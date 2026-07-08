@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# venv
+.venv/
+venv/
+
+# 생성 산출물 / 임시 데이터
+out/
+Results/
+sample.xlsx
+*.tmp
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store

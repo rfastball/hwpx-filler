@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hwpx-filler"
+version = "0.1.0"
+description = "HWPX 누름틀(Field) 값 주입 데스크톱 앱 — UnivContractor VBA 엔진의 Python 포트"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "lxml>=5.0",
+    "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+gui = ["PySide6>=6.6"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+hwpxfiller = "hwpxfiller.cli:main"
+
+[project.gui-scripts]
+hwpx-filler = "hwpxfiller.gui.app:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hwpxfiller"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
