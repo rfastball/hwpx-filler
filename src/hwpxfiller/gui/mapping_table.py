@@ -1,0 +1,351 @@
+"""매핑 테이블 뷰 — MappingModel 을 QTableWidget 으로 렌더/편집한다.
+
+열: [확정 | 템플릿 필드 | 소스 | 변환 | 구분자·상수 | 미리보기].
+행 색: 미확정=노랑, 소스 없는 미확정(미매칭)=빨강, 확정=기본.
+모든 편집은 MappingModel 편집 API 를 거치고(편집 → 확정 해제 규칙 포함),
+변경 시 ``completeChanged`` 시그널을 쏜다(위저드 isComplete 연동용).
+"""
+
+from __future__ import annotations
+
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QBrush, QColor
+from PySide6.QtWidgets import (
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
+from ..core.mapping import TRANSFORMS
+from .mapping_state import MappingModel
+
+# 변환 코드 → 한국어 라벨(콤보 표시 순서는 TRANSFORMS 그대로).
+TRANSFORM_LABELS = {"join": "그대로", "datetime": "일시", "amount": "금액", "const": "상수"}
+
+_COL_CONFIRM, _COL_FIELD, _COL_SOURCE, _COL_TRANSFORM, _COL_ARG, _COL_PREVIEW = range(6)
+_HEADERS = ("확정", "템플릿 필드", "소스", "변환", "구분자·상수", "미리보기")
+
+_BG_UNCONFIRMED = QBrush(QColor("#FFF3BF"))  # 미확정 = 노랑
+_BG_UNMATCHED = QBrush(QColor("#FFD8D8"))    # 미매칭 미확정 = 빨강
+_BG_DEFAULT = QBrush()
+
+_EMPTY_ITEM = "(비움)"
+_MULTI_ITEM = "여러 소스 선택…"
+
+# 이 미만의 제안 점수는 툴팁으로 신뢰도를 고지한다(정확 일치 1.0 은 조용히).
+_LOW_CONFIDENCE = 1.0
+
+
+def _source_label(key: str, aliases: "dict[str, str]") -> str:
+    """영문 소스 키를 alias 한글 라벨과 병기(``opengDate — 개찰일자``)."""
+    label = aliases.get(key)
+    if label and label != key:
+        return f"{key} — {label}"
+    return key
+
+
+def _sources_display(sources: "list[str]", aliases: "dict[str, str]") -> str:
+    """현재 소스 선택의 표시 문자열 — N→1 은 ``opengDate + opengTm`` 식으로."""
+    if not sources:
+        return _EMPTY_ITEM
+    if len(sources) == 1:
+        return _source_label(sources[0], aliases)
+    return " + ".join(sources)
+
+
+class _SourcePickerDialog(QDialog):
+    """N→1 합성용 다중 소스 선택 다이얼로그(체크 리스트).
+
+    선택 순서는 리스트(소스 필드) 순서를 따른다 — 나라장터 키는 날짜가 시각보다
+    앞에 오므로 datetime 합성의 기대 순서(날짜, 시각)와 일치한다.
+    """
+
+    def __init__(self, source_fields, aliases, selected, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("소스 다중 선택 (N→1 합성)")
+        self.resize(360, 420)
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("이 템플릿 필드에 합칠 소스를 순서대로 체크하세요."))
+        self.list = QListWidget()
+        chosen = set(selected)
+        for key in source_fields:
+            item = QListWidgetItem(_source_label(key, aliases))
+            item.setData(Qt.UserRole, key)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked if key in chosen else Qt.Unchecked)
+            self.list.addItem(item)
+        layout.addWidget(self.list)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def selected_sources(self) -> "list[str]":
+        out: "list[str]" = []
+        for i in range(self.list.count()):
+            item = self.list.item(i)
+            if item.checkState() == Qt.Checked:
+                out.append(item.data(Qt.UserRole))
+        return out
+
+
+class MappingTable(QWidget):
+    """MappingModel 렌더/편집 위젯 — 테이블 + 모두 확정/해제 버튼."""
+
+    completeChanged = Signal()  # 모델 변경(확정 상태 포함) 시마다 발신
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._model: "MappingModel | None" = None
+        self._preview_record: dict = {}
+        self._updating = False  # 프로그램적 갱신 중 itemChanged 재진입 방지
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        self.table = QTableWidget(0, len(_HEADERS))
+        self.table.setHorizontalHeaderLabels(_HEADERS)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setSelectionMode(QTableWidget.NoSelection)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Interactive)
+        header.setSectionResizeMode(_COL_CONFIRM, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(_COL_PREVIEW, QHeaderView.Stretch)
+        self.table.setColumnWidth(_COL_FIELD, 170)
+        self.table.setColumnWidth(_COL_SOURCE, 220)
+        self.table.setColumnWidth(_COL_TRANSFORM, 90)
+        self.table.setColumnWidth(_COL_ARG, 110)
+        self.table.itemChanged.connect(self._on_item_changed)
+        layout.addWidget(self.table, 1)
+
+        buttons = QHBoxLayout()
+        self.btn_confirm_all = QPushButton("모두 확정")
+        self.btn_confirm_all.clicked.connect(self._on_confirm_all)
+        self.btn_unconfirm_all = QPushButton("모두 해제")
+        self.btn_unconfirm_all.clicked.connect(self._on_unconfirm_all)
+        buttons.addWidget(self.btn_confirm_all)
+        buttons.addWidget(self.btn_unconfirm_all)
+        buttons.addStretch(1)
+        layout.addLayout(buttons)
+
+    # ---------------------------------------------------------------- 공개 API
+    def set_model(self, model: MappingModel, preview_record: "dict | None" = None):
+        """모델 교체 후 전체 재렌더. preview_record 는 미리보기 기준 레코드."""
+        self._model = model
+        self._preview_record = dict(preview_record or {})
+        self._rebuild()
+
+    def refresh(self):
+        """모델이 밖에서 바뀐 뒤(프로파일 로드 등) 전체 행 시각 동기화."""
+        if self._model is None:
+            return
+        for ri in range(len(self._model.rows)):
+            self._sync_row(ri)
+
+    # ----------------------------------------------------------------- 렌더링
+    def _rebuild(self):
+        model = self._model
+        self._updating = True
+        try:
+            self.table.setRowCount(0)
+            if model is None:
+                return
+            self.table.setRowCount(len(model.rows))
+            for ri, row in enumerate(model.rows):
+                # 확정 체크(체크 가능한 아이템).
+                chk = QTableWidgetItem()
+                chk.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
+                self.table.setItem(ri, _COL_CONFIRM, chk)
+
+                # 템플릿 필드(이름 + 타입 배지, context 툴팁).
+                spec = row.spec
+                type_badge = spec.inferred_type if spec else "text"
+                fld = QTableWidgetItem(f"{row.template_field}  [{type_badge}]")
+                fld.setFlags(Qt.ItemIsEnabled)
+                if spec and spec.context:
+                    fld.setToolTip(f"문맥: {spec.context}")
+                self.table.setItem(ri, _COL_FIELD, fld)
+
+                # 소스 콤보.
+                combo = QComboBox()
+                combo.activated.connect(
+                    lambda idx, ri=ri: self._on_source_activated(ri, idx)
+                )
+                self.table.setCellWidget(ri, _COL_SOURCE, combo)
+
+                # 변환 콤보(한국어 라벨).
+                tr = QComboBox()
+                for kind in TRANSFORMS:
+                    tr.addItem(TRANSFORM_LABELS.get(kind, kind), kind)
+                tr.activated.connect(
+                    lambda idx, ri=ri: self._on_transform_activated(ri, idx)
+                )
+                self.table.setCellWidget(ri, _COL_TRANSFORM, tr)
+
+                # 구분자·상수(변환 종류에 따라 의미·활성이 바뀜).
+                arg = QLineEdit()
+                arg.textEdited.connect(lambda text, ri=ri: self._on_arg_edited(ri, text))
+                self.table.setCellWidget(ri, _COL_ARG, arg)
+
+                # 미리보기(읽기 전용).
+                pv = QTableWidgetItem()
+                pv.setFlags(Qt.ItemIsEnabled)
+                self.table.setItem(ri, _COL_PREVIEW, pv)
+        finally:
+            self._updating = False
+        for ri in range(len(model.rows)):
+            self._sync_row(ri)
+
+    def _sync_row(self, ri: int):
+        """행 위젯/아이템을 모델 상태로 동기화(색·미리보기·활성 포함)."""
+        model = self._model
+        row = model.rows[ri]
+        self._updating = True
+        try:
+            # 확정 체크 상태.
+            self.table.item(ri, _COL_CONFIRM).setCheckState(
+                Qt.Checked if row.confirmed else Qt.Unchecked
+            )
+
+            # 소스 콤보 재구성: (비움) + 각 소스 + [현재 다중 표시] + 다중 선택….
+            combo: QComboBox = self.table.cellWidget(ri, _COL_SOURCE)
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItem(_EMPTY_ITEM)
+            for key in model.source_fields:
+                combo.addItem(_source_label(key, model.aliases))
+            if len(row.sources) > 1:
+                combo.addItem(_sources_display(row.sources, model.aliases))
+                combo.setCurrentIndex(combo.count() - 1)
+            elif len(row.sources) == 1 and row.sources[0] in model.source_fields:
+                combo.setCurrentIndex(1 + model.source_fields.index(row.sources[0]))
+            else:
+                combo.setCurrentIndex(0)
+            combo.addItem(_MULTI_ITEM)
+            if 0.0 < row.suggestion_score < _LOW_CONFIDENCE:
+                combo.setToolTip(
+                    f"자동 제안 신뢰도 {row.suggestion_score:.0%} — 초안입니다. 확인 후 확정하세요."
+                )
+            else:
+                combo.setToolTip("")
+            combo.blockSignals(False)
+
+            # 변환 콤보.
+            tr: QComboBox = self.table.cellWidget(ri, _COL_TRANSFORM)
+            tr.blockSignals(True)
+            tr.setCurrentIndex(TRANSFORMS.index(row.transform))
+            tr.blockSignals(False)
+
+            # 구분자·상수 — join 이면 구분자, const 면 상수, 그 외 비활성.
+            arg: QLineEdit = self.table.cellWidget(ri, _COL_ARG)
+            arg.blockSignals(True)
+            if row.transform == "join":
+                arg.setEnabled(True)
+                arg.setPlaceholderText("구분자")
+                arg.setText(row.sep)
+            elif row.transform == "const":
+                arg.setEnabled(True)
+                arg.setPlaceholderText("상수 값")
+                arg.setText(row.const)
+            else:
+                arg.setEnabled(False)
+                arg.setPlaceholderText("")
+                arg.setText("")
+            arg.blockSignals(False)
+
+            # 미리보기(records[0] 기준 실시간).
+            preview = row.to_mapping().value_for(self._preview_record)
+            self.table.item(ri, _COL_PREVIEW).setText(preview)
+
+            # 행 상태 색.
+            if row.confirmed:
+                brush = _BG_DEFAULT
+            elif row.has_content():
+                brush = _BG_UNCONFIRMED
+            else:
+                brush = _BG_UNMATCHED
+            for col in (_COL_CONFIRM, _COL_FIELD, _COL_PREVIEW):
+                self.table.item(ri, col).setBackground(brush)
+        finally:
+            self._updating = False
+
+    # --------------------------------------------------------------- 핸들러
+    def _on_item_changed(self, item: QTableWidgetItem):
+        if self._updating or item.column() != _COL_CONFIRM:
+            return
+        ri = item.row()
+        self._model.set_confirmed(ri, item.checkState() == Qt.Checked)
+        self._sync_row(ri)
+        self.completeChanged.emit()
+
+    def _on_source_activated(self, ri: int, idx: int):
+        model = self._model
+        combo: QComboBox = self.table.cellWidget(ri, _COL_SOURCE)
+        n = len(model.source_fields)
+        if combo.itemText(idx) == _MULTI_ITEM:
+            dlg = _SourcePickerDialog(
+                model.source_fields, model.aliases, model.rows[ri].sources, self
+            )
+            if dlg.exec() == QDialog.Accepted:
+                model.set_sources(ri, dlg.selected_sources())
+        elif idx == 0:
+            model.set_sources(ri, [])
+        elif 1 <= idx <= n:
+            model.set_sources(ri, [model.source_fields[idx - 1]])
+        else:
+            # 현재 다중 선택 표시 아이템 재선택 — 변경 없음.
+            self._sync_row(ri)
+            return
+        self._sync_row(ri)
+        self.completeChanged.emit()
+
+    def _on_transform_activated(self, ri: int, idx: int):
+        self._model.set_transform(ri, TRANSFORMS[idx])
+        self._sync_row(ri)
+        self.completeChanged.emit()
+
+    def _on_arg_edited(self, ri: int, text: str):
+        row = self._model.rows[ri]
+        if row.transform == "join":
+            self._model.set_sep(ri, text)
+        elif row.transform == "const":
+            self._model.set_const(ri, text)
+        else:
+            return
+        # 입력 중 포커스 유지를 위해 라인에디트 자체는 다시 만지지 않는다.
+        self._updating = True
+        try:
+            self.table.item(ri, _COL_CONFIRM).setCheckState(Qt.Unchecked)
+            preview = row.to_mapping().value_for(self._preview_record)
+            self.table.item(ri, _COL_PREVIEW).setText(preview)
+            brush = _BG_UNCONFIRMED if row.has_content() else _BG_UNMATCHED
+            for col in (_COL_CONFIRM, _COL_FIELD, _COL_PREVIEW):
+                self.table.item(ri, col).setBackground(brush)
+        finally:
+            self._updating = False
+        self.completeChanged.emit()
+
+    def _on_confirm_all(self):
+        if self._model is None:
+            return
+        self._model.confirm_all()
+        self.refresh()
+        self.completeChanged.emit()
+
+    def _on_unconfirm_all(self):
+        if self._model is None:
+            return
+        self._model.unconfirm_all()
+        self.refresh()
+        self.completeChanged.emit()
