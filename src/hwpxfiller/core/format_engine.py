@@ -71,6 +71,33 @@ def _korean_dt(value: str) -> str:
     return out
 
 
+# ---- 마스크(자릿수 그룹) — stdlib 서식 스펙으로 안 되는 전화/사업자번호 등 ----
+def _mask_phone(value: str) -> str:
+    """전화번호 자릿수 마스크. 자릿수가 안 맞으면 원본(degrade)."""
+    d = re.sub(r"\D", "", value)
+    n = len(d)
+    if n == 11:
+        return f"{d[:3]}-{d[3:7]}-{d[7:]}"      # 010-1234-5678
+    if n == 10:
+        if d.startswith("02"):
+            return f"{d[:2]}-{d[2:6]}-{d[6:]}"   # 02-1234-5678
+        return f"{d[:3]}-{d[3:6]}-{d[6:]}"       # 031-123-4567
+    if n == 9 and d.startswith("02"):
+        return f"{d[:2]}-{d[2:5]}-{d[5:]}"       # 02-123-4567
+    return value
+
+
+def _mask_biz(value: str) -> str:
+    """사업자등록번호 10자리 → ``123-45-67890``. 아니면 원본(degrade)."""
+    d = re.sub(r"\D", "", value)
+    if len(d) == 10:
+        return f"{d[:3]}-{d[3:5]}-{d[5:]}"
+    return value
+
+
+_MASKS = {"phone": _mask_phone, "biz": _mask_biz}
+
+
 class StdlibFormatEngine:
     """stdlib 서식 엔진 — 금액=``str.format`` 스펙, 날짜=``strftime``. 의존성 0."""
 
@@ -88,6 +115,11 @@ class StdlibFormatEngine:
             ("점", "%Y.%m.%d"),         # 2026.06.15
             ("연-월", "%Y-%m"),         # 2026-06
         ],
+        "join": [                       # 평문(그대로) 변환의 표시형 = 마스크
+            ("원문", ""),               # 값 그대로
+            ("전화", "phone"),          # 010-1234-5678
+            ("사업자번호", "biz"),       # 123-45-67890
+        ],
     }
 
     def render(self, kind: str, code: str, value: str) -> str:
@@ -95,7 +127,9 @@ class StdlibFormatEngine:
             return self._amount(code, value)
         if kind == "datetime":
             return self._datetime(code, value)
-        return value  # 표시형 없는 kind
+        if kind == "join":
+            return self._text(code, value)
+        return value  # 표시형 없는 kind(const)
 
     def presets(self, kind: str) -> "list[tuple[str, str]]":
         return list(self._PRESETS.get(kind, []))
@@ -119,6 +153,12 @@ class StdlibFormatEngine:
             return dt.strftime(code)
         except (ValueError, TypeError):
             return value
+
+    def _text(self, code: str, value: str) -> str:
+        if not code:
+            return value  # 원문 그대로
+        fn = _MASKS.get(code)
+        return fn(value) if fn else value  # 미지 마스크 코드 → 원본(degrade)
 
 
 # ---------------------------------------------------- 어댑터 (교체 지점) --

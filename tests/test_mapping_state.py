@@ -173,6 +173,12 @@ def test_datetime_custom_code_format():
     assert model.preview({"d": "2026-6-5"})["개찰일시"] == "2026-06-05"
 
 
+def test_phone_mask_via_join_transform():
+    """평문(join) 변환 + 마스크 표시형 — 전화번호 자릿수 그룹."""
+    model = MappingModel(rows=[RowState("연락처", sources=["tel"], transform="join", fmt="phone")])
+    assert model.preview({"tel": "01012345678"})["연락처"] == "010-1234-5678"
+
+
 def test_changing_transform_resets_format_code():
     """변환을 바꾸면 이전 표시형 코드는 무효 → 기본으로 리셋."""
     model = MappingModel(rows=[RowState("x", sources=["a"], transform="amount", fmt="{:,}")])

@@ -88,8 +88,8 @@ def apply_transform(
         return _fe.render("amount", fmt, "".join(parts))
     if kind == "datetime":
         return _fe.render("datetime", fmt, " ".join(parts))
-    # join(기본)
-    return sep.join(parts)
+    # join(기본) — 결합 후 마스크/텍스트 표시형(fmt) 적용(fmt="" 이면 원문).
+    return _fe.render("join", fmt, sep.join(parts))
 
 
 # ------------------------------------------------------------------ 모델

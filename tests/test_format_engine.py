@@ -36,8 +36,19 @@ def test_datetime_degrades_on_unparseable():
     assert render("datetime", "%Y-%m-%d", "미정") == "미정"
 
 
-def test_no_format_kind_passthrough():
+def test_join_masks_and_passthrough():
+    # 원문(빈 코드)은 값 그대로.
+    assert render("join", "", "아무 텍스트") == "아무 텍스트"
+    # 전화 마스크(자릿수별).
+    assert render("join", "phone", "01012345678") == "010-1234-5678"
+    assert render("join", "phone", "0212345678") == "02-1234-5678"
+    assert render("join", "phone", "0311234567") == "031-123-4567"
+    # 사업자번호 마스크.
+    assert render("join", "biz", "1234567890") == "123-45-67890"
+    # 자릿수 안 맞거나 미지 코드 → 원본(degrade).
+    assert render("join", "phone", "123") == "123"
     assert render("join", "%Y", "값") == "값"
+    # const 는 표시형 없는 kind.
     assert render("const", "{:,}", "값") == "값"
 
 
@@ -48,7 +59,11 @@ def test_presets_are_label_code_pairs():
     dt = dict(presets("datetime"))
     assert dt["한글"] == ""
     assert dt["ISO"] == "%Y-%m-%d"
-    assert presets("join") == []       # 표시형 없는 kind
+    join = dict(presets("join"))       # 평문 변환의 표시형 = 마스크
+    assert join["원문"] == ""
+    assert join["전화"] == "phone"
+    assert join["사업자번호"] == "biz"
+    assert presets("const") == []      # 표시형 없는 kind
 
 
 def test_engine_is_swappable_via_protocol():
