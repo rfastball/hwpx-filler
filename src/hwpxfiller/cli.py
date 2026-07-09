@@ -12,6 +12,7 @@
     python -m hwpxfiller.cli fieldize T.hwpx [--out compiled.hwpx]  # {{토큰}}→누름틀
     python -m hwpxfiller.cli lint T.hwpx [--vocab words.txt]  # 템플릿 위생 점검
     python -m hwpxfiller.cli drift OLD.hwpx NEW.hwpx  # 판본 간 필드 드리프트
+    python -m hwpxfiller.cli render TPL.txt --data d.xlsx [--record N] [--clip]  # 텍스트 템플릿 치환
 """
 
 from __future__ import annotations
@@ -149,6 +150,73 @@ def _drift_main(argv: "list[str]") -> int:
     return 0
 
 
+def _copy_to_clipboard(text: str) -> None:
+    """결과를 OS 클립보드로 복사(best-effort). 실패해도 표준출력/파일 경로가 있으니 치명 아님."""
+    import subprocess
+
+    try:
+        if sys.platform.startswith("win"):
+            # PowerShell Set-Clipboard 가 유니코드(한글)를 안전하게 처리.
+            cmd = ["powershell", "-NoProfile", "-Command", "$input | Set-Clipboard"]
+        elif sys.platform == "darwin":
+            cmd = ["pbcopy"]
+        else:
+            cmd = ["xclip", "-selection", "clipboard"]
+        subprocess.run(cmd, input=text, text=True, check=True)
+        print("클립보드로 복사했습니다.", file=sys.stderr)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[안내] 클립보드 복사 실패({exc}). 표준출력/--out 을 쓰세요.", file=sys.stderr)
+
+
+def _render_main(argv: "list[str]") -> int:
+    """``render`` 하위명령 — 텍스트 템플릿에 데이터 1건을 치환(온나라 기안 등 즉각 복사용).
+
+    HWPX·누름틀과 무관한 순수 문자열 치환이다. 데이터에 없는 필드·미지 포매터는 토큰을
+    그대로 남기고 stderr 로 시끄럽게 신고한다(출력 자체는 막지 않아 파이프/복사에 방해 없음).
+    """
+    from .core.text_render import render_record
+
+    ap = argparse.ArgumentParser(prog="hwpxfiller render")
+    ap.add_argument("template", help="텍스트 템플릿 경로(.txt 등, {{필드}} 토큰)")
+    ap.add_argument("--data", required=True, help="엑셀/CSV 데이터 경로")
+    ap.add_argument("--record", type=int, default=1, help="렌더할 레코드 번호(1-based, 기본 1)")
+    ap.add_argument("--sheet", default=None, help="엑셀 시트명(기본: 첫 시트)")
+    ap.add_argument("--out", default=None, help="출력 파일 경로(생략 시 표준출력)")
+    ap.add_argument("--clip", action="store_true", help="결과를 클립보드로 복사")
+    args = ap.parse_args(argv)
+
+    with open(args.template, encoding="utf-8") as fh:
+        template = fh.read()
+    records = ExcelDataSource(args.data, sheet=args.sheet).records()
+    if not records:
+        print("데이터에 레코드가 없습니다.", file=sys.stderr)
+        return 1
+    idx = args.record - 1
+    if idx < 0 or idx >= len(records):
+        print(f"--record {args.record} 범위 밖(1..{len(records)}).", file=sys.stderr)
+        return 1
+
+    text, report = render_record(template, records[idx])
+    if report.missing_fields:
+        print(f"[경고] 데이터에 없는 필드(토큰 유지): {', '.join(report.missing_fields)}",
+              file=sys.stderr)
+    if report.unknown_formatters:
+        print(f"[경고] 미지의 포매터(토큰 유지): {', '.join(report.unknown_formatters)}",
+              file=sys.stderr)
+    if report.empty_fields:
+        print(f"[안내] 값이 비어있는 필드: {', '.join(report.empty_fields)}", file=sys.stderr)
+
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        print(f"렌더 저장: {args.out}", file=sys.stderr)
+    else:
+        print(text)
+    if args.clip:
+        _copy_to_clipboard(text)
+    return 0
+
+
 def _load_records(ap: argparse.ArgumentParser, args) -> "list[dict[str, str]]":
     """``--source`` 에 따라 데이터 소스를 만들고 레코드를 취득한다.
 
@@ -194,6 +262,8 @@ def main(argv: "list[str] | None" = None) -> int:
         return _lint_main(argv[1:])
     if argv and argv[0] == "drift":
         return _drift_main(argv[1:])
+    if argv and argv[0] == "render":
+        return _render_main(argv[1:])
 
     ap = argparse.ArgumentParser(prog="hwpxfiller")
     ap.add_argument("--template", required=True, help="HWPX 템플릿 경로")

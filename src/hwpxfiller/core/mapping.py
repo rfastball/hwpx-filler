@@ -19,10 +19,10 @@
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import format_engine as _fe
 from .lint import similarity
 
 # 나라장터 표준 입찰공고 응답 필드(소스 키) → 사람이 읽는 한글 라벨.
@@ -66,42 +66,28 @@ NARA_ALIASES: "dict[str, str]" = {
     "bidNtceUrl": "공고URL",
 }
 
-# 지원 변환 종류.
+# 지원 변환 종류. 이 중 amount/datetime 은 **결합(N→1) 후 공용 포매터**에 위임한다
+# (값-포맷 로직은 core/formatters.py 가 단일 소유; join/const 는 매핑 고유 결합자).
 TRANSFORMS = ("join", "datetime", "amount", "const")
 
 
 # ------------------------------------------------------------------ 변환
-def _fmt_datetime(parts: "list[str]") -> str:
-    """``["2017-01-04","09:00"]`` → ``"2017년 1월 4일 09:00"``. 파싱 실패 시 공백 결합."""
-    if not parts:
-        return ""
-    date_str = parts[0]
-    time_str = parts[1].strip() if len(parts) > 1 else ""
-    m = re.match(r"(\d{4})[-.]?(\d{2})[-.]?(\d{2})", date_str)
-    if m:
-        y, mo, d = m.groups()
-        out = f"{int(y)}년 {int(mo)}월 {int(d)}일"
-        if time_str:
-            out += f" {time_str}"
-        return out
-    return " ".join(p for p in parts if p)
-
-
 def apply_transform(
-    kind: str, values: "list[str]", sep: str = " ", const: str = ""
+    kind: str, values: "list[str]", sep: str = " ", const: str = "", fmt: str = ""
 ) -> str:
-    """소스 값 목록에 변환을 적용해 최종 문자열 생성."""
+    """소스 값 목록을 결합(N→1)한 뒤, 표시형(``fmt``)에 따라 서식 엔진으로 포맷.
+
+    ``fmt`` 는 변환 안의 표시형 **서식 코드**("" = 기본, 예: ``"{:,}"``·``"%Y-%m-%d"``).
+    코드 해석은 교체 가능한 `format_engine` 에 위임한다(현재 stdlib). amount/datetime 만
+    표시형을 가지며, 없는 변환에선 ``fmt`` 는 무시된다.
+    """
     if kind == "const":
         return const
     parts = [v.strip() for v in values if v and v.strip()]
     if kind == "amount":
-        raw = "".join(parts)
-        digits = re.sub(r"[^\d-]", "", raw)
-        if digits and digits.lstrip("-").isdigit():
-            return f"{int(digits):,}원"
-        return raw
+        return _fe.render("amount", fmt, "".join(parts))
     if kind == "datetime":
-        return _fmt_datetime(parts)
+        return _fe.render("datetime", fmt, " ".join(parts))
     # join(기본)
     return sep.join(parts)
 
@@ -116,10 +102,11 @@ class FieldMapping:
     transform: str = "join"
     sep: str = " "
     const: str = ""
+    fmt: str = ""  # 표시형 프리셋 키(변환 내). "" = 기본(하위호환).
 
     def value_for(self, record: "dict[str, object]") -> str:
         values = [str(record.get(s, "")) for s in self.sources]
-        return apply_transform(self.transform, values, self.sep, self.const)
+        return apply_transform(self.transform, values, self.sep, self.const, self.fmt)
 
     def to_dict(self) -> dict:
         return {
@@ -128,6 +115,7 @@ class FieldMapping:
             "transform": self.transform,
             "sep": self.sep,
             "const": self.const,
+            "fmt": self.fmt,
         }
 
     @classmethod
@@ -138,6 +126,7 @@ class FieldMapping:
             transform=d.get("transform", "join"),
             sep=d.get("sep", " "),
             const=d.get("const", ""),
+            fmt=d.get("fmt", ""),  # 구 프로파일엔 없을 수 있음 → 기본
         )
 
 

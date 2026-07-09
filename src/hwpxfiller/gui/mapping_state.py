@@ -48,6 +48,7 @@ class RowState:
     transform: str = "join"
     sep: str = " "
     const: str = ""
+    fmt: str = ""  # 표시형 프리셋 키(변환 내). "" = 기본.
     confirmed: bool = False
     suggestion_score: float = 0.0
 
@@ -66,6 +67,7 @@ class RowState:
             transform=self.transform,
             sep=self.sep,
             const=self.const,
+            fmt=self.fmt,
         )
 
 
@@ -130,6 +132,13 @@ class MappingModel:
             raise ValueError(f"지원하지 않는 변환: {transform!r} (지원: {TRANSFORMS})")
         row = self.rows[index]
         row.transform = transform
+        row.fmt = ""  # 변환이 바뀌면 이전 표시형 키는 무효 → 기본으로.
+        row.confirmed = False
+
+    def set_fmt(self, index: int, fmt: str) -> None:
+        """표시형(변환 내 프리셋) 변경 — 편집이므로 확정 해제."""
+        row = self.rows[index]
+        row.fmt = fmt
         row.confirmed = False
 
     def set_sep(self, index: int, sep: str) -> None:
@@ -198,6 +207,7 @@ class MappingModel:
             row.transform = m.transform
             row.sep = m.sep
             row.const = m.const
+            row.fmt = m.fmt
             row.confirmed = True
             applied += 1
         return applied

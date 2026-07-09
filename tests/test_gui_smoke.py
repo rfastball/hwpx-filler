@@ -116,6 +116,24 @@ def test_record_selector_relabel_preserves_selection(qapp):
     assert sel.list.item(0).text() == "1. 새-A.hwpx"
 
 
+def test_mapping_table_format_combo_drives_preview(qapp):
+    from hwpxfiller.gui.mapping_table import _COL_FORMAT, _COL_PREVIEW, MappingTable
+
+    schema = TemplateSchema(fields=[FieldSpec("추정가격", "amount", 1, False)])
+    model = MappingModel.from_suggestions(schema, ["presmptPrce"], {"presmptPrce": "추정가격"})
+    table = MappingTable()
+    table.set_model(model, {"presmptPrce": "21326800"})
+    ri = 0
+    # 기본 표시형(원)일 때 미리보기.
+    assert table.table.item(ri, _COL_PREVIEW).text() == "21,326,800원"
+    # 표시형 콤보에서 '숫자' 프리셋(코드 "{:,}") 선택 → 모델·미리보기 반영.
+    fmtc = table.table.cellWidget(ri, _COL_FORMAT)
+    plain_idx = next(i for i in range(fmtc.count()) if fmtc.itemData(i) == "{:,}")
+    table._on_format_activated(ri, plain_idx)
+    assert model.rows[ri].fmt == "{:,}"
+    assert table.table.item(ri, _COL_PREVIEW).text() == "21,326,800"
+
+
 def test_worker_and_main_window_modules_import(qapp):
     from hwpxfiller.gui.main_window import MainWindow  # noqa: F401
     from hwpxfiller.gui.worker import GenerateWorker  # noqa: F401

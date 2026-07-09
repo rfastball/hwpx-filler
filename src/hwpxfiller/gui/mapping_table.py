@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -27,14 +28,20 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..core.format_engine import presets as format_presets
 from ..core.mapping import TRANSFORMS
 from .mapping_state import MappingModel
 
 # 변환 코드 → 한국어 라벨(콤보 표시 순서는 TRANSFORMS 그대로).
 TRANSFORM_LABELS = {"join": "그대로", "datetime": "일시", "amount": "금액", "const": "상수"}
 
-_COL_CONFIRM, _COL_FIELD, _COL_SOURCE, _COL_TRANSFORM, _COL_ARG, _COL_PREVIEW = range(6)
-_HEADERS = ("확정", "템플릿 필드", "소스", "변환", "구분자·상수", "미리보기")
+(
+    _COL_CONFIRM, _COL_FIELD, _COL_SOURCE, _COL_TRANSFORM, _COL_FORMAT, _COL_ARG,
+    _COL_PREVIEW,
+) = range(7)
+_HEADERS = ("확정", "템플릿 필드", "소스", "변환", "표시형", "구분자·상수", "미리보기")
+_NO_FORMAT_ITEM = "—"          # 표시형 변형이 없는 변환(그대로/상수)
+_CUSTOM_FORMAT_ITEM = "직접 입력…"  # 고급: 서식 코드 직접 입력(액션 항목)
 
 _BG_UNCONFIRMED = QBrush(QColor("#FFF3BF"))  # 미확정 = 노랑
 _BG_UNMATCHED = QBrush(QColor("#FFD8D8"))    # 미매칭 미확정 = 빨강
@@ -129,6 +136,7 @@ class MappingTable(QWidget):
         self.table.setColumnWidth(_COL_FIELD, 170)
         self.table.setColumnWidth(_COL_SOURCE, 220)
         self.table.setColumnWidth(_COL_TRANSFORM, 90)
+        self.table.setColumnWidth(_COL_FORMAT, 80)
         self.table.setColumnWidth(_COL_ARG, 110)
         self.table.itemChanged.connect(self._on_item_changed)
         layout.addWidget(self.table, 1)
@@ -232,6 +240,13 @@ class MappingTable(QWidget):
                 )
                 self.table.setCellWidget(ri, _COL_TRANSFORM, tr)
 
+                # 표시형 콤보(변환에 딸린 프리셋; 변형 없는 변환이면 비활성).
+                fmtc = QComboBox()
+                fmtc.activated.connect(
+                    lambda idx, ri=ri: self._on_format_activated(ri, idx)
+                )
+                self.table.setCellWidget(ri, _COL_FORMAT, fmtc)
+
                 # 구분자·상수(변환 종류에 따라 의미·활성이 바뀜).
                 arg = QLineEdit()
                 arg.textEdited.connect(lambda text, ri=ri: self._on_arg_edited(ri, text))
@@ -285,6 +300,28 @@ class MappingTable(QWidget):
             tr.blockSignals(True)
             tr.setCurrentIndex(TRANSFORMS.index(row.transform))
             tr.blockSignals(False)
+
+            # 표시형 콤보 — 프리셋(라벨→코드) + 커스텀 코드 + '직접 입력…' 액션.
+            fmtc: QComboBox = self.table.cellWidget(ri, _COL_FORMAT)
+            fmtc.blockSignals(True)
+            fmtc.clear()
+            opts = format_presets(row.transform)  # [(라벨, 코드)]
+            if opts:
+                codes = [code for _, code in opts]
+                for label, code in opts:
+                    fmtc.addItem(label, code)
+                # 프리셋에 없는 커스텀 코드면 별도 항목으로 노출(코드 그대로 보여줌).
+                if row.fmt and row.fmt not in codes:
+                    fmtc.addItem(f"직접: {row.fmt}", row.fmt)
+                fmtc.addItem(_CUSTOM_FORMAT_ITEM, None)  # 액션(코드 데이터 None)
+                sel = next((i for i in range(fmtc.count())
+                            if fmtc.itemData(i) == row.fmt), 0)
+                fmtc.setCurrentIndex(sel)
+                fmtc.setEnabled(True)
+            else:
+                fmtc.addItem(_NO_FORMAT_ITEM, "")
+                fmtc.setEnabled(False)
+            fmtc.blockSignals(False)
 
             # 구분자·상수 — join 이면 구분자, const 면 상수, 그 외 비활성.
             arg: QLineEdit = self.table.cellWidget(ri, _COL_ARG)
@@ -352,6 +389,31 @@ class MappingTable(QWidget):
         self._model.set_transform(ri, TRANSFORMS[idx])
         self._sync_row(ri)
         self.completeChanged.emit()
+
+    def _on_format_activated(self, ri: int, idx: int):
+        combo: QComboBox = self.table.cellWidget(ri, _COL_FORMAT)
+        if combo.itemText(idx) == _CUSTOM_FORMAT_ITEM:
+            self._prompt_custom_format(ri)
+            return
+        code = combo.itemData(idx)
+        if code is None:  # 비활성('—') 항목
+            self._sync_row(ri)
+            return
+        self._model.set_fmt(ri, code)
+        self._sync_row(ri)
+        self.completeChanged.emit()
+
+    def _prompt_custom_format(self, ri: int):
+        """고급: 서식 코드 직접 입력. WYSIWYG 미리보기가 결과를 즉시 보여준다."""
+        row = self._model.rows[ri]
+        hint = ("금액 예: {:,}원 · {:,.2f}   ·   날짜 예: %Y-%m-%d · %Y년 %m월 %d일")
+        code, ok = QInputDialog.getText(
+            self, "표시형 코드 직접 입력", f"서식 코드\n({hint}):", text=row.fmt
+        )
+        if ok:
+            self._model.set_fmt(ri, code)
+            self.completeChanged.emit()
+        self._sync_row(ri)
 
     def _on_arg_edited(self, ri: int, text: str):
         row = self._model.rows[ri]

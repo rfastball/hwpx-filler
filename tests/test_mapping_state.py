@@ -155,6 +155,42 @@ def test_preview_amount_and_datetime_match_apply_transform():
     )
 
 
+def test_display_format_choice_changes_preview():
+    """같은 amount 라도 표시형 코드(fmt)에 따라 보일 형태가 달라진다(Excel 셀서식 격)."""
+    model = MappingModel(rows=[RowState("추정가격", sources=["presmptPrce"], transform="amount")])
+    rec = {"presmptPrce": "21326800"}
+    assert model.preview(rec)["추정가격"] == "21,326,800원"  # 기본(빈 코드)
+    model.set_fmt(0, "{:,}")
+    assert model.preview(rec)["추정가격"] == "21,326,800"    # 숫자만
+    # 표시형 편집은 확정을 해제한다(사람 눈 재확인).
+    model.set_confirmed(0)
+    model.set_fmt(0, "")
+    assert not model.rows[0].confirmed
+
+
+def test_datetime_custom_code_format():
+    model = MappingModel(rows=[RowState("개찰일시", sources=["d"], transform="datetime", fmt="%Y-%m-%d")])
+    assert model.preview({"d": "2026-6-5"})["개찰일시"] == "2026-06-05"
+
+
+def test_changing_transform_resets_format_code():
+    """변환을 바꾸면 이전 표시형 코드는 무효 → 기본으로 리셋."""
+    model = MappingModel(rows=[RowState("x", sources=["a"], transform="amount", fmt="{:,}")])
+    model.set_transform(0, "datetime")
+    assert model.rows[0].fmt == ""
+
+
+def test_profile_roundtrip_preserves_format(tmp_path):
+    """저장→로드가 표시형 코드(fmt)를 보존한다(구 프로파일 호환: 없으면 기본)."""
+    model = MappingModel(rows=[RowState("추정가격", sources=["presmptPrce"], transform="amount", fmt="{:,}")])
+    model.set_confirmed(0)
+    path = tmp_path / "p.json"
+    model.to_profile().save(path)
+    loaded = MappingProfile.load(path)
+    assert loaded.mappings[0].fmt == "{:,}"
+    assert loaded.apply({"presmptPrce": "21326800"})["추정가격"] == "21,326,800"
+
+
 def test_preview_covers_unmapped_rows_as_empty():
     model = _model()
     out = model.preview(_nara_record())
