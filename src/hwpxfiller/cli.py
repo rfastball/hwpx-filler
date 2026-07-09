@@ -5,6 +5,7 @@
     python -m hwpxfiller.cli --template T.hwpx --fields   # 요구 필드만 출력
     python -m hwpxfiller.cli diff OLD.hwpx NEW.hwpx [--html out.html]  # 개정 비교
     python -m hwpxfiller.cli schema T.hwpx [--out schema.json]  # 템플릿 스키마 추출
+    python -m hwpxfiller.cli fieldize T.hwpx [--out compiled.hwpx]  # {{토큰}}→누름틀
 """
 
 from __future__ import annotations
@@ -58,12 +59,50 @@ def _schema_main(argv: "list[str]") -> int:
     return 0
 
 
+def _fieldize_main(argv: "list[str]") -> int:
+    """``fieldize`` 하위명령 — 평문 ``{{토큰}}`` 을 누름틀로 컴파일.
+
+    명시성 원칙: ``--out`` 없으면 dry-run(무엇을 바꿀지 미리보기만), ``--out`` 지정 시에만
+    실제 컴파일 후 저장.
+    """
+    from .core.authoring import compile_document, scan_tokens
+
+    ap = argparse.ArgumentParser(prog="hwpxfiller fieldize")
+    ap.add_argument("template", help="평문 토큰이 든 HWPX 경로")
+    ap.add_argument("--out", default=None, help="컴파일 결과 저장 경로(생략 시 미리보기만)")
+    args = ap.parse_args(argv)
+
+    if not args.out:
+        sites = scan_tokens(args.template)
+        compilable = [s for s in sites if s.compilable]
+        skipped = [s for s in sites if not s.compilable]
+        print(f"[미리보기] 컴파일 가능 {len(compilable)}개 / 건너뜀 {len(skipped)}개")
+        for s in compilable:
+            print(f"  + {s.name}  ({s.context})")
+        for s in skipped:
+            print(f"  ! {s.name}  — {s.reason}", file=sys.stderr)
+        print("실제 변환하려면 --out <경로> 를 지정하세요.")
+        return 0
+
+    pkg, report = compile_document(args.template)
+    for s in report.skipped:
+        print(f"  [건너뜀] {s.name} — {s.reason}", file=sys.stderr)
+    if not report.modified:
+        print("컴파일할 토큰이 없습니다(이미 누름틀이거나 토큰 없음).")
+        return 0
+    pkg.save(args.out)
+    print(f"컴파일 완료: 필드 {len(report.compiled)}개 -> {args.out}")
+    return 0
+
+
 def main(argv: "list[str] | None" = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "diff":
         return _diff_main(argv[1:])
     if argv and argv[0] == "schema":
         return _schema_main(argv[1:])
+    if argv and argv[0] == "fieldize":
+        return _fieldize_main(argv[1:])
 
     ap = argparse.ArgumentParser(prog="hwpxfiller")
     ap.add_argument("--template", required=True, help="HWPX 템플릿 경로")
