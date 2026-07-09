@@ -22,6 +22,7 @@ hwpxfiller = "hwpxfiller.cli:main"
 
 [project.gui-scripts]
 hwpx-filler = "hwpxfiller.gui.app:main"
+hwpx-diff = "hwpxfiller.gui.diff_app:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hwpxfiller"]

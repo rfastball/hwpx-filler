@@ -165,3 +165,26 @@ def test_run_view_instantiates_with_a_job(qapp):
     view = RunView(Job(name="집행테스트", template_path="/t.hwpx", filename_pattern="doc-{{ID}}"))
     assert view.datasource is None  # 데이터 미겨눔 상태로 시작
     assert hasattr(view, "run_finished")
+
+
+# ------------------------------------------------------------------ 앱 A(diff)
+def test_diff_window_compares_real_corpus_and_binds_items(qapp):
+    """앱 A 단일 화면 — 실코퍼스 개정 쌍 비교가 리스트·뷰에 바인딩되고 클릭 이동이 돈다."""
+    from pathlib import Path
+
+    from hwpxfiller.gui.diff_app import DiffReviewWindow
+
+    corpus = Path(__file__).parent / "corpus" / "real"
+    win = DiffReviewWindow()
+    assert not win.btn_compare.isEnabled()  # 판본 선택 전
+
+    win.ed_old.setText(str(corpus / "spec_revision_2025.hwpx"))
+    win.ed_new.setText(str(corpus / "spec_revision_2026.hwpx"))
+    win._on_compare()
+
+    assert win.result is not None
+    assert win.items.rowCount() == len(win.result.change_items) > 0
+    assert "chg-" in win._html  # 앵커가 리포트에 존재(클릭 이동 표적)
+    # 첫 항목 선택 → 앵커 스크롤이 예외 없이 동작.
+    win.items.selectRow(0)
+    assert win.btn_browser.isEnabled() and win.btn_save.isEnabled()

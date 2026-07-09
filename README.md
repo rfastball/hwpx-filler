@@ -53,7 +53,11 @@ python -m hwpxfiller.cli --template template.hwpx --source nara \
 ### GUI
 
 ```bash
+# 앱 B — 문서 생성(작업 홈 → 에디터/집행)
 python -m hwpxfiller.gui.app
+
+# 앱 A — 규격서 개정 diff 리뷰어(판본 2개 → 변경항목 리스트 + HTML 리포트)
+python -m hwpxfiller.gui.diff_app
 ```
 
 ## 구조
@@ -74,7 +78,9 @@ python -m hwpxfiller.gui.app
 | `batch.py` | 일괄 생성 | `Process_HWP_Generation` |
 | `data/excel.py` | 엑셀/CSV 데이터 소스 | (대시보드 페이로드) |
 | `data/nara.py` | 나라장터 조달청 API 취득 소스(stdlib urllib) | (신규 — 웹 취득, VBA선 불가) |
-| `gui/` | PySide6 데스크톱 UI — 4스텝 매핑 위저드 | (대시보드 버튼) |
+| `core/job.py` | 작업(Job) 앵커 — durable {템플릿·매핑·파일명} + 레지스트리 + 집행요청 | (신규 — 원본의 일급 Job 부재를 수리) |
+| `gui/` | 앱 B: 작업 홈(`home`)·에디터(`job_editor`)·집행(`run_view`) | (대시보드 버튼) |
+| `gui/diff_app.py` | 앱 A: 개정 diff 리뷰어(별도 진입점, 읽기 도구) | (신규 — VBA선 불가) |
 
 ## 테스트
 

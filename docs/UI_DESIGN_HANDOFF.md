@@ -1,8 +1,9 @@
 # UI 디자인 핸드오프 — 트랙 C 셸
 
-이 문서는 **작업(Job) 앵커 데이터모델 + GUI 스캐폴드**가 랜딩된 뒤, 세부 UI 구현을
-넘기기 위한 계약서다. 스캐폴드가 **고정한 이음새**(모듈 경계·시그널/슬롯·데이터 바인딩
-지점)와 **디자인이 채울 것**(레이아웃·위젯·스타일·상호작용)을 가른다.
+이 문서는 **작업(Job) 앵커 데이터모델 + GUI 스캐폴드**(앱 B)와 **diff 리뷰어**(앱 A)가
+랜딩된 뒤, 세부 UI 구현을 넘기기 위한 계약서다. 스캐폴드가 **고정한 이음새**(모듈 경계·
+시그널/슬롯·데이터 바인딩 지점)와 **디자인이 채울 것**(레이아웃·위젯·스타일·상호작용)을
+가른다. §0~§6 = 앱 B(생성기), §8 = 앱 A(diff 리뷰어).
 
 > **관통 원칙 — UI는 기능이 거쳐 UX로 드러나는 통로다.** function → UX → UI 이지 그 역이
 > 아니다. 빈 슬롯을 채우려 **없던 기능을 발명하지 말 것**(과거 "빠른 생성" 드리프트 재발
@@ -138,3 +139,34 @@ gui/app.py  _AppController ──라우팅──┬─▶ home.JobListHome      
    그 위에 위젯·레이아웃만 얹는다.
 3. 각 변경은 `tests/test_gui_smoke.py`(offscreen)로 배선 유지 확인 — 로직은
    `test_job.py`·`test_mapping_state.py`·`test_selection_state.py`가 헤드리스로 지킨다.
+
+---
+
+## 8. 앱 A — diff 리뷰어 (`gui/diff_app.py`, 별도 앱)
+
+diff 는 앱 B와 **별도 앱**이다 — 별도 진입점(`python -m hwpxfiller.gui.diff_app`,
+gui-script `hwpx-diff`)+창+exe, 공유는 `core/` 뿐(UI 상태 공유 0). 상호작용 형태가
+근본 다르다: 앱 B=쓰기 도구(위저드·집행), 앱 A=**읽기 도구**(문서를 바꾸지 않는다).
+
+**코어 계약** (`core/diff.py`, 완성·골든 고정 — 디자인이 건드리지 않음):
+- `diff_files(old, new) -> DiffResult` — 실코퍼스 기준 ~30ms(동기 실행으로 충분).
+- `DiffResult.change_items` — 우선순위 정렬된 리뷰어용 목록(`category/location_label/detail/order`).
+- `render_html(result) -> str` — 자체 완결 HTML. **변경마다 앵커 `chg-{seq}`**
+  (`ChangeItem.order` == `Change.seq`) — 클릭 이동·딥링크의 표적.
+
+**스캐폴드가 고정** (`DiffReviewWindow(QMainWindow)`):
+- 단일 화면: 판본 2개 픽커 → `비교` → 요약 라벨 + 좌(변경항목 QTableWidget)/우(QTextBrowser
+  리포트) 스플리터.
+- **클릭 이동**: 항목 선택 → `view.scrollToAnchor(f"chg-{seq}")` (seq는 `Qt.UserRole`).
+- 「브라우저에서 열기」(원본 충실 뷰 — QTextBrowser 는 CSS 근사 렌더) · 「HTML 저장…」.
+
+**디자인이 채울 것:**
+- 변경항목 리스트의 **배지 색**(HTML 리포트의 `b-{category}` 팔레트와 일치시킬 것)·행 스타일.
+- **범주 필터**(숫자/조항/문구/표…)와 **번호변경(renumber) 접기 토글** — 리포트의
+  "실질 변경과 섞지 않되 조용히 버리지 않는" 규칙을 리스트에도.
+- 임베드 뷰 개선: QTextBrowser 근사의 한계를 수용하거나, Qt 친화 HTML 변형 렌더를 별도
+  작성(코어 `render_html` 은 브라우저 기준 유지 — 갈라야 하면 뷰 측에서).
+- 드래그&드롭 파일 투입·최근 비교 목록·대형 문서용 워커 스레드(현재 동기) 등 편의.
+
+**발명 금지:** 이 앱은 읽기 도구다 — 문서 편집·주석·병합 기능을 붙이지 말 것(스코프 밖).
+diff 정밀도(표 제목 매칭·셀 재번호 인지)는 코어 파킹 항목이지 UI 일이 아니다.

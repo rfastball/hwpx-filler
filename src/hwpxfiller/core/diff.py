@@ -783,7 +783,10 @@ def render_html(result: DiffResult) -> str:
     else:
         out.append(f"<details open><summary>{len(result.changes)}건</summary>")
         for c in result.changes:
-            out.append(f"<div class='chg {c.kind}'>")
+            # 앵커: 변경항목 리스트(ChangeItem.order == Change.seq)에서 클릭 이동의 표적.
+            # id(브라우저)와 <a name>(Qt 리치텍스트 뷰) 둘 다 제공한다.
+            out.append(f"<div class='chg {c.kind}' id='chg-{c.seq}'>"
+                       f"<a name='chg-{c.seq}'></a>")
             out.append(f"<div class='loc'>[{_KIND_LABEL.get(c.kind, c.kind)}] "
                        f"{html.escape(c.location_label)}</div>")
             if c.kind in ("changed", "renumber"):
