@@ -4,6 +4,7 @@
         --pattern "공고서-{{계약명}}"
     python -m hwpxfiller.cli --template T.hwpx --fields   # 요구 필드만 출력
     python -m hwpxfiller.cli diff OLD.hwpx NEW.hwpx [--html out.html]  # 개정 비교
+    python -m hwpxfiller.cli schema T.hwpx [--out schema.json]  # 템플릿 스키마 추출
 """
 
 from __future__ import annotations
@@ -36,10 +37,33 @@ def _diff_main(argv: "list[str]") -> int:
     return 0
 
 
+def _schema_main(argv: "list[str]") -> int:
+    """``schema`` 하위명령 — 템플릿 스키마(필드·타입·표 영역)를 JSON 으로 출력/저장."""
+    import json
+
+    from .core.schema import extract_schema
+
+    ap = argparse.ArgumentParser(prog="hwpxfiller schema")
+    ap.add_argument("template", help="HWPX 템플릿 경로")
+    ap.add_argument("--out", default=None, help="JSON 저장 경로(생략 시 표준출력)")
+    args = ap.parse_args(argv)
+
+    payload = json.dumps(extract_schema(args.template).to_dict(), ensure_ascii=False, indent=2)
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as fh:
+            fh.write(payload)
+        print(f"스키마 저장: {args.out}", file=sys.stderr)
+    else:
+        print(payload)
+    return 0
+
+
 def main(argv: "list[str] | None" = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "diff":
         return _diff_main(argv[1:])
+    if argv and argv[0] == "schema":
+        return _schema_main(argv[1:])
 
     ap = argparse.ArgumentParser(prog="hwpxfiller")
     ap.add_argument("--template", required=True, help="HWPX 템플릿 경로")

@@ -23,6 +23,9 @@ pip install -e ".[dev,gui]"
 # 템플릿이 요구하는 필드 확인
 python -m hwpxfiller.cli --template template.hwpx --fields
 
+# 템플릿 스키마 추출(필드·타입·표 영역·라벨 → JSON)
+python -m hwpxfiller.cli schema template.hwpx --out schema.json
+
 # 엑셀 데이터로 일괄 생성
 python -m hwpxfiller.cli --template template.hwpx --data data.xlsx \
     --out ./out --pattern "공고서-{{계약명}}"
@@ -40,6 +43,7 @@ python -m hwpxfiller.gui.app
 |------|------|----------|
 | `core/package.py` | HWPX OCF ZIP 열기/저장 | `api_Compression` |
 | `core/fields.py` | 누름틀 XML DOM 주입 | `clsHWPXParser` |
+| `core/schema.py` | 템플릿 스키마 추출(필드·타입·표 영역·라벨) | (신규 — 매핑/폼 토대) |
 | `core/engine.py` | 단일 문서 생성 조율 | `modHWPXEngine` |
 | `core/validate.py` | 사전검증(누락/빈값) | `modHWPgen` |
 | `batch.py` | 일괄 생성 | `Process_HWP_Generation` |
