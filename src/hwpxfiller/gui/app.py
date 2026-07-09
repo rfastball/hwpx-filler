@@ -1,8 +1,11 @@
-"""GUI 진입점 — 매핑 위저드를 기동한다.
+"""GUI 진입점 — 작업(Job) 목록 홈을 기동하고 능력들을 라우팅한다.
 
     python -m hwpxfiller.gui.app
 
-단순 창(main_window.MainWindow)은 매핑 없는 직결 흐름용으로 유지된다.
+홈(:class:`~hwpxfiller.gui.home.JobListHome`)이 오케스트레이터다: 새 작업은 에디터
+(:class:`~hwpxfiller.gui.job_editor.JobEditorWizard`)로, 집행은 집행 화면
+(:class:`~hwpxfiller.gui.run_view.RunView`)으로 보낸다. 자식 창의 수명은 여기서 소유한다
+(Qt GC 방지). 초기엔 자식 창 — 임베드(QStackedWidget)는 후속 리팩터.
 """
 
 from __future__ import annotations
@@ -10,14 +13,65 @@ from __future__ import annotations
 import sys
 
 
+class _AppController:
+    """홈 + 자식 창들의 배선·수명 소유자. QApplication 과 분리해 테스트 가능."""
+
+    def __init__(self, registry):
+        from .home import JobListHome
+
+        self.registry = registry
+        self.home = JobListHome(registry)
+        self._children: "list[object]" = []  # Qt GC 방지 — 자식 창 참조 유지
+
+        self.home.new_job_requested.connect(self._open_editor_new)
+        self.home.edit_job_requested.connect(self._open_editor_edit)
+        self.home.run_job_requested.connect(self._open_run)
+        self.home.delete_job_requested.connect(self._delete_job)
+
+    # ------------------------------------------------------------------ 라우팅
+    def _open_editor_new(self) -> None:
+        from .job_editor import JobEditorWizard
+
+        wiz = JobEditorWizard(self.registry)
+        wiz.job_saved.connect(lambda _name: self.home.refresh())
+        self._track(wiz)
+        wiz.show()
+
+    def _open_editor_edit(self, name: str) -> None:
+        # 편집(기존 작업 프리로드)은 스캐폴드에서 표식 스텁 — 새 작업 흐름 재사용.
+        # TODO(디자인): MappingPage.initializePage 에서 job.mapping 프리시드.
+        self._open_editor_new()
+
+    def _open_run(self, name: str) -> None:
+        from .run_view import RunView
+
+        job = self.registry.load(name)
+        view = RunView(job)
+        self._track(view)
+        view.show()
+
+    def _delete_job(self, name: str) -> None:
+        from PySide6.QtWidgets import QMessageBox
+
+        if QMessageBox.question(
+            self.home, "삭제", f"작업 '{name}' 을(를) 삭제할까요?"
+        ) == QMessageBox.Yes:
+            self.registry.delete(name)
+            self.home.refresh()
+
+    def _track(self, win) -> None:
+        self._children.append(win)
+        win.destroyed.connect(lambda *_: self._children.remove(win) if win in self._children else None)
+
+
 def main() -> int:
     from PySide6.QtWidgets import QApplication
 
-    from .wizard import MappingWizard
+    from ..core.job import JobRegistry, default_jobs_dir
 
     app = QApplication(sys.argv)
-    wiz = MappingWizard()
-    wiz.show()
+    controller = _AppController(JobRegistry(default_jobs_dir()))
+    controller.home.show()
     return app.exec()
 
 

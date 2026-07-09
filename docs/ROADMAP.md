@@ -1,9 +1,17 @@
 # HWPX Filler — 발전 방향 로드맵
 
-## 현재 상태 및 다음 착수 (2026-07-09, 새 세션 인수인계)
+## 현재 상태 및 다음 착수 (2026-07-10 갱신)
 
-**master · pytest 239 통과 · 워크트리 없음(메인만).** dev venv 구성됨
+**master · pytest 255 통과 · 워크트리 없음(메인만).** dev venv 구성됨
 (`.venv`, `pip install -e ".[dev,gui]"`).
+
+**▶ 트랙 C 착수 랜딩 (2026-07-10) — 작업(Job) 앵커 데이터모델 + GUI 스캐폴드.**
+데이터모델(`core/job.py`: `Job`·`JobRegistry`·`RunRequest`·`default_jobs_dir`, Qt 비의존·테스트
+완비)과 얇은 3화면 셸(`gui/home.py` 작업목록 홈 · `gui/job_editor.py` 위저드 강등=저장으로 끝 ·
+`gui/run_view.py` 집행)을 랜딩. `main_window` 삭제(명시성 게이트 우회 중복 경로). 세부 UI는
+**클로드 디자인에 위임** — 계약서 `docs/UI_DESIGN_HANDOFF.md`(스캐폴드가 고정한 이음새 vs
+디자인이 채울 것). 남은 UX 결정: 소스-종류 선택기(신규 vs 누적치환)·능동 빈칸 게이트+표식·
+기존 작업 편집 프리로드(스텁). diff/템플릿관리 GUI(앱 A 분리)·exe 패키징(C-3)은 후속.
 
 **완료(랜딩됨):**
 - 생성기: 누름틀 필드 주입(`core/fields.py`·`engine.py`·`package.py`), 배치·검증·

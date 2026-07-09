@@ -1,32 +1,27 @@
-"""매핑 위저드 — 템플릿 → 데이터 → 필드 매핑(사람 확정) → 생성, 4스텝 QWizard.
+"""작업 에디터 저작 페이지 — 템플릿 → 데이터 → 필드 매핑(사람 확정).
 
-핵심은 3단계의 **명시성 게이트**: 자동 제안은 초안일 뿐이고, 사람이 모든 행을
-확정하기 전에는 생성 스텝으로 넘어갈 수 없다(MappingModel.is_complete).
+이 세 페이지(:class:`TemplatePage`·:class:`DataPage`·:class:`MappingPage`)는 작업 에디터
+(:mod:`hwpxfiller.gui.job_editor`)가 조립해 쓰는 재사용 저작 스텝이다. 핵심은 매핑 단계의
+**명시성 게이트**: 자동 제안은 초안일 뿐이고, 사람이 모든 행을 확정하기 전에는 다음으로
+넘어갈 수 없다(``MappingModel.is_complete``).
 
-세션 상태(template_path, schema, data_path, source_fields, records, model)는
-위저드 객체가 들고, 각 페이지는 ``self.wizard()`` 로 접근한다.
+세션 상태(template_path, schema, data_path, source_fields, records, model)는 호스트 위저드
+객체가 들고, 각 페이지는 ``self.wizard()`` 로 접근한다(덕타이핑 — 같은 속성명을 노출하는
+어떤 QWizard 든 이 페이지들을 그대로 호스팅할 수 있다).
 """
 
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
 from pathlib import Path
 
-from PySide6.QtCore import QThread
 from PySide6.QtWidgets import (
     QFileDialog,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
-    QPlainTextEdit,
-    QProgressBar,
     QPushButton,
     QVBoxLayout,
-    QWizard,
     QWizardPage,
 )
 
@@ -35,35 +30,9 @@ from ..core.schema import extract_schema
 from ..data.excel import ExcelDataSource
 from .mapping_state import MappingModel
 from .mapping_table import MappingTable
-from .record_select import RecordSelector
-from .worker import GenerateWorker
 
 # 요약 라벨에 나열할 필드 이름 최대 개수(넘치면 말줄임).
 _SUMMARY_MAX_FIELDS = 12
-
-
-class MappingWizard(QWizard):
-    """4스텝 매핑 위저드 — GUI 진입점(app.main)이 기동한다."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("HWPX Filler — 매핑 위저드")
-        self.resize(920, 660)
-        self.setWizardStyle(QWizard.ModernStyle)
-
-        # ---- 공유 세션 상태 ----
-        self.template_path: str = ""
-        self.schema = None                      # TemplateSchema
-        self.data_path: str = ""
-        self.datasource = None                  # ExcelDataSource
-        self.source_fields: "list[str]" = []
-        self.records: "list[dict]" = []
-        self.model: "MappingModel | None" = None
-
-        self.addPage(TemplatePage())
-        self.addPage(DataPage())
-        self.addPage(MappingPage())
-        self.addPage(GeneratePage())
 
 
 class TemplatePage(QWizardPage):
@@ -99,7 +68,7 @@ class TemplatePage(QWizardPage):
         path, _ = QFileDialog.getOpenFileName(self, "HWPX 템플릿 선택", "", "HWPX (*.hwpx)")
         if not path:
             return
-        wiz: MappingWizard = self.wizard()
+        wiz = self.wizard()
         self._valid = False
         self.lbl_warn.setText("")
         try:
@@ -170,7 +139,7 @@ class DataPage(QWizardPage):
         )
         if not path:
             return
-        wiz: MappingWizard = self.wizard()
+        wiz = self.wizard()
         self._valid = False
         try:
             source = ExcelDataSource(path)
@@ -248,7 +217,7 @@ class MappingPage(QWizardPage):
         layout.addLayout(buttons)
 
     def initializePage(self):
-        wiz: MappingWizard = self.wizard()
+        wiz = self.wizard()
         key = (wiz.template_path, wiz.data_path)
         if self._built_for != key or wiz.model is None:
             # 템플릿/데이터 조합이 바뀌었을 때만 초안을 새로 뽑는다
@@ -269,7 +238,7 @@ class MappingPage(QWizardPage):
         self.completeChanged.emit()
 
     def _step(self, delta: int):
-        wiz: MappingWizard = self.wizard()
+        wiz = self.wizard()
         n = len(wiz.records)
         if n == 0:
             return
@@ -277,7 +246,7 @@ class MappingPage(QWizardPage):
         self._sync_preview()
 
     def _sync_preview(self):
-        wiz: MappingWizard = self.wizard()
+        wiz = self.wizard()
         n = len(wiz.records)
         if n == 0:
             self.lbl_index.setText("레코드 0/0")
@@ -293,7 +262,7 @@ class MappingPage(QWizardPage):
         self._sync_preview_summary()
 
     def _sync_preview_summary(self):
-        wiz: MappingWizard = self.wizard()
+        wiz = self.wizard()
         if wiz.model is None or not wiz.records:
             self.lbl_preview_summary.setText("")
             return
@@ -306,12 +275,12 @@ class MappingPage(QWizardPage):
         self.lbl_preview_summary.setText(text)
 
     def isComplete(self) -> bool:
-        wiz: MappingWizard = self.wizard()
+        wiz = self.wizard()
         return wiz is not None and wiz.model is not None and wiz.model.is_complete()
 
     # ----------------------------------------------------------- 프로파일 IO
     def _load_profile(self):
-        wiz: MappingWizard = self.wizard()
+        wiz = self.wizard()
         if wiz.model is None:
             return
         path, _ = QFileDialog.getOpenFileName(
@@ -334,7 +303,7 @@ class MappingPage(QWizardPage):
         )
 
     def _save_profile(self):
-        wiz: MappingWizard = self.wizard()
+        wiz = self.wizard()
         if wiz.model is None:
             return
         profile = wiz.model.to_profile()
@@ -357,160 +326,3 @@ class MappingPage(QWizardPage):
         QMessageBox.information(
             self, "저장 완료", f"확정 매핑 {len(profile.mappings)}개를 저장했습니다."
         )
-
-
-class GeneratePage(QWizardPage):
-    """4단계 — 저장 폴더·파일명 패턴 지정 후 일괄 생성(백그라운드 워커)."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setTitle("4단계 — 생성")
-        self.setSubTitle("확정된 매핑으로 레코드마다 문서를 생성합니다.")
-        self._running = False
-        self._thread: "QThread | None" = None
-
-        layout = QVBoxLayout(self)
-        grid = QGridLayout()
-        self.ed_out = QLineEdit()
-        btn_out = QPushButton("찾아보기…")
-        btn_out.clicked.connect(self._pick_out)
-        self.ed_pattern = QLineEdit("공고서-{{ID}}")
-        grid.addWidget(QLabel("저장 폴더"), 0, 0)
-        grid.addWidget(self.ed_out, 0, 1)
-        grid.addWidget(btn_out, 0, 2)
-        grid.addWidget(QLabel("파일명 패턴"), 1, 0)
-        grid.addWidget(self.ed_pattern, 1, 1)
-        grid.addWidget(
-            QLabel("토큰: {{필드}}, {{date:YYYYMMDD}}, {{seq:001}}"), 1, 2
-        )
-        layout.addLayout(grid)
-        # 패턴을 바꾸면 선택 리스트의 파일명 미리보기도 갱신.
-        self.ed_pattern.textChanged.connect(self._refresh_selector_labels)
-
-        layout.addWidget(QLabel("생성 대상 레코드"))
-        self.selector = RecordSelector()
-        layout.addWidget(self.selector, 1)
-
-        actions = QHBoxLayout()
-        self.btn_generate = QPushButton("생성")
-        self.btn_generate.clicked.connect(self._on_generate)
-        actions.addWidget(self.btn_generate)
-        actions.addStretch(1)
-        layout.addLayout(actions)
-
-        self.progress = QProgressBar()
-        self.progress.setValue(0)
-        layout.addWidget(self.progress)
-        self.log = QPlainTextEdit()
-        self.log.setReadOnly(True)
-        layout.addWidget(self.log, 1)
-
-    def initializePage(self):
-        wiz: MappingWizard = self.wizard()
-        if not self.ed_out.text() and wiz.template_path:
-            self.ed_out.setText(str(Path(wiz.template_path).parent / "Results"))
-        self.selector.set_records(wiz.records, self.ed_pattern.text().strip())
-        mapped = len(wiz.model.to_profile().mappings) if wiz.model else 0
-        self._say(
-            f"준비 완료: 레코드 {len(wiz.records)}건(선택 "
-            f"{self.selector.model().selected_count()}건) × 확정 매핑 {mapped}개 필드."
-        )
-
-    def _refresh_selector_labels(self):
-        wiz: MappingWizard = self.wizard()
-        if wiz is not None and wiz.records:
-            # 선택 상태는 보존하고 파일명 미리보기 라벨만 갱신.
-            self.selector.relabel(wiz.records, self.ed_pattern.text().strip())
-
-    def isComplete(self) -> bool:
-        return not self._running  # 생성 중에는 마침 버튼 잠금
-
-    def _pick_out(self):
-        path = QFileDialog.getExistingDirectory(self, "저장 폴더 선택")
-        if path:
-            self.ed_out.setText(path)
-
-    def _say(self, msg: str):
-        self.log.appendPlainText(msg)
-
-    # --------------------------------------------------------------- 생성
-    def _on_generate(self):
-        wiz: MappingWizard = self.wizard()
-        if wiz.model is None or not wiz.model.is_complete():
-            QMessageBox.warning(self, "확인", "3단계에서 모든 행을 확정해야 생성할 수 있습니다.")
-            return
-        out_dir = self.ed_out.text().strip()
-        if not out_dir:
-            QMessageBox.warning(self, "확인", "저장 폴더를 지정하세요.")
-            return
-        profile = wiz.model.to_profile()
-        if not profile.mappings:
-            QMessageBox.warning(
-                self, "확인",
-                "확정된 매핑이 전부 비움이라 생성할 값이 없습니다. 3단계에서 소스를 지정하세요.",
-            )
-            return
-        selected = self.selector.model().selected_records(wiz.records)
-        if not selected:
-            QMessageBox.warning(self, "확인", "생성할 레코드를 최소 1건 선택하세요.")
-            return
-        pattern = self.ed_pattern.text().strip() or "output-{{ID}}"
-        mapped_records = profile.apply_all(selected)
-
-        self._running = True
-        self.btn_generate.setEnabled(False)
-        self.completeChanged.emit()
-        self.progress.setMaximum(len(mapped_records))
-        self.progress.setValue(0)
-        self._say(f"생성 시작: {len(mapped_records)}건 → {out_dir}")
-
-        self._thread = QThread()
-        self._worker = GenerateWorker(wiz.template_path, mapped_records, out_dir, pattern)
-        self._worker.moveToThread(self._thread)
-        self._thread.started.connect(self._worker.run)
-        self._worker.progress.connect(self._on_progress)
-        self._worker.finished.connect(self._on_finished)
-        self._worker.failed.connect(self._on_failed)
-        self._thread.start()
-
-    def _on_progress(self, done: int, total: int):
-        self.progress.setValue(done)
-
-    def _on_finished(self, batch):
-        self._teardown_thread()
-        self._say(f"완료: {batch.succeeded}/{batch.total} 성공, {batch.failed} 실패")
-        for res in batch.results:
-            if not res.ok:
-                self._say(f"  [실패] {res.output_path}: {res.error}")
-            elif res.unmatched:
-                self._say(
-                    f"  [주의] 매칭 안 된 필드: {', '.join(res.unmatched)} → "
-                    f"{Path(res.output_path).name}"
-                )
-        out_dir = self.ed_out.text().strip()
-        if batch.succeeded > 0 and QMessageBox.question(
-            self, "완료", f"{batch.succeeded}건 생성 완료.\n결과 폴더를 여시겠습니까?"
-        ) == QMessageBox.Yes:
-            self._open_folder(out_dir)
-
-    def _on_failed(self, msg: str):
-        self._teardown_thread()
-        QMessageBox.critical(self, "오류", f"생성 중 오류:\n{msg}")
-
-    def _teardown_thread(self):
-        if self._thread:
-            self._thread.quit()
-            self._thread.wait()
-            self._thread = None
-        self._running = False
-        self.btn_generate.setEnabled(True)
-        self.completeChanged.emit()
-
-    @staticmethod
-    def _open_folder(path: str):
-        if sys.platform.startswith("win"):
-            os.startfile(path)  # noqa: S606
-        elif sys.platform == "darwin":
-            subprocess.Popen(["open", path])
-        else:
-            subprocess.Popen(["xdg-open", path])

@@ -38,13 +38,18 @@ def _model() -> MappingModel:
     return MappingModel.from_suggestions(schema, list(NARA_ALIASES), NARA_ALIASES)
 
 
-def test_wizard_instantiates_with_four_pages(qapp):
-    from hwpxfiller.gui.wizard import MappingWizard
+def test_job_editor_instantiates_with_four_pages(qapp, tmp_path):
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.job_editor import JobEditorWizard
 
-    wiz = MappingWizard()
-    assert len(wiz.pageIds()) == 4
+    wiz = JobEditorWizard(JobRegistry(tmp_path))
+    assert len(wiz.pageIds()) == 4  # 템플릿/데이터/매핑/저장
     # 1단계는 템플릿 선택 전이라 미완료 — 다음 비활성.
     assert not wiz.page(wiz.pageIds()[0]).isComplete()
+    # 마지막 스텝은 '생성'이 아니라 '작업 저장'.
+    from hwpxfiller.gui.job_editor import SaveJobPage
+
+    assert isinstance(wiz.page(wiz.pageIds()[-1]), SaveJobPage)
 
 
 def test_mapping_table_renders_model_and_emits_complete_changed(qapp):
@@ -134,6 +139,29 @@ def test_mapping_table_format_combo_drives_preview(qapp):
     assert table.table.item(ri, _COL_PREVIEW).text() == "21,326,800"
 
 
-def test_worker_and_main_window_modules_import(qapp):
-    from hwpxfiller.gui.main_window import MainWindow  # noqa: F401
+def test_worker_module_imports(qapp):
     from hwpxfiller.gui.worker import GenerateWorker  # noqa: F401
+
+
+def test_home_exposes_navigation_signals_and_lists_jobs(qapp, tmp_path):
+    from hwpxfiller.core.job import Job, JobRegistry
+    from hwpxfiller.gui.home import JobListHome
+
+    reg = JobRegistry(tmp_path)
+    reg.save(Job(name="샘플작업", template_path="/t.hwpx"))
+    home = JobListHome(reg)
+    # 네비게이션 시그널 계약 존재 확인.
+    for sig in ("new_job_requested", "edit_job_requested", "run_job_requested", "delete_job_requested"):
+        assert hasattr(home, sig)
+    # 레지스트리 작업이 목록에 바인딩됨.
+    assert home.list.count() == 1
+    assert home.list.item(0).text() == "샘플작업"
+
+
+def test_run_view_instantiates_with_a_job(qapp):
+    from hwpxfiller.core.job import Job
+    from hwpxfiller.gui.run_view import RunView
+
+    view = RunView(Job(name="집행테스트", template_path="/t.hwpx", filename_pattern="doc-{{ID}}"))
+    assert view.datasource is None  # 데이터 미겨눔 상태로 시작
+    assert hasattr(view, "run_finished")
