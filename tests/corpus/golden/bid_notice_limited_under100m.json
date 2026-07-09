@@ -1,4 +1,6 @@
 {
+  "footers": [],
+  "headers": [],
   "sections": [
     {
       "blocks": [
@@ -28,167 +30,307 @@
           "rows": [
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 0
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               },
               {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 0
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               },
               {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 0
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "< 이 계약은 청렴계약(서약)제가 적용됩니다 >",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 2
+                }
               },
               {
+                "addr": {
+                  "colAddr": 3,
+                  "rowAddr": 0
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               },
               {
+                "addr": {
+                  "colAddr": 4,
+                  "rowAddr": 0
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ],
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 1
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               },
               {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 1
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               },
               {
+                "addr": {
+                  "colAddr": 3,
+                  "rowAddr": 1
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               },
               {
+                "addr": {
+                  "colAddr": 4,
+                  "rowAddr": 1
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ],
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 2
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               },
               {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 2
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               },
               {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 2
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               },
               {
+                "addr": {
+                  "colAddr": 3,
+                  "rowAddr": 2
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               },
               {
+                "addr": {
+                  "colAddr": 4,
+                  "rowAddr": 2
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ],
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 3
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 2
+                }
               },
               {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 3
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "이 계약은 「국가를 당사자로 하는 계약에 관한 법률」 제5조의2에 따른 청렴계약제가 적용됩니다. 입찰자는 반드시 입찰서 제출시 아래 청렴계약서에 관한 내용을 숙지∙승낙하여야 하며, 동 내용을 위반한 경우 발주기관의 조치에 대하여 어떠한 이의도 제기할 수 없습니다.",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 3,
+                  "rowSpan": 1
+                }
               },
               {
+                "addr": {
+                  "colAddr": 4,
+                  "rowAddr": 3
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 2
+                }
               }
             ],
             [
               {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 4
+                },
                 "blocks": [
                   {
                     "fields": [],
@@ -220,54 +362,98 @@
                     "text": "  - (입찰자) 입찰금액의 100분의 5, (계약상대자) 계약금액의 100분의 10",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 3,
+                  "rowSpan": 1
+                }
               }
             ],
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 5
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               },
               {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 5
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               },
               {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 5
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               },
               {
+                "addr": {
+                  "colAddr": 3,
+                  "rowAddr": 5
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               },
               {
+                "addr": {
+                  "colAddr": 4,
+                  "rowAddr": 5
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ]
           ],
@@ -403,13 +589,21 @@
           "rows": [
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 0
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": " 기타 세부사항은 입찰공고서에 첨부된 규격서, 내역서 등 관련 자료를 반드시 확인하시기 바랍니다.",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ]
           ],
@@ -483,6 +677,10 @@
           "rows": [
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 0
+                },
                 "blocks": [
                   {
                     "fields": [],
@@ -504,7 +702,11 @@
                     "text": "4) 동가입찰인 경우에는 전자조달시스템을 통한 자동추첨 방식으로 낙찰자를 결정하는 ‘동일가격입찰낙찰자자동추첨 프로그램이용’ 방식으로 계약상대자를 결정합니다.",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ]
           ],
@@ -519,6 +721,10 @@
           "rows": [
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 0
+                },
                 "blocks": [
                   {
                     "fields": [],
@@ -555,7 +761,11 @@
                     "text": " ③ 입찰참가자격 등록, 나라장터 시스템: 정부조달 콜센터(☎ 1588-0800, FAX 042-472-2297)",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ]
           ],
@@ -598,6 +808,10 @@
           "rows": [
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 0
+                },
                 "blocks": [
                   {
                     "fields": [],
@@ -639,7 +853,11 @@
                     "text": " ④ 전자입찰서 제출마감일 전일 이후 ‘소기업·소상공인 확인서’를 신청한 경우",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ]
           ],
@@ -654,6 +872,10 @@
           "rows": [
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 0
+                },
                 "blocks": [
                   {
                     "fields": [],
@@ -705,7 +927,11 @@
                     "text": "  내용을 포함하고 있으므로 전자입찰서 제출로 서약서 제출을 대신합니다.)",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ]
           ],
@@ -823,6 +1049,10 @@
           "rows": [
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 0
+                },
                 "blocks": [
                   {
                     "fields": [],
@@ -834,7 +1064,11 @@
                     "text": "2) 낙찰자결정을 위한 적격심사 통과 점수: 85 점",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ]
           ],
@@ -849,6 +1083,10 @@
           "rows": [
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 0
+                },
                 "blocks": [
                   {
                     "fields": [],
@@ -875,7 +1113,11 @@
                     "text": "5) 「전자조달의 이용 및 촉진에 관한 법률」 제11조제2항에 따라 적격심사 대상 통보서는 국가종합전자조달시스템에 입력된 때 송신 및 수신된 것으로 간주합니다.",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ]
           ],
@@ -1140,6 +1382,10 @@
           "rows": [
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 0
+                },
                 "blocks": [
                   {
                     "fields": [],
@@ -1186,7 +1432,11 @@
                     "text": " 8. 기타 관련 법령, 계약규정 또는 계약조건 위반 등으로 인해 공정한 조달질서를 훼손한 행위 ",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ]
           ],
@@ -1281,6 +1531,10 @@
           "rows": [
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 0
+                },
                 "blocks": [
                   {
                     "fields": [],
@@ -1311,6 +1565,10 @@
                     "rows": [
                       [
                         {
+                          "addr": {
+                            "colAddr": 0,
+                            "rowAddr": 0
+                          },
                           "blocks": [
                             {
                               "fields": [],
@@ -1367,7 +1625,11 @@
                               "text": "11. 조달청 내자구매업무 처리규정 (조달청훈령)",
                               "type": "paragraph"
                             }
-                          ]
+                          ],
+                          "span": {
+                            "colSpan": 1,
+                            "rowSpan": 1
+                          }
                         }
                       ]
                     ],
@@ -1378,7 +1640,11 @@
                     "text": " ",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ]
           ],
@@ -1388,6 +1654,10 @@
           "rows": [
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 0
+                },
                 "blocks": [
                   {
                     "fields": [],
@@ -1409,7 +1679,11 @@
                     "text": "  3. 정확한 자료 검색이 되지 않을 경우 입찰공고 담당자에게 확인하시기 바랍니다. ",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ]
           ],
@@ -1429,6 +1703,10 @@
           "rows": [
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 0
+                },
                 "blocks": [
                   {
                     "fields": [],
@@ -1449,62 +1727,110 @@
                     "rows": [
                       [
                         {
+                          "addr": {
+                            "colAddr": 0,
+                            "rowAddr": 0
+                          },
                           "blocks": [
                             {
                               "fields": [],
                               "text": " - 계약번호: ",
                               "type": "paragraph"
                             }
-                          ]
+                          ],
+                          "span": {
+                            "colSpan": 1,
+                            "rowSpan": 1
+                          }
                         },
                         {
+                          "addr": {
+                            "colAddr": 1,
+                            "rowAddr": 0
+                          },
                           "blocks": [
                             {
                               "fields": [],
                               "text": "",
                               "type": "paragraph"
                             }
-                          ]
+                          ],
+                          "span": {
+                            "colSpan": 1,
+                            "rowSpan": 1
+                          }
                         }
                       ],
                       [
                         {
+                          "addr": {
+                            "colAddr": 0,
+                            "rowAddr": 1
+                          },
                           "blocks": [
                             {
                               "fields": [],
                               "text": " - 계약건명: ",
                               "type": "paragraph"
                             }
-                          ]
+                          ],
+                          "span": {
+                            "colSpan": 1,
+                            "rowSpan": 1
+                          }
                         },
                         {
+                          "addr": {
+                            "colAddr": 1,
+                            "rowAddr": 1
+                          },
                           "blocks": [
                             {
                               "fields": [],
                               "text": "",
                               "type": "paragraph"
                             }
-                          ]
+                          ],
+                          "span": {
+                            "colSpan": 1,
+                            "rowSpan": 1
+                          }
                         }
                       ],
                       [
                         {
+                          "addr": {
+                            "colAddr": 0,
+                            "rowAddr": 2
+                          },
                           "blocks": [
                             {
                               "fields": [],
                               "text": " - 계약금액: ",
                               "type": "paragraph"
                             }
-                          ]
+                          ],
+                          "span": {
+                            "colSpan": 1,
+                            "rowSpan": 1
+                          }
                         },
                         {
+                          "addr": {
+                            "colAddr": 1,
+                            "rowAddr": 2
+                          },
                           "blocks": [
                             {
                               "fields": [],
                               "text": "",
                               "type": "paragraph"
                             }
-                          ]
+                          ],
+                          "span": {
+                            "colSpan": 1,
+                            "rowSpan": 1
+                          }
                         }
                       ]
                     ],
@@ -1524,6 +1850,10 @@
                     "rows": [
                       [
                         {
+                          "addr": {
+                            "colAddr": 0,
+                            "rowAddr": 0
+                          },
                           "blocks": [
                             {
                               "fields": [],
@@ -1575,7 +1905,11 @@
                               "text": "  4. 계약이행 완료 이후 위반사실을 확인한 경우에는 동 특수조건 제12조(환수) 및 [별표1] 제6호에 따라 계약금액의 100분의 10에 해당하는 금액 환수",
                               "type": "paragraph"
                             }
-                          ]
+                          ],
+                          "span": {
+                            "colSpan": 1,
+                            "rowSpan": 1
+                          }
                         }
                       ]
                     ],
@@ -1616,7 +1950,11 @@
                     "text": "조달청장 귀하",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ]
           ],
@@ -1631,6 +1969,10 @@
           "rows": [
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 0
+                },
                 "blocks": [
                   {
                     "fields": [],
@@ -1646,62 +1988,110 @@
                     "rows": [
                       [
                         {
+                          "addr": {
+                            "colAddr": 0,
+                            "rowAddr": 0
+                          },
                           "blocks": [
                             {
                               "fields": [],
                               "text": " - 계약번호: ",
                               "type": "paragraph"
                             }
-                          ]
+                          ],
+                          "span": {
+                            "colSpan": 1,
+                            "rowSpan": 1
+                          }
                         },
                         {
+                          "addr": {
+                            "colAddr": 1,
+                            "rowAddr": 0
+                          },
                           "blocks": [
                             {
                               "fields": [],
                               "text": "",
                               "type": "paragraph"
                             }
-                          ]
+                          ],
+                          "span": {
+                            "colSpan": 1,
+                            "rowSpan": 1
+                          }
                         }
                       ],
                       [
                         {
+                          "addr": {
+                            "colAddr": 0,
+                            "rowAddr": 1
+                          },
                           "blocks": [
                             {
                               "fields": [],
                               "text": " - 계약건명: ",
                               "type": "paragraph"
                             }
-                          ]
+                          ],
+                          "span": {
+                            "colSpan": 1,
+                            "rowSpan": 1
+                          }
                         },
                         {
+                          "addr": {
+                            "colAddr": 1,
+                            "rowAddr": 1
+                          },
                           "blocks": [
                             {
                               "fields": [],
                               "text": "",
                               "type": "paragraph"
                             }
-                          ]
+                          ],
+                          "span": {
+                            "colSpan": 1,
+                            "rowSpan": 1
+                          }
                         }
                       ],
                       [
                         {
+                          "addr": {
+                            "colAddr": 0,
+                            "rowAddr": 2
+                          },
                           "blocks": [
                             {
                               "fields": [],
                               "text": " - 계약금액: ",
                               "type": "paragraph"
                             }
-                          ]
+                          ],
+                          "span": {
+                            "colSpan": 1,
+                            "rowSpan": 1
+                          }
                         },
                         {
+                          "addr": {
+                            "colAddr": 1,
+                            "rowAddr": 2
+                          },
                           "blocks": [
                             {
                               "fields": [],
                               "text": "",
                               "type": "paragraph"
                             }
-                          ]
+                          ],
+                          "span": {
+                            "colSpan": 1,
+                            "rowSpan": 1
+                          }
                         }
                       ]
                     ],
@@ -1721,6 +2111,10 @@
                     "rows": [
                       [
                         {
+                          "addr": {
+                            "colAddr": 0,
+                            "rowAddr": 0
+                          },
                           "blocks": [
                             {
                               "fields": [],
@@ -1757,7 +2151,11 @@
                               "text": "  4. 계약이행 완료 이후 위반사실을 확인한 경우에는 동 특수조건 제12조(환수) 및 [별표1] 제7호에 따라 계약금액의 100분의 10에 해당하는 금액 환수",
                               "type": "paragraph"
                             }
-                          ]
+                          ],
+                          "span": {
+                            "colSpan": 1,
+                            "rowSpan": 1
+                          }
                         }
                       ]
                     ],
@@ -1793,7 +2191,11 @@
                     "text": "조달청장 귀하",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ]
           ],
@@ -1838,35 +2240,63 @@
           "rows": [
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 0
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "불공정행위 유형",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               },
               {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 0
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "산정 기준",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ],
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 1
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "1. 허위 서류, 위조ㆍ변조 또는 기타 부정한 방법으로 서류를 제출하는 행위",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               },
               {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 1
+                },
                 "blocks": [
                   {
                     "fields": [],
@@ -1903,80 +2333,144 @@
                     "text": "    금액과의 차액",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ],
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 2
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "2. 계약 시 정한 직접생산 기준을 위반하여 납품하는 행위",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               },
               {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 2
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "직접생산기준을 위반하여 납품한 수량에 상응하는 물품대금에 100분의 15를 곱한 금액. 단, 계약상대자가 그 물품대금에서 직접생산기준을 위반하여 납품한 물품을 위한 비용(이윤을 제외한다)을 공제한 금액이 그 물품대금에 100분의 15를 곱한 금액보다 적음을 입증한 경우에는 그 금액을 지급한다. ",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ],
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 3
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "3. 원산지를 거짓으로 표시하여 납품하는 행위",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               },
               {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 3
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "원산지를 거짓으로 표시하여 납품한 수량에 상응하는 물품대금에 100분의 15를 곱한 금액. 단, 계약상대자가 그 물품대금에서 원산지를 거짓으로 표시하여 납품한 물품을 위한 비용(이윤을 제외한다)을 공제한 금액이 그 물품대금에 100분의 15를 곱한 금액보다 적음을 입증한 경우에는 그 금액을 지급한다. ",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ],
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 4
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "4. 계약규격과 상이한 제품을 납품하는 행위",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               },
               {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 4
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "계약규격과 상이한 제품에 대한 물품대금. 단, 계약의 목적달성에 영향이 없고, 계약상대자가 계약을 위반하여 납품한 물품의 공급비용(이윤을 포함한다)을 입증한 경우에는 이를 공제한다.",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ],
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 5
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "5. 계약 시 정한 우대가격 유지의무를 위반하는 행위",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               },
               {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 5
+                },
                 "blocks": [
                   {
                     "fields": [],
@@ -1993,11 +2487,19 @@
                     "text": " * 할인행사를 실시하여 할인된 단가가 시장공급 물품단가를 초과한 경우, 해당 계약단가는 할인단가를 적용",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ],
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 6
+                },
                 "blocks": [
                   {
                     "fields": [],
@@ -2009,20 +2511,36 @@
                     "text": "  직접이행의무를 위반하는 행위 ",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               },
               {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 6
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "계약금액의 100분의 10에 해당하는 금액 ",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ],
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 7
+                },
                 "blocks": [
                   {
                     "fields": [],
@@ -2034,29 +2552,53 @@
                     "text": "  브로커의 불공정행위에 개입하는 행위 ",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               },
               {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 7
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "계약금액의 100분의 10에 해당하는 금액 ",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ],
             [
               {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 8
+                },
                 "blocks": [
                   {
                     "fields": [],
                     "text": "8. 기타 관련 법령, 계약규정 또는 계약조건 위반 등으로 인해 공정한 조달질서를 훼손한 행위",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               },
               {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 8
+                },
                 "blocks": [
                   {
                     "fields": [],
@@ -2073,7 +2615,11 @@
                     "text": "* 평균 영업이익률: 납품을 개시한 년도부터 납품이 종료한 년도까지 연도별 손익계산서 영업이익률의 평균",
                     "type": "paragraph"
                   }
-                ]
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
               }
             ]
           ],
@@ -2101,5 +2647,7 @@
         }
       ]
     }
-  ]
+  ],
+  "unhandled": {},
+  "unhandled_examples": {}
 }

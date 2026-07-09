@@ -53,6 +53,20 @@ def test_no_silent_text_drop(path: Path):
 
 
 @pytest.mark.parametrize("path", REAL_FILES, ids=lambda p: p.name)
+def test_coverage_ledger_empty(path: Path):
+    """모든 자식 태그가 결정 지점에서 처리 또는 명시 허용됐다(원장 비어 있음).
+
+    새 HWPX 요소가 등장하면 침묵 누락이 아니라 여기서 실패한다 — 의식적 결정 강제.
+    """
+    doc = extract_document(str(path))
+    assert doc.unhandled == {}, (
+        f"미처리 구조 발견 {path.name}: {doc.unhandled} "
+        f"(예: {doc.unhandled_examples}). 처리 브랜치 추가 또는 KNOWN_IGNORED 허용목록에 "
+        f"이유와 함께 등록할 것."
+    )
+
+
+@pytest.mark.parametrize("path", REAL_FILES, ids=lambda p: p.name)
 def test_deterministic(path: Path):
     """같은 파일을 두 번 추출하면 to_dict() 가 완전히 동일하다."""
     first = extract_document(str(path)).to_dict()

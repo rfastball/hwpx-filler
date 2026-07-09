@@ -1,4 +1,6 @@
 {
+  "footers": [],
+  "headers": [],
   "sections": [
     {
       "blocks": [
@@ -9,5 +11,7 @@
         }
       ]
     }
-  ]
+  ],
+  "unhandled": {},
+  "unhandled_examples": {}
 }

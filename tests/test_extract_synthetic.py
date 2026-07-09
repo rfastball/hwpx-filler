@@ -9,19 +9,23 @@ from __future__ import annotations
 from lxml import etree
 
 from hwpxfiller.core.text_extract import (
+    CoverageLedger,
+    Document,
     Paragraph,
     Table,
     _blocks_from_container,
+    _has_body_text,
+    extract_document,
 )
 
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 
 
-def _blocks(inner_xml: str):
+def _blocks(inner_xml: str, ledger: "CoverageLedger | None" = None):
     """``<sec>...</sec>`` 로 감싼 조각을 파싱해 최상위 블록 목록 반환."""
     xml = f'<sec xmlns:hp="{HP}">{inner_xml}</sec>'
     root = etree.fromstring(xml.encode("utf-8"))
-    return _blocks_from_container(root)
+    return _blocks_from_container(root, ledger or CoverageLedger(), "sec")
 
 
 def test_fragments_across_multiple_runs_join():
@@ -168,3 +172,126 @@ def test_random_ids_absent_from_output():
         assert noise not in dumped, f"랜덤 ID 누출: {noise}"
     assert blocks[0].text == "1,000,000원"
     assert blocks[0].fields == ["금액"]
+
+
+def test_merged_cell_span_metadata_captured():
+    """병합 셀의 ``cellSpan``(colSpan/rowSpan)·``cellAddr``(colAddr/rowAddr)가 보존된다."""
+    xml = """
+    <hp:p><hp:run>
+      <hp:tbl>
+        <hp:tr>
+          <hp:tc>
+            <hp:cellAddr colAddr="0" rowAddr="0"/>
+            <hp:cellSpan colSpan="3" rowSpan="1"/>
+            <hp:cellSz width="1000" height="500"/>
+            <hp:subList><hp:p><hp:run><hp:t>병합 헤더</hp:t></hp:run></hp:p></hp:subList>
+          </hp:tc>
+        </hp:tr>
+        <hp:tr>
+          <hp:tc>
+            <hp:cellAddr colAddr="0" rowAddr="1"/>
+            <hp:cellSpan colSpan="1" rowSpan="2"/>
+            <hp:subList><hp:p><hp:run><hp:t>세로병합</hp:t></hp:run></hp:p></hp:subList>
+          </hp:tc>
+        </hp:tr>
+      </hp:tbl>
+    </hp:run></hp:p>
+    """
+    blocks = _blocks(xml)
+    tbl = blocks[0]
+    assert isinstance(tbl, Table)
+    top = tbl.rows[0][0]
+    assert top.span == {"colSpan": 3, "rowSpan": 1}
+    assert top.addr == {"colAddr": 0, "rowAddr": 0}
+    bottom = tbl.rows[1][0]
+    assert bottom.span == {"colSpan": 1, "rowSpan": 2}
+    assert bottom.addr == {"colAddr": 0, "rowAddr": 1}
+    # to_dict 결정적으로 병합 메타 노출.
+    d = tbl.to_dict()
+    assert d["rows"][0][0]["span"] == {"colSpan": 3, "rowSpan": 1}
+
+
+def test_coverage_ledger_records_unknown_child():
+    """결정 지점에 미지의 ``hp:`` 태그가 오면 원장에 소리 나게 기록된다."""
+    ledger = CoverageLedger()
+    # hp:p 직속에 처리도 허용목록도 아닌 hp:someNewThing 을 넣는다.
+    xml = """
+    <hp:p>
+      <hp:run><hp:t>정상</hp:t></hp:run>
+      <hp:someNewThing/>
+    </hp:p>
+    """
+    _blocks(xml, ledger)
+    assert ledger.counts.get("someNewThing") == 1
+    assert "someNewThing" in ledger.examples
+
+
+def test_coverage_ledger_clean_for_known_structure():
+    """알려진 구조(run/t/linesegarray/tbl/셀 메타)는 원장을 더럽히지 않는다."""
+    ledger = CoverageLedger()
+    xml = """
+    <hp:p>
+      <hp:run><hp:t>가</hp:t><hp:secPr/></hp:run>
+      <hp:linesegarray><hp:lineseg/></hp:linesegarray>
+      <hp:run><hp:tbl>
+        <hp:sz/><hp:pos/>
+        <hp:tr><hp:tc>
+          <hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellMargin/>
+          <hp:subList><hp:p><hp:run><hp:t>셀</hp:t></hp:run></hp:p></hp:subList>
+        </hp:tc></hp:tr>
+      </hp:tbl></hp:run>
+    </hp:p>
+    """
+    _blocks(xml, ledger)
+    assert ledger.counts == {}, f"예상치 못한 원장 항목: {ledger.counts}"
+
+
+def test_header_footer_body_text_captured():
+    """머리말/꼬리말 XML 의 본문 문단이 별도 영역으로 잡히고 본문에 섞이지 않는다.
+
+    실제 코퍼스는 ``Contents/header.xml`` 이 스타일 전용 ``hp:head`` 라 이 경로를
+    태우지 못한다. 여기서 본문 문단을 담은 머리말/꼬리말을 합성해 코드 경로를 증명한다.
+    """
+    from hwpxfiller.core.package import HwpxPackage, MIMETYPE_NAME, MIMETYPE_VALUE
+
+    def sec(text: str) -> bytes:
+        return (
+            f'<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" '
+            f'xmlns:hp="{HP}">'
+            f"<hp:p><hp:run><hp:t>{text}</hp:t></hp:run></hp:p></hs:sec>"
+        ).encode("utf-8")
+
+    # hp:head 스타일 전용 파일(본문 아님) — 제외되어야 한다.
+    style_head = (
+        '<hp:head xmlns:hp="' + HP + '"><hp:refList/></hp:head>'
+    ).encode("utf-8")
+
+    pkg = HwpxPackage()
+    pkg.entries[MIMETYPE_NAME] = MIMETYPE_VALUE
+    pkg.stored.add(MIMETYPE_NAME)
+    pkg.entries["Contents/section0.xml"] = sec("본문 문단")
+    pkg.entries["Contents/header.xml"] = style_head  # 스타일 전용 → 제외
+    pkg.entries["Contents/header0.xml"] = sec("머리말 문단")  # 본문 → 포함
+    pkg.entries["Contents/footer0.xml"] = sec("꼬리말 문단")  # 본문 → 포함
+
+    doc = extract_document(pkg)
+    assert isinstance(doc, Document)
+    # 스타일 전용 header.xml 은 제외, 본문 있는 header0/footer0 만 포함.
+    assert len(doc.headers) == 1
+    assert len(doc.footers) == 1
+    assert doc.headers[0].blocks[0].text == "머리말 문단"
+    assert doc.footers[0].blocks[0].text == "꼬리말 문단"
+    # 본문 섹션에 머리말/꼬리말이 섞이지 않는다.
+    body_texts = [
+        b.text for s in doc.sections for b in s.blocks if isinstance(b, Paragraph)
+    ]
+    assert body_texts == ["본문 문단"]
+    assert doc.unhandled == {}
+
+
+def test_style_only_header_not_treated_as_body():
+    """스타일 전용 ``hp:head`` 루트는 본문 영역으로 오인되지 않는다."""
+    head = etree.fromstring(
+        ('<hp:head xmlns:hp="' + HP + '"><hp:refList/></hp:head>').encode("utf-8")
+    )
+    assert _has_body_text(head) is False
