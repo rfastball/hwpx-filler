@@ -1,0 +1,65 @@
+{
+  "change_items": [
+    {
+      "category": "text_changed",
+      "detail": "테스트",
+      "location_label": "본문 1 · 문단 1",
+      "new": "테스트",
+      "old": "{{진행상태}} - 누름틀",
+      "order": 0,
+      "priority": 2
+    },
+    {
+      "category": "text_removed",
+      "detail": "{{진행상태}} - 텍스트",
+      "location_label": "본문 1 · 문단 2",
+      "new": "",
+      "old": "{{진행상태}} - 텍스트",
+      "order": 1,
+      "priority": 3
+    }
+  ],
+  "changes": [
+    {
+      "kind": "changed",
+      "location": {
+        "index": 0,
+        "region": "본문",
+        "region_index": 0,
+        "unit": "paragraph"
+      },
+      "location_label": "본문 1 · 문단 1",
+      "new_text": "테스트",
+      "old_text": "{{진행상태}} - 누름틀",
+      "seq": 0,
+      "unit": "paragraph",
+      "word_ops": [
+        {
+          "new": "테스트",
+          "old": "{{진행상태}} - 누름틀",
+          "op": "replace"
+        }
+      ]
+    },
+    {
+      "kind": "removed",
+      "location": {
+        "index": 1,
+        "region": "본문",
+        "region_index": 0,
+        "unit": "paragraph"
+      },
+      "location_label": "본문 1 · 문단 2",
+      "new_text": "",
+      "old_text": "{{진행상태}} - 텍스트",
+      "seq": 1,
+      "unit": "paragraph"
+    }
+  ],
+  "summary": {
+    "added": 0,
+    "change_items": 2,
+    "changed": 1,
+    "removed": 1
+  }
+}

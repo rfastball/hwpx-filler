@@ -3,6 +3,7 @@
     python -m hwpxfiller.cli --template T.hwpx --data data.xlsx --out ./out \
         --pattern "공고서-{{계약명}}"
     python -m hwpxfiller.cli --template T.hwpx --fields   # 요구 필드만 출력
+    python -m hwpxfiller.cli diff OLD.hwpx NEW.hwpx [--html out.html]  # 개정 비교
 """
 
 from __future__ import annotations
@@ -16,7 +17,30 @@ from .core.validate import validate
 from .data.excel import ExcelDataSource
 
 
+def _diff_main(argv: "list[str]") -> int:
+    """``diff`` 하위명령 — 두 HWPX 를 비교해 요약 출력, 선택적 HTML 저장."""
+    from .core.diff import diff_files, render_html, render_summary
+
+    ap = argparse.ArgumentParser(prog="hwpxfiller diff")
+    ap.add_argument("old", help="이전 판본 HWPX 경로")
+    ap.add_argument("new", help="새 판본 HWPX 경로")
+    ap.add_argument("--html", default=None, help="HTML 리포트 저장 경로")
+    args = ap.parse_args(argv)
+
+    result = diff_files(args.old, args.new)
+    print(render_summary(result), end="")
+    if args.html:
+        with open(args.html, "w", encoding="utf-8") as fh:
+            fh.write(render_html(result))
+        print(f"\nHTML 리포트 저장: {args.html}", file=sys.stderr)
+    return 0
+
+
 def main(argv: "list[str] | None" = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == "diff":
+        return _diff_main(argv[1:])
+
     ap = argparse.ArgumentParser(prog="hwpxfiller")
     ap.add_argument("--template", required=True, help="HWPX 템플릿 경로")
     ap.add_argument("--data", help="엑셀/CSV 데이터 경로")
