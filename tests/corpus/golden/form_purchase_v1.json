@@ -1,0 +1,20 @@
+{
+  "sections": [
+    {
+      "blocks": [
+        {
+          "fields": [
+            "진행상태"
+          ],
+          "text": "{{진행상태}} - 누름틀",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "{{진행상태}} - 텍스트",
+          "type": "paragraph"
+        }
+      ]
+    }
+  ]
+}
