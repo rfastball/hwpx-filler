@@ -3,6 +3,10 @@
     python -m hwpxfiller.cli --template T.hwpx --data data.xlsx --out ./out \
         --pattern "공고서-{{계약명}}"
     python -m hwpxfiller.cli --template T.hwpx --fields   # 요구 필드만 출력
+    # 나라장터 취득 → 매핑 프로파일로 템플릿 채우기(영문키→한글필드)
+    python -m hwpxfiller.cli --template T.hwpx --source nara \
+        --service-key KEY --bgn 202606010000 --end 202606302359 \
+        --profile mapping.json --out ./out
     python -m hwpxfiller.cli diff OLD.hwpx NEW.hwpx [--html out.html]  # 개정 비교
     python -m hwpxfiller.cli schema T.hwpx [--out schema.json]  # 템플릿 스키마 추출
     python -m hwpxfiller.cli fieldize T.hwpx [--out compiled.hwpx]  # {{토큰}}→누름틀
@@ -145,6 +149,39 @@ def _drift_main(argv: "list[str]") -> int:
     return 0
 
 
+def _load_records(ap: argparse.ArgumentParser, args) -> "list[dict[str, str]]":
+    """``--source`` 에 따라 데이터 소스를 만들고 레코드를 취득한다.
+
+    나라장터는 영문 코드 키를 반환하므로, 한글 템플릿 필드로 채우려면 대개 ``--profile``
+    이 함께 필요하다(호출부에서 적용). 필수 인자 누락은 ``ap.error`` 로 종료.
+    """
+    if args.source == "nara":
+        from .data.nara import NaraStdDataSource
+
+        missing = [
+            name for name, val in
+            (("--service-key", args.service_key), ("--bgn", args.bgn), ("--end", args.end))
+            if not val
+        ]
+        if missing:
+            ap.error(f"--source nara 에는 {', '.join(missing)} 가 필요합니다")
+        src = NaraStdDataSource(
+            args.service_key, args.bgn, args.end,
+            num_rows=args.num_rows, page_no=args.page,
+        )
+        records = src.records()
+        print(f"[나라장터] {len(records)}건 취득 (기간 {args.bgn}~{args.end})", file=sys.stderr)
+        if not args.profile:
+            print("[주의] 나라장터 키는 영문 코드입니다. --profile 없이는 한글 템플릿 필드와 "
+                  "맞지 않아 대부분 빈칸으로 생성됩니다.", file=sys.stderr)
+        return records
+
+    # 기본: 엑셀/CSV
+    if not args.data:
+        ap.error("--data 가 필요합니다 (또는 --fields, 또는 --source nara)")
+    return ExcelDataSource(args.data, sheet=args.sheet).records()
+
+
 def main(argv: "list[str] | None" = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "diff":
@@ -160,11 +197,21 @@ def main(argv: "list[str] | None" = None) -> int:
 
     ap = argparse.ArgumentParser(prog="hwpxfiller")
     ap.add_argument("--template", required=True, help="HWPX 템플릿 경로")
-    ap.add_argument("--data", help="엑셀/CSV 데이터 경로")
+    ap.add_argument("--source", choices=["excel", "nara"], default="excel",
+                    help="데이터 소스 (기본: excel)")
+    ap.add_argument("--data", help="엑셀/CSV 데이터 경로 (--source excel)")
     ap.add_argument("--out", default="./out", help="결과 저장 폴더")
     ap.add_argument("--pattern", default="output-{{ID}}", help="파일명 패턴({{키}})")
     ap.add_argument("--sheet", default=None, help="엑셀 시트명(기본: 첫 시트)")
+    ap.add_argument("--profile", default=None,
+                    help="매핑 프로파일 JSON(소스 키→템플릿 필드; 나라장터 영문키에 사실상 필수)")
     ap.add_argument("--fields", action="store_true", help="템플릿 요구 필드만 출력")
+    # 나라장터 취득 옵션(--source nara)
+    ap.add_argument("--service-key", default=None, help="data.go.kr ServiceKey (--source nara)")
+    ap.add_argument("--bgn", default=None, help="공고 시작일시 YYYYMMDDHHMM (--source nara)")
+    ap.add_argument("--end", default=None, help="공고 종료일시 YYYYMMDDHHMM (bgn 과 1개월 이내)")
+    ap.add_argument("--num-rows", type=int, default=100, help="나라장터 페이지당 건수(기본 100)")
+    ap.add_argument("--page", type=int, default=1, help="나라장터 페이지 번호(기본 1)")
     args = ap.parse_args(argv)
 
     engine = HwpxEngine()
@@ -174,11 +221,12 @@ def main(argv: "list[str] | None" = None) -> int:
             print(f)
         return 0
 
-    if not args.data:
-        ap.error("--data 가 필요합니다 (또는 --fields 사용)")
+    records = _load_records(ap, args)
 
-    src = ExcelDataSource(args.data, sheet=args.sheet)
-    records = src.records()
+    if args.profile:
+        from .core.mapping import MappingProfile
+        profile = MappingProfile.load(args.profile)
+        records = profile.apply_all(records)
 
     report = validate(engine.required_fields(args.template), records)
     if report.missing_columns:

@@ -42,6 +42,12 @@ python -m hwpxfiller.cli diff v2025.hwpx v2026.hwpx [--html report.html]
 # 엑셀 데이터로 일괄 생성
 python -m hwpxfiller.cli --template template.hwpx --data data.xlsx \
     --out ./out --pattern "공고서-{{계약명}}"
+
+# 나라장터(조달청 표준 API)에서 취득 → 매핑 프로파일로 템플릿 채우기
+#   영문 코드 키(bidNtceNo 등)는 --profile 로 한글 필드에 잇는다(없으면 대부분 빈칸).
+python -m hwpxfiller.cli --template template.hwpx --source nara \
+    --service-key $DATA_GO_KR_KEY --bgn 202606010000 --end 202606302359 \
+    --profile mapping.json --out ./out --pattern "공고서-{{입찰공고번호}}"
 ```
 
 ### GUI
