@@ -16,6 +16,11 @@ Results/
 sample.xlsx
 *.tmp
 
+# 비밀값(로컬 개발용 — 커밋 금지)
+.secrets/
+.env
+.env.*
+
 # OS
 Thumbs.db
 desktop.ini
