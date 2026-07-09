@@ -187,8 +187,15 @@ L2 diff·향후 검증·병합의 공용 토대.
      속성 미러링, dry-run 기본, 멱등, 파편/복합 런 신고
    - ✅ 템플릿 관리(`core/lint.py`): lint(공백/표기 변이 필드명·미치환 토큰·어휘 준수)
      + 필드 드리프트(판본 간 추가/삭제/개명 추정). CLI `lint`·`drift`
-3. 🚧 **1 매핑 계층 + 프로파일** ← **다음 스프린트** — ERP 연동의 실질적 포석
-   (스키마 fields 가 매핑 좌열 자동생성, 명시성 원칙: 자동 제안 + 사용자 확정)
+3. 🚧 **1 매핑 계층 + 프로파일 + 웹 취득** ← **현재 스프린트**
+   - ✅ 매핑 코어(`core/mapping.py`): 프로파일 `{템플릿필드 ← {sources, transform}}`,
+     변환(join·datetime 합성·amount), 퍼지 자동제안(`NARA_ALIASES` 경유), JSON 저장/적용.
+     통합 검증: 나라장터 표준 레코드 → 프로파일 → 실 입찰공고 템플릿 채우기.
+   - ⬜ 취득 DataSource(`NaraStdDataSource`, httpx): 조달청 표준 API. **키 활성화 대기**
+     (401 — data.go.kr 활용신청 승인/전파 확인 필요). 엔드포인트/파라미터는 검증됨
+     (`apis.data.go.kr/1230000/ad/BidPublicInfoService/...`). 실응답 캡처 후 envelope 확정.
+   - ⬜ 매핑 UI(위저드 좌열=스키마 fields, 제안=퍼지, 사용자 확정)
+   - 의존성: 취득 플러그인은 optional extra(`[web]`)로 격리, core 는 lxml+openpyxl 유지
 4. ⬜ **2 위저드·행선택·미리보기** UX 고도화
 5. ⬜ **3-① 표/반복 영역** — 경계선상(행복제=구조변형). 명시 선언+미리보기 전제로만
 

@@ -54,6 +54,7 @@ python -m hwpxfiller.gui.app
 | `core/schema.py` | 템플릿 스키마 추출(필드·타입·표 영역·라벨) | (신규 — 매핑/폼 토대) |
 | `core/authoring.py` | 저작 보조: 평문 `{{토큰}}` → 누름틀 컴파일 | (신규 — `set_field`의 역연산) |
 | `core/lint.py` | 템플릿 관리: 위생 lint + 판본 간 필드 드리프트 | (신규 — `modFuzzyMatch` 아이디어) |
+| `core/mapping.py` | 소스 레코드 → 템플릿 필드 매핑(alias·N→1 합성·변환)+프로파일 | `frmErpPreview`+`modFuzzyMatch` |
 | `core/engine.py` | 단일 문서 생성 조율 | `modHWPXEngine` |
 | `core/validate.py` | 사전검증(누락/빈값) | `modHWPgen` |
 | `batch.py` | 일괄 생성 | `Process_HWP_Generation` |
