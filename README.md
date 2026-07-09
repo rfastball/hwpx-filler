@@ -30,6 +30,10 @@ python -m hwpxfiller.cli schema template.hwpx --out schema.json
 python -m hwpxfiller.cli fieldize draft.hwpx            # 미리보기(dry-run)
 python -m hwpxfiller.cli fieldize draft.hwpx --out template.hwpx
 
+# 템플릿 관리: 위생 점검(유사 필드명·미치환 토큰), 판본 간 필드 드리프트
+python -m hwpxfiller.cli lint template.hwpx [--vocab words.txt]
+python -m hwpxfiller.cli drift v2025.hwpx v2026.hwpx
+
 # 엑셀 데이터로 일괄 생성
 python -m hwpxfiller.cli --template template.hwpx --data data.xlsx \
     --out ./out --pattern "공고서-{{계약명}}"
@@ -49,6 +53,7 @@ python -m hwpxfiller.gui.app
 | `core/fields.py` | 누름틀 XML DOM 주입 | `clsHWPXParser` |
 | `core/schema.py` | 템플릿 스키마 추출(필드·타입·표 영역·라벨) | (신규 — 매핑/폼 토대) |
 | `core/authoring.py` | 저작 보조: 평문 `{{토큰}}` → 누름틀 컴파일 | (신규 — `set_field`의 역연산) |
+| `core/lint.py` | 템플릿 관리: 위생 lint + 판본 간 필드 드리프트 | (신규 — `modFuzzyMatch` 아이디어) |
 | `core/engine.py` | 단일 문서 생성 조율 | `modHWPXEngine` |
 | `core/validate.py` | 사전검증(누락/빈값) | `modHWPgen` |
 | `batch.py` | 일괄 생성 | `Process_HWP_Generation` |

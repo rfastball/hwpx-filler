@@ -6,6 +6,8 @@
     python -m hwpxfiller.cli diff OLD.hwpx NEW.hwpx [--html out.html]  # 개정 비교
     python -m hwpxfiller.cli schema T.hwpx [--out schema.json]  # 템플릿 스키마 추출
     python -m hwpxfiller.cli fieldize T.hwpx [--out compiled.hwpx]  # {{토큰}}→누름틀
+    python -m hwpxfiller.cli lint T.hwpx [--vocab words.txt]  # 템플릿 위생 점검
+    python -m hwpxfiller.cli drift OLD.hwpx NEW.hwpx  # 판본 간 필드 드리프트
 """
 
 from __future__ import annotations
@@ -95,6 +97,54 @@ def _fieldize_main(argv: "list[str]") -> int:
     return 0
 
 
+def _lint_main(argv: "list[str]") -> int:
+    """``lint`` 하위명령 — 단일 템플릿 위생 점검(유사 필드명·미치환 토큰·어휘).
+
+    이슈가 있으면 종료코드 1(자동화에서 게이트로 쓰기 위함).
+    """
+    from .core.lint import lint_template
+
+    ap = argparse.ArgumentParser(prog="hwpxfiller lint")
+    ap.add_argument("template", help="HWPX 템플릿 경로")
+    ap.add_argument("--vocab", default=None, help="통제 어휘 사전(한 줄에 필드명 하나)")
+    args = ap.parse_args(argv)
+
+    vocabulary = None
+    if args.vocab:
+        with open(args.vocab, encoding="utf-8") as fh:
+            vocabulary = [ln.strip() for ln in fh if ln.strip()]
+
+    report = lint_template(args.template, vocabulary=vocabulary)
+    if not report.findings:
+        print("이슈 없음.")
+        return 0
+    for f in report.findings:
+        print(f"  [{f.severity}] {f.kind}: {f.message}")
+    return 1 if report.has_issues else 0
+
+
+def _drift_main(argv: "list[str]") -> int:
+    """``drift`` 하위명령 — 두 템플릿의 필드셋 변화(추가/삭제/개명)."""
+    from .core.lint import diff_schema
+
+    ap = argparse.ArgumentParser(prog="hwpxfiller drift")
+    ap.add_argument("old", help="이전 판본 HWPX")
+    ap.add_argument("new", help="새 판본 HWPX")
+    args = ap.parse_args(argv)
+
+    drift = diff_schema(args.old, args.new)
+    if not drift.has_changes:
+        print("필드셋 변화 없음.")
+        return 0
+    for n in drift.added:
+        print(f"  + 추가: {n}")
+    for n in drift.removed:
+        print(f"  - 삭제: {n}")
+    for r in drift.renamed:
+        print(f"  ~ 개명(추정): {r['old']} -> {r['new']} (유사도 {r['score']})")
+    return 0
+
+
 def main(argv: "list[str] | None" = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "diff":
@@ -103,6 +153,10 @@ def main(argv: "list[str] | None" = None) -> int:
         return _schema_main(argv[1:])
     if argv and argv[0] == "fieldize":
         return _fieldize_main(argv[1:])
+    if argv and argv[0] == "lint":
+        return _lint_main(argv[1:])
+    if argv and argv[0] == "drift":
+        return _drift_main(argv[1:])
 
     ap = argparse.ArgumentParser(prog="hwpxfiller")
     ap.add_argument("--template", required=True, help="HWPX 템플릿 경로")
