@@ -61,11 +61,52 @@ _CLAUSE_RES = (
     re.compile(r"^\s*\d+(?:-\d+)?\s*\.\s*\S"),  # "1. 입찰개요", "3-1. 제출서류"
 )
 
+# 선두 조항/목록 서수(ordinal) 접두 — 정렬 키 정규화에 쓴다.
+# 조항이 하나 삽입돼 뒤 번호가 통째로 밀리면(3.2.8→3.2.9) 본문이 같아도 원문이 달라
+# equal 로 안 잡히고 replace 로 흘러 엉뚱한 조항끼리 1:1 짝지어진다. 이를 막으려
+# **정렬 키를 만들 때만** 선두 서수를 벗겨 본문으로 맞춘다(원문은 표시·변경 감지에 보존).
+# 보수적으로: 산문 속 숫자("납기 180일")는 절대 건드리지 않도록 서수 표식만 벗긴다.
+#   · 제N조/제N장/… (제 3 조)
+#   · 점 구분 다단계 번호 3.2.8 / 3.2.8.  (점이 하나 이상 — "180"은 안 걸림)
+#   · 하이픈 번호 3-1 / 3-1.
+#   · 마침표 붙은 단일 번호 3.  ("1.5" 는 뒤가 공백이 아니라 안 걸림)
+# 뒤에 공백(또는 끝)이 와야만 서수로 인정해 "180일"·"1.5배" 같은 산문을 지킨다.
+_ORDINAL_PREFIX_RE = re.compile(
+    r"^\s*(?:"
+    r"제\s*\d+\s*[조장절관항호목]\s*"       # 제3조 / 제 3 장
+    r"|\d+(?:\.\d+)+\.?(?=\s|$)\s*"        # 3.2.8 / 3.2.8. (점 ≥1)
+    r"|\d+(?:-\d+)+\.?(?=\s|$)\s*"         # 3-1 / 3-1.
+    r"|\d+\.(?=\s|$)\s*"                   # 3.  (마침표 필수)
+    r")"
+)
+
 # 변경 항목 우선순위(작을수록 먼저). 리뷰어가 가장 찾는 순.
 _PRI_NUMBER = 0
 _PRI_CLAUSE = 1
 _PRI_CHANGED = 2
 _PRI_ADDREMOVE = 3
+_PRI_RENUMBER = 4  # 번호만 바뀐 재번호 — 실질 변경 아래에 데모트(숨기진 않음)
+
+# replace 구간에서 old↔new 문단을 짝지을 최소 정규화-본문 유사도.
+# 0.6 이상이면 재작성(180일→300일 유형)으로 보고 페어링, 미만은 서로 다른 조항으로
+# 간주해 add/remove 로 분리(거짓 changed 방지).
+_REPLACE_PAIR_THRESHOLD = 0.6
+
+
+def _ordinal_prefix(text: str) -> str:
+    """선두 서수 접두를 반환(없으면 빈 문자열). 트림된 원문 조각."""
+    m = _ORDINAL_PREFIX_RE.match(text)
+    return m.group(0).strip() if m else ""
+
+
+def _norm_key(text: str) -> str:
+    """정렬용 정규화 키 — 선두 서수 접두를 벗긴 본문.
+
+    벗긴 결과가 비면(문단이 서수 그 자체뿐: "3.") 원문을 그대로 키로 쓴다 —
+    빈 키끼리 뭉쳐 서로 다른 서수 문단이 거짓 정렬되는 것을 막는다.
+    """
+    stripped = _ORDINAL_PREFIX_RE.sub("", text, count=1)
+    return stripped if stripped.strip() else text
 
 
 def _is_blank(s: str) -> bool:
@@ -285,14 +326,30 @@ class _Differ:
         )
         self._seq += 1
 
+    def _emit_renumber(self, uo: "_ParaUnit", un: "_ParaUnit") -> None:
+        """선두 서수만 바뀐 문단을 renumber 변경으로 기록(원문 보존)."""
+        self._emit("renumber", "paragraph", un.location, un.label,
+                   old_text=uo.text, new_text=un.text,
+                   word_ops=_word_ops(uo.text, un.text))
+
     # ---------------------------------------------------- 문단 스트림 정렬
     def _diff_paragraphs(self, olds: "list[_ParaUnit]",
                          news: "list[_ParaUnit]") -> None:
+        # 정렬은 **정규화 키**(선두 서수 제거)로 태운다 — 재번호된 조항이 본문 기준으로
+        # 맞물리게 해 엉뚱한 조항끼리의 거짓 1:1 짝을 없앤다. 원문은 표시·감지에 보존.
         sm = SequenceMatcher(
-            a=[u.text for u in olds], b=[u.text for u in news], autojunk=False
+            a=[_norm_key(u.text) for u in olds],
+            b=[_norm_key(u.text) for u in news],
+            autojunk=False,
         )
         for tag, i1, i2, j1, j2 in sm.get_opcodes():
             if tag == "equal":
+                # 키(본문)는 같지만 원문이 다르면 = 선두 서수만 바뀐 재번호. 조용히
+                # 버리지 않고 renumber 로 표면화(위치는 1:1 대응).
+                for k in range(i2 - i1):
+                    uo, un = olds[i1 + k], news[j1 + k]
+                    if uo.text != un.text:
+                        self._emit_renumber(uo, un)
                 continue
             if tag == "delete":
                 for u in olds[i1:i2]:
@@ -304,26 +361,61 @@ class _Differ:
                     if not _is_blank(u.text):
                         self._emit("added", "paragraph", u.location, u.label,
                                    new_text=u.text)
-            else:  # replace — 위치 순서로 1:1 페어링, 나머지는 add/remove
-                blk_o, blk_n = olds[i1:i2], news[j1:j2]
-                m = min(len(blk_o), len(blk_n))
-                for k in range(m):
-                    uo, un = blk_o[k], blk_n[k]
-                    if _is_blank(uo.text) and _is_blank(un.text):
-                        continue
-                    if uo.text == un.text:
-                        continue
-                    self._emit("changed", "paragraph", un.location, un.label,
-                               old_text=uo.text, new_text=un.text,
-                               word_ops=_word_ops(uo.text, un.text))
-                for u in blk_o[m:]:
-                    if not _is_blank(u.text):
-                        self._emit("removed", "paragraph", u.location, u.label,
-                                   old_text=u.text)
-                for u in blk_n[m:]:
-                    if not _is_blank(u.text):
-                        self._emit("added", "paragraph", u.location, u.label,
-                                   new_text=u.text)
+            else:  # replace — 유사도 기반 짝짓기(위치 슬립 교정), 나머지는 add/remove
+                self._pair_replace_block(olds[i1:i2], news[j1:j2])
+
+    def _pair_replace_block(self, blk_o: "list[_ParaUnit]",
+                            blk_n: "list[_ParaUnit]") -> None:
+        """replace 구간의 old/new 문단을 **정규화 본문 유사도**로 짝짓는다.
+
+        위치 1:1 은 조항 삽입/삭제로 뒤가 밀리면(착지발판 ↔ 유압계통) 엉뚱한 조항끼리
+        짝지어 거짓 changed 를 쏟아낸다. 대신 유사도 임계 이상인 쌍만 맺고, 짝 없는
+        old 는 removed, new 는 added 로 흘려 재번호+삽입 캐스케이드를 붕괴시킨다.
+
+        짝지어진 쌍: 원문 동일→무시, 정규화 본문 동일(서수만 변경)→renumber, 그 외→changed.
+        결정적: 유사도 내림차순, 동률은 (old_idx, new_idx) 로 안정 정렬해 그리디 할당.
+        """
+        no = [_norm_key(u.text) for u in blk_o]
+        nn = [_norm_key(u.text) for u in blk_n]
+        cands: "list[tuple[float, int, int]]" = []
+        for oi, a in enumerate(no):
+            if _is_blank(blk_o[oi].text):
+                continue
+            for nj, b in enumerate(nn):
+                if _is_blank(blk_n[nj].text):
+                    continue
+                r = SequenceMatcher(a=a, b=b, autojunk=False).ratio()
+                if r >= _REPLACE_PAIR_THRESHOLD:
+                    cands.append((r, oi, nj))
+        cands.sort(key=lambda c: (-c[0], c[1], c[2]))
+        o_match: "dict[int, int]" = {}
+        n_used: "set[int]" = set()
+        for _r, oi, nj in cands:
+            if oi in o_match or nj in n_used:
+                continue
+            o_match[oi] = nj
+            n_used.add(nj)
+        # 순서 보존: old 순서로 pair/remove, 이어서 남은 new 를 add.
+        for oi, uo in enumerate(blk_o):
+            if oi in o_match:
+                un = blk_n[o_match[oi]]
+                if _is_blank(uo.text) and _is_blank(un.text):
+                    continue
+                if uo.text == un.text:
+                    continue
+                if _norm_key(uo.text) == _norm_key(un.text):
+                    self._emit_renumber(uo, un)
+                    continue
+                self._emit("changed", "paragraph", un.location, un.label,
+                           old_text=uo.text, new_text=un.text,
+                           word_ops=_word_ops(uo.text, un.text))
+            elif not _is_blank(uo.text):
+                self._emit("removed", "paragraph", uo.location, uo.label,
+                           old_text=uo.text)
+        for nj, un in enumerate(blk_n):
+            if nj not in n_used and not _is_blank(un.text):
+                self._emit("added", "paragraph", un.location, un.label,
+                           new_text=un.text)
 
     # ---------------------------------------------------------- 표 diff
     def _diff_tables(self, region: str, region_idx: int,
@@ -459,7 +551,14 @@ def _build_change_items(changes: "list[Change]") -> "list[ChangeItem]":
     """
     items: "list[ChangeItem]" = []
     for c in changes:
-        if c.kind == "changed":
+        if c.kind == "renumber":
+            op = _ordinal_prefix(c.old_text) or "(없음)"
+            np = _ordinal_prefix(c.new_text) or "(없음)"
+            items.append(ChangeItem(
+                "renumber", _PRI_RENUMBER, c.seq, c.location_label,
+                f"{op} → {np}  {_snippet(c.new_text)}",
+                old=c.old_text, new=c.new_text))
+        elif c.kind == "changed":
             pairs = _number_changes(c.old_text, c.new_text)
             if pairs:
                 detail = "; ".join(
@@ -512,6 +611,7 @@ def diff_documents(old: Document, new: Document) -> DiffResult:
         "added": sum(1 for c in differ.changes if c.kind == "added"),
         "removed": sum(1 for c in differ.changes if c.kind == "removed"),
         "changed": sum(1 for c in differ.changes if c.kind == "changed"),
+        "renumber": sum(1 for c in differ.changes if c.kind == "renumber"),
         "change_items": len(items),
     }
     return DiffResult(changes=differ.changes, change_items=items, summary=summary)
@@ -523,7 +623,8 @@ def diff_files(old_path: str, new_path: str) -> DiffResult:
 
 
 # ------------------------------------------------------------------ 렌더링
-_KIND_LABEL = {"added": "추가", "removed": "삭제", "changed": "변경"}
+_KIND_LABEL = {"added": "추가", "removed": "삭제", "changed": "변경",
+               "renumber": "번호변경"}
 _CAT_LABEL = {
     "number": "숫자",
     "clause_added": "조항추가",
@@ -533,12 +634,15 @@ _CAT_LABEL = {
     "text_removed": "삭제",
     "table_added": "표추가",
     "table_removed": "표삭제",
+    "renumber": "번호변경",
 }
 
 
 def render_summary(result: DiffResult) -> str:
     """터미널/PR 용 텍스트(마크다운) 요약."""
     s = result.summary
+    substantive = [it for it in result.change_items if it.category != "renumber"]
+    renumbers = [it for it in result.change_items if it.category == "renumber"]
     lines = [
         "# HWPX 규격서 개정 비교",
         "",
@@ -546,14 +650,21 @@ def render_summary(result: DiffResult) -> str:
         f"- 추가: {s.get('added', 0)}",
         f"- 삭제: {s.get('removed', 0)}",
         f"- 변경: {s.get('changed', 0)}",
-        f"- 주요 변경 항목: {s.get('change_items', 0)}",
+        f"- 번호 변경: {s.get('renumber', 0)}",
+        f"- 주요 변경 항목: {len(substantive)}",
         "",
     ]
-    if result.change_items:
+    if substantive:
         lines.append("## 주요 변경 항목")
-        for i, it in enumerate(result.change_items, 1):
+        for i, it in enumerate(substantive, 1):
             tag = _CAT_LABEL.get(it.category, it.category)
             lines.append(f"{i}. [{tag}] {it.location_label}: {it.detail}")
+        lines.append("")
+    if renumbers:
+        # 낮은 우선순위 별도 항목 — 조용히 버리지 않되 실질 변경과 섞지 않는다.
+        lines.append(f"## 번호 변경 ({len(renumbers)}건)")
+        for i, it in enumerate(renumbers, 1):
+            lines.append(f"{i}. {it.location_label}: {it.detail}")
         lines.append("")
     if not result.changes:
         lines.append("(변경 없음)")
@@ -599,6 +710,8 @@ font-weight:700;color:#fff;white-space:nowrap}
 .b-clause_removed{background:#8e44ad}.b-text_changed{background:#2874a6}
 .b-text_added{background:#1e8449}.b-text_removed{background:#7b241c}
 .b-table_added{background:#1e8449}.b-table_removed{background:#7b241c}
+.b-renumber{background:#7a7f87}
+.renumber-group{opacity:.72}
 details{background:#fff;border:1px solid #e2e4e8;border-radius:8px;margin:8px 0;
 padding:4px 12px}
 summary{cursor:pointer;font-weight:600;font-size:13px;padding:6px 0}
@@ -609,6 +722,7 @@ ins{background:#dcffe0;color:#12681f;text-decoration:none}
 .added{border-left:3px solid #1e8449;padding-left:10px}
 .removed{border-left:3px solid #c0392b;padding-left:10px}
 .changed{border-left:3px solid #2874a6;padding-left:10px}
+.renumber{border-left:3px solid #7a7f87;padding-left:10px;opacity:.72}
 .empty{color:#888;font-style:italic}
 """
 
@@ -631,11 +745,13 @@ def render_html(result: DiffResult) -> str:
                    f"<div class='l'>{label}</div></div>")
     out.append("</div>")
 
-    # 주요 변경 항목
-    if result.change_items:
+    # 주요 변경 항목(재번호는 제외 — 아래 접이식 그룹으로 데모트)
+    substantive = [it for it in result.change_items if it.category != "renumber"]
+    renumbers = [it for it in result.change_items if it.category == "renumber"]
+    if substantive:
         out.append("<h2>주요 변경 항목</h2><div class='items'><table>")
         out.append("<tr><th>#</th><th>구분</th><th>위치</th><th>내용</th></tr>")
-        for i, it in enumerate(result.change_items, 1):
+        for i, it in enumerate(substantive, 1):
             tag = _CAT_LABEL.get(it.category, it.category)
             out.append(
                 f"<tr><td>{i}</td>"
@@ -644,6 +760,21 @@ def render_html(result: DiffResult) -> str:
                 f"<td>{html.escape(it.detail)}</td></tr>"
             )
         out.append("</table></div>")
+
+    # 번호 변경 — 기본 접힘·흐리게(loud omission: 보이되 눈에 덜 띄게)
+    if renumbers:
+        out.append("<details class='renumber-group'>")
+        out.append(f"<summary>번호 변경 {len(renumbers)}건 "
+                   "(본문 동일, 서수만 변경)</summary>")
+        out.append("<div class='items'><table>")
+        out.append("<tr><th>#</th><th>위치</th><th>내용</th></tr>")
+        for i, it in enumerate(renumbers, 1):
+            out.append(
+                f"<tr><td>{i}</td>"
+                f"<td>{html.escape(it.location_label)}</td>"
+                f"<td>{html.escape(it.detail)}</td></tr>"
+            )
+        out.append("</table></div></details>")
 
     # 전체 변경 내역(접이식)
     out.append("<h2>전체 변경 내역</h2>")
@@ -655,7 +786,7 @@ def render_html(result: DiffResult) -> str:
             out.append(f"<div class='chg {c.kind}'>")
             out.append(f"<div class='loc'>[{_KIND_LABEL.get(c.kind, c.kind)}] "
                        f"{html.escape(c.location_label)}</div>")
-            if c.kind == "changed":
+            if c.kind in ("changed", "renumber"):
                 out.append(f"<div>{_render_inline(c.word_ops, c.old_text, c.new_text)}</div>")
             elif c.kind == "added":
                 out.append(f"<div><ins>{html.escape(c.new_text)}</ins></div>")

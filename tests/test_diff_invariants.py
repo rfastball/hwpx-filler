@@ -29,7 +29,7 @@ def test_identity_zero_changes(path: Path):
     assert result.changes == []
     assert result.change_items == []
     assert result.summary == {
-        "added": 0, "removed": 0, "changed": 0, "change_items": 0
+        "added": 0, "removed": 0, "changed": 0, "renumber": 0, "change_items": 0
     }
 
 

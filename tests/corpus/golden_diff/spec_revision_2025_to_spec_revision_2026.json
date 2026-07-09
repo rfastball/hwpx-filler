@@ -38,101 +38,11 @@
     },
     {
       "category": "number",
-      "detail": "2.1 → (없음); 2 → (없음)",
-      "location_label": "본문 1 · 문단 27",
-      "new": "      부하시험기 미지참 할 경우 장비는 업체측에서 회수하여야 한다.",
+      "detail": "2 → 3",
+      "location_label": "본문 1 · 문단 29",
+      "new": "2.1.3 제작사는 항공기용 유압식 잭을 만드는 전문 제작사여야 하며, 제작사 ISO 시설인증서를 ",
       "old": "2.1.2 제작사는 항공기용 유압식 잭을 만드는 전문 제작사여야 하며, 제작사 ISO 시설인증서",
       "order": 5,
-      "priority": 0
-    },
-    {
-      "category": "number",
-      "detail": "(없음) → 2.1; (없음) → 2",
-      "location_label": "본문 1 · 문단 28",
-      "new": "2.1.2 장비를 포함한 모든 부수품은 업체가 직접 하역 하여야 한다.",
-      "old": "      상에 상용(민수) 및 군용 유입식 잭 제작사로 명시되어 있어야 한다. ",
-      "order": 6,
-      "priority": 0
-    },
-    {
-      "category": "number",
-      "detail": "6 → 19; (없음) → 70; (없음) → 46",
-      "location_label": "본문 1 · 문단 37",
-      "new": "2.2.5 NAVAIR 19-70-46",
-      "old": "2.2.5 ICAO Annex 6",
-      "order": 10,
-      "priority": 0
-    },
-    {
-      "category": "number",
-      "detail": "3.2 → (없음); 3 → (없음); 30 → (없음); 120시간 → (없음)",
-      "location_label": "본문 1 · 문단 54",
-      "new": "       그 이상이여야 한다.",
-      "old": "3.2.3 항공기에 장착하여 작업 시 최소 30 TON을 120시간(Landing Gear 교환 시간) 이상",
-      "order": 13,
-      "priority": 0
-    },
-    {
-      "category": "number",
-      "detail": "(없음) → 3.2; (없음) → 3; (없음) → 1시간; (없음) → 10%",
-      "location_label": "본문 1 · 문단 55",
-      "new": "3.2.3 부하시험시 최대 정격부하용량에서 UNLOCK 상태로 1시간 동안 유압 변동이10% 이하여야 하고",
-      "old": "      지지 할 수 있는 내구성, 안전성 등 성능을 갖추어야 한다. JACK 유압계통 내 유압, ",
-      "order": 14,
-      "priority": 0
-    },
-    {
-      "category": "number",
-      "detail": "3 → (없음)",
-      "location_label": "본문 1 · 문단 56",
-      "new": "      이상여부(진동, 누설)가 없어야 한다",
-      "old": "      유량 변동이 없어야 하며, P-3 항공기 JACK 전용이어야 한다.",
-      "order": 15,
-      "priority": 0
-    },
-    {
-      "category": "number",
-      "detail": "(없음) → 3.2; (없음) → 8",
-      "location_label": "본문 1 · 문단 68",
-      "new": "3.2.8 장비는 항공기 지지를 위해 스프링 장착 캐스터로 제작되어 있어야 한다.",
-      "old": "      하여야 한다.",
-      "order": 23,
-      "priority": 0
-    },
-    {
-      "category": "number",
-      "detail": "8 → 9",
-      "location_label": "본문 1 · 문단 69",
-      "new": "3.2.9 유압계통이 고장나도 실린더가 내려오지 않도록하는 물리적인 안전장치인 흐름 차단 장치 또는 동등이상의 안전장치가 장착되어야 한다.",
-      "old": "3.2.8 Tripod 형식이며 잭킹 포인트가 있어야 한다.",
-      "order": 24,
-      "priority": 0
-    },
-    {
-      "category": "number",
-      "detail": "9 → 10",
-      "location_label": "본문 1 · 문단 70",
-      "new": "3.2.10 잭의 삼각대 PAD는 균형을 목적으로 높이 조절기능이 있어야 한다.",
-      "old": "3.2.9 장비는 항공기 지지를 위해 스프링 장착 캐스터로 제작되어 있어야 한다.",
-      "order": 25,
-      "priority": 0
-    },
-    {
-      "category": "number",
-      "detail": "10 → 11",
-      "location_label": "본문 1 · 문단 71",
-      "new": "3.2.11 형상사진(참고사항)",
-      "old": "3.2.10 잭에 착지발판은 균형을 목적으로 조절기능이 있어야 한다.",
-      "order": 26,
-      "priority": 0
-    },
-    {
-      "category": "number",
-      "detail": "(없음) → 4.1; (없음) → 1",
-      "location_label": "본문 1 · 문단 80",
-      "new": "\n4.1.1 주장비 정비공구는 정비메뉴얼에 따라 정비에 사용되는 수공구를 납품하여야 한다.",
-      "old": " * 정비공구, 기본불출품목(예비부품) 등이 있는 경우 제작사 사양 적용하여 납품하여야 한다.",
-      "order": 31,
       "priority": 0
     },
     {
@@ -141,25 +51,7 @@
       "location_label": "본문 1 · 문단 105",
       "new": "5.2.1 교육기간 : 1일(8시간)",
       "old": "5.2.1 교육시간 : 8시간 이내",
-      "order": 36,
-      "priority": 0
-    },
-    {
-      "category": "number",
-      "detail": "5.2 → (없음); 6 → (없음)",
-      "location_label": "본문 1 · 문단 110",
-      "new": "      (단, 피교육자 이동 및 숙식에 소요되는 비용은 공무원 여비규정에 따라 해군에서 지급한다.)",
-      "old": "5.2.6 계약상대자는 교육완료 후 교육훈련 완료 확인서를 검수관 및 사업주관부서에 제출하여야 한다.",
-      "order": 40,
-      "priority": 0
-    },
-    {
-      "category": "number",
-      "detail": "5 → 4.1",
-      "location_label": "본문 1 · 문단 126",
-      "new": "6.2.4.1 공인기관시험성적서 제출 불가 시 자체시험성적서를 제출할 수 있다. ",
-      "old": "6.2.5 KCS 인증서",
-      "order": 46,
+      "order": 43,
       "priority": 0
     },
     {
@@ -168,16 +60,16 @@
       "location_label": "본문 1 · 문단 233",
       "new": "8.6.1 납기 : 계약체결 후 300일 이내",
       "old": "8.6.1 납기 : 계약 후 180일 이내",
-      "order": 51,
+      "order": 58,
       "priority": 0
     },
     {
       "category": "number",
-      "detail": "61 → 65; 615 → 651",
-      "location_label": "본문 1 · 문단 240",
-      "new": "        항공사 보급지원대대(2대) : 항공사 65전대 651대대(포항)",
+      "detail": "2 → 1",
+      "location_label": "본문 1 · 문단 241",
+      "new": "        기동함대사 제주기지전대 보급지원대(1대) : 항공사 61전대 615대대(제주)",
       "old": "        기동함대사 제주기지전대 보급지원대(2대) : 항공사 61전대 615대대(제주)",
-      "order": 53,
+      "order": 60,
       "priority": 0
     },
     {
@@ -186,7 +78,7 @@
       "location_label": "본문 1 · 표 1 · 셀(1,1)",
       "new": "30 Ton 이상",
       "old": "30 TON(60,000 lbs)-35 TON(70,000 lbs)",
-      "order": 56,
+      "order": 63,
       "priority": 0
     },
     {
@@ -195,7 +87,7 @@
       "location_label": "본문 1 · 표 1 · 셀(2,1)",
       "new": "35 Ton 이상",
       "old": "40 INCH 이상",
-      "order": 58,
+      "order": 65,
       "priority": 0
     },
     {
@@ -204,7 +96,7 @@
       "location_label": "본문 1 · 표 1 · 셀(3,1)",
       "new": "40 in 이상",
       "old": "55 ~ 91 INCH 이내",
-      "order": 60,
+      "order": 67,
       "priority": 0
     },
     {
@@ -213,7 +105,7 @@
       "location_label": "본문 1 · 표 1 · 셀(4,1)",
       "new": "55 ~ 91 in 이내",
       "old": "110 INCH 이상",
-      "order": 62,
+      "order": 69,
       "priority": 0
     },
     {
@@ -222,7 +114,7 @@
       "location_label": "본문 1 · 표 1 · 셀(5,1)",
       "new": "110 in 이상",
       "old": "40 INCH 이하",
-      "order": 64,
+      "order": 71,
       "priority": 0
     },
     {
@@ -231,7 +123,7 @@
       "location_label": "본문 1 · 표 1 · 셀(6,1)",
       "new": "1,600 LBS 이하",
       "old": "1,500 LBS 이하",
-      "order": 65,
+      "order": 72,
       "priority": 0
     },
     {
@@ -240,7 +132,7 @@
       "location_label": "본문 1 · 표 1 · 셀(7,1)",
       "new": "장비보호를 위해 전체를 덮을 수 있는\n방수형 천으로 된 탈·부착형식 Cover를 제공",
       "old": "5 GALLONS - 8 GALLONS",
-      "order": 67,
+      "order": 74,
       "priority": 0
     },
     {
@@ -249,7 +141,7 @@
       "location_label": "본문 1 · 표 3 · 셀(1,2)",
       "new": "3",
       "old": "2",
-      "order": 72,
+      "order": 79,
       "priority": 0
     },
     {
@@ -258,7 +150,7 @@
       "location_label": "본문 1 · 표 3 · 셀(1,3)",
       "new": "제주(1), 포항(2)",
       "old": "",
-      "order": 73,
+      "order": 80,
       "priority": 0
     },
     {
@@ -267,7 +159,7 @@
       "location_label": "본문 1 · 표 4 · 셀(1,3)",
       "new": "3",
       "old": "2",
-      "order": 74,
+      "order": 81,
       "priority": 0
     },
     {
@@ -276,7 +168,7 @@
       "location_label": "본문 1 · 표 4 · 셀(2,3)",
       "new": "3",
       "old": "2",
-      "order": 76,
+      "order": 83,
       "priority": 0
     },
     {
@@ -285,7 +177,7 @@
       "location_label": "본문 1 · 표 4 · 셀(3,3)",
       "new": "6",
       "old": "4",
-      "order": 78,
+      "order": 85,
       "priority": 0
     },
     {
@@ -294,7 +186,7 @@
       "location_label": "본문 1 · 표 4 · 셀(4,3)",
       "new": "3",
       "old": "2",
-      "order": 79,
+      "order": 86,
       "priority": 0
     },
     {
@@ -303,7 +195,7 @@
       "location_label": "본문 1 · 표 5 · 셀(1,2)",
       "new": "3",
       "old": "2",
-      "order": 84,
+      "order": 91,
       "priority": 0
     },
     {
@@ -312,7 +204,7 @@
       "location_label": "본문 1 · 표 5 · 셀(2,2)",
       "new": "3",
       "old": "2",
-      "order": 85,
+      "order": 92,
       "priority": 0
     },
     {
@@ -321,7 +213,7 @@
       "location_label": "본문 1 · 표 6 · 셀(1,0)",
       "new": "1",
       "old": "보급 매뉴얼",
-      "order": 106,
+      "order": 113,
       "priority": 0
     },
     {
@@ -330,7 +222,7 @@
       "location_label": "본문 1 · 표 6 · 셀(1,2)",
       "new": "□ 국방표준종합정보시스템 접속 목록화 작성 권한 신청\n□ 연락처 : 방위사업청(1577-1118)",
       "old": "2",
-      "order": 108,
+      "order": 115,
       "priority": 0
     },
     {
@@ -339,7 +231,7 @@
       "location_label": "본문 1 · 표 6 · 셀(2,0)",
       "new": "2",
       "old": "매뉴얼 CD",
-      "order": 110,
+      "order": 117,
       "priority": 0
     },
     {
@@ -348,7 +240,7 @@
       "location_label": "본문 1 · 표 6 · 셀(2,2)",
       "new": "□ 요청방법 : 생산자부호 생성 필요 업체에서 직접 수행\n   ◦ 사업자등록증을 준비 후 아래 연락처에 유선 연락\n   ◦ 방위사업청 담당자의 안내에 따라 생산자 부호 등록절차 수행\n□ 지원부서 : 방위사업청 미래전력사업표준자원관리팀\n□ 연락처 : 02-2079-4247\n□ 준비물 : 사업자등록증(최근 3개월이내 발행 PDF파일)",
       "old": "2",
-      "order": 112,
+      "order": 119,
       "priority": 0
     },
     {
@@ -357,7 +249,7 @@
       "location_label": "본문 1 · 표 6 · 셀(3,0)",
       "new": "3",
       "old": "기타 기술자료",
-      "order": 114,
+      "order": 121,
       "priority": 0
     },
     {
@@ -366,7 +258,7 @@
       "location_label": "본문 1 · 표 6 · 셀(3,2)",
       "new": "□ 국방표준종합정보 시스템 접속\n□ 업무지원 → 커뮤니티 → 자료실 → 국방목록업무 안내서\n    * 국방목록업무 안내서 참조하여 목록화 요청\n□ 사전 준비물\n   ◦ 생산자 부호 \n   ◦ 기술자료 : 납품제품의 제작사에서 작성한 카탈로그(한글/영문) \n              또는 도면 각 1부 ☞  PDF 파일\n      * 기술자료에는 제작사 정보(회사명, 연락처, 주소 등)가 필수로 명시\n   ◦ 형상자료 : 납품 실물 형상 또는 카탈로그(형상) ☞ JPG 파일 \n   ◦ 계약서, 명세서 각 1부 ☞ PDF 파일\n□ 문의사항 : 해군 군수사 규격목록과\n             (055-549-1871~5)",
       "old": "2",
-      "order": 116,
+      "order": 123,
       "priority": 0
     },
     {
@@ -375,7 +267,7 @@
       "location_label": "본문 1 · 표 7 · 셀(1,0)",
       "new": "작성자\n인적사항",
       "old": "1",
-      "order": 125,
+      "order": 132,
       "priority": 0
     },
     {
@@ -384,7 +276,7 @@
       "location_label": "본문 1 · 표 7 · 셀(1,2)",
       "new": "항공사 651항공대대 6급 조광표 010-4759-7682\n항공사 615비행대대 상사 최승순 010-4104-3049",
       "old": "□ 국방표준종합정보시스템 접속 목록화 작성 권한 신청\n□ 연락처 : 방위사업청(1577-1118)",
-      "order": 127,
+      "order": 134,
       "priority": 0
     },
     {
@@ -393,7 +285,7 @@
       "location_label": "본문 1 · 표 7 · 셀(2,2)",
       "new": "해본 항공장비관리과 원사 김대환 042-553-4199",
       "old": "□ 요청방법 : 생산자부호 생성 필요 업체에서 직접 수행\n   ◦사업자등록증을 준비 후 아래 연락처에 유선 연락\n   ◦방위사업청 담당자의 안내에 따라 생산자 부호 등록절차 수행\n□ 지원부서 : 방위사업청 미래전력사업표준자원관리팀\n□ 연락처 : 02-2079-4247\n□ 준비물 : 사업자등록증(최근 3개월이내 발행 PDF파일)",
-      "order": 130,
+      "order": 137,
       "priority": 0
     },
     {
@@ -402,7 +294,7 @@
       "location_label": "본문 1 · 표 7 · 셀(3,2)",
       "new": "해군군수사 장비구매관리팀 상사 조은비 055-549-1375",
       "old": "□ 국방표준종합정보 시스템 접속\n□ 업무지원 → 커뮤니티 → 자료실 → 국방목록업무 안내서\n    * 국방목록업무 안내서 참조하여 목록화 요청\n□ 사전 준비물\n   ◦ 생산자 부호 \n   ◦ 기술자료 : 납품제품의 제작사에서 작성한 카탈로그(한글/영문) \n              또는 도면 각 1부 ☞  PDF 파일\n      * 기술자료에는 제작사 정보(회사명, 연락처, 주소 등)가 필수로 명시\n   ◦ 형상자료 : 납품 실물 형상 또는 카탈로그(형상) ☞ JPG 파일 \n   ◦ 계약서, 명세서 각 1부 ☞ PDF 파일\n□ 문의사항 : 해군 군수사 규격목록과\n             (055-549-1871~5)",
-      "order": 133,
+      "order": 140,
       "priority": 0
     },
     {
@@ -411,7 +303,7 @@
       "location_label": "본문 1 · 표 8 · 셀(1,0)",
       "new": "항공사령부 \n보급지원대대\n(6000007469)",
       "old": "작성자\n인적사항",
-      "order": 138,
+      "order": 145,
       "priority": 0
     },
     {
@@ -420,7 +312,7 @@
       "location_label": "본문 1 · 표 8 · 셀(1,1)",
       "new": "2대",
       "old": "소요제기자",
-      "order": 139,
+      "order": 146,
       "priority": 0
     },
     {
@@ -429,7 +321,7 @@
       "location_label": "본문 1 · 표 8 · 셀(1,2)",
       "new": "항공사령부 보급지원대대 \n5급 윤성현\n054-290-6771",
       "old": "항공사 615비행대대 상사 최승순 010-4104-3049",
-      "order": 140,
+      "order": 147,
       "priority": 0
     },
     {
@@ -438,7 +330,7 @@
       "location_label": "본문 1 · 표 8 · 셀(2,1)",
       "new": "1대",
       "old": "사업주관부서",
-      "order": 143,
+      "order": 150,
       "priority": 0
     },
     {
@@ -447,16 +339,34 @@
       "location_label": "본문 1 · 표 8 · 셀(2,2)",
       "new": "기동함대사 제주기지전대\n보급지원대 물자/피복팀장\n064-905-5510",
       "old": "해본 항공장비관리과 원사 김대환 042-553-4199",
-      "order": 144,
+      "order": 151,
       "priority": 0
     },
     {
       "category": "clause_added",
-      "detail": "2.1.4 국내·외 제작품일 경우 KCS 또는 동등규격의 인증서를 제출해야 한다.",
-      "location_label": "본문 1 · 문단 31",
-      "new": "2.1.4 국내·외 제작품일 경우 KCS 또는 동등규격의 인증서를 제출해야 한다.",
+      "detail": "2.1.2 장비를 포함한 모든 부수품은 업체가 직접 하역 하여야 한다.",
+      "location_label": "본문 1 · 문단 28",
+      "new": "2.1.2 장비를 포함한 모든 부수품은 업체가 직접 하역 하여야 한다.",
       "old": "",
-      "order": 9,
+      "order": 8,
+      "priority": 1
+    },
+    {
+      "category": "clause_removed",
+      "detail": "2.2.5 ICAO Annex 6",
+      "location_label": "본문 1 · 문단 35",
+      "new": "",
+      "old": "2.2.5 ICAO Annex 6",
+      "order": 11,
+      "priority": 1
+    },
+    {
+      "category": "clause_added",
+      "detail": "2.2.5 NAVAIR 19-70-46",
+      "location_label": "본문 1 · 문단 37",
+      "new": "2.2.5 NAVAIR 19-70-46",
+      "old": "",
+      "order": 12,
       "priority": 1
     },
     {
@@ -465,7 +375,25 @@
       "location_label": "본문 1 · 문단 38",
       "new": "2.2.6 NAVAIR 19-70-521",
       "old": "",
-      "order": 11,
+      "order": 13,
+      "priority": 1
+    },
+    {
+      "category": "clause_removed",
+      "detail": "3.2.3 항공기에 장착하여 작업 시 최소 30 TON을 120시간(Landing Gear 교환 시간) 이상",
+      "location_label": "본문 1 · 문단 51",
+      "new": "",
+      "old": "3.2.3 항공기에 장착하여 작업 시 최소 30 TON을 120시간(Landing Gear 교환 시간) 이상",
+      "order": 15,
+      "priority": 1
+    },
+    {
+      "category": "clause_added",
+      "detail": "3.2.3 부하시험시 최대 정격부하용량에서 UNLOCK 상태로 1시간 동안 유압 변동이10% 이하여야 하고",
+      "location_label": "본문 1 · 문단 55",
+      "new": "3.2.3 부하시험시 최대 정격부하용량에서 UNLOCK 상태로 1시간 동안 유압 변동이10% 이하여야 하고",
+      "old": "",
+      "order": 19,
       "priority": 1
     },
     {
@@ -474,7 +402,7 @@
       "location_label": "본문 1 · 문단 61",
       "new": "3.2.4.1 장착된 바퀴는 항공기를 지지하기 위해 360도 회전 가능한 캐스터로 제작 되어야한다.",
       "old": "",
-      "order": 19,
+      "order": 24,
       "priority": 1
     },
     {
@@ -483,7 +411,16 @@
       "location_label": "본문 1 · 문단 64",
       "new": "3.2.5.1 부식방지의 근거는 KS, ISO, ASTM, NAVAIR 등의 내식성 시험 성적서 및 방청 공정   인증서을 제출해야한다.",
       "old": "",
-      "order": 20,
+      "order": 25,
+      "priority": 1
+    },
+    {
+      "category": "clause_removed",
+      "detail": "3.2.7 작업대 작업 바닥에 작업자가 미끄러지지 않도록 미끄럼방지 표면으로 작업이 편리하도록",
+      "location_label": "본문 1 · 문단 61",
+      "new": "",
+      "old": "3.2.7 작업대 작업 바닥에 작업자가 미끄러지지 않도록 미끄럼방지 표면으로 작업이 편리하도록 ",
+      "order": 27,
       "priority": 1
     },
     {
@@ -492,43 +429,43 @@
       "location_label": "본문 1 · 문단 66",
       "new": "",
       "old": "3.2.11 상기 명시된 제원 및 요구성능과 동등 또는 동등 이상 제품 납품 시 계약상대자는 제작 표준인 美해군 정비교범(NAVAIR 19-70-521)에 명시된 제작 기준을 충족되어야 하며, 대체장비로 입증 가능한 자료를 1개 이상 제출해야한다.",
-      "order": 27,
-      "priority": 1
-    },
-    {
-      "category": "clause_removed",
-      "detail": "3.2.12 형상사진(참고사항)",
-      "location_label": "본문 1 · 문단 67",
-      "new": "",
-      "old": "3.2.12 형상사진(참고사항)",
-      "order": 28,
+      "order": 32,
       "priority": 1
     },
     {
       "category": "clause_added",
-      "detail": "5.2.6 계약상대자는 교육 완료 후 교육 훈련 완료 확인서를 검사·검수관 및 사업주관부서에",
-      "location_label": "본문 1 · 문단 111",
-      "new": "5.2.6 계약상대자는 교육 완료 후 교육 훈련 완료 확인서를 검사·검수관 및 사업주관부서에 ",
+      "detail": "3.2.9 유압계통이 고장나도 실린더가 내려오지 않도록하는 물리적인 안전장치인 흐름 차단 장치 또는 동등이…",
+      "location_label": "본문 1 · 문단 69",
+      "new": "3.2.9 유압계통이 고장나도 실린더가 내려오지 않도록하는 물리적인 안전장치인 흐름 차단 장치 또는 동등이상의 안전장치가 장착되어야 한다.",
       "old": "",
-      "order": 41,
+      "order": 33,
+      "priority": 1
+    },
+    {
+      "category": "clause_added",
+      "detail": "4.1.1 주장비 정비공구는 정비메뉴얼에 따라 정비에 사용되는 수공구를 납품하여야 한다.",
+      "location_label": "본문 1 · 문단 80",
+      "new": "\n4.1.1 주장비 정비공구는 정비메뉴얼에 따라 정비에 사용되는 수공구를 납품하여야 한다.",
+      "old": "",
+      "order": 38,
       "priority": 1
     },
     {
       "category": "clause_removed",
-      "detail": "6.2.6 공인기관시험성적서",
-      "location_label": "본문 1 · 문단 120",
+      "detail": "6.2.3 취급설명서 및 장비이력자료",
+      "location_label": "본문 1 · 문단 117",
       "new": "",
-      "old": "6.2.6 공인기관시험성적서",
-      "order": 47,
+      "old": "6.2.3 취급설명서 및 장비이력자료",
+      "order": 51,
       "priority": 1
     },
     {
       "category": "clause_removed",
-      "detail": "6.2.6.1 공인기관시험성적서 제출 불가 시 자체시험성적서를 제출할 수 있다.",
-      "location_label": "본문 1 · 문단 121",
+      "detail": "6.2.4 국토교통부 GSE 승인 인증서",
+      "location_label": "본문 1 · 문단 118",
       "new": "",
-      "old": "6.2.6.1 공인기관시험성적서 제출 불가 시 자체시험성적서를 제출할 수 있다. ",
-      "order": 48,
+      "old": "6.2.4 국토교통부 GSE 승인 인증서",
+      "order": 52,
       "priority": 1
     },
     {
@@ -542,20 +479,11 @@
     },
     {
       "category": "text_changed",
-      "detail": "2.1.3 제작사는 항공기용 유압식 잭을 만드는 전문 제작사여야 하며, 제작사 ISO 시설인증서를",
-      "location_label": "본문 1 · 문단 29",
-      "new": "2.1.3 제작사는 항공기용 유압식 잭을 만드는 전문 제작사여야 하며, 제작사 ISO 시설인증서를 ",
-      "old": "2.1.3 국내·외 제작품일 경우 KCS 또는 동등규격의 인증서를 제출해야 한다.",
-      "order": 7,
-      "priority": 2
-    },
-    {
-      "category": "text_changed",
       "detail": "성능이 동등해야 한다. 단 대체장비일 경우 T30-1VH5와 제원 및 성능이 동등하거나",
       "location_label": "본문 1 · 문단 53",
       "new": "      성능이 동등해야 한다. 단 대체장비일 경우 T30-1VH5와 제원 및 성능이 동등하거나 ",
       "old": "      성능을 발휘할 수 있어야 한다. 단 대체장비일 경우 T30-1VH5와 제원 및 성능의 호환이 가능하여야 한다. ",
-      "order": 12,
+      "order": 14,
       "priority": 2
     },
     {
@@ -564,7 +492,7 @@
       "location_label": "본문 1 · 문단 58",
       "new": "      지지할 수 있는 고하중 바퀴(타이어) 3개를 장착하여야 하며, 바퀴(타이어)를 들어 ",
       "old": "      지지할 수 있는 바퀴(타이어) 3개를 장착하여야 하며, 바퀴(타이어)를 들어 올리는 구조 ",
-      "order": 16,
+      "order": 21,
       "priority": 2
     },
     {
@@ -573,7 +501,7 @@
       "location_label": "본문 1 · 문단 59",
       "new": "      올리는 구조 등(제작사 사양)으로 제작 가능하나, 항공기에 장착하여 작업 시 ",
       "old": "      등(제작사 사양)으로 제작 가능하나, 항공기에 장착하여 작업 시 바퀴(타이어)에 항공기",
-      "order": 17,
+      "order": 22,
       "priority": 2
     },
     {
@@ -582,16 +510,16 @@
       "location_label": "본문 1 · 문단 60",
       "new": "      바퀴(타이어)에 항공기 톤수가 전달되지 않아야 한다.",
       "old": "      톤수가 전달되지 않아야 한다.",
-      "order": 18,
+      "order": 23,
       "priority": 2
     },
     {
       "category": "text_changed",
-      "detail": "3.2.7 Tripod 형식이며 잭킹 포인트가 있어야 한다.",
-      "location_label": "본문 1 · 문단 67",
-      "new": "3.2.7 Tripod 형식이며 잭킹 포인트가 있어야 한다.",
-      "old": "3.2.7 작업대 작업 바닥에 작업자가 미끄러지지 않도록 미끄럼방지 표면으로 작업이 편리하도록 ",
-      "order": 22,
+      "detail": "3.2.10 잭의 삼각대 PAD는 균형을 목적으로 높이 조절기능이 있어야 한다.",
+      "location_label": "본문 1 · 문단 70",
+      "new": "3.2.10 잭의 삼각대 PAD는 균형을 목적으로 높이 조절기능이 있어야 한다.",
+      "old": "3.2.10 잭에 착지발판은 균형을 목적으로 조절기능이 있어야 한다.",
+      "order": 31,
       "priority": 2
     },
     {
@@ -600,7 +528,7 @@
       "location_label": "본문 1 · 문단 75",
       "new": "4. 공급범위",
       "old": "4. 공급범위  ",
-      "order": 29,
+      "order": 35,
       "priority": 2
     },
     {
@@ -609,7 +537,7 @@
       "location_label": "본문 1 · 문단 78",
       "new": "4.1 주 장비 : 유압식 잭, 30톤 주 장비는 아래 <표 2>과 같다.",
       "old": "4.1 주 장비 : 유압식 잭, 30톤 주 장비는 아래 <표 2>과 같다",
-      "order": 30,
+      "order": 36,
       "priority": 2
     },
     {
@@ -618,7 +546,7 @@
       "location_label": "본문 1 · 문단 82",
       "new": "<표 3> 부속장비(추가 구성품)",
       "old": "<표 3> 부속장비(추가 구성품) ",
-      "order": 32,
+      "order": 39,
       "priority": 2
     },
     {
@@ -627,7 +555,7 @@
       "location_label": "본문 1 · 문단 93",
       "new": "      주기, 검·교정 장비정비(필요시)에 사용되는 수공구가 명시되어 있어야 한다.",
       "old": "       주기, 검·교정 장비정비(필요시), 정비에 사용되는 공구, 정비장비가 명기되어 있어야 한다.",
-      "order": 33,
+      "order": 40,
       "priority": 2
     },
     {
@@ -636,7 +564,7 @@
       "location_label": "본문 1 · 문단 96",
       "new": "       제공해야 한다.      ",
       "old": "        제공해야 한다.      ",
-      "order": 34,
+      "order": 41,
       "priority": 2
     },
     {
@@ -645,7 +573,7 @@
       "location_label": "본문 1 · 문단 103",
       "new": "5.1 계약상대자는 운용 및 정비교육을 수요군과 협의된 계획에 따라 제공해야 한다.",
       "old": "5.1 계약 상대자는 운용 및 정비교육을 수요군과 협의 된 계획에 따라 제공해야 한다.",
-      "order": 35,
+      "order": 42,
       "priority": 2
     },
     {
@@ -654,7 +582,7 @@
       "location_label": "본문 1 · 문단 106",
       "new": "5.2.2 교육장소 : 소요부대 / 포항, 제주",
       "old": "5.2.2 교육장소 : 납지별 지정장소 / 제주",
-      "order": 37,
+      "order": 44,
       "priority": 2
     },
     {
@@ -663,7 +591,16 @@
       "location_label": "본문 1 · 문단 108",
       "new": "5.2.4 교육내용 : 장비 작동절차, 주의사항, 체크방법, 장비 특성, 주요부품 설명, 고장 탐구방법 등 납품 장비 운용에 필요한 전반적인 내용",
       "old": "5.2.4 교육내용 : 장비 작동절차, 주의사항, 체크방법, 장비 특성, 주요부품 설명, 고장 탐구방법",
-      "order": 38,
+      "order": 45,
+      "priority": 2
+    },
+    {
+      "category": "text_changed",
+      "detail": "5.2.6 계약상대자는 교육 완료 후 교육 훈련 완료 확인서를 검사·검수관 및 사업주관부서에",
+      "location_label": "본문 1 · 문단 111",
+      "new": "5.2.6 계약상대자는 교육 완료 후 교육 훈련 완료 확인서를 검사·검수관 및 사업주관부서에 ",
+      "old": "5.2.6 계약상대자는 교육완료 후 교육훈련 완료 확인서를 검수관 및 사업주관부서에 제출하여야 한다.",
+      "order": 47,
       "priority": 2
     },
     {
@@ -672,25 +609,7 @@
       "location_label": "본문 1 · 문단 122",
       "new": "6.2.1 원제작사의 품질보증서",
       "old": "6.2.1 원 제작사의 품질보증서",
-      "order": 43,
-      "priority": 2
-    },
-    {
-      "category": "text_changed",
-      "detail": "6.2.3 KCS 인증서",
-      "location_label": "본문 1 · 문단 124",
-      "new": "6.2.3 KCS 인증서",
-      "old": "6.2.3 취급설명서 및 장비이력자료",
-      "order": 44,
-      "priority": 2
-    },
-    {
-      "category": "text_changed",
-      "detail": "6.2.4 공인기관시험성적서",
-      "location_label": "본문 1 · 문단 125",
-      "new": "6.2.4 공인기관시험성적서",
-      "old": "6.2.4 국토교통부 GSE 승인 인증서",
-      "order": 45,
+      "order": 50,
       "priority": 2
     },
     {
@@ -699,7 +618,7 @@
       "location_label": "본문 1 · 문단 130",
       "new": "6.3.1 공인시험성적서 제출 시 계약상대자는 시험성적서 발급 신청 시 국가기술품질원의",
       "old": "6.3.1 공인시험성적서 제출 시 계약상대자는 시험성적서 발급 신청 시 국방기술품질원의",
-      "order": 49,
+      "order": 56,
       "priority": 2
     },
     {
@@ -708,7 +627,7 @@
       "location_label": "본문 1 · 문단 165",
       "new": "      기술 및 부품을 구매함으로서 지속적인 후속군수지원이 보장되도록 하여야 한다.",
       "old": "      기술 및 부품을 구매함으로서 지속적인 후속군수지원이 보장되도록 하여야한다.",
-      "order": 50,
+      "order": 57,
       "priority": 2
     },
     {
@@ -717,7 +636,7 @@
       "location_label": "본문 1 · 문단 235",
       "new": "8.6.3 인도조건 : 현지직납(현장설치도) / 포항, 제주",
       "old": "8.6.3 인도조건 : 현지직납(현장설치도) / 제주",
-      "order": 52,
+      "order": 59,
       "priority": 2
     },
     {
@@ -726,7 +645,7 @@
       "location_label": "본문 1 · 표 1 · 셀(1,0)",
       "new": "정격부하용량\n(Rated Load Capacity)",
       "old": "정격용량(CAPACITY)",
-      "order": 55,
+      "order": 62,
       "priority": 2
     },
     {
@@ -735,7 +654,7 @@
       "location_label": "본문 1 · 표 1 · 셀(2,0)",
       "new": "최대 정격부하용량\n(MAXIMUM Rated Load Capacity)",
       "old": "유압식 상승높이(HYDRAULIC LIFT)",
-      "order": 57,
+      "order": 64,
       "priority": 2
     },
     {
@@ -744,7 +663,7 @@
       "location_label": "본문 1 · 표 1 · 셀(3,0)",
       "new": "유압 상승 행정\n(Hydraulic Lift Travel)",
       "old": "최저높이(MINIMUM HEIGHT)",
-      "order": 59,
+      "order": 66,
       "priority": 2
     },
     {
@@ -753,7 +672,7 @@
       "location_label": "본문 1 · 표 1 · 셀(4,0)",
       "new": "최저높이(MINIMUM HEIGHT)",
       "old": "최대높이(MAXIMUM HEIGHT)",
-      "order": 61,
+      "order": 68,
       "priority": 2
     },
     {
@@ -762,7 +681,7 @@
       "location_label": "본문 1 · 표 1 · 셀(5,0)",
       "new": "최대높이(MAXIMUM HEIGHT)",
       "old": "삼각대 반경(TRIPOD RADIUS)",
-      "order": 63,
+      "order": 70,
       "priority": 2
     },
     {
@@ -771,7 +690,7 @@
       "location_label": "본문 1 · 표 1 · 셀(7,0)",
       "new": "장비 보호용 COVER",
       "old": "유압액 저장용량(유압탱크 용량)",
-      "order": 66,
+      "order": 73,
       "priority": 2
     },
     {
@@ -780,7 +699,7 @@
       "location_label": "본문 1 · 표 4 · 셀(2,0)",
       "new": "캐스터(3 EA/SET)",
       "old": "선회캐스터(3 EA/SET)",
-      "order": 75,
+      "order": 82,
       "priority": 2
     },
     {
@@ -789,7 +708,7 @@
       "location_label": "본문 1 · 표 4 · 셀(3,0)",
       "new": "잭 펌프 손잡이",
       "old": "잭 펌프 손잡이(바)",
-      "order": 77,
+      "order": 84,
       "priority": 2
     },
     {
@@ -798,7 +717,7 @@
       "location_label": "본문 1 · 표 6 · 셀(0,0)",
       "new": "순번",
       "old": "품명",
-      "order": 102,
+      "order": 109,
       "priority": 2
     },
     {
@@ -807,7 +726,7 @@
       "location_label": "본문 1 · 표 6 · 셀(0,1)",
       "new": "목록화 절차",
       "old": "단위",
-      "order": 103,
+      "order": 110,
       "priority": 2
     },
     {
@@ -816,7 +735,7 @@
       "location_label": "본문 1 · 표 6 · 셀(0,2)",
       "new": "방              법",
       "old": "총 수량",
-      "order": 104,
+      "order": 111,
       "priority": 2
     },
     {
@@ -825,7 +744,7 @@
       "location_label": "본문 1 · 표 6 · 셀(1,1)",
       "new": "방사청 국방표준종합정보시스템 목록화 작성 권한 요청",
       "old": "EA",
-      "order": 107,
+      "order": 114,
       "priority": 2
     },
     {
@@ -834,7 +753,7 @@
       "location_label": "본문 1 · 표 6 · 셀(2,1)",
       "new": "생산자 부호 확인 및 요청",
       "old": "EA",
-      "order": 111,
+      "order": 118,
       "priority": 2
     },
     {
@@ -843,7 +762,7 @@
       "location_label": "본문 1 · 표 6 · 셀(3,1)",
       "new": "목록화 요청",
       "old": "EA",
-      "order": 115,
+      "order": 122,
       "priority": 2
     },
     {
@@ -852,7 +771,7 @@
       "location_label": "본문 1 · 표 7 · 셀(0,0)",
       "new": "구     분",
       "old": "순번",
-      "order": 122,
+      "order": 129,
       "priority": 2
     },
     {
@@ -861,7 +780,7 @@
       "location_label": "본문 1 · 표 7 · 셀(0,2)",
       "new": "내     용",
       "old": "방              법",
-      "order": 124,
+      "order": 131,
       "priority": 2
     },
     {
@@ -870,7 +789,7 @@
       "location_label": "본문 1 · 표 7 · 셀(1,1)",
       "new": "소요제기자",
       "old": "방사청 국방표준종합정보시스템 목록화 작성 권한 요청",
-      "order": 126,
+      "order": 133,
       "priority": 2
     },
     {
@@ -879,7 +798,7 @@
       "location_label": "본문 1 · 표 7 · 셀(2,1)",
       "new": "사업주관부서",
       "old": "생산자 부호 확인 및 요청",
-      "order": 129,
+      "order": 136,
       "priority": 2
     },
     {
@@ -888,7 +807,7 @@
       "location_label": "본문 1 · 표 7 · 셀(3,1)",
       "new": "검토자",
       "old": "목록화 요청",
-      "order": 132,
+      "order": 139,
       "priority": 2
     },
     {
@@ -897,7 +816,7 @@
       "location_label": "본문 1 · 표 8 · 셀(0,0)",
       "new": "납 지",
       "old": "구     분",
-      "order": 134,
+      "order": 141,
       "priority": 2
     },
     {
@@ -906,8 +825,26 @@
       "location_label": "본문 1 · 표 8 · 셀(0,2)",
       "new": "검수관",
       "old": "내     용",
-      "order": 136,
+      "order": 143,
       "priority": 2
+    },
+    {
+      "category": "text_removed",
+      "detail": "상에 상용(민수) 및 군용 유입식 잭 제작사로 명시되어 있어야 한다.",
+      "location_label": "본문 1 · 문단 28",
+      "new": "",
+      "old": "      상에 상용(민수) 및 군용 유입식 잭 제작사로 명시되어 있어야 한다. ",
+      "order": 6,
+      "priority": 3
+    },
+    {
+      "category": "text_added",
+      "detail": "부하시험기 미지참 할 경우 장비는 업체측에서 회수하여야 한다.",
+      "location_label": "본문 1 · 문단 27",
+      "new": "      부하시험기 미지참 할 경우 장비는 업체측에서 회수하여야 한다.",
+      "old": "",
+      "order": 7,
+      "priority": 3
     },
     {
       "category": "text_added",
@@ -915,7 +852,43 @@
       "location_label": "본문 1 · 문단 30",
       "new": "      통해 이를 인증할 수 있어야 한다. ",
       "old": "",
-      "order": 8,
+      "order": 9,
+      "priority": 3
+    },
+    {
+      "category": "text_removed",
+      "detail": "지지 할 수 있는 내구성, 안전성 등 성능을 갖추어야 한다. JACK 유압계통 내 유압,",
+      "location_label": "본문 1 · 문단 52",
+      "new": "",
+      "old": "      지지 할 수 있는 내구성, 안전성 등 성능을 갖추어야 한다. JACK 유압계통 내 유압, ",
+      "order": 16,
+      "priority": 3
+    },
+    {
+      "category": "text_removed",
+      "detail": "유량 변동이 없어야 하며, P-3 항공기 JACK 전용이어야 한다.",
+      "location_label": "본문 1 · 문단 53",
+      "new": "",
+      "old": "      유량 변동이 없어야 하며, P-3 항공기 JACK 전용이어야 한다.",
+      "order": 17,
+      "priority": 3
+    },
+    {
+      "category": "text_added",
+      "detail": "그 이상이여야 한다.",
+      "location_label": "본문 1 · 문단 54",
+      "new": "       그 이상이여야 한다.",
+      "old": "",
+      "order": 18,
+      "priority": 3
+    },
+    {
+      "category": "text_added",
+      "detail": "이상여부(진동, 누설)가 없어야 한다",
+      "location_label": "본문 1 · 문단 56",
+      "new": "      이상여부(진동, 누설)가 없어야 한다",
+      "old": "",
+      "order": 20,
       "priority": 3
     },
     {
@@ -924,7 +897,25 @@
       "location_label": "본문 1 · 문단 65",
       "new": "       * 시험성적서 및 인증서의 종류는 소요군과 협의 가능",
       "old": "",
-      "order": 21,
+      "order": 26,
+      "priority": 3
+    },
+    {
+      "category": "text_removed",
+      "detail": "하여야 한다.",
+      "location_label": "본문 1 · 문단 62",
+      "new": "",
+      "old": "      하여야 한다.",
+      "order": 28,
+      "priority": 3
+    },
+    {
+      "category": "text_removed",
+      "detail": "* 정비공구, 기본불출품목(예비부품) 등이 있는 경우 제작사 사양 적용하여 납품하여야 한다.",
+      "location_label": "본문 1 · 문단 76",
+      "new": "",
+      "old": " * 정비공구, 기본불출품목(예비부품) 등이 있는 경우 제작사 사양 적용하여 납품하여야 한다.",
+      "order": 37,
       "priority": 3
     },
     {
@@ -933,7 +924,16 @@
       "location_label": "본문 1 · 문단 103",
       "new": "",
       "old": "                 등 납품 장비 운용에 필요한 전반적인 내용",
-      "order": 39,
+      "order": 46,
+      "priority": 3
+    },
+    {
+      "category": "text_added",
+      "detail": "(단, 피교육자 이동 및 숙식에 소요되는 비용은 공무원 여비규정에 따라 해군에서 지급한다.)",
+      "location_label": "본문 1 · 문단 110",
+      "new": "      (단, 피교육자 이동 및 숙식에 소요되는 비용은 공무원 여비규정에 따라 해군에서 지급한다.)",
+      "old": "",
+      "order": 48,
       "priority": 3
     },
     {
@@ -942,16 +942,16 @@
       "location_label": "본문 1 · 문단 112",
       "new": "      제출해야 한다.",
       "old": "",
-      "order": 42,
+      "order": 49,
       "priority": 3
     },
     {
       "category": "text_added",
-      "detail": "기동함대사 제주기지전대 보급지원대(1대) : 항공사 61전대 615대대(제주)",
-      "location_label": "본문 1 · 문단 241",
-      "new": "        기동함대사 제주기지전대 보급지원대(1대) : 항공사 61전대 615대대(제주)",
+      "detail": "항공사 보급지원대대(2대) : 항공사 65전대 651대대(포항)",
+      "location_label": "본문 1 · 문단 240",
+      "new": "        항공사 보급지원대대(2대) : 항공사 65전대 651대대(포항)",
       "old": "",
-      "order": 54,
+      "order": 61,
       "priority": 3
     },
     {
@@ -960,7 +960,7 @@
       "location_label": "본문 1 · 표 1 · 셀(8,0)",
       "new": "",
       "old": "유압액(FLUID TYPE)",
-      "order": 68,
+      "order": 75,
       "priority": 3
     },
     {
@@ -969,7 +969,7 @@
       "location_label": "본문 1 · 표 1 · 셀(8,1)",
       "new": "",
       "old": "MIL-H-5606 또는 MIL-H-83282\n* 장비교범 35A2-2-9-21명시",
-      "order": 69,
+      "order": 76,
       "priority": 3
     },
     {
@@ -978,7 +978,7 @@
       "location_label": "본문 1 · 표 1 · 셀(9,0)",
       "new": "",
       "old": "장비 보호용 COVER",
-      "order": 70,
+      "order": 77,
       "priority": 3
     },
     {
@@ -987,7 +987,7 @@
       "location_label": "본문 1 · 표 1 · 셀(9,1)",
       "new": "",
       "old": "장비보호를 위해 전체를 덮을 수 있는\n방수형 천으로 된 탈·부착형식 Cover를 제공",
-      "order": 71,
+      "order": 78,
       "priority": 3
     },
     {
@@ -996,7 +996,7 @@
       "location_label": "본문 1 · 표 4 · 셀(5,0)",
       "new": "",
       "old": "압력게이지",
-      "order": 80,
+      "order": 87,
       "priority": 3
     },
     {
@@ -1005,7 +1005,7 @@
       "location_label": "본문 1 · 표 4 · 셀(5,1)",
       "new": "",
       "old": "EA",
-      "order": 81,
+      "order": 88,
       "priority": 3
     },
     {
@@ -1014,7 +1014,7 @@
       "location_label": "본문 1 · 표 4 · 셀(5,2)",
       "new": "",
       "old": "1",
-      "order": 82,
+      "order": 89,
       "priority": 3
     },
     {
@@ -1023,7 +1023,7 @@
       "location_label": "본문 1 · 표 4 · 셀(5,3)",
       "new": "",
       "old": "2",
-      "order": 83,
+      "order": 90,
       "priority": 3
     },
     {
@@ -1032,7 +1032,7 @@
       "location_label": "본문 1 · 표 5 · 셀(3,0)",
       "new": "보급 매뉴얼",
       "old": "",
-      "order": 86,
+      "order": 93,
       "priority": 3
     },
     {
@@ -1041,7 +1041,7 @@
       "location_label": "본문 1 · 표 5 · 셀(3,1)",
       "new": "EA",
       "old": "",
-      "order": 87,
+      "order": 94,
       "priority": 3
     },
     {
@@ -1050,7 +1050,7 @@
       "location_label": "본문 1 · 표 5 · 셀(3,2)",
       "new": "3",
       "old": "",
-      "order": 88,
+      "order": 95,
       "priority": 3
     },
     {
@@ -1059,7 +1059,7 @@
       "location_label": "본문 1 · 표 5 · 셀(3,3)",
       "new": "* 한글 본 필요 시 통합작성 가능\n* 외자(수입)품은 영문 본 포함하여 납품",
       "old": "",
-      "order": 89,
+      "order": 96,
       "priority": 3
     },
     {
@@ -1068,7 +1068,7 @@
       "location_label": "본문 1 · 표 5 · 셀(4,0)",
       "new": "매뉴얼 CD",
       "old": "",
-      "order": 90,
+      "order": 97,
       "priority": 3
     },
     {
@@ -1077,7 +1077,7 @@
       "location_label": "본문 1 · 표 5 · 셀(4,1)",
       "new": "EA",
       "old": "",
-      "order": 91,
+      "order": 98,
       "priority": 3
     },
     {
@@ -1086,7 +1086,7 @@
       "location_label": "본문 1 · 표 5 · 셀(4,2)",
       "new": "3",
       "old": "",
-      "order": 92,
+      "order": 99,
       "priority": 3
     },
     {
@@ -1095,7 +1095,7 @@
       "location_label": "본문 1 · 표 5 · 셀(4,3)",
       "new": "전산 파일 저장",
       "old": "",
-      "order": 93,
+      "order": 100,
       "priority": 3
     },
     {
@@ -1104,7 +1104,7 @@
       "location_label": "본문 1 · 표 5 · 셀(5,0)",
       "new": "기타 기술자료",
       "old": "",
-      "order": 94,
+      "order": 101,
       "priority": 3
     },
     {
@@ -1113,7 +1113,7 @@
       "location_label": "본문 1 · 표 5 · 셀(5,1)",
       "new": "EA",
       "old": "",
-      "order": 95,
+      "order": 102,
       "priority": 3
     },
     {
@@ -1122,7 +1122,7 @@
       "location_label": "본문 1 · 표 5 · 셀(5,2)",
       "new": "3",
       "old": "",
-      "order": 96,
+      "order": 103,
       "priority": 3
     },
     {
@@ -1131,7 +1131,7 @@
       "location_label": "본문 1 · 표 5 · 셀(5,3)",
       "new": "회로도, 카탈로그, 도면, 팜플랫 등",
       "old": "",
-      "order": 97,
+      "order": 104,
       "priority": 3
     },
     {
@@ -1140,7 +1140,7 @@
       "location_label": "본문 1 · 표 5 · 셀(6,0)",
       "new": "품질보증서",
       "old": "",
-      "order": 98,
+      "order": 105,
       "priority": 3
     },
     {
@@ -1149,7 +1149,7 @@
       "location_label": "본문 1 · 표 5 · 셀(6,1)",
       "new": "EA",
       "old": "",
-      "order": 99,
+      "order": 106,
       "priority": 3
     },
     {
@@ -1158,7 +1158,7 @@
       "location_label": "본문 1 · 표 5 · 셀(6,2)",
       "new": "3",
       "old": "",
-      "order": 100,
+      "order": 107,
       "priority": 3
     },
     {
@@ -1167,7 +1167,7 @@
       "location_label": "본문 1 · 표 5 · 셀(6,3)",
       "new": "-",
       "old": "",
-      "order": 101,
+      "order": 108,
       "priority": 3
     },
     {
@@ -1176,7 +1176,7 @@
       "location_label": "본문 1 · 표 6 · 셀(0,3)",
       "new": "",
       "old": "비고",
-      "order": 105,
+      "order": 112,
       "priority": 3
     },
     {
@@ -1185,7 +1185,7 @@
       "location_label": "본문 1 · 표 6 · 셀(1,3)",
       "new": "",
       "old": "* 한글 본 필요 시 통합작성 가능\n* 외자(수입)품은 영문 본 포함하여 납품",
-      "order": 109,
+      "order": 116,
       "priority": 3
     },
     {
@@ -1194,7 +1194,7 @@
       "location_label": "본문 1 · 표 6 · 셀(2,3)",
       "new": "",
       "old": "전산 파일 저장",
-      "order": 113,
+      "order": 120,
       "priority": 3
     },
     {
@@ -1203,7 +1203,7 @@
       "location_label": "본문 1 · 표 6 · 셀(3,3)",
       "new": "",
       "old": "회로도, 카탈로그, 도면, 팜플랫 등",
-      "order": 117,
+      "order": 124,
       "priority": 3
     },
     {
@@ -1212,7 +1212,7 @@
       "location_label": "본문 1 · 표 6 · 셀(4,0)",
       "new": "",
       "old": "품질보증서",
-      "order": 118,
+      "order": 125,
       "priority": 3
     },
     {
@@ -1221,7 +1221,7 @@
       "location_label": "본문 1 · 표 6 · 셀(4,1)",
       "new": "",
       "old": "EA",
-      "order": 119,
+      "order": 126,
       "priority": 3
     },
     {
@@ -1230,7 +1230,7 @@
       "location_label": "본문 1 · 표 6 · 셀(4,2)",
       "new": "",
       "old": "2",
-      "order": 120,
+      "order": 127,
       "priority": 3
     },
     {
@@ -1239,7 +1239,7 @@
       "location_label": "본문 1 · 표 6 · 셀(4,3)",
       "new": "",
       "old": "-",
-      "order": 121,
+      "order": 128,
       "priority": 3
     },
     {
@@ -1248,7 +1248,7 @@
       "location_label": "본문 1 · 표 7 · 셀(0,1)",
       "new": "",
       "old": "목록화 절차",
-      "order": 123,
+      "order": 130,
       "priority": 3
     },
     {
@@ -1257,7 +1257,7 @@
       "location_label": "본문 1 · 표 7 · 셀(2,0)",
       "new": "",
       "old": "2",
-      "order": 128,
+      "order": 135,
       "priority": 3
     },
     {
@@ -1266,7 +1266,7 @@
       "location_label": "본문 1 · 표 7 · 셀(3,0)",
       "new": "",
       "old": "3",
-      "order": 131,
+      "order": 138,
       "priority": 3
     },
     {
@@ -1275,7 +1275,7 @@
       "location_label": "본문 1 · 표 8 · 셀(0,1)",
       "new": "수 량",
       "old": "",
-      "order": 135,
+      "order": 142,
       "priority": 3
     },
     {
@@ -1284,7 +1284,7 @@
       "location_label": "본문 1 · 표 8 · 셀(0,3)",
       "new": "검사관",
       "old": "",
-      "order": 137,
+      "order": 144,
       "priority": 3
     },
     {
@@ -1293,7 +1293,7 @@
       "location_label": "본문 1 · 표 8 · 셀(1,3)",
       "new": "해군군수사 품질관리처\n국내조달품검사과 추후지정\n055-549-1713~1717",
       "old": "",
-      "order": 141,
+      "order": 148,
       "priority": 3
     },
     {
@@ -1302,7 +1302,7 @@
       "location_label": "본문 1 · 표 8 · 셀(2,0)",
       "new": "기동함대사\n제주기지전대\n보급지원대\n(6000019895)",
       "old": "",
-      "order": 142,
+      "order": 149,
       "priority": 3
     },
     {
@@ -1311,7 +1311,7 @@
       "location_label": "본문 1 · 표 8 · 셀(3,1)",
       "new": "",
       "old": "검토자",
-      "order": 145,
+      "order": 152,
       "priority": 3
     },
     {
@@ -1320,7 +1320,7 @@
       "location_label": "본문 1 · 표 8 · 셀(3,2)",
       "new": "",
       "old": "해군군수사 장비구매관리팀 상사 조은비 055-549-1375",
-      "order": 146,
+      "order": 153,
       "priority": 3
     },
     {
@@ -1329,7 +1329,7 @@
       "location_label": "본문 1 · 표 8 · 셀(4,0)",
       "new": "",
       "old": "납 지",
-      "order": 147,
+      "order": 154,
       "priority": 3
     },
     {
@@ -1338,7 +1338,7 @@
       "location_label": "본문 1 · 표 8 · 셀(4,1)",
       "new": "",
       "old": "수 량",
-      "order": 148,
+      "order": 155,
       "priority": 3
     },
     {
@@ -1347,7 +1347,7 @@
       "location_label": "본문 1 · 표 8 · 셀(4,2)",
       "new": "",
       "old": "검수관",
-      "order": 149,
+      "order": 156,
       "priority": 3
     },
     {
@@ -1356,7 +1356,7 @@
       "location_label": "본문 1 · 표 8 · 셀(4,3)",
       "new": "",
       "old": "검사관",
-      "order": 150,
+      "order": 157,
       "priority": 3
     },
     {
@@ -1365,7 +1365,7 @@
       "location_label": "본문 1 · 표 8 · 셀(5,0)",
       "new": "",
       "old": "기동함대사\n제주기지전대\n보급지원대\n(6000019895)",
-      "order": 151,
+      "order": 158,
       "priority": 3
     },
     {
@@ -1374,7 +1374,7 @@
       "location_label": "본문 1 · 표 8 · 셀(5,1)",
       "new": "",
       "old": "2대",
-      "order": 152,
+      "order": 159,
       "priority": 3
     },
     {
@@ -1383,7 +1383,7 @@
       "location_label": "본문 1 · 표 8 · 셀(5,2)",
       "new": "",
       "old": "기동함대사 제주기지전대\n보급지원대 물자/피복팀장\n064-905-5510",
-      "order": 153,
+      "order": 160,
       "priority": 3
     },
     {
@@ -1392,8 +1392,71 @@
       "location_label": "본문 1 · 표 8 · 셀(5,3)",
       "new": "",
       "old": "해군군수사 품질관리처\n국내조달품검사과 추후지정\n055-549-1713~1717",
-      "order": 154,
+      "order": 161,
       "priority": 3
+    },
+    {
+      "category": "renumber",
+      "detail": "2.1.3 → 2.1.4  2.1.4 국내·외 제작품일 경우 KCS 또는 동등규격의 인증서를 제출해야 한다.",
+      "location_label": "본문 1 · 문단 31",
+      "new": "2.1.4 국내·외 제작품일 경우 KCS 또는 동등규격의 인증서를 제출해야 한다.",
+      "old": "2.1.3 국내·외 제작품일 경우 KCS 또는 동등규격의 인증서를 제출해야 한다.",
+      "order": 10,
+      "priority": 4
+    },
+    {
+      "category": "renumber",
+      "detail": "3.2.8 → 3.2.7  3.2.7 Tripod 형식이며 잭킹 포인트가 있어야 한다.",
+      "location_label": "본문 1 · 문단 67",
+      "new": "3.2.7 Tripod 형식이며 잭킹 포인트가 있어야 한다.",
+      "old": "3.2.8 Tripod 형식이며 잭킹 포인트가 있어야 한다.",
+      "order": 29,
+      "priority": 4
+    },
+    {
+      "category": "renumber",
+      "detail": "3.2.9 → 3.2.8  3.2.8 장비는 항공기 지지를 위해 스프링 장착 캐스터로 제작되어 있어야 한다.",
+      "location_label": "본문 1 · 문단 68",
+      "new": "3.2.8 장비는 항공기 지지를 위해 스프링 장착 캐스터로 제작되어 있어야 한다.",
+      "old": "3.2.9 장비는 항공기 지지를 위해 스프링 장착 캐스터로 제작되어 있어야 한다.",
+      "order": 30,
+      "priority": 4
+    },
+    {
+      "category": "renumber",
+      "detail": "3.2.12 → 3.2.11  3.2.11 형상사진(참고사항)",
+      "location_label": "본문 1 · 문단 71",
+      "new": "3.2.11 형상사진(참고사항)",
+      "old": "3.2.12 형상사진(참고사항)",
+      "order": 34,
+      "priority": 4
+    },
+    {
+      "category": "renumber",
+      "detail": "6.2.5 → 6.2.3  6.2.3 KCS 인증서",
+      "location_label": "본문 1 · 문단 124",
+      "new": "6.2.3 KCS 인증서",
+      "old": "6.2.5 KCS 인증서",
+      "order": 53,
+      "priority": 4
+    },
+    {
+      "category": "renumber",
+      "detail": "6.2.6 → 6.2.4  6.2.4 공인기관시험성적서",
+      "location_label": "본문 1 · 문단 125",
+      "new": "6.2.4 공인기관시험성적서",
+      "old": "6.2.6 공인기관시험성적서",
+      "order": 54,
+      "priority": 4
+    },
+    {
+      "category": "renumber",
+      "detail": "6.2.6.1 → 6.2.4.1  6.2.4.1 공인기관시험성적서 제출 불가 시 자체시험성적서를 제출할 수 있다.",
+      "location_label": "본문 1 · 문단 126",
+      "new": "6.2.4.1 공인기관시험성적서 제출 불가 시 자체시험성적서를 제출할 수 있다. ",
+      "old": "6.2.6.1 공인기관시험성적서 제출 불가 시 자체시험성적서를 제출할 수 있다. ",
+      "order": 55,
+      "priority": 4
     }
   ],
   "changes": [
@@ -1585,6 +1648,56 @@
     {
       "kind": "changed",
       "location": {
+        "index": 28,
+        "region": "본문",
+        "region_index": 0,
+        "unit": "paragraph"
+      },
+      "location_label": "본문 1 · 문단 29",
+      "new_text": "2.1.3 제작사는 항공기용 유압식 잭을 만드는 전문 제작사여야 하며, 제작사 ISO 시설인증서를 ",
+      "old_text": "2.1.2 제작사는 항공기용 유압식 잭을 만드는 전문 제작사여야 하며, 제작사 ISO 시설인증서",
+      "seq": 5,
+      "unit": "paragraph",
+      "word_ops": [
+        {
+          "new": "",
+          "old": "2.1.",
+          "op": "equal"
+        },
+        {
+          "new": "3",
+          "old": "2",
+          "op": "replace"
+        },
+        {
+          "new": "",
+          "old": " 제작사는 항공기용 유압식 잭을 만드는 전문 제작사여야 하며, 제작사 ISO ",
+          "op": "equal"
+        },
+        {
+          "new": "시설인증서를 ",
+          "old": "시설인증서",
+          "op": "replace"
+        }
+      ]
+    },
+    {
+      "kind": "removed",
+      "location": {
+        "index": 27,
+        "region": "본문",
+        "region_index": 0,
+        "unit": "paragraph"
+      },
+      "location_label": "본문 1 · 문단 28",
+      "new_text": "",
+      "old_text": "      상에 상용(민수) 및 군용 유입식 잭 제작사로 명시되어 있어야 한다. ",
+      "seq": 6,
+      "unit": "paragraph"
+    },
+    {
+      "kind": "added",
+      "location": {
         "index": 26,
         "region": "본문",
         "region_index": 0,
@@ -1592,89 +1705,12 @@
       },
       "location_label": "본문 1 · 문단 27",
       "new_text": "      부하시험기 미지참 할 경우 장비는 업체측에서 회수하여야 한다.",
-      "old_text": "2.1.2 제작사는 항공기용 유압식 잭을 만드는 전문 제작사여야 하며, 제작사 ISO 시설인증서",
-      "seq": 5,
-      "unit": "paragraph",
-      "word_ops": [
-        {
-          "new": "      부하시험기",
-          "old": "2.1.2",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "미지참",
-          "old": "제작사는",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "할",
-          "old": "항공기용",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "경우",
-          "old": "유압식",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "장비는",
-          "old": "잭을",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "업체측에서",
-          "old": "만드는",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "회수하여야",
-          "old": "전문",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "한다.",
-          "old": "제작사여야 하며, 제작사 ISO 시설인증서",
-          "op": "replace"
-        }
-      ]
+      "old_text": "",
+      "seq": 7,
+      "unit": "paragraph"
     },
     {
-      "kind": "changed",
+      "kind": "added",
       "location": {
         "index": 27,
         "region": "본문",
@@ -1683,212 +1719,9 @@
       },
       "location_label": "본문 1 · 문단 28",
       "new_text": "2.1.2 장비를 포함한 모든 부수품은 업체가 직접 하역 하여야 한다.",
-      "old_text": "      상에 상용(민수) 및 군용 유입식 잭 제작사로 명시되어 있어야 한다. ",
-      "seq": 6,
-      "unit": "paragraph",
-      "word_ops": [
-        {
-          "new": "2.1.2",
-          "old": "      상에",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "장비를",
-          "old": "상용(민수)",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "포함한",
-          "old": "및",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "모든",
-          "old": "군용",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "부수품은",
-          "old": "유입식",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "업체가",
-          "old": "잭",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "직접",
-          "old": "제작사로",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "하역",
-          "old": "명시되어",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "하여야",
-          "old": "있어야",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " 한다.",
-          "op": "equal"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "delete"
-        }
-      ]
-    },
-    {
-      "kind": "changed",
-      "location": {
-        "index": 28,
-        "region": "본문",
-        "region_index": 0,
-        "unit": "paragraph"
-      },
-      "location_label": "본문 1 · 문단 29",
-      "new_text": "2.1.3 제작사는 항공기용 유압식 잭을 만드는 전문 제작사여야 하며, 제작사 ISO 시설인증서를 ",
-      "old_text": "2.1.3 국내·외 제작품일 경우 KCS 또는 동등규격의 인증서를 제출해야 한다.",
-      "seq": 7,
-      "unit": "paragraph",
-      "word_ops": [
-        {
-          "new": "",
-          "old": "2.1.3 ",
-          "op": "equal"
-        },
-        {
-          "new": "제작사는",
-          "old": "국내·외",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "항공기용",
-          "old": "제작품일",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "유압식",
-          "old": "경우",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "잭을",
-          "old": "KCS",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "만드는",
-          "old": "또는",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "전문",
-          "old": "동등규격의",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "제작사여야",
-          "old": "인증서를",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "하며,",
-          "old": "제출해야",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "제작사 ISO 시설인증서를 ",
-          "old": "한다.",
-          "op": "replace"
-        }
-      ]
+      "old_text": "",
+      "seq": 8,
+      "unit": "paragraph"
     },
     {
       "kind": "added",
@@ -1901,11 +1734,11 @@
       "location_label": "본문 1 · 문단 30",
       "new_text": "      통해 이를 인증할 수 있어야 한다. ",
       "old_text": "",
-      "seq": 8,
+      "seq": 9,
       "unit": "paragraph"
     },
     {
-      "kind": "added",
+      "kind": "renumber",
       "location": {
         "index": 30,
         "region": "본문",
@@ -1914,12 +1747,43 @@
       },
       "location_label": "본문 1 · 문단 31",
       "new_text": "2.1.4 국내·외 제작품일 경우 KCS 또는 동등규격의 인증서를 제출해야 한다.",
-      "old_text": "",
-      "seq": 9,
+      "old_text": "2.1.3 국내·외 제작품일 경우 KCS 또는 동등규격의 인증서를 제출해야 한다.",
+      "seq": 10,
+      "unit": "paragraph",
+      "word_ops": [
+        {
+          "new": "",
+          "old": "2.1.",
+          "op": "equal"
+        },
+        {
+          "new": "4",
+          "old": "3",
+          "op": "replace"
+        },
+        {
+          "new": "",
+          "old": " 국내·외 제작품일 경우 KCS 또는 동등규격의 인증서를 제출해야 한다.",
+          "op": "equal"
+        }
+      ]
+    },
+    {
+      "kind": "removed",
+      "location": {
+        "index": 34,
+        "region": "본문",
+        "region_index": 0,
+        "unit": "paragraph"
+      },
+      "location_label": "본문 1 · 문단 35",
+      "new_text": "",
+      "old_text": "2.2.5 ICAO Annex 6",
+      "seq": 11,
       "unit": "paragraph"
     },
     {
-      "kind": "changed",
+      "kind": "added",
       "location": {
         "index": 36,
         "region": "본문",
@@ -1928,31 +1792,9 @@
       },
       "location_label": "본문 1 · 문단 37",
       "new_text": "2.2.5 NAVAIR 19-70-46",
-      "old_text": "2.2.5 ICAO Annex 6",
-      "seq": 10,
-      "unit": "paragraph",
-      "word_ops": [
-        {
-          "new": "",
-          "old": "2.2.5 ",
-          "op": "equal"
-        },
-        {
-          "new": "NAVAIR",
-          "old": "ICAO",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "19-70-46",
-          "old": "Annex 6",
-          "op": "replace"
-        }
-      ]
+      "old_text": "",
+      "seq": 12,
+      "unit": "paragraph"
     },
     {
       "kind": "added",
@@ -1965,7 +1807,7 @@
       "location_label": "본문 1 · 문단 38",
       "new_text": "2.2.6 NAVAIR 19-70-521",
       "old_text": "",
-      "seq": 11,
+      "seq": 13,
       "unit": "paragraph"
     },
     {
@@ -1979,7 +1821,7 @@
       "location_label": "본문 1 · 문단 53",
       "new_text": "      성능이 동등해야 한다. 단 대체장비일 경우 T30-1VH5와 제원 및 성능이 동등하거나 ",
       "old_text": "      성능을 발휘할 수 있어야 한다. 단 대체장비일 경우 T30-1VH5와 제원 및 성능의 호환이 가능하여야 한다. ",
-      "seq": 12,
+      "seq": 14,
       "unit": "paragraph",
       "word_ops": [
         {
@@ -2035,7 +1877,49 @@
       ]
     },
     {
-      "kind": "changed",
+      "kind": "removed",
+      "location": {
+        "index": 50,
+        "region": "본문",
+        "region_index": 0,
+        "unit": "paragraph"
+      },
+      "location_label": "본문 1 · 문단 51",
+      "new_text": "",
+      "old_text": "3.2.3 항공기에 장착하여 작업 시 최소 30 TON을 120시간(Landing Gear 교환 시간) 이상",
+      "seq": 15,
+      "unit": "paragraph"
+    },
+    {
+      "kind": "removed",
+      "location": {
+        "index": 51,
+        "region": "본문",
+        "region_index": 0,
+        "unit": "paragraph"
+      },
+      "location_label": "본문 1 · 문단 52",
+      "new_text": "",
+      "old_text": "      지지 할 수 있는 내구성, 안전성 등 성능을 갖추어야 한다. JACK 유압계통 내 유압, ",
+      "seq": 16,
+      "unit": "paragraph"
+    },
+    {
+      "kind": "removed",
+      "location": {
+        "index": 52,
+        "region": "본문",
+        "region_index": 0,
+        "unit": "paragraph"
+      },
+      "location_label": "본문 1 · 문단 53",
+      "new_text": "",
+      "old_text": "      유량 변동이 없어야 하며, P-3 항공기 JACK 전용이어야 한다.",
+      "seq": 17,
+      "unit": "paragraph"
+    },
+    {
+      "kind": "added",
       "location": {
         "index": 53,
         "region": "본문",
@@ -2044,39 +1928,12 @@
       },
       "location_label": "본문 1 · 문단 54",
       "new_text": "       그 이상이여야 한다.",
-      "old_text": "3.2.3 항공기에 장착하여 작업 시 최소 30 TON을 120시간(Landing Gear 교환 시간) 이상",
-      "seq": 13,
-      "unit": "paragraph",
-      "word_ops": [
-        {
-          "new": "       그",
-          "old": "3.2.3",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "이상이여야",
-          "old": "항공기에",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "한다.",
-          "old": "장착하여 작업 시 최소 30 TON을 120시간(Landing Gear 교환 시간) 이상",
-          "op": "replace"
-        }
-      ]
+      "old_text": "",
+      "seq": 18,
+      "unit": "paragraph"
     },
     {
-      "kind": "changed",
+      "kind": "added",
       "location": {
         "index": 54,
         "region": "본문",
@@ -2085,129 +1942,12 @@
       },
       "location_label": "본문 1 · 문단 55",
       "new_text": "3.2.3 부하시험시 최대 정격부하용량에서 UNLOCK 상태로 1시간 동안 유압 변동이10% 이하여야 하고",
-      "old_text": "      지지 할 수 있는 내구성, 안전성 등 성능을 갖추어야 한다. JACK 유압계통 내 유압, ",
-      "seq": 14,
-      "unit": "paragraph",
-      "word_ops": [
-        {
-          "new": "3.2.3",
-          "old": "      지지",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "부하시험시",
-          "old": "할",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "최대",
-          "old": "수",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "정격부하용량에서",
-          "old": "있는",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "UNLOCK",
-          "old": "내구성,",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "상태로",
-          "old": "안전성",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "1시간",
-          "old": "등",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "동안",
-          "old": "성능을",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "유압",
-          "old": "갖추어야",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "변동이10%",
-          "old": "한다.",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "이하여야",
-          "old": "JACK",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "하고",
-          "old": "유압계통 내 유압, ",
-          "op": "replace"
-        }
-      ]
+      "old_text": "",
+      "seq": 19,
+      "unit": "paragraph"
     },
     {
-      "kind": "changed",
+      "kind": "added",
       "location": {
         "index": 55,
         "region": "본문",
@@ -2216,41 +1956,9 @@
       },
       "location_label": "본문 1 · 문단 56",
       "new_text": "      이상여부(진동, 누설)가 없어야 한다",
-      "old_text": "      유량 변동이 없어야 하며, P-3 항공기 JACK 전용이어야 한다.",
-      "seq": 15,
-      "unit": "paragraph",
-      "word_ops": [
-        {
-          "new": "",
-          "old": "      ",
-          "op": "equal"
-        },
-        {
-          "new": "이상여부(진동,",
-          "old": "유량",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "누설)가",
-          "old": "변동이",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " 없어야 ",
-          "op": "equal"
-        },
-        {
-          "new": "한다",
-          "old": "하며, P-3 항공기 JACK 전용이어야 한다.",
-          "op": "replace"
-        }
-      ]
+      "old_text": "",
+      "seq": 20,
+      "unit": "paragraph"
     },
     {
       "kind": "changed",
@@ -2263,7 +1971,7 @@
       "location_label": "본문 1 · 문단 58",
       "new_text": "      지지할 수 있는 고하중 바퀴(타이어) 3개를 장착하여야 하며, 바퀴(타이어)를 들어 ",
       "old_text": "      지지할 수 있는 바퀴(타이어) 3개를 장착하여야 하며, 바퀴(타이어)를 들어 올리는 구조 ",
-      "seq": 16,
+      "seq": 21,
       "unit": "paragraph",
       "word_ops": [
         {
@@ -2299,7 +2007,7 @@
       "location_label": "본문 1 · 문단 59",
       "new_text": "      올리는 구조 등(제작사 사양)으로 제작 가능하나, 항공기에 장착하여 작업 시 ",
       "old_text": "      등(제작사 사양)으로 제작 가능하나, 항공기에 장착하여 작업 시 바퀴(타이어)에 항공기",
-      "seq": 17,
+      "seq": 22,
       "unit": "paragraph",
       "word_ops": [
         {
@@ -2335,7 +2043,7 @@
       "location_label": "본문 1 · 문단 60",
       "new_text": "      바퀴(타이어)에 항공기 톤수가 전달되지 않아야 한다.",
       "old_text": "      톤수가 전달되지 않아야 한다.",
-      "seq": 18,
+      "seq": 23,
       "unit": "paragraph",
       "word_ops": [
         {
@@ -2366,7 +2074,7 @@
       "location_label": "본문 1 · 문단 61",
       "new_text": "3.2.4.1 장착된 바퀴는 항공기를 지지하기 위해 360도 회전 가능한 캐스터로 제작 되어야한다.",
       "old_text": "",
-      "seq": 19,
+      "seq": 24,
       "unit": "paragraph"
     },
     {
@@ -2380,7 +2088,7 @@
       "location_label": "본문 1 · 문단 64",
       "new_text": "3.2.5.1 부식방지의 근거는 KS, ISO, ASTM, NAVAIR 등의 내식성 시험 성적서 및 방청 공정   인증서을 제출해야한다.",
       "old_text": "",
-      "seq": 20,
+      "seq": 25,
       "unit": "paragraph"
     },
     {
@@ -2394,11 +2102,39 @@
       "location_label": "본문 1 · 문단 65",
       "new_text": "       * 시험성적서 및 인증서의 종류는 소요군과 협의 가능",
       "old_text": "",
-      "seq": 21,
+      "seq": 26,
       "unit": "paragraph"
     },
     {
-      "kind": "changed",
+      "kind": "removed",
+      "location": {
+        "index": 60,
+        "region": "본문",
+        "region_index": 0,
+        "unit": "paragraph"
+      },
+      "location_label": "본문 1 · 문단 61",
+      "new_text": "",
+      "old_text": "3.2.7 작업대 작업 바닥에 작업자가 미끄러지지 않도록 미끄럼방지 표면으로 작업이 편리하도록 ",
+      "seq": 27,
+      "unit": "paragraph"
+    },
+    {
+      "kind": "removed",
+      "location": {
+        "index": 61,
+        "region": "본문",
+        "region_index": 0,
+        "unit": "paragraph"
+      },
+      "location_label": "본문 1 · 문단 62",
+      "new_text": "",
+      "old_text": "      하여야 한다.",
+      "seq": 28,
+      "unit": "paragraph"
+    },
+    {
+      "kind": "renumber",
       "location": {
         "index": 66,
         "region": "본문",
@@ -2407,110 +2143,8 @@
       },
       "location_label": "본문 1 · 문단 67",
       "new_text": "3.2.7 Tripod 형식이며 잭킹 포인트가 있어야 한다.",
-      "old_text": "3.2.7 작업대 작업 바닥에 작업자가 미끄러지지 않도록 미끄럼방지 표면으로 작업이 편리하도록 ",
-      "seq": 22,
-      "unit": "paragraph",
-      "word_ops": [
-        {
-          "new": "",
-          "old": "3.2.7 ",
-          "op": "equal"
-        },
-        {
-          "new": "Tripod",
-          "old": "작업대",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "형식이며",
-          "old": "작업",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "잭킹",
-          "old": "바닥에",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "포인트가",
-          "old": "작업자가",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "있어야",
-          "old": "미끄러지지",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "한다.",
-          "old": "않도록 미끄럼방지 표면으로 작업이 편리하도록 ",
-          "op": "replace"
-        }
-      ]
-    },
-    {
-      "kind": "changed",
-      "location": {
-        "index": 67,
-        "region": "본문",
-        "region_index": 0,
-        "unit": "paragraph"
-      },
-      "location_label": "본문 1 · 문단 68",
-      "new_text": "3.2.8 장비는 항공기 지지를 위해 스프링 장착 캐스터로 제작되어 있어야 한다.",
-      "old_text": "      하여야 한다.",
-      "seq": 23,
-      "unit": "paragraph",
-      "word_ops": [
-        {
-          "new": "3.2.8 장비는 항공기 지지를 위해 스프링 장착 캐스터로 제작되어 있어야",
-          "old": "      하여야",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " 한다.",
-          "op": "equal"
-        }
-      ]
-    },
-    {
-      "kind": "changed",
-      "location": {
-        "index": 68,
-        "region": "본문",
-        "region_index": 0,
-        "unit": "paragraph"
-      },
-      "location_label": "본문 1 · 문단 69",
-      "new_text": "3.2.9 유압계통이 고장나도 실린더가 내려오지 않도록하는 물리적인 안전장치인 흐름 차단 장치 또는 동등이상의 안전장치가 장착되어야 한다.",
       "old_text": "3.2.8 Tripod 형식이며 잭킹 포인트가 있어야 한다.",
-      "seq": 24,
+      "seq": 29,
       "unit": "paragraph",
       "word_ops": [
         {
@@ -2519,63 +2153,44 @@
           "op": "equal"
         },
         {
-          "new": "9",
+          "new": "7",
           "old": "8",
           "op": "replace"
         },
         {
           "new": "",
-          "old": " ",
+          "old": " Tripod 형식이며 잭킹 포인트가 있어야 한다.",
+          "op": "equal"
+        }
+      ]
+    },
+    {
+      "kind": "renumber",
+      "location": {
+        "index": 67,
+        "region": "본문",
+        "region_index": 0,
+        "unit": "paragraph"
+      },
+      "location_label": "본문 1 · 문단 68",
+      "new_text": "3.2.8 장비는 항공기 지지를 위해 스프링 장착 캐스터로 제작되어 있어야 한다.",
+      "old_text": "3.2.9 장비는 항공기 지지를 위해 스프링 장착 캐스터로 제작되어 있어야 한다.",
+      "seq": 30,
+      "unit": "paragraph",
+      "word_ops": [
+        {
+          "new": "",
+          "old": "3.2.",
           "op": "equal"
         },
         {
-          "new": "유압계통이",
-          "old": "Tripod",
+          "new": "8",
+          "old": "9",
           "op": "replace"
         },
         {
           "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "고장나도",
-          "old": "형식이며",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "실린더가",
-          "old": "잭킹",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "내려오지",
-          "old": "포인트가",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "않도록하는 물리적인 안전장치인 흐름 차단 장치 또는 동등이상의 안전장치가 장착되어야",
-          "old": "있어야",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " 한다.",
+          "old": " 장비는 항공기 지지를 위해 스프링 장착 캐스터로 제작되어 있어야 한다.",
           "op": "equal"
         }
       ]
@@ -2590,28 +2205,18 @@
       },
       "location_label": "본문 1 · 문단 70",
       "new_text": "3.2.10 잭의 삼각대 PAD는 균형을 목적으로 높이 조절기능이 있어야 한다.",
-      "old_text": "3.2.9 장비는 항공기 지지를 위해 스프링 장착 캐스터로 제작되어 있어야 한다.",
-      "seq": 25,
+      "old_text": "3.2.10 잭에 착지발판은 균형을 목적으로 조절기능이 있어야 한다.",
+      "seq": 31,
       "unit": "paragraph",
       "word_ops": [
         {
           "new": "",
-          "old": "3.2.",
-          "op": "equal"
-        },
-        {
-          "new": "10",
-          "old": "9",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
+          "old": "3.2.10 ",
           "op": "equal"
         },
         {
           "new": "잭의",
-          "old": "장비는",
+          "old": "잭에",
           "op": "replace"
         },
         {
@@ -2620,100 +2225,24 @@
           "op": "equal"
         },
         {
-          "new": "삼각대",
-          "old": "항공기",
+          "new": "삼각대 PAD는",
+          "old": "착지발판은",
           "op": "replace"
         },
         {
           "new": "",
-          "old": " ",
+          "old": " 균형을 목적으로",
           "op": "equal"
         },
         {
-          "new": "PAD는",
-          "old": "지지를",
-          "op": "replace"
+          "new": " 높이",
+          "old": "",
+          "op": "insert"
         },
         {
           "new": "",
-          "old": " ",
+          "old": " 조절기능이 있어야 한다.",
           "op": "equal"
-        },
-        {
-          "new": "균형을",
-          "old": "위해",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "목적으로",
-          "old": "스프링",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "높이",
-          "old": "장착",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "조절기능이",
-          "old": "캐스터로 제작되어",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " 있어야 한다.",
-          "op": "equal"
-        }
-      ]
-    },
-    {
-      "kind": "changed",
-      "location": {
-        "index": 70,
-        "region": "본문",
-        "region_index": 0,
-        "unit": "paragraph"
-      },
-      "location_label": "본문 1 · 문단 71",
-      "new_text": "3.2.11 형상사진(참고사항)",
-      "old_text": "3.2.10 잭에 착지발판은 균형을 목적으로 조절기능이 있어야 한다.",
-      "seq": 26,
-      "unit": "paragraph",
-      "word_ops": [
-        {
-          "new": "",
-          "old": "3.2.",
-          "op": "equal"
-        },
-        {
-          "new": "11",
-          "old": "10",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "형상사진(참고사항)",
-          "old": "잭에 착지발판은 균형을 목적으로 조절기능이 있어야 한다.",
-          "op": "replace"
         }
       ]
     },
@@ -2728,22 +2257,53 @@
       "location_label": "본문 1 · 문단 66",
       "new_text": "",
       "old_text": "3.2.11 상기 명시된 제원 및 요구성능과 동등 또는 동등 이상 제품 납품 시 계약상대자는 제작 표준인 美해군 정비교범(NAVAIR 19-70-521)에 명시된 제작 기준을 충족되어야 하며, 대체장비로 입증 가능한 자료를 1개 이상 제출해야한다.",
-      "seq": 27,
+      "seq": 32,
       "unit": "paragraph"
     },
     {
-      "kind": "removed",
+      "kind": "added",
       "location": {
-        "index": 66,
+        "index": 68,
         "region": "본문",
         "region_index": 0,
         "unit": "paragraph"
       },
-      "location_label": "본문 1 · 문단 67",
-      "new_text": "",
-      "old_text": "3.2.12 형상사진(참고사항)",
-      "seq": 28,
+      "location_label": "본문 1 · 문단 69",
+      "new_text": "3.2.9 유압계통이 고장나도 실린더가 내려오지 않도록하는 물리적인 안전장치인 흐름 차단 장치 또는 동등이상의 안전장치가 장착되어야 한다.",
+      "old_text": "",
+      "seq": 33,
       "unit": "paragraph"
+    },
+    {
+      "kind": "renumber",
+      "location": {
+        "index": 70,
+        "region": "본문",
+        "region_index": 0,
+        "unit": "paragraph"
+      },
+      "location_label": "본문 1 · 문단 71",
+      "new_text": "3.2.11 형상사진(참고사항)",
+      "old_text": "3.2.12 형상사진(참고사항)",
+      "seq": 34,
+      "unit": "paragraph",
+      "word_ops": [
+        {
+          "new": "",
+          "old": "3.2.",
+          "op": "equal"
+        },
+        {
+          "new": "11",
+          "old": "12",
+          "op": "replace"
+        },
+        {
+          "new": "",
+          "old": " 형상사진(참고사항)",
+          "op": "equal"
+        }
+      ]
     },
     {
       "kind": "changed",
@@ -2756,7 +2316,7 @@
       "location_label": "본문 1 · 문단 75",
       "new_text": "4. 공급범위",
       "old_text": "4. 공급범위  ",
-      "seq": 29,
+      "seq": 35,
       "unit": "paragraph",
       "word_ops": [
         {
@@ -2782,7 +2342,7 @@
       "location_label": "본문 1 · 문단 78",
       "new_text": "4.1 주 장비 : 유압식 잭, 30톤 주 장비는 아래 <표 2>과 같다.",
       "old_text": "4.1 주 장비 : 유압식 잭, 30톤 주 장비는 아래 <표 2>과 같다",
-      "seq": 30,
+      "seq": 36,
       "unit": "paragraph",
       "word_ops": [
         {
@@ -2798,7 +2358,21 @@
       ]
     },
     {
-      "kind": "changed",
+      "kind": "removed",
+      "location": {
+        "index": 75,
+        "region": "본문",
+        "region_index": 0,
+        "unit": "paragraph"
+      },
+      "location_label": "본문 1 · 문단 76",
+      "new_text": "",
+      "old_text": " * 정비공구, 기본불출품목(예비부품) 등이 있는 경우 제작사 사양 적용하여 납품하여야 한다.",
+      "seq": 37,
+      "unit": "paragraph"
+    },
+    {
+      "kind": "added",
       "location": {
         "index": 79,
         "region": "본문",
@@ -2807,91 +2381,9 @@
       },
       "location_label": "본문 1 · 문단 80",
       "new_text": "\n4.1.1 주장비 정비공구는 정비메뉴얼에 따라 정비에 사용되는 수공구를 납품하여야 한다.",
-      "old_text": " * 정비공구, 기본불출품목(예비부품) 등이 있는 경우 제작사 사양 적용하여 납품하여야 한다.",
-      "seq": 31,
-      "unit": "paragraph",
-      "word_ops": [
-        {
-          "new": "\n4.1.1",
-          "old": "",
-          "op": "insert"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "주장비",
-          "old": "*",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "정비공구는",
-          "old": "정비공구,",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "정비메뉴얼에",
-          "old": "기본불출품목(예비부품)",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "따라",
-          "old": "등이",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "정비에",
-          "old": "있는",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "사용되는",
-          "old": "경우",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "수공구를",
-          "old": "제작사 사양 적용하여",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " 납품하여야 한다.",
-          "op": "equal"
-        }
-      ]
+      "old_text": "",
+      "seq": 38,
+      "unit": "paragraph"
     },
     {
       "kind": "changed",
@@ -2904,7 +2396,7 @@
       "location_label": "본문 1 · 문단 82",
       "new_text": "<표 3> 부속장비(추가 구성품)",
       "old_text": "<표 3> 부속장비(추가 구성품) ",
-      "seq": 32,
+      "seq": 39,
       "unit": "paragraph",
       "word_ops": [
         {
@@ -2930,7 +2422,7 @@
       "location_label": "본문 1 · 문단 93",
       "new_text": "      주기, 검·교정 장비정비(필요시)에 사용되는 수공구가 명시되어 있어야 한다.",
       "old_text": "       주기, 검·교정 장비정비(필요시), 정비에 사용되는 공구, 정비장비가 명기되어 있어야 한다.",
-      "seq": 33,
+      "seq": 40,
       "unit": "paragraph",
       "word_ops": [
         {
@@ -2986,7 +2478,7 @@
       "location_label": "본문 1 · 문단 96",
       "new_text": "       제공해야 한다.      ",
       "old_text": "        제공해야 한다.      ",
-      "seq": 34,
+      "seq": 41,
       "unit": "paragraph",
       "word_ops": [
         {
@@ -3012,7 +2504,7 @@
       "location_label": "본문 1 · 문단 103",
       "new_text": "5.1 계약상대자는 운용 및 정비교육을 수요군과 협의된 계획에 따라 제공해야 한다.",
       "old_text": "5.1 계약 상대자는 운용 및 정비교육을 수요군과 협의 된 계획에 따라 제공해야 한다.",
-      "seq": 35,
+      "seq": 42,
       "unit": "paragraph",
       "word_ops": [
         {
@@ -3053,7 +2545,7 @@
       "location_label": "본문 1 · 문단 105",
       "new_text": "5.2.1 교육기간 : 1일(8시간)",
       "old_text": "5.2.1 교육시간 : 8시간 이내",
-      "seq": 36,
+      "seq": 43,
       "unit": "paragraph",
       "word_ops": [
         {
@@ -3099,7 +2591,7 @@
       "location_label": "본문 1 · 문단 106",
       "new_text": "5.2.2 교육장소 : 소요부대 / 포항, 제주",
       "old_text": "5.2.2 교육장소 : 납지별 지정장소 / 제주",
-      "seq": 37,
+      "seq": 44,
       "unit": "paragraph",
       "word_ops": [
         {
@@ -3140,7 +2632,7 @@
       "location_label": "본문 1 · 문단 108",
       "new_text": "5.2.4 교육내용 : 장비 작동절차, 주의사항, 체크방법, 장비 특성, 주요부품 설명, 고장 탐구방법 등 납품 장비 운용에 필요한 전반적인 내용",
       "old_text": "5.2.4 교육내용 : 장비 작동절차, 주의사항, 체크방법, 장비 특성, 주요부품 설명, 고장 탐구방법",
-      "seq": 38,
+      "seq": 45,
       "unit": "paragraph",
       "word_ops": [
         {
@@ -3166,82 +2658,11 @@
       "location_label": "본문 1 · 문단 103",
       "new_text": "",
       "old_text": "                 등 납품 장비 운용에 필요한 전반적인 내용",
-      "seq": 39,
+      "seq": 46,
       "unit": "paragraph"
     },
     {
       "kind": "changed",
-      "location": {
-        "index": 109,
-        "region": "본문",
-        "region_index": 0,
-        "unit": "paragraph"
-      },
-      "location_label": "본문 1 · 문단 110",
-      "new_text": "      (단, 피교육자 이동 및 숙식에 소요되는 비용은 공무원 여비규정에 따라 해군에서 지급한다.)",
-      "old_text": "5.2.6 계약상대자는 교육완료 후 교육훈련 완료 확인서를 검수관 및 사업주관부서에 제출하여야 한다.",
-      "seq": 40,
-      "unit": "paragraph",
-      "word_ops": [
-        {
-          "new": "      (단,",
-          "old": "5.2.6",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "피교육자",
-          "old": "계약상대자는",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "이동",
-          "old": "교육완료 후 교육훈련 완료 확인서를 검수관",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " 및 ",
-          "op": "equal"
-        },
-        {
-          "new": "숙식에",
-          "old": "사업주관부서에",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "소요되는",
-          "old": "제출하여야",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "비용은 공무원 여비규정에 따라 해군에서 지급한다.)",
-          "old": "한다.",
-          "op": "replace"
-        }
-      ]
-    },
-    {
-      "kind": "added",
       "location": {
         "index": 110,
         "region": "본문",
@@ -3250,8 +2671,64 @@
       },
       "location_label": "본문 1 · 문단 111",
       "new_text": "5.2.6 계약상대자는 교육 완료 후 교육 훈련 완료 확인서를 검사·검수관 및 사업주관부서에 ",
+      "old_text": "5.2.6 계약상대자는 교육완료 후 교육훈련 완료 확인서를 검수관 및 사업주관부서에 제출하여야 한다.",
+      "seq": 47,
+      "unit": "paragraph",
+      "word_ops": [
+        {
+          "new": "",
+          "old": "5.2.6 계약상대자는 ",
+          "op": "equal"
+        },
+        {
+          "new": "교육 완료",
+          "old": "교육완료",
+          "op": "replace"
+        },
+        {
+          "new": "",
+          "old": " 후 ",
+          "op": "equal"
+        },
+        {
+          "new": "교육 훈련",
+          "old": "교육훈련",
+          "op": "replace"
+        },
+        {
+          "new": "",
+          "old": " 완료 확인서를 ",
+          "op": "equal"
+        },
+        {
+          "new": "검사·검수관",
+          "old": "검수관",
+          "op": "replace"
+        },
+        {
+          "new": "",
+          "old": " 및 사업주관부서에 ",
+          "op": "equal"
+        },
+        {
+          "new": "",
+          "old": "제출하여야 한다.",
+          "op": "delete"
+        }
+      ]
+    },
+    {
+      "kind": "added",
+      "location": {
+        "index": 109,
+        "region": "본문",
+        "region_index": 0,
+        "unit": "paragraph"
+      },
+      "location_label": "본문 1 · 문단 110",
+      "new_text": "      (단, 피교육자 이동 및 숙식에 소요되는 비용은 공무원 여비규정에 따라 해군에서 지급한다.)",
       "old_text": "",
-      "seq": 41,
+      "seq": 48,
       "unit": "paragraph"
     },
     {
@@ -3265,7 +2742,7 @@
       "location_label": "본문 1 · 문단 112",
       "new_text": "      제출해야 한다.",
       "old_text": "",
-      "seq": 42,
+      "seq": 49,
       "unit": "paragraph"
     },
     {
@@ -3279,7 +2756,7 @@
       "location_label": "본문 1 · 문단 122",
       "new_text": "6.2.1 원제작사의 품질보증서",
       "old_text": "6.2.1 원 제작사의 품질보증서",
-      "seq": 43,
+      "seq": 50,
       "unit": "paragraph",
       "word_ops": [
         {
@@ -3300,7 +2777,35 @@
       ]
     },
     {
-      "kind": "changed",
+      "kind": "removed",
+      "location": {
+        "index": 116,
+        "region": "본문",
+        "region_index": 0,
+        "unit": "paragraph"
+      },
+      "location_label": "본문 1 · 문단 117",
+      "new_text": "",
+      "old_text": "6.2.3 취급설명서 및 장비이력자료",
+      "seq": 51,
+      "unit": "paragraph"
+    },
+    {
+      "kind": "removed",
+      "location": {
+        "index": 117,
+        "region": "본문",
+        "region_index": 0,
+        "unit": "paragraph"
+      },
+      "location_label": "본문 1 · 문단 118",
+      "new_text": "",
+      "old_text": "6.2.4 국토교통부 GSE 승인 인증서",
+      "seq": 52,
+      "unit": "paragraph"
+    },
+    {
+      "kind": "renumber",
       "location": {
         "index": 123,
         "region": "본문",
@@ -3309,34 +2814,29 @@
       },
       "location_label": "본문 1 · 문단 124",
       "new_text": "6.2.3 KCS 인증서",
-      "old_text": "6.2.3 취급설명서 및 장비이력자료",
-      "seq": 44,
+      "old_text": "6.2.5 KCS 인증서",
+      "seq": 53,
       "unit": "paragraph",
       "word_ops": [
         {
           "new": "",
-          "old": "6.2.3 ",
+          "old": "6.2.",
           "op": "equal"
         },
         {
-          "new": "KCS",
-          "old": "취급설명서",
+          "new": "3",
+          "old": "5",
           "op": "replace"
         },
         {
           "new": "",
-          "old": " ",
+          "old": " KCS 인증서",
           "op": "equal"
-        },
-        {
-          "new": "인증서",
-          "old": "및 장비이력자료",
-          "op": "replace"
         }
       ]
     },
     {
-      "kind": "changed",
+      "kind": "renumber",
       "location": {
         "index": 124,
         "region": "본문",
@@ -3345,24 +2845,29 @@
       },
       "location_label": "본문 1 · 문단 125",
       "new_text": "6.2.4 공인기관시험성적서",
-      "old_text": "6.2.4 국토교통부 GSE 승인 인증서",
-      "seq": 45,
+      "old_text": "6.2.6 공인기관시험성적서",
+      "seq": 54,
       "unit": "paragraph",
       "word_ops": [
         {
           "new": "",
-          "old": "6.2.4 ",
+          "old": "6.2.",
           "op": "equal"
         },
         {
-          "new": "공인기관시험성적서",
-          "old": "국토교통부 GSE 승인 인증서",
+          "new": "4",
+          "old": "6",
           "op": "replace"
+        },
+        {
+          "new": "",
+          "old": " 공인기관시험성적서",
+          "op": "equal"
         }
       ]
     },
     {
-      "kind": "changed",
+      "kind": "renumber",
       "location": {
         "index": 125,
         "region": "본문",
@@ -3371,8 +2876,8 @@
       },
       "location_label": "본문 1 · 문단 126",
       "new_text": "6.2.4.1 공인기관시험성적서 제출 불가 시 자체시험성적서를 제출할 수 있다. ",
-      "old_text": "6.2.5 KCS 인증서",
-      "seq": 46,
+      "old_text": "6.2.6.1 공인기관시험성적서 제출 불가 시 자체시험성적서를 제출할 수 있다. ",
+      "seq": 55,
       "unit": "paragraph",
       "word_ops": [
         {
@@ -3382,58 +2887,15 @@
         },
         {
           "new": "4.1",
-          "old": "5",
+          "old": "6.1",
           "op": "replace"
         },
         {
           "new": "",
-          "old": " ",
+          "old": " 공인기관시험성적서 제출 불가 시 자체시험성적서를 제출할 수 있다. ",
           "op": "equal"
-        },
-        {
-          "new": "공인기관시험성적서",
-          "old": "KCS",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "제출 불가 시 자체시험성적서를 제출할 수 있다. ",
-          "old": "인증서",
-          "op": "replace"
         }
       ]
-    },
-    {
-      "kind": "removed",
-      "location": {
-        "index": 119,
-        "region": "본문",
-        "region_index": 0,
-        "unit": "paragraph"
-      },
-      "location_label": "본문 1 · 문단 120",
-      "new_text": "",
-      "old_text": "6.2.6 공인기관시험성적서",
-      "seq": 47,
-      "unit": "paragraph"
-    },
-    {
-      "kind": "removed",
-      "location": {
-        "index": 120,
-        "region": "본문",
-        "region_index": 0,
-        "unit": "paragraph"
-      },
-      "location_label": "본문 1 · 문단 121",
-      "new_text": "",
-      "old_text": "6.2.6.1 공인기관시험성적서 제출 불가 시 자체시험성적서를 제출할 수 있다. ",
-      "seq": 48,
-      "unit": "paragraph"
     },
     {
       "kind": "changed",
@@ -3446,7 +2908,7 @@
       "location_label": "본문 1 · 문단 130",
       "new_text": "6.3.1 공인시험성적서 제출 시 계약상대자는 시험성적서 발급 신청 시 국가기술품질원의",
       "old_text": "6.3.1 공인시험성적서 제출 시 계약상대자는 시험성적서 발급 신청 시 국방기술품질원의",
-      "seq": 49,
+      "seq": 56,
       "unit": "paragraph",
       "word_ops": [
         {
@@ -3472,7 +2934,7 @@
       "location_label": "본문 1 · 문단 165",
       "new_text": "      기술 및 부품을 구매함으로서 지속적인 후속군수지원이 보장되도록 하여야 한다.",
       "old_text": "      기술 및 부품을 구매함으로서 지속적인 후속군수지원이 보장되도록 하여야한다.",
-      "seq": 50,
+      "seq": 57,
       "unit": "paragraph",
       "word_ops": [
         {
@@ -3498,7 +2960,7 @@
       "location_label": "본문 1 · 문단 233",
       "new_text": "8.6.1 납기 : 계약체결 후 300일 이내",
       "old_text": "8.6.1 납기 : 계약 후 180일 이내",
-      "seq": 51,
+      "seq": 58,
       "unit": "paragraph",
       "word_ops": [
         {
@@ -3539,7 +3001,7 @@
       "location_label": "본문 1 · 문단 235",
       "new_text": "8.6.3 인도조건 : 현지직납(현장설치도) / 포항, 제주",
       "old_text": "8.6.3 인도조건 : 현지직납(현장설치도) / 제주",
-      "seq": 52,
+      "seq": 59,
       "unit": "paragraph",
       "word_ops": [
         {
@@ -3562,62 +3024,6 @@
     {
       "kind": "changed",
       "location": {
-        "index": 239,
-        "region": "본문",
-        "region_index": 0,
-        "unit": "paragraph"
-      },
-      "location_label": "본문 1 · 문단 240",
-      "new_text": "        항공사 보급지원대대(2대) : 항공사 65전대 651대대(포항)",
-      "old_text": "        기동함대사 제주기지전대 보급지원대(2대) : 항공사 61전대 615대대(제주)",
-      "seq": 53,
-      "unit": "paragraph",
-      "word_ops": [
-        {
-          "new": "",
-          "old": "        ",
-          "op": "equal"
-        },
-        {
-          "new": "항공사",
-          "old": "기동함대사",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": " ",
-          "op": "equal"
-        },
-        {
-          "new": "보급지원대대(",
-          "old": "제주기지전대 보급지원대(",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": "2대) : 항공사 ",
-          "op": "equal"
-        },
-        {
-          "new": "65",
-          "old": "61",
-          "op": "replace"
-        },
-        {
-          "new": "",
-          "old": "전대 ",
-          "op": "equal"
-        },
-        {
-          "new": "651대대(포항)",
-          "old": "615대대(제주)",
-          "op": "replace"
-        }
-      ]
-    },
-    {
-      "kind": "added",
-      "location": {
         "index": 240,
         "region": "본문",
         "region_index": 0,
@@ -3625,8 +3031,39 @@
       },
       "location_label": "본문 1 · 문단 241",
       "new_text": "        기동함대사 제주기지전대 보급지원대(1대) : 항공사 61전대 615대대(제주)",
+      "old_text": "        기동함대사 제주기지전대 보급지원대(2대) : 항공사 61전대 615대대(제주)",
+      "seq": 60,
+      "unit": "paragraph",
+      "word_ops": [
+        {
+          "new": "",
+          "old": "        기동함대사 제주기지전대 보급지원대(",
+          "op": "equal"
+        },
+        {
+          "new": "1",
+          "old": "2",
+          "op": "replace"
+        },
+        {
+          "new": "",
+          "old": "대) : 항공사 61전대 615대대(제주)",
+          "op": "equal"
+        }
+      ]
+    },
+    {
+      "kind": "added",
+      "location": {
+        "index": 239,
+        "region": "본문",
+        "region_index": 0,
+        "unit": "paragraph"
+      },
+      "location_label": "본문 1 · 문단 240",
+      "new_text": "        항공사 보급지원대대(2대) : 항공사 65전대 651대대(포항)",
       "old_text": "",
-      "seq": 54,
+      "seq": 61,
       "unit": "paragraph"
     },
     {
@@ -3642,7 +3079,7 @@
       "location_label": "본문 1 · 표 1 · 셀(1,0)",
       "new_text": "정격부하용량\n(Rated Load Capacity)",
       "old_text": "정격용량(CAPACITY)",
-      "seq": 55,
+      "seq": 62,
       "unit": "cell",
       "word_ops": [
         {
@@ -3665,7 +3102,7 @@
       "location_label": "본문 1 · 표 1 · 셀(1,1)",
       "new_text": "30 Ton 이상",
       "old_text": "30 TON(60,000 lbs)-35 TON(70,000 lbs)",
-      "seq": 56,
+      "seq": 63,
       "unit": "cell",
       "word_ops": [
         {
@@ -3703,7 +3140,7 @@
       "location_label": "본문 1 · 표 1 · 셀(2,0)",
       "new_text": "최대 정격부하용량\n(MAXIMUM Rated Load Capacity)",
       "old_text": "유압식 상승높이(HYDRAULIC LIFT)",
-      "seq": 57,
+      "seq": 64,
       "unit": "cell",
       "word_ops": [
         {
@@ -3746,7 +3183,7 @@
       "location_label": "본문 1 · 표 1 · 셀(2,1)",
       "new_text": "35 Ton 이상",
       "old_text": "40 INCH 이상",
-      "seq": 58,
+      "seq": 65,
       "unit": "cell",
       "word_ops": [
         {
@@ -3784,7 +3221,7 @@
       "location_label": "본문 1 · 표 1 · 셀(3,0)",
       "new_text": "유압 상승 행정\n(Hydraulic Lift Travel)",
       "old_text": "최저높이(MINIMUM HEIGHT)",
-      "seq": 59,
+      "seq": 66,
       "unit": "cell",
       "word_ops": [
         {
@@ -3817,7 +3254,7 @@
       "location_label": "본문 1 · 표 1 · 셀(3,1)",
       "new_text": "40 in 이상",
       "old_text": "55 ~ 91 INCH 이내",
-      "seq": 60,
+      "seq": 67,
       "unit": "cell",
       "word_ops": [
         {
@@ -3860,7 +3297,7 @@
       "location_label": "본문 1 · 표 1 · 셀(4,0)",
       "new_text": "최저높이(MINIMUM HEIGHT)",
       "old_text": "최대높이(MAXIMUM HEIGHT)",
-      "seq": 61,
+      "seq": 68,
       "unit": "cell",
       "word_ops": [
         {
@@ -3888,7 +3325,7 @@
       "location_label": "본문 1 · 표 1 · 셀(4,1)",
       "new_text": "55 ~ 91 in 이내",
       "old_text": "110 INCH 이상",
-      "seq": 62,
+      "seq": 69,
       "unit": "cell",
       "word_ops": [
         {
@@ -3931,7 +3368,7 @@
       "location_label": "본문 1 · 표 1 · 셀(5,0)",
       "new_text": "최대높이(MAXIMUM HEIGHT)",
       "old_text": "삼각대 반경(TRIPOD RADIUS)",
-      "seq": 63,
+      "seq": 70,
       "unit": "cell",
       "word_ops": [
         {
@@ -3964,7 +3401,7 @@
       "location_label": "본문 1 · 표 1 · 셀(5,1)",
       "new_text": "110 in 이상",
       "old_text": "40 INCH 이하",
-      "seq": 64,
+      "seq": 71,
       "unit": "cell",
       "word_ops": [
         {
@@ -4007,7 +3444,7 @@
       "location_label": "본문 1 · 표 1 · 셀(6,1)",
       "new_text": "1,600 LBS 이하",
       "old_text": "1,500 LBS 이하",
-      "seq": 65,
+      "seq": 72,
       "unit": "cell",
       "word_ops": [
         {
@@ -4035,7 +3472,7 @@
       "location_label": "본문 1 · 표 1 · 셀(7,0)",
       "new_text": "장비 보호용 COVER",
       "old_text": "유압액 저장용량(유압탱크 용량)",
-      "seq": 66,
+      "seq": 73,
       "unit": "cell",
       "word_ops": [
         {
@@ -4078,7 +3515,7 @@
       "location_label": "본문 1 · 표 1 · 셀(7,1)",
       "new_text": "장비보호를 위해 전체를 덮을 수 있는\n방수형 천으로 된 탈·부착형식 Cover를 제공",
       "old_text": "5 GALLONS - 8 GALLONS",
-      "seq": 67,
+      "seq": 74,
       "unit": "cell",
       "word_ops": [
         {
@@ -4141,7 +3578,7 @@
       "location_label": "본문 1 · 표 1 · 셀(8,0)",
       "new_text": "",
       "old_text": "유압액(FLUID TYPE)",
-      "seq": 68,
+      "seq": 75,
       "unit": "cell"
     },
     {
@@ -4157,7 +3594,7 @@
       "location_label": "본문 1 · 표 1 · 셀(8,1)",
       "new_text": "",
       "old_text": "MIL-H-5606 또는 MIL-H-83282\n* 장비교범 35A2-2-9-21명시",
-      "seq": 69,
+      "seq": 76,
       "unit": "cell"
     },
     {
@@ -4173,7 +3610,7 @@
       "location_label": "본문 1 · 표 1 · 셀(9,0)",
       "new_text": "",
       "old_text": "장비 보호용 COVER",
-      "seq": 70,
+      "seq": 77,
       "unit": "cell"
     },
     {
@@ -4189,7 +3626,7 @@
       "location_label": "본문 1 · 표 1 · 셀(9,1)",
       "new_text": "",
       "old_text": "장비보호를 위해 전체를 덮을 수 있는\n방수형 천으로 된 탈·부착형식 Cover를 제공",
-      "seq": 71,
+      "seq": 78,
       "unit": "cell"
     },
     {
@@ -4205,7 +3642,7 @@
       "location_label": "본문 1 · 표 3 · 셀(1,2)",
       "new_text": "3",
       "old_text": "2",
-      "seq": 72,
+      "seq": 79,
       "unit": "cell",
       "word_ops": [
         {
@@ -4228,7 +3665,7 @@
       "location_label": "본문 1 · 표 3 · 셀(1,3)",
       "new_text": "제주(1), 포항(2)",
       "old_text": "",
-      "seq": 73,
+      "seq": 80,
       "unit": "cell",
       "word_ops": [
         {
@@ -4251,7 +3688,7 @@
       "location_label": "본문 1 · 표 4 · 셀(1,3)",
       "new_text": "3",
       "old_text": "2",
-      "seq": 74,
+      "seq": 81,
       "unit": "cell",
       "word_ops": [
         {
@@ -4274,7 +3711,7 @@
       "location_label": "본문 1 · 표 4 · 셀(2,0)",
       "new_text": "캐스터(3 EA/SET)",
       "old_text": "선회캐스터(3 EA/SET)",
-      "seq": 75,
+      "seq": 82,
       "unit": "cell",
       "word_ops": [
         {
@@ -4302,7 +3739,7 @@
       "location_label": "본문 1 · 표 4 · 셀(2,3)",
       "new_text": "3",
       "old_text": "2",
-      "seq": 76,
+      "seq": 83,
       "unit": "cell",
       "word_ops": [
         {
@@ -4325,7 +3762,7 @@
       "location_label": "본문 1 · 표 4 · 셀(3,0)",
       "new_text": "잭 펌프 손잡이",
       "old_text": "잭 펌프 손잡이(바)",
-      "seq": 77,
+      "seq": 84,
       "unit": "cell",
       "word_ops": [
         {
@@ -4353,7 +3790,7 @@
       "location_label": "본문 1 · 표 4 · 셀(3,3)",
       "new_text": "6",
       "old_text": "4",
-      "seq": 78,
+      "seq": 85,
       "unit": "cell",
       "word_ops": [
         {
@@ -4376,7 +3813,7 @@
       "location_label": "본문 1 · 표 4 · 셀(4,3)",
       "new_text": "3",
       "old_text": "2",
-      "seq": 79,
+      "seq": 86,
       "unit": "cell",
       "word_ops": [
         {
@@ -4399,7 +3836,7 @@
       "location_label": "본문 1 · 표 4 · 셀(5,0)",
       "new_text": "",
       "old_text": "압력게이지",
-      "seq": 80,
+      "seq": 87,
       "unit": "cell"
     },
     {
@@ -4415,7 +3852,7 @@
       "location_label": "본문 1 · 표 4 · 셀(5,1)",
       "new_text": "",
       "old_text": "EA",
-      "seq": 81,
+      "seq": 88,
       "unit": "cell"
     },
     {
@@ -4431,7 +3868,7 @@
       "location_label": "본문 1 · 표 4 · 셀(5,2)",
       "new_text": "",
       "old_text": "1",
-      "seq": 82,
+      "seq": 89,
       "unit": "cell"
     },
     {
@@ -4447,7 +3884,7 @@
       "location_label": "본문 1 · 표 4 · 셀(5,3)",
       "new_text": "",
       "old_text": "2",
-      "seq": 83,
+      "seq": 90,
       "unit": "cell"
     },
     {
@@ -4463,7 +3900,7 @@
       "location_label": "본문 1 · 표 5 · 셀(1,2)",
       "new_text": "3",
       "old_text": "2",
-      "seq": 84,
+      "seq": 91,
       "unit": "cell",
       "word_ops": [
         {
@@ -4486,7 +3923,7 @@
       "location_label": "본문 1 · 표 5 · 셀(2,2)",
       "new_text": "3",
       "old_text": "2",
-      "seq": 85,
+      "seq": 92,
       "unit": "cell",
       "word_ops": [
         {
@@ -4509,7 +3946,7 @@
       "location_label": "본문 1 · 표 5 · 셀(3,0)",
       "new_text": "보급 매뉴얼",
       "old_text": "",
-      "seq": 86,
+      "seq": 93,
       "unit": "cell"
     },
     {
@@ -4525,7 +3962,7 @@
       "location_label": "본문 1 · 표 5 · 셀(3,1)",
       "new_text": "EA",
       "old_text": "",
-      "seq": 87,
+      "seq": 94,
       "unit": "cell"
     },
     {
@@ -4541,7 +3978,7 @@
       "location_label": "본문 1 · 표 5 · 셀(3,2)",
       "new_text": "3",
       "old_text": "",
-      "seq": 88,
+      "seq": 95,
       "unit": "cell"
     },
     {
@@ -4557,7 +3994,7 @@
       "location_label": "본문 1 · 표 5 · 셀(3,3)",
       "new_text": "* 한글 본 필요 시 통합작성 가능\n* 외자(수입)품은 영문 본 포함하여 납품",
       "old_text": "",
-      "seq": 89,
+      "seq": 96,
       "unit": "cell"
     },
     {
@@ -4573,7 +4010,7 @@
       "location_label": "본문 1 · 표 5 · 셀(4,0)",
       "new_text": "매뉴얼 CD",
       "old_text": "",
-      "seq": 90,
+      "seq": 97,
       "unit": "cell"
     },
     {
@@ -4589,7 +4026,7 @@
       "location_label": "본문 1 · 표 5 · 셀(4,1)",
       "new_text": "EA",
       "old_text": "",
-      "seq": 91,
+      "seq": 98,
       "unit": "cell"
     },
     {
@@ -4605,7 +4042,7 @@
       "location_label": "본문 1 · 표 5 · 셀(4,2)",
       "new_text": "3",
       "old_text": "",
-      "seq": 92,
+      "seq": 99,
       "unit": "cell"
     },
     {
@@ -4621,7 +4058,7 @@
       "location_label": "본문 1 · 표 5 · 셀(4,3)",
       "new_text": "전산 파일 저장",
       "old_text": "",
-      "seq": 93,
+      "seq": 100,
       "unit": "cell"
     },
     {
@@ -4637,7 +4074,7 @@
       "location_label": "본문 1 · 표 5 · 셀(5,0)",
       "new_text": "기타 기술자료",
       "old_text": "",
-      "seq": 94,
+      "seq": 101,
       "unit": "cell"
     },
     {
@@ -4653,7 +4090,7 @@
       "location_label": "본문 1 · 표 5 · 셀(5,1)",
       "new_text": "EA",
       "old_text": "",
-      "seq": 95,
+      "seq": 102,
       "unit": "cell"
     },
     {
@@ -4669,7 +4106,7 @@
       "location_label": "본문 1 · 표 5 · 셀(5,2)",
       "new_text": "3",
       "old_text": "",
-      "seq": 96,
+      "seq": 103,
       "unit": "cell"
     },
     {
@@ -4685,7 +4122,7 @@
       "location_label": "본문 1 · 표 5 · 셀(5,3)",
       "new_text": "회로도, 카탈로그, 도면, 팜플랫 등",
       "old_text": "",
-      "seq": 97,
+      "seq": 104,
       "unit": "cell"
     },
     {
@@ -4701,7 +4138,7 @@
       "location_label": "본문 1 · 표 5 · 셀(6,0)",
       "new_text": "품질보증서",
       "old_text": "",
-      "seq": 98,
+      "seq": 105,
       "unit": "cell"
     },
     {
@@ -4717,7 +4154,7 @@
       "location_label": "본문 1 · 표 5 · 셀(6,1)",
       "new_text": "EA",
       "old_text": "",
-      "seq": 99,
+      "seq": 106,
       "unit": "cell"
     },
     {
@@ -4733,7 +4170,7 @@
       "location_label": "본문 1 · 표 5 · 셀(6,2)",
       "new_text": "3",
       "old_text": "",
-      "seq": 100,
+      "seq": 107,
       "unit": "cell"
     },
     {
@@ -4749,7 +4186,7 @@
       "location_label": "본문 1 · 표 5 · 셀(6,3)",
       "new_text": "-",
       "old_text": "",
-      "seq": 101,
+      "seq": 108,
       "unit": "cell"
     },
     {
@@ -4765,7 +4202,7 @@
       "location_label": "본문 1 · 표 6 · 셀(0,0)",
       "new_text": "순번",
       "old_text": "품명",
-      "seq": 102,
+      "seq": 109,
       "unit": "cell",
       "word_ops": [
         {
@@ -4788,7 +4225,7 @@
       "location_label": "본문 1 · 표 6 · 셀(0,1)",
       "new_text": "목록화 절차",
       "old_text": "단위",
-      "seq": 103,
+      "seq": 110,
       "unit": "cell",
       "word_ops": [
         {
@@ -4811,7 +4248,7 @@
       "location_label": "본문 1 · 표 6 · 셀(0,2)",
       "new_text": "방              법",
       "old_text": "총 수량",
-      "seq": 104,
+      "seq": 111,
       "unit": "cell",
       "word_ops": [
         {
@@ -4834,7 +4271,7 @@
       "location_label": "본문 1 · 표 6 · 셀(0,3)",
       "new_text": "",
       "old_text": "비고",
-      "seq": 105,
+      "seq": 112,
       "unit": "cell"
     },
     {
@@ -4850,7 +4287,7 @@
       "location_label": "본문 1 · 표 6 · 셀(1,0)",
       "new_text": "1",
       "old_text": "보급 매뉴얼",
-      "seq": 106,
+      "seq": 113,
       "unit": "cell",
       "word_ops": [
         {
@@ -4873,7 +4310,7 @@
       "location_label": "본문 1 · 표 6 · 셀(1,1)",
       "new_text": "방사청 국방표준종합정보시스템 목록화 작성 권한 요청",
       "old_text": "EA",
-      "seq": 107,
+      "seq": 114,
       "unit": "cell",
       "word_ops": [
         {
@@ -4896,7 +4333,7 @@
       "location_label": "본문 1 · 표 6 · 셀(1,2)",
       "new_text": "□ 국방표준종합정보시스템 접속 목록화 작성 권한 신청\n□ 연락처 : 방위사업청(1577-1118)",
       "old_text": "2",
-      "seq": 108,
+      "seq": 115,
       "unit": "cell",
       "word_ops": [
         {
@@ -4919,7 +4356,7 @@
       "location_label": "본문 1 · 표 6 · 셀(1,3)",
       "new_text": "",
       "old_text": "* 한글 본 필요 시 통합작성 가능\n* 외자(수입)품은 영문 본 포함하여 납품",
-      "seq": 109,
+      "seq": 116,
       "unit": "cell"
     },
     {
@@ -4935,7 +4372,7 @@
       "location_label": "본문 1 · 표 6 · 셀(2,0)",
       "new_text": "2",
       "old_text": "매뉴얼 CD",
-      "seq": 110,
+      "seq": 117,
       "unit": "cell",
       "word_ops": [
         {
@@ -4958,7 +4395,7 @@
       "location_label": "본문 1 · 표 6 · 셀(2,1)",
       "new_text": "생산자 부호 확인 및 요청",
       "old_text": "EA",
-      "seq": 111,
+      "seq": 118,
       "unit": "cell",
       "word_ops": [
         {
@@ -4981,7 +4418,7 @@
       "location_label": "본문 1 · 표 6 · 셀(2,2)",
       "new_text": "□ 요청방법 : 생산자부호 생성 필요 업체에서 직접 수행\n   ◦ 사업자등록증을 준비 후 아래 연락처에 유선 연락\n   ◦ 방위사업청 담당자의 안내에 따라 생산자 부호 등록절차 수행\n□ 지원부서 : 방위사업청 미래전력사업표준자원관리팀\n□ 연락처 : 02-2079-4247\n□ 준비물 : 사업자등록증(최근 3개월이내 발행 PDF파일)",
       "old_text": "2",
-      "seq": 112,
+      "seq": 119,
       "unit": "cell",
       "word_ops": [
         {
@@ -5004,7 +4441,7 @@
       "location_label": "본문 1 · 표 6 · 셀(2,3)",
       "new_text": "",
       "old_text": "전산 파일 저장",
-      "seq": 113,
+      "seq": 120,
       "unit": "cell"
     },
     {
@@ -5020,7 +4457,7 @@
       "location_label": "본문 1 · 표 6 · 셀(3,0)",
       "new_text": "3",
       "old_text": "기타 기술자료",
-      "seq": 114,
+      "seq": 121,
       "unit": "cell",
       "word_ops": [
         {
@@ -5043,7 +4480,7 @@
       "location_label": "본문 1 · 표 6 · 셀(3,1)",
       "new_text": "목록화 요청",
       "old_text": "EA",
-      "seq": 115,
+      "seq": 122,
       "unit": "cell",
       "word_ops": [
         {
@@ -5066,7 +4503,7 @@
       "location_label": "본문 1 · 표 6 · 셀(3,2)",
       "new_text": "□ 국방표준종합정보 시스템 접속\n□ 업무지원 → 커뮤니티 → 자료실 → 국방목록업무 안내서\n    * 국방목록업무 안내서 참조하여 목록화 요청\n□ 사전 준비물\n   ◦ 생산자 부호 \n   ◦ 기술자료 : 납품제품의 제작사에서 작성한 카탈로그(한글/영문) \n              또는 도면 각 1부 ☞  PDF 파일\n      * 기술자료에는 제작사 정보(회사명, 연락처, 주소 등)가 필수로 명시\n   ◦ 형상자료 : 납품 실물 형상 또는 카탈로그(형상) ☞ JPG 파일 \n   ◦ 계약서, 명세서 각 1부 ☞ PDF 파일\n□ 문의사항 : 해군 군수사 규격목록과\n             (055-549-1871~5)",
       "old_text": "2",
-      "seq": 116,
+      "seq": 123,
       "unit": "cell",
       "word_ops": [
         {
@@ -5089,7 +4526,7 @@
       "location_label": "본문 1 · 표 6 · 셀(3,3)",
       "new_text": "",
       "old_text": "회로도, 카탈로그, 도면, 팜플랫 등",
-      "seq": 117,
+      "seq": 124,
       "unit": "cell"
     },
     {
@@ -5105,7 +4542,7 @@
       "location_label": "본문 1 · 표 6 · 셀(4,0)",
       "new_text": "",
       "old_text": "품질보증서",
-      "seq": 118,
+      "seq": 125,
       "unit": "cell"
     },
     {
@@ -5121,7 +4558,7 @@
       "location_label": "본문 1 · 표 6 · 셀(4,1)",
       "new_text": "",
       "old_text": "EA",
-      "seq": 119,
+      "seq": 126,
       "unit": "cell"
     },
     {
@@ -5137,7 +4574,7 @@
       "location_label": "본문 1 · 표 6 · 셀(4,2)",
       "new_text": "",
       "old_text": "2",
-      "seq": 120,
+      "seq": 127,
       "unit": "cell"
     },
     {
@@ -5153,7 +4590,7 @@
       "location_label": "본문 1 · 표 6 · 셀(4,3)",
       "new_text": "",
       "old_text": "-",
-      "seq": 121,
+      "seq": 128,
       "unit": "cell"
     },
     {
@@ -5169,7 +4606,7 @@
       "location_label": "본문 1 · 표 7 · 셀(0,0)",
       "new_text": "구     분",
       "old_text": "순번",
-      "seq": 122,
+      "seq": 129,
       "unit": "cell",
       "word_ops": [
         {
@@ -5192,7 +4629,7 @@
       "location_label": "본문 1 · 표 7 · 셀(0,1)",
       "new_text": "",
       "old_text": "목록화 절차",
-      "seq": 123,
+      "seq": 130,
       "unit": "cell"
     },
     {
@@ -5208,7 +4645,7 @@
       "location_label": "본문 1 · 표 7 · 셀(0,2)",
       "new_text": "내     용",
       "old_text": "방              법",
-      "seq": 124,
+      "seq": 131,
       "unit": "cell",
       "word_ops": [
         {
@@ -5231,7 +4668,7 @@
       "location_label": "본문 1 · 표 7 · 셀(1,0)",
       "new_text": "작성자\n인적사항",
       "old_text": "1",
-      "seq": 125,
+      "seq": 132,
       "unit": "cell",
       "word_ops": [
         {
@@ -5254,7 +4691,7 @@
       "location_label": "본문 1 · 표 7 · 셀(1,1)",
       "new_text": "소요제기자",
       "old_text": "방사청 국방표준종합정보시스템 목록화 작성 권한 요청",
-      "seq": 126,
+      "seq": 133,
       "unit": "cell",
       "word_ops": [
         {
@@ -5277,7 +4714,7 @@
       "location_label": "본문 1 · 표 7 · 셀(1,2)",
       "new_text": "항공사 651항공대대 6급 조광표 010-4759-7682\n항공사 615비행대대 상사 최승순 010-4104-3049",
       "old_text": "□ 국방표준종합정보시스템 접속 목록화 작성 권한 신청\n□ 연락처 : 방위사업청(1577-1118)",
-      "seq": 127,
+      "seq": 134,
       "unit": "cell",
       "word_ops": [
         {
@@ -5390,7 +4827,7 @@
       "location_label": "본문 1 · 표 7 · 셀(2,0)",
       "new_text": "",
       "old_text": "2",
-      "seq": 128,
+      "seq": 135,
       "unit": "cell"
     },
     {
@@ -5406,7 +4843,7 @@
       "location_label": "본문 1 · 표 7 · 셀(2,1)",
       "new_text": "사업주관부서",
       "old_text": "생산자 부호 확인 및 요청",
-      "seq": 129,
+      "seq": 136,
       "unit": "cell",
       "word_ops": [
         {
@@ -5429,7 +4866,7 @@
       "location_label": "본문 1 · 표 7 · 셀(2,2)",
       "new_text": "해본 항공장비관리과 원사 김대환 042-553-4199",
       "old_text": "□ 요청방법 : 생산자부호 생성 필요 업체에서 직접 수행\n   ◦사업자등록증을 준비 후 아래 연락처에 유선 연락\n   ◦방위사업청 담당자의 안내에 따라 생산자 부호 등록절차 수행\n□ 지원부서 : 방위사업청 미래전력사업표준자원관리팀\n□ 연락처 : 02-2079-4247\n□ 준비물 : 사업자등록증(최근 3개월이내 발행 PDF파일)",
-      "seq": 130,
+      "seq": 137,
       "unit": "cell",
       "word_ops": [
         {
@@ -5512,7 +4949,7 @@
       "location_label": "본문 1 · 표 7 · 셀(3,0)",
       "new_text": "",
       "old_text": "3",
-      "seq": 131,
+      "seq": 138,
       "unit": "cell"
     },
     {
@@ -5528,7 +4965,7 @@
       "location_label": "본문 1 · 표 7 · 셀(3,1)",
       "new_text": "검토자",
       "old_text": "목록화 요청",
-      "seq": 132,
+      "seq": 139,
       "unit": "cell",
       "word_ops": [
         {
@@ -5551,7 +4988,7 @@
       "location_label": "본문 1 · 표 7 · 셀(3,2)",
       "new_text": "해군군수사 장비구매관리팀 상사 조은비 055-549-1375",
       "old_text": "□ 국방표준종합정보 시스템 접속\n□ 업무지원 → 커뮤니티 → 자료실 → 국방목록업무 안내서\n    * 국방목록업무 안내서 참조하여 목록화 요청\n□ 사전 준비물\n   ◦ 생산자 부호 \n   ◦ 기술자료 : 납품제품의 제작사에서 작성한 카탈로그(한글/영문) \n              또는 도면 각 1부 ☞  PDF 파일\n      * 기술자료에는 제작사 정보(회사명, 연락처, 주소 등)가 필수로 명시\n   ◦ 형상자료 : 납품 실물 형상 또는 카탈로그(형상) ☞ JPG 파일 \n   ◦ 계약서, 명세서 각 1부 ☞ PDF 파일\n□ 문의사항 : 해군 군수사 규격목록과\n             (055-549-1871~5)",
-      "seq": 133,
+      "seq": 140,
       "unit": "cell",
       "word_ops": [
         {
@@ -5624,7 +5061,7 @@
       "location_label": "본문 1 · 표 8 · 셀(0,0)",
       "new_text": "납 지",
       "old_text": "구     분",
-      "seq": 134,
+      "seq": 141,
       "unit": "cell",
       "word_ops": [
         {
@@ -5647,7 +5084,7 @@
       "location_label": "본문 1 · 표 8 · 셀(0,1)",
       "new_text": "수 량",
       "old_text": "",
-      "seq": 135,
+      "seq": 142,
       "unit": "cell"
     },
     {
@@ -5663,7 +5100,7 @@
       "location_label": "본문 1 · 표 8 · 셀(0,2)",
       "new_text": "검수관",
       "old_text": "내     용",
-      "seq": 136,
+      "seq": 143,
       "unit": "cell",
       "word_ops": [
         {
@@ -5686,7 +5123,7 @@
       "location_label": "본문 1 · 표 8 · 셀(0,3)",
       "new_text": "검사관",
       "old_text": "",
-      "seq": 137,
+      "seq": 144,
       "unit": "cell"
     },
     {
@@ -5702,7 +5139,7 @@
       "location_label": "본문 1 · 표 8 · 셀(1,0)",
       "new_text": "항공사령부 \n보급지원대대\n(6000007469)",
       "old_text": "작성자\n인적사항",
-      "seq": 138,
+      "seq": 145,
       "unit": "cell",
       "word_ops": [
         {
@@ -5735,7 +5172,7 @@
       "location_label": "본문 1 · 표 8 · 셀(1,1)",
       "new_text": "2대",
       "old_text": "소요제기자",
-      "seq": 139,
+      "seq": 146,
       "unit": "cell",
       "word_ops": [
         {
@@ -5758,7 +5195,7 @@
       "location_label": "본문 1 · 표 8 · 셀(1,2)",
       "new_text": "항공사령부 보급지원대대 \n5급 윤성현\n054-290-6771",
       "old_text": "항공사 615비행대대 상사 최승순 010-4104-3049",
-      "seq": 140,
+      "seq": 147,
       "unit": "cell",
       "word_ops": [
         {
@@ -5821,7 +5258,7 @@
       "location_label": "본문 1 · 표 8 · 셀(1,3)",
       "new_text": "해군군수사 품질관리처\n국내조달품검사과 추후지정\n055-549-1713~1717",
       "old_text": "",
-      "seq": 141,
+      "seq": 148,
       "unit": "cell"
     },
     {
@@ -5837,7 +5274,7 @@
       "location_label": "본문 1 · 표 8 · 셀(2,0)",
       "new_text": "기동함대사\n제주기지전대\n보급지원대\n(6000019895)",
       "old_text": "",
-      "seq": 142,
+      "seq": 149,
       "unit": "cell"
     },
     {
@@ -5853,7 +5290,7 @@
       "location_label": "본문 1 · 표 8 · 셀(2,1)",
       "new_text": "1대",
       "old_text": "사업주관부서",
-      "seq": 143,
+      "seq": 150,
       "unit": "cell",
       "word_ops": [
         {
@@ -5876,7 +5313,7 @@
       "location_label": "본문 1 · 표 8 · 셀(2,2)",
       "new_text": "기동함대사 제주기지전대\n보급지원대 물자/피복팀장\n064-905-5510",
       "old_text": "해본 항공장비관리과 원사 김대환 042-553-4199",
-      "seq": 144,
+      "seq": 151,
       "unit": "cell",
       "word_ops": [
         {
@@ -5939,7 +5376,7 @@
       "location_label": "본문 1 · 표 8 · 셀(3,1)",
       "new_text": "",
       "old_text": "검토자",
-      "seq": 145,
+      "seq": 152,
       "unit": "cell"
     },
     {
@@ -5955,7 +5392,7 @@
       "location_label": "본문 1 · 표 8 · 셀(3,2)",
       "new_text": "",
       "old_text": "해군군수사 장비구매관리팀 상사 조은비 055-549-1375",
-      "seq": 146,
+      "seq": 153,
       "unit": "cell"
     },
     {
@@ -5971,7 +5408,7 @@
       "location_label": "본문 1 · 표 8 · 셀(4,0)",
       "new_text": "",
       "old_text": "납 지",
-      "seq": 147,
+      "seq": 154,
       "unit": "cell"
     },
     {
@@ -5987,7 +5424,7 @@
       "location_label": "본문 1 · 표 8 · 셀(4,1)",
       "new_text": "",
       "old_text": "수 량",
-      "seq": 148,
+      "seq": 155,
       "unit": "cell"
     },
     {
@@ -6003,7 +5440,7 @@
       "location_label": "본문 1 · 표 8 · 셀(4,2)",
       "new_text": "",
       "old_text": "검수관",
-      "seq": 149,
+      "seq": 156,
       "unit": "cell"
     },
     {
@@ -6019,7 +5456,7 @@
       "location_label": "본문 1 · 표 8 · 셀(4,3)",
       "new_text": "",
       "old_text": "검사관",
-      "seq": 150,
+      "seq": 157,
       "unit": "cell"
     },
     {
@@ -6035,7 +5472,7 @@
       "location_label": "본문 1 · 표 8 · 셀(5,0)",
       "new_text": "",
       "old_text": "기동함대사\n제주기지전대\n보급지원대\n(6000019895)",
-      "seq": 151,
+      "seq": 158,
       "unit": "cell"
     },
     {
@@ -6051,7 +5488,7 @@
       "location_label": "본문 1 · 표 8 · 셀(5,1)",
       "new_text": "",
       "old_text": "2대",
-      "seq": 152,
+      "seq": 159,
       "unit": "cell"
     },
     {
@@ -6067,7 +5504,7 @@
       "location_label": "본문 1 · 표 8 · 셀(5,2)",
       "new_text": "",
       "old_text": "기동함대사 제주기지전대\n보급지원대 물자/피복팀장\n064-905-5510",
-      "seq": 153,
+      "seq": 160,
       "unit": "cell"
     },
     {
@@ -6083,14 +5520,15 @@
       "location_label": "본문 1 · 표 8 · 셀(5,3)",
       "new_text": "",
       "old_text": "해군군수사 품질관리처\n국내조달품검사과 추후지정\n055-549-1713~1717",
-      "seq": 154,
+      "seq": 161,
       "unit": "cell"
     }
   ],
   "summary": {
-    "added": 29,
-    "change_items": 155,
-    "changed": 92,
-    "removed": 34
+    "added": 36,
+    "change_items": 162,
+    "changed": 78,
+    "removed": 41,
+    "renumber": 7
   }
 }

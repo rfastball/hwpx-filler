@@ -6,7 +6,7 @@ Document 데이터클래스를 직접 조립해(패키지/XML 없이) 변경을 
 
 from __future__ import annotations
 
-from hwpxfiller.core.diff import diff_documents
+from hwpxfiller.core.diff import _norm_key, diff_documents
 from hwpxfiller.core.text_extract import (
     Cell,
     Document,
@@ -138,7 +138,8 @@ def test_unchanged_doc_no_changes():
     r = diff_documents(d, d)
     assert r.changes == []
     assert r.change_items == []
-    assert r.summary == {"added": 0, "removed": 0, "changed": 0, "change_items": 0}
+    assert r.summary == {"added": 0, "removed": 0, "changed": 0,
+                         "renumber": 0, "change_items": 0}
 
 
 # ------------------------------------------------------------ 우선순위 정렬
@@ -170,3 +171,77 @@ def test_blank_paragraph_shifts_are_not_reported():
     new = _doc("실질 문단 A.", "", "실질 문단 B.")
     r = diff_documents(old, new)
     assert r.changes == []
+
+
+# ------------------------------------------------------------ 재번호 캐스케이드
+def test_renumber_cascade_from_inserted_clause():
+    """조항 하나 삽입 -> 뒤 번호 통째 밀림. 정확히 삽입 1 + 재번호 K, 재번호는 changed 아님.
+
+    선두 서수 정규화가 없다면 3.2.2 둘째 ↔ 3.2.3 둘째 가 원문 기준으로 어긋나
+    거짓 changed/숫자변경(2→3)이 쏟아진다. 여기서는 renumber 로만 잡혀야 한다.
+    """
+    old = _doc(
+        "3.2.1 첫째 조항 본문 내용.",
+        "3.2.2 둘째 조항 본문 내용.",
+        "3.2.3 셋째 조항 본문 내용.",
+    )
+    new = _doc(
+        "3.2.1 첫째 조항 본문 내용.",
+        "3.2.2 신설된 조항 본문 내용.",   # 삽입
+        "3.2.3 둘째 조항 본문 내용.",       # 3.2.2 -> 3.2.3 (본문 동일)
+        "3.2.4 셋째 조항 본문 내용.",       # 3.2.3 -> 3.2.4 (본문 동일)
+    )
+    r = diff_documents(old, new)
+    cats = _cats(r)
+
+    assert r.summary["renumber"] == 2
+    assert cats.count("renumber") == 2
+    assert r.summary["changed"] == 0        # 재번호는 changed 로 세지 않는다
+    assert "text_changed" not in cats
+    assert "number" not in cats             # 서수 2→3 거짓 숫자변경 없음
+    assert cats.count("clause_added") == 1  # 신설 조항만 진짜 추가
+    # 재번호 항목은 본문(정규화) 동일 + 원문(서수)만 다름.
+    for c in r.changes:
+        if c.kind == "renumber":
+            assert _norm_key(c.old_text) == _norm_key(c.new_text)
+            assert c.old_text != c.new_text
+
+
+def test_renumbered_clause_with_value_change_detects_both():
+    """서수도 밀리고 값도 바뀐 조항 -> 재번호로 삼키지 않고 실질 숫자변경(180→300)을 잡는다."""
+    old = _doc(
+        "3.2.7 앞 조항은 그대로 유지된다.",
+        "3.2.8 납품 기한은 180일 이내로 한다.",
+    )
+    new = _doc(
+        "3.2.7 앞 조항은 그대로 유지된다.",
+        "3.2.8 신설된 안전 관련 조항 내용.",     # 삽입 -> 뒤 번호 밀림
+        "3.2.9 납품 기한은 300일 이내로 한다.",  # 3.2.8 -> 3.2.9 + 180일→300일
+    )
+    r = diff_documents(old, new)
+
+    # 정렬이 납품180 ↔ 납품300 을 올바로 짝짓고(그 사이 신설은 added), 180→300 을 잡는다.
+    nums = [it for it in r.change_items if it.category == "number"]
+    assert any("180" in it.detail and "300" in it.detail for it in nums)
+    changed = [c for c in r.changes if c.kind == "changed"]
+    assert any("180일" in c.old_text and "300일" in c.new_text for c in changed)
+    # 신설 조항은 added, 납품 조항은 renumber 로 오분류되지 않는다.
+    assert any(c.kind == "added" and "신설된 안전" in c.new_text for c in r.changes)
+    assert not any(c.kind == "renumber" and "납품" in c.new_text for c in r.changes)
+
+
+def test_leading_prose_number_not_stripped_as_ordinal():
+    """서수가 아닌 선두 숫자(수량·치수)는 정규화가 건드리지 않는다 — 산문 숫자 보존."""
+    old = _doc("180일 이내에 전량 납품하여야 한다.")
+    new = _doc("300일 이내에 전량 납품하여야 한다.")
+    r = diff_documents(old, new)
+
+    # '180' 을 서수로 오인해 벗겼다면 본문이 같아져 renumber 로 오분류됐을 것.
+    assert r.summary["renumber"] == 0
+    nums = [it for it in r.change_items if it.category == "number"]
+    assert any("180" in it.detail and "300" in it.detail for it in nums)
+    # _norm_key 가 선두 산문 숫자는 보존하고 서수만 벗기는지 직접 검증.
+    assert _norm_key("180일 이내에 전량 납품") == "180일 이내에 전량 납품"
+    assert _norm_key("1.5배 이상으로 한다") == "1.5배 이상으로 한다"
+    assert _norm_key("3.2.8 본문 내용") == "본문 내용"  # 다단계 서수는 벗김
+    assert _norm_key("제3조 목적") == "목적"            # 제N조 서수도 벗김

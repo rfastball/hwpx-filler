@@ -51,3 +51,41 @@ def test_render_html_escapes_markup():
     r = diff_documents(_doc("a < b & c 원본"), _doc("a < b & c 변경"))
     html = render_html(r)
     assert "&lt;" in html and "&amp;" in html
+
+
+def _renumber_sample():
+    """조항 삽입으로 뒤 번호가 밀린(재번호) + 진짜 숫자변경이 섞인 표본."""
+    old = _doc(
+        "3.2.1 앞 조항 본문.",
+        "3.2.2 뒤 조항 본문.",
+        "요율은 3% 로 한다.",
+    )
+    new = _doc(
+        "3.2.1 앞 조항 본문.",
+        "3.2.2 신설된 조항 본문.",   # 삽입
+        "3.2.3 뒤 조항 본문.",         # 재번호(본문 동일)
+        "요율은 5% 로 한다.",          # 실질 숫자변경
+    )
+    return diff_documents(old, new)
+
+
+def test_render_summary_separates_renumber_section():
+    """요약은 재번호를 실질 항목과 섞지 않고 별도 저순위 헤딩(건수 포함)으로 낸다."""
+    r = _renumber_sample()
+    text = render_summary(r)
+    assert "번호 변경" in text          # 별도 섹션
+    assert "- 번호 변경:" in text        # 요약 카운트 줄
+    # 재번호는 '주요 변경 항목'(실질) 목록엔 badge 로 섞이지 않는다.
+    main = text.split("번호 변경")[0]
+    assert "renumber" not in main
+
+
+def test_render_html_renumber_collapsed_group():
+    """HTML 은 재번호를 기본 접힘·흐린 그룹으로 데모트(숨기지 않되 눈에 덜 띄게)."""
+    r = _renumber_sample()
+    html = render_html(r)
+    # 접이식 그룹(기본 접힘: 'open' 없이), 흐린 스타일 클래스.
+    assert "renumber-group" in html
+    assert "<details class='renumber-group'>" in html  # open 아님 -> 접힘
+    # 실질 항목 배지는 그대로, 재번호는 실질 배지 테이블에 섞이지 않는다.
+    assert "b-number" in html

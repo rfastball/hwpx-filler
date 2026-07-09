@@ -1,13 +1,13 @@
 {
   "change_items": [
     {
-      "category": "text_changed",
-      "detail": "테스트",
+      "category": "text_removed",
+      "detail": "{{진행상태}} - 누름틀",
       "location_label": "본문 1 · 문단 1",
-      "new": "테스트",
+      "new": "",
       "old": "{{진행상태}} - 누름틀",
       "order": 0,
-      "priority": 2
+      "priority": 3
     },
     {
       "category": "text_removed",
@@ -17,11 +17,20 @@
       "old": "{{진행상태}} - 텍스트",
       "order": 1,
       "priority": 3
+    },
+    {
+      "category": "text_added",
+      "detail": "테스트",
+      "location_label": "본문 1 · 문단 1",
+      "new": "테스트",
+      "old": "",
+      "order": 2,
+      "priority": 3
     }
   ],
   "changes": [
     {
-      "kind": "changed",
+      "kind": "removed",
       "location": {
         "index": 0,
         "region": "본문",
@@ -29,17 +38,10 @@
         "unit": "paragraph"
       },
       "location_label": "본문 1 · 문단 1",
-      "new_text": "테스트",
+      "new_text": "",
       "old_text": "{{진행상태}} - 누름틀",
       "seq": 0,
-      "unit": "paragraph",
-      "word_ops": [
-        {
-          "new": "테스트",
-          "old": "{{진행상태}} - 누름틀",
-          "op": "replace"
-        }
-      ]
+      "unit": "paragraph"
     },
     {
       "kind": "removed",
@@ -54,12 +56,27 @@
       "old_text": "{{진행상태}} - 텍스트",
       "seq": 1,
       "unit": "paragraph"
+    },
+    {
+      "kind": "added",
+      "location": {
+        "index": 0,
+        "region": "본문",
+        "region_index": 0,
+        "unit": "paragraph"
+      },
+      "location_label": "본문 1 · 문단 1",
+      "new_text": "테스트",
+      "old_text": "",
+      "seq": 2,
+      "unit": "paragraph"
     }
   ],
   "summary": {
-    "added": 0,
-    "change_items": 2,
-    "changed": 1,
-    "removed": 1
+    "added": 1,
+    "change_items": 3,
+    "changed": 0,
+    "removed": 2,
+    "renumber": 0
   }
 }
