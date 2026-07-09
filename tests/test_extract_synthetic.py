@@ -246,6 +246,58 @@ def test_coverage_ledger_clean_for_known_structure():
     assert ledger.counts == {}, f"예상치 못한 원장 항목: {ledger.counts}"
 
 
+def test_table_caption_text_extracted():
+    """``hp:tbl`` 밑 ``hp:caption`` 의 본문 텍스트가 표 앞 문단으로 추출된다.
+
+    캡션은 셀과 동형(``caption`` > ``subList`` > ``hp:p``)이며 표 앞(문서 순서)에 온다.
+    이 처리를 끄면(캡션 미추출) 아래 캡션 문자열이 사라져 파일 레벨 무결성 테스트
+    ``test_no_silent_text_drop`` 이 실패한다 — 즉 이 테스트는 하중을 진다.
+    """
+    ledger = CoverageLedger()
+    xml = """
+    <hp:p><hp:run>
+      <hp:tbl>
+        <hp:sz/><hp:pos/>
+        <hp:caption>
+          <hp:subList>
+            <hp:p><hp:run><hp:t>&lt;표 1&gt; 유압식 잭(30톤) 주요제원</hp:t></hp:run></hp:p>
+          </hp:subList>
+        </hp:caption>
+        <hp:tr><hp:tc><hp:subList>
+          <hp:p><hp:run><hp:t>항목</hp:t></hp:run></hp:p>
+        </hp:subList></hp:tc></hp:tr>
+      </hp:tbl>
+    </hp:run></hp:p>
+    """
+    blocks = _blocks(xml, ledger)
+    # 캡션 문단이 표 블록 앞에 문서 순서로 배치된다.
+    assert [type(b).__name__ for b in blocks] == ["Paragraph", "Table"]
+    assert isinstance(blocks[0], Paragraph)
+    assert blocks[0].text == "<표 1> 유압식 잭(30톤) 주요제원"
+    assert isinstance(blocks[1], Table)
+    # 캡션 처리로 원장이 더럽혀지지 않는다(caption/subList 는 명시 처리).
+    assert ledger.counts == {}, f"예상치 못한 원장 항목: {ledger.counts}"
+
+
+def test_pic_object_no_text_keeps_ledger_clean():
+    """런 안의 그림 객체 ``hp:pic`` 은 본문 텍스트가 없고 원장을 더럽히지 않는다.
+
+    pic 은 KNOWN_IGNORED(이미지 객체) 라 유령 텍스트를 만들지 않고 크래시도 없다.
+    """
+    ledger = CoverageLedger()
+    xml = """
+    <hp:p>
+      <hp:run><hp:t>본문 문구</hp:t></hp:run>
+      <hp:run><hp:pic><hp:img/><hp:sz/><hp:pos/><hp:shapeComment/></hp:pic></hp:run>
+    </hp:p>
+    """
+    blocks = _blocks(xml, ledger)
+    assert len(blocks) == 1
+    assert isinstance(blocks[0], Paragraph)
+    assert blocks[0].text == "본문 문구"  # 그림은 유령 텍스트를 만들지 않는다
+    assert ledger.counts == {}, f"예상치 못한 원장 항목: {ledger.counts}"
+
+
 def test_header_footer_body_text_captured():
     """머리말/꼬리말 XML 의 본문 문단이 별도 영역으로 잡히고 본문에 섞이지 않는다.
 

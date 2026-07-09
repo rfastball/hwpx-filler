@@ -1,0 +1,3498 @@
+{
+  "footers": [],
+  "headers": [],
+  "sections": [
+    {
+      "blocks": [
+        {
+          "fields": [],
+          "text": "",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "구   매   요   구   서",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "유압식 잭, 30톤(’25~’26) / 구매",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "조달번호 : MPKPJU25A00002",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "작성일자 : 2025. 8.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "작성기관 : 61전대 615대대 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "1. 적용범위 및 용도",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "1.1 범위 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "     이 구매요구서는 P-3 항공기 UP & DOWN CHECK 및 LANDING GEAR 정비 시 WING에",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "    사용하는 유압식 잭에 대하여 적용한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "1.2 용도",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "     P-3 항공기를 격납고에서 UP & DOWN CHECK 및 LANDING GEAR 정비 시 항공기 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "    주익에 JACKING 하는데 사용한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "2. 적용자료 및 문서",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "2.1 일반사항",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "    아래문서는 규정된 범위 내에서 본 구매요구서와 함께 적용되며, 별도로 명시되지 않는 경우 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "    유효한 최신판을 적용한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "2.1.1 납품될 장비는 계약일 기준 당해 년도 생산된 장비를 납품하여야 하며, 장비 납품 시",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      부하테스트를 할 수 있는 장비(부하시험기 등)를 지참하여 부하시험을 하여야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "2.1.2 제작사는 항공기용 유압식 잭을 만드는 전문 제작사여야 하며, 제작사 ISO 시설인증서",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      상에 상용(민수) 및 군용 유입식 잭 제작사로 명시되어 있어야 한다. ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "2.1.3 국내·외 제작품일 경우 KCS 또는 동등규격의 인증서를 제출해야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "2.2 규정 및 지침",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "2.2.1 법률 방위사업법  ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "2.2.2 훈령 국방전력발전업무훈령",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "2.2.3 훈령 방위사업관리규정",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "2.2.4 국방 표준 바코드 운용지침서",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "2.2.5 ICAO Annex 6",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "2.3 우선순위",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "    본 구매요구서의 내용과 이 문서에서 인용한 참고문서 사이에 일관성이 없거나 차이가 있는 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "    경우에는 본 구매요구서의 내용이 우선한다. 그러나 특별한 면제가 부여되지 않는 한, ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "    본 구매요구서의 어떤 항목도 관련 법률이나 규정에 우선할 수 없다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "3. 제원 및 요구성능",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "3.1 제원",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "3.1.1. 유압식 잭(30톤) 주요 제원은 아래 <표 1> 과 같다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "<표 1> 유압식 잭(30톤) 주요제원",
+          "type": "paragraph"
+        },
+        {
+          "rows": [
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "항   목",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "제      원",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "정격용량(CAPACITY)",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "30 TON(60,000 lbs)-35 TON(70,000 lbs)",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 2
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "유압식 상승높이(HYDRAULIC LIFT)",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 2
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "40 INCH 이상",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 3
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "최저높이(MINIMUM HEIGHT)",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 3
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "55 ~ 91 INCH 이내",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 4
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "최대높이(MAXIMUM HEIGHT)",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 4
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "110 INCH 이상",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 5
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "삼각대 반경(TRIPOD RADIUS)",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 5
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "40 INCH 이하",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 6
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "잭 자체무게(JACK WEIGHT)",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 6
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "1,500 LBS 이하",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 7
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "유압액 저장용량(유압탱크 용량)",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 7
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "5 GALLONS - 8 GALLONS",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 8
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "유압액(FLUID TYPE)",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 8
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "MIL-H-5606 또는 MIL-H-83282",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "* 장비교범 35A2-2-9-21명시",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 9
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "장비 보호용 COVER",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 9
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "장비보호를 위해 전체를 덮을 수 있는",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "방수형 천으로 된 탈·부착형식 Cover를 제공",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ]
+          ],
+          "type": "table"
+        },
+        {
+          "fields": [],
+          "text": "  ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "3.2 요구성능 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "3.2.1 P-3 항공기 美해군 정비교범에 따라 UP & DOWN CHECK 및 LANDING GEAR 정비 시",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      항공기 주익에 JACKING 절차를 수행함에 있어 사용상 문제가 없어야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "3.2.2 장비는 P-3 항공기 美해군 정비교범(NAVAIR 19-70-521)에 T30-1VH5 모델제원과 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      성능을 발휘할 수 있어야 한다. 단 대체장비일 경우 T30-1VH5와 제원 및 성능의 호환이 가능하여야 한다. ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "3.2.3 항공기에 장착하여 작업 시 최소 30 TON을 120시간(Landing Gear 교환 시간) 이상",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      지지 할 수 있는 내구성, 안전성 등 성능을 갖추어야 한다. JACK 유압계통 내 유압, ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      유량 변동이 없어야 하며, P-3 항공기 JACK 전용이어야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "3.2.4 정비 효율성 및 근거리 이동을 고려한 삼각대 PAD 끝단 부근에 견고하고 잭 중량을",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      지지할 수 있는 바퀴(타이어) 3개를 장착하여야 하며, 바퀴(타이어)를 들어 올리는 구조 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      등(제작사 사양)으로 제작 가능하나, 항공기에 장착하여 작업 시 바퀴(타이어)에 항공기",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      톤수가 전달되지 않아야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "3.2.5 장비 내구연한 및 운영 중 고장발생을 방지하기 위해 내/외부 구성품은 부식이 되지 않는",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      재질 및 부식방지 처리가 되어 있어야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "3.2.6 방수기능을 보유한 유압식 잭 전체를 덮을 수 있는 장비 보호용 커버를 납품 하여야한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "3.2.7 작업대 작업 바닥에 작업자가 미끄러지지 않도록 미끄럼방지 표면으로 작업이 편리하도록 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      하여야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "3.2.8 Tripod 형식이며 잭킹 포인트가 있어야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "3.2.9 장비는 항공기 지지를 위해 스프링 장착 캐스터로 제작되어 있어야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "3.2.10 잭에 착지발판은 균형을 목적으로 조절기능이 있어야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "3.2.11 상기 명시된 제원 및 요구성능과 동등 또는 동등 이상 제품 납품 시 계약상대자는 제작 표준인 美해군 정비교범(NAVAIR 19-70-521)에 명시된 제작 기준을 충족되어야 하며, 대체장비로 입증 가능한 자료를 1개 이상 제출해야한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "3.2.12 형상사진(참고사항)",
+          "type": "paragraph"
+        },
+        {
+          "rows": [
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "     ",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "본 형상은 참고용이며 특정 제조사/모델을 지정하는 것이 아님",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ]
+          ],
+          "type": "table"
+        },
+        {
+          "fields": [],
+          "text": "※ 기타 명시되지 않은 요구사항은 시중에 보편적으로 유통되는 상용품과 동등 또는 동등",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "   이상을 적용한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "4. 공급범위  ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "   본 장비는 주 장비(유압식 잭, 30톤) 이외에 아래의 부수기재 및 기술 자료를 갖추어야 하며, ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "   추가하거나 제외할 경우에는 구매자와 공급자가 협의하여 정하도록 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "4.1 주 장비 : 유압식 잭, 30톤 주 장비는 아래 <표 2>과 같다",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": " <표 2> 주 장비",
+          "type": "paragraph"
+        },
+        {
+          "rows": [
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "품     명",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "단위",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "총수량",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 3,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "비고",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "유압식 잭(30톤)",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "EA",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "2",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 3,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ]
+          ],
+          "type": "table"
+        },
+        {
+          "fields": [],
+          "text": " * 정비공구, 기본불출품목(예비부품) 등이 있는 경우 제작사 사양 적용하여 납품하여야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "4.2 부속장비 : 부속장비는 아래 <표 3> 과 같다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "<표 3> 부속장비(추가 구성품) ",
+          "type": "paragraph"
+        },
+        {
+          "rows": [
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "품   명",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "단위",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "대당수량",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 3,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "총수량",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 4,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "비고",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "Hyd' OIL 20 liter(5gallon)",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "EA",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "1",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 3,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "2",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 4,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "MIL-PRF-5606",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 2
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "선회캐스터(3 EA/SET)",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 2
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "SET",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 2
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "1",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 3,
+                  "rowAddr": 2
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "2",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 4,
+                  "rowAddr": 2
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 3
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "잭 펌프 손잡이(바)",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 3
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "EA",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 3
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "2",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 3,
+                  "rowAddr": 3
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "4",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 4,
+                  "rowAddr": 3
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 4
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "장비 보호용 COVER",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 4
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "EA",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 4
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "1",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 3,
+                  "rowAddr": 4
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "2",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 4,
+                  "rowAddr": 4
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 5
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "압력게이지",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 5
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "EA",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 5
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "1",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 3,
+                  "rowAddr": 5
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "2",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 4,
+                  "rowAddr": 5
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ]
+          ],
+          "type": "table"
+        },
+        {
+          "fields": [],
+          "text": " ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "4.3 기술 자료",
+          "type": "paragraph"
+        },
+        {
+          "rows": [
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "품명",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "단위",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "총 수량",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 3,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "비고",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "운용자 매뉴얼",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "EA",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "2",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 3,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "* 한글 본 필요 시 통합작성 가능",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "* 외자(수입)품은 영문 본 포함하여 납품",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 2
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 2
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "정비 매뉴얼",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 2
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "EA",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 2
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "2",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ]
+          ],
+          "type": "table"
+        },
+        {
+          "rows": [
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "품명",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "단위",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "총 수량",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 3,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "비고",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "보급 매뉴얼",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "EA",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "2",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 3,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "* 한글 본 필요 시 통합작성 가능",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "* 외자(수입)품은 영문 본 포함하여 납품",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 2
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "매뉴얼 CD",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 2
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "EA",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 2
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "2",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 3,
+                  "rowAddr": 2
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "전산 파일 저장",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 3
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "기타 기술자료",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 3
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "EA",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 3
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "2",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 3,
+                  "rowAddr": 3
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "회로도, 카탈로그, 도면, 팜플랫 등",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 4
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "품질보증서",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 4
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "EA",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 4
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "2",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 3,
+                  "rowAddr": 4
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "-",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ]
+          ],
+          "type": "table"
+        },
+        {
+          "fields": [],
+          "text": " 4.3.1 기술 자료는 장비 운용 ․ 정비 ․ 보급 지침서, 카탈로그, 팸플릿 등 장비운용 및 정비 등에",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "       필요한 모든 자료를 의미한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": " 4.3.2 운영자 매뉴얼은 장비제원, 작동절차, 장비운용 환경 장비 작동 시 유의사항 등이 상세히",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "       기록되어 있어야 하며, 장비의 정상 작동 여부를 확인 할 수 있는 검사절차가 수록되어",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "       있어야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": " 4.3.3 정비 매뉴얼은 정비 단계별 정비주기, 절차, 방법, 정비인력(M/H), 소모성 및 재생품 교환",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "       주기, 검·교정 장비정비(필요시), 정비에 사용되는 공구, 정비장비가 명기되어 있어야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": " 4.3.4 보급 매뉴얼은 장비의 규격, 장비를 구성하는 구성품 및 하위 부품의 제작사(제작국), ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "       부품번호(P/N), 형상(필요시 도면포함)이 명시되어 구성품 개별 구매 필요시 품목 정보를",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "        제공해야 한다.      ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": " 4.3.5 기술 자료에는 장비명, 모델, 제원, 장비형상도, 부품의 Part NO 및 단위 / 수량, 제작국, ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "       제작사 및 주소/전화번호 등의 필수 항목이 명확히 명시되어야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": " 4.3.6 품질보증서에는 장비명, 모델, 제작일련번호, 제작년월일, 품질보증 사항, 제작사명 등을 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "       명시하여야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "5. 교육",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "5.1 계약 상대자는 운용 및 정비교육을 수요군과 협의 된 계획에 따라 제공해야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "5.2 교육계획",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "5.2.1 교육시간 : 8시간 이내",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "5.2.2 교육장소 : 납지별 지정장소 / 제주",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "5.2.3 교육인원 : 10명 이내",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "5.2.4 교육내용 : 장비 작동절차, 주의사항, 체크방법, 장비 특성, 주요부품 설명, 고장 탐구방법",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "                 등 납품 장비 운용에 필요한 전반적인 내용",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "5.2.5 교육에 소요되는 일체 비용은 계약상대자가 부담한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "5.2.6 계약상대자는 교육완료 후 교육훈련 완료 확인서를 검수관 및 사업주관부서에 제출하여야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6. 검사 ․ 검수와 시험 및 품질보증",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.1 검사의 책임",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.1.1 계약서에 달리 규정하지 않는 한, 검사의 책임은 공급자에게 있다. 공급자는 품질보증에      필요한 증빙자료를 수요군에 제출하여야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.1.2 증빙자료 제출 시 구매요구서에 첨부된 별지 양식을 참고하며, 기술검사관 협의 후 작성",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      하여야 한다. ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.1.3 구매요구서상 별도 명시되어 있지 않아도 장비운영 및 관련 법령에 의한 필수서류는 검수 시 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      제출하여야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.2. 검수 시 필수 제출서류",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.2.1 원 제작사의 품질보증서",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.2.2 제조일 증명서",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.2.3 취급설명서 및 장비이력자료",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.2.4 국토교통부 GSE 승인 인증서",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.2.5 KCS 인증서",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.2.6 공인기관시험성적서",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.2.6.1 공인기관시험성적서 제출 불가 시 자체시험성적서를 제출할 수 있다. ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "        단, 관계 법령에 따라 공인시험기관이 없거나 대상장비가 아닌 경우 등 검사관과",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "        협의 후 해당 증빙자료 제출하여야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.3 공인기관 시험성적서 발급절차",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.3.1 공인시험성적서 제출 시 계약상대자는 시험성적서 발급 신청 시 국방기술품질원의",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      IQIS(종합품질정보서비스)체계를 활용하여 성적서를 제출하여야한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.3.2 계약상대자는 협력업체를 포함하여 계약물품에 대한 시험성적서 위. 변조 등의 부정당 행위가",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      발생되지 않도록 관리하며, 계약담당공무원이 정한 감독/검사관 또는 품질보증기관이 계약",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      상대자가 시험을 의뢰한 공인시힘기관에 대해 시험성적서를 기품원 IQIS(종합품질정보서비스)",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      체계를 통해 직접 제출토록 요구할 경우 계약상대자는 공인시험기관이 이에 응하도록 하여야 한다. ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      * 기품원 IQIS체계를 활용하지 않은 공인기관의 성적서는 인증이 불가하고, 절차를 미숙지하여",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "        발생하는 손해는 계약상대자의 책임",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.3.3 신청 및 안내 절차 문의처 : 해군군수사 국내조달품검사과(055-549-1713, 1715)",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.4 검수 / 기술검사의 방법",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.4.1 해군 품질관리규정 및 군수사령부 내규에 따라 실시한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.4.2 계약상대자는 납품 10근무일 전 검사관에게 검사의뢰서 및 10근무일 전 검수관에게 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      검수신청서를 제출하여, 납지부대와 납품일정을 확정하야야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.4.3 검수 및 검사에 필요한 장비 및 부수자재(계측기 등) 일체는 계약상대자가 준비하여 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      검수 및 검사에 참가하여야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "        * 준비 미흡으로 발생된 검사/검수 지연은 계약상대자의 책임",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.5 시운전 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.5.1 장비 납품 및 설치 시 장비 운용, 성능시험 등에 대한 기술을 제공해야한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.5.2 계약상대자는 납품(설치) 후 검사관 또는 운용부대 기술검사관 입회하여 8시간 이내 장비 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      시운전을 실시하고 장비성능에 문제가 없을 경우 검사관 또는 운용부대 기술검사관 인증",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      (확인서를)을 받아야 한다.(단, 교육시간과 시운전 시간 병행가능)",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.5.3 시운전에 따른 모든 소요 경비는 계약상대자가 부담한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.5.4 기술검사 시 기술교범(NAVAIR-19-70-521)에 의한 기술검사를 실시 할 수 있다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.6 품질보증",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.6.1 납품장비 및 추가 공급품은 국방규격, 한국 산업규격(KS) 등 정부규격을 우선 적용하고, ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      정부규격이 없는 경우에는 다른 법령에 의하여 인정된 검사 및 형식승인 기준 등을 적용",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      해야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.6.2 계약상대자는 검사 및 검수와는 별도로 납품한 물품의 규격과 품질이 계약내용과 동일함을 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      납품완료 후 1년 간 보증해야 한다. 단 하자발생 시 하자종결까지는 품질보증기간 에서 제외하며, ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      하자부분에 대한 품질보증기간은 하자구상완료 후 1년으로 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      (단, 하자발생 시 하자종결까지는 기간에서 제외한다.)",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.6.3 품질보증 기간 내 장비의 규격 및 품질이 계약 내용과 상이한 것이 확인될 경우, 계약상대자는",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      신품으로 교환 또는 무상 수리 하여야 한다. 이 경우 모든 경비는 계약상대자의 부담으로 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.6.4 계약상대자는 장비 납품 후 장비운용과 정비를 위해 공급된 장비의 부품 단종을 인지 시에는 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      단종부품과 대체품에 대한 정보를 사전에 운용부대에 통보하여야하며, 운용부대는 필요시 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      기술 및 부품을 구매함으로서 지속적인 후속군수지원이 보장되도록 하여야한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.6.5 품질보증서에는 장비명, 모델, 제작일련번호, 제작 년 월일, 품질보증 사항, 제작사명 등을 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      명시하여야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.6.6 품질보증에 관한 사항(보증항목 등)은 공급자와 구매자가 협의하여 계약서 및 별도 품질",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      보증서에 명시한다. 또한, 리콜 및 품질보증에 관한 책임은 공급자에게 있다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "6.6.7 계약상대자는 장비 납품 후 장비운용 및 유지를 위해 관련 기술 및 부품을 무상 또는",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      유상으로 제공하여야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "7. 포장 및 표시",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "7.1 포장",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "7.1.1 포장은 구매자의 별도 요구사항이 없는 한 공급자 포장방식에 따르며, 계약상대자는 장비",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      포장상자에 장비명, 모델명, 장비부호, 재고번호, S/N(생산 일련번호), 납품일자, 수량, 단가,",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      중량, 제작 연ㆍ월ㆍ일, 제작사명, 사진 등을 포함한 장비 제원표 와 국방표준 바코드 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      운용지침서에 따른 바코드를 부착하여야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "7.1.2 계약상대자는 수송과 보관 또는 장기간 저장 중에 충격, 접촉에 의한 장비의 방청과 손상",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      방지가 가능토록 견고한 포장이어야 하며, 운송과정에서 파손 및 특성변화 시는 계약상대자가 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      책임을 진다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "7.2 표시",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "7.2.1 장비표지판은 사용자가 확인할 수 있는 위치에 부착하며, 품명, 모델명 및 번호, 일련번호,",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      제작년도, 제조사명, 자체중량, 적재중량, 총중량 등을 포함되어야 한다. 장비표지판 재질은 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      방청효과가 있으며 쉽게 변형이 이루어지지 않는 재질로 제작한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8. 기타사항",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.1 협의",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.1.1 계약상대자(또는 입찰참가자)는 요구서에 대한 해석 상 이견이 있을 경우 계약 전 협의를    요청 하여야 하며 계약서 내용을 숙지하고 계약을 이행하여야한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      * 구매요구서 상 이견이 있을 경우는 수요군 협의를 요청하여 서면으로 반드시 승인 후",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "        장비 제작/납품하여야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.1.2 계약상대자는 계약 후 10근무일 이내 사업이행계획서(계약이행 일정, 원․부자재 확보계획,    장비 확보 및 제작일정 등)를 수요군에 제출하여야 하며, 필요시 수요군에서 주관하는",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      사업관리회의에 참석하여야한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.2 보안",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.2.1 계약상대자는 계약 이행시 보안상 요구되는 제반사항을 필히 준수 하여야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.2.2 사업추진 과정에서 획득한 비밀 또는 정보사항은 제3자에게 임의로 공개할 수 없으며,  ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      타 사업 목적으로 전용될 수 없다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.2.3 계약상대자는 계약내용에 대한 보안유지를 성실히 이행할 책임이 있으며, 보안유지에 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      최선을 다해야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.2.4 계약상대자는 고의 또는 과실에 의하여 보안사항이 누설 되었을 경우 책임을 면할 수 없다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.2.5 본 사업에 참여하는 계약상대자의 직원은 부대 출입 필요시 7근무일 전에 해당부대에",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      출입승인을 요청하여 허가를 받아야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.2.6 현장 조사 및 장비 설치 간 부대 출입에 따른 행정사항 및 통제는 현지부대의 조건에",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      따르며, 작전상황에 지장을 초래하여서는 안 된다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.3 지적재산권",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.3.1 계약상대자는 계약을 이행함에 있어서 발생하는 상표, 특허, 실용신안, 디자인 등 일체의 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      지적재산권상의 문제에 대하여 책임을 진다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.3.2. 1항의 규정을 위반함으로써 손해를 받은 경우에는 계약상대자에게 손해배상을 청구 할 수 있다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.4 목록화",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.4.1 목록화 절차",
+          "type": "paragraph"
+        },
+        {
+          "rows": [
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "순번",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "목록화 절차",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "방              법",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "1",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "방사청 국방표준종합정보시스템 목록화 작성 권한 요청",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "□ 국방표준종합정보시스템 접속 목록화 작성 권한 신청",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "□ 연락처 : 방위사업청(1577-1118)",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 2
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "2",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 2
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "생산자 부호 확인 및 요청",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 2
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "□ 요청방법 : 생산자부호 생성 필요 업체에서 직접 수행",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "   ◦사업자등록증을 준비 후 아래 연락처에 유선 연락",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "   ◦방위사업청 담당자의 안내에 따라 생산자 부호 등록절차 수행",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "□ 지원부서 : 방위사업청 미래전력사업표준자원관리팀",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "□ 연락처 : 02-2079-4247",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "□ 준비물 : 사업자등록증(최근 3개월이내 발행 PDF파일)",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 3
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "3",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 3
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "목록화 요청",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 3
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "□ 국방표준종합정보 시스템 접속",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "□ 업무지원 → 커뮤니티 → 자료실 → 국방목록업무 안내서",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "    * 국방목록업무 안내서 참조하여 목록화 요청",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "□ 사전 준비물",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "   ◦ 생산자 부호 ",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "   ◦ 기술자료 : 납품제품의 제작사에서 작성한 카탈로그(한글/영문) ",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "              또는 도면 각 1부 ☞  PDF 파일",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "      * 기술자료에는 제작사 정보(회사명, 연락처, 주소 등)가 필수로 명시",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "   ◦ 형상자료 : 납품 실물 형상 또는 카탈로그(형상) ☞ JPG 파일 ",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "   ◦ 계약서, 명세서 각 1부 ☞ PDF 파일",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "□ 문의사항 : 해군 군수사 규격목록과",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "             (055-549-1871~5)",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ]
+          ],
+          "type": "table"
+        },
+        {
+          "fields": [],
+          "text": "       ※ 목록화 처리기간(방위사업청) : 1개월(국내품) / 2~ 5개월(국외품)  ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.4.2 계약업체는 방사청에 생산자 부호가 등록되어 있지 않은 생산업체 장비 납품시 계약 후 30일 이내에 방사청 인터넷 홈페이지 통해 생산업체 등록을 완료하여야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.4.3 계약업체는 해군 군수사령부 규격목록과 협조, 해당장비 및 기본구성품(수리부속/공구 등)에",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      대한 목록화 자료를 납품30일(60일)전에 관련규정과 지침에 따라 국방표준종합정보시스템",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "       (http://kdsis.dapa.go.kr)에 입력을 완료하고 검수 시 검수관에게 목록화 자료 입력 완료",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      증빙서류를 제출하여야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "        * 표준종합정보시스템 관련 문의 : 1577-1118",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "           해군 목록화 담당자(해군 군수사 종합군수지원처 규격목록과) 문의 : 055-549-1872",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.5 납품",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.5.1 계약상대자는 계약 후 5근무일 이내에 장비운용부대를 방문하여 장비 운용환경 등 제반",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "     사항을 확인하여 계약이행에 차질이 없도록 하여야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      * 장비 특성상 부대방문이 불필요한 경우는 유선으로 반드시 운용환경 및 제반사항을 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "        확인하여야 하며, 확인하지 않아 발생된 문제는 계약상대자의 책임이다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.5.2 장비 설치 및 시운전 중 구매 장비의 문제로 인하여 군자산의 파괴 또는 손상이 발생했을    경우 계약상대자는 배상 또는 무상으로 원상 복구하여야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.5.3 계약상대자는 납품이행 완료 30일 전에 납품이행 가능 여부를 해군 군수사 수중항공",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "     관리처(장비구매관리팀) 및 검수관에게 서면으로 제출하여야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.5.4 계약상대자는 납기를 준수할 수 없다고 판단 될 경우 즉시 계약담당공무원과 검수관,",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "     사업주관부서 및 해군 군수사 수중항공관리처(장비구매관리팀)에 지체사유 및 납품예정 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      일자를 서면으로 통지하여야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.5.5 납품은 기술검사관이 기술검사 후 검사조서에 날인하고, 검수관이 검수 후 납품조서에 ",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      날인함으로써 완료된다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.6 납품조건",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.6.1 납기 : 계약 후 180일 이내",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.6.2 품질보증형태 : 수요군 검사(Ⅲ형)",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.6.3 인도조건 : 현지직납(현장설치도) / 제주",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "      * 계약상대자가 운송관련(이송, 적․하역, 장비설치 등)사항에 대한 제반적인 책임 하에      납품하여야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "        * 계약상대자가 운송관련(이송, 적․하역, 장비설치 등) 사항에 대한 제반적인 책임 하에 납품하여야 한다.",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.6.4 납지별 수량 및 업무담당자",
+          "type": "paragraph"
+        },
+        {
+          "rows": [
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "구     분",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 2,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 0
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "내     용",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 2,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "작성자",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "인적사항",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 3
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "소요제기자",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 1
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "항공사 615비행대대 상사 최승순 010-4104-3049",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 2,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 2
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "사업주관부서",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 2
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "해본 항공장비관리과 원사 김대환 042-553-4199",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 2,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 3
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "검토자",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 3
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "해군군수사 장비구매관리팀 상사 조은비 055-549-1375",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 2,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 4
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "납 지",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 4
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "수 량",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 4
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "검수관",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 3,
+                  "rowAddr": 4
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "검사관",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ],
+            [
+              {
+                "addr": {
+                  "colAddr": 0,
+                  "rowAddr": 5
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "기동함대사",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "제주기지전대",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "보급지원대",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "(6000019895)",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 1,
+                  "rowAddr": 5
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "2대",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 2,
+                  "rowAddr": 5
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "기동함대사 제주기지전대",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "보급지원대 물자/피복팀장",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "064-905-5510",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              },
+              {
+                "addr": {
+                  "colAddr": 3,
+                  "rowAddr": 5
+                },
+                "blocks": [
+                  {
+                    "fields": [],
+                    "text": "해군군수사 품질관리처",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "국내조달품검사과 추후지정",
+                    "type": "paragraph"
+                  },
+                  {
+                    "fields": [],
+                    "text": "055-549-1713~1717",
+                    "type": "paragraph"
+                  }
+                ],
+                "span": {
+                  "colSpan": 1,
+                  "rowSpan": 1
+                }
+              }
+            ]
+          ],
+          "type": "table"
+        },
+        {
+          "fields": [],
+          "text": "8.6.4.1 납지별 세부내용(최종 납지)",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "        기동함대사 제주기지전대 보급지원대(2대) : 항공사 61전대 615대대(제주)",
+          "type": "paragraph"
+        },
+        {
+          "fields": [],
+          "text": "8.6.5 이 구매요구서에서 언급되지 않은 사항, 추가 문의사항 등은 계약 후 10일 이내에 수요군과 협의해야 한다.",
+          "type": "paragraph"
+        }
+      ]
+    }
+  ],
+  "unhandled": {},
+  "unhandled_examples": {}
+}
