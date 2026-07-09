@@ -27,20 +27,24 @@ from .lint import similarity
 
 # 나라장터 표준 입찰공고 응답 필드(소스 키) → 사람이 읽는 한글 라벨.
 # 영문 코드 키를 한글 템플릿 필드에 퍼지 매칭하려면 이 사전이 퍼지 타겟이 된다.
-# 근거: 조달청 OpenAPI 활용가이드(공공데이터개방표준서비스) 실응답 필드.
+# 근거: 공공데이터개방표준서비스(15058815) getDataSetOpnStdBidPblancInfo 실 라이브 응답.
 NARA_ALIASES: "dict[str, str]" = {
     "bidNtceNo": "입찰공고번호",
-    "bidNtceOrd": "공고차수",
+    "bidNtceOrd": "입찰공고차수",
     "bidNtceNm": "공고명",
     "bidNtceSttusNm": "공고상태",
     "bidNtceDate": "공고일자",
-    "cntrctCnclsMthdNm": "계약체결방법",
+    "bidNtceBgn": "공고시각",
+    "bsnsDivNm": "업무구분",
+    "cntrctCnclsMthdNm": "계약방법",
     "cntrctCnclsSttusNm": "계약체결형태",
+    "bidwinrDcsnMthdNm": "낙찰자결정방법",
     "ntceInsttNm": "공고기관",
     "ntceInsttCd": "공고기관코드",
     "ntceInsttOfclDeptNm": "공고기관담당부서",
     "ntceInsttOfclNm": "공고기관담당자",
     "ntceInsttOfclTel": "공고기관담당자전화번호",
+    "dmndInsttNm": "수요기관",
     "dmndInsttOfclDeptNm": "수요기관담당부서",
     "dmndInsttOfclNm": "수요기관담당자",
     "dmndInsttOfclTel": "수요기관담당자전화번호",
@@ -48,11 +52,17 @@ NARA_ALIASES: "dict[str, str]" = {
     "bidBeginTm": "입찰개시시각",
     "bidClseDate": "입찰마감일자",
     "bidClseTm": "입찰마감시각",
+    "bidPrtcptQlfctRgstClseDate": "입찰참가자격등록마감일자",
+    "bidPrtcptQlfctRgstClseTm": "입찰참가자격등록마감시각",
     "opengDate": "개찰일자",
     "opengTm": "개찰시각",
     "opengPlce": "개찰장소",
     "asignBdgtAmt": "배정예산",
     "presmptPrce": "추정가격",
+    "rgnLmtYn": "지역제한여부",
+    "prtcptPsblRgnNm": "참가가능지역",
+    "indstrytyLmtYn": "업종제한여부",
+    "bidprcPsblIndstrytyNm": "투찰가능업종",
     "bidNtceUrl": "공고URL",
 }
 

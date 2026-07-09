@@ -191,11 +191,13 @@ L2 diff·향후 검증·병합의 공용 토대.
    - ✅ 매핑 코어(`core/mapping.py`): 프로파일 `{템플릿필드 ← {sources, transform}}`,
      변환(join·datetime 합성·amount), 퍼지 자동제안(`NARA_ALIASES` 경유), JSON 저장/적용.
      통합 검증: 나라장터 표준 레코드 → 프로파일 → 실 입찰공고 템플릿 채우기.
-   - ⬜ 취득 DataSource(`NaraStdDataSource`, httpx): 조달청 표준 API. **키 활성화 대기**
-     (401 — data.go.kr 활용신청 승인/전파 확인 필요). 엔드포인트/파라미터는 검증됨
-     (`apis.data.go.kr/1230000/ad/BidPublicInfoService/...`). 실응답 캡처 후 envelope 확정.
-   - ⬜ 매핑 UI(위저드 좌열=스키마 fields, 제안=퍼지, 사용자 확정)
-   - 의존성: 취득 플러그인은 optional extra(`[web]`)로 격리, core 는 lxml+openpyxl 유지
+   - ✅ 취득 DataSource(`data/nara.py` `NaraStdDataSource`): 조달청 표준 API
+     (`apis.data.go.kr/1230000/ao/PubDataOpnStdService`, envelope response.body.items[]).
+     **라이브 검증 완료** — 실 API 취득→매핑→실 템플릿 생성 전체 파이프라인 확인.
+     stdlib urllib 만(새 의존성 0). ServiceKey 는 런타임 인자. 실응답 픽스처 커밋.
+   - ⬜ 매핑 UI(위저드 좌열=스키마 fields, 제안=퍼지, 사용자 확정) ← **다음**
+   - 참고: 표준 서비스는 목록 필드까지. 세부(품명·수량 등)는 카테고리 상세 operation
+     추가 시 별도 DataSource 로 확장(같은 프로토콜).
 4. ⬜ **2 위저드·행선택·미리보기** UX 고도화
 5. ⬜ **3-① 표/반복 영역** — 경계선상(행복제=구조변형). 명시 선언+미리보기 전제로만
 

@@ -24,9 +24,9 @@ CORPUS = Path(__file__).parent / "corpus" / "real"
 
 
 def _nara_record() -> dict:
-    d = json.loads((FIXTURES / "nara_std_record.json").read_text(encoding="utf-8"))
-    d.pop("_comment", None)
-    return d
+    """실 라이브 응답 픽스처의 첫 레코드(envelope response.body.items[0])."""
+    env = json.loads((FIXTURES / "nara_std_response.json").read_text(encoding="utf-8"))
+    return env["response"]["body"]["items"][0]
 
 
 # ------------------------------------------------------------------ 변환
@@ -52,7 +52,7 @@ def test_transform_amount_graceful_on_nonnumeric():
 def test_field_mapping_composes_from_record():
     rec = _nara_record()
     fm = FieldMapping("개찰일시", ["opengDate", "opengTm"], transform="datetime")
-    assert fm.value_for(rec) == "2017년 1월 6일 11:00"
+    assert fm.value_for(rec) == "2026년 6월 15일 18:00"
 
 
 # ------------------------------------------------------------------ 자동 제안
@@ -88,14 +88,14 @@ def test_profile_apply_produces_template_dict():
             FieldMapping("입찰공고번호", ["bidNtceNo"]),
             FieldMapping("계약방법", ["cntrctCnclsMthdNm"]),
             FieldMapping("추정가격", ["presmptPrce"], transform="amount"),
-            FieldMapping("입찰개시일시", ["bidBeginDate", "bidBeginTm"], transform="datetime"),
+            FieldMapping("개찰일시", ["opengDate", "opengTm"], transform="datetime"),
         ],
     )
     out = profile.apply(rec)
-    assert out["입찰공고번호"] == "20170100001"
-    assert out["계약방법"] == "수의계약"
-    assert out["추정가격"] == "21,326,800원"
-    assert out["입찰개시일시"] == "2017년 1월 4일 09:00"
+    assert out["입찰공고번호"] == "R26BK01561738"
+    assert out["계약방법"] == "제한경쟁"
+    assert out["추정가격"] == "65,454,545원"
+    assert out["개찰일시"] == "2026년 6월 15일 18:00"
 
 
 def test_profile_save_load_roundtrip(tmp_path):
@@ -132,8 +132,8 @@ def test_end_to_end_api_record_fills_real_template(tmp_path):
     assert result.ok
     assert {"입찰공고번호", "공고명", "추정가격", "개찰일시"} <= result.applied
     # 생성물에 변환된 값이 실제로 들어갔는지 바이트로 확인.
-    blob = b"".join(HwpxPackage.open(str(out)).entries[n] for n in HwpxPackage.open(str(out)).content_xml_names())
-    text = blob.decode("utf-8")
-    assert "20170100001" in text
-    assert "21,326,800원" in text
-    assert "2017년 1월 6일 11:00" in text
+    pkg = HwpxPackage.open(str(out))
+    text = b"".join(pkg.entries[n] for n in pkg.content_xml_names()).decode("utf-8")
+    assert "R26BK01561738" in text
+    assert "65,454,545원" in text
+    assert "2026년 6월 15일 18:00" in text

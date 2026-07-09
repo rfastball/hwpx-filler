@@ -59,6 +59,7 @@ python -m hwpxfiller.gui.app
 | `core/validate.py` | 사전검증(누락/빈값) | `modHWPgen` |
 | `batch.py` | 일괄 생성 | `Process_HWP_Generation` |
 | `data/excel.py` | 엑셀/CSV 데이터 소스 | (대시보드 페이로드) |
+| `data/nara.py` | 나라장터 조달청 API 취득 소스(stdlib urllib) | (신규 — 웹 취득, VBA선 불가) |
 | `gui/` | PySide6 데스크톱 UI | (대시보드 버튼) |
 
 ## 테스트
