@@ -15,8 +15,6 @@ from __future__ import annotations
 import re
 from datetime import datetime
 
-from .core import formatters as _fmt
-
 _INVALID = re.compile(r'[\\/:*?"<>|\r\n\t]')
 _DATE_TOKEN = re.compile(r"\{\{date(?::([^}]*))?\}\}")
 _SEQ_TOKEN = re.compile(r"\{\{seq(?::([^}]*))?\}\}")
@@ -64,16 +62,11 @@ def make_output_filename(
     now = now or datetime.now()
     out = _DATE_TOKEN.sub(lambda m: _fmt_date(m.group(1), now), pattern)
     out = _SEQ_TOKEN.sub(lambda m: _fmt_seq(m.group(1), seq if seq is not None else 1), out)
-    # 데이터 필드 토큰 — 공용 포매터 어휘 공유(``{{개찰일시|date:YYYYMMDD}}`` 등).
-    # 생성자 토큰(``{{date}}``·``{{seq}}``)은 위에서 이미 해석돼 여기서 안 걸린다.
-    def _sub_field(m: "re.Match") -> str:
-        name = m.group(1).strip()
-        if name not in data:
-            return m.group(0)  # 데이터에 없는 키는 그대로 둔다(기존 동작 보존).
-        value, _unknown = _fmt.apply_chain(str(data[name]), _fmt.parse_chain(m.group(2)))
-        return clean_filename(value)
-
-    out = _fmt.TOKEN_RE.sub(_sub_field, out)
+    # 데이터 필드 토큰 — 평문 치환(표시형은 여기서 안 함; 값은 이미 프로파일이 서식했음).
+    for key, val in data.items():
+        token = "{{" + str(key) + "}}"
+        if token in out:
+            out = out.replace(token, clean_filename(str(val)))
     if not out.lower().endswith(".hwpx"):
         out += ".hwpx"
     return out

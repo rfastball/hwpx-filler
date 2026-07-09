@@ -12,7 +12,7 @@
     python -m hwpxfiller.cli fieldize T.hwpx [--out compiled.hwpx]  # {{토큰}}→누름틀
     python -m hwpxfiller.cli lint T.hwpx [--vocab words.txt]  # 템플릿 위생 점검
     python -m hwpxfiller.cli drift OLD.hwpx NEW.hwpx  # 판본 간 필드 드리프트
-    python -m hwpxfiller.cli render TPL.txt --data d.xlsx [--record N] [--clip]  # 텍스트 템플릿 치환
+    python -m hwpxfiller.cli render TPL.txt --data d.xlsx [--profile p.json] [--record N] [--clip]  # 텍스트 치환
 """
 
 from __future__ import annotations
@@ -171,14 +171,17 @@ def _copy_to_clipboard(text: str) -> None:
 def _render_main(argv: "list[str]") -> int:
     """``render`` 하위명령 — 텍스트 템플릿에 데이터 1건을 치환(온나라 기안 등 즉각 복사용).
 
-    HWPX·누름틀과 무관한 순수 문자열 치환이다. 데이터에 없는 필드·미지 포매터는 토큰을
-    그대로 남기고 stderr 로 시끄럽게 신고한다(출력 자체는 막지 않아 파이프/복사에 방해 없음).
+    순수 ``{{필드}}`` 치환이다. ``--profile`` 을 주면 소스 레코드에 매핑 프로파일을 적용해
+    **표시형까지 서식된 값**(예: `150,000,000원`)으로 채운다(HWPX 생성 경로와 동일 모델).
+    없으면 원본 값 그대로. 데이터에 없는 필드는 토큰을 남기고 stderr 로 시끄럽게 신고한다.
     """
     from .core.text_render import render_record
 
     ap = argparse.ArgumentParser(prog="hwpxfiller render")
     ap.add_argument("template", help="텍스트 템플릿 경로(.txt 등, {{필드}} 토큰)")
     ap.add_argument("--data", required=True, help="엑셀/CSV 데이터 경로")
+    ap.add_argument("--profile", default=None,
+                    help="매핑 프로파일 JSON(소스→필드 + 표시형 적용). 없으면 원본 값 치환")
     ap.add_argument("--record", type=int, default=1, help="렌더할 레코드 번호(1-based, 기본 1)")
     ap.add_argument("--sheet", default=None, help="엑셀 시트명(기본: 첫 시트)")
     ap.add_argument("--out", default=None, help="출력 파일 경로(생략 시 표준출력)")
@@ -196,12 +199,14 @@ def _render_main(argv: "list[str]") -> int:
         print(f"--record {args.record} 범위 밖(1..{len(records)}).", file=sys.stderr)
         return 1
 
-    text, report = render_record(template, records[idx])
+    record = records[idx]
+    if args.profile:
+        from .core.mapping import MappingProfile
+        record = MappingProfile.load(args.profile).apply(record)  # 표시형까지 서식된 값
+
+    text, report = render_record(template, record)
     if report.missing_fields:
         print(f"[경고] 데이터에 없는 필드(토큰 유지): {', '.join(report.missing_fields)}",
-              file=sys.stderr)
-    if report.unknown_formatters:
-        print(f"[경고] 미지의 포매터(토큰 유지): {', '.join(report.unknown_formatters)}",
               file=sys.stderr)
     if report.empty_fields:
         print(f"[안내] 값이 비어있는 필드: {', '.join(report.empty_fields)}", file=sys.stderr)

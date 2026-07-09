@@ -33,14 +33,10 @@ def test_missing_key_left_untouched():
     assert make_output_filename("{{a}}-{{b}}", {"a": "1"}) == "1-{{b}}.hwpx"
 
 
-def test_field_formatter_in_filename_shares_vocab():
-    # 파일명 필드 토큰도 공용 포매터 어휘를 쓴다(데이터 값 date 재서식).
-    out = make_output_filename("{{개찰일시|date:YYYYMMDD}}", {"개찰일시": "2026-06-15"})
-    assert out == "20260615.hwpx"
-
-
-def test_field_default_formatter_in_filename():
-    assert make_output_filename("{{비고|default:없음}}", {"비고": ""}) == "없음.hwpx"
+def test_prefformatted_value_substituted_plainly():
+    # 파일명은 서식하지 않는다 — 프로파일이 이미 서식한 값을 평문 치환.
+    out = make_output_filename("공고-{{개찰일시}}", {"개찰일시": "2026년 6월 15일"})
+    assert out == "공고-2026년 6월 15일.hwpx"
 
 
 # ------------------------------------------------------------------- 날짜 토큰

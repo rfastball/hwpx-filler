@@ -66,8 +66,8 @@ NARA_ALIASES: "dict[str, str]" = {
     "bidNtceUrl": "공고URL",
 }
 
-# 지원 변환 종류. 이 중 amount/datetime 은 **결합(N→1) 후 공용 포매터**에 위임한다
-# (값-포맷 로직은 core/formatters.py 가 단일 소유; join/const 는 매핑 고유 결합자).
+# 지원 변환 종류. 이 중 amount/datetime 은 **결합(N→1) 후 표시형 서식**을 교체 가능한
+# core/format_engine 에 위임한다(join/const 는 매핑 고유 결합자).
 TRANSFORMS = ("join", "datetime", "amount", "const")
 
 
