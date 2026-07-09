@@ -64,6 +64,58 @@ def test_mapping_table_renders_model_and_emits_complete_changed(qapp):
     assert not model.is_complete()
 
 
+def test_mapping_table_set_preview_record_updates_preview_column(qapp):
+    from hwpxfiller.gui.mapping_table import _COL_PREVIEW, MappingTable
+
+    model = _model()
+    table = MappingTable()
+    table.set_model(model, {"bidNtceNm": "첫 공고", "opengDate": "2026-06-15"})
+    ri = next(i for i, r in enumerate(model.rows) if r.template_field == "공고명")
+    first = table.table.item(ri, _COL_PREVIEW).text()
+    assert first == "첫 공고"
+
+    table.set_preview_record({"bidNtceNm": "둘째 공고", "opengDate": "2026-07-01"})
+    assert table.table.item(ri, _COL_PREVIEW).text() == "둘째 공고"
+
+
+def test_record_selector_all_none_and_toggle(qapp):
+    from hwpxfiller.gui.record_select import RecordSelector
+
+    sel = RecordSelector()
+    sel.set_records([{"ID": "A"}, {"ID": "B"}, {"ID": "C"}], "doc-{{ID}}")
+    assert sel.selected_indices() == [0, 1, 2]  # 기본 전체 선택
+
+    sel._on_none()
+    assert sel.selected_indices() == []
+    sel._on_all()
+    assert sel.selected_indices() == [0, 1, 2]
+
+    # 항목 체크 해제가 모델에 반영.
+    from PySide6.QtCore import Qt
+
+    sel.list.item(1).setCheckState(Qt.Unchecked)
+    assert sel.selected_indices() == [0, 2]
+
+    # 라벨은 파일명 미리보기.
+    assert sel.list.item(0).text() == "1. doc-A.hwpx"
+
+
+def test_record_selector_relabel_preserves_selection(qapp):
+    from PySide6.QtCore import Qt
+
+    from hwpxfiller.gui.record_select import RecordSelector
+
+    records = [{"ID": "A"}, {"ID": "B"}]
+    sel = RecordSelector()
+    sel.set_records(records, "doc-{{ID}}")
+    sel.list.item(0).setCheckState(Qt.Unchecked)
+    assert sel.selected_indices() == [1]
+
+    sel.relabel(records, "새-{{ID}}")
+    assert sel.selected_indices() == [1]  # 선택 보존
+    assert sel.list.item(0).text() == "1. 새-A.hwpx"
+
+
 def test_worker_and_main_window_modules_import(qapp):
     from hwpxfiller.gui.main_window import MainWindow  # noqa: F401
     from hwpxfiller.gui.worker import GenerateWorker  # noqa: F401

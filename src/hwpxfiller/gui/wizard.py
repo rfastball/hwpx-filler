@@ -35,6 +35,7 @@ from ..core.schema import extract_schema
 from ..data.excel import ExcelDataSource
 from .mapping_state import MappingModel
 from .mapping_table import MappingTable
+from .record_select import RecordSelector
 from .worker import GenerateWorker
 
 # 요약 라벨에 나열할 필드 이름 최대 개수(넘치면 말줄임).
@@ -213,11 +214,28 @@ class MappingPage(QWizardPage):
             "채우지 않을 필드는 소스를 (비움)으로 두고 확정하세요."
         )
         self._built_for: "tuple[str, str] | None" = None
+        self._preview_index = 0
 
         layout = QVBoxLayout(self)
         self.table = MappingTable()
-        self.table.completeChanged.connect(self.completeChanged.emit)
+        self.table.completeChanged.connect(self._on_table_changed)
         layout.addWidget(self.table, 1)
+
+        # 레코드 스텝퍼 — 어떤 레코드로 미리보기할지 훑는다.
+        stepper = QHBoxLayout()
+        self.btn_prev = QPushButton("◀ 이전")
+        self.btn_prev.clicked.connect(lambda: self._step(-1))
+        self.btn_next = QPushButton("다음 ▶")
+        self.btn_next.clicked.connect(lambda: self._step(1))
+        self.lbl_index = QLabel("레코드 0/0")
+        self.lbl_preview_summary = QLabel("")
+        self.lbl_preview_summary.setWordWrap(True)
+        stepper.addWidget(self.btn_prev)
+        stepper.addWidget(self.lbl_index)
+        stepper.addWidget(self.btn_next)
+        stepper.addSpacing(12)
+        stepper.addWidget(self.lbl_preview_summary, 1)
+        layout.addLayout(stepper)
 
         buttons = QHBoxLayout()
         btn_load = QPushButton("프로파일 불러오기…")
@@ -239,7 +257,53 @@ class MappingPage(QWizardPage):
             self._built_for = key
         preview = wiz.records[0] if wiz.records else {}
         self.table.set_model(wiz.model, preview)
+        # 데이터가 바뀌면 인덱스가 범위 밖일 수 있으니 클램프.
+        if self._preview_index >= len(wiz.records):
+            self._preview_index = 0
+        self._sync_preview()
         self.completeChanged.emit()
+
+    def _on_table_changed(self):
+        # 매핑 편집 시 미리보기 요약도 함께 갱신(미리보기 셀은 테이블이 이미 갱신).
+        self._sync_preview_summary()
+        self.completeChanged.emit()
+
+    def _step(self, delta: int):
+        wiz: MappingWizard = self.wizard()
+        n = len(wiz.records)
+        if n == 0:
+            return
+        self._preview_index = max(0, min(n - 1, self._preview_index + delta))
+        self._sync_preview()
+
+    def _sync_preview(self):
+        wiz: MappingWizard = self.wizard()
+        n = len(wiz.records)
+        if n == 0:
+            self.lbl_index.setText("레코드 0/0")
+            self.btn_prev.setEnabled(False)
+            self.btn_next.setEnabled(False)
+            self.lbl_preview_summary.setText("")
+            return
+        rec = wiz.records[self._preview_index]
+        self.table.set_preview_record(rec)
+        self.lbl_index.setText(f"레코드 {self._preview_index + 1}/{n}")
+        self.btn_prev.setEnabled(self._preview_index > 0)
+        self.btn_next.setEnabled(self._preview_index < n - 1)
+        self._sync_preview_summary()
+
+    def _sync_preview_summary(self):
+        wiz: MappingWizard = self.wizard()
+        if wiz.model is None or not wiz.records:
+            self.lbl_preview_summary.setText("")
+            return
+        rec = wiz.records[self._preview_index]
+        empties = wiz.model.preview_empties(rec)
+        filled = sum(1 for r in wiz.model.rows if r.has_content()) - len(empties)
+        text = f"채움 {filled} · 빈값 {len(empties)}"
+        if empties:
+            text += " — " + ", ".join(empties)
+        self.lbl_preview_summary.setText(text)
 
     def isComplete(self) -> bool:
         wiz: MappingWizard = self.wizard()
@@ -316,8 +380,16 @@ class GeneratePage(QWizardPage):
         grid.addWidget(btn_out, 0, 2)
         grid.addWidget(QLabel("파일명 패턴"), 1, 0)
         grid.addWidget(self.ed_pattern, 1, 1)
-        grid.addWidget(QLabel("예: 공고서-{{공고명}} (키는 템플릿 필드명)"), 1, 2)
+        grid.addWidget(
+            QLabel("토큰: {{필드}}, {{date:YYYYMMDD}}, {{seq:001}}"), 1, 2
+        )
         layout.addLayout(grid)
+        # 패턴을 바꾸면 선택 리스트의 파일명 미리보기도 갱신.
+        self.ed_pattern.textChanged.connect(self._refresh_selector_labels)
+
+        layout.addWidget(QLabel("생성 대상 레코드"))
+        self.selector = RecordSelector()
+        layout.addWidget(self.selector, 1)
 
         actions = QHBoxLayout()
         self.btn_generate = QPushButton("생성")
@@ -337,8 +409,18 @@ class GeneratePage(QWizardPage):
         wiz: MappingWizard = self.wizard()
         if not self.ed_out.text() and wiz.template_path:
             self.ed_out.setText(str(Path(wiz.template_path).parent / "Results"))
+        self.selector.set_records(wiz.records, self.ed_pattern.text().strip())
         mapped = len(wiz.model.to_profile().mappings) if wiz.model else 0
-        self._say(f"준비 완료: 레코드 {len(wiz.records)}건 × 확정 매핑 {mapped}개 필드.")
+        self._say(
+            f"준비 완료: 레코드 {len(wiz.records)}건(선택 "
+            f"{self.selector.model().selected_count()}건) × 확정 매핑 {mapped}개 필드."
+        )
+
+    def _refresh_selector_labels(self):
+        wiz: MappingWizard = self.wizard()
+        if wiz is not None and wiz.records:
+            # 선택 상태는 보존하고 파일명 미리보기 라벨만 갱신.
+            self.selector.relabel(wiz.records, self.ed_pattern.text().strip())
 
     def isComplete(self) -> bool:
         return not self._running  # 생성 중에는 마침 버튼 잠금
@@ -368,8 +450,12 @@ class GeneratePage(QWizardPage):
                 "확정된 매핑이 전부 비움이라 생성할 값이 없습니다. 3단계에서 소스를 지정하세요.",
             )
             return
+        selected = self.selector.model().selected_records(wiz.records)
+        if not selected:
+            QMessageBox.warning(self, "확인", "생성할 레코드를 최소 1건 선택하세요.")
+            return
         pattern = self.ed_pattern.text().strip() or "output-{{ID}}"
-        mapped_records = profile.apply_all(wiz.records)
+        mapped_records = profile.apply_all(selected)
 
         self._running = True
         self.btn_generate.setEnabled(False)

@@ -162,6 +162,30 @@ def test_preview_covers_unmapped_rows_as_empty():
     assert out["입찰공고번호"] == "R26BK01561738"
 
 
+# --------------------------------------------------------------- preview_empties
+def test_preview_empties_flags_content_mapped_but_empty_for_record():
+    """소스는 매핑됐으나 이 레코드에 그 키의 값이 없으면 빈값으로 신고."""
+    model = MappingModel(
+        rows=[
+            RowState("공고명", sources=["bidNtceNm"]),      # 값 있음
+            RowState("추정가격", sources=["presmptPrce"]),  # 이 레코드엔 값 없음
+        ]
+    )
+    empties = model.preview_empties({"bidNtceNm": "테스트 공고"})
+    assert empties == ["추정가격"]
+
+
+def test_preview_empties_excludes_intentionally_empty_rows():
+    """내용 없는 행(의도적 비움)은 빈값 신고 대상이 아니다."""
+    model = MappingModel(
+        rows=[
+            RowState("공고명", sources=["bidNtceNm"]),  # 값 없음 → 신고
+            RowState("여백"),                            # 내용 자체 없음 → 제외
+        ]
+    )
+    assert model.preview_empties({}) == ["공고명"]
+
+
 # --------------------------------------------------------------- apply_profile
 def test_apply_profile_roundtrip_restores_confirmed_state(tmp_path):
     """저장 → 로드 라운드트립: 일치 행은 값 복원 + 확정 도착, 나머지는 미확정 유지."""

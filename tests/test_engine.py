@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 from hwpxfiller.batch import generate_batch
@@ -47,3 +48,39 @@ def test_batch_generates_multiple_files(tmp_path):
     assert batch.succeeded == 2
     assert (tmp_path / "doc-A1.hwpx").exists()
     assert (tmp_path / "doc-A2.hwpx").exists()
+
+
+def test_batch_collision_suffixes_dedupe(tmp_path):
+    # 두 레코드가 같은 파일명을 만들면 덮어쓰지 않고 _1 접미사로 유일화.
+    engine = HwpxEngine()
+    key = _required(engine)[0]
+    records = [{key: "가", "ID": "A1"}, {key: "나", "ID": "A1"}]
+    batch = generate_batch(str(FIXTURE), records, str(tmp_path), "doc-{{ID}}", engine)
+    assert batch.succeeded == 2
+    assert (tmp_path / "doc-A1.hwpx").exists()
+    assert (tmp_path / "doc-A1_1.hwpx").exists()
+
+
+def test_batch_seq_and_date_tokens(tmp_path):
+    engine = HwpxEngine()
+    key = _required(engine)[0]
+    records = [{key: "가"}, {key: "나"}]
+    now = datetime(2026, 7, 9, 0, 0, 0)
+    batch = generate_batch(
+        str(FIXTURE), records, str(tmp_path), "{{date:YYYYMMDD}}-{{seq:001}}", engine, now=now
+    )
+    assert batch.succeeded == 2
+    assert (tmp_path / "20260709-001.hwpx").exists()
+    assert (tmp_path / "20260709-002.hwpx").exists()
+
+
+def test_batch_progress_callback(tmp_path):
+    engine = HwpxEngine()
+    key = _required(engine)[0]
+    records = [{key: "가"}, {key: "나"}, {key: "다"}]
+    seen: list[tuple[int, int]] = []
+    generate_batch(
+        str(FIXTURE), records, str(tmp_path), "doc-{{seq}}", engine,
+        progress=lambda d, t: seen.append((d, t)),
+    )
+    assert seen == [(1, 3), (2, 3), (3, 3)]

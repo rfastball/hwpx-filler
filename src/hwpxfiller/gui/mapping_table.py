@@ -40,6 +40,10 @@ _BG_UNCONFIRMED = QBrush(QColor("#FFF3BF"))  # 미확정 = 노랑
 _BG_UNMATCHED = QBrush(QColor("#FFD8D8"))    # 미매칭 미확정 = 빨강
 _BG_DEFAULT = QBrush()
 
+# 미리보기 전경색: 내용은 매핑됐으나 이 레코드에서 값이 빈 경우 빨강으로 고지.
+_FG_DATA_EMPTY = QBrush(QColor("#B00020"))
+_FG_DEFAULT = QBrush()
+
 _EMPTY_ITEM = "(비움)"
 _MULTI_ITEM = "여러 소스 선택…"
 
@@ -153,6 +157,41 @@ class MappingTable(QWidget):
         for ri in range(len(self._model.rows)):
             self._sync_row(ri)
 
+    def set_preview_record(self, record: "dict | None"):
+        """미리보기 기준 레코드를 교체한다(스텝퍼가 호출). 미리보기 열만 갱신 —
+        콤보·포커스는 건드리지 않아 편집 중에도 안전하다."""
+        self._preview_record = dict(record or {})
+        self._refresh_previews()
+
+    def _refresh_previews(self):
+        """미리보기 열(_COL_PREVIEW)만 현재 기준 레코드로 다시 계산.
+
+        내용이 매핑됐는데 이 레코드에서 값이 비면 '(이 레코드에서 빈 값)' 을 빨강으로
+        표시(의도적 비움과 구분). 그 외는 값 그대로.
+        """
+        model = self._model
+        if model is None:
+            return
+        self._updating = True
+        try:
+            for ri, row in enumerate(model.rows):
+                self._render_preview(ri, row)
+        finally:
+            self._updating = False
+
+    def _render_preview(self, ri: int, row):
+        """한 행의 미리보기 셀을 현재 기준 레코드로 렌더(호출자가 _updating 관리)."""
+        item = self.table.item(ri, _COL_PREVIEW)
+        if item is None:
+            return
+        value = row.to_mapping().value_for(self._preview_record)
+        if value == "" and row.has_content():
+            item.setText("(이 레코드에서 빈 값)")
+            item.setForeground(_FG_DATA_EMPTY)
+        else:
+            item.setText(value)
+            item.setForeground(_FG_DEFAULT)
+
     # ----------------------------------------------------------------- 렌더링
     def _rebuild(self):
         model = self._model
@@ -264,9 +303,8 @@ class MappingTable(QWidget):
                 arg.setText("")
             arg.blockSignals(False)
 
-            # 미리보기(records[0] 기준 실시간).
-            preview = row.to_mapping().value_for(self._preview_record)
-            self.table.item(ri, _COL_PREVIEW).setText(preview)
+            # 미리보기(현재 기준 레코드).
+            self._render_preview(ri, row)
 
             # 행 상태 색.
             if row.confirmed:
@@ -327,8 +365,7 @@ class MappingTable(QWidget):
         self._updating = True
         try:
             self.table.item(ri, _COL_CONFIRM).setCheckState(Qt.Unchecked)
-            preview = row.to_mapping().value_for(self._preview_record)
-            self.table.item(ri, _COL_PREVIEW).setText(preview)
+            self._render_preview(ri, row)
             brush = _BG_UNCONFIRMED if row.has_content() else _BG_UNMATCHED
             for col in (_COL_CONFIRM, _COL_FIELD, _COL_PREVIEW):
                 self.table.item(ri, col).setBackground(brush)

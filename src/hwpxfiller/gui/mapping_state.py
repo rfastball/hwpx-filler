@@ -163,6 +163,15 @@ class MappingModel:
         """행별 현재 매핑을 레코드 1건에 적용한 미리보기 값(확정 여부 무관)."""
         return {r.template_field: r.to_mapping().value_for(record) for r in self.rows}
 
+    def preview_empties(self, record: "dict[str, object]") -> "list[str]":
+        """내용은 매핑됐으나 이 레코드에선 값이 빈 필드 — validate.py 의 empty_valued 를
+        단건화한 것. 의도적 비움(내용 없음) 행은 제외한다."""
+        return [
+            r.template_field
+            for r in self.rows
+            if r.has_content() and r.to_mapping().value_for(record) == ""
+        ]
+
     # ------------------------------------------------------- 프로파일 입출력
     def to_profile(self, name: str = "") -> MappingProfile:
         """확정됐고 내용 있는 행만 프로파일로. 비움 확정 행은 제외한다."""

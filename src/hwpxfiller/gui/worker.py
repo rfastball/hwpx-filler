@@ -1,12 +1,10 @@
 """백그라운드 일괄 생성 워커 — QThread 에 태워 UI 블로킹을 막는다.
 
-main_window 와 wizard 가 공유한다(main_window._Worker 에서 추출, 로직 동일).
-generate_batch 와 동등한 루프에 레코드 단위 progress 시그널을 더한 형태.
+main_window 와 wizard 가 공유한다. 생성 로직은 :func:`batch.generate_batch` 에
+위임하고(파일명·연번·충돌 처리 단일화), 레코드 단위 진행률만 시그널로 중계한다.
 """
 
 from __future__ import annotations
-
-from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
 
@@ -27,22 +25,15 @@ class GenerateWorker(QObject):
 
     def run(self):
         try:
-            from ..batch import BatchResult
-            from ..core.engine import HwpxEngine
-            from ..naming import make_output_filename
+            from ..batch import generate_batch
 
-            engine = HwpxEngine()
-            out = Path(self.out_dir)
-            out.mkdir(parents=True, exist_ok=True)
-
-            batch = BatchResult(total=len(self.records))
-            for i, rec in enumerate(self.records, 1):
-                target = str(out / make_output_filename(self.pattern, rec))
-                res = engine.generate(self.template, rec, target)
-                batch.results.append(res)
-                if res.ok:
-                    batch.succeeded += 1
-                self.progress.emit(i, batch.total)
+            batch = generate_batch(
+                self.template,
+                self.records,
+                self.out_dir,
+                self.pattern,
+                progress=self.progress.emit,
+            )
             self.finished.emit(batch)
         except Exception as exc:  # noqa: BLE001
             self.failed.emit(str(exc))

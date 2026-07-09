@@ -71,7 +71,7 @@ class MainWindow(QMainWindow):
 
         grid.addWidget(QLabel("파일명 패턴"), 3, 0)
         grid.addWidget(self.ed_pattern, 3, 1)
-        grid.addWidget(QLabel("예: 공고서-{{계약명}}"), 3, 2)
+        grid.addWidget(QLabel("토큰: {{필드}}, {{date:YYYYMMDD}}, {{seq:001}}"), 3, 2)
 
         root.addWidget(box)
 
