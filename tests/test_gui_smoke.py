@@ -306,6 +306,119 @@ def test_run_view_instantiates_with_a_job(qapp):
     assert hasattr(view, "run_finished")
 
 
+def _run_view_with_data(tmp_path):
+    """집행 화면 + 가짜 데이터소스(빈값 1필드 포함) — 다이얼로그 없이 직접 겨눔."""
+    from hwpxfiller.core.job import Job
+    from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+    from hwpxfiller.gui.run_view import RunView
+
+    template = tmp_path / "t.hwpx"
+    template.write_bytes(b"dummy")  # 존재 검사 통과용(가짜 워커라 열지 않음)
+    job = Job(
+        name="집행",
+        template_path=str(template),
+        mapping=MappingProfile(mappings=[
+            FieldMapping(template_field="공고명", sources=["bidNtceNm"]),
+            FieldMapping(template_field="추정가격", sources=["presmptPrce"]),
+        ]),
+        filename_pattern="doc-{{공고명}}",
+    )
+
+    class _Src:
+        def records(self):
+            return [
+                {"bidNtceNm": "가", "presmptPrce": ""},
+                {"bidNtceNm": "나", "presmptPrce": "2000"},
+            ]
+
+        def fields(self):
+            return ["bidNtceNm", "presmptPrce"]
+
+    view = RunView(job)
+    view.datasource = _Src()
+    view.records = view.datasource.records()
+    view.selector.set_records(view.records, job.filename_pattern)
+    view.ed_out.setText(str(tmp_path / "out"))
+    return view
+
+
+def test_run_view_effective_template_switches_with_target_mode(qapp, tmp_path):
+    """대상 문서 선택 — 신규=작업 템플릿, 누적=이전 출력. datasource 이음새 무관."""
+    view = _run_view_with_data(tmp_path)
+    assert view._effective_template() == view.job.template_path  # 기본 신규
+
+    prev = tmp_path / "prev.hwpx"
+    prev.write_bytes(b"dummy")
+    view.rb_cont.setChecked(True)
+    view._template_override = str(prev)
+    assert view._effective_template() == str(prev)
+
+    view.rb_new.setChecked(True)  # 신규 복귀 → override 해제
+    assert view._template_override is None
+    assert view._effective_template() == view.job.template_path
+
+
+def test_run_view_cumulative_mode_requires_single_record(qapp, tmp_path, monkeypatch):
+    """누적 v1 = 단건 게이트 — 2건 선택이면 생성 중단(배치 파일키 매칭은 파킹)."""
+    from PySide6.QtWidgets import QMessageBox
+
+    view = _run_view_with_data(tmp_path)
+    prev = tmp_path / "prev.hwpx"
+    prev.write_bytes(b"dummy")
+    view.rb_cont.setChecked(True)
+    view._template_override = str(prev)
+
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: warnings.append(a[2]))
+    assert len(view.selector.selected_indices()) == 2  # 기본 전체 선택
+    view._on_generate()
+    assert any("1건" in w for w in warnings)
+    assert view._thread is None  # 워커 미기동
+
+
+def test_run_view_blank_gate_injects_markers_on_confirm(qapp, tmp_path, monkeypatch):
+    """능동 빈칸 게이트 — 문구에 필드·건수, 승인 시 워커 레코드에 표식 주입."""
+    from PySide6.QtCore import QObject, Signal
+    from PySide6.QtWidgets import QMessageBox
+
+    from hwpxfiller.gui import run_view as rv
+
+    view = _run_view_with_data(tmp_path)
+
+    questions = []
+    monkeypatch.setattr(
+        QMessageBox, "question",
+        lambda *a, **k: (questions.append(a[2]), QMessageBox.Yes)[1],
+    )
+
+    captured = {}
+
+    class _FakeWorker(QObject):
+        progress = Signal(int, int)
+        finished = Signal(object)
+        failed = Signal(str)
+
+        def __init__(self, template, records, out_dir, pattern):
+            super().__init__()
+            captured["template"] = template
+            captured["records"] = records
+
+        def run(self):
+            pass
+
+    monkeypatch.setattr(rv, "GenerateWorker", _FakeWorker)
+    view._on_generate()
+    try:
+        assert questions and "빈칸 1필드" in questions[0] and "추정가격" in questions[0]
+        assert captured["template"] == view.job.template_path
+        recs = captured["records"]
+        assert recs[0]["추정가격"] == "〘미입력·추정가격〙"  # 미충족 공란 → 표식
+        assert recs[0]["공고명"] == "가"                    # 비빈 값 불변
+        assert recs[1]["추정가격"] == "2000"
+    finally:
+        view._teardown_thread()
+
+
 # ------------------------------------------------------------------ 앱 A(diff)
 def _diff_window_for_test(tmp_path, monkeypatch):
     """실패 모달 즉시 fail + QSettings 를 임시 파일로(사용자 설정 오염 방지)한 창."""
