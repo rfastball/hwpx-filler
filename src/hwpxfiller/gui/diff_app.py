@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+import os
+import re
 import sys
 import tempfile
 import webbrowser
@@ -40,20 +42,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..core.diff import diff_files, render_html
+# _CAT_LABEL: 범주 어휘의 단일 출처는 core — 사본을 두면 코어의 범주 추가가 GUI 에서
+# 조용히 누락된다(영문 키 노출).
+from ..core.diff import _CAT_LABEL, DiffResult, diff_files, render_html
 
-# 변경항목 리스트의 범주 라벨(core/diff._CAT_LABEL 과 동일 어휘).
-_CAT_LABEL = {
-    "number": "숫자",
-    "clause_added": "조항추가",
-    "clause_removed": "조항삭제",
-    "text_changed": "문구변경",
-    "text_added": "추가",
-    "text_removed": "삭제",
-    "table_added": "표추가",
-    "table_removed": "표삭제",
-    "renumber": "번호변경",
-}
+# QTextBrowser 는 id= 앵커 해석이 불안정해 <a name> 이 필요하다. 코어 render_html 은
+# 브라우저 기준을 유지하고(핸드오프 §8), Qt 호환 마크업은 여기 뷰 측에서 주입한다.
+_ANCHOR_ID_RE = re.compile(r"id='(chg-\d+)'>")
+
+
+def _qt_html(html_text: str) -> str:
+    return _ANCHOR_ID_RE.sub(lambda m: f"{m.group(0)}<a name='{m.group(1)}'></a>", html_text)
 
 
 class DiffReviewWindow(QMainWindow):
@@ -63,8 +62,9 @@ class DiffReviewWindow(QMainWindow):
         super().__init__(parent)
         self.setWindowTitle("HWPX 규격서 개정 비교")
         self.resize(1100, 720)
-        self.result = None          # DiffResult
+        self.result: DiffResult | None = None
         self._html: str = ""
+        self._browser_tmp: Path | None = None  # 「브라우저에서 열기」 재사용 임시파일
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -129,7 +129,20 @@ class DiffReviewWindow(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(self, "HWPX 선택", "", "HWPX (*.hwpx)")
         if path:
             edit.setText(path)
+            # 판본이 바뀌면 이전 결과는 화면의 경로와 어긋난다 — 내보내기 오발송 방지.
+            self._invalidate_result("판본이 바뀌었습니다 — 비교를 다시 누르세요.")
         self.btn_compare.setEnabled(bool(self.ed_old.text() and self.ed_new.text()))
+
+    def _invalidate_result(self, message: str) -> None:
+        if self.result is None and not self._html:
+            return
+        self.result = None
+        self._html = ""
+        self.items.setRowCount(0)
+        self.view.clear()
+        self.btn_browser.setEnabled(False)
+        self.btn_save.setEnabled(False)
+        self.lbl_summary.setText(message)
 
     # ------------------------------------------------------------------ 비교
     def _on_compare(self) -> None:
@@ -137,6 +150,7 @@ class DiffReviewWindow(QMainWindow):
         try:
             self.result = diff_files(old, new)
         except Exception as exc:  # noqa: BLE001
+            self._invalidate_result("비교 실패 — 판본을 확인하고 다시 시도하세요.")
             QMessageBox.critical(self, "오류", f"비교 실패:\n{exc}")
             return
         self._html = render_html(self.result)
@@ -149,16 +163,14 @@ class DiffReviewWindow(QMainWindow):
             f"변경 {s.get('changed', 0)} · 번호변경 {s.get('renumber', 0)} · "
             f"변경항목 {len(self.result.change_items)}"
         )
-        self.items.setRowCount(0)
-        for it in self.result.change_items:
-            r = self.items.rowCount()
-            self.items.insertRow(r)
+        self.items.setRowCount(len(self.result.change_items))
+        for r, it in enumerate(self.result.change_items):
             cat = QTableWidgetItem(_CAT_LABEL.get(it.category, it.category))
             cat.setData(Qt.UserRole, it.order)  # 앵커 표적(Change.seq)
             self.items.setItem(r, 0, cat)
             self.items.setItem(r, 1, QTableWidgetItem(it.location_label))
             self.items.setItem(r, 2, QTableWidgetItem(it.detail))
-        self.view.setHtml(self._html)
+        self.view.setHtml(_qt_html(self._html))
         self.btn_browser.setEnabled(True)
         self.btn_save.setEnabled(True)
 
@@ -172,14 +184,27 @@ class DiffReviewWindow(QMainWindow):
 
     # ------------------------------------------------------------- 내보내기
     def _open_in_browser(self) -> None:
-        """원본 충실 뷰 — 임시 파일로 시스템 브라우저에서(임베드 뷰는 CSS 근사)."""
+        """원본 충실 뷰 — 임시 파일로 시스템 브라우저에서(임베드 뷰는 CSS 근사).
+
+        클릭마다 새 파일을 만들면 %TEMP% 에 규격서 본문이 무한 누적된다 —
+        창당 파일 1개를 재사용하고 창 닫힐 때 지운다.
+        """
         if not self._html:
             return
-        with tempfile.NamedTemporaryFile(
-            "w", suffix=".html", delete=False, encoding="utf-8"
-        ) as f:
-            f.write(self._html)
-        webbrowser.open(Path(f.name).as_uri())
+        if self._browser_tmp is None:
+            fd, name = tempfile.mkstemp(suffix=".html")
+            os.close(fd)
+            self._browser_tmp = Path(name)
+        self._browser_tmp.write_text(self._html, encoding="utf-8")
+        webbrowser.open(self._browser_tmp.as_uri())
+
+    def closeEvent(self, event) -> None:  # noqa: N802 (Qt 오버라이드)
+        if self._browser_tmp is not None:
+            try:
+                self._browser_tmp.unlink(missing_ok=True)
+            except OSError:
+                pass  # 브라우저가 잡고 있으면 다음 부팅 정리에 맡긴다
+        super().closeEvent(event)
 
     def _save_html(self) -> None:
         if not self._html:

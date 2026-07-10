@@ -168,11 +168,20 @@ def test_run_view_instantiates_with_a_job(qapp):
 
 
 # ------------------------------------------------------------------ 앱 A(diff)
-def test_diff_window_compares_real_corpus_and_binds_items(qapp):
+def test_diff_window_compares_real_corpus_and_binds_items(qapp, monkeypatch):
     """앱 A 단일 화면 — 실코퍼스 개정 쌍 비교가 리스트·뷰에 바인딩되고 클릭 이동이 돈다."""
     from pathlib import Path
 
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QMessageBox
+
     from hwpxfiller.gui.diff_app import DiffReviewWindow
+
+    # 실패 경로의 모달은 offscreen 에서 exec 루프로 영원히 블록 — 행 대신 즉시 실패.
+    monkeypatch.setattr(
+        QMessageBox, "critical",
+        lambda *a, **k: pytest.fail(f"비교 실패 다이얼로그가 떴다: {a[2] if len(a) > 2 else a}"),
+    )
 
     corpus = Path(__file__).parent / "corpus" / "real"
     win = DiffReviewWindow()
@@ -184,7 +193,10 @@ def test_diff_window_compares_real_corpus_and_binds_items(qapp):
 
     assert win.result is not None
     assert win.items.rowCount() == len(win.result.change_items) > 0
-    assert "chg-" in win._html  # 앵커가 리포트에 존재(클릭 이동 표적)
-    # 첫 항목 선택 → 앵커 스크롤이 예외 없이 동작.
-    win.items.selectRow(0)
+    # 클릭 이동 계약: 각 행의 표적(Qt.UserRole == Change.seq)이 리포트 앵커로 실재.
+    # scrollToAnchor 는 없는 앵커를 조용히 무시하므로, 표적 실재를 직접 못박는다.
+    for r in range(win.items.rowCount()):
+        seq = win.items.item(r, 0).data(Qt.UserRole)
+        assert f"id='chg-{seq}'" in win._html, f"행 {r}: 앵커 chg-{seq} 없음"
+    win.items.selectRow(0)  # 선택 시그널 경로가 예외 없이 동작
     assert win.btn_browser.isEnabled() and win.btn_save.isEnabled()

@@ -784,9 +784,8 @@ def render_html(result: DiffResult) -> str:
         out.append(f"<details open><summary>{len(result.changes)}건</summary>")
         for c in result.changes:
             # 앵커: 변경항목 리스트(ChangeItem.order == Change.seq)에서 클릭 이동의 표적.
-            # id(브라우저)와 <a name>(Qt 리치텍스트 뷰) 둘 다 제공한다.
-            out.append(f"<div class='chg {c.kind}' id='chg-{c.seq}'>"
-                       f"<a name='chg-{c.seq}'></a>")
+            # 브라우저 기준 id 만 — Qt 뷰용 <a name> 은 gui/diff_app 이 뷰 측에서 주입.
+            out.append(f"<div class='chg {c.kind}' id='chg-{c.seq}'>")
             out.append(f"<div class='loc'>[{_KIND_LABEL.get(c.kind, c.kind)}] "
                        f"{html.escape(c.location_label)}</div>")
             if c.kind in ("changed", "renumber"):
