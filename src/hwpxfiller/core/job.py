@@ -30,6 +30,11 @@ from .validate import ValidationReport, validate
 if TYPE_CHECKING:  # 런타임 결합 회피 — DataSource 는 덕타이핑으로 충분.
     from ..data.base import DataSource
 
+# 미충족 공란 표식 — grep 가능 표적의 단일 출처(로드맵 ⑤ 출력검증 = 이 표식 grep).
+# "누락은 시끄럽게"의 출력 짝: 있어야 할 값이 빈 필드에만 주입되고(의도적 공란은 매핑이
+# 이미 키를 제외해 자동 면제), 누적치환의 다음 패스에서 그 필드가 매핑되면 덮인다.
+MISSING_MARKER = "〘미입력·{field}〙"
+
 # 레지스트리 파일명 slug — 파일시스템 금지문자만 정리(naming.clean_filename 과 동일 규칙).
 _INVALID = re.compile(r'[\\/:*?"<>|\r\n\t]')
 
@@ -176,9 +181,26 @@ class RunRequest:
         recs = self.datasource.records()
         return [recs[i] for i in self.selected_indices]
 
-    def mapped_records(self) -> "list[dict]":
-        """선택 레코드에 작업 매핑을 적용 → {템플릿필드: 값}. generate_batch 가 소비한다."""
-        return self.job.mapping.apply_all(self.selected_records())
+    def mapped_records(self, *, mark_missing: str = "") -> "list[dict]":
+        """선택 레코드에 작업 매핑을 적용 → {템플릿필드: 값}. generate_batch 가 소비한다.
+
+        ``mark_missing`` 이 주어지면(예: :data:`MISSING_MARKER`) **값이 빈 키만**
+        ``mark_missing.format(field=키)`` 표식으로 치환한다 — 능동 빈칸 게이트의
+        "표식 넣고 생성" 경로. 의도적 공란(매핑 비움 확정)은 프로파일이 키 자체를
+        제외하므로 자동으로 표식이 없다. 표식은 비어 있지 않은 값이라 엔진의 빈값
+        스킵을 통과해 누름틀에 주입되고, 누적치환 다음 패스에서 매핑되면 덮인다.
+        기본값(빈 문자열)이면 기존 동작 그대로.
+
+        수용 에지: 파일명 패턴이 ``{{빈필드}}`` 를 쓰면 표식이 파일명에 들어간다 —
+        빈 키 파일명은 어차피 이상 신호라 시끄러운 쪽을 택한다.
+        """
+        mapped = self.job.mapping.apply_all(self.selected_records())
+        if not mark_missing:
+            return mapped
+        return [
+            {k: (mark_missing.format(field=k) if v == "" else v) for k, v in rec.items()}
+            for rec in mapped
+        ]
 
     def source_report(self) -> ValidationReport:
         """소스키 사전검증 — 겨눈 DataSource 가 매핑이 읽는 키를 제공하는가.

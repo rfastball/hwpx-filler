@@ -194,6 +194,36 @@ def test_run_request_output_report_flags_empty_value():
     assert "공고명" in report.empty_valued
 
 
+def test_mapped_records_mark_missing_only_empty_values():
+    """표식 주입 — 값이 빈 키만 치환, 비빈 값 불변, 의도적 공란(키 부재)은 그대로."""
+    from hwpxfiller.core.job import MISSING_MARKER
+
+    src = _FakeSource([{"bidNtceNm": "", "presmptPrce": "1000"}])
+    req = RunRequest(_job(), src, [0])
+
+    marked = req.mapped_records(mark_missing=MISSING_MARKER)
+    assert marked[0]["공고명"] == "〘미입력·공고명〙"       # 미충족 공란 → 표식
+    assert marked[0]["추정가격"] == "1,000"                 # 비빈 값 불변(표시형 유지)
+    # 의도적 공란 = 프로파일이 키를 제외 → 표식 대상 자체가 아님.
+    assert set(marked[0]) == set(_job().template_fields())
+
+
+def test_mapped_records_default_unchanged_and_marker_silences_empty_report():
+    """기본 인자 = 기존 동작 회귀 + 표식 주입 후 empty_valued 무경보(주입 확인의 거울)."""
+    from hwpxfiller.core.job import MISSING_MARKER
+    from hwpxfiller.core.validate import validate
+
+    src = _FakeSource([{"bidNtceNm": "", "presmptPrce": "1000"}])
+    req = RunRequest(_job(), src, [0])
+
+    plain = req.mapped_records()
+    assert plain[0]["공고명"] == ""  # 기본값이면 그대로(하위호환)
+
+    marked = req.mapped_records(mark_missing=MISSING_MARKER)
+    report = validate(_job().template_fields(), marked)
+    assert not report.empty_valued  # 표식은 비어 있지 않은 값 — 엔진 빈값 스킵 통과
+
+
 def test_default_jobs_dir_honors_env_override(monkeypatch, tmp_path):
     """HWPXFILLER_HOME 로 레지스트리 위치를 재지정(테스트·이식성)."""
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
