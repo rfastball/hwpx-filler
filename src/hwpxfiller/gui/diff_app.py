@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
@@ -24,9 +25,10 @@ import tempfile
 import webbrowser
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSettings, Qt
 from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QFileDialog,
     QHBoxLayout,
@@ -34,6 +36,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPushButton,
     QSplitter,
@@ -51,6 +54,19 @@ from ..core.diff import CATEGORY_COLORS, CATEGORY_LABELS, DiffResult, diff_files
 # QTextBrowser 는 id= 앵커 해석이 불안정해 <a name> 이 필요하다. 코어 render_html 은
 # 브라우저 기준을 유지하고(핸드오프 §8), Qt 호환 마크업은 여기 뷰 측에서 주입한다.
 _ANCHOR_ID_RE = re.compile(r"id='(chg-\d+)'>")
+
+# 임베드 뷰 근사 보정 — Qt 리치텍스트가 실제 지원하는 속성만(코어 HTML 은 불변,
+# 원본 충실 뷰는 「브라우저에서 열기」가 담당). del/ins 색·셀 여백·기본 폰트.
+_QT_VIEW_CSS = """
+body{font-family:'Malgun Gothic','맑은 고딕',sans-serif;}
+del{background-color:#ffe3e3;color:#a61b1b;}
+ins{background-color:#dcffe0;color:#12681f;text-decoration:none;}
+td,th{padding:4px 8px;}
+.loc{color:#888888;}
+"""
+
+_RECENT_KEY = "recent_pairs"
+_RECENT_MAX = 5
 
 
 def _qt_html(html_text: str) -> str:
@@ -78,6 +94,8 @@ class DiffReviewWindow(QMainWindow):
         self.result: DiffResult | None = None
         self._html: str = ""
         self._browser_tmp: Path | None = None  # 「브라우저에서 열기」 재사용 임시파일
+        self._settings = QSettings("hwpxfiller", "diff")  # 최근 비교(테스트에서 교체 가능)
+        self.setAcceptDrops(True)  # .hwpx 드래그&드롭 투입
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -96,6 +114,10 @@ class DiffReviewWindow(QMainWindow):
         self.btn_compare = QPushButton("비교")
         self.btn_compare.clicked.connect(self._on_compare)
         self.btn_compare.setEnabled(False)
+        self.btn_recent = QPushButton("최근 ▾")
+        self._recent_menu = QMenu(self)
+        self._recent_menu.aboutToShow.connect(self._populate_recent_menu)
+        self.btn_recent.setMenu(self._recent_menu)
         picks.addWidget(QLabel("구판(.hwpx)"))
         picks.addWidget(self.ed_old, 1)
         picks.addWidget(btn_old)
@@ -103,6 +125,7 @@ class DiffReviewWindow(QMainWindow):
         picks.addWidget(QLabel("신판(.hwpx)"))
         picks.addWidget(self.ed_new, 1)
         picks.addWidget(btn_new)
+        picks.addWidget(self.btn_recent)
         picks.addWidget(self.btn_compare)
         root.addLayout(picks)
 
@@ -141,6 +164,7 @@ class DiffReviewWindow(QMainWindow):
 
         self.view = QTextBrowser()
         self.view.setOpenExternalLinks(False)
+        self.view.document().setDefaultStyleSheet(_QT_VIEW_CSS)
         split.addWidget(self.view)
         split.setStretchFactor(0, 2)
         split.setStretchFactor(1, 3)
@@ -153,7 +177,68 @@ class DiffReviewWindow(QMainWindow):
             edit.setText(path)
             # 판본이 바뀌면 이전 결과는 화면의 경로와 어긋난다 — 내보내기 오발송 방지.
             self._invalidate_result("판본이 바뀌었습니다 — 비교를 다시 누르세요.")
+        self._sync_compare_button()
+
+    def _sync_compare_button(self) -> None:
         self.btn_compare.setEnabled(bool(self.ed_old.text() and self.ed_new.text()))
+
+    # ------------------------------------------------------------ 드래그&드롭
+    def dragEnterEvent(self, event) -> None:  # noqa: N802 (Qt 오버라이드)
+        if any(u.toLocalFile().lower().endswith(".hwpx") for u in event.mimeData().urls()):
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:  # noqa: N802 (Qt 오버라이드)
+        paths = [u.toLocalFile() for u in event.mimeData().urls()
+                 if u.toLocalFile().lower().endswith(".hwpx")]
+        if paths:
+            self._ingest_paths(paths)
+            event.acceptProposedAction()
+
+    def _ingest_paths(self, paths: "list[str]") -> None:
+        """파일 투입(DnD·최근 목록 공용). 2개면 순서대로 구→신, 1개면 빈 칸 우선(구→신)."""
+        paths = [p for p in paths if p.lower().endswith(".hwpx")]
+        if not paths:
+            return
+        if len(paths) >= 2:
+            self.ed_old.setText(paths[0])
+            self.ed_new.setText(paths[1])
+        elif not self.ed_old.text():
+            self.ed_old.setText(paths[0])
+        elif not self.ed_new.text():
+            self.ed_new.setText(paths[0])
+        else:
+            self.ed_old.setText(paths[0])  # 둘 다 차 있으면 구판 교체(비교 방향 유지)
+        self._invalidate_result("판본이 바뀌었습니다 — 비교를 다시 누르세요.")
+        self._sync_compare_button()
+
+    # ------------------------------------------------------------- 최근 비교
+    def _recent_pairs(self) -> "list[tuple[str, str]]":
+        try:
+            raw = json.loads(self._settings.value(_RECENT_KEY, "[]"))
+            return [(str(o), str(n)) for o, n in raw]
+        except (ValueError, TypeError):
+            return []
+
+    def _push_recent(self, old: str, new: str) -> None:
+        pairs = [(o, n) for o, n in self._recent_pairs() if (o, n) != (old, new)]
+        pairs.insert(0, (old, new))
+        self._settings.setValue(_RECENT_KEY, json.dumps(pairs[:_RECENT_MAX]))
+
+    def _populate_recent_menu(self) -> None:
+        self._recent_menu.clear()
+        pairs = self._recent_pairs()
+        if not pairs:
+            act = self._recent_menu.addAction("최근 비교 없음")
+            act.setEnabled(False)
+            return
+        for old, new in pairs:
+            act = self._recent_menu.addAction(f"{Path(old).name} ↔ {Path(new).name}")
+            if Path(old).exists() and Path(new).exists():
+                act.triggered.connect(
+                    lambda _=False, o=old, n=new: self._ingest_paths([o, n])
+                )
+            else:
+                act.setEnabled(False)  # 파일이 사라진 항목은 고를 수 없게
 
     def _invalidate_result(self, message: str) -> None:
         if self.result is None and not self._html:
@@ -170,12 +255,16 @@ class DiffReviewWindow(QMainWindow):
     # ------------------------------------------------------------------ 비교
     def _on_compare(self) -> None:
         old, new = self.ed_old.text(), self.ed_new.text()
+        QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             self.result = diff_files(old, new)
         except Exception as exc:  # noqa: BLE001
+            QApplication.restoreOverrideCursor()  # 모달 뜨기 전에 커서 복원
             self._invalidate_result("비교 실패 — 판본을 확인하고 다시 시도하세요.")
             QMessageBox.critical(self, "오류", f"비교 실패:\n{exc}")
             return
+        QApplication.restoreOverrideCursor()
+        self._push_recent(old, new)
         self._html = render_html(self.result)
         self._bind_result()
 

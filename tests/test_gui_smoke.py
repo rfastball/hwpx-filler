@@ -168,11 +168,9 @@ def test_run_view_instantiates_with_a_job(qapp):
 
 
 # ------------------------------------------------------------------ 앱 A(diff)
-def test_diff_window_compares_real_corpus_and_binds_items(qapp, monkeypatch):
-    """앱 A 단일 화면 — 실코퍼스 개정 쌍 비교가 리스트·뷰에 바인딩되고 클릭 이동이 돈다."""
-    from pathlib import Path
-
-    from PySide6.QtCore import Qt
+def _diff_window_for_test(tmp_path, monkeypatch):
+    """실패 모달 즉시 fail + QSettings 를 임시 파일로(사용자 설정 오염 방지)한 창."""
+    from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QMessageBox
 
     from hwpxfiller.gui.diff_app import DiffReviewWindow
@@ -182,9 +180,19 @@ def test_diff_window_compares_real_corpus_and_binds_items(qapp, monkeypatch):
         QMessageBox, "critical",
         lambda *a, **k: pytest.fail(f"비교 실패 다이얼로그가 떴다: {a[2] if len(a) > 2 else a}"),
     )
+    win = DiffReviewWindow()
+    win._settings = QSettings(str(tmp_path / "recent.ini"), QSettings.IniFormat)
+    return win
+
+
+def test_diff_window_compares_real_corpus_and_binds_items(qapp, tmp_path, monkeypatch):
+    """앱 A 단일 화면 — 실코퍼스 개정 쌍 비교가 리스트·뷰에 바인딩되고 클릭 이동이 돈다."""
+    from pathlib import Path
+
+    from PySide6.QtCore import Qt
 
     corpus = Path(__file__).parent / "corpus" / "real"
-    win = DiffReviewWindow()
+    win = _diff_window_for_test(tmp_path, monkeypatch)
     assert not win.btn_compare.isEnabled()  # 판본 선택 전
 
     win.ed_old.setText(str(corpus / "spec_revision_2025.hwpx"))
@@ -212,20 +220,12 @@ def test_diff_visible_predicate_headless():
     assert _visible("renumber", set(), True)
 
 
-def test_diff_category_filter_and_renumber_toggle(qapp, monkeypatch):
+def test_diff_category_filter_and_renumber_toggle(qapp, tmp_path, monkeypatch):
     """범주 필터·번호변경 접기 — 기본: 실질 범주 전부 표시 + renumber 숨김(개수는 노출)."""
     from pathlib import Path
 
-    from PySide6.QtWidgets import QMessageBox
-
-    from hwpxfiller.gui.diff_app import DiffReviewWindow
-
-    monkeypatch.setattr(
-        QMessageBox, "critical",
-        lambda *a, **k: pytest.fail(f"비교 실패 다이얼로그가 떴다: {a[2] if len(a) > 2 else a}"),
-    )
     corpus = Path(__file__).parent / "corpus" / "real"
-    win = DiffReviewWindow()
+    win = _diff_window_for_test(tmp_path, monkeypatch)
     win.ed_old.setText(str(corpus / "spec_revision_2025.hwpx"))
     win.ed_new.setText(str(corpus / "spec_revision_2026.hwpx"))
     win._on_compare()
@@ -252,21 +252,48 @@ def test_diff_category_filter_and_renumber_toggle(qapp, monkeypatch):
     assert win.filter_bar.count() == 0 and win.chk_renumber is None
 
 
-def test_diff_list_badge_colors_match_core_palette(qapp, monkeypatch):
+def test_diff_ingest_paths_and_recent_pairs(qapp, tmp_path):
+    """DnD/최근 목록 공용 투입 — 2개=구→신, 1개=빈 칸 우선, 비-hwpx 무시, 결과 무효화."""
+    from PySide6.QtCore import QSettings
+
+    from hwpxfiller.gui.diff_app import DiffReviewWindow
+
+    win = DiffReviewWindow()
+    win._settings = QSettings(str(tmp_path / "recent.ini"), QSettings.IniFormat)
+
+    a, b = str(tmp_path / "a.hwpx"), str(tmp_path / "b.hwpx")
+    win._ingest_paths([a, b])
+    assert win.ed_old.text() == a and win.ed_new.text() == b
+    assert win.btn_compare.isEnabled()
+
+    win.ed_old.clear(); win.ed_new.clear()
+    win._ingest_paths([a])                    # 1개 → 빈 구판부터
+    assert win.ed_old.text() == a and not win.ed_new.text()
+    win._ingest_paths([b])                    # 1개 더 → 빈 신판
+    assert win.ed_new.text() == b
+    win._ingest_paths([str(tmp_path / "x.txt")])  # 비-hwpx 무시
+    assert win.ed_old.text() == a and win.ed_new.text() == b
+    win._html = "<html>이전 결과</html>"
+    win._ingest_paths([b])                    # 둘 다 차 있으면 구판 교체 + 결과 무효화
+    assert win.ed_old.text() == b and win._html == ""
+
+    # 최근 쌍: 중복 제거·앞 삽입·최대 5개.
+    for i in range(7):
+        win._push_recent(f"o{i}.hwpx", f"n{i}.hwpx")
+    win._push_recent("o6.hwpx", "n6.hwpx")    # 중복 재푸시 → 맨 앞 유지, 증식 없음
+    pairs = win._recent_pairs()
+    assert len(pairs) == 5
+    assert pairs[0] == ("o6.hwpx", "n6.hwpx")
+
+
+def test_diff_list_badge_colors_match_core_palette(qapp, tmp_path, monkeypatch):
     """리스트 배지색 = HTML 리포트의 b-{category} — 코어 팔레트 단일 출처 계약."""
     from pathlib import Path
 
-    from PySide6.QtWidgets import QMessageBox
-
     from hwpxfiller.core.diff import CATEGORY_COLORS
-    from hwpxfiller.gui.diff_app import DiffReviewWindow
 
-    monkeypatch.setattr(
-        QMessageBox, "critical",
-        lambda *a, **k: pytest.fail(f"비교 실패 다이얼로그가 떴다: {a[2] if len(a) > 2 else a}"),
-    )
     corpus = Path(__file__).parent / "corpus" / "real"
-    win = DiffReviewWindow()
+    win = _diff_window_for_test(tmp_path, monkeypatch)
     win.ed_old.setText(str(corpus / "spec_revision_2025.hwpx"))
     win.ed_new.setText(str(corpus / "spec_revision_2026.hwpx"))
     win._on_compare()
