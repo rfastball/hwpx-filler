@@ -202,6 +202,56 @@ def test_diff_window_compares_real_corpus_and_binds_items(qapp, monkeypatch):
     assert win.btn_browser.isEnabled() and win.btn_save.isEnabled()
 
 
+def test_diff_visible_predicate_headless():
+    """행 표시 판정 — renumber 는 전용 토글, 나머지는 범주 체크."""
+    from hwpxfiller.gui.diff_app import _visible
+
+    assert _visible("number", {"number"}, False)
+    assert not _visible("number", set(), False)
+    assert not _visible("renumber", {"renumber"}, False)  # 범주 체크가 아니라 토글만 따름
+    assert _visible("renumber", set(), True)
+
+
+def test_diff_category_filter_and_renumber_toggle(qapp, monkeypatch):
+    """범주 필터·번호변경 접기 — 기본: 실질 범주 전부 표시 + renumber 숨김(개수는 노출)."""
+    from pathlib import Path
+
+    from PySide6.QtWidgets import QMessageBox
+
+    from hwpxfiller.gui.diff_app import DiffReviewWindow
+
+    monkeypatch.setattr(
+        QMessageBox, "critical",
+        lambda *a, **k: pytest.fail(f"비교 실패 다이얼로그가 떴다: {a[2] if len(a) > 2 else a}"),
+    )
+    corpus = Path(__file__).parent / "corpus" / "real"
+    win = DiffReviewWindow()
+    win.ed_old.setText(str(corpus / "spec_revision_2025.hwpx"))
+    win.ed_new.setText(str(corpus / "spec_revision_2026.hwpx"))
+    win._on_compare()
+
+    items = win.result.change_items
+    renumber_rows = [r for r, it in enumerate(items) if it.category == "renumber"]
+    hidden = [r for r in range(win.items.rowCount()) if win.items.isRowHidden(r)]
+    assert hidden == renumber_rows  # 기본: renumber 만 숨김
+    if renumber_rows:
+        assert win.chk_renumber is not None
+        assert f"{len(renumber_rows)}건" in win.chk_renumber.text()  # 조용히 버리지 않음
+        win.chk_renumber.setChecked(True)
+        assert not any(win.items.isRowHidden(r) for r in renumber_rows)
+
+    # 특정 범주 해제 → 해당 행만 추가로 숨김.
+    cat, cb = next(iter(win._filter_checks.items()))
+    cb.setChecked(False)
+    for r, it in enumerate(items):
+        if it.category == cat:
+            assert win.items.isRowHidden(r)
+
+    # 판본 변경 → 결과·필터 바 무효화.
+    win._invalidate_result("변경")
+    assert win.filter_bar.count() == 0 and win.chk_renumber is None
+
+
 def test_diff_list_badge_colors_match_core_palette(qapp, monkeypatch):
     """리스트 배지색 = HTML 리포트의 b-{category} — 코어 팔레트 단일 출처 계약."""
     from pathlib import Path

@@ -25,8 +25,9 @@ import webbrowser
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
+    QCheckBox,
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
@@ -54,6 +55,17 @@ _ANCHOR_ID_RE = re.compile(r"id='(chg-\d+)'>")
 
 def _qt_html(html_text: str) -> str:
     return _ANCHOR_ID_RE.sub(lambda m: f"{m.group(0)}<a name='{m.group(1)}'></a>", html_text)
+
+
+def _visible(category: str, enabled: "set[str]", show_renumber: bool) -> bool:
+    """변경항목 행 표시 판정(순수 함수 — 헤드리스 테스트 표적).
+
+    renumber 는 범주 체크가 아니라 전용 토글을 따른다 — HTML 리포트가 재번호를
+    실질 변경과 섞지 않되(기본 접힘) 조용히 버리지 않는 규칙의 리스트 짝.
+    """
+    if category == "renumber":
+        return show_renumber
+    return category in enabled
 
 
 class DiffReviewWindow(QMainWindow):
@@ -108,6 +120,12 @@ class DiffReviewWindow(QMainWindow):
         srow.addWidget(self.btn_save)
         root.addLayout(srow)
 
+        # ---- 범주 필터 바(비교 결과에 실재하는 범주만 동적 생성) ----
+        self.filter_bar = QHBoxLayout()
+        self._filter_checks: "dict[str, QCheckBox]" = {}
+        self.chk_renumber: "QCheckBox | None" = None
+        root.addLayout(self.filter_bar)
+
         # ---- 변경항목 리스트(좌) + 리포트 뷰(우) ----
         split = QSplitter()
         self.items = QTableWidget(0, 3)
@@ -144,6 +162,7 @@ class DiffReviewWindow(QMainWindow):
         self._html = ""
         self.items.setRowCount(0)
         self.view.clear()
+        self._clear_filter_bar()
         self.btn_browser.setEnabled(False)
         self.btn_save.setEnabled(False)
         self.lbl_summary.setText(message)
@@ -187,8 +206,60 @@ class DiffReviewWindow(QMainWindow):
             self.items.setItem(r, 1, loc)
             self.items.setItem(r, 2, det)
         self.view.setHtml(_qt_html(self._html))
+        self._rebuild_filter_bar()
+        self._apply_filter()
         self.btn_browser.setEnabled(True)
         self.btn_save.setEnabled(True)
+
+    # ------------------------------------------------------------------ 필터
+    def _clear_filter_bar(self) -> None:
+        while self.filter_bar.count():
+            item = self.filter_bar.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+        self._filter_checks = {}
+        self.chk_renumber = None
+
+    def _rebuild_filter_bar(self) -> None:
+        """비교 결과에 실재하는 범주만 체크박스로(기본 켬). renumber 는 전용 토글(기본 끔)."""
+        self._clear_filter_bar()
+        cats: "dict[str, None]" = {}  # 등장순 중복제거
+        n_renumber = 0
+        for it in self.result.change_items:
+            if it.category == "renumber":
+                n_renumber += 1
+            else:
+                cats.setdefault(it.category, None)
+        if not cats and not n_renumber:
+            return
+        self.filter_bar.addWidget(QLabel("필터:"))
+        for cat in cats:
+            cb = QCheckBox(CATEGORY_LABELS.get(cat, cat))
+            cb.setChecked(True)
+            # 배지색 점 아이콘 — 리스트 배지·리포트와 같은 팔레트.
+            if cat in CATEGORY_COLORS:
+                dot = QPixmap(10, 10)
+                dot.fill(QColor(CATEGORY_COLORS[cat]))
+                cb.setIcon(dot)
+            cb.toggled.connect(self._apply_filter)
+            self._filter_checks[cat] = cb
+            self.filter_bar.addWidget(cb)
+        if n_renumber:
+            self.chk_renumber = QCheckBox(f"번호변경 {n_renumber}건 표시")
+            self.chk_renumber.setChecked(False)  # 기본 접힘 — 개수는 항상 노출
+            self.chk_renumber.toggled.connect(self._apply_filter)
+            self.filter_bar.addSpacing(12)
+            self.filter_bar.addWidget(self.chk_renumber)
+        self.filter_bar.addStretch(1)
+
+    def _apply_filter(self) -> None:
+        if self.result is None:
+            return
+        enabled = {c for c, cb in self._filter_checks.items() if cb.isChecked()}
+        show_renumber = self.chk_renumber is not None and self.chk_renumber.isChecked()
+        for r, it in enumerate(self.result.change_items):
+            self.items.setRowHidden(r, not _visible(it.category, enabled, show_renumber))
 
     # ------------------------------------------------------------- 클릭 이동
     def _on_item_selected(self) -> None:
