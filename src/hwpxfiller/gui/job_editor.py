@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core.job import Job, JobRegistry
+from .style import BASE_QSS
 from .wizard import DataPage, MappingPage, TemplatePage
 
 
@@ -42,6 +43,7 @@ class JobEditorWizard(QWizard):
         self.setWindowTitle("HWPX Filler — 작업 편집기")
         self.resize(920, 660)
         self.setWizardStyle(QWizard.ModernStyle)
+        self.setStyleSheet(BASE_QSS)
         self.registry = registry
 
         # ---- 공유 세션 상태(저작 페이지가 self.wizard() 로 읽음) ----

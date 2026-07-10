@@ -158,6 +158,58 @@ def test_home_exposes_navigation_signals_and_lists_jobs(qapp, tmp_path):
     assert home.list.item(0).text() == "샘플작업"
 
 
+def test_home_empty_state_and_job_cards(qapp, tmp_path):
+    """빈 상태 ↔ 카드 목록 전환, 빈 상태 버튼 = new_job_requested 동일 시그널."""
+    from PySide6.QtWidgets import QLabel
+
+    from hwpxfiller.core.job import Job, JobRegistry
+    from hwpxfiller.gui.home import _JobCard, JobListHome
+
+    reg = JobRegistry(tmp_path)
+    home = JobListHome(reg)
+    assert home.stack.currentIndex() == 1  # 작업 0개 → 빈 상태
+
+    emitted = []
+    home.new_job_requested.connect(lambda: emitted.append(True))
+    home.btn_empty_new.click()
+    assert emitted  # 빈 상태 버튼도 같은 계약 시그널
+
+    reg.save(Job(name="카드작업", template_path="/t.hwpx", filename_pattern="doc-{{ID}}"))
+    home.refresh()
+    assert home.stack.currentIndex() == 0  # 목록 페이지로
+    item = home.list.item(0)
+    card = home.list.itemWidget(item)
+    assert isinstance(card, _JobCard)
+    joined = " ".join(lbl.text() for lbl in card.findChildren(QLabel))
+    assert "카드작업" in joined
+    assert "필드 0개" in joined          # 메타 노출
+    assert "아직 집행 안 함" in joined    # 미집행 상태
+    assert "템플릿 없음" in joined        # 부재 템플릿 선고지
+
+
+def test_app_controller_records_last_run(qapp, tmp_path, monkeypatch):
+    """성공 집행(run_finished) → last_run_at 저장·홈 갱신. RunView 는 레지스트리 무지."""
+    from hwpxfiller.core.job import Job, JobRegistry
+    from hwpxfiller.gui.app import _AppController
+
+    reg = JobRegistry(tmp_path)
+    reg.save(Job(name="집행기록", template_path="/t.hwpx"))
+    ctrl = _AppController(reg)
+
+    class _Batch:
+        succeeded = 2
+
+    ctrl._record_run("집행기록", _Batch())
+    assert reg.load("집행기록").last_run_at != ""
+
+    class _Failed:
+        succeeded = 0
+
+    before = reg.load("집행기록").last_run_at
+    ctrl._record_run("집행기록", _Failed())
+    assert reg.load("집행기록").last_run_at == before  # 실패 집행은 갱신 안 함
+
+
 def test_run_view_instantiates_with_a_job(qapp):
     from hwpxfiller.core.job import Job
     from hwpxfiller.gui.run_view import RunView

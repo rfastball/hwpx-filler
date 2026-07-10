@@ -54,13 +54,21 @@ def default_jobs_dir() -> Path:
 # ------------------------------------------------------------------ 모델
 @dataclass
 class Job:
-    """저장되는 생성 작업 — durable 바인딩 {템플릿·매핑·파일명}. 데이터·행은 제외."""
+    """저장되는 생성 작업 — durable 바인딩 {템플릿·매핑·파일명}. 데이터·행은 제외.
+
+    스키마 진화 규율: **가산적(additive) 필드는 version 을 올리지 않는다** —
+    ``from_dict`` 의 ``.get(기본값)`` 관례가 하위호환(구 JSON→기본값, 구 코드는 신 키 무시)을
+    보장한다. version 증가는 기존 키의 의미·형태가 깨지는 변경에 예약.
+    """
 
     name: str = ""
     template_path: str = ""
     mapping: MappingProfile = field(default_factory=MappingProfile)
     filename_pattern: str = "output-{{ID}}"
     version: int = 1  # 전방호환 — 스키마 진화 시 마이그레이션 훅.
+    # 마지막 성공 집행 시각(ISO-8601, ""=미집행). 작업 자체의 사용 메타 — 집행의
+    # 데이터·행을 저장하는 게 아니므로 "Job 에 데이터 미포함" 불변식과 무관.
+    last_run_at: str = ""
 
     def template_fields(self) -> "list[str]":
         """이 작업이 채우는 템플릿 필드(매핑이 방출하는 집합). 집행 사전검증의 요구필드."""
@@ -82,6 +90,7 @@ class Job:
             "template_path": self.template_path,
             "filename_pattern": self.filename_pattern,
             "mapping": self.mapping.to_dict(),
+            "last_run_at": self.last_run_at,
         }
 
     @classmethod
@@ -92,6 +101,7 @@ class Job:
             mapping=MappingProfile.from_dict(d.get("mapping", {})),
             filename_pattern=d.get("filename_pattern", "output-{{ID}}"),
             version=d.get("version", 1),
+            last_run_at=d.get("last_run_at", ""),
         )
 
     def save(self, path: "str | Path") -> None:

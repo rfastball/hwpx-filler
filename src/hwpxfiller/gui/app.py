@@ -47,8 +47,21 @@ class _AppController:
 
         job = self.registry.load(name)
         view = RunView(job)
+        # 성공 집행 → 작업 사용 메타(last_run_at) 갱신. RunView 는 레지스트리를 모른다
+        # (뷰 계약 유지) — 시그널 수신자만 추가.
+        view.run_finished.connect(lambda batch: self._record_run(name, batch))
         self._track(view)
         view.show()
+
+    def _record_run(self, name: str, batch) -> None:
+        from datetime import datetime
+
+        if getattr(batch, "succeeded", 0) <= 0 or not self.registry.exists(name):
+            return
+        job = self.registry.load(name)
+        job.last_run_at = datetime.now().isoformat(timespec="seconds")
+        self.registry.save(job)
+        self.home.refresh()
 
     def _delete_job(self, name: str) -> None:
         from PySide6.QtWidgets import QMessageBox

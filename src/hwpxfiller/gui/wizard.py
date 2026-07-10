@@ -30,6 +30,7 @@ from ..core.schema import extract_schema
 from ..data.excel import ExcelDataSource
 from .mapping_state import MappingModel
 from .mapping_table import MappingTable
+from .style import mark
 
 # 요약 라벨에 나열할 필드 이름 최대 개수(넘치면 말줄임).
 _SUMMARY_MAX_FIELDS = 12
@@ -60,7 +61,7 @@ class TemplatePage(QWizardPage):
         layout.addWidget(self.lbl_summary)
         self.lbl_warn = QLabel("")
         self.lbl_warn.setWordWrap(True)
-        self.lbl_warn.setStyleSheet("color: #A05A00;")
+        mark(self.lbl_warn, "level", "warn")
         layout.addWidget(self.lbl_warn)
         layout.addStretch(1)
 

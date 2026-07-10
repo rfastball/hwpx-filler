@@ -70,6 +70,19 @@ def test_save_load_roundtrip_preserves_mapping_behavior(tmp_path):
     }
 
 
+def test_last_run_at_roundtrip_and_backward_compat():
+    """가산 필드 last_run_at — 왕복 보존 + 구 JSON(키 부재)은 기본값 ""(version 1 유지)."""
+    job = _job()
+    job.last_run_at = "2026-07-10T12:34:56"
+    loaded = Job.from_dict(job.to_dict())
+    assert loaded.last_run_at == "2026-07-10T12:34:56"
+    assert loaded.version == 1
+
+    old_dict = _job().to_dict()
+    del old_dict["last_run_at"]  # 구 버전이 저장한 JSON
+    assert Job.from_dict(old_dict).last_run_at == ""
+
+
 def test_default_mapping_is_empty_profile():
     """빈 작업은 빈 프로파일을 갖는다(데이터·행 미포함 원칙의 최소형)."""
     job = Job()
