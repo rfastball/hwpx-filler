@@ -65,10 +65,27 @@ class TemplatePage(QWizardPage):
         layout.addWidget(self.lbl_warn)
         layout.addStretch(1)
 
+    def initializePage(self):
+        # 편집 모드: 저장된 템플릿을 자동 로드(부재 시 경고만 — 사용자가 재선택).
+        wiz = self.wizard()
+        job = getattr(wiz, "initial_job", None)
+        if job is None or self._valid or self.ed_path.text():
+            return
+        if job.template_path and Path(job.template_path).exists():
+            self._load_template(job.template_path)
+        elif job.template_path:
+            self.lbl_warn.setText(
+                f"저장된 템플릿을 찾을 수 없습니다: {job.template_path}\n"
+                "템플릿을 다시 선택하세요."
+            )
+
     def _pick(self):
         path, _ = QFileDialog.getOpenFileName(self, "HWPX 템플릿 선택", "", "HWPX (*.hwpx)")
-        if not path:
-            return
+        if path:
+            self._load_template(path)
+
+    def _load_template(self, path: str) -> bool:
+        """스키마 추출·요약 표시. 실패/필드 0개면 미완료 유지."""
         wiz = self.wizard()
         self._valid = False
         self.lbl_warn.setText("")
@@ -78,7 +95,7 @@ class TemplatePage(QWizardPage):
             QMessageBox.critical(self, "오류", f"템플릿 스키마 추출 실패:\n{exc}")
             self.lbl_summary.setText("")
             self.completeChanged.emit()
-            return
+            return False
 
         self.ed_path.setText(path)
         if not schema.fields:
@@ -87,7 +104,7 @@ class TemplatePage(QWizardPage):
                 "한글에서 누름틀을 삽입하거나 저작 보조(compile)로 토큰을 변환한 템플릿을 쓰세요."
             )
             self.completeChanged.emit()
-            return
+            return False
 
         wiz.template_path = path
         wiz.schema = schema
@@ -104,6 +121,7 @@ class TemplatePage(QWizardPage):
             )
         self._valid = True
         self.completeChanged.emit()
+        return True
 
     def isComplete(self) -> bool:
         return self._valid
@@ -133,6 +151,15 @@ class DataPage(QWizardPage):
         self.lbl_summary.setWordWrap(True)
         layout.addWidget(self.lbl_summary)
         layout.addStretch(1)
+
+    def initializePage(self):
+        # 편집 모드 고지: Job 은 데이터를 저장하지 않는다(핸드오프 §3) — 매핑 검토용
+        # 샘플 데이터를 다시 고른다는 사실을 정직하게 노출.
+        if getattr(self.wizard(), "initial_job", None) is not None:
+            self.setSubTitle(
+                "작업에 데이터는 저장되지 않습니다 — 매핑 검토용 샘플 데이터를 "
+                "다시 선택하세요. 실제 데이터·행은 집행할 때 고릅니다."
+            )
 
     def _pick(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -208,13 +235,16 @@ class MappingPage(QWizardPage):
         layout.addLayout(stepper)
 
         buttons = QHBoxLayout()
+        self.lbl_progress = QLabel("확정 0/0")
+        mark(self.lbl_progress, "muted", True)
         btn_load = QPushButton("프로파일 불러오기…")
         btn_load.clicked.connect(self._load_profile)
         btn_save = QPushButton("프로파일 저장…")
         btn_save.clicked.connect(self._save_profile)
+        buttons.addWidget(self.lbl_progress)
+        buttons.addStretch(1)
         buttons.addWidget(btn_load)
         buttons.addWidget(btn_save)
-        buttons.addStretch(1)
         layout.addLayout(buttons)
 
     def initializePage(self):
@@ -225,18 +255,42 @@ class MappingPage(QWizardPage):
             # (뒤로 갔다 와도 사람이 만진 확정 상태를 잃지 않게).
             wiz.model = MappingModel.from_suggestions(wiz.schema, wiz.source_fields)
             self._built_for = key
+            # 편집 모드: 저장된 매핑을 프리시드 — 일치 행은 과거 사람 확정의 복원이라
+            # 확정 상태로 온다(apply_profile). 프로파일에 없는 행은 미확정 유지:
+            # 의도적 공란과 새 필드를 구별할 수 없어 자동 확정은 게이트를 몰래 약화시킨다.
+            job = getattr(wiz, "initial_job", None)
+            if job is not None and job.mapping.mappings:
+                applied = wiz.model.apply_profile(job.mapping)
+                self.setSubTitle(
+                    f"기존 매핑 {applied}개 필드를 불러왔습니다(확정 상태). "
+                    "소스에 없거나 새로 생긴 필드만 검토해 확정하세요."
+                )
         preview = wiz.records[0] if wiz.records else {}
         self.table.set_model(wiz.model, preview)
         # 데이터가 바뀌면 인덱스가 범위 밖일 수 있으니 클램프.
         if self._preview_index >= len(wiz.records):
             self._preview_index = 0
         self._sync_preview()
+        self._sync_progress()
         self.completeChanged.emit()
 
     def _on_table_changed(self):
         # 매핑 편집 시 미리보기 요약도 함께 갱신(미리보기 셀은 테이블이 이미 갱신).
         self._sync_preview_summary()
+        self._sync_progress()
         self.completeChanged.emit()
+
+    def _sync_progress(self):
+        """확정 진행 카운터 — 게이트(전 행 확정)까지 얼마나 남았는지 상시 노출."""
+        model = self.wizard().model if self.wizard() else None
+        if model is None or not model.rows:
+            self.lbl_progress.setText("확정 0/0")
+            return
+        done = sum(1 for r in model.rows if r.confirmed)
+        complete = done == len(model.rows)
+        self.lbl_progress.setText(f"확정 {done}/{len(model.rows)}")
+        mark(self.lbl_progress, "muted", not complete)
+        mark(self.lbl_progress, "level", "ok" if complete else "")
 
     def _step(self, delta: int):
         wiz = self.wizard()

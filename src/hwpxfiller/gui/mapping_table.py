@@ -284,6 +284,13 @@ class MappingTable(QWidget):
                 combo.setCurrentIndex(combo.count() - 1)
             elif len(row.sources) == 1 and row.sources[0] in model.source_fields:
                 combo.setCurrentIndex(1 + model.source_fields.index(row.sources[0]))
+            elif len(row.sources) == 1:
+                # 프로파일이 기억한 소스가 현 샘플 데이터에 없음 — (비움) 오표시 대신
+                # 실제 이름을 보여 상태를 숨기지 않는다(집행 사전검증이 잡기 전에 에디터가 고지).
+                combo.addItem(
+                    _source_label(row.sources[0], model.aliases) + " (데이터에 없음)"
+                )
+                combo.setCurrentIndex(combo.count() - 1)
             else:
                 combo.setCurrentIndex(0)
             combo.addItem(_MULTI_ITEM)

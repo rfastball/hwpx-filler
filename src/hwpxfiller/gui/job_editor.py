@@ -38,12 +38,20 @@ class JobEditorWizard(QWizard):
 
     job_saved = Signal(str)  # 저장된 작업 이름
 
-    def __init__(self, registry: JobRegistry, parent=None):
+    def __init__(self, registry: JobRegistry, initial_job: "Job | None" = None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("HWPX Filler — 작업 편집기")
+        # 편집 모드: 기존 작업을 프리로드(템플릿 자동 로드·매핑 프리시드·이름/패턴 프리필).
+        # 게이트는 그대로다 — 프리시드는 "과거 사람 확정"의 복원이지 자동 확정이 아니다.
+        self.initial_job = initial_job
+        if initial_job is not None:
+            self.setWindowTitle(f"HWPX Filler — 작업 편집: {initial_job.name}")
+        else:
+            self.setWindowTitle("HWPX Filler — 작업 편집기")
         self.resize(920, 660)
         self.setWizardStyle(QWizard.ModernStyle)
         self.setStyleSheet(BASE_QSS)
+        # 마지막 스텝 = 저장(생성 아님)을 버튼 문안으로 못박는다.
+        self.setButtonText(QWizard.FinishButton, "작업 저장")
         self.registry = registry
 
         # ---- 공유 세션 상태(저작 페이지가 self.wizard() 로 읽음) ----
@@ -77,7 +85,10 @@ class JobEditorWizard(QWizard):
                 "확정된 매핑이 전부 비움이라 채울 값이 없습니다. 소스를 지정한 뒤 저장하세요.",
             )
             return
-        if self.registry.exists(name) and QMessageBox.question(
+        # 자기 자신 갱신(편집 모드, 이름 그대로)은 자명 — 이름을 바꿔 다른 작업을
+        # 덮게 될 때만 확인을 묻는다.
+        editing_self = self.initial_job is not None and name == self.initial_job.name
+        if not editing_self and self.registry.exists(name) and QMessageBox.question(
             self, "덮어쓰기", f"작업 '{name}' 이(가) 이미 있습니다. 덮어쓸까요?"
         ) != QMessageBox.Yes:
             return
@@ -86,6 +97,8 @@ class JobEditorWizard(QWizard):
             template_path=self.template_path,
             mapping=profile,
             filename_pattern=self._save_page.pattern() or "output-{{ID}}",
+            # 편집 재저장이 사용 메타를 지우지 않게 이월.
+            last_run_at=self.initial_job.last_run_at if self.initial_job else "",
         )
         try:
             self.registry.save(job)
@@ -122,6 +135,15 @@ class SaveJobPage(QWizardPage):
         layout.addLayout(grid)
         layout.addStretch(1)
         self.ed_name.textChanged.connect(self.completeChanged)
+        self._prefilled = False  # 편집 모드 프리필은 1회 — 사용자 수정을 되돌리지 않는다
+
+    def initializePage(self):
+        wiz = self.wizard()
+        job = getattr(wiz, "initial_job", None)
+        if job is not None and not self._prefilled:
+            self.ed_name.setText(job.name)
+            self.ed_pattern.setText(job.filename_pattern)
+            self._prefilled = True
 
     def job_name(self) -> str:
         return self.ed_name.text().strip()

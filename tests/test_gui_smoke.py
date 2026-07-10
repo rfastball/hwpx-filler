@@ -187,6 +187,93 @@ def test_home_empty_state_and_job_cards(qapp, tmp_path):
     assert "템플릿 없음" in joined        # 부재 템플릿 선고지
 
 
+def _saved_job(tmp_path):
+    """편집 프리로드 테스트용 저장 작업 — 매핑 2행(공고명·추정가격) 확정본."""
+    from hwpxfiller.core.job import Job, JobRegistry
+    from hwpxfiller.gui.mapping_state import MappingModel
+
+    model = _model()
+    for i, row in enumerate(model.rows):
+        if row.template_field == "공고명":
+            model.set_sources(i, ["bidNtceNm"])
+    model.confirm_all()
+    reg = JobRegistry(tmp_path)
+    job = Job(
+        name="편집대상", template_path="/t.hwpx",
+        mapping=model.to_profile("편집대상"), filename_pattern="공고-{{공고명}}",
+    )
+    reg.save(job)
+    return reg, job
+
+
+def test_editor_edit_mode_prefills_and_preseeds(qapp, tmp_path):
+    """편집 모드 — SaveJobPage 이름·패턴 프리필 + MappingPage 매핑 프리시드(일치 행 확정)."""
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+
+    reg, job = _saved_job(tmp_path)
+    wiz = JobEditorWizard(reg, initial_job=job)
+    assert "편집" in wiz.windowTitle()
+
+    # SaveJobPage 프리필(1회) — 사용자 수정을 되돌리지 않는다.
+    save_page = wiz.page(wiz.pageIds()[-1])
+    save_page.initializePage()
+    assert save_page.job_name() == "편집대상"
+    assert save_page.pattern() == "공고-{{공고명}}"
+    save_page.ed_name.setText("바꾼이름")
+    save_page.initializePage()
+    assert save_page.job_name() == "바꾼이름"  # 재진입이 프리필로 덮지 않음
+
+    # MappingPage 프리시드 — 위저드 세션 상태를 심고 initializePage 호출.
+    from hwpxfiller.core.mapping import NARA_ALIASES
+
+    wiz.template_path = "/t.hwpx"
+    wiz.data_path = "/d.xlsx"
+    wiz.schema = TemplateSchema(
+        fields=[
+            FieldSpec("공고명", "text", 1, False),
+            FieldSpec("개찰일시", "date", 1, True),
+            FieldSpec("미매칭필드qq", "text", 1, False),
+        ]
+    )
+    wiz.source_fields = list(NARA_ALIASES)
+    wiz.records = [{"bidNtceNm": "샘플"}]
+    mapping_page = wiz.page(wiz.pageIds()[2])
+    mapping_page.initializePage()
+    rows = {r.template_field: r for r in wiz.model.rows}
+    assert rows["공고명"].confirmed          # 프로파일 일치 행 = 확정 복원
+    assert not rows["미매칭필드qq"].confirmed  # 프로파일 밖(과거 비움 확정) = 미확정 유지
+    assert "확정" in mapping_page.lbl_progress.text()
+
+
+def test_editor_edit_mode_accept_same_name_no_prompt(qapp, tmp_path, monkeypatch):
+    """편집 모드 자기 자신 재저장은 덮어쓰기 프롬프트 없음 + last_run_at 이월."""
+    from PySide6.QtWidgets import QMessageBox
+
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+
+    reg, job = _saved_job(tmp_path)
+    job.last_run_at = "2026-07-01T09:00:00"
+    reg.save(job)
+
+    monkeypatch.setattr(
+        QMessageBox, "question",
+        lambda *a, **k: pytest.fail("자기 자신 갱신에 덮어쓰기 프롬프트가 떴다"),
+    )
+    wiz = JobEditorWizard(reg, initial_job=reg.load("편집대상"))
+    # 매핑 확정 세션 상태를 직접 구성(위저드 통과 대신 accept 전제 충족).
+    wiz.template_path = "/t.hwpx"
+    wiz.model = _model()
+    for i, row in enumerate(wiz.model.rows):
+        if row.template_field == "공고명":
+            wiz.model.set_sources(i, ["bidNtceNm"])
+    wiz.model.confirm_all()
+    wiz._save_page.ed_name.setText("편집대상")
+    wiz.accept()
+
+    saved = reg.load("편집대상")
+    assert saved.last_run_at == "2026-07-01T09:00:00"  # 사용 메타 이월
+
+
 def test_app_controller_records_last_run(qapp, tmp_path, monkeypatch):
     """성공 집행(run_finished) → last_run_at 저장·홈 갱신. RunView 는 레지스트리 무지."""
     from hwpxfiller.core.job import Job, JobRegistry

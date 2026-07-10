@@ -38,9 +38,14 @@ class _AppController:
         wiz.show()
 
     def _open_editor_edit(self, name: str) -> None:
-        # 편집(기존 작업 프리로드)은 스캐폴드에서 표식 스텁 — 새 작업 흐름 재사용.
-        # TODO(디자인): MappingPage.initializePage 에서 job.mapping 프리시드.
-        self._open_editor_new()
+        from .job_editor import JobEditorWizard
+
+        # 기존 작업 프리로드: 템플릿 자동 로드 + 매핑 프리시드 + 이름/패턴 프리필.
+        # 이름을 바꿔 저장하면 구명 작업은 별개로 남는다(자동 삭제는 발명 — 삭제는 사용자 몫).
+        wiz = JobEditorWizard(self.registry, initial_job=self.registry.load(name))
+        wiz.job_saved.connect(lambda _name: self.home.refresh())
+        self._track(wiz)
+        wiz.show()
 
     def _open_run(self, name: str) -> None:
         from .run_view import RunView
