@@ -200,3 +200,31 @@ def test_diff_window_compares_real_corpus_and_binds_items(qapp, monkeypatch):
         assert f"id='chg-{seq}'" in win._html, f"행 {r}: 앵커 chg-{seq} 없음"
     win.items.selectRow(0)  # 선택 시그널 경로가 예외 없이 동작
     assert win.btn_browser.isEnabled() and win.btn_save.isEnabled()
+
+
+def test_diff_list_badge_colors_match_core_palette(qapp, monkeypatch):
+    """리스트 배지색 = HTML 리포트의 b-{category} — 코어 팔레트 단일 출처 계약."""
+    from pathlib import Path
+
+    from PySide6.QtWidgets import QMessageBox
+
+    from hwpxfiller.core.diff import CATEGORY_COLORS
+    from hwpxfiller.gui.diff_app import DiffReviewWindow
+
+    monkeypatch.setattr(
+        QMessageBox, "critical",
+        lambda *a, **k: pytest.fail(f"비교 실패 다이얼로그가 떴다: {a[2] if len(a) > 2 else a}"),
+    )
+    corpus = Path(__file__).parent / "corpus" / "real"
+    win = DiffReviewWindow()
+    win.ed_old.setText(str(corpus / "spec_revision_2025.hwpx"))
+    win.ed_new.setText(str(corpus / "spec_revision_2026.hwpx"))
+    win._on_compare()
+
+    assert win.items.rowCount() > 0
+    for r in range(win.items.rowCount()):
+        it = win.result.change_items[r]
+        cell = win.items.item(r, 0)
+        assert cell.background().color().name() == CATEGORY_COLORS[it.category], (
+            f"행 {r} ({it.category}): 배지색이 코어 팔레트와 다름"
+        )

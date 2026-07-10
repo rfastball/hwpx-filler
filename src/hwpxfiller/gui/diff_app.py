@@ -25,6 +25,7 @@ import webbrowser
 from pathlib import Path
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -42,9 +43,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-# _CAT_LABEL: 범주 어휘의 단일 출처는 core — 사본을 두면 코어의 범주 추가가 GUI 에서
-# 조용히 누락된다(영문 키 노출).
-from ..core.diff import _CAT_LABEL, DiffResult, diff_files, render_html
+# 범주 어휘·배지색의 단일 출처는 core — 사본을 두면 코어의 범주 추가가 GUI 에서
+# 조용히 누락된다(영문 키 노출·색 어긋남).
+from ..core.diff import CATEGORY_COLORS, CATEGORY_LABELS, DiffResult, diff_files, render_html
 
 # QTextBrowser 는 id= 앵커 해석이 불안정해 <a name> 이 필요하다. 코어 render_html 은
 # 브라우저 기준을 유지하고(핸드오프 §8), Qt 호환 마크업은 여기 뷰 측에서 주입한다.
@@ -111,7 +112,10 @@ class DiffReviewWindow(QMainWindow):
         split = QSplitter()
         self.items = QTableWidget(0, 3)
         self.items.setHorizontalHeaderLabels(["구분", "위치", "내용"])
+        self.items.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.items.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.items.verticalHeader().setVisible(False)
+        self.items.setAlternatingRowColors(True)
         self.items.setSelectionBehavior(QTableWidget.SelectRows)
         self.items.setEditTriggers(QTableWidget.NoEditTriggers)
         self.items.itemSelectionChanged.connect(self._on_item_selected)
@@ -164,12 +168,24 @@ class DiffReviewWindow(QMainWindow):
             f"변경항목 {len(self.result.change_items)}"
         )
         self.items.setRowCount(len(self.result.change_items))
+        muted = QColor(CATEGORY_COLORS["renumber"])
         for r, it in enumerate(self.result.change_items):
-            cat = QTableWidgetItem(_CAT_LABEL.get(it.category, it.category))
+            cat = QTableWidgetItem(CATEGORY_LABELS.get(it.category, it.category))
             cat.setData(Qt.UserRole, it.order)  # 앵커 표적(Change.seq)
+            # 배지색 = HTML 리포트의 .b-{category} 와 동일(코어 팔레트 단일 출처).
+            if it.category in CATEGORY_COLORS:
+                cat.setBackground(QColor(CATEGORY_COLORS[it.category]))
+                cat.setForeground(QColor("#ffffff"))
+            cat.setTextAlignment(Qt.AlignCenter)
+            loc = QTableWidgetItem(it.location_label)
+            det = QTableWidgetItem(it.detail)
+            if it.category == "renumber":
+                # 리포트의 .renumber-group{opacity:.72} 짝 — 실질 변경과 섞지 않는다.
+                loc.setForeground(muted)
+                det.setForeground(muted)
             self.items.setItem(r, 0, cat)
-            self.items.setItem(r, 1, QTableWidgetItem(it.location_label))
-            self.items.setItem(r, 2, QTableWidgetItem(it.detail))
+            self.items.setItem(r, 1, loc)
+            self.items.setItem(r, 2, det)
         self.view.setHtml(_qt_html(self._html))
         self.btn_browser.setEnabled(True)
         self.btn_save.setEnabled(True)

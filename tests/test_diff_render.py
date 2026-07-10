@@ -89,3 +89,13 @@ def test_render_html_renumber_collapsed_group():
     assert "<details class='renumber-group'>" in html  # open 아님 -> 접힘
     # 실질 항목 배지는 그대로, 재번호는 실질 배지 테이블에 섞이지 않는다.
     assert "b-number" in html
+
+
+def test_category_palette_single_source():
+    """배지 팔레트·라벨은 코어 단일 출처 — 전 범주에 색이 있고 CSS 는 dict 에서 생성된다."""
+    from hwpxfiller.core.diff import CATEGORY_COLORS, CATEGORY_LABELS
+
+    assert set(CATEGORY_COLORS) == set(CATEGORY_LABELS)  # 범주 추가 시 색 누락 방지
+    html = render_html(_sample())
+    for cat, color in CATEGORY_COLORS.items():
+        assert f".b-{cat}{{background:{color}}}" in html, f"CSS 규칙 없음: {cat}"

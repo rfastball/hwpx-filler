@@ -625,7 +625,10 @@ def diff_files(old_path: str, new_path: str) -> DiffResult:
 # ------------------------------------------------------------------ 렌더링
 _KIND_LABEL = {"added": "추가", "removed": "삭제", "changed": "변경",
                "renumber": "번호변경"}
-_CAT_LABEL = {
+
+# 변경항목 범주의 표시 어휘·배지색 — 단일 출처(공개). HTML 리포트의 `.b-{category}` 와
+# GUI(diff_app) 리스트 배지가 모두 여기서 당겨 쓴다(사본을 두면 범주 추가가 조용히 어긋난다).
+CATEGORY_LABELS = {
     "number": "숫자",
     "clause_added": "조항추가",
     "clause_removed": "조항삭제",
@@ -636,6 +639,18 @@ _CAT_LABEL = {
     "table_removed": "표삭제",
     "renumber": "번호변경",
 }
+CATEGORY_COLORS = {
+    "number": "#c0392b",
+    "clause_added": "#1e8449",
+    "clause_removed": "#8e44ad",
+    "text_changed": "#2874a6",
+    "text_added": "#1e8449",
+    "text_removed": "#7b241c",
+    "table_added": "#1e8449",
+    "table_removed": "#7b241c",
+    "renumber": "#7a7f87",
+}
+_CAT_LABEL = CATEGORY_LABELS  # 하위호환 별칭
 
 
 def render_summary(result: DiffResult) -> str:
@@ -706,11 +721,6 @@ min-width:96px}
 vertical-align:top}
 .badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;
 font-weight:700;color:#fff;white-space:nowrap}
-.b-number{background:#c0392b}.b-clause_added{background:#1e8449}
-.b-clause_removed{background:#8e44ad}.b-text_changed{background:#2874a6}
-.b-text_added{background:#1e8449}.b-text_removed{background:#7b241c}
-.b-table_added{background:#1e8449}.b-table_removed{background:#7b241c}
-.b-renumber{background:#7a7f87}
 .renumber-group{opacity:.72}
 details{background:#fff;border:1px solid #e2e4e8;border-radius:8px;margin:8px 0;
 padding:4px 12px}
@@ -724,7 +734,10 @@ ins{background:#dcffe0;color:#12681f;text-decoration:none}
 .changed{border-left:3px solid #2874a6;padding-left:10px}
 .renumber{border-left:3px solid #7a7f87;padding-left:10px;opacity:.72}
 .empty{color:#888;font-style:italic}
-"""
+""" + "\n".join(
+    # 배지색은 CATEGORY_COLORS 에서 생성 — 팔레트 단일 출처(GUI 리스트 배지와 공유).
+    f".b-{cat}{{background:{color}}}" for cat, color in CATEGORY_COLORS.items()
+)
 
 
 def render_html(result: DiffResult) -> str:
