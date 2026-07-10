@@ -17,7 +17,7 @@ from hwpxfiller.core.mapping import (
     apply_transform,
     suggest_mappings,
 )
-from hwpxfiller.core.package import HwpxPackage
+from hwpxcore.package import HwpxPackage
 
 FIXTURES = Path(__file__).parent / "fixtures"
 CORPUS = Path(__file__).parent / "corpus" / "real"

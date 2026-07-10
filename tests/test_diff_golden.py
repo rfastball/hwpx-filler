@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from hwpxfiller.core.diff import diff_files
+from hwpxdiff.diff import diff_files
 
 CORPUS = Path(__file__).parent / "corpus" / "real"
 GOLDEN = Path(__file__).parent / "corpus" / "golden_diff"

@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from hwpxfiller.core.diff import diff_documents, diff_files
-from hwpxfiller.core.text_extract import extract_document
+from hwpxdiff.diff import diff_documents, diff_files
+from hwpxcore.text_extract import extract_document
 
 CORPUS = Path(__file__).parent / "corpus" / "real"
 REAL_FILES = sorted(CORPUS.glob("*.hwpx"))

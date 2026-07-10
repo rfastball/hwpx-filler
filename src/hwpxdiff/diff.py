@@ -33,7 +33,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
-from .text_extract import (
+from hwpxcore.text_extract import (
     Document,
     Paragraph,
     Section,
@@ -189,16 +189,40 @@ class ChangeItem:
 
 
 @dataclass
+class DocRow:
+    """전문(全文) 대조 행 — 두 문서를 나란히 펼친 정렬 스트림의 한 줄.
+
+    변경만 담는 :class:`Change` 와 달리 **equal 행을 포함**해 원문 전체가 보존된다
+    (신구대비표 뷰의 데이터). ``seq`` 는 변경 행이면 대응 ``Change.seq``, equal 이면
+    None — 변경 목록과 전문 뷰를 같은 번호로 잇는 앵커 키다.
+    """
+
+    kind: str  # equal/added/removed/changed/renumber
+    unit: str  # paragraph/cell/table
+    label: str
+    old_text: str = ""
+    new_text: str = ""
+    word_ops: "list[WordOp] | None" = None
+    seq: "int | None" = None
+
+
+@dataclass
 class DiffResult:
     """구조화·직렬화 가능한 diff 결과.
 
     ``changes`` 는 문서 순서의 원 변경 목록, ``change_items`` 는 우선순위 정렬된 사람용
     목록, ``summary`` 는 개수 요약. 모두 결정적이다.
+
+    ``rows`` 는 equal 을 포함한 전문 대조 스트림(뷰 데이터)이다 — ``to_dict()`` 에는
+    넣지 않는다(골든은 변경만 고정; 전문은 원문 파일에서 항상 재생 가능한 파생물).
+    주의: 행 순서는 섹션마다 문단 전부 → 표 전부다(diff 가 그 순서로 정렬한다) —
+    문단·표가 섞인 원문 배치와 다를 수 있다.
     """
 
     changes: "list[Change]" = field(default_factory=list)
     change_items: "list[ChangeItem]" = field(default_factory=list)
     summary: "dict[str, int]" = field(default_factory=dict)
+    rows: "list[DocRow]" = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -315,6 +339,7 @@ class _Differ:
 
     def __init__(self) -> None:
         self.changes: "list[Change]" = []
+        self.rows: "list[DocRow]" = []  # equal 포함 전문 대조 스트림
         self._seq = 0
 
     def _emit(self, kind: str, unit: str, location: dict, label: str,
@@ -324,7 +349,15 @@ class _Differ:
             Change(self._seq, kind, unit, location, label,
                    old_text, new_text, word_ops)
         )
+        self.rows.append(
+            DocRow(kind, unit, label, old_text, new_text, word_ops, self._seq)
+        )
         self._seq += 1
+
+    def _note_equal(self, unit: str, label: str, text: str) -> None:
+        """변경 없는 단위도 전문 스트림에 남긴다(빈 것은 제외 — 표시 노이즈)."""
+        if not _is_blank(text):
+            self.rows.append(DocRow("equal", unit, label, text, text))
 
     def _emit_renumber(self, uo: "_ParaUnit", un: "_ParaUnit") -> None:
         """선두 서수만 바뀐 문단을 renumber 변경으로 기록(원문 보존)."""
@@ -350,6 +383,8 @@ class _Differ:
                     uo, un = olds[i1 + k], news[j1 + k]
                     if uo.text != un.text:
                         self._emit_renumber(uo, un)
+                    else:
+                        self._note_equal("paragraph", un.label, un.text)
                 continue
             if tag == "delete":
                 for u in olds[i1:i2]:
@@ -402,6 +437,7 @@ class _Differ:
                 if _is_blank(uo.text) and _is_blank(un.text):
                     continue
                 if uo.text == un.text:
+                    self._note_equal("paragraph", un.label, un.text)
                     continue
                 if _norm_key(uo.text) == _norm_key(un.text):
                     self._emit_renumber(uo, un)
@@ -459,6 +495,7 @@ class _Differ:
             o_txt = oc[1] if oc else ""
             n_txt = nc[1] if nc else ""
             if o_txt == n_txt:
+                self._note_equal("cell", label, n_txt)
                 continue
             if oc and not nc:
                 if not _is_blank(o_txt):
@@ -614,7 +651,8 @@ def diff_documents(old: Document, new: Document) -> DiffResult:
         "renumber": sum(1 for c in differ.changes if c.kind == "renumber"),
         "change_items": len(items),
     }
-    return DiffResult(changes=differ.changes, change_items=items, summary=summary)
+    return DiffResult(changes=differ.changes, change_items=items, summary=summary,
+                      rows=differ.rows)
 
 
 def diff_files(old_path: str, new_path: str) -> DiffResult:
@@ -623,8 +661,13 @@ def diff_files(old_path: str, new_path: str) -> DiffResult:
 
 
 # ------------------------------------------------------------------ 렌더링
-_KIND_LABEL = {"added": "추가", "removed": "삭제", "changed": "변경",
+# 변경 종류(kind)의 표시 어휘·색 — 단일 출처(공개). GUI 신구대비표 뷰·변경 리스트가
+# 여기서 당겨 쓴다. 색은 CATEGORY_COLORS 와 같은 계열(추가 초록/삭제 빨강/변경 파랑).
+KIND_LABELS = {"added": "추가", "removed": "삭제", "changed": "변경",
                "renumber": "번호변경"}
+KIND_COLORS = {"added": "#1e8449", "removed": "#c0392b", "changed": "#2874a6",
+               "renumber": "#7a7f87"}
+_KIND_LABEL = KIND_LABELS  # 하위호환 별칭
 
 # 변경항목 범주의 표시 어휘·배지색 — 단일 출처(공개). HTML 리포트의 `.b-{category}` 와
 # GUI(diff_app) 리스트 배지가 모두 여기서 당겨 쓴다(사본을 두면 범주 추가가 조용히 어긋난다).

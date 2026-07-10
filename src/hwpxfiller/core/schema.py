@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 
 from lxml import etree
 
-from .text_extract import (
+from hwpxcore.text_extract import (
     HP_NS,
     _local,
     _text_of_t,

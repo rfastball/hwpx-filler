@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from hwpxfiller.core.lint import diff_schema, lint_template
-from hwpxfiller.core.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 HS = "http://www.hancom.co.kr/hwpml/2011/section"

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from hwpxfiller.core.text_extract import extract_document
+from hwpxcore.text_extract import extract_document
 
 CORPUS = Path(__file__).parent / "corpus" / "real"
 GOLDEN = Path(__file__).parent / "corpus" / "golden"

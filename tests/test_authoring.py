@@ -12,7 +12,7 @@ from lxml import etree
 
 from hwpxfiller.core.authoring import compile_document, scan_tokens
 from hwpxfiller.core.fields import FieldDocument
-from hwpxfiller.core.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxfiller.core.schema import extract_schema
 
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
@@ -75,7 +75,7 @@ def test_surrounding_text_preserved():
     xml = '<hp:p><hp:run><hp:t>앞 {{계약명}} 뒤</hp:t></hp:run></hp:p>'
     pkg, _ = compile_document(_pkg(xml))
     # 문단 전체 텍스트(placeholder 유지)가 원문과 동일해야 한다.
-    from hwpxfiller.core.text_extract import extract_document, full_text
+    from hwpxcore.text_extract import extract_document, full_text
 
     assert full_text(extract_document(pkg)) == "앞 {{계약명}} 뒤"
 

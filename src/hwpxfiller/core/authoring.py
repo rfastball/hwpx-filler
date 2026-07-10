@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 
 from lxml import etree
 
-from .text_extract import HP_NS, _local, _to_package
+from hwpxcore.text_extract import HP_NS, _local, _to_package
 
 _TOKEN_RE = re.compile(r"\{\{\s*([^{}]+?)\s*\}\}")
 _ID_ATTRS = ("id", "fieldid", "beginIDRef", "instId", "endIDRef")

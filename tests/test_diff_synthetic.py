@@ -6,8 +6,8 @@ Document 데이터클래스를 직접 조립해(패키지/XML 없이) 변경을 
 
 from __future__ import annotations
 
-from hwpxfiller.core.diff import _norm_key, diff_documents
-from hwpxfiller.core.text_extract import (
+from hwpxdiff.diff import _norm_key, diff_documents
+from hwpxcore.text_extract import (
     Cell,
     Document,
     Paragraph,

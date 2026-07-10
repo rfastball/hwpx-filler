@@ -3,7 +3,7 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
-from hwpxfiller.core.package import MIMETYPE_NAME, HwpxPackage
+from hwpxcore.package import MIMETYPE_NAME, HwpxPackage
 
 FIXTURE = Path(__file__).parent / "fixtures" / "template_v1.hwpx"
 

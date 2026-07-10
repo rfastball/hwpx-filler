@@ -14,6 +14,7 @@ venv/
 out/
 Results/
 sample.xlsx
+sample_bid_data.csv
 *.tmp
 
 # 비밀값(로컬 개발용 — 커밋 금지)

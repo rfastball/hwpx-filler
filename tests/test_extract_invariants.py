@@ -10,8 +10,8 @@ from pathlib import Path
 import pytest
 from lxml import etree
 
-from hwpxfiller.core.package import HwpxPackage
-from hwpxfiller.core.text_extract import (
+from hwpxcore.package import HwpxPackage
+from hwpxcore.text_extract import (
     extract_document,
     full_text,
     section_xml_names,

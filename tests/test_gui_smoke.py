@@ -425,7 +425,7 @@ def _diff_window_for_test(tmp_path, monkeypatch):
     from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QMessageBox
 
-    from hwpxfiller.gui.diff_app import DiffReviewWindow
+    from hwpxdiff.app import DiffReviewWindow
 
     # 실패 경로의 모달은 offscreen 에서 exec 루프로 영원히 블록 — 행 대신 즉시 실패.
     monkeypatch.setattr(
@@ -437,11 +437,13 @@ def _diff_window_for_test(tmp_path, monkeypatch):
     return win
 
 
-def test_diff_window_compares_real_corpus_and_binds_items(qapp, tmp_path, monkeypatch):
-    """앱 A 단일 화면 — 실코퍼스 개정 쌍 비교가 리스트·뷰에 바인딩되고 클릭 이동이 돈다."""
+def test_diff_window_compares_real_corpus_and_binds_groups(qapp, tmp_path, monkeypatch):
+    """앱 A 단일 화면 — 실코퍼스 비교가 그룹 리스트·전문 뷰에 바인딩되고 클릭 이동이 돈다."""
     from pathlib import Path
 
     from PySide6.QtCore import Qt
+
+    from hwpxdiff.app import _group_changes
 
     corpus = Path(__file__).parent / "corpus" / "real"
     win = _diff_window_for_test(tmp_path, monkeypatch)
@@ -452,28 +454,73 @@ def test_diff_window_compares_real_corpus_and_binds_items(qapp, tmp_path, monkey
     win._on_compare()
 
     assert win.result is not None
-    assert win.items.rowCount() == len(win.result.change_items) > 0
-    # 클릭 이동 계약: 각 행의 표적(Qt.UserRole == Change.seq)이 리포트 앵커로 실재.
+    assert win.items.rowCount() == len(_group_changes(win.result.changes)) > 0
+    # 전문 뷰 계약: equal 원문이 실제로 포함된다(본문 맥락 보존).
+    assert len(win.result.rows) > len(win.result.changes)
+    # 클릭 이동 계약: 각 그룹의 표적(Qt.UserRole == 첫 Change.seq)이 뷰 앵커로 실재.
     # scrollToAnchor 는 없는 앵커를 조용히 무시하므로, 표적 실재를 직접 못박는다.
     for r in range(win.items.rowCount()):
         seq = win.items.item(r, 0).data(Qt.UserRole)
-        assert f"id='chg-{seq}'" in win._html, f"행 {r}: 앵커 chg-{seq} 없음"
+        assert f"<a name='chg-{seq}'></a>" in win._html, f"행 {r}: 앵커 chg-{seq} 없음"
     win.items.selectRow(0)  # 선택 시그널 경로가 예외 없이 동작
-    assert win.btn_browser.isEnabled() and win.btn_save.isEnabled()
 
 
 def test_diff_visible_predicate_headless():
-    """행 표시 판정 — renumber 는 전용 토글, 나머지는 범주 체크."""
-    from hwpxfiller.gui.diff_app import _visible
+    """그룹 행 표시 판정 — renumber 는 전용 토글, 나머지는 종류(kind) 체크."""
+    from hwpxdiff.app import _visible
 
-    assert _visible("number", {"number"}, False)
-    assert not _visible("number", set(), False)
-    assert not _visible("renumber", {"renumber"}, False)  # 범주 체크가 아니라 토글만 따름
+    assert _visible("added", {"added"}, False)
+    assert not _visible("added", set(), False)
+    assert not _visible("renumber", {"renumber"}, False)  # 종류 체크가 아니라 토글만 따름
     assert _visible("renumber", set(), True)
 
 
-def test_diff_category_filter_and_renumber_toggle(qapp, tmp_path, monkeypatch):
-    """범주 필터·번호변경 접기 — 기본: 실질 범주 전부 표시 + renumber 숨김(개수는 노출)."""
+def test_group_changes_merges_adjacent_same_kind():
+    """인접(연속 seq)·같은 종류 변경은 리스트 1행으로 — 파편화 완화(순수 함수)."""
+    from hwpxdiff.diff import Change
+    from hwpxdiff.app import _group_changes
+
+    chs = [
+        Change(0, "changed", "paragraph", {}, "본문 1 · 문단 3", "a", "b"),
+        Change(1, "changed", "paragraph", {}, "본문 1 · 문단 4", "c", "d"),
+        Change(2, "added", "paragraph", {}, "본문 1 · 문단 5", "", "e"),
+        Change(4, "changed", "paragraph", {}, "본문 1 · 문단 9", "f", "g"),  # seq 갭 → 새 그룹
+    ]
+    gs = _group_changes(chs)
+    assert [(g.kind, len(g.seqs)) for g in gs] == [
+        ("changed", 2), ("added", 1), ("changed", 1)
+    ]
+    assert gs[0].seqs == [0, 1] and "연속 2건" in gs[0].detail
+    assert gs[0].label == "본문 1 · 문단 3"  # 그룹 라벨 = 첫 변경 위치
+
+
+def test_coalesce_ops_absorbs_short_equal_between_changes():
+    """변경 사이 한두 글자 equal 은 흡수, 낱말 경계(선두/후미/공백)는 보존."""
+    from hwpxdiff.diff import WordOp
+    from hwpxdiff.app import _coalesce_ops
+
+    ops = [
+        WordOp("equal", old="제"),
+        WordOp("replace", old="3", new="4"),
+        WordOp("equal", old="조"),
+        WordOp("replace", old="갑", new="을"),
+        WordOp("equal", old=" 이하 같다"),
+    ]
+    out = _coalesce_ops(ops)
+    assert [o.op for o in out] == ["equal", "replace", "equal"]
+    assert out[1].old == "3조갑" and out[1].new == "4조을"
+
+    # 공백 equal 은 낱말 경계 — 흡수하지 않는다.
+    ops2 = [
+        WordOp("replace", old="가", new="나"),
+        WordOp("equal", old=" "),
+        WordOp("replace", old="다", new="라"),
+    ]
+    assert [o.op for o in _coalesce_ops(ops2)] == ["replace", "equal", "replace"]
+
+
+def test_diff_kind_filter_and_renumber_toggle(qapp, tmp_path, monkeypatch):
+    """종류 필터(추가/삭제/변경 3종 고정) — 기본: 전부 표시 + renumber 숨김(개수는 노출)."""
     from pathlib import Path
 
     corpus = Path(__file__).parent / "corpus" / "real"
@@ -482,33 +529,53 @@ def test_diff_category_filter_and_renumber_toggle(qapp, tmp_path, monkeypatch):
     win.ed_new.setText(str(corpus / "spec_revision_2026.hwpx"))
     win._on_compare()
 
-    items = win.result.change_items
-    renumber_rows = [r for r, it in enumerate(items) if it.category == "renumber"]
+    assert set(win._filter_checks) == {"added", "removed", "changed"}  # 세분 범주 없음
+    groups = win._groups
+    renumber_rows = [r for r, g in enumerate(groups) if g.kind == "renumber"]
     hidden = [r for r in range(win.items.rowCount()) if win.items.isRowHidden(r)]
     assert hidden == renumber_rows  # 기본: renumber 만 숨김
     if renumber_rows:
-        assert win.chk_renumber is not None
-        assert f"{len(renumber_rows)}건" in win.chk_renumber.text()  # 조용히 버리지 않음
+        assert "건 표시" in win.chk_renumber.text()  # 조용히 버리지 않음(개수 노출)
         win.chk_renumber.setChecked(True)
         assert not any(win.items.isRowHidden(r) for r in renumber_rows)
 
-    # 특정 범주 해제 → 해당 행만 추가로 숨김.
-    cat, cb = next(iter(win._filter_checks.items()))
-    cb.setChecked(False)
-    for r, it in enumerate(items):
-        if it.category == cat:
+    # 특정 종류 해제 → 해당 그룹만 추가로 숨김.
+    win._filter_checks["changed"].setChecked(False)
+    for r, g in enumerate(groups):
+        if g.kind == "changed":
             assert win.items.isRowHidden(r)
 
-    # 판본 변경 → 결과·필터 바 무효화.
+    # 판본 변경 → 결과·리스트·토글 라벨 무효화.
     win._invalidate_result("변경")
-    assert win.filter_bar.count() == 0 and win.chk_renumber is None
+    assert win.items.rowCount() == 0 and win._html == ""
+    assert win.chk_renumber.text() == "번호변경 표시"
+
+
+def test_diff_doc_view_renders_full_text_side_by_side(qapp, tmp_path, monkeypatch):
+    """전문 뷰 — equal 원문이 좌우 동일하게, 변경은 구판 del/신판 ins 로 갈라 렌더."""
+    from hwpxdiff.diff import DocRow, WordOp
+    from hwpxdiff.app import _render_doc_html
+
+    rows = [
+        DocRow("equal", "paragraph", "본문 1 · 문단 1", "서문 그대로", "서문 그대로"),
+        DocRow("changed", "paragraph", "본문 1 · 문단 2", "요율 3%", "요율 3.5%",
+               [WordOp("equal", old="요율 "), WordOp("replace", old="3", new="3.5"),
+                WordOp("equal", old="%")], seq=0),
+        DocRow("added", "paragraph", "본문 1 · 문단 3", "", "신설 조항", seq=1),
+    ]
+    html_text = _render_doc_html(rows)
+    assert html_text.count("서문 그대로") == 2          # equal = 좌우 모두 원문
+    assert "<del>3</del>" in html_text                  # 구판 측 삭제 강조
+    assert "<ins>3.5</ins>" in html_text                # 신판 측 삽입 강조
+    assert "<a name='chg-0'></a>" in html_text          # 변경 행 앵커
+    assert "신설 조항" in html_text and "<a name='chg-1'></a>" in html_text
 
 
 def test_diff_ingest_paths_and_recent_pairs(qapp, tmp_path):
     """DnD/최근 목록 공용 투입 — 2개=구→신, 1개=빈 칸 우선, 비-hwpx 무시, 결과 무효화."""
     from PySide6.QtCore import QSettings
 
-    from hwpxfiller.gui.diff_app import DiffReviewWindow
+    from hwpxdiff.app import DiffReviewWindow
 
     win = DiffReviewWindow()
     win._settings = QSettings(str(tmp_path / "recent.ini"), QSettings.IniFormat)
@@ -539,10 +606,10 @@ def test_diff_ingest_paths_and_recent_pairs(qapp, tmp_path):
 
 
 def test_diff_list_badge_colors_match_core_palette(qapp, tmp_path, monkeypatch):
-    """리스트 배지색 = HTML 리포트의 b-{category} — 코어 팔레트 단일 출처 계약."""
+    """리스트 배지색 = 코어 KIND_COLORS — 팔레트 단일 출처 계약(전문 뷰 표식과 공유)."""
     from pathlib import Path
 
-    from hwpxfiller.core.diff import CATEGORY_COLORS
+    from hwpxdiff.diff import KIND_COLORS
 
     corpus = Path(__file__).parent / "corpus" / "real"
     win = _diff_window_for_test(tmp_path, monkeypatch)
@@ -551,9 +618,8 @@ def test_diff_list_badge_colors_match_core_palette(qapp, tmp_path, monkeypatch):
     win._on_compare()
 
     assert win.items.rowCount() > 0
-    for r in range(win.items.rowCount()):
-        it = win.result.change_items[r]
+    for r, g in enumerate(win._groups):
         cell = win.items.item(r, 0)
-        assert cell.background().color().name() == CATEGORY_COLORS[it.category], (
-            f"행 {r} ({it.category}): 배지색이 코어 팔레트와 다름"
+        assert cell.background().color().name() == KIND_COLORS[g.kind], (
+            f"행 {r} ({g.kind}): 배지색이 코어 팔레트와 다름"
         )

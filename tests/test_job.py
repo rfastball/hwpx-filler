@@ -211,7 +211,7 @@ def test_mapped_records_mark_missing_only_empty_values():
 def test_mapped_records_default_unchanged_and_marker_silences_empty_report():
     """기본 인자 = 기존 동작 회귀 + 표식 주입 후 empty_valued 무경보(주입 확인의 거울)."""
     from hwpxfiller.core.job import MISSING_MARKER
-    from hwpxfiller.core.validate import validate
+    from hwpxcore.validate import validate
 
     src = _FakeSource([{"bidNtceNm": "", "presmptPrce": "1000"}])
     req = RunRequest(_job(), src, [0])

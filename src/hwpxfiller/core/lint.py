@@ -22,7 +22,7 @@ from difflib import SequenceMatcher
 
 from .authoring import scan_tokens
 from .schema import extract_schema
-from .text_extract import _to_package
+from hwpxcore.text_extract import _to_package
 
 _WS_RE = re.compile(r"\s+")
 # 유사도 임계값 — 이 이상이면 near-duplicate/개명 후보로 본다.

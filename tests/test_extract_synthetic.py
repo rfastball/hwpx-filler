@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from lxml import etree
 
-from hwpxfiller.core.text_extract import (
+from hwpxcore.text_extract import (
     CoverageLedger,
     Document,
     Paragraph,
@@ -304,7 +304,7 @@ def test_header_footer_body_text_captured():
     실제 코퍼스는 ``Contents/header.xml`` 이 스타일 전용 ``hp:head`` 라 이 경로를
     태우지 못한다. 여기서 본문 문단을 담은 머리말/꼬리말을 합성해 코드 경로를 증명한다.
     """
-    from hwpxfiller.core.package import HwpxPackage, MIMETYPE_NAME, MIMETYPE_VALUE
+    from hwpxcore.package import HwpxPackage, MIMETYPE_NAME, MIMETYPE_VALUE
 
     def sec(text: str) -> bytes:
         return (

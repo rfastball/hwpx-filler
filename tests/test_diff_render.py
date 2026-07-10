@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from hwpxfiller.core.diff import (
+from hwpxdiff.diff import (
     diff_documents,
     render_html,
     render_summary,
 )
-from hwpxfiller.core.text_extract import Document, Paragraph, Section
+from hwpxcore.text_extract import Document, Paragraph, Section
 
 
 def _doc(*texts: str) -> Document:
@@ -93,7 +93,7 @@ def test_render_html_renumber_collapsed_group():
 
 def test_category_palette_single_source():
     """배지 팔레트·라벨은 코어 단일 출처 — 전 범주에 색이 있고 CSS 는 dict 에서 생성된다."""
-    from hwpxfiller.core.diff import CATEGORY_COLORS, CATEGORY_LABELS
+    from hwpxdiff.diff import CATEGORY_COLORS, CATEGORY_LABELS
 
     assert set(CATEGORY_COLORS) == set(CATEGORY_LABELS)  # 범주 추가 시 색 누락 방지
     html = render_html(_sample())

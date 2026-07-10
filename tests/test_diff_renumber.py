@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from hwpxfiller.core.diff import _norm_key, diff_files
+from hwpxdiff.diff import _norm_key, diff_files
 
 CORPUS = Path(__file__).parent / "corpus" / "real"
 OLD = str(CORPUS / "spec_revision_2025.hwpx")

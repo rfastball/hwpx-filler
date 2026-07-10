@@ -142,31 +142,35 @@ gui/app.py  _AppController ──라우팅──┬─▶ home.JobListHome      
 
 ---
 
-## 8. 앱 A — diff 리뷰어 (`gui/diff_app.py`, 별도 앱)
+## 8. 앱 A — diff 리뷰어 (별도 서브프로젝트 `src/hwpxdiff/`)
 
-diff 는 앱 B와 **별도 앱**이다 — 별도 진입점(`python -m hwpxfiller.gui.diff_app`,
-gui-script `hwpx-diff`)+창+exe, 공유는 `core/` 뿐(UI 상태 공유 0). 상호작용 형태가
-근본 다르다: 앱 B=쓰기 도구(위저드·집행), 앱 A=**읽기 도구**(문서를 바꾸지 않는다).
+diff 는 앱 B와 **별도 제품**이다 — 2026-07 서브프로젝트로 분리 완료: `hwpxdiff` 패키지
+(GUI `hwpxdiff/app.py`, 알고리즘 `hwpxdiff/diff.py`, CLI `hwpxdiff/cli.py`), 진입점
+`python -m hwpxdiff` / gui-script `hwpx-diff` / 단독 exe(`packaging/`). 공유는 공통 파서
+`hwpxcore` 뿐(hwpxfiller 와 상호 임포트 금지). 상호작용 형태가 근본 다르다:
+앱 B=쓰기 도구(위저드·집행), 앱 A=**읽기 도구**(문서를 바꾸지 않는다).
 
 **코어 계약** (`core/diff.py`, 완성·골든 고정 — 디자인이 건드리지 않음):
 - `diff_files(old, new) -> DiffResult` — 실코퍼스 기준 ~30ms(동기 실행으로 충분).
-- `DiffResult.change_items` — 우선순위 정렬된 리뷰어용 목록(`category/location_label/detail/order`).
-- `render_html(result) -> str` — 자체 완결 HTML. **변경마다 앵커 `chg-{seq}`**
-  (`ChangeItem.order` == `Change.seq`) — 클릭 이동·딥링크의 표적.
+- `DiffResult.rows` — **equal 포함 전문(全文) 대조 스트림**(`DocRow`; 변경 행은
+  `seq` == `Change.seq`, equal 은 None). 골든(to_dict) 밖의 뷰 데이터 — 신구대비표의 원천.
+- `DiffResult.change_items`·`render_html` 은 CLI(diff --html)용으로 유지 — GUI 는 안 쓴다.
+- `KIND_LABELS/KIND_COLORS` — 종류(추가/삭제/변경/번호변경) 어휘·색 단일 출처.
 
-**스캐폴드가 고정** (`DiffReviewWindow(QMainWindow)`):
-- 단일 화면: 판본 2개 픽커 → `비교` → 요약 라벨 + 좌(변경항목 QTableWidget)/우(QTextBrowser
-  리포트) 스플리터.
-- **클릭 이동**: 항목 선택 → `view.scrollToAnchor(f"chg-{seq}")` (seq는 `Qt.UserRole`).
-- 「브라우저에서 열기」(원본 충실 뷰 — QTextBrowser 는 CSS 근사 렌더) · 「HTML 저장…」.
+**뷰 형태(2026-07 사용자 피드백으로 확정 — 변경분 리포트 폐기):**
+- **전문 신구대비표** — 원문 전체를 좌(구판)/우(신판) 대조 렌더(`_render_doc_html`).
+  변경만 발라내면 본문 맥락이 날아가 diff 를 파악할 수 없다는 피드백의 산물.
+  변경 행은 구판 측 del / 신판 측 ins 로 갈라 강조, equal 행은 좌우 동일 원문.
+- **변경 리스트 = 네비게이션** — 인접(연속 seq)·같은 종류 변경을 그룹 1행으로
+  (`_group_changes`, 파편화 완화). 클릭 → `scrollToAnchor(chg-{첫 seq})`.
+- **필터는 종류 3종 고정**(추가/삭제/변경) + 번호변경 전용 토글(기본 접힘·개수 노출).
+  세분 범주(숫자/조항/문구…) 필터는 부정확한 노이즈라 제거.
+- **내보내기 없음** — 「브라우저에서 열기」·「HTML 저장」 제거(불필요 기능 피드백).
+- 낱말 diff 파편화는 뷰 측 `_coalesce_ops` 가 완화(변경 사이 한두 글자 equal 흡수).
 
-**디자인이 채울 것:**
-- 변경항목 리스트의 **배지 색**(HTML 리포트의 `b-{category}` 팔레트와 일치시킬 것)·행 스타일.
-- **범주 필터**(숫자/조항/문구/표…)와 **번호변경(renumber) 접기 토글** — 리포트의
-  "실질 변경과 섞지 않되 조용히 버리지 않는" 규칙을 리스트에도.
-- 임베드 뷰 개선: QTextBrowser 근사의 한계를 수용하거나, Qt 친화 HTML 변형 렌더를 별도
-  작성(코어 `render_html` 은 브라우저 기준 유지 — 갈라야 하면 뷰 측에서).
-- 드래그&드롭 파일 투입·최근 비교 목록·대형 문서용 워커 스레드(현재 동기) 등 편의.
+**남은 개선 후보:**
+- 드래그&드롭·최근 비교 목록(구현됨) 외: 대형 문서용 워커 스레드(현재 동기),
+  전문 뷰 내 검색, 변경 간 이전/다음 점프 키.
 
 **발명 금지:** 이 앱은 읽기 도구다 — 문서 편집·주석·병합 기능을 붙이지 말 것(스코프 밖).
 diff 정밀도(표 제목 매칭·셀 재번호 인지)는 코어 파킹 항목이지 UI 일이 아니다.

@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .fields import FieldDocument
-from .package import HwpxPackage
+from hwpxcore.package import HwpxPackage
 
 
 @dataclass

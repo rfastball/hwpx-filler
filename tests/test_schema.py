@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 from hwpxfiller.core.engine import HwpxEngine
-from hwpxfiller.core.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxfiller.core.schema import FieldSpec, _infer_type, extract_schema
 
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"

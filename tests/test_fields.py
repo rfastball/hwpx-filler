@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from hwpxfiller.core.fields import FieldDocument
-from hwpxfiller.core.package import HwpxPackage
+from hwpxcore.package import HwpxPackage
 
 FIXTURE = Path(__file__).parent / "fixtures" / "template_v1.hwpx"
 

@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "hwpx-filler"
+name = "hwpx-tools"
 version = "0.1.0"
-description = "HWPX 누름틀(Field) 값 주입 데스크톱 앱 — UnivContractor VBA 엔진의 Python 포트"
+description = "HWPX 도구 모음 — 공통 파서(hwpxcore) 위의 두 제품: 개정 비교(hwpxdiff)·누름틀 주입(hwpxfiller)"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -19,13 +19,14 @@ dev = ["pytest>=8.0"]
 
 [project.scripts]
 hwpxfiller = "hwpxfiller.cli:main"
+hwpxdiff = "hwpxdiff.cli:main"
 
 [project.gui-scripts]
 hwpx-filler = "hwpxfiller.gui.app:main"
-hwpx-diff = "hwpxfiller.gui.diff_app:main"
+hwpx-diff = "hwpxdiff.app:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/hwpxfiller"]
+packages = ["src/hwpxcore", "src/hwpxdiff", "src/hwpxfiller"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
