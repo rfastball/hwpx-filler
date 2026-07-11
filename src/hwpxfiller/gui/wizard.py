@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 
 from ..core.mapping import MappingProfile
 from ..core.schema import extract_schema
-from ..data.excel import ExcelDataSource
+from ..data import source_for_path
 from .mapping_state import MappingModel
 from .mapping_table import MappingTable
 from .style import mark
@@ -170,7 +170,7 @@ class DataPage(QWizardPage):
         wiz = self.wizard()
         self._valid = False
         try:
-            source = ExcelDataSource(path)
+            source = source_for_path(path)
             fields = source.fields()
             records = source.records()
         except Exception as exc:  # noqa: BLE001
