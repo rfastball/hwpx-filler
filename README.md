@@ -61,7 +61,7 @@ python -m hwpxfiller.cli --template template.hwpx --source nara \
 ### GUI
 
 ```bash
-# 앱 B — 문서 생성(작업 홈 → 에디터/집행)
+# 앱 B — 문서 생성(작업 홈 → 에디터/실행)
 python -m hwpxfiller.gui.app
 
 # 앱 A(hwpxdiff) — 규격서 개정 diff 리뷰어(전문 신구대비표 + 변경 그룹 리스트)
@@ -96,12 +96,12 @@ python -m hwpxdiff
 | `core/lint.py` | 템플릿 관리: 위생 lint + 판본 간 필드 드리프트 | (신규 — `modFuzzyMatch` 아이디어) |
 | `core/mapping.py` | 소스 레코드 → 템플릿 필드 매핑(alias·N→1 합성·변환)+프로파일 | `frmErpPreview`+`modFuzzyMatch` |
 | `core/engine.py` | 단일 문서 생성 조율 | `modHWPXEngine` |
-| `core/job.py` | 작업(Job) 앵커 — durable {템플릿·매핑·파일명} + 레지스트리 + 집행요청 | (신규 — 원본의 일급 Job 부재를 수리) |
+| `core/job.py` | 작업(Job) 앵커 — durable {템플릿·매핑·파일명} + 레지스트리 + 실행요청 | (신규 — 원본의 일급 Job 부재를 수리) |
 | `naming.py` | 파일명 패턴(`{{키}}`) 치환 | (파일명 규칙) |
 | `batch.py` | 일괄 생성 | `Process_HWP_Generation` |
 | `data/excel.py` | 엑셀/CSV 데이터 소스 | (대시보드 페이로드) |
 | `data/nara.py` | 나라장터 조달청 API 취득 소스(stdlib urllib) | (신규 — 웹 취득, VBA선 불가) |
-| `gui/` | 앱 B: 작업 홈(`home`)·에디터(`job_editor`)·집행(`run_view`) | (대시보드 버튼) |
+| `gui/` | 앱 B: 작업 홈(`home`)·에디터(`job_editor`)·실행(`run_view`) | (대시보드 버튼) |
 
 ## 테스트
 

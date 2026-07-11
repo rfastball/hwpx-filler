@@ -1,14 +1,14 @@
 """작업 에디터 — 저장된 "작업"(템플릿·매핑·파일명)을 저작한다.
 
 트랙 C UX 결정([[hwpx-filler-scope]])으로 옛 매핑 위저드가 **작업 에디터로 강등**됐다:
-마지막 스텝이 "생성"이 아니라 **"작업 저장"**이다(생성은 별도 집행 화면 :mod:`run_view`).
+마지막 스텝이 "생성"이 아니라 **"작업 저장"**이다(생성은 별도 실행 화면 :mod:`run_view`).
 
 저작 페이지 1~3(:class:`~hwpxfiller.gui.wizard.TemplatePage`·``DataPage``·``MappingPage``)은
 :mod:`hwpxfiller.gui.wizard` 에서 그대로 재사용한다 — 무거운 **명시성 게이트**(전 행 확정)는
 여기, 작업 정의 시점에 **1회** 머문다. 4단계는 확정된 매핑을 :class:`~hwpxfiller.core.job.Job`
 으로 굳혀 :class:`~hwpxfiller.core.job.JobRegistry` 에 쓴다.
 
-**샘플 데이터는 매핑 저작용일 뿐 작업에 저장하지 않는다** — 데이터·행은 집행 때 고른다.
+**샘플 데이터는 매핑 저작용일 뿐 작업에 저장하지 않는다** — 데이터·행은 실행 때 고른다.
 """
 
 from __future__ import annotations
@@ -112,7 +112,7 @@ class JobEditorWizard(QWizard):
 class SaveJobPage(QWizardPage):
     """4단계 — 작업 이름·파일명 패턴을 정하고 저장한다(생성 아님).
 
-    출력 폴더·행 선택·생성은 여기 없다 — 그것들은 일회성이라 집행 화면의 몫이다.
+    출력 폴더·행 선택·생성은 여기 없다 — 그것들은 일회성이라 실행 화면의 몫이다.
     실제 저장은 위저드의 :meth:`JobEditorWizard.accept` 가 마침 버튼에서 수행한다.
     """
 
@@ -121,7 +121,7 @@ class SaveJobPage(QWizardPage):
         self.setTitle("4단계 — 작업 저장")
         self.setSubTitle(
             "이 작업(템플릿·매핑·파일명)을 저장합니다. 데이터·행은 저장하지 않습니다 "
-            "— 집행할 때 고릅니다."
+            "— 실행할 때 고릅니다."
         )
         layout = QVBoxLayout(self)
         grid = QGridLayout()

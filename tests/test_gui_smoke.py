@@ -183,7 +183,7 @@ def test_home_empty_state_and_job_cards(qapp, tmp_path):
     joined = " ".join(lbl.text() for lbl in card.findChildren(QLabel))
     assert "카드작업" in joined
     assert "필드 0개" in joined          # 메타 노출
-    assert "아직 집행 안 함" in joined    # 미집행 상태
+    assert "아직 실행 안 함" in joined    # 미실행 상태
     assert "템플릿 없음" in joined        # 부재 템플릿 선고지
 
 
@@ -275,39 +275,39 @@ def test_editor_edit_mode_accept_same_name_no_prompt(qapp, tmp_path, monkeypatch
 
 
 def test_app_controller_records_last_run(qapp, tmp_path, monkeypatch):
-    """성공 집행(run_finished) → last_run_at 저장·홈 갱신. RunView 는 레지스트리 무지."""
+    """성공 실행(run_finished) → last_run_at 저장·홈 갱신. RunView 는 레지스트리 무지."""
     from hwpxfiller.core.job import Job, JobRegistry
     from hwpxfiller.gui.app import _AppController
 
     reg = JobRegistry(tmp_path)
-    reg.save(Job(name="집행기록", template_path="/t.hwpx"))
+    reg.save(Job(name="실행기록", template_path="/t.hwpx"))
     ctrl = _AppController(reg)
 
     class _Batch:
         succeeded = 2
 
-    ctrl._record_run("집행기록", _Batch())
-    assert reg.load("집행기록").last_run_at != ""
+    ctrl._record_run("실행기록", _Batch())
+    assert reg.load("실행기록").last_run_at != ""
 
     class _Failed:
         succeeded = 0
 
-    before = reg.load("집행기록").last_run_at
-    ctrl._record_run("집행기록", _Failed())
-    assert reg.load("집행기록").last_run_at == before  # 실패 집행은 갱신 안 함
+    before = reg.load("실행기록").last_run_at
+    ctrl._record_run("실행기록", _Failed())
+    assert reg.load("실행기록").last_run_at == before  # 실패 실행은 갱신 안 함
 
 
 def test_run_view_instantiates_with_a_job(qapp):
     from hwpxfiller.core.job import Job
     from hwpxfiller.gui.run_view import RunView
 
-    view = RunView(Job(name="집행테스트", template_path="/t.hwpx", filename_pattern="doc-{{ID}}"))
+    view = RunView(Job(name="실행테스트", template_path="/t.hwpx", filename_pattern="doc-{{ID}}"))
     assert view.datasource is None  # 데이터 미겨눔 상태로 시작
     assert hasattr(view, "run_finished")
 
 
 def _run_view_with_data(tmp_path):
-    """집행 화면 + 가짜 데이터소스(빈값 1필드 포함) — 다이얼로그 없이 직접 겨눔."""
+    """실행 화면 + 가짜 데이터소스(빈값 1필드 포함) — 다이얼로그 없이 직접 겨눔."""
     from hwpxfiller.core.job import Job
     from hwpxfiller.core.mapping import FieldMapping, MappingProfile
     from hwpxfiller.gui.run_view import RunView
@@ -315,7 +315,7 @@ def _run_view_with_data(tmp_path):
     template = tmp_path / "t.hwpx"
     template.write_bytes(b"dummy")  # 존재 검사 통과용(가짜 워커라 열지 않음)
     job = Job(
-        name="집행",
+        name="실행",
         template_path=str(template),
         mapping=MappingProfile(mappings=[
             FieldMapping(template_field="공고명", sources=["bidNtceNm"]),

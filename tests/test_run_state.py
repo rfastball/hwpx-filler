@@ -1,4 +1,4 @@
-"""집행 ViewModel — Qt 불필요(헤드리스). 대상 전환·사전검증·게이트·표식 주입 계약.
+"""실행 ViewModel — Qt 불필요(헤드리스). 대상 전환·사전검증·게이트·표식 주입 계약.
 
 위젯의 QThread/QMessageBox 없이 백엔드 결정 로직을 여기서 못박는다(누수 제거의 회귀 방어).
 """
@@ -28,7 +28,7 @@ def _job(tmp_path) -> Job:
     template = tmp_path / "t.hwpx"
     template.write_bytes(b"dummy")
     return Job(
-        name="집행",
+        name="실행",
         template_path=str(template),
         mapping=MappingProfile(mappings=[
             FieldMapping(template_field="공고명", sources=["bidNtceNm"]),

@@ -158,7 +158,7 @@ class DataPage(QWizardPage):
         if getattr(self.wizard(), "initial_job", None) is not None:
             self.setSubTitle(
                 "작업에 데이터는 저장되지 않습니다 — 매핑 검토용 샘플 데이터를 "
-                "다시 선택하세요. 실제 데이터·행은 집행할 때 고릅니다."
+                "다시 선택하세요. 실제 데이터·행은 실행할 때 고릅니다."
             )
 
     def _pick(self):

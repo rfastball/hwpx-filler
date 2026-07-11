@@ -2,7 +2,7 @@
 
 인라인 ``setStyleSheet`` 산재 금지: 색·상태 표현은 여기 상수와 QSS **동적 프로퍼티
 셀렉터**(``QPushButton[primary="true"]``·``QLabel[level="warn"]``)로 통일한다.
-각 최상위 창(홈·에디터·집행)이 생성자에서 :data:`BASE_QSS` 를 적용한다 — 앱 B는
+각 최상위 창(홈·에디터·실행)이 생성자에서 :data:`BASE_QSS` 를 적용한다 — 앱 B는
 자식 창 구조(app.py)라 QApplication 레벨보다 창 자립이 부분 적용·스모크에 유리.
 
 diff 리뷰어(앱 A)의 배지색은 여기가 아니라 ``core.diff.CATEGORY_COLORS`` 가 원천이다
@@ -115,7 +115,7 @@ QListWidget#jobList::item:selected {{
     background: {SELECT_BG}; border-left: 3px solid {PRIMARY};
 }}
 
-/* 집행 화면 인라인 필드 상태 배지(ADR-E/B): 채움/의도적 빈칸/미입력(클릭 확인)/확인됨. */
+/* 실행 화면 인라인 필드 상태 배지(ADR-E/B): 채움/의도적 빈칸/미입력(클릭 확인)/확인됨. */
 QLabel[fb="fill"] {{
     background: {FILL_BG}; color: {OK}; border: 1px solid #bfe0cb;
     border-radius: 11px; padding: 3px 10px; font-weight: 600;

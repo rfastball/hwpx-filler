@@ -1,7 +1,7 @@
 """홈 화면 ViewModel — Qt 비의존 프레젠테이션 상태(작업 목록·메타 성형·선택).
 
 위젯(:class:`~hwpxfiller.gui.home.JobListHome`)은 이 뷰모델을 들고 ``rows()``·``is_empty()``·
-``count_label()`` 로 **렌더만** 한다. 레지스트리 접근, 카드 메타 문자열, 최근집행 포맷, 선택
+``count_label()`` 로 **렌더만** 한다. 레지스트리 접근, 카드 메타 문자열, 최근실행 포맷, 선택
 상태가 여기 산다 — 변경 통지는 Qt 시그널이 아니라 순수 옵저버 콜백(``subscribe``)이라
 QApplication 없이 헤드리스로 테스트된다(링1 규율: PySide6 임포트 금지).
 
@@ -35,7 +35,7 @@ class JobRow:
     field_count: int
     filename_pattern: str
     last_run_display: str
-    last_run_at: str = ""  # 원시 ISO(KPI '최근 집행' 계산용, ""=미집행)
+    last_run_at: str = ""  # 원시 ISO(KPI '최근 실행' 계산용, ""=미실행)
 
     @classmethod
     def from_job(cls, job: Job) -> "JobRow":
@@ -43,12 +43,12 @@ class JobRow:
         return cls(
             name=job.name,
             template_name=(Path(tpath).name or "—") if tpath else "—",
-            # 집행 화면의 템플릿 가드를 홈에서 선고지(비차단).
+            # 실행 화면의 템플릿 가드를 홈에서 선고지(비차단).
             template_missing=bool(tpath) and not Path(tpath).exists(),
             field_count=len(job.mapping.mappings),
             filename_pattern=job.filename_pattern,
             last_run_display=(
-                f"최근 집행 {_fmt_iso(job.last_run_at)}" if job.last_run_at else "아직 집행 안 함"
+                f"최근 실행 {_fmt_iso(job.last_run_at)}" if job.last_run_at else "아직 실행 안 함"
             ),
             last_run_at=job.last_run_at,
         )
@@ -70,7 +70,7 @@ class TxtRow:
 
 @dataclass
 class DashboardKpi:
-    """대시보드 요약 — 전부 실재 데이터(레지스트리·집행 이력·템플릿 상태·txt 루트)."""
+    """대시보드 요약 — 전부 실재 데이터(레지스트리·실행 이력·템플릿 상태·txt 루트)."""
 
     job_count: int
     recent_run: str            # "MM-DD · 작업명" 또는 "—"

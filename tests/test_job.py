@@ -13,7 +13,7 @@ from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 
 
 class _FakeSource:
-    """dict 백드 DataSource — 실 Excel/Qt 없이 집행 사전검증을 테스트."""
+    """dict 백드 DataSource — 실 Excel/Qt 없이 실행 사전검증을 테스트."""
 
     def __init__(self, records: "list[dict]"):
         self._records = records
@@ -158,7 +158,7 @@ def test_registry_list_jobs_sorted_by_name(tmp_path):
     assert [j.name for j in reg.list_jobs()] == ["가공고", "나공고"]
 
 
-# ------------------------------------------------------------ 집행 사전검증
+# ------------------------------------------------------------ 실행 사전검증
 def test_run_request_selected_and_mapped_records():
     """선택 인덱스만, 원본 순서로 → 작업 매핑 적용 결과."""
     src = _FakeSource(

@@ -2,7 +2,7 @@
 
 GUI·ViewModel 은 구체 클래스(``ExcelDataSource`` 등)를 직접 만들지 않고 여기를 거친다.
 누적치환·나라장터·API 직결 같은 미래 소스 종류는 이 팩토리에만 추가되면 되고,
-소비자(위저드·집행 뷰모델)는 :class:`~hwpxfiller.data.base.DataSource` 포트만 알면 된다
+소비자(위저드·실행 뷰모델)는 :class:`~hwpxfiller.data.base.DataSource` 포트만 알면 된다
 — UI/VM 코드 수정 없이 종류가 늘어난다.
 """
 from __future__ import annotations

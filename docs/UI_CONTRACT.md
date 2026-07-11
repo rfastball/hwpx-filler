@@ -62,7 +62,7 @@ HWPX 카드별 액션은 위젯 Qt 시그널(`run/edit/delete_job_requested`), t
 행 편집 명령: `MappingModel.set_sources`/`set_transform`/`set_fmt`/`set_sep`/`set_const`/`set_confirmed`.
 프로파일 IO: `MappingModel.apply_profile`/`to_profile`.
 
-## 집행 (`gui/run_view.py` ← `gui/run_state.py` + `gui/selection_state.py`)
+## 실행 (`gui/run_view.py` ← `gui/run_state.py` + `gui/selection_state.py`)
 
 | 목업 셀렉터 | ViewModel 심볼 | 종류 | 근거 |
 |---|---|---|---|

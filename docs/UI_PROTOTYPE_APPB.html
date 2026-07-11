@@ -301,7 +301,7 @@
       <div class="tag">앱 B · 투트랙 · 인터랙티브 프로토타입</div>
       <h1>HWPX Filler — UI 프로토타입</h1>
       <p>UI 설계 핸드오프와 표면 결정 기록(ADR A~I)에서 도출한 <b>투트랙</b> UI — HWPX(대시보드·
-         에디터·집행)와 txt(즉시 기안). 색·위젯은 <code>gui/style.py</code> 팔레트를 따르고,
+         에디터·실행)와 txt(즉시 기안). 색·위젯은 <code>gui/style.py</code> 팔레트를 따르고,
          각 요소의 <code>data-vm</code>은 실제 ViewModel 계약에 배선됩니다(<code>UI_CONTRACT.md</code>).</p>
     </div>
     <div class="spacer"></div>
@@ -330,7 +330,7 @@
         <span class="n"><span class="num">2</span>작업 에디터</span>
         <span class="d">HWPX · 4스텝 · 저장으로 끝</span></button>
       <button class="navbtn" data-scr="run">
-        <span class="n"><span class="num">3</span>집행</span>
+        <span class="n"><span class="num">3</span>실행</span>
         <span class="d">HWPX · 데이터 겨눔 → 생성</span></button>
       <button class="navbtn" data-scr="txt">
         <span class="n"><span class="num">✎</span>즉시 기안 (txt)</span>
@@ -352,7 +352,7 @@
                 </div>
                 <div class="kpis" data-vm="HomeViewModel.kpi">
                   <div class="kpi"><div class="v">3</div><div class="l">저장된 작업 · HWPX</div></div>
-                  <div class="kpi"><div class="v">07-09</div><div class="l">최근 집행 · 공고서 자동생성</div></div>
+                  <div class="kpi"><div class="v">07-09</div><div class="l">최근 실행 · 공고서 자동생성</div></div>
                   <div class="kpi warn"><div class="v">1</div><div class="l">템플릿 없는 작업</div></div>
                   <div class="kpi"><div class="v">2</div><div class="l">기안 템플릿 · txt</div></div>
                 </div>
@@ -365,27 +365,27 @@
                       <div class="jcard">
                         <div class="jn" data-vm="JobRow.name">공고서 자동생성</div>
                         <div class="jm" data-vm="JobRow.meta_line">공고서_양식.hwpx · 필드 14개 · <span class="mono">공고서-{{ID}}</span></div>
-                        <div class="jfoot"><span class="jr" data-vm="JobRow.last_run_display">최근 집행 2026-07-09 15:42</span>
-                          <span class="row"><button class="btn primary sm">집행</button><button class="btn sm">편집</button><button class="btn sm">삭제</button></span></div>
+                        <div class="jfoot"><span class="jr" data-vm="JobRow.last_run_display">최근 실행 2026-07-09 15:42</span>
+                          <span class="row"><button class="btn primary sm">실행</button><button class="btn sm">편집</button><button class="btn sm">삭제</button></span></div>
                       </div>
                       <div class="jcard">
                         <div class="jn">낙찰통지서</div>
                         <div class="jm">낙찰통지_v2.hwpx · 필드 8개 · <span class="mono">낙찰-{{ID}}</span></div>
-                        <div class="jfoot"><span class="jr">아직 집행 안 함</span>
-                          <span class="row"><button class="btn primary sm">집행</button><button class="btn sm">편집</button><button class="btn sm">삭제</button></span></div>
+                        <div class="jfoot"><span class="jr">아직 실행 안 함</span>
+                          <span class="row"><button class="btn primary sm">실행</button><button class="btn sm">편집</button><button class="btn sm">삭제</button></span></div>
                       </div>
                       <div class="jcard">
                         <div class="jn">계약서 초안 <span class="pill warn" data-vm="JobRow.template_missing">템플릿 없음</span></div>
                         <div class="jm">계약서.hwpx · 필드 21개 · <span class="mono">계약-{{업체명}}</span></div>
-                        <div class="jfoot"><span class="jr">최근 집행 2026-06-30 11:08</span>
-                          <span class="row"><button class="btn primary sm" disabled>집행</button><button class="btn sm">편집</button><button class="btn sm">삭제</button></span></div>
+                        <div class="jfoot"><span class="jr">최근 실행 2026-06-30 11:08</span>
+                          <span class="row"><button class="btn primary sm" disabled>실행</button><button class="btn sm">편집</button><button class="btn sm">삭제</button></span></div>
                       </div>
                     </div>
                     <div id="emptyView" style="display:none" data-vm="HomeViewModel.is_empty">
                       <div class="empty">
                         <div class="heading">저장된 작업이 없습니다</div>
                         <p>템플릿과 매핑을 묶어 첫 작업을 만드세요.
-데이터·행은 집행할 때 고릅니다.</p>
+데이터·행은 실행할 때 고릅니다.</p>
                         <button class="btn primary">＋ 새 작업 만들기</button>
                       </div>
                     </div>
@@ -415,7 +415,7 @@
             <h3>지배 결정 · 근거</h3>
             <div class="dcard"><div class="dh"><span class="dchip">I</span><span class="dt">투트랙 허브 대시보드</span></div>
               <p>HWPX=Job-앵커(재사용·가이드 실행), txt=경량·즉시. 트랙 이원성이 홈을 두 진입의
-                 허브로. KPI는 전부 <b>실재 데이터</b>(레지스트리·집행 이력·템플릿 루트).</p>
+                 허브로. KPI는 전부 <b>실재 데이터</b>(레지스트리·실행 이력·템플릿 루트).</p>
               <div class="src">DECISIONS §트랙 이원성 · ADR A·I</div></div>
             <div class="dcard"><div class="dh"><span class="dchip">B</span><span class="dt">상태 시각화</span></div>
               <p>작업 카드에 <span class="warn">템플릿 없음</span> pill, KPI에 경고 수 — 이미 있는
@@ -423,7 +423,7 @@
               <div class="src">ADR B</div></div>
             <div class="dcard"><div class="dh"><span class="dchip">!</span><span class="dt">발명 금지</span></div>
               <p>대시보드는 크롬이 아니라 <b>기능의 표면</b> — 가짜 지표·차트 없이 레지스트리·
-                 템플릿 루트·집행 이력만 노출.</p>
+                 템플릿 루트·실행 이력만 노출.</p>
               <div class="src">HANDOFF 관통 원칙</div></div>
             <p style="font-size:12px;color:var(--ink-soft)">
               <a href="#" id="toggleEmpty">↺ 빈 상태 보기</a> — 작업 0건 온보딩 미리보기</p>
@@ -510,7 +510,7 @@
                 <div class="wstep" data-w="3" style="display:none">
                   <div class="wtitle">4단계 — 작업 저장</div>
                   <p class="wsub">이 작업(템플릿·매핑·파일명)을 저장합니다. 데이터·행은 저장하지
-                    않습니다 — 집행할 때 고릅니다.</p>
+                    않습니다 — 실행할 때 고릅니다.</p>
                   <div class="row" style="margin-bottom:9px"><span class="lbl" style="width:76px">작업 이름</span>
                     <input class="field" value="공고서 자동생성"></div>
                   <div class="row"><span class="lbl" style="width:76px">파일명 패턴</span>
@@ -562,7 +562,7 @@
         <div class="stage">
           <div class="canvas">
             <div class="win" style="max-width:800px">
-              <div class="titlebar"><span class="t">HWPX Filler — 집행: 공고서 자동생성</span>
+              <div class="titlebar"><span class="t">HWPX Filler — 실행: 공고서 자동생성</span>
                 <span class="caps"><span>—</span><span>▢</span><span class="x">✕</span></span></div>
               <div class="body">
                 <div class="heading">작업: 공고서 자동생성 · 템플릿: 공고서_양식.hwpx ·
@@ -651,7 +651,7 @@
                  <span class="fb missing" style="font-size:10px;cursor:default">● 미입력</span>.
                  출력물엔 <span class="mono">〘미입력·{field}〙</span> 표식이 남습니다.</p>
               <div class="src">core/job.py MISSING_MARKER · ADR B</div></div>
-            <div class="dcard"><div class="dh"><span class="dchip">A</span><span class="dt">집행 = 가이드 흐름</span></div>
+            <div class="dcard"><div class="dh"><span class="dchip">A</span><span class="dt">실행 = 가이드 흐름</span></div>
               <p>개별 실행은 저빈도·고위험 → 데이터 겨눔 → 행 선택 → 사전검증 → 생성의
                  가이드형. <b>매핑 재확정은 없음</b>(에디터에서 1회).</p>
               <div class="src">HANDOFF §4 · ADR A</div></div>

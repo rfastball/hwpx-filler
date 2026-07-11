@@ -2,7 +2,7 @@
 
 트랙 이원성([[hwpx-filler-scope]], DECISIONS §트랙 이원성): 홈은 단순 목록이 아니라 **두 트랙의
 허브 대시보드**다 — 좌: 정식 문서 생성(HWPX, Job-앵커·재사용 자산), 우: 즉시 기안(txt, 경량·
-render→copy). 상단 KPI는 **실재 데이터만**(작업 수·최근 집행·템플릿 없는 작업·기안 템플릿 수) —
+render→copy). 상단 KPI는 **실재 데이터만**(작업 수·최근 실행·템플릿 없는 작업·기안 템플릿 수) —
 가짜 지표 없음(핸드오프 관통 경고: 없던 기능 발명 금지).
 
 레이어링: 위젯은 얇은 렌더러 — 목록 성형·KPI·선택은 :class:`~hwpxfiller.gui.home_state.HomeViewModel`
@@ -33,7 +33,7 @@ from .style import BASE_QSS, mark
 
 
 class _JobCard(QWidget):
-    """HWPX 작업 카드 — 이름 + 상태 배지 + 메타 + 최근 집행 + 카드별 액션(집행/편집/삭제).
+    """HWPX 작업 카드 — 이름 + 상태 배지 + 메타 + 최근 실행 + 카드별 액션(실행/편집/삭제).
 
     성형된 :class:`JobRow` 와 콜백만 받는다(Job·레지스트리 직접 접근 없음).
     """
@@ -65,9 +65,9 @@ class _JobCard(QWidget):
         mark(lbl_run, "muted", True)
         foot.addWidget(lbl_run)
         foot.addStretch(1)
-        btn_run = QPushButton("집행")
+        btn_run = QPushButton("실행")
         mark(btn_run, "primary", True)
-        btn_run.setEnabled(not row.template_missing)  # 템플릿 없으면 집행 불가(홈에서 선고지)
+        btn_run.setEnabled(not row.template_missing)  # 템플릿 없으면 실행 불가(홈에서 선고지)
         btn_run.clicked.connect(lambda: on_run(row.name))
         btn_edit = QPushButton("편집")
         btn_edit.clicked.connect(lambda: on_edit(row.name))
@@ -219,7 +219,7 @@ class JobListHome(QMainWindow):
         lbl = QLabel("저장된 작업이 없습니다")
         mark(lbl, "heading", True)
         lbl.setAlignment(Qt.AlignCenter)
-        sub = QLabel("템플릿과 매핑을 묶어 첫 작업을 만드세요.\n데이터·행은 집행할 때 고릅니다.")
+        sub = QLabel("템플릿과 매핑을 묶어 첫 작업을 만드세요.\n데이터·행은 실행할 때 고릅니다.")
         mark(sub, "muted", True)
         sub.setAlignment(Qt.AlignCenter)
         self.btn_empty_new = QPushButton("＋ 새 작업 만들기")
@@ -253,7 +253,7 @@ class JobListHome(QMainWindow):
 
     # ------------------------------------------------------------- 렌더
     def refresh(self) -> None:
-        """배선(app.py)이 저장·삭제·집행 후 호출 → 뷰모델 재적재 → _render 통지."""
+        """배선(app.py)이 저장·삭제·실행 후 호출 → 뷰모델 재적재 → _render 통지."""
         self.vm.refresh()
 
     def _render(self) -> None:
@@ -265,7 +265,7 @@ class JobListHome(QMainWindow):
                 w.deleteLater()
         k = self.vm.kpi()
         self.kpi_row.addWidget(self._kpi_tile(str(k.job_count), "저장된 작업 · HWPX"))
-        self.kpi_row.addWidget(self._kpi_tile(k.recent_run, "최근 집행"))
+        self.kpi_row.addWidget(self._kpi_tile(k.recent_run, "최근 실행"))
         self.kpi_row.addWidget(
             self._kpi_tile(str(k.missing_template_count), "템플릿 없는 작업", warn=k.missing_template_count > 0)
         )

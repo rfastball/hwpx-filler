@@ -1,7 +1,7 @@
-"""집행(Run) 화면 — 저장된 작업을 골라 데이터·행을 겨눠 생성한다.
+"""실행(Run) 화면 — 저장된 작업을 골라 데이터·행을 겨눠 생성한다.
 
-트랙 C UX 결정([[hwpx-filler-scope]]): 셋업(에디터)과 집행(여기)을 가른다. 무거운 명시성
-게이트(매핑 확정)는 셋업에만 있다 — **여기선 매핑 재확정이 없다.** 집행은 사전검증만 한다.
+트랙 C UX 결정([[hwpx-filler-scope]]): 셋업(에디터)과 실행(여기)을 가른다. 무거운 명시성
+게이트(매핑 확정)는 셋업에만 있다 — **여기선 매핑 재확정이 없다.** 실행은 사전검증만 한다.
 
 레이어링(아키텍처 분리): 이 위젯은 **얇은 렌더러/오케스트레이터**다 — 데이터 로드·대상
 문서 결정·사전검증·생성 게이트는 :class:`~hwpxfiller.gui.run_state.RunViewModel`(Qt 비의존,
@@ -46,7 +46,7 @@ from .worker import GenerateWorker
 
 
 class RunView(QMainWindow):
-    """작업 1건을 집행 — 데이터 겨눔 → 행 선택 → 사전검증 → 생성."""
+    """작업 1건을 실행 — 데이터 겨눔 → 행 선택 → 사전검증 → 생성."""
 
     run_finished = Signal(object)  # BatchResult
     back_requested = Signal()
@@ -54,12 +54,12 @@ class RunView(QMainWindow):
     def __init__(self, job: Job, parent=None):
         super().__init__(parent)
         self.job = job
-        self.vm = RunViewModel(job)            # 집행 결정(Qt 비의존)
+        self.vm = RunViewModel(job)            # 실행 결정(Qt 비의존)
         self._running = False
         self._thread: "QThread | None" = None
         self._marked_fields: "list[str]" = []  # 이번 생성에서 표식 주입된 필드(결과 요약용)
 
-        self.setWindowTitle(f"HWPX Filler — 집행: {job.name}")
+        self.setWindowTitle(f"HWPX Filler — 실행: {job.name}")
         self.resize(760, 680)
         self.setStyleSheet(BASE_QSS)
         central = QWidget()

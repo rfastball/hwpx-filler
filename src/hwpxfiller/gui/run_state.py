@@ -1,11 +1,11 @@
-"""집행(Run) 화면 ViewModel — Qt 비의존 집행 결정(데이터·대상·사전검증·게이트).
+"""실행(Run) 화면 ViewModel — Qt 비의존 실행 결정(데이터·대상·사전검증·게이트).
 
 위젯(:class:`~hwpxfiller.gui.run_view.RunView`)에서 백엔드로 새던 부분을 여기로 옮겼다:
 ``DataSource`` 포트(팩토리 경유)·``HwpxEngine``·``RunRequest`` 는 이 뷰모델만 만지고,
 위젯은 QThread·QMessageBox·QFileDialog 같은 Qt 오케스트레이션만 남긴다(링1: PySide6 금지).
 **매핑 재확정 없음** — 매핑은 작업 정의 때 확정됐고 여기선 사전검증만 한다.
 
-이 뷰모델 표면(dataclass 결과 + 메서드)이 목업 집행 화면이 겨누는 seam 계약이다.
+이 뷰모델 표면(dataclass 결과 + 메서드)이 목업 실행 화면이 겨누는 seam 계약이다.
 """
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ class GateError:
 
 @dataclass
 class FieldState:
-    """집행 화면 상시 인라인 배지 1개(ADR-E/B) — 필드의 채움 상태."""
+    """실행 화면 상시 인라인 배지 1개(ADR-E/B) — 필드의 채움 상태."""
 
     name: str
     state: str            # "filled" | "blank"(의도적 비움) | "missing"(미충족)
@@ -57,7 +57,7 @@ class FieldState:
 
 
 class RunViewModel:
-    """작업 1건 집행 상태·결정. 데이터·대상 문서는 DataSource 이음새 뒤에 둔다."""
+    """작업 1건 실행 상태·결정. 데이터·대상 문서는 DataSource 이음새 뒤에 둔다."""
 
     def __init__(self, job: Job):
         self.job = job

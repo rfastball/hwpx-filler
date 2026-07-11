@@ -32,13 +32,13 @@ def test_rows_shape_meta_and_missing_template(tmp_path):
     assert g.template_name == "t.hwpx"
     assert g.template_missing is True
     assert g.field_count == 1
-    assert "최근 집행 2026-07-09 15:42" == g.last_run_display
+    assert "최근 실행 2026-07-09 15:42" == g.last_run_display
     assert g.meta_line() == "템플릿 t.hwpx · 필드 1개 · 파일명 공고-{{ID}}"
 
     n = rows["낙찰"]
     assert n.template_name == "—"          # 빈 템플릿 경로
     assert n.template_missing is False      # 경로 없음 = 부재 배지 아님
-    assert n.last_run_display == "아직 집행 안 함"
+    assert n.last_run_display == "아직 실행 안 함"
 
 
 def test_empty_registry(tmp_path):
@@ -89,14 +89,14 @@ def test_dashboard_kpi_from_real_data(tmp_path):
     assert k.job_count == 2
     assert k.missing_template_count == 1        # '/none/t.hwpx' 부재
     assert k.txt_template_count == 1
-    assert k.recent_run.startswith("07-09") and "공고서" in k.recent_run  # 최신 집행
+    assert k.recent_run.startswith("07-09") and "공고서" in k.recent_run  # 최신 실행
 
 
 def test_dashboard_kpi_no_runs_no_txt(tmp_path):
     from hwpxfiller.core.job import Job, JobRegistry
 
     reg = JobRegistry(tmp_path / "j")
-    reg.save(Job(name="미집행", template_path=""))
+    reg.save(Job(name="미실행", template_path=""))
     vm = HomeViewModel(reg)  # txt 레지스트리 없음
     k = vm.kpi()
     assert k.recent_run == "—" and k.txt_template_count == 0

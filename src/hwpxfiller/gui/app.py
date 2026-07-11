@@ -3,7 +3,7 @@
     python -m hwpxfiller.gui.app
 
 홈(:class:`~hwpxfiller.gui.home.JobListHome`)이 오케스트레이터다: 새 작업은 에디터
-(:class:`~hwpxfiller.gui.job_editor.JobEditorWizard`)로, 집행은 집행 화면
+(:class:`~hwpxfiller.gui.job_editor.JobEditorWizard`)로, 실행은 실행 화면
 (:class:`~hwpxfiller.gui.run_view.RunView`)으로 보낸다. 자식 창의 수명은 여기서 소유한다
 (Qt GC 방지). 초기엔 자식 창 — 임베드(QStackedWidget)는 후속 리팩터.
 """
@@ -55,7 +55,7 @@ class _AppController:
 
         job = self.registry.load(name)
         view = RunView(job)
-        # 성공 집행 → 작업 사용 메타(last_run_at) 갱신. RunView 는 레지스트리를 모른다
+        # 성공 실행 → 작업 사용 메타(last_run_at) 갱신. RunView 는 레지스트리를 모른다
         # (뷰 계약 유지) — 시그널 수신자만 추가.
         view.run_finished.connect(lambda batch: self._record_run(name, batch))
         self._track(view)

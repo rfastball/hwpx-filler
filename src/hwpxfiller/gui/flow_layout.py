@@ -1,6 +1,6 @@
 """줄바꿈 배치(FlowLayout) — 폭이 차면 다음 줄로 넘어가는 위젯 흐름.
 
-집행 화면 인라인 필드 배지처럼 개수가 가변인 칩 묶음을 목업처럼 감싸 렌더할 때 쓴다.
+실행 화면 인라인 필드 배지처럼 개수가 가변인 칩 묶음을 목업처럼 감싸 렌더할 때 쓴다.
 Qt 공식 예제(Qt Widgets Examples: Flow Layout)의 표준 구현. Ring 2(위젯 계층) 전용.
 """
 from __future__ import annotations

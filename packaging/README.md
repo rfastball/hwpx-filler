@@ -46,7 +46,7 @@ dist\hwpx-diff.exe --selfcheck tests\corpus\real\spec_revision_2025.hwpx tests\c
 # 패키징 — hwpx-filler.exe (앱 B, 단독 배포)
 
 누름틀 문서 생성기를 **의존성 0의 단일 exe**로 패키징한다. 받는 사람은 파이썬도 한컴도
-필요 없다 — `hwpx-filler.exe` 하나 복사해서 더블클릭(홈 → 새 작업 → 저장 → 집행).
+필요 없다 — `hwpx-filler.exe` 하나 복사해서 더블클릭(홈 → 새 작업 → 저장 → 실행).
 
 ## 빌드
 
