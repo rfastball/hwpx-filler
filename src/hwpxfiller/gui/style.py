@@ -11,16 +11,30 @@ diff 리뷰어(앱 A)의 배지색은 여기가 아니라 ``core.diff.CATEGORY_C
 
 from __future__ import annotations
 
-# ---- 팔레트 상수 ----
-PRIMARY = "#2874a6"        # 주 액션(리포트의 text_changed 파랑과 같은 계열)
+# ---- 팔레트 상수 (단일 출처: gui/design_tokens.json) ----
+# 아래 <gen:tokens> 영역은 scripts/gen_design_tokens.py 가 design_tokens.json 에서
+# 생성한다 — 색을 바꾸려면 JSON 을 고치고 ``python scripts/gen_design_tokens.py`` 를
+# 돌린다(직접 편집 금지). BASE_QSS·mark() 는 수작성이며 이 상수들을 참조한다.
+# 상태색(미확정 UNCONFIRMED_BG / 미매칭 UNMATCHED_BG / 데이터빈값 DATA_EMPTY_FG)은
+# mapping_table 이 여기서 임포트한다 — 색 리터럴 중복 금지(드리프트 방지).
+# 의미 참고: PRIMARY=주 액션·WARN=비차단 경고·DANGER=치명·OK=통과·MUTED=부차·
+# SELECT_BG=목록 선택 하이라이트(리포트 text_changed/removed/added 계열과 통일).
+# <gen:tokens> — scripts/gen_design_tokens.py 가 생성. 직접 편집 금지.
+PRIMARY = "#2874a6"
 PRIMARY_HOVER = "#1f5a80"
-WARN = "#a05a00"           # 비차단 경고(구 wizard.py 인라인 색을 승격)
-DANGER = "#c0392b"         # 치명(리포트 number/removed 빨강 계열)
-OK = "#1e8449"             # 통과/성공(리포트 added 초록 계열)
-MUTED = "#7a7f87"          # 부차 텍스트
+WARN = "#a05a00"
+DANGER = "#c0392b"
+OK = "#1e8449"
+MUTED = "#7a7f87"
 BORDER = "#e2e4e8"
 CARD_BG = "#ffffff"
 WINDOW_BG = "#f6f7f9"
+INK = "#1c2126"
+UNCONFIRMED_BG = "#fff3bf"
+UNMATCHED_BG = "#ffd8d8"
+DATA_EMPTY_FG = "#b00020"
+SELECT_BG = "#dce9f5"
+# </gen:tokens>
 
 BASE_QSS = f"""
 QMainWindow, QWizard {{ background: {WINDOW_BG}; }}
@@ -43,7 +57,7 @@ QListWidget#jobList {{
 }}
 QListWidget#jobList::item {{ border-bottom: 1px solid {BORDER}; }}
 QListWidget#jobList::item:selected {{
-    background: #dce9f5; border-left: 3px solid {PRIMARY};
+    background: {SELECT_BG}; border-left: 3px solid {PRIMARY};
 }}
 """
 

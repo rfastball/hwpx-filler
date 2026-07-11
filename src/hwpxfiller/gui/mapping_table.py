@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 from ..core.format_engine import presets as format_presets
 from ..core.mapping import TRANSFORMS
 from .mapping_state import MappingModel
+from .style import DATA_EMPTY_FG, UNCONFIRMED_BG, UNMATCHED_BG
 
 # 변환 코드 → 한국어 라벨(콤보 표시 순서는 TRANSFORMS 그대로).
 TRANSFORM_LABELS = {"join": "그대로", "datetime": "일시", "amount": "금액", "const": "상수"}
@@ -43,12 +44,13 @@ _HEADERS = ("확정", "템플릿 필드", "소스", "변환", "표시형", "구�
 _NO_FORMAT_ITEM = "—"          # 표시형 변형이 없는 변환(그대로/상수)
 _CUSTOM_FORMAT_ITEM = "직접 입력…"  # 고급: 서식 코드 직접 입력(액션 항목)
 
-_BG_UNCONFIRMED = QBrush(QColor("#FFF3BF"))  # 미확정 = 노랑
-_BG_UNMATCHED = QBrush(QColor("#FFD8D8"))    # 미매칭 미확정 = 빨강
+# 색은 style 의 토큰 상수에서(단일 출처 gui/design_tokens.json) — 리터럴 중복 금지.
+_BG_UNCONFIRMED = QBrush(QColor(UNCONFIRMED_BG))  # 미확정 = 노랑
+_BG_UNMATCHED = QBrush(QColor(UNMATCHED_BG))      # 미매칭 미확정 = 빨강
 _BG_DEFAULT = QBrush()
 
 # 미리보기 전경색: 내용은 매핑됐으나 이 레코드에서 값이 빈 경우 빨강으로 고지.
-_FG_DATA_EMPTY = QBrush(QColor("#B00020"))
+_FG_DATA_EMPTY = QBrush(QColor(DATA_EMPTY_FG))
 _FG_DEFAULT = QBrush()
 
 _EMPTY_ITEM = "(비움)"

@@ -6,11 +6,23 @@
     --ink:#1b2128; --ink-soft:#5a626c; --hair:#d7dbe1; --accent:#2874a6;
     --chip:#e7edf3; --shadow:rgba(24,34,48,.16);
     --canvas:#dbe0e7;
-    /* ── app window: fixed real QSS palette (never re-themed) ── */
-    --a-primary:#2874a6; --a-primary-h:#1f5a80; --a-warn:#a05a00;
-    --a-danger:#c0392b; --a-ok:#1e8449; --a-muted:#7a7f87; --a-border:#e2e4e8;
-    --a-card:#ffffff; --a-window:#f6f7f9; --a-ink:#1c2126;
-    --a-unconf:#fff3bf; --a-unmatch:#ffd8d8; --a-empty:#b00020; --a-sel:#dce9f5;
+    /* ── app window: fixed real QSS palette (single source: gui/design_tokens.json) ── */
+    /* <gen:tokens> */
+    --a-primary:#2874a6;
+    --a-primary-h:#1f5a80;
+    --a-warn:#a05a00;
+    --a-danger:#c0392b;
+    --a-ok:#1e8449;
+    --a-muted:#7a7f87;
+    --a-border:#e2e4e8;
+    --a-card:#ffffff;
+    --a-window:#f6f7f9;
+    --a-ink:#1c2126;
+    --a-unconf:#fff3bf;
+    --a-unmatch:#ffd8d8;
+    --a-empty:#b00020;
+    --a-sel:#dce9f5;
+    /* </gen:tokens> */
     --app-font:"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;
     --mono:"Cascadia Code","Consolas",ui-monospace,monospace;
   }
@@ -286,16 +298,16 @@
               <div class="body">
                 <div class="row" style="justify-content:space-between">
                   <div class="row"><span class="heading">작업 목록</span>
-                    <span class="muted" id="jcount">3건</span></div>
+                    <span class="muted" id="jcount" data-vm="HomeViewModel.count_label">3건</span></div>
                   <button class="btn primary">＋ 새 작업 만들기</button>
                 </div>
 
                 <div id="jobsView">
-                  <div class="jobs" role="listbox" aria-label="저장된 작업">
+                  <div class="jobs" role="listbox" aria-label="저장된 작업" data-vm="HomeViewModel.rows">
                     <div class="job" role="option" tabindex="0" aria-selected="false" data-job="공고서 자동생성">
-                      <div class="jn">공고서 자동생성</div>
-                      <div class="jm">템플릿 공고서_양식.hwpx · 필드 14개 · 파일명 <span class="mono">공고서-{{ID}}</span></div>
-                      <div class="jr">최근 집행 2026-07-09 15:42</div>
+                      <div class="jn" data-vm="JobRow.name">공고서 자동생성</div>
+                      <div class="jm" data-vm="JobRow.meta_line">템플릿 공고서_양식.hwpx · 필드 14개 · 파일명 <span class="mono">공고서-{{ID}}</span></div>
+                      <div class="jr" data-vm="JobRow.last_run_display">최근 집행 2026-07-09 15:42</div>
                     </div>
                     <div class="job" role="option" tabindex="0" aria-selected="false" data-job="낙찰통지서">
                       <div class="jn">낙찰통지서</div>
@@ -303,14 +315,14 @@
                       <div class="jr">아직 집행 안 함</div>
                     </div>
                     <div class="job" role="option" tabindex="0" aria-selected="false" data-job="계약서 초안">
-                      <div class="jn">계약서 초안 <span class="pill warn">템플릿 없음</span></div>
+                      <div class="jn">계약서 초안 <span class="pill warn" data-vm="JobRow.template_missing">템플릿 없음</span></div>
                       <div class="jm">템플릿 계약서.hwpx · 필드 21개 · 파일명 <span class="mono">계약-{{업체명}}</span></div>
                       <div class="jr">최근 집행 2026-06-30 11:08</div>
                     </div>
                   </div>
                 </div>
 
-                <div id="emptyView" style="display:none">
+                <div id="emptyView" style="display:none" data-vm="HomeViewModel.is_empty">
                   <div class="empty">
                     <div class="heading">저장된 작업이 없습니다</div>
                     <p>템플릿과 매핑을 묶어 첫 작업을 만드세요.
@@ -320,8 +332,8 @@
                 </div>
 
                 <div class="row" style="justify-content:flex-end;margin-top:14px">
-                  <button class="btn primary" id="hRun" disabled>집행</button>
-                  <button class="btn" id="hEdit" disabled>편집</button>
+                  <button class="btn primary" id="hRun" disabled data-vm="HomeViewModel.has_selection">집행</button>
+                  <button class="btn" id="hEdit" disabled data-vm="HomeViewModel.selected_name">편집</button>
                   <button class="btn" id="hDel" disabled>삭제</button>
                 </div>
               </div>
@@ -396,22 +408,28 @@
                     진행합니다. 채우지 않을 필드는 소스를 (비움)으로 두고 확정하세요.</p>
                   <div class="tblwrap">
                     <table class="map">
-                      <thead><tr><th>확정</th><th>템플릿 필드</th><th>소스</th><th>변환</th>
-                        <th>표시형</th><th>구분자·상수</th><th>미리보기</th></tr></thead>
-                      <tbody id="mapBody"></tbody>
+                      <thead><tr>
+                        <th data-vm="RowState.confirmed">확정</th>
+                        <th data-vm="RowState.template_field">템플릿 필드</th>
+                        <th data-vm="RowState.sources">소스</th>
+                        <th data-vm="RowState.transform">변환</th>
+                        <th data-vm="RowState.fmt">표시형</th>
+                        <th data-vm="RowState.sep">구분자·상수</th>
+                        <th data-vm="RowState.to_mapping">미리보기</th></tr></thead>
+                      <tbody id="mapBody" data-vm="MappingModel.rows"></tbody>
                     </table>
                   </div>
                   <div class="stepper">
                     <button class="btn" id="recPrev">◀ 이전</button>
                     <span id="recIdx" style="font-weight:600">레코드 1/25</span>
                     <button class="btn" id="recNext">다음 ▶</button>
-                    <span class="muted" style="margin-left:6px" id="pvSummary">채움 12 · 빈값 2 — 비고, 특이사항</span>
+                    <span class="muted" style="margin-left:6px" id="pvSummary" data-vm="MappingModel.preview_empties">채움 12 · 빈값 2 — 비고, 특이사항</span>
                   </div>
                   <div class="gate">
-                    <span class="gatecount pend" id="gateCount">확정 4/6</span>
+                    <span class="gatecount pend" id="gateCount" data-vm="MappingModel.is_complete">확정 4/6</span>
                     <span style="flex:1"></span>
-                    <button class="btn" id="confAll">모두 확정</button>
-                    <button class="btn" id="unconfAll">모두 해제</button>
+                    <button class="btn" id="confAll" data-vm="MappingModel.confirm_all">모두 확정</button>
+                    <button class="btn" id="unconfAll" data-vm="MappingModel.unconfirm_all">모두 해제</button>
                     <button class="btn">프로파일 불러오기…</button>
                     <button class="btn">프로파일 저장…</button>
                   </div>
@@ -480,30 +498,30 @@
                   파일명: <span class="mono" style="font-weight:400">공고서-{{ID}}</span></div>
 
                 <div class="grp"><span class="cap">대상 문서</span>
-                  <label class="radio"><input type="radio" name="tgt" id="rNew" checked>
+                  <label class="radio"><input type="radio" name="tgt" id="rNew" checked data-vm="RunViewModel.set_target_mode">
                     <span>새 문서 생성 — 작업 템플릿(공고서_양식.hwpx)</span></label>
-                  <label class="radio"><input type="radio" name="tgt" id="rCont">
+                  <label class="radio"><input type="radio" name="tgt" id="rCont" data-vm="RunViewModel.set_target_mode">
                     <span>이전 출력 이어채우기 — 이전 단계 출력(.hwpx)에 이 단계 값을 채웁니다</span></label>
                   <div class="row" id="prevRow" style="margin:6px 0 0 22px;opacity:.45">
                     <input class="field ro" id="prevPath" value="" placeholder="이전 출력(.hwpx)" readonly disabled>
-                    <button class="btn" id="prevPick" disabled>이전 출력 선택…</button></div>
-                  <div class="note warnbox" id="overlapNote" style="display:none">
+                    <button class="btn" id="prevPick" disabled data-vm="RunViewModel.set_prev_output">이전 출력 선택…</button></div>
+                  <div class="note warnbox" id="overlapNote" style="display:none" data-vm="RunViewModel.set_prev_output">
                     ⚠ 이 작업의 필드 14개 중 <b>5개</b>가 문서에 있습니다. 이미 값이 있는
                     겹침 필드는 <b>덮어씁니다</b> — 단계별 필드는 서로소로 설계하세요.</div>
                 </div>
 
                 <div class="row" style="margin-top:14px"><span class="lbl">데이터(.xlsx/.csv)</span>
                   <input class="field ro" value="C:\데이터\입찰공고_2026Q3.xlsx" readonly>
-                  <button class="btn">데이터 선택…</button></div>
+                  <button class="btn" data-vm="RunViewModel.load_data">데이터 선택…</button></div>
 
-                <div class="preflight okbox" style="background:#e5f2ea;border:1px solid #a6d3b7">
+                <div class="preflight okbox" style="background:#e5f2ea;border:1px solid #a6d3b7" data-vm="RunViewModel.preflight">
                   <span class="ok">사전검증 통과 — 치명 누락 없음. 아래 빈칸 표면화를 확인하세요.</span></div>
 
                 <div class="grp" style="margin-top:16px"><span class="cap">빈칸 표면화 · 상시 인라인</span>
                   <p style="font-size:12px;margin:2px 0 0;color:#4a505a">필드 상태를 상시 배지로
                     노출합니다. <b class="danger">미입력</b> 필드는 반사적 dismiss를 막기 위해
                     <b>직접 클릭해 확인</b>해야 생성이 열립니다(차단 모달 대체).</p>
-                  <div class="statebadges" id="fieldBadges">
+                  <div class="statebadges" id="fieldBadges" data-vm="RunViewModel.blank_fields">
                     <span class="fb fill">✓ 공고명</span>
                     <span class="fb fill">✓ 개찰일자</span>
                     <span class="fb fill">✓ 추정가격</span>
@@ -517,11 +535,11 @@
                 <div style="margin-top:14px">
                   <div class="row" style="justify-content:space-between">
                     <span class="lbl" style="font-weight:600">생성 대상 레코드</span>
-                    <div class="row"><span class="muted" id="selCount" style="font-size:12px">선택 4/4</span>
-                      <button class="btn" id="selAll">전체 선택</button>
-                      <button class="btn" id="selNone">전체 해제</button></div>
+                    <div class="row"><span class="muted" id="selCount" style="font-size:12px" data-vm="SelectionModel.selected_count">선택 4/4</span>
+                      <button class="btn" id="selAll" data-vm="SelectionModel.set_all">전체 선택</button>
+                      <button class="btn" id="selNone" data-vm="SelectionModel.set_none">전체 해제</button></div>
                   </div>
-                  <div class="reclist" id="recList">
+                  <div class="reclist" id="recList" data-vm="SelectionModel.selected_indices">
                     <label class="rec"><input type="checkbox" checked><span class="rf">1. 공고서-A2026-001</span></label>
                     <label class="rec"><input type="checkbox" checked><span class="rf">2. 공고서-A2026-002</span></label>
                     <label class="rec"><input type="checkbox" checked><span class="rf">3. 공고서-A2026-003</span></label>
@@ -534,10 +552,10 @@
                   <button class="btn">찾아보기…</button></div>
 
                 <div class="row" style="margin-top:14px">
-                  <button class="btn primary" id="genBtn" disabled>생성</button>
-                  <span class="muted" id="genGate" style="font-size:12px">
+                  <button class="btn primary" id="genBtn" disabled data-vm="RunViewModel.validate_generate">생성</button>
+                  <span class="muted" id="genGate" style="font-size:12px" data-vm="RunViewModel.blank_fields">
                     미입력 2필드를 확인해야 생성이 열립니다</span></div>
-                <div class="bar"><i id="genBar"></i></div>
+                <div class="bar"><i id="genBar" data-vm="RunViewModel.mapped_records"></i></div>
                 <div id="genResult" style="font-size:12.5px;margin-top:8px;font-weight:600"></div>
                 <div class="logbox" id="genLog">[대기] 데이터·대상 문서를 확인한 뒤 생성하세요.</div>
               </div>

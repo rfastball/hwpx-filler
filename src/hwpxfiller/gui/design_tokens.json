@@ -1,0 +1,24 @@
+{
+  "_note": "앱 B 디자인 토큰 단일 출처. 색을 바꾸려면 여기만 고치고 `python scripts/gen_design_tokens.py` 실행 — style.py(Qt QSS)와 목업 CSS가 함께 재생성된다. 백엔드 무접촉. space/radius/type 은 예약(향후 QSS metric 배선 대상, 현재 미생성).",
+  "color": {
+    "primary": "#2874a6",
+    "primary_hover": "#1f5a80",
+    "warn": "#a05a00",
+    "danger": "#c0392b",
+    "ok": "#1e8449",
+    "muted": "#7a7f87",
+    "border": "#e2e4e8",
+    "card_bg": "#ffffff",
+    "window_bg": "#f6f7f9",
+    "ink": "#1c2126"
+  },
+  "state": {
+    "unconfirmed_bg": "#fff3bf",
+    "unmatched_bg": "#ffd8d8",
+    "data_empty_fg": "#b00020",
+    "select_bg": "#dce9f5"
+  },
+  "space": { "xs": 2, "sm": 6, "md": 12, "lg": 18 },
+  "radius": { "sm": 4, "md": 6, "lg": 9 },
+  "type": { "small": 12, "body": 13, "heading": 15 }
+}
