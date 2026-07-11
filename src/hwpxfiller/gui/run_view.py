@@ -19,7 +19,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QFileDialog,
     QGridLayout,
@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core.job import MISSING_MARKER, Job
+from .flow_layout import FlowLayout
 from .record_select import RecordSelector
 from .run_state import RunViewModel
 from .style import BASE_QSS, mark
@@ -108,14 +109,33 @@ class RunView(QMainWindow):
         drow.addWidget(btn_data)
         root.addLayout(drow)
 
-        # ---- 사전검증(표시) ----
+        # ---- 사전검증(치명 소스누락 표시) ----
         self.lbl_preflight = QLabel("")
         self.lbl_preflight.setWordWrap(True)
         root.addWidget(self.lbl_preflight)
 
+        # ---- 빈칸 표면화(상시 인라인 + 강제 확인 게이트, ADR-E) ----
+        gate_box = QGroupBox("빈칸 표면화 · 상시 인라인")
+        gbl = QVBoxLayout(gate_box)
+        lbl_gate_help = QLabel(
+            "필드 상태를 상시 배지로 노출합니다. 미입력 필드는 반사적 dismiss 를 막기 위해 "
+            "직접 클릭해 확인해야 생성이 열립니다(차단 모달 대체)."
+        )
+        lbl_gate_help.setWordWrap(True)
+        mark(lbl_gate_help, "muted", True)
+        gbl.addWidget(lbl_gate_help)
+        self.badge_host = QWidget()
+        self.badge_flow = FlowLayout(self.badge_host, margin=0, spacing=6)
+        gbl.addWidget(self.badge_host)
+        self.lbl_gate = QLabel("")
+        self.lbl_gate.setWordWrap(True)
+        gbl.addWidget(self.lbl_gate)
+        root.addWidget(gate_box)
+
         # ---- 행 선택 ----
         root.addWidget(QLabel("생성 대상 레코드"))
         self.selector = RecordSelector()
+        self.selector.selectionChanged.connect(self._on_selection_changed)
         root.addWidget(self.selector, 1)
 
         # ---- 출력 폴더 ----
@@ -150,6 +170,7 @@ class RunView(QMainWindow):
         root.addWidget(self.log, 1)
 
         self._check_template()
+        self._refresh_field_panel()
 
     # ------------------------------- 뷰모델 위임 프로퍼티(스캐폴드·스모크 계약) ----
     @property
@@ -225,14 +246,81 @@ class RunView(QMainWindow):
             QMessageBox.warning(self, "확인", "레코드가 없습니다. 다른 파일을 선택하세요.")
             return
         self.ed_data.setText(path)
+        # set_records 가 selectionChanged 를 쏘아 _on_selection_changed(사전검증+패널)를 부른다.
         self.selector.set_records(self.vm.records, self.job.filename_pattern)
+        self._on_selection_changed()
+
+    def _on_selection_changed(self) -> None:
+        """행 선택/데이터가 바뀌면 사전검증·인라인 필드 패널·생성 게이트를 다시 계산."""
         self._run_preflight()
+        self._refresh_field_panel()
 
     def _run_preflight(self) -> None:
-        """사전검증 표시 — 뷰모델 판정을 라벨에 반영. 매핑 재확정 아님."""
+        """사전검증 — 치명(데이터에 없는 소스키)만 라벨에. 빈칸은 아래 인라인 패널이 맡는다."""
         pf = self.vm.preflight(self.selector.selected_indices())
-        mark(self.lbl_preflight, "level", pf.level)
-        self.lbl_preflight.setText(pf.text)
+        if pf.missing_columns:
+            mark(self.lbl_preflight, "level", "danger")
+            self.lbl_preflight.setText(
+                "[치명] 데이터에 없는 소스키(빈칸 생성됨): " + ", ".join(pf.missing_columns)
+            )
+        elif self.vm.datasource is None:
+            mark(self.lbl_preflight, "level", "")
+            self.lbl_preflight.setText("")
+        else:
+            mark(self.lbl_preflight, "level", "ok")
+            self.lbl_preflight.setText("사전검증 통과 — 치명 누락 없음. 아래 빈칸 표면화를 확인하세요.")
+
+    # ------------------------------- 상시 인라인 필드 패널 + 강제 확인 게이트(ADR-E)
+    def _clear_badges(self) -> None:
+        while self.badge_flow.count():
+            item = self.badge_flow.takeAt(0)
+            w = item.widget() if item is not None else None
+            if w is not None:
+                w.deleteLater()
+
+    def _refresh_field_panel(self) -> None:
+        """뷰모델 필드 상태를 채움/의도적 빈칸/미입력(클릭 확인) 배지로 렌더."""
+        self._clear_badges()
+        indices = self.selector.selected_indices()
+        for st in self.vm.field_states(indices):
+            if st.state == "filled":
+                chip = QLabel(f"✓ {st.name}")
+                mark(chip, "fb", "fill")
+            elif st.state == "blank":
+                chip = QLabel(f"◦ {st.name} (매핑 비움)")
+                mark(chip, "fb", "blank")
+            elif st.acknowledged:
+                chip = QPushButton(f"✓ {st.name} — 표식 넣고 생성")
+                mark(chip, "fb", "ack")
+                chip.setEnabled(False)
+            else:
+                chip = QPushButton(f"● {st.name} — 클릭해 확인")
+                mark(chip, "fb", "missing")
+                chip.setCursor(Qt.PointingHandCursor)
+                chip.clicked.connect(lambda _checked=False, f=st.name: self._ack_field(f))
+            self.badge_flow.addWidget(chip)
+        self._sync_generate_enabled()
+
+    def _ack_field(self, field: str) -> None:
+        """미입력 배지 클릭 = 직접 확인(강제 상호작용). 다 확인되면 생성이 열린다."""
+        self.vm.acknowledge(field)
+        self._refresh_field_panel()
+
+    def _sync_generate_enabled(self) -> None:
+        indices = self.selector.selected_indices()
+        unmet = self.vm.unmet_blanks(indices) if self.vm.datasource is not None else []
+        if self._running:
+            self.btn_generate.setEnabled(False)
+            return
+        self.btn_generate.setEnabled(not unmet)
+        if unmet:
+            mark(self.lbl_gate, "level", "warn")
+            self.lbl_gate.setText(
+                f"미입력 {len(unmet)}필드를 클릭해 확인해야 생성이 열립니다: {', '.join(unmet)}"
+            )
+        else:
+            mark(self.lbl_gate, "level", "")
+            self.lbl_gate.setText("")
 
     def _pick_out(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "저장 폴더 선택")
@@ -252,26 +340,22 @@ class RunView(QMainWindow):
                 QMessageBox.warning(self, "확인", err.message)
             return
 
-        # ---- 능동 빈칸 게이트: 수동 로그가 아니라 물어보고 표식을 넣는다. ----
+        # ---- 빈칸 게이트(ADR-E): 차단 모달이 아니라 상시 인라인 + 강제 확인. ----
+        # 버튼이 이미 미확인 미입력이 있으면 비활성이지만, 방어적으로 재확인한다.
         # "표식 없이 생성" 은 없다 — 미충족 공란을 조용히 내면 "누락은 시끄럽게" 위반
         # (의도적 공란은 매핑이 키를 제외해 이미 조용한 경로가 있다).
-        pf = self.vm.preflight(indices)
-        self._marked_fields = list(pf.empty_valued)
-        if self._marked_fields:
-            if QMessageBox.question(
-                self, "빈칸 확인",
-                f"빈칸 {len(self._marked_fields)}필드 — {', '.join(self._marked_fields)}\n\n"
-                f"미입력 표식({MISSING_MARKER.format(field='필드')})을 넣고 생성할까요?\n"
-                "표식은 누름틀로 남아 한글에서 클릭해 채우거나, 다음 단계 "
-                "이어채우기에서 덮입니다.",
-            ) != QMessageBox.Yes:
-                return
+        unmet = self.vm.unmet_blanks(indices)
+        if unmet:
+            self._say("미입력 필드를 먼저 클릭해 확인하세요: " + ", ".join(unmet))
+            self._refresh_field_panel()
+            return
+        blanks = self.vm.blank_fields(indices)
+        self._marked_fields = list(blanks)
+        if blanks:
             mapped = self.vm.mapped_records(indices, mark_missing=MISSING_MARKER)
+            self._say("미입력 표식 주입: " + ", ".join(blanks))
         else:
             mapped = self.vm.mapped_records(indices)
-        issues = pf.issues()
-        if issues:
-            self._say("사전검증 이슈: " + ", ".join(issues))
 
         template = self.vm.effective_template()
         self._running = True
@@ -327,7 +411,7 @@ class RunView(QMainWindow):
             self._thread.wait()
             self._thread = None
         self._running = False
-        self.btn_generate.setEnabled(True)
+        self._sync_generate_enabled()  # 게이트(미확인 미입력) 재평가 후 버튼 상태 복원
 
     @staticmethod
     def _open_folder(path: str) -> None:

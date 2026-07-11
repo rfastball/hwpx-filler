@@ -26,6 +26,8 @@ STYLE = ROOT / "src" / "hwpxfiller" / "gui" / "style.py"
 MOCKUP = ROOT / "docs" / "UI_PROTOTYPE_APPB.html"
 
 # style.py 팔레트 상수 이름 ← 토큰 경로("그룹.키").
+# badge.* 는 style 전용(집행 화면 인라인 필드 배지) — 목업은 .fb 클래스 CSS 로 같은 값을
+# 직접 렌더하므로 _MOCKUP_MAP 엔 넣지 않는다(값은 목업 .fb 톤과 일치).
 _STYLE_MAP = [
     ("PRIMARY", "color.primary"), ("PRIMARY_HOVER", "color.primary_hover"),
     ("WARN", "color.warn"), ("DANGER", "color.danger"), ("OK", "color.ok"),
@@ -33,6 +35,8 @@ _STYLE_MAP = [
     ("WINDOW_BG", "color.window_bg"), ("INK", "color.ink"),
     ("UNCONFIRMED_BG", "state.unconfirmed_bg"), ("UNMATCHED_BG", "state.unmatched_bg"),
     ("DATA_EMPTY_FG", "state.data_empty_fg"), ("SELECT_BG", "state.select_bg"),
+    ("FILL_BG", "badge.fill_bg"), ("BLANK_BG", "badge.blank_bg"),
+    ("MISSING_BG", "badge.missing_bg"), ("ACK_BG", "badge.ack_bg"), ("ACK_FG", "badge.ack_fg"),
 ]
 # 목업 앱윈도 CSS 변수 이름 ← 토큰 경로(고정 팔레트; 스튜디오 셸 테마변수는 수작성 유지).
 _MOCKUP_MAP = [

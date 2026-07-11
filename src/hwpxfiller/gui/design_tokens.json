@@ -18,6 +18,13 @@
     "data_empty_fg": "#b00020",
     "select_bg": "#dce9f5"
   },
+  "badge": {
+    "fill_bg": "#e5f2ea",
+    "blank_bg": "#f6ecdb",
+    "missing_bg": "#fbe6e3",
+    "ack_bg": "#ecebf4",
+    "ack_fg": "#4a3f8a"
+  },
   "space": { "xs": 2, "sm": 6, "md": 12, "lg": 18 },
   "radius": { "sm": 4, "md": 6, "lg": 9 },
   "type": { "small": 12, "body": 13, "heading": 15 }

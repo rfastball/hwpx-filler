@@ -34,6 +34,11 @@ UNCONFIRMED_BG = "#fff3bf"
 UNMATCHED_BG = "#ffd8d8"
 DATA_EMPTY_FG = "#b00020"
 SELECT_BG = "#dce9f5"
+FILL_BG = "#e5f2ea"
+BLANK_BG = "#f6ecdb"
+MISSING_BG = "#fbe6e3"
+ACK_BG = "#ecebf4"
+ACK_FG = "#4a3f8a"
 # </gen:tokens>
 
 BASE_QSS = f"""
@@ -58,6 +63,25 @@ QListWidget#jobList {{
 QListWidget#jobList::item {{ border-bottom: 1px solid {BORDER}; }}
 QListWidget#jobList::item:selected {{
     background: {SELECT_BG}; border-left: 3px solid {PRIMARY};
+}}
+
+/* 집행 화면 인라인 필드 상태 배지(ADR-E/B): 채움/의도적 빈칸/미입력(클릭 확인)/확인됨. */
+QLabel[fb="fill"] {{
+    background: {FILL_BG}; color: {OK}; border: 1px solid #bfe0cb;
+    border-radius: 11px; padding: 3px 10px; font-weight: 600;
+}}
+QLabel[fb="blank"] {{
+    background: {BLANK_BG}; color: {WARN}; border: 1px solid #e6c98f;
+    border-radius: 11px; padding: 3px 10px; font-weight: 600;
+}}
+QPushButton[fb="missing"] {{
+    background: {MISSING_BG}; color: {DANGER}; border: 1px solid #e6a49c;
+    border-radius: 11px; padding: 3px 11px; font-weight: 600; text-align: left;
+}}
+QPushButton[fb="missing"]:hover {{ background: #f9d9d4; }}
+QPushButton[fb="ack"] {{
+    background: {ACK_BG}; color: {ACK_FG}; border: 1px solid #c8c3e6;
+    border-radius: 11px; padding: 3px 11px; font-weight: 600; text-align: left;
 }}
 """
 

@@ -112,6 +112,28 @@ def test_missing_template_is_danger(tmp_path):
     assert errs and errs[0].level == "danger"
 
 
+def test_field_states_unmet_and_acknowledge(tmp_path):
+    vm = _vm(tmp_path)
+    states = {s.name: s for s in vm.field_states([0, 1])}
+    assert states["공고명"].state == "filled"
+    assert states["추정가격"].state == "missing" and not states["추정가격"].acknowledged
+    assert vm.unmet_blanks([0, 1]) == ["추정가격"]      # 미확인 미입력 = 게이트 닫힘
+
+    vm.acknowledge("추정가격")
+    acked = {s.name: s.acknowledged for s in vm.field_states([0, 1])}
+    assert acked["추정가격"] is True
+    assert vm.unmet_blanks([0, 1]) == []               # 확인 → 게이트 열림
+
+    vm.reset_acks()
+    assert vm.unmet_blanks([0, 1]) == ["추정가격"]      # 초기화 → 다시 닫힘
+
+
+def test_field_states_empty_without_data(tmp_path):
+    vm = RunViewModel(_job(tmp_path))                    # 데이터 미겨눔
+    assert vm.field_states([0]) == []
+    assert vm.unmet_blanks([0]) == []
+
+
 def test_load_data_empty_returns_empty_without_committing(tmp_path):
     vm = RunViewModel(_job(tmp_path))
     csv = tmp_path / "empty.csv"

@@ -376,20 +376,20 @@ def test_run_view_cumulative_mode_requires_single_record(qapp, tmp_path, monkeyp
     assert view._thread is None  # 워커 미기동
 
 
-def test_run_view_blank_gate_injects_markers_on_confirm(qapp, tmp_path, monkeypatch):
-    """능동 빈칸 게이트 — 문구에 필드·건수, 승인 시 워커 레코드에 표식 주입."""
+def test_run_view_inline_blank_gate_and_marker_injection(qapp, tmp_path, monkeypatch):
+    """ADR-E 인라인 게이트 — 미입력은 차단 모달이 아니라 배지 클릭으로 확인.
+    확인 전엔 생성 버튼 비활성·생성 무동작, 확인 후 워커 레코드에 표식 주입."""
     from PySide6.QtCore import QObject, Signal
-    from PySide6.QtWidgets import QMessageBox
 
     from hwpxfiller.gui import run_view as rv
 
     view = _run_view_with_data(tmp_path)
+    idx = view.selector.selected_indices()
 
-    questions = []
-    monkeypatch.setattr(
-        QMessageBox, "question",
-        lambda *a, **k: (questions.append(a[2]), QMessageBox.Yes)[1],
-    )
+    # 미입력(추정가격, rec0 빈 값)이 게이트를 닫는다 — 상시 인라인, 생성 버튼 비활성.
+    assert "추정가격" in view.vm.unmet_blanks(idx)
+    assert not view.btn_generate.isEnabled()
+    assert "미입력" in view.lbl_gate.text() and "추정가격" in view.lbl_gate.text()
 
     captured = {}
 
@@ -407,9 +407,19 @@ def test_run_view_blank_gate_injects_markers_on_confirm(qapp, tmp_path, monkeypa
             pass
 
     monkeypatch.setattr(rv, "GenerateWorker", _FakeWorker)
+
+    # 확인 전 생성 시도 = 게이트에 막혀 무동작(모달 없음, 워커 미생성).
+    view._on_generate()
+    assert "records" not in captured
+    assert view._thread is None
+
+    # 미입력 배지 직접 클릭 = 강제 확인 → 게이트 열림.
+    view._ack_field("추정가격")
+    assert view.vm.unmet_blanks(idx) == []
+    assert view.btn_generate.isEnabled()
+
     view._on_generate()
     try:
-        assert questions and "빈칸 1필드" in questions[0] and "추정가격" in questions[0]
         assert captured["template"] == view.job.template_path
         recs = captured["records"]
         assert recs[0]["추정가격"] == "〘미입력·추정가격〙"  # 미충족 공란 → 표식

@@ -47,6 +47,15 @@ class GateError:
     level: str  # "warn"(확인) / "danger"(오류)
 
 
+@dataclass
+class FieldState:
+    """집행 화면 상시 인라인 배지 1개(ADR-E/B) — 필드의 채움 상태."""
+
+    name: str
+    state: str            # "filled" | "blank"(의도적 비움) | "missing"(미충족)
+    acknowledged: bool = False  # missing 만 유효 — 사용자가 직접 확인했는가
+
+
 class RunViewModel:
     """작업 1건 집행 상태·결정. 데이터·대상 문서는 DataSource 이음새 뒤에 둔다."""
 
@@ -57,6 +66,9 @@ class RunViewModel:
         # 누적치환: 이전 출력이 **템플릿 자리**에 온다(데이터 소스 아님 — 이음새 무관).
         self.template_override: "str | None" = None
         self.target_mode = "new"               # "new" | "continue"
+        self._acked: "set[str]" = set()        # 사용자가 직접 확인한 미입력 필드(ADR-E)
+        self._tpl_fields: "list[str] | None" = None  # 템플릿 전 누름틀 캐시
+        self._tpl_key: "str | None" = None
 
     # ------------------------------------------------------------ 대상 문서
     def effective_template(self) -> str:
@@ -100,6 +112,7 @@ class RunViewModel:
             return []
         self.datasource = source
         self.records = records
+        self.reset_acks()  # 새 데이터 → 미입력 확인 재평가
         return records
 
     # ------------------------------------------------------------ 사전검증
@@ -134,6 +147,52 @@ class RunViewModel:
         if self.datasource is None:
             return []
         return list(self.request(indices).output_report().empty_valued)
+
+    # ------------------------------------------------------- 상시 인라인 필드 상태(ADR-E)
+    def _intentional_blanks(self) -> "list[str]":
+        """템플릿 누름틀 중 매핑이 비운 필드(의도적 공란). 템플릿 읽기 실패 시 빈 목록."""
+        template = self.effective_template()
+        if not template or not Path(template).exists():
+            return []
+        if self._tpl_fields is None or self._tpl_key != template:
+            try:
+                self._tpl_fields = list(HwpxEngine().required_fields(template))
+            except Exception:  # noqa: BLE001 - 읽기 실패면 의도적 공란 표면화 생략
+                self._tpl_fields = []
+            self._tpl_key = template
+        mapped = set(self.job.template_fields())
+        return [f for f in self._tpl_fields if f not in mapped]
+
+    def field_states(self, indices: "list[int]") -> "list[FieldState]":
+        """필드별 3상태(채움/의도적 빈칸/미입력) — 상시 인라인 배지의 원천.
+
+        채움/미입력은 매핑 출력(선택 레코드)에서, 의도적 빈칸은 템플릿과 매핑의 차집합에서.
+        데이터 미겨눔이면 빈 목록(패널 비움).
+        """
+        if self.datasource is None:
+            return []
+        empty = set(self.request(indices).output_report().empty_valued)
+        states = [
+            FieldState(f, "missing" if f in empty else "filled", f in self._acked)
+            for f in self.job.template_fields()
+        ]
+        states += [FieldState(f, "blank") for f in self._intentional_blanks()]
+        return states
+
+    def acknowledge(self, field: str) -> None:
+        """미입력 필드를 사용자가 직접 확인함(강제 상호작용 — 반사적 dismiss 봉쇄)."""
+        self._acked.add(field)
+
+    def reset_acks(self) -> None:
+        """확인 상태 초기화(새 데이터 겨눔 등)."""
+        self._acked.clear()
+
+    def unmet_blanks(self, indices: "list[int]") -> "list[str]":
+        """미입력이면서 아직 확인 안 된 필드 — 이게 남아 있으면 생성 게이트가 닫힌다."""
+        return [
+            s.name for s in self.field_states(indices)
+            if s.state == "missing" and not s.acknowledged
+        ]
 
     # ------------------------------------------------------------ 생성 게이트
     def validate_generate(self, indices: "list[int]", out_dir: str) -> "list[GateError]":
