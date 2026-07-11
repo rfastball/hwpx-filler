@@ -3,13 +3,12 @@
 트랙 C UX 결정([[hwpx-filler-scope]]): 셋업(에디터)과 집행(여기)을 가른다. 무거운 명시성
 게이트(매핑 확정)는 셋업에만 있다 — **여기선 매핑 재확정이 없다.** 집행은 사전검증만 한다.
 
-- **데이터는 이음새 뒤.** 지금은 :class:`~hwpxfiller.data.excel.ExcelDataSource` 를 고르지만
-  ``self.datasource`` 는 추상 참조다 — 누적치환(이전 출력을 소스로)·나라장터 세부·API 직결은
-  같은 이음새에 꽂히는 미래의 *소스 종류*다(여기서 종류로 분기하지 않는다).
-- **사전검증**은 :class:`~hwpxfiller.core.job.RunRequest` 가 Qt 밖에서 판정한 걸 표시만 한다.
-
-**스캐폴드 범위:** 배선까지만. 소스-종류 선택기(신규 vs 이전출력)·능동 빈칸 게이트+표식
-렌더·레이아웃/스타일은 후속 디자인 패스의 몫이다.
+레이어링(아키텍처 분리): 이 위젯은 **얇은 렌더러/오케스트레이터**다 — 데이터 로드·대상
+문서 결정·사전검증·생성 게이트는 :class:`~hwpxfiller.gui.run_state.RunViewModel`(Qt 비의존,
+링1)이 소유한다. 위젯은 QThread·QMessageBox·QFileDialog·진행/로그 표현만 담당하고, 백엔드
+(``DataSource``·``HwpxEngine``)를 직접 만지지 않는다. ``datasource``/``records``/
+``_template_override``/``_effective_template()`` 는 뷰모델로 위임하는 프로퍼티다(스캐폴드·
+스모크 계약 보존).
 """
 
 from __future__ import annotations
@@ -38,10 +37,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..core.engine import HwpxEngine
-from ..core.job import MISSING_MARKER, Job, RunRequest
-from ..data.excel import ExcelDataSource
+from ..core.job import MISSING_MARKER, Job
 from .record_select import RecordSelector
+from .run_state import RunViewModel
 from .style import BASE_QSS, mark
 from .worker import GenerateWorker
 
@@ -55,12 +53,9 @@ class RunView(QMainWindow):
     def __init__(self, job: Job, parent=None):
         super().__init__(parent)
         self.job = job
-        self.datasource = None                 # DataSource 이음새(현재 Excel)
-        self.records: "list[dict]" = []
+        self.vm = RunViewModel(job)            # 집행 결정(Qt 비의존)
         self._running = False
         self._thread: "QThread | None" = None
-        # 누적치환: 이전 출력이 **템플릿 자리**에 온다(데이터 소스 아님 — 이음새 무관).
-        self._template_override: "str | None" = None
         self._marked_fields: "list[str]" = []  # 이번 생성에서 표식 주입된 필드(결과 요약용)
 
         self.setWindowTitle(f"HWPX Filler — 집행: {job.name}")
@@ -156,26 +151,50 @@ class RunView(QMainWindow):
 
         self._check_template()
 
+    # ------------------------------- 뷰모델 위임 프로퍼티(스캐폴드·스모크 계약) ----
+    @property
+    def datasource(self):
+        return self.vm.datasource
+
+    @datasource.setter
+    def datasource(self, value) -> None:
+        self.vm.datasource = value
+
+    @property
+    def records(self) -> "list[dict]":
+        return self.vm.records
+
+    @records.setter
+    def records(self, value) -> None:
+        self.vm.records = value
+
+    @property
+    def _template_override(self) -> "str | None":
+        return self.vm.template_override
+
+    @_template_override.setter
+    def _template_override(self, value) -> None:
+        self.vm.template_override = value
+
+    def _effective_template(self) -> str:
+        return self.vm.effective_template()
+
     # ------------------------------------------------------------------ helpers
     def _say(self, msg: str) -> None:
         self.log.appendPlainText(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
-    def _effective_template(self) -> str:
-        """생성이 겨눌 문서 — 누적 모드면 이전 출력, 아니면 작업 템플릿."""
-        return self._template_override or self.job.template_path
-
     def _check_template(self) -> None:
-        path = self._effective_template()
+        path = self.vm.effective_template()
         if path and not Path(path).exists():
             self._say(f"[경고] 템플릿을 찾을 수 없습니다: {path}")
 
     # ------------------------------------------------------- 대상 문서(누적치환)
     def _on_target_mode(self, *_args) -> None:
         cont = self.rb_cont.isChecked()
+        self.vm.set_target_mode("continue" if cont else "new")
         self.ed_prev.setEnabled(cont)
         self.btn_prev.setEnabled(cont)
         if not cont:
-            self._template_override = None
             self.ed_prev.clear()
             self.lbl_prev_note.setText("")
 
@@ -186,41 +205,9 @@ class RunView(QMainWindow):
         if not path:
             return
         self.ed_prev.setText(path)
-        self._template_override = path
-        self._sync_prev_note()
-
-    def _sync_prev_note(self) -> None:
-        """이전 출력 정합 고지(비차단) — 이 작업의 필드가 그 문서에 실재하는가.
-
-        누름틀은 채운 뒤에도 재발견되므로(engine.required_fields) 교집합으로 판정.
-        값 수준 '이미 채워짐' 검사는 필드 값 읽기 API 부재로 파킹 — 겹침 덮어씀을
-        정직하게 고지한다(단계별 필드 서로소 규칙).
-        """
-        prev = self._template_override
-        if not prev:
-            return
-        try:
-            doc_fields = set(HwpxEngine().required_fields(prev))
-        except Exception as exc:  # noqa: BLE001
-            mark(self.lbl_prev_note, "level", "danger")
-            self.lbl_prev_note.setText(f"이전 출력을 읽을 수 없습니다: {exc}")
-            return
-        ours = set(self.job.template_fields())
-        inter = doc_fields & ours
-        if not inter:
-            mark(self.lbl_prev_note, "level", "danger")
-            self.lbl_prev_note.setText(
-                "이 작업의 필드가 이 문서에 하나도 없습니다 — 파일을 확인하세요."
-            )
-        else:
-            mark(self.lbl_prev_note, "level", "warn" if len(inter) < len(ours) else "")
-            self.lbl_prev_note.setText(
-                f"이 작업의 필드 {len(ours)}개 중 {len(inter)}개가 문서에 있습니다. "
-                "이미 값이 있는 겹침 필드는 덮어씁니다 — 단계별 필드는 서로소로 설계하세요."
-            )
-
-    def _request(self) -> RunRequest:
-        return RunRequest(self.job, self.datasource, self.selector.selected_indices())
+        note = self.vm.set_prev_output(path)
+        mark(self.lbl_prev_note, "level", note.level)
+        self.lbl_prev_note.setText(note.text)
 
     # ------------------------------------------------------------------ 데이터
     def _pick_data(self) -> None:
@@ -230,8 +217,7 @@ class RunView(QMainWindow):
         if not path:
             return
         try:
-            source = ExcelDataSource(path)
-            records = source.records()
+            records = self.vm.load_data(path)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "오류", f"데이터 로드 실패:\n{exc}")
             return
@@ -239,33 +225,14 @@ class RunView(QMainWindow):
             QMessageBox.warning(self, "확인", "레코드가 없습니다. 다른 파일을 선택하세요.")
             return
         self.ed_data.setText(path)
-        self.datasource = source
-        self.records = records
-        self.selector.set_records(records, self.job.filename_pattern)
+        self.selector.set_records(self.vm.records, self.job.filename_pattern)
         self._run_preflight()
 
     def _run_preflight(self) -> None:
-        """사전검증 표시 — 빠진 소스키(치명)·매핑 출력의 빈값(경고). 매핑 재확정 아님."""
-        if self.datasource is None:
-            self.lbl_preflight.setText("")
-            return
-        req = self._request()
-        src = req.source_report()
-        out = req.output_report()
-        parts: "list[str]" = []
-        if src.missing_columns:
-            parts.append(
-                "[치명] 데이터에 없는 소스키(빈칸 생성됨): " + ", ".join(src.missing_columns)
-            )
-        if out.empty_valued:
-            parts.append("[경고] 값이 비어 있는 필드: " + ", ".join(out.empty_valued))
-        if src.missing_columns:
-            mark(self.lbl_preflight, "level", "danger")
-        elif out.empty_valued:
-            mark(self.lbl_preflight, "level", "warn")
-        else:
-            mark(self.lbl_preflight, "level", "ok")
-        self.lbl_preflight.setText("\n".join(parts) if parts else "사전검증 통과 — 누락/빈 값 없음.")
+        """사전검증 표시 — 뷰모델 판정을 라벨에 반영. 매핑 재확정 아님."""
+        pf = self.vm.preflight(self.selector.selected_indices())
+        mark(self.lbl_preflight, "level", pf.level)
+        self.lbl_preflight.setText(pf.text)
 
     def _pick_out(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "저장 폴더 선택")
@@ -274,41 +241,22 @@ class RunView(QMainWindow):
 
     # ------------------------------------------------------------------ 생성
     def _on_generate(self) -> None:
-        if self.datasource is None:
-            QMessageBox.warning(self, "확인", "먼저 데이터를 선택하세요.")
-            return
-        if self.rb_cont.isChecked() and not self._template_override:
-            QMessageBox.warning(self, "확인", "이어채울 이전 출력(.hwpx)을 선택하세요.")
-            return
-        template = self._effective_template()
-        if template and not Path(template).exists():
-            QMessageBox.critical(self, "오류", f"템플릿을 찾을 수 없습니다:\n{template}")
-            return
+        indices = self.selector.selected_indices()
         out_dir = self.ed_out.text().strip()
-        if not out_dir:
-            QMessageBox.warning(self, "확인", "저장 폴더를 지정하세요.")
-            return
-        req = self._request()
-        if not req.selected_indices:
-            QMessageBox.warning(self, "확인", "생성할 레코드를 최소 1건 선택하세요.")
-            return
-        if self._template_override and len(req.selected_indices) != 1:
-            # 누적 v1 = 단건(자명). 배치 누적은 "이전 출력↔레코드 파일키 매칭"이
-            # 필요한 별개 설계 — 실데이터 확보 전 파킹(ROADMAP).
-            QMessageBox.warning(
-                self, "확인",
-                "이전 출력 이어채우기는 레코드 1건만 지원합니다 — 문서 1개에 여러 "
-                "레코드를 겹쳐 쓸 수 없습니다. 레코드를 1건만 선택하세요.",
-            )
+        errors = self.vm.validate_generate(indices, out_dir)
+        if errors:
+            err = errors[0]
+            if err.level == "danger":
+                QMessageBox.critical(self, "오류", err.message)
+            else:
+                QMessageBox.warning(self, "확인", err.message)
             return
 
         # ---- 능동 빈칸 게이트: 수동 로그가 아니라 물어보고 표식을 넣는다. ----
         # "표식 없이 생성" 은 없다 — 미충족 공란을 조용히 내면 "누락은 시끄럽게" 위반
         # (의도적 공란은 매핑이 키를 제외해 이미 조용한 경로가 있다).
-        issues = list(dict.fromkeys(
-            list(req.source_report().missing_columns) + list(req.output_report().empty_valued)
-        ))
-        self._marked_fields = list(req.output_report().empty_valued)
+        pf = self.vm.preflight(indices)
+        self._marked_fields = list(pf.empty_valued)
         if self._marked_fields:
             if QMessageBox.question(
                 self, "빈칸 확인",
@@ -318,12 +266,14 @@ class RunView(QMainWindow):
                 "이어채우기에서 덮입니다.",
             ) != QMessageBox.Yes:
                 return
-            mapped = req.mapped_records(mark_missing=MISSING_MARKER)
+            mapped = self.vm.mapped_records(indices, mark_missing=MISSING_MARKER)
         else:
-            mapped = req.mapped_records()
+            mapped = self.vm.mapped_records(indices)
+        issues = pf.issues()
         if issues:
             self._say("사전검증 이슈: " + ", ".join(issues))
 
+        template = self.vm.effective_template()
         self._running = True
         self.btn_generate.setEnabled(False)
         self.lbl_result.setText("")
