@@ -1,0 +1,35 @@
+name: quality
+
+on:
+  pull_request:
+  push:
+    branches: [master, main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.28"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked environment
+        run: uv sync --locked --all-extras --group dev --group build
+      - name: Quality and tests
+        shell: pwsh
+        run: .\test.ps1
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            pytest.xml
+            coverage.xml
+          if-no-files-found: warn

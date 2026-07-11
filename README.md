@@ -17,12 +17,24 @@ src/hwpxfiller/   ② 누름틀 값 주입(쓰기 도구) — UnivContractor VBA
   렌더. GUI `hwpx-diff`(또는 `python -m hwpxdiff`), CLI `hwpxdiff OLD NEW [--html]`,
   단독 배포는 `packaging/`(PyInstaller 단일 exe)
 
-## 설치
+## 개발 환경
 
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -e ".[dev,gui]"
+Python과 의존성은 `uv` 및 `uv.lock`으로 관리한다. 저장소가 지정하는 Python 3.13도
+`uv`가 설치하므로 시스템 Python이나 수동 venv가 필요 없다.
+전체 온보딩·품질 검사·패키징·릴리스 정책은
+[개발·빌드·배포 환경](docs/DEVELOPMENT_ENVIRONMENT.md)을 기준으로 한다.
+
+```powershell
+# 최초 1회: https://docs.astral.sh/uv/ 의 Windows 설치 방법으로 uv 설치
+uv python install 3.13
+uv sync --locked --all-extras --group dev --group build
+
+# 품질 검사 + 타입 검사 + 전체 테스트 + coverage
+.\test.ps1
+
+# 소스에서 실행
+.\run-filler.ps1
+.\run-diff.ps1
 ```
 
 ## 사용
@@ -105,6 +117,24 @@ python -m hwpxdiff
 
 ## 테스트
 
-```bash
-pytest
+```powershell
+.\test.ps1
+# pytest 인자는 그대로 전달된다.
+.\test.ps1 -x -q
 ```
+
+## Windows 빌드와 배포
+
+```powershell
+# portable 단일 EXE 두 개 + self-check
+.\build.ps1
+
+# Inno Setup 6 설치 후, 제품별 설치 EXE까지 생성
+.\package-installer.ps1
+```
+
+산출물은 `dist\hwpx-filler.exe`, `dist\hwpx-diff.exe`와
+`installer-dist\HWPX-*-Setup.exe`이다. 공식 릴리스는 `pyproject.toml`의 버전과 같은
+`vX.Y.Z` 태그를 push하면 GitHub Actions가 테스트, 빌드, 설치·제거 스모크,
+SHA-256 생성을 거쳐 게시한다. 저장소 secret `WINDOWS_CERTIFICATE_BASE64`와
+`WINDOWS_CERTIFICATE_PASSWORD`가 모두 있으면 EXE와 설치본을 Authenticode 서명한다.

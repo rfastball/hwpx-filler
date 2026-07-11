@@ -16,6 +16,9 @@ from pathlib import Path
 
 SPEC_DIR = Path(SPECPATH)  # noqa: F821 - PyInstaller 주입 전역
 SRC = str(SPEC_DIR.parent / "src")
+version_path = SPEC_DIR.parent / "build" / "version" / "hwpx_diff_version.txt"
+if not version_path.exists():
+    raise SystemExit("버전 리소스 없음: 먼저 build.ps1을 실행하세요.")
 
 # 아이콘은 빌드 산출물 — 부재 시 생성(커밋 대상 아님).
 icon_path = SPEC_DIR / "hwpx-diff.ico"
@@ -64,7 +67,7 @@ exe = EXE(
     [],
     name="hwpx-diff",
     icon=str(icon_path),
-    version=str(SPEC_DIR / "hwpx_diff_version.txt"),
+    version=str(version_path),
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

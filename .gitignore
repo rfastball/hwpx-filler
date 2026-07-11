@@ -3,12 +3,15 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
+.pytest-tmp/
 build/
 dist/
 
 # venv
 .venv/
 venv/
+.uv-cache/
+.uv-python/
 
 # 생성 산출물 / 임시 데이터
 out/
@@ -21,6 +24,17 @@ sample_bid_data.csv
 .secrets/
 .env
 .env.*
+.claude/settings.local.json
+
+# Tool caches / reports
+.coverage
+coverage.xml
+pytest.xml
+.ruff_cache/
+.pyright/
+
+# Installer output
+installer-dist/
 
 # OS
 Thumbs.db
