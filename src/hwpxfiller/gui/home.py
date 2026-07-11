@@ -48,7 +48,7 @@ class _JobCard(QWidget):
         name_row.addWidget(lbl_name)
         if row.template_missing:
             lbl_missing = QLabel("템플릿 없음")
-            mark(lbl_missing, "level", "warn")
+            mark(lbl_missing, "pill", "warn")
             name_row.addWidget(lbl_missing)
         name_row.addStretch(1)
         root.addLayout(name_row)

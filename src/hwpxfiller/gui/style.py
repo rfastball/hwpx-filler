@@ -43,6 +43,47 @@ ACK_FG = "#4a3f8a"
 
 BASE_QSS = f"""
 QMainWindow, QWizard {{ background: {WINDOW_BG}; }}
+QLabel {{ color: {INK}; }}
+
+/* ── 공통 컨트롤(디자인 시스템 Qt 표면) — 목업의 카드/입력/버튼 룩으로 통일 ── */
+QGroupBox {{
+    background: {CARD_BG}; border: 1px solid {BORDER}; border-radius: 7px;
+    margin-top: 12px; padding: 12px;
+}}
+QGroupBox::title {{
+    subcontrol-origin: margin; subcontrol-position: top left; left: 10px;
+    padding: 0 6px; color: {MUTED};
+}}
+
+QLineEdit, QPlainTextEdit {{
+    background: #ffffff; border: 1px solid {BORDER}; border-radius: 4px;
+    padding: 5px 8px; color: {INK};
+    selection-background-color: {SELECT_BG}; selection-color: {INK};
+}}
+QLineEdit:focus, QPlainTextEdit:focus {{ border: 1px solid {PRIMARY}; }}
+QLineEdit:read-only {{ background: #f3f4f6; color: #5c626b; }}
+QLineEdit:disabled {{ background: #f3f4f6; color: {MUTED}; }}
+
+QPushButton {{
+    background: #ffffff; color: #2b3038; border: 1px solid #cbd0d6;
+    border-radius: 4px; padding: 6px 13px;
+}}
+QPushButton:hover {{ background: #f0f2f5; }}
+QPushButton:pressed {{ background: #e6e9ee; }}
+QPushButton:disabled {{ color: {MUTED}; border-color: {BORDER}; background: #f6f7f9; }}
+
+QProgressBar {{
+    border: 1px solid {BORDER}; border-radius: 6px; background: #eef0f3;
+    text-align: center; color: {MUTED};
+}}
+QProgressBar::chunk {{ background: {PRIMARY}; border-radius: 5px; }}
+
+QHeaderView::section {{
+    background: #eef1f4; color: #4a505a; padding: 5px 8px; border: none;
+    border-bottom: 1px solid {BORDER}; font-weight: 600;
+}}
+QTableWidget {{ background: #ffffff; gridline-color: #eef0f3; }}
+QListWidget {{ background: #ffffff; border: 1px solid {BORDER}; border-radius: 6px; }}
 
 QPushButton[primary="true"] {{
     background: {PRIMARY}; color: #ffffff; font-weight: 600;
@@ -56,6 +97,10 @@ QLabel[level="danger"] {{ color: {DANGER}; }}
 QLabel[level="ok"] {{ color: {OK}; }}
 QLabel[muted="true"] {{ color: {MUTED}; }}
 QLabel[heading="true"] {{ font-size: 15px; font-weight: 700; }}
+QLabel[pill="warn"] {{
+    background: {BLANK_BG}; color: {WARN}; border: 1px solid #e6c98f;
+    border-radius: 9px; padding: 1px 8px; font-weight: 600;
+}}
 
 QListWidget#jobList {{
     background: {CARD_BG}; border: 1px solid {BORDER}; border-radius: 6px;
