@@ -37,5 +37,50 @@ dist\hwpx-diff.exe --selfcheck tests\corpus\real\spec_revision_2025.hwpx tests\c
 - diff exe 의 실의존 = `hwpxdiff` + `hwpxcore` + PySide6(QtCore/Gui/Widgets) + lxml.
   **`hwpxfiller`(주입 제품) 통째와 openpyxl 은 excludes 로 못박았다** — 후일 누가
   경계를 넘는 임포트를 추가해도 diff exe 가 조용히 비대해지지 않는다.
-- 앱 B(`hwpx-filler` 주입)의 패키징은 별도 spec 으로(이 spec 재사용 금지 —
-  excludes 가 정반대다).
+- 앱 B(`hwpx-filler` 생성기)의 패키징은 **별도 spec**(`hwpx_filler.spec`) — 아래 참조.
+  이 diff spec 재사용 금지(excludes 가 정반대: filler 는 openpyxl·hwpxfiller 를 **포함**하고
+  hwpxdiff 를 제외한다).
+
+---
+
+# 패키징 — hwpx-filler.exe (앱 B, 단독 배포)
+
+누름틀 문서 생성기를 **의존성 0의 단일 exe**로 패키징한다. 받는 사람은 파이썬도 한컴도
+필요 없다 — `hwpx-filler.exe` 하나 복사해서 더블클릭(홈 → 새 작업 → 저장 → 집행).
+
+## 빌드
+
+```powershell
+.venv\Scripts\pyinstaller packaging\hwpx_filler.spec --noconfirm
+```
+
+산출: `dist\hwpx-filler.exe` (onefile·창 모드, ~49 MB — PySide6 포함 비용).
+아이콘(`hwpx-filler.ico`)은 부재 시 spec 이 `make_filler_icon.py` 로 자동 생성한다(커밋 안 함).
+**디자인 토큰은 `gui/style.py` 에 빌드타임 상수로 구워지므로**(`gui/design_tokens.json` 은 dev 전용)
+런타임 데이터 파일이 필요 없다(`datas=[]`).
+
+## 빌드 검증(패키징 스모크)
+
+```powershell
+dist\hwpx-filler.exe --selfcheck
+# exit 0 + "selfcheck: records=1 ... OK" 면 통과
+```
+
+`--selfcheck` 는 엔트리 래퍼(`hwpx_filler_entry.py`)에만 있는 인자 없는 검증 플래그다 —
+패키징된 환경에서 PySide6 + openpyxl(임시 xlsx 생성·로드) + 매핑 엔진(`RunRequest.mapped_records`)
+경로가 실제로 도는지 헤드리스로 확인한다(템플릿 불필요).
+
+## 구성 파일
+
+| 파일 | 역할 |
+|---|---|
+| `hwpx_filler.spec` | PyInstaller 스펙 — 진입점·hiddenimports(지연 임포트 보증)·excludes(hwpxdiff 차단)·아이콘·버전 |
+| `hwpx_filler_entry.py` | exe 진입점 — 기본 GUI, `--selfcheck` 헤드리스 검증 |
+| `hwpx_filler_version.txt` | exe 속성(제품명 "HWPX Filler"·버전) — pyproject 버전과 수동 동기 |
+| `make_filler_icon.py` | 아이콘 생성기(QPainter — 누름틀 채움 문서, 커밋 대상 아님) |
+
+## 경계(계약)
+
+- filler exe 의 실의존 = `hwpxfiller` + `hwpxcore` + PySide6(QtCore/Gui/Widgets) + lxml + openpyxl.
+  **`hwpxdiff`(diff 리뷰어)는 excludes 로 못박았다** — 두 제품은 `hwpxcore` 만 공유하며 서로의
+  exe 에 섞이지 않는다(앱 A spec 의 대칭).
