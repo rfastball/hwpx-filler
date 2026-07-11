@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -48,6 +49,13 @@ class RecordSelector(QWidget):
         layout.addLayout(top)
 
         self.list = QListWidget()
+        self.list.setObjectName("recordList")
+        # 체크 상태가 유일한 선택 표현 — 행 하이라이트(SingleSelection)와의 이중 상태 모호 제거.
+        self.list.setSelectionMode(QAbstractItemView.NoSelection)
+        # 체크 토글마다 current 아이템으로 자동 스크롤되며 뷰가 날뛰는 것 방지.
+        self.list.setAutoScroll(False)
+        self.list.setUniformItemSizes(True)
+        self.list.setMinimumHeight(96)  # 창을 줄여도 목록이 스크롤될 최소 높이 확보
         self.list.itemChanged.connect(self._on_item_changed)
         layout.addWidget(self.list, 1)
 

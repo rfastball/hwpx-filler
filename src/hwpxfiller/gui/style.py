@@ -85,6 +85,14 @@ QHeaderView::section {{
 QTableWidget {{ background: #ffffff; gridline-color: #eef0f3; }}
 QListWidget {{ background: #ffffff; border: 1px solid {BORDER}; border-radius: 6px; }}
 
+/* 레코드 선택 목록 — 체크박스를 또렷하게(선택 하이라이트 제거 대신 체크가 유일한 신호). */
+QListWidget#recordList::item {{ padding: 3px 4px; }}
+QListWidget#recordList::indicator {{
+    width: 15px; height: 15px; border: 1px solid #adb3bb; border-radius: 3px; background: #ffffff;
+}}
+QListWidget#recordList::indicator:hover {{ border-color: {PRIMARY}; }}
+QListWidget#recordList::indicator:checked {{ border-color: {PRIMARY}; background: {PRIMARY}; }}
+
 /* 대시보드 카드/KPI 타일 */
 QFrame[card="true"] {{ background: {CARD_BG}; border: 1px solid {BORDER}; border-radius: 9px; }}
 QLabel[kpi="value"] {{ font-size: 22px; font-weight: 800; }}

@@ -22,6 +22,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QFileDialog,
+    QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -33,6 +34,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QRadioButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -62,8 +64,8 @@ class RunView(QMainWindow):
         self.setWindowTitle(f"HWPX Filler — 실행: {job.name}")
         self.resize(760, 680)
         self.setStyleSheet(BASE_QSS)
+        # 폼이 세로로 길다 — 창을 줄이면 위젯이 찌그러지지 않고 스크롤되도록 QScrollArea 로 감싼다.
         central = QWidget()
-        self.setCentralWidget(central)
         root = QVBoxLayout(central)
 
         # ---- 작업 요약 ----
@@ -168,6 +170,12 @@ class RunView(QMainWindow):
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         root.addWidget(self.log, 1)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setWidget(central)
+        self.setCentralWidget(scroll)
 
         self._check_template()
         self._refresh_field_panel()
