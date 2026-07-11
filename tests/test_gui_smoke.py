@@ -429,6 +429,35 @@ def test_run_view_inline_blank_gate_and_marker_injection(qapp, tmp_path, monkeyp
         view._teardown_thread()
 
 
+def test_txt_view_renders_and_keeps_missing_tokens(qapp, tmp_path):
+    """즉시 기안 화면 — 템플릿 자동 선택·토큰 상태·실시간 렌더에 미입력 토큰 노출."""
+    from hwpxfiller.core.text_registry import TextTemplateRegistry
+    from hwpxfiller.gui.txt_view import TxtDraftView
+
+    d = tmp_path / "tt"
+    d.mkdir()
+    (d / "기안.txt").write_text("제목: {{공고명}}\n담당: {{담당자}}", encoding="utf-8")
+    view = TxtDraftView(TextTemplateRegistry(d))
+    assert view.cbo.count() == 1  # 루트 템플릿 1개 로드
+
+    class _Src:
+        def records(self):
+            return [{"공고명": "전산장비 구매"}]  # 담당자 없음 → missing
+
+        def fields(self):
+            return ["공고명"]
+
+    view.vm.datasource = _Src()
+    view.vm.records = _Src().records()
+    view._render()
+
+    states = {t.name: t.state for t in view.vm.token_states()}
+    assert states == {"공고명": "fill", "담당자": "missing"}
+    rendered = view.view.toPlainText()
+    assert "전산장비 구매" in rendered      # 값 치환
+    assert "{{담당자}}" in rendered          # 미입력 토큰 그대로(시끄럽게)
+
+
 # ------------------------------------------------------------------ 앱 A(diff)
 def _diff_window_for_test(tmp_path, monkeypatch):
     """실패 모달 즉시 fail + QSettings 를 임시 파일로(사용자 설정 오염 방지)한 창."""

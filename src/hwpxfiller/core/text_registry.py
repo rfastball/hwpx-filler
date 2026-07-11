@@ -1,0 +1,66 @@
+"""텍스트 기안 템플릿 레지스트리 — 정해진 루트의 ``.txt`` 템플릿 목록/로드.
+
+HWPX 작업 레지스트리(:class:`~hwpxfiller.core.job.JobRegistry`)와 **별도**다(ADR A: txt 진입은
+Job 과 분리 설계). txt 트랙은 저장 Job 이 없다 — 경량·즉시(render→copy). 이 레지스트리는
+재사용할 평문 템플릿(``.txt``, ``{{필드}}`` 토큰)을 한 곳(루트)에 모아 고르게 한다.
+
+Qt·엔진(lxml/openpyxl) 비의존 — 순수 파일 나열 + :func:`~hwpxfiller.core.text_render.template_fields`.
+"""
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from pathlib import Path
+
+from .text_render import template_fields
+
+
+def default_text_templates_dir() -> Path:
+    """txt 기안 템플릿 기본 루트 — ``~/.hwpxfiller/text_templates``.
+
+    작업 레지스트리(``jobs/``)와 같은 홈 아래 별도 폴더. ``HWPXFILLER_HOME`` 로 재지정 가능
+    (테스트·이식성). 레지스트리 *클래스* 는 위치-불가지(생성자가 디렉터리를 받는다).
+    """
+    root = os.environ.get("HWPXFILLER_HOME") or (Path.home() / ".hwpxfiller")
+    return Path(root) / "text_templates"
+
+
+@dataclass
+class TextTemplate:
+    """평문 기안 템플릿 1개 — 이름 + 경로. 내용/필드는 필요 시 파일에서 읽는다."""
+
+    name: str
+    path: Path
+
+    def content(self) -> str:
+        return self.path.read_text(encoding="utf-8")
+
+    def fields(self) -> "list[str]":
+        """템플릿이 참조하는 ``{{필드}}`` 목록(등장순·중복제거)."""
+        return template_fields(self.content())
+
+
+class TextTemplateRegistry:
+    """루트 디렉터리의 ``*.txt`` 를 기안 템플릿으로 나열/로드한다."""
+
+    SUFFIX = ".txt"
+
+    def __init__(self, directory: "str | Path"):
+        self.directory = Path(directory)
+
+    def list_templates(self) -> "list[TextTemplate]":
+        if not self.directory.exists():
+            return []
+        return [
+            TextTemplate(p.stem, p)
+            for p in sorted(self.directory.glob("*" + self.SUFFIX))
+        ]
+
+    def names(self) -> "list[str]":
+        return [t.name for t in self.list_templates()]
+
+    def count(self) -> int:
+        return len(self.list_templates())
+
+    def load(self, name: str) -> TextTemplate:
+        return TextTemplate(name, self.directory / (name + self.SUFFIX))

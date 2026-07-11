@@ -119,6 +119,10 @@ QLabel[fb="blank"] {{
     background: {BLANK_BG}; color: {WARN}; border: 1px solid #e6c98f;
     border-radius: 11px; padding: 3px 10px; font-weight: 600;
 }}
+QLabel[fb="missing"] {{
+    background: {MISSING_BG}; color: {DANGER}; border: 1px solid #e6a49c;
+    border-radius: 11px; padding: 3px 10px; font-weight: 600;
+}}
 QPushButton[fb="missing"] {{
     background: {MISSING_BG}; color: {DANGER}; border: 1px solid #e6a49c;
     border-radius: 11px; padding: 3px 11px; font-weight: 600; text-align: left;
