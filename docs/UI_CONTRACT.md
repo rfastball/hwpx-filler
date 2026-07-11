@@ -11,22 +11,36 @@
 관련: [UI_DESIGN_HANDOFF.md](UI_DESIGN_HANDOFF.md)(무엇을) · [UI_DESIGN_DECISIONS.md](UI_DESIGN_DECISIONS.md)(왜) ·
 [ARCH_UI_SEPARATION.md](ARCH_UI_SEPARATION.md)(레이어링·왜 이 seam인가).
 
-## 홈 (`gui/home.py` ← `gui/home_state.py`)
+## 대시보드 홈 (`gui/home.py` ← `gui/home_state.py`) — 투트랙 허브(ADR I)
 
 | 목업 셀렉터 | ViewModel 심볼 | 종류 | 근거 |
 |---|---|---|---|
-| `#jcount` | `HomeViewModel.count_label` | 상태 | A/B |
-| `.jobs` | `HomeViewModel.rows` | 상태(목록) | A |
-| `.job .jn` | `JobRow.name` | 상태 | B |
-| `.job .jm` | `JobRow.meta_line` | 상태(성형) | B |
-| `.job .jr` | `JobRow.last_run_display` | 상태 | B |
+| `.kpis` | `HomeViewModel.kpi` → `DashboardKpi` | 파생(요약) | I/B |
+| `#jobsView` | `HomeViewModel.rows` | 상태(HWPX 목록) | A |
+| `.jcard .jn` | `JobRow.name` | 상태 | B |
+| `.jcard .jm` | `JobRow.meta_line` | 상태(성형) | B |
+| `.jcard .jr` | `JobRow.last_run_display` | 상태 | B |
 | `.pill.warn`("템플릿 없음") | `JobRow.template_missing` | 상태 | B |
 | `#emptyView` | `HomeViewModel.is_empty` | 상태(분기) | A |
-| `#hRun` | `HomeViewModel.has_selection` | 상태(활성) | A |
-| `#hEdit` | `HomeViewModel.selected_name` | 상태 | A |
+| `.tlist` | `HomeViewModel.txt_rows` | 상태(txt 목록) | I/H |
+| `.titem .tn` | `TxtRow.name` | 상태 | H |
+| `.titem .tm` | `TxtRow.field_count` | 상태 | H |
 
-선택/삭제 명령: `HomeViewModel.select` · `HomeViewModel.delete` · `HomeViewModel.refresh`(구독 통지).
-네비게이션은 위젯 Qt 시그널(`run/edit/delete/new_job_requested`) — VM 밖(라우팅은 `app.py`).
+HWPX 카드별 액션은 위젯 Qt 시그널(`run/edit/delete_job_requested`), txt 진입은 `open_txt/new_txt_requested`
+(라우팅 `app.py`). 선택/삭제/갱신: `HomeViewModel.select`/`delete`/`refresh`.
+
+## 즉시 기안 txt (`gui/txt_view.py` ← `gui/txt_state.py` + `core/text_registry.py`) — ADR H
+
+| 목업 셀렉터 | ViewModel 심볼 | 종류 | 근거 |
+|---|---|---|---|
+| `#tplSel` | `TxtDraftViewModel.template_names` | 상태(루트 목록) | H |
+| 데이터 선택 버튼 | `TxtDraftViewModel.load_data` | 명령 | F/H |
+| `.stepper` | `TxtDraftViewModel.step` (+`record_count`) | 명령/상태 | H |
+| `#tokPanel` | `TxtDraftViewModel.token_states` → `TokenState` | 파생(채움/빈값/미입력) | E/B |
+| `#renderView` | `TxtDraftViewModel.render` → `(text, RenderReport)` | 파생(실시간 view=진실) | C/E |
+| `#copyBtn` | `TxtDraftViewModel.render` (복사=commit) | 명령 | C |
+
+미입력 토큰은 `render` 가 `{{}}` 를 남긴다(조용히 안 지움) — `RenderReport.missing_fields`(ADR E).
 
 ## 작업 에디터 (`gui/wizard.py`·`gui/job_editor.py` ← `gui/mapping_state.py`)
 

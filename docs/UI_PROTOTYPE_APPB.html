@@ -243,6 +243,53 @@
   .dcard .src{font-size:11px;color:var(--accent);margin-top:6px;font-weight:600}
   .scr{display:none} .scr.on{display:block}
 
+  /* ── dashboard (scr-home) ── */
+  .dash-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:14px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+  @media(max-width:720px){.kpis{grid-template-columns:repeat(2,1fr)}}
+  .kpi{background:var(--a-card);border:1px solid var(--a-border);border-radius:9px;padding:12px 14px}
+  .kpi .v{font-size:23px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .kpi .l{font-size:11.5px;color:var(--a-muted);margin-top:2px}
+  .kpi.warn .v{color:var(--a-warn)}
+  .tracks{display:grid;grid-template-columns:1.3fr 1fr;gap:16px}
+  @media(max-width:820px){.tracks{grid-template-columns:1fr}}
+  .track{background:var(--a-card);border:1px solid var(--a-border);border-radius:10px;padding:15px 16px}
+  .track.txt{border-top:3px solid var(--a-primary)}
+  .track.hwpx{border-top:3px solid #6b46c1}
+  .track .th{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:2px}
+  .track .tt{font-size:15px;font-weight:800}
+  .track .tsub{font-size:12px;color:var(--a-muted);margin:0 0 12px}
+  .jcard{border:1px solid var(--a-border);border-radius:8px;padding:10px 12px;margin-bottom:8px;border-left:3px solid transparent}
+  .jcard:hover{background:#fafbfc;border-left-color:var(--a-primary)}
+  .jcard .jn{font-weight:700;display:flex;gap:8px;align-items:center}
+  .jcard .jm{font-size:12px;color:var(--a-muted);margin-top:2px}
+  .jcard .jfoot{display:flex;justify-content:space-between;align-items:center;margin-top:8px;gap:8px}
+  .jcard .jr{font-size:11.5px;color:var(--a-muted)}
+  .tlist .titem{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--a-border);border-radius:8px;padding:9px 12px;margin-bottom:8px;cursor:pointer}
+  .tlist .titem:hover{background:#fafbfc;border-color:var(--a-primary)}
+  .tlist .tn{font-weight:600} .tlist .tm{font-size:11.5px;color:var(--a-muted);margin-top:1px}
+  .route{font-size:11px;color:var(--a-muted);margin:10px 0 0;font-family:var(--mono)}
+  .btn.sm{font-size:12px;padding:4px 10px}
+  /* ── txt render (scr-txt) ── */
+  .txt-controls{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;background:var(--a-card);border:1px solid var(--a-border);border-radius:9px;padding:11px 13px;margin-bottom:14px}
+  .txt-controls .lbl{font-size:12px;color:#3a3f47}
+  .stepper{display:flex;align-items:center;gap:8px}
+  .panes{display:grid;grid-template-columns:280px 1fr;gap:16px}
+  @media(max-width:760px){.panes{grid-template-columns:1fr}}
+  .pane{background:var(--a-card);border:1px solid var(--a-border);border-radius:9px;padding:13px}
+  .pane h4{margin:0 0 10px;font-size:12px;letter-spacing:.02em;color:var(--a-muted);text-transform:uppercase;font-weight:700}
+  .tok{display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-radius:6px;margin-bottom:5px;font-size:12.5px}
+  .tok .tname{font-family:var(--mono);font-size:12px}
+  .tok.fill{background:#e5f2ea} .tok.fill .st{color:var(--a-ok);font-weight:600}
+  .tok.blank{background:#f6ecdb} .tok.blank .st{color:var(--a-warn);font-weight:600}
+  .tok.missing{background:#fbe6e3} .tok.missing .st{color:var(--a-danger);font-weight:700}
+  .render{background:#fff;border:1px solid var(--a-border);border-radius:8px;padding:18px 20px;min-height:300px;font-size:14px;line-height:1.85;white-space:pre-wrap;color:#1c2126;box-shadow:inset 0 1px 3px rgba(0,0,0,.03)}
+  .render .miss{background:#fde2dd;color:var(--a-danger);border:1px dashed #e6a49c;border-radius:4px;padding:0 4px;font-family:var(--mono);font-size:12.5px;font-weight:700}
+  .render .val{background:#eaf3ea;border-radius:3px;padding:0 3px}
+  .txt-foot{display:flex;align-items:center;gap:12px;margin-top:14px}
+  .txt-foot .note{font-size:12px;color:var(--a-muted);flex:1}
+  .copied{color:var(--a-ok);font-weight:600;font-size:12.5px}
+
   footer{margin-top:34px;padding-top:16px;border-top:1px solid var(--hair);
     font-size:12px;color:var(--ink-soft)}
   footer code{font-family:var(--mono)}
@@ -251,11 +298,11 @@
 <div class="wrap">
   <header class="mast">
     <div>
-      <div class="tag">앱 B · 생성기 · 인터랙티브 프로토타입</div>
+      <div class="tag">앱 B · 투트랙 · 인터랙티브 프로토타입</div>
       <h1>HWPX Filler — UI 프로토타입</h1>
-      <p>UI 설계 핸드오프(§0–§7)와 표면 결정 기록(ADR B·D·F·C·E·A·G)에서 직접 도출한
-         세 화면. 색·위젯은 <code>gui/style.py</code>의 실제 팔레트를 그대로 따르고,
-         상호작용은 스캐폴드가 고정한 계약(명시성 게이트·상시 인라인 표면화 등)을 지킵니다.</p>
+      <p>UI 설계 핸드오프와 표면 결정 기록(ADR A~I)에서 도출한 <b>투트랙</b> UI — HWPX(대시보드·
+         에디터·집행)와 txt(즉시 기안). 색·위젯은 <code>gui/style.py</code> 팔레트를 따르고,
+         각 요소의 <code>data-vm</code>은 실제 ViewModel 계약에 배선됩니다(<code>UI_CONTRACT.md</code>).</p>
     </div>
     <div class="spacer"></div>
     <div class="toggles">
@@ -275,16 +322,19 @@
 
   <div class="shell">
     <nav class="rail" aria-label="화면 전환">
-      <div class="rl">화면 · 3 + 오케스트레이터</div>
+      <div class="rl">투트랙 허브</div>
       <button class="navbtn" data-scr="home" aria-current="true">
-        <span class="n"><span class="num">1</span>홈 — 작업 목록</span>
-        <span class="d">오케스트레이터 · 라우터</span></button>
+        <span class="n"><span class="num">▤</span>대시보드</span>
+        <span class="d">두 트랙 허브 · 요약</span></button>
       <button class="navbtn" data-scr="editor">
         <span class="n"><span class="num">2</span>작업 에디터</span>
-        <span class="d">4스텝 위저드 · 저장으로 끝</span></button>
+        <span class="d">HWPX · 4스텝 · 저장으로 끝</span></button>
       <button class="navbtn" data-scr="run">
         <span class="n"><span class="num">3</span>집행</span>
-        <span class="d">데이터 겨눔 → 생성</span></button>
+        <span class="d">HWPX · 데이터 겨눔 → 생성</span></button>
+      <button class="navbtn" data-scr="txt">
+        <span class="n"><span class="num">✎</span>즉시 기안 (txt)</span>
+        <span class="d">템플릿+데이터 → 실시간 → 복사</span></button>
     </nav>
 
     <div>
@@ -296,66 +346,87 @@
               <div class="titlebar"><span class="t">HWPX Filler — 작업</span>
                 <span class="caps"><span>—</span><span>▢</span><span class="x">✕</span></span></div>
               <div class="body">
-                <div class="row" style="justify-content:space-between">
-                  <div class="row"><span class="heading">작업 목록</span>
-                    <span class="muted" id="jcount" data-vm="HomeViewModel.count_label">3건</span></div>
-                  <button class="btn primary">＋ 새 작업 만들기</button>
+                <div class="dash-head">
+                  <span class="heading">대시보드</span>
+                  <span class="muted" style="font-size:12px">개인 작업 자산 · <span class="mono">~/.hwpxfiller</span></span>
                 </div>
-
-                <div id="jobsView">
-                  <div class="jobs" role="listbox" aria-label="저장된 작업" data-vm="HomeViewModel.rows">
-                    <div class="job" role="option" tabindex="0" aria-selected="false" data-job="공고서 자동생성">
-                      <div class="jn" data-vm="JobRow.name">공고서 자동생성</div>
-                      <div class="jm" data-vm="JobRow.meta_line">템플릿 공고서_양식.hwpx · 필드 14개 · 파일명 <span class="mono">공고서-{{ID}}</span></div>
-                      <div class="jr" data-vm="JobRow.last_run_display">최근 집행 2026-07-09 15:42</div>
-                    </div>
-                    <div class="job" role="option" tabindex="0" aria-selected="false" data-job="낙찰통지서">
-                      <div class="jn">낙찰통지서</div>
-                      <div class="jm">템플릿 낙찰통지_v2.hwpx · 필드 8개 · 파일명 <span class="mono">낙찰-{{ID}}</span></div>
-                      <div class="jr">아직 집행 안 함</div>
-                    </div>
-                    <div class="job" role="option" tabindex="0" aria-selected="false" data-job="계약서 초안">
-                      <div class="jn">계약서 초안 <span class="pill warn" data-vm="JobRow.template_missing">템플릿 없음</span></div>
-                      <div class="jm">템플릿 계약서.hwpx · 필드 21개 · 파일명 <span class="mono">계약-{{업체명}}</span></div>
-                      <div class="jr">최근 집행 2026-06-30 11:08</div>
-                    </div>
-                  </div>
+                <div class="kpis" data-vm="HomeViewModel.kpi">
+                  <div class="kpi"><div class="v">3</div><div class="l">저장된 작업 · HWPX</div></div>
+                  <div class="kpi"><div class="v">07-09</div><div class="l">최근 집행 · 공고서 자동생성</div></div>
+                  <div class="kpi warn"><div class="v">1</div><div class="l">템플릿 없는 작업</div></div>
+                  <div class="kpi"><div class="v">2</div><div class="l">기안 템플릿 · txt</div></div>
                 </div>
-
-                <div id="emptyView" style="display:none" data-vm="HomeViewModel.is_empty">
-                  <div class="empty">
-                    <div class="heading">저장된 작업이 없습니다</div>
-                    <p>템플릿과 매핑을 묶어 첫 작업을 만드세요.
+                <div class="tracks">
+                  <div class="track hwpx">
+                    <div class="th"><span class="tt">정식 문서 생성 · HWPX</span>
+                      <button class="btn primary sm">＋ 새 작업</button></div>
+                    <p class="tsub">누름틀 템플릿 + 매핑을 작업으로 저장 → 데이터 겨눠 .hwpx 생성.</p>
+                    <div id="jobsView" data-vm="HomeViewModel.rows">
+                      <div class="jcard">
+                        <div class="jn" data-vm="JobRow.name">공고서 자동생성</div>
+                        <div class="jm" data-vm="JobRow.meta_line">공고서_양식.hwpx · 필드 14개 · <span class="mono">공고서-{{ID}}</span></div>
+                        <div class="jfoot"><span class="jr" data-vm="JobRow.last_run_display">최근 집행 2026-07-09 15:42</span>
+                          <span class="row"><button class="btn primary sm">집행</button><button class="btn sm">편집</button><button class="btn sm">삭제</button></span></div>
+                      </div>
+                      <div class="jcard">
+                        <div class="jn">낙찰통지서</div>
+                        <div class="jm">낙찰통지_v2.hwpx · 필드 8개 · <span class="mono">낙찰-{{ID}}</span></div>
+                        <div class="jfoot"><span class="jr">아직 집행 안 함</span>
+                          <span class="row"><button class="btn primary sm">집행</button><button class="btn sm">편집</button><button class="btn sm">삭제</button></span></div>
+                      </div>
+                      <div class="jcard">
+                        <div class="jn">계약서 초안 <span class="pill warn" data-vm="JobRow.template_missing">템플릿 없음</span></div>
+                        <div class="jm">계약서.hwpx · 필드 21개 · <span class="mono">계약-{{업체명}}</span></div>
+                        <div class="jfoot"><span class="jr">최근 집행 2026-06-30 11:08</span>
+                          <span class="row"><button class="btn primary sm" disabled>집행</button><button class="btn sm">편집</button><button class="btn sm">삭제</button></span></div>
+                      </div>
+                    </div>
+                    <div id="emptyView" style="display:none" data-vm="HomeViewModel.is_empty">
+                      <div class="empty">
+                        <div class="heading">저장된 작업이 없습니다</div>
+                        <p>템플릿과 매핑을 묶어 첫 작업을 만드세요.
 데이터·행은 집행할 때 고릅니다.</p>
-                    <button class="btn primary">＋ 새 작업 만들기</button>
+                        <button class="btn primary">＋ 새 작업 만들기</button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-
-                <div class="row" style="justify-content:flex-end;margin-top:14px">
-                  <button class="btn primary" id="hRun" disabled data-vm="HomeViewModel.has_selection">집행</button>
-                  <button class="btn" id="hEdit" disabled data-vm="HomeViewModel.selected_name">편집</button>
-                  <button class="btn" id="hDel" disabled>삭제</button>
+                  <div class="track txt">
+                    <div class="th"><span class="tt">즉시 기안 · txt</span>
+                      <button class="btn primary sm">＋ 새 기안</button></div>
+                    <p class="tsub">평문 {{필드}} → 실시간 렌더 → 복사. 온나라 기안 등 즉각 붙여넣기.</p>
+                    <div class="tlist" data-vm="HomeViewModel.txt_rows">
+                      <div class="titem" data-tpl="온나라_기안">
+                        <div><div class="tn" data-vm="TxtRow.name">온나라_기안.txt</div><div class="tm" data-vm="TxtRow.field_count">필드 5개</div></div>
+                        <button class="btn primary sm">기안 열기 →</button>
+                      </div>
+                      <div class="titem" data-tpl="회의결과보고">
+                        <div><div class="tn">회의결과보고.txt</div><div class="tm">필드 4개</div></div>
+                        <button class="btn primary sm">기안 열기 →</button>
+                      </div>
+                    </div>
+                    <p class="route">템플릿 루트 ~/.hwpxfiller/text_templates/</p>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
 
           <aside class="ann">
-            <h3>이 화면을 지배하는 결정</h3>
-            <div class="dcard"><div class="dh"><span class="dchip">A</span><span class="dt">Home 진입 = Job-앵커</span></div>
-              <p>홈은 하나의 태스크가 아니라 저장된 <b>작업 목록</b>. 사용자가 같은 서식을 많이
-                 재사용하므로(재인&gt;회상) 레지스트리가 기본 진입점입니다. 빈 상태는 단일 CTA로 온보딩.</p>
-              <div class="src">HANDOFF §2 · ADR A</div></div>
-            <div class="dcard"><div class="dh"><span class="dchip">B</span><span class="dt">필드 시각 구별</span></div>
-              <p>카드가 이름만이 아니라 <b>템플릿·필드수·최근 집행</b> 메타를 노출.
-                 템플릿 부재는 집행 전에 <span class="warn">경고 배지</span>로 선고지(비차단).</p>
-              <div class="src">HANDOFF §2 · ADR B</div></div>
-            <div class="dcard"><div class="dh"><span class="dchip">A</span><span class="dt">라우팅만, 수명은 배선이 소유</span></div>
-              <p>선택 시에만 집행·편집·삭제 활성. 더블클릭 = 집행. 시그널 계약
-                 (<span class="mono">run/edit/delete_job_requested</span>)은 불변.</p>
-              <div class="src">home.py 시그널 계약</div></div>
+            <h3>지배 결정 · 근거</h3>
+            <div class="dcard"><div class="dh"><span class="dchip">I</span><span class="dt">투트랙 허브 대시보드</span></div>
+              <p>HWPX=Job-앵커(재사용·가이드 실행), txt=경량·즉시. 트랙 이원성이 홈을 두 진입의
+                 허브로. KPI는 전부 <b>실재 데이터</b>(레지스트리·집행 이력·템플릿 루트).</p>
+              <div class="src">DECISIONS §트랙 이원성 · ADR A·I</div></div>
+            <div class="dcard"><div class="dh"><span class="dchip">B</span><span class="dt">상태 시각화</span></div>
+              <p>작업 카드에 <span class="warn">템플릿 없음</span> pill, KPI에 경고 수 — 이미 있는
+                 상태(템플릿 존재·last_run)를 표면화(발명 아님).</p>
+              <div class="src">ADR B</div></div>
+            <div class="dcard"><div class="dh"><span class="dchip">!</span><span class="dt">발명 금지</span></div>
+              <p>대시보드는 크롬이 아니라 <b>기능의 표면</b> — 가짜 지표·차트 없이 레지스트리·
+                 템플릿 루트·집행 이력만 노출.</p>
+              <div class="src">HANDOFF 관통 원칙</div></div>
             <p style="font-size:12px;color:var(--ink-soft)">
-              <a href="#" id="toggleEmpty">↺ 빈 상태 보기</a> — 작업 0건 온보딩 화면 미리보기</p>
+              <a href="#" id="toggleEmpty">↺ 빈 상태 보기</a> — 작업 0건 온보딩 미리보기</p>
           </aside>
         </div>
       </section>
@@ -587,6 +658,71 @@
           </aside>
         </div>
       </section>
+
+      <!-- ============ TXT 즉시 기안 ============ -->
+      <section class="scr" id="scr-txt">
+        <div class="stage">
+          <div class="canvas">
+            <div class="win">
+              <div class="titlebar"><span class="t">HWPX Filler — 즉시 기안</span>
+                <span class="caps"><span>—</span><span>▢</span><span class="x">✕</span></span></div>
+              <div class="body">
+                <div class="txt-controls">
+                  <span class="lbl">템플릿</span>
+                  <select class="field" id="tplSel" data-vm="TxtDraftViewModel.template_names">
+                    <option value="온나라_기안">온나라_기안.txt</option>
+                    <option value="회의결과보고">회의결과보고.txt</option>
+                  </select>
+                  <span class="lbl">데이터</span>
+                  <span class="mono" style="font-size:12px">입찰공고_2026Q3.xlsx</span>
+                  <button class="btn sm" data-vm="TxtDraftViewModel.load_data">데이터 선택…</button>
+                  <span style="flex:1"></span>
+                  <span class="lbl">레코드</span>
+                  <div class="stepper" data-vm="TxtDraftViewModel.step">
+                    <button class="btn sm" id="recPrev">◀</button>
+                    <span class="mono" id="recIdx" style="font-size:12px">1 / 25</span>
+                    <button class="btn sm" id="recNext">▶</button>
+                  </div>
+                </div>
+                <div class="panes">
+                  <div class="pane">
+                    <h4>필드 상태 (토큰)</h4>
+                    <div id="tokPanel" data-vm="TxtDraftViewModel.token_states"></div>
+                    <p class="muted" style="font-size:11.5px;margin:10px 0 0">
+                      값은 데이터에서 채움(표시형은 매핑 프로파일 있으면 적용).
+                      <span class="danger">미입력</span>은 <span class="mono">{{토큰}}</span> 그대로 남김.</p>
+                  </div>
+                  <div class="pane">
+                    <h4>실시간 렌더 · 이 view가 진실</h4>
+                    <div class="render" id="renderView" data-vm="TxtDraftViewModel.render"></div>
+                  </div>
+                </div>
+                <div class="txt-foot">
+                  <button class="btn primary" id="copyBtn">📋 복사 (commit)</button>
+                  <button class="btn">txt로 저장…</button>
+                  <span class="copied" id="copied" style="display:none">✓ 클립보드로 복사됨</span>
+                  <span class="note">복사가 commit — 외부 권위 렌더러가 없어 <b>실시간 view가 곧 산출물</b>(ADR C·E). 누락 토큰은 그대로 노출.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <aside class="ann">
+            <h3>지배 결정 · 근거</h3>
+            <div class="dcard"><div class="dh"><span class="dchip">H</span><span class="dt">txt 트랙 GUI (파킹 해제)</span></div>
+              <p>정해진 루트 템플릿 목록 + 데이터 결합 → 실시간 view → 복사. ADR A가 별도 설계로
+                 파킹한 txt 진입을 별도 레지스트리로 닫음.</p>
+              <div class="src">core/text_registry · ADR A·H</div></div>
+            <div class="dcard"><div class="dh"><span class="dchip">C</span><span class="dt">권위 렌더러 흉내 없음 — 반대 표면</span></div>
+              <p>HWPX는 한글이 진실이라 인앱 미리보기 금지. <b>txt엔 외부 렌더러가 없어</b> 실시간
+                 view가 곧 진실이자 산출물 — 같은 원리의 반대 표면.</p>
+              <div class="src">ADR C(트랙 분기)</div></div>
+            <div class="dcard"><div class="dh"><span class="dchip E">E</span><span class="dt">누락 표면화 레퍼런스</span></div>
+              <p><code>render_record</code>는 미충족 토큰을 <span class="mono">{{}}</span>로 남기고
+                 시끄럽게 신고. HWPX 표식(<span class="mono">〘미입력〙</span>)의 평문 짝.</p>
+              <div class="src">core/text_render.py · ADR E</div></div>
+          </aside>
+        </div>
+      </section>
     </div>
   </div>
 
@@ -594,7 +730,7 @@
     출처: <code>docs/UI_DESIGN_HANDOFF.md</code> · <code>docs/UI_DESIGN_DECISIONS.md</code> ·
     팔레트 <code>src/hwpxfiller/gui/style.py</code>. 관통 원칙 —
     <b>function → UX → UI</b>, 그리고 <b>묻고 확정하게 하라, 아니면 시끄럽게 알려라</b>.
-    이 프로토타입은 HWPX 트랙 앱 B만 다룹니다(diff 리뷰어=앱 A, txt 트랙은 별도).
+    앱 B 투트랙(HWPX·txt)을 다룹니다. diff 리뷰어(앱 A)는 별도 제품.
   </footer>
 </div>
 
@@ -626,26 +762,28 @@
     scrs.forEach(function(s){s.classList.toggle('on',s.id==='scr-'+id);});
   });});
 
-  /* ---------- HOME ---------- */
-  var jobs=document.querySelectorAll('.job');
-  var hRun=document.getElementById('hRun'),hEdit=document.getElementById('hEdit'),hDel=document.getElementById('hDel');
-  function selectJob(j){
-    jobs.forEach(function(x){x.setAttribute('aria-selected','false');});
-    j.setAttribute('aria-selected','true');
-    [hRun,hEdit,hDel].forEach(function(b){b.disabled=false;});
+  /* ---------- DASHBOARD (home) ---------- */
+  function go(id){
+    navs.forEach(function(x){x.setAttribute('aria-current',String(x.dataset.scr===id));});
+    scrs.forEach(function(s){s.classList.toggle('on',s.id==='scr-'+id);});
   }
-  jobs.forEach(function(j){
-    j.addEventListener('click',function(){selectJob(j);});
-    j.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();selectJob(j);}});
+  // 기안 템플릿 클릭 → txt 화면(선택 반영)
+  document.querySelectorAll('.titem').forEach(function(it){
+    it.addEventListener('click',function(){
+      var s=document.getElementById('tplSel'); if(s) s.value=it.dataset.tpl;
+      renderTxt(); go('txt');
+    });
   });
+  var newTxt=document.querySelector('.track.txt .th .btn.primary');  // ＋ 새 기안
+  if(newTxt) newTxt.addEventListener('click',function(){go('txt');});
+  // 빈 상태 토글(온보딩 미리보기)
   var te=document.getElementById('toggleEmpty'),ev=document.getElementById('emptyView'),
-      jv=document.getElementById('jobsView'),jc=document.getElementById('jcount');
-  te.addEventListener('click',function(e){
+      jv=document.getElementById('jobsView');
+  if(te) te.addEventListener('click',function(e){
     e.preventDefault();
     var empty=ev.style.display!=='none';
     ev.style.display=empty?'none':'block';
     jv.style.display=empty?'block':'none';
-    jc.textContent=empty?'3건':'';
     te.textContent=empty?'↺ 빈 상태 보기':'↺ 목록으로 돌아가기';
   });
 
@@ -798,5 +936,52 @@
     },420);
   });
   syncMissing();syncSel();syncTarget();
+
+  /* ---------- TXT 즉시 기안 (render_record 의 브라우저 미러) ---------- */
+  var TEMPLATES={
+    '온나라_기안':
+'제목: {{공고명}} 입찰 공고 기안\n\n1. 개찰일자: {{개찰일자}}\n2. 추정가격: {{추정가격}}\n3. 담당부서: {{수요기관}}\n4. 담당자: {{담당자}}\n\n붙임: {{비고}}',
+    '회의결과보고':
+'□ 안건: {{공고명}}\n□ 일시: {{개찰일자}}\n□ 결정사항: {{결정사항}}\n□ 후속조치: {{비고}}'
+  };
+  var TXT_RECORDS=[
+    {공고명:'전산장비 구매',개찰일자:'2026-08-01',추정가격:'85,000,000원',수요기관:'조달청',비고:''},
+    {공고명:'사무용 가구 구매',개찰일자:'2026-08-05',추정가격:'12,400,000원',수요기관:'행정안전부',비고:'긴급'}
+  ];
+  var txtI=0, TXT_TOK=/\{\{\s*([^{}|]+?)\s*\}\}/g;
+  function txtEsc(s){return s.replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+  function txtFields(t){var f=[],m;TXT_TOK.lastIndex=0;while((m=TXT_TOK.exec(t))){if(f.indexOf(m[1].trim())<0)f.push(m[1].trim());}return f;}
+  function renderTxt(){
+    var sel=document.getElementById('tplSel'); if(!sel) return;
+    var tpl=TEMPLATES[sel.value], rec=TXT_RECORDS[txtI%TXT_RECORDS.length];
+    var html=txtEsc(tpl).replace(TXT_TOK,function(_,name){
+      name=name.trim();
+      if(!(name in rec)) return '<span class="miss">{{'+txtEsc(name)+'}}</span>';
+      var v=String(rec[name]==null?'':rec[name]);
+      if(v.trim()==='') return '<span class="miss" title="빈 값">{{'+txtEsc(name)+'}}</span>';
+      return '<span class="val">'+txtEsc(v)+'</span>';
+    });
+    document.getElementById('renderView').innerHTML=html;
+    var panel=document.getElementById('tokPanel'); panel.innerHTML='';
+    txtFields(tpl).forEach(function(name){
+      var st,label,sym;
+      if(!(name in rec)){st='missing';label='미입력';sym='●';}
+      else if(String(rec[name]||'').trim()===''){st='blank';label='빈 값';sym='◦';}
+      else {st='fill';label='채움';sym='✓';}
+      var el=document.createElement('div'); el.className='tok '+st;
+      el.innerHTML='<span class="tname">{{'+txtEsc(name)+'}}</span><span class="st">'+sym+' '+label+'</span>';
+      panel.appendChild(el);
+    });
+    document.getElementById('recIdx').textContent=(txtI%TXT_RECORDS.length+1)+' / 25';
+  }
+  var _sel=document.getElementById('tplSel');
+  if(_sel){
+    _sel.addEventListener('change',renderTxt);
+    document.getElementById('recPrev').addEventListener('click',function(){txtI=(txtI+TXT_RECORDS.length-1)%TXT_RECORDS.length;renderTxt();});
+    document.getElementById('recNext').addEventListener('click',function(){txtI=(txtI+1)%TXT_RECORDS.length;renderTxt();});
+    var cp=document.getElementById('copied');
+    document.getElementById('copyBtn').addEventListener('click',function(){cp.style.display='inline';setTimeout(function(){cp.style.display='none';},1600);});
+    renderTxt();
+  }
 })();
 </script>

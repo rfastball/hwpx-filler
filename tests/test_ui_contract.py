@@ -10,12 +10,15 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 from hwpxfiller.core.job import Job
-from hwpxfiller.gui.home_state import HomeViewModel, JobRow
+from hwpxfiller.core.text_registry import TextTemplateRegistry
+from hwpxfiller.gui.home_state import HomeViewModel, JobRow, TxtRow
 from hwpxfiller.gui.mapping_state import MappingModel, RowState
 from hwpxfiller.gui.run_state import RunViewModel
 from hwpxfiller.gui.selection_state import SelectionModel
+from hwpxfiller.gui.txt_state import TokenState, TxtDraftViewModel
 
 MOCKUP = Path(__file__).resolve().parents[1] / "docs" / "UI_PROTOTYPE_APPB.html"
+_NO_DIR = MOCKUP.parent / "__no_such_text_templates__"
 
 
 class _StubRegistry:
@@ -37,6 +40,9 @@ _INSTANCES = {
     "MappingModel": MappingModel(),
     "RowState": RowState(template_field=""),
     "SelectionModel": SelectionModel(0),
+    "TxtDraftViewModel": TxtDraftViewModel(TextTemplateRegistry(_NO_DIR)),
+    "TokenState": TokenState("x", "fill"),
+    "TxtRow": TxtRow("x", 0),
 }
 
 
@@ -79,5 +85,7 @@ def test_every_data_vm_resolves_to_a_real_viewmodel_member():
 
 def test_all_three_viewmodels_are_referenced():
     seen = {r.split(".")[0] for r in _collect()}
-    for required in ("HomeViewModel", "RunViewModel", "MappingModel", "SelectionModel"):
+    for required in (
+        "HomeViewModel", "RunViewModel", "MappingModel", "SelectionModel", "TxtDraftViewModel",
+    ):
         assert required in seen, f"{required} 를 겨누는 목업 요소가 없습니다"
