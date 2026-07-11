@@ -1,0 +1,784 @@
+<title>HWPX Filler — 앱 B UI 프로토타입</title>
+<style>
+  :root{
+    /* ── studio shell (theme-aware) ── */
+    --page:#eef0f4; --panel:#ffffff; --rail:#20262e; --rail-ink:#c9d3df;
+    --ink:#1b2128; --ink-soft:#5a626c; --hair:#d7dbe1; --accent:#2874a6;
+    --chip:#e7edf3; --shadow:rgba(24,34,48,.16);
+    --canvas:#dbe0e7;
+    /* ── app window: fixed real QSS palette (never re-themed) ── */
+    --a-primary:#2874a6; --a-primary-h:#1f5a80; --a-warn:#a05a00;
+    --a-danger:#c0392b; --a-ok:#1e8449; --a-muted:#7a7f87; --a-border:#e2e4e8;
+    --a-card:#ffffff; --a-window:#f6f7f9; --a-ink:#1c2126;
+    --a-unconf:#fff3bf; --a-unmatch:#ffd8d8; --a-empty:#b00020; --a-sel:#dce9f5;
+    --app-font:"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;
+    --mono:"Cascadia Code","Consolas",ui-monospace,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --page:#12161c; --panel:#1a2029; --rail:#0d1116; --rail-ink:#aeb9c6;
+      --ink:#e6ebf1; --ink-soft:#98a2ae; --hair:#2b333d; --accent:#5aa0d0;
+      --chip:#232c37; --shadow:rgba(0,0,0,.5); --canvas:#0f141a;
+    }
+  }
+  :root[data-theme="light"]{
+    --page:#eef0f4; --panel:#ffffff; --rail:#20262e; --rail-ink:#c9d3df;
+    --ink:#1b2128; --ink-soft:#5a626c; --hair:#d7dbe1; --accent:#2874a6;
+    --chip:#e7edf3; --shadow:rgba(24,34,48,.16); --canvas:#dbe0e7;
+  }
+  :root[data-theme="dark"]{
+    --page:#12161c; --panel:#1a2029; --rail:#0d1116; --rail-ink:#aeb9c6;
+    --ink:#e6ebf1; --ink-soft:#98a2ae; --hair:#2b333d; --accent:#5aa0d0;
+    --chip:#232c37; --shadow:rgba(0,0,0,.5); --canvas:#0f141a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--page);color:var(--ink);
+    font-family:var(--app-font);line-height:1.5;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent)}
+  .wrap{max-width:1320px;margin:0 auto;padding:20px clamp(14px,3vw,34px) 60px}
+
+  /* ── masthead ── */
+  header.mast{display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px 22px;
+    padding:14px 0 18px;border-bottom:1px solid var(--hair)}
+  .mast h1{font-size:clamp(18px,2.4vw,25px);margin:0;letter-spacing:-.01em;
+    text-wrap:balance;font-weight:700}
+  .mast .tag{font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--accent);font-weight:700}
+  .mast p{margin:2px 0 0;color:var(--ink-soft);font-size:13.5px;max-width:62ch}
+  .mast .spacer{flex:1 1 40px}
+  .toggles{display:flex;gap:8px;align-items:center}
+  .tbtn{font:inherit;font-size:12.5px;cursor:pointer;border:1px solid var(--hair);
+    background:var(--panel);color:var(--ink);padding:7px 12px;border-radius:8px;
+    display:inline-flex;gap:7px;align-items:center}
+  .tbtn[aria-pressed="true"]{border-color:var(--accent);
+    box-shadow:inset 0 0 0 1px var(--accent);color:var(--accent)}
+  .tbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* ── note strip ── */
+  .strip{margin:16px 0 0;padding:12px 15px;border:1px solid var(--hair);
+    border-left:3px solid var(--accent);border-radius:10px;background:var(--panel);
+    font-size:13px;color:var(--ink-soft)}
+  .strip b{color:var(--ink)}
+  .strip code{font-family:var(--mono);font-size:12px;background:var(--chip);
+    padding:1px 6px;border-radius:5px;color:var(--ink)}
+
+  /* ── layout: rail + stage ── */
+  .shell{display:grid;grid-template-columns:216px 1fr;gap:20px;margin-top:20px}
+  @media(max-width:900px){.shell{grid-template-columns:1fr}}
+  nav.rail{background:var(--rail);border-radius:14px;padding:12px;
+    align-self:start;position:sticky;top:14px}
+  nav.rail .rl{font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+    color:#7d8a99;padding:6px 10px 10px;font-weight:700}
+  .navbtn{width:100%;text-align:left;font:inherit;cursor:pointer;border:0;
+    background:transparent;color:var(--rail-ink);padding:11px 12px;border-radius:9px;
+    display:block;margin-bottom:3px}
+  .navbtn .n{font-size:14.5px;font-weight:600;display:flex;gap:8px;align-items:center}
+  .navbtn .d{font-size:11.5px;color:#7d8a99;margin-top:1px}
+  .navbtn:hover{background:rgba(255,255,255,.05)}
+  .navbtn[aria-current="true"]{background:var(--accent);color:#fff}
+  .navbtn[aria-current="true"] .d{color:#dbeaf6}
+  .navbtn:focus-visible{outline:2px solid #fff;outline-offset:-2px}
+  .rail .num{display:inline-grid;place-items:center;width:20px;height:20px;
+    border-radius:6px;background:rgba(255,255,255,.12);font-size:12px;font-weight:700}
+  .navbtn[aria-current="true"] .num{background:rgba(255,255,255,.25)}
+
+  .stage{display:grid;grid-template-columns:1fr 288px;gap:20px;align-items:start}
+  @media(max-width:1120px){.stage{grid-template-columns:1fr}}
+  body.noann .stage{grid-template-columns:1fr}
+  body.noann aside.ann,body.noann .pin{display:none}
+
+  /* ── the app window (fixed palette) ── */
+  .canvas{background:var(--canvas);border-radius:14px;padding:clamp(14px,2.2vw,30px);
+    display:grid;place-items:center;min-height:200px}
+  .win{width:100%;max-width:780px;background:var(--a-window);color:var(--a-ink);
+    border-radius:9px;overflow:hidden;box-shadow:0 18px 40px -12px var(--shadow),
+    0 0 0 1px rgba(0,0,0,.06);font-size:13.5px}
+  .titlebar{display:flex;align-items:center;gap:8px;background:#e9ebee;
+    padding:7px 10px;border-bottom:1px solid #dcdfe4;color:#3a3f47}
+  .titlebar .t{font-size:12.5px;font-weight:600;flex:1}
+  .caps{display:flex;gap:16px;color:#8b9099;font-size:12px}
+  .caps span{width:13px;text-align:center}
+  .caps .x:hover{color:var(--a-danger)}
+  .win .body{padding:16px 18px 18px}
+
+  /* app typography + controls (mirror QSS) */
+  .heading{font-size:15px;font-weight:700;color:var(--a-ink)}
+  .muted{color:var(--a-muted)}
+  .warn{color:var(--a-warn)} .danger{color:var(--a-danger)} .ok{color:var(--a-ok)}
+  .row{display:flex;align-items:center;gap:9px}
+  .btn{font:inherit;font-size:13px;cursor:pointer;border:1px solid #cbd0d6;
+    background:#fff;color:#2b3038;padding:6px 13px;border-radius:4px}
+  .btn:hover{background:#f0f2f5}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn.primary{background:var(--a-primary);color:#fff;border-color:var(--a-primary);
+    font-weight:600;padding:6px 16px}
+  .btn.primary:hover{background:var(--a-primary-h);border-color:var(--a-primary-h)}
+  .btn.primary:disabled{background:var(--a-muted);border-color:var(--a-muted)}
+  .btn:focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
+  .field{background:#fff;border:1px solid var(--a-border);border-radius:4px;
+    padding:6px 9px;color:var(--a-ink);flex:1;min-width:0;font:inherit;font-size:12.5px}
+  .field.ro{background:#f3f4f6;color:#5c626b}
+  .lbl{font-size:12.5px;color:#3a3f47;white-space:nowrap}
+  .mono{font-family:var(--mono);font-size:12px}
+  .grp{border:1px solid var(--a-border);border-radius:7px;background:var(--a-card);
+    padding:12px 13px;margin-top:12px;position:relative}
+  .grp>.cap{position:absolute;top:-9px;left:12px;background:var(--a-window);
+    padding:0 7px;font-size:12px;font-weight:600;color:#4a505a}
+
+  /* home job list */
+  .jobs{background:var(--a-card);border:1px solid var(--a-border);border-radius:6px;
+    overflow:hidden;margin-top:12px}
+  .job{padding:11px 13px;border-bottom:1px solid var(--a-border);cursor:pointer;
+    border-left:3px solid transparent}
+  .job:last-child{border-bottom:0}
+  .job:hover{background:#fafbfc}
+  .job[aria-selected="true"]{background:var(--a-sel);border-left-color:var(--a-primary)}
+  .job .jn{font-size:14.5px;font-weight:700;display:flex;align-items:center;gap:8px}
+  .job .jm{font-size:12px;color:var(--a-muted);margin-top:2px}
+  .job .jr{font-size:12px;color:var(--a-muted)}
+  .pill{font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:20px;
+    letter-spacing:.02em}
+  .pill.warn{background:#f6ecdb;color:var(--a-warn)}
+  .empty{background:var(--a-card);border:1px dashed var(--a-border);border-radius:6px;
+    margin-top:12px;padding:38px 20px;text-align:center}
+  .empty .heading{margin-bottom:6px}
+  .empty p{color:var(--a-muted);font-size:12.5px;margin:0 0 16px;white-space:pre-line}
+
+  /* wizard */
+  .steps{display:flex;gap:2px;margin-bottom:4px;flex-wrap:wrap}
+  .step{font:inherit;font-size:12px;cursor:pointer;border:0;background:transparent;
+    color:var(--a-muted);padding:7px 11px;border-radius:6px 6px 0 0;position:relative}
+  .step .k{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;
+    background:#dfe3e8;color:#5c626b;font-size:11px;font-weight:700;margin-right:6px}
+  .step[aria-current="true"]{color:var(--a-primary);font-weight:700;background:#fff;
+    box-shadow:inset 0 -2px 0 var(--a-primary)}
+  .step[aria-current="true"] .k{background:var(--a-primary);color:#fff}
+  .step.done .k{background:var(--a-ok);color:#fff}
+  .wtitle{font-size:15px;font-weight:700;margin:10px 0 2px}
+  .wsub{font-size:12.5px;color:var(--a-muted);margin:0 0 12px;max-width:70ch}
+
+  /* mapping table */
+  .tblwrap{overflow-x:auto;border:1px solid var(--a-border);border-radius:6px;background:#fff}
+  table.map{border-collapse:collapse;width:100%;font-size:12px;min-width:640px}
+  table.map th{background:#eef1f4;color:#4a505a;font-weight:600;text-align:left;
+    padding:7px 9px;border-bottom:1px solid var(--a-border);position:sticky;top:0}
+  table.map td{padding:6px 9px;border-bottom:1px solid #eef0f3;vertical-align:middle}
+  table.map tr:last-child td{border-bottom:0}
+  tr.r-unconf td{background:var(--a-unconf)}
+  tr.r-unmatch td{background:var(--a-unmatch)}
+  tr.r-conf td{background:#fff}
+  .cbx{width:15px;height:15px;accent-color:var(--a-primary);cursor:pointer}
+  .fname{font-weight:600}
+  .tbadge{font-size:10px;color:#6b7079;font-weight:600}
+  .sel{font:inherit;font-size:11.5px;border:1px solid #cbd0d6;border-radius:4px;
+    padding:3px 5px;background:#fff;max-width:100%}
+  .pv{font-family:var(--mono);font-size:11.5px}
+  .pv.emptyval{color:var(--a-empty);font-weight:600}
+  .stepper{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:12px}
+  .gate{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+  .gatecount{font-size:12.5px;font-weight:700}
+  .gatecount.ok{color:var(--a-ok)} .gatecount.pend{color:var(--a-muted)}
+
+  /* run view */
+  .radio{display:flex;gap:8px;align-items:flex-start;padding:5px 0;font-size:12.5px}
+  .radio input{margin-top:3px;accent-color:var(--a-primary)}
+  .note{font-size:12px;margin-top:8px;padding:8px 10px;border-radius:6px;line-height:1.45}
+  .note.warnbox{background:#f8efe0;border:1px solid #e6c98f;color:var(--a-warn)}
+  .note.dangerbox{background:#fbe6e3;border:1px solid #e6a49c;color:var(--a-danger)}
+  .note.okbox{background:#e5f2ea;border:1px solid #a6d3b7;color:var(--a-ok)}
+  .preflight{margin-top:12px;font-size:12.5px;padding:9px 11px;border-radius:6px}
+  .statebadges{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .fb{font-size:11px;padding:3px 9px;border-radius:20px;font-weight:600;
+    display:inline-flex;gap:6px;align-items:center;border:1px solid transparent}
+  .fb.fill{background:#e5f2ea;color:var(--a-ok);border-color:#bfe0cb}
+  .fb.blank{background:#f6ecdb;color:var(--a-warn);border-color:#e6c98f}
+  .fb.missing{background:#fbe6e3;color:var(--a-danger);border-color:#e6a49c;cursor:pointer}
+  .fb.missing.ack{background:#ecebf4;color:#4a3f8a;border-color:#c8c3e6;
+    text-decoration:line-through}
+  .reclist{border:1px solid var(--a-border);border-radius:6px;background:#fff;
+    max-height:150px;overflow:auto;margin-top:8px}
+  .rec{display:flex;gap:9px;align-items:center;padding:5px 11px;font-size:12px;
+    border-bottom:1px solid #eef0f3}
+  .rec:last-child{border-bottom:0}
+  .rec input{accent-color:var(--a-primary)}
+  .rec .rf{font-family:var(--mono);font-size:11.5px}
+  .bar{height:8px;background:#e2e4e8;border-radius:20px;overflow:hidden;margin-top:12px}
+  .bar>i{display:block;height:100%;width:0;background:var(--a-primary);
+    transition:width .25s ease}
+  .logbox{margin-top:10px;background:#1e242b;color:#c6d0da;border-radius:6px;
+    padding:9px 11px;font-family:var(--mono);font-size:11px;height:96px;overflow:auto;
+    white-space:pre-wrap}
+  @media(prefers-reduced-motion:reduce){.bar>i{transition:none}}
+
+  /* letter pins inline */
+  .pin{display:inline-grid;place-items:center;width:17px;height:17px;border-radius:50%;
+    background:var(--a-primary);color:#fff;font-size:10.5px;font-weight:700;
+    margin-left:6px;cursor:help;vertical-align:middle;flex:0 0 auto}
+  .pin.E{background:#7a5cc0}
+
+  /* annotations column */
+  aside.ann{position:sticky;top:14px;align-self:start}
+  aside.ann h3{font-size:11px;letter-spacing:.15em;text-transform:uppercase;
+    color:var(--ink-soft);margin:0 0 10px;font-weight:700}
+  .dcard{background:var(--panel);border:1px solid var(--hair);border-radius:11px;
+    padding:12px 13px;margin-bottom:9px}
+  .dcard .dh{display:flex;gap:9px;align-items:center;margin-bottom:5px}
+  .dchip{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:7px;
+    background:var(--accent);color:#fff;font-weight:800;font-size:12px;flex:0 0 auto}
+  .dchip.E{background:#7a5cc0}
+  .dcard .dt{font-size:13px;font-weight:700}
+  .dcard p{margin:0;font-size:12px;color:var(--ink-soft);line-height:1.5}
+  .dcard .src{font-size:11px;color:var(--accent);margin-top:6px;font-weight:600}
+  .scr{display:none} .scr.on{display:block}
+
+  footer{margin-top:34px;padding-top:16px;border-top:1px solid var(--hair);
+    font-size:12px;color:var(--ink-soft)}
+  footer code{font-family:var(--mono)}
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <div>
+      <div class="tag">앱 B · 생성기 · 인터랙티브 프로토타입</div>
+      <h1>HWPX Filler — UI 프로토타입</h1>
+      <p>UI 설계 핸드오프(§0–§7)와 표면 결정 기록(ADR B·D·F·C·E·A·G)에서 직접 도출한
+         세 화면. 색·위젯은 <code>gui/style.py</code>의 실제 팔레트를 그대로 따르고,
+         상호작용은 스캐폴드가 고정한 계약(명시성 게이트·상시 인라인 표면화 등)을 지킵니다.</p>
+    </div>
+    <div class="spacer"></div>
+    <div class="toggles">
+      <button class="tbtn" id="annToggle" aria-pressed="true">🅐 주석</button>
+      <button class="tbtn" id="themeToggle" aria-pressed="false">◐ 테마</button>
+    </div>
+  </header>
+
+  <div class="strip">
+    <b>왜 <code>/design-sync</code>가 아니라 프로토타입인가.</b>
+    design-sync는 <em>컴파일된 JS/React 디자인 시스템</em>(<code>dist/</code>+Storybook/npm)을
+    claude.ai/design에 올려 디자인 에이전트가 실제 컴포넌트로 빌드하게 하는 스킬입니다.
+    이 저장소는 <b>Python·PySide6 데스크톱 앱</b>이라 올릴 컴포넌트 라이브러리가 없습니다 —
+    그래서 <code>confirm-or-alarm</code> 원칙대로 억지 실행 대신, 설계 문서를 읽어 화면을
+    <b>시각 디자인</b>으로 옮겼습니다.
+  </div>
+
+  <div class="shell">
+    <nav class="rail" aria-label="화면 전환">
+      <div class="rl">화면 · 3 + 오케스트레이터</div>
+      <button class="navbtn" data-scr="home" aria-current="true">
+        <span class="n"><span class="num">1</span>홈 — 작업 목록</span>
+        <span class="d">오케스트레이터 · 라우터</span></button>
+      <button class="navbtn" data-scr="editor">
+        <span class="n"><span class="num">2</span>작업 에디터</span>
+        <span class="d">4스텝 위저드 · 저장으로 끝</span></button>
+      <button class="navbtn" data-scr="run">
+        <span class="n"><span class="num">3</span>집행</span>
+        <span class="d">데이터 겨눔 → 생성</span></button>
+    </nav>
+
+    <div>
+      <!-- ============ HOME ============ -->
+      <section class="scr on" id="scr-home">
+        <div class="stage">
+          <div class="canvas">
+            <div class="win">
+              <div class="titlebar"><span class="t">HWPX Filler — 작업</span>
+                <span class="caps"><span>—</span><span>▢</span><span class="x">✕</span></span></div>
+              <div class="body">
+                <div class="row" style="justify-content:space-between">
+                  <div class="row"><span class="heading">작업 목록</span>
+                    <span class="muted" id="jcount">3건</span></div>
+                  <button class="btn primary">＋ 새 작업 만들기</button>
+                </div>
+
+                <div id="jobsView">
+                  <div class="jobs" role="listbox" aria-label="저장된 작업">
+                    <div class="job" role="option" tabindex="0" aria-selected="false" data-job="공고서 자동생성">
+                      <div class="jn">공고서 자동생성</div>
+                      <div class="jm">템플릿 공고서_양식.hwpx · 필드 14개 · 파일명 <span class="mono">공고서-{{ID}}</span></div>
+                      <div class="jr">최근 집행 2026-07-09 15:42</div>
+                    </div>
+                    <div class="job" role="option" tabindex="0" aria-selected="false" data-job="낙찰통지서">
+                      <div class="jn">낙찰통지서</div>
+                      <div class="jm">템플릿 낙찰통지_v2.hwpx · 필드 8개 · 파일명 <span class="mono">낙찰-{{ID}}</span></div>
+                      <div class="jr">아직 집행 안 함</div>
+                    </div>
+                    <div class="job" role="option" tabindex="0" aria-selected="false" data-job="계약서 초안">
+                      <div class="jn">계약서 초안 <span class="pill warn">템플릿 없음</span></div>
+                      <div class="jm">템플릿 계약서.hwpx · 필드 21개 · 파일명 <span class="mono">계약-{{업체명}}</span></div>
+                      <div class="jr">최근 집행 2026-06-30 11:08</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div id="emptyView" style="display:none">
+                  <div class="empty">
+                    <div class="heading">저장된 작업이 없습니다</div>
+                    <p>템플릿과 매핑을 묶어 첫 작업을 만드세요.
+데이터·행은 집행할 때 고릅니다.</p>
+                    <button class="btn primary">＋ 새 작업 만들기</button>
+                  </div>
+                </div>
+
+                <div class="row" style="justify-content:flex-end;margin-top:14px">
+                  <button class="btn primary" id="hRun" disabled>집행</button>
+                  <button class="btn" id="hEdit" disabled>편집</button>
+                  <button class="btn" id="hDel" disabled>삭제</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <aside class="ann">
+            <h3>이 화면을 지배하는 결정</h3>
+            <div class="dcard"><div class="dh"><span class="dchip">A</span><span class="dt">Home 진입 = Job-앵커</span></div>
+              <p>홈은 하나의 태스크가 아니라 저장된 <b>작업 목록</b>. 사용자가 같은 서식을 많이
+                 재사용하므로(재인&gt;회상) 레지스트리가 기본 진입점입니다. 빈 상태는 단일 CTA로 온보딩.</p>
+              <div class="src">HANDOFF §2 · ADR A</div></div>
+            <div class="dcard"><div class="dh"><span class="dchip">B</span><span class="dt">필드 시각 구별</span></div>
+              <p>카드가 이름만이 아니라 <b>템플릿·필드수·최근 집행</b> 메타를 노출.
+                 템플릿 부재는 집행 전에 <span class="warn">경고 배지</span>로 선고지(비차단).</p>
+              <div class="src">HANDOFF §2 · ADR B</div></div>
+            <div class="dcard"><div class="dh"><span class="dchip">A</span><span class="dt">라우팅만, 수명은 배선이 소유</span></div>
+              <p>선택 시에만 집행·편집·삭제 활성. 더블클릭 = 집행. 시그널 계약
+                 (<span class="mono">run/edit/delete_job_requested</span>)은 불변.</p>
+              <div class="src">home.py 시그널 계약</div></div>
+            <p style="font-size:12px;color:var(--ink-soft)">
+              <a href="#" id="toggleEmpty">↺ 빈 상태 보기</a> — 작업 0건 온보딩 화면 미리보기</p>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ============ EDITOR ============ -->
+      <section class="scr" id="scr-editor">
+        <div class="stage">
+          <div class="canvas">
+            <div class="win" style="max-width:820px">
+              <div class="titlebar"><span class="t">HWPX Filler — 작업 편집기</span>
+                <span class="caps"><span>—</span><span>▢</span><span class="x">✕</span></span></div>
+              <div class="body">
+                <div class="steps" role="tablist">
+                  <button class="step" data-step="0" aria-current="true"><span class="k">1</span>템플릿 선택</button>
+                  <button class="step" data-step="1"><span class="k">2</span>데이터 선택</button>
+                  <button class="step" data-step="2"><span class="k">3</span>필드 매핑 확정</button>
+                  <button class="step" data-step="3"><span class="k">4</span>작업 저장</button>
+                </div>
+
+                <!-- step 1 -->
+                <div class="wstep" data-w="0">
+                  <div class="wtitle">1단계 — 템플릿 선택</div>
+                  <p class="wsub">누름틀이 들어 있는 HWPX 템플릿을 선택하세요.</p>
+                  <div class="row"><span class="lbl">템플릿(.hwpx)</span>
+                    <input class="field ro" value="C:\양식\공고서_양식.hwpx" readonly>
+                    <button class="btn">찾아보기…</button></div>
+                  <p style="font-size:12.5px;margin:12px 0 0">필드 14개:
+                    공고번호(text), 공고명(text), 개찰일자(datetime), 추정가격(amount),
+                    수요기관(text), 계약방법(text) <span class="muted">외 8개</span></p>
+                  <p class="warn" style="font-size:12px;margin:10px 0 0">경고(비차단): 본문에
+                    누름틀이 아닌 <span class="mono">{{담당자}}</span> 토큰이 남아 있습니다 —
+                    값이 주입되지 않습니다. 저작 보조로 누름틀로 변환하세요.</p>
+                </div>
+
+                <!-- step 2 -->
+                <div class="wstep" data-w="1" style="display:none">
+                  <div class="wtitle">2단계 — 데이터 선택</div>
+                  <p class="wsub">레코드(행)마다 문서 1건을 생성할 데이터 파일을 선택하세요.
+                    작업에 데이터는 저장되지 않습니다 — 매핑 검토용 샘플입니다.</p>
+                  <div class="row"><span class="lbl">데이터(.xlsx/.csv)</span>
+                    <input class="field ro" value="C:\데이터\입찰공고_2026Q3.xlsx" readonly>
+                    <button class="btn">찾아보기…</button></div>
+                  <p class="ok" style="font-size:12.5px;margin:12px 0 0">컬럼 12개, 레코드 25건 로드.</p>
+                </div>
+
+                <!-- step 3 -->
+                <div class="wstep" data-w="2" style="display:none">
+                  <div class="wtitle">3단계 — 필드 매핑 확정</div>
+                  <p class="wsub">자동 제안은 초안일 뿐입니다. 모든 행을 검토해 확정해야 다음으로
+                    진행합니다. 채우지 않을 필드는 소스를 (비움)으로 두고 확정하세요.</p>
+                  <div class="tblwrap">
+                    <table class="map">
+                      <thead><tr><th>확정</th><th>템플릿 필드</th><th>소스</th><th>변환</th>
+                        <th>표시형</th><th>구분자·상수</th><th>미리보기</th></tr></thead>
+                      <tbody id="mapBody"></tbody>
+                    </table>
+                  </div>
+                  <div class="stepper">
+                    <button class="btn" id="recPrev">◀ 이전</button>
+                    <span id="recIdx" style="font-weight:600">레코드 1/25</span>
+                    <button class="btn" id="recNext">다음 ▶</button>
+                    <span class="muted" style="margin-left:6px" id="pvSummary">채움 12 · 빈값 2 — 비고, 특이사항</span>
+                  </div>
+                  <div class="gate">
+                    <span class="gatecount pend" id="gateCount">확정 4/6</span>
+                    <span style="flex:1"></span>
+                    <button class="btn" id="confAll">모두 확정</button>
+                    <button class="btn" id="unconfAll">모두 해제</button>
+                    <button class="btn">프로파일 불러오기…</button>
+                    <button class="btn">프로파일 저장…</button>
+                  </div>
+                </div>
+
+                <!-- step 4 -->
+                <div class="wstep" data-w="3" style="display:none">
+                  <div class="wtitle">4단계 — 작업 저장</div>
+                  <p class="wsub">이 작업(템플릿·매핑·파일명)을 저장합니다. 데이터·행은 저장하지
+                    않습니다 — 집행할 때 고릅니다.</p>
+                  <div class="row" style="margin-bottom:9px"><span class="lbl" style="width:76px">작업 이름</span>
+                    <input class="field" value="공고서 자동생성"></div>
+                  <div class="row"><span class="lbl" style="width:76px">파일명 패턴</span>
+                    <input class="field mono" value="공고서-{{ID}}"></div>
+                  <p class="muted" style="font-size:11.5px;margin:8px 0 0 84px">토큰:
+                    {{필드}}, {{date:YYYYMMDD}}, {{seq:001}}</p>
+                </div>
+
+                <div class="row" style="justify-content:space-between;margin-top:18px;
+                     border-top:1px solid var(--a-border);padding-top:13px">
+                  <button class="btn" id="wBack" disabled>◀ 뒤로</button>
+                  <div class="row">
+                    <span class="muted" id="gateHint" style="font-size:12px;display:none">
+                      전 행 확정 전에는 진행할 수 없습니다</span>
+                    <button class="btn primary" id="wNext">다음 ▶</button>
+                    <button class="btn primary" id="wSave" style="display:none">작업 저장</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <aside class="ann">
+            <h3>이 화면을 지배하는 결정</h3>
+            <div class="dcard"><div class="dh"><span class="dchip">D</span><span class="dt">매핑 = 제안 후 미매칭만 확정</span></div>
+              <p>이름 기반 자동매칭은 <b>제안(초안)</b>일 뿐. 고신뢰는 「모두 확정」으로,
+                 모호·미매칭 행만 시끄럽게 hard-stop. 조용히 바인딩하는 경로는 없습니다.</p>
+              <div class="src">wizard.py 게이트 · ADR D</div></div>
+            <div class="dcard"><div class="dh"><span class="dchip">F</span><span class="dt">소스 열 select-and-insert</span></div>
+              <p>소스는 실제 데이터 열 목록에서 <b>선택</b>(드롭다운). 자유 타이핑 제거 —
+                 오타·불일치로 인한 조용한 미연결을 UI 층에서 원천 봉쇄.</p>
+              <div class="src">mapping_table.py · ADR F</div></div>
+            <div class="dcard"><div class="dh"><span class="dchip">B</span><span class="dt">3상태 행 색</span></div>
+              <p><span style="background:var(--a-unconf);padding:0 5px;border-radius:3px">미확정</span>
+                 <span style="background:var(--a-unmatch);padding:0 5px;border-radius:3px">미매칭</span>
+                 확정(기본). 미리보기의 <span class="danger">이 레코드에서 빈 값</span>은
+                 의도적 비움과 구별해 빨강으로 고지.</p>
+              <div class="src">mapping_table.py · ADR B</div></div>
+            <div class="dcard"><div class="dh"><span class="dchip">C</span><span class="dt">인앱 미리보기 없음(HWPX)</span></div>
+              <p>매핑 셀 미리보기는 <b>값 치환 확인</b>까지. 최종 렌더는 한글이 권위 —
+                 인앱 HWPX 렌더는 WYSIWYG 괴리 위험이라 짓지 않습니다.</p>
+              <div class="src">ADR C(HWPX 트랙)</div></div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ============ RUN ============ -->
+      <section class="scr" id="scr-run">
+        <div class="stage">
+          <div class="canvas">
+            <div class="win" style="max-width:800px">
+              <div class="titlebar"><span class="t">HWPX Filler — 집행: 공고서 자동생성</span>
+                <span class="caps"><span>—</span><span>▢</span><span class="x">✕</span></span></div>
+              <div class="body">
+                <div class="heading">작업: 공고서 자동생성 · 템플릿: 공고서_양식.hwpx ·
+                  파일명: <span class="mono" style="font-weight:400">공고서-{{ID}}</span></div>
+
+                <div class="grp"><span class="cap">대상 문서</span>
+                  <label class="radio"><input type="radio" name="tgt" id="rNew" checked>
+                    <span>새 문서 생성 — 작업 템플릿(공고서_양식.hwpx)</span></label>
+                  <label class="radio"><input type="radio" name="tgt" id="rCont">
+                    <span>이전 출력 이어채우기 — 이전 단계 출력(.hwpx)에 이 단계 값을 채웁니다</span></label>
+                  <div class="row" id="prevRow" style="margin:6px 0 0 22px;opacity:.45">
+                    <input class="field ro" id="prevPath" value="" placeholder="이전 출력(.hwpx)" readonly disabled>
+                    <button class="btn" id="prevPick" disabled>이전 출력 선택…</button></div>
+                  <div class="note warnbox" id="overlapNote" style="display:none">
+                    ⚠ 이 작업의 필드 14개 중 <b>5개</b>가 문서에 있습니다. 이미 값이 있는
+                    겹침 필드는 <b>덮어씁니다</b> — 단계별 필드는 서로소로 설계하세요.</div>
+                </div>
+
+                <div class="row" style="margin-top:14px"><span class="lbl">데이터(.xlsx/.csv)</span>
+                  <input class="field ro" value="C:\데이터\입찰공고_2026Q3.xlsx" readonly>
+                  <button class="btn">데이터 선택…</button></div>
+
+                <div class="preflight okbox" style="background:#e5f2ea;border:1px solid #a6d3b7">
+                  <span class="ok">사전검증 통과 — 치명 누락 없음. 아래 빈칸 표면화를 확인하세요.</span></div>
+
+                <div class="grp" style="margin-top:16px"><span class="cap">빈칸 표면화 · 상시 인라인</span>
+                  <p style="font-size:12px;margin:2px 0 0;color:#4a505a">필드 상태를 상시 배지로
+                    노출합니다. <b class="danger">미입력</b> 필드는 반사적 dismiss를 막기 위해
+                    <b>직접 클릭해 확인</b>해야 생성이 열립니다(차단 모달 대체).</p>
+                  <div class="statebadges" id="fieldBadges">
+                    <span class="fb fill">✓ 공고명</span>
+                    <span class="fb fill">✓ 개찰일자</span>
+                    <span class="fb fill">✓ 추정가격</span>
+                    <span class="fb fill">✓ 수요기관</span>
+                    <span class="fb blank">◦ 비고 (매핑 비움·의도적)</span>
+                    <span class="fb missing" data-f="특이사항" tabindex="0" role="button">● 특이사항 — 클릭해 확인</span>
+                    <span class="fb missing" data-f="담당자" tabindex="0" role="button">● 담당자 — 클릭해 확인</span>
+                  </div>
+                </div>
+
+                <div style="margin-top:14px">
+                  <div class="row" style="justify-content:space-between">
+                    <span class="lbl" style="font-weight:600">생성 대상 레코드</span>
+                    <div class="row"><span class="muted" id="selCount" style="font-size:12px">선택 4/4</span>
+                      <button class="btn" id="selAll">전체 선택</button>
+                      <button class="btn" id="selNone">전체 해제</button></div>
+                  </div>
+                  <div class="reclist" id="recList">
+                    <label class="rec"><input type="checkbox" checked><span class="rf">1. 공고서-A2026-001</span></label>
+                    <label class="rec"><input type="checkbox" checked><span class="rf">2. 공고서-A2026-002</span></label>
+                    <label class="rec"><input type="checkbox" checked><span class="rf">3. 공고서-A2026-003</span></label>
+                    <label class="rec"><input type="checkbox" checked><span class="rf">4. 공고서-A2026-004</span></label>
+                  </div>
+                </div>
+
+                <div class="row" style="margin-top:12px"><span class="lbl">저장 폴더</span>
+                  <input class="field ro" value="C:\양식\Results" readonly>
+                  <button class="btn">찾아보기…</button></div>
+
+                <div class="row" style="margin-top:14px">
+                  <button class="btn primary" id="genBtn" disabled>생성</button>
+                  <span class="muted" id="genGate" style="font-size:12px">
+                    미입력 2필드를 확인해야 생성이 열립니다</span></div>
+                <div class="bar"><i id="genBar"></i></div>
+                <div id="genResult" style="font-size:12.5px;margin-top:8px;font-weight:600"></div>
+                <div class="logbox" id="genLog">[대기] 데이터·대상 문서를 확인한 뒤 생성하세요.</div>
+              </div>
+            </div>
+          </div>
+
+          <aside class="ann">
+            <h3>이 화면을 지배하는 결정</h3>
+            <div class="dcard"><div class="dh"><span class="dchip E">E</span><span class="dt">누락 표면화 — 상시 인라인 <span style="font-weight:400;font-size:10px;color:var(--a-warn)">(변경)</span></span></div>
+              <p>반복 차단 모달은 두 번째 노출부터 습관화로 무력화(CHI 2017). 그래서
+                 범용 확인 모달을 <b>상시 인라인 패널</b>로 강등하고, 최종 게이트는
+                 <b>미입력 필드를 직접 건드리게</b> 해 반사적 클릭을 봉쇄합니다.</p>
+              <div class="src">ADR E · SOUPS 2014 · NN/g</div></div>
+            <div class="dcard"><div class="dh"><span class="dchip">G</span><span class="dt">신규/누적 + loud 겹침 신호</span></div>
+              <p>상호배타 2모드 radio 유지. 누적의 필드명 겹침은 계산 가능하므로
+                 <span class="warn">덮어쓰기 경고</span>로 승격 — 조용한 덮어쓰기 방지.
+                 누적 v1은 단건.</p>
+              <div class="src">run_view.py · ADR G</div></div>
+            <div class="dcard"><div class="dh"><span class="dchip">B</span><span class="dt">채움/빈칸/미입력 3배지</span></div>
+              <p><span class="fb fill" style="font-size:10px">✓ 채움</span>
+                 <span class="fb blank" style="font-size:10px">◦ 빈칸(의도)</span>
+                 <span class="fb missing" style="font-size:10px;cursor:default">● 미입력</span>.
+                 출력물엔 <span class="mono">〘미입력·{field}〙</span> 표식이 남습니다.</p>
+              <div class="src">core/job.py MISSING_MARKER · ADR B</div></div>
+            <div class="dcard"><div class="dh"><span class="dchip">A</span><span class="dt">집행 = 가이드 흐름</span></div>
+              <p>개별 실행은 저빈도·고위험 → 데이터 겨눔 → 행 선택 → 사전검증 → 생성의
+                 가이드형. <b>매핑 재확정은 없음</b>(에디터에서 1회).</p>
+              <div class="src">HANDOFF §4 · ADR A</div></div>
+          </aside>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <footer>
+    출처: <code>docs/UI_DESIGN_HANDOFF.md</code> · <code>docs/UI_DESIGN_DECISIONS.md</code> ·
+    팔레트 <code>src/hwpxfiller/gui/style.py</code>. 관통 원칙 —
+    <b>function → UX → UI</b>, 그리고 <b>묻고 확정하게 하라, 아니면 시끄럽게 알려라</b>.
+    이 프로토타입은 HWPX 트랙 앱 B만 다룹니다(diff 리뷰어=앱 A, txt 트랙은 별도).
+  </footer>
+</div>
+
+<script>
+(function(){
+  var root=document.documentElement, body=document.body;
+
+  /* theme toggle */
+  var tt=document.getElementById('themeToggle');
+  tt.addEventListener('click',function(){
+    var dark=root.getAttribute('data-theme')==='dark';
+    root.setAttribute('data-theme',dark?'light':'dark');
+    tt.setAttribute('aria-pressed',String(!dark));
+  });
+  /* annotations toggle */
+  var at=document.getElementById('annToggle');
+  at.addEventListener('click',function(){
+    var on=at.getAttribute('aria-pressed')==='true';
+    at.setAttribute('aria-pressed',String(!on));
+    body.classList.toggle('noann',on);
+  });
+
+  /* screen switch */
+  var navs=document.querySelectorAll('.navbtn'), scrs=document.querySelectorAll('.scr');
+  navs.forEach(function(b){b.addEventListener('click',function(){
+    navs.forEach(function(x){x.setAttribute('aria-current','false');});
+    b.setAttribute('aria-current','true');
+    var id=b.dataset.scr;
+    scrs.forEach(function(s){s.classList.toggle('on',s.id==='scr-'+id);});
+  });});
+
+  /* ---------- HOME ---------- */
+  var jobs=document.querySelectorAll('.job');
+  var hRun=document.getElementById('hRun'),hEdit=document.getElementById('hEdit'),hDel=document.getElementById('hDel');
+  function selectJob(j){
+    jobs.forEach(function(x){x.setAttribute('aria-selected','false');});
+    j.setAttribute('aria-selected','true');
+    [hRun,hEdit,hDel].forEach(function(b){b.disabled=false;});
+  }
+  jobs.forEach(function(j){
+    j.addEventListener('click',function(){selectJob(j);});
+    j.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();selectJob(j);}});
+  });
+  var te=document.getElementById('toggleEmpty'),ev=document.getElementById('emptyView'),
+      jv=document.getElementById('jobsView'),jc=document.getElementById('jcount');
+  te.addEventListener('click',function(e){
+    e.preventDefault();
+    var empty=ev.style.display!=='none';
+    ev.style.display=empty?'none':'block';
+    jv.style.display=empty?'block':'none';
+    jc.textContent=empty?'3건':'';
+    te.textContent=empty?'↺ 빈 상태 보기':'↺ 목록으로 돌아가기';
+  });
+
+  /* ---------- EDITOR ---------- */
+  var MAP=[
+    {f:'공고번호',t:'text',s:'bidNo — 공고번호',tr:'그대로',fmt:'—',arg:'',pv:'A2026-001',conf:true,match:true},
+    {f:'공고명',t:'text',s:'bidNm — 공고명',tr:'그대로',fmt:'—',arg:'',pv:'전산장비 구매',conf:true,match:true},
+    {f:'개찰일자',t:'datetime',s:'opengDate + opengTm',tr:'일시',fmt:'YYYY-MM-DD',arg:'',pv:'2026-08-01',conf:true,match:true},
+    {f:'추정가격',t:'amount',s:'presmptPrce — 추정가격',tr:'금액',fmt:'{:,}원',arg:'',pv:'85,000,000원',conf:true,match:true},
+    {f:'수요기관',t:'text',s:'(비움)',tr:'그대로',fmt:'—',arg:'',pv:'',conf:false,match:false},
+    {f:'특이사항',t:'text',s:'remark — 비고',tr:'그대로',fmt:'—',arg:'',pv:'(이 레코드에서 빈 값)',conf:false,match:true,empty:true}
+  ];
+  var SRCS=['(비움)','bidNo — 공고번호','bidNm — 공고명','opengDate — 개찰일자','opengTm — 개찰시각',
+            'presmptPrce — 추정가격','dminsttNm — 수요기관','cntrctMthd — 계약방법','remark — 비고','여러 소스 선택…'];
+  var mapBody=document.getElementById('mapBody');
+  function rowClass(r){return r.conf?'r-conf':(r.match?'r-unconf':'r-unmatch');}
+  function renderMap(){
+    mapBody.innerHTML='';
+    MAP.forEach(function(r,i){
+      var tr=document.createElement('tr');tr.className=rowClass(r);
+      var opts=SRCS.map(function(o){return '<option'+(o===r.s?' selected':'')+'>'+o+'</option>';}).join('');
+      tr.innerHTML=
+        '<td style="text-align:center"><input class="cbx" type="checkbox" data-i="'+i+'"'+(r.conf?' checked':'')+'></td>'+
+        '<td><span class="fname">'+r.f+'</span> <span class="tbadge">['+r.t+']</span></td>'+
+        '<td><select class="sel">'+opts+'</select></td>'+
+        '<td><select class="sel"><option>그대로</option><option>일시</option><option>금액</option><option>상수</option></select></td>'+
+        '<td><select class="sel"><option>'+r.fmt+'</option></select></td>'+
+        '<td><input class="sel" style="width:88px" value="'+r.arg+'" placeholder="'+(r.tr==='금액'?'':'구분자')+'"></td>'+
+        '<td><span class="pv'+(r.empty?' emptyval':'')+'">'+(r.pv||'—')+'</span></td>';
+      mapBody.appendChild(tr);
+    });
+    mapBody.querySelectorAll('.cbx').forEach(function(c){
+      c.addEventListener('change',function(){MAP[+c.dataset.i].conf=c.checked;renderMap();syncGate();});
+    });
+    mapBody.querySelectorAll('.sel').forEach(function(s){
+      s.addEventListener('change',function(){/* editing unconfirms in real app */});
+    });
+  }
+  var gateCount=document.getElementById('gateCount'),wNext=document.getElementById('wNext'),
+      gateHint=document.getElementById('gateHint');
+  function confirmedN(){return MAP.filter(function(r){return r.conf;}).length;}
+  function syncGate(){
+    var n=confirmedN(),done=n===MAP.length;
+    gateCount.textContent='확정 '+n+'/'+MAP.length;
+    gateCount.className='gatecount '+(done?'ok':'pend');
+    if(curStep===2){ wNext.disabled=!done; gateHint.style.display=done?'none':'inline'; }
+  }
+  document.getElementById('confAll').addEventListener('click',function(){MAP.forEach(function(r){r.conf=true;});renderMap();syncGate();});
+  document.getElementById('unconfAll').addEventListener('click',function(){MAP.forEach(function(r){r.conf=false;});renderMap();syncGate();});
+
+  var recI=1;
+  function syncRec(){
+    document.getElementById('recIdx').textContent='레코드 '+recI+'/25';
+    document.getElementById('recPrev').disabled=recI<=1;
+    document.getElementById('recNext').disabled=recI>=25;
+    document.getElementById('pvSummary').textContent = recI===1
+      ? '채움 12 · 빈값 2 — 특이사항, 담당자'
+      : '채움 13 · 빈값 1 — 담당자';
+  }
+  document.getElementById('recPrev').addEventListener('click',function(){if(recI>1){recI--;syncRec();}});
+  document.getElementById('recNext').addEventListener('click',function(){if(recI<25){recI++;syncRec();}});
+
+  var curStep=0, steps=document.querySelectorAll('.step'), wsteps=document.querySelectorAll('.wstep'),
+      wBack=document.getElementById('wBack'), wSave=document.getElementById('wSave');
+  function gotoStep(n){
+    curStep=n;
+    steps.forEach(function(s,i){
+      s.setAttribute('aria-current',String(i===n));
+      s.classList.toggle('done',i<n);
+    });
+    wsteps.forEach(function(w,i){w.style.display=(i===n)?'block':'none';});
+    wBack.disabled=n===0;
+    var last=n===3;
+    wNext.style.display=last?'none':'inline-block';
+    wSave.style.display=last?'inline-block':'none';
+    if(n===2){renderMap();syncRec();syncGate();}
+    else{wNext.disabled=false;gateHint.style.display='none';}
+  }
+  steps.forEach(function(s){s.addEventListener('click',function(){
+    var n=+s.dataset.step;
+    if(n>2 && confirmedN()!==MAP.length){gotoStep(2);return;} /* gate blocks skipping past mapping */
+    gotoStep(n);
+  });});
+  wNext.addEventListener('click',function(){if(!wNext.disabled)gotoStep(Math.min(3,curStep+1));});
+  wBack.addEventListener('click',function(){gotoStep(Math.max(0,curStep-1));});
+  wSave.addEventListener('click',function(){wSave.textContent='✓ 저장됨';wSave.disabled=true;});
+  gotoStep(0);
+
+  /* ---------- RUN ---------- */
+  var rCont=document.getElementById('rCont'),rNew=document.getElementById('rNew'),
+      prevRow=document.getElementById('prevRow'),prevPath=document.getElementById('prevPath'),
+      prevPick=document.getElementById('prevPick'),overlapNote=document.getElementById('overlapNote');
+  function syncTarget(){
+    var cont=rCont.checked;
+    prevRow.style.opacity=cont?'1':'.45';
+    prevPath.disabled=!cont;prevPick.disabled=!cont;
+    if(cont){prevPath.value='C:\\양식\\Results\\공고서-A2026-001.hwpx';overlapNote.style.display='block';}
+    else{prevPath.value='';overlapNote.style.display='none';}
+  }
+  rCont.addEventListener('change',syncTarget);rNew.addEventListener('change',syncTarget);
+
+  var genBtn=document.getElementById('genBtn'),genGate=document.getElementById('genGate');
+  function syncMissing(){
+    var left=document.querySelectorAll('.fb.missing:not(.ack)').length;
+    genBtn.disabled=left>0;
+    genGate.style.display=left>0?'inline':'none';
+    genGate.textContent='미입력 '+left+'필드를 확인해야 생성이 열립니다';
+  }
+  document.querySelectorAll('.fb.missing').forEach(function(b){
+    function ack(){b.classList.add('ack');b.textContent='✓ '+b.dataset.f+' — 표식 넣고 생성';syncMissing();}
+    b.addEventListener('click',ack);
+    b.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();ack();}});
+  });
+
+  var recList=document.getElementById('recList'),selCount=document.getElementById('selCount');
+  function syncSel(){
+    var boxes=recList.querySelectorAll('input'),n=recList.querySelectorAll('input:checked').length;
+    selCount.textContent='선택 '+n+'/'+boxes.length;
+  }
+  recList.addEventListener('change',syncSel);
+  document.getElementById('selAll').addEventListener('click',function(){recList.querySelectorAll('input').forEach(function(c){c.checked=true;});syncSel();});
+  document.getElementById('selNone').addEventListener('click',function(){recList.querySelectorAll('input').forEach(function(c){c.checked=false;});syncSel();});
+
+  var genBar=document.getElementById('genBar'),genLog=document.getElementById('genLog'),
+      genResult=document.getElementById('genResult');
+  function stamp(m){var d=new Date();return '['+d.toTimeString().slice(0,8)+'] '+m;}
+  genBtn.addEventListener('click',function(){
+    if(genBtn.disabled)return;
+    var total=recList.querySelectorAll('input:checked').length;
+    if(total===0){genLog.textContent=stamp('생성할 레코드를 최소 1건 선택하세요.');return;}
+    genBtn.disabled=true;genResult.textContent='';genBar.style.width='0';
+    var marked=document.querySelectorAll('.fb.missing.ack').length;
+    var mode=rCont.checked?'누적(이전 출력 이어채우기)':'신규';
+    genLog.textContent=stamp('생성 시작['+mode+']: '+total+'건 → C:\\양식\\Results');
+    var done=0;
+    var iv=setInterval(function(){
+      done++;
+      genBar.style.width=Math.round(done/total*100)+'%';
+      genLog.textContent+='\n'+stamp('  생성 '+done+'/'+total+' · 공고서-A2026-00'+done+'.hwpx');
+      genLog.scrollTop=genLog.scrollHeight;
+      if(done>=total){
+        clearInterval(iv);
+        genResult.textContent='완료 — 성공 '+total+'/'+total+' · 실패 0'+
+          (marked?' · 미입력 표식 '+marked+'필드(특이사항, 담당자)':'');
+        genResult.className='ok';genResult.style.color='var(--a-ok)';
+        genLog.textContent+='\n'+stamp('완료: '+total+'/'+total+' 성공, 0 실패');
+        genLog.scrollTop=genLog.scrollHeight;
+        genBtn.disabled=false;
+      }
+    },420);
+  });
+  syncMissing();syncSel();syncTarget();
+})();
+</script>
