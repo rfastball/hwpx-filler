@@ -85,6 +85,11 @@ QHeaderView::section {{
 QTableWidget {{ background: #ffffff; gridline-color: #eef0f3; }}
 QListWidget {{ background: #ffffff; border: 1px solid {BORDER}; border-radius: 6px; }}
 
+/* 대시보드 카드/KPI 타일 */
+QFrame[card="true"] {{ background: {CARD_BG}; border: 1px solid {BORDER}; border-radius: 9px; }}
+QLabel[kpi="value"] {{ font-size: 22px; font-weight: 800; }}
+QLabel[kpi="label"] {{ color: {MUTED}; font-size: 11px; }}
+
 QPushButton[primary="true"] {{
     background: {PRIMARY}; color: #ffffff; font-weight: 600;
     border: none; border-radius: 4px; padding: 6px 16px;

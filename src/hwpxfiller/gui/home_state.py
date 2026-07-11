@@ -35,6 +35,7 @@ class JobRow:
     field_count: int
     filename_pattern: str
     last_run_display: str
+    last_run_at: str = ""  # 원시 ISO(KPI '최근 집행' 계산용, ""=미집행)
 
     @classmethod
     def from_job(cls, job: Job) -> "JobRow":
@@ -49,6 +50,7 @@ class JobRow:
             last_run_display=(
                 f"최근 집행 {_fmt_iso(job.last_run_at)}" if job.last_run_at else "아직 집행 안 함"
             ),
+            last_run_at=job.last_run_at,
         )
 
     def meta_line(self) -> str:
@@ -58,11 +60,30 @@ class JobRow:
         )
 
 
+@dataclass
+class TxtRow:
+    """txt 기안 템플릿 1건(대시보드 txt 트랙 목록)."""
+
+    name: str
+    field_count: int
+
+
+@dataclass
+class DashboardKpi:
+    """대시보드 요약 — 전부 실재 데이터(레지스트리·집행 이력·템플릿 상태·txt 루트)."""
+
+    job_count: int
+    recent_run: str            # "MM-DD · 작업명" 또는 "—"
+    missing_template_count: int
+    txt_template_count: int
+
+
 class HomeViewModel:
     """작업 목록 상태 + 레지스트리 어댑터. 위젯은 구독해서 렌더한다."""
 
-    def __init__(self, registry: JobRegistry):
+    def __init__(self, registry: JobRegistry, text_registry=None):
         self.registry = registry
+        self.text_registry = text_registry  # TextTemplateRegistry | None (txt 트랙)
         self._rows: "list[JobRow]" = []
         self._selected: "str | None" = None
         self._subs: "list" = []
@@ -93,6 +114,30 @@ class HomeViewModel:
 
     def count_label(self) -> str:
         return f"{len(self._rows)}건" if self._rows else ""
+
+    # ---------------------------------------------------------- 대시보드
+    def kpi(self) -> DashboardKpi:
+        """대시보드 KPI — 실재 데이터만(가짜 지표 없음)."""
+        runs = [r for r in self._rows if r.last_run_at]
+        if runs:
+            latest = max(runs, key=lambda r: r.last_run_at)
+            recent = f"{_fmt_iso(latest.last_run_at)[5:10]} · {latest.name}"
+        else:
+            recent = "—"
+        return DashboardKpi(
+            job_count=len(self._rows),
+            recent_run=recent,
+            missing_template_count=sum(1 for r in self._rows if r.template_missing),
+            txt_template_count=self.text_registry.count() if self.text_registry else 0,
+        )
+
+    def txt_rows(self) -> "list[TxtRow]":
+        """txt 기안 템플릿 목록(정해진 루트). 레지스트리 없으면 빈 목록."""
+        if self.text_registry is None:
+            return []
+        return [
+            TxtRow(t.name, len(t.fields())) for t in self.text_registry.list_templates()
+        ]
 
     # ---------------------------------------------------------- 선택
     @property

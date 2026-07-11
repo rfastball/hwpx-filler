@@ -76,3 +76,38 @@ def test_refresh_preserves_live_selection(tmp_path):
 def test_jobrow_from_job_direct():
     row = JobRow.from_job(Job(name="x", template_path="", filename_pattern="p-{{ID}}"))
     assert row.name == "x" and row.template_name == "—" and row.field_count == 0
+
+
+def test_dashboard_kpi_from_real_data(tmp_path):
+    from hwpxfiller.core.text_registry import TextTemplateRegistry
+
+    td = tmp_path / "tt"
+    td.mkdir()
+    (td / "온나라.txt").write_text("{{a}}", encoding="utf-8")
+    vm = HomeViewModel(_reg(tmp_path), TextTemplateRegistry(td))
+    k = vm.kpi()
+    assert k.job_count == 2
+    assert k.missing_template_count == 1        # '/none/t.hwpx' 부재
+    assert k.txt_template_count == 1
+    assert k.recent_run.startswith("07-09") and "공고서" in k.recent_run  # 최신 집행
+
+
+def test_dashboard_kpi_no_runs_no_txt(tmp_path):
+    from hwpxfiller.core.job import Job, JobRegistry
+
+    reg = JobRegistry(tmp_path / "j")
+    reg.save(Job(name="미집행", template_path=""))
+    vm = HomeViewModel(reg)  # txt 레지스트리 없음
+    k = vm.kpi()
+    assert k.recent_run == "—" and k.txt_template_count == 0
+
+
+def test_txt_rows(tmp_path):
+    from hwpxfiller.core.text_registry import TextTemplateRegistry
+
+    td = tmp_path / "tt"
+    td.mkdir()
+    (td / "기안.txt").write_text("{{공고명}} {{담당자}}", encoding="utf-8")
+    vm = HomeViewModel(_reg(tmp_path), TextTemplateRegistry(td))
+    rows = vm.txt_rows()
+    assert len(rows) == 1 and rows[0].name == "기안" and rows[0].field_count == 2

@@ -27,6 +27,9 @@ class _AppController:
         self.home.edit_job_requested.connect(self._open_editor_edit)
         self.home.run_job_requested.connect(self._open_run)
         self.home.delete_job_requested.connect(self._delete_job)
+        # txt 트랙 라우팅(트랙 이원성) — 템플릿 열기 / 새 기안.
+        self.home.open_txt_requested.connect(self._open_txt)
+        self.home.new_txt_requested.connect(lambda: self._open_txt(None))
 
     # ------------------------------------------------------------------ 라우팅
     def _open_editor_new(self) -> None:
@@ -67,6 +70,15 @@ class _AppController:
         job.last_run_at = datetime.now().isoformat(timespec="seconds")
         self.registry.save(job)
         self.home.refresh()
+
+    def _open_txt(self, name: "str | None" = None) -> None:
+        from .txt_view import TxtDraftView
+
+        view = TxtDraftView(self.home.text_registry)
+        if name:
+            view.select_template(name)
+        self._track(view)
+        view.show()
 
     def _delete_job(self, name: str) -> None:
         from PySide6.QtWidgets import QMessageBox

@@ -118,6 +118,14 @@ class TxtDraftView(QMainWindow):
             self.vm.select_template(names[0])
         self._render()
 
+    def select_template(self, name: str) -> None:
+        """외부(대시보드 라우팅)에서 특정 템플릿을 선택해 연다."""
+        idx = self.cbo.findText(name)
+        if idx >= 0:
+            self.cbo.setCurrentIndex(idx)
+        self.vm.select_template(name)
+        self._render()
+
     # ------------------------------------------------------------------ 핸들러
     def _on_template(self, idx: int) -> None:
         name = self.cbo.itemText(idx)
