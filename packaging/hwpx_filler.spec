@@ -27,7 +27,7 @@ a = Analysis(
     pathex=[SRC],
     binaries=[],
     datas=[],
-    # 지연 임포트(app.py 의 함수 내 import, data 팩토리→excel/nara) 보증.
+    # 지연 임포트(app.py 의 함수 내 import, data 팩토리→excel/nara, txt 라우팅) 보증.
     hiddenimports=[
         "openpyxl",
         "hwpxfiller.data.excel",
@@ -35,6 +35,9 @@ a = Analysis(
         "hwpxfiller.gui.home",
         "hwpxfiller.gui.job_editor",
         "hwpxfiller.gui.run_view",
+        "hwpxfiller.gui.txt_view",
+        "hwpxfiller.gui.txt_state",
+        "hwpxfiller.core.text_registry",
     ],
     hookspath=[],
     runtime_hooks=[],

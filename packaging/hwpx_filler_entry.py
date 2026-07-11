@@ -48,9 +48,19 @@ def _selfcheck() -> int:
         recs == [{"공고명": "전산장비 구매", "추정가격": "1000"}]
         and bool(mapped) and mapped[0].get("공고명") == "전산장비 구매"
     )
+
+    # txt 트랙(대시보드·즉시 기안)이 프리즈 번들에 실제로 들어갔는지 + 렌더 경로 확인.
+    from hwpxfiller.core.text_render import render_record
+    from hwpxfiller.core.text_registry import TextTemplateRegistry  # noqa: F401
+    from hwpxfiller.gui.txt_view import TxtDraftView  # noqa: F401  (번들 확인)
+
+    txt, _report = render_record("제목: {{공고명}} / 담당: {{담당자}}", {"공고명": "전산장비 구매"})
+    txt_ok = "전산장비 구매" in txt and "{{담당자}}" in txt  # 값 치환 + 미입력 토큰 유지
+    ok = ok and txt_ok
+
     print(
         f"selfcheck: records={len(recs)} mapped={mapped[0] if mapped else None} "
-        f"-> {'OK' if ok else 'FAIL'}"
+        f"txt_ok={txt_ok} -> {'OK' if ok else 'FAIL'}"
     )
     return 0 if ok else 1
 
