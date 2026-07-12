@@ -1,0 +1,101 @@
+"""매트릭스 실행 ViewModel(J2) 헤드리스 테스트 — Qt 무접촉.
+
+작업 다중선택·데이터 겨눔(파일/풀)·사전검증을 못박는다.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
+from hwpxfiller.core.job import Job, JobRegistry
+from hwpxfiller.gui.matrix_state import MatrixRunViewModel
+
+
+def _registry(tmp_path):
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="공고", template_path="/공고.hwpx", filename_pattern="공고-{{ID}}"))
+    reg.save(Job(name="요청", template_path="/요청.hwpx", filename_pattern="요청-{{ID}}"))
+    return reg
+
+
+def _vm(tmp_path, **kw):
+    return MatrixRunViewModel(_registry(tmp_path), **kw)
+
+
+def test_job_multiselect(tmp_path):
+    vm = _vm(tmp_path)
+    assert set(vm.all_job_names()) == {"공고", "요청"}
+    assert vm.selection_count() == 0
+    vm.set_job_selected("요청", True)
+    vm.set_job_selected("공고", True)
+    # 선택 순서는 레지스트리 순서(이름순) 유지.
+    assert vm.selected_job_names() == ["공고", "요청"]
+    vm.set_job_selected("공고", False)
+    assert vm.selected_job_names() == ["요청"]
+    assert [j.name for j in vm.selected_jobs()] == ["요청"]
+
+
+def test_load_file_sets_datasource(tmp_path):
+    csv = tmp_path / "d.csv"
+    csv.write_text("ID,공고명\n1,전산\n2,비품\n", encoding="utf-8")
+    vm = _vm(tmp_path)
+    recs = vm.load_file(str(csv))
+    assert len(recs) == 2 and vm.datasource is not None
+    assert vm.records[0]["공고명"] == "전산"
+
+
+def test_load_pool_by_name(tmp_path):
+    csv = tmp_path / "d.csv"
+    csv.write_text("ID\n1\n", encoding="utf-8")
+    pool = DatasetPoolRegistry(tmp_path / "pool")
+    pool.save(DatasetPoolItem(name="6월", kind="excel", opts={"path": str(csv)}))
+    vm = _vm(tmp_path, pool_registry=pool)
+    assert vm.active_pool_names() == ["6월"]
+    recs = vm.load_pool_by_name("6월")
+    assert len(recs) == 1 and vm.datasource is not None
+
+
+def test_validate_reports_all_violations(tmp_path):
+    vm = _vm(tmp_path)
+    errs = vm.validate([], "")
+    assert any("작업" in e for e in errs)
+    assert any("데이터" in e for e in errs)
+    assert any("레코드" in e for e in errs)
+    assert any("저장 폴더" in e for e in errs)
+
+
+def test_validate_flags_missing_template(tmp_path):
+    csv = tmp_path / "d.csv"
+    csv.write_text("ID\n1\n", encoding="utf-8")
+    vm = _vm(tmp_path)
+    vm.set_job_selected("공고", True)  # /공고.hwpx 부재
+    vm.load_file(str(csv))
+    errs = vm.validate([0], str(tmp_path / "out"))
+    assert any("찾을 수 없는" in e for e in errs)
+
+
+def test_validate_flags_empty_template_path(tmp_path):
+    """템플릿 경로가 비어 있는 작업도 게이트에서 막는다(생성 단계로 흘리지 않음)."""
+    csv = tmp_path / "d.csv"
+    csv.write_text("ID\n1\n", encoding="utf-8")
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="무템플릿", template_path="", filename_pattern="d-{{ID}}"))
+    vm = MatrixRunViewModel(reg)
+    vm.set_job_selected("무템플릿", True)
+    vm.load_file(str(csv))
+    errs = vm.validate([0], str(tmp_path / "out"))
+    assert any("템플릿이 없거나" in e for e in errs)
+
+
+def test_validate_passes_when_ready(tmp_path):
+    tpl = tmp_path / "t.hwpx"
+    tpl.write_bytes(b"dummy")
+    csv = tmp_path / "d.csv"
+    csv.write_text("ID\n1\n", encoding="utf-8")
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="작업", template_path=str(tpl), filename_pattern="d-{{ID}}"))
+    vm = MatrixRunViewModel(reg)
+    vm.set_job_selected("작업", True)
+    vm.load_file(str(csv))
+    assert vm.validate([0], str(tmp_path / "out")) == []

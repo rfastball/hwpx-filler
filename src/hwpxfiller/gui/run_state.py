@@ -56,6 +56,41 @@ class FieldState:
     acknowledged: bool = False  # missing 만 유효 — 사용자가 직접 확인했는가
 
 
+# ------------------------------------------ 데이터 겨눔 리졸버(단일 실행·매트릭스 공용)
+def resolve_file_source(path: str) -> "tuple[object, list[dict]]":
+    """파일 경로 → (DataSource, records). 팩토리가 종류 선택(엑셀/CSV). 로드 실패는 raise."""
+    source = source_for_path(path)
+    return source, source.records()
+
+
+def resolve_pool_source(item, *, secret_store=None, fetcher=None) -> "tuple[object, list[dict]]":
+    """데이터셋 풀 항목(참조) → (DataSource, records). 실행 시점 재읽기="싱크".
+
+    나라장터는 N2 취득 경로(:class:`~hwpxfiller.gui.nara_state.NaraAcquireViewModel`)를 재사용
+    — resultCode '00' 정합·기간 재검증·키 마스킹 관통, 만료·인증실패는 조용한 "0건"이 아니라
+    **시끄러운** ``RuntimeError``. 성공은 **키 없는 스냅샷**이라 반복 조회가 재-fetch·키 재사용을
+    하지 않는다. 엑셀 등 파일 소스는 라이브(파일 재읽기=싱크). 단일 실행·매트릭스가 공유한다.
+    """
+    if getattr(item, "kind", None) == "nara":
+        from .nara_state import NaraAcquireViewModel
+
+        opts = dict(item.opts)
+        avm = NaraAcquireViewModel(secret_store, fetcher=fetcher)
+        res = avm.acquire(
+            str(opts.get("bgn_dt", "")), str(opts.get("end_dt", "")),
+            num_rows=int(opts.get("num_rows", 100)),
+            page_no=int(opts.get("page_no", 1)),
+        )
+        if not res.ok:
+            raise RuntimeError(f"나라장터 데이터 취득 실패: {res.error}")
+        return res.as_datasource(), res.records
+
+    from ..data.factory import source_from_pool_item
+
+    source = source_from_pool_item(item, secret_store=secret_store, fetcher=fetcher)
+    return source, source.records()
+
+
 class RunViewModel:
     """작업 1건 실행 상태·결정. 데이터·대상 문서는 DataSource 이음새 뒤에 둔다."""
 
@@ -106,8 +141,7 @@ class RunViewModel:
     def load_data(self, path: str) -> "list[dict]":
         """겨눈 경로에서 레코드를 읽는다(팩토리가 종류 선택). 로드 실패는 raise,
         레코드 0건이면 상태를 바꾸지 않고 빈 리스트 반환(위젯이 경고)."""
-        source = source_for_path(path)
-        records = source.records()
+        source, records = resolve_file_source(path)
         if not records:
             return []
         self.datasource = source
@@ -127,31 +161,11 @@ class RunViewModel:
           소스를 복원(지연·캐시, 파일 재읽기가 곧 싱크).
 
         키는 복원 순간에만 저장소에서 읽혀 스냅샷·레코드 어디에도 남지 않는다. 취득 실패는
-        **마스킹된 채** raise(위젯이 시끄럽게 표시), 레코드 0건이면 상태 불변(위젯이 경고)."""
-        if getattr(item, "kind", None) == "nara":
-            from .nara_state import NaraAcquireViewModel
-
-            opts = dict(item.opts)
-            avm = NaraAcquireViewModel(secret_store, fetcher=fetcher)
-            res = avm.acquire(
-                str(opts.get("bgn_dt", "")), str(opts.get("end_dt", "")),
-                num_rows=int(opts.get("num_rows", 100)),
-                page_no=int(opts.get("page_no", 1)),
-            )
-            if not res.ok:
-                # 키 미등록·인증실패·기간초과 등 — 마스킹된 사유로 시끄럽게(조용한 0건 금지).
-                raise RuntimeError(f"나라장터 데이터 취득 실패: {res.error}")
-            if not res.records:
-                return []
-            self.datasource = res.as_datasource()  # 키 없는 실행 스냅샷
-            self.records = res.records
-            self.reset_acks()
-            return res.records
-
-        from ..data.factory import source_from_pool_item
-
-        source = source_from_pool_item(item, secret_store=secret_store, fetcher=fetcher)
-        records = source.records()
+        **마스킹된 채** raise(위젯이 시끄럽게 표시), 레코드 0건이면 상태 불변(위젯이 경고).
+        실제 복원·마스킹·스냅샷은 :func:`resolve_pool_source`(단일 실행·매트릭스 공용)가 한다."""
+        source, records = resolve_pool_source(
+            item, secret_store=secret_store, fetcher=fetcher
+        )
         if not records:
             return []
         self.datasource = source

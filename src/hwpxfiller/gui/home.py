@@ -133,6 +133,8 @@ class JobListHome(QMainWindow):
     open_txt_requested = Signal(str)  # 템플릿 이름
     # 데이터 풀 관리(J1) — 앱 컨트롤러가 hasattr 로 가드해 라우팅(전방호환).
     manage_pool_requested = Signal()
+    # 여러 작업 일괄 실행(J2 매트릭스) — 마찬가지로 hasattr 가드 라우팅.
+    matrix_run_requested = Signal()
 
     def __init__(self, registry: JobRegistry, text_registry=None, parent=None,
                  pool_registry=None):
@@ -187,8 +189,11 @@ class JobListHome(QMainWindow):
         self.btn_new = QPushButton("＋ 새 문서 작업")
         mark(self.btn_new, "primary", True)
         self.btn_new.clicked.connect(self.new_job_requested)
+        self.btn_matrix = QPushButton("여러 작업 일괄 실행")
+        self.btn_matrix.clicked.connect(self.matrix_run_requested)
         hhead.addWidget(QLabel("누름틀 템플릿 + 매핑 → .hwpx 생성"))
         hhead.addStretch(1)
+        hhead.addWidget(self.btn_matrix)
         hhead.addWidget(self.btn_new)
         hp.addLayout(hhead)
         self.stack = QStackedWidget()

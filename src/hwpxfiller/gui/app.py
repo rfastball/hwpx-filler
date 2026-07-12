@@ -37,6 +37,9 @@ class _AppController:
         # 데이터 풀 관리(J1) — 홈이 진입 시그널을 노출하면 배선(전방호환·비파괴).
         if hasattr(self.home, "manage_pool_requested"):
             self.home.manage_pool_requested.connect(self._open_pool_manager)
+        # 여러 작업 일괄 실행(J2 매트릭스).
+        if hasattr(self.home, "matrix_run_requested"):
+            self.home.matrix_run_requested.connect(self._open_matrix_run)
 
     # ------------------------------------------------------------------ 라우팅
     def _open_editor_new(self) -> None:
@@ -97,6 +100,32 @@ class _AppController:
         panel.make_job_requested.connect(self._open_editor_from_template)
         self._track(panel)
         panel.show()
+
+    def _open_matrix_run(self) -> None:
+        """여러 작업 일괄 실행(J2) 창을 연다 — 홈과 같은 풀 레지스트리 공유."""
+        from .matrix_view import MatrixRunView
+
+        pool_registry = getattr(self.home, "pool_registry", None)
+        view = MatrixRunView(self.registry, pool_registry=pool_registry)
+        view.run_finished.connect(self._record_matrix_run)
+        self._track(view)
+        view.show()
+
+    def _record_matrix_run(self, result) -> None:
+        """매트릭스 생성 성공분을 작업별 last_run_at 에 기록하고 홈 갱신."""
+        from datetime import datetime
+
+        stamp = datetime.now().isoformat(timespec="seconds")
+        touched = False
+        for jr in getattr(result, "per_job", []):
+            if getattr(jr.batch, "succeeded", 0) <= 0 or not self.registry.exists(jr.job_name):
+                continue
+            job = self.registry.load(jr.job_name)
+            job.last_run_at = stamp
+            self.registry.save(job)
+            touched = True
+        if touched:
+            self.home.refresh()
 
     def _open_pool_manager(self) -> None:
         """데이터 풀 관리 워크숍(J1)을 연다. 변경 시 홈 KPI 를 갱신한다."""
