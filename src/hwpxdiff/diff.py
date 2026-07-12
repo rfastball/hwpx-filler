@@ -838,15 +838,15 @@ def render_summary(result: DiffResult) -> str:
 _COALESCE_MIN_EQUAL = 3
 
 
-def coalesce_word_ops(ops: "list[WordOp] | None") -> "list[WordOp] | None":
+def coalesce_word_ops(ops: "list[WordOp] | None") -> "list[WordOp]":
     """변경 사이의 짧은 equal 조각을 replace 로 흡수 — 인라인 강조 가독성(순수 함수).
 
     공백뿐인 equal 은 낱말 경계라 남긴다(흡수하면 별개 낱말 변경이 한 덩어리로 뭉개짐).
     GUI 전문 뷰와 CLI HTML 리포트가 **같은 성형**을 공유한다 — 같은 DiffResult 가
-    표면마다 다른 낱말 강조로 렌더되지 않도록.
+    표면마다 다른 낱말 강조로 렌더되지 않도록. 빈 입력(None 포함)은 빈 리스트.
     """
     if not ops:
-        return ops
+        return []
     out: "list[WordOp]" = []
     i = 0
     while i < len(ops):
