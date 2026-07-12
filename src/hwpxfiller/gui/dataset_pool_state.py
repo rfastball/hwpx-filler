@@ -34,7 +34,7 @@ _BADGE_LEVELS = {
     STATUS_ARCHIVED: "muted",
     STATUS_RETIRED: "warn",
 }
-_KIND_LABELS = {"excel": "엑셀/CSV", "nara": "나라장터"}
+_KIND_LABELS = {"excel": "엑셀/CSV", "nara": "나라장터", "pipeline": "파이프라인"}
 
 
 @dataclass(frozen=True)
@@ -85,6 +85,16 @@ def reference_summary(item: DatasetPoolItem) -> str:
         rows = opts.get("num_rows")
         s = f"기간 {bgn}~{end}"
         return s + (f" · {rows}건" if rows else "")
+    if item.kind == "pipeline":
+        srcs = opts.get("sources")
+        steps = opts.get("steps")
+        n_src = len(srcs) if isinstance(srcs, list) else 0
+        ops = (
+            "+".join(str(st.get("op", "?")) for st in steps)
+            if isinstance(steps, list) and steps
+            else "스텝 없음"
+        )
+        return f"조립: 소스 {n_src}개 · {ops}"
     return "(알 수 없는 소스)"
 
 

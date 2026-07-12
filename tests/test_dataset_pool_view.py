@@ -120,6 +120,58 @@ def test_panel_delete_confirms_then_removes(qapp, tmp_path, monkeypatch):
     assert not reg.exists("D")
 
 
+# ------------------------------------------------------------ 파이프라인 빌더(KB)
+def test_pipeline_builder_dialog_author_preview_save(qapp, tmp_path):
+    """빌더 배선 스모크 — 소스 추가→키 제안→스텝 추가→미리보기→저장(참조만) 관통.
+
+    깊은 로직은 test_pipeline_builder_state.py 헤드리스가 검증. 여기선 위젯 배선만.
+    """
+    from hwpxfiller.gui.pipeline_builder import PipelineBuilderDialog
+
+    a = tmp_path / "base.csv"
+    b = tmp_path / "look.csv"
+    a.write_text("id,name\n1,A\n", encoding="utf-8-sig")
+    b.write_text("id,city\n1,서울\n", encoding="utf-8-sig")
+    reg = DatasetPoolRegistry(tmp_path / "pool")
+    reg.save(DatasetPoolItem(name="기준", kind="excel", opts={"path": str(a)}))
+    reg.save(DatasetPoolItem(name="참조표", kind="excel", opts={"path": str(b)}))
+
+    dlg = PipelineBuilderDialog(reg)
+    # 소스 2개 추가
+    dlg.cmb_pool.setCurrentText("기준")
+    dlg._on_add_source()
+    dlg.cmb_pool.setCurrentText("참조표")
+    dlg._on_add_source()
+    assert dlg.lst_sources.count() == 2
+    # 키 제안 → 콤보에 후보만(스텝 미생성 게이트)
+    dlg.cmb_target.setCurrentIndex(1)
+    dlg._on_suggest()
+    assert dlg.cmb_key.currentText() == "id"
+    assert dlg.vm.steps == []
+    # 스텝 추가(사람 확정) → 미리보기 표
+    dlg._on_add_step()
+    assert dlg.lst_steps.count() == 1
+    dlg._on_preview()
+    assert dlg.tbl_preview.rowCount() == 1
+    assert dlg.tbl_preview.item(0, 2).text() == "서울"
+    assert dlg.lbl_error.isHidden()
+    # 저장 → 참조만 풀 항목
+    dlg.edt_name.setText("조립6월")
+    dlg._on_save()
+    assert dlg.saved_name == "조립6월"
+    assert reg.load("조립6월").kind == "pipeline"
+
+
+def test_pipeline_builder_preview_error_surfaces(qapp, tmp_path):
+    from hwpxfiller.gui.pipeline_builder import PipelineBuilderDialog
+
+    reg = DatasetPoolRegistry(tmp_path / "pool")
+    dlg = PipelineBuilderDialog(reg)
+    dlg._on_preview()  # 소스 없음 → 시끄러운 오류 라벨(빈 표 조용히 금지)
+    assert not dlg.lbl_error.isHidden()
+    assert "소스" in dlg.lbl_error.text()
+
+
 # ------------------------------------------------------------ 위저드 데이터 강등
 def test_datapage_is_optional_without_data(qapp, tmp_path):
     """DataPage 는 이제 선택 — 데이터를 안 골라도 isComplete()==True(진행 가능)."""

@@ -101,9 +101,12 @@ class DatasetPoolPanel(QMainWindow):
         self.btn_add_excel.clicked.connect(self._on_register_excel)
         self.btn_add_nara = QPushButton("나라장터 등록…")
         self.btn_add_nara.clicked.connect(self._on_register_nara)
+        self.btn_add_pipeline = QPushButton("파이프라인 조립…")
+        self.btn_add_pipeline.clicked.connect(self._on_build_pipeline)
         mark(self.btn_add_excel, "primary", True)
         header.addWidget(self.btn_add_excel)
         header.addWidget(self.btn_add_nara)
+        header.addWidget(self.btn_add_pipeline)
         root.addLayout(header)
 
         self.list = QListWidget()
@@ -177,6 +180,23 @@ class DatasetPoolPanel(QMainWindow):
             QMessageBox.critical(self, "오류", f"등록 실패:\n{exc}")
             return
         self.lbl_result.setText(f"등록 완료: {name}")
+        self.pool_changed.emit()
+
+    def _on_build_pipeline(self) -> None:
+        """파이프라인 조립(KB) — 빌더 대화상자로 저작·미리보기, 수용 시 풀 갱신.
+
+        저장은 빌더 뷰모델이 레지스트리에 직접 한다(참조·레시피만) — 여기선 대화
+        오케스트레이션과 수용 후 새로고침·통지뿐.
+        """
+        from .pipeline_builder import PipelineBuilderDialog
+
+        dlg = PipelineBuilderDialog(
+            self.vm.registry, self, store=self._store, fetcher=self._fetcher
+        )
+        if dlg.exec() != dlg.Accepted:
+            return
+        self.vm.refresh()
+        self.lbl_result.setText(f"등록 완료: {dlg.saved_name} (조립 파이프라인)")
         self.pool_changed.emit()
 
     def _on_register_nara(self) -> None:

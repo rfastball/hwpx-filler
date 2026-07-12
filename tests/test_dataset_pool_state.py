@@ -79,6 +79,26 @@ def test_reference_summary_unknown_kind():
     assert "경로 없음" in reference_summary(it)
 
 
+def test_pipeline_row_renders_kind_label_and_summary(tmp_path):
+    """파이프라인 풀 항목(KB)이 풀 목록에서 종류 라벨·조립 요약으로 성형된다."""
+    from hwpxfiller.core.dataset_pool import DatasetPoolItem
+
+    it = DatasetPoolItem(
+        name="6월 조립", kind="pipeline",
+        opts={
+            "sources": [{"kind": "excel", "opts": {"path": "/a.csv"}},
+                        {"kind": "excel", "opts": {"path": "/b.csv"}}],
+            "steps": [{"op": "merge", "source": 1, "on": "id", "how": "inner"}],
+        },
+    )
+    reg = DatasetPoolRegistry(tmp_path)
+    reg.save(it)
+    vm = DatasetPoolViewModel(reg)
+    r = vm.rows()[0]
+    assert r.kind_label == "파이프라인"
+    assert "소스 2개" in r.reference and "merge" in r.reference
+
+
 # ------------------------------------------------------------ home KPI (헤드리스)
 def test_home_kpi_counts_active_pool_items(tmp_path):
     from hwpxfiller.core.job import JobRegistry
