@@ -145,6 +145,24 @@ def test_raw_blocks_and_compiled_filled_pass():
     assert filled.can_proceed()
 
 
+def test_whitespace_name_token_is_ackable():
+    """무명 토큰 ``{{   }}``(공백뿐) — compilable 로 PARTIAL 트리거되지만 정제 이름은 "".
+
+    열거가 트리거와 어긋나 unmet 이 비면 ack 가 '0개 토큰' dead-end 가 된다. 대표 라벨로
+    열거해 ack 가 실제로 게이트를 열 수 있어야 한다(Finding 2).
+    """
+    pkg, _ = compile_document(_pkg("<hp:p><hp:run><hp:t>{{계약명}}</hp:t></hp:run></hp:p>"))
+    pkg = _append_plaintext(pkg, "{{   }}")
+
+    gate = gate_for_template(pkg)
+    assert gate.state is CompileState.PARTIAL
+    assert gate.unmet_tokens  # 무명 토큰도 대표 라벨로 열거 → 비어 있지 않음
+    assert not gate.can_proceed()
+
+    gate.acknowledge(gate.unmet_tokens)
+    assert gate.can_proceed()  # 더 이상 0-토큰 dead-end 가 아니다
+
+
 def test_inline_compile_flips_partial_to_compiled():
     """PARTIAL(compilable) → compile_document 적용 → COMPILED, 게이트 통과(수용 4).
 

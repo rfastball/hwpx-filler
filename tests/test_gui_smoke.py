@@ -516,8 +516,10 @@ def test_run_view_inline_blank_gate_and_marker_injection(qapp, tmp_path, monkeyp
         view._teardown_thread()
 
 
-def _partial_template_file(tmp_path) -> str:
-    """진짜 필드 1개 + 미컴파일 평문 ``{{미컴파일필드}}`` 를 담은 PARTIAL .hwpx 파일."""
+def _partial_template_file(
+    tmp_path, extra_token: str = "{{미컴파일필드}}", filename: str = "tpl.hwpx"
+) -> str:
+    """진짜 필드 1개(계약명) + 미컴파일 평문 ``extra_token`` 을 담은 PARTIAL .hwpx 파일."""
     from lxml import etree
 
     from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
@@ -541,11 +543,11 @@ def _partial_template_file(tmp_path) -> str:
     p = etree.SubElement(root, f"{{{HP}}}p")
     run = etree.SubElement(p, f"{{{HP}}}run")
     t = etree.SubElement(run, f"{{{HP}}}t")
-    t.text = "{{미컴파일필드}}"
+    t.text = extra_token
     pkg.entries[section] = etree.tostring(
         root, xml_declaration=True, encoding="UTF-8", standalone=True
     )
-    path = tmp_path / "tpl.hwpx"
+    path = tmp_path / filename
     pkg.save(str(path))
     return str(path)
 
@@ -596,6 +598,53 @@ def test_template_page_inline_compile_flips_to_compiled(qapp, tmp_path, monkeypa
     assert page.isComplete()
     assert page.ed_path.text().endswith(".compiled.hwpx")
     assert wiz.template_path == page.ed_path.text()  # 컴파일본으로 전환
+
+
+def test_template_page_ack_does_not_carry_across_templates(qapp, tmp_path):
+    """PARTIAL A 를 ack 한 뒤 다른 미해결 집합의 PARTIAL B 로드 → A의 ack 가 B를 만족 못함."""
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+
+    path_a = _partial_template_file(tmp_path, "{{토큰에이}}", "a.hwpx")
+    path_b = _partial_template_file(tmp_path, "{{토큰비}}", "b.hwpx")
+    wiz = JobEditorWizard(JobRegistry(tmp_path))
+    page = wiz.page(wiz.pageIds()[0])
+
+    page._load_template(path_a)
+    assert "토큰에이" in page._gate.unmet_tokens
+    page._gate.acknowledge(page._gate.unmet_tokens)
+    page._refresh_gate_ui()
+    assert page.isComplete()  # A ack 후 진행 가능
+
+    # 미해결 집합이 다른 템플릿 B 로드 → 게이트가 새로 계산되어 A의 ack 는 무효.
+    page._load_template(path_b)
+    assert "토큰비" in page._gate.unmet_tokens
+    assert "토큰에이" not in page._gate.unmet_tokens
+    assert not page.isComplete()  # 스테일 ack 이월 금지
+
+
+def test_template_page_fails_closed_on_gate_compute_error(qapp, tmp_path, monkeypatch):
+    """게이트 계산이 실패하면 PARTIAL 여부를 배제 못하므로 fail-closed(진행 불가 + 시끄럽게).
+
+    Finding-1 회귀: 수정 전에는 _valid=True·_gate=None·경고 삭제로 조용히 통과했다.
+    """
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui import wizard as wz
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+
+    path = _partial_template_file(tmp_path)
+    wiz = JobEditorWizard(JobRegistry(tmp_path))
+    page = wiz.page(wiz.pageIds()[0])
+
+    def _boom(*a, **k):
+        raise RuntimeError("상태 계산 폭발")
+
+    monkeypatch.setattr(wz, "gate_for_template", _boom)
+    page._load_template(path)
+
+    assert not page.isComplete()  # fail-closed: 진행 불가
+    assert page._gate_error  # 오류 상태 명시
+    assert "계산할 수 없습니다" in page.lbl_warn.text()  # 경고를 지우지 않고 시끄럽게 유지
 
 
 def test_txt_view_renders_and_keeps_missing_tokens(qapp, tmp_path):

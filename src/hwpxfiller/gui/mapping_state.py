@@ -227,13 +227,19 @@ def _leftover_token_names(
     ``scan_tokens`` 사이트(컴파일 가능/파편 skip)의 이름 + 스키마의 본문 평문 잔존
     (``stray_tokens``)을 합친다. 이 이름들이 "값이 주입되지 않는다"를 사람에게 구체적으로
     재진술하는 대상이다(범용 메시지 금지 — ADR-E 반사적 dismiss 봉쇄의 전제).
+
+    이름이 빈 사이트(예: ``{{   }}`` 공백뿐인 토큰 — ``compile_status`` 는 compilable 로
+    세어 PARTIAL 로 트리거하지만 정제 이름은 "")도 대표 라벨로 반드시 열거한다. 그러지
+    않으면 ``unmet_tokens`` 가 비어 ack 가 "0개 토큰" dead-end 가 되고, 열거가 PARTIAL
+    트리거와 어긋난다(fail-closed 지만 진행 불가한 함정).
     """
     names: "list[str]" = []
     seen: "set[str]" = set()
     for s in sites:
-        if s.name and s.name not in seen:
-            seen.add(s.name)
-            names.append(s.name)
+        label = s.name or "(이름 없는 토큰)"  # 무명 토큰도 대표 라벨로 열거(트리거와 일치)
+        if label not in seen:
+            seen.add(label)
+            names.append(label)
     for t in strays:
         if t and t not in seen:
             seen.add(t)

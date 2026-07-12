@@ -52,6 +52,9 @@ class TemplatePage(QWizardPage):
         self.setSubTitle("누름틀이 들어 있는 HWPX 템플릿을 선택하세요.")
         self._valid = False
         self._gate: "PartialGate | None" = None
+        # 게이트 계산 자체가 실패한 상태(fail-closed): PARTIAL 여부를 배제할 수 없으므로
+        # 진행을 막고 경고를 지우지 않는다. ``_gate is None``(COMPILED/FILLED 정상)과 구분.
+        self._gate_error = False
 
         layout = QVBoxLayout(self)
         row = QHBoxLayout()
@@ -110,6 +113,7 @@ class TemplatePage(QWizardPage):
         wiz = self.wizard()
         self._valid = False
         self._gate = None
+        self._gate_error = False
         self.lbl_warn.setText("")
         self.btn_compile.setVisible(False)
         self.btn_ack.setVisible(False)
@@ -141,11 +145,16 @@ class TemplatePage(QWizardPage):
 
         # 컴파일 상태 게이트 — PARTIAL 이면 비차단 경고를 확정 게이트로 승격한다.
         # (종전엔 stray 만 비차단 경고였다 — 값이 조용히 누락되는 위험을 소리 나게 세운다.)
+        # 계산 자체가 실패하면 PARTIAL 여부를 배제할 수 없다 → fail-closed(진행 차단 + 시끄럽게).
         try:
             self._gate = gate_for_template(path)
-        except Exception as exc:  # noqa: BLE001 - 상태 계산 실패는 경고만(필드 요약은 유효)
+        except Exception as exc:  # noqa: BLE001 - 계산 실패는 fail-closed(조용히 통과 금지)
             self._gate = None
-            self.lbl_warn.setText(f"경고: 컴파일 상태를 계산할 수 없습니다: {exc}")
+            self._gate_error = True
+            self.lbl_warn.setText(
+                f"진행 차단: 컴파일 상태를 계산할 수 없습니다 — {exc}\n"
+                "PARTIAL 여부를 확인할 수 없어 진행할 수 없습니다. 템플릿을 다시 선택하세요."
+            )
         self._valid = True
         self._refresh_gate_ui()
         self.completeChanged.emit()
@@ -153,6 +162,11 @@ class TemplatePage(QWizardPage):
 
     def _refresh_gate_ui(self) -> None:
         """게이트 상태를 경고 라벨·액션 버튼에 반영(PARTIAL 에서만 게이트 UI 노출)."""
+        if self._gate_error:
+            # 계산 실패 = fail-closed. 경고 텍스트를 지우지 않고(시끄럽게 유지) 버튼만 숨긴다.
+            self.btn_compile.setVisible(False)
+            self.btn_ack.setVisible(False)
+            return
         gate = self._gate
         if gate is None or not gate.needs_gate():
             self.lbl_warn.setText("")
@@ -227,8 +241,13 @@ class TemplatePage(QWizardPage):
             self.completeChanged.emit()
 
     def isComplete(self) -> bool:
-        # 필드가 있고(_valid), PARTIAL 이면 ack-or-compile 로 게이트가 열려야 완료.
-        return self._valid and (self._gate is None or self._gate.can_proceed())
+        # 필드가 있고(_valid), 상태 계산이 성공했으며(not _gate_error), PARTIAL 이면
+        # ack-or-compile 로 게이트가 열려야 완료. 계산 실패는 fail-closed(진행 불가).
+        return (
+            self._valid
+            and not self._gate_error
+            and (self._gate is None or self._gate.can_proceed())
+        )
 
 
 class DataPage(QWizardPage):
