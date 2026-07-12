@@ -110,6 +110,19 @@ def _region_value(begin: etree._Element) -> str:
     return "".join(parts)
 
 
+def _is_placeholder(value: str, name: str) -> bool:
+    """값이 아직 미충전 placeholder 인가 — ``{{ ... }}`` 껍질을 벗겨 안쪽을 필드명과 비교.
+
+    compile_document 는 값 런에 원문 토큰(내부 공백 포함, 예 ``{{ 계약명 }}``)을 그대로
+    남기고 fieldBegin@name 은 공백을 벗긴 이름을 쓴다. 그 비대칭을 여기서 흡수한다 —
+    문자열 재조립("{{"+name+"}}")은 공백 토큰을 FILLED 로 오판정하므로 쓰지 않는다.
+    """
+    v = value.strip()
+    if v.startswith("{{") and v.endswith("}}"):
+        return v[2:-2].strip() == name
+    return False
+
+
 def _read_field_values(pkg: object) -> "list[tuple[str, str]]":
     """주입 대상 XML 전체에서 (필드명, 값) 목록을 읽는다(파싱 사본 — 무변형)."""
     pkg2 = _to_package(pkg)
@@ -150,10 +163,12 @@ def compile_status(pkg_or_path: object) -> TemplateStatus:
         state = CompileState.PARTIAL
     else:
         # 필드 有 + 잔존 토큰 0 → 실제 값을 읽어 COMPILED(placeholder) vs FILLED 구분.
-        # placeholder 리터럴은 "{{" + name + "}}". 갓 컴파일된 값 런은 이 리터럴을 유지한다.
-        # 값이 비어 있으면(코퍼스 관례상 placeholder 유지 취지) 채워지지 않은 것으로 본다.
+        # 값이 아직 {{...}} placeholder(내부 공백 무관)면 미충전, 실제 내용이면 채워짐.
+        # 값이 비어/공백뿐이면(코퍼스 관례상 placeholder 유지 취지) 채워지지 않은 것으로 본다.
         values = _read_field_values(pkg)
-        filled = any(val and val != "{{" + name + "}}" for name, val in values)
+        filled = any(
+            val.strip() and not _is_placeholder(val, name) for name, val in values
+        )
         state = CompileState.FILLED if filled else CompileState.COMPILED
 
     return TemplateStatus(

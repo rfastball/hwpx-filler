@@ -53,20 +53,70 @@ def test_raw_when_no_fields_and_no_tokens():
 
 
 # ------------------------------------------------------------------- PARTIAL
-def test_partial_field_plus_leftover_token():
-    """진짜 누름틀 1개 + 파편에 걸친 토큰 잔존 → PARTIAL('다 된 듯 아닌' 위험)."""
+def test_partial_skipped_channel_only():
+    """진짜 필드 1개 + 파편에 걸친 토큰(재조립하면 실필드명) → skipped 채널만 PARTIAL.
+
+    파편이 ``계약명`` 으로 재조립되므로 stray 는 뜨지 않는다 — skipped 채널을 고립 검증.
+    """
     xml = (
         "<hp:p><hp:run><hp:t>{{계약명}}</hp:t></hp:run></hp:p>"
-        "<hp:p><hp:run><hp:t>{{사업</hp:t></hp:run>"
-        "<hp:run><hp:t>예산}}</hp:t></hp:run></hp:p>"
+        "<hp:p><hp:run><hp:t>{{계약</hp:t></hp:run>"
+        "<hp:run><hp:t>명}}</hp:t></hp:run></hp:p>"
     )
     pkg, report = compile_document(_pkg(xml))
     assert report.compiled == ["계약명"]  # 첫 토큰만 컴파일, 파편은 skipped
     st = compile_status(pkg)
     assert st.state == CompileState.PARTIAL
     assert st.field_n == 1
-    # 잔존 토큰이 어느 신호로든 소리 나게 남아 있어야 한다.
-    assert st.skipped_n >= 1 or st.stray_n >= 1
+    assert st.skipped_n >= 1  # 파편 신고
+    assert st.stray_n == 0  # 재조립하면 실필드명 → stray 아님
+    assert st.compilable_n == 0
+
+
+def test_partial_stray_channel_only():
+    """진짜 필드 1개 + 그 값이 미해결 ``{{미결}}`` 토큰 → stray 채널만 PARTIAL.
+
+    토큰이 필드 영역 안(depth>0)이라 scan 은 못 본다(compilable/skipped=0) — 본문 평문
+    스캔만이 잔존물을 잡는다. stray 채널 고립 검증.
+    """
+    xml = "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>"
+    pkg, _ = compile_document(_pkg(xml))
+    doc = FieldDocument(pkg.entries[SECTION])
+    assert doc.set_field("계약명", "{{미결}}") is True  # 값 자리에 미해결 토큰
+    pkg.entries[SECTION] = doc.to_bytes()
+
+    st = compile_status(pkg)
+    assert st.state == CompileState.PARTIAL
+    assert st.field_n == 1
+    assert st.stray_n >= 1  # 미결 은 실필드 아님 → stray
+    assert st.compilable_n == 0
+    assert st.skipped_n == 0
+
+
+def test_partial_compilable_channel_only():
+    """진짜 필드 1개 + 같은 이름의 미컴파일 평문 중복 → compilable 채널만 PARTIAL.
+
+    잔존 평문 ``{{계약명}}`` 은 실필드명과 같아 stray 는 아니지만, 아직 누름틀이 아니라
+    scan 이 컴파일 가능으로 신고한다. compilable 채널 고립 검증.
+    """
+    xml = "<hp:p><hp:run><hp:t>{{계약명}}</hp:t></hp:run></hp:p>"
+    pkg, _ = compile_document(_pkg(xml))
+    # 작성자가 같은 필드를 다른 자리에 평문으로 또 타이핑(컴파일 누락).
+    root = etree.fromstring(pkg.entries[SECTION])
+    newp = etree.SubElement(root, f"{{{HP}}}p")
+    run = etree.SubElement(newp, f"{{{HP}}}run")
+    t = etree.SubElement(run, f"{{{HP}}}t")
+    t.text = "{{계약명}}"
+    pkg.entries[SECTION] = etree.tostring(
+        root, xml_declaration=True, encoding="UTF-8", standalone=True
+    )
+
+    st = compile_status(pkg)
+    assert st.state == CompileState.PARTIAL
+    assert st.field_n == 1
+    assert st.compilable_n >= 1  # 미컴파일 평문 중복
+    assert st.stray_n == 0  # 실필드명과 동일 → stray 아님
+    assert st.skipped_n == 0
 
 
 # ------------------------------------------------------------------ COMPILED
@@ -82,6 +132,22 @@ def test_compiled_unfilled_values_are_placeholder_literals():
     assert st.compilable_n == 0
 
 
+def test_compiled_spaced_token_is_compiled():
+    """내부 공백 토큰 ``{{ 계약명 }}`` 을 컴파일만 하고 채우지 않으면 COMPILED.
+
+    compile_document 는 값 런에 원문(``{{ 계약명 }}``, 공백 포함)을 남기고 fieldBegin@name
+    은 공백 벗긴 ``계약명`` 을 쓴다 — 그 비대칭을 판별기가 흡수해야 FILLED 오판정을 막는다.
+    """
+    xml = "<hp:p><hp:run><hp:t>계약명: {{ 계약명 }}</hp:t></hp:run></hp:p>"
+    pkg, report = compile_document(_pkg(xml))
+    assert report.compiled == ["계약명"]  # 공백 토큰도 컴파일 대상
+    st = compile_status(pkg)
+    assert st.state == CompileState.COMPILED  # 공백 때문에 FILLED 로 오판정 금지
+    assert st.field_n == 1
+    assert st.stray_n == 0
+    assert st.compilable_n == 0
+
+
 # -------------------------------------------------------------------- FILLED
 def test_filled_after_set_field():
     """COMPILED 문서에 실제 값을 주입하면 값이 placeholder 와 달라져 → FILLED."""
@@ -92,6 +158,52 @@ def test_filled_after_set_field():
     doc = FieldDocument(pkg.entries[SECTION])
     assert doc.set_field("계약명", "정보시스템 구축 사업") is True
     pkg.entries[SECTION] = doc.to_bytes()  # 패키지 엔트리 재빌드
+
+    st = compile_status(pkg)
+    assert st.state == CompileState.FILLED
+    assert st.field_n == 1
+    assert st.stray_n == 0
+
+
+def test_filled_when_any_field_filled_mixed():
+    """여러 필드 중 하나만 채우고 하나는 placeholder로 남겨도 → FILLED(하나라도 채워지면)."""
+    xml = "<hp:p><hp:run><hp:t>계약명: {{계약명}} 예산 {{사업예산}}</hp:t></hp:run></hp:p>"
+    pkg, report = compile_document(_pkg(xml))
+    assert report.compiled == ["계약명", "사업예산"]
+
+    doc = FieldDocument(pkg.entries[SECTION])
+    assert doc.set_field("계약명", "정보시스템 구축") is True  # 하나만 채움
+    pkg.entries[SECTION] = doc.to_bytes()
+
+    st = compile_status(pkg)
+    assert st.state == CompileState.FILLED  # 사업예산은 아직 placeholder여도 FILLED
+    assert st.field_n == 2
+    assert st.stray_n == 0
+
+
+def test_filled_table_cell_field():
+    """표 셀 안 필드를 컴파일 후 채우면 → FILLED(값 리더가 표 경로를 탄다)."""
+    xml = """
+    <hp:p><hp:run>
+      <hp:tbl>
+        <hp:tr>
+          <hp:tc><hp:subList>
+            <hp:p><hp:run><hp:t>품명</hp:t></hp:run></hp:p>
+          </hp:subList></hp:tc>
+          <hp:tc><hp:subList>
+            <hp:p><hp:run><hp:t>{{공급가액}}</hp:t></hp:run></hp:p>
+          </hp:subList></hp:tc>
+        </hp:tr>
+      </hp:tbl>
+    </hp:run></hp:p>
+    """
+    pkg, report = compile_document(_pkg(xml))
+    assert report.compiled == ["공급가액"]
+    assert compile_status(pkg).state == CompileState.COMPILED  # 채우기 전
+
+    doc = FieldDocument(pkg.entries[SECTION])
+    assert doc.set_field("공급가액", "1,000,000원") is True
+    pkg.entries[SECTION] = doc.to_bytes()
 
     st = compile_status(pkg)
     assert st.state == CompileState.FILLED
