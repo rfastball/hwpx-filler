@@ -66,6 +66,11 @@ QLineEdit, QPlainTextEdit {{
 }}
 QLineEdit:focus, QPlainTextEdit:focus {{ border: 1px solid {PRIMARY}; }}
 QLineEdit:read-only {{ background: #f3f4f6; color: #5c626b; }}
+/* 읽기전용 필드가 포커스를 받아도 회색 룩을 유지한다(UD-37): :focus 파랑 테두리가
+   :read-only 회색을 덮어 '편집 가능'을 오발신하던 신호 충돌 해소. 포커스 정책
+   (wizard 의 setFocusPolicy NoFocus)이 1차 방어, 이 규칙이 QSS 상속 2차 방어 —
+   :read-only:focus(의사상태 2개)가 :focus(1개)보다 특이도 높고 뒤에 선언돼 이긴다. */
+QLineEdit:read-only:focus, QPlainTextEdit:read-only:focus {{ border: 1px solid {BORDER}; }}
 QLineEdit:disabled {{ background: #f3f4f6; color: {MUTED}; }}
 
 QPushButton {{

@@ -246,6 +246,16 @@ class MappingModel:
         return sum(1 for r in self.rows if r.confirmed)
 
     # ------------------------------------------------------------- 상태 질의
+    def is_schema_only(self) -> bool:
+        """데이터 미연결(스키마온리) 세션인가 — 연결된 데이터 소스의 필드가 0개(UD-28).
+
+        데이터 스텝을 건너뛰면(ADR-J 선택 플로우) ``source_fields`` 가 비어 애초에
+        매칭할 데이터가 없다. 이때 내용 없는 행은 '미매칭'(데이터가 있는데 못 맞춘 것)이
+        아니라 '데이터 미연결'이다 — 뷰가 빨강 경보를 중립으로 강등하고(오경보 방지),
+        스키마온리 안내 배너를 띄우는 근거다. Qt 비의존이라 헤드리스로 검증한다.
+        """
+        return not self.source_fields
+
     def is_complete(self) -> bool:
         """전 행이 사람 확정을 받았는가 — 명시성 게이트. 행이 없으면 False."""
         return bool(self.rows) and all(r.confirmed for r in self.rows)

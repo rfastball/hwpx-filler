@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFileDialog,
@@ -73,6 +74,11 @@ class TemplatePage(QWizardPage):
         row = QHBoxLayout()
         self.ed_path = QLineEdit()
         self.ed_path.setReadOnly(True)
+        # 읽기전용 경로 표시 필드는 포커스 체인에서 제외한다(UD-37): 남겨두면 스텝1
+        # 첫 포커스가 여기 착지해 :focus 파랑 테두리+전체 선택이 :read-only 회색 룩을
+        # 덮어 '편집하라'/'편집 불가'를 동시 발신했다. NoFocus 로 첫 포커스를 실제
+        # 실행동인 '찾아보기…' 버튼에 넘긴다(style.py 의 read-only:focus 규칙이 2차 방어).
+        self.ed_path.setFocusPolicy(Qt.NoFocus)
         btn = QPushButton("찾아보기…")
         btn.clicked.connect(self._pick)
         row.addWidget(QLabel("템플릿(.hwpx)"))
@@ -315,6 +321,8 @@ class DataPage(QWizardPage):
         row.setContentsMargins(0, 0, 0, 0)
         self.ed_path = QLineEdit()
         self.ed_path.setReadOnly(True)
+        # 읽기전용 경로 필드는 포커스 체인에서 제외(UD-37 — 스텝1과 동일 시맨틱).
+        self.ed_path.setFocusPolicy(Qt.NoFocus)
         btn = QPushButton("찾아보기…")
         btn.clicked.connect(self._pick)
         row.addWidget(QLabel("데이터(.xlsx/.csv)"))
@@ -515,11 +523,13 @@ class MappingPage(QWizardPage):
         self.table.completeChanged.connect(self._on_table_changed)
         layout.addWidget(self.table, 1)
 
-        # 레코드 스텝퍼 — 어떤 레코드로 미리보기할지 훑는다.
+        # 레코드 스텝퍼 — 어떤 레코드로 미리보기할지 훑는다. 라벨을 '이전/다음
+        # 레코드'로 구체화한다(UD-40): 위저드 푸터의 '다음(N)'(페이지 이동)과 스텝퍼의
+        # '다음'(레코드 이동)이 한 화면에서 두 '다음'으로 공존해 혼동될 여지를 없앤다.
         stepper = QHBoxLayout()
-        self.btn_prev = QPushButton("◀ 이전")
+        self.btn_prev = QPushButton("◀ 이전 레코드")
         self.btn_prev.clicked.connect(lambda: self._step(-1))
-        self.btn_next = QPushButton("다음 ▶")
+        self.btn_next = QPushButton("다음 레코드 ▶")
         self.btn_next.clicked.connect(lambda: self._step(1))
         self.lbl_index = QLabel("레코드 0/0")
         self.lbl_preview_summary = QLabel("")
@@ -639,10 +649,16 @@ class MappingPage(QWizardPage):
         wiz = self.wizard()
         n = len(wiz.records)
         if n == 0:
+            # 레코드 0/0 빈 상태 안내(UD-28): 미리보기할 데이터가 없다는 사실을 그냥
+            # 침묵으로 두지 않고, 왜(데이터 미연결)·무엇을 할 수 있는지(상수·비움 확정)를
+            # 재진술한다. 스텝퍼 인덱스는 '레코드 0/0'로 유지(비활성).
             self.lbl_index.setText("레코드 0/0")
             self.btn_prev.setEnabled(False)
             self.btn_next.setEnabled(False)
-            self.lbl_preview_summary.setText("")
+            self.lbl_preview_summary.setText(
+                "미리보기할 데이터가 없습니다 — 데이터 미연결(스키마만 편집 중). "
+                "상수로 채우거나 (비움)으로 확정하세요. 실제 데이터는 실행할 때 고릅니다."
+            )
             return
         rec = wiz.records[self._preview_index]
         self.table.set_preview_record(rec)

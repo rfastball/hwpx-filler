@@ -1739,6 +1739,54 @@ def test_mapping_table_arg_edit_shares_row_brush(qapp):
     assert table.table.item(ri, _COL_FIELD).background() == _row_brush(row)
 
 
+def test_mapping_table_schema_only_demotes_red_and_shows_banner(qapp):
+    """UD-28 — 데이터 미연결(source_fields=[]) 세션에선 빈 미확정 행의 '미매칭' 빨강이
+    중립으로 강등되고 스키마온리 안내 배너가 노출된다. 데이터 연결 세션에선 빨강 유지·
+    배너 숨김('데이터 미연결'과 '미매칭'을 시각 분리)."""
+    from PySide6.QtGui import QColor
+
+    from hwpxfiller.gui.mapping_state import MappingModel, RowState
+    from hwpxfiller.gui.mapping_table import _COL_FIELD, MappingTable
+    from hwpxfiller.gui.style import UNMATCHED_BG
+
+    red = QColor(UNMATCHED_BG).rgb()
+
+    # 데이터 미연결 — 빈 행 중립 강등 + 배너 노출.
+    so = MappingModel(rows=[RowState("공고명"), RowState("추정가격")], source_fields=[])
+    t = MappingTable()
+    t.set_model(so)
+    assert so.is_schema_only()
+    assert not t.lbl_schema_only.isHidden()  # 배너 노출
+    for ri in range(len(so.rows)):
+        assert t.table.item(ri, _COL_FIELD).background().color().rgb() != red
+
+    # 데이터 연결 — 빈 행은 여전히 미매칭 빨강, 배너 숨김.
+    conn = MappingModel(rows=[RowState("공고명")], source_fields=["bidNtceNm"])
+    t2 = MappingTable()
+    t2.set_model(conn)
+    assert not conn.is_schema_only()
+    assert t2.lbl_schema_only.isHidden()
+    assert t2.table.item(0, _COL_FIELD).background().color().rgb() == red
+
+
+def test_wizard_readonly_path_fields_excluded_from_focus_chain(qapp):
+    """UD-37 — 스텝1·2의 읽기전용 경로 필드는 포커스 정책 NoFocus 로 포커스 체인에서
+    빠져 첫 포커스가 회색 read-only 필드에 착지하지 않는다. style 에 read-only:focus
+    규칙이 있어 혹시 포커스를 받아도 회색 룩을 유지한다(2차 방어)."""
+    from PySide6.QtCore import Qt
+
+    from hwpxfiller.gui import style
+    from hwpxfiller.gui.wizard import DataPage, TemplatePage
+
+    tp = TemplatePage()
+    assert tp.ed_path.isReadOnly()
+    assert tp.ed_path.focusPolicy() == Qt.FocusPolicy.NoFocus
+    dp = DataPage()
+    assert dp.ed_path.isReadOnly()
+    assert dp.ed_path.focusPolicy() == Qt.FocusPolicy.NoFocus
+    assert "QLineEdit:read-only:focus" in style.BASE_QSS
+
+
 def test_template_page_compile_here_delegates_io_to_core(qapp, tmp_path, monkeypatch):
     """RC-28 — [여기서 컴파일]의 경로 파생·저장은 코어 compile_to_sibling 경유.
 

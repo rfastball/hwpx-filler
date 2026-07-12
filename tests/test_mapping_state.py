@@ -347,6 +347,23 @@ def test_preview_counts_three_states_sum_to_total():
     assert filled + empty_n + unmapped == len(model.rows)  # 어떤 필드도 무집계 아님
 
 
+def test_is_schema_only_true_only_when_no_source_fields():
+    """UD-28 — 연결된 데이터 소스 필드가 0개면 스키마온리(데이터 미연결) 세션이다.
+
+    뷰가 빈 행 빨강 '미매칭'을 중립으로 강등하는 근거(링1, Qt 비의존). 데이터가
+    연결된 세션(source_fields 有)에선 False 라야 미매칭 빨강이 살아 있다.
+    """
+    schema_only = MappingModel(
+        rows=[RowState("공고명"), RowState("추정가격")], source_fields=[]
+    )
+    assert schema_only.is_schema_only() is True
+
+    connected = MappingModel(
+        rows=[RowState("공고명")], source_fields=["bidNtceNm"]
+    )
+    assert connected.is_schema_only() is False
+
+
 # --------------------------------------------------------------- apply_profile
 def test_apply_profile_roundtrip_restores_confirmed_state(tmp_path):
     """저장 → 로드 라운드트립: 일치 행은 값 복원 + 확정 도착, 나머지는 미확정 유지."""

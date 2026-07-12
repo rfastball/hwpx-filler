@@ -62,28 +62,38 @@ _MULTI_ITEM = "여러 데이터 항목 선택…"
 _LOW_CONFIDENCE = 1.0
 
 
-def _row_brush(row) -> QBrush:
+def _row_brush(row, schema_only: bool = False) -> QBrush:
     """행 상태 배경색 결정식(단일 출처) — 확정=기본, 미확정=노랑, 내용 없는 미확정=빨강.
 
     ``_sync_row`` 와 ``_on_arg_edited``(포커스 보존을 위한 부분 갱신)가 공유한다 —
     결정식이 두 곳에서 따로 진화하지 않게 한다(RC-28).
+
+    ``schema_only`` (데이터 미연결 세션, UD-28): 내용 없는 미확정 행의 빨강 '미매칭'
+    경보를 중립(기본)으로 강등한다 — 매칭할 데이터가 없으니 '못 맞춤'이 아니라 '아직
+    연결 안 함'이라, 빨강은 오경보다('데이터 미연결'은 상단 배너가 설명). 이로써
+    '데이터 미연결'(중립)과 '미매칭'(데이터 有 + 빨강)이 시각적으로 분리된다.
     """
     if row.confirmed:
         return _BG_DEFAULT
-    return _BG_UNCONFIRMED if row.has_content() else _BG_UNMATCHED
+    if row.has_content():
+        return _BG_UNCONFIRMED
+    return _BG_DEFAULT if schema_only else _BG_UNMATCHED
 
 
-def _row_state_color(row) -> "QColor | None":
+def _row_state_color(row, schema_only: bool = False) -> "QColor | None":
     """행 상태 밴드 색(위젯 열 컨테이너용, UD-38) — ``_row_brush`` 와 같은 결정식.
 
     아이템 배경(QBrush)과 달리 위젯 셀 컨테이너는 팔레트 색으로 칠하므로 ``QColor``
     또는 ``None``(확정 = 밴드 없음)을 돌려준다. 상태색이 아이템 3열에만 닿고 cellWidget
     4열(데이터 항목·변환·표시형·구분자)에서 끊겨 미매칭 빨강이 좌우로 찢기던 것을,
-    같은 색을 셀 컨테이너에도 칠해 **연속 밴드**로 잇는다.
+    같은 색을 셀 컨테이너에도 칠해 **연속 밴드**로 잇는다. ``schema_only`` 강등은
+    ``_row_brush`` 와 동형(데이터 미연결 세션의 빈 행 = 밴드 없음).
     """
     if row.confirmed:
         return None
-    return QColor(UNCONFIRMED_BG) if row.has_content() else QColor(UNMATCHED_BG)
+    if row.has_content():
+        return QColor(UNCONFIRMED_BG)
+    return None if schema_only else QColor(UNMATCHED_BG)
 
 
 def _source_label(key: str, aliases: "dict[str, str]") -> str:
@@ -152,6 +162,19 @@ class MappingTable(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+
+        # 데이터 미연결(스키마온리) 안내 배너(UD-28) — 데이터 스텝을 건너뛴 세션에서만
+        # 노출. 빈 행이 중립색인 이유(매칭할 데이터가 없음)를 설명하고 다음 행동을
+        # 제안해, 전면 빨강을 오류로 오인하던 문제를 해소한다. 평상시 숨김.
+        self.lbl_schema_only = QLabel(
+            "데이터 미연결 — 스키마만 편집 중입니다. 연결된 데이터가 없어 데이터 항목을 "
+            "고를 수 없습니다(빈 행은 오류가 아닙니다). 상수로 채우거나 각 필드를 (비움)으로 "
+            "확정하세요 — 실제 데이터는 실행할 때 연결합니다."
+        )
+        self.lbl_schema_only.setWordWrap(True)
+        mark(self.lbl_schema_only, "muted", True)
+        self.lbl_schema_only.setVisible(False)
+        layout.addWidget(self.lbl_schema_only)
 
         self.table = QTableWidget(0, len(_HEADERS))
         self.table.setHorizontalHeaderLabels(_HEADERS)
@@ -235,9 +258,15 @@ class MappingTable(QWidget):
             item.setText(value)
             item.setForeground(_FG_DEFAULT)
 
+    def _schema_only(self) -> bool:
+        """현재 모델이 데이터 미연결(스키마온리) 세션인가(UD-28) — 행 색 강등의 근거."""
+        return self._model is not None and self._model.is_schema_only()
+
     # ----------------------------------------------------------------- 렌더링
     def _rebuild(self):
         model = self._model
+        # 데이터 미연결 세션에서만 스키마온리 안내 배너 노출(UD-28).
+        self.lbl_schema_only.setVisible(self._schema_only())
         self._updating = True
         try:
             self.table.setRowCount(0)
@@ -457,11 +486,13 @@ class MappingTable(QWidget):
             self._render_preview(ri, row)
 
             # 행 상태 색(결정식은 _row_brush 단일 출처) — 아이템 3열 + 위젯 4열 컨테이너
-            # 를 함께 칠해 상태색 밴드를 행 전폭으로 연속화(UD-38).
-            brush = _row_brush(row)
+            # 를 함께 칠해 상태색 밴드를 행 전폭으로 연속화(UD-38). 데이터 미연결
+            # 세션이면 빈 행 빨강을 중립으로 강등(UD-28).
+            so = self._schema_only()
+            brush = _row_brush(row, so)
             for col in (_COL_CONFIRM, _COL_FIELD, _COL_PREVIEW):
                 self.table.item(ri, col).setBackground(brush)
-            self._apply_band(ri, _row_state_color(row))
+            self._apply_band(ri, _row_state_color(row, so))
         finally:
             self._updating = False
 
@@ -542,10 +573,11 @@ class MappingTable(QWidget):
         try:
             self.table.item(ri, _COL_CONFIRM).setCheckState(Qt.Unchecked)
             self._render_preview(ri, row)
-            brush = _row_brush(row)  # set_sep/set_const 가 확정을 해제한 뒤라 미확정 색
+            so = self._schema_only()
+            brush = _row_brush(row, so)  # set_sep/set_const 가 확정을 해제한 뒤라 미확정 색
             for col in (_COL_CONFIRM, _COL_FIELD, _COL_PREVIEW):
                 self.table.item(ri, col).setBackground(brush)
-            self._apply_band(ri, _row_state_color(row))  # 위젯 열 밴드도 함께(UD-38)
+            self._apply_band(ri, _row_state_color(row, so))  # 위젯 열 밴드도 함께(UD-38)
         finally:
             self._updating = False
         self.completeChanged.emit()
