@@ -56,8 +56,8 @@ jobs:
             Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $signtool) { throw 'signtool.exe not found' }
           "SIGNTOOL=$($signtool.FullName)" | Out-File $env:GITHUB_ENV -Append
-          & $signtool.FullName sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $pfx /p $env:SIGN_PASSWORD dist\hwpx-filler.exe dist\hwpx-diff.exe
-          & $signtool.FullName verify /pa dist\hwpx-filler.exe dist\hwpx-diff.exe
+          & $signtool.FullName sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $pfx /p $env:SIGN_PASSWORD dist\hwpx-filler\hwpx-filler.exe dist\hwpx-diff\hwpx-diff.exe
+          & $signtool.FullName verify /pa dist\hwpx-filler\hwpx-filler.exe dist\hwpx-diff\hwpx-diff.exe
       - name: Install Inno Setup
         run: choco install innosetup --yes --no-progress
       - name: Build product installers
@@ -87,11 +87,17 @@ jobs:
           & "$diffDir\hwpx-diff.exe" --selfcheck tests\corpus\real\spec_revision_2025.hwpx tests\corpus\real\spec_revision_2026.hwpx
           if ($LASTEXITCODE -ne 0) { throw 'installed diff selfcheck failed' }
           & "$diffDir\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+      - name: Package portable bundles
+        shell: pwsh
+        run: |
+          $version = $env:RELEASE_TAG.TrimStart('v')
+          Compress-Archive -Path dist\hwpx-filler\* -DestinationPath ("installer-dist\HWPX-Filler-$version-portable.zip")
+          Compress-Archive -Path dist\hwpx-diff\* -DestinationPath ("installer-dist\HWPX-Diff-$version-portable.zip")
       - name: Create checksums and collect metadata
         shell: pwsh
         run: |
           Copy-Item build\version\build-metadata.json installer-dist\build-metadata.json
-          $files = @(Get-Item dist\hwpx-filler.exe, dist\hwpx-diff.exe) + @(Get-ChildItem installer-dist\*.exe)
+          $files = @(Get-ChildItem installer-dist\*.exe) + @(Get-ChildItem installer-dist\*.zip)
           $lines = foreach ($file in $files) {
             $hash = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             "$hash  $($file.Name)"
@@ -105,8 +111,7 @@ jobs:
           prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
           body: ${{ env.SIGNED_RELEASE == 'true' && 'Windows artifacts are Authenticode signed.' || 'Unsigned development release; verify SHA256SUMS.txt before use.' }}
           files: |
-            dist/hwpx-filler.exe
-            dist/hwpx-diff.exe
             installer-dist/*.exe
+            installer-dist/*.zip
             installer-dist/SHA256SUMS.txt
             installer-dist/build-metadata.json
