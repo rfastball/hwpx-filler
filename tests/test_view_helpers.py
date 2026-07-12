@@ -165,6 +165,7 @@ def test_elided_label_elides_and_sets_tooltip_when_narrow(qapp):
     full = "아주" * 40
     lbl = ElidedLabel(full, max_width=200)
     lbl.resize(60, 20)
+    lbl._relayout()                     # offscreen 미표시 위젯은 resizeEvent 비동기 — 넓은 경우(아래)와 동일하게 명시 호출
     assert lbl.text() != full           # 말줄임됨
     assert lbl.toolTip() == full        # 전체 이름 툴팁
     assert lbl.full_text() == full
