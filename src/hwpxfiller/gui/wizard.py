@@ -15,13 +15,16 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QRadioButton,
     QVBoxLayout,
+    QWidget,
     QWizardPage,
 )
 
@@ -251,16 +254,40 @@ class TemplatePage(QWizardPage):
 
 
 class DataPage(QWizardPage):
-    """2단계 — 데이터 파일 선택(xlsx/csv). 컬럼·레코드 수 요약."""
+    """2단계 — 데이터 소스 선택(엑셀/CSV 파일 **또는** 나라장터 취득). 컬럼·레코드 수 요약.
+
+    소스가 자기 어휘를 소유한다(V1): 나라장터는 영문 코드 키를 반환하고 ``field_labels()``
+    로 퍼지 매핑 타겟을 제공한다. 취득 산출물은 **키 없는 스냅샷**(``AcquiredNaraData``)이라
+    위저드 세션/작업 직렬화 표면에 ServiceKey 가 닿지 않는다(키 저장/사용은 N1 SecretStore).
+    """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setTitle("2단계 — 데이터 선택")
-        self.setSubTitle("레코드(행)마다 문서 1건을 생성할 데이터 파일을 선택하세요.")
+        self.setSubTitle("레코드(행)마다 문서 1건을 생성할 데이터를 선택하세요.")
         self._valid = False
 
         layout = QVBoxLayout(self)
-        row = QHBoxLayout()
+
+        # ---- 소스 선택(엑셀/CSV | 나라장터) ----
+        src_row = QHBoxLayout()
+        self.rb_excel = QRadioButton("엑셀/CSV 파일")
+        self.rb_nara = QRadioButton("나라장터")
+        self.rb_excel.setChecked(True)
+        self._src_group = QButtonGroup(self)
+        self._src_group.addButton(self.rb_excel)
+        self._src_group.addButton(self.rb_nara)
+        self.rb_excel.toggled.connect(self._on_source_toggle)
+        src_row.addWidget(QLabel("데이터 소스"))
+        src_row.addWidget(self.rb_excel)
+        src_row.addWidget(self.rb_nara)
+        src_row.addStretch(1)
+        layout.addLayout(src_row)
+
+        # ---- 엑셀/CSV 파일 선택 행 ----
+        self.excel_row = QWidget()
+        row = QHBoxLayout(self.excel_row)
+        row.setContentsMargins(0, 0, 0, 0)
         self.ed_path = QLineEdit()
         self.ed_path.setReadOnly(True)
         btn = QPushButton("찾아보기…")
@@ -268,12 +295,70 @@ class DataPage(QWizardPage):
         row.addWidget(QLabel("데이터(.xlsx/.csv)"))
         row.addWidget(self.ed_path, 1)
         row.addWidget(btn)
-        layout.addLayout(row)
+        layout.addWidget(self.excel_row)
+
+        # ---- 나라장터 취득 행 ----
+        self.nara_row = QWidget()
+        nrow = QHBoxLayout(self.nara_row)
+        nrow.setContentsMargins(0, 0, 0, 0)
+        self.btn_nara = QPushButton("나라장터에서 가져오기…")
+        self.btn_nara.clicked.connect(self._open_nara)
+        nrow.addWidget(QLabel("조달청 표준 입찰공고"))
+        nrow.addWidget(self.btn_nara)
+        nrow.addStretch(1)
+        self.nara_row.setVisible(False)
+        layout.addWidget(self.nara_row)
 
         self.lbl_summary = QLabel("")
         self.lbl_summary.setWordWrap(True)
         layout.addWidget(self.lbl_summary)
         layout.addStretch(1)
+
+    def _on_source_toggle(self, *_args) -> None:
+        """소스 전환 — 해당 입력 행만 노출하고 이전 선택을 무효화(소스 혼선 방지)."""
+        excel = self.rb_excel.isChecked()
+        self.excel_row.setVisible(excel)
+        self.nara_row.setVisible(not excel)
+        self._valid = False
+        self.ed_path.clear()
+        self.lbl_summary.setText("")
+        self.completeChanged.emit()
+
+    def _open_nara(self) -> None:
+        """나라장터 취득 대화상자를 열고, 수용 시 취득 산출물을 위저드 세션에 심는다.
+
+        ``secret_store``/``nara_fetcher`` 를 위저드에서 읽어 대화상자에 주입한다(테스트 이음새).
+        평시엔 둘 다 부재 → 대화상자가 OS 자격증명 저장소·실 네트워크를 쓴다.
+        """
+        from .nara_view import NaraAcquireDialog
+
+        wiz = self.wizard()
+        dlg = NaraAcquireDialog(
+            self,
+            store=getattr(wiz, "secret_store", None),
+            fetcher=getattr(wiz, "nara_fetcher", None),
+        )
+        if dlg.exec() == dlg.Accepted and dlg.records:
+            self._apply_nara_result(dlg.records, dlg.fields, dlg.datasource, dlg.label)
+
+    def _apply_nara_result(self, records, fields, datasource, label: str) -> None:
+        """취득 결과(키 없는 스냅샷)를 위저드 세션에 반영 — 파일 경로 대신 합성 라벨 사용.
+
+        ``data_path`` 는 매핑 초안 캐시 키의 일부라 취득마다 달라지게 라벨을 심는다
+        (MappingPage 가 조합 변경을 감지해 재초안). 헤드리스 테스트가 다이얼로그 없이 직접
+        호출할 수 있게 분리한다.
+        """
+        wiz = self.wizard()
+        wiz.data_path = label
+        wiz.datasource = datasource
+        wiz.source_fields = fields
+        wiz.records = records
+        self.ed_path.setText(label)
+        self.lbl_summary.setText(
+            f"나라장터 {len(fields)}개 필드, {len(records)}건 취득."
+        )
+        self._valid = bool(fields and records)
+        self.completeChanged.emit()
 
     def initializePage(self):
         # 편집 모드 고지: Job 은 데이터를 저장하지 않는다(핸드오프 §3) — 매핑 검토용
