@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .confirm import confirm_destructive
 from .dataset_pool_state import DatasetPoolRow, DatasetPoolViewModel
 from .style import BASE_QSS, mark
 
@@ -149,9 +150,9 @@ class DatasetPoolPanel(QMainWindow):
     # ---------------------------------------------------- 액션 디스패치
     def _dispatch(self, key: str, name: str) -> None:
         if key == "delete":
-            if QMessageBox.question(
-                self, "삭제", f"데이터셋 '{name}' 참조를 삭제할까요?"
-            ) != QMessageBox.Yes:
+            if not confirm_destructive(
+                self, "데이터셋 삭제", f"데이터셋 '{name}' 참조를 삭제할까요?", "삭제"
+            ):
                 return
         try:
             self.vm.dispatch(key, name)

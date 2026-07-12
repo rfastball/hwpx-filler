@@ -33,6 +33,7 @@ from ..core.authoring import compile_document, scan_tokens
 from ..core.mapping import MappingProfile
 from ..core.schema import extract_schema
 from ..data import source_for_path
+from .confirm import confirm_destructive
 from .mapping_state import MappingModel, PartialGate, gate_for_template
 from .mapping_table import MappingTable
 from .style import mark
@@ -206,11 +207,12 @@ class TemplatePage(QWizardPage):
             return
         compiled_path = str(Path(path).with_suffix(".compiled.hwpx"))
         # 컴파일본이 이미 있으면(사람이 손봤을 수 있음) 조용히 덮지 않는다(RC-02).
-        if Path(compiled_path).exists() and QMessageBox.question(
+        if Path(compiled_path).exists() and not confirm_destructive(
             self, "덮어쓰기 확인",
             f"컴파일본이 이미 있습니다:\n{compiled_path}\n\n"
-            "계속하면 기존 컴파일본을 덮어씁니다. 덮어쓰고 진행할까요?",
-        ) != QMessageBox.Yes:
+            "계속하면 기존 컴파일본을 덮어씁니다.",
+            "덮어쓰고 진행",
+        ):
             return
         try:
             pkg.save(compiled_path)
@@ -656,18 +658,28 @@ class MappingPage(QWizardPage):
 
         return MappingBaseRegistry(default_mapping_bases_dir())
 
-    def _referencing_jobs(self, base_name: str) -> "list[str]":
-        """이 베이스를 계보로 참조하는 작업 이름들(전파 경고 근거)."""
+    def _referencing_jobs(self, base_name: str) -> "list[str] | None":
+        """이 베이스를 계보로 참조하는 작업 이름들(전파 경고 근거).
+
+        ``None`` = **참조 여부 판단 불가**(레지스트리 부재·조회 실패·손상 작업 파일 존재)
+        — 호출부는 이를 '참조 없음'([])과 구별해 시끄럽게 재진술해야 한다(RC-15 P5b:
+        과거엔 조회 실패를 []로 삼켜 실존 참조의 전파 경고를 우회시켰다).
+        """
         job_reg = getattr(self.wizard(), "registry", None)
         if job_reg is None:
-            return []
+            return None
+        corrupted: "list[tuple[Path, str]]" = []
         try:
-            return [
-                j.name for j in job_reg.list_jobs()
-                if getattr(j, "base_mapping_name", "") == base_name
-            ]
-        except Exception:  # noqa: BLE001
-            return []
+            jobs = job_reg.list_jobs(corrupted=corrupted)
+        except Exception:  # noqa: BLE001 — 실패를 '참조 없음'으로 오역하지 않는다
+            return None
+        if corrupted:
+            # 손상 작업이 이 베이스를 참조할 수도 있다 — 전수 확인이 불가능하면 불명.
+            return None
+        return [
+            j.name for j in jobs
+            if getattr(j, "base_mapping_name", "") == base_name
+        ]
 
     def _apply_base(self):
         """공유 베이스를 골라 현재 모델에 **이름 교집합**으로 투영(apply_profile)."""
@@ -721,13 +733,27 @@ class MappingPage(QWizardPage):
         name = name.strip()
         reg = self._base_registry()
         if reg.exists(name):
+            # 베이스는 durable 공유 자산 — 참조 유무와 **무관하게** 덮어쓰기 확인을
+            # 요구한다(RC-15 P5a: 과거엔 참조 0개면 확인 자체가 없었다).
             refs = self._referencing_jobs(name)
-            if refs and QMessageBox.question(
+            if refs:
+                detail = (
+                    f"이 베이스를 참조하는 작업 {len(refs)}개가 있습니다"
+                    f"({', '.join(refs[:5])}). 덮어쓰면 그 작업들의 매핑을 다시 "
+                    "검토·확정해야 할 수 있습니다."
+                )
+            elif refs is None:
+                detail = (
+                    "참조 작업 여부를 확인할 수 없습니다(작업 목록 조회 실패·손상) — "
+                    "이 베이스를 참조하는 작업이 있을 수 있습니다."
+                )
+            else:
+                detail = "참조하는 작업은 없지만, 저장된 공유 어휘가 지금 매핑으로 교체됩니다."
+            if not confirm_destructive(
                 self, "베이스 덮어쓰기",
-                f"'{name}' 베이스를 참조하는 작업 {len(refs)}개가 있습니다"
-                f"({', '.join(refs[:5])}). 덮어쓰면 그 작업들의 매핑을 다시 검토·확정해야 "
-                "할 수 있습니다. 계속할까요?",
-            ) != QMessageBox.Yes:
+                f"공유 베이스 '{name}' 이(가) 이미 있습니다.\n{detail}",
+                "덮어쓰기",
+            ):
                 return
         profile.name = name
         try:

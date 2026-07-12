@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .confirm import confirm_destructive
 from .style import BASE_QSS, mark
 from .template_manager_state import TemplateManagerViewModel, TemplateRow
 
@@ -226,10 +227,10 @@ class TemplateManagerPanel(QMainWindow):
             lines.append("\n컴파일 가능한 토큰이 없습니다.")
             QMessageBox.information(self, "fieldize 미리보기", "\n".join(lines))
             return
-        lines.append("\n지금 컴파일할까요? (파일이 변경됩니다)")
-        if QMessageBox.question(
-            self, "fieldize 미리보기 → 적용", "\n".join(lines)
-        ) != QMessageBox.Yes:
+        lines.append(f"\n지금 컴파일하면 파일이 제자리에서 변경됩니다: {Path(path).name}")
+        if not confirm_destructive(
+            self, "fieldize 미리보기 → 적용", "\n".join(lines), "컴파일 적용"
+        ):
             return  # dry-run 만 — 확인 없으면 변형 없음
         report = self.vm.apply_fieldize(path)
         self.lbl_result.setText(self.vm.format_compile_result(path, report))

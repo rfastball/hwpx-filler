@@ -198,11 +198,14 @@ class _AppController:
         wiz.show()
 
     def _delete_job(self, name: str) -> None:
-        from PySide6.QtWidgets import QMessageBox
+        from .confirm import confirm_destructive
 
-        if QMessageBox.question(
-            self.home, "삭제", f"작업 '{name}' 을(를) 삭제할까요?"
-        ) == QMessageBox.Yes:
+        # 공용 파괴 확인(RC-15): 기본=취소·한국어 명시 라벨 — Enter 반사로 삭제되지 않는다.
+        if confirm_destructive(
+            self.home, "작업 삭제",
+            f"작업 '{name}' 을(를) 삭제할까요?\n삭제하면 되돌릴 수 없습니다.",
+            "삭제",
+        ):
             self.registry.delete(name)
             self.home.refresh()
 

@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core.job import Job, JobRegistry
+from .confirm import confirm_destructive
 from .style import BASE_QSS
 from .wizard import DataPage, MappingPage, TemplatePage
 
@@ -97,10 +98,29 @@ class JobEditorWizard(QWizard):
         # 자기 자신 갱신(편집 모드, 이름 그대로)은 자명 — 이름을 바꿔 다른 작업을
         # 덮게 될 때만 확인을 묻는다.
         editing_self = self.initial_job is not None and name == self.initial_job.name
-        if not editing_self and self.registry.exists(name) and QMessageBox.question(
-            self, "덮어쓰기", f"작업 '{name}' 이(가) 이미 있습니다. 덮어쓸까요?"
-        ) != QMessageBox.Yes:
-            return
+        if not editing_self and self.registry.exists(name):
+            # 실제 파괴 대상을 문구에 못박는다(RC-15 P6): 레지스트리는 slug 로 저장하므로
+            # 입력 이름('예산/2026')과 파괴되는 기존 작업 이름('예산_2026')이 다를 수 있다
+            # — 입력 이름만 재진술하면 확인 내용이 거짓이 된다.
+            try:
+                victim = self.registry.load(name).name or name
+            except Exception:  # noqa: BLE001 — 손상 파일: 이름 불명을 조용히 추측하지 않는다
+                victim = ""
+            if not victim:
+                text = (
+                    f"작업 '{name}' 의 저장 위치에 기존 작업 파일이 있습니다"
+                    "(손상되어 어떤 작업인지 확인할 수 없습니다).\n"
+                    "계속하면 그 파일을 덮어씁니다."
+                )
+            elif victim != name:
+                text = (
+                    f"작업 이름 '{name}' 은(는) 기존 작업 '{victim}' 과(와) 같은 파일로 "
+                    f"저장됩니다.\n계속하면 작업 '{victim}' 을(를) 덮어씁니다."
+                )
+            else:
+                text = f"작업 '{name}' 이(가) 이미 있습니다.\n계속하면 기존 작업을 덮어씁니다."
+            if not confirm_destructive(self, "작업 덮어쓰기", text, "덮어쓰기"):
+                return
         job = Job(
             name=name,
             template_path=self.template_path,

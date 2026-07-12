@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .confirm import confirm_destructive
 from .nara_state import DT_FMT, NaraAcquireViewModel
 from .style import mark
 from .worker import TaskWorker
@@ -231,9 +232,11 @@ class NaraAcquireDialog(QDialog):
         self._sync_key_ui()
 
     def _on_delete_key(self) -> None:
-        if QMessageBox.question(
-            self, "삭제", "저장된 서비스키를 삭제할까요?"
-        ) != QMessageBox.Yes:
+        if not confirm_destructive(
+            self, "서비스키 삭제",
+            "저장된 서비스키를 삭제할까요?\n삭제하면 다시 등록하기 전까지 취득할 수 없습니다.",
+            "삭제",
+        ):
             return
         try:
             self.vm.delete_key()

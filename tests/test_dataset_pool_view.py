@@ -168,17 +168,19 @@ def test_panel_register_nara_refuses_stale_edited_dialog(qapp, tmp_path, monkeyp
 
 
 def test_panel_delete_confirms_then_removes(qapp, tmp_path, monkeypatch):
+    from hwpxfiller.gui import dataset_pool_panel as dpp
     from hwpxfiller.gui.dataset_pool_panel import DatasetPoolPanel
 
     reg = DatasetPoolRegistry(tmp_path)
     reg.save(DatasetPoolItem(name="D", kind="excel", opts={"path": "/d.xlsx"}))
     panel = DatasetPoolPanel(reg)
 
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.No)
+    # 파괴 확인은 공용 헬퍼 경유(RC-15) — 거절 → 유지.
+    monkeypatch.setattr(dpp, "confirm_destructive", lambda *a, **k: False)
     panel._dispatch("delete", "D")
-    assert reg.exists("D")  # 거절 → 유지
+    assert reg.exists("D")
 
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    monkeypatch.setattr(dpp, "confirm_destructive", lambda *a, **k: True)
     panel._dispatch("delete", "D")
     assert not reg.exists("D")
 
@@ -241,12 +243,15 @@ def test_pipeline_builder_save_collision_gated_by_question(qapp, tmp_path, monke
     dlg._on_add_source()
     dlg.edt_name.setText("기준")  # 기존 항목과 동명
 
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.No)
+    from hwpxfiller.gui import pipeline_builder as pb
+
+    # 파괴 확인은 공용 헬퍼 경유(RC-15) — 거절 → 원본 유지.
+    monkeypatch.setattr(pb, "confirm_destructive", lambda *a, **k: False)
     dlg._on_save()
     assert dlg.saved_name is None
-    assert reg.load("기준").kind == "excel"  # 거절 → 원본 유지
+    assert reg.load("기준").kind == "excel"
 
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    monkeypatch.setattr(pb, "confirm_destructive", lambda *a, **k: True)
     dlg._on_save()
     assert dlg.saved_name == "기준"
     assert reg.load("기준").kind == "pipeline"  # 확정 후에만 치환

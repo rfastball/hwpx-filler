@@ -249,8 +249,7 @@ def test_editor_edit_mode_prefills_and_preseeds(qapp, tmp_path):
 
 def test_editor_edit_mode_accept_same_name_no_prompt(qapp, tmp_path, monkeypatch):
     """편집 모드 자기 자신 재저장은 덮어쓰기 프롬프트 없음 + last_run_at 이월."""
-    from PySide6.QtWidgets import QMessageBox
-
+    from hwpxfiller.gui import job_editor as je
     from hwpxfiller.gui.job_editor import JobEditorWizard
 
     reg, job = _saved_job(tmp_path)
@@ -258,7 +257,7 @@ def test_editor_edit_mode_accept_same_name_no_prompt(qapp, tmp_path, monkeypatch
     reg.save(job)
 
     monkeypatch.setattr(
-        QMessageBox, "question",
+        je, "confirm_destructive",
         lambda *a, **k: pytest.fail("자기 자신 갱신에 덮어쓰기 프롬프트가 떴다"),
     )
     wiz = JobEditorWizard(reg, initial_job=reg.load("편집대상"))
@@ -344,10 +343,9 @@ def test_template_manager_panel_renders_badges_and_gated_actions(qapp, tmp_path)
 
 
 def test_template_manager_compile_dry_run_then_apply(qapp, tmp_path, monkeypatch):
-    """컴파일 버튼 = dry-run 확인 → No 면 무변형, Yes 면 컴파일·상태 진행(명시성)."""
-    from PySide6.QtWidgets import QMessageBox
-
+    """컴파일 버튼 = dry-run 확인 → 거절이면 무변형, 확정이면 컴파일·상태 진행(명시성)."""
     from hwpxfiller.core.template_status import CompileState, compile_status
+    from hwpxfiller.gui import template_manager as tm
     from hwpxfiller.gui.template_manager import TemplateManagerPanel
 
     path = tmp_path / "raw.hwpx"
@@ -355,14 +353,14 @@ def test_template_manager_compile_dry_run_then_apply(qapp, tmp_path, monkeypatch
     panel = TemplateManagerPanel(library_dir=tmp_path)
     before = path.read_bytes()
 
-    # 확인 거절(No) → dry-run 만, 파일 무변형.
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.No)
+    # 확인 거절 → dry-run 만, 파일 무변형(파괴 확인은 공용 헬퍼 경유 — RC-15).
+    monkeypatch.setattr(tm, "confirm_destructive", lambda *a, **k: False)
     panel._dispatch("compile", str(path))
     assert path.read_bytes() == before
     assert compile_status(str(path)).state == CompileState.RAW
 
-    # 확인 수락(Yes) → 컴파일·저장, RAW → COMPILED.
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    # 확인 수락 → 컴파일·저장, RAW → COMPILED.
+    monkeypatch.setattr(tm, "confirm_destructive", lambda *a, **k: True)
     panel._dispatch("compile", str(path))
     assert compile_status(str(path)).state == CompileState.COMPILED
     assert panel.list.count() == 1  # 재렌더됨
@@ -691,7 +689,6 @@ def test_run_view_inline_blank_gate_and_marker_injection(qapp, tmp_path, monkeyp
 def test_run_view_overwrite_requires_confirmation(qapp, tmp_path, monkeypatch):
     """RC-02 — 기존 산출물과 충돌 시 확인 대화상자: 거부=워커 미기동·무손상, 확정=overwrite 전달."""
     from PySide6.QtCore import QObject, Signal
-    from PySide6.QtWidgets import QMessageBox
 
     from hwpxfiller.gui import run_view as rv
 
@@ -722,14 +719,14 @@ def test_run_view_overwrite_requires_confirmation(qapp, tmp_path, monkeypatch):
 
     monkeypatch.setattr(rv, "GenerateWorker", _FakeWorker)
 
-    # 1) 거부 — 워커 미기동, 기존 파일 무손상.
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.No)
+    # 1) 거부 — 워커 미기동, 기존 파일 무손상(파괴 확인은 공용 헬퍼 경유 — RC-15).
+    monkeypatch.setattr(rv, "confirm_destructive", lambda *a, **k: False)
     view._on_generate()
     assert "overwrite" not in captured and view._thread is None
     assert sentinel.read_bytes() == b"user-edited"
 
     # 2) 확정 — 워커가 overwrite=True 로 기동.
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    monkeypatch.setattr(rv, "confirm_destructive", lambda *a, **k: True)
     view._on_generate()
     try:
         assert captured["overwrite"] is True
@@ -920,6 +917,7 @@ def test_template_page_compile_here_confirms_before_overwriting(qapp, tmp_path, 
     from PySide6.QtWidgets import QMessageBox
 
     from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui import wizard as wz
     from hwpxfiller.gui.job_editor import JobEditorWizard
 
     path = _partial_template_file(tmp_path)
@@ -930,14 +928,14 @@ def test_template_page_compile_here_confirms_before_overwriting(qapp, tmp_path, 
     page = wiz.page(wiz.pageIds()[0])
     page._load_template(path)
 
-    # 1) 거부 — 기존 컴파일본 무손상, 원본 경로 유지.
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.No)
+    # 1) 거부 — 기존 컴파일본 무손상, 원본 경로 유지(파괴 확인은 공용 헬퍼 — RC-15).
+    monkeypatch.setattr(wz, "confirm_destructive", lambda *a, **k: False)
     page._compile_here()
     assert stale.read_bytes() == b"user-edited-compiled"
     assert page.ed_path.text() == path
 
     # 2) 확정 — 덮어쓰고 컴파일본으로 전환.
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    monkeypatch.setattr(wz, "confirm_destructive", lambda *a, **k: True)
     monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
     page._compile_here()
     assert stale.read_bytes()[:2] == b"PK"  # 유효 HWPX 로 교체

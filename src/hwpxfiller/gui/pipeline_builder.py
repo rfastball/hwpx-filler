@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .confirm import confirm_destructive
 from .pipeline_builder_state import PipelineBuilderViewModel
 from .style import BASE_QSS, mark
 
@@ -274,11 +275,12 @@ class PipelineBuilderDialog(QDialog):
         # 동명 항목은 조용히 덮지 않는다 — 사람 확정 후에만 overwrite(confirm-or-alarm).
         overwrite = False
         if name and self.vm.registry.exists(name):
-            if QMessageBox.question(
+            if not confirm_destructive(
                 self, "이름 충돌",
-                f"'{name}' 풀 항목이 이미 있습니다 — 이 파이프라인으로 덮어쓸까요?\n"
-                "(기존 참조는 사라집니다)",
-            ) != QMessageBox.Yes:
+                f"'{name}' 풀 항목이 이미 있습니다 — 이 파이프라인으로 덮어쓰면 "
+                "기존 참조는 사라집니다.",
+                "덮어쓰기",
+            ):
                 return
             overwrite = True
         try:

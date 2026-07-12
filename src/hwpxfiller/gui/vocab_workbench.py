@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .confirm import confirm_destructive
 from .style import BASE_QSS, mark
 from .vocab_workbench_state import VocabBaseRow, VocabWorkbenchViewModel
 
@@ -140,7 +141,7 @@ class VocabWorkbenchPanel(QMainWindow):
                 f"\n\n이 베이스를 참조하는 작업 {len(refs)}개가 있습니다"
                 f"({', '.join(refs[:5])}). 작업의 매핑 자체는 그대로지만 계보 연결이 끊깁니다."
             )
-        if QMessageBox.question(self, "삭제", msg) != QMessageBox.Yes:
+        if not confirm_destructive(self, "베이스 삭제", msg, "삭제"):
             return
         self.vm.delete(name)
         self.base_changed.emit()
@@ -150,11 +151,13 @@ class VocabWorkbenchPanel(QMainWindow):
         if not ok:
             return
         refs = self.vm.ref_names(name)
-        if refs and QMessageBox.question(
+        if refs and not confirm_destructive(
             self, "이름변경",
+            f"공유 베이스 '{name}' 을(를) '{new}' 으(로) 바꿉니다.\n"
             f"참조 작업 {len(refs)}개의 계보도 새 이름으로 갱신됩니다"
-            f"({', '.join(refs[:5])}). 계속할까요?",
-        ) != QMessageBox.Yes:
+            f"({', '.join(refs[:5])}).",
+            "이름변경",
+        ):
             return
         try:
             self.vm.rename(name, new)

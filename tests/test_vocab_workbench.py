@@ -108,8 +108,7 @@ def test_job_editor_accept_carries_base_mapping_name(qapp, tmp_path, monkeypatch
     wiz.template_path = "/t.hwpx"
     wiz.model = MappingModel.from_profile(_base())  # 확정·내용 있음
     wiz._save_page.ed_name.setText("공고작업")
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
-    wiz.accept()
+    wiz.accept()  # 신규 이름 — 덮어쓰기 확인 없이 저장
     assert reg.load("공고작업").base_mapping_name == "조달어휘"
 
 
@@ -181,15 +180,23 @@ def test_panel_renders_and_edit_emits(qapp, tmp_path):
 
 
 def test_panel_delete_with_refs_confirms(qapp, tmp_path, monkeypatch):
+    from hwpxfiller.gui import vocab_workbench as vw
     from hwpxfiller.gui.vocab_workbench import VocabWorkbenchPanel
 
     base_reg, job_reg = _setup(tmp_path)
     panel = VocabWorkbenchPanel(base_reg, job_registry=job_reg)
-    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    # 파괴 확인은 공용 헬퍼 경유(RC-15) — 참조 재진술 문구를 함께 검증.
+    seen = {}
+    monkeypatch.setattr(
+        vw, "confirm_destructive",
+        lambda parent, title, text, label: seen.update(text=text) or True,
+    )
     changed = []
     panel.base_changed.connect(lambda: changed.append(True))
     panel._delete("조달어휘")
     assert not base_reg.exists("조달어휘") and changed
+    # 확인 문구가 파괴 대상·참조 작업을 구체 이름으로 재진술(RC-15).
+    assert "조달어휘" in seen["text"] and "공고작업" in seen["text"]
 
 
 def test_app_opens_workbench_and_seeds_editor_from_base(qapp, tmp_path, monkeypatch):

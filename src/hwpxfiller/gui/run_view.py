@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core.job import MISSING_MARKER, Job
+from .confirm import confirm_destructive
 from .flow_layout import FlowLayout
 from .record_select import RecordSelector
 from .run_state import GenerationPlan, RunViewModel
@@ -508,12 +509,12 @@ class RunView(QMainWindow):
         if conflicts:
             names = [Path(p).name for p in conflicts]
             shown = "\n".join(names[:10]) + (f"\n… 외 {len(names) - 10}개" if len(names) > 10 else "")
-            if QMessageBox.question(
+            if not confirm_destructive(
                 self, "덮어쓰기 확인",
                 f"저장 폴더에 같은 이름의 파일이 이미 있습니다.\n"
-                f"계속하면 기존 파일 {len(conflicts)}개를 덮어씁니다:\n\n{shown}\n\n"
-                "덮어쓰고 진행할까요?",
-            ) != QMessageBox.Yes:
+                f"계속하면 기존 파일 {len(conflicts)}개를 덮어씁니다:\n\n{shown}",
+                "덮어쓰고 진행",
+            ):
                 self._say("생성 취소 — 기존 파일 덮어쓰기를 확정하지 않았습니다.")
                 return
             overwrite = True
