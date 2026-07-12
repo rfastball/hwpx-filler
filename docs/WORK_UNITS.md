@@ -61,6 +61,23 @@ J1a(txt인라인) ──(독립)
 (J1a 제외 — `gui/txt_*`가 진행 중 미커밋 작업이라 워크트리 분기 시 충돌). 유닛이 파일 서로소라
 프로바이더가 섞여도 충돌 0.
 
+## ▶ 현재 프론티어 디스패치 (2026-07-12, KA 착지 후 · 아래 웨이브1 배정표는 완료·이력용)
+
+웨이브 1·2·3 전부 착지. **KA(조립 코어)도 master 착지**(`data/pipeline.py` seam). 남은 프론티어
+= **KB·L1·L2** 셋. 파일 서로소라 **KB ∥ L1 진짜 병렬**, L2 는 `core/fill_ledger.py` 공유로 L1 뒤 직렬.
+
+| 유닛 | 프로바이더 | base | 파일(서로소) | 상태 |
+|---|---|---|---|---|
+| **KB** 쿼리빌더 GUI | **Claude**(저자) | master(KA+J3) | `gui/dataset_pool_panel·state`,(`home`?) | 착수 |
+| **L1** 전건커버+대칭차 드리프트 | **Codex**(저자) | master(즉시·KA 무관) | `core/mapping`(가산)·신규 `core/fill_ledger`·`gui/run_state` | **착수(승인됨)** |
+| **L2** 원장 export+프로파일링 | Codex(L1 뒤) | L1 착지 후 | `core/fill_ledger`(확장)·신규 `core/source_profile`·`data/nara` | 대기(L1 의존) |
+
+- **Codex 몫 = L1 → L2**(L-트랙 연속). L1 은 **KA·KB 무의존** — 현재 master 에서 즉시 분기 착수.
+  L1 정합치명(오라벨 구멍=조용한 실패)이라 **병합 전 Claude 적대 리뷰**. `master 직접 병합 금지`(게이트=Claude).
+- **Claude 몫 = KB + 통합 게이트 + L1/L2 적대 리뷰.** KB 는 KA+J3 어휘 정합 위에서 저작.
+- **머지 게이트(Claude 단독):** 브랜치 준비 시 최신 master 위 재-피닝 → `.\test.ps1` → 의존순 ff.
+  KB ∥ L1 서로소라 병합 순서 자유, L1 → L2 직렬.
+
 ## 배정
 
 | 유닛 | 크기 | 프로바이더 | 성격 |
