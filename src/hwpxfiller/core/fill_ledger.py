@@ -7,12 +7,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import json
+from dataclasses import dataclass, field, replace
 from enum import Enum
+from pathlib import Path
 from typing import Iterable
 
 from .engine import HwpxEngine
-from .mapping import MappingProfile
+from .fields import read_fields
+from .mapping import FieldMapping, MappingProfile
+from .source_profile import FieldProfile
 
 
 class StructureState(str, Enum):
@@ -158,3 +162,213 @@ def build_fill_ledger(
         missing_sources=missing_sources,
         empty_values=tuple(dict.fromkeys(empty_values)),
     )
+
+
+# ==================================================================== L2 원장 export
+#: 배치 저장 폴더에 남는 사이드카 파일명(opt-in).
+LEDGER_SIDECAR_NAME = "fill-ledger.json"
+
+#: 사이드카에 박제하는 고지 — 값 미리보기는 HWPX 렌더가 아니다(ADR C 불변).
+LEDGER_PREVIEW_NOTE = (
+    "preview_text/read_back 은 주입될·주입된 텍스트 값이다 — "
+    "HWPX 렌더(서식·레이아웃)가 아니다."
+)
+
+
+@dataclass(frozen=True)
+class LedgerRow:
+    """생성 원장의 필드당 1행 — dry-run 매니페스트와 사후 증거가 같은 형태를 쓴다.
+
+    ``injected`` 는 생성 후 :func:`verify_output` 이 문서를 **되읽어** 채우는 증거값이다
+    (``GenerateResult.applied`` 는 엔진의 주장, 이 값은 산출물의 관측). ``None`` 은
+    "검증 대상 아님/미검증"(공란 선언·빈값 스킵·생성 실패)이지 성공 추정이 아니다.
+    """
+
+    field: str
+    status: str                          # "filled" | "blank" | "missing" | "drift"
+    sources: "tuple[str, ...]" = ()      # 이 필드가 읽는 소스 키(포인터, 값 아님)
+    transform: str = ""
+    fmt: str = ""
+    preview_text: str = ""               # dry-run 결과값(텍스트) — HWPX 렌더 아님
+    injected: "bool | None" = None       # 되읽기 증거: True/False, None=해당없음·미검증
+    read_back: str = ""                  # injected=False 일 때 문서의 실제 값(증거)
+
+    def to_dict(self) -> dict:
+        return {
+            "field": self.field,
+            "status": self.status,
+            "sources": list(self.sources),
+            "transform": self.transform,
+            "fmt": self.fmt,
+            "preview_text": self.preview_text,
+            "injected": self.injected,
+            "read_back": self.read_back,
+        }
+
+
+def manifest_rows(
+    mapping: MappingProfile,
+    template_fields: "Iterable[str]",
+    mapped_record: "dict[str, str]",
+    *,
+    missing_marker: str = "",
+) -> "tuple[LedgerRow, ...]":
+    """레코드 1건의 dry-run 매니페스트 — 생성 전 "무엇이 어떻게 들어갈지".
+
+    행 순서·상태 판정은 run_state ``field_states`` 와 같은 규칙(매핑 계약순 + 템플릿
+    신규 유입순, 대칭차·충돌은 ``drift``)이다. ``missing_marker`` 가 주어지면 표식이
+    주입된 값도 미충족(``missing``)으로 분류하되 ``preview_text`` 는 실제 주입값(표식)
+    그대로 둔다 — 원장은 들어가는 값을 있는 그대로 기록한다.
+    """
+    drift = template_structure_drift(template_fields, mapping)
+    drift_fields = drift.symmetric_difference | set(drift.conflicting)
+    value_maps: "dict[str, FieldMapping]" = {}
+    for m in mapping.mappings:
+        if not m.is_blank:
+            value_maps.setdefault(m.template_field, m)
+    blanks = set(mapping.blank_fields())
+    rows: "list[LedgerRow]" = []
+    order = list(mapping.cover_fields()) + list(drift.template_only)
+    for name in dict.fromkeys(order):
+        m = value_maps.get(name)
+        sources = tuple(m.sources) if m else ()
+        transform = m.transform if m else ""
+        fmt = m.fmt if m else ""
+        value = str(mapped_record.get(name, ""))
+        if name in drift_fields:
+            rows.append(LedgerRow(name, "drift", sources, transform, fmt, value))
+        elif name in blanks:
+            rows.append(LedgerRow(name, "blank", transform="blank"))
+        else:
+            is_missing = value == "" or (
+                bool(missing_marker) and value == missing_marker.format(field=name)
+            )
+            rows.append(LedgerRow(
+                name, "missing" if is_missing else "filled",
+                sources, transform, fmt, value,
+            ))
+    return tuple(rows)
+
+
+def verify_output(
+    output_path: str, rows: "tuple[LedgerRow, ...]"
+) -> "tuple[LedgerRow, ...]":
+    """생성물 실값 되읽기(C1 ``read_fields``) — 주입 주장 위에 관측 증거를 얹는다.
+
+    비어 있지 않은 값이 주입됐어야 하는 행(``preview_text`` 有)만 판정한다. 빈값은
+    엔진이 주입 자체를 건너뛰고(공란 선언은 키가 아예 안 넘어가고) 누름틀이 남으므로
+    ``None`` 유지. 문서를 읽지 못하면 raise — 증거 없음을 조용한 통과로 바꾸지 않는다.
+    """
+    actual = read_fields(output_path)
+    verified: "list[LedgerRow]" = []
+    for row in rows:
+        if row.status in ("filled", "missing") and row.preview_text.strip():
+            got = actual.get(row.field)
+            ok = got == row.preview_text
+            verified.append(replace(
+                row, injected=ok, read_back="" if ok else str(got),
+            ))
+        else:
+            verified.append(row)
+    return tuple(verified)
+
+
+@dataclass(frozen=True)
+class OutputLedger:
+    """산출물 1건의 원장 — 생성 결과 + 필드행(검증 여부 포함)."""
+
+    output: str
+    ok: bool
+    rows: "tuple[LedgerRow, ...]" = ()
+    error: str = ""                      # 생성 실패 사유(엔진 보고)
+    verify_error: str = ""               # 되읽기 실패 사유(증거 부재는 시끄럽게)
+
+    def to_dict(self) -> dict:
+        return {
+            "output": self.output,
+            "ok": self.ok,
+            "error": self.error,
+            "verify_error": self.verify_error,
+            "rows": [r.to_dict() for r in self.rows],
+        }
+
+
+def ledger_outputs(
+    results,
+    mapped_records: "list[dict[str, str]]",
+    mapping: MappingProfile,
+    template_fields: "Iterable[str]",
+    *,
+    missing_marker: str = "",
+    verify: bool = True,
+) -> "tuple[OutputLedger, ...]":
+    """배치 결과(:class:`~hwpxfiller.core.engine.GenerateResult` 순서열)와 매핑된
+    레코드를 합쳐 산출별 원장을 만든다. 성공 산출물은 되읽기 검증까지.
+    """
+    template_order = list(template_fields)
+    entries: "list[OutputLedger]" = []
+    for res, record in zip(results, mapped_records, strict=True):
+        rows = manifest_rows(
+            mapping, template_order, record, missing_marker=missing_marker
+        )
+        verify_error = ""
+        if verify and res.ok:
+            try:
+                rows = verify_output(res.output_path, rows)
+            except Exception as exc:  # noqa: BLE001 - 증거 부재를 조용히 넘기지 않는다
+                verify_error = f"되읽기 실패: {exc}"
+        entries.append(OutputLedger(res.output_path, res.ok, rows, res.error, verify_error))
+    return tuple(entries)
+
+
+def _redacted(payload: dict) -> dict:
+    """export 직전 전 문자열 마스킹 관통(N1) — 키·값 어느 쪽도 예외 없이 걷는다.
+
+    원장의 소스 표기는 포인터-온리라 정상 경로엔 비밀이 없지만, 소스 값·오류 메시지가
+    URL(ServiceKey 포함)을 품고 흘러들 수 있다 — 과삭제 원칙으로 전면 방어한다.
+    """
+    from ..data.secret_store import redact
+
+    def walk(v):
+        if isinstance(v, str):
+            return redact(v)
+        if isinstance(v, dict):
+            return {walk(k): walk(val) for k, val in v.items()}
+        if isinstance(v, (list, tuple)):
+            return [walk(item) for item in v]
+        return v
+
+    return {walk(k): walk(v) for k, v in payload.items()}
+
+
+def export_run_ledger(
+    path: "str | Path",
+    *,
+    template: str,
+    source: str,
+    outputs: "tuple[OutputLedger, ...] | list[OutputLedger]",
+    job_name: str = "",
+    profiles: "list[FieldProfile] | tuple[FieldProfile, ...]" = (),
+    generated_at: str = "",
+) -> dict:
+    """생성 원장 JSON 사이드카 저장(**opt-in per batch**) — 저장한 payload 를 반환.
+
+    - ``source`` 는 **포인터-온리**(파일 경로·소스 종류 표기) — 나라 쿼리 URL·키를
+      박제하지 않는다.
+    - 저장 직전 :func:`_redacted` 로 전 문자열에 N1 마스킹을 관통시킨다(키 비직렬화).
+    """
+    payload = _redacted({
+        "kind": "hwpx-fill-ledger",
+        "version": 1,
+        "generated_at": generated_at,
+        "template": template,
+        "source": source,
+        "job": job_name,
+        "note": LEDGER_PREVIEW_NOTE,
+        "profiles": [p.to_dict() for p in profiles],
+        "outputs": [o.to_dict() for o in outputs],
+    })
+    Path(path).write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return payload

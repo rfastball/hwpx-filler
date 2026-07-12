@@ -1,11 +1,20 @@
+import json
+
+from hwpxfiller.core.engine import HwpxEngine
 from hwpxfiller.core.fill_ledger import (
+    LEDGER_SIDECAR_NAME,
     StructureState,
     ValueState,
     build_fill_ledger,
+    export_run_ledger,
+    ledger_outputs,
+    manifest_rows,
     template_structure_drift,
     template_path_drift,
+    verify_output,
 )
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.core.source_profile import profile_fields
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
 
@@ -69,3 +78,93 @@ def test_template_path_seam_reloads_and_fails_closed(tmp_path):
     assert template_path_drift(str(path), _mapping()).template_uncovered == ("신규",)
     path.write_bytes(b"broken")
     assert template_path_drift(str(path), _mapping()).read_error
+
+
+# ==================================================================== L2 원장 export
+MARKER = "〘미입력·{field}〙"
+
+
+def test_manifest_rows_statuses_and_previews():
+    rows = {r.field: r for r in manifest_rows(
+        _mapping(), ["공고명", "비고", "신규"],
+        {"공고명": "관급자재 구매"},
+    )}
+    assert rows["공고명"].status == "filled"
+    assert rows["공고명"].preview_text == "관급자재 구매"
+    assert rows["공고명"].sources == ("name",)
+    assert rows["비고"].status == "blank" and rows["비고"].preview_text == ""
+    assert rows["신규"].status == "drift"
+    # 전 행이 미검증 상태(dry-run) — injected 는 증거이지 추정이 아니다.
+    assert all(r.injected is None for r in rows.values())
+
+
+def test_manifest_rows_marker_counts_as_missing_but_records_real_value():
+    marked = MARKER.format(field="공고명")
+    (row,) = [r for r in manifest_rows(
+        _mapping(), ["공고명", "비고"], {"공고명": marked}, missing_marker=MARKER,
+    ) if r.field == "공고명"]
+    assert row.status == "missing"
+    assert row.preview_text == marked  # 원장은 실제 들어가는 값을 그대로 기록
+
+
+def test_verify_output_reads_back_evidence(tmp_path):
+    template = tmp_path / "t.hwpx"
+    _template(template, ["공고명", "비고"])
+    out = tmp_path / "doc.hwpx"
+    res = HwpxEngine().generate(str(template), {"공고명": "실제값"}, str(out))
+    assert res.ok
+
+    rows = manifest_rows(_mapping(), ["공고명", "비고"], {"공고명": "실제값"})
+    verified = {r.field: r for r in verify_output(str(out), rows)}
+    assert verified["공고명"].injected is True and verified["공고명"].read_back == ""
+    assert verified["비고"].injected is None  # 공란 선언 — 검증 대상 아님
+
+    # 기대값이 문서 실값과 다르면 증거로 불일치를 남긴다(주장 ≠ 관측).
+    lying = manifest_rows(_mapping(), ["공고명", "비고"], {"공고명": "다른값"})
+    bad = {r.field: r for r in verify_output(str(out), lying)}
+    assert bad["공고명"].injected is False
+    assert bad["공고명"].read_back == "실제값"
+
+
+def test_ledger_outputs_verifies_success_and_keeps_failure_loud(tmp_path):
+    template = tmp_path / "t.hwpx"
+    _template(template, ["공고명", "비고"])
+    out = tmp_path / "doc.hwpx"
+    res = HwpxEngine().generate(str(template), {"공고명": "가"}, str(out))
+    entries = ledger_outputs(
+        [res], [{"공고명": "가"}], _mapping(), ["공고명", "비고"],
+    )
+    assert entries[0].ok and entries[0].verify_error == ""
+    assert {r.field: r.injected for r in entries[0].rows}["공고명"] is True
+
+    # 산출물이 사라지면 되읽기 실패가 조용한 통과가 아니라 verify_error 로 남는다.
+    out.unlink()
+    (entry,) = ledger_outputs(
+        [res], [{"공고명": "가"}], _mapping(), ["공고명", "비고"],
+    )
+    assert entry.verify_error.startswith("되읽기 실패")
+
+
+def test_export_redacts_service_key_and_notes_no_render(tmp_path):
+    template = tmp_path / "t.hwpx"
+    _template(template, ["공고명", "비고"])
+    out = tmp_path / "doc.hwpx"
+    leaky = "https://apis.example/x?ServiceKey=TOPSECRET&y=1"
+    res = HwpxEngine().generate(str(template), {"공고명": leaky}, str(out))
+    entries = ledger_outputs([res], [{"공고명": leaky}], _mapping(), ["공고명", "비고"])
+    sidecar = tmp_path / LEDGER_SIDECAR_NAME
+    payload = export_run_ledger(
+        sidecar,
+        template=str(template),
+        source="file:data.xlsx",
+        outputs=entries,
+        job_name="작업",
+        profiles=profile_fields([{"name": leaky}], ["name"]),
+        generated_at="2026-07-12T00:00:00",
+    )
+    text = sidecar.read_text(encoding="utf-8")
+    # 키 비직렬화 — 값·프로파일 샘플 어디에도 비밀이 남지 않는다(N1 관통).
+    assert "TOPSECRET" not in text and "[REDACTED]" in text
+    assert payload["kind"] == "hwpx-fill-ledger"
+    assert "렌더" in payload["note"]  # 값 미리보기 ≠ HWPX 렌더(ADR C)
+    assert json.loads(text) == payload

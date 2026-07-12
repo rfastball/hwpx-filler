@@ -196,3 +196,40 @@ def test_load_data_empty_returns_empty_without_committing(tmp_path):
     csv.write_text("공고명,추정가격\n", encoding="utf-8-sig")  # 헤더만
     assert vm.load_data(str(csv)) == []
     assert vm.datasource is None  # 빈 데이터는 상태 미변경
+
+
+# ------------------------------------------------------------------ 생성 원장(L2)
+def test_export_run_ledger_writes_evidence_sidecar(tmp_path):
+    import json
+    from pathlib import Path
+
+    from hwpxfiller.batch import generate_batch
+    from hwpxfiller.core.job import MISSING_MARKER
+
+    vm = _vm(tmp_path)
+    indices = [0, 1]
+    mapped = vm.mapped_records(indices, MISSING_MARKER)  # 위젯의 생성 경로와 동일 표식
+    out = tmp_path / "out"
+    batch = generate_batch(
+        vm.job.template_path, mapped, str(out), vm.job.filename_pattern
+    )
+    assert batch.failed == 0
+
+    sidecar = vm.export_run_ledger(
+        str(out), indices, batch, mark_missing=MISSING_MARKER
+    )
+    payload = json.loads(Path(sidecar).read_text(encoding="utf-8"))
+    assert payload["job"] == "실행"
+    assert payload["source"] == "_Src"                  # 포인터-온리(값·쿼리 박제 없음)
+
+    first = {r["field"]: r for r in payload["outputs"][0]["rows"]}
+    assert first["공고명"]["status"] == "filled" and first["공고명"]["injected"] is True
+    # 표식 주입도 미충족으로 분류하되, 실제 들어간 값(표식)의 증거는 남는다.
+    assert first["추정가격"]["status"] == "missing"
+    assert first["추정가격"]["injected"] is True
+    second = {r["field"]: r for r in payload["outputs"][1]["rows"]}
+    assert second["추정가격"]["status"] == "filled" and second["추정가격"]["injected"] is True
+
+    profs = {p["key"]: p for p in payload["profiles"]}
+    assert set(profs) == {"bidNtceNm", "presmptPrce"}   # 매핑이 읽는 소스 키만 관측
+    assert profs["presmptPrce"]["samples"] == ["2000"]

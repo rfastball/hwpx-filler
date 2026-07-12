@@ -309,3 +309,57 @@ class RunViewModel:
     def mapped_records(self, indices: "list[int]", mark_missing: str = "") -> "list[dict]":
         """선택 레코드에 매핑 적용 → {템플릿필드: 값}. mark_missing 시 빈 키에 표식 주입."""
         return self.request(indices).mapped_records(mark_missing=mark_missing)
+
+    # ------------------------------------------------------------ 생성 원장(L2)
+    def source_pointer(self) -> str:
+        """원장에 남길 소스 표기 — **포인터-온리**(경로·종류). 쿼리·키는 박제하지 않는다."""
+        src = self.datasource
+        if src is None:
+            return ""
+        path = getattr(src, "path", "")
+        if path:
+            return f"file:{path}"
+        # 나라장터 풀/취득 경로는 키 없는 스냅샷 어댑터로 도착한다 — 종류만 남긴다.
+        if type(src).__name__ == "AcquiredNaraData":
+            return "nara:취득 스냅샷(키 미포함)"
+        return type(src).__name__
+
+    def export_run_ledger(
+        self, out_dir: str, indices: "list[int]", batch, *, mark_missing: str = ""
+    ) -> str:
+        """생성 원장 JSON 사이드카 저장(**opt-in**) — 저장 경로 반환, 실패는 raise.
+
+        ``mark_missing`` 은 생성에 실제 쓴 표식과 동일해야 dry-run 행이 주입값과
+        일치한다(위젯이 생성 시 결정한 값을 그대로 넘긴다). 되읽기 검증·마스킹은
+        :func:`~hwpxfiller.core.fill_ledger.export_run_ledger` 계열이 관통시킨다.
+        """
+        from datetime import datetime
+
+        from ..core.fill_ledger import (
+            LEDGER_SIDECAR_NAME, export_run_ledger, ledger_outputs,
+        )
+        from ..core.source_profile import profile_fields
+
+        indices = list(indices)
+        mapped = self.mapped_records(indices, mark_missing)
+        labels_fn = getattr(self.datasource, "field_labels", None)
+        labels = labels_fn() if callable(labels_fn) else {}
+        profiles = profile_fields(
+            self.request(indices).selected_records(),
+            self.job.source_keys(), labels=labels,
+        )
+        outputs = ledger_outputs(
+            batch.results, mapped, self.job.mapping, self._template_fields(),
+            missing_marker=mark_missing,
+        )
+        sidecar = Path(out_dir) / LEDGER_SIDECAR_NAME
+        export_run_ledger(
+            sidecar,
+            template=self.effective_template(),
+            source=self.source_pointer(),
+            outputs=outputs,
+            job_name=self.job.name,
+            profiles=profiles,
+            generated_at=datetime.now().isoformat(timespec="seconds"),
+        )
+        return str(sidecar)

@@ -307,6 +307,10 @@ def main(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
     ap.add_argument("--profile", default=None,
                     help="매핑 프로파일 JSON(소스 키→템플릿 필드; 나라장터 영문키에 사실상 필수)")
     ap.add_argument("--fields", action="store_true", help="템플릿 요구 필드만 출력")
+    ap.add_argument("--ledger", action="store_true",
+                    help="생성 원장 JSON 사이드카를 out 폴더에 저장(opt-in) — "
+                         "소스 프로파일·dry-run 매니페스트·주입 되읽기 증거. "
+                         "값은 텍스트이며 HWPX 렌더가 아님")
     # 나라장터 취득 옵션(--source nara)
     ap.add_argument("--service-key", default=None,
                     help="data.go.kr ServiceKey 인라인(비권장·노출 위험). "
@@ -327,7 +331,9 @@ def main(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
         return 0
 
     records = _load_records(ap, args, secret_store)
+    source_records = records  # 원장 프로파일링용 — 매핑 적용 전 실제형 관측 대상.
 
+    profile = None
     if args.profile:
         from .core.fill_ledger import template_path_drift
         from .core.mapping import MappingProfile
@@ -343,7 +349,8 @@ def main(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
             return 1
         records = profile.apply_all(records)
 
-    report = validate(engine.required_fields(args.template), records)
+    required = engine.required_fields(args.template)
+    report = validate(required, records)
     if report.missing_columns:
         print(f"[경고] 데이터에 없는 필드(빈칸 생성): {', '.join(report.missing_columns)}",
               file=sys.stderr)
@@ -355,7 +362,50 @@ def main(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
     for res in batch.results:
         if not res.ok:
             print(f"  [실패] {res.output_path}: {res.error}", file=sys.stderr)
+
+    if args.ledger:
+        _export_ledger(args, profile, required, source_records, records, batch)
     return 0 if batch.failed == 0 else 1
+
+
+def _export_ledger(args, profile, required, source_records, mapped_records, batch) -> None:
+    """``--ledger`` opt-in — 원장 사이드카를 out 폴더에 저장(생성 성패와 독립).
+
+    프로파일 없는 직접 채우기(헤더=템플릿 필드)는 항등 매핑으로 원장 행을 만든다 —
+    소스출처·변환이 없는 게 아니라 "같은 이름 열을 그대로" 라는 사실의 기록이다.
+    소스 표기는 포인터-온리(경로·기간) — 나라 쿼리 URL·ServiceKey 는 박제하지 않는다.
+    """
+    from datetime import datetime
+    from pathlib import Path
+
+    from .core.fill_ledger import (
+        LEDGER_SIDECAR_NAME, export_run_ledger, ledger_outputs,
+    )
+    from .core.mapping import FieldMapping, MappingProfile
+    from .core.source_profile import profile_fields
+
+    mapping = profile or MappingProfile(
+        mappings=[FieldMapping(f, [f]) for f in required]
+    )
+    labels: "dict[str, str]" = {}
+    if args.source == "nara":
+        from .data.nara import NaraStdDataSource
+        labels = NaraStdDataSource.field_labels()
+        source = f"nara:표준입찰공고 {args.bgn}~{args.end}"
+    else:
+        source = f"file:{args.data}"
+    outputs = ledger_outputs(batch.results, mapped_records, mapping, required)
+    sidecar = Path(args.out) / LEDGER_SIDECAR_NAME
+    export_run_ledger(
+        sidecar,
+        template=args.template,
+        source=source,
+        outputs=outputs,
+        profiles=profile_fields(source_records, labels=labels),
+        generated_at=datetime.now().isoformat(timespec="seconds"),
+    )
+    print(f"[원장] {sidecar} 저장 — 값은 텍스트 미리보기·되읽기이며 HWPX 렌더가 아닙니다.",
+          file=sys.stderr)
 
 
 if __name__ == "__main__":

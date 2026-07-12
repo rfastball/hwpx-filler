@@ -21,6 +21,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QFileDialog,
     QFrame,
     QGridLayout,
@@ -166,6 +167,13 @@ class RunView(QMainWindow):
         orow.addWidget(QLabel("저장 폴더"), 0, 0)
         orow.addWidget(self.ed_out, 0, 1)
         orow.addWidget(btn_out, 0, 2)
+        # 생성 원장(L2) — 기본 꺼짐(opt-in). 고위험 문서 계보가 필요할 때만 켠다.
+        self.chk_ledger = QCheckBox("생성 원장(JSON) 저장 — 들어간 값의 증거")
+        self.chk_ledger.setToolTip(
+            "저장 폴더에 fill-ledger.json 을 남깁니다: 소스 실제형 샘플, 필드별 주입 예정값, "
+            "생성 후 문서 되읽기 검증(✓/✗). 값은 텍스트이며 HWPX 렌더가 아닙니다."
+        )
+        orow.addWidget(self.chk_ledger, 1, 1)
         root.addLayout(orow)
 
         # ---- 액션 ----
@@ -443,11 +451,14 @@ class RunView(QMainWindow):
             return
         blanks = self.vm.blank_fields(indices)
         self._marked_fields = list(blanks)
+        marker = MISSING_MARKER if blanks else ""
         if blanks:
-            mapped = self.vm.mapped_records(indices, mark_missing=MISSING_MARKER)
+            mapped = self.vm.mapped_records(indices, mark_missing=marker)
             self._say("미입력 표시 적용: " + ", ".join(blanks))
         else:
             mapped = self.vm.mapped_records(indices)
+        # 원장 export(_on_finished)가 생성과 동일한 선택·표식으로 행을 재구성하기 위한 문맥.
+        self._ledger_ctx = (list(indices), marker) if self.chk_ledger.isChecked() else None
 
         template = self.vm.effective_template()
         self._running = True
@@ -486,8 +497,19 @@ class RunView(QMainWindow):
                     f"  [주의] 매칭 안 된 필드: {', '.join(res.unmatched)} → "
                     f"{Path(res.output_path).name}"
                 )
-        self.run_finished.emit(batch)
         out_dir = self.ed_out.text().strip()
+        ctx = getattr(self, "_ledger_ctx", None)
+        if ctx is not None:
+            indices, marker = ctx
+            try:
+                sidecar = self.vm.export_run_ledger(
+                    out_dir, indices, batch, mark_missing=marker
+                )
+                self._say(f"[원장] {sidecar} 저장 — 값은 텍스트이며 HWPX 렌더가 아닙니다.")
+            except Exception as exc:  # noqa: BLE001 - 증거 저장 실패는 조용히 넘기지 않는다
+                self._say(f"[원장 실패] 사이드카를 저장하지 못했습니다: {exc}")
+                mark(self.lbl_result, "level", "warn")
+        self.run_finished.emit(batch)
         if batch.succeeded > 0 and QMessageBox.question(
             self, "완료", f"{batch.succeeded}건 생성 완료.\n결과 폴더를 여시겠습니까?"
         ) == QMessageBox.Yes:

@@ -104,6 +104,37 @@ def test_profile_maps_source_keys_to_template_fields(tmp_path):
     assert "5,000,000원" in blob
 
 
+# ------------------------------------------------------------- 생성 원장(--ledger)
+def test_ledger_is_optin_and_writes_evidence_sidecar(tmp_path, capsys):
+    data = _xlsx(tmp_path / "d.xlsx",
+                 [["R26BK00000001", "관급자재 구매", "일반경쟁", "12000000", "2026-08-01 10:00"]])
+
+    # 기본은 opt-in — 플래그 없으면 사이드카를 만들지 않는다.
+    out0 = tmp_path / "out0"
+    assert main(["--template", TEMPLATE, "--data", data, "--out", str(out0)]) == 0
+    assert not (out0 / "fill-ledger.json").exists()
+
+    out = tmp_path / "out"
+    rc = main(["--template", TEMPLATE, "--data", data, "--out", str(out),
+               "--pattern", "공고-{{입찰공고번호}}", "--ledger"])
+    assert rc == 0
+    payload = json.loads((out / "fill-ledger.json").read_text(encoding="utf-8"))
+    assert payload["kind"] == "hwpx-fill-ledger"
+    assert payload["source"] == f"file:{data}"           # 포인터-온리
+    (entry,) = payload["outputs"]
+    assert entry["ok"] and entry["verify_error"] == ""
+    rows = {r["field"]: r for r in entry["rows"]}
+    # dry-run 결과값 + 생성물 되읽기 증거(주장 아닌 관측).
+    assert rows["입찰공고번호"]["preview_text"] == "R26BK00000001"
+    assert rows["입찰공고번호"]["injected"] is True
+    assert rows["공고명"]["injected"] is True
+    # 소스 실제형 프로파일 — 잠정 라벨은 추정 표기.
+    profs = {p["key"]: p for p in payload["profiles"]}
+    assert profs["추정가격"]["samples"] == ["12000000"]
+    assert profs["추정가격"]["tentative_type"] == "정수(추정)"
+    assert "HWPX 렌더" in capsys.readouterr().err       # 미리보기 ≠ 렌더 고지
+
+
 # --------------------------------------------------------------- 나라장터 소스
 def _patch_nara(monkeypatch):
     """NaraStdDataSource._fetch 를 실 응답 픽스처로 대체(네트워크 차단).
