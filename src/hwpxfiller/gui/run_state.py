@@ -389,7 +389,8 @@ class RunViewModel:
         if unmet:
             return GateState(
                 False, "warn",
-                f"미입력 {len(unmet)}필드를 확인해야 문서 생성이 가능합니다: {', '.join(unmet)}",
+                f"미입력 {len(unmet)}필드의 배지를 눌러 확인해야 문서 생성이 가능합니다: "
+                f"{', '.join(unmet)}",
             )
         return GateState(True, "", "")
 

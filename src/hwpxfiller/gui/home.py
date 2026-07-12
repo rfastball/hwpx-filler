@@ -77,6 +77,7 @@ class JobCard(QWidget):
         btn_edit = QPushButton("작업 수정")
         btn_edit.clicked.connect(lambda: on_edit(row.name))
         btn_del = QPushButton("삭제")
+        mark(btn_del, "level", "danger")  # 파괴 버튼 시각 등급(UD-12) — 안전 버튼과 구별
         btn_del.clicked.connect(lambda: on_delete(row.name))
         foot.addWidget(btn_run)
         foot.addWidget(btn_edit)

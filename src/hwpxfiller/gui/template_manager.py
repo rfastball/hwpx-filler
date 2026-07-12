@@ -57,7 +57,9 @@ class TemplateCard(QWidget):
         mark(lbl_name, "heading", True)
         name_row.addWidget(lbl_name)
         badge = QLabel(row.badge_label)
-        mark(badge, "level", row.badge_level)
+        # 같은 CompileState badge_level 을 홈 카드와 동일한 pill 계열로 렌더(UD-13/RC-29)
+        # — 맨 텍스트(level)로 렌더되어 파일명과 구별이 약하던 화면별 배지 분열을 해소.
+        mark(badge, "pill", row.badge_level)
         name_row.addWidget(badge)
         name_row.addStretch(1)
         root.addLayout(name_row)

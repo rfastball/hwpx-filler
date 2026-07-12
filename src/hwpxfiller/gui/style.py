@@ -11,6 +11,10 @@ diff 리뷰어(앱 A)의 배지색은 여기가 아니라 ``core.diff.CATEGORY_C
 
 from __future__ import annotations
 
+from PySide6.QtCore import QRect, Qt
+from PySide6.QtGui import QColor, QPainter, QPaintEvent
+from PySide6.QtWidgets import QProgressBar
+
 # ---- 팔레트 상수 (단일 출처: gui/design_tokens.json) ----
 # 아래 <gen:tokens> 영역은 scripts/gen_design_tokens.py 가 design_tokens.json 에서
 # 생성한다 — 색을 바꾸려면 JSON 을 고치고 ``python scripts/gen_design_tokens.py`` 를
@@ -103,11 +107,30 @@ QPushButton[primary="true"] {{
     border: none; border-radius: 4px; padding: 6px 16px;
 }}
 QPushButton[primary="true"]:hover {{ background: {PRIMARY_HOVER}; }}
-QPushButton[primary="true"]:disabled {{ background: {MUTED}; }}
+/* 비활성 주 버튼은 일반 버튼 disabled 문법으로 수렴(UD-23): MUTED 채움을 재전용하면
+   비활성 primary 가 활성 보조 버튼보다 시각 무게가 커지는 위계 역전이 난다.
+   비활성은 활성보다 항상 약하게 — 채움 해제 + 회색 글자 + 옅은 테두리. */
+QPushButton[primary="true"]:disabled {{
+    background: #f6f7f9; color: {MUTED}; border: 1px solid {BORDER};
+}}
+
+/* 파괴(삭제) 버튼 등급(UD-12): DANGER 텍스트 + 붉은 외곽선, hover 시 미입력 배경.
+   home/pool/vocab 이 삭제 버튼에 mark(btn,'level','danger') 를 걸어도 QPushButton
+   레벨 셀렉터가 없어 죽은 표식이던 것을 소생시킨다(확인 다이얼로그는 마지막 방어선,
+   이 시각 등급이 첫 신호다). */
+QPushButton[level="danger"] {{
+    color: {DANGER}; border: 1px solid #e6a49c; font-weight: 600;
+}}
+QPushButton[level="danger"]:hover {{ background: {MISSING_BG}; }}
+QPushButton[level="danger"]:pressed {{ background: #f9d9d4; }}
 
 QLabel[level="warn"] {{ color: {WARN}; }}
 QLabel[level="danger"] {{ color: {DANGER}; }}
 QLabel[level="ok"] {{ color: {OK}; }}
+/* level='muted' 는 RAW·보관·무참조 배지가 발화(dataset_pool/vocab 상태 배지)하나
+   셀렉터가 없어 기본 INK 검정 평문으로 렌더되던 무스타일 상태였다(UD-13) — 의도색
+   (부차 회색)으로 소생시켜 조용한 상태 소실을 막는다. */
+QLabel[level="muted"] {{ color: {MUTED}; }}
 QLabel[muted="true"] {{ color: {MUTED}; }}
 QLabel[heading="true"] {{ font-size: 15px; font-weight: 700; }}
 /* 상태 배지 pill — 레벨 어휘(muted/warn/ok/danger)는 compile_badge.badge_level 이
@@ -159,6 +182,20 @@ QPushButton[fb="ack"] {{
     background: {ACK_BG}; color: {ACK_FG}; border: 1px solid #c8c3e6;
     border-radius: 11px; padding: 3px 11px; font-weight: 600; text-align: left;
 }}
+/* 구조 드리프트 배지(UD-16): missing 색을 차용하던 4번째 상태에 전용 정체성을 준다.
+   drift 는 레코드별 '값' 문제가 아니라 '구조' 문제(매핑 재확정) — 같은 danger 심각도
+   계열이되 점선 테두리로 클릭형 미입력(실선 pill)과 시각 분리(정적 QLabel·비클릭). */
+QLabel[fb="drift"] {{
+    background: {MISSING_BG}; color: {DANGER}; border: 1px dashed {DANGER};
+    border-radius: 11px; padding: 3px 10px; font-weight: 600;
+}}
+/* fb 버튼 :disabled 변형(UD-16): [fb] 규칙이 일반 :disabled 를 특이도로 덮어
+   비활성 ack 버튼이 완전 채도의 '눌러 보이는' pill 로 렌더되던 문제 — 비활성 버튼은
+   글자 채도를 낮춰 '지금 상호작용 불가(정지 상태)'를 신호한다(drift 는 QLabel 이라
+   버튼 크롬이 없고 위 점선 정체성을 상태 불문 유지하므로 별도 dim 하지 않는다). */
+QPushButton[fb="ack"]:disabled, QPushButton[fb="missing"]:disabled {{
+    color: {MUTED}; border-color: {BORDER};
+}}
 """
 
 
@@ -167,3 +204,41 @@ def mark(widget, prop: str, value) -> None:
     widget.setProperty(prop, value)
     widget.style().unpolish(widget)
     widget.style().polish(widget)
+
+
+class ContrastProgressBar(QProgressBar):
+    """퍼센트 텍스트를 청크/그루브 경계로 2색 클리핑해 그리는 진행바(UD-31).
+
+    QSS 로 ``::chunk`` 를 칠하는 순간 Qt(QStyleSheetStyle)는 텍스트를 단색 1패스로
+    그려 네이티브의 청크-클리핑 대비 반전이 소실된다 — :data:`BASE_QSS` 의 MUTED 단색
+    퍼센트 글자는 PRIMARY 청크 위에서 대비 ~1.3:1 로 붕괴한다(그루브 위 3.5:1 도 AA
+    미달). 단일 텍스트색으로는 진한 청크·밝은 그루브 양쪽 4.5:1 을 동시 충족할 수
+    없으므로, 여기서 텍스트를 직접 2패스로 그린다: 청크 위는 흰색(≈5:1), 그루브 위는
+    INK(≈13:1). ``setTextVisible(False)`` 로 QSS 단색 텍스트는 끈다.
+    """
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setTextVisible(False)
+
+    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802 — Qt 오버라이드
+        super().paintEvent(event)  # 그루브·청크(QSS)만 그려짐(텍스트 꺼짐)
+        span = self.maximum() - self.minimum()
+        text = self.text()
+        if span <= 0 or not text:
+            return
+        frac = (self.value() - self.minimum()) / span
+        rect = self.rect()
+        split = round(rect.width() * frac)
+        align = int(Qt.AlignmentFlag.AlignCenter)
+        painter = QPainter(self)
+        painter.setFont(self.font())
+        # 그루브(밝은 배경) 구간 — INK 짙은 글자
+        painter.setPen(QColor(INK))
+        painter.setClipRect(QRect(split, 0, rect.width() - split, rect.height()))
+        painter.drawText(rect, align, text)
+        # 청크(PRIMARY 짙은 배경) 구간 — 흰 글자
+        painter.setPen(QColor("#ffffff"))
+        painter.setClipRect(QRect(0, 0, split, rect.height()))
+        painter.drawText(rect, align, text)
+        painter.end()

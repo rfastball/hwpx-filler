@@ -30,7 +30,6 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
-    QProgressBar,
     QPushButton,
     QRadioButton,
     QScrollArea,
@@ -50,7 +49,7 @@ from .file_filters import HWPX_FILTER
 from .flow_layout import FlowLayout
 from .record_select import RecordSelector
 from .run_state import GenerationPlan, RunViewModel
-from .style import BASE_QSS, mark
+from .style import BASE_QSS, ContrastProgressBar, mark
 from .worker import GenerateWorker
 
 
@@ -196,7 +195,7 @@ class RunView(QMainWindow):
         actions.addStretch(1)
         root.addLayout(actions)
 
-        self.progress = QProgressBar()
+        self.progress = ContrastProgressBar()  # 청크 위 퍼센트 대비 복원(UD-31)
         self.progress.setValue(0)
         root.addWidget(self.progress)
         self.lbl_result = QLabel("")
@@ -367,8 +366,10 @@ class RunView(QMainWindow):
                 mark(chip, "fb", "blank")
             elif st.state == "drift":
                 # 구조 드리프트는 레코드별 값 판단이 아니므로 ack 버튼이 될 수 없다.
+                # missing 색 차용 대신 drift 전용 시각 정체성(점선 pill)으로 렌더(UD-16)
+                # — 값 문제(클릭형 미입력)와 구조 문제를 시각 분리.
                 chip = QLabel(f"⚠ {st.name} — 매핑 재확정 필요")
-                mark(chip, "fb", "missing")
+                mark(chip, "fb", "drift")
                 chip.setEnabled(False)
             elif st.acknowledged:
                 chip = QPushButton(f"✓ {st.name} — 미입력 표시 예정")

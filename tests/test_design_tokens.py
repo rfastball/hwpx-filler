@@ -22,6 +22,10 @@ def test_style_region_renders_expected_constants():
     assert 'PRIMARY = "#2874a6"' in region
     assert 'SELECT_BG = "#dce9f5"' in region      # BASE_QSS 선택 하이라이트가 참조
     assert 'UNCONFIRMED_BG = "#fff3bf"' in region  # mapping_table 이 임포트
+    # V2 신설 셀렉터가 참조하는 토큰(UD-12 danger 버튼 hover·UD-16 drift 배경).
+    assert 'MISSING_BG = "#fbe6e3"' in region
+    assert 'DANGER = "#c0392b"' in region
+    assert 'MUTED = "#7a7f87"' in region
 
 
 def test_mockup_region_maps_app_palette():
