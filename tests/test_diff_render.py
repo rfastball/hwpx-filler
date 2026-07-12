@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from hwpxdiff.diff import (
+    NO_CHANGES_MESSAGE,
+    WordOp,
+    coalesce_word_ops,
     diff_documents,
     render_html,
     render_summary,
@@ -43,7 +46,22 @@ def test_render_html_self_contained_and_escaped():
 def test_render_html_no_changes():
     r = diff_documents(_doc("동일."), _doc("동일."))
     html = render_html(r)
-    assert "변경 없음" in html
+    assert NO_CHANGES_MESSAGE in html  # 빈 상태 카피는 3표면 공유(RC-32)
+
+
+def test_render_summary_no_changes_uses_shared_copy():
+    """CLI 텍스트 요약의 0건 카피도 공유 상수 — 표면별 하드코딩 금지(RC-32)."""
+    r = diff_documents(_doc("동일."), _doc("동일."))
+    assert NO_CHANGES_MESSAGE in render_summary(r)
+
+
+def test_render_html_summary_cards_include_renumber():
+    """HTML 상단 카드에 번호변경 포함 — GUI KPI 타일과 같은 지표 집합(RC-32)."""
+    r = _renumber_sample()
+    html = render_html(r)
+    n = r.summary["renumber"]
+    assert n > 0
+    assert f"<div class='card'><div class='n'>{n}</div><div class='l'>번호변경</div></div>" in html
 
 
 def test_render_html_escapes_markup():
@@ -99,3 +117,54 @@ def test_category_palette_single_source():
     html = render_html(_sample())
     for cat, color in CATEGORY_COLORS.items():
         assert f".b-{cat}{{background:{color}}}" in html, f"CSS 규칙 없음: {cat}"
+
+
+def test_html_inline_palette_single_source():
+    """del/ins 강조·틴트도 코어 단일 출처(KIND_COLORS/KIND_TINTS)에서 CSS 생성(RC-17)."""
+    from hwpxdiff.diff import KIND_COLORS, KIND_TINTS
+
+    html = render_html(_sample())
+    assert f"del{{background:{KIND_TINTS['removed']};color:{KIND_COLORS['removed']};" in html
+    assert f"ins{{background:{KIND_TINTS['added']};color:{KIND_COLORS['added']};" in html
+
+
+# ------------------------------------------------ 낱말 성형(coalesce) 공유
+def test_coalesce_ops_absorbs_short_equal_between_changes():
+    """변경 사이 한두 글자 equal 은 흡수, 낱말 경계(선두/후미/공백)는 보존(순수 함수)."""
+    ops = [
+        WordOp("equal", old="제"),
+        WordOp("replace", old="3", new="4"),
+        WordOp("equal", old="조"),
+        WordOp("replace", old="갑", new="을"),
+        WordOp("equal", old=" 이하 같다"),
+    ]
+    out = coalesce_word_ops(ops)
+    assert [o.op for o in out] == ["equal", "replace", "equal"]
+    assert out[1].old == "3조갑" and out[1].new == "4조을"
+
+    # 공백 equal 은 낱말 경계 — 흡수하지 않는다.
+    ops2 = [
+        WordOp("replace", old="가", new="나"),
+        WordOp("equal", old=" "),
+        WordOp("replace", old="다", new="라"),
+    ]
+    assert [o.op for o in coalesce_word_ops(ops2)] == ["replace", "equal", "replace"]
+
+
+def test_render_html_applies_same_coalescing_as_gui():
+    """RC-17 회귀: CLI HTML 도 coalesce 성형을 거친다 — GUI 와 같은 낱말 덩어리 강조.
+
+    성형 없이는 '제3조 갑'→'제4조 을'이 <del>3</del>…<del>갑</del> 파편으로 렌더돼
+    GUI 검토자와 HTML 회람자가 같은 변경을 다른 강조로 읽는다.
+    """
+    r = diff_documents(_doc("제3조 갑 이하 같다"), _doc("제4조 을 이하 같다"))
+    (c,) = r.changes
+    assert c.kind in ("changed", "renumber") and c.word_ops
+    html = render_html(r)
+    merged = coalesce_word_ops(c.word_ops)
+    # coalesce 결과의 replace 덩어리가 그대로 del/ins 로 나타난다(파편 렌더 아님).
+    reps = [w for w in merged if w.op == "replace"]
+    assert reps, "coalesce 가 replace 덩어리를 만들지 않았다"
+    for w in reps:
+        assert f"<del>{w.old}</del>" in html
+        assert f"<ins>{w.new}</ins>" in html

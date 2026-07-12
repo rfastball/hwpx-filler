@@ -22,7 +22,6 @@ from __future__ import annotations
 import html
 import json
 import sys
-from dataclasses import dataclass, field
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, Qt
@@ -48,34 +47,38 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-# 종류 어휘·색의 단일 출처는 core — 사본을 두면 코어의 어휘 변경이 GUI 에서 어긋난다.
+# 종류 어휘·색·성형(그룹화·coalesce)·빈 상태 카피의 단일 출처는 core —
+# 사본을 두면 코어의 변경이 GUI 에서 조용히 어긋난다(같은 결과가 표면마다 다르게 렌더).
 from .diff import (
     KIND_COLORS,
     KIND_LABELS,
-    Change,
+    KIND_TINTS,
+    NO_CHANGES_MESSAGE,
+    ChangeGroup,
     DiffResult,
     DocRow,
     WordOp,
+    coalesce_word_ops,
     diff_files,
+    row_group_key,
 )
 # 앱 B(hwpxfiller) 목업 디자인 문법 — 자립 사본(런타임 hwpxcore-only). 색 단일 출처는
 # design_tokens.json(generator), 배지색 단일 출처는 core.diff.KIND_COLORS.
-from .style import BASE_QSS, mark
+from .style import BASE_QSS, INK, mark
 
 # 전문 뷰(QTextBrowser) 기본 스타일 — Qt 리치텍스트가 실제 지원하는 속성만.
-# 톤은 디자인 토큰과 정렬: 삭제=danger 계열, 삽입=ok 계열.
-_QT_VIEW_CSS = """
-body{font-family:'Malgun Gothic','맑은 고딕',sans-serif;font-size:13px;color:#1c2126;}
-del{background-color:#fdecec;color:#c0392b;}
-ins{background-color:#e5f2ea;color:#1e8449;text-decoration:none;}
+# del/ins 팔레트는 core.diff(KIND_COLORS/KIND_TINTS) 단일 출처 — CLI HTML 과 동일.
+_QT_VIEW_CSS = f"""
+body{{font-family:'Malgun Gothic','맑은 고딕',sans-serif;font-size:13px;color:{INK};}}
+del{{background-color:{KIND_TINTS["removed"]};color:{KIND_COLORS["removed"]};}}
+ins{{background-color:{KIND_TINTS["added"]};color:{KIND_COLORS["added"]};text-decoration:none;}}
 """
 
 _RECENT_KEY = "recent_pairs"
 _RECENT_MAX = 5
 
-# 낱말 diff 파편화 완화 — 변경 사이에 낀 이 길이 미만의 equal 조각은 양옆 변경에
-# 흡수한다("제3조→제4조"의 '조' 같은 한두 글자가 del/ins 를 잘게 쪼개 붙이는 문제).
-_COALESCE_MIN_EQUAL = 3
+# 필터로 전부 숨었을 때의 안내 — '진짜 변경 없음'(NO_CHANGES_MESSAGE)과 구분되는 카피.
+_FILTERED_ALL_MESSAGE = "필터에 걸려 표시된 변경이 없습니다 — 종류 필터·번호변경 토글을 확인하세요."
 
 
 def _visible(kind: str, enabled: "set[str]", show_renumber: bool) -> bool:
@@ -89,67 +92,8 @@ def _visible(kind: str, enabled: "set[str]", show_renumber: bool) -> bool:
     return kind in enabled
 
 
-def _coalesce_ops(ops: "list[WordOp] | None") -> "list[WordOp] | None":
-    """변경 사이의 짧은 equal 조각을 replace 로 흡수 — 인라인 강조 가독성.
-
-    공백뿐인 equal 은 낱말 경계라 남긴다(흡수하면 별개 낱말 변경이 한 덩어리로 뭉개짐).
-    """
-    if not ops:
-        return ops
-    out: "list[WordOp]" = []
-    i = 0
-    while i < len(ops):
-        op = ops[i]
-        if (op.op == "equal" and op.old.strip()
-                and len(op.old) < _COALESCE_MIN_EQUAL
-                and out and out[-1].op != "equal"
-                and i + 1 < len(ops) and ops[i + 1].op != "equal"):
-            prev = out.pop()
-            nxt = ops[i + 1]
-            out.append(WordOp(
-                "replace",
-                old=prev.old + op.old + nxt.old,
-                new=prev.new + op.old + nxt.new,
-            ))
-            i += 2
-            continue
-        out.append(op)
-        i += 1
-    return out
-
-
-@dataclass
-class _ChangeGroup:
-    """리스트 1행 = 인접 변경 묶음. 점프 표적은 첫 변경의 seq."""
-
-    kind: str
-    label: str
-    detail: str
-    seqs: "list[int]" = field(default_factory=list)
-
-
-def _snippet(text: str, limit: int = 60) -> str:
-    flat = " ".join(text.split())
-    return flat if len(flat) <= limit else flat[: limit - 1] + "…"
-
-
-def _group_changes(changes: "list[Change]") -> "list[_ChangeGroup]":
-    """seq 연속 + 같은 종류의 변경을 한 그룹으로(파편화 완화, 순수 함수).
-
-    diff 는 문단 하나가 여러 조각으로 갈릴 때 인접 seq 로 연달아 방출한다 —
-    리뷰어에게 그건 한 건의 변경이다.
-    """
-    groups: "list[_ChangeGroup]" = []
-    for c in changes:
-        if groups and c.kind == groups[-1].kind and c.seq == groups[-1].seqs[-1] + 1:
-            groups[-1].seqs.append(c.seq)
-            continue
-        detail = _snippet(c.new_text or c.old_text)
-        groups.append(_ChangeGroup(c.kind, c.location_label, detail, [c.seq]))
-    for g in groups:
-        if len(g.seqs) > 1:
-            g.detail += f"  (연속 {len(g.seqs)}건)"
-    return groups
+# 성형·그룹화(coalesce_word_ops·group_changes·row_group_key)는 core.diff 소유 —
+# GUI 와 CLI HTML 이 같은 함수를 공유한다(RC-17: 표면 간 렌더 동등성).
 
 
 # ------------------------------------------------------------- 전문 뷰 렌더
@@ -170,15 +114,6 @@ def _multiline(s: str) -> str:
     return html.escape(s).replace("\n", "<br>") or "&nbsp;"
 
 
-def _row_group_key(label: str) -> str:
-    """행 라벨 → 소속 그룹 헤더(마지막 단위 조각 제거).
-
-    "본문 1 · 문단 12" → "본문 1", "본문 1 · 표 2 · 셀(3,4)" → "본문 1 · 표 2".
-    """
-    parts = label.split(" · ")
-    return " · ".join(parts[:-1]) if len(parts) > 1 else label
-
-
 def _render_doc_html(rows: "list[DocRow]") -> str:
     """전문 신구대비표 HTML(Qt 리치텍스트 호환) — 원문 전체 + 인라인 강조 + 앵커."""
     out: "list[str]" = ["<body>"]
@@ -190,7 +125,7 @@ def _render_doc_html(rows: "list[DocRow]") -> str:
     )
     prev_key = None
     for r in rows:
-        key = _row_group_key(r.label)
+        key = row_group_key(r.label)  # 라벨→그룹 헤더 역산은 라벨 생산자(core.diff) 소유
         if key != prev_key:
             out.append(
                 f"<tr bgcolor='#f6f7f9'><td colspan='3'>"
@@ -207,19 +142,20 @@ def _render_doc_html(rows: "list[DocRow]") -> str:
                f"<b>{KIND_LABELS.get(r.kind, r.kind)}</b></font>")
         if r.kind == "added":
             out.append(f"<tr><td>{tag}</td><td></td>"
-                       f"<td bgcolor='#e5f2ea'>{_multiline(r.new_text)}</td></tr>")
+                       f"<td bgcolor='{KIND_TINTS['added']}'>{_multiline(r.new_text)}</td></tr>")
         elif r.kind == "removed":
             out.append(f"<tr><td>{tag}</td>"
-                       f"<td bgcolor='#fdecec'>{_multiline(r.old_text)}</td><td></td></tr>")
+                       f"<td bgcolor='{KIND_TINTS['removed']}'>{_multiline(r.old_text)}</td>"
+                       "<td></td></tr>")
         else:  # changed / renumber — 좌: 삭제 강조, 우: 삽입 강조
-            ops = _coalesce_ops(r.word_ops) or [
+            ops = coalesce_word_ops(r.word_ops) or [
                 WordOp("replace", old=r.old_text, new=r.new_text)
             ]
             old_html = _side_html(ops, "old")
             new_html = _side_html(ops, "new")
             if r.kind == "renumber":
-                old_html = f"<font color='#7a7f87'>{old_html}</font>"
-                new_html = f"<font color='#7a7f87'>{new_html}</font>"
+                old_html = f"<font color='{KIND_COLORS['renumber']}'>{old_html}</font>"
+                new_html = f"<font color='{KIND_COLORS['renumber']}'>{new_html}</font>"
             out.append(f"<tr><td>{tag}</td><td>{old_html}</td><td>{new_html}</td></tr>")
     out.append("</table></body>")
     return "".join(out)
@@ -234,7 +170,7 @@ class DiffReviewWindow(QMainWindow):
         self.resize(1280, 800)
         self.result: DiffResult | None = None
         self._html: str = ""            # 전문 뷰 HTML(무효화·테스트 표적)
-        self._groups: "list[_ChangeGroup]" = []
+        self._groups: "list[ChangeGroup]" = []
         self._settings = QSettings("hwpxdiff", "diff")  # 최근 비교(테스트에서 교체 가능)
         self.setAcceptDrops(True)  # .hwpx 드래그&드롭 투입
         self.setStyleSheet(BASE_QSS)  # 앱 B 목업 디자인 문법(카드/입력/버튼/타일) 적용
@@ -346,6 +282,12 @@ class DiffReviewWindow(QMainWindow):
         srow.addWidget(self.chk_renumber)
         root.addLayout(srow)
 
+        # 필터 0행 안내 — 변경은 있는데 필터가 전부 숨겼을 때만 노출('진짜 동일'과 구분).
+        self.lbl_filter_notice = QLabel(_FILTERED_ALL_MESSAGE)
+        mark(self.lbl_filter_notice, "muted", True)
+        self.lbl_filter_notice.hide()
+        root.addWidget(self.lbl_filter_notice)
+
         # ---- 변경 그룹 리스트(좌) + 전문 대조 뷰(우) ----
         split = QSplitter()
         self.items = QTableWidget(0, 3)
@@ -455,8 +397,12 @@ class DiffReviewWindow(QMainWindow):
                 act.setEnabled(False)  # 파일이 사라진 항목은 고를 수 없게
 
     def _invalidate_result(self, message: str) -> None:
+        # 사유(실패·판본 변경)는 결과 유무와 무관하게 **항상** 표시한다 — 새 창 첫 비교
+        # 실패에서도 화면에 남아야 한다('지울 결과 없음' ≠ '표시할 메시지 없음', RC-31).
+        self.lbl_summary.setText(message)
+        self.lbl_summary.show()
         if self.result is None and not self._html:
-            return
+            return  # 조기 반환은 결과 클리어에만 적용
         self.result = None
         self._html = ""
         self._groups = []
@@ -464,8 +410,7 @@ class DiffReviewWindow(QMainWindow):
         self.view.clear()
         self.chk_renumber.setText("번호변경 표시")
         self.kpi_wrap.hide()  # 결과 없음 → KPI 감추고 안내 문구 노출
-        self.lbl_summary.setText(message)
-        self.lbl_summary.show()
+        self.lbl_filter_notice.hide()
 
     # ------------------------------------------------------------------ 비교
     def _on_compare(self) -> None:
@@ -487,13 +432,20 @@ class DiffReviewWindow(QMainWindow):
         s = self.result.summary
         for kind, val in self._kpi_vals.items():
             val.setText(str(s.get(kind, 0)))
-        self.lbl_summary.hide()   # 카운트는 이제 KPI 타일이 보여준다
+        if self.result.changes:
+            self.lbl_summary.hide()   # 카운트는 이제 KPI 타일이 보여준다
+        else:
+            # 0건은 검토 결론이다 — KPI 0 나열이 아니라 확정 문장으로 남긴다(카피는
+            # CLI 요약·HTML 리포트와 공유, RC-32).
+            self.lbl_summary.setText(NO_CHANGES_MESSAGE)
+            self.lbl_summary.show()
         self.kpi_wrap.show()
         n_renumber = s.get("renumber", 0)
         self.chk_renumber.setText(
             f"번호변경 {n_renumber}건 표시" if n_renumber else "번호변경 표시"
         )
-        self._groups = _group_changes(self.result.changes)
+        # 그룹화는 core 소유(rows 스트림 인접 기준) — seq 연속은 문서 인접이 아니다.
+        self._groups = self.result.change_groups
         self.items.setRowCount(len(self._groups))
         for r, g in enumerate(self._groups):
             cell = QTableWidgetItem(KIND_LABELS.get(g.kind, g.kind))
@@ -513,8 +465,13 @@ class DiffReviewWindow(QMainWindow):
             return
         enabled = {k for k, cb in self._filter_checks.items() if cb.isChecked()}
         show_renumber = self.chk_renumber.isChecked()
+        n_visible = 0
         for r, g in enumerate(self._groups):
-            self.items.setRowHidden(r, not _visible(g.kind, enabled, show_renumber))
+            visible = _visible(g.kind, enabled, show_renumber)
+            self.items.setRowHidden(r, not visible)
+            n_visible += visible
+        # 변경이 있는데 필터가 전부 숨겼으면 말없이 빈 리스트로 두지 않는다(RC-32).
+        self.lbl_filter_notice.setVisible(bool(self._groups) and n_visible == 0)
 
     # ------------------------------------------------------------- 클릭 이동
     def _on_item_selected(self) -> None:

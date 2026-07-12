@@ -230,6 +230,47 @@ def test_renumbered_clause_with_value_change_detects_both():
     assert not any(c.kind == "renumber" and "납품" in c.new_text for c in r.changes)
 
 
+# ------------------------------------------------- replace 짝짓기 프리필터(RC-19)
+def test_replace_pairing_prefilter_skips_dissimilar_ratio_calls(monkeypatch):
+    """전량 재작성(전부 비유사) 블록 — quick_ratio 상한 프리필터가 실 ratio 호출을 0으로.
+
+    프리필터 없이는 replace 블록의 모든 old×new 쌍에 O(N²) ratio 를 전액 지불해
+    대개정 문서에서 UI 가 수십 초 동결된다(RC-19).
+    """
+    from difflib import SequenceMatcher
+
+    calls = {"ratio": 0}
+    orig_ratio = SequenceMatcher.ratio
+
+    def counting_ratio(self):
+        calls["ratio"] += 1
+        return orig_ratio(self)
+
+    monkeypatch.setattr(SequenceMatcher, "ratio", counting_ratio)
+
+    # 문자 집합이 완전히 갈리는 old/new — 모든 쌍의 quick_ratio 상한이 0.
+    old = _doc("가나다라마바사", "아자차카타파하가", "나다라마바사아자")
+    new = _doc("ABCDEFG", "HIJKLMNO", "PQRSTUV")
+    r = diff_documents(old, new)
+
+    assert calls["ratio"] == 0, "비유사 쌍에 실 ratio 가 호출됐다(프리필터 미동작)"
+    # 짝 없는 쌍은 전부 removed/added 로 분리(거짓 changed 없음) — 기존 의미 보존.
+    assert r.summary["changed"] == 0
+    assert r.summary["removed"] == 3 and r.summary["added"] == 3
+
+
+def test_replace_pairing_prefilter_keeps_similar_pairs():
+    """프리필터는 상한 기반 조기 기각일 뿐 — 임계 이상 유사 쌍의 짝짓기는 그대로."""
+    old = _doc("납품 기한은 180일 이내로 한다.", "가나다라마바사아자차")
+    new = _doc("납품 기한은 300일 이내로 한다.", "ABCDEFGHIJ")
+    r = diff_documents(old, new)
+
+    changed = [c for c in r.changes if c.kind == "changed"]
+    assert len(changed) == 1
+    assert "180일" in changed[0].old_text and "300일" in changed[0].new_text
+    assert r.summary["removed"] == 1 and r.summary["added"] == 1
+
+
 def test_leading_prose_number_not_stripped_as_ordinal():
     """서수가 아닌 선두 숫자(수량·치수)는 정규화가 건드리지 않는다 — 산문 숫자 보존."""
     old = _doc("180일 이내에 전량 납품하여야 한다.")

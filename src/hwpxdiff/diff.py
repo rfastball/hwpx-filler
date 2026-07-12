@@ -207,6 +207,21 @@ class DocRow:
 
 
 @dataclass
+class ChangeGroup:
+    """변경 리스트 1행 = **문서상 인접**한 같은 종류 변경 묶음(파편화 완화).
+
+    인접성은 ``seq``(변경 방출 서수 — equal 을 소모하지 않아 문서 간격 정보가 없다)가
+    아니라 rows 스트림에서의 연속으로 판정한다: 사이에 equal 행이 있으면 별개 그룹이다.
+    점프 표적은 첫 변경의 seq.
+    """
+
+    kind: str
+    label: str
+    detail: str
+    seqs: "list[int]" = field(default_factory=list)
+
+
+@dataclass
 class DiffResult:
     """구조화·직렬화 가능한 diff 결과.
 
@@ -217,12 +232,16 @@ class DiffResult:
     넣지 않는다(골든은 변경만 고정; 전문은 원문 파일에서 항상 재생 가능한 파생물).
     주의: 행 순서는 섹션마다 문단 전부 → 표 전부다(diff 가 그 순서로 정렬한다) —
     문단·표가 섞인 원문 배치와 다를 수 있다.
+
+    ``change_groups`` 는 rows 기반 인접 묶음(변경 리스트 뷰 데이터) — rows 와 같은
+    이유로 ``to_dict()`` 밖의 파생물이다. GUI·CLI 가 같은 그룹화를 공유한다.
     """
 
     changes: "list[Change]" = field(default_factory=list)
     change_items: "list[ChangeItem]" = field(default_factory=list)
     summary: "dict[str, int]" = field(default_factory=dict)
     rows: "list[DocRow]" = field(default_factory=list)
+    change_groups: "list[ChangeGroup]" = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -413,15 +432,26 @@ class _Differ:
         no = [_norm_key(u.text) for u in blk_o]
         nn = [_norm_key(u.text) for u in blk_n]
         cands: "list[tuple[float, int, int]]" = []
-        for oi, a in enumerate(no):
-            if _is_blank(blk_o[oi].text):
+        # O(N²) ratio 완화: quick_ratio/real_quick_ratio 는 ratio 의 **상한**을 싸게
+        # 계산한다(difflib 표준 관용구) — 상한이 임계 미만인 쌍은 실제 ratio 없이 조기
+        # 기각한다. 상한이므로 통과 집합은 동일(결과 불변, 대개정 문서의 동결 완화).
+        # 루프는 new(b) 바깥·old(a) 안쪽 — SequenceMatcher 가 seq2(b) 통계를 캐싱한다.
+        for nj, b in enumerate(nn):
+            if _is_blank(blk_n[nj].text):
                 continue
-            for nj, b in enumerate(nn):
-                if _is_blank(blk_n[nj].text):
+            sm = SequenceMatcher(b=b, autojunk=False)
+            for oi, a in enumerate(no):
+                if _is_blank(blk_o[oi].text):
                     continue
-                r = SequenceMatcher(a=a, b=b, autojunk=False).ratio()
+                sm.set_seq1(a)
+                if sm.real_quick_ratio() < _REPLACE_PAIR_THRESHOLD:
+                    continue
+                if sm.quick_ratio() < _REPLACE_PAIR_THRESHOLD:
+                    continue
+                r = sm.ratio()
                 if r >= _REPLACE_PAIR_THRESHOLD:
                     cands.append((r, oi, nj))
+        # 수집 순서와 무관한 완전 결정 정렬(동률은 (old_idx, new_idx)) — 그리디 할당 안정.
         cands.sort(key=lambda c: (-c[0], c[1], c[2]))
         o_match: "dict[int, int]" = {}
         n_used: "set[int]" = set()
@@ -576,6 +606,17 @@ def _split_blocks(region: str, ridx: int,
     return paras, tables
 
 
+def row_group_key(label: str) -> str:
+    """행 라벨 → 소속 그룹 헤더(마지막 단위 조각 제거) — 라벨 생산자(이 모듈) 소유.
+
+    "본문 1 · 문단 12" → "본문 1", "본문 1 · 표 2 · 셀(3,4)" → "본문 1 · 표 2".
+    구분자 ``' · '`` 는 위 라벨 생산 f-string 들과 한 몸이다 — 뷰가 라벨 문자열을
+    준-API 로 재파싱하지 않도록 여기서 함께 관리한다.
+    """
+    parts = label.split(" · ")
+    return " · ".join(parts[:-1]) if len(parts) > 1 else label
+
+
 # --------------------------------------------------- 변경 항목(리뷰어 킬러기능)
 def _build_change_items(changes: "list[Change]") -> "list[ChangeItem]":
     """changes 에서 우선순위 정렬된 사람용 변경 항목을 파생.
@@ -638,7 +679,52 @@ def _snippet(text: str, limit: int = 60) -> str:
     return flat if len(flat) <= limit else flat[: limit - 1] + "…"
 
 
+def group_changes(rows: "list[DocRow]") -> "list[ChangeGroup]":
+    """rows 스트림에서 문서상 인접·같은 종류의 변경을 한 그룹으로 묶는다(순수 함수).
+
+    인접 판정은 rows 스트림 연속이다 — 사이에 equal 행(=변경 없는 원문)이 하나라도
+    있으면 별개 그룹으로 남긴다. ``Change.seq`` 는 변경 방출 서수라 equal 을 소모하지
+    않아(연속 seq ≠ 문서 인접) 떨어진 독립 변경을 거짓 병합한다.
+    """
+    groups: "list[ChangeGroup]" = []
+    open_group: "ChangeGroup | None" = None
+    for row in rows:
+        if row.seq is None:  # equal 행 = 문서상 간격 → 인접성 단절
+            open_group = None
+            continue
+        if open_group is not None and row.kind == open_group.kind:
+            open_group.seqs.append(row.seq)
+            continue
+        open_group = ChangeGroup(row.kind, row.label,
+                                 _snippet(row.new_text or row.old_text), [row.seq])
+        groups.append(open_group)
+    for g in groups:
+        if len(g.seqs) > 1:
+            g.detail += f"  (연속 {len(g.seqs)}건)"
+    return groups
+
+
 # ------------------------------------------------------------------ 공개 API
+class EmptyExtractionError(ValueError):
+    """두 판본 **모두** 추출 본문이 0 — '변경 없음' 단언 금지(빈 컨테이너 완전성 게이트).
+
+    추출이 조용히 빈 결과를 내는 컨테이너(섹션 0개·본문 0)를 물리면 '두 판본이
+    동일합니다'라는 최악 방향의 거짓 음성이 된다. 확인-또는-경보: 시끄럽게 실패한다.
+    """
+
+
+def _has_extracted_content(doc: Document) -> bool:
+    """추출된 본문(비공백 문단 또는 내용 있는 표)이 하나라도 있으면 True."""
+    for _lbl, secs in _region_iter(doc):
+        for sec in secs:
+            for b in sec.blocks:
+                if isinstance(b, Paragraph) and b.text.strip():
+                    return True
+                if isinstance(b, Table) and _table_flat_text(b):
+                    return True
+    return False
+
+
 def diff_documents(old: Document, new: Document) -> DiffResult:
     """두 Document 를 비교해 결정적 DiffResult 반환. 동일 문서면 변경 0."""
     differ = _Differ()
@@ -652,12 +738,24 @@ def diff_documents(old: Document, new: Document) -> DiffResult:
         "change_items": len(items),
     }
     return DiffResult(changes=differ.changes, change_items=items, summary=summary,
-                      rows=differ.rows)
+                      rows=differ.rows, change_groups=group_changes(differ.rows))
 
 
 def diff_files(old_path: str, new_path: str) -> DiffResult:
-    """두 HWPX 파일 경로를 추출·비교해 DiffResult 반환(편의 함수)."""
-    return diff_documents(extract_document(old_path), extract_document(new_path))
+    """두 HWPX 파일 경로를 추출·비교해 DiffResult 반환(편의 함수).
+
+    완전성 게이트: 양쪽 다 추출 본문이 0이면 '변경 없음'을 단언할 근거가 없으므로
+    :class:`EmptyExtractionError` 를 던진다(GUI 모달·CLI 오류 종료로 표면화).
+    """
+    old_doc = extract_document(old_path)
+    new_doc = extract_document(new_path)
+    if not _has_extracted_content(old_doc) and not _has_extracted_content(new_doc):
+        raise EmptyExtractionError(
+            "두 판본 모두에서 본문을 추출하지 못했습니다 — '변경 없음'이 아니라 "
+            "읽기 실패일 수 있습니다. 파일이 올바른 HWPX 인지 확인하세요: "
+            f"{old_path} ↔ {new_path}"
+        )
+    return diff_documents(old_doc, new_doc)
 
 
 # ------------------------------------------------------------------ 렌더링
@@ -667,7 +765,13 @@ KIND_LABELS = {"added": "추가", "removed": "삭제", "changed": "변경",
                "renumber": "번호변경"}
 KIND_COLORS = {"added": "#1e8449", "removed": "#c0392b", "changed": "#2874a6",
                "renumber": "#7a7f87"}
+# del/ins 인라인 강조·행 배경 틴트 — 단일 출처(공개). GUI 전문 뷰 CSS 와 CLI HTML
+# CSS 가 모두 여기서 당겨 쓴다(표면별 하드코딩은 같은 변경을 다른 색으로 보이게 한다).
+KIND_TINTS = {"added": "#e5f2ea", "removed": "#fdecec"}
 _KIND_LABEL = KIND_LABELS  # 하위호환 별칭
+
+# 변경 0건의 빈 상태 카피 — 세 표면(GUI 요약 라벨·CLI 텍스트 요약·HTML 리포트) 공유.
+NO_CHANGES_MESSAGE = "변경 없음 — 두 판본이 동일합니다."
 
 # 변경항목 범주의 표시 어휘·배지색 — 단일 출처(공개). HTML 리포트의 `.b-{category}` 와
 # GUI(diff_app) 리스트 배지가 모두 여기서 당겨 쓴다(사본을 두면 범주 추가가 조용히 어긋난다).
@@ -725,17 +829,53 @@ def render_summary(result: DiffResult) -> str:
             lines.append(f"{i}. {it.location_label}: {it.detail}")
         lines.append("")
     if not result.changes:
-        lines.append("(변경 없음)")
+        lines.append(NO_CHANGES_MESSAGE)
     return "\n".join(lines).rstrip() + "\n"
 
 
+# 낱말 diff 파편화 완화 — 변경 사이에 낀 이 길이 미만의 equal 조각은 양옆 변경에
+# 흡수한다("제3조→제4조"의 '조' 같은 한두 글자가 del/ins 를 잘게 쪼개 붙이는 문제).
+_COALESCE_MIN_EQUAL = 3
+
+
+def coalesce_word_ops(ops: "list[WordOp] | None") -> "list[WordOp] | None":
+    """변경 사이의 짧은 equal 조각을 replace 로 흡수 — 인라인 강조 가독성(순수 함수).
+
+    공백뿐인 equal 은 낱말 경계라 남긴다(흡수하면 별개 낱말 변경이 한 덩어리로 뭉개짐).
+    GUI 전문 뷰와 CLI HTML 리포트가 **같은 성형**을 공유한다 — 같은 DiffResult 가
+    표면마다 다른 낱말 강조로 렌더되지 않도록.
+    """
+    if not ops:
+        return ops
+    out: "list[WordOp]" = []
+    i = 0
+    while i < len(ops):
+        op = ops[i]
+        if (op.op == "equal" and op.old.strip()
+                and len(op.old) < _COALESCE_MIN_EQUAL
+                and out and out[-1].op != "equal"
+                and i + 1 < len(ops) and ops[i + 1].op != "equal"):
+            prev = out.pop()
+            nxt = ops[i + 1]
+            out.append(WordOp(
+                "replace",
+                old=prev.old + op.old + nxt.old,
+                new=prev.new + op.old + nxt.new,
+            ))
+            i += 2
+            continue
+        out.append(op)
+        i += 1
+    return out
+
+
 def _render_inline(word_ops: "list[WordOp] | None", old: str, new: str) -> str:
-    """낱말 op 를 인라인 del/ins HTML 로. op 없으면 통째 교체 표시."""
+    """낱말 op 를 인라인 del/ins HTML 로(coalesce 성형 공유). op 없으면 통째 교체 표시."""
     if not word_ops:
         return (f"<del>{html.escape(old)}</del>"
                 f"<ins>{html.escape(new)}</ins>")
     out: "list[str]" = []
-    for w in word_ops:
+    for w in coalesce_word_ops(word_ops):
         if w.op == "equal":
             out.append(html.escape(w.old))
         elif w.op == "delete":
@@ -770,14 +910,20 @@ padding:4px 12px}
 summary{cursor:pointer;font-weight:600;font-size:13px;padding:6px 0}
 .chg{padding:8px 0;border-top:1px solid #f0f1f3;font-size:13px}
 .loc{color:#888;font-size:12px;margin-bottom:2px}
-del{background:#ffe3e3;color:#a61b1b;text-decoration:line-through}
-ins{background:#dcffe0;color:#12681f;text-decoration:none}
-.added{border-left:3px solid #1e8449;padding-left:10px}
-.removed{border-left:3px solid #c0392b;padding-left:10px}
-.changed{border-left:3px solid #2874a6;padding-left:10px}
-.renumber{border-left:3px solid #7a7f87;padding-left:10px;opacity:.72}
 .empty{color:#888;font-style:italic}
-""" + "\n".join(
+""" + (
+    # del/ins 강조·경계선은 KIND_TINTS/KIND_COLORS 에서 생성 — 팔레트 단일 출처
+    # (GUI 전문 뷰 CSS 와 공유; 표면별 리터럴 이원화 방지).
+    f"del{{background:{KIND_TINTS['removed']};color:{KIND_COLORS['removed']};"
+    "text-decoration:line-through}\n"
+    f"ins{{background:{KIND_TINTS['added']};color:{KIND_COLORS['added']};"
+    "text-decoration:none}\n"
+    f".added{{border-left:3px solid {KIND_COLORS['added']};padding-left:10px}}\n"
+    f".removed{{border-left:3px solid {KIND_COLORS['removed']};padding-left:10px}}\n"
+    f".changed{{border-left:3px solid {KIND_COLORS['changed']};padding-left:10px}}\n"
+    f".renumber{{border-left:3px solid {KIND_COLORS['renumber']};padding-left:10px;"
+    "opacity:.72}\n"
+) + "\n".join(
     # 배지색은 CATEGORY_COLORS 에서 생성 — 팔레트 단일 출처(GUI 리스트 배지와 공유).
     f".b-{cat}{{background:{color}}}" for cat, color in CATEGORY_COLORS.items()
 )
@@ -793,10 +939,11 @@ def render_html(result: DiffResult) -> str:
     out.append(f"<style>{_HTML_CSS}</style></head><body>")
     out.append("<h1>HWPX 규격서 개정 비교</h1>")
 
-    # 변경 요약
+    # 변경 요약 — 종류 카드는 GUI KPI 타일과 같은 집합(번호변경 포함, RC-32).
     out.append("<div class='summary'>")
     for label, key in (("추가", "added"), ("삭제", "removed"),
-                       ("변경", "changed"), ("주요 항목", "change_items")):
+                       ("변경", "changed"), ("번호변경", "renumber"),
+                       ("주요 항목", "change_items")):
         out.append(f"<div class='card'><div class='n'>{s.get(key, 0)}</div>"
                    f"<div class='l'>{label}</div></div>")
     out.append("</div>")
@@ -835,7 +982,7 @@ def render_html(result: DiffResult) -> str:
     # 전체 변경 내역(접이식)
     out.append("<h2>전체 변경 내역</h2>")
     if not result.changes:
-        out.append("<p class='empty'>변경 없음 — 두 문서가 동일합니다.</p>")
+        out.append(f"<p class='empty'>{NO_CHANGES_MESSAGE}</p>")
     else:
         out.append(f"<details open><summary>{len(result.changes)}건</summary>")
         for c in result.changes:

@@ -23,6 +23,23 @@ def test_products_do_not_import_each_other() -> None:
     assert "hwpxdiff" not in _import_roots("hwpxfiller")
 
 
+def test_hwpxdiff_core_module_is_qt_free() -> None:
+    """hwpxdiff/diff.py(+cli.py)는 stdlib+hwpxcore 만 — 성형·그룹화·렌더 로직이 뷰로
+    돌아가 GUI/CLI 표면이 갈라지는 회귀(RC-17)를 막는다."""
+    for module in ("diff.py", "cli.py"):
+        path = ROOT / "src" / "hwpxdiff" / module
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            names: list[str] = []
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                names = [node.module]
+            assert not any(n.split(".", 1)[0] in ("PySide6", "shiboken6") for n in names), (
+                f"hwpxdiff/{module} 에 Qt 임포트가 들어왔다 — 순수 계층을 지켜라"
+            )
+
+
 def test_core_mapping_carries_no_source_specific_vocabulary() -> None:
     """범용 코어(core/mapping.py)는 특정 API 어휘를 품지 않는다(V1 소스 어휘 소유권).
 

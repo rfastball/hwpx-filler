@@ -14,7 +14,7 @@ import sys
 
 
 def main(argv: "list[str] | None" = None) -> int:
-    from .diff import diff_files, render_html, render_summary
+    from .diff import EmptyExtractionError, diff_files, render_html, render_summary
 
     ap = argparse.ArgumentParser(prog="hwpxdiff")
     ap.add_argument("old", help="이전 판본 HWPX 경로")
@@ -22,7 +22,12 @@ def main(argv: "list[str] | None" = None) -> int:
     ap.add_argument("--html", default=None, help="HTML 리포트 저장 경로")
     args = ap.parse_args(sys.argv[1:] if argv is None else argv)
 
-    result = diff_files(args.old, args.new)
+    try:
+        result = diff_files(args.old, args.new)
+    except EmptyExtractionError as exc:
+        # 빈 컨테이너 쌍을 '(변경 없음)' + exit 0 으로 삼키지 않는다(거짓 음성 게이트).
+        print(f"오류: {exc}", file=sys.stderr)
+        return 1
     print(render_summary(result), end="")
     if args.html:
         from hwpxcore.atomic import write_text_atomic

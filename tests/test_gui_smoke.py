@@ -1083,8 +1083,6 @@ def test_diff_window_compares_real_corpus_and_binds_groups(qapp, tmp_path, monke
 
     from PySide6.QtCore import Qt
 
-    from hwpxdiff.app import _group_changes
-
     corpus = Path(__file__).parent / "corpus" / "real"
     win = _diff_window_for_test(tmp_path, monkeypatch)
     assert not win.btn_compare.isEnabled()  # 판본 선택 전
@@ -1094,7 +1092,8 @@ def test_diff_window_compares_real_corpus_and_binds_groups(qapp, tmp_path, monke
     win._on_compare()
 
     assert win.result is not None
-    assert win.items.rowCount() == len(_group_changes(win.result.changes)) > 0
+    # 그룹화는 코어 소유 — 리스트 행 수 = 코어가 계산한 rows 기반 그룹 수.
+    assert win.items.rowCount() == len(win.result.change_groups) > 0
     # 전문 뷰 계약: equal 원문이 실제로 포함된다(본문 맥락 보존).
     assert len(win.result.rows) > len(win.result.changes)
     # 클릭 이동 계약: 각 그룹의 표적(Qt.UserRole == 첫 Change.seq)이 뷰 앵커로 실재.
@@ -1115,48 +1114,8 @@ def test_diff_visible_predicate_headless():
     assert _visible("renumber", set(), True)
 
 
-def test_group_changes_merges_adjacent_same_kind():
-    """인접(연속 seq)·같은 종류 변경은 리스트 1행으로 — 파편화 완화(순수 함수)."""
-    from hwpxdiff.diff import Change
-    from hwpxdiff.app import _group_changes
-
-    chs = [
-        Change(0, "changed", "paragraph", {}, "본문 1 · 문단 3", "a", "b"),
-        Change(1, "changed", "paragraph", {}, "본문 1 · 문단 4", "c", "d"),
-        Change(2, "added", "paragraph", {}, "본문 1 · 문단 5", "", "e"),
-        Change(4, "changed", "paragraph", {}, "본문 1 · 문단 9", "f", "g"),  # seq 갭 → 새 그룹
-    ]
-    gs = _group_changes(chs)
-    assert [(g.kind, len(g.seqs)) for g in gs] == [
-        ("changed", 2), ("added", 1), ("changed", 1)
-    ]
-    assert gs[0].seqs == [0, 1] and "연속 2건" in gs[0].detail
-    assert gs[0].label == "본문 1 · 문단 3"  # 그룹 라벨 = 첫 변경 위치
-
-
-def test_coalesce_ops_absorbs_short_equal_between_changes():
-    """변경 사이 한두 글자 equal 은 흡수, 낱말 경계(선두/후미/공백)는 보존."""
-    from hwpxdiff.diff import WordOp
-    from hwpxdiff.app import _coalesce_ops
-
-    ops = [
-        WordOp("equal", old="제"),
-        WordOp("replace", old="3", new="4"),
-        WordOp("equal", old="조"),
-        WordOp("replace", old="갑", new="을"),
-        WordOp("equal", old=" 이하 같다"),
-    ]
-    out = _coalesce_ops(ops)
-    assert [o.op for o in out] == ["equal", "replace", "equal"]
-    assert out[1].old == "3조갑" and out[1].new == "4조을"
-
-    # 공백 equal 은 낱말 경계 — 흡수하지 않는다.
-    ops2 = [
-        WordOp("replace", old="가", new="나"),
-        WordOp("equal", old=" "),
-        WordOp("replace", old="다", new="라"),
-    ]
-    assert [o.op for o in _coalesce_ops(ops2)] == ["replace", "equal", "replace"]
+# 순수 함수(coalesce_word_ops·group_changes)는 core.diff 로 이관 — 헤드리스 테스트도
+# 함께 이동했다: tests/test_diff_render.py(coalesce)·tests/test_diff_rows.py(그룹화).
 
 
 def test_diff_kind_filter_and_renumber_toggle(qapp, tmp_path, monkeypatch):
@@ -1263,3 +1222,88 @@ def test_diff_list_badge_colors_match_core_palette(qapp, tmp_path, monkeypatch):
         assert cell.background().color().name() == KIND_COLORS[g.kind], (
             f"행 {r} ({g.kind}): 배지색이 코어 팔레트와 다름"
         )
+
+
+def test_diff_view_css_uses_core_inline_palette(qapp):
+    """전문 뷰 del/ins 팔레트 = 코어 KIND_COLORS/KIND_TINTS — CLI HTML 과 표면 간 일치."""
+    from hwpxdiff.app import _QT_VIEW_CSS
+    from hwpxdiff.diff import KIND_COLORS, KIND_TINTS
+
+    assert f"del{{background-color:{KIND_TINTS['removed']};color:{KIND_COLORS['removed']};}}" \
+        in _QT_VIEW_CSS
+    assert f"ins{{background-color:{KIND_TINTS['added']};color:{KIND_COLORS['added']};" \
+        in _QT_VIEW_CSS
+
+
+def test_diff_first_compare_failure_sets_inline_message(qapp, tmp_path, monkeypatch):
+    """RC-31: 새 창 첫 비교 실패 — 모달을 닫은 뒤에도 실패 사유가 요약 라벨에 남는다.
+
+    _invalidate_result 의 조기 반환('지울 결과 없음')이 메시지 표시까지 삼키면
+    초기 안내문('판본 2개를 선택하고…')이 손상 경로 위에 그대로 잔존한다.
+    """
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QMessageBox
+
+    from hwpxdiff.app import DiffReviewWindow
+
+    calls: "list[tuple]" = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a, **k: calls.append(a))
+    win = DiffReviewWindow()
+    win._settings = QSettings(str(tmp_path / "recent.ini"), QSettings.IniFormat)
+    initial = win.lbl_summary.text()
+
+    bad_old = tmp_path / "bad_old.hwpx"
+    bad_old.write_bytes(b"not a zip")
+    bad_new = tmp_path / "bad_new.hwpx"
+    bad_new.write_bytes(b"still not a zip")
+    win.ed_old.setText(str(bad_old))
+    win.ed_new.setText(str(bad_new))
+    win._on_compare()
+
+    assert calls, "실패 모달이 뜨지 않았다"
+    assert win.result is None
+    assert win.lbl_summary.text() != initial
+    assert "비교 실패" in win.lbl_summary.text()
+    assert not win.lbl_summary.isHidden()
+
+
+def test_diff_zero_changes_shows_shared_no_changes_copy(qapp, tmp_path, monkeypatch):
+    """RC-32: 변경 0건이면 GUI 도 확정 문장(3표면 공유 카피)을 노출 — 빈 리스트 모호성 제거."""
+    from pathlib import Path
+
+    from hwpxdiff.diff import NO_CHANGES_MESSAGE
+
+    corpus = Path(__file__).parent / "corpus" / "real"
+    same = str(corpus / "spec_revision_2025.hwpx")
+    win = _diff_window_for_test(tmp_path, monkeypatch)
+    win.ed_old.setText(same)
+    win.ed_new.setText(same)
+    win._on_compare()
+
+    assert win.result is not None and not win.result.changes
+    assert win.lbl_summary.text() == NO_CHANGES_MESSAGE
+    assert not win.lbl_summary.isHidden()
+    assert not win.kpi_wrap.isHidden()          # 수치 근거(0/0/0/0)도 함께
+    assert win.lbl_filter_notice.isHidden()     # 필터 안내와 혼동 금지
+
+
+def test_diff_filter_all_off_shows_notice_not_silence(qapp, tmp_path, monkeypatch):
+    """RC-32: 필터 3종+번호변경 전부 꺼서 0행이면 안내 라벨 — '진짜 동일'과 구분."""
+    from pathlib import Path
+
+    corpus = Path(__file__).parent / "corpus" / "real"
+    win = _diff_window_for_test(tmp_path, monkeypatch)
+    win.ed_old.setText(str(corpus / "spec_revision_2025.hwpx"))
+    win.ed_new.setText(str(corpus / "spec_revision_2026.hwpx"))
+    win._on_compare()
+    assert win.items.rowCount() > 0
+    assert win.lbl_filter_notice.isHidden()     # 기본 필터에선 안내 없음
+
+    for cb in win._filter_checks.values():
+        cb.setChecked(False)
+    win.chk_renumber.setChecked(False)
+    assert all(win.items.isRowHidden(r) for r in range(win.items.rowCount()))
+    assert not win.lbl_filter_notice.isHidden()
+
+    win._filter_checks["changed"].setChecked(True)  # 하나라도 켜면 안내 해제
+    assert win.lbl_filter_notice.isHidden()
