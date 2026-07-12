@@ -44,21 +44,21 @@
 | RC-19 | 중간 | defect | confirmed | U5 | 착지(877d50c) | 대규모 전량 개정 문서에서 hwpxdiff 비교가 UI 스레드를 수십 초 동결 — 전쌍 SequenceMatcher.ratio O(N²) + 동기 핸들러(취소·진행 없음) |
 | RC-20 | 중간 | defect | confirmed | U8 | 착지(cf56119) | 출력 파일명 패턴 계약 부실 — 기본값 2종이 3링 4곳 산재, 빈 입력 시 화면에 없던 값으로 조용한 폴백, 미치환 {{토큰}}이 무경고로 실파일명이 됨 |
 | RC-21 | 중간 | defect | unverified | U8 | 착지(cf56119) | hwpxfiller 최상위 --help가 서브커맨드 6종을 전혀 표기하지 않음 — pre-argparse 수동 디스패치로 도움말이 실제 CLI 표면을 오표현 |
-| RC-22 | 중간 | code_smell | accepted | U9 | 대기 | run_view↔matrix_view 사본 8종(QThread 배선·완료/실패 핸들러·teardown·open_folder·나라/풀 데이터 겨눔 3종) — _teardown_thread는 이미 의미가 갈라진 사본 부패 개시 상태 |
-| RC-23 | 중간 | convention_deviation | accepted | U9 | 대기 | 게이트 상태의 표시 결정이 VM과 위젯에 쪼개져 모순 신호 — 드리프트 차단 중에도 상단 '사전검증 통과' 녹색 유지, 상태 리프레시 1회당 템플릿 zip 5회 재파싱 |
+| RC-22 | 중간 | code_smell | accepted | U9 | 착지(216cbd2) | run_view↔matrix_view 사본 8종(QThread 배선·완료/실패 핸들러·teardown·open_folder·나라/풀 데이터 겨눔 3종) — _teardown_thread는 이미 의미가 갈라진 사본 부패 개시 상태 |
+| RC-23 | 중간 | convention_deviation | accepted | U9 | 착지(216cbd2) | 게이트 상태의 표시 결정이 VM과 위젯에 쪼개져 모순 신호 — 드리프트 차단 중에도 상단 '사전검증 통과' 녹색 유지, 상태 리프레시 1회당 템플릿 zip 5회 재파싱 |
 | RC-24 | 중간 | code_smell | accepted | U4 | 착지(b676d6b) | 취득 결과 스냅샷의 소유가 링2 뷰 — 실패 시 records만 리셋되어 datasource/fields/label에 이전 성공값 잔존, 수용성 판정·위젯 관통도 뷰에 산재 |
-| RC-25 | 중간 | code_smell | accepted | U10 | 대기 | 미선언 덕타이핑 이음새 — 위저드 주입 2속성(secret_store/nara_fetcher)이 호스트에 정의조차 없어 주입 실수가 조용히 실 자격증명 저장소·실 네트워크로 폴백, 문자열 타입명 검사·미선언 인스턴스 속성 동반 |
+| RC-25 | 중간 | code_smell | accepted | U10 | 착지(4403d94) | 미선언 덕타이핑 이음새 — 위저드 주입 2속성(secret_store/nara_fetcher)이 호스트에 정의조차 없어 주입 실수가 조용히 실 자격증명 저장소·실 네트워크로 폴백, 문자열 타입명 검사·미선언 인스턴스 속성 동반 |
 | RC-26 | 중간 | convention_deviation | accepted | U12 | 대기 | 사용자 용어 체계의 전역 미정렬 — 1개념 다이름(공유 베이스 4이름·fieldize/컴파일), 1단어 다개념('어휘' 3개념, 비움/공란/빈칸 어휘 침범), 라벨↔창 제목 짝 불일치 |
-| RC-27 | 중간 | convention_deviation | accepted | U11 | 대기 | 전 한국어 제품에 Qt 표준 문자열이 영어로 잔존 — QTranslator 미설치로 위저드 Back/Next/Cancel·파괴적 확인 &Yes/&No가 영어 |
-| RC-30 | 중간 | defect | unverified | U9 | 대기 | 부분 실패 배치의 완료 모달이 실패를 무언급 — succeeded>0만으로 '완료' 서사(run/matrix 동일 사본), 실패 사유는 원시 errno 관통 |
-| RC-28 | 낮음 | code_smell | accepted | U10 | 대기 | 저작 화면의 링1 연기 잔여 비용 — accept() 5책임 fat handler, _compile_here 인라인 컴파일·IO, 레지스트리 질의·베이스 저장이 뷰 상주, 안내문이 절차 순서의 부수효과 |
-| RC-29 | 낮음 | code_smell | accepted | U10 | 대기 | CompileState→시각 심각도 매핑이 링2(home)와 링1(template_manager_state)에 상이한 어휘로 이중 존재 + fb 셀렉터 값 어휘가 원 의미와 다른 뜻으로 재전용 |
+| RC-27 | 중간 | convention_deviation | accepted | U11 | 착지(979ccc0) | 전 한국어 제품에 Qt 표준 문자열이 영어로 잔존 — QTranslator 미설치로 위저드 Back/Next/Cancel·파괴적 확인 &Yes/&No가 영어 |
+| RC-30 | 중간 | defect | unverified | U9 | 착지(216cbd2) | 부분 실패 배치의 완료 모달이 실패를 무언급 — succeeded>0만으로 '완료' 서사(run/matrix 동일 사본), 실패 사유는 원시 errno 관통 |
+| RC-28 | 낮음 | code_smell | accepted | U10 | 착지(4403d94) | 저작 화면의 링1 연기 잔여 비용 — accept() 5책임 fat handler, _compile_here 인라인 컴파일·IO, 레지스트리 질의·베이스 저장이 뷰 상주, 안내문이 절차 순서의 부수효과 |
+| RC-29 | 낮음 | code_smell | accepted | U10 | 착지(4403d94) | CompileState→시각 심각도 매핑이 링2(home)와 링1(template_manager_state)에 상이한 어휘로 이중 존재 + fb 셀렉터 값 어휘가 원 의미와 다른 뜻으로 재전용 |
 | RC-31 | 낮음 | defect | unverified | U5 | 착지(877d50c) | hwpxdiff 첫 비교 실패 시 인라인 실패 문구 미설정 — _invalidate_result 조기 반환이 '지울 결과 없음'과 '표시할 메시지 없음'을 동일시 |
 | RC-32 | 낮음 | polish | accepted | U5 | 착지(877d50c) | hwpxdiff 세 표면(GUI/CLI/HTML)의 요약·빈 상태 카피가 각자 하드코딩 — GUI만 '변경 없음' 확정 문장 부재, HTML만 번호변경 KPI 부재 |
 | RC-33 | 낮음 | defect | unverified | U8 | 착지(cf56119) | CLI lint --vocab이 UTF-8 BOM 파일의 첫 필드명을 오염 — Windows 표준 도구로 만든 어휘 파일이 오탐 off_vocabulary + exit 1 게이트 실패 |
-| RC-34 | 낮음 | code_smell | accepted | U11 | 대기 | 파일 다이얼로그 필터 문자열 하드코딩 10곳 — 지원 확장자 단일 출처(data/factory.py)와 드리프트 대기 상태 |
-| RC-35 | 낮음 | convention_deviation | accepted | U11 | 대기 | 언더스코어 사명 클래스(_AppController·_JobCard·_TemplateCard)가 사실상 공용 API — 테스트 4파일·docs 4곳이 크로스모듈 임포트/인용 |
-| RC-36 | 낮음 | polish | accepted | U11 | 대기 | 매핑 테이블에서 말줄임된 긴 필드명·소스 콤보의 전체 이름 확인 수단(툴팁) 부재 — 유사 접두 필드 오인 확정 위험 |
+| RC-34 | 낮음 | code_smell | accepted | U11 | 착지(979ccc0) | 파일 다이얼로그 필터 문자열 하드코딩 10곳 — 지원 확장자 단일 출처(data/factory.py)와 드리프트 대기 상태 |
+| RC-35 | 낮음 | convention_deviation | accepted | U11 | 착지(979ccc0) | 언더스코어 사명 클래스(_AppController·_JobCard·_TemplateCard)가 사실상 공용 API — 테스트 4파일·docs 4곳이 크로스모듈 임포트/인용 |
+| RC-36 | 낮음 | polish | accepted | U11 | 착지(979ccc0) | 매핑 테이블에서 말줄임된 긴 필드명·소스 콤보의 전체 이름 확인 수단(툴팁) 부재 — 유사 접두 필드 오인 확정 위험 |
 
 ### 스테이지 1 착지 기록 (2026-07-12) — 리그레션 증거
 
@@ -101,6 +101,29 @@ pyright 포함).
 OutputCollisionError 로 분리해 RC-02 차단(exit 1+안내)과 환경성 FileExistsError(exit 2)의
 거짓 안내를 차단, 나라 취득 실패는 U6 데이터 경계 게이트(exit 1)로 확정, hwpxdiff 빈 추출
 게이트를 diff_documents 로 하강(분리 로드 경로도 게이트 통과). 최종 게이트 707 passed.
+
+### 스테이지 3 착지 기록 (2026-07-12) — 리그레션 증거
+
+3유닛 전부 적대 검증 pass. U9는 반려 1회(WinError 지역화 문자열 미발화 → 실 재현 형태 겨냥
+테스트로 박제) 후 pass.
+
+- **U9** `216cbd2` (RC-22·23·30): gui/batch_run.py 공용 실행 계층(BatchRunController·
+  DataAcquireController — matrix 풀 복원도 TaskWorker 비동기 파리티), vm.gate_state 단일
+  산출(드리프트 차단 중 '통과' 녹색 모순 해소, 리프레시당 재파싱 5→1회), 부분 실패 모달
+  발화 + describe_result_error(WinError 5/32/112 코드·한국어 메시지 양면, 원문 보존). 실
+  파일 잠금으로 master 재현 → 비재현.
+- **U10** `4403d94` (RC-25·28·29): 위저드 secret_store/nara_fetcher 주입 계약 선언(조용한
+  실 자격증명·실 네트워크 폴백 → TypeError), 저작 게이트 링1 하강(job_editor_state), 배지
+  매핑 링1 단일화(compile_badge.py). source_pointer 타입명 검사 → 선언 프로토콜(개명 내성).
+- **U11** `979ccc0` (RC-27·34·35·36): qtbase_ko 번역기 설치(위저드 버튼 한국어), 파일 필터
+  상수 단일화(EXCEL_EXTS→file_filters, 하드코딩 9곳 + 재유입 grep 게이트), 언더스코어 클래스
+  공개화(무파괴 별칭), 매핑 테이블 툴팁 전체 이름.
+  **주의(프로세스)**: U11 구현 worktree가 스테이지 1·2·3 착지 이전 스냅샷에서 출발해 U9가
+  옮긴 파일 다이얼로그·U10이 제거한 배지 헬퍼와 의미가 갈라져 머지 4파일 충돌 → 머지를 무손상
+  되돌리고(트리 4403d94 복원) 최신 master 위에서 **재구현**(충돌 0으로 fast-forward). 이후
+  스테이지의 worktree 베이스 확인을 착수 전 필수로.
+
+최종 게이트 755 passed. 스테이지 3 완료 시점 누적 착지 35/36건 — 남은 것은 U12(RC-26 전역 용어 정렬).
 
 ## 치명 (critical) — 5건
 
