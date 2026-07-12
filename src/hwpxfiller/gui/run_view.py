@@ -355,7 +355,7 @@ class RunView(QMainWindow):
                 w.deleteLater()
 
     def _refresh_field_panel(self) -> None:
-        """뷰모델 필드 상태를 채움/의도적 빈칸/미입력(클릭 확인) 배지로 렌더."""
+        """뷰모델 필드 상태를 채움/공란/미입력/구조 드리프트 배지로 렌더."""
         self._clear_badges()
         indices = self.selector.selected_indices()
         for st in self.vm.field_states(indices):
@@ -365,6 +365,11 @@ class RunView(QMainWindow):
             elif st.state == "blank":
                 chip = QLabel(f"◦ {st.name} (채우지 않음)")
                 mark(chip, "fb", "blank")
+            elif st.state == "drift":
+                # 구조 드리프트는 레코드별 값 판단이 아니므로 ack 버튼이 될 수 없다.
+                chip = QLabel(f"⚠ {st.name} — 매핑 재확정 필요")
+                mark(chip, "fb", "missing")
+                chip.setEnabled(False)
             elif st.acknowledged:
                 chip = QPushButton(f"✓ {st.name} — 미입력 표시 예정")
                 mark(chip, "fb", "ack")
@@ -385,11 +390,22 @@ class RunView(QMainWindow):
     def _sync_generate_enabled(self) -> None:
         indices = self.selector.selected_indices()
         unmet = self.vm.unmet_blanks(indices) if self.vm.datasource is not None else []
+        drift = self.vm.structure_drift() if self.vm.datasource is not None else None
         if self._running:
             self.btn_generate.setEnabled(False)
             return
-        self.btn_generate.setEnabled(not unmet)
-        if unmet:
+        self.btn_generate.setEnabled(not unmet and not (drift and drift.has_drift))
+        if drift and drift.has_drift:
+            names = list(drift.template_only) + list(drift.mapping_only) + list(drift.conflicting)
+            mark(self.lbl_gate, "level", "danger")
+            if drift.read_error:
+                self.lbl_gate.setText("템플릿 구조를 읽을 수 없어 생성이 차단됩니다.")
+            else:
+                self.lbl_gate.setText(
+                    "템플릿 구조 드리프트 — 매핑을 다시 확정해야 생성할 수 있습니다: "
+                    + ", ".join(names)
+                )
+        elif unmet:
             mark(self.lbl_gate, "level", "warn")
             self.lbl_gate.setText(
                 f"미입력 {len(unmet)}필드를 확인해야 문서 생성이 가능합니다: {', '.join(unmet)}"

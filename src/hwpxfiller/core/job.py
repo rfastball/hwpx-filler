@@ -87,6 +87,10 @@ class Job:
         """매핑이 읽는 소스 키 전체(문서순 중복제거). 실 DataSource 정합 검증의 대상."""
         seen: "dict[str, None]" = {}
         for m in self.mapping.mappings:
+            if m.is_blank:
+                # malformed/구 프로파일이 blank에 sources를 남겨도 의도 선언은
+                # 소스 요구가 아니다. source drift와 실제 출력이 갈리지 않게 제외.
+                continue
             for s in m.sources:
                 seen.setdefault(s, None)
         return list(seen)

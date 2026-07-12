@@ -32,6 +32,8 @@ from .lint import similarity
 
 # 지원 변환 종류. 이 중 amount/datetime 은 **결합(N→1) 후 표시형 서식**을 교체 가능한
 # core/format_engine 에 위임한다(join/const 는 매핑 고유 결합자).
+# 사용자 편집 가능한 값 변환만. ``blank`` 는 empty-confirmed 행의 내부 영속 마커라
+# 공용 UI 목록에 노출하지 않는다.
 TRANSFORMS = ("join", "datetime", "amount", "const")
 
 
@@ -45,6 +47,10 @@ def apply_transform(
     코드 해석은 교체 가능한 `format_engine` 에 위임한다(현재 stdlib). amount/datetime 만
     표시형을 가지며, 없는 변환에선 ``fmt`` 는 무시된다.
     """
+    if kind == "blank":
+        # 의도적 공란은 값 추론이 아니라 매핑 계약의 명시적 선언이다. 엔진에는
+        # 키 자체를 넘기지 않지만, 단독 FieldMapping 평가도 언제나 빈 값이어야 한다.
+        return ""
     if kind == "const":
         return const
     parts = [v.strip() for v in values if v and v.strip()]
@@ -67,6 +73,11 @@ class FieldMapping:
     sep: str = " "
     const: str = ""
     fmt: str = ""  # 표시형 프리셋 키(변환 내). "" = 기본(하위호환).
+
+    @property
+    def is_blank(self) -> bool:
+        """이 항목이 템플릿 필드를 의도적으로 비운다는 명시적 선언인가."""
+        return self.transform == "blank"
 
     def value_for(self, record: "dict[str, object]") -> str:
         values = [str(record.get(s, "")) for s in self.sources]
@@ -102,11 +113,47 @@ class MappingProfile:
     mappings: "list[FieldMapping]" = field(default_factory=list)
 
     def template_fields(self) -> "list[str]":
-        return [m.template_field for m in self.mappings]
+        """실제로 값을 방출하는 필드(기존 엔진/ADR-E 계약).
+
+        명시적 공란은 커버에는 속하지만 출력 데이터에는 없어야 한다. 따라서 기존
+        호출자가 보던 이 메서드는 값 매핑만 반환하고, 구조 계약에는
+        :meth:`cover_fields` 를 사용한다.
+        """
+        return [m.template_field for m in self.mappings if not m.is_blank]
+
+    def mapped_fields(self) -> "list[str]":
+        """값을 채우는 매핑 필드 집합(문서순, 중복 제거)."""
+        return list(dict.fromkeys(self.template_fields()))
+
+    def blank_fields(self) -> "list[str]":
+        """사람이 명시적으로 '채우지 않음'을 선언한 필드 집합."""
+        return list(dict.fromkeys(m.template_field for m in self.mappings if m.is_blank))
+
+    def cover_fields(self) -> "list[str]":
+        """매핑 계약이 전건 커버하는 필드(``mapped ∪ blank``), 선언순."""
+        return list(dict.fromkeys(m.template_field for m in self.mappings))
+
+    def coverage_set(self) -> "set[str]":
+        """대칭차 드리프트 평가용 커버 집합."""
+        return set(self.cover_fields())
+
+    def coverage_conflicts(self) -> "list[str]":
+        """값 매핑과 공란 선언이 동시에 존재하는 모순 필드(선언순)."""
+        mapped = set(self.mapped_fields())
+        blanks = set(self.blank_fields())
+        return [f for f in self.cover_fields() if f in mapped and f in blanks]
 
     def apply(self, record: "dict[str, object]") -> "dict[str, str]":
-        """소스 레코드 1건 → {템플릿필드: 값}. 엔진/배치가 그대로 소비한다."""
-        return {m.template_field: m.value_for(record) for m in self.mappings}
+        """소스 레코드 1건 → {템플릿필드: 값}. 엔진/배치가 그대로 소비한다.
+
+        명시적 공란은 구조 계약에만 남고 출력 dict 에서는 빠진다. 이는 L1 이전의
+        '미매핑 필드는 엔진에 전달하지 않아 누름틀을 그대로 둔다'는 동작을 보존한다.
+        """
+        return {
+            m.template_field: m.value_for(record)
+            for m in self.mappings
+            if not m.is_blank
+        }
 
     def apply_all(self, records: "list[dict]") -> "list[dict[str, str]]":
         return [self.apply(r) for r in records]

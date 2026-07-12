@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..core.engine import HwpxEngine
+from ..core.fill_ledger import TemplateStructureDrift, template_path_drift
 from ..core.job import Job, RunRequest
 from ..data import source_for_path
 
@@ -52,7 +53,7 @@ class FieldState:
     """실행 화면 상시 인라인 배지 1개(ADR-E/B) — 필드의 채움 상태."""
 
     name: str
-    state: str            # "filled" | "blank"(의도적 비움) | "missing"(미충족)
+    state: str            # "filled" | "blank" | "missing" | "drift"(구조 불일치)
     acknowledged: bool = False  # missing 만 유효 — 사용자가 직접 확인했는가
 
 
@@ -102,8 +103,6 @@ class RunViewModel:
         self.template_override: "str | None" = None
         self.target_mode = "new"               # "new" | "continue"
         self._acked: "set[str]" = set()        # 사용자가 직접 확인한 미입력 필드(ADR-E)
-        self._tpl_fields: "list[str] | None" = None  # 템플릿 전 누름틀 캐시
-        self._tpl_key: "str | None" = None
 
     # ------------------------------------------------------------ 대상 문서
     def effective_template(self) -> str:
@@ -207,34 +206,51 @@ class RunViewModel:
         return list(self.request(indices).output_report().empty_valued)
 
     # ------------------------------------------------------- 상시 인라인 필드 상태(ADR-E)
-    def _intentional_blanks(self) -> "list[str]":
-        """템플릿 누름틀 중 매핑이 비운 필드(의도적 공란). 템플릿 읽기 실패 시 빈 목록."""
+    def _template_fields(self) -> "list[str]":
+        """현재 대상 문서의 누름틀 집합. 드리프트 감지를 위해 매 호출 재읽기한다."""
         template = self.effective_template()
         if not template or not Path(template).exists():
             return []
-        if self._tpl_fields is None or self._tpl_key != template:
-            try:
-                self._tpl_fields = list(HwpxEngine().required_fields(template))
-            except Exception:  # noqa: BLE001 - 읽기 실패면 의도적 공란 표면화 생략
-                self._tpl_fields = []
-            self._tpl_key = template
-        mapped = set(self.job.template_fields())
-        return [f for f in self._tpl_fields if f not in mapped]
+        return list(HwpxEngine().required_fields(template))
+
+    def structure_drift(self) -> TemplateStructureDrift:
+        """현재 템플릿과 확정 매핑 커버의 대칭차(스냅샷 없는 구조 계약)."""
+        return template_path_drift(self.effective_template(), self.job.mapping)
+
+    def _intentional_blanks(self) -> "list[str]":
+        """매핑이 명시적으로 공란 선언한, 현재 템플릿에 존재하는 필드."""
+        try:
+            current = set(self._template_fields())
+        except Exception:  # noqa: BLE001 - 구조 오류는 drift/gate가 별도 표면화
+            return []
+        return [f for f in self.job.mapping.blank_fields() if f in current]
 
     def field_states(self, indices: "list[int]") -> "list[FieldState]":
         """필드별 3상태(채움/의도적 빈칸/미입력) — 상시 인라인 배지의 원천.
 
-        채움/미입력은 매핑 출력(선택 레코드)에서, 의도적 빈칸은 템플릿과 매핑의 차집합에서.
+        채움/미입력은 값 매핑 출력에서, 의도적 빈칸은 매핑의 ``blank`` 선언에서 온다.
+        템플릿↔커버 대칭차는 ``drift`` 로 별도 표시해 의도적 공란으로 오라벨하지 않는다.
         데이터 미겨눔이면 빈 목록(패널 비움).
         """
         if self.datasource is None:
             return []
         empty = set(self.request(indices).output_report().empty_valued)
-        states = [
-            FieldState(f, "missing" if f in empty else "filled", f in self._acked)
-            for f in self.job.template_fields()
-        ]
-        states += [FieldState(f, "blank") for f in self._intentional_blanks()]
+        drift = self.structure_drift()
+        drift_fields = drift.symmetric_difference | set(drift.conflicting)
+        blanks = set(self._intentional_blanks())
+        # 매핑 계약순 뒤에 템플릿 신규 유입순을 붙인다. 사라진 값 매핑도 drift 하나로
+        # 표시해 filled/missing과 중복·모순되지 않게 한다.
+        order = list(self.job.mapping.cover_fields()) + list(drift.template_only)
+        states: "list[FieldState]" = []
+        for name in dict.fromkeys(order):
+            if name in drift_fields:
+                states.append(FieldState(name, "drift"))
+            elif name in blanks:
+                states.append(FieldState(name, "blank"))
+            else:
+                states.append(FieldState(
+                    name, "missing" if name in empty else "filled", name in self._acked
+                ))
         return states
 
     def acknowledge(self, field: str) -> None:
@@ -263,6 +279,22 @@ class RunViewModel:
         template = self.effective_template()
         if template and not Path(template).exists():
             return [GateError(f"템플릿을 찾을 수 없습니다:\n{template}", "danger")]
+        drift = self.structure_drift()
+        if drift.has_drift:
+            parts: "list[str]" = []
+            if drift.read_error:
+                parts.append("템플릿 구조를 읽을 수 없음: " + drift.read_error)
+            if drift.template_only:
+                parts.append("새로 유입된 미매핑 필드: " + ", ".join(drift.template_only))
+            if drift.mapping_only:
+                parts.append("템플릿에서 소멸한 매핑 필드: " + ", ".join(drift.mapping_only))
+            if drift.conflicting:
+                parts.append("값 매핑과 공란 선언이 충돌하는 필드: " + ", ".join(drift.conflicting))
+            return [GateError(
+                "템플릿 구조가 확정 매핑과 다릅니다. 매핑을 다시 확정해 전건 커버를 "
+                "회복해야 생성할 수 있습니다.\n" + "\n".join(parts),
+                "danger",
+            )]
         if not out_dir:
             return [GateError("저장 폴더를 지정하세요.", "warn")]
         if not indices:

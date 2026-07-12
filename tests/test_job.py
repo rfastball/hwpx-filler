@@ -112,6 +112,14 @@ def test_source_keys_dedupes_across_mappings_preserving_order():
     assert job.source_keys() == ["d", "t"]
 
 
+def test_source_keys_skips_even_malformed_blank_sources():
+    job = Job(mapping=MappingProfile(mappings=[
+        FieldMapping("공고명", ["name"]),
+        FieldMapping("비고", ["must_not_be_required"], transform="blank"),
+    ]))
+    assert job.source_keys() == ["name"]
+
+
 # ------------------------------------------------------------ 레지스트리
 def test_registry_save_load_names_delete(tmp_path):
     """작업당 JSON 1개 — 저장·존재·목록·로드·삭제 왕복."""
@@ -222,6 +230,40 @@ def test_mapped_records_default_unchanged_and_marker_silences_empty_report():
     marked = req.mapped_records(mark_missing=MISSING_MARKER)
     report = validate(_job().template_fields(), marked)
     assert not report.empty_valued  # 표식은 비어 있지 않은 값 — 엔진 빈값 스킵 통과
+
+
+def test_blank_key_and_placeholder_survive_mark_missing_and_real_hwpx(tmp_path):
+    """blank는 RunRequest 표식 대상에도 엔진 입력에도 없고 실제 누름틀 값이 보존된다."""
+    from pathlib import Path
+
+    from hwpxfiller.core.engine import HwpxEngine
+    from hwpxfiller.core.fields import read_fields
+    from hwpxfiller.core.job import MISSING_MARKER
+
+    template = Path(__file__).parent / "corpus" / "real" / "bid_notice_limited_under100m.hwpx"
+    mapping = MappingProfile(mappings=[
+        FieldMapping("공고명", ["name"]),
+        FieldMapping("입찰공고번호", transform="blank"),
+        FieldMapping("계약방법", transform="blank"),
+        FieldMapping("추정가격", transform="blank"),
+        FieldMapping("개찰일시", transform="blank"),
+    ])
+    req = RunRequest(
+        Job(template_path=str(template), mapping=mapping),
+        _FakeSource([{"name": ""}]),
+        [0],
+    )
+    marked = req.mapped_records(mark_missing=MISSING_MARKER)[0]
+    assert marked == {"공고명": "〘미입력·공고명〙"}
+
+    before = read_fields(str(template))
+    out = tmp_path / "marked.hwpx"
+    result = HwpxEngine().generate(str(template), marked, str(out))
+    assert result.ok
+    after = read_fields(str(out))
+    assert after["공고명"] == "〘미입력·공고명〙"
+    for blank in ["입찰공고번호", "계약방법", "추정가격", "개찰일시"]:
+        assert after[blank] == before[blank]
 
 
 def test_default_jobs_dir_honors_env_override(monkeypatch, tmp_path):

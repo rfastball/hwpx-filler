@@ -242,7 +242,8 @@ def test_editor_edit_mode_prefills_and_preseeds(qapp, tmp_path):
     mapping_page.initializePage()
     rows = {r.template_field: r for r in wiz.model.rows}
     assert rows["공고명"].confirmed          # 프로파일 일치 행 = 확정 복원
-    assert not rows["미매칭필드qq"].confirmed  # 프로파일 밖(과거 비움 확정) = 미확정 유지
+    assert rows["미매칭필드qq"].confirmed      # 과거 비움 확정 = blank 선언으로 복원
+    assert rows["미매칭필드qq"].is_empty_confirmed()
     assert "확정" in mapping_page.lbl_progress.text()
 
 
@@ -401,7 +402,7 @@ def _run_view_with_data(tmp_path):
     from hwpxfiller.gui.run_view import RunView
 
     template = tmp_path / "t.hwpx"
-    template.write_bytes(b"dummy")  # 존재 검사 통과용(가짜 워커라 열지 않음)
+    _write_run_template(template, ["공고명", "추정가격"])
     job = Job(
         name="실행",
         template_path=str(template),
@@ -430,6 +431,25 @@ def _run_view_with_data(tmp_path):
     return view
 
 
+def _write_run_template(path, fields):
+    """실행뷰 구조 게이트용 최소 유효 HWPX."""
+    from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+
+    body = "".join(
+        f'<hp:run><hp:ctrl><hp:fieldBegin name="{name}"/></hp:ctrl></hp:run>'
+        f'<hp:run><hp:t>{{{{{name}}}}}</hp:t></hp:run>'
+        '<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>'
+        for name in fields
+    )
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" '
+        'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p>'
+        + body + '</hp:p></hs:sec>'
+    ).encode()
+    HwpxPackage(entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": xml}).save(str(path))
+
+
 def test_run_view_effective_template_switches_with_target_mode(qapp, tmp_path):
     """대상 문서 선택 — 신규=작업 템플릿, 누적=이전 출력. datasource 이음새 무관."""
     view = _run_view_with_data(tmp_path)
@@ -452,7 +472,7 @@ def test_run_view_cumulative_mode_requires_single_record(qapp, tmp_path, monkeyp
 
     view = _run_view_with_data(tmp_path)
     prev = tmp_path / "prev.hwpx"
-    prev.write_bytes(b"dummy")
+    _write_run_template(prev, ["공고명", "추정가격"])
     view.rb_cont.setChecked(True)
     view._template_override = str(prev)
 
@@ -462,6 +482,18 @@ def test_run_view_cumulative_mode_requires_single_record(qapp, tmp_path, monkeyp
     view._on_generate()
     assert any("1건" in w for w in warnings)
     assert view._thread is None  # 워커 미기동
+
+
+def test_run_view_structure_drift_is_disabled_danger_not_ack(qapp, tmp_path):
+    view = _run_view_with_data(tmp_path)
+    _write_run_template(view.job.template_path, ["공고명", "추정가격", "신규필드"])
+    view._refresh_field_panel()
+    assert not view.btn_generate.isEnabled()
+    assert view.lbl_gate.property("level") == "danger"
+    assert "매핑을 다시 확정" in view.lbl_gate.text()
+    chips = [view.badge_flow.itemAt(i).widget() for i in range(view.badge_flow.count())]
+    drift = [w for w in chips if "신규필드" in w.text()][0]
+    assert not drift.isEnabled() and "재확정" in drift.text()
 
 
 def test_run_view_inline_blank_gate_and_marker_injection(qapp, tmp_path, monkeypatch):

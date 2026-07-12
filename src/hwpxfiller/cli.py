@@ -329,8 +329,18 @@ def main(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
     records = _load_records(ap, args, secret_store)
 
     if args.profile:
+        from .core.fill_ledger import template_path_drift
         from .core.mapping import MappingProfile
         profile = MappingProfile.load(args.profile)
+        drift = template_path_drift(args.template, profile)
+        if drift.has_drift:
+            if drift.read_error:
+                detail = "템플릿 구조를 읽을 수 없음: " + drift.read_error
+            else:
+                names = list(drift.template_only) + list(drift.mapping_only) + list(drift.conflicting)
+                detail = "매핑 재확정 필요: " + ", ".join(names)
+            print("[오류] 템플릿 구조 드리프트 — " + detail, file=sys.stderr)
+            return 1
         records = profile.apply_all(records)
 
     report = validate(engine.required_fields(args.template), records)

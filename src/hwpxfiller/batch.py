@@ -116,12 +116,30 @@ def generate_matrix(
     스킵(``engine.py:42``)은 불변.
     """
     from .core.job import MISSING_MARKER, RunRequest, _slug
+    from .core.fill_ledger import template_path_drift
 
     if mark_missing is None:
         mark_missing = MISSING_MARKER
     engine = engine or HwpxEngine()
     indices = list(indices)
     jobs = list(jobs)
+    # 실제 생성 경계에서 **전 작업을 먼저** 재검사한다. GUI validate 이후 템플릿이
+    # 바뀌거나 worker/API가 validate를 우회해도 한 작업이라도 구조 계약이 깨졌으면
+    # 출력 폴더조차 만들기 전에 원자 차단한다(부분 생성 후 발견 금지).
+    drift_errors: "list[str]" = []
+    for job in jobs:
+        drift = template_path_drift(job.template_path, job.mapping)
+        if not drift.has_drift:
+            continue
+        if drift.read_error:
+            detail = "구조를 읽을 수 없음: " + drift.read_error
+        else:
+            names = list(drift.template_only) + list(drift.mapping_only) + list(drift.conflicting)
+            detail = "매핑 재확정 필요: " + ", ".join(names)
+        drift_errors.append(f"{job.name}: {detail}")
+    if drift_errors:
+        raise ValueError("템플릿 구조 드리프트로 매트릭스 생성을 차단했습니다 — " + "; ".join(drift_errors))
+
     grand_total = len(jobs) * len(indices)
     root = Path(out_dir)
     result = MatrixResult()

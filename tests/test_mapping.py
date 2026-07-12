@@ -129,6 +129,42 @@ def test_profile_save_load_roundtrip(tmp_path):
     assert loaded.mappings[0].transform == "datetime"
 
 
+def test_explicit_blank_is_covered_but_not_emitted_and_roundtrips(tmp_path):
+    profile = MappingProfile(mappings=[
+        FieldMapping("공고명", ["bidNtceNm"]),
+        FieldMapping("비고", transform="blank"),
+    ])
+    assert profile.template_fields() == ["공고명"]
+    assert profile.mapped_fields() == ["공고명"]
+    assert profile.blank_fields() == ["비고"]
+    assert profile.cover_fields() == ["공고명", "비고"]
+    assert profile.apply({"bidNtceNm": "입찰"}) == {"공고명": "입찰"}
+
+    path = tmp_path / "blank.json"
+    profile.save(path)
+    loaded = MappingProfile.load(path)
+    assert loaded.blank_fields() == ["비고"]
+    assert loaded.apply({"bidNtceNm": "입찰"}) == {"공고명": "입찰"}
+
+
+def test_mapped_and_blank_duplicate_is_reported_as_conflict():
+    profile = MappingProfile(mappings=[
+        FieldMapping("공고명", ["name"]),
+        FieldMapping("공고명", transform="blank"),
+    ])
+    assert profile.coverage_conflicts() == ["공고명"]
+
+
+def test_legacy_json_empty_join_is_not_reinterpreted_as_blank():
+    """구 JSON의 transform 생략/빈 sources는 값 매핑 literal이며 blank 선언이 아니다."""
+    loaded = MappingProfile.from_dict({"mappings": [{
+        "template_field": "비고", "sources": []
+    }]})
+    assert not loaded.mappings[0].is_blank
+    assert loaded.blank_fields() == []
+    assert loaded.apply({}) == {"비고": ""}
+
+
 # ------------------------------------------------- 통합: API 레코드 → 실 템플릿 채우기
 def test_end_to_end_api_record_fills_real_template(tmp_path):
     """나라장터 레코드 → 프로파일 → 실제 입찰공고 템플릿 생성. 값이 주입된다."""

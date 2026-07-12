@@ -9,6 +9,7 @@ import pytest
 from hwpxfiller.core.job import Job
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.gui.run_state import RunViewModel
+from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
 
 class _Src:
@@ -26,7 +27,7 @@ class _Src:
 
 def _job(tmp_path) -> Job:
     template = tmp_path / "t.hwpx"
-    template.write_bytes(b"dummy")
+    _write_template(template, ["공고명", "추정가격"])
     return Job(
         name="실행",
         template_path=str(template),
@@ -36,6 +37,23 @@ def _job(tmp_path) -> Job:
         ]),
         filename_pattern="doc-{{공고명}}",
     )
+
+
+def _write_template(path, fields):
+    body = []
+    for name in fields:
+        body.append(
+            f'<hp:run><hp:ctrl><hp:fieldBegin name="{name}"/></hp:ctrl></hp:run>'
+            f'<hp:run><hp:t>{{{{{name}}}}}</hp:t></hp:run>'
+            '<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>'
+        )
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" '
+        'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p>'
+        + "".join(body) + '</hp:p></hs:sec>'
+    ).encode()
+    HwpxPackage(entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": xml}).save(str(path))
 
 
 def _vm(tmp_path) -> RunViewModel:
@@ -84,7 +102,7 @@ def test_mapped_records_injects_marker_only_on_empty(tmp_path):
 
 def test_validate_generate_gate_order(tmp_path):
     prev = tmp_path / "prev.hwpx"
-    prev.write_bytes(b"dummy")
+    _write_template(prev, ["공고명", "추정가격"])
 
     # 데이터 없음 = 첫 차단.
     vm0 = RunViewModel(_job(tmp_path))
@@ -132,6 +150,44 @@ def test_field_states_empty_without_data(tmp_path):
     vm = RunViewModel(_job(tmp_path))                    # 데이터 미겨눔
     assert vm.field_states([0]) == []
     assert vm.unmet_blanks([0]) == []
+
+
+def test_declared_blank_is_quiet_but_uncovered_template_field_is_drift(tmp_path):
+    job = _job(tmp_path)
+    job.mapping.mappings[1] = FieldMapping("추정가격", transform="blank")
+    vm = RunViewModel(job)
+    vm.datasource = _Src()
+    vm.records = vm.datasource.records()
+    states = {s.name: s.state for s in vm.field_states([0])}
+    assert states == {"공고명": "filled", "추정가격": "blank"}
+    assert vm.validate_generate([0], "out") == []
+
+    _write_template(job.template_path, ["공고명", "추정가격", "신규필드"])
+    states = {s.name: s.state for s in vm.field_states([0])}
+    assert states["신규필드"] == "drift"
+    errs = vm.validate_generate([0], "out")
+    assert errs and errs[0].level == "danger" and "신규필드" in errs[0].message
+
+
+def test_mapping_orphan_is_drift_and_hard_gate(tmp_path):
+    vm = _vm(tmp_path)
+    _write_template(vm.job.template_path, ["공고명"])
+    drift = vm.structure_drift()
+    assert drift.mapping_orphaned == ("추정가격",)
+    assert {s.name: s.state for s in vm.field_states([0])}["추정가격"] == "drift"
+    assert "소멸" in vm.validate_generate([0], "out")[0].message
+
+
+def test_structure_is_reread_and_parse_failure_fails_closed(tmp_path):
+    vm = _vm(tmp_path)
+    assert not vm.structure_drift().has_drift
+    _write_template(vm.job.template_path, ["공고명", "추정가격", "재편집유입"])
+    assert vm.structure_drift().template_uncovered == ("재편집유입",)
+
+    vm.job.template_path = str(tmp_path / "broken.hwpx")
+    (tmp_path / "broken.hwpx").write_bytes(b"not a zip")
+    errs = vm.validate_generate([0], "out")
+    assert errs and errs[0].level == "danger" and "읽을 수 없음" in errs[0].message
 
 
 def test_load_data_empty_returns_empty_without_committing(tmp_path):

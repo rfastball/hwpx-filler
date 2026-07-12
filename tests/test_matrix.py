@@ -12,6 +12,7 @@ from hwpxfiller.batch import MatrixResult, generate_batch, generate_matrix
 from hwpxfiller.core.engine import GenerateResult
 from hwpxfiller.core.job import MISSING_MARKER, Job
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
 
 class _FakeEngine:
@@ -35,9 +36,26 @@ class _Src:
         return list(self._records[0]) if self._records else []
 
 
-def _job(name, tfield, source, pattern):
+def _write_template(path: Path, fields):
+    body = "".join(
+        f'<hp:run><hp:ctrl><hp:fieldBegin name="{field}"/></hp:ctrl></hp:run>'
+        f'<hp:run><hp:t>{{{{{field}}}}}</hp:t></hp:run>'
+        '<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>'
+        for field in fields
+    )
+    xml = (
+        '<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" '
+        'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p>'
+        + body + '</hp:p></hs:sec>'
+    ).encode()
+    HwpxPackage(entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": xml}).save(str(path))
+
+
+def _job(tmp_path, name, tfield, source, pattern):
+    path = tmp_path / f"{name}.hwpx"
+    _write_template(path, [tfield])
     return Job(
-        name=name, template_path=f"/{name}.hwpx",
+        name=name, template_path=str(path),
         mapping=MappingProfile(mappings=[FieldMapping(template_field=tfield, sources=[source])]),
         filename_pattern=pattern,
     )
@@ -49,8 +67,8 @@ def _read(path: Path) -> dict:
 
 def test_matrix_m_jobs_per_job_subfolders(tmp_path):
     jobs = [
-        _job("공고", "공고명", "bidNtceNm", "공고-{{공고명}}"),
-        _job("요청", "품명", "itemNm", "요청-{{품명}}"),
+        _job(tmp_path, "공고", "공고명", "bidNtceNm", "공고-{{공고명}}"),
+        _job(tmp_path, "요청", "품명", "itemNm", "요청-{{품명}}"),
     ]
     src = _Src([{"bidNtceNm": "A", "itemNm": "X"}, {"bidNtceNm": "B", "itemNm": "Y"}])
     res = generate_matrix(jobs, src, [0, 1], str(tmp_path), engine=_FakeEngine())
@@ -72,8 +90,8 @@ def test_matrix_m_jobs_per_job_subfolders(tmp_path):
 def test_matrix_same_pattern_no_cross_collision(tmp_path):
     """두 작업이 같은 파일명 패턴이어도 하위폴더 분리로 교차 충돌이 없다."""
     jobs = [
-        _job("잡A", "공고명", "bidNtceNm", "문서-{{공고명}}"),
-        _job("잡B", "공고명", "bidNtceNm", "문서-{{공고명}}"),
+        _job(tmp_path, "잡A", "공고명", "bidNtceNm", "문서-{{공고명}}"),
+        _job(tmp_path, "잡B", "공고명", "bidNtceNm", "문서-{{공고명}}"),
     ]
     src = _Src([{"bidNtceNm": "같은값"}])
     res = generate_matrix(jobs, src, [0], str(tmp_path), engine=_FakeEngine())
@@ -84,7 +102,7 @@ def test_matrix_same_pattern_no_cross_collision(tmp_path):
 
 def test_matrix_marks_missing_loudly_by_default(tmp_path):
     """빈 필드는 기본으로 MISSING_MARKER 표식이 주입된다(누락은 시끄럽게)."""
-    jobs = [_job("요청", "품명", "itemNm", "요청-{{seq}}")]
+    jobs = [_job(tmp_path, "요청", "품명", "itemNm", "요청-{{seq}}")]
     src = _Src([{"itemNm": ""}])  # 품명 소스가 빈 값
     generate_matrix(jobs, src, [0], str(tmp_path), engine=_FakeEngine())
     data = _read(tmp_path / "요청" / "요청-1.hwpx")
@@ -93,7 +111,7 @@ def test_matrix_marks_missing_loudly_by_default(tmp_path):
 
 def test_matrix_blank_skip_when_marking_off(tmp_path):
     """mark_missing='' 이면 빈 필드는 표식 없이 스킵(엔진 빈값 스킵 불변)."""
-    jobs = [_job("요청", "품명", "itemNm", "요청-{{seq}}")]
+    jobs = [_job(tmp_path, "요청", "품명", "itemNm", "요청-{{seq}}")]
     src = _Src([{"itemNm": ""}])
     generate_matrix(jobs, src, [0], str(tmp_path), engine=_FakeEngine(), mark_missing="")
     data = _read(tmp_path / "요청" / "요청-1.hwpx")
@@ -102,8 +120,8 @@ def test_matrix_blank_skip_when_marking_off(tmp_path):
 
 def test_matrix_progress_is_cumulative(tmp_path):
     jobs = [
-        _job("A", "f", "s", "a-{{seq}}"),
-        _job("B", "f", "s", "b-{{seq}}"),
+        _job(tmp_path, "A", "f", "s", "a-{{seq}}"),
+        _job(tmp_path, "B", "f", "s", "b-{{seq}}"),
     ]
     src = _Src([{"s": "1"}, {"s": "2"}])
     seen = []
@@ -124,3 +142,19 @@ def test_single_job_generate_batch_unchanged(tmp_path):
     )
     assert res.total == 2 and res.succeeded == 2
     assert (tmp_path / "d-A.hwpx").exists() and (tmp_path / "d-B.hwpx").exists()
+
+
+def test_generate_matrix_direct_call_atomically_blocks_drift(tmp_path):
+    good = _job(tmp_path, "good", "공고명", "name", "g-{{seq}}")
+    bad = _job(tmp_path, "bad", "품명", "item", "b-{{seq}}")
+    _write_template(Path(bad.template_path), ["품명", "신규필드"])
+    out = tmp_path / "out"
+
+    import pytest
+
+    with pytest.raises(ValueError, match="구조 드리프트"):
+        generate_matrix(
+            [good, bad], _Src([{"name": "A", "item": "B"}]), [0], str(out),
+            engine=_FakeEngine(),
+        )
+    assert not out.exists()  # good 작업조차 먼저 생성되지 않는 원자 차단

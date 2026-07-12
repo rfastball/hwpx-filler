@@ -7,9 +7,27 @@ from __future__ import annotations
 
 import pytest
 
+from hwpxfiller.batch import generate_matrix
 from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
 from hwpxfiller.core.job import Job, JobRegistry
+from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.gui.matrix_state import MatrixRunViewModel
+from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+
+
+def _template(path, fields=()):
+    body = "".join(
+        f'<hp:run><hp:ctrl><hp:fieldBegin name="{name}"/></hp:ctrl></hp:run>'
+        f'<hp:run><hp:t>{{{{{name}}}}}</hp:t></hp:run>'
+        '<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>'
+        for name in fields
+    )
+    xml = (
+        '<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" '
+        'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p>'
+        + body + '</hp:p></hs:sec>'
+    ).encode()
+    HwpxPackage(entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": xml}).save(str(path))
 
 
 def _registry(tmp_path):
@@ -90,7 +108,7 @@ def test_validate_flags_empty_template_path(tmp_path):
 
 def test_validate_passes_when_ready(tmp_path):
     tpl = tmp_path / "t.hwpx"
-    tpl.write_bytes(b"dummy")
+    _template(tpl)
     csv = tmp_path / "d.csv"
     csv.write_text("ID\n1\n", encoding="utf-8")
     reg = JobRegistry(tmp_path / "jobs")
@@ -99,3 +117,42 @@ def test_validate_passes_when_ready(tmp_path):
     vm.set_job_selected("작업", True)
     vm.load_file(str(csv))
     assert vm.validate([0], str(tmp_path / "out")) == []
+
+
+def test_validate_hard_gates_matrix_template_drift_but_blank_is_quiet(tmp_path):
+    tpl = tmp_path / "t.hwpx"
+    _template(tpl, ["공고명", "비고"])
+    csv = tmp_path / "d.csv"
+    csv.write_text("name\n테스트\n", encoding="utf-8")
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="작업", template_path=str(tpl), mapping=MappingProfile(mappings=[
+        FieldMapping("공고명", ["name"]), FieldMapping("비고", transform="blank")
+    ])))
+    vm = MatrixRunViewModel(reg)
+    vm.set_job_selected("작업", True)
+    vm.load_file(str(csv))
+    assert vm.validate([0], str(tmp_path / "out")) == []
+    _template(tpl, ["공고명", "비고", "신규"])
+    assert any("구조 드리프트" in e and "신규" in e for e in vm.validate([0], str(tmp_path / "out")))
+
+
+def test_generate_boundary_rechecks_after_validate_toctou(tmp_path):
+    tpl = tmp_path / "t.hwpx"
+    _template(tpl, ["공고명"])
+    csv = tmp_path / "d.csv"
+    csv.write_text("name\n테스트\n", encoding="utf-8")
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="작업", template_path=str(tpl), mapping=MappingProfile(mappings=[
+        FieldMapping("공고명", ["name"])
+    ]), filename_pattern="d-{{seq}}"))
+    vm = MatrixRunViewModel(reg)
+    vm.set_job_selected("작업", True)
+    vm.load_file(str(csv))
+    out = tmp_path / "out"
+    assert vm.validate([0], str(out)) == []
+
+    # validate 직후 외부 편집 — worker/API 생성 경계가 다시 읽어 원자 차단해야 한다.
+    _template(tpl, ["공고명", "검증후유입"])
+    with pytest.raises(ValueError, match="검증후유입"):
+        generate_matrix(vm.selected_jobs(), vm.datasource, [0], str(out))
+    assert not out.exists()

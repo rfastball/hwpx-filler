@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from hwpxfiller.core.mapping import MappingProfile, apply_transform
+from hwpxfiller.core.mapping import FieldMapping, MappingProfile, apply_transform
 from hwpxfiller.core.schema import FieldSpec, TemplateSchema
 from hwpxfiller.data.nara import NaraStdDataSource
 from hwpxfiller.gui.mapping_state import MappingModel, RowState
@@ -119,16 +119,19 @@ def test_confirm_all_and_unconfirm_all():
 
 
 # ------------------------------------------------------------------ to_profile
-def test_to_profile_includes_only_confirmed_rows_with_content():
-    """미확정 행(초안 존재해도)과 비움 확정 행은 프로파일에서 제외."""
+def test_to_profile_includes_confirmed_rows_and_persists_blank_intent():
+    """미확정 행은 제외하고 비움 확정 행은 명시적 blank 선언으로 저장."""
     model = _model()
     rows = {r.template_field: i for i, r in enumerate(model.rows)}
     model.set_confirmed(rows["입찰공고번호"])       # 확정 + 소스 있음 → 포함
-    model.set_confirmed(rows["존재하지않는들판xyz"])  # 비움 확정 → 제외
+    model.set_confirmed(rows["존재하지않는들판xyz"])  # 비움 확정 → blank 선언
     # 공고명·추정가격·개찰일시는 초안이 있어도 미확정 → 제외
     profile = model.to_profile("p")
     assert profile.name == "p"
     assert profile.template_fields() == ["입찰공고번호"]
+    assert profile.blank_fields() == ["존재하지않는들판xyz"]
+    assert profile.cover_fields() == ["입찰공고번호", "존재하지않는들판xyz"]
+    assert profile.apply(_nara_record()) == {"입찰공고번호": "R26BK01561738"}
 
 
 def test_to_profile_includes_confirmed_const_row_without_sources():
@@ -138,6 +141,35 @@ def test_to_profile_includes_confirmed_const_row_without_sources():
     profile = model.to_profile()
     assert profile.template_fields() == ["계약방법"]
     assert profile.apply({}) == {"계약방법": "수의계약"}
+
+
+def test_apply_profile_restores_explicit_blank_and_roundtrips():
+    profile = MappingProfile(mappings=[FieldMapping("비고", ["malformed"], transform="blank")])
+    model = MappingModel(rows=[RowState("비고")])
+    assert model.apply_profile(profile) == 1
+    row = model.rows[0]
+    assert row.confirmed and row.is_empty_confirmed()
+    assert row.sources == [] and row.transform == "join"
+    restored = model.to_profile()
+    assert restored.blank_fields() == ["비고"]
+    assert restored.apply({}) == {}
+
+
+def test_blank_is_internal_marker_not_selectable_transform():
+    from hwpxfiller.core.mapping import TRANSFORMS
+
+    assert "blank" not in TRANSFORMS
+
+
+def test_from_profile_malformed_blank_does_not_leak_source_vocabulary():
+    profile = MappingProfile(mappings=[
+        FieldMapping("공고명", ["name"]),
+        FieldMapping("비고", ["ghost_source"], transform="blank"),
+    ])
+    model = MappingModel.from_profile(profile)
+    assert model.source_fields == ["name"]
+    blank = {r.template_field: r for r in model.rows}["비고"]
+    assert blank.sources == [] and blank.transform == "join" and blank.is_empty_confirmed()
 
 
 # --------------------------------------------------------------------- preview

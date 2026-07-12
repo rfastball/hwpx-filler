@@ -17,6 +17,7 @@ from PySide6.QtWidgets import QApplication, QInputDialog, QMessageBox  # noqa: E
 
 from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry  # noqa: E402
 from hwpxfiller.core.job import Job, JobRegistry  # noqa: E402
+from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -28,7 +29,11 @@ def qapp():
 def _registry(tmp_path):
     reg = JobRegistry(tmp_path / "jobs")
     tpl = tmp_path / "t.hwpx"
-    tpl.write_bytes(b"dummy")
+    xml = (
+        '<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" '
+        'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p/></hs:sec>'
+    ).encode()
+    HwpxPackage(entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": xml}).save(str(tpl))
     reg.save(Job(name="공고", template_path=str(tpl), filename_pattern="공고-{{ID}}"))
     reg.save(Job(name="요청", template_path=str(tpl), filename_pattern="요청-{{ID}}"))
     return reg

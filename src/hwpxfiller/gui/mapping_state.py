@@ -62,11 +62,11 @@ class RowState:
         """의도적 비움 확정 — 확정됐지만 채울 내용이 없음."""
         return self.confirmed and not self.has_content()
 
-    def to_mapping(self) -> FieldMapping:
+    def to_mapping(self, *, blank: bool = False) -> FieldMapping:
         return FieldMapping(
             template_field=self.template_field,
-            sources=list(self.sources),
-            transform=self.transform,
+            sources=[] if blank else list(self.sources),
+            transform="blank" if blank else self.transform,
             sep=self.sep,
             const=self.const,
             fmt=self.fmt,
@@ -135,16 +135,19 @@ class MappingModel:
         seen: "set[str]" = set()
         source_fields: "list[str]" = []
         for m in profile.mappings:
+            is_blank = m.is_blank
             rows.append(RowState(
                 template_field=m.template_field,
-                sources=list(m.sources),
-                transform=m.transform,
-                sep=m.sep,
-                const=m.const,
-                fmt=m.fmt,
+                sources=[] if is_blank else list(m.sources),
+                transform="join" if is_blank else m.transform,
+                sep=" " if is_blank else m.sep,
+                const="" if is_blank else m.const,
+                fmt="" if is_blank else m.fmt,
                 confirmed=True,  # 베이스는 확정본
             ))
-            for s in m.sources:
+            # malformed blank+sources도 복원 시 완전히 정규화: 행 sources뿐 아니라
+            # 소스 선택 어휘에도 유령 키를 흘리지 않는다.
+            for s in (() if is_blank else m.sources):
                 if s not in seen:
                     seen.add(s)
                     source_fields.append(s)
@@ -212,11 +215,12 @@ class MappingModel:
 
     # ------------------------------------------------------- 프로파일 입출력
     def to_profile(self, name: str = "") -> MappingProfile:
-        """확정됐고 내용 있는 행만 프로파일로. 비움 확정 행은 제외한다."""
+        """확정된 전 행을 프로파일로. 빈 행은 명시적 ``blank`` 선언으로 영속화한다."""
         return MappingProfile(
             name=name,
             mappings=[
-                r.to_mapping() for r in self.rows if r.confirmed and r.has_content()
+                r.to_mapping(blank=r.is_empty_confirmed())
+                for r in self.rows if r.confirmed
             ],
         )
 
@@ -232,11 +236,11 @@ class MappingModel:
             m = by_field.get(row.template_field)
             if m is None:
                 continue
-            row.sources = list(m.sources)
-            row.transform = m.transform
-            row.sep = m.sep
-            row.const = m.const
-            row.fmt = m.fmt
+            row.sources = [] if m.is_blank else list(m.sources)
+            row.transform = "join" if m.is_blank else m.transform
+            row.sep = " " if m.is_blank else m.sep
+            row.const = "" if m.is_blank else m.const
+            row.fmt = "" if m.is_blank else m.fmt
             row.confirmed = True
             applied += 1
         return applied

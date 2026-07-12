@@ -19,6 +19,7 @@ from ..core.dataset_pool import (
     default_dataset_pool_dir,
 )
 from ..core.job import Job, JobRegistry
+from ..core.fill_ledger import template_path_drift
 from .run_state import resolve_file_source, resolve_pool_source
 
 
@@ -122,4 +123,15 @@ class MatrixRunViewModel:
         ]
         if unrunnable:
             errs.append("템플릿이 없거나 찾을 수 없는 작업: " + ", ".join(unrunnable))
+        for job in jobs:
+            if not job.template_path or not Path(job.template_path).exists():
+                continue
+            drift = template_path_drift(job.template_path, job.mapping)
+            if drift.has_drift:
+                if drift.read_error:
+                    detail = "구조를 읽을 수 없음"
+                else:
+                    fields = list(drift.template_only) + list(drift.mapping_only) + list(drift.conflicting)
+                    detail = ", ".join(fields)
+                errs.append(f"템플릿 구조 드리프트({job.name}): {detail}")
         return errs
