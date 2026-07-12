@@ -16,6 +16,7 @@ from ..core.engine import HwpxEngine
 from ..core.fill_ledger import TemplateStructureDrift, template_path_drift
 from ..core.job import Job, RunRequest
 from ..data import source_for_path
+from ..naming import existing_outputs, plan_output_names
 
 
 @dataclass
@@ -310,6 +311,20 @@ class RunViewModel:
         """선택 레코드에 매핑 적용 → {템플릿필드: 값}. mark_missing 시 빈 키에 표식 주입."""
         return self.request(indices).mapped_records(mark_missing=mark_missing)
 
+    def output_conflicts(
+        self, indices: "list[int]", out_dir: str, *, mark_missing: str = ""
+    ) -> "list[str]":
+        """생성이 덮어쓸 **기존** 파일 경로 목록 — 실행 전 덮어쓰기 확인의 원천(RC-02).
+
+        생성과 동일한 매핑·표식·파일명 규칙으로 대상 경로를 계산해 디스크 존재만
+        조회한다(무변형). 위젯은 이 목록이 비지 않으면 "기존 N개 파일을 덮어씁니다"
+        사용자 확정을 받은 뒤에만 ``overwrite=True`` 로 진행한다(확인-또는-경보).
+        """
+        names = plan_output_names(
+            self.job.filename_pattern, self.mapped_records(indices, mark_missing)
+        )
+        return existing_outputs(out_dir, names)
+
     # ------------------------------------------------------------ 생성 원장(L2)
     def source_pointer(self) -> str:
         """원장에 남길 소스 표기 — **포인터-온리**(경로·종류). 쿼리·키는 박제하지 않는다."""
@@ -332,11 +347,12 @@ class RunViewModel:
         ``mark_missing`` 은 생성에 실제 쓴 표식과 동일해야 dry-run 행이 주입값과
         일치한다(위젯이 생성 시 결정한 값을 그대로 넘긴다). 되읽기 검증·마스킹은
         :func:`~hwpxfiller.core.fill_ledger.export_run_ledger` 계열이 관통시킨다.
+        파일명은 실행별 타임스탬프(RC-02) — 재실행이 이전 증거를 덮지 않는다.
         """
         from datetime import datetime
 
         from ..core.fill_ledger import (
-            LEDGER_SIDECAR_NAME, export_run_ledger, ledger_outputs,
+            export_run_ledger, ledger_outputs, ledger_sidecar_path,
         )
         from ..core.source_profile import profile_fields
 
@@ -352,7 +368,8 @@ class RunViewModel:
             batch.results, mapped, self.job.mapping, self._template_fields(),
             missing_marker=mark_missing,
         )
-        sidecar = Path(out_dir) / LEDGER_SIDECAR_NAME
+        generated_at = datetime.now().isoformat(timespec="seconds")
+        sidecar = ledger_sidecar_path(out_dir, generated_at)
         export_run_ledger(
             sidecar,
             template=self.effective_template(),
@@ -360,6 +377,6 @@ class RunViewModel:
             outputs=outputs,
             job_name=self.job.name,
             profiles=profiles,
-            generated_at=datetime.now().isoformat(timespec="seconds"),
+            generated_at=generated_at,
         )
         return str(sidecar)

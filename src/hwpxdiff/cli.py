@@ -25,8 +25,11 @@ def main(argv: "list[str] | None" = None) -> int:
     result = diff_files(args.old, args.new)
     print(render_summary(result), end="")
     if args.html:
-        with open(args.html, "w", encoding="utf-8") as fh:
-            fh.write(render_html(result))
+        from hwpxcore.atomic import write_text_atomic
+
+        # 렌더를 **저장 전에 선평가**하고 원자 쓰기로 교체한다(RC-01) — 렌더·쓰기
+        # 실패가 기존 리포트를 truncate 로 파괴하지 않는다.
+        write_text_atomic(args.html, render_html(result))
         print(f"\nHTML 리포트 저장: {args.html}", file=sys.stderr)
     return 0
 

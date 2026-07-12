@@ -518,10 +518,11 @@ def test_run_view_inline_blank_gate_and_marker_injection(qapp, tmp_path, monkeyp
         finished = Signal(object)
         failed = Signal(str)
 
-        def __init__(self, template, records, out_dir, pattern):
+        def __init__(self, template, records, out_dir, pattern, *, overwrite=False):
             super().__init__()
             captured["template"] = template
             captured["records"] = records
+            captured["overwrite"] = overwrite
 
         def run(self):
             pass
@@ -545,6 +546,51 @@ def test_run_view_inline_blank_gate_and_marker_injection(qapp, tmp_path, monkeyp
         assert recs[0]["추정가격"] == "〘미입력·추정가격〙"  # 미충족 공란 → 표식
         assert recs[0]["공고명"] == "가"                    # 비빈 값 불변
         assert recs[1]["추정가격"] == "2000"
+    finally:
+        view._teardown_thread()
+
+
+def test_run_view_overwrite_requires_confirmation(qapp, tmp_path, monkeypatch):
+    """RC-02 — 기존 산출물과 충돌 시 확인 대화상자: 거부=워커 미기동·무손상, 확정=overwrite 전달."""
+    from PySide6.QtCore import QObject, Signal
+    from PySide6.QtWidgets import QMessageBox
+
+    from hwpxfiller.gui import run_view as rv
+
+    view = _run_view_with_data(tmp_path)
+    view._ack_field("추정가격")  # 빈칸 게이트 통과(rec0 빈 값 확인)
+    out = tmp_path / "out"
+    out.mkdir()
+    sentinel = out / "doc-가.hwpx"  # 패턴 doc-{{공고명}} × rec0 의 대상
+    sentinel.write_bytes(b"user-edited")
+
+    captured = {}
+
+    class _FakeWorker(QObject):
+        progress = Signal(int, int)
+        finished = Signal(object)
+        failed = Signal(str)
+
+        def __init__(self, template, records, out_dir, pattern, *, overwrite=False):
+            super().__init__()
+            captured["overwrite"] = overwrite
+
+        def run(self):
+            pass
+
+    monkeypatch.setattr(rv, "GenerateWorker", _FakeWorker)
+
+    # 1) 거부 — 워커 미기동, 기존 파일 무손상.
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.No)
+    view._on_generate()
+    assert "overwrite" not in captured and view._thread is None
+    assert sentinel.read_bytes() == b"user-edited"
+
+    # 2) 확정 — 워커가 overwrite=True 로 기동.
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    view._on_generate()
+    try:
+        assert captured["overwrite"] is True
     finally:
         view._teardown_thread()
 
@@ -631,6 +677,40 @@ def test_template_page_inline_compile_flips_to_compiled(qapp, tmp_path, monkeypa
     assert page.isComplete()
     assert page.ed_path.text().endswith(".compiled.hwpx")
     assert wiz.template_path == page.ed_path.text()  # 컴파일본으로 전환
+
+
+def test_template_page_compile_here_confirms_before_overwriting(qapp, tmp_path, monkeypatch):
+    """RC-02 — 기존 .compiled.hwpx(사람이 손봤을 수 있음)를 확인 없이 덮지 않는다.
+
+    거부하면 기존 컴파일본 무손상 + 경로 전환 없음, 확정 시에만 덮어쓰고 전환한다.
+    """
+    from pathlib import Path
+
+    from PySide6.QtWidgets import QMessageBox
+
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+
+    path = _partial_template_file(tmp_path)
+    stale = Path(path).with_suffix(".compiled.hwpx")
+    stale.write_bytes(b"user-edited-compiled")
+
+    wiz = JobEditorWizard(JobRegistry(tmp_path))
+    page = wiz.page(wiz.pageIds()[0])
+    page._load_template(path)
+
+    # 1) 거부 — 기존 컴파일본 무손상, 원본 경로 유지.
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.No)
+    page._compile_here()
+    assert stale.read_bytes() == b"user-edited-compiled"
+    assert page.ed_path.text() == path
+
+    # 2) 확정 — 덮어쓰고 컴파일본으로 전환.
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    page._compile_here()
+    assert stale.read_bytes()[:2] == b"PK"  # 유효 HWPX 로 교체
+    assert page.ed_path.text().endswith(".compiled.hwpx")
 
 
 def test_template_page_ack_does_not_carry_across_templates(qapp, tmp_path):

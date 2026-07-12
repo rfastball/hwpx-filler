@@ -16,6 +16,8 @@ import io
 import zipfile
 from dataclasses import dataclass, field
 
+from .atomic import write_bytes_atomic
+
 MIMETYPE_NAME = "mimetype"
 MIMETYPE_VALUE = b"application/hwp+zip"
 
@@ -68,8 +70,9 @@ class HwpxPackage:
 
     # ------------------------------------------------------------------ save
     def save(self, path: str) -> None:
-        with open(path, "wb") as fh:
-            fh.write(self.to_bytes())
+        # 페이로드를 **먼저** 완성한다 — 직렬화 실패·쓰기 중단이 기존 파일을 파괴하지
+        # 않도록(선평가 + 임시 파일 원자 교체, RC-01).
+        write_bytes_atomic(path, self.to_bytes())
 
     def to_bytes(self) -> bytes:
         buf = io.BytesIO()

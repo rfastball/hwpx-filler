@@ -253,6 +253,22 @@ class MatrixRunView(QMainWindow):
         if errors:
             QMessageBox.warning(self, "확인", "\n".join(errors))
             return
+        # ---- 덮어쓰기 확인(RC-02): 기존 파일을 조용히 파괴하지 않는다. ----
+        conflicts = self.vm.output_conflicts(indices, out_dir)
+        overwrite = False
+        if conflicts:
+            names = [Path(p).name for p in conflicts]
+            shown = "\n".join(names[:10]) + (f"\n… 외 {len(names) - 10}개" if len(names) > 10 else "")
+            if QMessageBox.question(
+                self, "덮어쓰기 확인",
+                f"저장 폴더에 같은 이름의 파일이 이미 있습니다.\n"
+                f"계속하면 기존 파일 {len(conflicts)}개를 덮어씁니다:\n\n{shown}\n\n"
+                "덮어쓰고 진행할까요?",
+            ) != QMessageBox.Yes:
+                self._say("생성 취소 — 기존 파일 덮어쓰기를 확정하지 않았습니다.")
+                return
+            overwrite = True
+            self._say(f"덮어쓰기 확정: 기존 파일 {len(conflicts)}개")
         jobs = self.vm.selected_jobs()
         self._running = True
         self.btn_generate.setEnabled(False)
@@ -262,7 +278,9 @@ class MatrixRunView(QMainWindow):
         self._say(f"일괄 생성 시작: 작업 {len(jobs)}개 × 레코드 {len(indices)}건 → {out_dir}")
 
         self._thread = QThread()
-        self._worker = MatrixGenerateWorker(jobs, self.vm.datasource, indices, out_dir)
+        self._worker = MatrixGenerateWorker(
+            jobs, self.vm.datasource, indices, out_dir, overwrite=overwrite
+        )
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.progress.connect(lambda done, total: self.progress.setValue(done))

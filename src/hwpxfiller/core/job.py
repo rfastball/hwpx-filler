@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .mapping import MappingProfile
+from hwpxcore.atomic import write_text_atomic
 from hwpxcore.validate import ValidationReport, validate
 
 if TYPE_CHECKING:  # 런타임 결합 회피 — DataSource 는 덕타이핑으로 충분.
@@ -120,9 +121,8 @@ class Job:
         )
 
     def save(self, path: "str | Path") -> None:
-        Path(path).write_text(
-            json.dumps(self.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        # 원자 쓰기(RC-01) — 재저장 중 실패가 기존 작업 JSON 을 절단하지 않는다.
+        write_text_atomic(path, json.dumps(self.to_dict(), ensure_ascii=False, indent=2))
 
     @classmethod
     def load(cls, path: "str | Path") -> "Job":

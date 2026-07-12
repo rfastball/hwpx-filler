@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import html as _html
 import re
-from pathlib import Path
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
@@ -27,6 +26,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from hwpxcore.atomic import write_text_atomic
 
 from ..core.text_registry import TextTemplateRegistry
 from .flow_layout import FlowLayout
@@ -199,7 +200,7 @@ class TxtDraftView(QMainWindow):
         if not path:
             return
         try:
-            Path(path).write_text(text, encoding="utf-8")
+            write_text_atomic(path, text)  # 원자 쓰기(RC-01) — 실패해도 기존 파일 무손상
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "오류", f"저장 실패:\n{exc}")
             return

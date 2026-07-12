@@ -8,7 +8,12 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from hwpxfiller.batch import MatrixResult, generate_batch, generate_matrix
+from hwpxfiller.batch import (
+    MatrixResult,
+    generate_batch,
+    generate_matrix,
+    matrix_output_conflicts,
+)
 from hwpxfiller.core.engine import GenerateResult
 from hwpxfiller.core.job import MISSING_MARKER, Job
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
@@ -142,6 +147,34 @@ def test_single_job_generate_batch_unchanged(tmp_path):
     )
     assert res.total == 2 and res.succeeded == 2
     assert (tmp_path / "d-A.hwpx").exists() and (tmp_path / "d-B.hwpx").exists()
+
+
+def test_matrix_blocks_existing_outputs_without_overwrite(tmp_path):
+    """RC-02 — 하위폴더의 기존 파일과 충돌하면 **어느 작업도 생성 전에** 원자 차단."""
+    import pytest
+
+    jobs = [
+        _job(tmp_path, "공고", "공고명", "bidNtceNm", "공고-{{공고명}}"),
+        _job(tmp_path, "요청", "품명", "itemNm", "요청-{{품명}}"),
+    ]
+    src = _Src([{"bidNtceNm": "A", "itemNm": "X"}])
+    out = tmp_path / "out"
+    # 두 번째 작업의 대상만 미리 존재(수기 보정본 모사).
+    (out / "요청").mkdir(parents=True)
+    sentinel = out / "요청" / "요청-X.hwpx"
+    sentinel.write_text("수기 보정본", encoding="utf-8")
+
+    conflicts = matrix_output_conflicts(jobs, src, [0], str(out))
+    assert conflicts == [str(sentinel)]
+
+    with pytest.raises(FileExistsError, match="덮어쓰"):
+        generate_matrix(jobs, src, [0], str(out), engine=_FakeEngine())
+    assert sentinel.read_text(encoding="utf-8") == "수기 보정본"  # 무손상
+    assert not (out / "공고").exists()  # 무충돌 작업조차 착수 전 차단(원자성)
+
+    res = generate_matrix(jobs, src, [0], str(out), engine=_FakeEngine(), overwrite=True)
+    assert res.succeeded == 2
+    assert sentinel.read_text(encoding="utf-8") != "수기 보정본"  # 확정 후에만 교체
 
 
 def test_generate_matrix_direct_call_atomically_blocks_drift(tmp_path):

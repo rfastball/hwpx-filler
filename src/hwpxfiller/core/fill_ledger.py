@@ -8,10 +8,13 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Iterable
+
+from hwpxcore.atomic import write_text_atomic
 
 from .engine import HwpxEngine
 from .fields import read_fields
@@ -165,7 +168,8 @@ def build_fill_ledger(
 
 
 # ==================================================================== L2 원장 export
-#: 배치 저장 폴더에 남는 사이드카 파일명(opt-in).
+#: 사이드카 고정 파일명 — 경로를 직접 지정하는 호출용. 실행별 사이드카(배치 저장
+#: 폴더)는 :func:`ledger_sidecar_path` 로 타임스탬프 이름을 발급받아 증거를 축적한다.
 LEDGER_SIDECAR_NAME = "fill-ledger.json"
 
 #: 사이드카에 박제하는 고지 — 값 미리보기는 HWPX 렌더가 아니다(ADR C 불변).
@@ -368,7 +372,27 @@ def export_run_ledger(
         "profiles": [p.to_dict() for p in profiles],
         "outputs": [o.to_dict() for o in outputs],
     })
-    Path(path).write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    # 원자 쓰기(RC-01) — 저장 중 실패가 기존 원장(증거)을 파괴하지 않는다.
+    write_text_atomic(path, json.dumps(payload, ensure_ascii=False, indent=2))
     return payload
+
+
+def ledger_sidecar_path(out_dir: "str | Path", generated_at: str) -> Path:
+    """실행별 원장 사이드카 경로 — 타임스탬프 파일명으로 이전 실행의 증거를 덮지 않는다(RC-02).
+
+    ``generated_at``(ISO, 초 해상도)의 숫자만 취해 ``fill-ledger-YYYYMMDD-HHMMSS.json``
+    을 만든다. 같은 초 재실행으로 그 경로가 이미 있으면 ``-1``·``-2`` 접미사로 비켜
+    간다 — 원장은 교체가 아니라 **축적**이다(이전 실행의 증거 보존).
+    """
+    stamp = re.sub(r"\D", "", generated_at)
+    if len(stamp) >= 14:
+        base = f"fill-ledger-{stamp[:8]}-{stamp[8:14]}"
+    else:  # 비정상 입력도 조용히 덮지 않도록 접미사 루프는 동일하게 태운다.
+        base = "fill-ledger"
+    out = Path(out_dir)
+    cand = out / f"{base}.json"
+    i = 1
+    while cand.exists():
+        cand = out / f"{base}-{i}.json"
+        i += 1
+    return cand

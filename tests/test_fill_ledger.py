@@ -168,3 +168,22 @@ def test_export_redacts_service_key_and_notes_no_render(tmp_path):
     assert payload["kind"] == "hwpx-fill-ledger"
     assert "렌더" in payload["note"]  # 값 미리보기 ≠ HWPX 렌더(ADR C)
     assert json.loads(text) == payload
+
+
+# ------------------------------------------------- 실행별 사이드카 경로(RC-02)
+def test_ledger_sidecar_path_is_timestamped(tmp_path):
+    from hwpxfiller.core.fill_ledger import ledger_sidecar_path
+
+    p = ledger_sidecar_path(tmp_path, "2026-07-12T14:05:03")
+    assert p == tmp_path / "fill-ledger-20260712-140503.json"
+
+
+def test_ledger_sidecar_path_same_second_accumulates(tmp_path):
+    """같은 초 재실행 — 기존 증거를 덮지 않고 접미사로 비켜 간다(증거는 축적)."""
+    from hwpxfiller.core.fill_ledger import ledger_sidecar_path
+
+    first = ledger_sidecar_path(tmp_path, "2026-07-12T14:05:03")
+    first.write_text("{}", encoding="utf-8")
+    second = ledger_sidecar_path(tmp_path, "2026-07-12T14:05:03")
+    assert second == tmp_path / "fill-ledger-20260712-140503-1.json"
+    assert second != first and first.exists()

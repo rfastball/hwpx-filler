@@ -156,3 +156,31 @@ def test_generate_boundary_rechecks_after_validate_toctou(tmp_path):
     with pytest.raises(ValueError, match="검증후유입"):
         generate_matrix(vm.selected_jobs(), vm.datasource, [0], str(out))
     assert not out.exists()
+
+
+def test_output_conflicts_ring1_reports_existing_subfolder_targets(tmp_path):
+    """RC-02 — 뷰모델이 작업별 하위폴더 규칙으로 기존 파일 충돌을 보고(무변형, 링1).
+
+    위젯 확인 대화상자의 원천: 빈 목록이면 확인 없이 진행, 비지 않으면 사용자 확정
+    후에만 overwrite=True 로 생성한다.
+    """
+    tpl = tmp_path / "t.hwpx"
+    _template(tpl, ["공고명"])
+    csv = tmp_path / "d.csv"
+    csv.write_text("공고명\n전산\n", encoding="utf-8")
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="작업", template_path=str(tpl), mapping=MappingProfile(mappings=[
+        FieldMapping("공고명", ["공고명"])
+    ]), filename_pattern="d-{{공고명}}"))
+    vm = MatrixRunViewModel(reg)
+    vm.set_job_selected("작업", True)
+    vm.load_file(str(csv))
+
+    out = tmp_path / "out"
+    assert vm.output_conflicts([0], str(out)) == []  # 아무것도 없으면 무충돌
+
+    (out / "작업").mkdir(parents=True)
+    sentinel = out / "작업" / "d-전산.hwpx"
+    sentinel.write_bytes(b"user-edited")
+    assert vm.output_conflicts([0], str(out)) == [str(sentinel)]
+    assert sentinel.read_bytes() == b"user-edited"  # 검출은 무변형

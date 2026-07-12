@@ -205,6 +205,13 @@ class TemplatePage(QWizardPage):
             )
             return
         compiled_path = str(Path(path).with_suffix(".compiled.hwpx"))
+        # 컴파일본이 이미 있으면(사람이 손봤을 수 있음) 조용히 덮지 않는다(RC-02).
+        if Path(compiled_path).exists() and QMessageBox.question(
+            self, "덮어쓰기 확인",
+            f"컴파일본이 이미 있습니다:\n{compiled_path}\n\n"
+            "계속하면 기존 컴파일본을 덮어씁니다. 덮어쓰고 진행할까요?",
+        ) != QMessageBox.Yes:
+            return
         try:
             pkg.save(compiled_path)
         except Exception as exc:  # noqa: BLE001

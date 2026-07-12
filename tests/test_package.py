@@ -30,6 +30,30 @@ def test_roundtrip_preserves_ocf_rules(tmp_path):
         assert names == set(pkg.entries)
 
 
+def test_save_failure_leaves_existing_file_intact(tmp_path, monkeypatch):
+    """RC-01 — 직렬화(to_bytes) 실패가 기존 산출물을 truncate 로 파괴하지 않는다.
+
+    save 는 페이로드를 open 전에 선평가 + 임시 파일 원자 교체이므로, 어떤 단계가
+    실패해도 기존 파일 바이트가 그대로 남는다(잔해 임시 파일도 없음).
+    """
+    import pytest
+
+    pkg = HwpxPackage.open(str(FIXTURE))
+    out = tmp_path / "doc.hwpx"
+    pkg.save(str(out))
+    existing = out.read_bytes()
+    assert existing[:2] == b"PK"
+
+    def _boom(self):
+        raise RuntimeError("직렬화 실패 주입")
+
+    monkeypatch.setattr(HwpxPackage, "to_bytes", _boom)
+    with pytest.raises(RuntimeError):
+        pkg.save(str(out))
+    assert out.read_bytes() == existing                       # 기존 파일 무손상
+    assert [p.name for p in tmp_path.iterdir()] == ["doc.hwpx"]  # 임시 파일 잔해 없음
+
+
 def test_content_xml_names_targets_only_sections_headers_footers():
     pkg = HwpxPackage.open(str(FIXTURE))
     targets = pkg.content_xml_names()

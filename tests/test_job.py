@@ -270,3 +270,23 @@ def test_default_jobs_dir_honors_env_override(monkeypatch, tmp_path):
     """HWPXFILLER_HOME 로 레지스트리 위치를 재지정(테스트·이식성)."""
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
     assert default_jobs_dir() == tmp_path / "jobs"
+
+
+def test_job_save_failure_preserves_existing_json(tmp_path, monkeypatch):
+    """RC-01 — 재저장 중 실패가 기존 작업 JSON 을 절단하지 않는다(원자 쓰기)."""
+    import pytest
+
+    job = Job(name="계약", template_path="/t.hwpx",
+              mapping=MappingProfile(mappings=[FieldMapping("공고명", ["name"])]))
+    path = tmp_path / "j.job.json"
+    job.save(path)
+    existing = path.read_text(encoding="utf-8")
+
+    def _boom(src, dst):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr("hwpxcore.atomic.os.replace", _boom)
+    with pytest.raises(OSError):
+        job.save(path)
+    assert path.read_text(encoding="utf-8") == existing  # 무손상
+    assert Job.load(path).name == "계약"                  # 여전히 로드 가능

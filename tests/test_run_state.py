@@ -198,6 +198,25 @@ def test_load_data_empty_returns_empty_without_committing(tmp_path):
     assert vm.datasource is None  # 빈 데이터는 상태 미변경
 
 
+# ------------------------------------------------------------- 덮어쓰기 확인(RC-02)
+def test_output_conflicts_lists_existing_targets_only(tmp_path):
+    """생성과 동일 규칙으로 계산한 대상 중 **디스크에 이미 있는** 파일만 보고(무변형).
+
+    위젯 확인 대화상자의 원천 — 빈 목록이면 확인 없이 진행, 비면 안 되는 목록이면
+    사용자 확정 후에만 overwrite=True(링1 계약).
+    """
+    vm = _vm(tmp_path)
+    out = tmp_path / "out"
+    assert vm.output_conflicts([0, 1], str(out)) == []  # 폴더 자체가 없음 → 무충돌
+
+    out.mkdir()
+    sentinel = out / "doc-가.hwpx"  # 패턴 doc-{{공고명}} × 레코드0(공고명=가)의 대상
+    sentinel.write_bytes(b"user-edited")
+    conflicts = vm.output_conflicts([0, 1], str(out))
+    assert conflicts == [str(sentinel)]
+    assert sentinel.read_bytes() == b"user-edited"  # 검출은 무변형
+
+
 # ------------------------------------------------------------------ 생성 원장(L2)
 def test_export_run_ledger_writes_evidence_sidecar(tmp_path):
     import json

@@ -170,8 +170,9 @@ class RunView(QMainWindow):
         # 생성 원장(L2) — 기본 꺼짐(opt-in). 고위험 문서 계보가 필요할 때만 켠다.
         self.chk_ledger = QCheckBox("생성 원장(JSON) 저장 — 들어간 값의 증거")
         self.chk_ledger.setToolTip(
-            "저장 폴더에 fill-ledger.json 을 남깁니다: 소스 실제형 샘플, 필드별 주입 예정값, "
-            "생성 후 문서 되읽기 검증(✓/✗). 값은 텍스트이며 HWPX 렌더가 아닙니다."
+            "저장 폴더에 실행별 fill-ledger-<시각>.json 을 남깁니다(이전 실행 증거 보존): "
+            "소스 실제형 샘플, 필드별 주입 예정값, 생성 후 문서 되읽기 검증(✓/✗). "
+            "값은 텍스트이며 HWPX 렌더가 아닙니다."
         )
         orow.addWidget(self.chk_ledger, 1, 1)
         root.addLayout(orow)
@@ -460,6 +461,24 @@ class RunView(QMainWindow):
         # 원장 export(_on_finished)가 생성과 동일한 선택·표식으로 행을 재구성하기 위한 문맥.
         self._ledger_ctx = (list(indices), marker) if self.chk_ledger.isChecked() else None
 
+        # ---- 덮어쓰기 확인(RC-02): 기존 파일을 조용히 파괴하지 않는다. ----
+        # 확정 없이 진행하다 충돌하면 generate_batch 가 raise → _on_failed 로 시끄럽게.
+        conflicts = self.vm.output_conflicts(indices, out_dir, mark_missing=marker)
+        overwrite = False
+        if conflicts:
+            names = [Path(p).name for p in conflicts]
+            shown = "\n".join(names[:10]) + (f"\n… 외 {len(names) - 10}개" if len(names) > 10 else "")
+            if QMessageBox.question(
+                self, "덮어쓰기 확인",
+                f"저장 폴더에 같은 이름의 파일이 이미 있습니다.\n"
+                f"계속하면 기존 파일 {len(conflicts)}개를 덮어씁니다:\n\n{shown}\n\n"
+                "덮어쓰고 진행할까요?",
+            ) != QMessageBox.Yes:
+                self._say("생성 취소 — 기존 파일 덮어쓰기를 확정하지 않았습니다.")
+                return
+            overwrite = True
+            self._say(f"덮어쓰기 확정: 기존 파일 {len(conflicts)}개")
+
         template = self.vm.effective_template()
         self._running = True
         self.btn_generate.setEnabled(False)
@@ -471,7 +490,7 @@ class RunView(QMainWindow):
 
         self._thread = QThread()
         self._worker = GenerateWorker(
-            template, mapped, out_dir, self.job.filename_pattern
+            template, mapped, out_dir, self.job.filename_pattern, overwrite=overwrite
         )
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)

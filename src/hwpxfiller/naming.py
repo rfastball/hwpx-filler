@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from pathlib import Path
 
 _INVALID = re.compile(r'[\\/:*?"<>|\r\n\t]')
 _DATE_TOKEN = re.compile(r"\{\{date(?::([^}]*))?\}\}")
@@ -103,3 +104,27 @@ class OutputNamer:
             cand = f"{stem}_{i}{ext}"
         self._seen.add(cand)
         return cand
+
+
+# ------------------------------------------------------- 디스크 충돌 검출(RC-02)
+def plan_output_names(
+    pattern: str, records: "list[dict[str, object]]", *, now: "datetime | None" = None
+) -> "list[str]":
+    """배치가 발급할 파일명 전체를 미리 계산한다(:class:`OutputNamer` 와 동일 규칙·순서).
+
+    ``_seen`` 은 배치 **내** 유일성만 보장한다 — 디스크의 기존 파일과의 충돌은
+    :func:`existing_outputs` 로 생성 **전에** 검출해 정책(GUI 확인·CLI ``--overwrite``)
+    이 분기한다. 조용한 접미사 회피는 하지 않는다(확인-또는-경보).
+    """
+    namer = OutputNamer(pattern, now=now)
+    return [namer.next(r) for r in records]
+
+
+def existing_outputs(out_dir: "str | Path", names: "list[str]") -> "list[str]":
+    """``out_dir`` 에 이미 존재하는 대상 파일 경로 목록 — 덮어쓰기 정책 분기의 원천.
+
+    검출만 한다(무변형·무결정). 덮을지 말지는 호출측이 확정한다: GUI 는 실행 전
+    사용자 확인, CLI 는 기본 차단 + ``--overwrite`` 옵트인.
+    """
+    out = Path(out_dir)
+    return [str(out / n) for n in names if (out / n).exists()]

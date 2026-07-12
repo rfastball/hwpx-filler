@@ -24,6 +24,7 @@ from pathlib import Path
 
 from . import format_engine as _fe
 from .lint import similarity
+from hwpxcore.atomic import write_text_atomic
 
 # 소스별 어휘(소스 키 → 한글 라벨)는 **코어가 소유하지 않는다**. 각 DataSource 가
 # ``field_labels()`` 로 자기 어휘를 선언하고(예: ``data/nara.py`` 의 나라장터 36쌍),
@@ -169,9 +170,8 @@ class MappingProfile:
         )
 
     def save(self, path: "str | Path") -> None:
-        Path(path).write_text(
-            json.dumps(self.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        # 원자 쓰기(RC-01) — 저장 중 실패가 기존 프로파일 JSON 을 파괴하지 않는다.
+        write_text_atomic(path, json.dumps(self.to_dict(), ensure_ascii=False, indent=2))
 
     @classmethod
     def load(cls, path: "str | Path") -> "MappingProfile":

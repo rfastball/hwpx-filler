@@ -9,11 +9,14 @@
 
 from __future__ import annotations
 
+from .atomic import write_bytes_atomic, write_text_atomic
 from .package import HwpxPackage
 from .text_extract import Document, extract_document
 from .validate import ValidationReport, validate
 
 __all__ = [
+    "write_bytes_atomic",
+    "write_text_atomic",
     "HwpxPackage",
     "Document",
     "extract_document",

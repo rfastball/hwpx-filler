@@ -103,6 +103,18 @@ class MatrixRunViewModel:
         self.records = list(records)
 
     # ---------------------------------------------------------- 사전검증
+    def output_conflicts(self, indices: "list[int]", out_dir: str) -> "list[str]":
+        """생성이 덮어쓸 **기존** 파일 경로 목록(작업별 하위폴더 규칙 동일, RC-02).
+
+        :func:`~hwpxfiller.batch.matrix_output_conflicts` 위임 — 위젯은 이 목록이 비지
+        않으면 사용자 확정을 받은 뒤에만 ``overwrite=True`` 로 진행한다(확인-또는-경보).
+        """
+        from ..batch import matrix_output_conflicts
+
+        return matrix_output_conflicts(
+            self.selected_jobs(), self.datasource, indices, out_dir
+        )
+
     def validate(self, indices: "list[int]", out_dir: str) -> "list[str]":
         """생성 전 가드 — 모든 위반 사유(빈 목록이면 통과). 시끄럽게 표면화."""
         errs: "list[str]" = []

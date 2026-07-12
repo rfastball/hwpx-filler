@@ -16,12 +16,15 @@ class GenerateWorker(QObject):
     finished = Signal(object)    # BatchResult
     failed = Signal(str)
 
-    def __init__(self, template, records, out_dir, pattern):
+    def __init__(self, template, records, out_dir, pattern, *, overwrite=False):
         super().__init__()
         self.template = template
         self.records = records
         self.out_dir = out_dir
         self.pattern = pattern
+        # 덮어쓰기는 위젯이 사용자 확정을 받은 경우에만 True(RC-02) — 확정 없이
+        # 충돌이면 generate_batch 가 raise 하고 failed 시그널로 시끄럽게 표면화된다.
+        self.overwrite = overwrite
 
     def run(self):
         try:
@@ -33,6 +36,7 @@ class GenerateWorker(QObject):
                 self.out_dir,
                 self.pattern,
                 progress=self.progress.emit,
+                overwrite=self.overwrite,
             )
             self.finished.emit(batch)
         except Exception as exc:  # noqa: BLE001
@@ -51,12 +55,13 @@ class MatrixGenerateWorker(QObject):
     finished = Signal(object)    # MatrixResult
     failed = Signal(str)
 
-    def __init__(self, jobs, datasource, indices, out_dir):
+    def __init__(self, jobs, datasource, indices, out_dir, *, overwrite=False):
         super().__init__()
         self.jobs = jobs
         self.datasource = datasource
         self.indices = indices
         self.out_dir = out_dir
+        self.overwrite = overwrite  # GenerateWorker 와 동일 계약(RC-02)
 
     def run(self):
         try:
@@ -68,6 +73,7 @@ class MatrixGenerateWorker(QObject):
                 self.indices,
                 self.out_dir,
                 progress=self.progress.emit,
+                overwrite=self.overwrite,
             )
             self.finished.emit(result)
         except Exception as exc:  # noqa: BLE001

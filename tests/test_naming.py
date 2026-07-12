@@ -8,7 +8,13 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from hwpxfiller.naming import OutputNamer, clean_filename, make_output_filename
+from hwpxfiller.naming import (
+    OutputNamer,
+    clean_filename,
+    existing_outputs,
+    make_output_filename,
+    plan_output_names,
+)
 
 _NOW = datetime(2026, 7, 9, 14, 5, 3)
 
@@ -119,3 +125,21 @@ def test_namer_deterministic_given_order():
 
 def test_clean_filename_direct():
     assert clean_filename('a\\b/c:d') == "a_b_c_d"
+
+
+# -------------------------------------------------- 디스크 충돌 검출(RC-02)
+def test_plan_output_names_matches_namer_rules():
+    """사전 계산이 실제 발급(OutputNamer)과 동일 규칙·순서 — 검출과 생성의 이름 일치."""
+    recs = [{"ID": "A"}, {"ID": "A"}, {"ID": "B"}]
+    namer = OutputNamer("{{date:YYYYMMDD}}-{{ID}}", now=_NOW)
+    assert plan_output_names("{{date:YYYYMMDD}}-{{ID}}", recs, now=_NOW) == [
+        namer.next(r) for r in recs
+    ]
+
+
+def test_existing_outputs_reports_only_disk_hits(tmp_path):
+    """배치 내 유일성(_seen)과 별개로 **디스크**의 기존 파일만 보고한다."""
+    (tmp_path / "doc-A.hwpx").write_text("수기 보정본", encoding="utf-8")
+    names = ["doc-A.hwpx", "doc-B.hwpx"]
+    assert existing_outputs(tmp_path, names) == [str(tmp_path / "doc-A.hwpx")]
+    assert existing_outputs(tmp_path / "없는폴더", names) == []

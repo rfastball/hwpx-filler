@@ -112,13 +112,15 @@ def test_ledger_is_optin_and_writes_evidence_sidecar(tmp_path, capsys):
     # 기본은 opt-in — 플래그 없으면 사이드카를 만들지 않는다.
     out0 = tmp_path / "out0"
     assert main(["--template", TEMPLATE, "--data", data, "--out", str(out0)]) == 0
-    assert not (out0 / "fill-ledger.json").exists()
+    assert not list(out0.glob("fill-ledger*.json"))
 
     out = tmp_path / "out"
     rc = main(["--template", TEMPLATE, "--data", data, "--out", str(out),
                "--pattern", "공고-{{입찰공고번호}}", "--ledger"])
     assert rc == 0
-    payload = json.loads((out / "fill-ledger.json").read_text(encoding="utf-8"))
+    # 실행별 타임스탬프 파일명(RC-02) — 고정 이름이 아니라 fill-ledger-<시각>.json.
+    (sidecar,) = list(out.glob("fill-ledger-*.json"))
+    payload = json.loads(sidecar.read_text(encoding="utf-8"))
     assert payload["kind"] == "hwpx-fill-ledger"
     assert payload["source"] == f"file:{data}"           # 포인터-온리
     (entry,) = payload["outputs"]
@@ -133,6 +135,52 @@ def test_ledger_is_optin_and_writes_evidence_sidecar(tmp_path, capsys):
     assert profs["추정가격"]["samples"] == ["12000000"]
     assert profs["추정가격"]["tentative_type"] == "정수(추정)"
     assert "HWPX 렌더" in capsys.readouterr().err       # 미리보기 ≠ 렌더 고지
+
+
+def test_ledger_rerun_accumulates_evidence(tmp_path):
+    """원장 재실행 — 이전 실행의 증거 사이드카를 덮지 않고 축적한다(RC-02)."""
+    data = _xlsx(tmp_path / "d.xlsx",
+                 [["R26BK00000001", "관급자재 구매", "일반경쟁", "12000000", "2026-08-01 10:00"]])
+    out = tmp_path / "out"
+    args = ["--template", TEMPLATE, "--data", data, "--out", str(out),
+            "--pattern", "공고-{{입찰공고번호}}", "--ledger"]
+    assert main(args) == 0
+    assert main(args + ["--overwrite"]) == 0  # 산출물 재생성은 명시 확정, 원장은 새 파일
+    assert len(list(out.glob("fill-ledger-*.json"))) == 2
+
+
+# ------------------------------------------------------- 덮어쓰기 계약(RC-02)
+def test_cli_blocks_overwrite_by_default(tmp_path, capsys):
+    """같은 폴더 재실행 기본 차단 — exit 1 + 기존 파일(수기 보정본) 무손상 + 안내."""
+    data = _xlsx(tmp_path / "d.xlsx",
+                 [["R26BK00000001", "관급자재 구매", "일반경쟁", "12000000", "2026-08-01 10:00"]])
+    out = tmp_path / "out"
+    args = ["--template", TEMPLATE, "--data", data, "--out", str(out),
+            "--pattern", "공고-{{입찰공고번호}}"]
+    assert main(args) == 0
+    sentinel = out / "공고-R26BK00000001.hwpx"
+    sentinel.write_bytes(b"user-edited")  # 발송 후 수기 보정본 모사
+
+    rc = main(args)
+    assert rc == 1
+    assert sentinel.read_bytes() == b"user-edited"  # 무경고 파괴 금지
+    err = capsys.readouterr().err
+    assert "덮어쓰" in err and "--overwrite" in err  # 시끄럽게 + 다음 행동 안내
+
+
+def test_cli_overwrite_optin_passes(tmp_path):
+    """--overwrite 옵트인 — 명시 확정 시에만 기존 산출물을 교체한다."""
+    data = _xlsx(tmp_path / "d.xlsx",
+                 [["R26BK00000001", "관급자재 구매", "일반경쟁", "12000000", "2026-08-01 10:00"]])
+    out = tmp_path / "out"
+    args = ["--template", TEMPLATE, "--data", data, "--out", str(out),
+            "--pattern", "공고-{{입찰공고번호}}"]
+    assert main(args) == 0
+    sentinel = out / "공고-R26BK00000001.hwpx"
+    sentinel.write_bytes(b"user-edited")
+
+    assert main(args + ["--overwrite"]) == 0
+    assert sentinel.read_bytes()[:2] == b"PK"  # 재생성본으로 교체됨
 
 
 # --------------------------------------------------------------- 나라장터 소스

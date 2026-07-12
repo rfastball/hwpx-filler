@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .job import _slug
+from hwpxcore.atomic import write_text_atomic
 
 # 항목 상태 — active(실행 대상) / archived(사이클 유휴, 복구 가능) / retired(은퇴, 숨김).
 # add/delete 가 아니라 retire 로 수명 종료를 표현한다(참조는 남기되 실행 후보에서 제외).
@@ -107,9 +108,8 @@ class DatasetPoolItem:
         )
 
     def save(self, path: "str | Path") -> None:
-        Path(path).write_text(
-            json.dumps(self.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        # 원자 쓰기(RC-01) — 저장 중 실패가 기존 풀 항목 JSON 을 파괴하지 않는다.
+        write_text_atomic(path, json.dumps(self.to_dict(), ensure_ascii=False, indent=2))
 
     @classmethod
     def load(cls, path: "str | Path") -> "DatasetPoolItem":

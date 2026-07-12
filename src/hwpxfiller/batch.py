@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 from .core.engine import GenerateResult, HwpxEngine
-from .naming import OutputNamer
+from .naming import existing_outputs, plan_output_names
 
 
 @dataclass
@@ -35,21 +35,33 @@ def generate_batch(
     *,
     progress: "Callable[[int, int], None] | None" = None,
     now: "datetime | None" = None,
+    overwrite: bool = False,
 ) -> BatchResult:
     """레코드 목록을 순회하며 문서를 일괄 생성한다.
 
-    파일명은 :class:`OutputNamer` 가 배치 단위로 할당한다(연번·날짜 토큰·충돌 접미사).
+    파일명은 :func:`~hwpxfiller.naming.plan_output_names` 로 **먼저 전부** 계산한다
+    (연번·날짜 토큰·배치 내 충돌 접미사 — :class:`~hwpxfiller.naming.OutputNamer` 규칙).
+    대상 중 디스크에 이미 존재하는 파일이 있으면 ``overwrite=True`` 없이는 생성을
+    시작하기 전에 :class:`FileExistsError` 로 원자 차단한다(RC-02: 기존 산출물의
+    무경고 파괴 금지 — GUI 는 사용자 확인 후, CLI 는 ``--overwrite`` 로만 통과).
     ``progress(done, total)`` 는 레코드마다 호출되는 선택적 콜백(GUI 워커의 진행률용).
     ``now`` 는 날짜 토큰 기준 시각 주입(테스트 결정성).
     """
     engine = engine or HwpxEngine()
     out = Path(out_dir)
+    names = plan_output_names(name_pattern, records, now=now)
+    clobbered = existing_outputs(out, names)
+    if clobbered and not overwrite:
+        raise FileExistsError(
+            f"이미 존재하는 파일 {len(clobbered)}개를 덮어쓰게 됩니다 — 덮어쓰기 확정 "
+            "없이는 생성하지 않습니다: "
+            + ", ".join(Path(p).name for p in clobbered)
+        )
     out.mkdir(parents=True, exist_ok=True)
-    namer = OutputNamer(name_pattern, now=now)
 
     batch = BatchResult(total=len(records))
-    for i, rec in enumerate(records, 1):
-        target = str(out / namer.next(rec))
+    for i, (rec, name) in enumerate(zip(records, names, strict=True), 1):
+        target = str(out / name)
         res = engine.generate(template_path, rec, target)
         batch.results.append(res)
         if res.ok:
@@ -92,6 +104,35 @@ class MatrixResult:
         return self.total - self.succeeded
 
 
+def matrix_output_conflicts(
+    jobs,
+    datasource,
+    indices: "list[int]",
+    out_dir: str,
+    *,
+    now: "datetime | None" = None,
+    mark_missing: "str | None" = None,
+) -> "list[str]":
+    """매트릭스 생성이 덮어쓸 **기존** 파일 경로 전체(무변형 검출, RC-02).
+
+    :func:`generate_matrix` 와 동일한 매핑(``mapped_records``)·작업별 하위폴더(slug)·
+    파일명 규칙으로 대상 경로를 계산해 디스크 존재만 조회한다. GUI 사전 확인과
+    :func:`generate_matrix` 의 기본 차단이 이 목록을 공유한다.
+    """
+    from .core.job import MISSING_MARKER, RunRequest, _slug
+
+    if mark_missing is None:
+        mark_missing = MISSING_MARKER
+    root = Path(out_dir)
+    indices = list(indices)
+    conflicts: "list[str]" = []
+    for job in jobs:
+        mapped = RunRequest(job, datasource, indices).mapped_records(mark_missing=mark_missing)
+        names = plan_output_names(job.filename_pattern, mapped, now=now)
+        conflicts.extend(existing_outputs(root / _slug(job.name), names))
+    return conflicts
+
+
 def generate_matrix(
     jobs,
     datasource,
@@ -102,6 +143,7 @@ def generate_matrix(
     progress: "Callable[[int, int], None] | None" = None,
     now: "datetime | None" = None,
     mark_missing: "str | None" = None,
+    overwrite: bool = False,
 ) -> MatrixResult:
     """**M 작업 × 공유 데이터(N행)** 일괄 생성 — 1:1 실행 표면 인공물 해소(ADR J 축2).
 
@@ -113,7 +155,8 @@ def generate_matrix(
     매핑·빈값 처리는 :meth:`~hwpxfiller.core.job.RunRequest.mapped_records` 재사용 —
     ``mark_missing`` 이 주어지면 빈 필드에 표식을 넣어 **누락을 시끄럽게**(기본은
     :data:`~hwpxfiller.core.job.MISSING_MARKER`; 명시적 ``""`` 로 끄기 가능). 엔진의 빈값
-    스킵(``engine.py:42``)은 불변.
+    스킵(``engine.py:42``)은 불변. 디스크의 기존 파일과 충돌하면 ``overwrite=True``
+    없이는 :class:`FileExistsError` 로 착수 전에 원자 차단한다(RC-02).
     """
     from .core.job import MISSING_MARKER, RunRequest, _slug
     from .core.fill_ledger import template_path_drift
@@ -121,6 +164,7 @@ def generate_matrix(
     if mark_missing is None:
         mark_missing = MISSING_MARKER
     engine = engine or HwpxEngine()
+    now = now or datetime.now()  # 충돌 검출과 생성이 같은 날짜 토큰 시각을 공유
     indices = list(indices)
     jobs = list(jobs)
     # 실제 생성 경계에서 **전 작업을 먼저** 재검사한다. GUI validate 이후 템플릿이
@@ -140,6 +184,20 @@ def generate_matrix(
     if drift_errors:
         raise ValueError("템플릿 구조 드리프트로 매트릭스 생성을 차단했습니다 — " + "; ".join(drift_errors))
 
+    # 디스크 충돌도 생성 경계에서 **전 작업을 먼저** 검사해 원자 차단한다(RC-02) —
+    # 일부 작업만 생성된 뒤 발견하지 않는다. 통과·확정 후엔 배치 재검사를 끈다
+    # (아래 generate_batch 에 overwrite=True — 결정은 이 경계에서 한 번).
+    if not overwrite:
+        clobbered = matrix_output_conflicts(
+            jobs, datasource, indices, out_dir, now=now, mark_missing=mark_missing
+        )
+        if clobbered:
+            raise FileExistsError(
+                f"이미 존재하는 파일 {len(clobbered)}개를 덮어쓰게 됩니다 — 덮어쓰기 확정 "
+                "없이는 생성하지 않습니다: "
+                + ", ".join(Path(p).name for p in clobbered)
+            )
+
     grand_total = len(jobs) * len(indices)
     root = Path(out_dir)
     result = MatrixResult()
@@ -156,7 +214,7 @@ def generate_matrix(
 
         batch = generate_batch(
             job.template_path, mapped, job_dir, job.filename_pattern,
-            engine=engine, progress=_job_progress, now=now,
+            engine=engine, progress=_job_progress, now=now, overwrite=True,
         )
         result.per_job.append(MatrixJobResult(job.name, job_dir, batch))
         done += batch.total

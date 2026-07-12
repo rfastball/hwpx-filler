@@ -4,6 +4,8 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
+import pytest
+
 from hwpxfiller.batch import generate_batch
 from hwpxfiller.core.engine import HwpxEngine
 
@@ -72,6 +74,43 @@ def test_batch_seq_and_date_tokens(tmp_path):
     assert batch.succeeded == 2
     assert (tmp_path / "20260709-001.hwpx").exists()
     assert (tmp_path / "20260709-002.hwpx").exists()
+
+
+def test_batch_blocks_existing_outputs_without_overwrite(tmp_path):
+    """RC-02 — 대상 파일이 디스크에 이미 있으면 생성을 시작하기 전에 원자 차단.
+
+    같은 폴더 재실행(기본 동선)이 사용자 수기 보정본을 무경고 교체하던 결함의 회귀 방어:
+    하나라도 충돌이면 전건 차단(부분 생성 없음), 기존 파일 바이트는 그대로다.
+    """
+    engine = HwpxEngine()
+    key = _required(engine)[0]
+    records = [{key: "가", "ID": "A1"}, {key: "나", "ID": "A2"}]
+    generate_batch(str(FIXTURE), records, str(tmp_path), "doc-{{ID}}", engine)
+
+    # 사용자 수기 보정본 모사 — 재실행이 이걸 조용히 덮으면 안 된다.
+    sentinel = tmp_path / "doc-A1.hwpx"
+    sentinel.write_bytes(b"user-edited")
+    other_bytes = (tmp_path / "doc-A2.hwpx").read_bytes()
+
+    with pytest.raises(FileExistsError, match="덮어쓰"):
+        generate_batch(str(FIXTURE), records, str(tmp_path), "doc-{{ID}}", engine)
+    assert sentinel.read_bytes() == b"user-edited"                 # 보정본 무손상
+    assert (tmp_path / "doc-A2.hwpx").read_bytes() == other_bytes  # 전건 차단
+
+
+def test_batch_overwrite_optin_replaces_existing(tmp_path):
+    """--overwrite 계약 — 명시 옵트인 시에만 기존 파일을 교체한다."""
+    engine = HwpxEngine()
+    key = _required(engine)[0]
+    records = [{key: "가", "ID": "A1"}]
+    generate_batch(str(FIXTURE), records, str(tmp_path), "doc-{{ID}}", engine)
+    (tmp_path / "doc-A1.hwpx").write_bytes(b"user-edited")
+
+    batch = generate_batch(
+        str(FIXTURE), records, str(tmp_path), "doc-{{ID}}", engine, overwrite=True
+    )
+    assert batch.succeeded == 1
+    assert (tmp_path / "doc-A1.hwpx").read_bytes()[:2] == b"PK"  # 재생성본으로 교체됨
 
 
 def test_batch_progress_callback(tmp_path):

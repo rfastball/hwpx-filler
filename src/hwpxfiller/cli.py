@@ -26,6 +26,7 @@ from .batch import generate_batch
 if TYPE_CHECKING:  # 런타임 결합 회피 — 저장소는 덕타이핑으로 충분.
     from .data.secret_store import SecretStore
 from .core.engine import HwpxEngine
+from hwpxcore.atomic import write_text_atomic
 from hwpxcore.validate import validate
 from .data.excel import ExcelDataSource
 
@@ -43,8 +44,7 @@ def _schema_main(argv: "list[str]") -> int:
 
     payload = json.dumps(extract_schema(args.template).to_dict(), ensure_ascii=False, indent=2)
     if args.out:
-        with open(args.out, "w", encoding="utf-8") as fh:
-            fh.write(payload)
+        write_text_atomic(args.out, payload)  # 원자 쓰기(RC-01) — 실패해도 기존 파일 무손상
         print(f"스키마 저장: {args.out}", file=sys.stderr)
     else:
         print(payload)
@@ -197,8 +197,7 @@ def _render_main(argv: "list[str]") -> int:
         print(f"[안내] 값이 비어있는 필드: {', '.join(report.empty_fields)}", file=sys.stderr)
 
     if args.out:
-        with open(args.out, "w", encoding="utf-8") as fh:
-            fh.write(text)
+        write_text_atomic(args.out, text)  # 원자 쓰기(RC-01) — 실패해도 기존 파일 무손상
         print(f"렌더 저장: {args.out}", file=sys.stderr)
     else:
         print(text)
@@ -307,6 +306,9 @@ def main(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
     ap.add_argument("--profile", default=None,
                     help="매핑 프로파일 JSON(소스 키→템플릿 필드; 나라장터 영문키에 사실상 필수)")
     ap.add_argument("--fields", action="store_true", help="템플릿 요구 필드만 출력")
+    ap.add_argument("--overwrite", action="store_true",
+                    help="같은 이름의 기존 산출물 덮어쓰기 허용(옵트인). 없으면 대상 "
+                         "파일이 하나라도 이미 있을 때 생성 전체를 차단하고 종료코드 1")
     ap.add_argument("--ledger", action="store_true",
                     help="생성 원장 JSON 사이드카를 out 폴더에 저장(opt-in) — "
                          "소스 프로파일·dry-run 매니페스트·주입 되읽기 증거. "
@@ -357,7 +359,14 @@ def main(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
     if report.empty_valued:
         print(f"[경고] 값이 비어있는 필드: {', '.join(report.empty_valued)}", file=sys.stderr)
 
-    batch = generate_batch(args.template, records, args.out, args.pattern, engine)
+    try:
+        batch = generate_batch(args.template, records, args.out, args.pattern, engine,
+                               overwrite=args.overwrite)
+    except FileExistsError as exc:
+        # 기본은 차단(RC-02) — 기존 산출물(수기 보정본일 수 있음)의 무경고 파괴 금지.
+        print(f"[오류] {exc}", file=sys.stderr)
+        print("덮어쓰려면 --overwrite 를 지정하세요.", file=sys.stderr)
+        return 1
     print(f"완료: {batch.succeeded}/{batch.total} 성공 -> {args.out}")
     for res in batch.results:
         if not res.ok:
@@ -374,12 +383,12 @@ def _export_ledger(args, profile, required, source_records, mapped_records, batc
     프로파일 없는 직접 채우기(헤더=템플릿 필드)는 항등 매핑으로 원장 행을 만든다 —
     소스출처·변환이 없는 게 아니라 "같은 이름 열을 그대로" 라는 사실의 기록이다.
     소스 표기는 포인터-온리(경로·기간) — 나라 쿼리 URL·ServiceKey 는 박제하지 않는다.
+    파일명은 실행별 타임스탬프(RC-02) — 재실행이 이전 실행의 증거를 덮지 않는다.
     """
     from datetime import datetime
-    from pathlib import Path
 
     from .core.fill_ledger import (
-        LEDGER_SIDECAR_NAME, export_run_ledger, ledger_outputs,
+        export_run_ledger, ledger_outputs, ledger_sidecar_path,
     )
     from .core.mapping import FieldMapping, MappingProfile
     from .core.source_profile import profile_fields
@@ -395,14 +404,15 @@ def _export_ledger(args, profile, required, source_records, mapped_records, batc
     else:
         source = f"file:{args.data}"
     outputs = ledger_outputs(batch.results, mapped_records, mapping, required)
-    sidecar = Path(args.out) / LEDGER_SIDECAR_NAME
+    generated_at = datetime.now().isoformat(timespec="seconds")
+    sidecar = ledger_sidecar_path(args.out, generated_at)
     export_run_ledger(
         sidecar,
         template=args.template,
         source=source,
         outputs=outputs,
         profiles=profile_fields(source_records, labels=labels),
-        generated_at=datetime.now().isoformat(timespec="seconds"),
+        generated_at=generated_at,
     )
     print(f"[원장] {sidecar} 저장 — 값은 텍스트 미리보기·되읽기이며 HWPX 렌더가 아닙니다.",
           file=sys.stderr)
