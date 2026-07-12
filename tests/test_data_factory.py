@@ -28,6 +28,16 @@ def test_make_source_by_kind(tmp_path):
         make_source("does_not_exist")
 
 
+def test_make_source_pipeline_kind(tmp_path):
+    from hwpxfiller.data.pipeline import PipelineSource
+
+    src = make_source(
+        "pipeline", sources=[source_for_path(tmp_path / "d.csv")], steps=[]
+    )
+    assert isinstance(src, PipelineSource)
+    assert isinstance(src, DataSource)  # 파이프라인도 동일 포트로 다운스트림에 보임
+
+
 def test_csv_roundtrip_through_factory(tmp_path):
     csv = tmp_path / "rec.csv"
     csv.write_text("공고명,추정가격\n전산장비,1000\n", encoding="utf-8-sig")
