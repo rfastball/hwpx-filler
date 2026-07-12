@@ -37,6 +37,23 @@ from .compile_badge import badge_level as _badge_level
 _SEVERITY_KO: "dict[str, str]" = {"warning": "경고", "info": "정보", "error": "오류"}
 
 
+class ResultLine(str):
+    """결과 문구 + 심각도 레벨(UD-07) — 성과별 시각 위계의 단일 seam.
+
+    lint 경고·실패 잔존 문구가 화면 최저 위계의 muted 회색으로 고정 렌더되던 결함을
+    푼다. ``str`` 하위형이라 기존 문자열 계약(``"파일명" in result`` 포함검사·
+    ``setText(result)``)을 그대로 지키면서, 위젯이 ``.level`` 을 style.mark 레벨
+    (``"warn"``/``"danger"``/``"ok"``/``"muted"``)로 마킹한다 — 심각도 판정은 링1 소유.
+    """
+
+    level: str
+
+    def __new__(cls, text: str, level: str = "muted") -> "ResultLine":
+        obj = super().__new__(cls, text)
+        obj.level = level
+        return obj
+
+
 @dataclass(frozen=True)
 class TemplateAction:
     """상태 게이트가 허용하는 액션 하나 — ``key`` 는 안정 식별자, ``label`` 은 버튼 문구.
@@ -284,36 +301,60 @@ class TemplateManagerViewModel:
     # 단일 결과 라벨이 lint/미리보기/드리프트/컴파일을 무맥락으로 덮어쓰던 것을(RC-14)
     # 대상 템플릿명을 포함한 성형으로 고정한다 — 뷰(위젯)가 아니라 여기 살아야
     # 헤드리스로 테스트되고 '얇은 렌더러' 계약이 지켜진다.
-    def format_compile_result(self, path: str, report) -> str:
-        """apply_fieldize 리포트 → 결과 문구(대상 템플릿명 포함)."""
-        return f"컴파일 완료 — {Path(path).name}: 필드 {len(report.compiled)}개 추가"
+    def format_compile_result(self, path: str, report) -> ResultLine:
+        """apply_fieldize 리포트 → 결과 문구(대상 템플릿명 포함) — 성공은 ok(UD-07)."""
+        return ResultLine(
+            f"컴파일 완료 — {Path(path).name}: 필드 {len(report.compiled)}개 추가", "ok"
+        )
 
-    def format_lint_result(self, path: str, report: LintReport) -> str:
-        """lint 리포트 → 결과 문구(심각도 한국어·대상 템플릿명 포함)."""
+    def format_scan_empty_result(self, path: str, preview: "ScanPreview") -> ResultLine:
+        """컴파일 스캔 결과 '변환 가능 토큰 없음' → 인라인 결과 문구(UD-24).
+
+        같은 화면 다른 결과 4종과 대칭으로 lbl_result 에 싣는다(차단 모달 강등 —
+        ADR-E: 모달은 파괴 확정에만). 진행 불가 통지이므로 warn 레벨.
+        """
+        name = Path(path).name
+        text = f"컴파일 — {name}: 변환 가능한 토큰이 없습니다"
+        if preview.skipped:
+            names = ", ".join(s.name for s in preview.skipped)
+            text += f" (건너뜀 {len(preview.skipped)}개: {names})"
+        return ResultLine(text, "warn")
+
+    def format_lint_result(self, path: str, report: LintReport) -> ResultLine:
+        """lint 리포트 → 결과 문구(심각도 한국어·대상 템플릿명 포함).
+
+        경고가 남으면 warn, 오류 심각도면 danger, 이슈 없으면 ok(UD-07) — VM 이 이미
+        아는 심각도를 시각 채널로 파생한다.
+        """
         name = Path(path).name
         if not report.findings:
-            return f"검토 — {name}: 이슈 없음."
+            return ResultLine(f"검토 — {name}: 이슈 없음.", "ok")
+        severities = {f.severity for f in report.findings}
+        level = "danger" if "error" in severities else "warn"
         lines = [f"검토 결과 — {name}:"]
         lines.extend(
             f"[{_SEVERITY_KO.get(f.severity, f.severity)}] {f.message}"
             for f in report.findings
         )
-        return "\n".join(lines)
+        return ResultLine("\n".join(lines), level)
 
-    def format_preview_result(self, path: str, values: "dict[str, str]") -> str:
-        """FILLED 값 미리보기 → 결과 문구(대상 템플릿명 포함)."""
+    def format_preview_result(self, path: str, values: "dict[str, str]") -> ResultLine:
+        """FILLED 값 미리보기 → 결과 문구(대상 템플릿명 포함) — 정보성이므로 muted."""
         name = Path(path).name
         if not values:
-            return f"미리보기 — {name}: 누름틀 값이 없습니다."
-        return f"미리보기 — {name}:\n" + "\n".join(
-            f"{k} = {v}" for k, v in values.items()
+            return ResultLine(f"미리보기 — {name}: 누름틀 값이 없습니다.", "muted")
+        return ResultLine(
+            f"미리보기 — {name}:\n" + "\n".join(f"{k} = {v}" for k, v in values.items()),
+            "muted",
         )
 
-    def format_drift_result(self, old_path: str, new_path: str, drift: SchemaDrift) -> str:
-        """드리프트 결과 → 결과 문구(비교 판본 쌍 명시)."""
+    def format_drift_result(
+        self, old_path: str, new_path: str, drift: SchemaDrift
+    ) -> ResultLine:
+        """드리프트 결과 → 결과 문구(비교 판본 쌍 명시) — 변화 있으면 warn, 없으면 ok."""
         pair = f"{Path(old_path).name} → {Path(new_path).name}"
         if not drift.has_changes:
-            return f"드리프트 — {pair}: 필드셋 변화 없음."
+            return ResultLine(f"드리프트 — {pair}: 필드셋 변화 없음.", "ok")
         parts = [f"드리프트 — {pair}:"]
         for n in drift.added:
             parts.append(f"+ 추가: {n}")
@@ -321,7 +362,7 @@ class TemplateManagerViewModel:
             parts.append(f"- 삭제: {n}")
         for r in drift.renamed:
             parts.append(f"~ 개명(추정): {r['old']} → {r['new']} ({r['score']})")
-        return "\n".join(parts)
+        return ResultLine("\n".join(parts), "warn")
 
     # ----------------------------------------------------- FILLED 값 미리보기
     def filled_values(self, path: str) -> "dict[str, str]":

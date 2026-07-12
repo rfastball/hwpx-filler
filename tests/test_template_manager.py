@@ -290,14 +290,40 @@ def test_vm_result_formatting_lives_in_ring1_and_names_target(tmp_path):
     assert "raw.hwpx" in lint_text
     assert "[경고]" in lint_text          # severity 영문 원시 노출 금지
     assert "[warning]" not in lint_text
+    assert lint_text.level == "warn"      # UD-07: 경고 잔존 → warn 심각도 채널
+    # 이슈 없는 검토는 ok(muted 고정 아님).
+    assert vm.format_lint_result(str(raw), _EmptyLint()).level == "ok"
 
     preview_text = vm.format_preview_result(str(raw), {"계약명": "값"})
     assert "raw.hwpx" in preview_text and "계약명 = 값" in preview_text
+    assert preview_text.level == "muted"  # 미리보기는 정보성 → muted
     assert "raw.hwpx" in vm.format_preview_result(str(raw), {})  # 빈 값도 대상 명시
 
     report = vm.apply_fieldize(str(raw))
     compile_text = vm.format_compile_result(str(raw), report)
     assert "raw.hwpx" in compile_text and "필드 1개 추가" in compile_text
+    assert compile_text.level == "ok"     # 성공 → ok
 
     drift_text = vm.format_drift_result(str(raw), str(raw), vm.drift(str(raw), str(raw)))
     assert "raw.hwpx" in drift_text and "변화 없음" in drift_text
+    assert drift_text.level == "ok"       # 변화 없음 → ok
+
+
+class _EmptyLint:
+    """findings 없는 LintReport 대역(형 계약: .findings 순회)."""
+
+    findings: "list" = []
+
+
+def test_format_scan_empty_result_is_inline_warn(tmp_path):
+    """UD-24: '변환 가능 토큰 없음'을 인라인 결과(warn)로 성형 — 차단 모달 강등."""
+    from hwpxfiller.gui.template_manager_state import ScanPreview
+
+    raw = _write_raw(
+        tmp_path / "onlymanual.hwpx",
+        "<hp:p><hp:run><hp:t>계약: {{계약명}}</hp:t></hp:run></hp:p>",
+    )
+    vm = TemplateManagerViewModel(paths=[raw])
+    line = vm.format_scan_empty_result(str(raw), ScanPreview(compilable=[], skipped=[]))
+    assert "onlymanual.hwpx" in line and "변환 가능한 토큰이 없습니다" in line
+    assert line.level == "warn"

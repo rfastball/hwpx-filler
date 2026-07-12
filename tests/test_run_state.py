@@ -146,6 +146,40 @@ def test_field_states_unmet_and_acknowledge(tmp_path):
     assert vm.unmet_blanks([0, 1]) == ["추정가격"]      # 초기화 → 다시 닫힘
 
 
+def test_unacknowledge_reopens_gate_toggle(tmp_path):
+    """UD-19: ack 재클릭 철회(unacknowledge)가 제자리에서 게이트를 다시 닫는다."""
+    vm = _vm(tmp_path)
+    vm.acknowledge("추정가격")
+    assert vm.gate_state([0, 1], "out").enabled is True
+    vm.unacknowledge("추정가격")                         # 철회 → 미입력 재계상
+    gate = vm.gate_state([0, 1], "out")
+    assert gate.enabled is False and gate.level == "warn" and "추정가격" in gate.text
+
+
+def test_gate_absorbs_preconditions_inline(tmp_path):
+    """UD-06: 데이터·폴더·레코드 전제조건을 게이트로 흡수 — '버튼 비활성 + 인라인 사유'.
+
+    이전에는 활성 primary + 클릭 후 차단 모달로 이원화됐다(초기 상태 침묵).
+    """
+    # 데이터 미겨눔 → 닫힌 인라인 게이트('먼저 데이터를 선택하세요').
+    vm_nodata = RunViewModel(_job(tmp_path))
+    gate = vm_nodata.gate_state([0])
+    assert gate.enabled is False and gate.level == "warn" and "데이터" in gate.text
+
+    vm = _vm(tmp_path)
+    vm.acknowledge("추정가격")                            # 미입력 게이트 해소
+    # 저장 폴더 미지정 → 인라인 warn(모달 아님).
+    gate = vm.gate_state([0, 1])
+    assert gate.enabled is False and gate.level == "warn" and "저장 폴더" in gate.text
+    # 레코드 0건 → 인라인 warn.
+    gate = vm.gate_state([], "out")
+    assert gate.enabled is False and gate.level == "warn" and "레코드" in gate.text
+    # 이어채우기 모드 + 문서 미선택 → 인라인 warn.
+    vm.set_target_mode("continue")
+    gate = vm.gate_state([0], "out")
+    assert gate.enabled is False and "기존 문서" in gate.text
+
+
 def test_field_states_empty_without_data(tmp_path):
     vm = RunViewModel(_job(tmp_path))                    # 데이터 미겨눔
     assert vm.field_states([0]) == []
@@ -356,9 +390,9 @@ def test_gate_state_single_decision_drift_unmet_open(tmp_path):
     assert gate.enabled is False and gate.level == "warn"
     assert "미입력" in gate.text and "추정가격" in gate.text
 
-    # 확인(ack) → 열림(문구 없음).
+    # 확인(ack) + 전제조건 충족(저장 폴더) → 열림(문구 없음).
     vm.acknowledge("추정가격")
-    gate = vm.gate_state([0, 1])
+    gate = vm.gate_state([0, 1], "out")
     assert gate.enabled is True and gate.level == "" and gate.text == ""
 
     # 드리프트 → danger 차단(미입력보다 우선).

@@ -135,7 +135,9 @@ class TemplateManagerPanel(QMainWindow):
 
         self.lbl_result = QLabel("")
         self.lbl_result.setWordWrap(True)
-        mark(self.lbl_result, "muted", True)
+        # 결과 라벨은 성과별 심각도 채널(level)로 렌더한다(UD-07) — 경고·실패가 화면
+        # 최저 위계의 muted 회색으로 고정 렌더되던 결함 해소. 초기(빈 문구)는 muted.
+        mark(self.lbl_result, "level", "muted")
         root.addWidget(self.lbl_result)
 
         self.vm.subscribe(self._render)
@@ -171,6 +173,16 @@ class TemplateManagerPanel(QMainWindow):
     def refresh(self) -> None:
         self.vm.refresh()
 
+    def _show_result(self, line) -> None:
+        """결과 문구 + 심각도 마킹(UD-07) — VM(링1)이 파생한 level 을 그대로 렌더한다.
+
+        ``line`` 은 :class:`~hwpxfiller.gui.template_manager_state.ResultLine`(str 하위형)
+        로 ``.level`` 을 싣는다 — 위젯은 심각도를 재판정하지 않고 마킹만 한다.
+        """
+        level = getattr(line, "level", "muted")
+        mark(self.lbl_result, "level", level)
+        self.lbl_result.setText(str(line))
+
     def _render(self) -> None:
         self.lbl_count.setText(self.vm.count_label())
         self.list.clear()
@@ -192,7 +204,9 @@ class TemplateManagerPanel(QMainWindow):
         chosen = QFileDialog.getExistingDirectory(self, "템플릿 라이브러리 폴더", start)
         if not chosen:
             return
-        self.lbl_result.setText("")  # 폴더가 바뀌면 직전 결과는 무의미(스테일 방지)
+        # 폴더가 바뀌면 직전 결과는 무의미(스테일 방지) — 문구·심각도 함께 초기화.
+        mark(self.lbl_result, "level", "muted")
+        self.lbl_result.setText("")
         self.vm.set_library_dir(chosen)
 
     # ---------------------------------------------------- 액션 디스패치
@@ -214,12 +228,16 @@ class TemplateManagerPanel(QMainWindow):
         stderr 조차 없다 — 직전 성공 문구가 실패한 작업 밑에 남아 적극 오도하던
         침묵 실패를 여기서 끊는다.
         """
-        self.lbl_result.setText("")  # 직전 결과 잔존 = 실패를 성공처럼 보이게 하는 오도
+        # 직전 결과 잔존 = 실패를 성공처럼 보이게 하는 오도 — 문구·심각도 함께 소거.
+        mark(self.lbl_result, "level", "muted")
+        self.lbl_result.setText("")
         try:
             fn()
         except Exception as exc:  # noqa: BLE001 — 액션 시점 실패는 전부 통지 대상
             name = Path(path).name if path else ""
             detail = f"{name} — {exc}" if name else str(exc)
+            # 실패 잔존 기록은 danger 로 시끄럽게(UD-07) — muted 회색 중립 메모로 오독 금지.
+            mark(self.lbl_result, "level", "danger")
             self.lbl_result.setText(f"실패: {title} · {detail}")
             QMessageBox.critical(self, f"{title} 실패", detail)
 
@@ -232,8 +250,9 @@ class TemplateManagerPanel(QMainWindow):
         for s in preview.skipped:
             lines.append(f"! {s.name} — {s.reason}")
         if not preview.has_compilable:
-            lines.append("\n컴파일 가능한 토큰이 없습니다.")
-            QMessageBox.information(self, "fieldize 미리보기", "\n".join(lines))
+            # UD-24: '변환 가능 토큰 없음'을 차단 모달이 아니라 인라인 lbl_result 로 통일
+            # (같은 화면 다른 결과 4종과 대칭 — 모달은 파괴 확정에만).
+            self._show_result(self.vm.format_scan_empty_result(path, preview))
             return
         lines.append(f"\n지금 컴파일하면 파일이 제자리에서 변경됩니다: {Path(path).name}")
         if not confirm_destructive(
@@ -241,13 +260,13 @@ class TemplateManagerPanel(QMainWindow):
         ):
             return  # dry-run 만 — 확인 없으면 변형 없음
         report = self.vm.apply_fieldize(path)
-        self.lbl_result.setText(self.vm.format_compile_result(path, report))
+        self._show_result(self.vm.format_compile_result(path, report))
 
     def _on_review(self, path: str) -> None:
-        self.lbl_result.setText(self.vm.format_lint_result(path, self.vm.lint(path)))
+        self._show_result(self.vm.format_lint_result(path, self.vm.lint(path)))
 
     def _on_preview(self, path: str) -> None:
-        self.lbl_result.setText(
+        self._show_result(
             self.vm.format_preview_result(path, self.vm.filled_values(path))
         )
 
@@ -261,6 +280,6 @@ class TemplateManagerPanel(QMainWindow):
         self._run_action("드리프트", new, lambda: self._do_drift(old, new))
 
     def _do_drift(self, old: str, new: str) -> None:
-        self.lbl_result.setText(
+        self._show_result(
             self.vm.format_drift_result(old, new, self.vm.drift(old, new))
         )

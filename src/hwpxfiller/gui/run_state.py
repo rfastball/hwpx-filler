@@ -311,16 +311,20 @@ class RunViewModel:
         return list(self.refresh(indices).field_states)
 
     # ------------------------------------------------ 상태 스냅샷·게이트 단일 산출(RC-23)
-    def refresh(self, indices: "list[int]") -> RunStatus:
+    def refresh(self, indices: "list[int]", out_dir: str = "") -> RunStatus:
         """상태 리프레시 1회의 단일 스냅샷 — 사전검증·필드 배지·게이트를 동시 파생.
 
         레코드 매핑·템플릿 구조를 **각 1회만** 계산해 세 표시면이 같은 사실에서
         나온다(RC-23: 표시면별 재질의가 만들던 모순 신호·zip 5회 재파싱 해소).
-        데이터 미겨눔이면 전부 공백이고 게이트는 열림 — ``validate_generate`` 가
-        '먼저 데이터를 선택하세요'로 막는 기존 동작 보존.
+        데이터 미겨눔이면 표시면은 공백이되 게이트는 **닫힌 인라인 사유**로 발화한다
+        (UD-06: '활성 primary + 클릭 후 모달' 이원화를 '버튼 비활성 + 인라인 사유'로 통일
+        — 초기 상태 침묵 해소). 저장 폴더·레코드 선택 같은 warn 급 전제조건도 여기서
+        게이트로 흡수해 모달은 danger 예외에만 남긴다.
         """
         if self.datasource is None:
-            return RunStatus(PreflightResult(), (), GateState(True, "", ""))
+            return RunStatus(
+                PreflightResult(), (), GateState(False, "warn", "먼저 데이터를 선택하세요."),
+            )
         idx = list(indices)
         req = self.request(idx)
         src = req.source_report()
@@ -330,12 +334,12 @@ class RunViewModel:
         return RunStatus(
             preflight=self._compose_preflight(src, out, drift),
             field_states=tuple(states),
-            gate=self._compose_gate(states, drift),
+            gate=self._compose_gate(states, drift, idx, out_dir),
         )
 
-    def gate_state(self, indices: "list[int]") -> GateState:
+    def gate_state(self, indices: "list[int]", out_dir: str = "") -> GateState:
         """생성 게이트 표시 결정(활성/level/text)의 단일 통합(RC-23)."""
-        return self.refresh(indices).gate
+        return self.refresh(indices, out_dir).gate
 
     def _structure_snapshot(self) -> "tuple[TemplateStructureDrift, set[str]]":
         """템플릿 구조 1회 재읽기 → (드리프트, 현재 누름틀 집합).
@@ -373,9 +377,18 @@ class RunViewModel:
         return states
 
     def _compose_gate(
-        self, states: "list[FieldState]", drift: TemplateStructureDrift
+        self, states: "list[FieldState]", drift: TemplateStructureDrift,
+        indices: "list[int]", out_dir: str,
     ) -> GateState:
-        """게이트 표시 결정 — 드리프트(danger·차단) > 미확인 미입력(warn·차단) > 열림."""
+        """게이트 표시 결정 — 드리프트(danger·차단) > 미확인 미입력(warn) > 전제조건(warn) > 열림.
+
+        UD-06: 이어채우기 문서·저장 폴더·레코드 선택 같은 warn 급 전제조건을 이 단일
+        산출로 흡수해 '버튼 비활성 + 인라인 사유' 문법으로 통일한다(클릭 후 차단 모달
+        재유입 소거 — 모달은 danger 예외에만 남긴다). 템플릿 부재(danger)는
+        ``validate_generate`` 의 모달 백스톱에 남긴다.
+        """
+        if self.target_mode == "continue" and not self.template_override:
+            return GateState(False, "warn", "이어채울 기존 문서(.hwpx)를 선택하세요.")
         if drift.has_drift:
             if drift.read_error:
                 return GateState(False, "danger", "템플릿 구조를 읽을 수 없어 생성이 차단됩니다.")
@@ -391,6 +404,15 @@ class RunViewModel:
                 False, "warn",
                 f"미입력 {len(unmet)}필드의 배지를 눌러 확인해야 문서 생성이 가능합니다: "
                 f"{', '.join(unmet)}",
+            )
+        if not out_dir:
+            return GateState(False, "warn", "저장 폴더를 지정하세요.")
+        if not indices:
+            return GateState(False, "warn", "생성할 레코드를 최소 1건 선택하세요.")
+        if self.template_override and len(indices) != 1:
+            return GateState(
+                False, "warn",
+                "기존 문서 이어채우기는 레코드 1건만 지원합니다 — 레코드를 1건만 선택하세요.",
             )
         return GateState(True, "", "")
 
@@ -420,6 +442,14 @@ class RunViewModel:
     def acknowledge(self, field: str) -> None:
         """미입력 필드를 사용자가 직접 확인함(강제 상호작용)."""
         self._acked.add(field)
+
+    def unacknowledge(self, field: str) -> None:
+        """미입력 확인을 **제자리에서 철회**(UD-19: ack 칩 재클릭 토글).
+
+        원클릭 즉시 확정이 오클릭도 비가역 결정으로 승격시키던 결함을 푼다 — 철회하면
+        게이트가 다시 닫혀(unmet 재계상) 확인의 의미가 보전된다(확인-또는-경보).
+        """
+        self._acked.discard(field)
 
     def reset_acks(self) -> None:
         """확인 상태 초기화(새 데이터 겨눔 등)."""

@@ -160,6 +160,9 @@ class DatasetPoolPanel(QMainWindow):
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "오류", f"작업 실패:\n{exc}")
             return
+        # 상태 전이(삭제·보관·활성화 등)로 서술 대상이 바뀌었다 — 이전 '등록 완료: X'
+        # 성공 문구가 현재 상태처럼 잔존하지 않게 결과 라벨을 리셋한다(UD-10).
+        self.lbl_result.setText("")
         self.pool_changed.emit()
 
     # ------------------------------------------------------------- 등록

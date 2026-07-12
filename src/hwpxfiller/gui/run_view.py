@@ -166,6 +166,9 @@ class RunView(QMainWindow):
         self.ed_out = QLineEdit()
         if job.template_path:
             self.ed_out.setText(str(Path(job.template_path).parent / "Results"))
+        # 저장 폴더는 게이트 전제조건(UD-06) — 편집 시 게이트를 다시 평가해 '버튼
+        # 비활성 + 인라인 사유'가 즉시 반영되게 한다.
+        self.ed_out.textChanged.connect(self._sync_generate_enabled)
         btn_out = QPushButton("찾아보기…")
         btn_out.clicked.connect(self._pick_out)
         orow.addWidget(QLabel("저장 폴더"), 0, 0)
@@ -329,10 +332,19 @@ class RunView(QMainWindow):
         """데이터 겨눔 공통 꼬리 — 라벨 표시 + 레코드 선택기 채움 + 사전검증/패널 갱신.
 
         set_records 가 selectionChanged 를 쏘아 _on_selection_changed(사전검증+패널)를 부른다.
+        서술 대상(데이터)이 바뀌었으므로 이전 실행의 결과 표면을 먼저 리셋한다
+        (UD-10: 완료 후 재겨눔 시 스테일 '완료' 요약·만충 진행바가 현재 상태처럼 잔존하던 결함).
         """
+        self._reset_result_surface()
         self.ed_data.setText(label)
         self.selector.set_records(self.vm.records, self.job.filename_pattern)
         self._on_selection_changed()
+
+    def _reset_result_surface(self) -> None:
+        """결과 라벨·진행바를 초기화(UD-10) — 서술 대상 변경 이벤트에 결과 수명주기를 결합."""
+        self.lbl_result.setText("")
+        mark(self.lbl_result, "level", "")
+        self.progress.setValue(0)
 
     def _on_selection_changed(self) -> None:
         """행 선택/데이터가 바뀌면 사전검증·인라인 필드 패널·생성 게이트를 다시 계산."""
@@ -344,6 +356,10 @@ class RunView(QMainWindow):
             item = self.badge_flow.takeAt(0)
             w = item.widget() if item is not None else None
             if w is not None:
+                # UD-32 제품 방어: 지연 삭제(deleteLater) 전에 즉시 숨기고 부모에서 떼어
+                # 구세대 칩이 DeferredDelete 처리 전까지 유령으로 잔존하지 않게 한다.
+                w.hide()
+                w.setParent(None)
                 w.deleteLater()
 
     def _refresh_field_panel(self) -> None:
@@ -353,10 +369,19 @@ class RunView(QMainWindow):
         만들던 모순 신호(상단 '통과' 녹색 + 하단 드리프트 차단)와 표시면별 재질의의
         템플릿 zip 5회 재파싱을 함께 해소.
         """
-        snap = self.vm.refresh(self.selector.selected_indices())
+        snap = self.vm.refresh(
+            self.selector.selected_indices(), self.ed_out.text().strip()
+        )
         mark(self.lbl_preflight, "level", snap.preflight.level)
         self.lbl_preflight.setText(snap.preflight.text)
         self._clear_badges()
+        if not snap.field_states:
+            # 빈 상태 안내(UD-06 · ADR-B '빈 공간으로 보이면 안 됨') — 데이터 미겨눔이면
+            # 배지 영역이 통째 공백이 아니라 다음 행동을 발화한다.
+            hint = QLabel("데이터를 선택하면 필드별 채움 상태가 여기에 표시됩니다.")
+            hint.setWordWrap(True)
+            mark(hint, "muted", True)
+            self.badge_flow.addWidget(hint)
         for st in snap.field_states:
             if st.state == "filled":
                 chip = QLabel(f"✓ {st.name}")
@@ -372,9 +397,14 @@ class RunView(QMainWindow):
                 mark(chip, "fb", "drift")
                 chip.setEnabled(False)
             elif st.acknowledged:
+                # UD-19: 확정 ack 도 활성 토글 — 재클릭으로 제자리 철회(비가역 원클릭 해소).
                 chip = QPushButton(f"✓ {st.name} — 미입력 표시 예정")
                 mark(chip, "fb", "ack")
-                chip.setEnabled(False)
+                chip.setCursor(Qt.PointingHandCursor)
+                chip.setToolTip("다시 눌러 확인을 취소합니다(게이트가 다시 닫힙니다).")
+                chip.clicked.connect(
+                    lambda _checked=False, f=st.name: self._unack_field(f)
+                )
             else:
                 chip = QPushButton(f"● {st.name} — 미입력 확인")
                 mark(chip, "fb", "missing")
@@ -388,6 +418,11 @@ class RunView(QMainWindow):
         self.vm.acknowledge(field)
         self._refresh_field_panel()
 
+    def _unack_field(self, field: str) -> None:
+        """ack 칩 재클릭 = 확인 철회(UD-19 토글) — 게이트가 다시 닫힌다."""
+        self.vm.unacknowledge(field)
+        self._refresh_field_panel()
+
     def _apply_gate(self, gate) -> None:
         """링1 게이트 결정(GateState)을 그대로 렌더 — 판정·문구 재조립 금지(RC-23)."""
         self.btn_generate.setEnabled(gate.enabled and not self._running)
@@ -396,7 +431,9 @@ class RunView(QMainWindow):
 
     def _sync_generate_enabled(self) -> None:
         """게이트만 재평가(teardown 후 버튼 복원 등) — 결정은 vm.gate_state 단일 출처."""
-        self._apply_gate(self.vm.gate_state(self.selector.selected_indices()))
+        self._apply_gate(self.vm.gate_state(
+            self.selector.selected_indices(), self.ed_out.text().strip()
+        ))
 
     def _pick_out(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "저장 폴더 선택")
