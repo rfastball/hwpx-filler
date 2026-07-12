@@ -31,8 +31,8 @@ fast-forward 병합**.
 웨이브 2/3 (ADR L 축확정 — L1 독립 착지 가능):
   L1 전건커버+대칭차 드리프트(오라벨 닫음) → L2 원장 export+소스프로파일링(C1 필요·D-8 해동)
 
-수요 파킹 (ADR K 조립 파이프라인 — 지금 비-목표):
-  K 다소스 조립(Power-Query식·DuckDB 선호) — 실 2+소스 워크플로 나타날 때 착수
+ADR K 착수 (조립 파이프라인 — 2유닛 분할):
+  KA 조립 코어(격리 리프, 자율 후보·petl·merge+append) │ KB 쿼리빌더 GUI(직렬, 웨이브 2/3)
 ```
 
 ## 의존 그래프
@@ -50,7 +50,7 @@ J1a(txt인라인) ──(독립)
 [ADR J 확정] ─▶ J1(데이터셋풀) ─▶ J2(매트릭스실행)
                             └──▶ J3
 [ADR L 축확정] ─▶ L1(전건커버+대칭차, 독립) ─▶ L2(원장 export+프로파일링)  [C1 필요]  ← run_state 오라벨 구멍 닫음
-[ADR K 확정·수요파킹] ── K(조립 파이프라인)  ── 수요 게이트, 지금 미착수
+[ADR K 착수] ─▶ KA(조립 코어, 격리 리프)  ─▶ KB(쿼리빌더 GUI)  [J1 필요·데이터셋 풀 표면]
 ```
 
 ---
@@ -406,7 +406,7 @@ J1a(txt인라인) ──(독립)
 `UI_DESIGN_DECISIONS.md` ADR J §축확정 — **J-축 3결정 닫힘**:
 1. 잡 경계 = **한 겹** (조합은 일회·저장 안 함; durable = 잡·데이터셋참조·매핑 베이스 3풀).
    "가공방식 저장" 요구는 데이터가 아니라 **매핑 베이스 + [ADR K](UI_DESIGN_DECISIONS.md)
-   파이프라인 레시피**가 흡수(데이터는 참조만). 조인/조립은 **ADR K로 분리**(수요 파킹).
+   파이프라인 레시피**가 흡수(데이터는 참조만). 조인/조립은 **ADR K로 분리·착수**(2026-07-12).
 2. "공유 소스 어휘" 소유 = 소스-측 닫힘(NARA_ALIASES 탈하드코딩); 잔여 = 출력측 정준
    네임스페이스(템플릿 합집합 vs 별도 vocab, J3 착수 시 확정).
 3. 풀 저장 위치 = **홈 레지스트리**(`~/.hwpxfiller/`, 매핑 프로파일 레지스트리 흡수).
@@ -433,16 +433,45 @@ J1a(txt인라인) ──(독립)
 공란 항목·`run_state`(대칭차 라벨링)·`core/fill_ledger.py`(신규) 예상. 경계: **값 미리보기 ≠ HWPX
 렌더(ADR C 불변)**. **의존:** effective-mapping 평가는 J3와, 소스-구조 처방은 J1과 정합 전제.
 
-# ⏸ 수요 파킹 — ADR K (조립 파이프라인)
+# ▶ 착수 — ADR K (조립 파이프라인) · 2유닛 분할
 
-ADR K는 **목표 형태 확정·구현 파킹**(착수 조건 = **수요**, 철학 아님). 다소스 조립(여러 원천 →
-하나의 `DataSource`)이 필요해질 때 **Power-Query식 파이프라인**으로 착지(추론 엔진 아님, 사람이
-저작·미리보기). 후보 엔진 DuckDB 선호(구현 시 결정). **`AssemblyEngine` 프로토콜 + 교체점**
-(`format_engine` 선례) = 착지 이음새, `data/factory.py` `"pipeline"` kind.
+**착수 확정(2026-07-12, 사용자):** "최소 표면 GUI 쿼리빌더 = 제품 필수·실수요 있음" 판단으로
+수요 게이트 충족. 종전 "자율 에이전트 대상 아님"은 **제품 위험(슬롯 발명)** 근거였고, 그 위험이
+걷혔으므로 **K-코어는 이제 자율 에이전트 후보**다(기술적으로 늘 이음새 아래 격리 가능했음).
+확정 내용 = `UI_DESIGN_DECISIONS.md` ADR K "착수 시 4결정"(엔진 petl·데이터셋 하위종류·
+v1 스텝셋 merge+append·2유닛 분할).
 
-→ **지금 비-목표.** 현 코퍼스 근거는 *한 소스 → 여러 템플릿 부분집합 투영*(J 어휘 케이스)이지
-다소스 조인이 아님. 실 2+소스 워크플로(나라 세부 op·ERP API) 나타날 때 착수. 수요 없이 착수 =
-"능력 없는 슬롯 발명"(핸드오프 관통 경고) 위험 최대라 **자율 에이전트 대상 아님**.
+## KA — 조립 코어 (격리 리프, 자율 에이전트 후보)
+
+- **목적.** 여러 소스 → 하나의 `DataSource`. Power-Query식 파이프라인의 이음새-아래 코어.
+- **범위.** **신규** `core/assembly.py`(or `data/pipeline.py`): **`AssemblyEngine` 프로토콜**
+  (`format_engine.ENGINE` 선례) + **petl/agate 구현**(경량 순수파이썬 — DuckDB는 후일 raw-SQL
+  실수요 시 교체) + `PipelineSource(DataSource)`. v1 스텝 = **merge(키 조인)+append(union)**
+  (filter·select/rename은 고급 접기, raw SQL v1 밖). `data/factory.py`: `make_source` `"pipeline"`
+  분기 + `source_from_pool_item` **재귀 복원**.
+- **파일.** 신규 `core/assembly.py`(or `data/pipeline.py`), `data/factory.py`(가산). `dataset_pool.py`
+  **무접촉**(kind 불가지 — 신규 kind는 코어 변경 0).
+- **의존.** J1(데이터셋 풀 — 병합됨). **선확정 계약**: 풀 항목 `{kind:"pipeline",
+  opts:{sources:[<sub-ref>...], steps:[<recipe>]}}` + 재귀 복원이 나라 sub-source에서 기존 SecretStore
+  키 주입 상속(make_source 직결 우회 금지).
+- **병렬가능.** 전부(파일 서로소, P1/K1/C1 몰드). 게이트 ff 병합.
+- **인수조건.** `records()/fields()` 계약, merge(inner/left 명시)·append 시맨틱, degrade(스텝 실패 시
+  원본·시끄럽게), 파이프라인 풀 항목 라운드트립(참조만·스냅샷 없음), 나라 sub-source 키 주입 재귀.
+- **비-목표.** GUI(KB). 범용 ETL(스텝셋 팽창 = 슬롯 발명 신호, 정지). 추론 자동조인(제안+게이트만).
+
+## KB — 비주얼 쿼리빌더 GUI (직렬, 웨이브 2/3)
+
+- **목적.** 최소 표면 GUI 쿼리빌더 — 데이터셋 풀에서 파이프라인 저작·미리보기.
+- **범위.** J1 데이터셋 풀 표면에 `엑셀 | 나라 | **파이프라인**` 선택지 추가. 스텝 리스트(merge/append)
+  + WYSIWYG 미리보기 + **공유키 감지 → merge 제안(제안 전용·미리보기·사람 확정, ADR D)**. merge 키
+  = **구조축(schema)**, 표시축 preset 아님(UnivContractor #2). 추측 조인 자동실행 금지.
+- **파일.** `gui/dataset_pool_panel.py`·`gui/dataset_pool_state.py`(핫스팟), 경우에 따라 `gui/home.py`.
+- **의존.** **KA**(코어) + J1. **웨이브 2/3.** J1/C4/N2 핫스팟 뒤 직렬.
+- **인수조건.** 파이프라인 풀 항목 저작→저장(참조만)→실행 재읽기, merge 제안이 게이트(자동실행 안 함),
+  미리보기가 생성과 동일 파이프라인 공유(divergence 0, UnivContractor #3).
+- **비-목표.** raw SQL 편집(v1 밖). 범용 ETL 위젯.
+
+- **근거.** `UI_DESIGN_DECISIONS.md` ADR K(착수 4결정 전문).
 
 # 워크트리 환경 (uv — 각 에이전트 선행)
 
