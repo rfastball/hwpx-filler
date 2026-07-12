@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from lxml import etree
 
+from hwpxcore.text_extract import _to_package
+
 HP_NS = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 _NSMAP = {"hp": HP_NS}
 
@@ -26,6 +28,16 @@ def _local(tag: object) -> str:
     if not isinstance(tag, str):
         return ""
     return tag.rsplit("}", 1)[-1]
+
+
+def _clean_field_name(raw: object) -> str:
+    """누름틀 이름의 공백과 선택적 ``{{..}}`` 표기를 정규화한다."""
+    if not isinstance(raw, str):
+        return ""
+    name = raw.strip()
+    if name.startswith("{{") and name.endswith("}}"):
+        name = name[2:-2].strip()
+    return name
 
 
 class FieldDocument:
@@ -46,13 +58,54 @@ class FieldDocument:
         """문서 내 모든 누름틀 이름을 중복 없이 반환. ``{{..}}`` 는 벗겨서."""
         seen: dict[str, None] = {}
         for node in self._tree.iterfind(f".//{{{HP_NS}}}fieldBegin"):
-            name = (node.get("name") or "").strip()
-            if not name:
-                continue
-            name = name.replace("{{", "").replace("}}", "")
+            name = _clean_field_name(node.get("name"))
             if name and name not in seen:
                 seen[name] = None
         return list(seen)
+
+    # --------------------------------------------------------------- read
+    def read_field(self, field_name: str) -> "str | None":
+        """첫 ``field_name`` 누름틀의 현재 값을 반환한다.
+
+        값은 ``fieldBegin`` 뒤부터 ``fieldEnd`` 앞까지 등장하는 모든 ``hp:t``
+        파편을 문서 순서대로 이어 붙인다. 이름은 ``NAME`` 과 ``{{NAME}}`` 표기를
+        동일하게 취급하며, 해당 필드가 없을 때만 ``None`` 을 반환한다.
+        """
+        clean = _clean_field_name(field_name)
+        for begin in self._tree.iterfind(f".//{{{HP_NS}}}fieldBegin"):
+            if _clean_field_name(begin.get("name")) == clean:
+                return self._read_one(begin)
+        return None
+
+    def _read_one(self, begin: etree._Element) -> str:
+        """단일 ``fieldBegin`` 과 짝을 이루는 종료 지점 사이의 텍스트를 읽는다."""
+        ctrl = begin.getparent()
+        run = ctrl.getparent() if ctrl is not None and _local(ctrl.tag) == "ctrl" else ctrl
+        if run is None or _local(run.tag) != "run":
+            return ""
+
+        parts: "list[str]" = []
+        found_begin = False
+        current = run
+        while current is not None and _local(current.tag) == "run":
+            stop = False
+            for inner in current:
+                if not found_begin and (inner is ctrl or inner is begin):
+                    found_begin = True
+                if not found_begin:
+                    continue
+                name = _local(inner.tag)
+                if name == "t":
+                    parts.append("".join(inner.itertext()))
+                elif name == "ctrl" and any(
+                    _local(child.tag) == "fieldEnd" for child in inner
+                ):
+                    stop = True
+                    break
+            if stop:
+                break
+            current = current.getnext()
+        return "".join(parts)
 
     # ------------------------------------------------------------- inject
     def set_field(self, field_name: str, new_value: str) -> bool:
@@ -126,3 +179,20 @@ class FieldDocument:
             encoding="UTF-8",
             standalone=True,
         )
+
+
+def read_fields(pkg_or_path: object) -> "dict[str, str]":
+    """HWPX 패키지(경로/바이트/객체)의 모든 누름틀 현재 값을 반환한다.
+
+    같은 이름이 여러 번 등장하면 문서 순서상 첫 값을 사용한다. ``set_field`` 는 같은
+    이름의 모든 누름틀을 함께 갱신하므로 정상 템플릿에서는 값이 동일하다.
+    """
+    pkg = _to_package(pkg_or_path)
+    values: "dict[str, str]" = {}
+    for xml_name in pkg.content_xml_names():
+        doc = FieldDocument(pkg.entries[xml_name])
+        for field_name in doc.required_fields():
+            value = doc.read_field(field_name)
+            if value is not None:
+                values.setdefault(field_name, value)
+    return values
