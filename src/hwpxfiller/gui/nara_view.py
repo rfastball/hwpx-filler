@@ -34,11 +34,15 @@ from PySide6.QtWidgets import (
 
 from .confirm import confirm_destructive
 from .nara_state import DT_FMT, NaraAcquireViewModel
-from .style import mark
+from .style import BASE_QSS, mark
 from .worker import TaskWorker
 
 # QDateTimeEdit 표시/파싱 포맷 — VM 의 DT_FMT(YYYYMMDDHHMM)와 1:1(strptime 호환).
 _QT_DT_FMT = "yyyyMMddHHmm"
+
+# 게이트 규칙 상시 안내(UD-09) — 취득 전/무효화 후 OK 잠금 사유를 화면이 늘 말한다.
+# 사용자 행동 뒤에만 사유가 출현하던 침묵을 해소한다(확인-또는-경보의 시각형).
+_GATE_HINT = "기간을 정해 가져오기를 실행하면 확인이 열립니다 — 취득 성공이 수용의 전제입니다."
 
 
 class NaraAcquireDialog(QDialog):
@@ -62,11 +66,15 @@ class NaraAcquireDialog(QDialog):
 
         self.setWindowTitle("나라장터에서 데이터 가져오기")
         self.resize(560, 460)
+        # BASE_QSS 자기 적용(UD-35) — 형제 창(pipeline_builder.py:49) 미러. 무부모/비스타일
+        # 문맥에서도 primary 위계·danger 실패색·카드 룩이 부모 상속 없이 유지된다.
+        self.setStyleSheet(BASE_QSS)
         root = QVBoxLayout(self)
 
         root.addWidget(self._build_key_group())
         root.addWidget(self._build_search_group())
 
+        # 초기부터 게이트 규칙을 muted 로 상시 발화(UD-09) — 취득 성공 시 요약으로 교체된다.
         self.lbl_result = QLabel("")
         self.lbl_result.setWordWrap(True)
         root.addWidget(self.lbl_result)
@@ -77,6 +85,10 @@ class NaraAcquireDialog(QDialog):
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         self._ok_button().setEnabled(False)
+        # 비활성 확인 버튼의 잠금 사유를 툴팁으로도 상시 전달(UD-09, RC-36 툴팁 패턴 재사용).
+        self._ok_button().setToolTip(
+            "취득에 성공해야 열립니다 — 기간을 정해 '가져오기'를 실행하세요."
+        )
         root.addWidget(self.buttons)
 
         # 취득 성공 뒤 기간·건수 편집 → 스냅샷과 입력이 어긋남 — OK 게이트 무효화(RC-13).
@@ -87,6 +99,7 @@ class NaraAcquireDialog(QDialog):
         self.spin_page.valueChanged.connect(self._on_query_edited)
 
         self._sync_key_ui()
+        self._show_gate_hint()  # 취득 전부터 잠금 사유를 화면이 말하게(UD-09)
 
     # ------------------------------------------------ 취득 산출물(원자 스냅샷 파생)
     # 전부 vm.last_result(성공 or None)에서 파생 — 실패·편집 시 4속성 부분 잔존 불가(RC-24).
@@ -148,6 +161,9 @@ class NaraAcquireDialog(QDialog):
 
         action_row = QHBoxLayout()
         self.btn_delete = QPushButton("삭제")
+        # 파괴(삭제) 버튼 danger 마킹(UD-12 위탁 수령) — QPushButton[level="danger"]
+        # 셀렉터는 V2 신설 대기(현재는 죽은 마크, 셀렉터 착지 시 자동 소생).
+        mark(self.btn_delete, "level", "danger")
         self.btn_delete.clicked.connect(self._on_delete_key)
         self.btn_test = QPushButton("연결 시험")
         self.btn_test.clicked.connect(self._on_test)
@@ -193,9 +209,12 @@ class NaraAcquireDialog(QDialog):
         self.btn_retry = QPushButton("다시 시도")
         self.btn_retry.clicked.connect(self._on_acquire)
         self.btn_retry.setEnabled(False)
+        # 비활성 사유 상시 발화(UD-09) — '가져오기'를 한 번 실행해야 재시도가 열린다.
+        self.btn_retry.setToolTip("'가져오기'를 한 번 실행한 뒤 같은 조건으로 다시 시도합니다.")
         # 진행 중 요청 중지(RC-12) — 도착할 결과를 폐기하고 UI 를 즉시 복원한다.
         self.btn_stop = QPushButton("중지")
         self.btn_stop.setEnabled(False)
+        self.btn_stop.setToolTip("취득이 진행 중일 때만 중지할 수 있습니다.")
         self.btn_stop.clicked.connect(self._on_stop_fetch)
         btn_row.addWidget(self.btn_acquire)
         btn_row.addWidget(self.btn_retry)
@@ -207,6 +226,22 @@ class NaraAcquireDialog(QDialog):
     # ------------------------------------------------------------------ helpers
     def _ok_button(self) -> QPushButton:
         return self.buttons.button(QDialogButtonBox.Ok)
+
+    def _set_result(self, text: str, level: str = "") -> None:
+        """결과 라벨에 상태 문구를 쓴다 — muted(게이트 안내)를 걷어내고 level 색을 적용.
+
+        muted 와 level 은 같은 QLabel 셀렉터 특이도라 동시 지정 시 뒤 규칙이 색을
+        덮는다 — 상태 문구를 쓸 땐 muted 를 반드시 해제한다(색 신호 소실 방지).
+        """
+        mark(self.lbl_result, "muted", False)
+        mark(self.lbl_result, "level", level)
+        self.lbl_result.setText(text)
+
+    def _show_gate_hint(self) -> None:
+        """게이트 규칙을 muted 로 상시 발화(UD-09) — 취득 전/무효화 후 잠금 사유 표기."""
+        mark(self.lbl_result, "level", "")
+        mark(self.lbl_result, "muted", True)
+        self.lbl_result.setText(_GATE_HINT)
 
     def _sync_key_ui(self) -> None:
         """등록 상태를 라벨·버튼 문구에 반영(등록됨→'교체', 미등록→'등록')."""
@@ -278,8 +313,7 @@ class NaraAcquireDialog(QDialog):
         self._fetch_seq += 1
         self._retry_available = True
         self._set_busy(True)
-        mark(self.lbl_result, "level", "")
-        self.lbl_result.setText("가져오는 중… (중지 가능)")
+        self._set_result("가져오는 중… (중지 가능)")
         self._spawn_task(
             lambda: self.vm.acquire_result(bgn, end, num_rows=num_rows, page_no=page_no),
             self._apply_acquire_result,
@@ -288,8 +322,7 @@ class NaraAcquireDialog(QDialog):
     def _apply_acquire_result(self, res) -> None:
         self.vm.commit(res)  # 커밋은 UI 스레드에서만 — 편집/중지와 경합하지 않는다
         self._set_busy(False)
-        mark(self.lbl_result, "level", "ok" if res.acceptable else "danger")
-        self.lbl_result.setText(res.summary())
+        self._set_result(res.summary(), "ok" if res.acceptable else "danger")
         # 수용성(성공+1건 이상)은 뷰모델 스냅샷이 판정 — 실패/0건이면 last_result 가
         # 원자로 None 이 돼 records/fields/datasource/label 도 함께 비워진다(RC-24).
         self._ok_button().setEnabled(res.acceptable)
@@ -305,8 +338,7 @@ class NaraAcquireDialog(QDialog):
             return
         self._fetch_seq += 1
         self._set_busy(False)
-        mark(self.lbl_result, "level", "warn")
-        self.lbl_result.setText("요청을 중지했습니다 — 도착하는 결과는 무시됩니다.")
+        self._set_result("요청을 중지했습니다 — 도착하는 결과는 무시됩니다.", "warn")
 
     def _on_query_edited(self, *_args) -> None:
         """취득 뒤 기간·건수 편집 — 스냅샷 폐기 + OK 잠금 + 재취득 안내(RC-13).
@@ -321,8 +353,7 @@ class NaraAcquireDialog(QDialog):
             return
         self.vm.invalidate()
         self._ok_button().setEnabled(False)
-        mark(self.lbl_result, "level", "warn")
-        self.lbl_result.setText("입력이 변경됨 — 다시 가져오세요.")
+        self._set_result("입력이 변경됨 — 다시 가져오세요.", "warn")
 
     # -------------------------------------------------------- 백그라운드 태스크(RC-12)
     def _set_busy(self, busy: bool) -> None:
@@ -385,8 +416,7 @@ class NaraAcquireDialog(QDialog):
         if seq != self._fetch_seq:
             return
         self._set_busy(False)
-        mark(self.lbl_result, "level", "danger")
-        self.lbl_result.setText(f"요청 실패: {msg}")
+        self._set_result(f"요청 실패: {msg}", "danger")
 
     def reject(self) -> None:
         # 진행 중 닫기 — 도착할 결과를 폐기시키고 즉시 닫는다(프리즈 없음).

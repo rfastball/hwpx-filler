@@ -197,9 +197,35 @@ def test_dialog_edit_before_acquire_is_noop(qapp):
 
     store = MemorySecretStore({NARA_SERVICE_KEY_NAME: "DUMMY"})
     dlg = _dialog(store, lambda url: _fixture_bytes())
+    before = dlg.lbl_result.text()  # UD-09: 초기부터 게이트 사유가 발화돼 있다
     dlg.spin_page.setValue(3)
     assert not dlg.buttons.button(QDialogButtonBox.Ok).isEnabled()
-    assert dlg.lbl_result.text() == ""
+    assert dlg.lbl_result.text() == before  # 편집은 사유 문구를 바꾸지 않는다(무영향)
+
+
+def test_dialog_initial_gate_reason_is_always_spoken(qapp):
+    """UD-09: 초기 상태에서 OK 잠금 사유가 라벨(muted)·툴팁으로 상시 발화된다."""
+    from PySide6.QtWidgets import QDialogButtonBox
+
+    from hwpxfiller.gui.nara_view import _GATE_HINT
+
+    store = MemorySecretStore({NARA_SERVICE_KEY_NAME: "DUMMY"})
+    dlg = _dialog(store, lambda url: _fixture_bytes())
+
+    # 사용자 행동 전부터 사유가 화면에 있다(침묵 해소).
+    assert dlg.lbl_result.text() == _GATE_HINT
+    assert dlg.lbl_result.property("muted") is True
+    ok = dlg.buttons.button(QDialogButtonBox.Ok)
+    assert not ok.isEnabled()
+    assert ok.toolTip()                 # 비활성 확인 버튼 잠금 사유 툴팁
+    assert dlg.btn_retry.toolTip()      # 재시도 잠금 사유
+    assert dlg.btn_stop.toolTip()       # 중지 잠금 사유
+
+    # 취득 성공 → 라벨이 요약(muted 해제)으로 교체되고 게이트가 열린다.
+    _acquire(dlg)
+    assert dlg.lbl_result.text() != _GATE_HINT
+    assert not dlg.lbl_result.property("muted")
+    assert ok.isEnabled()
 
 
 def test_query_options_is_acquire_time_snapshot_or_loud_failure(qapp):
