@@ -91,6 +91,31 @@ def test_jobrow_from_job_direct():
     assert row.name == "x" and row.template_name == "—" and row.field_count == 0
 
 
+def test_corrupt_job_file_surfaces_as_corrupt_row_not_crash(tmp_path):
+    """손상 .job.json → 홈 VM 이 죽지 않고 '손상됨' 행으로 시끄럽게 노출한다(RC-05)."""
+    reg = _reg(tmp_path)
+    (tmp_path / "깨진작업.job.json").write_text('{"name": "깨진', encoding="utf-8")
+
+    vm = HomeViewModel(reg)  # 생성자 refresh 가 JSONDecodeError 로 죽지 않는다
+    assert {r.name for r in vm.rows()} == {"공고서", "낙찰"}  # 정상 작업은 계속 표시
+    crows = vm.corrupt_rows()
+    assert len(crows) == 1
+    assert crows[0].file_name == "깨진작업.job.json"  # 원인 파일 지목
+    assert crows[0].error                              # 오류 사유 동반
+    assert "읽을 수 없습니다" in crows[0].detail_line()
+
+
+def test_only_corrupt_files_is_not_empty_state(tmp_path):
+    """손상 파일만 있어도 빈 상태로 위장하지 않는다 — 손상 행이 보여야 한다(RC-05)."""
+    jobs_dir = tmp_path / "jobs"
+    jobs_dir.mkdir()
+    (jobs_dir / "부서진.job.json").write_text("[1, 2, 3]", encoding="utf-8")
+    vm = HomeViewModel(JobRegistry(jobs_dir))
+    assert vm.rows() == []
+    assert vm.corrupt_rows()
+    assert not vm.is_empty()  # 빈 상태 패널 대신 손상 행이 노출돼야 한다
+
+
 def test_dashboard_kpi_from_real_data(tmp_path):
     from hwpxfiller.core.text_registry import TextTemplateRegistry
 

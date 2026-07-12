@@ -230,3 +230,74 @@ def test_filled_values_preview_reads_c1_fields(tmp_path):
     )
     vm = TemplateManagerViewModel(paths=[path])
     assert vm.filled_values(str(path)) == {"계약명": "정보시스템 구축"}
+
+
+# ============================================ RC-14 — 기본 라이브러리·빈상태·성형
+def test_default_templates_dir_honors_env_override(monkeypatch, tmp_path):
+    """링0 기본 템플릿 라이브러리 루트 — HWPXFILLER_HOME 재지정(기존 루트 4종 미러)."""
+    from hwpxfiller.core.template_status import default_templates_dir
+
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    assert default_templates_dir() == tmp_path / "templates"
+
+
+def test_vm_lint_accepts_vocabulary(tmp_path):
+    """VM.lint(path, vocabulary=None) 가 코어 lint_template 시그니처와 정렬(RC-14).
+
+    통제 어휘를 주면 어휘 밖 필드명이 off_vocabulary 로 신고된다 — CLI --vocab 과
+    GUI 위생 점검 범위 동등.
+    """
+    path = _write_compiled(
+        tmp_path / "v.hwpx",
+        "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>",
+    )
+    vm = TemplateManagerViewModel(paths=[path])
+    assert "off_vocabulary" not in {f.kind for f in vm.lint(str(path)).findings}  # 기본: 어휘 검사 없음
+    report = vm.lint(str(path), vocabulary=["표준필드명"])
+    assert "off_vocabulary" in {f.kind for f in report.findings}
+
+
+def test_vm_set_library_dir_and_empty_hint_distinguish_missing_vs_empty(tmp_path):
+    """'폴더 없음'과 '빈 폴더'를 구분 안내하고, 폴더 재지정이 재스캔한다(RC-14 W6)."""
+    missing = tmp_path / "없는폴더"
+    vm = TemplateManagerViewModel(library_dir=missing)
+    assert vm.is_empty()
+    assert "폴더가 없습니다" in vm.empty_hint()
+    assert str(missing) in vm.empty_hint()  # 어느 폴더인지 지목
+
+    empty = tmp_path / "빈폴더"
+    empty.mkdir()
+    vm.set_library_dir(empty)
+    assert vm.is_empty()
+    assert "템플릿이 없습니다" in vm.empty_hint()  # 폴더는 있으나 .hwpx 없음
+
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    _write_raw(lib / "t.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")
+    vm.set_library_dir(lib)
+    assert not vm.is_empty()  # 재지정 → 재스캔
+
+
+def test_vm_result_formatting_lives_in_ring1_and_names_target(tmp_path):
+    """결과 문구 성형 4종은 링1 소유 — 대상 템플릿명 포함, severity 한국어(RC-14)."""
+    raw = _write_raw(
+        tmp_path / "raw.hwpx",
+        "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>",
+    )
+    vm = TemplateManagerViewModel(paths=[raw])
+
+    lint_text = vm.format_lint_result(str(raw), vm.lint(str(raw)))
+    assert "raw.hwpx" in lint_text
+    assert "[경고]" in lint_text          # severity 영문 원시 노출 금지
+    assert "[warning]" not in lint_text
+
+    preview_text = vm.format_preview_result(str(raw), {"계약명": "값"})
+    assert "raw.hwpx" in preview_text and "계약명 = 값" in preview_text
+    assert "raw.hwpx" in vm.format_preview_result(str(raw), {})  # 빈 값도 대상 명시
+
+    report = vm.apply_fieldize(str(raw))
+    compile_text = vm.format_compile_result(str(raw), report)
+    assert "raw.hwpx" in compile_text and "필드 1개 추가" in compile_text
+
+    drift_text = vm.format_drift_result(str(raw), str(raw), vm.drift(str(raw), str(raw)))
+    assert "raw.hwpx" in drift_text and "변화 없음" in drift_text

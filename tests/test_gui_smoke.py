@@ -368,22 +368,156 @@ def test_template_manager_compile_dry_run_then_apply(qapp, tmp_path, monkeypatch
     assert panel.list.count() == 1  # 재렌더됨
 
 
-def test_app_controller_opens_template_manager_and_routes_make_job(qapp, tmp_path):
-    """app.py 라우팅 — 관리 패널 개방 + '작업 만들기' → 템플릿 시드 새 에디터."""
+def test_home_template_button_emits_manage_templates(qapp, tmp_path):
+    """홈 헤더 [템플릿 관리] 버튼 = manage_templates_requested — 워크숍 진입점(RC-04)."""
     from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.home import JobListHome
+
+    home = JobListHome(JobRegistry(tmp_path))
+    emitted = []
+    home.manage_templates_requested.connect(lambda: emitted.append(True))
+    home.btn_templates.click()
+    assert emitted
+
+
+def test_app_controller_wires_all_home_routes_via_signal_emit(qapp, tmp_path, monkeypatch):
+    """배선 완결성 전수(RC-04) — 사용자 경로(홈 시그널 emit) 기점으로 전 라우트 검증.
+
+    과거 hasattr 전방호환 가드 + 내부 메서드 직접 호출 테스트가 홈 측 시그널 미착지를
+    3중으로 은폐했다 — 여기서는 emit 이 실제로 자식 창을 여는지 라우트별로 못박는다
+    (배선이 빠지면 _AppController 생성 자체가 AttributeError 로 시끄럽게 실패).
+    """
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))  # 표준 루트 전부 임시 홈으로
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.app import _AppController
+    from hwpxfiller.gui.dataset_pool_panel import DatasetPoolPanel
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+    from hwpxfiller.gui.matrix_view import MatrixRunView
+    from hwpxfiller.gui.template_manager import TemplateManagerPanel
+    from hwpxfiller.gui.txt_view import TxtDraftView
+    from hwpxfiller.gui.vocab_workbench import VocabWorkbenchPanel
+
+    ctrl = _AppController(JobRegistry(tmp_path / "jobs"))
+    routes = [
+        ("new_job_requested", JobEditorWizard),
+        ("new_txt_requested", TxtDraftView),
+        ("manage_templates_requested", TemplateManagerPanel),
+        ("manage_pool_requested", DatasetPoolPanel),
+        ("matrix_run_requested", MatrixRunView),
+        ("manage_vocab_requested", VocabWorkbenchPanel),
+    ]
+    for sig, cls in routes:
+        getattr(ctrl.home, sig).emit()
+        opened = [c for c in ctrl._children if isinstance(c, cls)]
+        assert opened, f"{sig} emit 이 {cls.__name__} 을(를) 열지 못했다(배선 부재)"
+
+
+def test_template_manager_route_seeds_default_library_and_make_job(qapp, tmp_path, monkeypatch):
+    """emit → 패널이 기본 라이브러리를 겨눔(RC-14) + '작업 만들기' → 템플릿 시드 에디터."""
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.core.template_status import default_templates_dir
     from hwpxfiller.gui.app import _AppController
     from hwpxfiller.gui.job_editor import JobEditorWizard
     from hwpxfiller.gui.template_manager import TemplateManagerPanel
 
-    ctrl = _AppController(JobRegistry(tmp_path))
-    ctrl._open_template_manager(str(tmp_path))
+    ctrl = _AppController(JobRegistry(tmp_path / "jobs"))
+    ctrl.home.manage_templates_requested.emit()
     panels = [c for c in ctrl._children if isinstance(c, TemplateManagerPanel)]
     assert len(panels) == 1
+    assert panels[0].vm.library_dir == default_templates_dir()  # 백지(None) 금지
 
-    ctrl._open_editor_from_template("/lib/tpl.hwpx")
+    panels[0].make_job_requested.emit("/lib/tpl.hwpx")
     wizards = [c for c in ctrl._children if isinstance(c, JobEditorWizard)]
     assert len(wizards) == 1
     assert wizards[0].template_path == "/lib/tpl.hwpx"  # 세션에 시드됨
+
+
+def test_open_editor_from_base_failure_is_loud_not_silent(qapp, tmp_path, monkeypatch):
+    """베이스 로드 실패 → 침묵 no-op 이 아니라 경고 모달 + 위저드 미개방(RC-04)."""
+    from PySide6.QtWidgets import QMessageBox
+
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.app import _AppController
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    ctrl = _AppController(JobRegistry(tmp_path / "jobs"))
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: warnings.append(a[2]))
+    ctrl._open_editor_from_base("존재하지-않는-베이스")
+    assert warnings and "존재하지-않는-베이스" in warnings[0]  # 시끄럽게 알림
+    assert not [c for c in ctrl._children if isinstance(c, JobEditorWizard)]  # 창 미개방
+
+
+def test_home_surfaces_corrupt_job_file_as_badge_row(qapp, tmp_path):
+    """절단 .job.json → 홈이 죽지 않고 '손상됨' 배지 카드로 시끄럽게 노출(RC-05)."""
+    from PySide6.QtWidgets import QLabel
+
+    from hwpxfiller.core.job import Job, JobRegistry
+    from hwpxfiller.gui.home import _CorruptJobCard, JobListHome
+
+    reg = JobRegistry(tmp_path)
+    reg.save(Job(name="정상작업", template_path="/t.hwpx"))
+    (tmp_path / "절단.job.json").write_text('{"name": "절단", "template_pa', encoding="utf-8")
+
+    home = JobListHome(reg)  # 생성이 JSONDecodeError 로 죽지 않는다(앱 시작 경로)
+    texts = [home.list.item(i).text() for i in range(home.list.count())]
+    assert "정상작업" in texts                      # 나머지 작업은 정상 표시
+    assert "절단.job.json" in texts                 # 손상 행이 목록에 실재
+    card = home.list.itemWidget(home.list.item(texts.index("절단.job.json")))
+    assert isinstance(card, _CorruptJobCard)
+    joined = " ".join(lbl.text() for lbl in card.findChildren(QLabel))
+    assert "손상됨" in joined                        # 배지
+    assert "절단.job.json" in joined                 # 원인 파일 지목
+    assert home.stack.currentIndex() == 0            # 빈 상태 아님(목록 페이지)
+
+
+def test_template_manager_empty_state_offers_folder_choice(qapp, tmp_path):
+    """빈 라이브러리 → 백지가 아니라 빈상태 안내('폴더 없음' 구분) + 폴더 선택(RC-14)."""
+    from hwpxfiller.gui.template_manager import TemplateManagerPanel
+
+    missing = tmp_path / "없는폴더"
+    panel = TemplateManagerPanel(library_dir=missing)
+    assert panel.stack.currentIndex() == 1                  # 빈 상태 페이지
+    assert "폴더가 없습니다" in panel.lbl_empty_hint.text()  # 원인 구분 안내
+    assert panel.btn_dir.text() == "폴더 선택"               # 헤더 진입 수단
+    assert panel.btn_empty_dir.text() == "폴더 선택"         # 빈 상태 진입 수단
+
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    _hwpx_pkg(_P("계약명: {{계약명}}")).save(str(lib / "t.hwpx"))
+    panel.vm.set_library_dir(lib)  # 다이얼로그 대신 VM 계약 직접 호출(재스캔 경로 동일)
+    assert panel.stack.currentIndex() == 0
+    assert panel.list.count() == 1
+
+
+def test_template_manager_action_failure_is_loud_and_clears_stale_result(
+    qapp, tmp_path, monkeypatch
+):
+    """액션 예외 → critical 모달 + '실패: 파일명+사유' 라벨, 직전 성공 문구 잔존 금지(RC-14)."""
+    from PySide6.QtWidgets import QMessageBox
+
+    from hwpxfiller.gui.template_manager import TemplateManagerPanel
+
+    path = tmp_path / "raw.hwpx"
+    _hwpx_pkg(_P("계약명: {{계약명}}")).save(str(path))
+    panel = TemplateManagerPanel(library_dir=tmp_path)
+    criticals = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a, **k: criticals.append(a[2]))
+
+    panel.lbl_result.setText("컴파일 완료 — 직전 성공 문구")  # 스테일 결과 시뮬레이션
+
+    def _boom(*_a, **_k):
+        raise PermissionError("액세스가 거부되었습니다")
+
+    monkeypatch.setattr(panel.vm, "lint", _boom)
+    panel._dispatch("review", str(path))
+
+    assert criticals                                     # 침묵 소멸 금지 — 모달 통지
+    assert panel.lbl_result.text().startswith("실패:")    # 직전 성공 문구 잔존 금지
+    assert "raw.hwpx" in panel.lbl_result.text()          # 대상 파일명 지목
+    assert "액세스가 거부되었습니다" in panel.lbl_result.text()
 
 
 def test_run_view_instantiates_with_a_job(qapp):

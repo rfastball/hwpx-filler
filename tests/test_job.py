@@ -166,6 +166,25 @@ def test_registry_list_jobs_sorted_by_name(tmp_path):
     assert [j.name for j in reg.list_jobs()] == ["가공고", "나공고"]
 
 
+def test_registry_list_jobs_isolates_corrupt_files(tmp_path):
+    """손상 .job.json 1개가 목록 전체를 죽이지 않는다(RC-05) — 격리 + (경로, 오류) 수집."""
+    reg = JobRegistry(tmp_path)
+    reg.save(_job())
+    # 절단 JSON(비원자 저장 실패의 전형) + 유효 JSON 이지만 dict 아님(from_dict 전제 위반).
+    (tmp_path / "절단.job.json").write_text('{"name": "절단", "template_pa', encoding="utf-8")
+    (tmp_path / "비딕트.job.json").write_text("[1, 2, 3]", encoding="utf-8")
+
+    corrupted: "list[tuple]" = []
+    jobs = reg.list_jobs(corrupted=corrupted)
+    assert [j.name for j in jobs] == ["입찰공고서"]  # 정상 작업은 살아남는다
+    assert {p.name for p, _err in corrupted} == {"절단.job.json", "비딕트.job.json"}
+    assert all(err for _p, err in corrupted)  # 오류 사유가 함께 수집된다
+
+    # 수집 리스트를 안 넘긴 기존 호출측도 예외 전파 없이 정상 작업만 받는다.
+    assert [j.name for j in reg.list_jobs()] == ["입찰공고서"]
+    assert reg.names() == ["입찰공고서"]
+
+
 # ------------------------------------------------------------ 실행 사전검증
 def test_run_request_selected_and_mapped_records():
     """선택 인덱스만, 원본 순서로 → 작업 매핑 적용 결과."""

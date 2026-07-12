@@ -10,11 +10,14 @@ lint/drift 는 전부 :class:`~hwpxfiller.gui.template_manager_state.TemplateMan
 - fieldize: 스캔 미리보기(dry-run) → 명시적 적용(확인 시에만 변환·저장) — CLI 2단계 미러.
 - lint / drift 결과 표시.
 
-라우팅: :class:`~hwpxfiller.gui.app._AppController` 가 이 패널의 수명을 소유하고
-``make_job_requested`` 시그널을 에디터로 연결한다(홈은 건드리지 않는다 — C5 스코프).
+라우팅: 홈 헤더 [템플릿 관리] 버튼 → ``manage_templates_requested`` →
+:class:`~hwpxfiller.gui.app._AppController` 가 이 패널을 열고 수명을 소유하며
+``make_job_requested`` 시그널을 에디터로 연결한다(RC-04 로 홈 진입점 착지).
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
@@ -26,6 +29,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -81,6 +85,12 @@ class TemplateManagerPanel(QMainWindow):
 
     def __init__(self, library_dir=None, parent=None):
         super().__init__(parent)
+        if library_dir is None:
+            # 홈의 기본 레지스트리 주입 관례 미러(RC-14) — 진입점이 폴더를 안 넘겨도
+            # 백지가 아니라 표준 라이브러리(~/.hwpxfiller/templates)를 겨눈다.
+            from ..core.template_status import default_templates_dir
+
+            library_dir = default_templates_dir()
         self.vm = TemplateManagerViewModel(library_dir)
 
         self.setWindowTitle("HWPX Filler — 템플릿 관리")
@@ -98,15 +108,21 @@ class TemplateManagerPanel(QMainWindow):
         header.addWidget(title)
         header.addWidget(self.lbl_count)
         header.addStretch(1)
+        self.btn_dir = QPushButton("폴더 선택")
+        self.btn_dir.clicked.connect(self._on_choose_dir)
+        header.addWidget(self.btn_dir)
         self.btn_drift = QPushButton("판본 비교(드리프트)")
         self.btn_drift.clicked.connect(self._on_drift)
         header.addWidget(self.btn_drift)
         root.addLayout(header)
 
+        self.stack = QStackedWidget()
         self.list = QListWidget()
         self.list.setObjectName("jobList")
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        root.addWidget(self.list, 1)
+        self.stack.addWidget(self.list)                    # 0 = 목록
+        self.stack.addWidget(self._build_empty_state())    # 1 = 빈 상태(홈 패턴 미러)
+        root.addWidget(self.stack, 1)
 
         self.lbl_result = QLabel("")
         self.lbl_result.setWordWrap(True)
@@ -115,6 +131,32 @@ class TemplateManagerPanel(QMainWindow):
 
         self.vm.subscribe(self._render)
         self._render()
+
+    # ------------------------------------------------------------- 빌더
+    def _build_empty_state(self) -> QWidget:
+        """빈 라이브러리 안내 — 백지 대신 원인(폴더 없음/빈 폴더)과 폴더 선택 유도(RC-14)."""
+        panel = QWidget()
+        box = QVBoxLayout(panel)
+        box.addStretch(2)
+        lbl = QLabel("표시할 템플릿이 없습니다")
+        mark(lbl, "heading", True)
+        lbl.setAlignment(Qt.AlignCenter)
+        self.lbl_empty_hint = QLabel("")
+        mark(self.lbl_empty_hint, "muted", True)
+        self.lbl_empty_hint.setAlignment(Qt.AlignCenter)
+        self.lbl_empty_hint.setWordWrap(True)
+        self.btn_empty_dir = QPushButton("폴더 선택")
+        mark(self.btn_empty_dir, "primary", True)
+        self.btn_empty_dir.clicked.connect(self._on_choose_dir)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        row.addWidget(self.btn_empty_dir)
+        row.addStretch(1)
+        box.addWidget(lbl)
+        box.addWidget(self.lbl_empty_hint)
+        box.addLayout(row)
+        box.addStretch(3)
+        return panel
 
     # ------------------------------------------------------------- 렌더
     def refresh(self) -> None:
@@ -130,17 +172,47 @@ class TemplateManagerPanel(QMainWindow):
             card = _TemplateCard(row, on_action=self._dispatch)
             item.setSizeHint(card.sizeHint())
             self.list.setItemWidget(item, card)
+        if self.vm.is_empty():
+            self.lbl_empty_hint.setText(self.vm.empty_hint())
+            self.stack.setCurrentIndex(1)
+        else:
+            self.stack.setCurrentIndex(0)
+
+    def _on_choose_dir(self) -> None:
+        start = str(self.vm.library_dir) if self.vm.library_dir is not None else ""
+        chosen = QFileDialog.getExistingDirectory(self, "템플릿 라이브러리 폴더", start)
+        if not chosen:
+            return
+        self.lbl_result.setText("")  # 폴더가 바뀌면 직전 결과는 무의미(스테일 방지)
+        self.vm.set_library_dir(chosen)
 
     # ---------------------------------------------------- 액션 디스패치
     def _dispatch(self, key: str, path: str) -> None:
         if key == "compile":
-            self._on_compile(path)
+            self._run_action("컴파일", path, lambda: self._on_compile(path))
         elif key == "review":
-            self._on_review(path)
+            self._run_action("검토", path, lambda: self._on_review(path))
         elif key == "preview":
-            self._on_preview(path)
+            self._run_action("미리보기", path, lambda: self._on_preview(path))
         elif key == "make_job":
             self.make_job_requested.emit(path)
+
+    def _run_action(self, title: str, path: "str | None", fn) -> None:
+        """액션 공통 예외 경계(RC-14) — 시작 시 스테일 결과부터 무효화하고, 실패는
+        모달 + '실패: …' 라벨로 시끄럽게 남긴다(확인-또는-경보).
+
+        슬롯에서 이탈한 예외는 PySide6 가 stderr 인쇄 후 삼키며 windowed exe 엔
+        stderr 조차 없다 — 직전 성공 문구가 실패한 작업 밑에 남아 적극 오도하던
+        침묵 실패를 여기서 끊는다.
+        """
+        self.lbl_result.setText("")  # 직전 결과 잔존 = 실패를 성공처럼 보이게 하는 오도
+        try:
+            fn()
+        except Exception as exc:  # noqa: BLE001 — 액션 시점 실패는 전부 통지 대상
+            name = Path(path).name if path else ""
+            detail = f"{name} — {exc}" if name else str(exc)
+            self.lbl_result.setText(f"실패: {title} · {detail}")
+            QMessageBox.critical(self, f"{title} 실패", detail)
 
     def _on_compile(self, path: str) -> None:
         """CLI 2단계 미러 — 스캔 미리보기(dry-run) → 사용자 확인 시에만 적용·저장."""
@@ -160,25 +232,14 @@ class TemplateManagerPanel(QMainWindow):
         ) != QMessageBox.Yes:
             return  # dry-run 만 — 확인 없으면 변형 없음
         report = self.vm.apply_fieldize(path)
-        self.lbl_result.setText(f"컴파일 완료: 필드 {len(report.compiled)}개 추가")
+        self.lbl_result.setText(self.vm.format_compile_result(path, report))
 
     def _on_review(self, path: str) -> None:
-        report = self.vm.lint(path)
-        if not report.findings:
-            self.lbl_result.setText("검토: 이슈 없음.")
-            return
-        self.lbl_result.setText(
-            "검토 결과:\n"
-            + "\n".join(f"[{f.severity}] {f.message}" for f in report.findings)
-        )
+        self.lbl_result.setText(self.vm.format_lint_result(path, self.vm.lint(path)))
 
     def _on_preview(self, path: str) -> None:
-        values = self.vm.filled_values(path)
-        if not values:
-            self.lbl_result.setText("미리보기: 누름틀 값이 없습니다.")
-            return
         self.lbl_result.setText(
-            "미리보기:\n" + "\n".join(f"{k} = {v}" for k, v in values.items())
+            self.vm.format_preview_result(path, self.vm.filled_values(path))
         )
 
     def _on_drift(self) -> None:
@@ -188,15 +249,9 @@ class TemplateManagerPanel(QMainWindow):
         new, _ = QFileDialog.getOpenFileName(self, "새 판본 HWPX", "", "HWPX (*.hwpx)")
         if not new:
             return
-        drift = self.vm.drift(old, new)
-        if not drift.has_changes:
-            self.lbl_result.setText("드리프트: 필드셋 변화 없음.")
-            return
-        parts = []
-        for n in drift.added:
-            parts.append(f"+ 추가: {n}")
-        for n in drift.removed:
-            parts.append(f"- 삭제: {n}")
-        for r in drift.renamed:
-            parts.append(f"~ 개명(추정): {r['old']} → {r['new']} ({r['score']})")
-        self.lbl_result.setText("드리프트:\n" + "\n".join(parts))
+        self._run_action("드리프트", new, lambda: self._do_drift(old, new))
+
+    def _do_drift(self, old: str, new: str) -> None:
+        self.lbl_result.setText(
+            self.vm.format_drift_result(old, new, self.vm.drift(old, new))
+        )

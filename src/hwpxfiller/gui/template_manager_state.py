@@ -1,8 +1,8 @@
 """템플릿 관리 워크숍 ViewModel — Qt 비의존(링1). 특정 Job 밖의 템플릿 라이브러리 관리면.
 
 위젯(:class:`~hwpxfiller.gui.template_manager.TemplateManagerPanel`)은 이 뷰모델을 들고
-``rows()``·``actions_for(state)``·``scan_preview(path)``·``apply_fieldize(path)``·``lint(path)``·
-``drift(old,new)`` 로 **렌더·오케스트레이션만** 한다. 상태 판정(compile_status)·상태별
+``rows()``·``actions_for(state)``·``scan_preview(path)``·``apply_fieldize(path)``·
+``lint(path, vocabulary=None)``·``drift(old,new)`` 로 **렌더·오케스트레이션만** 한다. 상태 판정(compile_status)·상태별
 게이트 액션·2단계 fieldize(스캔 미리보기→적용)·lint/drift 는 전부 여기 산다 — PySide6 임포트
 없이 헤드리스로 테스트된다(홈의 home_state↔home 분리를 그대로 미러링).
 
@@ -43,6 +43,9 @@ _BADGE_LEVELS: "dict[CompileState, str]" = {
     CompileState.COMPILED: "ok",
     CompileState.FILLED: "ok",
 }
+
+# lint 심각도 → 사용자 대면 한국어(뷰가 영문 원시값을 노출하지 않게 링1이 성형).
+_SEVERITY_KO: "dict[str, str]" = {"warning": "경고", "info": "정보", "error": "오류"}
 
 
 @dataclass(frozen=True)
@@ -205,6 +208,22 @@ class TemplateManagerViewModel:
             return sorted(self.library_dir.glob("*.hwpx"), key=lambda p: p.name)
         return []
 
+    def set_library_dir(self, library_dir: "str | Path") -> None:
+        """라이브러리 폴더 재지정(사용자 폴더 선택) — 명시 경로 주입은 해제하고 재스캔."""
+        self.library_dir = Path(library_dir)
+        self._explicit_paths = None
+        self.refresh()
+
+    def empty_hint(self) -> str:
+        """빈 목록의 원인 안내 — '폴더 없음'과 '빈 폴더'를 구분한다(RC-14 침묵 백지 방지)."""
+        if self._explicit_paths is not None:
+            return "표시할 템플릿이 없습니다."
+        if self.library_dir is None:
+            return "템플릿 폴더가 지정되지 않았습니다.\n[폴더 선택]으로 라이브러리 폴더를 지정하세요."
+        if not self.library_dir.is_dir():
+            return f"템플릿 폴더가 없습니다: {self.library_dir}\n[폴더 선택]으로 다시 지정하세요."
+        return f"폴더에 .hwpx 템플릿이 없습니다: {self.library_dir}"
+
     def refresh(self) -> None:
         """라이브러리를 다시 스캔해 행을 성형하고 통지(compile_status 매번 재산출)."""
         rows: "list[TemplateRow]" = []
@@ -260,13 +279,60 @@ class TemplateManagerViewModel:
         return report
 
     # ----------------------------------------------------------- lint/drift
-    def lint(self, path: str) -> LintReport:
-        """단일 템플릿 위생 점검(유사 필드명·미치환 토큰·어휘). 읽기 전용."""
-        return lint_template(str(path))
+    def lint(self, path: str, vocabulary=None) -> LintReport:
+        """단일 템플릿 위생 점검(유사 필드명·미치환 토큰·어휘). 읽기 전용.
+
+        ``vocabulary`` 는 코어 :func:`~hwpxfiller.core.lint.lint_template` 의 통제 어휘
+        그대로 전달한다(RC-14 시그니처 정렬 — CLI ``--vocab`` 과 위생 점검 범위 동등).
+        """
+        return lint_template(str(path), vocabulary=vocabulary)
 
     def drift(self, old_path: str, new_path: str) -> SchemaDrift:
         """두 판본의 필드셋 드리프트(추가/삭제/개명 추정). 읽기 전용."""
         return diff_schema(str(old_path), str(new_path))
+
+    # ------------------------------------------------------ 결과 문구 성형(링1)
+    # 단일 결과 라벨이 lint/미리보기/드리프트/컴파일을 무맥락으로 덮어쓰던 것을(RC-14)
+    # 대상 템플릿명을 포함한 성형으로 고정한다 — 뷰(위젯)가 아니라 여기 살아야
+    # 헤드리스로 테스트되고 '얇은 렌더러' 계약이 지켜진다.
+    def format_compile_result(self, path: str, report) -> str:
+        """apply_fieldize 리포트 → 결과 문구(대상 템플릿명 포함)."""
+        return f"컴파일 완료 — {Path(path).name}: 필드 {len(report.compiled)}개 추가"
+
+    def format_lint_result(self, path: str, report: LintReport) -> str:
+        """lint 리포트 → 결과 문구(심각도 한국어·대상 템플릿명 포함)."""
+        name = Path(path).name
+        if not report.findings:
+            return f"검토 — {name}: 이슈 없음."
+        lines = [f"검토 결과 — {name}:"]
+        lines.extend(
+            f"[{_SEVERITY_KO.get(f.severity, f.severity)}] {f.message}"
+            for f in report.findings
+        )
+        return "\n".join(lines)
+
+    def format_preview_result(self, path: str, values: "dict[str, str]") -> str:
+        """FILLED 값 미리보기 → 결과 문구(대상 템플릿명 포함)."""
+        name = Path(path).name
+        if not values:
+            return f"미리보기 — {name}: 누름틀 값이 없습니다."
+        return f"미리보기 — {name}:\n" + "\n".join(
+            f"{k} = {v}" for k, v in values.items()
+        )
+
+    def format_drift_result(self, old_path: str, new_path: str, drift: SchemaDrift) -> str:
+        """드리프트 결과 → 결과 문구(비교 판본 쌍 명시)."""
+        pair = f"{Path(old_path).name} → {Path(new_path).name}"
+        if not drift.has_changes:
+            return f"드리프트 — {pair}: 필드셋 변화 없음."
+        parts = [f"드리프트 — {pair}:"]
+        for n in drift.added:
+            parts.append(f"+ 추가: {n}")
+        for n in drift.removed:
+            parts.append(f"- 삭제: {n}")
+        for r in drift.renamed:
+            parts.append(f"~ 개명(추정): {r['old']} → {r['new']} ({r['score']})")
+        return "\n".join(parts)
 
     # ----------------------------------------------------- FILLED 값 미리보기
     def filled_values(self, path: str) -> "dict[str, str]":

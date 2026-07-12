@@ -165,9 +165,24 @@ class JobRegistry:
             return []
         return sorted(self.directory.glob("*" + self.SUFFIX))
 
-    def list_jobs(self) -> "list[Job]":
-        """저장된 전 작업을 이름순으로. 빈/없는 디렉터리면 빈 리스트."""
-        return sorted((Job.load(p) for p in self._files()), key=lambda j: j.name)
+    def list_jobs(
+        self, *, corrupted: "list[tuple[Path, str]] | None" = None
+    ) -> "list[Job]":
+        """저장된 전 작업을 이름순으로. 빈/없는 디렉터리면 빈 리스트.
+
+        **파일 단위 격리(RC-05):** 손상된 ``.job.json`` 1개가 목록 전체(→홈·앱 시작)를
+        죽이지 않도록 파싱 실패를 파일별로 잡는다. 손상 항목은 결과에서 제외하되
+        조용히 버리지 않는다 — ``corrupted`` 리스트를 넘기면 ``(경로, 오류 문자열)``
+        로 수집되며, 홈이 이를 '손상됨' 행으로 시끄럽게 표면화한다(확인-또는-경보).
+        """
+        jobs: "list[Job]" = []
+        for p in self._files():
+            try:
+                jobs.append(Job.load(p))
+            except Exception as exc:  # noqa: BLE001 — 손상 1개의 전멸 방지(격리 후 표면화)
+                if corrupted is not None:
+                    corrupted.append((p, str(exc)))
+        return sorted(jobs, key=lambda j: j.name)
 
     def names(self) -> "list[str]":
         return [j.name for j in self.list_jobs()]

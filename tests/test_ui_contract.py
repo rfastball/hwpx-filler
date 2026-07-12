@@ -22,9 +22,9 @@ _NO_DIR = MOCKUP.parent / "__no_such_text_templates__"
 
 
 class _StubRegistry:
-    """HomeViewModel 구성용 최소 레지스트리(빈 목록)."""
+    """HomeViewModel 구성용 최소 레지스트리(빈 목록) — list_jobs 계약(RC-05) 미러."""
 
-    def list_jobs(self):
+    def list_jobs(self, *, corrupted=None):
         return []
 
 

@@ -31,8 +31,10 @@ gui/app.py  _AppController ──라우팅──┬─▶ home.JobListHome      
 - **에디터**와 **실행**을 가른다: 무거운 명시성 게이트(매핑 확정)는 **셋업(에디터)에만**.
   실행은 사전검증만 — 매핑 재확정 없음.
 - 분리 예정이던 둘의 착지는 **갈렸다**: diff GUI만 별도 앱(앱 A, `src/hwpxdiff/`)으로 분리
-  완료(§8), **템플릿관리는 앱 B 안에 착지** — `gui/template_manager.py`+`template_manager_state.py`,
-  `app.py`의 `manage_templates_requested` 배선(착지 커밋 `c1ee653`).
+  완료(§8), **템플릿관리는 앱 B 안에 착지** — `gui/template_manager.py`+`template_manager_state.py`
+  (패널·VM 착지 커밋 `c1ee653`). 홈 측 진입점은 그 커밋에 **없었고**(hasattr 가드 뒤 침묵
+  no-op — RC-04로 확정), 이후 수리로 홈 헤더 [템플릿 관리] 버튼 → `manage_templates_requested`
+  → `app.py` 직결 배선이 착지해 GUI 도달 가능해졌다.
 
 실행: `python -m hwpxfiller.gui.app` (또는 `hwpx-filler` gui-script). 헤드리스 테스트는
 `QT_QPA_PLATFORM=offscreen` + `tests/test_gui_smoke.py`.

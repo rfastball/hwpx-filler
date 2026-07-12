@@ -34,19 +34,16 @@ class _AppController:
         # txt 트랙 라우팅(트랙 이원성) — 템플릿 열기 / 새 기안.
         self.home.open_txt_requested.connect(self._open_txt)
         self.home.new_txt_requested.connect(lambda: self._open_txt(None))
-        # 템플릿 관리 워크숍(C5) — 홈이 진입 시그널을 노출하면 배선(전방호환·비파괴).
-        # 홈은 병렬 유닛 소유라 여기서 hasattr 로 가드해 라우팅만 더한다.
-        if hasattr(self.home, "manage_templates_requested"):
-            self.home.manage_templates_requested.connect(self._open_template_manager)
-        # 데이터 풀 관리(J1) — 홈이 진입 시그널을 노출하면 배선(전방호환·비파괴).
-        if hasattr(self.home, "manage_pool_requested"):
-            self.home.manage_pool_requested.connect(self._open_pool_manager)
+        # 워크숍 라우팅 — 홈 시그널에 **직결** 연결한다(RC-04). 과거 hasattr 전방호환
+        # 가드는 홈 측 시그널 미착지를 조용한 no-op 으로 삼켜 템플릿 워크숍 전체를
+        # 은폐했다 — 배선이 어긋나면 기동 즉시 AttributeError 로 시끄럽게 실패한다.
+        self.home.manage_templates_requested.connect(self._open_template_manager)
+        # 데이터 풀 관리(J1).
+        self.home.manage_pool_requested.connect(self._open_pool_manager)
         # 여러 작업 일괄 실행(J2 매트릭스).
-        if hasattr(self.home, "matrix_run_requested"):
-            self.home.matrix_run_requested.connect(self._open_matrix_run)
+        self.home.matrix_run_requested.connect(self._open_matrix_run)
         # 어휘 워크벤치(J3 공유 베이스 매핑).
-        if hasattr(self.home, "manage_vocab_requested"):
-            self.home.manage_vocab_requested.connect(self._open_vocab_workbench)
+        self.home.manage_vocab_requested.connect(self._open_vocab_workbench)
 
     # ------------------------------------------------------------------ 라우팅
     def _open_editor_new(self) -> None:
@@ -103,7 +100,11 @@ class _AppController:
         view.show()
 
     def _open_template_manager(self, library_dir: "str | None" = None) -> None:
-        """템플릿 관리 워크숍(C5)을 연다. '작업 만들기'는 에디터로 프리로드 라우팅."""
+        """템플릿 관리 워크숍(C5)을 연다. '작업 만들기'는 에디터로 프리로드 라우팅.
+
+        ``library_dir=None``(홈 시그널은 무인자)이면 패널이 표준 라이브러리
+        (:func:`~hwpxfiller.core.template_status.default_templates_dir`)를 겨눈다(RC-14).
+        """
         from .template_manager import TemplateManagerPanel
 
         panel = TemplateManagerPanel(library_dir)
@@ -172,11 +173,22 @@ class _AppController:
 
     def _open_editor_from_base(self, base_name: str) -> None:
         """워크벤치 '편집' → 베이스를 시드한 새 위저드(템플릿 선택 후 이름 교집합 투영)."""
+        from PySide6.QtWidgets import QMessageBox
+
         from .job_editor import JobEditorWizard
+        from .vocab_workbench import VocabWorkbenchPanel
 
         try:
             base = self.base_registry.load(base_name)
-        except Exception:  # noqa: BLE001 - 로드 실패는 조용히 무시(패널이 최신 목록 소유)
+        except Exception as exc:  # noqa: BLE001 — 침묵 no-op 금지(RC-04): 알리고 재동기화
+            QMessageBox.warning(
+                self.home, "베이스 열기 실패",
+                f"베이스 매핑 '{base_name}' 을(를) 불러올 수 없습니다.\n{exc}",
+            )
+            # 스테일 목록(삭제·손상된 베이스)일 수 있으니 열린 워크벤치를 갱신한다.
+            for child in self._children:
+                if isinstance(child, VocabWorkbenchPanel):
+                    child.refresh()
             return
         wiz = JobEditorWizard(self.registry, base_registry=self.base_registry)
         wiz.base_mapping = base

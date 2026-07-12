@@ -23,6 +23,7 @@ BADGE_MISSING = "❌ 템플릿 없음"        # 경로 있으나 파일 부재(c
 BADGE_RAW = "✏ 원문·컴파일 필요"       # CompileState.RAW(진짜 필드 없음, 평문 토큰)
 BADGE_READY = "✅ 실행 준비"           # COMPILED/FILLED(잔존 토큰 0)
 BADGE_ERROR = "⚠ 템플릿 오류"          # 손상 템플릿 — 조용한 ✅ 금지, 시끄럽게 알림
+BADGE_CORRUPT = "⚠ 손상됨"             # .job.json 파싱 실패 — 목록을 죽이지 않되 시끄럽게(RC-05)
 
 
 def _partial_badge(n: int) -> str:
@@ -106,6 +107,22 @@ class JobRow:
 
 
 @dataclass
+class CorruptJobRow:
+    """파싱 실패한 ``.job.json`` 1건 — 조용히 감추지 않고 '손상됨' 행으로 노출한다(RC-05).
+
+    이름을 알 수 없으므로(JSON 파싱 불가) 파일명이 식별자다. 사용자가 원인 파일을
+    직접 복구/삭제할 수 있게 경로·오류를 그대로 나른다.
+    """
+
+    file_name: str
+    path: str
+    error: str
+
+    def detail_line(self) -> str:
+        return f"작업 파일을 읽을 수 없습니다 — {self.error}"
+
+
+@dataclass
 class TxtRow:
     """txt 기안 템플릿 1건(대시보드 txt 트랙 목록)."""
 
@@ -132,6 +149,7 @@ class HomeViewModel:
         self.text_registry = text_registry  # TextTemplateRegistry | None (txt 트랙)
         self.pool_registry = pool_registry  # DatasetPoolRegistry | None (데이터 풀 KPI)
         self._rows: "list[JobRow]" = []
+        self._corrupt_rows: "list[CorruptJobRow]" = []
         self._selected: "str | None" = None
         self._subs: "list" = []
         self.refresh()
@@ -147,8 +165,19 @@ class HomeViewModel:
 
     # ---------------------------------------------------------- 데이터
     def refresh(self) -> None:
-        """레지스트리에서 다시 읽어 행을 성형하고 통지(선택은 살아있으면 보존)."""
-        self._rows = [JobRow.from_job(j) for j in self.registry.list_jobs()]
+        """레지스트리에서 다시 읽어 행을 성형하고 통지(선택은 살아있으면 보존).
+
+        손상 ``.job.json`` 은 격리 수집(RC-05)해 :meth:`corrupt_rows` 로 노출한다 —
+        정상 작업은 계속 표시하되 손상 파일을 조용히 감추지 않는다.
+        """
+        corrupted: "list" = []
+        self._rows = [
+            JobRow.from_job(j) for j in self.registry.list_jobs(corrupted=corrupted)
+        ]
+        self._corrupt_rows = [
+            CorruptJobRow(file_name=p.name, path=str(p), error=err)
+            for p, err in corrupted
+        ]
         if self._selected not in {r.name for r in self._rows}:
             self._selected = None
         self._notify()
@@ -156,8 +185,13 @@ class HomeViewModel:
     def rows(self) -> "list[JobRow]":
         return list(self._rows)
 
+    def corrupt_rows(self) -> "list[CorruptJobRow]":
+        """파싱 실패한 작업 파일 행 — 홈이 '손상됨' 배지 카드로 렌더한다(RC-05)."""
+        return list(self._corrupt_rows)
+
     def is_empty(self) -> bool:
-        return not self._rows
+        # 손상 행만 있어도 빈 상태로 위장하지 않는다 — 손상 행이 보여야 한다.
+        return not self._rows and not self._corrupt_rows
 
     def count_label(self) -> str:
         return f"{len(self._rows)}건" if self._rows else ""

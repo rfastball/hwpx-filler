@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
 
 from ..core.job import JobRegistry
 from ..core.template_status import CompileState
-from .home_state import HomeViewModel, JobRow, TxtRow
+from .home_state import BADGE_CORRUPT, CorruptJobRow, HomeViewModel, JobRow, TxtRow
 from .style import BASE_QSS, mark
 
 
@@ -97,6 +97,35 @@ class _JobCard(QWidget):
         root.addLayout(foot)
 
 
+class _CorruptJobCard(QWidget):
+    """손상 ``.job.json`` 행 카드 — 파일명 + '손상됨' 배지 + 오류·경로(RC-05).
+
+    액션 없음(파싱 불가라 실행/편집 대상이 아님). 조용히 감추는 대신 원인 파일을
+    지목해 사용자가 직접 복구/삭제할 수 있게 한다(확인-또는-경보).
+    """
+
+    def __init__(self, row: CorruptJobRow, parent=None):
+        super().__init__(parent)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(10, 8, 10, 8)
+        root.setSpacing(3)
+
+        name_row = QHBoxLayout()
+        lbl_name = QLabel(row.file_name)
+        mark(lbl_name, "heading", True)
+        name_row.addWidget(lbl_name)
+        lbl_badge = QLabel(BADGE_CORRUPT)
+        mark(lbl_badge, "fb", "missing")  # 부재/오류와 같은 시끄러운 빨강 pill
+        name_row.addWidget(lbl_badge)
+        name_row.addStretch(1)
+        root.addLayout(name_row)
+
+        lbl_meta = QLabel(f"{row.detail_line()}\n경로: {row.path}")
+        mark(lbl_meta, "muted", True)
+        lbl_meta.setWordWrap(True)
+        root.addWidget(lbl_meta)
+
+
 class _TxtCard(QWidget):
     """txt 기안 템플릿 카드 — 이름 + 필드 수 + [기안 열기]."""
 
@@ -131,12 +160,14 @@ class JobListHome(QMainWindow):
     # txt 트랙(신규)
     new_txt_requested = Signal()
     open_txt_requested = Signal(str)  # 템플릿 이름
-    # 데이터 풀 관리(J1) — 앱 컨트롤러가 hasattr 로 가드해 라우팅(전방호환).
+    # 데이터 풀 관리(J1) — 앱 컨트롤러(app.py)가 직결 배선한다.
     manage_pool_requested = Signal()
-    # 여러 작업 일괄 실행(J2 매트릭스) — 마찬가지로 hasattr 가드 라우팅.
+    # 여러 작업 일괄 실행(J2 매트릭스).
     matrix_run_requested = Signal()
     # 어휘 워크벤치(J3 공유 베이스 매핑 관리).
     manage_vocab_requested = Signal()
+    # 템플릿 관리 워크숍(C5) — 헤더 [템플릿 관리] 버튼이 방출(RC-04 소생 진입점).
+    manage_templates_requested = Signal()
 
     def __init__(self, registry: JobRegistry, text_registry=None, parent=None,
                  pool_registry=None):
@@ -169,10 +200,13 @@ class JobListHome(QMainWindow):
         mark(sub, "muted", True)
         header.addWidget(title)
         header.addStretch(1)
+        self.btn_templates = QPushButton("템플릿 관리")
+        self.btn_templates.clicked.connect(self.manage_templates_requested)
         self.btn_pool = QPushButton("데이터 풀 관리")
         self.btn_pool.clicked.connect(self.manage_pool_requested)
         self.btn_vocab = QPushButton("어휘 워크벤치")
         self.btn_vocab.clicked.connect(self.manage_vocab_requested)
+        header.addWidget(self.btn_templates)
         header.addWidget(self.btn_pool)
         header.addWidget(self.btn_vocab)
         header.addWidget(sub)
@@ -325,6 +359,15 @@ class JobListHome(QMainWindow):
                 on_edit=self.edit_job_requested.emit,
                 on_delete=self.delete_job_requested.emit,
             )
+            item.setSizeHint(card.sizeHint())
+            self.list.setItemWidget(item, card)
+        # 손상 .job.json 행(RC-05) — 정상 작업 뒤에 '손상됨' 배지 카드로 시끄럽게 노출.
+        # 아이템 text 는 파일명(이름을 알 수 없음 — findItems 작업명 계약과 충돌 없음).
+        for crow in self.vm.corrupt_rows():
+            self.list.addItem(crow.file_name)
+            item = self.list.item(self.list.count() - 1)
+            item.setForeground(QColor(0, 0, 0, 0))
+            card = _CorruptJobCard(crow)
             item.setSizeHint(card.sizeHint())
             self.list.setItemWidget(item, card)
         self.stack.setCurrentIndex(1 if self.vm.is_empty() else 0)
