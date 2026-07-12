@@ -183,6 +183,55 @@ def test_cli_overwrite_optin_passes(tmp_path):
     assert sentinel.read_bytes()[:2] == b"PK"  # 재생성본으로 교체됨
 
 
+# ------------------------------------------------------- 빈값 게이트(RC-03, ADR-E)
+def test_cli_blocks_empty_values_by_default(tmp_path, capsys):
+    """값이 빈 필드는 기본 차단(exit 1) — GUI 와 동일 입력에서 문서 내용이 갈라지지 않는다."""
+    data = _xlsx(tmp_path / "d.xlsx",
+                 [["", "관급자재 구매", "일반경쟁", "12000000", "2026-08-01 10:00"]])
+    out = tmp_path / "out"
+    rc = main(["--template", TEMPLATE, "--data", data, "--out", str(out),
+               "--pattern", "공고-{{공고명}}"])
+    assert rc == 1
+    assert not out.exists()  # 생성 전 차단(부분 산출물 0)
+    err = capsys.readouterr().err
+    assert "입찰공고번호" in err and "--ack-empty" in err  # 시끄럽게 + 다음 행동 안내
+
+
+def test_cli_ack_empty_injects_marker(tmp_path):
+    """--ack-empty 옵트인 — GUI 와 같은 미입력 표식을 넣고 진행(조용한 누름틀 잔존 금지)."""
+    from hwpxfiller.core.fields import read_fields
+
+    data = _xlsx(tmp_path / "d.xlsx",
+                 [["", "관급자재 구매", "일반경쟁", "12000000", "2026-08-01 10:00"]])
+    out = tmp_path / "out"
+    rc = main(["--template", TEMPLATE, "--data", data, "--out", str(out),
+               "--pattern", "공고-{{공고명}}", "--ack-empty"])
+    assert rc == 0
+    (doc,) = list(out.glob("*.hwpx"))
+    fields = read_fields(str(doc))
+    assert fields["입찰공고번호"] == "〘미입력·입찰공고번호〙"  # GUI 와 동일 표식(단일 출처)
+    assert fields["공고명"] == "관급자재 구매"
+
+
+def test_cli_ack_empty_ledger_records_marker_evidence(tmp_path):
+    """--ack-empty + --ledger — 원장이 문서 실상(표식 주입)을 증거한다(RC-03 원장 갈림 봉합)."""
+    import json as _json
+
+    data = _xlsx(tmp_path / "d.xlsx",
+                 [["", "관급자재 구매", "일반경쟁", "12000000", "2026-08-01 10:00"]])
+    out = tmp_path / "out"
+    rc = main(["--template", TEMPLATE, "--data", data, "--out", str(out),
+               "--pattern", "공고-{{공고명}}", "--ack-empty", "--ledger"])
+    assert rc == 0
+    (sidecar,) = list(out.glob("fill-ledger-*.json"))
+    payload = _json.loads(sidecar.read_text(encoding="utf-8"))
+    rows = {r["field"]: r for r in payload["outputs"][0]["rows"]}
+    # 표식 주입 필드: 미충족(missing)으로 분류 + 실제 들어간 값(표식) 되읽기 증거.
+    assert rows["입찰공고번호"]["status"] == "missing"
+    assert rows["입찰공고번호"]["preview_text"] == "〘미입력·입찰공고번호〙"
+    assert rows["입찰공고번호"]["injected"] is True
+
+
 # --------------------------------------------------------------- 나라장터 소스
 def _patch_nara(monkeypatch):
     """NaraStdDataSource._fetch 를 실 응답 픽스처로 대체(네트워크 차단).
@@ -233,6 +282,37 @@ def test_nara_source_with_profile_fills_template(tmp_path, monkeypatch, capsys):
     assert "2026년 6월 15일 18:00" in blob
     # 취득 로그가 stderr 로 나온다.
     assert "[나라장터]" in capsys.readouterr().err
+
+
+def test_nara_auth_failure_is_loud_exit_1(tmp_path, monkeypatch, capsys):
+    """인증 실패(resultCode=07)는 '0건 취득 + exit 0' 조용한 성공이 아니라 exit 1(RC-03 C1)."""
+    auth_fail = (
+        b'{"response":{"header":{"resultCode":"07",'
+        b'"resultMsg":"INVALID_REQUEST_PARAMETER_ERROR"},"body":{}}}'
+    )
+    from hwpxfiller.data.nara import NaraStdDataSource
+    monkeypatch.setattr(NaraStdDataSource, "_fetch", lambda self: auth_fail)
+    monkeypatch.delenv("DATA_GO_KR_KEY", raising=False)
+    out = tmp_path / "out"
+    rc = main(["--template", TEMPLATE, "--source", "nara",
+               "--service-key", "DUMMY", "--bgn", "202606010000", "--end", "202606302359",
+               "--out", str(out), "--pattern", "n-{{bidNtceNo}}", "--ledger"])
+    assert rc == 1
+    assert not out.exists()  # 문서도 원장도 없다 — 실패를 정상 실행으로 문서화하지 않는다
+    err = capsys.readouterr().err
+    assert "취득 실패" in err and "[07]" in err
+
+
+def test_nara_period_over_one_month_blocked(tmp_path, monkeypatch, capsys):
+    """기간 6개월은 데이터 경계 검증(RC-03)에 걸려 exit 1 — GUI 취득 경로와 동일 엄격도."""
+    _patch_nara(monkeypatch)
+    out = tmp_path / "out"
+    rc = main(["--template", TEMPLATE, "--source", "nara",
+               "--service-key", "DUMMY", "--bgn", "202601010000", "--end", "202607010000",
+               "--out", str(out)])
+    assert rc == 1
+    assert "1개월" in capsys.readouterr().err
+    assert not out.exists()
 
 
 def test_profile_template_drift_is_cli_hard_gate(tmp_path, capsys):

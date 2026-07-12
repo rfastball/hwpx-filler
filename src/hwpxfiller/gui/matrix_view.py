@@ -61,6 +61,7 @@ class MatrixRunView(QMainWindow):
         self._nara_fetcher = nara_fetcher
         self._running = False
         self._thread: "QThread | None" = None
+        self._worker: "MatrixGenerateWorker | None" = None
 
         self.setWindowTitle("HWPX Filler — 여러 작업 일괄 실행")
         self.resize(780, 720)
@@ -134,6 +135,11 @@ class MatrixRunView(QMainWindow):
         mark(self.btn_generate, "primary", True)
         self.btn_generate.clicked.connect(self._on_generate)
         actions.addWidget(self.btn_generate)
+        # 실행 중 협조적 취소(RC-06) — 작업·레코드 경계에서 중단, 부분 결과 요약.
+        self.btn_cancel = QPushButton("생성 취소")
+        self.btn_cancel.setEnabled(False)
+        self.btn_cancel.clicked.connect(self._on_cancel_generate)
+        actions.addWidget(self.btn_cancel)
         actions.addStretch(1)
         root.addLayout(actions)
 
@@ -272,6 +278,7 @@ class MatrixRunView(QMainWindow):
         jobs = self.vm.selected_jobs()
         self._running = True
         self.btn_generate.setEnabled(False)
+        self.btn_cancel.setEnabled(True)
         self.lbl_result.setText("")
         self.progress.setMaximum(len(jobs) * len(indices))
         self.progress.setValue(0)
@@ -288,14 +295,32 @@ class MatrixRunView(QMainWindow):
         self._worker.failed.connect(self._on_failed)
         self._thread.start()
 
+    def _on_cancel_generate(self) -> None:
+        """협조적 취소(RC-06) — 진행 중인 레코드까지 마치고 중단한다."""
+        if self._worker is not None and self._running:
+            self._worker.cancel()
+            self.btn_cancel.setEnabled(False)
+            self._say("취소 요청 — 진행 중인 레코드까지 마치고 중단합니다.")
+
     def _on_finished(self, result) -> None:
         self._teardown_thread()
-        summary = (
-            f"완료 — 작업 {result.job_count}개, 문서 {result.succeeded}/{result.total} 성공 · "
-            f"실패 {result.failed}"
-        )
-        mark(self.lbl_result, "level", "ok" if result.failed == 0 else "danger")
+        cancelled = bool(getattr(result, "cancelled", False))
+        if cancelled:
+            # 부분 결과 요약(RC-06) — 처리된 작업/문서 수를 침묵하지 않는다.
+            attempted = sum(len(jr.batch.results) for jr in result.per_job)
+            summary = (
+                f"취소됨 — 작업 {result.job_count}개 처리 · 문서 {attempted}건 시도 · "
+                f"성공 {result.succeeded}"
+            )
+            mark(self.lbl_result, "level", "warn")
+        else:
+            summary = (
+                f"완료 — 작업 {result.job_count}개, 문서 {result.succeeded}/{result.total} 성공 · "
+                f"실패 {result.failed}"
+            )
+            mark(self.lbl_result, "level", "ok" if result.failed == 0 else "danger")
         self.lbl_result.setText(summary)
+        self._say(summary)
         for jr in result.per_job:
             self._say(
                 f"  [{jr.job_name}] {jr.batch.succeeded}/{jr.batch.total} → "
@@ -303,13 +328,18 @@ class MatrixRunView(QMainWindow):
             )
         self.run_finished.emit(result)
         out_dir = self.ed_out.text().strip()
-        if result.succeeded > 0 and QMessageBox.question(
+        if not cancelled and result.succeeded > 0 and QMessageBox.question(
             self, "완료", f"{result.succeeded}건 생성 완료.\n결과 폴더를 여시겠습니까?"
         ) == QMessageBox.Yes:
             self._open_folder(out_dir)
 
     def _on_failed(self, msg: str) -> None:
         self._teardown_thread()
+        # 실패 상태 정리(RC-07 대칭) — 모달 휘발 경보만 남기지 않는다.
+        self.progress.setValue(0)
+        mark(self.lbl_result, "level", "danger")
+        self.lbl_result.setText(f"실패 — 생성 중 오류: {msg}")
+        self._say(f"[실패] 생성 중 오류: {msg}")
         QMessageBox.critical(self, "오류", f"생성 중 오류:\n{msg}")
 
     def _teardown_thread(self) -> None:
@@ -318,6 +348,7 @@ class MatrixRunView(QMainWindow):
             self._thread.wait()
             self._thread = None
         self._running = False
+        self.btn_cancel.setEnabled(False)
         self.btn_generate.setEnabled(True)
 
     @staticmethod

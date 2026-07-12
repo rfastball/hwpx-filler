@@ -649,16 +649,20 @@ def test_run_view_inline_blank_gate_and_marker_injection(qapp, tmp_path, monkeyp
 
     class _FakeWorker(QObject):
         progress = Signal(int, int)
+        stage = Signal(str)
         finished = Signal(object)
         failed = Signal(str)
 
-        def __init__(self, template, records, out_dir, pattern, *, overwrite=False):
+        def __init__(self, plan):
             super().__init__()
-            captured["template"] = template
-            captured["records"] = records
-            captured["overwrite"] = overwrite
+            captured["template"] = plan.template
+            captured["records"] = list(plan.records)
+            captured["overwrite"] = plan.overwrite
 
         def run(self):
+            pass
+
+        def cancel(self):
             pass
 
     monkeypatch.setattr(rv, "GenerateWorker", _FakeWorker)
@@ -702,14 +706,18 @@ def test_run_view_overwrite_requires_confirmation(qapp, tmp_path, monkeypatch):
 
     class _FakeWorker(QObject):
         progress = Signal(int, int)
+        stage = Signal(str)
         finished = Signal(object)
         failed = Signal(str)
 
-        def __init__(self, template, records, out_dir, pattern, *, overwrite=False):
+        def __init__(self, plan):
             super().__init__()
-            captured["overwrite"] = overwrite
+            captured["overwrite"] = plan.overwrite
 
         def run(self):
+            pass
+
+        def cancel(self):
             pass
 
     monkeypatch.setattr(rv, "GenerateWorker", _FakeWorker)
@@ -727,6 +735,95 @@ def test_run_view_overwrite_requires_confirmation(qapp, tmp_path, monkeypatch):
         assert captured["overwrite"] is True
     finally:
         view._teardown_thread()
+
+
+def test_run_view_failed_path_cleans_state_loudly(qapp, tmp_path, monkeypatch):
+    """RC-07 — 실패 경로도 성공과 대칭: 모달 휘발이 아니라 라벨(danger)·로그·진행바 정리."""
+    from PySide6.QtWidgets import QMessageBox
+
+    view = _run_view_with_data(tmp_path)
+    criticals = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a, **k: criticals.append(a[2]))
+    view.progress.setMaximum(3)
+    view.progress.setValue(2)
+    view._running = True
+    view.btn_cancel.setEnabled(True)
+
+    view._on_failed("디스크 오류")
+    assert criticals                                        # 경보(모달)는 유지
+    assert view.lbl_result.property("level") == "danger"    # 모달 닫아도 증거 잔존
+    assert "디스크 오류" in view.lbl_result.text()
+    assert "디스크 오류" in view.log.toPlainText()           # 로그에도 박제
+    assert view.progress.value() == 0                        # 진행바 리셋
+    assert not view._running and not view.btn_cancel.isEnabled()
+
+
+def test_run_view_cancel_button_gated_by_running(qapp, tmp_path):
+    """RC-06 — 취소 버튼 존재 + 평시 비활성(실행 중에만 열린다)."""
+    view = _run_view_with_data(tmp_path)
+    assert view.btn_cancel.text() == "생성 취소"
+    assert not view.btn_cancel.isEnabled()
+
+
+def _plan_view(tmp_path, *, ledger=False):
+    """계획 캡처까지 마친 RunView + GenerationPlan (rec1만 — 빈값 게이트 회피)."""
+    view = _run_view_with_data(tmp_path)
+    out = tmp_path / "out"
+    plan = view.vm.build_generation_plan([1], str(out), marker="", ledger=ledger)
+    return view, plan
+
+
+def test_generate_worker_runs_ledger_tail_off_ui_thread(qapp, tmp_path):
+    """RC-07 — 원장 검증·export 는 워커 run() 꼬리: stage 고지 + 파일 생성 + 경로 보고."""
+    from pathlib import Path
+
+    from hwpxfiller.gui.worker import GenerateWorker
+
+    _view, plan = _plan_view(tmp_path, ledger=True)
+    worker = GenerateWorker(plan)
+    stages: "list[str]" = []
+    done = {}
+    worker.stage.connect(stages.append)
+    worker.finished.connect(lambda b: done.setdefault("batch", b))
+    worker.run()  # 동일 스레드 직접 실행(직결 시그널) — 계약만 검증
+
+    batch = done["batch"]
+    assert batch.succeeded == 1 and not batch.cancelled
+    assert worker.ledger_error is None
+    assert worker.ledger_path and Path(worker.ledger_path).exists()
+    assert any("원장 검증 중" in s for s in stages)  # '검증 중' 단계 고지
+
+
+def test_generate_worker_cancel_short_circuits(qapp, tmp_path):
+    """RC-06 — 스레드-세이프 취소 플래그: 시작 전 취소면 산출물 0 + cancelled 배치."""
+    from hwpxfiller.gui.worker import GenerateWorker
+
+    _view, plan = _plan_view(tmp_path)
+    worker = GenerateWorker(plan)
+    worker.cancel()
+    done = {}
+    worker.finished.connect(lambda b: done.setdefault("batch", b))
+    worker.run()
+    batch = done["batch"]
+    assert batch.cancelled is True and batch.attempted == 0
+    assert not list((tmp_path / "out").glob("*.hwpx"))
+
+
+def test_run_view_cancelled_batch_shows_partial_summary(qapp, tmp_path):
+    """RC-06 — 취소 완료는 '완료' 서사가 아니라 부분 결과 요약(warn) + 폴더 모달 억제."""
+    from hwpxfiller.batch import BatchResult
+    from hwpxfiller.core.engine import GenerateResult
+
+    view, plan = _plan_view(tmp_path)
+    view._plan = plan
+    view._running = True
+    results = [GenerateResult(True, str(tmp_path / f"d{i}.hwpx")) for i in range(2)]
+    view._on_finished(
+        BatchResult(total=5, succeeded=2, results=results, cancelled=True)
+    )
+    assert "취소됨" in view.lbl_result.text()
+    assert view.lbl_result.property("level") == "warn"
+    assert "미처리 3건" in view.lbl_result.text()
 
 
 def _partial_template_file(

@@ -19,12 +19,17 @@
 
 from __future__ import annotations
 
-import calendar
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from ..data.nara import NaraFetchError, NaraStdDataSource
+from ..data.nara import (
+    DT_FMT,
+    OK_RESULT_CODE as _OK_CODE,
+    NaraFetchError,
+    NaraStdDataSource,
+    validate_range as _validate_range,
+)
 from ..data.secret_store import (
     NARA_SERVICE_KEY_NAME,
     SecretStore,
@@ -32,20 +37,15 @@ from ..data.secret_store import (
     redact,
 )
 
-#: 나라 API 일시 포맷(``bidNtceBgnDt``/``bidNtceEndDt``) — YYYYMMDDHHMM.
-DT_FMT = "%Y%m%d%H%M"
-
-#: 정상 응답 헤더 코드(그 외는 인증/파라미터 오류로 시끄럽게 실패).
-_OK_CODE = "00"
-
-
-def _add_one_month(dt: datetime) -> datetime:
-    """``dt`` 에 한 달을 더한다(말일 클램프: 1/31 + 1달 = 2/28·29)."""
-    month = dt.month + 1
-    year = dt.year + (month - 1) // 12
-    month = (month - 1) % 12 + 1
-    last_day = calendar.monthrange(year, month)[1]
-    return dt.replace(year=year, month=month, day=min(dt.day, last_day))
+# DT_FMT 는 데이터층(data.nara)이 소유하고 여기서 재노출한다(RC-03 경계 하강) —
+# nara_view 등 기존 소비자의 임포트 경로(nara_state.DT_FMT)는 불변.
+__all__ = [
+    "DT_FMT",
+    "AcquiredNaraData",
+    "AcquireResult",
+    "ConnResult",
+    "NaraAcquireViewModel",
+]
 
 
 def _union_fields(records: "list[dict[str, str]]") -> "list[str]":
@@ -189,22 +189,9 @@ class NaraAcquireViewModel:
         self._store.delete(NARA_SERVICE_KEY_NAME)
 
     # --------------------------------------------------------------- 기간 검증
-    @staticmethod
-    def validate_range(bgn: str, end: str) -> "str | None":
-        """시작~종료 일시 검증(YYYYMMDDHHMM·1개월 제한). 통과면 ``None``, 아니면 사유 문자열."""
-        for label, val in (("시작", bgn), ("종료", end)):
-            if not val or len(val) != 12 or not val.isdigit():
-                return f"{label} 일시 형식이 올바르지 않습니다(YYYYMMDDHHMM 12자리)."
-        try:
-            b = datetime.strptime(bgn, DT_FMT)
-            e = datetime.strptime(end, DT_FMT)
-        except ValueError:
-            return "일시를 해석할 수 없습니다(YYYYMMDDHHMM)."
-        if e < b:
-            return "종료 일시가 시작 일시보다 빠릅니다."
-        if e > _add_one_month(b):
-            return "조회 기간은 최대 1개월입니다(시작~종료 간격을 1개월 이내로)."
-        return None
+    # 단일 출처는 데이터층 :func:`~hwpxfiller.data.nara.validate_range`(RC-03 경계 하강)
+    # — 뷰모델은 같은 검증을 취득 **전에** 사용자 문구로 표면화하기 위해 위임만 한다.
+    validate_range = staticmethod(_validate_range)
 
     # --------------------------------------------------------------- 취득
     def _build_source(
@@ -246,11 +233,27 @@ class NaraAcquireViewModel:
         갱신된다 — 수용 가능한 성공이면 결과 전체, 아니면 ``None``(이전 성공값의 부분
         잔존 금지, RC-24).
         """
+        res = self.acquire_result(bgn, end, num_rows=num_rows, page_no=page_no)
+        self.commit(res)
+        return res
+
+    def acquire_result(
+        self, bgn: str, end: str, *, num_rows: int = 100, page_no: int = 1
+    ) -> AcquireResult:
+        """취득 계산만(스냅샷 **미커밋**) — 워커 스레드에서 안전한 순수 호출(RC-12).
+
+        위젯이 취득을 QThread 로 옮길 때 이걸 태우고, 결과 도착 시 UI 스레드에서
+        :meth:`commit` 한다 — 진행 중 편집/중지로 무효화된(스테일) 결과가 스레드
+        경합으로 ``last_result`` 를 덮는 일이 없다(RC-13 게이트 보존).
+        """
         res = self._acquire(bgn, end, num_rows=num_rows, page_no=page_no)
         res.bgn_dt, res.end_dt = bgn, end
         res.num_rows, res.page_no = num_rows, page_no
-        self.last_result = res if res.acceptable else None
         return res
+
+    def commit(self, res: AcquireResult) -> None:
+        """취득 결과를 '현재 취득' 스냅샷으로 원자 커밋 — 수용 불가면 ``None``(RC-24)."""
+        self.last_result = res if res.acceptable else None
 
     def invalidate(self) -> None:
         """현재 취득 스냅샷 폐기 — 취득 후 입력(기간·건수)이 편집돼 결과와 어긋날 때(RC-13).

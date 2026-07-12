@@ -151,8 +151,12 @@ def test_empty_response_fails_loudly_without_leak():
     assert _LIVE_KEY not in str(ei.value)
 
 
-def test_auth_failure_result_code_no_leak():
-    """resultCode != '00' 응답(인증 실패류)은 items 부재로 빈 목록 — 키 누출 없음."""
+def test_auth_failure_result_code_raises_loudly_no_leak():
+    """resultCode != '00'(인증 실패류)은 조용한 빈 목록이 아니라 NaraFetchError(RC-03).
+
+    게이트는 데이터 경계가 소유한다 — CLI·파이프라인·풀 복원 어느 호출자도 인증 실패
+    응답(HTTP 200 + 오류 헤더)을 '0건 취득' 성공으로 통과시킬 수 없다. 키 누출도 없다.
+    """
     auth_fail = (
         b'{"response":{"header":{"resultCode":"07",'
         b'"resultMsg":"INVALID_REQUEST_PARAMETER_ERROR"},"body":{}}}'
@@ -160,6 +164,43 @@ def test_auth_failure_result_code_no_leak():
     code, msg = NaraStdDataSource.result(auth_fail)
     assert code == "07"
     src = _live_src(lambda url: auth_fail)
-    recs = src.records()
-    assert recs == []
-    assert _LIVE_KEY not in repr(recs) and _LIVE_KEY not in msg
+    with pytest.raises(NaraFetchError) as ei:
+        src.records()
+    text = str(ei.value)
+    assert "[07]" in text and "API 오류" in text
+    assert _LIVE_KEY not in text
+
+
+def test_auth_failure_with_items_still_raises():
+    """오류 응답에 items 가 실려 있어도 오류 데이터로 문서를 만들지 않는다(RC-03 C2)."""
+    poisoned = (
+        b'{"response":{"header":{"resultCode":"07","resultMsg":"AUTH"},'
+        b'"body":{"items":[{"bidNtceNo":"X1"}]}}}'
+    )
+    src = _live_src(lambda url: poisoned)
+    with pytest.raises(NaraFetchError, match="API 오류"):
+        src.records()
+
+
+def test_missing_result_code_fails_closed():
+    """resultCode 부재도 규격 밖 — 조용한 성공 금지(fail-closed)."""
+    src = _live_src(lambda url: b'{"response":{"body":{"items":[]}}}')
+    with pytest.raises(NaraFetchError, match="코드 없음"):
+        src.records()
+
+
+def test_range_over_one_month_raises_before_fetch():
+    """기간 검증도 데이터 경계 소유(RC-03) — 위반이면 네트워크 요청 자체가 없다."""
+    calls: "list[str]" = []
+
+    def fetcher(url: str) -> bytes:
+        calls.append(url)
+        return _fixture_bytes()
+
+    src = NaraStdDataSource(
+        service_key="DUMMY", bgn_dt="202601010000", end_dt="202607010000",
+        fetcher=fetcher,
+    )
+    with pytest.raises(NaraFetchError, match="1개월"):
+        src.records()
+    assert calls == []  # 요청 전 차단(키 소비 0회)

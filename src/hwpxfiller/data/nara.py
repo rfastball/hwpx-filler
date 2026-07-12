@@ -18,9 +18,11 @@
 
 from __future__ import annotations
 
+import calendar
 import json
 import urllib.parse
 import urllib.request
+from datetime import datetime
 
 from .secret_store import redact
 
@@ -28,6 +30,42 @@ BASE = (
     "https://apis.data.go.kr/1230000/ao/PubDataOpnStdService/"
     "getDataSetOpnStdBidPblancInfo"
 )
+
+#: 나라 API 일시 포맷(``bidNtceBgnDt``/``bidNtceEndDt``) — YYYYMMDDHHMM.
+DT_FMT = "%Y%m%d%H%M"
+
+#: 정상 응답 헤더 코드 — 그 외(인증/파라미터 오류, 부재)는 시끄럽게 실패한다.
+OK_RESULT_CODE = "00"
+
+
+def _add_one_month(dt: datetime) -> datetime:
+    """``dt`` 에 한 달을 더한다(말일 클램프: 1/31 + 1달 = 2/28·29)."""
+    month = dt.month + 1
+    year = dt.year + (month - 1) // 12
+    month = (month - 1) % 12 + 1
+    last_day = calendar.monthrange(year, month)[1]
+    return dt.replace(year=year, month=month, day=min(dt.day, last_day))
+
+
+def validate_range(bgn: str, end: str) -> "str | None":
+    """시작~종료 일시 검증(YYYYMMDDHHMM·1개월 제한). 통과면 ``None``, 아니면 사유 문자열.
+
+    검증의 단일 출처(RC-03) — 취득 경계(:meth:`NaraStdDataSource.records`)와 GUI
+    뷰모델(:class:`~hwpxfiller.gui.nara_state.NaraAcquireViewModel`)이 공유한다.
+    """
+    for label, val in (("시작", bgn), ("종료", end)):
+        if not val or len(val) != 12 or not val.isdigit():
+            return f"{label} 일시 형식이 올바르지 않습니다(YYYYMMDDHHMM 12자리)."
+    try:
+        b = datetime.strptime(bgn, DT_FMT)
+        e = datetime.strptime(end, DT_FMT)
+    except ValueError:
+        return "일시를 해석할 수 없습니다(YYYYMMDDHHMM)."
+    if e < b:
+        return "종료 일시가 시작 일시보다 빠릅니다."
+    if e > _add_one_month(b):
+        return "조회 기간은 최대 1개월입니다(시작~종료 간격을 1개월 이내로)."
+    return None
 
 # 나라장터 표준 입찰공고 응답 필드(소스 키) → 사람이 읽는 한글 라벨.
 # 영문 코드 키를 한글 템플릿 필드에 퍼지 매칭하려면 이 사전이 퍼지 타겟이 된다.
@@ -135,9 +173,27 @@ class NaraStdDataSource:
 
     # ------------------------------------------------------ DataSource protocol
     def records(self) -> "list[dict[str, str]]":
+        """취득 + **경계 검증**(RC-03) — 기간·resultCode 게이트는 데이터층이 소유한다.
+
+        검증이 호출자(GUI 뷰모델)에게만 있으면 CLI·파이프라인·풀 복원 같은 새 호출측이
+        자동으로 게이트 밖이 된다. 여기서 fail-closed:
+
+        - 기간(1개월 제한·형식) 위반 → 요청 전에 :class:`NaraFetchError`.
+        - ``resultCode != '00'``(인증/파라미터 오류, **부재 포함**) → 조용한 "0건"이
+          아니라 :class:`NaraFetchError`. 오류 응답에 items 가 실려 있어도 오류 데이터로
+          문서를 만들지 않는다.
+        """
+        rng_err = validate_range(self.bgn_dt, self.end_dt)
+        if rng_err:
+            raise NaraFetchError(f"조회 조건 오류: {rng_err}")
         raw = self._fetch()
         # 파싱 오류(빈/불량 응답)도 마스킹 경계 안에서 시끄럽게 실패시킨다.
         try:
+            code, msg = self.result(raw)
+            if code != OK_RESULT_CODE:
+                raise NaraFetchError(
+                    f"API 오류 [{code or '코드 없음'}] {msg or '메시지 없음'}"
+                )
             return self.parse(raw)
         except NaraFetchError:
             raise

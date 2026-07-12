@@ -20,10 +20,17 @@ class BatchResult:
     total: int = 0
     succeeded: int = 0
     results: "list[GenerateResult]" = field(default_factory=list)
+    # 협조적 취소로 완주하지 못했는가(RC-06) — True 면 results 는 부분 결과다.
+    cancelled: bool = False
 
     @property
     def failed(self) -> int:
         return self.total - self.succeeded
+
+    @property
+    def attempted(self) -> int:
+        """실제 시도한 레코드 수 — 취소 시 total(계획)과 갈라진다."""
+        return len(self.results)
 
 
 def generate_batch(
@@ -36,8 +43,16 @@ def generate_batch(
     progress: "Callable[[int, int], None] | None" = None,
     now: "datetime | None" = None,
     overwrite: bool = False,
+    mapping=None,
+    cancelled: "Callable[[], bool] | None" = None,
 ) -> BatchResult:
     """레코드 목록을 순회하며 문서를 일괄 생성한다.
+
+    ``mapping``(:class:`~hwpxfiller.core.mapping.MappingProfile`)이 주어지면 **생성
+    경계에서** 템플릿 구조 드리프트를 재검사한다(RC-03) — 매트릭스와 대칭. 호출측
+    validate 이후 템플릿이 교체돼도(TOCTOU) 다른 문서종이 '성공'으로 섞여 나가지
+    않도록 첫 파일을 쓰기 전에 :class:`ValueError` 로 원자 차단한다. 문구는
+    :meth:`~hwpxfiller.core.fill_ledger.TemplateStructureDrift.describe` 단일화.
 
     파일명은 :func:`~hwpxfiller.naming.plan_output_names` 로 **먼저 전부** 계산한다
     (연번·날짜 토큰·배치 내 충돌 접미사 — :class:`~hwpxfiller.naming.OutputNamer` 규칙).
@@ -45,8 +60,18 @@ def generate_batch(
     시작하기 전에 :class:`FileExistsError` 로 원자 차단한다(RC-02: 기존 산출물의
     무경고 파괴 금지 — GUI 는 사용자 확인 후, CLI 는 ``--overwrite`` 로만 통과).
     ``progress(done, total)`` 는 레코드마다 호출되는 선택적 콜백(GUI 워커의 진행률용).
+    ``cancelled()`` 가 True 를 돌려주면 **레코드 경계에서** 중단한다(RC-06) — 진행
+    중인 문서는 완결하고, 결과엔 ``cancelled=True`` 와 부분 결과가 남는다.
     ``now`` 는 날짜 토큰 기준 시각 주입(테스트 결정성).
     """
+    if mapping is not None:
+        from .core.fill_ledger import template_path_drift
+
+        drift = template_path_drift(template_path, mapping)
+        if drift.has_drift:
+            raise ValueError(
+                "템플릿 구조 드리프트로 생성을 차단했습니다 — " + drift.describe(sep="; ")
+            )
     engine = engine or HwpxEngine()
     out = Path(out_dir)
     names = plan_output_names(name_pattern, records, now=now)
@@ -61,6 +86,9 @@ def generate_batch(
 
     batch = BatchResult(total=len(records))
     for i, (rec, name) in enumerate(zip(records, names, strict=True), 1):
+        if cancelled is not None and cancelled():
+            batch.cancelled = True
+            break
         target = str(out / name)
         res = engine.generate(template_path, rec, target)
         batch.results.append(res)
@@ -86,6 +114,8 @@ class MatrixResult:
     """M 작업 × 공유 데이터(N행) 일괄 생성의 집계 결과."""
 
     per_job: "list[MatrixJobResult]" = field(default_factory=list)
+    # 협조적 취소로 완주하지 못했는가(RC-06) — True 면 per_job 은 부분 결과다.
+    cancelled: bool = False
 
     @property
     def job_count(self) -> int:
@@ -144,6 +174,7 @@ def generate_matrix(
     now: "datetime | None" = None,
     mark_missing: "str | None" = None,
     overwrite: bool = False,
+    cancelled: "Callable[[], bool] | None" = None,
 ) -> MatrixResult:
     """**M 작업 × 공유 데이터(N행)** 일괄 생성 — 1:1 실행 표면 인공물 해소(ADR J 축2).
 
@@ -157,6 +188,8 @@ def generate_matrix(
     :data:`~hwpxfiller.core.job.MISSING_MARKER`; 명시적 ``""`` 로 끄기 가능). 엔진의 빈값
     스킵(``engine.py:42``)은 불변. 디스크의 기존 파일과 충돌하면 ``overwrite=True``
     없이는 :class:`FileExistsError` 로 착수 전에 원자 차단한다(RC-02).
+    ``cancelled()`` 는 레코드 경계 협조적 취소(RC-06) — 작업·레코드 경계에서 중단하고
+    ``MatrixResult.cancelled=True`` 와 부분 결과를 남긴다.
     """
     from .core.job import MISSING_MARKER, RunRequest, _slug
     from .core.fill_ledger import template_path_drift
@@ -173,14 +206,9 @@ def generate_matrix(
     drift_errors: "list[str]" = []
     for job in jobs:
         drift = template_path_drift(job.template_path, job.mapping)
-        if not drift.has_drift:
-            continue
-        if drift.read_error:
-            detail = "구조를 읽을 수 없음: " + drift.read_error
-        else:
-            names = list(drift.template_only) + list(drift.mapping_only) + list(drift.conflicting)
-            detail = "매핑 재확정 필요: " + ", ".join(names)
-        drift_errors.append(f"{job.name}: {detail}")
+        if drift.has_drift:
+            # 문구는 describe() 단일화(RC-03) — 표면별 재조립 금지.
+            drift_errors.append(f"{job.name}: {drift.describe(sep='; ')}")
     if drift_errors:
         raise ValueError("템플릿 구조 드리프트로 매트릭스 생성을 차단했습니다 — " + "; ".join(drift_errors))
 
@@ -203,6 +231,9 @@ def generate_matrix(
     result = MatrixResult()
     done = 0
     for job in jobs:
+        if cancelled is not None and cancelled():
+            result.cancelled = True
+            break
         req = RunRequest(job, datasource, indices)
         mapped = req.mapped_records(mark_missing=mark_missing)
         # 폴더명은 레지스트리 파일명과 같은 slug(공백 정리 + 빈이름→unnamed)로 일관.
@@ -212,10 +243,16 @@ def generate_matrix(
             if progress:
                 progress(_base + i, grand_total)
 
+        # mapping 전달로 작업 시작 직전에도 드리프트를 재검사한다(RC-03) — 위의 전건
+        # 원자 검사 이후 미드매트릭스 템플릿 교체(TOCTOU)까지 닫는다.
         batch = generate_batch(
             job.template_path, mapped, job_dir, job.filename_pattern,
             engine=engine, progress=_job_progress, now=now, overwrite=True,
+            mapping=job.mapping, cancelled=cancelled,
         )
         result.per_job.append(MatrixJobResult(job.name, job_dir, batch))
         done += batch.total
+        if batch.cancelled:
+            result.cancelled = True
+            break
     return result

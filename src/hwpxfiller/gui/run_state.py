@@ -15,6 +15,7 @@ from pathlib import Path
 from ..core.engine import HwpxEngine
 from ..core.fill_ledger import TemplateStructureDrift, template_path_drift
 from ..core.job import Job, RunRequest
+from ..core.mapping import MappingProfile
 from ..data import source_for_path
 from ..naming import existing_outputs, plan_output_names
 
@@ -56,6 +57,61 @@ class FieldState:
     name: str
     state: str            # "filled" | "blank" | "missing" | "drift"(구조 불일치)
     acknowledged: bool = False  # missing 만 유효 — 사용자가 직접 확인했는가
+
+
+@dataclass(frozen=True)
+class GenerationPlan:
+    """생성 1회의 **불변 계획**(RC-07) — 게이트 통과 시점의 전체 스냅샷.
+
+    워커·완료 핸들러·원장 export 가 이것만 소비한다. 실행 중 사용자의 위젯 조작
+    (출력 폴더 편집·데이터 재로드)이 라이브 재독을 통해 원장에 생성물과 다른
+    데이터·폴더를 '증거'로 기록하던 결함의 봉합 — 계획에 없는 값은 소비할 수 없다.
+    """
+
+    template: str
+    records: "tuple[dict, ...]"          # 매핑+표식 적용 완료(생성 입력 그대로)
+    out_dir: str
+    pattern: str
+    marker: str                          # 이번 생성에 실제 쓴 미입력 표식("" = 없음)
+    indices: "tuple[int, ...]"
+    source_pointer: str                  # 원장 소스 표기(포인터-온리)
+    overwrite: bool = False              # 사용자 확정을 받은 덮어쓰기(RC-02)
+    ledger: bool = False                 # 원장 사이드카 opt-in
+    # ---- 원장 문맥(ledger=True 일 때 워커 꼬리가 소비) — 전부 계획 시점 캡처 ----
+    job_name: str = ""
+    mapping: "MappingProfile | None" = None
+    template_fields: "tuple[str, ...]" = ()
+    source_records: "tuple[dict, ...]" = ()   # 매핑 전 실제형(프로파일링 대상)
+    source_keys: "tuple[str, ...]" = ()
+    labels: "dict[str, str]" = field(default_factory=dict)
+
+
+def export_plan_ledger(plan: GenerationPlan, batch) -> str:
+    """계획 스냅샷 + 배치 결과만으로 원장 사이드카 저장(RC-07) — 라이브 상태 재독 0.
+
+    조립·저장은 GUI/CLI 공유 단일 함수
+    :func:`~hwpxfiller.core.fill_ledger.export_batch_ledger`(RC-03). 저장 경로 반환,
+    실패는 raise(호출측 워커/뷰가 시끄럽게 표면화).
+    """
+    from ..core.fill_ledger import export_batch_ledger
+
+    if plan.mapping is None:
+        raise ValueError("원장 export 에는 계획의 매핑 스냅샷이 필요합니다.")
+    sidecar = export_batch_ledger(
+        plan.out_dir,
+        template=plan.template,
+        source=plan.source_pointer,
+        mapping=plan.mapping,
+        template_fields=list(plan.template_fields),
+        results=batch.results,
+        mapped_records=list(plan.records),
+        source_records=list(plan.source_records),
+        source_keys=list(plan.source_keys),
+        labels=dict(plan.labels),
+        job_name=plan.job_name,
+        missing_marker=plan.marker,
+    )
+    return str(sidecar)
 
 
 # ------------------------------------------ 데이터 겨눔 리졸버(단일 실행·매트릭스 공용)
@@ -282,18 +338,10 @@ class RunViewModel:
             return [GateError(f"템플릿을 찾을 수 없습니다:\n{template}", "danger")]
         drift = self.structure_drift()
         if drift.has_drift:
-            parts: "list[str]" = []
-            if drift.read_error:
-                parts.append("템플릿 구조를 읽을 수 없음: " + drift.read_error)
-            if drift.template_only:
-                parts.append("새로 유입된 미매핑 필드: " + ", ".join(drift.template_only))
-            if drift.mapping_only:
-                parts.append("템플릿에서 소멸한 매핑 필드: " + ", ".join(drift.mapping_only))
-            if drift.conflicting:
-                parts.append("값 매핑과 공란 선언이 충돌하는 필드: " + ", ".join(drift.conflicting))
+            # 상세 문구는 describe() 단일화(RC-03) — CLI/생성 경계와 같은 문장.
             return [GateError(
                 "템플릿 구조가 확정 매핑과 다릅니다. 매핑을 다시 확정해 전건 커버를 "
-                "회복해야 생성할 수 있습니다.\n" + "\n".join(parts),
+                "회복해야 생성할 수 있습니다.\n" + drift.describe(),
                 "danger",
             )]
         if not out_dir:
@@ -325,6 +373,42 @@ class RunViewModel:
         )
         return existing_outputs(out_dir, names)
 
+    # ------------------------------------------------------------ 생성 계획(RC-07)
+    def build_generation_plan(
+        self,
+        indices: "list[int]",
+        out_dir: str,
+        *,
+        marker: str = "",
+        ledger: bool = False,
+        overwrite: bool = False,
+    ) -> GenerationPlan:
+        """게이트 통과 직후 호출 — 생성·완료 처리·원장이 소비할 전부를 원자 캡처한다.
+
+        이후 위젯/VM 이 어떻게 바뀌어도 이 계획은 불변이다(RC-07). ``marker`` 는
+        생성에 실제 쓸 표식과 동일해야 원장 dry-run 행이 주입값과 일치한다.
+        """
+        idx = list(indices)
+        labels_fn = getattr(self.datasource, "field_labels", None)
+        labels = labels_fn() if callable(labels_fn) else {}
+        return GenerationPlan(
+            template=self.effective_template(),
+            records=tuple(self.mapped_records(idx, marker)),
+            out_dir=out_dir,
+            pattern=self.job.filename_pattern,
+            marker=marker,
+            indices=tuple(idx),
+            source_pointer=self.source_pointer(),
+            overwrite=overwrite,
+            ledger=ledger,
+            job_name=self.job.name,
+            mapping=self.job.mapping,
+            template_fields=tuple(self._template_fields()),
+            source_records=tuple(self.request(idx).selected_records()),
+            source_keys=tuple(self.job.source_keys()),
+            labels=dict(labels),
+        )
+
     # ------------------------------------------------------------ 생성 원장(L2)
     def source_pointer(self) -> str:
         """원장에 남길 소스 표기 — **포인터-온리**(경로·종류). 쿼리·키는 박제하지 않는다."""
@@ -344,39 +428,14 @@ class RunViewModel:
     ) -> str:
         """생성 원장 JSON 사이드카 저장(**opt-in**) — 저장 경로 반환, 실패는 raise.
 
-        ``mark_missing`` 은 생성에 실제 쓴 표식과 동일해야 dry-run 행이 주입값과
-        일치한다(위젯이 생성 시 결정한 값을 그대로 넘긴다). 되읽기 검증·마스킹은
+        지금 상태를 계획으로 캡처해 :func:`export_plan_ledger` 에 위임한다 — 정상
+        경로(위젯)는 생성 시점 계획을 워커 꼬리에서 그대로 export 하므로(RC-07)
+        이 메서드는 헤드리스/사후 export 용 보조 표면이다. ``mark_missing`` 은 생성에
+        실제 쓴 표식과 동일해야 dry-run 행이 주입값과 일치한다. 되읽기 검증·마스킹은
         :func:`~hwpxfiller.core.fill_ledger.export_run_ledger` 계열이 관통시킨다.
         파일명은 실행별 타임스탬프(RC-02) — 재실행이 이전 증거를 덮지 않는다.
         """
-        from datetime import datetime
-
-        from ..core.fill_ledger import (
-            export_run_ledger, ledger_outputs, ledger_sidecar_path,
+        plan = self.build_generation_plan(
+            list(indices), out_dir, marker=mark_missing, ledger=True
         )
-        from ..core.source_profile import profile_fields
-
-        indices = list(indices)
-        mapped = self.mapped_records(indices, mark_missing)
-        labels_fn = getattr(self.datasource, "field_labels", None)
-        labels = labels_fn() if callable(labels_fn) else {}
-        profiles = profile_fields(
-            self.request(indices).selected_records(),
-            self.job.source_keys(), labels=labels,
-        )
-        outputs = ledger_outputs(
-            batch.results, mapped, self.job.mapping, self._template_fields(),
-            missing_marker=mark_missing,
-        )
-        generated_at = datetime.now().isoformat(timespec="seconds")
-        sidecar = ledger_sidecar_path(out_dir, generated_at)
-        export_run_ledger(
-            sidecar,
-            template=self.effective_template(),
-            source=self.source_pointer(),
-            outputs=outputs,
-            job_name=self.job.name,
-            profiles=profiles,
-            generated_at=generated_at,
-        )
-        return str(sidecar)
+        return export_plan_ledger(plan, batch)

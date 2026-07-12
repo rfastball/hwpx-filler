@@ -309,6 +309,10 @@ def main(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
     ap.add_argument("--overwrite", action="store_true",
                     help="같은 이름의 기존 산출물 덮어쓰기 허용(옵트인). 없으면 대상 "
                          "파일이 하나라도 이미 있을 때 생성 전체를 차단하고 종료코드 1")
+    ap.add_argument("--ack-empty", action="store_true",
+                    help="값이 비어 있는 필드를 확인했음을 표시(옵트인) — 빈 필드에 "
+                         "미입력 표식(〘미입력·필드명〙)을 넣고 진행. 없으면 빈값 "
+                         "발견 시 생성 전체를 차단하고 종료코드 1")
     ap.add_argument("--ledger", action="store_true",
                     help="생성 원장 JSON 사이드카를 out 폴더에 저장(opt-in) — "
                          "소스 프로파일·dry-run 매니페스트·주입 되읽기 증거. "
@@ -332,70 +336,101 @@ def main(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
             print(f)
         return 0
 
-    records = _load_records(ap, args, secret_store)
+    from .data.nara import NaraFetchError
+
+    try:
+        records = _load_records(ap, args, secret_store)
+    except NaraFetchError as exc:
+        # 데이터 경계 게이트(RC-03) — 인증 실패/기간 위반을 '0건 성공'으로 넘기지 않는다.
+        print(f"[오류] 나라장터 취득 실패: {exc}", file=sys.stderr)
+        return 1
     source_records = records  # 원장 프로파일링용 — 매핑 적용 전 실제형 관측 대상.
+
+    from .core.mapping import FieldMapping, MappingProfile
 
     profile = None
     if args.profile:
         from .core.fill_ledger import template_path_drift
-        from .core.mapping import MappingProfile
         profile = MappingProfile.load(args.profile)
         drift = template_path_drift(args.template, profile)
         if drift.has_drift:
-            if drift.read_error:
-                detail = "템플릿 구조를 읽을 수 없음: " + drift.read_error
-            else:
-                names = list(drift.template_only) + list(drift.mapping_only) + list(drift.conflicting)
-                detail = "매핑 재확정 필요: " + ", ".join(names)
-            print("[오류] 템플릿 구조 드리프트 — " + detail, file=sys.stderr)
+            # 문구는 describe() 단일화(RC-03) — GUI/배치 경계와 같은 문장.
+            print("[오류] 템플릿 구조 드리프트 — " + drift.describe(sep="; "),
+                  file=sys.stderr)
             return 1
         records = profile.apply_all(records)
 
     required = engine.required_fields(args.template)
+    # 생성 경계 재검사(RC-03)용 매핑 — 프로파일이 없으면 "같은 이름 열 그대로"의 항등
+    # 매핑(요구 필드 스냅샷). validate 이후 템플릿이 교체되면(TOCTOU) generate_batch 가
+    # 원자 차단한다.
+    gate_mapping = profile or MappingProfile(
+        mappings=[FieldMapping(f, [f]) for f in required]
+    )
     report = validate(required, records)
     if report.missing_columns:
         print(f"[경고] 데이터에 없는 필드(빈칸 생성): {', '.join(report.missing_columns)}",
               file=sys.stderr)
+    marker = ""
     if report.empty_valued:
-        print(f"[경고] 값이 비어있는 필드: {', '.join(report.empty_valued)}", file=sys.stderr)
+        # ADR-E 빈값 게이트의 CLI 이식(RC-03) — 기본 차단, --ack-empty 옵트인 시
+        # GUI 와 동일한 표식을 주입하고 진행(동일 입력 → 두 표면 동일 문서 내용).
+        from .core.job import MISSING_MARKER, mark_missing_values
+
+        if not args.ack_empty:
+            print("[오류] 값이 비어 있는 필드가 있습니다 — 표식 없이 조용히 생성하지 "
+                  f"않습니다: {', '.join(report.empty_valued)}", file=sys.stderr)
+            print("확인했으면 --ack-empty 를 지정하세요(빈 필드에 "
+                  f"'{MISSING_MARKER.format(field='필드명')}' 표식을 넣고 진행).",
+                  file=sys.stderr)
+            return 1
+        marker = MISSING_MARKER
+        records = mark_missing_values(records, marker, fields=required)
+        print(f"[안내] 미입력 표식 주입: {', '.join(report.empty_valued)}", file=sys.stderr)
 
     try:
         batch = generate_batch(args.template, records, args.out, args.pattern, engine,
-                               overwrite=args.overwrite)
+                               overwrite=args.overwrite, mapping=gate_mapping)
     except FileExistsError as exc:
         # 기본은 차단(RC-02) — 기존 산출물(수기 보정본일 수 있음)의 무경고 파괴 금지.
         print(f"[오류] {exc}", file=sys.stderr)
         print("덮어쓰려면 --overwrite 를 지정하세요.", file=sys.stderr)
         return 1
+    except ValueError as exc:
+        # 생성 경계 드리프트 재검사(RC-03) — 검증 이후 템플릿 교체도 성공으로 못 섞인다.
+        print(f"[오류] {exc}", file=sys.stderr)
+        return 1
     print(f"완료: {batch.succeeded}/{batch.total} 성공 -> {args.out}")
     for res in batch.results:
         if not res.ok:
             print(f"  [실패] {res.output_path}: {res.error}", file=sys.stderr)
+        elif res.unmatched:
+            # 매칭 안 된 필드는 어느 채널에도 안 나오면 파이프라인 관점 완전 무음(RC-03).
+            print(f"  [주의] 매칭 안 된 필드({res.output_path}): "
+                  f"{', '.join(res.unmatched)}", file=sys.stderr)
 
     if args.ledger:
-        _export_ledger(args, profile, required, source_records, records, batch)
+        _export_ledger(args, gate_mapping, required, source_records, records, batch, marker)
     return 0 if batch.failed == 0 else 1
 
 
-def _export_ledger(args, profile, required, source_records, mapped_records, batch) -> None:
+def _export_ledger(
+    args, mapping, required, source_records, mapped_records, batch, marker: str = "",
+) -> None:
     """``--ledger`` opt-in — 원장 사이드카를 out 폴더에 저장(생성 성패와 독립).
+
+    문맥 조립·행 구성·프로파일링·저장은 GUI 와 공유하는 단일 함수
+    :func:`~hwpxfiller.core.fill_ledger.export_batch_ledger` 가 한다(RC-03 —
+    표면별 병렬 구현으로 원장 사실이 갈라지는 결함 봉합). ``marker`` 는 생성에
+    실제 쓴 표식과 동일해야 원장이 문서 실상(표식 잔존)을 증거한다.
 
     프로파일 없는 직접 채우기(헤더=템플릿 필드)는 항등 매핑으로 원장 행을 만든다 —
     소스출처·변환이 없는 게 아니라 "같은 이름 열을 그대로" 라는 사실의 기록이다.
     소스 표기는 포인터-온리(경로·기간) — 나라 쿼리 URL·ServiceKey 는 박제하지 않는다.
     파일명은 실행별 타임스탬프(RC-02) — 재실행이 이전 실행의 증거를 덮지 않는다.
     """
-    from datetime import datetime
+    from .core.fill_ledger import export_batch_ledger
 
-    from .core.fill_ledger import (
-        export_run_ledger, ledger_outputs, ledger_sidecar_path,
-    )
-    from .core.mapping import FieldMapping, MappingProfile
-    from .core.source_profile import profile_fields
-
-    mapping = profile or MappingProfile(
-        mappings=[FieldMapping(f, [f]) for f in required]
-    )
     labels: "dict[str, str]" = {}
     if args.source == "nara":
         from .data.nara import NaraStdDataSource
@@ -403,16 +438,17 @@ def _export_ledger(args, profile, required, source_records, mapped_records, batc
         source = f"nara:표준입찰공고 {args.bgn}~{args.end}"
     else:
         source = f"file:{args.data}"
-    outputs = ledger_outputs(batch.results, mapped_records, mapping, required)
-    generated_at = datetime.now().isoformat(timespec="seconds")
-    sidecar = ledger_sidecar_path(args.out, generated_at)
-    export_run_ledger(
-        sidecar,
+    sidecar = export_batch_ledger(
+        args.out,
         template=args.template,
         source=source,
-        outputs=outputs,
-        profiles=profile_fields(source_records, labels=labels),
-        generated_at=generated_at,
+        mapping=mapping,
+        template_fields=required,
+        results=batch.results,
+        mapped_records=mapped_records,
+        source_records=source_records,
+        labels=labels,
+        missing_marker=marker,
     )
     print(f"[원장] {sidecar} 저장 — 값은 텍스트 미리보기·되읽기이며 HWPX 렌더가 아닙니다.",
           file=sys.stderr)

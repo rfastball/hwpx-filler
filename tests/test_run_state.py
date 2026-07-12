@@ -217,6 +217,98 @@ def test_output_conflicts_lists_existing_targets_only(tmp_path):
     assert sentinel.read_bytes() == b"user-edited"  # 검출은 무변형
 
 
+# ------------------------------------------------------------ 생성 계획(RC-07)
+def test_generation_plan_is_immutable_snapshot(tmp_path):
+    """계획은 클릭 시점 스냅샷 — 이후 VM/데이터가 바뀌어도 불변(라이브 재독 금지)."""
+    import dataclasses
+
+    from hwpxfiller.core.job import MISSING_MARKER
+
+    vm = _vm(tmp_path)
+    plan = vm.build_generation_plan(
+        [0, 1], str(tmp_path / "outA"), marker=MISSING_MARKER, ledger=True
+    )
+    assert plan.template == vm.job.template_path
+    assert plan.out_dir == str(tmp_path / "outA")
+    assert plan.records[0]["추정가격"] == MISSING_MARKER.format(field="추정가격")
+    assert plan.source_pointer == "_Src"
+    assert plan.indices == (0, 1)
+    assert plan.job_name == "실행" and plan.source_keys == ("bidNtceNm", "presmptPrce")
+
+    # 실행 중 데이터 재로드 모사(프로브2) — 계획은 옛 스냅샷 그대로.
+    class _Swapped:
+        def records(self):
+            return [{"bidNtceNm": "바뀐공고", "presmptPrce": "9"}] * 2
+
+        def fields(self):
+            return ["bidNtceNm", "presmptPrce"]
+
+    vm.datasource = _Swapped()
+    vm.records = vm.datasource.records()
+    assert plan.records[0]["공고명"] == "가"          # 재독 없음
+    assert plan.source_records[0]["bidNtceNm"] == "가"
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        plan.out_dir = "elsewhere"  # type: ignore[misc]
+
+
+def test_export_plan_ledger_consumes_plan_not_live_state(tmp_path):
+    """원장은 계획만 소비(RC-07) — 실행 중 out_dir 편집·데이터 교체가 증거에 못 낀다."""
+    import json
+    from pathlib import Path
+
+    from hwpxfiller.batch import generate_batch
+    from hwpxfiller.core.job import MISSING_MARKER
+    from hwpxfiller.gui.run_state import export_plan_ledger
+
+    vm = _vm(tmp_path)
+    out = tmp_path / "outA"
+    plan = vm.build_generation_plan(
+        [0, 1], str(out), marker=MISSING_MARKER, ledger=True
+    )
+    batch = generate_batch(
+        plan.template, list(plan.records), plan.out_dir, plan.pattern,
+        mapping=plan.mapping,
+    )
+    assert batch.failed == 0
+
+    # 프로브1·2 — 완료 전 위젯/VM 조작 모사: 원장은 여전히 계획(outA·옛 데이터)을 증거.
+    vm.datasource = None
+    vm.records = []
+    sidecar = export_plan_ledger(plan, batch)
+    assert Path(sidecar).parent == out                   # ed_out 재독 없음
+    payload = json.loads(Path(sidecar).read_text(encoding="utf-8"))
+    assert payload["job"] == "실행" and payload["source"] == "_Src"
+    first = {r["field"]: r for r in payload["outputs"][0]["rows"]}
+    assert first["공고명"]["preview_text"] == "가"       # 생성물과 같은 데이터의 증거
+    assert first["공고명"]["injected"] is True
+
+
+def test_export_plan_ledger_partial_batch_keeps_evidence(tmp_path):
+    """취소된 부분 배치(RC-06)도 처리된 산출물만큼 증거를 남긴다 — strict zip 붕괴 금지."""
+    from hwpxfiller.batch import generate_batch
+    from hwpxfiller.gui.run_state import export_plan_ledger
+
+    vm = _vm(tmp_path)
+    out = tmp_path / "out"
+    plan = vm.build_generation_plan([0, 1], str(out), marker="", ledger=True)
+    flag = {"stop": False}
+
+    def progress(done, total):
+        flag["stop"] = True  # 레코드 1 직후 취소
+
+    batch = generate_batch(
+        plan.template, list(plan.records), plan.out_dir, plan.pattern,
+        progress=progress, cancelled=lambda: flag["stop"],
+    )
+    assert batch.cancelled and batch.attempted == 1
+
+    import json
+    from pathlib import Path
+    sidecar = export_plan_ledger(plan, batch)
+    payload = json.loads(Path(sidecar).read_text(encoding="utf-8"))
+    assert len(payload["outputs"]) == 1  # 처리된 1건만 — 예외 없이 부분 증거
+
+
 # ------------------------------------------------------------------ 생성 원장(L2)
 def test_export_run_ledger_writes_evidence_sidecar(tmp_path):
     import json

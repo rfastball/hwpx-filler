@@ -75,6 +75,23 @@ class TemplateStructureDrift:
         """방향을 드러내는 별칭: ``C - T``."""
         return self.mapping_only
 
+    def describe(self, sep: str = "\n") -> str:
+        """차단 사유 상세 문구의 **단일 출처**(RC-03) — GUI·CLI·생성 경계가 같은 문장을 쓴다.
+
+        표면별로 문구를 재조립하면 이미 갈라졌던 전례(run_state/run_view/cli/batch 4곳)가
+        있어, 조립을 여기로 하강한다. 드리프트가 없으면 빈 문자열.
+        """
+        parts: "list[str]" = []
+        if self.read_error:
+            parts.append("템플릿 구조를 읽을 수 없음: " + self.read_error)
+        if self.template_only:
+            parts.append("새로 유입된 미매핑 필드: " + ", ".join(self.template_only))
+        if self.mapping_only:
+            parts.append("템플릿에서 소멸한 매핑 필드: " + ", ".join(self.mapping_only))
+        if self.conflicting:
+            parts.append("값 매핑과 공란 선언이 충돌하는 필드: " + ", ".join(self.conflicting))
+        return sep.join(parts)
+
 
 def template_structure_drift(
     template_fields: "Iterable[str]", mapping: MappingProfile
@@ -375,6 +392,60 @@ def export_run_ledger(
     # 원자 쓰기(RC-01) — 저장 중 실패가 기존 원장(증거)을 파괴하지 않는다.
     write_text_atomic(path, json.dumps(payload, ensure_ascii=False, indent=2))
     return payload
+
+
+def export_batch_ledger(
+    out_dir: "str | Path",
+    *,
+    template: str,
+    source: str,
+    mapping: MappingProfile,
+    template_fields: "Iterable[str]",
+    results,
+    mapped_records: "list[dict[str, str]] | tuple[dict[str, str], ...]",
+    source_records: "list[dict[str, str]] | tuple[dict[str, str], ...]" = (),
+    source_keys: "Iterable[str] | None" = None,
+    labels: "dict[str, str] | None" = None,
+    job_name: str = "",
+    missing_marker: str = "",
+    generated_at: str = "",
+) -> Path:
+    """원장 문맥 조립 + export 의 **단일 함수**(RC-03) — GUI(RunViewModel)·CLI 가 공유한다.
+
+    표면별 병렬 구현(cli._export_ledger vs RunViewModel.export_run_ledger)이
+    job명/missing_marker/profiles 축에서 이미 갈라졌던 결함의 봉합: 행 구성
+    (:func:`ledger_outputs`)·프로파일링(:func:`~hwpxfiller.core.source_profile.
+    profile_fields`)·사이드카 경로(:func:`ledger_sidecar_path`)·저장을 여기서만 한다.
+    취소된 배치(부분 결과)도 증거를 남긴다 — 처리된 산출물만큼만 행을 만든다.
+    저장한 사이드카 경로를 반환, 실패는 raise(증거 저장 실패는 조용히 넘기지 않는다).
+    """
+    from datetime import datetime
+
+    from .source_profile import profile_fields
+
+    if not generated_at:
+        generated_at = datetime.now().isoformat(timespec="seconds")
+    results = list(results)
+    outputs = ledger_outputs(
+        results, list(mapped_records)[: len(results)], mapping, template_fields,
+        missing_marker=missing_marker,
+    )
+    profiles = profile_fields(
+        list(source_records),
+        list(source_keys) if source_keys is not None else None,
+        labels=labels or {},
+    )
+    sidecar = ledger_sidecar_path(out_dir, generated_at)
+    export_run_ledger(
+        sidecar,
+        template=template,
+        source=source,
+        outputs=outputs,
+        job_name=job_name,
+        profiles=profiles,
+        generated_at=generated_at,
+    )
+    return sidecar
 
 
 def ledger_sidecar_path(out_dir: "str | Path", generated_at: str) -> Path:

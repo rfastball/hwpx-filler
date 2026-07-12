@@ -38,6 +38,37 @@ def _fixture_bytes() -> bytes:
     return (FIXTURES / "nara_std_response.json").read_bytes()
 
 
+def _acquire_and_wait(dlg, timeout: float = 8.0) -> None:
+    """나라 대화상자 취득이 QThread(RC-12)로 돌므로 busy 해제까지 이벤트 루프를 돌린다."""
+    import time
+
+    from PySide6.QtCore import QCoreApplication
+
+    dlg._on_acquire()
+    deadline = time.monotonic() + timeout
+    while dlg._busy:
+        QCoreApplication.processEvents()
+        if time.monotonic() > deadline:
+            raise AssertionError("나라 취득이 제한시간 내에 끝나지 않았습니다")
+        time.sleep(0.005)
+    QCoreApplication.processEvents()
+
+
+def _wait_pool_load(view, timeout: float = 8.0) -> None:
+    """실행뷰 풀 복원이 QThread(RC-12)로 돌므로 완료(스레드 해제)까지 이벤트 루프를 돌린다."""
+    import time
+
+    from PySide6.QtCore import QCoreApplication
+
+    deadline = time.monotonic() + timeout
+    while view._data_thread is not None:
+        QCoreApplication.processEvents()
+        if time.monotonic() > deadline:
+            raise AssertionError("풀 복원이 제한시간 내에 끝나지 않았습니다")
+        time.sleep(0.005)
+    QCoreApplication.processEvents()
+
+
 @pytest.fixture(scope="module")
 def qapp():
     app = QApplication.instance() or QApplication([])
@@ -93,7 +124,7 @@ def test_panel_register_nara_from_dialog_saves_query_only(qapp, tmp_path, monkey
     panel = DatasetPoolPanel(reg, store=store, fetcher=lambda url: _fixture_bytes())
 
     dlg = NaraAcquireDialog(store=store, fetcher=lambda url: _fixture_bytes())
-    dlg._on_acquire()  # 취득 성공(수용 가능 상태)
+    _acquire_and_wait(dlg)  # 취득 성공(수용 가능 상태)
     monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("공고6월", True))
     panel._register_nara_from_dialog(dlg)
 
@@ -122,7 +153,7 @@ def test_panel_register_nara_refuses_stale_edited_dialog(qapp, tmp_path, monkeyp
     panel = DatasetPoolPanel(reg, store=store, fetcher=lambda url: _fixture_bytes())
 
     dlg = NaraAcquireDialog(store=store, fetcher=lambda url: _fixture_bytes())
-    dlg._on_acquire()  # 취득 성공
+    _acquire_and_wait(dlg)  # 취득 성공
     dlg.dt_bgn.setDateTime(dlg.dt_bgn.dateTime().addMonths(-6))  # 취득 후 기간 편집
     assert not dlg.buttons.button(QDialogButtonBox.Ok).isEnabled()  # 수용 게이트 잠김
 
@@ -264,8 +295,10 @@ def test_run_view_picks_from_pool(qapp, tmp_path, monkeypatch):
     view = RunView(job, pool_registry=reg)
     monkeypatch.setattr(QInputDialog, "getItem", lambda *a, **k: ("6월", True))
     view._pick_from_pool()
+    _wait_pool_load(view)  # 복원은 QThread(RC-12) — 완료까지 이벤트 루프
     assert view.records and view.records[0]["공고명"] == "전산장비"
     assert view.ed_data.text().startswith("풀: 6월")
+    assert view.btn_pool.isEnabled()  # 복원 후 데이터 버튼 잠금 해제
 
 
 def test_run_view_pool_empty_informs(qapp, tmp_path, monkeypatch):

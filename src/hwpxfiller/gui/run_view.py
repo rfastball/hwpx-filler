@@ -43,9 +43,9 @@ from PySide6.QtWidgets import (
 from ..core.job import MISSING_MARKER, Job
 from .flow_layout import FlowLayout
 from .record_select import RecordSelector
-from .run_state import RunViewModel
+from .run_state import GenerationPlan, RunViewModel
 from .style import BASE_QSS, mark
-from .worker import GenerateWorker
+from .worker import GenerateWorker, TaskWorker
 
 
 class RunView(QMainWindow):
@@ -71,6 +71,11 @@ class RunView(QMainWindow):
         self._nara_fetcher = nara_fetcher
         self._running = False
         self._thread: "QThread | None" = None
+        self._worker: "GenerateWorker | None" = None
+        self._plan: "GenerationPlan | None" = None  # 이번 생성의 불변 계획(RC-07)
+        self._data_thread: "QThread | None" = None  # 풀 복원 백그라운드(RC-12)
+        self._data_worker: "TaskWorker | None" = None
+        self._pending_pool_label = ""
         self._marked_fields: "list[str]" = []  # 이번 생성에서 미입력 표시가 들어간 필드(결과 요약용)
 
         self.setWindowTitle(f"HWPX Filler — 실행: {job.name}")
@@ -118,14 +123,14 @@ class RunView(QMainWindow):
         self.ed_data.setReadOnly(True)
         self.btn_pool = QPushButton("데이터 풀에서…")
         self.btn_pool.clicked.connect(self._pick_from_pool)
-        btn_data = QPushButton("파일 선택…")
-        btn_data.clicked.connect(self._pick_data)
+        self.btn_data = QPushButton("파일 선택…")
+        self.btn_data.clicked.connect(self._pick_data)
         self.btn_nara = QPushButton("나라장터…")
         self.btn_nara.clicked.connect(self._pick_nara)
         drow.addWidget(QLabel("데이터"))
         drow.addWidget(self.ed_data, 1)
         drow.addWidget(self.btn_pool)
-        drow.addWidget(btn_data)
+        drow.addWidget(self.btn_data)
         drow.addWidget(self.btn_nara)
         root.addLayout(drow)
 
@@ -183,6 +188,11 @@ class RunView(QMainWindow):
         mark(self.btn_generate, "primary", True)
         self.btn_generate.clicked.connect(self._on_generate)
         actions.addWidget(self.btn_generate)
+        # 실행 중 협조적 취소(RC-06) — 레코드 경계에서 중단, 부분 결과는 요약으로 남는다.
+        self.btn_cancel = QPushButton("생성 취소")
+        self.btn_cancel.setEnabled(False)
+        self.btn_cancel.clicked.connect(self._on_cancel_generate)
+        actions.addWidget(self.btn_cancel)
         actions.addStretch(1)
         root.addLayout(actions)
 
@@ -281,7 +291,12 @@ class RunView(QMainWindow):
         self._after_data_loaded(path)
 
     def _pick_from_pool(self) -> None:
-        """데이터 풀(활성 항목)에서 참조를 골라 실행 시점에 재읽기(싱크)한다."""
+        """데이터 풀(활성 항목)에서 참조를 골라 실행 시점에 재읽기(싱크)한다.
+
+        나라 풀 항목의 재취득은 네트워크라 UI 스레드에서 돌리면 이벤트 루프가
+        동결된다(RC-12) — 복원은 :class:`TaskWorker`(QThread)로 옮기고, 복원 중엔
+        데이터 버튼을 잠가 진행 상태를 시끄럽게 표시한다.
+        """
         from PySide6.QtWidgets import QInputDialog
 
         from ..core.dataset_pool import STATUS_ACTIVE
@@ -299,17 +314,47 @@ class RunView(QMainWindow):
         if not ok or not name:
             return
         item = next(it for it in items if it.name == name)
-        try:
-            records = self.vm.load_pool_item(
+        self._say(f"데이터 복원 중(백그라운드): {item.name}")
+        self._set_data_busy(True)
+        self._data_thread = QThread()
+        self._data_worker = TaskWorker(
+            lambda: self.vm.load_pool_item(
                 item, secret_store=self._secret_store, fetcher=self._nara_fetcher
             )
-        except Exception as exc:  # noqa: BLE001 - 복원 실패(키 미등록·읽기)는 시끄럽게
-            QMessageBox.critical(self, "오류", f"데이터 복원 실패:\n{exc}")
-            return
+        )
+        self._data_worker.moveToThread(self._data_thread)
+        self._data_thread.started.connect(self._data_worker.run)
+        # 수신자는 반드시 바운드 메서드(QObject 슬롯) — 큐드 연결로 UI 스레드에서 처리된다.
+        self._pending_pool_label = f"풀: {item.name}"
+        self._data_worker.finished.connect(self._on_pool_loaded)
+        self._data_worker.failed.connect(self._on_pool_load_failed)
+        self._data_thread.start()
+
+    def _set_data_busy(self, busy: bool) -> None:
+        """데이터 복원(네트워크 가능) 중 겨눔 버튼 잠금 — 진행 중 재진입·경합 방지(RC-12)."""
+        for b in (self.btn_pool, self.btn_data, self.btn_nara):
+            b.setEnabled(not busy)
+
+    def _teardown_data_thread(self) -> None:
+        if self._data_thread:
+            self._data_thread.quit()
+            self._data_thread.wait()
+            self._data_thread = None
+        self._data_worker = None
+        self._set_data_busy(False)
+
+    def _on_pool_loaded(self, records) -> None:
+        self._teardown_data_thread()
         if not records:
             QMessageBox.warning(self, "확인", "레코드가 없습니다(취득 0건).")
             return
-        self._after_data_loaded(f"풀: {item.name}")
+        self._after_data_loaded(self._pending_pool_label)
+
+    def _on_pool_load_failed(self, msg: str) -> None:
+        # 복원 실패(키 미등록·읽기·API 오류)는 시끄럽게 — 마스킹은 하위 계층이 관통.
+        self._teardown_data_thread()
+        self._say(f"[실패] 데이터 복원 실패: {msg}")
+        QMessageBox.critical(self, "오류", f"데이터 복원 실패:\n{msg}")
 
     def _pick_nara(self) -> None:
         """일회 나라장터 취득(애드혹) — 풀 등록 없이 이번 실행만 겨눈다."""
@@ -454,12 +499,7 @@ class RunView(QMainWindow):
         self._marked_fields = list(blanks)
         marker = MISSING_MARKER if blanks else ""
         if blanks:
-            mapped = self.vm.mapped_records(indices, mark_missing=marker)
             self._say("미입력 표시 적용: " + ", ".join(blanks))
-        else:
-            mapped = self.vm.mapped_records(indices)
-        # 원장 export(_on_finished)가 생성과 동일한 선택·표식으로 행을 재구성하기 위한 문맥.
-        self._ledger_ctx = (list(indices), marker) if self.chk_ledger.isChecked() else None
 
         # ---- 덮어쓰기 확인(RC-02): 기존 파일을 조용히 파괴하지 않는다. ----
         # 확정 없이 진행하다 충돌하면 generate_batch 가 raise → _on_failed 로 시끄럽게.
@@ -479,35 +519,62 @@ class RunView(QMainWindow):
             overwrite = True
             self._say(f"덮어쓰기 확정: 기존 파일 {len(conflicts)}개")
 
-        template = self.vm.effective_template()
+        # ---- 불변 생성 계획 캡처(RC-07): 워커·완료 핸들러·원장이 이것만 소비한다. ----
+        # 실행 중 위젯 조작(출력 폴더 편집·데이터 재로드)이 결과·증거에 끼어들 수 없다.
+        plan = self.vm.build_generation_plan(
+            indices, out_dir, marker=marker,
+            ledger=self.chk_ledger.isChecked(), overwrite=overwrite,
+        )
+        self._plan = plan
         self._running = True
         self.btn_generate.setEnabled(False)
+        self.btn_cancel.setEnabled(True)
         self.lbl_result.setText("")
-        self.progress.setMaximum(len(mapped))
+        self.progress.setMaximum(len(plan.records))
         self.progress.setValue(0)
         mode = "기존 문서 이어채우기" if self._template_override else "새 문서"
-        self._say(f"생성 시작[{mode}]: {len(mapped)}건 → {out_dir}")
+        self._say(f"생성 시작[{mode}]: {len(plan.records)}건 → {plan.out_dir}")
 
         self._thread = QThread()
-        self._worker = GenerateWorker(
-            template, mapped, out_dir, self.job.filename_pattern, overwrite=overwrite
-        )
+        self._worker = GenerateWorker(plan)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.progress.connect(lambda done, total: self.progress.setValue(done))
+        self._worker.stage.connect(self._say)  # '원장 검증 중' 등 단계 고지(RC-07)
         self._worker.finished.connect(self._on_finished)
         self._worker.failed.connect(self._on_failed)
         self._thread.start()
 
+    def _on_cancel_generate(self) -> None:
+        """협조적 취소(RC-06) — 진행 중 레코드까지 마치고 중단, 부분 결과는 요약으로."""
+        if self._worker is not None and self._running:
+            self._worker.cancel()
+            self.btn_cancel.setEnabled(False)
+            self._say("취소 요청 — 진행 중인 레코드까지 마치고 중단합니다.")
+
     def _on_finished(self, batch) -> None:
+        worker = self._worker
+        plan = self._plan
         self._teardown_thread()
-        summary = f"완료 — 성공 {batch.succeeded}/{batch.total} · 실패 {batch.failed}"
-        marked = getattr(self, "_marked_fields", [])
-        if marked:
-            summary += f" · 미입력 표시 {len(marked)}필드({', '.join(marked)})"
-        mark(self.lbl_result, "level", "ok" if batch.failed == 0 else "danger")
+        if plan is None:  # 계획 없는 완료 신호는 배선 오류 — 조용히 무시하지 않는다
+            self._say("[오류] 생성 계획이 없는 완료 신호 — 배선 오류입니다.")
+            return
+        cancelled = bool(getattr(batch, "cancelled", False))
+        if cancelled:
+            # 부분 결과 요약(RC-06) — 어디까지 만들어졌는지 침묵하지 않는다.
+            summary = (
+                f"취소됨 — 처리 {batch.attempted}/{batch.total}건 · "
+                f"성공 {batch.succeeded} · 미처리 {batch.total - batch.attempted}건"
+            )
+            mark(self.lbl_result, "level", "warn")
+        else:
+            summary = f"완료 — 성공 {batch.succeeded}/{batch.total} · 실패 {batch.failed}"
+            marked = self._marked_fields
+            if marked:
+                summary += f" · 미입력 표시 {len(marked)}필드({', '.join(marked)})"
+            mark(self.lbl_result, "level", "ok" if batch.failed == 0 else "danger")
         self.lbl_result.setText(summary)
-        self._say(f"완료: {batch.succeeded}/{batch.total} 성공, {batch.failed} 실패")
+        self._say(summary)
         for res in batch.results:
             if not res.ok:
                 self._say(f"  [실패] {res.output_path}: {res.error}")
@@ -516,26 +583,27 @@ class RunView(QMainWindow):
                     f"  [주의] 매칭 안 된 필드: {', '.join(res.unmatched)} → "
                     f"{Path(res.output_path).name}"
                 )
-        out_dir = self.ed_out.text().strip()
-        ctx = getattr(self, "_ledger_ctx", None)
-        if ctx is not None:
-            indices, marker = ctx
-            try:
-                sidecar = self.vm.export_run_ledger(
-                    out_dir, indices, batch, mark_missing=marker
-                )
-                self._say(f"[원장] {sidecar} 저장 — 값은 텍스트이며 HWPX 렌더가 아닙니다.")
-            except Exception as exc:  # noqa: BLE001 - 증거 저장 실패는 조용히 넘기지 않는다
-                self._say(f"[원장 실패] 사이드카를 저장하지 못했습니다: {exc}")
+        # 원장은 워커 꼬리에서 이미 저장·검증됐다(RC-07) — 여기선 결과만 표면화.
+        if plan.ledger and worker is not None:
+            if worker.ledger_error:
+                self._say(f"[원장 실패] 사이드카를 저장하지 못했습니다: {worker.ledger_error}")
                 mark(self.lbl_result, "level", "warn")
+            elif worker.ledger_path:
+                self._say(f"[원장] {worker.ledger_path} 저장 — 값은 텍스트이며 HWPX 렌더가 아닙니다.")
         self.run_finished.emit(batch)
-        if batch.succeeded > 0 and QMessageBox.question(
+        if not cancelled and batch.succeeded > 0 and QMessageBox.question(
             self, "완료", f"{batch.succeeded}건 생성 완료.\n결과 폴더를 여시겠습니까?"
         ) == QMessageBox.Yes:
-            self._open_folder(out_dir)
+            self._open_folder(plan.out_dir)
 
     def _on_failed(self, msg: str) -> None:
         self._teardown_thread()
+        # 실패도 성공 경로와 대칭으로 상태를 정리한다(RC-07) — 모달만 남기면 닫는 순간
+        # 실패 증거가 증발한다(경보 휘발). 라벨·로그·진행바에 실패를 박제한다.
+        self.progress.setValue(0)
+        mark(self.lbl_result, "level", "danger")
+        self.lbl_result.setText(f"실패 — 생성 중 오류: {msg}")
+        self._say(f"[실패] 생성 중 오류: {msg}")
         QMessageBox.critical(self, "오류", f"생성 중 오류:\n{msg}")
 
     def _teardown_thread(self) -> None:
@@ -544,6 +612,7 @@ class RunView(QMainWindow):
             self._thread.wait()
             self._thread = None
         self._running = False
+        self.btn_cancel.setEnabled(False)
         self._sync_generate_enabled()  # 게이트(미확인 미입력) 재평가 후 버튼 상태 복원
 
     @staticmethod

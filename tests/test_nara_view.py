@@ -43,6 +43,40 @@ def _dialog(store, fetcher):
     return NaraAcquireDialog(store=store, fetcher=fetcher)
 
 
+def _wait_idle(dlg, timeout: float = 8.0) -> None:
+    """취득/시험이 QThread(RC-12)로 돌므로 busy 해제까지 이벤트 루프를 돌린다."""
+    import time
+
+    from PySide6.QtCore import QCoreApplication
+
+    deadline = time.monotonic() + timeout
+    while dlg._busy:
+        QCoreApplication.processEvents()
+        if time.monotonic() > deadline:
+            raise AssertionError("나라 요청이 제한시간 내에 끝나지 않았습니다")
+        time.sleep(0.005)
+    QCoreApplication.processEvents()  # 남은 큐 배출(시그널 전달 마무리)
+
+
+def _drain_tasks(dlg, timeout: float = 8.0) -> None:
+    """중지 후에도 백그라운드 태스크가 비워질 때까지 대기(스테일 결과 도착·폐기 확인)."""
+    import time
+
+    from PySide6.QtCore import QCoreApplication
+
+    deadline = time.monotonic() + timeout
+    while dlg._tasks:
+        QCoreApplication.processEvents()
+        if time.monotonic() > deadline:
+            raise AssertionError("백그라운드 태스크가 제한시간 내에 끝나지 않았습니다")
+        time.sleep(0.005)
+
+
+def _acquire(dlg) -> None:
+    dlg._on_acquire()
+    _wait_idle(dlg)
+
+
 def test_dialog_key_registration_updates_status_and_clears_input(qapp):
     store = MemorySecretStore()
     dlg = _dialog(store, lambda url: _fixture_bytes())
@@ -67,7 +101,7 @@ def test_dialog_acquire_enables_ok_and_captures_records(qapp):
     ok = dlg.buttons.button(QDialogButtonBox.Ok)
     assert not ok.isEnabled()  # 취득 전 확인 잠금
 
-    dlg._on_acquire()
+    _acquire(dlg)
     assert ok.isEnabled()
     assert len(dlg.records) == 2
     assert "bidNtceNo" in dlg.fields
@@ -84,7 +118,7 @@ def test_dialog_acquire_failure_keeps_ok_locked_and_redacts(qapp):
 
     store = MemorySecretStore({NARA_SERVICE_KEY_NAME: _LIVE_KEY})
     dlg = _dialog(store, boom)
-    dlg._on_acquire()
+    _acquire(dlg)
     ok = dlg.buttons.button(QDialogButtonBox.Ok)
     assert not ok.isEnabled()           # 실패는 수용 불가
     assert dlg.records == []
@@ -107,10 +141,10 @@ def test_dialog_failure_after_success_resets_all_outputs(qapp):
 
     store = MemorySecretStore({NARA_SERVICE_KEY_NAME: "DUMMY"})
     dlg = _dialog(store, flaky)
-    dlg._on_acquire()
+    _acquire(dlg)
     assert dlg.datasource is not None and dlg.label and dlg.fields
 
-    dlg._on_acquire()  # 실패 — 이전 성공값 잔존 금지
+    _acquire(dlg)  # 실패 — 이전 성공값 잔존 금지
     assert dlg.records == []
     assert dlg.fields == []
     assert dlg.datasource is None
@@ -124,7 +158,7 @@ def test_dialog_edit_after_acquire_locks_ok_and_requires_reacquire(qapp):
 
     store = MemorySecretStore({NARA_SERVICE_KEY_NAME: "DUMMY"})
     dlg = _dialog(store, lambda url: _fixture_bytes())
-    dlg._on_acquire()
+    _acquire(dlg)
     ok = dlg.buttons.button(QDialogButtonBox.Ok)
     assert ok.isEnabled()
 
@@ -133,7 +167,7 @@ def test_dialog_edit_after_acquire_locks_ok_and_requires_reacquire(qapp):
     assert "다시 가져오세요" in dlg.lbl_result.text()
     assert dlg.records == [] and dlg.datasource is None and dlg.label == ""  # 원자 리셋
 
-    dlg._on_acquire()  # 편집된 기간(>1개월)은 재취득도 검증에 걸림 — 잠금 유지
+    _acquire(dlg)  # 편집된 기간(>1개월)은 재취득도 검증에 걸림 — 잠금 유지
     assert not ok.isEnabled()
     assert "1개월" in dlg.lbl_result.text()
 
@@ -144,7 +178,7 @@ def test_dialog_spin_edit_after_acquire_locks_ok_until_reacquire(qapp):
 
     store = MemorySecretStore({NARA_SERVICE_KEY_NAME: "DUMMY"})
     dlg = _dialog(store, lambda url: _fixture_bytes())
-    dlg._on_acquire()
+    _acquire(dlg)
     ok = dlg.buttons.button(QDialogButtonBox.Ok)
     assert ok.isEnabled()
 
@@ -152,7 +186,7 @@ def test_dialog_spin_edit_after_acquire_locks_ok_until_reacquire(qapp):
     assert not ok.isEnabled()
     assert "다시 가져오세요" in dlg.lbl_result.text()
 
-    dlg._on_acquire()  # 재취득 → 새 스냅샷으로 복원
+    _acquire(dlg)  # 재취득 → 새 스냅샷으로 복원
     assert ok.isEnabled()
     assert dlg.query_options()["num_rows"] == 7
 
@@ -175,7 +209,7 @@ def test_query_options_is_acquire_time_snapshot_or_loud_failure(qapp):
     with pytest.raises(RuntimeError):
         dlg.query_options()  # 취득 전
 
-    dlg._on_acquire()
+    _acquire(dlg)
     opts = dlg.query_options()
     bgn, end = dlg.datetime_range()  # 편집 전이므로 위젯 현재값 == 취득 시점값
     assert (opts["bgn_dt"], opts["end_dt"]) == (bgn, end)
@@ -186,7 +220,67 @@ def test_dialog_connection_test_reports_result(qapp):
     store = MemorySecretStore({NARA_SERVICE_KEY_NAME: "DUMMY"})
     dlg = _dialog(store, lambda url: _fixture_bytes())
     dlg._on_test()
+    _wait_idle(dlg)  # 연결시험도 QThread(RC-12)
     assert "성공" in dlg.lbl_test.text()
+
+
+# ------------------------------------------------------------ 백그라운드 취득(RC-12)
+def test_acquire_runs_off_ui_thread_with_busy_lock(qapp):
+    """RC-12: 취득 중 UI 스레드 비블로킹 — 즉시 반환 + 입력·액션 잠금 + 진행 표시."""
+    import threading
+
+    from PySide6.QtWidgets import QDialogButtonBox
+
+    gate = threading.Event()
+
+    def slow_fetch(url: str) -> bytes:
+        gate.wait(5.0)  # 정부 API 지연 모사 — UI 스레드였다면 여기서 동결
+        return _fixture_bytes()
+
+    store = MemorySecretStore({NARA_SERVICE_KEY_NAME: "DUMMY"})
+    dlg = _dialog(store, slow_fetch)
+    dlg._on_acquire()  # 동기 urlopen이었다면 이 호출 자체가 5초 블록 후 busy=False
+    assert dlg._busy                       # 즉시 반환 — 백그라운드 진행 중
+    assert not dlg.btn_acquire.isEnabled()  # 취득 중 버튼 비활성
+    assert not dlg.btn_test.isEnabled()
+    assert not dlg.dt_bgn.isEnabled()       # 진행 중 입력 잠금(스냅샷 경합 차단)
+    assert dlg.btn_stop.isEnabled()         # 취소 수단 존재
+    assert "가져오는 중" in dlg.lbl_result.text()  # 진행 표시
+    assert not dlg.buttons.button(QDialogButtonBox.Ok).isEnabled()
+
+    gate.set()
+    _wait_idle(dlg)
+    assert dlg.buttons.button(QDialogButtonBox.Ok).isEnabled()
+    assert len(dlg.records) == 2
+
+
+def test_stop_discards_inflight_result(qapp):
+    """RC-12: 중지 = 즉시 UI 복원 + 도착한 결과 폐기(스테일 스냅샷 수용 금지)."""
+    import threading
+
+    from PySide6.QtWidgets import QDialogButtonBox
+
+    gate = threading.Event()
+
+    def slow_fetch(url: str) -> bytes:
+        gate.wait(5.0)
+        return _fixture_bytes()
+
+    store = MemorySecretStore({NARA_SERVICE_KEY_NAME: "DUMMY"})
+    dlg = _dialog(store, slow_fetch)
+    dlg._on_acquire()
+    assert dlg._busy
+
+    dlg._on_stop_fetch()
+    assert not dlg._busy                    # 프리즈 없이 즉시 복원
+    assert "중지" in dlg.lbl_result.text()
+    assert dlg.btn_acquire.isEnabled()      # 재시도 가능
+
+    gate.set()
+    _drain_tasks(dlg)                       # 뒤늦게 도착한 결과는 폐기된다
+    assert dlg.vm.last_result is None
+    assert dlg.records == []
+    assert not dlg.buttons.button(QDialogButtonBox.Ok).isEnabled()
 
 
 # ------------------------------------------------------------ DataPage 소스 선택

@@ -11,11 +11,11 @@ from pathlib import Path
 
 import pytest
 
+from hwpxfiller.data.nara import _add_one_month  # 검증 단일 출처는 데이터층(RC-03)
 from hwpxfiller.data.secret_store import NARA_SERVICE_KEY_NAME, MemorySecretStore
 from hwpxfiller.gui.nara_state import (
     AcquiredNaraData,
     NaraAcquireViewModel,
-    _add_one_month,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
