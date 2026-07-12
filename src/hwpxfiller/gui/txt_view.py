@@ -10,7 +10,7 @@ from __future__ import annotations
 import html as _html
 import re
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -36,8 +36,9 @@ from ..core.text_registry import TextTemplateRegistry
 from ..data import make_source
 from .batch_run import DataAcquireController
 from .flow_layout import FlowLayout
-from .style import BASE_QSS, mark
+from .style import BASE_QSS, MUTED, mark
 from .txt_state import TxtDraftViewModel
+from .view_helpers import ElidedLabel
 
 _TOKEN = re.compile(r"\{\{\s*([^{}|]+?)\s*\}\}")
 _STATE_LABEL = {"fill": "✓ 채움", "blank": "◦ 빈 값", "missing": "● 미입력"}
@@ -281,19 +282,20 @@ class TxtDraftView(QMainWindow):
         self._reset_note()
         self._clear_tokens()
         for tok in self.vm.token_states():
-            chip = QLabel("{{" + tok.name + "}} · " + _STATE_LABEL[tok.state])
+            # 고정폭 280px 패널에서 긴 토큰명이 배지를 넘기던 것을 말줄임+툴팁으로 봉합(UD-30 E).
+            # 가운데 말줄임으로 토큰명 앞부분과 상태 접미('· ✓ 채움')를 모두 남긴다.
+            chip = ElidedLabel(
+                "{{" + tok.name + "}} · " + _STATE_LABEL[tok.state],
+                mode=Qt.TextElideMode.ElideMiddle, max_width=248,
+            )
             mark(chip, "fb", tok.state)
             self.tok_flow.addWidget(chip)
 
-        text, _report = self.vm.render()
-        esc = _html.escape(text)
-
-        def _hl(m: "re.Match") -> str:
-            # 미충족 토큰은 빨강으로 그대로 노출(조용히 지우지 않음).
-            return ('<span style="background:#fde2dd;color:#c0392b;">{{'
-                    + _html.escape(m.group(1).strip()) + '}}</span>')
-
-        esc = _TOKEN.sub(_hl, esc)
+        # 미리보기는 템플릿에서 직접 토큰을 재진술 렌더한다(UD-26 E7) — 미입력은 빨강
+        # {{토큰}}, 빈 값은 '〈빈 값〉' 마커로 위치를 남긴다. 채우다 만 자리가 무표시 빈
+        # 공간으로 사라지지 않는다(ADR-B '빈 공간으로 보이면 안 됨'). 클립보드 복사(_copy)는
+        # vm.render() 의 실제 텍스트를 쓰므로 마커에 영향받지 않는다.
+        esc = self._build_preview_html(self.vm.template_text, self.vm.current_record())
         self.view.setHtml(
             '<div style="font-family:Malgun Gothic,sans-serif;font-size:14px;'
             'line-height:1.8;white-space:pre-wrap;">' + esc + '</div>'
@@ -303,6 +305,34 @@ class TxtDraftView(QMainWindow):
         self.lbl_idx.setText(f"{(self.vm.record_index % n) + 1 if n else 0}/{n}")
         self.btn_prev.setEnabled(n > 1)
         self.btn_next.setEnabled(n > 1)
+
+    @staticmethod
+    def _build_preview_html(template: str, record: "dict") -> str:
+        """템플릿의 토큰을 레코드로 치환하되 미충족을 명시 재진술한 미리보기 HTML(UD-26 E7).
+
+        - 미입력(레코드에 없음): 빨강 ``{{토큰}}`` 으로 그대로 노출(조용히 안 지움, ADR-E).
+        - 빈 값(필드는 있으나 값이 빔): ``〈빈 값〉`` muted 마커로 **위치**를 남긴다 — blank 가
+          ``''`` 로 치환·소멸해 어느 자리가 빈 채 나가는지 특정 불가이던 결함을 봉합한다.
+        - 채움: 값 그대로.
+        """
+        parts: "list[str]" = []
+        last = 0
+        for m in _TOKEN.finditer(template):
+            parts.append(_html.escape(template[last:m.start()]))
+            name = m.group(1).strip()
+            if name not in record:
+                parts.append('<span style="background:#fde2dd;color:#c0392b;">{{'
+                             + _html.escape(name) + '}}</span>')
+            else:
+                raw = record.get(name)
+                value = "" if raw is None else str(raw)
+                if value.strip() == "":
+                    parts.append(f'<span style="color:{MUTED};">〈빈 값〉</span>')
+                else:
+                    parts.append(_html.escape(value))
+            last = m.end()
+        parts.append(_html.escape(template[last:]))
+        return "".join(parts)
 
     def _copy(self) -> None:
         text, report = self.vm.render()

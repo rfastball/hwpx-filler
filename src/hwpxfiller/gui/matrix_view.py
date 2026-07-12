@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -48,6 +49,7 @@ from .flow_layout import FlowLayout
 from .matrix_state import MatrixRunViewModel
 from .record_select import RecordSelector
 from .style import BASE_QSS, mark
+from .view_helpers import build_empty_state
 from .worker import MatrixGenerateWorker
 
 
@@ -102,7 +104,17 @@ class MatrixRunView(QMainWindow):
         # pipeline_builder 보조 리스트 setMaximumHeight). 내부 스크롤로 다량도 수용.
         self.job_list.setMaximumHeight(150)
         self.job_list.itemChanged.connect(self._on_job_toggled)
-        jb.addWidget(self.job_list)
+        # 작업 0건 빈 상태(UD-17) — 저장된 작업이 없을 때 안내 없는 백지를 '작업 0건'
+        # 안내로 스택 교체한다('선택 0건'과 시각적으로 구별). 작업 생성 경로는 홈뿐이라
+        # CTA 는 두지 않고 그 경로를 안내한다(없던 진입점 발명 금지).
+        self.job_stack = QStackedWidget()
+        self.job_stack.setMaximumHeight(150)
+        self.job_stack.addWidget(self.job_list)                        # 0 = 목록
+        self.job_stack.addWidget(build_empty_state(
+            "저장된 작업이 없습니다",
+            "일괄 실행할 작업이 없습니다 — 홈에서 '＋ 새 문서 작업'으로 작업을 먼저 만드세요.",
+        ))                                                             # 1 = 빈 상태
+        jb.addWidget(self.job_stack)
         root.addWidget(job_box)
         self._populate_jobs()
 
@@ -243,12 +255,14 @@ class MatrixRunView(QMainWindow):
     def _populate_jobs(self) -> None:
         self.job_list.blockSignals(True)
         self.job_list.clear()
-        for name in self.vm.all_job_names():
+        names = self.vm.all_job_names()
+        for name in names:
             item = QListWidgetItem(name)
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
             item.setCheckState(Qt.Checked if self.vm.is_selected(name) else Qt.Unchecked)
             self.job_list.addItem(item)
         self.job_list.blockSignals(False)
+        self.job_stack.setCurrentIndex(1 if not names else 0)  # 0건 → 빈 상태(UD-17)
 
     def _on_job_toggled(self, item: QListWidgetItem) -> None:
         self.vm.set_job_selected(item.text(), item.checkState() == Qt.Checked)

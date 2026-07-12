@@ -23,13 +23,13 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
 )
 
 from .confirm import confirm_destructive
 from .pipeline_builder_state import PipelineBuilderViewModel
 from .style import BASE_QSS, mark
+from .view_helpers import restate_preview_item
 
 _HOW_LABELS = [("교집합(inner) — 매칭된 행만", "inner"), ("왼쪽 유지(left) — 무매칭도 유지", "left")]
 
@@ -293,7 +293,10 @@ class PipelineBuilderDialog(QDialog):
         self.tbl_preview.setRowCount(len(result.rows))
         for r, rec in enumerate(result.rows):
             for c, f in enumerate(result.fields):
-                self.tbl_preview.setItem(r, c, QTableWidgetItem(rec.get(f, "")))
+                # left 조인 무매칭 결측·원본 빈 문자열을 무표시 공백으로 렌더하던 것을
+                # '(결측)'·'(비움)' 으로 명시 재진술한다(UD-26 D6c — '실행 결과와 동일'을
+                # 자처하는 검수 표면에서 무매칭 행을 놓치지 않게).
+                self.tbl_preview.setItem(r, c, restate_preview_item(rec, f))
         shown = len(result.rows)
         self.lbl_total.setText(
             f"총 {result.total}행" + (f" (상위 {shown}행 표시)" if result.total > shown else "")

@@ -50,6 +50,7 @@ from .flow_layout import FlowLayout
 from .record_select import RecordSelector
 from .run_state import GenerationPlan, RunViewModel
 from .style import BASE_QSS, ContrastProgressBar, mark
+from .view_helpers import ElidedLabel
 from .worker import GenerateWorker
 
 
@@ -85,7 +86,10 @@ class RunView(QMainWindow):
         root = QVBoxLayout(central)
 
         # ---- 작업 요약 ----
-        lbl_job = QLabel(
+        # 작업명·템플릿명·파일명 패턴 연결 문자열은 형제 라벨과 달리 wordWrap 이 없어
+        # 긴 이름에서 폼 전체 가로 스크롤을 유발할 수 있었다(UD-30 C) — 말줄임+전체 툴팁으로
+        # 봉합한다(최소폭을 작게 둬 스크롤 대신 말줄임).
+        lbl_job = ElidedLabel(
             f"작업: {job.name}  ·  템플릿: {Path(job.template_path).name}  ·  "
             f"파일명: {job.filename_pattern}"
         )

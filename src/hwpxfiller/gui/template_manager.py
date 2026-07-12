@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -38,6 +38,7 @@ from .confirm import confirm_destructive
 from .file_filters import HWPX_FILTER
 from .style import BASE_QSS, mark
 from .template_manager_state import TemplateManagerViewModel, TemplateRow
+from .view_helpers import ElidedLabel, resync_card_item_heights
 
 
 class TemplateCard(QWidget):
@@ -53,7 +54,9 @@ class TemplateCard(QWidget):
         root.setSpacing(3)
 
         name_row = QHBoxLayout()
-        lbl_name = QLabel(row.name)
+        # 긴 템플릿 파일명은 말줄임+툴팁(UD-30 F) — 가로 스크롤 Off 로 잘려 유사 판본
+        # 파일명을 구별 못 하던 것을, 전체 이름 툴팁으로 보완한다.
+        lbl_name = ElidedLabel(row.name, max_width=360)
         mark(lbl_name, "heading", True)
         name_row.addWidget(lbl_name)
         badge = QLabel(row.badge_label)
@@ -198,6 +201,17 @@ class TemplateManagerPanel(QMainWindow):
             self.stack.setCurrentIndex(1)
         else:
             self.stack.setCurrentIndex(0)
+        # 카드 액션 버튼 세로 압착 방지(UD-11) — 폴리시·레이아웃 후 높이 재동기.
+        self._sync_cards()
+        QTimer.singleShot(0, self._sync_cards)
+
+    def _sync_cards(self) -> None:
+        """카드 item sizeHint 를 폴리시 후 재계산(UD-11 공용 헬퍼)."""
+        resync_card_item_heights(self.list)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 — Qt 오버라이드
+        super().resizeEvent(event)
+        self._sync_cards()
 
     def _on_choose_dir(self) -> None:
         start = str(self.vm.library_dir) if self.vm.library_dir is not None else ""

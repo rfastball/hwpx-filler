@@ -12,7 +12,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -31,6 +32,7 @@ from .confirm import confirm_destructive
 from .dataset_pool_state import DatasetPoolRow, DatasetPoolViewModel
 from .file_filters import EXCEL_FILTER
 from .style import BASE_QSS, mark
+from .view_helpers import build_empty_state, resync_card_item_heights
 
 
 class _PoolCard(QWidget):
@@ -114,15 +116,19 @@ class DatasetPoolPanel(QMainWindow):
         self.list = QListWidget()
         self.list.setObjectName("jobList")
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        root.addWidget(self.list, 1)
-
-        self.lbl_empty = QLabel(
-            "등록된 데이터가 없습니다 — 엑셀/CSV 파일이나 나라장터 쿼리를 참조로 등록하세요.\n"
-            "데이터는 복사되지 않고 참조만 저장됩니다(실행할 때 다시 읽습니다)."
+        # 빈 상태 이식(UD-17) — 뷰포트 대부분이 백지 리스트 + 최하단 잔글씨이던 것을,
+        # 상태 재진술 + CTA(엑셀/CSV 등록)를 담은 공용 빈 상태 뷰로 스택 교체한다.
+        self.stack = QStackedWidget()
+        self.stack.addWidget(self.list)                                # 0 = 목록
+        empty = build_empty_state(
+            "등록된 데이터가 없습니다",
+            "엑셀/CSV 파일이나 나라장터 쿼리를 참조로 등록하세요. 데이터는 복사되지 않고 "
+            "참조만 저장됩니다(실행할 때 다시 읽습니다).",
+            cta_text="엑셀/CSV 등록…",
+            on_cta=self._on_register_excel,
         )
-        self.lbl_empty.setWordWrap(True)
-        mark(self.lbl_empty, "muted", True)
-        root.addWidget(self.lbl_empty)
+        self.stack.addWidget(empty)                                    # 1 = 빈 상태
+        root.addWidget(self.stack, 1)
 
         self.lbl_result = QLabel("")
         self.lbl_result.setWordWrap(True)
@@ -138,7 +144,6 @@ class DatasetPoolPanel(QMainWindow):
 
     def _render(self) -> None:
         self.lbl_count.setText(self.vm.count_label())
-        self.lbl_empty.setVisible(self.vm.is_empty())
         self.list.clear()
         for row in self.vm.rows():
             self.list.addItem(row.name)
@@ -147,6 +152,18 @@ class DatasetPoolPanel(QMainWindow):
             card = _PoolCard(row, on_action=self._dispatch)
             item.setSizeHint(card.sizeHint())
             self.list.setItemWidget(item, card)
+        self.stack.setCurrentIndex(1 if self.vm.is_empty() else 0)  # 0건 → 빈 상태(UD-17)
+        # 카드 액션 버튼 세로 압착 방지(UD-11) — 폴리시·레이아웃 후 높이 재동기.
+        self._sync_cards()
+        QTimer.singleShot(0, self._sync_cards)
+
+    def _sync_cards(self) -> None:
+        """카드 item sizeHint 를 폴리시 후 재계산(UD-11 공용 헬퍼)."""
+        resync_card_item_heights(self.list)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 — Qt 오버라이드
+        super().resizeEvent(event)
+        self._sync_cards()
 
     # ---------------------------------------------------- 액션 디스패치
     def _dispatch(self, key: str, name: str) -> None:

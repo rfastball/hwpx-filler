@@ -339,12 +339,17 @@ class TemplateManagerViewModel:
         return ResultLine("\n".join(lines), level)
 
     def format_preview_result(self, path: str, values: "dict[str, str]") -> ResultLine:
-        """FILLED 값 미리보기 → 결과 문구(대상 템플릿명 포함) — 정보성이므로 muted."""
+        """FILLED 값 미리보기 → 결과 문구(대상 템플릿명 포함) — 정보성이므로 muted.
+
+        빈 값 필드는 '필드명 = ' 뒤 무표시 공백으로 렌더돼 의도적 공란과 채우다 만 것을
+        구별할 수 없었다(UD-26 F5) — 빈 값을 '(비움)' 으로 명시 재진술한다(ADR-B).
+        """
         name = Path(path).name
         if not values:
             return ResultLine(f"미리보기 — {name}: 누름틀 값이 없습니다.", "muted")
         return ResultLine(
-            f"미리보기 — {name}:\n" + "\n".join(f"{k} = {v}" for k, v in values.items()),
+            f"미리보기 — {name}:\n"
+            + "\n".join(f"{k} = {v if str(v).strip() else '(비움)'}" for k, v in values.items()),
             "muted",
         )
 

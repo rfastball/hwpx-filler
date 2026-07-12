@@ -10,7 +10,7 @@ VocabWorkbenchViewModel`(Qt 비의존)이 소유. 이 위젯은 카드로 얹고
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -20,12 +20,14 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from .confirm import confirm_destructive
 from .style import BASE_QSS, mark
+from .view_helpers import build_empty_state, resync_card_item_heights
 from .vocab_workbench_state import VocabBaseRow, VocabWorkbenchViewModel
 
 
@@ -95,16 +97,18 @@ class VocabWorkbenchPanel(QMainWindow):
         self.list = QListWidget()
         self.list.setObjectName("jobList")
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        root.addWidget(self.list, 1)
-
-        self.lbl_empty = QLabel(
-            "저장된 매핑 프로파일이 없습니다 — 작업 편집기의 매핑 단계에서 매핑을 확정한 뒤 "
-            "'매핑 프로파일로 저장'으로 만드세요. 이후 다른 템플릿에 '매핑 프로파일 적용'으로 "
-            "이름 교집합 투영해 재사용합니다."
+        # 빈 상태 이식(UD-17) — 백지 리스트 + 최하단 잔글씨이던 것을 상태 재진술 안내로
+        # 스택 교체한다. 프로파일 생성 경로는 작업 편집기 매핑 단계뿐이라 CTA 는 두지 않고
+        # (없던 진입점 발명 금지) 그 경로를 안내한다.
+        self.stack = QStackedWidget()
+        self.stack.addWidget(self.list)                                # 0 = 목록
+        empty = build_empty_state(
+            "저장된 매핑 프로파일이 없습니다",
+            "작업 편집기의 매핑 단계에서 매핑을 확정한 뒤 '매핑 프로파일로 저장'으로 만드세요. "
+            "이후 다른 템플릿에 '매핑 프로파일 적용'으로 이름 교집합 투영해 재사용합니다.",
         )
-        self.lbl_empty.setWordWrap(True)
-        mark(self.lbl_empty, "muted", True)
-        root.addWidget(self.lbl_empty)
+        self.stack.addWidget(empty)                                    # 1 = 빈 상태
+        root.addWidget(self.stack, 1)
 
         self.vm.subscribe(self._render)
         self._render()
@@ -115,7 +119,6 @@ class VocabWorkbenchPanel(QMainWindow):
 
     def _render(self) -> None:
         self.lbl_count.setText(self.vm.count_label())
-        self.lbl_empty.setVisible(self.vm.is_empty())
         self.list.clear()
         for row in self.vm.rows():
             self.list.addItem(row.name)
@@ -124,6 +127,18 @@ class VocabWorkbenchPanel(QMainWindow):
             card = _BaseCard(row, on_action=self._dispatch)
             item.setSizeHint(card.sizeHint())
             self.list.setItemWidget(item, card)
+        self.stack.setCurrentIndex(1 if self.vm.is_empty() else 0)  # 0건 → 빈 상태(UD-17)
+        # 카드 액션 버튼 세로 압착 방지(UD-11) — 폴리시·레이아웃 후 높이 재동기.
+        self._sync_cards()
+        QTimer.singleShot(0, self._sync_cards)
+
+    def _sync_cards(self) -> None:
+        """카드 item sizeHint 를 폴리시 후 재계산(UD-11 공용 헬퍼)."""
+        resync_card_item_heights(self.list)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 — Qt 오버라이드
+        super().resizeEvent(event)
+        self._sync_cards()
 
     # ---------------------------------------------------- 액션 디스패치
     def _dispatch(self, key: str, name: str) -> None:
