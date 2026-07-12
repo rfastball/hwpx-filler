@@ -288,11 +288,10 @@ def _data_page(qapp, tmp_path, *, store=None, fetcher=None):
     from hwpxfiller.core.job import JobRegistry
     from hwpxfiller.gui.job_editor import JobEditorWizard
 
-    wiz = JobEditorWizard(JobRegistry(tmp_path))
-    if store is not None:
-        wiz.secret_store = store
-    if fetcher is not None:
-        wiz.nara_fetcher = fetcher
+    # RC-25: 주입은 생성자 파라미터(선언 계약) — 키워드 오타는 TypeError 로 시끄럽게.
+    wiz = JobEditorWizard(
+        JobRegistry(tmp_path), secret_store=store, nara_fetcher=fetcher
+    )
     page = wiz.page(wiz.pageIds()[1])  # DataPage
     return wiz, page
 

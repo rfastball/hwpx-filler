@@ -28,24 +28,9 @@ from PySide6.QtWidgets import (
 )
 
 from ..core.job import JobRegistry
-from ..core.template_status import CompileState
+from .compile_badge import badge_level
 from .home_state import BADGE_CORRUPT, CorruptJobRow, HomeViewModel, JobRow, TxtRow
 from .style import BASE_QSS, mark
-
-
-def _badge_fb(row: JobRow) -> str:
-    """카드 컴파일 배지의 pill 심각도(style.py 의 fb 셀렉터 재사용).
-
-    ready=초록·partial=호박·raw=보라(할 일)·부재/오류=빨강(주의). 어휘 자체는 배지 문구가
-    나르고, 색은 한눈 식별 보조다.
-    """
-    if row.compile_state == CompileState.RAW:
-        return "ack"
-    if row.compile_state == CompileState.PARTIAL:
-        return "blank"
-    if row.compile_state in (CompileState.COMPILED, CompileState.FILLED):
-        return "fill"
-    return "missing"  # compile_state None + 배지 有 = 부재/오류(시끄러운 주의)
 
 
 class _JobCard(QWidget):
@@ -65,10 +50,12 @@ class _JobCard(QWidget):
         mark(lbl_name, "heading", True)
         name_row.addWidget(lbl_name)
         # C2 파생 컴파일 상태 배지(부재·원문·미확인 N개·실행 준비) — 기존 '템플릿 없음'
-        # pill 어휘를 확장한다. 문구는 JobRow.compile_badge(seam), 색은 상태에서 파생.
+        # pill 어휘를 확장한다. 문구는 JobRow.compile_badge(seam), 심각도 레벨은
+        # compile_badge.badge_level(링1 단일 출처 — 템플릿 관리 배지와 동일 어휘, RC-29).
+        # 실행 화면 필드 상태 셀렉터(fb)를 다른 뜻으로 재전용하지 않는다.
         if row.compile_badge:
             lbl_badge = QLabel(row.compile_badge)
-            mark(lbl_badge, "fb", _badge_fb(row))
+            mark(lbl_badge, "pill", badge_level(row.compile_state))
             name_row.addWidget(lbl_badge)
         name_row.addStretch(1)
         root.addLayout(name_row)
@@ -115,7 +102,8 @@ class _CorruptJobCard(QWidget):
         mark(lbl_name, "heading", True)
         name_row.addWidget(lbl_name)
         lbl_badge = QLabel(BADGE_CORRUPT)
-        mark(lbl_badge, "fb", "missing")  # 부재/오류와 같은 시끄러운 빨강 pill
+        # 손상 = 상태 판정 불가(None)와 같은 심각도(danger) — compile_badge 어휘 재사용.
+        mark(lbl_badge, "pill", badge_level(None))
         name_row.addWidget(lbl_badge)
         name_row.addStretch(1)
         root.addLayout(name_row)

@@ -1513,3 +1513,129 @@ def test_diff_filter_all_off_shows_notice_not_silence(qapp, tmp_path, monkeypatc
 
     win._filter_checks["changed"].setChecked(True)  # 하나라도 켜면 안내 해제
     assert win.lbl_filter_notice.isHidden()
+
+
+# ------------------------------------------------- U10 링 경계(RC-25·28·29) 배선
+def test_job_editor_declares_nara_injection_contract(qapp, tmp_path):
+    """RC-25 — 주입은 생성자 계약: 오타는 TypeError, 미주입도 None 으로 선언 존재."""
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+
+    store = object()
+    fetcher = lambda url: b""  # noqa: E731
+    wiz = JobEditorWizard(
+        JobRegistry(tmp_path), secret_store=store, nara_fetcher=fetcher
+    )
+    assert wiz.secret_store is store and wiz.nara_fetcher is fetcher
+
+    wiz2 = JobEditorWizard(JobRegistry(tmp_path))
+    assert wiz2.secret_store is None and wiz2.nara_fetcher is None  # 선언된 기본
+
+    with pytest.raises(TypeError):  # 키워드 오타 = 시끄러운 실패(조용한 실 폴백 금지)
+        JobEditorWizard(JobRegistry(tmp_path), secret_stre=store)  # type: ignore[call-arg]
+
+
+def test_editor_accept_blocks_all_blank_job_loudly(qapp, tmp_path, monkeypatch):
+    """RC-28 — accept 가드가 링1(validate_save)을 관통: 전부 비움 저장은 경고 + 무저장."""
+    from PySide6.QtWidgets import QMessageBox
+
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+    from hwpxfiller.gui.mapping_state import MappingModel, RowState
+
+    warnings = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: warnings.append(a[2]))
+    reg = JobRegistry(tmp_path)
+    wiz = JobEditorWizard(reg)
+    wiz.template_path = "/t.hwpx"
+    wiz.model = MappingModel(rows=[RowState(template_field="공고명", confirmed=True)])
+    wiz._save_page.ed_name.setText("빈작업")
+
+    wiz.accept()
+
+    assert warnings and "전부 비움" in warnings[0]
+    assert not reg.exists("빈작업")  # 조용한 저장 없음
+
+
+def test_mapping_table_arg_edit_shares_row_brush(qapp):
+    """RC-28 — _on_arg_edited 의 행 색이 _sync_row 와 같은 결정식(_row_brush)을 쓴다."""
+    from hwpxfiller.gui.mapping_table import _COL_FIELD, _row_brush, MappingTable
+
+    model = _model()
+    table = MappingTable()
+    table.set_model(model, {"bidNtceNm": "테스트"})
+    ri = 0
+    model.set_sources(ri, ["bidNtceNm"])  # 내용 있는 join 행
+    model.set_confirmed(ri, True)
+    table._sync_row(ri)
+
+    table._on_arg_edited(ri, ";")  # 구분자 편집 → 확정 해제
+
+    row = model.rows[ri]
+    assert not row.confirmed
+    assert table.table.item(ri, _COL_FIELD).background() == _row_brush(row)
+
+
+def test_template_page_compile_here_delegates_io_to_core(qapp, tmp_path, monkeypatch):
+    """RC-28 — [여기서 컴파일]의 경로 파생·저장은 코어 compile_to_sibling 경유.
+
+    기존 컴파일본 충돌은 FileExistsError 로 도착해 명시 확정 후에만 덮는다(RC-02 유지).
+    """
+    from pathlib import Path
+
+    from PySide6.QtWidgets import QMessageBox
+
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui import wizard as wz
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    path = _partial_template_file(tmp_path)
+    sibling = Path(path).with_suffix(".compiled.hwpx")
+    sibling.write_bytes(b"human-edited")  # 충돌 유도
+
+    wiz = JobEditorWizard(JobRegistry(tmp_path))
+    page = wiz.page(wiz.pageIds()[0])
+    page._load_template(path)
+
+    # 확정 거절 → 기존 컴파일본 무변형(조용한 덮어쓰기 없음).
+    asked = []
+    monkeypatch.setattr(wz, "confirm_destructive", lambda *a, **k: asked.append(a) or False)
+    page._compile_here()
+    assert asked and sibling.read_bytes() == b"human-edited"
+
+    # 확정 수락 → 컴파일본 교체 + COMPILED 전환.
+    monkeypatch.setattr(wz, "confirm_destructive", lambda *a, **k: True)
+    page._compile_here()
+    assert sibling.read_bytes() != b"human-edited"
+    assert page._gate is not None and page._gate.state.name == "COMPILED"
+    assert wiz.template_path == str(sibling)
+
+
+def test_home_card_badge_uses_unified_level_palette(qapp, tmp_path):
+    """RC-29 — 홈 카드 배지가 fb 재전용 대신 compile_badge 레벨(pill)로 칠해진다."""
+    from PySide6.QtWidgets import QLabel
+
+    from hwpxfiller.core.authoring import compile_document
+    from hwpxfiller.core.job import Job, JobRegistry
+    from hwpxfiller.gui.home import JobListHome
+    from hwpxfiller.gui.home_state import BADGE_MISSING, BADGE_READY
+
+    pkg, _ = compile_document(_hwpx_pkg(_P("계약명: {{계약명}}")))
+    comp = tmp_path / "comp.hwpx"
+    pkg.save(str(comp))
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="준비작업", template_path=str(comp)))
+    reg.save(Job(name="부재작업", template_path=str(tmp_path / "ghost.hwpx")))
+    home = JobListHome(reg)
+
+    badges = {}
+    for i in range(home.list.count()):
+        card = home.list.itemWidget(home.list.item(i))
+        for lbl in card.findChildren(QLabel):
+            if lbl.text() in (BADGE_READY, BADGE_MISSING):
+                badges[lbl.text()] = lbl
+    assert badges[BADGE_READY].property("pill") == "ok"        # COMPILED → ok
+    assert badges[BADGE_MISSING].property("pill") == "danger"  # 부재(state None) → danger
+    # fb 셀렉터(실행 화면 필드 상태 어휘)는 더 이상 홈 배지에 재전용되지 않는다.
+    assert badges[BADGE_READY].property("fb") is None

@@ -420,3 +420,36 @@ def test_set_acquired_resets_acks_atomically(tmp_path):
 
     vm.set_acquired(_Src(), _Src().records())     # 새 데이터 직접 겨눔
     assert vm.unmet_blanks([0, 1]) == ["추정가격"]  # ack 이월 없음 — 다시 닫힘
+
+
+# ------------------------------------------------ 소스 포인터 선언 프로토콜(RC-25)
+def test_source_pointer_uses_declared_protocol_not_type_name(tmp_path):
+    """소스가 선언한 source_pointer() 가 우선 — 타입명 검사 아님(개명 내성, RC-25)."""
+    from hwpxfiller.gui.nara_state import AcquiredNaraData
+
+    vm = RunViewModel(_job(tmp_path))
+    vm.datasource = AcquiredNaraData([{"bidNtceNm": "가"}], ["bidNtceNm"])
+    assert vm.source_pointer() == "nara:취득 스냅샷(키 미포함)"
+
+    # 클래스를 개명해도(서브클래스 = 다른 __name__) 원장 표기는 선언값 그대로 —
+    # 종전 type(src).__name__ == "AcquiredNaraData" 비교였다면 침묵 오기록되던 자리.
+    class RenamedSnapshot(AcquiredNaraData):
+        pass
+
+    vm.datasource = RenamedSnapshot([], [])
+    assert vm.source_pointer() == "nara:취득 스냅샷(키 미포함)"
+
+
+def test_source_pointer_falls_back_to_path_then_type_name(tmp_path):
+    """미선언 소스 강등 순서: path 속성(file:) → 타입명(포트 명세의 폴백 계약)."""
+    vm = RunViewModel(_job(tmp_path))
+
+    class _PathSrc(_Src):
+        path = "C:/data/d.xlsx"
+
+    vm.datasource = _PathSrc()
+    assert vm.source_pointer() == "file:C:/data/d.xlsx"
+    vm.datasource = _Src()
+    assert vm.source_pointer() == "_Src"
+    vm.datasource = None
+    assert vm.source_pointer() == ""

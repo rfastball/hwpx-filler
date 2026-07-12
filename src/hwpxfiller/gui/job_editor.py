@@ -26,6 +26,11 @@ from PySide6.QtWidgets import (
 
 from ..core.job import DEFAULT_FILENAME_PATTERN, Job, JobRegistry
 from .confirm import confirm_destructive
+from .job_editor_state import (
+    needs_overwrite_confirm,
+    overwrite_confirm_text,
+    validate_save,
+)
 from .style import BASE_QSS
 from .wizard import DataPage, MappingPage, TemplatePage
 
@@ -35,12 +40,17 @@ class JobEditorWizard(QWizard):
 
     세션 상태를 옛 위저드와 동일한 속성명으로 노출해 저작 페이지들을 그대로 호스팅한다.
     ``registry`` 는 주입받는다(홈이 소유). 저장 성공 시 :attr:`job_saved` 를 방출한다.
+
+    ``secret_store``/``nara_fetcher`` 는 나라장터 취득 대화상자(DataPage)로 관통하는
+    **선언된 주입 계약**이다 — 평시 ``None`` 이면 대화상자가 OS 자격증명 저장소·실
+    네트워크 기본값을 쓴다. 생성자 파라미터로 못박아 주입 오타가 조용한 실 저장소·실
+    네트워크 폴백이 아니라 ``TypeError`` 로 시끄럽게 실패한다(RC-25).
     """
 
     job_saved = Signal(str)  # 저장된 작업 이름
 
     def __init__(self, registry: JobRegistry, initial_job: "Job | None" = None, parent=None,
-                 *, base_registry=None):
+                 *, base_registry=None, secret_store=None, nara_fetcher=None):
         super().__init__(parent)
         # 편집 모드: 기존 작업을 프리로드(템플릿 자동 로드·매핑 프리시드·이름/패턴 프리필).
         # 게이트는 그대로다 — 프리시드는 "과거 사람 확정"의 복원이지 자동 확정이 아니다.
@@ -70,6 +80,9 @@ class JobEditorWizard(QWizard):
             initial_job.base_mapping_name if initial_job is not None else ""
         )
         self.base_registry = base_registry      # MappingBaseRegistry | None (없으면 홈 기본)
+        # 나라장터 주입 이음새(선언 계약, RC-25) — None = 대화상자 기본(OS 자격증명·실 네트워크).
+        self.secret_store = secret_store        # SecretStore | None
+        self.nara_fetcher = nara_fetcher        # (url)->bytes | None
 
         self.addPage(TemplatePage())
         self.addPage(DataPage())
@@ -78,54 +91,31 @@ class JobEditorWizard(QWizard):
         self.addPage(self._save_page)
 
     def accept(self):
-        """마침 = 저장(생성 아님). 이름·매핑 확정 검증 후 레지스트리에 쓴다."""
-        if self.model is None or not self.model.is_complete():
-            QMessageBox.warning(self, "확인", "모든 매핑 행을 확정해야 작업을 저장할 수 있습니다.")
-            return
+        """마침 = 저장(생성 아님). 게이트 판정은 링1(:mod:`job_editor_state`), 여기선 표시만."""
         name = self._save_page.job_name()
-        if not name:
-            QMessageBox.warning(self, "확인", "작업 이름을 입력하세요.")
-            return
-        # 파일명 패턴은 문서 식별자를 결정한다 — 빈 입력을 화면에 없던 값으로
-        # 조용히 폴백하지 않는다(확인-또는-경보, RC-20).
         pattern = self._save_page.pattern()
-        if not pattern:
-            QMessageBox.warning(self, "확인", "파일명 패턴을 입력하세요.")
+        verdict = validate_save(self.model, name, pattern)
+        if not verdict.ok:
+            QMessageBox.warning(self, "확인", verdict.block_reason)
             return
-        # '전부 비움' 가드(RC-08): blank 선언도 mappings 에 영속화되므로(L1) 판단은
-        # 링1 질의(emits_any_value)로 — 뷰는 자료구조 내부 표현을 재구현하지 않는다.
-        if not self.model.emits_any_value():
-            QMessageBox.warning(
-                self, "확인",
-                "확정된 매핑이 전부 비움이라 채울 값이 없습니다. 소스를 지정한 뒤 저장하세요.",
-            )
-            return
-        profile = self.model.to_profile(name)
+        profile = verdict.profile
+        assert profile is not None  # verdict.ok 이면 링1이 확정 프로파일을 담아 반환
         # 자기 자신 갱신(편집 모드, 이름 그대로)은 자명 — 이름을 바꿔 다른 작업을
-        # 덮게 될 때만 확인을 묻는다.
-        editing_self = self.initial_job is not None and name == self.initial_job.name
-        if not editing_self and self.registry.exists(name):
+        # 덮게 될 때만 확인을 묻는다(판정·문구 성형은 링1, 다이얼로그만 여기서).
+        if needs_overwrite_confirm(
+            name,
+            self.initial_job.name if self.initial_job is not None else None,
+            self.registry.exists(name),
+        ):
             # 실제 파괴 대상을 문구에 못박는다(RC-15 P6): 레지스트리는 slug 로 저장하므로
-            # 입력 이름('예산/2026')과 파괴되는 기존 작업 이름('예산_2026')이 다를 수 있다
-            # — 입력 이름만 재진술하면 확인 내용이 거짓이 된다.
+            # 입력 이름('예산/2026')과 파괴되는 기존 작업 이름('예산_2026')이 다를 수 있다.
             try:
                 victim = self.registry.load(name).name or name
             except Exception:  # noqa: BLE001 — 손상 파일: 이름 불명을 조용히 추측하지 않는다
                 victim = ""
-            if not victim:
-                text = (
-                    f"작업 '{name}' 의 저장 위치에 기존 작업 파일이 있습니다"
-                    "(손상되어 어떤 작업인지 확인할 수 없습니다).\n"
-                    "계속하면 그 파일을 덮어씁니다."
-                )
-            elif victim != name:
-                text = (
-                    f"작업 이름 '{name}' 은(는) 기존 작업 '{victim}' 과(와) 같은 파일로 "
-                    f"저장됩니다.\n계속하면 작업 '{victim}' 을(를) 덮어씁니다."
-                )
-            else:
-                text = f"작업 '{name}' 이(가) 이미 있습니다.\n계속하면 기존 작업을 덮어씁니다."
-            if not confirm_destructive(self, "작업 덮어쓰기", text, "덮어쓰기"):
+            if not confirm_destructive(
+                self, "작업 덮어쓰기", overwrite_confirm_text(name, victim), "덮어쓰기"
+            ):
                 return
         job = Job(
             name=name,

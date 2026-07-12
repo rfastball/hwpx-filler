@@ -60,6 +60,17 @@ _MULTI_ITEM = "여러 데이터 항목 선택…"
 _LOW_CONFIDENCE = 1.0
 
 
+def _row_brush(row) -> QBrush:
+    """행 상태 배경색 결정식(단일 출처) — 확정=기본, 미확정=노랑, 내용 없는 미확정=빨강.
+
+    ``_sync_row`` 와 ``_on_arg_edited``(포커스 보존을 위한 부분 갱신)가 공유한다 —
+    결정식이 두 곳에서 따로 진화하지 않게 한다(RC-28).
+    """
+    if row.confirmed:
+        return _BG_DEFAULT
+    return _BG_UNCONFIRMED if row.has_content() else _BG_UNMATCHED
+
+
 def _source_label(key: str, aliases: "dict[str, str]") -> str:
     """영문 소스 키를 alias 한글 라벨과 병기(``opengDate — 개찰일자``)."""
     label = aliases.get(key)
@@ -369,13 +380,8 @@ class MappingTable(QWidget):
             # 미리보기(현재 기준 레코드).
             self._render_preview(ri, row)
 
-            # 행 상태 색.
-            if row.confirmed:
-                brush = _BG_DEFAULT
-            elif row.has_content():
-                brush = _BG_UNCONFIRMED
-            else:
-                brush = _BG_UNMATCHED
+            # 행 상태 색(결정식은 _row_brush 단일 출처).
+            brush = _row_brush(row)
             for col in (_COL_CONFIRM, _COL_FIELD, _COL_PREVIEW):
                 self.table.item(ri, col).setBackground(brush)
         finally:
@@ -458,7 +464,7 @@ class MappingTable(QWidget):
         try:
             self.table.item(ri, _COL_CONFIRM).setCheckState(Qt.Unchecked)
             self._render_preview(ri, row)
-            brush = _BG_UNCONFIRMED if row.has_content() else _BG_UNMATCHED
+            brush = _row_brush(row)  # set_sep/set_const 가 확정을 해제한 뒤라 미확정 색
             for col in (_COL_CONFIRM, _COL_FIELD, _COL_PREVIEW):
                 self.table.item(ri, col).setBackground(brush)
         finally:

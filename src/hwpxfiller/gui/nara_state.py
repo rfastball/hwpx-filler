@@ -86,6 +86,15 @@ class AcquiredNaraData:
         """소스 키(영문 코드) → 한글 라벨. 소스가 어휘를 소유한다(코어 아님, V1)."""
         return NaraStdDataSource.field_labels()
 
+    def source_pointer(self) -> str:
+        """원장에 남길 포인터-온리 소스 표기(DataSource 선택 프로토콜, RC-25).
+
+        소스가 자기 표기를 **선언**한다 — 소비자(run_state)가 문자열 타입명 비교로
+        나라 스냅샷을 식별하다 클래스 개명 시 원장을 침묵 오기록하던 이음새의 봉합.
+        쿼리·키는 박제하지 않는다(키 없는 스냅샷 불변식 그대로).
+        """
+        return "nara:취득 스냅샷(키 미포함)"
+
 
 @dataclass
 class AcquireResult:

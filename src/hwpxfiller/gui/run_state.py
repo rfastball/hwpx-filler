@@ -517,16 +517,22 @@ class RunViewModel:
 
     # ------------------------------------------------------------ 생성 원장(L2)
     def source_pointer(self) -> str:
-        """원장에 남길 소스 표기 — **포인터-온리**(경로·종류). 쿼리·키는 박제하지 않는다."""
+        """원장에 남길 소스 표기 — **포인터-온리**(경로·종류). 쿼리·키는 박제하지 않는다.
+
+        소스가 자기 표기를 선언하면(``source_pointer()`` — :mod:`hwpxfiller.data.base`
+        의 선택 프로토콜) 그것이 우선한다. 문자열 타입명 비교로 소스 종류를 식별하지
+        않는다 — 클래스 개명이 원장 침묵 오기록이 되지 않게(RC-25). 미선언 소스는
+        ``path`` 속성(``file:<경로>``) → 타입명 순으로 강등 표기.
+        """
         src = self.datasource
         if src is None:
             return ""
+        pointer_fn = getattr(src, "source_pointer", None)
+        if callable(pointer_fn):
+            return str(pointer_fn())
         path = getattr(src, "path", "")
         if path:
             return f"file:{path}"
-        # 나라장터 풀/취득 경로는 키 없는 스냅샷 어댑터로 도착한다 — 종류만 남긴다.
-        if type(src).__name__ == "AcquiredNaraData":
-            return "nara:취득 스냅샷(키 미포함)"
         return type(src).__name__
 
     def export_run_ledger(

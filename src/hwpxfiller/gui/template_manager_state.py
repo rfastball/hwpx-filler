@@ -28,21 +28,10 @@ from ..core.fields import read_fields
 from ..core.lint import LintReport, SchemaDrift, diff_schema, lint_template
 from ..core.template_status import CompileState, TemplateStatus, compile_status
 
-# 상태 → 사람이 읽는 배지 라벨(단일 출처).
-_BADGE_LABELS: "dict[CompileState, str]" = {
-    CompileState.RAW: "원문",
-    CompileState.PARTIAL: "부분 컴파일",
-    CompileState.COMPILED: "컴파일됨",
-    CompileState.FILLED: "채워짐",
-}
-
-# 상태 → QSS 배지 레벨(style.py 의 QLabel[level=...] 팔레트와 통일).
-_BADGE_LEVELS: "dict[CompileState, str]" = {
-    CompileState.RAW: "muted",
-    CompileState.PARTIAL: "warn",
-    CompileState.COMPILED: "ok",
-    CompileState.FILLED: "ok",
-}
+# 상태 → 배지 (라벨, 레벨)은 :mod:`compile_badge` 가 단일 출처 — 홈 카드 배지와
+# 같은 상태에 같은 심각도 신호를 낸다(RC-29, 이중화 금지).
+from .compile_badge import badge_label as _badge_label
+from .compile_badge import badge_level as _badge_level
 
 # lint 심각도 → 사용자 대면 한국어(뷰가 영문 원시값을 노출하지 않게 링1이 성형).
 _SEVERITY_KO: "dict[str, str]" = {"warning": "경고", "info": "정보", "error": "오류"}
@@ -151,8 +140,8 @@ class TemplateRow:
             name=path.name,
             path=str(path),
             state=status.state,
-            badge_label=_BADGE_LABELS.get(status.state, status.state.value),
-            badge_level=_BADGE_LEVELS.get(status.state, "muted"),
+            badge_label=_badge_label(status.state),
+            badge_level=_badge_level(status.state),
             field_count=status.field_n,
             compilable_n=status.compilable_n,
             skipped_n=status.skipped_n,
@@ -165,8 +154,8 @@ class TemplateRow:
             name=path.name,
             path=str(path),
             state=None,
-            badge_label="오류",
-            badge_level="danger",
+            badge_label=_badge_label(None),
+            badge_level=_badge_level(None),
             field_count=0,
             compilable_n=0,
             skipped_n=0,

@@ -7,7 +7,9 @@
 
 세션 상태(template_path, schema, data_path, source_fields, records, model)는 호스트 위저드
 객체가 들고, 각 페이지는 ``self.wizard()`` 로 접근한다(덕타이핑 — 같은 속성명을 노출하는
-어떤 QWizard 든 이 페이지들을 그대로 호스팅할 수 있다).
+어떤 QWizard 든 이 페이지들을 그대로 호스팅할 수 있다). 나라장터 주입 이음새
+(``secret_store``/``nara_fetcher``)도 호스트 계약의 일부다 — 페이지가 직접 속성 접근하므로
+호스트는 (None 이라도) 반드시 선언해야 한다(미선언 폴백 금지, RC-25).
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ from PySide6.QtWidgets import (
     QWizardPage,
 )
 
-from ..core.authoring import compile_document, scan_tokens
+from ..core.authoring import compile_to_sibling
 from ..core.mapping import MappingProfile
 from ..core.schema import extract_schema
 from ..data import source_for_path
@@ -186,38 +188,40 @@ class TemplatePage(QWizardPage):
     def _compile_here(self) -> None:
         """[여기서 컴파일] — 잔존 평문 토큰을 누름틀로 컴파일해 COMPILED 로 승격.
 
-        원본은 건드리지 않는다. 컴파일본을 원본 옆 ``<이름>.compiled.hwpx`` 로 **명시적으로**
-        저장하고 그 경로로 전환(재로딩)해 스키마·상태·게이트를 다시 계산한다.
+        원본은 건드리지 않는다. 컴파일·경로 파생·저장·충돌 정책은 코어
+        :func:`~hwpxfiller.core.authoring.compile_to_sibling` 이 수행한다(뷰에 IO 정책
+        하드코딩 없음 — RC-28). 여기선 충돌 시 사용자 확정(RC-02)과 컴파일본 전환
+        (재로딩·스키마·게이트 재계산)만 오케스트레이션한다.
         """
         path = self.ed_path.text()
         if not path:
             return
         try:
-            scan_tokens(path)  # 미리보기 산출(무변형) — 무엇을 바꿀지 먼저 본다
-            pkg, report = compile_document(path)
+            compiled_path, report = compile_to_sibling(path)
+        except FileExistsError as exc:
+            # 컴파일본이 이미 있으면(사람이 손봤을 수 있음) 조용히 덮지 않는다(RC-02)
+            # — 명시 확정 후에만 overwrite 로 재시도한다.
+            if not confirm_destructive(
+                self, "덮어쓰기 확인",
+                f"컴파일본이 이미 있습니다:\n{exc}\n\n"
+                "계속하면 기존 컴파일본을 덮어씁니다.",
+                "덮어쓰고 진행",
+            ):
+                return
+            try:
+                compiled_path, report = compile_to_sibling(path, overwrite=True)
+            except Exception as exc2:  # noqa: BLE001
+                QMessageBox.critical(self, "오류", f"컴파일 실패:\n{exc2}")
+                return
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "오류", f"컴파일 실패:\n{exc}")
             return
-        if not report.modified:
+        if compiled_path is None:
             QMessageBox.information(
                 self, "컴파일할 토큰 없음",
                 "누름틀로 바꿀 수 있는 평문 토큰이 없습니다(파편·필드 값 내부 잔존).\n"
                 "'채우지 않음 확인'으로 진행하세요.",
             )
-            return
-        compiled_path = str(Path(path).with_suffix(".compiled.hwpx"))
-        # 컴파일본이 이미 있으면(사람이 손봤을 수 있음) 조용히 덮지 않는다(RC-02).
-        if Path(compiled_path).exists() and not confirm_destructive(
-            self, "덮어쓰기 확인",
-            f"컴파일본이 이미 있습니다:\n{compiled_path}\n\n"
-            "계속하면 기존 컴파일본을 덮어씁니다.",
-            "덮어쓰고 진행",
-        ):
-            return
-        try:
-            pkg.save(compiled_path)
-        except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "오류", f"컴파일본 저장 실패:\n{exc}")
             return
         QMessageBox.information(
             self, "컴파일 완료",
@@ -355,16 +359,19 @@ class DataPage(QWizardPage):
     def _open_nara(self) -> None:
         """나라장터 취득 대화상자를 열고, 수용 시 취득 산출물을 위저드 세션에 심는다.
 
-        ``secret_store``/``nara_fetcher`` 를 위저드에서 읽어 대화상자에 주입한다(테스트 이음새).
-        평시엔 둘 다 부재 → 대화상자가 OS 자격증명 저장소·실 네트워크를 쓴다.
+        ``secret_store``/``nara_fetcher`` 는 호스트 위저드의 **선언된 계약 속성**이다
+        (:class:`~hwpxfiller.gui.job_editor.JobEditorWizard` 생성자 파라미터, RC-25) —
+        직접 읽어서, 계약을 선언하지 않은 호스트는 조용한 실 자격증명 저장소·실 네트워크
+        폴백이 아니라 ``AttributeError`` 로 시끄럽게 실패한다. ``None`` 이면 대화상자가
+        OS 자격증명 저장소·실 네트워크 기본값을 쓴다.
         """
         from .nara_view import NaraAcquireDialog
 
         wiz = self.wizard()
         dlg = NaraAcquireDialog(
             self,
-            store=getattr(wiz, "secret_store", None),
-            fetcher=getattr(wiz, "nara_fetcher", None),
+            store=wiz.secret_store,
+            fetcher=wiz.nara_fetcher,
         )
         if dlg.exec() == dlg.Accepted and dlg.records:
             self._apply_nara_result(dlg.records, dlg.fields, dlg.datasource, dlg.label)

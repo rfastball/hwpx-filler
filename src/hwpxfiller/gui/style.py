@@ -110,8 +110,22 @@ QLabel[level="danger"] {{ color: {DANGER}; }}
 QLabel[level="ok"] {{ color: {OK}; }}
 QLabel[muted="true"] {{ color: {MUTED}; }}
 QLabel[heading="true"] {{ font-size: 15px; font-weight: 700; }}
+/* 상태 배지 pill — 레벨 어휘(muted/warn/ok/danger)는 compile_badge.badge_level 이
+   단일 출처(홈 카드·템플릿 관리가 같은 상태에 같은 심각도 신호 — RC-29). */
 QLabel[pill="warn"] {{
     background: {BLANK_BG}; color: {WARN}; border: 1px solid #e6c98f;
+    border-radius: 9px; padding: 1px 8px; font-weight: 600;
+}}
+QLabel[pill="ok"] {{
+    background: {FILL_BG}; color: {OK}; border: 1px solid #bfe0cb;
+    border-radius: 9px; padding: 1px 8px; font-weight: 600;
+}}
+QLabel[pill="muted"] {{
+    background: #eef0f3; color: {MUTED}; border: 1px solid {BORDER};
+    border-radius: 9px; padding: 1px 8px; font-weight: 600;
+}}
+QLabel[pill="danger"] {{
+    background: {MISSING_BG}; color: {DANGER}; border: 1px solid #e6a49c;
     border-radius: 9px; padding: 1px 8px; font-weight: 600;
 }}
 

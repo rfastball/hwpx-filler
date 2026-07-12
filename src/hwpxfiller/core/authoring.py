@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from lxml import etree
 
@@ -484,3 +485,25 @@ def compile_document(pkg_or_path: object) -> "tuple[object, CompileReport]":
             )
     report.modified = bool(report.compiled)
     return pkg, report
+
+
+def compile_to_sibling(path: str, *, overwrite: bool = False) -> "tuple[str | None, CompileReport]":
+    """토큰을 컴파일해 **원본 옆** ``<이름>.compiled.hwpx`` 로 저장(원본 무변형).
+
+    저작 화면의 [여기서 컴파일] 경로가 쓰는 코어 프리미티브 — 출력 경로 파생·저장·충돌
+    정책을 뷰가 하드코딩하지 않는다(RC-28). 정책:
+
+    - 바꿀 토큰이 없으면(``modified=False``) 아무것도 쓰지 않고 ``(None, report)``.
+    - 컴파일본이 이미 있으면 ``overwrite=True`` 없이는 :class:`FileExistsError`
+      (메시지 = 충돌 경로)로 시끄럽게 차단 — 조용한 덮어쓰기 금지(RC-02). 호출측이
+      사용자 확정을 받은 뒤 ``overwrite=True`` 로 재호출한다.
+    - 컴파일·저장 실패는 그대로 raise(호출측이 시끄럽게 표시).
+    """
+    pkg, report = compile_document(path)
+    if not report.modified:
+        return None, report
+    compiled_path = str(Path(path).with_suffix(".compiled.hwpx"))
+    if Path(compiled_path).exists() and not overwrite:
+        raise FileExistsError(compiled_path)
+    pkg.save(compiled_path)  # _to_package 가 HwpxPackage 를 반환한다(save 보유)
+    return compiled_path, report
