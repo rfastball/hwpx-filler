@@ -358,3 +358,6 @@ Feature Work Packages (§6)
   전건 confirmed. 전량 박제: **`docs/REVIEW_ROUND1_FINDINGS.md`** (패치 추적 표 포함 —
   후속 작업은 그 표를 원장으로 갱신). §8 선행 발견 12건은 전부 확정 또는 상위 이슈로 흡수.
 - 라운드 2(F3/F5/F6/F8/F9/F11)·라운드 3(F14 패키징)은 미실행 — §6 매트릭스 그대로 유효.
+- **UI 디자인 전용 라운드 완료 (2026-07-13)**: 별도 설계서
+  [REVIEW_UI_ORCHESTRATOR.md](REVIEW_UI_ORCHESTRATOR.md)(디자인 5렌즈·캡처 뱅크) →
+  발견 원장 [REVIEW_UI_FINDINGS.md](REVIEW_UI_FINDINGS.md)(UD-01~45).
