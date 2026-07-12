@@ -1,8 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""hwpx-diff 단일 exe 빌드 스펙 (앱 A — 규격서 개정 diff 리뷰어).
+"""hwpx-diff onedir 빌드 스펙 (앱 A — 규격서 개정 diff 리뷰어).
 
 빌드:  .venv/Scripts/pyinstaller packaging/hwpx_diff.spec --noconfirm
-산출:  dist/hwpx-diff.exe  (onefile·창 모드·콘솔 없음)
+산출:  dist/hwpx-diff/hwpx-diff.exe  (onedir·창 모드·콘솔 없음)
 
 diff 경로의 실제 의존은 PySide6(QtCore/QtGui/QtWidgets) + lxml + 표준库뿐이다.
 앱 B(메일머지)의 데이터 레이어(openpyxl 등)는 임포트 그래프에 없지만, 후일 누군가
@@ -57,13 +57,29 @@ a = Analysis(
     ],
     noarchive=False,
 )
+
+# QtGui 훅이 imageformat/input-context 플러그인 의존으로 수집하는 미사용
+# QML/Quick/Pdf/OpenGL 연쇄를 제거한다. diff 앱은 QWidget 백엔드만 쓴다.
+SLIM_QT_BINARIES = {
+    "opengl32sw.dll",
+    "qpdf.dll",
+    "qtvirtualkeyboardplugin.dll",
+    "qt6network.dll",
+    "qt6opengl.dll",
+    "qt6pdf.dll",
+    "qt6quick.dll",
+    "qt6virtualkeyboard.dll",
+}
+a.binaries = [
+    item for item in a.binaries
+    if Path(item[0]).name.lower() not in SLIM_QT_BINARIES
+    and not Path(item[0]).name.lower().startswith("qt6qml")
+]
 pyz = PYZ(a.pure)
 
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
     name="hwpx-diff",
     icon=str(icon_path),
@@ -78,4 +94,15 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    exclude_binaries=True,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name="hwpx-diff",
 )

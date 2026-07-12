@@ -25,7 +25,7 @@ VersionInfoVersion={#AppVersion}
 Name: "desktopicon"; Description: "바탕 화면 바로가기 만들기"; GroupDescription: "추가 바로가기:"; Flags: unchecked
 
 [Files]
-Source: "..\..\dist\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\dist\hwpx-diff\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"

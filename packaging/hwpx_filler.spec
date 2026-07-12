@@ -1,8 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""hwpx-filler 단일 exe 빌드 스펙 (앱 B — 누름틀 문서 생성기).
+"""hwpx-filler onedir 빌드 스펙 (앱 B — 누름틀 문서 생성기).
 
 빌드:  .venv/Scripts/pyinstaller packaging/hwpx_filler.spec --noconfirm
-산출:  dist/hwpx-filler.exe  (onefile·창 모드·콘솔 없음)
+산출:  dist/hwpx-filler/hwpx-filler.exe  (onedir·창 모드·콘솔 없음)
 
 앱 B 의 실의존 = hwpxfiller + hwpxcore + PySide6(QtCore/QtGui/QtWidgets) + lxml + openpyxl.
 디자인 토큰은 style.py 에 빌드타임 상수로 구워지므로(gui/design_tokens.json 은 dev 전용)
@@ -67,13 +67,30 @@ a = Analysis(
     ],
     noarchive=False,
 )
+
+# PySide6 6.11의 QtGui 훅은 Windows에서 imageformat/input-context 플러그인의
+# 연쇄 의존으로 QML/Quick/Pdf/OpenGL을 수집한다. 이 앱은 QWidget 백엔드만
+# 쓰므로, 연결 플러그인과 미사용 DLL을 Analysis 후에 한 번 더 걸러낸다.
+SLIM_QT_BINARIES = {
+    "opengl32sw.dll",
+    "qpdf.dll",
+    "qtvirtualkeyboardplugin.dll",
+    "qt6network.dll",
+    "qt6opengl.dll",
+    "qt6pdf.dll",
+    "qt6quick.dll",
+    "qt6virtualkeyboard.dll",
+}
+a.binaries = [
+    item for item in a.binaries
+    if Path(item[0]).name.lower() not in SLIM_QT_BINARIES
+    and not Path(item[0]).name.lower().startswith("qt6qml")
+]
 pyz = PYZ(a.pure)
 
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
     name="hwpx-filler",
     icon=str(icon_path),
@@ -88,4 +105,15 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    exclude_binaries=True,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name="hwpx-filler",
 )

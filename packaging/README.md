@@ -1,92 +1,48 @@
-# 패키징 — hwpx-diff.exe (앱 A, 단독 배포)
+# PyInstaller onedir 패키징
 
-diff 리뷰어를 **의존성 0의 단일 exe**로 패키징한다. 받는 사람은 파이썬도 한컴도
-필요 없다 — `hwpx-diff.exe` 하나 복사해서 더블클릭(또는 .hwpx 두 개 드래그&드롭).
-
-## 빌드
-
-```powershell
-uv sync --locked --all-extras --group build
-.\build.ps1 -App diff
-```
-
-산출: `dist\hwpx-diff.exe` (onefile·창 모드, ~50 MB — PySide6 포함 비용).
-아이콘(`hwpx-diff.ico`)은 부재 시 spec 이 `make_icon.py` 로 자동 생성한다(커밋 안 함).
-
-## 빌드 검증(패키징 스모크)
-
-```powershell
-dist\hwpx-diff.exe --selfcheck tests\corpus\real\spec_revision_2025.hwpx tests\corpus\real\spec_revision_2026.hwpx
-# exit 0 + "selfcheck: change_items=N ... OK" 면 통과
-```
-
-`--selfcheck` 는 엔트리 래퍼(`hwpx_diff_entry.py`)에만 있는 패키징 검증 플래그다 —
-앱 코드는 무변경이고, 패키징된 환경에서 zip 읽기→lxml 파싱→HTML 렌더 전 경로를 돌린다.
-
-## 구성 파일
-
-| 파일 | 역할 |
-|---|---|
-| `hwpx_diff.spec` | PyInstaller 스펙 — 진입점·excludes(앱 B 의존 차단)·아이콘·버전 리소스 |
-| `hwpx_diff_entry.py` | exe 진입점 — 기본 GUI, `--selfcheck` 헤드리스 검증 |
-| `scripts/generate_build_metadata.py` | pyproject 버전에서 Windows 버전 리소스 자동 생성 |
-| `make_icon.py` | 아이콘 생성기(QPainter, 커밋 대상 아님) |
-
-## 경계(계약)
-
-- diff exe 의 실의존 = `hwpxdiff` + `hwpxcore` + PySide6(QtCore/Gui/Widgets) + lxml.
-  **`hwpxfiller`(주입 제품) 통째와 openpyxl 은 excludes 로 못박았다** — 후일 누가
-  경계를 넘는 임포트를 추가해도 diff exe 가 조용히 비대해지지 않는다.
-- 앱 B(`hwpx-filler` 생성기)의 패키징은 **별도 spec**(`hwpx_filler.spec`) — 아래 참조.
-  이 diff spec 재사용 금지(excludes 가 정반대: filler 는 openpyxl·hwpxfiller 를 **포함**하고
-  hwpxdiff 를 제외한다).
-
-## 제품별 설치 파일
-
-Inno Setup 6 설치 후 루트에서 `.\package-installer.ps1`을 실행한다. Filler와 Diff는
-서로 다른 AppId와 사용자 설치 경로를 사용하므로 독립적으로 설치, 업그레이드, 제거된다.
-설치 산출물은 `installer-dist\`에 생성된다.
-
----
-
-# 패키징 — hwpx-filler.exe (앱 B, 단독 배포)
-
-누름틀 문서 생성기를 **의존성 0의 단일 exe**로 패키징한다. 받는 사람은 파이썬도 한컴도
-필요 없다 — `hwpx-filler.exe` 하나 복사해서 더블클릭(홈 → 새 작업 → 저장 → 실행).
+앱 A(`hwpx-diff`), 앱 B(`hwpx-filler`), 자동화 CLI(`hwpx-cli`)를 각각 독립
+`onedir` 번들로 만든다. 받는 사람에게는 exe 하나가 아니라 해당 폴더
+전체를 배포한다.
 
 ## 빌드
 
 ```powershell
-.\build.ps1 -App filler
+uv sync --locked --all-extras --group dev --group build
+.\packaging\build.ps1
+.\packaging\build.ps1 -Target filler
+.\packaging\build.ps1 -Target diff
+.\packaging\build.ps1 -Target cli
 ```
 
-산출: `dist\hwpx-filler.exe` (onefile·창 모드, ~49 MB — PySide6 포함 비용).
-아이콘(`hwpx-filler.ico`)은 부재 시 spec 이 `make_filler_icon.py` 로 자동 생성한다(커밋 안 함).
-**디자인 토큰은 `gui/style.py` 에 빌드타임 상수로 구워지므로**(`gui/design_tokens.json` 은 dev 전용)
-런타임 데이터 파일이 필요 없다(`datas=[]`).
+산출물:
 
-## 빌드 검증(패키징 스모크)
+- `dist\hwpx-diff\hwpx-diff.exe`
+- `dist\hwpx-filler\hwpx-filler.exe`
+- `dist\hwpx-cli\hwpx-cli.exe`
 
-```powershell
-dist\hwpx-filler.exe --selfcheck
-# exit 0 + "selfcheck: records=1 ... OK" 면 통과
-```
+아이콘은 없으면 spec이 생성한다. 디자인 토큰은 `gui/style.py`의 빌드타임
+상수이므로 런타임 data 파일이 필요 없다.
 
-`--selfcheck` 는 엔트리 래퍼(`hwpx_filler_entry.py`)에만 있는 인자 없는 검증 플래그다 —
-패키징된 환경에서 PySide6 + openpyxl(임시 xlsx 생성·로드) + 매핑 엔진(`RunRequest.mapped_records`)
-경로가 실제로 도는지 헤드리스로 확인한다(템플릿 불필요).
+## 빌드 검증
 
-## 구성 파일
+`build.ps1`은 spec 계약 검사 후 실제 번들에서 다음을 스모크한다.
 
-| 파일 | 역할 |
-|---|---|
-| `hwpx_filler.spec` | PyInstaller 스펙 — 진입점·hiddenimports(지연 임포트 보증)·excludes(hwpxdiff 차단)·아이콘·버전 |
-| `hwpx_filler_entry.py` | exe 진입점 — 기본 GUI, `--selfcheck` 헤드리스 검증 |
-| `scripts/generate_build_metadata.py` | pyproject 버전에서 Windows 버전 리소스 자동 생성 |
-| `make_filler_icon.py` | 아이콘 생성기(QPainter — 누름틀 채움 문서, 커밋 대상 아님) |
+- 앱 A: HWPX 두 판본 diff + HTML 렌더 selfcheck, GUI 이벤트 루프 기동
+- 앱 B: Qt + openpyxl + 매핑 + txt 렌더 selfcheck, GUI 이벤트 루프 기동
+- CLI: `schema`, `fieldize`, `lint`, `drift` 네 하위명령
 
-## 경계(계약)
+`lint`는 이슈를 찾으면 정상적으로 exit 1을 내므로 빌드 스크립트가 0과 1을
+둘 다 실행 성공으로 받는다.
 
-- filler exe 의 실의존 = `hwpxfiller` + `hwpxcore` + PySide6(QtCore/Gui/Widgets) + lxml + openpyxl.
-  **`hwpxdiff`(diff 리뷰어)는 excludes 로 못박았다** — 두 제품은 `hwpxcore` 만 공유하며 서로의
-  exe 에 섞이지 않는다(앱 A spec 의 대칭).
+## 의존성 경계
+
+- GUI는 QtCore/Gui/Widgets만 쓰고 WebEngine/QML/Quick/Multimedia/Sql 등을 제외한다.
+- CLI에서는 PySide6 전체를 제외한다.
+- `cli.py`의 함수 내 import를 CLI spec의 hidden import로 명시한다.
+- 앱 A에서 `hwpxfiller`/openpyxl, 앱 B에서 `hwpxdiff`를 제외해 제품 경계를 유지한다.
+- 한글 COM PDF 경로는 번들하지 않는 호스트 옵션 기능으로 남겨둔다.
+
+## 설치 패키징
+
+`packaging/installers/*.iss`는 onedir 폴더 전체를 Inno Setup에 담도록 구성되어
+있다. 코드 서명과 Nuitka 전환은 이 유닛의 범위 밖이다.
