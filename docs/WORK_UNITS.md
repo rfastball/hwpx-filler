@@ -342,9 +342,21 @@ ADR K는 **목표 형태 확정·구현 파킹**(착수 조건 = **수요**, 철
 다소스 조인이 아님. 실 2+소스 워크플로(나라 세부 op·ERP API) 나타날 때 착수. 수요 없이 착수 =
 "능력 없는 슬롯 발명"(핸드오프 관통 경고) 위험 최대라 **자율 에이전트 대상 아님**.
 
+# 워크트리 환경 (uv — 각 에이전트 선행)
+
+환경은 **uv 관리**(`docs/DEVELOPMENT_ENVIRONMENT.md` 기준). **맨 시스템 `python` 금지** — 반드시
+uv `.venv` 경유. `.venv`는 gitignore(체크아웃별)라 **각 워크트리가 자기 `.venv`를 만들어야** 한다:
+
+```powershell
+uv sync --locked --all-extras --group dev --group build   # 워크트리 진입 후 1회(uv 캐시로 빠름)
+.\test.ps1                                                 # Ruff→Pyright→pytest→coverage(offscreen 자동)
+# 직접: uv run pytest  /  QT_QPA_PLATFORM=offscreen (GUI 테스트)
+```
+
 # 공통 완료 조건
 
 - **자체 테스트 동봉** — 코어 유닛=불변식·멱등·라운드트립, GUI=상태모델(Qt 비의존) 테스트 +
   `test_ui_contract.py`(seam 변경 시).
-- **메인 재검증** — `pytest + 불변식 + 변이 테스트(회귀 스위트 하중 확인)` → **ff 병합**.
+- **메인 재검증** — `.\test.ps1`(Ruff→Pyright→pytest→coverage) + 불변식 + 변이 테스트(회귀 스위트
+  하중 확인) → **ff 병합**. (기준선: 현재 `master` 에서 pytest 323개 수집.)
 - **파서 원칙** — 충실도 완전 · 기능 최소 · 누락은 시끄럽게. 명시성(암묵 자동 금지, dry-run 기본).
