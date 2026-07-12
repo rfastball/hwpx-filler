@@ -7,7 +7,13 @@ from __future__ import annotations
 
 import pytest
 
-from hwpxfiller.data import DataSource, ExcelDataSource, make_source, source_for_path
+from hwpxfiller.data import (
+    DataSource,
+    ExcelDataSource,
+    InlineDataSource,
+    make_source,
+    source_for_path,
+)
 
 
 def test_source_for_path_picks_excel_by_extension(tmp_path):
@@ -26,6 +32,20 @@ def test_make_source_by_kind(tmp_path):
     assert isinstance(make_source("excel", path=str(tmp_path / "d.xlsx")), ExcelDataSource)
     with pytest.raises(ValueError):
         make_source("does_not_exist")
+
+
+def test_make_source_inline_kind_wraps_records():
+    """수기 1건 경로(UD-25) — 파일 없이 메모리 레코드를 동일 포트로 겨눈다."""
+    rec = {"공고명": "전산장비", "추정가격": "1000"}
+    src = make_source("inline", records=[rec])
+    assert isinstance(src, InlineDataSource)
+    assert isinstance(src, DataSource)  # 파일 소스와 동일 포트(다운스트림 무구별)
+    assert src.records() == [rec]
+    assert src.fields() == ["공고명", "추정가격"]
+    assert src.field_labels() == {}
+    # 방어 복사 — 반환 dict 변형이 소스 내부를 오염시키지 않는다.
+    src.records()[0]["공고명"] = "변조"
+    assert src.records() == [rec]
 
 
 def test_make_source_pipeline_kind(tmp_path):

@@ -36,6 +36,7 @@ def make_source(kind: str, **opts) -> DataSource:
     """소스 *종류* 이름으로 DataSource 를 만든다(파일 아닌 종류 포함).
 
     - ``"excel"``     — ``path=`` (+ 선택 ``sheet``/``header_row``)
+    - ``"inline"``    — ``records=[dict...]`` (수기 1건 등 파일 없는 메모리 레코드, UD-25)
     - ``"nara"``      — ``service_key=``·``bgn_dt=``·``end_dt=`` … (조달청 표준 취득)
     - ``"pipeline"``  — ``sources=[DataSource...]``·``steps=[<recipe>...]`` (조립 파이프라인)
 
@@ -45,6 +46,10 @@ def make_source(kind: str, **opts) -> DataSource:
     """
     if kind == "excel":
         return ExcelDataSource(**opts)
+    if kind == "inline":
+        from .inline import InlineDataSource
+
+        return InlineDataSource(**opts)
     if kind == "nara":
         from .nara import NaraStdDataSource
 

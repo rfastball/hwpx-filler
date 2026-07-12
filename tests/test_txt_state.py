@@ -70,3 +70,40 @@ def test_paste_text_clears_name(tmp_path):
     vm = _vm(tmp_path)
     vm.set_template_text("자유 {{필드}}")
     assert vm.template_name is None and "자유" in vm.template_text
+
+
+# ------------------------------------------------- UD-25 데이터 겨눔 대칭화(V12)
+def test_template_field_names_lists_tokens_in_order(tmp_path):
+    vm = _vm(tmp_path)
+    assert vm.template_field_names() == ["공고명", "추정가격", "담당자", "비고"]
+
+
+class _ExcelPoolItem:
+    # 풀 항목(참조) 덕타입 — kind+opts 만 노출(레코드·키 없음).
+    kind = "excel"
+
+    def __init__(self, path):
+        self.opts = {"path": path}
+
+
+def test_load_pool_item_restores_and_targets_records(tmp_path):
+    """풀 겨눔(UD-25) — 공용 팩토리로 참조를 복원해 렌더 소스로 겨눈다."""
+    csv = tmp_path / "pool.csv"
+    csv.write_text("공고명,추정가격\n전산장비,1000\n", encoding="utf-8-sig")
+    vm = _vm(tmp_path)
+    records = vm.load_pool_item(_ExcelPoolItem(str(csv)))
+    assert records == [{"공고명": "전산장비", "추정가격": "1000"}]
+    assert vm.record_count() == 1
+    assert vm.current_record()["공고명"] == "전산장비"
+
+
+def test_set_acquired_targets_and_resets_index(tmp_path):
+    """수기·애드혹 직접 겨눔 — datasource/records 원자 대입 + 인덱스 리셋(스텝 잔존 방지)."""
+    vm = _vm(tmp_path)
+    vm.records = _Src().records()
+    vm.step(1)  # index -> 1
+    marker = object()
+    vm.set_acquired(marker, [{"공고명": "수기건"}])
+    assert vm.datasource is marker
+    assert vm.record_index == 0
+    assert vm.current_record() == {"공고명": "수기건"}

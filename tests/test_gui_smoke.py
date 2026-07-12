@@ -1281,6 +1281,40 @@ def test_txt_view_renders_and_keeps_missing_tokens(qapp, tmp_path):
     assert "{{담당자}}" in rendered          # 미입력 토큰 그대로(시끄럽게)
 
 
+def test_txt_view_data_affordances_are_symmetric(qapp, tmp_path):
+    """UD-25(V12): txt 데이터 겨눔이 파일 1종 → 풀·파일·수기 3종으로 대칭화."""
+    from hwpxfiller.core.text_registry import TextTemplateRegistry
+    from hwpxfiller.gui.txt_view import ManualRecordDialog, TxtDraftView
+
+    d = tmp_path / "tt"
+    d.mkdir()
+    (d / "기안.txt").write_text("제목: {{공고명}}\n담당: {{담당자}}", encoding="utf-8")
+
+    class _Pool:  # 풀 레지스트리 스텁 — 구성만 검증(홈 무접촉).
+        def list_items(self, status=None):
+            return []
+
+    view = TxtDraftView(TextTemplateRegistry(d), pool_registry=_Pool())
+    # 3종 겨눔 버튼이 실행 표면(풀·파일·나라)과 동형으로 출현한다.
+    assert view.btn_pool.text() == "데이터 풀에서…"
+    assert view.btn_data.text() == "파일 선택…"
+    assert view.btn_manual.text() == "수기 입력…"
+
+    # 수기 1건 — 인라인 소스로 겨눠 실시간 렌더에 반영(파일 강제 없이).
+    # 폼은 템플릿 토큰 전량을 담는다 → 미입력 칸은 '빈 값'(blank)으로 겨눠진다.
+    dlg = ManualRecordDialog(view, view.vm.template_field_names())
+    dlg._edits["공고명"].setText("친환경 소화장비")
+    rec = dlg.record()
+    assert set(rec) == {"공고명", "담당자"}  # 템플릿 토큰 전량이 폼에 있다
+    view.vm.set_acquired(None, [rec])
+    view._after_data_loaded("수기 입력 1건")
+    assert view.ed_data.text() == "수기 입력 1건"
+    assert "친환경 소화장비" in view.view.toPlainText()
+    # 채운 값은 fill, 빈 칸은 blank(missing 아님 — 폼에 존재하므로) — 상태 배지로 확인.
+    states = {t.name: t.state for t in view.vm.token_states()}
+    assert states == {"공고명": "fill", "담당자": "blank"}
+
+
 # ------------------------------------------- U3 매핑 정확성 회귀(RC-08·09·10)
 def test_job_editor_accept_warns_and_blocks_all_blank_job(qapp, tmp_path, monkeypatch):
     """RC-08 회귀: 전 행 비움 확정 작업은 저장 전 경고로 차단 — 종전 술어

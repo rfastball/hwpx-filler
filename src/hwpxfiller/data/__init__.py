@@ -3,6 +3,7 @@ from __future__ import annotations
 from .base import DataSource, Record
 from .excel import ExcelDataSource
 from .factory import make_source, source_for_path, source_from_pool_item
+from .inline import InlineDataSource
 from .pipeline import AssemblyEngine, AssemblyError, PipelineSource
 from .secret_store import (
     MemorySecretStore,
@@ -16,6 +17,7 @@ __all__ = [
     "DataSource",
     "Record",
     "ExcelDataSource",
+    "InlineDataSource",
     "PipelineSource",
     "AssemblyEngine",
     "AssemblyError",

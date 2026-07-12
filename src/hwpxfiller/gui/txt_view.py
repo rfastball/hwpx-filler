@@ -14,7 +14,10 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
+    QFormLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -30,7 +33,8 @@ from PySide6.QtWidgets import (
 from hwpxcore.atomic import write_text_atomic
 
 from ..core.text_registry import TextTemplateRegistry
-from .file_filters import EXCEL_FILTER
+from ..data import make_source
+from .batch_run import DataAcquireController
 from .flow_layout import FlowLayout
 from .style import BASE_QSS, mark
 from .txt_state import TxtDraftViewModel
@@ -46,9 +50,21 @@ class TxtDraftView(QMainWindow):
 
     back_requested = Signal()
 
-    def __init__(self, registry: TextTemplateRegistry, parent=None):
+    def __init__(self, registry: TextTemplateRegistry, parent=None, *,
+                 pool_registry=None, secret_store=None, nara_fetcher=None):
         super().__init__(parent)
         self.vm = TxtDraftViewModel(registry)
+        # 데이터 풀(참조) — 실행 표면과 대칭으로 txt 도 풀에서 겨눈다(UD-25). 주입 가능
+        # (테스트); 기본은 홈 레지스트리(run_view 와 동형 기본값).
+        if pool_registry is None:
+            from ..core.dataset_pool import (
+                DatasetPoolRegistry,
+                default_dataset_pool_dir,
+            )
+            pool_registry = DatasetPoolRegistry(default_dataset_pool_dir())
+        self._pool_registry = pool_registry
+        self._secret_store = secret_store
+        self._nara_fetcher = nara_fetcher
         self.setWindowTitle("HWPX Filler — 즉시 기안")
         self.resize(880, 680)
         self.setStyleSheet(BASE_QSS)
@@ -78,9 +94,16 @@ class TxtDraftView(QMainWindow):
         self.ed_data = QLineEdit()
         self.ed_data.setReadOnly(True)
         ctl.addWidget(self.ed_data, 1)
-        btn_data = QPushButton("데이터 선택…")
-        btn_data.clicked.connect(self._pick_data)
-        ctl.addWidget(btn_data)
+        # 데이터 겨눔 대칭화(UD-25) — 실행 표면(풀·파일·나라)과 동형으로 풀·파일·수기 3종.
+        self.btn_pool = QPushButton("데이터 풀에서…")
+        self.btn_pool.clicked.connect(self._pick_from_pool)
+        self.btn_data = QPushButton("파일 선택…")
+        self.btn_data.clicked.connect(self._pick_data)
+        self.btn_manual = QPushButton("수기 입력…")
+        self.btn_manual.clicked.connect(self._manual_entry)
+        ctl.addWidget(self.btn_pool)
+        ctl.addWidget(self.btn_data)
+        ctl.addWidget(self.btn_manual)
         ctl.addWidget(QLabel("레코드"))
         self.btn_prev = QPushButton("◀")
         self.btn_prev.clicked.connect(lambda: self._step(-1))
@@ -125,6 +148,21 @@ class TxtDraftView(QMainWindow):
         foot.addWidget(self.lbl_note, 1)
         root.addLayout(foot)
 
+        # ---- 공용 데이터 취득 계층(RC-22) 재사용 — 실행 표면과 같은 겨눔 오케스트레이션 ----
+        # 파일·풀 겨눔은 run/matrix 와 동일한 DataAcquireController 를 태운다(축자 사본 금지).
+        # 나라 애드혹은 이 트랙 스코프 밖 — 파일·풀·수기 3경로만 배선한다.
+        self._data = DataAcquireController(
+            self, pool_registry=self._pool_registry,
+            load_file=self.vm.load_data,
+            restore_pool_item=lambda item: self.vm.load_pool_item(
+                item, secret_store=self._secret_store, fetcher=self._nara_fetcher
+            ),
+            set_acquired=self.vm.set_acquired,
+            after_loaded=self._after_data_loaded,
+            say=self._say, set_busy=self._set_data_busy,
+            secret_store=self._secret_store, nara_fetcher=self._nara_fetcher,
+        )
+
         names = self.vm.template_names()
         if names:
             self.vm.select_template(names[0])
@@ -145,22 +183,56 @@ class TxtDraftView(QMainWindow):
             self.vm.select_template(name)
         self._render()
 
+    # ------------------------------- 데이터 겨눔(파일·풀은 공용 계층 위임, RC-22) ----
     def _pick_data(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self, "데이터 파일 선택", "", EXCEL_FILTER
-        )
-        if not path:
+        """파일 소스 겨눔 — run/matrix 와 같은 공용 계층에 위임(축자 사본 해소)."""
+        self._data.pick_file()
+
+    def _pick_from_pool(self) -> None:
+        """데이터 풀에서 골라 실행 시점 재읽기(싱크) — 복원은 백그라운드(RC-12)."""
+        self._data.pick_from_pool()
+
+    def _manual_entry(self) -> None:
+        """수기 1건 입력 — 현재 템플릿 토큰을 폼으로 받아 인라인 소스로 겨눈다(UD-25).
+
+        값 몇 개만 넣고 바로 복사한다는 즉시 기안의 핵심 가치를 위해 엑셀 파일 제작을
+        강제하지 않는다. 인라인 소스 생성은 공용 팩토리(``make_source("inline", …)``)를
+        거친다 — txt 가 소스 클래스를 직접 만들지 않는다.
+        """
+        fields = self.vm.template_field_names()
+        if not fields:
+            QMessageBox.information(
+                self, "수기 입력", "먼저 토큰({{…}})이 있는 템플릿을 선택하세요."
+            )
             return
-        try:
-            records = self.vm.load_data(path)
-        except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "오류", f"데이터 로드 실패:\n{exc}")
+        dlg = ManualRecordDialog(self, fields)
+        if dlg.exec() != QDialog.Accepted:
             return
-        if not records:
-            QMessageBox.warning(self, "확인", "레코드가 없습니다. 다른 파일을 선택하세요.")
-            return
-        self.ed_data.setText(path)
+        rec = dlg.record()
+        source = make_source("inline", records=[rec])
+        self.vm.set_acquired(source, [rec])
+        self._after_data_loaded("수기 입력 1건")
+
+    def _after_data_loaded(self, label: str) -> None:
+        """겨눔 공통 꼬리 — 라벨 표기 + 실시간 재렌더(파일·풀·수기 공용)."""
+        self.ed_data.setText(label)
         self._render()
+
+    def _set_data_busy(self, busy: bool) -> None:
+        """데이터 복원(네트워크 가능) 중 겨눔 버튼 잠금 — 재진입·경합 방지(RC-12)."""
+        for b in (self.btn_pool, self.btn_data, self.btn_manual):
+            b.setEnabled(not busy)
+
+    def _say(self, msg: str) -> None:
+        """진행 상태를 완료 라벨에 잠깐 표기(muted) — 다음 렌더가 기본 안내로 복귀시킨다.
+
+        txt 는 로그 패널이 없다 — 풀 복원 같은 백그라운드 진행을 조용히 두지 않고
+        (RC-12 진행 표시) lbl_note 에 muted 로 띄운다. 완료 시 ``_after_data_loaded`` →
+        ``_render`` → ``_reset_note`` 가 스테일 진행 문구를 지운다(UD-02 서사 존중).
+        """
+        mark(self.lbl_note, "level", "")
+        mark(self.lbl_note, "muted", True)
+        self.lbl_note.setText(msg)
 
     def _step(self, delta: int) -> None:
         self.vm.step(delta)
@@ -255,3 +327,38 @@ class TxtDraftView(QMainWindow):
             )
         else:
             QMessageBox.information(self, "저장", "기안 텍스트를 저장했습니다.")
+
+
+class ManualRecordDialog(QDialog):
+    """수기 1건 입력 — 현재 템플릿 토큰을 폼으로 받아 레코드 1건을 만든다(UD-25).
+
+    파일·풀 겨눔과 대칭인 세 번째 데이터 진입점. 빈 칸은 빈 값으로 남겨 미리보기에서
+    '빈 값'(blank)으로 표시되게 한다 — 조용히 지우지 않는다(ADR-E 미러). 레코드 dict
+    조립만 하고 소스 생성(팩토리)·겨눔은 호출자(``TxtDraftView._manual_entry``)가 한다.
+    """
+
+    def __init__(self, parent, fields: "list[str]"):
+        super().__init__(parent)
+        self.setWindowTitle("수기 입력 — 1건")
+        self._edits: "dict[str, QLineEdit]" = {}
+        lay = QVBoxLayout(self)
+        form = QFormLayout()
+        for name in fields:
+            ed = QLineEdit()
+            self._edits[name] = ed
+            form.addRow(name, ed)
+        lay.addLayout(form)
+        note = QLabel("빈 칸은 빈 값으로 채워집니다(미리보기에서 '빈 값'으로 표시).")
+        mark(note, "muted", True)
+        note.setWordWrap(True)
+        lay.addWidget(note)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        lay.addWidget(buttons)
+
+    def record(self) -> "dict[str, str]":
+        """폼 입력을 레코드 1건(dict)으로 — 값이 없으면 빈 문자열."""
+        return {name: ed.text() for name, ed in self._edits.items()}
