@@ -35,6 +35,7 @@ _INSTANCES = {
     "JobRow": JobRow(
         name="", template_name="", template_missing=False,
         field_count=0, filename_pattern="", last_run_display="",
+        compile_state=None, compile_badge="",  # C2 파생 컴파일 배지 seam(C4)
     ),
     "RunViewModel": RunViewModel(Job()),
     "MappingModel": MappingModel(),

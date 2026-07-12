@@ -15,6 +15,44 @@ from datetime import datetime
 from pathlib import Path
 
 from ..core.job import Job, JobRegistry
+from ..core.template_status import CompileState, compile_status
+
+# 카드 컴파일 상태 배지 어휘(C2 파생) — 기존 '템플릿 없음' pill 을 대체가 아니라 확장한다.
+# 이모지 접두로 한눈에 "실행 준비 vs 손봐야 함" 을 가른다.
+BADGE_MISSING = "❌ 템플릿 없음"        # 경로 있으나 파일 부재(compile_status 호출 안 함)
+BADGE_RAW = "✏ 원문·컴파일 필요"       # CompileState.RAW(진짜 필드 없음, 평문 토큰)
+BADGE_READY = "✅ 실행 준비"           # COMPILED/FILLED(잔존 토큰 0)
+BADGE_ERROR = "⚠ 템플릿 오류"          # 손상 템플릿 — 조용한 ✅ 금지, 시끄럽게 알림
+
+
+def _partial_badge(n: int) -> str:
+    """PARTIAL 배지 — N = 미확인(잔존) 토큰 수."""
+    return f"⚠ 미확인 토큰 {n}개"
+
+
+def _derive_compile(tpath: str, template_missing: bool) -> "tuple[CompileState | None, str]":
+    """(compile_state, compile_badge) 를 C2 ``compile_status`` 에서 파생한다.
+
+    비용 주의: 템플릿이 존재하면 매 refresh 마다 .hwpx 를 파싱해 상태를 **재계산**한다
+    (한글 재편집으로 COMPILED→PARTIAL 드리프트가 나므로 저장·캐시하지 않는다 — C2 의
+    compute-not-store 원칙). 손상 템플릿이 홈 목록을 죽이지 않도록 예외를 가드하되,
+    조용히 ✅ 로 통과시키지 않고 시끄럽게 오류 배지로 강등한다.
+    """
+    if not tpath:
+        return None, ""                       # 템플릿 경로 없음 → 배지 없음(부재 아님)
+    if template_missing:
+        return None, BADGE_MISSING            # 부재 경로엔 compile_status 를 부르지 않는다
+    try:
+        st = compile_status(tpath)
+    except Exception:
+        return None, BADGE_ERROR              # 손상/파싱 실패 → 시끄럽게 강등(never silent ✅)
+    if st.state == CompileState.RAW:
+        return st.state, BADGE_RAW
+    if st.state == CompileState.PARTIAL:
+        # N = 미확인(잔존) 토큰 총합: skip 채널 + 본문 stray + 미컴파일(compilable).
+        n = st.skipped_n + st.stray_n + st.compilable_n
+        return st.state, _partial_badge(n)
+    return st.state, BADGE_READY              # COMPILED 또는 FILLED(잔존 토큰 0)
 
 
 def _fmt_iso(ts: str) -> str:
@@ -36,21 +74,28 @@ class JobRow:
     filename_pattern: str
     last_run_display: str
     last_run_at: str = ""  # 원시 ISO(KPI '최근 실행' 계산용, ""=미실행)
+    # C2 파생 컴파일 상태(seam) — refresh 마다 재계산(저장·캐시 없음). None = 배지 없음/부재/오류.
+    compile_state: "CompileState | None" = None
+    compile_badge: str = ""
 
     @classmethod
     def from_job(cls, job: Job) -> "JobRow":
         tpath = job.template_path
+        # 실행 화면의 템플릿 가드를 홈에서 선고지(비차단).
+        template_missing = bool(tpath) and not Path(tpath).exists()
+        compile_state, compile_badge = _derive_compile(tpath, template_missing)
         return cls(
             name=job.name,
             template_name=(Path(tpath).name or "—") if tpath else "—",
-            # 실행 화면의 템플릿 가드를 홈에서 선고지(비차단).
-            template_missing=bool(tpath) and not Path(tpath).exists(),
+            template_missing=template_missing,
             field_count=len(job.mapping.mappings),
             filename_pattern=job.filename_pattern,
             last_run_display=(
                 f"최근 실행 {_fmt_iso(job.last_run_at)}" if job.last_run_at else "아직 실행 안 함"
             ),
             last_run_at=job.last_run_at,
+            compile_state=compile_state,
+            compile_badge=compile_badge,
         )
 
     def meta_line(self) -> str:

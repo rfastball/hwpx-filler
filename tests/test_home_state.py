@@ -4,9 +4,22 @@
 """
 from __future__ import annotations
 
+from lxml import etree
+
+from hwpxfiller.core.authoring import compile_document
+from hwpxfiller.core.fields import FieldDocument
 from hwpxfiller.core.job import Job, JobRegistry
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
-from hwpxfiller.gui.home_state import HomeViewModel, JobRow
+from hwpxfiller.core.template_status import CompileState
+from hwpxfiller.gui.home_state import (
+    BADGE_ERROR,
+    BADGE_MISSING,
+    BADGE_RAW,
+    BADGE_READY,
+    HomeViewModel,
+    JobRow,
+)
+from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
 
 def _reg(tmp_path) -> JobRegistry:
@@ -111,3 +124,143 @@ def test_txt_rows(tmp_path):
     vm = HomeViewModel(_reg(tmp_path), TextTemplateRegistry(td))
     rows = vm.txt_rows()
     assert len(rows) == 1 and rows[0].name == "기안" and rows[0].field_count == 2
+
+
+# ============================================================ C4: 컴파일 상태 배지
+# JobRow.compile_badge/compile_state 는 C2 compile_status 에서 refresh 마다 재산출된다.
+# 여기서 4-상태 + 부재 + 재편집 드리프트를 헤드리스로 못박는다(위젯 불필요).
+
+HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
+HS = "http://www.hancom.co.kr/hwpml/2011/section"
+SECTION = "Contents/section0.xml"
+
+
+def _pkg(section_inner: str) -> HwpxPackage:
+    sec = (
+        f'<hs:sec xmlns:hs="{HS}" xmlns:hp="{HP}">{section_inner}</hs:sec>'
+    ).encode("utf-8")
+    pkg = HwpxPackage()
+    pkg.entries[MIMETYPE_NAME] = MIMETYPE_VALUE
+    pkg.stored.add(MIMETYPE_NAME)
+    pkg.entries[SECTION] = sec
+    return pkg
+
+
+def _save(pkg: HwpxPackage, path) -> str:
+    pkg.save(str(path))
+    return str(path)
+
+
+def _raw_hwpx(tmp_path) -> str:
+    """필드 0개 + 평문 토큰(미컴파일 원문) → RAW."""
+    xml = "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>"
+    return _save(_pkg(xml), tmp_path / "raw.hwpx")
+
+
+def _compiled_hwpx(tmp_path, name="compiled.hwpx") -> str:
+    """평문 토큰을 컴파일만(채우지 않음) → COMPILED."""
+    xml = "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>"
+    pkg, _ = compile_document(_pkg(xml))
+    return _save(pkg, tmp_path / name)
+
+
+def _partial_hwpx(tmp_path) -> str:
+    """컴파일 + 값 자리에 미해결 토큰 → 잔존 토큰 有 → PARTIAL."""
+    xml = "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>"
+    pkg, _ = compile_document(_pkg(xml))
+    doc = FieldDocument(pkg.entries[SECTION])
+    doc.set_field("계약명", "{{미결}}")
+    pkg.entries[SECTION] = doc.to_bytes()
+    return _save(pkg, tmp_path / "partial.hwpx")
+
+
+def _filled_hwpx(tmp_path) -> str:
+    """컴파일 + 실제 값 주입 → FILLED."""
+    xml = "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>"
+    pkg, _ = compile_document(_pkg(xml))
+    doc = FieldDocument(pkg.entries[SECTION])
+    doc.set_field("계약명", "정보시스템 구축 사업")
+    pkg.entries[SECTION] = doc.to_bytes()
+    return _save(pkg, tmp_path / "filled.hwpx")
+
+
+def _row(template_path: str) -> JobRow:
+    return JobRow.from_job(Job(name="작업", template_path=template_path))
+
+
+def test_badge_raw(tmp_path):
+    row = _row(_raw_hwpx(tmp_path))
+    assert row.compile_state == CompileState.RAW
+    assert row.compile_badge == BADGE_RAW
+
+
+def test_badge_partial_counts_leftover_tokens(tmp_path):
+    row = _row(_partial_hwpx(tmp_path))
+    assert row.compile_state == CompileState.PARTIAL
+    # N = skipped_n + stray_n + compilable_n; 이 픽스처는 stray 1개.
+    assert row.compile_badge == "⚠ 미확인 토큰 1개"
+
+
+def test_badge_compiled_is_ready(tmp_path):
+    row = _row(_compiled_hwpx(tmp_path))
+    assert row.compile_state == CompileState.COMPILED
+    assert row.compile_badge == BADGE_READY
+
+
+def test_badge_filled_is_ready(tmp_path):
+    row = _row(_filled_hwpx(tmp_path))
+    assert row.compile_state == CompileState.FILLED
+    assert row.compile_badge == BADGE_READY
+
+
+def test_badge_missing_template_does_not_call_compile_status(tmp_path):
+    # 존재하지 않는 경로 → 부재 배지, compile_state None(compile_status 미호출).
+    row = _row(str(tmp_path / "does_not_exist.hwpx"))
+    assert row.template_missing is True
+    assert row.compile_state is None
+    assert row.compile_badge == BADGE_MISSING
+
+
+def test_badge_empty_path_has_no_badge():
+    row = _row("")
+    assert row.template_missing is False
+    assert row.compile_state is None
+    assert row.compile_badge == ""
+
+
+def test_badge_corrupt_template_degrades_loudly(tmp_path):
+    # 손상 .hwpx(zip 아님) → 조용한 ✅ 금지, 시끄러운 오류 배지로 강등.
+    bad = tmp_path / "corrupt.hwpx"
+    bad.write_bytes(b"not a real hwpx zip")
+    row = _row(str(bad))
+    assert row.compile_state is None
+    assert row.compile_badge == BADGE_ERROR
+
+
+def test_badge_recomputed_on_refresh_reflects_drift(tmp_path):
+    """COMPILED 템플릿에 stray 토큰을 주입 → refresh 재산출 → 배지가 ⚠ 로 뒤집힌다.
+
+    저장 도장이 아니라 매 refresh 재계산임을 증명(한글 재편집 드리프트 반영).
+    """
+    path = _compiled_hwpx(tmp_path, name="drift.hwpx")
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="드리프트", template_path=path))
+    vm = HomeViewModel(reg)
+    assert vm.rows()[0].compile_badge == BADGE_READY  # 처음엔 실행 준비
+
+    # 사용자가 한글에서 새 평문 토큰을 타이핑(파일 밖에서 드리프트).
+    pkg = HwpxPackage.open(path)
+    root = etree.fromstring(pkg.entries[SECTION])
+    newp = etree.SubElement(root, f"{{{HP}}}p")
+    run = etree.SubElement(newp, f"{{{HP}}}run")
+    t = etree.SubElement(run, f"{{{HP}}}t")
+    t.text = "추가항목: {{추가}}"
+    pkg.entries[SECTION] = etree.tostring(
+        root, xml_declaration=True, encoding="UTF-8", standalone=True
+    )
+    pkg.save(path)
+
+    vm.refresh()  # 재적재 → JobRow.from_job → compile_status 재산출
+    row = vm.rows()[0]
+    assert row.compile_state == CompileState.PARTIAL
+    assert row.compile_badge.startswith("⚠ 미확인 토큰")  # ✅ → ⚠ 로 뒤집힘

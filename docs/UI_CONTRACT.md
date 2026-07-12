@@ -21,6 +21,7 @@
 | `.jcard .jm` | `JobRow.meta_line` | 상태(성형) | B |
 | `.jcard .jr` | `JobRow.last_run_display` | 상태 | B |
 | `.pill.warn`("템플릿 없음") | `JobRow.template_missing` | 상태 | B |
+| `.jcard .pill`(컴파일 배지) | `JobRow.compile_badge` (+`compile_state`) | 파생(C2 재산출) | B/C2 |
 | `#emptyView` | `HomeViewModel.is_empty` | 상태(분기) | A |
 | `.tlist` | `HomeViewModel.txt_rows` | 상태(txt 목록) | I/H |
 | `.titem .tn` | `TxtRow.name` | 상태 | H |

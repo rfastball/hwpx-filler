@@ -28,8 +28,24 @@ from PySide6.QtWidgets import (
 )
 
 from ..core.job import JobRegistry
+from ..core.template_status import CompileState
 from .home_state import HomeViewModel, JobRow, TxtRow
 from .style import BASE_QSS, mark
+
+
+def _badge_fb(row: JobRow) -> str:
+    """카드 컴파일 배지의 pill 심각도(style.py 의 fb 셀렉터 재사용).
+
+    ready=초록·partial=호박·raw=보라(할 일)·부재/오류=빨강(주의). 어휘 자체는 배지 문구가
+    나르고, 색은 한눈 식별 보조다.
+    """
+    if row.compile_state == CompileState.RAW:
+        return "ack"
+    if row.compile_state == CompileState.PARTIAL:
+        return "blank"
+    if row.compile_state in (CompileState.COMPILED, CompileState.FILLED):
+        return "fill"
+    return "missing"  # compile_state None + 배지 有 = 부재/오류(시끄러운 주의)
 
 
 class _JobCard(QWidget):
@@ -48,10 +64,12 @@ class _JobCard(QWidget):
         lbl_name = QLabel(row.name)
         mark(lbl_name, "heading", True)
         name_row.addWidget(lbl_name)
-        if row.template_missing:
-            lbl_missing = QLabel("템플릿 없음")
-            mark(lbl_missing, "pill", "warn")
-            name_row.addWidget(lbl_missing)
+        # C2 파생 컴파일 상태 배지(부재·원문·미확인 N개·실행 준비) — 기존 '템플릿 없음'
+        # pill 어휘를 확장한다. 문구는 JobRow.compile_badge(seam), 색은 상태에서 파생.
+        if row.compile_badge:
+            lbl_badge = QLabel(row.compile_badge)
+            mark(lbl_badge, "fb", _badge_fb(row))
+            name_row.addWidget(lbl_badge)
         name_row.addStretch(1)
         root.addLayout(name_row)
 
