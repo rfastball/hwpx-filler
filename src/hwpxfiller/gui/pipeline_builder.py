@@ -43,6 +43,9 @@ class PipelineBuilderDialog(QDialog):
             registry, secret_store=store, fetcher=fetcher
         )
         self.saved_name: "str | None" = None  # 수용 시 저장된 항목 이름(패널이 읽음)
+        # 미리보기가 한 번이라도 표시된 뒤에만 스테일 무효화 경고를 낸다(취득 전에는
+        # 무효화할 스냅샷이 없다 — nara_view._on_query_edited 의 last_result 가드 미러).
+        self._preview_shown = False
 
         self.setWindowTitle("파이프라인 조립")
         self.resize(760, 640)
@@ -190,6 +193,7 @@ class PipelineBuilderDialog(QDialog):
             QMessageBox.critical(self, "오류", f"소스 추가 실패:\n{exc}")
             return
         self._render()
+        self._invalidate_preview()
 
     def _on_remove_source(self) -> None:
         idx = self.lst_sources.currentRow()
@@ -201,6 +205,7 @@ class PipelineBuilderDialog(QDialog):
             QMessageBox.warning(self, "제거 불가", str(exc))
             return
         self._render()
+        self._invalidate_preview()
 
     def _on_suggest(self) -> None:
         """공유 컬럼 감지 → 키 콤보에 **후보만** 채움(스텝 미생성 — 사람 확정 게이트)."""
@@ -240,6 +245,7 @@ class PipelineBuilderDialog(QDialog):
             QMessageBox.warning(self, "스텝 추가 실패", str(exc))
             return
         self._render()
+        self._invalidate_preview()
 
     def _on_remove_step(self) -> None:
         idx = self.lst_steps.currentRow()
@@ -247,10 +253,32 @@ class PipelineBuilderDialog(QDialog):
             return
         self.vm.remove_step(idx)
         self._render()
+        self._invalidate_preview()
+
+    def _invalidate_preview(self) -> None:
+        """소스·스텝 편집 → 이전 미리보기 스테일 무효화(RC-13 이식; nara_view._on_query_edited).
+
+        표·총행을 비우고 warn 으로 재미리보기를 요구한다 — '저장 후 실행 결과가 이 표다'
+        단언은 **신선한** 미리보기에서만 성립하므로, 편집으로 어긋난 스냅샷을 조용히
+        잔존시키지 않는다(confirm-or-alarm). 미리보기가 한 번도 없었으면 무효화할 스냅샷이
+        없어 조용히 통과(취득 전 nara 게이트가 이미 잠겨 있는 것과 같은 상태).
+        """
+        if not self._preview_shown:
+            return
+        self._preview_shown = False
+        self.tbl_preview.clearContents()
+        self.tbl_preview.setRowCount(0)
+        self.tbl_preview.setColumnCount(0)
+        self.lbl_total.setText("")
+        mark(self.lbl_error, "level", "warn")
+        self.lbl_error.setText("조립이 변경됨 — 다시 미리보기하세요.")
+        self.lbl_error.show()
 
     def _on_preview(self) -> None:
         result = self.vm.preview()
         if not result.ok:
+            self._preview_shown = False  # 실패한 미리보기는 신선한 스냅샷이 아니다
+            mark(self.lbl_error, "level", "danger")  # 무효화 경고(warn)에서 오류(danger)로 복원
             self.lbl_error.setText(f"조립 실패: {result.error}")
             self.lbl_error.show()
             self.tbl_preview.clearContents()
@@ -258,6 +286,7 @@ class PipelineBuilderDialog(QDialog):
             self.tbl_preview.setColumnCount(0)
             self.lbl_total.setText("")
             return
+        self._preview_shown = True  # 신선한 미리보기 표시됨 — 이후 편집이 이를 무효화한다
         self.lbl_error.hide()
         self.tbl_preview.setColumnCount(len(result.fields))
         self.tbl_preview.setHorizontalHeaderLabels(result.fields)
@@ -290,3 +319,22 @@ class PipelineBuilderDialog(QDialog):
             return
         self.saved_name = item.name
         self.accept()
+
+    def _is_dirty(self) -> bool:
+        """조립 중 작업물이 있는가 — 소스나 스텝이 하나라도 있으면 더티."""
+        return bool(self.vm.sources or self.vm.steps)
+
+    def reject(self) -> None:
+        """닫기·Esc 이탈 경로(UD-45) — 더티 상태면 무확인 폐기하지 않는다.
+
+        같은 다이얼로그가 이름 충돌 덮어쓰기에는 confirm_destructive 를 요구하면서(_on_save)
+        이탈 경로만 무확인으로 두던 비대칭을 없앤다. 반사적 Esc 한 번에 수 클릭 분량의
+        조립이 사라지지 않도록, 이탈도 같은 파괴 확인 게이트를 경유한다(RC-15 확장).
+        """
+        if self._is_dirty() and not confirm_destructive(
+            self, "조립 폐기",
+            "조립 중인 파이프라인을 버리고 닫을까요? 추가한 소스·스텝이 사라집니다.",
+            "폐기",
+        ):
+            return
+        super().reject()

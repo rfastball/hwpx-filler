@@ -216,6 +216,30 @@ def test_save_requires_name_and_sources(tmp_path):
         vm.save("이름있음")
 
 
+def test_save_refuses_invalid_assembly_loudly(tmp_path):
+    """저장 게이트가 실행과 같은 복원 경로로 조립 유효성을 확인 — 깨진 조립은 실행 시점이
+    아니라 저장 시점에 시끄럽게 실패하고 커밋되지 않는다(UD-01: save 가 build_source 무호출로
+    부재 키·빈 취득을 통과시키던 결함).
+    """
+    vm = PipelineBuilderViewModel(_pool_with_csvs(tmp_path))
+    vm.add_source("기준")
+    vm.add_source("참조표")
+    vm.steps.append({"op": "merge", "source": 1, "on": "없는키", "how": "inner"})  # 부재 키
+    with pytest.raises(ValueError, match="유효하지 않아"):
+        vm.save("깨진조립")
+    assert not vm.registry.exists("깨진조립")  # 깨진 조립은 커밋되지 않는다
+
+
+def test_save_valid_assembly_still_commits(tmp_path):
+    """유효성 게이트가 정상 조립의 저장을 막지 않는다(회귀 가드)."""
+    vm = PipelineBuilderViewModel(_pool_with_csvs(tmp_path))
+    vm.add_source("기준")
+    vm.add_source("참조표")
+    vm.add_step("merge", 1, on="id", how="inner")
+    item = vm.save("정상조립")
+    assert item.kind == "pipeline" and vm.registry.exists("정상조립")
+
+
 def test_save_name_collision_refused_without_explicit_overwrite(tmp_path):
     """동명 풀 항목을 조용히 덮지 않는다 — overwrite 명시로만(적대 리뷰 결함 3).
 

@@ -246,6 +246,13 @@ class PipelineBuilderViewModel:
                 f"같은 이름의 풀 항목이 이미 있습니다: {name!r} — 다른 이름을 쓰거나 "
                 "덮어쓰기를 확정하세요."
             )
+        # 조립 유효성 게이트(UD-01) — save 가 build_source 를 호출하지 않아 깨진 조립(부재 키·
+        # 빈 취득)도 그대로 저장되고 실행 시점에야 실패하던 결함을 닫는다. 저장은 실행과 **같은**
+        # 복원 경로(preview→build_source)로 조립이 성립함을 확인한 뒤에만 커밋한다 — 실패는
+        # 실행이 아니라 저장 시점에 시끄럽게(confirm-or-alarm; divergence 0 단일 경로 재사용).
+        assembly = self.preview(limit=1)
+        if not assembly.ok:
+            raise ValueError(f"조립이 유효하지 않아 저장할 수 없습니다: {assembly.error}")
         item = DatasetPoolItem(
             name=name, kind="pipeline", opts=self.draft_opts(), note=note
         )
