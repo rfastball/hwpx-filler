@@ -25,25 +25,25 @@
 |---|---|---|---|---|---|---|
 | RC-01 | 치명 | defect | confirmed | U1 | 착지(219f7f2) | 쓰기 경로 전반이 truncate-then-write 비원자 — 저장 실패가 기존 파일(사용자 편집본·저작 원본·작업 JSON·리포트)을 파괴 |
 | RC-02 | 치명 | defect | confirmed | U1 | 착지(219f7f2) | 산출물·증거 파일의 디스크 기존 파일 무확인 덮어쓰기 — 충돌 개념이 '배치 내 유일성'으로만 정의됨 |
-| RC-03 | 치명 | defect | confirmed | U6 | 대기 | GUI/CLI 흐름 접착층 이중화 — 검증·정책(드리프트 경계 게이트·빈값 표식·원장 조립·나라 취득 검증)이 표면별 병렬 구현이라 공유 프리미티브와 CLI가 게이트 밖 |
+| RC-03 | 치명 | defect | confirmed | U6 | 착지(bce35ef) | GUI/CLI 흐름 접착층 이중화 — 검증·정책(드리프트 경계 게이트·빈값 표식·원장 조립·나라 취득 검증)이 표면별 병렬 구현이라 공유 프리미티브와 CLI가 게이트 밖 |
 | RC-04 | 치명 | defect | confirmed | U2 | 착지(2113cae) | [확정] 템플릿 관리 워크숍 GUI 완전 도달 불가 — hasattr 전방호환 배선이 홈에 없는 시그널을 기다리는 침묵 no-op, 테스트 우회·문서 오기로 3중 은폐 |
 | RC-05 | 치명 | defect | confirmed | U2 | 착지(2113cae) | 손상 .job.json 1개가 홈·앱 시작을 통째로 벽돌화 — list_jobs에 파일 단위 격리 없음 |
-| RC-06 | 높음 | defect | confirmed | U6 | 대기 | 배치 실행 중 취소 수단 전무 — generate_batch 완주형 루프·워커 무중단·GUI 취소 UI 부재 |
-| RC-07 | 높음 | defect | confirmed | U6 | 대기 | 생성 요청이 불변 계획(GenerationPlan)으로 캡슐화되지 않음 — 완료 핸들러가 라이브 위젯/VM 상태를 재읽어 원장이 생성물과 다른 데이터·폴더를 '증거'로 기록, 완료 시 UI 프리즈·실패 경로 상태 미정리 동반 |
+| RC-06 | 높음 | defect | confirmed | U6 | 착지(bce35ef) | 배치 실행 중 취소 수단 전무 — generate_batch 완주형 루프·워커 무중단·GUI 취소 UI 부재 |
+| RC-07 | 높음 | defect | confirmed | U6 | 착지(bce35ef) | 생성 요청이 불변 계획(GenerationPlan)으로 캡슐화되지 않음 — 완료 핸들러가 라이브 위젯/VM 상태를 재읽어 원장이 생성물과 다른 데이터·폴더를 '증거'로 기록, 완료 시 UI 프리즈·실패 경로 상태 미정리 동반 |
 | RC-08 | 높음 | defect | confirmed | U3 | 착지(1cf696c) | '전부 비움' 저장 가드가 술어 오류로 dead code — 아무 값도 채우지 않는 작업이 무경고 저장(3자 독립 런타임 실증) |
 | RC-09 | 높음 | defect | confirmed | U3 | 착지(1cf696c) | 위저드 세션 상태의 이중 사본 + 내용 불감 캐시 키 — 같은 파일 재선택·소스 토글 후 매핑 스텝이 화면 요약과 모순되는 옛 데이터로 조용히 구동 |
 | RC-10 | 높음 | defect | confirmed | U3 | 착지(1cf696c) | 미지 transform의 3중 실패 — 직렬화 경계 무검증 주입, 뷰 미처리 크래시(통지 0), 런타임 조용한 join 폴백으로 서식 미적용 값 무경고 주입 |
 | RC-11 | 높음 | defect | confirmed | U5 | 착지(877d50c) | hwpxdiff 변경 그룹 리스트가 문서상 최대 65행 떨어진 독립 변경들을 '연속 N건'으로 거짓 병합 — seq는 변경 방출 서수일 뿐 문서 인접이 아님 |
-| RC-12 | 높음 | defect | confirmed | U6 | 대기 | 나라장터 취득·연결시험이 UI 스레드 동기 네트워크 — 이벤트 루프 완전 동결(취소 의도가 fetch 종료까지 전달 불가, 기본 timeout 20s), 생성 경로 QThread와 비대칭 |
+| RC-12 | 높음 | defect | confirmed | U6 | 착지(bce35ef) | 나라장터 취득·연결시험이 UI 스레드 동기 네트워크 — 이벤트 루프 완전 동결(취소 의도가 fetch 종료까지 전달 불가, 기본 timeout 20s), 생성 경로 QThread와 비대칭 |
 | RC-13 | 높음 | defect | confirmed | U4 | 착지(b676d6b) | 취득 성공 후 기간·건수 위젯 편집이 OK 게이트를 무효화하지 않음 — 미검증 기간이 풀에 등록되어 이후 모든 실행이 실패하는 죽은 참조를 조용히 생성 |
 | RC-14 | 높음 | defect | confirmed | U2 | 착지(2113cae) | 템플릿 워크숍 패널이 실사용 강도 미달 — library_dir 공급 계약 부재로 백지, 액션 핸들러 4종 예외 무방비(확정 클릭 직후 실패도 통지 0), 스테일 단일 결과 라벨 |
-| RC-15 | 중간 | defect | confirmed | U7 | 대기 | 파괴적 확인 정책이 두 계열로 분열 — ADR-E 강화 패턴은 _ack_partial 1곳뿐, 덮어쓰기·삭제 3곳은 기본버튼 미지정 영어 Yes/No라 Enter 반사로 파괴 확정(런타임 실증), 충돌 사실 재진술도 거짓·부재 |
-| RC-16 | 중간 | defect | confirmed | U8 | 대기 | 예외→사용자 메시지 번역 층 부재 — 3개 CLI가 일상 실패를 원시 traceback으로 노출하고 exit 1이 게이트/부분실패/크래시를 구분 못하며, GUI 오류 문구도 원인 파일·다음 행동을 지목 못함 |
+| RC-15 | 중간 | defect | confirmed | U7 | 착지(f0c748f) | 파괴적 확인 정책이 두 계열로 분열 — ADR-E 강화 패턴은 _ack_partial 1곳뿐, 덮어쓰기·삭제 3곳은 기본버튼 미지정 영어 Yes/No라 Enter 반사로 파괴 확정(런타임 실증), 충돌 사실 재진술도 거짓·부재 |
+| RC-16 | 중간 | defect | confirmed | U8 | 착지(cf56119) | 예외→사용자 메시지 번역 층 부재 — 3개 CLI가 일상 실패를 원시 traceback으로 노출하고 exit 1이 게이트/부분실패/크래시를 구분 못하며, GUI 오류 문구도 원인 파일·다음 행동을 지목 못함 |
 | RC-17 | 중간 | defect | confirmed | U5 | 착지(877d50c) | hwpxdiff 성형·렌더 로직의 뷰 상주(링1 부재) — 같은 DiffResult가 GUI와 CLI HTML에서 다른 낱말 강조로 렌더(8/85행 실측), 사본·라벨 재파싱·팔레트 이원 동반 |
 | RC-18 | 중간 | defect | confirmed | U5 | 착지(877d50c) | 섹션 0개 빈 컨테이너 HWPX 쌍을 '변경 없음'으로 단언 — 추출 완전성 신호를 diff 표면 어느 층도 실패로 승격하지 않음 |
 | RC-19 | 중간 | defect | confirmed | U5 | 착지(877d50c) | 대규모 전량 개정 문서에서 hwpxdiff 비교가 UI 스레드를 수십 초 동결 — 전쌍 SequenceMatcher.ratio O(N²) + 동기 핸들러(취소·진행 없음) |
-| RC-20 | 중간 | defect | confirmed | U8 | 대기 | 출력 파일명 패턴 계약 부실 — 기본값 2종이 3링 4곳 산재, 빈 입력 시 화면에 없던 값으로 조용한 폴백, 미치환 {{토큰}}이 무경고로 실파일명이 됨 |
-| RC-21 | 중간 | defect | unverified | U8 | 대기 | hwpxfiller 최상위 --help가 서브커맨드 6종을 전혀 표기하지 않음 — pre-argparse 수동 디스패치로 도움말이 실제 CLI 표면을 오표현 |
+| RC-20 | 중간 | defect | confirmed | U8 | 착지(cf56119) | 출력 파일명 패턴 계약 부실 — 기본값 2종이 3링 4곳 산재, 빈 입력 시 화면에 없던 값으로 조용한 폴백, 미치환 {{토큰}}이 무경고로 실파일명이 됨 |
+| RC-21 | 중간 | defect | unverified | U8 | 착지(cf56119) | hwpxfiller 최상위 --help가 서브커맨드 6종을 전혀 표기하지 않음 — pre-argparse 수동 디스패치로 도움말이 실제 CLI 표면을 오표현 |
 | RC-22 | 중간 | code_smell | accepted | U9 | 대기 | run_view↔matrix_view 사본 8종(QThread 배선·완료/실패 핸들러·teardown·open_folder·나라/풀 데이터 겨눔 3종) — _teardown_thread는 이미 의미가 갈라진 사본 부패 개시 상태 |
 | RC-23 | 중간 | convention_deviation | accepted | U9 | 대기 | 게이트 상태의 표시 결정이 VM과 위젯에 쪼개져 모순 신호 — 드리프트 차단 중에도 상단 '사전검증 통과' 녹색 유지, 상태 리프레시 1회당 템플릿 zip 5회 재파싱 |
 | RC-24 | 중간 | code_smell | accepted | U4 | 착지(b676d6b) | 취득 결과 스냅샷의 소유가 링2 뷰 — 실패 시 records만 리셋되어 datasource/fields/label에 이전 성공값 잔존, 수용성 판정·위젯 관통도 뷰에 산재 |
@@ -55,7 +55,7 @@
 | RC-29 | 낮음 | code_smell | accepted | U10 | 대기 | CompileState→시각 심각도 매핑이 링2(home)와 링1(template_manager_state)에 상이한 어휘로 이중 존재 + fb 셀렉터 값 어휘가 원 의미와 다른 뜻으로 재전용 |
 | RC-31 | 낮음 | defect | unverified | U5 | 착지(877d50c) | hwpxdiff 첫 비교 실패 시 인라인 실패 문구 미설정 — _invalidate_result 조기 반환이 '지울 결과 없음'과 '표시할 메시지 없음'을 동일시 |
 | RC-32 | 낮음 | polish | accepted | U5 | 착지(877d50c) | hwpxdiff 세 표면(GUI/CLI/HTML)의 요약·빈 상태 카피가 각자 하드코딩 — GUI만 '변경 없음' 확정 문장 부재, HTML만 번호변경 KPI 부재 |
-| RC-33 | 낮음 | defect | unverified | U8 | 대기 | CLI lint --vocab이 UTF-8 BOM 파일의 첫 필드명을 오염 — Windows 표준 도구로 만든 어휘 파일이 오탐 off_vocabulary + exit 1 게이트 실패 |
+| RC-33 | 낮음 | defect | unverified | U8 | 착지(cf56119) | CLI lint --vocab이 UTF-8 BOM 파일의 첫 필드명을 오염 — Windows 표준 도구로 만든 어휘 파일이 오탐 off_vocabulary + exit 1 게이트 실패 |
 | RC-34 | 낮음 | code_smell | accepted | U11 | 대기 | 파일 다이얼로그 필터 문자열 하드코딩 10곳 — 지원 확장자 단일 출처(data/factory.py)와 드리프트 대기 상태 |
 | RC-35 | 낮음 | convention_deviation | accepted | U11 | 대기 | 언더스코어 사명 클래스(_AppController·_JobCard·_TemplateCard)가 사실상 공용 API — 테스트 4파일·docs 4곳이 크로스모듈 임포트/인용 |
 | RC-36 | 낮음 | polish | accepted | U11 | 대기 | 매핑 테이블에서 말줄임된 긴 필드명·소스 콤보의 전체 이름 확인 수단(툴팁) 부재 — 유사 접두 필드 오인 확정 위험 |
@@ -81,6 +81,26 @@
 머지 후 전체 게이트(ruff→pyright→pytest) green: 최종 654 passed. 머지 게이트에서 pyright 1건
 검출·정합(`e707837` — worktree 자체 검증에 pyright 부재가 원인; 스테이지 2부터 유닛 자체 검증에
 pyright 포함).
+
+### 스테이지 2 착지 기록 (2026-07-12) — 리그레션 증거
+
+3유닛 전부 적대 검증 pass(반려 0회). 유닛 자체 검증에 pyright 포함(스테이지 1 교훈 반영).
+
+- **U6** `bce35ef` (RC-03·07·06·12): 게이트 경계 하강(드리프트 재검사·빈값 CLI 이식
+  `--ack-empty`·원장 빌더 단일화·나라 resultCode/기간 fail-closed), frozen GenerationPlan,
+  협조적 취소, 나라 취득 QThread화(스테일 결과 seq 폐기). 검증자 실 CLI e2e 포함, 679 green.
+  잔여 노트: 단일 배치 '루프 도중' 템플릿 교체 창은 매트릭스와 동일 수준(권고 문언 충족),
+  matrix_view._pick_from_pool 동기 잔존 — U9에서 흡수 예정.
+- **U7** `f0c748f` (RC-15): confirm_destructive 공용 헬퍼(기본=취소·한국어 라벨), 지침 3곳
+  + 확장 5곳 + U1 확인 3곳 정렬. Enter 반사 파괴를 런타임 차등 실증(재현→비재현).
+- **U8** `cf56119` (RC-16·20·21·33): 오류 번역 경계(crash exit 2), DEFAULT_FILENAME_PATTERN
+  단일화('공고서-{{ID}}' — 의도된 breaking), --help 서브커맨드, lint --vocab BOM.
+  미검증 2건(RC-21·33)은 검증자가 master에서 최초 재현 확인 후 수리 판정.
+
+머지 통합(메인 세션, U8이 U6 착지 전 베이스라 충돌 8파일 수동 해소): 출력 충돌을
+OutputCollisionError 로 분리해 RC-02 차단(exit 1+안내)과 환경성 FileExistsError(exit 2)의
+거짓 안내를 차단, 나라 취득 실패는 U6 데이터 경계 게이트(exit 1)로 확정, hwpxdiff 빈 추출
+게이트를 diff_documents 로 하강(분리 로드 경로도 게이트 통과). 최종 게이트 707 passed.
 
 ## 치명 (critical) — 5건
 
