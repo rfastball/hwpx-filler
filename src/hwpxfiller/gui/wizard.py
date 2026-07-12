@@ -37,7 +37,12 @@ from ..core.schema import extract_schema
 from ..data import source_for_path
 from .confirm import confirm_destructive
 from .file_filters import EXCEL_FILTER, HWPX_FILTER
-from .mapping_state import MappingModel, PartialGate, gate_for_template
+from .mapping_state import (
+    RAW_BLOCK_MESSAGE,
+    MappingModel,
+    PartialGate,
+    gate_for_template,
+)
 from .mapping_table import MappingTable
 from .style import mark
 
@@ -135,11 +140,12 @@ class TemplatePage(QWizardPage):
 
         self.ed_path.setText(path)
         if not schema.fields:
-            # RAW(진짜 필드 0개) — 채울 대상이 없어 진행 불가(종전 동작 유지).
-            self.lbl_summary.setText(
-                "이 템플릿에는 누름틀 필드가 없습니다 — 채울 대상이 없어 진행할 수 없습니다.\n"
-                "한글에서 누름틀을 삽입하거나 누름틀 변환(fieldize)으로 토큰을 바꾼 템플릿을 쓰세요."
-            )
+            # RAW(진짜 필드 0개) — 채울 대상이 없어 진행 불가. 차단 사유를 같은 페이지
+            # PARTIAL 차단과 동일한 warn 채널(lbl_warn)로 렌더하고, 문구는 단일 원천
+            # (mapping_state.RAW_BLOCK_MESSAGE)에서 가져온다(UD-21: 무마크 요약·이중화 해소).
+            # lbl_summary 는 성공 요약 전용으로 비운다.
+            self.lbl_summary.setText("")
+            self.lbl_warn.setText(RAW_BLOCK_MESSAGE)
             self.completeChanged.emit()
             return False
 
@@ -284,6 +290,7 @@ class DataPage(QWizardPage):
             "매핑은 데이터 없이 스키마만으로 확정할 수 있고, 실제 데이터는 실행할 때 고릅니다."
         )
         self._valid = False
+        self._reverting = False  # 소스 토글 취소 시 라디오 되돌림의 재진입 가드
 
         layout = QVBoxLayout(self)
 
@@ -332,9 +339,38 @@ class DataPage(QWizardPage):
         layout.addWidget(self.lbl_summary)
         layout.addStretch(1)
 
+    def _has_loaded_data(self) -> bool:
+        """파기될 실데이터(파일 로드분·나라장터 스냅샷)가 세션에 있는가.
+
+        뷰 경로칸이 아니라 **세션**(records/data_path)만 본다 — 빈 파일 선택 후처럼
+        경로칸에는 시도 경로가 남아도 세션이 비었으면 잃을 것이 없다(오탐 방지).
+        """
+        wiz = self.wizard()
+        if wiz is None:
+            return False
+        return bool(getattr(wiz, "records", None)) or bool(getattr(wiz, "data_path", ""))
+
     def _on_source_toggle(self, *_args) -> None:
-        """소스 전환 — 해당 입력 행만 노출하고 이전 선택을 무효화(소스 혼선 방지)."""
+        """소스 전환 — 해당 입력 행만 노출하고 이전 선택을 무효화(소스 혼선 방지).
+
+        이전에 불러온 데이터(특히 네트워크 왕복 산출물인 나라장터 스냅샷)가 있으면
+        탐색적 클릭 한 번에 조용히 파기하지 않는다 — 파괴 확인을 거치고, 거부하면
+        라디오를 되돌린다(UD-08: 무확인·무고지 즉시 파기 해소).
+        """
+        if self._reverting:
+            return
         excel = self.rb_excel.isChecked()
+        if self._has_loaded_data() and not confirm_destructive(
+            self, "데이터 소스 전환",
+            "지금 불러온 데이터 선택이 지워집니다"
+            "(나라장터 취득분은 다시 가져와야 합니다).\n소스를 전환하시겠습니까?",
+            "전환하고 지우기",
+        ):
+            # 되돌림 — 이 재-토글이 다시 확인을 띄우지 않도록 가드.
+            self._reverting = True
+            self.rb_excel.setChecked(not excel)
+            self._reverting = False
+            return
         self.excel_row.setVisible(excel)
         self.nara_row.setVisible(not excel)
         self.reset_data_session()
@@ -412,26 +448,40 @@ class DataPage(QWizardPage):
         if not path:
             return
         wiz = self.wizard()
-        self._valid = False
         try:
             source = source_for_path(path)
             fields = source.fields()
             records = source.records()
         except Exception as exc:  # noqa: BLE001
+            # 실패 시 뷰·세션을 원자적으로 정렬해 옛 데이터가 매핑을 조용히 구동하지
+            # 않게 한다(UD-08). 시도 경로는 보여주되 세션은 비운다.
+            self.reset_data_session()
+            self.ed_path.setText(path)
+            self.lbl_summary.setText(
+                "데이터 로드에 실패했습니다 — 이전 선택은 지워졌습니다. "
+                "다른 파일을 선택하거나 데이터 없이 다음 단계로 진행하세요."
+            )
             QMessageBox.critical(self, "오류", f"데이터 로드 실패:\n{exc}")
-            self.lbl_summary.setText("")
             self.completeChanged.emit()
             return
 
-        self.ed_path.setText(path)
         if not fields or not records:
+            # 빈 데이터는 샘플로 불러오지 않는다 — 그러나 데이터 스텝은 **선택**(ADR-J)
+            # 이므로 '진행할 수 없습니다'로 게이트를 오도하지 않는다. 뷰·세션을 정렬하고
+            # (옛 데이터 잔존 제거) 사실에 맞는 문구로 교체한다(UD-08).
+            self.reset_data_session()
+            self.ed_path.setText(path)
             self.lbl_summary.setText(
-                f"컬럼 {len(fields)}개, 레코드 {len(records)}건 — 빈 데이터로는 진행할 수 없습니다.\n"
-                "1행이 헤더(필드명), 2행부터가 레코드인 파일을 선택하세요."
+                f"컬럼 {len(fields)}개, 레코드 {len(records)}건 — 이 파일은 비어 있어 "
+                "샘플로 불러오지 않았습니다(이전 선택은 지워짐).\n"
+                "1행이 헤더(필드명)·2행부터 레코드인 파일을 선택하거나, "
+                "데이터 없이 다음 단계로 진행하세요."
             )
             self.completeChanged.emit()
             return
 
+        self._valid = False
+        self.ed_path.setText(path)
         wiz.data_path = path
         wiz.datasource = source
         wiz.source_fields = fields
@@ -555,16 +605,27 @@ class MappingPage(QWizardPage):
         self.completeChanged.emit()
 
     def _sync_progress(self):
-        """확정 진행 카운터 — 게이트(전 행 확정)까지 얼마나 남았는지 상시 노출."""
+        """확정 진행 카운터 — 게이트(전 행 확정)까지 얼마나 남았는지 상시 노출.
+
+        위계는 상태 의존적이다(UD-14): 차단 중(미완료)에는 스텝1 차단 신호와 같은
+        warn 로 강조하고 잔여 수를 재진술하며, 해소되면 ok 로 축하한다. 차단일수록
+        muted 회색으로 눕던 강조 역전을 바로잡는다.
+        """
         model = self.wizard().model if self.wizard() else None
         if model is None or not model.rows:
             self.lbl_progress.setText("확정 0/0")
+            mark(self.lbl_progress, "muted", True)
+            mark(self.lbl_progress, "level", "")
             return
         done = sum(1 for r in model.rows if r.confirmed)
-        complete = done == len(model.rows)
-        self.lbl_progress.setText(f"확정 {done}/{len(model.rows)}")
-        mark(self.lbl_progress, "muted", not complete)
-        mark(self.lbl_progress, "level", "ok" if complete else "")
+        total = len(model.rows)
+        mark(self.lbl_progress, "muted", False)
+        if done == total:
+            self.lbl_progress.setText(f"확정 {done}/{total}")
+            mark(self.lbl_progress, "level", "ok")
+        else:
+            self.lbl_progress.setText(f"확정 {done}/{total} — {total - done}개 남음")
+            mark(self.lbl_progress, "level", "warn")
 
     def _step(self, delta: int):
         wiz = self.wizard()
@@ -597,8 +658,10 @@ class MappingPage(QWizardPage):
             return
         rec = wiz.records[self._preview_index]
         empties = wiz.model.preview_empties(rec)
-        filled = sum(1 for r in wiz.model.rows if r.has_content()) - len(empties)
-        text = f"채움 {filled} · 빈 값 {len(empties)}"
+        # 3상태 전량 집계(UD-27): 채움·빈 값·미매핑의 합 = 전체 필드 수. 미매핑 잔존
+        # 필드가 무집계로 빠져 합계가 필드 수와 어긋나던 공란 규모 과소 진술을 해소.
+        filled, empty_n, unmapped = wiz.model.preview_counts(rec)
+        text = f"채움 {filled} · 빈 값 {empty_n} · 미매핑 {unmapped}"
         if empties:
             text += " — " + ", ".join(empties)
         self.lbl_preview_summary.setText(text)

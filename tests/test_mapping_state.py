@@ -146,6 +146,46 @@ def test_confirm_all_and_unconfirm_all():
     assert all(not r.confirmed for r in model.rows)
 
 
+# --------------------------------------------------- 대량 확정 게이트(UD-05, 링1)
+def test_confirm_content_rows_leaves_unmatched_blank_rows_unconfirmed():
+    """'모두 확정'의 내용-행 단계: 내용 있는 행만 확정, 미매칭 빈 행은 미확정 유지."""
+    model = _model()  # 4 매칭(내용) + 1 미매칭(빈) 행
+    n = model.confirm_content_rows()
+    assert n == 4                       # 내용 있는 4행만 새로 확정
+    assert not model.is_complete()      # 미매칭 빈 행이 남아 게이트 닫힘
+    rows = {r.template_field: r for r in model.rows}
+    assert rows["입찰공고번호"].confirmed
+    assert not rows["존재하지않는들판xyz"].confirmed
+    # 재호출은 이미 확정된 행을 다시 세지 않는다(증분 반환).
+    assert model.confirm_content_rows() == 0
+
+
+def test_unconfirmed_blank_fields_lists_only_empty_unconfirmed_rows():
+    model = _model()
+    assert model.unconfirmed_blank_fields() == ["존재하지않는들판xyz"]
+    # 내용 있는 행을 비움 확정 후보로 오해하지 않는다.
+    model.confirm_content_rows()
+    assert model.unconfirmed_blank_fields() == ["존재하지않는들판xyz"]
+
+
+def test_confirm_fields_promotes_named_blanks_and_completes_gate():
+    """이름으로 재진술·확인된 미매칭 빈 필드만 확정 → 전 행 확정 시 게이트 개방."""
+    model = _model()
+    model.confirm_content_rows()
+    blanks = model.unconfirmed_blank_fields()
+    assert model.confirm_fields(blanks) == 1
+    assert model.is_complete()
+    # 존재하지 않는 이름은 무시(우발 확정 없음).
+    assert model.confirm_fields(["없는필드"]) == 0
+
+
+def test_confirmed_count_tracks_confirmations():
+    model = _model()
+    assert model.confirmed_count() == 0
+    model.confirm_content_rows()
+    assert model.confirmed_count() == 4
+
+
 # ------------------------------------------------------------------ to_profile
 def test_to_profile_includes_confirmed_rows_and_persists_blank_intent():
     """미확정 행은 제외하고 비움 확정 행은 명시적 blank 선언으로 저장."""
@@ -290,6 +330,21 @@ def test_preview_empties_excludes_intentionally_empty_rows():
         ]
     )
     assert model.preview_empties({}) == ["공고명"]
+
+
+def test_preview_counts_three_states_sum_to_total():
+    """UD-27 — (채움, 빈 값, 미매핑)의 합이 언제나 전체 행 수와 일치."""
+    model = MappingModel(
+        rows=[
+            RowState("공고명", sources=["bidNtceNm"]),   # 값 있음 → 채움
+            RowState("추정가격", sources=["presmptPrce"]),  # 이 레코드엔 값 없음 → 빈 값
+            RowState("여백"),                             # 내용 없음 → 미매핑
+            RowState("비고"),                             # 내용 없음 → 미매핑
+        ]
+    )
+    filled, empty_n, unmapped = model.preview_counts({"bidNtceNm": "테스트 공고"})
+    assert (filled, empty_n, unmapped) == (1, 1, 2)
+    assert filled + empty_n + unmapped == len(model.rows)  # 어떤 필드도 무집계 아님
 
 
 # --------------------------------------------------------------- apply_profile

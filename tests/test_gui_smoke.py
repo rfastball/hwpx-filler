@@ -55,21 +55,44 @@ def test_job_editor_instantiates_with_four_pages(qapp, tmp_path):
     assert isinstance(wiz.page(wiz.pageIds()[-1]), SaveJobPage)
 
 
-def test_mapping_table_renders_model_and_emits_complete_changed(qapp):
+def test_mapping_table_renders_model_and_emits_complete_changed(qapp, monkeypatch):
+    """UD-05 — '모두 확정'은 내용 행만 즉시 확정하고, 미매칭 빈 행의 의도적 비움
+    승격은 이름 재진술 확인을 거친다. '모두 해제'는 확정본이 있으면 파괴 확인 경유."""
+    from hwpxfiller.gui import mapping_table as mt
     from hwpxfiller.gui.mapping_table import MappingTable
 
-    model = _model()
+    model = _model()  # 공고명·개찰일시(내용) + 미매칭필드qq(빈)
     table = MappingTable()
     table.set_model(model, {"bidNtceNm": "테스트 공고", "opengDate": "2026-06-15"})
     assert table.table.rowCount() == len(model.rows)
+    blank = next(r for r in model.rows if r.template_field == "미매칭필드qq")
 
     emitted = []
     table.completeChanged.connect(lambda: emitted.append(True))
+
+    # 비움 확정 거부 → 내용 행만 확정, 미매칭 빈 행 미확정(게이트 닫힘).
+    monkeypatch.setattr(mt, "confirm_destructive", lambda *a, **k: False)
     table.btn_confirm_all.click()
     assert emitted
+    assert not model.is_complete()
+    assert not blank.confirmed
+    assert all(r.confirmed for r in model.rows if r.has_content())
+
+    # 비움 확정 수락 → 미매칭 빈 행도 의도적 비움으로 확정 → 완료.
+    monkeypatch.setattr(mt, "confirm_destructive", lambda *a, **k: True)
+    table.btn_confirm_all.click()
     assert model.is_complete()
+
+    # '모두 해제' 거부 → 확정 유지(무확인 파기 없음).
+    monkeypatch.setattr(mt, "confirm_destructive", lambda *a, **k: False)
+    table.btn_unconfirm_all.click()
+    assert model.is_complete()
+
+    # '모두 해제' 수락 → 전 행 해제.
+    monkeypatch.setattr(mt, "confirm_destructive", lambda *a, **k: True)
     table.btn_unconfirm_all.click()
     assert not model.is_complete()
+    assert all(not r.confirmed for r in model.rows)
 
 
 def test_mapping_table_set_preview_record_updates_preview_column(qapp):
@@ -135,7 +158,7 @@ def test_mapping_table_format_combo_drives_preview(qapp):
     # 기본 표시형(원)일 때 미리보기.
     assert table.table.item(ri, _COL_PREVIEW).text() == "21,326,800원"
     # 표시형 콤보에서 '숫자' 프리셋(코드 "{:,}") 선택 → 모델·미리보기 반영.
-    fmtc = table.table.cellWidget(ri, _COL_FORMAT)
+    fmtc = table.cell_control(ri, _COL_FORMAT)
     plain_idx = next(i for i in range(fmtc.count()) if fmtc.itemData(i) == "{:,}")
     table._on_format_activated(ri, plain_idx)
     assert model.rows[ri].fmt == "{:,}"
@@ -1209,9 +1232,12 @@ def test_mapping_page_rebuilds_when_same_path_content_changes(qapp, tmp_path, mo
 
 
 def test_datapage_source_toggle_resets_session_atomically(qapp, tmp_path, monkeypatch):
-    """RC-09 §C 회귀: 소스 전환은 뷰(경로칸·요약)만이 아니라 위저드 세션 사본
-    (data_path·datasource·records·source_fields)까지 원자적으로 무효화한다."""
+    """RC-09 §C 회귀 + UD-08: 소스 전환은 뷰(경로칸·요약)만이 아니라 위저드 세션 사본
+    (data_path·datasource·records·source_fields)까지 원자적으로 무효화한다 — 단 불러온
+    데이터가 있으면 무확인 파기가 아니라 확인을 거치고, 거부 시 라디오를 되돌린다."""
     from PySide6.QtWidgets import QFileDialog
+
+    from hwpxfiller.gui import wizard as wz
 
     csv = tmp_path / "d.csv"
     csv.write_text("colA,colB\n1,2\n", encoding="utf-8")
@@ -1221,8 +1247,16 @@ def test_datapage_source_toggle_resets_session_atomically(qapp, tmp_path, monkey
     data_page._pick()
     assert wiz.records and wiz.datasource is not None
 
-    data_page.rb_nara.setChecked(True)  # 소스 전환 → reset_data_session
+    # UD-08 — 전환 확인 거부: 데이터 보존 + 라디오 되돌림(무확인·무고지 파기 금지).
+    monkeypatch.setattr(wz, "confirm_destructive", lambda *a, **k: False)
+    data_page.rb_nara.setChecked(True)
+    assert wiz.records and wiz.datasource is not None        # 파기되지 않음
+    assert data_page.rb_excel.isChecked()                     # 라디오 원위치
+    assert not data_page.rb_nara.isChecked()
 
+    # 확인 수락 → 뷰·세션 원자적 무효화(RC-09).
+    monkeypatch.setattr(wz, "confirm_destructive", lambda *a, **k: True)
+    data_page.rb_nara.setChecked(True)
     assert wiz.data_path == ""
     assert wiz.datasource is None
     assert wiz.source_fields == []
@@ -1249,19 +1283,19 @@ def test_mapping_table_unknown_transform_renders_loudly_without_crash(qapp):
     # 종전: TRANSFORMS.index("amonut") 미처리 ValueError 로 렌더 중단.
     table.set_model(model, {"presmptPrce": "123456789"})
 
-    tr = table.table.cellWidget(0, _COL_TRANSFORM)
+    tr = table.cell_control(0, _COL_TRANSFORM)
     assert "amonut" in tr.currentText() and "지원 안 함" in tr.currentText()
     assert "변환 오류" in table.table.item(0, _COL_PREVIEW).text()
 
     # 마커 항목 재선택은 변경 없음 — 재동기화가 마커를 증식시키지도 않는다.
     table._on_transform_activated(0, tr.currentIndex())
     assert model.rows[0].transform == "amonut"
-    assert table.table.cellWidget(0, _COL_TRANSFORM).count() == len(TRANSFORMS) + 1
+    assert table.cell_control(0, _COL_TRANSFORM).count() == len(TRANSFORMS) + 1
 
     # 지원 변환으로 바꾸면 정상 복귀(마커 제거·미리보기 재계산).
     table._on_transform_activated(0, TRANSFORMS.index("amount"))
     assert model.rows[0].transform == "amount"
-    assert table.table.cellWidget(0, _COL_TRANSFORM).count() == len(TRANSFORMS)
+    assert table.cell_control(0, _COL_TRANSFORM).count() == len(TRANSFORMS)
     assert "변환 오류" not in table.table.item(0, _COL_PREVIEW).text()
 
 
@@ -1668,7 +1702,7 @@ def test_mapping_table_tooltips_expose_full_names(qapp):
     table.set_model(model, {})
     for ri, row in enumerate(model.rows):
         assert row.template_field in table.table.item(ri, _COL_FIELD).toolTip()
-        combo = table.table.cellWidget(ri, _COL_SOURCE)
+        combo = table.cell_control(ri, _COL_SOURCE)
         assert combo.currentText() in combo.toolTip()  # 현재 선택 전체 문자열
 
     # 문맥(spec.context)은 병기 유지 — '공고명' 필드는 문맥 "공 고 명:" 을 갖는다.
@@ -1678,6 +1712,6 @@ def test_mapping_table_tooltips_expose_full_names(qapp):
     # 저신뢰 자동 제안 경고 병기 유지(툴팁 대체가 아니라 병기).
     model.rows[ri].suggestion_score = 0.6
     table.refresh()
-    tip = table.table.cellWidget(ri, _COL_SOURCE).toolTip()
+    tip = table.cell_control(ri, _COL_SOURCE).toolTip()
     assert "현재 선택:" in tip
     assert "신뢰도 60%" in tip

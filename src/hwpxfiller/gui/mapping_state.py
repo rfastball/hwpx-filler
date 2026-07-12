@@ -29,6 +29,13 @@ from ..core.template_status import CompileState, TemplateStatus, compile_status
 # inferred_type → 기본 변환. 명시 없는 타입은 join(그대로).
 _DEFAULT_TRANSFORM = {"date": "datetime", "amount": "amount"}
 
+# RAW(필드 0개) 차단 사유의 **단일 원천**(UD-21). 위저드 1단계와 PartialGate.message()
+# 가 같은 문구를 쓰도록 여기 한 곳에서만 정의한다 — 뷰·VM 이중화(문구 드리프트) 금지.
+RAW_BLOCK_MESSAGE = (
+    "이 템플릿에는 누름틀 필드가 없습니다 — 채울 대상이 없어 진행할 수 없습니다.\n"
+    "한글에서 누름틀을 삽입하거나 누름틀 변환(fieldize)으로 토큰을 바꾼 템플릿을 쓰세요."
+)
+
 
 def default_transform_for(inferred_type: str) -> str:
     """스키마의 의미 타입에서 기본 변환을 유도한다."""
@@ -196,6 +203,48 @@ class MappingModel:
         for row in self.rows:
             row.confirmed = False
 
+    # --------------------------------------------------- 대량 확정 게이트(UD-05)
+    # '모두 확정'은 ADR-D 의 '고신뢰 매칭 일괄 수락'만 담당한다: 내용 있는 행만
+    # 즉시 확정하고, 내용 없는 미매칭 행의 **의도적 비움 승격**은 뷰가 이름 재진술
+    # 확인(ADR-E)을 거쳐 confirm_fields 로 따로 확정한다(무경고 대량 우회 금지).
+    def confirm_content_rows(self) -> int:
+        """내용(소스/상수)이 있는 행만 확정한다 — 미매칭 빈 행은 건드리지 않는다.
+
+        반환값은 이번에 새로 확정 상태가 된 행 수(이미 확정된 행 제외).
+        """
+        n = 0
+        for row in self.rows:
+            if row.has_content() and not row.confirmed:
+                row.confirmed = True
+                n += 1
+        return n
+
+    def unconfirmed_blank_fields(self) -> "list[str]":
+        """미확정이면서 내용이 없는(미매칭) 행의 템플릿 필드 이름 — 문서순.
+
+        '모두 확정' 시 **의도적 비움으로 승격될 후보**다. 뷰는 이 이름들을 재진술해
+        사람에게 확인시킨 뒤에만 confirm_fields 로 확정한다(ADR-E 반사적 dismiss 봉쇄).
+        """
+        return [
+            r.template_field
+            for r in self.rows
+            if not r.confirmed and not r.has_content()
+        ]
+
+    def confirm_fields(self, fields: "Iterable[str]") -> int:
+        """이름으로 재진술·확인된 필드들만 확정한다(대량 비움 확정의 이름-게이트 경로)."""
+        names = set(fields)
+        n = 0
+        for row in self.rows:
+            if row.template_field in names and not row.confirmed:
+                row.confirmed = True
+                n += 1
+        return n
+
+    def confirmed_count(self) -> int:
+        """확정된 행 수 — '모두 해제' 파괴 확인 게이트가 파기 규모를 진술하는 근거."""
+        return sum(1 for r in self.rows if r.confirmed)
+
     # ------------------------------------------------------------- 상태 질의
     def is_complete(self) -> bool:
         """전 행이 사람 확정을 받았는가 — 명시성 게이트. 행이 없으면 False."""
@@ -223,6 +272,19 @@ class MappingModel:
             for r in self.rows
             if r.has_content() and r.to_mapping().value_for(record) == ""
         ]
+
+    def preview_counts(self, record: "dict[str, object]") -> "tuple[int, int, int]":
+        """미리보기 3상태 집계 ``(채움, 빈 값, 미매핑)`` — 합은 언제나 전체 행 수(UD-27).
+
+        기존 요약은 '채움/빈 값' 2상태만 세어 미매핑(내용 없는) 행이 무집계로 빠져
+        합계가 필드 수와 어긋났다(공란 규모 과소 진술). 세 항의 합 = ``len(rows)`` 로
+        묶어 어떤 필드도 집계에서 사라지지 않게 한다(ADR-B '빈 공간으로 보이면 안 됨').
+        """
+        empties = self.preview_empties(record)
+        content_rows = sum(1 for r in self.rows if r.has_content())
+        filled = content_rows - len(empties)
+        unmapped = len(self.rows) - content_rows
+        return filled, len(empties), unmapped
 
     # ------------------------------------------------------- 프로파일 입출력
     def to_profile(self, name: str = "") -> MappingProfile:
@@ -340,9 +402,7 @@ class PartialGate:
         """사람이 볼 게이트 메시지 — PARTIAL 은 구체 토큰 이름을 재진술한다."""
         st = self.status.state
         if st is CompileState.RAW:
-            return (
-                "이 템플릿에는 누름틀 필드가 없습니다 — 채울 대상이 없어 진행할 수 없습니다."
-            )
+            return RAW_BLOCK_MESSAGE
         if st is not CompileState.PARTIAL:
             return ""
         names = ", ".join(self.unmet_tokens)

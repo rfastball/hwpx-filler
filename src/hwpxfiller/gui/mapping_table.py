@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QBrush, QColor
+from PySide6.QtGui import QBrush, QColor, QPalette
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -30,8 +30,9 @@ from PySide6.QtWidgets import (
 
 from ..core.format_engine import presets as format_presets
 from ..core.mapping import TRANSFORMS
+from .confirm import confirm_destructive
 from .mapping_state import MappingModel
-from .style import DATA_EMPTY_FG, UNCONFIRMED_BG, UNMATCHED_BG
+from .style import DATA_EMPTY_FG, UNCONFIRMED_BG, UNMATCHED_BG, mark
 
 # 변환 코드 → 한국어 라벨(콤보 표시 순서는 TRANSFORMS 그대로).
 # join = N개 소스를 구분자로 이어붙이는 결합(라벨 '그대로'는 실제 의미와 불일치 — RC-26).
@@ -70,6 +71,19 @@ def _row_brush(row) -> QBrush:
     if row.confirmed:
         return _BG_DEFAULT
     return _BG_UNCONFIRMED if row.has_content() else _BG_UNMATCHED
+
+
+def _row_state_color(row) -> "QColor | None":
+    """행 상태 밴드 색(위젯 열 컨테이너용, UD-38) — ``_row_brush`` 와 같은 결정식.
+
+    아이템 배경(QBrush)과 달리 위젯 셀 컨테이너는 팔레트 색으로 칠하므로 ``QColor``
+    또는 ``None``(확정 = 밴드 없음)을 돌려준다. 상태색이 아이템 3열에만 닿고 cellWidget
+    4열(데이터 항목·변환·표시형·구분자)에서 끊겨 미매칭 빨강이 좌우로 찢기던 것을,
+    같은 색을 셀 컨테이너에도 칠해 **연속 밴드**로 잇는다.
+    """
+    if row.confirmed:
+        return None
+    return QColor(UNCONFIRMED_BG) if row.has_content() else QColor(UNMATCHED_BG)
 
 
 def _source_label(key: str, aliases: "dict[str, str]") -> str:
@@ -249,12 +263,18 @@ class MappingTable(QWidget):
                 fld.setToolTip(tip)
                 self.table.setItem(ri, _COL_FIELD, fld)
 
-                # 소스 콤보.
+                # 소스 콤보 + 퍼지(저신뢰) 제안 인라인 신호(UD-15). 상태색 밴드가
+                # 닿도록 셀 컨테이너로 감싼다(UD-38).
                 combo = QComboBox()
                 combo.activated.connect(
                     lambda idx, ri=ri: self._on_source_activated(ri, idx)
                 )
-                self.table.setCellWidget(ri, _COL_SOURCE, combo)
+                conf = QLabel("")
+                mark(conf, "level", "warn")  # 퍼지 제안 = 주황 주의(정확 일치는 무표시)
+                conf.setVisible(False)
+                src_box = self._wrap_cell(combo, extra=conf)
+                src_box._conf = conf
+                self.table.setCellWidget(ri, _COL_SOURCE, src_box)
 
                 # 변환 콤보(한국어 라벨).
                 tr = QComboBox()
@@ -263,19 +283,19 @@ class MappingTable(QWidget):
                 tr.activated.connect(
                     lambda idx, ri=ri: self._on_transform_activated(ri, idx)
                 )
-                self.table.setCellWidget(ri, _COL_TRANSFORM, tr)
+                self.table.setCellWidget(ri, _COL_TRANSFORM, self._wrap_cell(tr))
 
                 # 표시형 콤보(변환에 딸린 프리셋; 변형 없는 변환이면 비활성).
                 fmtc = QComboBox()
                 fmtc.activated.connect(
                     lambda idx, ri=ri: self._on_format_activated(ri, idx)
                 )
-                self.table.setCellWidget(ri, _COL_FORMAT, fmtc)
+                self.table.setCellWidget(ri, _COL_FORMAT, self._wrap_cell(fmtc))
 
                 # 구분자·상수(변환 종류에 따라 의미·활성이 바뀜).
                 arg = QLineEdit()
                 arg.textEdited.connect(lambda text, ri=ri: self._on_arg_edited(ri, text))
-                self.table.setCellWidget(ri, _COL_ARG, arg)
+                self.table.setCellWidget(ri, _COL_ARG, self._wrap_cell(arg))
 
                 # 미리보기(읽기 전용).
                 pv = QTableWidgetItem()
@@ -285,6 +305,42 @@ class MappingTable(QWidget):
             self._updating = False
         for ri in range(len(model.rows)):
             self._sync_row(ri)
+
+    # ------------------------------------------------------- 셀 컨테이너(UD-38)
+    def _wrap_cell(self, control, *, extra=None) -> QWidget:
+        """cellWidget 을 상태색 밴드가 닿는 컨테이너로 감싼다(UD-38).
+
+        컨테이너에 여백을 둬 행 상태색이 컨트롤 둘레로 이어져 아이템 열의 밴드와
+        연속된다. 실제 컨트롤은 ``_control`` 로 보관해 :meth:`cell_control` 이 되찾는다.
+        """
+        box = QWidget()
+        lay = QHBoxLayout(box)
+        lay.setContentsMargins(3, 3, 3, 3)
+        lay.setSpacing(4)
+        lay.addWidget(control, 1)
+        if extra is not None:
+            lay.addWidget(extra)
+        box._control = control
+        return box
+
+    def cell_control(self, ri: int, col: int):
+        """셀 위젯 컨테이너 안의 실제 컨트롤(콤보/라인에디트)을 돌려준다(UD-38 래핑)."""
+        w = self.table.cellWidget(ri, col)
+        return getattr(w, "_control", w)
+
+    def _apply_band(self, ri: int, color: "QColor | None") -> None:
+        """위젯 열 컨테이너를 행 상태색으로 칠해 아이템 열 밴드와 연속화(UD-38)."""
+        for col in (_COL_SOURCE, _COL_TRANSFORM, _COL_FORMAT, _COL_ARG):
+            box = self.table.cellWidget(ri, col)
+            if box is None:
+                continue
+            if color is None:
+                box.setAutoFillBackground(False)
+            else:
+                box.setAutoFillBackground(True)
+                pal = box.palette()
+                pal.setColor(QPalette.Window, color)
+                box.setPalette(pal)
 
     def _sync_row(self, ri: int):
         """행 위젯/아이템을 모델 상태로 동기화(색·미리보기·활성 포함)."""
@@ -298,7 +354,7 @@ class MappingTable(QWidget):
             )
 
             # 소스 콤보 재구성: (비움) + 각 소스 + [현재 다중 표시] + 다중 선택….
-            combo: QComboBox = self.table.cellWidget(ri, _COL_SOURCE)
+            combo: QComboBox = self.cell_control(ri, _COL_SOURCE)
             combo.blockSignals(True)
             combo.clear()
             combo.addItem(_EMPTY_ITEM)
@@ -330,8 +386,20 @@ class MappingTable(QWidget):
             combo.setToolTip(tip)
             combo.blockSignals(False)
 
+            # 퍼지(모호) 제안의 상시 인라인 신호(UD-15) — 정확 일치(1.0)·무제안(0.0)은
+            # 무표시, 그 사이만 신뢰도 배지. 툴팁에만 있던 2등급 분류를 시각 채널로.
+            src_box = self.table.cellWidget(ri, _COL_SOURCE)
+            conf = getattr(src_box, "_conf", None)
+            if conf is not None:
+                if 0.0 < row.suggestion_score < _LOW_CONFIDENCE:
+                    conf.setText(f"제안 {row.suggestion_score:.0%}")
+                    conf.setVisible(True)
+                else:
+                    conf.setText("")
+                    conf.setVisible(False)
+
             # 변환 콤보.
-            tr: QComboBox = self.table.cellWidget(ri, _COL_TRANSFORM)
+            tr: QComboBox = self.cell_control(ri, _COL_TRANSFORM)
             tr.blockSignals(True)
             # 이전 동기화가 남긴 '지원 안 함' 마커를 걷어내고 표준 항목만 남긴다.
             while tr.count() > len(TRANSFORMS):
@@ -347,7 +415,7 @@ class MappingTable(QWidget):
             tr.blockSignals(False)
 
             # 표시형 콤보 — 프리셋(라벨→코드) + 커스텀 코드 + '직접 입력…' 액션.
-            fmtc: QComboBox = self.table.cellWidget(ri, _COL_FORMAT)
+            fmtc: QComboBox = self.cell_control(ri, _COL_FORMAT)
             fmtc.blockSignals(True)
             fmtc.clear()
             opts = format_presets(row.transform)  # [(라벨, 코드)]
@@ -369,7 +437,7 @@ class MappingTable(QWidget):
             fmtc.blockSignals(False)
 
             # 구분자·상수 — join 이면 구분자, const 면 상수, 그 외 비활성.
-            arg: QLineEdit = self.table.cellWidget(ri, _COL_ARG)
+            arg: QLineEdit = self.cell_control(ri, _COL_ARG)
             arg.blockSignals(True)
             if row.transform == "join":
                 arg.setEnabled(True)
@@ -388,10 +456,12 @@ class MappingTable(QWidget):
             # 미리보기(현재 기준 레코드).
             self._render_preview(ri, row)
 
-            # 행 상태 색(결정식은 _row_brush 단일 출처).
+            # 행 상태 색(결정식은 _row_brush 단일 출처) — 아이템 3열 + 위젯 4열 컨테이너
+            # 를 함께 칠해 상태색 밴드를 행 전폭으로 연속화(UD-38).
             brush = _row_brush(row)
             for col in (_COL_CONFIRM, _COL_FIELD, _COL_PREVIEW):
                 self.table.item(ri, col).setBackground(brush)
+            self._apply_band(ri, _row_state_color(row))
         finally:
             self._updating = False
 
@@ -406,7 +476,7 @@ class MappingTable(QWidget):
 
     def _on_source_activated(self, ri: int, idx: int):
         model = self._model
-        combo: QComboBox = self.table.cellWidget(ri, _COL_SOURCE)
+        combo: QComboBox = self.cell_control(ri, _COL_SOURCE)
         n = len(model.source_fields)
         if combo.itemText(idx) == _MULTI_ITEM:
             dlg = _SourcePickerDialog(
@@ -435,7 +505,7 @@ class MappingTable(QWidget):
         self.completeChanged.emit()
 
     def _on_format_activated(self, ri: int, idx: int):
-        combo: QComboBox = self.table.cellWidget(ri, _COL_FORMAT)
+        combo: QComboBox = self.cell_control(ri, _COL_FORMAT)
         if combo.itemText(idx) == _CUSTOM_FORMAT_ITEM:
             self._prompt_custom_format(ri)
             return
@@ -475,20 +545,46 @@ class MappingTable(QWidget):
             brush = _row_brush(row)  # set_sep/set_const 가 확정을 해제한 뒤라 미확정 색
             for col in (_COL_CONFIRM, _COL_FIELD, _COL_PREVIEW):
                 self.table.item(ri, col).setBackground(brush)
+            self._apply_band(ri, _row_state_color(row))  # 위젯 열 밴드도 함께(UD-38)
         finally:
             self._updating = False
         self.completeChanged.emit()
 
     def _on_confirm_all(self):
-        if self._model is None:
+        """'모두 확정' — 내용 있는 행만 즉시 확정하고, 미매칭 빈 행의 **의도적 비움
+        승격**은 이름 재진술 확인(ADR-E)을 거친다(UD-05: 무경고 대량 우회 방지)."""
+        model = self._model
+        if model is None:
             return
-        self._model.confirm_all()
+        model.confirm_content_rows()  # ADR-D 고신뢰 일괄 수락(내용 행만)
+        blanks = model.unconfirmed_blank_fields()
+        if blanks:
+            # 값이 주입되지 않을 필드를 구체 이름으로 재진술 — 기본 버튼은 '취소'.
+            names = ", ".join(blanks)
+            if confirm_destructive(
+                self, "비움 확정 확인",
+                f"다음 {len(blanks)}개 필드는 채울 데이터 항목이 없습니다:\n\n{names}\n\n"
+                "이 필드들을 비우고 확정(의도적 비움)하는 것이 맞습니까? "
+                "확정하면 미매칭 경고가 사라지고 다음으로 진행할 수 있습니다.",
+                "비우고 확정",
+            ):
+                model.confirm_fields(blanks)
         self.refresh()
         self.completeChanged.emit()
 
     def _on_unconfirm_all(self):
-        if self._model is None:
+        """'모두 해제' — 확정한 작업이 있으면 파괴 확인을 거친다(UD-05: 무확인 파기 방지)."""
+        model = self._model
+        if model is None:
             return
-        self._model.unconfirm_all()
+        n = model.confirmed_count()
+        if n > 0 and not confirm_destructive(
+            self, "모두 해제 확인",
+            f"확정한 {n}개 행의 확정을 모두 해제합니다.\n"
+            "해제하면 각 행을 다시 검토·확정해야 다음으로 진행할 수 있습니다.",
+            "모두 해제",
+        ):
+            return
+        model.unconfirm_all()
         self.refresh()
         self.completeChanged.emit()
