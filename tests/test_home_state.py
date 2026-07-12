@@ -262,6 +262,21 @@ def test_badge_corrupt_template_degrades_loudly(tmp_path):
     assert row.compile_badge == BADGE_ERROR
 
 
+def test_is_runnable_gates_on_badge_level(tmp_path):
+    """UD-03 — 실행 진입 판정은 badge_level 단일 술어: danger(부재·손상·오류·미설정)만
+    차단하고 RAW·PARTIAL·COMPILED·FILLED 는 진입 가능(카드 CTA·더블클릭 공유 술어)."""
+    assert _row(_raw_hwpx(tmp_path)).is_runnable() is True          # RAW(muted)
+    assert _row(_partial_hwpx(tmp_path)).is_runnable() is True      # PARTIAL(warn)
+    assert _row(_compiled_hwpx(tmp_path)).is_runnable() is True     # COMPILED(ok)
+    assert _row(_filled_hwpx(tmp_path)).is_runnable() is True       # FILLED(ok)
+    # 실행 불가(danger) — 세 경로 모두 compile_state None → 차단.
+    assert _row(str(tmp_path / "does_not_exist.hwpx")).is_runnable() is False  # 부재
+    assert _row("").is_runnable() is False                          # 템플릿 미설정
+    bad = tmp_path / "corrupt.hwpx"
+    bad.write_bytes(b"not a real hwpx zip")
+    assert _row(str(bad)).is_runnable() is False                    # 손상/컴파일 오류
+
+
 def test_badge_recomputed_on_refresh_reflects_drift(tmp_path):
     """COMPILED 템플릿에 stray 토큰을 주입 → refresh 재산출 → 배지가 ⚠ 로 뒤집힌다.
 

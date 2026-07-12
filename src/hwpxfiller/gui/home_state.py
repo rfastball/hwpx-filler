@@ -16,6 +16,7 @@ from pathlib import Path
 
 from ..core.job import Job, JobRegistry
 from ..core.template_status import CompileState, compile_status
+from .compile_badge import ERROR_BADGE_LEVEL, badge_level
 
 # 카드 컴파일 상태 배지 어휘(C2 파생) — 기존 '템플릿 없음' pill 을 대체가 아니라 확장한다.
 # 이모지 접두로 한눈에 "실행 준비 vs 손봐야 함" 을 가른다.
@@ -104,6 +105,17 @@ class JobRow:
             f"템플릿 {self.template_name} · 필드 {self.field_count}개 · "
             f"파일명 {self.filename_pattern}"
         )
+
+    def is_runnable(self) -> bool:
+        """실행 진입 가능 여부 — 카드 상태 모델과 실행 판정을 잇는 단일 술어(UD-03).
+
+        판정을 badge_level(RC-29 단일 어휘)에 연결한다: ``danger``(템플릿 부재·손상·컴파일
+        오류·미설정 = compile_state None)면 실행 불가, 그 외(RAW·PARTIAL·COMPILED·FILLED)는
+        진입 가능하다. RAW/PARTIAL 은 아직 실행 준비 전이지만 진입 자체는 허용하고
+        위젯이 CTA 강조를 강등해 고지한다. 카드 [실행] 버튼 활성화와 더블클릭 게이트가
+        이 한 술어를 공유해 같은 액션의 두 경로가 다른 판정을 내지 않는다(자기 모순 해소).
+        """
+        return badge_level(self.compile_state) != ERROR_BADGE_LEVEL
 
 
 @dataclass

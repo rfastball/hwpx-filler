@@ -71,8 +71,13 @@ class JobCard(QWidget):
         foot.addWidget(lbl_run)
         foot.addStretch(1)
         btn_run = QPushButton("실행")
-        mark(btn_run, "primary", True)
-        btn_run.setEnabled(not row.template_missing)  # 템플릿 없으면 실행 불가(홈에서 선고지)
+        # 실행 진입 판정을 badge_level 단일 술어에 연결(UD-03): danger(부재·손상·오류)는
+        # 비활성 — 더블클릭 경로도 같은 게이트(JobRow.is_runnable)를 공유한다. 주 액션
+        # 강조(primary)는 '실행 준비'(ok)에만 준다 — RAW/PARTIAL 은 활성이되 최소 강등해
+        # '지금 실행 준비 vs 아직 손봐야 함'을 시각으로 가른다.
+        btn_run.setEnabled(row.is_runnable())
+        if badge_level(row.compile_state) == "ok":
+            mark(btn_run, "primary", True)
         btn_run.clicked.connect(lambda: on_run(row.name))
         btn_edit = QPushButton("작업 수정")
         btn_edit.clicked.connect(lambda: on_edit(row.name))
@@ -93,11 +98,12 @@ _JobCard = JobCard
 class _CorruptJobCard(QWidget):
     """손상 ``.job.json`` 행 카드 — 파일명 + '손상됨' 배지 + 오류·경로(RC-05).
 
-    액션 없음(파싱 불가라 실행/편집 대상이 아님). 조용히 감추는 대신 원인 파일을
-    지목해 사용자가 직접 복구/삭제할 수 있게 한다(확인-또는-경보).
+    실행/편집은 없지만(파싱 불가라 실행 대상이 아님) 앱 내 해소 동선은 제공한다(UD-44):
+    원인 파일을 폴더에서 열어 수동 복구하거나, 확인을 거쳐 삭제할 수 있다 — 정상 카드와
+    같은 파괴 어휘([삭제]·confirm_destructive)라 '해소 불가 상시 경보'의 습관화를 막는다.
     """
 
-    def __init__(self, row: CorruptJobRow, parent=None):
+    def __init__(self, row: CorruptJobRow, on_open=None, on_delete=None, parent=None):
         super().__init__(parent)
         root = QVBoxLayout(self)
         root.setContentsMargins(10, 8, 10, 8)
@@ -118,6 +124,20 @@ class _CorruptJobCard(QWidget):
         mark(lbl_meta, "muted", True)
         lbl_meta.setWordWrap(True)
         root.addWidget(lbl_meta)
+
+        # 해소 동선(UD-44) — 콜백은 손상 파일 경로를 나른다(이름 없음 → 경로 식별).
+        foot = QHBoxLayout()
+        foot.addStretch(1)
+        btn_open = QPushButton("폴더 열기")
+        if on_open is not None:
+            btn_open.clicked.connect(lambda: on_open(row.path))
+        btn_del = QPushButton("삭제")
+        mark(btn_del, "level", "danger")  # 파괴 버튼 시각 등급(정상 카드와 동일 어휘)
+        if on_delete is not None:
+            btn_del.clicked.connect(lambda: on_delete(row.path))
+        foot.addWidget(btn_open)
+        foot.addWidget(btn_del)
+        root.addLayout(foot)
 
 
 class _TxtCard(QWidget):
@@ -162,6 +182,10 @@ class JobListHome(QMainWindow):
     manage_vocab_requested = Signal()
     # 템플릿 관리 워크숍(C5) — 헤더 [템플릿 관리] 버튼이 방출(RC-04 소생 진입점).
     manage_templates_requested = Signal()
+    # 손상 작업 파일 해소 동선(UD-44) — 앱 컨트롤러가 폴더 열기·확인 삭제로 처리.
+    # 손상 행은 이름이 없어(파싱 불가) 인자는 파일 경로다(run_job_requested 의 작업명 계약과 별개).
+    reveal_corrupt_requested = Signal(str)
+    delete_corrupt_requested = Signal(str)
 
     def __init__(self, registry: JobRegistry, text_registry=None, parent=None,
                  pool_registry=None):
@@ -192,7 +216,10 @@ class JobListHome(QMainWindow):
         mark(title, "heading", True)
         sub = QLabel("내 작업 보관함")
         mark(sub, "muted", True)
+        # 부제는 제목 인접(UD-36) — 헤더 버튼 뒤 최우단 표류를 해소해 '무엇의 라벨인지'를
+        # 위치로 말한다. 액션 버튼은 stretch 뒤 우측에 모은다.
         header.addWidget(title)
+        header.addWidget(sub)
         header.addStretch(1)
         self.btn_templates = QPushButton("템플릿 관리")
         self.btn_templates.clicked.connect(self.manage_templates_requested)
@@ -203,7 +230,6 @@ class JobListHome(QMainWindow):
         header.addWidget(self.btn_templates)
         header.addWidget(self.btn_pool)
         header.addWidget(self.btn_vocab)
-        header.addWidget(sub)
         root.addLayout(header)
 
         # ---- KPI 타일(내용은 _render 가 채운다) ----
@@ -224,7 +250,9 @@ class JobListHome(QMainWindow):
         self.btn_new.clicked.connect(self.new_job_requested)
         self.btn_matrix = QPushButton("여러 작업 일괄 실행")
         self.btn_matrix.clicked.connect(self.matrix_run_requested)
-        hhead.addWidget(QLabel("누름틀 템플릿 + 매핑 → .hwpx 생성"))
+        lbl_hwpx_hint = QLabel("누름틀 템플릿 + 매핑 → .hwpx 생성")
+        mark(lbl_hwpx_hint, "muted", True)  # 부연 라벨 위계 통일(UD-36) — 화면 전체 muted
+        hhead.addWidget(lbl_hwpx_hint)
         hhead.addStretch(1)
         hhead.addWidget(self.btn_matrix)
         hhead.addWidget(self.btn_new)
@@ -233,9 +261,9 @@ class JobListHome(QMainWindow):
         self.list = QListWidget()
         self.list.setObjectName("jobList")
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # 카드가 뷰포트 폭에 맞음
-        self.list.itemDoubleClicked.connect(
-            lambda _it: self._emit_for_selected(self.run_job_requested)
-        )
+        # 더블클릭 실행 진입 — 버튼 경로와 같은 게이트를 공유한다(UD-03). 무조건 배선하던
+        # 과거는 손상 카드(비작업)를 조용한 크래시로, 실행 불가 카드를 무게이트 우회로 보냈다.
+        self.list.itemDoubleClicked.connect(self._on_job_double_click)
         self.stack.addWidget(self.list)                    # 0 = 목록
         self.stack.addWidget(self._build_empty_state())    # 1 = 빈 상태
         hp.addWidget(self.stack, 1)
@@ -248,7 +276,9 @@ class JobListHome(QMainWindow):
         self.btn_new_txt = QPushButton("＋ 새 기안")
         mark(self.btn_new_txt, "primary", True)
         self.btn_new_txt.clicked.connect(self.new_txt_requested)
-        thead.addWidget(QLabel("기안 템플릿으로 문안 미리보기"))
+        lbl_txt_hint = QLabel("기안 템플릿으로 문안 미리보기")
+        mark(lbl_txt_hint, "muted", True)  # 부연 라벨 위계 통일(UD-36)
+        thead.addWidget(lbl_txt_hint)
         thead.addStretch(1)
         thead.addWidget(self.btn_new_txt)
         tp.addLayout(thead)
@@ -361,7 +391,14 @@ class JobListHome(QMainWindow):
             self.list.addItem(crow.file_name)
             item = self.list.item(self.list.count() - 1)
             item.setForeground(QColor(0, 0, 0, 0))
-            card = _CorruptJobCard(crow)
+            # 손상 행은 실행 대상이 아니다(UD-03 증상 3) — 선택 하이라이트로 실행 대상처럼
+            # 보이지 않게 선택 플래그를 내린다. 더블클릭도 _on_job_double_click 가 무작업 처리.
+            item.setFlags(item.flags() & ~Qt.ItemIsSelectable)
+            card = _CorruptJobCard(
+                crow,
+                on_open=self.reveal_corrupt_requested.emit,
+                on_delete=self.delete_corrupt_requested.emit,
+            )
             item.setSizeHint(card.sizeHint())
             self.list.setItemWidget(item, card)
         self.stack.setCurrentIndex(1 if self.vm.is_empty() else 0)
@@ -407,10 +444,38 @@ class JobListHome(QMainWindow):
         it = self.list.currentItem()
         return it.text() if it is not None else None
 
-    def _emit_for_selected(self, signal) -> None:
-        name = self.selected_job_name()
-        if name is not None:
-            signal.emit(name)
+    def _job_row_by_name(self, name: str) -> "JobRow | None":
+        """이름으로 성형 행을 찾는다(더블클릭 게이트가 상태를 조회할 이음새)."""
+        for r in self.vm.rows():
+            if r.name == name:
+                return r
+        return None
+
+    def _on_job_double_click(self, item) -> None:
+        """더블클릭 실행 진입 — 버튼 [실행]과 같은 게이트(is_runnable)를 공유한다(UD-03).
+
+        손상 행(비작업)은 무작업으로 무시하고(카드 자체 [폴더 열기]/[삭제]로 해소),
+        실행 불가 상태(danger)는 조용한 no-op/크래시 대신 사유를 시끄럽게 고지한다.
+        정상·실행 가능 행만 run_job_requested(작업명)를 방출한다 — 손상 행 파일명을
+        방출하던 계약 위반(seam 은 작업명)도 함께 막힌다.
+        """
+        row = self._job_row_by_name(item.text())
+        if row is None:
+            return  # 손상/비작업 행 — 실행 대상 아님
+        if not row.is_runnable():
+            self._warn_not_runnable(row)
+            return
+        self.run_job_requested.emit(row.name)
+
+    def _warn_not_runnable(self, row: "JobRow") -> None:
+        """실행 불가 카드 진입 시 시끄러운 사유 고지(UD-03) — stderr 침묵 금지."""
+        from PySide6.QtWidgets import QMessageBox
+
+        QMessageBox.information(
+            self, "실행할 수 없습니다",
+            f"'{row.name}' 은(는) 지금 실행할 수 없습니다 — {row.compile_badge or '템플릿 미설정'}.\n"
+            "작업을 수정해 템플릿을 연결하거나 복구한 뒤 실행하세요.",
+        )
 
     def _emit_txt_for_item(self, item) -> None:
         if item is not None:

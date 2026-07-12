@@ -534,6 +534,135 @@ def test_home_surfaces_corrupt_job_file_as_badge_row(qapp, tmp_path):
     assert home.stack.currentIndex() == 0            # 빈 상태 아님(목록 페이지)
 
 
+def _home_with_ready_and_absent(tmp_path):
+    """홈 + 실행 가능(컴파일된 실존 템플릿) '정상작업' + 실행 불가(부재) '부재작업'."""
+    from hwpxfiller.core.authoring import compile_document
+    from hwpxfiller.core.job import Job, JobRegistry
+    from hwpxfiller.gui.home import JobListHome
+
+    reg = JobRegistry(tmp_path)
+    pkg, _ = compile_document(_hwpx_pkg(_P("계약명: {{계약명}}")))
+    good = tmp_path / "good.hwpx"
+    pkg.save(str(good))
+    reg.save(Job(name="정상작업", template_path=str(good)))
+    reg.save(Job(name="부재작업", template_path=str(tmp_path / "missing.hwpx")))
+    return JobListHome(reg)
+
+
+def test_home_double_click_shares_run_gate_with_button(qapp, tmp_path, monkeypatch):
+    """UD-03 — 더블클릭이 버튼과 같은 게이트 공유: 실행 가능 행만 run_job_requested(작업명)
+    방출, 실행 불가(부재) 행은 조용한 크래시 대신 시끄러운 사유 고지 + 무방출."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QMessageBox
+
+    home = _home_with_ready_and_absent(tmp_path)
+    emitted: "list[str]" = []
+    home.run_job_requested.connect(emitted.append)
+    infos: "list[str]" = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: infos.append(a[2]))
+
+    def _item(name):
+        return home.list.findItems(name, Qt.MatchExactly)[0]
+
+    home._on_job_double_click(_item("부재작업"))
+    assert emitted == [] and infos          # 무방출 + 사유 고지(stderr 침묵 아님)
+    home._on_job_double_click(_item("정상작업"))
+    assert emitted == ["정상작업"]           # 실행 가능 행만 방출(파일명 아님)
+
+
+def test_home_run_cta_enabled_and_emphasis_by_state(qapp, tmp_path):
+    """UD-03 — 실행 CTA 활성/강조가 badge_level 연동: 부재=비활성, 준비(ok)=활성 primary."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QPushButton
+
+    home = _home_with_ready_and_absent(tmp_path)
+
+    def _run_btn(name):
+        card = home.list.itemWidget(home.list.findItems(name, Qt.MatchExactly)[0])
+        return next(b for b in card.findChildren(QPushButton) if b.text() == "실행")
+
+    ready, absent = _run_btn("정상작업"), _run_btn("부재작업")
+    assert ready.isEnabled() and ready.property("primary")   # 준비 = 활성 primary
+    assert not absent.isEnabled()                            # 부재 = 비활성(더블클릭도 차단)
+
+
+def test_home_corrupt_card_offers_resolution_affordances(qapp, tmp_path):
+    """UD-44 — 손상 카드에 [폴더 열기]·[삭제] 해소 동선 + 손상 파일 경로를 나르는 시그널."""
+    from PySide6.QtWidgets import QPushButton
+
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.home import _CorruptJobCard, JobListHome
+
+    reg = JobRegistry(tmp_path)
+    bad = tmp_path / "절단.job.json"
+    bad.write_text('{"name": "절단", "template_pa', encoding="utf-8")
+    home = JobListHome(reg)
+
+    card = None
+    for i in range(home.list.count()):
+        widget = home.list.itemWidget(home.list.item(i))
+        if isinstance(widget, _CorruptJobCard):
+            card = widget
+    assert card is not None
+    btns = {b.text(): b for b in card.findChildren(QPushButton)}
+    assert "폴더 열기" in btns and "삭제" in btns
+    assert btns["삭제"].property("level") == "danger"       # 파괴 등급 시각(정상 카드와 동일 어휘)
+
+    reveal: "list[str]" = []
+    dele: "list[str]" = []
+    home.reveal_corrupt_requested.connect(reveal.append)
+    home.delete_corrupt_requested.connect(dele.append)
+    btns["폴더 열기"].click()
+    btns["삭제"].click()
+    assert reveal == [str(bad)] and dele == [str(bad)]      # 경로를 나른다
+
+
+def test_open_run_guards_missing_job_loudly(qapp, tmp_path, monkeypatch):
+    """UD-03 — _open_run 은 exists() 가드로 사라진 작업을 조용한 크래시 대신 경고 + 무개방."""
+    from PySide6.QtWidgets import QMessageBox
+
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui import run_view as rv
+    from hwpxfiller.gui.app import AppController
+
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    ctrl = AppController(JobRegistry(tmp_path / "jobs"))
+    warnings: "list[str]" = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: warnings.append(a[2]))
+    monkeypatch.setattr(
+        rv, "RunView", lambda *a, **k: pytest.fail("사라진 작업에 RunView 를 열면 안 된다")
+    )
+    ctrl._open_run("없는작업")
+    assert warnings and "없는작업" in warnings[0]  # 시끄럽게 알림, load 직행 크래시 아님
+
+
+def test_app_resolves_corrupt_job_file(qapp, tmp_path, monkeypatch):
+    """UD-44 — 컨트롤러가 손상 파일 해소: 폴더 열기 공용 유틸 호출, 확인 경유 삭제 후 새로고침."""
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui import batch_run, confirm
+    from hwpxfiller.gui.app import AppController
+
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    jobs = tmp_path / "jobs"
+    jobs.mkdir(parents=True)
+    bad = jobs / "절단.job.json"
+    bad.write_text('{"name": "절단", "template_pa', encoding="utf-8")
+    ctrl = AppController(JobRegistry(jobs))
+
+    opened: "list[str]" = []
+    monkeypatch.setattr(batch_run, "open_folder", opened.append)
+    ctrl._reveal_corrupt(str(bad))
+    assert opened == [str(bad.parent)]                     # 폴더(부모) 열기
+
+    monkeypatch.setattr(confirm, "confirm_destructive", lambda *a, **k: False)
+    ctrl._delete_corrupt(str(bad))
+    assert bad.exists()                                    # 확인 거부 → 잔존(무손상)
+
+    monkeypatch.setattr(confirm, "confirm_destructive", lambda *a, **k: True)
+    ctrl._delete_corrupt(str(bad))
+    assert not bad.exists()                                # 확인 수락 → 삭제
+
+
 def test_template_manager_empty_state_offers_folder_choice(qapp, tmp_path):
     """빈 라이브러리 → 백지가 아니라 빈상태 안내('폴더 없음' 구분) + 폴더 선택(RC-14)."""
     from hwpxfiller.gui.template_manager import TemplateManagerPanel

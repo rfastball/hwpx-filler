@@ -60,6 +60,9 @@ class AppController:
         self.home.edit_job_requested.connect(self._open_editor_edit)
         self.home.run_job_requested.connect(self._open_run)
         self.home.delete_job_requested.connect(self._delete_job)
+        # 손상 작업 파일 해소 동선(UD-44) — 폴더 열기 / 확인 경유 삭제.
+        self.home.reveal_corrupt_requested.connect(self._reveal_corrupt)
+        self.home.delete_corrupt_requested.connect(self._delete_corrupt)
         # txt 트랙 라우팅(트랙 이원성) — 템플릿 열기 / 새 기안.
         self.home.open_txt_requested.connect(self._open_txt)
         self.home.new_txt_requested.connect(lambda: self._open_txt(None))
@@ -99,6 +102,19 @@ class AppController:
     def _open_run(self, name: str) -> None:
         from .run_view import RunView
 
+        # 진입 가드(UD-03) — 렌더~클릭 사이 삭제·손상으로 사라진 작업을 exists() 없이
+        # load 직행하면 FileNotFoundError 가 stderr 로만 샌다(조용한 크래시). 먼저 확인해
+        # 없으면 시끄럽게 알리고 목록을 새로고침한다(확인-또는-경보).
+        if not self.registry.exists(name):
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.warning(
+                self.home, "실행할 수 없습니다",
+                f"작업 '{name}' 을(를) 찾을 수 없습니다 — 이미 삭제되었거나 파일이 "
+                "손상되었을 수 있습니다.\n목록을 새로고침합니다.",
+            )
+            self.home.refresh()
+            return
         job = self.registry.load(name)
         # 실행뷰가 홈과 같은 데이터 풀 레지스트리를 공유(풀에서 겨눔). 홈이 풀을 노출하면 주입.
         pool_registry = getattr(self.home, "pool_registry", None)
@@ -236,6 +252,36 @@ class AppController:
             "삭제",
         ):
             self.registry.delete(name)
+            self.home.refresh()
+
+    def _reveal_corrupt(self, path: str) -> None:
+        """손상 작업 파일이 있는 폴더를 OS 탐색기로 연다(UD-44) — 수동 복구 동선.
+
+        폴더 열기는 run/matrix 가 쓰는 공용 유틸(RC-22 단일 출처)을 소비한다.
+        """
+        from pathlib import Path
+
+        from .batch_run import open_folder
+
+        open_folder(str(Path(path).parent))
+
+    def _delete_corrupt(self, path: str) -> None:
+        """손상 작업 파일 삭제(UD-44) — 확인 경유(RC-15). 파싱 불가라 이름이 없어
+        파일명으로 재진술한다. 삭제 후 홈을 새로고침해 상시 경보를 해소한다."""
+        from pathlib import Path
+
+        from .confirm import confirm_destructive
+
+        p = Path(path)
+        if confirm_destructive(
+            self.home, "손상 파일 삭제",
+            f"손상된 작업 파일 '{p.name}' 을(를) 삭제할까요?\n삭제하면 되돌릴 수 없습니다.",
+            "삭제",
+        ):
+            try:
+                p.unlink()
+            except OSError:
+                pass  # 이미 사라졌으면 목적 달성(무시)
             self.home.refresh()
 
     def _track(self, win) -> None:

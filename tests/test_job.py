@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from hwpxfiller.core.job import Job, JobRegistry, RunRequest, default_jobs_dir
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 
@@ -142,6 +144,19 @@ def test_registry_save_load_names_delete(tmp_path):
     reg.delete("입찰공고서")
     assert not reg.exists("입찰공고서")
     assert reg.list_jobs() == []
+
+
+def test_registry_exists_guards_missing_and_deleted_name(tmp_path):
+    """UD-03 실행 진입 가드의 링0 술어 — 미저장·삭제 후 이름은 exists()=False,
+    load 는 예외. app._open_run 이 load 직행 전 이 술어로 '사라진 작업'을 걸러낸다."""
+    reg = JobRegistry(tmp_path)
+    assert not reg.exists("사라진작업")            # 미저장 → False
+    with pytest.raises(FileNotFoundError):
+        reg.load("사라진작업")                     # 가드 없이 load 직행하면 예외
+    reg.save(Job(name="사라진작업", template_path="/t.hwpx"))
+    assert reg.exists("사라진작업")
+    reg.delete("사라진작업")
+    assert not reg.exists("사라진작업")            # 삭제 후 → False(가드가 잡는 상태)
 
 
 def test_registry_missing_directory_lists_empty(tmp_path):
