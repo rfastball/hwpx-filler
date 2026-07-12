@@ -59,8 +59,12 @@ def apply_transform(
         return _fe.render("amount", fmt, "".join(parts))
     if kind == "datetime":
         return _fe.render("datetime", fmt, " ".join(parts))
-    # join(기본) — 결합 후 마스크/텍스트 표시형(fmt) 적용(fmt="" 이면 원문).
-    return _fe.render("join", fmt, sep.join(parts))
+    if kind == "join":
+        # join — 결합 후 마스크/텍스트 표시형(fmt) 적용(fmt="" 이면 원문).
+        return _fe.render("join", fmt, sep.join(parts))
+    # 미지 변환을 join 으로 조용히 폴백하면 서식 미적용 값이 무경고 주입된다(RC-10)
+    # — 조용한 추측 대신 시끄럽게 실패한다(확인-또는-경보).
+    raise ValueError(f"지원하지 않는 변환: {kind!r} (지원: {TRANSFORMS})")
 
 
 # ------------------------------------------------------------------ 모델
@@ -96,10 +100,17 @@ class FieldMapping:
 
     @classmethod
     def from_dict(cls, d: dict) -> "FieldMapping":
+        transform = d.get("transform", "join")
+        # 직렬화 경계 검증(RC-10): 손 편집·버전 스큐로 들어온 미지 변환을 조용히
+        # 수용하면 뷰 크래시·서식 미적용 값 무경고 주입으로 이어진다 — 로드 시점에
+        # 시끄럽게 거부한다(호출자의 '로드 실패' 경로가 수용). ``blank`` 는 명시적
+        # 공란 선언의 내부 영속 마커라 허용한다.
+        if transform not in TRANSFORMS and transform != "blank":
+            raise ValueError(f"지원하지 않는 변환: {transform!r} (지원: {TRANSFORMS})")
         return cls(
             template_field=d["template_field"],
             sources=list(d.get("sources", [])),
-            transform=d.get("transform", "join"),
+            transform=transform,
             sep=d.get("sep", " "),
             const=d.get("const", ""),
             fmt=d.get("fmt", ""),  # 구 프로파일엔 없을 수 있음 → 기본

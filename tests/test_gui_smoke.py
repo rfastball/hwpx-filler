@@ -923,6 +923,142 @@ def test_txt_view_renders_and_keeps_missing_tokens(qapp, tmp_path):
     assert "{{담당자}}" in rendered          # 미입력 토큰 그대로(시끄럽게)
 
 
+# ------------------------------------------- U3 매핑 정확성 회귀(RC-08·09·10)
+def test_job_editor_accept_warns_and_blocks_all_blank_job(qapp, tmp_path, monkeypatch):
+    """RC-08 회귀: 전 행 비움 확정 작업은 저장 전 경고로 차단 — 종전 술어
+    (not profile.mappings)는 blank 영속화(L1) 이후 dead code 라 무경고 저장됐다."""
+    from PySide6.QtWidgets import QMessageBox
+
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+    from hwpxfiller.gui.mapping_state import RowState
+
+    warnings = []
+    monkeypatch.setattr(
+        QMessageBox, "warning",
+        lambda *a, **k: warnings.append(a[2] if len(a) > 2 else ""),
+    )
+    reg = JobRegistry(tmp_path)
+    wiz = JobEditorWizard(reg)
+    wiz.template_path = "/t.hwpx"
+    wiz.model = MappingModel(rows=[RowState("공고명"), RowState("비고")])
+    wiz.model.confirm_all()  # 소스·상수 없이 전 행 확정 = '전부 비움'
+    assert wiz.model.is_complete()
+    assert wiz.model.to_profile().mappings  # blank 도 영속화 — 옛 술어는 여기서 불발
+    saved = []
+    wiz.job_saved.connect(lambda name: saved.append(name))
+    wiz._save_page.ed_name.setText("전부비움작업")
+
+    wiz.accept()
+
+    assert warnings and "채울 값이 없습니다" in warnings[0]
+    assert not reg.exists("전부비움작업")  # 무의미 작업 저장 차단
+    assert not saved                       # job_saved 미방출
+
+    # 반대 방향(과차단 금지): 값을 방출하는 행이 생기면 그대로 저장된다.
+    wiz.model.set_sources(0, ["bidNtceNm"])
+    wiz.model.confirm_all()
+    wiz.accept()
+    assert saved == ["전부비움작업"]
+    assert reg.exists("전부비움작업")
+
+
+def _authoring_wizard(tmp_path):
+    """RC-09 회귀용 위저드 — 템플릿 스텝은 세션 직주입으로 건너뛴다."""
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+
+    wiz = JobEditorWizard(JobRegistry(tmp_path))
+    wiz.template_path = "/t.hwpx"
+    wiz.schema = TemplateSchema(fields=[FieldSpec("공고명", "text", 1, False)])
+    data_page = wiz.page(wiz.pageIds()[1])
+    mapping_page = wiz.page(wiz.pageIds()[2])
+    return wiz, data_page, mapping_page
+
+
+def test_mapping_page_rebuilds_when_same_path_content_changes(qapp, tmp_path, monkeypatch):
+    """RC-09 §B 회귀: 같은 경로의 수정된 파일 재선택 → 매핑 초안이 새 어휘로 재구성.
+
+    종전 캐시 키는 (template_path, data_path) 경로쌍뿐이라 내용 불감 — 신규 컬럼은
+    매핑 불가, 삭제 컬럼은 계속 제안되는 옛 어휘로 조용히 구동됐다.
+    """
+    from PySide6.QtWidgets import QFileDialog
+
+    csv = tmp_path / "d.csv"
+    csv.write_text("colA,colB\n1,2\n", encoding="utf-8")
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(csv), ""))
+    wiz, data_page, mapping_page = _authoring_wizard(tmp_path)
+
+    data_page._pick()
+    assert wiz.source_fields == ["colA", "colB"]
+    mapping_page.initializePage()
+    assert wiz.model.source_fields == ["colA", "colB"]
+
+    # 같은 경로, 내용 교체 후 재선택 — 소스 어휘가 새것으로 갈려야 한다.
+    csv.write_text("colA,colC,colD\n1,3,4\n", encoding="utf-8")
+    data_page._pick()
+    assert wiz.source_fields == ["colA", "colC", "colD"]
+    mapping_page.initializePage()
+    assert wiz.model.source_fields == ["colA", "colC", "colD"]  # 옛 colB 잔존 금지
+
+
+def test_datapage_source_toggle_resets_session_atomically(qapp, tmp_path, monkeypatch):
+    """RC-09 §C 회귀: 소스 전환은 뷰(경로칸·요약)만이 아니라 위저드 세션 사본
+    (data_path·datasource·records·source_fields)까지 원자적으로 무효화한다."""
+    from PySide6.QtWidgets import QFileDialog
+
+    csv = tmp_path / "d.csv"
+    csv.write_text("colA,colB\n1,2\n", encoding="utf-8")
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(csv), ""))
+    wiz, data_page, mapping_page = _authoring_wizard(tmp_path)
+
+    data_page._pick()
+    assert wiz.records and wiz.datasource is not None
+
+    data_page.rb_nara.setChecked(True)  # 소스 전환 → reset_data_session
+
+    assert wiz.data_path == ""
+    assert wiz.datasource is None
+    assert wiz.source_fields == []
+    assert wiz.records == []
+    assert data_page.ed_path.text() == "" and data_page.lbl_summary.text() == ""
+    # 매핑 스텝 재진입도 지운 데이터로 구동되지 않는다(캐시 키·레코드 모두 초기화).
+    mapping_page.initializePage()
+    assert wiz.model.source_fields == []
+    assert mapping_page.lbl_index.text() == "레코드 0/0"
+
+
+def test_mapping_table_unknown_transform_renders_loudly_without_crash(qapp):
+    """RC-10 2차 방어 회귀: 미지 변환 행도 뷰가 죽지 않고(Qt 가 예외를 삼켜 통지 0 이던
+    크래시 금지) 변환 콤보·미리보기에 시끄럽게 재진술한다 — 조용한 오표시 금지."""
+    from hwpxfiller.core.mapping import TRANSFORMS
+    from hwpxfiller.gui.mapping_state import RowState
+    from hwpxfiller.gui.mapping_table import _COL_PREVIEW, _COL_TRANSFORM, MappingTable
+
+    model = MappingModel(
+        rows=[RowState("추정가격", sources=["presmptPrce"], transform="amonut")],
+        source_fields=["presmptPrce"],
+    )
+    table = MappingTable()
+    # 종전: TRANSFORMS.index("amonut") 미처리 ValueError 로 렌더 중단.
+    table.set_model(model, {"presmptPrce": "123456789"})
+
+    tr = table.table.cellWidget(0, _COL_TRANSFORM)
+    assert "amonut" in tr.currentText() and "지원 안 함" in tr.currentText()
+    assert "변환 오류" in table.table.item(0, _COL_PREVIEW).text()
+
+    # 마커 항목 재선택은 변경 없음 — 재동기화가 마커를 증식시키지도 않는다.
+    table._on_transform_activated(0, tr.currentIndex())
+    assert model.rows[0].transform == "amonut"
+    assert table.table.cellWidget(0, _COL_TRANSFORM).count() == len(TRANSFORMS) + 1
+
+    # 지원 변환으로 바꾸면 정상 복귀(마커 제거·미리보기 재계산).
+    table._on_transform_activated(0, TRANSFORMS.index("amount"))
+    assert model.rows[0].transform == "amount"
+    assert table.table.cellWidget(0, _COL_TRANSFORM).count() == len(TRANSFORMS)
+    assert "변환 오류" not in table.table.item(0, _COL_PREVIEW).text()
+
+
 # ------------------------------------------------------------------ 앱 A(diff)
 def _diff_window_for_test(tmp_path, monkeypatch):
     """실패 모달 즉시 fail + QSettings 를 임시 파일로(사용자 설정 오염 방지)한 창."""

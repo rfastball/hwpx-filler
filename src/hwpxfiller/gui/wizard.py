@@ -330,10 +330,25 @@ class DataPage(QWizardPage):
         excel = self.rb_excel.isChecked()
         self.excel_row.setVisible(excel)
         self.nara_row.setVisible(not excel)
+        self.reset_data_session()
+        self.completeChanged.emit()
+
+    def reset_data_session(self) -> None:
+        """이전 데이터 선택을 뷰·위저드 세션 **양쪽에서 원자적으로** 무효화.
+
+        뷰(경로칸·요약)만 지우면 세션 사본(data_path·datasource·records·source_fields)
+        이 잔존해 매핑 스텝이 사용자가 지웠다고 믿는 옛 데이터로 조용히 구동된다
+        (RC-09) — 이중 사본을 한 자리에서 함께 지운다.
+        """
         self._valid = False
         self.ed_path.clear()
         self.lbl_summary.setText("")
-        self.completeChanged.emit()
+        wiz = self.wizard()
+        if wiz is not None:
+            wiz.data_path = ""
+            wiz.datasource = None
+            wiz.source_fields = []
+            wiz.records = []
 
     def _open_nara(self) -> None:
         """나라장터 취득 대화상자를 열고, 수용 시 취득 산출물을 위저드 세션에 심는다.
@@ -432,7 +447,7 @@ class MappingPage(QWizardPage):
             "자동 제안은 초안일 뿐입니다. 모든 행을 검토해 확정해야 다음으로 진행합니다. "
             "채우지 않을 필드는 소스를 (비움)으로 두고 확정하세요."
         )
-        self._built_for: "tuple[str, str] | None" = None
+        self._built_for: "tuple[str, str, tuple[str, ...]] | None" = None
         self._preview_index = 0
 
         layout = QVBoxLayout(self)
@@ -477,7 +492,9 @@ class MappingPage(QWizardPage):
 
     def initializePage(self):
         wiz = self.wizard()
-        key = (wiz.template_path, wiz.data_path)
+        # 캐시 키에 소스 필드 집합을 포함한다(RC-09): 경로쌍만으로는 내용 불감이라
+        # 같은 경로의 수정된 파일 재선택·소스 전환 후에도 옛 어휘로 조용히 구동됐다.
+        key = (wiz.template_path, wiz.data_path, tuple(wiz.source_fields))
         if self._built_for != key or wiz.model is None:
             # 템플릿/데이터 조합이 바뀌었을 때만 초안을 새로 뽑는다
             # (뒤로 갔다 와도 사람이 만진 확정 상태를 잃지 않게).

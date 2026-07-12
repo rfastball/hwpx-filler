@@ -40,7 +40,8 @@ class RowState:
     """템플릿 필드 1개의 매핑 편집 상태.
 
     ``confirmed=True`` 인데 채울 내용이 없으면(소스도 상수도 없음) **의도적 비움
-    확정** — "이 필드는 채우지 않는다"를 사람이 명시한 상태다(``to_profile`` 제외).
+    확정** — "이 필드는 채우지 않는다"를 사람이 명시한 상태다(``to_profile`` 이
+    명시적 ``blank`` 선언으로 영속화 — L1).
     ``suggestion_score`` 는 자동 제안의 유사도(0=제안 없음) — 뷰가 신뢰도 툴팁에 쓴다.
     """
 
@@ -199,6 +200,16 @@ class MappingModel:
     def is_complete(self) -> bool:
         """전 행이 사람 확정을 받았는가 — 명시성 게이트. 행이 없으면 False."""
         return bool(self.rows) and all(r.confirmed for r in self.rows)
+
+    def emits_any_value(self) -> bool:
+        """확정된 행 중 실제 값을 방출하는 행이 하나라도 있는가 — '전부 비움' 저장 가드.
+
+        전 행을 비움 확정하면 ``is_complete`` 는 통과하지만 ``to_profile`` 은 blank
+        선언만 담아 어떤 누름틀에도 값을 주입하지 않는다(RC-08). blank 도 mappings 에
+        영속화되므로(L1) 뷰는 자료구조 내부(``profile.mappings``)가 아니라 이 질의로
+        무의미 작업 저장을 판단한다.
+        """
+        return any(r.confirmed and r.has_content() for r in self.rows)
 
     def preview(self, record: "dict[str, object]") -> "dict[str, str]":
         """행별 현재 매핑을 레코드 1건에 적용한 미리보기 값(확정 여부 무관)."""

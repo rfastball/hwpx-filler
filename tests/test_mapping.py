@@ -9,8 +9,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from hwpxfiller.core.engine import HwpxEngine
 from hwpxfiller.core.mapping import (
+    TRANSFORMS,
     FieldMapping,
     MappingProfile,
     apply_transform,
@@ -49,6 +52,18 @@ def test_transform_join_and_const():
 
 def test_transform_amount_graceful_on_nonnumeric():
     assert apply_transform("amount", ["미정"]) == "미정"
+
+
+def test_apply_transform_raises_on_unknown_kind():
+    """RC-10 회귀: 미지 변환의 조용한 join 폴백 금지 — 서식 미적용 값 무경고 주입 차단."""
+    with pytest.raises(ValueError, match="amonut"):
+        apply_transform("amonut", ["123456789"], fmt="{:,}")
+
+
+def test_apply_transform_known_kinds_still_work():
+    """명시적 join 분기 전환 후에도 지원 변환(+내부 blank)은 종전과 동일하게 동작."""
+    assert apply_transform("join", ["가", "나"], sep="/") == "가/나"
+    assert apply_transform("blank", ["무시"]) == ""
 
 
 # ------------------------------------------------------------- FieldMapping.value
@@ -153,6 +168,28 @@ def test_mapped_and_blank_duplicate_is_reported_as_conflict():
         FieldMapping("공고명", transform="blank"),
     ])
     assert profile.coverage_conflicts() == ["공고명"]
+
+
+def test_from_dict_rejects_unknown_transform():
+    """RC-10 회귀: 직렬화 경계(from_dict)가 오타·버전 스큐 transform 을 시끄럽게 거부."""
+    with pytest.raises(ValueError, match="amonut"):
+        FieldMapping.from_dict({"template_field": "추정가격", "transform": "amonut"})
+
+
+def test_from_dict_accepts_all_supported_transforms_and_blank():
+    """지원 변환 전부 + 내부 마커 blank 는 종전대로 로드된다(하위호환 유지)."""
+    for t in (*TRANSFORMS, "blank"):
+        assert FieldMapping.from_dict({"template_field": "f", "transform": t}).transform == t
+
+
+def test_profile_load_rejects_unknown_transform(tmp_path):
+    """손 편집된 매핑 파일의 미지 transform 은 로드 시점에 ValueError — 조용한 주입 금지."""
+    path = tmp_path / "typo.json"
+    path.write_text(json.dumps({"name": "t", "mappings": [{
+        "template_field": "추정가격", "sources": ["presmptPrce"], "transform": "amonut",
+    }]}, ensure_ascii=False), encoding="utf-8")
+    with pytest.raises(ValueError, match="지원하지 않는 변환"):
+        MappingProfile.load(path)
 
 
 def test_legacy_json_empty_join_is_not_reinterpreted_as_blank():

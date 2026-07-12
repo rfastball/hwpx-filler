@@ -109,6 +109,34 @@ def test_editing_a_confirmed_row_resets_confirmation():
     assert not model.rows[0].confirmed
 
 
+def test_emits_any_value_false_when_all_rows_blank_confirmed():
+    """RC-08 회귀: 전부 비움 확정은 is_complete 통과 + mappings 비지 않음 — 그래도
+    실제 값은 하나도 방출하지 않으므로 '전부 비움' 저장 가드 질의는 False 다."""
+    model = MappingModel(rows=[RowState("공고명"), RowState("비고")])
+    model.confirm_all()
+    assert model.is_complete()
+    assert model.to_profile().mappings          # blank 도 영속화(L1) — 옛 술어의 함정
+    assert not model.to_profile().template_fields()
+    assert not model.emits_any_value()
+
+
+def test_emits_any_value_true_when_any_confirmed_row_has_content():
+    """소스 행 또는 상수 행이 하나라도 확정되면 값이 방출된다 — 가드 통과."""
+    model = MappingModel(rows=[RowState("공고명"), RowState("비고")])
+    model.set_sources(0, ["bidNtceNm"])
+    model.confirm_all()
+    assert model.emits_any_value()
+    const_model = MappingModel(rows=[RowState("계약방법", transform="const", const="수의계약")])
+    const_model.set_confirmed(0)
+    assert const_model.emits_any_value()
+
+
+def test_emits_any_value_ignores_unconfirmed_content():
+    """미확정 행은 to_profile 에서 제외되므로 내용이 있어도 방출로 세지 않는다."""
+    model = MappingModel(rows=[RowState("공고명", sources=["bidNtceNm"])])
+    assert not model.emits_any_value()
+
+
 def test_confirm_all_and_unconfirm_all():
     model = _model()
     model.confirm_all()

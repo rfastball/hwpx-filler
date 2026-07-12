@@ -194,7 +194,14 @@ class MappingTable(QWidget):
         item = self.table.item(ri, _COL_PREVIEW)
         if item is None:
             return
-        value = row.to_mapping().value_for(self._preview_record)
+        try:
+            value = row.to_mapping().value_for(self._preview_record)
+        except ValueError as exc:
+            # RC-10 2차 방어: 미지 변환은 apply_transform 이 시끄럽게 raise 한다 —
+            # 뷰가 통째로 죽는 대신 해당 행에 오류를 빨갛게 재진술한다.
+            item.setText(f"(변환 오류: {exc})")
+            item.setForeground(_FG_DATA_EMPTY)
+            return
         if value == "" and row.has_content():
             item.setText("(이 레코드에서 빈 값)")
             item.setForeground(_FG_DATA_EMPTY)
@@ -307,7 +314,17 @@ class MappingTable(QWidget):
             # 변환 콤보.
             tr: QComboBox = self.table.cellWidget(ri, _COL_TRANSFORM)
             tr.blockSignals(True)
-            tr.setCurrentIndex(TRANSFORMS.index(row.transform))
+            # 이전 동기화가 남긴 '지원 안 함' 마커를 걷어내고 표준 항목만 남긴다.
+            while tr.count() > len(TRANSFORMS):
+                tr.removeItem(tr.count() - 1)
+            if row.transform in TRANSFORMS:
+                tr.setCurrentIndex(TRANSFORMS.index(row.transform))
+            else:
+                # RC-10 2차 방어: 직렬화 경계(from_dict)가 1차로 거부하지만, 프로그램
+                # 경로로 미지 변환이 스며도 미처리 크래시(Qt 가 예외를 삼켜 통지 0)나
+                # 조용한 오표시 대신 실제 값을 그대로 노출한다 — 사람이 고치게.
+                tr.addItem(f"{row.transform} (지원 안 함)", row.transform)
+                tr.setCurrentIndex(tr.count() - 1)
             tr.blockSignals(False)
 
             # 표시형 콤보 — 프리셋(라벨→코드) + 커스텀 코드 + '직접 입력…' 액션.
@@ -395,6 +412,10 @@ class MappingTable(QWidget):
         self.completeChanged.emit()
 
     def _on_transform_activated(self, ri: int, idx: int):
+        if idx >= len(TRANSFORMS):
+            # '지원 안 함' 마커 항목(RC-10 2차 방어) 재선택 — 변경 없음, 표시만 재동기화.
+            self._sync_row(ri)
+            return
         self._model.set_transform(ri, TRANSFORMS[idx])
         self._sync_row(ri)
         self.completeChanged.emit()

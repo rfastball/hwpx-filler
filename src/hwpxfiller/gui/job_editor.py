@@ -85,13 +85,15 @@ class JobEditorWizard(QWizard):
         if not name:
             QMessageBox.warning(self, "확인", "작업 이름을 입력하세요.")
             return
-        profile = self.model.to_profile(name)
-        if not profile.mappings:
+        # '전부 비움' 가드(RC-08): blank 선언도 mappings 에 영속화되므로(L1) 판단은
+        # 링1 질의(emits_any_value)로 — 뷰는 자료구조 내부 표현을 재구현하지 않는다.
+        if not self.model.emits_any_value():
             QMessageBox.warning(
                 self, "확인",
                 "확정된 매핑이 전부 비움이라 채울 값이 없습니다. 소스를 지정한 뒤 저장하세요.",
             )
             return
+        profile = self.model.to_profile(name)
         # 자기 자신 갱신(편집 모드, 이름 그대로)은 자명 — 이름을 바꿔 다른 작업을
         # 덮게 될 때만 확인을 묻는다.
         editing_self = self.initial_job is not None and name == self.initial_job.name
