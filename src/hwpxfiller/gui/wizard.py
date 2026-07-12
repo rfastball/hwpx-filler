@@ -36,6 +36,7 @@ from ..core.mapping import MappingProfile
 from ..core.schema import extract_schema
 from ..data import source_for_path
 from .confirm import confirm_destructive
+from .file_filters import EXCEL_FILTER, HWPX_FILTER
 from .mapping_state import MappingModel, PartialGate, gate_for_template
 from .mapping_table import MappingTable
 from .style import mark
@@ -111,7 +112,7 @@ class TemplatePage(QWizardPage):
             )
 
     def _pick(self):
-        path, _ = QFileDialog.getOpenFileName(self, "HWPX 템플릿 선택", "", "HWPX (*.hwpx)")
+        path, _ = QFileDialog.getOpenFileName(self, "HWPX 템플릿 선택", "", HWPX_FILTER)
         if path:
             self._load_template(path)
 
@@ -406,7 +407,7 @@ class DataPage(QWizardPage):
 
     def _pick(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "데이터 파일 선택", "", "엑셀/CSV (*.xlsx *.xlsm *.csv)"
+            self, "데이터 파일 선택", "", EXCEL_FILTER
         )
         if not path:
             return

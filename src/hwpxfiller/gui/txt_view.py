@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 from hwpxcore.atomic import write_text_atomic
 
 from ..core.text_registry import TextTemplateRegistry
+from .file_filters import EXCEL_FILTER
 from .flow_layout import FlowLayout
 from .style import BASE_QSS, mark
 from .txt_state import TxtDraftViewModel
@@ -135,7 +136,7 @@ class TxtDraftView(QMainWindow):
 
     def _pick_data(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "데이터 파일 선택", "", "엑셀/CSV (*.xlsx *.xlsm *.csv)"
+            self, "데이터 파일 선택", "", EXCEL_FILTER
         )
         if not path:
             return

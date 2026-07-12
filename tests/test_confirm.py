@@ -194,11 +194,11 @@ def test_delete_job_gated_by_destructive_confirm(qapp, tmp_path, monkeypatch):
     """홈 삭제 라우트 — 공용 헬퍼 거절=유지, 확정=삭제(과거: 무방비 2-인자 question)."""
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
     from hwpxfiller.gui import confirm as confirm_mod
-    from hwpxfiller.gui.app import _AppController
+    from hwpxfiller.gui.app import AppController
 
     reg = JobRegistry(tmp_path / "jobs")
     reg.save(Job(name="지울작업", template_path="/t.hwpx", mapping=_profile()))
-    ctrl = _AppController(reg)
+    ctrl = AppController(reg)
 
     seen = {}
     monkeypatch.setattr(

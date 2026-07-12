@@ -14,10 +14,10 @@
 ## 0. 전체 구조 — 오케스트레이터 + 라우팅 화면들
 
 핸드오프 시점 스캐폴드는 홈·에디터·실행 **3화면**이었다(§5 이음새표의 원형). 이후 화면들이
-착지해 현재 `_AppController` 라우팅은 다음과 같다(`gui/app.py` 확인, 2026-07-12):
+착지해 현재 `AppController` 라우팅은 다음과 같다(`gui/app.py` 확인, 2026-07-12):
 
 ```
-gui/app.py  _AppController ──라우팅──┬─▶ home.JobListHome            (홈 = 투트랙 허브)
+gui/app.py  AppController ──라우팅──┬─▶ home.JobListHome            (홈 = 투트랙 허브)
    (QApplication, 자식창 수명 소유)   ├─▶ job_editor.JobEditorWizard  (작업 저작: 저장으로 끝)
                                      ├─▶ run_view.RunView             (실행: 데이터 겨눠 생성)
                                      ├─▶ txt_view.TxtDraftView        (즉시 기안 txt — ADR H)

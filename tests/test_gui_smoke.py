@@ -166,7 +166,7 @@ def test_home_empty_state_and_job_cards(qapp, tmp_path):
     from PySide6.QtWidgets import QLabel
 
     from hwpxfiller.core.job import Job, JobRegistry
-    from hwpxfiller.gui.home import _JobCard, JobListHome
+    from hwpxfiller.gui.home import JobCard, JobListHome
 
     reg = JobRegistry(tmp_path)
     home = JobListHome(reg)
@@ -182,7 +182,7 @@ def test_home_empty_state_and_job_cards(qapp, tmp_path):
     assert home.stack.currentIndex() == 0  # 목록 페이지로
     item = home.list.item(0)
     card = home.list.itemWidget(item)
-    assert isinstance(card, _JobCard)
+    assert isinstance(card, JobCard)
     joined = " ".join(lbl.text() for lbl in card.findChildren(QLabel))
     assert "카드작업" in joined
     assert "필드 0개" in joined          # 메타 노출
@@ -318,11 +318,11 @@ def test_editor_edit_mode_accept_same_name_no_prompt(qapp, tmp_path, monkeypatch
 def test_app_controller_records_last_run(qapp, tmp_path, monkeypatch):
     """성공 실행(run_finished) → last_run_at 저장·홈 갱신. RunView 는 레지스트리 무지."""
     from hwpxfiller.core.job import Job, JobRegistry
-    from hwpxfiller.gui.app import _AppController
+    from hwpxfiller.gui.app import AppController
 
     reg = JobRegistry(tmp_path)
     reg.save(Job(name="실행기록", template_path="/t.hwpx"))
-    ctrl = _AppController(reg)
+    ctrl = AppController(reg)
 
     class _Batch:
         succeeded = 2
@@ -361,7 +361,7 @@ def test_template_manager_panel_renders_badges_and_gated_actions(qapp, tmp_path)
     from PySide6.QtWidgets import QPushButton
 
     from hwpxfiller.core.authoring import compile_document
-    from hwpxfiller.gui.template_manager import _TemplateCard, TemplateManagerPanel
+    from hwpxfiller.gui.template_manager import TemplateCard, TemplateManagerPanel
 
     _hwpx_pkg(_P("계약명: {{계약명}}")).save(str(tmp_path / "raw.hwpx"))
     pkg, _ = compile_document(_hwpx_pkg(_P("계약명: {{계약명}}")))
@@ -373,7 +373,7 @@ def test_template_manager_panel_renders_badges_and_gated_actions(qapp, tmp_path)
     for i in range(panel.list.count()):
         it = panel.list.item(i)
         card = panel.list.itemWidget(it)
-        assert isinstance(card, _TemplateCard)
+        assert isinstance(card, TemplateCard)
         by_name[it.text()] = card
 
     raw_labels = [b.text() for b in by_name["raw.hwpx"].findChildren(QPushButton)]
@@ -423,11 +423,11 @@ def test_app_controller_wires_all_home_routes_via_signal_emit(qapp, tmp_path, mo
 
     과거 hasattr 전방호환 가드 + 내부 메서드 직접 호출 테스트가 홈 측 시그널 미착지를
     3중으로 은폐했다 — 여기서는 emit 이 실제로 자식 창을 여는지 라우트별로 못박는다
-    (배선이 빠지면 _AppController 생성 자체가 AttributeError 로 시끄럽게 실패).
+    (배선이 빠지면 AppController 생성 자체가 AttributeError 로 시끄럽게 실패).
     """
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))  # 표준 루트 전부 임시 홈으로
     from hwpxfiller.core.job import JobRegistry
-    from hwpxfiller.gui.app import _AppController
+    from hwpxfiller.gui.app import AppController
     from hwpxfiller.gui.dataset_pool_panel import DatasetPoolPanel
     from hwpxfiller.gui.job_editor import JobEditorWizard
     from hwpxfiller.gui.matrix_view import MatrixRunView
@@ -435,7 +435,7 @@ def test_app_controller_wires_all_home_routes_via_signal_emit(qapp, tmp_path, mo
     from hwpxfiller.gui.txt_view import TxtDraftView
     from hwpxfiller.gui.vocab_workbench import VocabWorkbenchPanel
 
-    ctrl = _AppController(JobRegistry(tmp_path / "jobs"))
+    ctrl = AppController(JobRegistry(tmp_path / "jobs"))
     routes = [
         ("new_job_requested", JobEditorWizard),
         ("new_txt_requested", TxtDraftView),
@@ -455,11 +455,11 @@ def test_template_manager_route_seeds_default_library_and_make_job(qapp, tmp_pat
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
     from hwpxfiller.core.job import JobRegistry
     from hwpxfiller.core.template_status import default_templates_dir
-    from hwpxfiller.gui.app import _AppController
+    from hwpxfiller.gui.app import AppController
     from hwpxfiller.gui.job_editor import JobEditorWizard
     from hwpxfiller.gui.template_manager import TemplateManagerPanel
 
-    ctrl = _AppController(JobRegistry(tmp_path / "jobs"))
+    ctrl = AppController(JobRegistry(tmp_path / "jobs"))
     ctrl.home.manage_templates_requested.emit()
     panels = [c for c in ctrl._children if isinstance(c, TemplateManagerPanel)]
     assert len(panels) == 1
@@ -476,11 +476,11 @@ def test_open_editor_from_base_failure_is_loud_not_silent(qapp, tmp_path, monkey
     from PySide6.QtWidgets import QMessageBox
 
     from hwpxfiller.core.job import JobRegistry
-    from hwpxfiller.gui.app import _AppController
+    from hwpxfiller.gui.app import AppController
     from hwpxfiller.gui.job_editor import JobEditorWizard
 
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
-    ctrl = _AppController(JobRegistry(tmp_path / "jobs"))
+    ctrl = AppController(JobRegistry(tmp_path / "jobs"))
     warnings = []
     monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: warnings.append(a[2]))
     ctrl._open_editor_from_base("존재하지-않는-베이스")
@@ -1639,3 +1639,45 @@ def test_home_card_badge_uses_unified_level_palette(qapp, tmp_path):
     assert badges[BADGE_MISSING].property("pill") == "danger"  # 부재(state None) → danger
     # fb 셀렉터(실행 화면 필드 상태 어휘)는 더 이상 홈 배지에 재전용되지 않는다.
     assert badges[BADGE_READY].property("fb") is None
+
+
+def test_public_class_names_with_underscore_compat_aliases(qapp):
+    """RC-35 — 사실상 공용 API 인 컨트롤러·카드류 공개화 + 언더스코어 별칭 무파괴.
+
+    기존 크로스모듈 임포트·docs 스니펫(`_AppController` 등)은 별칭으로 계속 동작한다.
+    """
+    from hwpxfiller.gui import app as app_mod
+    from hwpxfiller.gui import home as home_mod
+    from hwpxfiller.gui import template_manager as tm_mod
+
+    assert app_mod._AppController is app_mod.AppController
+    assert home_mod._JobCard is home_mod.JobCard
+    assert tm_mod._TemplateCard is tm_mod.TemplateCard
+
+
+def test_mapping_table_tooltips_expose_full_names(qapp):
+    """RC-36 — 필드 셀 전체 이름 상시 툴팁(문맥 병기), 소스 콤보 현재 선택 툴팁.
+
+    좁은 열에서 말줄임된 유사 접두 필드를 오인 확정하지 않도록 툴팁이 전체 문자열을
+    항상 보여준다. 기존 저신뢰 자동 제안 경고는 병기 유지.
+    """
+    from hwpxfiller.gui.mapping_table import _COL_FIELD, _COL_SOURCE, MappingTable
+
+    model = _model()
+    table = MappingTable()
+    table.set_model(model, {})
+    for ri, row in enumerate(model.rows):
+        assert row.template_field in table.table.item(ri, _COL_FIELD).toolTip()
+        combo = table.table.cellWidget(ri, _COL_SOURCE)
+        assert combo.currentText() in combo.toolTip()  # 현재 선택 전체 문자열
+
+    # 문맥(spec.context)은 병기 유지 — '공고명' 필드는 문맥 "공 고 명:" 을 갖는다.
+    ri = next(i for i, r in enumerate(model.rows) if r.template_field == "공고명")
+    assert "문맥: 공 고 명:" in table.table.item(ri, _COL_FIELD).toolTip()
+
+    # 저신뢰 자동 제안 경고 병기 유지(툴팁 대체가 아니라 병기).
+    model.rows[ri].suggestion_score = 0.6
+    table.refresh()
+    tip = table.table.cellWidget(ri, _COL_SOURCE).toolTip()
+    assert "현재 선택:" in tip
+    assert "신뢰도 60%" in tip

@@ -26,6 +26,7 @@ import sys
 from PySide6.QtCore import QObject, QThread
 from PySide6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
 
+from .file_filters import EXCEL_FILTER
 from .style import mark
 from .worker import TaskWorker
 
@@ -230,7 +231,7 @@ class DataAcquireController(QObject):
     # ---------------------------------------------------------------- 파일
     def pick_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self._view, "데이터 파일 선택", "", "엑셀/CSV (*.xlsx *.xlsm *.csv)"
+            self._view, "데이터 파일 선택", "", EXCEL_FILTER
         )
         if not path:
             return

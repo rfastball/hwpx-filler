@@ -33,7 +33,7 @@ from .home_state import BADGE_CORRUPT, CorruptJobRow, HomeViewModel, JobRow, Txt
 from .style import BASE_QSS, mark
 
 
-class _JobCard(QWidget):
+class JobCard(QWidget):
     """HWPX 작업 카드 — 이름 + 상태 배지 + 메타 + 최근 실행 + 카드별 액션(실행/편집/삭제).
 
     성형된 :class:`JobRow` 와 콜백만 받는다(Job·레지스트리 직접 접근 없음).
@@ -82,6 +82,11 @@ class _JobCard(QWidget):
         foot.addWidget(btn_edit)
         foot.addWidget(btn_del)
         root.addLayout(foot)
+
+
+# 하위호환 별칭(RC-35): 스모크 테스트 등 크로스모듈 인용이 실재하는 공용 표면 —
+# 기존 `_JobCard` 임포트는 이 별칭으로 계속 동작한다.
+_JobCard = JobCard
 
 
 class _CorruptJobCard(QWidget):
@@ -341,7 +346,7 @@ class JobListHome(QMainWindow):
             self.list.addItem(row.name)
             item = self.list.item(self.list.count() - 1)
             item.setForeground(QColor(0, 0, 0, 0))  # 이름은 아이템 text(계약), 표시는 카드
-            card = _JobCard(
+            card = JobCard(
                 row,
                 on_run=self.run_job_requested.emit,
                 on_edit=self.edit_job_requested.emit,

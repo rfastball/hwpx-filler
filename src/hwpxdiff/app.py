@@ -24,7 +24,7 @@ import json
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QLibraryInfo, QSettings, Qt, QTranslator
 from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -76,6 +76,34 @@ ins{{background-color:{KIND_TINTS["added"]};color:{KIND_COLORS["added"]};text-de
 
 _RECENT_KEY = "recent_pairs"
 _RECENT_MAX = 5
+
+# HWPX 파일 다이얼로그 필터 — hwpxdiff 자체 소유 상수(RC-34). hwpxfiller 의
+# gui/file_filters.py 와 사본 관계다: 제품 간 임포트 금지 규칙(tests/test_architecture.py)
+# 때문에 공유하지 않는다. 하드코딩 재유입은 tests/test_file_filters.py 게이트가 막는다.
+HWPX_FILTER = "HWPX (*.hwpx)"
+
+
+def install_korean_translator(app) -> "QTranslator | None":
+    """Qt 표준 문자열(qtbase — 다이얼로그 버튼·메뉴 등)을 한국어로 설치한다(RC-27).
+
+    PySide6 는 번역을 자동 로드하지 않는다 — 부트스트랩에서 ``qtbase_ko`` 를 명시
+    설치한다. 실패 시 조용한 폴백 금지: stderr 로 시끄럽게 알리고 ``None`` 을 돌려준다.
+    성공 시 설치된 :class:`QTranslator` 를 돌려줘 테스트가 공유 QApplication 에서
+    ``removeTranslator`` 로 원복할 수 있게 한다.
+
+    hwpxfiller(gui/app.py)도 같은 헬퍼 사본을 소유한다 — 제품 간 임포트 금지 규칙
+    (tests/test_architecture.py) 때문에 공유하지 않는다.
+    """
+    translations_dir = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
+    translator = QTranslator(app)
+    if translator.load("qtbase_ko", translations_dir) and app.installTranslator(translator):
+        return translator
+    print(
+        "경고: Qt 한국어 번역(qtbase_ko)을 설치하지 못했습니다 — 표준 버튼이 "
+        f"영어로 표시됩니다. (탐색 경로: {translations_dir})",
+        file=sys.stderr,
+    )
+    return None
 
 # 필터로 전부 숨었을 때의 안내 — '진짜 변경 없음'(NO_CHANGES_MESSAGE)과 구분되는 카피.
 _FILTERED_ALL_MESSAGE = "필터에 걸려 표시된 변경이 없습니다 — 종류 필터·번호변경 토글을 확인하세요."
@@ -328,7 +356,7 @@ class DiffReviewWindow(QMainWindow):
 
     # ------------------------------------------------------------------ 입력
     def _pick(self, edit: QLineEdit) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "HWPX 선택", "", "HWPX (*.hwpx)")
+        path, _ = QFileDialog.getOpenFileName(self, "HWPX 선택", "", HWPX_FILTER)
         if path:
             edit.setText(path)
             # 판본이 바뀌면 이전 결과는 화면의 경로와 어긋난다.
@@ -486,6 +514,7 @@ def main() -> int:
     from PySide6.QtWidgets import QApplication
 
     app = QApplication(sys.argv)
+    install_korean_translator(app)  # Qt 표준 문자열 한국어화(RC-27)
     win = DiffReviewWindow()
     win.show()
     return app.exec()

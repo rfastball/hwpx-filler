@@ -235,13 +235,17 @@ class MappingTable(QWidget):
                 chk.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
                 self.table.setItem(ri, _COL_CONFIRM, chk)
 
-                # 템플릿 필드(이름 + 타입 배지, context 툴팁).
+                # 템플릿 필드(이름 + 타입 배지, 전체 이름 상시 툴팁 + context 병기).
+                # 긴 필드명은 좁은 열에서 말줄임돼 유사 접두 필드끼리 오인 확정될 수
+                # 있다(RC-36) — 툴팁이 전체 이름을 항상 보여준다.
                 spec = row.spec
                 type_badge = spec.inferred_type if spec else "text"
                 fld = QTableWidgetItem(f"{row.template_field}  [{type_badge}]")
                 fld.setFlags(Qt.ItemIsEnabled)
+                tip = f"필드: {row.template_field}"
                 if spec and spec.context:
-                    fld.setToolTip(f"문맥: {spec.context}")
+                    tip += f"\n문맥: {spec.context}"
+                fld.setToolTip(tip)
                 self.table.setItem(ri, _COL_FIELD, fld)
 
                 # 소스 콤보.
@@ -314,12 +318,15 @@ class MappingTable(QWidget):
             else:
                 combo.setCurrentIndex(0)
             combo.addItem(_MULTI_ITEM)
+            # 현재 선택 전체 문자열 상시 툴팁(RC-36) — 콤보 고정폭(220px)에서 잘린
+            # 선택을 확인할 수단. 저신뢰 자동 제안 경고는 병기 유지.
+            tip = f"현재 선택: {combo.currentText()}"
             if 0.0 < row.suggestion_score < _LOW_CONFIDENCE:
-                combo.setToolTip(
-                    f"자동 제안 신뢰도 {row.suggestion_score:.0%} — 초안입니다. 확인 후 확정하세요."
+                tip += (
+                    f"\n자동 제안 신뢰도 {row.suggestion_score:.0%} — "
+                    "초안입니다. 확인 후 확정하세요."
                 )
-            else:
-                combo.setToolTip("")
+            combo.setToolTip(tip)
             combo.blockSignals(False)
 
             # 변환 콤보.

@@ -11,7 +11,7 @@ lint/drift 는 전부 :class:`~hwpxfiller.gui.template_manager_state.TemplateMan
 - lint / drift 결과 표시.
 
 라우팅: 홈 헤더 [템플릿 관리] 버튼 → ``manage_templates_requested`` →
-:class:`~hwpxfiller.gui.app._AppController` 가 이 패널을 열고 수명을 소유하며
+:class:`~hwpxfiller.gui.app.AppController` 가 이 패널을 열고 수명을 소유하며
 ``make_job_requested`` 시그널을 에디터로 연결한다(RC-04 로 홈 진입점 착지).
 """
 
@@ -35,11 +35,12 @@ from PySide6.QtWidgets import (
 )
 
 from .confirm import confirm_destructive
+from .file_filters import HWPX_FILTER
 from .style import BASE_QSS, mark
 from .template_manager_state import TemplateManagerViewModel, TemplateRow
 
 
-class _TemplateCard(QWidget):
+class TemplateCard(QWidget):
     """템플릿 1건 카드 — 이름 + 상태 배지 + 상세 + 상태별 게이트 액션 버튼.
 
     성형된 :class:`TemplateRow` 와 액션 디스패처만 받는다(코어 직접 접근 없음).
@@ -77,6 +78,11 @@ class _TemplateCard(QWidget):
             )
             foot.addWidget(btn)
         root.addLayout(foot)
+
+
+# 하위호환 별칭(RC-35): 스모크 테스트 등 크로스모듈 인용이 실재하는 공용 표면 —
+# 기존 `_TemplateCard` 임포트는 이 별칭으로 계속 동작한다.
+_TemplateCard = TemplateCard
 
 
 class TemplateManagerPanel(QMainWindow):
@@ -170,7 +176,7 @@ class TemplateManagerPanel(QMainWindow):
             self.list.addItem(row.name)
             item = self.list.item(self.list.count() - 1)
             item.setForeground(QColor(0, 0, 0, 0))  # 이름은 아이템 text, 표시는 카드
-            card = _TemplateCard(row, on_action=self._dispatch)
+            card = TemplateCard(row, on_action=self._dispatch)
             item.setSizeHint(card.sizeHint())
             self.list.setItemWidget(item, card)
         if self.vm.is_empty():
@@ -244,10 +250,10 @@ class TemplateManagerPanel(QMainWindow):
         )
 
     def _on_drift(self) -> None:
-        old, _ = QFileDialog.getOpenFileName(self, "이전 판본 HWPX", "", "HWPX (*.hwpx)")
+        old, _ = QFileDialog.getOpenFileName(self, "이전 판본 HWPX", "", HWPX_FILTER)
         if not old:
             return
-        new, _ = QFileDialog.getOpenFileName(self, "새 판본 HWPX", "", "HWPX (*.hwpx)")
+        new, _ = QFileDialog.getOpenFileName(self, "새 판본 HWPX", "", HWPX_FILTER)
         if not new:
             return
         self._run_action("드리프트", new, lambda: self._do_drift(old, new))

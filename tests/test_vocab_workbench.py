@@ -201,11 +201,11 @@ def test_panel_delete_with_refs_confirms(qapp, tmp_path, monkeypatch):
 
 def test_app_opens_workbench_and_seeds_editor_from_base(qapp, tmp_path, monkeypatch):
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
-    from hwpxfiller.gui.app import _AppController
+    from hwpxfiller.gui.app import AppController
     from hwpxfiller.gui.job_editor import JobEditorWizard
     from hwpxfiller.gui.vocab_workbench import VocabWorkbenchPanel
 
-    ctrl = _AppController(JobRegistry(tmp_path / "jobs"))
+    ctrl = AppController(JobRegistry(tmp_path / "jobs"))
     ctrl.base_registry.save(_base("조달어휘"))
 
     ctrl._open_vocab_workbench()

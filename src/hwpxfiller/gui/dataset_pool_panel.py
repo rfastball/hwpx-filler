@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 
 from .confirm import confirm_destructive
 from .dataset_pool_state import DatasetPoolRow, DatasetPoolViewModel
+from .file_filters import EXCEL_FILTER
 from .style import BASE_QSS, mark
 
 
@@ -164,7 +165,7 @@ class DatasetPoolPanel(QMainWindow):
     # ------------------------------------------------------------- 등록
     def _on_register_excel(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "데이터 파일 선택", "", "엑셀/CSV (*.xlsx *.xlsm *.csv)"
+            self, "데이터 파일 선택", "", EXCEL_FILTER
         )
         if not path:
             return

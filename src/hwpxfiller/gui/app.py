@@ -11,9 +11,38 @@
 from __future__ import annotations
 
 import sys
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # 런타임 Qt 임포트는 main/헬퍼 안에서만(모듈 임포트 경량 유지)
+    from PySide6.QtCore import QTranslator
 
 
-class _AppController:
+def install_korean_translator(app) -> "QTranslator | None":
+    """Qt 표준 문자열(qtbase — 위저드 Back/Next/Cancel, 확인 &Yes/&No)을 한국어로(RC-27).
+
+    PySide6 는 번역을 자동 로드하지 않는다 — 부트스트랩에서 ``qtbase_ko`` 를 명시
+    설치한다. 실패 시 조용한 폴백 금지: stderr 로 시끄럽게 알리고 ``None`` 을 돌려준다.
+    성공 시 설치된 :class:`QTranslator` 를 돌려줘 테스트가 공유 QApplication 에서
+    ``removeTranslator`` 로 원복할 수 있게 한다.
+
+    hwpxdiff(app.py)도 같은 헬퍼 사본을 소유한다 — 제품 간 임포트 금지 규칙
+    (tests/test_architecture.py) 때문에 공유하지 않는다.
+    """
+    from PySide6.QtCore import QLibraryInfo, QTranslator
+
+    translations_dir = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
+    translator = QTranslator(app)
+    if translator.load("qtbase_ko", translations_dir) and app.installTranslator(translator):
+        return translator
+    print(
+        "경고: Qt 한국어 번역(qtbase_ko)을 설치하지 못했습니다 — 표준 버튼이 "
+        f"영어로 표시됩니다. (탐색 경로: {translations_dir})",
+        file=sys.stderr,
+    )
+    return None
+
+
+class AppController:
     """홈 + 자식 창들의 배선·수명 소유자. QApplication 과 분리해 테스트 가능."""
 
     def __init__(self, registry):
@@ -214,13 +243,20 @@ class _AppController:
         win.destroyed.connect(lambda *_: self._children.remove(win) if win in self._children else None)
 
 
+# 하위호환 별칭(RC-35): 컨트롤러는 앱 전체 배선·수명을 소유하는 사실상 공용 API 다 —
+# 언더스코어 사명이 '프라이빗이니 자유 변경' 오신호를 주던 것을 공개화했다.
+# 기존 임포트·docs 스니펫(`_AppController`)은 이 별칭으로 계속 동작한다.
+_AppController = AppController
+
+
 def main() -> int:
     from PySide6.QtWidgets import QApplication
 
     from ..core.job import JobRegistry, default_jobs_dir
 
     app = QApplication(sys.argv)
-    controller = _AppController(JobRegistry(default_jobs_dir()))
+    install_korean_translator(app)  # Qt 표준 문자열 한국어화(RC-27)
+    controller = AppController(JobRegistry(default_jobs_dir()))
     controller.home.show()
     return app.exec()
 

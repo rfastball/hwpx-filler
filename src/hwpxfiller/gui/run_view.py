@@ -46,6 +46,7 @@ from .batch_run import (
     describe_result_error,
 )
 from .confirm import confirm_destructive
+from .file_filters import HWPX_FILTER
 from .flow_layout import FlowLayout
 from .record_select import RecordSelector
 from .run_state import GenerationPlan, RunViewModel
@@ -299,7 +300,7 @@ class RunView(QMainWindow):
 
     def _pick_prev(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "기존 문서 선택", "", "HWPX (*.hwpx)"
+            self, "기존 문서 선택", "", HWPX_FILTER
         )
         if not path:
             return

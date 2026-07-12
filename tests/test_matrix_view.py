@@ -189,10 +189,10 @@ def test_matrix_view_partial_failure_modal_mentions_failures(qapp, tmp_path, mon
 
 
 def test_app_controller_opens_matrix_run(qapp, tmp_path):
-    from hwpxfiller.gui.app import _AppController
+    from hwpxfiller.gui.app import AppController
     from hwpxfiller.gui.matrix_view import MatrixRunView
 
-    ctrl = _AppController(_registry(tmp_path))
+    ctrl = AppController(_registry(tmp_path))
     ctrl._open_matrix_run()
     views = [c for c in ctrl._children if isinstance(c, MatrixRunView)]
     assert len(views) == 1
@@ -200,10 +200,10 @@ def test_app_controller_opens_matrix_run(qapp, tmp_path):
 
 def test_app_controller_records_matrix_run(qapp, tmp_path):
     """매트릭스 성공분이 작업별 last_run_at 에 기록된다."""
-    from hwpxfiller.gui.app import _AppController
+    from hwpxfiller.gui.app import AppController
 
     reg = _registry(tmp_path)
-    ctrl = _AppController(reg)
+    ctrl = AppController(reg)
 
     class _Batch:
         succeeded = 2
