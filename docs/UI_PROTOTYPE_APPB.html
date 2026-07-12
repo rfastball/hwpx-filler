@@ -245,7 +245,7 @@
 
   /* ── dashboard (scr-home) ── */
   .dash-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:14px}
-  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:18px}
   @media(max-width:720px){.kpis{grid-template-columns:repeat(2,1fr)}}
   .kpi{background:var(--a-card);border:1px solid var(--a-border);border-radius:9px;padding:12px 14px}
   .kpi .v{font-size:23px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
@@ -348,6 +348,8 @@
               <div class="body">
                 <div class="dash-head">
                   <span class="heading">대시보드</span>
+                  <!-- Qt 시그널 manage_pool_requested(J1) · manage_vocab_requested(J3) — VM 표면 아님, data-vm 미부착 -->
+                  <span class="row"><button class="btn sm">데이터 풀 관리</button><button class="btn sm">어휘 워크벤치</button></span>
                   <span class="muted" style="font-size:12px">개인 작업 자산 · <span class="mono">~/.hwpxfiller</span></span>
                 </div>
                 <div class="kpis" data-vm="HomeViewModel.kpi">
@@ -355,11 +357,15 @@
                   <div class="kpi"><div class="v">07-09</div><div class="l">최근 실행 · 공고서 자동생성</div></div>
                   <div class="kpi warn"><div class="v">1</div><div class="l">템플릿 없는 작업</div></div>
                   <div class="kpi"><div class="v">2</div><div class="l">기안 템플릿 · txt</div></div>
+                  <!-- DashboardKpi.pool_count (J1) — 개별 타일은 data-vm 미부착(컨테이너 HomeViewModel.kpi 가 대표) -->
+                  <div class="kpi"><div class="v">4</div><div class="l">데이터 풀 · 활성</div></div>
                 </div>
                 <div class="tracks">
                   <div class="track hwpx">
                     <div class="th"><span class="tt">정식 문서 생성 · HWPX</span>
-                      <button class="btn primary sm">＋ 새 작업</button></div>
+                      <span class="row"><!-- Qt 시그널 matrix_run_requested(J2) — VM 표면 아님 -->
+                        <button class="btn sm">여러 작업 일괄 실행</button>
+                        <button class="btn primary sm">＋ 새 작업</button></span></div>
                     <p class="tsub">누름틀 템플릿 + 매핑을 작업으로 저장 → 데이터 겨눠 .hwpx 생성.</p>
                     <div id="jobsView" data-vm="HomeViewModel.rows">
                       <div class="jcard">

@@ -15,7 +15,7 @@ src/hwpxfiller/   ② 누름틀 값 주입(쓰기 도구) — UnivContractor VBA
 - **hwpxfiller** — 데이터 소스 플러그인: Excel/CSV·나라장터 조달청 API, 장기적으로 ERP 확장
 - **hwpxdiff** — 두 판본의 본문·조항·표를 의미 기반 비교, 원문 전체를 좌우 대조(신구대비표)로
   렌더. GUI `hwpx-diff`(또는 `python -m hwpxdiff`), CLI `hwpxdiff OLD NEW [--html]`,
-  단독 배포는 `packaging/`(PyInstaller 단일 exe)
+  단독 배포는 `packaging/`(PyInstaller onedir)
 
 ## 개발 환경
 
@@ -59,14 +59,19 @@ python -m hwpxfiller.cli drift v2025.hwpx v2026.hwpx
 # 규격서 개정 비교(별도 제품 hwpxdiff): 의미 기반 diff (--html 없으면 요약만)
 python -m hwpxdiff.cli v2025.hwpx v2026.hwpx [--html report.html]
 
-# 엑셀 데이터로 일괄 생성
+# 엑셀 데이터로 일괄 생성 (--ledger: 생성 원장 JSON 사이드카를 out 폴더에 저장, opt-in)
 python -m hwpxfiller.cli --template template.hwpx --data data.xlsx \
-    --out ./out --pattern "공고서-{{계약명}}"
+    --out ./out --pattern "공고서-{{계약명}}" [--ledger]
+
+# 텍스트 기안 치환(온나라 등): 데이터 1건을 평문 {{토큰}} 템플릿에 렌더
+python -m hwpxfiller.cli render draft.txt --data data.xlsx [--profile mapping.json] [--record N] [--clip]
 
 # 나라장터(조달청 표준 API)에서 취득 → 매핑 프로파일로 템플릿 채우기
 #   영문 코드 키(bidNtceNo 등)는 --profile 로 한글 필드에 잇는다(없으면 대부분 빈칸).
+#   키 해석 우선순위: --service-key-file(권장) > DATA_GO_KR_KEY 환경변수
+#   > --service-key(인라인·노출 위험이라 비권장) > OS 자격증명 저장 키.
 python -m hwpxfiller.cli --template template.hwpx --source nara \
-    --service-key $DATA_GO_KR_KEY --bgn 202606010000 --end 202606302359 \
+    --service-key-file .secrets/nara_service_key --bgn 202606010000 --end 202606302359 \
     --profile mapping.json --out ./out --pattern "공고서-{{입찰공고번호}}"
 ```
 
@@ -109,10 +114,21 @@ python -m hwpxdiff
 | `core/mapping.py` | 소스 레코드 → 템플릿 필드 매핑(alias·N→1 합성·변환)+프로파일 | `frmErpPreview`+`modFuzzyMatch` |
 | `core/engine.py` | 단일 문서 생성 조율 | `modHWPXEngine` |
 | `core/job.py` | 작업(Job) 앵커 — durable {템플릿·매핑·파일명} + 레지스트리 + 실행요청 | (신규 — 원본의 일급 Job 부재를 수리) |
+| `core/dataset_pool.py` | 데이터셋 풀: durable 데이터 *참조*(스냅샷 아님) 레지스트리, 실행 시 재읽기 | (신규 — ADR J) |
+| `core/mapping_base.py` | 공유 베이스 매핑 레지스트리 — 명명 프로파일 1회 선언·다작업 참조 | (신규 — ADR J) |
+| `core/format_engine.py` | 표시형 서식 엔진(금액·날짜) — 교체 가능한 어댑터 층 | (신규 — Excel 셀서식의 열화판) |
+| `core/fill_ledger.py` | 생성 원장 척추: 매핑 전건 커버 + 템플릿 구조 드리프트(순수 파생) | (신규 — L1) |
+| `core/source_profile.py` | 소스 프로파일링: 매핑이 읽을 소스 키의 실제형 관측(샘플+잠정 타입) | (신규 — L2) |
+| `core/template_status.py` | 컴파일 수명주기 4-상태 파생 — 저장하지 않는 계산값(호출마다 재산출) | (신규) |
+| `core/text_registry.py` | 텍스트 기안 템플릿(`.txt`) 레지스트리 — Job 과 분리된 경량 트랙 | (신규 — txt 트랙) |
+| `core/text_render.py` | 텍스트 템플릿 렌더링: 데이터 → `{{필드}}` 순수 치환 | (신규 — txt 트랙) |
 | `naming.py` | 파일명 패턴(`{{키}}`) 치환 | (파일명 규칙) |
 | `batch.py` | 일괄 생성 | `Process_HWP_Generation` |
 | `data/excel.py` | 엑셀/CSV 데이터 소스 | (대시보드 페이로드) |
 | `data/nara.py` | 나라장터 조달청 API 취득 소스(stdlib urllib) | (신규 — 웹 취득, VBA선 불가) |
+| `data/factory.py` | DataSource 팩토리 — 소스 *종류* 선택을 한 곳에 모음 | (신규) |
+| `data/pipeline.py` | 소스 조립 파이프라인: 여러 DataSource → 하나(Power-Query식 저작) | (신규 — ADR K) |
+| `data/secret_store.py` | 비밀 저장소 포트(OS 자격증명) + ServiceKey 마스킹 | (신규 — N1) |
 | `gui/` | 앱 B: 작업 홈(`home`)·에디터(`job_editor`)·실행(`run_view`) | (대시보드 버튼) |
 
 ## 테스트
@@ -126,14 +142,14 @@ python -m hwpxdiff
 ## Windows 빌드와 배포
 
 ```powershell
-# portable 단일 EXE 두 개 + self-check
+# portable 빌드(PyInstaller onedir) 두 개 + self-check — 루트 build.ps1은 packaging/build.ps1 위임 러너
 .\build.ps1
 
 # Inno Setup 6 설치 후, 제품별 설치 EXE까지 생성
 .\package-installer.ps1
 ```
 
-산출물은 `dist\hwpx-filler.exe`, `dist\hwpx-diff.exe`와
+산출물은 `dist\hwpx-filler\hwpx-filler.exe`, `dist\hwpx-diff\hwpx-diff.exe`와
 `installer-dist\HWPX-*-Setup.exe`이다. 공식 릴리스는 `pyproject.toml`의 버전과 같은
 `vX.Y.Z` 태그를 push하면 GitHub Actions가 테스트, 빌드, 설치·제거 스모크,
 SHA-256 생성을 거쳐 게시한다. 저장소 secret `WINDOWS_CERTIFICATE_BASE64`와

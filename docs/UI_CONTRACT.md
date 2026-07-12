@@ -16,6 +16,7 @@
 | 목업 셀렉터 | ViewModel 심볼 | 종류 | 근거 |
 |---|---|---|---|
 | `.kpis` | `HomeViewModel.kpi` → `DashboardKpi` | 파생(요약) | I/B |
+| `.kpis` 5번째 타일("데이터 풀 · 활성") | `DashboardKpi.pool_count` | 파생(풀 레지스트리 활성 수) | J1 |
 | `#jobsView` | `HomeViewModel.rows` | 상태(HWPX 목록) | A |
 | `.jcard .jn` | `JobRow.name` | 상태 | B |
 | `.jcard .jm` | `JobRow.meta_line` | 상태(성형) | B |
@@ -28,7 +29,11 @@
 | `.titem .tm` | `TxtRow.field_count` | 상태 | H |
 
 HWPX 카드별 액션은 위젯 Qt 시그널(`run/edit/delete_job_requested`), txt 진입은 `open_txt/new_txt_requested`
-(라우팅 `app.py`). 선택/삭제/갱신: `HomeViewModel.select`/`delete`/`refresh`.
+(라우팅 `app.py`). 이후 착지한 홈 진입 시그널 3종(`home.py:135-139`)도 같은 방식 — "데이터 풀 관리"
+버튼→`manage_pool_requested`(J1) · "여러 작업 일괄 실행" 버튼→`matrix_run_requested`(J2) ·
+"어휘 워크벤치" 버튼→`manage_vocab_requested`(J3), `app.py`가 `hasattr` 가드로 라우팅(전방호환).
+Qt 시그널은 VM 표면이 아니므로 `data-vm` 계약 검사 대상이 아니다(목업엔 버튼만).
+선택/삭제/갱신: `HomeViewModel.select`/`delete`/`refresh`.
 
 ## 즉시 기안 txt (`gui/txt_view.py` ← `gui/txt_state.py` + `core/text_registry.py`) — ADR H
 

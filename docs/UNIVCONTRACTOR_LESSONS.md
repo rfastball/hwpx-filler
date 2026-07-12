@@ -7,7 +7,7 @@
 ## 왜 이 대비인가
 
 `hwpxfiller`(Product B)는 README가 명시하듯 **UnivContractor VBA 엔진의 파이썬 포트**다
-(`README.md:8`; 모듈별 VBA 출처 `README.md:73-104`). 원본은 포트 착수 *이후에도* 진화했으므로,
+(`README.md:8`; 모듈별 VBA 출처 `README.md:88-132`). 원본은 포트 착수 *이후에도* 진화했으므로,
 원본의 후기 교훈이 포트에 자동 반영됐다는 보장이 없다. 그래서 다음 두 출처의 교훈을 현재
 코드에 하나씩 겨눠 판정한다.
 
@@ -24,7 +24,7 @@
 
 | 교훈 | 판정 | 근거 / 향후 손댈 곳 |
 |---|---|---|
-| **#1** frmErpPreview HITL 요약 UX — 자동매핑 N / 실패 M / 무시 K 3버킷 요약 + 인폼 Diff 프리뷰 | ⚠️ 부분 | 매핑 단계엔 *의미*는 있으나(행별 `confirmed`, 의도적 비움 = `is_empty_confirmed`, `mapping_state.py:41`) **3버킷 집계 요약 메서드는 없다**(ViewModel에 카운트 산출 부재). 실패·누락의 시끄러운 표면화는 **run 단계 게이트**(`run_state.py` `field_states` 3-state 배지 + `unmet_blanks` 강제 상호작용)가 이미 담당하므로 우선순위 낮음. 반영 시: `mapping_state.py`에 버킷 카운트 + `wizard.py`에 요약 패널. |
+| **#1** frmErpPreview HITL 요약 UX — 자동매핑 N / 실패 M / 무시 K 3버킷 요약 + 인폼 Diff 프리뷰 | ⚠️ 부분 | 매핑 단계엔 *의미*는 있으나(행별 `confirmed`, 의도적 비움 = `is_empty_confirmed`, `mapping_state.py:61`) **3버킷 집계 요약 메서드는 없다**(ViewModel에 카운트 산출 부재). 실패·누락의 시끄러운 표면화는 **run 단계 게이트**(`run_state.py` `field_states` 3-state 배지 + `unmet_blanks` 강제 상호작용)가 이미 담당하므로 우선순위 낮음. 반영 시: `mapping_state.py`에 버킷 카운트 + `wizard.py`에 요약 패널. |
 | **#2** 조인키 `presetName`→`sourceReportName` | 🚫→📐 파킹(형태 확정) | 조인은 **지금 안 만듦**이나, 2026-07-12 **[ADR K](UI_DESIGN_DECISIONS.md)로 목표 형태 확정**: 조립은 사용자 저작·미리보기의 Power-Query식 파이프라인(외부 엔진 래핑, `DataSource` 생산자, 추론 아님)으로 landing. 파킹 근거가 "철학"→"**수요**"로 이동(명시 저작이 "책상 위 추정 금지" 해소). 교훈의 *원리*("결합은 표시축(preset)이 아닌 **구조축(schema)**을 따른다")가 **ADR K의 merge 키 제약으로 명문화** — merge 키 = 실제 공유 컬럼·명시·미리보기, preset 이름 휴리스틱 금지. |
 | **#3** 문서생성 경로가 조인 파이프라인 재사용 | 🚫 이미 구조적 충족 | 원본의 문제는 대시보드(표시)와 `Build_Payload_Table`(생성)이 갈라진 것. hwpxfiller는 **두 트랙(HWPX·txt)이 매핑+`profile.apply` 엔진을 공유**(`UI_DESIGN_DECISIONS.md` 트랙 이원성)하므로 표시/생성 divergence가 구조적으로 발생하지 않는다. **ADR K가 이 원리를 조립 층에 계승**: 조립 파이프라인은 `DataSource`를 생산해 모든 소비자(매핑·엔진·작업·실행)가 **공유** — 표시/생성 갈림 없음. |
 
@@ -35,15 +35,15 @@
 | 교훈 | 판정 | 근거 / 향후 손댈 곳 |
 |---|---|---|
 | **A** 가짜 성공 금지(산출물 검증) | 🔧 부분 갭 | `engine.generate()`는 열기/처리/저장 각 단계를 `GenerateResult(ok=False, error=…)`로 정직 보고(`engine.py:35-60`). 다만 저장 후 **파일 존재·유효성 재확인은 없고**, `applied`가 비어도(= 아무 필드도 안 채워짐) `ok=True`를 반환(`engine.py:62-63`). 후자는 누적채움 워크플로에선 정상이며, 미매칭은 상위(`unmatched`·run 게이트)가 표면화하므로 실질 위험은 낮음. K와 함께 저장 하드닝 후보로 묶는다. |
-| **B** 성공 = 실제 텍스트 노드를 씀 | ✅ 이미 흡수 | `_fill_one`이 `touched`를 추적해 **실제 `hp:t` 기입 시에만** True(`fields.py:90-119`); engine은 그때만 `applied` 집계(`engine.py:48-51`). 원본 VBA의 "구조만 매칭돼도 성공 집계" 버그가 포트에는 애초에 없다. |
+| **B** 성공 = 실제 텍스트 노드를 씀 | ✅ 이미 흡수 | `_fill_one`이 `touched`를 추적해 **실제 `hp:t` 기입 시에만** True(`fields.py:136-172`); engine은 그때만 `applied` 집계(`engine.py:48-51`). 원본 VBA의 "구조만 매칭돼도 성공 집계" 버그가 포트에는 애초에 없다. |
 | **C** 항목별 실패 전파(집계) | ✅ 이미 흡수 | `generate_batch`는 첫 실패에 중단하지 않고 전 결과를 `results`에 보관, `succeeded`/`failed` 집계(`batch.py:50-59`). |
 | **D** 정리블록 에러핸들러 재진입 방지 | 🚫 비대상 | VBA `On Error Resume Next` 특유 문제. 파이썬 `try/finally`로 구조적 무효. |
-| **E** "검증 통과" ≠ "검증 불가" 구분 | ⚠️ 대체로 흡수 | 고위험 경로는 읽기 실패를 **시끄럽게** 처리: `set_prev_output`은 `required_fields()` 예외를 `PrevNote(…, "danger")`로 표면화(`run_state.py:91-94`). 유일한 조용한 저하(`run_state.py:158-161`, 실패 시 `[]`)는 **비권위 오버레이**(의도적 공란 표시)일 뿐이고, 실 게이트는 `engine.required_fields`가 아니라 매핑이 방출하는 `job.template_fields()` 기반 `output_report()`다(`job.py:217-221`, 이 선택 자체가 의도적으로 기록됨). CLI 경로(`cli.py:289`)는 무가드지만 손상 템플릿은 예외로 크래시(=조용한 통과 아님). |
+| **E** "검증 통과" ≠ "검증 불가" 구분 | ⚠️ 대체로 흡수 | 고위험 경로는 읽기 실패를 **시끄럽게** 처리: `set_prev_output`은 `required_fields()` 예외를 `PrevNote(…, "danger")`로 표면화(`run_state.py:126-128`). 유일한 조용한 저하(`run_state.py:222-225`, 실패 시 `[]`)는 **비권위 오버레이**(의도적 공란 표시)일 뿐이고, 실 게이트는 `engine.required_fields`가 아니라 매핑이 방출하는 `job.template_fields()` 기반 `output_report()`다(`job.py:224-231`, 이 선택 자체가 의도적으로 기록됨). CLI 경로(`cli.py:329`·`:352`)는 무가드지만 손상 템플릿은 예외로 크래시(=조용한 통과 아님). |
 | **F** 부분 실패 정직 보고 | ✅ 대체로 흡수 | `MISSING_MARKER 〘미입력·{field}〙`(`job.py:36`)를 빈값 키에만 주입 + `source_report()`/`output_report()` 이원 검증 + run 게이트로 표면화. engine의 `unmatched`도 결과로 노출(`engine.py:62`). 원본의 "사전중단(abort)" 대신 "부분 산출 + 시끄러운 마커"를 택한 것은 의도적 개선. |
 | **G** 시끄럽되 스팸 아님(집계 1회) | ✅ 흡수 | ADR-E: "시끄럽게의 최적 구현은 습관화로 조용해지는 종단 모달이 아니라 상시 인라인 알람"(`UI_DESIGN_DECISIONS.md:134`) — 원본의 `LogQuiet`+집계1회와 동형의 원리. |
 | **H** 로깅↔알림 분리(`LogQuiet`) | 🚫 비대상 | 파이썬 logging이 본래 UI와 분리. |
 | **I** 단일 트리거(이중 트리거 제거) | ⚠️ 코드스멜 인지 | Qt 시그널/ViewModel 옵저버 이중 갱신은 이론상 가능하나 알려진 갭 아님. 회귀 시 점검할 인지 항목으로만 기록. |
-| **J** 부작용은 최종 확인 이후 커밋 | ✅ 흡수 | 프로파일/Job 저장은 **명시적 사용자 액션**(프로파일 저장 버튼 `wizard.py:360-377`; 잡 저장 `job_editor.py:104`)이고 `RunRequest`는 데이터를 비영속으로 둔다. 원본의 "확인 전 별칭 기록 → 취소가 못 되돌림" 문제에 해당하는 조용한 선기록이 없다. |
+| **J** 부작용은 최종 확인 이후 커밋 | ✅ 흡수 | 프로파일/Job 저장은 **명시적 사용자 액션**(프로파일 저장 버튼 `wizard.py:461-462`; 잡 저장은 `job_editor.py`의 SaveJobPage 마침 버튼 — `job_editor.py:55`·`:76`, 레지스트리 기록 `:113`)이고 `RunRequest`는 데이터를 비영속으로 둔다. 원본의 "확인 전 별칭 기록 → 취소가 못 되돌림" 문제에 해당하는 조용한 선기록이 없다. |
 | **K** 비가역 연산 보상 롤백 / 찢긴 쓰기 | 🔧 소형 갭 | `HwpxPackage.save()`가 최종 경로에 **비원자적 in-place 쓰기**(`package.py:70-72`, `open(path,"wb")` 직접). 저장 도중 중단 시 대상이 손상되고, **재생성 시 기존 정상본을 먼저 덮어쓴다**. 원본 "찢긴 상태 방지"의 파이썬 대응은 temp 파일 기록 후 `os.replace`(원자적 교체). 단건·고위험 문서 도구라 정합도 높음. 반영 시: `package.py:save`. |
 | **L** 임시폴더 충돌 회피(`GetTempName`) | 🚫 비대상 | 순수 인메모리 zipfile — 임시폴더 미사용. |
 | **M** 실패경로 테스트 강제 | ⚠️ 확인/보강 | 골든 코퍼스·불변식·뮤테이션 스위트는 두텁다. 다만 "손상 템플릿 → `ok=False`+error", "0필드 주입과 정상 주입 구분", "저장 실패 전파" 같은 **정직-실패 계약 자체를 겨눈 단위 테스트**가 명시적으로 있는지 확인 후, 없으면 소량 보강 후보. 반영 시: `tests/test_engine*.py`. |

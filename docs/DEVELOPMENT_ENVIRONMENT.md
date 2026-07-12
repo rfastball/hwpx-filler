@@ -14,7 +14,7 @@
 | GUI | PySide6 |
 | 테스트 | pytest, pytest-cov |
 | 정적 검사 | Ruff, Pyright basic |
-| portable 패키징 | PyInstaller onefile |
+| portable 패키징 | PyInstaller onedir |
 | 설치 패키징 | Inno Setup 6, 제품별 사용자 설치 |
 | 공식 배포 | GitHub Release |
 
@@ -116,8 +116,9 @@ PyInstaller를 실행한다.
 - Inno Setup용 `version.iss`
 - 버전, Git 커밋, Python, PyInstaller가 기록된 `build-metadata.json`
 
-산출물은 `dist/hwpx-filler.exe`, `dist/hwpx-diff.exe`이며 빌드 스크립트가 각각의
-`--selfcheck`까지 실행한다.
+산출물은 `dist\hwpx-filler\hwpx-filler.exe`, `dist\hwpx-diff\hwpx-diff.exe`(onedir 폴더)이며
+빌드 스크립트가 각각의 `--selfcheck`까지 실행한다. 루트 `build.ps1`은 canonical인
+`packaging/build.ps1`로 위임하는 얇은 러너다.
 
 ### 제품별 설치파일
 
