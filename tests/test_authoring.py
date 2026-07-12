@@ -18,6 +18,7 @@ from hwpxfiller.core.schema import extract_schema
 HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 HS = "http://www.hancom.co.kr/hwpml/2011/section"
 CORPUS = Path(__file__).parent / "corpus" / "real"
+FRAG_CORPUS = Path(__file__).parent / "corpus" / "frag"
 
 
 def _pkg(section_inner: str) -> HwpxPackage:
@@ -33,6 +34,10 @@ def _pkg(section_inner: str) -> HwpxPackage:
 
 def _root(pkg: HwpxPackage) -> etree._Element:
     return etree.fromstring(pkg.entries["Contents/section0.xml"])
+
+
+def _frag(name: str) -> str:
+    return (FRAG_CORPUS / name).read_text(encoding="utf-8")
 
 
 # --------------------------------------------------------------- 미리보기(scan)
@@ -134,17 +139,84 @@ def test_token_already_in_field_not_recompiled():
 
 
 # ----------------------------------------------------- 못 바꾸는 토큰 시끄럽게 신고
-def test_split_token_reported_not_silently_dropped():
-    """파편에 걸친 토큰은 조용히 넘기지 않고 skipped 로 신고한다."""
+def test_same_format_split_token_is_compiled_losslessly():
+    """인접·동일 서식 런의 허위 파편은 논리적으로 접어 컴파일한다."""
+    from hwpxcore.text_extract import extract_document, full_text
+
+    xml = _frag("same_charpr_split.xml")
+    pkg = _pkg(xml)
+    before_text = full_text(extract_document(pkg))
+
+    sites = scan_tokens(pkg)
+    assert [(site.name, site.compilable) for site in sites] == [("계약명", True)]
+    pkg, report = compile_document(pkg)
+
+    assert report.compiled == ["계약명"]
+    assert report.skipped == []
+    assert full_text(extract_document(pkg)) == before_text
+    assert extract_schema(pkg).field_names() == ["계약명"]
+
+
+def test_fragment_compile_roundtrip_fill_and_idempotence():
+    """파편 정규화 뒤에도 compile→fill 라운드트립과 재컴파일 멱등이 성립한다."""
+    pkg, report = compile_document(_pkg(_frag("same_charpr_split.xml")))
+    assert report.compiled == ["계약명"]
+    compiled_bytes = pkg.entries["Contents/section0.xml"]
+
+    _, second_report = compile_document(pkg)
+    assert second_report.compiled == []
+    assert second_report.modified is False
+    assert pkg.entries["Contents/section0.xml"] == compiled_bytes
+
+    doc = FieldDocument(compiled_bytes)
+    assert doc.set_field("계약명", "정보시스템 구축") is True
+    assert "앞 정보시스템 구축 뒤" in "".join(etree.fromstring(doc.to_bytes()).itertext())
+
+
+def test_fragment_compile_preserves_each_source_run_attributes():
+    """오프셋 역매핑은 charPr 외 런 속성도 원래 토큰 조각별로 보존한다."""
     xml = """
     <hp:p>
-      <hp:run><hp:t>{{계약</hp:t></hp:run>
-      <hp:run><hp:t>명}}</hp:t></hp:run>
+      <hp:run charPrIDRef="7" custom="left"><hp:t>{{계약</hp:t></hp:run>
+      <hp:run charPrIDRef="7" custom="right"><hp:t>명}}</hp:t></hp:run>
     </hp:p>
     """
-    _, report = compile_document(_pkg(xml))
-    assert report.compiled == []
-    assert any("파편" in s.reason for s in report.skipped)
+    pkg, report = compile_document(_pkg(xml))
+    assert report.compiled == ["계약명"]
+    value_runs = [
+        run
+        for run in _root(pkg).iter(f"{{{HP}}}run")
+        if any(_local.tag == f"{{{HP}}}t" for _local in run)
+    ]
+    assert [(run.get("custom"), "".join(run.itertext())) for run in value_runs] == [
+        ("left", "{{계약"),
+        ("right", "명}}"),
+    ]
+
+
+def test_fragment_pathology_taxonomy_stays_loud():
+    """구조/혼합서식 경계는 추측하지 않고 병리별 이유로 skip 한다."""
+    expected = {
+        "tab_inserted.xml": "탭/줄바꿈",
+        "linebreak_inserted.xml": "탭/줄바꿈",
+        "mixed_charpr.xml": "혼합 서식",
+        "ctrl_between.xml": "제어 요소",
+        "noncontiguous_run_boundary.xml": "비연속",
+    }
+    for fixture, reason in expected.items():
+        pkg = _pkg(_frag(fixture))
+        before = pkg.entries["Contents/section0.xml"]
+        sites = scan_tokens(pkg)
+        assert pkg.entries["Contents/section0.xml"] == before
+        assert len(sites) == 1
+        assert sites[0].compilable is False
+        assert reason in sites[0].reason
+
+        _, report = compile_document(pkg)
+        assert report.compiled == []
+        assert report.modified is False
+        assert len(report.skipped) == 1
+        assert reason in report.skipped[0].reason
 
 
 # ------------------------------------------------------------- 실제 코퍼스 멱등

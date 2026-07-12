@@ -16,9 +16,10 @@
 정수 id 최댓값 위에서 결정적으로 할당(입력 같으면 출력 같다). 값 런 텍스트는 원본
 토큰 ``{{X}}`` 리터럴을 유지한다(코퍼스 관례 — 채우기 전까지 placeholder 가 보인다).
 
-**MVP 경계.** 토큰이 단일 ``hp:t`` 의 ``.text`` 안에 온전히 있고 그 런이 단순할
-(hp:t 하나, 인라인 자식 없음) 때만 컴파일한다. 파편에 걸친 토큰·복합 런은 skipped 로
-신고(작성자가 손봐야 할 소수 케이스). 갓 타이핑한 토큰은 대개 단일 런에 온다.
+**파편 정규화.** 인접한 단순 텍스트 런의 ``charPrIDRef`` 가 같으면 하나의 논리 런으로
+보고 토큰을 찾는다. 적용할 때는 오프셋을 원래 런으로 되돌려 각 조각의 속성과 텍스트를
+보존한다. 탭·줄바꿈·제어 요소 또는 서로 다른 ``charPrIDRef`` 를 가로지르는 토큰은
+서식을 추측하지 않고 skipped 로 신고한다.
 """
 
 from __future__ import annotations
@@ -181,6 +182,169 @@ def _end_run(attrs: "dict[str, str]", begin_id: int, field_id: int) -> etree._El
     return run
 
 
+def _text_slices(
+    runs: "list[etree._Element]", start: int, end: int
+) -> "list[etree._Element]":
+    """논리 런 ``[start:end]`` 을 원래 런 속성을 보존한 텍스트 런들로 복원."""
+    out: "list[etree._Element]" = []
+    offset = 0
+    for run in runs:
+        t = next(c for c in run if _local(c.tag) == "t")
+        text = t.text or ""
+        lo = max(start - offset, 0)
+        hi = min(end - offset, len(text))
+        if lo < hi:
+            out.append(_text_run(dict(run.attrib), text[lo:hi]))
+        offset += len(text)
+    return out
+
+
+def _compile_simple_group(
+    p_el: etree._Element,
+    runs: "list[etree._Element]",
+    matches: "list[re.Match[str]]",
+    alloc,
+    report: CompileReport,
+) -> None:
+    """동일 서식 단순 런 묶음을 원본 오프셋/속성을 보존하며 누름틀로 치환."""
+    text = "".join(next(c for c in run if _local(c.tag) == "t").text or "" for run in runs)
+    new_runs: "list[etree._Element]" = []
+    pos = 0
+    for match in matches:
+        new_runs.extend(_text_slices(runs, pos, match.start()))
+        name = _clean_name(match.group(1))
+        begin_id, field_id = alloc()
+
+        # 경계 제어 런도 토큰 양 끝의 실제 런 속성을 따른다. 값은 원래 조각별
+        # 속성을 그대로 유지하므로 charPrIDRef 외 메타도 버리지 않는다.
+        begin_attrs = dict(next(r for r in runs if match.start() < _run_end(runs, r)).attrib)
+        end_pos = max(match.end() - 1, match.start())
+        end_attrs = dict(next(r for r in runs if end_pos < _run_end(runs, r)).attrib)
+        new_runs.append(_begin_run(begin_attrs, name, begin_id, field_id))
+        new_runs.extend(_text_slices(runs, match.start(), match.end()))
+        new_runs.append(_end_run(end_attrs, begin_id, field_id))
+        report.compiled.append(name)
+        pos = match.end()
+    new_runs.extend(_text_slices(runs, pos, len(text)))
+
+    idx = p_el.index(runs[0])
+    for run in runs:
+        p_el.remove(run)
+    for offset, new_run in enumerate(new_runs):
+        p_el.insert(idx + offset, new_run)
+
+
+def _run_end(runs: "list[etree._Element]", target: etree._Element) -> int:
+    """논리 런 묶음에서 ``target`` 런의 끝 오프셋."""
+    end = 0
+    for run in runs:
+        t = next(c for c in run if _local(c.tag) == "t")
+        end += len(t.text or "")
+        if run is target:
+            return end
+    raise ValueError("target run is not in the logical group")
+
+
+def _text_with_inline_events(t_el: etree._Element) -> "tuple[str, list[tuple[int, str]]]":
+    """hp:t 혼합 콘텐츠와 토큰 안 구조 경계 위치를 복원."""
+    parts = [t_el.text or ""]
+    events: "list[tuple[int, str]]" = []
+    length = len(parts[0])
+    for child in t_el:
+        local = _local(child.tag)
+        if local == "tab":
+            events.append((length, "tab"))
+            parts.append("\t")
+            length += 1
+        elif local == "lineBreak":
+            events.append((length, "lineBreak"))
+            parts.append("\n")
+            length += 1
+        else:
+            events.append((length, "inline"))
+        tail = child.tail or ""
+        parts.append(tail)
+        length += len(tail)
+    return "".join(parts), events
+
+
+def _report_uncompilable_tokens(
+    p_el: etree._Element, context: str, report: CompileReport
+) -> None:
+    """depth-0 문단 문자열을 복원해 구조/서식 경계를 가로지른 토큰을 신고."""
+    text_parts: "list[str]" = []
+    # (start, end, run, simple, paragraph-child-index)
+    pieces: "list[tuple[int, int, etree._Element, bool, int]]" = []
+    events: "list[tuple[int, str]]" = []
+    depth = 0
+    length = 0
+
+    for child_index, run in enumerate(p_el):
+        if _local(run.tag) != "run":
+            continue
+        simple, _ = _run_shape(run)
+        for child in run:
+            local = _local(child.tag)
+            if local == "ctrl":
+                field_boundary = False
+                for ctrl_child in child:
+                    ctrl_local = _local(ctrl_child.tag)
+                    if ctrl_local == "fieldBegin":
+                        depth += 1
+                        field_boundary = True
+                    elif ctrl_local == "fieldEnd":
+                        depth = max(depth - 1, 0)
+                        field_boundary = True
+                if depth == 0 and not field_boundary:
+                    events.append((length, "ctrl"))
+            elif local == "t" and depth == 0:
+                value, inline_events = _text_with_inline_events(child)
+                start = length
+                text_parts.append(value)
+                length += len(value)
+                pieces.append((start, length, run, simple, child_index))
+                events.extend((start + pos, kind) for pos, kind in inline_events)
+            elif local in ("tab", "lineBreak") and depth == 0:
+                events.append((length, local))
+                text_parts.append("\t" if local == "tab" else "\n")
+                length += 1
+
+    text = "".join(text_parts)
+    for match in _TOKEN_RE.finditer(text):
+        covered = [piece for piece in pieces if piece[0] < match.end() and piece[1] > match.start()]
+        if not covered:
+            continue
+        inside_events = [kind for pos, kind in events if match.start() <= pos < match.end()]
+        runs = list(dict.fromkeys(piece[2] for piece in covered))
+        char_prs = {run.get("charPrIDRef") for run in runs}
+        child_indexes = [piece[4] for piece in covered]
+        contiguous = child_indexes == list(range(child_indexes[0], child_indexes[-1] + 1))
+        same_proven_format = len(runs) == 1 or (len(char_prs) == 1 and None not in char_prs)
+        compilable = (
+            not inside_events
+            and all(piece[3] for piece in covered)
+            and same_proven_format
+            and contiguous
+        )
+        if compilable:
+            continue
+        if any(kind in ("tab", "lineBreak") for kind in inside_events):
+            reason = "탭/줄바꿈이 토큰 안에 삽입됨"
+        elif "ctrl" in inside_events:
+            reason = "제어 요소가 토큰 사이에 끼임"
+        elif len(char_prs) > 1:
+            reason = "혼합 서식(charPrIDRef 상이)"
+        elif len(runs) > 1 and None in char_prs:
+            reason = "토큰이 파편에 걸침(charPrIDRef 없음)"
+        elif not contiguous:
+            reason = "런 경계가 비연속"
+        else:
+            reason = "복합 런(수동 처리)"
+        report.skipped.append(
+            TokenSite(_clean_name(match.group(1)), context, False, reason)
+        )
+
+
 # ------------------------------------------------------------- 문단 처리
 def _depth0_texts(run: etree._Element, start_depth: int) -> "tuple[list[str], int]":
     """런 자식을 순서대로 훑어 depth-0 에 놓인 hp:t 텍스트만 모으고, 끝 depth 반환.
@@ -215,59 +379,51 @@ def _process_paragraph(
     """
     context = _paragraph_text(p_el).strip()[:_CONTEXT_MAX]
     depth = 0
-    runs = [c for c in p_el if _local(c.tag) == "run"]  # 스냅샷(치환 중 순회 안정)
-    for run in runs:
+    children = list(p_el)  # 스냅샷(치환 중 순회 안정)
+    index = 0
+    while index < len(children):
+        run = children[index]
+        if _local(run.tag) != "run":
+            index += 1
+            continue
         start_depth = depth
         simple, _ts = _run_shape(run)
 
-        # 컴파일 가능한 단순 런: 단일 hp:t + 바깥(depth 0)에 놓임.
+        # 컴파일 가능한 논리 런: 인접·동일 charPrIDRef 단순 텍스트 런 묶음.
         if simple and start_depth == 0:
-            depth = start_depth  # ctrl 없으니 depth 불변
-            t = _ts[0]
-            text = t.text or ""
+            group = [run]
+            next_index = index + 1
+            while run.get("charPrIDRef") is not None and next_index < len(children):
+                candidate = children[next_index]
+                candidate_simple, _ = _run_shape(candidate)
+                if (
+                    _local(candidate.tag) != "run"
+                    or not candidate_simple
+                    or candidate.get("charPrIDRef") != run.get("charPrIDRef")
+                ):
+                    break
+                group.append(candidate)
+                next_index += 1
+            text = "".join(
+                next(c for c in grouped if _local(c.tag) == "t").text or ""
+                for grouped in group
+            )
             matches = list(_TOKEN_RE.finditer(text))
-            if not matches:
-                if "{{" in text:  # 열림만·닫힘 없음 → 파편에 걸친 토큰
-                    report.skipped.append(
-                        TokenSite(text.strip()[:40], context, False, "토큰이 파편에 걸침")
-                    )
-                continue
-            if not apply:
+            if matches and not apply:
                 for m in matches:
                     report.compilable.append(
                         TokenSite(_clean_name(m.group(1)), context, True)
                     )
-                continue
-            # ---- 컴파일: 런을 begin/value/end + 전후 텍스트 런으로 치환 ----
-            attrs = dict(run.attrib)
-            new_runs: "list[etree._Element]" = []
-            pos = 0
-            for m in matches:
-                before = text[pos:m.start()]
-                if before:
-                    new_runs.append(_text_run(attrs, before))
-                name = _clean_name(m.group(1))
-                begin_id, field_id = alloc()
-                new_runs.append(_begin_run(attrs, name, begin_id, field_id))
-                new_runs.append(_text_run(attrs, m.group(0)))  # placeholder 유지
-                new_runs.append(_end_run(attrs, begin_id, field_id))
-                report.compiled.append(name)
-                pos = m.end()
-            after = text[pos:]
-            if after:
-                new_runs.append(_text_run(attrs, after))
-            idx = p_el.index(run)
-            p_el.remove(run)
-            for offset, nr in enumerate(new_runs):
-                p_el.insert(idx + offset, nr)
+            elif matches:
+                _compile_simple_group(p_el, group, matches, alloc, report)
+            index = next_index
             continue
 
-        # 복합 런 또는 depth>0 런: 바깥(depth 0) 텍스트에만 남은 토큰을 신고.
-        depth0, depth = _depth0_texts(run, start_depth)
-        joined = "".join(depth0)
-        if "{{" in joined:
-            reason = "복합 런(수동 처리)" if _TOKEN_RE.search(joined) else "토큰이 파편에 걸침"
-            report.skipped.append(TokenSite(joined.strip()[:40], context, False, reason))
+        _, depth = _depth0_texts(run, start_depth)
+        index += 1
+
+    # apply 뒤에는 새 누름틀 영역이 depth>0 으로 제외되므로 미처리 토큰만 남는다.
+    _report_uncompilable_tokens(p_el, context, report)
 
 
 # ------------------------------------------------------------------ 공개 API
