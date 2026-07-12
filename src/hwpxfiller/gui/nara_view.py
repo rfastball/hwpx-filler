@@ -333,12 +333,32 @@ class NaraAcquireDialog(QDialog):
         저수준 소켓 중단은 urlopen 한계로 불가하지만 사용자 관점의 취소는 즉시
         보장된다: 결과는 커밋되지 않고, 수용 게이트는 마지막 유효 스냅샷 기준으로
         복원된다(조용한 스테일 수용 금지).
+
+        중지 발화와 게이트 복원을 동기화한다(UD-29). ``_set_busy(False)`` 가 잔존
+        스냅샷 유무로 OK 를 재개방하는데, 재취득 시작이 이전 성공 요약을 '가져오는
+        중…'으로 덮은 뒤라 그냥 '중지' 문구만 남기면 라벨과 게이트가 다른 상태를
+        말한다. 잔존 스냅샷이 있으면 그 요약을 병기해 '무엇이 수용 대기인지'를
+        재진술하고, 없으면 게이트가 닫혔음을 명시한다(확인-또는-경보의 시각형).
         """
         if not self._busy:
             return
         self._fetch_seq += 1
-        self._set_busy(False)
-        self._set_result("요청을 중지했습니다 — 도착하는 결과는 무시됩니다.", "warn")
+        self._set_busy(False)  # 잔존 스냅샷 기준으로 OK 를 원자 복원(vm.last_result 미변경)
+        res = self.vm.last_result
+        if res is not None:
+            # 재취득을 중지해도 직전 성공 스냅샷은 계약상 유효 — 그 요약을 병기해
+            # OK 재개방과 발화를 정합시킨다(무엇이 등록되는지 화면에 명시, RC-24).
+            self._set_result(
+                f"중지됨 — 직전 취득분이 그대로 유효합니다({res.source_label()}). "
+                "확인하면 이 결과가 등록됩니다.",
+                "warn",
+            )
+        else:
+            # 수용 가능한 잔존 스냅샷 없음 — 게이트는 닫힌 채(OK 비활성)임을 명시.
+            self._set_result(
+                "중지됨 — 도착하는 결과는 무시됩니다. 수용 가능한 취득이 없습니다.",
+                "warn",
+            )
 
     def _on_query_edited(self, *_args) -> None:
         """취득 뒤 기간·건수 편집 — 스냅샷 폐기 + OK 잠금 + 재취득 안내(RC-13).

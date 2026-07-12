@@ -309,6 +309,55 @@ def test_stop_discards_inflight_result(qapp):
     assert not dlg.buttons.button(QDialogButtonBox.Ok).isEnabled()
 
 
+def test_stop_after_reacquire_syncs_gate_and_restates_residual(qapp):
+    """UD-29 (D10): 성공→재취득→중지 시 라벨·게이트 정합.
+
+    재취득 시작이 이전 성공 요약을 '가져오는 중…'으로 덮은 뒤 중지하면, 잔존
+    스냅샷 기준으로 OK 가 재개방되는데 발화는 '중지'뿐이어서 무엇이 수용 대기인지
+    화면에 없었다(신호 모순). 수리 후엔 중지 문구가 잔존 스냅샷 요약(기간·건수)을
+    병기해 OK 재개방과 정합한다.
+    """
+    import threading
+
+    from PySide6.QtWidgets import QDialogButtonBox
+
+    gate = threading.Event()
+    state = {"slow": False}
+
+    def fetch(url: str) -> bytes:
+        if state["slow"]:
+            gate.wait(5.0)  # 2차(재취득)만 블로킹 — 중지 개입 창을 연다
+        return _fixture_bytes()
+
+    store = MemorySecretStore({NARA_SERVICE_KEY_NAME: "DUMMY"})
+    dlg = _dialog(store, fetch)
+    ok = dlg.buttons.button(QDialogButtonBox.Ok)
+
+    _acquire(dlg)                                  # 1차 취득 성공 → 스냅샷·게이트 개방
+    assert ok.isEnabled()
+    assert dlg.vm.last_result is not None
+
+    state["slow"] = True
+    dlg._on_acquire()                              # 재취득 시작 — 진행 표시가 요약을 덮음
+    assert dlg._busy
+    assert "가져오는 중" in dlg.lbl_result.text()
+    assert not ok.isEnabled()                      # 진행 중 게이트 잠금
+
+    dlg._on_stop_fetch()                           # 중지 — 잔존 스냅샷 기준 복원
+    assert not dlg._busy
+    assert ok.isEnabled()                          # 게이트-라벨 정합: 직전 취득분 수용 대기
+    text = dlg.lbl_result.text()
+    assert "중지" in text                           # 중지 사실 발화
+    assert "직전 취득분" in text                     # 무엇이 수용 대기인지 재진술
+    assert "2건" in text                            # 잔존 스냅샷 요약(건수) 병기
+    assert dlg.vm.last_result is not None          # 스냅샷 보존
+
+    gate.set()
+    _drain_tasks(dlg)                              # 뒤늦은 재취득 결과는 폐기(seq 무효화)
+    assert dlg.vm.last_result is not None          # 여전히 1차 스냅샷 유지
+    assert ok.isEnabled()
+
+
 # ------------------------------------------------------------ DataPage 소스 선택
 def _data_page(qapp, tmp_path, *, store=None, fetcher=None):
     from hwpxfiller.core.job import JobRegistry
