@@ -310,6 +310,7 @@ def _report_uncompilable_tokens(
                 length += 1
 
     text = "".join(text_parts)
+    match_starts = {match.start() for match in _TOKEN_RE.finditer(text)}
     for match in _TOKEN_RE.finditer(text):
         covered = [piece for piece in pieces if piece[0] < match.end() and piece[1] > match.start()]
         if not covered:
@@ -342,6 +343,20 @@ def _report_uncompilable_tokens(
             reason = "복합 런(수동 처리)"
         report.skipped.append(
             TokenSite(_clean_name(match.group(1)), context, False, reason)
+        )
+
+    # 미완결 여는 괄호({{ 만 있고 닫는 }} 없음)는 완전 매치가 없어 위 루프가 못 잡는다.
+    # 조용히 흘리지 않고 파편에 걸친 토큰으로 시끄럽게 신고(master 동작 복원).
+    search_from = 0
+    while True:
+        opener = text.find("{{", search_from)
+        if opener == -1:
+            break
+        search_from = opener + 2
+        if opener in match_starts:
+            continue  # 이미 완전 토큰으로 처리됨 → 이중 신고 금지
+        report.skipped.append(
+            TokenSite(text[opener:].strip()[:40], context, False, "토큰이 파편에 걸침")
         )
 
 
@@ -390,15 +405,18 @@ def _process_paragraph(
         simple, _ts = _run_shape(run)
 
         # 컴파일 가능한 논리 런: 인접·동일 charPrIDRef 단순 텍스트 런 묶음.
-        if simple and start_depth == 0:
+        # 길이 0 빈 런(속성만 있는 <hp:t></hp:t>)은 접기 대상에서 제외해 원위치·속성을
+        # 그대로 보존한다(충실도: 소스 요소·속성을 병합 중 삼키지 않는다).
+        if simple and start_depth == 0 and (_ts[0].text or ""):
             group = [run]
             next_index = index + 1
             while run.get("charPrIDRef") is not None and next_index < len(children):
                 candidate = children[next_index]
-                candidate_simple, _ = _run_shape(candidate)
+                candidate_simple, candidate_ts = _run_shape(candidate)
                 if (
                     _local(candidate.tag) != "run"
                     or not candidate_simple
+                    or not (candidate_ts[0].text or "")  # 빈 런은 그룹 종료(원위치 보존)
                     or candidate.get("charPrIDRef") != run.get("charPrIDRef")
                 ):
                     break

@@ -219,6 +219,45 @@ def test_fragment_pathology_taxonomy_stays_loud():
         assert reason in report.skipped[0].reason
 
 
+def test_dangling_open_brace_reported_not_silent():
+    """미완결 여는 괄호({{ 만 있고 닫는 }} 없음)는 조용히 흘리지 않고 신고한다.
+
+    Fix 1 회귀: 병합 경로가 완전 매치에만 신고를 걸어 미완결 {{ 가 조용히 사라졌다.
+    """
+    xml = '<hp:p><hp:run charPrIDRef="7"><hp:t>계약명 {{ 없음</hp:t></hp:run></hp:p>'
+    pkg = _pkg(xml)
+    before = pkg.entries["Contents/section0.xml"]
+    sites = scan_tokens(pkg)
+    assert pkg.entries["Contents/section0.xml"] == before  # 무변형
+    assert len(sites) == 1
+    assert sites[0].compilable is False
+    assert "파편" in sites[0].reason
+
+    _, report = compile_document(_pkg(xml))
+    assert report.compiled == []
+    assert len(report.skipped) == 1
+    assert "파편" in report.skipped[0].reason
+
+
+def test_empty_attr_run_preserved_through_merge():
+    """길이 0 빈 런(속성 포함)이 인접 토큰 병합 중 삼켜지지 않고 보존된다.
+
+    Fix 2 회귀: 슬라이스 재발행이 빈 슬라이스를 건너뛰어 속성 있는 빈 런이 사라졌다.
+    """
+    xml = (
+        "<hp:p>"
+        '<hp:run charPrIDRef="7" note="EMPTY_MARKER"><hp:t></hp:t></hp:run>'
+        '<hp:run charPrIDRef="7"><hp:t>{{계약명}}</hp:t></hp:run>'
+        "</hp:p>"
+    )
+    pkg, report = compile_document(_pkg(xml))
+    assert report.compiled == ["계약명"]
+    out = pkg.entries["Contents/section0.xml"].decode("utf-8")
+    assert 'note="EMPTY_MARKER"' in out  # 소스 요소·속성 보존
+    # 인접 토큰은 여전히 진짜 누름틀로 컴파일된다.
+    assert extract_schema(pkg).field_names() == ["계약명"]
+
+
 # ------------------------------------------------------------- 실제 코퍼스 멱등
 def test_corpus_already_compiled_yields_no_new_fields():
     """실제 입찰공고(이미 누름틀 완비)를 스캔하면 새로 컴파일할 토큰이 없다."""
