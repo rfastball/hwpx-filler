@@ -12,8 +12,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
+from ..core.authoring import scan_tokens
 from ..core.lint import similarity
 from ..core.mapping import (
     NARA_ALIASES,
@@ -22,7 +24,8 @@ from ..core.mapping import (
     MappingProfile,
     suggest_mappings,
 )
-from ..core.schema import FieldSpec, TemplateSchema
+from ..core.schema import FieldSpec, TemplateSchema, extract_schema
+from ..core.template_status import CompileState, TemplateStatus, compile_status
 
 # inferred_type → 기본 변환. 명시 없는 타입은 join(그대로).
 _DEFAULT_TRANSFORM = {"date": "datetime", "amount": "amount"}
@@ -211,3 +214,108 @@ class MappingModel:
             row.confirmed = True
             applied += 1
         return applied
+
+
+# ============================================================= PARTIAL 확정 게이트
+# 위저드 1단계(TemplatePage)의 위험 상태 게이트를 Qt 비의존 순수 파이썬으로 뽑아
+# 헤드리스 단위 테스트가 가능하게 한다(위젯은 이 결정을 그대로 그린다).
+def _leftover_token_names(
+    sites: "list", strays: "list[str]"
+) -> "list[str]":
+    """PARTIAL 게이트가 재진술할 **미해결 토큰 이름** — 문서순·중복 제거.
+
+    ``scan_tokens`` 사이트(컴파일 가능/파편 skip)의 이름 + 스키마의 본문 평문 잔존
+    (``stray_tokens``)을 합친다. 이 이름들이 "값이 주입되지 않는다"를 사람에게 구체적으로
+    재진술하는 대상이다(범용 메시지 금지 — ADR-E 반사적 dismiss 봉쇄의 전제).
+    """
+    names: "list[str]" = []
+    seen: "set[str]" = set()
+    for s in sites:
+        if s.name and s.name not in seen:
+            seen.add(s.name)
+            names.append(s.name)
+    for t in strays:
+        if t and t not in seen:
+            seen.add(t)
+            names.append(t)
+    return names
+
+
+@dataclass
+class PartialGate:
+    """PARTIAL "다 된 것 같지만 아닌" 상태의 확정 게이트(Qt 비의존, 헤드리스 테스트 대상).
+
+    ``compile_status`` 상태 + 미해결 토큰 이름에서 '진행 가부'를 파생한다:
+    - ``RAW``(필드 0개): 차단(채울 대상 없음 — 상위 페이지가 이미 필드 없는 템플릿을 거부).
+    - ``PARTIAL``(필드 有 + skip/파편/평문 잔존): **명시 ack 또는 인라인 컴파일 전까지 차단**
+      — 값이 조용히 누락되는 위험을 소리 나게 세운다(confirm-or-alarm).
+    - ``COMPILED``/``FILLED``: 통과.
+
+    **반사적 dismiss 봉쇄(ADR-E).** ack 는 *정확히 재진술된 미해결 이름 전체*를 확인해야
+    성립한다(``acknowledge`` 가 받은 이름 집합이 ``unmet_tokens`` 와 일치할 때만). 다른/부분/
+    오래된 확인으로는 게이트가 열리지 않아, 이름을 안 보고 누르는 한 번-클릭 해제를 막는다.
+    """
+
+    status: TemplateStatus
+    unmet_tokens: "list[str]" = field(default_factory=list)
+    _acked: "set[str]" = field(default_factory=set)
+
+    @property
+    def state(self) -> CompileState:
+        return self.status.state
+
+    def needs_gate(self) -> bool:
+        """PARTIAL 만 확정 게이트가 닫힌다(RAW 는 상위에서 차단, COMPILED/FILLED 는 통과)."""
+        return self.status.state is CompileState.PARTIAL
+
+    def acknowledge(self, confirmed: "Iterable[str]") -> None:
+        """사용자가 재진술된 미해결 토큰을 직접 확인 — 확인한 **이름 집합**을 기록한다.
+
+        위젯은 정확히 ``unmet_tokens`` 를 넘겨 확인시킨다. 부분/엉뚱한 이름을 넘기면
+        ``is_acked`` 가 불성립이라 게이트가 열리지 않는다(반사적 확인 무력화).
+        """
+        self._acked = set(confirmed)
+
+    def is_acked(self) -> bool:
+        """미해결 토큰 **전체**를 정확히 확인했는가(부분·오래된·빈 확인은 불성립)."""
+        return bool(self.unmet_tokens) and self._acked == set(self.unmet_tokens)
+
+    def can_proceed(self) -> bool:
+        """이 상태에서 다음 단계로 넘어가도 되는가 — 게이트의 최종 판정."""
+        st = self.status.state
+        if st is CompileState.RAW:
+            return False
+        if st is CompileState.PARTIAL:
+            return self.is_acked()
+        return True  # COMPILED / FILLED
+
+    def message(self) -> str:
+        """사람이 볼 게이트 메시지 — PARTIAL 은 구체 토큰 이름을 재진술한다."""
+        st = self.status.state
+        if st is CompileState.RAW:
+            return (
+                "이 템플릿에는 누름틀 필드가 없습니다 — 채울 대상이 없어 진행할 수 없습니다."
+            )
+        if st is not CompileState.PARTIAL:
+            return ""
+        names = ", ".join(self.unmet_tokens)
+        if self.is_acked():
+            return (
+                f"확인함: 아래 {len(self.unmet_tokens)}개 토큰은 채우지 않고 진행합니다 — {names}"
+            )
+        return (
+            f"진행 차단: 값이 주입되지 않는 토큰 {len(self.unmet_tokens)}개가 남아 있습니다 — "
+            f"{names}. [여기서 컴파일]로 누름틀로 바꾸거나, 채우지 않음을 명시 확인하세요."
+        )
+
+
+def gate_for_template(pkg_or_path: object) -> PartialGate:
+    """경로/바이트/패키지에서 컴파일 상태 + 미해결 토큰 이름을 읽어 게이트를 만든다.
+
+    전부 읽기 전용(``compile_status``/``extract_schema``/``scan_tokens`` 는 무변형). 위저드와
+    테스트가 공유하는 진입점 — PARTIAL 게이트가 겨누는 실제 파생을 한자리에 모은다.
+    """
+    status = compile_status(pkg_or_path)
+    schema = extract_schema(pkg_or_path)
+    unmet = _leftover_token_names(scan_tokens(pkg_or_path), schema.stray_tokens)
+    return PartialGate(status=status, unmet_tokens=unmet)

@@ -516,6 +516,88 @@ def test_run_view_inline_blank_gate_and_marker_injection(qapp, tmp_path, monkeyp
         view._teardown_thread()
 
 
+def _partial_template_file(tmp_path) -> str:
+    """진짜 필드 1개 + 미컴파일 평문 ``{{미컴파일필드}}`` 를 담은 PARTIAL .hwpx 파일."""
+    from lxml import etree
+
+    from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+    from hwpxfiller.core.authoring import compile_document
+
+    HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
+    HS = "http://www.hancom.co.kr/hwpml/2011/section"
+    section = "Contents/section0.xml"
+    token = "{{계약명}}"
+    sec = (
+        f'<hs:sec xmlns:hs="{HS}" xmlns:hp="{HP}">'
+        f"<hp:p><hp:run><hp:t>{token}</hp:t></hp:run></hp:p></hs:sec>"
+    ).encode("utf-8")
+    pkg = HwpxPackage()
+    pkg.entries[MIMETYPE_NAME] = MIMETYPE_VALUE
+    pkg.stored.add(MIMETYPE_NAME)
+    pkg.entries[section] = sec
+    pkg, _ = compile_document(pkg)  # {{계약명}} → 누름틀 필드
+    # 미컴파일 평문 토큰을 덧붙여 PARTIAL 로 만든다.
+    root = etree.fromstring(pkg.entries[section])
+    p = etree.SubElement(root, f"{{{HP}}}p")
+    run = etree.SubElement(p, f"{{{HP}}}run")
+    t = etree.SubElement(run, f"{{{HP}}}t")
+    t.text = "{{미컴파일필드}}"
+    pkg.entries[section] = etree.tostring(
+        root, xml_declaration=True, encoding="UTF-8", standalone=True
+    )
+    path = tmp_path / "tpl.hwpx"
+    pkg.save(str(path))
+    return str(path)
+
+
+def test_template_page_partial_gates_until_acked(qapp, tmp_path):
+    """PARTIAL 템플릿 로드 → isComplete False; 명시 ack 후 True(다이얼로그 우회)."""
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+
+    path = _partial_template_file(tmp_path)
+    wiz = JobEditorWizard(JobRegistry(tmp_path))
+    page = wiz.page(wiz.pageIds()[0])  # TemplatePage
+    page._load_template(path)
+
+    assert page._gate is not None and page._gate.state.name == "PARTIAL"
+    assert not page.isComplete()  # PARTIAL 차단
+    assert "미컴파일필드" in page.lbl_warn.text()  # 구체 이름 재진술
+    assert not page.btn_ack.isHidden()  # offscreen: 최상위 미표시라 isVisible 대신 isHidden
+
+    # 명시 ack(다이얼로그 대신 정확한 이름 전체를 직접 확인).
+    page._gate.acknowledge(page._gate.unmet_tokens)
+    page._refresh_gate_ui()
+    assert page.isComplete()
+
+
+def test_template_page_inline_compile_flips_to_compiled(qapp, tmp_path, monkeypatch):
+    """[여기서 컴파일] → 컴파일본 전환, COMPILED 로 승격되어 진행 가능."""
+    from PySide6.QtWidgets import QMessageBox
+
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(
+        QMessageBox, "critical",
+        lambda *a, **k: pytest.fail(f"컴파일 실패 다이얼로그가 떴다: {a[2] if len(a) > 2 else a}"),
+    )
+    path = _partial_template_file(tmp_path)
+    wiz = JobEditorWizard(JobRegistry(tmp_path))
+    page = wiz.page(wiz.pageIds()[0])
+    page._load_template(path)
+    assert not page.isComplete()
+    assert not page.btn_compile.isHidden()  # offscreen: isVisible 대신 isHidden
+
+    page._compile_here()
+
+    assert page._gate is not None and page._gate.state.name == "COMPILED"
+    assert page.isComplete()
+    assert page.ed_path.text().endswith(".compiled.hwpx")
+    assert wiz.template_path == page.ed_path.text()  # 컴파일본으로 전환
+
+
 def test_txt_view_renders_and_keeps_missing_tokens(qapp, tmp_path):
     """즉시 기안 화면 — 템플릿 자동 선택·토큰 상태·실시간 렌더에 미입력 토큰 노출."""
     from hwpxfiller.core.text_registry import TextTemplateRegistry

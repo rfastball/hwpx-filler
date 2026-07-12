@@ -25,10 +25,11 @@ from PySide6.QtWidgets import (
     QWizardPage,
 )
 
+from ..core.authoring import compile_document, scan_tokens
 from ..core.mapping import MappingProfile
 from ..core.schema import extract_schema
 from ..data import source_for_path
-from .mapping_state import MappingModel
+from .mapping_state import MappingModel, PartialGate, gate_for_template
 from .mapping_table import MappingTable
 from .style import mark
 
@@ -37,13 +38,20 @@ _SUMMARY_MAX_FIELDS = 12
 
 
 class TemplatePage(QWizardPage):
-    """1단계 — HWPX 템플릿 선택 + 스키마 추출(필드·타입 요약, stray 경고)."""
+    """1단계 — HWPX 템플릿 선택 + 스키마 추출 + PARTIAL 확정 게이트.
+
+    필드가 있어도 skip/파편/평문 잔존 토큰이 남은 **PARTIAL**("다 된 것 같지만 아닌")
+    상태는 값이 조용히 누락되는 위험이라 그냥 통과시키지 않는다. 게이트를 열려면 사람이
+    (a) [여기서 컴파일]로 잔존 평문 토큰을 누름틀로 바꾸거나, (b) 그 토큰들을 채우지 않음을
+    구체 이름으로 **명시 확인**해야 한다(순수 판정은 :class:`PartialGate`, 헤드리스 테스트).
+    """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setTitle("1단계 — 템플릿 선택")
         self.setSubTitle("누름틀이 들어 있는 HWPX 템플릿을 선택하세요.")
         self._valid = False
+        self._gate: "PartialGate | None" = None
 
         layout = QVBoxLayout(self)
         row = QHBoxLayout()
@@ -63,6 +71,19 @@ class TemplatePage(QWizardPage):
         self.lbl_warn.setWordWrap(True)
         mark(self.lbl_warn, "level", "warn")
         layout.addWidget(self.lbl_warn)
+
+        # PARTIAL 게이트 해소 액션 — 평상시 숨김, PARTIAL 일 때만 노출.
+        gate_row = QHBoxLayout()
+        self.btn_compile = QPushButton("여기서 컴파일")
+        self.btn_compile.clicked.connect(self._compile_here)
+        self.btn_ack = QPushButton("채우지 않음 확인…")
+        self.btn_ack.clicked.connect(self._ack_partial)
+        self.btn_compile.setVisible(False)
+        self.btn_ack.setVisible(False)
+        gate_row.addWidget(self.btn_compile)
+        gate_row.addWidget(self.btn_ack)
+        gate_row.addStretch(1)
+        layout.addLayout(gate_row)
         layout.addStretch(1)
 
     def initializePage(self):
@@ -85,10 +106,13 @@ class TemplatePage(QWizardPage):
             self._load_template(path)
 
     def _load_template(self, path: str) -> bool:
-        """스키마 추출·요약 표시. 실패/필드 0개면 미완료 유지."""
+        """스키마 추출·요약 표시 + PARTIAL 게이트 계산. 실패/필드 0개면 미완료 유지."""
         wiz = self.wizard()
         self._valid = False
+        self._gate = None
         self.lbl_warn.setText("")
+        self.btn_compile.setVisible(False)
+        self.btn_ack.setVisible(False)
         try:
             schema = extract_schema(path)
         except Exception as exc:  # noqa: BLE001
@@ -99,6 +123,7 @@ class TemplatePage(QWizardPage):
 
         self.ed_path.setText(path)
         if not schema.fields:
+            # RAW(진짜 필드 0개) — 채울 대상이 없어 진행 불가(종전 동작 유지).
             self.lbl_summary.setText(
                 "이 템플릿에는 누름틀 필드가 없습니다 — 채울 대상이 없어 진행할 수 없습니다.\n"
                 "한글에서 누름틀을 삽입하거나 저작 보조(compile)로 토큰을 변환한 템플릿을 쓰세요."
@@ -113,18 +138,97 @@ class TemplatePage(QWizardPage):
         if len(names) > _SUMMARY_MAX_FIELDS:
             shown += f" 외 {len(names) - _SUMMARY_MAX_FIELDS}개"
         self.lbl_summary.setText(f"필드 {len(names)}개: {shown}")
-        if schema.stray_tokens:
-            self.lbl_warn.setText(
-                "경고(비차단): 본문에 누름틀이 아닌 {{...}} 토큰이 남아 있습니다 — "
-                + ", ".join(schema.stray_tokens)
-                + "\n이 토큰은 값이 주입되지 않습니다. 필요하면 저작 보조로 누름틀로 변환하세요."
-            )
+
+        # 컴파일 상태 게이트 — PARTIAL 이면 비차단 경고를 확정 게이트로 승격한다.
+        # (종전엔 stray 만 비차단 경고였다 — 값이 조용히 누락되는 위험을 소리 나게 세운다.)
+        try:
+            self._gate = gate_for_template(path)
+        except Exception as exc:  # noqa: BLE001 - 상태 계산 실패는 경고만(필드 요약은 유효)
+            self._gate = None
+            self.lbl_warn.setText(f"경고: 컴파일 상태를 계산할 수 없습니다: {exc}")
         self._valid = True
+        self._refresh_gate_ui()
         self.completeChanged.emit()
         return True
 
+    def _refresh_gate_ui(self) -> None:
+        """게이트 상태를 경고 라벨·액션 버튼에 반영(PARTIAL 에서만 게이트 UI 노출)."""
+        gate = self._gate
+        if gate is None or not gate.needs_gate():
+            self.lbl_warn.setText("")
+            self.btn_compile.setVisible(False)
+            self.btn_ack.setVisible(False)
+            return
+        self.lbl_warn.setText(gate.message())
+        # 인라인 컴파일은 잔존 평문(컴파일 가능)이 있을 때만 제안한다.
+        self.btn_compile.setVisible(gate.status.compilable_n > 0)
+        self.btn_ack.setVisible(not gate.is_acked())
+
+    def _compile_here(self) -> None:
+        """[여기서 컴파일] — 잔존 평문 토큰을 누름틀로 컴파일해 COMPILED 로 승격.
+
+        원본은 건드리지 않는다. 컴파일본을 원본 옆 ``<이름>.compiled.hwpx`` 로 **명시적으로**
+        저장하고 그 경로로 전환(재로딩)해 스키마·상태·게이트를 다시 계산한다.
+        """
+        path = self.ed_path.text()
+        if not path:
+            return
+        try:
+            scan_tokens(path)  # 미리보기 산출(무변형) — 무엇을 바꿀지 먼저 본다
+            pkg, report = compile_document(path)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "오류", f"컴파일 실패:\n{exc}")
+            return
+        if not report.modified:
+            QMessageBox.information(
+                self, "컴파일할 토큰 없음",
+                "누름틀로 바꿀 수 있는 평문 토큰이 없습니다(파편·필드 값 내부 잔존).\n"
+                "'채우지 않음 확인'으로 진행하세요.",
+            )
+            return
+        compiled_path = str(Path(path).with_suffix(".compiled.hwpx"))
+        try:
+            pkg.save(compiled_path)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "오류", f"컴파일본 저장 실패:\n{exc}")
+            return
+        QMessageBox.information(
+            self, "컴파일 완료",
+            f"{len(report.compiled)}개 토큰을 누름틀로 컴파일했습니다.\n"
+            f"원본은 그대로 두고 컴파일본으로 전환합니다:\n{compiled_path}",
+        )
+        # 컴파일본으로 재로딩 — 상태가 COMPILED 면 게이트가 저절로 열린다.
+        self._load_template(compiled_path)
+
+    def _ack_partial(self) -> None:
+        """[채우지 않음 확인] — 미해결 토큰을 **구체 이름으로 재진술**하고 직접 확인시킨다.
+
+        범용 확인이 아니라 이름을 못박은 확인이라야 반사적 dismiss 에 저항한다(ADR-E).
+        기본 버튼은 '취소'라 Enter/Space 로는 확인되지 않는다.
+        """
+        gate = self._gate
+        if gate is None or not gate.needs_gate():
+            return
+        names = ", ".join(gate.unmet_tokens)
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle("채우지 않음 확인")
+        box.setText(
+            f"다음 {len(gate.unmet_tokens)}개 토큰은 값이 주입되지 않습니다:\n\n{names}\n\n"
+            "이 토큰들을 채우지 않고 진행하는 것이 의도한 바가 맞습니까?"
+        )
+        proceed = box.addButton("채우지 않고 진행", QMessageBox.AcceptRole)
+        cancel = box.addButton("취소", QMessageBox.RejectRole)
+        box.setDefaultButton(cancel)  # 반사적 Enter/Space 로는 확인되지 않음(ADR-E)
+        box.exec()
+        if box.clickedButton() is proceed:
+            gate.acknowledge(gate.unmet_tokens)  # 정확히 재진술된 이름 전체를 확인
+            self._refresh_gate_ui()
+            self.completeChanged.emit()
+
     def isComplete(self) -> bool:
-        return self._valid
+        # 필드가 있고(_valid), PARTIAL 이면 ack-or-compile 로 게이트가 열려야 완료.
+        return self._valid and (self._gate is None or self._gate.can_proceed())
 
 
 class DataPage(QWizardPage):
