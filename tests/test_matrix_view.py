@@ -188,6 +188,83 @@ def test_matrix_view_partial_failure_modal_mentions_failures(qapp, tmp_path, mon
     assert "b.hwpx" in log                                 # 실패 대상 식별 가능
 
 
+def _field_template(path, fields):
+    body = "".join(
+        f'<hp:run><hp:ctrl><hp:fieldBegin name="{name}"/></hp:ctrl></hp:run>'
+        f'<hp:run><hp:t>{{{{{name}}}}}</hp:t></hp:run>'
+        '<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>'
+        for name in fields
+    )
+    xml = (
+        '<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" '
+        'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p>'
+        + body + '</hp:p></hs:sec>'
+    ).encode()
+    HwpxPackage(entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": xml}).save(str(path))
+
+
+def test_matrix_view_missing_gate_blocks_and_badges_appear(qapp, tmp_path, monkeypatch):
+    """UD-04 — 미입력 배지·확인 게이트 이식: 미확인 미입력이 일괄 생성을 막고(우회
+    소멸 해소), 배지 클릭 확인 후 워커가 기동된다."""
+    from PySide6.QtCore import QObject, Signal
+    from PySide6.QtWidgets import QPushButton
+
+    from hwpxfiller.core.mapping import FieldMapping, MappingProfile  # noqa: E402
+    from hwpxfiller.gui import matrix_view as mv
+    from hwpxfiller.gui.matrix_view import MatrixRunView
+
+    reg = JobRegistry(tmp_path / "jobs")
+    tpl = tmp_path / "t.hwpx"
+    _field_template(tpl, ["공고명", "추정가격"])
+    reg.save(Job(name="공고", template_path=str(tpl), mapping=MappingProfile(mappings=[
+        FieldMapping("공고명", ["공고명"]), FieldMapping("추정가격", ["추정가격"]),
+    ]), filename_pattern="공고-{{공고명}}"))
+    csv = tmp_path / "d.csv"
+    csv.write_text("공고명,추정가격\n전산,\n", encoding="utf-8")  # 추정가격 빈값 → 미입력
+
+    view = MatrixRunView(reg)
+    view.job_list.item(0).setCheckState(Qt.Checked)
+    view.vm.load_file(str(csv))
+    view._after_data_loaded(str(csv))
+    view.ed_out.setText(str(tmp_path / "out"))
+
+    # 미확인 미입력 → 게이트 닫힘(버튼 비활성) + 인라인 사유 재진술 + missing 배지 존재.
+    assert view.btn_generate.isEnabled() is False
+    assert "추정가격" in view.lbl_gate.text()
+    missing_chips = [w for w in view.badge_host.findChildren(QPushButton)
+                     if w.property("fb") == "missing"]
+    assert missing_chips, "미입력 배지가 렌더돼야 한다"
+
+    started = {}
+
+    class _FakeWorker(QObject):
+        progress = Signal(int, int)
+        finished = Signal(object)
+        failed = Signal(str)
+
+        def __init__(self, *a, **k):
+            super().__init__()
+            started["yes"] = True
+
+        def run(self):
+            pass
+
+    monkeypatch.setattr(mv, "MatrixGenerateWorker", _FakeWorker)
+
+    # 우회 재현: 미확인 상태에서 생성 시도 → 워커 미기동(하드스톱 유지).
+    view._on_generate()
+    assert view._thread is None and "yes" not in started
+
+    # 배지 클릭 확인 → 게이트 열림 → 생성 기동.
+    view._ack_field("공고", "추정가격")
+    assert view.btn_generate.isEnabled() is True
+    view._on_generate()
+    try:
+        assert started.get("yes") is True
+    finally:
+        view._teardown_thread()
+
+
 def test_app_controller_opens_matrix_run(qapp, tmp_path):
     from hwpxfiller.gui.app import AppController
     from hwpxfiller.gui.matrix_view import MatrixRunView

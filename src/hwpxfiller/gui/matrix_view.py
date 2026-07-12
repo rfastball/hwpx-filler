@@ -44,6 +44,7 @@ from .batch_run import (
     describe_result_error,
 )
 from .confirm import confirm_destructive
+from .flow_layout import FlowLayout
 from .matrix_state import MatrixRunViewModel
 from .record_select import RecordSelector
 from .style import BASE_QSS, mark
@@ -65,6 +66,7 @@ class MatrixRunView(QMainWindow):
         self._secret_store = secret_store
         self._nara_fetcher = nara_fetcher
         self._out_dir = ""  # 이번 생성이 겨눈 저장 폴더(시작 시점 캡처 — 완료 모달용)
+        self._marked_missing: "list[tuple[str, str]]" = []  # 이번 생성 표식 필드(UD-04)
 
         self.setWindowTitle("HWPX Filler — 여러 작업 일괄 실행")
         self.resize(780, 720)
@@ -95,6 +97,10 @@ class MatrixRunView(QMainWindow):
         jb.addLayout(sel_row)
         self.job_list = QListWidget()
         self.job_list.setObjectName("jobList")
+        # 세로 예산(UD-42): 대부분 공백인 작업 리스트가 무제한 선호높이를 고집해 표준
+        # 크기에서도 페이지 스크롤을 유발하던 것을 빌더식 캡으로 막는다(내부 대조:
+        # pipeline_builder 보조 리스트 setMaximumHeight). 내부 스크롤로 다량도 수용.
+        self.job_list.setMaximumHeight(150)
         self.job_list.itemChanged.connect(self._on_job_toggled)
         jb.addWidget(self.job_list)
         root.addWidget(job_box)
@@ -117,10 +123,33 @@ class MatrixRunView(QMainWindow):
         drow.addWidget(self.btn_nara)
         root.addLayout(drow)
 
+        # ---- 미입력 필드 확인(작업별 3상태 배지 + 강제 확인 게이트, UD-04·ADR-B/E) ----
+        # 단일 실행의 하드스톱이 매트릭스 우회로 조용히 소멸하던 결함의 봉합 — 작업별
+        # 필드 스냅샷을 배지로 노출하고, 미확인 미입력이 있으면 일괄 생성을 막는다.
+        gate_box = QGroupBox("미입력 필드 확인")
+        gbl = QVBoxLayout(gate_box)
+        lbl_gate_help = QLabel(
+            "작업별 필드 상태를 확인하세요. 미입력 필드는 직접 확인해야 일괄 생성이 가능합니다."
+        )
+        lbl_gate_help.setWordWrap(True)
+        mark(lbl_gate_help, "muted", True)
+        gbl.addWidget(lbl_gate_help)
+        self.badge_host = QWidget()
+        self.badge_flow = FlowLayout(self.badge_host, margin=0, spacing=6)
+        gbl.addWidget(self.badge_host)
+        self.lbl_gate = QLabel("")
+        self.lbl_gate.setWordWrap(True)
+        gbl.addWidget(self.lbl_gate)
+        root.addWidget(gate_box)
+
         # ---- 행 선택 ----
         root.addWidget(QLabel("생성 대상 레코드"))
         self.selector = RecordSelector()
-        root.addWidget(self.selector, 1)
+        self.selector.selectionChanged.connect(self._refresh_field_panel)
+        # 세로 예산(UD-42): 두 번째 리스트 단도 캡해 표준 크기에서 결과·로그 푸터가
+        # 접힘 아래로 밀리지 않게 한다(내부 스크롤로 다량 레코드 수용).
+        self.selector.setMaximumHeight(200)
+        root.addWidget(self.selector)
 
         # ---- 출력 폴더 ----
         orow = QGridLayout()
@@ -132,7 +161,18 @@ class MatrixRunView(QMainWindow):
         orow.addWidget(btn_out, 0, 2)
         root.addLayout(orow)
 
-        # ---- 액션 ----
+        # ---- 액션·진행·결과·로그: 고정 푸터(UD-42) ----
+        # 스크롤되는 폼(위) 밖의 고정 푸터로 둬, 표준·좁은 폭 모두에서 결과 라벨·로그가
+        # 접힘 아래로 밀리지 않고 상시 보이게 한다(무제한 리스트 예산 전가의 봉합).
+        outer = QWidget()
+        outer_l = QVBoxLayout(outer)
+        outer_l.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setWidget(central)
+        outer_l.addWidget(scroll, 1)
+
         actions = QHBoxLayout()
         self.btn_generate = QPushButton("일괄 생성")
         mark(self.btn_generate, "primary", True)
@@ -144,23 +184,20 @@ class MatrixRunView(QMainWindow):
         self.btn_cancel.clicked.connect(self._on_cancel_generate)
         actions.addWidget(self.btn_cancel)
         actions.addStretch(1)
-        root.addLayout(actions)
+        outer_l.addLayout(actions)
 
         self.progress = QProgressBar()
         self.progress.setValue(0)
-        root.addWidget(self.progress)
+        outer_l.addWidget(self.progress)
         self.lbl_result = QLabel("")
         self.lbl_result.setWordWrap(True)
-        root.addWidget(self.lbl_result)
+        outer_l.addWidget(self.lbl_result)
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
-        root.addWidget(self.log, 1)
+        self.log.setMaximumHeight(160)  # 푸터 로그도 캡 — 푸터가 폼을 압도하지 않게.
+        outer_l.addWidget(self.log)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setWidget(central)
-        self.setCentralWidget(scroll)
+        self.setCentralWidget(outer)
         self._sync_sel_label()
 
         # ---- 공용 실행 계층(RC-22) — QThread 수명주기·데이터 겨눔은 단일 실행과 공유 ----
@@ -168,8 +205,9 @@ class MatrixRunView(QMainWindow):
             self, progress=self.progress, lbl_result=self.lbl_result,
             btn_generate=self.btn_generate, btn_cancel=self.btn_cancel,
             say=self._say,
-            # 매트릭스엔 인라인 게이트가 없다 — teardown 후 생성 버튼 단순 재활성.
-            on_idle=lambda: self.btn_generate.setEnabled(True),
+            # UD-04: 이제 매트릭스에도 미입력 확인 게이트가 있다 — teardown 후 버튼을
+            # 무조건 재활성하지 않고 게이트 결정을 재적용한다(미확인 미입력이 남으면 잠금).
+            on_idle=self._sync_generate_enabled,
             on_result=self._render_finished,
         )
         self._data = DataAcquireController(
@@ -181,6 +219,8 @@ class MatrixRunView(QMainWindow):
             say=self._say, set_busy=self._set_data_busy,
             secret_store=self._secret_store, nara_fetcher=self._nara_fetcher,
         )
+        # 초기 배지·게이트 렌더(빈 상태 안내) — _running 을 읽으므로 _runner 생성 뒤에 둔다.
+        self._refresh_field_panel()
 
     # ------------------------- 공용 실행 계층 위임 프로퍼티(스캐폴드·스모크 계약, RC-22)
     @property
@@ -213,6 +253,7 @@ class MatrixRunView(QMainWindow):
     def _on_job_toggled(self, item: QListWidgetItem) -> None:
         self.vm.set_job_selected(item.text(), item.checkState() == Qt.Checked)
         self._sync_sel_label()
+        self._refresh_field_panel()  # 선택 작업 변경 → 배지·게이트 재계산(UD-04)
 
     def _check_all(self, on: bool) -> None:
         self.job_list.blockSignals(True)
@@ -223,11 +264,96 @@ class MatrixRunView(QMainWindow):
             self.vm.set_job_selected(it.text(), on)
         self.job_list.blockSignals(False)
         self._sync_sel_label()
+        self._refresh_field_panel()  # 선택 작업 변경 → 배지·게이트 재계산(UD-04)
 
     def _sync_sel_label(self) -> None:
         n = self.vm.selection_count()
         self.lbl_sel.setText(f"선택 {n}개")
         mark(self.lbl_sel, "level", "ok" if n else "")
+
+    # --------------------------- 작업별 필드 3상태 배지 + 강제 확인 게이트(UD-04·ADR-B/E)
+    def _clear_badges(self) -> None:
+        while self.badge_flow.count():
+            item = self.badge_flow.takeAt(0)
+            w = item.widget() if item is not None else None
+            if w is not None:
+                # 지연 삭제 전에 즉시 숨기고 부모에서 떼어 유령 칩 잔존을 막는다(UD-32 대칭).
+                w.hide()
+                w.setParent(None)
+                w.deleteLater()
+
+    def _refresh_field_panel(self) -> None:
+        """작업별 필드 스냅샷(vm.field_summaries)을 배지로 렌더 + 확인 게이트 적용(UD-04).
+
+        단일 실행과 같은 링1 산출을 소비한다 — 위젯은 표시 결정(배지 상태·게이트
+        level/text/활성)을 **그대로** 렌더하고 재조립하지 않는다. 미확인 미입력이
+        남으면 게이트가 '버튼 비활성 + 인라인 사유'로 일괄 생성을 막는다.
+        """
+        self._clear_badges()
+        summaries = self.vm.field_summaries(self.selector.selected_indices())
+        if not summaries:
+            hint = QLabel("작업과 데이터를 선택하면 작업별 필드 채움 상태가 여기에 표시됩니다.")
+            hint.setWordWrap(True)
+            mark(hint, "muted", True)
+            self.badge_flow.addWidget(hint)
+        for js in summaries:
+            head = QLabel(f"[{js.job_name}]")
+            mark(head, "muted", True)
+            self.badge_flow.addWidget(head)
+            for st in js.field_states:
+                self.badge_flow.addWidget(self._make_chip(js.job_name, st))
+        self._apply_gate(self.vm.missing_gate(self.selector.selected_indices()))
+
+    def _make_chip(self, job_name: str, st):
+        """필드 1개의 상태 배지 — 미입력만 클릭형(확인/철회 토글), 나머지는 정적 라벨."""
+        if st.state == "filled":
+            chip = QLabel(f"✓ {st.name}")
+            mark(chip, "fb", "fill")
+        elif st.state == "blank":
+            chip = QLabel(f"◦ {st.name} (비움)")
+            mark(chip, "fb", "blank")
+        elif st.state == "drift":
+            # 구조 드리프트는 레코드별 값 문제가 아니라 매핑 재확정 대상 — validate 하드스톱
+            # 이 별도로 막는다. 여기선 비클릭 전용 정체성(점선)으로 값 문제와 시각 분리.
+            chip = QLabel(f"⚠ {st.name} — 매핑 재확정 필요")
+            mark(chip, "fb", "drift")
+            chip.setEnabled(False)
+        elif st.acknowledged:
+            chip = QPushButton(f"✓ {st.name} — 미입력 표시 예정")
+            mark(chip, "fb", "ack")
+            chip.setCursor(Qt.PointingHandCursor)
+            chip.setToolTip("다시 눌러 확인을 취소합니다(게이트가 다시 닫힙니다).")
+            chip.clicked.connect(
+                lambda _c=False, j=job_name, f=st.name: self._unack_field(j, f)
+            )
+        else:
+            chip = QPushButton(f"● {st.name} — 미입력 확인")
+            mark(chip, "fb", "missing")
+            chip.setCursor(Qt.PointingHandCursor)
+            chip.clicked.connect(
+                lambda _c=False, j=job_name, f=st.name: self._ack_field(j, f)
+            )
+        return chip
+
+    def _ack_field(self, job_name: str, field: str) -> None:
+        """미입력 배지 클릭 = 직접 확인(강제 상호작용). 다 확인되면 일괄 생성이 열린다."""
+        self.vm.acknowledge(job_name, field)
+        self._refresh_field_panel()
+
+    def _unack_field(self, job_name: str, field: str) -> None:
+        """ack 칩 재클릭 = 확인 철회(토글) — 게이트가 다시 닫힌다."""
+        self.vm.unacknowledge(job_name, field)
+        self._refresh_field_panel()
+
+    def _apply_gate(self, gate) -> None:
+        """링1 게이트 결정(GateState)을 그대로 렌더 — 판정·문구 재조립 금지."""
+        self.btn_generate.setEnabled(gate.enabled and not self._running)
+        mark(self.lbl_gate, "level", gate.level)
+        self.lbl_gate.setText(gate.text)
+
+    def _sync_generate_enabled(self) -> None:
+        """게이트만 재평가(teardown 후 버튼 복원 등) — 결정은 vm.missing_gate 단일 출처."""
+        self._apply_gate(self.vm.missing_gate(self.selector.selected_indices()))
 
     # ------------------------------------------ 데이터(겨눔 3종은 공용 계층 위임, RC-22)
     def _say(self, msg: str) -> None:
@@ -253,6 +379,7 @@ class MatrixRunView(QMainWindow):
         self.ed_data.setText(label)
         self.selector.set_records(self.vm.records, "행-{{seq}}")
         self._say(f"데이터 겨눔: {label} — {len(self.vm.records)}행")
+        self._refresh_field_panel()  # 새 데이터 → 작업별 필드 배지·게이트 재계산(UD-04)
 
     def _pick_out(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "저장 폴더 선택")
@@ -267,6 +394,22 @@ class MatrixRunView(QMainWindow):
         if errors:
             QMessageBox.warning(self, "확인", "\n".join(errors))
             return
+        # ---- 미입력 확인 게이트(UD-04·ADR-E): 단일 실행의 하드스톱이 매트릭스 우회로
+        # 조용히 소멸하지 않게 한다. 버튼은 미확인 미입력이 있으면 이미 비활성이지만
+        # (게이트 렌더), worker/API 우회에도 방어적으로 재확인해 원자 차단한다.
+        unmet = self.vm.unmet_missing(indices)
+        if unmet:
+            names = "; ".join(f"{jn}·{f}" for jn, f in unmet)
+            self._say(f"미입력 필드를 먼저 확인하세요: {names}")
+            self._refresh_field_panel()
+            return
+        # 이번 생성에서 표식이 들어갈 미입력 필드(확인 완료분) — 완료 요약이 병기한다
+        # (표식 포함 문서를 무언급으로 '성공' 집계하던 낙관 서사 해소).
+        self._marked_missing = [
+            (js.job_name, s.name)
+            for js in self.vm.field_summaries(indices)
+            for s in js.field_states if s.state == "missing"
+        ]
         # ---- 덮어쓰기 확인(RC-02): 기존 파일을 조용히 파괴하지 않는다. ----
         conflicts = self.vm.output_conflicts(indices, out_dir)
         overwrite = False
@@ -315,6 +458,10 @@ class MatrixRunView(QMainWindow):
                 f"완료 — 작업 {result.job_count}개, 문서 {result.succeeded}/{result.total} 성공 · "
                 f"실패 {result.failed}"
             )
+            if self._marked_missing:
+                # 표식 포함 문서를 무언급으로 '성공' 집계하던 낙관 서사 해소(UD-04) —
+                # 확인된 미입력이라도 표식이 들어갔음을 완료 시점에 병기한다.
+                summary += f" · 미입력 표시 {len(self._marked_missing)}필드"
             mark(self.lbl_result, "level", "ok" if result.failed == 0 else "danger")
         self.lbl_result.setText(summary)
         self._say(summary)

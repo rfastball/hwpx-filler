@@ -184,3 +184,89 @@ def test_output_conflicts_ring1_reports_existing_subfolder_targets(tmp_path):
     sentinel.write_bytes(b"user-edited")
     assert vm.output_conflicts([0], str(out)) == [str(sentinel)]
     assert sentinel.read_bytes() == b"user-edited"  # 검출은 무변형
+
+
+# --------------------------- UD-04: 작업별 필드 3상태 배지·미입력 확인 게이트(ADR-B/E)
+def _missing_job(tmp_path):
+    """공고명=채움 · 추정가격=미입력(빈값) · 비고=의도적 빈칸 인 단일 작업 VM."""
+    tpl = tmp_path / "t.hwpx"
+    _template(tpl, ["공고명", "추정가격", "비고"])
+    csv = tmp_path / "d.csv"
+    csv.write_text("공고명,추정가격\n전산장비,\n", encoding="utf-8")  # 추정가격 빈값
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="작업", template_path=str(tpl), mapping=MappingProfile(mappings=[
+        FieldMapping("공고명", ["공고명"]),
+        FieldMapping("추정가격", ["추정가격"]),
+        FieldMapping("비고", transform="blank"),
+    ]), filename_pattern="d-{{공고명}}"))
+    vm = MatrixRunViewModel(reg)
+    vm.set_job_selected("작업", True)
+    vm.load_file(str(csv))
+    return vm
+
+
+def test_field_summaries_three_states_reuse_run_layer(tmp_path):
+    """작업별 필드 스냅샷이 단일 실행과 같은 3상태(채움/빈칸/미입력)를 집계한다."""
+    vm = _missing_job(tmp_path)
+    summaries = vm.field_summaries([0])
+    assert len(summaries) == 1
+    js = summaries[0]
+    assert js.job_name == "작업"
+    states = {s.name: s.state for s in js.field_states}
+    assert states == {"공고명": "filled", "추정가격": "missing", "비고": "blank"}
+    assert (js.filled, js.blank, js.missing, js.drift) == (1, 1, 1, 0)
+    assert js.unmet() == ["추정가격"]
+
+
+def test_field_summaries_empty_without_data(tmp_path):
+    """데이터 미겨눔이면 빈 집계 — 게이트는 열림(기본 전제는 validate 가 소유)."""
+    vm = _vm(tmp_path)
+    vm.set_job_selected("공고", True)
+    assert vm.field_summaries([0]) == []
+    assert vm.unmet_missing([0]) == []
+    assert vm.missing_gate([0]).enabled is True
+
+
+def test_missing_gate_blocks_until_ack_and_toggles(tmp_path):
+    """미확인 미입력이 게이트를 닫고(재진술 문구), 확인/철회가 게이트를 여닫는다(ADR-E)."""
+    vm = _missing_job(tmp_path)
+    assert vm.unmet_missing([0]) == [("작업", "추정가격")]
+    gate = vm.missing_gate([0])
+    assert gate.enabled is False and gate.level == "warn"
+    assert "추정가격" in gate.text and "작업" in gate.text
+
+    vm.acknowledge("작업", "추정가격")
+    assert vm.unmet_missing([0]) == []
+    assert vm.missing_gate([0]).enabled is True
+
+    vm.unacknowledge("작업", "추정가격")               # 철회 → 재계상
+    assert vm.missing_gate([0]).enabled is False
+
+
+def test_ack_is_reset_on_new_data(tmp_path):
+    """새 데이터 겨눔이 확인을 초기화한다 — 스테일 ack 로 게이트가 무단 통과하지 않는다."""
+    vm = _missing_job(tmp_path)
+    vm.acknowledge("작업", "추정가격")
+    assert vm.missing_gate([0]).enabled is True
+    vm.load_file(str(tmp_path / "d.csv"))              # 재겨눔 → reset_acks
+    assert vm.missing_gate([0]).enabled is False
+
+
+def test_missing_ack_is_keyed_per_job(tmp_path):
+    """확인은 (작업, 필드) 단위 — 한 작업 확인이 다른 작업 미입력을 통과시키지 않는다."""
+    tpl = tmp_path / "t.hwpx"
+    _template(tpl, ["추정가격"])
+    csv = tmp_path / "d.csv"
+    csv.write_text("id,추정가격\n1,\n", encoding="utf-8")  # 추정가격 빈값 → 두 작업 모두 미입력
+    reg = JobRegistry(tmp_path / "jobs")
+    mp = MappingProfile(mappings=[FieldMapping("추정가격", ["추정가격"])])
+    reg.save(Job(name="공고", template_path=str(tpl), mapping=mp, filename_pattern="공고-{{seq}}"))
+    reg.save(Job(name="요청", template_path=str(tpl), mapping=mp, filename_pattern="요청-{{seq}}"))
+    vm = MatrixRunViewModel(reg)
+    vm.set_job_selected("공고", True)
+    vm.set_job_selected("요청", True)
+    vm.load_file(str(csv))
+    assert vm.unmet_missing([0]) == [("공고", "추정가격"), ("요청", "추정가격")]
+    vm.acknowledge("공고", "추정가격")                  # 공고만 확인
+    assert vm.unmet_missing([0]) == [("요청", "추정가격")]
+    assert vm.missing_gate([0]).enabled is False       # 요청 미확인 → 여전히 닫힘

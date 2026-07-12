@@ -11,6 +11,7 @@ generate_matrix` 가 작업별 하위폴더로 수행한다(교차 충돌 차단
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from ..core.dataset_pool import (
@@ -20,7 +21,52 @@ from ..core.dataset_pool import (
 )
 from ..core.job import Job, JobRegistry
 from ..core.fill_ledger import template_path_drift
-from .run_state import resolve_file_source, resolve_pool_source
+from .run_state import (
+    FieldState,
+    GateState,
+    RunViewModel,
+    resolve_file_source,
+    resolve_pool_source,
+)
+
+
+@dataclass(frozen=True)
+class JobFieldSummary:
+    """한 작업의 필드 3상태 스냅샷(UD-04) — 매트릭스 행 배지·확인 게이트의 원천.
+
+    단일 실행이 :class:`~hwpxfiller.gui.run_state.RunViewModel` 로 계산하는 필드 상태
+    (채움/의도적 빈칸/미입력/구조 드리프트)를 **작업별로** 집계한 것이다. 매트릭스가
+    이 스냅샷을 소비해 단일 실행과 같은 ADR-B 3상태 배지·ADR-E 확인 게이트를 얻는다
+    (매트릭스 우회로 게이트가 조용히 소멸하던 결함의 봉합). ``acknowledged`` 는 미입력
+    상태에만 유효하며 매트릭스 VM 의 (작업, 필드) 확인 집합을 반영한다.
+    """
+
+    job_name: str
+    field_states: "tuple[FieldState, ...]"
+
+    def _count(self, state: str) -> int:
+        return sum(1 for s in self.field_states if s.state == state)
+
+    @property
+    def filled(self) -> int:
+        return self._count("filled")
+
+    @property
+    def blank(self) -> int:
+        return self._count("blank")
+
+    @property
+    def missing(self) -> int:
+        return self._count("missing")
+
+    @property
+    def drift(self) -> int:
+        return self._count("drift")
+
+    def unmet(self) -> "list[str]":
+        """미입력이면서 아직 확인 안 된 필드 — 있으면 이 작업이 게이트를 닫는다."""
+        return [s.name for s in self.field_states
+                if s.state == "missing" and not s.acknowledged]
 
 
 class MatrixRunViewModel:
@@ -48,6 +94,9 @@ class MatrixRunViewModel:
         self.datasource = None
         self.records: "list[dict]" = []
         self._selected: "set[str]" = set()
+        # 사용자가 직접 확인한 (작업, 미입력필드) — 단일 실행의 ADR-E ack 의 매트릭스판.
+        # 작업×필드 단위라 스테일 ack 로 미입력 게이트가 무단 통과하지 않는다(UD-04).
+        self._acked: "set[tuple[str, str]]" = set()
 
     # ---------------------------------------------------------- 작업 선택
     def all_job_names(self) -> "list[str]":
@@ -79,6 +128,7 @@ class MatrixRunViewModel:
             return []
         self.datasource = source
         self.records = records
+        self.reset_acks()  # 새 데이터 → 미입력 확인 재평가(UD-04)
         return records
 
     def active_pool_names(self) -> "list[str]":
@@ -92,6 +142,7 @@ class MatrixRunViewModel:
             return []
         self.datasource = source
         self.records = records
+        self.reset_acks()  # 새 데이터 → 미입력 확인 재평가(UD-04)
         return records
 
     def load_pool_by_name(self, name: str) -> "list[dict]":
@@ -101,6 +152,7 @@ class MatrixRunViewModel:
         """애드혹 나라 취득 등 이미 만들어진 (키 없는) 소스·레코드를 직접 겨눈다."""
         self.datasource = datasource
         self.records = list(records)
+        self.reset_acks()  # 새 데이터 → 미입력 확인 재평가(UD-04)
 
     # ---------------------------------------------------------- 사전검증
     def output_conflicts(self, indices: "list[int]", out_dir: str) -> "list[str]":
@@ -147,3 +199,73 @@ class MatrixRunViewModel:
                     detail = ", ".join(fields)
                 errs.append(f"템플릿 구조 드리프트({job.name}): {detail}")
         return errs
+
+    # ---------------------------------- 필드 3상태 배지·확인 게이트(UD-04, ADR-B/E)
+    def field_summaries(self, indices: "list[int]") -> "list[JobFieldSummary]":
+        """선택 작업×겨눈 데이터의 작업별 필드 3상태 집계(배지·게이트의 원천, UD-04).
+
+        각 작업의 필드 상태는 단일 실행과 **완전히 같은** 링1 산출
+        (:meth:`~hwpxfiller.gui.run_state.RunViewModel.field_states`)을 재사용해 계산한다
+        — 매트릭스가 별도 판정 로직을 재발명하지 않는다(내부 다수 패턴 정합). 미입력
+        상태의 ``acknowledged`` 는 이 VM 의 (작업, 필드) 확인 집합에서 덮어쓴다. 데이터
+        미겨눔이면 빈 목록(위젯이 빈 상태 안내를 렌더).
+        """
+        if self.datasource is None:
+            return []
+        idx = list(indices)
+        summaries: "list[JobFieldSummary]" = []
+        for job in self.selected_jobs():
+            rvm = RunViewModel(job)
+            rvm.datasource = self.datasource
+            rvm.records = self.records
+            states: "list[FieldState]" = []
+            for s in rvm.field_states(idx):
+                if s.state == "missing":
+                    states.append(
+                        FieldState(s.name, s.state, (job.name, s.name) in self._acked)
+                    )
+                else:
+                    states.append(s)
+            summaries.append(JobFieldSummary(job.name, tuple(states)))
+        return summaries
+
+    def unmet_missing(self, indices: "list[int]") -> "list[tuple[str, str]]":
+        """전 선택 작업에서 미입력이면서 아직 확인 안 된 (작업, 필드) — 게이트가 닫힌다."""
+        return [
+            (js.job_name, name)
+            for js in self.field_summaries(indices)
+            for name in js.unmet()
+        ]
+
+    def acknowledge(self, job_name: str, field: str) -> None:
+        """미입력 배지 클릭 = 직접 확인(강제 상호작용). 다 확인되면 일괄 생성이 열린다."""
+        self._acked.add((job_name, field))
+
+    def unacknowledge(self, job_name: str, field: str) -> None:
+        """확인 철회(제자리 토글) — 게이트가 다시 닫혀 확인의 의미를 보전한다(UD-19 대칭)."""
+        self._acked.discard((job_name, field))
+
+    def reset_acks(self) -> None:
+        """확인 상태 초기화(새 데이터 겨눔 등) — 스테일 ack 로 게이트가 새지 않게 한다."""
+        self._acked.clear()
+
+    def missing_gate(self, indices: "list[int]") -> GateState:
+        """미입력 확인 게이트의 단일 표시 결정(UD-04) — 위젯은 그대로 렌더한다.
+
+        단일 실행이 우회 없이 강제하는 ADR-E 미입력 확인을 매트릭스에도 이식한다 —
+        미확인 미입력이 하나라도 있으면 '버튼 비활성 + 인라인 사유'로 막고, 사유엔
+        어느 작업의 어느 필드인지를 재진술한다(강제 상호작용). 데이터·작업·폴더 같은
+        기본 전제는 :meth:`validate` 가 계속 소유한다(중복 판정 금지) — 이 게이트는
+        미입력 확인 축만 얹는다.
+        """
+        unmet = self.unmet_missing(indices)
+        if not unmet:
+            return GateState(True, "", "")
+        by_job: "dict[str, list[str]]" = {}
+        for job_name, field in unmet:
+            by_job.setdefault(job_name, []).append(field)
+        parts = "; ".join(f"{jn}({', '.join(fs)})" for jn, fs in by_job.items())
+        return GateState(
+            False, "warn",
+            f"미입력 {len(unmet)}필드의 배지를 눌러 확인해야 일괄 생성이 가능합니다: {parts}",
+        )
