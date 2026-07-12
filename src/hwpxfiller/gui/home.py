@@ -1,7 +1,7 @@
 """홈 — 투트랙 허브 대시보드 + 라우팅(오케스트레이터).
 
 트랙 이원성([[hwpx-filler-scope]], DECISIONS §트랙 이원성): 홈은 단순 목록이 아니라 **두 트랙의
-허브 대시보드**다 — 좌: 정식 문서 생성(HWPX, Job-앵커·재사용 자산), 우: 즉시 기안(txt, 경량·
+허브 대시보드**다 — 좌: HWPX 문서 생성(Job-앵커·재사용 자산), 우: 즉시 기안(txt, 경량·
 render→copy). 상단 KPI는 **실재 데이터만**(작업 수·최근 실행·템플릿 없는 작업·기안 템플릿 수) —
 가짜 지표 없음(핸드오프 관통 경고: 없던 기능 발명 금지).
 
@@ -65,11 +65,11 @@ class _JobCard(QWidget):
         mark(lbl_run, "muted", True)
         foot.addWidget(lbl_run)
         foot.addStretch(1)
-        btn_run = QPushButton("실행")
+        btn_run = QPushButton("문서 생성")
         mark(btn_run, "primary", True)
         btn_run.setEnabled(not row.template_missing)  # 템플릿 없으면 실행 불가(홈에서 선고지)
         btn_run.clicked.connect(lambda: on_run(row.name))
-        btn_edit = QPushButton("편집")
+        btn_edit = QPushButton("작업 수정")
         btn_edit.clicked.connect(lambda: on_edit(row.name))
         btn_del = QPushButton("삭제")
         btn_del.clicked.connect(lambda: on_delete(row.name))
@@ -96,7 +96,7 @@ class _TxtCard(QWidget):
         box.addWidget(lbl_fields)
         root.addLayout(box)
         root.addStretch(1)
-        btn_open = QPushButton("기안 열기 →")
+        btn_open = QPushButton("기안 작성")
         mark(btn_open, "primary", True)
         btn_open.clicked.connect(lambda: on_open(row.name))
         root.addWidget(btn_open)
@@ -135,7 +135,7 @@ class JobListHome(QMainWindow):
         header = QHBoxLayout()
         title = QLabel("대시보드")
         mark(title, "heading", True)
-        sub = QLabel("개인 작업 자산 · ~/.hwpxfiller")
+        sub = QLabel("내 작업 보관함")
         mark(sub, "muted", True)
         header.addWidget(title)
         header.addStretch(1)
@@ -152,10 +152,10 @@ class JobListHome(QMainWindow):
         tracks.setSpacing(14)
 
         # 좌: HWPX
-        hwpx = self._panel("정식 문서 생성 · HWPX")
+        hwpx = self._panel("HWPX 문서 생성")
         hp = hwpx.layout()
         hhead = QHBoxLayout()
-        self.btn_new = QPushButton("＋ 새 작업")
+        self.btn_new = QPushButton("＋ 새 문서 작업")
         mark(self.btn_new, "primary", True)
         self.btn_new.clicked.connect(self.new_job_requested)
         hhead.addWidget(QLabel("누름틀 템플릿 + 매핑 → .hwpx 생성"))
@@ -175,13 +175,13 @@ class JobListHome(QMainWindow):
         tracks.addWidget(hwpx, 3)
 
         # 우: txt
-        txt = self._panel("즉시 기안 · txt")
+        txt = self._panel("간단 기안 작성")
         tp = txt.layout()
         thead = QHBoxLayout()
         self.btn_new_txt = QPushButton("＋ 새 기안")
         mark(self.btn_new_txt, "primary", True)
         self.btn_new_txt.clicked.connect(self.new_txt_requested)
-        thead.addWidget(QLabel("평문 {{필드}} → 실시간 → 복사"))
+        thead.addWidget(QLabel("기안 템플릿으로 문안 미리보기"))
         thead.addStretch(1)
         thead.addWidget(self.btn_new_txt)
         tp.addLayout(thead)
@@ -190,7 +190,7 @@ class JobListHome(QMainWindow):
         self.txt_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.txt_list.itemDoubleClicked.connect(self._emit_txt_for_item)
         tp.addWidget(self.txt_list, 1)
-        self.lbl_route = QLabel("템플릿 루트 ~/.hwpxfiller/text_templates/")
+        self.lbl_route = QLabel("기안 템플릿 보관함")
         mark(self.lbl_route, "muted", True)
         tp.addWidget(self.lbl_route)
         tracks.addWidget(txt, 2)

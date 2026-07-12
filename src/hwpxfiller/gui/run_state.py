@@ -19,7 +19,7 @@ from ..data import source_for_path
 
 @dataclass
 class PreflightResult:
-    """사전검증 표시용 — 빠진 소스키(치명)·빈 출력값(경고)."""
+    """사전검증 표시용 — 데이터에 없는 항목(치명)·빈 출력값(경고)."""
 
     missing_columns: "list[str]" = field(default_factory=list)
     empty_valued: "list[str]" = field(default_factory=list)
@@ -27,13 +27,13 @@ class PreflightResult:
     text: str = ""
 
     def issues(self) -> "list[str]":
-        """로그용 이슈 목록(소스 누락 + 빈값, 문서순 중복제거)."""
+        """로그용 이슈 목록(데이터 항목 누락 + 빈값, 문서순 중복제거)."""
         return list(dict.fromkeys(list(self.missing_columns) + list(self.empty_valued)))
 
 
 @dataclass
 class PrevNote:
-    """누적 모드 이전 출력 정합 고지(비차단)."""
+    """기존 문서 이어채우기 정합 고지(비차단)."""
 
     text: str
     level: str  # ""/"warn"/"danger"
@@ -63,7 +63,7 @@ class RunViewModel:
         self.job = job
         self.datasource = None                 # DataSource 포트(팩토리가 생성)
         self.records: "list[dict]" = []
-        # 누적치환: 이전 출력이 **템플릿 자리**에 온다(데이터 소스 아님 — 이음새 무관).
+        # 이어채우기: 기존 문서가 **템플릿 자리**에 온다(데이터 소스 아님 — 이음새 무관).
         self.template_override: "str | None" = None
         self.target_mode = "new"               # "new" | "continue"
         self._acked: "set[str]" = set()        # 사용자가 직접 확인한 미입력 필드(ADR-E)
@@ -76,13 +76,13 @@ class RunViewModel:
         return self.template_override or self.job.template_path
 
     def set_target_mode(self, mode: str) -> None:
-        """신규/누적 전환. 신규 복귀 시 이전 출력 override 해제."""
+        """새 문서/기존 문서 이어채우기 전환. 새 문서 복귀 시 override 해제."""
         self.target_mode = mode
         if mode != "continue":
             self.template_override = None
 
     def set_prev_output(self, path: str) -> PrevNote:
-        """이전 출력을 겨누고 정합 고지를 계산한다(값 겹침 덮어씀을 시끄럽게 — ADR G).
+        """기존 문서를 겨누고 정합 고지를 계산한다(값 겹침 덮어씀을 시끄럽게 — ADR G).
 
         누름틀은 채운 뒤에도 재발견되므로(engine.required_fields) 교집합으로 판정.
         값 수준 '이미 채워짐' 검사는 필드 값 읽기 API 부재로 파킹.
@@ -91,7 +91,7 @@ class RunViewModel:
         try:
             doc_fields = set(HwpxEngine().required_fields(path))
         except Exception as exc:  # noqa: BLE001
-            return PrevNote(f"이전 출력을 읽을 수 없습니다: {exc}", "danger")
+            return PrevNote(f"기존 문서를 읽을 수 없습니다: {exc}", "danger")
         ours = set(self.job.template_fields())
         inter = doc_fields & ours
         if not inter:
@@ -120,7 +120,7 @@ class RunViewModel:
         return RunRequest(self.job, self.datasource, list(indices))
 
     def preflight(self, indices: "list[int]") -> PreflightResult:
-        """빠진 소스키(치명)·매핑 출력의 빈값(경고)을 판정만 한다(재확정 아님)."""
+        """데이터에 없는 항목(치명)·매핑 출력의 빈값(경고)을 판정만 한다(재확정 아님)."""
         if self.datasource is None:
             return PreflightResult()
         req = self.request(indices)
@@ -128,7 +128,7 @@ class RunViewModel:
         out = req.output_report()
         parts: "list[str]" = []
         if src.missing_columns:
-            parts.append("[치명] 데이터에 없는 소스키(빈칸 생성됨): " + ", ".join(src.missing_columns))
+            parts.append("[치명] 데이터에 없는 항목입니다(빈칸 생성됨): " + ", ".join(src.missing_columns))
         if out.empty_valued:
             parts.append("[경고] 값이 비어 있는 필드: " + ", ".join(out.empty_valued))
         if src.missing_columns:
@@ -180,7 +180,7 @@ class RunViewModel:
         return states
 
     def acknowledge(self, field: str) -> None:
-        """미입력 필드를 사용자가 직접 확인함(강제 상호작용 — 반사적 dismiss 봉쇄)."""
+        """미입력 필드를 사용자가 직접 확인함(강제 상호작용)."""
         self._acked.add(field)
 
     def reset_acks(self) -> None:
@@ -201,7 +201,7 @@ class RunViewModel:
         if self.datasource is None:
             return [GateError("먼저 데이터를 선택하세요.", "warn")]
         if self.target_mode == "continue" and not self.template_override:
-            return [GateError("이어채울 이전 출력(.hwpx)을 선택하세요.", "warn")]
+            return [GateError("이어채울 기존 문서(.hwpx)를 선택하세요.", "warn")]
         template = self.effective_template()
         if template and not Path(template).exists():
             return [GateError(f"템플릿을 찾을 수 없습니다:\n{template}", "danger")]
@@ -212,7 +212,7 @@ class RunViewModel:
         if self.template_override and len(indices) != 1:
             # 누적 v1 = 단건. 배치 누적(이전출력↔레코드 파일키 매칭)은 별개 설계 — 파킹.
             return [GateError(
-                "이전 출력 이어채우기는 레코드 1건만 지원합니다 — 문서 1개에 여러 "
+                "기존 문서 이어채우기는 레코드 1건만 지원합니다 — 문서 1개에 여러 "
                 "레코드를 겹쳐 쓸 수 없습니다. 레코드를 1건만 선택하세요.", "warn")]
         return []
 

@@ -59,7 +59,7 @@ class RunView(QMainWindow):
         self.vm = RunViewModel(job)            # 실행 결정(Qt 비의존)
         self._running = False
         self._thread: "QThread | None" = None
-        self._marked_fields: "list[str]" = []  # 이번 생성에서 표식 주입된 필드(결과 요약용)
+        self._marked_fields: "list[str]" = []  # 이번 생성에서 미입력 표시가 들어간 필드(결과 요약용)
 
         self.setWindowTitle(f"HWPX Filler — 실행: {job.name}")
         self.resize(760, 680)
@@ -81,14 +81,14 @@ class RunView(QMainWindow):
         tb = QVBoxLayout(target_box)
         self.rb_new = QRadioButton(f"새 문서 생성 — 작업 템플릿({Path(job.template_path).name})")
         self.rb_new.setChecked(True)
-        self.rb_cont = QRadioButton("이전 출력 이어채우기 — 이전 단계 출력(.hwpx)에 이 단계 값을 채웁니다")
+        self.rb_cont = QRadioButton("기존 문서 이어채우기 — 선택한 .hwpx 문서에 이 단계 값을 채웁니다")
         self.rb_new.toggled.connect(self._on_target_mode)
         tb.addWidget(self.rb_new)
         tb.addWidget(self.rb_cont)
         prow = QHBoxLayout()
         self.ed_prev = QLineEdit()
         self.ed_prev.setReadOnly(True)
-        self.btn_prev = QPushButton("이전 출력 선택…")
+        self.btn_prev = QPushButton("기존 문서 선택…")
         self.btn_prev.clicked.connect(self._pick_prev)
         prow.addSpacing(20)
         prow.addWidget(self.ed_prev, 1)
@@ -100,7 +100,7 @@ class RunView(QMainWindow):
         root.addWidget(target_box)
         self._on_target_mode()  # 초기 상태(신규) 반영
 
-        # ---- 데이터 겨눔(이음새) ----
+        # ---- 데이터 겨눔 ----
         drow = QHBoxLayout()
         self.ed_data = QLineEdit()
         self.ed_data.setReadOnly(True)
@@ -117,11 +117,10 @@ class RunView(QMainWindow):
         root.addWidget(self.lbl_preflight)
 
         # ---- 빈칸 표면화(상시 인라인 + 강제 확인 게이트, ADR-E) ----
-        gate_box = QGroupBox("빈칸 표면화 · 상시 인라인")
+        gate_box = QGroupBox("미입력 필드 확인")
         gbl = QVBoxLayout(gate_box)
         lbl_gate_help = QLabel(
-            "필드 상태를 상시 배지로 노출합니다. 미입력 필드는 반사적 dismiss 를 막기 위해 "
-            "직접 클릭해 확인해야 생성이 열립니다(차단 모달 대체)."
+            "필드 상태를 확인하세요. 미입력 필드는 직접 확인해야 문서를 생성할 수 있습니다."
         )
         lbl_gate_help.setWordWrap(True)
         mark(lbl_gate_help, "muted", True)
@@ -154,7 +153,7 @@ class RunView(QMainWindow):
 
         # ---- 액션 ----
         actions = QHBoxLayout()
-        self.btn_generate = QPushButton("생성")
+        self.btn_generate = QPushButton("문서 생성")
         mark(self.btn_generate, "primary", True)
         self.btn_generate.clicked.connect(self._on_generate)
         actions.addWidget(self.btn_generate)
@@ -229,7 +228,7 @@ class RunView(QMainWindow):
 
     def _pick_prev(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "이전 출력 선택", "", "HWPX (*.hwpx)"
+            self, "기존 문서 선택", "", "HWPX (*.hwpx)"
         )
         if not path:
             return
@@ -264,12 +263,12 @@ class RunView(QMainWindow):
         self._refresh_field_panel()
 
     def _run_preflight(self) -> None:
-        """사전검증 — 치명(데이터에 없는 소스키)만 라벨에. 빈칸은 아래 인라인 패널이 맡는다."""
+        """사전검증 — 치명(데이터에 없는 항목)만 라벨에. 빈칸은 아래 인라인 패널이 맡는다."""
         pf = self.vm.preflight(self.selector.selected_indices())
         if pf.missing_columns:
             mark(self.lbl_preflight, "level", "danger")
             self.lbl_preflight.setText(
-                "[치명] 데이터에 없는 소스키(빈칸 생성됨): " + ", ".join(pf.missing_columns)
+                "[치명] 데이터에 없는 항목입니다(빈칸 생성됨): " + ", ".join(pf.missing_columns)
             )
         elif self.vm.datasource is None:
             mark(self.lbl_preflight, "level", "")
@@ -295,14 +294,14 @@ class RunView(QMainWindow):
                 chip = QLabel(f"✓ {st.name}")
                 mark(chip, "fb", "fill")
             elif st.state == "blank":
-                chip = QLabel(f"◦ {st.name} (매핑 비움)")
+                chip = QLabel(f"◦ {st.name} (채우지 않음)")
                 mark(chip, "fb", "blank")
             elif st.acknowledged:
-                chip = QPushButton(f"✓ {st.name} — 표식 넣고 생성")
+                chip = QPushButton(f"✓ {st.name} — 미입력 표시 예정")
                 mark(chip, "fb", "ack")
                 chip.setEnabled(False)
             else:
-                chip = QPushButton(f"● {st.name} — 클릭해 확인")
+                chip = QPushButton(f"● {st.name} — 미입력 확인")
                 mark(chip, "fb", "missing")
                 chip.setCursor(Qt.PointingHandCursor)
                 chip.clicked.connect(lambda _checked=False, f=st.name: self._ack_field(f))
@@ -324,7 +323,7 @@ class RunView(QMainWindow):
         if unmet:
             mark(self.lbl_gate, "level", "warn")
             self.lbl_gate.setText(
-                f"미입력 {len(unmet)}필드를 클릭해 확인해야 생성이 열립니다: {', '.join(unmet)}"
+                f"미입력 {len(unmet)}필드를 확인해야 문서 생성이 가능합니다: {', '.join(unmet)}"
             )
         else:
             mark(self.lbl_gate, "level", "")
@@ -354,14 +353,14 @@ class RunView(QMainWindow):
         # (의도적 공란은 매핑이 키를 제외해 이미 조용한 경로가 있다).
         unmet = self.vm.unmet_blanks(indices)
         if unmet:
-            self._say("미입력 필드를 먼저 클릭해 확인하세요: " + ", ".join(unmet))
+            self._say("미입력 필드를 먼저 확인하세요: " + ", ".join(unmet))
             self._refresh_field_panel()
             return
         blanks = self.vm.blank_fields(indices)
         self._marked_fields = list(blanks)
         if blanks:
             mapped = self.vm.mapped_records(indices, mark_missing=MISSING_MARKER)
-            self._say("미입력 표식 주입: " + ", ".join(blanks))
+            self._say("미입력 표시 적용: " + ", ".join(blanks))
         else:
             mapped = self.vm.mapped_records(indices)
 
@@ -371,7 +370,7 @@ class RunView(QMainWindow):
         self.lbl_result.setText("")
         self.progress.setMaximum(len(mapped))
         self.progress.setValue(0)
-        mode = "누적(이전 출력 이어채우기)" if self._template_override else "신규"
+        mode = "기존 문서 이어채우기" if self._template_override else "새 문서"
         self._say(f"생성 시작[{mode}]: {len(mapped)}건 → {out_dir}")
 
         self._thread = QThread()
@@ -390,7 +389,7 @@ class RunView(QMainWindow):
         summary = f"완료 — 성공 {batch.succeeded}/{batch.total} · 실패 {batch.failed}"
         marked = getattr(self, "_marked_fields", [])
         if marked:
-            summary += f" · 미입력 표식 {len(marked)}필드({', '.join(marked)})"
+            summary += f" · 미입력 표시 {len(marked)}필드({', '.join(marked)})"
         mark(self.lbl_result, "level", "ok" if batch.failed == 0 else "danger")
         self.lbl_result.setText(summary)
         self._say(f"완료: {batch.succeeded}/{batch.total} 성공, {batch.failed} 실패")

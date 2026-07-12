@@ -3,7 +3,7 @@
 레이어링: 결정·렌더는 :class:`~hwpxfiller.gui.txt_state.TxtDraftViewModel`(Qt 비의존, 링1)이
 소유하고, 이 위젯은 QComboBox·QFileDialog·클립보드·표현만 담당한다. **실시간 view 가 진실**
 (ADR C 트랙 분기): 템플릿/레코드가 바뀔 때마다 다시 렌더하고, 누락 토큰은 ``{{}}`` 를 빨강으로
-남긴다(조용히 안 지움 — ADR E). 클립보드 복사가 commit.
+남긴다(조용히 안 지움 — ADR E). 클립보드 복사가 사용자의 완료 동작이다.
 """
 from __future__ import annotations
 
@@ -87,7 +87,7 @@ class TxtDraftView(QMainWindow):
         tb.addStretch(1)
         tok_box.setFixedWidth(280)
         panes.addWidget(tok_box)
-        view_box = QGroupBox("실시간 렌더 · 이 view가 진실")
+        view_box = QGroupBox("기안 미리보기")
         vb = QVBoxLayout(view_box)
         self.view = QTextEdit()
         self.view.setReadOnly(True)
@@ -97,14 +97,13 @@ class TxtDraftView(QMainWindow):
 
         # ---- 액션 ----
         foot = QHBoxLayout()
-        self.btn_copy = QPushButton("📋 복사 (commit)")
+        self.btn_copy = QPushButton("클립보드로 복사")
         mark(self.btn_copy, "primary", True)
         self.btn_copy.clicked.connect(self._copy)
-        btn_save = QPushButton("txt로 저장…")
+        btn_save = QPushButton("텍스트 파일로 저장…")
         btn_save.clicked.connect(self._save)
         self.lbl_note = QLabel(
-            "복사가 commit — 외부 권위 렌더러가 없어 실시간 view가 곧 산출물(ADR C·E). "
-            "누락 토큰은 그대로 노출."
+            "현재 미리보기 내용을 복사합니다. 미입력 토큰은 그대로 표시됩니다."
         )
         mark(self.lbl_note, "muted", True)
         self.lbl_note.setWordWrap(True)
@@ -192,7 +191,7 @@ class TxtDraftView(QMainWindow):
         text, _ = self.vm.render()
         QApplication.clipboard().setText(text)
         mark(self.lbl_note, "level", "ok")
-        self.lbl_note.setText("✓ 클립보드로 복사됨 — 붙여넣기 하세요. (복사가 commit)")
+        self.lbl_note.setText("✓ 복사 완료 — 필요한 곳에 붙여넣으세요.")
 
     def _save(self) -> None:
         text, _ = self.vm.render()

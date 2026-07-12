@@ -572,10 +572,10 @@
                   <label class="radio"><input type="radio" name="tgt" id="rNew" checked data-vm="RunViewModel.set_target_mode">
                     <span>새 문서 생성 — 작업 템플릿(공고서_양식.hwpx)</span></label>
                   <label class="radio"><input type="radio" name="tgt" id="rCont" data-vm="RunViewModel.set_target_mode">
-                    <span>이전 출력 이어채우기 — 이전 단계 출력(.hwpx)에 이 단계 값을 채웁니다</span></label>
+                    <span>기존 문서 이어채우기 — 선택한 .hwpx 문서에 이 단계 값을 채웁니다</span></label>
                   <div class="row" id="prevRow" style="margin:6px 0 0 22px;opacity:.45">
-                    <input class="field ro" id="prevPath" value="" placeholder="이전 출력(.hwpx)" readonly disabled>
-                    <button class="btn" id="prevPick" disabled data-vm="RunViewModel.set_prev_output">이전 출력 선택…</button></div>
+                    <input class="field ro" id="prevPath" value="" placeholder="기존 문서(.hwpx)" readonly disabled>
+                    <button class="btn" id="prevPick" disabled data-vm="RunViewModel.set_prev_output">기존 문서 선택…</button></div>
                   <div class="note warnbox" id="overlapNote" style="display:none" data-vm="RunViewModel.set_prev_output">
                     ⚠ 이 작업의 필드 14개 중 <b>5개</b>가 문서에 있습니다. 이미 값이 있는
                     겹침 필드는 <b>덮어씁니다</b> — 단계별 필드는 서로소로 설계하세요.</div>
@@ -916,7 +916,7 @@
     if(total===0){genLog.textContent=stamp('생성할 레코드를 최소 1건 선택하세요.');return;}
     genBtn.disabled=true;genResult.textContent='';genBar.style.width='0';
     var marked=document.querySelectorAll('.fb.missing.ack').length;
-    var mode=rCont.checked?'누적(이전 출력 이어채우기)':'신규';
+    var mode=rCont.checked?'누적(기존 문서 이어채우기)':'신규';
     genLog.textContent=stamp('생성 시작['+mode+']: '+total+'건 → C:\\양식\\Results');
     var done=0;
     var iv=setInterval(function(){

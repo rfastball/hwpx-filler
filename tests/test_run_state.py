@@ -95,9 +95,9 @@ def test_validate_generate_gate_order(tmp_path):
     assert vm.validate_generate([0], "")[0].message.startswith("저장 폴더")        # 폴더 미지정
     assert vm.validate_generate([0, 1], "out") == []                              # 신규 다건 OK
 
-    # 누적: 이전 출력 미선택 → 차단.
+    # 누적: 이어채울 기존 문서 미선택 → 차단.
     vm.set_target_mode("continue")
-    assert "이전 출력" in vm.validate_generate([0], "out")[0].message
+    assert "기존 문서" in vm.validate_generate([0], "out")[0].message
     # 누적 + 2건 선택 → 단건 게이트.
     vm.template_override = str(prev)
     errs = vm.validate_generate([0, 1], "out")

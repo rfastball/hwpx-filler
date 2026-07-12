@@ -237,9 +237,9 @@ class MappingPage(QWizardPage):
         buttons = QHBoxLayout()
         self.lbl_progress = QLabel("확정 0/0")
         mark(self.lbl_progress, "muted", True)
-        btn_load = QPushButton("프로파일 불러오기…")
+        btn_load = QPushButton("매핑 파일 불러오기…")
         btn_load.clicked.connect(self._load_profile)
-        btn_save = QPushButton("프로파일 저장…")
+        btn_save = QPushButton("매핑 파일 저장…")
         btn_save.clicked.connect(self._save_profile)
         buttons.addWidget(self.lbl_progress)
         buttons.addStretch(1)
@@ -339,22 +339,22 @@ class MappingPage(QWizardPage):
         if wiz.model is None:
             return
         path, _ = QFileDialog.getOpenFileName(
-            self, "매핑 프로파일 불러오기", "", "매핑 프로파일 (*.json)"
+            self, "매핑 파일 불러오기", "", "매핑 파일 (*.json)"
         )
         if not path:
             return
         try:
             profile = MappingProfile.load(path)
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "오류", f"프로파일 로드 실패:\n{exc}")
+            QMessageBox.critical(self, "오류", f"매핑 파일 로드 실패:\n{exc}")
             return
         applied = wiz.model.apply_profile(profile)
         self.table.refresh()
         self.completeChanged.emit()
         QMessageBox.information(
-            self, "프로파일 적용",
-            f"{applied}개 필드에 프로파일을 적용했습니다(적용 행은 확정 상태).\n"
-            "프로파일에 없는 필드는 직접 확정하세요.",
+            self, "매핑 파일 적용",
+            f"{applied}개 필드에 매핑 파일을 적용했습니다(적용 행은 확정 상태).\n"
+            "매핑 파일에 없는 필드는 직접 확정하세요.",
         )
 
     def _save_profile(self):
@@ -368,7 +368,7 @@ class MappingPage(QWizardPage):
             )
             return
         path, _ = QFileDialog.getSaveFileName(
-            self, "매핑 프로파일 저장", "mapping_profile.json", "매핑 프로파일 (*.json)"
+            self, "매핑 파일 저장", "mapping_profile.json", "매핑 파일 (*.json)"
         )
         if not path:
             return
@@ -376,7 +376,7 @@ class MappingPage(QWizardPage):
         try:
             profile.save(path)
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "오류", f"프로파일 저장 실패:\n{exc}")
+            QMessageBox.critical(self, "오류", f"매핑 파일 저장 실패:\n{exc}")
             return
         QMessageBox.information(
             self, "저장 완료", f"확정 매핑 {len(profile.mappings)}개를 저장했습니다."

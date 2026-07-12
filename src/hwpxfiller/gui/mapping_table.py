@@ -40,7 +40,7 @@ TRANSFORM_LABELS = {"join": "그대로", "datetime": "일시", "amount": "금액
     _COL_CONFIRM, _COL_FIELD, _COL_SOURCE, _COL_TRANSFORM, _COL_FORMAT, _COL_ARG,
     _COL_PREVIEW,
 ) = range(7)
-_HEADERS = ("확정", "템플릿 필드", "소스", "변환", "표시형", "구분자·상수", "미리보기")
+_HEADERS = ("확정", "템플릿 필드", "데이터 항목", "변환", "표시형", "구분자·상수", "미리보기")
 _NO_FORMAT_ITEM = "—"          # 표시형 변형이 없는 변환(그대로/상수)
 _CUSTOM_FORMAT_ITEM = "직접 입력…"  # 고급: 서식 코드 직접 입력(액션 항목)
 
@@ -54,7 +54,7 @@ _FG_DATA_EMPTY = QBrush(QColor(DATA_EMPTY_FG))
 _FG_DEFAULT = QBrush()
 
 _EMPTY_ITEM = "(비움)"
-_MULTI_ITEM = "여러 소스 선택…"
+_MULTI_ITEM = "여러 데이터 항목 선택…"
 
 # 이 미만의 제안 점수는 툴팁으로 신뢰도를 고지한다(정확 일치 1.0 은 조용히).
 _LOW_CONFIDENCE = 1.0
@@ -69,7 +69,7 @@ def _source_label(key: str, aliases: "dict[str, str]") -> str:
 
 
 def _sources_display(sources: "list[str]", aliases: "dict[str, str]") -> str:
-    """현재 소스 선택의 표시 문자열 — N→1 은 ``opengDate + opengTm`` 식으로."""
+    """현재 데이터 항목 선택의 표시 문자열 — 여러 항목은 ``opengDate + opengTm`` 식으로."""
     if not sources:
         return _EMPTY_ITEM
     if len(sources) == 1:
@@ -78,7 +78,7 @@ def _sources_display(sources: "list[str]", aliases: "dict[str, str]") -> str:
 
 
 class _SourcePickerDialog(QDialog):
-    """N→1 합성용 다중 소스 선택 다이얼로그(체크 리스트).
+    """다중 데이터 항목 선택 다이얼로그(체크 리스트).
 
     선택 순서는 리스트(소스 필드) 순서를 따른다 — 나라장터 키는 날짜가 시각보다
     앞에 오므로 datetime 합성의 기대 순서(날짜, 시각)와 일치한다.
@@ -86,10 +86,10 @@ class _SourcePickerDialog(QDialog):
 
     def __init__(self, source_fields, aliases, selected, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("소스 다중 선택 (N→1 합성)")
+        self.setWindowTitle("여러 데이터 항목 선택")
         self.resize(360, 420)
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("이 템플릿 필드에 합칠 소스를 순서대로 체크하세요."))
+        layout.addWidget(QLabel("이 템플릿 필드에 함께 사용할 데이터 항목을 순서대로 체크하세요."))
         self.list = QListWidget()
         chosen = set(selected)
         for key in source_fields:
