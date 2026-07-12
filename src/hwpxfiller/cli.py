@@ -63,16 +63,19 @@ def _fieldize_main(argv: "list[str]") -> int:
     """
     from .core.authoring import compile_document, scan_tokens
 
-    ap = argparse.ArgumentParser(prog="hwpxfiller fieldize")
+    ap = argparse.ArgumentParser(
+        prog="hwpxfiller fieldize",
+        description="누름틀 변환 — 평문 {{토큰}}을 누름틀 필드로 바꿉니다(GUI '누름틀 변환'과 동일).",
+    )
     ap.add_argument("template", help="평문 토큰이 든 HWPX 경로")
-    ap.add_argument("--out", default=None, help="컴파일 결과 저장 경로(생략 시 미리보기만)")
+    ap.add_argument("--out", default=None, help="누름틀 변환 결과 저장 경로(생략 시 미리보기만)")
     args = ap.parse_args(argv)
 
     if not args.out:
         sites = scan_tokens(args.template)
         compilable = [s for s in sites if s.compilable]
         skipped = [s for s in sites if not s.compilable]
-        print(f"[미리보기] 컴파일 가능 {len(compilable)}개 / 건너뜀 {len(skipped)}개")
+        print(f"[미리보기] 변환 가능 {len(compilable)}개 / 건너뜀 {len(skipped)}개")
         for s in compilable:
             print(f"  + {s.name}  ({s.context})")
         for s in skipped:
@@ -84,10 +87,10 @@ def _fieldize_main(argv: "list[str]") -> int:
     for s in report.skipped:
         print(f"  [건너뜀] {s.name} — {s.reason}", file=sys.stderr)
     if not report.modified:
-        print("컴파일할 토큰이 없습니다(이미 누름틀이거나 토큰 없음).")
+        print("변환할 토큰이 없습니다(이미 누름틀이거나 토큰 없음).")
         return 0
     pkg.save(args.out)
-    print(f"컴파일 완료: 필드 {len(report.compiled)}개 -> {args.out}")
+    print(f"누름틀 변환 완료: 필드 {len(report.compiled)}개 -> {args.out}")
     return 0
 
 
@@ -124,8 +127,8 @@ def _drift_main(argv: "list[str]") -> int:
     from .core.lint import diff_schema
 
     ap = argparse.ArgumentParser(prog="hwpxfiller drift")
-    ap.add_argument("old", help="이전 판본 HWPX")
-    ap.add_argument("new", help="새 판본 HWPX")
+    ap.add_argument("old", help="구판 HWPX")
+    ap.add_argument("new", help="신판 HWPX")
     args = ap.parse_args(argv)
 
     drift = diff_schema(args.old, args.new)
@@ -172,7 +175,8 @@ def _render_main(argv: "list[str]") -> int:
     ap.add_argument("template", help="텍스트 템플릿 경로(.txt 등, {{필드}} 토큰)")
     ap.add_argument("--data", required=True, help="엑셀/CSV 데이터 경로")
     ap.add_argument("--profile", default=None,
-                    help="매핑 프로파일 JSON(소스→필드 + 표시형 적용). 없으면 원본 값 치환")
+                    help="매핑 프로파일 JSON(소스→필드 + 표시형 적용). 없으면 원본 값 치환. "
+                         "GUI에서 저장한 매핑 프로파일을 그대로 씁니다")
     ap.add_argument("--record", type=int, default=1, help="렌더할 레코드 번호(1-based, 기본 1)")
     ap.add_argument("--sheet", default=None, help="엑셀 시트명(기본: 첫 시트)")
     ap.add_argument("--out", default=None, help="출력 파일 경로(생략 시 표준출력)")
@@ -274,7 +278,7 @@ def _load_records(
         print(f"[나라장터] {len(records)}건 취득 (기간 {args.bgn}~{args.end})", file=sys.stderr)
         if not args.profile:
             print("[주의] 나라장터 키는 영문 코드입니다. --profile 없이는 한글 템플릿 필드와 "
-                  "맞지 않아 대부분 빈칸으로 생성됩니다.", file=sys.stderr)
+                  "맞지 않아 대부분 빈 값으로 생성됩니다.", file=sys.stderr)
         return records
 
     # 기본: 엑셀/CSV
@@ -288,7 +292,7 @@ def _load_records(
 _SUBCOMMANDS_EPILOG = """\
 하위명령(자세한 도움말: hwpxfiller <하위명령> --help):
   schema TPL.hwpx           템플릿 스키마(필드·타입·표 영역)를 JSON 으로 추출
-  fieldize TPL.hwpx         평문 {{토큰}} → 누름틀 컴파일(--out 없으면 미리보기)
+  fieldize TPL.hwpx         평문 {{토큰}} → 누름틀 변환(--out 없으면 미리보기)
   lint TPL.hwpx             템플릿 위생 점검(--vocab 통제 어휘) — 이슈 있으면 exit 1
   drift OLD.hwpx NEW.hwpx   판본 간 필드 드리프트(추가/삭제/개명)
   render TPL.txt --data D   텍스트 템플릿 치환(온나라 기안 등)
@@ -352,14 +356,15 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
                          "키(예: 공고-{{bidNtceNo}})로 지정하세요 — 데이터에 없는 토큰은 오류")
     ap.add_argument("--sheet", default=None, help="엑셀 시트명(기본: 첫 시트)")
     ap.add_argument("--profile", default=None,
-                    help="매핑 프로파일 JSON(소스 키→템플릿 필드; 나라장터 영문키에 사실상 필수)")
+                    help="매핑 프로파일 JSON(소스 키→템플릿 필드; 나라장터 영문키에 사실상 필수). "
+                         "GUI에서 '매핑 프로파일로 저장'한 JSON을 그대로 씁니다")
     ap.add_argument("--fields", action="store_true", help="템플릿 요구 필드만 출력")
     ap.add_argument("--overwrite", action="store_true",
                     help="같은 이름의 기존 산출물 덮어쓰기 허용(옵트인). 없으면 대상 "
                          "파일이 하나라도 이미 있을 때 생성 전체를 차단하고 종료코드 1")
     ap.add_argument("--ack-empty", action="store_true",
                     help="값이 비어 있는 필드를 확인했음을 표시(옵트인) — 빈 필드에 "
-                         "미입력 표식(〘미입력·필드명〙)을 넣고 진행. 없으면 빈값 "
+                         "미입력 표식(〘미입력·필드명〙)을 넣고 진행. 없으면 빈 값 "
                          "발견 시 생성 전체를 차단하고 종료코드 1")
     ap.add_argument("--ledger", action="store_true",
                     help="생성 원장 JSON 사이드카를 out 폴더에 저장(opt-in) — "
@@ -417,7 +422,7 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
     )
     report = validate(required, records)
     if report.missing_columns:
-        print(f"[경고] 데이터에 없는 필드(빈칸 생성): {', '.join(report.missing_columns)}",
+        print(f"[경고] 데이터에 없는 필드(빈 값 생성): {', '.join(report.missing_columns)}",
               file=sys.stderr)
     marker = ""
     if report.empty_valued:

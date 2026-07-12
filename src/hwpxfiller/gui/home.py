@@ -70,7 +70,7 @@ class JobCard(QWidget):
         mark(lbl_run, "muted", True)
         foot.addWidget(lbl_run)
         foot.addStretch(1)
-        btn_run = QPushButton("문서 생성")
+        btn_run = QPushButton("실행")
         mark(btn_run, "primary", True)
         btn_run.setEnabled(not row.template_missing)  # 템플릿 없으면 실행 불가(홈에서 선고지)
         btn_run.clicked.connect(lambda: on_run(row.name))
@@ -157,7 +157,7 @@ class JobListHome(QMainWindow):
     manage_pool_requested = Signal()
     # 여러 작업 일괄 실행(J2 매트릭스).
     matrix_run_requested = Signal()
-    # 어휘 워크벤치(J3 공유 베이스 매핑 관리).
+    # 매핑 프로파일 관리(J3 — 공유 매핑 프로파일 계보). 시그널명은 코드 심볼로 유지.
     manage_vocab_requested = Signal()
     # 템플릿 관리 워크숍(C5) — 헤더 [템플릿 관리] 버튼이 방출(RC-04 소생 진입점).
     manage_templates_requested = Signal()
@@ -197,7 +197,7 @@ class JobListHome(QMainWindow):
         self.btn_templates.clicked.connect(self.manage_templates_requested)
         self.btn_pool = QPushButton("데이터 풀 관리")
         self.btn_pool.clicked.connect(self.manage_pool_requested)
-        self.btn_vocab = QPushButton("어휘 워크벤치")
+        self.btn_vocab = QPushButton("매핑 프로파일 관리")
         self.btn_vocab.clicked.connect(self.manage_vocab_requested)
         header.addWidget(self.btn_templates)
         header.addWidget(self.btn_pool)
@@ -241,7 +241,7 @@ class JobListHome(QMainWindow):
         tracks.addWidget(hwpx, 3)
 
         # 우: txt
-        txt = self._panel("간단 기안 작성")
+        txt = self._panel("즉시 기안")
         tp = txt.layout()
         thead = QHBoxLayout()
         self.btn_new_txt = QPushButton("＋ 새 기안")

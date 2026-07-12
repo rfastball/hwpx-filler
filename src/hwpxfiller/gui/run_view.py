@@ -363,7 +363,7 @@ class RunView(QMainWindow):
                 chip = QLabel(f"✓ {st.name}")
                 mark(chip, "fb", "fill")
             elif st.state == "blank":
-                chip = QLabel(f"◦ {st.name} (채우지 않음)")
+                chip = QLabel(f"◦ {st.name} (비움)")
                 mark(chip, "fb", "blank")
             elif st.state == "drift":
                 # 구조 드리프트는 레코드별 값 판단이 아니므로 ack 버튼이 될 수 없다.

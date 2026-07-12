@@ -490,7 +490,7 @@ def compile_document(pkg_or_path: object) -> "tuple[object, CompileReport]":
 def compile_to_sibling(path: str, *, overwrite: bool = False) -> "tuple[str | None, CompileReport]":
     """토큰을 컴파일해 **원본 옆** ``<이름>.compiled.hwpx`` 로 저장(원본 무변형).
 
-    저작 화면의 [여기서 컴파일] 경로가 쓰는 코어 프리미티브 — 출력 경로 파생·저장·충돌
+    저작 화면의 [여기서 누름틀 변환] 경로가 쓰는 코어 프리미티브 — 출력 경로 파생·저장·충돌
     정책을 뷰가 하드코딩하지 않는다(RC-28). 정책:
 
     - 바꿀 토큰이 없으면(``modified=False``) 아무것도 쓰지 않고 ``(None, report)``.

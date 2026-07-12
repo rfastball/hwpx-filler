@@ -52,7 +52,7 @@ class AppController:
 
         self.registry = registry
         self.home = JobListHome(registry)
-        # 공유 베이스 매핑 레지스트리(J3) — 워크벤치·에디터가 공유(어휘 1회 선언 후 재사용).
+        # 공유 매핑 프로파일 레지스트리(J3) — 관리 화면·에디터가 공유(1회 저작 후 재사용).
         self.base_registry = MappingBaseRegistry(default_mapping_bases_dir())
         self._children: "list[object]" = []  # Qt GC 방지 — 자식 창 참조 유지
 
@@ -71,7 +71,7 @@ class AppController:
         self.home.manage_pool_requested.connect(self._open_pool_manager)
         # 여러 작업 일괄 실행(J2 매트릭스).
         self.home.matrix_run_requested.connect(self._open_matrix_run)
-        # 어휘 워크벤치(J3 공유 베이스 매핑).
+        # 매핑 프로파일 관리(J3 공유 매핑 프로파일).
         self.home.manage_vocab_requested.connect(self._open_vocab_workbench)
 
     # ------------------------------------------------------------------ 라우팅
@@ -191,7 +191,7 @@ class AppController:
         wiz.show()
 
     def _open_vocab_workbench(self) -> None:
-        """어휘 워크벤치(J3)를 연다 — 베이스 편집은 위저드를 베이스 시드로 개방."""
+        """매핑 프로파일 관리 화면(J3)을 연다 — 편집은 위저드를 베이스 시드로 개방."""
         from .vocab_workbench import VocabWorkbenchPanel
 
         panel = VocabWorkbenchPanel(self.base_registry, job_registry=self.registry)

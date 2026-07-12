@@ -217,3 +217,20 @@ def test_app_opens_workbench_and_seeds_editor_from_base(qapp, tmp_path, monkeypa
     assert len(wizards) == 1
     assert wizards[0].base_mapping_name == "조달어휘"
     assert wizards[0].base_mapping.template_fields() == ["공고명", "추정가격"]
+
+
+# ------------------------------------------------------ 전역 용어 정렬(RC-26, U12)
+def test_home_label_matches_mapping_profile_window_title(qapp, tmp_path):
+    """홈의 매핑 프로파일 진입 버튼 라벨과 그 버튼이 여는 창 제목이 같은 정준 용어를 쓴다
+    (1개념 1이름: '어휘 워크벤치'/'공유 베이스 매핑' 4이름 → '매핑 프로파일')."""
+    from hwpxfiller.gui.home import JobListHome
+    from hwpxfiller.gui.vocab_workbench import VocabWorkbenchPanel
+
+    home = JobListHome(JobRegistry(tmp_path / "jobs"))
+    assert home.btn_vocab.text() == "매핑 프로파일 관리"
+
+    base_reg = MappingBaseRegistry(tmp_path / "bases")
+    panel = VocabWorkbenchPanel(base_reg)
+    # 홈 버튼 라벨과 목적지 창 제목이 정준 용어 '매핑 프로파일'을 공유(라벨↔제목 정렬).
+    assert "매핑 프로파일" in panel.windowTitle()
+    assert "어휘" not in panel.windowTitle()   # '어휘'는 lint 통제 사전 전용

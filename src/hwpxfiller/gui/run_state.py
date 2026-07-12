@@ -397,7 +397,7 @@ class RunViewModel:
         parts: "list[str]" = []
         if src.missing_columns:
             parts.append(
-                "[치명] 데이터에 없는 항목입니다(빈칸 생성됨): " + ", ".join(src.missing_columns)
+                "[치명] 데이터에 없는 항목입니다(빈 값 생성됨): " + ", ".join(src.missing_columns)
             )
         if drift.has_drift:
             # 게이트가 상세 사유를 렌더한다 — 여기선 '통과' 녹색이 남지 않게만 알린다.
@@ -413,7 +413,7 @@ class RunViewModel:
         return PreflightResult(
             list(src.missing_columns), list(out.empty_valued), level,
             "\n".join(parts) if parts
-            else "사전검증 통과 — 치명 누락 없음. 아래 빈칸 표면화를 확인하세요.",
+            else "사전검증 통과 — 치명 누락 없음. 아래 빈 값 표면화를 확인하세요.",
         )
 
     def acknowledge(self, field: str) -> None:

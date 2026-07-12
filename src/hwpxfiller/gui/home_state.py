@@ -20,7 +20,7 @@ from ..core.template_status import CompileState, compile_status
 # 카드 컴파일 상태 배지 어휘(C2 파생) — 기존 '템플릿 없음' pill 을 대체가 아니라 확장한다.
 # 이모지 접두로 한눈에 "실행 준비 vs 손봐야 함" 을 가른다.
 BADGE_MISSING = "❌ 템플릿 없음"        # 경로 있으나 파일 부재(compile_status 호출 안 함)
-BADGE_RAW = "✏ 원문·컴파일 필요"       # CompileState.RAW(진짜 필드 없음, 평문 토큰)
+BADGE_RAW = "✏ 원문·누름틀 변환 필요"   # CompileState.RAW(진짜 필드 없음, 평문 토큰)
 BADGE_READY = "✅ 실행 준비"           # COMPILED/FILLED(잔존 토큰 0)
 BADGE_ERROR = "⚠ 템플릿 오류"          # 손상 템플릿 — 조용한 ✅ 금지, 시끄럽게 알림
 BADGE_CORRUPT = "⚠ 손상됨"             # .job.json 파싱 실패 — 목록을 죽이지 않되 시끄럽게(RC-05)

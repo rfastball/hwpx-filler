@@ -123,7 +123,7 @@ def test_drift_describe_is_single_source_of_message():
     assert "템플릿 구조를 읽을 수 없음: 깨짐" in text
     assert "새로 유입된 미매핑 필드: 신규" in text
     assert "템플릿에서 소멸한 매핑 필드: 소멸" in text
-    assert "값 매핑과 공란 선언이 충돌하는 필드: 충돌" in text
+    assert "값 매핑과 비움 선언이 충돌하는 필드: 충돌" in text
     assert TemplateStructureDrift().describe() == ""  # 무드리프트 = 빈 문자열
 
 

@@ -378,7 +378,7 @@ def test_template_manager_panel_renders_badges_and_gated_actions(qapp, tmp_path)
 
     raw_labels = [b.text() for b in by_name["raw.hwpx"].findChildren(QPushButton)]
     comp_labels = [b.text() for b in by_name["comp.hwpx"].findChildren(QPushButton)]
-    assert raw_labels == ["컴파일"]
+    assert raw_labels == ["누름틀 변환"]
     assert comp_labels == ["미리보기", "작업 만들기"]
 
 

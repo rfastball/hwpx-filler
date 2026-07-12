@@ -25,6 +25,9 @@ from ..core.dataset_pool import (
 from .nara_state import NaraAcquireViewModel  # 기간 검증 단일 출처(링1→링1)
 
 # 상태 → 사람이 읽는 배지 라벨/레벨(style.py QLabel[level=...] 팔레트와 통일).
+# 경보 위계는 활성>지난(RC-26): '활성'(지금 실행에 쓰는 것)만 prominent(ok)로 세우고,
+# 보관·은퇴는 둘 다 '지난 것'이라 muted 로 둔다. 은퇴=warn(보관=muted보다 강한 경보)는
+# 위계 역전이었다 — 은퇴가 활성보다 시끄러울 이유가 없다.
 _BADGE_LABELS = {
     STATUS_ACTIVE: "활성",
     STATUS_ARCHIVED: "보관",
@@ -33,7 +36,7 @@ _BADGE_LABELS = {
 _BADGE_LEVELS = {
     STATUS_ACTIVE: "ok",
     STATUS_ARCHIVED: "muted",
-    STATUS_RETIRED: "warn",
+    STATUS_RETIRED: "muted",
 }
 _KIND_LABELS = {"excel": "엑셀/CSV", "nara": "나라장터", "pipeline": "파이프라인"}
 

@@ -73,9 +73,9 @@ def test_available_actions_per_state_exact_sets():
 
 
 def test_action_labels_are_state_contextual():
-    """같은 key='compile' 라도 RAW='컴파일' / PARTIAL='마저 컴파일' 로 문맥화된다."""
-    assert available_actions(CompileState.RAW)[0].label == "컴파일"
-    assert available_actions(CompileState.PARTIAL)[0].label == "마저 컴파일"
+    """같은 key='compile' 라도 RAW='누름틀 변환' / PARTIAL='마저 변환' 으로 문맥화된다."""
+    assert available_actions(CompileState.RAW)[0].label == "누름틀 변환"
+    assert available_actions(CompileState.PARTIAL)[0].label == "마저 변환"
 
 
 def test_error_or_none_state_offers_no_actions():

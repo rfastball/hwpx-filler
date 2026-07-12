@@ -138,7 +138,7 @@ class MappingProfile:
         return list(dict.fromkeys(self.template_fields()))
 
     def blank_fields(self) -> "list[str]":
-        """사람이 명시적으로 '채우지 않음'을 선언한 필드 집합."""
+        """사람이 명시적으로 '비움'을 선언한 필드 집합."""
         return list(dict.fromkeys(m.template_field for m in self.mappings if m.is_blank))
 
     def cover_fields(self) -> "list[str]":

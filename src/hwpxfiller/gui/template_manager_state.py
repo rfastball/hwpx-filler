@@ -41,7 +41,7 @@ _SEVERITY_KO: "dict[str, str]" = {"warning": "경고", "info": "정보", "error"
 class TemplateAction:
     """상태 게이트가 허용하는 액션 하나 — ``key`` 는 안정 식별자, ``label`` 은 버튼 문구.
 
-    ``label`` 이 상태 의존적인 경우가 있다(RAW 의 '컴파일' vs PARTIAL 의 '마저 컴파일')
+    ``label`` 이 상태 의존적인 경우가 있다(RAW 의 '누름틀 변환' vs PARTIAL 의 '마저 변환')
     — 같은 ``key``('compile')라도 문맥에 맞는 문구를 담는다.
     """
 
@@ -50,14 +50,14 @@ class TemplateAction:
 
 
 # 상태 → 허용 액션(순수 함수의 단일 출처). C5 수용기준 1이 이 표를 못박는다.
-#   RAW      → [컴파일]
-#   PARTIAL  → [마저 컴파일] [검토]
+#   RAW      → [누름틀 변환]
+#   PARTIAL  → [마저 변환] [검토]
 #   COMPILED → [미리보기] [작업 만들기]
 #   FILLED   → [미리보기]
 _STATE_ACTIONS: "dict[CompileState, tuple[TemplateAction, ...]]" = {
-    CompileState.RAW: (TemplateAction("compile", "컴파일"),),
+    CompileState.RAW: (TemplateAction("compile", "누름틀 변환"),),
     CompileState.PARTIAL: (
-        TemplateAction("compile", "마저 컴파일"),
+        TemplateAction("compile", "마저 변환"),
         TemplateAction("review", "검토"),
     ),
     CompileState.COMPILED: (

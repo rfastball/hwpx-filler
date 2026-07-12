@@ -1,8 +1,9 @@
-"""어휘 워크벤치 위젯 — 공유 베이스 매핑의 관리면(얇은 렌더러).
+"""매핑 프로파일 관리 위젯 — 재사용 매핑 프로파일(공유 베이스)의 관리면(얇은 렌더러).
 
 레이어링: 목록·참조수·삭제·이름변경은 :class:`~hwpxfiller.gui.vocab_workbench_state.
 VocabWorkbenchViewModel`(Qt 비의존)이 소유. 이 위젯은 카드로 얹고 액션을 배선하며 저작은
-위저드로 위임한다(``edit_base_requested`` → app 이 베이스 시드 위저드를 연다).
+위저드로 위임한다(``edit_base_requested`` → app 이 베이스 시드 위저드를 연다). 클래스·시그널
+이름은 코드 심볼로 유지하고, 사용자-가시 문구만 '매핑 프로파일'로 정렬한다(RC-26).
 
 **전파 경고**: 삭제/이름변경 시 참조 작업 수를 시끄럽게 고지한다(ADR J).
 """
@@ -29,7 +30,7 @@ from .vocab_workbench_state import VocabBaseRow, VocabWorkbenchViewModel
 
 
 class _BaseCard(QWidget):
-    """공유 베이스 1건 카드 — 이름 + 필드수 + 참조 배지 + [편집][이름변경][삭제]."""
+    """매핑 프로파일 1건 카드 — 이름 + 필드수 + 참조 배지 + [편집][이름변경][삭제]."""
 
     def __init__(self, row: VocabBaseRow, on_action, parent=None):
         super().__init__(parent)
@@ -65,7 +66,7 @@ class _BaseCard(QWidget):
 
 
 class VocabWorkbenchPanel(QMainWindow):
-    """공유 베이스 매핑 워크벤치. :class:`VocabWorkbenchViewModel` 을 렌더한다."""
+    """매핑 프로파일 관리 화면. :class:`VocabWorkbenchViewModel` 을 렌더한다."""
 
     edit_base_requested = Signal(str)  # 베이스 이름 → app 이 위저드를 베이스 시드로 연다
     base_changed = Signal()            # 삭제/이름변경 후 — 홈/에디터 갱신용
@@ -74,7 +75,7 @@ class VocabWorkbenchPanel(QMainWindow):
         super().__init__(parent)
         self.vm = VocabWorkbenchViewModel(base_registry, job_registry)
 
-        self.setWindowTitle("HWPX Filler — 어휘 워크벤치")
+        self.setWindowTitle("HWPX Filler — 매핑 프로파일")
         self.resize(680, 520)
         self.setStyleSheet(BASE_QSS)
         central = QWidget()
@@ -82,7 +83,7 @@ class VocabWorkbenchPanel(QMainWindow):
         root = QVBoxLayout(central)
 
         header = QHBoxLayout()
-        title = QLabel("공유 베이스 매핑")
+        title = QLabel("매핑 프로파일")
         mark(title, "heading", True)
         self.lbl_count = QLabel("")
         mark(self.lbl_count, "muted", True)
@@ -97,8 +98,8 @@ class VocabWorkbenchPanel(QMainWindow):
         root.addWidget(self.list, 1)
 
         self.lbl_empty = QLabel(
-            "저장된 공유 베이스가 없습니다 — 작업 편집기의 매핑 단계에서 매핑을 확정한 뒤 "
-            "'공유 베이스로 저장'으로 만드세요. 이후 다른 템플릿에 '공유 베이스 적용'으로 "
+            "저장된 매핑 프로파일이 없습니다 — 작업 편집기의 매핑 단계에서 매핑을 확정한 뒤 "
+            "'매핑 프로파일로 저장'으로 만드세요. 이후 다른 템플릿에 '매핑 프로파일 적용'으로 "
             "이름 교집합 투영해 재사용합니다."
         )
         self.lbl_empty.setWordWrap(True)
@@ -135,13 +136,13 @@ class VocabWorkbenchPanel(QMainWindow):
 
     def _delete(self, name: str) -> None:
         refs = self.vm.ref_names(name)
-        msg = f"공유 베이스 '{name}' 을(를) 삭제할까요?"
+        msg = f"매핑 프로파일 '{name}' 을(를) 삭제할까요?"
         if refs:
             msg += (
-                f"\n\n이 베이스를 참조하는 작업 {len(refs)}개가 있습니다"
+                f"\n\n이 매핑 프로파일을 참조하는 작업 {len(refs)}개가 있습니다"
                 f"({', '.join(refs[:5])}). 작업의 매핑 자체는 그대로지만 계보 연결이 끊깁니다."
             )
-        if not confirm_destructive(self, "베이스 삭제", msg, "삭제"):
+        if not confirm_destructive(self, "매핑 프로파일 삭제", msg, "삭제"):
             return
         self.vm.delete(name)
         self.base_changed.emit()
@@ -153,7 +154,7 @@ class VocabWorkbenchPanel(QMainWindow):
         refs = self.vm.ref_names(name)
         if refs and not confirm_destructive(
             self, "이름변경",
-            f"공유 베이스 '{name}' 을(를) '{new}' 으(로) 바꿉니다.\n"
+            f"매핑 프로파일 '{name}' 을(를) '{new}' 으(로) 바꿉니다.\n"
             f"참조 작업 {len(refs)}개의 계보도 새 이름으로 갱신됩니다"
             f"({', '.join(refs[:5])}).",
             "이름변경",

@@ -1,4 +1,4 @@
-"""어휘 워크벤치 ViewModel — Qt 비의존(링1). 공유 베이스 매핑의 관리면.
+"""매핑 프로파일 관리 ViewModel — Qt 비의존(링1). 공유 매핑 프로파일(베이스)의 관리면.
 
 위젯(:class:`~hwpxfiller.gui.vocab_workbench.VocabWorkbenchPanel`)은 이 뷰모델을 들고
 목록 렌더·삭제·이름변경만 오케스트레이션한다. 베이스 **저작**은 위저드가 담당한다

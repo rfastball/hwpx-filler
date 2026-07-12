@@ -504,3 +504,23 @@ def test_service_key_precedence(tmp_path, monkeypatch):
     # 저장소도 비었으면 None.
     args = _key_args()
     assert _resolve_service_key(ap, args, MemorySecretStore()) is None
+
+
+# ---------------------------------------------------- 전역 용어 정렬(RC-26, U12)
+def test_cli_help_uses_canonical_terms(capsys):
+    """CLI 도움말이 정준 용어를 노출한다 — --profile 재사용성('매핑 프로파일'),
+    fieldize 대응 병기('누름틀 변환'), drift 판본쌍('구판/신판')."""
+    with pytest.raises(SystemExit):
+        main(["--template", TEMPLATE, "--help"])
+    top = capsys.readouterr().out
+    assert "매핑 프로파일" in top          # GUI 산출물 재사용 명기(1개념 1이름)
+
+    with pytest.raises(SystemExit):
+        main(["fieldize", "--help"])
+    fz = capsys.readouterr().out
+    assert "누름틀 변환" in fz              # fieldize = 누름틀 변환(사용자 문구 대응)
+
+    with pytest.raises(SystemExit):
+        main(["drift", "--help"])
+    dr = capsys.readouterr().out
+    assert "구판" in dr and "신판" in dr    # 판본 쌍 정준(CLI가 GUI/HTML과 일치)

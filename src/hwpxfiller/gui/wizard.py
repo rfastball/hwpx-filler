@@ -50,7 +50,7 @@ class TemplatePage(QWizardPage):
 
     필드가 있어도 skip/파편/평문 잔존 토큰이 남은 **PARTIAL**("다 된 것 같지만 아닌")
     상태는 값이 조용히 누락되는 위험이라 그냥 통과시키지 않는다. 게이트를 열려면 사람이
-    (a) [여기서 컴파일]로 잔존 평문 토큰을 누름틀로 바꾸거나, (b) 그 토큰들을 채우지 않음을
+    (a) [여기서 누름틀 변환]으로 잔존 평문 토큰을 누름틀로 바꾸거나, (b) 그 토큰들을 비움으로
     구체 이름으로 **명시 확인**해야 한다(순수 판정은 :class:`PartialGate`, 헤드리스 테스트).
     """
 
@@ -85,9 +85,9 @@ class TemplatePage(QWizardPage):
 
         # PARTIAL 게이트 해소 액션 — 평상시 숨김, PARTIAL 일 때만 노출.
         gate_row = QHBoxLayout()
-        self.btn_compile = QPushButton("여기서 컴파일")
+        self.btn_compile = QPushButton("여기서 누름틀 변환")
         self.btn_compile.clicked.connect(self._compile_here)
-        self.btn_ack = QPushButton("채우지 않음 확인…")
+        self.btn_ack = QPushButton("비움 확인…")
         self.btn_ack.clicked.connect(self._ack_partial)
         self.btn_compile.setVisible(False)
         self.btn_ack.setVisible(False)
@@ -138,7 +138,7 @@ class TemplatePage(QWizardPage):
             # RAW(진짜 필드 0개) — 채울 대상이 없어 진행 불가(종전 동작 유지).
             self.lbl_summary.setText(
                 "이 템플릿에는 누름틀 필드가 없습니다 — 채울 대상이 없어 진행할 수 없습니다.\n"
-                "한글에서 누름틀을 삽입하거나 저작 보조(compile)로 토큰을 변환한 템플릿을 쓰세요."
+                "한글에서 누름틀을 삽입하거나 누름틀 변환(fieldize)으로 토큰을 바꾼 템플릿을 쓰세요."
             )
             self.completeChanged.emit()
             return False
@@ -160,7 +160,7 @@ class TemplatePage(QWizardPage):
             self._gate = None
             self._gate_error = True
             self.lbl_warn.setText(
-                f"진행 차단: 컴파일 상태를 계산할 수 없습니다 — {exc}\n"
+                f"진행 차단: 누름틀 변환 상태를 계산할 수 없습니다 — {exc}\n"
                 "PARTIAL 여부를 확인할 수 없어 진행할 수 없습니다. 템플릿을 다시 선택하세요."
             )
         self._valid = True
@@ -187,7 +187,7 @@ class TemplatePage(QWizardPage):
         self.btn_ack.setVisible(not gate.is_acked())
 
     def _compile_here(self) -> None:
-        """[여기서 컴파일] — 잔존 평문 토큰을 누름틀로 컴파일해 COMPILED 로 승격.
+        """[여기서 누름틀 변환] — 잔존 평문 토큰을 누름틀로 변환해 COMPILED 로 승격.
 
         원본은 건드리지 않는다. 컴파일·경로 파생·저장·충돌 정책은 코어
         :func:`~hwpxfiller.core.authoring.compile_to_sibling` 이 수행한다(뷰에 IO 정책
@@ -204,36 +204,36 @@ class TemplatePage(QWizardPage):
             # — 명시 확정 후에만 overwrite 로 재시도한다.
             if not confirm_destructive(
                 self, "덮어쓰기 확인",
-                f"컴파일본이 이미 있습니다:\n{exc}\n\n"
-                "계속하면 기존 컴파일본을 덮어씁니다.",
+                f"변환본이 이미 있습니다:\n{exc}\n\n"
+                "계속하면 기존 변환본을 덮어씁니다.",
                 "덮어쓰고 진행",
             ):
                 return
             try:
                 compiled_path, report = compile_to_sibling(path, overwrite=True)
             except Exception as exc2:  # noqa: BLE001
-                QMessageBox.critical(self, "오류", f"컴파일 실패:\n{exc2}")
+                QMessageBox.critical(self, "오류", f"누름틀 변환 실패:\n{exc2}")
                 return
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "오류", f"컴파일 실패:\n{exc}")
+            QMessageBox.critical(self, "오류", f"누름틀 변환 실패:\n{exc}")
             return
         if compiled_path is None:
             QMessageBox.information(
-                self, "컴파일할 토큰 없음",
+                self, "변환할 토큰 없음",
                 "누름틀로 바꿀 수 있는 평문 토큰이 없습니다(파편·필드 값 내부 잔존).\n"
-                "'채우지 않음 확인'으로 진행하세요.",
+                "'비움 확인'으로 진행하세요.",
             )
             return
         QMessageBox.information(
-            self, "컴파일 완료",
-            f"{len(report.compiled)}개 토큰을 누름틀로 컴파일했습니다.\n"
-            f"원본은 그대로 두고 컴파일본으로 전환합니다:\n{compiled_path}",
+            self, "누름틀 변환 완료",
+            f"{len(report.compiled)}개 토큰을 누름틀로 변환했습니다.\n"
+            f"원본은 그대로 두고 변환본으로 전환합니다:\n{compiled_path}",
         )
-        # 컴파일본으로 재로딩 — 상태가 COMPILED 면 게이트가 저절로 열린다.
+        # 변환본으로 재로딩 — 상태가 COMPILED 면 게이트가 저절로 열린다.
         self._load_template(compiled_path)
 
     def _ack_partial(self) -> None:
-        """[채우지 않음 확인] — 미해결 토큰을 **구체 이름으로 재진술**하고 직접 확인시킨다.
+        """[비움 확인] — 미해결 토큰을 **구체 이름으로 재진술**하고 직접 확인시킨다.
 
         범용 확인이 아니라 이름을 못박은 확인이라야 반사적 dismiss 에 저항한다(ADR-E).
         기본 버튼은 '취소'라 Enter/Space 로는 확인되지 않는다.
@@ -244,12 +244,12 @@ class TemplatePage(QWizardPage):
         names = ", ".join(gate.unmet_tokens)
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Warning)
-        box.setWindowTitle("채우지 않음 확인")
+        box.setWindowTitle("비움 확인")
         box.setText(
             f"다음 {len(gate.unmet_tokens)}개 토큰은 값이 주입되지 않습니다:\n\n{names}\n\n"
-            "이 토큰들을 채우지 않고 진행하는 것이 의도한 바가 맞습니까?"
+            "이 토큰들을 비우고 진행하는 것이 의도한 바가 맞습니까?"
         )
-        proceed = box.addButton("채우지 않고 진행", QMessageBox.AcceptRole)
+        proceed = box.addButton("비우고 진행", QMessageBox.AcceptRole)
         cancel = box.addButton("취소", QMessageBox.RejectRole)
         box.setDefaultButton(cancel)  # 반사적 Enter/Space 로는 확인되지 않음(ADR-E)
         box.exec()
@@ -281,7 +281,7 @@ class DataPage(QWizardPage):
         self.setTitle("2단계 — 데이터 선택 (선택)")
         self.setSubTitle(
             "선택 단계입니다 — 미리보기·자동제안용 샘플을 불러오거나 건너뛰세요. "
-            "매핑은 데이터 없이 스키마만으로 확정할 수 있고, 실제 데이터는 실행할 때 겨눕니다."
+            "매핑은 데이터 없이 스키마만으로 확정할 수 있고, 실제 데이터는 실행할 때 고릅니다."
         )
         self._valid = False
 
@@ -484,9 +484,9 @@ class MappingPage(QWizardPage):
         buttons = QHBoxLayout()
         self.lbl_progress = QLabel("확정 0/0")
         mark(self.lbl_progress, "muted", True)
-        btn_base_apply = QPushButton("공유 베이스 적용…")
+        btn_base_apply = QPushButton("매핑 프로파일 적용…")
         btn_base_apply.clicked.connect(self._apply_base)
-        btn_base_save = QPushButton("공유 베이스로 저장…")
+        btn_base_save = QPushButton("매핑 프로파일로 저장…")
         btn_base_save.clicked.connect(self._save_base)
         btn_load = QPushButton("매핑 파일 불러오기…")
         btn_load.clicked.connect(self._load_profile)
@@ -525,8 +525,8 @@ class MappingPage(QWizardPage):
                 applied = wiz.model.apply_profile(base)
                 uncovered = sum(1 for r in wiz.model.rows if not r.confirmed)
                 self.setSubTitle(
-                    f"공유 어휘에서 {applied}개 필드를 반영했습니다(확정 상태). "
-                    f"베이스가 커버하지 못한 {uncovered}개 필드는 직접 검토·확정하세요."
+                    f"매핑 프로파일에서 {applied}개 필드를 반영했습니다(확정 상태). "
+                    f"매핑 프로파일이 커버하지 못한 {uncovered}개 필드는 직접 검토·확정하세요."
                 )
             # 편집 모드: 저장된 매핑을 프리시드 — 일치 행은 과거 사람 확정의 복원이라
             # 확정 상태로 온다(apply_profile). 프로파일에 없는 행은 미확정 유지:
@@ -598,7 +598,7 @@ class MappingPage(QWizardPage):
         rec = wiz.records[self._preview_index]
         empties = wiz.model.preview_empties(rec)
         filled = sum(1 for r in wiz.model.rows if r.has_content()) - len(empties)
-        text = f"채움 {filled} · 빈값 {len(empties)}"
+        text = f"채움 {filled} · 빈 값 {len(empties)}"
         if empties:
             text += " — " + ", ".join(empties)
         self.lbl_preview_summary.setText(text)
@@ -698,11 +698,13 @@ class MappingPage(QWizardPage):
         names = reg.names()
         if not names:
             QMessageBox.information(
-                self, "공유 베이스",
-                "저장된 공유 베이스가 없습니다. 매핑을 확정한 뒤 '공유 베이스로 저장'으로 만드세요.",
+                self, "매핑 프로파일",
+                "저장된 매핑 프로파일이 없습니다. 매핑을 확정한 뒤 '매핑 프로파일로 저장'으로 만드세요.",
             )
             return
-        name, ok = QInputDialog.getItem(self, "공유 베이스 적용", "베이스:", names, 0, False)
+        name, ok = QInputDialog.getItem(
+            self, "매핑 프로파일 적용", "매핑 프로파일:", names, 0, False
+        )
         if not ok or not name:
             return
         try:
@@ -716,9 +718,9 @@ class MappingPage(QWizardPage):
         self.completeChanged.emit()
         uncovered = sum(1 for r in wiz.model.rows if not r.confirmed)
         QMessageBox.information(
-            self, "공유 베이스 적용",
+            self, "매핑 프로파일 적용",
             f"'{name}'에서 {applied}개 필드를 반영했습니다(확정 상태).\n"
-            f"베이스가 커버하지 못한 {uncovered}개 필드는 직접 확정하세요.",
+            f"매핑 프로파일이 커버하지 못한 {uncovered}개 필드는 직접 확정하세요.",
         )
 
     def _save_base(self):
@@ -733,7 +735,7 @@ class MappingPage(QWizardPage):
             )
             return
         name, ok = QInputDialog.getText(
-            self, "공유 베이스로 저장", "베이스 이름:",
+            self, "매핑 프로파일로 저장", "매핑 프로파일 이름:",
             text=getattr(wiz, "base_mapping_name", "") or "",
         )
         if not ok or not name.strip():
@@ -746,20 +748,20 @@ class MappingPage(QWizardPage):
             refs = self._referencing_jobs(name)
             if refs:
                 detail = (
-                    f"이 베이스를 참조하는 작업 {len(refs)}개가 있습니다"
+                    f"이 매핑 프로파일을 참조하는 작업 {len(refs)}개가 있습니다"
                     f"({', '.join(refs[:5])}). 덮어쓰면 그 작업들의 매핑을 다시 "
                     "검토·확정해야 할 수 있습니다."
                 )
             elif refs is None:
                 detail = (
                     "참조 작업 여부를 확인할 수 없습니다(작업 목록 조회 실패·손상) — "
-                    "이 베이스를 참조하는 작업이 있을 수 있습니다."
+                    "이 매핑 프로파일을 참조하는 작업이 있을 수 있습니다."
                 )
             else:
-                detail = "참조하는 작업은 없지만, 저장된 공유 어휘가 지금 매핑으로 교체됩니다."
+                detail = "참조하는 작업은 없지만, 저장된 매핑 프로파일이 지금 매핑으로 교체됩니다."
             if not confirm_destructive(
-                self, "베이스 덮어쓰기",
-                f"공유 베이스 '{name}' 이(가) 이미 있습니다.\n{detail}",
+                self, "매핑 프로파일 덮어쓰기",
+                f"매핑 프로파일 '{name}' 이(가) 이미 있습니다.\n{detail}",
                 "덮어쓰기",
             ):
                 return
@@ -772,5 +774,5 @@ class MappingPage(QWizardPage):
         wiz.base_mapping_name = name
         QMessageBox.information(
             self, "저장 완료",
-            f"공유 베이스 '{name}'({len(profile.mappings)}개 필드)를 저장했습니다.",
+            f"매핑 프로파일 '{name}'({len(profile.mappings)}개 필드)를 저장했습니다.",
         )

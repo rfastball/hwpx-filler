@@ -89,7 +89,7 @@ class TemplateStructureDrift:
         if self.mapping_only:
             parts.append("템플릿에서 소멸한 매핑 필드: " + ", ".join(self.mapping_only))
         if self.conflicting:
-            parts.append("값 매핑과 공란 선언이 충돌하는 필드: " + ", ".join(self.conflicting))
+            parts.append("값 매핑과 비움 선언이 충돌하는 필드: " + ", ".join(self.conflicting))
         return sep.join(parts)
 
 

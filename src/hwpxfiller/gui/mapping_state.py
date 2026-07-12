@@ -3,7 +3,7 @@
 ``suggest_mappings`` 초안과 사람의 확정 사이를 잇는 계층. **명시성 원칙**
 ([[hwpx-filler-scope]]): 자동 제안은 초안일 뿐이므로 초안이 채워져 있어도 모든 행은
 ``confirmed=False`` 로 시작하고, 사람이 행별로 확정해야 ``is_complete()`` 가 True 가
-된다 — 위저드는 이 게이트를 통과해야만 생성 스텝으로 넘어간다.
+된다 — 위저드는 이 게이트를 통과해야만 다음(저장) 단계로 넘어간다.
 
 행 편집(소스/변환/구분자/상수 변경)은 확정을 해제한다 — 확정 후 바뀐 행은
 다시 사람의 눈을 거쳐야 한다. 저장된 프로파일의 로드(``apply_profile``)만 예외로
@@ -348,11 +348,11 @@ class PartialGate:
         names = ", ".join(self.unmet_tokens)
         if self.is_acked():
             return (
-                f"확인함: 아래 {len(self.unmet_tokens)}개 토큰은 채우지 않고 진행합니다 — {names}"
+                f"확인함: 아래 {len(self.unmet_tokens)}개 토큰은 비우고 진행합니다 — {names}"
             )
         return (
             f"진행 차단: 값이 주입되지 않는 토큰 {len(self.unmet_tokens)}개가 남아 있습니다 — "
-            f"{names}. [여기서 컴파일]로 누름틀로 바꾸거나, 채우지 않음을 명시 확인하세요."
+            f"{names}. [여기서 누름틀 변환]으로 누름틀로 바꾸거나, 비움을 명시 확인하세요."
         )
 
 

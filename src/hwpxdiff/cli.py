@@ -26,8 +26,8 @@ def main(argv: "list[str] | None" = None) -> int:
     from .diff import EmptyExtractionError, diff_documents, render_html, render_summary
 
     ap = argparse.ArgumentParser(prog="hwpxdiff")
-    ap.add_argument("old", help="이전 판본 HWPX 경로")
-    ap.add_argument("new", help="새 판본 HWPX 경로")
+    ap.add_argument("old", help="구판 HWPX 경로")
+    ap.add_argument("new", help="신판 HWPX 경로")
     ap.add_argument("--html", default=None, help="HTML 리포트 저장 경로")
     args = ap.parse_args(sys.argv[1:] if argv is None else argv)
 

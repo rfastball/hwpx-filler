@@ -21,8 +21,8 @@ from ..core.template_status import CompileState
 # 상태 → 사람이 읽는 배지 라벨(단일 출처).
 BADGE_LABELS: "dict[CompileState, str]" = {
     CompileState.RAW: "원문",
-    CompileState.PARTIAL: "부분 컴파일",
-    CompileState.COMPILED: "컴파일됨",
+    CompileState.PARTIAL: "부분 변환",
+    CompileState.COMPILED: "변환됨",
     CompileState.FILLED: "채워짐",
 }
 

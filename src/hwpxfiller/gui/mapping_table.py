@@ -34,14 +34,15 @@ from .mapping_state import MappingModel
 from .style import DATA_EMPTY_FG, UNCONFIRMED_BG, UNMATCHED_BG
 
 # 변환 코드 → 한국어 라벨(콤보 표시 순서는 TRANSFORMS 그대로).
-TRANSFORM_LABELS = {"join": "그대로", "datetime": "일시", "amount": "금액", "const": "상수"}
+# join = N개 소스를 구분자로 이어붙이는 결합(라벨 '그대로'는 실제 의미와 불일치 — RC-26).
+TRANSFORM_LABELS = {"join": "결합", "datetime": "일시", "amount": "금액", "const": "상수"}
 
 (
     _COL_CONFIRM, _COL_FIELD, _COL_SOURCE, _COL_TRANSFORM, _COL_FORMAT, _COL_ARG,
     _COL_PREVIEW,
 ) = range(7)
 _HEADERS = ("확정", "템플릿 필드", "데이터 항목", "변환", "표시형", "구분자·상수", "미리보기")
-_NO_FORMAT_ITEM = "—"          # 표시형 변형이 없는 변환(그대로/상수)
+_NO_FORMAT_ITEM = "—"          # 표시형 변형이 없는 변환(결합/상수)
 _CUSTOM_FORMAT_ITEM = "직접 입력…"  # 고급: 서식 코드 직접 입력(액션 항목)
 
 # 색은 style 의 토큰 상수에서(단일 출처 gui/design_tokens.json) — 리터럴 중복 금지.

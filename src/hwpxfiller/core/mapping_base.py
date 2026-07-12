@@ -32,7 +32,7 @@ def default_mapping_bases_dir() -> Path:
 
 class MappingBaseRegistry:
     """공유 베이스 매핑 레지스트리 — 디렉터리에 베이스당 JSON 1개(:class:`~hwpxfiller.core.job.
-    JobRegistry` 미러). 어휘 워크벤치의 데이터 원천.
+    JobRegistry` 미러). 매핑 프로파일 관리 화면의 데이터 원천.
 
     위치-불가지: 생성자가 디렉터리를 받는다(테스트는 ``tmp_path``, GUI 는
     :func:`default_mapping_bases_dir`). 파일명은 베이스 이름 slug + ``.mapping.json``.
