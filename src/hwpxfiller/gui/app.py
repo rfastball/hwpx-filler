@@ -19,8 +19,12 @@ class _AppController:
     def __init__(self, registry):
         from .home import JobListHome
 
+        from ..core.mapping_base import MappingBaseRegistry, default_mapping_bases_dir
+
         self.registry = registry
         self.home = JobListHome(registry)
+        # 공유 베이스 매핑 레지스트리(J3) — 워크벤치·에디터가 공유(어휘 1회 선언 후 재사용).
+        self.base_registry = MappingBaseRegistry(default_mapping_bases_dir())
         self._children: "list[object]" = []  # Qt GC 방지 — 자식 창 참조 유지
 
         self.home.new_job_requested.connect(self._open_editor_new)
@@ -40,12 +44,15 @@ class _AppController:
         # 여러 작업 일괄 실행(J2 매트릭스).
         if hasattr(self.home, "matrix_run_requested"):
             self.home.matrix_run_requested.connect(self._open_matrix_run)
+        # 어휘 워크벤치(J3 공유 베이스 매핑).
+        if hasattr(self.home, "manage_vocab_requested"):
+            self.home.manage_vocab_requested.connect(self._open_vocab_workbench)
 
     # ------------------------------------------------------------------ 라우팅
     def _open_editor_new(self) -> None:
         from .job_editor import JobEditorWizard
 
-        wiz = JobEditorWizard(self.registry)
+        wiz = JobEditorWizard(self.registry, base_registry=self.base_registry)
         wiz.job_saved.connect(lambda _name: self.home.refresh())
         self._track(wiz)
         wiz.show()
@@ -55,7 +62,10 @@ class _AppController:
 
         # 기존 작업 프리로드: 템플릿 자동 로드 + 매핑 프리시드 + 이름/패턴 프리필.
         # 이름을 바꿔 저장하면 구명 작업은 별개로 남는다(자동 삭제는 발명 — 삭제는 사용자 몫).
-        wiz = JobEditorWizard(self.registry, initial_job=self.registry.load(name))
+        wiz = JobEditorWizard(
+            self.registry, initial_job=self.registry.load(name),
+            base_registry=self.base_registry,
+        )
         wiz.job_saved.connect(lambda _name: self.home.refresh())
         self._track(wiz)
         wiz.show()
@@ -144,8 +154,33 @@ class _AppController:
         """
         from .job_editor import JobEditorWizard
 
-        wiz = JobEditorWizard(self.registry)
+        wiz = JobEditorWizard(self.registry, base_registry=self.base_registry)
         wiz.template_path = template_path
+        wiz.job_saved.connect(lambda _name: self.home.refresh())
+        self._track(wiz)
+        wiz.show()
+
+    def _open_vocab_workbench(self) -> None:
+        """어휘 워크벤치(J3)를 연다 — 베이스 편집은 위저드를 베이스 시드로 개방."""
+        from .vocab_workbench import VocabWorkbenchPanel
+
+        panel = VocabWorkbenchPanel(self.base_registry, job_registry=self.registry)
+        panel.edit_base_requested.connect(self._open_editor_from_base)
+        panel.base_changed.connect(self.home.refresh)
+        self._track(panel)
+        panel.show()
+
+    def _open_editor_from_base(self, base_name: str) -> None:
+        """워크벤치 '편집' → 베이스를 시드한 새 위저드(템플릿 선택 후 이름 교집합 투영)."""
+        from .job_editor import JobEditorWizard
+
+        try:
+            base = self.base_registry.load(base_name)
+        except Exception:  # noqa: BLE001 - 로드 실패는 조용히 무시(패널이 최신 목록 소유)
+            return
+        wiz = JobEditorWizard(self.registry, base_registry=self.base_registry)
+        wiz.base_mapping = base
+        wiz.base_mapping_name = base_name
         wiz.job_saved.connect(lambda _name: self.home.refresh())
         self._track(wiz)
         wiz.show()

@@ -74,6 +74,10 @@ class Job:
     # 마지막 성공 실행 시각(ISO-8601, ""=미실행). 작업 자체의 사용 메타 — 실행의
     # 데이터·행을 저장하는 게 아니므로 "Job 에 데이터 미포함" 불변식과 무관.
     last_run_at: str = ""
+    # 이 작업의 매핑을 시드한 공유 베이스 이름(J3 계보, ""=베이스 무관). **순수 메타** —
+    # 엔진은 여전히 합성된 ``mapping`` 만 소비한다(run-path 무영향). 베이스 편집 시 "이 베이스를
+    # 참조하는 작업 N개" loud 경고의 근거(전파는 경고이지 자동 재투영 아님).
+    base_mapping_name: str = ""
 
     def template_fields(self) -> "list[str]":
         """이 작업이 채우는 템플릿 필드(매핑이 방출하는 집합). 실행 사전검증의 요구필드."""
@@ -96,6 +100,7 @@ class Job:
             "filename_pattern": self.filename_pattern,
             "mapping": self.mapping.to_dict(),
             "last_run_at": self.last_run_at,
+            "base_mapping_name": self.base_mapping_name,
         }
 
     @classmethod
@@ -107,6 +112,7 @@ class Job:
             filename_pattern=d.get("filename_pattern", "output-{{ID}}"),
             version=d.get("version", 1),
             last_run_at=d.get("last_run_at", ""),
+            base_mapping_name=d.get("base_mapping_name", ""),
         )
 
     def save(self, path: "str | Path") -> None:

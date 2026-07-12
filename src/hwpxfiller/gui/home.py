@@ -135,6 +135,8 @@ class JobListHome(QMainWindow):
     manage_pool_requested = Signal()
     # 여러 작업 일괄 실행(J2 매트릭스) — 마찬가지로 hasattr 가드 라우팅.
     matrix_run_requested = Signal()
+    # 어휘 워크벤치(J3 공유 베이스 매핑 관리).
+    manage_vocab_requested = Signal()
 
     def __init__(self, registry: JobRegistry, text_registry=None, parent=None,
                  pool_registry=None):
@@ -169,7 +171,10 @@ class JobListHome(QMainWindow):
         header.addStretch(1)
         self.btn_pool = QPushButton("데이터 풀 관리")
         self.btn_pool.clicked.connect(self.manage_pool_requested)
+        self.btn_vocab = QPushButton("어휘 워크벤치")
+        self.btn_vocab.clicked.connect(self.manage_vocab_requested)
         header.addWidget(self.btn_pool)
+        header.addWidget(self.btn_vocab)
         header.addWidget(sub)
         root.addLayout(header)
 

@@ -38,7 +38,8 @@ class JobEditorWizard(QWizard):
 
     job_saved = Signal(str)  # 저장된 작업 이름
 
-    def __init__(self, registry: JobRegistry, initial_job: "Job | None" = None, parent=None):
+    def __init__(self, registry: JobRegistry, initial_job: "Job | None" = None, parent=None,
+                 *, base_registry=None):
         super().__init__(parent)
         # 편집 모드: 기존 작업을 프리로드(템플릿 자동 로드·매핑 프리시드·이름/패턴 프리필).
         # 게이트는 그대로다 — 프리시드는 "과거 사람 확정"의 복원이지 자동 확정이 아니다.
@@ -62,6 +63,12 @@ class JobEditorWizard(QWizard):
         self.source_fields: "list[str]" = []
         self.records: "list[dict]" = []
         self.model = None                       # MappingModel
+        # J3 공유 베이스: 시드용 프로파일(선택) + 계보 이름(저장 Job 에 이월) + 레지스트리(주입).
+        self.base_mapping = None                # MappingProfile | None (MappingPage 시드)
+        self.base_mapping_name: str = (
+            initial_job.base_mapping_name if initial_job is not None else ""
+        )
+        self.base_registry = base_registry      # MappingBaseRegistry | None (없으면 홈 기본)
 
         self.addPage(TemplatePage())
         self.addPage(DataPage())
@@ -99,6 +106,8 @@ class JobEditorWizard(QWizard):
             filename_pattern=self._save_page.pattern() or "output-{{ID}}",
             # 편집 재저장이 사용 메타를 지우지 않게 이월.
             last_run_at=self.initial_job.last_run_at if self.initial_job else "",
+            # J3 계보: 이 작업의 매핑을 시드한 공유 베이스 이름(순수 메타, run-path 무관).
+            base_mapping_name=self.base_mapping_name,
         )
         try:
             self.registry.save(job)

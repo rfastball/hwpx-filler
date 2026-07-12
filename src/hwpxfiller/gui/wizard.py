@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QButtonGroup,
     QFileDialog,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -451,12 +452,18 @@ class MappingPage(QWizardPage):
         buttons = QHBoxLayout()
         self.lbl_progress = QLabel("확정 0/0")
         mark(self.lbl_progress, "muted", True)
+        btn_base_apply = QPushButton("공유 베이스 적용…")
+        btn_base_apply.clicked.connect(self._apply_base)
+        btn_base_save = QPushButton("공유 베이스로 저장…")
+        btn_base_save.clicked.connect(self._save_base)
         btn_load = QPushButton("매핑 파일 불러오기…")
         btn_load.clicked.connect(self._load_profile)
         btn_save = QPushButton("매핑 파일 저장…")
         btn_save.clicked.connect(self._save_profile)
         buttons.addWidget(self.lbl_progress)
         buttons.addStretch(1)
+        buttons.addWidget(btn_base_apply)
+        buttons.addWidget(btn_base_save)
         buttons.addWidget(btn_load)
         buttons.addWidget(btn_save)
         layout.addLayout(buttons)
@@ -476,9 +483,21 @@ class MappingPage(QWizardPage):
                 wiz.schema, wiz.source_fields, aliases
             )
             self._built_for = key
+            # 공유 베이스(J3): fresh 초안 위에 베이스를 **이름 교집합**으로 투영한다
+            # (apply_profile 이 이 템플릿에 없는 베이스 필드는 자동 skip). 베이스가 커버
+            # 못 한 템플릿 필드는 **미확정 유지** → is_complete 게이트가 loud 차단(ADR D).
+            base = getattr(wiz, "base_mapping", None)
+            if base is not None and base.mappings:
+                applied = wiz.model.apply_profile(base)
+                uncovered = sum(1 for r in wiz.model.rows if not r.confirmed)
+                self.setSubTitle(
+                    f"공유 어휘에서 {applied}개 필드를 반영했습니다(확정 상태). "
+                    f"베이스가 커버하지 못한 {uncovered}개 필드는 직접 검토·확정하세요."
+                )
             # 편집 모드: 저장된 매핑을 프리시드 — 일치 행은 과거 사람 확정의 복원이라
             # 확정 상태로 온다(apply_profile). 프로파일에 없는 행은 미확정 유지:
             # 의도적 공란과 새 필드를 구별할 수 없어 자동 확정은 게이트를 몰래 약화시킨다.
+            # 베이스 다음에 적용해 **인별 오버레이가 베이스를 이긴다**(변경 행만 덮음).
             job = getattr(wiz, "initial_job", None)
             if job is not None and job.mapping.mappings:
                 applied = wiz.model.apply_profile(job.mapping)
@@ -601,4 +620,99 @@ class MappingPage(QWizardPage):
             return
         QMessageBox.information(
             self, "저장 완료", f"확정 매핑 {len(profile.mappings)}개를 저장했습니다."
+        )
+
+    # -------------------------------------------------------- 공유 베이스(J3)
+    def _base_registry(self):
+        """베이스 레지스트리 — 위저드 주입 우선, 아니면 홈 기본(테스트 이음새)."""
+        reg = getattr(self.wizard(), "base_registry", None)
+        if reg is not None:
+            return reg
+        from ..core.mapping_base import MappingBaseRegistry, default_mapping_bases_dir
+
+        return MappingBaseRegistry(default_mapping_bases_dir())
+
+    def _referencing_jobs(self, base_name: str) -> "list[str]":
+        """이 베이스를 계보로 참조하는 작업 이름들(전파 경고 근거)."""
+        job_reg = getattr(self.wizard(), "registry", None)
+        if job_reg is None:
+            return []
+        try:
+            return [
+                j.name for j in job_reg.list_jobs()
+                if getattr(j, "base_mapping_name", "") == base_name
+            ]
+        except Exception:  # noqa: BLE001
+            return []
+
+    def _apply_base(self):
+        """공유 베이스를 골라 현재 모델에 **이름 교집합**으로 투영(apply_profile)."""
+        wiz = self.wizard()
+        if wiz.model is None:
+            return
+        reg = self._base_registry()
+        names = reg.names()
+        if not names:
+            QMessageBox.information(
+                self, "공유 베이스",
+                "저장된 공유 베이스가 없습니다. 매핑을 확정한 뒤 '공유 베이스로 저장'으로 만드세요.",
+            )
+            return
+        name, ok = QInputDialog.getItem(self, "공유 베이스 적용", "베이스:", names, 0, False)
+        if not ok or not name:
+            return
+        try:
+            base = reg.load(name)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "오류", f"베이스 로드 실패:\n{exc}")
+            return
+        applied = wiz.model.apply_profile(base)  # 이 템플릿에 없는 필드는 자동 skip
+        wiz.base_mapping_name = name
+        self.table.refresh()
+        self.completeChanged.emit()
+        uncovered = sum(1 for r in wiz.model.rows if not r.confirmed)
+        QMessageBox.information(
+            self, "공유 베이스 적용",
+            f"'{name}'에서 {applied}개 필드를 반영했습니다(확정 상태).\n"
+            f"베이스가 커버하지 못한 {uncovered}개 필드는 직접 확정하세요.",
+        )
+
+    def _save_base(self):
+        """현재 확정 매핑을 named 공유 베이스로 저장 — 참조 작업 있으면 전파 경고."""
+        wiz = self.wizard()
+        if wiz.model is None:
+            return
+        profile = wiz.model.to_profile()
+        if not profile.mappings:
+            QMessageBox.warning(
+                self, "확인", "저장할 확정 매핑이 없습니다. 행을 확정한 뒤 저장하세요."
+            )
+            return
+        name, ok = QInputDialog.getText(
+            self, "공유 베이스로 저장", "베이스 이름:",
+            text=getattr(wiz, "base_mapping_name", "") or "",
+        )
+        if not ok or not name.strip():
+            return
+        name = name.strip()
+        reg = self._base_registry()
+        if reg.exists(name):
+            refs = self._referencing_jobs(name)
+            if refs and QMessageBox.question(
+                self, "베이스 덮어쓰기",
+                f"'{name}' 베이스를 참조하는 작업 {len(refs)}개가 있습니다"
+                f"({', '.join(refs[:5])}). 덮어쓰면 그 작업들의 매핑을 다시 검토·확정해야 "
+                "할 수 있습니다. 계속할까요?",
+            ) != QMessageBox.Yes:
+                return
+        profile.name = name
+        try:
+            reg.save(profile)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "오류", f"베이스 저장 실패:\n{exc}")
+            return
+        wiz.base_mapping_name = name
+        QMessageBox.information(
+            self, "저장 완료",
+            f"공유 베이스 '{name}'({len(profile.mappings)}개 필드)를 저장했습니다.",
         )

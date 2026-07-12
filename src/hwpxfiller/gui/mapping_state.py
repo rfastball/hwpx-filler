@@ -123,6 +123,33 @@ class MappingModel:
             rows.append(row)
         return cls(rows=rows, source_fields=source_fields, aliases=aliases)
 
+    @classmethod
+    def from_profile(cls, profile) -> "MappingModel":
+        """저장된 프로파일(공유 베이스)에서 직접 행 모델을 구성한다 — 템플릿 없이.
+
+        각 ``FieldMapping`` → **확정** ``RowState``(과거 사람 확정의 복원, ``apply_profile`` 선례).
+        워크벤치가 베이스를 표시·재편집할 때 쓴다. ``source_fields`` 는 프로파일이 참조하는
+        소스 키 합집합(테이블 소스 피커의 후보) — 별도 소스 주입 없이도 기존 매핑을 손본다.
+        """
+        rows: "list[RowState]" = []
+        seen: "set[str]" = set()
+        source_fields: "list[str]" = []
+        for m in profile.mappings:
+            rows.append(RowState(
+                template_field=m.template_field,
+                sources=list(m.sources),
+                transform=m.transform,
+                sep=m.sep,
+                const=m.const,
+                fmt=m.fmt,
+                confirmed=True,  # 베이스는 확정본
+            ))
+            for s in m.sources:
+                if s not in seen:
+                    seen.add(s)
+                    source_fields.append(s)
+        return cls(rows=rows, source_fields=source_fields, aliases={})
+
     # ------------------------------------------------------------ 행 편집 API
     def set_sources(self, index: int, sources: "list[str]") -> None:
         row = self.rows[index]
