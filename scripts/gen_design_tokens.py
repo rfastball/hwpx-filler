@@ -24,9 +24,12 @@ ROOT = Path(__file__).resolve().parent.parent
 TOKENS = ROOT / "src" / "hwpxfiller" / "gui" / "design_tokens.json"
 STYLE = ROOT / "src" / "hwpxfiller" / "gui" / "style.py"
 MOCKUP = ROOT / "docs" / "UI_PROTOTYPE_APPB.html"
+# 앱 A(diff 리뷰어)도 같은 토큰에서 팔레트를 받는다 — diff 는 hwpxfiller 를 런타임에
+# 임포트하지 못하므로(패키징 제외) 자립 style.py 를 두되, 색은 이 JSON 이 단일 출처다.
+DIFF_STYLE = ROOT / "src" / "hwpxdiff" / "style.py"
 
 # style.py 팔레트 상수 이름 ← 토큰 경로("그룹.키").
-# badge.* 는 style 전용(집행 화면 인라인 필드 배지) — 목업은 .fb 클래스 CSS 로 같은 값을
+# badge.* 는 style 전용(실행 화면 인라인 필드 배지) — 목업은 .fb 클래스 CSS 로 같은 값을
 # 직접 렌더하므로 _MOCKUP_MAP 엔 넣지 않는다(값은 목업 .fb 톤과 일치).
 _STYLE_MAP = [
     ("PRIMARY", "color.primary"), ("PRIMARY_HOVER", "color.primary_hover"),
@@ -37,6 +40,14 @@ _STYLE_MAP = [
     ("DATA_EMPTY_FG", "state.data_empty_fg"), ("SELECT_BG", "state.select_bg"),
     ("FILL_BG", "badge.fill_bg"), ("BLANK_BG", "badge.blank_bg"),
     ("MISSING_BG", "badge.missing_bg"), ("ACK_BG", "badge.ack_bg"), ("ACK_FG", "badge.ack_fg"),
+]
+# diff 앱 자립 style.py 팔레트 상수 ← 토큰 경로(앱 A 크롬이 쓰는 부분집합).
+# 상태색·배지색은 각각 core.diff.KIND_COLORS 소유 → 여기 미포함(색 중복 금지).
+_DIFF_STYLE_MAP = [
+    ("PRIMARY", "color.primary"), ("PRIMARY_HOVER", "color.primary_hover"),
+    ("WARN", "color.warn"), ("DANGER", "color.danger"), ("OK", "color.ok"),
+    ("MUTED", "color.muted"), ("BORDER", "color.border"), ("CARD_BG", "color.card_bg"),
+    ("WINDOW_BG", "color.window_bg"), ("INK", "color.ink"), ("SELECT_BG", "state.select_bg"),
 ]
 # 목업 앱윈도 CSS 변수 이름 ← 토큰 경로(고정 팔레트; 스튜디오 셸 테마변수는 수작성 유지).
 _MOCKUP_MAP = [
@@ -63,12 +74,22 @@ def _dig(tokens: dict, path: str) -> str:
     return tokens[group][key]
 
 
-def render_style_region(tokens: dict) -> str:
-    """style.py 의 ``<gen:tokens>`` 영역 전문(마커 포함)."""
+def _render_py_region(tokens: dict, mapping: "list[tuple[str, str]]") -> str:
+    """파이썬 팔레트 상수 ``<gen:tokens>`` 영역 전문(마커 포함) — 매핑만 다르다."""
     lines = [OPEN_PY + " — scripts/gen_design_tokens.py 가 생성. 직접 편집 금지."]
-    lines += [f'{name} = "{_dig(tokens, path)}"' for name, path in _STYLE_MAP]
+    lines += [f'{name} = "{_dig(tokens, path)}"' for name, path in mapping]
     lines.append(CLOSE_PY)
     return "\n".join(lines)
+
+
+def render_style_region(tokens: dict) -> str:
+    """app B ``gui/style.py`` 의 ``<gen:tokens>`` 영역 전문."""
+    return _render_py_region(tokens, _STYLE_MAP)
+
+
+def render_diff_style_region(tokens: dict) -> str:
+    """app A ``hwpxdiff/style.py`` 의 ``<gen:tokens>`` 영역 전문(크롬 부분집합)."""
+    return _render_py_region(tokens, _DIFF_STYLE_MAP)
 
 
 def render_mockup_region(tokens: dict) -> str:
@@ -97,6 +118,7 @@ def check() -> "list[str]":
     problems: "list[str]" = []
     for path, open_m, close_m, render in (
         (STYLE, OPEN_PY, CLOSE_PY, render_style_region),
+        (DIFF_STYLE, OPEN_PY, CLOSE_PY, render_diff_style_region),
         (MOCKUP, OPEN_CSS, CLOSE_CSS, render_mockup_region),
     ):
         text = path.read_text(encoding="utf-8")  # read_text 가 CRLF→\n 정규화
@@ -112,6 +134,10 @@ def rewrite() -> None:
     tokens = load_tokens()
     STYLE.write_text(
         _splice(STYLE.read_text(encoding="utf-8"), OPEN_PY, CLOSE_PY, render_style_region(tokens)),
+        encoding="utf-8", newline="\n",
+    )
+    DIFF_STYLE.write_text(
+        _splice(DIFF_STYLE.read_text(encoding="utf-8"), OPEN_PY, CLOSE_PY, render_diff_style_region(tokens)),
         encoding="utf-8", newline="\n",
     )
     MOCKUP.write_text(
@@ -132,7 +158,7 @@ def main(argv=None) -> int:
         print("토큰 동기화 OK (style.py · 목업)")
         return 0
     rewrite()
-    print("재생성 완료: style.py · docs/UI_PROTOTYPE_APPB.html")
+    print("재생성 완료: style.py · hwpxdiff/style.py · docs/UI_PROTOTYPE_APPB.html")
     return 0
 
 

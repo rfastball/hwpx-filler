@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -57,12 +58,16 @@ from .diff import (
     WordOp,
     diff_files,
 )
+# 앱 B(hwpxfiller) 목업 디자인 문법 — 자립 사본(런타임 hwpxcore-only). 색 단일 출처는
+# design_tokens.json(generator), 배지색 단일 출처는 core.diff.KIND_COLORS.
+from .style import BASE_QSS, mark
 
 # 전문 뷰(QTextBrowser) 기본 스타일 — Qt 리치텍스트가 실제 지원하는 속성만.
+# 톤은 디자인 토큰과 정렬: 삭제=danger 계열, 삽입=ok 계열.
 _QT_VIEW_CSS = """
-body{font-family:'Malgun Gothic','맑은 고딕',sans-serif;font-size:13px;color:#1b1b1b;}
-del{background-color:#ffd9d9;color:#a61b1b;}
-ins{background-color:#c9f2d0;color:#12681f;text-decoration:none;}
+body{font-family:'Malgun Gothic','맑은 고딕',sans-serif;font-size:13px;color:#1c2126;}
+del{background-color:#fdecec;color:#c0392b;}
+ins{background-color:#e5f2ea;color:#1e8449;text-decoration:none;}
 """
 
 _RECENT_KEY = "recent_pairs"
@@ -179,16 +184,17 @@ def _render_doc_html(rows: "list[DocRow]") -> str:
     out: "list[str]" = ["<body>"]
     out.append("<table width='100%' cellspacing='0' cellpadding='6'>")
     out.append(
-        "<tr bgcolor='#dfe3e8'><td width='54'></td>"
-        "<td width='47%'><b>구판</b></td><td width='47%'><b>신판</b></td></tr>"
+        "<tr bgcolor='#eef1f4'><td width='54'></td>"
+        "<td width='47%'><font color='#4a505a'><b>구판</b></font></td>"
+        "<td width='47%'><font color='#4a505a'><b>신판</b></font></td></tr>"
     )
     prev_key = None
     for r in rows:
         key = _row_group_key(r.label)
         if key != prev_key:
             out.append(
-                f"<tr bgcolor='#eef0f3'><td colspan='3'>"
-                f"<font color='#555555' size='2'><b>{html.escape(key)}</b></font></td></tr>"
+                f"<tr bgcolor='#f6f7f9'><td colspan='3'>"
+                f"<font color='#7a7f87' size='2'><b>{html.escape(key)}</b></font></td></tr>"
             )
             prev_key = key
         anchor = f"<a name='chg-{r.seq}'></a>" if r.seq is not None else ""
@@ -201,7 +207,7 @@ def _render_doc_html(rows: "list[DocRow]") -> str:
                f"<b>{KIND_LABELS.get(r.kind, r.kind)}</b></font>")
         if r.kind == "added":
             out.append(f"<tr><td>{tag}</td><td></td>"
-                       f"<td bgcolor='#e9f7ee'>{_multiline(r.new_text)}</td></tr>")
+                       f"<td bgcolor='#e5f2ea'>{_multiline(r.new_text)}</td></tr>")
         elif r.kind == "removed":
             out.append(f"<tr><td>{tag}</td>"
                        f"<td bgcolor='#fdecec'>{_multiline(r.old_text)}</td><td></td></tr>")
@@ -231,44 +237,98 @@ class DiffReviewWindow(QMainWindow):
         self._groups: "list[_ChangeGroup]" = []
         self._settings = QSettings("hwpxdiff", "diff")  # 최근 비교(테스트에서 교체 가능)
         self.setAcceptDrops(True)  # .hwpx 드래그&드롭 투입
+        self.setStyleSheet(BASE_QSS)  # 앱 B 목업 디자인 문법(카드/입력/버튼/타일) 적용
 
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
+        root.setContentsMargins(16, 14, 16, 16)
+        root.setSpacing(12)
 
-        # ---- 판본 선택 ----
-        picks = QHBoxLayout()
+        # ---- 헤더(제목 + 부제) ----
+        header = QHBoxLayout()
+        title = QLabel("규격서 개정 비교")
+        mark(title, "heading", True)
+        sub = QLabel("HWPX 신구대비 리뷰어 · 구판 ↔ 신판")
+        mark(sub, "muted", True)
+        header.addWidget(title)
+        header.addStretch(1)
+        header.addWidget(sub)
+        root.addLayout(header)
+
+        # ---- 판본 선택(카드) ----
+        pick_card = QFrame()
+        pick_card.setProperty("card", True)
+        pc = QVBoxLayout(pick_card)
+        pc.setContentsMargins(14, 12, 14, 12)
+        pc.setSpacing(8)
         self.ed_old = QLineEdit()
         self.ed_old.setReadOnly(True)
+        self.ed_old.setPlaceholderText("구판 .hwpx 를 고르거나 여기로 끌어다 놓으세요")
         self.ed_new = QLineEdit()
         self.ed_new.setReadOnly(True)
-        btn_old = QPushButton("구판…")
+        self.ed_new.setPlaceholderText("신판 .hwpx 를 고르거나 여기로 끌어다 놓으세요")
+        btn_old = QPushButton("구판 선택…")
         btn_old.clicked.connect(lambda: self._pick(self.ed_old))
-        btn_new = QPushButton("신판…")
+        btn_new = QPushButton("신판 선택…")
         btn_new.clicked.connect(lambda: self._pick(self.ed_new))
         self.btn_compare = QPushButton("비교")
+        mark(self.btn_compare, "primary", True)
         self.btn_compare.clicked.connect(self._on_compare)
         self.btn_compare.setEnabled(False)
         self.btn_recent = QPushButton("최근 ▾")
         self._recent_menu = QMenu(self)
         self._recent_menu.aboutToShow.connect(self._populate_recent_menu)
         self.btn_recent.setMenu(self._recent_menu)
-        picks.addWidget(QLabel("구판(.hwpx)"))
-        picks.addWidget(self.ed_old, 1)
-        picks.addWidget(btn_old)
-        picks.addSpacing(12)
-        picks.addWidget(QLabel("신판(.hwpx)"))
-        picks.addWidget(self.ed_new, 1)
-        picks.addWidget(btn_new)
-        picks.addWidget(self.btn_recent)
-        picks.addWidget(self.btn_compare)
-        root.addLayout(picks)
 
-        # ---- 요약 + 종류 필터(고정 3종 + 번호변경 토글) ----
-        srow = QHBoxLayout()
+        row_old = QHBoxLayout()
+        lbl_old = QLabel("구판")
+        lbl_old.setFixedWidth(40)
+        mark(lbl_old, "muted", True)
+        row_old.addWidget(lbl_old)
+        row_old.addWidget(self.ed_old, 1)
+        row_old.addWidget(btn_old)
+        pc.addLayout(row_old)
+
+        row_new = QHBoxLayout()
+        lbl_new = QLabel("신판")
+        lbl_new.setFixedWidth(40)
+        mark(lbl_new, "muted", True)
+        row_new.addWidget(lbl_new)
+        row_new.addWidget(self.ed_new, 1)
+        row_new.addWidget(btn_new)
+        pc.addLayout(row_new)
+
+        actions = QHBoxLayout()
+        actions.addStretch(1)
+        actions.addWidget(self.btn_recent)
+        actions.addWidget(self.btn_compare)
+        pc.addLayout(actions)
+        root.addWidget(pick_card)
+
+        # ---- 요약 KPI 타일(비교 후 노출) + 비교 전 안내 문구 ----
         self.lbl_summary = QLabel("판본 2개를 선택하고 비교를 누르세요.")
-        srow.addWidget(self.lbl_summary, 1)
-        srow.addWidget(QLabel("필터:"))
+        mark(self.lbl_summary, "muted", True)
+        root.addWidget(self.lbl_summary)
+
+        self.kpi_wrap = QWidget()
+        self.kpi_row = QHBoxLayout(self.kpi_wrap)
+        self.kpi_row.setContentsMargins(0, 0, 0, 0)
+        self.kpi_row.setSpacing(10)
+        self._kpi_vals: "dict[str, QLabel]" = {}
+        for kind in ("added", "removed", "changed", "renumber"):
+            tile, val = self._kpi_tile(KIND_LABELS[kind], KIND_COLORS[kind])
+            self._kpi_vals[kind] = val
+            self.kpi_row.addWidget(tile)
+        self.kpi_wrap.hide()  # 결과가 없을 땐 감춘다(가짜 0 지표 방지)
+        root.addWidget(self.kpi_wrap)
+
+        # ---- 종류 필터(고정 3종 + 번호변경 토글) ----
+        srow = QHBoxLayout()
+        flabel = QLabel("필터")
+        mark(flabel, "subheading", True)
+        srow.addWidget(flabel)
+        srow.addSpacing(4)
         self._filter_checks: "dict[str, QCheckBox]" = {}
         for kind in ("added", "removed", "changed"):
             cb = QCheckBox(KIND_LABELS[kind])
@@ -279,10 +339,10 @@ class DiffReviewWindow(QMainWindow):
             cb.toggled.connect(self._apply_filter)
             self._filter_checks[kind] = cb
             srow.addWidget(cb)
+        srow.addStretch(1)
         self.chk_renumber = QCheckBox("번호변경 표시")
         self.chk_renumber.setChecked(False)  # 기본 접힘 — 개수는 비교 후 라벨에 노출
         self.chk_renumber.toggled.connect(self._apply_filter)
-        srow.addSpacing(8)
         srow.addWidget(self.chk_renumber)
         root.addLayout(srow)
 
@@ -306,6 +366,23 @@ class DiffReviewWindow(QMainWindow):
         split.setStretchFactor(0, 1)
         split.setStretchFactor(1, 2)
         root.addWidget(split, 1)
+
+    # ------------------------------------------------------------------ 빌더
+    def _kpi_tile(self, label: str, color: str) -> "tuple[QFrame, QLabel]":
+        """요약 KPI 타일(카드) — 값 라벨은 종류색, 아래 작은 라벨. 값은 _bind_result 가 채운다."""
+        tile = QFrame()
+        tile.setProperty("card", True)
+        box = QVBoxLayout(tile)
+        box.setContentsMargins(13, 10, 13, 10)
+        box.setSpacing(2)
+        val = QLabel("0")
+        mark(val, "kpi", "value")
+        val.setStyleSheet(f"color:{color};")  # 종류색(추가 초록/삭제 빨강/변경 파랑/번호 회색)
+        lbl = QLabel(label)
+        mark(lbl, "kpi", "label")
+        box.addWidget(val)
+        box.addWidget(lbl)
+        return tile, val
 
     # ------------------------------------------------------------------ 입력
     def _pick(self, edit: QLineEdit) -> None:
@@ -386,7 +463,9 @@ class DiffReviewWindow(QMainWindow):
         self.items.setRowCount(0)
         self.view.clear()
         self.chk_renumber.setText("번호변경 표시")
+        self.kpi_wrap.hide()  # 결과 없음 → KPI 감추고 안내 문구 노출
         self.lbl_summary.setText(message)
+        self.lbl_summary.show()
 
     # ------------------------------------------------------------------ 비교
     def _on_compare(self) -> None:
@@ -406,10 +485,10 @@ class DiffReviewWindow(QMainWindow):
 
     def _bind_result(self) -> None:
         s = self.result.summary
-        self.lbl_summary.setText(
-            f"추가 {s.get('added', 0)} · 삭제 {s.get('removed', 0)} · "
-            f"변경 {s.get('changed', 0)} · 번호변경 {s.get('renumber', 0)}"
-        )
+        for kind, val in self._kpi_vals.items():
+            val.setText(str(s.get(kind, 0)))
+        self.lbl_summary.hide()   # 카운트는 이제 KPI 타일이 보여준다
+        self.kpi_wrap.show()
         n_renumber = s.get("renumber", 0)
         self.chk_renumber.setText(
             f"번호변경 {n_renumber}건 표시" if n_renumber else "번호변경 표시"
