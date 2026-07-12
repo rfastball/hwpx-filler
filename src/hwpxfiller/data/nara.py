@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import calendar
 import json
+import re
 import urllib.parse
 import urllib.request
 from datetime import datetime
@@ -119,6 +120,23 @@ class NaraFetchError(RuntimeError):
     """
 
 
+# data.go.kr 게이트웨이는 인증 실패를 JSON 이 아닌 **XML** 로 응답한다(type=json 이어도).
+# JSON 파서 원문("Expecting value: ...")에 실원인이 묻히지 않게 여기서 추출한다(RC-16).
+_XML_AUTH_MSG = re.compile(r"<returnAuthMsg>\s*([^<]+?)\s*</returnAuthMsg>")
+_XML_REASON_CODE = re.compile(r"<returnReasonCode>\s*([^<]+?)\s*</returnReasonCode>")
+
+
+def _auth_failure_detail(raw: "bytes | str") -> "str | None":
+    """XML 오류 응답에서 returnAuthMsg(+returnReasonCode)를 뽑는다. 아니면 ``None``."""
+    text = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)
+    m = _XML_AUTH_MSG.search(text)
+    if not m:
+        return None
+    code = _XML_REASON_CODE.search(text)
+    suffix = f" (코드 {code.group(1)})" if code else ""
+    return f"인증 실패 — {m.group(1)}{suffix}"
+
+
 class NaraStdDataSource:
     """조달청 표준 입찰공고 취득 소스."""
 
@@ -198,7 +216,9 @@ class NaraStdDataSource:
         except NaraFetchError:
             raise
         except Exception as exc:
-            raise NaraFetchError(redact(str(exc), self.service_key)) from None
+            # 인증 실패 XML 이면 파서 원문 대신 실원인(returnAuthMsg)을 표면화.
+            detail = _auth_failure_detail(raw) or str(exc)
+            raise NaraFetchError(redact(detail, self.service_key)) from None
 
     @staticmethod
     def field_labels() -> "dict[str, str]":

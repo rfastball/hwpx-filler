@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QWizardPage,
 )
 
-from ..core.job import Job, JobRegistry
+from ..core.job import DEFAULT_FILENAME_PATTERN, Job, JobRegistry
 from .confirm import confirm_destructive
 from .style import BASE_QSS
 from .wizard import DataPage, MappingPage, TemplatePage
@@ -86,6 +86,12 @@ class JobEditorWizard(QWizard):
         if not name:
             QMessageBox.warning(self, "확인", "작업 이름을 입력하세요.")
             return
+        # 파일명 패턴은 문서 식별자를 결정한다 — 빈 입력을 화면에 없던 값으로
+        # 조용히 폴백하지 않는다(확인-또는-경보, RC-20).
+        pattern = self._save_page.pattern()
+        if not pattern:
+            QMessageBox.warning(self, "확인", "파일명 패턴을 입력하세요.")
+            return
         # '전부 비움' 가드(RC-08): blank 선언도 mappings 에 영속화되므로(L1) 판단은
         # 링1 질의(emits_any_value)로 — 뷰는 자료구조 내부 표현을 재구현하지 않는다.
         if not self.model.emits_any_value():
@@ -125,7 +131,7 @@ class JobEditorWizard(QWizard):
             name=name,
             template_path=self.template_path,
             mapping=profile,
-            filename_pattern=self._save_page.pattern() or "output-{{ID}}",
+            filename_pattern=pattern,
             # 편집 재저장이 사용 메타를 지우지 않게 이월.
             last_run_at=self.initial_job.last_run_at if self.initial_job else "",
             # J3 계보: 이 작업의 매핑을 시드한 공유 베이스 이름(순수 메타, run-path 무관).
@@ -157,7 +163,7 @@ class SaveJobPage(QWizardPage):
         layout = QVBoxLayout(self)
         grid = QGridLayout()
         self.ed_name = QLineEdit()
-        self.ed_pattern = QLineEdit("공고서-{{ID}}")
+        self.ed_pattern = QLineEdit(DEFAULT_FILENAME_PATTERN)
         grid.addWidget(QLabel("작업 이름"), 0, 0)
         grid.addWidget(self.ed_name, 0, 1)
         grid.addWidget(QLabel("파일명 패턴"), 1, 0)
@@ -166,6 +172,7 @@ class SaveJobPage(QWizardPage):
         layout.addLayout(grid)
         layout.addStretch(1)
         self.ed_name.textChanged.connect(self.completeChanged)
+        self.ed_pattern.textChanged.connect(self.completeChanged)
         self._prefilled = False  # 편집 모드 프리필은 1회 — 사용자 수정을 되돌리지 않는다
 
     def initializePage(self):
@@ -186,6 +193,7 @@ class SaveJobPage(QWizardPage):
         wiz = self.wizard()
         return (
             bool(self.job_name())
+            and bool(self.pattern())  # 빈 패턴은 저장 게이트에서 차단(RC-20)
             and wiz is not None
             and getattr(wiz, "model", None) is not None
             and wiz.model.is_complete()

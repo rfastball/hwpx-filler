@@ -726,7 +726,16 @@ def _has_extracted_content(doc: Document) -> bool:
 
 
 def diff_documents(old: Document, new: Document) -> DiffResult:
-    """두 Document 를 비교해 결정적 DiffResult 반환. 동일 문서면 변경 0."""
+    """두 Document 를 비교해 결정적 DiffResult 반환. 동일 문서면 변경 0.
+
+    완전성 게이트: 양쪽 다 추출 본문이 0이면 :class:`EmptyExtractionError` —
+    판본을 분리 로드하는 경로(CLI RC-16)도 게이트를 우회하지 못한다.
+    """
+    if not _has_extracted_content(old) and not _has_extracted_content(new):
+        raise EmptyExtractionError(
+            "두 판본 모두에서 본문을 추출하지 못했습니다 — '변경 없음'이 아니라 "
+            "읽기 실패일 수 있습니다. 파일이 올바른 HWPX 인지 확인하세요."
+        )
     differ = _Differ()
     differ.run(old, new)
     items = _build_change_items(differ.changes)

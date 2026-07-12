@@ -15,6 +15,14 @@ from .core.engine import GenerateResult, HwpxEngine
 from .naming import existing_outputs, plan_output_names
 
 
+class OutputCollisionError(FileExistsError):
+    """산출물 이름이 디스크의 기존 파일과 충돌(RC-02) — 덮어쓰기 확정 없이는 차단.
+
+    환경성 :class:`FileExistsError` (예: ``--out`` 자리에 파일이 있어 makedirs 실패)
+    와 구분한다 — 후자에 '덮어쓰려면 --overwrite' 안내를 붙이면 거짓 안내가 된다.
+    """
+
+
 @dataclass
 class BatchResult:
     total: int = 0
@@ -77,7 +85,7 @@ def generate_batch(
     names = plan_output_names(name_pattern, records, now=now)
     clobbered = existing_outputs(out, names)
     if clobbered and not overwrite:
-        raise FileExistsError(
+        raise OutputCollisionError(
             f"이미 존재하는 파일 {len(clobbered)}개를 덮어쓰게 됩니다 — 덮어쓰기 확정 "
             "없이는 생성하지 않습니다: "
             + ", ".join(Path(p).name for p in clobbered)
@@ -220,7 +228,7 @@ def generate_matrix(
             jobs, datasource, indices, out_dir, now=now, mark_missing=mark_missing
         )
         if clobbered:
-            raise FileExistsError(
+            raise OutputCollisionError(
                 f"이미 존재하는 파일 {len(clobbered)}개를 덮어쓰게 됩니다 — 덮어쓰기 확정 "
                 "없이는 생성하지 않습니다: "
                 + ", ".join(Path(p).name for p in clobbered)

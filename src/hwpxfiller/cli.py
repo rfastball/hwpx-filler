@@ -19,14 +19,18 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import zipfile
 from typing import TYPE_CHECKING
 
-from .batch import generate_batch
+from .batch import OutputCollisionError, generate_batch
 
 if TYPE_CHECKING:  # 런타임 결합 회피 — 저장소는 덕타이핑으로 충분.
     from .data.secret_store import SecretStore
 from .core.engine import HwpxEngine
 from hwpxcore.atomic import write_text_atomic
+from .core.job import DEFAULT_FILENAME_PATTERN
+from .data.nara import NaraFetchError
+from .naming import pattern_field_tokens
 from hwpxcore.validate import validate
 from .data.excel import ExcelDataSource
 
@@ -101,7 +105,9 @@ def _lint_main(argv: "list[str]") -> int:
 
     vocabulary = None
     if args.vocab:
-        with open(args.vocab, encoding="utf-8") as fh:
+        # utf-8-sig: 메모장·PowerShell(Set-Content -Encoding utf8) 기본이 BOM 을 남긴다 —
+        # 첫 필드명이 '﻿필드명'으로 오염돼 위양성 게이트 실패가 되는 것을 차단(RC-33).
+        with open(args.vocab, encoding="utf-8-sig") as fh:
             vocabulary = [ln.strip() for ln in fh if ln.strip()]
 
     report = lint_template(args.template, vocabulary=vocabulary)
@@ -277,7 +283,43 @@ def _load_records(
     return ExcelDataSource(args.data, sheet=args.sheet).records()
 
 
+# 최상위 --help 가 실제 CLI 표면(하위명령 6종)을 그대로 보이게 한다(RC-21) —
+# 디스패치가 pre-argparse 수동 비교라 subparsers 없이는 epilog 가 유일한 노출면.
+_SUBCOMMANDS_EPILOG = """\
+하위명령(자세한 도움말: hwpxfiller <하위명령> --help):
+  schema TPL.hwpx           템플릿 스키마(필드·타입·표 영역)를 JSON 으로 추출
+  fieldize TPL.hwpx         평문 {{토큰}} → 누름틀 컴파일(--out 없으면 미리보기)
+  lint TPL.hwpx             템플릿 위생 점검(--vocab 통제 어휘) — 이슈 있으면 exit 1
+  drift OLD.hwpx NEW.hwpx   판본 간 필드 드리프트(추가/삭제/개명)
+  render TPL.txt --data D   텍스트 템플릿 치환(온나라 기안 등)
+  diff                      hwpxdiff 로 분리됨 — hwpxdiff OLD.hwpx NEW.hwpx
+"""
+
+
 def main(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" = None) -> int:
+    """CLI 진입점 — 최상위 오류 번역 경계(RC-16).
+
+    일상 실패(파일 접근·손상 HWPX·나라장터 취득)를 원시 traceback 대신 '[오류]'
+    한국어 1줄로 번역하고 **exit 2** 로 끝낸다 — lint 의 '이슈 게이트 exit 1'
+    (문서화된 계약)·생성 부분실패 exit 1 과 크래시를 종료코드로 구분해 자동화의
+    실패 종류 오분류(성공 배치 재실행 유발 등)를 막는다.
+    """
+    try:
+        return _run(argv, secret_store=secret_store)
+    except NaraFetchError as exc:
+        print(f"[오류] 나라장터 취득 실패: {exc}", file=sys.stderr)
+        return 2
+    except zipfile.BadZipFile as exc:
+        print(f"[오류] HWPX(zip) 파일이 아니거나 손상됐습니다: {exc}", file=sys.stderr)
+        return 2
+    except OSError as exc:
+        name = getattr(exc, "filename", None)
+        detail = f"{name} — {exc.strerror or exc}" if name else str(exc)
+        print(f"[오류] 파일을 읽거나 쓸 수 없습니다: {detail}", file=sys.stderr)
+        return 2
+
+
+def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "diff":
         # 개정 비교는 별도 제품(hwpxdiff)로 분리됐다 — 손에 익은 진입점만 안내.
@@ -295,13 +337,19 @@ def main(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
     if argv and argv[0] == "render":
         return _render_main(argv[1:])
 
-    ap = argparse.ArgumentParser(prog="hwpxfiller")
+    ap = argparse.ArgumentParser(
+        prog="hwpxfiller",
+        epilog=_SUBCOMMANDS_EPILOG,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     ap.add_argument("--template", required=True, help="HWPX 템플릿 경로")
     ap.add_argument("--source", choices=["excel", "nara"], default="excel",
                     help="데이터 소스 (기본: excel)")
     ap.add_argument("--data", help="엑셀/CSV 데이터 경로 (--source excel)")
     ap.add_argument("--out", default="./out", help="결과 저장 폴더")
-    ap.add_argument("--pattern", default="output-{{ID}}", help="파일명 패턴({{키}})")
+    ap.add_argument("--pattern", default=DEFAULT_FILENAME_PATTERN,
+                    help="파일명 패턴({{키}}, 기본 %(default)s). --source nara 는 영문 코드 "
+                         "키(예: 공고-{{bidNtceNo}})로 지정하세요 — 데이터에 없는 토큰은 오류")
     ap.add_argument("--sheet", default=None, help="엑셀 시트명(기본: 첫 시트)")
     ap.add_argument("--profile", default=None,
                     help="매핑 프로파일 JSON(소스 키→템플릿 필드; 나라장터 영문키에 사실상 필수)")
@@ -388,11 +436,29 @@ def main(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
         records = mark_missing_values(records, marker, fields=required)
         print(f"[안내] 미입력 표식 주입: {', '.join(report.empty_valued)}", file=sys.stderr)
 
+    # 파일명 계약 사전검증(RC-20) — 미치환 {{토큰}}이 조용히 실파일명이 되는 경로 차단.
+    # 본문 미치환 토큰은 시끄럽게 다루면서 파일명 토큰만 조용히 통과하던 비대칭 해소.
+    name_tokens = pattern_field_tokens(args.pattern)
+    if records and name_tokens:
+        unresolved = [t for t in name_tokens if not any(t in rec for rec in records)]
+        if unresolved:
+            ap.error(
+                "파일명 패턴의 토큰이 데이터에 없어 그대로 파일명이 됩니다: "
+                + ", ".join("{{" + t + "}}" for t in unresolved)
+                + " — --pattern 을 데이터 키에 맞게 지정하세요"
+            )
+        partial = [t for t in name_tokens if not all(t in rec for rec in records)]
+        if partial:
+            print("[경고] 일부 레코드에 파일명 토큰 키가 없어 해당 파일명에 토큰이 남습니다: "
+                  + ", ".join("{{" + t + "}}" for t in partial), file=sys.stderr)
+
     try:
         batch = generate_batch(args.template, records, args.out, args.pattern, engine,
                                overwrite=args.overwrite, mapping=gate_mapping)
-    except FileExistsError as exc:
+    except OutputCollisionError as exc:
         # 기본은 차단(RC-02) — 기존 산출물(수기 보정본일 수 있음)의 무경고 파괴 금지.
+        # 환경성 FileExistsError(--out 자리에 파일 등)는 최상위 경계의 exit 2 로 —
+        # 그 경우 '--overwrite' 안내는 거짓이라 붙이지 않는다(RC-16).
         print(f"[오류] {exc}", file=sys.stderr)
         print("덮어쓰려면 --overwrite 를 지정하세요.", file=sys.stderr)
         return 1
@@ -410,7 +476,13 @@ def main(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
                   f"{', '.join(res.unmatched)}", file=sys.stderr)
 
     if args.ledger:
-        _export_ledger(args, gate_mapping, required, source_records, records, batch, marker)
+        try:
+            _export_ledger(args, gate_mapping, required, source_records, records, batch,
+                           marker)
+        except Exception as exc:  # noqa: BLE001 - 증거 저장 실패는 조용히 넘기지 않는다
+            # 원장은 사이드카 — 실패해도 '생성 실패'로 위장하지 않는다(RC-16, GUI 와 동형).
+            print(f"[원장 실패] 사이드카를 저장하지 못했습니다: {exc} — "
+                  f"생성물({batch.succeeded}건)은 저장돼 있습니다.", file=sys.stderr)
     return 0 if batch.failed == 0 else 1
 
 

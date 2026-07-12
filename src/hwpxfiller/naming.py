@@ -32,6 +32,26 @@ _DATE_MAP = [
 ]
 
 
+_FIELD_TOKEN = re.compile(r"\{\{([^{}]+)\}\}")
+_RESERVED_TOKENS = ("date", "seq")
+
+
+def pattern_field_tokens(pattern: str) -> "list[str]":
+    """패턴이 요구하는 **데이터 필드** 토큰 이름(문서순·중복 제거). 예약 토큰 제외.
+
+    파일명 계약 사전검증용 — 여기 나온 키가 레코드에 없으면 미치환 ``{{토큰}}`` 이
+    실파일명에 그대로 남는다. 조용한 통과 대신 호출부(CLI/GUI)가 시끄럽게 다룰 수
+    있게 요구 키를 노출한다(RC-20).
+    """
+    out: "dict[str, None]" = {}
+    for m in _FIELD_TOKEN.finditer(pattern):
+        name = m.group(1)
+        if name.split(":", 1)[0] in _RESERVED_TOKENS:
+            continue
+        out.setdefault(name, None)
+    return list(out)
+
+
 def clean_filename(name: str) -> str:
     return _INVALID.sub("_", name)
 

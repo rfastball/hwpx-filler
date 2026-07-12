@@ -247,6 +247,46 @@ def test_editor_edit_mode_prefills_and_preseeds(qapp, tmp_path):
     assert "확정" in mapping_page.lbl_progress.text()
 
 
+def test_save_page_prefills_default_pattern_and_gates_empty(qapp, tmp_path):
+    """RC-20 — 프리필은 단일 출처 상수, 빈 패턴은 isComplete 게이트가 차단한다."""
+    from hwpxfiller.core.job import DEFAULT_FILENAME_PATTERN, JobRegistry
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+
+    wiz = JobEditorWizard(JobRegistry(tmp_path))
+    page = wiz.page(wiz.pageIds()[-1])
+    assert page.ed_pattern.text() == DEFAULT_FILENAME_PATTERN  # 프리필 = 단일 출처
+    wiz.model = _model()
+    wiz.model.confirm_all()
+    page.ed_name.setText("작업")
+    assert page.isComplete()
+    page.ed_pattern.setText("   ")            # 공백뿐인 패턴 = 빈 패턴
+    assert not page.isComplete()
+
+
+def test_editor_accept_blocks_empty_pattern_no_silent_fallback(qapp, tmp_path, monkeypatch):
+    """RC-20 — 빈 패턴 저장 시도는 화면에 없던 'output-{{ID}}' 무고지 폴백 대신 경고+차단."""
+    from PySide6.QtWidgets import QMessageBox
+
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+
+    reg = JobRegistry(tmp_path)
+    wiz = JobEditorWizard(reg)
+    wiz.template_path = "/t.hwpx"
+    wiz.model = _model()
+    for i, row in enumerate(wiz.model.rows):
+        if row.template_field == "공고명":
+            wiz.model.set_sources(i, ["bidNtceNm"])
+    wiz.model.confirm_all()
+    wiz._save_page.ed_name.setText("빈패턴작업")
+    wiz._save_page.ed_pattern.setText("")
+    warned: "list[str]" = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: warned.append(a[2]))
+    wiz.accept()
+    assert warned and "파일명 패턴" in warned[-1]
+    assert not reg.exists("빈패턴작업")       # 조용한 폴백 저장이 일어나지 않았다
+
+
 def test_editor_edit_mode_accept_same_name_no_prompt(qapp, tmp_path, monkeypatch):
     """편집 모드 자기 자신 재저장은 덮어쓰기 프롬프트 없음 + last_run_at 이월."""
     from hwpxfiller.gui import job_editor as je

@@ -111,7 +111,8 @@ def test_ledger_is_optin_and_writes_evidence_sidecar(tmp_path, capsys):
 
     # 기본은 opt-in — 플래그 없으면 사이드카를 만들지 않는다.
     out0 = tmp_path / "out0"
-    assert main(["--template", TEMPLATE, "--data", data, "--out", str(out0)]) == 0
+    assert main(["--template", TEMPLATE, "--data", data, "--out", str(out0),
+                 "--pattern", "공고-{{입찰공고번호}}"]) == 0
     assert not list(out0.glob("fill-ledger*.json"))
 
     out = tmp_path / "out"
@@ -336,6 +337,125 @@ def test_nara_without_profile_warns(tmp_path, monkeypatch, capsys):
     # 프로파일 없이도 실행은 되지만(영문키라 대부분 빈칸) 경고를 낸다.
     assert rc == 0
     assert "--profile 없이는" in capsys.readouterr().err
+
+
+# ------------------------------------------------ 최상위 오류 번역 경계(RC-16)
+def test_missing_template_is_one_line_korean_error_exit_2(tmp_path, capsys):
+    """일상 실패(부재 파일)는 원시 traceback 대신 '[오류]' 1줄 + exit 2(게이트 1과 구분)."""
+    rc = main(["--template", str(tmp_path / "없는템플릿.hwpx"), "--fields"])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "[오류]" in err
+    assert "Traceback" not in err
+
+
+def test_out_path_colliding_with_existing_file_exit_2(tmp_path, capsys):
+    """--out 자리에 기존 파일(FX3b) → FileExistsError traceback 대신 번역 진단."""
+    data = _xlsx(tmp_path / "d.xlsx",
+                 [["1", "공고", "일반", "100", "2026-01-01 10:00"]])
+    clash = tmp_path / "outfile"
+    clash.write_text("x", encoding="utf-8")
+    rc = main(["--template", TEMPLATE, "--data", data, "--out", str(clash),
+               "--pattern", "공고-{{입찰공고번호}}"])
+    assert rc == 2
+    assert "[오류]" in capsys.readouterr().err
+
+
+def test_lint_crash_exit_2_distinct_from_issue_gate_exit_1(tmp_path, capsys):
+    """손상 템플릿 lint 크래시(2)가 '위생 이슈 게이트'(1)와 종료코드로 구분된다."""
+    corrupt = tmp_path / "손상.hwpx"
+    corrupt.write_text("zip 아님", encoding="utf-8")
+    rc = main(["lint", str(corrupt)])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "[오류]" in err
+    assert "Traceback" not in err
+
+
+def test_ledger_failure_diagnosed_but_generation_exit_kept(tmp_path, capsys, monkeypatch):
+    """원장 실패(FX6)는 '[원장 실패]' 진단만 — 성공 배치를 실패(exit 1)로 위장하지 않는다.
+
+    사이드카는 실행별 타임스탬프 파일명(RC-02)이라 경로 선점으로는 실패를 주입할 수
+    없다 — export 함수 자체에 실패를 주입한다.
+    """
+    import hwpxfiller.cli as cli_mod
+
+    def boom(*args, **kwargs):
+        raise OSError("사이드카 쓰기 실패 주입")
+
+    monkeypatch.setattr(cli_mod, "_export_ledger", boom)
+    data = _xlsx(tmp_path / "d.xlsx",
+                 [["1", "공고", "일반", "100", "2026-01-01 10:00"]])
+    out = tmp_path / "out"
+    rc = main(["--template", TEMPLATE, "--data", data, "--out", str(out),
+               "--pattern", "공고-{{입찰공고번호}}", "--ledger"])
+    assert rc == 0                       # 생성 성패 기준 exit 유지
+    assert "[원장 실패]" in capsys.readouterr().err
+    assert _outputs(out)                 # 생성물은 실재
+
+
+def test_nara_fetch_error_translated_exit_1(monkeypatch, capsys):
+    """NaraFetchError 는 '[오류] 나라장터 취득 실패' 1줄 + exit 1(데이터 경계 게이트).
+
+    취득 실패는 크래시(exit 2)가 아니라 RC-03 데이터 경계 게이트다 — 인증 실패·기간
+    위반·연결 실패를 '0건 성공'으로 넘기지 않되, 자동화가 게이트로 분류하게 한다.
+    """
+    from hwpxfiller.data.nara import NaraFetchError, NaraStdDataSource
+
+    def boom(self):
+        raise NaraFetchError("connection timed out")
+
+    monkeypatch.setattr(NaraStdDataSource, "_fetch", boom)
+    monkeypatch.delenv("DATA_GO_KR_KEY", raising=False)
+    rc = main(["--template", TEMPLATE, "--source", "nara", "--service-key", "DUMMY",
+               "--bgn", "202606010000", "--end", "202606302359"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "[오류] 나라장터 취득 실패" in err
+    assert "Traceback" not in err
+
+
+# ------------------------------------------------- 파일명 패턴 계약(RC-20)
+def test_pattern_token_missing_from_data_fails_loud(tmp_path, monkeypatch, capsys):
+    """기본 패턴의 {{ID}} 가 나라 레코드에 없음 → 'output-{{ID}}.hwpx' 조용 생성 대신 오류."""
+    _patch_nara(monkeypatch)
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit) as ei:
+        main(["--template", TEMPLATE, "--source", "nara",
+              "--service-key", "DUMMY", "--bgn", "202606010000", "--end", "202606302359",
+              "--out", str(out)])
+    assert ei.value.code == 2
+    assert "파일명 패턴의 토큰이 데이터에 없어" in capsys.readouterr().err
+    assert not out.exists()              # 미치환 이름의 파일이 만들어지지 않았다
+
+
+def test_cli_pattern_default_is_single_source():
+    from hwpxfiller.cli import DEFAULT_FILENAME_PATTERN as CLI_DEFAULT
+    from hwpxfiller.core.job import DEFAULT_FILENAME_PATTERN
+    assert CLI_DEFAULT is DEFAULT_FILENAME_PATTERN
+
+
+# ------------------------------------------------- 최상위 --help 표면(RC-21)
+def test_top_level_help_lists_subcommands(capsys):
+    """--help 가 pre-argparse 수동 디스패치 하위명령 6종을 전부 표기한다."""
+    with pytest.raises(SystemExit) as ei:
+        main(["--help"])
+    assert ei.value.code == 0
+    out = capsys.readouterr().out
+    for name in ("schema", "fieldize", "lint", "drift", "render", "diff"):
+        assert name in out
+
+
+# ------------------------------------------------- lint --vocab BOM(RC-33)
+def test_lint_vocab_utf8_bom_does_not_pollute_first_entry(tmp_path, capsys):
+    """메모장/PowerShell 이 남긴 BOM(U+FEFF)이 첫 어휘 항목을 오염시키지 않는다."""
+    vocab = tmp_path / "vocab.txt"
+    vocab.write_bytes(("﻿" + "입찰공고번호\n공고명\n").encode("utf-8"))  # BOM 파일
+    rc = main(["lint", TEMPLATE, "--vocab", str(vocab)])
+    out = capsys.readouterr().out
+    assert "﻿" not in out           # BOM 잔존 없음
+    assert "'입찰공고번호'" not in out   # 어휘에 있는 첫 항목이 오탐되지 않는다
+    assert rc == 1                       # 다른 필드는 여전히 어휘 밖 — 게이트 계약 유지
 
 
 # ------------------------------------------------- 키 소스 우선순위(스펙 고정)

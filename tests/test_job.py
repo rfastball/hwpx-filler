@@ -49,6 +49,16 @@ def _job() -> Job:
 
 
 # ------------------------------------------------------------------ 직렬화
+def test_default_filename_pattern_is_single_source():
+    """기본 패턴 단일 출처(RC-20) — dataclass·from_dict 하위호환이 같은 상수를 참조하고,
+    값은 사용자-가시 표면(에디터 프리필·목업)이 써온 '공고서-{{ID}}' 다."""
+    from hwpxfiller.core.job import DEFAULT_FILENAME_PATTERN
+
+    assert DEFAULT_FILENAME_PATTERN == "공고서-{{ID}}"
+    assert Job().filename_pattern == DEFAULT_FILENAME_PATTERN
+    assert Job.from_dict({}).filename_pattern == DEFAULT_FILENAME_PATTERN
+
+
 def test_to_dict_from_dict_roundtrip_preserves_embedded_mapping():
     """작업 dict 왕복이 임베드된 매핑의 소스·표시형까지 보존한다."""
     loaded = Job.from_dict(_job().to_dict())

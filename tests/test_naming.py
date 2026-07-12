@@ -13,6 +13,7 @@ from hwpxfiller.naming import (
     clean_filename,
     existing_outputs,
     make_output_filename,
+    pattern_field_tokens,
     plan_output_names,
 )
 
@@ -143,3 +144,14 @@ def test_existing_outputs_reports_only_disk_hits(tmp_path):
     names = ["doc-A.hwpx", "doc-B.hwpx"]
     assert existing_outputs(tmp_path, names) == [str(tmp_path / "doc-A.hwpx")]
     assert existing_outputs(tmp_path / "없는폴더", names) == []
+
+
+# --------------------------------------------- 패턴 요구 토큰 조회(RC-20)
+def test_pattern_field_tokens_excludes_reserved_and_dedupes():
+    toks = pattern_field_tokens("{{공고명}}-{{date:YYYYMMDD}}-{{seq:001}}-{{공고명}}-{{ID}}")
+    assert toks == ["공고명", "ID"]
+
+
+def test_pattern_field_tokens_empty_for_literal_and_reserved_only():
+    assert pattern_field_tokens("고정이름-{{date}}-{{seq}}") == []
+    assert pattern_field_tokens("고정이름") == []

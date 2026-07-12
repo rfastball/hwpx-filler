@@ -151,6 +151,24 @@ def test_empty_response_fails_loudly_without_leak():
     assert _LIVE_KEY not in str(ei.value)
 
 
+def test_xml_auth_failure_surfaces_return_auth_msg():
+    """게이트웨이 인증 실패 **XML** 응답이면 JSON 파서 원문 대신 returnAuthMsg 를 표면화(RC-16)."""
+    xml = (
+        b"<OpenAPI_ServiceResponse><cmmMsgHeader>"
+        b"<returnAuthMsg>SERVICE_KEY_IS_NOT_REGISTERED_ERROR</returnAuthMsg>"
+        b"<returnReasonCode>30</returnReasonCode>"
+        b"</cmmMsgHeader></OpenAPI_ServiceResponse>"
+    )
+    src = _live_src(lambda url: xml)
+    with pytest.raises(NaraFetchError) as ei:
+        src.records()
+    msg = str(ei.value)
+    assert "SERVICE_KEY_IS_NOT_REGISTERED_ERROR" in msg   # 실원인 보존
+    assert "코드 30" in msg
+    assert "Expecting value" not in msg                    # 파서 원문에 묻히지 않음
+    assert _LIVE_KEY not in msg                            # 마스킹 경계 유지
+
+
 def test_auth_failure_result_code_raises_loudly_no_leak():
     """resultCode != '00'(인증 실패류)은 조용한 빈 목록이 아니라 NaraFetchError(RC-03).
 
