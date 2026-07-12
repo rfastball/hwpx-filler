@@ -212,12 +212,14 @@ def _resolve_service_key(
 ) -> "str | None":
     """나라 ServiceKey 를 우선순위대로 해석한다(없으면 ``None``).
 
-    우선순위(보안 강한 순):
-        ``--service-key-file`` > ``--service-key`` > ``DATA_GO_KR_KEY`` 환경변수 > 저장된 키.
+    우선순위(스펙: 1급 입력 > 비권장 입력 > 저장된 키):
+        ``--service-key-file`` > ``DATA_GO_KR_KEY`` 환경변수 > ``--service-key``(비권장) > 저장된 키.
 
-    근거: 파일 지정은 의도적·비노출이라 최우선. 인라인 ``--service-key`` 는 명시적이지만
-    프로세스 목록·셸 히스토리에 노출되므로 **비권장 경고**를 내고 다음으로 강등. 환경변수는
-    앰비언트 편의. 저장소(OS 자격증명)는 재공급 없이 재사용하는 마지막 폴백.
+    근거: ``--service-key-file`` 과 환경변수는 노출 없는 **1급 입력**(브리핑 명세)이라 최상위 —
+    파일이 더 명시적이라 환경변수보다 앞선다. 인라인 ``--service-key`` 는 프로세스 목록·셸
+    히스토리에 노출되는 **비권장·제거 예정** 경로라 1급 입력들 아래로 강등하되(경고 발행),
+    수동적으로 저장된 키보다는 위에 둬 명시적 override 가 동작하게 한다. 저장소(OS 자격증명)는
+    재공급 없이 재사용하는 마지막 폴백.
     """
     if getattr(args, "service_key_file", None):
         try:
@@ -225,14 +227,14 @@ def _resolve_service_key(
                 return fh.read().strip()
         except OSError as exc:
             ap.error(f"--service-key-file 읽기 실패: {exc}")
+    env = os.environ.get("DATA_GO_KR_KEY")
+    if env and env.strip():
+        return env.strip()
     if getattr(args, "service_key", None):
         print("[보안 경고] --service-key 로 키를 명령행에 직접 넘기면 프로세스 목록·셸 "
               "히스토리에 노출됩니다(비권장·향후 제거 예정). --service-key-file 또는 "
               "DATA_GO_KR_KEY 환경변수를 쓰세요.", file=sys.stderr)
         return args.service_key
-    env = os.environ.get("DATA_GO_KR_KEY")
-    if env and env.strip():
-        return env.strip()
     from .data.secret_store import NARA_SERVICE_KEY_NAME, default_secret_store
 
     if store is None:

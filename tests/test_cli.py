@@ -152,3 +152,51 @@ def test_nara_without_profile_warns(tmp_path, monkeypatch, capsys):
     # 프로파일 없이도 실행은 되지만(영문키라 대부분 빈칸) 경고를 낸다.
     assert rc == 0
     assert "--profile 없이는" in capsys.readouterr().err
+
+
+# ------------------------------------------------- 키 소스 우선순위(스펙 고정)
+def _key_args(**over):
+    import argparse
+    ns = argparse.Namespace(service_key_file=None, service_key=None)
+    for k, v in over.items():
+        setattr(ns, k, v)
+    return ns
+
+
+def test_service_key_precedence(tmp_path, monkeypatch):
+    """우선순위: --service-key-file > DATA_GO_KR_KEY > --service-key(비권장) > 저장소.
+
+    핵심: 1급 입력(파일·환경변수)이 비권장 인라인 플래그보다 위. 비권장 인라인은 수동
+    저장된 키보다는 위(명시적 override).
+    """
+    import argparse
+
+    from hwpxfiller.cli import _resolve_service_key
+    from hwpxfiller.data.secret_store import NARA_SERVICE_KEY_NAME, MemorySecretStore
+
+    ap = argparse.ArgumentParser()
+    store = MemorySecretStore({NARA_SERVICE_KEY_NAME: "STORED"})
+    kf = tmp_path / "key.txt"
+    kf.write_text("  FILEKEY\n", encoding="utf-8")
+
+    # 파일이 최우선(환경변수·인라인·저장소 모두 있어도).
+    monkeypatch.setenv("DATA_GO_KR_KEY", "ENVKEY")
+    args = _key_args(service_key_file=str(kf), service_key="INLINE")
+    assert _resolve_service_key(ap, args, store) == "FILEKEY"
+
+    # 파일 없으면 환경변수가 인라인보다 우선(스펙 핵심 수정).
+    args = _key_args(service_key="INLINE")
+    assert _resolve_service_key(ap, args, store) == "ENVKEY"
+
+    # 환경변수 없으면 비권장 인라인이 저장소보다 우선.
+    monkeypatch.delenv("DATA_GO_KR_KEY", raising=False)
+    args = _key_args(service_key="INLINE")
+    assert _resolve_service_key(ap, args, store) == "INLINE"
+
+    # 아무 입력 없으면 저장소 폴백.
+    args = _key_args()
+    assert _resolve_service_key(ap, args, store) == "STORED"
+
+    # 저장소도 비었으면 None.
+    args = _key_args()
+    assert _resolve_service_key(ap, args, MemorySecretStore()) is None

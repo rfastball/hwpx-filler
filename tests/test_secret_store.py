@@ -17,6 +17,7 @@ import pytest
 
 from hwpxfiller.core.job import Job
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.data.nara import NaraStdDataSource
 from hwpxfiller.data.secret_store import (
     NARA_SERVICE_KEY_NAME,
     REDACTED,
@@ -175,6 +176,21 @@ def test_redact_after_urlencode():
 
 
 # ------------------------------------- 6. 키가 직렬화 경로에 실리지 않음(불변식)
+def test_service_key_absent_from_nara_datasource_diagnostics():
+    """키를 실제로 보유하는 표면(``NaraStdDataSource.service_key``)의 진단 노출을 가드.
+
+    유일한 영속 표면은 SecretStore 다. 소스 객체는 취득 동안 키를 들지만, repr/진단
+    문자열로 새면 로그에 유출된다 — 기본 ``object.__repr__`` 은 속성을 안 보여 오늘은
+    안전하나, 미래에 누출성 ``__repr__`` 이 추가되는 회귀를 이 가드가 잡는다.
+    """
+    src = NaraStdDataSource(service_key=KEY, bgn_dt="202606010000", end_dt="202606302359")
+    # 기본 repr 은 속성을 노출하지 않는다 — 누출성 __repr__ 회귀를 이 가드가 잡는다.
+    assert KEY not in repr(src)
+    assert KEY not in str(src)
+    # 주: 인스턴스 __dict__(vars) 는 취득에 쓰려 키를 정당하게 보유한다 — 그 자체는 누출
+    # 표면이 아니다(로그에 vars() 를 찍지 않는 한). 누출 표면은 repr/직렬화다.
+
+
 def test_service_key_never_serialized_in_profile_and_job(tmp_path):
     """프로파일·작업 JSON 직렬화 경로 어디에도 ServiceKey 가 실리지 않는다.
 

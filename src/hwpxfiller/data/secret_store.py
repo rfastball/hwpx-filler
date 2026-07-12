@@ -230,8 +230,6 @@ class WindowsCredentialStore:
         return ctypes, advapi32, CREDENTIAL, pcred
 
     def get(self, name: str) -> "str | None":
-        import ctypes
-
         ctypes_mod, advapi32, _cred, pcred = self._bindings()
         ptr = pcred()
         ok = advapi32.CredReadW(
