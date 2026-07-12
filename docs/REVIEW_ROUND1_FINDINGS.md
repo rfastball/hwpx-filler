@@ -23,42 +23,64 @@
 
 | ID | 심각도 | 유형 | 판정 | 유닛 | 상태 | 제목 |
 |---|---|---|---|---|---|---|
-| RC-01 | 치명 | defect | confirmed | U1 | 대기 | 쓰기 경로 전반이 truncate-then-write 비원자 — 저장 실패가 기존 파일(사용자 편집본·저작 원본·작업 JSON·리포트)을 파괴 |
-| RC-02 | 치명 | defect | confirmed | U1 | 대기 | 산출물·증거 파일의 디스크 기존 파일 무확인 덮어쓰기 — 충돌 개념이 '배치 내 유일성'으로만 정의됨 |
+| RC-01 | 치명 | defect | confirmed | U1 | 착지(219f7f2) | 쓰기 경로 전반이 truncate-then-write 비원자 — 저장 실패가 기존 파일(사용자 편집본·저작 원본·작업 JSON·리포트)을 파괴 |
+| RC-02 | 치명 | defect | confirmed | U1 | 착지(219f7f2) | 산출물·증거 파일의 디스크 기존 파일 무확인 덮어쓰기 — 충돌 개념이 '배치 내 유일성'으로만 정의됨 |
 | RC-03 | 치명 | defect | confirmed | U6 | 대기 | GUI/CLI 흐름 접착층 이중화 — 검증·정책(드리프트 경계 게이트·빈값 표식·원장 조립·나라 취득 검증)이 표면별 병렬 구현이라 공유 프리미티브와 CLI가 게이트 밖 |
-| RC-04 | 치명 | defect | confirmed | U2 | 대기 | [확정] 템플릿 관리 워크숍 GUI 완전 도달 불가 — hasattr 전방호환 배선이 홈에 없는 시그널을 기다리는 침묵 no-op, 테스트 우회·문서 오기로 3중 은폐 |
-| RC-05 | 치명 | defect | confirmed | U2 | 대기 | 손상 .job.json 1개가 홈·앱 시작을 통째로 벽돌화 — list_jobs에 파일 단위 격리 없음 |
+| RC-04 | 치명 | defect | confirmed | U2 | 착지(2113cae) | [확정] 템플릿 관리 워크숍 GUI 완전 도달 불가 — hasattr 전방호환 배선이 홈에 없는 시그널을 기다리는 침묵 no-op, 테스트 우회·문서 오기로 3중 은폐 |
+| RC-05 | 치명 | defect | confirmed | U2 | 착지(2113cae) | 손상 .job.json 1개가 홈·앱 시작을 통째로 벽돌화 — list_jobs에 파일 단위 격리 없음 |
 | RC-06 | 높음 | defect | confirmed | U6 | 대기 | 배치 실행 중 취소 수단 전무 — generate_batch 완주형 루프·워커 무중단·GUI 취소 UI 부재 |
 | RC-07 | 높음 | defect | confirmed | U6 | 대기 | 생성 요청이 불변 계획(GenerationPlan)으로 캡슐화되지 않음 — 완료 핸들러가 라이브 위젯/VM 상태를 재읽어 원장이 생성물과 다른 데이터·폴더를 '증거'로 기록, 완료 시 UI 프리즈·실패 경로 상태 미정리 동반 |
-| RC-08 | 높음 | defect | confirmed | U3 | 대기 | '전부 비움' 저장 가드가 술어 오류로 dead code — 아무 값도 채우지 않는 작업이 무경고 저장(3자 독립 런타임 실증) |
-| RC-09 | 높음 | defect | confirmed | U3 | 대기 | 위저드 세션 상태의 이중 사본 + 내용 불감 캐시 키 — 같은 파일 재선택·소스 토글 후 매핑 스텝이 화면 요약과 모순되는 옛 데이터로 조용히 구동 |
-| RC-10 | 높음 | defect | confirmed | U3 | 대기 | 미지 transform의 3중 실패 — 직렬화 경계 무검증 주입, 뷰 미처리 크래시(통지 0), 런타임 조용한 join 폴백으로 서식 미적용 값 무경고 주입 |
-| RC-11 | 높음 | defect | confirmed | U5 | 대기 | hwpxdiff 변경 그룹 리스트가 문서상 최대 65행 떨어진 독립 변경들을 '연속 N건'으로 거짓 병합 — seq는 변경 방출 서수일 뿐 문서 인접이 아님 |
+| RC-08 | 높음 | defect | confirmed | U3 | 착지(1cf696c) | '전부 비움' 저장 가드가 술어 오류로 dead code — 아무 값도 채우지 않는 작업이 무경고 저장(3자 독립 런타임 실증) |
+| RC-09 | 높음 | defect | confirmed | U3 | 착지(1cf696c) | 위저드 세션 상태의 이중 사본 + 내용 불감 캐시 키 — 같은 파일 재선택·소스 토글 후 매핑 스텝이 화면 요약과 모순되는 옛 데이터로 조용히 구동 |
+| RC-10 | 높음 | defect | confirmed | U3 | 착지(1cf696c) | 미지 transform의 3중 실패 — 직렬화 경계 무검증 주입, 뷰 미처리 크래시(통지 0), 런타임 조용한 join 폴백으로 서식 미적용 값 무경고 주입 |
+| RC-11 | 높음 | defect | confirmed | U5 | 착지(877d50c) | hwpxdiff 변경 그룹 리스트가 문서상 최대 65행 떨어진 독립 변경들을 '연속 N건'으로 거짓 병합 — seq는 변경 방출 서수일 뿐 문서 인접이 아님 |
 | RC-12 | 높음 | defect | confirmed | U6 | 대기 | 나라장터 취득·연결시험이 UI 스레드 동기 네트워크 — 이벤트 루프 완전 동결(취소 의도가 fetch 종료까지 전달 불가, 기본 timeout 20s), 생성 경로 QThread와 비대칭 |
-| RC-13 | 높음 | defect | confirmed | U4 | 대기 | 취득 성공 후 기간·건수 위젯 편집이 OK 게이트를 무효화하지 않음 — 미검증 기간이 풀에 등록되어 이후 모든 실행이 실패하는 죽은 참조를 조용히 생성 |
-| RC-14 | 높음 | defect | confirmed | U2 | 대기 | 템플릿 워크숍 패널이 실사용 강도 미달 — library_dir 공급 계약 부재로 백지, 액션 핸들러 4종 예외 무방비(확정 클릭 직후 실패도 통지 0), 스테일 단일 결과 라벨 |
+| RC-13 | 높음 | defect | confirmed | U4 | 착지(b676d6b) | 취득 성공 후 기간·건수 위젯 편집이 OK 게이트를 무효화하지 않음 — 미검증 기간이 풀에 등록되어 이후 모든 실행이 실패하는 죽은 참조를 조용히 생성 |
+| RC-14 | 높음 | defect | confirmed | U2 | 착지(2113cae) | 템플릿 워크숍 패널이 실사용 강도 미달 — library_dir 공급 계약 부재로 백지, 액션 핸들러 4종 예외 무방비(확정 클릭 직후 실패도 통지 0), 스테일 단일 결과 라벨 |
 | RC-15 | 중간 | defect | confirmed | U7 | 대기 | 파괴적 확인 정책이 두 계열로 분열 — ADR-E 강화 패턴은 _ack_partial 1곳뿐, 덮어쓰기·삭제 3곳은 기본버튼 미지정 영어 Yes/No라 Enter 반사로 파괴 확정(런타임 실증), 충돌 사실 재진술도 거짓·부재 |
 | RC-16 | 중간 | defect | confirmed | U8 | 대기 | 예외→사용자 메시지 번역 층 부재 — 3개 CLI가 일상 실패를 원시 traceback으로 노출하고 exit 1이 게이트/부분실패/크래시를 구분 못하며, GUI 오류 문구도 원인 파일·다음 행동을 지목 못함 |
-| RC-17 | 중간 | defect | confirmed | U5 | 대기 | hwpxdiff 성형·렌더 로직의 뷰 상주(링1 부재) — 같은 DiffResult가 GUI와 CLI HTML에서 다른 낱말 강조로 렌더(8/85행 실측), 사본·라벨 재파싱·팔레트 이원 동반 |
-| RC-18 | 중간 | defect | confirmed | U5 | 대기 | 섹션 0개 빈 컨테이너 HWPX 쌍을 '변경 없음'으로 단언 — 추출 완전성 신호를 diff 표면 어느 층도 실패로 승격하지 않음 |
-| RC-19 | 중간 | defect | confirmed | U5 | 대기 | 대규모 전량 개정 문서에서 hwpxdiff 비교가 UI 스레드를 수십 초 동결 — 전쌍 SequenceMatcher.ratio O(N²) + 동기 핸들러(취소·진행 없음) |
+| RC-17 | 중간 | defect | confirmed | U5 | 착지(877d50c) | hwpxdiff 성형·렌더 로직의 뷰 상주(링1 부재) — 같은 DiffResult가 GUI와 CLI HTML에서 다른 낱말 강조로 렌더(8/85행 실측), 사본·라벨 재파싱·팔레트 이원 동반 |
+| RC-18 | 중간 | defect | confirmed | U5 | 착지(877d50c) | 섹션 0개 빈 컨테이너 HWPX 쌍을 '변경 없음'으로 단언 — 추출 완전성 신호를 diff 표면 어느 층도 실패로 승격하지 않음 |
+| RC-19 | 중간 | defect | confirmed | U5 | 착지(877d50c) | 대규모 전량 개정 문서에서 hwpxdiff 비교가 UI 스레드를 수십 초 동결 — 전쌍 SequenceMatcher.ratio O(N²) + 동기 핸들러(취소·진행 없음) |
 | RC-20 | 중간 | defect | confirmed | U8 | 대기 | 출력 파일명 패턴 계약 부실 — 기본값 2종이 3링 4곳 산재, 빈 입력 시 화면에 없던 값으로 조용한 폴백, 미치환 {{토큰}}이 무경고로 실파일명이 됨 |
 | RC-21 | 중간 | defect | unverified | U8 | 대기 | hwpxfiller 최상위 --help가 서브커맨드 6종을 전혀 표기하지 않음 — pre-argparse 수동 디스패치로 도움말이 실제 CLI 표면을 오표현 |
 | RC-22 | 중간 | code_smell | accepted | U9 | 대기 | run_view↔matrix_view 사본 8종(QThread 배선·완료/실패 핸들러·teardown·open_folder·나라/풀 데이터 겨눔 3종) — _teardown_thread는 이미 의미가 갈라진 사본 부패 개시 상태 |
 | RC-23 | 중간 | convention_deviation | accepted | U9 | 대기 | 게이트 상태의 표시 결정이 VM과 위젯에 쪼개져 모순 신호 — 드리프트 차단 중에도 상단 '사전검증 통과' 녹색 유지, 상태 리프레시 1회당 템플릿 zip 5회 재파싱 |
-| RC-24 | 중간 | code_smell | accepted | U4 | 대기 | 취득 결과 스냅샷의 소유가 링2 뷰 — 실패 시 records만 리셋되어 datasource/fields/label에 이전 성공값 잔존, 수용성 판정·위젯 관통도 뷰에 산재 |
+| RC-24 | 중간 | code_smell | accepted | U4 | 착지(b676d6b) | 취득 결과 스냅샷의 소유가 링2 뷰 — 실패 시 records만 리셋되어 datasource/fields/label에 이전 성공값 잔존, 수용성 판정·위젯 관통도 뷰에 산재 |
 | RC-25 | 중간 | code_smell | accepted | U10 | 대기 | 미선언 덕타이핑 이음새 — 위저드 주입 2속성(secret_store/nara_fetcher)이 호스트에 정의조차 없어 주입 실수가 조용히 실 자격증명 저장소·실 네트워크로 폴백, 문자열 타입명 검사·미선언 인스턴스 속성 동반 |
 | RC-26 | 중간 | convention_deviation | accepted | U12 | 대기 | 사용자 용어 체계의 전역 미정렬 — 1개념 다이름(공유 베이스 4이름·fieldize/컴파일), 1단어 다개념('어휘' 3개념, 비움/공란/빈칸 어휘 침범), 라벨↔창 제목 짝 불일치 |
 | RC-27 | 중간 | convention_deviation | accepted | U11 | 대기 | 전 한국어 제품에 Qt 표준 문자열이 영어로 잔존 — QTranslator 미설치로 위저드 Back/Next/Cancel·파괴적 확인 &Yes/&No가 영어 |
 | RC-30 | 중간 | defect | unverified | U9 | 대기 | 부분 실패 배치의 완료 모달이 실패를 무언급 — succeeded>0만으로 '완료' 서사(run/matrix 동일 사본), 실패 사유는 원시 errno 관통 |
 | RC-28 | 낮음 | code_smell | accepted | U10 | 대기 | 저작 화면의 링1 연기 잔여 비용 — accept() 5책임 fat handler, _compile_here 인라인 컴파일·IO, 레지스트리 질의·베이스 저장이 뷰 상주, 안내문이 절차 순서의 부수효과 |
 | RC-29 | 낮음 | code_smell | accepted | U10 | 대기 | CompileState→시각 심각도 매핑이 링2(home)와 링1(template_manager_state)에 상이한 어휘로 이중 존재 + fb 셀렉터 값 어휘가 원 의미와 다른 뜻으로 재전용 |
-| RC-31 | 낮음 | defect | unverified | U5 | 대기 | hwpxdiff 첫 비교 실패 시 인라인 실패 문구 미설정 — _invalidate_result 조기 반환이 '지울 결과 없음'과 '표시할 메시지 없음'을 동일시 |
-| RC-32 | 낮음 | polish | accepted | U5 | 대기 | hwpxdiff 세 표면(GUI/CLI/HTML)의 요약·빈 상태 카피가 각자 하드코딩 — GUI만 '변경 없음' 확정 문장 부재, HTML만 번호변경 KPI 부재 |
+| RC-31 | 낮음 | defect | unverified | U5 | 착지(877d50c) | hwpxdiff 첫 비교 실패 시 인라인 실패 문구 미설정 — _invalidate_result 조기 반환이 '지울 결과 없음'과 '표시할 메시지 없음'을 동일시 |
+| RC-32 | 낮음 | polish | accepted | U5 | 착지(877d50c) | hwpxdiff 세 표면(GUI/CLI/HTML)의 요약·빈 상태 카피가 각자 하드코딩 — GUI만 '변경 없음' 확정 문장 부재, HTML만 번호변경 KPI 부재 |
 | RC-33 | 낮음 | defect | unverified | U8 | 대기 | CLI lint --vocab이 UTF-8 BOM 파일의 첫 필드명을 오염 — Windows 표준 도구로 만든 어휘 파일이 오탐 off_vocabulary + exit 1 게이트 실패 |
 | RC-34 | 낮음 | code_smell | accepted | U11 | 대기 | 파일 다이얼로그 필터 문자열 하드코딩 10곳 — 지원 확장자 단일 출처(data/factory.py)와 드리프트 대기 상태 |
 | RC-35 | 낮음 | convention_deviation | accepted | U11 | 대기 | 언더스코어 사명 클래스(_AppController·_JobCard·_TemplateCard)가 사실상 공용 API — 테스트 4파일·docs 4곳이 크로스모듈 임포트/인용 |
 | RC-36 | 낮음 | polish | accepted | U11 | 대기 | 매핑 테이블에서 말줄임된 긴 필드명·소스 콤보의 전체 이름 확인 수단(툴팁) 부재 — 유사 접두 필드 오인 확정 위험 |
+
+### 스테이지 1 착지 기록 (2026-07-12) — 리그레션 증거
+
+유닛별 독립 검증 에이전트가 **수리 전 master에서 결함을 런타임 재현 → 수리 커밋에서 동일 절차
+전건 비재현**을 확인한 뒤 머지했다(적용 지점 전수 대조 + 회귀 반박 포함, 5유닛 전부 pass·반려 0회).
+
+- **U1** `219f7f2` (RC-01·02): master 6/6 재현(save 직렬화 실패로 111,322B→0B 파괴, ENOSPC 절단,
+  HTML 리포트 truncate, 무경고 덮어쓰기, 배치 간 동일 이름 재발급, 원장 무조건 교체) → 전건 비재현.
+  truncate-write 잔존 grep 0건. CLI 기본 차단은 의도된 breaking(`--overwrite` 옵트인).
+- **U2** `2113cae` (RC-05·04·14): master 15/15 재현 → 전건 비재현. 워크숍 라우트 소생(시그널 직결),
+  손상 job 격리 배지, 패널 예외 경계.
+- **U3** `1cf696c` (RC-08·10·09): master 3/3 재현 → 비재현. 잔여 보류 1건: wizard `_save_profile`/
+  `_save_base`의 동종 술어(공란 커버 계약 가능성) — 라운드 2 검토 소재.
+- **U4** `b676d6b` (RC-13·24): master 4증상 재현 → 비재현. 대화상자 산출물 4종을 VM 스냅샷 파생으로
+  전환해 부분 잔존을 구조적으로 차단.
+- **U5** `877d50c`+`e707837` (RC-17·11·18·19·31·32): master 6/6 재현 → 비재현. RC-19는 재현 기준
+  39.3s→4.0s(~10x, 적대 합성 최악 케이스의 O(N²)는 잔존 — 중기 워커 스레드화 과제 유효).
+  RC-31(미검증분)은 착수 시 재현 확인 후 수리. 골든 테스트 무변경.
+
+머지 후 전체 게이트(ruff→pyright→pytest) green: 최종 654 passed. 머지 게이트에서 pyright 1건
+검출·정합(`e707837` — worktree 자체 검증에 pyright 부재가 원인; 스테이지 2부터 유닛 자체 검증에
+pyright 포함).
 
 ## 치명 (critical) — 5건
 
