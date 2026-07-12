@@ -93,6 +93,95 @@ def test_dialog_acquire_failure_keeps_ok_locked_and_redacts(qapp):
     assert dlg.btn_retry.isEnabled()    # 재시도 노출
 
 
+def test_dialog_failure_after_success_resets_all_outputs(qapp):
+    """RC-24: 성공 뒤 실패 — records 만이 아니라 fields/datasource/label 까지 원자 리셋."""
+    from PySide6.QtWidgets import QDialogButtonBox
+
+    calls = {"n": 0}
+
+    def flaky(url: str) -> bytes:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _fixture_bytes()
+        raise RuntimeError("boom")
+
+    store = MemorySecretStore({NARA_SERVICE_KEY_NAME: "DUMMY"})
+    dlg = _dialog(store, flaky)
+    dlg._on_acquire()
+    assert dlg.datasource is not None and dlg.label and dlg.fields
+
+    dlg._on_acquire()  # 실패 — 이전 성공값 잔존 금지
+    assert dlg.records == []
+    assert dlg.fields == []
+    assert dlg.datasource is None
+    assert dlg.label == ""
+    assert not dlg.buttons.button(QDialogButtonBox.Ok).isEnabled()
+
+
+def test_dialog_edit_after_acquire_locks_ok_and_requires_reacquire(qapp):
+    """RC-13: 취득 성공 뒤 기간 편집 → OK 무효화 + 재취득 안내(미검증 기간 수용 금지)."""
+    from PySide6.QtWidgets import QDialogButtonBox
+
+    store = MemorySecretStore({NARA_SERVICE_KEY_NAME: "DUMMY"})
+    dlg = _dialog(store, lambda url: _fixture_bytes())
+    dlg._on_acquire()
+    ok = dlg.buttons.button(QDialogButtonBox.Ok)
+    assert ok.isEnabled()
+
+    dlg.dt_bgn.setDateTime(dlg.dt_bgn.dateTime().addMonths(-6))  # 취득 후 기간 편집
+    assert not ok.isEnabled()
+    assert "다시 가져오세요" in dlg.lbl_result.text()
+    assert dlg.records == [] and dlg.datasource is None and dlg.label == ""  # 원자 리셋
+
+    dlg._on_acquire()  # 편집된 기간(>1개월)은 재취득도 검증에 걸림 — 잠금 유지
+    assert not ok.isEnabled()
+    assert "1개월" in dlg.lbl_result.text()
+
+
+def test_dialog_spin_edit_after_acquire_locks_ok_until_reacquire(qapp):
+    """RC-13: 건수 편집도 게이트 무효화 — 유효 입력 재취득으로만 게이트 복원."""
+    from PySide6.QtWidgets import QDialogButtonBox
+
+    store = MemorySecretStore({NARA_SERVICE_KEY_NAME: "DUMMY"})
+    dlg = _dialog(store, lambda url: _fixture_bytes())
+    dlg._on_acquire()
+    ok = dlg.buttons.button(QDialogButtonBox.Ok)
+    assert ok.isEnabled()
+
+    dlg.spin_rows.setValue(7)
+    assert not ok.isEnabled()
+    assert "다시 가져오세요" in dlg.lbl_result.text()
+
+    dlg._on_acquire()  # 재취득 → 새 스냅샷으로 복원
+    assert ok.isEnabled()
+    assert dlg.query_options()["num_rows"] == 7
+
+
+def test_dialog_edit_before_acquire_is_noop(qapp):
+    """취득 전(스냅샷 없음) 편집은 게이트·라벨에 무영향 — 이미 잠겨 있다."""
+    from PySide6.QtWidgets import QDialogButtonBox
+
+    store = MemorySecretStore({NARA_SERVICE_KEY_NAME: "DUMMY"})
+    dlg = _dialog(store, lambda url: _fixture_bytes())
+    dlg.spin_page.setValue(3)
+    assert not dlg.buttons.button(QDialogButtonBox.Ok).isEnabled()
+    assert dlg.lbl_result.text() == ""
+
+
+def test_query_options_is_acquire_time_snapshot_or_loud_failure(qapp):
+    """query_options 는 취득 시점 캡처값 — 스냅샷 없으면 조용한 위젯값 폴백 대신 시끄럽게."""
+    store = MemorySecretStore({NARA_SERVICE_KEY_NAME: "DUMMY"})
+    dlg = _dialog(store, lambda url: _fixture_bytes())
+    with pytest.raises(RuntimeError):
+        dlg.query_options()  # 취득 전
+
+    dlg._on_acquire()
+    opts = dlg.query_options()
+    bgn, end = dlg.datetime_range()  # 편집 전이므로 위젯 현재값 == 취득 시점값
+    assert (opts["bgn_dt"], opts["end_dt"]) == (bgn, end)
+    assert (opts["num_rows"], opts["page_no"]) == (100, 1)
+
+
 def test_dialog_connection_test_reports_result(qapp):
     store = MemorySecretStore({NARA_SERVICE_KEY_NAME: "DUMMY"})
     dlg = _dialog(store, lambda url: _fixture_bytes())

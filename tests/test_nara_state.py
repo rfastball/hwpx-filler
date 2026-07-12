@@ -113,6 +113,61 @@ def test_acquire_datasource_is_keyless_snapshot():
     assert _LIVE_KEY not in repr(res)
 
 
+# ------------------------------------------------------- 원자 스냅샷(RC-24·RC-13)
+def test_acquire_success_owns_atomic_snapshot_with_query():
+    """수용 가능한 성공 → last_result 가 결과 전체 + 취득 시점 쿼리 스탬프(위젯 재독 금지)."""
+    store = MemorySecretStore({NARA_SERVICE_KEY_NAME: "DUMMY"})
+    vm = _vm(store, fetcher=lambda url: _fixture_bytes())
+    res = vm.acquire("202606010000", "202606302359", num_rows=50, page_no=2)
+    assert res.acceptable
+    assert vm.last_result is res
+    assert (res.bgn_dt, res.end_dt) == ("202606010000", "202606302359")
+    assert (res.num_rows, res.page_no) == (50, 2)
+    assert res.source_label() == "나라장터 · 202606010000~202606302359 · 2건"
+
+
+def test_acquire_failure_resets_snapshot_atomically():
+    """성공 뒤 실패 → last_result 통째로 None — records 만 리셋되는 부분 잔존 금지(RC-24)."""
+    calls = {"n": 0}
+
+    def flaky(url: str) -> bytes:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _fixture_bytes()
+        raise RuntimeError("boom")
+
+    store = MemorySecretStore({NARA_SERVICE_KEY_NAME: "DUMMY"})
+    vm = _vm(store, fetcher=flaky)
+    assert vm.acquire("202606010000", "202606302359").acceptable
+    assert vm.last_result is not None
+    res2 = vm.acquire("202606010000", "202606302359")
+    assert not res2.ok
+    assert vm.last_result is None  # fields/datasource/label 파생원까지 원자 리셋
+
+
+def test_acquire_zero_records_ok_but_not_acceptable():
+    """0건은 응답 정상이어도 수용 불가(빈 데이터 매핑 진행 금지) — 스냅샷도 남지 않는다."""
+    empty_ok = (
+        b'{"response":{"header":{"resultCode":"00","resultMsg":"OK"},'
+        b'"body":{"items":[]}}}'
+    )
+    store = MemorySecretStore({NARA_SERVICE_KEY_NAME: "DUMMY"})
+    vm = _vm(store, fetcher=lambda url: empty_ok)
+    res = vm.acquire("202606010000", "202606302359")
+    assert res.ok and not res.acceptable
+    assert vm.last_result is None
+
+
+def test_invalidate_discards_snapshot():
+    """취득 후 입력 편집 시 뷰가 호출하는 invalidate — 스냅샷 폐기(RC-13 게이트 무효화)."""
+    store = MemorySecretStore({NARA_SERVICE_KEY_NAME: "DUMMY"})
+    vm = _vm(store, fetcher=lambda url: _fixture_bytes())
+    vm.acquire("202606010000", "202606302359")
+    assert vm.last_result is not None
+    vm.invalidate()
+    assert vm.last_result is None
+
+
 # ------------------------------------------------------------------ 취득 실패
 def test_acquire_without_key_fails_loudly():
     vm = _vm(MemorySecretStore())  # 키 없음

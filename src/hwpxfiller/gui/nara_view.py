@@ -6,8 +6,10 @@
 직접 만지지 않는다.
 
 수용 시 :attr:`records`·:attr:`fields`·:attr:`datasource`(키 없는 스냅샷)·:attr:`label` 을
-노출해 DataPage 가 위저드 세션에 심는다. **키는 이 대화상자를 통과하지 않는다** —
-입력창 값은 즉시 SecretStore 로 넘어가고(등록), 취득은 저장된 키로만 이뤄진다.
+노출해 DataPage 가 위저드 세션에 심는다 — 전부 뷰모델의 ``last_result``(원자 스냅샷,
+성공 or None)에서 파생된 읽기 전용 프로퍼티라 실패·편집 시 부분 잔존이 없다.
+**키는 이 대화상자를 통과하지 않는다** — 입력창 값은 즉시 SecretStore 로 넘어가고(등록),
+취득은 저장된 키로만 이뤄진다.
 """
 
 from __future__ import annotations
@@ -45,11 +47,6 @@ class NaraAcquireDialog(QDialog):
     def __init__(self, parent=None, *, store=None, fetcher=None):
         super().__init__(parent)
         self.vm = NaraAcquireViewModel(store, fetcher=fetcher)
-        # 수용 시 DataPage 가 읽는 취득 산출물(키 없음).
-        self.records: "list[dict[str, str]]" = []
-        self.fields: "list[str]" = []
-        self.datasource = None
-        self.label: str = ""
 
         self.setWindowTitle("나라장터에서 데이터 가져오기")
         self.resize(560, 460)
@@ -70,7 +67,50 @@ class NaraAcquireDialog(QDialog):
         self._ok_button().setEnabled(False)
         root.addWidget(self.buttons)
 
+        # 취득 성공 뒤 기간·건수 편집 → 스냅샷과 입력이 어긋남 — OK 게이트 무효화(RC-13).
+        # (위젯 생성·초기값 설정이 끝난 뒤에 배선 — 초기화가 편집으로 오인되지 않게)
+        self.dt_bgn.dateTimeChanged.connect(self._on_query_edited)
+        self.dt_end.dateTimeChanged.connect(self._on_query_edited)
+        self.spin_rows.valueChanged.connect(self._on_query_edited)
+        self.spin_page.valueChanged.connect(self._on_query_edited)
+
         self._sync_key_ui()
+
+    # ------------------------------------------------ 취득 산출물(원자 스냅샷 파생)
+    # 전부 vm.last_result(성공 or None)에서 파생 — 실패·편집 시 4속성 부분 잔존 불가(RC-24).
+    @property
+    def records(self) -> "list[dict[str, str]]":
+        res = self.vm.last_result
+        return res.records if res is not None else []
+
+    @property
+    def fields(self) -> "list[str]":
+        res = self.vm.last_result
+        return res.fields if res is not None else []
+
+    @property
+    def datasource(self):
+        res = self.vm.last_result
+        return res.as_datasource() if res is not None else None
+
+    @property
+    def label(self) -> str:
+        res = self.vm.last_result
+        return res.source_label() if res is not None else ""
+
+    def query_options(self) -> "dict[str, object]":
+        """수용된 취득의 쿼리 스냅샷 — **취득 시점 캡처값**(위젯 현재값 재독 금지, RC-13).
+
+        풀 등록이 이걸 저장해야 '취득으로 검증된 기간'과 '저장되는 기간'이 항상 같다.
+        수용 가능한 취득이 없으면 시끄럽게 실패한다(조용한 위젯값 폴백 금지).
+        """
+        res = self.vm.last_result
+        if res is None:
+            raise RuntimeError("수용 가능한 취득 결과가 없습니다 — 먼저 가져오기를 실행하세요.")
+        return {
+            "bgn_dt": res.bgn_dt, "end_dt": res.end_dt,
+            "num_rows": res.num_rows, "page_no": res.page_no,
+        }
 
     # ------------------------------------------------------------- 키 등록 그룹
     def _build_key_group(self) -> QGroupBox:
@@ -205,18 +245,24 @@ class NaraAcquireDialog(QDialog):
             num_rows=self.spin_rows.value(), page_no=self.spin_page.value(),
         )
         self.btn_retry.setEnabled(True)
-        mark(self.lbl_result, "level", "ok" if (res.ok and res.records) else "danger")
+        mark(self.lbl_result, "level", "ok" if res.acceptable else "danger")
         self.lbl_result.setText(res.summary())
-        if res.ok and res.records:
-            self.records = res.records
-            self.fields = res.fields
-            self.datasource = res.as_datasource()  # 키 없는 스냅샷
-            self.label = f"나라장터 · {self._bgn_text()}~{self._end_text()} · {res.count}건"
-            self._ok_button().setEnabled(True)
-        else:
-            # 실패/0건은 수용 불가(빈 데이터로 매핑 진행 금지) — 확인 버튼 잠금 유지.
-            self.records = []
-            self._ok_button().setEnabled(False)
+        # 수용성(성공+1건 이상)은 뷰모델 스냅샷이 판정 — 실패/0건이면 last_result 가
+        # 원자로 None 이 돼 records/fields/datasource/label 도 함께 비워진다(RC-24).
+        self._ok_button().setEnabled(res.acceptable)
+
+    def _on_query_edited(self, *_args) -> None:
+        """취득 뒤 기간·건수 편집 — 스냅샷 폐기 + OK 잠금 + 재취득 안내(RC-13).
+
+        편집된 입력은 검증되지 않았다: 그대로 수용·등록되면 '취득 성공에서만 수용'
+        불변식이 깨진다. 스냅샷이 없으면(취득 전/이미 실패) 게이트는 이미 잠겨 있다.
+        """
+        if self.vm.last_result is None:
+            return
+        self.vm.invalidate()
+        self._ok_button().setEnabled(False)
+        mark(self.lbl_result, "level", "warn")
+        self.lbl_result.setText("입력이 변경됨 — 다시 가져오세요.")
 
     def datetime_range(self) -> "tuple[str, str]":
         """현재 입력된 (시작, 종료) 일시 문자열(YYYYMMDDHHMM) — 검증·표시용."""

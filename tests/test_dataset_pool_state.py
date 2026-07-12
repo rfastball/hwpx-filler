@@ -53,6 +53,17 @@ def test_register_rejects_empty_name(tmp_path):
         vm.register_nara("이름있음", "", "202606302359")
 
 
+def test_register_nara_validates_range(tmp_path):
+    """RC-13: 등록 경로도 기간 검증 — 취득 게이트 우회로 미검증 기간이 조용히 저장되면
+    실행 시점마다 실패하는 죽은 참조가 된다(등록 시점에 시끄럽게 거절)."""
+    vm = _vm(tmp_path)
+    with pytest.raises(ValueError, match="1개월"):
+        vm.register_nara("긴기간", "202601010000", "202607010000")
+    with pytest.raises(ValueError):
+        vm.register_nara("형식오류", "2026-06-01 00", "202606302359")
+    assert vm.is_empty()  # 거절된 등록은 흔적 없음
+
+
 def test_status_transitions_via_dispatch(tmp_path):
     vm = _vm(tmp_path)
     vm.register_excel("D", "/d.xlsx")

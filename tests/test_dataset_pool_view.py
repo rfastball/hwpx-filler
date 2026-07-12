@@ -100,8 +100,40 @@ def test_panel_register_nara_from_dialog_saves_query_only(qapp, tmp_path, monkey
     assert reg.exists("공고6월")
     item = reg.load("공고6월")
     assert item.kind == "nara" and "service_key" not in item.opts
+    # 저장된 쿼리는 취득 시점 스냅샷과 동일(위젯 현재값 재독 아님 — RC-13).
+    snap = dlg.query_options()
+    assert item.opts["bgn_dt"] == snap["bgn_dt"]
+    assert item.opts["end_dt"] == snap["end_dt"]
+    assert item.opts["num_rows"] == 100 and item.opts["page_no"] == 1
     saved = reg.path_for("공고6월").read_text(encoding="utf-8")
     assert _LIVE_KEY not in saved
+
+
+def test_panel_register_nara_refuses_stale_edited_dialog(qapp, tmp_path, monkeypatch):
+    """RC-13: 취득 뒤 위젯 편집은 스냅샷을 무효화 — 등록은 시끄럽게 거절되고 풀은 무변화
+    (편집된 미검증 기간이 죽은 참조로 조용히 저장되는 경로 차단)."""
+    from PySide6.QtWidgets import QDialogButtonBox
+
+    from hwpxfiller.gui.dataset_pool_panel import DatasetPoolPanel
+    from hwpxfiller.gui.nara_view import NaraAcquireDialog
+
+    reg = DatasetPoolRegistry(tmp_path)
+    store = MemorySecretStore({NARA_SERVICE_KEY_NAME: _LIVE_KEY})
+    panel = DatasetPoolPanel(reg, store=store, fetcher=lambda url: _fixture_bytes())
+
+    dlg = NaraAcquireDialog(store=store, fetcher=lambda url: _fixture_bytes())
+    dlg._on_acquire()  # 취득 성공
+    dlg.dt_bgn.setDateTime(dlg.dt_bgn.dateTime().addMonths(-6))  # 취득 후 기간 편집
+    assert not dlg.buttons.button(QDialogButtonBox.Ok).isEnabled()  # 수용 게이트 잠김
+
+    seen = {}
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("스테일", True))
+    monkeypatch.setattr(
+        QMessageBox, "critical", lambda *a, **k: seen.setdefault("msg", a[2])
+    )
+    panel._register_nara_from_dialog(dlg)  # 게이트 우회 시도(헤드리스)도 거절
+    assert not reg.exists("스테일")
+    assert "가져오기" in seen.get("msg", "")
 
 
 def test_panel_delete_confirms_then_removes(qapp, tmp_path, monkeypatch):

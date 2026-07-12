@@ -89,7 +89,12 @@ class AcquiredNaraData:
 
 @dataclass
 class AcquireResult:
-    """취득 1회의 결과 — 성공(레코드·필드) 또는 시끄러운 실패(마스킹된 ``error``)."""
+    """취득 1회의 결과 — 성공(레코드·필드) 또는 시끄러운 실패(마스킹된 ``error``).
+
+    ``bgn_dt``~``page_no`` 는 **취득 시점 쿼리 스냅샷** — 이후 위젯 편집과 무관하게
+    이 결과가 어떤 쿼리의 산물인지 붙들어, 풀 등록·라벨이 위젯 현재값을 재독하지
+    않게 한다(RC-13 이중 소스 차단).
+    """
 
     ok: bool
     records: "list[dict[str, str]]" = field(default_factory=list)
@@ -97,10 +102,28 @@ class AcquireResult:
     result_code: str = ""
     result_msg: str = ""
     error: str = ""
+    # 취득 시점 쿼리 스냅샷(acquire 가 스탬프) — 성공·실패 공통.
+    bgn_dt: str = ""
+    end_dt: str = ""
+    num_rows: int = 0
+    page_no: int = 0
 
     @property
     def count(self) -> int:
         return len(self.records)
+
+    @property
+    def acceptable(self) -> bool:
+        """수용 가능(=매핑 진행 허용) 여부 — 성공 **그리고** 1건 이상(0건 수용 불가 정책).
+
+        '0건 수용 불가' 도메인 정책의 단일 출처 — 뷰가 ``ok and records`` 를 재합성하지
+        않는다(RC-24).
+        """
+        return self.ok and bool(self.records)
+
+    def source_label(self) -> str:
+        """수용 시 세션·풀에 표시할 소스 라벨 — 취득 시점 기간·건수로 조합(위젯값 아님)."""
+        return f"나라장터 · {self.bgn_dt}~{self.end_dt} · {self.count}건"
 
     def as_datasource(self) -> AcquiredNaraData:
         """매핑에 붙일 키 없는 스냅샷 어댑터."""
@@ -140,6 +163,8 @@ class NaraAcquireViewModel:
         self._store = store if store is not None else default_secret_store()
         self._fetcher = fetcher
         self._timeout = timeout
+        #: '현재 취득' 원자 스냅샷 — 수용 가능한 성공 결과 전체 or None(부분 잔존 금지, RC-24).
+        self.last_result: "AcquireResult | None" = None
 
     # --------------------------------------------------------------- 키 등록
     def is_registered(self) -> bool:
@@ -216,7 +241,27 @@ class NaraAcquireViewModel:
 
         성공은 레코드+필드+정상 코드, 실패는 **마스킹된** 사유. 키는 저장소에서 이 순간에만
         읽어 소스에 넘기고 반환값엔 남기지 않는다.
+
+        결과엔 취득 시점 쿼리(기간·건수)가 스탬프되고, :attr:`last_result` 는 **원자로**
+        갱신된다 — 수용 가능한 성공이면 결과 전체, 아니면 ``None``(이전 성공값의 부분
+        잔존 금지, RC-24).
         """
+        res = self._acquire(bgn, end, num_rows=num_rows, page_no=page_no)
+        res.bgn_dt, res.end_dt = bgn, end
+        res.num_rows, res.page_no = num_rows, page_no
+        self.last_result = res if res.acceptable else None
+        return res
+
+    def invalidate(self) -> None:
+        """현재 취득 스냅샷 폐기 — 취득 후 입력(기간·건수)이 편집돼 결과와 어긋날 때(RC-13).
+
+        수용 게이트가 이 스냅샷 유무를 따르므로, 폐기는 곧 '다시 가져오기 전 수용 불가'다.
+        """
+        self.last_result = None
+
+    def _acquire(
+        self, bgn: str, end: str, *, num_rows: int, page_no: int
+    ) -> AcquireResult:
         key = self._store.get(NARA_SERVICE_KEY_NAME)
         if not key:
             return AcquireResult(

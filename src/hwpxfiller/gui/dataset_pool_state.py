@@ -22,6 +22,7 @@ from ..core.dataset_pool import (
     DatasetPoolRegistry,
     default_dataset_pool_dir,
 )
+from .nara_state import NaraAcquireViewModel  # 기간 검증 단일 출처(링1→링1)
 
 # 상태 → 사람이 읽는 배지 라벨/레벨(style.py QLabel[level=...] 팔레트와 통일).
 _BADGE_LABELS = {
@@ -193,12 +194,19 @@ class DatasetPoolViewModel:
         page_no: "int | None" = None,
         note: str = "",
     ) -> DatasetPoolItem:
-        """나라장터 쿼리 참조 등록 — 기간·건수만 저장(**ServiceKey 없음**·데이터 없음)."""
+        """나라장터 쿼리 참조 등록 — 기간·건수만 저장(**ServiceKey 없음**·데이터 없음).
+
+        기간은 등록 시점에 검증한다(형식·1개월 제한) — 취득 경로만 믿고 우회 저장하면
+        실행 때마다 실패하는 죽은 참조가 조용히 생긴다(RC-13).
+        """
         name = (name or "").strip()
         if not name:
             raise ValueError("데이터셋 이름을 입력하세요.")
         if not bgn_dt or not end_dt:
             raise ValueError("조회 기간(시작·종료)을 입력하세요.")
+        rng_err = NaraAcquireViewModel.validate_range(bgn_dt, end_dt)
+        if rng_err:
+            raise ValueError(rng_err)
         opts: "dict[str, object]" = {"bgn_dt": bgn_dt, "end_dt": end_dt}
         if num_rows:
             opts["num_rows"] = num_rows

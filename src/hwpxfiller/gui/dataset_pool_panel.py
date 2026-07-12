@@ -213,15 +213,19 @@ class DatasetPoolPanel(QMainWindow):
         self._register_nara_from_dialog(dlg)
 
     def _register_nara_from_dialog(self, dlg) -> None:
-        """대화상자 수용 결과에서 쿼리 참조를 만들어 등록(헤드리스 테스트용 분리)."""
+        """대화상자 수용 결과에서 쿼리 참조를 만들어 등록(헤드리스 테스트용 분리).
+
+        저장하는 기간·건수는 **취득 시점 스냅샷**(``query_options``) — 위젯 현재값을
+        재독하지 않는다(취득으로 검증된 쿼리만 풀에 들어간다, RC-13).
+        """
         name, ok = QInputDialog.getText(self, "데이터셋 이름", "이름:")
         if not ok or not name.strip():
             return
-        bgn, end = dlg.datetime_range()
         try:
+            opts = dlg.query_options()  # 스냅샷 부재 시 시끄럽게 실패(조용한 위젯값 폴백 금지)
             self.vm.register_nara(
-                name, bgn, end,
-                num_rows=dlg.spin_rows.value(), page_no=dlg.spin_page.value(),
+                name, str(opts["bgn_dt"]), str(opts["end_dt"]),
+                num_rows=int(opts["num_rows"]), page_no=int(opts["page_no"]),
             )
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "오류", f"등록 실패:\n{exc}")
