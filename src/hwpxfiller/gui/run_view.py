@@ -53,10 +53,21 @@ class RunView(QMainWindow):
     run_finished = Signal(object)  # BatchResult
     back_requested = Signal()
 
-    def __init__(self, job: Job, parent=None):
+    def __init__(self, job: Job, parent=None, *, pool_registry=None,
+                 secret_store=None, nara_fetcher=None):
         super().__init__(parent)
         self.job = job
         self.vm = RunViewModel(job)            # 실행 결정(Qt 비의존)
+        # 데이터 풀(참조) — 실행 시점에 겨눈다. 주입 가능(테스트); 기본은 홈 레지스트리.
+        if pool_registry is None:
+            from ..core.dataset_pool import (
+                DatasetPoolRegistry,
+                default_dataset_pool_dir,
+            )
+            pool_registry = DatasetPoolRegistry(default_dataset_pool_dir())
+        self._pool_registry = pool_registry
+        self._secret_store = secret_store
+        self._nara_fetcher = nara_fetcher
         self._running = False
         self._thread: "QThread | None" = None
         self._marked_fields: "list[str]" = []  # 이번 생성에서 미입력 표시가 들어간 필드(결과 요약용)
@@ -104,11 +115,17 @@ class RunView(QMainWindow):
         drow = QHBoxLayout()
         self.ed_data = QLineEdit()
         self.ed_data.setReadOnly(True)
-        btn_data = QPushButton("데이터 선택…")
+        self.btn_pool = QPushButton("데이터 풀에서…")
+        self.btn_pool.clicked.connect(self._pick_from_pool)
+        btn_data = QPushButton("파일 선택…")
         btn_data.clicked.connect(self._pick_data)
-        drow.addWidget(QLabel("데이터(.xlsx/.csv)"))
+        self.btn_nara = QPushButton("나라장터…")
+        self.btn_nara.clicked.connect(self._pick_nara)
+        drow.addWidget(QLabel("데이터"))
         drow.addWidget(self.ed_data, 1)
+        drow.addWidget(self.btn_pool)
         drow.addWidget(btn_data)
+        drow.addWidget(self.btn_nara)
         root.addLayout(drow)
 
         # ---- 사전검증(치명 소스누락 표시) ----
@@ -252,8 +269,60 @@ class RunView(QMainWindow):
         if not records:
             QMessageBox.warning(self, "확인", "레코드가 없습니다. 다른 파일을 선택하세요.")
             return
-        self.ed_data.setText(path)
-        # set_records 가 selectionChanged 를 쏘아 _on_selection_changed(사전검증+패널)를 부른다.
+        self._after_data_loaded(path)
+
+    def _pick_from_pool(self) -> None:
+        """데이터 풀(활성 항목)에서 참조를 골라 실행 시점에 재읽기(싱크)한다."""
+        from PySide6.QtWidgets import QInputDialog
+
+        from ..core.dataset_pool import STATUS_ACTIVE
+
+        items = self._pool_registry.list_items(status=STATUS_ACTIVE)
+        if not items:
+            QMessageBox.information(
+                self, "데이터 풀", "활성 데이터가 없습니다. 먼저 데이터 풀에 등록하세요."
+            )
+            return
+        names = [it.name for it in items]
+        name, ok = QInputDialog.getItem(
+            self, "데이터 풀에서 선택", "데이터셋:", names, 0, False
+        )
+        if not ok or not name:
+            return
+        item = next(it for it in items if it.name == name)
+        try:
+            records = self.vm.load_pool_item(
+                item, secret_store=self._secret_store, fetcher=self._nara_fetcher
+            )
+        except Exception as exc:  # noqa: BLE001 - 복원 실패(키 미등록·읽기)는 시끄럽게
+            QMessageBox.critical(self, "오류", f"데이터 복원 실패:\n{exc}")
+            return
+        if not records:
+            QMessageBox.warning(self, "확인", "레코드가 없습니다(취득 0건).")
+            return
+        self._after_data_loaded(f"풀: {item.name}")
+
+    def _pick_nara(self) -> None:
+        """일회 나라장터 취득(애드혹) — 풀 등록 없이 이번 실행만 겨눈다."""
+        from .nara_view import NaraAcquireDialog
+
+        dlg = NaraAcquireDialog(
+            self, store=self._secret_store, fetcher=self._nara_fetcher
+        )
+        if dlg.exec() != dlg.Accepted or not dlg.records:
+            return
+        # 대화상자가 키 없는 스냅샷(AcquiredNaraData)을 이미 만들었다 — 그대로 겨눈다.
+        self.vm.datasource = dlg.datasource
+        self.vm.records = dlg.records
+        self.vm.reset_acks()
+        self._after_data_loaded(dlg.label)
+
+    def _after_data_loaded(self, label: str) -> None:
+        """데이터 겨눔 공통 꼬리 — 라벨 표시 + 레코드 선택기 채움 + 사전검증/패널 갱신.
+
+        set_records 가 selectionChanged 를 쏘아 _on_selection_changed(사전검증+패널)를 부른다.
+        """
+        self.ed_data.setText(label)
         self.selector.set_records(self.vm.records, self.job.filename_pattern)
         self._on_selection_changed()
 

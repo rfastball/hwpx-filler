@@ -115,6 +115,50 @@ class RunViewModel:
         self.reset_acks()  # 새 데이터 → 미입력 확인 재평가
         return records
 
+    def load_pool_item(self, item, *, secret_store=None, fetcher=None) -> "list[dict]":
+        """데이터셋 풀 항목(참조)을 복원해 겨눈다 — 실행 시점 재읽기가 곧 "싱크".
+
+        - **나라장터**: N2 :class:`~hwpxfiller.gui.nara_state.NaraAcquireViewModel` 취득 경로를
+          재사용한다 — 기간(1개월) 재검증·``resultCode`` 정합('00'만 성공)·키 마스킹을 그대로
+          관통시켜, 만료·인증실패 키가 조용한 "0건"이 아니라 **시끄러운 API 오류**로 실패하게
+          한다(acquire 경로와 동일 엄격도). 성공 결과는 **키 없는 스냅샷**(``as_datasource``)이라
+          실행뷰의 반복 조회가 재-fetch·키 재사용을 하지 않는다("싱크 = 의도적 1회 재읽기").
+        - **엑셀 등 파일 소스**: :func:`~hwpxfiller.data.factory.source_from_pool_item` 로 라이브
+          소스를 복원(지연·캐시, 파일 재읽기가 곧 싱크).
+
+        키는 복원 순간에만 저장소에서 읽혀 스냅샷·레코드 어디에도 남지 않는다. 취득 실패는
+        **마스킹된 채** raise(위젯이 시끄럽게 표시), 레코드 0건이면 상태 불변(위젯이 경고)."""
+        if getattr(item, "kind", None) == "nara":
+            from .nara_state import NaraAcquireViewModel
+
+            opts = dict(item.opts)
+            avm = NaraAcquireViewModel(secret_store, fetcher=fetcher)
+            res = avm.acquire(
+                str(opts.get("bgn_dt", "")), str(opts.get("end_dt", "")),
+                num_rows=int(opts.get("num_rows", 100)),
+                page_no=int(opts.get("page_no", 1)),
+            )
+            if not res.ok:
+                # 키 미등록·인증실패·기간초과 등 — 마스킹된 사유로 시끄럽게(조용한 0건 금지).
+                raise RuntimeError(f"나라장터 데이터 취득 실패: {res.error}")
+            if not res.records:
+                return []
+            self.datasource = res.as_datasource()  # 키 없는 실행 스냅샷
+            self.records = res.records
+            self.reset_acks()
+            return res.records
+
+        from ..data.factory import source_from_pool_item
+
+        source = source_from_pool_item(item, secret_store=secret_store, fetcher=fetcher)
+        records = source.records()
+        if not records:
+            return []
+        self.datasource = source
+        self.records = records
+        self.reset_acks()
+        return records
+
     # ------------------------------------------------------------ 사전검증
     def request(self, indices: "list[int]") -> RunRequest:
         return RunRequest(self.job, self.datasource, list(indices))

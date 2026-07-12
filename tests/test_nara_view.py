@@ -120,7 +120,10 @@ def test_datapage_source_toggle_swaps_input_rows(qapp, tmp_path):
     page.rb_nara.setChecked(True)
     assert page.excel_row.isHidden()      # offscreen: isVisible 대신 isHidden
     assert not page.nara_row.isHidden()
-    assert not page.isComplete()          # 소스 전환은 이전 선택 무효화
+    # 소스 전환은 이전에 로드한 데이터 선택을 무효화한다(_valid=False). 단 J1 강등 이후
+    # DataPage 는 선택 단계라 isComplete()==True(데이터 없이도 진행) — 둘은 분리됐다.
+    assert not page._valid
+    assert page.isComplete()
 
 
 def test_datapage_apply_nara_result_seeds_session_and_vocab(qapp, tmp_path):

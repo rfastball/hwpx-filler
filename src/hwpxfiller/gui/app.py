@@ -34,6 +34,9 @@ class _AppController:
         # 홈은 병렬 유닛 소유라 여기서 hasattr 로 가드해 라우팅만 더한다.
         if hasattr(self.home, "manage_templates_requested"):
             self.home.manage_templates_requested.connect(self._open_template_manager)
+        # 데이터 풀 관리(J1) — 홈이 진입 시그널을 노출하면 배선(전방호환·비파괴).
+        if hasattr(self.home, "manage_pool_requested"):
+            self.home.manage_pool_requested.connect(self._open_pool_manager)
 
     # ------------------------------------------------------------------ 라우팅
     def _open_editor_new(self) -> None:
@@ -58,7 +61,9 @@ class _AppController:
         from .run_view import RunView
 
         job = self.registry.load(name)
-        view = RunView(job)
+        # 실행뷰가 홈과 같은 데이터 풀 레지스트리를 공유(풀에서 겨눔). 홈이 풀을 노출하면 주입.
+        pool_registry = getattr(self.home, "pool_registry", None)
+        view = RunView(job, pool_registry=pool_registry)
         # 성공 실행 → 작업 사용 메타(last_run_at) 갱신. RunView 는 레지스트리를 모른다
         # (뷰 계약 유지) — 시그널 수신자만 추가.
         view.run_finished.connect(lambda batch: self._record_run(name, batch))
@@ -90,6 +95,15 @@ class _AppController:
 
         panel = TemplateManagerPanel(library_dir)
         panel.make_job_requested.connect(self._open_editor_from_template)
+        self._track(panel)
+        panel.show()
+
+    def _open_pool_manager(self) -> None:
+        """데이터 풀 관리 워크숍(J1)을 연다. 변경 시 홈 KPI 를 갱신한다."""
+        from .dataset_pool_panel import DatasetPoolPanel
+
+        panel = DatasetPoolPanel(getattr(self.home, "pool_registry", None))
+        panel.pool_changed.connect(self.home.refresh)
         self._track(panel)
         panel.show()
 

@@ -263,8 +263,11 @@ class DataPage(QWizardPage):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setTitle("2단계 — 데이터 선택")
-        self.setSubTitle("레코드(행)마다 문서 1건을 생성할 데이터를 선택하세요.")
+        self.setTitle("2단계 — 데이터 선택 (선택)")
+        self.setSubTitle(
+            "선택 단계입니다 — 미리보기·자동제안용 샘플을 불러오거나 건너뛰세요. "
+            "매핑은 데이터 없이 스키마만으로 확정할 수 있고, 실제 데이터는 실행할 때 겨눕니다."
+        )
         self._valid = False
 
         layout = QVBoxLayout(self)
@@ -365,8 +368,8 @@ class DataPage(QWizardPage):
         # 샘플 데이터를 다시 고른다는 사실을 정직하게 노출.
         if getattr(self.wizard(), "initial_job", None) is not None:
             self.setSubTitle(
-                "작업에 데이터는 저장되지 않습니다 — 매핑 검토용 샘플 데이터를 "
-                "다시 선택하세요. 실제 데이터·행은 실행할 때 고릅니다."
+                "작업에 데이터는 저장되지 않습니다 — 매핑 검토용 샘플은 선택입니다"
+                "(건너뛰어도 됩니다). 실제 데이터·행은 실행할 때 고릅니다."
             )
 
     def _pick(self):
@@ -405,7 +408,10 @@ class DataPage(QWizardPage):
         self.completeChanged.emit()
 
     def isComplete(self) -> bool:
-        return self._valid
+        # 데이터 스텝은 **선택**(ADR J 강등) — 데이터 없이도 다음(매핑)으로 진행할 수 있다.
+        # 샘플을 불러오면 매핑 초안·미리보기가 채워지고, 건너뛰면 스키마만으로 확정한다.
+        # (``_valid`` 는 요약 표시·소스전환 내부 상태로만 유지.)
+        return True
 
 
 class MappingPage(QWizardPage):

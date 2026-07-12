@@ -131,8 +131,11 @@ class JobListHome(QMainWindow):
     # txt 트랙(신규)
     new_txt_requested = Signal()
     open_txt_requested = Signal(str)  # 템플릿 이름
+    # 데이터 풀 관리(J1) — 앱 컨트롤러가 hasattr 로 가드해 라우팅(전방호환).
+    manage_pool_requested = Signal()
 
-    def __init__(self, registry: JobRegistry, text_registry=None, parent=None):
+    def __init__(self, registry: JobRegistry, text_registry=None, parent=None,
+                 pool_registry=None):
         super().__init__(parent)
         self.registry = registry
         # 기본 txt 레지스트리(주입 없으면 표준 루트) — 대시보드 txt 트랙.
@@ -140,7 +143,12 @@ class JobListHome(QMainWindow):
             from ..core.text_registry import TextTemplateRegistry, default_text_templates_dir
             text_registry = TextTemplateRegistry(default_text_templates_dir())
         self.text_registry = text_registry
-        self.vm = HomeViewModel(registry, text_registry)
+        # 기본 데이터 풀 레지스트리(durable 참조) — 대시보드 KPI + 관리 진입.
+        if pool_registry is None:
+            from ..core.dataset_pool import DatasetPoolRegistry, default_dataset_pool_dir
+            pool_registry = DatasetPoolRegistry(default_dataset_pool_dir())
+        self.pool_registry = pool_registry
+        self.vm = HomeViewModel(registry, text_registry, pool_registry)
 
         self.setWindowTitle("HWPX Filler — 대시보드")
         self.resize(900, 560)
@@ -157,6 +165,9 @@ class JobListHome(QMainWindow):
         mark(sub, "muted", True)
         header.addWidget(title)
         header.addStretch(1)
+        self.btn_pool = QPushButton("데이터 풀 관리")
+        self.btn_pool.clicked.connect(self.manage_pool_requested)
+        header.addWidget(self.btn_pool)
         header.addWidget(sub)
         root.addLayout(header)
 
@@ -288,6 +299,7 @@ class JobListHome(QMainWindow):
             self._kpi_tile(str(k.missing_template_count), "템플릿 없는 작업", warn=k.missing_template_count > 0)
         )
         self.kpi_row.addWidget(self._kpi_tile(str(k.txt_template_count), "기안 템플릿 · txt"))
+        self.kpi_row.addWidget(self._kpi_tile(str(k.pool_count), "데이터 풀 · 활성"))
 
         # HWPX 작업 목록
         prev = self.vm.selected_name

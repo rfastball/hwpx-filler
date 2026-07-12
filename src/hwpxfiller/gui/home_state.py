@@ -121,14 +121,16 @@ class DashboardKpi:
     recent_run: str            # "MM-DD · 작업명" 또는 "—"
     missing_template_count: int
     txt_template_count: int
+    pool_count: int = 0        # 데이터 풀 활성 항목 수(durable 참조)
 
 
 class HomeViewModel:
     """작업 목록 상태 + 레지스트리 어댑터. 위젯은 구독해서 렌더한다."""
 
-    def __init__(self, registry: JobRegistry, text_registry=None):
+    def __init__(self, registry: JobRegistry, text_registry=None, pool_registry=None):
         self.registry = registry
         self.text_registry = text_registry  # TextTemplateRegistry | None (txt 트랙)
+        self.pool_registry = pool_registry  # DatasetPoolRegistry | None (데이터 풀 KPI)
         self._rows: "list[JobRow]" = []
         self._selected: "str | None" = None
         self._subs: "list" = []
@@ -174,7 +176,20 @@ class HomeViewModel:
             recent_run=recent,
             missing_template_count=sum(1 for r in self._rows if r.template_missing),
             txt_template_count=self.text_registry.count() if self.text_registry else 0,
+            pool_count=self._pool_count(),
         )
+
+    def _pool_count(self) -> int:
+        """데이터 풀 활성(active) 항목 수. 레지스트리 없거나 읽기 실패면 0(조용히 감춤 아님 —
+        관리 표면이 손상 파일을 시끄럽게 노출; KPI 는 요약이라 0 으로 안전 강등)."""
+        if self.pool_registry is None:
+            return 0
+        try:
+            from ..core.dataset_pool import STATUS_ACTIVE
+
+            return len(self.pool_registry.list_items(status=STATUS_ACTIVE))
+        except Exception:  # noqa: BLE001
+            return 0
 
     def txt_rows(self) -> "list[TxtRow]":
         """txt 기안 템플릿 목록(정해진 루트). 레지스트리 없으면 빈 목록."""
