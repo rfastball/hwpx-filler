@@ -30,6 +30,10 @@ class _AppController:
         # txt 트랙 라우팅(트랙 이원성) — 템플릿 열기 / 새 기안.
         self.home.open_txt_requested.connect(self._open_txt)
         self.home.new_txt_requested.connect(lambda: self._open_txt(None))
+        # 템플릿 관리 워크숍(C5) — 홈이 진입 시그널을 노출하면 배선(전방호환·비파괴).
+        # 홈은 병렬 유닛 소유라 여기서 hasattr 로 가드해 라우팅만 더한다.
+        if hasattr(self.home, "manage_templates_requested"):
+            self.home.manage_templates_requested.connect(self._open_template_manager)
 
     # ------------------------------------------------------------------ 라우팅
     def _open_editor_new(self) -> None:
@@ -79,6 +83,29 @@ class _AppController:
             view.select_template(name)
         self._track(view)
         view.show()
+
+    def _open_template_manager(self, library_dir: "str | None" = None) -> None:
+        """템플릿 관리 워크숍(C5)을 연다. '작업 만들기'는 에디터로 프리로드 라우팅."""
+        from .template_manager import TemplateManagerPanel
+
+        panel = TemplateManagerPanel(library_dir)
+        panel.make_job_requested.connect(self._open_editor_from_template)
+        self._track(panel)
+        panel.show()
+
+    def _open_editor_from_template(self, template_path: str) -> None:
+        """관리 패널의 '작업 만들기' → 새 작업 에디터(템플릿 경로 세션에 시드).
+
+        에디터의 페이지 계약은 병렬 유닛 소유라 건드리지 않는다 — 새 위저드를 열고
+        공유 세션 속성(``template_path``)만 시드한다(사용자가 템플릿 페이지에서 확정).
+        """
+        from .job_editor import JobEditorWizard
+
+        wiz = JobEditorWizard(self.registry)
+        wiz.template_path = template_path
+        wiz.job_saved.connect(lambda _name: self.home.refresh())
+        self._track(wiz)
+        wiz.show()
 
     def _delete_job(self, name: str) -> None:
         from PySide6.QtWidgets import QMessageBox

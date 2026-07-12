@@ -1,0 +1,232 @@
+"""템플릿 관리 워크숍 ViewModel(C5) 계약 테스트 — Qt/QApplication 불필요(링1, Qt-free).
+
+핵심 증명:
+1. 상태별(RAW/PARTIAL/COMPILED/FILLED) 게이트 액션이 정확히 합의된 집합이다.
+2. fieldize dry-run(scan_preview)은 파일을 만지지 않고 미리보기만; 적용(apply_fieldize)만
+   컴파일·저장하고 그 파일의 compile_status 가 진행한다(RAW/PARTIAL → COMPILED).
+3. lint/drift 결과가 VM 을 통해 렌더된다.
+
+파일 하단에 offscreen GUI 스모크(PySide6 있을 때만)를 얹는다 — 위젯이 VM 을 카드로
+렌더하고 상태별 버튼을 배선하는 최소 배선 확인.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from hwpxfiller.core.authoring import compile_document
+from hwpxfiller.core.fields import FieldDocument
+from hwpxfiller.core.template_status import CompileState, compile_status
+from hwpxfiller.gui.template_manager_state import (
+    TemplateManagerViewModel,
+    available_actions,
+)
+from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+
+HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
+HS = "http://www.hancom.co.kr/hwpml/2011/section"
+SECTION = "Contents/section0.xml"
+
+
+# --------------------------------------------------------------- 픽스처 빌더
+def _pkg(section_inner: str) -> HwpxPackage:
+    sec = (
+        f'<hs:sec xmlns:hs="{HS}" xmlns:hp="{HP}">{section_inner}</hs:sec>'
+    ).encode("utf-8")
+    pkg = HwpxPackage()
+    pkg.entries[MIMETYPE_NAME] = MIMETYPE_VALUE
+    pkg.stored.add(MIMETYPE_NAME)
+    pkg.entries[SECTION] = sec
+    return pkg
+
+
+def _write_raw(path: Path, section_inner: str) -> Path:
+    """평문 토큰만 든 템플릿을 파일로 저장(RAW/미컴파일 원문)."""
+    _pkg(section_inner).save(str(path))
+    return path
+
+
+def _write_compiled(path: Path, section_inner: str) -> Path:
+    """평문 토큰을 컴파일한 템플릿을 파일로 저장(COMPILED)."""
+    pkg, _ = compile_document(_pkg(section_inner))
+    pkg.save(str(path))
+    return path
+
+
+def _write_filled(path: Path, section_inner: str, field: str, value: str) -> Path:
+    """컴파일 후 값 1개 주입한 템플릿을 파일로 저장(FILLED)."""
+    pkg, _ = compile_document(_pkg(section_inner))
+    doc = FieldDocument(pkg.entries[SECTION])
+    assert doc.set_field(field, value) is True
+    pkg.entries[SECTION] = doc.to_bytes()
+    pkg.save(str(path))
+    return path
+
+
+# =============================================== 수용기준 1 — 상태별 게이트 액션
+def test_available_actions_per_state_exact_sets():
+    """각 상태가 정확히 합의된 액션 키 집합을 제공한다(순수 리졸버)."""
+    assert [a.key for a in available_actions(CompileState.RAW)] == ["compile"]
+    assert [a.key for a in available_actions(CompileState.PARTIAL)] == ["compile", "review"]
+    assert [a.key for a in available_actions(CompileState.COMPILED)] == ["preview", "make_job"]
+    assert [a.key for a in available_actions(CompileState.FILLED)] == ["preview"]
+
+
+def test_action_labels_are_state_contextual():
+    """같은 key='compile' 라도 RAW='컴파일' / PARTIAL='마저 컴파일' 로 문맥화된다."""
+    assert available_actions(CompileState.RAW)[0].label == "컴파일"
+    assert available_actions(CompileState.PARTIAL)[0].label == "마저 컴파일"
+
+
+def test_error_or_none_state_offers_no_actions():
+    assert available_actions(None) == []
+
+
+def test_vm_actions_for_delegates_to_resolver(tmp_path):
+    vm = TemplateManagerViewModel(paths=[])
+    assert [a.key for a in vm.actions_for(CompileState.COMPILED)] == ["preview", "make_job"]
+
+
+def test_rows_expose_gated_actions_matching_state(tmp_path):
+    """VM 행이 실제 파일 상태에서 계산한 액션 집합을 노출한다(라이브러리 전 상태)."""
+    raw = _write_raw(tmp_path / "raw.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")
+    comp = _write_compiled(tmp_path / "comp.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")
+    filled = _write_filled(
+        tmp_path / "fill.hwpx",
+        "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>",
+        "계약명", "정보시스템 구축",
+    )
+    vm = TemplateManagerViewModel(library_dir=tmp_path)
+    by_name = {r.name: r for r in vm.rows()}
+
+    assert by_name["raw.hwpx"].state == CompileState.RAW
+    assert [a.key for a in by_name["raw.hwpx"].actions()] == ["compile"]
+    assert by_name["comp.hwpx"].state == CompileState.COMPILED
+    assert [a.key for a in by_name["comp.hwpx"].actions()] == ["preview", "make_job"]
+    assert by_name["fill.hwpx"].state == CompileState.FILLED
+    assert [a.key for a in by_name["fill.hwpx"].actions()] == ["preview"]
+    # 배지·상세가 성형돼 위젯이 읽을 수 있다.
+    assert by_name["raw.hwpx"].badge_label == "원문"
+    assert "필드" in by_name["comp.hwpx"].detail_line()
+
+
+# ================================ 수용기준 2 — dry-run 무변형 → 적용 시 상태 진행
+def test_scan_preview_is_readonly_and_previews_sites(tmp_path):
+    """scan_preview 는 컴파일 가능/건너뜀을 미리 보여주되 파일을 만지지 않는다."""
+    path = _write_raw(tmp_path / "t.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")
+    before = path.read_bytes()
+
+    vm = TemplateManagerViewModel(paths=[path])
+    preview = vm.scan_preview(str(path))
+
+    assert preview.has_compilable
+    assert [s.name for s in preview.compilable] == ["계약명"]
+    assert path.read_bytes() == before  # 무변형(dry-run)
+    assert compile_status(str(path)).state == CompileState.RAW  # 여전히 RAW
+
+
+def test_apply_fieldize_compiles_and_advances_status(tmp_path):
+    """적용은 컴파일·저장하고 그 파일 상태가 RAW → COMPILED 로 진행한다."""
+    path = _write_raw(tmp_path / "t.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")
+    assert compile_status(str(path)).state == CompileState.RAW
+
+    vm = TemplateManagerViewModel(paths=[path])
+    report = vm.apply_fieldize(str(path))
+
+    assert report.compiled == ["계약명"]
+    assert report.modified
+    assert compile_status(str(path)).state == CompileState.COMPILED  # 진행
+    # VM 행도 재산출돼 COMPILED 로 갱신(그리고 액션 집합도 전이).
+    row = vm.row_for(str(path))
+    assert row.state == CompileState.COMPILED
+    assert [a.key for a in row.actions()] == ["preview", "make_job"]
+
+
+def test_apply_fieldize_advances_partial_to_compiled(tmp_path):
+    """PARTIAL(필드 有 + 미컴파일 평문 중복)에 적용하면 잔존 토큰이 컴파일돼 COMPILED."""
+    # 필드 1개(컴파일됨) + 같은 이름 평문 중복(미컴파일) = PARTIAL.
+    inner = (
+        "<hp:p><hp:run><hp:ctrl>"
+        f'<hp:fieldBegin id="1" type="CLICK_HERE" name="계약명" fieldid="2"/>'
+        "</hp:ctrl></hp:run>"
+        "<hp:run><hp:t>{{계약명}}</hp:t></hp:run>"
+        "<hp:run><hp:ctrl><hp:fieldEnd beginIDRef=\"1\" fieldid=\"2\"/></hp:ctrl></hp:run></hp:p>"
+        "<hp:p><hp:run><hp:t>다시: {{계약명}}</hp:t></hp:run></hp:p>"
+    )
+    path = tmp_path / "partial.hwpx"
+    _pkg(inner).save(str(path))
+    assert compile_status(str(path)).state == CompileState.PARTIAL
+
+    vm = TemplateManagerViewModel(paths=[path])
+    vm.apply_fieldize(str(path))
+    assert compile_status(str(path)).state == CompileState.COMPILED
+
+
+# =================================================== 수용기준 3 — lint / drift
+def test_lint_reports_near_duplicate_fields(tmp_path):
+    """공백만 다른 유사 필드명(계약명 vs 계약 명)을 VM lint 가 near_duplicate 로 신고."""
+    path = _write_compiled(
+        tmp_path / "dup.hwpx",
+        "<hp:p><hp:run><hp:t>계약명: {{계약명}} / 상대: {{계약 명}}</hp:t></hp:run></hp:p>",
+    )
+    vm = TemplateManagerViewModel(paths=[path])
+    report = vm.lint(str(path))
+    kinds = {f.kind for f in report.findings}
+    assert "near_duplicate" in kinds
+    assert report.has_issues
+
+
+def test_lint_reports_stray_compilable_token(tmp_path):
+    """미컴파일 평문 토큰이 남으면 lint 가 stray_token(fieldize 권장)으로 신고."""
+    path = _write_raw(tmp_path / "raw.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")
+    vm = TemplateManagerViewModel(paths=[path])
+    report = vm.lint(str(path))
+    kinds = {f.kind for f in report.findings}
+    assert "stray_token" in kinds  # authoring.scan_tokens 가 단일 진실원
+
+
+def test_drift_reports_added_and_removed_fields(tmp_path):
+    """두 판본의 필드셋 변화를 VM drift 가 추가/삭제로 낸다."""
+    old = _write_compiled(
+        tmp_path / "v1.hwpx",
+        "<hp:p><hp:run><hp:t>계약명: {{계약명}} 금액 {{금액}}</hp:t></hp:run></hp:p>",
+    )
+    new = _write_compiled(
+        tmp_path / "v2.hwpx",
+        "<hp:p><hp:run><hp:t>계약명: {{계약명}} 예산 {{사업예산}}</hp:t></hp:run></hp:p>",
+    )
+    vm = TemplateManagerViewModel(paths=[])
+    drift = vm.drift(str(old), str(new))
+    assert drift.has_changes
+    assert "사업예산" in drift.added
+    assert "금액" in drift.removed
+
+
+# ==================================================== 라이브러리/오류 노출
+def test_empty_library_is_empty(tmp_path):
+    vm = TemplateManagerViewModel(library_dir=tmp_path)
+    assert vm.is_empty()
+    assert vm.count_label() == ""
+
+
+def test_unreadable_file_surfaced_as_error_row_not_hidden(tmp_path):
+    """읽기 실패 파일은 조용히 감추지 않고 error 행으로 시끄럽게 노출한다."""
+    bad = tmp_path / "broken.hwpx"
+    bad.write_bytes(b"not a zip at all")
+    vm = TemplateManagerViewModel(library_dir=tmp_path)
+    rows = vm.rows()
+    assert len(rows) == 1
+    assert rows[0].is_error
+    assert rows[0].state is None
+    assert rows[0].actions() == []
+
+
+def test_filled_values_preview_reads_c1_fields(tmp_path):
+    """FILLED 미리보기 값은 C1 read_fields 로 읽는다."""
+    path = _write_filled(
+        tmp_path / "fill.hwpx",
+        "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>",
+        "계약명", "정보시스템 구축",
+    )
+    vm = TemplateManagerViewModel(paths=[path])
+    assert vm.filled_values(str(path)) == {"계약명": "정보시스템 구축"}

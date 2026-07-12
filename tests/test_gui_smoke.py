@@ -297,6 +297,93 @@ def test_app_controller_records_last_run(qapp, tmp_path, monkeypatch):
     assert reg.load("실행기록").last_run_at == before  # 실패 실행은 갱신 안 함
 
 
+# ------------------------------------------------------- 템플릿 관리 워크숍(C5)
+def _hwpx_pkg(section_inner: str):
+    from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+
+    hp = "http://www.hancom.co.kr/hwpml/2011/paragraph"
+    hs = "http://www.hancom.co.kr/hwpml/2011/section"
+    sec = f'<hs:sec xmlns:hs="{hs}" xmlns:hp="{hp}">{section_inner}</hs:sec>'.encode("utf-8")
+    pkg = HwpxPackage()
+    pkg.entries[MIMETYPE_NAME] = MIMETYPE_VALUE
+    pkg.stored.add(MIMETYPE_NAME)
+    pkg.entries["Contents/section0.xml"] = sec
+    return pkg
+
+
+def _P(inner: str):
+    return f"<hp:p><hp:run><hp:t>{inner}</hp:t></hp:run></hp:p>"
+
+
+def test_template_manager_panel_renders_badges_and_gated_actions(qapp, tmp_path):
+    """관리 패널이 라이브러리 행을 카드로 렌더하고 상태별 게이트 버튼을 배선한다."""
+    from PySide6.QtWidgets import QPushButton
+
+    from hwpxfiller.core.authoring import compile_document
+    from hwpxfiller.gui.template_manager import _TemplateCard, TemplateManagerPanel
+
+    _hwpx_pkg(_P("계약명: {{계약명}}")).save(str(tmp_path / "raw.hwpx"))
+    pkg, _ = compile_document(_hwpx_pkg(_P("계약명: {{계약명}}")))
+    pkg.save(str(tmp_path / "comp.hwpx"))
+
+    panel = TemplateManagerPanel(library_dir=tmp_path)
+    assert panel.list.count() == 2
+    by_name = {}
+    for i in range(panel.list.count()):
+        it = panel.list.item(i)
+        card = panel.list.itemWidget(it)
+        assert isinstance(card, _TemplateCard)
+        by_name[it.text()] = card
+
+    raw_labels = [b.text() for b in by_name["raw.hwpx"].findChildren(QPushButton)]
+    comp_labels = [b.text() for b in by_name["comp.hwpx"].findChildren(QPushButton)]
+    assert raw_labels == ["컴파일"]
+    assert comp_labels == ["미리보기", "작업 만들기"]
+
+
+def test_template_manager_compile_dry_run_then_apply(qapp, tmp_path, monkeypatch):
+    """컴파일 버튼 = dry-run 확인 → No 면 무변형, Yes 면 컴파일·상태 진행(명시성)."""
+    from PySide6.QtWidgets import QMessageBox
+
+    from hwpxfiller.core.template_status import CompileState, compile_status
+    from hwpxfiller.gui.template_manager import TemplateManagerPanel
+
+    path = tmp_path / "raw.hwpx"
+    _hwpx_pkg(_P("계약명: {{계약명}}")).save(str(path))
+    panel = TemplateManagerPanel(library_dir=tmp_path)
+    before = path.read_bytes()
+
+    # 확인 거절(No) → dry-run 만, 파일 무변형.
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.No)
+    panel._dispatch("compile", str(path))
+    assert path.read_bytes() == before
+    assert compile_status(str(path)).state == CompileState.RAW
+
+    # 확인 수락(Yes) → 컴파일·저장, RAW → COMPILED.
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    panel._dispatch("compile", str(path))
+    assert compile_status(str(path)).state == CompileState.COMPILED
+    assert panel.list.count() == 1  # 재렌더됨
+
+
+def test_app_controller_opens_template_manager_and_routes_make_job(qapp, tmp_path):
+    """app.py 라우팅 — 관리 패널 개방 + '작업 만들기' → 템플릿 시드 새 에디터."""
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.app import _AppController
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+    from hwpxfiller.gui.template_manager import TemplateManagerPanel
+
+    ctrl = _AppController(JobRegistry(tmp_path))
+    ctrl._open_template_manager(str(tmp_path))
+    panels = [c for c in ctrl._children if isinstance(c, TemplateManagerPanel)]
+    assert len(panels) == 1
+
+    ctrl._open_editor_from_template("/lib/tpl.hwpx")
+    wizards = [c for c in ctrl._children if isinstance(c, JobEditorWizard)]
+    assert len(wizards) == 1
+    assert wizards[0].template_path == "/lib/tpl.hwpx"  # 세션에 시드됨
+
+
 def test_run_view_instantiates_with_a_job(qapp):
     from hwpxfiller.core.job import Job
     from hwpxfiller.gui.run_view import RunView
