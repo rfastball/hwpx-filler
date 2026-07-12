@@ -663,6 +663,9 @@ def test_run_view_structure_drift_is_disabled_danger_not_ack(qapp, tmp_path):
     assert not view.btn_generate.isEnabled()
     assert view.lbl_gate.property("level") == "danger"
     assert "매핑을 다시 확정" in view.lbl_gate.text()
+    # RC-23 — 차단 중 상단 사전검증이 '통과' 녹색으로 남지 않는다(모순 신호 해소).
+    assert view.lbl_preflight.property("level") == "danger"
+    assert "통과" not in view.lbl_preflight.text()
     chips = [view.badge_flow.itemAt(i).widget() for i in range(view.badge_flow.count())]
     drift = [w for w in chips if "신규필드" in w.text()][0]
     assert not drift.isEnabled() and "재확정" in drift.text()
@@ -861,6 +864,74 @@ def test_run_view_cancelled_batch_shows_partial_summary(qapp, tmp_path):
     assert "취소됨" in view.lbl_result.text()
     assert view.lbl_result.property("level") == "warn"
     assert "미처리 3건" in view.lbl_result.text()
+
+
+def test_run_view_partial_failure_modal_mentions_failures(qapp, tmp_path, monkeypatch):
+    """RC-30 — 부분 실패 완료 모달이 '완료' 서사로 실패를 덮지 않는다.
+
+    2성공·1실패 배치(S4 재현): 모달은 경고형으로 실패 건수·로그 안내를 병기하고,
+    개별 실패 사유는 원시 errno 대신 행동 지향 문구로 로그에 남는다.
+    """
+    from PySide6.QtWidgets import QMessageBox
+
+    from hwpxfiller.batch import BatchResult
+    from hwpxfiller.core.engine import GenerateResult
+    from hwpxfiller.gui import batch_run
+
+    view, plan = _plan_view(tmp_path)
+    view._plan = plan
+    view._running = True
+    seen = {}
+    monkeypatch.setattr(
+        QMessageBox, "warning",
+        lambda parent, title, text, *a, **k: (seen.update(title=title, text=text),
+                                              QMessageBox.Yes)[1],
+    )
+    monkeypatch.setattr(
+        QMessageBox, "question",
+        lambda *a, **k: pytest.fail("부분 실패는 경고형 모달이어야 한다(RC-30)"),
+    )
+    opened = []
+    monkeypatch.setattr(batch_run, "open_folder", opened.append)
+
+    results = [
+        GenerateResult(True, "a.hwpx"),
+        GenerateResult(True, "b.hwpx"),
+        GenerateResult(False, "c.hwpx",
+                       error="저장 실패: [Errno 13] Permission denied: 'c.hwpx'"),
+    ]
+    view._on_finished(BatchResult(total=3, succeeded=2, results=results))
+
+    assert "2건 성공" in seen["text"] and "1건 실패" in seen["text"] and "로그" in seen["text"]
+    assert "일부 실패" in seen["title"]
+    assert opened == [plan.out_dir]                      # 확정(Yes) → 공용 open_folder 경유
+    assert view.lbl_result.property("level") == "danger"  # 요약 라벨과 정보 대칭
+    log = view.log.toPlainText()
+    assert "파일 접근이 거부됐습니다" in log               # 행동 지향 문구(RC-30)
+    assert "Permission denied" in log                     # 원문도 증거로 보존
+
+
+def test_run_view_all_success_modal_keeps_question(qapp, tmp_path, monkeypatch):
+    """전건 성공은 기존 question 모달 유지(회귀 불변) — 실패 무언급이 정당한 유일 경우."""
+    from PySide6.QtWidgets import QMessageBox
+
+    from hwpxfiller.batch import BatchResult
+    from hwpxfiller.core.engine import GenerateResult
+
+    view, plan = _plan_view(tmp_path)
+    view._plan = plan
+    view._running = True
+    seen = {}
+    monkeypatch.setattr(
+        QMessageBox, "question",
+        lambda parent, title, text, *a, **k: (seen.update(text=text), QMessageBox.No)[1],
+    )
+    view._on_finished(BatchResult(
+        total=2, succeeded=2,
+        results=[GenerateResult(True, f"d{i}.hwpx") for i in range(2)],
+    ))
+    assert "2건 생성 완료" in seen["text"] and "실패" not in seen["text"]
+    assert view.lbl_result.property("level") == "ok"
 
 
 def _partial_template_file(

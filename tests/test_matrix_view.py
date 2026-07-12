@@ -26,6 +26,21 @@ def qapp():
     yield app
 
 
+def _wait_pool_load(view, timeout: float = 8.0) -> None:
+    """풀 복원이 QThread(RC-12 공용 계층)로 돌므로 완료(스레드 해제)까지 이벤트 루프."""
+    import time
+
+    from PySide6.QtCore import QCoreApplication
+
+    deadline = time.monotonic() + timeout
+    while view._data_thread is not None:
+        QCoreApplication.processEvents()
+        if time.monotonic() > deadline:
+            raise AssertionError("풀 복원이 제한시간 내에 끝나지 않았습니다")
+        time.sleep(0.005)
+    QCoreApplication.processEvents()
+
+
 def _registry(tmp_path):
     reg = JobRegistry(tmp_path / "jobs")
     tpl = tmp_path / "t.hwpx"
@@ -68,8 +83,10 @@ def test_matrix_view_pool_pick_loads_records(qapp, tmp_path, monkeypatch):
     view = MatrixRunView(_registry(tmp_path), pool_registry=pool)
     monkeypatch.setattr(QInputDialog, "getItem", lambda *a, **k: ("6월", True))
     view._pick_from_pool()
+    _wait_pool_load(view)  # 복원은 QThread(RC-12) — 단일 실행과 같은 비동기 공용 경로
     assert len(view.vm.records) == 1
     assert view.ed_data.text().startswith("풀: 6월")
+    assert view.btn_pool.isEnabled()  # 복원 후 데이터 버튼 잠금 해제
 
 
 def test_matrix_view_pool_empty_informs(qapp, tmp_path, monkeypatch):
@@ -129,6 +146,46 @@ def test_matrix_view_generate_gate_and_worker(qapp, tmp_path, monkeypatch):
         assert captured["out_dir"].endswith("out")
     finally:
         view._teardown_thread()
+
+
+def test_matrix_view_partial_failure_modal_mentions_failures(qapp, tmp_path, monkeypatch):
+    """RC-30(매트릭스 사본) — 부분 실패 완료 모달: 실패 병기(경고형) + 행동 지향 로그."""
+    from PySide6.QtWidgets import QMessageBox as MB
+
+    from hwpxfiller.batch import BatchResult, MatrixJobResult, MatrixResult
+    from hwpxfiller.core.engine import GenerateResult
+    from hwpxfiller.gui import batch_run
+    from hwpxfiller.gui.matrix_view import MatrixRunView
+
+    view = MatrixRunView(_registry(tmp_path))
+    out_dir = str(tmp_path / "out")
+    view._out_dir = out_dir  # 생성 시작 시점 캡처값(완료 모달이 소비)
+    seen = {}
+    monkeypatch.setattr(
+        MB, "warning",
+        lambda parent, title, text, *a, **k: (seen.update(text=text), MB.Yes)[1],
+    )
+    monkeypatch.setattr(
+        MB, "question",
+        lambda *a, **k: pytest.fail("부분 실패는 경고형 모달이어야 한다(RC-30)"),
+    )
+    opened = []
+    monkeypatch.setattr(batch_run, "open_folder", opened.append)
+
+    batch = BatchResult(total=2, succeeded=1, results=[
+        GenerateResult(True, "a.hwpx"),
+        GenerateResult(False, "b.hwpx",
+                       error="저장 실패: [Errno 13] Permission denied: 'b.hwpx'"),
+    ])
+    result = MatrixResult(per_job=[MatrixJobResult("공고", out_dir + "/공고", batch)])
+    view._on_finished(result)
+
+    assert "1건 성공" in seen["text"] and "1건 실패" in seen["text"] and "로그" in seen["text"]
+    assert opened == [out_dir]                            # 확정(Yes) → 공용 open_folder
+    assert view.lbl_result.property("level") == "danger"
+    log = view.log.toPlainText()
+    assert "파일 접근이 거부됐습니다" in log                # 행동 지향 문구(RC-30)
+    assert "b.hwpx" in log                                 # 실패 대상 식별 가능
 
 
 def test_app_controller_opens_matrix_run(qapp, tmp_path):

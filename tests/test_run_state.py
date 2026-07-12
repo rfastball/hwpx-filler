@@ -344,3 +344,79 @@ def test_export_run_ledger_writes_evidence_sidecar(tmp_path):
     profs = {p["key"]: p for p in payload["profiles"]}
     assert set(profs) == {"bidNtceNm", "presmptPrce"}   # 매핑이 읽는 소스 키만 관측
     assert profs["presmptPrce"]["samples"] == ["2000"]
+
+
+# ------------------------------------------------ 상태 스냅샷·게이트 단일 산출(RC-23)
+def test_gate_state_single_decision_drift_unmet_open(tmp_path):
+    """게이트 표시 결정(활성/level/text)이 vm 단일 산출 — 위젯 재조립 없음(RC-23)."""
+    vm = _vm(tmp_path)
+
+    # 미확인 미입력 → warn 차단.
+    gate = vm.gate_state([0, 1])
+    assert gate.enabled is False and gate.level == "warn"
+    assert "미입력" in gate.text and "추정가격" in gate.text
+
+    # 확인(ack) → 열림(문구 없음).
+    vm.acknowledge("추정가격")
+    gate = vm.gate_state([0, 1])
+    assert gate.enabled is True and gate.level == "" and gate.text == ""
+
+    # 드리프트 → danger 차단(미입력보다 우선).
+    _write_template(vm.job.template_path, ["공고명", "추정가격", "신규필드"])
+    gate = vm.gate_state([0, 1])
+    assert gate.enabled is False and gate.level == "danger"
+    assert "매핑을 다시 확정" in gate.text and "신규필드" in gate.text
+
+
+def test_gate_state_read_error_fails_closed(tmp_path):
+    vm = _vm(tmp_path)
+    vm.acknowledge("추정가격")
+    (tmp_path / "broken.hwpx").write_bytes(b"not a zip")
+    vm.job.template_path = str(tmp_path / "broken.hwpx")
+    gate = vm.gate_state([0])
+    assert gate.enabled is False and gate.level == "danger"
+    assert "읽을 수 없어" in gate.text
+
+
+def test_preflight_reflects_drift_no_green_pass_during_block(tmp_path):
+    """RC-23 모순 신호 해소 — 드리프트 차단 중 사전검증이 '통과' 녹색으로 남지 않는다."""
+    vm = _vm(tmp_path)
+    _write_template(vm.job.template_path, ["공고명", "추정가격", "신규필드"])
+    pf = vm.preflight([0, 1])
+    assert pf.level == "danger"
+    assert "구조" in pf.text and "통과" not in pf.text
+
+
+def test_refresh_is_single_snapshot_and_parses_template_once(tmp_path, monkeypatch):
+    """상태 리프레시 1회 = 템플릿 구조 1회 재읽기(RC-23: zip 5회 재파싱 해소).
+
+    스냅샷의 세 표시면(사전검증·필드 상태·게이트)이 같은 계산에서 나온다.
+    """
+    from hwpxfiller.core.engine import HwpxEngine
+
+    vm = _vm(tmp_path)
+    calls = {"n": 0}
+    original = HwpxEngine.required_fields
+
+    def counting(self, path):
+        calls["n"] += 1
+        return original(self, path)
+
+    monkeypatch.setattr(HwpxEngine, "required_fields", counting)
+    snap = vm.refresh([0, 1])
+    assert calls["n"] == 1                       # 표시면별 재질의 없음
+    assert snap.preflight.level == "warn"        # 빈 값 1필드(추정가격)
+    assert {s.name: s.state for s in snap.field_states} == {
+        "공고명": "filled", "추정가격": "missing",
+    }
+    assert snap.gate.enabled is False and snap.gate.level == "warn"
+
+
+def test_set_acquired_resets_acks_atomically(tmp_path):
+    """RC-22 — 직접 겨눔(set_acquired)이 reset_acks 를 내장: stale ack 게이트 통과 차단."""
+    vm = _vm(tmp_path)
+    vm.acknowledge("추정가격")
+    assert vm.unmet_blanks([0, 1]) == []          # 확인됨(게이트 열림)
+
+    vm.set_acquired(_Src(), _Src().records())     # 새 데이터 직접 겨눔
+    assert vm.unmet_blanks([0, 1]) == ["추정가격"]  # ack 이월 없음 — 다시 닫힘

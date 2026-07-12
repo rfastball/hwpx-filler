@@ -77,8 +77,12 @@ def test_generate_batch_blocks_drifted_template_before_any_write(tmp_path):
     assert not out.exists()  # 출력 폴더조차 만들기 전에 차단
 
 
-def test_generate_batch_mid_batch_template_swap_is_blocked(tmp_path):
-    """FX1(TOCTOU) — 검증 시점 통과 후 템플릿이 교체되면 다음 generate_batch 가 차단."""
+def test_generate_batch_between_batches_template_swap_is_blocked(tmp_path):
+    """FX1(TOCTOU) — 검증 시점 통과 후 템플릿이 교체되면 **다음 배치 호출**이 차단.
+
+    검사 시점은 배치 착수 경계(generate_batch 진입 시 1회)다 — 배치 **도중**(레코드
+    경계) 교체까지 재검사하지는 않는다(U9 개명: 과장 없는 이름으로 정직하게).
+    """
     template = tmp_path / "t.hwpx"
     _write_template(template, ["공고명"])
     mapping = _mapping("공고명")

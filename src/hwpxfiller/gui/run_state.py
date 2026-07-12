@@ -13,7 +13,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..core.engine import HwpxEngine
-from ..core.fill_ledger import TemplateStructureDrift, template_path_drift
+from ..core.fill_ledger import (
+    TemplateStructureDrift,
+    template_path_drift,
+    template_structure_drift,
+)
 from ..core.job import Job, RunRequest
 from ..core.mapping import MappingProfile
 from ..data import source_for_path
@@ -57,6 +61,33 @@ class FieldState:
     name: str
     state: str            # "filled" | "blank" | "missing" | "drift"(구조 불일치)
     acknowledged: bool = False  # missing 만 유효 — 사용자가 직접 확인했는가
+
+
+@dataclass(frozen=True)
+class GateState:
+    """생성 게이트의 **단일 표시 결정**(RC-23) — 위젯은 이걸 그대로 렌더만 한다.
+
+    unmet/drift 판정과 차단 문구가 위젯에 재조립되던 이중 진실을 소거한다 —
+    버튼 활성 여부와 게이트 라벨(level/text)이 한 산출에서 나온다.
+    """
+
+    enabled: bool
+    level: str  # ""/"warn"/"danger" (style.mark 레벨)
+    text: str
+
+
+@dataclass(frozen=True)
+class RunStatus:
+    """상태 리프레시 1회의 **단일 스냅샷**(RC-23) — 사전검증·필드 배지·게이트.
+
+    한 번의 계산(레코드 매핑 1회 + 템플릿 구조 1회 재읽기)에서 세 표시면이 전부
+    파생된다 — 표시면마다 재질의해 리프레시 1회당 템플릿 zip 을 5회 재파싱하고
+    표시면 간 모순(상단 '통과' 녹색 + 하단 드리프트 차단)이 생기던 결함의 봉합.
+    """
+
+    preflight: PreflightResult
+    field_states: "tuple[FieldState, ...]"
+    gate: GateState
 
 
 @dataclass(frozen=True)
@@ -229,32 +260,28 @@ class RunViewModel:
         self.reset_acks()
         return records
 
+    def set_acquired(self, datasource, records: "list[dict]") -> None:
+        """이미 만들어진(키 없는) 소스·레코드를 직접 겨눈다 — 나라 애드혹 취득 등.
+
+        매트릭스 VM 과 같은 seam(RC-22) — datasource/records 직접 대입 + ``reset_acks``
+        수동 호출 관례에 의존하다 누락 시 stale ack 로 미입력 게이트가 무단 통과하던
+        잠복 함정을 원자 진입점으로 봉합한다.
+        """
+        self.datasource = datasource
+        self.records = list(records)
+        self.reset_acks()
+
     # ------------------------------------------------------------ 사전검증
     def request(self, indices: "list[int]") -> RunRequest:
         return RunRequest(self.job, self.datasource, list(indices))
 
     def preflight(self, indices: "list[int]") -> PreflightResult:
-        """데이터에 없는 항목(치명)·매핑 출력의 빈값(경고)을 판정만 한다(재확정 아님)."""
-        if self.datasource is None:
-            return PreflightResult()
-        req = self.request(indices)
-        src = req.source_report()
-        out = req.output_report()
-        parts: "list[str]" = []
-        if src.missing_columns:
-            parts.append("[치명] 데이터에 없는 항목입니다(빈칸 생성됨): " + ", ".join(src.missing_columns))
-        if out.empty_valued:
-            parts.append("[경고] 값이 비어 있는 필드: " + ", ".join(out.empty_valued))
-        if src.missing_columns:
-            level = "danger"
-        elif out.empty_valued:
-            level = "warn"
-        else:
-            level = "ok"
-        return PreflightResult(
-            list(src.missing_columns), list(out.empty_valued), level,
-            "\n".join(parts) if parts else "사전검증 통과 — 누락/빈 값 없음.",
-        )
+        """데이터에 없는 항목(치명)·구조 드리프트(치명)·빈값(경고) 판정(재확정 아님).
+
+        위젯은 level/text 를 **그대로** 렌더한다(RC-23) — 드리프트 차단 중에 상단만
+        '통과' 녹색으로 남는 모순 신호를 여기서 차단한다.
+        """
+        return self.refresh(indices).preflight
 
     def blank_fields(self, indices: "list[int]") -> "list[str]":
         """미충족 빈칸 필드(ADR-E 상시 인라인 게이트의 seam). 데이터 없으면 빈 목록."""
@@ -274,14 +301,6 @@ class RunViewModel:
         """현재 템플릿과 확정 매핑 커버의 대칭차(스냅샷 없는 구조 계약)."""
         return template_path_drift(self.effective_template(), self.job.mapping)
 
-    def _intentional_blanks(self) -> "list[str]":
-        """매핑이 명시적으로 공란 선언한, 현재 템플릿에 존재하는 필드."""
-        try:
-            current = set(self._template_fields())
-        except Exception:  # noqa: BLE001 - 구조 오류는 drift/gate가 별도 표면화
-            return []
-        return [f for f in self.job.mapping.blank_fields() if f in current]
-
     def field_states(self, indices: "list[int]") -> "list[FieldState]":
         """필드별 3상태(채움/의도적 빈칸/미입력) — 상시 인라인 배지의 원천.
 
@@ -289,12 +308,55 @@ class RunViewModel:
         템플릿↔커버 대칭차는 ``drift`` 로 별도 표시해 의도적 공란으로 오라벨하지 않는다.
         데이터 미겨눔이면 빈 목록(패널 비움).
         """
+        return list(self.refresh(indices).field_states)
+
+    # ------------------------------------------------ 상태 스냅샷·게이트 단일 산출(RC-23)
+    def refresh(self, indices: "list[int]") -> RunStatus:
+        """상태 리프레시 1회의 단일 스냅샷 — 사전검증·필드 배지·게이트를 동시 파생.
+
+        레코드 매핑·템플릿 구조를 **각 1회만** 계산해 세 표시면이 같은 사실에서
+        나온다(RC-23: 표시면별 재질의가 만들던 모순 신호·zip 5회 재파싱 해소).
+        데이터 미겨눔이면 전부 공백이고 게이트는 열림 — ``validate_generate`` 가
+        '먼저 데이터를 선택하세요'로 막는 기존 동작 보존.
+        """
         if self.datasource is None:
-            return []
-        empty = set(self.request(indices).output_report().empty_valued)
-        drift = self.structure_drift()
+            return RunStatus(PreflightResult(), (), GateState(True, "", ""))
+        idx = list(indices)
+        req = self.request(idx)
+        src = req.source_report()
+        out = req.output_report()
+        drift, current_fields = self._structure_snapshot()
+        states = self._compose_field_states(set(out.empty_valued), drift, current_fields)
+        return RunStatus(
+            preflight=self._compose_preflight(src, out, drift),
+            field_states=tuple(states),
+            gate=self._compose_gate(states, drift),
+        )
+
+    def gate_state(self, indices: "list[int]") -> GateState:
+        """생성 게이트 표시 결정(활성/level/text)의 단일 통합(RC-23)."""
+        return self.refresh(indices).gate
+
+    def _structure_snapshot(self) -> "tuple[TemplateStructureDrift, set[str]]":
+        """템플릿 구조 1회 재읽기 → (드리프트, 현재 누름틀 집합).
+
+        읽기 실패는 :func:`template_path_drift` 와 동일하게 ``read_error``
+        (fail-closed)로 남긴다 — 드리프트 감지를 위해 refresh 마다 재읽기한다.
+        """
+        template = self.effective_template()
+        if not template:
+            return TemplateStructureDrift(read_error="템플릿 경로가 비어 있습니다."), set()
+        try:
+            fields = HwpxEngine().required_fields(template)
+        except Exception as exc:  # noqa: BLE001 - 구조를 증명 못 하면 fail-closed
+            return TemplateStructureDrift(read_error=str(exc)), set()
+        return template_structure_drift(fields, self.job.mapping), set(fields)
+
+    def _compose_field_states(
+        self, empty: "set[str]", drift: TemplateStructureDrift, current_fields: "set[str]"
+    ) -> "list[FieldState]":
         drift_fields = drift.symmetric_difference | set(drift.conflicting)
-        blanks = set(self._intentional_blanks())
+        blanks = {f for f in self.job.mapping.blank_fields() if f in current_fields}
         # 매핑 계약순 뒤에 템플릿 신규 유입순을 붙인다. 사라진 값 매핑도 drift 하나로
         # 표시해 filled/missing과 중복·모순되지 않게 한다.
         order = list(self.job.mapping.cover_fields()) + list(drift.template_only)
@@ -309,6 +371,50 @@ class RunViewModel:
                     name, "missing" if name in empty else "filled", name in self._acked
                 ))
         return states
+
+    def _compose_gate(
+        self, states: "list[FieldState]", drift: TemplateStructureDrift
+    ) -> GateState:
+        """게이트 표시 결정 — 드리프트(danger·차단) > 미확인 미입력(warn·차단) > 열림."""
+        if drift.has_drift:
+            if drift.read_error:
+                return GateState(False, "danger", "템플릿 구조를 읽을 수 없어 생성이 차단됩니다.")
+            names = list(drift.template_only) + list(drift.mapping_only) + list(drift.conflicting)
+            return GateState(
+                False, "danger",
+                "템플릿 구조 드리프트 — 매핑을 다시 확정해야 생성할 수 있습니다: "
+                + ", ".join(names),
+            )
+        unmet = [s.name for s in states if s.state == "missing" and not s.acknowledged]
+        if unmet:
+            return GateState(
+                False, "warn",
+                f"미입력 {len(unmet)}필드를 확인해야 문서 생성이 가능합니다: {', '.join(unmet)}",
+            )
+        return GateState(True, "", "")
+
+    def _compose_preflight(self, src, out, drift: TemplateStructureDrift) -> PreflightResult:
+        parts: "list[str]" = []
+        if src.missing_columns:
+            parts.append(
+                "[치명] 데이터에 없는 항목입니다(빈칸 생성됨): " + ", ".join(src.missing_columns)
+            )
+        if drift.has_drift:
+            # 게이트가 상세 사유를 렌더한다 — 여기선 '통과' 녹색이 남지 않게만 알린다.
+            parts.append("[치명] 템플릿 구조가 확정 매핑과 다릅니다 — 아래 차단 사유를 확인하세요.")
+        if out.empty_valued:
+            parts.append("[경고] 값이 비어 있는 필드: " + ", ".join(out.empty_valued))
+        if src.missing_columns or drift.has_drift:
+            level = "danger"
+        elif out.empty_valued:
+            level = "warn"
+        else:
+            level = "ok"
+        return PreflightResult(
+            list(src.missing_columns), list(out.empty_valued), level,
+            "\n".join(parts) if parts
+            else "사전검증 통과 — 치명 누락 없음. 아래 빈칸 표면화를 확인하세요.",
+        )
 
     def acknowledge(self, field: str) -> None:
         """미입력 필드를 사용자가 직접 확인함(강제 상호작용)."""

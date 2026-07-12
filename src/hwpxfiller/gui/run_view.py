@@ -5,21 +5,19 @@
 
 레이어링(아키텍처 분리): 이 위젯은 **얇은 렌더러/오케스트레이터**다 — 데이터 로드·대상
 문서 결정·사전검증·생성 게이트는 :class:`~hwpxfiller.gui.run_state.RunViewModel`(Qt 비의존,
-링1)이 소유한다. 위젯은 QThread·QMessageBox·QFileDialog·진행/로그 표현만 담당하고, 백엔드
+링1)이 소유한다. 위젯은 QMessageBox·QFileDialog·진행/로그 표현만 담당하고, 백엔드
 (``DataSource``·``HwpxEngine``)를 직접 만지지 않는다. ``datasource``/``records``/
 ``_template_override``/``_effective_template()`` 는 뷰모델로 위임하는 프로퍼티다(스캐폴드·
-스모크 계약 보존).
+스모크 계약 보존). QThread 수명주기·데이터 겨눔 3종은 매트릭스 실행과 공용 계층
+(:mod:`~hwpxfiller.gui.batch_run`, RC-22)이 소유한다.
 """
 
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QFileDialog,
@@ -41,12 +39,18 @@ from PySide6.QtWidgets import (
 )
 
 from ..core.job import MISSING_MARKER, Job
+from .batch_run import (
+    BatchRunController,
+    DataAcquireController,
+    ask_open_result_folder,
+    describe_result_error,
+)
 from .confirm import confirm_destructive
 from .flow_layout import FlowLayout
 from .record_select import RecordSelector
 from .run_state import GenerationPlan, RunViewModel
 from .style import BASE_QSS, mark
-from .worker import GenerateWorker, TaskWorker
+from .worker import GenerateWorker
 
 
 class RunView(QMainWindow):
@@ -70,13 +74,7 @@ class RunView(QMainWindow):
         self._pool_registry = pool_registry
         self._secret_store = secret_store
         self._nara_fetcher = nara_fetcher
-        self._running = False
-        self._thread: "QThread | None" = None
-        self._worker: "GenerateWorker | None" = None
         self._plan: "GenerationPlan | None" = None  # 이번 생성의 불변 계획(RC-07)
-        self._data_thread: "QThread | None" = None  # 풀 복원 백그라운드(RC-12)
-        self._data_worker: "TaskWorker | None" = None
-        self._pending_pool_label = ""
         self._marked_fields: "list[str]" = []  # 이번 생성에서 미입력 표시가 들어간 필드(결과 요약용)
 
         self.setWindowTitle(f"HWPX Filler — 실행: {job.name}")
@@ -213,6 +211,25 @@ class RunView(QMainWindow):
         scroll.setWidget(central)
         self.setCentralWidget(scroll)
 
+        # ---- 공용 실행 계층(RC-22) — QThread 수명주기·데이터 겨눔은 매트릭스와 공유 ----
+        self._runner = BatchRunController(
+            self, progress=self.progress, lbl_result=self.lbl_result,
+            btn_generate=self.btn_generate, btn_cancel=self.btn_cancel,
+            say=self._say, on_idle=self._sync_generate_enabled,
+            on_result=self._render_finished,
+        )
+        self._data = DataAcquireController(
+            self, pool_registry=self._pool_registry,
+            load_file=self.vm.load_data,
+            restore_pool_item=lambda item: self.vm.load_pool_item(
+                item, secret_store=self._secret_store, fetcher=self._nara_fetcher
+            ),
+            set_acquired=self.vm.set_acquired,
+            after_loaded=self._after_data_loaded,
+            say=self._say, set_busy=self._set_data_busy,
+            secret_store=self._secret_store, nara_fetcher=self._nara_fetcher,
+        )
+
         self._check_template()
         self._refresh_field_panel()
 
@@ -244,6 +261,23 @@ class RunView(QMainWindow):
     def _effective_template(self) -> str:
         return self.vm.effective_template()
 
+    # ------------------------- 공용 실행 계층 위임 프로퍼티(스캐폴드·스모크 계약, RC-22)
+    @property
+    def _thread(self):
+        return self._runner.thread
+
+    @property
+    def _running(self) -> bool:
+        return self._runner.running
+
+    @_running.setter
+    def _running(self, value: bool) -> None:
+        self._runner.running = value
+
+    @property
+    def _data_thread(self):
+        return self._data.thread
+
     # ------------------------------------------------------------------ helpers
     def _say(self, msg: str) -> None:
         self.log.appendPlainText(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
@@ -274,103 +308,22 @@ class RunView(QMainWindow):
         mark(self.lbl_prev_note, "level", note.level)
         self.lbl_prev_note.setText(note.text)
 
-    # ------------------------------------------------------------------ 데이터
+    # ------------------------------------------ 데이터(겨눔 3종은 공용 계층 위임, RC-22)
     def _pick_data(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self, "데이터 파일 선택", "", "엑셀/CSV (*.xlsx *.xlsm *.csv)"
-        )
-        if not path:
-            return
-        try:
-            records = self.vm.load_data(path)
-        except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "오류", f"데이터 로드 실패:\n{exc}")
-            return
-        if not records:
-            QMessageBox.warning(self, "확인", "레코드가 없습니다. 다른 파일을 선택하세요.")
-            return
-        self._after_data_loaded(path)
+        self._data.pick_file()
 
     def _pick_from_pool(self) -> None:
-        """데이터 풀(활성 항목)에서 참조를 골라 실행 시점에 재읽기(싱크)한다.
+        """데이터 풀에서 골라 실행 시점 재읽기(싱크) — 복원은 백그라운드(RC-12)."""
+        self._data.pick_from_pool()
 
-        나라 풀 항목의 재취득은 네트워크라 UI 스레드에서 돌리면 이벤트 루프가
-        동결된다(RC-12) — 복원은 :class:`TaskWorker`(QThread)로 옮기고, 복원 중엔
-        데이터 버튼을 잠가 진행 상태를 시끄럽게 표시한다.
-        """
-        from PySide6.QtWidgets import QInputDialog
-
-        from ..core.dataset_pool import STATUS_ACTIVE
-
-        items = self._pool_registry.list_items(status=STATUS_ACTIVE)
-        if not items:
-            QMessageBox.information(
-                self, "데이터 풀", "활성 데이터가 없습니다. 먼저 데이터 풀에 등록하세요."
-            )
-            return
-        names = [it.name for it in items]
-        name, ok = QInputDialog.getItem(
-            self, "데이터 풀에서 선택", "데이터셋:", names, 0, False
-        )
-        if not ok or not name:
-            return
-        item = next(it for it in items if it.name == name)
-        self._say(f"데이터 복원 중(백그라운드): {item.name}")
-        self._set_data_busy(True)
-        self._data_thread = QThread()
-        self._data_worker = TaskWorker(
-            lambda: self.vm.load_pool_item(
-                item, secret_store=self._secret_store, fetcher=self._nara_fetcher
-            )
-        )
-        self._data_worker.moveToThread(self._data_thread)
-        self._data_thread.started.connect(self._data_worker.run)
-        # 수신자는 반드시 바운드 메서드(QObject 슬롯) — 큐드 연결로 UI 스레드에서 처리된다.
-        self._pending_pool_label = f"풀: {item.name}"
-        self._data_worker.finished.connect(self._on_pool_loaded)
-        self._data_worker.failed.connect(self._on_pool_load_failed)
-        self._data_thread.start()
+    def _pick_nara(self) -> None:
+        """일회 나라장터 취득(애드혹) — 풀 등록 없이 이번 실행만 겨눈다."""
+        self._data.pick_nara()
 
     def _set_data_busy(self, busy: bool) -> None:
         """데이터 복원(네트워크 가능) 중 겨눔 버튼 잠금 — 진행 중 재진입·경합 방지(RC-12)."""
         for b in (self.btn_pool, self.btn_data, self.btn_nara):
             b.setEnabled(not busy)
-
-    def _teardown_data_thread(self) -> None:
-        if self._data_thread:
-            self._data_thread.quit()
-            self._data_thread.wait()
-            self._data_thread = None
-        self._data_worker = None
-        self._set_data_busy(False)
-
-    def _on_pool_loaded(self, records) -> None:
-        self._teardown_data_thread()
-        if not records:
-            QMessageBox.warning(self, "확인", "레코드가 없습니다(취득 0건).")
-            return
-        self._after_data_loaded(self._pending_pool_label)
-
-    def _on_pool_load_failed(self, msg: str) -> None:
-        # 복원 실패(키 미등록·읽기·API 오류)는 시끄럽게 — 마스킹은 하위 계층이 관통.
-        self._teardown_data_thread()
-        self._say(f"[실패] 데이터 복원 실패: {msg}")
-        QMessageBox.critical(self, "오류", f"데이터 복원 실패:\n{msg}")
-
-    def _pick_nara(self) -> None:
-        """일회 나라장터 취득(애드혹) — 풀 등록 없이 이번 실행만 겨눈다."""
-        from .nara_view import NaraAcquireDialog
-
-        dlg = NaraAcquireDialog(
-            self, store=self._secret_store, fetcher=self._nara_fetcher
-        )
-        if dlg.exec() != dlg.Accepted or not dlg.records:
-            return
-        # 대화상자가 키 없는 스냅샷(AcquiredNaraData)을 이미 만들었다 — 그대로 겨눈다.
-        self.vm.datasource = dlg.datasource
-        self.vm.records = dlg.records
-        self.vm.reset_acks()
-        self._after_data_loaded(dlg.label)
 
     def _after_data_loaded(self, label: str) -> None:
         """데이터 겨눔 공통 꼬리 — 라벨 표시 + 레코드 선택기 채움 + 사전검증/패널 갱신.
@@ -383,23 +336,7 @@ class RunView(QMainWindow):
 
     def _on_selection_changed(self) -> None:
         """행 선택/데이터가 바뀌면 사전검증·인라인 필드 패널·생성 게이트를 다시 계산."""
-        self._run_preflight()
         self._refresh_field_panel()
-
-    def _run_preflight(self) -> None:
-        """사전검증 — 치명(데이터에 없는 항목)만 라벨에. 빈칸은 아래 인라인 패널이 맡는다."""
-        pf = self.vm.preflight(self.selector.selected_indices())
-        if pf.missing_columns:
-            mark(self.lbl_preflight, "level", "danger")
-            self.lbl_preflight.setText(
-                "[치명] 데이터에 없는 항목입니다(빈칸 생성됨): " + ", ".join(pf.missing_columns)
-            )
-        elif self.vm.datasource is None:
-            mark(self.lbl_preflight, "level", "")
-            self.lbl_preflight.setText("")
-        else:
-            mark(self.lbl_preflight, "level", "ok")
-            self.lbl_preflight.setText("사전검증 통과 — 치명 누락 없음. 아래 빈칸 표면화를 확인하세요.")
 
     # ------------------------------- 상시 인라인 필드 패널 + 강제 확인 게이트(ADR-E)
     def _clear_badges(self) -> None:
@@ -410,10 +347,17 @@ class RunView(QMainWindow):
                 w.deleteLater()
 
     def _refresh_field_panel(self) -> None:
-        """뷰모델 필드 상태를 채움/공란/미입력/구조 드리프트 배지로 렌더."""
+        """상태 스냅샷 1회(vm.refresh)로 사전검증·필드 배지·게이트를 함께 렌더(RC-23).
+
+        표시 결정(level/text/활성)은 전부 링1 산출을 **그대로** 렌더한다 — 위젯 재조립이
+        만들던 모순 신호(상단 '통과' 녹색 + 하단 드리프트 차단)와 표시면별 재질의의
+        템플릿 zip 5회 재파싱을 함께 해소.
+        """
+        snap = self.vm.refresh(self.selector.selected_indices())
+        mark(self.lbl_preflight, "level", snap.preflight.level)
+        self.lbl_preflight.setText(snap.preflight.text)
         self._clear_badges()
-        indices = self.selector.selected_indices()
-        for st in self.vm.field_states(indices):
+        for st in snap.field_states:
             if st.state == "filled":
                 chip = QLabel(f"✓ {st.name}")
                 mark(chip, "fb", "fill")
@@ -435,39 +379,22 @@ class RunView(QMainWindow):
                 chip.setCursor(Qt.PointingHandCursor)
                 chip.clicked.connect(lambda _checked=False, f=st.name: self._ack_field(f))
             self.badge_flow.addWidget(chip)
-        self._sync_generate_enabled()
+        self._apply_gate(snap.gate)
 
     def _ack_field(self, field: str) -> None:
         """미입력 배지 클릭 = 직접 확인(강제 상호작용). 다 확인되면 생성이 열린다."""
         self.vm.acknowledge(field)
         self._refresh_field_panel()
 
+    def _apply_gate(self, gate) -> None:
+        """링1 게이트 결정(GateState)을 그대로 렌더 — 판정·문구 재조립 금지(RC-23)."""
+        self.btn_generate.setEnabled(gate.enabled and not self._running)
+        mark(self.lbl_gate, "level", gate.level)
+        self.lbl_gate.setText(gate.text)
+
     def _sync_generate_enabled(self) -> None:
-        indices = self.selector.selected_indices()
-        unmet = self.vm.unmet_blanks(indices) if self.vm.datasource is not None else []
-        drift = self.vm.structure_drift() if self.vm.datasource is not None else None
-        if self._running:
-            self.btn_generate.setEnabled(False)
-            return
-        self.btn_generate.setEnabled(not unmet and not (drift and drift.has_drift))
-        if drift and drift.has_drift:
-            names = list(drift.template_only) + list(drift.mapping_only) + list(drift.conflicting)
-            mark(self.lbl_gate, "level", "danger")
-            if drift.read_error:
-                self.lbl_gate.setText("템플릿 구조를 읽을 수 없어 생성이 차단됩니다.")
-            else:
-                self.lbl_gate.setText(
-                    "템플릿 구조 드리프트 — 매핑을 다시 확정해야 생성할 수 있습니다: "
-                    + ", ".join(names)
-                )
-        elif unmet:
-            mark(self.lbl_gate, "level", "warn")
-            self.lbl_gate.setText(
-                f"미입력 {len(unmet)}필드를 확인해야 문서 생성이 가능합니다: {', '.join(unmet)}"
-            )
-        else:
-            mark(self.lbl_gate, "level", "")
-            self.lbl_gate.setText("")
+        """게이트만 재평가(teardown 후 버튼 복원 등) — 결정은 vm.gate_state 단일 출처."""
+        self._apply_gate(self.vm.gate_state(self.selector.selected_indices()))
 
     def _pick_out(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "저장 폴더 선택")
@@ -527,36 +454,23 @@ class RunView(QMainWindow):
             ledger=self.chk_ledger.isChecked(), overwrite=overwrite,
         )
         self._plan = plan
-        self._running = True
-        self.btn_generate.setEnabled(False)
-        self.btn_cancel.setEnabled(True)
-        self.lbl_result.setText("")
-        self.progress.setMaximum(len(plan.records))
-        self.progress.setValue(0)
         mode = "기존 문서 이어채우기" if self._template_override else "새 문서"
         self._say(f"생성 시작[{mode}]: {len(plan.records)}건 → {plan.out_dir}")
 
-        self._thread = QThread()
-        self._worker = GenerateWorker(plan)
-        self._worker.moveToThread(self._thread)
-        self._thread.started.connect(self._worker.run)
-        self._worker.progress.connect(lambda done, total: self.progress.setValue(done))
-        self._worker.stage.connect(self._say)  # '원장 검증 중' 등 단계 고지(RC-07)
-        self._worker.finished.connect(self._on_finished)
-        self._worker.failed.connect(self._on_failed)
-        self._thread.start()
+        worker = GenerateWorker(plan)
+        worker.stage.connect(self._say)  # '원장 검증 중' 등 단계 고지(RC-07)
+        self._runner.start(worker, total=len(plan.records))
 
     def _on_cancel_generate(self) -> None:
         """협조적 취소(RC-06) — 진행 중 레코드까지 마치고 중단, 부분 결과는 요약으로."""
-        if self._worker is not None and self._running:
-            self._worker.cancel()
-            self.btn_cancel.setEnabled(False)
-            self._say("취소 요청 — 진행 중인 레코드까지 마치고 중단합니다.")
+        self._runner.request_cancel()
 
     def _on_finished(self, batch) -> None:
-        worker = self._worker
+        """완료 신호 진입점(스모크/테스트 계약) — 공용 라우팅(teardown+렌더)에 위임."""
+        self._runner.finish(batch)
+
+    def _render_finished(self, batch, worker) -> None:
         plan = self._plan
-        self._teardown_thread()
         if plan is None:  # 계획 없는 완료 신호는 배선 오류 — 조용히 무시하지 않는다
             self._say("[오류] 생성 계획이 없는 완료 신호 — 배선 오류입니다.")
             return
@@ -578,7 +492,8 @@ class RunView(QMainWindow):
         self._say(summary)
         for res in batch.results:
             if not res.ok:
-                self._say(f"  [실패] {res.output_path}: {res.error}")
+                # 원시 errno 관통 해소(RC-30) — 행동 지향 문구 + 원문 보존.
+                self._say(f"  [실패] {res.output_path}: {describe_result_error(res.error)}")
             elif res.unmatched:
                 self._say(
                     f"  [주의] 매칭 안 된 필드: {', '.join(res.unmatched)} → "
@@ -592,35 +507,13 @@ class RunView(QMainWindow):
             elif worker.ledger_path:
                 self._say(f"[원장] {worker.ledger_path} 저장 — 값은 텍스트이며 HWPX 렌더가 아닙니다.")
         self.run_finished.emit(batch)
-        if not cancelled and batch.succeeded > 0 and QMessageBox.question(
-            self, "완료", f"{batch.succeeded}건 생성 완료.\n결과 폴더를 여시겠습니까?"
-        ) == QMessageBox.Yes:
-            self._open_folder(plan.out_dir)
+        if not cancelled:
+            # 완료 모달은 부분 실패를 무언급하지 않는다(RC-30) — 공용 문구·경고형.
+            ask_open_result_folder(self, batch.succeeded, batch.failed, plan.out_dir)
 
     def _on_failed(self, msg: str) -> None:
-        self._teardown_thread()
-        # 실패도 성공 경로와 대칭으로 상태를 정리한다(RC-07) — 모달만 남기면 닫는 순간
-        # 실패 증거가 증발한다(경보 휘발). 라벨·로그·진행바에 실패를 박제한다.
-        self.progress.setValue(0)
-        mark(self.lbl_result, "level", "danger")
-        self.lbl_result.setText(f"실패 — 생성 중 오류: {msg}")
-        self._say(f"[실패] 생성 중 오류: {msg}")
-        QMessageBox.critical(self, "오류", f"생성 중 오류:\n{msg}")
+        """실패 신호 진입점(스모크/테스트 계약) — 공용 라우팅(RC-07 대칭 정리)에 위임."""
+        self._runner.fail(msg)
 
     def _teardown_thread(self) -> None:
-        if self._thread:
-            self._thread.quit()
-            self._thread.wait()
-            self._thread = None
-        self._running = False
-        self.btn_cancel.setEnabled(False)
-        self._sync_generate_enabled()  # 게이트(미확인 미입력) 재평가 후 버튼 상태 복원
-
-    @staticmethod
-    def _open_folder(path: str) -> None:
-        if sys.platform.startswith("win"):
-            os.startfile(path)  # noqa: S606
-        elif sys.platform == "darwin":
-            subprocess.Popen(["open", path])
-        else:
-            subprocess.Popen(["xdg-open", path])
+        self._runner.teardown()
