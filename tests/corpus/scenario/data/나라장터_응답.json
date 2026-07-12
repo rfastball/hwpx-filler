@@ -1,0 +1,69 @@
+{
+  "_comment": "시나리오용 나라장터 표준서비스 응답 형태(영문 코드 키). NaraStdDataSource.parse 가 response.body.items[] 를 평면 레코드로 읽는다. 값 형태는 실 응답을 따르되(가격은 raw 정수 문자열, 일시는 날짜/시각 분리) 매핑 프로파일(나라장터_매핑.json)로 한글 템플릿 필드에 잇는다. 담당자/연락처는 중립화.",
+  "response": {
+    "header": { "resultCode": "00", "resultMsg": "정상" },
+    "body": {
+      "pageNo": 1,
+      "numOfRows": 2,
+      "totalCount": 2,
+      "items": [
+        {
+          "bidNtceNo": "R26BK00450011",
+          "bidNtceOrd": "000",
+          "bidNtceNm": "친환경 선박용 소화장비 구매",
+          "bidNtceSttusNm": "일반공고",
+          "bidNtceDate": "2026-07-10",
+          "bsnsDivNm": "물품",
+          "elctrnBidYn": "Y",
+          "cntrctCnclsMthdNm": "일반경쟁",
+          "bidwinrDcsnMthdNm": "적격심사",
+          "dmndInsttNm": "해양수산부",
+          "dmndInsttCd": "1192000",
+          "dmndInsttOfclDeptNm": "장비구매팀",
+          "dmndInsttOfclNm": "담당자",
+          "dmndInsttOfclTel": "044-200-0000",
+          "bidBeginDate": "2026-07-15",
+          "bidBeginTm": "09:00",
+          "bidClseDate": "2026-07-21",
+          "bidClseTm": "17:00",
+          "opengDate": "2026-07-22",
+          "opengTm": "10:00",
+          "opengPlce": "국가종합전자조달시스템(나라장터)",
+          "asignBdgtAmt": "50000000",
+          "presmptPrce": "45000000",
+          "rgnLmtYn": "N",
+          "bidNtceUrl": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK00450011&bidPbancOrd=000",
+          "dataBssDate": "2026-07-11"
+        },
+        {
+          "bidNtceNo": "R26BK00450029",
+          "bidNtceOrd": "000",
+          "bidNtceNm": "수산자원조사용 수중드론 구매",
+          "bidNtceSttusNm": "일반공고",
+          "bidNtceDate": "2026-07-11",
+          "bsnsDivNm": "물품",
+          "elctrnBidYn": "Y",
+          "cntrctCnclsMthdNm": "제한경쟁",
+          "bidwinrDcsnMthdNm": "협상에의한계약",
+          "dmndInsttNm": "국립수산과학원",
+          "dmndInsttCd": "1192649",
+          "dmndInsttOfclDeptNm": "연구지원팀",
+          "dmndInsttOfclNm": "담당자",
+          "dmndInsttOfclTel": "051-720-0000",
+          "bidBeginDate": "2026-07-16",
+          "bidBeginTm": "09:00",
+          "bidClseDate": "2026-07-22",
+          "bidClseTm": "17:00",
+          "opengDate": "2026-07-23",
+          "opengTm": "10:00",
+          "opengPlce": "국가종합전자조달시스템(나라장터)",
+          "asignBdgtAmt": "80000000",
+          "presmptPrce": "72000000",
+          "rgnLmtYn": "N",
+          "bidNtceUrl": "https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK00450029&bidPbancOrd=000",
+          "dataBssDate": "2026-07-11"
+        }
+      ]
+    }
+  }
+}

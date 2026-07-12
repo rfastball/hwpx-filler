@@ -1,0 +1,138 @@
+{
+  "name": "나라장터→조달어휘",
+  "mappings": [
+    {
+      "template_field": "입찰공고번호",
+      "sources": [
+        "bidNtceNo"
+      ],
+      "transform": "join",
+      "sep": " ",
+      "const": "",
+      "fmt": ""
+    },
+    {
+      "template_field": "수요기관",
+      "sources": [
+        "dmndInsttNm"
+      ],
+      "transform": "join",
+      "sep": " ",
+      "const": "",
+      "fmt": ""
+    },
+    {
+      "template_field": "공고명",
+      "sources": [
+        "bidNtceNm"
+      ],
+      "transform": "join",
+      "sep": " ",
+      "const": "",
+      "fmt": ""
+    },
+    {
+      "template_field": "계약방법",
+      "sources": [
+        "cntrctCnclsMthdNm"
+      ],
+      "transform": "join",
+      "sep": " ",
+      "const": "",
+      "fmt": ""
+    },
+    {
+      "template_field": "사업예산",
+      "sources": [
+        "asignBdgtAmt"
+      ],
+      "transform": "amount",
+      "sep": " ",
+      "const": "",
+      "fmt": "{:,}원"
+    },
+    {
+      "template_field": "추정가격",
+      "sources": [
+        "presmptPrce"
+      ],
+      "transform": "amount",
+      "sep": " ",
+      "const": "",
+      "fmt": "{:,}원"
+    },
+    {
+      "template_field": "낙찰자결정방법",
+      "sources": [
+        "bidwinrDcsnMthdNm"
+      ],
+      "transform": "join",
+      "sep": " ",
+      "const": "",
+      "fmt": ""
+    },
+    {
+      "template_field": "입찰개시일시",
+      "sources": [
+        "bidBeginDate",
+        "bidBeginTm"
+      ],
+      "transform": "datetime",
+      "sep": " ",
+      "const": "",
+      "fmt": ""
+    },
+    {
+      "template_field": "입찰마감일시",
+      "sources": [
+        "bidClseDate",
+        "bidClseTm"
+      ],
+      "transform": "datetime",
+      "sep": " ",
+      "const": "",
+      "fmt": ""
+    },
+    {
+      "template_field": "개찰일시",
+      "sources": [
+        "opengDate",
+        "opengTm"
+      ],
+      "transform": "datetime",
+      "sep": " ",
+      "const": "",
+      "fmt": ""
+    },
+    {
+      "template_field": "담당부서",
+      "sources": [
+        "dmndInsttOfclDeptNm"
+      ],
+      "transform": "join",
+      "sep": " ",
+      "const": "",
+      "fmt": ""
+    },
+    {
+      "template_field": "담당자",
+      "sources": [
+        "dmndInsttOfclNm"
+      ],
+      "transform": "join",
+      "sep": " ",
+      "const": "",
+      "fmt": ""
+    },
+    {
+      "template_field": "담당자 전화번호",
+      "sources": [
+        "dmndInsttOfclTel"
+      ],
+      "transform": "join",
+      "sep": " ",
+      "const": "",
+      "fmt": ""
+    }
+  ]
+}
