@@ -18,7 +18,6 @@ from dataclasses import dataclass, field
 from ..core.authoring import scan_tokens
 from ..core.lint import similarity
 from ..core.mapping import (
-    NARA_ALIASES,
     TRANSFORMS,
     FieldMapping,
     MappingProfile,
@@ -93,7 +92,7 @@ class MappingModel:
         cls,
         schema: TemplateSchema,
         source_fields: "list[str]",
-        aliases: "dict[str, str] | None" = NARA_ALIASES,
+        aliases: "dict[str, str] | None" = None,
     ) -> "MappingModel":
         """스키마 전 필드(문서순)에 행을 만들고 ``suggest_mappings`` 초안을 얹는다.
 

@@ -75,3 +75,10 @@ class ExcelDataSource:
     def fields(self) -> "list[str]":
         self._load()
         return [h for h in self._headers if h]
+
+    def field_labels(self) -> "dict[str, str]":
+        """Excel/CSV 헤더는 이미 사람이 읽는 라벨이라 별도 어휘가 없다(빈 dict).
+
+        영문 코드 키를 쓰는 소스(예: 나라장터 API)만 자기 어휘를 선언한다.
+        """
+        return {}

@@ -376,7 +376,14 @@ class MappingPage(QWizardPage):
         if self._built_for != key or wiz.model is None:
             # 템플릿/데이터 조합이 바뀌었을 때만 초안을 새로 뽑는다
             # (뒤로 갔다 와도 사람이 만진 확정 상태를 잃지 않게).
-            wiz.model = MappingModel.from_suggestions(wiz.schema, wiz.source_fields)
+            # 선택된 소스가 자기 어휘를 소유한다: 나라장터처럼 영문 코드 키 소스는
+            # field_labels() 로 퍼지 타겟을 제공하고, Excel/CSV(사람 라벨 헤더)는 {}.
+            ds = getattr(wiz, "datasource", None)
+            labels_fn = getattr(ds, "field_labels", None)
+            aliases = labels_fn() if callable(labels_fn) else {}
+            wiz.model = MappingModel.from_suggestions(
+                wiz.schema, wiz.source_fields, aliases
+            )
             self._built_for = key
             # 편집 모드: 저장된 매핑을 프리시드 — 일치 행은 과거 사람 확정의 복원이라
             # 확정 상태로 온다(apply_profile). 프로파일에 없는 행은 미확정 유지:

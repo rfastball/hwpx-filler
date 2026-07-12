@@ -11,16 +11,19 @@ from pathlib import Path
 
 from hwpxfiller.core.engine import HwpxEngine
 from hwpxfiller.core.mapping import (
-    NARA_ALIASES,
     FieldMapping,
     MappingProfile,
     apply_transform,
     suggest_mappings,
 )
+from hwpxfiller.data.nara import NaraStdDataSource
 from hwpxcore.package import HwpxPackage
 
 FIXTURES = Path(__file__).parent / "fixtures"
 CORPUS = Path(__file__).parent / "corpus" / "real"
+
+# 어휘는 이제 소스가 소유한다(코어 아님) — V1 승격 후 새 출처.
+NARA_ALIASES = NaraStdDataSource.field_labels()
 
 
 def _nara_record() -> dict:
@@ -77,6 +80,21 @@ def test_suggest_is_one_to_one_draft():
     sugg = suggest_mappings(["입찰개시일시"], list(NARA_ALIASES), NARA_ALIASES)
     # 날짜 쪽으로 1:1 제안(시각은 사람이 추가).
     assert len(sugg) == 1 and sugg[0].sources == ["bidBeginDate"]
+
+
+def test_suggest_without_source_vocabulary_matches_raw_keys():
+    """어휘 없는 소스(Excel/CSV — 헤더가 이미 사람 라벨)는 원 키에 직접 퍼지 매칭한다.
+
+    나라장터 어휘가 모든 소스에 강요되지 않음을 못박는다(V1 GUI 기본 alias 제거):
+    한글 헤더 소스는 aliases 없이도 초안이 잡히고, 영문 코드 소스는 aliases 없이는
+    한글 필드와 안 맞아 초안이 없다(코어는 어휘를 몰래 얹지 않는다).
+    """
+    # 한글 헤더 Excel 소스 — aliases 없이 직접 매칭.
+    sugg = suggest_mappings(["공고명", "추정가격"], ["공고명", "추정가격", "비고"])
+    pairs = {m.template_field: m.sources[0] for m in sugg}
+    assert pairs == {"공고명": "공고명", "추정가격": "추정가격"}
+    # 영문 코드 소스 — 나라 어휘를 강요하지 않으면 한글 필드와 안 맞아 초안 없음.
+    assert suggest_mappings(["공고명"], ["bidNtceNm"]) == []
 
 
 # ------------------------------------------------------------- 프로파일 저장/적용

@@ -16,9 +16,12 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from hwpxfiller.core.mapping import NARA_ALIASES  # noqa: E402
 from hwpxfiller.core.schema import FieldSpec, TemplateSchema  # noqa: E402
+from hwpxfiller.data.nara import NaraStdDataSource  # noqa: E402
 from hwpxfiller.gui.mapping_state import MappingModel  # noqa: E402
+
+# 어휘는 이제 소스가 소유한다(코어 아님) — V1 승격 후 새 출처.
+NARA_ALIASES = NaraStdDataSource.field_labels()
 
 
 @pytest.fixture(scope="module")
@@ -224,8 +227,6 @@ def test_editor_edit_mode_prefills_and_preseeds(qapp, tmp_path):
     assert save_page.job_name() == "바꾼이름"  # 재진입이 프리필로 덮지 않음
 
     # MappingPage 프리시드 — 위저드 세션 상태를 심고 initializePage 호출.
-    from hwpxfiller.core.mapping import NARA_ALIASES
-
     wiz.template_path = "/t.hwpx"
     wiz.data_path = "/d.xlsx"
     wiz.schema = TemplateSchema(

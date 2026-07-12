@@ -9,11 +9,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from hwpxfiller.core.mapping import NARA_ALIASES, MappingProfile, apply_transform
+from hwpxfiller.core.mapping import MappingProfile, apply_transform
 from hwpxfiller.core.schema import FieldSpec, TemplateSchema
+from hwpxfiller.data.nara import NaraStdDataSource
 from hwpxfiller.gui.mapping_state import MappingModel, RowState
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+# 어휘는 이제 소스가 소유한다(코어 아님) — V1 승격 후 새 출처.
+NARA_ALIASES = NaraStdDataSource.field_labels()
 
 
 def _nara_record() -> dict:

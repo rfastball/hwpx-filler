@@ -4,10 +4,10 @@
 변환으로 꽂을지"는 사람이 관리한다. 그 결정을 재사용 가능한 영속 산출물(**프로파일**)로
 고정한다. 같은 소스 스키마면 프로파일 1회 저작 후 영구 재사용(API/크롤의 결정적 이득).
 
-실데이터(나라장터 API)가 드러낸 3요구를 담는다:
-  1. **alias** — 소스 키가 영문코드(``bidNtceNo``)라 한글 템플릿 필드명과 직접 안 맞음.
-  2. **N→1 합성** — 한 템플릿 필드가 여러 소스 키에서(``bidBeginDate``+``bidBeginTm`` →
-     ``입찰개시일시``).
+실데이터(공공 API 등)가 드러낸 3요구를 담는다:
+  1. **alias** — 소스 키가 영문코드라 한글 템플릿 필드명과 직접 안 맞음(소스가
+     자기 어휘를 ``field_labels()`` 로 선언하면 퍼지 타겟이 된다 — 코어는 어휘-불가지).
+  2. **N→1 합성** — 한 템플릿 필드가 여러 소스 키에서(날짜 키 + 시각 키 → 일시 필드).
   3. **값 변환** — 숫자→금액서식, 날짜 결합·서식.
 
 그래서 프로파일은 ``{템플릿필드: {sources:[...], transform}}`` 형태다(단순 1:1 dict 불가).
@@ -25,46 +25,10 @@ from pathlib import Path
 from . import format_engine as _fe
 from .lint import similarity
 
-# 나라장터 표준 입찰공고 응답 필드(소스 키) → 사람이 읽는 한글 라벨.
-# 영문 코드 키를 한글 템플릿 필드에 퍼지 매칭하려면 이 사전이 퍼지 타겟이 된다.
-# 근거: 공공데이터개방표준서비스(15058815) getDataSetOpnStdBidPblancInfo 실 라이브 응답.
-NARA_ALIASES: "dict[str, str]" = {
-    "bidNtceNo": "입찰공고번호",
-    "bidNtceOrd": "입찰공고차수",
-    "bidNtceNm": "공고명",
-    "bidNtceSttusNm": "공고상태",
-    "bidNtceDate": "공고일자",
-    "bidNtceBgn": "공고시각",
-    "bsnsDivNm": "업무구분",
-    "cntrctCnclsMthdNm": "계약방법",
-    "cntrctCnclsSttusNm": "계약체결형태",
-    "bidwinrDcsnMthdNm": "낙찰자결정방법",
-    "ntceInsttNm": "공고기관",
-    "ntceInsttCd": "공고기관코드",
-    "ntceInsttOfclDeptNm": "공고기관담당부서",
-    "ntceInsttOfclNm": "공고기관담당자",
-    "ntceInsttOfclTel": "공고기관담당자전화번호",
-    "dmndInsttNm": "수요기관",
-    "dmndInsttOfclDeptNm": "수요기관담당부서",
-    "dmndInsttOfclNm": "수요기관담당자",
-    "dmndInsttOfclTel": "수요기관담당자전화번호",
-    "bidBeginDate": "입찰개시일자",
-    "bidBeginTm": "입찰개시시각",
-    "bidClseDate": "입찰마감일자",
-    "bidClseTm": "입찰마감시각",
-    "bidPrtcptQlfctRgstClseDate": "입찰참가자격등록마감일자",
-    "bidPrtcptQlfctRgstClseTm": "입찰참가자격등록마감시각",
-    "opengDate": "개찰일자",
-    "opengTm": "개찰시각",
-    "opengPlce": "개찰장소",
-    "asignBdgtAmt": "배정예산",
-    "presmptPrce": "추정가격",
-    "rgnLmtYn": "지역제한여부",
-    "prtcptPsblRgnNm": "참가가능지역",
-    "indstrytyLmtYn": "업종제한여부",
-    "bidprcPsblIndstrytyNm": "투찰가능업종",
-    "bidNtceUrl": "공고URL",
-}
+# 소스별 어휘(소스 키 → 한글 라벨)는 **코어가 소유하지 않는다**. 각 DataSource 가
+# ``field_labels()`` 로 자기 어휘를 선언하고(예: ``data/nara.py`` 의 나라장터 36쌍),
+# GUI 가 선택된 소스의 라벨을 ``suggest_mappings(..., aliases=...)`` 로 주입한다.
+# 코어는 어휘-불가지: ``aliases`` 는 아래 서명에서 순수 범용 인자다.
 
 # 지원 변환 종류. 이 중 amount/datetime 은 **결합(N→1) 후 표시형 서식**을 교체 가능한
 # core/format_engine 에 위임한다(join/const 는 매핑 고유 결합자).
