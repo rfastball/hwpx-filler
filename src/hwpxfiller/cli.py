@@ -17,9 +17,14 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+from typing import TYPE_CHECKING
 
 from .batch import generate_batch
+
+if TYPE_CHECKING:  # 런타임 결합 회피 — 저장소는 덕타이핑으로 충분.
+    from .data.secret_store import SecretStore
 from .core.engine import HwpxEngine
 from hwpxcore.validate import validate
 from .data.excel import ExcelDataSource
@@ -202,7 +207,42 @@ def _render_main(argv: "list[str]") -> int:
     return 0
 
 
-def _load_records(ap: argparse.ArgumentParser, args) -> "list[dict[str, str]]":
+def _resolve_service_key(
+    ap: argparse.ArgumentParser, args, store: "SecretStore | None",
+) -> "str | None":
+    """나라 ServiceKey 를 우선순위대로 해석한다(없으면 ``None``).
+
+    우선순위(보안 강한 순):
+        ``--service-key-file`` > ``--service-key`` > ``DATA_GO_KR_KEY`` 환경변수 > 저장된 키.
+
+    근거: 파일 지정은 의도적·비노출이라 최우선. 인라인 ``--service-key`` 는 명시적이지만
+    프로세스 목록·셸 히스토리에 노출되므로 **비권장 경고**를 내고 다음으로 강등. 환경변수는
+    앰비언트 편의. 저장소(OS 자격증명)는 재공급 없이 재사용하는 마지막 폴백.
+    """
+    if getattr(args, "service_key_file", None):
+        try:
+            with open(args.service_key_file, encoding="utf-8") as fh:
+                return fh.read().strip()
+        except OSError as exc:
+            ap.error(f"--service-key-file 읽기 실패: {exc}")
+    if getattr(args, "service_key", None):
+        print("[보안 경고] --service-key 로 키를 명령행에 직접 넘기면 프로세스 목록·셸 "
+              "히스토리에 노출됩니다(비권장·향후 제거 예정). --service-key-file 또는 "
+              "DATA_GO_KR_KEY 환경변수를 쓰세요.", file=sys.stderr)
+        return args.service_key
+    env = os.environ.get("DATA_GO_KR_KEY")
+    if env and env.strip():
+        return env.strip()
+    from .data.secret_store import NARA_SERVICE_KEY_NAME, default_secret_store
+
+    if store is None:
+        store = default_secret_store()
+    return store.get(NARA_SERVICE_KEY_NAME)
+
+
+def _load_records(
+    ap: argparse.ArgumentParser, args, store: "SecretStore | None" = None,
+) -> "list[dict[str, str]]":
     """``--source`` 에 따라 데이터 소스를 만들고 레코드를 취득한다.
 
     나라장터는 영문 코드 키를 반환하므로, 한글 템플릿 필드로 채우려면 대개 ``--profile``
@@ -211,15 +251,16 @@ def _load_records(ap: argparse.ArgumentParser, args) -> "list[dict[str, str]]":
     if args.source == "nara":
         from .data.nara import NaraStdDataSource
 
+        service_key = _resolve_service_key(ap, args, store)
         missing = [
-            name for name, val in
-            (("--service-key", args.service_key), ("--bgn", args.bgn), ("--end", args.end))
-            if not val
+            name for name, val in (("--bgn", args.bgn), ("--end", args.end)) if not val
         ]
+        if not service_key:
+            missing.append("서비스키(--service-key-file/--service-key/DATA_GO_KR_KEY/저장된 키)")
         if missing:
             ap.error(f"--source nara 에는 {', '.join(missing)} 가 필요합니다")
         src = NaraStdDataSource(
-            args.service_key, args.bgn, args.end,
+            service_key, args.bgn, args.end,
             num_rows=args.num_rows, page_no=args.page,
         )
         records = src.records()
@@ -235,7 +276,7 @@ def _load_records(ap: argparse.ArgumentParser, args) -> "list[dict[str, str]]":
     return ExcelDataSource(args.data, sheet=args.sheet).records()
 
 
-def main(argv: "list[str] | None" = None) -> int:
+def main(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "diff":
         # 개정 비교는 별도 제품(hwpxdiff)로 분리됐다 — 손에 익은 진입점만 안내.
@@ -265,7 +306,11 @@ def main(argv: "list[str] | None" = None) -> int:
                     help="매핑 프로파일 JSON(소스 키→템플릿 필드; 나라장터 영문키에 사실상 필수)")
     ap.add_argument("--fields", action="store_true", help="템플릿 요구 필드만 출력")
     # 나라장터 취득 옵션(--source nara)
-    ap.add_argument("--service-key", default=None, help="data.go.kr ServiceKey (--source nara)")
+    ap.add_argument("--service-key", default=None,
+                    help="data.go.kr ServiceKey 인라인(비권장·노출 위험). "
+                         "--service-key-file/DATA_GO_KR_KEY/저장된 키를 우선 쓰세요")
+    ap.add_argument("--service-key-file", default=None,
+                    help="ServiceKey 를 담은 파일 경로(권장 — 프로세스 목록/히스토리 미노출)")
     ap.add_argument("--bgn", default=None, help="공고 시작일시 YYYYMMDDHHMM (--source nara)")
     ap.add_argument("--end", default=None, help="공고 종료일시 YYYYMMDDHHMM (bgn 과 1개월 이내)")
     ap.add_argument("--num-rows", type=int, default=100, help="나라장터 페이지당 건수(기본 100)")
@@ -279,7 +324,7 @@ def main(argv: "list[str] | None" = None) -> int:
             print(f)
         return 0
 
-    records = _load_records(ap, args)
+    records = _load_records(ap, args, secret_store)
 
     if args.profile:
         from .core.mapping import MappingProfile

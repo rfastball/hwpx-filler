@@ -94,17 +94,25 @@ def test_profile_maps_source_keys_to_template_fields(tmp_path):
 
 # --------------------------------------------------------------- 나라장터 소스
 def _patch_nara(monkeypatch):
-    """NaraStdDataSource._fetch 를 실 응답 픽스처로 대체(네트워크 차단)."""
+    """NaraStdDataSource._fetch 를 실 응답 픽스처로 대체(네트워크 차단).
+
+    실 OS 자격증명 저장소 무접촉을 위해 ``DATA_GO_KR_KEY`` 환경변수도 비운다(키 해석이
+    저장소로 폴백하지 않도록). 호출부는 빈 :class:`MemorySecretStore` 를 주입한다.
+    """
     fixture = (FIXTURES / "nara_std_response.json").read_bytes()
     from hwpxfiller.data.nara import NaraStdDataSource
     monkeypatch.setattr(NaraStdDataSource, "_fetch", lambda self: fixture)
+    monkeypatch.delenv("DATA_GO_KR_KEY", raising=False)
 
 
 def test_nara_missing_service_key_errors(monkeypatch):
+    from hwpxfiller.data.secret_store import MemorySecretStore
     _patch_nara(monkeypatch)
+    # 인라인 키·파일·환경변수·저장소 모두 비어 있으면 시끄럽게 종료.
     with pytest.raises(SystemExit):
         main(["--template", TEMPLATE, "--source", "nara",
-              "--bgn", "202606010000", "--end", "202606302359"])
+              "--bgn", "202606010000", "--end", "202606302359"],
+             secret_store=MemorySecretStore())
 
 
 def test_nara_source_with_profile_fills_template(tmp_path, monkeypatch, capsys):

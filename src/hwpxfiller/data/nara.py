@@ -22,10 +22,21 @@ import json
 import urllib.parse
 import urllib.request
 
+from .secret_store import redact
+
 BASE = (
     "https://apis.data.go.kr/1230000/ao/PubDataOpnStdService/"
     "getDataSetOpnStdBidPblancInfo"
 )
+
+
+class NaraFetchError(RuntimeError):
+    """취득/파싱 경계에서 발생한 오류 — 메시지에서 ServiceKey 가 마스킹된 상태로만 표면화.
+
+    ``urlopen``/주입 fetcher/파싱이 던지는 예외의 ``str()`` 은 요청 URL(키 포함)이나 키 자체를
+    품을 수 있다. 그 원문을 **연쇄(chain)로도 남기지 않도록**(traceback 누출 방지) 원예외를
+    끊고(``from None``) 마스킹된 메시지로 재발생시킨다.
+    """
 
 
 class NaraStdDataSource:
@@ -64,15 +75,32 @@ class NaraStdDataSource:
         )
         return f"{BASE}?{query}"
 
+    def redacted_url(self) -> str:
+        """진단·로그용 URL — ServiceKey 가 마스킹된 형태(실취득엔 :meth:`url` 을 쓴다)."""
+        return redact(self.url(), self.service_key)
+
     def _fetch(self) -> bytes:
-        if self._fetcher is not None:
-            return self._fetcher(self.url())
-        with urllib.request.urlopen(self.url(), timeout=self.timeout) as resp:
-            return resp.read()
+        # urlopen/주입 fetcher 가 던지는 예외는 URL(키 포함)을 품을 수 있다 → 마스킹 후 재발생.
+        try:
+            if self._fetcher is not None:
+                return self._fetcher(self.url())
+            with urllib.request.urlopen(self.url(), timeout=self.timeout) as resp:
+                return resp.read()
+        except NaraFetchError:
+            raise
+        except Exception as exc:
+            raise NaraFetchError(redact(str(exc), self.service_key)) from None
 
     # ------------------------------------------------------ DataSource protocol
     def records(self) -> "list[dict[str, str]]":
-        return self.parse(self._fetch())
+        raw = self._fetch()
+        # 파싱 오류(빈/불량 응답)도 마스킹 경계 안에서 시끄럽게 실패시킨다.
+        try:
+            return self.parse(raw)
+        except NaraFetchError:
+            raise
+        except Exception as exc:
+            raise NaraFetchError(redact(str(exc), self.service_key)) from None
 
     def fields(self) -> "list[str]":
         """레코드가 제공하는 필드 키를 등장 순서(중복 제거)로 반환."""
