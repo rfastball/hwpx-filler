@@ -107,10 +107,18 @@ class PipelineBuilderViewModel:
         """서브소스 제거 — 그 소스를 참조하는 스텝이 있으면 **시끄럽게 거부**.
 
         조용한 스텝 자동삭제(추측)는 금지; 사용자가 스텝을 먼저 제거해야 한다.
+        **씨앗(index 0) 제거도 스텝이 있는 한 거부** — 씨앗은 스텝이 명시 참조하지
+        않아도 파이프라인 의미가 암묵 참조하는 기준 테이블이라, 제거 시 다음 소스가
+        조용히 승격되며 기존 스텝이 전혀 다른 조립(자기조인 포함)이 된다.
         더 높은 인덱스를 참조하는 스텝은 의미 보존 재번호(순수 시프트, 추측 아님).
         """
         if not (0 <= index < len(self.sources)):
             raise ValueError(f"소스 인덱스가 범위를 벗어났습니다: {index}")
+        if index == 0 and self.steps:
+            raise ValueError(
+                "기준(첫) 소스는 스텝이 있는 동안 제거할 수 없습니다 — 스텝을 먼저 "
+                "제거하세요(제거 시 다음 소스가 기준으로 승격되어 조립 의미가 바뀝니다)."
+            )
         for n, st in enumerate(self.steps):
             if st.get("source") == index:
                 raise ValueError(
@@ -192,12 +200,22 @@ class PipelineBuilderViewModel:
 
         **제안 전용**: 후보 키 목록만 반환하고 스텝을 만들지 않는다(사람이 골라
         :meth:`add_step` 으로 명시 확정 — ADR D 게이트). 감지 실패는 시끄럽게(ValueError).
+
+        현재 결과가 **0행이면 "감지 불가"로 시끄럽게** 실패한다 — 파이프라인 필드는
+        레코드 유도(:meth:`PipelineSource.fields`)라 0행에선 스키마상 공유 컬럼이
+        실재해도 보이지 않는다. 불확실("판단 근거 없음")을 오답("공유 컬럼 없음")으로
+        단정하지 않는다(confirm-or-alarm).
         """
         if not (0 <= source_index < len(self.sources)):
             raise ValueError(f"소스 인덱스가 범위를 벗어났습니다: {source_index}")
         current = self.preview(limit=1)
         if not current.ok:
             raise ValueError(f"현재 조립 결과를 읽을 수 없습니다: {current.error}")
+        if current.total == 0:
+            raise ValueError(
+                "현재 조립 결과가 0행이라 공유 컬럼을 감지할 수 없습니다 — "
+                "키를 직접 입력하세요."
+            )
         slot = self.sources[source_index]
         target = source_from_pool_item(
             SimpleNamespace(kind=slot.kind, opts=dict(slot.opts)),
@@ -208,13 +226,26 @@ class PipelineBuilderViewModel:
         return [f for f in current.fields if f in target_fields]  # 등장순 유지
 
     # ------------------------------------------------------------- 저장(참조만)
-    def save(self, name: str, *, note: str = "") -> DatasetPoolItem:
-        """드래프트를 풀 항목으로 저장 — **참조·레시피만**(KA 라운드트립 불변식)."""
+    def save(
+        self, name: str, *, note: str = "", overwrite: bool = False
+    ) -> DatasetPoolItem:
+        """드래프트를 풀 항목으로 저장 — **참조·레시피만**(KA 라운드트립 불변식).
+
+        동명 항목이 이미 있으면 **조용히 덮지 않고** 거부한다 — 빌더는 기존 항목명이
+        소스 콤보에 그대로 노출되는 표면이라 충돌 확률이 구조적으로 높고, 덮어쓰기는
+        기존 durable 참조(엑셀 경로·나라 쿼리)를 무경고 소실시킨다. 덮어쓰기는
+        호출측이 사용자 확정을 받은 뒤 ``overwrite=True`` 로만(confirm-or-alarm).
+        """
         name = (name or "").strip()
         if not name:
             raise ValueError("파이프라인 이름을 입력하세요.")
         if not self.sources:
             raise ValueError("소스가 없습니다 — 서브소스를 하나 이상 추가하세요.")
+        if not overwrite and self.registry.exists(name):
+            raise ValueError(
+                f"같은 이름의 풀 항목이 이미 있습니다: {name!r} — 다른 이름을 쓰거나 "
+                "덮어쓰기를 확정하세요."
+            )
         item = DatasetPoolItem(
             name=name, kind="pipeline", opts=self.draft_opts(), note=note
         )

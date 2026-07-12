@@ -80,6 +80,8 @@ class PipelineBuilderDialog(QDialog):
         self.cmb_op.currentIndexChanged.connect(self._on_op_changed)
         step_head.addWidget(self.cmb_op)
         self.cmb_target = QComboBox()  # 스텝 대상 소스(인덱스)
+        # 대상이 바뀌면 이전 대상 기준의 제안 후보는 무효 — 잔존 키로 오조인 방지.
+        self.cmb_target.currentIndexChanged.connect(lambda _i: self.cmb_key.clear())
         step_head.addWidget(self.cmb_target, 1)
         root.addLayout(step_head)
 
@@ -153,9 +155,14 @@ class PipelineBuilderDialog(QDialog):
         for i, s in enumerate(self.vm.sources):
             role = "기준" if i == 0 else f"소스 {i}"
             self.lst_sources.addItem(f"[{role}] {s.name} ({s.kind})")
+        # 대상 콤보 재구성 — 이전 선택(인덱스)을 보존한다. clear() 가 선택을 첫 항목으로
+        # 리셋하면 연속 [스텝 추가]가 조용히 씨앗(0) 대상 자기스텝을 만들 수 있다.
+        prev_target = self.cmb_target.currentData()
         self.cmb_target.clear()
         for i, s in enumerate(self.vm.sources):
             self.cmb_target.addItem(f"{i}: {s.name}", i)
+        if prev_target is not None and 0 <= prev_target < self.cmb_target.count():
+            self.cmb_target.setCurrentIndex(prev_target)
         self.lst_steps.clear()
         for st in self.vm.steps:
             if st["op"] == "merge":
@@ -263,8 +270,19 @@ class PipelineBuilderDialog(QDialog):
         )
 
     def _on_save(self) -> None:
+        name = self.edt_name.text().strip()
+        # 동명 항목은 조용히 덮지 않는다 — 사람 확정 후에만 overwrite(confirm-or-alarm).
+        overwrite = False
+        if name and self.vm.registry.exists(name):
+            if QMessageBox.question(
+                self, "이름 충돌",
+                f"'{name}' 풀 항목이 이미 있습니다 — 이 파이프라인으로 덮어쓸까요?\n"
+                "(기존 참조는 사라집니다)",
+            ) != QMessageBox.Yes:
+                return
+            overwrite = True
         try:
-            item = self.vm.save(self.edt_name.text())
+            item = self.vm.save(name, overwrite=overwrite)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "저장 실패", str(exc))
             return

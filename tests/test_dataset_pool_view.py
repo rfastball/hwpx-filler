@@ -151,6 +151,8 @@ def test_pipeline_builder_dialog_author_preview_save(qapp, tmp_path):
     # 스텝 추가(사람 확정) → 미리보기 표
     dlg._on_add_step()
     assert dlg.lst_steps.count() == 1
+    # 렌더 후 대상 선택 보존 — 씨앗(0)으로 조용히 리셋되면 연속 클릭이 자기스텝을 만든다.
+    assert dlg.cmb_target.currentData() == 1
     dlg._on_preview()
     assert dlg.tbl_preview.rowCount() == 1
     assert dlg.tbl_preview.item(0, 2).text() == "서울"
@@ -160,6 +162,31 @@ def test_pipeline_builder_dialog_author_preview_save(qapp, tmp_path):
     dlg._on_save()
     assert dlg.saved_name == "조립6월"
     assert reg.load("조립6월").kind == "pipeline"
+
+
+def test_pipeline_builder_save_collision_gated_by_question(qapp, tmp_path, monkeypatch):
+    """동명 저장은 사람 확정 게이트 — 거절 시 원본 무손실, 수락 시에만 덮어쓰기."""
+    from hwpxfiller.gui.pipeline_builder import PipelineBuilderDialog
+
+    a = tmp_path / "a.csv"
+    a.write_text("id\n1\n", encoding="utf-8-sig")
+    reg = DatasetPoolRegistry(tmp_path / "pool")
+    reg.save(DatasetPoolItem(name="기준", kind="excel", opts={"path": str(a)}))
+
+    dlg = PipelineBuilderDialog(reg)
+    dlg.cmb_pool.setCurrentText("기준")
+    dlg._on_add_source()
+    dlg.edt_name.setText("기준")  # 기존 항목과 동명
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.No)
+    dlg._on_save()
+    assert dlg.saved_name is None
+    assert reg.load("기준").kind == "excel"  # 거절 → 원본 유지
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    dlg._on_save()
+    assert dlg.saved_name == "기준"
+    assert reg.load("기준").kind == "pipeline"  # 확정 후에만 치환
 
 
 def test_pipeline_builder_preview_error_surfaces(qapp, tmp_path):

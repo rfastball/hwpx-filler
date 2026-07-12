@@ -72,6 +72,24 @@ def test_remove_source_referenced_by_step_fails_loudly(tmp_path):
     assert len(vm.sources) == 1
 
 
+def test_remove_seed_source_with_steps_fails_loudly(tmp_path):
+    """씨앗(index 0) 제거는 스텝이 있는 한 거부 — 조용한 승격·자기조인 금지(적대 리뷰 결함 1).
+
+    씨앗은 스텝이 명시 참조하지 않아도 파이프라인 의미가 암묵 참조한다. 제거를 허용하면
+    다음 소스가 기준으로 승격되며 merge 스텝이 자기조인(행 제곱)으로 조용히 변한다.
+    """
+    vm = PipelineBuilderViewModel(_pool_with_csvs(tmp_path))
+    vm.add_source("기준")
+    vm.add_source("참조표")
+    vm.add_step("merge", 1, on="id", how="inner")
+    with pytest.raises(ValueError, match="기준"):
+        vm.remove_source(0)
+    # 스텝 제거 후엔 허용 — 승격이 일어나되 스텝 없는 상태라 의미 왜곡 없음(목록에 가시).
+    vm.remove_step(0)
+    vm.remove_source(0)
+    assert [s.name for s in vm.sources] == ["참조표"]
+
+
 def test_remove_source_reindexes_higher_step_refs(tmp_path):
     tmp = tmp_path / "c.csv"
     tmp.write_text("id,x\n1,q\n", encoding="utf-8-sig")
@@ -119,6 +137,23 @@ def test_suggest_merge_keys_no_shared_columns_returns_empty(tmp_path):
     vm.add_source("기준")
     vm.add_source("무관")
     assert vm.suggest_merge_keys(1) == []
+
+
+def test_suggest_merge_keys_zero_rows_fails_loudly_not_false_negative(tmp_path):
+    """0행 중간결과에선 '공유 컬럼 없음' 확언 대신 감지 불가를 시끄럽게(적대 리뷰 결함 2).
+
+    파이프라인 fields 는 레코드 유도라 0행에선 스키마상 공유 컬럼(양쪽 헤더의 id)이
+    실재해도 안 보인다 — 불확실을 오답으로 단정하지 않는다.
+    """
+    empty = tmp_path / "empty.csv"
+    empty.write_text("id,name\n", encoding="utf-8-sig")  # 헤더만, 0행
+    reg = _pool_with_csvs(tmp_path)
+    reg.save(DatasetPoolItem(name="빈것", kind="excel", opts={"path": str(empty)}))
+    vm = PipelineBuilderViewModel(reg)
+    vm.add_source("빈것")    # 씨앗 0행
+    vm.add_source("참조표")  # id 공유(스키마상 실재)
+    with pytest.raises(ValueError, match="감지"):
+        vm.suggest_merge_keys(1)
 
 
 # ------------------------------------------------------------------ 미리보기 = 실행(divergence 0)
@@ -179,6 +214,22 @@ def test_save_requires_name_and_sources(tmp_path):
         vm.save("  ")
     with pytest.raises(ValueError, match="소스"):
         vm.save("이름있음")
+
+
+def test_save_name_collision_refused_without_explicit_overwrite(tmp_path):
+    """동명 풀 항목을 조용히 덮지 않는다 — overwrite 명시로만(적대 리뷰 결함 3).
+
+    빌더 소스 콤보에 노출되는 기존 이름('기준' 등)으로 저장하면 durable 참조가
+    무경고 소실되던 경로를 닫는다.
+    """
+    vm = PipelineBuilderViewModel(_pool_with_csvs(tmp_path))
+    vm.add_source("기준")
+    with pytest.raises(ValueError, match="이미 있습니다"):
+        vm.save("기준")  # 기존 excel 항목과 동명 — 거부
+    assert vm.registry.load("기준").kind == "excel"  # 원본 무손실
+    item = vm.save("기준", overwrite=True)  # 사람 확정 경유(대화상자)만 이 플래그를 쓴다
+    assert item.kind == "pipeline"
+    assert vm.registry.load("기준").kind == "pipeline"
 
 
 # ------------------------------------------------------------------ 나라 서브소스 키 주입
