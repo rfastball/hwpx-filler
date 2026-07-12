@@ -37,6 +37,8 @@ from .txt_state import TxtDraftViewModel
 
 _TOKEN = re.compile(r"\{\{\s*([^{}|]+?)\s*\}\}")
 _STATE_LABEL = {"fill": "✓ 채움", "blank": "◦ 빈 값", "missing": "● 미입력"}
+# 완료 라벨(lbl_note)의 기본 안내 — 복사/저장 전, 그리고 레코드·템플릿 전환 후 복귀 문구.
+_NOTE_DEFAULT = "현재 미리보기 내용을 복사합니다. 미입력 토큰은 그대로 표시됩니다."
 
 
 class TxtDraftView(QMainWindow):
@@ -53,6 +55,17 @@ class TxtDraftView(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
+
+        # ---- 화면 제목(heading 관례 — 최상위 표면 6곳과 동형, UD-39) ----
+        head = QHBoxLayout()
+        title = QLabel("즉시 기안")
+        mark(title, "heading", True)
+        sub = QLabel("템플릿 + 데이터를 실시간으로 채워 기안문을 복사·저장합니다.")
+        mark(sub, "muted", True)
+        head.addWidget(title)
+        head.addWidget(sub)
+        head.addStretch(1)
+        root.addLayout(head)
 
         # ---- 컨트롤 줄: 템플릿 · 데이터 · 레코드 ----
         ctl = QHBoxLayout()
@@ -104,9 +117,7 @@ class TxtDraftView(QMainWindow):
         self.btn_copy.clicked.connect(self._copy)
         btn_save = QPushButton("텍스트 파일로 저장…")
         btn_save.clicked.connect(self._save)
-        self.lbl_note = QLabel(
-            "현재 미리보기 내용을 복사합니다. 미입력 토큰은 그대로 표시됩니다."
-        )
+        self.lbl_note = QLabel(_NOTE_DEFAULT)
         mark(self.lbl_note, "muted", True)
         self.lbl_note.setWordWrap(True)
         foot.addWidget(self.btn_copy)
@@ -162,8 +173,40 @@ class TxtDraftView(QMainWindow):
             if w is not None:
                 w.deleteLater()
 
+    def _reset_note(self) -> None:
+        """완료 라벨을 기본 안내+muted 로 되돌린다 — 레코드/템플릿 전환 후 '✓ 복사 완료'
+        스테일 문구가 새 레코드에 잔존하는 것을 막는다(UD-02). level 을 해제하고 muted 로
+        복귀시켜 다음 완료 동작 전까지 성공/경고 색이 남지 않게 한다."""
+        mark(self.lbl_note, "level", "")   # 이전 완료 레벨(ok/warn) 해제
+        mark(self.lbl_note, "muted", True)  # 기본 부차(회색) 안내로 복귀
+        self.lbl_note.setText(_NOTE_DEFAULT)
+
+    def _announce(self, report, action: str) -> None:
+        """완료 동작(복사/저장) 결과를 RenderReport 로 재진술한다(UD-02).
+
+        미입력(레코드에 없어 빨간 ``{{토큰}}`` 잔존)·빈 값을 이름으로 재진술하고, 전량
+        채움일 때만 ok 성공 신호를 낸다. muted 를 해제해 level 색이 회색에 패배하지 않게
+        한다(style.py 선언 순서와 이중 방어)."""
+        missing = report.missing_fields
+        empty = report.empty_fields
+        if missing:
+            level = "warn"
+            text = (f"⚠ 미입력 {len(missing)}건({', '.join(missing)}) 포함 {action}됨 "
+                    "— 빨간 토큰을 확인한 뒤 붙여넣으세요.")
+        elif empty:
+            level = "warn"
+            text = (f"⚠ 빈 값 {len(empty)}건({', '.join(empty)}) 포함 {action}됨 "
+                    "— 확인한 뒤 붙여넣으세요.")
+        else:
+            level = "ok"
+            text = f"✓ 전량 채움 {action} 완료 — 필요한 곳에 붙여넣으세요."
+        mark(self.lbl_note, "muted", False)  # 완료 레벨이 muted 를 이기도록 배타 해제
+        mark(self.lbl_note, "level", level)
+        self.lbl_note.setText(text)
+
     def _render(self) -> None:
         """토큰 상태 배지 + 실시간 렌더 view 를 현재 템플릿/레코드로 다시 그린다."""
+        self._reset_note()
         self._clear_tokens()
         for tok in self.vm.token_states():
             chip = QLabel("{{" + tok.name + "}} · " + _STATE_LABEL[tok.state])
@@ -190,13 +233,12 @@ class TxtDraftView(QMainWindow):
         self.btn_next.setEnabled(n > 1)
 
     def _copy(self) -> None:
-        text, _ = self.vm.render()
+        text, report = self.vm.render()
         QApplication.clipboard().setText(text)
-        mark(self.lbl_note, "level", "ok")
-        self.lbl_note.setText("✓ 복사 완료 — 필요한 곳에 붙여넣으세요.")
+        self._announce(report, "복사")
 
     def _save(self) -> None:
-        text, _ = self.vm.render()
+        text, report = self.vm.render()
         path, _ = QFileDialog.getSaveFileName(self, "txt 저장", "기안.txt", "텍스트 (*.txt)")
         if not path:
             return
@@ -205,4 +247,11 @@ class TxtDraftView(QMainWindow):
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "오류", f"저장 실패:\n{exc}")
             return
-        QMessageBox.information(self, "저장", "기안 텍스트를 저장했습니다.")
+        self._announce(report, "저장")
+        if report.missing_fields or report.empty_fields:
+            QMessageBox.warning(
+                self, "저장",
+                "기안 텍스트를 저장했습니다. 미입력/빈 값이 포함되어 있으니 확인하세요.",
+            )
+        else:
+            QMessageBox.information(self, "저장", "기안 텍스트를 저장했습니다.")

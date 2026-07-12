@@ -124,6 +124,11 @@ QPushButton[level="danger"] {{
 QPushButton[level="danger"]:hover {{ background: {MISSING_BG}; }}
 QPushButton[level="danger"]:pressed {{ background: #f9d9d4; }}
 
+/* muted 기본 하강은 명시 level(warn/danger/ok)보다 **먼저** 선언한다(UD-02): Qt QSS 는
+   동일 특이도(속성 셀렉터 1개)에서 후순위 규칙이 이기므로, muted 를 앞에 두어야 뒤의
+   level 이 muted 를 덮는다. 순서가 뒤바뀌면(muted 가 뒤) 완료 라벨의 level=ok 녹색이
+   muted 회색(#7a7f87)에 패배해 성공 신호가 회색으로 죽던 함정이 재발한다. */
+QLabel[muted="true"] {{ color: {MUTED}; }}
 QLabel[level="warn"] {{ color: {WARN}; }}
 QLabel[level="danger"] {{ color: {DANGER}; }}
 QLabel[level="ok"] {{ color: {OK}; }}
@@ -131,7 +136,6 @@ QLabel[level="ok"] {{ color: {OK}; }}
    셀렉터가 없어 기본 INK 검정 평문으로 렌더되던 무스타일 상태였다(UD-13) — 의도색
    (부차 회색)으로 소생시켜 조용한 상태 소실을 막는다. */
 QLabel[level="muted"] {{ color: {MUTED}; }}
-QLabel[muted="true"] {{ color: {MUTED}; }}
 QLabel[heading="true"] {{ font-size: 15px; font-weight: 700; }}
 /* 상태 배지 pill — 레벨 어휘(muted/warn/ok/danger)는 compile_badge.badge_level 이
    단일 출처(홈 카드·템플릿 관리가 같은 상태에 같은 심각도 신호 — RC-29). */
