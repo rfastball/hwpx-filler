@@ -32,6 +32,7 @@ from .job_editor_state import (
     validate_save,
 )
 from .style import BASE_QSS, mark
+from .view_helpers import restore_geometry, save_geometry
 from .wizard import DataPage, MappingPage, TemplatePage
 
 
@@ -59,7 +60,7 @@ class JobEditorWizard(QWizard):
             self.setWindowTitle(f"HWPX Filler — 작업 편집: {initial_job.name}")
         else:
             self.setWindowTitle("HWPX Filler — 작업 편집기")
-        self.resize(920, 660)
+        restore_geometry(self, "editor", default_size=(920, 660))  # ST-11
         self.setWizardStyle(QWizard.ModernStyle)
         self.setStyleSheet(BASE_QSS)
         # 마지막 스텝 = 저장(생성 아님)을 버튼 문안으로 못박는다.
@@ -146,7 +147,35 @@ class JobEditorWizard(QWizard):
             QMessageBox.critical(self, "오류", f"작업 저장 실패:\n{exc}")
             return
         self.job_saved.emit(name)
+        save_geometry(self, "editor")  # ST-11
         super().accept()
+
+    def _confirm_discard(self) -> bool:
+        """진행 중 저작(확정 행)이 있으면 폐기 확인 — 없으면 즉시 True(ST-08).
+
+        model 미도달(매핑 페이지 전) 또는 확정 0행이면 잃을 게 없어 통과. 확정 행이
+        있으면 반사적 X/Esc/취소가 다스텝 저작을 침묵 폐기하지 못하게 확인을 강제한다
+        (pipeline_builder 이탈 게이트와 대칭, confirm-or-alarm).
+        """
+        model = self.model
+        if model is None or model.confirmed_count() <= 0:
+            return True
+        return confirm_destructive(
+            self, "편집 취소",
+            "확정한 매핑이 있습니다 — 저장하지 않고 닫으면 이 편집 내용이 사라집니다.",
+            "저장 안 함",
+        )
+
+    def reject(self):
+        # Cancel/Esc(및 X → closeEvent 위임) 공통 이탈 경로 — 단일 가드(ST-08).
+        if not self._confirm_discard():
+            return
+        save_geometry(self, "editor")  # ST-11
+        super().reject()
+
+    def closeEvent(self, event):  # noqa: N802 — X 버튼을 reject 경로로 위임(이중 프롬프트 방지)
+        event.ignore()
+        self.reject()
 
 
 class SaveJobPage(QWizardPage):

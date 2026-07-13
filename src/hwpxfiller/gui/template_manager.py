@@ -37,7 +37,13 @@ from .confirm import confirm_destructive
 from .file_filters import HWPX_FILTER
 from .style import BASE_QSS, mark
 from .template_manager_state import TemplateManagerViewModel, TemplateRow
-from .view_helpers import ElidedLabel, hide_item_text, resync_card_item_heights
+from .view_helpers import (
+    ElidedLabel,
+    hide_item_text,
+    restore_geometry,
+    resync_card_item_heights,
+    save_geometry,
+)
 
 
 class TemplateCard(QWidget):
@@ -116,7 +122,7 @@ class TemplateManagerPanel(QMainWindow):
         self.vm = TemplateManagerViewModel(library_dir)
 
         self.setWindowTitle("HWPX Filler — 템플릿 관리")
-        self.resize(720, 560)
+        restore_geometry(self, "template", default_size=(720, 560))  # ST-11
         self.setStyleSheet(BASE_QSS)
         central = QWidget()
         self.setCentralWidget(central)
@@ -218,6 +224,10 @@ class TemplateManagerPanel(QMainWindow):
     def _sync_cards(self) -> None:
         """카드 item sizeHint 를 폴리시 후 재계산(UD-11 공용 헬퍼)."""
         resync_card_item_heights(self.list)
+
+    def closeEvent(self, event) -> None:  # noqa: N802 — Qt 오버라이드
+        save_geometry(self, "template")  # 세션 간 크기·위치 유지(ST-11)
+        super().closeEvent(event)
 
     def resizeEvent(self, event) -> None:  # noqa: N802 — Qt 오버라이드
         super().resizeEvent(event)

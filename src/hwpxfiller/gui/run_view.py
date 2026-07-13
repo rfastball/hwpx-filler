@@ -50,7 +50,7 @@ from .flow_layout import FlowLayout
 from .record_select import RecordSelector
 from .run_state import GenerationPlan, RunViewModel
 from .style import BASE_QSS, ContrastProgressBar, mark
-from .view_helpers import ElidedLabel
+from .view_helpers import ElidedLabel, restore_geometry, save_geometry
 from .worker import GenerateWorker
 
 
@@ -79,7 +79,7 @@ class RunView(QMainWindow):
         self._marked_fields: "list[str]" = []  # 이번 생성에서 미입력 표시가 들어간 필드(결과 요약용)
 
         self.setWindowTitle(f"HWPX Filler — 실행: {job.name}")
-        self.resize(760, 680)
+        restore_geometry(self, "run", default_size=(760, 680))  # ST-11
         self.setStyleSheet(BASE_QSS)
         # 폼이 세로로 길다 — 창을 줄이면 위젯이 찌그러지지 않고 스크롤되도록 QScrollArea 로 감싼다.
         central = QWidget()
@@ -283,6 +283,21 @@ class RunView(QMainWindow):
     @_running.setter
     def _running(self, value: bool) -> None:
         self._runner.running = value
+
+    def closeEvent(self, event) -> None:  # noqa: N802 — Qt 오버라이드
+        # 생성 진행 중 닫기 = 협조적 취소 확인(ST-21) — 파이프라인 이탈 가드와 대칭.
+        if self._running:
+            if not confirm_destructive(
+                self, "생성 중단",
+                "문서 생성이 진행 중입니다 — 창을 닫으면 남은 생성을 중단합니다.",
+                "중단하고 닫기",
+            ):
+                event.ignore()
+                return
+            self._runner.request_cancel()
+            self._runner.teardown()
+        save_geometry(self, "run")  # 세션 간 크기·위치 유지(ST-11)
+        super().closeEvent(event)
 
     @property
     def _data_thread(self):

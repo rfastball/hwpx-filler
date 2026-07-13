@@ -495,6 +495,81 @@ def test_pool_register_overwrite_is_gated(qapp, tmp_path, monkeypatch):
     assert panel._confirm_pool_overwrite("공고자료") is True  # 동명+확정 → 진행 허용
 
 
+def test_window_geometry_persists_across_sessions(qapp, tmp_path, monkeypatch):
+    """창 크기·위치가 세션 간 지속된다(ST-11) — HWPXFILLER_HOME INI 로 사용자 설정 비접촉.
+
+    save→restore 왕복은 지오메트리 바이트가 동일함으로 확인(스크린 비의존). 미저장 키는
+    default_size 로 폴백한다(첫 실행·손상 값).
+    """
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    from PySide6.QtWidgets import QMainWindow
+
+    from hwpxfiller.gui.view_helpers import _ui_settings, restore_geometry, save_geometry
+
+    # 저장: 창 지오메트리 바이트가 설정에 그대로 기록된다(스크린 비의존·결정적).
+    w1 = QMainWindow()
+    w1.resize(1111, 777)
+    save_geometry(w1, "probe")
+    assert _ui_settings().value("geometry/probe") == w1.saveGeometry()
+
+    # 복원: 저장 데이터가 있으면 default_size 를 무시하고 복원한다(프레임 보정은 허용).
+    w2 = QMainWindow()
+    w2.resize(200, 200)
+    restore_geometry(w2, "probe", default_size=(640, 480))
+    assert (w2.width(), w2.height()) != (640, 480)  # 기본 폴백이 아니라 복원됨
+
+    # 미저장 키: default_size 로 폴백(첫 실행·손상 값).
+    w3 = QMainWindow()
+    restore_geometry(w3, "unseen", default_size=(640, 480))
+    assert (w3.width(), w3.height()) == (640, 480)
+
+
+def test_wizard_discard_guard_confirms_when_mapping_confirmed(qapp, tmp_path, monkeypatch):
+    """위저드 이탈이 확정 매핑을 무확인 폐기하지 못한다(ST-08).
+
+    model 미도달·확정 0행이면 잃을 게 없어 통과, 확정 행이 있으면 confirm_destructive
+    결과를 반영(취소=폐기 안 함). reject/closeEvent 가 이 술어를 공유한다.
+    """
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui import job_editor as je
+
+    wiz = je.JobEditorWizard(JobRegistry(tmp_path / "jobs"))
+    assert wiz._confirm_discard() is True  # model None → 통과
+
+    class _Model:
+        def confirmed_count(self):
+            return 2
+
+    wiz.model = _Model()
+    monkeypatch.setattr(je, "confirm_destructive", lambda *a, **k: False)
+    assert wiz._confirm_discard() is False  # 확정 행 + 취소 → 폐기 차단
+    monkeypatch.setattr(je, "confirm_destructive", lambda *a, **k: True)
+    assert wiz._confirm_discard() is True  # 확정 → 폐기 허용
+
+
+def test_run_view_close_while_running_confirms(qapp, monkeypatch):
+    """생성 진행 중 창 닫기는 협조적 취소 확인을 거친다(ST-21) — 취소 시 창 유지."""
+    from hwpxfiller.core.job import Job
+    from hwpxfiller.gui import run_view as rv
+
+    view = rv.RunView(Job(name="실행중", template_path="/t.hwpx", filename_pattern="d-{{ID}}"))
+    view._running = True
+    monkeypatch.setattr(rv, "confirm_destructive", lambda *a, **k: False)
+
+    class _Ev:
+        def __init__(self):
+            self.ignored = False
+
+        def ignore(self):
+            self.ignored = True
+
+    ev = _Ev()
+    view.closeEvent(ev)
+    assert ev.ignored is True  # 확인 취소 → 닫기 무산
+    assert view._running is True  # 생성 계속(중단 안 함)
+
+
 def test_template_manager_route_seeds_default_library_and_make_job(qapp, tmp_path, monkeypatch):
     """emit → 패널이 기본 라이브러리를 겨눔(RC-14) + '작업 만들기' → 템플릿 시드 에디터."""
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))

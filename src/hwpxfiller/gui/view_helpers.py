@@ -220,3 +220,47 @@ def restate_preview_item(record: "dict", field: str) -> QTableWidgetItem:
     else:
         item.setText(value)
     return item
+
+
+# ---------------------------------------------------------- ST-11: 창 지오메트리 지속
+def _ui_settings():
+    """UI 설정 저장소(INI) — ``HWPXFILLER_HOME`` 을 존중해 테스트가 tmp 로 격리된다.
+
+    hwpxdiff 는 QSettings 네이티브(레지스트리)를 쓰나, 앱 B 는 표준 루트(``~/.hwpxfiller``
+    또는 ``HWPXFILLER_HOME``) 아래 INI 파일을 써서 테스트가 사용자 레지스트리를 건드리지
+    않게 한다(스모크가 HWPXFILLER_HOME 을 tmp 로 지정).
+    """
+    import os
+    from pathlib import Path
+
+    from PySide6.QtCore import QSettings
+
+    home = os.environ.get("HWPXFILLER_HOME")
+    base = Path(home) if home else Path.home() / ".hwpxfiller"
+    return QSettings(str(base / "ui_settings.ini"), QSettings.Format.IniFormat)
+
+
+def restore_geometry(win, key: str, *, default_size=None) -> None:
+    """저장된 창 지오메트리를 복원한다(ST-11). 없거나 손상 시 default_size 로 폴백.
+
+    지오메트리는 편의라 실패(손상 값·읽기 불가)는 조용히 폴백한다 — 시끄러운 예외 대신
+    합리적 기본 크기로 연다. 생성자의 하드코딩 resize 를 이 호출로 대체한다.
+    """
+    from PySide6.QtCore import QByteArray
+
+    raw = _ui_settings().value(f"geometry/{key}")
+    if isinstance(raw, (QByteArray, bytes, bytearray)) and win.restoreGeometry(QByteArray(raw)):
+        return
+    if default_size is not None:
+        win.resize(*default_size)
+
+
+def save_geometry(win, key: str) -> None:
+    """현재 창 지오메트리를 저장한다(closeEvent 에서 호출) — 세션 간 크기·위치 유지.
+
+    새 QSettings 인스턴스가 곧바로 읽어도 보이도록 sync 로 디스크에 flush 한다(각 호출이
+    QSettings 를 새로 만들어 소멸 지연 시 쓰기가 안 보이던 것 방지).
+    """
+    st = _ui_settings()
+    st.setValue(f"geometry/{key}", win.saveGeometry())
+    st.sync()

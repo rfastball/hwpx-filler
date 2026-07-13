@@ -35,6 +35,8 @@ from .view_helpers import (
     build_empty_state,
     hide_item_text,
     resync_card_item_heights,
+    restore_geometry,
+    save_geometry,
 )
 
 # 카드 제목의 말줄임 상한(UD-30) — 긴 작업명·파일명이 상태 배지를 밀어내지 않도록
@@ -220,7 +222,7 @@ class JobListHome(QMainWindow):
         self.vm = HomeViewModel(registry, text_registry, pool_registry)
 
         self.setWindowTitle("HWPX Filler — 대시보드")
-        self.resize(900, 560)
+        restore_geometry(self, "home", default_size=(900, 560))  # 세션 간 크기·위치 복원(ST-11)
         self.setStyleSheet(BASE_QSS)
         central = QWidget()
         self.setCentralWidget(central)
@@ -467,6 +469,10 @@ class JobListHome(QMainWindow):
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._sync_item_widths()
+
+    def closeEvent(self, event) -> None:
+        save_geometry(self, "home")  # 세션 간 크기·위치 유지(ST-11)
+        super().closeEvent(event)
 
     # ------------------------------------------------------------- 선택/보조
     def selected_job_name(self) -> "str | None":

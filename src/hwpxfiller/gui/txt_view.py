@@ -38,7 +38,7 @@ from .batch_run import DataAcquireController
 from .flow_layout import FlowLayout
 from .style import BASE_QSS, DANGER, MISSING_BG, MUTED, mark
 from .txt_state import TxtDraftViewModel
-from .view_helpers import ElidedLabel
+from .view_helpers import ElidedLabel, restore_geometry, save_geometry
 
 _TOKEN = re.compile(r"\{\{\s*([^{}|]+?)\s*\}\}")
 # 상태 어휘 3정의 경계(UD-20): txt 의 'missing'=데이터에 해당 **항목(열) 부재**라
@@ -70,7 +70,7 @@ class TxtDraftView(QMainWindow):
         self._secret_store = secret_store
         self._nara_fetcher = nara_fetcher
         self.setWindowTitle("HWPX Filler — 즉시 기안")
-        self.resize(880, 680)
+        restore_geometry(self, "txt", default_size=(880, 680))  # ST-11
         self.setStyleSheet(BASE_QSS)
         central = QWidget()
         self.setCentralWidget(central)
@@ -171,6 +171,10 @@ class TxtDraftView(QMainWindow):
         if names:
             self.vm.select_template(names[0])
         self._render()
+
+    def closeEvent(self, event) -> None:  # noqa: N802 — Qt 오버라이드
+        save_geometry(self, "txt")  # 세션 간 크기·위치 유지(ST-11)
+        super().closeEvent(event)
 
     def select_template(self, name: str) -> None:
         """외부(대시보드 라우팅)에서 특정 템플릿을 선택해 연다."""

@@ -26,7 +26,13 @@ from PySide6.QtWidgets import (
 
 from .confirm import confirm_destructive
 from .style import BASE_QSS, mark
-from .view_helpers import build_empty_state, hide_item_text, resync_card_item_heights
+from .view_helpers import (
+    build_empty_state,
+    hide_item_text,
+    restore_geometry,
+    resync_card_item_heights,
+    save_geometry,
+)
 from .vocab_workbench_state import VocabBaseRow, VocabWorkbenchViewModel
 
 
@@ -82,7 +88,7 @@ class VocabWorkbenchPanel(QMainWindow):
         self.vm = VocabWorkbenchViewModel(base_registry, job_registry)
 
         self.setWindowTitle("HWPX Filler — 매핑 프로파일")
-        self.resize(680, 520)
+        restore_geometry(self, "vocab", default_size=(680, 520))  # ST-11
         self.setStyleSheet(BASE_QSS)
         central = QWidget()
         self.setCentralWidget(central)
@@ -139,6 +145,10 @@ class VocabWorkbenchPanel(QMainWindow):
     def _sync_cards(self) -> None:
         """카드 item sizeHint 를 폴리시 후 재계산(UD-11 공용 헬퍼)."""
         resync_card_item_heights(self.list)
+
+    def closeEvent(self, event) -> None:  # noqa: N802 — Qt 오버라이드
+        save_geometry(self, "vocab")  # 세션 간 크기·위치 유지(ST-11)
+        super().closeEvent(event)
 
     def resizeEvent(self, event) -> None:  # noqa: N802 — Qt 오버라이드
         super().resizeEvent(event)

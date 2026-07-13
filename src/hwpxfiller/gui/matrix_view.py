@@ -49,7 +49,7 @@ from .flow_layout import FlowLayout
 from .matrix_state import MatrixRunViewModel
 from .record_select import RecordSelector
 from .style import BASE_QSS, mark
-from .view_helpers import build_empty_state
+from .view_helpers import build_empty_state, restore_geometry, save_geometry
 from .worker import MatrixGenerateWorker
 
 
@@ -71,7 +71,7 @@ class MatrixRunView(QMainWindow):
         self._marked_missing: "list[tuple[str, str]]" = []  # 이번 생성 표식 필드(UD-04)
 
         self.setWindowTitle("HWPX Filler — 여러 작업 일괄 실행")
-        self.resize(780, 720)
+        restore_geometry(self, "matrix", default_size=(780, 720))  # ST-11
         self.setStyleSheet(BASE_QSS)
         central = QWidget()
         root = QVBoxLayout(central)
@@ -249,6 +249,21 @@ class MatrixRunView(QMainWindow):
     @_running.setter
     def _running(self, value: bool) -> None:
         self._runner.running = value
+
+    def closeEvent(self, event) -> None:  # noqa: N802 — Qt 오버라이드
+        # 일괄 생성 진행 중 닫기 = 협조적 취소 확인(ST-21) — run_view 와 동형.
+        if self._running:
+            if not confirm_destructive(
+                self, "생성 중단",
+                "일괄 생성이 진행 중입니다 — 창을 닫으면 남은 생성을 중단합니다.",
+                "중단하고 닫기",
+            ):
+                event.ignore()
+                return
+            self._runner.request_cancel()
+            self._runner.teardown()
+        save_geometry(self, "matrix")  # 세션 간 크기·위치 유지(ST-11)
+        super().closeEvent(event)
 
     @property
     def _data_thread(self):
