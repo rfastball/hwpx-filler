@@ -288,6 +288,24 @@ class DataAcquireController(QObject):
         self.worker = None
         self._set_busy(False)
 
+    def teardown(self) -> None:
+        """복원 스레드 강제 정리(R4) — 페이지 이탈/파괴 전 호출, 진행 중이 아니면 무해.
+
+        이탈 가드(:meth:`can_leave`)가 생성 워커만 정리하고 복원 스레드는 방치하면,
+        느린 나라 복원 중 이탈 시 실행 중 QThread 가 파괴돼 'QThread: Destroyed while
+        thread is still running' 으로 프로세스가 죽는다(R4 누수). 완료/실패 슬롯이 파괴
+        중인 뷰를 만지지 않도록 시그널을 먼저 끊고, 워커 run() 이 반환할 때까지 접는다."""
+        if self.worker is not None:
+            for sig, slot in (
+                (self.worker.finished, self._on_pool_loaded),
+                (self.worker.failed, self._on_pool_load_failed),
+            ):
+                try:
+                    sig.disconnect(slot)
+                except (RuntimeError, TypeError):
+                    pass
+        self._teardown()
+
     def _on_pool_loaded(self, records) -> None:
         self._teardown()
         if not records:

@@ -296,16 +296,18 @@ class RunView(QWidget):
         취소 요청+teardown 후 True — 셸이 페이지를 파괴해도 QThread 가 누수되지
         않는다(R4). 진행 중이 아니면 무조건 허용.
         """
-        if not self._running:
-            return True
-        if not confirm_destructive(
-            self, "생성 중단",
-            "문서 생성이 진행 중입니다 — 이 화면을 떠나면 남은 생성을 중단합니다.",
-            "중단하고 나가기",
-        ):
-            return False
-        self._runner.request_cancel()
-        self._runner.teardown()
+        if self._running:
+            if not confirm_destructive(
+                self, "생성 중단",
+                "문서 생성이 진행 중입니다 — 이 화면을 떠나면 남은 생성을 중단합니다.",
+                "중단하고 나가기",
+            ):
+                return False
+            self._runner.request_cancel()
+            self._runner.teardown()
+        # 생성 워커와 별개로 데이터 복원 스레드도 접어야 QThread 누수/파괴 크래시를
+        # 막는다(진행 중이 아니면 무해) — 셸이 페이지를 deleteLater 하기 전에.
+        self._data.teardown()
         return True
 
     @property
@@ -355,9 +357,19 @@ class RunView(QWidget):
         self._data.pick_nara()
 
     def _set_data_busy(self, busy: bool) -> None:
-        """데이터 복원(네트워크 가능) 중 겨눔 버튼 잠금 — 진행 중 재진입·경합 방지(RC-12)."""
+        """데이터 복원(네트워크 가능) 중 겨눔 버튼 + 생성 버튼 잠금(RC-12).
+
+        복원 워커가 다른 스레드에서 vm.datasource/records 를 갈아끼우는 동안 생성이
+        반쯤 스왑된 데이터로 조용히 돌지 않도록 생성 버튼도 함께 잠근다 — 겨눔 버튼만
+        잠그고 생성을 열어두면 복원 중 클릭이 구 데이터소스+신 레코드의 찢긴 조합으로
+        의도치 않은 문서를 만든다(확인-또는-경보). 복원이 끝나면 게이트로 복원하되
+        (실패 경로엔 게이트 재평가가 없어) 무조건 재활성이 아닌 게이트 판정을 따른다."""
         for b in (self.btn_pool, self.btn_data, self.btn_nara):
             b.setEnabled(not busy)
+        if busy:
+            self.btn_generate.setEnabled(False)
+        else:
+            self._sync_generate_enabled()
 
     def _after_data_loaded(self, label: str) -> None:
         """데이터 겨눔 공통 꼬리 — 라벨 표시 + 레코드 선택기 채움 + 사전검증/패널 갱신.
@@ -501,7 +513,10 @@ class RunView(QWidget):
 
         # ---- 덮어쓰기 확인(RC-02): 기존 파일을 조용히 파괴하지 않는다. ----
         # 확정 없이 진행하다 충돌하면 generate_batch 가 raise → _on_failed 로 시끄럽게.
-        conflicts = self.vm.output_conflicts(indices, out_dir, mark_missing=marker)
+        # 날짜 토큰 기준 시각을 여기서 한 번 고정해 확인·계획·생성이 같은 값을 쓰게 한다
+        # (하위-일 토큰에서 확인 대상과 실제 생성 대상이 갈라지던 결함 봉합, RC-02).
+        now = datetime.now()
+        conflicts = self.vm.output_conflicts(indices, out_dir, mark_missing=marker, now=now)
         overwrite = False
         if conflicts:
             names = [Path(p).name for p in conflicts]
@@ -521,7 +536,7 @@ class RunView(QWidget):
         # 실행 중 위젯 조작(출력 폴더 편집·데이터 재로드)이 결과·증거에 끼어들 수 없다.
         plan = self.vm.build_generation_plan(
             indices, out_dir, marker=marker,
-            ledger=self.chk_ledger.isChecked(), overwrite=overwrite,
+            ledger=self.chk_ledger.isChecked(), overwrite=overwrite, now=now,
         )
         self._plan = plan
         mode = "기존 문서 이어채우기" if self._template_override else "새 문서"

@@ -53,6 +53,7 @@ class GenerateWorker(QObject):
                 plan.out_dir,
                 plan.pattern,
                 progress=self.progress.emit,
+                now=plan.now,  # 확인·계획과 같은 시각 — 하위-일 날짜 토큰 대상 일치(RC-02)
                 overwrite=plan.overwrite,
                 mapping=plan.mapping,
                 cancelled=self._cancel.is_set,
@@ -85,13 +86,15 @@ class MatrixGenerateWorker(QObject):
     finished = Signal(object)    # MatrixResult (cancelled 플래그 포함)
     failed = Signal(str)
 
-    def __init__(self, jobs, datasource, indices, out_dir, *, overwrite=False):
+    def __init__(self, jobs, datasource, indices, out_dir, *, overwrite=False, now=None):
         super().__init__()
         self.jobs = jobs
         self.datasource = datasource
         self.indices = indices
         self.out_dir = out_dir
         self.overwrite = overwrite  # GenerateWorker 와 동일 계약(RC-02)
+        # 덮어쓰기 확인에 쓴 시각을 그대로 생성에 넘겨 하위-일 날짜 토큰 대상 일치(RC-02).
+        self.now = now
         self._cancel = threading.Event()
 
     def cancel(self) -> None:
@@ -108,6 +111,7 @@ class MatrixGenerateWorker(QObject):
                 self.indices,
                 self.out_dir,
                 progress=self.progress.emit,
+                now=self.now,  # 확인과 같은 시각 — 하위-일 날짜 토큰 대상 일치(RC-02)
                 overwrite=self.overwrite,
                 cancelled=self._cancel.is_set,
             )

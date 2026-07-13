@@ -123,12 +123,14 @@ def test_matrix_view_generate_gate_and_worker(qapp, tmp_path, monkeypatch):
         finished = Signal(object)
         failed = Signal(str)
 
-        def __init__(self, jobs, datasource, indices, out_dir, *, overwrite=False):
+        def __init__(self, jobs, datasource, indices, out_dir, *, overwrite=False,
+                     now=None):
             super().__init__()
             captured["jobs"] = jobs
             captured["indices"] = indices
             captured["out_dir"] = out_dir
             captured["overwrite"] = overwrite
+            captured["now"] = now
 
         def run(self):
             pass
