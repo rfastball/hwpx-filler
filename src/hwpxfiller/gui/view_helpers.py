@@ -288,24 +288,36 @@ def wire_refresh_shortcut(win) -> None:
 
     외부에서 파일이 바뀐 뒤 목록을 명시적으로 새로고침하는 표준 데스크톱 관행. 대상 창은
     인자 없는 공개 ``refresh()`` 를 가져야 한다(home·template·pool·vocab).
+
+    컨텍스트는 WidgetWithChildrenShortcut(SHELL_DESIGN D9): 셸 임베드(ST-01) 후 한
+    창에 F5 대상 페이지가 여럿 공존한다 — 기본 WindowShortcut 이면 Qt 모호 활성
+    (activatedAmbiguously)으로 **전부 무동작**하는 조용한 회귀. 포커스를 가진
+    페이지에서만 발화한다(독립 창으로 쓰일 때는 의미 동일).
     """
+    from PySide6.QtCore import Qt
     from PySide6.QtGui import QKeySequence, QShortcut
 
-    QShortcut(QKeySequence("F5"), win, win.refresh)
+    sc = QShortcut(QKeySequence("F5"), win, win.refresh)
+    sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
 
 
 def wire_submit_shortcut(win, button) -> None:
     """Ctrl+Return → 주 액션 버튼 실행(활성 시)(ST-12) — Enter 관성으로 제출.
 
     QMainWindow 에선 setDefault 가 효과가 약해, 포커스와 무관하게 도는 단축키로 주
-    행동(문서 생성 등)을 키보드로 실행한다. 비활성이면 무동작(게이트 존중)."""
+    행동(문서 생성 등)을 키보드로 실행한다. 비활성이면 무동작(게이트 존중).
+
+    컨텍스트는 WidgetWithChildrenShortcut(SHELL_DESIGN D9) — 셸 임베드 후 run·matrix
+    의 Ctrl+Return 공존 모호 활성을 막는다(wire_refresh_shortcut 과 동일 근거)."""
+    from PySide6.QtCore import Qt
     from PySide6.QtGui import QKeySequence, QShortcut
 
     def _fire():
         if button.isEnabled():
             button.click()
 
-    QShortcut(QKeySequence("Ctrl+Return"), win, _fire)
+    sc = QShortcut(QKeySequence("Ctrl+Return"), win, _fire)
+    sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
 
 
 # ---------------------------------------------------------- ST-16: 동기 작업 대기 커서

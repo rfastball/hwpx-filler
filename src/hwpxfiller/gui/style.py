@@ -218,6 +218,18 @@ QListWidget#jobList::item:selected {{
     background: {SELECT_BG}; border-left: 3px solid {PRIMARY};
 }}
 
+/* 셸 네비 레일(ST-01, SHELL_DESIGN D1·D10): 현재 위치 표지 = 선택 하이라이트.
+   기존 토큰만 재사용(ST-14 보류 존중 — 다크 레일 등 새 팔레트 발명 금지). 선택
+   표기는 jobList 와 같은 SELECT_BG + PRIMARY 좌측 바 문법으로 통일한다. */
+QListWidget#navRail {{
+    background: {CARD_BG}; border: none; border-right: 1px solid {BORDER};
+}}
+QListWidget#navRail::item {{ padding: 10px 12px; color: {INK}; }}
+QListWidget#navRail::item:hover {{ background: {NEUTRAL_HOVER}; }}
+QListWidget#navRail::item:selected {{
+    background: {SELECT_BG}; color: {INK}; border-left: 3px solid {PRIMARY};
+}}
+
 /* 실행 화면 인라인 필드 상태 배지(ADR-E/B): 채움/의도적 빈칸/미입력(클릭 확인)/확인됨.
    fb 전종은 radius(pill=11)의 절반 경계(2*11=22px)에 걸려 글리프 메트릭에 따라 필/직각
    으로 분열했다(UD-43: missing 칩만 자연높이 21px<22 라 클램프→직각·3px 낮음). min-height
