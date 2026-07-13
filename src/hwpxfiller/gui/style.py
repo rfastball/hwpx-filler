@@ -125,7 +125,13 @@ QHeaderView::section {{
     border-bottom: 1px solid {BORDER}; font-weight: 600;
 }}
 QTableWidget {{ background: {CARD_BG}; gridline-color: {NEUTRAL_TRACK}; }}
-QListWidget {{ background: {CARD_BG}; border: 1px solid {BORDER}; border-radius: {RADIUS_MD}px; }}
+/* outline: none — 네이티브 아이템뷰 포커스 사각형(Fusion 검은 라운드 박스)을 억제한다.
+   키보드 포커스 가시성(ST-03)은 아래 ``QListWidget::item:focus`` 의 PRIMARY 테두리가
+   담당하므로 접근성 손실 없이 잔재 검은 띠만 제거된다(navRail·jobList·recordList 공통). */
+QListWidget {{
+    background: {CARD_BG}; border: 1px solid {BORDER}; border-radius: {RADIUS_MD}px;
+    outline: none;
+}}
 
 /* 레코드 선택 목록 — 체크박스를 또렷하게(선택 하이라이트 제거 대신 체크가 유일한 신호).
    인디케이터 18px + 행 세로 여백으로 행 높이를 24px 이상 확보한다(ST-15, WCAG 2.5.8 Target
