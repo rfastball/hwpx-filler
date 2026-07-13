@@ -26,6 +26,9 @@ sample_bid_data.csv
 .env.*
 .claude/settings.local.json
 
+# Claude 워크플로 실행 산출물(격리 worktree — 커밋 금지)
+.claude/worktrees/
+
 # Tool caches / reports
 .coverage
 coverage.xml
