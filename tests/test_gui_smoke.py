@@ -640,6 +640,29 @@ def test_managed_page_reentry_refreshes_and_moves_rail(qapp, tmp_path, monkeypat
     assert calls == [1]
 
 
+def test_editor_wizard_is_application_modal_window(qapp, tmp_path, monkeypatch):
+    """에디터 위저드는 임베드하지 않는 유일한 표면 — 애플리케이션 모달 창(SHELL_DESIGN D3·D4).
+
+    모달성이 동일 작업 동시 편집(last-save-wins)을 상위 호환으로 차단한다(구 ST-10
+    editor:{name} 싱글턴 대체). exec() 는 어디서도 호출하지 않는다(offscreen hang, R1)
+    — 여기서도 속성만 검증한다.
+    """
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    from PySide6.QtCore import Qt
+
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.app import AppController
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+
+    ctrl = AppController(JobRegistry(tmp_path / "jobs"))
+    ctrl.home.new_job_requested.emit()
+    wiz = next(c for c in ctrl._children if isinstance(c, JobEditorWizard))
+    assert wiz.isWindow()  # 임베드 아님 — 독립 창 유지
+    assert wiz.windowModality() == Qt.ApplicationModal
+    assert wiz.parent() is None  # parent 무부여(R5) — 수명은 _track 소유
+    wiz.close()
+
+
 def test_run_route_embeds_and_replaces_in_run_slot(qapp, tmp_path, monkeypatch):
     """실행 라우트가 run 파라미터 슬롯에 임베드된다(ST-01, SHELL_DESIGN §2) —
     새 최상위 창 0개 · 같은 작업 재사용 · 다른 작업 교체."""
