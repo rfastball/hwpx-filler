@@ -62,7 +62,6 @@ class RunView(QWidget):
     """
 
     run_finished = Signal(object)  # BatchResult
-    back_requested = Signal()
 
     def __init__(self, job: Job, parent=None, *, pool_registry=None,
                  secret_store=None, nara_fetcher=None):
