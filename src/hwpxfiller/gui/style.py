@@ -29,7 +29,7 @@ PRIMARY_HOVER = "#1f5a80"
 WARN = "#a05a00"
 DANGER = "#c0392b"
 OK = "#1e8449"
-MUTED = "#7a7f87"
+MUTED = "#656a72"
 BORDER = "#e2e4e8"
 CARD_BG = "#ffffff"
 WINDOW_BG = "#f6f7f9"
@@ -54,7 +54,7 @@ NEUTRAL_PRESSED = "#e6e9ee"
 NEUTRAL_TRACK = "#eef0f3"
 NEUTRAL_HEADER_BG = "#eef1f4"
 NEUTRAL_BORDER_STRONG = "#cbd0d6"
-NEUTRAL_BORDER_CONTROL = "#adb3bb"
+NEUTRAL_BORDER_CONTROL = "#767b83"
 NEUTRAL_INK_SOFT = "#5c626b"
 NEUTRAL_HEADER_INK = "#4a505a"
 NEUTRAL_INK_CONTROL = "#2b3038"
@@ -127,10 +127,12 @@ QHeaderView::section {{
 QTableWidget {{ background: {CARD_BG}; gridline-color: {NEUTRAL_TRACK}; }}
 QListWidget {{ background: {CARD_BG}; border: 1px solid {BORDER}; border-radius: {RADIUS_MD}px; }}
 
-/* 레코드 선택 목록 — 체크박스를 또렷하게(선택 하이라이트 제거 대신 체크가 유일한 신호). */
-QListWidget#recordList::item {{ padding: 3px 4px; }}
+/* 레코드 선택 목록 — 체크박스를 또렷하게(선택 하이라이트 제거 대신 체크가 유일한 신호).
+   인디케이터 18px + 행 세로 여백으로 행 높이를 24px 이상 확보한다(ST-15, WCAG 2.5.8 Target
+   Size): 인디케이터당 행이 한 줄뿐이라 24px 원이 세로로 겹치지 않아 간격 예외를 충족한다. */
+QListWidget#recordList::item {{ padding: 6px 4px; }}
 QListWidget#recordList::indicator {{
-    width: 15px; height: 15px; border: 1px solid {NEUTRAL_BORDER_CONTROL};
+    width: 18px; height: 18px; border: 1px solid {NEUTRAL_BORDER_CONTROL};
     border-radius: {RADIUS_XS}px; background: {CARD_BG};
 }}
 QListWidget#recordList::indicator:hover {{ border-color: {PRIMARY}; }}
@@ -264,6 +266,18 @@ QLabel[fb="drift"] {{
 QPushButton[fb="ack"]:disabled, QPushButton[fb="missing"]:disabled {{
     color: {MUTED}; border-color: {BORDER};
 }}
+
+/* ── 키보드 포커스 가시성(ST-03, WCAG 2.4.7 Focus Visible) ──
+   BASE_QSS 가 컨트롤을 전면 재스타일하면서 QLineEdit/QPlainTextEdit(:focus 기존)을 뺀
+   버튼·리스트 아이템·인디케이터의 네이티브 포커스 링이 억제됐다. Tab 이동 위치를 다시
+   보이게 복원한다 — 전부 기존과 동일 폭 테두리를 재색(레이아웃 불변)하거나, 채운 primary
+   만 padding 1px 보정해 총 박스 크기를 유지한다. 스타일 안 한 bare QComboBox/QCheckBox/
+   QRadioButton 은 네이티브 포커스가 살아 있어 여기 대상이 아니다. 이 블록은 버튼/리스트
+   규칙 뒤에 두어 동일 특이도(type+pseudo)에서 후순위로 이긴다. */
+QPushButton:focus {{ border: 1px solid {PRIMARY}; }}
+QPushButton[primary="true"]:focus {{ border: 1px solid {INK}; padding: 5px 15px; }}
+QListWidget::item:focus {{ border: 1px solid {PRIMARY}; }}
+QListWidget#recordList::indicator:focus {{ border-color: {PRIMARY}; }}
 """
 
 

@@ -6,7 +6,7 @@
     "warn": "#a05a00",
     "danger": "#c0392b",
     "ok": "#1e8449",
-    "muted": "#7a7f87",
+    "muted": "#656a72",
     "border": "#e2e4e8",
     "card_bg": "#ffffff",
     "window_bg": "#f6f7f9",
@@ -37,7 +37,7 @@
     "track": "#eef0f3",
     "header_bg": "#eef1f4",
     "border_strong": "#cbd0d6",
-    "border_control": "#adb3bb",
+    "border_control": "#767b83",
     "ink_soft": "#5c626b",
     "header_ink": "#4a505a",
     "ink_control": "#2b3038"

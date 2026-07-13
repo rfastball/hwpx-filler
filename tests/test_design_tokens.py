@@ -25,7 +25,7 @@ def test_style_region_renders_expected_constants():
     # V2 신설 셀렉터가 참조하는 토큰(UD-12 danger 버튼 hover·UD-16 drift 배경).
     assert 'MISSING_BG = "#fbe6e3"' in region
     assert 'DANGER = "#c0392b"' in region
-    assert 'MUTED = "#7a7f87"' in region
+    assert 'MUTED = "#656a72"' in region
 
 
 def test_style_region_renders_v14_neutral_and_metric_tokens():
