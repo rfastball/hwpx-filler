@@ -571,7 +571,11 @@ def test_home_double_click_shares_run_gate_with_button(qapp, tmp_path, monkeypat
 
 
 def test_home_run_cta_enabled_and_emphasis_by_state(qapp, tmp_path):
-    """UD-03 — 실행 CTA 활성/강조가 badge_level 연동: 부재=비활성, 준비(ok)=활성 primary."""
+    """UD-03/UD-22 — 실행 CTA 활성/강조가 badge_level 연동: 부재=비활성, 준비(ok)=활성 강조.
+
+    강조는 화면 전역 primary(채움)가 아니라 카드 반복 액션용 보조 등급(emphasis=card, UD-22)
+    — 카드 곱셈으로 primary 가 11개까지 번지던 것을 화면당 primary 1개 규율로 되돌린다.
+    """
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QPushButton
 
@@ -582,7 +586,9 @@ def test_home_run_cta_enabled_and_emphasis_by_state(qapp, tmp_path):
         return next(b for b in card.findChildren(QPushButton) if b.text() == "실행")
 
     ready, absent = _run_btn("정상작업"), _run_btn("부재작업")
-    assert ready.isEnabled() and ready.property("primary")   # 준비 = 활성 primary
+    # 준비(ok) = 활성 + 카드 보조 강조. 화면 전역 primary(채움)로 승격하지 않는다.
+    assert ready.isEnabled() and ready.property("emphasis") == "card"
+    assert not ready.property("primary")                     # 카드 곱셈 primary 금지(UD-22)
     assert not absent.isEnabled()                            # 부재 = 비활성(더블클릭도 차단)
 
 

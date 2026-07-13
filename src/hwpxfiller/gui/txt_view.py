@@ -36,7 +36,7 @@ from ..core.text_registry import TextTemplateRegistry
 from ..data import make_source
 from .batch_run import DataAcquireController
 from .flow_layout import FlowLayout
-from .style import BASE_QSS, MUTED, mark
+from .style import BASE_QSS, DANGER, MISSING_BG, MUTED, mark
 from .txt_state import TxtDraftViewModel
 from .view_helpers import ElidedLabel
 
@@ -321,7 +321,9 @@ class TxtDraftView(QMainWindow):
             parts.append(_html.escape(template[last:m.start()]))
             name = m.group(1).strip()
             if name not in record:
-                parts.append('<span style="background:#fde2dd;color:#c0392b;">{{'
+                # 미입력 토큰 강조는 배지 토큰 참조(UD-33 ③): raw #fde2dd(제3의 미입력색)·
+                # #c0392b(DANGER 재타이핑)를 MISSING_BG·DANGER 로 환원 — 칩과 프리뷰 색 일치.
+                parts.append(f'<span style="background:{MISSING_BG};color:{DANGER};">{{{{'
                              + _html.escape(name) + '}}</span>')
             else:
                 raw = record.get(name)

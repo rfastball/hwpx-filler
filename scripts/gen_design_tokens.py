@@ -40,6 +40,26 @@ _STYLE_MAP = [
     ("DATA_EMPTY_FG", "state.data_empty_fg"), ("SELECT_BG", "state.select_bg"),
     ("FILL_BG", "badge.fill_bg"), ("BLANK_BG", "badge.blank_bg"),
     ("MISSING_BG", "badge.missing_bg"), ("ACK_BG", "badge.ack_bg"), ("ACK_FG", "badge.ack_fg"),
+    # 배지 테두리·눌림 틴트(V14/UD-33) — BASE_QSS pill·fb·danger 버튼이 참조하던 raw hex 환원.
+    ("FILL_BORDER", "badge.fill_border"), ("BLANK_BORDER", "badge.blank_border"),
+    ("MISSING_BORDER", "badge.missing_border"), ("ACK_BORDER", "badge.ack_border"),
+    ("MISSING_PRESS", "badge.missing_press"),
+    # 중성 회색 스케일(V14/UD-33) — 수작성 QSS 에 산재하던 raw hex 12종을 토큰으로 환원.
+    ("NEUTRAL_SURFACE_ALT", "neutral.surface_alt"), ("NEUTRAL_HOVER", "neutral.hover"),
+    ("NEUTRAL_PRESSED", "neutral.pressed"), ("NEUTRAL_TRACK", "neutral.track"),
+    ("NEUTRAL_HEADER_BG", "neutral.header_bg"),
+    ("NEUTRAL_BORDER_STRONG", "neutral.border_strong"),
+    ("NEUTRAL_BORDER_CONTROL", "neutral.border_control"),
+    ("NEUTRAL_INK_SOFT", "neutral.ink_soft"), ("NEUTRAL_HEADER_INK", "neutral.header_ink"),
+    ("NEUTRAL_INK_CONTROL", "neutral.ink_control"),
+    # metric 스케일(V14/UD-33 — V2 가 미룬 예약 배선). 정수 상수로 생성 → BASE_QSS f-string·
+    # 소비 뷰 여백/타이포가 참조. radius 7종·간격·타입 리터럴 산포를 명명 스케일로 수렴한다.
+    ("RADIUS_XS", "radius.xs"), ("RADIUS_SM", "radius.sm"), ("RADIUS_MD", "radius.md"),
+    ("RADIUS_LG", "radius.lg"), ("RADIUS_PILL", "radius.pill"),
+    ("SPACE_XS", "space.xs"), ("SPACE_SM", "space.sm"), ("SPACE_MD", "space.md"),
+    ("SPACE_LG", "space.lg"),
+    ("TYPE_LABEL", "type.label"), ("TYPE_SMALL", "type.small"), ("TYPE_BODY", "type.body"),
+    ("TYPE_TITLE", "type.title"), ("TYPE_HEADING", "type.heading"), ("TYPE_KPI", "type.kpi"),
 ]
 # diff 앱 자립 style.py 팔레트 상수 ← 토큰 경로(앱 A 크롬이 쓰는 부분집합).
 # 상태색·배지색은 각각 core.diff.KIND_COLORS 소유 → 여기 미포함(색 중복 금지).
@@ -69,15 +89,20 @@ def load_tokens() -> dict:
     return json.loads(TOKENS.read_text(encoding="utf-8"))
 
 
-def _dig(tokens: dict, path: str) -> str:
+def _dig(tokens: dict, path: str):
     group, key = path.split(".")
     return tokens[group][key]
+
+
+def _fmt(value) -> str:
+    """색·글자 토큰은 따옴표 문자열, metric(space/radius/type) 은 정수 리터럴로."""
+    return f'"{value}"' if isinstance(value, str) else f"{value}"
 
 
 def _render_py_region(tokens: dict, mapping: "list[tuple[str, str]]") -> str:
     """파이썬 팔레트 상수 ``<gen:tokens>`` 영역 전문(마커 포함) — 매핑만 다르다."""
     lines = [OPEN_PY + " — scripts/gen_design_tokens.py 가 생성. 직접 편집 금지."]
-    lines += [f'{name} = "{_dig(tokens, path)}"' for name, path in mapping]
+    lines += [f"{name} = {_fmt(_dig(tokens, path))}" for name, path in mapping]
     lines.append(CLOSE_PY)
     return "\n".join(lines)
 

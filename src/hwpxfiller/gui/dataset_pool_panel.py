@@ -13,7 +13,6 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -32,7 +31,7 @@ from .confirm import confirm_destructive
 from .dataset_pool_state import DatasetPoolRow, DatasetPoolViewModel
 from .file_filters import EXCEL_FILTER
 from .style import BASE_QSS, mark
-from .view_helpers import build_empty_state, resync_card_item_heights
+from .view_helpers import build_empty_state, hide_item_text, resync_card_item_heights
 
 
 class _PoolCard(QWidget):
@@ -148,7 +147,7 @@ class DatasetPoolPanel(QMainWindow):
         for row in self.vm.rows():
             self.list.addItem(row.name)
             item = self.list.item(self.list.count() - 1)
-            item.setForeground(QColor(0, 0, 0, 0))  # 이름은 아이템 text, 표시는 카드
+            hide_item_text(item)  # 이름은 아이템 text, 표시는 카드(UD-33 공용 이디엄)
             card = _PoolCard(row, on_action=self._dispatch)
             item.setSizeHint(card.sizeHint())
             self.list.setItemWidget(item, card)

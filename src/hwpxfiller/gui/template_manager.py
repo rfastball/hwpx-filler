@@ -20,7 +20,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -38,7 +37,7 @@ from .confirm import confirm_destructive
 from .file_filters import HWPX_FILTER
 from .style import BASE_QSS, mark
 from .template_manager_state import TemplateManagerViewModel, TemplateRow
-from .view_helpers import ElidedLabel, resync_card_item_heights
+from .view_helpers import ElidedLabel, hide_item_text, resync_card_item_heights
 
 
 class TemplateCard(QWidget):
@@ -74,14 +73,25 @@ class TemplateCard(QWidget):
 
         foot = QHBoxLayout()
         foot.addStretch(1)
+        # 카드 주 액션(compile·make_job)은 보조 등급 + 고정 끝(우측) 정렬(UD-22): PARTIAL 은
+        # [마저 변환][검토], COMPILED 는 [미리보기][작업 만들기]로 _STATE_ACTIONS 선언 순서
+        # 그대로 화면화돼 카드마다 주 액션 위치가 좌/우 반전되던 것을, 주 액션을 항상 마지막
+        # (카드 우측 끝)에 두어 위치를 고정한다. 강조는 화면 전역 primary(채움)가 아니라 카드
+        # 반복 액션용 emphasis=card — 목록 전체에 채운 primary 가 곱절로 번지지 않게 한다.
+        # 버튼 생성 순서는 선언 순서를 지켜(findItems·스모크 라벨 계약) 배치만 재정렬한다.
+        primary_btn = None
         for act in row.actions():
             btn = QPushButton(act.label)
-            if act.key in ("compile", "make_job"):
-                mark(btn, "primary", True)
             btn.clicked.connect(
                 lambda _checked=False, k=act.key: on_action(k, row.path)
             )
-            foot.addWidget(btn)
+            if act.key in ("compile", "make_job"):
+                mark(btn, "emphasis", "card")
+                primary_btn = btn  # 배치는 맨 끝으로 미룸(위치 고정)
+            else:
+                foot.addWidget(btn)
+        if primary_btn is not None:
+            foot.addWidget(primary_btn)
         root.addLayout(foot)
 
 
@@ -192,7 +202,7 @@ class TemplateManagerPanel(QMainWindow):
         for row in self.vm.rows():
             self.list.addItem(row.name)
             item = self.list.item(self.list.count() - 1)
-            item.setForeground(QColor(0, 0, 0, 0))  # 이름은 아이템 text, 표시는 카드
+            hide_item_text(item)  # 이름은 아이템 text, 표시는 카드(UD-33 공용 이디엄)
             card = TemplateCard(row, on_action=self._dispatch)
             item.setSizeHint(card.sizeHint())
             self.list.setItemWidget(item, card)

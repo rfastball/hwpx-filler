@@ -1,5 +1,5 @@
 {
-  "_note": "앱 B 디자인 토큰 단일 출처. 색을 바꾸려면 여기만 고치고 `python scripts/gen_design_tokens.py` 실행 — style.py(Qt QSS)와 목업 CSS가 함께 재생성된다. 백엔드 무접촉. space/radius/type 은 예약(향후 QSS metric 배선 대상, 현재 미생성).",
+  "_note": "앱 B 디자인 토큰 단일 출처. 색을 바꾸려면 여기만 고치고 `python scripts/gen_design_tokens.py` 실행 — style.py(Qt QSS)와 목업 CSS가 함께 재생성된다. 백엔드 무접촉. neutral(중성 회색)·badge tint 는 style.py 전용(QSS 내부 크롬). space/radius/type 은 V14 에서 실제 배선됨(BASE_QSS metric 상수 + 소비 뷰 여백/타이포).",
   "color": {
     "primary": "#2874a6",
     "primary_hover": "#1f5a80",
@@ -23,9 +23,26 @@
     "blank_bg": "#f6ecdb",
     "missing_bg": "#fbe6e3",
     "ack_bg": "#ecebf4",
-    "ack_fg": "#4a3f8a"
+    "ack_fg": "#4a3f8a",
+    "fill_border": "#bfe0cb",
+    "blank_border": "#e6c98f",
+    "missing_border": "#e6a49c",
+    "ack_border": "#c8c3e6",
+    "missing_press": "#f9d9d4"
+  },
+  "neutral": {
+    "surface_alt": "#f3f4f6",
+    "hover": "#f0f2f5",
+    "pressed": "#e6e9ee",
+    "track": "#eef0f3",
+    "header_bg": "#eef1f4",
+    "border_strong": "#cbd0d6",
+    "border_control": "#adb3bb",
+    "ink_soft": "#5c626b",
+    "header_ink": "#4a505a",
+    "ink_control": "#2b3038"
   },
   "space": { "xs": 2, "sm": 6, "md": 12, "lg": 18 },
-  "radius": { "sm": 4, "md": 6, "lg": 9 },
-  "type": { "small": 12, "body": 13, "heading": 15 }
+  "radius": { "xs": 3, "sm": 4, "md": 6, "lg": 9, "pill": 11 },
+  "type": { "label": 11, "small": 12, "body": 13, "title": 14, "heading": 15, "kpi": 22 }
 }

@@ -31,7 +31,7 @@ from .job_editor_state import (
     overwrite_confirm_text,
     validate_save,
 )
-from .style import BASE_QSS
+from .style import BASE_QSS, mark
 from .wizard import DataPage, MappingPage, TemplatePage
 
 
@@ -64,6 +64,19 @@ class JobEditorWizard(QWizard):
         self.setStyleSheet(BASE_QSS)
         # 마지막 스텝 = 저장(생성 아님)을 버튼 문안으로 못박는다.
         self.setButtonText(QWizard.FinishButton, "작업 저장")
+        # 위저드 전진 버튼에 primary 마킹(UD-22): QWizard 자체 생성 내비 버튼(Next/Finish/
+        # Commit)에 마킹 관례가 미적용돼 저작 표면 4스텝 전부 primary 0개 — Next/'작업 저장'이
+        # Cancel·Back 과 동일 룩이라 주 행동 탐색 비용·Cancel 오클릭 위험이 컸다. 화면당
+        # primary 1개(전진 버튼) 규율을 위저드에도 적용한다. 스텝별로 하나만 노출된다
+        # (Next 또는 Finish/Commit) — 뷰포트 primary 는 항상 1개.
+        for _wb in (
+            QWizard.WizardButton.NextButton,
+            QWizard.WizardButton.FinishButton,
+            QWizard.WizardButton.CommitButton,
+        ):
+            _btn = self.button(_wb)
+            if _btn is not None:
+                mark(_btn, "primary", True)
         self.registry = registry
 
         # ---- 공유 세션 상태(저작 페이지가 self.wizard() 로 읽음) ----

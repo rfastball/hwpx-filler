@@ -25,7 +25,8 @@ GUI_DIR = Path(style.__file__).parent
 BASE_QSS = style.BASE_QSS
 
 # 값이 변형 셀렉터를 선택하는 프로퍼티(`[prop="value"]`).
-VALUE_PROPS = {"level", "pill", "fb", "kpi"}
+# emphasis(V14/UD-22): 카드 반복 액션 보조 시각 등급 — mark(btn,"emphasis","card").
+VALUE_PROPS = {"level", "pill", "fb", "kpi", "emphasis"}
 # 불리언 프로퍼티(`mark(w, prop, True)` → `[prop="true"]`).
 BOOL_PROPS = {"heading", "muted", "primary", "card"}
 # 값이 빈 문자열/False 면 '레벨 해제'라 셀렉터가 없어도 정상(기본 렌더로 복귀).

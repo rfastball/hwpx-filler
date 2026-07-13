@@ -103,7 +103,9 @@ class PipelineBuilderDialog(QDialog):
             self.cmb_how.addItem(label, code)
         merge_row.addWidget(self.cmb_how)
         self.btn_add_step = QPushButton("스텝 추가")
-        mark(self.btn_add_step, "primary", True)
+        # 화면당 primary 1개 규율(UD-22): '스텝 추가'와 '풀에 저장' 2개가 경쟁하던 것을,
+        # 완료 액션인 [풀에 저장]만 primary 로 두고 조립 중 반복 액션인 [스텝 추가]는 일반
+        # 버튼으로 강등한다(조립은 반복, 저장은 종결 — 주 행동은 저장).
         self.btn_add_step.clicked.connect(self._on_add_step)
         merge_row.addWidget(self.btn_add_step)
         self.btn_del_step = QPushButton("스텝 제거")

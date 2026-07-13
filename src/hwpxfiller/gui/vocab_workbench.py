@@ -11,7 +11,6 @@ VocabWorkbenchViewModel`(Qt 비의존)이 소유. 이 위젯은 카드로 얹고
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
@@ -27,7 +26,7 @@ from PySide6.QtWidgets import (
 
 from .confirm import confirm_destructive
 from .style import BASE_QSS, mark
-from .view_helpers import build_empty_state, resync_card_item_heights
+from .view_helpers import build_empty_state, hide_item_text, resync_card_item_heights
 from .vocab_workbench_state import VocabBaseRow, VocabWorkbenchViewModel
 
 
@@ -60,6 +59,11 @@ class _BaseCard(QWidget):
             btn = QPushButton(label)
             if key == "delete":
                 mark(btn, "level", "danger")
+            elif key == "edit":
+                # 프로파일 생성 진입점은 이 화면에 없다(작업 편집기 매핑 단계 전용 — 없던
+                # 진입점 발명 금지). 카드 주 액션 [편집]에 보조 등급(UD-22)만 부여해 화면
+                # 전역 primary 없이도 카드 안의 주 행동을 시각으로 가른다.
+                mark(btn, "emphasis", "card")
             btn.clicked.connect(
                 lambda _c=False, k=key, n=row.name: on_action(k, n)
             )
@@ -123,7 +127,7 @@ class VocabWorkbenchPanel(QMainWindow):
         for row in self.vm.rows():
             self.list.addItem(row.name)
             item = self.list.item(self.list.count() - 1)
-            item.setForeground(QColor(0, 0, 0, 0))
+            hide_item_text(item)  # 이름은 아이템 text, 표시는 카드(UD-33 공용 이디엄)
             card = _BaseCard(row, on_action=self._dispatch)
             item.setSizeHint(card.sizeHint())
             self.list.setItemWidget(item, card)

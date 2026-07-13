@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QListWidget,
+    QListWidgetItem,
     QPushButton,
     QTableWidgetItem,
     QVBoxLayout,
@@ -33,6 +34,20 @@ from PySide6.QtWidgets import (
 )
 
 from .style import DATA_EMPTY_FG, mark
+
+# 투명 전경(아이템 텍스트 숨김) — 카드 리스트 4패널이 각자 복제하던 이디엄의 단일 출처.
+_TRANSPARENT = QColor(0, 0, 0, 0)
+
+
+def hide_item_text(item: QListWidgetItem) -> None:
+    """QListWidget 아이템의 텍스트를 투명 전경으로 숨긴다(UD-33 ④ 이디엄 승격).
+
+    카드 목록은 아이템 ``text`` 를 계약(findItems 로 이름 조회·스모크)으로 유지하되 화면
+    표시는 ``setItemWidget`` 카드가 담당한다 — 아이템 자체 텍스트가 카드 뒤로 비쳐 이중
+    렌더되지 않게 전경을 투명색으로 눌러 온다. home/dataset_pool/vocab/template_manager
+    4파일이 ``item.setForeground(QColor(0, 0, 0, 0))`` 을 주석까지 3중 복제하던 것을
+    한 곳으로 모은다(신규 카드 리스트가 마법 호출을 빠뜨리는 조용한 회귀 방지)."""
+    item.setForeground(_TRANSPARENT)
 
 # 빈 값/결측 명시 재진술 어휘(UD-26) — mapping_table 의 '(비움)' 어휘를 검수 파생 표면과
 # 공유한다(신규 어휘 발명 없음). 결측(키 부재, left 조인 무매칭)은 빈 값과 구별해 재진술.
