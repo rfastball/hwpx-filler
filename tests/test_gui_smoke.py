@@ -1781,6 +1781,66 @@ def test_mapping_table_unknown_transform_renders_loudly_without_crash(qapp):
     assert "변환 오류" not in table.table.item(0, _COL_PREVIEW).text()
 
 
+def test_mapping_table_combos_ignore_wheel_so_table_scrolls(qapp):
+    """사용성 회귀: 셀 콤보 위에서 휠을 굴려도 선택이 바뀌지 않고 이벤트가 표로 전파된다
+    (선택은 클릭만). 종전엔 휠이 콤보에 흡수돼 스크롤 대신 값이 엉뚱하게 바뀌었다."""
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtGui import QWheelEvent
+
+    from hwpxfiller.gui.mapping_state import RowState
+    from hwpxfiller.gui.mapping_table import (
+        _COL_FORMAT,
+        _COL_SOURCE,
+        _COL_TRANSFORM,
+        MappingTable,
+        _NoScrollComboBox,
+    )
+
+    model = MappingModel(
+        rows=[RowState("개찰일시", sources=["opengDate"], transform="datetime")],
+        source_fields=["opengDate", "opengTm", "presmptPrce"],
+    )
+    table = MappingTable()
+    table.set_model(model, {"opengDate": "20260713"})
+
+    for col in (_COL_SOURCE, _COL_TRANSFORM, _COL_FORMAT):
+        combo = table.cell_control(0, col)
+        assert isinstance(combo, _NoScrollComboBox)
+        before = combo.currentIndex()
+        ev = QWheelEvent(
+            QPoint(5, 5), combo.mapToGlobal(QPoint(5, 5)), QPoint(0, -120),
+            QPoint(0, -120), Qt.NoButton, Qt.NoModifier, Qt.ScrollUpdate, False,
+        )
+        combo.wheelEvent(ev)
+        assert not ev.isAccepted()          # 위(표)로 전파됨
+        assert combo.currentIndex() == before  # 선택 불변
+
+
+def test_source_picker_uses_checkbox_widgets_and_preserves_order(qapp):
+    """UI 버그 회귀: 다중 데이터 항목 선택창은 QListWidget 체크아이템(전역 QSS 와 섞여
+    체크박스 소실·정렬 붕괴)이 아니라 실제 QCheckBox 위젯 행으로 구성한다. 사전선택
+    반영·토글·소스 필드 순서 보존을 검증한다."""
+    from PySide6.QtWidgets import QCheckBox
+
+    from hwpxfiller.gui.mapping_table import _SourcePickerDialog
+
+    fields = ["opengDate", "opengTm", "presmptPrce", "bidNtceNm"]
+    aliases = {"opengDate": "개찰일자", "opengTm": "개찰시각"}
+    dlg = _SourcePickerDialog(fields, aliases, selected=["opengTm"])
+
+    # 실제 QCheckBox 위젯 — 델리게이트 인디케이터가 아님.
+    assert len(dlg._checks) == len(fields)
+    assert all(isinstance(cb, QCheckBox) for _, cb in dlg._checks)
+    # 사전선택 반영.
+    assert dlg.selected_sources() == ["opengTm"]
+
+    # 토글 후 선택은 소스 필드 순서대로(체크 순서 아님) — datetime 날짜→시각 순서 보존.
+    dlg._checks[0][1].setChecked(True)   # opengDate
+    assert dlg.selected_sources() == ["opengDate", "opengTm"]
+    dlg._checks[1][1].setChecked(False)  # opengTm 해제 → 복구 동작
+    assert dlg.selected_sources() == ["opengDate"]
+
+
 # ------------------------------------------------------------------ 앱 A(diff)
 def _diff_window_for_test(tmp_path, monkeypatch):
     """실패 모달 즉시 fail + QSettings 를 임시 파일로(사용자 설정 오염 방지)한 창."""

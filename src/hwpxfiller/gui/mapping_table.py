@@ -11,6 +11,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QPalette
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -19,9 +20,8 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QPushButton,
+    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -37,6 +37,18 @@ from .style import DATA_EMPTY_FG, UNCONFIRMED_BG, UNMATCHED_BG, mark
 # 변환 코드 → 한국어 라벨(콤보 표시 순서는 TRANSFORMS 그대로).
 # join = N개 소스를 구분자로 이어붙이는 결합(라벨 '그대로'는 실제 의미와 불일치 — RC-26).
 TRANSFORM_LABELS = {"join": "결합", "datetime": "일시", "amount": "금액", "const": "상수"}
+
+
+class _NoScrollComboBox(QComboBox):
+    """휠 스크롤로 선택이 바뀌지 않게 하는 콤보 — 이벤트를 위(표)로 넘겨 표가 스크롤되게 한다.
+
+    표 셀에 얹힌 콤보는 마우스 휠을 삼켜 사용자가 화면을 내리려는 순간 엉뚱하게
+    선택이 바뀐다(의도치 않은 값 변경). 휠 이벤트를 무시(``ignore``)하면 부모 스크롤
+    영역(표 뷰포트)으로 전파돼 표가 스크롤되고, 선택은 오직 클릭으로만 바뀐다.
+    """
+
+    def wheelEvent(self, event):  # noqa: N802 (Qt 시그니처)
+        event.ignore()
 
 (
     _COL_CONFIRM, _COL_FIELD, _COL_SOURCE, _COL_TRANSFORM, _COL_FORMAT, _COL_ARG,
@@ -126,27 +138,38 @@ class _SourcePickerDialog(QDialog):
         self.resize(360, 420)
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("이 템플릿 필드에 함께 사용할 데이터 항목을 순서대로 체크하세요."))
-        self.list = QListWidget()
+
+        # 체크 항목을 '실제 QCheckBox 위젯 행'으로 구성한다(UI 버그 근본 조치). 종전
+        # QListWidget 의 체크 가능 아이템은 델리게이트가 그리는 네이티브 인디케이터라,
+        # 앱 전역 ``QListWidget::item`` QSS 와 섞이면 실제 클릭(부분 리페인트)·고DPI
+        # 스케일링에서 체크박스 소실·텍스트 잔상·정렬 붕괴가 났다. QCheckBox 는 인디케이터·
+        # 텍스트 정렬을 위젯이 직접 관리(BASE_QSS 미스타일 → 네이티브 안정)하므로 그 버그
+        # 계열이 원천적으로 불가능하다. 스크롤 영역에 담아 항목이 많아도 스크롤된다.
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        inner = QWidget()
+        vbox = QVBoxLayout(inner)
+        vbox.setContentsMargins(6, 6, 6, 6)
+        vbox.setSpacing(2)
         chosen = set(selected)
+        self._checks: "list[tuple[str, QCheckBox]]" = []
         for key in source_fields:
-            item = QListWidgetItem(_source_label(key, aliases))
-            item.setData(Qt.UserRole, key)
-            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-            item.setCheckState(Qt.Checked if key in chosen else Qt.Unchecked)
-            self.list.addItem(item)
-        layout.addWidget(self.list)
+            cb = QCheckBox(_source_label(key, aliases))
+            cb.setChecked(key in chosen)
+            vbox.addWidget(cb)
+            self._checks.append((key, cb))
+        vbox.addStretch(1)
+        scroll.setWidget(inner)
+        layout.addWidget(scroll, 1)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
     def selected_sources(self) -> "list[str]":
-        out: "list[str]" = []
-        for i in range(self.list.count()):
-            item = self.list.item(i)
-            if item.checkState() == Qt.Checked:
-                out.append(item.data(Qt.UserRole))
-        return out
+        """체크된 데이터 항목 키를 소스 필드 순서대로 반환(datetime 합성의 날짜→시각 순서 보존)."""
+        return [key for key, cb in self._checks if cb.isChecked()]
 
 
 class MappingTable(QWidget):
@@ -293,8 +316,8 @@ class MappingTable(QWidget):
                 self.table.setItem(ri, _COL_FIELD, fld)
 
                 # 소스 콤보 + 퍼지(저신뢰) 제안 인라인 신호(UD-15). 상태색 밴드가
-                # 닿도록 셀 컨테이너로 감싼다(UD-38).
-                combo = QComboBox()
+                # 닿도록 셀 컨테이너로 감싼다(UD-38). 휠은 표 스크롤로(선택은 클릭만).
+                combo = _NoScrollComboBox()
                 combo.activated.connect(
                     lambda idx, ri=ri: self._on_source_activated(ri, idx)
                 )
@@ -305,8 +328,8 @@ class MappingTable(QWidget):
                 src_box._conf = conf
                 self.table.setCellWidget(ri, _COL_SOURCE, src_box)
 
-                # 변환 콤보(한국어 라벨).
-                tr = QComboBox()
+                # 변환 콤보(한국어 라벨). 휠은 표 스크롤로.
+                tr = _NoScrollComboBox()
                 for kind in TRANSFORMS:
                     tr.addItem(TRANSFORM_LABELS.get(kind, kind), kind)
                 tr.activated.connect(
@@ -314,8 +337,8 @@ class MappingTable(QWidget):
                 )
                 self.table.setCellWidget(ri, _COL_TRANSFORM, self._wrap_cell(tr))
 
-                # 표시형 콤보(변환에 딸린 프리셋; 변형 없는 변환이면 비활성).
-                fmtc = QComboBox()
+                # 표시형 콤보(변환에 딸린 프리셋; 변형 없는 변환이면 비활성). 휠은 표 스크롤로.
+                fmtc = _NoScrollComboBox()
                 fmtc.activated.connect(
                     lambda idx, ri=ri: self._on_format_activated(ri, idx)
                 )
