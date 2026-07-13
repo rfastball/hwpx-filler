@@ -26,7 +26,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QMainWindow,
-    QMessageBox,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -44,6 +43,7 @@ from .view_helpers import (
     restore_geometry,
     resync_card_item_heights,
     save_geometry,
+    show_error,
     wire_refresh_shortcut,
 )
 
@@ -277,7 +277,7 @@ class TemplateManagerPanel(QMainWindow):
             # 실패 잔존 기록은 danger 로 시끄럽게(UD-07) — muted 회색 중립 메모로 오독 금지.
             mark(self.lbl_result, "level", "danger")
             self.lbl_result.setText(f"실패: {title} · {detail}")
-            QMessageBox.critical(self, f"{title} 실패", detail)
+            show_error(self, f"{title} 실패", exc)  # 유형별 문구 + 원문 접기(ST-20)
 
     def _on_compile(self, path: str) -> None:
         """CLI 2단계 미러 — 스캔 미리보기(dry-run) → 사용자 확인 시에만 적용·저장."""

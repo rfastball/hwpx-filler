@@ -410,6 +410,7 @@ class DiffReviewWindow(QMainWindow):
 
     def _populate_recent_menu(self) -> None:
         self._recent_menu.clear()
+        self._recent_menu.setToolTipsVisible(True)  # 전체 경로 툴팁 노출(ST-34)
         pairs = self._recent_pairs()
         if not pairs:
             act = self._recent_menu.addAction("최근 비교 없음")
@@ -417,6 +418,9 @@ class DiffReviewWindow(QMainWindow):
             return
         for old, new in pairs:
             act = self._recent_menu.addAction(f"{Path(old).name} ↔ {Path(new).name}")
+            # 파일명(basename)만으론 다른 폴더 동명 파일을 구별 못 한다(ST-34) —
+            # 전체 경로를 툴팁으로 노출해 어느 파일 쌍인지 확인하게 한다.
+            act.setToolTip(f"{old}\n↔ {new}")
             if Path(old).exists() and Path(new).exists():
                 act.triggered.connect(
                     lambda _=False, o=old, n=new: self._ingest_paths([o, n])
@@ -443,6 +447,9 @@ class DiffReviewWindow(QMainWindow):
     # ------------------------------------------------------------------ 비교
     def _on_compare(self) -> None:
         old, new = self.ed_old.text(), self.ed_new.text()
+        # ST-33 재검토: 동일 파일 비교를 차단하려 했으나, RC-32 가 이미 변경 0건을 명시
+        # 문장(NO_CHANGES_MESSAGE)+KPI(0/0/0/0)로 정직하게 확정한다(조용한 오도 없음) —
+        # 별도 차단 가드는 그 의도된 zero-changes 흐름과 충돌하므로 두지 않는다.
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             self.result = diff_files(old, new)

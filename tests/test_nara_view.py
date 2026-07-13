@@ -108,6 +108,8 @@ def test_dialog_acquire_enables_ok_and_captures_records(qapp):
     assert "나라장터" in dlg.label and "2건" in dlg.label
     # 산출 datasource 는 키 없는 스냅샷(어휘 노출).
     assert dlg.datasource.field_labels()["bidNtceNm"] == "공고명"
+    # 성공 취득 뒤엔 '다시 시도'가 노출되지 않는다(ST-30) — '가져오기'와 중복 제거.
+    assert not dlg.btn_retry.isEnabled()
 
 
 def test_dialog_acquire_failure_keeps_ok_locked_and_redacts(qapp):

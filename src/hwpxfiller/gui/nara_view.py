@@ -223,9 +223,9 @@ class NaraAcquireDialog(QDialog):
         self.btn_acquire.clicked.connect(self._on_acquire)
         self.btn_retry = QPushButton("다시 시도")
         self.btn_retry.clicked.connect(self._on_acquire)
-        self.btn_retry.setEnabled(False)
+        self.btn_retry.setEnabled(False)  # 실패·중지 후에만 노출(ST-30) — 성공 시 '가져오기'와 중복
         # 비활성 사유 상시 발화(UD-09) — '가져오기'를 한 번 실행해야 재시도가 열린다.
-        self.btn_retry.setToolTip("'가져오기'를 한 번 실행한 뒤 같은 조건으로 다시 시도합니다.")
+        self.btn_retry.setToolTip("직전 취득이 실패했거나 중지된 경우 같은 조건으로 다시 시도합니다.")
         # 진행 중 요청 중지(RC-12) — 도착할 결과를 폐기하고 UI 를 즉시 복원한다.
         self.btn_stop = QPushButton("중지")
         self.btn_stop.setEnabled(False)
@@ -326,7 +326,7 @@ class NaraAcquireDialog(QDialog):
         bgn, end = self._bgn_text(), self._end_text()
         num_rows, page_no = self.spin_rows.value(), self.spin_page.value()
         self._fetch_seq += 1
-        self._retry_available = True
+        self._retry_available = False  # 결과가 정한다(ST-30): 성공=숨김·실패/중지=노출
         self._set_busy(True)
         self._set_result("가져오는 중… (중지 가능)")
         self._spawn_task(
@@ -336,6 +336,7 @@ class NaraAcquireDialog(QDialog):
 
     def _apply_acquire_result(self, res) -> None:
         self.vm.commit(res)  # 커밋은 UI 스레드에서만 — 편집/중지와 경합하지 않는다
+        self._retry_available = not res.acceptable  # 실패 시에만 '다시 시도' 노출(ST-30)
         self._set_busy(False)
         self._set_result(res.summary(), "ok" if res.acceptable else "danger")
         # 수용성(성공+1건 이상)은 뷰모델 스냅샷이 판정 — 실패/0건이면 last_result 가
@@ -358,6 +359,7 @@ class NaraAcquireDialog(QDialog):
         if not self._busy:
             return
         self._fetch_seq += 1
+        self._retry_available = True  # 중지 후엔 같은 조건 재시도가 유효(ST-30)
         self._set_busy(False)  # 잔존 스냅샷 기준으로 OK 를 원자 복원(vm.last_result 미변경)
         res = self.vm.last_result
         if res is not None:

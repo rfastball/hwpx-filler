@@ -242,11 +242,21 @@ class JobListHome(QMainWindow):
         header.addWidget(sub)
         header.addStretch(1)
         # 니모닉(&, ST-12): Alt+글자로 키보드 접근. Alt+M 템플릿·P 풀·V 매핑 프로파일.
+        # 개념 툴팁(ST-26): 전문 용어(누름틀·데이터 풀·매핑 프로파일)를 한 줄로 설명한다.
         self.btn_templates = QPushButton("템플릿 관리(&M)")
+        self.btn_templates.setToolTip(
+            "누름틀 템플릿(.hwpx)의 컴파일 상태를 보고 스키마 추출·누름틀 변환·검토를 합니다."
+        )
         self.btn_templates.clicked.connect(self.manage_templates_requested)
         self.btn_pool = QPushButton("데이터 풀 관리(&P)")
+        self.btn_pool.setToolTip(
+            "재사용할 데이터 참조(엑셀/CSV 경로·나라장터 쿼리·조립 파이프라인)를 등록·보관합니다."
+        )
         self.btn_pool.clicked.connect(self.manage_pool_requested)
         self.btn_vocab = QPushButton("매핑 프로파일 관리(&V)")
+        self.btn_vocab.setToolTip(
+            "여러 작업이 공유하는 필드↔소스 매핑 베이스를 저작·재사용합니다."
+        )
         self.btn_vocab.clicked.connect(self.manage_vocab_requested)
         header.addWidget(self.btn_templates)
         header.addWidget(self.btn_pool)

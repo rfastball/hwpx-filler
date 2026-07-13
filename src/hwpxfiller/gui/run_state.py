@@ -395,8 +395,8 @@ class RunViewModel:
             names = list(drift.template_only) + list(drift.mapping_only) + list(drift.conflicting)
             return GateState(
                 False, "danger",
-                "템플릿 구조 드리프트 — 매핑을 다시 확정해야 생성할 수 있습니다: "
-                + ", ".join(names),
+                "템플릿 구조가 확정 매핑과 달라졌습니다 — 매핑을 다시 확정해야 생성할 "
+                "수 있습니다: " + ", ".join(names),
             )
         unmet = [s.name for s in states if s.state == "missing" and not s.acknowledged]
         if unmet:

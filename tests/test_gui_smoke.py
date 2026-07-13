@@ -653,6 +653,18 @@ def test_nara_progress_visible_only_while_busy(qapp):
     assert dlg.progress.isVisibleTo(dlg) is False
 
 
+def test_describe_exception_shapes_common_errors(qapp):
+    """예외를 유형별 사용자 문구로 성형한다(ST-20) — 미지 유형은 원문 보존."""
+    import zipfile
+
+    from hwpxfiller.gui.view_helpers import describe_exception
+
+    assert "다른 프로그램" in describe_exception(PermissionError("x"))
+    assert "찾을 수 없" in describe_exception(FileNotFoundError("x"))
+    assert "손상" in describe_exception(zipfile.BadZipFile("x"))
+    assert describe_exception(ValueError("고유메시지")) == "고유메시지"  # 미지 유형 원문
+
+
 def test_template_manager_route_seeds_default_library_and_make_job(qapp, tmp_path, monkeypatch):
     """emit → 패널이 기본 라이브러리를 겨눔(RC-14) + '작업 만들기' → 템플릿 시드 에디터."""
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))

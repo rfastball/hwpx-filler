@@ -38,6 +38,7 @@ from .view_helpers import (
     restore_geometry,
     resync_card_item_heights,
     save_geometry,
+    show_error,
     wire_refresh_shortcut,
 )
 
@@ -215,7 +216,7 @@ class DatasetPoolPanel(QMainWindow):
         try:
             self.vm.register_excel(name, path)
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "오류", f"등록 실패:\n{exc}")
+            show_error(self, "등록 실패", exc)  # 유형별 문구 + 원문 접기(ST-20)
             return
         announce_status(self.lbl_result, f"등록 완료: {name}")  # 보조기술 통지(ST-18)
         self.pool_changed.emit()
@@ -269,7 +270,7 @@ class DatasetPoolPanel(QMainWindow):
                 num_rows=int(opts["num_rows"]), page_no=int(opts["page_no"]),
             )
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "오류", f"등록 실패:\n{exc}")
+            show_error(self, "등록 실패", exc)  # 유형별 문구 + 원문 접기(ST-20)
             return
         announce_status(self.lbl_result, f"등록 완료: {name} (나라장터 쿼리 참조)")
         self.pool_changed.emit()

@@ -32,7 +32,7 @@ from .job_editor_state import (
     validate_save,
 )
 from .style import BASE_QSS, mark
-from .view_helpers import restore_geometry, save_geometry
+from .view_helpers import restore_geometry, save_geometry, show_error
 from .wizard import DataPage, MappingPage, TemplatePage
 
 
@@ -144,7 +144,7 @@ class JobEditorWizard(QWizard):
         try:
             self.registry.save(job)
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "오류", f"작업 저장 실패:\n{exc}")
+            show_error(self, "작업 저장 실패", exc)  # 유형별 문구 + 원문 접기(ST-20)
             return
         self.job_saved.emit(name)
         save_geometry(self, "editor")  # ST-11

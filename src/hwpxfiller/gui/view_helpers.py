@@ -325,3 +325,41 @@ def busy_cursor():
         yield
     finally:
         QApplication.restoreOverrideCursor()
+
+
+# ---------------------------------------------------------- ST-20: 오류 메시지 성형
+def describe_exception(exc: BaseException) -> str:
+    """예외를 사용자 대면 한국어 문구로 성형한다(ST-20, Nielsen H9·WCAG 3.3.3).
+
+    원시 ``str(exc)``(PermissionError·BadZipFile·WinError)는 개발자용이라 사용자에게 다음
+    행동을 주지 못한다 — 유형별로 무엇이 잘못됐고 어떻게 회복하는지 안내한다. 미지 유형은
+    원문을 돌려준다(조용한 은폐 금지 — 원인 전문은 :func:`show_error` 가 접어서 병기).
+    """
+    import zipfile
+
+    if isinstance(exc, PermissionError):
+        return "파일에 접근할 수 없습니다 — 다른 프로그램(한글 등)에서 열려 있지 않은지 확인하세요."
+    if isinstance(exc, FileNotFoundError):
+        return "파일을 찾을 수 없습니다 — 경로가 바뀌었거나 삭제되었을 수 있습니다."
+    if isinstance(exc, zipfile.BadZipFile):
+        return "손상되었거나 HWPX(zip) 형식이 아닌 파일입니다."
+    if isinstance(exc, (IsADirectoryError, NotADirectoryError)):
+        return "경로가 올바른 파일이 아닙니다."
+    if isinstance(exc, UnicodeDecodeError):
+        return "파일 인코딩을 해석할 수 없습니다 — 형식·인코딩을 확인하세요."
+    return str(exc)
+
+
+def show_error(parent, title: str, exc: BaseException) -> None:
+    """유형별 문구 + 원시 예외를 함께 실은 오류 모달을 띄운다(ST-20).
+
+    사용자 대면 문구(:func:`describe_exception`)를 앞에 두고, 진단용 원문은 뒤에 병기한다 —
+    평이한 안내와 원인을 모두 잃지 않는다. 표시는 ``QMessageBox.critical`` 로 통일해 다른
+    실패 통지와 같은 이음새를 쓴다(테스트가 이 정적 메서드를 가로채 무모달로 검증).
+    """
+    from PySide6.QtWidgets import QMessageBox
+
+    friendly = describe_exception(exc)
+    raw = str(exc)
+    message = friendly if friendly == raw else f"{friendly}\n\n{raw}"
+    QMessageBox.critical(parent, title, message)
