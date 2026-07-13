@@ -195,6 +195,10 @@ class DatasetPoolPanel(QMainWindow):
         )
         if not ok or not name.strip():
             return
+        name = name.strip()
+        # 동명 데이터셋 무통보 덮어쓰기 방지(ST-09) — 파이프라인 저장과 같은 게이트.
+        if not self._confirm_pool_overwrite(name):
+            return
         try:
             self.vm.register_excel(name, path)
         except Exception as exc:  # noqa: BLE001
@@ -242,6 +246,9 @@ class DatasetPoolPanel(QMainWindow):
         name, ok = QInputDialog.getText(self, "데이터셋 이름", "이름:")
         if not ok or not name.strip():
             return
+        name = name.strip()
+        if not self._confirm_pool_overwrite(name):  # 동명 덮어쓰기 방지(ST-09)
+            return
         try:
             opts = dlg.query_options()  # 스냅샷 부재 시 시끄럽게 실패(조용한 위젯값 폴백 금지)
             self.vm.register_nara(
@@ -253,3 +260,22 @@ class DatasetPoolPanel(QMainWindow):
             return
         self.lbl_result.setText(f"등록 완료: {name} (나라장터 쿼리 참조)")
         self.pool_changed.emit()
+
+    def _confirm_pool_overwrite(self, name: str) -> bool:
+        """동명 데이터셋이 있으면 파괴 확인을 거친다 — 없으면 즉시 통과(True).
+
+        pipeline_builder 의 덮어쓰기 게이트(exists→confirm_destructive)와 같은 어휘·기본
+        (취소). victim 이름은 레지스트리에서 재독해 slug≠입력명 상황에서도 실제 사라질
+        항목을 진술한다(job_editor 덮어쓰기 확인 선례). 데이터셋은 durable 참조라 조용히
+        덮으면 기존 경로·쿼리가 소실된다 — confirm-or-alarm.
+        """
+        registry = self.vm.registry
+        if not registry.exists(name):
+            return True
+        existing = registry.load(name).name
+        return confirm_destructive(
+            self, "이름 충돌",
+            f"'{existing}' 데이터셋이 이미 있습니다 — 등록하면 기존 참조(경로·쿼리)가 "
+            "사라집니다.",
+            "덮어쓰기",
+        )

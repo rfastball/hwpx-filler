@@ -473,6 +473,28 @@ def test_app_controller_wires_all_home_routes_via_signal_emit(qapp, tmp_path, mo
         assert opened, f"{sig} emit 이 {cls.__name__} 을(를) 열지 못했다(배선 부재)"
 
 
+def test_pool_register_overwrite_is_gated(qapp, tmp_path, monkeypatch):
+    """동명 데이터셋 등록은 확인 게이트를 거친다(ST-09) — 파이프라인 저장과 대칭.
+
+    ``_confirm_pool_overwrite``: 신규 이름은 즉시 통과, 동명은 ``confirm_destructive``
+    결과를 반영(취소=차단). VM.register_* 는 exists 무검사 save 라, 이 위젯 게이트가
+    유일한 무통보 덮어쓰기 방어다(durable 참조 소실 방지·confirm-or-alarm).
+    """
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    from hwpxfiller.core.dataset_pool import DatasetPoolRegistry
+    from hwpxfiller.gui import dataset_pool_panel as dpp
+
+    panel = dpp.DatasetPoolPanel(DatasetPoolRegistry(tmp_path / "pool"))
+    panel.vm.register_excel("공고자료", "C:/x/first.csv")
+    assert panel.vm.registry.exists("공고자료")
+
+    assert panel._confirm_pool_overwrite("다른이름") is True  # 신규 → 게이트 없이 통과
+    monkeypatch.setattr(dpp, "confirm_destructive", lambda *a, **k: False)
+    assert panel._confirm_pool_overwrite("공고자료") is False  # 동명+취소 → 차단
+    monkeypatch.setattr(dpp, "confirm_destructive", lambda *a, **k: True)
+    assert panel._confirm_pool_overwrite("공고자료") is True  # 동명+확정 → 진행 허용
+
+
 def test_template_manager_route_seeds_default_library_and_make_job(qapp, tmp_path, monkeypatch):
     """emit → 패널이 기본 라이브러리를 겨눔(RC-14) + '작업 만들기' → 템플릿 시드 에디터."""
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
