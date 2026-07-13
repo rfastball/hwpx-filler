@@ -251,18 +251,29 @@ class MatrixRunView(QMainWindow):
     def _running(self, value: bool) -> None:
         self._runner.running = value
 
+    def can_leave(self) -> bool:
+        """이탈 가드(ST-21 → SHELL_DESIGN D8) — run_view 와 동형: 진행 중이면 취소 확인.
+
+        수락 시 취소 요청+teardown 후 True(R4 — QThread 누수 방지). 창 닫기와 셸
+        페이지 전환이 공유하는 단일 이탈 경로다.
+        """
+        if not self._running:
+            return True
+        if not confirm_destructive(
+            self, "생성 중단",
+            "일괄 생성이 진행 중입니다 — 이 화면을 떠나면 남은 생성을 중단합니다.",
+            "중단하고 나가기",
+        ):
+            return False
+        self._runner.request_cancel()
+        self._runner.teardown()
+        return True
+
     def closeEvent(self, event) -> None:  # noqa: N802 — Qt 오버라이드
-        # 일괄 생성 진행 중 닫기 = 협조적 취소 확인(ST-21) — run_view 와 동형.
-        if self._running:
-            if not confirm_destructive(
-                self, "생성 중단",
-                "일괄 생성이 진행 중입니다 — 창을 닫으면 남은 생성을 중단합니다.",
-                "중단하고 닫기",
-            ):
-                event.ignore()
-                return
-            self._runner.request_cancel()
-            self._runner.teardown()
+        # 이탈 가드는 can_leave 로 단일화(D8) — 닫기는 그 위임 경로 중 하나.
+        if not self.can_leave():
+            event.ignore()
+            return
         save_geometry(self, "matrix")  # 세션 간 크기·위치 유지(ST-11)
         super().closeEvent(event)
 
