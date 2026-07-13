@@ -473,6 +473,22 @@ def test_app_controller_wires_all_home_routes_via_signal_emit(qapp, tmp_path, mo
         assert opened, f"{sig} emit 이 {cls.__name__} 을(를) 열지 못했다(배선 부재)"
 
 
+def test_app_controller_boots_single_window_shell_with_home_page(qapp, tmp_path, monkeypatch):
+    """단일창 셸 기동(ST-01, SHELL_DESIGN S3) — 홈이 셸 스택의 첫 페이지로 임베드된다.
+
+    홈은 더 이상 최상위 창이 아니다: 셸(레일+스택)이 유일한 창이고, 현재 위치는
+    current_key() 로 노출된다(레일 하이라이트의 테스트 seam).
+    """
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.app import AppController
+
+    ctrl = AppController(JobRegistry(tmp_path / "jobs"))
+    assert ctrl.shell.current_key() == "home"
+    assert ctrl.shell.stack.currentWidget() is ctrl.home
+    assert ctrl.home.parent() is not None  # 임베드됨 — 독립 창 아님
+
+
 def test_pool_register_overwrite_is_gated(qapp, tmp_path, monkeypatch):
     """동명 데이터셋 등록은 확인 게이트를 거친다(ST-09) — 파이프라인 저장과 대칭.
 

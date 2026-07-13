@@ -47,11 +47,21 @@ class AppController:
 
     def __init__(self, registry):
         from .home import JobListHome
+        from .shell import ShellWindow
 
         from ..core.mapping_base import MappingBaseRegistry, default_mapping_bases_dir
 
         self.registry = registry
+        # 단일창 셸(ST-01, SHELL_DESIGN): 홈은 페이지로 즉시 임베드(허브 = 기저선),
+        # 능력 페이지들은 라우트별 지연 factory 로 임베드한다(스테이지 순차 이관).
+        self.shell = ShellWindow()
+        self.shell.register_static("home", "대시보드", "작업 보관함 — 두 트랙 허브")
         self.home = JobListHome(registry)
+        self.shell.activate("home", factory=lambda: self.home)
+        # 레일 클릭 → 라우트 요청. 라우트 표는 스테이지 이관에 따라 자란다 — 미배선
+        # 키는 조용한 no-op 대신 KeyError(RC-04: 배선 어긋남은 기동 즉시 시끄럽게).
+        self._nav_routes: "dict[str, object]" = {"home": self.shell.go_home}
+        self.shell.nav_requested.connect(self._on_nav)
         # 공유 매핑 프로파일 레지스트리(J3) — 관리 화면·에디터가 공유(1회 저작 후 재사용).
         self.base_registry = MappingBaseRegistry(default_mapping_bases_dir())
         self._children: "list[object]" = []  # Qt GC 방지 — 자식 창 참조 유지
@@ -81,6 +91,10 @@ class AppController:
         self.home.manage_vocab_requested.connect(self._open_vocab_workbench)
 
     # ------------------------------------------------------------------ 라우팅
+    def _on_nav(self, key: str) -> None:
+        """레일 선택 → 라우트 디스패치(배선 소유는 컨트롤러 — 핸드오프 §0)."""
+        self._nav_routes[key]()  # 미배선 키 = KeyError (조용한 무시 금지)
+
     def _open_editor_new(self) -> None:
         from .job_editor import JobEditorWizard
 
@@ -336,7 +350,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     install_korean_translator(app)  # Qt 표준 문자열 한국어화(RC-27)
     controller = AppController(JobRegistry(default_jobs_dir()))
-    controller.home.show()
+    controller.shell.show()  # 단일창 셸 기동(ST-01) — 홈이 첫 페이지
     return app.exec()
 
 
