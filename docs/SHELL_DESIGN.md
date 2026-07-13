@@ -4,6 +4,9 @@
 중간)을 착지시키는 구조 리팩터의 설계서다. 이전 라운드가 창 수명(U3)·재사용 싱글턴(U5)을
 먼저 마감해 이 리팩터의 표면을 줄여 두었다.
 
+> **착지 완료(2026-07-13)** — S1~S7 전량, 최종 게이트 834 passed(+13 신규)·ruff·pyright.
+> 착지 기록은 §5 표. 이후 이 문서는 셸 계약(§1~§4·§6·§7)의 원장으로 산다.
+
 > **문제(ST-01):** `AppController` 의 7개 `_open_*` 가 능력마다 별도 최상위 창을 생성해
 > `win.show()` — 인-윈도 전환·복귀·현재 위치 표지가 없다(Nielsen H3/H4 · Fluent
 > NavigationView). `app.py` 모듈 docstring 이 임베드를 "후속 리팩터"로 자인해 온 상태.
@@ -76,20 +79,20 @@ class ShellWindow(QMainWindow):
 | `editor` | 존치 — 위저드는 여전히 창 |
 | `home` `run` `txt` `template` `pool` `matrix` `vocab` | **읽기·쓰기 중단**(코드에서 제거). INI 잔존은 무해 — 마이그레이션/청소 코드 발명 금지 |
 
-## 5. 스테이지 계획 (각 스테이지 = 커밋 1 + pytest 전체 게이트 + 앱 기동 가능)
+## 5. 스테이지 착지 기록 (각 스테이지 = 커밋 1 + pytest 전체 게이트 + 앱 기동 가능)
 
-| 스테이지 | 내용 |
-|---|---|
-| S1 | 이 설계 문서 (무접촉) |
-| S2 | 셸 골격+선행 정지작업(순가산, 앱 무전환): `shell.py`·`#navRail`·단축키 컨텍스트·run/matrix `can_leave()` 추출·`tests/test_shell.py` |
-| S3 | 홈 임베드 + 셸 기동(혼재: 홈만 페이지) |
-| S4 | 관리형 패널 4종 임베드(template/pool/vocab/matrix) |
-| S5 | run/txt 임베드 + 동적 레일 + dirty 이탈 게이트 |
-| S6 | 위저드 ApplicationModal + 싱글턴 장치 해체 |
-| S7 | 잔재 정리(죽은 `back_requested` 제거 등) + 문서/원장 착지 |
+| 스테이지 | 내용 | 커밋 | 게이트 |
+|---|---|---|---|
+| S1 | 이 설계 문서 (무접촉) | `e24e03d` | 821 |
+| S2 | 셸 골격+선행 정지작업(순가산, 앱 무전환): `shell.py`·`#navRail`·단축키 컨텍스트·run/matrix `can_leave()` 추출·`tests/test_shell.py`(7) | `515480d` | 828 |
+| S3 | 홈 임베드 + 셸 기동(혼재: 홈만 페이지) | `d628490` | 829 |
+| S4 | 관리형 패널 4종 임베드(template/pool/vocab/matrix) + matrix `refresh()` | `c239d49` | 831 |
+| S5 | run/txt 임베드 + 동적 레일 + dirty 이탈 게이트 + txt `refresh()` | `8259137` | 833 |
+| S6 | 위저드 ApplicationModal + 구 ST-10 싱글턴 장치 해체 | `cfc6dbf` | 834 |
+| S7 | 잔재 정리(죽은 `back_requested` 제거·docstring·핸드오프·원장 갱신) | (이 문서의 커밋) | 834 |
 
-혼재 스테이지(S3~S5)의 일부-창·일부-임베드 UX 어색함은 허용 — 각 스테이지가 게이트
-통과·기동 가능하며 커밋 메시지에 명시한다.
+혼재 스테이지(S3~S5)의 일부-창·일부-임베드 UX 어색함은 허용했다 — 각 스테이지가
+게이트 통과·기동 가능했고 커밋 메시지에 명시했다.
 
 ## 6. 테스트 영향
 

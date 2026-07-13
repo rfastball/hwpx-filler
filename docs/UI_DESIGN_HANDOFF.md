@@ -14,17 +14,20 @@
 ## 0. 전체 구조 — 오케스트레이터 + 라우팅 화면들
 
 핸드오프 시점 스캐폴드는 홈·에디터·실행 **3화면**이었다(§5 이음새표의 원형). 이후 화면들이
-착지해 현재 `AppController` 라우팅은 다음과 같다(`gui/app.py` 확인, 2026-07-12):
+착지해 현재 `AppController` 라우팅은 다음과 같다. **셸 리팩터(ST-01, `SHELL_DESIGN.md`,
+2026-07-13) 이후 라우팅 목적지는 별도 창이 아니라 단일창 셸(`gui/shell.py` `ShellWindow`
+= 좌 네비 레일 + QStackedWidget)의 페이지다** — 에디터 위저드만 애플리케이션 모달 창.
+라우팅 시그널 계약 자체는 불변이다.
 
 ```
 gui/app.py  AppController ──라우팅──┬─▶ home.JobListHome            (홈 = 투트랙 허브)
-   (QApplication, 자식창 수명 소유)   ├─▶ job_editor.JobEditorWizard  (작업 저작: 저장으로 끝)
-                                     ├─▶ run_view.RunView             (실행: 데이터 겨눠 생성)
+ (배선·수명 소유, 페이지는 ShellWindow ├─▶ job_editor.JobEditorWizard  (작업 저작 — 유일한 창·모달)
+  스택에 임베드)                      ├─▶ run_view.RunView             (실행: run 파라미터 슬롯)
                                      ├─▶ txt_view.TxtDraftView        (즉시 기안 txt — ADR H)
                                      ├─▶ template_manager.TemplateManagerPanel (템플릿 관리 — C5)
                                      ├─▶ dataset_pool_panel.DatasetPoolPanel   (데이터 풀 관리 — J1)
                                      ├─▶ matrix_view.MatrixRunView             (여러 작업 일괄 실행 — J2)
-                                     └─▶ vocab_workbench.VocabWorkbenchPanel   (어휘 워크벤치 — J3)
+                                     └─▶ vocab_workbench.VocabWorkbenchPanel   (매핑 프로파일 — J3)
 ```
 
 - **홈**이 오케스트레이터다(하나의 태스크가 아니라 능력 라우터).
@@ -58,11 +61,12 @@ gui/app.py  AppController ──라우팅──┬─▶ home.JobListHome       
 
 ---
 
-## 2. 홈 — `gui/home.py` `JobListHome(QMainWindow)`
+## 2. 홈 — `gui/home.py` `JobListHome(QWidget)`
 
 **스캐폴드가 고정:**
 - 생성자 `JobListHome(registry)`. `refresh()`가 `registry.names()`를 `self.list`(QListWidget)에 바인딩.
-- **네비게이션 시그널 계약**(app.py가 배선, 바꾸지 말 것):
+  (셸 리팩터로 QMainWindow→QWidget 페이지 강등 — 창 크롬은 셸 소유, 계약 무변.)
+- **네비게이션 시그널 계약**(app.py가 배선, 바꾸지 말 것 — 셸이 임베드하되 계약 불변):
   - `new_job_requested` (인자 없음)
   - `edit_job_requested(str)` · `run_job_requested(str)` · `delete_job_requested(str)` (작업 이름)
 - `selected_job_name()`, 선택 시 버튼 활성 토글(`_sync_buttons`).
@@ -95,7 +99,7 @@ gui/app.py  AppController ──라우팅──┬─▶ home.JobListHome       
 
 ---
 
-## 4. 실행 — `gui/run_view.py` `RunView(QMainWindow)`
+## 4. 실행 — `gui/run_view.py` `RunView(QWidget)` (셸 run 파라미터 슬롯 페이지)
 
 **스캐폴드가 고정:**
 - 생성자 `RunView(job, *, pool_registry=None, secret_store=None, nara_fetcher=None)`
@@ -107,7 +111,8 @@ gui/app.py  AppController ──라우팅──┬─▶ home.JobListHome       
 - 행 선택 = `RecordSelector`(`SelectionModel`) 재사용.
 - 사전검증 = `RunRequest.source_report()`(빠진 소스키=치명)·`output_report()`(빈 출력값=경고)를 표시만.
 - 생성 = `GenerateWorker`(백그라운드) + `RunRequest.mapped_records()`. 템플릿 부재 가드 있음.
-- 시그널: `run_finished(BatchResult)`, `back_requested()`.
+- 시그널: `run_finished(BatchResult)`. (죽은 `back_requested` 는 셸 리팩터 S7 에서 제거 —
+  복귀는 셸 레일이 담당.)
 
 **디자인이 채울 것:**
 - **소스-종류 선택기**: "새 데이터(신규)" vs "이전 출력 이어채우기(누적치환)". 엔진은 이미 지원

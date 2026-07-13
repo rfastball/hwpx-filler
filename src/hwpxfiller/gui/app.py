@@ -1,11 +1,13 @@
-"""GUI 진입점 — 작업(Job) 목록 홈을 기동하고 능력들을 라우팅한다.
+"""GUI 진입점 — 단일창 셸을 기동하고 능력 페이지들을 라우팅한다(ST-01, SHELL_DESIGN).
 
     python -m hwpxfiller.gui.app
 
-홈(:class:`~hwpxfiller.gui.home.JobListHome`)이 오케스트레이터다: 새 작업은 에디터
-(:class:`~hwpxfiller.gui.job_editor.JobEditorWizard`)로, 실행은 실행 화면
-(:class:`~hwpxfiller.gui.run_view.RunView`)으로 보낸다. 자식 창의 수명은 여기서 소유한다
-(Qt GC 방지). 초기엔 자식 창 — 임베드(QStackedWidget)는 후속 리팩터.
+셸(:class:`~hwpxfiller.gui.shell.ShellWindow`)이 유일한 최상위 창이다: 좌 네비 레일 +
+QStackedWidget 에 홈(:class:`~hwpxfiller.gui.home.JobListHome`)과 능력 페이지들
+(실행·즉시 기안·템플릿·데이터 풀·매핑 프로파일·일괄 실행)이 임베드된다. 에디터
+(:class:`~hwpxfiller.gui.job_editor.JobEditorWizard`)만 애플리케이션 모달 창(D3).
+배선(홈 시그널→라우트, 레일→라우트)과 인스턴스 수명은 :class:`AppController` 가
+소유한다 — 네비게이션 시그널 계약은 불변(UI_DESIGN_HANDOFF §0 고정 이음새).
 """
 
 from __future__ import annotations
@@ -43,7 +45,7 @@ def install_korean_translator(app) -> "QTranslator | None":
 
 
 class AppController:
-    """홈 + 자식 창들의 배선·수명 소유자. QApplication 과 분리해 테스트 가능."""
+    """셸 + 페이지·위저드의 배선·수명 소유자. QApplication 과 분리해 테스트 가능."""
 
     def __init__(self, registry):
         from .home import JobListHome

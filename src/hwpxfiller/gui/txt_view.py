@@ -10,7 +10,7 @@ from __future__ import annotations
 import html as _html
 import re
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -55,8 +55,6 @@ class TxtDraftView(QWidget):
     은닉 보존으로 템플릿·데이터 선택이 전환 후에도 유지된다(D6). 독립 생성(테스트)도
     계속 동작한다.
     """
-
-    back_requested = Signal()
 
     def __init__(self, registry: TextTemplateRegistry, parent=None, *,
                  pool_registry=None, secret_store=None, nara_fetcher=None):
