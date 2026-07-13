@@ -564,26 +564,22 @@ def test_wizard_discard_guard_confirms_when_mapping_confirmed(qapp, tmp_path, mo
     assert wiz._confirm_discard() is True  # 확정 → 폐기 허용
 
 
-def test_run_view_close_while_running_confirms(qapp, monkeypatch):
-    """생성 진행 중 창 닫기는 협조적 취소 확인을 거친다(ST-21) — 취소 시 창 유지."""
+def test_run_view_leave_while_running_confirms(qapp, monkeypatch):
+    """생성 진행 중 이탈(can_leave, SHELL_DESIGN D8)은 협조적 취소 확인을 거친다(ST-21).
+
+    거부 시 이탈 무산·생성 계속, 수락 시 취소 요청+teardown(R4 — QThread 누수 방지).
+    셸 페이지 전환·셸 닫기·run 슬롯 교체가 전부 이 단일 술어를 공유한다."""
     from hwpxfiller.core.job import Job
     from hwpxfiller.gui import run_view as rv
 
     view = rv.RunView(Job(name="실행중", template_path="/t.hwpx", filename_pattern="d-{{ID}}"))
     view._running = True
     monkeypatch.setattr(rv, "confirm_destructive", lambda *a, **k: False)
-
-    class _Ev:
-        def __init__(self):
-            self.ignored = False
-
-        def ignore(self):
-            self.ignored = True
-
-    ev = _Ev()
-    view.closeEvent(ev)
-    assert ev.ignored is True  # 확인 취소 → 닫기 무산
+    assert view.can_leave() is False  # 확인 취소 → 이탈 무산
     assert view._running is True  # 생성 계속(중단 안 함)
+    monkeypatch.setattr(rv, "confirm_destructive", lambda *a, **k: True)
+    assert view.can_leave() is True  # 수락 → 취소 요청+teardown
+    assert view._running is False
 
 
 def test_accessible_names_and_buddies_present(qapp, tmp_path, monkeypatch):
@@ -642,6 +638,48 @@ def test_managed_page_reentry_refreshes_and_moves_rail(qapp, tmp_path, monkeypat
     ctrl.home.manage_pool_requested.emit()  # 재진입 → refresh 1회
     assert ctrl.shell.current_key() == "pool"
     assert calls == [1]
+
+
+def test_run_route_embeds_and_replaces_in_run_slot(qapp, tmp_path, monkeypatch):
+    """실행 라우트가 run 파라미터 슬롯에 임베드된다(ST-01, SHELL_DESIGN §2) —
+    새 최상위 창 0개 · 같은 작업 재사용 · 다른 작업 교체."""
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    from hwpxfiller.core.job import Job, JobRegistry
+    from hwpxfiller.gui.app import AppController
+    from hwpxfiller.gui.run_view import RunView
+
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="보고서", template_path="/t.hwpx", filename_pattern="a-{{ID}}"))
+    reg.save(Job(name="계약서", template_path="/t.hwpx", filename_pattern="b-{{ID}}"))
+    ctrl = AppController(reg)
+    before = len(QApplication.topLevelWidgets())
+    ctrl.home.run_job_requested.emit("보고서")
+    assert ctrl.shell.current_key() == "run"
+    first = ctrl.shell.stack.currentWidget()
+    assert isinstance(first, RunView)
+    assert len(QApplication.topLevelWidgets()) == before  # 인-윈도 전환 — 새 창 없음
+    ctrl.home.run_job_requested.emit("보고서")  # 같은 작업 재요청 → 재사용
+    assert ctrl.shell.stack.currentWidget() is first
+    ctrl.home.run_job_requested.emit("계약서")  # 다른 작업 → 슬롯 교체
+    second = ctrl.shell.stack.currentWidget()
+    assert isinstance(second, RunView)
+    assert second is not first
+    assert second.job.name == "계약서"
+
+
+def test_txt_page_state_preserved_across_navigation(qapp, tmp_path, monkeypatch):
+    """txt 페이지 은닉 보존(SHELL_DESIGN D6) — 전환 후 복귀해도 같은 인스턴스."""
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.app import AppController
+
+    ctrl = AppController(JobRegistry(tmp_path / "jobs"))
+    ctrl.home.new_txt_requested.emit()
+    assert ctrl.shell.current_key() == "txt"
+    txt = ctrl.shell.stack.currentWidget()
+    ctrl.shell.go_home()
+    ctrl.home.new_txt_requested.emit()  # 복귀 — 새 인스턴스 아님(상태 보존)
+    assert ctrl.shell.stack.currentWidget() is txt
 
 
 def test_matrix_page_leave_while_running_gated(qapp, tmp_path, monkeypatch):

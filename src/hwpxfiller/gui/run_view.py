@@ -27,7 +27,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMainWindow,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -50,12 +49,17 @@ from .flow_layout import FlowLayout
 from .record_select import RecordSelector
 from .run_state import GenerationPlan, RunViewModel
 from .style import BASE_QSS, ContrastProgressBar, mark
-from .view_helpers import ElidedLabel, restore_geometry, save_geometry, wire_submit_shortcut
+from .view_helpers import ElidedLabel, wire_submit_shortcut
 from .worker import GenerateWorker
 
 
-class RunView(QMainWindow):
-    """작업 1건을 실행 — 데이터 겨눔 → 행 선택 → 사전검증 → 생성."""
+class RunView(QWidget):
+    """작업 1건을 실행 — 데이터 겨눔 → 행 선택 → 사전검증 → 생성.
+
+    셸 페이지(ST-01, SHELL_DESIGN §2) — run 파라미터 슬롯에 산다: 같은 작업 재요청은
+    재사용, 다른 작업은 :meth:`can_leave`(실행 중 확인, D8·R4) 경유 교체. 창 크롬은
+    셸이 소유. 독립 생성(테스트)도 계속 동작한다.
+    """
 
     run_finished = Signal(object)  # BatchResult
     back_requested = Signal()
@@ -79,7 +83,6 @@ class RunView(QMainWindow):
         self._marked_fields: "list[str]" = []  # 이번 생성에서 미입력 표시가 들어간 필드(결과 요약용)
 
         self.setWindowTitle(f"HWPX Filler — 실행: {job.name}")
-        restore_geometry(self, "run", default_size=(760, 680))  # ST-11
         self.setStyleSheet(BASE_QSS)
         # 폼이 세로로 길다 — 창을 줄이면 위젯이 찌그러지지 않고 스크롤되도록 QScrollArea 로 감싼다.
         central = QWidget()
@@ -220,7 +223,9 @@ class RunView(QMainWindow):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
         scroll.setWidget(central)
-        self.setCentralWidget(scroll)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(scroll)
 
         # ---- 공용 실행 계층(RC-22) — QThread 수명주기·데이터 겨눔은 매트릭스와 공유 ----
         self._runner = BatchRunController(
@@ -303,14 +308,6 @@ class RunView(QMainWindow):
         self._runner.request_cancel()
         self._runner.teardown()
         return True
-
-    def closeEvent(self, event) -> None:  # noqa: N802 — Qt 오버라이드
-        # 이탈 가드는 can_leave 로 단일화(D8) — 닫기는 그 위임 경로 중 하나.
-        if not self.can_leave():
-            event.ignore()
-            return
-        save_geometry(self, "run")  # 세션 간 크기·위치 유지(ST-11)
-        super().closeEvent(event)
 
     @property
     def _data_thread(self):
