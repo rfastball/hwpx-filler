@@ -20,6 +20,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
@@ -304,3 +306,22 @@ def wire_submit_shortcut(win, button) -> None:
             button.click()
 
     QShortcut(QKeySequence("Ctrl+Return"), win, _fire)
+
+
+# ---------------------------------------------------------- ST-16: 동기 작업 대기 커서
+@contextlib.contextmanager
+def busy_cursor():
+    """무거운 동기 작업 동안 대기 커서를 표시한다(ST-16, Nielsen H1 — 상태 가시성).
+
+    1초 초과 가능 동기 IO(HWPX 재파싱·스키마 추출·컴파일·드리프트)를 이 컨텍스트로 감싸면
+    UI 가 응답 없음처럼 얼어도 최소한 '처리 중' 신호가 뜬다. 예외가 나도 커서를 반드시
+    복원한다(finally). 무거운 작업의 백그라운드 오프로드는 후속(worker 이식) 대상이다.
+    """
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+    try:
+        yield
+    finally:
+        QApplication.restoreOverrideCursor()

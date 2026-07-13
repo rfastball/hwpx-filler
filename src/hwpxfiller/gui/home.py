@@ -33,6 +33,7 @@ from .style import BASE_QSS, SPACE_MD, SPACE_XS, mark
 from .view_helpers import (
     ElidedLabel,
     build_empty_state,
+    busy_cursor,
     hide_item_text,
     resync_card_item_heights,
     restore_geometry,
@@ -385,7 +386,8 @@ class JobListHome(QMainWindow):
     # ------------------------------------------------------------- 렌더
     def refresh(self) -> None:
         """배선(app.py)이 저장·삭제·실행 후 호출 → 뷰모델 재적재 → _render 통지."""
-        self.vm.refresh()
+        with busy_cursor():  # 템플릿 전수 재파싱(compile 상태) 동안 대기 커서(ST-16)
+            self.vm.refresh()
 
     def _render(self) -> None:
         # KPI

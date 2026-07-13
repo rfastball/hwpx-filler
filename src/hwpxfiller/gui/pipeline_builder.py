@@ -277,7 +277,10 @@ class PipelineBuilderDialog(QDialog):
         self.lbl_error.show()
 
     def _on_preview(self) -> None:
-        result = self.vm.preview()
+        from .view_helpers import busy_cursor
+
+        with busy_cursor():  # 조립 미리보기(소스 로드·나라 서브소스 네트워크 포함, ST-16)
+            result = self.vm.preview()
         if not result.ok:
             self._preview_shown = False  # 실패한 미리보기는 신선한 스냅샷이 아니다
             mark(self.lbl_error, "level", "danger")  # 무효화 경고(warn)에서 오류(danger)로 복원

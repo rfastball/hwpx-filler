@@ -47,6 +47,7 @@ from .mapping_state import (
 )
 from .mapping_table import MappingTable
 from .style import mark
+from .view_helpers import busy_cursor
 
 # 요약 라벨에 나열할 필드 이름 최대 개수(넘치면 말줄임).
 _SUMMARY_MAX_FIELDS = 12
@@ -141,7 +142,8 @@ class TemplatePage(QWizardPage):
         self.btn_compile.setVisible(False)
         self.btn_ack.setVisible(False)
         try:
-            schema = extract_schema(path)
+            with busy_cursor():  # HWPX 스키마 추출 동안 대기 커서(ST-16)
+                schema = extract_schema(path)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "오류", f"템플릿 스키마 추출 실패:\n{exc}")
             self.lbl_summary.setText("")
@@ -475,9 +477,10 @@ class DataPage(QWizardPage):
             return
         wiz = self.wizard()
         try:
-            source = source_for_path(path)
-            fields = source.fields()
-            records = source.records()
+            with busy_cursor():  # 데이터 소스 로드·읽기 동안 대기 커서(ST-16)
+                source = source_for_path(path)
+                fields = source.fields()
+                records = source.records()
         except Exception as exc:  # noqa: BLE001
             # 실패 시 뷰·세션을 원자적으로 정렬해 옛 데이터가 매핑을 조용히 구동하지
             # 않게 한다(UD-08). 시도 경로는 보여주되 세션은 비운다.

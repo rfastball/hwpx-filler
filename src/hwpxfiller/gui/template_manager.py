@@ -39,6 +39,7 @@ from .style import BASE_QSS, mark
 from .template_manager_state import TemplateManagerViewModel, TemplateRow
 from .view_helpers import (
     ElidedLabel,
+    busy_cursor,
     hide_item_text,
     restore_geometry,
     resync_card_item_heights,
@@ -192,7 +193,8 @@ class TemplateManagerPanel(QMainWindow):
 
     # ------------------------------------------------------------- 렌더
     def refresh(self) -> None:
-        self.vm.refresh()
+        with busy_cursor():  # 라이브러리 템플릿 재파싱(compile 상태) 동안 대기 커서(ST-16)
+            self.vm.refresh()
 
     def _show_result(self, line) -> None:
         """결과 문구 + 심각도 마킹(UD-07) — VM(링1)이 파생한 level 을 그대로 렌더한다.
@@ -279,7 +281,8 @@ class TemplateManagerPanel(QMainWindow):
 
     def _on_compile(self, path: str) -> None:
         """CLI 2단계 미러 — 스캔 미리보기(dry-run) → 사용자 확인 시에만 적용·저장."""
-        preview = self.vm.scan_preview(path)
+        with busy_cursor():  # HWPX 스캔(ST-16)
+            preview = self.vm.scan_preview(path)
         lines = [preview.summary(), ""]
         for s in preview.compilable:
             lines.append(f"+ {s.name}")
@@ -295,16 +298,19 @@ class TemplateManagerPanel(QMainWindow):
             self, "누름틀 변환 미리보기 → 적용", "\n".join(lines), "누름틀 변환 적용"
         ):
             return  # dry-run 만 — 확인 없으면 변형 없음
-        report = self.vm.apply_fieldize(path)
+        with busy_cursor():  # 제자리 변환·저장(ST-16)
+            report = self.vm.apply_fieldize(path)
         self._show_result(self.vm.format_compile_result(path, report))
 
     def _on_review(self, path: str) -> None:
-        self._show_result(self.vm.format_lint_result(path, self.vm.lint(path)))
+        with busy_cursor():  # lint HWPX 파싱(ST-16)
+            result = self.vm.lint(path)
+        self._show_result(self.vm.format_lint_result(path, result))
 
     def _on_preview(self, path: str) -> None:
-        self._show_result(
-            self.vm.format_preview_result(path, self.vm.filled_values(path))
-        )
+        with busy_cursor():  # 필드 값 읽기 HWPX 파싱(ST-16)
+            values = self.vm.filled_values(path)
+        self._show_result(self.vm.format_preview_result(path, values))
 
     def _on_drift(self) -> None:
         old, _ = QFileDialog.getOpenFileName(self, "이전 판본 HWPX", "", HWPX_FILTER)
@@ -316,6 +322,6 @@ class TemplateManagerPanel(QMainWindow):
         self._run_action("드리프트", new, lambda: self._do_drift(old, new))
 
     def _do_drift(self, old: str, new: str) -> None:
-        self._show_result(
-            self.vm.format_drift_result(old, new, self.vm.drift(old, new))
-        )
+        with busy_cursor():  # 두 판본 스키마 파싱·비교(ST-16)
+            result = self.vm.drift(old, new)
+        self._show_result(self.vm.format_drift_result(old, new, result))

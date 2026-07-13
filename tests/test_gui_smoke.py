@@ -621,6 +621,38 @@ def test_keyboard_affordances_present(qapp, tmp_path, monkeypatch):
     assert "F5" in seqs  # F5 → refresh
 
 
+def test_busy_cursor_sets_and_restores(qapp):
+    """무거운 동기 작업 동안 대기 커서를 표시하고, 예외에도 반드시 복원한다(ST-16)."""
+    from PySide6.QtWidgets import QApplication
+
+    from hwpxfiller.gui.view_helpers import busy_cursor
+
+    assert QApplication.overrideCursor() is None
+    with busy_cursor():
+        assert QApplication.overrideCursor() is not None
+    assert QApplication.overrideCursor() is None
+    try:
+        with busy_cursor():
+            raise RuntimeError("boom")
+    except RuntimeError:
+        pass
+    assert QApplication.overrideCursor() is None  # finally 복원
+
+
+def test_nara_progress_visible_only_while_busy(qapp):
+    """나라 취득 진행바는 취득 중에만 보인다(ST-17)."""
+    from hwpxfiller.data.secret_store import NARA_SERVICE_KEY_NAME, MemorySecretStore
+    from hwpxfiller.gui.nara_view import NaraAcquireDialog
+
+    store = MemorySecretStore({NARA_SERVICE_KEY_NAME: "K"})
+    dlg = NaraAcquireDialog(store=store, fetcher=lambda url: b"")
+    assert dlg.progress.isVisibleTo(dlg) is False  # 초기 숨김
+    dlg._set_busy(True)
+    assert dlg.progress.isVisibleTo(dlg) is True
+    dlg._set_busy(False)
+    assert dlg.progress.isVisibleTo(dlg) is False
+
+
 def test_template_manager_route_seeds_default_library_and_make_job(qapp, tmp_path, monkeypatch):
     """emit → 패널이 기본 라이브러리를 겨눔(RC-14) + '작업 만들기' → 템플릿 시드 에디터."""
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))

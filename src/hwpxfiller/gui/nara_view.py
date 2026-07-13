@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
@@ -79,6 +80,13 @@ class NaraAcquireDialog(QDialog):
         self.lbl_result = QLabel("")
         self.lbl_result.setWordWrap(True)
         root.addWidget(self.lbl_result)
+        # 취득 진행 표시(ST-17, Nielsen H1): 불확정 진행바 — 라벨 한 줄만으론 네트워크가
+        # 도는지 멈췄는지 구별 안 돼 반복 클릭·창 닫기를 유발했다. 취득 중에만 노출한다.
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 0)  # 불확정(indeterminate) 애니메이션
+        self.progress.setTextVisible(False)
+        self.progress.hide()
+        root.addWidget(self.progress)
         root.addStretch(1)
 
         # 확인(취득 성공 후에만) / 취소.
@@ -392,6 +400,7 @@ class NaraAcquireDialog(QDialog):
         ):
             w.setEnabled(not busy)
         self.btn_stop.setEnabled(busy)
+        self.progress.setVisible(busy)  # 진행바는 취득 중에만(ST-17)
         if busy:
             self._ok_button().setEnabled(False)
         else:
