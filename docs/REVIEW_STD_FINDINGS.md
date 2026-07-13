@@ -9,7 +9,11 @@
 > **실행(2026-07-13)**: 병렬 오케스트레이션(에이전트 47) — 리뷰어 10(전역 3: nav·IA /
 > WCAG 접근성 / Windows 플랫폼 + 화면 7: Nielsen 휴리스틱, 앱 A 포함) → 원발견 83 →
 > 상관 병합 35 → 적대 검증(반증 4축) → **확정 23 · ADR정당화 2 · 기각 10**.
-> 대상: 앱 B(`src/hwpxfiller/gui/`) 전 화면 + 앱 A(`src/hwpxdiff/`). **조치는 전건 대기.**
+> 대상: 앱 B(`src/hwpxfiller/gui/`) 전 화면 + 앱 A(`src/hwpxdiff/`).
+>
+> **조치 완료(2026-07-13): 착지 20 · 후속 1(ST-01 셸) · 보류 1(ST-14) · 재분류 1(ST-33).**
+> 유닛 U1~U8 · 6스테이지 직렬 착지(각 스테이지 ruff·pyright·pytest 통과, 최종 821 passed).
+> 착지 기록은 아래 "스테이지 착지 기록" 절.
 
 ---
 
@@ -17,29 +21,29 @@
 
 | ID | 판정 | 심각도 | 차원 | 화면 | 표준 근거 | 제목 | 상태 |
 |---|---|---|---|---|---|---|---|
-| ST-03 | 확정 | **높음** | a11y | 전역 QSS | WCAG 2.4.7 | 포커스 표시가 QLineEdit/QPlainTextEdit 에만 — 버튼·체크박스·콤보·라디오·리스트 포커스 비가시 | 대기 |
-| ST-04 | 확정 | **높음** | a11y | 전 화면 | WCAG 1.4.3 | MUTED(#7a7f87) 소형 텍스트 대비 4.0/3.76:1 — 4.5:1 미달 (systemic) | 대기 |
-| ST-08 | 확정 | **높음** | heuristic | 저작 위저드 | Nielsen H5/H3 | 위저드 닫기(X/취소/Esc)가 진행 중 저작을 무확인 폐기 | 대기 |
-| ST-09 | 확정 | **높음** | heuristic | 데이터 풀 | Nielsen H5·confirm-or-alarm | 풀 등록이 동명 데이터셋을 무확인·무경고 덮어쓰기 | 대기 |
-| ST-01 | 확정 | 중간 | nav-ia | 전역 창 모델 | Nielsen H3/H4·Fluent | 능력마다 별도 최상위 창 — 인-윈도 네비게이션 부재 | 대기 |
-| ST-06 | 확정 | 중간 | a11y | txt 기안 | WCAG 4.1.2/1.1.1 | 아이콘 전용 ◀/▶ 버튼 접근가능 이름 부재 | 대기 |
-| ST-07 | 확정 | 중간 | a11y | 저장·txt·나라 | WCAG 1.3.1/4.1.2/3.3.2 | 폼 라벨-입력 프로그램적 연결(setBuddy) 누락 (systemic) | 대기 |
-| ST-10 | 확정 | 중간 | nav-ia | 전역 라우팅 | Nielsen H4·Windows | 중복 창 무제한 생성 + 동일 제목 + 편집기 저장 경합 | 대기 |
-| ST-15 | 확정 | 중간 | a11y | 레코드·매핑 체크박스 | WCAG 2.5.8 | 체크박스 클릭 타깃 15px — 24px 최소 미달 | 대기 |
-| ST-16 | 확정 | 중간 | heuristic | 홈·위저드·템플릿·파이프라인 | Nielsen H1 | 장시간 동기 IO 가 UI 스레드 무피드백 실행 → 프리즈 (systemic) | 대기 |
-| ST-05 | 확정 | 낮음 | a11y | 레코드 체크박스 | WCAG 1.4.11 | 인디케이터 테두리(#adb3bb) 대비 2.1:1 — 3:1 미달 | 대기 |
-| ST-11 | 확정 | 낮음 | platform | 전 최상위 창 | Windows·H4 | 창 크기·위치·최대화 세션 간 미지속 (systemic) | 대기 |
-| ST-12 | 확정 | 낮음 | a11y | 전 화면 | WCAG 2.1.1·H7 | 키보드 니모닉·가속기·기본버튼 전무 (systemic) | 대기 |
-| ST-14 | 확정 | 낮음 | platform | 전역 QSS | Windows·WCAG 1.4.3 | 고정 hex 팔레트가 Windows 고대비(Forced Colors) 무시 | 대기 |
-| ST-17 | 확정 | 낮음 | heuristic | 나라·풀 복원 | Nielsen H1 | 백그라운드 네트워크 중 진행 인디케이터 부재 | 대기 |
-| ST-18 | 확정 | 낮음 | a11y | 나라·매트릭스·풀·txt | WCAG 4.1.3 | 동적 상태 메시지가 보조기술에 미통지 (systemic) | 대기 |
-| ST-20 | 확정 | 낮음 | heuristic | 위저드·템플릿·txt·diff | Nielsen H9·WCAG 3.3.3 | 오류 다이얼로그가 원시 예외 str(exc) 노출 (systemic) | 대기 |
-| ST-21 | 확정 | 낮음 | heuristic | 실행·매트릭스 | Nielsen H3/H5 | 생성 진행 중 창 닫기 확인·취소 가드 없음 | 대기 |
-| ST-22 | 확정 | 낮음 | heuristic | 실행 게이트 | Nielsen H2 | 사용자 대면 문구에 개발자 용어 '드리프트' 노출 | 대기 |
-| ST-26 | 확정 | 낮음 | heuristic | 전 화면 | Nielsen H10 | 도메인 용어·복잡 개념에 도움말·툴팁·진입점 부재 (systemic) | 대기 |
-| ST-30 | 확정 | 낮음 | heuristic | 나라 취득 | Nielsen H8 | '다시 시도'가 '가져오기'와 동일 동작 — 중복 컨트롤 | 대기 |
-| ST-33 | 확정 | 낮음 | heuristic | diff 판본 선택 | Nielsen H5 | 구판=신판 동일 파일 선택 가드 없음 | 대기 |
-| ST-34 | 확정 | 낮음 | heuristic | diff 최근 비교 | Nielsen H6 | 최근 비교가 basename 만 표시 — 동명 파일 구별 불가 | 대기 |
+| ST-03 | 확정 | **높음** | a11y | 전역 QSS | WCAG 2.4.7 | 포커스 표시가 QLineEdit/QPlainTextEdit 에만 — 버튼·체크박스·콤보·라디오·리스트 포커스 비가시 | 착지(b46fbf4) |
+| ST-04 | 확정 | **높음** | a11y | 전 화면 | WCAG 1.4.3 | MUTED(#7a7f87) 소형 텍스트 대비 4.0/3.76:1 — 4.5:1 미달 (systemic) | 착지(b46fbf4) |
+| ST-08 | 확정 | **높음** | heuristic | 저작 위저드 | Nielsen H5/H3 | 위저드 닫기(X/취소/Esc)가 진행 중 저작을 무확인 폐기 | 착지(2a9a864) |
+| ST-09 | 확정 | **높음** | heuristic | 데이터 풀 | Nielsen H5·confirm-or-alarm | 풀 등록이 동명 데이터셋을 무확인·무경고 덮어쓰기 | 착지(7d5a810) |
+| ST-01 | 확정 | 중간 | nav-ia | 전역 창 모델 | Nielsen H3/H4·Fluent | 능력마다 별도 최상위 창 — 인-윈도 네비게이션 부재 | 후속(셸 라운드) |
+| ST-06 | 확정 | 중간 | a11y | txt 기안 | WCAG 4.1.2/1.1.1 | 아이콘 전용 ◀/▶ 버튼 접근가능 이름 부재 | 착지(7838c96) |
+| ST-07 | 확정 | 중간 | a11y | 저장·txt·나라 | WCAG 1.3.1/4.1.2/3.3.2 | 폼 라벨-입력 프로그램적 연결(setBuddy) 누락 (systemic) | 착지(7838c96) |
+| ST-10 | 확정 | 중간 | nav-ia | 전역 라우팅 | Nielsen H4·Windows | 중복 창 무제한 생성 + 동일 제목 + 편집기 저장 경합 | 착지(7ba56dd) |
+| ST-15 | 확정 | 중간 | a11y | 레코드·매핑 체크박스 | WCAG 2.5.8 | 체크박스 클릭 타깃 15px — 24px 최소 미달 | 착지(b46fbf4) |
+| ST-16 | 확정 | 중간 | heuristic | 홈·위저드·템플릿·파이프라인 | Nielsen H1 | 장시간 동기 IO 가 UI 스레드 무피드백 실행 → 프리즈 (systemic) | 착지(7b3e68c) |
+| ST-05 | 확정 | 낮음 | a11y | 레코드 체크박스 | WCAG 1.4.11 | 인디케이터 테두리(#adb3bb) 대비 2.1:1 — 3:1 미달 | 착지(b46fbf4) |
+| ST-11 | 확정 | 낮음 | platform | 전 최상위 창 | Windows·H4 | 창 크기·위치·최대화 세션 간 미지속 (systemic) | 착지(2a9a864) |
+| ST-12 | 확정 | 낮음 | a11y | 전 화면 | WCAG 2.1.1·H7 | 키보드 니모닉·가속기·기본버튼 전무 (systemic) | 착지(7ba56dd) |
+| ST-14 | 확정 | 낮음 | platform | 전역 QSS | Windows·WCAG 1.4.3 | 고정 hex 팔레트가 Windows 고대비(Forced Colors) 무시 | 보류(헤드리스 검증불가·리스크) |
+| ST-17 | 확정 | 낮음 | heuristic | 나라·풀 복원 | Nielsen H1 | 백그라운드 네트워크 중 진행 인디케이터 부재 | 착지(7b3e68c) |
+| ST-18 | 확정 | 낮음 | a11y | 나라·매트릭스·풀·txt | WCAG 4.1.3 | 동적 상태 메시지가 보조기술에 미통지 (systemic) | 착지(7838c96) |
+| ST-20 | 확정 | 낮음 | heuristic | 위저드·템플릿·txt·diff | Nielsen H9·WCAG 3.3.3 | 오류 다이얼로그가 원시 예외 str(exc) 노출 (systemic) | 착지(6f209fc) |
+| ST-21 | 확정 | 낮음 | heuristic | 실행·매트릭스 | Nielsen H3/H5 | 생성 진행 중 창 닫기 확인·취소 가드 없음 | 착지(2a9a864) |
+| ST-22 | 확정 | 낮음 | heuristic | 실행 게이트 | Nielsen H2 | 사용자 대면 문구에 개발자 용어 '드리프트' 노출 | 착지(6f209fc) |
+| ST-26 | 확정 | 낮음 | heuristic | 전 화면 | Nielsen H10 | 도메인 용어·복잡 개념에 도움말·툴팁·진입점 부재 (systemic) | 착지(6f209fc) |
+| ST-30 | 확정 | 낮음 | heuristic | 나라 취득 | Nielsen H8 | '다시 시도'가 '가져오기'와 동일 동작 — 중복 컨트롤 | 착지(6f209fc) |
+| ST-33 | 확정→재분류 | 낮음 | heuristic | diff 판본 선택 | Nielsen H5 | 구판=신판 동일 파일 선택 가드 없음 | 재분류(RC-32 충돌·부록 D) |
+| ST-34 | 확정 | 낮음 | heuristic | diff 최근 비교 | Nielsen H6 | 최근 비교가 basename 만 표시 — 동명 파일 구별 불가 | 착지(6f209fc) |
 | ST-27 | **ADR정당화** | (low) | heuristic | 삭제·제자리 변환 | Nielsen H3 → ADR-E | 파괴적 삭제·변환에 undo/휴지통 없이 확인 게이트만 | 제외(부록) |
 | ST-28 | **ADR정당화** | (low) | heuristic | 실행 사전검증 | Nielsen H9 → ADR-L | 비차단 조건(missing_columns)에 '[치명]' 어휘 | 제외(부록) |
 | ST-02 | 기각 | — | nav-ia | 자식 창 exit | — | 상시 home 앵커라 창닫기=비파괴 복귀; 잔여=죽은 back_requested(코드위생) | 기각 |
@@ -54,6 +58,33 @@
 | ST-35 | 기각 | — | heuristic | diff 스플리터 | — | QSplitterHandle 이 hover SplitHCursor 어포던스 제공(캡처 미검증) | 기각 |
 
 **확정 23** (높음 4 · 중간 6 · 낮음 13) · **ADR정당화 2** · **기각 10** · critical 0.
+
+---
+
+## 스테이지 착지 기록 (2026-07-13)
+
+앞선 두 라운드(U1~U12, V1~V15)의 방식 계승 — 직교 유닛 · 유닛별 커밋 · 스테이지별 통합
+게이트. 기존 안전 패턴(`confirm_destructive`·`QProgressBar`·`QFormLayout` 버디·
+`design_tokens` 단일출처)의 수평 전개가 처방 골자. **최종 게이트 821 passed**(직전 809 대비
++12 신규 회귀 테스트).
+
+| 유닛 | 커밋 | 착지 | 요지 |
+|---|---|---|---|
+| U1 시각/토큰 | `b46fbf4` | ST-03·04·05·15 | :focus outline · MUTED/테두리 대비 · 인디케이터 24px. 신규 대비 계약 가드 |
+| U2 풀 게이트 | `7d5a810` | ST-09 | 풀 등록 exists→confirm_destructive(파이프라인 게이트 복제) |
+| U3 창 수명 | `2a9a864` | ST-08·11·21 | 창당 단일 closeEvent(가드→지오메트리). QSettings INI(HWPXFILLER_HOME 격리) |
+| U4 접근성 | `7838c96` | ST-06·07·18 | accessibleName·setBuddy·announce_status(QAccessible Alert) |
+| U5 재사용·키보드 | `7ba56dd` | ST-10·12 | 능력별 싱글턴 · F5/Ctrl+Return/니모닉 |
+| U6 상태 가시성 | `7b3e68c` | ST-16·17 | busy_cursor 컨텍스트 · 나라 불확정 진행바 |
+| U7/U8 마감 | `6f209fc` | ST-20·22·26·30·34 | describe_exception/show_error · 용어 · 툴팁 · 재시도 컨텍스트 · diff 경로 툴팁 |
+
+**보류·후속·재분류(3):**
+- **ST-01**(중간) — 다중창→단일창 셸 리팩터는 **별도 전용 라운드**(설계부터). 이 라운드가
+  창 수명(U3)·재사용(U5)을 먼저 마감해 셸 리팩터 표면을 줄였다.
+- **ST-14**(낮음) — 고대비/Forced Colors 정확 처리는 **헤드리스 검증 불가 + 리스크**이고
+  기본 팔레트가 이미 AA(검증 시 low 강등)라 이 라운드에서 보류. 재개 시 취약 토큰
+  (MUTED·테두리)부터 palette 경로 최소 도입.
+- **ST-33**(낮음) — 아래 부록 D 참조.
 
 ---
 
@@ -205,3 +236,15 @@ ST-02·ST-13·ST-19·ST-23·ST-24·ST-25·ST-29·ST-31·ST-32·ST-35. 상세 반
 존재하는 텍스트/어휘/커서 신호 미인지(ST-13·19·29·32·35), ③ 외부 표준 오귀속(H7↔발견성,
 Fluent 메뉴바 관행 — ST-24·25), ④ 네트워크 이전 fail-closed 검증 미인지(ST-23), ⑤ ADR
 반대 처방(ST-31: 빈 상태 CTA 가 ADR-E/H loud-missing 은폐).
+
+## 부록 C — ST-33 재분류 (조치 중 발견)
+
+**ST-33**(diff 구판=신판 동일 파일 가드)은 조치 착수 시 **RC-32 와 충돌**함이 드러나
+재분류했다(반영 커밋 `6f209fc`). 동일 파일 비교를 차단하는 경고 모달을 넣었으나,
+`hwpxdiff` 는 이미 **RC-32** 로 변경 0건을 `NO_CHANGES_MESSAGE`(명시 문장)+KPI(0/0/0/0)로
+**정직하게 확정**한다(조용한 오도 없음 — 회귀 테스트 `test_diff_zero_changes_shows_shared_
+no_changes_copy` 가 같은 파일 비교의 이 흐름을 고정). 즉 발견이 우려한 '무의미 비교가 조용히
+확정'은 RC-32 가 이미 완화했고, 별도 차단 가드는 그 의도된 zero-changes 흐름과 정면 충돌한다.
+→ 가드 철회, 발견을 **기각 계열(기존 설계로 완화)** 로 재분류. ST-34(최근 비교 경로 툴팁)는
+충돌 없어 착지. **교훈**: 소스 기반 리뷰가 놓친 인접 결정(RC-32)은 조치 착수(코드 접촉) 시
+드러난다 — 검증 단계에 회귀 코퍼스 대조를 더 실으면 조기 포착 가능.
