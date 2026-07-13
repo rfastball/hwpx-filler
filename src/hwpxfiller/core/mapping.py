@@ -1,16 +1,20 @@
 """매핑 계층 — 소스 레코드(DataSource) → 템플릿 필드 값. 취득과 문서생성 사이의 불변 계층.
 
 취득(Excel/API/크롤)이 아무리 좋아져도 "어떤 소스 키를 어떤 템플릿 필드에 어떤 alias·
-변환으로 꽂을지"는 사람이 관리한다. 그 결정을 재사용 가능한 영속 산출물(**프로파일**)로
+유형으로 꽂을지"는 사람이 관리한다. 그 결정을 재사용 가능한 영속 산출물(**프로파일**)로
 고정한다. 같은 소스 스키마면 프로파일 1회 저작 후 영구 재사용(API/크롤의 결정적 이득).
 
-실데이터(공공 API 등)가 드러낸 3요구를 담는다:
+**엄격한 1:1 계약.** 한 템플릿 필드는 정확히 한 소스 키에서 값을 취한다(N→1 결합·sep
+없음). 날짜+시각처럼 예전에 두 키를 합치던 자리는 이제 소스가 이미 합쳐진 단일 키를
+제공하거나(권장), 각각 별도 필드로 매핑한다. 결합 계층을 제거해 모델을 단순·검증가능하게
+유지한다.
+
+실데이터(공공 API 등)가 드러낸 요구를 담는다:
   1. **alias** — 소스 키가 영문코드라 한글 템플릿 필드명과 직접 안 맞음(소스가
      자기 어휘를 ``field_labels()`` 로 선언하면 퍼지 타겟이 된다 — 코어는 어휘-불가지).
-  2. **N→1 합성** — 한 템플릿 필드가 여러 소스 키에서(날짜 키 + 시각 키 → 일시 필드).
-  3. **값 변환** — 숫자→금액서식, 날짜 결합·서식.
+  2. **값 유형** — 숫자→금액서식, 날짜/시각 서식, 상수 리터럴.
 
-그래서 프로파일은 ``{템플릿필드: {sources:[...], transform}}`` 형태다(단순 1:1 dict 불가).
+그래서 프로파일은 ``{템플릿필드: {source, type, fmt, const}}`` 형태다.
 
 **명시성 원칙**([[hwpx-filler-scope]]): ``suggest_mappings`` 는 퍼지 초안 제안일 뿐,
 사람이 확정·수정한다. 자동으로 몰래 꽂지 않는다.
@@ -31,89 +35,78 @@ from hwpxcore.atomic import write_text_atomic
 # GUI 가 선택된 소스의 라벨을 ``suggest_mappings(..., aliases=...)`` 로 주입한다.
 # 코어는 어휘-불가지: ``aliases`` 는 아래 서명에서 순수 범용 인자다.
 
-# 지원 변환 종류. 이 중 amount/datetime 은 **결합(N→1) 후 표시형 서식**을 교체 가능한
-# core/format_engine 에 위임한다(join/const 는 매핑 고유 결합자).
-# 사용자 편집 가능한 값 변환만. ``blank`` 는 empty-confirmed 행의 내부 영속 마커라
-# 공용 UI 목록에 노출하지 않는다.
-TRANSFORMS = ("join", "datetime", "amount", "const")
+# 지원 값 유형. text/date/amount 는 단일 소스 값의 표시형 서식을 교체 가능한
+# core/format_engine 에 위임하고, const 는 소스와 무관한 리터럴이다.
+# ``blank`` 는 empty-confirmed 행의 내부 영속 마커라 공용 UI 목록에 노출하지 않는다.
+TYPES = ("text", "date", "amount", "const")
 
 
 # ------------------------------------------------------------------ 변환
-def apply_transform(
-    kind: str, values: "list[str]", sep: str = " ", const: str = "", fmt: str = ""
-) -> str:
-    """소스 값 목록을 결합(N→1)한 뒤, 표시형(``fmt``)에 따라 서식 엔진으로 포맷.
+def apply_transform(kind: str, value: str = "", const: str = "", fmt: str = "") -> str:
+    """단일 소스 값을 유형(``kind``)·표시형(``fmt``)에 따라 서식 엔진으로 포맷.
 
-    ``fmt`` 는 변환 안의 표시형 **서식 코드**("" = 기본, 예: ``"{:,}"``·``"%Y-%m-%d"``).
-    코드 해석은 교체 가능한 `format_engine` 에 위임한다(현재 stdlib). amount/datetime 만
-    표시형을 가지며, 없는 변환에선 ``fmt`` 는 무시된다.
+    ``fmt`` 는 유형 안의 표시형 **서식 코드**("" = 기본, 예: ``"{:,}"``·``"%Y-%m-%d"``).
+    코드 해석은 교체 가능한 `format_engine` 에 위임한다(현재 stdlib). text/date/amount 만
+    표시형을 가지며, const 는 리터럴을, blank 는 언제나 빈 값을 낸다.
     """
     if kind == "blank":
-        # 의도적 공란은 값 추론이 아니라 매핑 계약의 명시적 선언이다. 엔진에는
-        # 키 자체를 넘기지 않지만, 단독 FieldMapping 평가도 언제나 빈 값이어야 한다.
+        # 의도적 공란은 값 추론이 아니라 매핑 계약의 명시적 선언이다. 단독
+        # FieldMapping 평가도 언제나 빈 값이어야 한다.
         return ""
     if kind == "const":
         return const
-    parts = [v.strip() for v in values if v and v.strip()]
-    if kind == "amount":
-        return _fe.render("amount", fmt, "".join(parts))
-    if kind == "datetime":
-        return _fe.render("datetime", fmt, " ".join(parts))
-    if kind == "join":
-        # join — 결합 후 마스크/텍스트 표시형(fmt) 적용(fmt="" 이면 원문).
-        return _fe.render("join", fmt, sep.join(parts))
-    # 미지 변환을 join 으로 조용히 폴백하면 서식 미적용 값이 무경고 주입된다(RC-10)
+    if kind in ("text", "date", "amount"):
+        return _fe.render(kind, fmt, value.strip())
+    # 미지 유형을 조용히 폴백하면 서식 미적용 값이 무경고 주입된다(RC-10)
     # — 조용한 추측 대신 시끄럽게 실패한다(확인-또는-경보).
-    raise ValueError(f"지원하지 않는 변환: {kind!r} (지원: {TRANSFORMS})")
+    raise ValueError(f"지원하지 않는 유형: {kind!r} (지원: {TYPES})")
 
 
 # ------------------------------------------------------------------ 모델
 @dataclass
 class FieldMapping:
-    """한 템플릿 필드를 어떻게 채울지. ``sources`` 를 ``transform`` 으로 합쳐 값 생성."""
+    """한 템플릿 필드를 어떻게 채울지 — 단일 ``source`` 를 ``type`` 으로 서식해 값 생성."""
 
     template_field: str
-    sources: "list[str]" = field(default_factory=list)
-    transform: str = "join"
-    sep: str = " "
+    source: str = ""
+    type: str = "text"
     const: str = ""
-    fmt: str = ""  # 표시형 프리셋 키(변환 내). "" = 기본(하위호환).
+    fmt: str = ""  # 표시형 프리셋 키(유형 내). "" = 기본.
 
     @property
     def is_blank(self) -> bool:
         """이 항목이 템플릿 필드를 의도적으로 비운다는 명시적 선언인가."""
-        return self.transform == "blank"
+        return self.type == "blank"
 
     def value_for(self, record: "dict[str, object]") -> str:
-        values = [str(record.get(s, "")) for s in self.sources]
-        return apply_transform(self.transform, values, self.sep, self.const, self.fmt)
+        return apply_transform(
+            self.type, str(record.get(self.source, "")), self.const, self.fmt
+        )
 
     def to_dict(self) -> dict:
         return {
             "template_field": self.template_field,
-            "sources": list(self.sources),
-            "transform": self.transform,
-            "sep": self.sep,
+            "source": self.source,
+            "type": self.type,
             "const": self.const,
             "fmt": self.fmt,
         }
 
     @classmethod
     def from_dict(cls, d: dict) -> "FieldMapping":
-        transform = d.get("transform", "join")
-        # 직렬화 경계 검증(RC-10): 손 편집·버전 스큐로 들어온 미지 변환을 조용히
+        type_ = d.get("type", "text")
+        # 직렬화 경계 검증(RC-10): 손 편집·버전 스큐로 들어온 미지 유형을 조용히
         # 수용하면 뷰 크래시·서식 미적용 값 무경고 주입으로 이어진다 — 로드 시점에
         # 시끄럽게 거부한다(호출자의 '로드 실패' 경로가 수용). ``blank`` 는 명시적
         # 공란 선언의 내부 영속 마커라 허용한다.
-        if transform not in TRANSFORMS and transform != "blank":
-            raise ValueError(f"지원하지 않는 변환: {transform!r} (지원: {TRANSFORMS})")
+        if type_ not in TYPES and type_ != "blank":
+            raise ValueError(f"지원하지 않는 유형: {type_!r} (지원: {TYPES})")
         return cls(
             template_field=d["template_field"],
-            sources=list(d.get("sources", [])),
-            transform=transform,
-            sep=d.get("sep", " "),
+            source=d.get("source", ""),
+            type=type_,
             const=d.get("const", ""),
-            fmt=d.get("fmt", ""),  # 구 프로파일엔 없을 수 있음 → 기본
+            fmt=d.get("fmt", ""),
         )
 
 
@@ -198,8 +191,9 @@ def suggest_mappings(
 ) -> "list[FieldMapping]":
     """템플릿 필드 ↔ 소스 키를 퍼지로 1:1 자동 제안(초안). 사람이 확정·보정한다.
 
-    소스 키가 영문코드면 ``aliases``(키→한글 라벨)를 퍼지 타겟으로 쓴다. N→1 합성(일시 등)
-    은 초안에서 1:1 로만 잡고, 나머지 소스는 사람이 덧붙인다(명시성 원칙).
+    소스 키가 영문코드면 ``aliases``(키→한글 라벨)를 퍼지 타겟으로 쓴다. 엄격한 1:1
+    이므로 초안도 필드당 최선의 단일 소스만 잡고, 유형은 기본 ``text`` — 서식이 필요한
+    필드는 사람이 date/amount 로 바꾼다(명시성 원칙).
     """
     aliases = aliases or {}
     labels = {k: aliases.get(k, k) for k in source_keys}
@@ -211,5 +205,5 @@ def suggest_mappings(
             if s > best_score:
                 best_key, best_score = k, s
         if best_key is not None and best_score >= threshold:
-            out.append(FieldMapping(tf, [best_key], transform="join"))
+            out.append(FieldMapping(tf, best_key, type="text"))
     return out

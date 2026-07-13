@@ -49,8 +49,8 @@ def test_report_dedupes_repeated_missing_tokens():
 def test_profile_supplies_display_format_then_pure_substitution():
     """D-6 통합: 프로파일이 표시형까지 서식한 값 → 순수 치환으로 텍스트에 꽂힌다."""
     profile = MappingProfile(mappings=[
-        FieldMapping("배정예산", sources=["asignBdgtAmt"], transform="amount"),      # 기본(원)
-        FieldMapping("개찰일시", sources=["opengDate"], transform="datetime", fmt="%Y-%m-%d"),
+        FieldMapping("배정예산", "asignBdgtAmt", type="amount"),      # 기본(원)
+        FieldMapping("개찰일시", "opengDate", type="date", fmt="%Y-%m-%d"),
     ])
     record = profile.apply({"asignBdgtAmt": "150000000", "opengDate": "2026-06-15"})
     tpl = "예산: {{배정예산}} / 개찰: {{개찰일시}}"

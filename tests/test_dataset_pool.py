@@ -146,7 +146,7 @@ def _job():
     return Job(
         name="실행", template_path="/t.hwpx",
         mapping=MappingProfile(mappings=[
-            FieldMapping(template_field="공고명", sources=["bidNtceNm"]),
+            FieldMapping(template_field="공고명", source="bidNtceNm"),
         ]),
         filename_pattern="doc-{{공고명}}",
     )

@@ -2,6 +2,9 @@
 
 핵심 회귀는 **명시성 게이트**: 자동 초안이 채워져 있어도 사람이 전 행을 확정하기
 전에는 ``is_complete()`` 가 False 여야 한다. 이 게이트가 기능의 존재 이유다.
+
+엄격한 1:1: 한 템플릿 필드는 정확히 한 소스 키(``source``)에서 값을 취한다 —
+N→1 결합·구분자(sep)는 없다.
 """
 
 from __future__ import annotations
@@ -51,23 +54,23 @@ def test_from_suggestions_creates_row_for_every_field_in_document_order():
         "입찰공고번호", "공고명", "추정가격", "개찰일시", "존재하지않는들판xyz",
     ]
     rows = {r.template_field: r for r in model.rows}
-    assert rows["입찰공고번호"].sources == ["bidNtceNo"]
-    assert rows["공고명"].sources == ["bidNtceNm"]
-    assert rows["추정가격"].sources == ["presmptPrce"]
+    assert rows["입찰공고번호"].source == "bidNtceNo"
+    assert rows["공고명"].source == "bidNtceNm"
+    assert rows["추정가격"].source == "presmptPrce"
     # 미매칭 필드도 빈 행으로 존재(제안 없음 → 점수 0).
-    assert rows["존재하지않는들판xyz"].sources == []
+    assert rows["존재하지않는들판xyz"].source == ""
     assert rows["존재하지않는들판xyz"].suggestion_score == 0.0
     # 제안 행은 신뢰도 점수를 갖는다(뷰 툴팁용).
     assert rows["입찰공고번호"].suggestion_score > 0.6
 
 
-def test_from_suggestions_default_transform_follows_inferred_type():
-    """date→datetime, amount→amount, 그 외→join."""
+def test_from_suggestions_default_type_follows_inferred_type():
+    """date→date, amount→amount, 그 외→text."""
     rows = {r.template_field: r for r in _model().rows}
-    assert rows["개찰일시"].transform == "datetime"
-    assert rows["추정가격"].transform == "amount"
-    assert rows["공고명"].transform == "join"
-    assert rows["입찰공고번호"].transform == "join"  # number 도 join
+    assert rows["개찰일시"].type == "date"
+    assert rows["추정가격"].type == "amount"
+    assert rows["공고명"].type == "text"
+    assert rows["입찰공고번호"].type == "text"  # number 도 text
 
 
 def test_from_suggestions_all_rows_start_unconfirmed():
@@ -93,16 +96,13 @@ def test_is_complete_false_on_empty_model():
 
 
 def test_editing_a_confirmed_row_resets_confirmation():
-    """확정 후 소스/변환/구분자/상수를 바꾸면 재확정 필요."""
+    """확정 후 소스/유형/상수를 바꾸면 재확정 필요."""
     model = _model()
     model.confirm_all()
-    model.set_sources(0, ["bidNtceNo", "bidNtceOrd"])
+    model.set_source(0, "bidNtceOrd")
     assert not model.rows[0].confirmed
     model.set_confirmed(0)
-    model.set_transform(0, "join")
-    assert not model.rows[0].confirmed
-    model.set_confirmed(0)
-    model.set_sep(0, "-")
+    model.set_type(0, "text")
     assert not model.rows[0].confirmed
     model.set_confirmed(0)
     model.set_const(0, "고정값")
@@ -123,17 +123,17 @@ def test_emits_any_value_false_when_all_rows_blank_confirmed():
 def test_emits_any_value_true_when_any_confirmed_row_has_content():
     """소스 행 또는 상수 행이 하나라도 확정되면 값이 방출된다 — 가드 통과."""
     model = MappingModel(rows=[RowState("공고명"), RowState("비고")])
-    model.set_sources(0, ["bidNtceNm"])
+    model.set_source(0, "bidNtceNm")
     model.confirm_all()
     assert model.emits_any_value()
-    const_model = MappingModel(rows=[RowState("계약방법", transform="const", const="수의계약")])
+    const_model = MappingModel(rows=[RowState("계약방법", type="const", const="수의계약")])
     const_model.set_confirmed(0)
     assert const_model.emits_any_value()
 
 
 def test_emits_any_value_ignores_unconfirmed_content():
     """미확정 행은 to_profile 에서 제외되므로 내용이 있어도 방출로 세지 않는다."""
-    model = MappingModel(rows=[RowState("공고명", sources=["bidNtceNm"])])
+    model = MappingModel(rows=[RowState("공고명", source="bidNtceNm")])
     assert not model.emits_any_value()
 
 
@@ -202,9 +202,9 @@ def test_to_profile_includes_confirmed_rows_and_persists_blank_intent():
     assert profile.apply(_nara_record()) == {"입찰공고번호": "R26BK01561738"}
 
 
-def test_to_profile_includes_confirmed_const_row_without_sources():
+def test_to_profile_includes_confirmed_const_row_without_source():
     """소스 없이 상수만 있는 확정 행도 내용 있는 매핑이다."""
-    model = MappingModel(rows=[RowState("계약방법", transform="const", const="수의계약")])
+    model = MappingModel(rows=[RowState("계약방법", type="const", const="수의계약")])
     model.set_confirmed(0)
     profile = model.to_profile()
     assert profile.template_fields() == ["계약방법"]
@@ -212,56 +212,52 @@ def test_to_profile_includes_confirmed_const_row_without_sources():
 
 
 def test_apply_profile_restores_explicit_blank_and_roundtrips():
-    profile = MappingProfile(mappings=[FieldMapping("비고", ["malformed"], transform="blank")])
+    profile = MappingProfile(mappings=[FieldMapping("비고", "malformed", type="blank")])
     model = MappingModel(rows=[RowState("비고")])
     assert model.apply_profile(profile) == 1
     row = model.rows[0]
     assert row.confirmed and row.is_empty_confirmed()
-    assert row.sources == [] and row.transform == "join"
+    assert row.source == "" and row.type == "text"
     restored = model.to_profile()
     assert restored.blank_fields() == ["비고"]
     assert restored.apply({}) == {}
 
 
-def test_blank_is_internal_marker_not_selectable_transform():
-    from hwpxfiller.core.mapping import TRANSFORMS
+def test_blank_is_internal_marker_not_selectable_type():
+    from hwpxfiller.core.mapping import TYPES
 
-    assert "blank" not in TRANSFORMS
+    assert "blank" not in TYPES
 
 
 def test_from_profile_malformed_blank_does_not_leak_source_vocabulary():
     profile = MappingProfile(mappings=[
-        FieldMapping("공고명", ["name"]),
-        FieldMapping("비고", ["ghost_source"], transform="blank"),
+        FieldMapping("공고명", "name"),
+        FieldMapping("비고", "ghost_source", type="blank"),
     ])
     model = MappingModel.from_profile(profile)
     assert model.source_fields == ["name"]
     blank = {r.template_field: r for r in model.rows}["비고"]
-    assert blank.sources == [] and blank.transform == "join" and blank.is_empty_confirmed()
+    assert blank.source == "" and blank.type == "text" and blank.is_empty_confirmed()
 
 
 # --------------------------------------------------------------------- preview
-def test_preview_amount_and_datetime_match_apply_transform():
-    """미리보기 값은 apply_transform 과 정확히 일치해야 한다(WYSIWYG)."""
+def test_preview_amount_and_date_match_apply_transform():
+    """미리보기 값은 apply_transform 과 정확히 일치해야 한다(WYSIWYG). 단일 소스."""
     model = MappingModel(
         rows=[
-            RowState("추정가격", sources=["presmptPrce"], transform="amount"),
-            RowState("개찰일시", sources=["opengDate", "opengTm"], transform="datetime"),
+            RowState("추정가격", source="presmptPrce", type="amount"),
+            RowState("개찰시각", source="opengTm", type="date", fmt="%H:%M"),
         ]
     )
-    record = {"presmptPrce": "21326800", "opengDate": "2026-06-15", "opengTm": "18:00"}
+    record = {"presmptPrce": "21326800", "opengTm": "18:00"}
     out = model.preview(record)
-    assert out["추정가격"] == apply_transform("amount", ["21326800"]) == "21,326,800원"
-    assert (
-        out["개찰일시"]
-        == apply_transform("datetime", ["2026-06-15", "18:00"])
-        == "2026년 6월 15일 18:00"
-    )
+    assert out["추정가격"] == apply_transform("amount", "21326800") == "21,326,800원"
+    assert out["개찰시각"] == apply_transform("date", "18:00", fmt="%H:%M") == "18:00"
 
 
 def test_display_format_choice_changes_preview():
     """같은 amount 라도 표시형 코드(fmt)에 따라 보일 형태가 달라진다(Excel 셀서식 격)."""
-    model = MappingModel(rows=[RowState("추정가격", sources=["presmptPrce"], transform="amount")])
+    model = MappingModel(rows=[RowState("추정가격", source="presmptPrce", type="amount")])
     rec = {"presmptPrce": "21326800"}
     assert model.preview(rec)["추정가격"] == "21,326,800원"  # 기본(빈 코드)
     model.set_fmt(0, "{:,}")
@@ -272,27 +268,27 @@ def test_display_format_choice_changes_preview():
     assert not model.rows[0].confirmed
 
 
-def test_datetime_custom_code_format():
-    model = MappingModel(rows=[RowState("개찰일시", sources=["d"], transform="datetime", fmt="%Y-%m-%d")])
+def test_date_custom_code_format():
+    model = MappingModel(rows=[RowState("개찰일시", source="d", type="date", fmt="%Y-%m-%d")])
     assert model.preview({"d": "2026-6-5"})["개찰일시"] == "2026-06-05"
 
 
-def test_phone_mask_via_join_transform():
-    """평문(join) 변환 + 마스크 표시형 — 전화번호 자릿수 그룹."""
-    model = MappingModel(rows=[RowState("연락처", sources=["tel"], transform="join", fmt="phone")])
+def test_phone_mask_via_text_type():
+    """평문(text) 유형 + 마스크 표시형 — 전화번호 자릿수 그룹."""
+    model = MappingModel(rows=[RowState("연락처", source="tel", type="text", fmt="phone")])
     assert model.preview({"tel": "01012345678"})["연락처"] == "010-1234-5678"
 
 
-def test_changing_transform_resets_format_code():
-    """변환을 바꾸면 이전 표시형 코드는 무효 → 기본으로 리셋."""
-    model = MappingModel(rows=[RowState("x", sources=["a"], transform="amount", fmt="{:,}")])
-    model.set_transform(0, "datetime")
+def test_changing_type_resets_format_code():
+    """유형을 바꾸면 이전 표시형 코드는 무효 → 기본으로 리셋."""
+    model = MappingModel(rows=[RowState("x", source="a", type="amount", fmt="{:,}")])
+    model.set_type(0, "date")
     assert model.rows[0].fmt == ""
 
 
 def test_profile_roundtrip_preserves_format(tmp_path):
     """저장→로드가 표시형 코드(fmt)를 보존한다(구 프로파일 호환: 없으면 기본)."""
-    model = MappingModel(rows=[RowState("추정가격", sources=["presmptPrce"], transform="amount", fmt="{:,}")])
+    model = MappingModel(rows=[RowState("추정가격", source="presmptPrce", type="amount", fmt="{:,}")])
     model.set_confirmed(0)
     path = tmp_path / "p.json"
     model.to_profile().save(path)
@@ -313,8 +309,8 @@ def test_preview_empties_flags_content_mapped_but_empty_for_record():
     """소스는 매핑됐으나 이 레코드에 그 키의 값이 없으면 빈값으로 신고."""
     model = MappingModel(
         rows=[
-            RowState("공고명", sources=["bidNtceNm"]),      # 값 있음
-            RowState("추정가격", sources=["presmptPrce"]),  # 이 레코드엔 값 없음
+            RowState("공고명", source="bidNtceNm"),      # 값 있음
+            RowState("추정가격", source="presmptPrce"),  # 이 레코드엔 값 없음
         ]
     )
     empties = model.preview_empties({"bidNtceNm": "테스트 공고"})
@@ -325,8 +321,8 @@ def test_preview_empties_excludes_intentionally_empty_rows():
     """내용 없는 행(의도적 비움)은 빈값 신고 대상이 아니다."""
     model = MappingModel(
         rows=[
-            RowState("공고명", sources=["bidNtceNm"]),  # 값 없음 → 신고
-            RowState("여백"),                            # 내용 자체 없음 → 제외
+            RowState("공고명", source="bidNtceNm"),  # 값 없음 → 신고
+            RowState("여백"),                          # 내용 자체 없음 → 제외
         ]
     )
     assert model.preview_empties({}) == ["공고명"]
@@ -336,10 +332,10 @@ def test_preview_counts_three_states_sum_to_total():
     """UD-27 — (채움, 빈 값, 미매핑)의 합이 언제나 전체 행 수와 일치."""
     model = MappingModel(
         rows=[
-            RowState("공고명", sources=["bidNtceNm"]),   # 값 있음 → 채움
-            RowState("추정가격", sources=["presmptPrce"]),  # 이 레코드엔 값 없음 → 빈 값
-            RowState("여백"),                             # 내용 없음 → 미매핑
-            RowState("비고"),                             # 내용 없음 → 미매핑
+            RowState("공고명", source="bidNtceNm"),     # 값 있음 → 채움
+            RowState("추정가격", source="presmptPrce"),  # 이 레코드엔 값 없음 → 빈 값
+            RowState("여백"),                            # 내용 없음 → 미매핑
+            RowState("비고"),                            # 내용 없음 → 미매핑
         ]
     )
     filled, empty_n, unmapped = model.preview_counts({"bidNtceNm": "테스트 공고"})
@@ -369,8 +365,8 @@ def test_apply_profile_roundtrip_restores_confirmed_state(tmp_path):
     """저장 → 로드 라운드트립: 일치 행은 값 복원 + 확정 도착, 나머지는 미확정 유지."""
     model = _model()
     rows = {r.template_field: i for i, r in enumerate(model.rows)}
-    # 사람이 개찰일시에 시각 소스를 덧붙이고(N→1) 두 행을 확정.
-    model.set_sources(rows["개찰일시"], ["opengDate", "opengTm"])
+    # 사람이 개찰일시 소스를 확정하고 추정가격도 확정.
+    model.set_source(rows["개찰일시"], "opengDate")
     model.set_confirmed(rows["개찰일시"])
     model.set_confirmed(rows["추정가격"])
     path = tmp_path / "profile.json"
@@ -382,8 +378,8 @@ def test_apply_profile_roundtrip_restores_confirmed_state(tmp_path):
     assert applied == 2
     frows = {r.template_field: r for r in fresh.rows}
     assert frows["개찰일시"].confirmed
-    assert frows["개찰일시"].sources == ["opengDate", "opengTm"]
-    assert frows["개찰일시"].transform == "datetime"
+    assert frows["개찰일시"].source == "opengDate"
+    assert frows["개찰일시"].type == "date"
     assert frows["추정가격"].confirmed
     # 프로파일에 없는 필드는 미확정 유지 — 게이트는 여전히 닫혀 있다.
     assert not frows["공고명"].confirmed
@@ -403,9 +399,9 @@ def test_real_fixture_record_keys_produce_korean_field_drafts():
     record = _nara_record()
     model = MappingModel.from_suggestions(schema, sorted(record), NARA_ALIASES)
     rows = {r.template_field: r for r in model.rows}
-    assert rows["입찰공고번호"].sources == ["bidNtceNo"]
-    assert rows["공고명"].sources == ["bidNtceNm"]
-    assert rows["추정가격"].sources == ["presmptPrce"]
+    assert rows["입찰공고번호"].source == "bidNtceNo"
+    assert rows["공고명"].source == "bidNtceNm"
+    assert rows["추정가격"].source == "presmptPrce"
     # 초안 그대로 확정하면 실레코드 값이 나온다.
     model.confirm_all()
     out = model.to_profile().apply(record)

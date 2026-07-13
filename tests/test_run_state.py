@@ -32,8 +32,8 @@ def _job(tmp_path) -> Job:
         name="실행",
         template_path=str(template),
         mapping=MappingProfile(mappings=[
-            FieldMapping(template_field="공고명", sources=["bidNtceNm"]),
-            FieldMapping(template_field="추정가격", sources=["presmptPrce"]),
+            FieldMapping(template_field="공고명", source="bidNtceNm"),
+            FieldMapping(template_field="추정가격", source="presmptPrce"),
         ]),
         filename_pattern="doc-{{공고명}}",
     )
@@ -188,7 +188,7 @@ def test_field_states_empty_without_data(tmp_path):
 
 def test_declared_blank_is_quiet_but_uncovered_template_field_is_drift(tmp_path):
     job = _job(tmp_path)
-    job.mapping.mappings[1] = FieldMapping("추정가격", transform="blank")
+    job.mapping.mappings[1] = FieldMapping("추정가격", type="blank")
     vm = RunViewModel(job)
     vm.datasource = _Src()
     vm.records = vm.datasource.records()

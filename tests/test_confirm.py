@@ -34,7 +34,7 @@ def qapp():
 
 def _profile(name="확정매핑", fields=("공고명", "추정가격")) -> MappingProfile:
     return MappingProfile(name=name, mappings=[
-        FieldMapping(template_field=f, sources=["bidNtceNm"]) for f in fields
+        FieldMapping(template_field=f, source="bidNtceNm") for f in fields
     ])
 
 

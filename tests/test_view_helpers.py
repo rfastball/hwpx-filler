@@ -88,7 +88,7 @@ def test_vocab_cards_not_compressed(qapp, tmp_path):
 
     breg = MappingBaseRegistry(tmp_path / "bases")
     breg.save(MappingProfile(name="공고베이스", mappings=[
-        FieldMapping(template_field="계약명", sources=["bidNtceNm"]),
+        FieldMapping(template_field="계약명", source="bidNtceNm"),
     ]))
     vw = VocabWorkbenchPanel(breg)
     vw._sync_cards()

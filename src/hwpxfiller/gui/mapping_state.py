@@ -5,9 +5,13 @@
 ``confirmed=False`` 로 시작하고, 사람이 행별로 확정해야 ``is_complete()`` 가 True 가
 된다 — 위저드는 이 게이트를 통과해야만 다음(저장) 단계로 넘어간다.
 
-행 편집(소스/변환/구분자/상수 변경)은 확정을 해제한다 — 확정 후 바뀐 행은
+행 편집(소스/유형/상수 변경)은 확정을 해제한다 — 확정 후 바뀐 행은
 다시 사람의 눈을 거쳐야 한다. 저장된 프로파일의 로드(``apply_profile``)만 예외로
 확정 상태로 도착한다: 프로파일 자체가 과거에 사람이 확정한 산출물이기 때문이다.
+
+**엄격한 1:1 계약**(코어 미러). 한 템플릿 필드는 정확히 한 소스 키(``source``)에서
+값을 취한다 — N→1 결합·구분자(sep)는 없다. 날짜+시각처럼 예전에 두 키를 합치던
+자리는 소스가 이미 합쳐진 단일 키를 주거나 각각 별도 필드로 매핑한다.
 """
 
 from __future__ import annotations
@@ -18,7 +22,7 @@ from dataclasses import dataclass, field
 from ..core.authoring import scan_tokens
 from ..core.lint import similarity
 from ..core.mapping import (
-    TRANSFORMS,
+    TYPES,
     FieldMapping,
     MappingProfile,
     suggest_mappings,
@@ -26,8 +30,8 @@ from ..core.mapping import (
 from ..core.schema import FieldSpec, TemplateSchema, extract_schema
 from ..core.template_status import CompileState, TemplateStatus, compile_status
 
-# inferred_type → 기본 변환. 명시 없는 타입은 join(그대로).
-_DEFAULT_TRANSFORM = {"date": "datetime", "amount": "amount"}
+# inferred_type → 기본 값 유형. 명시 없는 타입은 text(그대로).
+_DEFAULT_TYPE = {"date": "date", "amount": "amount"}
 
 # RAW(필드 0개) 차단 사유의 **단일 원천**(UD-21). 위저드 1단계와 PartialGate.message()
 # 가 같은 문구를 쓰도록 여기 한 곳에서만 정의한다 — 뷰·VM 이중화(문구 드리프트) 금지.
@@ -38,13 +42,13 @@ RAW_BLOCK_MESSAGE = (
 
 
 def default_transform_for(inferred_type: str) -> str:
-    """스키마의 의미 타입에서 기본 변환을 유도한다."""
-    return _DEFAULT_TRANSFORM.get(inferred_type, "join")
+    """스키마의 의미 타입에서 기본 값 유형을 유도한다(date→date, amount→amount, 그 외 text)."""
+    return _DEFAULT_TYPE.get(inferred_type, "text")
 
 
 @dataclass
 class RowState:
-    """템플릿 필드 1개의 매핑 편집 상태.
+    """템플릿 필드 1개의 매핑 편집 상태 — 단일 ``source`` 를 ``type`` 으로 서식.
 
     ``confirmed=True`` 인데 채울 내용이 없으면(소스도 상수도 없음) **의도적 비움
     확정** — "이 필드는 채우지 않는다"를 사람이 명시한 상태다(``to_profile`` 이
@@ -54,17 +58,16 @@ class RowState:
 
     template_field: str
     spec: "FieldSpec | None" = None
-    sources: "list[str]" = field(default_factory=list)
-    transform: str = "join"
-    sep: str = " "
+    source: str = ""
+    type: str = "text"
     const: str = ""
-    fmt: str = ""  # 표시형 프리셋 키(변환 내). "" = 기본.
+    fmt: str = ""  # 표시형 프리셋 키(유형 내). "" = 기본.
     confirmed: bool = False
     suggestion_score: float = 0.0
 
     def has_content(self) -> bool:
         """매핑 내용이 있는가 — 소스가 있거나 비어 있지 않은 상수."""
-        return bool(self.sources) or (self.transform == "const" and self.const != "")
+        return bool(self.source) or (self.type == "const" and self.const != "")
 
     def is_empty_confirmed(self) -> bool:
         """의도적 비움 확정 — 확정됐지만 채울 내용이 없음."""
@@ -73,9 +76,8 @@ class RowState:
     def to_mapping(self, *, blank: bool = False) -> FieldMapping:
         return FieldMapping(
             template_field=self.template_field,
-            sources=[] if blank else list(self.sources),
-            transform="blank" if blank else self.transform,
-            sep=self.sep,
+            source="" if blank else self.source,
+            type="blank" if blank else self.type,
             const=self.const,
             fmt=self.fmt,
         )
@@ -104,8 +106,8 @@ class MappingModel:
     ) -> "MappingModel":
         """스키마 전 필드(문서순)에 행을 만들고 ``suggest_mappings`` 초안을 얹는다.
 
-        미매칭 필드도 빈 행으로 포함한다(사람이 채우거나 비움 확정). 기본 변환은
-        inferred_type 에서 유도(date→datetime, amount→amount, 그 외 join). 모든 행은
+        미매칭 필드도 빈 행으로 포함한다(사람이 채우거나 비움 확정). 기본 유형은
+        inferred_type 에서 유도(date→date, amount→amount, 그 외 text). 모든 행은
         confirmed=False 로 시작한다 — 초안은 초안이다(명시성 원칙).
         """
         aliases = dict(aliases or {})
@@ -118,15 +120,14 @@ class MappingModel:
             row = RowState(
                 template_field=spec.name,
                 spec=spec,
-                transform=default_transform_for(spec.inferred_type),
+                type=default_transform_for(spec.inferred_type),
             )
             draft = drafts.get(spec.name)
-            if draft is not None:
-                row.sources = list(draft.sources)
+            if draft is not None and draft.source:
+                row.source = draft.source
                 # 제안 점수는 suggest 와 동일 방식(alias 라벨 대상 유사도)으로 복원.
-                row.suggestion_score = max(
-                    (similarity(spec.name, aliases.get(s, s)) for s in draft.sources),
-                    default=0.0,
+                row.suggestion_score = similarity(
+                    spec.name, aliases.get(draft.source, draft.source)
                 )
             rows.append(row)
         return cls(rows=rows, source_fields=source_fields, aliases=aliases)
@@ -146,44 +147,38 @@ class MappingModel:
             is_blank = m.is_blank
             rows.append(RowState(
                 template_field=m.template_field,
-                sources=[] if is_blank else list(m.sources),
-                transform="join" if is_blank else m.transform,
-                sep=" " if is_blank else m.sep,
+                source="" if is_blank else m.source,
+                type="text" if is_blank else m.type,
                 const="" if is_blank else m.const,
                 fmt="" if is_blank else m.fmt,
                 confirmed=True,  # 베이스는 확정본
             ))
-            # malformed blank+sources도 복원 시 완전히 정규화: 행 sources뿐 아니라
+            # malformed blank+source도 복원 시 완전히 정규화: 행 source뿐 아니라
             # 소스 선택 어휘에도 유령 키를 흘리지 않는다.
-            for s in (() if is_blank else m.sources):
-                if s not in seen:
-                    seen.add(s)
-                    source_fields.append(s)
+            src = "" if is_blank else m.source
+            if src and src not in seen:
+                seen.add(src)
+                source_fields.append(src)
         return cls(rows=rows, source_fields=source_fields, aliases={})
 
     # ------------------------------------------------------------ 행 편집 API
-    def set_sources(self, index: int, sources: "list[str]") -> None:
+    def set_source(self, index: int, source: str) -> None:
         row = self.rows[index]
-        row.sources = list(sources)
+        row.source = source
         row.confirmed = False
 
-    def set_transform(self, index: int, transform: str) -> None:
-        if transform not in TRANSFORMS:
-            raise ValueError(f"지원하지 않는 변환: {transform!r} (지원: {TRANSFORMS})")
+    def set_type(self, index: int, type_: str) -> None:
+        if type_ not in TYPES:
+            raise ValueError(f"지원하지 않는 유형: {type_!r} (지원: {TYPES})")
         row = self.rows[index]
-        row.transform = transform
-        row.fmt = ""  # 변환이 바뀌면 이전 표시형 키는 무효 → 기본으로.
+        row.type = type_
+        row.fmt = ""  # 유형이 바뀌면 이전 표시형 키는 무효 → 기본으로.
         row.confirmed = False
 
     def set_fmt(self, index: int, fmt: str) -> None:
-        """표시형(변환 내 프리셋) 변경 — 편집이므로 확정 해제."""
+        """표시형(유형 내 프리셋) 변경 — 편집이므로 확정 해제."""
         row = self.rows[index]
         row.fmt = fmt
-        row.confirmed = False
-
-    def set_sep(self, index: int, sep: str) -> None:
-        row = self.rows[index]
-        row.sep = sep
         row.confirmed = False
 
     def set_const(self, index: int, const: str) -> None:
@@ -319,9 +314,8 @@ class MappingModel:
             m = by_field.get(row.template_field)
             if m is None:
                 continue
-            row.sources = [] if m.is_blank else list(m.sources)
-            row.transform = "join" if m.is_blank else m.transform
-            row.sep = " " if m.is_blank else m.sep
+            row.source = "" if m.is_blank else m.source
+            row.type = "text" if m.is_blank else m.type
             row.const = "" if m.is_blank else m.const
             row.fmt = "" if m.is_blank else m.fmt
             row.confirmed = True

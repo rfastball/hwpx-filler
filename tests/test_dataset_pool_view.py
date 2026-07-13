@@ -294,7 +294,7 @@ def test_run_view_picks_from_pool(qapp, tmp_path, monkeypatch):
 
     job = Job(
         name="실행", template_path=str(template),
-        mapping=MappingProfile(mappings=[FieldMapping(template_field="공고명", sources=["공고명"])]),
+        mapping=MappingProfile(mappings=[FieldMapping(template_field="공고명", source="공고명")]),
         filename_pattern="doc-{{공고명}}",
     )
     view = RunView(job, pool_registry=reg)

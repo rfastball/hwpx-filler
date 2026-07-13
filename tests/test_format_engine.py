@@ -23,31 +23,39 @@ def test_amount_parses_leniently_and_degrades():
     assert render("amount", "{:Q}", "100") == "100"
 
 
-def test_datetime_default_and_strftime_codes():
+def test_date_default_and_strftime_codes():
     # 빈 코드 = 한글 기본(월/일 비패딩), 시각 있으면 보존.
-    assert render("datetime", "", "2026-06-15") == "2026년 6월 15일"
-    assert render("datetime", "", "2026-06-15 18:00") == "2026년 6월 15일 18:00"
+    assert render("date", "", "2026-06-15") == "2026년 6월 15일"
+    assert render("date", "", "2026-06-15 18:00") == "2026년 6월 15일 18:00"
     # strftime 코드.
-    assert render("datetime", "%Y-%m-%d", "2026-6-5") == "2026-06-05"
-    assert render("datetime", "%Y.%m.%d", "2026-06-15") == "2026.06.15"
+    assert render("date", "%Y-%m-%d", "2026-6-5") == "2026-06-05"
+    assert render("date", "%Y.%m.%d", "2026-06-15") == "2026.06.15"
+    # 날짜+시각 코드.
+    assert render("date", "%Y-%m-%d %H:%M", "2026-06-15 18:00") == "2026-06-15 18:00"
 
 
-def test_datetime_degrades_on_unparseable():
-    assert render("datetime", "%Y-%m-%d", "미정") == "미정"
+def test_date_time_only_value_parses():
+    # 시각 단독값('HHMM'·'HH:MM')도 시각 서식으로 렌더된다.
+    assert render("date", "%H:%M", "1400") == "14:00"
+    assert render("date", "%H:%M", "18:00") == "18:00"
 
 
-def test_join_masks_and_passthrough():
+def test_date_degrades_on_unparseable():
+    assert render("date", "%Y-%m-%d", "미정") == "미정"
+
+
+def test_text_masks_and_passthrough():
     # 원문(빈 코드)은 값 그대로.
-    assert render("join", "", "아무 텍스트") == "아무 텍스트"
+    assert render("text", "", "아무 텍스트") == "아무 텍스트"
     # 전화 마스크(자릿수별).
-    assert render("join", "phone", "01012345678") == "010-1234-5678"
-    assert render("join", "phone", "0212345678") == "02-1234-5678"
-    assert render("join", "phone", "0311234567") == "031-123-4567"
+    assert render("text", "phone", "01012345678") == "010-1234-5678"
+    assert render("text", "phone", "0212345678") == "02-1234-5678"
+    assert render("text", "phone", "0311234567") == "031-123-4567"
     # 사업자번호 마스크.
-    assert render("join", "biz", "1234567890") == "123-45-67890"
+    assert render("text", "biz", "1234567890") == "123-45-67890"
     # 자릿수 안 맞거나 미지 코드 → 원본(degrade).
-    assert render("join", "phone", "123") == "123"
-    assert render("join", "%Y", "값") == "값"
+    assert render("text", "phone", "123") == "123"
+    assert render("text", "%Y", "값") == "값"
     # const 는 표시형 없는 kind.
     assert render("const", "{:,}", "값") == "값"
 
@@ -56,13 +64,17 @@ def test_presets_are_label_code_pairs():
     amount = dict(presets("amount"))
     assert amount["원"] == ""          # 기본
     assert amount["숫자"] == "{:,}"
-    dt = dict(presets("datetime"))
+    dt = dict(presets("date"))
     assert dt["한글"] == ""
     assert dt["ISO"] == "%Y-%m-%d"
-    join = dict(presets("join"))       # 평문 변환의 표시형 = 마스크
-    assert join["원문"] == ""
-    assert join["전화"] == "phone"
-    assert join["사업자번호"] == "biz"
+    # 시각·날짜+시각 프리셋 신설.
+    assert dt["시각"] == "%H:%M"
+    assert dt["날짜+시각"] == "%Y-%m-%d %H:%M"
+    assert "한글일시" in dt
+    text = dict(presets("text"))       # 평문 유형의 표시형 = 마스크
+    assert text["원문"] == ""
+    assert text["전화"] == "phone"
+    assert text["사업자번호"] == "biz"
     assert presets("const") == []      # 표시형 없는 kind
 
 

@@ -20,7 +20,7 @@ def _model(*rows: RowState) -> MappingModel:
 
 
 def _content_row(name: str = "공고명", confirmed: bool = True) -> RowState:
-    return RowState(template_field=name, sources=["bidNtceNm"], confirmed=confirmed)
+    return RowState(template_field=name, source="bidNtceNm", confirmed=confirmed)
 
 
 def _blank_row(name: str = "비고") -> RowState:

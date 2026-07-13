@@ -27,7 +27,7 @@ def _reg(tmp_path) -> JobRegistry:
     reg.save(Job(
         name="공고서",
         template_path="/none/t.hwpx",  # 존재 안 함 → template_missing
-        mapping=MappingProfile(mappings=[FieldMapping(template_field="공고명", sources=["bidNtceNm"])]),
+        mapping=MappingProfile(mappings=[FieldMapping(template_field="공고명", source="bidNtceNm")]),
         filename_pattern="공고-{{ID}}",
         last_run_at="2026-07-09T15:42:00",
     ))

@@ -126,7 +126,7 @@ def test_validate_hard_gates_matrix_template_drift_but_blank_is_quiet(tmp_path):
     csv.write_text("name\n테스트\n", encoding="utf-8")
     reg = JobRegistry(tmp_path / "jobs")
     reg.save(Job(name="작업", template_path=str(tpl), mapping=MappingProfile(mappings=[
-        FieldMapping("공고명", ["name"]), FieldMapping("비고", transform="blank")
+        FieldMapping("공고명", "name"), FieldMapping("비고", type="blank")
     ])))
     vm = MatrixRunViewModel(reg)
     vm.set_job_selected("작업", True)
@@ -143,7 +143,7 @@ def test_generate_boundary_rechecks_after_validate_toctou(tmp_path):
     csv.write_text("name\n테스트\n", encoding="utf-8")
     reg = JobRegistry(tmp_path / "jobs")
     reg.save(Job(name="작업", template_path=str(tpl), mapping=MappingProfile(mappings=[
-        FieldMapping("공고명", ["name"])
+        FieldMapping("공고명", "name")
     ]), filename_pattern="d-{{seq}}"))
     vm = MatrixRunViewModel(reg)
     vm.set_job_selected("작업", True)
@@ -170,7 +170,7 @@ def test_output_conflicts_ring1_reports_existing_subfolder_targets(tmp_path):
     csv.write_text("공고명\n전산\n", encoding="utf-8")
     reg = JobRegistry(tmp_path / "jobs")
     reg.save(Job(name="작업", template_path=str(tpl), mapping=MappingProfile(mappings=[
-        FieldMapping("공고명", ["공고명"])
+        FieldMapping("공고명", "공고명")
     ]), filename_pattern="d-{{공고명}}"))
     vm = MatrixRunViewModel(reg)
     vm.set_job_selected("작업", True)
@@ -195,9 +195,9 @@ def _missing_job(tmp_path):
     csv.write_text("공고명,추정가격\n전산장비,\n", encoding="utf-8")  # 추정가격 빈값
     reg = JobRegistry(tmp_path / "jobs")
     reg.save(Job(name="작업", template_path=str(tpl), mapping=MappingProfile(mappings=[
-        FieldMapping("공고명", ["공고명"]),
-        FieldMapping("추정가격", ["추정가격"]),
-        FieldMapping("비고", transform="blank"),
+        FieldMapping("공고명", "공고명"),
+        FieldMapping("추정가격", "추정가격"),
+        FieldMapping("비고", type="blank"),
     ]), filename_pattern="d-{{공고명}}"))
     vm = MatrixRunViewModel(reg)
     vm.set_job_selected("작업", True)
@@ -259,7 +259,7 @@ def test_missing_ack_is_keyed_per_job(tmp_path):
     csv = tmp_path / "d.csv"
     csv.write_text("id,추정가격\n1,\n", encoding="utf-8")  # 추정가격 빈값 → 두 작업 모두 미입력
     reg = JobRegistry(tmp_path / "jobs")
-    mp = MappingProfile(mappings=[FieldMapping("추정가격", ["추정가격"])])
+    mp = MappingProfile(mappings=[FieldMapping("추정가격", "추정가격")])
     reg.save(Job(name="공고", template_path=str(tpl), mapping=mp, filename_pattern="공고-{{seq}}"))
     reg.save(Job(name="요청", template_path=str(tpl), mapping=mp, filename_pattern="요청-{{seq}}"))
     vm = MatrixRunViewModel(reg)

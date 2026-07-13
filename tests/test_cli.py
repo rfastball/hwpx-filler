@@ -40,7 +40,7 @@ def _covered_profile(*mappings: FieldMapping, name: str = "p") -> MappingProfile
     """실 코퍼스 전 필드를 값 매핑 또는 명시 blank로 전건 확정한 프로파일."""
     covered = {m.template_field for m in mappings}
     blanks = [
-        FieldMapping(field, transform="blank")
+        FieldMapping(field, type="blank")
         for field in HwpxEngine().required_fields(TEMPLATE)
         if field not in covered
     ]
@@ -86,8 +86,8 @@ def test_profile_maps_source_keys_to_template_fields(tmp_path):
     wb.save(data)
 
     profile = _covered_profile(
-        FieldMapping("입찰공고번호", ["bidNtceNo"]),
-        FieldMapping("추정가격", ["presmptPrce"], transform="amount"),
+        FieldMapping("입찰공고번호", "bidNtceNo"),
+        FieldMapping("추정가격", "presmptPrce", type="amount"),
     )
     pf = tmp_path / "map.json"
     profile.save(pf)
@@ -259,10 +259,10 @@ def test_nara_missing_service_key_errors(monkeypatch):
 def test_nara_source_with_profile_fills_template(tmp_path, monkeypatch, capsys):
     _patch_nara(monkeypatch)
     profile = _covered_profile(
-        FieldMapping("입찰공고번호", ["bidNtceNo"]),
-        FieldMapping("공고명", ["bidNtceNm"]),
-        FieldMapping("추정가격", ["presmptPrce"], transform="amount"),
-        FieldMapping("개찰일시", ["opengDate", "opengTm"], transform="datetime"),
+        FieldMapping("입찰공고번호", "bidNtceNo"),
+        FieldMapping("공고명", "bidNtceNm"),
+        FieldMapping("추정가격", "presmptPrce", type="amount"),
+        FieldMapping("개찰일시", "opengDate", type="date"),
         name="나라",
     )
     pf = tmp_path / "nara.json"
@@ -280,7 +280,7 @@ def test_nara_source_with_profile_fills_template(tmp_path, monkeypatch, capsys):
     with zipfile.ZipFile(gen) as zf:
         blob = b"".join(zf.read(n) for n in zf.namelist() if n.endswith(".xml")).decode("utf-8")
     assert "65,454,545원" in blob
-    assert "2026년 6월 15일 18:00" in blob
+    assert "2026년 6월 15일" in blob
     # 취득 로그가 stderr 로 나온다.
     assert "[나라장터]" in capsys.readouterr().err
 
@@ -319,7 +319,7 @@ def test_nara_period_over_one_month_blocked(tmp_path, monkeypatch, capsys):
 def test_profile_template_drift_is_cli_hard_gate(tmp_path, capsys):
     data = _xlsx(tmp_path / "d.xlsx",
                  [["1", "공고", "일반", "100", "2026-01-01 10:00"]])
-    profile = MappingProfile(mappings=[FieldMapping("입찰공고번호", ["입찰공고번호"])])
+    profile = MappingProfile(mappings=[FieldMapping("입찰공고번호", "입찰공고번호")])
     pf = tmp_path / "partial.json"
     profile.save(pf)
     out = tmp_path / "out"
