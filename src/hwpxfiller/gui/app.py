@@ -93,10 +93,10 @@ class AppController:
         self.shell.nav_requested.connect(self._on_nav)
         # 공유 매핑 프로파일 레지스트리(J3) — 관리 화면·에디터가 공유(1회 저작 후 재사용).
         self.base_registry = MappingBaseRegistry(default_mapping_bases_dir())
-        self._children: "list[object]" = []  # Qt GC 방지 — 자식 창 참조 유지
-        # 능력별 싱글턴(ST-10): 같은 관리 창·같은 작업 에디터가 이미 열려 있으면 새로
-        # 만들지 않고 앞으로 가져와 중복 창 누적·동일 작업 다중 편집(last-save-wins)을 막는다.
-        self._singletons: "dict[str, object]" = {}
+        # Qt GC 방지 — 페이지·위저드 참조 유지(테스트 seam: 라우트가 만든 인스턴스 대장).
+        # 구 ST-10 싱글턴 맵은 해체됐다: 능력 유일성은 셸 스택이 구조로, 동일 작업 다중
+        # 편집(last-save-wins)은 위저드 ApplicationModal 이 상위 호환으로 막는다(D3).
+        self._children: "list[object]" = []
 
         self.home.new_job_requested.connect(self._open_editor_new)
         self.home.edit_job_requested.connect(self._open_editor_edit)
@@ -124,22 +124,32 @@ class AppController:
         """레일 선택 → 라우트 디스패치(배선 소유는 컨트롤러 — 핸드오프 §0)."""
         self._nav_routes[key]()  # 미배선 키 = KeyError (조용한 무시 금지)
 
+    def _show_editor(self, wiz) -> None:
+        """에디터 위저드를 애플리케이션 모달 창으로 띄운다(SHELL_DESIGN D3·D4).
+
+        위저드는 셸에 임베드하지 않는 유일한 표면 — QWizard 는 스택 임베드가 어색한
+        컴포넌트라 창으로 남기되 **ApplicationModal** 을 부여한다. 모달성이 동일 작업
+        동시 편집(last-save-wins — 구 ST-10 ``editor:{name}`` 싱글턴의 방어 대상)을
+        상위 호환으로 불가능하게 만든다. parent 는 주지 않는다(배치·수명 부작용, R5;
+        수명은 ``_track`` 소유). ``exec()`` 금지(offscreen hang, R1) — 결과 처리는
+        ``job_saved`` 시그널이라 반환값이 필요 없다.
+        """
+        from PySide6.QtCore import Qt
+
+        wiz.setWindowModality(Qt.ApplicationModal)
+        self._track(wiz)
+        wiz.show()
+
     def _open_editor_new(self) -> None:
         from .job_editor import JobEditorWizard
 
         wiz = JobEditorWizard(self.registry, base_registry=self.base_registry)
         wiz.job_saved.connect(lambda _name: self.home.refresh())
-        self._track(wiz)
-        wiz.show()
+        self._show_editor(wiz)
 
     def _open_editor_edit(self, name: str) -> None:
         from .job_editor import JobEditorWizard
 
-        # 같은 작업을 두 에디터로 열면 last-save-wins 로 조용히 충돌한다(ST-10) — 이미
-        # 열린 편집기가 있으면 앞으로 가져온다.
-        key = f"editor:{name}"
-        if self._raise_singleton(key):
-            return
         # 기존 작업 프리로드: 템플릿 자동 로드 + 매핑 프리시드 + 이름/패턴 프리필.
         # 이름을 바꿔 저장하면 구명 작업은 별개로 남는다(자동 삭제는 발명 — 삭제는 사용자 몫).
         wiz = JobEditorWizard(
@@ -147,8 +157,7 @@ class AppController:
             base_registry=self.base_registry,
         )
         wiz.job_saved.connect(lambda _name: self.home.refresh())
-        self._track(wiz, singleton_key=key)
-        wiz.show()
+        self._show_editor(wiz)
 
     def _open_run(self, name: str) -> None:
         from .run_view import RunView
@@ -277,8 +286,7 @@ class AppController:
         wiz = JobEditorWizard(self.registry, base_registry=self.base_registry)
         wiz.template_path = template_path
         wiz.job_saved.connect(lambda _name: self.home.refresh())
-        self._track(wiz)
-        wiz.show()
+        self._show_editor(wiz)
 
     def _open_vocab_workbench(self) -> None:
         """매핑 프로파일 관리 페이지(J3)를 전면으로 — 편집은 위저드를 베이스 시드로 개방."""
@@ -316,8 +324,7 @@ class AppController:
         wiz.base_mapping = base
         wiz.base_mapping_name = base_name
         wiz.job_saved.connect(lambda _name: self.home.refresh())
-        self._track(wiz)
-        wiz.show()
+        self._show_editor(wiz)
 
     def _delete_job(self, name: str) -> None:
         from .confirm import confirm_destructive
@@ -361,26 +368,10 @@ class AppController:
                 pass  # 이미 사라졌으면 목적 달성(무시)
             self.home.refresh()
 
-    def _raise_singleton(self, key: str) -> bool:
-        """같은 능력 창이 이미 열려 있으면 앞으로 가져오고 True(ST-10) — 없거나 닫혔으면 False.
-
-        보이는(살아 있는) 창만 재사용한다 — 닫힌 창은 stale 로 보고 새로 연다(신선 상태).
-        """
-        win = self._singletons.get(key)
-        if win is not None and win.isVisible():
-            if win.isMinimized():
-                win.showNormal()
-            win.raise_()
-            win.activateWindow()
-            return True
-        return False
-
-    def _track(self, win, *, singleton_key: "str | None" = None) -> None:
+    def _track(self, win) -> None:
+        """라우트가 만든 인스턴스를 대장에 등록한다(Qt GC 방지 + 테스트 seam)."""
         self._children.append(win)
         win.destroyed.connect(lambda *_: self._children.remove(win) if win in self._children else None)
-        if singleton_key is not None:
-            self._singletons[singleton_key] = win
-            win.destroyed.connect(lambda *_: self._singletons.pop(singleton_key, None))
 
 
 # 하위호환 별칭(RC-35): 컨트롤러는 앱 전체 배선·수명을 소유하는 사실상 공용 API 다 —
