@@ -85,6 +85,14 @@ const REVIEW = { type: 'object', required: ['refuted', 'findings'], properties: 
 const CHANGED = { type: 'object', required: ['files'], properties: {
   files: { type: 'array', items: { type: 'string' } } } }
 
+// 발견 임팩트(discovered_impacts) 정산 결과 — 보고만 되고 소비 안 되던 안전밸브를 닫는다.
+const RECONCILE = { type: 'object', required: ['fixed', 'deferred'], properties: {
+  fixed: { type: 'array', items: { type: 'string' } },       // 실제 수리한 임팩트 요약
+  deferred: { type: 'array', items: { type: 'object', required: ['impact', 'reason', 'is_defect'], properties: {
+    impact: { type: 'string' }, reason: { type: 'string' },
+    is_defect: { type: 'boolean' } } } },                    // is_defect=true면 미해소 결함 → 알람
+} }
+
 // ── 공통: 변경 파일 → 영역 매핑 (결정적, 스크립트 내 순수 JS) ─────────────────
 function mapAreas(files) {
   const hit = new Set(), frozenHit = [], unmapped = []
@@ -130,14 +138,27 @@ gui의 view/*_state 쌍 구조, 링 계약(tests/test_architecture.py·test_ui_c
 영향도 보고: ${JSON.stringify(impact)}
 
 task로 분할하라. 각 task에 objective·acceptance(검증 가능한 완료 조건)·test_files(관련 pytest 파일)를 채워라.
+영역(areas) 정직성: task.areas 는 objective 가 생성·수정할 **모든** 파일의 영역을 포함해야 한다
+(예: objective 가 scripts/ 에 파일을 쓰면 areas 에 packaging 을, cli.py 를 만지면 cli 를 포함).
+영역 정의: ${JSON.stringify(AREAS)}
+임팩트 커버리지: 영향도 보고의 components 가 짚은 모든 영역·파일은 최소 한 task 의 areas·objective 가
+담당해야 한다 — 어떤 파일도 담당 task 없이 방치하지 마라(방치는 곧 조용한 미수정으로 샌다).
 직교성 인증: 아래 규칙을 적용해 task들이 병렬 실행 가능한지 판정하고 이유를 적어라.
 ${ORTHOGONALITY_RULES}
 동결 영역(src/hwpxdiff/)을 필요로 하는 계획은 세우지 마라 — 필요하면 unknowns로 남겨야 했던 사안이다.`,
     { schema: PLAN, effort: 'high' })
 
-  // 여기서 반환 → 메인 에이전트가 unknowns·계획을 사용자에게 확정받는다(게이트 A/B).
-  return { mode: 'plan', impact, plan,
-    next: 'unknowns를 사용자와 확정한 뒤 Workflow({scriptPath, args:{mode:"implement", request, plan}})로 재호출' }
+  // 임팩트 커버리지 정산(결정적) — 영향도가 짚은 영역 중 어떤 task.areas 도 담당하지
+  // 않는 것을 골라낸다. 담당 없는 영역은 곧 조용한 미수정으로 새므로 확정 전에 고지한다.
+  const taskAreas = new Set((plan.tasks || []).flatMap(t => t.areas || []))
+  const impactAreas = new Set((impact.components || []).map(c => c.area).filter(Boolean))
+  const coverage_gaps = [...impactAreas].filter(a => !taskAreas.has(a))
+
+  // 여기서 반환 → 메인 에이전트가 unknowns·coverage_gaps·계획을 사용자에게 확정받는다(게이트 A/B).
+  return { mode: 'plan', impact, plan, coverage_gaps,
+    next: coverage_gaps.length
+      ? `⚠ 임팩트 영역 [${coverage_gaps.join(', ')}] 을 담당하는 task 가 없다 — 계획을 보강하거나 사용자와 확정한 뒤 implement 로 재호출하라.`
+      : 'unknowns를 사용자와 확정한 뒤 Workflow({scriptPath, args:{mode:"implement", request, plan}})로 재호출' }
 }
 
 // ═════════════════════════════ MODE: implement ═════════════════════════════
@@ -153,7 +174,7 @@ if (A.mode === 'implement') {
       malformed.push(`task ${t.id || '(id 없음)'}: id/areas/acceptance/test_files 불량`)
   if (malformed.length) return { error: `계획 형식 불량: ${malformed.join(' · ')}` }
 
-  const report = { tasks: [], merge: null, gate: null, review: null, drift: null, status: 'unknown' }
+  const report = { tasks: [], merge: null, reconcile: null, gate: null, review: null, drift: null, status: 'unknown' }
 
   phase('Implement')
   // 사전 실측: 기준 SHA + 기존 더티 파일. 이후 모든 드리프트·리뷰는 base 기준으로 잰다
@@ -227,6 +248,26 @@ ${JSON.stringify(task)}
   }
 
   phase('Review')
+  // (0) 발견 임팩트 정산 — 구현자들이 '스코프 밖'이라 보고만 한 discovered_impacts 를
+  //     소비한다(보고만 되고 소비 안 되던 안전밸브를 닫는다). 테스트가 안 덮어 게이트도
+  //     통과시킬 수 있는 잠재버그(예: 콜러의 잘못된 인자)를 계획 영역 안에서 수리하고,
+  //     못 고칠 건 결함 여부로 분류해 최종 판정에 넘긴다. 게이트 루프 앞에 둬 재검증되게 한다.
+  const allImpacts = report.tasks.flatMap(t => (t && t.discovered_impacts) || [])
+  if (allImpacts.length) {
+    report.reconcile = await agent(
+      `발견 임팩트 정산 담당이다. 구현 중 각 task 가 '스코프 밖'이라 보고만 한 아래
+discovered_impacts 를 처리하라(코드 수정 허용). 각 항목에 대해:
+- 비동결 영역의 구체적 코드 결함이면(잘못된 인자·깨진 콜러·미개편 잔재 등) 근본 원인을 수리하라.
+- 계획 task 영역: ${JSON.stringify(plan.tasks.map(t => ({ id: t.id, areas: t.areas })))}
+- src/hwpxdiff/ 는 동결. 테스트를 약화(assert 삭제·skip)하지 마라.
+- 수리한 항목은 fixed 에 요약. 안 고친 항목은 deferred 에 {impact, reason, is_defect} 로 —
+  is_defect 는 '지금 방치하면 잘못 동작하는 실제 결함인가'(단순 후속 제안·문서 메모·마이그레이션 안내는 false).
+discovered_impacts:
+${JSON.stringify(allImpacts)}${usePar ? `
+수리 후 반드시 커밋하라(git add -A && git commit -m "wf: reconcile impacts") — 회수 브랜치(${mergeBranch})에 커밋 안 된 수리는 빠진다.` : ''}`,
+      { schema: RECONCILE, phase: 'Review', label: 'reconcile' })
+  }
+
   // (1) 결정적 게이트 — 전체 test.ps1 (링 계약 테스트 포함). 최대 2회 재작업.
   let gate = null
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -293,6 +334,12 @@ blocker = 머지 불가 사유, warn = 사용자 판단 사항. 반증 실패면
   const doneIds = new Set(report.tasks.filter(t => t && t.done).map(t => t.task_id))
   const notDone = plan.tasks.map(t => t.id).filter(id => !doneIds.has(id))
   if (notDone.length) blockers.push(`미완·미실행 task: ${notDone.join(', ')}`)
+  // 정산에서 결함으로 분류됐으나 못 고친 임팩트는 조용한 누수가 아니라 blocker다.
+  if (report.reconcile) {
+    const undoneDefects = report.reconcile.deferred.filter(d => d.is_defect)
+    if (undoneDefects.length)
+      blockers.push(`미해소 결함(discovered_impacts): ${undoneDefects.map(d => d.impact).join(' · ').slice(0, 300)}`)
+  }
   if (usePar) {
     if (!report.merge) blockers.push('병렬 회수 결과 없음')
     else {
@@ -306,7 +353,12 @@ blocker = 머지 불가 사유, warn = 사용자 판단 사항. 반증 실패면
   report.status = blockers.length ? 'blocked' : 'ready_to_merge'
   report.blockers = blockers
   // 머지는 여기서 절대 하지 않는다 — 사용자 확정(게이트 C)이 마지막 관문이다.
-  return report
+  // P5: 판정 요약을 반환 객체 맨 앞에 얹는다 — 하네스가 tasks 를 먼저 펼쳐 blocked 를
+  // 놓치는 일이 없게(status·blockers·게이트·정산을 한눈에).
+  const headline = `${report.status.toUpperCase()} — gate ${report.gate && report.gate.passed ? 'PASS' : 'FAIL'}`
+    + (blockers.length ? ` · blockers(${blockers.length}): ${blockers.join(' | ')}` : '')
+    + (report.reconcile ? ` · reconcile fixed ${report.reconcile.fixed.length}, deferred ${report.reconcile.deferred.length}` : '')
+  return { headline, status: report.status, blockers, gate_passed: !!(report.gate && report.gate.passed), ...report }
 }
 
 return { error: `알 수 없는 mode: ${A.mode}` }
