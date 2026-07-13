@@ -110,9 +110,15 @@ class TxtDraftView(QMainWindow):
         ctl.addWidget(self.btn_manual)
         ctl.addWidget(QLabel("레코드"))
         self.btn_prev = QPushButton("◀")
+        # 글리프 전용 버튼에 접근가능 이름·툴팁 부여(ST-06, WCAG 4.1.2/1.1.1) — 스크린리더가
+        # 삼각형 문자명이 아니라 기능을 읽는다.
+        self.btn_prev.setAccessibleName("이전 레코드")
+        self.btn_prev.setToolTip("이전 레코드")
         self.btn_prev.clicked.connect(lambda: self._step(-1))
         self.lbl_idx = QLabel("0/0")
         self.btn_next = QPushButton("▶")
+        self.btn_next.setAccessibleName("다음 레코드")
+        self.btn_next.setToolTip("다음 레코드")
         self.btn_next.clicked.connect(lambda: self._step(1))
         ctl.addWidget(self.btn_prev)
         ctl.addWidget(self.lbl_idx)

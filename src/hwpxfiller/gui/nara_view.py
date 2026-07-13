@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
 from .confirm import confirm_destructive
 from .nara_state import DT_FMT, NaraAcquireViewModel
 from .style import BASE_QSS, mark
+from .view_helpers import announce_status
 from .worker import TaskWorker
 
 # QDateTimeEdit 표시/파싱 포맷 — VM 의 DT_FMT(YYYYMMDDHHMM)와 1:1(strptime 호환).
@@ -150,11 +151,17 @@ class NaraAcquireDialog(QDialog):
         v.addLayout(status_row)
 
         key_row = QHBoxLayout()
+        # 지속 라벨 + 버디(ST-07): placeholder 만 의존하면 입력을 채우는 순간 필드명이
+        # 사라져 스크린리더·시각 모두 무엇을 넣는 칸인지 잃는다. 항상 보이는 라벨로 못박는다.
+        lbl_key = QLabel("ServiceKey")
         self.ed_key = QLineEdit()
         self.ed_key.setEchoMode(QLineEdit.Password)  # 어깨너머 노출 방지
         self.ed_key.setPlaceholderText("data.go.kr 에서 발급받은 ServiceKey")
+        lbl_key.setBuddy(self.ed_key)
+        self.ed_key.setAccessibleName("ServiceKey")
         self.btn_save = QPushButton("등록")
         self.btn_save.clicked.connect(self._on_save_key)
+        key_row.addWidget(lbl_key)
         key_row.addWidget(self.ed_key, 1)
         key_row.addWidget(self.btn_save)
         v.addLayout(key_row)
@@ -235,7 +242,7 @@ class NaraAcquireDialog(QDialog):
         """
         mark(self.lbl_result, "muted", False)
         mark(self.lbl_result, "level", level)
-        self.lbl_result.setText(text)
+        announce_status(self.lbl_result, text)  # 취득 결과·오류를 보조기술에 통지(ST-18)
 
     def _show_gate_hint(self) -> None:
         """게이트 규칙을 muted 로 상시 발화(UD-09) — 취득 전/무효화 후 잠금 사유 표기."""

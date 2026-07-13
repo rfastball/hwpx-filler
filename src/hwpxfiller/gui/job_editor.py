@@ -196,9 +196,18 @@ class SaveJobPage(QWizardPage):
         grid = QGridLayout()
         self.ed_name = QLineEdit()
         self.ed_pattern = QLineEdit(DEFAULT_FILENAME_PATTERN)
-        grid.addWidget(QLabel("작업 이름"), 0, 0)
+        # 라벨-입력을 프로그램적으로 연결(ST-07, WCAG 1.3.1/4.1.2/3.3.2): setBuddy 가
+        # 접근성 LabeledBy 관계를 만들어 스크린리더가 각 칸의 이름을 읽는다(인접 배치만으론
+        # 연결 안 됨). accessibleName 도 병기해 리더 구현 차이를 흡수한다.
+        lbl_name = QLabel("작업 이름")
+        lbl_name.setBuddy(self.ed_name)
+        self.ed_name.setAccessibleName("작업 이름")
+        lbl_pattern = QLabel("파일명 패턴")
+        lbl_pattern.setBuddy(self.ed_pattern)
+        self.ed_pattern.setAccessibleName("파일명 패턴")
+        grid.addWidget(lbl_name, 0, 0)
         grid.addWidget(self.ed_name, 0, 1)
-        grid.addWidget(QLabel("파일명 패턴"), 1, 0)
+        grid.addWidget(lbl_pattern, 1, 0)
         grid.addWidget(self.ed_pattern, 1, 1)
         grid.addWidget(QLabel("토큰: {{필드}}, {{date:YYYYMMDD}}, {{seq:001}}"), 2, 1)
         layout.addLayout(grid)

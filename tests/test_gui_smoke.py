@@ -570,6 +570,29 @@ def test_run_view_close_while_running_confirms(qapp, monkeypatch):
     assert view._running is True  # 생성 계속(중단 안 함)
 
 
+def test_accessible_names_and_buddies_present(qapp, tmp_path, monkeypatch):
+    """글리프 버튼·폼 입력에 접근가능 이름/버디가 설정된다(ST-06/07) + 상태 통지 헬퍼(ST-18)."""
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    from PySide6.QtWidgets import QLabel
+
+    from hwpxfiller.core.text_registry import TextTemplateRegistry
+    from hwpxfiller.gui.job_editor import SaveJobPage
+    from hwpxfiller.gui.txt_view import TxtDraftView
+    from hwpxfiller.gui.view_helpers import announce_status
+
+    tv = TxtDraftView(TextTemplateRegistry(tmp_path / "txt"))
+    assert tv.btn_prev.accessibleName() == "이전 레코드"  # ST-06
+    assert tv.btn_next.accessibleName() == "다음 레코드"
+
+    page = SaveJobPage()
+    assert page.ed_name.accessibleName() == "작업 이름"  # ST-07
+    assert page.ed_pattern.accessibleName() == "파일명 패턴"
+
+    lbl = QLabel()
+    announce_status(lbl, "등록 완료")  # ST-18 — 텍스트 설정 + Alert(리더 없으면 no-op)
+    assert lbl.text() == "등록 완료"
+
+
 def test_template_manager_route_seeds_default_library_and_make_job(qapp, tmp_path, monkeypatch):
     """emit → 패널이 기본 라이브러리를 겨눔(RC-14) + '작업 만들기' → 템플릿 시드 에디터."""
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))

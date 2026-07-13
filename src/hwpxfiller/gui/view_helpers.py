@@ -264,3 +264,17 @@ def save_geometry(win, key: str) -> None:
     st = _ui_settings()
     st.setValue(f"geometry/{key}", win.saveGeometry())
     st.sync()
+
+
+# ---------------------------------------------------------- ST-18: 상태 통지(live-region)
+def announce_status(label, text: str) -> None:
+    """상태 라벨 텍스트를 갱신하고 보조기술에 통지한다(ST-18, WCAG 4.1.3 Status Messages).
+
+    동적 상태 메시지(취득 결과·완료 요약 등)는 화면엔 뜨지만 스크린리더엔 조용히 지나간다.
+    텍스트 설정 후 QAccessible Alert 이벤트를 발신해 live-region 상당의 즉시 통지를 준다.
+    보조기술이 비활성(리더 없음)이면 무해한 no-op — 시각 렌더는 무영향.
+    """
+    label.setText(text)
+    from PySide6.QtGui import QAccessible, QAccessibleEvent
+
+    QAccessible.updateAccessibility(QAccessibleEvent(label, QAccessible.Event.Alert))

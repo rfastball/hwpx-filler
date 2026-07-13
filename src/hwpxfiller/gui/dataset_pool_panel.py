@@ -32,6 +32,7 @@ from .dataset_pool_state import DatasetPoolRow, DatasetPoolViewModel
 from .file_filters import EXCEL_FILTER
 from .style import BASE_QSS, mark
 from .view_helpers import (
+    announce_status,
     build_empty_state,
     hide_item_text,
     restore_geometry,
@@ -214,7 +215,7 @@ class DatasetPoolPanel(QMainWindow):
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "오류", f"등록 실패:\n{exc}")
             return
-        self.lbl_result.setText(f"등록 완료: {name}")
+        announce_status(self.lbl_result, f"등록 완료: {name}")  # 보조기술 통지(ST-18)
         self.pool_changed.emit()
 
     def _on_build_pipeline(self) -> None:
@@ -231,7 +232,7 @@ class DatasetPoolPanel(QMainWindow):
         if dlg.exec() != dlg.Accepted:
             return
         self.vm.refresh()
-        self.lbl_result.setText(f"등록 완료: {dlg.saved_name} (조립 파이프라인)")
+        announce_status(self.lbl_result, f"등록 완료: {dlg.saved_name} (조립 파이프라인)")
         self.pool_changed.emit()
 
     def _on_register_nara(self) -> None:
@@ -268,7 +269,7 @@ class DatasetPoolPanel(QMainWindow):
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "오류", f"등록 실패:\n{exc}")
             return
-        self.lbl_result.setText(f"등록 완료: {name} (나라장터 쿼리 참조)")
+        announce_status(self.lbl_result, f"등록 완료: {name} (나라장터 쿼리 참조)")
         self.pool_changed.emit()
 
     def _confirm_pool_overwrite(self, name: str) -> bool:
