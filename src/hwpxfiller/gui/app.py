@@ -72,6 +72,10 @@ class AppController:
             "matrix", "여러 작업 일괄 실행",
             "선택한 작업들을 한 데이터에 일괄 적용해 생성합니다.",
         )
+        self.shell.register_static(
+            "txt", "즉시 기안",
+            "기안 템플릿에 데이터를 실시간으로 채워 문안을 복사·저장합니다.",
+        )
         self.home = JobListHome(registry)
         self.shell.activate("home", factory=lambda: self.home)
         # 레일 클릭 → 라우트 요청. 라우트 표는 스테이지 이관에 따라 자란다 — 미배선
@@ -82,6 +86,9 @@ class AppController:
             "pool": self._open_pool_manager,
             "vocab": self._open_vocab_workbench,
             "matrix": self._open_matrix_run,
+            "txt": self._open_txt,
+            # 동적 run 항목의 레일 클릭 — 페이지가 살아 있을 때만 존재하므로 전면 전환만.
+            "run": lambda: self.shell.activate("run"),
         }
         self.shell.nav_requested.connect(self._on_nav)
         # 공유 매핑 프로파일 레지스트리(J3) — 관리 화면·에디터가 공유(1회 저작 후 재사용).
@@ -159,15 +166,21 @@ class AppController:
             )
             self.home.refresh()
             return
-        job = self.registry.load(name)
-        # 실행뷰가 홈과 같은 데이터 풀 레지스트리를 공유(풀에서 겨눔). 홈이 풀을 노출하면 주입.
-        pool_registry = getattr(self.home, "pool_registry", None)
-        view = RunView(job, pool_registry=pool_registry)
-        # 성공 실행 → 작업 사용 메타(last_run_at) 갱신. RunView 는 레지스트리를 모른다
-        # (뷰 계약 유지) — 시그널 수신자만 추가.
-        view.run_finished.connect(lambda batch: self._record_run(name, batch))
-        self._track(view)
-        view.show()
+
+        def make():
+            job = self.registry.load(name)
+            # 실행뷰가 홈과 같은 데이터 풀 레지스트리를 공유(풀에서 겨눔). 홈이 풀을 노출하면 주입.
+            pool_registry = getattr(self.home, "pool_registry", None)
+            view = RunView(job, pool_registry=pool_registry)
+            # 성공 실행 → 작업 사용 메타(last_run_at) 갱신. RunView 는 레지스트리를 모른다
+            # (뷰 계약 유지) — 시그널 수신자만 추가.
+            view.run_finished.connect(lambda batch: self._record_run(name, batch))
+            self._track(view)
+            return view
+
+        # run 파라미터 슬롯(SHELL_DESIGN §2): 같은 작업 재사용, 다른 작업은 기존 페이지의
+        # can_leave(실행 중 확인, R4 teardown 보장) 경유 교체 — 셸이 게이트를 소유한다.
+        self.shell.open_run(name, make)
 
     def _record_run(self, name: str, batch) -> None:
         from datetime import datetime
@@ -180,13 +193,18 @@ class AppController:
         self.home.refresh()
 
     def _open_txt(self, name: "str | None" = None) -> None:
-        from .txt_view import TxtDraftView
+        def make():
+            from .txt_view import TxtDraftView
 
-        view = TxtDraftView(self.home.text_registry)
-        if name:
+            view = TxtDraftView(self.home.text_registry)
+            self._track(view)
+            return view
+
+        view = self.shell.activate("txt", factory=make)
+        # 이탈 게이트가 전환을 거부하면 activate 는 '현재 페이지'를 돌려준다 — 그때는
+        # txt 가 전면이 아니므로 템플릿 시드를 적용하지 않는다(오객체 호출 방지).
+        if name and self.shell.current_key() == "txt":
             view.select_template(name)
-        self._track(view)
-        view.show()
 
     def _open_template_manager(self, library_dir: "str | None" = None) -> None:
         """템플릿 관리 페이지(C5)를 전면으로. '작업 만들기'는 에디터로 프리로드 라우팅.
