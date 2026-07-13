@@ -19,7 +19,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QListWidget,
-    QMainWindow,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -36,8 +35,6 @@ from .view_helpers import (
     busy_cursor,
     hide_item_text,
     resync_card_item_heights,
-    restore_geometry,
-    save_geometry,
     wire_refresh_shortcut,
 )
 
@@ -183,8 +180,13 @@ class _TxtCard(QWidget):
         root.addWidget(btn_open)
 
 
-class JobListHome(QMainWindow):
-    """투트랙 허브 대시보드. :class:`HomeViewModel` 을 렌더하고 액션을 시그널로 방출한다."""
+class JobListHome(QWidget):
+    """투트랙 허브 대시보드. :class:`HomeViewModel` 을 렌더하고 액션을 시그널로 방출한다.
+
+    셸 페이지(ST-01, SHELL_DESIGN §2): 최상위 창이 아니라 :class:`~hwpxfiller.gui.shell.ShellWindow`
+    의 스택에 임베드된다 — 창 크롬(지오메트리 지속·closeEvent)은 셸이 소유하고, 홈은
+    시그널 계약을 든 렌더러로 남는다. 독립 생성(테스트)도 계속 동작한다.
+    """
 
     # HWPX 트랙(불변 계약)
     new_job_requested = Signal()
@@ -223,12 +225,11 @@ class JobListHome(QMainWindow):
         self.pool_registry = pool_registry
         self.vm = HomeViewModel(registry, text_registry, pool_registry)
 
+        # 창 제목은 유지(페이지 정체·테스트 호환) — 지오메트리 지속은 셸("shell" 키)이
+        # 소유한다(SHELL_DESIGN D7: 구 "home" 키는 읽기·쓰기 중단, INI 잔존 무해).
         self.setWindowTitle("HWPX Filler — 대시보드")
-        restore_geometry(self, "home", default_size=(900, 560))  # 세션 간 크기·위치 복원(ST-11)
         self.setStyleSheet(BASE_QSS)
-        central = QWidget()
-        self.setCentralWidget(central)
-        root = QVBoxLayout(central)
+        root = QVBoxLayout(self)
 
         # ---- 헤더 ----
         header = QHBoxLayout()
@@ -484,10 +485,6 @@ class JobListHome(QMainWindow):
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._sync_item_widths()
-
-    def closeEvent(self, event) -> None:
-        save_geometry(self, "home")  # 세션 간 크기·위치 유지(ST-11)
-        super().closeEvent(event)
 
     # ------------------------------------------------------------- 선택/보조
     def selected_job_name(self) -> "str | None":
