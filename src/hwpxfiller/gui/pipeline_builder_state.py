@@ -243,7 +243,7 @@ class PipelineBuilderViewModel:
             raise ValueError("소스가 없습니다 — 서브소스를 하나 이상 추가하세요.")
         if not overwrite and self.registry.exists(name):
             raise ValueError(
-                f"같은 이름의 풀 항목이 이미 있습니다: {name!r} — 다른 이름을 쓰거나 "
+                f"같은 이름의 데이터셋이 이미 있습니다: {name!r} — 다른 이름을 쓰거나 "
                 "덮어쓰기를 확정하세요."
             )
         # 조립 유효성 게이트(UD-01) — save 가 build_source 를 호출하지 않아 깨진 조립(부재 키·

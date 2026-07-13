@@ -124,7 +124,7 @@ def lint_template(
                 LintFinding(
                     "stray_token",
                     "warning",
-                    f"미치환 토큰(fieldize 가능): {{{{{site.name}}}}}",
+                    f"미치환 토큰(누름틀 변환 가능): {{{{{site.name}}}}}",
                     [site.name],
                 )
             )

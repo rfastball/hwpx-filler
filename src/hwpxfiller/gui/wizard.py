@@ -20,6 +20,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFileDialog,
+    QGridLayout,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -71,7 +72,10 @@ class TemplatePage(QWizardPage):
         self._gate_error = False
 
         layout = QVBoxLayout(self)
-        row = QHBoxLayout()
+        # 폼 배치 규약(UD-41): 라벨 열 공유 그리드 — 스텝4(SaveJobPage)의 QGridLayout 을
+        # 기준 패턴으로 스텝1·2도 정렬(라벨 시작선·필드 시작선 통일).
+        row = QGridLayout()
+        row.setColumnStretch(1, 1)
         self.ed_path = QLineEdit()
         self.ed_path.setReadOnly(True)
         # 읽기전용 경로 표시 필드는 포커스 체인에서 제외한다(UD-37): 남겨두면 스텝1
@@ -81,9 +85,9 @@ class TemplatePage(QWizardPage):
         self.ed_path.setFocusPolicy(Qt.NoFocus)
         btn = QPushButton("찾아보기…")
         btn.clicked.connect(self._pick)
-        row.addWidget(QLabel("템플릿(.hwpx)"))
-        row.addWidget(self.ed_path, 1)
-        row.addWidget(btn)
+        row.addWidget(QLabel("템플릿(.hwpx)"), 0, 0)
+        row.addWidget(self.ed_path, 0, 1)
+        row.addWidget(btn, 0, 2)
         layout.addLayout(row)
 
         self.lbl_summary = QLabel("")
@@ -299,9 +303,12 @@ class DataPage(QWizardPage):
         self._reverting = False  # 소스 토글 취소 시 라디오 되돌림의 재진입 가드
 
         layout = QVBoxLayout(self)
+        # 폼 배치 규약(UD-41): 라벨 열 공유 그리드 — 소스 선택 행과 경로/취득 행의 라벨
+        # 시작선·필드 시작선을 스텝4(SaveJobPage) 그리드 기준으로 통일(비정렬 HBox 해소).
+        form = QGridLayout()
+        form.setColumnStretch(1, 1)
 
         # ---- 소스 선택(엑셀/CSV | 나라장터) ----
-        src_row = QHBoxLayout()
         self.rb_excel = QRadioButton("엑셀/CSV 파일")
         self.rb_nara = QRadioButton("나라장터")
         self.rb_excel.setChecked(True)
@@ -309,13 +316,17 @@ class DataPage(QWizardPage):
         self._src_group.addButton(self.rb_excel)
         self._src_group.addButton(self.rb_nara)
         self.rb_excel.toggled.connect(self._on_source_toggle)
-        src_row.addWidget(QLabel("데이터 소스"))
+        src_choices = QWidget()
+        src_row = QHBoxLayout(src_choices)
+        src_row.setContentsMargins(0, 0, 0, 0)
         src_row.addWidget(self.rb_excel)
         src_row.addWidget(self.rb_nara)
         src_row.addStretch(1)
-        layout.addLayout(src_row)
+        form.addWidget(QLabel("데이터 소스"), 0, 0)
+        form.addWidget(src_choices, 0, 1, 1, 2)
 
-        # ---- 엑셀/CSV 파일 선택 행 ----
+        # ---- 엑셀/CSV 파일 선택 행 ---- (라벨은 그리드 열0, 필드 행은 열1)
+        self.lbl_excel = QLabel("데이터(.xlsx/.csv)")
         self.excel_row = QWidget()
         row = QHBoxLayout(self.excel_row)
         row.setContentsMargins(0, 0, 0, 0)
@@ -325,23 +336,26 @@ class DataPage(QWizardPage):
         self.ed_path.setFocusPolicy(Qt.NoFocus)
         btn = QPushButton("찾아보기…")
         btn.clicked.connect(self._pick)
-        row.addWidget(QLabel("데이터(.xlsx/.csv)"))
         row.addWidget(self.ed_path, 1)
         row.addWidget(btn)
-        layout.addWidget(self.excel_row)
+        form.addWidget(self.lbl_excel, 1, 0)
+        form.addWidget(self.excel_row, 1, 1, 1, 2)
 
-        # ---- 나라장터 취득 행 ----
+        # ---- 나라장터 취득 행 ---- (라벨·행을 함께 토글해 그리드 정렬 유지)
+        self.lbl_nara = QLabel("조달청 표준 입찰공고")
         self.nara_row = QWidget()
         nrow = QHBoxLayout(self.nara_row)
         nrow.setContentsMargins(0, 0, 0, 0)
         self.btn_nara = QPushButton("나라장터에서 가져오기…")
         self.btn_nara.clicked.connect(self._open_nara)
-        nrow.addWidget(QLabel("조달청 표준 입찰공고"))
         nrow.addWidget(self.btn_nara)
         nrow.addStretch(1)
+        self.lbl_nara.setVisible(False)
         self.nara_row.setVisible(False)
-        layout.addWidget(self.nara_row)
+        form.addWidget(self.lbl_nara, 2, 0)
+        form.addWidget(self.nara_row, 2, 1, 1, 2)
 
+        layout.addLayout(form)
         self.lbl_summary = QLabel("")
         self.lbl_summary.setWordWrap(True)
         layout.addWidget(self.lbl_summary)
@@ -379,7 +393,11 @@ class DataPage(QWizardPage):
             self.rb_excel.setChecked(not excel)
             self._reverting = False
             return
+        # 라벨·필드 행을 함께 토글해 그리드 라벨 열 정렬을 유지(UD-41): 숨긴 소스의
+        # 라벨만 남아 빈 필드 라벨이 떠 보이지 않게 한다.
+        self.lbl_excel.setVisible(excel)
         self.excel_row.setVisible(excel)
+        self.lbl_nara.setVisible(not excel)
         self.nara_row.setVisible(not excel)
         self.reset_data_session()
         self.completeChanged.emit()
@@ -513,7 +531,7 @@ class MappingPage(QWizardPage):
         self.setTitle("3단계 — 필드 매핑 확정")
         self.setSubTitle(
             "자동 제안은 초안일 뿐입니다. 모든 행을 검토해 확정해야 다음으로 진행합니다. "
-            "채우지 않을 필드는 소스를 (비움)으로 두고 확정하세요."
+            "채우지 않을 필드는 데이터 항목을 (비움)으로 두고 확정하세요."
         )
         self._built_for: "tuple[str, str, tuple[str, ...]] | None" = None
         self._preview_index = 0
@@ -789,7 +807,7 @@ class MappingPage(QWizardPage):
         try:
             base = reg.load(name)
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "오류", f"베이스 로드 실패:\n{exc}")
+            QMessageBox.critical(self, "오류", f"매핑 프로파일 로드 실패:\n{exc}")
             return
         applied = wiz.model.apply_profile(base)  # 이 템플릿에 없는 필드는 자동 skip
         wiz.base_mapping_name = name
@@ -848,7 +866,7 @@ class MappingPage(QWizardPage):
         try:
             reg.save(profile)
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "오류", f"베이스 저장 실패:\n{exc}")
+            QMessageBox.critical(self, "오류", f"매핑 프로파일 저장 실패:\n{exc}")
             return
         wiz.base_mapping_name = name
         QMessageBox.information(

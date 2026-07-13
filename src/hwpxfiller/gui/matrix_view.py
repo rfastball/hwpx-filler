@@ -118,8 +118,9 @@ class MatrixRunView(QMainWindow):
         root.addWidget(job_box)
         self._populate_jobs()
 
-        # ---- 데이터 겨눔 ----
-        drow = QHBoxLayout()
+        # ---- 데이터 ---- (UD-41: 동급 섹션 카드 프레이밍 통일 — 섹션명은 박스 제목으로)
+        data_box = QGroupBox("데이터")
+        drow = QHBoxLayout(data_box)
         self.ed_data = QLineEdit()
         self.ed_data.setReadOnly(True)
         self.btn_pool = QPushButton("데이터 풀에서…")
@@ -128,12 +129,11 @@ class MatrixRunView(QMainWindow):
         self.btn_file.clicked.connect(self._pick_file)
         self.btn_nara = QPushButton("나라장터…")
         self.btn_nara.clicked.connect(self._pick_nara)
-        drow.addWidget(QLabel("데이터"))
         drow.addWidget(self.ed_data, 1)
         drow.addWidget(self.btn_pool)
         drow.addWidget(self.btn_file)
         drow.addWidget(self.btn_nara)
-        root.addLayout(drow)
+        root.addWidget(data_box)
 
         # ---- 미입력 필드 확인(작업별 3상태 배지 + 강제 확인 게이트, UD-04·ADR-B/E) ----
         # 단일 실행의 하드스톱이 매트릭스 우회로 조용히 소멸하던 결함의 봉합 — 작업별
@@ -154,24 +154,27 @@ class MatrixRunView(QMainWindow):
         gbl.addWidget(self.lbl_gate)
         root.addWidget(gate_box)
 
-        # ---- 행 선택 ----
-        root.addWidget(QLabel("생성 대상 레코드"))
+        # ---- 생성 대상 레코드 ---- (UD-41: 동급 섹션 카드 프레이밍 통일)
+        rec_box = QGroupBox("생성 대상 레코드")
+        rec_l = QVBoxLayout(rec_box)
         self.selector = RecordSelector()
         self.selector.selectionChanged.connect(self._refresh_field_panel)
         # 세로 예산(UD-42): 두 번째 리스트 단도 캡해 표준 크기에서 결과·로그 푸터가
         # 접힘 아래로 밀리지 않게 한다(내부 스크롤로 다량 레코드 수용).
         self.selector.setMaximumHeight(200)
-        root.addWidget(self.selector)
+        rec_l.addWidget(self.selector)
+        root.addWidget(rec_box)
 
-        # ---- 출력 폴더 ----
-        orow = QGridLayout()
+        # ---- 저장 폴더 ---- (UD-41: 동급 섹션 카드 프레이밍 통일)
+        out_box = QGroupBox("저장 폴더")
+        orow = QGridLayout(out_box)
         self.ed_out = QLineEdit()
         btn_out = QPushButton("찾아보기…")
         btn_out.clicked.connect(self._pick_out)
-        orow.addWidget(QLabel("저장 폴더(작업별 하위폴더 생성)"), 0, 0)
+        orow.addWidget(QLabel("작업별 하위폴더 생성"), 0, 0)
         orow.addWidget(self.ed_out, 0, 1)
         orow.addWidget(btn_out, 0, 2)
-        root.addLayout(orow)
+        root.addWidget(out_box)
 
         # ---- 액션·진행·결과·로그: 고정 푸터(UD-42) ----
         # 스크롤되는 폼(위) 밖의 고정 푸터로 둬, 표준·좁은 폭 모두에서 결과 라벨·로그가
@@ -392,7 +395,7 @@ class MatrixRunView(QMainWindow):
     def _after_data_loaded(self, label: str) -> None:
         self.ed_data.setText(label)
         self.selector.set_records(self.vm.records, "행-{{seq}}")
-        self._say(f"데이터 겨눔: {label} — {len(self.vm.records)}행")
+        self._say(f"데이터 불러옴: {label} — {len(self.vm.records)}건")
         self._refresh_field_panel()  # 새 데이터 → 작업별 필드 배지·게이트 재계산(UD-04)
 
     def _pick_out(self) -> None:
@@ -475,7 +478,7 @@ class MatrixRunView(QMainWindow):
             if self._marked_missing:
                 # 표식 포함 문서를 무언급으로 '성공' 집계하던 낙관 서사 해소(UD-04) —
                 # 확인된 미입력이라도 표식이 들어갔음을 완료 시점에 병기한다.
-                summary += f" · 미입력 표시 {len(self._marked_missing)}필드"
+                summary += f" · 미입력 표시 필드 {len(self._marked_missing)}개"
             mark(self.lbl_result, "level", "ok" if result.failed == 0 else "danger")
         self.lbl_result.setText(summary)
         self._say(summary)

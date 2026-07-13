@@ -91,7 +91,7 @@ class JobCard(QWidget):
         if badge_level(row.compile_state) == "ok":
             mark(btn_run, "emphasis", "card")
         btn_run.clicked.connect(lambda: on_run(row.name))
-        btn_edit = QPushButton("작업 수정")
+        btn_edit = QPushButton("작업 편집")
         btn_edit.clicked.connect(lambda: on_edit(row.name))
         btn_del = QPushButton("삭제")
         mark(btn_del, "level", "danger")  # 파괴 버튼 시각 등급(UD-12) — 안전 버튼과 구별
@@ -346,7 +346,7 @@ class JobListHome(QMainWindow):
         sub = QLabel("템플릿과 매핑을 묶어 첫 작업을 만드세요.\n데이터·행은 실행할 때 고릅니다.")
         mark(sub, "muted", True)
         sub.setAlignment(Qt.AlignCenter)
-        self.btn_empty_new = QPushButton("＋ 새 작업 만들기")
+        self.btn_empty_new = QPushButton("＋ 새 문서 작업")
         mark(self.btn_empty_new, "primary", True)
         self.btn_empty_new.clicked.connect(self.new_job_requested)
         row = QHBoxLayout()

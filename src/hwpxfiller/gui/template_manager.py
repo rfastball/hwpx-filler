@@ -236,7 +236,7 @@ class TemplateManagerPanel(QMainWindow):
     # ---------------------------------------------------- 액션 디스패치
     def _dispatch(self, key: str, path: str) -> None:
         if key == "compile":
-            self._run_action("컴파일", path, lambda: self._on_compile(path))
+            self._run_action("누름틀 변환", path, lambda: self._on_compile(path))
         elif key == "review":
             self._run_action("검토", path, lambda: self._on_review(path))
         elif key == "preview":
@@ -278,9 +278,9 @@ class TemplateManagerPanel(QMainWindow):
             # (같은 화면 다른 결과 4종과 대칭 — 모달은 파괴 확정에만).
             self._show_result(self.vm.format_scan_empty_result(path, preview))
             return
-        lines.append(f"\n지금 컴파일하면 파일이 제자리에서 변경됩니다: {Path(path).name}")
+        lines.append(f"\n지금 누름틀로 변환하면 파일이 제자리에서 변경됩니다: {Path(path).name}")
         if not confirm_destructive(
-            self, "fieldize 미리보기 → 적용", "\n".join(lines), "컴파일 적용"
+            self, "누름틀 변환 미리보기 → 적용", "\n".join(lines), "누름틀 변환 적용"
         ):
             return  # dry-run 만 — 확인 없으면 변형 없음
         report = self.vm.apply_fieldize(path)

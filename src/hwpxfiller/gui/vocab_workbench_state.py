@@ -73,7 +73,8 @@ class VocabWorkbenchViewModel:
         return not self._rows
 
     def count_label(self) -> str:
-        return f"{len(self._rows)}개" if self._rows else ""
+        # 목록 헤더 카운트 분류사 통일(UD-34): 홈·템플릿·풀과 동일하게 '건'.
+        return f"{len(self._rows)}건" if self._rows else ""
 
     # ---------------------------------------------------------- 수명
     def delete(self, name: str) -> None:
@@ -93,7 +94,7 @@ class VocabWorkbenchViewModel:
         if new == old:
             return
         if self.registry.exists(new):
-            raise ValueError(f"'{new}' 베이스가 이미 있습니다.")
+            raise ValueError(f"'{new}' 매핑 프로파일이 이미 있습니다.")
         profile = self.registry.load(old)
         profile.name = new
         self.registry.save(profile)

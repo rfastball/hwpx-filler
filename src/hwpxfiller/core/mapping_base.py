@@ -48,7 +48,7 @@ class MappingBaseRegistry:
 
     def save(self, profile: MappingProfile) -> None:
         if not profile.name:
-            raise ValueError("베이스 매핑 이름이 비어 있습니다.")
+            raise ValueError("매핑 프로파일 이름이 비어 있습니다.")
         self.directory.mkdir(parents=True, exist_ok=True)
         profile.save(self.path_for(profile.name))
 

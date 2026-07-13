@@ -141,7 +141,7 @@ class PipelineBuilderDialog(QDialog):
         foot = QHBoxLayout()
         foot.addWidget(QLabel("이름:"))
         self.edt_name = QLineEdit()
-        self.edt_name.setPlaceholderText("파이프라인 이름 (풀 항목으로 저장)")
+        self.edt_name.setPlaceholderText("파이프라인 이름 (데이터셋으로 저장)")
         foot.addWidget(self.edt_name, 1)
         self.btn_save = QPushButton("풀에 저장")
         mark(self.btn_save, "primary", True)
@@ -301,7 +301,7 @@ class PipelineBuilderDialog(QDialog):
                 self.tbl_preview.setItem(r, c, restate_preview_item(rec, f))
         shown = len(result.rows)
         self.lbl_total.setText(
-            f"총 {result.total}행" + (f" (상위 {shown}행 표시)" if result.total > shown else "")
+            f"총 {result.total}건" + (f" (상위 {shown}건 표시)" if result.total > shown else "")
         )
 
     def _on_save(self) -> None:
@@ -311,7 +311,7 @@ class PipelineBuilderDialog(QDialog):
         if name and self.vm.registry.exists(name):
             if not confirm_destructive(
                 self, "이름 충돌",
-                f"'{name}' 풀 항목이 이미 있습니다 — 이 파이프라인으로 덮어쓰면 "
+                f"'{name}' 데이터셋이 이미 있습니다 — 이 파이프라인으로 덮어쓰면 "
                 "기존 참조는 사라집니다.",
                 "덮어쓰기",
             ):

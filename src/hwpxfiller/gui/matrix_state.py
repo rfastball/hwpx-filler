@@ -267,5 +267,5 @@ class MatrixRunViewModel:
         parts = "; ".join(f"{jn}({', '.join(fs)})" for jn, fs in by_job.items())
         return GateState(
             False, "warn",
-            f"미입력 {len(unmet)}필드의 배지를 눌러 확인해야 일괄 생성이 가능합니다: {parts}",
+            f"미입력 필드 {len(unmet)}개의 배지를 눌러 확인해야 일괄 생성이 가능합니다: {parts}",
         )

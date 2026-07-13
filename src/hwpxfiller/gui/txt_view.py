@@ -41,9 +41,12 @@ from .txt_state import TxtDraftViewModel
 from .view_helpers import ElidedLabel
 
 _TOKEN = re.compile(r"\{\{\s*([^{}|]+?)\s*\}\}")
-_STATE_LABEL = {"fill": "✓ 채움", "blank": "◦ 빈 값", "missing": "● 미입력"}
+# 상태 어휘 3정의 경계(UD-20): txt 의 'missing'=데이터에 해당 **항목(열) 부재**라
+# '항목 없음'으로 표기한다 — 실행 화면의 '미입력'(출력값 빔·ack 대상)과 구분한다.
+# 'blank'=항목은 있으나 값이 빈 '빈 값'(원천 데이터 값 빔).
+_STATE_LABEL = {"fill": "✓ 채움", "blank": "◦ 빈 값", "missing": "● 항목 없음"}
 # 완료 라벨(lbl_note)의 기본 안내 — 복사/저장 전, 그리고 레코드·템플릿 전환 후 복귀 문구.
-_NOTE_DEFAULT = "현재 미리보기 내용을 복사합니다. 미입력 토큰은 그대로 표시됩니다."
+_NOTE_DEFAULT = "현재 미리보기 내용을 복사합니다. 항목 없는 토큰은 그대로 표시됩니다."
 
 
 class TxtDraftView(QMainWindow):
@@ -264,7 +267,7 @@ class TxtDraftView(QMainWindow):
         empty = report.empty_fields
         if missing:
             level = "warn"
-            text = (f"⚠ 미입력 {len(missing)}건({', '.join(missing)}) 포함 {action}됨 "
+            text = (f"⚠ 항목 없음 {len(missing)}건({', '.join(missing)}) 포함 {action}됨 "
                     "— 빨간 토큰을 확인한 뒤 붙여넣으세요.")
         elif empty:
             level = "warn"
@@ -291,7 +294,7 @@ class TxtDraftView(QMainWindow):
             mark(chip, "fb", tok.state)
             self.tok_flow.addWidget(chip)
 
-        # 미리보기는 템플릿에서 직접 토큰을 재진술 렌더한다(UD-26 E7) — 미입력은 빨강
+        # 미리보기는 템플릿에서 직접 토큰을 재진술 렌더한다(UD-26 E7) — 항목 없음은 빨강
         # {{토큰}}, 빈 값은 '〈빈 값〉' 마커로 위치를 남긴다. 채우다 만 자리가 무표시 빈
         # 공간으로 사라지지 않는다(ADR-B '빈 공간으로 보이면 안 됨'). 클립보드 복사(_copy)는
         # vm.render() 의 실제 텍스트를 쓰므로 마커에 영향받지 않는다.
@@ -310,7 +313,7 @@ class TxtDraftView(QMainWindow):
     def _build_preview_html(template: str, record: "dict") -> str:
         """템플릿의 토큰을 레코드로 치환하되 미충족을 명시 재진술한 미리보기 HTML(UD-26 E7).
 
-        - 미입력(레코드에 없음): 빨강 ``{{토큰}}`` 으로 그대로 노출(조용히 안 지움, ADR-E).
+        - 항목 없음(레코드에 없음): 빨강 ``{{토큰}}`` 으로 그대로 노출(조용히 안 지움, ADR-E).
         - 빈 값(필드는 있으나 값이 빔): ``〈빈 값〉`` muted 마커로 **위치**를 남긴다 — blank 가
           ``''`` 로 치환·소멸해 어느 자리가 빈 채 나가는지 특정 불가이던 결함을 봉합한다.
         - 채움: 값 그대로.
@@ -343,7 +346,8 @@ class TxtDraftView(QMainWindow):
 
     def _save(self) -> None:
         text, report = self.vm.render()
-        path, _ = QFileDialog.getSaveFileName(self, "txt 저장", "기안.txt", "텍스트 (*.txt)")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "텍스트 파일로 저장", "기안.txt", "텍스트 (*.txt)")
         if not path:
             return
         try:
@@ -355,7 +359,7 @@ class TxtDraftView(QMainWindow):
         if report.missing_fields or report.empty_fields:
             QMessageBox.warning(
                 self, "저장",
-                "기안 텍스트를 저장했습니다. 미입력/빈 값이 포함되어 있으니 확인하세요.",
+                "기안 텍스트를 저장했습니다. 항목 없음/빈 값이 포함되어 있으니 확인하세요.",
             )
         else:
             QMessageBox.information(self, "저장", "기안 텍스트를 저장했습니다.")

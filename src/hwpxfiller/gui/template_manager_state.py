@@ -109,7 +109,7 @@ class ScanPreview:
         return bool(self.compilable)
 
     def summary(self) -> str:
-        return f"컴파일 가능 {len(self.compilable)}개 · 건너뜀 {len(self.skipped)}개"
+        return f"변환 가능 {len(self.compilable)}개 · 건너뜀 {len(self.skipped)}개"
 
 
 @dataclass
@@ -139,13 +139,14 @@ class TemplateRow:
         """스킵/잔존 상세를 담은 한 줄 메타(위생 신호)."""
         if self.is_error:
             return f"읽기 실패: {self.error}"
+        # 카드 메타 수량은 분류사 '개'로 통일(UD-34) — '미컴파일'은 '미변환'으로(UD-18).
         parts = [f"필드 {self.field_count}개"]
         if self.compilable_n:
-            parts.append(f"미컴파일 {self.compilable_n}")
+            parts.append(f"미변환 {self.compilable_n}개")
         if self.skipped_n:
-            parts.append(f"수동 {self.skipped_n}")
+            parts.append(f"수동 {self.skipped_n}개")
         if self.stray_n:
-            parts.append(f"잔존 {self.stray_n}")
+            parts.append(f"잔존 {self.stray_n}개")
         return " · ".join(parts)
 
     def actions(self) -> "list[TemplateAction]":
@@ -304,7 +305,7 @@ class TemplateManagerViewModel:
     def format_compile_result(self, path: str, report) -> ResultLine:
         """apply_fieldize 리포트 → 결과 문구(대상 템플릿명 포함) — 성공은 ok(UD-07)."""
         return ResultLine(
-            f"컴파일 완료 — {Path(path).name}: 필드 {len(report.compiled)}개 추가", "ok"
+            f"누름틀 변환 완료 — {Path(path).name}: 필드 {len(report.compiled)}개 추가", "ok"
         )
 
     def format_scan_empty_result(self, path: str, preview: "ScanPreview") -> ResultLine:
@@ -314,7 +315,7 @@ class TemplateManagerViewModel:
         ADR-E: 모달은 파괴 확정에만). 진행 불가 통지이므로 warn 레벨.
         """
         name = Path(path).name
-        text = f"컴파일 — {name}: 변환 가능한 토큰이 없습니다"
+        text = f"누름틀 변환 — {name}: 변환 가능한 토큰이 없습니다"
         if preview.skipped:
             names = ", ".join(s.name for s in preview.skipped)
             text += f" (건너뜀 {len(preview.skipped)}개: {names})"

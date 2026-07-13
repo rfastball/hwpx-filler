@@ -49,7 +49,7 @@ class _BaseCard(QWidget):
         name_row.addStretch(1)
         root.addLayout(name_row)
 
-        lbl_meta = QLabel(f"정준 필드 {row.field_count}개")
+        lbl_meta = QLabel(f"필드 {row.field_count}개")
         mark(lbl_meta, "muted", True)
         root.addWidget(lbl_meta)
 

@@ -18,7 +18,11 @@ from ..data import source_for_path, source_from_pool_item
 
 @dataclass
 class TokenState:
-    """토큰 1개의 채움 상태(좌측 패널 배지) — 채움/빈 값/미입력."""
+    """토큰 1개의 채움 상태(좌측 패널 배지) — 채움/빈 값/항목 없음(UD-20 어휘 경계).
+
+    'missing'=데이터에 해당 항목(열) 부재 → '항목 없음'(실행 화면 '미입력'과 구분),
+    'blank'=항목은 있으나 값이 빔 → '빈 값'.
+    """
 
     name: str
     state: str  # "fill" | "blank" | "missing"

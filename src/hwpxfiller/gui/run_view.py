@@ -120,8 +120,9 @@ class RunView(QMainWindow):
         root.addWidget(target_box)
         self._on_target_mode()  # 초기 상태(신규) 반영
 
-        # ---- 데이터 겨눔 ----
-        drow = QHBoxLayout()
+        # ---- 데이터 ---- (UD-41: 동급 섹션 카드 프레이밍 통일 — 섹션명은 박스 제목으로)
+        data_box = QGroupBox("데이터")
+        drow = QHBoxLayout(data_box)
         self.ed_data = QLineEdit()
         self.ed_data.setReadOnly(True)
         self.btn_pool = QPushButton("데이터 풀에서…")
@@ -130,12 +131,11 @@ class RunView(QMainWindow):
         self.btn_data.clicked.connect(self._pick_data)
         self.btn_nara = QPushButton("나라장터…")
         self.btn_nara.clicked.connect(self._pick_nara)
-        drow.addWidget(QLabel("데이터"))
         drow.addWidget(self.ed_data, 1)
         drow.addWidget(self.btn_pool)
         drow.addWidget(self.btn_data)
         drow.addWidget(self.btn_nara)
-        root.addLayout(drow)
+        root.addWidget(data_box)
 
         # ---- 사전검증(치명 소스누락 표시) ----
         self.lbl_preflight = QLabel("")
@@ -159,14 +159,18 @@ class RunView(QMainWindow):
         gbl.addWidget(self.lbl_gate)
         root.addWidget(gate_box)
 
-        # ---- 행 선택 ----
-        root.addWidget(QLabel("생성 대상 레코드"))
+        # ---- 생성 대상 레코드 ---- (UD-41: 동급 섹션 카드 프레이밍 통일)
+        rec_box = QGroupBox("생성 대상 레코드")
+        rec_l = QVBoxLayout(rec_box)
         self.selector = RecordSelector()
         self.selector.selectionChanged.connect(self._on_selection_changed)
-        root.addWidget(self.selector, 1)
+        rec_l.addWidget(self.selector, 1)
+        root.addWidget(rec_box, 1)
 
-        # ---- 출력 폴더 ----
-        orow = QGridLayout()
+        # ---- 저장 폴더 ---- (UD-41: 동급 섹션 카드 프레이밍 통일 — 섹션명은 박스 제목으로)
+        out_box = QGroupBox("저장 폴더")
+        orow = QGridLayout(out_box)
+        orow.setColumnStretch(0, 1)
         self.ed_out = QLineEdit()
         if job.template_path:
             self.ed_out.setText(str(Path(job.template_path).parent / "Results"))
@@ -175,9 +179,8 @@ class RunView(QMainWindow):
         self.ed_out.textChanged.connect(self._sync_generate_enabled)
         btn_out = QPushButton("찾아보기…")
         btn_out.clicked.connect(self._pick_out)
-        orow.addWidget(QLabel("저장 폴더"), 0, 0)
-        orow.addWidget(self.ed_out, 0, 1)
-        orow.addWidget(btn_out, 0, 2)
+        orow.addWidget(self.ed_out, 0, 0)
+        orow.addWidget(btn_out, 0, 1)
         # 생성 원장(L2) — 기본 꺼짐(opt-in). 고위험 문서 계보가 필요할 때만 켠다.
         self.chk_ledger = QCheckBox("생성 원장(JSON) 저장 — 들어간 값의 증거")
         self.chk_ledger.setToolTip(
@@ -185,8 +188,8 @@ class RunView(QMainWindow):
             "소스 실제형 샘플, 필드별 주입 예정값, 생성 후 문서 되읽기 검증(✓/✗). "
             "값은 텍스트이며 HWPX 렌더가 아닙니다."
         )
-        orow.addWidget(self.chk_ledger, 1, 1)
-        root.addLayout(orow)
+        orow.addWidget(self.chk_ledger, 1, 0)
+        root.addWidget(out_box)
 
         # ---- 액션 ----
         actions = QHBoxLayout()
@@ -529,7 +532,7 @@ class RunView(QMainWindow):
             summary = f"완료 — 성공 {batch.succeeded}/{batch.total} · 실패 {batch.failed}"
             marked = self._marked_fields
             if marked:
-                summary += f" · 미입력 표시 {len(marked)}필드({', '.join(marked)})"
+                summary += f" · 미입력 표시 필드 {len(marked)}개({', '.join(marked)})"
             mark(self.lbl_result, "level", "ok" if batch.failed == 0 else "danger")
         self.lbl_result.setText(summary)
         self._say(summary)

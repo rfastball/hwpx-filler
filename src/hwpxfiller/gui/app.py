@@ -227,8 +227,8 @@ class AppController:
             base = self.base_registry.load(base_name)
         except Exception as exc:  # noqa: BLE001 — 침묵 no-op 금지(RC-04): 알리고 재동기화
             QMessageBox.warning(
-                self.home, "베이스 열기 실패",
-                f"베이스 매핑 '{base_name}' 을(를) 불러올 수 없습니다.\n{exc}",
+                self.home, "매핑 프로파일 열기 실패",
+                f"매핑 프로파일 '{base_name}' 을(를) 불러올 수 없습니다.\n{exc}",
             )
             # 스테일 목록(삭제·손상된 베이스)일 수 있으니 열린 워크벤치를 갱신한다.
             for child in self._children:
