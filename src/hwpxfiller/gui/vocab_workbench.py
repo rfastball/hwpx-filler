@@ -16,7 +16,6 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QListWidget,
-    QMainWindow,
     QMessageBox,
     QPushButton,
     QStackedWidget,
@@ -29,9 +28,7 @@ from .style import BASE_QSS, mark
 from .view_helpers import (
     build_empty_state,
     hide_item_text,
-    restore_geometry,
     resync_card_item_heights,
-    save_geometry,
     wire_refresh_shortcut,
 )
 from .vocab_workbench_state import VocabBaseRow, VocabWorkbenchViewModel
@@ -78,8 +75,12 @@ class _BaseCard(QWidget):
         root.addLayout(foot)
 
 
-class VocabWorkbenchPanel(QMainWindow):
-    """매핑 프로파일 관리 화면. :class:`VocabWorkbenchViewModel` 을 렌더한다."""
+class VocabWorkbenchPanel(QWidget):
+    """매핑 프로파일 관리 화면. :class:`VocabWorkbenchViewModel` 을 렌더한다.
+
+    셸 페이지(ST-01, SHELL_DESIGN §2) — 창 크롬(지오메트리·closeEvent)은 셸이 소유.
+    독립 생성(테스트)도 계속 동작한다.
+    """
 
     edit_base_requested = Signal(str)  # 베이스 이름 → app 이 위저드를 베이스 시드로 연다
     base_changed = Signal()            # 삭제/이름변경 후 — 홈/에디터 갱신용
@@ -89,12 +90,9 @@ class VocabWorkbenchPanel(QMainWindow):
         self.vm = VocabWorkbenchViewModel(base_registry, job_registry)
 
         self.setWindowTitle("HWPX Filler — 매핑 프로파일")
-        restore_geometry(self, "vocab", default_size=(680, 520))  # ST-11
         wire_refresh_shortcut(self)  # F5 → 새로고침(ST-12)
         self.setStyleSheet(BASE_QSS)
-        central = QWidget()
-        self.setCentralWidget(central)
-        root = QVBoxLayout(central)
+        root = QVBoxLayout(self)
 
         header = QHBoxLayout()
         title = QLabel("매핑 프로파일")
@@ -147,10 +145,6 @@ class VocabWorkbenchPanel(QMainWindow):
     def _sync_cards(self) -> None:
         """카드 item sizeHint 를 폴리시 후 재계산(UD-11 공용 헬퍼)."""
         resync_card_item_heights(self.list)
-
-    def closeEvent(self, event) -> None:  # noqa: N802 — Qt 오버라이드
-        save_geometry(self, "vocab")  # 세션 간 크기·위치 유지(ST-11)
-        super().closeEvent(event)
 
     def resizeEvent(self, event) -> None:  # noqa: N802 — Qt 오버라이드
         super().resizeEvent(event)

@@ -56,11 +56,33 @@ class AppController:
         # 능력 페이지들은 라우트별 지연 factory 로 임베드한다(스테이지 순차 이관).
         self.shell = ShellWindow()
         self.shell.register_static("home", "대시보드", "작업 보관함 — 두 트랙 허브")
+        self.shell.register_static(
+            "template", "템플릿 관리",
+            "누름틀 템플릿(.hwpx)의 컴파일 상태를 보고 스키마 추출·누름틀 변환·검토를 합니다.",
+        )
+        self.shell.register_static(
+            "pool", "데이터 풀",
+            "재사용할 데이터 참조(엑셀/CSV 경로·나라장터 쿼리·조립 파이프라인)를 등록·보관합니다.",
+        )
+        self.shell.register_static(
+            "vocab", "매핑 프로파일",
+            "여러 작업이 공유하는 필드↔소스 매핑 베이스를 저작·재사용합니다.",
+        )
+        self.shell.register_static(
+            "matrix", "여러 작업 일괄 실행",
+            "선택한 작업들을 한 데이터에 일괄 적용해 생성합니다.",
+        )
         self.home = JobListHome(registry)
         self.shell.activate("home", factory=lambda: self.home)
         # 레일 클릭 → 라우트 요청. 라우트 표는 스테이지 이관에 따라 자란다 — 미배선
         # 키는 조용한 no-op 대신 KeyError(RC-04: 배선 어긋남은 기동 즉시 시끄럽게).
-        self._nav_routes: "dict[str, object]" = {"home": self.shell.go_home}
+        self._nav_routes: "dict[str, object]" = {
+            "home": self.shell.go_home,
+            "template": self._open_template_manager,
+            "pool": self._open_pool_manager,
+            "vocab": self._open_vocab_workbench,
+            "matrix": self._open_matrix_run,
+        }
         self.shell.nav_requested.connect(self._on_nav)
         # 공유 매핑 프로파일 레지스트리(J3) — 관리 화면·에디터가 공유(1회 저작 후 재사용).
         self.base_registry = MappingBaseRegistry(default_mapping_bases_dir())
@@ -167,31 +189,36 @@ class AppController:
         view.show()
 
     def _open_template_manager(self, library_dir: "str | None" = None) -> None:
-        """템플릿 관리 워크숍(C5)을 연다. '작업 만들기'는 에디터로 프리로드 라우팅.
+        """템플릿 관리 페이지(C5)를 전면으로. '작업 만들기'는 에디터로 프리로드 라우팅.
 
         ``library_dir=None``(홈 시그널은 무인자)이면 패널이 표준 라이브러리
         (:func:`~hwpxfiller.core.template_status.default_templates_dir`)를 겨눈다(RC-14).
+        셸 페이지(ST-01) — 유일성은 스택이 구조로 보장(구 ST-10 싱글턴 대체), 재진입
+        시 셸이 refresh 를 호출한다. ``library_dir`` 시드는 첫 생성에만 반영된다
+        (재진입 무시 — 구 싱글턴 재사용과 동일 의미).
         """
-        if self._raise_singleton("template"):  # 중복 관리 창 방지(ST-10)
-            return
-        from .template_manager import TemplateManagerPanel
+        def make():
+            from .template_manager import TemplateManagerPanel
 
-        panel = TemplateManagerPanel(library_dir)
-        panel.make_job_requested.connect(self._open_editor_from_template)
-        self._track(panel, singleton_key="template")
-        panel.show()
+            panel = TemplateManagerPanel(library_dir)
+            panel.make_job_requested.connect(self._open_editor_from_template)
+            self._track(panel)
+            return panel
+
+        self.shell.activate("template", factory=make)
 
     def _open_matrix_run(self) -> None:
-        """여러 작업 일괄 실행(J2) 창을 연다 — 홈과 같은 풀 레지스트리 공유."""
-        if self._raise_singleton("matrix"):  # 중복 관리 창 방지(ST-10)
-            return
-        from .matrix_view import MatrixRunView
+        """여러 작업 일괄 실행(J2) 페이지를 전면으로 — 홈과 같은 풀 레지스트리 공유."""
+        def make():
+            from .matrix_view import MatrixRunView
 
-        pool_registry = getattr(self.home, "pool_registry", None)
-        view = MatrixRunView(self.registry, pool_registry=pool_registry)
-        view.run_finished.connect(self._record_matrix_run)
-        self._track(view, singleton_key="matrix")
-        view.show()
+            pool_registry = getattr(self.home, "pool_registry", None)
+            view = MatrixRunView(self.registry, pool_registry=pool_registry)
+            view.run_finished.connect(self._record_matrix_run)
+            self._track(view)
+            return view
+
+        self.shell.activate("matrix", factory=make)
 
     def _record_matrix_run(self, result) -> None:
         """매트릭스 생성 성공분을 작업별 last_run_at 에 기록하고 홈 갱신."""
@@ -210,15 +237,16 @@ class AppController:
             self.home.refresh()
 
     def _open_pool_manager(self) -> None:
-        """데이터 풀 관리 워크숍(J1)을 연다. 변경 시 홈 KPI 를 갱신한다."""
-        if self._raise_singleton("pool"):  # 중복 관리 창 방지(ST-10)
-            return
-        from .dataset_pool_panel import DatasetPoolPanel
+        """데이터 풀 관리 페이지(J1)를 전면으로. 변경 시 홈 KPI 를 갱신한다."""
+        def make():
+            from .dataset_pool_panel import DatasetPoolPanel
 
-        panel = DatasetPoolPanel(getattr(self.home, "pool_registry", None))
-        panel.pool_changed.connect(self.home.refresh)
-        self._track(panel, singleton_key="pool")
-        panel.show()
+            panel = DatasetPoolPanel(getattr(self.home, "pool_registry", None))
+            panel.pool_changed.connect(self.home.refresh)
+            self._track(panel)
+            return panel
+
+        self.shell.activate("pool", factory=make)
 
     def _open_editor_from_template(self, template_path: str) -> None:
         """관리 패널의 '작업 만들기' → 새 작업 에디터(템플릿 경로 세션에 시드).
@@ -235,16 +263,17 @@ class AppController:
         wiz.show()
 
     def _open_vocab_workbench(self) -> None:
-        """매핑 프로파일 관리 화면(J3)을 연다 — 편집은 위저드를 베이스 시드로 개방."""
-        if self._raise_singleton("vocab"):  # 중복 관리 창 방지(ST-10)
-            return
-        from .vocab_workbench import VocabWorkbenchPanel
+        """매핑 프로파일 관리 페이지(J3)를 전면으로 — 편집은 위저드를 베이스 시드로 개방."""
+        def make():
+            from .vocab_workbench import VocabWorkbenchPanel
 
-        panel = VocabWorkbenchPanel(self.base_registry, job_registry=self.registry)
-        panel.edit_base_requested.connect(self._open_editor_from_base)
-        panel.base_changed.connect(self.home.refresh)
-        self._track(panel, singleton_key="vocab")
-        panel.show()
+            panel = VocabWorkbenchPanel(self.base_registry, job_registry=self.registry)
+            panel.edit_base_requested.connect(self._open_editor_from_base)
+            panel.base_changed.connect(self.home.refresh)
+            self._track(panel)
+            return panel
+
+        self.shell.activate("vocab", factory=make)
 
     def _open_editor_from_base(self, base_name: str) -> None:
         """워크벤치 '편집' → 베이스를 시드한 새 위저드(템플릿 선택 후 이름 교집합 투영)."""

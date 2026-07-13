@@ -610,7 +610,8 @@ def test_accessible_names_and_buddies_present(qapp, tmp_path, monkeypatch):
 
 
 def test_managed_windows_are_singletons(qapp, tmp_path, monkeypatch):
-    """관리 창 재요청은 새 창을 만들지 않고 기존 창을 재사용한다(ST-10)."""
+    """관리 능력 재요청은 새 인스턴스를 만들지 않는다 — 셸 스택 페이지 재사용이
+    구 ST-10 싱글턴을 구조로 승계한다(ST-01, SHELL_DESIGN §3)."""
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
     from hwpxfiller.core.job import JobRegistry
     from hwpxfiller.gui.app import AppController
@@ -621,6 +622,49 @@ def test_managed_windows_are_singletons(qapp, tmp_path, monkeypatch):
     ctrl.home.manage_pool_requested.emit()  # 두 번째 요청 → 중복 생성 금지
     pools = [c for c in ctrl._children if isinstance(c, DatasetPoolPanel)]
     assert len(pools) == 1
+
+
+def test_managed_page_reentry_refreshes_and_moves_rail(qapp, tmp_path, monkeypatch):
+    """관리 페이지 재진입 시 refresh 로 은닉 중 스테일 해소(SHELL_DESIGN D6) +
+    현재 위치 표지(current_key)가 라우트를 따라 이동한다(ST-01)."""
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.app import AppController
+
+    ctrl = AppController(JobRegistry(tmp_path / "jobs"))
+    ctrl.home.manage_pool_requested.emit()
+    assert ctrl.shell.current_key() == "pool"
+    pool_page = ctrl.shell.stack.currentWidget()
+    calls = []
+    monkeypatch.setattr(pool_page, "refresh", lambda: calls.append(1))
+    ctrl.shell.go_home()
+    assert ctrl.shell.current_key() == "home"
+    ctrl.home.manage_pool_requested.emit()  # 재진입 → refresh 1회
+    assert ctrl.shell.current_key() == "pool"
+    assert calls == [1]
+
+
+def test_matrix_page_leave_while_running_gated(qapp, tmp_path, monkeypatch):
+    """일괄 생성 진행 중 셸 이탈은 협조적 취소 확인을 거친다(ST-21 → SHELL_DESIGN D8)
+    — 거부 시 페이지 유지, 수락 시 취소+teardown 후 전환."""
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui import matrix_view as mv
+    from hwpxfiller.gui.app import AppController
+
+    ctrl = AppController(JobRegistry(tmp_path / "jobs"))
+    ctrl.home.matrix_run_requested.emit()
+    assert ctrl.shell.current_key() == "matrix"
+    view = ctrl.shell.stack.currentWidget()
+    view._running = True
+    monkeypatch.setattr(mv, "confirm_destructive", lambda *a, **k: False)
+    ctrl.shell.go_home()
+    assert ctrl.shell.current_key() == "matrix"  # 이탈 거부 → 전환 무산
+    assert view._running is True
+    monkeypatch.setattr(mv, "confirm_destructive", lambda *a, **k: True)
+    ctrl.shell.go_home()
+    assert ctrl.shell.current_key() == "home"  # 수락 → 취소·teardown 후 전환
+    assert view._running is False
 
 
 def test_keyboard_affordances_present(qapp, tmp_path, monkeypatch):
