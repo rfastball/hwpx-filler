@@ -51,18 +51,32 @@
       "fmt": ""
     },
     {
-      "template_field": "입찰개시일시",
+      "template_field": "입찰개시일자",
       "source": "bidBeginDate",
       "type": "date",
       "const": "",
       "fmt": ""
     },
     {
-      "template_field": "입찰마감일시",
+      "template_field": "입찰개시시각",
+      "source": "bidBeginTm",
+      "type": "date",
+      "const": "",
+      "fmt": "%H:%M"
+    },
+    {
+      "template_field": "입찰마감일자",
       "source": "bidClseDate",
       "type": "date",
       "const": "",
       "fmt": ""
+    },
+    {
+      "template_field": "입찰마감시각",
+      "source": "bidClseTm",
+      "type": "date",
+      "const": "",
+      "fmt": "%H:%M"
     },
     {
       "template_field": "개찰일자",
