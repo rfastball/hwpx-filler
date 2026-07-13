@@ -100,14 +100,19 @@ function mapAreas(files) {
   return { areas: [...hit], frozenHit, unmapped }
 }
 
+// args 정규화 — 하네스가 Workflow args 를 JSON 문자열로 전달하는 경우가 있어(그러면
+// 스크립트의 args.mode/args.request 접근이 undefined → 조용한 오류), 문자열이면 객체로
+// 파싱한다. 이미 객체면 그대로. 이후 코드는 전부 정규화된 A 를 쓴다.
+const A = (typeof args === 'string') ? JSON.parse(args) : (args || {})
+
 // ═════════════════════════════ MODE: plan ═════════════════════════════
-if (!args || !args.mode || args.mode === 'plan') {
-  if (!args || !args.request) return { error: 'args.request(기능 요청 설명)가 필요하다.' }
+if (!A.mode || A.mode === 'plan') {
+  if (!A.request) return { error: 'args.request(기능 요청 설명)가 필요하다.' }
 
   phase('Impact')
   const impact = await agent(
     `hwpx-filler 저장소의 변경 영향도 조사 담당이다. 코드를 절대 수정하지 마라(읽기 전용).
-기능 요청: ${args.request}
+기능 요청: ${A.request}
 
 영역 정의: ${JSON.stringify(AREAS)}
 동결 영역(건드리면 안 됨): src/hwpxdiff/
@@ -121,7 +126,7 @@ gui의 view/*_state 쌍 구조, 링 계약(tests/test_architecture.py·test_ui_c
   phase('Plan')
   const plan = await agent(
     `hwpx-filler 기능 계획 담당이다. 코드를 수정하지 마라.
-기능 요청: ${args.request}
+기능 요청: ${A.request}
 영향도 보고: ${JSON.stringify(impact)}
 
 task로 분할하라. 각 task에 objective·acceptance(검증 가능한 완료 조건)·test_files(관련 pytest 파일)를 채워라.
@@ -136,10 +141,10 @@ ${ORTHOGONALITY_RULES}
 }
 
 // ═════════════════════════════ MODE: implement ═════════════════════════════
-if (args.mode === 'implement') {
-  if (!args.plan || !Array.isArray(args.plan.tasks) || !args.plan.tasks.length)
+if (A.mode === 'implement') {
+  if (!A.plan || !Array.isArray(A.plan.tasks) || !A.plan.tasks.length)
     return { error: 'args.plan(확정된 계획)이 필요하다.' }
-  const plan = args.plan
+  const plan = A.plan
   // 계획 재검증 — 사용자 확정을 거쳐 왕복한 값이므로 형식을 다시 확인한다(늦은 TypeError 방지).
   const malformed = []
   if (!Array.isArray(plan.areas)) malformed.push('plan.areas 누락')
@@ -304,4 +309,4 @@ blocker = 머지 불가 사유, warn = 사용자 판단 사항. 반증 실패면
   return report
 }
 
-return { error: `알 수 없는 mode: ${args.mode}` }
+return { error: `알 수 없는 mode: ${A.mode}` }
