@@ -38,6 +38,7 @@ from .view_helpers import (
     restore_geometry,
     resync_card_item_heights,
     save_geometry,
+    wire_refresh_shortcut,
 )
 
 
@@ -94,6 +95,7 @@ class DatasetPoolPanel(QMainWindow):
 
         self.setWindowTitle("HWPX Filler — 데이터 풀")
         restore_geometry(self, "pool", default_size=(720, 560))  # ST-11
+        wire_refresh_shortcut(self)  # F5 → 새로고침(ST-12)
         self.setStyleSheet(BASE_QSS)
         central = QWidget()
         self.setCentralWidget(central)

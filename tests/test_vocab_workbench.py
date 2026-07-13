@@ -227,7 +227,9 @@ def test_home_label_matches_mapping_profile_window_title(qapp, tmp_path):
     from hwpxfiller.gui.vocab_workbench import VocabWorkbenchPanel
 
     home = JobListHome(JobRegistry(tmp_path / "jobs"))
-    assert home.btn_vocab.text() == "매핑 프로파일 관리"
+    # 라벨은 Alt 니모닉(&V)을 포함하되(ST-12) 정준 용어 '매핑 프로파일'을 유지한다.
+    assert "매핑 프로파일 관리" in home.btn_vocab.text()
+    assert "어휘" not in home.btn_vocab.text()  # '어휘'는 lint 통제 사전 전용
 
     base_reg = MappingBaseRegistry(tmp_path / "bases")
     panel = VocabWorkbenchPanel(base_reg)

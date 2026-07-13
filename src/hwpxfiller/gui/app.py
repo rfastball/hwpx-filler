@@ -55,6 +55,9 @@ class AppController:
         # 공유 매핑 프로파일 레지스트리(J3) — 관리 화면·에디터가 공유(1회 저작 후 재사용).
         self.base_registry = MappingBaseRegistry(default_mapping_bases_dir())
         self._children: "list[object]" = []  # Qt GC 방지 — 자식 창 참조 유지
+        # 능력별 싱글턴(ST-10): 같은 관리 창·같은 작업 에디터가 이미 열려 있으면 새로
+        # 만들지 않고 앞으로 가져와 중복 창 누적·동일 작업 다중 편집(last-save-wins)을 막는다.
+        self._singletons: "dict[str, object]" = {}
 
         self.home.new_job_requested.connect(self._open_editor_new)
         self.home.edit_job_requested.connect(self._open_editor_edit)
@@ -89,6 +92,11 @@ class AppController:
     def _open_editor_edit(self, name: str) -> None:
         from .job_editor import JobEditorWizard
 
+        # 같은 작업을 두 에디터로 열면 last-save-wins 로 조용히 충돌한다(ST-10) — 이미
+        # 열린 편집기가 있으면 앞으로 가져온다.
+        key = f"editor:{name}"
+        if self._raise_singleton(key):
+            return
         # 기존 작업 프리로드: 템플릿 자동 로드 + 매핑 프리시드 + 이름/패턴 프리필.
         # 이름을 바꿔 저장하면 구명 작업은 별개로 남는다(자동 삭제는 발명 — 삭제는 사용자 몫).
         wiz = JobEditorWizard(
@@ -96,7 +104,7 @@ class AppController:
             base_registry=self.base_registry,
         )
         wiz.job_saved.connect(lambda _name: self.home.refresh())
-        self._track(wiz)
+        self._track(wiz, singleton_key=key)
         wiz.show()
 
     def _open_run(self, name: str) -> None:
@@ -150,21 +158,25 @@ class AppController:
         ``library_dir=None``(홈 시그널은 무인자)이면 패널이 표준 라이브러리
         (:func:`~hwpxfiller.core.template_status.default_templates_dir`)를 겨눈다(RC-14).
         """
+        if self._raise_singleton("template"):  # 중복 관리 창 방지(ST-10)
+            return
         from .template_manager import TemplateManagerPanel
 
         panel = TemplateManagerPanel(library_dir)
         panel.make_job_requested.connect(self._open_editor_from_template)
-        self._track(panel)
+        self._track(panel, singleton_key="template")
         panel.show()
 
     def _open_matrix_run(self) -> None:
         """여러 작업 일괄 실행(J2) 창을 연다 — 홈과 같은 풀 레지스트리 공유."""
+        if self._raise_singleton("matrix"):  # 중복 관리 창 방지(ST-10)
+            return
         from .matrix_view import MatrixRunView
 
         pool_registry = getattr(self.home, "pool_registry", None)
         view = MatrixRunView(self.registry, pool_registry=pool_registry)
         view.run_finished.connect(self._record_matrix_run)
-        self._track(view)
+        self._track(view, singleton_key="matrix")
         view.show()
 
     def _record_matrix_run(self, result) -> None:
@@ -185,11 +197,13 @@ class AppController:
 
     def _open_pool_manager(self) -> None:
         """데이터 풀 관리 워크숍(J1)을 연다. 변경 시 홈 KPI 를 갱신한다."""
+        if self._raise_singleton("pool"):  # 중복 관리 창 방지(ST-10)
+            return
         from .dataset_pool_panel import DatasetPoolPanel
 
         panel = DatasetPoolPanel(getattr(self.home, "pool_registry", None))
         panel.pool_changed.connect(self.home.refresh)
-        self._track(panel)
+        self._track(panel, singleton_key="pool")
         panel.show()
 
     def _open_editor_from_template(self, template_path: str) -> None:
@@ -208,12 +222,14 @@ class AppController:
 
     def _open_vocab_workbench(self) -> None:
         """매핑 프로파일 관리 화면(J3)을 연다 — 편집은 위저드를 베이스 시드로 개방."""
+        if self._raise_singleton("vocab"):  # 중복 관리 창 방지(ST-10)
+            return
         from .vocab_workbench import VocabWorkbenchPanel
 
         panel = VocabWorkbenchPanel(self.base_registry, job_registry=self.registry)
         panel.edit_base_requested.connect(self._open_editor_from_base)
         panel.base_changed.connect(self.home.refresh)
-        self._track(panel)
+        self._track(panel, singleton_key="vocab")
         panel.show()
 
     def _open_editor_from_base(self, base_name: str) -> None:
@@ -284,9 +300,26 @@ class AppController:
                 pass  # 이미 사라졌으면 목적 달성(무시)
             self.home.refresh()
 
-    def _track(self, win) -> None:
+    def _raise_singleton(self, key: str) -> bool:
+        """같은 능력 창이 이미 열려 있으면 앞으로 가져오고 True(ST-10) — 없거나 닫혔으면 False.
+
+        보이는(살아 있는) 창만 재사용한다 — 닫힌 창은 stale 로 보고 새로 연다(신선 상태).
+        """
+        win = self._singletons.get(key)
+        if win is not None and win.isVisible():
+            if win.isMinimized():
+                win.showNormal()
+            win.raise_()
+            win.activateWindow()
+            return True
+        return False
+
+    def _track(self, win, *, singleton_key: "str | None" = None) -> None:
         self._children.append(win)
         win.destroyed.connect(lambda *_: self._children.remove(win) if win in self._children else None)
+        if singleton_key is not None:
+            self._singletons[singleton_key] = win
+            win.destroyed.connect(lambda *_: self._singletons.pop(singleton_key, None))
 
 
 # 하위호환 별칭(RC-35): 컨트롤러는 앱 전체 배선·수명을 소유하는 사실상 공용 API 다 —

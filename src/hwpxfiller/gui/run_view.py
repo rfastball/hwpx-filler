@@ -50,7 +50,7 @@ from .flow_layout import FlowLayout
 from .record_select import RecordSelector
 from .run_state import GenerationPlan, RunViewModel
 from .style import BASE_QSS, ContrastProgressBar, mark
-from .view_helpers import ElidedLabel, restore_geometry, save_geometry
+from .view_helpers import ElidedLabel, restore_geometry, save_geometry, wire_submit_shortcut
 from .worker import GenerateWorker
 
 
@@ -196,6 +196,7 @@ class RunView(QMainWindow):
         self.btn_generate = QPushButton("문서 생성")
         mark(self.btn_generate, "primary", True)
         self.btn_generate.clicked.connect(self._on_generate)
+        wire_submit_shortcut(self, self.btn_generate)  # Ctrl+Return → 문서 생성(ST-12)
         actions.addWidget(self.btn_generate)
         # 실행 중 협조적 취소(RC-06) — 레코드 경계에서 중단, 부분 결과는 요약으로 남는다.
         self.btn_cancel = QPushButton("생성 취소")

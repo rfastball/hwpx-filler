@@ -593,6 +593,34 @@ def test_accessible_names_and_buddies_present(qapp, tmp_path, monkeypatch):
     assert lbl.text() == "등록 완료"
 
 
+def test_managed_windows_are_singletons(qapp, tmp_path, monkeypatch):
+    """관리 창 재요청은 새 창을 만들지 않고 기존 창을 재사용한다(ST-10)."""
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.app import AppController
+    from hwpxfiller.gui.dataset_pool_panel import DatasetPoolPanel
+
+    ctrl = AppController(JobRegistry(tmp_path / "jobs"))
+    ctrl.home.manage_pool_requested.emit()
+    ctrl.home.manage_pool_requested.emit()  # 두 번째 요청 → 중복 생성 금지
+    pools = [c for c in ctrl._children if isinstance(c, DatasetPoolPanel)]
+    assert len(pools) == 1
+
+
+def test_keyboard_affordances_present(qapp, tmp_path, monkeypatch):
+    """니모닉(&)·F5 새로고침 단축키가 배선된다(ST-12)."""
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    from PySide6.QtGui import QShortcut
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.home import JobListHome
+
+    home = JobListHome(JobRegistry(tmp_path / "jobs"))
+    assert "&" in home.btn_new.text()  # Alt 니모닉
+    assert "&" in home.btn_templates.text()
+    seqs = [sc.key().toString() for sc in home.findChildren(QShortcut)]
+    assert "F5" in seqs  # F5 → refresh
+
+
 def test_template_manager_route_seeds_default_library_and_make_job(qapp, tmp_path, monkeypatch):
     """emit → 패널이 기본 라이브러리를 겨눔(RC-14) + '작업 만들기' → 템플릿 시드 에디터."""
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))

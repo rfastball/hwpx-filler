@@ -32,6 +32,7 @@ from .view_helpers import (
     restore_geometry,
     resync_card_item_heights,
     save_geometry,
+    wire_refresh_shortcut,
 )
 from .vocab_workbench_state import VocabBaseRow, VocabWorkbenchViewModel
 
@@ -89,6 +90,7 @@ class VocabWorkbenchPanel(QMainWindow):
 
         self.setWindowTitle("HWPX Filler — 매핑 프로파일")
         restore_geometry(self, "vocab", default_size=(680, 520))  # ST-11
+        wire_refresh_shortcut(self)  # F5 → 새로고침(ST-12)
         self.setStyleSheet(BASE_QSS)
         central = QWidget()
         self.setCentralWidget(central)

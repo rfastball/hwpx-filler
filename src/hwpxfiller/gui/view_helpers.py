@@ -278,3 +278,29 @@ def announce_status(label, text: str) -> None:
     from PySide6.QtGui import QAccessible, QAccessibleEvent
 
     QAccessible.updateAccessibility(QAccessibleEvent(label, QAccessible.Event.Alert))
+
+
+# ---------------------------------------------------------- ST-12: 키보드 가속기
+def wire_refresh_shortcut(win) -> None:
+    """F5 → ``win.refresh()`` 단축키를 배선한다(ST-12, Nielsen H7).
+
+    외부에서 파일이 바뀐 뒤 목록을 명시적으로 새로고침하는 표준 데스크톱 관행. 대상 창은
+    인자 없는 공개 ``refresh()`` 를 가져야 한다(home·template·pool·vocab).
+    """
+    from PySide6.QtGui import QKeySequence, QShortcut
+
+    QShortcut(QKeySequence("F5"), win, win.refresh)
+
+
+def wire_submit_shortcut(win, button) -> None:
+    """Ctrl+Return → 주 액션 버튼 실행(활성 시)(ST-12) — Enter 관성으로 제출.
+
+    QMainWindow 에선 setDefault 가 효과가 약해, 포커스와 무관하게 도는 단축키로 주
+    행동(문서 생성 등)을 키보드로 실행한다. 비활성이면 무동작(게이트 존중)."""
+    from PySide6.QtGui import QKeySequence, QShortcut
+
+    def _fire():
+        if button.isEnabled():
+            button.click()
+
+    QShortcut(QKeySequence("Ctrl+Return"), win, _fire)

@@ -37,6 +37,7 @@ from .view_helpers import (
     resync_card_item_heights,
     restore_geometry,
     save_geometry,
+    wire_refresh_shortcut,
 )
 
 # 카드 제목의 말줄임 상한(UD-30) — 긴 작업명·파일명이 상태 배지를 밀어내지 않도록
@@ -239,11 +240,12 @@ class JobListHome(QMainWindow):
         header.addWidget(title)
         header.addWidget(sub)
         header.addStretch(1)
-        self.btn_templates = QPushButton("템플릿 관리")
+        # 니모닉(&, ST-12): Alt+글자로 키보드 접근. Alt+M 템플릿·P 풀·V 매핑 프로파일.
+        self.btn_templates = QPushButton("템플릿 관리(&M)")
         self.btn_templates.clicked.connect(self.manage_templates_requested)
-        self.btn_pool = QPushButton("데이터 풀 관리")
+        self.btn_pool = QPushButton("데이터 풀 관리(&P)")
         self.btn_pool.clicked.connect(self.manage_pool_requested)
-        self.btn_vocab = QPushButton("매핑 프로파일 관리")
+        self.btn_vocab = QPushButton("매핑 프로파일 관리(&V)")
         self.btn_vocab.clicked.connect(self.manage_vocab_requested)
         header.addWidget(self.btn_templates)
         header.addWidget(self.btn_pool)
@@ -263,7 +265,7 @@ class JobListHome(QMainWindow):
         hwpx = self._panel("HWPX 문서 생성")
         hp = hwpx.layout()
         hhead = QHBoxLayout()
-        self.btn_new = QPushButton("＋ 새 문서 작업")
+        self.btn_new = QPushButton("＋ 새 문서 작업(&N)")  # Alt+N(ST-12)
         mark(self.btn_new, "primary", True)
         self.btn_new.clicked.connect(self.new_job_requested)
         self.btn_matrix = QPushButton("여러 작업 일괄 실행")
@@ -291,7 +293,7 @@ class JobListHome(QMainWindow):
         txt = self._panel("즉시 기안")
         tp = txt.layout()
         thead = QHBoxLayout()
-        self.btn_new_txt = QPushButton("＋ 새 기안")
+        self.btn_new_txt = QPushButton("＋ 새 기안(&T)")  # Alt+T(ST-12)
         mark(self.btn_new_txt, "primary", True)
         self.btn_new_txt.clicked.connect(self.new_txt_requested)
         lbl_txt_hint = QLabel("기안 템플릿으로 문안 미리보기")
@@ -323,6 +325,7 @@ class JobListHome(QMainWindow):
 
         self.vm.subscribe(self._render)
         self._render()
+        wire_refresh_shortcut(self)  # F5 → 목록 새로고침(ST-12)
 
     # ------------------------------------------------------------- 빌더
     @staticmethod

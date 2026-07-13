@@ -49,7 +49,7 @@ from .flow_layout import FlowLayout
 from .matrix_state import MatrixRunViewModel
 from .record_select import RecordSelector
 from .style import BASE_QSS, mark
-from .view_helpers import build_empty_state, restore_geometry, save_geometry
+from .view_helpers import build_empty_state, restore_geometry, save_geometry, wire_submit_shortcut
 from .worker import MatrixGenerateWorker
 
 
@@ -192,6 +192,7 @@ class MatrixRunView(QMainWindow):
         self.btn_generate = QPushButton("일괄 생성")
         mark(self.btn_generate, "primary", True)
         self.btn_generate.clicked.connect(self._on_generate)
+        wire_submit_shortcut(self, self.btn_generate)  # Ctrl+Return → 일괄 생성(ST-12)
         actions.addWidget(self.btn_generate)
         # 실행 중 협조적 취소(RC-06) — 작업·레코드 경계에서 중단, 부분 결과 요약.
         self.btn_cancel = QPushButton("생성 취소")
