@@ -27,7 +27,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QMainWindow,
     QMessageBox,
     QPlainTextEdit,
     QProgressBar,
@@ -49,12 +48,16 @@ from .flow_layout import FlowLayout
 from .matrix_state import MatrixRunViewModel
 from .record_select import RecordSelector
 from .style import BASE_QSS, mark
-from .view_helpers import build_empty_state, restore_geometry, save_geometry, wire_submit_shortcut
+from .view_helpers import build_empty_state, wire_submit_shortcut
 from .worker import MatrixGenerateWorker
 
 
-class MatrixRunView(QMainWindow):
-    """여러 작업 일괄 실행 — 작업 다중선택 × 공유 데이터 → 작업별 하위폴더 생성."""
+class MatrixRunView(QWidget):
+    """여러 작업 일괄 실행 — 작업 다중선택 × 공유 데이터 → 작업별 하위폴더 생성.
+
+    셸 페이지(ST-01, SHELL_DESIGN §2) — 창 크롬(지오메트리·closeEvent)은 셸이 소유,
+    이탈 가드는 :meth:`can_leave` 가 담당(D8). 독립 생성(테스트)도 계속 동작한다.
+    """
 
     run_finished = Signal(object)  # MatrixResult
 
@@ -71,7 +74,6 @@ class MatrixRunView(QMainWindow):
         self._marked_missing: "list[tuple[str, str]]" = []  # 이번 생성 표식 필드(UD-04)
 
         self.setWindowTitle("HWPX Filler — 여러 작업 일괄 실행")
-        restore_geometry(self, "matrix", default_size=(780, 720))  # ST-11
         self.setStyleSheet(BASE_QSS)
         central = QWidget()
         root = QVBoxLayout(central)
@@ -179,8 +181,7 @@ class MatrixRunView(QMainWindow):
         # ---- 액션·진행·결과·로그: 고정 푸터(UD-42) ----
         # 스크롤되는 폼(위) 밖의 고정 푸터로 둬, 표준·좁은 폭 모두에서 결과 라벨·로그가
         # 접힘 아래로 밀리지 않고 상시 보이게 한다(무제한 리스트 예산 전가의 봉합).
-        outer = QWidget()
-        outer_l = QVBoxLayout(outer)
+        outer_l = QVBoxLayout(self)
         outer_l.setContentsMargins(0, 0, 0, 0)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -213,7 +214,6 @@ class MatrixRunView(QMainWindow):
         self.log.setMaximumHeight(160)  # 푸터 로그도 캡 — 푸터가 폼을 압도하지 않게.
         outer_l.addWidget(self.log)
 
-        self.setCentralWidget(outer)
         self._sync_sel_label()
 
         # ---- 공용 실행 계층(RC-22) — QThread 수명주기·데이터 겨눔은 단일 실행과 공유 ----
@@ -269,19 +269,24 @@ class MatrixRunView(QMainWindow):
         self._runner.teardown()
         return True
 
-    def closeEvent(self, event) -> None:  # noqa: N802 — Qt 오버라이드
-        # 이탈 가드는 can_leave 로 단일화(D8) — 닫기는 그 위임 경로 중 하나.
-        if not self.can_leave():
-            event.ignore()
-            return
-        save_geometry(self, "matrix")  # 세션 간 크기·위치 유지(ST-11)
-        super().closeEvent(event)
-
     @property
     def _data_thread(self):
         return self._data.thread
 
     # ------------------------------------------------------------- 작업 목록
+    def refresh(self) -> None:
+        """작업 목록 재적재 — 셸 재진입 스테일 방지(SHELL_DESIGN D6).
+
+        은닉 중 홈에서 작업이 생기거나 삭제돼도 재진입 시 최신 목록을 보인다. 선택
+        상태는 VM 이 이름으로 보유하므로 재적재해도 유지된다. 일괄 생성 진행 중엔
+        무개입(진행 UI 를 흔들지 않는다 — 완료 후 재진입 시 갱신).
+        """
+        if self._running:
+            return
+        self._populate_jobs()
+        self._sync_sel_label()
+        self._refresh_field_panel()
+
     def _populate_jobs(self) -> None:
         self.job_list.blockSignals(True)
         self.job_list.clear()

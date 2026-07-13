@@ -25,7 +25,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QListWidget,
-    QMainWindow,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -40,9 +39,7 @@ from .view_helpers import (
     ElidedLabel,
     busy_cursor,
     hide_item_text,
-    restore_geometry,
     resync_card_item_heights,
-    save_geometry,
     show_error,
     wire_refresh_shortcut,
 )
@@ -108,8 +105,12 @@ class TemplateCard(QWidget):
 _TemplateCard = TemplateCard
 
 
-class TemplateManagerPanel(QMainWindow):
-    """템플릿 라이브러리 워크숍. :class:`TemplateManagerViewModel` 을 렌더한다."""
+class TemplateManagerPanel(QWidget):
+    """템플릿 라이브러리 워크숍. :class:`TemplateManagerViewModel` 을 렌더한다.
+
+    셸 페이지(ST-01, SHELL_DESIGN §2) — 창 크롬(지오메트리·closeEvent)은 셸이 소유.
+    독립 생성(테스트)도 계속 동작한다.
+    """
 
     make_job_requested = Signal(str)  # 템플릿 경로 → 에디터로(app.py 가 연결)
 
@@ -124,12 +125,9 @@ class TemplateManagerPanel(QMainWindow):
         self.vm = TemplateManagerViewModel(library_dir)
 
         self.setWindowTitle("HWPX Filler — 템플릿 관리")
-        restore_geometry(self, "template", default_size=(720, 560))  # ST-11
         wire_refresh_shortcut(self)  # F5 → 새로고침(ST-12)
         self.setStyleSheet(BASE_QSS)
-        central = QWidget()
-        self.setCentralWidget(central)
-        root = QVBoxLayout(central)
+        root = QVBoxLayout(self)
 
         header = QHBoxLayout()
         title = QLabel("템플릿 관리")
@@ -228,10 +226,6 @@ class TemplateManagerPanel(QMainWindow):
     def _sync_cards(self) -> None:
         """카드 item sizeHint 를 폴리시 후 재계산(UD-11 공용 헬퍼)."""
         resync_card_item_heights(self.list)
-
-    def closeEvent(self, event) -> None:  # noqa: N802 — Qt 오버라이드
-        save_geometry(self, "template")  # 세션 간 크기·위치 유지(ST-11)
-        super().closeEvent(event)
 
     def resizeEvent(self, event) -> None:  # noqa: N802 — Qt 오버라이드
         super().resizeEvent(event)
