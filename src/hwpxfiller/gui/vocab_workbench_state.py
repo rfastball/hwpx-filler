@@ -37,6 +37,7 @@ class VocabWorkbenchViewModel:
         self.registry = base_registry
         self.job_registry = job_registry
         self._rows: "list[VocabBaseRow]" = []
+        self._corrupted: "list[tuple]" = []
         self._subs: list = []
         self.refresh()
 
@@ -60,11 +61,20 @@ class VocabWorkbenchViewModel:
 
     # ---------------------------------------------------------- 데이터
     def refresh(self) -> None:
+        # 파일 단위 격리(RC-05): 손상 base 1개가 목록 전체를 죽이지 않도록 corrupted 로
+        # 수집한다 — 조용히 버리지 않고 corrupted_bases() 로 노출(확인-또는-경보).
+        corrupted: "list[tuple]" = []
+        bases = self.registry.list_bases(corrupted=corrupted)
+        self._corrupted = corrupted
         self._rows = [
             VocabBaseRow(b.name, len(b.mappings), len(self.ref_names(b.name)))
-            for b in self.registry.list_bases()
+            for b in bases
         ]
         self._notify()
+
+    def corrupted_bases(self) -> "list[tuple]":
+        """직전 refresh 에서 읽지 못한 손상 base 파일 ``(경로, 오류)`` — 조용한 드롭 방지."""
+        return list(self._corrupted)
 
     def rows(self) -> "list[VocabBaseRow]":
         return list(self._rows)

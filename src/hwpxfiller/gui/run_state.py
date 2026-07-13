@@ -11,8 +11,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..core.engine import HwpxEngine
+
+if TYPE_CHECKING:
+    from datetime import datetime
 from ..core.fill_ledger import (
     TemplateStructureDrift,
     template_path_drift,
@@ -107,6 +111,10 @@ class GenerationPlan:
     indices: "tuple[int, ...]"
     source_pointer: str                  # 원장 소스 표기(포인터-온리)
     overwrite: bool = False              # 사용자 확정을 받은 덮어쓰기(RC-02)
+    # 날짜 토큰({{date}}) 기준 시각을 계획 시점에 **고정**한다(RC-02) — 덮어쓰기 확인이
+    # 조회한 대상 파일과 실제 생성이 쓰는 파일이 하위-일 토큰에서 갈라지지 않도록.
+    # None 이면 생성 시 datetime.now() 로 폴백(직접 구성 테스트 호환).
+    now: "datetime | None" = None
     ledger: bool = False                 # 원장 사이드카 opt-in
     # ---- 원장 문맥(ledger=True 일 때 워커 꼬리가 소비) — 전부 계획 시점 캡처 ----
     job_name: str = ""
@@ -499,16 +507,20 @@ class RunViewModel:
         return self.request(indices).mapped_records(mark_missing=mark_missing)
 
     def output_conflicts(
-        self, indices: "list[int]", out_dir: str, *, mark_missing: str = ""
+        self, indices: "list[int]", out_dir: str, *, mark_missing: str = "",
+        now: "datetime | None" = None,
     ) -> "list[str]":
         """생성이 덮어쓸 **기존** 파일 경로 목록 — 실행 전 덮어쓰기 확인의 원천(RC-02).
 
         생성과 동일한 매핑·표식·파일명 규칙으로 대상 경로를 계산해 디스크 존재만
         조회한다(무변형). 위젯은 이 목록이 비지 않으면 "기존 N개 파일을 덮어씁니다"
         사용자 확정을 받은 뒤에만 ``overwrite=True`` 로 진행한다(확인-또는-경보).
+        ``now`` 는 날짜 토큰 기준 시각 — 이후 생성 계획과 **같은 값**을 넘겨야 하위-일
+        토큰에서 확인 대상과 실제 생성 대상이 갈라지지 않는다(RC-02).
         """
         names = plan_output_names(
-            self.job.filename_pattern, self.mapped_records(indices, mark_missing)
+            self.job.filename_pattern, self.mapped_records(indices, mark_missing),
+            now=now,
         )
         return existing_outputs(out_dir, names)
 
@@ -521,11 +533,14 @@ class RunViewModel:
         marker: str = "",
         ledger: bool = False,
         overwrite: bool = False,
+        now: "datetime | None" = None,
     ) -> GenerationPlan:
         """게이트 통과 직후 호출 — 생성·완료 처리·원장이 소비할 전부를 원자 캡처한다.
 
         이후 위젯/VM 이 어떻게 바뀌어도 이 계획은 불변이다(RC-07). ``marker`` 는
-        생성에 실제 쓸 표식과 동일해야 원장 dry-run 행이 주입값과 일치한다.
+        생성에 실제 쓸 표식과 동일해야 원장 dry-run 행이 주입값과 일치한다. ``now`` 는
+        덮어쓰기 확인(:meth:`output_conflicts`)에 넘긴 시각과 **같은 값**이어야 확인
+        대상과 실제 생성 대상이 하위-일 날짜 토큰에서 갈라지지 않는다(RC-02).
         """
         idx = list(indices)
         labels_fn = getattr(self.datasource, "field_labels", None)
@@ -539,6 +554,7 @@ class RunViewModel:
             indices=tuple(idx),
             source_pointer=self.source_pointer(),
             overwrite=overwrite,
+            now=now,
             ledger=ledger,
             job_name=self.job.name,
             mapping=self.job.mapping,

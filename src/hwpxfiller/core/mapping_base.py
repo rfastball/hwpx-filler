@@ -68,9 +68,25 @@ class MappingBaseRegistry:
             return []
         return sorted(self.directory.glob("*" + self.SUFFIX), key=lambda p: p.name)
 
-    def list_bases(self) -> "list[MappingProfile]":
-        """베이스 목록(이름순). 손상 파일은 감추지 않고 예외 전파(호출측이 표면화)."""
-        bases = [MappingProfile.load(p) for p in self._files()]
+    def list_bases(
+        self, *, corrupted: "list[tuple[Path, str]] | None" = None
+    ) -> "list[MappingProfile]":
+        """베이스 목록(이름순).
+
+        **파일 단위 격리(RC-05, :meth:`~hwpxfiller.core.job.JobRegistry.list_jobs` 미러):**
+        손상된 base 파일 1개(손편집·구버전·미지 transform)가 목록 전체(→매핑 프로파일
+        관리 패널·셸 재진입 ``refresh()``)를 죽이지 않도록 파싱 실패를 파일별로 잡는다.
+        손상 항목은 결과에서 제외하되 조용히 버리지 않는다 — ``corrupted`` 리스트를
+        넘기면 ``(경로, 오류 문자열)`` 로 수집되어 호출측이 시끄럽게 표면화한다
+        (확인-또는-경보). 예전엔 예외를 그대로 전파해 호출측(워크벤치 refresh)이 이를
+        표면화하지 않아 패널 전체가 크래시했다."""
+        bases: "list[MappingProfile]" = []
+        for p in self._files():
+            try:
+                bases.append(MappingProfile.load(p))
+            except Exception as exc:  # noqa: BLE001 — 손상 1개의 전멸 방지(격리 후 표면화)
+                if corrupted is not None:
+                    corrupted.append((p, str(exc)))
         bases.sort(key=lambda b: b.name)
         return bases
 

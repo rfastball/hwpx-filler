@@ -321,6 +321,12 @@ def main(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
         detail = f"{name} — {exc.strerror or exc}" if name else str(exc)
         print(f"[오류] 파일을 읽거나 쓸 수 없습니다: {detail}", file=sys.stderr)
         return 2
+    except ValueError as exc:
+        # 프로파일/매핑 로드의 버전 스큐·손편집(미지 transform 등)이 원시 traceback 으로
+        # 새지 않게 최상위에서 번역한다(RC-16). 생성 경계의 ValueError 는 _run 내부에서
+        # 이미 exit 1 로 처리되므로 여기까지 오는 건 로드·구성 단계의 실패다.
+        print(f"[오류] {exc}", file=sys.stderr)
+        return 2
 
 
 def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" = None) -> int:

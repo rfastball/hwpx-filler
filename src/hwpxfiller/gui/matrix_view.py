@@ -257,16 +257,18 @@ class MatrixRunView(QWidget):
         수락 시 취소 요청+teardown 후 True(R4 — QThread 누수 방지). 창 닫기와 셸
         페이지 전환이 공유하는 단일 이탈 경로다.
         """
-        if not self._running:
-            return True
-        if not confirm_destructive(
-            self, "생성 중단",
-            "일괄 생성이 진행 중입니다 — 이 화면을 떠나면 남은 생성을 중단합니다.",
-            "중단하고 나가기",
-        ):
-            return False
-        self._runner.request_cancel()
-        self._runner.teardown()
+        if self._running:
+            if not confirm_destructive(
+                self, "생성 중단",
+                "일괄 생성이 진행 중입니다 — 이 화면을 떠나면 남은 생성을 중단합니다.",
+                "중단하고 나가기",
+            ):
+                return False
+            self._runner.request_cancel()
+            self._runner.teardown()
+        # 생성 워커와 별개로 데이터 복원 스레드도 접어야 QThread 누수/파괴 크래시를
+        # 막는다(진행 중이 아니면 무해) — run_view 와 동형.
+        self._data.teardown()
         return True
 
     @property
@@ -351,7 +353,11 @@ class MatrixRunView(QWidget):
             self.badge_flow.addWidget(head)
             for st in js.field_states:
                 self.badge_flow.addWidget(self._make_chip(js.job_name, st))
-        self._apply_gate(self.vm.missing_gate(self.selector.selected_indices()))
+        # 위에서 계산한 요약을 게이트에 넘겨 재계산(작업별 템플릿 zip 재파싱)을 피한다
+        # — 이벤트당 field_summaries 2회 → 1회(RC-23 이식).
+        self._apply_gate(self.vm.missing_gate(
+            self.selector.selected_indices(), summaries=summaries
+        ))
 
     def _make_chip(self, job_name: str, st):
         """필드 1개의 상태 배지 — 미입력만 클릭형(확인/철회 토글), 나머지는 정적 라벨."""
@@ -420,9 +426,18 @@ class MatrixRunView(QWidget):
         self._data.pick_nara()
 
     def _set_data_busy(self, busy: bool) -> None:
-        """데이터 복원(네트워크 가능) 중 겨눔 버튼 잠금 — 진행 중 재진입·경합 방지(RC-12)."""
+        """데이터 복원(네트워크 가능) 중 겨눔 버튼 + 생성 버튼 잠금(RC-12).
+
+        복원 워커가 다른 스레드에서 vm.datasource/records 를 갈아끼우는 동안 일괄 생성이
+        반쯤 스왑된 데이터로 조용히 돌지 않도록 생성 버튼도 함께 잠근다(run_view 와 동형).
+        복원이 끝나면 무조건 재활성이 아닌 게이트 판정으로 복원한다(실패 경로엔 게이트
+        재평가가 없으므로)."""
         for b in (self.btn_pool, self.btn_file, self.btn_nara):
             b.setEnabled(not busy)
+        if busy:
+            self.btn_generate.setEnabled(False)
+        else:
+            self._sync_generate_enabled()
 
     def _after_data_loaded(self, label: str) -> None:
         self.ed_data.setText(label)
@@ -446,7 +461,10 @@ class MatrixRunView(QWidget):
         # ---- 미입력 확인 게이트(UD-04·ADR-E): 단일 실행의 하드스톱이 매트릭스 우회로
         # 조용히 소멸하지 않게 한다. 버튼은 미확인 미입력이 있으면 이미 비활성이지만
         # (게이트 렌더), worker/API 우회에도 방어적으로 재확인해 원자 차단한다.
-        unmet = self.vm.unmet_missing(indices)
+        # 작업별 필드 스냅샷은 한 번만 계산해 게이트 재확인·표식 목록이 공유한다
+        # (매 호출이 선택 작업 템플릿 zip 을 재파싱하던 중복 제거, RC-23 매트릭스 이식).
+        summaries = self.vm.field_summaries(indices)
+        unmet = self.vm.unmet_missing(indices, summaries=summaries)
         if unmet:
             names = "; ".join(f"{jn}·{f}" for jn, f in unmet)
             self._say(f"미입력 필드를 먼저 확인하세요: {names}")
@@ -456,11 +474,13 @@ class MatrixRunView(QWidget):
         # (표식 포함 문서를 무언급으로 '성공' 집계하던 낙관 서사 해소).
         self._marked_missing = [
             (js.job_name, s.name)
-            for js in self.vm.field_summaries(indices)
+            for js in summaries
             for s in js.field_states if s.state == "missing"
         ]
         # ---- 덮어쓰기 확인(RC-02): 기존 파일을 조용히 파괴하지 않는다. ----
-        conflicts = self.vm.output_conflicts(indices, out_dir)
+        # 날짜 토큰 기준 시각을 한 번 고정해 확인·생성이 같은 값을 쓰게 한다(RC-02).
+        now = datetime.now()
+        conflicts = self.vm.output_conflicts(indices, out_dir, now=now)
         overwrite = False
         if conflicts:
             names = [Path(p).name for p in conflicts]
@@ -480,7 +500,7 @@ class MatrixRunView(QWidget):
         self._say(f"일괄 생성 시작: 작업 {len(jobs)}개 × 레코드 {len(indices)}건 → {out_dir}")
 
         worker = MatrixGenerateWorker(
-            jobs, self.vm.datasource, indices, out_dir, overwrite=overwrite
+            jobs, self.vm.datasource, indices, out_dir, overwrite=overwrite, now=now
         )
         self._runner.start(worker, total=len(jobs) * len(indices))
 

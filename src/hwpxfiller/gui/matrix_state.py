@@ -155,16 +155,21 @@ class MatrixRunViewModel:
         self.reset_acks()  # 새 데이터 → 미입력 확인 재평가(UD-04)
 
     # ---------------------------------------------------------- 사전검증
-    def output_conflicts(self, indices: "list[int]", out_dir: str) -> "list[str]":
+    def output_conflicts(
+        self, indices: "list[int]", out_dir: str, *, now=None
+    ) -> "list[str]":
         """생성이 덮어쓸 **기존** 파일 경로 목록(작업별 하위폴더 규칙 동일, RC-02).
 
         :func:`~hwpxfiller.batch.matrix_output_conflicts` 위임 — 위젯은 이 목록이 비지
         않으면 사용자 확정을 받은 뒤에만 ``overwrite=True`` 로 진행한다(확인-또는-경보).
+        ``now`` 는 날짜 토큰 기준 시각 — 이후 :func:`~hwpxfiller.batch.generate_matrix`
+        에 **같은 값**을 넘겨야 확인 대상과 실제 생성 대상이 하위-일 토큰에서 갈라지지
+        않는다(RC-02).
         """
         from ..batch import matrix_output_conflicts
 
         return matrix_output_conflicts(
-            self.selected_jobs(), self.datasource, indices, out_dir
+            self.selected_jobs(), self.datasource, indices, out_dir, now=now
         )
 
     def validate(self, indices: "list[int]", out_dir: str) -> "list[str]":
@@ -229,11 +234,20 @@ class MatrixRunViewModel:
             summaries.append(JobFieldSummary(job.name, tuple(states)))
         return summaries
 
-    def unmet_missing(self, indices: "list[int]") -> "list[tuple[str, str]]":
-        """전 선택 작업에서 미입력이면서 아직 확인 안 된 (작업, 필드) — 게이트가 닫힌다."""
+    def unmet_missing(
+        self, indices: "list[int]", *, summaries: "list[JobFieldSummary] | None" = None
+    ) -> "list[tuple[str, str]]":
+        """전 선택 작업에서 미입력이면서 아직 확인 안 된 (작업, 필드) — 게이트가 닫힌다.
+
+        ``summaries`` 를 넘기면 재계산 대신 재사용한다 — 한 이벤트에서 배지 렌더와
+        게이트가 각자 :meth:`field_summaries`(선택 작업 템플릿 zip 재파싱)를 부르던
+        2N 중복 제거(RC-23 이식). 미지정이면 종전대로 즉석 계산한다.
+        """
+        if summaries is None:
+            summaries = self.field_summaries(indices)
         return [
             (js.job_name, name)
-            for js in self.field_summaries(indices)
+            for js in summaries
             for name in js.unmet()
         ]
 
@@ -249,16 +263,19 @@ class MatrixRunViewModel:
         """확인 상태 초기화(새 데이터 겨눔 등) — 스테일 ack 로 게이트가 새지 않게 한다."""
         self._acked.clear()
 
-    def missing_gate(self, indices: "list[int]") -> GateState:
+    def missing_gate(
+        self, indices: "list[int]", *, summaries: "list[JobFieldSummary] | None" = None
+    ) -> GateState:
         """미입력 확인 게이트의 단일 표시 결정(UD-04) — 위젯은 그대로 렌더한다.
 
         단일 실행이 우회 없이 강제하는 ADR-E 미입력 확인을 매트릭스에도 이식한다 —
         미확인 미입력이 하나라도 있으면 '버튼 비활성 + 인라인 사유'로 막고, 사유엔
         어느 작업의 어느 필드인지를 재진술한다(강제 상호작용). 데이터·작업·폴더 같은
         기본 전제는 :meth:`validate` 가 계속 소유한다(중복 판정 금지) — 이 게이트는
-        미입력 확인 축만 얹는다.
+        미입력 확인 축만 얹는다. ``summaries`` 를 넘기면 배지 렌더가 이미 계산한
+        스냅샷을 재사용해 필드 요약 재계산(템플릿 zip 재파싱)을 피한다(RC-23 이식).
         """
-        unmet = self.unmet_missing(indices)
+        unmet = self.unmet_missing(indices, summaries=summaries)
         if not unmet:
             return GateState(True, "", "")
         by_job: "dict[str, list[str]]" = {}
