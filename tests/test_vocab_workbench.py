@@ -29,8 +29,8 @@ def qapp():
 
 def _base(name="조달어휘") -> MappingProfile:
     return MappingProfile(name=name, mappings=[
-        FieldMapping(template_field="공고명", sources=["bidNtceNm"]),
-        FieldMapping(template_field="추정가격", sources=["presmptPrce"], transform="amount"),
+        FieldMapping(template_field="공고명", source="bidNtceNm"),
+        FieldMapping(template_field="추정가격", source="presmptPrce", type="amount"),
     ])
 
 
@@ -55,7 +55,7 @@ def test_wizard_base_seed_projects_name_intersection_and_gates(qapp, tmp_path):
     rows = {r.template_field: r for r in wiz.model.rows}
     assert set(rows) == {"공고명", "담당자"}       # 템플릿 필드만(추정가격=베이스에만, skip)
     assert rows["공고명"].confirmed                 # 베이스 커버 → pre-confirm
-    assert rows["공고명"].sources == ["bidNtceNm"]
+    assert rows["공고명"].source == "bidNtceNm"
     assert not rows["담당자"].confirmed             # 미커버 → 미확정
     assert not wiz.model.is_complete()              # 미커버 필드가 게이트 차단(ADR D, loud)
 
@@ -78,7 +78,7 @@ def test_wizard_apply_base_button_sets_lineage(qapp, tmp_path, monkeypatch):
     page._apply_base()
     assert wiz.base_mapping_name == "조달어휘"       # 계보 설정
     row = next(r for r in wiz.model.rows if r.template_field == "공고명")
-    assert row.confirmed and row.sources == ["bidNtceNm"]
+    assert row.confirmed and row.source == "bidNtceNm"
 
 
 def test_wizard_save_base_registers_profile(qapp, tmp_path, monkeypatch):

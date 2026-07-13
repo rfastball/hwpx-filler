@@ -3,134 +3,99 @@
   "mappings": [
     {
       "template_field": "입찰공고번호",
-      "sources": [
-        "bidNtceNo"
-      ],
-      "transform": "join",
-      "sep": " ",
+      "source": "bidNtceNo",
+      "type": "text",
       "const": "",
       "fmt": ""
     },
     {
       "template_field": "수요기관",
-      "sources": [
-        "dmndInsttNm"
-      ],
-      "transform": "join",
-      "sep": " ",
+      "source": "dmndInsttNm",
+      "type": "text",
       "const": "",
       "fmt": ""
     },
     {
       "template_field": "공고명",
-      "sources": [
-        "bidNtceNm"
-      ],
-      "transform": "join",
-      "sep": " ",
+      "source": "bidNtceNm",
+      "type": "text",
       "const": "",
       "fmt": ""
     },
     {
       "template_field": "계약방법",
-      "sources": [
-        "cntrctCnclsMthdNm"
-      ],
-      "transform": "join",
-      "sep": " ",
+      "source": "cntrctCnclsMthdNm",
+      "type": "text",
       "const": "",
       "fmt": ""
     },
     {
       "template_field": "사업예산",
-      "sources": [
-        "asignBdgtAmt"
-      ],
-      "transform": "amount",
-      "sep": " ",
+      "source": "asignBdgtAmt",
+      "type": "amount",
       "const": "",
-      "fmt": "{:,}원"
+      "fmt": ""
     },
     {
       "template_field": "추정가격",
-      "sources": [
-        "presmptPrce"
-      ],
-      "transform": "amount",
-      "sep": " ",
+      "source": "presmptPrce",
+      "type": "amount",
       "const": "",
-      "fmt": "{:,}원"
+      "fmt": ""
     },
     {
       "template_field": "낙찰자결정방법",
-      "sources": [
-        "bidwinrDcsnMthdNm"
-      ],
-      "transform": "join",
-      "sep": " ",
+      "source": "bidwinrDcsnMthdNm",
+      "type": "text",
       "const": "",
       "fmt": ""
     },
     {
       "template_field": "입찰개시일시",
-      "sources": [
-        "bidBeginDate",
-        "bidBeginTm"
-      ],
-      "transform": "datetime",
-      "sep": " ",
+      "source": "bidBeginDate",
+      "type": "date",
       "const": "",
       "fmt": ""
     },
     {
       "template_field": "입찰마감일시",
-      "sources": [
-        "bidClseDate",
-        "bidClseTm"
-      ],
-      "transform": "datetime",
-      "sep": " ",
+      "source": "bidClseDate",
+      "type": "date",
       "const": "",
       "fmt": ""
     },
     {
-      "template_field": "개찰일시",
-      "sources": [
-        "opengDate",
-        "opengTm"
-      ],
-      "transform": "datetime",
-      "sep": " ",
+      "template_field": "개찰일자",
+      "source": "opengDate",
+      "type": "date",
       "const": "",
       "fmt": ""
+    },
+    {
+      "template_field": "개찰시각",
+      "source": "opengTm",
+      "type": "date",
+      "const": "",
+      "fmt": "%H:%M"
     },
     {
       "template_field": "담당부서",
-      "sources": [
-        "dmndInsttOfclDeptNm"
-      ],
-      "transform": "join",
-      "sep": " ",
+      "source": "dmndInsttOfclDeptNm",
+      "type": "text",
       "const": "",
       "fmt": ""
     },
     {
       "template_field": "담당자",
-      "sources": [
-        "dmndInsttOfclNm"
-      ],
-      "transform": "join",
-      "sep": " ",
+      "source": "dmndInsttOfclNm",
+      "type": "text",
       "const": "",
       "fmt": ""
     },
     {
       "template_field": "담당자 전화번호",
-      "sources": [
-        "dmndInsttOfclTel"
-      ],
-      "transform": "join",
-      "sep": " ",
+      "source": "dmndInsttOfclTel",
+      "type": "text",
       "const": "",
       "fmt": ""
     }

@@ -175,7 +175,9 @@ def build_fill_ledger(
     missing_sources: "tuple[str, ...]" = ()
     if source_fields is not None:
         available = set(source_fields)
-        required = list(dict.fromkeys(s for m in mapping.mappings if not m.is_blank for s in m.sources))
+        required = list(dict.fromkeys(
+            m.source for m in mapping.mappings if not m.is_blank and m.source
+        ))
         missing_sources = tuple(s for s in required if s not in available)
     return FillLedger(
         template_drift=template_structure_drift(template_fields, mapping),
@@ -207,8 +209,8 @@ class LedgerRow:
 
     field: str
     status: str                          # "filled" | "blank" | "missing" | "drift"
-    sources: "tuple[str, ...]" = ()      # 이 필드가 읽는 소스 키(포인터, 값 아님)
-    transform: str = ""
+    source: str = ""                     # 이 필드가 읽는 소스 키(포인터, 값 아님)
+    type: str = ""
     fmt: str = ""
     preview_text: str = ""               # dry-run 결과값(텍스트) — HWPX 렌더 아님
     injected: "bool | None" = None       # 되읽기 증거: True/False, None=해당없음·미검증
@@ -218,8 +220,8 @@ class LedgerRow:
         return {
             "field": self.field,
             "status": self.status,
-            "sources": list(self.sources),
-            "transform": self.transform,
+            "source": self.source,
+            "type": self.type,
             "fmt": self.fmt,
             "preview_text": self.preview_text,
             "injected": self.injected,
@@ -252,21 +254,21 @@ def manifest_rows(
     order = list(mapping.cover_fields()) + list(drift.template_only)
     for name in dict.fromkeys(order):
         m = value_maps.get(name)
-        sources = tuple(m.sources) if m else ()
-        transform = m.transform if m else ""
+        source = m.source if m else ""
+        type_ = m.type if m else ""
         fmt = m.fmt if m else ""
         value = str(mapped_record.get(name, ""))
         if name in drift_fields:
-            rows.append(LedgerRow(name, "drift", sources, transform, fmt, value))
+            rows.append(LedgerRow(name, "drift", source, type_, fmt, value))
         elif name in blanks:
-            rows.append(LedgerRow(name, "blank", transform="blank"))
+            rows.append(LedgerRow(name, "blank", type="blank"))
         else:
             is_missing = value == "" or (
                 bool(missing_marker) and value == missing_marker.format(field=name)
             )
             rows.append(LedgerRow(
                 name, "missing" if is_missing else "filled",
-                sources, transform, fmt, value,
+                source, type_, fmt, value,
             ))
     return tuple(rows)
 

@@ -1,9 +1,13 @@
 """매핑 테이블 뷰 — MappingModel 을 QTableWidget 으로 렌더/편집한다.
 
-열: [확정 | 템플릿 필드 | 소스 | 변환 | 구분자·상수 | 미리보기].
+열: [확정 | 템플릿 필드 | 데이터 항목 | 타입 | 표시형 | 고정값 입력 | 미리보기].
 행 색: 미확정=노랑, 소스 없는 미확정(미매칭)=빨강, 확정=기본.
 모든 편집은 MappingModel 편집 API 를 거치고(편집 → 확정 해제 규칙 포함),
 변경 시 ``completeChanged`` 시그널을 쏜다(위저드 isComplete 연동용).
+
+**엄격한 1:1 계약.** 한 템플릿 필드는 정확히 한 데이터 항목(단일 소스)에서 값을
+취한다 — 구분자 결합(N→1)·다중선택은 없다. '고정값 입력' 열은 타입이 ``const`` 일
+때만 활성이며 소스와 무관한 리터럴을 담는다.
 """
 
 from __future__ import annotations
@@ -11,17 +15,13 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QPalette
 from PySide6.QtWidgets import (
-    QCheckBox,
     QComboBox,
-    QDialog,
-    QDialogButtonBox,
     QHBoxLayout,
     QHeaderView,
     QInputDialog,
     QLabel,
     QLineEdit,
     QPushButton,
-    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -29,14 +29,13 @@ from PySide6.QtWidgets import (
 )
 
 from ..core.format_engine import presets as format_presets
-from ..core.mapping import TRANSFORMS
+from ..core.mapping import TYPES
 from .confirm import confirm_destructive
 from .mapping_state import MappingModel
 from .style import DATA_EMPTY_FG, UNCONFIRMED_BG, UNMATCHED_BG, mark
 
-# 변환 코드 → 한국어 라벨(콤보 표시 순서는 TRANSFORMS 그대로).
-# join = N개 소스를 구분자로 이어붙이는 결합(라벨 '그대로'는 실제 의미와 불일치 — RC-26).
-TRANSFORM_LABELS = {"join": "결합", "datetime": "일시", "amount": "금액", "const": "상수"}
+# 값 유형 코드 → 한국어 라벨(콤보 표시 순서는 TYPES 그대로).
+TYPE_LABELS = {"text": "텍스트", "date": "날짜", "amount": "금액", "const": "고정값"}
 
 
 class _NoScrollComboBox(QComboBox):
@@ -51,11 +50,11 @@ class _NoScrollComboBox(QComboBox):
         event.ignore()
 
 (
-    _COL_CONFIRM, _COL_FIELD, _COL_SOURCE, _COL_TRANSFORM, _COL_FORMAT, _COL_ARG,
+    _COL_CONFIRM, _COL_FIELD, _COL_SOURCE, _COL_TYPE, _COL_FORMAT, _COL_ARG,
     _COL_PREVIEW,
 ) = range(7)
-_HEADERS = ("확정", "템플릿 필드", "데이터 항목", "변환", "표시형", "구분자·상수", "미리보기")
-_NO_FORMAT_ITEM = "—"          # 표시형 변형이 없는 변환(결합/상수)
+_HEADERS = ("확정", "템플릿 필드", "데이터 항목", "타입", "표시형", "고정값 입력", "미리보기")
+_NO_FORMAT_ITEM = "—"          # 표시형 변형이 없는 유형(고정값)
 _CUSTOM_FORMAT_ITEM = "직접 입력…"  # 고급: 서식 코드 직접 입력(액션 항목)
 
 # 색은 style 의 토큰 상수에서(단일 출처 gui/design_tokens.json) — 리터럴 중복 금지.
@@ -68,7 +67,6 @@ _FG_DATA_EMPTY = QBrush(QColor(DATA_EMPTY_FG))
 _FG_DEFAULT = QBrush()
 
 _EMPTY_ITEM = "(비움)"
-_MULTI_ITEM = "여러 데이터 항목 선택…"
 
 # 이 미만의 제안 점수는 툴팁으로 신뢰도를 고지한다(정확 일치 1.0 은 조용히).
 _LOW_CONFIDENCE = 1.0
@@ -97,7 +95,7 @@ def _row_state_color(row, schema_only: bool = False) -> "QColor | None":
 
     아이템 배경(QBrush)과 달리 위젯 셀 컨테이너는 팔레트 색으로 칠하므로 ``QColor``
     또는 ``None``(확정 = 밴드 없음)을 돌려준다. 상태색이 아이템 3열에만 닿고 cellWidget
-    4열(데이터 항목·변환·표시형·구분자)에서 끊겨 미매칭 빨강이 좌우로 찢기던 것을,
+    4열(데이터 항목·타입·표시형·고정값)에서 끊겨 미매칭 빨강이 좌우로 찢기던 것을,
     같은 색을 셀 컨테이너에도 칠해 **연속 밴드**로 잇는다. ``schema_only`` 강등은
     ``_row_brush`` 와 동형(데이터 미연결 세션의 빈 행 = 밴드 없음).
     """
@@ -114,62 +112,6 @@ def _source_label(key: str, aliases: "dict[str, str]") -> str:
     if label and label != key:
         return f"{key} — {label}"
     return key
-
-
-def _sources_display(sources: "list[str]", aliases: "dict[str, str]") -> str:
-    """현재 데이터 항목 선택의 표시 문자열 — 여러 항목은 ``opengDate + opengTm`` 식으로."""
-    if not sources:
-        return _EMPTY_ITEM
-    if len(sources) == 1:
-        return _source_label(sources[0], aliases)
-    return " + ".join(sources)
-
-
-class _SourcePickerDialog(QDialog):
-    """다중 데이터 항목 선택 다이얼로그(체크 리스트).
-
-    선택 순서는 리스트(소스 필드) 순서를 따른다 — 나라장터 키는 날짜가 시각보다
-    앞에 오므로 datetime 합성의 기대 순서(날짜, 시각)와 일치한다.
-    """
-
-    def __init__(self, source_fields, aliases, selected, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("여러 데이터 항목 선택")
-        self.resize(360, 420)
-        layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("이 템플릿 필드에 함께 사용할 데이터 항목을 순서대로 체크하세요."))
-
-        # 체크 항목을 '실제 QCheckBox 위젯 행'으로 구성한다(UI 버그 근본 조치). 종전
-        # QListWidget 의 체크 가능 아이템은 델리게이트가 그리는 네이티브 인디케이터라,
-        # 앱 전역 ``QListWidget::item`` QSS 와 섞이면 실제 클릭(부분 리페인트)·고DPI
-        # 스케일링에서 체크박스 소실·텍스트 잔상·정렬 붕괴가 났다. QCheckBox 는 인디케이터·
-        # 텍스트 정렬을 위젯이 직접 관리(BASE_QSS 미스타일 → 네이티브 안정)하므로 그 버그
-        # 계열이 원천적으로 불가능하다. 스크롤 영역에 담아 항목이 많아도 스크롤된다.
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        inner = QWidget()
-        vbox = QVBoxLayout(inner)
-        vbox.setContentsMargins(6, 6, 6, 6)
-        vbox.setSpacing(2)
-        chosen = set(selected)
-        self._checks: "list[tuple[str, QCheckBox]]" = []
-        for key in source_fields:
-            cb = QCheckBox(_source_label(key, aliases))
-            cb.setChecked(key in chosen)
-            vbox.addWidget(cb)
-            self._checks.append((key, cb))
-        vbox.addStretch(1)
-        scroll.setWidget(inner)
-        layout.addWidget(scroll, 1)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-
-    def selected_sources(self) -> "list[str]":
-        """체크된 데이터 항목 키를 소스 필드 순서대로 반환(datetime 합성의 날짜→시각 순서 보존)."""
-        return [key for key, cb in self._checks if cb.isChecked()]
 
 
 class MappingTable(QWidget):
@@ -191,7 +133,7 @@ class MappingTable(QWidget):
         # 제안해, 전면 빨강을 오류로 오인하던 문제를 해소한다. 평상시 숨김.
         self.lbl_schema_only = QLabel(
             "데이터 미연결 — 스키마만 편집 중입니다. 연결된 데이터가 없어 데이터 항목을 "
-            "고를 수 없습니다(빈 행은 오류가 아닙니다). 상수로 채우거나 각 필드를 (비움)으로 "
+            "고를 수 없습니다(빈 행은 오류가 아닙니다). 고정값으로 채우거나 각 필드를 (비움)으로 "
             "확정하세요 — 실제 데이터는 실행할 때 연결합니다."
         )
         self.lbl_schema_only.setWordWrap(True)
@@ -209,7 +151,7 @@ class MappingTable(QWidget):
         header.setSectionResizeMode(_COL_PREVIEW, QHeaderView.Stretch)
         self.table.setColumnWidth(_COL_FIELD, 170)
         self.table.setColumnWidth(_COL_SOURCE, 220)
-        self.table.setColumnWidth(_COL_TRANSFORM, 90)
+        self.table.setColumnWidth(_COL_TYPE, 90)
         self.table.setColumnWidth(_COL_FORMAT, 80)
         self.table.setColumnWidth(_COL_ARG, 110)
         self.table.itemChanged.connect(self._on_item_changed)
@@ -269,9 +211,9 @@ class MappingTable(QWidget):
         try:
             value = row.to_mapping().value_for(self._preview_record)
         except ValueError as exc:
-            # RC-10 2차 방어: 미지 변환은 apply_transform 이 시끄럽게 raise 한다 —
-            # 뷰가 통째로 죽는 대신 해당 행에 오류를 빨갛게 재진술한다.
-            item.setText(f"(변환 오류: {exc})")
+            # RC-10 2차 방어: 미지 타입은 apply_transform 이 시끄럽게 raise 한다 —
+            # 뷰가 통째로 죽는 대신 해당 행에 오류를 빨갛게 재진술한다(조용한 오표시 금지).
+            item.setText(f"(미리보기 오류: {exc})")
             item.setForeground(_FG_DATA_EMPTY)
             return
         if value == "" and row.has_content():
@@ -315,8 +257,9 @@ class MappingTable(QWidget):
                 fld.setToolTip(tip)
                 self.table.setItem(ri, _COL_FIELD, fld)
 
-                # 소스 콤보 + 퍼지(저신뢰) 제안 인라인 신호(UD-15). 상태색 밴드가
-                # 닿도록 셀 컨테이너로 감싼다(UD-38). 휠은 표 스크롤로(선택은 클릭만).
+                # 데이터 항목 콤보(단일선택) + 퍼지(저신뢰) 제안 인라인 신호(UD-15).
+                # 상태색 밴드가 닿도록 셀 컨테이너로 감싼다(UD-38). 휠은 표 스크롤로
+                # (선택은 클릭만).
                 combo = _NoScrollComboBox()
                 combo.activated.connect(
                     lambda idx, ri=ri: self._on_source_activated(ri, idx)
@@ -328,23 +271,23 @@ class MappingTable(QWidget):
                 src_box._conf = conf
                 self.table.setCellWidget(ri, _COL_SOURCE, src_box)
 
-                # 변환 콤보(한국어 라벨). 휠은 표 스크롤로.
-                tr = _NoScrollComboBox()
-                for kind in TRANSFORMS:
-                    tr.addItem(TRANSFORM_LABELS.get(kind, kind), kind)
-                tr.activated.connect(
-                    lambda idx, ri=ri: self._on_transform_activated(ri, idx)
+                # 타입 콤보(한국어 라벨). 휠은 표 스크롤로.
+                tc = _NoScrollComboBox()
+                for kind in TYPES:
+                    tc.addItem(TYPE_LABELS.get(kind, kind), kind)
+                tc.activated.connect(
+                    lambda idx, ri=ri: self._on_type_activated(ri, idx)
                 )
-                self.table.setCellWidget(ri, _COL_TRANSFORM, self._wrap_cell(tr))
+                self.table.setCellWidget(ri, _COL_TYPE, self._wrap_cell(tc))
 
-                # 표시형 콤보(변환에 딸린 프리셋; 변형 없는 변환이면 비활성). 휠은 표 스크롤로.
+                # 표시형 콤보(타입에 딸린 프리셋; 변형 없는 타입이면 비활성). 휠은 표 스크롤로.
                 fmtc = _NoScrollComboBox()
                 fmtc.activated.connect(
                     lambda idx, ri=ri: self._on_format_activated(ri, idx)
                 )
                 self.table.setCellWidget(ri, _COL_FORMAT, self._wrap_cell(fmtc))
 
-                # 구분자·상수(변환 종류에 따라 의미·활성이 바뀜).
+                # 고정값 입력 — 타입이 const 일 때만 활성(그 외 비활성·빈칸).
                 arg = QLineEdit()
                 arg.textEdited.connect(lambda text, ri=ri: self._on_arg_edited(ri, text))
                 self.table.setCellWidget(ri, _COL_ARG, self._wrap_cell(arg))
@@ -382,7 +325,7 @@ class MappingTable(QWidget):
 
     def _apply_band(self, ri: int, color: "QColor | None") -> None:
         """위젯 열 컨테이너를 행 상태색으로 칠해 아이템 열 밴드와 연속화(UD-38)."""
-        for col in (_COL_SOURCE, _COL_TRANSFORM, _COL_FORMAT, _COL_ARG):
+        for col in (_COL_SOURCE, _COL_TYPE, _COL_FORMAT, _COL_ARG):
             box = self.table.cellWidget(ri, col)
             if box is None:
                 continue
@@ -405,28 +348,24 @@ class MappingTable(QWidget):
                 Qt.Checked if row.confirmed else Qt.Unchecked
             )
 
-            # 소스 콤보 재구성: (비움) + 각 소스 + [현재 다중 표시] + 다중 선택….
+            # 데이터 항목 콤보 재구성(단일선택): (비움) + 각 소스.
             combo: QComboBox = self.cell_control(ri, _COL_SOURCE)
             combo.blockSignals(True)
             combo.clear()
             combo.addItem(_EMPTY_ITEM)
             for key in model.source_fields:
                 combo.addItem(_source_label(key, model.aliases))
-            if len(row.sources) > 1:
-                combo.addItem(_sources_display(row.sources, model.aliases))
-                combo.setCurrentIndex(combo.count() - 1)
-            elif len(row.sources) == 1 and row.sources[0] in model.source_fields:
-                combo.setCurrentIndex(1 + model.source_fields.index(row.sources[0]))
-            elif len(row.sources) == 1:
+            if row.source and row.source in model.source_fields:
+                combo.setCurrentIndex(1 + model.source_fields.index(row.source))
+            elif row.source:
                 # 프로파일이 기억한 소스가 현 샘플 데이터에 없음 — (비움) 오표시 대신
                 # 실제 이름을 보여 상태를 숨기지 않는다(실행 사전검증이 잡기 전에 에디터가 고지).
                 combo.addItem(
-                    _source_label(row.sources[0], model.aliases) + " (데이터에 없음)"
+                    _source_label(row.source, model.aliases) + " (데이터에 없음)"
                 )
                 combo.setCurrentIndex(combo.count() - 1)
             else:
                 combo.setCurrentIndex(0)
-            combo.addItem(_MULTI_ITEM)
             # 현재 선택 전체 문자열 상시 툴팁(RC-36) — 콤보 고정폭(220px)에서 잘린
             # 선택을 확인할 수단. 저신뢰 자동 제안 경고는 병기 유지.
             tip = f"현재 선택: {combo.currentText()}"
@@ -450,27 +389,27 @@ class MappingTable(QWidget):
                     conf.setText("")
                     conf.setVisible(False)
 
-            # 변환 콤보.
-            tr: QComboBox = self.cell_control(ri, _COL_TRANSFORM)
-            tr.blockSignals(True)
+            # 타입 콤보.
+            tc: QComboBox = self.cell_control(ri, _COL_TYPE)
+            tc.blockSignals(True)
             # 이전 동기화가 남긴 '지원 안 함' 마커를 걷어내고 표준 항목만 남긴다.
-            while tr.count() > len(TRANSFORMS):
-                tr.removeItem(tr.count() - 1)
-            if row.transform in TRANSFORMS:
-                tr.setCurrentIndex(TRANSFORMS.index(row.transform))
+            while tc.count() > len(TYPES):
+                tc.removeItem(tc.count() - 1)
+            if row.type in TYPES:
+                tc.setCurrentIndex(TYPES.index(row.type))
             else:
                 # RC-10 2차 방어: 직렬화 경계(from_dict)가 1차로 거부하지만, 프로그램
-                # 경로로 미지 변환이 스며도 미처리 크래시(Qt 가 예외를 삼켜 통지 0)나
+                # 경로로 미지 타입이 스며도 미처리 크래시(Qt 가 예외를 삼켜 통지 0)나
                 # 조용한 오표시 대신 실제 값을 그대로 노출한다 — 사람이 고치게.
-                tr.addItem(f"{row.transform} (지원 안 함)", row.transform)
-                tr.setCurrentIndex(tr.count() - 1)
-            tr.blockSignals(False)
+                tc.addItem(f"{row.type} (지원 안 함)", row.type)
+                tc.setCurrentIndex(tc.count() - 1)
+            tc.blockSignals(False)
 
             # 표시형 콤보 — 프리셋(라벨→코드) + 커스텀 코드 + '직접 입력…' 액션.
             fmtc: QComboBox = self.cell_control(ri, _COL_FORMAT)
             fmtc.blockSignals(True)
             fmtc.clear()
-            opts = format_presets(row.transform)  # [(라벨, 코드)]
+            opts = format_presets(row.type)  # [(라벨, 코드)]
             if opts:
                 codes = [code for _, code in opts]
                 for label, code in opts:
@@ -488,16 +427,12 @@ class MappingTable(QWidget):
                 fmtc.setEnabled(False)
             fmtc.blockSignals(False)
 
-            # 구분자·상수 — join 이면 구분자, const 면 상수, 그 외 비활성.
+            # 고정값 입력 — const 면 활성(리터럴), 그 외 비활성.
             arg: QLineEdit = self.cell_control(ri, _COL_ARG)
             arg.blockSignals(True)
-            if row.transform == "join":
+            if row.type == "const":
                 arg.setEnabled(True)
-                arg.setPlaceholderText("구분자")
-                arg.setText(row.sep)
-            elif row.transform == "const":
-                arg.setEnabled(True)
-                arg.setPlaceholderText("상수 값")
+                arg.setPlaceholderText("고정값")
                 arg.setText(row.const)
             else:
                 arg.setEnabled(False)
@@ -530,31 +465,24 @@ class MappingTable(QWidget):
 
     def _on_source_activated(self, ri: int, idx: int):
         model = self._model
-        combo: QComboBox = self.cell_control(ri, _COL_SOURCE)
         n = len(model.source_fields)
-        if combo.itemText(idx) == _MULTI_ITEM:
-            dlg = _SourcePickerDialog(
-                model.source_fields, model.aliases, model.rows[ri].sources, self
-            )
-            if dlg.exec() == QDialog.Accepted:
-                model.set_sources(ri, dlg.selected_sources())
-        elif idx == 0:
-            model.set_sources(ri, [])
+        if idx == 0:
+            model.set_source(ri, "")
         elif 1 <= idx <= n:
-            model.set_sources(ri, [model.source_fields[idx - 1]])
+            model.set_source(ri, model.source_fields[idx - 1])
         else:
-            # 현재 다중 선택 표시 아이템 재선택 — 변경 없음.
+            # '(데이터에 없음)' 잔존 표시 아이템 재선택 — 변경 없음.
             self._sync_row(ri)
             return
         self._sync_row(ri)
         self.completeChanged.emit()
 
-    def _on_transform_activated(self, ri: int, idx: int):
-        if idx >= len(TRANSFORMS):
+    def _on_type_activated(self, ri: int, idx: int):
+        if idx >= len(TYPES):
             # '지원 안 함' 마커 항목(RC-10 2차 방어) 재선택 — 변경 없음, 표시만 재동기화.
             self._sync_row(ri)
             return
-        self._model.set_transform(ri, TRANSFORMS[idx])
+        self._model.set_type(ri, TYPES[idx])
         self._sync_row(ri)
         self.completeChanged.emit()
 
@@ -585,19 +513,16 @@ class MappingTable(QWidget):
 
     def _on_arg_edited(self, ri: int, text: str):
         row = self._model.rows[ri]
-        if row.transform == "join":
-            self._model.set_sep(ri, text)
-        elif row.transform == "const":
-            self._model.set_const(ri, text)
-        else:
+        if row.type != "const":
             return
+        self._model.set_const(ri, text)
         # 입력 중 포커스 유지를 위해 라인에디트 자체는 다시 만지지 않는다.
         self._updating = True
         try:
             self.table.item(ri, _COL_CONFIRM).setCheckState(Qt.Unchecked)
             self._render_preview(ri, row)
             so = self._schema_only()
-            brush = _row_brush(row, so)  # set_sep/set_const 가 확정을 해제한 뒤라 미확정 색
+            brush = _row_brush(row, so)  # set_const 가 확정을 해제한 뒤라 미확정 색
             for col in (_COL_CONFIRM, _COL_FIELD, _COL_PREVIEW):
                 self.table.item(ri, col).setBackground(brush)
             self._apply_band(ri, _row_state_color(row, so))  # 위젯 열 밴드도 함께(UD-38)

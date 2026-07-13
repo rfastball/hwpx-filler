@@ -35,8 +35,8 @@ def _profile() -> MappingProfile:
     return MappingProfile(
         name="p",
         mappings=[
-            FieldMapping("공고명", ["bidNtceNm"], transform="join"),
-            FieldMapping("추정가격", ["presmptPrce"], transform="amount", fmt="{:,}"),
+            FieldMapping("공고명", "bidNtceNm", type="text"),
+            FieldMapping("추정가격", "presmptPrce", type="amount", fmt="{:,}"),
         ],
     )
 
@@ -67,7 +67,8 @@ def test_to_dict_from_dict_roundtrip_preserves_embedded_mapping():
     assert loaded.name == "입찰공고서"
     assert loaded.template_path == "/tmp/template.hwpx"
     assert loaded.filename_pattern == "공고서-{{공고명}}"
-    assert loaded.mapping.mappings[1].sources == ["presmptPrce"]
+    assert loaded.mapping.mappings[1].source == "presmptPrce"
+    assert loaded.mapping.mappings[1].type == "amount"
     assert loaded.mapping.mappings[1].fmt == "{:,}"
 
 
@@ -116,18 +117,19 @@ def test_source_keys_dedupes_across_mappings_preserving_order():
     job = Job(
         mapping=MappingProfile(
             mappings=[
-                FieldMapping("일시", ["d", "t"], transform="datetime"),
-                FieldMapping("다른", ["d"]),  # d 재등장
+                FieldMapping("개찰일", "d", type="date"),
+                FieldMapping("개찰시각", "t", type="date", fmt="%H:%M"),
+                FieldMapping("다른", "d"),  # d 재등장
             ]
         )
     )
     assert job.source_keys() == ["d", "t"]
 
 
-def test_source_keys_skips_even_malformed_blank_sources():
+def test_source_keys_skips_even_malformed_blank_source():
     job = Job(mapping=MappingProfile(mappings=[
-        FieldMapping("공고명", ["name"]),
-        FieldMapping("비고", ["must_not_be_required"], transform="blank"),
+        FieldMapping("공고명", "name"),
+        FieldMapping("비고", "must_not_be_required", type="blank"),
     ]))
     assert job.source_keys() == ["name"]
 
@@ -286,11 +288,11 @@ def test_blank_key_and_placeholder_survive_mark_missing_and_real_hwpx(tmp_path):
 
     template = Path(__file__).parent / "corpus" / "real" / "bid_notice_limited_under100m.hwpx"
     mapping = MappingProfile(mappings=[
-        FieldMapping("공고명", ["name"]),
-        FieldMapping("입찰공고번호", transform="blank"),
-        FieldMapping("계약방법", transform="blank"),
-        FieldMapping("추정가격", transform="blank"),
-        FieldMapping("개찰일시", transform="blank"),
+        FieldMapping("공고명", "name"),
+        FieldMapping("입찰공고번호", type="blank"),
+        FieldMapping("계약방법", type="blank"),
+        FieldMapping("추정가격", type="blank"),
+        FieldMapping("개찰일시", type="blank"),
     ])
     req = RunRequest(
         Job(template_path=str(template), mapping=mapping),
@@ -321,7 +323,7 @@ def test_job_save_failure_preserves_existing_json(tmp_path, monkeypatch):
     import pytest
 
     job = Job(name="계약", template_path="/t.hwpx",
-              mapping=MappingProfile(mappings=[FieldMapping("공고명", ["name"])]))
+              mapping=MappingProfile(mappings=[FieldMapping("공고명", "name")]))
     path = tmp_path / "j.job.json"
     job.save(path)
     existing = path.read_text(encoding="utf-8")

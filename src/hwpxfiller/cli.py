@@ -424,7 +424,7 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
     # 매핑(요구 필드 스냅샷). validate 이후 템플릿이 교체되면(TOCTOU) generate_batch 가
     # 원자 차단한다.
     gate_mapping = profile or MappingProfile(
-        mappings=[FieldMapping(f, [f]) for f in required]
+        mappings=[FieldMapping(f, f) for f in required]
     )
     report = validate(required, records)
     if report.missing_columns:

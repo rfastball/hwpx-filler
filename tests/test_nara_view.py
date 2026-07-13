@@ -406,7 +406,7 @@ def test_datapage_apply_nara_result_seeds_session_and_vocab(qapp, tmp_path):
     mapping_page = wiz.page(wiz.pageIds()[2])
     mapping_page.initializePage()
     row = next(r for r in wiz.model.rows if r.template_field == "공고명")
-    assert row.sources == ["bidNtceNm"]  # 어휘 관통(V1→N2) 자동제안
+    assert row.source == "bidNtceNm"  # 어휘 관통(V1→N2) 자동제안
 
 
 def test_key_never_reaches_job_serialization(qapp, tmp_path):
@@ -430,7 +430,7 @@ def test_key_never_reaches_job_serialization(qapp, tmp_path):
     mapping_page.initializePage()
     for i, row in enumerate(wiz.model.rows):
         if row.template_field == "공고명":
-            wiz.model.set_sources(i, ["bidNtceNm"])
+            wiz.model.set_source(i, "bidNtceNm")
     wiz.model.confirm_all()
 
     profile = wiz.model.to_profile("공고작업")

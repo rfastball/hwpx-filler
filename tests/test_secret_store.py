@@ -198,8 +198,8 @@ def test_service_key_never_serialized_in_profile_and_job(tmp_path):
     키 문자열이 부재함을 가드한다(직렬화가 키를 우연히 포획하지 않음을 문서화).
     """
     profile = MappingProfile(name="나라", mappings=[
-        FieldMapping("입찰공고번호", ["bidNtceNo"]),
-        FieldMapping("추정가격", ["presmptPrce"], transform="amount"),
+        FieldMapping("입찰공고번호", "bidNtceNo"),
+        FieldMapping("추정가격", "presmptPrce", type="amount"),
     ])
     pf = tmp_path / "map.json"
     profile.save(pf)

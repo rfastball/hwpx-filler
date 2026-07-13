@@ -35,8 +35,8 @@ def _template(path, fields):
 
 def _mapping():
     return MappingProfile(mappings=[
-        FieldMapping("공고명", ["name"]),
-        FieldMapping("비고", transform="blank"),
+        FieldMapping("공고명", "name"),
+        FieldMapping("비고", type="blank"),
     ])
 
 
@@ -63,8 +63,8 @@ def test_structure_and_value_axes_are_independent():
 
 def test_mapping_blank_conflict_fails_closed():
     mapping = MappingProfile(mappings=[
-        FieldMapping("공고명", ["name"]),
-        FieldMapping("공고명", transform="blank"),
+        FieldMapping("공고명", "name"),
+        FieldMapping("공고명", type="blank"),
     ])
     drift = template_structure_drift(["공고명"], mapping)
     assert drift.has_drift and drift.conflicting == ("공고명",)
@@ -91,7 +91,7 @@ def test_manifest_rows_statuses_and_previews():
     )}
     assert rows["공고명"].status == "filled"
     assert rows["공고명"].preview_text == "관급자재 구매"
-    assert rows["공고명"].sources == ("name",)
+    assert rows["공고명"].source == "name"
     assert rows["비고"].status == "blank" and rows["비고"].preview_text == ""
     assert rows["신규"].status == "drift"
     # 전 행이 미검증 상태(dry-run) — injected 는 증거이지 추정이 아니다.

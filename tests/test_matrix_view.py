@@ -219,7 +219,7 @@ def test_matrix_view_missing_gate_blocks_and_badges_appear(qapp, tmp_path, monke
     tpl = tmp_path / "t.hwpx"
     _field_template(tpl, ["공고명", "추정가격"])
     reg.save(Job(name="공고", template_path=str(tpl), mapping=MappingProfile(mappings=[
-        FieldMapping("공고명", ["공고명"]), FieldMapping("추정가격", ["추정가격"]),
+        FieldMapping("공고명", "공고명"), FieldMapping("추정가격", "추정가격"),
     ]), filename_pattern="공고-{{공고명}}"))
     csv = tmp_path / "d.csv"
     csv.write_text("공고명,추정가격\n전산,\n", encoding="utf-8")  # 추정가격 빈값 → 미입력

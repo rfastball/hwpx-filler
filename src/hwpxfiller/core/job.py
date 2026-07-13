@@ -121,11 +121,11 @@ class Job:
         seen: "dict[str, None]" = {}
         for m in self.mapping.mappings:
             if m.is_blank:
-                # malformed/구 프로파일이 blank에 sources를 남겨도 의도 선언은
+                # malformed/구 프로파일이 blank에 source를 남겨도 의도 선언은
                 # 소스 요구가 아니다. source drift와 실제 출력이 갈리지 않게 제외.
                 continue
-            for s in m.sources:
-                seen.setdefault(s, None)
+            if m.source:
+                seen.setdefault(m.source, None)
         return list(seen)
 
     # ------------------------------------------------------------ 직렬화

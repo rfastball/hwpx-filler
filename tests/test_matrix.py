@@ -61,7 +61,7 @@ def _job(tmp_path, name, tfield, source, pattern):
     _write_template(path, [tfield])
     return Job(
         name=name, template_path=str(path),
-        mapping=MappingProfile(mappings=[FieldMapping(template_field=tfield, sources=[source])]),
+        mapping=MappingProfile(mappings=[FieldMapping(template_field=tfield, source=source)]),
         filename_pattern=pattern,
     )
 

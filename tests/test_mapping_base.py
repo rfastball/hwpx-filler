@@ -17,8 +17,8 @@ from hwpxfiller.core.mapping_base import (
 
 def _base(name="조달어휘") -> MappingProfile:
     return MappingProfile(name=name, mappings=[
-        FieldMapping(template_field="공고명", sources=["bidNtceNm"]),
-        FieldMapping(template_field="추정가격", sources=["presmptPrce"], transform="amount"),
+        FieldMapping(template_field="공고명", source="bidNtceNm"),
+        FieldMapping(template_field="추정가격", source="presmptPrce", type="amount"),
     ])
 
 
@@ -30,7 +30,7 @@ def test_registry_roundtrip(tmp_path):
     assert reg.exists("조달어휘")
     loaded = reg.load("조달어휘")
     assert loaded.template_fields() == ["공고명", "추정가격"]
-    assert loaded.mappings[1].transform == "amount"
+    assert loaded.mappings[1].type == "amount"
 
 
 def test_registry_list_sorted_and_delete(tmp_path):
@@ -91,7 +91,7 @@ def test_mapping_model_from_profile_builds_confirmed_rows():
     model = MappingModel.from_profile(_base())
     assert [r.template_field for r in model.rows] == ["공고명", "추정가격"]
     assert all(r.confirmed for r in model.rows)  # 베이스는 확정본
-    assert model.rows[1].transform == "amount"
+    assert model.rows[1].type == "amount"
     # source_fields = 참조 소스 키 합집합(테이블 소스 피커 후보).
     assert set(model.source_fields) == {"bidNtceNm", "presmptPrce"}
     assert model.is_complete()  # 전 행 확정 → 게이트 통과

@@ -58,7 +58,7 @@ def _write_template(path: Path, fields) -> None:
 
 def _mapping(*fields: str) -> MappingProfile:
     return MappingProfile(
-        mappings=[FieldMapping(template_field=f, sources=[f]) for f in fields]
+        mappings=[FieldMapping(template_field=f, source=f) for f in fields]
     )
 
 
@@ -163,7 +163,7 @@ def test_generate_matrix_cancel_skips_remaining_jobs(tmp_path):
         return Job(
             name=name, template_path=str(path),
             mapping=MappingProfile(
-                mappings=[FieldMapping(template_field=tfield, sources=[source])]
+                mappings=[FieldMapping(template_field=tfield, source=source)]
             ),
             filename_pattern=pattern,
         )

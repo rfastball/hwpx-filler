@@ -7,7 +7,7 @@
 
 원칙(Excel 셀서식의 열화판):
   - 표시형은 값을 **파싱→서식→실패 시 원본(degrade)**. 타입 *주장*이 아니라 관대한 *시도*.
-  - 서식 코드는 변환(kind)이 해석기를 고른다: amount→``str.format`` 스펙, datetime→strftime.
+  - 서식 코드는 유형(kind)이 해석기를 고른다: amount→``str.format`` 스펙, date→strftime.
   - 자주 쓰는 코드는 **프리셋**(분류해 클릭), 고급 사용자는 **코드 직접 입력**. 빈 코드("")는
     각 kind 의 기본 표시(원 붙임 / 한글 날짜).
 """
@@ -57,6 +57,21 @@ def _parse_dt(value: str) -> "datetime | None":
         return datetime(y, mo, d, hh, mm)
     except ValueError:
         return None
+
+
+def _parse_time(value: str) -> "tuple[int, int] | None":
+    """날짜 없는 **시각 단독값**을 관대하게 파싱('1400'→(14,0), '18:00'→(18,0)).
+
+    소스가 시각만 담은 키(나라장터 ``opengTm`` 등)를 date 유형·시각 서식으로 렌더할 때
+    쓴다. ``HH:MM``·``HHMM`` 만 인식하고 범위를 벗어나면 None(원본 degrade)."""
+    s = value.strip()
+    m = re.fullmatch(r"(\d{1,2}):(\d{2})", s) or re.fullmatch(r"(\d{2})(\d{2})", s)
+    if not m:
+        return None
+    hh, mm = int(m.group(1)), int(m.group(2))
+    if 0 <= hh < 24 and 0 <= mm < 60:
+        return hh, mm
+    return None
 
 
 def _korean_dt(value: str) -> str:
@@ -109,13 +124,16 @@ class StdlibFormatEngine:
             ("소수 2자리", "{:,.2f}"),   # 150,000,000.00
             ("백분율", "{:.1%}"),        # (0.05 → 5.0%)
         ],
-        "datetime": [
-            ("한글", ""),               # 2026년 6월 15일 (기본)
-            ("ISO", "%Y-%m-%d"),        # 2026-06-15
-            ("점", "%Y.%m.%d"),         # 2026.06.15
-            ("연-월", "%Y-%m"),         # 2026-06
+        "date": [
+            ("한글", ""),                      # 2026년 6월 15일 (기본)
+            ("ISO", "%Y-%m-%d"),               # 2026-06-15
+            ("점", "%Y.%m.%d"),                # 2026.06.15
+            ("연-월", "%Y-%m"),                # 2026-06
+            ("시각", "%H:%M"),                 # 18:00 (시각 단독값도 파싱)
+            ("날짜+시각", "%Y-%m-%d %H:%M"),    # 2026-06-15 18:00
+            ("한글일시", "%Y년 %m월 %d일 %H:%M"),  # 2026년 06월 15일 18:00
         ],
-        "join": [                       # 평문(그대로) 변환의 표시형 = 마스크
+        "text": [                       # 평문(그대로) 유형의 표시형 = 마스크
             ("원문", ""),               # 값 그대로
             ("전화", "phone"),          # 010-1234-5678
             ("사업자번호", "biz"),       # 123-45-67890
@@ -125,9 +143,9 @@ class StdlibFormatEngine:
     def render(self, kind: str, code: str, value: str) -> str:
         if kind == "amount":
             return self._amount(code, value)
-        if kind == "datetime":
-            return self._datetime(code, value)
-        if kind == "join":
+        if kind == "date":
+            return self._date(code, value)
+        if kind == "text":
             return self._text(code, value)
         return value  # 표시형 없는 kind(const)
 
@@ -143,12 +161,16 @@ class StdlibFormatEngine:
         except (ValueError, KeyError, IndexError):
             return value  # 잘못된 서식 코드도 degrade
 
-    def _datetime(self, code: str, value: str) -> str:
+    def _date(self, code: str, value: str) -> str:
         if not code:
             return _korean_dt(value)  # 기본 한글 표시(비패딩)
         dt = _parse_dt(value)
         if dt is None:
-            return value
+            # 날짜가 없으면 시각 단독값('1400'·'18:00')으로 재시도 — 시각 서식용.
+            t = _parse_time(value)
+            if t is None:
+                return value
+            dt = datetime(1900, 1, 1, t[0], t[1])
         try:
             return dt.strftime(code)
         except (ValueError, TypeError):

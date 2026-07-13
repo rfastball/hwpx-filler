@@ -221,7 +221,7 @@ def _saved_job(tmp_path):
     model = _model()
     for i, row in enumerate(model.rows):
         if row.template_field == "공고명":
-            model.set_sources(i, ["bidNtceNm"])
+            model.set_source(i, "bidNtceNm")
     model.confirm_all()
     reg = JobRegistry(tmp_path)
     job = Job(
@@ -299,7 +299,7 @@ def test_editor_accept_blocks_empty_pattern_no_silent_fallback(qapp, tmp_path, m
     wiz.model = _model()
     for i, row in enumerate(wiz.model.rows):
         if row.template_field == "공고명":
-            wiz.model.set_sources(i, ["bidNtceNm"])
+            wiz.model.set_source(i, "bidNtceNm")
     wiz.model.confirm_all()
     wiz._save_page.ed_name.setText("빈패턴작업")
     wiz._save_page.ed_pattern.setText("")
@@ -329,7 +329,7 @@ def test_editor_edit_mode_accept_same_name_no_prompt(qapp, tmp_path, monkeypatch
     wiz.model = _model()
     for i, row in enumerate(wiz.model.rows):
         if row.template_field == "공고명":
-            wiz.model.set_sources(i, ["bidNtceNm"])
+            wiz.model.set_source(i, "bidNtceNm")
     wiz.model.confirm_all()
     wiz._save_page.ed_name.setText("편집대상")
     wiz.accept()
@@ -1050,8 +1050,8 @@ def _run_view_with_data(tmp_path):
         name="실행",
         template_path=str(template),
         mapping=MappingProfile(mappings=[
-            FieldMapping(template_field="공고명", sources=["bidNtceNm"]),
-            FieldMapping(template_field="추정가격", sources=["presmptPrce"]),
+            FieldMapping(template_field="공고명", source="bidNtceNm"),
+            FieldMapping(template_field="추정가격", source="presmptPrce"),
         ]),
         filename_pattern="doc-{{공고명}}",
     )
@@ -1667,7 +1667,7 @@ def test_job_editor_accept_warns_and_blocks_all_blank_job(qapp, tmp_path, monkey
     assert not saved                       # job_saved 미방출
 
     # 반대 방향(과차단 금지): 값을 방출하는 행이 생기면 그대로 저장된다.
-    wiz.model.set_sources(0, ["bidNtceNm"])
+    wiz.model.set_source(0, "bidNtceNm")
     wiz.model.confirm_all()
     wiz.accept()
     assert saved == ["전부비움작업"]
@@ -1750,35 +1750,35 @@ def test_datapage_source_toggle_resets_session_atomically(qapp, tmp_path, monkey
     assert mapping_page.lbl_index.text() == "레코드 0/0"
 
 
-def test_mapping_table_unknown_transform_renders_loudly_without_crash(qapp):
-    """RC-10 2차 방어 회귀: 미지 변환 행도 뷰가 죽지 않고(Qt 가 예외를 삼켜 통지 0 이던
-    크래시 금지) 변환 콤보·미리보기에 시끄럽게 재진술한다 — 조용한 오표시 금지."""
-    from hwpxfiller.core.mapping import TRANSFORMS
+def test_mapping_table_unknown_type_renders_loudly_without_crash(qapp):
+    """RC-10 2차 방어 회귀: 미지 타입 행도 뷰가 죽지 않고(Qt 가 예외를 삼켜 통지 0 이던
+    크래시 금지) 타입 콤보·미리보기에 시끄럽게 재진술한다 — 조용한 오표시 금지."""
+    from hwpxfiller.core.mapping import TYPES
     from hwpxfiller.gui.mapping_state import RowState
-    from hwpxfiller.gui.mapping_table import _COL_PREVIEW, _COL_TRANSFORM, MappingTable
+    from hwpxfiller.gui.mapping_table import _COL_PREVIEW, _COL_TYPE, MappingTable
 
     model = MappingModel(
-        rows=[RowState("추정가격", sources=["presmptPrce"], transform="amonut")],
+        rows=[RowState("추정가격", source="presmptPrce", type="amonut")],
         source_fields=["presmptPrce"],
     )
     table = MappingTable()
-    # 종전: TRANSFORMS.index("amonut") 미처리 ValueError 로 렌더 중단.
+    # 종전: TYPES.index("amonut") 미처리 ValueError 로 렌더 중단.
     table.set_model(model, {"presmptPrce": "123456789"})
 
-    tr = table.cell_control(0, _COL_TRANSFORM)
-    assert "amonut" in tr.currentText() and "지원 안 함" in tr.currentText()
-    assert "변환 오류" in table.table.item(0, _COL_PREVIEW).text()
+    tc = table.cell_control(0, _COL_TYPE)
+    assert "amonut" in tc.currentText() and "지원 안 함" in tc.currentText()
+    assert "미리보기 오류" in table.table.item(0, _COL_PREVIEW).text()
 
     # 마커 항목 재선택은 변경 없음 — 재동기화가 마커를 증식시키지도 않는다.
-    table._on_transform_activated(0, tr.currentIndex())
-    assert model.rows[0].transform == "amonut"
-    assert table.cell_control(0, _COL_TRANSFORM).count() == len(TRANSFORMS) + 1
+    table._on_type_activated(0, tc.currentIndex())
+    assert model.rows[0].type == "amonut"
+    assert table.cell_control(0, _COL_TYPE).count() == len(TYPES) + 1
 
-    # 지원 변환으로 바꾸면 정상 복귀(마커 제거·미리보기 재계산).
-    table._on_transform_activated(0, TRANSFORMS.index("amount"))
-    assert model.rows[0].transform == "amount"
-    assert table.cell_control(0, _COL_TRANSFORM).count() == len(TRANSFORMS)
-    assert "변환 오류" not in table.table.item(0, _COL_PREVIEW).text()
+    # 지원 타입으로 바꾸면 정상 복귀(마커 제거·미리보기 재계산).
+    table._on_type_activated(0, TYPES.index("amount"))
+    assert model.rows[0].type == "amount"
+    assert table.cell_control(0, _COL_TYPE).count() == len(TYPES)
+    assert "미리보기 오류" not in table.table.item(0, _COL_PREVIEW).text()
 
 
 def test_mapping_table_combos_ignore_wheel_so_table_scrolls(qapp):
@@ -1791,19 +1791,19 @@ def test_mapping_table_combos_ignore_wheel_so_table_scrolls(qapp):
     from hwpxfiller.gui.mapping_table import (
         _COL_FORMAT,
         _COL_SOURCE,
-        _COL_TRANSFORM,
+        _COL_TYPE,
         MappingTable,
         _NoScrollComboBox,
     )
 
     model = MappingModel(
-        rows=[RowState("개찰일시", sources=["opengDate"], transform="datetime")],
+        rows=[RowState("개찰일시", source="opengDate", type="date")],
         source_fields=["opengDate", "opengTm", "presmptPrce"],
     )
     table = MappingTable()
     table.set_model(model, {"opengDate": "20260713"})
 
-    for col in (_COL_SOURCE, _COL_TRANSFORM, _COL_FORMAT):
+    for col in (_COL_SOURCE, _COL_TYPE, _COL_FORMAT):
         combo = table.cell_control(0, col)
         assert isinstance(combo, _NoScrollComboBox)
         before = combo.currentIndex()
@@ -1814,31 +1814,6 @@ def test_mapping_table_combos_ignore_wheel_so_table_scrolls(qapp):
         combo.wheelEvent(ev)
         assert not ev.isAccepted()          # 위(표)로 전파됨
         assert combo.currentIndex() == before  # 선택 불변
-
-
-def test_source_picker_uses_checkbox_widgets_and_preserves_order(qapp):
-    """UI 버그 회귀: 다중 데이터 항목 선택창은 QListWidget 체크아이템(전역 QSS 와 섞여
-    체크박스 소실·정렬 붕괴)이 아니라 실제 QCheckBox 위젯 행으로 구성한다. 사전선택
-    반영·토글·소스 필드 순서 보존을 검증한다."""
-    from PySide6.QtWidgets import QCheckBox
-
-    from hwpxfiller.gui.mapping_table import _SourcePickerDialog
-
-    fields = ["opengDate", "opengTm", "presmptPrce", "bidNtceNm"]
-    aliases = {"opengDate": "개찰일자", "opengTm": "개찰시각"}
-    dlg = _SourcePickerDialog(fields, aliases, selected=["opengTm"])
-
-    # 실제 QCheckBox 위젯 — 델리게이트 인디케이터가 아님.
-    assert len(dlg._checks) == len(fields)
-    assert all(isinstance(cb, QCheckBox) for _, cb in dlg._checks)
-    # 사전선택 반영.
-    assert dlg.selected_sources() == ["opengTm"]
-
-    # 토글 후 선택은 소스 필드 순서대로(체크 순서 아님) — datetime 날짜→시각 순서 보존.
-    dlg._checks[0][1].setChecked(True)   # opengDate
-    assert dlg.selected_sources() == ["opengDate", "opengTm"]
-    dlg._checks[1][1].setChecked(False)  # opengTm 해제 → 복구 동작
-    assert dlg.selected_sources() == ["opengDate"]
 
 
 # ------------------------------------------------------------------ 앱 A(diff)
@@ -2141,11 +2116,11 @@ def test_mapping_table_arg_edit_shares_row_brush(qapp):
     table = MappingTable()
     table.set_model(model, {"bidNtceNm": "테스트"})
     ri = 0
-    model.set_sources(ri, ["bidNtceNm"])  # 내용 있는 join 행
+    model.set_type(ri, "const")  # 고정값 입력이 활성인 행
     model.set_confirmed(ri, True)
     table._sync_row(ri)
 
-    table._on_arg_edited(ri, ";")  # 구분자 편집 → 확정 해제
+    table._on_arg_edited(ri, "고정값")  # 고정값 편집 → 확정 해제
 
     row = model.rows[ri]
     assert not row.confirmed
