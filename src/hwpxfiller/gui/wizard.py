@@ -561,15 +561,15 @@ class MappingPage(QWizardPage):
         self.table.completeChanged.connect(self._on_table_changed)
         layout.addWidget(self.table, 1)
 
-        # 레코드 스텝퍼 — 어떤 레코드로 미리보기할지 훑는다. 라벨을 '이전/다음
-        # 레코드'로 구체화한다(UD-40): 위저드 푸터의 '다음(N)'(페이지 이동)과 스텝퍼의
-        # '다음'(레코드 이동)이 한 화면에서 두 '다음'으로 공존해 혼동될 여지를 없앤다.
+        # 행 스텝퍼 — 데이터의 어느 행으로 미리보기할지 훑는다. 라벨을 '이전/다음 행'으로
+        # 구체화한다(8609E239): 위저드 푸터의 '다음(N)'(페이지 이동)과 스텝퍼의 '다음 행'
+        # (데이터 이동)이 한 화면에서 공존해도 목적을 구분할 수 있다.
         stepper = QHBoxLayout()
-        self.btn_prev = QPushButton("◀ 이전 레코드")
+        self.btn_prev = QPushButton("◀ 이전 행")
         self.btn_prev.clicked.connect(lambda: self._step(-1))
-        self.btn_next = QPushButton("다음 레코드 ▶")
+        self.btn_next = QPushButton("다음 행 ▶")
         self.btn_next.clicked.connect(lambda: self._step(1))
-        self.lbl_index = QLabel("레코드 0/0")
+        self.lbl_index = QLabel("행 0/0")
         self.lbl_preview_summary = QLabel("")
         self.lbl_preview_summary.setWordWrap(True)
         stepper.addWidget(self.btn_prev)
@@ -582,20 +582,35 @@ class MappingPage(QWizardPage):
         buttons = QHBoxLayout()
         self.lbl_progress = QLabel("확정 0/0")
         mark(self.lbl_progress, "muted", True)
-        btn_base_apply = QPushButton("매핑 프로파일 적용…")
-        btn_base_apply.clicked.connect(self._apply_base)
-        btn_base_save = QPushButton("매핑 프로파일로 저장…")
-        btn_base_save.clicked.connect(self._save_base)
-        btn_load = QPushButton("매핑 파일 불러오기…")
-        btn_load.clicked.connect(self._load_profile)
-        btn_save = QPushButton("매핑 파일 저장…")
-        btn_save.clicked.connect(self._save_profile)
+        # 긴 목적어를 버튼마다 반복하지 않고 그룹 라벨 한 번으로 구조화한다(4B32B5D8).
+        # 프로파일=앱 안 재사용 자산, JSON 파일=외부 교환이라는 차이를 위치·툴팁으로 설명한다.
+        self.lbl_profile_actions = QLabel("매핑 프로파일")
+        mark(self.lbl_profile_actions, "muted", True)
+        self.lbl_profile_actions.setToolTip("여러 작업에서 다시 쓰는 매핑입니다.")
+        self.btn_base_apply = QPushButton("적용…")
+        self.btn_base_apply.setToolTip("저장된 매핑 프로파일을 현재 필드에 적용합니다.")
+        self.btn_base_apply.clicked.connect(self._apply_base)
+        self.btn_base_save = QPushButton("저장…")
+        self.btn_base_save.setToolTip("현재 확정 매핑을 앱에서 재사용할 프로파일로 저장합니다.")
+        self.btn_base_save.clicked.connect(self._save_base)
+        self.lbl_file_actions = QLabel("JSON 파일")
+        mark(self.lbl_file_actions, "muted", True)
+        self.lbl_file_actions.setToolTip("다른 환경과 주고받는 매핑 파일입니다.")
+        self.btn_load = QPushButton("불러오기…")
+        self.btn_load.setToolTip("JSON 매핑 파일을 불러와 현재 필드에 적용합니다.")
+        self.btn_load.clicked.connect(self._load_profile)
+        self.btn_save = QPushButton("내보내기…")
+        self.btn_save.setToolTip("현재 확정 매핑을 JSON 파일로 내보냅니다.")
+        self.btn_save.clicked.connect(self._save_profile)
         buttons.addWidget(self.lbl_progress)
         buttons.addStretch(1)
-        buttons.addWidget(btn_base_apply)
-        buttons.addWidget(btn_base_save)
-        buttons.addWidget(btn_load)
-        buttons.addWidget(btn_save)
+        buttons.addWidget(self.lbl_profile_actions)
+        buttons.addWidget(self.btn_base_apply)
+        buttons.addWidget(self.btn_base_save)
+        buttons.addSpacing(12)
+        buttons.addWidget(self.lbl_file_actions)
+        buttons.addWidget(self.btn_load)
+        buttons.addWidget(self.btn_save)
         layout.addLayout(buttons)
 
     def initializePage(self):
@@ -689,10 +704,10 @@ class MappingPage(QWizardPage):
         wiz = self.wizard()
         n = len(wiz.records)
         if n == 0:
-            # 레코드 0/0 빈 상태 안내(UD-28): 미리보기할 데이터가 없다는 사실을 그냥
+            # 행 0/0 빈 상태 안내(UD-28): 미리보기할 데이터가 없다는 사실을 그냥
             # 침묵으로 두지 않고, 왜(데이터 미연결)·무엇을 할 수 있는지(상수·비움 확정)를
-            # 재진술한다. 스텝퍼 인덱스는 '레코드 0/0'로 유지(비활성).
-            self.lbl_index.setText("레코드 0/0")
+            # 재진술한다. 스텝퍼 인덱스는 '행 0/0'로 유지(비활성).
+            self.lbl_index.setText("행 0/0")
             self.btn_prev.setEnabled(False)
             self.btn_next.setEnabled(False)
             self.lbl_preview_summary.setText(
@@ -702,7 +717,7 @@ class MappingPage(QWizardPage):
             return
         rec = wiz.records[self._preview_index]
         self.table.set_preview_record(rec)
-        self.lbl_index.setText(f"레코드 {self._preview_index + 1}/{n}")
+        self.lbl_index.setText(f"행 {self._preview_index + 1}/{n}")
         self.btn_prev.setEnabled(self._preview_index > 0)
         self.btn_next.setEnabled(self._preview_index < n - 1)
         self._sync_preview_summary()

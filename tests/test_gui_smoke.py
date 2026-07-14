@@ -57,7 +57,7 @@ def test_job_editor_instantiates_with_four_pages(qapp, tmp_path):
 
 def test_mapping_table_renders_model_and_emits_complete_changed(qapp, monkeypatch):
     """UD-05 — '모두 확정'은 내용 행만 즉시 확정하고, 미매칭 빈 행의 의도적 비움
-    승격은 이름 재진술 확인을 거친다. '모두 해제'는 확정본이 있으면 파괴 확인 경유."""
+    승격은 이름 재진술 확인을 거친다. '모두 해제'는 가역 상태라 확인 없이 즉시 실행."""
     from hwpxfiller.gui import mapping_table as mt
     from hwpxfiller.gui.mapping_table import MappingTable
 
@@ -83,13 +83,11 @@ def test_mapping_table_renders_model_and_emits_complete_changed(qapp, monkeypatc
     table.btn_confirm_all.click()
     assert model.is_complete()
 
-    # '모두 해제' 거부 → 확정 유지(무확인 파기 없음).
-    monkeypatch.setattr(mt, "confirm_destructive", lambda *a, **k: False)
-    table.btn_unconfirm_all.click()
-    assert model.is_complete()
-
-    # '모두 해제' 수락 → 전 행 해제.
-    monkeypatch.setattr(mt, "confirm_destructive", lambda *a, **k: True)
+    # '모두 해제'는 저장 전 확정 상태만 되돌리는 가역 작업 — 확인 호출 없이 즉시 해제.
+    monkeypatch.setattr(
+        mt, "confirm_destructive",
+        lambda *a, **k: pytest.fail("가역적인 모두 해제에 확인 대화상자가 호출됐다"),
+    )
     table.btn_unconfirm_all.click()
     assert not model.is_complete()
     assert all(not r.confirmed for r in model.rows)
@@ -2282,7 +2280,30 @@ def test_datapage_source_toggle_resets_session_atomically(qapp, tmp_path, monkey
     # 매핑 스텝 재진입도 지운 데이터로 구동되지 않는다(캐시 키·레코드 모두 초기화).
     mapping_page.initializePage()
     assert wiz.model.source_fields == []
-    assert mapping_page.lbl_index.text() == "레코드 0/0"
+    assert mapping_page.lbl_index.text() == "행 0/0"
+
+
+def test_mapping_page_compacts_profile_actions_and_uses_row_terms(qapp, tmp_path):
+    """#16 — 반복 목적어는 그룹화하고 미리보기 탐색 용어는 '행'으로 통일한다."""
+    wiz, _data_page, page = _authoring_wizard(tmp_path)
+    wiz.records = [{"공고명": "첫째"}, {"공고명": "둘째"}]
+    wiz.source_fields = ["공고명"]
+    page.initializePage()
+
+    assert page.lbl_profile_actions.text() == "매핑 프로파일"
+    assert page.btn_base_apply.text() == "적용…"
+    assert page.btn_base_save.text() == "저장…"
+    assert page.lbl_file_actions.text() == "JSON 파일"
+    assert page.btn_load.text() == "불러오기…"
+    assert page.btn_save.text() == "내보내기…"
+    assert "재사용" in page.btn_base_save.toolTip()
+    assert "JSON" in page.btn_save.toolTip()
+
+    assert page.btn_prev.text() == "◀ 이전 행"
+    assert page.lbl_index.text() == "행 1/2"
+    assert page.btn_next.text() == "다음 행 ▶"
+    page.btn_next.click()
+    assert page.lbl_index.text() == "행 2/2"
 
 
 def test_mapping_table_unknown_type_renders_loudly_without_crash(qapp):

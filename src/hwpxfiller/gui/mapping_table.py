@@ -580,17 +580,9 @@ class MappingTable(QWidget):
         self.completeChanged.emit()
 
     def _on_unconfirm_all(self):
-        """'모두 해제' — 확정한 작업이 있으면 파괴 확인을 거친다(UD-05: 무확인 파기 방지)."""
+        """'모두 해제' — 저장 전 확정 상태만 되돌리므로 확인 없이 즉시 실행한다."""
         model = self._model
         if model is None:
-            return
-        n = model.confirmed_count()
-        if n > 0 and not confirm_destructive(
-            self, "모두 해제 확인",
-            f"확정한 {n}개 행의 확정을 모두 해제합니다.\n"
-            "해제하면 각 행을 다시 검토·확정해야 다음으로 진행할 수 있습니다.",
-            "모두 해제",
-        ):
             return
         model.unconfirm_all()
         self.refresh()
