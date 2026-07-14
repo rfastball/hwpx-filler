@@ -29,7 +29,7 @@ $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 
-$module = if ($Cli) { 'hwpxfiller.cli' } else { 'hwpxfiller.gui.app' }
+$module = if ($Cli) { 'hwpxfiller.cli' } else { 'hwpxfiller.webapp' }
 
 if (-not (Get-Command uv -CommandType Application -ErrorAction SilentlyContinue)) {
     Write-Error "uv 없음. 설치 후: uv sync --all-extras --group dev"

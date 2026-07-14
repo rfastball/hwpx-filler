@@ -79,7 +79,7 @@ python -m hwpxfiller.cli --template template.hwpx --source nara \
 
 ```bash
 # 앱 B — 문서 생성(작업 홈 → 에디터/실행)
-python -m hwpxfiller.gui.app
+python -m hwpxfiller.webapp
 
 # 앱 A(hwpxdiff) — 규격서 개정 diff 리뷰어(전문 신구대비표 + 변경 그룹 리스트)
 python -m hwpxdiff
