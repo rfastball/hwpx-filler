@@ -1,13 +1,13 @@
 """매핑 테이블 뷰 — MappingModel 을 QTableWidget 으로 렌더/편집한다.
 
-열: [확정 | 템플릿 필드 | 데이터 항목 | 타입 | 표시형 | 고정값 입력 | 미리보기].
+열: [확정 | 템플릿 필드 | 데이터 항목 | 타입/고정값 | 표시형 | 미리보기].
 행 색: 미확정=노랑, 소스 없는 미확정(미매칭)=빨강, 확정=기본.
 모든 편집은 MappingModel 편집 API 를 거치고(편집 → 확정 해제 규칙 포함),
 변경 시 ``completeChanged`` 시그널을 쏜다(위저드 isComplete 연동용).
 
 **엄격한 1:1 계약.** 한 템플릿 필드는 정확히 한 데이터 항목(단일 소스)에서 값을
-취한다 — 구분자 결합(N→1)·다중선택은 없다. '고정값 입력' 열은 타입이 ``const`` 일
-때만 활성이며 소스와 무관한 리터럴을 담는다.
+취한다 — 구분자 결합(N→1)·다중선택은 없다. 고정값 입력은 타입이 ``const`` 일 때만
+타입 선택 옆에 나타나며 소스와 무관한 리터럴을 담는다.
 """
 
 from __future__ import annotations
@@ -36,6 +36,12 @@ from .style import DATA_EMPTY_FG, UNCONFIRMED_BG, UNMATCHED_BG, mark
 
 # 값 유형 코드 → 한국어 라벨(콤보 표시 순서는 TYPES 그대로).
 TYPE_LABELS = {"text": "텍스트", "date": "날짜", "amount": "금액", "const": "고정값"}
+# 스키마가 템플릿 내용에서 **추정한** 타입 라벨. 실제 변환 타입(TYPE_LABELS)과 구분해
+# 표시한다(C08AD62D) — number 추정도 실제 기본 변환은 text일 수 있다.
+INFERRED_TYPE_LABELS = {
+    "text": "텍스트", "date": "날짜", "amount": "금액", "number": "숫자",
+    "phone": "전화번호",
+}
 
 
 class _NoScrollComboBox(QComboBox):
@@ -50,10 +56,9 @@ class _NoScrollComboBox(QComboBox):
         event.ignore()
 
 (
-    _COL_CONFIRM, _COL_FIELD, _COL_SOURCE, _COL_TYPE, _COL_FORMAT, _COL_ARG,
-    _COL_PREVIEW,
-) = range(7)
-_HEADERS = ("확정", "템플릿 필드", "데이터 항목", "타입", "표시형", "고정값 입력", "미리보기")
+    _COL_CONFIRM, _COL_FIELD, _COL_SOURCE, _COL_TYPE, _COL_FORMAT, _COL_PREVIEW,
+) = range(6)
+_HEADERS = ("확정", "템플릿 필드", "데이터 항목", "타입 / 고정값", "표시형", "미리보기")
 _NO_FORMAT_ITEM = "—"          # 표시형 변형이 없는 유형(고정값)
 _CUSTOM_FORMAT_ITEM = "직접 입력…"  # 고급: 서식 코드 직접 입력(액션 항목)
 
@@ -95,7 +100,7 @@ def _row_state_color(row, schema_only: bool = False) -> "QColor | None":
 
     아이템 배경(QBrush)과 달리 위젯 셀 컨테이너는 팔레트 색으로 칠하므로 ``QColor``
     또는 ``None``(확정 = 밴드 없음)을 돌려준다. 상태색이 아이템 3열에만 닿고 cellWidget
-    4열(데이터 항목·타입·표시형·고정값)에서 끊겨 미매칭 빨강이 좌우로 찢기던 것을,
+    3열(데이터 항목·타입/고정값·표시형)에서 끊겨 미매칭 빨강이 좌우로 찢기던 것을,
     같은 색을 셀 컨테이너에도 칠해 **연속 밴드**로 잇는다. ``schema_only`` 강등은
     ``_row_brush`` 와 동형(데이터 미연결 세션의 빈 행 = 밴드 없음).
     """
@@ -128,6 +133,15 @@ class MappingTable(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
+        self.lbl_inferred_help = QLabel(
+            "필드명 옆 ‘추정: …’은 템플릿 내용에서 얻은 초기 제안입니다. "
+            "실제 채움 방식은 ‘타입 / 고정값’에서 확인하거나 바꿀 수 있습니다."
+        )
+        self.lbl_inferred_help.setWordWrap(True)
+        mark(self.lbl_inferred_help, "muted", True)
+        self.lbl_inferred_help.setVisible(False)
+        layout.addWidget(self.lbl_inferred_help)
+
         # 데이터 미연결(스키마온리) 안내 배너(UD-28) — 데이터 스텝을 건너뛴 세션에서만
         # 노출. 빈 행이 중립색인 이유(매칭할 데이터가 없음)를 설명하고 다음 행동을
         # 제안해, 전면 빨강을 오류로 오인하던 문제를 해소한다. 평상시 숨김.
@@ -151,9 +165,8 @@ class MappingTable(QWidget):
         header.setSectionResizeMode(_COL_PREVIEW, QHeaderView.Stretch)
         self.table.setColumnWidth(_COL_FIELD, 170)
         self.table.setColumnWidth(_COL_SOURCE, 220)
-        self.table.setColumnWidth(_COL_TYPE, 90)
+        self.table.setColumnWidth(_COL_TYPE, 210)
         self.table.setColumnWidth(_COL_FORMAT, 80)
-        self.table.setColumnWidth(_COL_ARG, 110)
         self.table.itemChanged.connect(self._on_item_changed)
         layout.addWidget(self.table, 1)
 
@@ -232,6 +245,9 @@ class MappingTable(QWidget):
         model = self._model
         # 데이터 미연결 세션에서만 스키마온리 안내 배너 노출(UD-28).
         self.lbl_schema_only.setVisible(self._schema_only())
+        self.lbl_inferred_help.setVisible(
+            model is not None and any(row.spec is not None for row in model.rows)
+        )
         self._updating = True
         try:
             self.table.setRowCount(0)
@@ -244,14 +260,20 @@ class MappingTable(QWidget):
                 chk.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
                 self.table.setItem(ri, _COL_CONFIRM, chk)
 
-                # 템플릿 필드(이름 + 타입 배지, 전체 이름 상시 툴팁 + context 병기).
+                # 템플릿 필드(이름 + **추정** 타입, 전체 이름 상시 툴팁 + context 병기).
                 # 긴 필드명은 좁은 열에서 말줄임돼 유사 접두 필드끼리 오인 확정될 수
                 # 있다(RC-36) — 툴팁이 전체 이름을 항상 보여준다.
                 spec = row.spec
-                type_badge = spec.inferred_type if spec else "text"
-                fld = QTableWidgetItem(f"{row.template_field}  [{type_badge}]")
+                if spec is not None:
+                    inferred = INFERRED_TYPE_LABELS.get(spec.inferred_type, spec.inferred_type)
+                    field_text = f"{row.template_field}  [추정: {inferred}]"
+                else:
+                    field_text = row.template_field
+                fld = QTableWidgetItem(field_text)
                 fld.setFlags(Qt.ItemIsEnabled)
                 tip = f"필드: {row.template_field}"
+                if spec is not None:
+                    tip += f"\n추정 타입: {inferred} — 템플릿 내용에서 얻은 초기 제안"
                 if spec and spec.context:
                     tip += f"\n문맥: {spec.context}"
                 fld.setToolTip(tip)
@@ -271,14 +293,20 @@ class MappingTable(QWidget):
                 src_box._conf = conf
                 self.table.setCellWidget(ri, _COL_SOURCE, src_box)
 
-                # 타입 콤보(한국어 라벨). 휠은 표 스크롤로.
+                # 타입 콤보(한국어 라벨) + 조건부 고정값 입력. 입력은 별도 상시 열이 아니라
+                # '고정값' 선택 시 콤보 바로 옆에 나타나 정보량과 발견성을 함께 지킨다.
                 tc = _NoScrollComboBox()
                 for kind in TYPES:
                     tc.addItem(TYPE_LABELS.get(kind, kind), kind)
                 tc.activated.connect(
                     lambda idx, ri=ri: self._on_type_activated(ri, idx)
                 )
-                self.table.setCellWidget(ri, _COL_TYPE, self._wrap_cell(tc))
+                arg = QLineEdit()
+                arg.setPlaceholderText("고정값 입력")
+                arg.textEdited.connect(lambda text, ri=ri: self._on_arg_edited(ri, text))
+                type_box = self._wrap_cell(tc, extra=arg)
+                type_box._arg = arg
+                self.table.setCellWidget(ri, _COL_TYPE, type_box)
 
                 # 표시형 콤보(타입에 딸린 프리셋; 변형 없는 타입이면 비활성). 휠은 표 스크롤로.
                 fmtc = _NoScrollComboBox()
@@ -286,11 +314,6 @@ class MappingTable(QWidget):
                     lambda idx, ri=ri: self._on_format_activated(ri, idx)
                 )
                 self.table.setCellWidget(ri, _COL_FORMAT, self._wrap_cell(fmtc))
-
-                # 고정값 입력 — 타입이 const 일 때만 활성(그 외 비활성·빈칸).
-                arg = QLineEdit()
-                arg.textEdited.connect(lambda text, ri=ri: self._on_arg_edited(ri, text))
-                self.table.setCellWidget(ri, _COL_ARG, self._wrap_cell(arg))
 
                 # 미리보기(읽기 전용).
                 pv = QTableWidgetItem()
@@ -323,9 +346,13 @@ class MappingTable(QWidget):
         w = self.table.cellWidget(ri, col)
         return getattr(w, "_control", w)
 
+    def fixed_value_control(self, ri: int) -> QLineEdit:
+        """타입 셀 안 조건부 고정값 입력(test seam)."""
+        return self.table.cellWidget(ri, _COL_TYPE)._arg
+
     def _apply_band(self, ri: int, color: "QColor | None") -> None:
         """위젯 열 컨테이너를 행 상태색으로 칠해 아이템 열 밴드와 연속화(UD-38)."""
-        for col in (_COL_SOURCE, _COL_TYPE, _COL_FORMAT, _COL_ARG):
+        for col in (_COL_SOURCE, _COL_TYPE, _COL_FORMAT):
             box = self.table.cellWidget(ri, col)
             if box is None:
                 continue
@@ -427,16 +454,16 @@ class MappingTable(QWidget):
                 fmtc.setEnabled(False)
             fmtc.blockSignals(False)
 
-            # 고정값 입력 — const 면 활성(리터럴), 그 외 비활성.
-            arg: QLineEdit = self.cell_control(ri, _COL_ARG)
+            # 고정값 입력 — const 면 콤보 바로 옆에 노출, 그 외에는 셀에서 완전히 숨긴다.
+            arg = self.fixed_value_control(ri)
             arg.blockSignals(True)
             if row.type == "const":
                 arg.setEnabled(True)
-                arg.setPlaceholderText("고정값")
+                arg.setVisible(True)
                 arg.setText(row.const)
             else:
                 arg.setEnabled(False)
-                arg.setPlaceholderText("")
+                arg.setVisible(False)
                 arg.setText("")
             arg.blockSignals(False)
 

@@ -165,6 +165,52 @@ def test_mapping_table_format_combo_drives_preview(qapp):
     assert table.table.item(ri, _COL_PREVIEW).text() == "21,326,800"
 
 
+def test_mapping_table_explains_inferred_type_role(qapp):
+    """#15 — 영문 타입 단정 대신 한국어 추정값과 실제 타입 변경 위치를 설명한다."""
+    from hwpxfiller.gui.mapping_table import _COL_FIELD, _COL_TYPE, MappingTable
+
+    schema = TemplateSchema(fields=[FieldSpec("입찰공고번호", "number", 1, False)])
+    model = MappingModel.from_suggestions(schema, [])
+    table = MappingTable()
+    table.set_model(model)
+    ri = 0
+
+    field = table.table.item(ri, _COL_FIELD)
+    assert "[추정: 숫자]" in field.text()
+    assert "[number]" not in field.text()
+    assert "초기 제안" in table.lbl_inferred_help.text()
+    assert "실제 채움 방식" in table.lbl_inferred_help.text()
+    assert "초기 제안" in field.toolTip()
+    # 숫자 추정이어도 실제 변환 기본은 텍스트 — 두 역할이 같은 값인 척하지 않는다.
+    assert table.cell_control(ri, _COL_TYPE).currentText() == "텍스트"
+
+
+def test_mapping_table_shows_fixed_value_only_beside_const_type(qapp):
+    """#15 — 고정값 입력은 별도 상시 열이 아니라 고정값 타입 선택 옆에만 나타난다."""
+    from hwpxfiller.core.mapping import TYPES
+    from hwpxfiller.gui.mapping_table import _COL_TYPE, MappingTable
+    from hwpxfiller.gui.mapping_state import MappingModel, RowState
+
+    model = MappingModel(rows=[RowState("계약방법")])
+    table = MappingTable()
+    table.set_model(model)
+    fixed = table.fixed_value_control(0)
+
+    assert table.table.columnCount() == 6
+    assert table.table.horizontalHeaderItem(_COL_TYPE).text() == "타입 / 고정값"
+    assert fixed.parent() is table.table.cellWidget(0, _COL_TYPE)
+    assert fixed.isHidden()
+
+    table._on_type_activated(0, TYPES.index("const"))
+    assert not fixed.isHidden()
+    fixed.setText("수의계약")
+    fixed.textEdited.emit("수의계약")
+    assert model.rows[0].const == "수의계약"
+
+    table._on_type_activated(0, TYPES.index("text"))
+    assert fixed.isHidden()
+
+
 def test_worker_module_imports(qapp):
     from hwpxfiller.gui.worker import GenerateWorker  # noqa: F401
 
