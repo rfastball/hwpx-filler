@@ -24,6 +24,8 @@
       <span class="n">작업 에디터</span><span class="d">HWPX · 4스텝</span></button>
     <button class="navbtn" data-scr="run">
       <span class="n">실행</span><span class="d">HWPX · 데이터 겨눔 → 생성</span></button>
+    <button class="navbtn" data-scr="matrix">
+      <span class="n">여러 작업 실행</span><span class="d">여러 작업 × 공통 데이터 → 생성</span></button>
     <button class="navbtn" data-scr="txt" aria-current="true">
       <span class="n">즉시 기안 (txt)</span><span class="d">템플릿+데이터 → 실시간 → 복사</span></button>
   </nav>
@@ -118,6 +120,73 @@
       </div>
     </section>
 
+    <!-- ============ 여러 작업 실행 (M 작업 × 공통 데이터, #14) ============ -->
+    <!-- 목업 scr-matrix 이관. 안정 DOM(id) + matrix.js 가 window.__push('matrix', snapshot)
+         로 값만 채운다(run 패턴). 링1 MatrixRunViewModel·SelectionModel 에 브리지로 배선 —
+         VM 로직 재구현 없음. 작업 다중선택기는 진입 어포던스(홈 이관 전까지 자체 진입점).
+         데이터 스코프 = 파일만(풀·나라는 후속, screen_matrix.py docstring 참조). -->
+    <section class="scr" id="scr-matrix">
+      <header class="scr-head">
+        <div>
+          <h1>여러 작업 실행</h1>
+          <p class="sub">선택한 작업 여러 개에 같은 데이터를 적용합니다 — 작업마다 선택한 행 수만큼
+            문서를 만들어 작업별 하위 폴더에 저장합니다.</p>
+        </div>
+        <div class="status" id="mxStatus" data-level="idle">작업 선택</div>
+      </header>
+
+      <div class="run-body" id="mxBody">
+        <!-- 1. 적용할 작업(여러 개) -->
+        <div class="grp"><span class="cap">1. 적용할 작업 (여러 개)</span>
+          <div class="run-row run-recs-head">
+            <span class="muted" id="mxJobCount" style="font-size:12px">선택 0개</span>
+            <div class="row">
+              <button class="btn sm" id="mxJobAll">전체 선택</button>
+              <button class="btn sm" id="mxJobNone">전체 해제</button></div>
+          </div>
+          <div class="reclist" id="mxJobList"></div>
+        </div>
+
+        <!-- 2. 함께 적용할 데이터(공통 1개) -->
+        <div class="run-row"><span class="lbl">함께 적용할 데이터 (공통 1개)</span>
+          <input class="field ro" id="mxDataLabel" type="text" readonly
+                 placeholder="데이터를 선택하세요 (.xlsx/.csv)">
+          <button class="btn" id="btnMxPickData">파일 선택…</button></div>
+
+        <!-- 3. 작업별 미입력 필드 확인(상시 인라인 + 강제 확인 게이트, ADR-E·UD-04) -->
+        <div class="grp"><span class="cap">3. 작업별 미입력 필드 확인</span>
+          <p class="muted hint">선택한 각 작업의 필드 상태를 배지로 노출합니다.
+            <span class="danger">미입력</span> 필드는 반사적 dismiss를 막기 위해
+            <b>직접 클릭해 확인</b>해야 일괄 생성이 열립니다.</p>
+          <div class="statebadges" id="mxFieldBadges"></div>
+        </div>
+
+        <!-- 4. 공통 데이터에서 사용할 행 -->
+        <div class="run-row run-recs-head">
+          <span class="lbl" style="font-weight:600">공통 데이터에서 사용할 행</span>
+          <div class="row"><span class="muted" id="mxSelCount" style="font-size:12px">선택 0/0</span>
+            <button class="btn sm" id="mxSelAll">전체 선택</button>
+            <button class="btn sm" id="mxSelNone">전체 해제</button></div>
+        </div>
+        <div class="reclist" id="mxRecList"></div>
+
+        <!-- 5. 저장 폴더(작업별 하위폴더) -->
+        <div class="run-row"><span class="lbl">저장 폴더 · 작업별 하위폴더</span>
+          <input class="field ro" id="mxOutDir" type="text" readonly
+                 placeholder="이 폴더 아래에 작업별 하위 폴더로 저장합니다">
+          <button class="btn" id="btnMxPickFolder">찾아보기…</button></div>
+
+        <!-- 액션 · 진행 · 결과 · 로그 -->
+        <div class="run-actions">
+          <button class="btn primary" id="mxGenBtn" disabled>여러 작업 문서 생성</button>
+          <span class="muted" id="mxGenGate" style="font-size:12px"></span>
+        </div>
+        <div class="bar"><i id="mxGenBar"></i></div>
+        <div id="mxGenResult" class="run-result"></div>
+        <div class="logbox" id="mxGenLog">[대기] 작업·데이터·저장 폴더를 확인한 뒤 생성하세요.</div>
+      </div>
+    </section>
+
     <!-- ============ TXT 즉시 기안 (첫 실화면) ============ -->
     <section class="scr on" id="scr-txt">
       <header class="scr-head">
@@ -187,6 +256,7 @@
 <script src="js/screens/txt.js"></script>
 <script src="js/screens/editor.js"></script>
 <script src="js/screens/run.js"></script>
+<script src="js/screens/matrix.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
