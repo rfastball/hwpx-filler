@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QListWidget,
+    QMenu,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -27,16 +28,32 @@ from PySide6.QtWidgets import (
 
 from ..core.job import JobRegistry
 from .compile_badge import badge_level
-from .home_state import BADGE_CORRUPT, CorruptJobRow, HomeViewModel, JobRow, TxtRow
-from .style import BASE_QSS, SPACE_MD, SPACE_XS, mark
+from .flow_layout import FlowLayout
+from .home_state import (
+    BADGE_CORRUPT,
+    CorruptJobRow,
+    FacetValue,
+    HomeViewModel,
+    JobRow,
+    TxtRow,
+)
+from .style import BASE_QSS, SPACE_MD, SPACE_SM, SPACE_XS, mark
 from .view_helpers import (
     ElidedLabel,
     build_empty_state,
     busy_cursor,
     hide_item_text,
+    load_home_lens,
     resync_card_item_heights,
+    save_home_lens,
     wire_refresh_shortcut,
 )
+
+# group-by 축 선택 메뉴의 'flat'(그룹핑 없음) 항목 라벨. 빈 축 키("")로 매핑된다.
+_GROUP_NONE_LABEL = "그룹 없음"
+# 섹션 헤더·손상 행 등 '작업 아님' 아이템 표식(Qt.UserRole) — findItems(작업명)·더블클릭
+# 게이트가 이 아이템을 카드로 오인하지 않게 한다.
+_ROLE_SECTION = "section-header"
 
 # 카드 제목의 말줄임 상한(UD-30) — 긴 작업명·파일명이 상태 배지를 밀어내지 않도록
 # sizeHint 폭을 눌러 pill 을 온전히 남긴다. 잘리면 전체 이름은 툴팁으로 노출된다.
@@ -106,6 +123,38 @@ class JobCard(QWidget):
 # 하위호환 별칭(RC-35): 스모크 테스트 등 크로스모듈 인용이 실재하는 공용 표면 —
 # 기존 `_JobCard` 임포트는 이 별칭으로 계속 동작한다.
 _JobCard = JobCard
+
+
+class _SectionHeader(QWidget):
+    """group-by 섹션 헤더 — 비선택 리스트 아이템에 얹는 클릭형 접기 컨트롤(JOB_BROWSER_DESIGN D8).
+
+    '▾/▸ 구간라벨 · N건' 전폭 버튼. 클릭하면 ``on_toggle(value)`` 로 접기 상태를 뒤집는다.
+    카드 스펙(JobCard)은 건드리지 않는다 — 접두어 노이즈를 이 헤더 한 줄이 흡수한다.
+    """
+
+    def __init__(self, value: str, count: int, collapsed: bool, on_toggle, parent=None):
+        super().__init__(parent)
+        root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        arrow = "▸" if collapsed else "▾"
+        btn = QPushButton(f"{arrow}  {value} · {count}건")
+        mark(btn, "section", "header")
+        btn.clicked.connect(lambda: on_toggle(value))
+        root.addWidget(btn)
+
+
+class _FacetChip(QPushButton):
+    """facet 값 토글 칩 — on/off 상태(JOB_BROWSER_DESIGN D10). '값 · 건수' 표기.
+
+    0건 값은 비활성(회색)으로 강등하되(막다른 길 차단), 이미 활성이면 해제 가능하게 유지한다.
+    """
+
+    def __init__(self, axis: str, fv: FacetValue, on_toggle, parent=None):
+        super().__init__(f"{fv.value} · {fv.count}", parent)
+        mark(self, "chip", "on" if fv.active else "off")
+        # 0건은 비활성 — 단 이미 켜진 칩은 끌 수 있어야 하므로 활성 유지(막다른 길 회피).
+        self.setEnabled(fv.count > 0 or fv.active)
+        self.clicked.connect(lambda: on_toggle(axis, fv.value))
 
 
 class _CorruptJobCard(QWidget):
@@ -284,11 +333,22 @@ class JobListHome(QWidget):
         self.btn_matrix.clicked.connect(self.matrix_run_requested)
         lbl_hwpx_hint = QLabel("누름틀 템플릿 + 매핑 → .hwpx 생성")
         mark(lbl_hwpx_hint, "muted", True)  # 부연 라벨 위계 통일(UD-36) — 화면 전체 muted
+        # group-by 렌즈 선택(D4) — 발견된 축으로 묶기. 축이 없으면(태그 0) _render 가 숨겨
+        # 오늘과 동일한 평면 목록으로 강등한다(퇴화-코퍼스 불변식). 메뉴는 _render 가 채운다.
+        self.btn_groupby = QPushButton()
+        self.btn_groupby.setToolTip("작업을 어느 분류 축으로 묶을지 고릅니다(그룹 없음=평면 목록).")
+        self._groupby_menu = QMenu(self.btn_groupby)
+        self.btn_groupby.setMenu(self._groupby_menu)
         hhead.addWidget(lbl_hwpx_hint)
+        hhead.addWidget(self.btn_groupby)
         hhead.addStretch(1)
         hhead.addWidget(self.btn_matrix)
         hhead.addWidget(self.btn_new)
         hp.addLayout(hhead)
+        # facet 칩바(D10) — group-by 외 축들이 여기 토글 칩으로. _render 가 채우고 표시/숨김한다.
+        self.facet_bar = QWidget()
+        self._facet_flow = FlowLayout(self.facet_bar, margin=0, spacing=SPACE_SM)
+        hp.addWidget(self.facet_bar)
         self.stack = QStackedWidget()
         self.list = QListWidget()
         self.list.setObjectName("jobList")
@@ -334,6 +394,14 @@ class JobListHome(QWidget):
         tracks.addWidget(txt, 2)
 
         root.addLayout(tracks, 1)
+
+        # 렌즈 복원(D4) — 지속된 group-by/facet 을 VM 에 주입한다. 구독 전이라 통지는 무해.
+        self._collapsed: "set[str]" = set()  # 접힌 섹션의 group 값
+        gb, facets = load_home_lens()
+        if gb is not None:  # None=미저장(씨앗 렌즈 유지), ""=사용자가 flat 명시 선택
+            self.vm.set_group_by(gb)
+        if facets:
+            self.vm.set_facets(facets)
 
         self.vm.subscribe(self._render)
         self._render()
@@ -418,22 +486,44 @@ class JobListHome(QWidget):
         self.kpi_row.addWidget(self._kpi_tile(str(k.txt_template_count), "기안 템플릿 · txt"), 1)
         self.kpi_row.addWidget(self._kpi_tile(str(k.pool_count), "데이터 풀 · 활성"), 1)
 
-        # HWPX 작업 목록
+        # HWPX 작업 목록 — group-by 접이식 섹션 + facet(JOB_BROWSER_DESIGN §4).
+        # 카드는 계속 self.list(QListWidget)에 얹는다(findItems·스모크 계약 보존, home docstring).
+        self._render_groupby_button()
+        self._render_facet_bar()
         prev = self.vm.selected_name
         self.list.blockSignals(True)
         self.list.clear()
-        for row in self.vm.rows():
-            self.list.addItem(row.name)
-            item = self.list.item(self.list.count() - 1)
-            hide_item_text(item)  # 이름은 아이템 text(계약), 표시는 카드(UD-33 공용 이디엄)
-            card = JobCard(
-                row,
-                on_run=self.run_job_requested.emit,
-                on_edit=self.edit_job_requested.emit,
-                on_delete=self.delete_job_requested.emit,
-            )
-            item.setSizeHint(card.sizeHint())
-            self.list.setItemWidget(item, card)
+
+        sections = self.vm.grouped_rows()
+        # 헤더는 구분할 그룹이 2개 이상일 때만 — 유효 그룹 ≤1 이면 헤더가 노이즈다(퇴화-코퍼스
+        # 불변식: 태그 0 → 섹션 1개 → 헤더·칩바 미렌더 → 오늘과 바이트 동일한 평면 리스트).
+        show_headers = len(sections) > 1
+        for sec in sections:
+            collapsed = False
+            if show_headers:
+                collapsed = sec.value in self._collapsed
+                self.list.addItem("")  # 헤더 아이템 — text 빈 값(findItems 작업명 계약과 무충돌)
+                hitem = self.list.item(self.list.count() - 1)
+                hitem.setData(Qt.UserRole, _ROLE_SECTION)
+                # 손상행 선례(L445)와 같은 비선택 플래그 — 헤더는 실행/선택 대상이 아니다.
+                hitem.setFlags(hitem.flags() & ~Qt.ItemIsSelectable)
+                header = _SectionHeader(sec.value, sec.count, collapsed, self._toggle_section)
+                hitem.setSizeHint(header.sizeHint())
+                self.list.setItemWidget(hitem, header)
+            for row in sec.rows:
+                self.list.addItem(row.name)
+                item = self.list.item(self.list.count() - 1)
+                hide_item_text(item)  # 이름은 아이템 text(계약), 표시는 카드(UD-33 공용 이디엄)
+                if collapsed:
+                    item.setHidden(True)  # 접힌 섹션 멤버 숨김(계약 아이템은 살아 있음)
+                card = JobCard(
+                    row,
+                    on_run=self.run_job_requested.emit,
+                    on_edit=self.edit_job_requested.emit,
+                    on_delete=self.delete_job_requested.emit,
+                )
+                item.setSizeHint(card.sizeHint())
+                self.list.setItemWidget(item, card)
         # 손상 .job.json 행(RC-05) — 정상 작업 뒤에 '손상됨' 배지 카드로 시끄럽게 노출.
         # 아이템 text 는 파일명(이름을 알 수 없음 — findItems 작업명 계약과 충돌 없음).
         for crow in self.vm.corrupt_rows():
@@ -472,6 +562,71 @@ class JobListHome(QWidget):
         # 폭/높이 동기화는 레이아웃이 자리잡은 뒤로 미룬다(생성 시 viewport 폭이 아직 미확정).
         self._sync_item_widths()
         QTimer.singleShot(0, self._sync_item_widths)
+
+    # --------------------------------------------------- 작업 브라우저(group/facet)
+    def _render_groupby_button(self) -> None:
+        """group-by 메뉴를 발견된 축으로 채운다. 축이 없으면(태그 0) 버튼을 숨겨 퇴화 평면."""
+        axes = self.vm.axes()
+        self.btn_groupby.setVisible(bool(axes))
+        self._groupby_menu.clear()
+        if not axes:
+            return
+        eff = self.vm.effective_group_by()
+        self.btn_groupby.setText(f"그룹: {eff or _GROUP_NONE_LABEL} ▾")
+        act_none = self._groupby_menu.addAction(_GROUP_NONE_LABEL)
+        act_none.setCheckable(True)
+        act_none.setChecked(eff == "")
+        act_none.triggered.connect(lambda checked=False: self._set_group_by(""))
+        for axis in axes:
+            act = self._groupby_menu.addAction(axis)
+            act.setCheckable(True)
+            act.setChecked(axis == eff)
+            act.triggered.connect(lambda checked=False, a=axis: self._set_group_by(a))
+
+    def _render_facet_bar(self) -> None:
+        """facet 칩바 재구성 — group-by 외 축의 값들을 토글 칩으로(D10). 없으면 바를 숨긴다."""
+        while self._facet_flow.count():  # 기존 칩 제거
+            it = self._facet_flow.takeAt(0)
+            w = it.widget() if it is not None else None
+            if w is not None:
+                w.deleteLater()
+        facets = self.vm.facets()
+        has_active = bool(self.vm.active_facets)
+        self.facet_bar.setVisible(bool(facets) or has_active)
+        if not facets and not has_active:
+            return
+        for fa in facets:
+            for fv in fa.values:
+                self._facet_flow.addWidget(_FacetChip(fa.axis, fv, self._toggle_facet))
+        if has_active:  # 활성 제약 일괄 해제(D10) — 개별 해제는 켜진 칩 재클릭
+            btn_clear = QPushButton("필터 해제")
+            btn_clear.clicked.connect(self._clear_facets)
+            self._facet_flow.addWidget(btn_clear)
+
+    def _persist_lens(self) -> None:
+        """현재 렌즈(group-by+facet)를 INI 에 저장(D4). 링1 VM 은 지속을 모른다 — 위젯 몫."""
+        save_home_lens(self.vm.active_group_by, self.vm.active_facets)
+
+    def _set_group_by(self, axis: str) -> None:
+        self._collapsed.clear()  # 축이 바뀌면 접힘 상태는 무의미(구 값 기준)
+        self.vm.set_group_by(axis)  # 통지 → _render 재구성
+        self._persist_lens()
+
+    def _toggle_facet(self, axis: str, value: str) -> None:
+        self.vm.toggle_facet(axis, value)  # 통지 → _render 재구성
+        self._persist_lens()
+
+    def _clear_facets(self) -> None:
+        self.vm.clear_facets()  # 통지 → _render 재구성
+        self._persist_lens()
+
+    def _toggle_section(self, value: str) -> None:
+        """섹션 접기/펴기 — VM 상태 불변이므로 직접 재렌더(카드 재파싱 없어 값쌈)."""
+        if value in self._collapsed:
+            self._collapsed.discard(value)
+        else:
+            self._collapsed.add(value)
+        self._render()
 
     def _sync_item_widths(self) -> None:
         """카드 폭을 뷰포트에 고정한 뒤 그 폭에서의 높이로 아이템을 잡는다(UD-11 공용 헬퍼).

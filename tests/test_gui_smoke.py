@@ -213,6 +213,134 @@ def test_home_empty_state_and_job_cards(qapp, tmp_path):
     assert "템플릿 없음" in joined        # 부재 템플릿 선고지
 
 
+# ---- 작업 브라우저(패싯 탐색) — JOB_BROWSER_DESIGN §4 ----
+def _tagged_home(tmp_path, monkeypatch):
+    """금액구간·낙찰방법 두 축이 섞인 코퍼스로 홈을 띄운다(렌즈 지속은 tmp 로 격리)."""
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    from hwpxfiller.core.job import Job, JobRegistry
+    from hwpxfiller.gui.home import JobListHome
+
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="적격-소액", template_path="", tags={"금액구간": "1억미만", "낙찰방법": "적격심사"}))
+    reg.save(Job(name="적격-고시", template_path="", tags={"금액구간": "고시이상", "낙찰방법": "적격심사"}))
+    reg.save(Job(name="협상-소액", template_path="", tags={"금액구간": "1억미만", "낙찰방법": "협상"}))
+    return JobListHome(reg)
+
+
+def _card_names(home):
+    """현재 리스트에서 (숨김 아님) 카드 아이템의 작업명 — 헤더(빈 text)·숨김 제외."""
+    from hwpxfiller.gui.home import JobCard
+
+    out = []
+    for i in range(home.list.count()):
+        it = home.list.item(i)
+        if it.isHidden():
+            continue
+        if isinstance(home.list.itemWidget(it), JobCard):
+            out.append(it.text())
+    return out
+
+
+def _header_widgets(home):
+    from hwpxfiller.gui.home import _SectionHeader
+
+    return [
+        home.list.itemWidget(home.list.item(i))
+        for i in range(home.list.count())
+        if isinstance(home.list.itemWidget(home.list.item(i)), _SectionHeader)
+    ]
+
+
+def test_home_untagged_corpus_is_byte_identical_flat(qapp, tmp_path, monkeypatch):
+    """퇴화-코퍼스 불변식 — 태그 0 → 헤더·칩바·group-by 버튼 없음, 오늘과 동일 평면."""
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    from hwpxfiller.core.job import Job, JobRegistry
+    from hwpxfiller.gui.home import JobListHome
+
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="가", template_path=""))
+    reg.save(Job(name="나", template_path=""))
+    home = JobListHome(reg)
+    assert home.list.count() == 2  # 헤더 아이템 없음 — 카드만
+    # isHidden(명시적 숨김)으로 판정 — 창 미표시라 isVisible 은 항상 False.
+    assert home.btn_groupby.isHidden()  # 축 0 → group-by 버튼 숨김
+    assert home.facet_bar.isHidden()    # facet 없음 → 칩바 숨김
+    assert _header_widgets(home) == []
+
+
+def test_home_groups_by_seed_axis_with_headers(qapp, tmp_path, monkeypatch):
+    """씨앗 축(금액구간)으로 섹션 헤더 등장 + 다른 축(낙찰방법)은 facet 칩바로."""
+    from PySide6.QtCore import Qt
+
+    from hwpxfiller.gui.home import _FacetChip
+
+    home = _tagged_home(tmp_path, monkeypatch)
+    assert home.vm.effective_group_by() == "금액구간"
+    assert not home.btn_groupby.isHidden()
+    # 헤더 = 명명 그룹 2개(1억미만·고시이상). 미태깅 없으니 "(값 없음)" 섹션 없음.
+    headers = _header_widgets(home)
+    assert len(headers) == 2
+    # facet 칩바에 낙찰방법 값 칩(적격심사·협상)이 뜬다.
+    assert not home.facet_bar.isHidden()
+    chips = home.facet_bar.findChildren(_FacetChip)
+    labels = {c.text().split(" · ")[0] for c in chips}
+    assert {"적격심사", "협상"} <= labels
+    # 전 작업이 카드로 살아 있고 findItems(작업명) 계약 보존.
+    assert set(_card_names(home)) == {"적격-소액", "적격-고시", "협상-소액"}
+    assert home.list.findItems("적격-소액", Qt.MatchExactly)
+
+
+def test_home_section_collapse_hides_members(qapp, tmp_path, monkeypatch):
+    """섹션 헤더 토글 → 그 구간 카드 아이템 숨김(계약 아이템은 살아 있음)."""
+    home = _tagged_home(tmp_path, monkeypatch)
+    assert "적격-소액" in _card_names(home)  # 1억미만 구간
+    home._toggle_section("1억미만")           # 접기
+    visible = _card_names(home)
+    assert "적격-소액" not in visible and "협상-소액" not in visible  # 1억미만 멤버 숨김
+    assert "적격-고시" in visible                                    # 고시이상은 그대로
+    home._toggle_section("1억미만")           # 다시 펴기
+    assert "적격-소액" in _card_names(home)
+
+
+def test_home_facet_toggle_filters_cards(qapp, tmp_path, monkeypatch):
+    """facet 칩 토글 → 카드가 필터되고 '필터 해제'로 원복."""
+    home = _tagged_home(tmp_path, monkeypatch)
+    home._toggle_facet("낙찰방법", "협상")
+    assert set(_card_names(home)) == {"협상-소액"}  # 협상만
+    home._clear_facets()
+    assert set(_card_names(home)) == {"적격-소액", "적격-고시", "협상-소액"}
+
+
+def test_home_lens_persists_across_instances(qapp, tmp_path, monkeypatch):
+    """group-by/ facet 선택이 INI 지속 — 새 홈 인스턴스가 렌즈를 복원(D4)."""
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.home import JobListHome
+
+    home = _tagged_home(tmp_path, monkeypatch)
+    home._set_group_by("낙찰방법")
+    home._toggle_facet("금액구간", "1억미만")
+
+    # 같은 HWPXFILLER_HOME·레지스트리로 새 인스턴스 — 렌즈가 복원돼야 한다.
+    reg = JobRegistry(tmp_path / "jobs")
+    home2 = JobListHome(reg)
+    assert home2.vm.effective_group_by() == "낙찰방법"
+    assert home2.vm.active_facets == {"금액구간": {"1억미만"}}
+
+
+def test_home_flat_lens_distinguished_from_unset(qapp, tmp_path, monkeypatch):
+    """사용자가 '그룹 없음'(flat) 명시 선택하면 씨앗으로 되돌아가지 않고 유지된다."""
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.home import JobListHome
+
+    home = _tagged_home(tmp_path, monkeypatch)
+    home._set_group_by("")  # flat 명시
+    reg = JobRegistry(tmp_path / "jobs")
+    home2 = JobListHome(reg)
+    assert home2.vm.active_group_by == ""          # 씨앗으로 복귀하지 않음
+    assert home2.vm.effective_group_by() == ""
+    assert _header_widgets(home2) == []            # flat → 헤더 없음
+
+
 def _saved_job(tmp_path):
     """편집 프리로드 테스트용 저장 작업 — 매핑 2행(공고명·추정가격) 확정본."""
     from hwpxfiller.core.job import Job, JobRegistry
@@ -268,6 +396,48 @@ def test_editor_edit_mode_prefills_and_preseeds(qapp, tmp_path):
     assert rows["미매칭필드qq"].confirmed      # 과거 비움 확정 = blank 선언으로 복원
     assert rows["미매칭필드qq"].is_empty_confirmed()
     assert "확정" in mapping_page.lbl_progress.text()
+
+
+def test_editor_tag_edit_prefill_and_collect(qapp, tmp_path):
+    """SaveJobPage 수동 태그 편집 — 편집 프리필 · 발견 축 후보 · tags() 수집(JOB_BROWSER_DESIGN T6)."""
+    from hwpxfiller.core.job import Job, JobRegistry
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+
+    reg = JobRegistry(tmp_path)
+    # 다른 작업이 이미 '금액구간' 축을 씀 → 발견 후보로 떠야 한다.
+    reg.save(Job(name="기존", template_path="", tags={"금액구간": "고시이상"}))
+    target = Job(name="편집대상", template_path="", tags={"금액구간": "1억미만", "낙찰방법": "적격심사"})
+    reg.save(target)
+
+    wiz = JobEditorWizard(reg, initial_job=target)
+    page = wiz.page(wiz.pageIds()[-1])
+    page.initializePage()
+    # 기존 태그 2개가 프리필된다.
+    assert page.tags() == {"금액구간": "1억미만", "낙찰방법": "적격심사"}
+    # 발견된 축(금액구간·낙찰방법)이 후보 목록에 있다.
+    assert "금액구간" in page._known_axes
+
+    # 수동 추가 → 값·축 채우면 수집됨.
+    row = page._add_tag_row("목적물", "물품")
+    assert page.tags()["목적물"] == "물품"
+    # 빈 축/빈 값 행은 무시(D12 — 미태깅 허용).
+    page._add_tag_row("", "")
+    page._add_tag_row("빈값축", "")
+    assert "빈값축" not in page.tags()
+    # 삭제하면 빠진다.
+    page._remove_tag_row(row)
+    assert "목적물" not in page.tags()
+
+
+def test_editor_new_job_saves_without_tags(qapp, tmp_path):
+    """미태깅 저장 자유(D12) — 태그 행을 하나도 안 넣어도 tags()=={}."""
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+
+    reg, _ = _saved_job(tmp_path)
+    wiz = JobEditorWizard(reg)
+    page = wiz.page(wiz.pageIds()[-1])
+    page.initializePage()
+    assert page.tags() == {}
 
 
 def test_save_page_prefills_default_pattern_and_gates_empty(qapp, tmp_path):
