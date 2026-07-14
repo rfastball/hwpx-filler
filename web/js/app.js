@@ -14,5 +14,6 @@
   // pywebview.api 준비 후 실화면 초기화(브라우저 단독 미리보기에선 안 뜸 — 정상).
   window.addEventListener("pywebviewready", () => {
     if (window.TxtScreen) window.TxtScreen.init();
+    if (window.EditorScreen) window.EditorScreen.init();
   });
 })();
