@@ -28,6 +28,7 @@ from ._debug import log
 from .clipboard import set_clipboard_text
 from .dialogs import open_file_dialog, open_folder_dialog, save_file_dialog
 from .screen_editor import EditorController
+from .screen_matrix import MatrixController
 from .screen_run import RunController
 from .screens import TxtController
 
@@ -61,6 +62,7 @@ class WebFrontend:
             TxtController(registry, self._push),
             EditorController(job_registry, self._push),
             RunController(job_registry, self._push),
+            MatrixController(job_registry, self._push),
         ]
         self.controllers = {c.name: c for c in controllers}
 

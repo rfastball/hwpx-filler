@@ -23,5 +23,6 @@
     if (window.TxtScreen) window.TxtScreen.init();
     if (window.EditorScreen) window.EditorScreen.init();
     if (window.RunScreen) window.RunScreen.init();
+    if (window.MatrixScreen) window.MatrixScreen.init();
   });
 })();
