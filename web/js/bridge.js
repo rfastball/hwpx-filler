@@ -19,6 +19,9 @@
     /** 네이티브 파일 다이얼로그 → 링1 VM 로드. 파일명 또는 "ERROR:…" 또는 null(취소). */
     pickDataFile(screen) { return window.pywebview.api.pick_data_file(screen); },
 
+    /** 네이티브 열기 다이얼로그(HWPX 템플릿) → 스키마/게이트 로드. 파일명·"ERROR:…"·null. */
+    pickTemplateFile(screen) { return window.pywebview.api.pick_template_file(screen); },
+
     /** 현재 렌더를 OS 클립보드로(완료=commit). 리포트(missing/empty) 반환. */
     copyClipboard(screen) { return window.pywebview.api.copy_clipboard(screen); },
 
