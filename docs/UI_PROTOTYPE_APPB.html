@@ -367,7 +367,18 @@
                         <button class="btn sm">여러 작업 일괄 실행</button>
                         <button class="btn primary sm">＋ 새 작업</button></span></div>
                     <p class="tsub">누름틀 템플릿 + 매핑을 작업으로 저장 → 데이터 겨눠 .hwpx 생성.</p>
-                    <div id="jobsView" data-vm="HomeViewModel.rows">
+                    <!-- 작업 브라우저(패싯 탐색, JOB_BROWSER_DESIGN §4): 사용자 소유 group-by 렌즈
+                         + facet 칩바. 태그가 없으면(퇴화-코퍼스 불변식) 이 바는 렌더되지 않고
+                         아래 평면 카드 목록이 오늘과 동일하게 그려진다. -->
+                    <div class="row" style="margin:6px 0" data-vm="HomeViewModel.axes">
+                      <button class="btn sm">그룹: 금액구간 ▾</button>
+                      <span class="row" data-vm="HomeViewModel.facets">
+                        <button class="pill">적격심사 · 2</button>
+                        <button class="pill muted">협상 · 1</button>
+                      </span>
+                    </div>
+                    <div id="jobsView" data-vm="HomeViewModel.grouped_rows">
+                      <div class="jm" style="font-weight:700;margin:4px 0">▾ 1억미만 · 2</div>
                       <div class="jcard">
                         <div class="jn" data-vm="JobRow.name">공고서 자동생성 <span class="pill" data-vm="JobRow.compile_badge">✅ 실행 준비</span></div>
                         <div class="jm" data-vm="JobRow.meta_line">공고서_양식.hwpx · 필드 14개 · <span class="mono">공고서-{{ID}}</span></div>
