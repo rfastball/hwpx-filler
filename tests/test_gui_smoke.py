@@ -213,6 +213,76 @@ def test_home_empty_state_and_job_cards(qapp, tmp_path):
     assert "템플릿 없음" in joined        # 부재 템플릿 선고지
 
 
+def test_home_replaces_vanity_kpis_with_continue_run_actions(qapp, tmp_path, monkeypatch):
+    """#11 — 등록 데이터 수 타일 제거 + 최근 실행을 실제 재진입 목록으로 대체한다."""
+    from PySide6.QtWidgets import QLabel, QMessageBox, QPushButton
+
+    home = _home_with_ready_and_absent(tmp_path)
+    ready = home.registry.load("정상작업")
+    ready.last_run_at = "2026-07-13T09:30:00"
+    home.registry.save(ready)
+    absent = home.registry.load("부재작업")
+    absent.last_run_at = "2026-07-14T10:45:00"
+    home.registry.save(absent)
+    home.refresh()
+
+    kpi_labels = {
+        label.text()
+        for i in range(home.kpi_row.count())
+        for label in home.kpi_row.itemAt(i).widget().findChildren(QLabel)
+    }
+    assert "등록 데이터 · 사용 가능" not in kpi_labels
+    assert "최근 실행" not in kpi_labels
+    assert home.continue_list.count() == 2
+    assert [home.continue_list.item(i).text() for i in range(2)] == ["부재작업", "정상작업"]
+
+    emitted: "list[str]" = []
+    home.run_job_requested.connect(emitted.append)
+    infos: "list[str]" = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: infos.append(a[2]))
+
+    def _continue(name):
+        item = next(
+            home.continue_list.item(i)
+            for i in range(home.continue_list.count())
+            if home.continue_list.item(i).text() == name
+        )
+        card = home.continue_list.itemWidget(item)
+        return next(b for b in card.findChildren(QPushButton) if b.text() == "이어서 실행")
+
+    _continue("부재작업").click()
+    assert emitted == [] and infos  # 실행 불가 변화는 조용히 추측하지 않고 기존 경고 게이트
+    _continue("정상작업").click()
+    assert emitted == ["정상작업"]
+
+
+def test_home_txt_card_preselects_its_template_in_draft_page(qapp, tmp_path, monkeypatch):
+    """#11 — 템플릿별 [기안 작성]은 해당 템플릿을 선점해 새 기안과 동작을 가른다."""
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QPushButton
+
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.app import AppController
+
+    templates = tmp_path / "text_templates"
+    templates.mkdir()
+    (templates / "가-기본.txt").write_text("기본 {{이름}}", encoding="utf-8")
+    (templates / "나-선택.txt").write_text("선택 {{이름}}", encoding="utf-8")
+
+    ctrl = AppController(JobRegistry(tmp_path / "jobs"))
+    item = ctrl.home.txt_list.findItems("나-선택", Qt.MatchExactly)[0]
+    card = ctrl.home.txt_list.itemWidget(item)
+    button = next(b for b in card.findChildren(QPushButton) if b.text() == "기안 작성")
+    assert "나-선택.txt" in button.toolTip()
+
+    button.click()
+    view = ctrl.shell.stack.currentWidget()
+    assert ctrl.shell.current_key() == "txt"
+    assert view.cbo.currentText() == "나-선택"
+    assert view.vm.template_name == "나-선택"
+
+
 # ---- 작업 브라우저(패싯 탐색) — JOB_BROWSER_DESIGN §4 ----
 def _tagged_home(tmp_path, monkeypatch):
     """금액구간·낙찰방법 두 축이 섞인 코퍼스로 홈을 띄운다(렌즈 지속은 tmp 로 격리)."""

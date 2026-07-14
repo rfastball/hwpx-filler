@@ -2,8 +2,8 @@
 
 트랙 이원성([[hwpx-filler-scope]], DECISIONS §트랙 이원성): 홈은 단순 목록이 아니라 **두 트랙의
 허브 대시보드**다 — 좌: HWPX 문서 생성(Job-앵커·재사용 자산), 우: 즉시 기안(txt, 경량·
-render→copy). 상단 KPI는 **실재 데이터만**(작업 수·최근 실행·템플릿 없는 작업·기안 템플릿 수) —
-가짜 지표 없음(핸드오프 관통 경고: 없던 기능 발명 금지).
+render→copy). 상단 요약은 **행동 가능한 실재 데이터만** 남긴다 — 작업·경고·기안 템플릿 수와
+최근 실행 작업의 재진입 목록(핸드오프 관통 경고: 없던 기능 발명 금지).
 
 레이어링: 위젯은 얇은 렌더러 — 목록 성형·KPI·선택은 :class:`~hwpxfiller.gui.home_state.HomeViewModel`
 (Qt 비의존, 링1)이 소유. **네비게이션 시그널 계약 불변** — HWPX(new/edit/run/delete_job_requested,
@@ -65,6 +65,8 @@ _UNTAGGED_SECTION_KEY = object()
 # 카드 제목의 말줄임 상한(UD-30) — 긴 작업명·파일명이 상태 배지를 밀어내지 않도록
 # sizeHint 폭을 눌러 pill 을 온전히 남긴다. 잘리면 전체 이름은 툴팁으로 노출된다.
 _CARD_TITLE_MAX = 340
+# 대시보드는 최근 실행 이력을 전부 복제하지 않고, 바로 재진입할 상위 작업만 노출한다.
+_CONTINUE_RUN_LIMIT = 3
 
 
 class JobCard(QWidget):
@@ -130,6 +132,31 @@ class JobCard(QWidget):
 # 하위호환 별칭(RC-35): 스모크 테스트 등 크로스모듈 인용이 실재하는 공용 표면 —
 # 기존 `_JobCard` 임포트는 이 별칭으로 계속 동작한다.
 _JobCard = JobCard
+
+
+class _ContinueRunCard(QWidget):
+    """최근 실행 작업 1건 — 실행 화면으로 돌아가는 행동형 행(AD966C89-B)."""
+
+    def __init__(self, row: JobRow, on_continue, parent=None):
+        super().__init__(parent)
+        root = QHBoxLayout(self)
+        root.setContentsMargins(10, SPACE_XS, 10, SPACE_XS)
+        root.setSpacing(SPACE_SM)
+
+        lbl_name = ElidedLabel(row.name, max_width=_CARD_TITLE_MAX)
+        mark(lbl_name, "heading", True)
+        root.addWidget(lbl_name, 1)
+
+        lbl_when = QLabel(row.last_run_display)
+        mark(lbl_when, "muted", True)
+        root.addWidget(lbl_when)
+
+        btn = QPushButton("이어서 실행")
+        mark(btn, "emphasis", "card")
+        if not row.is_runnable():
+            btn.setToolTip("현재 상태로 바로 실행할 수 없습니다. 누르면 확인할 항목을 안내합니다.")
+        btn.clicked.connect(lambda: on_continue(row))
+        root.addWidget(btn)
 
 
 class _SectionHeader(QWidget):
@@ -245,6 +272,7 @@ class _TxtCard(QWidget):
         # 카드 반복 주 액션은 보조 등급(UD-22): txt 카드마다 반복돼 화면 전역 primary 로 두면
         # 홈 뷰포트의 강조가 곱절 — emphasis=card 로 강등(화면당 primary 1개 규율).
         mark(btn_open, "emphasis", "card")
+        btn_open.setToolTip(f"{row.name}.txt 템플릿을 선택해 기안을 시작합니다.")
         btn_open.clicked.connect(lambda: on_open(row.name))
         root.addWidget(btn_open)
 
@@ -338,6 +366,15 @@ class JobListHome(QWidget):
         self.kpi_row = QHBoxLayout()
         self.kpi_row.setSpacing(10)
         root.addLayout(self.kpi_row)
+
+        # 최근 실행은 읽기 전용 KPI가 아니라 해당 실행 화면으로 돌아가는 행동형 목록이다.
+        self.continue_panel = self._panel("이어서 실행")
+        continue_box = self.continue_panel.layout()
+        self.continue_list = QListWidget()
+        self.continue_list.setObjectName("jobList")
+        self.continue_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        continue_box.addWidget(self.continue_list)
+        root.addWidget(self.continue_panel)
 
         # ---- 투트랙 ----
         tracks = QHBoxLayout()
@@ -490,8 +527,8 @@ class JobListHome(QWidget):
         box = QVBoxLayout(tile)
         box.setContentsMargins(SPACE_MD, SPACE_MD, SPACE_MD, SPACE_MD)  # 패널과 동일 여백(UD-33 ②)
         box.setSpacing(SPACE_XS)
-        # KPI 값('최근 실행'은 날짜+작업명 연결)은 말줄임+툴팁(UD-30) — 긴 값이 타일 폭을
-        # 넘겨 우측 타일을 압착·화면 밖으로 밀어내던 것을 막는다(타일은 동일 폭 배분).
+        # KPI 값은 말줄임+툴팁(UD-30) — 긴 값이 타일 폭을 넘겨 우측 타일을 압착·화면
+        # 밖으로 밀어내지 않게 한다(타일은 동일 폭 배분).
         v = ElidedLabel(value)
         mark(v, "kpi", "value")
         if warn:
@@ -516,15 +553,39 @@ class JobListHome(QWidget):
             if w is not None:
                 w.deleteLater()
         k = self.vm.kpi()
-        # 타일을 동일 폭(stretch=1)으로 배분한다(UD-30) — '최근 실행' 같은 긴 값이 한 타일을
-        # 넓혀 나머지를 압착하지 않고, 각 타일 안에서 값이 말줄임된다.
+        # 타일을 동일 폭(stretch=1)으로 배분한다(UD-30). 등록 데이터 수는 다음 행동을 만들지
+        # 못하는 허영 지표라 제거하고(AD966C89-A), 최근 실행은 아래 행동형 목록으로 옮긴다.
         self.kpi_row.addWidget(self._kpi_tile(str(k.job_count), "저장된 작업 · HWPX"), 1)
-        self.kpi_row.addWidget(self._kpi_tile(k.recent_run, "최근 실행"), 1)
         self.kpi_row.addWidget(
             self._kpi_tile(str(k.missing_template_count), "템플릿 없는 작업", warn=k.missing_template_count > 0), 1
         )
         self.kpi_row.addWidget(self._kpi_tile(str(k.txt_template_count), "기안 템플릿 · txt"), 1)
-        self.kpi_row.addWidget(self._kpi_tile(str(k.pool_count), "등록 데이터 · 사용 가능"), 1)
+
+        # 최신 실행 순으로 최대 3건. 실행 가능 여부는 클릭 시 기존 단일 게이트를 통과시켜,
+        # 템플릿이 사라진 작업을 조용히 열거나 무시하지 않고 원인을 경고한다.
+        self.continue_list.clear()
+        recent_rows = sorted(
+            (row for row in self.vm.rows() if row.last_run_at),
+            key=lambda row: row.last_run_at,
+            reverse=True,
+        )[:_CONTINUE_RUN_LIMIT]
+        for row in recent_rows:
+            self.continue_list.addItem(row.name)
+            item = self.continue_list.item(self.continue_list.count() - 1)
+            hide_item_text(item)
+            item.setFlags(item.flags() & ~Qt.ItemIsSelectable)
+            card = _ContinueRunCard(row, self._request_run)
+            item.setSizeHint(card.sizeHint())
+            self.continue_list.setItemWidget(item, card)
+        if recent_rows:
+            # QListWidget의 Expanding 기본 정책이 1~3개 행 아래에 큰 공백을 만들지 않도록
+            # 실제 카드 높이 합만 차지한다. 항목 수 상한이 3이라 스크롤도 생기지 않는다.
+            content_height = sum(
+                self.continue_list.item(i).sizeHint().height()
+                for i in range(self.continue_list.count())
+            )
+            self.continue_list.setFixedHeight(content_height + 2 * self.continue_list.frameWidth())
+        self.continue_panel.setVisible(bool(recent_rows))
 
         # HWPX 작업 목록 — group-by 접이식 섹션 + facet(JOB_BROWSER_DESIGN §4).
         # 카드는 계속 self.list(QListWidget)에 얹는다(findItems·스모크 계약 보존, home docstring).
@@ -748,6 +809,10 @@ class JobListHome(QWidget):
         row = self._job_row_by_name(item.text())
         if row is None:
             return  # 손상/비작업 행 — 실행 대상 아님
+        self._request_run(row)
+
+    def _request_run(self, row: JobRow) -> None:
+        """카드·최근 실행 목록이 공유하는 실행 진입 게이트(confirm-or-alarm)."""
         if not row.is_runnable():
             self._warn_not_runnable(row)
             return
