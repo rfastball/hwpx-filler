@@ -140,7 +140,7 @@ class TxtTemplateCard(QWidget):
         mark(lbl_name, "heading", True)
         name_row.addWidget(lbl_name)
         badge = QLabel("TXT" if error is None else "읽기 실패")
-        mark(badge, "pill", "info" if error is None else "danger")
+        mark(badge, "pill", "muted" if error is None else "danger")
         name_row.addWidget(badge)
         name_row.addStretch(1)
         root.addLayout(name_row)
@@ -524,7 +524,7 @@ class TemplateManagerPanel(QWidget):
         self._run_action("TXT 템플릿 삭제", str(template.path), delete)
 
     def _finish_txt_change(self, message: str) -> None:
-        mark(self.lbl_result, "level", "success")
+        mark(self.lbl_result, "level", "ok")
         self.lbl_result.setText(message)
         self._render_txt()
         self.templates_changed.emit()
