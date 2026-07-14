@@ -224,6 +224,35 @@ QListWidget#jobList::item:selected {{
     background: {SELECT_BG}; border-left: 3px solid {PRIMARY};
 }}
 
+/* ── 작업 브라우저(패싯 탐색, JOB_BROWSER_DESIGN §4) ──
+   좌 HWPX 트랙이 평면 리스트에서 'group-by 접이식 섹션 + facet 칩바'로 확장될 때의 두 신규
+   표면. 카드 스펙(위 jobList)은 불변(D8) — 헤더·칩만 추가한다. 태그가 없으면 이 표면은
+   렌더되지 않아(퇴화-코퍼스 불변식) 오늘과 동일하다. 전부 <gen:tokens> 상수만 참조. */
+/* 섹션 헤더 = 비선택 리스트 아이템에 얹는 클릭형 접기 컨트롤. 헤더 밴드는 테이블 헤더와
+   같은 중성색으로 카드(흰 배경)와 구분한다. 좌측 정렬 + 굵게로 '구간 라벨 · N건'을 담는다. */
+QPushButton[section="header"] {{
+    background: {NEUTRAL_HEADER_BG}; color: {NEUTRAL_HEADER_INK}; border: none;
+    border-radius: {RADIUS_SM}px; padding: 6px 10px; font-weight: 700; text-align: left;
+}}
+QPushButton[section="header"]:hover {{ background: {NEUTRAL_PRESSED}; }}
+QPushButton[section="header"]:focus {{ border: 1px solid {PRIMARY}; padding: 5px 9px; }}
+/* facet 칩 on/off — 비활성(off)은 무채움 외곽 pill, 활성(on)은 선택 하이라이트 문법
+   (SELECT_BG+PRIMARY, jobList/navRail 선택과 통일). 0건 값은 :disabled 로 회색 강등(D10). */
+QPushButton[chip="off"] {{
+    background: {CARD_BG}; color: {NEUTRAL_INK_CONTROL}; border: 1px solid {NEUTRAL_BORDER_STRONG};
+    border-radius: {RADIUS_PILL}px; padding: 2px 10px; font-weight: 600;
+}}
+QPushButton[chip="off"]:hover {{ background: {NEUTRAL_HOVER}; border-color: {PRIMARY}; }}
+QPushButton[chip="on"] {{
+    background: {SELECT_BG}; color: {PRIMARY}; border: 1px solid {PRIMARY};
+    border-radius: {RADIUS_PILL}px; padding: 2px 10px; font-weight: 600;
+}}
+QPushButton[chip="on"]:hover {{ background: {SELECT_BG}; }}
+QPushButton[chip="off"]:disabled, QPushButton[chip="on"]:disabled {{
+    background: {WINDOW_BG}; color: {MUTED}; border-color: {BORDER};
+}}
+QPushButton[chip="off"]:focus, QPushButton[chip="on"]:focus {{ border-color: {PRIMARY}; }}
+
 /* 셸 네비 레일(ST-01, SHELL_DESIGN D1·D10): 현재 위치 표지 = 선택 하이라이트.
    기존 토큰만 재사용(ST-14 보류 존중 — 다크 레일 등 새 팔레트 발명 금지). 선택
    표기는 jobList 와 같은 SELECT_BG + PRIMARY 좌측 바 문법으로 통일한다. */
