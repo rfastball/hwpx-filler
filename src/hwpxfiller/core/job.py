@@ -111,6 +111,10 @@ class Job:
     # 엔진은 여전히 합성된 ``mapping`` 만 소비한다(run-path 무영향). 베이스 편집 시 "이 베이스를
     # 참조하는 작업 N개" loud 경고의 근거(전파는 경고이지 자동 재투영 아님).
     base_mapping_name: str = ""
+    # 브라우징용 분류 태그 {축이름 → 값}(차원-불가지·선택적, JOB_BROWSER_DESIGN D1·D2·D12·D13).
+    # **순수 메타** — 코드는 "물품"·"금액구간"이 뭔지 모르고 얇은 매핑만 든다(run-path 무영향).
+    # 축·값은 이름 문자열이지 enum/bool 타입 필드 발명 금지(도메인을 코드에 안 박는다).
+    tags: "dict[str, str]" = field(default_factory=dict)
 
     def template_fields(self) -> "list[str]":
         """이 작업이 채우는 템플릿 필드(매핑이 방출하는 집합). 실행 사전검증의 요구필드."""
@@ -138,6 +142,7 @@ class Job:
             "mapping": self.mapping.to_dict(),
             "last_run_at": self.last_run_at,
             "base_mapping_name": self.base_mapping_name,
+            "tags": dict(self.tags),
         }
 
     @classmethod
@@ -150,6 +155,7 @@ class Job:
             version=d.get("version", 1),
             last_run_at=d.get("last_run_at", ""),
             base_mapping_name=d.get("base_mapping_name", ""),
+            tags=dict(d.get("tags", {})),
         )
 
     def save(self, path: "str | Path") -> None:
