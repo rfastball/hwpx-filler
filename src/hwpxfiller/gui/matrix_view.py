@@ -48,7 +48,7 @@ from .flow_layout import FlowLayout
 from .matrix_state import MatrixRunViewModel
 from .record_select import RecordSelector
 from .style import BASE_QSS, mark
-from .view_helpers import build_empty_state, wire_submit_shortcut
+from .view_helpers import build_empty_state, last_dir, save_last_dir, wire_submit_shortcut
 from .worker import MatrixGenerateWorker
 
 
@@ -446,8 +446,9 @@ class MatrixRunView(QWidget):
         self._refresh_field_panel()  # 새 데이터 → 작업별 필드 배지·게이트 재계산(UD-04)
 
     def _pick_out(self) -> None:
-        path = QFileDialog.getExistingDirectory(self, "저장 폴더 선택")
+        path = QFileDialog.getExistingDirectory(self, "저장 폴더 선택", last_dir("output"))
         if path:
+            save_last_dir("output", path)  # 성공 선택만 기억(T3)
             self.ed_out.setText(path)
 
     # ------------------------------------------------------------------ 생성

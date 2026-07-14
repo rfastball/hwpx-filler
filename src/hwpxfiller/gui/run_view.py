@@ -49,7 +49,7 @@ from .flow_layout import FlowLayout
 from .record_select import RecordSelector
 from .run_state import GenerationPlan, RunViewModel
 from .style import BASE_QSS, ContrastProgressBar, mark
-from .view_helpers import ElidedLabel, wire_submit_shortcut
+from .view_helpers import ElidedLabel, last_dir, save_last_dir, wire_submit_shortcut
 from .worker import GenerateWorker
 
 
@@ -335,10 +335,11 @@ class RunView(QWidget):
 
     def _pick_prev(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "기존 문서 선택", "", HWPX_FILTER
+            self, "기존 문서 선택", last_dir("prev_doc"), HWPX_FILTER
         )
         if not path:
             return
+        save_last_dir("prev_doc", path)  # 성공 선택만 기억(T3) — 취소는 직전 값 보존
         self.ed_prev.setText(path)
         note = self.vm.set_prev_output(path)
         mark(self.lbl_prev_note, "level", note.level)
@@ -479,8 +480,9 @@ class RunView(QWidget):
         ))
 
     def _pick_out(self) -> None:
-        path = QFileDialog.getExistingDirectory(self, "저장 폴더 선택")
+        path = QFileDialog.getExistingDirectory(self, "저장 폴더 선택", last_dir("output"))
         if path:
+            save_last_dir("output", path)  # 성공 선택만 기억(T3)
             self.ed_out.setText(path)
 
     # ------------------------------------------------------------------ 생성

@@ -84,6 +84,7 @@ class JobEditorWizard(QWizard):
         self.template_path: str = ""
         self.schema = None                      # TemplateSchema
         self.data_path: str = ""
+        self.data_sheet: "str | None" = None    # 확정 시트명(T2, None=기본 시트)
         self.datasource = None                  # ExcelDataSource
         self.source_fields: "list[str]" = []
         self.records: "list[dict]" = []

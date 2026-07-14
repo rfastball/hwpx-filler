@@ -5,6 +5,8 @@
 - UD-17: 빈 상태 패턴 이식 — 목록 0건이면 스택이 빈 상태 페이지로 교체.
 - UD-26: 빈 값/결측 명시 재진술 — 표 셀·미리보기 문자열이 무표시 공백으로 두지 않음.
 - UD-30: 가변 길이 문자열 말줄임+툴팁 — 좁은 폭에서 말줄임하고 전체 이름을 툴팁으로.
+- T2: 시트 확정 다이얼로그 — 다중 시트만 묻고(행×열 병기), 취소는 None(겨눔 전체 중단).
+- T3: 용도별 마지막 디렉터리 — 부모 디렉터리 저장·용도 분리·부재 시 조용한 빈 폴백.
 
 깊은 로직은 각 패널/상태 테스트가 헤드리스로 본다. 여기선 공용 규율의 이식만 확인한다.
 """
@@ -12,6 +14,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 
@@ -19,7 +22,7 @@ pytest.importorskip("PySide6")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt  # noqa: E402
-from PySide6.QtWidgets import QApplication, QPushButton  # noqa: E402
+from PySide6.QtWidgets import QApplication, QInputDialog, QPushButton  # noqa: E402
 
 from hwpxfiller.core.dataset_pool import (  # noqa: E402
     DatasetPoolItem,
@@ -32,8 +35,13 @@ from hwpxfiller.gui.view_helpers import (  # noqa: E402
     EMPTY_VALUE_MARKER,
     MISSING_VALUE_MARKER,
     ElidedLabel,
+    ask_sheet_choice,
+    last_dir,
     restate_preview_item,
+    save_last_dir,
 )
+
+MULTI_SHEET = Path(__file__).parent / "fixtures" / "multi_sheet.xlsx"
 
 
 @pytest.fixture(scope="module")
@@ -179,3 +187,75 @@ def test_elided_label_sizehint_capped_by_max_width(qapp):
     """max_width 가 sizeHint 폭을 눌러 긴 문자열이 형제(상태 배지)를 밀어내지 않는다(UD-30)."""
     lbl = ElidedLabel("가" * 200, max_width=180)
     assert lbl.sizeHint().width() <= 180
+
+
+# ------------------------------------------------------------ T2 시트 확정 다이얼로그
+def test_ask_sheet_choice_lists_sheets_with_rowcol_and_returns_name(qapp, monkeypatch):
+    """다중 시트 — 항목에 시트명+행×열 근사 병기, 확정 항목의 **시트명**을 반환."""
+    seen: "list[list[str]]" = []
+
+    def fake_get_item(parent, title, label, items, *a, **k):
+        seen.append(list(items))
+        return next(t for t in items if t.startswith("낙찰현황")), True
+
+    monkeypatch.setattr(QInputDialog, "getItem", fake_get_item)
+    assert ask_sheet_choice(None, MULTI_SHEET) == "낙찰현황"
+    items = seen[0]
+    assert items[0].startswith("공고목록") and "3행" in items[0] and "2열" in items[0]
+    assert items[1].startswith("낙찰현황") and "4행" in items[1] and "3열" in items[1]
+
+
+def test_ask_sheet_choice_skips_for_single_sheet_and_csv(qapp, tmp_path, monkeypatch):
+    """단일 시트·CSV — 물을 것이 없어 getItem 미호출, ""(기본 로드) 반환."""
+    monkeypatch.setattr(
+        QInputDialog, "getItem",
+        lambda *a, **k: pytest.fail("단일 시트/CSV 엔 시트 다이얼로그 금지"),
+    )
+    csv = tmp_path / "rec.csv"
+    csv.write_text("공고명\n전산장비\n", encoding="utf-8-sig")
+    assert ask_sheet_choice(None, csv) == ""
+
+    from openpyxl import Workbook
+
+    xlsx = tmp_path / "one.xlsx"
+    wb = Workbook()
+    wb.active.append(["공고명"])
+    wb.save(xlsx)
+    assert ask_sheet_choice(None, xlsx) == ""
+
+
+def test_ask_sheet_choice_cancel_returns_none(qapp, monkeypatch):
+    """취소 = None — 호출자는 파일 겨눔 전체를 중단한다(조용한 첫-시트 추측 금지)."""
+    monkeypatch.setattr(QInputDialog, "getItem", lambda *a, **k: ("", False))
+    assert ask_sheet_choice(None, MULTI_SHEET) is None
+
+
+# ------------------------------------------------------------ T3 마지막 디렉터리
+def test_last_dir_saves_parent_and_separates_purposes(tmp_path, monkeypatch):
+    """save_last_dir 는 **부모 디렉터리**를 용도별 키로 저장 — 용도 간 미혼합(T3).
+
+    HWPXFILLER_HOME 격리(ST-11 지오메트리 테스트 미러)로 사용자 INI 를 오염하지
+    않는다. 반환은 디렉터리뿐 — 파일 경로 프리필이 원천적으로 불가능하다.
+    """
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    assert last_dir("data") == ""              # 미저장 — 빈 시작(OS 기본 위치)
+    d = tmp_path / "엑셀자료"
+    d.mkdir()
+    save_last_dir("data", str(d / "records.csv"))
+    assert last_dir("data") == str(d)          # 파일이 아니라 부모 디렉터리
+    assert last_dir("template") == ""          # 데이터 선택이 템플릿 용도에 무영향
+
+
+def test_last_dir_falls_back_silently_when_saved_dir_missing(tmp_path, monkeypatch):
+    """저장된 디렉터리가 삭제·부재면 빈 문자열로 조용히 폴백 — 예외 없음(T3).
+
+    시작 디렉터리는 편의라 실패는 시끄럽지 않게(ST-11 동급 규율) — 빈 값이면
+    다이얼로그가 OS 기본 위치에서 열릴 뿐 기능 손실이 없다.
+    """
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    gone = tmp_path / "곧사라짐"
+    gone.mkdir()
+    save_last_dir("output", str(gone / "산출.hwpx"))
+    assert last_dir("output") == str(gone)
+    gone.rmdir()
+    assert last_dir("output") == ""            # 조용한 폴백(경보 아닌 편의 실패)

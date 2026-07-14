@@ -115,6 +115,17 @@ def test_restore_excel_item_returns_live_source_without_reading():
     assert isinstance(src, ExcelDataSource)
 
 
+def test_restore_excel_item_with_sheet_targets_that_sheet():
+    """T2 — opts 의 sheet 임베딩이 복원에 그대로 관통(지정 시트 레코드)."""
+    it = DatasetPoolItem(
+        name="다중", kind="excel",
+        opts={"path": str(FIXTURES / "multi_sheet.xlsx"), "sheet": "낙찰현황"},
+    )
+    src = source_from_pool_item(it)
+    assert src.sheet == "낙찰현황"
+    assert src.records()[0]["업체명"] == "가나상사"
+
+
 def test_restore_nara_item_injects_key_from_store():
     it = DatasetPoolItem(
         name="나라", kind="nara",
@@ -162,6 +173,26 @@ def test_run_load_pool_item_excel_live(tmp_path):
     recs = vm.load_pool_item(it)
     assert len(recs) == 1 and recs[0]["공고명"] == "전산장비"
     assert vm.datasource is not None
+
+
+def test_run_and_matrix_pool_targeting_returns_specified_sheet_records(tmp_path):
+    """T2 — sheet 임베딩 풀 항목의 run/matrix 겨눔이 지정 시트 레코드를 반환한다."""
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.matrix_state import MatrixRunViewModel
+    from hwpxfiller.gui.run_state import RunViewModel
+
+    it = DatasetPoolItem(
+        name="다중", kind="excel",
+        opts={"path": str(FIXTURES / "multi_sheet.xlsx"), "sheet": "낙찰현황"},
+    )
+    vm = RunViewModel(_job())
+    recs = vm.load_pool_item(it)
+    assert [r["업체명"] for r in recs] == ["가나상사", "다라물산", "마바테크"]
+
+    pool = DatasetPoolRegistry(tmp_path / "pool")
+    pool.save(it)
+    mvm = MatrixRunViewModel(JobRegistry(tmp_path / "jobs"), pool_registry=pool)
+    assert mvm.load_pool_by_name("다중") == recs
 
 
 def test_run_load_pool_item_nara_snapshots_once(tmp_path):

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 
@@ -16,6 +17,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QObject, Signal  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
+    QFileDialog,
+    QInputDialog,
     QLabel,
     QMessageBox,
     QProgressBar,
@@ -25,9 +28,12 @@ from PySide6.QtWidgets import (  # noqa: E402
 
 from hwpxfiller.gui.batch_run import (  # noqa: E402
     BatchRunController,
+    DataAcquireController,
     completion_notice,
     describe_result_error,
 )
+
+MULTI_SHEET = Path(__file__).parent / "fixtures" / "multi_sheet.xlsx"
 
 
 @pytest.fixture(scope="module")
@@ -170,3 +176,137 @@ def test_controller_request_cancel_is_cooperative(qapp):
         assert any("취소 요청" in line for line in log)
     finally:
         runner.teardown()
+
+
+# ------------------------------------------------ 파일 겨눔 + 시트 확정(T2, RC-22 공용)
+def _acquire_harness():
+    """DataAcquireController + 콜백 기록 다발 — pick_file 계약만 본다."""
+    view = QWidget()
+    calls: "dict[str, object]" = {}
+
+    def load_file(path, sheet=None):
+        calls["load"] = (path, sheet)
+        return [{"a": "1"}]
+
+    ctrl = DataAcquireController(
+        view,
+        pool_registry=None,
+        load_file=load_file,
+        restore_pool_item=lambda item: [],
+        set_acquired=lambda ds, recs: None,
+        after_loaded=lambda label: calls.__setitem__("label", label),
+        say=lambda msg: None,
+        set_busy=lambda busy: None,
+    )
+    return view, ctrl, calls
+
+
+def test_pick_file_confirms_sheet_and_restates_it_in_label(qapp, tmp_path, monkeypatch):
+    """다중 시트 — 확정 다이얼로그 경유(행×열 병기) → load_file(sheet=) 관통 →
+    after_loaded 라벨에 선택 시트명 재진술."""
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))  # last_dir INI 오염 방지
+    view, ctrl, calls = _acquire_harness()
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", lambda *a, **k: (str(MULTI_SHEET), "")
+    )
+    seen: "list[list[str]]" = []
+
+    def fake_get_item(parent, title, label, items, *a, **k):
+        seen.append(list(items))
+        return next(t for t in items if t.startswith("낙찰현황")), True
+
+    monkeypatch.setattr(QInputDialog, "getItem", fake_get_item)
+    ctrl.pick_file()
+    assert calls["load"] == (str(MULTI_SHEET), "낙찰현황")
+    label = calls["label"]
+    assert str(MULTI_SHEET) in label and "낙찰현황" in label  # 시트명 재진술
+    assert any("행" in t and "열" in t for t in seen[0])       # 행×열 근사 병기
+
+
+def test_pick_file_skips_sheet_dialog_for_csv_and_single_sheet(qapp, tmp_path, monkeypatch):
+    """단일 시트·CSV — getItem 미호출, sheet=None(기본) 로드, 라벨은 경로 그대로."""
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))  # last_dir INI 오염 방지
+    monkeypatch.setattr(
+        QInputDialog, "getItem",
+        lambda *a, **k: pytest.fail("단일 시트/CSV 엔 시트 다이얼로그 금지"),
+    )
+    view, ctrl, calls = _acquire_harness()
+
+    csv = tmp_path / "rec.csv"
+    csv.write_text("a\n1\n", encoding="utf-8-sig")
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(csv), ""))
+    ctrl.pick_file()
+    assert calls["load"] == (str(csv), None)
+    assert calls["label"] == str(csv)              # 시트 표기 없음
+
+    from openpyxl import Workbook
+
+    xlsx = tmp_path / "one.xlsx"
+    wb = Workbook()
+    wb.active.append(["a"])
+    wb.active.append(["1"])
+    wb.save(xlsx)
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(xlsx), ""))
+    ctrl.pick_file()
+    assert calls["load"] == (str(xlsx), None)
+    assert calls["label"] == str(xlsx)
+
+
+def test_pick_from_pool_restates_item_sheet_in_label(qapp, monkeypatch):
+    """풀 겨눔 라벨 — 항목 참조에 시트가 있으면 파일 겨눔(T2)과 대칭으로 병기하고,
+    시트 없는 항목(CSV·나라 등)은 기존 '풀: 이름' 그대로다(침묵 금지·과잉 표기 금지)."""
+    import time
+
+    from PySide6.QtCore import QCoreApplication
+
+    from hwpxfiller.core.dataset_pool import DatasetPoolItem
+
+    view = QWidget()
+    calls: "dict[str, object]" = {}
+    items = [
+        DatasetPoolItem(
+            name="6월", kind="excel",
+            opts={"path": str(MULTI_SHEET), "sheet": "낙찰현황"},
+        ),
+        DatasetPoolItem(name="수기", kind="excel", opts={"path": "d.csv"}),
+    ]
+
+    class _Reg:
+        def list_items(self, status=None):
+            return items
+
+    ctrl = DataAcquireController(
+        view,
+        pool_registry=_Reg(),
+        load_file=lambda path, sheet=None: [],
+        restore_pool_item=lambda item: [{"a": "1"}],
+        set_acquired=lambda ds, recs: None,
+        after_loaded=lambda label: calls.__setitem__("label", label),
+        say=lambda msg: None,
+        set_busy=lambda busy: None,
+    )
+
+    def _pick(name):
+        monkeypatch.setattr(QInputDialog, "getItem", lambda *a, **k: (name, True))
+        ctrl.pick_from_pool()
+        deadline = time.monotonic() + 5.0
+        while ctrl.thread is not None and time.monotonic() < deadline:
+            QCoreApplication.processEvents()
+            time.sleep(0.005)
+        QCoreApplication.processEvents()
+        return calls.pop("label")
+
+    assert _pick("6월") == "풀: 6월 [시트: 낙찰현황]"   # 시트 병기(파일 겨눔과 대칭)
+    assert _pick("수기") == "풀: 수기"                  # 시트 없는 참조는 이름만
+
+
+def test_pick_file_sheet_cancel_aborts_whole_targeting(qapp, tmp_path, monkeypatch):
+    """시트 확정 취소 — 파일 겨눔 전체 중단(load_file·after_loaded 미호출, 폴백 없음)."""
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))  # last_dir INI 오염 방지
+    view, ctrl, calls = _acquire_harness()
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", lambda *a, **k: (str(MULTI_SHEET), "")
+    )
+    monkeypatch.setattr(QInputDialog, "getItem", lambda *a, **k: ("", False))
+    ctrl.pick_file()
+    assert "load" not in calls and "label" not in calls  # 부분 겨눔·첫-시트 폴백 금지

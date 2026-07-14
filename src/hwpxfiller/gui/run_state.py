@@ -154,9 +154,13 @@ def export_plan_ledger(plan: GenerationPlan, batch) -> str:
 
 
 # ------------------------------------------ 데이터 겨눔 리졸버(단일 실행·매트릭스 공용)
-def resolve_file_source(path: str) -> "tuple[object, list[dict]]":
-    """파일 경로 → (DataSource, records). 팩토리가 종류 선택(엑셀/CSV). 로드 실패는 raise."""
-    source = source_for_path(path)
+def resolve_file_source(path: str, *, sheet: "str | None" = None) -> "tuple[object, list[dict]]":
+    """파일 경로 → (DataSource, records). 팩토리가 종류 선택(엑셀/CSV). 로드 실패는 raise.
+
+    ``sheet`` 는 사용자가 **확정한** 시트명(T2) — None 이면 기본(첫/유일 시트).
+    확정은 링2(시트 다이얼로그)가 하고 여기는 옵션 관통만 한다(링1: PySide6 금지).
+    """
+    source = source_for_path(path, sheet=sheet)
     return source, source.records()
 
 
@@ -233,10 +237,11 @@ class RunViewModel:
         )
 
     # ------------------------------------------------------------ 데이터
-    def load_data(self, path: str) -> "list[dict]":
+    def load_data(self, path: str, *, sheet: "str | None" = None) -> "list[dict]":
         """겨눈 경로에서 레코드를 읽는다(팩토리가 종류 선택). 로드 실패는 raise,
-        레코드 0건이면 상태를 바꾸지 않고 빈 리스트 반환(위젯이 경고)."""
-        source, records = resolve_file_source(path)
+        레코드 0건이면 상태를 바꾸지 않고 빈 리스트 반환(위젯이 경고).
+        ``sheet`` 는 사용자가 확정한 시트명(T2) — None 이면 기본(첫/유일 시트)."""
+        source, records = resolve_file_source(path, sheet=sheet)
         if not records:
             return []
         self.datasource = source

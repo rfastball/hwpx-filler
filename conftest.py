@@ -54,6 +54,19 @@ def _is_inside(path: Path, parent: Path) -> bool:
     return True
 
 
+@pytest.fixture(autouse=True)
+def _isolated_hwpxfiller_home(tmp_path_factory, monkeypatch):
+    """모든 테스트의 ``HWPXFILLER_HOME`` 을 임시 폴더로 격리한다.
+
+    GUI 편의 지속(ST-11 지오메트리·last_dir)은 ``HWPXFILLER_HOME`` 미설정 시 실사용자
+    INI(``~/.hwpxfiller/ui_settings.ini``)에 쓴다 — 파일 겨눔을 지나는 테스트가 격리를
+    한 줄이라도 빠뜨리면 게이트 실행마다 개발자 실설정이 조용히 변조된다(T3 리뷰에서
+    실측 확인된 오염 클래스). 테스트별 setenv 두더지잡기 대신 여기서 기본 격리를 깔고,
+    개별 테스트의 ``monkeypatch.setenv`` 는 이 기본값을 그대로 덮는다(더 구체적 격리 존중).
+    """
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path_factory.mktemp("hwpxfiller-home")))
+
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_configure(config: pytest.Config) -> None:
     """저장소 안을 가리키는 ``--basetemp`` 를 감시받지 않는 고유 임시 폴더로 돌린다.

@@ -4,12 +4,16 @@
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from hwpxfiller.core.job import Job
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.gui.run_state import RunViewModel
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+
+MULTI_SHEET = Path(__file__).parent / "fixtures" / "multi_sheet.xlsx"
 
 
 class _Src:
@@ -88,6 +92,25 @@ def test_preflight_and_blank_fields(tmp_path):
 def test_preflight_empty_when_no_datasource(tmp_path):
     vm = RunViewModel(_job(tmp_path))          # 데이터 미겨눔
     assert vm.preflight([0]).level == "" and vm.blank_fields([0]) == []
+
+
+# ------------------------------------------------------------ T2 시트 옵션 관통(링1)
+def test_load_data_targets_confirmed_sheet(tmp_path):
+    """sheet= 관통 — 확정 시트의 레코드가 겨눠진다(확정은 링2, 여기는 관통만)."""
+    vm = RunViewModel(_job(tmp_path))
+    recs = vm.load_data(str(MULTI_SHEET), sheet="낙찰현황")
+    assert [r["업체명"] for r in recs] == ["가나상사", "다라물산", "마바테크"]
+    # 대조군: 미지정(기본 첫 시트)은 다른 시트 내용 — 조용한 동치 금지.
+    vm2 = RunViewModel(_job(tmp_path))
+    assert vm2.load_data(str(MULTI_SHEET))[0] == {"공고명": "전산장비", "추정가격": "1000"}
+
+
+def test_resolve_file_source_passes_sheet(tmp_path):
+    """단일 실행·매트릭스 공용 리졸버도 같은 관통 — 한쪽만 고쳐지는 드리프트 방지."""
+    from hwpxfiller.gui.run_state import resolve_file_source
+
+    _source, recs = resolve_file_source(str(MULTI_SHEET), sheet="낙찰현황")
+    assert recs[0]["업체명"] == "가나상사"
 
 
 def test_mapped_records_injects_marker_only_on_empty(tmp_path):

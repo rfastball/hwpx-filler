@@ -32,9 +32,12 @@ from .file_filters import EXCEL_FILTER
 from .style import BASE_QSS, mark
 from .view_helpers import (
     announce_status,
+    ask_sheet_choice,
     build_empty_state,
     hide_item_text,
+    last_dir,
     resync_card_item_heights,
+    save_last_dir,
     show_error,
     wire_refresh_shortcut,
 )
@@ -193,9 +196,19 @@ class DatasetPoolPanel(QWidget):
     # ------------------------------------------------------------- 등록
     def _on_register_excel(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "데이터 파일 선택", "", EXCEL_FILTER
+            self, "데이터 파일 선택", last_dir("data"), EXCEL_FILTER
         )
         if not path:
+            return
+        save_last_dir("data", path)  # 성공 선택만 기억(T3) — 취소는 직전 값 보존
+        # 다중 시트면 등록 전에 시트를 확정받는다(T2) — 취소(None)는 등록 전체 중단
+        # (첫-시트 추측 참조가 조용히 저장되지 않게). 단일 시트·CSV 는 생략("").
+        try:
+            sheet = ask_sheet_choice(self, path)
+        except Exception as exc:  # noqa: BLE001 - 시트 열거 실패(손상 파일)도 시끄럽게
+            show_error(self, "등록 실패", exc)
+            return
+        if sheet is None:
             return
         from pathlib import Path
 
@@ -209,7 +222,7 @@ class DatasetPoolPanel(QWidget):
         if not self._confirm_pool_overwrite(name):
             return
         try:
-            self.vm.register_excel(name, path)
+            self.vm.register_excel(name, path, sheet=sheet or None)
         except Exception as exc:  # noqa: BLE001
             show_error(self, "등록 실패", exc)  # 유형별 문구 + 원문 접기(ST-20)
             return

@@ -36,6 +36,23 @@ def test_register_excel_stores_path_reference(tmp_path):
     assert vm.count_label() == "1건"
 
 
+def test_register_excel_embeds_sheet_and_restore_targets_it(tmp_path):
+    """T2 — 확정 시트가 풀 항목 opts 에 임베딩되고, 복원이 그 시트 레코드를 준다."""
+    from pathlib import Path
+
+    from hwpxfiller.data.factory import source_from_pool_item
+
+    fixture = Path(__file__).parent / "fixtures" / "multi_sheet.xlsx"
+    vm = _vm(tmp_path)
+    item = vm.register_excel("다중시트", str(fixture), sheet="낙찰현황")
+    assert item.opts["sheet"] == "낙찰현황"
+    # 복원 경로(source_from_pool_item)는 무수정 통과 — opts 그대로 관통해
+    # 지정 시트 레코드가 온다(실행 시점 재읽기=싱크).
+    src = source_from_pool_item(item)
+    assert src.records()[0]["업체명"] == "가나상사"
+    assert len(src.records()) == 3
+
+
 def test_register_nara_stores_query_only_no_key(tmp_path):
     vm = _vm(tmp_path)
     item = vm.register_nara("공고쿼리", "202606010000", "202606302359", num_rows=100)
