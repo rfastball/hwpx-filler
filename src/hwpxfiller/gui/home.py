@@ -107,7 +107,7 @@ class JobCard(QWidget):
         mark(lbl_run, "muted", True)
         foot.addWidget(lbl_run)
         foot.addStretch(1)
-        btn_run = QPushButton("실행")
+        btn_run = QPushButton("이 작업 실행")
         # 실행 진입 판정을 badge_level 단일 술어에 연결(UD-03): danger(부재·손상·오류)는
         # 비활성 — 더블클릭 경로도 같은 게이트(JobRow.is_runnable)를 공유한다. 카드 안 주
         # 액션 강조는 '실행 준비'(ok)에만 준다 — RAW/PARTIAL 은 활성이되 최소 강등해 '지금
@@ -387,7 +387,7 @@ class JobListHome(QWidget):
         self.btn_new = QPushButton("＋ 새 문서 작업(&N)")  # Alt+N(ST-12)
         mark(self.btn_new, "primary", True)
         self.btn_new.clicked.connect(self.new_job_requested)
-        self.btn_matrix = QPushButton("여러 작업 일괄 실행")
+        self.btn_matrix = QPushButton("같은 데이터로 여러 작업 실행")
         self.btn_matrix.clicked.connect(self.matrix_run_requested)
         lbl_hwpx_hint = QLabel("누름틀 템플릿 + 매핑 → .hwpx 생성")
         mark(lbl_hwpx_hint, "muted", True)  # 부연 라벨 위계 통일(UD-36) — 화면 전체 muted

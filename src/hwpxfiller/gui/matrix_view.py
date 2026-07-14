@@ -53,7 +53,7 @@ from .worker import MatrixGenerateWorker
 
 
 class MatrixRunView(QWidget):
-    """여러 작업 일괄 실행 — 작업 다중선택 × 공유 데이터 → 작업별 하위폴더 생성.
+    """같은 데이터로 여러 작업 실행 — 작업 다중선택 × 공유 데이터 → 작업별 하위폴더.
 
     셸 페이지(ST-01, SHELL_DESIGN §2) — 창 크롬(지오메트리·closeEvent)은 셸이 소유,
     이탈 가드는 :meth:`can_leave` 가 담당(D8). 독립 생성(테스트)도 계속 동작한다.
@@ -73,19 +73,22 @@ class MatrixRunView(QWidget):
         self._out_dir = ""  # 이번 생성이 겨눈 저장 폴더(시작 시점 캡처 — 완료 모달용)
         self._marked_missing: "list[tuple[str, str]]" = []  # 이번 생성 표식 필드(UD-04)
 
-        self.setWindowTitle("HWPX Filler — 여러 작업 일괄 실행")
+        self.setWindowTitle("HWPX Filler — 같은 데이터로 여러 작업 실행")
         self.setStyleSheet(BASE_QSS)
         central = QWidget()
         root = QVBoxLayout(central)
 
-        lbl_head = QLabel("선택한 작업들을 한 데이터에 일괄 적용해 생성합니다 "
-                          "(작업마다 하위폴더에 저장).")
-        mark(lbl_head, "heading", True)
-        lbl_head.setWordWrap(True)
-        root.addWidget(lbl_head)
+        self.lbl_head = QLabel(
+            "선택한 작업 여러 개에 같은 데이터를 적용합니다. 작업마다 선택한 행 수만큼 "
+            "문서가 생성되고, 작업별 하위 폴더에 저장됩니다."
+        )
+        mark(self.lbl_head, "heading", True)
+        self.lbl_head.setWordWrap(True)
+        root.addWidget(self.lbl_head)
 
         # ---- 작업 다중선택 ----
-        job_box = QGroupBox("작업 선택 (여러 개)")
+        job_box = QGroupBox("1. 적용할 작업 (여러 개)")
+        self.job_box = job_box
         jb = QVBoxLayout(job_box)
         sel_row = QHBoxLayout()
         self.lbl_sel = QLabel("선택 0개")
@@ -114,14 +117,15 @@ class MatrixRunView(QWidget):
         self.job_stack.addWidget(self.job_list)                        # 0 = 목록
         self.job_stack.addWidget(build_empty_state(
             "저장된 작업이 없습니다",
-            "일괄 실행할 작업이 없습니다 — 홈에서 '＋ 새 문서 작업'으로 작업을 먼저 만드세요.",
+            "적용할 작업이 없습니다 — 홈에서 '＋ 새 문서 작업'으로 작업을 먼저 만드세요.",
         ))                                                             # 1 = 빈 상태
         jb.addWidget(self.job_stack)
         root.addWidget(job_box)
         self._populate_jobs()
 
         # ---- 데이터 ---- (UD-41: 동급 섹션 카드 프레이밍 통일 — 섹션명은 박스 제목으로)
-        data_box = QGroupBox("데이터")
+        data_box = QGroupBox("2. 함께 적용할 데이터 (공통 1개)")
+        self.data_box = data_box
         drow = QHBoxLayout(data_box)
         self.ed_data = QLineEdit()
         self.ed_data.setReadOnly(True)
@@ -140,10 +144,11 @@ class MatrixRunView(QWidget):
         # ---- 미입력 필드 확인(작업별 3상태 배지 + 강제 확인 게이트, UD-04·ADR-B/E) ----
         # 단일 실행의 하드스톱이 매트릭스 우회로 조용히 소멸하던 결함의 봉합 — 작업별
         # 필드 스냅샷을 배지로 노출하고, 미확인 미입력이 있으면 일괄 생성을 막는다.
-        gate_box = QGroupBox("미입력 필드 확인")
+        gate_box = QGroupBox("3. 작업별 미입력 필드 확인")
         gbl = QVBoxLayout(gate_box)
         lbl_gate_help = QLabel(
-            "작업별 필드 상태를 확인하세요. 미입력 필드는 직접 확인해야 일괄 생성이 가능합니다."
+            "선택한 각 작업의 필드 상태를 확인하세요. 미입력 필드는 직접 확인해야 "
+            "여러 작업 문서를 생성할 수 있습니다."
         )
         lbl_gate_help.setWordWrap(True)
         mark(lbl_gate_help, "muted", True)
@@ -156,8 +161,9 @@ class MatrixRunView(QWidget):
         gbl.addWidget(self.lbl_gate)
         root.addWidget(gate_box)
 
-        # ---- 생성 대상 레코드 ---- (UD-41: 동급 섹션 카드 프레이밍 통일)
-        rec_box = QGroupBox("생성 대상 레코드")
+        # ---- 공통 데이터 행 ---- (모든 선택 작업에 똑같이 적용되는 범위를 명시)
+        rec_box = QGroupBox("4. 공통 데이터에서 사용할 행")
+        self.rec_box = rec_box
         rec_l = QVBoxLayout(rec_box)
         self.selector = RecordSelector()
         self.selector.selectionChanged.connect(self._refresh_field_panel)
@@ -168,7 +174,7 @@ class MatrixRunView(QWidget):
         root.addWidget(rec_box)
 
         # ---- 저장 폴더 ---- (UD-41: 동급 섹션 카드 프레이밍 통일)
-        out_box = QGroupBox("저장 폴더")
+        out_box = QGroupBox("5. 저장 폴더")
         orow = QGridLayout(out_box)
         self.ed_out = QLineEdit()
         btn_out = QPushButton("찾아보기…")
@@ -190,7 +196,7 @@ class MatrixRunView(QWidget):
         outer_l.addWidget(scroll, 1)
 
         actions = QHBoxLayout()
-        self.btn_generate = QPushButton("일괄 생성")
+        self.btn_generate = QPushButton("여러 작업 문서 생성")
         mark(self.btn_generate, "primary", True)
         self.btn_generate.clicked.connect(self._on_generate)
         wire_submit_shortcut(self, self.btn_generate)  # Ctrl+Return → 일괄 생성(ST-12)
@@ -260,7 +266,7 @@ class MatrixRunView(QWidget):
         if self._running:
             if not confirm_destructive(
                 self, "생성 중단",
-                "일괄 생성이 진행 중입니다 — 이 화면을 떠나면 남은 생성을 중단합니다.",
+                "여러 작업 문서 생성이 진행 중입니다 — 이 화면을 떠나면 남은 생성을 중단합니다.",
                 "중단하고 나가기",
             ):
                 return False
@@ -498,7 +504,10 @@ class MatrixRunView(QWidget):
             self._say(f"덮어쓰기 확정: 기존 파일 {len(conflicts)}개")
         jobs = self.vm.selected_jobs()
         self._out_dir = out_dir  # 완료 모달이 소비(시작 시점 캡처 — 실행 중 편집 무관)
-        self._say(f"일괄 생성 시작: 작업 {len(jobs)}개 × 레코드 {len(indices)}건 → {out_dir}")
+        self._say(
+            f"여러 작업 생성 시작: 작업 {len(jobs)}개 × 공통 데이터 {len(indices)}건 "
+            f"→ {out_dir}"
+        )
 
         worker = MatrixGenerateWorker(
             jobs, self.vm.datasource, indices, out_dir, overwrite=overwrite, now=now

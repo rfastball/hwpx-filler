@@ -34,7 +34,7 @@
 |---|---|---|---|
 | `home.JobListHome` (QMainWindow) | **페이지** (QWidget) | `home` "대시보드" | 시그널 12개·refresh·카드 렌더 불변 |
 | `txt_view.TxtDraftView` | 페이지 | `txt` "즉시 기안" | `select_template` API 불변 |
-| `matrix_view.MatrixRunView` | 페이지 | `matrix` "여러 작업 일괄 실행" | `can_leave()` = 실행 중 ST-21 확인 |
+| `matrix_view.MatrixRunView` | 페이지 | `matrix` "같은 데이터로 여러 작업 실행" | `can_leave()` = 실행 중 ST-21 확인 |
 | `template_manager.TemplateManagerPanel` | 페이지 | `template` "템플릿 관리" | |
 | `dataset_pool_panel.DatasetPoolPanel` | 페이지 | `pool` "데이터 풀" | |
 | `vocab_workbench.VocabWorkbenchPanel` | 페이지 | `vocab` "어휘 워크벤치" | |

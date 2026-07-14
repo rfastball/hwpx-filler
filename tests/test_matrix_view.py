@@ -85,7 +85,7 @@ def test_matrix_view_pool_pick_loads_records(qapp, tmp_path, monkeypatch):
     view._pick_from_pool()
     _wait_pool_load(view)  # 복원은 QThread(RC-12) — 단일 실행과 같은 비동기 공용 경로
     assert len(view.vm.records) == 1
-    assert view.ed_data.text().startswith("풀: 6월")
+    assert view.ed_data.text().startswith("등록 데이터: 6월")
     assert view.btn_pool.isEnabled()  # 복원 후 데이터 버튼 잠금 해제
 
 
@@ -96,7 +96,7 @@ def test_matrix_view_pool_empty_informs(qapp, tmp_path, monkeypatch):
     seen = {}
     monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: seen.setdefault("m", a[2]))
     view._pick_from_pool()
-    assert "활성 데이터가 없습니다" in seen.get("m", "")
+    assert "사용 가능한 등록 데이터가 없습니다" in seen.get("m", "")
 
 
 def test_matrix_view_generate_gate_and_worker(qapp, tmp_path, monkeypatch):
