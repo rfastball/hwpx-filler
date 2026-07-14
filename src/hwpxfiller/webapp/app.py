@@ -1,0 +1,167 @@
+"""pywebview 창 + 브리지 + 엔트리 — 웹 프론트엔드의 링2.
+
+    python -m hwpxfiller.webapp        # 개발 구동(창)
+    hwpx-filler-web                    # 설치 후 gui-script
+
+브리지(:class:`WebFrontend`)는 스파이크 ``app.py`` 의 ``Api`` 를 **다화면용으로 승격**한 것:
+화면 id → 컨트롤러(:mod:`~hwpxfiller.webapp.screens`) 라우팅을 얇게 얹는다. 웹→Python 은
+``js_api``(``initial``·``dispatch``·네이티브 동작), Python→웹은 관측 푸시(``window.__push``).
+
+소이슈 흡수(SPIKE_FINDINGS.md 끝):
+- ① 정식 종료: 스파이크의 ``os._exit`` 강제 종료를 **버린다**. 정상 닫기는 사용자가 창 X →
+  ``webview.start()`` 가 반환 → 프로세스 클린 종료(매달림 없음). 프리즈 자가검증도
+  ``window.destroy()`` 정식 API 로 닫는다.
+- ② WebView2 backend 핀: Windows 에서 ``gui="edgechromium"`` 명시 → WinForms 접근성 재귀
+  크래시(외부 UIA 주입에서만 관측)의 backend 고정 항. 버전은 pyproject gui extra 에서 핀.
+- ③ 배포 형태(onedir)는 packaging/hwpx_filler_web.spec 에서 결정.
+"""
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+from ..core.text_registry import TextTemplateRegistry, default_text_templates_dir
+from ..gui.file_filters import EXCEL_FILTER_PATTERN  # 확장자 단일 출처(RC-34) — Qt-free 상수
+from ._debug import log
+from .clipboard import set_clipboard_text
+from .dialogs import open_file_dialog, save_file_dialog
+from .screens import TxtController
+
+
+WINDOW_TITLE = "HWPX Filler"  # 창 제목 = 파일 다이얼로그 소유주 창을 FindWindowW 로 찾는 키
+
+
+# ------------------------------------------------------------------ 경로 해석
+def _repo_root() -> Path:
+    # app.py = <repo>/src/hwpxfiller/webapp/app.py → parents[3] = <repo>
+    return Path(__file__).resolve().parents[3]
+
+
+def web_dir() -> Path:
+    """정적 자산 루트 — 동결 시 ``sys._MEIPASS/web``, 개발 시 ``<repo>/web``."""
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS) / "web"  # type: ignore[attr-defined]
+    return _repo_root() / "web"
+
+
+# ------------------------------------------------------------------ 브리지
+class WebFrontend:
+    """웹→Python js_api + 화면 라우팅. 컨트롤러를 소유하고 창(네이티브 자원)을 쥔다."""
+
+    def __init__(self, text_templates_dir: "str | Path") -> None:
+        self.window: "object | None" = None  # webview.Window (지연 배선)
+        registry = TextTemplateRegistry(text_templates_dir)
+        # 화면 등록 — 새 화면 = 컨트롤러 1개 추가(순수 데이터는 dispatch, 네이티브는 아래 메서드).
+        controllers = [TxtController(registry, self._push)]
+        self.controllers = {c.name: c for c in controllers}
+
+    def _controller(self, screen: str) -> TxtController:
+        try:
+            return self.controllers[screen]
+        except KeyError:  # confirm-or-alarm: 미등록 화면은 시끄럽게.
+            raise ValueError(f"등록되지 않은 화면: {screen!r}") from None
+
+    # -------------------------------------------------- 관측 푸시(Python→웹)
+    def _push(self, screen: str, snapshot: dict) -> None:
+        if self.window is None:
+            return
+        payload = json.dumps(snapshot, ensure_ascii=False)
+        self.window.evaluate_js(f"window.__push({json.dumps(screen)}, {payload})")  # type: ignore[attr-defined]
+
+    # -------------------------------------------------- 웹→Python (js_api)
+    def initial(self, screen: str) -> dict:
+        """화면 부팅 시 웹이 1회 당겨 가는 초기 상태."""
+        return self._controller(screen).initial()
+
+    def dispatch(self, screen: str, action: str, payload: "dict | None" = None) -> None:
+        """순수 데이터 액션(창 불필요) 라우팅."""
+        self._controller(screen).dispatch(action, payload or {})
+
+    def pick_data_file(self, screen: str) -> "str | None":
+        """Win32 파일 다이얼로그 → 링1 VM 로드. 실패는 ``ERROR:`` 접두로 시끄럽게 반환."""
+        log(f"pick_data_file: enter screen={screen}")
+        filters = [("엑셀/CSV 데이터", EXCEL_FILTER_PATTERN), ("모든 파일", "*.*")]
+        path = open_file_dialog(filters, owner_title=WINDOW_TITLE)
+        log(f"pick_data_file: dialog returned {path!r}")
+        if not path:
+            return None
+        try:
+            self._controller(screen).load_data_path(path)
+        except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
+            return f"ERROR: {exc}"
+        return Path(path).name
+
+    def copy_clipboard(self, screen: str) -> dict:
+        """현재 렌더 텍스트를 OS 클립보드로(완료=commit). 리포트를 돌려줘 웹이 재진술."""
+        text, report = self._controller(screen).render()
+        set_clipboard_text(text)
+        return {"missing_fields": report.missing_fields, "empty_fields": report.empty_fields}
+
+    def save_file(self, screen: str) -> "dict | None":
+        """Win32 저장 다이얼로그 → 원자 쓰기(덮어쓰기 확인 포함)."""
+        from hwpxcore.atomic import write_text_atomic
+
+        path = save_file_dialog(
+            "기안.txt", [("텍스트", "*.txt"), ("모든 파일", "*.*")],
+            default_ext="txt", owner_title=WINDOW_TITLE,
+        )
+        if not path:
+            return None
+        text, report = self._controller(screen).render()
+        write_text_atomic(path, text)
+        return {
+            "path": Path(path).name,
+            "missing_fields": report.missing_fields,
+            "empty_fields": report.empty_fields,
+        }
+
+
+# ------------------------------------------------------------------ 자가검증(Q3)
+def _selftest_drive(window: "object") -> None:
+    """동결 exe 부팅 자가검증 — 창이 뜨고 렌더/브리지가 도는지 되읽어 파일로 확정 후 정식 종료.
+
+    소이슈 ①: ``os._exit`` 대신 ``window.destroy()`` 로 이벤트 루프를 정식 종료한다.
+    """
+    import time
+
+    time.sleep(4.5)
+    result: dict = {}
+    try:
+        result["url"] = window.get_current_url()  # type: ignore[attr-defined]
+        result["title_dom"] = window.evaluate_js("document.title")  # type: ignore[attr-defined]
+        result["nav_count"] = window.evaluate_js("document.querySelectorAll('.navbtn').length")  # type: ignore[attr-defined]
+        result["tpl_options"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "Array.from(document.querySelectorAll('#tplSel option')).map(o=>o.value)")
+    except Exception as exc:  # noqa: BLE001
+        result["error"] = repr(exc)
+    out = Path(sys.executable).resolve().parent / "selftest_result.json"
+    out.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    window.destroy()  # type: ignore[attr-defined]  # 정식 종료(os._exit 대체)
+
+
+# ------------------------------------------------------------------ 엔트리
+def main() -> int:
+    import webview
+
+    frontend = WebFrontend(default_text_templates_dir())
+    window = webview.create_window(
+        WINDOW_TITLE,
+        str(web_dir() / "index.html"),
+        js_api=frontend,
+        width=1180,
+        height=820,
+        min_size=(760, 600),
+    )
+    frontend.window = window
+    # 소이슈 ②: Windows 는 EdgeChromium(WebView2) 백엔드 명시 핀.
+    gui = "edgechromium" if sys.platform == "win32" else None
+    if "--selftest" in sys.argv:
+        webview.start(_selftest_drive, window, gui=gui)
+    else:
+        webview.start(gui=gui)  # 정상 닫기 = 여기서 반환 → 클린 종료(소이슈 ①)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

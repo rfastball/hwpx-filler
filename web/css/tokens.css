@@ -1,0 +1,39 @@
+/* 생성 파일 — scripts/gen_design_tokens.py 가 src/hwpxfiller/gui/design_tokens.json 에서 찍는다.
+   직접 편집 금지. 색을 바꾸려면 JSON 을 고치고 `python scripts/gen_design_tokens.py` 실행. */
+:root{
+  /* <gen:tokens> */
+  --a-primary:#2874a6;
+  --a-primary-h:#1f5a80;
+  --a-warn:#a05a00;
+  --a-danger:#c0392b;
+  --a-ok:#1e8449;
+  --a-muted:#656a72;
+  --a-border:#e2e4e8;
+  --a-card:#ffffff;
+  --a-window:#f6f7f9;
+  --a-ink:#1c2126;
+  --a-unconf:#fff3bf;
+  --a-unmatch:#ffd8d8;
+  --a-empty:#b00020;
+  --a-sel:#dce9f5;
+  --fb-fill-bg:#e5f2ea;
+  --fb-fill-bd:#bfe0cb;
+  --fb-blank-bg:#f6ecdb;
+  --fb-blank-bd:#e6c98f;
+  --fb-missing-bg:#fbe6e3;
+  --fb-missing-bd:#e6a49c;
+  --fb-ack-bg:#ecebf4;
+  --fb-ack-fg:#4a3f8a;
+  --fb-ack-bd:#c8c3e6;
+  --n-surface-alt:#f3f4f6;
+  --n-hover:#f0f2f5;
+  --n-pressed:#e6e9ee;
+  --n-track:#eef0f3;
+  --n-header-bg:#eef1f4;
+  --n-border-strong:#cbd0d6;
+  --n-border-control:#767b83;
+  --n-ink-soft:#5c626b;
+  --n-header-ink:#4a505a;
+  --n-ink-control:#2b3038;
+  /* </gen:tokens> */
+}
