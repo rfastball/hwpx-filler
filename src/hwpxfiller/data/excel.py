@@ -12,6 +12,27 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 
+def sheet_overview(path: "str | Path") -> "list[tuple[str, int, int]]":
+    """통합문서의 시트를 열거해 ``(시트명, 행수, 열수)`` 목록으로 준다.
+
+    xlsx/xlsm 은 openpyxl read_only 메타(max_row/max_column — 저장 시점 dimension
+    기반 **근사치**)로 전 시트를 통합문서 순서 그대로 열거한다. CSV 는 시트 개념이
+    없으므로 **빈 목록** — 소비자(시트 선택 다이얼로그)의 생략 판정 단일 출처다
+    (빈 목록 = 물을 것이 없음, 길이 1 = 유일 시트라 물을 필요 없음).
+    """
+    ext = Path(path).suffix.lower()
+    if ext == ".csv":
+        return []
+    wb = load_workbook(str(path), read_only=True)
+    try:
+        return [
+            (name, wb[name].max_row or 0, wb[name].max_column or 0)
+            for name in wb.sheetnames
+        ]
+    finally:
+        wb.close()
+
+
 class ExcelDataSource:
     def __init__(self, path: str, sheet: "str | None" = None, header_row: int = 1):
         self.path = path

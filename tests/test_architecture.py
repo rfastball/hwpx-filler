@@ -40,6 +40,37 @@ def test_hwpxdiff_core_module_is_qt_free() -> None:
             )
 
 
+def test_filler_data_package_imports_no_core_or_qt() -> None:
+    """data/ 는 헤드리스 어댑터 계층 — hwpxfiller.core·PySide6 역의존 금지.
+
+    풀 항목 복원(source_from_pool_item)이 덕타입(.kind/.opts)만 읽는 이유가 이
+    불변식이다. 시트 열거 헬퍼(sheet_overview) 등 신규 코드가 코어·Qt 를 끌어오면
+    여기서 시끄럽게 알린다.
+    """
+    forbidden = {"PySide6", "shiboken6"}
+    for path in (ROOT / "src" / "hwpxfiller" / "data").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            names: list[str] = []
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                names = [node.module]
+                # 상대 임포트(from ..core import …)도 core 역의존이다.
+                if node.level >= 2:
+                    assert node.module.split(".", 1)[0] != "core", (
+                        f"data/{path.name} 가 상대 경로로 core 를 임포트한다 — 역의존 금지"
+                    )
+            for n in names:
+                root = n.split(".", 1)[0]
+                assert root not in forbidden, (
+                    f"data/{path.name} 에 Qt 임포트가 들어왔다 — 헤드리스 계층을 지켜라"
+                )
+                assert not n.startswith("hwpxfiller.core"), (
+                    f"data/{path.name} 가 hwpxfiller.core 를 임포트한다 — 역의존 금지"
+                )
+
+
 def test_core_mapping_carries_no_source_specific_vocabulary() -> None:
     """범용 코어(core/mapping.py)는 특정 API 어휘를 품지 않는다(V1 소스 어휘 소유권).
 
