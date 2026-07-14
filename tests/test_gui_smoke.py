@@ -341,6 +341,108 @@ def test_home_flat_lens_distinguished_from_unset(qapp, tmp_path, monkeypatch):
     assert _header_widgets(home2) == []            # flat → 헤더 없음
 
 
+def test_home_filtered_empty_switches_to_distinct_state(qapp, tmp_path, monkeypatch):
+    """facet 이 모든 작업을 가리면 백지가 아니라 '필터-빈' 상태(index 2)로 전환 + 칩바 유지(RC).
+
+    코퍼스 자체가 빈 index 1 과 구별된다 — 원인(필터)과 해소 동선(칩바·필터 해제 CTA)을
+    시끄럽게 고지한다(조용한 빈 패널 금지)."""
+    home = _tagged_home(tmp_path, monkeypatch)
+    # 실재하지 않는 낙찰방법 값으로 필터 → 전 작업이 걸러진다(고아 활성 facet).
+    home.vm.set_facets({"낙찰방법": {"존재하지않음"}})
+    assert _card_names(home) == []                 # 렌더된 카드 0
+    assert not home.vm.is_empty()                  # 코퍼스 자체는 비어 있지 않다
+    assert home.stack.currentIndex() == 2          # 필터-빈(코퍼스 빔 index 1 과 구별)
+    assert not home.facet_bar.isHidden()           # 칩바는 스택 위에 남아 해소 동선 제공
+    home.btn_filtered_clear.click()                # '필터 해제' CTA → 원복
+    assert home.stack.currentIndex() == 0
+    assert set(_card_names(home)) == {"적격-소액", "적격-고시", "협상-소액"}
+
+
+def test_home_header_shown_when_single_section_with_active_facet(qapp, tmp_path, monkeypatch):
+    """활성 facet 이 단일 그룹으로 좁혀도 헤더('· N건')는 남는다 — GroupSection 계약(RC).
+
+    헤더 억제는 섹션 ≤1 '이고' 활성 facet 도 없을 때만. 좁혀진 지금 무엇을 보는지 헤더가
+    말해야 한다."""
+    home = _tagged_home(tmp_path, monkeypatch)
+    home._toggle_facet("낙찰방법", "협상")        # 협상-소액만 → 금액구간 단일 섹션
+    assert set(_card_names(home)) == {"협상-소액"}
+    assert len(_header_widgets(home)) == 1         # 단일 섹션이라도 활성 facet → 헤더 노출
+
+
+def test_home_collapse_clears_phantom_selection(qapp, tmp_path, monkeypatch):
+    """접힘으로 사라진 선택은 유령 하이라이트를 남기지 않는다(RC — 보이는 선택 불변식)."""
+    from PySide6.QtCore import Qt
+
+    home = _tagged_home(tmp_path, monkeypatch)
+    it = home.list.findItems("적격-소액", Qt.MatchExactly)[0]
+    home.list.setCurrentItem(it)
+    assert home.list.currentItem() is it
+    home._toggle_section("1억미만")               # 적격-소액이 속한 섹션 접기
+    cur = home.list.currentItem()
+    assert cur is None or not cur.isHidden()       # 숨겨진 행을 가리키는 선택 없음
+
+
+def test_home_collapse_is_in_place_no_item_drop(qapp, tmp_path, monkeypatch):
+    """접기/펴기는 인-플레이스 — 아이템을 버리지 않고 숨김·화살표만 뒤집는다(RC)."""
+    from PySide6.QtCore import Qt
+
+    from hwpxfiller.gui.home import _SectionHeader
+
+    home = _tagged_home(tmp_path, monkeypatch)
+    before = home.list.count()
+    hdr = next(h for h in _header_widgets(home) if h._value == "1억미만")
+    home._toggle_section("1억미만")               # 접기
+    assert home.list.count() == before             # clear/재빌드 아님 — 아이템 유지
+    it = home.list.findItems("적격-소액", Qt.MatchExactly)[0]
+    assert it.isHidden()                           # 멤버 숨김(계약 아이템은 살아 있음)
+    assert isinstance(hdr, _SectionHeader) and "▸" in hdr.btn.text()  # 접힘 화살표
+    home._toggle_section("1억미만")               # 펴기
+    assert not home.list.findItems("적격-소액", Qt.MatchExactly)[0].isHidden()
+    assert "▾" in hdr.btn.text()                   # 펼침 화살표 복귀
+
+
+def test_home_sentinel_value_collapse_independent_of_untagged(qapp, tmp_path, monkeypatch):
+    """'(값 없음)' 을 실제 값으로 태깅한 섹션과 미태깅 섹션이 접기에서 독립적이다(불변식 #11 회귀).
+
+    표시 라벨이 같아도 정체성 키가 달라, 명명 섹션 헤더를 접으면 그 자기 멤버만 숨고 동명
+    미태깅 섹션은 침범당하지 않으며 화살표도 뒤섞이지 않는다(정체성 분리)."""
+    from hwpxfiller.core.job import Job, JobRegistry
+    from hwpxfiller.gui.home import JobListHome
+    from hwpxfiller.gui.home_state import NO_VALUE_LABEL
+
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="실값작업", template_path="", tags={"금액구간": NO_VALUE_LABEL}))
+    reg.save(Job(name="소액작업", template_path="", tags={"금액구간": "1억미만"}))
+    reg.save(Job(name="미태깅작업", template_path="", tags={}))
+    home = JobListHome(reg)
+    assert home.vm.effective_group_by() == "금액구간"
+    # "(값 없음)" 라벨 헤더가 둘 — 리스트 순서상 [0]=명명(실값), [1]=미태깅(무태그 뒤 1급).
+    labeled = [h for h in _header_widgets(home) if h._value == NO_VALUE_LABEL]
+    assert len(labeled) == 2
+    named_hdr, untagged_hdr = labeled[0], labeled[1]
+    named_hdr.btn.click()                          # 명명 '(값 없음)' 섹션 접기(실제 사용자 경로)
+    visible = _card_names(home)
+    assert "실값작업" not in visible               # 명명 섹션 자기 멤버가 숨는다
+    assert "미태깅작업" in visible                 # 동명 미태깅 섹션은 침범당하지 않음
+    assert "▸" in named_hdr.btn.text()             # 명명 헤더만 접힘
+    assert "▾" in untagged_hdr.btn.text()          # 미태깅 헤더는 펼침 유지(화살표 비뒤섞임)
+
+
+def test_home_groupby_menu_check_state_survives_reselect(qapp, tmp_path, monkeypatch):
+    """활성 축 재선택 후에도 group-by 메뉴 체크가 유지된다 — aboutToShow 재구성(RC).
+
+    set_group_by 조기반환으로 재렌더가 안 나도, 메뉴가 열릴 때마다 체크를 새로 그려
+    '체크 없음' 거짓말을 막는다."""
+    home = _tagged_home(tmp_path, monkeypatch)
+    assert home.vm.effective_group_by() == "금액구간"
+    home._set_group_by("금액구간")               # 이미 활성인 축 재선택 → 조기반환(무재렌더)
+    home._groupby_menu.aboutToShow.emit()          # 메뉴 개시 → 체크 재구성
+    checked = [a.text() for a in home._groupby_menu.actions() if a.isChecked()]
+    assert checked == ["금액구간"]                # 활성 축 체크가 사라지지 않음
+    assert "금액구간" in home.btn_groupby.text()  # 버튼 라벨도 활성 축 유지
+
+
 def _saved_job(tmp_path):
     """편집 프리로드 테스트용 저장 작업 — 매핑 2행(공고명·추정가격) 확정본."""
     from hwpxfiller.core.job import Job, JobRegistry

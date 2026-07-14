@@ -55,6 +55,13 @@ _GROUP_NONE_LABEL = "그룹 없음"
 # 게이트가 이 아이템을 카드로 오인하지 않게 한다.
 _ROLE_SECTION = "section-header"
 
+# 미태깅 섹션의 정체성 토큰 — 접기 상태(_collapsed)·인-플레이스 접기 매핑의 키다. 표시
+# 라벨(NO_VALUE_LABEL "(값 없음)")을 그대로 키로 재사용하면, 사용자가 그 문자열을 실제 태그
+# 값으로 입력했을 때 명명 섹션과 정체성이 충돌해 마지막 기록이 상대를 덮고(접기가 엉뚱한
+# 섹션을 건드림) D12(미태깅 1급)·D8(인-플레이스 접기) 불변식이 깨진다. 표시 문자열과 분리된
+# 유일 토큰으로 키잉해 '(값 없음)' 이 유기적 카테고리로도 왕복하게 둔다(정체성 분리).
+_UNTAGGED_SECTION_KEY = object()
+
 # 카드 제목의 말줄임 상한(UD-30) — 긴 작업명·파일명이 상태 배지를 밀어내지 않도록
 # sizeHint 폭을 눌러 pill 을 온전히 남긴다. 잘리면 전체 이름은 툴팁으로 노출된다.
 _CARD_TITLE_MAX = 340
@@ -128,19 +135,32 @@ _JobCard = JobCard
 class _SectionHeader(QWidget):
     """group-by 섹션 헤더 — 비선택 리스트 아이템에 얹는 클릭형 접기 컨트롤(JOB_BROWSER_DESIGN D8).
 
-    '▾/▸ 구간라벨 · N건' 전폭 버튼. 클릭하면 ``on_toggle(value)`` 로 접기 상태를 뒤집는다.
-    카드 스펙(JobCard)은 건드리지 않는다 — 접두어 노이즈를 이 헤더 한 줄이 흡수한다.
+    '▾/▸ 구간라벨 · N건' 전폭 버튼. 클릭하면 ``on_toggle(key)`` 로 접기 상태를 뒤집는다 —
+    ``key`` 는 표시 ``value`` 와 별개인 섹션 정체성(미태깅은 :data:`_UNTAGGED_SECTION_KEY`)이라
+    '(값 없음)' 라벨이 실제 태그 값과 겹쳐도 접기가 엉뚱한 섹션을 건드리지 않는다. ``key``
+    미지정 시 ``value`` 로 폴백(하위호환). 카드 스펙(JobCard)은 건드리지 않는다.
     """
 
-    def __init__(self, value: str, count: int, collapsed: bool, on_toggle, parent=None):
+    def __init__(self, value: str, count: int, collapsed: bool, on_toggle,
+                 parent=None, *, key=None):
         super().__init__(parent)
+        self._value = value
+        self._count = count
+        skey = value if key is None else key
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
+        self.btn = QPushButton(self._label(collapsed))
+        mark(self.btn, "section", "header")
+        self.btn.clicked.connect(lambda: on_toggle(skey))
+        root.addWidget(self.btn)
+
+    def _label(self, collapsed: bool) -> str:
         arrow = "▸" if collapsed else "▾"
-        btn = QPushButton(f"{arrow}  {value} · {count}건")
-        mark(btn, "section", "header")
-        btn.clicked.connect(lambda: on_toggle(value))
-        root.addWidget(btn)
+        return f"{arrow}  {self._value} · {self._count}건"
+
+    def set_collapsed(self, collapsed: bool) -> None:
+        """접힘 화살표만 갱신한다(전체 재렌더 없이 인-플레이스 토글 — 카드 재파싱 없음)."""
+        self.btn.setText(self._label(collapsed))
 
 
 class _FacetChip(QPushButton):
@@ -339,6 +359,9 @@ class JobListHome(QWidget):
         self.btn_groupby.setToolTip("작업을 어느 분류 축으로 묶을지 고릅니다(그룹 없음=평면 목록).")
         self._groupby_menu = QMenu(self.btn_groupby)
         self.btn_groupby.setMenu(self._groupby_menu)
+        # 메뉴가 열릴 때마다 체크 상태를 새로 그린다(RC — 활성 축 재클릭이 set_group_by
+        # 조기반환으로 재렌더를 안 태워 체크가 사라지던 거짓말 방지). 재구성은 멱등하다.
+        self._groupby_menu.aboutToShow.connect(self._render_groupby_button)
         hhead.addWidget(lbl_hwpx_hint)
         hhead.addWidget(self.btn_groupby)
         hhead.addStretch(1)
@@ -357,7 +380,19 @@ class JobListHome(QWidget):
         # 과거는 손상 카드(비작업)를 조용한 크래시로, 실행 불가 카드를 무게이트 우회로 보냈다.
         self.list.itemDoubleClicked.connect(self._on_job_double_click)
         self.stack.addWidget(self.list)                    # 0 = 목록
-        self.stack.addWidget(self._build_empty_state())    # 1 = 빈 상태
+        self.stack.addWidget(self._build_empty_state())    # 1 = 빈 상태(코퍼스 자체가 빔)
+        # 2 = 필터-빈 상태 — 코퍼스는 비어 있지 않은데 활성 facet 이 전부 가렸을 때(RC).
+        # 조용한 백지 대신 원인(필터)과 해소 동선을 시끄럽게 고지한다. 칩바는 스택 위에
+        # 남아 있으므로 CTA 는 '필터 해제'(활성 제약 일괄 해제) 하나로 충분하다.
+        filtered_empty = build_empty_state(
+            "필터에 맞는 작업이 없습니다",
+            "지금 켜진 필터가 모든 작업을 가렸습니다. 위 칩바에서 켜진 필터를 끄거나 "
+            "'필터 해제'로 되돌리세요.",
+            cta_text="필터 해제",
+            on_cta=self._clear_facets,
+        )
+        self.btn_filtered_clear = filtered_empty.cta  # 빈 상태 CTA seam(테스트)
+        self.stack.addWidget(filtered_empty)               # 2 = 필터-빈 상태
         hp.addWidget(self.stack, 1)
         tracks.addWidget(hwpx, 3)
 
@@ -396,7 +431,11 @@ class JobListHome(QWidget):
         root.addLayout(tracks, 1)
 
         # 렌즈 복원(D4) — 지속된 group-by/facet 을 VM 에 주입한다. 구독 전이라 통지는 무해.
-        self._collapsed: "set[str]" = set()  # 접힌 섹션의 group 값
+        self._collapsed: "set" = set()  # 접힌 섹션의 정체성 키(값 문자열 또는 미태깅 토큰)
+        # 인-플레이스 접기용 매핑(RC) — group 값 → 멤버 아이템들 / 섹션 헤더 위젯. _render 가
+        # 매 렌더마다 새로 채우고, _toggle_section 이 이걸로 전체 재렌더 없이 숨김/화살표만 뒤집는다.
+        self._section_items: "dict" = {}       # 정체성 키 → 멤버 아이템들
+        self._section_headers: "dict" = {}      # 정체성 키 → 섹션 헤더 위젯
         gb, facets = load_home_lens()
         if gb is not None:  # None=미저장(씨앗 렌즈 유지), ""=사용자가 flat 명시 선택
             self.vm.set_group_by(gb)
@@ -495,24 +534,37 @@ class JobListHome(QWidget):
         self.list.clear()
 
         sections = self.vm.grouped_rows()
-        # 헤더는 구분할 그룹이 2개 이상일 때만 — 유효 그룹 ≤1 이면 헤더가 노이즈다(퇴화-코퍼스
-        # 불변식: 태그 0 → 섹션 1개 → 헤더·칩바 미렌더 → 오늘과 바이트 동일한 평면 리스트).
-        show_headers = len(sections) > 1
+        # 인-플레이스 접기 매핑을 매 렌더 새로 채운다(구 아이템은 clear 로 사라짐).
+        self._section_items = {}
+        self._section_headers = {}
+        # 헤더는 구분할 그룹이 2개 이상이거나 활성 facet 이 있을 때(GroupSection 계약: 섹션 ≤1
+        # 이고 활성 facet 도 없을 때만 억제). group-by 로 단일 그룹만 남아도 활성 facet 이 있으면
+        # '· N건' 헤더가 지금 무엇으로 좁혀졌는지 말해야 한다(퇴화-코퍼스 불변식은 태그 0 경로만).
+        show_headers = len(sections) > 1 or bool(self.vm.active_facets)
+        total_rows = 0  # 실제로 렌더된 카드 행 수(facet 이 전부 가렸는지 판정 — 필터-빈 게이트)
         for sec in sections:
             collapsed = False
+            members: "list" = []
+            # 섹션 정체성 키 — 미태깅은 표시 라벨과 별개인 유일 토큰(정체성 충돌 방지).
+            skey = _UNTAGGED_SECTION_KEY if sec.is_untagged else sec.value
             if show_headers:
-                collapsed = sec.value in self._collapsed
+                collapsed = skey in self._collapsed
                 self.list.addItem("")  # 헤더 아이템 — text 빈 값(findItems 작업명 계약과 무충돌)
                 hitem = self.list.item(self.list.count() - 1)
                 hitem.setData(Qt.UserRole, _ROLE_SECTION)
                 # 손상행 선례(L445)와 같은 비선택 플래그 — 헤더는 실행/선택 대상이 아니다.
                 hitem.setFlags(hitem.flags() & ~Qt.ItemIsSelectable)
-                header = _SectionHeader(sec.value, sec.count, collapsed, self._toggle_section)
+                header = _SectionHeader(
+                    sec.value, sec.count, collapsed, self._toggle_section, key=skey
+                )
                 hitem.setSizeHint(header.sizeHint())
                 self.list.setItemWidget(hitem, header)
+                self._section_headers[skey] = header
             for row in sec.rows:
+                total_rows += 1
                 self.list.addItem(row.name)
                 item = self.list.item(self.list.count() - 1)
+                members.append(item)
                 hide_item_text(item)  # 이름은 아이템 text(계약), 표시는 카드(UD-33 공용 이디엄)
                 if collapsed:
                     item.setHidden(True)  # 접힌 섹션 멤버 숨김(계약 아이템은 살아 있음)
@@ -524,9 +576,11 @@ class JobListHome(QWidget):
                 )
                 item.setSizeHint(card.sizeHint())
                 self.list.setItemWidget(item, card)
+            self._section_items[skey] = members  # 인-플레이스 접기용 멤버 기억(정체성 키)
         # 손상 .job.json 행(RC-05) — 정상 작업 뒤에 '손상됨' 배지 카드로 시끄럽게 노출.
         # 아이템 text 는 파일명(이름을 알 수 없음 — findItems 작업명 계약과 충돌 없음).
-        for crow in self.vm.corrupt_rows():
+        corrupt_rows = self.vm.corrupt_rows()
+        for crow in corrupt_rows:
             self.list.addItem(crow.file_name)
             item = self.list.item(self.list.count() - 1)
             hide_item_text(item)
@@ -540,11 +594,24 @@ class JobListHome(QWidget):
             )
             item.setSizeHint(card.sizeHint())
             self.list.setItemWidget(item, card)
-        self.stack.setCurrentIndex(1 if self.vm.is_empty() else 0)
+        # 스택 우선순위(RC): 코퍼스 자체가 빔(is_empty) → 1; 코퍼스는 있으나 렌더된 행이 0
+        # (facet 이 전부 가림) → 2 필터-빈; 그 외 → 0 목록. 손상 카드도 '렌더된 행'이라 하나라도
+        # 있으면 목록을 보인다(조용한 백지 금지).
+        if self.vm.is_empty():
+            self.stack.setCurrentIndex(1)
+        elif total_rows == 0 and not corrupt_rows:
+            self.stack.setCurrentIndex(2)
+        else:
+            self.stack.setCurrentIndex(0)
+        # 선택 하이라이트는 실제로 보이는(숨김 아님)·선택 가능한 행에만 복원한다(RC) — 접힘/
+        # facet 으로 사라진 행을 가리키는 유령 선택을 남기지 않는다. VM 의 selected_name 은
+        # 건드리지 않으므로 섹션을 다시 펴면 하이라이트가 돌아올 수 있다.
+        self.list.setCurrentItem(None)
         if prev is not None:
-            items = self.list.findItems(prev, Qt.MatchExactly)
-            if items:
-                self.list.setCurrentItem(items[0])
+            for it in self.list.findItems(prev, Qt.MatchExactly):
+                if not it.isHidden() and bool(it.flags() & Qt.ItemIsSelectable):
+                    self.list.setCurrentItem(it)
+                    break
         self.list.blockSignals(False)
 
         # txt 기안 템플릿 목록
@@ -620,13 +687,29 @@ class JobListHome(QWidget):
         self.vm.clear_facets()  # 통지 → _render 재구성
         self._persist_lens()
 
-    def _toggle_section(self, value: str) -> None:
-        """섹션 접기/펴기 — VM 상태 불변이므로 직접 재렌더(카드 재파싱 없어 값쌈)."""
-        if value in self._collapsed:
-            self._collapsed.discard(value)
+    def _toggle_section(self, key) -> None:
+        """섹션 접기/펴기 — 전체 재렌더 없이 그 섹션 멤버의 숨김·헤더 화살표만 인-플레이스로
+        뒤집는다(카드 재파싱 없어 값쌈 — 리스트 clear/재빌드·칩바·메뉴 재구성 회피, RC).
+
+        ``key`` 는 섹션 정체성(명명 섹션은 값 문자열, 미태깅은 :data:`_UNTAGGED_SECTION_KEY`)
+        이다 — 표시 라벨('(값 없음)')이 실제 태그 값과 겹쳐도 서로의 접기를 침범하지 않는다.
+        VM 상태·selected_name 은 불변이다. 다만 접으면 선택이 숨겨진 행을 가리킬 수 있으므로
+        보이는 선택 불변식(유령 하이라이트 금지)을 여기서도 지킨다.
+        """
+        if key in self._collapsed:
+            self._collapsed.discard(key)
+            collapsed = False
         else:
-            self._collapsed.add(value)
-        self._render()
+            self._collapsed.add(key)
+            collapsed = True
+        for item in self._section_items.get(key, []):
+            item.setHidden(collapsed)
+        header = self._section_headers.get(key)
+        if header is not None:
+            header.set_collapsed(collapsed)
+        cur = self.list.currentItem()
+        if cur is not None and cur.isHidden():
+            self.list.setCurrentItem(None)  # 접혀 사라진 선택은 유령 — 하이라이트 제거
 
     def _sync_item_widths(self) -> None:
         """카드 폭을 뷰포트에 고정한 뒤 그 폭에서의 높이로 아이템을 잡는다(UD-11 공용 헬퍼).

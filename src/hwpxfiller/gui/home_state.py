@@ -173,11 +173,17 @@ class GroupSection:
     ``value`` = 태그 값(명명 그룹), :data:`NO_VALUE_LABEL`(미태깅 그룹), 또는 ""(flat 단일
     버킷 — group-by 미적용). 위젯은 섹션이 ≤1개이고 활성 facet 이 없으면 헤더를 억제하고
     오늘과 동일한 평면 리스트를 그린다(퇴화-코퍼스 불변식).
+
+    ``is_untagged`` = 이 섹션이 (그 축 값이 없는) 미태깅 그룹인가. 위젯이 섹션 정체성을
+    ``value`` 문자열로만 키잉하면, 사용자가 :data:`NO_VALUE_LABEL` 문자열('(값 없음)')을
+    실제 태그 값으로 입력했을 때 명명 섹션과 미태깅 섹션의 정체성이 충돌한다 — 이 플래그로
+    둘을 분리해 표시 라벨은 같아도 접기 등 인-플레이스 전이가 서로를 침범하지 않게 한다.
     """
 
     value: str
     count: int
     rows: "list[JobRow]"
+    is_untagged: bool = False  # 미태깅 그룹(그 축 값 없음) — 표시 라벨과 별개인 정체성 표식
 
 
 @dataclass
@@ -369,8 +375,13 @@ class HomeViewModel:
             for v in sorted(named)
         ]
         if untagged:  # 미태깅 그룹은 명명 그룹 뒤 1급 섹션(D12)
+            # is_untagged=True 로 정체성을 분리한다 — 누군가 '(값 없음)' 을 실제 값으로
+            # 태깅해 명명 섹션이 같은 라벨을 써도 위젯이 둘을 별개 섹션으로 다룬다.
             sections.append(
-                GroupSection(value=NO_VALUE_LABEL, count=len(untagged), rows=untagged)
+                GroupSection(
+                    value=NO_VALUE_LABEL, count=len(untagged), rows=untagged,
+                    is_untagged=True,
+                )
             )
         return sections
 
@@ -379,26 +390,39 @@ class HomeViewModel:
 
         건수는 **자기 축을 제외한** 다른 facet 제약 하의 행 수 — 표준 패싯 의미론. 0건 값도
         돌려주고(위젯이 회색/억제), 값 순서는 알파벳(D11 보류).
+
+        고아(orphaned) 활성 facet 표면화(confirm-or-alarm): 지금 어떤 행도 지니지 않는
+        축/값이 :attr:`active_facets` 에 남아 있으면(그 유일 작업이 삭제·재태깅된 뒤 렌즈가
+        복원한 경우) 그 축은 :meth:`axes` 에 안 나와 칩이 하나도 안 그려지는데, 그래도
+        :meth:`_passes_facets` 는 여전히 강제해 :meth:`grouped_rows` 가 전부 비어 보인다 —
+        범인 필터가 보이지 않는 채로 실재 작업을 숨기는 위반. 그런 선택을 count=0·
+        active=True 인 켜진 칩으로 노출해 사용자가 보고 끌 수 있게 한다(축이 axes() 에 아예
+        없으면 FacetAxis 를 새로 만든다).
+
+        비용: 축마다 값별로 전체 행을 재스캔(O(값×행))하지 않고 **행을 한 번만** 순회해
+        값별 건수를 집계한다(O(행)). axes() 도 상단에서 1회만 계산한다(FINDING #10).
         """
         eff = self.effective_group_by()
         result: "list[FacetAxis]" = []
-        for axis in self.axes():
+        # 행이 지닌 축 ∪ 활성 facet 축(고아 포함) — group-by 축은 섹션이라 제외. 결정적 정렬.
+        for axis in sorted(set(self.axes()) | set(self.active_facets)):
             if axis == eff:
                 continue  # group-by 축은 섹션이지 facet 이 아니다
-            values = sorted({r.tags[axis] for r in self._rows if r.tags.get(axis)})
             sel = self.active_facets.get(axis, set())
+            # 단일 그룹 패스: 자기 축 제외 제약을 통과한 행만 값별 카운터에 가산(FINDING #10).
+            counts: "dict[str, int]" = {}
+            present: "set[str]" = set()  # 이 축 값을 지닌 모든 행의 값(카운트 0도 노출)
+            for r in self._rows:
+                v = r.tags.get(axis)
+                if not v:
+                    continue
+                present.add(v)
+                if self._passes_facets(r, exclude_axis=axis):
+                    counts[v] = counts.get(v, 0) + 1
+            # 행 유래 값 ∪ 고아 활성 값(어떤 행도 안 지닌 선택). 고아는 count=0·active=True.
             fvals = [
-                FacetValue(
-                    value=v,
-                    count=sum(
-                        1
-                        for r in self._rows
-                        if r.tags.get(axis) == v
-                        and self._passes_facets(r, exclude_axis=axis)
-                    ),
-                    active=v in sel,
-                )
-                for v in values
+                FacetValue(value=v, count=counts.get(v, 0), active=v in sel)
+                for v in sorted(present | sel)
             ]
             result.append(FacetAxis(axis=axis, values=fvals))
         return result
