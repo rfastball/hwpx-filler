@@ -98,27 +98,39 @@ class RunView(QWidget):
         mark(lbl_job, "heading", True)
         root.addWidget(lbl_job)
 
-        # ---- 대상 문서(신규 vs 누적치환 단건) ----
+        # ---- 대상 문서 ----
+        # #18/31A5A484-A: 실제 흐름은 '문서를 한 번에 완성'하는 신규 생성으로 고정한다.
+        # 이어채우기 기능 seam은 하위호환·별도 고급 진입을 위해 남기되 이 실행 화면에서는 숨긴다.
         target_box = QGroupBox("대상 문서")
         tb = QVBoxLayout(target_box)
-        self.rb_new = QRadioButton(f"새 문서 생성 — 작업 템플릿({Path(job.template_path).name})")
+        self.lbl_target_mode = QLabel(
+            f"새 문서 생성 — 작업 템플릿({Path(job.template_path).name})으로 한 번에 완성합니다."
+        )
+        self.lbl_target_mode.setWordWrap(True)
+        tb.addWidget(self.lbl_target_mode)
+        self.rb_new = QRadioButton(
+            f"새 문서 생성 — 작업 템플릿({Path(job.template_path).name})", target_box
+        )
         self.rb_new.setChecked(True)
-        self.rb_cont = QRadioButton("기존 문서 이어채우기 — 선택한 .hwpx 문서에 이 단계 값을 채웁니다")
+        self.rb_cont = QRadioButton(
+            "기존 문서 이어채우기 — 선택한 .hwpx 문서에 이 단계 값을 채웁니다",
+            target_box,
+        )
         self.rb_new.toggled.connect(self._on_target_mode)
-        tb.addWidget(self.rb_new)
-        tb.addWidget(self.rb_cont)
-        prow = QHBoxLayout()
-        self.ed_prev = QLineEdit()
+        self.ed_prev = QLineEdit(target_box)
         self.ed_prev.setReadOnly(True)
-        self.btn_prev = QPushButton("기존 문서 선택…")
+        self.btn_prev = QPushButton("기존 문서 선택…", target_box)
         self.btn_prev.clicked.connect(self._pick_prev)
-        prow.addSpacing(20)
-        prow.addWidget(self.ed_prev, 1)
-        prow.addWidget(self.btn_prev)
-        tb.addLayout(prow)
-        self.lbl_prev_note = QLabel("")
+        self.lbl_prev_note = QLabel("", target_box)
         self.lbl_prev_note.setWordWrap(True)
-        tb.addWidget(self.lbl_prev_note)
+        for legacy_control in (
+            self.rb_new,
+            self.rb_cont,
+            self.ed_prev,
+            self.btn_prev,
+            self.lbl_prev_note,
+        ):
+            legacy_control.setVisible(False)
         root.addWidget(target_box)
         self._on_target_mode()  # 초기 상태(신규) 반영
 
@@ -161,8 +173,9 @@ class RunView(QWidget):
         gbl.addWidget(self.lbl_gate)
         root.addWidget(gate_box)
 
-        # ---- 생성 대상 레코드 ---- (UD-41: 동급 섹션 카드 프레이밍 통일)
-        rec_box = QGroupBox("생성 대상 레코드")
+        # ---- 생성 대상 문서 ---- (각 데이터 행이 만들어 낼 결과물을 사용자 관점으로 명명)
+        rec_box = QGroupBox("생성 대상 문서")
+        self.rec_box = rec_box
         rec_l = QVBoxLayout(rec_box)
         self.selector = RecordSelector()
         self.selector.selectionChanged.connect(self._on_selection_changed)
@@ -183,14 +196,15 @@ class RunView(QWidget):
         btn_out.clicked.connect(self._pick_out)
         orow.addWidget(self.ed_out, 0, 0)
         orow.addWidget(btn_out, 0, 1)
-        # 생성 원장(L2) — 기본 꺼짐(opt-in). 고위험 문서 계보가 필요할 때만 켠다.
-        self.chk_ledger = QCheckBox("생성 원장(JSON) 저장 — 들어간 값의 증거")
+        # 생성 원장 기능은 계획/CLI에 존치하되 일반 실행 화면에서는 노출하지 않는다
+        # (#18/D0D92672-C). 숨은 seam은 별도 고급 표면이나 테스트가 opt-in 할 수 있다.
+        self.chk_ledger = QCheckBox("생성 원장(JSON) 저장 — 들어간 값의 증거", out_box)
         self.chk_ledger.setToolTip(
             "저장 폴더에 실행별 fill-ledger-<시각>.json 을 남깁니다(이전 실행 증거 보존): "
             "소스 실제형 샘플, 필드별 주입 예정값, 생성 후 문서 되읽기 검증(✓/✗). "
             "값은 텍스트이며 HWPX 렌더가 아닙니다."
         )
-        orow.addWidget(self.chk_ledger, 1, 0)
+        self.chk_ledger.setVisible(False)
         root.addWidget(out_box)
 
         # ---- 액션 ----
@@ -409,7 +423,8 @@ class RunView(QWidget):
     def _refresh_field_panel(self) -> None:
         """상태 스냅샷 1회(vm.refresh)로 사전검증·필드 배지·게이트를 함께 렌더(RC-23).
 
-        표시 결정(level/text/활성)은 전부 링1 산출을 **그대로** 렌더한다 — 위젯 재조립이
+        표시 결정(level/활성)은 링1 산출을 그대로 렌더한다. 성공 문구만 링2 사용자 어휘로
+        순화한다(#18/D0D92672-A) — 위젯 재조립이
         만들던 모순 신호(상단 '통과' 녹색 + 하단 드리프트 차단)와 표시면별 재질의의
         템플릿 zip 5회 재파싱을 함께 해소.
         """
@@ -417,7 +432,12 @@ class RunView(QWidget):
             self.selector.selected_indices(), self.ed_out.text().strip()
         )
         mark(self.lbl_preflight, "level", snap.preflight.level)
-        self.lbl_preflight.setText(snap.preflight.text)
+        preflight_text = (
+            "검증 완료 — 문서를 생성할 준비가 됐습니다."
+            if snap.preflight.level == "ok"
+            else snap.preflight.text
+        )
+        self.lbl_preflight.setText(preflight_text)
         self._clear_badges()
         if not snap.field_states:
             # 빈 상태 안내(UD-06 · ADR-B '빈 공간으로 보이면 안 됨') — 데이터 미겨눔이면

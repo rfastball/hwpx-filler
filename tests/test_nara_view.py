@@ -392,13 +392,25 @@ def test_datapage_apply_nara_result_seeds_session_and_vocab(qapp, tmp_path):
     wiz, page = _data_page(qapp, tmp_path)
     records = [{"bidNtceNm": "전산장비 구매", "presmptPrce": "21326800"}]
     ds = AcquiredNaraData(records, ["bidNtceNm", "presmptPrce"])
+    opts = {
+        "bgn_dt": "202606010000",
+        "end_dt": "202606302359",
+        "num_rows": 100,
+        "page_no": 1,
+    }
     page.rb_nara.setChecked(True)
-    page._apply_nara_result(records, ds.fields(), ds, "나라장터 · 1건")
+    page._apply_nara_result(
+        records, ds.fields(), ds, "나라장터 · 1건", pool_opts=opts
+    )
 
     assert page.isComplete()
     assert wiz.datasource is ds
     assert wiz.records == records
     assert wiz.data_path == "나라장터 · 1건"
+    assert wiz.declared_data_kind == "nara"
+    assert wiz.declared_data_opts == opts
+    assert "ServiceKey" not in str(wiz.declared_data_opts)
+    assert "자동 등록" in page.lbl_summary.text()
 
     # MappingPage 가 소스 어휘(field_labels)로 퍼지 자동초안 — bidNtceNm→공고명.
     wiz.template_path = "/t.hwpx"

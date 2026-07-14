@@ -303,7 +303,8 @@ class DataPage(QWizardPage):
         self.setTitle("2단계 — 데이터 선택 (선택)")
         self.setSubTitle(
             "선택 단계입니다 — 미리보기·자동제안용 샘플을 불러오거나 건너뛰세요. "
-            "매핑은 데이터 없이 스키마만으로 확정할 수 있고, 실제 데이터는 실행할 때 고릅니다."
+            "선택한 소스 참조는 작업 저장 시 등록 데이터로 자동 등록됩니다. "
+            "여러 소스 조합은 데이터 관리의 고급 파이프라인에서 구성합니다."
         )
         self._valid = False
         self._reverting = False  # 소스 토글 취소 시 라디오 되돌림의 재진입 가드
@@ -425,6 +426,8 @@ class DataPage(QWizardPage):
             wiz.datasource = None
             wiz.source_fields = []
             wiz.records = []
+            wiz.declared_data_kind = ""
+            wiz.declared_data_opts = {}
 
     def _open_nara(self) -> None:
         """나라장터 취득 대화상자를 열고, 수용 시 취득 산출물을 위저드 세션에 심는다.
@@ -444,14 +447,24 @@ class DataPage(QWizardPage):
             fetcher=wiz.nara_fetcher,
         )
         if dlg.exec() == dlg.Accepted and dlg.records:
-            self._apply_nara_result(dlg.records, dlg.fields, dlg.datasource, dlg.label)
+            self._apply_nara_result(
+                dlg.records,
+                dlg.fields,
+                dlg.datasource,
+                dlg.label,
+                pool_opts=dlg.query_options(),
+            )
 
-    def _apply_nara_result(self, records, fields, datasource, label: str) -> None:
+    def _apply_nara_result(
+        self, records, fields, datasource, label: str, *, pool_opts=None
+    ) -> None:
         """취득 결과(키 없는 스냅샷)를 위저드 세션에 반영 — 파일 경로 대신 합성 라벨 사용.
 
         ``data_path`` 는 매핑 초안 캐시 키의 일부라 취득마다 달라지게 라벨을 심는다
         (MappingPage 가 조합 변경을 감지해 재초안). 헤드리스 테스트가 다이얼로그 없이 직접
-        호출할 수 있게 분리한다.
+        호출할 수 있게 분리한다. ``pool_opts`` 는 수용된 쿼리 스냅샷만 받으며 ServiceKey 는
+        포함하지 않는다. 직접 테스트 호출처럼 옵션이 없으면 자동 등록 선언을 만들지 않는다
+        (조용히 현재 위젯값을 추측하지 않음).
         """
         wiz = self.wizard()
         wiz.data_path = label
@@ -459,9 +472,12 @@ class DataPage(QWizardPage):
         wiz.datasource = datasource
         wiz.source_fields = fields
         wiz.records = records
+        wiz.declared_data_kind = "nara" if pool_opts is not None else ""
+        wiz.declared_data_opts = dict(pool_opts or {})
         self.ed_path.setText(label)
         self.lbl_summary.setText(
             f"나라장터 {len(fields)}개 필드, {len(records)}건 취득."
+            + (" 작업 저장 시 등록 데이터로 자동 등록됩니다." if pool_opts is not None else "")
         )
         self._valid = bool(fields and records)
         self.completeChanged.emit()
@@ -471,8 +487,8 @@ class DataPage(QWizardPage):
         # 샘플 데이터를 다시 고른다는 사실을 정직하게 노출.
         if getattr(self.wizard(), "initial_job", None) is not None:
             self.setSubTitle(
-                "작업에 데이터는 저장되지 않습니다 — 매핑 검토용 샘플은 선택입니다"
-                "(건너뛰어도 됩니다). 실제 데이터·행은 실행할 때 고릅니다."
+                "매핑 검토용 샘플은 선택입니다(건너뛰어도 됩니다). "
+                "선택한 소스 참조는 작업 저장 시 등록 데이터로 자동 등록됩니다."
             )
 
     def _pick(self):
@@ -528,10 +544,15 @@ class DataPage(QWizardPage):
         wiz.datasource = source
         wiz.source_fields = fields
         wiz.records = records
+        wiz.declared_data_kind = "excel"
+        wiz.declared_data_opts = {"path": path}
+        if sheet:
+            wiz.declared_data_opts["sheet"] = sheet
         # 확정 시트명을 요약에 재진술한다(T2) — 어느 시트가 겨눠졌는지 침묵하지 않는다.
         sheet_note = f" — 시트: {sheet}" if sheet else ""
         self.lbl_summary.setText(
-            f"컬럼 {len(fields)}개, 레코드 {len(records)}건 로드.{sheet_note}"
+            f"컬럼 {len(fields)}개, 레코드 {len(records)}건 로드.{sheet_note} "
+            "작업 저장 시 등록 데이터로 자동 등록됩니다."
         )
         self._valid = True
         self.completeChanged.emit()
