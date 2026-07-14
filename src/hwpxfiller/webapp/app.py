@@ -21,11 +21,13 @@ import json
 import sys
 from pathlib import Path
 
+from ..core.job import JobRegistry, default_jobs_dir
 from ..core.text_registry import TextTemplateRegistry, default_text_templates_dir
 from ..gui.file_filters import EXCEL_FILTER_PATTERN  # 확장자 단일 출처(RC-34) — Qt-free 상수
 from ._debug import log
 from .clipboard import set_clipboard_text
 from .dialogs import open_file_dialog, save_file_dialog
+from .screen_editor import EditorController
 from .screens import TxtController
 
 
@@ -52,11 +54,15 @@ class WebFrontend:
     def __init__(self, text_templates_dir: "str | Path") -> None:
         self.window: "object | None" = None  # webview.Window (지연 배선)
         registry = TextTemplateRegistry(text_templates_dir)
+        job_registry = JobRegistry(default_jobs_dir())
         # 화면 등록 — 새 화면 = 컨트롤러 1개 추가(순수 데이터는 dispatch, 네이티브는 아래 메서드).
-        controllers = [TxtController(registry, self._push)]
+        controllers = [
+            TxtController(registry, self._push),
+            EditorController(job_registry, self._push),
+        ]
         self.controllers = {c.name: c for c in controllers}
 
-    def _controller(self, screen: str) -> TxtController:
+    def _controller(self, screen: str):
         try:
             return self.controllers[screen]
         except KeyError:  # confirm-or-alarm: 미등록 화면은 시끄럽게.
@@ -74,9 +80,21 @@ class WebFrontend:
         """화면 부팅 시 웹이 1회 당겨 가는 초기 상태."""
         return self._controller(screen).initial()
 
-    def dispatch(self, screen: str, action: str, payload: "dict | None" = None) -> None:
-        """순수 데이터 액션(창 불필요) 라우팅."""
-        self._controller(screen).dispatch(action, payload or {})
+    def dispatch(self, screen: str, action: str, payload: "dict | None" = None):
+        """순수 데이터 액션(창 불필요) 라우팅. 액션이 값을 돌려주면 그대로 웹에 반환."""
+        return self._controller(screen).dispatch(action, payload or {})
+
+    def pick_template_file(self, screen: str) -> "str | None":
+        """Win32 열기 다이얼로그(HWPX) → 링1 스키마/게이트 로드. 실패는 ``ERROR:`` 접두."""
+        path = open_file_dialog([("HWPX 템플릿", "*.hwpx"), ("모든 파일", "*.*")],
+                                owner_title=WINDOW_TITLE)
+        if not path:
+            return None
+        try:
+            self._controller(screen).load_template_path(path)
+        except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
+            return f"ERROR: {exc}"
+        return Path(path).name
 
     def pick_data_file(self, screen: str) -> "str | None":
         """Win32 파일 다이얼로그 → 링1 VM 로드. 실패는 ``ERROR:`` 접두로 시끄럽게 반환."""
