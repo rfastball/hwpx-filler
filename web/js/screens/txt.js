@@ -46,6 +46,7 @@
     $("tokPanel").innerHTML = rows || `<p class="muted">토큰이 없는 템플릿입니다.</p>`;
 
     $("renderView").innerHTML = buildPreview(s.template_text, s.record);
+    $("dataLabel").value = s.data_label || "";     // 서버 소유(P4) — run/matrix 와 정렬
     setStatus(s.missing_fields, s.empty_fields);
     resetNote();
   }
@@ -87,7 +88,7 @@
       const r = await Bridge.pickDataFile(SCREEN);
       if (r === null) return;                      // 취소
       if (typeof r === "string" && r.startsWith("ERROR:")) { warnNote(r.slice(6).trim()); return; }
-      $("dataLabel").value = r;                    // 파일명 표기
+      // 파일명은 load_data_path 가 스냅샷(data_label)으로 밀어 render 가 채운다(P4 서버 소유).
     });
 
     $("btnCopy").addEventListener("click", async () =>
@@ -104,9 +105,9 @@
     });
     $("pasteCancel").addEventListener("click", () => $("pasteModal").classList.add("hidden"));
     $("pasteOk").addEventListener("click", () => {
+      // 템플릿만 바꾼다 — 겨눈 데이터는 유지(VM datasource 불변). 라벨은 스냅샷이 실상태 반영(P4).
       Bridge.call(SCREEN, "set_template_text", { text: $("pasteText").value });
       $("pasteModal").classList.add("hidden");
-      $("dataLabel").value = "";
     });
   }
 
