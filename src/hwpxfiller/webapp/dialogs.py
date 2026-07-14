@@ -185,3 +185,65 @@ def save_file_dialog(
         return buf.value if fn(ctypes.byref(ofn)) else None
 
     return _in_sta_thread(call)  # type: ignore[return-value]
+
+
+# ------------------------------------------------------------------ 폴더 선택
+# BROWSEINFOW.ulFlags — SHBrowseForFolderW 동작 비트.
+BIF_RETURNONLYFSDIRS = 0x00000001  # 파일시스템 폴더만(가상 노드 배제)
+BIF_EDITBOX = 0x00000010           # 경로 직접 입력 상자
+BIF_NEWDIALOGSTYLE = 0x00000040    # 리사이즈·새폴더 버튼(OLE STA 필요 — _in_sta_thread 가 초기화)
+
+
+class _BROWSEINFOW(ctypes.Structure):
+    _fields_ = [
+        ("hwndOwner", wintypes.HWND),
+        ("pidlRoot", ctypes.c_void_p),
+        ("pszDisplayName", wintypes.LPWSTR),
+        ("lpszTitle", wintypes.LPCWSTR),
+        ("ulFlags", wintypes.UINT),
+        ("lpfn", ctypes.c_void_p),
+        ("lParam", wintypes.LPARAM),
+        ("iImage", ctypes.c_int),
+    ]
+
+
+def open_folder_dialog(
+    title: str = "저장 폴더 선택", owner_title: "str | None" = None
+) -> "str | None":
+    """네이티브 폴더 선택 다이얼로그(shell32 ``SHBrowseForFolderW``). 경로 또는 None(취소).
+
+    실행 화면의 **신규 네이티브 표면**(에픽 #20 화면 #18) — 파일 다이얼로그와 같은 이유로
+    pywebview 우회, 전용 STA 스레드에서 실행하고 앱 창을 소유주로 지정한다(뒤로 숨어 '멈춤'
+    으로 보이지 않게). ``BIF_NEWDIALOGSTYLE`` 은 OLE 초기화를 요구하는데
+    :func:`_in_sta_thread` 가 ``OleInitialize`` 로 이미 처리한다.
+    """
+    _require_windows()
+
+    def call() -> "str | None":
+        shell32 = ctypes.windll.shell32  # type: ignore[attr-defined]
+        name_buf = ctypes.create_unicode_buffer(_MAX)  # 표시명 수신 버퍼(수명 유지)
+        bi = _BROWSEINFOW()
+        bi.hwndOwner = _owner_hwnd(owner_title)
+        bi.pidlRoot = None
+        bi.pszDisplayName = ctypes.cast(name_buf, wintypes.LPWSTR)
+        bi.lpszTitle = title
+        bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE | BIF_EDITBOX
+        shell32.SHBrowseForFolderW.argtypes = [ctypes.POINTER(_BROWSEINFOW)]
+        shell32.SHBrowseForFolderW.restype = wintypes.LPVOID  # PIDL(널=취소)
+        log("folder: before SHBrowseForFolderW")
+        pidl = shell32.SHBrowseForFolderW(ctypes.byref(bi))
+        log(f"folder: after SHBrowseForFolderW pidl={bool(pidl)}")
+        if not pidl:
+            return None
+        try:
+            out = ctypes.create_unicode_buffer(_MAX)
+            shell32.SHGetPathFromIDListW.argtypes = [wintypes.LPVOID, wintypes.LPWSTR]
+            shell32.SHGetPathFromIDListW.restype = wintypes.BOOL
+            ok = shell32.SHGetPathFromIDListW(pidl, out)
+            return out.value if ok else None
+        finally:
+            # PIDL 은 셸 할당 — CoTaskMemFree 로 반환(_in_sta_thread 의 OLE 아파트 안).
+            ctypes.windll.ole32.CoTaskMemFree(pidl)  # type: ignore[attr-defined]
+
+    log("open_folder_dialog: enter")
+    return _in_sta_thread(call)  # type: ignore[return-value]

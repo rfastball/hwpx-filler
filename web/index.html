@@ -10,10 +10,13 @@
 <body>
 <!-- 웹 프론트엔드 셸 — 목업 docs/UI_PROTOTYPE_APPB.html 의 앱윈도 구조를 스튜디오 크롬(마스트헤드·
      주석·캔버스) 없이 실앱으로 전개. 좌 레일(4화면 라우팅) + 우 스테이지. 링1 VM 에 브리지로 배선.
-     txt 는 첫 실화면(스파이크가 끝까지 검증) — 나머지 3화면은 단계 N 에서 이관(가짜 데이터 금지). -->
+     실화면: txt(스파이크 승격)·editor(#15·#16)·run(#18). home 은 후속 이관(가짜 데이터 금지). -->
 <div class="app">
   <nav class="rail" aria-label="화면 전환">
-    <div class="brand">HWPX Filler</div>
+    <div class="brand">HWPX Filler
+      <!-- #18/9B2AB35D-A: 사이드 패널 접기 — 좁은 창에서 작업 영역 확장(반응형) -->
+      <button class="rail-toggle" id="railToggle" title="사이드 패널 접기/펼치기"
+              aria-label="사이드 패널 접기/펼치기">«</button></div>
     <div class="rl">투트랙 허브</div>
     <button class="navbtn" data-scr="home">
       <span class="n">대시보드</span><span class="d">두 트랙 허브 · 요약</span></button>
@@ -26,11 +29,11 @@
   </nav>
 
   <main class="stage">
-    <!-- ============ 대시보드 (단계 N — #13 이관 예정) ============ -->
+    <!-- ============ 대시보드 (단계 N — 홈 이관 예정) ============ -->
     <section class="scr" id="scr-home">
       <div class="placeholder">
         <h2>대시보드</h2>
-        <p>이 화면은 아직 웹으로 이관되지 않았습니다. 단계 N(에픽 #20, 화면 이슈 #13)에서
+        <p>이 화면은 아직 웹으로 이관되지 않았습니다. 후속 단계에서
           링1 <code>HomeViewModel</code> 에 배선해 살립니다.</p>
       </div>
     </section>
@@ -48,12 +51,70 @@
       <footer class="wfoot" id="editor-foot"></footer>
     </section>
 
-    <!-- ============ 실행 (단계 N — #15·#16 이관 예정) ============ -->
+    <!-- ============ 실행 (등록된 작업 실행, #18) ============ -->
+    <!-- 목업 scr-run 이관. 안정 DOM(id) + run.js 가 window.__push('run', snapshot) 로 값만 채운다
+         (txt 패턴). 링1 RunViewModel·SelectionModel 에 브리지로 배선 — VM 로직 재구현 없음.
+         작업 선택기는 진입 어포던스(홈 이관 전까지 실행 화면 자체 진입점). -->
     <section class="scr" id="scr-run">
-      <div class="placeholder">
-        <h2>실행</h2>
-        <p>이 화면은 아직 웹으로 이관되지 않았습니다. 단계 N(화면 이슈 #15·#16)에서
-          링1 <code>RunViewModel</code>·<code>SelectionModel</code> 에 배선합니다.</p>
+      <header class="scr-head">
+        <div>
+          <h1>실행</h1>
+          <p class="sub">저장된 작업을 골라 데이터·행을 겨눠 문서를 생성합니다.</p>
+        </div>
+        <div class="status" id="runStatus" data-level="idle">작업 선택</div>
+      </header>
+
+      <!-- 작업 선택(진입 어포던스) -->
+      <div class="run-jobbar">
+        <label class="ctl grow"><span class="lbl">실행할 작업</span>
+          <select class="field" id="jobSel"></select></label>
+        <div class="run-jobmeta" id="jobMeta"></div>
+      </div>
+
+      <div class="run-body" id="runBody">
+        <!-- 대상 문서(#18/31A5A484-A: 신규 생성 고정, 이어채우기 강등) -->
+        <div class="grp"><span class="cap">대상 문서</span>
+          <span id="targetLine" class="muted">작업을 선택하세요.</span></div>
+
+        <!-- 데이터 -->
+        <div class="run-row"><span class="lbl">데이터(.xlsx/.csv)</span>
+          <input class="field ro" id="dataLabel" type="text" readonly
+                 placeholder="데이터를 선택하세요">
+          <button class="btn" id="btnPickData">파일 선택…</button></div>
+
+        <!-- 사전검증 -->
+        <div class="preflight note" id="preflight" style="display:none"></div>
+
+        <!-- 빈칸 표면화(상시 인라인 + 강제 확인 게이트, ADR-E) -->
+        <div class="grp"><span class="cap">미입력 필드 확인</span>
+          <p class="muted hint">필드 상태를 상시 배지로 노출합니다. <span class="danger">미입력</span>
+            필드는 반사적 dismiss를 막기 위해 <b>직접 클릭해 확인</b>해야 생성이 열립니다.</p>
+          <div class="statebadges" id="fieldBadges"></div>
+        </div>
+
+        <!-- 생성 대상 문서 -->
+        <div class="run-row run-recs-head">
+          <span class="lbl" style="font-weight:600">생성 대상 문서</span>
+          <div class="row"><span class="muted" id="selCount" style="font-size:12px">선택 0/0</span>
+            <button class="btn sm" id="selAll">전체 선택</button>
+            <button class="btn sm" id="selNone">전체 해제</button></div>
+        </div>
+        <div class="reclist" id="recList"></div>
+
+        <!-- 저장 폴더 -->
+        <div class="run-row"><span class="lbl">저장 폴더</span>
+          <input class="field ro" id="outDir" type="text" readonly
+                 placeholder="작업별 하위 폴더 없이 이 폴더에 저장합니다">
+          <button class="btn" id="btnPickFolder">찾아보기…</button></div>
+
+        <!-- 액션 · 진행 · 결과 · 로그 -->
+        <div class="run-actions">
+          <button class="btn primary" id="genBtn" disabled>이 작업으로 문서 생성</button>
+          <span class="muted" id="genGate" style="font-size:12px"></span>
+        </div>
+        <div class="bar"><i id="genBar"></i></div>
+        <div id="genResult" class="run-result"></div>
+        <div class="logbox" id="genLog">[대기] 작업·데이터·저장 폴더를 확인한 뒤 생성하세요.</div>
       </div>
     </section>
 
@@ -125,6 +186,7 @@
 <script src="js/bridge.js"></script>
 <script src="js/screens/txt.js"></script>
 <script src="js/screens/editor.js"></script>
+<script src="js/screens/run.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

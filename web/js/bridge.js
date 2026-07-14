@@ -27,6 +27,14 @@
 
     /** 네이티브 저장 다이얼로그 → 원자 쓰기. 결과 dict 또는 null(취소). */
     saveFile(screen) { return window.pywebview.api.save_file(screen); },
+
+    /** 네이티브 폴더 피커(SHBrowseForFolder) → 저장 폴더 지정. 경로·"ERROR:…"·null(취소). */
+    pickOutputFolder(screen) { return window.pywebview.api.pick_output_folder(screen); },
+
+    /** 실행 화면 동기 생성 — 게이트/덮어쓰기 재진술·결과 요약 dict 반환. */
+    generate(screen, confirmOverwrite) {
+      return window.pywebview.api.generate(screen, !!confirmOverwrite);
+    },
   };
 
   // Python→웹 푸시 진입점(app.py 의 evaluate_js 가 호출). 전역 노출.
