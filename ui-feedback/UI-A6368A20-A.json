@@ -1,0 +1,15 @@
+{
+  "issue_id": "UI-A6368A20-A",
+  "related_captures": [{
+    "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-a6368a20-cd42-49f1-8d5d-ea685c7ae725.png",
+    "regions": ["상단 템플릿·데이터 선택 영역, 중앙 기안 미리보기, 왼쪽 하단 클립보드로 복사 버튼"]
+  }],
+  "screen_or_page": "즉시 기안 화면",
+  "affected_area": "템플릿·데이터 선택부터 미리보기 확인과 복사까지의 주요 작업 동선",
+  "current_state": "넓은 창에서 템플릿·데이터 선택, 기안 미리보기 확인, 클립보드 복사 기능이 서로 멀리 떨어져 있어 마우스 이동 동선이 산만하다.",
+  "expected_state": "템플릿·데이터 선택, 기안 미리보기 확인, 클립보드 복사로 이어지는 작업 흐름이 공간적으로 자연스럽게 연결되도록 주요 요소를 재배치한다.",
+  "issue_type": "작업 동선 및 레이아웃 개선",
+  "affected_viewport_or_environment": "넓게 펼친 데스크톱 창. 정확한 창 크기는 확인되지 않음.",
+  "severity": "보통",
+  "unverified": ["주요 작업 요소의 구체적인 배치 순서와 위치", "텍스트 파일로 저장 기능을 같은 흐름에 포함할지 여부"]
+}

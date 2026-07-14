@@ -1,0 +1,15 @@
+{
+  "issue_id": "UI-83D8BBD0-A",
+  "related_captures": [{
+    "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-83d8bbd0-c319-43e3-8a6e-264f806cf17b.png",
+    "regions": ["파이프라인 조립 창 상단의 소스 선택 및 소스 추가 영역"]
+  }],
+  "screen_or_page": "데이터 풀의 파이프라인 조립 창",
+  "affected_area": "파이프라인 소스 추가 기능",
+  "current_state": "이미 추가한 데이터 소스를 같은 파이프라인에 반복해서 다시 추가할 수 있다.",
+  "expected_state": "동일한 소스를 중복 추가하지 못하도록 막거나, 중복임을 명확히 알리는 입력 방지 장치를 제공한다.",
+  "issue_type": "중복 입력 방지 실패",
+  "affected_viewport_or_environment": "데스크톱 환경의 파이프라인 조립 창. 다른 환경의 적용 범위는 확인되지 않음.",
+  "severity": "보통",
+  "unverified": ["동일 소스를 여러 번 사용하는 유효한 조립 사례의 존재 여부", "중복 선택을 막을지 경고 후 허용할지에 대한 최종 동작"]
+}

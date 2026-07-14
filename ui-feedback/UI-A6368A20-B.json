@@ -1,0 +1,15 @@
+{
+  "issue_id": "UI-A6368A20-B",
+  "related_captures": [{
+    "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-a6368a20-cd42-49f1-8d5d-ea685c7ae725.png",
+    "regions": ["기안 미리보기의 추정가격 및 납품기한 표시"]
+  }],
+  "screen_or_page": "즉시 기안 화면",
+  "affected_area": "즉시 기안에서 채워지는 필드의 표시 형식 설정",
+  "current_state": "즉시 기안에서는 필드의 표시형을 선언하거나 수정할 방법이 보이지 않는다. 예시의 추정가격은 12000000, 납품기한은 2026-08-31로 표시되어 표준에 맞게 고칠 수 없다.",
+  "expected_state": "즉시 기안에서도 추정가격과 날짜 등의 표시 형식을 선언하거나 수정할 수 있는 방법을 제공한다.",
+  "issue_type": "표시 형식 설정 기능 부족",
+  "affected_viewport_or_environment": "데스크톱 환경의 즉시 기안 화면. 다른 환경의 적용 범위는 확인되지 않음.",
+  "severity": "보통",
+  "unverified": ["표시형 설정을 제공할 위치와 조작 방식", "설정한 표시형을 현재 기안에만 적용할지 저장할지 여부", "즉시 기안에서 지원할 표시형의 범위"]
+}

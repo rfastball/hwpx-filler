@@ -1,0 +1,24 @@
+{
+  "issue_id": "UI-98DDFE96",
+  "related_captures": [
+    {
+      "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-98ddfe96-a1d6-48e0-b16a-464daf81e7a2.png",
+      "regions": [
+        "상단: 작업 편집기 1단계 템플릿 선택 화면",
+        "하단: 작업 편집기 2단계 데이터 선택 화면"
+      ]
+    }
+  ],
+  "screen_or_page": "대시보드 > 새 문서 작업 > 작업 편집기 1단계 및 2단계",
+  "affected_area": "선택한 템플릿의 필드·타입 안내 영역과 선택한 데이터의 감지된 헤더 안내 영역",
+  "current_state": "필드와 타입이 한 줄의 나열식 텍스트로 표시되며, 안내 영역 아래에 큰 빈 공간이 남아 화면 구성이 불균형하게 보인다.",
+  "expected_state": "필드와 타입을 실제 헤더에 가까운 구조화된 양식으로 배치하고 예시 데이터를 함께 보여주어, 현재의 빈 공간을 정보 표시 영역으로 활용한다.",
+  "issue_type": "정보 구조 및 레이아웃 개선",
+  "affected_viewport_or_environment": "데스크톱 Windows 환경. 정확한 화면 크기와 다른 환경의 적용 범위는 확인되지 않음.",
+  "severity": "낮음",
+  "unverified": [
+    "구조화된 양식의 구체적인 배치 방식",
+    "표시할 예시 데이터의 값과 행 개수",
+    "현재 캡처 외의 창 크기에서 동일한 문제가 발생하는지 여부"
+  ]
+}

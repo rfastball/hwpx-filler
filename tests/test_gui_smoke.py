@@ -57,7 +57,7 @@ def test_job_editor_instantiates_with_four_pages(qapp, tmp_path):
 
 def test_mapping_table_renders_model_and_emits_complete_changed(qapp, monkeypatch):
     """UD-05 — '모두 확정'은 내용 행만 즉시 확정하고, 미매칭 빈 행의 의도적 비움
-    승격은 이름 재진술 확인을 거친다. '모두 해제'는 확정본이 있으면 파괴 확인 경유."""
+    승격은 이름 재진술 확인을 거친다. '모두 해제'는 가역 상태라 확인 없이 즉시 실행."""
     from hwpxfiller.gui import mapping_table as mt
     from hwpxfiller.gui.mapping_table import MappingTable
 
@@ -83,13 +83,11 @@ def test_mapping_table_renders_model_and_emits_complete_changed(qapp, monkeypatc
     table.btn_confirm_all.click()
     assert model.is_complete()
 
-    # '모두 해제' 거부 → 확정 유지(무확인 파기 없음).
-    monkeypatch.setattr(mt, "confirm_destructive", lambda *a, **k: False)
-    table.btn_unconfirm_all.click()
-    assert model.is_complete()
-
-    # '모두 해제' 수락 → 전 행 해제.
-    monkeypatch.setattr(mt, "confirm_destructive", lambda *a, **k: True)
+    # '모두 해제'는 저장 전 확정 상태만 되돌리는 가역 작업 — 확인 호출 없이 즉시 해제.
+    monkeypatch.setattr(
+        mt, "confirm_destructive",
+        lambda *a, **k: pytest.fail("가역적인 모두 해제에 확인 대화상자가 호출됐다"),
+    )
     table.btn_unconfirm_all.click()
     assert not model.is_complete()
     assert all(not r.confirmed for r in model.rows)
@@ -165,6 +163,52 @@ def test_mapping_table_format_combo_drives_preview(qapp):
     assert table.table.item(ri, _COL_PREVIEW).text() == "21,326,800"
 
 
+def test_mapping_table_explains_inferred_type_role(qapp):
+    """#15 — 영문 타입 단정 대신 한국어 추정값과 실제 타입 변경 위치를 설명한다."""
+    from hwpxfiller.gui.mapping_table import _COL_FIELD, _COL_TYPE, MappingTable
+
+    schema = TemplateSchema(fields=[FieldSpec("입찰공고번호", "number", 1, False)])
+    model = MappingModel.from_suggestions(schema, [])
+    table = MappingTable()
+    table.set_model(model)
+    ri = 0
+
+    field = table.table.item(ri, _COL_FIELD)
+    assert "[추정: 숫자]" in field.text()
+    assert "[number]" not in field.text()
+    assert "초기 제안" in table.lbl_inferred_help.text()
+    assert "실제 채움 방식" in table.lbl_inferred_help.text()
+    assert "초기 제안" in field.toolTip()
+    # 숫자 추정이어도 실제 변환 기본은 텍스트 — 두 역할이 같은 값인 척하지 않는다.
+    assert table.cell_control(ri, _COL_TYPE).currentText() == "텍스트"
+
+
+def test_mapping_table_shows_fixed_value_only_beside_const_type(qapp):
+    """#15 — 고정값 입력은 별도 상시 열이 아니라 고정값 타입 선택 옆에만 나타난다."""
+    from hwpxfiller.core.mapping import TYPES
+    from hwpxfiller.gui.mapping_table import _COL_TYPE, MappingTable
+    from hwpxfiller.gui.mapping_state import MappingModel, RowState
+
+    model = MappingModel(rows=[RowState("계약방법")])
+    table = MappingTable()
+    table.set_model(model)
+    fixed = table.fixed_value_control(0)
+
+    assert table.table.columnCount() == 6
+    assert table.table.horizontalHeaderItem(_COL_TYPE).text() == "타입 / 고정값"
+    assert fixed.parent() is table.table.cellWidget(0, _COL_TYPE)
+    assert fixed.isHidden()
+
+    table._on_type_activated(0, TYPES.index("const"))
+    assert not fixed.isHidden()
+    fixed.setText("수의계약")
+    fixed.textEdited.emit("수의계약")
+    assert model.rows[0].const == "수의계약"
+
+    table._on_type_activated(0, TYPES.index("text"))
+    assert fixed.isHidden()
+
+
 def test_worker_module_imports(qapp):
     from hwpxfiller.gui.worker import GenerateWorker  # noqa: F401
 
@@ -211,6 +255,76 @@ def test_home_empty_state_and_job_cards(qapp, tmp_path):
     assert "필드 0개" in joined          # 메타 노출
     assert "아직 실행 안 함" in joined    # 미실행 상태
     assert "템플릿 없음" in joined        # 부재 템플릿 선고지
+
+
+def test_home_replaces_vanity_kpis_with_continue_run_actions(qapp, tmp_path, monkeypatch):
+    """#11 — 등록 데이터 수 타일 제거 + 최근 실행을 실제 재진입 목록으로 대체한다."""
+    from PySide6.QtWidgets import QLabel, QMessageBox, QPushButton
+
+    home = _home_with_ready_and_absent(tmp_path)
+    ready = home.registry.load("정상작업")
+    ready.last_run_at = "2026-07-13T09:30:00"
+    home.registry.save(ready)
+    absent = home.registry.load("부재작업")
+    absent.last_run_at = "2026-07-14T10:45:00"
+    home.registry.save(absent)
+    home.refresh()
+
+    kpi_labels = {
+        label.text()
+        for i in range(home.kpi_row.count())
+        for label in home.kpi_row.itemAt(i).widget().findChildren(QLabel)
+    }
+    assert "등록 데이터 · 사용 가능" not in kpi_labels
+    assert "최근 실행" not in kpi_labels
+    assert home.continue_list.count() == 2
+    assert [home.continue_list.item(i).text() for i in range(2)] == ["부재작업", "정상작업"]
+
+    emitted: "list[str]" = []
+    home.run_job_requested.connect(emitted.append)
+    infos: "list[str]" = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: infos.append(a[2]))
+
+    def _continue(name):
+        item = next(
+            home.continue_list.item(i)
+            for i in range(home.continue_list.count())
+            if home.continue_list.item(i).text() == name
+        )
+        card = home.continue_list.itemWidget(item)
+        return next(b for b in card.findChildren(QPushButton) if b.text() == "이어서 실행")
+
+    _continue("부재작업").click()
+    assert emitted == [] and infos  # 실행 불가 변화는 조용히 추측하지 않고 기존 경고 게이트
+    _continue("정상작업").click()
+    assert emitted == ["정상작업"]
+
+
+def test_home_txt_card_preselects_its_template_in_draft_page(qapp, tmp_path, monkeypatch):
+    """#11 — 템플릿별 [기안 작성]은 해당 템플릿을 선점해 새 기안과 동작을 가른다."""
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QPushButton
+
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.app import AppController
+
+    templates = tmp_path / "text_templates"
+    templates.mkdir()
+    (templates / "가-기본.txt").write_text("기본 {{이름}}", encoding="utf-8")
+    (templates / "나-선택.txt").write_text("선택 {{이름}}", encoding="utf-8")
+
+    ctrl = AppController(JobRegistry(tmp_path / "jobs"))
+    item = ctrl.home.txt_list.findItems("나-선택", Qt.MatchExactly)[0]
+    card = ctrl.home.txt_list.itemWidget(item)
+    button = next(b for b in card.findChildren(QPushButton) if b.text() == "기안 작성")
+    assert "나-선택.txt" in button.toolTip()
+
+    button.click()
+    view = ctrl.shell.stack.currentWidget()
+    assert ctrl.shell.current_key() == "txt"
+    assert view.cbo.currentText() == "나-선택"
+    assert view.vm.template_name == "나-선택"
 
 
 # ---- 작업 브라우저(패싯 탐색) — JOB_BROWSER_DESIGN §4 ----
@@ -542,6 +656,77 @@ def test_editor_new_job_saves_without_tags(qapp, tmp_path):
     assert page.tags() == {}
 
 
+def _make_savable_editor(wiz, name: str):
+    """작업 저장 통합 테스트용 최소 확정 세션."""
+    wiz.template_path = "/t.hwpx"
+    wiz.model = _model()
+    wiz.model.confirm_all()
+    wiz._save_page.ed_name.setText(name)
+    return wiz
+
+
+def test_editor_auto_registers_declared_file_reference(qapp, tmp_path):
+    """#18 — 선택한 샘플 행은 저장하지 않고 파일 참조(+시트)만 등록 데이터로 자동 등록."""
+    from hwpxfiller.core.dataset_pool import DatasetPoolRegistry
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+
+    jobs = JobRegistry(tmp_path / "jobs")
+    pool = DatasetPoolRegistry(tmp_path / "datasets")
+    wiz = _make_savable_editor(
+        JobEditorWizard(jobs, pool_registry=pool), "자동등록작업"
+    )
+    wiz.declared_data_kind = "excel"
+    wiz.declared_data_opts = {"path": "C:/data/source.xlsx", "sheet": "입찰"}
+    wiz.records = [{"실제행": "저장되면 안 됨"}]
+
+    wiz.accept()
+
+    assert jobs.exists("자동등록작업")
+    item = pool.load("자동등록작업 · 등록 데이터")
+    assert item.kind == "excel"
+    assert item.opts == {"path": "C:/data/source.xlsx", "sheet": "입찰"}
+    assert "실제행" not in str(item.to_dict())
+    assert item.status == "active"
+
+
+def test_editor_declared_data_collision_requires_confirmation(qapp, tmp_path, monkeypatch):
+    """자동 등록도 다른 참조를 조용히 덮지 않는다 — 거절하면 작업·풀 모두 원상 유지."""
+    from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui import job_editor as je
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+
+    jobs = JobRegistry(tmp_path / "jobs")
+    pool = DatasetPoolRegistry(tmp_path / "datasets")
+    pool.save(
+        DatasetPoolItem(
+            name="충돌작업 · 등록 데이터",
+            kind="excel",
+            opts={"path": "C:/data/original.csv"},
+        )
+    )
+    wiz = _make_savable_editor(
+        JobEditorWizard(jobs, pool_registry=pool), "충돌작업"
+    )
+    wiz.declared_data_kind = "excel"
+    wiz.declared_data_opts = {"path": "C:/data/replacement.csv"}
+    seen = {}
+    monkeypatch.setattr(
+        je,
+        "confirm_destructive",
+        lambda _p, title, text, _label: seen.update(title=title, text=text) is not None,
+    )
+
+    wiz.accept()
+
+    assert "충돌작업 · 등록 데이터" in seen["text"]
+    assert not jobs.exists("충돌작업")
+    assert pool.load("충돌작업 · 등록 데이터").opts == {
+        "path": "C:/data/original.csv"
+    }
+
+
 def test_save_page_prefills_default_pattern_and_gates_empty(qapp, tmp_path):
     """RC-20 — 프리필은 단일 출처 상수, 빈 패턴은 isComplete 게이트가 차단한다."""
     from hwpxfiller.core.job import DEFAULT_FILENAME_PATTERN, JobRegistry
@@ -556,6 +741,42 @@ def test_save_page_prefills_default_pattern_and_gates_empty(qapp, tmp_path):
     assert page.isComplete()
     page.ed_pattern.setText("   ")            # 공백뿐인 패턴 = 빈 패턴
     assert not page.isComplete()
+
+
+def test_save_page_explains_field_values_and_reserved_tokens(qapp, tmp_path):
+    """#17 — 파일명 도우미는 확정 매핑 필드의 첫 샘플 값과 날짜·순번 규칙을 보여 준다."""
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+
+    wiz = JobEditorWizard(JobRegistry(tmp_path))
+    wiz.model = _model()
+    wiz.model.confirm_all()
+    wiz.records = [{"bidNtceNm": "샘플 공고"}]
+    page = wiz.page(wiz.pageIds()[-1])
+    page.initializePage()
+
+    field_help = page.lbl_field_tokens.text()
+    assert "{{공고명}}" in field_help
+    assert "샘플 공고" in field_help
+    reserved_help = page.lbl_reserved_tokens.text()
+    assert "{{date}}" in reserved_help and "{{date:YYYY-MM-DD}}" in reserved_help
+    assert "{{seq}}" in reserved_help and "{{seq:001}}" in reserved_help
+    assert "001부터 세 자리" in reserved_help
+
+
+def test_save_page_uses_plain_tag_language_and_hides_internal_design_note(qapp):
+    """#17 — 축·값 모델은 유지하되 사용자 문구는 평이하고 내부 저장 설계 설명은 없다."""
+    from hwpxfiller.gui.job_editor import SaveJobPage
+
+    page = SaveJobPage()
+    row = page._add_tag_row()
+
+    assert "데이터·행" not in page.subTitle()
+    assert row.cb_axis.lineEdit().placeholderText() == "분류 기준 (예: 금액 구간)"
+    assert row.ed_value.placeholderText() == "태그 값 (예: 1억 미만)"
+    assert "축" not in row.cb_axis.lineEdit().placeholderText()
+    assert "분류 기준" in page.lbl_tag_help.text()
+    assert "축" not in page.lbl_tag_help.text()
 
 
 def test_editor_accept_blocks_empty_pattern_no_silent_fallback(qapp, tmp_path, monkeypatch):
@@ -674,7 +895,66 @@ def test_template_manager_panel_renders_badges_and_gated_actions(qapp, tmp_path)
     raw_labels = [b.text() for b in by_name["raw.hwpx"].findChildren(QPushButton)]
     comp_labels = [b.text() for b in by_name["comp.hwpx"].findChildren(QPushButton)]
     assert raw_labels == ["누름틀 변환"]
-    assert comp_labels == ["미리보기", "작업 만들기"]
+    assert comp_labels == ["작업 만들기"]
+
+
+def test_template_manager_manages_txt_track_without_preview_or_drift(
+    qapp, tmp_path, monkeypatch
+):
+    """#13 — TXT를 같은 관리면에서 생성·편집·열기·삭제하고 HWPX 중복 액션은 숨긴다."""
+    from PySide6.QtWidgets import QInputDialog, QPushButton
+
+    from hwpxfiller.core.authoring import compile_document
+    from hwpxfiller.core.text_registry import TextTemplateRegistry
+    from hwpxfiller.gui import template_manager as tm
+    from hwpxfiller.gui.template_manager import TemplateManagerPanel, TxtTemplateCard
+
+    hwpx_dir = tmp_path / "hwpx"
+    hwpx_dir.mkdir()
+    pkg, _ = compile_document(_hwpx_pkg(_P("계약명: {{계약명}}")))
+    pkg.save(str(hwpx_dir / "comp.hwpx"))
+    txt_dir = tmp_path / "txt"
+    txt_dir.mkdir()
+    (txt_dir / "기안.txt").write_text("안녕하세요 {{이름}}", encoding="utf-8")
+
+    panel = TemplateManagerPanel(
+        library_dir=hwpx_dir,
+        text_registry=TextTemplateRegistry(txt_dir),
+    )
+    assert panel.txt_list.count() == 1
+    card = panel.txt_list.itemWidget(panel.txt_list.item(0))
+    assert isinstance(card, TxtTemplateCard)
+    labels = [button.text() for button in card.findChildren(QPushButton)]
+    assert labels == ["내용 편집", "즉시 기안에서 열기", "삭제"]
+    all_button_labels = [button.text() for button in panel.findChildren(QPushButton)]
+    assert "미리보기" not in all_button_labels
+    assert not any("드리프트" in label or "판본 비교" in label for label in all_button_labels)
+
+    opened = []
+    panel.open_txt_requested.connect(opened.append)
+    next(button for button in card.findChildren(QPushButton) if "즉시 기안" in button.text()).click()
+    assert opened == ["기안"]
+
+    answers = iter((("신규", True), ("제목 {{사업명}}", True)))
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: next(answers))
+    monkeypatch.setattr(QInputDialog, "getMultiLineText", lambda *a, **k: next(answers))
+    panel._on_new_txt()
+    created = txt_dir / "신규.txt"
+    assert created.read_text(encoding="utf-8") == "제목 {{사업명}}"
+    assert panel.txt_list.count() == 2
+
+    monkeypatch.setattr(
+        QInputDialog,
+        "getMultiLineText",
+        lambda *a, **k: ("수정 {{사업명}}", True),
+    )
+    panel._on_edit_txt(panel.text_registry.load("신규"))
+    assert created.read_text(encoding="utf-8") == "수정 {{사업명}}"
+
+    monkeypatch.setattr(tm, "confirm_destructive", lambda *a, **k: True)
+    panel._on_delete_txt(panel.text_registry.load("신규"))
+    assert not created.exists()
+    assert panel.txt_list.count() == 1
 
 
 def test_template_manager_compile_dry_run_then_apply(qapp, tmp_path, monkeypatch):
@@ -1183,11 +1463,18 @@ def test_template_manager_route_seeds_default_library_and_make_job(qapp, tmp_pat
     panels = [c for c in ctrl._children if isinstance(c, TemplateManagerPanel)]
     assert len(panels) == 1
     assert panels[0].vm.library_dir == default_templates_dir()  # 백지(None) 금지
+    assert panels[0].text_registry is ctrl.home.text_registry  # 홈·관리·즉시 기안 동일 TXT 루트
 
     panels[0].make_job_requested.emit("/lib/tpl.hwpx")
     wizards = [c for c in ctrl._children if isinstance(c, JobEditorWizard)]
     assert len(wizards) == 1
     assert wizards[0].template_path == "/lib/tpl.hwpx"  # 세션에 시드됨
+
+    (ctrl.home.text_registry.directory / "경로.txt").parent.mkdir(parents=True, exist_ok=True)
+    (ctrl.home.text_registry.directory / "경로.txt").write_text("{{값}}", encoding="utf-8")
+    panels[0].open_txt_requested.emit("경로")
+    assert ctrl.shell.current_key() == "txt"
+    assert ctrl.shell.stack.currentWidget().cbo.currentText() == "경로"
 
 
 def test_open_editor_from_base_failure_is_loud_not_silent(qapp, tmp_path, monkeypatch):
@@ -1279,7 +1566,7 @@ def test_home_run_cta_enabled_and_emphasis_by_state(qapp, tmp_path):
 
     def _run_btn(name):
         card = home.list.itemWidget(home.list.findItems(name, Qt.MatchExactly)[0])
-        return next(b for b in card.findChildren(QPushButton) if b.text() == "실행")
+        return next(b for b in card.findChildren(QPushButton) if b.text() == "이 작업 실행")
 
     ready, absent = _run_btn("정상작업"), _run_btn("부재작업")
     # 준비(ok) = 활성 + 카드 보조 강조. 화면 전역 primary(채움)로 승격하지 않는다.
@@ -1419,6 +1706,56 @@ def test_run_view_instantiates_with_a_job(qapp):
     view = RunView(Job(name="실행테스트", template_path="/t.hwpx", filename_pattern="doc-{{ID}}"))
     assert view.datasource is None  # 데이터 미겨눔 상태로 시작
     assert hasattr(view, "run_finished")
+
+
+def test_run_view_exposes_only_one_pass_document_flow(qapp, tmp_path):
+    """#18 — 일반 실행 UI는 신규 문서·쉬운 검증 문구·문서 중심 용어만 노출한다."""
+    from PySide6.QtCore import Qt
+
+    view = _run_view_with_data(tmp_path)
+    assert "한 번에 완성" in view.lbl_target_mode.text()
+    assert view.rb_cont.isHidden()
+    assert view.ed_prev.isHidden()
+    assert view.btn_prev.isHidden()
+    assert view.chk_ledger.isHidden()  # 기능 seam은 존치하되 실행 화면 노출은 없음
+    assert view.rec_box.title() == "생성 대상 문서"
+
+    # 빈 값 없는 둘째 행만 선택하면 쉬운 성공 문구가 렌더된다(판정 level은 링1 소유).
+    view.selector.list.item(0).setCheckState(Qt.Unchecked)
+    assert view.lbl_preflight.property("level") == "ok"
+    assert view.lbl_preflight.text() == "검증 완료 — 문서를 생성할 준비가 됐습니다."
+    assert "치명" not in view.lbl_preflight.text()
+    assert "표면화" not in view.lbl_preflight.text()
+
+
+def test_single_and_multi_job_execution_labels_name_both_axes(qapp, tmp_path):
+    """#14 — 1작업×N행과 M작업×공통데이터를 포괄적 '일괄' 한 단어로 부르지 않는다."""
+    from hwpxfiller.core.dataset_pool import DatasetPoolRegistry
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.core.text_registry import TextTemplateRegistry
+    from hwpxfiller.gui.home import JobListHome
+    from hwpxfiller.gui.matrix_view import MatrixRunView
+
+    single = _run_view_with_data(tmp_path)
+    assert single.lbl_scope.text() == (
+        "작업 1개로 선택한 데이터의 각 행마다 문서 1건을 만듭니다."
+    )
+    assert single.btn_generate.text() == "이 작업으로 문서 생성"
+
+    matrix = MatrixRunView(JobRegistry(tmp_path / "matrix-jobs"))
+    assert matrix.windowTitle() == "HWPX Filler — 같은 데이터로 여러 작업 실행"
+    assert "작업 여러 개에 같은 데이터" in matrix.lbl_head.text()
+    assert matrix.job_box.title() == "1. 적용할 작업 (여러 개)"
+    assert matrix.data_box.title() == "2. 함께 적용할 데이터 (공통 1개)"
+    assert matrix.rec_box.title() == "4. 공통 데이터에서 사용할 행"
+    assert matrix.btn_generate.text() == "여러 작업 문서 생성"
+
+    home = JobListHome(
+        JobRegistry(tmp_path / "home-jobs"),
+        TextTemplateRegistry(tmp_path / "text-templates"),
+        pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
+    )
+    assert home.btn_matrix.text() == "같은 데이터로 여러 작업 실행"
 
 
 def _run_view_with_data(tmp_path):
@@ -1998,7 +2335,7 @@ def test_txt_view_data_affordances_are_symmetric(qapp, tmp_path):
 
     view = TxtDraftView(TextTemplateRegistry(d), pool_registry=_Pool())
     # 3종 겨눔 버튼이 실행 표면(풀·파일·나라)과 동형으로 출현한다.
-    assert view.btn_pool.text() == "데이터 풀에서…"
+    assert view.btn_pool.text() == "등록 데이터에서…"
     assert view.btn_data.text() == "파일 선택…"
     assert view.btn_manual.text() == "수기 입력…"
 
@@ -2130,7 +2467,30 @@ def test_datapage_source_toggle_resets_session_atomically(qapp, tmp_path, monkey
     # 매핑 스텝 재진입도 지운 데이터로 구동되지 않는다(캐시 키·레코드 모두 초기화).
     mapping_page.initializePage()
     assert wiz.model.source_fields == []
-    assert mapping_page.lbl_index.text() == "레코드 0/0"
+    assert mapping_page.lbl_index.text() == "행 0/0"
+
+
+def test_mapping_page_compacts_profile_actions_and_uses_row_terms(qapp, tmp_path):
+    """#16 — 반복 목적어는 그룹화하고 미리보기 탐색 용어는 '행'으로 통일한다."""
+    wiz, _data_page, page = _authoring_wizard(tmp_path)
+    wiz.records = [{"공고명": "첫째"}, {"공고명": "둘째"}]
+    wiz.source_fields = ["공고명"]
+    page.initializePage()
+
+    assert page.lbl_profile_actions.text() == "매핑 프로파일"
+    assert page.btn_base_apply.text() == "적용…"
+    assert page.btn_base_save.text() == "저장…"
+    assert page.lbl_file_actions.text() == "JSON 파일"
+    assert page.btn_load.text() == "불러오기…"
+    assert page.btn_save.text() == "내보내기…"
+    assert "재사용" in page.btn_base_save.toolTip()
+    assert "JSON" in page.btn_save.toolTip()
+
+    assert page.btn_prev.text() == "◀ 이전 행"
+    assert page.lbl_index.text() == "행 1/2"
+    assert page.btn_next.text() == "다음 행 ▶"
+    page.btn_next.click()
+    assert page.lbl_index.text() == "행 2/2"
 
 
 def test_mapping_table_unknown_type_renders_loudly_without_crash(qapp):

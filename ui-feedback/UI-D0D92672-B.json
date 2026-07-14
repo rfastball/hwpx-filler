@@ -1,0 +1,21 @@
+{
+  "issue_id": "UI-D0D92672-B",
+  "related_captures": [
+    {
+      "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-d0d92672-5607-4b60-9649-99081183e6d1.png",
+      "regions": [
+        "실행 화면의 생성 대상 레코드 영역"
+      ]
+    }
+  ],
+  "screen_or_page": "등록된 작업의 실행 화면",
+  "affected_area": "생성할 문서 목록의 영역 제목",
+  "current_state": "각 데이터 항목이 하나의 문서로 생성되는 목록에 ‘생성 대상 레코드’라는 용어가 사용된다. 이 문맥에서는 ‘행’으로 바꾸기도 어렵고, 사용자가 결과물을 바로 떠올리기 어렵다.",
+  "expected_state": "영역 제목을 ‘생성 대상 문서’로 바꿔 목록의 각 항목이 생성될 문서를 의미한다는 점을 명확히 한다.",
+  "issue_type": "용어 순화",
+  "affected_viewport_or_environment": "데스크톱 환경의 등록 작업 실행 화면. 다른 환경의 적용 범위는 확인되지 않음.",
+  "severity": "낮음",
+  "unverified": [
+    "같은 화면의 다른 ‘레코드’ 표현에도 동일한 문서 중심 용어를 적용할지 여부"
+  ]
+}

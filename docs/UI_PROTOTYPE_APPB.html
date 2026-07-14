@@ -245,12 +245,17 @@
 
   /* ── dashboard (scr-home) ── */
   .dash-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:14px}
-  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:18px}
+  .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px}
   @media(max-width:720px){.kpis{grid-template-columns:repeat(2,1fr)}}
   .kpi{background:var(--a-card);border:1px solid var(--a-border);border-radius:9px;padding:12px 14px}
   .kpi .v{font-size:23px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
   .kpi .l{font-size:11.5px;color:var(--a-muted);margin-top:2px}
   .kpi.warn .v{color:var(--a-warn)}
+  .continue-runs{background:var(--a-card);border:1px solid var(--a-border);border-radius:9px;padding:10px 12px;margin-bottom:18px}
+  .continue-runs .cr-head{font-weight:700;margin-bottom:5px}
+  .continue-run{display:flex;align-items:center;gap:10px;padding:4px 0;border-top:1px solid var(--a-border)}
+  .continue-run .name{font-weight:650;flex:1}
+  .continue-run .when{font-size:11.5px;color:var(--a-muted)}
   .tracks{display:grid;grid-template-columns:1.3fr 1fr;gap:16px}
   @media(max-width:820px){.tracks{grid-template-columns:1fr}}
   .track{background:var(--a-card);border:1px solid var(--a-border);border-radius:10px;padding:15px 16px}
@@ -354,17 +359,19 @@
                 </div>
                 <div class="kpis" data-vm="HomeViewModel.kpi">
                   <div class="kpi"><div class="v">3</div><div class="l">저장된 작업 · HWPX</div></div>
-                  <div class="kpi"><div class="v">07-09</div><div class="l">최근 실행 · 공고서 자동생성</div></div>
                   <div class="kpi warn"><div class="v">1</div><div class="l">템플릿 없는 작업</div></div>
                   <div class="kpi"><div class="v">2</div><div class="l">기안 템플릿 · txt</div></div>
-                  <!-- DashboardKpi.pool_count (J1) — 개별 타일은 data-vm 미부착(컨테이너 HomeViewModel.kpi 가 대표) -->
-                  <div class="kpi"><div class="v">4</div><div class="l">데이터 풀 · 활성</div></div>
+                </div>
+                <div class="continue-runs" id="continueRunList" data-vm="HomeViewModel.rows">
+                  <div class="cr-head">이어서 실행</div>
+                  <div class="continue-run"><span class="name">공고서 자동생성</span><span class="when">최근 실행 2026-07-09 15:42</span><button class="btn sm">이어서 실행</button></div>
+                  <div class="continue-run"><span class="name">계약 보고서</span><span class="when">최근 실행 2026-06-30 11:08</span><button class="btn sm">이어서 실행</button></div>
                 </div>
                 <div class="tracks">
                   <div class="track hwpx">
                     <div class="th"><span class="tt">정식 문서 생성 · HWPX</span>
                       <span class="row"><!-- Qt 시그널 matrix_run_requested(J2) — VM 표면 아님 -->
-                        <button class="btn sm">여러 작업 일괄 실행</button>
+                        <button class="btn sm">같은 데이터로 여러 작업 실행</button>
                         <button class="btn primary sm">＋ 새 작업</button></span></div>
                     <p class="tsub">누름틀 템플릿 + 매핑을 작업으로 저장 → 데이터 겨눠 .hwpx 생성.</p>
                     <!-- 작업 브라우저(패싯 탐색, JOB_BROWSER_DESIGN §4): 사용자 소유 group-by 렌즈
@@ -383,7 +390,7 @@
                         <div class="jn" data-vm="JobRow.name">공고서 자동생성 <span class="pill" data-vm="JobRow.compile_badge">✅ 실행 준비</span></div>
                         <div class="jm" data-vm="JobRow.meta_line">공고서_양식.hwpx · 필드 14개 · <span class="mono">공고서-{{ID}}</span></div>
                         <div class="jfoot"><span class="jr" data-vm="JobRow.last_run_display">최근 실행 2026-07-09 15:42</span>
-                          <span class="row"><button class="btn primary sm">실행</button><button class="btn sm">편집</button><button class="btn sm">삭제</button></span></div>
+                          <span class="row"><button class="btn primary sm">이 작업 실행</button><button class="btn sm">편집</button><button class="btn sm">삭제</button></span></div>
                       </div>
                       <div class="jcard">
                         <div class="jn">낙찰통지서</div>
@@ -494,23 +501,24 @@
                   <div class="wtitle">3단계 — 필드 매핑 확정</div>
                   <p class="wsub">자동 제안은 초안일 뿐입니다. 모든 행을 검토해 확정해야 다음으로
                     진행합니다. 채우지 않을 필드는 소스를 (비움)으로 두고 확정하세요.</p>
+                  <p class="wsub">필드명 옆 ‘추정: …’은 템플릿 내용에서 얻은 초기 제안입니다.
+                    실제 채움 방식은 각 행의 ‘타입’에서 확인하거나 바꿀 수 있습니다.</p>
                   <div class="tblwrap">
                     <table class="map">
                       <thead><tr>
                         <th data-vm="RowState.confirmed">확정</th>
-                        <th data-vm="RowState.template_field">템플릿 필드</th>
+                        <th data-vm="RowState.template_field">템플릿 필드 · 추정 타입</th>
                         <th data-vm="RowState.source">소스</th>
-                        <th data-vm="RowState.type">유형</th>
+                        <th data-vm="RowState.type">타입 / 고정값</th>
                         <th data-vm="RowState.fmt">표시형</th>
-                        <th data-vm="RowState.const">상수</th>
                         <th data-vm="RowState.to_mapping">미리보기</th></tr></thead>
                       <tbody id="mapBody" data-vm="MappingModel.rows"></tbody>
                     </table>
                   </div>
                   <div class="stepper">
-                    <button class="btn" id="recPrev">◀ 이전</button>
-                    <span id="recIdx" style="font-weight:600">레코드 1/25</span>
-                    <button class="btn" id="recNext">다음 ▶</button>
+                    <button class="btn" id="recPrev">◀ 이전 행</button>
+                    <span id="recIdx" style="font-weight:600">행 1/25</span>
+                    <button class="btn" id="recNext">다음 행 ▶</button>
                     <span class="muted" style="margin-left:6px" id="pvSummary" data-vm="MappingModel.preview_empties">채움 12 · 빈값 2 — 비고, 특이사항</span>
                   </div>
                   <div class="gate">
@@ -518,8 +526,12 @@
                     <span style="flex:1"></span>
                     <button class="btn" id="confAll" data-vm="MappingModel.confirm_all">모두 확정</button>
                     <button class="btn" id="unconfAll" data-vm="MappingModel.unconfirm_all">모두 해제</button>
-                    <button class="btn">프로파일 불러오기…</button>
-                    <button class="btn">프로파일 저장…</button>
+                    <span class="muted">매핑 프로파일</span>
+                    <button class="btn">적용…</button>
+                    <button class="btn">저장…</button>
+                    <span class="muted">JSON 파일</span>
+                    <button class="btn">불러오기…</button>
+                    <button class="btn">내보내기…</button>
                   </div>
                 </div>
 
@@ -584,26 +596,18 @@
               <div class="body">
                 <div class="heading">작업: 공고서 자동생성 · 템플릿: 공고서_양식.hwpx ·
                   파일명: <span class="mono" style="font-weight:400">공고서-{{ID}}</span></div>
+                <div class="muted" style="margin-top:5px">작업 1개로 선택한 데이터의 각 행마다 문서 1건을 만듭니다.</div>
 
                 <div class="grp"><span class="cap">대상 문서</span>
-                  <label class="radio"><input type="radio" name="tgt" id="rNew" checked data-vm="RunViewModel.set_target_mode">
-                    <span>새 문서 생성 — 작업 템플릿(공고서_양식.hwpx)</span></label>
-                  <label class="radio"><input type="radio" name="tgt" id="rCont" data-vm="RunViewModel.set_target_mode">
-                    <span>기존 문서 이어채우기 — 선택한 .hwpx 문서에 이 단계 값을 채웁니다</span></label>
-                  <div class="row" id="prevRow" style="margin:6px 0 0 22px;opacity:.45">
-                    <input class="field ro" id="prevPath" value="" placeholder="기존 문서(.hwpx)" readonly disabled>
-                    <button class="btn" id="prevPick" disabled data-vm="RunViewModel.set_prev_output">기존 문서 선택…</button></div>
-                  <div class="note warnbox" id="overlapNote" style="display:none" data-vm="RunViewModel.set_prev_output">
-                    ⚠ 이 작업의 필드 14개 중 <b>5개</b>가 문서에 있습니다. 이미 값이 있는
-                    겹침 필드는 <b>덮어씁니다</b> — 단계별 필드는 서로소로 설계하세요.</div>
+                  <span>새 문서 생성 — 작업 템플릿(공고서_양식.hwpx)으로 한 번에 완성합니다.</span>
                 </div>
 
                 <div class="row" style="margin-top:14px"><span class="lbl">데이터(.xlsx/.csv)</span>
-                  <input class="field ro" value="C:\데이터\입찰공고_2026Q3.xlsx" readonly>
-                  <button class="btn" data-vm="RunViewModel.load_data">데이터 선택…</button></div>
+                  <input class="field ro" value="등록 데이터: 공고서 자동생성 · 등록 데이터" readonly>
+                  <button class="btn" data-vm="RunViewModel.load_data">등록 데이터에서…</button></div>
 
                 <div class="preflight okbox" style="background:#e5f2ea;border:1px solid #a6d3b7" data-vm="RunViewModel.preflight">
-                  <span class="ok">사전검증 통과 — 치명 누락 없음. 아래 빈칸 표면화를 확인하세요.</span></div>
+                  <span class="ok">검증 완료 — 문서를 생성할 준비가 됐습니다.</span></div>
 
                 <div class="grp" style="margin-top:16px"><span class="cap">빈칸 표면화 · 상시 인라인</span>
                   <p style="font-size:12px;margin:2px 0 0;color:#4a505a">필드 상태를 상시 배지로
@@ -622,7 +626,7 @@
 
                 <div style="margin-top:14px">
                   <div class="row" style="justify-content:space-between">
-                    <span class="lbl" style="font-weight:600">생성 대상 레코드</span>
+                    <span class="lbl" style="font-weight:600">생성 대상 문서</span>
                     <div class="row"><span class="muted" id="selCount" style="font-size:12px" data-vm="SelectionModel.selected_count">선택 4/4</span>
                       <button class="btn" id="selAll" data-vm="SelectionModel.set_all">전체 선택</button>
                       <button class="btn" id="selNone" data-vm="SelectionModel.set_none">전체 해제</button></div>
@@ -640,7 +644,7 @@
                   <button class="btn">찾아보기…</button></div>
 
                 <div class="row" style="margin-top:14px">
-                  <button class="btn primary" id="genBtn" disabled data-vm="RunViewModel.validate_generate">생성</button>
+                  <button class="btn primary" id="genBtn" disabled data-vm="RunViewModel.validate_generate">이 작업으로 문서 생성</button>
                   <span class="muted" id="genGate" style="font-size:12px" data-vm="RunViewModel.blank_fields">
                     미입력 2필드를 확인해야 생성이 열립니다</span></div>
                 <div class="bar"><i id="genBar" data-vm="RunViewModel.mapped_records"></i></div>
@@ -853,7 +857,7 @@
 
   var recI=1;
   function syncRec(){
-    document.getElementById('recIdx').textContent='레코드 '+recI+'/25';
+    document.getElementById('recIdx').textContent='행 '+recI+'/25';
     document.getElementById('recPrev').disabled=recI<=1;
     document.getElementById('recNext').disabled=recI>=25;
     document.getElementById('pvSummary').textContent = recI===1
@@ -890,18 +894,6 @@
   gotoStep(0);
 
   /* ---------- RUN ---------- */
-  var rCont=document.getElementById('rCont'),rNew=document.getElementById('rNew'),
-      prevRow=document.getElementById('prevRow'),prevPath=document.getElementById('prevPath'),
-      prevPick=document.getElementById('prevPick'),overlapNote=document.getElementById('overlapNote');
-  function syncTarget(){
-    var cont=rCont.checked;
-    prevRow.style.opacity=cont?'1':'.45';
-    prevPath.disabled=!cont;prevPick.disabled=!cont;
-    if(cont){prevPath.value='C:\\양식\\Results\\공고서-A2026-001.hwpx';overlapNote.style.display='block';}
-    else{prevPath.value='';overlapNote.style.display='none';}
-  }
-  rCont.addEventListener('change',syncTarget);rNew.addEventListener('change',syncTarget);
-
   var genBtn=document.getElementById('genBtn'),genGate=document.getElementById('genGate');
   function syncMissing(){
     var left=document.querySelectorAll('.fb.missing:not(.ack)').length;
@@ -933,7 +925,7 @@
     if(total===0){genLog.textContent=stamp('생성할 레코드를 최소 1건 선택하세요.');return;}
     genBtn.disabled=true;genResult.textContent='';genBar.style.width='0';
     var marked=document.querySelectorAll('.fb.missing.ack').length;
-    var mode=rCont.checked?'누적(기존 문서 이어채우기)':'신규';
+    var mode='신규';
     genLog.textContent=stamp('생성 시작['+mode+']: '+total+'건 → C:\\양식\\Results');
     var done=0;
     var iv=setInterval(function(){
@@ -952,7 +944,7 @@
       }
     },420);
   });
-  syncMissing();syncSel();syncTarget();
+  syncMissing();syncSel();
 
   /* ---------- TXT 즉시 기안 (render_record 의 브라우저 미러) ---------- */
   var TEMPLATES={

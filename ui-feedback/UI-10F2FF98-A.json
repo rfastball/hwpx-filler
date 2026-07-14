@@ -1,0 +1,15 @@
+{
+  "issue_id": "UI-10F2FF98-A",
+  "related_captures": [{
+    "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-10f2ff98-e5e6-447f-a804-6a3528623bc6.png",
+    "regions": ["선택한 템플릿 목록과 화면 맨 아래에 작게 표시된 미리보기"]
+  }],
+  "screen_or_page": "템플릿 관리 화면",
+  "affected_area": "템플릿 미리보기의 표시 위치와 크기",
+  "current_state": "선택한 템플릿의 미리보기가 목록과 떨어진 화면 하단에 작은 텍스트로 표시되어, 선택 항목과의 연관성은 알 수 있지만 시선 이동이 크고 화면이 산만하다.",
+  "expected_state": "선택한 템플릿과 미리보기 정보를 공간적으로 가깝게 연결하고, 내용을 확인하기 적절한 크기와 위치로 재배치한다.",
+  "issue_type": "미리보기 레이아웃 및 시선 동선 개선",
+  "affected_viewport_or_environment": "데스크톱 환경의 템플릿 관리 화면. 정확한 창 크기와 다른 환경의 적용 범위는 확인되지 않음.",
+  "severity": "낮음",
+  "unverified": ["미리보기를 표시할 구체적인 위치와 크기", "목록과 미리보기를 동시에 유지할지 여부"]
+}

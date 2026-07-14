@@ -1,0 +1,23 @@
+{
+  "issue_id": "UI-433A6E14",
+  "related_captures": [
+    {
+      "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-433a6e14-4786-4200-b471-c14642896eb4.png",
+      "regions": [
+        "필드 매핑 표에서 펼쳐진 표시형 드롭다운"
+      ]
+    }
+  ],
+  "screen_or_page": "새 문서 작업의 필드 매핑 화면",
+  "affected_area": "표시형 드롭다운의 옵션 목록",
+  "current_state": "긴 옵션 텍스트가 드롭다운 너비 안에서 말줄임표로 잘려 전체 내용을 확인하기 어렵다.",
+  "expected_state": "드롭다운에서 긴 옵션의 전체 텍스트를 식별할 수 있어야 한다.",
+  "issue_type": "텍스트 잘림",
+  "affected_viewport_or_environment": "데스크톱 환경. 정확한 화면 크기와 다른 환경의 적용 범위는 확인되지 않음.",
+  "severity": "낮음",
+  "unverified": [
+    "잘린 옵션들의 정확한 전체 문구",
+    "드롭다운 너비 조정, 줄바꿈, 별도 전체 문구 표시 중 선호하는 해결 방식",
+    "표시형 외 다른 드롭다운에서도 동일한 문제가 발생하는지 여부"
+  ]
+}

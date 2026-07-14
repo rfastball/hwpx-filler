@@ -1,0 +1,15 @@
+{
+  "issue_id": "UI-A6368A20-D",
+  "related_captures": [{
+    "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-a6368a20-cd42-49f1-8d5d-ea685c7ae725.png",
+    "regions": ["왼쪽 필드 상태(토큰) 영역의 초록색 토큰 표시"]
+  }],
+  "screen_or_page": "즉시 기안 화면",
+  "affected_area": "필드 상태 토큰 목록",
+  "current_state": "필드 상태 토큰의 표시 영역이 작아 토큰 이름이 모두 잘린 채 보이며, 각 항목을 구분하기 어렵다.",
+  "expected_state": "모든 필드 상태 토큰의 이름과 상태를 식별할 수 있도록 표시 방식을 재검토한다.",
+  "issue_type": "텍스트 잘림 및 상태 정보 가독성",
+  "affected_viewport_or_environment": "데스크톱 환경의 즉시 기안 화면. 정확한 창 크기는 확인되지 않음.",
+  "severity": "보통",
+  "unverified": ["전체 토큰을 보여줄 구체적인 표시 방식", "토큰 수가 많을 때의 배치 방식"]
+}

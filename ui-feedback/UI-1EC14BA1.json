@@ -1,0 +1,23 @@
+{
+  "issue_id": "UI-1EC14BA1",
+  "related_captures": [
+    {
+      "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-1ec14ba1-9ca2-4879-b753-4a6279550a55.png",
+      "regions": [
+        "필드 매핑 표의 날짜 유형 필드와 표시형 선택 영역",
+        "미리보기의 날짜 값"
+      ]
+    }
+  ],
+  "screen_or_page": "새 문서 작업의 필드 매핑 화면",
+  "affected_area": "날짜 유형 필드의 기본 표시 형식",
+  "current_state": "날짜 값이 공문서 표준 형식이 아닌 형태로 미리보기에 표시되며, 날짜 유형의 기본 표시 형식이 yyyy. m. d.로 설정되어 있지 않다.",
+  "expected_state": "날짜 유형 필드의 기본 표시 형식을 yyyy. m. d.로 설정한다. 예: 2026. 7. 3.",
+  "issue_type": "기본값 개선",
+  "affected_viewport_or_environment": "새 문서 작업의 날짜 필드. 화면 크기와 무관한 설정 요청으로 보이나 다른 환경의 적용 범위는 확인되지 않음.",
+  "severity": "낮음",
+  "unverified": [
+    "기존에 저장된 작업에도 기본 형식 변경을 적용할지 여부",
+    "사용자가 다른 날짜 표시 형식을 선택한 경우의 유지 방식"
+  ]
+}

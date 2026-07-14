@@ -1,0 +1,15 @@
+{
+  "issue_id": "UI-F6625AA9-A",
+  "related_captures": [{
+    "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-f6625aa9-89ff-4d08-bbd5-5a26da9efa8f.png",
+    "regions": ["왼쪽 탐색 메뉴와 본문 제목의 데이터 풀 명칭"]
+  }],
+  "screen_or_page": "데이터 풀 화면 및 데이터 풀을 지칭하는 탐색·선택 영역",
+  "affected_area": "‘데이터 풀’ 기능 명칭",
+  "current_state": "데이터를 모아 관리한다는 의도는 전달되지만 ‘데이터 풀’이라는 명칭이 개발자 중심의 용어처럼 느껴진다.",
+  "expected_state": "실무자가 기능의 목적을 자연스럽게 이해할 수 있는 용어로 순화하는 방안을 검토한다.",
+  "issue_type": "기능 명칭 순화 검토",
+  "affected_viewport_or_environment": "데스크톱 환경의 데이터 풀 관련 화면. 다른 환경의 적용 범위는 확인되지 않음.",
+  "severity": "낮음",
+  "unverified": ["‘데이터 풀’을 대신할 최종 용어", "같은 명칭이 사용되는 전체 화면과 안내 문구의 범위"]
+}
