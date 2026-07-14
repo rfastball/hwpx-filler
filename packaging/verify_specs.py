@@ -42,6 +42,13 @@ def main() -> int:
     assert not missing_hidden, f"CLI hidden import 누락: {missing_hidden}"
     assert '"PySide6"' in cli, "CLI에서 PySide6 제외 누락"
 
+    # 웹 프론트엔드 spec(에픽 #20) — onedir·Qt 전량 제외·web/ 번들·브리지 hidden import.
+    web = (HERE / "hwpx_filler_web.spec").read_text(encoding="utf-8")
+    assert "COLLECT(" in web and "exclude_binaries=True" in web, "web spec: onedir 아님"
+    assert '"PySide6"' in web, "web spec: PySide6 전량 제외 누락(Qt 미탑재)"
+    assert '(str(REPO / "web"), "web")' in web, "web spec: 정적 자산 web/ 번들 누락"
+    assert '"hwpxfiller.webapp.app"' in web, "web spec: 브리지 hidden import 누락"
+
     all_specs = "\n".join(specs.values()).lower()
     assert "win32com" not in all_specs and "comtypes" not in all_specs, "한글 COM 번들 금지"
     print("spec contract: OK (onedir=3, hidden-imports, Qt excludes, COM optional)")

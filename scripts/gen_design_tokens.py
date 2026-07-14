@@ -24,6 +24,9 @@ ROOT = Path(__file__).resolve().parent.parent
 TOKENS = ROOT / "src" / "hwpxfiller" / "gui" / "design_tokens.json"
 STYLE = ROOT / "src" / "hwpxfiller" / "gui" / "style.py"
 MOCKUP = ROOT / "docs" / "UI_PROTOTYPE_APPB.html"
+# 웹 프론트엔드(pywebview) CSS 변수 단일 출처(에픽 #20). 실앱은 스튜디오 셸 없이 앱윈도 자체라
+# --a-* 팔레트를 주 테마로 쓰고, 배지/중성 틴트까지 토큰에서 받는다(스파이크 임시색 교체).
+WEBCSS = ROOT / "web" / "css" / "tokens.css"
 # 앱 A(diff 리뷰어)도 같은 토큰에서 팔레트를 받는다 — diff 는 hwpxfiller 를 런타임에
 # 임포트하지 못하므로(패키징 제외) 자립 style.py 를 두되, 색은 이 JSON 이 단일 출처다.
 DIFF_STYLE = ROOT / "src" / "hwpxdiff" / "style.py"
@@ -80,9 +83,33 @@ _MOCKUP_MAP = [
     ("--a-empty", "state.data_empty_fg"), ("--a-sel", "state.select_bg"),
 ]
 
+# 웹 CSS 변수 이름 ← 토큰 경로. --a-* 핵심 팔레트(목업과 동일)에 배지/상태/중성 틴트를 더한다.
+# 실앱 CSS(web/css/app.css)는 이 변수만 참조 — 색 리터럴 하드코딩 금지(스파이크 임시색 교체).
+_WEB_MAP = [
+    ("--a-primary", "color.primary"), ("--a-primary-h", "color.primary_hover"),
+    ("--a-warn", "color.warn"), ("--a-danger", "color.danger"), ("--a-ok", "color.ok"),
+    ("--a-muted", "color.muted"), ("--a-border", "color.border"), ("--a-card", "color.card_bg"),
+    ("--a-window", "color.window_bg"), ("--a-ink", "color.ink"),
+    ("--a-unconf", "state.unconfirmed_bg"), ("--a-unmatch", "state.unmatched_bg"),
+    ("--a-empty", "state.data_empty_fg"), ("--a-sel", "state.select_bg"),
+    ("--fb-fill-bg", "badge.fill_bg"), ("--fb-fill-bd", "badge.fill_border"),
+    ("--fb-blank-bg", "badge.blank_bg"), ("--fb-blank-bd", "badge.blank_border"),
+    ("--fb-missing-bg", "badge.missing_bg"), ("--fb-missing-bd", "badge.missing_border"),
+    ("--fb-ack-bg", "badge.ack_bg"), ("--fb-ack-fg", "badge.ack_fg"),
+    ("--fb-ack-bd", "badge.ack_border"),
+    ("--n-surface-alt", "neutral.surface_alt"), ("--n-hover", "neutral.hover"),
+    ("--n-pressed", "neutral.pressed"), ("--n-track", "neutral.track"),
+    ("--n-header-bg", "neutral.header_bg"), ("--n-border-strong", "neutral.border_strong"),
+    ("--n-border-control", "neutral.border_control"), ("--n-ink-soft", "neutral.ink_soft"),
+    ("--n-header-ink", "neutral.header_ink"), ("--n-ink-control", "neutral.ink_control"),
+    # 실행 화면 로그박스(웹 전용) — 어두운 콘솔 톤. style.py(Qt)는 QPlainTextEdit 기본이라 미사용.
+    ("--log-surface", "log.surface"), ("--log-ink", "log.ink"),
+]
+
 OPEN_PY, CLOSE_PY = "# <gen:tokens>", "# </gen:tokens>"
 OPEN_CSS, CLOSE_CSS = "/* <gen:tokens> */", "/* </gen:tokens> */"
 _MOCKUP_INDENT = "    "
+_WEB_INDENT = "  "
 
 
 def load_tokens() -> dict:
@@ -125,6 +152,14 @@ def render_mockup_region(tokens: dict) -> str:
     return "\n".join(lines)
 
 
+def render_web_region(tokens: dict) -> str:
+    """웹 ``web/css/tokens.css`` 의 ``:root`` 안 ``<gen:tokens>`` 영역 전문(2칸 들여쓰기)."""
+    lines = [_WEB_INDENT + OPEN_CSS]
+    lines += [f"{_WEB_INDENT}{name}:{_dig(tokens, path)};" for name, path in _WEB_MAP]
+    lines.append(_WEB_INDENT + CLOSE_CSS)
+    return "\n".join(lines)
+
+
 def _region_re(open_m: str, close_m: str) -> "re.Pattern[str]":
     # 열림 마커 직전의 같은 줄 들여쓰기까지 소비 → 치환 시 들여쓰기 중복 방지.
     return re.compile(r"[ \t]*" + re.escape(open_m) + r".*?" + re.escape(close_m), re.DOTALL)
@@ -145,6 +180,7 @@ def check() -> "list[str]":
         (STYLE, OPEN_PY, CLOSE_PY, render_style_region),
         (DIFF_STYLE, OPEN_PY, CLOSE_PY, render_diff_style_region),
         (MOCKUP, OPEN_CSS, CLOSE_CSS, render_mockup_region),
+        (WEBCSS, OPEN_CSS, CLOSE_CSS, render_web_region),
     ):
         text = path.read_text(encoding="utf-8")  # read_text 가 CRLF→\n 정규화
         m = _region_re(open_m, close_m).search(text)
@@ -169,6 +205,10 @@ def rewrite() -> None:
         _splice(MOCKUP.read_text(encoding="utf-8"), OPEN_CSS, CLOSE_CSS, render_mockup_region(tokens)),
         encoding="utf-8", newline="\n",
     )
+    WEBCSS.write_text(
+        _splice(WEBCSS.read_text(encoding="utf-8"), OPEN_CSS, CLOSE_CSS, render_web_region(tokens)),
+        encoding="utf-8", newline="\n",
+    )
 
 
 def main(argv=None) -> int:
@@ -183,7 +223,7 @@ def main(argv=None) -> int:
         print("토큰 동기화 OK (style.py · 목업)")
         return 0
     rewrite()
-    print("재생성 완료: style.py · hwpxdiff/style.py · docs/UI_PROTOTYPE_APPB.html")
+    print("재생성 완료: style.py · hwpxdiff/style.py · docs/UI_PROTOTYPE_APPB.html · web/css/tokens.css")
     return 0
 
 

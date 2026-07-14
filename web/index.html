@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HWPX Filler</title>
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<!-- 웹 프론트엔드 셸 — 목업 docs/UI_PROTOTYPE_APPB.html 의 앱윈도 구조를 스튜디오 크롬(마스트헤드·
+     주석·캔버스) 없이 실앱으로 전개. 좌 레일(6화면 라우팅) + 우 스테이지. 링1 VM 에 브리지로 배선.
+     실화면 전부 이관 완료: home(허브·기본)·txt·editor(#15·#16)·run(#18)·matrix(#14)·tpl(#13). -->
+<div class="app">
+  <nav class="rail" aria-label="화면 전환">
+    <div class="brand">HWPX Filler
+      <!-- #18/9B2AB35D-A: 사이드 패널 접기 — 좁은 창에서 작업 영역 확장(반응형) -->
+      <button class="rail-toggle" id="railToggle" title="사이드 패널 접기/펼치기"
+              aria-label="사이드 패널 접기/펼치기">«</button></div>
+    <div class="rl">투트랙 허브</div>
+    <button class="navbtn" data-scr="home" aria-current="true">
+      <span class="n">대시보드</span><span class="d">두 트랙 허브 · 요약</span></button>
+    <button class="navbtn" data-scr="editor">
+      <span class="n">작업 에디터</span><span class="d">HWPX · 4스텝</span></button>
+    <button class="navbtn" data-scr="run">
+      <span class="n">실행</span><span class="d">HWPX · 데이터 겨눔 → 생성</span></button>
+    <button class="navbtn" data-scr="matrix">
+      <span class="n">여러 작업 실행</span><span class="d">여러 작업 × 공통 데이터 → 생성</span></button>
+    <button class="navbtn" data-scr="txt">
+      <span class="n">즉시 기안 (txt)</span><span class="d">템플릿+데이터 → 실시간 → 복사</span></button>
+    <button class="navbtn" data-scr="tpl">
+      <span class="n">템플릿 관리</span><span class="d">HWPX·TXT 라이브러리 · 상태·변환·검토</span></button>
+  </nav>
+
+  <main class="stage">
+    <!-- ============ 대시보드 (허브, 마지막 페이로드 화면 · #20) ============ -->
+    <!-- 목업 scr-home 이관. 안정 DOM(id) + home.js 가 window.__push('home', snapshot) 로 값만
+         채운다(run 패턴). 링1 HomeViewModel(KPI·작업 브라우저 group-by/facet·빈 상태·손상 격리·
+         txt 트랙)에 브리지로 배선 — VM 로직 재구현 없음. 카드/버튼의 워크플로 이동은 window.Nav
+         (셸 라우터)로만; 홈은 다른 화면 컨트롤러를 모른다. 스코프 경계는 screen_home.py docstring. -->
+    <section class="scr on" id="scr-home">
+      <header class="scr-head">
+        <div>
+          <h1>대시보드</h1>
+          <p class="sub">두 트랙 허브 — 저장된 작업(HWPX)과 즉시 기안 템플릿(txt)을 한눈에.</p>
+        </div>
+      </header>
+
+      <!-- KPI — 전부 실재 데이터(레지스트리·템플릿 상태·txt 루트). 가짜 지표 없음. -->
+      <div class="kpis" id="homeKpis"></div>
+
+      <!-- 이어서 실행 — 실행 이력 있는 작업 최근순(있을 때만 노출) -->
+      <div class="continue-runs" id="homeContinue" style="display:none"></div>
+
+      <!-- 손상 작업 — 숨기지 않고 시끄러운 위험 카드로(RC-05, 있을 때만) -->
+      <div id="homeCorrupt" style="display:none"></div>
+
+      <div class="tracks">
+        <!-- HWPX 트랙 — 작업 브라우저(group-by 렌즈 + facet 칩) -->
+        <div class="track hwpx">
+          <div class="th"><span class="tt">정식 문서 생성 · HWPX</span>
+            <span class="row">
+              <button class="btn sm" id="homeMatrix">같은 데이터로 여러 작업 실행</button>
+              <button class="btn primary sm" id="homeNewJob">＋ 새 작업</button></span></div>
+          <p class="tsub">누름틀 템플릿 + 매핑을 작업으로 저장 → 데이터 겨눠 .hwpx 생성.</p>
+          <!-- 작업 브라우저 바(태그 없으면 렌더 안 됨 — 퇴화-코퍼스 불변식) -->
+          <div class="jobbrowser" id="homeBrowser" style="display:none"></div>
+          <div id="homeJobs"></div>
+          <div id="homeEmpty" style="display:none"></div>
+        </div>
+
+        <!-- txt 트랙 — 즉시 기안 템플릿 목록 -->
+        <div class="track txt">
+          <div class="th"><span class="tt">즉시 기안 · txt</span>
+            <button class="btn primary sm" id="homeNewTxt">＋ 새 기안</button></div>
+          <p class="tsub">평문 {{필드}} → 실시간 렌더 → 복사. 온나라 기안 등 즉각 붙여넣기.</p>
+          <div class="tlist" id="homeTxt"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 작업 에디터 (HWPX 4단계 마법사, #15·#16) ============ -->
+    <section class="scr" id="scr-editor">
+      <header class="scr-head">
+        <div>
+          <h1>작업 에디터</h1>
+          <p class="sub">누름틀 템플릿 + 매핑을 작업으로 저장 → 실행 시 데이터를 겨눠 .hwpx 생성.</p>
+        </div>
+      </header>
+      <div class="wsteps" id="editor-steps"></div>
+      <div class="wbody" id="editor-body"></div>
+      <footer class="wfoot" id="editor-foot"></footer>
+    </section>
+
+    <!-- ============ 실행 (등록된 작업 실행, #18) ============ -->
+    <!-- 목업 scr-run 이관. 안정 DOM(id) + run.js 가 window.__push('run', snapshot) 로 값만 채운다
+         (txt 패턴). 링1 RunViewModel·SelectionModel 에 브리지로 배선 — VM 로직 재구현 없음.
+         작업 선택기는 진입 어포던스(홈 이관 전까지 실행 화면 자체 진입점). -->
+    <section class="scr" id="scr-run">
+      <header class="scr-head">
+        <div>
+          <h1>실행</h1>
+          <p class="sub">저장된 작업을 골라 데이터·행을 겨눠 문서를 생성합니다.</p>
+        </div>
+        <div class="status" id="runStatus" data-level="idle">작업 선택</div>
+      </header>
+
+      <!-- 작업 선택(진입 어포던스) -->
+      <div class="run-jobbar">
+        <label class="ctl grow"><span class="lbl">실행할 작업</span>
+          <select class="field" id="jobSel"></select></label>
+        <div class="run-jobmeta" id="jobMeta"></div>
+      </div>
+
+      <div class="run-body" id="runBody">
+        <!-- 대상 문서(#18/31A5A484-A: 신규 생성 고정, 이어채우기 강등) -->
+        <div class="grp"><span class="cap">대상 문서</span>
+          <span id="targetLine" class="muted">작업을 선택하세요.</span></div>
+
+        <!-- 데이터 -->
+        <div class="run-row"><span class="lbl">데이터(.xlsx/.csv)</span>
+          <input class="field ro" id="dataLabel" type="text" readonly
+                 placeholder="데이터를 선택하세요">
+          <button class="btn" id="btnPickData">파일 선택…</button></div>
+
+        <!-- 사전검증 -->
+        <div class="preflight note" id="preflight" style="display:none"></div>
+
+        <!-- 빈칸 표면화(상시 인라인 + 강제 확인 게이트, ADR-E) -->
+        <div class="grp"><span class="cap">미입력 필드 확인</span>
+          <p class="muted hint">필드 상태를 상시 배지로 노출합니다. <span class="danger">미입력</span>
+            필드는 반사적 dismiss를 막기 위해 <b>직접 클릭해 확인</b>해야 생성이 열립니다.</p>
+          <div class="statebadges" id="fieldBadges"></div>
+        </div>
+
+        <!-- 생성 대상 문서 -->
+        <div class="run-row run-recs-head">
+          <span class="lbl" style="font-weight:600">생성 대상 문서</span>
+          <div class="row"><span class="muted" id="selCount" style="font-size:12px">선택 0/0</span>
+            <button class="btn sm" id="selAll">전체 선택</button>
+            <button class="btn sm" id="selNone">전체 해제</button></div>
+        </div>
+        <div class="reclist" id="recList"></div>
+
+        <!-- 저장 폴더 -->
+        <div class="run-row"><span class="lbl">저장 폴더</span>
+          <input class="field ro" id="outDir" type="text" readonly
+                 placeholder="작업별 하위 폴더 없이 이 폴더에 저장합니다">
+          <button class="btn" id="btnPickFolder">찾아보기…</button></div>
+
+        <!-- 액션 · 진행 · 결과 · 로그 -->
+        <div class="run-actions">
+          <button class="btn primary" id="genBtn" disabled>이 작업으로 문서 생성</button>
+          <span class="muted" id="genGate" style="font-size:12px"></span>
+        </div>
+        <div class="bar"><i id="genBar"></i></div>
+        <div id="genResult" class="run-result"></div>
+        <div class="logbox" id="genLog">[대기] 작업·데이터·저장 폴더를 확인한 뒤 생성하세요.</div>
+      </div>
+    </section>
+
+    <!-- ============ 여러 작업 실행 (M 작업 × 공통 데이터, #14) ============ -->
+    <!-- 목업 scr-matrix 이관. 안정 DOM(id) + matrix.js 가 window.__push('matrix', snapshot)
+         로 값만 채운다(run 패턴). 링1 MatrixRunViewModel·SelectionModel 에 브리지로 배선 —
+         VM 로직 재구현 없음. 작업 다중선택기는 진입 어포던스(홈 이관 전까지 자체 진입점).
+         데이터 스코프 = 파일만(풀·나라는 후속, screen_matrix.py docstring 참조). -->
+    <section class="scr" id="scr-matrix">
+      <header class="scr-head">
+        <div>
+          <h1>여러 작업 실행</h1>
+          <p class="sub">선택한 작업 여러 개에 같은 데이터를 적용합니다 — 작업마다 선택한 행 수만큼
+            문서를 만들어 작업별 하위 폴더에 저장합니다.</p>
+        </div>
+        <div class="status" id="mxStatus" data-level="idle">작업 선택</div>
+      </header>
+
+      <div class="run-body" id="mxBody">
+        <!-- 1. 적용할 작업(여러 개) -->
+        <div class="grp"><span class="cap">1. 적용할 작업 (여러 개)</span>
+          <div class="run-row run-recs-head">
+            <span class="muted" id="mxJobCount" style="font-size:12px">선택 0개</span>
+            <div class="row">
+              <button class="btn sm" id="mxJobAll">전체 선택</button>
+              <button class="btn sm" id="mxJobNone">전체 해제</button></div>
+          </div>
+          <div class="reclist" id="mxJobList"></div>
+        </div>
+
+        <!-- 2. 함께 적용할 데이터(공통 1개) -->
+        <div class="run-row"><span class="lbl">함께 적용할 데이터 (공통 1개)</span>
+          <input class="field ro" id="mxDataLabel" type="text" readonly
+                 placeholder="데이터를 선택하세요 (.xlsx/.csv)">
+          <button class="btn" id="btnMxPickData">파일 선택…</button></div>
+
+        <!-- 3. 작업별 미입력 필드 확인(상시 인라인 + 강제 확인 게이트, ADR-E·UD-04) -->
+        <div class="grp"><span class="cap">3. 작업별 미입력 필드 확인</span>
+          <p class="muted hint">선택한 각 작업의 필드 상태를 배지로 노출합니다.
+            <span class="danger">미입력</span> 필드는 반사적 dismiss를 막기 위해
+            <b>직접 클릭해 확인</b>해야 일괄 생성이 열립니다.</p>
+          <div class="statebadges" id="mxFieldBadges"></div>
+        </div>
+
+        <!-- 4. 공통 데이터에서 사용할 행 -->
+        <div class="run-row run-recs-head">
+          <span class="lbl" style="font-weight:600">공통 데이터에서 사용할 행</span>
+          <div class="row"><span class="muted" id="mxSelCount" style="font-size:12px">선택 0/0</span>
+            <button class="btn sm" id="mxSelAll">전체 선택</button>
+            <button class="btn sm" id="mxSelNone">전체 해제</button></div>
+        </div>
+        <div class="reclist" id="mxRecList"></div>
+
+        <!-- 5. 저장 폴더(작업별 하위폴더) -->
+        <div class="run-row"><span class="lbl">저장 폴더 · 작업별 하위폴더</span>
+          <input class="field ro" id="mxOutDir" type="text" readonly
+                 placeholder="이 폴더 아래에 작업별 하위 폴더로 저장합니다">
+          <button class="btn" id="btnMxPickFolder">찾아보기…</button></div>
+
+        <!-- 액션 · 진행 · 결과 · 로그 -->
+        <div class="run-actions">
+          <button class="btn primary" id="mxGenBtn" disabled>여러 작업 문서 생성</button>
+          <span class="muted" id="mxGenGate" style="font-size:12px"></span>
+        </div>
+        <div class="bar"><i id="mxGenBar"></i></div>
+        <div id="mxGenResult" class="run-result"></div>
+        <div class="logbox" id="mxGenLog">[대기] 작업·데이터·저장 폴더를 확인한 뒤 생성하세요.</div>
+      </div>
+    </section>
+
+    <!-- ============ TXT 즉시 기안 (첫 실화면) ============ -->
+    <section class="scr" id="scr-txt">
+      <header class="scr-head">
+        <div>
+          <h1>즉시 기안</h1>
+          <p class="sub">템플릿 + 데이터를 실시간으로 채워 기안문을 복사·저장합니다.</p>
+        </div>
+        <div class="status" id="txtStatus" data-level="idle">준비됨</div>
+      </header>
+
+      <!-- 동선(A): 무엇으로(템플릿) → 무엇을(데이터) → 어느 건(레코드) 좌→우 -->
+      <div class="txt-controls">
+        <label class="ctl"><span class="lbl">템플릿</span>
+          <select class="field" id="tplSel"></select></label>
+        <label class="ctl grow"><span class="lbl">데이터</span>
+          <input class="field ro" id="dataLabel" type="text" readonly
+                 placeholder="데이터를 선택하세요 — 없으면 토큰이 그대로 남습니다"></label>
+        <div class="ctl-actions">
+          <button class="btn" id="btnPick">파일 선택…</button>
+          <button class="btn" id="btnPaste">템플릿 붙여넣기…</button>
+        </div>
+        <div class="stepper">
+          <span class="lbl">레코드</span>
+          <button class="btn sm icon" id="recPrev" title="이전 레코드" aria-label="이전 레코드">◀</button>
+          <span class="mono recidx" id="recIdx">0 / 0</span>
+          <button class="btn sm icon" id="recNext" title="다음 레코드" aria-label="다음 레코드">▶</button>
+        </div>
+      </div>
+
+      <!-- 2판(반응형 C): 좌=토큰 상태, 우=실시간 렌더. 좁으면 세로 적층 -->
+      <div class="panes">
+        <section class="pane tokens">
+          <h4>필드 상태 (토큰)</h4>
+          <div id="tokPanel"></div>
+          <p class="muted hint">값은 데이터에서 채움. <span class="danger">항목 없음</span>은
+            <span class="mono">{{토큰}}</span> 그대로 남깁니다.</p>
+        </section>
+        <section class="pane preview">
+          <h4>실시간 렌더 · 이 view가 진실</h4>
+          <div class="render" id="renderView" aria-live="polite"></div>
+        </section>
+      </div>
+
+      <footer class="txt-foot">
+        <button class="btn primary" id="btnCopy">📋 클립보드로 복사 (commit)</button>
+        <button class="btn" id="btnSave">텍스트 파일로 저장…</button>
+        <p class="note" id="txtNote">복사가 commit — 실시간 view가 곧 산출물. 항목 없는 토큰은 그대로 노출됩니다.</p>
+      </footer>
+    </section>
+
+    <!-- ============ 템플릿 관리 (HWPX·TXT 라이브러리, #13) ============ -->
+    <!-- 목업 scr-tpl 이관. 안정 DOM(id) + template.js 가 window.__push('tpl', snapshot) 로 값만
+         채운다(run 패턴). 링1 TemplateManagerViewModel + 코어 TextTemplateRegistry 에 브리지로 배선.
+         [B] 61C7ADF8: Qt 카드 하이라이트 비침 렌더 버그는 불투명 배경 div 카드라 구성상 소멸.
+         결정: 미리보기 액션 미노출(10F2FF98-B)·TXT 동등 관리(10F2FF98-C)·드리프트 UI 미노출(10F2FF98-D). -->
+    <section class="scr" id="scr-tpl">
+      <header class="scr-head">
+        <div>
+          <h1>템플릿 관리</h1>
+          <p class="sub">HWPX와 TXT 템플릿을 한곳에서 관리합니다 — 누름틀 상태를 배지로 보고, 상태별로
+            변환·검토하세요. 판본 비교(diff)는 별도 제품(hwpxdiff)이 담당합니다.</p>
+        </div>
+      </header>
+
+      <div class="tpl-catalogs">
+        <!-- HWPX 템플릿 카탈로그 -->
+        <section class="grp tpl-cat">
+          <span class="cap">HWPX 템플릿</span>
+          <div class="tpl-cathead">
+            <span class="muted" id="tplHwpxCount" style="font-size:12px"></span>
+            <div class="tpl-catdir"><span class="muted mono" id="tplLibDir"></span>
+              <button class="btn sm" id="btnTplLibDir">폴더 선택…</button></div>
+          </div>
+          <div class="tpllist" id="tplHwpxList"></div>
+        </section>
+
+        <!-- TXT 템플릿 카탈로그(HWPX와 동등 · 10F2FF98-C) -->
+        <section class="grp tpl-cat">
+          <span class="cap">TXT 템플릿</span>
+          <div class="tpl-cathead">
+            <span class="muted" id="tplTxtCount" style="font-size:12px"></span>
+            <div class="tpl-catdir"><span class="muted mono" id="tplTxtDir"></span>
+              <button class="btn sm" id="btnTplNewTxt">새 TXT 템플릿…</button></div>
+          </div>
+          <div class="tpllist" id="tplTxtList"></div>
+        </section>
+      </div>
+
+      <div id="tplResult" class="run-result"></div>
+    </section>
+
+    <!-- TXT 템플릿 편집/생성 모달(네이티브 입력 대체 — 인페이지 textarea) -->
+    <div id="txtEditModal" class="modal hidden">
+      <div class="modal-card">
+        <h3 id="txtEditTitle">새 TXT 템플릿</h3>
+        <label class="ctl" id="txtNameRow"><span class="lbl">이름(확장자 제외)</span>
+          <input class="field" id="txtEditName" type="text" placeholder="예: 회의결과보고"></label>
+        <p class="muted" style="font-size:12px;margin:8px 0 4px">{{필드}} 토큰을 포함한 템플릿 내용</p>
+        <textarea id="txtEditContent" rows="10" placeholder="제목: {{공고명}} ..."></textarea>
+        <div class="modal-actions">
+          <button class="btn" id="txtEditCancel">취소</button>
+          <button class="btn primary" id="txtEditOk">저장</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 붙여넣기 모달(세션 템플릿) -->
+    <div id="pasteModal" class="modal hidden">
+      <div class="modal-card">
+        <h3>템플릿 붙여넣기</h3>
+        <p class="muted">{{필드}} 토큰이 든 평문을 붙여넣으세요. 루트 밖 세션 템플릿으로 씁니다.</p>
+        <textarea id="pasteText" rows="10" placeholder="제목: {{공고명}} ..."></textarea>
+        <div class="modal-actions">
+          <button class="btn" id="pasteCancel">취소</button>
+          <button class="btn primary" id="pasteOk">적용</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="js/bridge.js"></script>
+<script src="js/screens/home.js"></script>
+<script src="js/screens/txt.js"></script>
+<script src="js/screens/editor.js"></script>
+<script src="js/screens/run.js"></script>
+<script src="js/screens/matrix.js"></script>
+<script src="js/screens/template.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
