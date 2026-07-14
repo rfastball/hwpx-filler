@@ -48,10 +48,10 @@ uv sync --locked --all-extras --group dev --group build
 
 ```powershell
 $env:HWPXFILLER_HOME = "$PWD\examples\quickstart-101"
-python -m hwpxfiller.gui.app
+python -m hwpxfiller.webapp
 ```
 
-macOS/Linux: `HWPXFILLER_HOME="$PWD/examples/quickstart-101" python -m hwpxfiller.gui.app`
+macOS/Linux: `HWPXFILLER_HOME="$PWD/examples/quickstart-101" python -m hwpxfiller.webapp`
 </details>
 
 ## 화면 한눈에 — 왼쪽 탐색 레일
