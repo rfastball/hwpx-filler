@@ -1,0 +1,10 @@
+# 이 폴더를 HWPXFILLER_HOME 으로 두고 GUI 를 실습하면 아래가 생성된다 — 커밋 대상 아님.
+# (templates/·text_templates/·data/ 는 커밋되는 예제 자산이라 제외하지 않는다.)
+jobs/
+datasets/
+mapping_bases/
+ui_settings.ini
+
+# 문서 생성 산출물
+out/
+Results/
