@@ -14,7 +14,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-gui = ["PySide6>=6.6"]
+# 웹 프론트엔드(pywebview) 마이그레이션 중 PySide6 와 병존 — 마지막 화면 이관 후에만 Qt 제거
+# 검토(에픽 #20). pywebview 는 Windows=EdgeChromium(WebView2) 백엔드 핀; 6.x 계열 고정.
+gui = ["PySide6>=6.6", "pywebview>=6.2,<7"]
 dev = ["pytest>=8.0"]
 package = ["pyinstaller>=6.21"]
 
@@ -36,6 +38,7 @@ hwpxdiff = "hwpxdiff.cli:main"
 
 [project.gui-scripts]
 hwpx-filler = "hwpxfiller.gui.app:main"
+hwpx-filler-web = "hwpxfiller.webapp.app:main"
 hwpx-diff = "hwpxdiff.app:main"
 
 [tool.hatch.build.targets.wheel]

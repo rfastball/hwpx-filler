@@ -58,7 +58,7 @@ pytest tests/test_scenario_e2e.py
 
 ```powershell
 $env:HWPXFILLER_HOME = "$PWD\tests\corpus\scenario"   # txt 트랙이 이 폴더를 나열
-python -m hwpxfiller.gui.app
+python -m hwpxfiller.webapp
 ```
 
 **HWPX 작업 트랙**

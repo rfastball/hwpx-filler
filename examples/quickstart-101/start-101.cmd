@@ -28,7 +28,7 @@ if errorlevel 1 (
 )
 
 echo Starting app...  HWPXFILLER_HOME=%HWPXFILLER_HOME%
-uv run --no-sync --extra gui python -m hwpxfiller.gui.app
+uv run --no-sync --extra gui python -m hwpxfiller.webapp
 set "RC=%ERRORLEVEL%"
 
 popd
