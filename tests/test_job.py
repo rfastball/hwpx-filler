@@ -96,6 +96,30 @@ def test_last_run_at_roundtrip_and_backward_compat():
     assert Job.from_dict(old_dict).last_run_at == ""
 
 
+def test_tags_roundtrip_and_backward_compat():
+    """가산 필드 tags(브라우징 분류, JOB_BROWSER_DESIGN D13) — 왕복 보존 +
+    구 JSON(키 부재)은 기본값 {}(version 1 유지). 축·값은 이름 문자열 그대로."""
+    job = _job()
+    job.tags = {"금액구간": "1억미만", "목적물": "물품"}
+    loaded = Job.from_dict(job.to_dict())
+    assert loaded.tags == {"금액구간": "1억미만", "목적물": "물품"}
+    assert loaded.version == 1
+
+    old_dict = _job().to_dict()
+    del old_dict["tags"]  # tags 필드 도입 전 저장된 JSON
+    from_old = Job.from_dict(old_dict)
+    assert from_old.tags == {}
+    assert from_old.version == 1
+
+    # 미태깅이 기본(선택적 — D12): 빈 작업도 빈 dict.
+    assert Job().tags == {}
+    # from_dict 는 방어적 복사 — 원 dict 변형이 로드된 작업에 새지 않는다(opts 선례).
+    src = {"tags": {"목적물": "용역"}}
+    loaded2 = Job.from_dict(src)
+    src["tags"]["목적물"] = "공사"
+    assert loaded2.tags == {"목적물": "용역"}
+
+
 def test_default_mapping_is_empty_profile():
     """빈 작업은 빈 프로파일을 갖는다(데이터·행 미포함 원칙의 최소형)."""
     job = Job()
