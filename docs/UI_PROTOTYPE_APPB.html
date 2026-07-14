@@ -598,24 +598,15 @@
                   파일명: <span class="mono" style="font-weight:400">공고서-{{ID}}</span></div>
 
                 <div class="grp"><span class="cap">대상 문서</span>
-                  <label class="radio"><input type="radio" name="tgt" id="rNew" checked data-vm="RunViewModel.set_target_mode">
-                    <span>새 문서 생성 — 작업 템플릿(공고서_양식.hwpx)</span></label>
-                  <label class="radio"><input type="radio" name="tgt" id="rCont" data-vm="RunViewModel.set_target_mode">
-                    <span>기존 문서 이어채우기 — 선택한 .hwpx 문서에 이 단계 값을 채웁니다</span></label>
-                  <div class="row" id="prevRow" style="margin:6px 0 0 22px;opacity:.45">
-                    <input class="field ro" id="prevPath" value="" placeholder="기존 문서(.hwpx)" readonly disabled>
-                    <button class="btn" id="prevPick" disabled data-vm="RunViewModel.set_prev_output">기존 문서 선택…</button></div>
-                  <div class="note warnbox" id="overlapNote" style="display:none" data-vm="RunViewModel.set_prev_output">
-                    ⚠ 이 작업의 필드 14개 중 <b>5개</b>가 문서에 있습니다. 이미 값이 있는
-                    겹침 필드는 <b>덮어씁니다</b> — 단계별 필드는 서로소로 설계하세요.</div>
+                  <span>새 문서 생성 — 작업 템플릿(공고서_양식.hwpx)으로 한 번에 완성합니다.</span>
                 </div>
 
                 <div class="row" style="margin-top:14px"><span class="lbl">데이터(.xlsx/.csv)</span>
-                  <input class="field ro" value="C:\데이터\입찰공고_2026Q3.xlsx" readonly>
-                  <button class="btn" data-vm="RunViewModel.load_data">데이터 선택…</button></div>
+                  <input class="field ro" value="등록 데이터: 공고서 자동생성 · 등록 데이터" readonly>
+                  <button class="btn" data-vm="RunViewModel.load_data">등록 데이터에서…</button></div>
 
                 <div class="preflight okbox" style="background:#e5f2ea;border:1px solid #a6d3b7" data-vm="RunViewModel.preflight">
-                  <span class="ok">사전검증 통과 — 치명 누락 없음. 아래 빈칸 표면화를 확인하세요.</span></div>
+                  <span class="ok">검증 완료 — 문서를 생성할 준비가 됐습니다.</span></div>
 
                 <div class="grp" style="margin-top:16px"><span class="cap">빈칸 표면화 · 상시 인라인</span>
                   <p style="font-size:12px;margin:2px 0 0;color:#4a505a">필드 상태를 상시 배지로
@@ -634,7 +625,7 @@
 
                 <div style="margin-top:14px">
                   <div class="row" style="justify-content:space-between">
-                    <span class="lbl" style="font-weight:600">생성 대상 레코드</span>
+                    <span class="lbl" style="font-weight:600">생성 대상 문서</span>
                     <div class="row"><span class="muted" id="selCount" style="font-size:12px" data-vm="SelectionModel.selected_count">선택 4/4</span>
                       <button class="btn" id="selAll" data-vm="SelectionModel.set_all">전체 선택</button>
                       <button class="btn" id="selNone" data-vm="SelectionModel.set_none">전체 해제</button></div>
@@ -902,18 +893,6 @@
   gotoStep(0);
 
   /* ---------- RUN ---------- */
-  var rCont=document.getElementById('rCont'),rNew=document.getElementById('rNew'),
-      prevRow=document.getElementById('prevRow'),prevPath=document.getElementById('prevPath'),
-      prevPick=document.getElementById('prevPick'),overlapNote=document.getElementById('overlapNote');
-  function syncTarget(){
-    var cont=rCont.checked;
-    prevRow.style.opacity=cont?'1':'.45';
-    prevPath.disabled=!cont;prevPick.disabled=!cont;
-    if(cont){prevPath.value='C:\\양식\\Results\\공고서-A2026-001.hwpx';overlapNote.style.display='block';}
-    else{prevPath.value='';overlapNote.style.display='none';}
-  }
-  rCont.addEventListener('change',syncTarget);rNew.addEventListener('change',syncTarget);
-
   var genBtn=document.getElementById('genBtn'),genGate=document.getElementById('genGate');
   function syncMissing(){
     var left=document.querySelectorAll('.fb.missing:not(.ack)').length;
@@ -945,7 +924,7 @@
     if(total===0){genLog.textContent=stamp('생성할 레코드를 최소 1건 선택하세요.');return;}
     genBtn.disabled=true;genResult.textContent='';genBar.style.width='0';
     var marked=document.querySelectorAll('.fb.missing.ack').length;
-    var mode=rCont.checked?'누적(기존 문서 이어채우기)':'신규';
+    var mode='신규';
     genLog.textContent=stamp('생성 시작['+mode+']: '+total+'건 → C:\\양식\\Results');
     var done=0;
     var iv=setInterval(function(){
@@ -964,7 +943,7 @@
       }
     },420);
   });
-  syncMissing();syncSel();syncTarget();
+  syncMissing();syncSel();
 
   /* ---------- TXT 즉시 기안 (render_record 의 브라우저 미러) ---------- */
   var TEMPLATES={

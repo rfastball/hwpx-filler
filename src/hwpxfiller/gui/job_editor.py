@@ -8,10 +8,13 @@
 여기, 작업 정의 시점에 **1회** 머문다. 4단계는 확정된 매핑을 :class:`~hwpxfiller.core.job.Job`
 으로 굳혀 :class:`~hwpxfiller.core.job.JobRegistry` 에 쓴다.
 
-**샘플 데이터는 매핑 저작용일 뿐 작업에 저장하지 않는다** — 데이터·행은 실행 때 고른다.
+**샘플 데이터의 행은 작업에 저장하지 않는다.** 다만 사용자가 선택한 소스 참조(파일 경로·
+나라장터 쿼리)는 작업 저장 시 등록 데이터로 함께 등록해 실행 때 다시 찾는 마찰을 줄인다(#18).
 """
 
 from __future__ import annotations
+
+from datetime import datetime
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -99,7 +102,8 @@ class JobEditorWizard(QWizard):
     job_saved = Signal(str)  # 저장된 작업 이름
 
     def __init__(self, registry: JobRegistry, initial_job: "Job | None" = None, parent=None,
-                 *, base_registry=None, secret_store=None, nara_fetcher=None):
+                 *, base_registry=None, pool_registry=None,
+                 secret_store=None, nara_fetcher=None):
         super().__init__(parent)
         # 편집 모드: 기존 작업을 프리로드(템플릿 자동 로드·매핑 프리시드·이름/패턴 프리필).
         # 게이트는 그대로다 — 프리시드는 "과거 사람 확정"의 복원이지 자동 확정이 아니다.
@@ -136,6 +140,9 @@ class JobEditorWizard(QWizard):
         self.datasource = None                  # ExcelDataSource
         self.source_fields: "list[str]" = []
         self.records: "list[dict]" = []
+        # 선택 샘플의 durable **참조**만 자동 등록한다(#18/31A5A484-C). 행 스냅샷·비밀은 없음.
+        self.declared_data_kind: str = ""
+        self.declared_data_opts: "dict[str, object]" = {}
         self.model = None                       # MappingModel
         # J3 공유 베이스: 시드용 프로파일(선택) + 계보 이름(저장 Job 에 이월) + 레지스트리(주입).
         self.base_mapping = None                # MappingProfile | None (MappingPage 시드)
@@ -143,6 +150,14 @@ class JobEditorWizard(QWizard):
             initial_job.base_mapping_name if initial_job is not None else ""
         )
         self.base_registry = base_registry      # MappingBaseRegistry | None (없으면 홈 기본)
+        if pool_registry is None:
+            from ..core.dataset_pool import (
+                DatasetPoolRegistry,
+                default_dataset_pool_dir,
+            )
+
+            pool_registry = DatasetPoolRegistry(default_dataset_pool_dir())
+        self.pool_registry = pool_registry
         # 나라장터 주입 이음새(선언 계약, RC-25) — None = 대화상자 기본(OS 자격증명·실 네트워크).
         self.secret_store = secret_store        # SecretStore | None
         self.nara_fetcher = nara_fetcher        # (url)->bytes | None
@@ -152,6 +167,33 @@ class JobEditorWizard(QWizard):
         self.addPage(MappingPage())
         self._save_page = SaveJobPage()
         self.addPage(self._save_page)
+
+    @staticmethod
+    def _declared_dataset_name(job_name: str) -> str:
+        """작업이 선언한 자동 등록 데이터의 결정적 이름 — 실행 선택 목록에서 식별 가능."""
+        return f"{job_name} · 등록 데이터"
+
+    def _declared_pool_item(self, job_name: str):
+        """현재 선택 소스를 데이터 풀 참조로 성형한다. 선택 없음은 ``None``.
+
+        링0 Job에는 데이터·행을 넣지 않는다. 엑셀/CSV는 경로(+확정 시트), 나라장터는
+        수용된 쿼리만 저장하며 ServiceKey와 취득 행은 들어오지 않는다.
+        """
+        if not self.declared_data_kind:
+            return None
+        if self.declared_data_kind not in {"excel", "nara"}:
+            raise ValueError(
+                f"자동 등록할 수 없는 데이터 종류입니다: {self.declared_data_kind!r}"
+            )
+        from ..core.dataset_pool import DatasetPoolItem
+
+        return DatasetPoolItem(
+            name=self._declared_dataset_name(job_name),
+            kind=self.declared_data_kind,
+            opts=dict(self.declared_data_opts),
+            created_at=datetime.now().isoformat(timespec="seconds"),
+            note=f"작업 '{job_name}' 저장 시 자동 등록",
+        )
 
     def accept(self):
         """마침 = 저장(생성 아님). 게이트 판정은 링1(:mod:`job_editor_state`), 여기선 표시만."""
@@ -199,10 +241,54 @@ class JobEditorWizard(QWizard):
             # 브라우징 분류 태그(선택 — D12). 수동 입력, 이름 파싱·자동 제안 없음(제안은 보류).
             tags=self._save_page.tags(),
         )
+        # 선언 데이터 자동 등록(#18). 같은 결정적 이름에 다른 참조가 있으면 조용히
+        # 덮지 않고 실제 항목명을 재진술해 확인한다. 풀을 먼저 쓴 뒤 Job 저장이 실패하면
+        # 기존 항목 복원/신규 항목 삭제로 되돌려 반쪽 저장을 남기지 않는다.
         try:
+            pool_item = self._declared_pool_item(name)
+            previous_pool_item = (
+                self.pool_registry.load(pool_item.name)
+                if pool_item is not None and self.pool_registry.exists(pool_item.name)
+                else None
+            )
+        except Exception as exc:  # noqa: BLE001 — 손상 풀/알 수 없는 종류는 loud 차단
+            show_error(self, "등록 데이터 확인 실패", exc)
+            return
+        if previous_pool_item is not None:
+            changed = (
+                previous_pool_item.name != pool_item.name
+                or previous_pool_item.kind != pool_item.kind
+                or previous_pool_item.opts != pool_item.opts
+            )
+            if changed and not confirm_destructive(
+                self,
+                "등록 데이터 교체",
+                f"등록 데이터 '{previous_pool_item.name or pool_item.name}' 이(가) 이미 "
+                "같은 저장 위치에서 다른 소스를 가리킵니다.\n"
+                "작업을 저장하면 이 참조를 현재 선택으로 교체합니다.",
+                "교체하고 저장",
+            ):
+                return
+            # 최초 등록 시각은 보존하되, 다시 선언한 항목은 실행 후보로 활성화한다.
+            pool_item.created_at = previous_pool_item.created_at or pool_item.created_at
+        pool_saved = False
+        try:
+            if pool_item is not None:
+                self.pool_registry.save(pool_item)
+                pool_saved = True
             self.registry.save(job)
         except Exception as exc:  # noqa: BLE001
-            show_error(self, "작업 저장 실패", exc)  # 유형별 문구 + 원문 접기(ST-20)
+            rollback_error = ""
+            if pool_saved:
+                try:
+                    if previous_pool_item is None:
+                        self.pool_registry.delete(pool_item.name)
+                    else:
+                        self.pool_registry.save(previous_pool_item)
+                except Exception as rollback_exc:  # noqa: BLE001 — 실패도 숨기지 않는다
+                    rollback_error = f"\n등록 데이터 되돌리기도 실패했습니다: {rollback_exc}"
+            detail = RuntimeError(f"{exc}{rollback_error}") if rollback_error else exc
+            show_error(self, "작업 저장 실패", detail)  # 유형별 문구 + 원문 접기(ST-20)
             return
         self.job_saved.emit(name)
         save_geometry(self, "editor")  # ST-11

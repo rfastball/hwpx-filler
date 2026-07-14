@@ -656,6 +656,77 @@ def test_editor_new_job_saves_without_tags(qapp, tmp_path):
     assert page.tags() == {}
 
 
+def _make_savable_editor(wiz, name: str):
+    """작업 저장 통합 테스트용 최소 확정 세션."""
+    wiz.template_path = "/t.hwpx"
+    wiz.model = _model()
+    wiz.model.confirm_all()
+    wiz._save_page.ed_name.setText(name)
+    return wiz
+
+
+def test_editor_auto_registers_declared_file_reference(qapp, tmp_path):
+    """#18 — 선택한 샘플 행은 저장하지 않고 파일 참조(+시트)만 등록 데이터로 자동 등록."""
+    from hwpxfiller.core.dataset_pool import DatasetPoolRegistry
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+
+    jobs = JobRegistry(tmp_path / "jobs")
+    pool = DatasetPoolRegistry(tmp_path / "datasets")
+    wiz = _make_savable_editor(
+        JobEditorWizard(jobs, pool_registry=pool), "자동등록작업"
+    )
+    wiz.declared_data_kind = "excel"
+    wiz.declared_data_opts = {"path": "C:/data/source.xlsx", "sheet": "입찰"}
+    wiz.records = [{"실제행": "저장되면 안 됨"}]
+
+    wiz.accept()
+
+    assert jobs.exists("자동등록작업")
+    item = pool.load("자동등록작업 · 등록 데이터")
+    assert item.kind == "excel"
+    assert item.opts == {"path": "C:/data/source.xlsx", "sheet": "입찰"}
+    assert "실제행" not in str(item.to_dict())
+    assert item.status == "active"
+
+
+def test_editor_declared_data_collision_requires_confirmation(qapp, tmp_path, monkeypatch):
+    """자동 등록도 다른 참조를 조용히 덮지 않는다 — 거절하면 작업·풀 모두 원상 유지."""
+    from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui import job_editor as je
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+
+    jobs = JobRegistry(tmp_path / "jobs")
+    pool = DatasetPoolRegistry(tmp_path / "datasets")
+    pool.save(
+        DatasetPoolItem(
+            name="충돌작업 · 등록 데이터",
+            kind="excel",
+            opts={"path": "C:/data/original.csv"},
+        )
+    )
+    wiz = _make_savable_editor(
+        JobEditorWizard(jobs, pool_registry=pool), "충돌작업"
+    )
+    wiz.declared_data_kind = "excel"
+    wiz.declared_data_opts = {"path": "C:/data/replacement.csv"}
+    seen = {}
+    monkeypatch.setattr(
+        je,
+        "confirm_destructive",
+        lambda _p, title, text, _label: seen.update(title=title, text=text) is not None,
+    )
+
+    wiz.accept()
+
+    assert "충돌작업 · 등록 데이터" in seen["text"]
+    assert not jobs.exists("충돌작업")
+    assert pool.load("충돌작업 · 등록 데이터").opts == {
+        "path": "C:/data/original.csv"
+    }
+
+
 def test_save_page_prefills_default_pattern_and_gates_empty(qapp, tmp_path):
     """RC-20 — 프리필은 단일 출처 상수, 빈 패턴은 isComplete 게이트가 차단한다."""
     from hwpxfiller.core.job import DEFAULT_FILENAME_PATTERN, JobRegistry
@@ -1569,6 +1640,26 @@ def test_run_view_instantiates_with_a_job(qapp):
     view = RunView(Job(name="실행테스트", template_path="/t.hwpx", filename_pattern="doc-{{ID}}"))
     assert view.datasource is None  # 데이터 미겨눔 상태로 시작
     assert hasattr(view, "run_finished")
+
+
+def test_run_view_exposes_only_one_pass_document_flow(qapp, tmp_path):
+    """#18 — 일반 실행 UI는 신규 문서·쉬운 검증 문구·문서 중심 용어만 노출한다."""
+    from PySide6.QtCore import Qt
+
+    view = _run_view_with_data(tmp_path)
+    assert "한 번에 완성" in view.lbl_target_mode.text()
+    assert view.rb_cont.isHidden()
+    assert view.ed_prev.isHidden()
+    assert view.btn_prev.isHidden()
+    assert view.chk_ledger.isHidden()  # 기능 seam은 존치하되 실행 화면 노출은 없음
+    assert view.rec_box.title() == "생성 대상 문서"
+
+    # 빈 값 없는 둘째 행만 선택하면 쉬운 성공 문구가 렌더된다(판정 level은 링1 소유).
+    view.selector.list.item(0).setCheckState(Qt.Unchecked)
+    assert view.lbl_preflight.property("level") == "ok"
+    assert view.lbl_preflight.text() == "검증 완료 — 문서를 생성할 준비가 됐습니다."
+    assert "치명" not in view.lbl_preflight.text()
+    assert "표면화" not in view.lbl_preflight.text()
 
 
 def _run_view_with_data(tmp_path):

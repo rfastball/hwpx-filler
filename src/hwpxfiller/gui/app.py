@@ -145,7 +145,11 @@ class AppController:
     def _open_editor_new(self) -> None:
         from .job_editor import JobEditorWizard
 
-        wiz = JobEditorWizard(self.registry, base_registry=self.base_registry)
+        wiz = JobEditorWizard(
+            self.registry,
+            base_registry=self.base_registry,
+            pool_registry=self.home.pool_registry,
+        )
         wiz.job_saved.connect(lambda _name: self.home.refresh())
         self._show_editor(wiz)
 
@@ -157,6 +161,7 @@ class AppController:
         wiz = JobEditorWizard(
             self.registry, initial_job=self.registry.load(name),
             base_registry=self.base_registry,
+            pool_registry=self.home.pool_registry,
         )
         wiz.job_saved.connect(lambda _name: self.home.refresh())
         self._show_editor(wiz)
@@ -285,7 +290,11 @@ class AppController:
         """
         from .job_editor import JobEditorWizard
 
-        wiz = JobEditorWizard(self.registry, base_registry=self.base_registry)
+        wiz = JobEditorWizard(
+            self.registry,
+            base_registry=self.base_registry,
+            pool_registry=self.home.pool_registry,
+        )
         wiz.template_path = template_path
         wiz.job_saved.connect(lambda _name: self.home.refresh())
         self._show_editor(wiz)
@@ -322,7 +331,11 @@ class AppController:
                 if isinstance(child, VocabWorkbenchPanel):
                     child.refresh()
             return
-        wiz = JobEditorWizard(self.registry, base_registry=self.base_registry)
+        wiz = JobEditorWizard(
+            self.registry,
+            base_registry=self.base_registry,
+            pool_registry=self.home.pool_registry,
+        )
         wiz.base_mapping = base
         wiz.base_mapping_name = base_name
         wiz.job_saved.connect(lambda _name: self.home.refresh())
