@@ -516,9 +516,9 @@
                     </table>
                   </div>
                   <div class="stepper">
-                    <button class="btn" id="recPrev">◀ 이전</button>
-                    <span id="recIdx" style="font-weight:600">레코드 1/25</span>
-                    <button class="btn" id="recNext">다음 ▶</button>
+                    <button class="btn" id="recPrev">◀ 이전 행</button>
+                    <span id="recIdx" style="font-weight:600">행 1/25</span>
+                    <button class="btn" id="recNext">다음 행 ▶</button>
                     <span class="muted" style="margin-left:6px" id="pvSummary" data-vm="MappingModel.preview_empties">채움 12 · 빈값 2 — 비고, 특이사항</span>
                   </div>
                   <div class="gate">
@@ -526,8 +526,12 @@
                     <span style="flex:1"></span>
                     <button class="btn" id="confAll" data-vm="MappingModel.confirm_all">모두 확정</button>
                     <button class="btn" id="unconfAll" data-vm="MappingModel.unconfirm_all">모두 해제</button>
-                    <button class="btn">프로파일 불러오기…</button>
-                    <button class="btn">프로파일 저장…</button>
+                    <span class="muted">매핑 프로파일</span>
+                    <button class="btn">적용…</button>
+                    <button class="btn">저장…</button>
+                    <span class="muted">JSON 파일</span>
+                    <button class="btn">불러오기…</button>
+                    <button class="btn">내보내기…</button>
                   </div>
                 </div>
 
@@ -861,7 +865,7 @@
 
   var recI=1;
   function syncRec(){
-    document.getElementById('recIdx').textContent='레코드 '+recI+'/25';
+    document.getElementById('recIdx').textContent='행 '+recI+'/25';
     document.getElementById('recPrev').disabled=recI<=1;
     document.getElementById('recNext').disabled=recI>=25;
     document.getElementById('pvSummary').textContent = recI===1
