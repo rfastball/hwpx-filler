@@ -17,5 +17,10 @@ from ..data.factory import EXCEL_EXTS
 # 데이터 파일(엑셀/CSV) 선택 필터 — EXCEL_EXTS 파생(리터럴 확장자 금지).
 EXCEL_FILTER = "엑셀/CSV (" + " ".join(f"*{ext}" for ext in EXCEL_EXTS) + ")"
 
+# 같은 EXCEL_EXTS 파생, Win32 comdlg32 파일 다이얼로그(웹 프론트, 에픽 #20)용 확장자 패턴.
+# Win32 필터는 세미콜론 구분(Qt 는 공백). 설명 문자열은 웹앱 다이얼로그 호출부가 붙인다 —
+# 단일 출처(EXCEL_EXTS)는 같아 화면별 확장자 하드코딩 사본을 만들지 않는다.
+EXCEL_FILTER_PATTERN = ";".join(f"*{ext}" for ext in EXCEL_EXTS)
+
 # HWPX 문서(템플릿·기존 문서) 선택 필터.
 HWPX_FILTER = "HWPX (*.hwpx)"

@@ -1,0 +1,127 @@
+/* 웹 프론트엔드 레이아웃·컴포넌트 — 목업 앱윈도 CSS(docs/UI_PROTOTYPE_APPB.html)의 이식.
+   색은 전부 css/tokens.css 의 변수(--a-*·--fb-*·--n-*) 참조 — 색 리터럴 하드코딩 금지(에픽 #20).
+   메트릭(px)은 리터럴 유지(토큰 정책은 색만; 목업 _MOCKUP_MAP 과 동일 경계). */
+
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  font-family:"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;
+  color:var(--a-ink); background:var(--a-window); font-size:13.5px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:12px}
+.muted{color:var(--a-muted)} .danger{color:var(--a-danger)} .ok{color:var(--a-ok)} .warn{color:var(--a-warn)}
+code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:12px;
+  background:var(--n-track);padding:1px 5px;border-radius:4px}
+
+/* ---- 앱 셸: 레일 + 스테이지 ---- */
+.app{display:grid;grid-template-columns:212px 1fr;height:100vh}
+.rail{background:var(--n-header-bg);border-right:1px solid var(--a-border);
+  padding:12px 10px;display:flex;flex-direction:column;gap:2px;overflow:auto}
+.rail .brand{font-weight:800;font-size:15px;padding:6px 10px 2px;letter-spacing:-.01em}
+.rail .rl{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--a-muted);padding:10px 10px 6px;font-weight:700}
+.navbtn{width:100%;text-align:left;font:inherit;cursor:pointer;border:0;background:transparent;
+  color:var(--n-ink-control);padding:9px 11px;border-radius:8px;display:block}
+.navbtn .n{font-size:13.5px;font-weight:600;display:block}
+.navbtn .d{font-size:11px;color:var(--a-muted);margin-top:1px}
+.navbtn:hover{background:var(--n-hover)}
+.navbtn[aria-current="true"]{background:var(--a-primary);color:#fff}
+.navbtn[aria-current="true"] .d{color:var(--a-sel)}
+.navbtn:focus-visible{outline:2px solid var(--a-primary);outline-offset:-2px}
+
+/* ---- 스테이지 · 화면 전환 ---- */
+.stage{overflow:auto;padding:20px 24px 28px;display:flex;flex-direction:column;min-height:0}
+.scr{display:none;flex:1;min-height:0;flex-direction:column}
+.scr.on{display:flex}
+.placeholder{margin:auto;max-width:520px;text-align:center;background:var(--a-card);
+  border:1px dashed var(--a-border);border-radius:12px;padding:40px 30px}
+.placeholder h2{margin:0 0 10px} .placeholder p{color:var(--a-muted);line-height:1.6;margin:0}
+
+/* ---- 공통 컨트롤(QSS 미러) ---- */
+.btn{font:inherit;font-size:13px;cursor:pointer;border:1px solid var(--n-border-strong);
+  background:var(--a-card);color:var(--n-ink-control);padding:6px 13px;border-radius:4px}
+.btn:hover{background:var(--n-hover)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.sm{font-size:12px;padding:4px 10px}
+.btn.icon{padding:5px 9px}
+.btn.primary{background:var(--a-primary);color:#fff;border-color:var(--a-primary);font-weight:600;padding:6px 16px}
+.btn.primary:hover{background:var(--a-primary-h);border-color:var(--a-primary-h)}
+.btn.primary:disabled{background:var(--a-muted);border-color:var(--a-muted)}
+.btn:focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
+.field{background:var(--a-card);border:1px solid var(--a-border);border-radius:4px;
+  padding:6px 9px;color:var(--a-ink);font:inherit;font-size:12.5px;width:100%}
+.field.ro{background:var(--n-surface-alt);color:var(--n-ink-soft)}
+.lbl{font-size:12px;color:var(--n-header-ink);white-space:nowrap}
+
+/* ---- txt 화면 머리말 + 상태 pill ---- */
+.scr-head{display:flex;align-items:flex-end;gap:16px;margin-bottom:14px}
+.scr-head h1{font-size:19px;margin:0}
+.scr-head .sub{margin:3px 0 0;color:var(--a-muted);font-size:12.5px}
+.scr-head>div:first-child{flex:1;min-width:0}
+.status{padding:4px 12px;border-radius:999px;font-size:12px;background:var(--n-track);
+  color:var(--n-ink-soft);white-space:nowrap}
+.status[data-level="ok"]{background:var(--fb-fill-bg);color:var(--a-ok)}
+.status[data-level="warn"]{background:var(--fb-blank-bg);color:var(--a-warn)}
+
+/* ---- 컨트롤바(동선 A) ---- */
+.txt-controls{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-end;
+  background:var(--a-card);border:1px solid var(--a-border);border-radius:9px;padding:12px 13px;margin-bottom:14px}
+.ctl{display:flex;flex-direction:column;gap:4px}
+.ctl.grow{flex:1;min-width:200px}
+.ctl-actions{display:flex;gap:8px}
+.stepper{display:flex;align-items:center;gap:7px}
+.recidx{min-width:48px;text-align:center;font-variant-numeric:tabular-nums}
+
+/* ---- 2판(반응형 C) ---- */
+.panes{display:grid;grid-template-columns:290px 1fr;gap:16px;flex:1;min-height:0}
+.pane{background:var(--a-card);border:1px solid var(--a-border);border-radius:9px;
+  padding:13px;display:flex;flex-direction:column;min-height:0}
+.pane h4{margin:0 0 10px;font-size:11.5px;letter-spacing:.03em;color:var(--a-muted);
+  text-transform:uppercase;font-weight:700}
+.pane.tokens{min-width:0}
+#tokPanel{overflow:auto;flex:0 1 auto}
+.hint{font-size:11.5px;margin:10px 0 0}
+
+/* ---- 토큰 상태 행 (좌 패널) ---- */
+.tok{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  padding:6px 9px;border-radius:6px;margin-bottom:5px;font-size:12.5px;border:1px solid transparent}
+.tok .tname{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:12px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tok .st{flex:none;font-weight:600}
+.tok.fill{background:var(--fb-fill-bg);border-color:var(--fb-fill-bd)} .tok.fill .st{color:var(--a-ok)}
+.tok.blank{background:var(--fb-blank-bg);border-color:var(--fb-blank-bd)} .tok.blank .st{color:var(--a-warn)}
+.tok.missing{background:var(--fb-missing-bg);border-color:var(--fb-missing-bd)} .tok.missing .st{color:var(--a-danger)}
+
+/* ---- 실시간 렌더(우 패널) + 재진술 ---- */
+.render{background:var(--a-card);border:1px solid var(--a-border);border-radius:8px;
+  padding:18px 20px;flex:1;overflow:auto;font-size:14px;line-height:1.85;white-space:pre-wrap;
+  color:var(--a-ink);box-shadow:inset 0 1px 3px rgba(0,0,0,.03)}
+.render .tok-missing{background:var(--fb-missing-bg);color:var(--a-danger);border:1px dashed var(--fb-missing-bd);
+  border-radius:4px;padding:0 4px;font-family:"Cascadia Code","Consolas",ui-monospace,monospace;
+  font-size:12.5px;font-weight:700}
+.render .tok-blank{color:var(--a-muted)}
+
+/* ---- 액션바 ---- */
+.txt-foot{display:flex;align-items:center;gap:12px;margin-top:14px;flex-wrap:wrap}
+.txt-foot .note{margin:0;flex:1;min-width:220px;color:var(--a-muted);font-size:12px}
+.txt-foot .note[data-level="ok"]{color:var(--a-ok)}
+.txt-foot .note[data-level="warn"]{color:var(--a-warn)}
+
+/* ---- 반응형 C: 좁으면 2판 → 세로 적층 ---- */
+@media (max-width:820px){
+  .app{grid-template-columns:1fr}
+  .rail{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--a-border)}
+  .panes{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+}
+
+/* ---- 모달 ---- */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;
+  justify-content:center;z-index:10}
+.modal.hidden{display:none}
+.modal-card{background:var(--a-card);border-radius:12px;padding:20px;width:min(560px,92vw);
+  box-shadow:0 12px 40px rgba(0,0,0,.2)}
+.modal-card h3{margin:0 0 6px}
+.modal-card textarea{width:100%;border:1px solid var(--a-border);border-radius:8px;padding:10px;
+  font-family:inherit;font-size:13px;resize:vertical;color:var(--a-ink);background:var(--a-card)}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}

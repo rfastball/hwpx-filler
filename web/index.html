@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HWPX Filler</title>
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<!-- 웹 프론트엔드 셸 — 목업 docs/UI_PROTOTYPE_APPB.html 의 앱윈도 구조를 스튜디오 크롬(마스트헤드·
+     주석·캔버스) 없이 실앱으로 전개. 좌 레일(4화면 라우팅) + 우 스테이지. 링1 VM 에 브리지로 배선.
+     txt 는 첫 실화면(스파이크가 끝까지 검증) — 나머지 3화면은 단계 N 에서 이관(가짜 데이터 금지). -->
+<div class="app">
+  <nav class="rail" aria-label="화면 전환">
+    <div class="brand">HWPX Filler</div>
+    <div class="rl">투트랙 허브</div>
+    <button class="navbtn" data-scr="home">
+      <span class="n">대시보드</span><span class="d">두 트랙 허브 · 요약</span></button>
+    <button class="navbtn" data-scr="editor">
+      <span class="n">작업 에디터</span><span class="d">HWPX · 4스텝</span></button>
+    <button class="navbtn" data-scr="run">
+      <span class="n">실행</span><span class="d">HWPX · 데이터 겨눔 → 생성</span></button>
+    <button class="navbtn" data-scr="txt" aria-current="true">
+      <span class="n">즉시 기안 (txt)</span><span class="d">템플릿+데이터 → 실시간 → 복사</span></button>
+  </nav>
+
+  <main class="stage">
+    <!-- ============ 대시보드 (단계 N — #13 이관 예정) ============ -->
+    <section class="scr" id="scr-home">
+      <div class="placeholder">
+        <h2>대시보드</h2>
+        <p>이 화면은 아직 웹으로 이관되지 않았습니다. 단계 N(에픽 #20, 화면 이슈 #13)에서
+          링1 <code>HomeViewModel</code> 에 배선해 살립니다.</p>
+      </div>
+    </section>
+
+    <!-- ============ 작업 에디터 (단계 N — #14 이관 예정) ============ -->
+    <section class="scr" id="scr-editor">
+      <div class="placeholder">
+        <h2>작업 에디터</h2>
+        <p>이 화면은 아직 웹으로 이관되지 않았습니다. 단계 N(화면 이슈 #14)에서
+          링1 <code>MappingModel</code> 등에 배선합니다.</p>
+      </div>
+    </section>
+
+    <!-- ============ 실행 (단계 N — #15·#16 이관 예정) ============ -->
+    <section class="scr" id="scr-run">
+      <div class="placeholder">
+        <h2>실행</h2>
+        <p>이 화면은 아직 웹으로 이관되지 않았습니다. 단계 N(화면 이슈 #15·#16)에서
+          링1 <code>RunViewModel</code>·<code>SelectionModel</code> 에 배선합니다.</p>
+      </div>
+    </section>
+
+    <!-- ============ TXT 즉시 기안 (첫 실화면) ============ -->
+    <section class="scr on" id="scr-txt">
+      <header class="scr-head">
+        <div>
+          <h1>즉시 기안</h1>
+          <p class="sub">템플릿 + 데이터를 실시간으로 채워 기안문을 복사·저장합니다.</p>
+        </div>
+        <div class="status" id="txtStatus" data-level="idle">준비됨</div>
+      </header>
+
+      <!-- 동선(A): 무엇으로(템플릿) → 무엇을(데이터) → 어느 건(레코드) 좌→우 -->
+      <div class="txt-controls">
+        <label class="ctl"><span class="lbl">템플릿</span>
+          <select class="field" id="tplSel"></select></label>
+        <label class="ctl grow"><span class="lbl">데이터</span>
+          <input class="field ro" id="dataLabel" type="text" readonly
+                 placeholder="데이터를 선택하세요 — 없으면 토큰이 그대로 남습니다"></label>
+        <div class="ctl-actions">
+          <button class="btn" id="btnPick">파일 선택…</button>
+          <button class="btn" id="btnPaste">템플릿 붙여넣기…</button>
+        </div>
+        <div class="stepper">
+          <span class="lbl">레코드</span>
+          <button class="btn sm icon" id="recPrev" title="이전 레코드" aria-label="이전 레코드">◀</button>
+          <span class="mono recidx" id="recIdx">0 / 0</span>
+          <button class="btn sm icon" id="recNext" title="다음 레코드" aria-label="다음 레코드">▶</button>
+        </div>
+      </div>
+
+      <!-- 2판(반응형 C): 좌=토큰 상태, 우=실시간 렌더. 좁으면 세로 적층 -->
+      <div class="panes">
+        <section class="pane tokens">
+          <h4>필드 상태 (토큰)</h4>
+          <div id="tokPanel"></div>
+          <p class="muted hint">값은 데이터에서 채움. <span class="danger">항목 없음</span>은
+            <span class="mono">{{토큰}}</span> 그대로 남깁니다.</p>
+        </section>
+        <section class="pane preview">
+          <h4>실시간 렌더 · 이 view가 진실</h4>
+          <div class="render" id="renderView" aria-live="polite"></div>
+        </section>
+      </div>
+
+      <footer class="txt-foot">
+        <button class="btn primary" id="btnCopy">📋 클립보드로 복사 (commit)</button>
+        <button class="btn" id="btnSave">텍스트 파일로 저장…</button>
+        <p class="note" id="txtNote">복사가 commit — 실시간 view가 곧 산출물. 항목 없는 토큰은 그대로 노출됩니다.</p>
+      </footer>
+    </section>
+
+    <!-- 붙여넣기 모달(세션 템플릿) -->
+    <div id="pasteModal" class="modal hidden">
+      <div class="modal-card">
+        <h3>템플릿 붙여넣기</h3>
+        <p class="muted">{{필드}} 토큰이 든 평문을 붙여넣으세요. 루트 밖 세션 템플릿으로 씁니다.</p>
+        <textarea id="pasteText" rows="10" placeholder="제목: {{공고명}} ..."></textarea>
+        <div class="modal-actions">
+          <button class="btn" id="pasteCancel">취소</button>
+          <button class="btn primary" id="pasteOk">적용</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="js/bridge.js"></script>
+<script src="js/screens/txt.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

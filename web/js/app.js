@@ -1,0 +1,18 @@
+/* 라우터 + 부팅 — 레일 나비로 화면 전환, pywebview 준비 시 실화면 초기화.
+   화면별 로직은 js/screens/*.js 가 소유(TxtScreen.init 등). 여기선 배선만. */
+(function () {
+  const navs = document.querySelectorAll(".navbtn");
+  const scrs = document.querySelectorAll(".scr");
+
+  navs.forEach((b) => b.addEventListener("click", () => {
+    navs.forEach((x) => x.setAttribute("aria-current", "false"));
+    b.setAttribute("aria-current", "true");
+    const id = b.dataset.scr;
+    scrs.forEach((s) => s.classList.toggle("on", s.id === "scr-" + id));
+  }));
+
+  // pywebview.api 준비 후 실화면 초기화(브라우저 단독 미리보기에선 안 뜸 — 정상).
+  window.addEventListener("pywebviewready", () => {
+    if (window.TxtScreen) window.TxtScreen.init();
+  });
+})();
