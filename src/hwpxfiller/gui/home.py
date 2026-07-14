@@ -318,9 +318,10 @@ class JobListHome(QWidget):
             "누름틀 템플릿(.hwpx)의 컴파일 상태를 보고 스키마 추출·누름틀 변환·검토를 합니다."
         )
         self.btn_templates.clicked.connect(self.manage_templates_requested)
-        self.btn_pool = QPushButton("데이터 풀 관리(&P)")
+        self.btn_pool = QPushButton("데이터 관리(&P)")
         self.btn_pool.setToolTip(
-            "재사용할 데이터 참조(엑셀/CSV 경로·나라장터 쿼리·조립 파이프라인)를 등록·보관합니다."
+            "재사용할 데이터 참조(엑셀/CSV 경로·나라장터 쿼리·조립 파이프라인)를 "
+            "등록하고 관리합니다."
         )
         self.btn_pool.clicked.connect(self.manage_pool_requested)
         self.btn_vocab = QPushButton("매핑 프로파일 관리(&V)")
@@ -523,7 +524,7 @@ class JobListHome(QWidget):
             self._kpi_tile(str(k.missing_template_count), "템플릿 없는 작업", warn=k.missing_template_count > 0), 1
         )
         self.kpi_row.addWidget(self._kpi_tile(str(k.txt_template_count), "기안 템플릿 · txt"), 1)
-        self.kpi_row.addWidget(self._kpi_tile(str(k.pool_count), "데이터 풀 · 활성"), 1)
+        self.kpi_row.addWidget(self._kpi_tile(str(k.pool_count), "등록 데이터 · 사용 가능"), 1)
 
         # HWPX 작업 목록 — group-by 접이식 섹션 + facet(JOB_BROWSER_DESIGN §4).
         # 카드는 계속 self.list(QListWidget)에 얹는다(findItems·스모크 계약 보존, home docstring).
