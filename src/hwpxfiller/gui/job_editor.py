@@ -159,6 +159,13 @@ class JobEditorWizard(QWizard):
         if not verdict.ok:
             QMessageBox.warning(self, "확인", verdict.block_reason)
             return
+        # 분류 태그 저장 게이트 — 반쯤 채운 행·중복 축은 tags() 가 조용히 버리거나
+        # 덮으므로(입력 소실), 저장 전 시끄럽게 막는다(확인-또는-경보). 덮어쓰기
+        # 확인보다 먼저 판정해, 어차피 막힐 저장에 파괴 프롬프트를 띄우지 않는다.
+        tag_reason = self._save_page.validate_tags()
+        if tag_reason:
+            QMessageBox.warning(self, "확인", tag_reason)
+            return
         profile = verdict.profile
         assert profile is not None  # verdict.ok 이면 링1이 확정 프로파일을 담아 반환
         # 자기 자신 갱신(편집 모드, 이름 그대로)은 자명 — 이름을 바꿔 다른 작업을
@@ -305,7 +312,12 @@ class SaveJobPage(QWizardPage):
         if reg is not None:
             try:
                 self._known_axes = list(discover_tag_axes(reg.list_jobs()).keys())
-            except Exception:  # noqa: BLE001 — 후보는 편의라 실패는 조용히 빈 목록
+            except (OSError, ValueError):
+                # 후보는 편의라 예상 가능한 IO·파싱 실패(디렉터리 접근·손상 JSON)만
+                # 조용히 빈 목록으로 강등한다. 시그니처·반환형 회귀(list_jobs/
+                # discover_tag_axes 가 던지는 TypeError/AttributeError 등)는 삼키지
+                # 않고 전파시켜 교차파일 회귀가 자동완성을 조용히 꺼버리는 대신
+                # 시끄럽게 실패하게 둔다(확인-또는-경보).
                 self._known_axes = []
         if job is not None and not self._prefilled:
             self.ed_name.setText(job.name)
@@ -317,13 +329,46 @@ class SaveJobPage(QWizardPage):
             row.set_known_axes(self._known_axes)
 
     def tags(self) -> "dict[str, str]":
-        """확정된 태그 {축→값} — 축·값이 모두 채워진 행만(빈 축/빈 값 행은 무시, D12)."""
+        """확정된 태그 {축→값} — 축·값이 모두 채워진 행만(빈 축/빈 값 행은 무시, D12).
+
+        반쯤 채운 행·중복 축은 :meth:`validate_tags` 가 저장 게이트에서 이미 걸러낸
+        뒤라, 여기 도달하면 깔끔한 사전만 만들어 돌려준다(추측·자동병합 없음).
+        """
         out: "dict[str, str]" = {}
         for row in self._tag_rows:
             axis, value = row.axis(), row.value()
             if axis and value:
                 out[axis] = value
         return out
+
+    def validate_tags(self) -> str:
+        """태그 행 저장 게이트 — 차단 사유를 돌려준다("" = 통과, 확인-또는-경보).
+
+        Job.tags 는 {축→값} 사전이라 한 축엔 값 하나뿐이다. 두 행이 같은 축을 쓰면
+        :meth:`tags` 가 뒤 값으로 앞 값을 조용히 덮어(저장 시 앞 값 소실) 사용자 입력을
+        말없이 버리므로, **중복 축**은 사용자 오류로 보고 막는다. 축·값 중 하나만 채운
+        **반쯤 채운 행**도 :meth:`tags` 가 조용히 빠뜨려(태깅된 줄 알고 저장) 위험하므로
+        막는다. 둘 다 빈 행은 무해한 no-op 이라 조용히 무시한다(D12 — 미태깅 허용).
+        자동 병합·추측 없이 어느 축/값이 문제인지 재진술만 한다.
+        """
+        seen: "set[str]" = set()
+        for row in self._tag_rows:
+            axis, value = row.axis(), row.value()
+            if not axis and not value:
+                continue  # 완전 빈 행 = 양성 no-op(D12)
+            if not axis or not value:
+                filled, blank = ("값", "축") if value else ("축", "값")
+                return (
+                    f"분류 태그에 {filled}만 있고 {blank}은(는) 빈 행이 있습니다"
+                    f"('{axis or value}'). {blank}을(를) 채우거나 그 행을 삭제하세요."
+                )
+            if axis in seen:
+                return (
+                    f"분류 태그 축 '{axis}' 이(가) 여러 행에 중복됩니다 — 한 축에는 값 "
+                    "하나만 저장됩니다. 중복 행을 하나로 합치거나 삭제하세요."
+                )
+            seen.add(axis)
+        return ""
 
     def job_name(self) -> str:
         return self.ed_name.text().strip()
