@@ -304,3 +304,225 @@ def test_badge_recomputed_on_refresh_reflects_drift(tmp_path):
     row = vm.rows()[0]
     assert row.compile_state == CompileState.PARTIAL
     assert row.compile_badge.startswith("⚠ 미확인 토큰")  # ✅ → ⚠ 로 뒤집힘
+
+
+# ============================================================ 작업 브라우저(group/facet)
+# JOB_BROWSER_DESIGN §4 — 태그 발견(D3)·group-by 렌즈(D4)·"(값 없음)"(D12)·패싯 의미론(D10).
+# 위젯 없이 링1 VM 에서 회귀를 잡는다.
+from hwpxfiller.gui.home_state import (  # noqa: E402
+    NO_VALUE_LABEL,
+    SEED_GROUP_BY_AXIS,
+    discover_tag_axes,
+)
+
+
+def _tagged_reg(tmp_path) -> JobRegistry:
+    """금액구간·낙찰방법 두 축이 섞인 코퍼스(일부 미태깅)."""
+    reg = JobRegistry(tmp_path)
+    reg.save(Job(name="적격-소액", template_path="", tags={"금액구간": "1억미만", "낙찰방법": "적격심사"}))
+    reg.save(Job(name="적격-고시", template_path="", tags={"금액구간": "고시이상", "낙찰방법": "적격심사"}))
+    reg.save(Job(name="협상-소액", template_path="", tags={"금액구간": "1억미만", "낙찰방법": "협상"}))
+    reg.save(Job(name="무태그", template_path="", tags={}))  # 미태깅 — "(값 없음)" 소속
+    return reg
+
+
+def _sections(vm) -> "dict[str, int]":
+    return {s.value: s.count for s in vm.grouped_rows()}
+
+
+def test_axes_discovered_from_tags_union(tmp_path):
+    """축은 authored 레지스트리가 아니라 붙은 태그 키의 합집합에서 발견(D3), 정렬."""
+    vm = HomeViewModel(_tagged_reg(tmp_path))
+    assert vm.axes() == ["금액구간", "낙찰방법"]
+
+
+def test_untagged_corpus_is_degenerate_flat(tmp_path):
+    """태그 0 → 축 0 → effective group-by 강등 → 단일 flat 버킷 하나(퇴화-코퍼스 불변식).
+
+    씨앗 축이 '금액구간'으로 남아 있어도 코퍼스에 그 축이 없으면 flat 로 강등된다.
+    """
+    vm = HomeViewModel(_reg(tmp_path))  # 태그 없는 기존 픽스처
+    assert vm.axes() == []
+    assert vm.active_group_by == SEED_GROUP_BY_AXIS  # 렌즈 값은 씨앗 그대로
+    assert vm.effective_group_by() == ""             # 그러나 유효 축 아님 → flat
+    groups = vm.grouped_rows()
+    assert len(groups) == 1 and groups[0].value == "" and groups[0].count == 2
+    assert vm.facets() == []
+
+
+def test_seed_axis_groups_when_present(tmp_path):
+    """씨앗 '금액구간'이 코퍼스에 있으면 그 축으로 섹션 분할 + 미태깅은 '(값 없음)' 1급(D12)."""
+    vm = HomeViewModel(_tagged_reg(tmp_path))
+    assert vm.effective_group_by() == "금액구간"
+    secs = _sections(vm)
+    assert secs == {"1억미만": 2, "고시이상": 1, NO_VALUE_LABEL: 1}
+    # 미태깅 그룹은 명명 그룹 뒤 마지막.
+    assert [s.value for s in vm.grouped_rows()][-1] == NO_VALUE_LABEL
+
+
+def test_sentinel_value_section_distinct_from_untagged(tmp_path):
+    """'(값 없음)' 을 실제 태그 값으로 쓴 명명 섹션과 미태깅 섹션이 정체성으로 분리된다.
+
+    표시 라벨은 같아도 grouped_rows 는 두 섹션을 방출하고 미태깅 섹션만 is_untagged=True 다 —
+    위젯이 정체성 키로 접기를 분리해 라벨 충돌을 막는 근거(불변식 라운드 #11 회귀).
+    """
+    reg = JobRegistry(tmp_path)
+    reg.save(Job(name="실값", template_path="", tags={"금액구간": NO_VALUE_LABEL}))
+    reg.save(Job(name="소액", template_path="", tags={"금액구간": "1억미만"}))
+    reg.save(Job(name="무태그", template_path="", tags={}))
+    vm = HomeViewModel(reg)
+    assert vm.effective_group_by() == "금액구간"
+    labeled = [s for s in vm.grouped_rows() if s.value == NO_VALUE_LABEL]
+    assert len(labeled) == 2  # 명명(실값) + 미태깅(무태그) — 라벨 같아도 두 섹션
+    untagged = [s for s in labeled if s.is_untagged]
+    named = [s for s in labeled if not s.is_untagged]
+    assert len(untagged) == 1 and untagged[0].rows[0].name == "무태그"
+    assert len(named) == 1 and named[0].rows[0].name == "실값"
+
+
+def test_home_renders_despite_type_corrupt_job(tmp_path):
+    """타입 손상 작업 1건이 홈 group-by/facet 렌더의 지뢰가 되지 않는다(내구성 라운드 지뢰 방어).
+
+    강화된 from_dict 경계가 손상(비문자열 tags 값)을 corrupt_rows 로 loud 격리하므로
+    grouped_rows()/facets() 는 정상 작업만 보고 혼합타입 sorted 크래시 없이 렌더된다."""
+    import json as _json
+
+    reg = JobRegistry(tmp_path)
+    reg.save(Job(name="정상", template_path="", tags={"금액구간": "1억미만"}))
+    (tmp_path / "정수태그.job.json").write_text(
+        _json.dumps({"name": "정수태그", "tags": {"금액구간": 123}}), encoding="utf-8"
+    )
+    vm = HomeViewModel(reg)
+    assert [r.name for r in vm.rows()] == ["정상"]  # 정상만 rows
+    assert len(vm.corrupt_rows()) == 1              # 손상은 loud 격리
+    assert vm.grouped_rows()                        # 혼합타입 크래시 없이 섹션 반환
+    assert isinstance(vm.facets(), list)
+
+
+def test_facets_are_non_groupby_axes_with_counts(tmp_path):
+    """group-by(금액구간) 외 축(낙찰방법)이 facet 으로, 값별 건수 동반(D10)."""
+    vm = HomeViewModel(_tagged_reg(tmp_path))
+    facets = {f.axis: {v.value: v.count for v in f.values} for f in vm.facets()}
+    assert set(facets) == {"낙찰방법"}  # 금액구간은 group-by 라 facet 아님
+    assert facets["낙찰방법"] == {"적격심사": 2, "협상": 1}
+
+
+def test_facet_filter_narrows_sections_and_notifies(tmp_path):
+    """facet 토글 → 섹션이 좁혀지고 재렌더 통지(select 와 달리 표시가 바뀌므로)."""
+    vm = HomeViewModel(_tagged_reg(tmp_path))
+    beats = []
+    vm.subscribe(lambda: beats.append(1))
+    vm.toggle_facet("낙찰방법", "적격심사")
+    assert beats  # 통지됨
+    secs = _sections(vm)
+    # 적격심사만: 1억미만(적격-소액) + 고시이상(적격-고시). 협상·무태그 제외.
+    assert secs == {"1억미만": 1, "고시이상": 1}
+    # 활성 facet 반영.
+    active = {v.value for f in vm.facets() for v in f.values if v.active}
+    assert active == {"적격심사"}
+
+
+def test_facet_internal_or_cross_and(tmp_path):
+    """facet 내 OR(같은 축 여러 값), facet 간 AND(다른 축은 모두 통과)."""
+    reg = JobRegistry(tmp_path)
+    reg.save(Job(name="a", template_path="", tags={"목적물": "물품", "낙찰방법": "적격심사"}))
+    reg.save(Job(name="b", template_path="", tags={"목적물": "용역", "낙찰방법": "적격심사"}))
+    reg.save(Job(name="c", template_path="", tags={"목적물": "물품", "낙찰방법": "협상"}))
+    vm = HomeViewModel(reg)
+    vm.set_group_by("")  # flat 로 두고 순수 facet 필터만 관찰
+    vm.toggle_facet("목적물", "물품")
+    vm.toggle_facet("목적물", "용역")  # 목적물 내 OR → 물품 or 용역
+    assert vm.grouped_rows()[0].count == 3  # a,b,c 전부(물품 2 + 용역 1)
+    vm.toggle_facet("낙찰방법", "적격심사")  # 축 간 AND
+    assert vm.grouped_rows()[0].count == 2  # (물품∨용역) ∧ 적격심사 → a,b
+
+
+def test_facet_own_selection_does_not_narrow_own_counts(tmp_path):
+    """표준 패싯 의미론 — 한 facet 의 선택은 그 facet 자신의 카운트를 좁히지 않는다."""
+    vm = HomeViewModel(_tagged_reg(tmp_path))
+    vm.set_group_by("")  # 낙찰방법·금액구간 둘 다 facet
+    vm.toggle_facet("낙찰방법", "적격심사")
+    facets = {f.axis: {v.value: v.count for v in f.values} for f in vm.facets()}
+    # 낙찰방법 자신의 카운트는 자기 선택에 안 좁혀짐 — 여전히 전체 기준.
+    assert facets["낙찰방법"] == {"적격심사": 2, "협상": 1}
+    # 그러나 금액구간(다른 축)은 적격심사 제약을 받아 좁혀진다.
+    assert facets["금액구간"] == {"1억미만": 1, "고시이상": 1}
+
+
+def test_set_group_by_switches_axis_and_drops_stale_facet(tmp_path):
+    """group-by 교체 시 새 축에 걸린 facet 선택은 제거(그 축은 이제 섹션 분할 축)."""
+    vm = HomeViewModel(_tagged_reg(tmp_path))
+    vm.toggle_facet("낙찰방법", "적격심사")
+    vm.set_group_by("낙찰방법")  # facet 축을 group-by 로 승격
+    assert "낙찰방법" not in vm.active_facets  # 스테일 facet 제거
+    secs = _sections(vm)
+    assert secs == {"적격심사": 2, "협상": 1, NO_VALUE_LABEL: 1}
+
+
+def test_clear_and_set_facets_bulk(tmp_path):
+    """clear_facets 일괄 해제 · set_facets 일괄 지정(INI 복원, 통지 1회)."""
+    vm = HomeViewModel(_tagged_reg(tmp_path))
+    vm.toggle_facet("낙찰방법", "적격심사")
+    vm.clear_facets()
+    assert vm.active_facets == {}
+    beats = []
+    vm.subscribe(lambda: beats.append(1))
+    vm.set_facets({"낙찰방법": {"협상"}, "빈축": set()})  # 빈 집합은 버려짐
+    assert vm.active_facets == {"낙찰방법": {"협상"}}
+    assert len(beats) == 1  # 일괄 통지 1회
+    assert vm.grouped_rows() and _sections(vm) == {"1억미만": 1}  # 협상-소액만
+
+
+def test_orphaned_active_facet_surfaces_as_on_chip_count_zero(tmp_path):
+    """고아 활성 facet — 어떤 행도 안 지닌 축/값이 렌즈에 남으면 count=0·active=True 로
+    표면화돼 사용자가 보고 끌 수 있다(confirm-or-alarm: 범인 필터를 조용히 숨기지 않음).
+
+    시나리오: 낙찰방법=협상 을 INI 에 지속 → 유일한 협상 작업이 삭제/재태깅 → 렌즈가
+    active_facets={낙찰방법:{협상}} 복원. axes() 는 그 축을 빼지만 _passes_facets 는
+    강제해 grouped_rows 가 전부 빈다 — 칩이 없으면 범인이 보이지 않는다.
+    """
+    reg = JobRegistry(tmp_path)
+    reg.save(Job(name="적격", template_path="", tags={"금액구간": "1억미만"}))
+    vm = HomeViewModel(reg)
+    # 어떤 행도 '낙찰방법' 축을 지니지 않는다 → axes() 에 없다.
+    assert "낙찰방법" not in vm.axes()
+    # 그런데 렌즈가 그 축/값을 복원했다(삭제된 작업의 잔재).
+    vm.set_facets({"낙찰방법": {"협상"}})
+    facets = {f.axis: {v.value: (v.count, v.active) for v in f.values} for f in vm.facets()}
+    # 고아 축이 FacetAxis 로 표면화되고, 그 값이 켜진(active) count=0 칩으로 보인다.
+    assert "낙찰방법" in facets
+    assert facets["낙찰방법"]["협상"] == (0, True)
+    # 실제로 grouped_rows 는 이 강제 때문에 비어 보인다 — 칩이 그 범인을 지목한다.
+    assert sum(s.count for s in vm.grouped_rows()) == 0
+
+
+def test_facet_counts_unchanged_by_single_pass_rewrite(tmp_path):
+    """단일 패스 재작성이 카운트 의미론을 바꾸지 않음(자기 축 제외 보존) — 다축 코퍼스에서
+    옛 중첩 스캔과 동일한 결과. 카운트 0 값도 유지된다."""
+    vm = HomeViewModel(_tagged_reg(tmp_path))
+    vm.set_group_by("")  # 금액구간·낙찰방법 둘 다 facet
+    vm.toggle_facet("낙찰방법", "협상")  # 협상: 협상-소액(1억미만)만
+    facets = {f.axis: {v.value: v.count for v in f.values} for f in vm.facets()}
+    # 낙찰방법 자신은 자기 선택에 안 좁혀짐(자기 축 제외) — 전체 기준.
+    assert facets["낙찰방법"] == {"적격심사": 2, "협상": 1}
+    # 금액구간(다른 축)은 협상 제약을 받는다: 협상은 1억미만 1건뿐 → 고시이상 count=0 유지.
+    assert facets["금액구간"] == {"1억미만": 1, "고시이상": 0}
+
+
+def test_grouped_rows_filtering_unchanged(tmp_path):
+    """grouped_rows 필터 의미론은 그대로 — facet 좁힘 + effective group-by 분할."""
+    vm = HomeViewModel(_tagged_reg(tmp_path))
+    assert _sections(vm) == {"1억미만": 2, "고시이상": 1, NO_VALUE_LABEL: 1}
+    vm.toggle_facet("낙찰방법", "적격심사")
+    assert _sections(vm) == {"1억미만": 1, "고시이상": 1}  # 협상·무태그 제외
+
+
+def test_discover_tag_axes_helper(tmp_path):
+    """discover_tag_axes — 축→정렬된 값 리스트(에디터 태그 편집 후보 공급, 링1 순수)."""
+    reg = _tagged_reg(tmp_path)
+    axes = discover_tag_axes(reg.list_jobs())
+    assert axes == {
+        "금액구간": ["1억미만", "고시이상"],
+        "낙찰방법": ["적격심사", "협상"],
+    }
+    assert discover_tag_axes([]) == {}

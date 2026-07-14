@@ -96,6 +96,59 @@ def test_last_run_at_roundtrip_and_backward_compat():
     assert Job.from_dict(old_dict).last_run_at == ""
 
 
+def test_tags_roundtrip_and_backward_compat():
+    """가산 필드 tags(브라우징 분류, JOB_BROWSER_DESIGN D13) — 왕복 보존 +
+    구 JSON(키 부재)은 기본값 {}(version 1 유지). 축·값은 이름 문자열 그대로."""
+    job = _job()
+    job.tags = {"금액구간": "1억미만", "목적물": "물품"}
+    loaded = Job.from_dict(job.to_dict())
+    assert loaded.tags == {"금액구간": "1억미만", "목적물": "물품"}
+    assert loaded.version == 1
+
+    old_dict = _job().to_dict()
+    del old_dict["tags"]  # tags 필드 도입 전 저장된 JSON
+    from_old = Job.from_dict(old_dict)
+    assert from_old.tags == {}
+    assert from_old.version == 1
+
+    # 미태깅이 기본(선택적 — D12): 빈 작업도 빈 dict.
+    assert Job().tags == {}
+    # from_dict 는 방어적 복사 — 원 dict 변형이 로드된 작업에 새지 않는다(opts 선례).
+    src = {"tags": {"목적물": "용역"}}
+    loaded2 = Job.from_dict(src)
+    src["tags"]["목적물"] = "공사"
+    assert loaded2.tags == {"목적물": "용역"}
+
+
+def test_from_dict_rejects_type_corrupt_durable_values():
+    """durable 로드 경계 — 문자열 계약 필드가 비문자열이면 loud 하게 던진다(내구성 라운드 #1·3·4).
+
+    앱은 늘 str 값만 쓰므로 int/list/null 은 외부 훼손 신호다. 조용히 통과하면 나중에 홈
+    렌더(혼합타입 sorted·_fmt_iso TypeError)에서 무관한 작업까지 죽이거나 계보 비교를 무성
+    무효화한다 — 경계에서 격리해 RC-05 손상 행으로 표면화(confirm-or-alarm)."""
+    base = _job().to_dict()
+    corrupt_variants = [
+        {**base, "tags": {"금액구간": 123}},   # 비문자열 tags 값 → group-by/facet 혼합 sorted 지뢰
+        {**base, "tags": None},                # dict(None) 크래시 대신 loud
+        {**base, "tags": ["금액구간"]},         # tags 가 리스트
+        {**base, "last_run_at": 1720000000},   # 비문자열 시각 → refresh 의 _fmt_iso 지뢰
+        {**base, "base_mapping_name": 12345},  # 비문자열 → 계보 비교 int==str 무성 무효화
+        {**base, "name": 5},                   # 비문자열 이름
+    ]
+    for d in corrupt_variants:
+        with pytest.raises(ValueError):
+            Job.from_dict(d)
+
+
+def test_from_dict_backward_compat_survives_boundary():
+    """경계 강화가 가산 하위호환을 깨지 않는다 — 신 필드 없는 구 JSON 은 여전히 기본값 로드."""
+    old = {"name": "구작업", "template_path": "/t.hwpx"}  # tags·base·last_run·version 전무
+    job = Job.from_dict(old)
+    assert job.name == "구작업" and job.tags == {} and job.last_run_at == ""
+    assert job.base_mapping_name == "" and job.version == 1
+    assert Job.from_dict({}).name == ""  # 완전 빈 dict 도 기본값 작업
+
+
 def test_default_mapping_is_empty_profile():
     """빈 작업은 빈 프로파일을 갖는다(데이터·행 미포함 원칙의 최소형)."""
     job = Job()
@@ -210,6 +263,29 @@ def test_registry_list_jobs_isolates_corrupt_files(tmp_path):
     # 수집 리스트를 안 넘긴 기존 호출측도 예외 전파 없이 정상 작업만 받는다.
     assert [j.name for j in reg.list_jobs()] == ["입찰공고서"]
     assert reg.names() == ["입찰공고서"]
+
+
+def test_registry_isolates_type_corrupt_files(tmp_path):
+    """JSON 은 정상 파싱되지만 값 타입이 깨진 파일도 RC-05 격리(내구성 라운드).
+
+    int/null 값은 JSON 정상 파싱이라 구 무검증 로더는 조용히 통과시켜 홈 렌더의 지뢰가
+    됐다 — 강화된 from_dict 경계가 loud 하게 격리해 손상 1건이 정상 작업을 죽이지 못한다.
+    """
+    import json as _json
+
+    reg = JobRegistry(tmp_path)
+    reg.save(_job())  # 정상
+    (tmp_path / "정수태그.job.json").write_text(
+        _json.dumps({"name": "정수태그", "tags": {"금액구간": 123}}), encoding="utf-8"
+    )
+    (tmp_path / "정수시각.job.json").write_text(
+        _json.dumps({"name": "정수시각", "last_run_at": 1720000000}), encoding="utf-8"
+    )
+    corrupted: "list[tuple]" = []
+    jobs = reg.list_jobs(corrupted=corrupted)
+    assert [j.name for j in jobs] == ["입찰공고서"]  # 정상 작업만 생존
+    assert {p.name for p, _e in corrupted} == {"정수태그.job.json", "정수시각.job.json"}
+    assert all(err for _p, err in corrupted)
 
 
 # ------------------------------------------------------------ 실행 사전검증

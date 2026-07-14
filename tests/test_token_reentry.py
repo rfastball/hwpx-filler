@@ -112,3 +112,10 @@ def test_v14_new_style_seams_exist():
     assert style.NEUTRAL_INK_CONTROL.startswith("#")
     # UD-43 fb 배지 클램프 회피 — 전 fb 셀렉터에 min-height 배선(균일 24px)
     assert style.BASE_QSS.count("min-height") >= 5
+
+
+def test_job_browser_style_seams_exist():
+    """작업 브라우저(JOB_BROWSER_DESIGN §4)의 신규 소비측 seam — 섹션 헤더·on/off facet 칩."""
+    assert 'QPushButton[section="header"]' in style.BASE_QSS
+    assert 'QPushButton[chip="off"]' in style.BASE_QSS
+    assert 'QPushButton[chip="on"]' in style.BASE_QSS
