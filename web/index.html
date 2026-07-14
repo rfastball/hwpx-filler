@@ -28,6 +28,8 @@
       <span class="n">여러 작업 실행</span><span class="d">여러 작업 × 공통 데이터 → 생성</span></button>
     <button class="navbtn" data-scr="txt" aria-current="true">
       <span class="n">즉시 기안 (txt)</span><span class="d">템플릿+데이터 → 실시간 → 복사</span></button>
+    <button class="navbtn" data-scr="tpl">
+      <span class="n">템플릿 관리</span><span class="d">HWPX·TXT 라이브러리 · 상태·변환·검토</span></button>
   </nav>
 
   <main class="stage">
@@ -237,6 +239,62 @@
       </footer>
     </section>
 
+    <!-- ============ 템플릿 관리 (HWPX·TXT 라이브러리, #13) ============ -->
+    <!-- 목업 scr-tpl 이관. 안정 DOM(id) + template.js 가 window.__push('tpl', snapshot) 로 값만
+         채운다(run 패턴). 링1 TemplateManagerViewModel + 코어 TextTemplateRegistry 에 브리지로 배선.
+         [B] 61C7ADF8: Qt 카드 하이라이트 비침 렌더 버그는 불투명 배경 div 카드라 구성상 소멸.
+         결정: 미리보기 액션 미노출(10F2FF98-B)·TXT 동등 관리(10F2FF98-C)·드리프트 UI 미노출(10F2FF98-D). -->
+    <section class="scr" id="scr-tpl">
+      <header class="scr-head">
+        <div>
+          <h1>템플릿 관리</h1>
+          <p class="sub">HWPX와 TXT 템플릿을 한곳에서 관리합니다 — 누름틀 상태를 배지로 보고, 상태별로
+            변환·검토하세요. 판본 비교(diff)는 별도 제품(hwpxdiff)이 담당합니다.</p>
+        </div>
+      </header>
+
+      <div class="tpl-catalogs">
+        <!-- HWPX 템플릿 카탈로그 -->
+        <section class="grp tpl-cat">
+          <span class="cap">HWPX 템플릿</span>
+          <div class="tpl-cathead">
+            <span class="muted" id="tplHwpxCount" style="font-size:12px"></span>
+            <div class="tpl-catdir"><span class="muted mono" id="tplLibDir"></span>
+              <button class="btn sm" id="btnTplLibDir">폴더 선택…</button></div>
+          </div>
+          <div class="tpllist" id="tplHwpxList"></div>
+        </section>
+
+        <!-- TXT 템플릿 카탈로그(HWPX와 동등 · 10F2FF98-C) -->
+        <section class="grp tpl-cat">
+          <span class="cap">TXT 템플릿</span>
+          <div class="tpl-cathead">
+            <span class="muted" id="tplTxtCount" style="font-size:12px"></span>
+            <div class="tpl-catdir"><span class="muted mono" id="tplTxtDir"></span>
+              <button class="btn sm" id="btnTplNewTxt">새 TXT 템플릿…</button></div>
+          </div>
+          <div class="tpllist" id="tplTxtList"></div>
+        </section>
+      </div>
+
+      <div id="tplResult" class="run-result"></div>
+    </section>
+
+    <!-- TXT 템플릿 편집/생성 모달(네이티브 입력 대체 — 인페이지 textarea) -->
+    <div id="txtEditModal" class="modal hidden">
+      <div class="modal-card">
+        <h3 id="txtEditTitle">새 TXT 템플릿</h3>
+        <label class="ctl" id="txtNameRow"><span class="lbl">이름(확장자 제외)</span>
+          <input class="field" id="txtEditName" type="text" placeholder="예: 회의결과보고"></label>
+        <p class="muted" style="font-size:12px;margin:8px 0 4px">{{필드}} 토큰을 포함한 템플릿 내용</p>
+        <textarea id="txtEditContent" rows="10" placeholder="제목: {{공고명}} ..."></textarea>
+        <div class="modal-actions">
+          <button class="btn" id="txtEditCancel">취소</button>
+          <button class="btn primary" id="txtEditOk">저장</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 붙여넣기 모달(세션 템플릿) -->
     <div id="pasteModal" class="modal hidden">
       <div class="modal-card">
@@ -257,6 +315,7 @@
 <script src="js/screens/editor.js"></script>
 <script src="js/screens/run.js"></script>
 <script src="js/screens/matrix.js"></script>
+<script src="js/screens/template.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

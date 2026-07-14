@@ -343,6 +343,9 @@
       <button class="navbtn" data-scr="txt">
         <span class="n"><span class="num">✎</span>즉시 기안 (txt)</span>
         <span class="d">템플릿+데이터 → 실시간 → 복사</span></button>
+      <button class="navbtn" data-scr="tpl">
+        <span class="n"><span class="num">▦</span>템플릿 관리</span>
+        <span class="d">HWPX·TXT 라이브러리 · 상태·변환·검토</span></button>
     </nav>
 
     <div>
@@ -853,6 +856,96 @@
               <p><code>render_record</code>는 미충족 토큰을 <span class="mono">{{}}</span>로 남기고
                  시끄럽게 신고. HWPX 표식(<span class="mono">〘미입력〙</span>)의 평문 짝.</p>
               <div class="src">core/text_render.py · ADR E</div></div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ============ 템플릿 관리 (HWPX·TXT 라이브러리, #13) ============ -->
+      <section class="scr" id="scr-tpl">
+        <div class="stage">
+          <div class="canvas">
+            <div class="win" style="max-width:860px">
+              <div class="titlebar"><span class="t">HWPX Filler — 템플릿 관리</span>
+                <span class="caps"><span>—</span><span>▢</span><span class="x">✕</span></span></div>
+              <div class="body">
+                <div class="heading">HWPX와 TXT 템플릿을 한곳에서 관리합니다 — 누름틀 상태를 배지로
+                  보고, 상태별로 변환·검토하세요. 판본 비교(diff)는 별도 제품(hwpxdiff)이 담당합니다.</div>
+
+                <div class="panes" style="margin-top:14px">
+                  <!-- HWPX 템플릿 카탈로그 -->
+                  <div class="pane">
+                    <div class="row" style="justify-content:space-between">
+                      <h4 style="margin:0">HWPX 템플릿 <span class="muted" style="font-weight:400"
+                        data-vm="TemplateManagerViewModel.count_label">2건</span></h4>
+                      <button class="btn sm" data-vm="TemplateManagerViewModel.set_library_dir">폴더 선택…</button>
+                    </div>
+                    <div class="reclist" data-vm="TemplateManagerViewModel.rows">
+                      <div class="tplcard">
+                        <div class="row" style="justify-content:space-between">
+                          <span class="rf" data-vm="TemplateRow.name">공고서_양식.hwpx</span>
+                          <span class="fb fill" data-vm="TemplateRow.badge_level">변환됨</span></div>
+                        <div class="muted" style="font-size:11px" data-vm="TemplateRow.detail_line">필드 6개</div>
+                        <div class="row" style="justify-content:flex-end;margin-top:4px"
+                             data-vm="TemplateRow.actions">
+                          <button class="btn sm" data-vm="TemplateManagerViewModel.actions_for">작업 만들기</button></div>
+                      </div>
+                      <div class="tplcard">
+                        <div class="row" style="justify-content:space-between">
+                          <span class="rf" data-vm="TemplateRow.badge_label">계약서.hwpx</span>
+                          <span class="fb blank">부분 변환</span></div>
+                        <div class="muted" style="font-size:11px">필드 3개 · 미변환 2개</div>
+                        <div class="row" style="justify-content:flex-end;margin-top:4px">
+                          <button class="btn sm" data-vm="TemplateManagerViewModel.lint">검토</button>
+                          <button class="btn sm" data-vm="TemplateManagerViewModel.scan_preview">마저 변환</button></div>
+                      </div>
+                    </div>
+                    <p class="muted" style="font-size:11px;margin-top:6px"
+                       data-vm="TemplateManagerViewModel.empty_hint">
+                      변환은 스캔 미리보기 → 확인 시에만 파일을 제자리 변경합니다(CLI 2단계 미러).</p>
+                  </div>
+
+                  <!-- TXT 템플릿 카탈로그(HWPX와 동등 관리 · 10F2FF98-C) -->
+                  <div class="pane">
+                    <div class="row" style="justify-content:space-between">
+                      <h4 style="margin:0">TXT 템플릿</h4>
+                      <button class="btn sm">새 TXT 템플릿…</button>
+                    </div>
+                    <div class="reclist">
+                      <div class="tplcard">
+                        <div class="row" style="justify-content:space-between">
+                          <span class="rf">온나라_기안.txt</span><span class="fb" >TXT</span></div>
+                        <div class="muted" style="font-size:11px">토큰 4개</div>
+                        <div class="row" style="justify-content:flex-end;margin-top:4px">
+                          <button class="btn sm">삭제</button>
+                          <button class="btn sm">즉시 기안에서 열기</button></div>
+                      </div>
+                    </div>
+                    <p class="muted" style="font-size:11px;margin-top:6px">새 TXT 템플릿을 만들면 즉시 기안
+                      화면에서 바로 사용할 수 있습니다.</p>
+                  </div>
+                </div>
+
+                <div class="run-result" data-vm="TemplateManagerViewModel.apply_fieldize"
+                     style="margin-top:12px"></div>
+              </div>
+            </div>
+          </div>
+
+          <aside class="ann">
+            <h3>이 화면을 지배하는 결정</h3>
+            <div class="dcard"><div class="dh"><span class="dchip B">B</span><span class="dt">카드 하이라이트 렌더 버그 봉합 <span style="font-weight:400;font-size:10px;color:var(--a-warn)">(이관)</span></span></div>
+              <p>Qt 리스트 카드 선택 하이라이트가 반투명이라 뒤에 숨긴 항목 텍스트가 비쳐
+                 <b>글자가 겹쳐 보이던 렌더 버그</b>(61C7ADF8)를, 웹 카드는 불투명 배경 div 라
+                 <b>구성상 소멸</b>합니다 — 숨긴 텍스트 레이어 자체가 없습니다.</p>
+              <div class="src">이슈 #13 · 61C7ADF8 · [B] 마이그레이션</div></div>
+            <div class="dcard"><div class="dh"><span class="dchip">10</span><span class="dt">미리보기 제거 · TXT 동등</span></div>
+              <p>필드명·토큰 미리보기는 작업 위저드와 <b>중복이라 제거</b>(10F2FF98-B). TXT 템플릿은
+                 HWPX와 <b>동등 관리</b>(열기·편집·생성·삭제, 10F2FF98-C).</p>
+              <div class="src">이슈 #13 · 결정 10F2FF98-B·C</div></div>
+            <div class="dcard"><div class="dh"><span class="dchip">DX</span><span class="dt">드리프트 강등 → hwpxdiff</span></div>
+              <p>두 파일 수동 드리프트 비교는 사용사례가 없어 <b>이 화면에서 숨김/강등</b> — diff 는
+                 앱 A(hwpxdiff) 책임입니다. 링1 seam(<code>drift()</code>)은 보존하되 UI 미노출.</p>
+              <div class="src">이슈 #13 · 결정 10F2FF98-D</div></div>
           </aside>
         </div>
       </section>

@@ -35,6 +35,12 @@
     generate(screen, confirmOverwrite) {
       return window.pywebview.api.generate(screen, !!confirmOverwrite);
     },
+
+    /** 네이티브 폴더 피커 → 템플릿 관리 HWPX 라이브러리 폴더 재지정. 경로·"ERROR:…"·null. */
+    pickLibraryFolder() { return window.pywebview.api.pick_library_folder(); },
+
+    /** 템플릿 관리 '작업 만들기' → 그 템플릿을 에디터에 로드(크로스스크린). 파일명·"ERROR:…". */
+    loadTemplateIntoEditor(path) { return window.pywebview.api.load_template_into_editor(path); },
   };
 
   // Python→웹 푸시 진입점(app.py 의 evaluate_js 가 호출). 전역 노출.
