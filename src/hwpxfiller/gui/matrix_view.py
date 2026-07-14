@@ -125,7 +125,7 @@ class MatrixRunView(QWidget):
         drow = QHBoxLayout(data_box)
         self.ed_data = QLineEdit()
         self.ed_data.setReadOnly(True)
-        self.btn_pool = QPushButton("데이터 풀에서…")
+        self.btn_pool = QPushButton("등록 데이터에서…")
         self.btn_pool.clicked.connect(self._pick_from_pool)
         self.btn_file = QPushButton("파일 선택…")
         self.btn_file.clicked.connect(self._pick_file)

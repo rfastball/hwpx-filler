@@ -63,8 +63,8 @@ class AppController:
             "누름틀 템플릿(.hwpx)의 컴파일 상태를 보고 스키마 추출·누름틀 변환·검토를 합니다.",
         )
         self.shell.register_static(
-            "pool", "데이터 풀",
-            "재사용할 데이터 참조(엑셀/CSV 경로·나라장터 쿼리·조립 파이프라인)를 등록·보관합니다.",
+            "pool", "데이터 관리",
+            "재사용할 데이터 참조(엑셀/CSV 경로·나라장터 쿼리·조립 파이프라인)를 등록하고 관리합니다.",
         )
         self.shell.register_static(
             "vocab", "매핑 프로파일",

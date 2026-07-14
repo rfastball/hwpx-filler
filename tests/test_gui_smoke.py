@@ -2034,7 +2034,7 @@ def test_txt_view_data_affordances_are_symmetric(qapp, tmp_path):
 
     view = TxtDraftView(TextTemplateRegistry(d), pool_registry=_Pool())
     # 3종 겨눔 버튼이 실행 표면(풀·파일·나라)과 동형으로 출현한다.
-    assert view.btn_pool.text() == "데이터 풀에서…"
+    assert view.btn_pool.text() == "등록 데이터에서…"
     assert view.btn_data.text() == "파일 선택…"
     assert view.btn_manual.text() == "수기 입력…"
 
