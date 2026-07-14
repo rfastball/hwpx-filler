@@ -345,6 +345,50 @@ def save_last_dir(purpose: str, path) -> None:
     st.sync()
 
 
+# ---------------------------- 작업 브라우저 렌즈 지속(JOB_BROWSER_DESIGN D4)
+def load_home_lens() -> "tuple[str | None, dict[str, set[str]]]":
+    """홈 좌 트랙 group-by 렌즈 + facet 선택을 INI 에서 복원(D4 사용자 소유 지속 상태).
+
+    지오메트리·last_dir 과 동급 규율: 편의 지속이라 미저장·손상 값은 조용히 폴백한다.
+    group_by 반환은 ``str | None`` — **None 은 '미저장'**(위젯이 씨앗 렌즈를 유지)이고,
+    ""(빈 문자열)은 '사용자가 flat 을 명시 선택'이라 구별한다. 링1 VM 은 지속을 모르고
+    확정된 값만 위젯이 주입한다(링 경계).
+    """
+    import json
+
+    st = _ui_settings()
+    gb = st.value("lens/home_group_by")
+    group_by = gb if isinstance(gb, str) else None
+    facets: "dict[str, set[str]]" = {}
+    raw = st.value("lens/home_facets")
+    if isinstance(raw, str) and raw:
+        try:
+            data = json.loads(raw)
+        except (ValueError, TypeError):
+            data = None
+        if isinstance(data, dict):
+            for axis, values in data.items():
+                if isinstance(axis, str) and isinstance(values, list):
+                    vs = {v for v in values if isinstance(v, str)}
+                    if vs:
+                        facets[axis] = vs
+    return group_by, facets
+
+
+def save_home_lens(group_by: str, facets: "dict[str, set[str]]") -> None:
+    """홈 렌즈 상태를 INI 에 저장(사용자 조작 시 위젯이 호출). facet 은 축→정렬 값리스트 JSON.
+
+    sync 근거는 :func:`save_geometry` 와 동일(각 호출이 QSettings 를 새로 만들어 즉시 flush).
+    """
+    import json
+
+    payload = {axis: sorted(vs) for axis, vs in facets.items() if vs}
+    st = _ui_settings()
+    st.setValue("lens/home_group_by", group_by or "")
+    st.setValue("lens/home_facets", json.dumps(payload, ensure_ascii=False))
+    st.sync()
+
+
 # ---------------------------------------------------------- ST-18: 상태 통지(live-region)
 def announce_status(label, text: str) -> None:
     """상태 라벨 텍스트를 갱신하고 보조기술에 통지한다(ST-18, WCAG 4.1.3 Status Messages).

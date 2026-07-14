@@ -15,17 +15,23 @@ from __future__ import annotations
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
+    QComboBox,
     QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
+    QPushButton,
     QVBoxLayout,
+    QWidget,
     QWizard,
     QWizardPage,
 )
 
 from ..core.job import DEFAULT_FILENAME_PATTERN, Job, JobRegistry
 from .confirm import confirm_destructive
+from .home_state import discover_tag_axes
 from .job_editor_state import (
     needs_overwrite_confirm,
     overwrite_confirm_text,
@@ -34,6 +40,46 @@ from .job_editor_state import (
 from .style import BASE_QSS, mark
 from .view_helpers import restore_geometry, save_geometry, show_error
 from .wizard import DataPage, MappingPage, TemplatePage
+
+
+class _TagRow(QWidget):
+    """분류 태그 한 줄 — 축(편집형 콤보, 발견된 축 후보) + 값 + 삭제(JOB_BROWSER_DESIGN D2).
+
+    차원-불가지: 코드는 축·값이 무엇인지 모른다 — 사용자가 자유롭게 입력한다. enum/bool
+    타입 필드를 발명하지 않는다.
+    """
+
+    def __init__(self, known_axes, axis="", value="", on_remove=None, parent=None):
+        super().__init__(parent)
+        root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        self.cb_axis = QComboBox()
+        self.cb_axis.setEditable(True)
+        self.cb_axis.addItems(known_axes)
+        self.cb_axis.setCurrentText(axis)
+        self.cb_axis.lineEdit().setPlaceholderText("축(예: 금액구간)")
+        self.ed_value = QLineEdit(value)
+        self.ed_value.setPlaceholderText("값(예: 1억미만)")
+        btn_del = QPushButton("삭제")
+        mark(btn_del, "level", "danger")  # 파괴 버튼 시각 등급(UD-12)
+        if on_remove is not None:
+            btn_del.clicked.connect(lambda: on_remove(self))
+        root.addWidget(self.cb_axis, 1)
+        root.addWidget(self.ed_value, 1)
+        root.addWidget(btn_del)
+
+    def set_known_axes(self, axes) -> None:
+        """축 후보 목록을 갱신하되 현재 입력값은 보존한다(재진입 시 발견 축 반영)."""
+        cur = self.cb_axis.currentText()
+        self.cb_axis.clear()
+        self.cb_axis.addItems(axes)
+        self.cb_axis.setCurrentText(cur)
+
+    def axis(self) -> str:
+        return self.cb_axis.currentText().strip()
+
+    def value(self) -> str:
+        return self.ed_value.text().strip()
 
 
 class JobEditorWizard(QWizard):
@@ -141,6 +187,8 @@ class JobEditorWizard(QWizard):
             last_run_at=self.initial_job.last_run_at if self.initial_job else "",
             # J3 계보: 이 작업의 매핑을 시드한 공유 베이스 이름(순수 메타, run-path 무관).
             base_mapping_name=self.base_mapping_name,
+            # 브라우징 분류 태그(선택 — D12). 수동 입력, 이름 파싱·자동 제안 없음(제안은 보류).
+            tags=self._save_page.tags(),
         )
         try:
             self.registry.save(job)
@@ -212,18 +260,70 @@ class SaveJobPage(QWizardPage):
         grid.addWidget(self.ed_pattern, 1, 1)
         grid.addWidget(QLabel("토큰: {{필드}}, {{date:YYYYMMDD}}, {{seq:001}}"), 2, 1)
         layout.addLayout(grid)
+
+        # 분류 태그(선택 — D12): 작업 브라우저(홈)의 group-by·facet 기준. 미태깅도 저장 자유.
+        self._tag_rows: "list[_TagRow]" = []
+        self._known_axes: "list[str]" = []
+        tags_box = QGroupBox("분류 태그 (선택) — 작업 브라우저의 그룹·필터 기준")
+        tags_box.setToolTip(
+            "{축→값}으로 작업을 분류합니다(예: 금액구간=1억미만). 홈 화면에서 이 축으로 묶거나 "
+            "걸러 봅니다. 비워 둬도 저장됩니다."
+        )
+        tb = QVBoxLayout(tags_box)
+        self._tags_layout = QVBoxLayout()
+        tb.addLayout(self._tags_layout)
+        add_row = QHBoxLayout()
+        btn_add = QPushButton("＋ 태그 추가")
+        btn_add.clicked.connect(lambda: self._add_tag_row())
+        add_row.addWidget(btn_add)
+        add_row.addStretch(1)
+        tb.addLayout(add_row)
+        layout.addWidget(tags_box)
+
         layout.addStretch(1)
         self.ed_name.textChanged.connect(self.completeChanged)
         self.ed_pattern.textChanged.connect(self.completeChanged)
         self._prefilled = False  # 편집 모드 프리필은 1회 — 사용자 수정을 되돌리지 않는다
 
+    def _add_tag_row(self, axis="", value="") -> "_TagRow":
+        row = _TagRow(self._known_axes, axis, value, on_remove=self._remove_tag_row)
+        self._tag_rows.append(row)
+        self._tags_layout.addWidget(row)
+        return row
+
+    def _remove_tag_row(self, row: "_TagRow") -> None:
+        if row in self._tag_rows:
+            self._tag_rows.remove(row)
+        self._tags_layout.removeWidget(row)
+        row.deleteLater()
+
     def initializePage(self):
         wiz = self.wizard()
         job = getattr(wiz, "initial_job", None)
+        # 발견된 축(다른 작업들의 태그 키)을 후보로 — 재진입마다 갱신(값싼 순회).
+        reg = getattr(wiz, "registry", None)
+        if reg is not None:
+            try:
+                self._known_axes = list(discover_tag_axes(reg.list_jobs()).keys())
+            except Exception:  # noqa: BLE001 — 후보는 편의라 실패는 조용히 빈 목록
+                self._known_axes = []
         if job is not None and not self._prefilled:
             self.ed_name.setText(job.name)
             self.ed_pattern.setText(job.filename_pattern)
-            self._prefilled = True
+            for axis, value in job.tags.items():  # 기존 태그 프리필(편집 재진입)
+                self._add_tag_row(axis, value)
+        self._prefilled = True
+        for row in self._tag_rows:  # 이미 있는 행의 축 후보 갱신
+            row.set_known_axes(self._known_axes)
+
+    def tags(self) -> "dict[str, str]":
+        """확정된 태그 {축→값} — 축·값이 모두 채워진 행만(빈 축/빈 값 행은 무시, D12)."""
+        out: "dict[str, str]" = {}
+        for row in self._tag_rows:
+            axis, value = row.axis(), row.value()
+            if axis and value:
+                out[axis] = value
+        return out
 
     def job_name(self) -> str:
         return self.ed_name.text().strip()
