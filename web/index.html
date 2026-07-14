@@ -9,8 +9,8 @@
 </head>
 <body>
 <!-- 웹 프론트엔드 셸 — 목업 docs/UI_PROTOTYPE_APPB.html 의 앱윈도 구조를 스튜디오 크롬(마스트헤드·
-     주석·캔버스) 없이 실앱으로 전개. 좌 레일(4화면 라우팅) + 우 스테이지. 링1 VM 에 브리지로 배선.
-     실화면: txt(스파이크 승격)·editor(#15·#16)·run(#18). home 은 후속 이관(가짜 데이터 금지). -->
+     주석·캔버스) 없이 실앱으로 전개. 좌 레일(6화면 라우팅) + 우 스테이지. 링1 VM 에 브리지로 배선.
+     실화면 전부 이관 완료: home(허브·기본)·txt·editor(#15·#16)·run(#18)·matrix(#14)·tpl(#13). -->
 <div class="app">
   <nav class="rail" aria-label="화면 전환">
     <div class="brand">HWPX Filler
@@ -18,7 +18,7 @@
       <button class="rail-toggle" id="railToggle" title="사이드 패널 접기/펼치기"
               aria-label="사이드 패널 접기/펼치기">«</button></div>
     <div class="rl">투트랙 허브</div>
-    <button class="navbtn" data-scr="home">
+    <button class="navbtn" data-scr="home" aria-current="true">
       <span class="n">대시보드</span><span class="d">두 트랙 허브 · 요약</span></button>
     <button class="navbtn" data-scr="editor">
       <span class="n">작업 에디터</span><span class="d">HWPX · 4스텝</span></button>
@@ -26,19 +26,56 @@
       <span class="n">실행</span><span class="d">HWPX · 데이터 겨눔 → 생성</span></button>
     <button class="navbtn" data-scr="matrix">
       <span class="n">여러 작업 실행</span><span class="d">여러 작업 × 공통 데이터 → 생성</span></button>
-    <button class="navbtn" data-scr="txt" aria-current="true">
+    <button class="navbtn" data-scr="txt">
       <span class="n">즉시 기안 (txt)</span><span class="d">템플릿+데이터 → 실시간 → 복사</span></button>
     <button class="navbtn" data-scr="tpl">
       <span class="n">템플릿 관리</span><span class="d">HWPX·TXT 라이브러리 · 상태·변환·검토</span></button>
   </nav>
 
   <main class="stage">
-    <!-- ============ 대시보드 (단계 N — 홈 이관 예정) ============ -->
-    <section class="scr" id="scr-home">
-      <div class="placeholder">
-        <h2>대시보드</h2>
-        <p>이 화면은 아직 웹으로 이관되지 않았습니다. 후속 단계에서
-          링1 <code>HomeViewModel</code> 에 배선해 살립니다.</p>
+    <!-- ============ 대시보드 (허브, 마지막 페이로드 화면 · #20) ============ -->
+    <!-- 목업 scr-home 이관. 안정 DOM(id) + home.js 가 window.__push('home', snapshot) 로 값만
+         채운다(run 패턴). 링1 HomeViewModel(KPI·작업 브라우저 group-by/facet·빈 상태·손상 격리·
+         txt 트랙)에 브리지로 배선 — VM 로직 재구현 없음. 카드/버튼의 워크플로 이동은 window.Nav
+         (셸 라우터)로만; 홈은 다른 화면 컨트롤러를 모른다. 스코프 경계는 screen_home.py docstring. -->
+    <section class="scr on" id="scr-home">
+      <header class="scr-head">
+        <div>
+          <h1>대시보드</h1>
+          <p class="sub">두 트랙 허브 — 저장된 작업(HWPX)과 즉시 기안 템플릿(txt)을 한눈에.</p>
+        </div>
+      </header>
+
+      <!-- KPI — 전부 실재 데이터(레지스트리·템플릿 상태·txt 루트). 가짜 지표 없음. -->
+      <div class="kpis" id="homeKpis"></div>
+
+      <!-- 이어서 실행 — 실행 이력 있는 작업 최근순(있을 때만 노출) -->
+      <div class="continue-runs" id="homeContinue" style="display:none"></div>
+
+      <!-- 손상 작업 — 숨기지 않고 시끄러운 위험 카드로(RC-05, 있을 때만) -->
+      <div id="homeCorrupt" style="display:none"></div>
+
+      <div class="tracks">
+        <!-- HWPX 트랙 — 작업 브라우저(group-by 렌즈 + facet 칩) -->
+        <div class="track hwpx">
+          <div class="th"><span class="tt">정식 문서 생성 · HWPX</span>
+            <span class="row">
+              <button class="btn sm" id="homeMatrix">같은 데이터로 여러 작업 실행</button>
+              <button class="btn primary sm" id="homeNewJob">＋ 새 작업</button></span></div>
+          <p class="tsub">누름틀 템플릿 + 매핑을 작업으로 저장 → 데이터 겨눠 .hwpx 생성.</p>
+          <!-- 작업 브라우저 바(태그 없으면 렌더 안 됨 — 퇴화-코퍼스 불변식) -->
+          <div class="jobbrowser" id="homeBrowser" style="display:none"></div>
+          <div id="homeJobs"></div>
+          <div id="homeEmpty" style="display:none"></div>
+        </div>
+
+        <!-- txt 트랙 — 즉시 기안 템플릿 목록 -->
+        <div class="track txt">
+          <div class="th"><span class="tt">즉시 기안 · txt</span>
+            <button class="btn primary sm" id="homeNewTxt">＋ 새 기안</button></div>
+          <p class="tsub">평문 {{필드}} → 실시간 렌더 → 복사. 온나라 기안 등 즉각 붙여넣기.</p>
+          <div class="tlist" id="homeTxt"></div>
+        </div>
       </div>
     </section>
 
@@ -190,7 +227,7 @@
     </section>
 
     <!-- ============ TXT 즉시 기안 (첫 실화면) ============ -->
-    <section class="scr on" id="scr-txt">
+    <section class="scr" id="scr-txt">
       <header class="scr-head">
         <div>
           <h1>즉시 기안</h1>
@@ -311,6 +348,7 @@
 </div>
 
 <script src="js/bridge.js"></script>
+<script src="js/screens/home.js"></script>
 <script src="js/screens/txt.js"></script>
 <script src="js/screens/editor.js"></script>
 <script src="js/screens/run.js"></script>
