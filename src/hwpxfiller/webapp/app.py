@@ -30,6 +30,7 @@ from .dialogs import open_file_dialog, open_folder_dialog, save_file_dialog
 from .screen_editor import EditorController
 from .screen_matrix import MatrixController
 from .screen_run import RunController
+from .screen_template import TemplateController
 from .screens import TxtController
 
 
@@ -63,6 +64,8 @@ class WebFrontend:
             EditorController(job_registry, self._push),
             RunController(job_registry, self._push),
             MatrixController(job_registry, self._push),
+            # 템플릿 관리(#13) — TXT 레지스트리는 즉시 기안과 공유(변경이 양쪽에 반영).
+            TemplateController(registry, self._push),
         ]
         self.controllers = {c.name: c for c in controllers}
 
@@ -155,6 +158,29 @@ class WebFrontend:
     def generate(self, screen: str, confirm_overwrite: bool = False) -> dict:
         """실행 화면 동기 생성 — 게이트 판정·덮어쓰기 재진술·결과 요약을 dict 로 반환."""
         return self._controller(screen).generate(confirm_overwrite=bool(confirm_overwrite))
+
+    def pick_library_folder(self) -> "str | None":
+        """Win32 폴더 피커 → 템플릿 관리 화면 HWPX 라이브러리 폴더 재지정. 경로·None(취소)·``ERROR:``."""
+        path = open_folder_dialog("템플릿 라이브러리 폴더", owner_title=WINDOW_TITLE)
+        if not path:
+            return None
+        try:
+            self._controller("tpl").set_library_dir(path)
+        except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
+            return f"ERROR: {exc}"
+        return path
+
+    def load_template_into_editor(self, path: str) -> "str | None":
+        """템플릿 관리 '작업 만들기' → 그 템플릿을 에디터에 로드(크로스스크린). 파일명·``ERROR:``.
+
+        웹은 이 호출 후 에디터 화면으로 전환한다 — 링1 seam(editor.load_template_path)을 재사용해
+        VM 로직을 재구현하지 않는다.
+        """
+        try:
+            self._controller("editor").load_template_path(path)
+        except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
+            return f"ERROR: {exc}"
+        return Path(path).name
 
 
 # ------------------------------------------------------------------ 자가검증(Q3)

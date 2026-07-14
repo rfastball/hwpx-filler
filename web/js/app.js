@@ -24,5 +24,6 @@
     if (window.EditorScreen) window.EditorScreen.init();
     if (window.RunScreen) window.RunScreen.init();
     if (window.MatrixScreen) window.MatrixScreen.init();
+    if (window.TemplateScreen) window.TemplateScreen.init();
   });
 })();
