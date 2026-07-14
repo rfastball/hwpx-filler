@@ -540,6 +540,117 @@ def test_window_geometry_persists_across_sessions(qapp, tmp_path, monkeypatch):
     assert (w3.width(), w3.height()) == (640, 480)
 
 
+def test_file_dialog_starts_at_purpose_scoped_last_dir(qapp, tmp_path, monkeypatch):
+    """파일 다이얼로그 시작 디렉터리 = 같은 용도의 직전 선택 **부모 디렉터리**(T3).
+
+    ST-11 지오메트리와 동급 규율(HWPXFILLER_HOME INI 격리): 성공 선택만 기억하고,
+    취소는 직전 기억을 보존하며, 용도(data/template)가 달라도 섞이지 않는다.
+    전달 인자는 QFileDialog monkeypatch 로 직접 검증한다(파일명 프리필 없음).
+    """
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    csv_dir = tmp_path / "데이터자료"
+    csv_dir.mkdir()
+    csv = csv_dir / "d.csv"
+    csv.write_text("colA\n1\n", encoding="utf-8")
+
+    starts: "list[str]" = []
+    picked = {"path": str(csv)}
+
+    def fake_open(parent, title, start, *a, **k):
+        starts.append(start)
+        return (picked["path"], "")
+
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", fake_open)
+    wiz, data_page, _mapping_page = _authoring_wizard(tmp_path / "jobs")
+
+    data_page._pick()
+    assert starts[0] == ""                    # 첫 실행 — 기억 없음(OS 기본 위치)
+    data_page._pick()
+    assert starts[1] == str(csv_dir)          # 직전 선택의 부모 디렉터리에서 시작
+
+    picked["path"] = ""                       # 취소 — last_dir 미갱신
+    data_page._pick()
+    picked["path"] = str(csv)
+    data_page._pick()
+    assert starts[3] == str(csv_dir)          # 취소가 직전 기억을 지우지 않았다
+
+    # 용도 분리 — 데이터 선택이 template 용도의 시작 디렉터리를 바꾸지 않는다.
+    template_page = wiz.page(wiz.pageIds()[0])
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a, **k: None)  # csv 스키마 추출 실패 모달 차단
+    template_page._pick()
+    assert starts[4] == ""                    # template 용도는 여전히 기억 없음(미혼합)
+
+
+def test_output_dir_dialog_remembers_parent_across_run_and_matrix(qapp, tmp_path, monkeypatch):
+    """getExistingDirectory 도 동일 헬퍼를 쓴다(T3) — output 용도를 실행·매트릭스가 공유.
+
+    성공 선택된 폴더의 부모가 다음 열기의 시작 디렉터리다(직전 선택을 목록에서 바로
+    보게). 화면이 달라도 용도가 같으면 기억을 공유한다.
+    """
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    from PySide6.QtWidgets import QFileDialog
+
+    from hwpxfiller.core.job import Job, JobRegistry
+    from hwpxfiller.gui.matrix_view import MatrixRunView
+    from hwpxfiller.gui.run_view import RunView
+
+    out = tmp_path / "산출물" / "7월"
+    out.mkdir(parents=True)
+    starts: "list[str]" = []
+
+    def fake_dir(parent, title, start="", *a, **k):
+        starts.append(start)
+        return str(out)
+
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", fake_dir)
+    run = RunView(Job(name="실행", template_path="/t.hwpx", filename_pattern="d-{{seq}}"))
+    run._pick_out()
+    assert starts[0] == ""                    # 첫 실행 — 기억 없음
+    assert run.ed_out.text() == str(out)
+
+    matrix = MatrixRunView(JobRegistry(tmp_path / "jobs"))
+    matrix._pick_out()
+    assert starts[1] == str(out.parent)       # 부모 디렉터리 — 용도(output) 공유
+
+
+def test_save_dialog_provides_start_dir_only_no_filename_prefill(qapp, tmp_path, monkeypatch):
+    """getSaveFileName 도 동일 헬퍼를 쓴다(T3) — 시작 디렉터리만, 파일명 프리필 금지.
+
+    저장 이름은 항상 사용자 몫 — 직전 파일명이 프리필되면 무심코 덮어쓰기 초대가 된다.
+    시작 인자는 첫 실행에 빈 값, 저장 성공 후엔 그 파일의 부모 디렉터리(문자열에
+    파일명 미포함)여야 한다.
+    """
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    from hwpxfiller.core.text_registry import TextTemplateRegistry
+    from hwpxfiller.gui.txt_view import TxtDraftView
+
+    d = tmp_path / "txt"
+    d.mkdir()
+    (d / "기안.txt").write_text("{{업체명}}", encoding="utf-8")
+    save_dir = tmp_path / "저장소"
+    save_dir.mkdir()
+    target = save_dir / "결과.txt"
+    starts: "list[str]" = []
+
+    def fake_save(parent, title, start="", *a, **k):
+        starts.append(start)
+        return (str(target), "")
+
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", fake_save)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)  # 결측 경고 모달 차단
+
+    txt = TxtDraftView(TextTemplateRegistry(d))
+    txt._save()
+    assert starts[0] == ""                    # 파일명 프리필 없음(빈 시작)
+    txt._save()
+    assert starts[1] == str(save_dir)         # 시작 디렉터리만 — 파일 경로 프리필 금지
+    assert target.exists()
+
+
 def test_wizard_discard_guard_confirms_when_mapping_confirmed(qapp, tmp_path, monkeypatch):
     """위저드 이탈이 확정 매핑을 무확인 폐기하지 못한다(ST-08).
 
@@ -2280,3 +2391,189 @@ def test_mapping_table_tooltips_expose_full_names(qapp):
     tip = table.cell_control(ri, _COL_SOURCE).toolTip()
     assert "현재 선택:" in tip
     assert "신뢰도 60%" in tip
+
+# ------------------------------------------------- T2: 시트 확정 다이얼로그(5표면)
+def _multi_sheet_fixture():
+    from pathlib import Path
+
+    return Path(__file__).parent / "fixtures" / "multi_sheet.xlsx"
+
+
+def _sheet_dialog_spy(monkeypatch, pick: str):
+    """QInputDialog.getItem 가로채기(헤드리스 모달 차단, QFileDialog 미러 선례) —
+    노출 항목을 기록하고 ``pick`` 으로 시작하는 항목을 확정한다."""
+    from PySide6.QtWidgets import QInputDialog
+
+    seen: "list[list[str]]" = []
+
+    def fake_get_item(parent, title, label, items, *a, **k):
+        seen.append(list(items))
+        return next(t for t in items if t.startswith(pick)), True
+
+    monkeypatch.setattr(QInputDialog, "getItem", fake_get_item)
+    return seen
+
+
+def test_sheet_confirm_on_wizard_datapage_restates_sheet(qapp, tmp_path, monkeypatch):
+    """표면 1(위저드 DataPage) — 다중 시트 확정 다이얼로그(행×열 병기) 경유,
+    확정 시트 레코드 로드 + lbl_summary 에 시트명 재진술."""
+    from PySide6.QtWidgets import QFileDialog
+
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))  # last_dir INI 오염 방지
+    fixture = _multi_sheet_fixture()
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(fixture), ""))
+    seen = _sheet_dialog_spy(monkeypatch, "낙찰현황")
+    wiz, data_page, _mapping_page = _authoring_wizard(tmp_path)
+
+    data_page._pick()
+
+    assert seen and seen[0][0].startswith("공고목록")
+    assert "3행" in seen[0][0] and "2열" in seen[0][0]   # 행×열 근사 병기
+    assert wiz.data_sheet == "낙찰현황"
+    assert wiz.source_fields == ["업체명", "낙찰금액", "계약일"]
+    assert wiz.records[0]["업체명"] == "가나상사"
+    assert "낙찰현황" in data_page.lbl_summary.text()     # 시트명 재진술
+
+
+def test_sheet_confirm_across_run_matrix_txt_surfaces(qapp, tmp_path, monkeypatch):
+    """표면 2·3·4(실행·매트릭스·txt) — 공용 pick_file 배선 3곳 모두 시트 확정을
+    관통하고, 겨눔 라벨에 시트명이 재진술된다(한 곳 누락 시 런타임 파손 방지)."""
+    from PySide6.QtWidgets import QFileDialog
+
+    from hwpxfiller.core.job import Job, JobRegistry
+    from hwpxfiller.core.text_registry import TextTemplateRegistry
+    from hwpxfiller.gui.matrix_view import MatrixRunView
+    from hwpxfiller.gui.run_view import RunView
+    from hwpxfiller.gui.txt_view import TxtDraftView
+
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    fixture = _multi_sheet_fixture()
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(fixture), ""))
+    seen = _sheet_dialog_spy(monkeypatch, "낙찰현황")
+
+    run = RunView(Job(name="실행", template_path="/t.hwpx", filename_pattern="d-{{seq}}"))
+    run._data.pick_file()
+    assert run.vm.records[0]["업체명"] == "가나상사"
+    assert "낙찰현황" in run.ed_data.text()
+
+    matrix = MatrixRunView(JobRegistry(tmp_path / "jobs"))
+    matrix._data.pick_file()
+    assert matrix.vm.records[0]["업체명"] == "가나상사"
+    assert "낙찰현황" in matrix.ed_data.text()
+
+    d = tmp_path / "txt"
+    d.mkdir()
+    (d / "기안.txt").write_text("{{업체명}}", encoding="utf-8")
+    txt = TxtDraftView(TextTemplateRegistry(d))
+    txt._data.pick_file()
+    assert txt.vm.records[0]["업체명"] == "가나상사"
+    assert "낙찰현황" in txt.ed_data.text()
+
+    assert len(seen) == 3  # 세 표면 모두 확정 다이얼로그 경유(우회 없음)
+
+
+def test_sheet_confirm_on_pool_registration_embeds_sheet(qapp, tmp_path, monkeypatch):
+    """표면 5(데이터셋 풀 등록) — 확정 시트가 항목 opts 에 임베딩되고 복원이
+    지정 시트 레코드를 반환한다(복원 경로는 무수정 통과)."""
+    from PySide6.QtWidgets import QFileDialog, QInputDialog
+
+    from hwpxfiller.core.dataset_pool import DatasetPoolRegistry
+    from hwpxfiller.data.factory import source_from_pool_item
+    from hwpxfiller.gui.dataset_pool_panel import DatasetPoolPanel
+
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))  # last_dir INI 오염 방지
+    fixture = _multi_sheet_fixture()
+    reg = DatasetPoolRegistry(tmp_path / "pool")
+    panel = DatasetPoolPanel(reg)
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(fixture), ""))
+    seen = _sheet_dialog_spy(monkeypatch, "낙찰현황")
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("다중시트", True))
+
+    panel._on_register_excel()
+
+    assert seen and any("행" in t and "열" in t for t in seen[0])
+    item = reg.load("다중시트")
+    assert item.opts["sheet"] == "낙찰현황"
+    assert source_from_pool_item(item).records()[0]["업체명"] == "가나상사"
+
+
+def test_sheet_dialog_cancel_preserves_previous_targeting(qapp, tmp_path, monkeypatch):
+    """시트 확정 취소 = 파일 겨눔 전체 중단 — 이전 상태 보존(부분 겨눔·첫-시트
+    폴백 없음, confirm-or-alarm)."""
+    from PySide6.QtWidgets import QFileDialog, QInputDialog
+
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))  # last_dir INI 오염 방지
+    # 위저드: CSV 를 먼저 겨눈 뒤 다중 시트 재선택을 취소 → 이전 세션 그대로.
+    csv = tmp_path / "d.csv"
+    csv.write_text("colA,colB\n1,2\n", encoding="utf-8")
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(csv), ""))
+    wiz, data_page, _mapping_page = _authoring_wizard(tmp_path)
+    data_page._pick()
+    assert wiz.source_fields == ["colA", "colB"]
+    summary_before = data_page.lbl_summary.text()
+
+    fixture = _multi_sheet_fixture()
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(fixture), ""))
+    monkeypatch.setattr(QInputDialog, "getItem", lambda *a, **k: ("", False))  # 취소
+    data_page._pick()
+    assert wiz.data_path == str(csv)
+    assert wiz.data_sheet is None
+    assert wiz.source_fields == ["colA", "colB"]
+    assert wiz.records == [{"colA": "1", "colB": "2"}]
+    assert data_page.ed_path.text() == str(csv)
+    assert data_page.lbl_summary.text() == summary_before
+
+    # 실행 뷰: 겨눔 없던 상태에서 취소 → 상태 무변(레코드 0·라벨 공백).
+    from hwpxfiller.core.job import Job
+    from hwpxfiller.gui.run_view import RunView
+
+    run = RunView(Job(name="실행", template_path="/t.hwpx", filename_pattern="d-{{seq}}"))
+    run._data.pick_file()
+    assert run.vm.datasource is None and run.vm.records == []
+    assert run.ed_data.text() == ""
+
+
+def test_mapping_redrafts_on_same_path_different_sheet(qapp, tmp_path, monkeypatch):
+    """T2 — 같은 경로·**같은 헤더**의 다른 시트 재선택도 재초안(_built_for 에 시트 반영).
+
+    두 시트의 헤더가 같으면 종전 키(경로+source_fields)는 캐시 히트라 옛 초안이
+    조용히 유지됐다 — 시트가 키에 들어가 재초안이 뜬다. 같은 시트 재선택은 캐시
+    유지(사람이 만진 확정 상태 보존).
+    """
+    from openpyxl import Workbook
+    from PySide6.QtWidgets import QFileDialog
+
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))  # last_dir INI 오염 방지
+    xlsx = tmp_path / "twin.xlsx"
+    wb = Workbook()
+    ws1 = wb.active
+    ws1.title = "일월"
+    ws1.append(["공고명"])
+    ws1.append(["일월건"])
+    ws2 = wb.create_sheet("이월")
+    ws2.append(["공고명"])
+    ws2.append(["이월건"])
+    wb.save(xlsx)
+
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(xlsx), ""))
+    wiz, data_page, mapping_page = _authoring_wizard(tmp_path)
+
+    _sheet_dialog_spy(monkeypatch, "일월")
+    data_page._pick()
+    assert wiz.data_sheet == "일월"
+    mapping_page.initializePage()
+    first_model = wiz.model
+
+    _sheet_dialog_spy(monkeypatch, "이월")
+    data_page._pick()
+    assert wiz.data_sheet == "이월"
+    assert wiz.source_fields == ["공고명"]   # 헤더 동일 — 종전 키로는 캐시 히트였을 조합
+    assert wiz.records == [{"공고명": "이월건"}]
+    mapping_page.initializePage()
+    assert wiz.model is not first_model      # 재초안이 떴다
+
+    # 같은 시트 재선택 — 키 불변이라 확정 상태(모델) 보존.
+    second_model = wiz.model
+    data_page._pick()
+    mapping_page.initializePage()
+    assert wiz.model is second_model

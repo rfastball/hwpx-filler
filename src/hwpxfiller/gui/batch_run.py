@@ -28,6 +28,7 @@ from PySide6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
 
 from .file_filters import EXCEL_FILTER
 from .style import mark
+from .view_helpers import ask_sheet_choice, last_dir, save_last_dir
 from .worker import TaskWorker
 
 
@@ -202,7 +203,8 @@ class DataAcquireController(QObject):
 
     뷰모델 결합은 콜백 계약으로만 한다(뷰별 뷰모델 표면 차이를 여기서 봉합하지 않는다):
 
-    - ``load_file(path) -> records``: 파일 소스 겨눔(raise = 시끄러운 실패).
+    - ``load_file(path, sheet=None) -> records``: 파일 소스 겨눔(raise = 시끄러운 실패).
+      ``sheet`` 는 시트 확정 다이얼로그(T2)가 받아낸 시트명(None=기본 시트).
     - ``restore_pool_item(item) -> records``: 풀 항목 복원 — **UI 스레드 밖**
       (:class:`TaskWorker`)에서 호출된다. UI 상태를 만지면 안 된다.
     - ``set_acquired(datasource, records)``: 나라 애드혹 취득 스냅샷 직접 겨눔.
@@ -231,19 +233,30 @@ class DataAcquireController(QObject):
     # ---------------------------------------------------------------- 파일
     def pick_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self._view, "데이터 파일 선택", "", EXCEL_FILTER
+            self._view, "데이터 파일 선택", last_dir("data"), EXCEL_FILTER
         )
         if not path:
             return
+        save_last_dir("data", path)  # 성공 선택만 기억(T3) — 취소는 직전 값 보존
+        # 다중 시트면 사용자 확정(T2) — 취소(None)는 파일 겨눔 **전체 중단**(이전
+        # 상태 보존, 조용한 첫-시트 추측 금지). 단일 시트·CSV 는 생략("").
         try:
-            records = self._load_file(path)
+            sheet = ask_sheet_choice(self._view, path)
+        except Exception as exc:  # noqa: BLE001 - 시트 열거 실패(손상 파일)도 시끄럽게
+            QMessageBox.critical(self._view, "오류", f"데이터 로드 실패:\n{exc}")
+            return
+        if sheet is None:
+            return
+        try:
+            records = self._load_file(path, sheet=sheet or None)
         except Exception as exc:  # noqa: BLE001 - 로드 실패는 시끄럽게
             QMessageBox.critical(self._view, "오류", f"데이터 로드 실패:\n{exc}")
             return
         if not records:
             QMessageBox.warning(self._view, "확인", "레코드가 없습니다. 다른 파일을 선택하세요.")
             return
-        self._after_loaded(path)
+        # 선택 시트명을 라벨에 재진술한다 — 어떤 시트가 겨눠졌는지 침묵하지 않는다.
+        self._after_loaded(f"{path} [시트: {sheet}]" if sheet else path)
 
     # ---------------------------------------------------------------- 데이터 풀
     def pick_from_pool(self) -> None:
@@ -270,7 +283,12 @@ class DataAcquireController(QObject):
         item = next(it for it in items if it.name == name)
         self._say(f"데이터 복원 중(백그라운드): {item.name}")
         self._set_busy(True)
-        self._pending_label = f"풀: {item.name}"
+        # 파일 겨눔 라벨(T2)과 대칭 — 항목 참조에 시트가 있으면 병기한다(어떤 시트가
+        # 겨눠졌는지 침묵하지 않는다). 시트 없는 항목(CSV·나라·파이프라인)은 이름만.
+        sheet = item.opts.get("sheet")
+        self._pending_label = (
+            f"풀: {item.name} [시트: {sheet}]" if sheet else f"풀: {item.name}"
+        )
         self.thread = QThread()
         self.worker = TaskWorker(lambda: self._restore_pool_item(item))
         self.worker.moveToThread(self.thread)

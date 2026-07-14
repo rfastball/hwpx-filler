@@ -39,7 +39,9 @@ from .view_helpers import (
     ElidedLabel,
     busy_cursor,
     hide_item_text,
+    last_dir,
     resync_card_item_heights,
+    save_last_dir,
     show_error,
     wire_refresh_shortcut,
 )
@@ -232,10 +234,12 @@ class TemplateManagerPanel(QWidget):
         self._sync_cards()
 
     def _on_choose_dir(self) -> None:
-        start = str(self.vm.library_dir) if self.vm.library_dir is not None else ""
+        # 현재 라이브러리 폴더 우선, 미설정이면 용도별 마지막 디렉터리(T3)로 시작.
+        start = str(self.vm.library_dir) if self.vm.library_dir is not None else last_dir("library")
         chosen = QFileDialog.getExistingDirectory(self, "템플릿 라이브러리 폴더", start)
         if not chosen:
             return
+        save_last_dir("library", chosen)  # 성공 선택만 기억(T3) — 취소는 직전 값 보존
         # 폴더가 바뀌면 직전 결과는 무의미(스테일 방지) — 문구·심각도 함께 초기화.
         mark(self.lbl_result, "level", "muted")
         self.lbl_result.setText("")
@@ -307,12 +311,16 @@ class TemplateManagerPanel(QWidget):
         self._show_result(self.vm.format_preview_result(path, values))
 
     def _on_drift(self) -> None:
-        old, _ = QFileDialog.getOpenFileName(self, "이전 판본 HWPX", "", HWPX_FILTER)
+        # HWPX 판본 선택은 위저드 템플릿 선택과 같은 용도 키(template)를 쓴다(T3) —
+        # 이전 판본 확정 직후 저장해 새 판본 다이얼로그가 그 곁에서 열리게 한다.
+        old, _ = QFileDialog.getOpenFileName(self, "이전 판본 HWPX", last_dir("template"), HWPX_FILTER)
         if not old:
             return
-        new, _ = QFileDialog.getOpenFileName(self, "새 판본 HWPX", "", HWPX_FILTER)
+        save_last_dir("template", old)
+        new, _ = QFileDialog.getOpenFileName(self, "새 판본 HWPX", last_dir("template"), HWPX_FILTER)
         if not new:
             return
+        save_last_dir("template", new)
         self._run_action("드리프트", new, lambda: self._do_drift(old, new))
 
     def _do_drift(self, old: str, new: str) -> None:

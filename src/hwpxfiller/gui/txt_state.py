@@ -57,8 +57,9 @@ class TxtDraftViewModel:
         return template_fields(self.template_text)
 
     # ---------------------------------------------------------- 데이터
-    def load_data(self, path: str) -> "list[dict]":
-        source = source_for_path(path)
+    def load_data(self, path: str, *, sheet: "str | None" = None) -> "list[dict]":
+        """파일 소스 겨눔 — ``sheet`` 는 사용자가 확정한 시트명(T2, None=기본 시트)."""
+        source = source_for_path(path, sheet=sheet)
         records = source.records()
         if records:
             self.datasource = source

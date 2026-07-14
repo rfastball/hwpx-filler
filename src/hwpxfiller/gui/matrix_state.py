@@ -122,8 +122,9 @@ class MatrixRunViewModel:
         return len(self.selected_job_names())
 
     # ---------------------------------------------------------- 데이터 겨눔
-    def load_file(self, path: str) -> "list[dict]":
-        source, records = resolve_file_source(path)
+    def load_file(self, path: str, *, sheet: "str | None" = None) -> "list[dict]":
+        """파일 소스 겨눔 — ``sheet`` 는 사용자가 확정한 시트명(T2, None=기본 시트)."""
+        source, records = resolve_file_source(path, sheet=sheet)
         if not records:
             return []
         self.datasource = source

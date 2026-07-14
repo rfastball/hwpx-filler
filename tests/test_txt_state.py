@@ -4,8 +4,12 @@
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from hwpxfiller.core.text_registry import TextTemplateRegistry
 from hwpxfiller.gui.txt_state import TxtDraftViewModel
+
+MULTI_SHEET = Path(__file__).parent / "fixtures" / "multi_sheet.xlsx"
 
 
 def _vm(tmp_path):
@@ -95,6 +99,29 @@ def test_load_pool_item_restores_and_targets_records(tmp_path):
     assert records == [{"공고명": "전산장비", "추정가격": "1000"}]
     assert vm.record_count() == 1
     assert vm.current_record()["공고명"] == "전산장비"
+
+
+def test_load_data_targets_confirmed_sheet(tmp_path):
+    """T2 시트 옵션 관통(링1) — 확정 시트의 레코드가 렌더 소스로 겨눠진다."""
+    vm = _vm(tmp_path)
+    recs = vm.load_data(str(MULTI_SHEET), sheet="낙찰현황")
+    assert recs[0]["업체명"] == "가나상사"
+    assert vm.record_count() == 3
+    # 대조군: 미지정(기본 첫 시트)은 다른 내용.
+    assert vm.load_data(str(MULTI_SHEET))[0]["공고명"] == "전산장비"
+
+
+def test_load_pool_item_with_sheet_restores_that_sheet(tmp_path):
+    """풀 항목 opts 의 sheet 임베딩이 txt 풀 겨눔 복원에도 관통한다(T2)."""
+
+    class _SheetPoolItem:
+        kind = "excel"
+        opts = {"path": str(MULTI_SHEET), "sheet": "낙찰현황"}
+
+    vm = _vm(tmp_path)
+    recs = vm.load_pool_item(_SheetPoolItem())
+    assert recs[0]["업체명"] == "가나상사"
+    assert vm.record_count() == 3
 
 
 def test_set_acquired_targets_and_resets_index(tmp_path):

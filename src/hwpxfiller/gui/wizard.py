@@ -47,7 +47,7 @@ from .mapping_state import (
 )
 from .mapping_table import MappingTable
 from .style import mark
-from .view_helpers import busy_cursor
+from .view_helpers import ask_sheet_choice, busy_cursor, last_dir, save_last_dir
 
 # 요약 라벨에 나열할 필드 이름 최대 개수(넘치면 말줄임).
 _SUMMARY_MAX_FIELDS = 12
@@ -128,8 +128,12 @@ class TemplatePage(QWizardPage):
             )
 
     def _pick(self):
-        path, _ = QFileDialog.getOpenFileName(self, "HWPX 템플릿 선택", "", HWPX_FILTER)
+        # 용도별 마지막 디렉터리에서 시작(T3) — 성공 선택 시에만 갱신(취소는 보존).
+        path, _ = QFileDialog.getOpenFileName(
+            self, "HWPX 템플릿 선택", last_dir("template"), HWPX_FILTER
+        )
         if path:
+            save_last_dir("template", path)
             self._load_template(path)
 
     def _load_template(self, path: str) -> bool:
@@ -417,6 +421,7 @@ class DataPage(QWizardPage):
         wiz = self.wizard()
         if wiz is not None:
             wiz.data_path = ""
+            wiz.data_sheet = None
             wiz.datasource = None
             wiz.source_fields = []
             wiz.records = []
@@ -450,6 +455,7 @@ class DataPage(QWizardPage):
         """
         wiz = self.wizard()
         wiz.data_path = label
+        wiz.data_sheet = None  # 나라 취득엔 시트 개념이 없다(캐시 키 정합)
         wiz.datasource = datasource
         wiz.source_fields = fields
         wiz.records = records
@@ -471,14 +477,20 @@ class DataPage(QWizardPage):
 
     def _pick(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "데이터 파일 선택", "", EXCEL_FILTER
+            self, "데이터 파일 선택", last_dir("data"), EXCEL_FILTER
         )
         if not path:
             return
+        save_last_dir("data", path)  # 성공 선택만 기억(T3) — 취소는 직전 값 보존
         wiz = self.wizard()
         try:
+            # 다중 시트면 사용자 확정(T2) — 취소(None)는 겨눔 전체 중단(이전 선택
+            # 보존, 첫-시트 추측 금지). 열거 실패(손상 파일)는 로드 실패와 동일 경로.
+            sheet = ask_sheet_choice(self, path)
+            if sheet is None:
+                return
             with busy_cursor():  # 데이터 소스 로드·읽기 동안 대기 커서(ST-16)
-                source = source_for_path(path)
+                source = source_for_path(path, sheet=sheet or None)
                 fields = source.fields()
                 records = source.records()
         except Exception as exc:  # noqa: BLE001
@@ -512,10 +524,15 @@ class DataPage(QWizardPage):
         self._valid = False
         self.ed_path.setText(path)
         wiz.data_path = path
+        wiz.data_sheet = sheet or None
         wiz.datasource = source
         wiz.source_fields = fields
         wiz.records = records
-        self.lbl_summary.setText(f"컬럼 {len(fields)}개, 레코드 {len(records)}건 로드.")
+        # 확정 시트명을 요약에 재진술한다(T2) — 어느 시트가 겨눠졌는지 침묵하지 않는다.
+        sheet_note = f" — 시트: {sheet}" if sheet else ""
+        self.lbl_summary.setText(
+            f"컬럼 {len(fields)}개, 레코드 {len(records)}건 로드.{sheet_note}"
+        )
         self._valid = True
         self.completeChanged.emit()
 
@@ -536,7 +553,7 @@ class MappingPage(QWizardPage):
             "자동 제안은 초안일 뿐입니다. 모든 행을 검토해 확정해야 다음으로 진행합니다. "
             "채우지 않을 필드는 데이터 항목을 (비움)으로 두고 확정하세요."
         )
-        self._built_for: "tuple[str, str, tuple[str, ...]] | None" = None
+        self._built_for: "tuple[str, str, str | None, tuple[str, ...]] | None" = None
         self._preview_index = 0
 
         layout = QVBoxLayout(self)
@@ -585,7 +602,9 @@ class MappingPage(QWizardPage):
         wiz = self.wizard()
         # 캐시 키에 소스 필드 집합을 포함한다(RC-09): 경로쌍만으로는 내용 불감이라
         # 같은 경로의 수정된 파일 재선택·소스 전환 후에도 옛 어휘로 조용히 구동됐다.
-        key = (wiz.template_path, wiz.data_path, tuple(wiz.source_fields))
+        # 확정 시트(T2)도 키에 넣는다 — 같은 경로·같은 헤더의 **다른 시트** 재선택이
+        # 옛 초안으로 조용히 구동되지 않고 재초안이 뜬다.
+        key = (wiz.template_path, wiz.data_path, wiz.data_sheet, tuple(wiz.source_fields))
         if self._built_for != key or wiz.model is None:
             # 템플릿/데이터 조합이 바뀌었을 때만 초안을 새로 뽑는다
             # (뒤로 갔다 와도 사람이 만진 확정 상태를 잃지 않게).
@@ -713,10 +732,11 @@ class MappingPage(QWizardPage):
         if wiz.model is None:
             return
         path, _ = QFileDialog.getOpenFileName(
-            self, "매핑 파일 불러오기", "", "매핑 파일 (*.json)"
+            self, "매핑 파일 불러오기", last_dir("mapping"), "매핑 파일 (*.json)"
         )
         if not path:
             return
+        save_last_dir("mapping", path)  # 성공 선택만 기억(T3)
         try:
             profile = MappingProfile.load(path)
         except Exception as exc:  # noqa: BLE001
@@ -741,11 +761,13 @@ class MappingPage(QWizardPage):
                 self, "확인", "저장할 확정 매핑이 없습니다. 행을 확정한 뒤 저장하세요."
             )
             return
+        # 시작 디렉터리만 제공(T3) — 파일명 프리필 금지(이름은 항상 사용자 몫).
         path, _ = QFileDialog.getSaveFileName(
-            self, "매핑 파일 저장", "mapping_profile.json", "매핑 파일 (*.json)"
+            self, "매핑 파일 저장", last_dir("mapping"), "매핑 파일 (*.json)"
         )
         if not path:
             return
+        save_last_dir("mapping", path)
         profile.name = Path(path).stem
         try:
             profile.save(path)

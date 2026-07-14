@@ -37,7 +37,7 @@ from .batch_run import DataAcquireController
 from .flow_layout import FlowLayout
 from .style import BASE_QSS, DANGER, MISSING_BG, MUTED, mark
 from .txt_state import TxtDraftViewModel
-from .view_helpers import ElidedLabel
+from .view_helpers import ElidedLabel, last_dir, save_last_dir
 
 _TOKEN = re.compile(r"\{\{\s*([^{}|]+?)\s*\}\}")
 # 상태 어휘 3정의 경계(UD-20): txt 의 'missing'=데이터에 해당 **항목(열) 부재**라
@@ -370,10 +370,12 @@ class TxtDraftView(QWidget):
 
     def _save(self) -> None:
         text, report = self.vm.render()
+        # 시작 디렉터리만 제공(T3) — 파일명 프리필 금지(이름은 항상 사용자 몫).
         path, _ = QFileDialog.getSaveFileName(
-            self, "텍스트 파일로 저장", "기안.txt", "텍스트 (*.txt)")
+            self, "텍스트 파일로 저장", last_dir("txt_save"), "텍스트 (*.txt)")
         if not path:
             return
+        save_last_dir("txt_save", path)  # 성공 선택만 기억(T3)
         try:
             write_text_atomic(path, text)  # 원자 쓰기(RC-01) — 실패해도 기존 파일 무손상
         except Exception as exc:  # noqa: BLE001

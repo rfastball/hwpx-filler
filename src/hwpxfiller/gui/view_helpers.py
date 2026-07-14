@@ -11,6 +11,8 @@
 - :class:`ElidedLabel` — 가변 길이 사용자 문자열을 폭에 맞춰 말줄임하고 전체 이름을
   툴팁으로 노출(UD-30). RC-36(매핑 테이블 툴팁) 처치의 미이식 부위 이식.
 - :func:`build_empty_state` — 스택 교체형 빈 상태 뷰(상태 재진술 + 선택적 CTA, UD-17).
+- :func:`ask_sheet_choice` — 다중 시트 통합문서의 시트 확정 다이얼로그(T2). 5표면
+  (위저드·실행·매트릭스·txt·풀 등록)이 같은 확정 규율을 공유한다(첫-시트 추측 금지).
 - :func:`restate_preview_item`·마커 상수 — 미리보기·검수 표면의 빈 값/결측을 명시
   재진술(UD-26 · ADR-B '빈 공간으로 보이면 안 됨').
 
@@ -26,6 +28,7 @@ from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QListWidget,
     QListWidgetItem,
@@ -224,6 +227,39 @@ def restate_preview_item(record: "dict", field: str) -> QTableWidgetItem:
     return item
 
 
+# ---------------------------------------------------------- T2: 시트 확정 다이얼로그
+def ask_sheet_choice(parent, path) -> "str | None":
+    """다중 시트 통합문서의 사용 시트를 사용자에게 확정받는다(확인-또는-경보).
+
+    생략 판정 단일 출처는 T1 :func:`~hwpxfiller.data.excel.sheet_overview` 다 —
+    CSV(빈 목록)·단일 시트(길이 1)는 물을 것이 없어 ``""`` 를 돌려주고 호출자는
+    기본(첫/유일 시트) 로드로 진행한다. 시트가 2개 이상이면
+    ``QInputDialog.getItem`` (:meth:`~hwpxfiller.gui.batch_run.DataAcquireController
+    .pick_from_pool` 의 풀 선택 getItem 선례 동형)으로 묻되, 항목 문구에 시트별
+    행×열 **근사치**(저장 시점 dimension 기반)를 병기해 눈으로 고를 근거를 준다.
+
+    반환 계약: 확정 시트명(str) / ``""`` = 물을 것 없음(기본 로드) / **None = 취소**
+    — 호출자는 파일 겨눔 **전체를 중단**해야 한다(조용한 첫-시트 추측 금지).
+    통합문서 열거 실패(손상 파일 등)는 raise — 호출자의 로드 실패 경로가 시끄럽게
+    알린다(조용한 생략 금지).
+    """
+    from ..data import sheet_overview
+
+    overview = sheet_overview(path)
+    if len(overview) < 2:
+        return ""
+    items = [f"{name} — 약 {rows}행×{cols}열" for name, rows, cols in overview]
+    choice, ok = QInputDialog.getItem(
+        parent, "시트 선택",
+        "이 파일에는 시트가 여러 개 있습니다 — 사용할 시트를 확정하세요.\n"
+        "(행×열은 저장 시점 근사치)",
+        items, 0, False,
+    )
+    if not ok or not choice:
+        return None
+    return overview[items.index(choice)][0]
+
+
 # ---------------------------------------------------------- ST-11: 창 지오메트리 지속
 def _ui_settings():
     """UI 설정 저장소(INI) — ``HWPXFILLER_HOME`` 을 존중해 테스트가 tmp 로 격리된다.
@@ -265,6 +301,47 @@ def save_geometry(win, key: str) -> None:
     """
     st = _ui_settings()
     st.setValue(f"geometry/{key}", win.saveGeometry())
+    st.sync()
+
+
+# ---------------------------------------------------- T3: 용도별 마지막 디렉터리 지속
+def last_dir(purpose: str) -> str:
+    """용도별 마지막 디렉터리를 읽는다(T3) — 파일 다이얼로그 **시작 디렉터리** 전용.
+
+    지오메트리(ST-11)와 동급 규율: 편의라 실패는 조용히 폴백한다 — 미저장·손상 값·
+    삭제된 디렉터리는 빈 문자열(OS 기본 시작 위치)로 돌아가고 예외를 내지 않는다.
+    용도(purpose: template/data/mapping/prev_doc/output/txt_save/library)별로 키를
+    분리해 서로 다른 용도의 선택이 섞이지 않게 한다. 반환은 디렉터리뿐이다 —
+    파일 경로 프리필 금지(시작 위치만 제공, 파일명은 항상 사용자 몫).
+    """
+    from pathlib import Path
+
+    raw = _ui_settings().value(f"last_dir/{purpose}")
+    if not isinstance(raw, str) or not raw:
+        return ""
+    try:
+        if Path(raw).is_dir():
+            return raw
+    except OSError:
+        pass  # 접근 불가 드라이브 등 — 조용한 폴백(편의 지속의 실패는 시끄럽지 않게)
+    return ""
+
+
+def save_last_dir(purpose: str, path) -> None:
+    """성공 선택된 경로의 **부모 디렉터리**를 용도별로 저장한다(T3).
+
+    호출자는 다이얼로그가 확정 경로를 돌려줬을 때만 부른다 — 취소(빈 값)는 호출하지
+    않아 직전 기억이 보존된다. 파일·디렉터리 선택 모두 부모를 저장한다(다음 열기가
+    직전 선택을 목록에서 바로 보게). sync 는 :func:`save_geometry` 와 동일 근거 —
+    각 호출이 QSettings 를 새로 만들므로 즉시 flush 해야 다음 읽기에 보인다.
+    """
+    from pathlib import Path
+
+    if not path:
+        return
+    parent = str(Path(path).parent)
+    st = _ui_settings()
+    st.setValue(f"last_dir/{purpose}", parent)
     st.sync()
 
 
