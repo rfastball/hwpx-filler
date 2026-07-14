@@ -1,0 +1,15 @@
+{
+  "issue_id": "UI-83D8BBD0-C",
+  "related_captures": [{
+    "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-83d8bbd0-c319-43e3-8a6e-264f806cf17b.png",
+    "regions": ["스텝 영역의 merge, append, 조인 키, inner 등 쿼리 계열 용어"]
+  }],
+  "screen_or_page": "데이터 풀의 파이프라인 조립 창",
+  "affected_area": "데이터 결합 방식을 설명하는 쿼리 계열 용어",
+  "current_state": "merge, append, 조인 키, inner 등 데이터 쿼리 중심의 용어가 사용되어 일반 사용자가 이해하기 어렵다.",
+  "expected_state": "고급 기능이라는 성격을 감안하되, 사용자가 각 결합 방식의 결과를 이해할 수 있도록 용어를 순화하거나 쉬운 설명을 함께 제공하는 방안을 검토한다.",
+  "issue_type": "고급 기능 용어 이해도 검토",
+  "affected_viewport_or_environment": "데스크톱 환경의 파이프라인 조립 창. 다른 환경의 적용 범위는 확인되지 않음.",
+  "severity": "낮음",
+  "unverified": ["순화가 필요한 용어의 전체 범위", "전문 용어를 유지하고 설명을 추가할지 쉬운 용어로 바꿀지", "파이프라인 기능의 대상 사용자 수준"]
+}

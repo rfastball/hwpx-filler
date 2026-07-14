@@ -1,0 +1,23 @@
+{
+  "issue_id": "UI-FF0F2730-B",
+  "related_captures": [
+    {
+      "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-ff0f2730-1072-495e-a7e6-5a1f4b8de4cc.png",
+      "regions": [
+        "4단계 작업 저장 화면의 파일명 패턴 입력란과 토큰 안내"
+      ]
+    }
+  ],
+  "screen_or_page": "작업 편집기 4단계 — 작업 저장",
+  "affected_area": "파일명 패턴에 사용할 토큰 안내",
+  "current_state": "파일명 패턴 아래에 필드·날짜·순번 토큰 예시만 표시된다. 이 화면에서 사용할 수 있는 필드 토큰과 대응 값이 보이지 않으며, 날짜 토큰과 순번 토큰은 예시만으로 사용법을 이해하기 어렵다.",
+  "expected_state": "이 화면에서 사용 가능한 필드 토큰과 대응 값을 확인할 수 있게 하고, 날짜 토큰과 순번 토큰의 사용법을 이해할 수 있도록 안내한다.",
+  "issue_type": "기능 안내 및 입력 지원 부족",
+  "affected_viewport_or_environment": "데스크톱 환경의 작업 편집기 4단계. 다른 환경의 적용 범위는 확인되지 않음.",
+  "severity": "보통",
+  "unverified": [
+    "토큰과 대응 값을 표시할 구체적인 방식",
+    "날짜 토큰에서 지원하는 형식의 범위",
+    "순번 토큰에서 지원하는 자리수와 시작값 설정 범위"
+  ]
+}

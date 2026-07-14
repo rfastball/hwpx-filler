@@ -1,0 +1,23 @@
+{
+  "issue_id": "UI-4B32B5D8",
+  "related_captures": [
+    {
+      "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-4b32b5d8-be65-4d86-93f4-c39da29fd008.png",
+      "regions": [
+        "필드 매핑 화면 하단의 매핑 프로파일 적용·저장 및 매핑 파일 불러오기·저장 버튼 영역"
+      ]
+    }
+  ],
+  "screen_or_page": "작업 편집기 3단계 — 필드 매핑 확정",
+  "affected_area": "화면 하단의 매핑 프로파일 및 매핑 파일 작업 버튼 모음",
+  "current_state": "‘매핑 프로파일’과 ‘매핑 파일’ 같은 긴 표현이 여러 버튼에 반복되어 시각적 주의가 분산되고, 각 작업의 의도를 빠르게 구분하기 어렵다.",
+  "expected_state": "반복되는 긴 표현을 줄이고 관련 작업을 재구조화하여, 사용자가 각 기능의 목적과 차이를 쉽게 파악할 수 있게 한다.",
+  "issue_type": "정보 구조 및 버튼 레이블 개선",
+  "affected_viewport_or_environment": "데스크톱 환경의 작업 편집기 3단계. 다른 환경의 적용 범위는 확인되지 않음.",
+  "severity": "낮음",
+  "unverified": [
+    "버튼을 묶는 구체적인 분류와 배치 방식",
+    "각 버튼에 사용할 짧은 최종 문구",
+    "매핑 프로파일과 매핑 파일의 차이를 별도로 설명할 필요가 있는지 여부"
+  ]
+}

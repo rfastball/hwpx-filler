@@ -1,0 +1,22 @@
+{
+  "issue_id": "UI-D0D92672-C",
+  "related_captures": [
+    {
+      "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-d0d92672-5607-4b60-9649-99081183e6d1.png",
+      "regions": [
+        "저장 폴더 아래의 생성 원장(JSON) 저장 — 들어간 값의 증거 선택 항목"
+      ]
+    }
+  ],
+  "screen_or_page": "등록된 작업의 실행 화면",
+  "affected_area": "생성 원장 JSON 저장 선택 항목",
+  "current_state": "‘생성 원장(JSON) 저장 — 들어간 값의 증거’라는 기계적인 설계 용어와 기능 선택 항목이 실행 화면에 노출된다.",
+  "expected_state": "‘생성 원장(JSON) 저장 — 들어간 값의 증거’ 항목을 실행 화면에서 삭제한다.",
+  "issue_type": "불필요한 설계 기능 노출",
+  "affected_viewport_or_environment": "데스크톱 환경의 등록 작업 실행 화면. 다른 환경의 적용 범위는 확인되지 않음.",
+  "severity": "낮음",
+  "unverified": [
+    "화면에서만 제거할지 해당 기능 자체도 제거할지 여부",
+    "생성 원장 기능이 필요한 별도 사용자나 업무가 있는지 여부"
+  ]
+}

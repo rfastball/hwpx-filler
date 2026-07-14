@@ -1,0 +1,23 @@
+{
+  "issue_id": "UI-9B2AB35D-A",
+  "related_captures": [
+    {
+      "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-9b2ab35d-2c29-430c-b2c7-eeec9b204bcc.png",
+      "regions": [
+        "실행 화면 왼쪽의 전체 높이 사이드 패널"
+      ]
+    }
+  ],
+  "screen_or_page": "등록된 작업의 실행 화면 및 좌측 사이드 패널을 사용하는 화면",
+  "affected_area": "좌측 사이드 패널",
+  "current_state": "좌측 사이드 패널이 항상 펼쳐져 있으며 사용자가 숨기거나 접을 수 없다.",
+  "expected_state": "필요할 때 작업 영역을 넓게 사용할 수 있도록 좌측 사이드 패널을 숨기거나 접는 기능을 제공한다.",
+  "issue_type": "반응형 레이아웃 및 패널 제어",
+  "affected_viewport_or_environment": "데스크톱 환경. 정확한 창 크기와 다른 환경의 적용 범위는 확인되지 않음.",
+  "severity": "낮음",
+  "unverified": [
+    "패널을 접고 펼치는 구체적인 조작 방식",
+    "숨김 상태를 다음 실행에도 유지할지 여부",
+    "사이드 패널을 사용하는 전체 화면에 동일하게 적용할지 여부"
+  ]
+}

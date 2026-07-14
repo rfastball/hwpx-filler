@@ -1,0 +1,15 @@
+{
+  "issue_id": "UI-A6368A20-E",
+  "related_captures": [{
+    "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-a6368a20-cd42-49f1-8d5d-ea685c7ae725.png",
+    "regions": ["왼쪽 필드 상태 영역의 클릭 가능한 요소처럼 보이는 토큰 표시"]
+  }],
+  "screen_or_page": "즉시 기안 화면",
+  "affected_area": "필드 상태 토큰의 외형과 클릭 상호작용",
+  "current_state": "토큰이 클릭 가능한 요소처럼 보이지만 클릭해도 아무 상호작용이 없어 사용자의 기대와 실제 동작이 일치하지 않는다.",
+  "expected_state": "토큰의 외형과 실제 동작을 일치시키고, 클릭 상호작용에 가이드나 표시형 선언·저장 기능을 제공하는 방안을 검토한다.",
+  "issue_type": "상호작용 기대 불일치 및 기능 제안",
+  "affected_viewport_or_environment": "데스크톱 환경의 즉시 기안 화면. 다른 환경의 적용 범위는 확인되지 않음.",
+  "severity": "낮음",
+  "unverified": ["토큰 클릭 기능을 실제로 제공할지 여부", "클릭 시 제공할 가이드 또는 설정 기능의 범위", "표시형 설정을 저장할지 여부"]
+}

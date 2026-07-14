@@ -1,0 +1,23 @@
+{
+  "issue_id": "UI-61C7ADF8",
+  "related_captures": [
+    {
+      "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-61c7adf8-774d-446f-ab6a-267c9208630c.png",
+      "regions": [
+        "템플릿 관리 화면에서 하이라이트된 구매요청서.hwpx 카드의 필드 정보 주변"
+      ]
+    }
+  ],
+  "screen_or_page": "템플릿 관리 화면",
+  "affected_area": "선택·하이라이트된 템플릿 카드의 텍스트 렌더링",
+  "current_state": "템플릿 카드를 하이라이트하면 배경의 흰색 문구가 카드 내용 위로 비쳐 보이며 기존 텍스트와 겹친다.",
+  "expected_state": "템플릿 카드가 하이라이트된 상태에서도 다른 배경 문구가 비치거나 겹치지 않고, 해당 카드의 정보만 정상적으로 표시되어야 한다.",
+  "issue_type": "텍스트 렌더링 버그",
+  "affected_viewport_or_environment": "데스크톱 환경의 템플릿 관리 화면. 정확한 창 크기와 다른 환경의 적용 범위는 확인되지 않음.",
+  "severity": "보통",
+  "unverified": [
+    "겹쳐 보이는 흰색 문구의 정확한 출처",
+    "다른 템플릿 카드에서도 동일하게 발생하는지 여부",
+    "하이라이트를 사용하는 다른 화면에서도 같은 렌더링 문제가 발생하는지 여부"
+  ]
+}

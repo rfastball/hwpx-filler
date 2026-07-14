@@ -1,0 +1,23 @@
+{
+  "issue_id": "UI-0F6B2273-B",
+  "related_captures": [
+    {
+      "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-0f6b2273-125f-4e29-a333-89a892c9f282.png",
+      "regions": [
+        "분류 태그의 축 선택란과 값 입력란"
+      ]
+    }
+  ],
+  "screen_or_page": "작업 편집기 4단계 — 작업 저장",
+  "affected_area": "분류 태그의 명칭과 축·값 입력 구조",
+  "current_state": "‘태그’ 기능에 ‘축’과 ‘값’이라는 입력 구조와 예시가 제시되어, 사용자가 일반적으로 이해하는 태그의 의미와 맞지 않게 느껴진다.",
+  "expected_state": "축·값 구조가 일반적인 태그 개념에 맞는지 검토하고, 기능의 실제 목적을 사용자가 자연스럽게 이해할 수 있도록 명칭과 입력 구조를 재정리한다.",
+  "issue_type": "용어 및 입력 구조 검토",
+  "affected_viewport_or_environment": "데스크톱 환경의 작업 편집기 4단계. 다른 환경의 적용 범위는 확인되지 않음.",
+  "severity": "낮음",
+  "unverified": [
+    "‘분류 태그’를 대신할 용어",
+    "축·값 구조를 유지할지 여부",
+    "입력란에 제시할 예시의 최종 형태"
+  ]
+}
