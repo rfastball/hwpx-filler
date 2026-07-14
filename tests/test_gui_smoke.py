@@ -895,7 +895,66 @@ def test_template_manager_panel_renders_badges_and_gated_actions(qapp, tmp_path)
     raw_labels = [b.text() for b in by_name["raw.hwpx"].findChildren(QPushButton)]
     comp_labels = [b.text() for b in by_name["comp.hwpx"].findChildren(QPushButton)]
     assert raw_labels == ["누름틀 변환"]
-    assert comp_labels == ["미리보기", "작업 만들기"]
+    assert comp_labels == ["작업 만들기"]
+
+
+def test_template_manager_manages_txt_track_without_preview_or_drift(
+    qapp, tmp_path, monkeypatch
+):
+    """#13 — TXT를 같은 관리면에서 생성·편집·열기·삭제하고 HWPX 중복 액션은 숨긴다."""
+    from PySide6.QtWidgets import QInputDialog, QPushButton
+
+    from hwpxfiller.core.authoring import compile_document
+    from hwpxfiller.core.text_registry import TextTemplateRegistry
+    from hwpxfiller.gui import template_manager as tm
+    from hwpxfiller.gui.template_manager import TemplateManagerPanel, TxtTemplateCard
+
+    hwpx_dir = tmp_path / "hwpx"
+    hwpx_dir.mkdir()
+    pkg, _ = compile_document(_hwpx_pkg(_P("계약명: {{계약명}}")))
+    pkg.save(str(hwpx_dir / "comp.hwpx"))
+    txt_dir = tmp_path / "txt"
+    txt_dir.mkdir()
+    (txt_dir / "기안.txt").write_text("안녕하세요 {{이름}}", encoding="utf-8")
+
+    panel = TemplateManagerPanel(
+        library_dir=hwpx_dir,
+        text_registry=TextTemplateRegistry(txt_dir),
+    )
+    assert panel.txt_list.count() == 1
+    card = panel.txt_list.itemWidget(panel.txt_list.item(0))
+    assert isinstance(card, TxtTemplateCard)
+    labels = [button.text() for button in card.findChildren(QPushButton)]
+    assert labels == ["내용 편집", "즉시 기안에서 열기", "삭제"]
+    all_button_labels = [button.text() for button in panel.findChildren(QPushButton)]
+    assert "미리보기" not in all_button_labels
+    assert not any("드리프트" in label or "판본 비교" in label for label in all_button_labels)
+
+    opened = []
+    panel.open_txt_requested.connect(opened.append)
+    next(button for button in card.findChildren(QPushButton) if "즉시 기안" in button.text()).click()
+    assert opened == ["기안"]
+
+    answers = iter((("신규", True), ("제목 {{사업명}}", True)))
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: next(answers))
+    monkeypatch.setattr(QInputDialog, "getMultiLineText", lambda *a, **k: next(answers))
+    panel._on_new_txt()
+    created = txt_dir / "신규.txt"
+    assert created.read_text(encoding="utf-8") == "제목 {{사업명}}"
+    assert panel.txt_list.count() == 2
+
+    monkeypatch.setattr(
+        QInputDialog,
+        "getMultiLineText",
+        lambda *a, **k: ("수정 {{사업명}}", True),
+    )
+    panel._on_edit_txt(panel.text_registry.load("신규"))
+    assert created.read_text(encoding="utf-8") == "수정 {{사업명}}"
+
+    monkeypatch.setattr(tm, "confirm_destructive", lambda *a, **k: True)
+    panel._on_delete_txt(panel.text_registry.load("신규"))
+    assert not created.exists()
+    assert panel.txt_list.count() == 1
 
 
 def test_template_manager_compile_dry_run_then_apply(qapp, tmp_path, monkeypatch):
@@ -1404,11 +1463,18 @@ def test_template_manager_route_seeds_default_library_and_make_job(qapp, tmp_pat
     panels = [c for c in ctrl._children if isinstance(c, TemplateManagerPanel)]
     assert len(panels) == 1
     assert panels[0].vm.library_dir == default_templates_dir()  # 백지(None) 금지
+    assert panels[0].text_registry is ctrl.home.text_registry  # 홈·관리·즉시 기안 동일 TXT 루트
 
     panels[0].make_job_requested.emit("/lib/tpl.hwpx")
     wizards = [c for c in ctrl._children if isinstance(c, JobEditorWizard)]
     assert len(wizards) == 1
     assert wizards[0].template_path == "/lib/tpl.hwpx"  # 세션에 시드됨
+
+    (ctrl.home.text_registry.directory / "경로.txt").parent.mkdir(parents=True, exist_ok=True)
+    (ctrl.home.text_registry.directory / "경로.txt").write_text("{{값}}", encoding="utf-8")
+    panels[0].open_txt_requested.emit("경로")
+    assert ctrl.shell.current_key() == "txt"
+    assert ctrl.shell.stack.currentWidget().cbo.currentText() == "경로"
 
 
 def test_open_editor_from_base_failure_is_loud_not_silent(qapp, tmp_path, monkeypatch):

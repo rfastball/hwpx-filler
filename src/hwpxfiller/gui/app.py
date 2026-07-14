@@ -234,8 +234,13 @@ class AppController:
         def make():
             from .template_manager import TemplateManagerPanel
 
-            panel = TemplateManagerPanel(library_dir)
+            panel = TemplateManagerPanel(
+                library_dir,
+                text_registry=self.home.text_registry,
+            )
             panel.make_job_requested.connect(self._open_editor_from_template)
+            panel.open_txt_requested.connect(self._open_txt)
+            panel.templates_changed.connect(self.home.refresh)
             self._track(panel)
             return panel
 
