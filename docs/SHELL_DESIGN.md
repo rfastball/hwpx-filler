@@ -1,6 +1,6 @@
 # 셸 설계 — 단일창 네비 레일 셸 (ST-01 착지 라운드)
 
-작성 2026-07-13. 표준 관행 리뷰 라운드의 후속 항목 **ST-01**(`REVIEW_STD_FINDINGS.md` T1,
+작성 2026-07-13. 표준 관행 리뷰 라운드의 후속 항목 **ST-01**(`REVIEW_LEDGER.md` Part 3,
 중간)을 착지시키는 구조 리팩터의 설계서다. 이전 라운드가 창 수명(U3)·재사용 싱글턴(U5)을
 먼저 마감해 이 리팩터의 표면을 줄여 두었다.
 
@@ -21,7 +21,7 @@
 | D2 | **셸은 신규 클래스** `gui/shell.py` `ShellWindow(QMainWindow)` — `JobListHome` 개조 아님 | home.py 는 이미 532줄 대시보드 렌더러. 별도 셸이면 홈은 시그널 계약을 든 채 페이지로 강등만 되고, 배선 소유자는 계속 `AppController`(핸드오프 §2 고정 이음새 존중) | 홈을 셸로 확장 — 대시보드 렌더링과 창 크롬이 한 클래스에 엉킴 |
 | D3 | **위저드만 창으로 남긴다**: `JobEditorWizard`(QWizard)는 임베드하지 않고 **ApplicationModal** 부여 | QWizard 는 스택 임베드가 어색한 컴포넌트(자체 버튼 크롬·페이지 흐름). 모달성이 ST-10 의 `editor:{name}` 싱글턴(last-save-wins 방어)을 상위 호환 대체 | 위저드 해체·페이지화 — 재작성 비용·회귀 위험 대비 이득 없음 |
 | D4 | **모달성 부여 방식**: parent 없이 `wiz.setWindowModality(Qt.ApplicationModal)` + 기존 `wiz.show()`. **`exec()` 금지** | offscreen 테스트에서 `exec()` 는 hang. 결과 처리는 기존 `job_saved` 시그널이라 반환값 불요. parent 를 주면 창 배치·수명이 바뀌므로 무부여(`_track` GC 방지 유지) | `wiz.exec()` — offscreen hang · parent 부여 — 최소 변경 위반 |
-| D5 | **네비게이션 시그널 계약 불변**: 홈의 시그널과 `app.py` 배선부는 한 줄도 바꾸지 않는다. `_open_*` **본문만** 창 생성 → 셸 활성화로 교체 | `UI_DESIGN_HANDOFF.md` §2 "app.py가 배선, 바꾸지 말 것" | 셸이 직접 배선 — 고정 이음새 파괴 |
+| D5 | **네비게이션 시그널 계약 불변**: 홈의 시그널과 `app.py` 배선부는 한 줄도 바꾸지 않는다. `_open_*` **본문만** 창 생성 → 셸 활성화로 교체 | `UI_CONTRACT.md` 시그널 이음새 "app.py가 배선, 바꾸지 말 것" | 셸이 직접 배선 — 고정 이음새 파괴 |
 | D6 | **페이지 지연 생성 + 은닉 보존 + 재진입 `refresh()`**: 첫 방문 시 factory 생성, 전환 시 파괴하지 않음(상태 보존), 재방문 시 `hasattr` 로 `refresh()` 호출 | TemplateManagerPanel 은 생성자에서 라이브러리 전수 파싱(즉시 생성은 기동 지연). 재진입 refresh 는 현행 "닫힌 창은 stale → 신선 재생성" 의미를 계승해 은닉 중 외부 변경 스테일을 막음 | 즉시 전체 생성 · 전환 시 파괴 |
 | D7 | **지오메트리는 셸 단일 키 `"shell"`**(기본 1140×720). 기존 뷰별 키는 읽기·쓰기 중단만 — INI 잔존 무해, **마이그레이션 코드 발명 금지**. `"editor"` 키만 존치(위저드는 여전히 창) | 창이 하나뿐이므로 ST-11 의 지속 대상도 하나. 레일 216px 가 붙어 기존 home 900×560 재사용 부적합 → 신규 키로 깨끗한 단절 | home 키 승계 · 키 마이그레이션 코드 |
 | D8 | **dirty 이탈 게이트 단일 경로**: 레일 전환·`activate()`·셸 `closeEvent` 모두 현재 페이지의 `can_leave()` 경유. run/matrix 의 기존 closeEvent ST-21 로직을 `can_leave()` 로 추출 | 창 닫기에만 걸려 있던 확인 게이트가 "페이지 이탈"로 일반화돼야 함. 단일 경로가 confirm-or-alarm 원칙의 누락 지점을 없앰 | 전환 경로별 개별 확인 |
@@ -79,20 +79,11 @@ class ShellWindow(QMainWindow):
 | `editor` | 존치 — 위저드는 여전히 창 |
 | `home` `run` `txt` `template` `pool` `matrix` `vocab` | **읽기·쓰기 중단**(코드에서 제거). INI 잔존은 무해 — 마이그레이션/청소 코드 발명 금지 |
 
-## 5. 스테이지 착지 기록 (각 스테이지 = 커밋 1 + pytest 전체 게이트 + 앱 기동 가능)
+## 5. 스테이지 착지 기록
 
-| 스테이지 | 내용 | 커밋 | 게이트 |
-|---|---|---|---|
-| S1 | 이 설계 문서 (무접촉) | `e24e03d` | 821 |
-| S2 | 셸 골격+선행 정지작업(순가산, 앱 무전환): `shell.py`·`#navRail`·단축키 컨텍스트·run/matrix `can_leave()` 추출·`tests/test_shell.py`(7) | `515480d` | 828 |
-| S3 | 홈 임베드 + 셸 기동(혼재: 홈만 페이지) | `d628490` | 829 |
-| S4 | 관리형 패널 4종 임베드(template/pool/vocab/matrix) + matrix `refresh()` | `c239d49` | 831 |
-| S5 | run/txt 임베드 + 동적 레일 + dirty 이탈 게이트 + txt `refresh()` | `8259137` | 833 |
-| S6 | 위저드 ApplicationModal + 구 ST-10 싱글턴 장치 해체 | `cfc6dbf` | 834 |
-| S7 | 잔재 정리(죽은 `back_requested` 제거·docstring·핸드오프·원장 갱신) | (이 문서의 커밋) | 834 |
-
-혼재 스테이지(S3~S5)의 일부-창·일부-임베드 UX 어색함은 허용했다 — 각 스테이지가
-게이트 통과·기동 가능했고 커밋 메시지에 명시했다.
+S1~S7 전량 착지(2026-07-13), 최종 게이트 834 passed. 스테이지별 내용·커밋 해시는
+git 히스토리 참조(`git log --oneline e24e03d..e317962` — S1 `e24e03d` → S7 `e317962`).
+혼재 스테이지(S3~S5)의 일부-창·일부-임베드는 각 스테이지가 게이트 통과·기동 가능했다.
 
 ## 6. 테스트 영향
 

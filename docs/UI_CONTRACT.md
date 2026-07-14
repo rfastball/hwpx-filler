@@ -8,7 +8,7 @@
 **계약의 방향:** ViewModel(링1) 공개 API가 seam이고, 목업(디자인)과 Qt 위젯(구현)은 **둘 다
 그 seam의 렌더러**다. 그래서 디자인 패스는 목업/위젯/토큰만 만지고 ViewModel·백엔드는 불변이다.
 
-관련: [UI_DESIGN_HANDOFF.md](UI_DESIGN_HANDOFF.md)(무엇을) · [UI_DESIGN_DECISIONS.md](UI_DESIGN_DECISIONS.md)(왜) ·
+관련: [UI_DESIGN_DECISIONS.md](UI_DESIGN_DECISIONS.md)(왜) ·
 [ARCH_UI_SEPARATION.md](ARCH_UI_SEPARATION.md)(레이어링·왜 이 seam인가).
 
 ## 대시보드 홈 (`gui/home.py` ← `gui/home_state.py`) — 투트랙 허브(ADR I)
