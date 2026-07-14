@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QGridLayout,
@@ -57,9 +57,11 @@ class _TagRow(QWidget):
         self.cb_axis.setEditable(True)
         self.cb_axis.addItems(known_axes)
         self.cb_axis.setCurrentText(axis)
-        self.cb_axis.lineEdit().setPlaceholderText("축(예: 금액구간)")
+        self.cb_axis.lineEdit().setPlaceholderText("분류 기준 (예: 금액 구간)")
+        self.cb_axis.setAccessibleName("태그 분류 기준")
         self.ed_value = QLineEdit(value)
-        self.ed_value.setPlaceholderText("값(예: 1억미만)")
+        self.ed_value.setPlaceholderText("태그 값 (예: 1억 미만)")
+        self.ed_value.setAccessibleName("태그 값")
         btn_del = QPushButton("삭제")
         mark(btn_del, "level", "danger")  # 파괴 버튼 시각 등급(UD-12)
         if on_remove is not None:
@@ -244,10 +246,7 @@ class SaveJobPage(QWizardPage):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setTitle("4단계 — 작업 저장")
-        self.setSubTitle(
-            "이 작업(템플릿·매핑·파일명)을 저장합니다. 데이터·행은 저장하지 않습니다 "
-            "— 실행할 때 고릅니다."
-        )
+        self.setSubTitle("작업 이름과 생성될 문서의 파일명 규칙을 확인한 뒤 저장하세요.")
         layout = QVBoxLayout(self)
         grid = QGridLayout()
         self.ed_name = QLineEdit()
@@ -265,18 +264,39 @@ class SaveJobPage(QWizardPage):
         grid.addWidget(self.ed_name, 0, 1)
         grid.addWidget(lbl_pattern, 1, 0)
         grid.addWidget(self.ed_pattern, 1, 1)
-        grid.addWidget(QLabel("토큰: {{필드}}, {{date:YYYYMMDD}}, {{seq:001}}"), 2, 1)
         layout.addLayout(grid)
+
+        token_box = QGroupBox("파일명에 넣을 수 있는 값")
+        token_layout = QVBoxLayout(token_box)
+        self.lbl_field_tokens = QLabel("매핑을 완료하면 사용할 수 있는 필드가 표시됩니다.")
+        self.lbl_field_tokens.setWordWrap(True)
+        self.lbl_field_tokens.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        token_layout.addWidget(self.lbl_field_tokens)
+        self.lbl_reserved_tokens = QLabel(
+            "날짜: {{date}} → 생성 날짜(YYYYMMDD) · {{date:YYYY-MM-DD}} → 하이픈 포함 날짜\n"
+            "순번: {{seq}} → 1부터 증가 · {{seq:001}} → 001부터 세 자리로 증가"
+        )
+        self.lbl_reserved_tokens.setWordWrap(True)
+        self.lbl_reserved_tokens.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        token_layout.addWidget(self.lbl_reserved_tokens)
+        layout.addWidget(token_box)
 
         # 분류 태그(선택 — D12): 작업 브라우저(홈)의 group-by·facet 기준. 미태깅도 저장 자유.
         self._tag_rows: "list[_TagRow]" = []
         self._known_axes: "list[str]" = []
-        tags_box = QGroupBox("분류 태그 (선택) — 작업 브라우저의 그룹·필터 기준")
+        tags_box = QGroupBox("분류 태그 (선택)")
         tags_box.setToolTip(
-            "{축→값}으로 작업을 분류합니다(예: 금액구간=1억미만). 홈 화면에서 이 축으로 묶거나 "
-            "걸러 봅니다. 비워 둬도 저장됩니다."
+            "작업을 찾기 쉽도록 분류 기준과 태그 값을 추가합니다. 예: '금액 구간'에 "
+            "'1억 미만'. 홈 화면에서 같은 기준끼리 모아 보거나 원하는 값만 찾을 수 있습니다. "
+            "태그 없이도 저장할 수 있습니다."
         )
         tb = QVBoxLayout(tags_box)
+        self.lbl_tag_help = QLabel(
+            "작업을 찾기 쉽도록 분류 기준과 태그 값을 추가하세요. "
+            "예: 금액 구간 — 1억 미만"
+        )
+        self.lbl_tag_help.setWordWrap(True)
+        tb.addWidget(self.lbl_tag_help)
         self._tags_layout = QVBoxLayout()
         tb.addLayout(self._tags_layout)
         add_row = QHBoxLayout()
@@ -307,6 +327,7 @@ class SaveJobPage(QWizardPage):
     def initializePage(self):
         wiz = self.wizard()
         job = getattr(wiz, "initial_job", None)
+        self._refresh_filename_help(wiz)
         # 발견된 축(다른 작업들의 태그 키)을 후보로 — 재진입마다 갱신(값싼 순회).
         reg = getattr(wiz, "registry", None)
         if reg is not None:
@@ -327,6 +348,38 @@ class SaveJobPage(QWizardPage):
         self._prefilled = True
         for row in self._tag_rows:  # 이미 있는 행의 축 후보 갱신
             row.set_known_axes(self._known_axes)
+
+    def _refresh_filename_help(self, wiz) -> None:
+        """확정 매핑의 파일명 필드 토큰과 첫 샘플 대응 값을 표시한다.
+
+        저장 화면에 도착할 때마다 다시 계산해 앞 단계에서 매핑이나 샘플을 바꾼 뒤 돌아와도
+        오래된 도움말이 남지 않게 한다. 값은 실행 때와 같은 ``MappingModel.preview`` 변환을
+        거치며, 샘플이 없거나 값이 비어 있으면 그 상태를 명시한다(조용한 추측 없음).
+        """
+        model = getattr(wiz, "model", None)
+        if model is None:
+            self.lbl_field_tokens.setText("매핑을 완료하면 사용할 수 있는 필드가 표시됩니다.")
+            return
+
+        rows = [row for row in model.rows if row.has_content()]
+        if not rows:
+            self.lbl_field_tokens.setText("파일명에 사용할 수 있는 매핑 필드가 없습니다.")
+            return
+
+        records = getattr(wiz, "records", None) or []
+        sample = records[0] if records else {}
+        preview = model.preview(sample)
+        values = []
+        for row in rows:
+            value = preview.get(row.template_field, "")
+            if value:
+                display = str(value).replace("\r", " ").replace("\n", " ")
+                if len(display) > 40:
+                    display = display[:39] + "…"
+            else:
+                display = "(빈 값)" if records or row.type == "const" else "(샘플 데이터 없음)"
+            values.append(f"{{{{{row.template_field}}}}} → {display}")
+        self.lbl_field_tokens.setText("필드: " + " · ".join(values))
 
     def tags(self) -> "dict[str, str]":
         """확정된 태그 {축→값} — 축·값이 모두 채워진 행만(빈 축/빈 값 행은 무시, D12).
@@ -357,15 +410,17 @@ class SaveJobPage(QWizardPage):
             if not axis and not value:
                 continue  # 완전 빈 행 = 양성 no-op(D12)
             if not axis or not value:
-                filled, blank = ("값", "축") if value else ("축", "값")
+                filled, blank = (
+                    ("태그 값", "분류 기준") if value else ("분류 기준", "태그 값")
+                )
                 return (
                     f"분류 태그에 {filled}만 있고 {blank}은(는) 빈 행이 있습니다"
                     f"('{axis or value}'). {blank}을(를) 채우거나 그 행을 삭제하세요."
                 )
             if axis in seen:
                 return (
-                    f"분류 태그 축 '{axis}' 이(가) 여러 행에 중복됩니다 — 한 축에는 값 "
-                    "하나만 저장됩니다. 중복 행을 하나로 합치거나 삭제하세요."
+                    f"분류 기준 '{axis}' 이(가) 여러 행에 중복됩니다 — 같은 분류 기준에는 "
+                    "태그 값 하나만 저장됩니다. 중복 행을 하나로 합치거나 삭제하세요."
                 )
             seen.add(axis)
         return ""

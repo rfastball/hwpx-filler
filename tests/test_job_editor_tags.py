@@ -64,7 +64,7 @@ def test_validate_tags_blocks_half_filled_row_missing_axis(qapp):
     page._add_tag_row("", "1억미만")  # 값만
     reason = page.validate_tags()
     assert reason  # 차단 사유 존재
-    assert "축" in reason and "1억미만" in reason  # 어느 값이 문제인지 재진술
+    assert "분류 기준" in reason and "1억미만" in reason  # 어느 값이 문제인지 재진술
 
 
 def test_validate_tags_blocks_half_filled_row_missing_value(qapp):
