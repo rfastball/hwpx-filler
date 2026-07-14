@@ -28,6 +28,7 @@ from ._debug import log
 from .clipboard import set_clipboard_text
 from .dialogs import open_file_dialog, open_folder_dialog, save_file_dialog
 from .screen_editor import EditorController
+from .screen_home import HomeController
 from .screen_matrix import MatrixController
 from .screen_run import RunController
 from .screen_template import TemplateController
@@ -60,6 +61,8 @@ class WebFrontend:
         job_registry = JobRegistry(default_jobs_dir())
         # 화면 등록 — 새 화면 = 컨트롤러 1개 추가(순수 데이터는 dispatch, 네이티브는 아래 메서드).
         controllers = [
+            # 홈(대시보드) — 허브. TXT 레지스트리는 즉시 기안·템플릿 관리와 공유(변경이 반영).
+            HomeController(job_registry, registry, self._push),
             TxtController(registry, self._push),
             EditorController(job_registry, self._push),
             RunController(job_registry, self._push),
@@ -199,6 +202,11 @@ def _selftest_drive(window: "object") -> None:
         result["nav_count"] = window.evaluate_js("document.querySelectorAll('.navbtn').length")  # type: ignore[attr-defined]
         result["tpl_options"] = window.evaluate_js(  # type: ignore[attr-defined]
             "Array.from(document.querySelectorAll('#tplSel option')).map(o=>o.value)")
+        # 홈(허브)이 기본 화면으로 뜨고 KPI 타일이 실렌더됐는지 되읽는다(#20 착지 심).
+        result["home_on"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "document.getElementById('scr-home').classList.contains('on')")
+        result["home_kpi_count"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "document.querySelectorAll('#homeKpis .kpi').length")
     except Exception as exc:  # noqa: BLE001
         result["error"] = repr(exc)
     out = Path(sys.executable).resolve().parent / "selftest_result.json"
