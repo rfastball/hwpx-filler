@@ -594,6 +594,11 @@
               <div class="titlebar"><span class="t">HWPX Filler — 실행: 공고서 자동생성</span>
                 <span class="caps"><span>—</span><span>▢</span><span class="x">✕</span></span></div>
               <div class="body">
+                <!-- 진입 어포던스(웹 이관, #18): Qt 는 홈에서 특정 작업으로 진입하지만 웹 셸의
+                     레일 '실행'은 독립 진입이라 상단에 작업 선택기를 둔다(홈 이관 전까지의 진입점).
+                     작업 목록은 레지스트리(JobRegistry.names) — VM seam 이 아니므로 data-vm 없음. -->
+                <div class="row" style="margin-bottom:8px"><span class="lbl">실행할 작업</span>
+                  <select class="field" style="max-width:280px"><option>공고서 자동생성</option></select></div>
                 <div class="heading">작업: 공고서 자동생성 · 템플릿: 공고서_양식.hwpx ·
                   파일명: <span class="mono" style="font-weight:400">공고서-{{ID}}</span></div>
                 <div class="muted" style="margin-top:5px">작업 1개로 선택한 데이터의 각 행마다 문서 1건을 만듭니다.</div>

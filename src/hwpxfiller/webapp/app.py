@@ -26,8 +26,9 @@ from ..core.text_registry import TextTemplateRegistry, default_text_templates_di
 from ..gui.file_filters import EXCEL_FILTER_PATTERN  # 확장자 단일 출처(RC-34) — Qt-free 상수
 from ._debug import log
 from .clipboard import set_clipboard_text
-from .dialogs import open_file_dialog, save_file_dialog
+from .dialogs import open_file_dialog, open_folder_dialog, save_file_dialog
 from .screen_editor import EditorController
+from .screen_run import RunController
 from .screens import TxtController
 
 
@@ -59,6 +60,7 @@ class WebFrontend:
         controllers = [
             TxtController(registry, self._push),
             EditorController(job_registry, self._push),
+            RunController(job_registry, self._push),
         ]
         self.controllers = {c.name: c for c in controllers}
 
@@ -133,6 +135,24 @@ class WebFrontend:
             "missing_fields": report.missing_fields,
             "empty_fields": report.empty_fields,
         }
+
+    def pick_output_folder(self, screen: str) -> "str | None":
+        """Win32 폴더 피커(SHBrowseForFolder) → 저장 폴더 지정. 실행 화면의 신규 네이티브 표면.
+
+        선택 경로의 표시명 또는 None(취소). 실패는 ``ERROR:`` 접두로 시끄럽게 반환.
+        """
+        path = open_folder_dialog("저장 폴더 선택", owner_title=WINDOW_TITLE)
+        if not path:
+            return None
+        try:
+            self._controller(screen).set_output_folder(path)
+        except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
+            return f"ERROR: {exc}"
+        return path
+
+    def generate(self, screen: str, confirm_overwrite: bool = False) -> dict:
+        """실행 화면 동기 생성 — 게이트 판정·덮어쓰기 재진술·결과 요약을 dict 로 반환."""
+        return self._controller(screen).generate(confirm_overwrite=bool(confirm_overwrite))
 
 
 # ------------------------------------------------------------------ 자가검증(Q3)

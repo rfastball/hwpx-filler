@@ -102,6 +102,8 @@ _WEB_MAP = [
     ("--n-header-bg", "neutral.header_bg"), ("--n-border-strong", "neutral.border_strong"),
     ("--n-border-control", "neutral.border_control"), ("--n-ink-soft", "neutral.ink_soft"),
     ("--n-header-ink", "neutral.header_ink"), ("--n-ink-control", "neutral.ink_control"),
+    # 실행 화면 로그박스(웹 전용) — 어두운 콘솔 톤. style.py(Qt)는 QPlainTextEdit 기본이라 미사용.
+    ("--log-surface", "log.surface"), ("--log-ink", "log.ink"),
 ]
 
 OPEN_PY, CLOSE_PY = "# <gen:tokens>", "# </gen:tokens>"

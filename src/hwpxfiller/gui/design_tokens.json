@@ -42,6 +42,10 @@
     "header_ink": "#4a505a",
     "ink_control": "#2b3038"
   },
+  "log": {
+    "surface": "#1e242b",
+    "ink": "#c6d0da"
+  },
   "space": { "xs": 2, "sm": 6, "md": 12, "lg": 18 },
   "radius": { "xs": 3, "sm": 4, "md": 6, "lg": 9, "pill": 11 },
   "type": { "label": 11, "small": 12, "body": 13, "title": 14, "heading": 15, "kpi": 22 }

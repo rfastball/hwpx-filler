@@ -11,9 +11,17 @@
     scrs.forEach((s) => s.classList.toggle("on", s.id === "scr-" + id));
   }));
 
+  // 사이드 패널 접기(#18/9B2AB35D-A) — 좁은 창에서 작업 영역 확장(반응형). 셸 전역.
+  const railToggle = document.getElementById("railToggle");
+  if (railToggle) {
+    railToggle.addEventListener("click", () =>
+      document.querySelector(".app").classList.toggle("rail-collapsed"));
+  }
+
   // pywebview.api 준비 후 실화면 초기화(브라우저 단독 미리보기에선 안 뜸 — 정상).
   window.addEventListener("pywebviewready", () => {
     if (window.TxtScreen) window.TxtScreen.init();
     if (window.EditorScreen) window.EditorScreen.init();
+    if (window.RunScreen) window.RunScreen.init();
   });
 })();

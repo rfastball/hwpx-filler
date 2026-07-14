@@ -161,6 +161,75 @@ tr.r-confirmed td,tr.r-schemaonly td{background:var(--a-card)}
 .gatecount{font-size:12.5px;font-weight:700}
 .gatecount.ok{color:var(--a-ok)} .gatecount.pend{color:var(--a-muted)}
 
+/* ---- 실행 화면 (#18) ---- */
+/* 진입 어포던스: 작업 선택 바 */
+.run-jobbar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-end;
+  background:var(--a-card);border:1px solid var(--a-border);border-radius:9px;
+  padding:12px 13px;margin-bottom:12px}
+.run-jobmeta{font-size:12px;color:var(--a-muted);padding-bottom:6px}
+.run-body{display:flex;flex-direction:column;min-height:0}
+
+/* 캡션 박스(목업 .grp 이식) */
+.grp{border:1px solid var(--a-border);border-radius:7px;background:var(--a-card);
+  padding:12px 13px;margin-top:12px;position:relative}
+.grp>.cap{position:absolute;top:-9px;left:12px;background:var(--a-window);
+  padding:0 7px;font-size:12px;font-weight:600;color:var(--n-header-ink)}
+.grp .hint{margin:2px 0 0}
+
+.run-row{display:flex;align-items:center;gap:9px;margin-top:12px}
+.run-row .field{flex:1;min-width:0}
+.run-recs-head{justify-content:space-between}
+.run-recs-head .row{gap:8px}
+
+/* 사전검증 박스 */
+.preflight{margin-top:12px;font-size:12.5px;padding:9px 11px;border-radius:6px;line-height:1.5}
+
+/* 3상태 필드 배지(목업 .fb 이식 — 색은 토큰) */
+.statebadges{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.fb{font-size:11px;padding:3px 9px;border-radius:20px;font-weight:600;
+  display:inline-flex;gap:6px;align-items:center;border:1px solid transparent}
+.fb.fill{background:var(--fb-fill-bg);color:var(--a-ok);border-color:var(--fb-fill-bd)}
+.fb.blank{background:var(--fb-blank-bg);color:var(--a-warn);border-color:var(--fb-blank-bd)}
+.fb.missing{background:var(--fb-missing-bg);color:var(--a-danger);border-color:var(--fb-missing-bd);cursor:pointer}
+.fb.missing:focus-visible{outline:2px solid var(--a-danger);outline-offset:1px}
+.fb.missing.ack{background:var(--fb-ack-bg);color:var(--fb-ack-fg);border-color:var(--fb-ack-bd)}
+.fb.drift{background:var(--a-unmatch);color:var(--a-danger);border-style:dashed;
+  border-color:var(--fb-missing-bd);cursor:default}
+
+/* 생성 대상 문서 리스트 — 내부 스크롤로 페이지 세로 스크롤 강제 해소(#18/9B2AB35D-B) */
+.reclist{border:1px solid var(--a-border);border-radius:6px;background:var(--a-card);
+  max-height:180px;overflow:auto;margin-top:8px}
+.rec{display:flex;gap:9px;align-items:center;padding:5px 11px;font-size:12px;
+  border-bottom:1px solid var(--n-track)}
+.rec:last-child{border-bottom:0}
+.rec input{accent-color:var(--a-primary)}
+.rec .rf{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:11.5px}
+.rec.muted{color:var(--a-muted);font-family:inherit}
+
+/* 액션 · 진행 · 결과 · 로그 */
+.run-actions{display:flex;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap}
+.bar{height:8px;background:var(--n-track);border-radius:20px;overflow:hidden;margin-top:12px}
+.bar>i{display:block;height:100%;width:0;background:var(--a-primary);transition:width .25s ease}
+.run-result{font-size:12.5px;margin-top:8px;font-weight:600;min-height:1.2em}
+.run-result.ok{color:var(--a-ok)} .run-result.warn{color:var(--a-warn)} .run-result.danger{color:var(--a-danger)}
+.logbox{margin-top:10px;background:var(--log-surface);color:var(--log-ink);border-radius:6px;
+  padding:9px 11px;font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:11px;
+  height:110px;overflow:auto;white-space:pre-wrap}
+@media (prefers-reduced-motion:reduce){.bar>i{transition:none}}
+
+/* ---- 사이드 패널 접기(#18/9B2AB35D-A) ---- */
+.rail .brand{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.rail-toggle{font:inherit;font-size:14px;line-height:1;cursor:pointer;border:1px solid var(--n-border-strong);
+  background:var(--a-card);color:var(--n-ink-control);border-radius:5px;padding:1px 7px}
+.rail-toggle:hover{background:var(--n-hover)}
+.app.rail-collapsed{grid-template-columns:48px 1fr}
+.app.rail-collapsed .rail .rl,
+.app.rail-collapsed .navbtn .n,
+.app.rail-collapsed .navbtn .d{display:none}
+.app.rail-collapsed .rail .brand{font-size:0}                 /* 로고 글자 접기 */
+.app.rail-collapsed .rail-toggle{font-size:14px;transform:rotate(180deg)}
+.app.rail-collapsed .navbtn{text-align:center;padding:9px 4px}
+
 /* ---- 모달 ---- */
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;
   justify-content:center;z-index:10}
