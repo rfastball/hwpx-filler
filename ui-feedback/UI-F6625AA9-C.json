@@ -1,0 +1,15 @@
+{
+  "issue_id": "UI-F6625AA9-C",
+  "related_captures": [{
+    "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-f6625aa9-89ff-4d08-bbd5-5a26da9efa8f.png",
+    "regions": ["각 데이터 항목의 보관 및 은퇴 버튼 문구"]
+  }],
+  "screen_or_page": "데이터 풀 화면",
+  "affected_area": "‘보관’과 ‘은퇴’ 작업 명칭",
+  "current_state": "‘보관’과 ‘은퇴’라는 표현이 번역어처럼 느껴지고, 버튼을 눌렀을 때 데이터가 어떻게 되는지 직관적으로 이해하기 어렵다.",
+  "expected_state": "각 동작의 실제 결과를 자연스럽게 이해할 수 있는 덜 번역어스러운 표현으로 바꾸는 방안을 검토한다.",
+  "issue_type": "작업 명칭 순화 검토",
+  "affected_viewport_or_environment": "데스크톱 환경의 데이터 풀 화면. 다른 환경의 적용 범위는 확인되지 않음.",
+  "severity": "낮음",
+  "unverified": ["‘보관’과 ‘은퇴’를 대신할 최종 용어", "두 기능을 모두 유지할지 여부", "변경된 용어를 적용해야 하는 전체 화면과 안내 문구의 범위"]
+}

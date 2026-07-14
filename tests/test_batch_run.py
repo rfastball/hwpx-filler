@@ -254,7 +254,7 @@ def test_pick_file_skips_sheet_dialog_for_csv_and_single_sheet(qapp, tmp_path, m
 
 def test_pick_from_pool_restates_item_sheet_in_label(qapp, monkeypatch):
     """풀 겨눔 라벨 — 항목 참조에 시트가 있으면 파일 겨눔(T2)과 대칭으로 병기하고,
-    시트 없는 항목(CSV·나라 등)은 기존 '풀: 이름' 그대로다(침묵 금지·과잉 표기 금지)."""
+    시트 없는 항목(CSV·나라 등)은 '등록 데이터: 이름' 그대로다(침묵 금지·과잉 표기 금지)."""
     import time
 
     from PySide6.QtCore import QCoreApplication
@@ -296,8 +296,8 @@ def test_pick_from_pool_restates_item_sheet_in_label(qapp, monkeypatch):
         QCoreApplication.processEvents()
         return calls.pop("label")
 
-    assert _pick("6월") == "풀: 6월 [시트: 낙찰현황]"   # 시트 병기(파일 겨눔과 대칭)
-    assert _pick("수기") == "풀: 수기"                  # 시트 없는 참조는 이름만
+    assert _pick("6월") == "등록 데이터: 6월 [시트: 낙찰현황]"   # 시트 병기(파일 겨눔과 대칭)
+    assert _pick("수기") == "등록 데이터: 수기"                  # 시트 없는 참조는 이름만
 
 
 def test_pick_file_sheet_cancel_aborts_whole_targeting(qapp, tmp_path, monkeypatch):

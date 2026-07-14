@@ -271,12 +271,14 @@ class DataAcquireController(QObject):
         items = self._pool_registry.list_items(status=STATUS_ACTIVE)
         if not items:
             QMessageBox.information(
-                self._view, "데이터 풀", "활성 데이터가 없습니다. 먼저 데이터 풀에 등록하세요."
+                self._view,
+                "등록 데이터",
+                "사용 가능한 등록 데이터가 없습니다. 먼저 데이터 관리에서 등록하세요.",
             )
             return
         names = [it.name for it in items]
         name, ok = QInputDialog.getItem(
-            self._view, "데이터 풀에서 선택", "데이터셋:", names, 0, False
+            self._view, "등록 데이터에서 선택", "데이터셋:", names, 0, False
         )
         if not ok or not name:
             return
@@ -287,7 +289,9 @@ class DataAcquireController(QObject):
         # 겨눠졌는지 침묵하지 않는다). 시트 없는 항목(CSV·나라·파이프라인)은 이름만.
         sheet = item.opts.get("sheet")
         self._pending_label = (
-            f"풀: {item.name} [시트: {sheet}]" if sheet else f"풀: {item.name}"
+            f"등록 데이터: {item.name} [시트: {sheet}]"
+            if sheet
+            else f"등록 데이터: {item.name}"
         )
         self.thread = QThread()
         self.worker = TaskWorker(lambda: self._restore_pool_item(item))

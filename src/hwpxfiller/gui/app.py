@@ -63,16 +63,16 @@ class AppController:
             "누름틀 템플릿(.hwpx)의 컴파일 상태를 보고 스키마 추출·누름틀 변환·검토를 합니다.",
         )
         self.shell.register_static(
-            "pool", "데이터 풀",
-            "재사용할 데이터 참조(엑셀/CSV 경로·나라장터 쿼리·조립 파이프라인)를 등록·보관합니다.",
+            "pool", "데이터 관리",
+            "재사용할 데이터 참조(엑셀/CSV 경로·나라장터 쿼리·조립 파이프라인)를 등록하고 관리합니다.",
         )
         self.shell.register_static(
             "vocab", "매핑 프로파일",
             "여러 작업이 공유하는 필드↔소스 매핑 베이스를 저작·재사용합니다.",
         )
         self.shell.register_static(
-            "matrix", "여러 작업 일괄 실행",
-            "선택한 작업들을 한 데이터에 일괄 적용해 생성합니다.",
+            "matrix", "같은 데이터로 여러 작업 실행",
+            "선택한 작업 여러 개에 같은 데이터 행들을 적용해 작업별 문서를 생성합니다.",
         )
         self.shell.register_static(
             "txt", "즉시 기안",
@@ -145,7 +145,11 @@ class AppController:
     def _open_editor_new(self) -> None:
         from .job_editor import JobEditorWizard
 
-        wiz = JobEditorWizard(self.registry, base_registry=self.base_registry)
+        wiz = JobEditorWizard(
+            self.registry,
+            base_registry=self.base_registry,
+            pool_registry=self.home.pool_registry,
+        )
         wiz.job_saved.connect(lambda _name: self.home.refresh())
         self._show_editor(wiz)
 
@@ -157,6 +161,7 @@ class AppController:
         wiz = JobEditorWizard(
             self.registry, initial_job=self.registry.load(name),
             base_registry=self.base_registry,
+            pool_registry=self.home.pool_registry,
         )
         wiz.job_saved.connect(lambda _name: self.home.refresh())
         self._show_editor(wiz)
@@ -229,8 +234,13 @@ class AppController:
         def make():
             from .template_manager import TemplateManagerPanel
 
-            panel = TemplateManagerPanel(library_dir)
+            panel = TemplateManagerPanel(
+                library_dir,
+                text_registry=self.home.text_registry,
+            )
             panel.make_job_requested.connect(self._open_editor_from_template)
+            panel.open_txt_requested.connect(self._open_txt)
+            panel.templates_changed.connect(self.home.refresh)
             self._track(panel)
             return panel
 
@@ -285,7 +295,11 @@ class AppController:
         """
         from .job_editor import JobEditorWizard
 
-        wiz = JobEditorWizard(self.registry, base_registry=self.base_registry)
+        wiz = JobEditorWizard(
+            self.registry,
+            base_registry=self.base_registry,
+            pool_registry=self.home.pool_registry,
+        )
         wiz.template_path = template_path
         wiz.job_saved.connect(lambda _name: self.home.refresh())
         self._show_editor(wiz)
@@ -322,7 +336,11 @@ class AppController:
                 if isinstance(child, VocabWorkbenchPanel):
                     child.refresh()
             return
-        wiz = JobEditorWizard(self.registry, base_registry=self.base_registry)
+        wiz = JobEditorWizard(
+            self.registry,
+            base_registry=self.base_registry,
+            pool_registry=self.home.pool_registry,
+        )
         wiz.base_mapping = base
         wiz.base_mapping_name = base_name
         wiz.job_saved.connect(lambda _name: self.home.refresh())

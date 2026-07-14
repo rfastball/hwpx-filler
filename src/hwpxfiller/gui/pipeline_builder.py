@@ -31,84 +31,133 @@ from .pipeline_builder_state import PipelineBuilderViewModel
 from .style import BASE_QSS, mark
 from .view_helpers import restate_preview_item
 
-_HOW_LABELS = [("교집합(inner) — 매칭된 행만", "inner"), ("왼쪽 유지(left) — 무매칭도 유지", "left")]
+_HOW_LABELS = [
+    ("일치하는 행만 남김", "inner"),
+    ("기준 데이터의 모든 행 유지", "left"),
+]
+_HOW_TEXT = {code: label for label, code in _HOW_LABELS}
+_KIND_TEXT = {"excel": "엑셀/CSV", "nara": "나라장터"}
+
+
+def _friendly_error(message: object) -> str:
+    """링1의 안정된 내부 용어는 보존하고 사용자에게 보일 때만 쉬운 말로 바꾼다."""
+    text = str(message)
+    for old, new in (
+        ("조인 키", "같은 행을 찾을 기준 항목"),
+        ("append", "행 추가"),
+        ("merge", "열 결합"),
+        ("inner", "일치하는 행만 남김"),
+        ("left", "기준 데이터의 모든 행 유지"),
+        ("소스", "데이터"),
+    ):
+        text = text.replace(old, new)
+    return text
 
 
 class PipelineBuilderDialog(QDialog):
     """조립 파이프라인 저작 대화상자. :class:`PipelineBuilderViewModel` 을 렌더한다."""
 
-    def __init__(self, registry, parent=None, *, store=None, fetcher=None):
+    def __init__(
+        self,
+        registry,
+        parent=None,
+        *,
+        store=None,
+        fetcher=None,
+        on_register_excel=None,
+        on_register_nara=None,
+    ):
         super().__init__(parent)
         self.vm = PipelineBuilderViewModel(
             registry, secret_store=store, fetcher=fetcher
         )
         self.saved_name: "str | None" = None  # 수용 시 저장된 항목 이름(패널이 읽음)
+        self._register_excel_callback = on_register_excel
+        self._register_nara_callback = on_register_nara
         # 미리보기가 한 번이라도 표시된 뒤에만 스테일 무효화 경고를 낸다(취득 전에는
         # 무효화할 스냅샷이 없다 — nara_view._on_query_edited 의 last_result 가드 미러).
         self._preview_shown = False
 
-        self.setWindowTitle("파이프라인 조립")
+        self.setWindowTitle("데이터 조립")
         self.resize(760, 640)
         self.setStyleSheet(BASE_QSS)
         root = QVBoxLayout(self)
 
         # ------------------------------------------------------------ 소스
         src_head = QHBoxLayout()
-        lbl = QLabel("소스 (첫 소스가 기준 테이블)")
+        lbl = QLabel("등록 데이터 (첫 데이터가 기준)")
         mark(lbl, "heading", True)
         src_head.addWidget(lbl)
         src_head.addStretch(1)
         self.cmb_pool = QComboBox()
-        self.cmb_pool.addItems(self.vm.available_source_names())
         src_head.addWidget(self.cmb_pool, 1)
-        self.btn_add_source = QPushButton("소스 추가")
+        self.btn_add_source = QPushButton("조립에 추가")
         self.btn_add_source.clicked.connect(self._on_add_source)
         src_head.addWidget(self.btn_add_source)
-        self.btn_del_source = QPushButton("소스 제거")
+        self.btn_del_source = QPushButton("조립에서 제거")
         self.btn_del_source.clicked.connect(self._on_remove_source)
         src_head.addWidget(self.btn_del_source)
         root.addLayout(src_head)
+        register_row = QHBoxLayout()
+        register_row.addStretch(1)
+        register_row.addWidget(QLabel("필요한 데이터가 목록에 없나요?"))
+        self.btn_register_excel = QPushButton("엑셀/CSV 새로 등록…")
+        self.btn_register_excel.setEnabled(callable(self._register_excel_callback))
+        self.btn_register_excel.clicked.connect(
+            lambda _checked=False: self._on_register_source(self._register_excel_callback)
+        )
+        register_row.addWidget(self.btn_register_excel)
+        self.btn_register_nara = QPushButton("나라장터 새로 등록…")
+        self.btn_register_nara.setEnabled(callable(self._register_nara_callback))
+        self.btn_register_nara.clicked.connect(
+            lambda _checked=False: self._on_register_source(self._register_nara_callback)
+        )
+        register_row.addWidget(self.btn_register_nara)
+        root.addLayout(register_row)
         self.lst_sources = QListWidget()
         self.lst_sources.setMaximumHeight(90)
         root.addWidget(self.lst_sources)
 
         # ------------------------------------------------------------ 스텝
         step_head = QHBoxLayout()
-        lbl2 = QLabel("스텝 (merge=키 조인 · append=행 합치기)")
+        lbl2 = QLabel("결합 방법")
         mark(lbl2, "heading", True)
         step_head.addWidget(lbl2)
         step_head.addStretch(1)
         self.cmb_op = QComboBox()
-        self.cmb_op.addItem("merge (키 조인)", "merge")
-        self.cmb_op.addItem("append (행 합치기)", "append")
+        self.cmb_op.addItem("같은 값끼리 열 결합", "merge")
+        self.cmb_op.addItem("아래에 행 추가", "append")
         self.cmb_op.currentIndexChanged.connect(self._on_op_changed)
         step_head.addWidget(self.cmb_op)
         self.cmb_target = QComboBox()  # 스텝 대상 소스(인덱스)
         # 대상이 바뀌면 이전 대상 기준의 제안 후보는 무효 — 잔존 키로 오조인 방지.
         self.cmb_target.currentIndexChanged.connect(lambda _i: self.cmb_key.clear())
+        step_head.addWidget(QLabel("대상 데이터"))
         step_head.addWidget(self.cmb_target, 1)
         root.addLayout(step_head)
 
         merge_row = QHBoxLayout()
         self.cmb_key = QComboBox()
         self.cmb_key.setEditable(True)  # 제안 밖 키도 명시 입력 가능
-        merge_row.addWidget(QLabel("조인 키:"))
+        merge_row.addWidget(QLabel("같은 행을 찾을 항목:"))
         merge_row.addWidget(self.cmb_key, 1)
-        self.btn_suggest = QPushButton("키 제안")
-        self.btn_suggest.setToolTip("공유 컬럼을 감지해 후보만 채웁니다 — 스텝은 추가하지 않습니다.")
+        self.btn_suggest = QPushButton("항목 제안")
+        self.btn_suggest.setToolTip(
+            "두 데이터에 공통으로 있는 항목을 후보로 보여 줍니다. 결합 방법은 추가하지 않습니다."
+        )
         self.btn_suggest.clicked.connect(self._on_suggest)
         merge_row.addWidget(self.btn_suggest)
         self.cmb_how = QComboBox()
         for label, code in _HOW_LABELS:
             self.cmb_how.addItem(label, code)
         merge_row.addWidget(self.cmb_how)
-        self.btn_add_step = QPushButton("스텝 추가")
+        self.btn_add_step = QPushButton("결합 방법 추가")
         # 화면당 primary 1개 규율(UD-22): '스텝 추가'와 '풀에 저장' 2개가 경쟁하던 것을,
         # 완료 액션인 [풀에 저장]만 primary 로 두고 조립 중 반복 액션인 [스텝 추가]는 일반
         # 버튼으로 강등한다(조립은 반복, 저장은 종결 — 주 행동은 저장).
         self.btn_add_step.clicked.connect(self._on_add_step)
         merge_row.addWidget(self.btn_add_step)
-        self.btn_del_step = QPushButton("스텝 제거")
+        self.btn_del_step = QPushButton("결합 방법 제거")
         self.btn_del_step.clicked.connect(self._on_remove_step)
         merge_row.addWidget(self.btn_del_step)
         root.addLayout(merge_row)
@@ -118,9 +167,9 @@ class PipelineBuilderDialog(QDialog):
 
         # ------------------------------------------------------- 미리보기
         pv_head = QHBoxLayout()
-        lbl3 = QLabel("미리보기 (실행과 동일한 조립 — 저장 후 실행 결과가 이 표다)")
-        mark(lbl3, "heading", True)
-        pv_head.addWidget(lbl3)
+        self.lbl_preview_title = QLabel("미리보기")
+        mark(self.lbl_preview_title, "heading", True)
+        pv_head.addWidget(self.lbl_preview_title)
         pv_head.addStretch(1)
         self.btn_preview = QPushButton("미리보기")
         self.btn_preview.clicked.connect(self._on_preview)
@@ -141,9 +190,9 @@ class PipelineBuilderDialog(QDialog):
         foot = QHBoxLayout()
         foot.addWidget(QLabel("이름:"))
         self.edt_name = QLineEdit()
-        self.edt_name.setPlaceholderText("파이프라인 이름 (데이터셋으로 저장)")
+        self.edt_name.setPlaceholderText("조립 이름 (등록 데이터로 저장)")
         foot.addWidget(self.edt_name, 1)
-        self.btn_save = QPushButton("풀에 저장")
+        self.btn_save = QPushButton("등록 데이터로 저장")
         mark(self.btn_save, "primary", True)
         self.btn_save.clicked.connect(self._on_save)
         foot.addWidget(self.btn_save)
@@ -159,8 +208,9 @@ class PipelineBuilderDialog(QDialog):
     def _render(self) -> None:
         self.lst_sources.clear()
         for i, s in enumerate(self.vm.sources):
-            role = "기준" if i == 0 else f"소스 {i}"
-            self.lst_sources.addItem(f"[{role}] {s.name} ({s.kind})")
+            role = "기준 데이터" if i == 0 else f"추가 데이터 {i}"
+            self.lst_sources.addItem(f"[{role}] {s.name} ({_KIND_TEXT.get(s.kind, s.kind)})")
+        self._refresh_source_picker()
         # 대상 콤보 재구성 — 이전 선택(인덱스)을 보존한다. clear() 가 선택을 첫 항목으로
         # 리셋하면 연속 [스텝 추가]가 조용히 씨앗(0) 대상 자기스텝을 만들 수 있다.
         prev_target = self.cmb_target.currentData()
@@ -173,10 +223,22 @@ class PipelineBuilderDialog(QDialog):
         for st in self.vm.steps:
             if st["op"] == "merge":
                 self.lst_steps.addItem(
-                    f"merge ← 소스 {st['source']} · 키 {st['on']} · {st['how']}"
+                    f"열 결합 ← 데이터 {st['source']} · 기준 항목 {st['on']} · "
+                    f"{_HOW_TEXT.get(st['how'], st['how'])}"
                 )
             else:
-                self.lst_steps.addItem(f"append ← 소스 {st['source']}")
+                self.lst_steps.addItem(f"행 추가 ← 데이터 {st['source']}")
+
+    def _refresh_source_picker(self, preferred: str = "") -> None:
+        """이미 추가한 데이터는 선택지에서 빼고, 제거하면 다시 선택지에 돌려놓는다."""
+        current = preferred or self.cmb_pool.currentText()
+        used = {source.name for source in self.vm.sources}
+        names = [name for name in self.vm.available_source_names() if name not in used]
+        self.cmb_pool.clear()
+        self.cmb_pool.addItems(names)
+        if current in names:
+            self.cmb_pool.setCurrentText(current)
+        self.btn_add_source.setEnabled(bool(names))
 
     def _on_op_changed(self) -> None:
         is_merge = self.cmb_op.currentData() == "merge"
@@ -189,10 +251,16 @@ class PipelineBuilderDialog(QDialog):
         name = self.cmb_pool.currentText()
         if not name:
             return
+        if any(source.name == name for source in self.vm.sources):
+            QMessageBox.information(
+                self, "이미 추가됨", f"'{name}' 데이터는 이미 이 조립에 들어 있습니다."
+            )
+            self._refresh_source_picker()
+            return
         try:
             self.vm.add_source(name)
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "오류", f"소스 추가 실패:\n{exc}")
+            QMessageBox.critical(self, "오류", f"데이터 추가 실패:\n{_friendly_error(exc)}")
             return
         self._render()
         self._invalidate_preview()
@@ -204,7 +272,7 @@ class PipelineBuilderDialog(QDialog):
         try:
             self.vm.remove_source(idx)
         except Exception as exc:  # noqa: BLE001 — 스텝이 참조 중이면 시끄럽게
-            QMessageBox.warning(self, "제거 불가", str(exc))
+            QMessageBox.warning(self, "제거 불가", _friendly_error(exc))
             return
         self._render()
         self._invalidate_preview()
@@ -213,25 +281,38 @@ class PipelineBuilderDialog(QDialog):
         """공유 컬럼 감지 → 키 콤보에 **후보만** 채움(스텝 미생성 — 사람 확정 게이트)."""
         idx = self.cmb_target.currentData()
         if idx is None:
-            QMessageBox.information(self, "키 제안", "대상 소스를 먼저 추가·선택하세요.")
+            QMessageBox.information(self, "항목 제안", "대상 데이터를 먼저 추가·선택하세요.")
             return
         try:
             keys = self.vm.suggest_merge_keys(idx)
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.warning(self, "키 제안 실패", str(exc))
+            QMessageBox.warning(self, "항목 제안 실패", _friendly_error(exc))
             return
         self.cmb_key.clear()
         if keys:
             self.cmb_key.addItems(keys)
         else:
             QMessageBox.information(
-                self, "키 제안", "공유 컬럼이 없습니다 — 키를 직접 입력하거나 append 를 쓰세요."
+                self,
+                "항목 제안",
+                "두 데이터에 공통 항목이 없습니다 — 기준 항목을 직접 입력하거나 "
+                "'아래에 행 추가'를 사용하세요.",
             )
+
+    def _on_register_source(self, callback) -> None:
+        """조립을 닫지 않고 새 데이터를 등록한 뒤 선택 목록을 즉시 갱신한다."""
+        if not callable(callback):
+            return
+        before = set(self.vm.available_source_names())
+        callback(self)
+        after = self.vm.available_source_names()
+        added = [name for name in after if name not in before]
+        self._refresh_source_picker(added[-1] if added else "")
 
     def _on_add_step(self) -> None:
         idx = self.cmb_target.currentData()
         if idx is None:
-            QMessageBox.information(self, "스텝 추가", "대상 소스를 먼저 추가·선택하세요.")
+            QMessageBox.information(self, "결합 방법 추가", "대상 데이터를 먼저 추가·선택하세요.")
             return
         op = self.cmb_op.currentData()
         try:
@@ -244,7 +325,7 @@ class PipelineBuilderDialog(QDialog):
             else:
                 self.vm.add_step("append", idx)
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.warning(self, "스텝 추가 실패", str(exc))
+            QMessageBox.warning(self, "결합 방법 추가 실패", _friendly_error(exc))
             return
         self._render()
         self._invalidate_preview()
@@ -284,7 +365,7 @@ class PipelineBuilderDialog(QDialog):
         if not result.ok:
             self._preview_shown = False  # 실패한 미리보기는 신선한 스냅샷이 아니다
             mark(self.lbl_error, "level", "danger")  # 무효화 경고(warn)에서 오류(danger)로 복원
-            self.lbl_error.setText(f"조립 실패: {result.error}")
+            self.lbl_error.setText(f"조립 실패: {_friendly_error(result.error)}")
             self.lbl_error.show()
             self.tbl_preview.clearContents()
             self.tbl_preview.setRowCount(0)
@@ -323,7 +404,7 @@ class PipelineBuilderDialog(QDialog):
         try:
             item = self.vm.save(name, overwrite=overwrite)
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "저장 실패", str(exc))
+            QMessageBox.critical(self, "저장 실패", _friendly_error(exc))
             return
         self.saved_name = item.name
         self.accept()

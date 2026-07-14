@@ -98,7 +98,7 @@ class TxtDraftView(QWidget):
         self.ed_data.setReadOnly(True)
         ctl.addWidget(self.ed_data, 1)
         # 데이터 겨눔 대칭화(UD-25) — 실행 표면(풀·파일·나라)과 동형으로 풀·파일·수기 3종.
-        self.btn_pool = QPushButton("데이터 풀에서…")
+        self.btn_pool = QPushButton("등록 데이터에서…")
         self.btn_pool.clicked.connect(self._pick_from_pool)
         self.btn_data = QPushButton("파일 선택…")
         self.btn_data.clicked.connect(self._pick_data)

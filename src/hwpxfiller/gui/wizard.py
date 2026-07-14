@@ -303,7 +303,8 @@ class DataPage(QWizardPage):
         self.setTitle("2단계 — 데이터 선택 (선택)")
         self.setSubTitle(
             "선택 단계입니다 — 미리보기·자동제안용 샘플을 불러오거나 건너뛰세요. "
-            "매핑은 데이터 없이 스키마만으로 확정할 수 있고, 실제 데이터는 실행할 때 고릅니다."
+            "선택한 소스 참조는 작업 저장 시 등록 데이터로 자동 등록됩니다. "
+            "여러 소스 조합은 데이터 관리의 고급 파이프라인에서 구성합니다."
         )
         self._valid = False
         self._reverting = False  # 소스 토글 취소 시 라디오 되돌림의 재진입 가드
@@ -425,6 +426,8 @@ class DataPage(QWizardPage):
             wiz.datasource = None
             wiz.source_fields = []
             wiz.records = []
+            wiz.declared_data_kind = ""
+            wiz.declared_data_opts = {}
 
     def _open_nara(self) -> None:
         """나라장터 취득 대화상자를 열고, 수용 시 취득 산출물을 위저드 세션에 심는다.
@@ -444,14 +447,24 @@ class DataPage(QWizardPage):
             fetcher=wiz.nara_fetcher,
         )
         if dlg.exec() == dlg.Accepted and dlg.records:
-            self._apply_nara_result(dlg.records, dlg.fields, dlg.datasource, dlg.label)
+            self._apply_nara_result(
+                dlg.records,
+                dlg.fields,
+                dlg.datasource,
+                dlg.label,
+                pool_opts=dlg.query_options(),
+            )
 
-    def _apply_nara_result(self, records, fields, datasource, label: str) -> None:
+    def _apply_nara_result(
+        self, records, fields, datasource, label: str, *, pool_opts=None
+    ) -> None:
         """취득 결과(키 없는 스냅샷)를 위저드 세션에 반영 — 파일 경로 대신 합성 라벨 사용.
 
         ``data_path`` 는 매핑 초안 캐시 키의 일부라 취득마다 달라지게 라벨을 심는다
         (MappingPage 가 조합 변경을 감지해 재초안). 헤드리스 테스트가 다이얼로그 없이 직접
-        호출할 수 있게 분리한다.
+        호출할 수 있게 분리한다. ``pool_opts`` 는 수용된 쿼리 스냅샷만 받으며 ServiceKey 는
+        포함하지 않는다. 직접 테스트 호출처럼 옵션이 없으면 자동 등록 선언을 만들지 않는다
+        (조용히 현재 위젯값을 추측하지 않음).
         """
         wiz = self.wizard()
         wiz.data_path = label
@@ -459,9 +472,12 @@ class DataPage(QWizardPage):
         wiz.datasource = datasource
         wiz.source_fields = fields
         wiz.records = records
+        wiz.declared_data_kind = "nara" if pool_opts is not None else ""
+        wiz.declared_data_opts = dict(pool_opts or {})
         self.ed_path.setText(label)
         self.lbl_summary.setText(
             f"나라장터 {len(fields)}개 필드, {len(records)}건 취득."
+            + (" 작업 저장 시 등록 데이터로 자동 등록됩니다." if pool_opts is not None else "")
         )
         self._valid = bool(fields and records)
         self.completeChanged.emit()
@@ -471,8 +487,8 @@ class DataPage(QWizardPage):
         # 샘플 데이터를 다시 고른다는 사실을 정직하게 노출.
         if getattr(self.wizard(), "initial_job", None) is not None:
             self.setSubTitle(
-                "작업에 데이터는 저장되지 않습니다 — 매핑 검토용 샘플은 선택입니다"
-                "(건너뛰어도 됩니다). 실제 데이터·행은 실행할 때 고릅니다."
+                "매핑 검토용 샘플은 선택입니다(건너뛰어도 됩니다). "
+                "선택한 소스 참조는 작업 저장 시 등록 데이터로 자동 등록됩니다."
             )
 
     def _pick(self):
@@ -528,10 +544,15 @@ class DataPage(QWizardPage):
         wiz.datasource = source
         wiz.source_fields = fields
         wiz.records = records
+        wiz.declared_data_kind = "excel"
+        wiz.declared_data_opts = {"path": path}
+        if sheet:
+            wiz.declared_data_opts["sheet"] = sheet
         # 확정 시트명을 요약에 재진술한다(T2) — 어느 시트가 겨눠졌는지 침묵하지 않는다.
         sheet_note = f" — 시트: {sheet}" if sheet else ""
         self.lbl_summary.setText(
-            f"컬럼 {len(fields)}개, 레코드 {len(records)}건 로드.{sheet_note}"
+            f"컬럼 {len(fields)}개, 레코드 {len(records)}건 로드.{sheet_note} "
+            "작업 저장 시 등록 데이터로 자동 등록됩니다."
         )
         self._valid = True
         self.completeChanged.emit()
@@ -561,15 +582,15 @@ class MappingPage(QWizardPage):
         self.table.completeChanged.connect(self._on_table_changed)
         layout.addWidget(self.table, 1)
 
-        # 레코드 스텝퍼 — 어떤 레코드로 미리보기할지 훑는다. 라벨을 '이전/다음
-        # 레코드'로 구체화한다(UD-40): 위저드 푸터의 '다음(N)'(페이지 이동)과 스텝퍼의
-        # '다음'(레코드 이동)이 한 화면에서 두 '다음'으로 공존해 혼동될 여지를 없앤다.
+        # 행 스텝퍼 — 데이터의 어느 행으로 미리보기할지 훑는다. 라벨을 '이전/다음 행'으로
+        # 구체화한다(8609E239): 위저드 푸터의 '다음(N)'(페이지 이동)과 스텝퍼의 '다음 행'
+        # (데이터 이동)이 한 화면에서 공존해도 목적을 구분할 수 있다.
         stepper = QHBoxLayout()
-        self.btn_prev = QPushButton("◀ 이전 레코드")
+        self.btn_prev = QPushButton("◀ 이전 행")
         self.btn_prev.clicked.connect(lambda: self._step(-1))
-        self.btn_next = QPushButton("다음 레코드 ▶")
+        self.btn_next = QPushButton("다음 행 ▶")
         self.btn_next.clicked.connect(lambda: self._step(1))
-        self.lbl_index = QLabel("레코드 0/0")
+        self.lbl_index = QLabel("행 0/0")
         self.lbl_preview_summary = QLabel("")
         self.lbl_preview_summary.setWordWrap(True)
         stepper.addWidget(self.btn_prev)
@@ -582,20 +603,35 @@ class MappingPage(QWizardPage):
         buttons = QHBoxLayout()
         self.lbl_progress = QLabel("확정 0/0")
         mark(self.lbl_progress, "muted", True)
-        btn_base_apply = QPushButton("매핑 프로파일 적용…")
-        btn_base_apply.clicked.connect(self._apply_base)
-        btn_base_save = QPushButton("매핑 프로파일로 저장…")
-        btn_base_save.clicked.connect(self._save_base)
-        btn_load = QPushButton("매핑 파일 불러오기…")
-        btn_load.clicked.connect(self._load_profile)
-        btn_save = QPushButton("매핑 파일 저장…")
-        btn_save.clicked.connect(self._save_profile)
+        # 긴 목적어를 버튼마다 반복하지 않고 그룹 라벨 한 번으로 구조화한다(4B32B5D8).
+        # 프로파일=앱 안 재사용 자산, JSON 파일=외부 교환이라는 차이를 위치·툴팁으로 설명한다.
+        self.lbl_profile_actions = QLabel("매핑 프로파일")
+        mark(self.lbl_profile_actions, "muted", True)
+        self.lbl_profile_actions.setToolTip("여러 작업에서 다시 쓰는 매핑입니다.")
+        self.btn_base_apply = QPushButton("적용…")
+        self.btn_base_apply.setToolTip("저장된 매핑 프로파일을 현재 필드에 적용합니다.")
+        self.btn_base_apply.clicked.connect(self._apply_base)
+        self.btn_base_save = QPushButton("저장…")
+        self.btn_base_save.setToolTip("현재 확정 매핑을 앱에서 재사용할 프로파일로 저장합니다.")
+        self.btn_base_save.clicked.connect(self._save_base)
+        self.lbl_file_actions = QLabel("JSON 파일")
+        mark(self.lbl_file_actions, "muted", True)
+        self.lbl_file_actions.setToolTip("다른 환경과 주고받는 매핑 파일입니다.")
+        self.btn_load = QPushButton("불러오기…")
+        self.btn_load.setToolTip("JSON 매핑 파일을 불러와 현재 필드에 적용합니다.")
+        self.btn_load.clicked.connect(self._load_profile)
+        self.btn_save = QPushButton("내보내기…")
+        self.btn_save.setToolTip("현재 확정 매핑을 JSON 파일로 내보냅니다.")
+        self.btn_save.clicked.connect(self._save_profile)
         buttons.addWidget(self.lbl_progress)
         buttons.addStretch(1)
-        buttons.addWidget(btn_base_apply)
-        buttons.addWidget(btn_base_save)
-        buttons.addWidget(btn_load)
-        buttons.addWidget(btn_save)
+        buttons.addWidget(self.lbl_profile_actions)
+        buttons.addWidget(self.btn_base_apply)
+        buttons.addWidget(self.btn_base_save)
+        buttons.addSpacing(12)
+        buttons.addWidget(self.lbl_file_actions)
+        buttons.addWidget(self.btn_load)
+        buttons.addWidget(self.btn_save)
         layout.addLayout(buttons)
 
     def initializePage(self):
@@ -689,10 +725,10 @@ class MappingPage(QWizardPage):
         wiz = self.wizard()
         n = len(wiz.records)
         if n == 0:
-            # 레코드 0/0 빈 상태 안내(UD-28): 미리보기할 데이터가 없다는 사실을 그냥
+            # 행 0/0 빈 상태 안내(UD-28): 미리보기할 데이터가 없다는 사실을 그냥
             # 침묵으로 두지 않고, 왜(데이터 미연결)·무엇을 할 수 있는지(상수·비움 확정)를
-            # 재진술한다. 스텝퍼 인덱스는 '레코드 0/0'로 유지(비활성).
-            self.lbl_index.setText("레코드 0/0")
+            # 재진술한다. 스텝퍼 인덱스는 '행 0/0'로 유지(비활성).
+            self.lbl_index.setText("행 0/0")
             self.btn_prev.setEnabled(False)
             self.btn_next.setEnabled(False)
             self.lbl_preview_summary.setText(
@@ -702,7 +738,7 @@ class MappingPage(QWizardPage):
             return
         rec = wiz.records[self._preview_index]
         self.table.set_preview_record(rec)
-        self.lbl_index.setText(f"레코드 {self._preview_index + 1}/{n}")
+        self.lbl_index.setText(f"행 {self._preview_index + 1}/{n}")
         self.btn_prev.setEnabled(self._preview_index > 0)
         self.btn_next.setEnabled(self._preview_index < n - 1)
         self._sync_preview_summary()

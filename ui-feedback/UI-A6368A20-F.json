@@ -1,0 +1,15 @@
+{
+  "issue_id": "UI-A6368A20-F",
+  "related_captures": [{
+    "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-a6368a20-cd42-49f1-8d5d-ea685c7ae725.png",
+    "regions": ["중앙의 기안 미리보기 영역"]
+  }],
+  "screen_or_page": "즉시 기안 화면",
+  "affected_area": "기안 미리보기의 편집 가능 여부",
+  "current_state": "기안 미리보기 내용을 화면에서 직접 수정할 수 없으며, 내용을 고치려면 템플릿을 별도로 열어야 한다.",
+  "expected_state": "즉시 기안의 목적에 맞게 기안 미리보기를 간이 텍스트 편집기로 사용할 수 있도록 직접 편집 기능을 검토한다.",
+  "issue_type": "미리보기 직접 편집 기능 부족",
+  "affected_viewport_or_environment": "데스크톱 환경의 즉시 기안 화면. 다른 환경의 적용 범위는 확인되지 않음.",
+  "severity": "보통",
+  "unverified": ["직접 편집을 지원할 텍스트와 서식의 범위", "편집 내용의 저장 방식", "미리보기 편집이 생성 결과에 적용되는 시점"]
+}

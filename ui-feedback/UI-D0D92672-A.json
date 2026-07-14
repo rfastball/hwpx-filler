@@ -1,0 +1,21 @@
+{
+  "issue_id": "UI-D0D92672-A",
+  "related_captures": [
+    {
+      "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-d0d92672-5607-4b60-9649-99081183e6d1.png",
+      "regions": [
+        "실행 화면 상단의 사전검증 통과 안내 문구"
+      ]
+    }
+  ],
+  "screen_or_page": "등록된 작업의 실행 화면",
+  "affected_area": "사전검증 결과 안내",
+  "current_state": "‘사전검증 통과 — 치명 누락 없음. 아래 빈 값 표면화를 확인하세요.’처럼 기계적인 설계 용어가 포함된 난해한 문구가 표시된다.",
+  "expected_state": "사용자에게 불필요한 ‘치명 누락 없음’과 ‘빈 값 표면화’ 표현을 제거하고, 필요한 검증 결과만 쉽게 이해할 수 있게 전달한다.",
+  "issue_type": "기계적 용어 노출 및 안내 문구 개선",
+  "affected_viewport_or_environment": "데스크톱 환경의 등록 작업 실행 화면. 다른 환경의 적용 범위는 확인되지 않음.",
+  "severity": "낮음",
+  "unverified": [
+    "사전검증 통과 외에 남겨야 할 최종 안내 문구"
+  ]
+}

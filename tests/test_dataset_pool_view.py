@@ -89,6 +89,8 @@ def test_panel_renders_cards_with_gated_actions(qapp, tmp_path):
     reg.save(retired)
 
     panel = DatasetPoolPanel(reg)
+    assert panel.windowTitle() == "HWPX Filler — 데이터 관리"
+    assert panel.btn_add_pipeline.text() == "데이터 조립…"
     assert panel.list.count() == 2
     by_name = {}
     for i in range(panel.list.count()):
@@ -113,6 +115,29 @@ def test_panel_register_excel(qapp, tmp_path, monkeypatch):
     assert reg.exists("6월데이터")
     assert reg.load("6월데이터").opts["path"].endswith("d.csv")
     assert panel.list.count() == 1
+
+
+def test_panel_wires_in_place_registration_into_builder(qapp, tmp_path, monkeypatch):
+    """#19 — 데이터 관리에서 연 조립 창은 기존 등록 절차 둘을 콜백으로 받는다."""
+    from hwpxfiller.gui import pipeline_builder as pb
+    from hwpxfiller.gui.dataset_pool_panel import DatasetPoolPanel
+
+    captured = {}
+
+    class FakeBuilder:
+        Accepted = 1
+
+        def __init__(self, registry, parent, **kwargs):
+            captured.update(kwargs)
+
+        def exec(self):
+            return 0
+
+    monkeypatch.setattr(pb, "PipelineBuilderDialog", FakeBuilder)
+    panel = DatasetPoolPanel(DatasetPoolRegistry(tmp_path / "pool"))
+    panel._on_build_pipeline()
+    assert captured["on_register_excel"] == panel._register_excel
+    assert captured["on_register_nara"] == panel._register_nara
 
 
 def test_panel_register_nara_from_dialog_saves_query_only(qapp, tmp_path, monkeypatch):
@@ -205,6 +230,7 @@ def test_pipeline_builder_dialog_author_preview_save(qapp, tmp_path):
     # 소스 2개 추가
     dlg.cmb_pool.setCurrentText("기준")
     dlg._on_add_source()
+    assert dlg.cmb_pool.findText("기준") == -1  # 이미 넣은 데이터는 선택지에서 제거
     dlg.cmb_pool.setCurrentText("참조표")
     dlg._on_add_source()
     assert dlg.lst_sources.count() == 2
@@ -227,6 +253,68 @@ def test_pipeline_builder_dialog_author_preview_save(qapp, tmp_path):
     dlg._on_save()
     assert dlg.saved_name == "조립6월"
     assert reg.load("조립6월").kind == "pipeline"
+
+
+def test_pipeline_builder_blocks_duplicate_and_restores_removed_choice(
+    qapp, tmp_path, monkeypatch
+):
+    """#19 — 중복 데이터는 stale 선택까지 시끄럽게 차단하고, 제거하면 다시 고를 수 있다."""
+    from PySide6.QtWidgets import QMessageBox
+
+    from hwpxfiller.gui.pipeline_builder import PipelineBuilderDialog
+
+    reg = DatasetPoolRegistry(tmp_path / "pool")
+    reg.save(DatasetPoolItem(name="기준", kind="excel", opts={"path": "/a.csv"}))
+    dlg = PipelineBuilderDialog(reg)
+    dlg.cmb_pool.setCurrentText("기준")
+    dlg._on_add_source()
+    assert dlg.lst_sources.count() == 1
+
+    # 갱신 직전 stale 콤보를 흉내 내도 이중 게이트가 중복을 막는다.
+    dlg.cmb_pool.addItem("기준")
+    dlg.cmb_pool.setCurrentText("기준")
+    messages = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: messages.append(a[2]))
+    dlg._on_add_source()
+    assert dlg.lst_sources.count() == 1
+    assert messages and "이미" in messages[-1]
+
+    dlg.lst_sources.setCurrentRow(0)
+    dlg._on_remove_source()
+    assert dlg.cmb_pool.findText("기준") >= 0
+
+
+def test_pipeline_builder_registers_new_data_in_place(qapp, tmp_path):
+    """#19 — 조립 창을 닫지 않고 등록한 데이터가 즉시 선택되고 등록 대화의 부모도 현재 창이다."""
+    from hwpxfiller.gui.pipeline_builder import PipelineBuilderDialog
+
+    reg = DatasetPoolRegistry(tmp_path / "pool")
+    owners = []
+
+    def register_excel(owner):
+        owners.append(owner)
+        reg.save(DatasetPoolItem(name="새 데이터", kind="excel", opts={"path": "/new.csv"}))
+
+    dlg = PipelineBuilderDialog(reg, on_register_excel=register_excel)
+    assert dlg.btn_register_excel.isEnabled()
+    dlg.btn_register_excel.click()
+    assert owners == [dlg]
+    assert dlg.cmb_pool.currentText() == "새 데이터"
+
+
+def test_pipeline_builder_uses_plain_language_and_short_preview_title(qapp, tmp_path):
+    """#19 — 사용자 표면에는 쿼리 내부어 대신 결과를 설명하는 쉬운 말을 쓴다."""
+    from hwpxfiller.gui.pipeline_builder import PipelineBuilderDialog
+
+    dlg = PipelineBuilderDialog(DatasetPoolRegistry(tmp_path / "pool"))
+    assert dlg.windowTitle() == "데이터 조립"
+    assert dlg.lbl_preview_title.text() == "미리보기"
+    assert dlg.cmb_op.itemText(0) == "같은 값끼리 열 결합"
+    assert dlg.cmb_op.itemText(1) == "아래에 행 추가"
+    assert [dlg.cmb_how.itemText(i) for i in range(dlg.cmb_how.count())] == [
+        "일치하는 행만 남김",
+        "기준 데이터의 모든 행 유지",
+    ]
 
 
 def test_pipeline_builder_save_collision_gated_by_question(qapp, tmp_path, monkeypatch):
@@ -264,7 +352,7 @@ def test_pipeline_builder_preview_error_surfaces(qapp, tmp_path):
     dlg = PipelineBuilderDialog(reg)
     dlg._on_preview()  # 소스 없음 → 시끄러운 오류 라벨(빈 표 조용히 금지)
     assert not dlg.lbl_error.isHidden()
-    assert "소스" in dlg.lbl_error.text()
+    assert "데이터" in dlg.lbl_error.text()
 
 
 # ------------------------------------------------------------ 위저드 데이터 강등
@@ -302,7 +390,7 @@ def test_run_view_picks_from_pool(qapp, tmp_path, monkeypatch):
     view._pick_from_pool()
     _wait_pool_load(view)  # 복원은 QThread(RC-12) — 완료까지 이벤트 루프
     assert view.records and view.records[0]["공고명"] == "전산장비"
-    assert view.ed_data.text().startswith("풀: 6월")
+    assert view.ed_data.text().startswith("등록 데이터: 6월")
     assert view.btn_pool.isEnabled()  # 복원 후 데이터 버튼 잠금 해제
 
 
@@ -318,4 +406,4 @@ def test_run_view_pool_empty_informs(qapp, tmp_path, monkeypatch):
         QMessageBox, "information", lambda *a, **k: seen.setdefault("msg", a[2])
     )
     view._pick_from_pool()
-    assert "활성 데이터가 없습니다" in seen.get("msg", "")
+    assert "등록 데이터가 없습니다" in seen.get("msg", "")

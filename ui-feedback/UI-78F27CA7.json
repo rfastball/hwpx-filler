@@ -1,0 +1,23 @@
+{
+  "issue_id": "UI-78F27CA7",
+  "related_captures": [
+    {
+      "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-78f27ca7-6bea-40e1-b69c-233dee61dffd.png",
+      "regions": [
+        "대시보드 즉시 기안 영역의 새 기안 버튼과 템플릿별 기안 작성 버튼"
+      ]
+    }
+  ],
+  "screen_or_page": "대시보드의 즉시 기안 영역",
+  "affected_area": "‘새 기안’과 ‘기안 작성’ 버튼의 동작",
+  "current_state": "‘새 기안’과 템플릿별 ‘기안 작성’이 서로 다른 작업처럼 표시되지만, 두 버튼 모두 즉시 기안 탭으로 이동하는 동일한 동작을 수행한다.",
+  "expected_state": "두 버튼의 목적에 맞게 동작을 구분하거나, 실제 동작이 같다면 중복 버튼을 통합해 사용자가 차이를 추측하지 않도록 한다.",
+  "issue_type": "중복 동작 및 버튼 의미 불일치",
+  "affected_viewport_or_environment": "데스크톱 환경의 대시보드. 다른 환경의 적용 범위는 확인되지 않음.",
+  "severity": "낮음",
+  "unverified": [
+    "‘새 기안’과 ‘기안 작성’이 의도상 서로 다른 기능인지 여부",
+    "템플릿별 ‘기안 작성’에서 해당 템플릿을 미리 선택해야 하는지 여부",
+    "두 버튼 중 유지하거나 제거할 버튼"
+  ]
+}

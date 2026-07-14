@@ -98,13 +98,13 @@ class DatasetPoolPanel(QWidget):
         self._store = store
         self._fetcher = fetcher
 
-        self.setWindowTitle("HWPX Filler — 데이터 풀")
+        self.setWindowTitle("HWPX Filler — 데이터 관리")
         wire_refresh_shortcut(self)  # F5 → 새로고침(ST-12)
         self.setStyleSheet(BASE_QSS)
         root = QVBoxLayout(self)
 
         header = QHBoxLayout()
-        title = QLabel("데이터 풀")
+        title = QLabel("데이터 관리")
         mark(title, "heading", True)
         self.lbl_count = QLabel("")
         mark(self.lbl_count, "muted", True)
@@ -115,7 +115,7 @@ class DatasetPoolPanel(QWidget):
         self.btn_add_excel.clicked.connect(self._on_register_excel)
         self.btn_add_nara = QPushButton("나라장터 등록…")
         self.btn_add_nara.clicked.connect(self._on_register_nara)
-        self.btn_add_pipeline = QPushButton("파이프라인 조립…")
+        self.btn_add_pipeline = QPushButton("데이터 조립…")
         self.btn_add_pipeline.clicked.connect(self._on_build_pipeline)
         mark(self.btn_add_excel, "primary", True)
         header.addWidget(self.btn_add_excel)
@@ -195,8 +195,12 @@ class DatasetPoolPanel(QWidget):
 
     # ------------------------------------------------------------- 등록
     def _on_register_excel(self) -> None:
+        self._register_excel(self)
+
+    def _register_excel(self, owner) -> None:
+        """엑셀/CSV 등록 흐름 — 데이터 조립 창에서도 같은 절차를 중첩 실행한다."""
         path, _ = QFileDialog.getOpenFileName(
-            self, "데이터 파일 선택", last_dir("data"), EXCEL_FILTER
+            owner, "데이터 파일 선택", last_dir("data"), EXCEL_FILTER
         )
         if not path:
             return
@@ -204,27 +208,27 @@ class DatasetPoolPanel(QWidget):
         # 다중 시트면 등록 전에 시트를 확정받는다(T2) — 취소(None)는 등록 전체 중단
         # (첫-시트 추측 참조가 조용히 저장되지 않게). 단일 시트·CSV 는 생략("").
         try:
-            sheet = ask_sheet_choice(self, path)
+            sheet = ask_sheet_choice(owner, path)
         except Exception as exc:  # noqa: BLE001 - 시트 열거 실패(손상 파일)도 시끄럽게
-            show_error(self, "등록 실패", exc)
+            show_error(owner, "등록 실패", exc)
             return
         if sheet is None:
             return
         from pathlib import Path
 
         name, ok = QInputDialog.getText(
-            self, "데이터셋 이름", "이름:", text=Path(path).stem
+            owner, "데이터셋 이름", "이름:", text=Path(path).stem
         )
         if not ok or not name.strip():
             return
         name = name.strip()
         # 동명 데이터셋 무통보 덮어쓰기 방지(ST-09) — 파이프라인 저장과 같은 게이트.
-        if not self._confirm_pool_overwrite(name):
+        if not self._confirm_pool_overwrite(name, parent=owner):
             return
         try:
             self.vm.register_excel(name, path, sheet=sheet or None)
         except Exception as exc:  # noqa: BLE001
-            show_error(self, "등록 실패", exc)  # 유형별 문구 + 원문 접기(ST-20)
+            show_error(owner, "등록 실패", exc)  # 유형별 문구 + 원문 접기(ST-20)
             return
         announce_status(self.lbl_result, f"등록 완료: {name}")  # 보조기술 통지(ST-18)
         self.pool_changed.emit()
@@ -238,7 +242,12 @@ class DatasetPoolPanel(QWidget):
         from .pipeline_builder import PipelineBuilderDialog
 
         dlg = PipelineBuilderDialog(
-            self.vm.registry, self, store=self._store, fetcher=self._fetcher
+            self.vm.registry,
+            self,
+            store=self._store,
+            fetcher=self._fetcher,
+            on_register_excel=self._register_excel,
+            on_register_nara=self._register_nara,
         )
         if dlg.exec() != dlg.Accepted:
             return
@@ -247,6 +256,9 @@ class DatasetPoolPanel(QWidget):
         self.pool_changed.emit()
 
     def _on_register_nara(self) -> None:
+        self._register_nara(self)
+
+    def _register_nara(self, owner) -> None:
         """나라장터 등록 — N2 대화상자로 키·기간·건수를 받고 **쿼리 참조**만 풀에 저장.
 
         대화상자는 취득 성공(키·쿼리 유효)에서만 수용되므로 등록 전에 사실상 연결 검증이
@@ -254,22 +266,23 @@ class DatasetPoolPanel(QWidget):
         """
         from .nara_view import NaraAcquireDialog
 
-        dlg = NaraAcquireDialog(self, store=self._store, fetcher=self._fetcher)
+        dlg = NaraAcquireDialog(owner, store=self._store, fetcher=self._fetcher)
         if dlg.exec() != dlg.Accepted:
             return
-        self._register_nara_from_dialog(dlg)
+        self._register_nara_from_dialog(dlg, parent=owner)
 
-    def _register_nara_from_dialog(self, dlg) -> None:
+    def _register_nara_from_dialog(self, dlg, *, parent=None) -> None:
         """대화상자 수용 결과에서 쿼리 참조를 만들어 등록(헤드리스 테스트용 분리).
 
         저장하는 기간·건수는 **취득 시점 스냅샷**(``query_options``) — 위젯 현재값을
         재독하지 않는다(취득으로 검증된 쿼리만 풀에 들어간다, RC-13).
         """
-        name, ok = QInputDialog.getText(self, "데이터셋 이름", "이름:")
+        owner = parent or self
+        name, ok = QInputDialog.getText(owner, "데이터셋 이름", "이름:")
         if not ok or not name.strip():
             return
         name = name.strip()
-        if not self._confirm_pool_overwrite(name):  # 동명 덮어쓰기 방지(ST-09)
+        if not self._confirm_pool_overwrite(name, parent=owner):  # 동명 덮어쓰기 방지(ST-09)
             return
         try:
             opts = dlg.query_options()  # 스냅샷 부재 시 시끄럽게 실패(조용한 위젯값 폴백 금지)
@@ -278,12 +291,12 @@ class DatasetPoolPanel(QWidget):
                 num_rows=int(opts["num_rows"]), page_no=int(opts["page_no"]),
             )
         except Exception as exc:  # noqa: BLE001
-            show_error(self, "등록 실패", exc)  # 유형별 문구 + 원문 접기(ST-20)
+            show_error(owner, "등록 실패", exc)  # 유형별 문구 + 원문 접기(ST-20)
             return
         announce_status(self.lbl_result, f"등록 완료: {name} (나라장터 쿼리 참조)")
         self.pool_changed.emit()
 
-    def _confirm_pool_overwrite(self, name: str) -> bool:
+    def _confirm_pool_overwrite(self, name: str, *, parent=None) -> bool:
         """동명 데이터셋이 있으면 파괴 확인을 거친다 — 없으면 즉시 통과(True).
 
         pipeline_builder 의 덮어쓰기 게이트(exists→confirm_destructive)와 같은 어휘·기본
@@ -296,7 +309,7 @@ class DatasetPoolPanel(QWidget):
             return True
         existing = registry.load(name).name
         return confirm_destructive(
-            self, "이름 충돌",
+            parent or self, "이름 충돌",
             f"'{existing}' 데이터셋이 이미 있습니다 — 등록하면 기존 참조(경로·쿼리)가 "
             "사라집니다.",
             "덮어쓰기",

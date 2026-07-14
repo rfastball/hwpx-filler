@@ -1,0 +1,15 @@
+{
+  "issue_id": "UI-AD966C89-B",
+  "related_captures": [{
+    "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-ad966c89-988b-48df-a25a-6798a30984e0.png",
+    "regions": ["대시보드의 최근 실행 날짜 및 작업 카드"]
+  }],
+  "screen_or_page": "대시보드",
+  "affected_area": "최근 실행한 작업을 보여주는 요약 카드",
+  "current_state": "대시보드에 최근 실행 날짜와 작업명이 표시되지만, 사용자에게 유용한 행동이나 판단으로 이어지는 정보로 느껴지지 않는다.",
+  "expected_state": "최근 실행 카드의 대시보드 제공 가치를 검토하고, 유용성이 없다면 제거하거나 실제 작업 재개 등에 도움이 되는 정보로 대체한다.",
+  "issue_type": "대시보드 정보 가치 검토",
+  "affected_viewport_or_environment": "데스크톱 환경의 대시보드. 다른 환경의 적용 범위는 확인되지 않음.",
+  "severity": "낮음",
+  "unverified": ["최근 실행 정보를 확인해야 하는 실제 업무 사례", "현재 카드에서 직접 수행할 수 있는 동작의 존재 여부", "카드를 제거할지 다른 정보로 대체할지"]
+}
