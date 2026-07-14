@@ -24,7 +24,10 @@
   dataclass(`JobRow`·`PreflightResult`·`PrevNote`·`GateError`)로 낸다.
 - **링2 — 프레젠테이션/Qt + 토큰** (얇은 렌더러): `style.py`·위젯·화면·`app.py`. ViewModel을 들고
   바인딩, Qt 시그널·`QThread`·`QMessageBox`·`QFileDialog`는 여기서만. **디자인 패스가 만지는
-  유일한 링**(+ 토큰 파일).
+  유일한 링**(+ 토큰 파일). 예: 시트 확정 다이얼로그(`view_helpers.ask_sheet_choice`, T2 —
+  `QInputDialog`)는 이 링이다 — 링1 VM은 다이얼로그의 존재를 모른 채 **확정된 `sheet` 값만**
+  키워드 인자(`load_data(path, sheet=None)`)로 수취해 팩토리로 관통시킨다(취소=중단 판정도
+  링2 소관, [UI_CONTRACT.md](UI_CONTRACT.md) 데이터 겨눔 콜백 계약).
 
 **계약 seam = 링1 ViewModel 공개 API + 상태 dataclass.** ([UI_CONTRACT.md](UI_CONTRACT.md))
 
