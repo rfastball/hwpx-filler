@@ -1,0 +1,42 @@
+{
+  "issue_id": "UI-59C00F1C",
+  "related_captures": [
+    {
+      "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-59c00f1c-65fa-4900-b709-504b889edf3c.png",
+      "regions": [
+        "필드 매핑 표의 확정 열과 확정된 행·미확정 행의 상태 표현"
+      ]
+    },
+    {
+      "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-8331a39b-9533-49ee-bcb4-19a1318f5884.png",
+      "regions": [
+        "여러 작업 일괄 실행 화면의 미선택 작업 체크박스"
+      ]
+    },
+    {
+      "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-36975186-1595-4622-a15f-b59dc52f200a.png",
+      "regions": [
+        "작업 1개가 선택되었지만 체크 표시가 보이지 않는 작업 목록"
+      ]
+    },
+    {
+      "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-1a916593-4c72-4050-ab1f-9623d9c49a9b.png",
+      "regions": [
+        "선택된 작업 행에서 명시적인 체크 표시가 보이지 않는 상태"
+      ]
+    }
+  ],
+  "screen_or_page": "작업 편집기 3단계 — 필드 매핑 확정 및 여러 작업 일괄 실행 화면",
+  "affected_area": "목록과 표에서 각 행의 선택·확정 상태를 나타내는 체크박스",
+  "current_state": "행을 선택하거나 확정하면 체크 표시가 명시적으로 남지 않고 체크박스가 사라지거나 다른 시각 상태로 바뀐다. 선택·확정 상태가 간접적으로만 표현되어 어떤 행이 선택되었는지 한눈에 파악하기 어렵다.",
+  "expected_state": "선택되거나 확정된 행에도 체크 표시를 명시적으로 남겨 상태를 바로 알아볼 수 있게 한다. 같은 체크박스 동작을 사용하는 화면에 일관되게 적용한다.",
+  "issue_type": "상태 피드백 부족",
+  "affected_viewport_or_environment": "데스크톱 환경의 작업 편집기 3단계, 여러 작업 일괄 실행 화면 및 같은 체크박스 동작을 사용하는 화면. 다른 환경의 적용 범위는 확인되지 않음.",
+  "severity": "낮음",
+  "unverified": [
+    "선택·확정된 행의 체크 표시를 다시 해제하는 상호작용 방식",
+    "체크 표시 외에 함께 사용할 상태 표현의 필요 여부",
+    "현재 배경색 구분을 유지할지 여부",
+    "같은 체크박스 동작을 사용하는 전체 화면의 목록"
+  ]
+}

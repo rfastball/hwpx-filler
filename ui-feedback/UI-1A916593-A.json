@@ -1,0 +1,22 @@
+{
+  "issue_id": "UI-1A916593-A",
+  "related_captures": [
+    {
+      "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-1a916593-4c72-4050-ab1f-9623d9c49a9b.png",
+      "regions": [
+        "여러 작업 일괄 실행 목록의 선택된 작업 행 하이라이트"
+      ]
+    }
+  ],
+  "screen_or_page": "여러 작업 일괄 실행 화면",
+  "affected_area": "선택된 작업 행의 하이라이트",
+  "current_state": "선택된 행에 적용되는 하이라이트가 조잡하게 보여 선택 상태의 시각적 완성도가 낮다.",
+  "expected_state": "선택 상태를 명확하면서도 정돈된 방식으로 전달하도록 행 하이라이트 디자인을 개선한다.",
+  "issue_type": "선택 하이라이트 디자인 개선",
+  "affected_viewport_or_environment": "데스크톱 환경의 여러 작업 일괄 실행 화면. 같은 선택 하이라이트를 사용하는 다른 화면의 범위는 확인되지 않음.",
+  "severity": "낮음",
+  "unverified": [
+    "선택 상태에 사용할 구체적인 색상과 시각 표현",
+    "같은 하이라이트 디자인을 적용해야 하는 전체 화면의 목록"
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "issue_id": "UI-1A916593-B",
+  "related_captures": [
+    {
+      "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-1a916593-4c72-4050-ab1f-9623d9c49a9b.png",
+      "regions": [
+        "선택 하이라이트 위에서 흰색으로 바뀐 작업명과 체크박스"
+      ]
+    }
+  ],
+  "screen_or_page": "여러 작업 일괄 실행 화면",
+  "affected_area": "선택된 작업 행의 텍스트와 체크박스 가독성",
+  "current_state": "행을 선택하면 하이라이트와 함께 작업명 및 체크박스가 흰색으로 바뀌어 배경과 구분하기 어려워지고, 선택된 항목을 거의 식별할 수 없다.",
+  "expected_state": "행이 선택된 상태에서도 작업명, 체크박스, 선택 표시를 명확하게 식별할 수 있도록 시각적 대비와 상태 표현을 개선한다.",
+  "issue_type": "선택 상태의 식별성 저하",
+  "affected_viewport_or_environment": "데스크톱 환경의 여러 작업 일괄 실행 화면. 같은 선택 스타일을 사용하는 다른 화면의 범위는 확인되지 않음.",
+  "severity": "보통",
+  "unverified": [
+    "선택 상태에 사용할 구체적인 전경색과 배경색",
+    "같은 선택 스타일로 인해 식별성이 낮아지는 다른 화면의 목록"
+  ]
+}

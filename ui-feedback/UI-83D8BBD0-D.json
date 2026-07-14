@@ -1,0 +1,21 @@
+{
+  "issue_id": "UI-83D8BBD0-D",
+  "related_captures": [
+    {
+      "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-83d8bbd0-c319-43e3-8a6e-264f806cf17b.png",
+      "regions": ["미리보기 영역 제목의 괄호 안 설명"]
+    },
+    {
+      "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-0e691d0e-19e3-4045-a256-e4a7b84fb80d.png",
+      "regions": ["‘실행과 동일한 조립 — 저장 후 실행 결과가 이 표다’ 문구의 확대 화면"]
+    }
+  ],
+  "screen_or_page": "데이터 풀의 파이프라인 조립 창",
+  "affected_area": "미리보기 영역 제목",
+  "current_state": "‘미리보기’ 제목 뒤에 ‘실행과 동일한 조립 — 저장 후 실행 결과가 이 표다’라는 개발 과정의 설명처럼 느껴지는 문구가 노출된다.",
+  "expected_state": "미리보기 제목에서 ‘실행과 동일한 조립 — 저장 후 실행 결과가 이 표다’ 문구를 삭제한다.",
+  "issue_type": "개발 용어 노출 및 불필요한 설명",
+  "affected_viewport_or_environment": "데스크톱 환경의 파이프라인 조립 창. 다른 환경의 적용 범위는 확인되지 않음.",
+  "severity": "낮음",
+  "unverified": []
+}

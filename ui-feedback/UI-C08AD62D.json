@@ -1,0 +1,24 @@
+{
+  "issue_id": "UI-C08AD62D",
+  "related_captures": [
+    {
+      "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-c08ad62d-f360-4ada-97ee-be7d83d3dec6.png",
+      "regions": [
+        "필드 매핑 표의 템플릿 필드 열에 표시된 [number], [text], [amount], [date] 표기"
+      ]
+    }
+  ],
+  "screen_or_page": "새 문서 작업의 필드 매핑 화면",
+  "affected_area": "템플릿 필드명 뒤의 대괄호 타입 표시",
+  "current_state": "필드명 뒤에 [number], [text], [amount], [date] 등의 타입이 별도 설명 없이 단정적인 형태로 표시되어, 해당 값이 어떻게 정해졌는지 혼동할 수 있다.",
+  "expected_state": "표시가 추정값이라면 무엇을 추정한 값인지와 해당 표시의 역할을 사용자가 이해할 수 있게 설명한다. 사용자 판단에 불필요한 정보라면 타입 표시 제거를 고려한다.",
+  "issue_type": "정보 명확성 개선",
+  "affected_viewport_or_environment": "데스크톱 환경. 정확한 화면 크기와 다른 환경의 적용 범위는 확인되지 않음.",
+  "severity": "낮음",
+  "unverified": [
+    "현재 타입 표시가 실제로 추정된 값인지 여부",
+    "타입을 정하는 기준",
+    "이 타입 표시가 이후 작업에 미치는 역할",
+    "설명을 추가할지 표시를 제거할지에 대한 최종 결정"
+  ]
+}

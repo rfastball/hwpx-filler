@@ -1,0 +1,15 @@
+{
+  "issue_id": "UI-A6368A20-C",
+  "related_captures": [{
+    "path": "C:\\Users\\rfast\\AppData\\Local\\Temp\\codex-clipboard-a6368a20-cd42-49f1-8d5d-ea685c7ae725.png",
+    "regions": ["좌우로 넓게 확장된 기안 미리보기 영역"]
+  }],
+  "screen_or_page": "즉시 기안 화면",
+  "affected_area": "기안 미리보기의 가로 반응형 동작",
+  "current_state": "창을 좌우로 넓히면 기안 미리보기 영역도 함께 확장되지만, 표시되는 내용이나 작업 효율에는 의미 있는 변화가 없다.",
+  "expected_state": "창 너비가 늘어날 때 기안 미리보기 영역을 의미 없이 확장하지 않고, 추가 공간이 실제 정보 확인이나 작업 흐름 개선에 기여하도록 반응형 동작을 재검토한다.",
+  "issue_type": "의미 없는 반응형 확장",
+  "affected_viewport_or_environment": "좌우로 넓게 펼친 데스크톱 창. 정확한 기준 너비는 확인되지 않음.",
+  "severity": "낮음",
+  "unverified": ["미리보기 영역의 적정 최대 너비", "늘어난 공간을 사용할 다른 영역이나 정보"]
+}
