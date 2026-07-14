@@ -97,6 +97,12 @@ class RunView(QWidget):
         )
         mark(lbl_job, "heading", True)
         root.addWidget(lbl_job)
+        self.lbl_scope = QLabel(
+            "작업 1개로 선택한 데이터의 각 행마다 문서 1건을 만듭니다."
+        )
+        mark(self.lbl_scope, "muted", True)
+        self.lbl_scope.setWordWrap(True)
+        root.addWidget(self.lbl_scope)
 
         # ---- 대상 문서 ----
         # #18/31A5A484-A: 실제 흐름은 '문서를 한 번에 완성'하는 신규 생성으로 고정한다.
@@ -209,7 +215,7 @@ class RunView(QWidget):
 
         # ---- 액션 ----
         actions = QHBoxLayout()
-        self.btn_generate = QPushButton("문서 생성")
+        self.btn_generate = QPushButton("이 작업으로 문서 생성")
         mark(self.btn_generate, "primary", True)
         self.btn_generate.clicked.connect(self._on_generate)
         wire_submit_shortcut(self, self.btn_generate)  # Ctrl+Return → 문서 생성(ST-12)

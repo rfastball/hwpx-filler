@@ -71,8 +71,8 @@ class AppController:
             "여러 작업이 공유하는 필드↔소스 매핑 베이스를 저작·재사용합니다.",
         )
         self.shell.register_static(
-            "matrix", "여러 작업 일괄 실행",
-            "선택한 작업들을 한 데이터에 일괄 적용해 생성합니다.",
+            "matrix", "같은 데이터로 여러 작업 실행",
+            "선택한 작업 여러 개에 같은 데이터 행들을 적용해 작업별 문서를 생성합니다.",
         )
         self.shell.register_static(
             "txt", "즉시 기안",

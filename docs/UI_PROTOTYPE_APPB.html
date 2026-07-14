@@ -371,7 +371,7 @@
                   <div class="track hwpx">
                     <div class="th"><span class="tt">정식 문서 생성 · HWPX</span>
                       <span class="row"><!-- Qt 시그널 matrix_run_requested(J2) — VM 표면 아님 -->
-                        <button class="btn sm">여러 작업 일괄 실행</button>
+                        <button class="btn sm">같은 데이터로 여러 작업 실행</button>
                         <button class="btn primary sm">＋ 새 작업</button></span></div>
                     <p class="tsub">누름틀 템플릿 + 매핑을 작업으로 저장 → 데이터 겨눠 .hwpx 생성.</p>
                     <!-- 작업 브라우저(패싯 탐색, JOB_BROWSER_DESIGN §4): 사용자 소유 group-by 렌즈
@@ -390,7 +390,7 @@
                         <div class="jn" data-vm="JobRow.name">공고서 자동생성 <span class="pill" data-vm="JobRow.compile_badge">✅ 실행 준비</span></div>
                         <div class="jm" data-vm="JobRow.meta_line">공고서_양식.hwpx · 필드 14개 · <span class="mono">공고서-{{ID}}</span></div>
                         <div class="jfoot"><span class="jr" data-vm="JobRow.last_run_display">최근 실행 2026-07-09 15:42</span>
-                          <span class="row"><button class="btn primary sm">실행</button><button class="btn sm">편집</button><button class="btn sm">삭제</button></span></div>
+                          <span class="row"><button class="btn primary sm">이 작업 실행</button><button class="btn sm">편집</button><button class="btn sm">삭제</button></span></div>
                       </div>
                       <div class="jcard">
                         <div class="jn">낙찰통지서</div>
@@ -596,6 +596,7 @@
               <div class="body">
                 <div class="heading">작업: 공고서 자동생성 · 템플릿: 공고서_양식.hwpx ·
                   파일명: <span class="mono" style="font-weight:400">공고서-{{ID}}</span></div>
+                <div class="muted" style="margin-top:5px">작업 1개로 선택한 데이터의 각 행마다 문서 1건을 만듭니다.</div>
 
                 <div class="grp"><span class="cap">대상 문서</span>
                   <span>새 문서 생성 — 작업 템플릿(공고서_양식.hwpx)으로 한 번에 완성합니다.</span>
@@ -643,7 +644,7 @@
                   <button class="btn">찾아보기…</button></div>
 
                 <div class="row" style="margin-top:14px">
-                  <button class="btn primary" id="genBtn" disabled data-vm="RunViewModel.validate_generate">생성</button>
+                  <button class="btn primary" id="genBtn" disabled data-vm="RunViewModel.validate_generate">이 작업으로 문서 생성</button>
                   <span class="muted" id="genGate" style="font-size:12px" data-vm="RunViewModel.blank_fields">
                     미입력 2필드를 확인해야 생성이 열립니다</span></div>
                 <div class="bar"><i id="genBar" data-vm="RunViewModel.mapped_records"></i></div>

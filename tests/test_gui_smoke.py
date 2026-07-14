@@ -1500,7 +1500,7 @@ def test_home_run_cta_enabled_and_emphasis_by_state(qapp, tmp_path):
 
     def _run_btn(name):
         card = home.list.itemWidget(home.list.findItems(name, Qt.MatchExactly)[0])
-        return next(b for b in card.findChildren(QPushButton) if b.text() == "실행")
+        return next(b for b in card.findChildren(QPushButton) if b.text() == "이 작업 실행")
 
     ready, absent = _run_btn("정상작업"), _run_btn("부재작업")
     # 준비(ok) = 활성 + 카드 보조 강조. 화면 전역 primary(채움)로 승격하지 않는다.
@@ -1660,6 +1660,36 @@ def test_run_view_exposes_only_one_pass_document_flow(qapp, tmp_path):
     assert view.lbl_preflight.text() == "검증 완료 — 문서를 생성할 준비가 됐습니다."
     assert "치명" not in view.lbl_preflight.text()
     assert "표면화" not in view.lbl_preflight.text()
+
+
+def test_single_and_multi_job_execution_labels_name_both_axes(qapp, tmp_path):
+    """#14 — 1작업×N행과 M작업×공통데이터를 포괄적 '일괄' 한 단어로 부르지 않는다."""
+    from hwpxfiller.core.dataset_pool import DatasetPoolRegistry
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.core.text_registry import TextTemplateRegistry
+    from hwpxfiller.gui.home import JobListHome
+    from hwpxfiller.gui.matrix_view import MatrixRunView
+
+    single = _run_view_with_data(tmp_path)
+    assert single.lbl_scope.text() == (
+        "작업 1개로 선택한 데이터의 각 행마다 문서 1건을 만듭니다."
+    )
+    assert single.btn_generate.text() == "이 작업으로 문서 생성"
+
+    matrix = MatrixRunView(JobRegistry(tmp_path / "matrix-jobs"))
+    assert matrix.windowTitle() == "HWPX Filler — 같은 데이터로 여러 작업 실행"
+    assert "작업 여러 개에 같은 데이터" in matrix.lbl_head.text()
+    assert matrix.job_box.title() == "1. 적용할 작업 (여러 개)"
+    assert matrix.data_box.title() == "2. 함께 적용할 데이터 (공통 1개)"
+    assert matrix.rec_box.title() == "4. 공통 데이터에서 사용할 행"
+    assert matrix.btn_generate.text() == "여러 작업 문서 생성"
+
+    home = JobListHome(
+        JobRegistry(tmp_path / "home-jobs"),
+        TextTemplateRegistry(tmp_path / "text-templates"),
+        pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
+    )
+    assert home.btn_matrix.text() == "같은 데이터로 여러 작업 실행"
 
 
 def _run_view_with_data(tmp_path):
