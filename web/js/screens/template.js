@@ -17,11 +17,6 @@
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   }
 
-  function switchTo(scr) {
-    const btn = document.querySelector(`.navbtn[data-scr="${scr}"]`);
-    if (btn) btn.click();
-  }
-
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
     renderHwpx(s);
@@ -102,7 +97,7 @@
   async function makeJob(path) {
     const r = await Bridge.loadTemplateIntoEditor(path);
     if (typeof r === "string" && r.startsWith("ERROR:")) { window.alert(r); return; }
-    switchTo("editor");
+    window.Nav.go("editor");   // 셸 라우터 단일 경로(P3) — navbtn .click() 합성 폐기
   }
 
   function onHwpxClick(e) {
@@ -122,7 +117,7 @@
     const act = btn.dataset.txt;
     if (act === "open") {
       Bridge.call("txt", "select_template", { name: btn.dataset.name });
-      switchTo("txt");
+      window.Nav.go("txt");   // 셸 라우터 단일 경로(P3)
     } else if (act === "delete") {
       const res = await Bridge.call(SCREEN, "txt_delete", { path: btn.dataset.path });
       if (res && res.needs_confirm && window.confirm(res.confirm_text + "\n\n삭제할까요?")) {

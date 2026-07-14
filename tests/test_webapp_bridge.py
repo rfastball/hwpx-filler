@@ -98,6 +98,27 @@ def test_unknown_action_is_loud(tmp_path):
         ctrl.dispatch("frobnicate", {})
 
 
+def test_data_label_is_server_owned_and_survives_paste(tmp_path):
+    """P4: data_label 을 스냅샷(서버)이 소유 — run/matrix 와 정렬, 붙여넣기에도 실상태 반영.
+
+    초기엔 빈 라벨. 데이터 로드 후 파일명이 스냅샷에 실린다. 붙여넣기(set_template_text)는
+    템플릿만 바꾸고 겨눈 데이터(datasource)를 유지하므로 라벨도 유지돼야 한다 — 예전 JS 의
+    명령형 클리어가 실상태와 어긋나던 균열 봉합.
+    """
+    ctrl, _ = _controller(tmp_path)
+    assert ctrl.initial()["data_label"] == ""
+
+    csv = tmp_path / "d.csv"
+    csv.write_text("공고명,추정가격,담당자\nA,1,x\nB,2,y\n", encoding="utf-8")
+    ctrl.load_data_path(str(csv))
+    assert ctrl.snapshot()["data_label"] == "d.csv"
+
+    # 붙여넣기 = 템플릿 교체이지 데이터 해제가 아니다 → 라벨·레코드 유지.
+    ctrl.dispatch("set_template_text", {"text": "안녕 {{공고명}}"})
+    snap = ctrl.snapshot()
+    assert snap["data_label"] == "d.csv" and snap["record_count"] == 2
+
+
 def test_win32_filter_block_derives_from_exts_and_is_double_null_terminated():
     """Win32 comdlg32 필터 블록이 EXCEL_EXTS 파생·이중 널 종결 구조인가.
 
