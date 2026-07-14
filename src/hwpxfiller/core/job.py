@@ -147,15 +147,40 @@ class Job:
 
     @classmethod
     def from_dict(cls, d: dict) -> "Job":
+        """durable 로드 경계 — 누락 필드는 ``.get(기본값)`` 으로 하위호환(구 JSON→기본값)하되,
+        **존재하는데 타입이 깨진** durable 값(문자열 계약 필드가 int/list/null 등)은 조용히
+        통과시키지 않고 loud 하게 던진다. 앱은 늘 str/에스케이프된 값만 쓰므로 타입 불일치는
+        외부 훼손·버그 신호다 — 여기서 격리하면 :meth:`JobRegistry.list_jobs` 의 파일단위
+        격리(RC-05)가 '손상됨' 행으로 표면화한다. 무검증 대입은 손상 값을 조용히 통과시켜
+        뒤늦게 무관한 홈 렌더(혼합타입 ``sorted()``·``_fmt_iso``)를 터뜨리는 지뢰가 됐다
+        (confirm-or-alarm: 조기 loud 격리 > 지연 크래시/무성 오염)."""
+        def _str(key: str, default: str = "") -> str:
+            v = d.get(key, default)
+            if not isinstance(v, str):
+                raise ValueError(
+                    f"작업 필드 '{key}' 는 문자열이어야 하는데 {type(v).__name__} 입니다"
+                )
+            return v
+
+        raw_tags = d.get("tags", {})
+        if not isinstance(raw_tags, dict):
+            raise ValueError(
+                f"'tags' 는 사전이어야 하는데 {type(raw_tags).__name__} 입니다"
+            )
+        tags: "dict[str, str]" = {}
+        for k, v in raw_tags.items():
+            if not isinstance(k, str) or not isinstance(v, str):
+                raise ValueError("'tags' 의 축·값은 모두 문자열이어야 합니다")
+            tags[k] = v
         return cls(
-            name=d.get("name", ""),
-            template_path=d.get("template_path", ""),
+            name=_str("name"),
+            template_path=_str("template_path"),
             mapping=MappingProfile.from_dict(d.get("mapping", {})),
-            filename_pattern=d.get("filename_pattern", DEFAULT_FILENAME_PATTERN),
+            filename_pattern=_str("filename_pattern", DEFAULT_FILENAME_PATTERN),
             version=d.get("version", 1),
-            last_run_at=d.get("last_run_at", ""),
-            base_mapping_name=d.get("base_mapping_name", ""),
-            tags=dict(d.get("tags", {})),
+            last_run_at=_str("last_run_at"),
+            base_mapping_name=_str("base_mapping_name"),
+            tags=tags,
         )
 
     def save(self, path: "str | Path") -> None:
