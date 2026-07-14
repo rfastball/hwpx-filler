@@ -558,6 +558,42 @@ def test_save_page_prefills_default_pattern_and_gates_empty(qapp, tmp_path):
     assert not page.isComplete()
 
 
+def test_save_page_explains_field_values_and_reserved_tokens(qapp, tmp_path):
+    """#17 — 파일명 도우미는 확정 매핑 필드의 첫 샘플 값과 날짜·순번 규칙을 보여 준다."""
+    from hwpxfiller.core.job import JobRegistry
+    from hwpxfiller.gui.job_editor import JobEditorWizard
+
+    wiz = JobEditorWizard(JobRegistry(tmp_path))
+    wiz.model = _model()
+    wiz.model.confirm_all()
+    wiz.records = [{"bidNtceNm": "샘플 공고"}]
+    page = wiz.page(wiz.pageIds()[-1])
+    page.initializePage()
+
+    field_help = page.lbl_field_tokens.text()
+    assert "{{공고명}}" in field_help
+    assert "샘플 공고" in field_help
+    reserved_help = page.lbl_reserved_tokens.text()
+    assert "{{date}}" in reserved_help and "{{date:YYYY-MM-DD}}" in reserved_help
+    assert "{{seq}}" in reserved_help and "{{seq:001}}" in reserved_help
+    assert "001부터 세 자리" in reserved_help
+
+
+def test_save_page_uses_plain_tag_language_and_hides_internal_design_note(qapp):
+    """#17 — 축·값 모델은 유지하되 사용자 문구는 평이하고 내부 저장 설계 설명은 없다."""
+    from hwpxfiller.gui.job_editor import SaveJobPage
+
+    page = SaveJobPage()
+    row = page._add_tag_row()
+
+    assert "데이터·행" not in page.subTitle()
+    assert row.cb_axis.lineEdit().placeholderText() == "분류 기준 (예: 금액 구간)"
+    assert row.ed_value.placeholderText() == "태그 값 (예: 1억 미만)"
+    assert "축" not in row.cb_axis.lineEdit().placeholderText()
+    assert "분류 기준" in page.lbl_tag_help.text()
+    assert "축" not in page.lbl_tag_help.text()
+
+
 def test_editor_accept_blocks_empty_pattern_no_silent_fallback(qapp, tmp_path, monkeypatch):
     """RC-20 — 빈 패턴 저장 시도는 화면에 없던 'output-{{ID}}' 무고지 폴백 대신 경고+차단."""
     from PySide6.QtWidgets import QMessageBox
