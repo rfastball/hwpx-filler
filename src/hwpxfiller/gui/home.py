@@ -343,7 +343,7 @@ class JobListHome(QWidget):
         # 개념 툴팁(ST-26): 전문 용어(누름틀·데이터 풀·매핑 프로파일)를 한 줄로 설명한다.
         self.btn_templates = QPushButton("템플릿 관리(&M)")
         self.btn_templates.setToolTip(
-            "누름틀 템플릿(.hwpx)의 컴파일 상태를 보고 스키마 추출·누름틀 변환·검토를 합니다."
+            "HWPX 누름틀의 변환·검토와 TXT 기안 템플릿의 생성·편집을 한곳에서 관리합니다."
         )
         self.btn_templates.clicked.connect(self.manage_templates_requested)
         self.btn_pool = QPushButton("데이터 관리(&P)")
