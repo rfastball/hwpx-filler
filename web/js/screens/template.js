@@ -95,6 +95,10 @@
   }
 
   async function makeJob(path) {
+    // 새 템플릿 진입 = 새 작업 세션 → 에디터에 미저장 세션이 있으면 조용히 버리지 않고 확인(#25).
+    if (await Bridge.editorHasUnsavedWork() && !window.confirm(
+      "작업 에디터에 저장하지 않은 작업 세션이 있습니다.\n" +
+      "새 템플릿으로 시작하면 이전의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?")) return;
     const r = await Bridge.loadTemplateIntoEditor(path);
     if (typeof r === "string" && r.startsWith("ERROR:")) { window.alert(r); return; }
     window.Nav.go("editor");   // 셸 라우터 단일 경로(P3) — navbtn .click() 합성 폐기

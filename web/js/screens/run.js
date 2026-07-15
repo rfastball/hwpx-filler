@@ -25,6 +25,20 @@
     renderGate(s);
     renderStatus(s);
     $("runBody").style.display = s.has_job ? "" : "none";
+    // 작업·데이터·선택이 바뀐 새 스냅샷 → 이전 생성 결과 무효화(#28, UD-10). txt.resetNote 패턴.
+    if (!generating) resetGenResult();
+  }
+
+  /* 이전 생성 결과(요약·진행바·로그)를 기본 상태로 되돌린다 — 오래된 성공 잔존 방지(#28).
+     생성 중(generating)엔 부르지 않아 진행 표시를 보존한다. 완료 결과는 renderResult 가
+     push 아닌 직접 호출로 그리므로 다음 사용자 변경(스냅샷) 전까지 유지된다. */
+  function resetGenResult() {
+    $("genBar").style.width = "0%";
+    const r = $("genResult");
+    r.textContent = "";
+    r.className = "run-result";
+    $("genLog").textContent = "";
+    logStarted = false;
   }
 
   /* 작업 목록 옵션은 변경 시에만 재구성(선택 중 리셋 방지). 값은 항상 스냅샷에 맞춘다. */
@@ -53,7 +67,7 @@
   }
 
   function renderData(s) {
-    $("dataLabel").value = s.data_label || "";
+    $("runDataLabel").value = s.data_label || "";  // 화면별 고유 id(#27) — txt 의 라벨과 분리
     $("outDir").value = s.out_dir || "";
   }
 
