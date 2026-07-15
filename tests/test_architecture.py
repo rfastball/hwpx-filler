@@ -23,6 +23,28 @@ def test_products_do_not_import_each_other() -> None:
     assert "hwpxdiff" not in _import_roots("hwpxfiller")
 
 
+def test_src_has_no_pyside6_runtime_imports() -> None:
+    """웹 이관(#20·#22·#23) 후 src/ 전체에 PySide6/shiboken6 런타임 임포트가 0 임을 못박는다.
+
+    Qt 위젯 계층은 물리 삭제됐고 두 제품 프론트엔드는 pywebview 다 — 어떤 모듈이든 Qt 를
+    다시 끌어오면(위젯 부활·실수 임포트) 여기서 시끄럽게 막는다(재유입 차단). 링1 상태
+    모듈이 docstring 에 'PySide6' 를 언급해도 실 임포트가 아니면 통과한다(AST 임포트만 스캔)."""
+    forbidden = {"PySide6", "shiboken6"}
+    offenders: list[str] = []
+    for package in ("hwpxcore", "hwpxdiff", "hwpxfiller"):
+        for path in (ROOT / "src" / package).rglob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                names: list[str] = []
+                if isinstance(node, ast.Import):
+                    names = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    names = [node.module]
+                if any(n.split(".", 1)[0] in forbidden for n in names):
+                    offenders.append(str(path.relative_to(ROOT)))
+    assert not offenders, f"src 에 PySide6 런타임 임포트 재유입: {sorted(set(offenders))}"
+
+
 def test_hwpxcore_native_stays_product_agnostic() -> None:
     """hwpxcore.native(공용 Win32 글루)는 제품·Qt 를 임포트하지 않는다.
 

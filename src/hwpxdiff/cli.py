@@ -3,8 +3,8 @@
     python -m hwpxdiff.cli OLD.hwpx NEW.hwpx [--html out.html]
     hwpxdiff OLD.hwpx NEW.hwpx          # console-script
 
-GUI 는 :mod:`hwpxdiff.app` (``hwpx-diff``). ``render_html`` 은 이 CLI 전용이다 —
-GUI 는 전문 신구대비표를 자체 렌더한다.
+GUI 는 :mod:`hwpxdiff.webapp.app` (``hwpx-diff-web``, pywebview). ``render_html`` 은 이
+CLI 전용이다 — GUI 는 전문 신구대비표를 자체 렌더한다.
 """
 
 from __future__ import annotations
