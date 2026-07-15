@@ -27,6 +27,9 @@ MOCKUP = ROOT / "docs" / "UI_PROTOTYPE_APPB.html"
 # 웹 프론트엔드(pywebview) CSS 변수 단일 출처(에픽 #20). 실앱은 스튜디오 셸 없이 앱윈도 자체라
 # --a-* 팔레트를 주 테마로 쓰고, 배지/중성 틴트까지 토큰에서 받는다(스파이크 임시색 교체).
 WEBCSS = ROOT / "web" / "css" / "tokens.css"
+# 앱 A(diff) 웹 번들도 같은 --a-* 팔레트를 쓴다 — diff 는 별도 exe·별도 web-diff/ 번들이라
+# 자립 사본이 필요하되, 값의 단일 출처는 이 JSON 이다(web/tokens.css 와 동일 _WEB_MAP).
+WEBCSS_DIFF = ROOT / "web-diff" / "css" / "tokens.css"
 # 앱 A(diff 리뷰어)도 같은 토큰에서 팔레트를 받는다 — diff 는 hwpxfiller 를 런타임에
 # 임포트하지 못하므로(패키징 제외) 자립 style.py 를 두되, 색은 이 JSON 이 단일 출처다.
 DIFF_STYLE = ROOT / "src" / "hwpxdiff" / "style.py"
@@ -181,6 +184,7 @@ def check() -> "list[str]":
         (DIFF_STYLE, OPEN_PY, CLOSE_PY, render_diff_style_region),
         (MOCKUP, OPEN_CSS, CLOSE_CSS, render_mockup_region),
         (WEBCSS, OPEN_CSS, CLOSE_CSS, render_web_region),
+        (WEBCSS_DIFF, OPEN_CSS, CLOSE_CSS, render_web_region),
     ):
         text = path.read_text(encoding="utf-8")  # read_text 가 CRLF→\n 정규화
         m = _region_re(open_m, close_m).search(text)
@@ -209,6 +213,10 @@ def rewrite() -> None:
         _splice(WEBCSS.read_text(encoding="utf-8"), OPEN_CSS, CLOSE_CSS, render_web_region(tokens)),
         encoding="utf-8", newline="\n",
     )
+    WEBCSS_DIFF.write_text(
+        _splice(WEBCSS_DIFF.read_text(encoding="utf-8"), OPEN_CSS, CLOSE_CSS, render_web_region(tokens)),
+        encoding="utf-8", newline="\n",
+    )
 
 
 def main(argv=None) -> int:
@@ -223,7 +231,8 @@ def main(argv=None) -> int:
         print("토큰 동기화 OK (style.py · 목업)")
         return 0
     rewrite()
-    print("재생성 완료: style.py · hwpxdiff/style.py · docs/UI_PROTOTYPE_APPB.html · web/css/tokens.css")
+    print("재생성 완료: style.py · hwpxdiff/style.py · docs/UI_PROTOTYPE_APPB.html · "
+          "web/css/tokens.css · web-diff/css/tokens.css")
     return 0
 
 
