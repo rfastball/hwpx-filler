@@ -61,7 +61,8 @@ function Test-GuiStart([string]$ExePath) {
 
 function Test-BundleBoundary([string]$Key, [string]$BundleDir) {
     $files = Get-ChildItem $BundleDir -Recurse -File
-    if ($Key -eq 'cli') {
+    if ($Key -eq 'cli' -or $Key -eq 'diff') {
+        # cli·diff(웹 이관, #22)는 Qt 미탑재 — PySide/Qt6 DLL 이 하나라도 있으면 실패.
         $unexpected = $files | Where-Object Name -Match '^(PySide|Qt6)'
     } else {
         $unexpected = $files | Where-Object Name -Match `
@@ -90,11 +91,12 @@ foreach ($key in $plan) {
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         Test-GuiStart $exe
     } elseif ($key -eq 'diff') {
+        # diff 는 #22 로 웹(pywebview) 이관됨 — Qt offscreen 기동(Test-GuiStart)은 무의미하다.
+        # 헤드리스 --selfcheck 가 브리지·컨트롤러·비교 엔진·번들 web-diff/ 를 스모크한다.
         & $exe --selfcheck `
             (Join-Path $corpus 'spec_revision_2025.hwpx') `
             (Join-Path $corpus 'spec_revision_2026.hwpx')
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        Test-GuiStart $exe
     } else {
         $template = Join-Path $corpus 'form_purchase_v1.hwpx'
         $template2 = Join-Path $corpus 'form_purchase_v2.hwpx'

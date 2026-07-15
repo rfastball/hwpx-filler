@@ -39,7 +39,9 @@ hwpxdiff = "hwpxdiff.cli:main"
 [project.gui-scripts]
 hwpx-filler = "hwpxfiller.gui.app:main"
 hwpx-filler-web = "hwpxfiller.webapp.app:main"
+# diff 웹 진입점(#22). 구 Qt 진입점(hwpx-diff)은 단계 B(PySide6 제거)까지 병존.
 hwpx-diff = "hwpxdiff.app:main"
+hwpx-diff-web = "hwpxdiff.webapp.app:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/hwpxcore", "src/hwpxdiff", "src/hwpxfiller"]
