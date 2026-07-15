@@ -348,7 +348,9 @@ class EditorController:
             mapping=verdict.profile,
             filename_pattern=self.pattern,
         )
-        self.registry.save(job)
+        # 위 게이트(needs_overwrite_confirm→confirm_overwrite)가 victim 을 재진술 확인시킨 뒤라
+        # slug 충돌이어도 사용자가 확정한 상태 → core 가드에 명시적 opt-in 을 통과한다.
+        self.registry.save(job, allow_overwrite=True)
         saved = self.job_name
         self._reset()  # 저장 후 새 작업 준비(에디터 초기화)
         return {"ok": True, "saved_name": saved}
