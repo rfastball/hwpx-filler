@@ -90,7 +90,7 @@
         </div>
       </header>
       <div class="wsteps" id="editor-steps"></div>
-      <div class="wbody" id="editor-body"></div>
+      <div class="wbody" id="editor-body" data-preserve-scroll></div>
       <footer class="wfoot" id="editor-foot"></footer>
     </section>
 
@@ -142,7 +142,7 @@
             <button class="btn sm" id="selAll">전체 선택</button>
             <button class="btn sm" id="selNone">전체 해제</button></div>
         </div>
-        <div class="reclist" id="recList"></div>
+        <div class="reclist" id="recList" data-preserve-scroll></div>
 
         <!-- 저장 폴더 -->
         <div class="run-row"><span class="lbl">저장 폴더</span>
@@ -185,7 +185,7 @@
               <button class="btn sm" id="mxJobAll">전체 선택</button>
               <button class="btn sm" id="mxJobNone">전체 해제</button></div>
           </div>
-          <div class="reclist" id="mxJobList"></div>
+          <div class="reclist" id="mxJobList" data-preserve-scroll></div>
         </div>
 
         <!-- 2. 함께 적용할 데이터(공통 1개) -->
@@ -209,7 +209,7 @@
             <button class="btn sm" id="mxSelAll">전체 선택</button>
             <button class="btn sm" id="mxSelNone">전체 해제</button></div>
         </div>
-        <div class="reclist" id="mxRecList"></div>
+        <div class="reclist" id="mxRecList" data-preserve-scroll></div>
 
         <!-- 5. 저장 폴더(작업별 하위폴더) -->
         <div class="run-row"><span class="lbl">저장 폴더 · 작업별 하위폴더</span>
@@ -261,13 +261,13 @@
       <div class="panes">
         <section class="pane tokens">
           <h4>필드 상태 (토큰)</h4>
-          <div id="tokPanel"></div>
+          <div id="tokPanel" data-preserve-scroll></div>
           <p class="muted hint">값은 데이터에서 채움. <span class="danger">항목 없음</span>은
             <span class="mono">{{토큰}}</span> 그대로 남깁니다.</p>
         </section>
         <section class="pane preview">
           <h4>실시간 렌더 · 이 view가 진실</h4>
-          <div class="render" id="renderView" aria-live="polite"></div>
+          <div class="render" id="renderView" aria-live="polite" data-preserve-scroll></div>
         </section>
       </div>
 
@@ -350,6 +350,7 @@
 </div>
 
 <script src="js/bridge.js"></script>
+<script src="js/preserve.js"></script>
 <script src="js/modal.js"></script>
 <script src="js/screens/home.js"></script>
 <script src="js/screens/txt.js"></script>

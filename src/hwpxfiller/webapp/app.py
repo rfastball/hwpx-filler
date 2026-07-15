@@ -222,6 +222,37 @@ _MODAL_A11Y_PROBE_JS = r"""
 """
 
 
+# 상호작용 보존 기제 프로브(#28) — 실 브라우저에서 Preserve 헬퍼가 innerHTML 재구성을 가로질러
+# 포커스·캐럿(selection)·옵트인 스크롤을 실제로 보존하는지 되읽는다. 화면 네비/데이터 의존 없이
+# 결정적으로 기제를 검증하기 위해 임시 픽스처를 만들어 실제 focus/setSelectionRange/scrollTop 을
+# 건 뒤, render() 가 하는 것과 동일한 innerHTML 교체를 Preserve.around 로 감싸 되읽는다.
+_PRESERVE_PROBE_JS = r"""
+(function () {
+  var host = document.createElement('div');
+  host.id = 'preserveProbeHost';
+  host.setAttribute('data-preserve-scroll', '');
+  host.style.cssText = 'height:40px;overflow:auto';
+  var markup = '<div style="height:400px"><input id="preserveProbeInput" value="abcdef"></div>';
+  host.innerHTML = markup;
+  document.body.appendChild(host);
+  var input = document.getElementById('preserveProbeInput');
+  input.focus();
+  input.setSelectionRange(2, 4);
+  host.scrollTop = 120;
+  window.Preserve.around(function () { host.innerHTML = markup; });  // render() 의 재구성과 동형
+  var a = document.activeElement;
+  var res = {
+    focus_id: a ? a.id : null,          // 재구성 뒤 같은 입력으로 포커스 복귀했는가
+    sel_start: a ? a.selectionStart : null,  // 캐럿/선택 범위 보존(2)
+    sel_end: a ? a.selectionEnd : null,      // (4)
+    scroll_top: document.getElementById('preserveProbeHost').scrollTop  // 옵트인 스크롤 보존(120)
+  };
+  host.remove();
+  return res;
+})()
+"""
+
+
 # ------------------------------------------------------------------ 자가검증(Q3)
 def _selftest_drive(window: "object") -> None:
     """동결 exe 부팅 자가검증 — 창이 뜨고 렌더/브리지가 도는지 되읽어 파일로 확정 후 정식 종료.
@@ -257,6 +288,8 @@ def _selftest_drive(window: "object") -> None:
         window.resize(1180, 820)  # type: ignore[attr-defined]  # 기본 크기 = 경계 위 → 2판 복귀
         time.sleep(0.6)
         result["grid_wide"] = window.evaluate_js(grid_probe)  # type: ignore[attr-defined]
+        # 상호작용 보존(#28) — Preserve 헬퍼가 재구성 가로질러 포커스·캐럿·스크롤 유지하는지.
+        result["preserve"] = window.evaluate_js(_PRESERVE_PROBE_JS)  # type: ignore[attr-defined]
     except Exception as exc:  # noqa: BLE001
         result["error"] = repr(exc)
     # 출력 경로: 테스트 하네스(#30 접근 A)가 HWPX_SELFTEST_OUT 로 결정적 위치를 준다.

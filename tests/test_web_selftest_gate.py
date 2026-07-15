@@ -97,3 +97,14 @@ class TestWebSelftestGate:
         # 넓힐 때(경계 위) .app 이 2판(2 tracks, 레일+스테이지)으로 복귀 — 경계가 죽어 상시 적층되는 회귀 가드(#27).
         wide = selftest_result["grid_wide"]
         assert len(wide.split()) == 2, f"넓은 폭에서 .app 이 2판으로 안 펴짐: {wide!r}"
+
+    def test_preserve_restores_focus_and_caret_across_rerender(self, selftest_result: dict) -> None:
+        # Preserve 헬퍼가 innerHTML 재구성을 가로질러 포커스와 캐럿/선택 범위를 복원한다(#28).
+        p = selftest_result["preserve"]
+        assert p["focus_id"] == "preserveProbeInput", f"재구성 뒤 포커스 유실: {p['focus_id']!r}"
+        assert (p["sel_start"], p["sel_end"]) == (2, 4), f"캐럿/선택 범위 유실: {p!r}"
+
+    def test_preserve_restores_scroll_across_rerender(self, selftest_result: dict) -> None:
+        # 옵트인(data-preserve-scroll) 컨테이너의 스크롤 위치가 재구성을 가로질러 유지된다(#28).
+        p = selftest_result["preserve"]
+        assert p["scroll_top"] == 120, f"옵트인 스크롤 위치 유실: {p['scroll_top']!r}"

@@ -33,22 +33,24 @@
 
   /* Python→웹 푸시 렌더. Bridge.onPush 로 등록된다. */
   function render(s) {
-    LAST = s;
-    $("recIdx").textContent = `${s.record_index} / ${s.record_count}`;
-    $("recPrev").disabled = s.record_count <= 1;
-    $("recNext").disabled = s.record_count <= 1;
+    Preserve.around(() => {  // 재구성 가로질러 포커스·캐럿·프리뷰/토큰 스크롤 보존(#28)
+      LAST = s;
+      $("recIdx").textContent = `${s.record_index} / ${s.record_count}`;
+      $("recPrev").disabled = s.record_count <= 1;
+      $("recNext").disabled = s.record_count <= 1;
 
-    const rows = s.tokens.map((t) =>
-      `<div class="tok ${t.state}">` +
-      `<span class="tname" title="{{${esc(t.name)}}}">{{${esc(t.name)}}}</span>` +
-      `<span class="st">${STATE_LABEL[t.state]}</span></div>`
-    ).join("");
-    $("tokPanel").innerHTML = rows || `<p class="muted">토큰이 없는 템플릿입니다.</p>`;
+      const rows = s.tokens.map((t) =>
+        `<div class="tok ${t.state}">` +
+        `<span class="tname" title="{{${esc(t.name)}}}">{{${esc(t.name)}}}</span>` +
+        `<span class="st">${STATE_LABEL[t.state]}</span></div>`
+      ).join("");
+      $("tokPanel").innerHTML = rows || `<p class="muted">토큰이 없는 템플릿입니다.</p>`;
 
-    $("renderView").innerHTML = buildPreview(s.template_text, s.record);
-    $("txtDataLabel").value = s.data_label || "";  // 서버 소유(P4)·화면별 고유 id(#27) — run/matrix 와 분리
-    setStatus(s.missing_fields, s.empty_fields);
-    resetNote();
+      $("renderView").innerHTML = buildPreview(s.template_text, s.record);
+      $("txtDataLabel").value = s.data_label || "";  // 서버 소유(P4)·화면별 고유 id(#27) — run/matrix 와 분리
+      setStatus(s.missing_fields, s.empty_fields);
+      resetNote();
+    });
   }
 
   function setStatus(missing, empty) {

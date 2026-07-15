@@ -22,6 +22,11 @@ WEB_CSS = Path(__file__).resolve().parents[1] / "web" / "css" / "app.css"
 # 최소 크기에서도 가로 오버플로 없이 쓸 수 있다. 경계나 접힘 규칙이 사라지면 회귀.
 RESPONSIVE_BREAKPOINT_PX = 820
 
+# 전체 스냅샷 재렌더가 포커스·캐럿·스크롤을 뭉개지 않도록 render() 를 Preserve.around 로 감싸는
+# 화면들(#28). 어느 화면이 래핑을 조용히 떨구면 상호작용 유실 회귀 → 정적 가드로 차단.
+WEB_JS_DIR = Path(__file__).resolve().parents[1] / "web" / "js"
+PRESERVE_WRAPPED_SCREENS = ("txt", "editor", "run", "matrix")
+
 # 여섯 화면 루트 — 셸 라우터가 표시/숨김으로 전환하는 최상위 컨테이너(회귀 시 화면 소실).
 SCREEN_ROOTS = ("scr-home", "scr-editor", "scr-run", "scr-matrix", "scr-txt", "scr-tpl")
 
@@ -180,3 +185,19 @@ def test_responsive_breakpoint_collapses_layout():
     assert ".app{grid-template-columns:1fr}" in css, (
         ".app 세로 단일열 접힘 규칙이 사라졌습니다 — 최소 크기에서 가로 오버플로 회귀(#27)."
     )
+
+
+def test_preserve_helper_loaded_and_wraps_screen_renders():
+    """상호작용 보존 헬퍼가 로드되고 4개 화면 render() 가 Preserve.around 로 감싸져 있어야 한다(#28).
+
+    실 재구성 가로지르기 거동(포커스·캐럿·스크롤 유지)은 selftest 게이트가 되읽어 단언한다 —
+    여기선 헤드리스 포함 전 플랫폼에서 배선(스크립트 로드·화면별 래핑)의 존재를 정적으로 가드해
+    어느 화면이 래핑을 조용히 떨구는 회귀를 막는다.
+    """
+    index = WEB_INDEX.read_text(encoding="utf-8")
+    assert 'src="js/preserve.js"' in index, "preserve.js 가 index.html 에 로드되지 않았습니다(#28)."
+    for scr in PRESERVE_WRAPPED_SCREENS:
+        src = (WEB_JS_DIR / "screens" / f"{scr}.js").read_text(encoding="utf-8")
+        assert "Preserve.around" in src, (
+            f"{scr}.js 의 render() 가 Preserve.around 래핑을 잃었습니다 — 재렌더 시 상호작용 유실(#28)."
+        )

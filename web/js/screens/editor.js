@@ -16,10 +16,12 @@
 
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
-    LAST = s;
-    $("editor-steps").innerHTML = stepHeader(s);
-    $("editor-body").innerHTML = stepBody(s);
-    $("editor-foot").innerHTML = footer(s);
+    Preserve.around(() => {  // 마법사 폼 포커스·캐럿·본문 스크롤 보존(#28)
+      LAST = s;
+      $("editor-steps").innerHTML = stepHeader(s);
+      $("editor-body").innerHTML = stepBody(s);
+      $("editor-foot").innerHTML = footer(s);
+    });
   }
 
   function stepHeader(s) {
