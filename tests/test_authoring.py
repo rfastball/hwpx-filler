@@ -219,6 +219,212 @@ def test_fragment_pathology_taxonomy_stays_loud():
         assert reason in report.skipped[0].reason
 
 
+# ------------------------------------------------- 복합 런 skip 축소 (#9)
+def test_composite_multi_t_single_run_compiles_losslessly():
+    """한 런에 여러 hp:t 로 쪼개진 토큰(복합 런)도 구간이 깨끗하면 무손실 컴파일한다."""
+    from hwpxcore.text_extract import extract_document, full_text
+
+    xml = (
+        '<hp:p><hp:run charPrIDRef="7">'
+        "<hp:t>{{계약</hp:t><hp:t>명}}</hp:t>"
+        "</hp:run></hp:p>"
+    )
+    pkg = _pkg(xml)
+    before = full_text(extract_document(pkg))
+
+    sites = scan_tokens(pkg)
+    assert [(s.name, s.compilable) for s in sites] == [("계약명", True)]
+
+    pkg, report = compile_document(pkg)
+    assert report.compiled == ["계약명"]
+    assert report.skipped == []
+    assert full_text(extract_document(pkg)) == before
+    assert extract_schema(pkg).field_names() == ["계약명"]
+
+
+def test_composite_preserves_trailing_control_outside_token():
+    """토큰 바깥(뒤)의 제어 요소는 복합 컴파일 중에도 원형 보존된다."""
+    from hwpxcore.text_extract import extract_document, full_text
+
+    xml = (
+        '<hp:p><hp:run charPrIDRef="7">'
+        "<hp:t>{{계약명}}</hp:t>"
+        '<hp:ctrl><hp:bookmark note="KEEP"/></hp:ctrl>'
+        "</hp:run></hp:p>"
+    )
+    pkg = _pkg(xml)
+    before = full_text(extract_document(pkg))
+
+    pkg, report = compile_document(pkg)
+    assert report.compiled == ["계약명"]
+    out = pkg.entries["Contents/section0.xml"].decode("utf-8")
+    assert 'note="KEEP"' in out  # 토큰 밖 구조 보존
+    assert full_text(extract_document(pkg)) == before
+    assert extract_schema(pkg).field_names() == ["계약명"]
+
+
+def test_composite_preserves_inline_tab_outside_token():
+    """토큰 뒤 인라인 탭·평문(같은 hp:t 안)이 복합 컴파일 중에도 보존된다."""
+    from hwpxcore.text_extract import extract_document, full_text
+
+    xml = (
+        '<hp:p><hp:run charPrIDRef="7">'
+        "<hp:t>{{계약명}}<hp:tab/>뒤</hp:t>"
+        "</hp:run></hp:p>"
+    )
+    pkg = _pkg(xml)
+    before = full_text(extract_document(pkg))
+
+    pkg, report = compile_document(pkg)
+    assert report.compiled == ["계약명"]
+    out = pkg.entries["Contents/section0.xml"].decode("utf-8")
+    assert "<hp:tab" in out  # 토큰 밖 탭 보존
+    assert full_text(extract_document(pkg)) == before  # "{{계약명}}\t뒤"
+    assert extract_schema(pkg).field_names() == ["계약명"]
+
+
+def test_composite_compile_roundtrip_fill_and_idempotence():
+    """복합 컴파일 뒤에도 compile→fill 라운드트립과 재컴파일 멱등이 성립한다."""
+    xml = (
+        '<hp:p><hp:run charPrIDRef="7">'
+        "<hp:t>{{계약</hp:t><hp:t>명}}</hp:t>"
+        '<hp:ctrl><hp:bookmark/></hp:ctrl>'
+        "</hp:run></hp:p>"
+    )
+    pkg, report = compile_document(_pkg(xml))
+    assert report.compiled == ["계약명"]
+    compiled_bytes = pkg.entries["Contents/section0.xml"]
+
+    _, second = compile_document(pkg)
+    assert second.compiled == []
+    assert second.modified is False
+    assert pkg.entries["Contents/section0.xml"] == compiled_bytes  # 멱등
+
+    doc = FieldDocument(compiled_bytes)
+    assert doc.set_field("계약명", "정보시스템 구축") is True
+    assert "정보시스템 구축" in "".join(etree.fromstring(doc.to_bytes()).itertext())
+
+
+def test_composite_structure_inside_token_stays_loud():
+    """복합 런이라도 토큰 **안**에 구조가 끼면 추측하지 않고 병리별로 skip 한다."""
+    xml_tab = (
+        '<hp:p><hp:run charPrIDRef="7"><hp:t>{{계약<hp:tab/>명}}</hp:t></hp:run></hp:p>'
+    )
+    xml_ctrl = (
+        "<hp:p>"
+        '<hp:run charPrIDRef="7"><hp:t>{{계약</hp:t></hp:run>'
+        "<hp:run charPrIDRef=\"7\"><hp:ctrl><hp:bookmark/></hp:ctrl></hp:run>"
+        '<hp:run charPrIDRef="7"><hp:t>명}}</hp:t></hp:run>'
+        "</hp:p>"
+    )
+    xml_struct = (
+        '<hp:p><hp:run charPrIDRef="7">'
+        "<hp:t>{{계약</hp:t><hp:tbl/><hp:t>명}}</hp:t>"
+        "</hp:run></hp:p>"
+    )
+    for xml, reason in (
+        (xml_tab, "탭/줄바꿈"),
+        (xml_ctrl, "제어 요소"),
+        (xml_struct, "구조 요소"),
+    ):
+        pkg = _pkg(xml)
+        before = pkg.entries["Contents/section0.xml"]
+        sites = scan_tokens(pkg)
+        assert pkg.entries["Contents/section0.xml"] == before  # 무변형
+        assert len(sites) == 1 and sites[0].compilable is False
+        assert reason in sites[0].reason
+
+        _, report = compile_document(pkg)
+        assert report.compiled == []
+        assert report.modified is False
+        assert len(report.skipped) == 1 and reason in report.skipped[0].reason
+
+
+def test_composite_mixed_format_stays_skipped():
+    """복합 런 확장이 혼합 서식(charPrIDRef 상이) 규칙을 느슨하게 만들지 않는다.
+
+    값 서식 상속이 애매하므로 조용히 추측하지 않고 skip 유지(ROADMAP 원칙).
+    """
+    xml = (
+        "<hp:p>"
+        '<hp:run charPrIDRef="7"><hp:t>{{계약</hp:t></hp:run>'
+        '<hp:run charPrIDRef="8"><hp:t>명}}</hp:t><hp:ctrl><hp:bookmark/></hp:ctrl></hp:run>'
+        "</hp:p>"
+    )
+    pkg = _pkg(xml)
+    before = pkg.entries["Contents/section0.xml"]
+    _, report = compile_document(pkg)
+    assert report.compiled == []
+    assert report.modified is False
+    assert len(report.skipped) == 1
+    assert "혼합 서식" in report.skipped[0].reason
+    assert pkg.entries["Contents/section0.xml"] == before  # 무변형
+
+
+def test_composite_preserves_empty_attributed_t_outside_token():
+    """속성만 있고 텍스트·자식이 없는 hp:t(예: marker)가 복합 런에 있어도 소실되지 않는다.
+
+    회귀: ``_clip_t`` 가 폭-0 요소를 문자/자식 단위로만 취급하면 세 구간(토큰
+    앞/값/뒤) 호출 모두 ``None`` 을 반환해 요소가 통째로 사라진다.
+    """
+    xml = (
+        '<hp:p><hp:run charPrIDRef="7">'
+        "<hp:t>{{계약명}}</hp:t>"
+        '<hp:t marker="KEEP"/>'
+        "</hp:run></hp:p>"
+    )
+    pkg = _pkg(xml)
+    pkg, report = compile_document(pkg)
+    assert report.compiled == ["계약명"]
+    out = pkg.entries["Contents/section0.xml"].decode("utf-8")
+    assert 'marker="KEEP"' in out
+
+
+def test_composite_leading_run_level_tab_field_boundary_exact():
+    """런의 첫 자식(hp:t 안이 아니라 런-레벨)이 탭인 경우에도 필드 경계가 정확하다.
+
+    회귀: run_base 를 런의 실제 시작이 아니라 첫 hp:t 위치로 잡으면, 선행
+    런-레벨 탭이 _clip_run 순회에서 이중 계산돼 한 칸 밀린다 — 탭이 필드값에
+    삼켜지고 닫는 중괄호가 값 밖으로 샌다. full_text 비교는 경계-무관이라
+    이 손상을 잡지 못하므로 set_field 라운드트립으로 직접 확인한다.
+    """
+    xml = (
+        '<hp:p><hp:run charPrIDRef="7">'
+        "<hp:tab/>"
+        "<hp:t>{{계약명}}</hp:t>"
+        "</hp:run></hp:p>"
+    )
+    pkg = _pkg(xml)
+    pkg, report = compile_document(pkg)
+    assert report.compiled == ["계약명"]
+
+    doc = FieldDocument(pkg.entries["Contents/section0.xml"])
+    assert doc.set_field("계약명", "정보시스템 구축") is True
+    out = etree.fromstring(doc.to_bytes())
+    filled = "".join(out.itertext())
+    assert "정보시스템 구축" in filled
+    assert "}" not in filled  # 닫는 중괄호가 값 밖으로 새면 안 된다
+    assert out.find(f".//{{{HP}}}tab") is not None  # 선행 탭 보존
+
+
+def test_composite_leading_text_preserved_and_field_created():
+    """토큰 앞 평문 + 뒤 제어를 동시에 가진 복합 런에서 순서·필드가 모두 옳다."""
+    from hwpxcore.text_extract import extract_document, full_text
+
+    xml = (
+        '<hp:p><hp:run charPrIDRef="7">'
+        "<hp:t>계약: {{계약명}}</hp:t>"
+        "<hp:ctrl><hp:bookmark/></hp:ctrl>"
+        "</hp:run></hp:p>"
+    )
+    pkg = _pkg(xml)
+    before = full_text(extract_document(pkg))
+    pkg, report = compile_document(pkg)
+    assert report.compiled == ["계약명"]
+    assert full_text(extract_document(pkg)) == before  # "계약: {{계약명}}"
+    assert extract_schema(pkg).field_names() == ["계약명"]
+
+
 def test_dangling_open_brace_reported_not_silent():
     """미완결 여는 괄호({{ 만 있고 닫는 }} 없음)는 조용히 흘리지 않고 신고한다.
 
