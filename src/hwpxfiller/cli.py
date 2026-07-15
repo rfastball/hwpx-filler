@@ -32,7 +32,7 @@ from .core.job import DEFAULT_FILENAME_PATTERN
 from .data.nara import NaraFetchError
 from .naming import pattern_field_tokens
 from hwpxcore.validate import validate
-from .data.excel import ExcelDataSource
+from .data.excel import ExcelDataSource, sheet_overview
 
 
 def _schema_main(argv: "list[str]") -> int:
@@ -185,6 +185,7 @@ def _render_main(argv: "list[str]") -> int:
 
     with open(args.template, encoding="utf-8") as fh:
         template = fh.read()
+    _require_sheet_if_ambiguous(ap, args.data, args.sheet)
     records = ExcelDataSource(args.data, sheet=args.sheet).records()
     if not records:
         print("데이터에 레코드가 없습니다.", file=sys.stderr)
@@ -251,6 +252,28 @@ def _resolve_service_key(
     return store.get(NARA_SERVICE_KEY_NAME)
 
 
+def _require_sheet_if_ambiguous(
+    ap: argparse.ArgumentParser, path: str, sheet: "str | None"
+) -> None:
+    """다중 시트 워크북에서 ``--sheet`` 미지정을 loud 게이트 — 조용한 첫 시트 추측 금지(#2).
+
+    ``--sheet`` 가 명시됐거나 CSV·단일 시트면 통과("모호할 때만 묻는다"). 2+ 시트인데
+    미지정이면 시트 목록을 stderr 에 나열하고 ``ap.error`` 로 중단(exit 2, ``--sheet`` 요구).
+    판정 단일 출처는 :func:`sheet_overview`(빈 리스트=CSV, 길이 1=단일, 2+=모호).
+    """
+    if sheet is not None:
+        return
+    overview = sheet_overview(path)
+    if len(overview) >= 2:
+        listing = "\n".join(
+            f"  - {name} ({rows}행 x {cols}열)" for name, rows, cols in overview
+        )
+        ap.error(
+            f"'{path}' 에 시트가 여러 개입니다 — 조용히 첫 시트를 쓰지 않습니다. "
+            f"--sheet <이름> 으로 지정하세요:\n{listing}"
+        )
+
+
 def _load_records(
     ap: argparse.ArgumentParser, args, store: "SecretStore | None" = None,
 ) -> "list[dict[str, str]]":
@@ -284,6 +307,7 @@ def _load_records(
     # 기본: 엑셀/CSV
     if not args.data:
         ap.error("--data 가 필요합니다 (또는 --fields, 또는 --source nara)")
+    _require_sheet_if_ambiguous(ap, args.data, args.sheet)
     return ExcelDataSource(args.data, sheet=args.sheet).records()
 
 
