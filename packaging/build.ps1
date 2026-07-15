@@ -36,40 +36,19 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $targets = @{
-    filler = @{ Spec = 'hwpx_filler.spec'; Dir = 'hwpx-filler'; Exe = 'hwpx-filler.exe' }
-    diff   = @{ Spec = 'hwpx_diff.spec';   Dir = 'hwpx-diff';   Exe = 'hwpx-diff.exe' }
-    cli    = @{ Spec = 'hwpx_cli.spec';    Dir = 'hwpx-cli';    Exe = 'hwpx-cli.exe' }
+    filler = @{ Spec = 'hwpx_filler_web.spec'; Dir = 'hwpx-filler-web'; Exe = 'hwpx-filler-web.exe' }
+    diff   = @{ Spec = 'hwpx_diff.spec';        Dir = 'hwpx-diff';       Exe = 'hwpx-diff.exe' }
+    cli    = @{ Spec = 'hwpx_cli.spec';         Dir = 'hwpx-cli';        Exe = 'hwpx-cli.exe' }
 }
 $plan = if ($Target -eq 'all') { @('filler', 'diff', 'cli') } else { @($Target) }
 
-function Test-GuiStart([string]$ExePath) {
-    $previous = $env:QT_QPA_PLATFORM
-    $env:QT_QPA_PLATFORM = 'offscreen'
-    try {
-        $process = Start-Process -FilePath $ExePath -PassThru -WindowStyle Hidden
-        Start-Sleep -Seconds 3
-        $process.Refresh()
-        if ($process.HasExited) {
-            throw "GUI 조기 종료(exit $($process.ExitCode)): $ExePath"
-        }
-        Stop-Process -Id $process.Id -Force
-        Write-Host "GUI 기동: OK ($ExePath)" -ForegroundColor Green
-    } finally {
-        $env:QT_QPA_PLATFORM = $previous
-    }
-}
-
-function Test-BundleBoundary([string]$Key, [string]$BundleDir) {
+function Test-BundleBoundary([string]$BundleDir) {
+    # 세 타깃 모두 웹 이관 완료(#20·#22·#23)로 Qt 미탑재 — PySide/Qt6 DLL 이 하나라도
+    # 번들에 있으면 실패(재유입 차단).
     $files = Get-ChildItem $BundleDir -Recurse -File
-    if ($Key -eq 'cli' -or $Key -eq 'diff') {
-        # cli·diff(웹 이관, #22)는 Qt 미탑재 — PySide/Qt6 DLL 이 하나라도 있으면 실패.
-        $unexpected = $files | Where-Object Name -Match '^(PySide|Qt6)'
-    } else {
-        $unexpected = $files | Where-Object Name -Match `
-            '^(Qt6(Qml|Quick|Pdf|Network|OpenGL|VirtualKeyboard)|opengl32sw|qtvirtualkeyboardplugin|qpdf\.dll)'
-    }
+    $unexpected = $files | Where-Object Name -Match '^(PySide|Qt6)'
     if ($unexpected) {
-        throw "미사용 런타임이 번들에 남음: $($unexpected.Name -join ', ')"
+        throw "미사용 Qt 런타임이 번들에 남음: $($unexpected.Name -join ', ')"
     }
 }
 
@@ -83,16 +62,17 @@ foreach ($key in $plan) {
 
     $exe = Join-Path (Join-Path $dist $item.Dir) $item.Exe
     if (-not (Test-Path $exe)) { throw "onedir exe 누락: $exe" }
-    Test-BundleBoundary $key (Split-Path -Parent $exe)
+    Test-BundleBoundary (Split-Path -Parent $exe)
     if ($SkipCheck) { continue }
 
     if ($key -eq 'filler') {
+        # filler 는 #20·#23 으로 웹(pywebview) 이관됨 — 헤드리스 --selfcheck 가 브리지·화면
+        # 컨트롤러·링1 VM·번들 web/ 를 스모크한다(창 기동은 app.py --selftest 담당).
         & $exe --selfcheck
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-        Test-GuiStart $exe
     } elseif ($key -eq 'diff') {
-        # diff 는 #22 로 웹(pywebview) 이관됨 — Qt offscreen 기동(Test-GuiStart)은 무의미하다.
-        # 헤드리스 --selfcheck 가 브리지·컨트롤러·비교 엔진·번들 web-diff/ 를 스모크한다.
+        # diff 는 #22 로 웹(pywebview) 이관됨 — 헤드리스 --selfcheck 가 브리지·컨트롤러·
+        # 비교 엔진·번들 web-diff/ 를 스모크한다.
         & $exe --selfcheck `
             (Join-Path $corpus 'spec_revision_2025.hwpx') `
             (Join-Path $corpus 'spec_revision_2026.hwpx')
