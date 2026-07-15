@@ -20,10 +20,17 @@
 보고 토큰을 찾는다. 적용할 때는 오프셋을 원래 런으로 되돌려 각 조각의 속성과 텍스트를
 보존한다. 탭·줄바꿈·제어 요소 또는 서로 다른 ``charPrIDRef`` 를 가로지르는 토큰은
 서식을 추측하지 않고 skipped 로 신고한다.
+
+**복합 런.** 토큰이 걸친 런이 단순하지 않아도(여러 ``hp:t``·인라인 탭/줄바꿈·제어
+요소를 함께 지님) **토큰 구간 자체가 깨끗하면**(구간 안에 구조 경계 없음 + 단일
+확정 ``charPrIDRef``) 컴파일한다. 런을 오프셋으로 잘라 토큰 바깥의 구조(제어·탭 등)와
+속성을 원형대로 보존하고 토큰 구간만 누름틀로 치환한다. 토큰 **안**에 구조가 끼거나
+서식이 섞이면 여전히 추측하지 않고 skipped 로 신고한다(명시성 유지).
 """
 
 from __future__ import annotations
 
+import copy
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -269,14 +276,102 @@ def _text_with_inline_events(t_el: etree._Element) -> "tuple[str, list[tuple[int
     return "".join(parts), events
 
 
-def _report_uncompilable_tokens(
-    p_el: etree._Element, context: str, report: CompileReport
-) -> None:
-    """depth-0 문단 문자열을 복원해 구조/서식 경계를 가로지른 토큰을 신고."""
+def _t_length(t_el: etree._Element) -> int:
+    """depth-0 텍스트 좌표에서 ``hp:t`` 하나가 차지하는 문자 길이(탭/줄바꿈 = 1자)."""
+    return len(_text_with_inline_events(t_el)[0])
+
+
+def _clip_t(
+    t_el: etree._Element, base: int, lo: int, hi: int
+) -> "etree._Element | None":
+    """``hp:t`` 의 혼합 콘텐츠를 depth-0 오프셋 ``[lo, hi)`` 로 잘라 새 ``hp:t`` 로 복원.
+
+    텍스트는 문자 단위로, 인라인 요소(탭/줄바꿈=1자·기타=0자)는 위치로 취사한다.
+    구간에 남는 게 없으면 ``None``. 요소·꼬리텍스트·속성을 원형 보존한다.
+    """
+    items: "list[tuple[int, str, object, int]]" = []  # (pos, kind, payload, width)
+    pos = base
+    for ch in t_el.text or "":
+        items.append((pos, "char", ch, 1))
+        pos += 1
+    for child in t_el:
+        width = 1 if _local(child.tag) in ("tab", "lineBreak") else 0
+        items.append((pos, "elem", child, width))
+        pos += width
+        for ch in child.tail or "":
+            items.append((pos, "char", ch, 1))
+            pos += 1
+
+    lead: "list[str]" = []
+    kids: "list[list]" = []  # [clone, tail_chars]
+    for item_pos, kind, payload, _width in items:
+        if not (lo <= item_pos < hi):
+            continue
+        if kind == "char":
+            if kids:
+                kids[-1][1].append(payload)
+            else:
+                lead.append(payload)
+        else:
+            clone = copy.deepcopy(payload)
+            clone.tail = None
+            kids.append([clone, []])
+
+    if not lead and not kids:
+        return None
+    new_t = etree.Element(t_el.tag, dict(t_el.attrib))
+    new_t.text = "".join(lead) or None
+    for clone, tail in kids:
+        clone.tail = "".join(tail) or None
+        new_t.append(clone)
+    return new_t
+
+
+def _clip_run(
+    run: etree._Element, base: int, lo: int, hi: int
+) -> "etree._Element | None":
+    """런을 depth-0 오프셋 ``[lo, hi)`` 로 잘라 속성·구조를 보존한 새 런으로 복원.
+
+    토큰 구간이 깨끗한(구조 경계 없는) 런에만 쓴다 — 그래서 이 런의 모든 자식이
+    depth-0 이고 pos 추적이 depth-0 좌표와 일치한다.
+    """
+    new_run = etree.Element(run.tag, dict(run.attrib))
+    pos = base
+    for child in run:
+        local = _local(child.tag)
+        if local == "t":
+            clipped = _clip_t(child, pos, lo, hi)
+            if clipped is not None:
+                new_run.append(clipped)
+            pos += _t_length(child)
+        else:
+            width = 1 if local in ("tab", "lineBreak") else 0
+            if lo <= pos < hi:
+                new_run.append(copy.deepcopy(child))
+            pos += width
+    return new_run if len(new_run) else None
+
+
+@dataclass
+class _TokenSpan:
+    """한 토큰 매치의 분류 결과 — 신고·복합 컴파일 공용."""
+
+    match: "re.Match[str]"
+    name: str
+    covered: "list[etree._Element]"  # 토큰이 걸친 런(중복 제거·문서 순)
+    run_base: "dict"  # run -> depth-0 시작 오프셋
+    clean: bool  # 토큰 구간이 컴파일 가능(구조 없음·단일 확정 서식·연속)
+    all_simple: bool  # 걸친 조각이 전부 단순 런(단순 경로가 이미 처리)
+    reason: str  # clean=False 일 때 병리 사유
+
+
+def _build_paragraph_model(p_el: etree._Element):
+    """depth-0 문단 텍스트와 조각(pieces)·구조 이벤트·런 시작오프셋을 복원."""
     text_parts: "list[str]" = []
     # (start, end, run, simple, paragraph-child-index)
     pieces: "list[tuple[int, int, etree._Element, bool, int]]" = []
     events: "list[tuple[int, str]]" = []
+    run_base: "dict" = {}
     depth = 0
     length = 0
 
@@ -301,6 +396,7 @@ def _report_uncompilable_tokens(
             elif local == "t" and depth == 0:
                 value, inline_events = _text_with_inline_events(child)
                 start = length
+                run_base.setdefault(run, start)
                 text_parts.append(value)
                 length += len(value)
                 pieces.append((start, length, run, simple, child_index))
@@ -310,44 +406,145 @@ def _report_uncompilable_tokens(
                 text_parts.append("\t" if local == "tab" else "\n")
                 length += 1
 
-    text = "".join(text_parts)
-    match_starts = {match.start() for match in _TOKEN_RE.finditer(text)}
+    return "".join(text_parts), pieces, events, run_base
+
+
+def _run_has_field_ctrl(run: etree._Element) -> bool:
+    """런 안에 누름틀 경계(fieldBegin/End) 제어가 있는지 — 있으면 복합 컴파일 제외."""
+    return (
+        run.find(f".//{_hp('fieldBegin')}") is not None
+        or run.find(f".//{_hp('fieldEnd')}") is not None
+    )
+
+
+def _classify_paragraph_tokens(p_el: etree._Element) -> "list[_TokenSpan]":
+    """문단의 각 완전 토큰을 (컴파일 가능·단순여부·병리 사유)로 분류."""
+    text, pieces, events, run_base = _build_paragraph_model(p_el)
+    spans: "list[_TokenSpan]" = []
     for match in _TOKEN_RE.finditer(text):
-        covered = [piece for piece in pieces if piece[0] < match.end() and piece[1] > match.start()]
-        if not covered:
+        covered_pieces = [
+            piece for piece in pieces if piece[0] < match.end() and piece[1] > match.start()
+        ]
+        if not covered_pieces:
             continue
         inside_events = [kind for pos, kind in events if match.start() <= pos < match.end()]
-        runs = list(dict.fromkeys(piece[2] for piece in covered))
+        runs = list(dict.fromkeys(piece[2] for piece in covered_pieces))
         char_prs = {run.get("charPrIDRef") for run in runs}
-        child_indexes = [piece[4] for piece in covered]
+        child_indexes = list(dict.fromkeys(piece[4] for piece in covered_pieces))
         contiguous = child_indexes == list(range(child_indexes[0], child_indexes[-1] + 1))
         same_proven_format = len(runs) == 1 or (len(char_prs) == 1 and None not in char_prs)
-        compilable = (
+        all_simple = all(piece[3] for piece in covered_pieces)
+        has_field = any(_run_has_field_ctrl(run) for run in runs)
+        clean = (
             not inside_events
-            and all(piece[3] for piece in covered)
             and same_proven_format
             and contiguous
+            and not has_field
         )
-        if compilable:
-            continue
-        if any(kind in ("tab", "lineBreak") for kind in inside_events):
-            reason = "탭/줄바꿈이 토큰 안에 삽입됨"
-        elif "ctrl" in inside_events:
-            reason = "제어 요소가 토큰 사이에 끼임"
-        elif len(char_prs) > 1:
-            reason = "혼합 서식(charPrIDRef 상이)"
-        elif len(runs) > 1 and None in char_prs:
-            reason = "토큰이 파편에 걸침(charPrIDRef 없음)"
-        elif not contiguous:
-            reason = "런 경계가 비연속"
-        else:
-            reason = "복합 런(수동 처리)"
-        report.skipped.append(
-            TokenSite(_clean_name(match.group(1)), context, False, reason)
+        reason = ""
+        if not clean:
+            if any(kind in ("tab", "lineBreak") for kind in inside_events):
+                reason = "탭/줄바꿈이 토큰 안에 삽입됨"
+            elif "ctrl" in inside_events:
+                reason = "제어 요소가 토큰 사이에 끼임"
+            elif len(char_prs) > 1:
+                reason = "혼합 서식(charPrIDRef 상이)"
+            elif len(runs) > 1 and None in char_prs:
+                reason = "토큰이 파편에 걸침(charPrIDRef 없음)"
+            elif not contiguous:
+                reason = "런 경계가 비연속"
+            else:
+                reason = "복합 런(수동 처리)"
+        spans.append(
+            _TokenSpan(
+                match=match,
+                name=_clean_name(match.group(1)),
+                covered=runs,
+                run_base=run_base,
+                clean=clean,
+                all_simple=all_simple,
+                reason=reason,
+            )
         )
+    return spans
+
+
+def _compile_one_composite(
+    p_el: etree._Element, alloc, report: CompileReport
+) -> bool:
+    """깨끗한 복합-런 토큰 **하나**를 누름틀로 치환. 치환했으면 True.
+
+    치환은 트리를 바꿔 오프셋을 무효화하므로 호출자가 한 번에 하나씩, 매번 새로
+    분석하며 돌린다(정지: 남은 깨끗한 복합 토큰이 없으면 False). 단순 런 토큰은
+    이미 단순 경로가 처리했으므로(apply 후 depth>0) 여기 걸리지 않는다.
+    """
+    for span in _classify_paragraph_tokens(p_el):
+        if not span.clean or span.all_simple:
+            continue  # 병리 토큰·단순 경로 소관은 건드리지 않는다
+        _replace_composite_token(p_el, span, alloc, report)
+        return True
+    return False
+
+
+def _replace_composite_token(
+    p_el: etree._Element, span: "_TokenSpan", alloc, report: CompileReport
+) -> None:
+    """복합 런 묶음에서 토큰 구간만 누름틀로 치환하고 바깥 구조·속성을 보존."""
+    match = span.match
+    tstart, tend = match.start(), match.end()
+    covered = span.covered
+    run_base = span.run_base
+    begin_id, field_id = alloc()
+
+    new_runs: "list[etree._Element]" = []
+    # 토큰 앞: 첫 걸친 런의 토큰 이전 부분(제어·탭 등 구조 원형 보존).
+    for run in covered:
+        left = _clip_run(run, run_base[run], 0, tstart)
+        if left is not None:
+            new_runs.append(left)
+    # 누름틀 여는 경계 — 토큰 시작 런 속성 승계.
+    new_runs.append(_begin_run(dict(covered[0].attrib), span.name, begin_id, field_id))
+    # 값: 토큰 구간을 각 걸친 런에서 잘라 조각별 속성 보존(구간은 깨끗한 텍스트뿐).
+    for run in covered:
+        value = _clip_run(run, run_base[run], tstart, tend)
+        if value is not None:
+            new_runs.append(value)
+    # 닫는 경계 — 토큰 끝 런 속성 승계.
+    new_runs.append(_end_run(dict(covered[-1].attrib), begin_id, field_id))
+    # 토큰 뒤: 마지막 걸친 런의 토큰 이후 부분.
+    for run in covered:
+        right = _clip_run(run, run_base[run], tend, 1 << 30)
+        if right is not None:
+            new_runs.append(right)
+
+    idx = p_el.index(covered[0])
+    for run in covered:
+        p_el.remove(run)
+    for offset, new_run in enumerate(new_runs):
+        p_el.insert(idx + offset, new_run)
+    report.compiled.append(span.name)
+
+
+def _report_uncompilable_tokens(
+    p_el: etree._Element, context: str, report: CompileReport, apply: bool
+) -> None:
+    """구조/서식 경계를 가로지른 토큰을 신고. scan 모드면 깨끗한 복합 토큰은 미리보기 등록.
+
+    apply 모드에서는 깨끗한 복합 토큰이 이미 치환돼 사라졌으므로 병리 토큰만 남는다.
+    """
+    text, _, _, _ = _build_paragraph_model(p_el)
+    for span in _classify_paragraph_tokens(p_el):
+        if span.clean:
+            if span.all_simple:
+                continue  # 단순 경로가 이미 처리(scan=미리보기 등록, apply=컴파일)
+            if not apply:
+                report.compilable.append(TokenSite(span.name, context, True))
+            continue  # apply 면 이미 _compile_one_composite 가 치환함
+        report.skipped.append(TokenSite(span.name, context, False, span.reason))
 
     # 미완결 여는 괄호({{ 만 있고 닫는 }} 없음)는 완전 매치가 없어 위 루프가 못 잡는다.
     # 조용히 흘리지 않고 파편에 걸친 토큰으로 시끄럽게 신고(master 동작 복원).
+    match_starts = {match.start() for match in _TOKEN_RE.finditer(text)}
     search_from = 0
     while True:
         opener = text.find("{{", search_from)
@@ -441,8 +638,14 @@ def _process_paragraph(
         _, depth = _depth0_texts(run, start_depth)
         index += 1
 
+    # 단순 경로가 못 접은 **복합 런**이라도 토큰 구간이 깨끗하면 여기서 컴파일한다.
+    # 매 치환이 오프셋을 무효화하므로 한 번에 하나씩 재분석하며 소진한다.
+    if apply:
+        while _compile_one_composite(p_el, alloc, report):
+            pass
+
     # apply 뒤에는 새 누름틀 영역이 depth>0 으로 제외되므로 미처리 토큰만 남는다.
-    _report_uncompilable_tokens(p_el, context, report)
+    _report_uncompilable_tokens(p_el, context, report, apply)
 
 
 # ------------------------------------------------------------------ 공개 API
