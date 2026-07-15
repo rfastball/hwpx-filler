@@ -77,6 +77,15 @@ def _slug(name: str) -> str:
     return s or "unnamed"
 
 
+class JobSlugCollisionError(Exception):
+    """서로 다른 작업 이름이 같은 slug(=같은 파일)로 매핑돼 기존 작업을 덮으려 할 때 loud raise.
+
+    slug 이 비단사라 ``예산/2026`` 과 ``예산_2026`` 이 같은 파일이 된다. 확인 없는 덮어쓰기는
+    durable 데이터(템플릿·매핑·태그)를 조용히 소실시키므로(confirm-or-alarm 위반),
+    :meth:`JobRegistry.save` 가 명시적 ``allow_overwrite`` 없이는 여기서 막는다.
+    """
+
+
 def default_jobs_dir() -> Path:
     """GUI 기본 작업 레지스트리 위치 — 사용자 홈(``~/.hwpxfiller/jobs``).
 
@@ -196,8 +205,10 @@ class JobRegistry:
     """작업 레지스트리 — 디렉터리에 작업당 JSON 1개. 홈 화면의 데이터 원천.
 
     위치-불가지: 생성자가 디렉터리를 받는다(테스트는 ``tmp_path``, GUI 는 :func:`default_jobs_dir`).
-    파일명은 작업 이름의 slug + ``.job.json``. **주의(스캐폴드 수용):** slug 이 같은 서로 다른
-    이름은 파일이 충돌한다(예: ``a/b`` 와 ``a_b``) — 실사용에서 드물고 후일 보강.
+    파일명은 작업 이름의 slug + ``.job.json``. slug 이 비단사라 서로 다른 이름이 같은 파일로
+    매핑될 수 있다(예: ``a/b`` 와 ``a_b``). :meth:`save` 는 이 충돌을 조용히 덮지 않고
+    :class:`JobSlugCollisionError` 로 loud raise 하며, 명시적 ``allow_overwrite=True`` 로만
+    통과시킨다(confirm-or-alarm — 웹 에디터는 victim 을 재진술 확인한 뒤 opt-in).
     """
 
     SUFFIX = ".job.json"
@@ -208,9 +219,30 @@ class JobRegistry:
     def path_for(self, name: str) -> Path:
         return self.directory / (_slug(name) + self.SUFFIX)
 
-    def save(self, job: Job) -> None:
+    def save(self, job: Job, *, allow_overwrite: bool = False) -> None:
+        """작업을 저장한다. slug 충돌(다른 이름·같은 파일)은 loud 거부.
+
+        대상 파일이 이미 **다른 작업 이름**으로 존재하거나 읽을 수 없으면(손상)
+        ``allow_overwrite`` 없이는 :class:`JobSlugCollisionError` 를 던진다 —
+        조용한 durable 소실 방지. 같은 이름 재저장(자기 갱신)은 충돌이 아니라 그대로 통과.
+        """
         self.directory.mkdir(parents=True, exist_ok=True)
-        job.save(self.path_for(job.name))
+        path = self.path_for(job.name)
+        if not allow_overwrite and path.exists():
+            try:
+                existing_name = Job.load(path).name
+            except Exception:  # noqa: BLE001 — 손상 파일: 이름 불명 → 덮어쓰기 판단 불가, loud
+                raise JobSlugCollisionError(
+                    f"작업 '{job.name}' 저장 대상 파일 {path.name} 이 이미 있으나 손상돼 "
+                    f"소유 작업을 확인할 수 없습니다 — 조용히 덮지 않습니다"
+                ) from None
+            if existing_name != job.name:
+                raise JobSlugCollisionError(
+                    f"작업 '{job.name}' 과 기존 작업 '{existing_name}' 이 같은 파일"
+                    f"({path.name})로 매핑됩니다 — 저장하면 '{existing_name}' 이 소실됩니다. "
+                    f"조용히 덮지 않습니다"
+                )
+        job.save(path)
 
     def exists(self, name: str) -> bool:
         return self.path_for(name).exists()

@@ -10,7 +10,13 @@ from __future__ import annotations
 
 import pytest
 
-from hwpxfiller.core.job import Job, JobRegistry, RunRequest, default_jobs_dir
+from hwpxfiller.core.job import (
+    Job,
+    JobRegistry,
+    JobSlugCollisionError,
+    RunRequest,
+    default_jobs_dir,
+)
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 
 
@@ -237,6 +243,38 @@ def test_registry_slug_keeps_original_name_in_json(tmp_path):
     reg = JobRegistry(tmp_path)
     reg.save(Job(name="2026/06 공고:안", template_path="/t.hwpx", mapping=_profile()))
     assert reg.load("2026/06 공고:안").name == "2026/06 공고:안"
+
+
+def test_registry_save_rejects_slug_collision_different_name(tmp_path):
+    """다른 이름이 같은 slug(=같은 파일)로 매핑되면 loud raise — 첫 작업 소실 방지(#1)."""
+    reg = JobRegistry(tmp_path)
+    reg.save(Job(name="예산/2026", template_path="/a.hwpx", tags={"금액구간": "1억미만"}))
+    with pytest.raises(JobSlugCollisionError):
+        reg.save(Job(name="예산_2026", template_path="/b.hwpx", tags={"낙찰방법": "협상"}))
+    # 첫 작업이 온전 보존된다(덮이지 않음).
+    assert reg.load("예산/2026").template_path == "/a.hwpx"
+    assert [j.template_path for j in reg.list_jobs()] == ["/a.hwpx"]
+
+
+def test_registry_save_allow_overwrite_bypasses_guard(tmp_path):
+    """명시적 opt-in(allow_overwrite) 은 slug 충돌을 통과 — 확정된 덮어쓰기."""
+    reg = JobRegistry(tmp_path)
+    reg.save(Job(name="예산/2026", template_path="/a.hwpx"))
+    reg.save(Job(name="예산_2026", template_path="/b.hwpx"), allow_overwrite=True)
+    assert len(reg.list_jobs()) == 1
+    assert reg.load("예산_2026").template_path == "/b.hwpx"
+
+
+def test_registry_save_corrupt_target_is_loud(tmp_path):
+    """대상 파일이 손상돼 소유 작업을 확인할 수 없으면 allow_overwrite 없이는 raise."""
+    reg = JobRegistry(tmp_path)
+    reg.directory.mkdir(parents=True, exist_ok=True)
+    reg.path_for("입찰공고서").write_text('{"name": "절단', encoding="utf-8")
+    with pytest.raises(JobSlugCollisionError):
+        reg.save(_job())
+    # 명시 opt-in 이면 손상 파일도 덮어쓸 수 있다.
+    reg.save(_job(), allow_overwrite=True)
+    assert reg.load("입찰공고서").template_path == "/tmp/template.hwpx"
 
 
 def test_registry_list_jobs_sorted_by_name(tmp_path):

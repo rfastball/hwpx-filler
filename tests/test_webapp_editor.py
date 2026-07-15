@@ -123,6 +123,37 @@ def test_overwrite_confirm_flow(tmp_path):
     assert ctrl.dispatch("save", {"confirm_overwrite": True})["ok"] is True
 
 
+def _save_named(ctrl: EditorController, name: str) -> dict:
+    """이름 하나로 새 작업을 저장하는 최소 흐름(테스트 헬퍼)."""
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("skip_data", {})
+    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_const", {"index": 0, "const": "v"})
+    r = ctrl.dispatch("confirm_all", {})
+    ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
+    ctrl.dispatch("set_name", {"name": name})
+    ctrl.dispatch("set_pattern", {"pattern": "p-{{ID}}"})
+    return ctrl.dispatch("save", {})
+
+
+def test_slug_collision_different_name_restates_victim_then_saves(tmp_path):
+    """다른 이름이 같은 slug 로 충돌하면 victim 을 재진술 확인하고, 확정 시 저장된다(#1).
+
+    core 가드가 확정 저장 경로에서 allow_overwrite=True 로 통과하는지까지 검증 —
+    확인했는데 JobSlugCollisionError 로 터지면 흐름이 깨진다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    assert _save_named(ctrl, "예산/2026")["ok"] is True
+
+    res = _save_named(ctrl, "예산_2026")  # slug 동일 → 충돌
+    assert res["ok"] is False and res.get("needs_overwrite") is True
+    # 입력 이름·victim 이름이 모두 재진술된다(거짓 확인 방지).
+    assert "예산_2026" in res["overwrite_text"] and "예산/2026" in res["overwrite_text"]
+    # 확정 → allow_overwrite 로 core 가드 통과, 저장 성공(크래시 없음).
+    assert ctrl.dispatch("save", {"confirm_overwrite": True})["ok"] is True
+    assert JobRegistry(tmp_path / "jobs").exists("예산_2026")
+
+
 def test_unknown_editor_action_is_loud(tmp_path):
     ctrl, _ = _controller(tmp_path)
     with pytest.raises(ValueError, match="알 수 없는 editor 액션"):
