@@ -141,11 +141,12 @@
     $("txtNameRow").style.display = mode === "new" ? "" : "none";
     $("txtEditName").value = "";
     $("txtEditContent").value = content || "";
-    $("txtEditModal").classList.remove("hidden");
-    (mode === "new" ? $("txtEditName") : $("txtEditContent")).focus();
+    // 초기 포커스: 새 템플릿은 이름, 편집은 내용. 복귀·Escape 는 Modal 헬퍼가 소유(#27/#28).
+    const focusTo = mode === "new" ? $("txtEditName") : $("txtEditContent");
+    window.Modal.open("txtEditModal", { initialFocus: focusTo });
   }
 
-  function closeEditModal() { $("txtEditModal").classList.add("hidden"); }
+  function closeEditModal() { window.Modal.close("txtEditModal"); }
 
   async function submitEditModal() {
     const content = $("txtEditContent").value;

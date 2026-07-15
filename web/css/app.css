@@ -232,6 +232,9 @@ tr.r-confirmed td,tr.r-schemaonly td{background:var(--a-card)}
 .app.rail-collapsed .rail .brand{font-size:0}                 /* 로고 글자 접기 */
 .app.rail-collapsed .rail-toggle{font-size:14px;transform:rotate(180deg)}
 .app.rail-collapsed .navbtn{text-align:center;padding:9px 4px}
+/* .ni: 접힘 시각 표지 — 펼침엔 숨고, 접힘엔 라벨 대신 노출(#27) */
+.navbtn .ni{display:none;font-weight:700;font-size:14px}
+.app.rail-collapsed .navbtn .ni{display:block;text-align:center}
 
 /* ---- 모달 ---- */
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;
