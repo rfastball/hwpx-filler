@@ -18,18 +18,22 @@
       <button class="rail-toggle" id="railToggle" title="사이드 패널 접기/펼치기"
               aria-label="사이드 패널 접기/펼치기">«</button></div>
     <div class="rl">투트랙 허브</div>
-    <button class="navbtn" data-scr="home" aria-current="true">
-      <span class="n">대시보드</span><span class="d">두 트랙 허브 · 요약</span></button>
-    <button class="navbtn" data-scr="editor">
-      <span class="n">작업 에디터</span><span class="d">HWPX · 4스텝</span></button>
-    <button class="navbtn" data-scr="run">
-      <span class="n">실행</span><span class="d">HWPX · 데이터 겨눔 → 생성</span></button>
-    <button class="navbtn" data-scr="matrix">
-      <span class="n">여러 작업 실행</span><span class="d">여러 작업 × 공통 데이터 → 생성</span></button>
-    <button class="navbtn" data-scr="txt">
-      <span class="n">즉시 기안 (txt)</span><span class="d">템플릿+데이터 → 실시간 → 복사</span></button>
-    <button class="navbtn" data-scr="tpl">
-      <span class="n">템플릿 관리</span><span class="d">HWPX·TXT 라이브러리 · 상태·변환·검토</span></button>
+    <!-- #27: 접힘(rail-collapsed) 시 .n/.d 가 display:none 이라 접근 이름·툴팁이 소실됨 →
+         각 버튼에 주 라벨을 aria-label(SR 이름)+title(호버 툴팁)로 고정. rail-toggle 선례와 동일. -->
+    <!-- .ni: 접힘(rail-collapsed) 시 .n/.d 가 숨으면 노출되는 시각적 표지(라벨 첫 글자) — #27
+         "식별 가능한 이름(aria/title)과 시각적 표지" 완료기준. 펼침 상태에선 display:none. -->
+    <button class="navbtn" data-scr="home" aria-current="true" aria-label="대시보드" title="대시보드">
+      <span class="ni">대</span><span class="n">대시보드</span><span class="d">두 트랙 허브 · 요약</span></button>
+    <button class="navbtn" data-scr="editor" aria-label="작업 에디터" title="작업 에디터">
+      <span class="ni">작</span><span class="n">작업 에디터</span><span class="d">HWPX · 4스텝</span></button>
+    <button class="navbtn" data-scr="run" aria-label="실행" title="실행">
+      <span class="ni">실</span><span class="n">실행</span><span class="d">HWPX · 데이터 겨눔 → 생성</span></button>
+    <button class="navbtn" data-scr="matrix" aria-label="여러 작업 실행" title="여러 작업 실행">
+      <span class="ni">여</span><span class="n">여러 작업 실행</span><span class="d">여러 작업 × 공통 데이터 → 생성</span></button>
+    <button class="navbtn" data-scr="txt" aria-label="즉시 기안 (txt)" title="즉시 기안 (txt)">
+      <span class="ni">즉</span><span class="n">즉시 기안 (txt)</span><span class="d">템플릿+데이터 → 실시간 → 복사</span></button>
+    <button class="navbtn" data-scr="tpl" aria-label="템플릿 관리" title="템플릿 관리">
+      <span class="ni">템</span><span class="n">템플릿 관리</span><span class="d">HWPX·TXT 라이브러리 · 상태·변환·검토</span></button>
   </nav>
 
   <main class="stage">
@@ -88,7 +92,7 @@
         </div>
       </header>
       <div class="wsteps" id="editor-steps"></div>
-      <div class="wbody" id="editor-body"></div>
+      <div class="wbody" id="editor-body" data-preserve-scroll></div>
       <footer class="wfoot" id="editor-foot"></footer>
     </section>
 
@@ -140,7 +144,7 @@
             <button class="btn sm" id="selAll">전체 선택</button>
             <button class="btn sm" id="selNone">전체 해제</button></div>
         </div>
-        <div class="reclist" id="recList"></div>
+        <div class="reclist" id="recList" data-preserve-scroll></div>
 
         <!-- 저장 폴더 -->
         <div class="run-row"><span class="lbl">저장 폴더</span>
@@ -183,7 +187,7 @@
               <button class="btn sm" id="mxJobAll">전체 선택</button>
               <button class="btn sm" id="mxJobNone">전체 해제</button></div>
           </div>
-          <div class="reclist" id="mxJobList"></div>
+          <div class="reclist" id="mxJobList" data-preserve-scroll></div>
         </div>
 
         <!-- 2. 함께 적용할 데이터(공통 1개) -->
@@ -207,7 +211,7 @@
             <button class="btn sm" id="mxSelAll">전체 선택</button>
             <button class="btn sm" id="mxSelNone">전체 해제</button></div>
         </div>
-        <div class="reclist" id="mxRecList"></div>
+        <div class="reclist" id="mxRecList" data-preserve-scroll></div>
 
         <!-- 5. 저장 폴더(작업별 하위폴더) -->
         <div class="run-row"><span class="lbl">저장 폴더 · 작업별 하위폴더</span>
@@ -259,13 +263,13 @@
       <div class="panes">
         <section class="pane tokens">
           <h4>필드 상태 (토큰)</h4>
-          <div id="tokPanel"></div>
+          <div id="tokPanel" data-preserve-scroll></div>
           <p class="muted hint">값은 데이터에서 채움. <span class="danger">항목 없음</span>은
             <span class="mono">{{토큰}}</span> 그대로 남깁니다.</p>
         </section>
         <section class="pane preview">
           <h4>실시간 렌더 · 이 view가 진실</h4>
-          <div class="render" id="renderView" aria-live="polite"></div>
+          <div class="render" id="renderView" aria-live="polite" data-preserve-scroll></div>
         </section>
       </div>
 
@@ -318,7 +322,7 @@
     </section>
 
     <!-- TXT 템플릿 편집/생성 모달(네이티브 입력 대체 — 인페이지 textarea) -->
-    <div id="txtEditModal" class="modal hidden">
+    <div id="txtEditModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="txtEditTitle">
       <div class="modal-card">
         <h3 id="txtEditTitle">새 TXT 템플릿</h3>
         <label class="ctl" id="txtNameRow"><span class="lbl">이름(확장자 제외)</span>
@@ -333,9 +337,9 @@
     </div>
 
     <!-- 붙여넣기 모달(세션 템플릿) -->
-    <div id="pasteModal" class="modal hidden">
+    <div id="pasteModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="pasteTitle">
       <div class="modal-card">
-        <h3>템플릿 붙여넣기</h3>
+        <h3 id="pasteTitle">템플릿 붙여넣기</h3>
         <p class="muted">{{필드}} 토큰이 든 평문을 붙여넣으세요. 루트 밖 세션 템플릿으로 씁니다.</p>
         <textarea id="pasteText" rows="10" placeholder="제목: {{공고명}} ..."></textarea>
         <div class="modal-actions">
@@ -348,6 +352,8 @@
 </div>
 
 <script src="js/bridge.js"></script>
+<script src="js/preserve.js"></script>
+<script src="js/modal.js"></script>
 <script src="js/screens/home.js"></script>
 <script src="js/screens/txt.js"></script>
 <script src="js/screens/editor.js"></script>

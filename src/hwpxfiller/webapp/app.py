@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -56,7 +57,11 @@ class WebFrontend:
     """웹→Python js_api + 화면 라우팅. 컨트롤러를 소유하고 창(네이티브 자원)을 쥔다."""
 
     def __init__(self, text_templates_dir: "str | Path") -> None:
-        self.window: "object | None" = None  # webview.Window (지연 배선)
+        # 창 참조는 비공개(_) — pywebview 의 js_api 자동노출 반영(util.get_functions)이 공개
+        # 속성을 dir() 로 재귀 순회하는데, 공개면 Window→native(WinForms)→AccessibilityObject 로
+        # 무한 재귀(recursion depth 초과)하며 WebView2 COM 을 주입 스레드에서 건드려 부팅을
+        # 불안정하게 만든다. 밑줄 접두면 반영이 건너뛴다 — 이 참조는 내부 배선일 뿐 JS API 아님.
+        self._window: "object | None" = None  # webview.Window (지연 배선)
         registry = TextTemplateRegistry(text_templates_dir)
         job_registry = JobRegistry(default_jobs_dir())
         # 화면 등록 — 새 화면 = 컨트롤러 1개 추가(순수 데이터는 dispatch, 네이티브는 아래 메서드).
@@ -80,10 +85,10 @@ class WebFrontend:
 
     # -------------------------------------------------- 관측 푸시(Python→웹)
     def _push(self, screen: str, snapshot: dict) -> None:
-        if self.window is None:
+        if self._window is None:
             return
         payload = json.dumps(snapshot, ensure_ascii=False)
-        self.window.evaluate_js(f"window.__push({json.dumps(screen)}, {payload})")  # type: ignore[attr-defined]
+        self._window.evaluate_js(f"window.__push({json.dumps(screen)}, {payload})")  # type: ignore[attr-defined]
 
     # -------------------------------------------------- 웹→Python (js_api)
     def initial(self, screen: str) -> dict:
@@ -192,6 +197,104 @@ class WebFrontend:
         return Path(path).name
 
 
+# 모달 접근성 동적 프로브(#27/#28) — 실 브라우저에서 Modal 헬퍼의 초기포커스·Escape·복귀를
+# 되읽는다. 알려진 트리거(첫 내비 버튼)에 포커스 → pasteModal 열기 → Escape → 복귀 확인.
+# IIFE 가 JSON 직렬화 가능한 객체를 반환하고, 게이트 테스트가 각 필드를 단언한다.
+_MODAL_A11Y_PROBE_JS = r"""
+(function () {
+  var trigger = document.querySelector('.navbtn');
+  trigger.focus();
+  var before = document.activeElement.getAttribute('data-scr');
+  window.Modal.open('pasteModal', { initialFocus: document.getElementById('pasteText') });
+  var opened = !document.getElementById('pasteModal').classList.contains('hidden');
+  var focusIn = document.activeElement.id;
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  var closed = document.getElementById('pasteModal').classList.contains('hidden');
+  var restored = document.activeElement.getAttribute('data-scr');
+  return {
+    opened: opened,               // 열기 후 hidden 해제됐는가
+    focus_in: focusIn,            // 초기 포커스가 모달 안(pasteText)으로 들어갔는가
+    closed_by_escape: closed,     // Escape 로 닫혔는가
+    focus_before: before,         // 열기 직전 트리거(내비 data-scr)
+    focus_restored: restored      // 닫은 뒤 포커스가 트리거로 복귀했는가
+  };
+})()
+"""
+
+
+# 상호작용 보존 기제 프로브(#28) — 실 브라우저에서 Preserve 헬퍼가 innerHTML 재구성을 가로질러
+# 포커스·캐럿(selection)·옵트인 스크롤을 실제로 보존하는지 되읽는다. 화면 네비/데이터 의존 없이
+# 결정적으로 기제를 검증하기 위해 임시 픽스처를 만들어 실제 focus/setSelectionRange/scrollTop 을
+# 건 뒤, render() 가 하는 것과 동일한 innerHTML 교체를 Preserve.around 로 감싸 되읽는다.
+_PRESERVE_PROBE_JS = r"""
+(function () {
+  var host = document.createElement('div');
+  host.id = 'preserveProbeHost';
+  host.setAttribute('data-preserve-scroll', '');
+  host.style.cssText = 'height:40px;overflow:auto';
+  var markup = '<div style="height:400px"><input id="preserveProbeInput" value="abcdef"></div>';
+  host.innerHTML = markup;
+  document.body.appendChild(host);
+  var input = document.getElementById('preserveProbeInput');
+  input.focus();
+  input.setSelectionRange(2, 4);
+  host.scrollTop = 120;
+  window.Preserve.around(function () { host.innerHTML = markup; });  // render() 의 재구성과 동형
+  var a = document.activeElement;
+  var res = {
+    focus_id: a ? a.id : null,          // 재구성 뒤 같은 입력으로 포커스 복귀했는가
+    sel_start: a ? a.selectionStart : null,  // 캐럿/선택 범위 보존(2)
+    sel_end: a ? a.selectionEnd : null,      // (4)
+    scroll_top: document.getElementById('preserveProbeHost').scrollTop  // 옵트인 스크롤 보존(120)
+  };
+  host.remove();
+  return res;
+})()
+"""
+
+# 실화면 회귀(#28 완료기준) — 위 기제 프로브는 합성 픽스처였고, 여기선 shipped __push 경로로
+# 실 컨트롤러 스냅샷을 4개 실화면 render() 에 흘려 (a) Preserve.around 래핑이 실 render 를
+# 깨지 않는지, (b) txt 프리뷰(#renderView)의 스크롤이 실 재렌더를 가로질러 유지되는지 되읽는다.
+# 스냅샷은 실 컨트롤러 initial()(비동기) 로 당겨 stash 하고, 스크롤은 가시 화면에서만 유효하므로
+# txt 를 가시화한다. 셋업(비동기 fire)과 되읽기 사이에 한 번 대기.
+_PRESERVE_REAL_SETUP_JS = r"""
+(function () {
+  window.__snaps = {};
+  ['txt', 'editor', 'run', 'matrix'].forEach(function (scr) {
+    window.pywebview.api.initial(scr).then(function (s) { window.__snaps[scr] = s; });
+  });
+  window.Nav.go('txt');  // 스크롤은 가시 화면에서만 유효 → txt 가시화
+})()
+"""
+
+_PRESERVE_REAL_PROBE_JS = r"""
+(function () {
+  var out = {}, snaps = window.__snaps || {};
+  ['txt', 'editor', 'run', 'matrix'].forEach(function (scr) {
+    try {
+      if (!snaps[scr]) { out[scr] = 'no-snap'; return; }
+      window.__push(scr, snaps[scr]);   // 실 render() (Preserve.around 래핑)
+      out[scr] = 'ok';
+    } catch (e) { out[scr] = 'throw:' + (e && e.message); }
+  });
+  // txt 스크롤 보존 end-to-end: 프리뷰를 강제로 길게 → 오버플로 → 스크롤 → 재렌더 → 유지?
+  try {
+    var snap = snaps['txt'];
+    if (!snap) { out.txt_scroll_top = 'no-snap'; return out; }
+    var lines = [];
+    for (var i = 0; i < 200; i++) { lines.push('라인 ' + i + ' {{공고명}}'); }
+    snap.template_text = lines.join('\n');
+    window.__push('txt', snap);
+    var box = document.getElementById('renderView');
+    box.scrollTop = 150;
+    window.__push('txt', snap);         // 실 재렌더 — Preserve 가 스크롤 복원해야
+    out.txt_scroll_top = document.getElementById('renderView').scrollTop;
+  } catch (e) { out.txt_scroll_top = 'throw:' + (e && e.message); }
+  return out;
+})()
+"""
+
+
 # ------------------------------------------------------------------ 자가검증(Q3)
 def _selftest_drive(window: "object") -> None:
     """동결 exe 부팅 자가검증 — 창이 뜨고 렌더/브리지가 도는지 되읽어 파일로 확정 후 정식 종료.
@@ -213,9 +316,32 @@ def _selftest_drive(window: "object") -> None:
             "document.getElementById('scr-home').classList.contains('on')")
         result["home_kpi_count"] = window.evaluate_js(  # type: ignore[attr-defined]
             "document.querySelectorAll('#homeKpis .kpi').length")
+        # 커스텀 모달 접근성 동적 거동(#27/#28) — 정적 계약(role/aria)은 test_web_dom_contract 가
+        # 보고, 여기선 실 브라우저에서 Modal 헬퍼가 초기포커스·Escape 닫기·트리거 복귀를 실제로
+        # 수행하는지 되읽는다. 알려진 트리거(첫 내비 버튼)에 포커스를 두고 열었다가 Escape 로 닫는다.
+        result["modal_a11y"] = window.evaluate_js(_MODAL_A11Y_PROBE_JS)  # type: ignore[attr-defined]
+        # 반응형 경계(#27) — 창을 최소폭(760<820 경계)으로 줄였다 넓히며 .app 그리드 열 수를
+        # 실 엔진에서 되읽는다. 정적 CSS 경계 존재는 test_web_dom_contract 가, 실제 접힘/펴짐은
+        # 여기가 가드. resize 는 OS 이벤트라 relayout 안정까지 짧게 대기(게이트는 flaky 금지).
+        grid_probe = "getComputedStyle(document.querySelector('.app')).gridTemplateColumns"
+        window.resize(760, 600)  # type: ignore[attr-defined]  # 최소 크기 = 경계 아래 → 세로 적층
+        time.sleep(0.6)
+        result["grid_narrow"] = window.evaluate_js(grid_probe)  # type: ignore[attr-defined]
+        window.resize(1180, 820)  # type: ignore[attr-defined]  # 기본 크기 = 경계 위 → 2판 복귀
+        time.sleep(0.6)
+        result["grid_wide"] = window.evaluate_js(grid_probe)  # type: ignore[attr-defined]
+        # 상호작용 보존(#28) — Preserve 헬퍼가 재구성 가로질러 포커스·캐럿·스크롤 유지하는지(기제).
+        result["preserve"] = window.evaluate_js(_PRESERVE_PROBE_JS)  # type: ignore[attr-defined]
+        # 실화면 회귀(#28) — 실 컨트롤러 스냅샷으로 4화면 실 render() 구동 + txt 스크롤 보존 end-to-end.
+        window.evaluate_js(_PRESERVE_REAL_SETUP_JS)  # type: ignore[attr-defined]  # 비동기 initial fire
+        time.sleep(1.2)  # initial() 해소 + 렌더 안정
+        result["preserve_real"] = window.evaluate_js(_PRESERVE_REAL_PROBE_JS)  # type: ignore[attr-defined]
     except Exception as exc:  # noqa: BLE001
         result["error"] = repr(exc)
-    out = Path(sys.executable).resolve().parent / "selftest_result.json"
+    # 출력 경로: 테스트 하네스(#30 접근 A)가 HWPX_SELFTEST_OUT 로 결정적 위치를 준다.
+    # 미설정 시 동결 exe 옆(dist) — 기존 부팅 자가검증 거동 불변.
+    out_override = os.environ.get("HWPX_SELFTEST_OUT")
+    out = Path(out_override) if out_override else Path(sys.executable).resolve().parent / "selftest_result.json"
     out.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     window.destroy()  # type: ignore[attr-defined]  # 정식 종료(os._exit 대체)
 
@@ -233,7 +359,7 @@ def main() -> int:
         height=820,
         min_size=(760, 600),
     )
-    frontend.window = window
+    frontend._window = window
     # 소이슈 ②: Windows 는 EdgeChromium(WebView2) 백엔드 명시 핀.
     gui = "edgechromium" if sys.platform == "win32" else None
     if "--selftest" in sys.argv:
