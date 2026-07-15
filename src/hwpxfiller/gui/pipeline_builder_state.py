@@ -256,5 +256,7 @@ class PipelineBuilderViewModel:
         item = DatasetPoolItem(
             name=name, kind="pipeline", opts=self.draft_opts(), note=note
         )
-        self.registry.save(item)
+        # 위 exists 게이트가 이미 동명/slug 충돌을 걸러 확정(overwrite=True) 아니면 여기 못 온다.
+        # 확정 경로는 core slug 가드에 allow_overwrite 로 opt-in 한다(#34; 이중 차단 회피).
+        self.registry.save(item, allow_overwrite=overwrite)
         return item
