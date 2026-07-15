@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from hwpxfiller.core.job import Job
+from hwpxfiller.core.job import Job, SlugCollisionError
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.core.mapping_base import (
     MappingBaseRegistry,
@@ -47,6 +47,47 @@ def test_registry_rejects_empty_name(tmp_path):
     reg = MappingBaseRegistry(tmp_path)
     with pytest.raises(ValueError):
         reg.save(MappingProfile(name="", mappings=[]))
+
+
+def test_registry_save_rejects_slug_collision_different_name(tmp_path):
+    """다른 이름이 같은 slug(=같은 파일)로 매핑되면 loud raise — 첫 베이스 소실 방지(#34)."""
+    reg = MappingBaseRegistry(tmp_path)
+    reg.save(_base("조달/어휘"))
+    with pytest.raises(SlugCollisionError):
+        reg.save(_base("조달_어휘"))
+    # 첫 베이스가 온전 보존된다(덮이지 않음).
+    assert reg.load("조달/어휘").template_fields() == ["공고명", "추정가격"]
+    assert reg.names() == ["조달/어휘"]
+
+
+def test_registry_save_same_name_update_is_not_collision(tmp_path):
+    """같은 이름 재저장(자기 갱신)은 충돌이 아니라 그대로 통과."""
+    reg = MappingBaseRegistry(tmp_path)
+    reg.save(_base("조달어휘"))
+    updated = MappingProfile(
+        name="조달어휘", mappings=[FieldMapping(template_field="공고명", source="x")]
+    )
+    reg.save(updated)  # allow_overwrite 없이도 통과(동명)
+    assert reg.load("조달어휘").template_fields() == ["공고명"]
+
+
+def test_registry_save_allow_overwrite_bypasses_guard(tmp_path):
+    """명시적 opt-in(allow_overwrite) 은 slug 충돌을 통과 — 확정된 덮어쓰기."""
+    reg = MappingBaseRegistry(tmp_path)
+    reg.save(_base("조달/어휘"))
+    reg.save(_base("조달_어휘"), allow_overwrite=True)
+    assert reg.names() == ["조달_어휘"]
+
+
+def test_registry_save_corrupt_target_is_loud(tmp_path):
+    """대상 파일이 손상돼 소유 베이스를 확인할 수 없으면 allow_overwrite 없이는 raise."""
+    reg = MappingBaseRegistry(tmp_path)
+    reg.directory.mkdir(parents=True, exist_ok=True)
+    reg.path_for("조달어휘").write_text('{"name": "절단', encoding="utf-8")
+    with pytest.raises(SlugCollisionError):
+        reg.save(_base("조달어휘"))
+    reg.save(_base("조달어휘"), allow_overwrite=True)
+    assert reg.load("조달어휘").template_fields() == ["공고명", "추정가격"]
 
 
 def test_default_dir_uses_home_env(monkeypatch, tmp_path):

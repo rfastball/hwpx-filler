@@ -15,7 +15,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from .job import _slug
+from .job import _slug, guard_slug_collision
 from .mapping import MappingProfile
 
 
@@ -35,7 +35,10 @@ class MappingBaseRegistry:
     JobRegistry` 미러). 매핑 프로파일 관리 화면의 데이터 원천.
 
     위치-불가지: 생성자가 디렉터리를 받는다(테스트는 ``tmp_path``, GUI 는
-    :func:`default_mapping_bases_dir`). 파일명은 베이스 이름 slug + ``.mapping.json``.
+    :func:`default_mapping_bases_dir`). 파일명은 베이스 이름 slug + ``.mapping.json``. slug 이
+    비단사라 서로 다른 이름이 같은 파일로 매핑될 수 있어(예: ``a/b`` 와 ``a_b``)
+    :meth:`save` 는 :class:`~hwpxfiller.core.job.SlugCollisionError` 로 loud raise 하며
+    명시적 ``allow_overwrite=True`` 로만 통과시킨다(JobRegistry 미러, #34).
     """
 
     SUFFIX = ".mapping.json"
@@ -46,11 +49,23 @@ class MappingBaseRegistry:
     def path_for(self, name: str) -> Path:
         return self.directory / (_slug(name) + self.SUFFIX)
 
-    def save(self, profile: MappingProfile) -> None:
+    def save(self, profile: MappingProfile, *, allow_overwrite: bool = False) -> None:
+        """베이스 매핑을 저장한다. slug 충돌(다른 이름·같은 파일)은 loud 거부.
+
+        대상 파일이 이미 **다른 베이스 이름**으로 존재하거나 손상돼 소유를 확인할 수 없으면
+        ``allow_overwrite`` 없이는 :class:`~hwpxfiller.core.job.SlugCollisionError` 를 던진다
+        (조용한 durable 매핑 소실 방지). 같은 이름 재저장(자기 갱신)은 충돌이 아니라 통과.
+        """
         if not profile.name:
             raise ValueError("매핑 프로파일 이름이 비어 있습니다.")
         self.directory.mkdir(parents=True, exist_ok=True)
-        profile.save(self.path_for(profile.name))
+        path = self.path_for(profile.name)
+        if not allow_overwrite:
+            guard_slug_collision(
+                path, profile.name, lambda p: MappingProfile.load(p).name,
+                kind="매핑 프로파일",
+            )
+        profile.save(path)
 
     def exists(self, name: str) -> bool:
         return self.path_for(name).exists()
