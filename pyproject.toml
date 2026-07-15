@@ -14,9 +14,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# 웹 프론트엔드(pywebview) 마이그레이션 중 PySide6 와 병존 — 마지막 화면 이관 후에만 Qt 제거
-# 검토(에픽 #20). pywebview 는 Windows=EdgeChromium(WebView2) 백엔드 핀; 6.x 계열 고정.
-gui = ["PySide6>=6.6", "pywebview>=6.2,<7"]
+# 웹 프론트엔드(pywebview) — 두 제품 모두 Qt 이관 완료(#20·#22·#23)로 PySide6 제거.
+# pywebview 는 Windows=EdgeChromium(WebView2) 백엔드 핀; 6.x 계열 고정. extra 이름은
+# 러너/빌드 관례(--extra gui) 유지 위해 gui 로 둔다(내용은 pywebview 단일).
+gui = ["pywebview>=6.2,<7"]
 dev = ["pytest>=8.0"]
 package = ["pyinstaller>=6.21"]
 
@@ -37,10 +38,9 @@ hwpxfiller = "hwpxfiller.cli:main"
 hwpxdiff = "hwpxdiff.cli:main"
 
 [project.gui-scripts]
-hwpx-filler = "hwpxfiller.gui.app:main"
+# 두 제품 모두 pywebview 웹 진입점만 남는다 — 구 Qt 진입점(hwpx-filler·hwpx-diff)은
+# PySide6 제거(#23)로 폐기.
 hwpx-filler-web = "hwpxfiller.webapp.app:main"
-# diff 웹 진입점(#22). 구 Qt 진입점(hwpx-diff)은 단계 B(PySide6 제거)까지 병존.
-hwpx-diff = "hwpxdiff.app:main"
 hwpx-diff-web = "hwpxdiff.webapp.app:main"
 
 [tool.hatch.build.targets.wheel]
