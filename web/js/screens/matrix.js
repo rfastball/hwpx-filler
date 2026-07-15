@@ -23,6 +23,20 @@
     renderRecords(s);
     renderGate(s);
     renderStatus(s);
+    // 작업·데이터·선택이 바뀐 새 스냅샷 → 이전 일괄 생성 결과 무효화(#28, UD-10). run/txt 패턴.
+    if (!generating) resetMxGenResult();
+  }
+
+  /* 이전 일괄 생성 결과(요약·진행바·로그)를 기본 상태로 되돌린다 — 오래된 성공 잔존 방지(#28).
+     생성 중(generating)엔 부르지 않는다. 완료 결과는 renderResult 가 직접 호출로 그리므로
+     다음 사용자 변경(스냅샷) 전까지 유지된다. */
+  function resetMxGenResult() {
+    $("mxGenBar").style.width = "0%";
+    const r = $("mxGenResult");
+    r.textContent = "";
+    r.className = "run-result";
+    $("mxGenLog").textContent = "";
+    logStarted = false;
   }
 
   /* 작업 다중선택 — 매 스냅샷마다 목록·선택을 그대로 반영(선택은 VM 이 이름으로 보유). */

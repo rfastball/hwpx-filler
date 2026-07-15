@@ -46,7 +46,7 @@
     $("tokPanel").innerHTML = rows || `<p class="muted">토큰이 없는 템플릿입니다.</p>`;
 
     $("renderView").innerHTML = buildPreview(s.template_text, s.record);
-    $("dataLabel").value = s.data_label || "";     // 서버 소유(P4) — run/matrix 와 정렬
+    $("txtDataLabel").value = s.data_label || "";  // 서버 소유(P4)·화면별 고유 id(#27) — run/matrix 와 분리
     setStatus(s.missing_fields, s.empty_fields);
     resetNote();
   }

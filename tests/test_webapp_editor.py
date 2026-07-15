@@ -127,3 +127,60 @@ def test_unknown_editor_action_is_loud(tmp_path):
     ctrl, _ = _controller(tmp_path)
     with pytest.raises(ValueError, match="알 수 없는 editor 액션"):
         ctrl.dispatch("frobnicate", {})
+
+
+# ------------------------------------------------------------ #25 세션 혼합 방지
+def _build_complete_session(ctrl, name: str) -> None:
+    """COMPILED 템플릿으로 저장 가능한 완결 세션 구성(저장 직전까지) — 혼합 테스트 준비."""
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("skip_data", {})
+    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_const", {"index": 0, "const": "v"})
+    r = ctrl.dispatch("confirm_all", {})
+    ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
+    ctrl.dispatch("goto_step", {"step": 3})
+    ctrl.dispatch("set_name", {"name": name})
+    ctrl.dispatch("set_pattern", {"pattern": "p-{{ID}}"})
+
+
+def test_has_unsaved_work_tracks_session_lifecycle(tmp_path):
+    ctrl, _ = _controller(tmp_path)
+    assert ctrl.has_unsaved_work() is False              # 갓 초기화 — 버릴 것 없음
+    ctrl.load_template_path(str(TPL_COMPILED))
+    assert ctrl.has_unsaved_work() is False              # 템플릿만 로드 — 아직 세션 아님
+    ctrl.dispatch("skip_data", {})                       # 매핑 모델 생성 → 진행 중 세션
+    assert ctrl.has_unsaved_work() is True
+    assert ctrl.snapshot()["has_unsaved_work"] is True   # 스냅샷에도 노출(웹 확인 판단용)
+
+
+def test_new_job_session_atomically_clears_prior_session(tmp_path):
+    """템플릿 A 진행 세션 → new_job_session(B) 는 이름·데이터·매핑·단계를 원자 초기화(#25)."""
+    ctrl, _ = _controller(tmp_path)
+    _build_complete_session(ctrl, "작업A")
+    assert ctrl.snapshot()["is_complete"] is True and ctrl.has_unsaved_work() is True
+
+    ctrl.new_job_session(str(TPL_PARTIAL))               # 다른 템플릿으로 새 세션
+    snap = ctrl.snapshot()
+    assert snap["step"] == 0                             # 단계 초기화
+    assert snap["name"] == ""                            # 이름 소거(A 잔존 없음)
+    assert snap["rows"] == [] and snap["is_complete"] is False  # 구 매핑 모델 폐기
+    assert snap["data_path"] == ""                       # 데이터 소거
+
+
+def test_new_job_session_prevents_mixed_save(tmp_path):
+    """A 완결 세션 후 저장 전 B 진입 → 저장 시 구 모델이 없어 시끄럽게 차단(혼합 오저장 불가)."""
+    ctrl, _ = _controller(tmp_path)
+    _build_complete_session(ctrl, "작업A")
+    ctrl.new_job_session(str(TPL_COMPILED))              # 저장 없이 새 세션(같은 템플릿이어도 초기화)
+    res = ctrl.dispatch("save", {})
+    assert res["ok"] is False and "확정" in res["block_reason"]  # 모델 리셋 → 미확정 차단
+
+
+def test_save_blocks_when_model_schema_mismatches_template(tmp_path):
+    """방어층: 모델이 현재 스키마와 어긋나면(혼합) 저장을 시끄럽게 차단(#25 항목4)."""
+    ctrl, _ = _controller(tmp_path)
+    _build_complete_session(ctrl, "작업A")               # 모델 = COMPILED 스키마
+    # new_job_session 을 우회해 low-level 로 스키마만 교체(구버그 경로 재현) → 모델은 A 그대로.
+    ctrl.load_template_path(str(TPL_PARTIAL))
+    res = ctrl.dispatch("save", {})
+    assert res["ok"] is False and "일치하지 않습니다" in res["block_reason"]
