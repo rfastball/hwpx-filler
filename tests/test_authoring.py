@@ -317,7 +317,16 @@ def test_composite_structure_inside_token_stays_loud():
         '<hp:run charPrIDRef="7"><hp:t>명}}</hp:t></hp:run>'
         "</hp:p>"
     )
-    for xml, reason in ((xml_tab, "탭/줄바꿈"), (xml_ctrl, "제어 요소")):
+    xml_struct = (
+        '<hp:p><hp:run charPrIDRef="7">'
+        "<hp:t>{{계약</hp:t><hp:tbl/><hp:t>명}}</hp:t>"
+        "</hp:run></hp:p>"
+    )
+    for xml, reason in (
+        (xml_tab, "탭/줄바꿈"),
+        (xml_ctrl, "제어 요소"),
+        (xml_struct, "구조 요소"),
+    ):
         pkg = _pkg(xml)
         before = pkg.entries["Contents/section0.xml"]
         sites = scan_tokens(pkg)
@@ -350,6 +359,25 @@ def test_composite_mixed_format_stays_skipped():
     assert len(report.skipped) == 1
     assert "혼합 서식" in report.skipped[0].reason
     assert pkg.entries["Contents/section0.xml"] == before  # 무변형
+
+
+def test_composite_preserves_empty_attributed_t_outside_token():
+    """속성만 있고 텍스트·자식이 없는 hp:t(예: marker)가 복합 런에 있어도 소실되지 않는다.
+
+    회귀: ``_clip_t`` 가 폭-0 요소를 문자/자식 단위로만 취급하면 세 구간(토큰
+    앞/값/뒤) 호출 모두 ``None`` 을 반환해 요소가 통째로 사라진다.
+    """
+    xml = (
+        '<hp:p><hp:run charPrIDRef="7">'
+        "<hp:t>{{계약명}}</hp:t>"
+        '<hp:t marker="KEEP"/>'
+        "</hp:run></hp:p>"
+    )
+    pkg = _pkg(xml)
+    pkg, report = compile_document(pkg)
+    assert report.compiled == ["계약명"]
+    out = pkg.entries["Contents/section0.xml"].decode("utf-8")
+    assert 'marker="KEEP"' in out
 
 
 def test_composite_leading_run_level_tab_field_boundary_exact():

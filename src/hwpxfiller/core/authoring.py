@@ -288,7 +288,17 @@ def _clip_t(
 
     텍스트는 문자 단위로, 인라인 요소(탭/줄바꿈=1자·기타=0자)는 위치로 취사한다.
     구간에 남는 게 없으면 ``None``. 요소·꼬리텍스트·속성을 원형 보존한다.
+
+    ``t_el`` 자체가 텍스트·자식 없이 속성만 있으면(예: ``<hp:t marker="KEEP"/>``)
+    위치 폭이 0 이라 문자/자식 단위로는 어느 구간에도 걸리지 않는다 — 그대로 두면
+    세 구간 호출 모두 ``None`` 을 반환해 요소가 통째로 소실된다. 폭-0 지점으로
+    취급해(``_clip_run`` 의 ctrl/구조 자식과 동일한 ``lo <= pos < hi`` 관례) 정확히
+    한 구간에만 보존한다.
     """
+    if not t_el.text and len(t_el) == 0:
+        if lo <= base < hi:
+            return etree.Element(t_el.tag, dict(t_el.attrib))
+        return None
     items: "list[tuple[int, str, object, int]]" = []  # (pos, kind, payload, width)
     pos = base
     for ch in t_el.text or "":
@@ -408,6 +418,13 @@ def _build_paragraph_model(p_el: etree._Element):
                 events.append((length, local))
                 text_parts.append("\t" if local == "tab" else "\n")
                 length += 1
+            elif depth == 0:
+                # t/ctrl/tab/lineBreak 가 아닌 다른 런 직계 자식(hp:tbl·hp:pic·hp:secPr 등).
+                # 폭 0 이라 텍스트 좌표엔 영향 없지만, 토큰 조각 사이에 끼면 그 구조
+                # 요소가 컴파일 시 필드 값 안으로 잘못 들어갈 수 있으므로 구조 경계로
+                # 기록해 clean 판정에서 걸러지게 한다(_clip_run 은 이미 이런 요소를
+                # 폭-0 지점으로 정확히 배치하므로 클리핑 자체는 손대지 않는다).
+                events.append((length, "struct"))
 
     return "".join(text_parts), pieces, events, run_base
 
@@ -450,6 +467,8 @@ def _classify_paragraph_tokens(p_el: etree._Element) -> "list[_TokenSpan]":
                 reason = "탭/줄바꿈이 토큰 안에 삽입됨"
             elif "ctrl" in inside_events:
                 reason = "제어 요소가 토큰 사이에 끼임"
+            elif "struct" in inside_events:
+                reason = "비텍스트 구조 요소(표·그림 등)가 토큰 사이에 끼임"
             elif len(char_prs) > 1:
                 reason = "혼합 서식(charPrIDRef 상이)"
             elif len(runs) > 1 and None in char_prs:
