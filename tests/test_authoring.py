@@ -352,6 +352,33 @@ def test_composite_mixed_format_stays_skipped():
     assert pkg.entries["Contents/section0.xml"] == before  # 무변형
 
 
+def test_composite_leading_run_level_tab_field_boundary_exact():
+    """런의 첫 자식(hp:t 안이 아니라 런-레벨)이 탭인 경우에도 필드 경계가 정확하다.
+
+    회귀: run_base 를 런의 실제 시작이 아니라 첫 hp:t 위치로 잡으면, 선행
+    런-레벨 탭이 _clip_run 순회에서 이중 계산돼 한 칸 밀린다 — 탭이 필드값에
+    삼켜지고 닫는 중괄호가 값 밖으로 샌다. full_text 비교는 경계-무관이라
+    이 손상을 잡지 못하므로 set_field 라운드트립으로 직접 확인한다.
+    """
+    xml = (
+        '<hp:p><hp:run charPrIDRef="7">'
+        "<hp:tab/>"
+        "<hp:t>{{계약명}}</hp:t>"
+        "</hp:run></hp:p>"
+    )
+    pkg = _pkg(xml)
+    pkg, report = compile_document(pkg)
+    assert report.compiled == ["계약명"]
+
+    doc = FieldDocument(pkg.entries["Contents/section0.xml"])
+    assert doc.set_field("계약명", "정보시스템 구축") is True
+    out = etree.fromstring(doc.to_bytes())
+    filled = "".join(out.itertext())
+    assert "정보시스템 구축" in filled
+    assert "}" not in filled  # 닫는 중괄호가 값 밖으로 새면 안 된다
+    assert out.find(f".//{{{HP}}}tab") is not None  # 선행 탭 보존
+
+
 def test_composite_leading_text_preserved_and_field_created():
     """토큰 앞 평문 + 뒤 제어를 동시에 가진 복합 런에서 순서·필드가 모두 옳다."""
     from hwpxcore.text_extract import extract_document, full_text

@@ -379,6 +379,10 @@ def _build_paragraph_model(p_el: etree._Element):
         if _local(run.tag) != "run":
             continue
         simple, _ = _run_shape(run)
+        # _clip_run 은 이 런의 자식을 처음부터 순회하며 pos=base 로 시작하므로,
+        # base 는 런의 첫 자식(탭/제어일 수도 있음) 위치여야 한다 — 첫 hp:t 위치로
+        # 잡으면 선행 런-레벨 탭/줄바꿈이 이중 계산돼 오프셋이 밀린다.
+        run_base.setdefault(run, length)
         for child in run:
             local = _local(child.tag)
             if local == "ctrl":
@@ -396,7 +400,6 @@ def _build_paragraph_model(p_el: etree._Element):
             elif local == "t" and depth == 0:
                 value, inline_events = _text_with_inline_events(child)
                 start = length
-                run_base.setdefault(run, start)
                 text_parts.append(value)
                 length += len(value)
                 pieces.append((start, length, run, simple, child_index))
