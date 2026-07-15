@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -56,7 +57,11 @@ class WebFrontend:
     """웹→Python js_api + 화면 라우팅. 컨트롤러를 소유하고 창(네이티브 자원)을 쥔다."""
 
     def __init__(self, text_templates_dir: "str | Path") -> None:
-        self.window: "object | None" = None  # webview.Window (지연 배선)
+        # 창 참조는 비공개(_) — pywebview 의 js_api 자동노출 반영(util.get_functions)이 공개
+        # 속성을 dir() 로 재귀 순회하는데, 공개면 Window→native(WinForms)→AccessibilityObject 로
+        # 무한 재귀(recursion depth 초과)하며 WebView2 COM 을 주입 스레드에서 건드려 부팅을
+        # 불안정하게 만든다. 밑줄 접두면 반영이 건너뛴다 — 이 참조는 내부 배선일 뿐 JS API 아님.
+        self._window: "object | None" = None  # webview.Window (지연 배선)
         registry = TextTemplateRegistry(text_templates_dir)
         job_registry = JobRegistry(default_jobs_dir())
         # 화면 등록 — 새 화면 = 컨트롤러 1개 추가(순수 데이터는 dispatch, 네이티브는 아래 메서드).
@@ -80,10 +85,10 @@ class WebFrontend:
 
     # -------------------------------------------------- 관측 푸시(Python→웹)
     def _push(self, screen: str, snapshot: dict) -> None:
-        if self.window is None:
+        if self._window is None:
             return
         payload = json.dumps(snapshot, ensure_ascii=False)
-        self.window.evaluate_js(f"window.__push({json.dumps(screen)}, {payload})")  # type: ignore[attr-defined]
+        self._window.evaluate_js(f"window.__push({json.dumps(screen)}, {payload})")  # type: ignore[attr-defined]
 
     # -------------------------------------------------- 웹→Python (js_api)
     def initial(self, screen: str) -> dict:
@@ -215,7 +220,10 @@ def _selftest_drive(window: "object") -> None:
             "document.querySelectorAll('#homeKpis .kpi').length")
     except Exception as exc:  # noqa: BLE001
         result["error"] = repr(exc)
-    out = Path(sys.executable).resolve().parent / "selftest_result.json"
+    # 출력 경로: 테스트 하네스(#30 접근 A)가 HWPX_SELFTEST_OUT 로 결정적 위치를 준다.
+    # 미설정 시 동결 exe 옆(dist) — 기존 부팅 자가검증 거동 불변.
+    out_override = os.environ.get("HWPX_SELFTEST_OUT")
+    out = Path(out_override) if out_override else Path(sys.executable).resolve().parent / "selftest_result.json"
     out.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     window.destroy()  # type: ignore[attr-defined]  # 정식 종료(os._exit 대체)
 
@@ -233,7 +241,7 @@ def main() -> int:
         height=820,
         min_size=(760, 600),
     )
-    frontend.window = window
+    frontend._window = window
     # 소이슈 ②: Windows 는 EdgeChromium(WebView2) 백엔드 명시 핀.
     gui = "edgechromium" if sys.platform == "win32" else None
     if "--selftest" in sys.argv:

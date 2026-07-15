@@ -50,7 +50,10 @@ class WebFrontend:
     """웹→Python js_api + 화면 라우팅. 컨트롤러를 소유하고 창(네이티브 자원)을 쥔다."""
 
     def __init__(self) -> None:
-        self.window: "object | None" = None  # webview.Window (지연 배선)
+        # 창 참조는 비공개(_) — pywebview js_api 자동노출 반영(util.get_functions)이 공개 속성을
+        # dir() 재귀 순회하는데, 공개면 Window→native(WinForms)→AccessibilityObject 무한 재귀로
+        # 부팅이 불안정해진다(filler app.py 동일 항). 밑줄 접두면 반영이 건너뛴다.
+        self._window: "object | None" = None  # webview.Window (지연 배선)
         controllers = [DiffController(self._push)]
         self.controllers = {c.name: c for c in controllers}
 
@@ -62,10 +65,10 @@ class WebFrontend:
 
     # -------------------------------------------------- 관측 푸시(Python→웹)
     def _push(self, screen: str, snapshot: dict) -> None:
-        if self.window is None:
+        if self._window is None:
             return
         payload = json.dumps(snapshot, ensure_ascii=False)
-        self.window.evaluate_js(f"window.__push({json.dumps(screen)}, {payload})")  # type: ignore[attr-defined]
+        self._window.evaluate_js(f"window.__push({json.dumps(screen)}, {payload})")  # type: ignore[attr-defined]
 
     # -------------------------------------------------- 웹→Python (js_api)
     def initial(self, screen: str) -> dict:
@@ -141,7 +144,7 @@ def main() -> int:
         height=820,
         min_size=(760, 600),
     )
-    frontend.window = window
+    frontend._window = window
     # Windows 는 EdgeChromium(WebView2) 백엔드 명시 핀(filler 소이슈 ②).
     gui = "edgechromium" if sys.platform == "win32" else None
     if "--selftest" in sys.argv:
