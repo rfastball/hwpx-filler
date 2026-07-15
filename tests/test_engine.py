@@ -37,6 +37,56 @@ def test_generate_injects_and_output_is_valid_hwpx(tmp_path):
     assert b"VAL_0" in blob
 
 
+def test_generate_reports_template_open_failure(tmp_path):
+    """정직-실패 계약(engine.py:38) — 손상 템플릿(zip 아님)은 ok=True 로 위장하지 못하고
+    ok=False + "템플릿 열기 실패" 로 강등한다. 실패를 산출물로 문서화하지 않는다."""
+    engine = HwpxEngine()
+    bad = tmp_path / "corrupt.hwpx"
+    bad.write_bytes(b"not a real hwpx zip")
+    out = tmp_path / "gen.hwpx"
+    res = engine.generate(str(bad), {"입찰공고번호": "A1"}, str(out))
+    assert not res.ok
+    assert "템플릿 열기 실패" in res.error
+    assert not out.exists()
+
+
+def test_generate_reports_xml_processing_failure(tmp_path, monkeypatch):
+    """정직-실패 계약(engine.py:55) — XML 처리 단계 예외는 삼키지 않고
+    ok=False + "XML 처리 실패" 로 전파한다."""
+    from hwpxfiller.core import engine as engine_mod
+
+    class _Boom:  # FieldDocument 생성 시점에 폭발 — 처리 루프 진입 즉시 예외
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError("XML 파싱 폭발 주입")
+
+    monkeypatch.setattr(engine_mod, "FieldDocument", _Boom)
+    engine = HwpxEngine()
+    out = tmp_path / "gen.hwpx"
+    res = engine.generate(str(FIXTURE), {"입찰공고번호": "A1"}, str(out))
+    assert not res.ok
+    assert "XML 처리 실패" in res.error
+    assert not out.exists()
+
+
+def test_generate_reports_save_failure(tmp_path, monkeypatch):
+    """정직-실패 계약(engine.py:60) — 저장 단계 예외를 엔진이 ok=False + "저장 실패" 로
+    변환·전파한다(원자/패키지 계층 실패를 엔진 결과로 정직하게 노출)."""
+    from hwpxcore.package import HwpxPackage
+
+    def _boom(self):  # save 가 페이로드를 선평가하는 to_bytes 에서 폭발
+        raise RuntimeError("직렬화 실패 주입")
+
+    engine = HwpxEngine()
+    fields = _required(engine)
+    data = {f: f"VAL_{i}" for i, f in enumerate(fields)}
+    monkeypatch.setattr(HwpxPackage, "to_bytes", _boom)
+    out = tmp_path / "gen.hwpx"
+    res = engine.generate(str(FIXTURE), data, str(out))
+    assert not res.ok
+    assert "저장 실패" in res.error
+    assert not out.exists()  # 저장 실패 시 산출물이 남지 않는다
+
+
 def test_batch_generates_multiple_files(tmp_path):
     engine = HwpxEngine()
     fields = _required(engine)
