@@ -26,6 +26,9 @@ SCOPED_DATA_LABELS = ("runDataLabel", "txtDataLabel", "mxDataLabel")
 # 접힘 상태에서 라벨이 사라지는 여섯 내비 버튼(회귀 시 접근 이름·툴팁 소실 → #27).
 NAV_SCREENS = ("home", "editor", "run", "matrix", "txt", "tpl")
 
+# 커스텀 모달 → aria-labelledby 가 가리켜야 할 제목 id(다이얼로그 시맨틱, #27/#28).
+MODAL_LABELLEDBY = {"txtEditModal": "txtEditTitle", "pasteModal": "pasteTitle"}
+
 
 class _IdCollector(HTMLParser):
     """모든 요소의 ``id`` 속성값을 등장 순서대로 수집(중복 포함)."""
@@ -56,10 +59,30 @@ class _NavButtonCollector(HTMLParser):
             self.buttons[d.get("data-scr", "")] = d
 
 
+class _ModalCollector(HTMLParser):
+    """``MODAL_LABELLEDBY`` 키에 해당하는 모달 컨테이너의 속성 사전을 id 키로 수집."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.modals: "dict[str, dict[str, str]]" = {}
+
+    def handle_starttag(self, tag, attrs):
+        d = {name: (value or "") for name, value in attrs}
+        mid = d.get("id", "")
+        if mid in MODAL_LABELLEDBY:
+            self.modals[mid] = d
+
+
 def _collect_ids() -> "list[str]":
     parser = _IdCollector()
     parser.feed(WEB_INDEX.read_text(encoding="utf-8"))
     return parser.ids
+
+
+def _collect_modals() -> "dict[str, dict[str, str]]":
+    parser = _ModalCollector()
+    parser.feed(WEB_INDEX.read_text(encoding="utf-8"))
+    return parser.modals
 
 
 def _collect_nav_buttons() -> "dict[str, dict[str, str]]":
@@ -118,3 +141,22 @@ def test_nav_buttons_have_accessible_name_and_tooltip():
             f"navbtn[data-scr={scr}] 에 비어있지 않은 title 이 필요합니다"
             " — 접힘 시 호버 툴팁 소실(#27)."
         )
+
+
+def test_custom_modals_have_dialog_semantics():
+    """커스텀 모달은 role=dialog·aria-modal·유효한 aria-labelledby 를 정적으로 가져야 한다(#27/#28).
+
+    포커스/복귀/Escape 동적 거동은 selftest 게이트가 되읽어 단언한다 — 여기선 AT 가 다이얼로그로
+    인지하고 이름을 얻는 *정적 계약*만 가드한다(네이티브 window.confirm 대체가 아닌 인페이지 모달).
+    """
+    ids = set(_collect_ids())
+    modals = _collect_modals()
+    for mid, label_id in MODAL_LABELLEDBY.items():
+        assert mid in modals, f"커스텀 모달이 사라졌습니다: {mid}"
+        attrs = modals[mid]
+        assert attrs.get("role") == "dialog", f"{mid} 에 role=\"dialog\" 가 필요합니다."
+        assert attrs.get("aria-modal") == "true", f"{mid} 에 aria-modal=\"true\" 가 필요합니다."
+        assert attrs.get("aria-labelledby") == label_id, (
+            f"{mid} 의 aria-labelledby 는 '{label_id}' 여야 합니다(현재: {attrs.get('aria-labelledby')!r})."
+        )
+        assert label_id in ids, f"{mid} 의 aria-labelledby 대상 id '{label_id}' 가 DOM 에 없습니다."

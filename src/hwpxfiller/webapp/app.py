@@ -197,6 +197,31 @@ class WebFrontend:
         return Path(path).name
 
 
+# 모달 접근성 동적 프로브(#27/#28) — 실 브라우저에서 Modal 헬퍼의 초기포커스·Escape·복귀를
+# 되읽는다. 알려진 트리거(첫 내비 버튼)에 포커스 → pasteModal 열기 → Escape → 복귀 확인.
+# IIFE 가 JSON 직렬화 가능한 객체를 반환하고, 게이트 테스트가 각 필드를 단언한다.
+_MODAL_A11Y_PROBE_JS = r"""
+(function () {
+  var trigger = document.querySelector('.navbtn');
+  trigger.focus();
+  var before = document.activeElement.getAttribute('data-scr');
+  window.Modal.open('pasteModal', { initialFocus: document.getElementById('pasteText') });
+  var opened = !document.getElementById('pasteModal').classList.contains('hidden');
+  var focusIn = document.activeElement.id;
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  var closed = document.getElementById('pasteModal').classList.contains('hidden');
+  var restored = document.activeElement.getAttribute('data-scr');
+  return {
+    opened: opened,               // 열기 후 hidden 해제됐는가
+    focus_in: focusIn,            // 초기 포커스가 모달 안(pasteText)으로 들어갔는가
+    closed_by_escape: closed,     // Escape 로 닫혔는가
+    focus_before: before,         // 열기 직전 트리거(내비 data-scr)
+    focus_restored: restored      // 닫은 뒤 포커스가 트리거로 복귀했는가
+  };
+})()
+"""
+
+
 # ------------------------------------------------------------------ 자가검증(Q3)
 def _selftest_drive(window: "object") -> None:
     """동결 exe 부팅 자가검증 — 창이 뜨고 렌더/브리지가 도는지 되읽어 파일로 확정 후 정식 종료.
@@ -218,6 +243,10 @@ def _selftest_drive(window: "object") -> None:
             "document.getElementById('scr-home').classList.contains('on')")
         result["home_kpi_count"] = window.evaluate_js(  # type: ignore[attr-defined]
             "document.querySelectorAll('#homeKpis .kpi').length")
+        # 커스텀 모달 접근성 동적 거동(#27/#28) — 정적 계약(role/aria)은 test_web_dom_contract 가
+        # 보고, 여기선 실 브라우저에서 Modal 헬퍼가 초기포커스·Escape 닫기·트리거 복귀를 실제로
+        # 수행하는지 되읽는다. 알려진 트리거(첫 내비 버튼)에 포커스를 두고 열었다가 Escape 로 닫는다.
+        result["modal_a11y"] = window.evaluate_js(_MODAL_A11Y_PROBE_JS)  # type: ignore[attr-defined]
     except Exception as exc:  # noqa: BLE001
         result["error"] = repr(exc)
     # 출력 경로: 테스트 하네스(#30 접근 A)가 HWPX_SELFTEST_OUT 로 결정적 위치를 준다.

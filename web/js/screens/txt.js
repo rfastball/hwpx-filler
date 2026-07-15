@@ -98,16 +98,16 @@
       if (r) announce("저장", r);
     });
 
-    // 붙여넣기 모달(세션 템플릿)
+    // 붙여넣기 모달(세션 템플릿) — 개폐·초기포커스·복귀·Escape 는 Modal 헬퍼가 소유(#27/#28).
     $("btnPaste").addEventListener("click", () => {
       $("pasteText").value = LAST ? LAST.template_text : "";
-      $("pasteModal").classList.remove("hidden");
+      window.Modal.open("pasteModal", { initialFocus: $("pasteText") });
     });
-    $("pasteCancel").addEventListener("click", () => $("pasteModal").classList.add("hidden"));
+    $("pasteCancel").addEventListener("click", () => window.Modal.close("pasteModal"));
     $("pasteOk").addEventListener("click", () => {
       // 템플릿만 바꾼다 — 겨눈 데이터는 유지(VM datasource 불변). 라벨은 스냅샷이 실상태 반영(P4).
       Bridge.call(SCREEN, "set_template_text", { text: $("pasteText").value });
-      $("pasteModal").classList.add("hidden");
+      window.Modal.close("pasteModal");
     });
   }
 

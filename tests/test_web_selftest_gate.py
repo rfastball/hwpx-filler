@@ -75,3 +75,15 @@ class TestWebSelftestGate:
     def test_home_kpis_actually_rendered(self, selftest_result: dict) -> None:
         # home.js 가 push 스냅샷으로 KPI 타일을 실제 렌더 = Python→웹 관측 푸시 왕복 확인.
         assert selftest_result["home_kpi_count"] >= 1
+
+    def test_modal_opens_with_initial_focus_inside(self, selftest_result: dict) -> None:
+        # 커스텀 모달을 열면 hidden 해제 + 초기 포커스가 모달 안(pasteText)으로 들어간다(#27/#28).
+        m = selftest_result["modal_a11y"]
+        assert m["opened"] is True
+        assert m["focus_in"] == "pasteText"
+
+    def test_modal_escape_closes_and_restores_focus(self, selftest_result: dict) -> None:
+        # Escape 로 닫히고, 포커스가 열기 직전 트리거로 복귀한다(조용한 포커스 유실 금지 — #28).
+        m = selftest_result["modal_a11y"]
+        assert m["closed_by_escape"] is True
+        assert m["focus_restored"] == m["focus_before"]

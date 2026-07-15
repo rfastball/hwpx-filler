@@ -320,7 +320,7 @@
     </section>
 
     <!-- TXT 템플릿 편집/생성 모달(네이티브 입력 대체 — 인페이지 textarea) -->
-    <div id="txtEditModal" class="modal hidden">
+    <div id="txtEditModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="txtEditTitle">
       <div class="modal-card">
         <h3 id="txtEditTitle">새 TXT 템플릿</h3>
         <label class="ctl" id="txtNameRow"><span class="lbl">이름(확장자 제외)</span>
@@ -335,9 +335,9 @@
     </div>
 
     <!-- 붙여넣기 모달(세션 템플릿) -->
-    <div id="pasteModal" class="modal hidden">
+    <div id="pasteModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="pasteTitle">
       <div class="modal-card">
-        <h3>템플릿 붙여넣기</h3>
+        <h3 id="pasteTitle">템플릿 붙여넣기</h3>
         <p class="muted">{{필드}} 토큰이 든 평문을 붙여넣으세요. 루트 밖 세션 템플릿으로 씁니다.</p>
         <textarea id="pasteText" rows="10" placeholder="제목: {{공고명}} ..."></textarea>
         <div class="modal-actions">
@@ -350,6 +350,7 @@
 </div>
 
 <script src="js/bridge.js"></script>
+<script src="js/modal.js"></script>
 <script src="js/screens/home.js"></script>
 <script src="js/screens/txt.js"></script>
 <script src="js/screens/editor.js"></script>
