@@ -1,7 +1,7 @@
 #include "..\..\build\version\version.iss"
 
 #define AppName "HWPX Filler"
-#define AppExe "hwpx-filler.exe"
+#define AppExe "hwpx-filler-web.exe"
 
 [Setup]
 AppId={{A08D764C-A28D-4E7E-A8E9-E391E11A5A8C}
@@ -25,7 +25,7 @@ VersionInfoVersion={#AppVersion}
 Name: "desktopicon"; Description: "바탕 화면 바로가기 만들기"; GroupDescription: "추가 바로가기:"; Flags: unchecked
 
 [Files]
-Source: "..\..\dist\hwpx-filler\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\dist\hwpx-filler-web\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"

@@ -16,8 +16,8 @@ PRODUCTS = {
     "filler": {
         "product_name": "HWPX Filler",
         "description": "HWPX 누름틀 문서 생성기",
-        "filename": "hwpx-filler.exe",
-        "internal_name": "hwpx-filler",
+        "filename": "hwpx-filler-web.exe",
+        "internal_name": "hwpx-filler-web",
     },
     "diff": {
         "product_name": "HWPX Diff",

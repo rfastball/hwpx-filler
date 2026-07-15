@@ -1,8 +1,8 @@
 """파일 다이얼로그 필터 단일 출처(RC-34) — 파생 검증 + 하드코딩 재유입 grep 게이트.
 
 지원 확장자의 실질 단일 출처는 data/factory.py(``EXCEL_EXTS``)다. hwpxfiller 의
-필터는 gui/file_filters.py 가 거기서 파생하고, hwpxdiff 는 제품 간 임포트 금지
-규칙 때문에 자체 상수(``HWPX_FILTER``)를 소유한다 — 그 두 지점 밖의 필터 리터럴
+필터는 gui/file_filters.py 가 거기서 파생하고, hwpxdiff 웹앱은 제품 간 임포트 금지
+규칙 때문에 자체 필터(``HWPX_FILTERS`` 튜플)를 소유한다 — 그 두 지점 밖의 필터 리터럴
 하드코딩은 확장자 정책 변경 시 화면별 드리프트로 이어진다(재유입 금지).
 """
 
@@ -50,12 +50,16 @@ def test_factory_accepts_exactly_the_public_exts(tmp_path):
 
 
 def test_hwpxdiff_owns_equivalent_hwpx_filter():
-    """hwpxdiff 자체 상수(제품 간 임포트 금지)가 hwpxfiller 필터와 어긋나지 않는다."""
-    pytest.importorskip("PySide6")
-    import hwpxdiff.app as diff_app
+    """hwpxdiff 웹앱 자체 필터(제품 간 임포트 금지)가 hwpxfiller hwpx 필터와 확장자에서 일치.
+
+    표현형은 다르다 — filler 는 Qt-free 상수 ``HWPX_FILTER`` ("HWPX (*.hwpx)"), diff 웹앱은
+    comdlg32 용 (레이블, 패턴) 튜플 목록 — 그러나 같은 ``*.hwpx`` 확장자를 공유해야 한다.
+    """
+    from hwpxdiff.webapp.app import HWPX_FILTERS
     from hwpxfiller.gui.file_filters import HWPX_FILTER
 
-    assert diff_app.HWPX_FILTER == HWPX_FILTER
+    assert ("HWPX", "*.hwpx") in HWPX_FILTERS
+    assert "*.hwpx" in HWPX_FILTER
 
 
 def test_no_hardcoded_file_dialog_filter_literals():
@@ -71,8 +75,6 @@ def test_no_hardcoded_file_dialog_filter_literals():
                 continue
             if rel == "hwpxfiller/gui/file_filters.py":
                 continue  # 단일 출처(파생 정의)
-            if rel == "hwpxdiff/app.py" and line.lstrip().startswith("HWPX_FILTER"):
-                continue  # hwpxdiff 자체 상수 정의 라인
             offenders.append(f"{rel}:{lineno}: {line.strip()}")
     assert not offenders, (
         "파일 다이얼로그 필터 리터럴 하드코딩 재유입(RC-34) — "

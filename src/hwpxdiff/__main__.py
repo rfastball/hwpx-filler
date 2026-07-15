@@ -1,7 +1,7 @@
-"""``python -m hwpxdiff`` → GUI 실행."""
+"""``python -m hwpxdiff`` → 웹(pywebview) GUI 실행."""
 
 from __future__ import annotations
 
-from .app import main
+from .webapp.app import main
 
 raise SystemExit(main())
