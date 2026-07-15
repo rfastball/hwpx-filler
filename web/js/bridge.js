@@ -41,6 +41,9 @@
 
     /** 템플릿 관리 '작업 만들기' → 그 템플릿을 에디터에 로드(크로스스크린). 파일명·"ERROR:…". */
     loadTemplateIntoEditor(path) { return window.pywebview.api.load_template_into_editor(path); },
+
+    /** 에디터에 미저장 작업 세션이 있는가 — 크로스스크린 진입 전 폐기 확인 판단(#25). */
+    editorHasUnsavedWork() { return window.pywebview.api.editor_has_unsaved_work(); },
   };
 
   // Python→웹 푸시 진입점(app.py 의 evaluate_js 가 호출). 전역 노출.

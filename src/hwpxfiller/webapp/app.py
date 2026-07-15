@@ -101,7 +101,8 @@ class WebFrontend:
         if not path:
             return None
         try:
-            self._controller(screen).load_template_path(path)
+            # 새 템플릿 진입 = 새 작업 세션(#25) — 이전 세션과 섞이지 않게 원자 초기화 후 로드.
+            self._controller(screen).new_job_session(path)
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
         return Path(path).name
@@ -173,14 +174,19 @@ class WebFrontend:
             return f"ERROR: {exc}"
         return path
 
+    def editor_has_unsaved_work(self) -> bool:
+        """에디터에 진행 중인(미저장) 작업 세션이 있는가 — 크로스스크린 진입 전 폐기 확인용(#25)."""
+        return self._controller("editor").has_unsaved_work()
+
     def load_template_into_editor(self, path: str) -> "str | None":
         """템플릿 관리 '작업 만들기' → 그 템플릿을 에디터에 로드(크로스스크린). 파일명·``ERROR:``.
 
-        웹은 이 호출 후 에디터 화면으로 전환한다 — 링1 seam(editor.load_template_path)을 재사용해
-        VM 로직을 재구현하지 않는다.
+        웹은 이 호출 후 에디터 화면으로 전환한다 — 링1 seam(editor.new_job_session)을 재사용해
+        VM 로직을 재구현하지 않는다. 새 템플릿 진입은 새 작업 세션이라 이전 세션을 원자
+        초기화한다(#25) — 미저장 확인은 웹이 has_unsaved_work 로 선판단한다.
         """
         try:
-            self._controller("editor").load_template_path(path)
+            self._controller("editor").new_job_session(path)
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
         return Path(path).name

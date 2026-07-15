@@ -178,6 +178,10 @@
     const idx = el.dataset.index !== undefined ? Number(el.dataset.index) : null;
     switch (act) {
       case "pick-template": {
+        // 새 템플릿 선택 = 새 작업 세션 → 미저장 세션은 조용히 버리지 않고 확인(#25).
+        if (LAST && LAST.has_unsaved_work && !window.confirm(
+          "저장하지 않은 작업 세션이 있습니다.\n" +
+          "새 템플릿으로 시작하면 이전의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?")) break;
         const r = await Bridge.pickTemplateFile(SCREEN);
         if (typeof r === "string" && r.startsWith("ERROR:")) alertMsg(r.slice(6).trim());
         break;

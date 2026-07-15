@@ -145,6 +145,7 @@ class EditorController:
             "fmt_options": _FMT_OPTIONS,
             "name": self.job_name,
             "pattern": self.pattern,
+            "has_unsaved_work": self.has_unsaved_work(),
         }
         if self.model is not None:
             schema_only = self.model.is_schema_only()
@@ -184,6 +185,27 @@ class EditorController:
 
     def initial(self) -> dict:
         return self.snapshot()
+
+    # ------------------------------------------- 세션 수명주기(confirm-or-alarm)
+    def has_unsaved_work(self) -> bool:
+        """진행 중인 작업 세션이 있는가 — 폐기 전 확인 판단에 쓴다(#25).
+
+        ``_reset()`` 직후(방금 저장 포함)엔 False. 이름·데이터·매핑 모델 중 하나라도
+        있으면 사용자가 손댄 세션이므로 True — 템플릿만 갓 로드한 상태(모델 전)는 아직
+        버릴 게 없어 False(불필요한 프롬프트 억제).
+        """
+        return bool(self.job_name or self.data_path or self.model is not None)
+
+    def new_job_session(self, path: str) -> None:
+        """새 작업 세션을 원자적으로 시작 — 이전 세션 전량 초기화 후 템플릿 로드(#25).
+
+        템플릿→에디터 진입(템플릿 관리 '작업 만들기', 에디터 0단계 피커)의 단일 seam.
+        ``load_template_path`` 만 부르면 이름·데이터·매핑·단계가 이전 세션 값으로 남아
+        새 템플릿과 섞인 혼합 세션이 조용히 저장될 수 있다 — 여기서 ``_reset()`` 로
+        먼저 끊는다. 미저장 확인은 호출측(브리지/웹)이 ``has_unsaved_work`` 로 선판단한다.
+        """
+        self._reset()
+        self.load_template_path(path)
 
     # ------------------------------------------- 네이티브 보조(브리지가 다이얼로그 담당)
     def load_template_path(self, path: str) -> None:
@@ -305,7 +327,7 @@ class EditorController:
 
         웹은 ``needs_overwrite`` 면 재진술 확인 후 ``confirm_overwrite=True`` 로 재호출한다.
         """
-        verdict = validate_save(self.model, self.job_name, self.pattern)
+        verdict = validate_save(self.model, self.job_name, self.pattern, schema=self.schema)
         if not verdict.ok:
             return {"ok": False, "block_reason": verdict.block_reason}
         exists = self.registry.exists(self.job_name)
