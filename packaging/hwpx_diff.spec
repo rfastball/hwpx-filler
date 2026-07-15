@@ -1,80 +1,60 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""hwpx-diff onedir 빌드 스펙 (앱 A — 규격서 개정 diff 리뷰어).
+"""hwpx-diff onedir 빌드 스펙 (앱 A — 규격서 개정 diff 리뷰어, 웹 프론트엔드).
 
 빌드:  .venv/Scripts/pyinstaller packaging/hwpx_diff.spec --noconfirm
 산출:  dist/hwpx-diff/hwpx-diff.exe  (onedir·창 모드·콘솔 없음)
 
-diff 경로의 실제 의존은 PySide6(QtCore/QtGui/QtWidgets) + lxml + 표준库뿐이다.
-앱 B(메일머지)의 데이터 레이어(openpyxl 등)는 임포트 그래프에 없지만, 후일 누군가
-공유 모듈에 임포트를 추가해도 diff exe 가 조용히 비대해지지 않도록 명시 excludes 로
-못박는다.
+#22 로 PySide6 GUI → pywebview(WebView2) 웹 프론트엔드로 이관했다. 웹 스택은 Qt 런타임을
+싣지 않는다 — 비교 엔진(hwpxdiff.diff)은 Qt-free 라 뷰 계층만 웹으로 교체됐다(PySide6 전량
+excludes). 정적 자산 web-diff/ 을 datas 로 번들(동결 시 _MEIPASS/web-diff 에서 해석).
+앱 B(hwpxfiller)·데이터 레이어(openpyxl)는 임포트 그래프 밖 — 명시 excludes 로 못박는다.
+WebView2 런타임은 Win11 기본 탑재라 별도 동봉 불필요(hwpx_filler_web.spec 와 대칭).
 """
 
-import subprocess
-import sys
 from pathlib import Path
 
 SPEC_DIR = Path(SPECPATH)  # noqa: F821 - PyInstaller 주입 전역
-SRC = str(SPEC_DIR.parent / "src")
-version_path = SPEC_DIR.parent / "build" / "version" / "hwpx_diff_version.txt"
-if not version_path.exists():
-    raise SystemExit("버전 리소스 없음: 먼저 build.ps1을 실행하세요.")
+REPO = SPEC_DIR.parent
+SRC = str(REPO / "src")
 
-# 아이콘은 빌드 산출물 — 부재 시 생성(커밋 대상 아님).
+# 버전 리소스는 build.ps1 산출 — 있으면 붙이고, 없으면 생략(스펙 단독 검증 가능).
+version_path = REPO / "build" / "version" / "hwpx_diff_version.txt"
+version_res = str(version_path) if version_path.exists() else None
+# 아이콘은 커밋된 정적 리소스 — 있으면 붙인다(Qt 의존 make_icon 호출 제거).
 icon_path = SPEC_DIR / "hwpx-diff.ico"
-if not icon_path.exists():
-    subprocess.run([sys.executable, str(SPEC_DIR / "make_icon.py")], check=True)
+icon_res = str(icon_path) if icon_path.exists() else None
 
 a = Analysis(
     [str(SPEC_DIR / "hwpx_diff_entry.py")],
     pathex=[SRC],
     binaries=[],
-    datas=[],
-    hiddenimports=[],
+    datas=[
+        (str(REPO / "web-diff"), "web-diff"),   # index.html·css·js
+    ],
+    # 지연·간접 임포트 보증(브리지→화면 컨트롤러→비교 엔진→네이티브 다이얼로그).
+    hiddenimports=[
+        "hwpxdiff.webapp",
+        "hwpxdiff.webapp.app",
+        "hwpxdiff.webapp.screen_diff",
+        "hwpxdiff.diff",
+        "hwpxcore.native.dialogs",
+        "hwpxcore.native.clipboard",
+        "hwpxcore.atomic",
+        "lxml",
+    ],
     hookspath=[],
     runtime_hooks=[],
     excludes=[
-        # 주입 제품(hwpxfiller)은 통째로 밖 — diff 는 hwpxcore 에만 의존한다.
+        # 웹 스택은 Qt 를 싣지 않는다 — 엔진은 Qt-free 라 위젯 계층 전량 제외.
+        "PySide6", "PyQt5", "PyQt6",
+        # 앱 B(메일머지)와 그 데이터 레이어는 임포트 그래프 밖.
         "hwpxfiller",
         "openpyxl",
         # 표준 슬리밍.
-        "tkinter",
-        "unittest",
-        "pydoc",
-        # PySide6 대형 모듈(미사용) 방어.
-        "PySide6.QtNetwork",
-        "PySide6.QtQml",
-        "PySide6.QtQuick",
-        "PySide6.QtPdf",
-        "PySide6.QtWebEngineCore",
-        "PySide6.QtWebEngineWidgets",
-        "PySide6.QtMultimedia",
-        "PySide6.QtSql",
-        "PySide6.QtTest",
-        "PySide6.QtDesigner",
-        "PySide6.QtOpenGL",
-        "PySide6.QtOpenGLWidgets",
+        "tkinter", "unittest", "pydoc", "matplotlib", "numpy",
     ],
     noarchive=False,
 )
-
-# QtGui 훅이 imageformat/input-context 플러그인 의존으로 수집하는 미사용
-# QML/Quick/Pdf/OpenGL 연쇄를 제거한다. diff 앱은 QWidget 백엔드만 쓴다.
-SLIM_QT_BINARIES = {
-    "opengl32sw.dll",
-    "qpdf.dll",
-    "qtvirtualkeyboardplugin.dll",
-    "qt6network.dll",
-    "qt6opengl.dll",
-    "qt6pdf.dll",
-    "qt6quick.dll",
-    "qt6virtualkeyboard.dll",
-}
-a.binaries = [
-    item for item in a.binaries
-    if Path(item[0]).name.lower() not in SLIM_QT_BINARIES
-    and not Path(item[0]).name.lower().startswith("qt6qml")
-]
 pyz = PYZ(a.pure)
 
 exe = EXE(
@@ -82,8 +62,8 @@ exe = EXE(
     a.scripts,
     [],
     name="hwpx-diff",
-    icon=str(icon_path),
-    version=str(version_path),
+    icon=icon_res,
+    version=version_res,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
