@@ -23,6 +23,28 @@ def test_products_do_not_import_each_other() -> None:
     assert "hwpxdiff" not in _import_roots("hwpxfiller")
 
 
+def test_hwpxcore_native_stays_product_agnostic() -> None:
+    """hwpxcore.native(공용 Win32 글루)는 제품·Qt 를 임포트하지 않는다.
+
+    diff·filler 웹이 파일 다이얼로그·클립보드를 이 공용 계층으로만 공유한다 — core 가
+    제품(hwpxfiller/hwpxdiff)이나 PySide6 로 역의존하면 그 공유 전제가 무너지므로 시끄럽게
+    막는다. stdlib+ctypes 만 허용."""
+    forbidden = {"PySide6", "shiboken6", "hwpxfiller", "hwpxdiff"}
+    roots = _import_roots("hwpxcore")  # native 는 hwpxcore 하위 — 패키지 전체를 스캔
+    native_roots: set[str] = set()
+    for path in (ROOT / "src" / "hwpxcore" / "native").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                native_roots.update(a.name.split(".", 1)[0] for a in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                native_roots.add(node.module.split(".", 1)[0])
+    assert not (forbidden & native_roots), (
+        f"hwpxcore.native 가 금지 패키지를 임포트한다: {forbidden & native_roots}"
+    )
+    assert forbidden.isdisjoint(roots), "hwpxcore 가 제품/Qt 로 역의존한다 — core 는 아래로만"
+
+
 def test_hwpxdiff_core_module_is_qt_free() -> None:
     """hwpxdiff/diff.py(+cli.py)는 stdlib+hwpxcore 만 — 성형·그룹화·렌더 로직이 뷰로
     돌아가 GUI/CLI 표면이 갈라지는 회귀(RC-17)를 막는다."""

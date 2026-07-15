@@ -24,9 +24,9 @@ from pathlib import Path
 from ..core.job import JobRegistry, default_jobs_dir
 from ..core.text_registry import TextTemplateRegistry, default_text_templates_dir
 from ..gui.file_filters import EXCEL_FILTER_PATTERN  # 확장자 단일 출처(RC-34) — Qt-free 상수
-from ._debug import log
-from .clipboard import set_clipboard_text
-from .dialogs import open_file_dialog, open_folder_dialog, save_file_dialog
+from hwpxcore.native._debug import log
+from hwpxcore.native.clipboard import set_clipboard_text
+from hwpxcore.native.dialogs import open_file_dialog, open_folder_dialog, save_file_dialog
 from .screen_editor import EditorController
 from .screen_home import HomeController
 from .screen_matrix import MatrixController

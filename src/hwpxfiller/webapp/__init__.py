@@ -8,7 +8,9 @@
 - :mod:`~hwpxfiller.webapp.screens` — 화면별 컨트롤러(webview 비의존, 헤드리스 테스트 가능).
   링1 VM 을 소유·위임하는 얇은 어댑터. VM 로직 재구현 금지.
 - :mod:`~hwpxfiller.webapp.app` — pywebview 창·브리지·엔트리(``main``). webview 를 여기서만 임포트.
-- :mod:`~hwpxfiller.webapp.clipboard` — Win32 CF_UNICODETEXT 클립보드(QClipboard 상당, 의존성 0).
+
+네이티브 표면(파일 다이얼로그·클립보드)은 :mod:`hwpxcore.native` 공용 계층에서 온다 —
+diff 웹과 공유(제품 간 250줄 STA/OLE ctypes 복제 회피).
 
 정적 자산은 저장소 루트 ``web/`` (index.html·css·js). 개발 시 루트에서, 동결(PyInstaller)
 시 ``sys._MEIPASS/web`` 에서 해석한다.
