@@ -75,6 +75,63 @@ def test_excel_missing_data_errors():
         main(["--template", TEMPLATE])
 
 
+# ------------------------------------------------- 다중 시트 loud 게이트(#2)
+def _xlsx_multi(path: Path, sheets: "list[str]") -> str:
+    """여러 시트 워크북 — 각 시트에 FIELDS 헤더 + 유효 1행."""
+    wb = Workbook()
+    wb.remove(wb.active)
+    for name in sheets:
+        ws = wb.create_sheet(name)
+        ws.append(FIELDS)
+        ws.append(["R26BK00000001", "관급자재 구매", "일반경쟁", "12000000", "2026-08-01 10:00"])
+    wb.save(path)
+    return str(path)
+
+
+def test_cli_fill_multisheet_without_sheet_errors(tmp_path, capsys):
+    """다중 시트인데 --sheet 미지정 → loud 실패(시트 나열), 산출물 미생성(#2)."""
+    data = _xlsx_multi(tmp_path / "m.xlsx", ["공고목록", "낙찰현황"])
+    out = tmp_path / "out"
+    with pytest.raises(SystemExit):
+        main(["--template", TEMPLATE, "--data", data, "--out", str(out),
+              "--pattern", "공고-{{입찰공고번호}}"])
+    err = capsys.readouterr().err
+    assert "공고목록" in err and "낙찰현황" in err  # 어느 시트가 있는지 재진술
+    assert not out.exists() or _outputs(out) == []  # 조용한 생성 없음
+
+
+def test_cli_fill_multisheet_with_sheet_proceeds(tmp_path):
+    """--sheet 명시 → 게이트 통과, 해당 시트로 생성."""
+    data = _xlsx_multi(tmp_path / "m.xlsx", ["공고목록", "낙찰현황"])
+    out = tmp_path / "out"
+    rc = main(["--template", TEMPLATE, "--data", data, "--out", str(out),
+               "--sheet", "낙찰현황", "--pattern", "공고-{{입찰공고번호}}"])
+    assert rc == 0
+    assert _outputs(out) == ["공고-R26BK00000001.hwpx"]
+
+
+def test_cli_render_multisheet_without_sheet_errors(tmp_path, capsys):
+    """render 경로도 동일 게이트 — 다중 시트 --sheet 미지정 시 loud 실패."""
+    data = _xlsx_multi(tmp_path / "m.xlsx", ["공고목록", "낙찰현황"])
+    tpl = tmp_path / "t.txt"
+    tpl.write_text("공고: {{공고명}}", encoding="utf-8")
+    with pytest.raises(SystemExit):
+        main(["render", str(tpl), "--data", data])
+    err = capsys.readouterr().err
+    assert "공고목록" in err and "낙찰현황" in err
+
+
+def test_cli_singlesheet_no_gate(tmp_path):
+    """단일 시트는 --sheet 없이도 조용히 진행(회귀 방지) — 모호할 때만 묻는다."""
+    data = _xlsx(tmp_path / "single.xlsx",
+                 [["R26BK00000001", "관급자재 구매", "일반경쟁", "12000000", "2026-08-01 10:00"]])
+    out = tmp_path / "out"
+    rc = main(["--template", TEMPLATE, "--data", data, "--out", str(out),
+               "--pattern", "공고-{{입찰공고번호}}"])
+    assert rc == 0
+    assert _outputs(out) == ["공고-R26BK00000001.hwpx"]
+
+
 # ------------------------------------------------------- 프로파일 매핑(엑셀 소스)
 def test_profile_maps_source_keys_to_template_fields(tmp_path):
     # 소스 헤더가 영문이라도 프로파일이 한글 필드로 잇는다.
