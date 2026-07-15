@@ -127,7 +127,7 @@ def test_win32_filter_block_derives_from_exts_and_is_double_null_terminated():
     """
     from hwpxfiller.data.factory import EXCEL_EXTS
     from hwpxfiller.gui.file_filters import EXCEL_FILTER_PATTERN
-    from hwpxfiller.webapp.dialogs import _filter_block
+    from hwpxcore.native.dialogs import _filter_block
 
     for ext in EXCEL_EXTS:
         assert f"*{ext}" in EXCEL_FILTER_PATTERN  # 확장자 추가가 필터에 자동 반영
