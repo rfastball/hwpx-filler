@@ -87,3 +87,13 @@ class TestWebSelftestGate:
         m = selftest_result["modal_a11y"]
         assert m["closed_by_escape"] is True
         assert m["focus_restored"] == m["focus_before"]
+
+    def test_responsive_layout_collapses_at_min_width(self, selftest_result: dict) -> None:
+        # 최소폭(760<820 경계)에서 .app 이 세로 단일열(1 track)로 접힘 — 최소 크기 가로 오버플로 회귀 가드(#27).
+        narrow = selftest_result["grid_narrow"]
+        assert len(narrow.split()) == 1, f"최소폭에서 .app 이 단일열로 안 접힘: {narrow!r}"
+
+    def test_responsive_layout_restores_two_panes_when_wide(self, selftest_result: dict) -> None:
+        # 넓힐 때(경계 위) .app 이 2판(2 tracks, 레일+스테이지)으로 복귀 — 경계가 죽어 상시 적층되는 회귀 가드(#27).
+        wide = selftest_result["grid_wide"]
+        assert len(wide.split()) == 2, f"넓은 폭에서 .app 이 2판으로 안 펴짐: {wide!r}"

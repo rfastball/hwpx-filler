@@ -16,6 +16,11 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 WEB_INDEX = Path(__file__).resolve().parents[1] / "web" / "index.html"
+WEB_CSS = Path(__file__).resolve().parents[1] / "web" / "css" / "app.css"
+
+# 반응형 경계(#27): 창 최소폭(760)보다 넓은 이 경계에서 2판 레이아웃이 세로 적층으로 접혀야
+# 최소 크기에서도 가로 오버플로 없이 쓸 수 있다. 경계나 접힘 규칙이 사라지면 회귀.
+RESPONSIVE_BREAKPOINT_PX = 820
 
 # 여섯 화면 루트 — 셸 라우터가 표시/숨김으로 전환하는 최상위 컨테이너(회귀 시 화면 소실).
 SCREEN_ROOTS = ("scr-home", "scr-editor", "scr-run", "scr-matrix", "scr-txt", "scr-tpl")
@@ -160,3 +165,18 @@ def test_custom_modals_have_dialog_semantics():
             f"{mid} 의 aria-labelledby 는 '{label_id}' 여야 합니다(현재: {attrs.get('aria-labelledby')!r})."
         )
         assert label_id in ids, f"{mid} 의 aria-labelledby 대상 id '{label_id}' 가 DOM 에 없습니다."
+
+
+def test_responsive_breakpoint_collapses_layout():
+    """좁은 폭 경계에서 2판 레이아웃이 세로 단일열로 접히는 규칙이 CSS 에 있어야 한다(#27).
+
+    실 렌더 검증(창을 실제로 줄여 되읽기)은 selftest 게이트가 한다 — 여기선 헤드리스 포함 전
+    플랫폼에서 경계 규칙 자체의 존재를 정적으로 가드한다(경계·접힘 규칙 삭제 회귀 차단).
+    """
+    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())  # 공백 제거 → 포맷 불가지
+    assert f"@media(max-width:{RESPONSIVE_BREAKPOINT_PX}px)" in css, (
+        f"반응형 경계 @media(max-width:{RESPONSIVE_BREAKPOINT_PX}px) 가 사라졌습니다(#27)."
+    )
+    assert ".app{grid-template-columns:1fr}" in css, (
+        ".app 세로 단일열 접힘 규칙이 사라졌습니다 — 최소 크기에서 가로 오버플로 회귀(#27)."
+    )

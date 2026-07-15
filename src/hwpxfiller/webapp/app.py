@@ -247,6 +247,16 @@ def _selftest_drive(window: "object") -> None:
         # 보고, 여기선 실 브라우저에서 Modal 헬퍼가 초기포커스·Escape 닫기·트리거 복귀를 실제로
         # 수행하는지 되읽는다. 알려진 트리거(첫 내비 버튼)에 포커스를 두고 열었다가 Escape 로 닫는다.
         result["modal_a11y"] = window.evaluate_js(_MODAL_A11Y_PROBE_JS)  # type: ignore[attr-defined]
+        # 반응형 경계(#27) — 창을 최소폭(760<820 경계)으로 줄였다 넓히며 .app 그리드 열 수를
+        # 실 엔진에서 되읽는다. 정적 CSS 경계 존재는 test_web_dom_contract 가, 실제 접힘/펴짐은
+        # 여기가 가드. resize 는 OS 이벤트라 relayout 안정까지 짧게 대기(게이트는 flaky 금지).
+        grid_probe = "getComputedStyle(document.querySelector('.app')).gridTemplateColumns"
+        window.resize(760, 600)  # type: ignore[attr-defined]  # 최소 크기 = 경계 아래 → 세로 적층
+        time.sleep(0.6)
+        result["grid_narrow"] = window.evaluate_js(grid_probe)  # type: ignore[attr-defined]
+        window.resize(1180, 820)  # type: ignore[attr-defined]  # 기본 크기 = 경계 위 → 2판 복귀
+        time.sleep(0.6)
+        result["grid_wide"] = window.evaluate_js(grid_probe)  # type: ignore[attr-defined]
     except Exception as exc:  # noqa: BLE001
         result["error"] = repr(exc)
     # 출력 경로: 테스트 하네스(#30 접근 A)가 HWPX_SELFTEST_OUT 로 결정적 위치를 준다.
