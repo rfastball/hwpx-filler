@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
+from hwpxfiller.core.job import SlugCollisionError
 from hwpxfiller.data import DataSource, make_source
 from hwpxfiller.data.factory import source_from_pool_item
 from hwpxfiller.data.nara import NaraStdDataSource
@@ -257,6 +258,20 @@ def test_pipeline_pool_item_roundtrip_references_only(tmp_path):
         {"id": "1", "name": "A", "city": "서울"},
         {"id": "2", "name": "B", "city": "부산"},
     ]
+
+
+def test_pipeline_pool_item_slug_collision_is_loud(tmp_path):
+    """파이프라인 항목도 다른 이름·같은 slug 저장 시 loud 거부 — 참조·레시피 소실 방지(#34)."""
+    reg = DatasetPoolRegistry(tmp_path)
+    reg.save(DatasetPoolItem(name="6월/조립", kind="pipeline", opts={"sources": [], "steps": []}))
+    with pytest.raises(SlugCollisionError):
+        reg.save(DatasetPoolItem(name="6월_조립", kind="pipeline", opts={"sources": [], "steps": []}))
+    # 확정 덮어쓰기는 opt-in 으로만.
+    reg.save(
+        DatasetPoolItem(name="6월_조립", kind="pipeline", opts={"sources": [], "steps": []}),
+        allow_overwrite=True,
+    )
+    assert reg.names() == ["6월_조립"]
 
 
 # ------------------------------------------------------------ 나라 sub-source 키 주입 재귀

@@ -77,13 +77,47 @@ def _slug(name: str) -> str:
     return s or "unnamed"
 
 
-class JobSlugCollisionError(Exception):
-    """서로 다른 작업 이름이 같은 slug(=같은 파일)로 매핑돼 기존 작업을 덮으려 할 때 loud raise.
+class SlugCollisionError(Exception):
+    """서로 다른 이름이 같은 slug(=같은 파일)로 매핑돼 기존 항목을 덮으려 할 때 loud raise.
 
     slug 이 비단사라 ``예산/2026`` 과 ``예산_2026`` 이 같은 파일이 된다. 확인 없는 덮어쓰기는
-    durable 데이터(템플릿·매핑·태그)를 조용히 소실시키므로(confirm-or-alarm 위반),
-    :meth:`JobRegistry.save` 가 명시적 ``allow_overwrite`` 없이는 여기서 막는다.
+    durable 데이터(템플릿·매핑·태그·참조)를 조용히 소실시키므로(confirm-or-alarm 위반),
+    각 레지스트리의 ``save`` 가 명시적 ``allow_overwrite`` 없이는 여기서 막는다.
+    JobRegistry·DatasetPoolRegistry·MappingBaseRegistry 가 :func:`guard_slug_collision` 로
+    공유하는 단일 계약(#1 JobRegistry 에서 확립, #34 세 레지스트리로 일반화).
     """
+
+
+# 하위호환 별칭 — #1 이 도입한 이름. 기존 호출·테스트(webapp editor·test_job)가 잡던
+# 예외 계약을 깨지 않도록 같은 클래스를 가리키게 둔다(`except JobSlugCollisionError` 유효).
+JobSlugCollisionError = SlugCollisionError
+
+
+def guard_slug_collision(path: Path, name: str, load_name, *, kind: str) -> None:
+    """slug 충돌 loud 가드 — 저장 경계 공용(세 레지스트리 공유, #34).
+
+    ``path`` 가 이미 존재하면 저장된 이름을 ``load_name(path)`` 로 읽어 ``name`` 과
+    비교한다. 다르면(다른 이름·같은 파일) 또는 읽을 수 없으면(손상) :class:`SlugCollisionError`
+    를 던진다 — 조용한 durable 소실 방지. 같은 이름 재저장(자기 갱신)은 충돌이 아니라 통과.
+    호출측이 확정 덮어쓰기를 받았으면 ``allow_overwrite`` 로 이 함수를 아예 건너뛴다.
+
+    ``kind`` 는 메시지에 쓰는 항목 종류 라벨('작업'·'데이터셋'·'매핑 프로파일').
+    """
+    if not path.exists():
+        return
+    try:
+        existing_name = load_name(path)
+    except Exception:  # noqa: BLE001 — 손상 파일: 이름 불명 → 덮어쓰기 판단 불가, loud
+        raise SlugCollisionError(
+            f"{kind} '{name}' 저장 대상 파일 {path.name} 이 이미 있으나 손상돼 "
+            f"소유 {kind}을(를) 확인할 수 없습니다 — 조용히 덮지 않습니다"
+        ) from None
+    if existing_name != name:
+        raise SlugCollisionError(
+            f"{kind} '{name}' 과 기존 {kind} '{existing_name}' 이 같은 파일"
+            f"({path.name})로 매핑됩니다 — 저장하면 '{existing_name}' 이 소실됩니다. "
+            f"조용히 덮지 않습니다"
+        )
 
 
 def default_jobs_dir() -> Path:
@@ -223,25 +257,15 @@ class JobRegistry:
         """작업을 저장한다. slug 충돌(다른 이름·같은 파일)은 loud 거부.
 
         대상 파일이 이미 **다른 작업 이름**으로 존재하거나 읽을 수 없으면(손상)
-        ``allow_overwrite`` 없이는 :class:`JobSlugCollisionError` 를 던진다 —
+        ``allow_overwrite`` 없이는 :class:`SlugCollisionError` 를 던진다 —
         조용한 durable 소실 방지. 같은 이름 재저장(자기 갱신)은 충돌이 아니라 그대로 통과.
         """
         self.directory.mkdir(parents=True, exist_ok=True)
         path = self.path_for(job.name)
-        if not allow_overwrite and path.exists():
-            try:
-                existing_name = Job.load(path).name
-            except Exception:  # noqa: BLE001 — 손상 파일: 이름 불명 → 덮어쓰기 판단 불가, loud
-                raise JobSlugCollisionError(
-                    f"작업 '{job.name}' 저장 대상 파일 {path.name} 이 이미 있으나 손상돼 "
-                    f"소유 작업을 확인할 수 없습니다 — 조용히 덮지 않습니다"
-                ) from None
-            if existing_name != job.name:
-                raise JobSlugCollisionError(
-                    f"작업 '{job.name}' 과 기존 작업 '{existing_name}' 이 같은 파일"
-                    f"({path.name})로 매핑됩니다 — 저장하면 '{existing_name}' 이 소실됩니다. "
-                    f"조용히 덮지 않습니다"
-                )
+        if not allow_overwrite:
+            guard_slug_collision(
+                path, job.name, lambda p: Job.load(p).name, kind="작업"
+            )
         job.save(path)
 
     def exists(self, name: str) -> bool:

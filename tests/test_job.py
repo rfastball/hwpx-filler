@@ -15,6 +15,7 @@ from hwpxfiller.core.job import (
     JobRegistry,
     JobSlugCollisionError,
     RunRequest,
+    SlugCollisionError,
     default_jobs_dir,
 )
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
@@ -275,6 +276,14 @@ def test_registry_save_corrupt_target_is_loud(tmp_path):
     # 명시 opt-in 이면 손상 파일도 덮어쓸 수 있다.
     reg.save(_job(), allow_overwrite=True)
     assert reg.load("입찰공고서").template_path == "/tmp/template.hwpx"
+
+
+def test_job_slug_collision_error_is_generalized_alias():
+    """#34: JobSlugCollisionError 는 공용 SlugCollisionError 의 하위호환 별칭(같은 클래스).
+
+    세 레지스트리가 한 계약을 공유하도록 일반화했고, #1 이 도입한 이름은 기존 호출·테스트가
+    잡던 예외 계약을 깨지 않게 같은 클래스를 가리킨다."""
+    assert JobSlugCollisionError is SlugCollisionError
 
 
 def test_registry_list_jobs_sorted_by_name(tmp_path):

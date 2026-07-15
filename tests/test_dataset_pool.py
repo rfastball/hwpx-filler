@@ -17,6 +17,7 @@ from hwpxfiller.core.dataset_pool import (
     DatasetPoolRegistry,
     default_dataset_pool_dir,
 )
+from hwpxfiller.core.job import SlugCollisionError
 from hwpxfiller.data.excel import ExcelDataSource
 from hwpxfiller.data.factory import source_from_pool_item
 from hwpxfiller.data.nara import NaraStdDataSource
@@ -86,6 +87,53 @@ def test_registry_filters_by_status(tmp_path):
     reg.save(retired)
     assert [it.name for it in reg.list_items(status=STATUS_ACTIVE)] == ["살아있음"]
     assert len(reg.list_items()) == 2
+
+
+def test_registry_save_rejects_slug_collision_different_name(tmp_path):
+    """다른 이름이 같은 slug(=같은 파일)로 매핑되면 loud raise — 첫 항목 소실 방지(#34)."""
+    reg = DatasetPoolRegistry(tmp_path)
+    reg.save(DatasetPoolItem(name="예산/2026", kind="excel", opts={"path": "/a.xlsx"}))
+    with pytest.raises(SlugCollisionError):
+        reg.save(DatasetPoolItem(name="예산_2026", kind="excel", opts={"path": "/b.xlsx"}))
+    # 첫 항목이 온전 보존된다(덮이지 않음).
+    assert reg.load("예산/2026").opts["path"] == "/a.xlsx"
+    assert [it.opts["path"] for it in reg.list_items()] == ["/a.xlsx"]
+
+
+def test_registry_save_same_name_update_is_not_collision(tmp_path):
+    """같은 이름 재저장(상태 전이 등)은 충돌이 아니라 그대로 통과 — 자기 갱신."""
+    reg = DatasetPoolRegistry(tmp_path)
+    it = DatasetPoolItem(name="6월 공고", kind="excel", opts={"path": "/a.xlsx"})
+    reg.save(it)
+    it.archive()
+    reg.save(it)  # allow_overwrite 없이도 통과(동명)
+    assert reg.load("6월 공고").status == STATUS_ARCHIVED
+
+
+def test_registry_save_allow_overwrite_bypasses_guard(tmp_path):
+    """명시적 opt-in(allow_overwrite) 은 slug 충돌을 통과 — 확정된 덮어쓰기."""
+    reg = DatasetPoolRegistry(tmp_path)
+    reg.save(DatasetPoolItem(name="예산/2026", kind="excel", opts={"path": "/a.xlsx"}))
+    reg.save(
+        DatasetPoolItem(name="예산_2026", kind="excel", opts={"path": "/b.xlsx"}),
+        allow_overwrite=True,
+    )
+    assert len(reg.list_items()) == 1
+    assert reg.load("예산_2026").opts["path"] == "/b.xlsx"
+
+
+def test_registry_save_corrupt_target_is_loud(tmp_path):
+    """대상 파일이 손상돼 소유 항목을 확인할 수 없으면 allow_overwrite 없이는 raise."""
+    reg = DatasetPoolRegistry(tmp_path)
+    reg.directory.mkdir(parents=True, exist_ok=True)
+    reg.path_for("공고").write_text('{"name": "절단', encoding="utf-8")
+    with pytest.raises(SlugCollisionError):
+        reg.save(DatasetPoolItem(name="공고", kind="excel", opts={"path": "/a.xlsx"}))
+    reg.save(
+        DatasetPoolItem(name="공고", kind="excel", opts={"path": "/a.xlsx"}),
+        allow_overwrite=True,
+    )
+    assert reg.load("공고").opts["path"] == "/a.xlsx"
 
 
 def test_default_pool_dir_uses_home_env(monkeypatch, tmp_path):

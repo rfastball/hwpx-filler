@@ -22,7 +22,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .job import _slug
+from .job import _slug, guard_slug_collision
 from hwpxcore.atomic import write_text_atomic
 
 # 항목 상태 — active(실행 대상) / archived(사이클 유휴, 복구 가능) / retired(은퇴, 숨김).
@@ -122,7 +122,10 @@ class DatasetPoolRegistry:
     JobRegistry` 미러). 홈 대시보드 데이터 풀 표면의 데이터 원천.
 
     위치-불가지: 생성자가 디렉터리를 받는다(테스트는 ``tmp_path``, GUI 는
-    :func:`default_dataset_pool_dir`). 파일명은 이름 slug + ``.dataset.json``.
+    :func:`default_dataset_pool_dir`). 파일명은 이름 slug + ``.dataset.json``. slug 이
+    비단사라 서로 다른 이름이 같은 파일로 매핑될 수 있어(예: ``a/b`` 와 ``a_b``)
+    :meth:`save` 는 :class:`~hwpxfiller.core.job.SlugCollisionError` 로 loud raise 하며
+    명시적 ``allow_overwrite=True`` 로만 통과시킨다(JobRegistry 미러, #34).
     """
 
     SUFFIX = ".dataset.json"
@@ -133,9 +136,20 @@ class DatasetPoolRegistry:
     def path_for(self, name: str) -> Path:
         return self.directory / (_slug(name) + self.SUFFIX)
 
-    def save(self, item: DatasetPoolItem) -> None:
+    def save(self, item: DatasetPoolItem, *, allow_overwrite: bool = False) -> None:
+        """항목을 저장한다. slug 충돌(다른 이름·같은 파일)은 loud 거부.
+
+        대상 파일이 이미 **다른 항목 이름**으로 존재하거나 손상돼 소유를 확인할 수 없으면
+        ``allow_overwrite`` 없이는 :class:`~hwpxfiller.core.job.SlugCollisionError` 를 던진다
+        (조용한 durable 참조 소실 방지). 같은 이름 재저장(상태 전이 등)은 충돌이 아니라 통과.
+        """
         self.directory.mkdir(parents=True, exist_ok=True)
-        item.save(self.path_for(item.name))
+        path = self.path_for(item.name)
+        if not allow_overwrite:
+            guard_slug_collision(
+                path, item.name, lambda p: DatasetPoolItem.load(p).name, kind="데이터셋"
+            )
+        item.save(path)
 
     def exists(self, name: str) -> bool:
         return self.path_for(name).exists()
