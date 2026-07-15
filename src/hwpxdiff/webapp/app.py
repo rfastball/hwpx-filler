@@ -23,7 +23,9 @@ from hwpxcore.native.dialogs import open_file_dialog
 from .screen_diff import DiffController
 
 WINDOW_TITLE = "HWPX 규격서 개정 비교"  # 창 제목 = 파일 다이얼로그 소유주 창 FindWindowW 키
-HWPX_FILTERS = [("HWPX (*.hwpx)", "*.hwpx"), ("모든 파일", "*.*")]
+# comdlg32 필터: (레이블, 패턴) 쌍 — dialogs._filter_block 이 "레이블 (패턴)"으로 조립하므로
+# 레이블엔 패턴을 다시 박지 않는다(이중 표기·RC-34 게이트). filler webapp 의 필터 관례와 동일.
+HWPX_FILTERS = [("HWPX", "*.hwpx"), ("모든 파일", "*.*")]
 
 
 # ------------------------------------------------------------------ 경로 해석
