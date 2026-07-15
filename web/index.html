@@ -20,18 +20,20 @@
     <div class="rl">투트랙 허브</div>
     <!-- #27: 접힘(rail-collapsed) 시 .n/.d 가 display:none 이라 접근 이름·툴팁이 소실됨 →
          각 버튼에 주 라벨을 aria-label(SR 이름)+title(호버 툴팁)로 고정. rail-toggle 선례와 동일. -->
+    <!-- .ni: 접힘(rail-collapsed) 시 .n/.d 가 숨으면 노출되는 시각적 표지(라벨 첫 글자) — #27
+         "식별 가능한 이름(aria/title)과 시각적 표지" 완료기준. 펼침 상태에선 display:none. -->
     <button class="navbtn" data-scr="home" aria-current="true" aria-label="대시보드" title="대시보드">
-      <span class="n">대시보드</span><span class="d">두 트랙 허브 · 요약</span></button>
+      <span class="ni">대</span><span class="n">대시보드</span><span class="d">두 트랙 허브 · 요약</span></button>
     <button class="navbtn" data-scr="editor" aria-label="작업 에디터" title="작업 에디터">
-      <span class="n">작업 에디터</span><span class="d">HWPX · 4스텝</span></button>
+      <span class="ni">작</span><span class="n">작업 에디터</span><span class="d">HWPX · 4스텝</span></button>
     <button class="navbtn" data-scr="run" aria-label="실행" title="실행">
-      <span class="n">실행</span><span class="d">HWPX · 데이터 겨눔 → 생성</span></button>
+      <span class="ni">실</span><span class="n">실행</span><span class="d">HWPX · 데이터 겨눔 → 생성</span></button>
     <button class="navbtn" data-scr="matrix" aria-label="여러 작업 실행" title="여러 작업 실행">
-      <span class="n">여러 작업 실행</span><span class="d">여러 작업 × 공통 데이터 → 생성</span></button>
+      <span class="ni">여</span><span class="n">여러 작업 실행</span><span class="d">여러 작업 × 공통 데이터 → 생성</span></button>
     <button class="navbtn" data-scr="txt" aria-label="즉시 기안 (txt)" title="즉시 기안 (txt)">
-      <span class="n">즉시 기안 (txt)</span><span class="d">템플릿+데이터 → 실시간 → 복사</span></button>
+      <span class="ni">즉</span><span class="n">즉시 기안 (txt)</span><span class="d">템플릿+데이터 → 실시간 → 복사</span></button>
     <button class="navbtn" data-scr="tpl" aria-label="템플릿 관리" title="템플릿 관리">
-      <span class="n">템플릿 관리</span><span class="d">HWPX·TXT 라이브러리 · 상태·변환·검토</span></button>
+      <span class="ni">템</span><span class="n">템플릿 관리</span><span class="d">HWPX·TXT 라이브러리 · 상태·변환·검토</span></button>
   </nav>
 
   <main class="stage">

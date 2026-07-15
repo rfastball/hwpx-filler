@@ -153,6 +153,26 @@ def test_nav_buttons_have_accessible_name_and_tooltip():
         )
 
 
+def test_collapsed_nav_has_visual_marker():
+    """접힘 상태에서 라벨(.n/.d)이 숨겨져도 각 내비 버튼에 눈에 보이는 시각적 표지(.ni)가 있어야 한다(#27).
+
+    aria-label/title 는 SR 이름·호버 툴팁이고, 이건 접힘 상태에서 상시 보이는 시각 표지다 —
+    #27 완료기준 '식별 가능한 이름과 시각적 표지'의 후자. 여섯 버튼 각각 1개 + 접힘 시 노출 규칙.
+    """
+    index = WEB_INDEX.read_text(encoding="utf-8")
+    marker_count = index.count('class="ni"')
+    assert marker_count == len(NAV_SCREENS), (
+        f"내비 시각 표지(.ni)가 {marker_count}개 — 여섯 버튼 각각 정확히 1개여야 합니다(#27)."
+    )
+    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    assert ".app.rail-collapsed.navbtn.ni{display:block" in css, (
+        "접힘 상태에서 .ni 시각 표지를 노출하는 규칙이 사라졌습니다(#27)."
+    )
+    assert ".navbtn.ni{display:none" in css, (
+        "펼침 상태에서 .ni 를 숨기는 규칙이 사라졌습니다 — 라벨과 중복 노출(#27)."
+    )
+
+
 def test_custom_modals_have_dialog_semantics():
     """커스텀 모달은 role=dialog·aria-modal·유효한 aria-labelledby 를 정적으로 가져야 한다(#27/#28).
 

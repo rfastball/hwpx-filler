@@ -252,6 +252,48 @@ _PRESERVE_PROBE_JS = r"""
 })()
 """
 
+# 실화면 회귀(#28 완료기준) — 위 기제 프로브는 합성 픽스처였고, 여기선 shipped __push 경로로
+# 실 컨트롤러 스냅샷을 4개 실화면 render() 에 흘려 (a) Preserve.around 래핑이 실 render 를
+# 깨지 않는지, (b) txt 프리뷰(#renderView)의 스크롤이 실 재렌더를 가로질러 유지되는지 되읽는다.
+# 스냅샷은 실 컨트롤러 initial()(비동기) 로 당겨 stash 하고, 스크롤은 가시 화면에서만 유효하므로
+# txt 를 가시화한다. 셋업(비동기 fire)과 되읽기 사이에 한 번 대기.
+_PRESERVE_REAL_SETUP_JS = r"""
+(function () {
+  window.__snaps = {};
+  ['txt', 'editor', 'run', 'matrix'].forEach(function (scr) {
+    window.pywebview.api.initial(scr).then(function (s) { window.__snaps[scr] = s; });
+  });
+  window.Nav.go('txt');  // 스크롤은 가시 화면에서만 유효 → txt 가시화
+})()
+"""
+
+_PRESERVE_REAL_PROBE_JS = r"""
+(function () {
+  var out = {}, snaps = window.__snaps || {};
+  ['txt', 'editor', 'run', 'matrix'].forEach(function (scr) {
+    try {
+      if (!snaps[scr]) { out[scr] = 'no-snap'; return; }
+      window.__push(scr, snaps[scr]);   // 실 render() (Preserve.around 래핑)
+      out[scr] = 'ok';
+    } catch (e) { out[scr] = 'throw:' + (e && e.message); }
+  });
+  // txt 스크롤 보존 end-to-end: 프리뷰를 강제로 길게 → 오버플로 → 스크롤 → 재렌더 → 유지?
+  try {
+    var snap = snaps['txt'];
+    if (!snap) { out.txt_scroll_top = 'no-snap'; return out; }
+    var lines = [];
+    for (var i = 0; i < 200; i++) { lines.push('라인 ' + i + ' {{공고명}}'); }
+    snap.template_text = lines.join('\n');
+    window.__push('txt', snap);
+    var box = document.getElementById('renderView');
+    box.scrollTop = 150;
+    window.__push('txt', snap);         // 실 재렌더 — Preserve 가 스크롤 복원해야
+    out.txt_scroll_top = document.getElementById('renderView').scrollTop;
+  } catch (e) { out.txt_scroll_top = 'throw:' + (e && e.message); }
+  return out;
+})()
+"""
+
 
 # ------------------------------------------------------------------ 자가검증(Q3)
 def _selftest_drive(window: "object") -> None:
@@ -288,8 +330,12 @@ def _selftest_drive(window: "object") -> None:
         window.resize(1180, 820)  # type: ignore[attr-defined]  # 기본 크기 = 경계 위 → 2판 복귀
         time.sleep(0.6)
         result["grid_wide"] = window.evaluate_js(grid_probe)  # type: ignore[attr-defined]
-        # 상호작용 보존(#28) — Preserve 헬퍼가 재구성 가로질러 포커스·캐럿·스크롤 유지하는지.
+        # 상호작용 보존(#28) — Preserve 헬퍼가 재구성 가로질러 포커스·캐럿·스크롤 유지하는지(기제).
         result["preserve"] = window.evaluate_js(_PRESERVE_PROBE_JS)  # type: ignore[attr-defined]
+        # 실화면 회귀(#28) — 실 컨트롤러 스냅샷으로 4화면 실 render() 구동 + txt 스크롤 보존 end-to-end.
+        window.evaluate_js(_PRESERVE_REAL_SETUP_JS)  # type: ignore[attr-defined]  # 비동기 initial fire
+        time.sleep(1.2)  # initial() 해소 + 렌더 안정
+        result["preserve_real"] = window.evaluate_js(_PRESERVE_REAL_PROBE_JS)  # type: ignore[attr-defined]
     except Exception as exc:  # noqa: BLE001
         result["error"] = repr(exc)
     # 출력 경로: 테스트 하네스(#30 접근 A)가 HWPX_SELFTEST_OUT 로 결정적 위치를 준다.

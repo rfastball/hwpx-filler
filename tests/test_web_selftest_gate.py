@@ -108,3 +108,20 @@ class TestWebSelftestGate:
         # 옵트인(data-preserve-scroll) 컨테이너의 스크롤 위치가 재구성을 가로질러 유지된다(#28).
         p = selftest_result["preserve"]
         assert p["scroll_top"] == 120, f"옵트인 스크롤 위치 유실: {p['scroll_top']!r}"
+
+    def test_real_screen_renders_survive_rerender(self, selftest_result: dict) -> None:
+        # 4개 실화면이 shipped __push 경로로 실 스냅샷을 재렌더해도 던지지 않는다 —
+        # Preserve.around 래핑이 실 render() 를 깨지 않음을 실 DOM 에서 가드(#28 완료기준).
+        p = selftest_result["preserve_real"]
+        for scr in ("txt", "editor", "run", "matrix"):
+            assert p.get(scr) == "ok", f"{scr} 실화면 재렌더 실패: {p.get(scr)!r}"
+
+    def test_real_screen_scroll_preserved_end_to_end(self, selftest_result: dict) -> None:
+        # 실 txt 화면 프리뷰(#renderView)의 스크롤이 실 재렌더를 가로질러 유지된다(#28) —
+        # 합성 픽스처가 아닌 shipped render() 경로의 end-to-end 보존 검증. 보존 없으면 재구성이
+        # 0 으로 리셋하므로, 설정값 150 근처(DPI 서브픽셀 스냅 허용 ±2)면 복원된 것.
+        p = selftest_result["preserve_real"]
+        top = p["txt_scroll_top"]
+        assert isinstance(top, (int, float)) and abs(top - 150) < 2, (
+            f"실화면 스크롤 유실(재구성이 0 으로 리셋됐거나 예외): {top!r}"
+        )
