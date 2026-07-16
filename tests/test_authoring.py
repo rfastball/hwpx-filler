@@ -380,6 +380,61 @@ def test_composite_preserves_empty_attributed_t_outside_token():
     assert 'marker="KEEP"' in out
 
 
+def _marker_t(root: etree._Element, value: str) -> "etree._Element | None":
+    for t in root.iter(f"{{{HP}}}t"):
+        if t.get("marker") == value:
+            return t
+    return None
+
+
+def test_composite_preserves_empty_attributed_t_before_token_outside_field():
+    """토큰 **앞**의 폭-0 속성 hp:t 는 필드 값 밖(fieldBegin 앞)에 남아야 한다.
+
+    회귀(PR#37 병합 후 발견): 폭-0 보존이 오프셋만 보면 토큰 앞 마커의 시작
+    오프셋이 토큰 첫 글자와 같아 값 구간 ``[tstart, tend)`` 로 빨려 들어간다. 그러면
+    ``set_field`` 가 이 마커를 필드의 첫 텍스트 노드로 인식해 주입값이 마커에 실리고
+    (마커 속성이 값 텍스트를 오염) 필드 경계가 조용히 밀린다. 형제 순서를 반영한
+    경계 배정으로 마커가 fieldBegin 밖에 남아야 한다.
+    """
+    xml = (
+        '<hp:p><hp:run charPrIDRef="7">'
+        '<hp:t marker="BEFORE"/>'
+        "<hp:t>{{계약명}}</hp:t>"
+        "</hp:run></hp:p>"
+    )
+    pkg, report = compile_document(_pkg(xml))
+    assert report.compiled == ["계약명"]
+
+    # 구조: 마커 런이 fieldBegin 보다 문서상 앞에 있어야 한다.
+    root = _root(pkg)
+    marker = _marker_t(root, "BEFORE")
+    begin = root.find(f".//{{{HP}}}fieldBegin")
+    assert marker is not None and begin is not None
+    all_elems = list(root.iter())
+    assert all_elems.index(marker) < all_elems.index(begin), "마커가 fieldBegin 앞에 없다"
+
+    # 라운드트립: 주입값이 실제 토큰 노드로 가고 마커는 비어 있어야 한다.
+    doc = FieldDocument(pkg.entries["Contents/section0.xml"])
+    assert doc.set_field("계약명", "정보시스템 구축") is True
+    filled = etree.fromstring(doc.to_bytes())
+    assert "정보시스템 구축" in "".join(filled.itertext())
+    assert not (_marker_t(filled, "BEFORE").text or ""), "마커 노드에 주입값이 새어 들어갔다"
+
+
+def test_composite_preserves_empty_attributed_t_between_fragments():
+    """토큰 조각 사이의 폭-0 속성 hp:t 는 소실 없이 보존된다(값 구간 내부 유지)."""
+    xml = (
+        '<hp:p><hp:run charPrIDRef="7">'
+        "<hp:t>{{계</hp:t>"
+        '<hp:t marker="MID"/>'
+        "<hp:t>약명}}</hp:t>"
+        "</hp:run></hp:p>"
+    )
+    pkg, report = compile_document(_pkg(xml))
+    assert report.compiled == ["계약명"]
+    assert 'marker="MID"' in pkg.entries["Contents/section0.xml"].decode("utf-8")
+
+
 def test_composite_leading_run_level_tab_field_boundary_exact():
     """런의 첫 자식(hp:t 안이 아니라 런-레벨)이 탭인 경우에도 필드 경계가 정확하다.
 
