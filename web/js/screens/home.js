@@ -6,13 +6,13 @@
   const SCREEN = "home";
   const $ = (id) => document.getElementById(id);
 
-  function esc(s) {
-    return String(s).replace(/[&<>"]/g, (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  }
+  const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
+
+  let LAST = null;  // 마지막 스냅샷 — 태그 편집 프리필 등 이벤트 핸들러가 참조(#26)
 
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
+    LAST = s;
     renderKpis(s.kpi);
     renderContinue(s.continue_runs);
     renderCorrupt(s.corrupt_rows);
@@ -49,7 +49,8 @@
       ).join("");
   }
 
-  /* 손상 작업 — 숨기지 않고 시끄러운 위험 카드로(RC-05). 조치(열기·삭제)는 이관 보류. */
+  /* 손상 작업 — 숨기지 않고 시끄러운 위험 카드로(RC-05) + 해소 동선(#26 #8·UD-44):
+     폴더 열기(탐색기 표시)·삭제(백엔드 재진술 확인 라운드트립). */
   function renderCorrupt(rows) {
     const box = $("homeCorrupt");
     rows = rows || [];
@@ -59,8 +60,36 @@
       `<div class="grp"><span class="cap">손상된 작업 파일</span>` +
       rows.map((c) =>
         `<div class="jcard corrupt"><div class="jn">${esc(c.file_name)} <span class="pill danger">손상됨</span></div>` +
-        `<div class="jm">${esc(c.detail_line)}</div></div>`
+        `<div class="jm">${esc(c.detail_line)}</div>` +
+        `<div class="jfoot"><span></span><span class="row">` +
+        `<button class="btn sm" data-reveal="${esc(c.path)}">폴더 열기</button>` +
+        `<button class="btn sm" data-del-corrupt="${esc(c.path)}">삭제</button>` +
+        `</span></div></div>`
       ).join("") + `</div>`;
+  }
+
+  /* 손상 파일 조치 핸들러 — 삭제는 백엔드가 재진술한 문구로 확인 후 확정(confirm-or-alarm). */
+  async function onCorruptClick(e) {
+    const rv = e.target.closest("[data-reveal]");
+    if (rv) {
+      const r = await Bridge.revealCorruptJob(rv.dataset.reveal);
+      if (typeof r === "string" && r.startsWith("ERROR:")) window.alert(r.slice(6).trim());
+      return;
+    }
+    const dc = e.target.closest("[data-del-corrupt]");
+    if (dc) {
+      const path = dc.dataset.delCorrupt;
+      // 백엔드가 거절할 수 있다(목록에 없는 stale 경로 → ValueError, 잠긴 파일 → PermissionError).
+      // try/catch 없이는 rejection 이 삼켜져 클릭이 무반응이 된다 — 시끄럽게 재진술한다(editTags 미러).
+      try {
+        const res = await Bridge.call(SCREEN, "delete_corrupt", { path });
+        if (res && res.needs_confirm && window.confirm(res.confirm_text)) {
+          await Bridge.call(SCREEN, "delete_corrupt", { path, confirm: true });
+        }
+      } catch (err) {
+        window.alert(String((err && err.message) || err));
+      }
+    }
   }
 
   /* 작업 브라우저 바 — group-by 렌즈 드롭다운 + facet 칩. 태그 없으면(axes 빈) 렌더 안 함
@@ -123,7 +152,8 @@
       `<div class="jfoot"><span class="jr">${esc(r.last_run_display)}</span>` +
       `<span class="row">` +
       `<button class="btn primary sm" data-run="${nm}"${runAttr}>실행</button>` +
-      `<button class="btn sm" disabled title="편집 모드는 아직 웹으로 이관되지 않았습니다(신규 작성은 ＋ 새 작업).">편집</button>` +
+      `<button class="btn sm" data-edit="${nm}">편집</button>` +
+      `<button class="btn sm" data-tags="${nm}">태그</button>` +
       `<button class="btn sm" data-del="${nm}">삭제</button>` +
       `</span></div></div>`;
   }
@@ -154,9 +184,79 @@
   }
 
   /* ---- 웹→Python 이벤트(위임) ---- */
+  /* 편집 진입(#26) — 미저장 에디터 세션은 조용히 버리지 않고 확인(#25 미러) 후 복원. */
+  async function editJob(name) {
+    const busy = await Bridge.editorHasUnsavedWork();
+    if (busy && !window.confirm(
+      "에디터에 저장하지 않은 작업 세션이 있습니다.\n" +
+      `'${name}' 편집을 열면 그 세션의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?`)) return;
+    const r = await Bridge.openJobInEditor(name);
+    if (typeof r === "string" && r.startsWith("ERROR:")) {
+      window.alert(r.slice(6).trim());   // 손상·템플릿 부재 → loud (조용한 무시 금지)
+      return;
+    }
+    window.Nav.go("editor");
+  }
+
+  /* '축=값, 축=값' 텍스트 → 태그 dict. 형식 오류면 {err: 문제 조각} — 호출부가 loud 처리. */
+  function parseTags(text) {
+    const tags = {};
+    for (const part of text.split(",")) {
+      const t = part.trim();
+      if (!t) continue;
+      const i = t.indexOf("=");
+      if (i <= 0 || !t.slice(i + 1).trim()) return { err: t };
+      tags[t.slice(0, i).trim()] = t.slice(i + 1).trim();
+    }
+    return { tags };
+  }
+  function sameTags(a, b) {
+    const ka = Object.keys(a);
+    return ka.length === Object.keys(b).length && ka.every((k) => b[k] === a[k]);
+  }
+
+  /* 태그 편집(#26 #2·D14) — 현재 태그를 '축=값' 쌍으로 재진술·프리필하고 통째 교체 저장.
+     비우면 전체 해제(사용자가 명시적으로 지운 것 — 추측 아님). 형식 오류는 loud. */
+  async function editTags(name) {
+    let cur = {};
+    (LAST && LAST.grouped_rows || []).forEach((sec) =>
+      (sec.rows || []).forEach((r) => { if (r.name === name) cur = r.tags || {}; }));
+    const ser = Object.entries(cur).map(([k, v]) => `${k}=${v}`).join(", ");
+    // 왕복 가드(C9): 직렬화 직후 재파싱해 원본과 대조 — 값에 쉼표, 축에 쉼표/등호가 있으면
+    // (백엔드 _do_set_tags 는 허용, 수동 .job.json 편집으로 도달 가능) 이 인라인 프롬프트는
+    // 프리필을 그대로 OK 해도 태그를 조용히 쪼개 재작성하거나 형식 오류로 막는다.
+    // 왕복 불가면 조용히 진행하지 않고 시끄럽게 중단한다(confirm-or-alarm).
+    const rt = parseTags(ser);
+    if (rt.err !== undefined || !sameTags(rt.tags, cur)) {
+      window.alert(
+        `'${name}' 의 태그에 쉼표(값) 또는 등호/쉼표(축)가 포함돼 있어\n` +
+        `'축=값, …' 인라인 편집으로는 안전하게 수정할 수 없습니다.\n\n` +
+        `현재 태그: ${ser}\n\n작업 파일(.job.json)의 tags 를 직접 수정하세요.`);
+      return;
+    }
+    const input = window.prompt(
+      `'${name}' 의 분류 태그 — '축=값' 쌍을 쉼표로 구분해 입력하세요.\n` +
+      `(예: 물품=의약품, 금액구간=소액)\n비우면 태그를 전부 해제합니다.`, ser);
+    if (input === null) return;
+    const parsed = parseTags(input);
+    if (parsed.err !== undefined) {
+      window.alert(`태그 형식 오류: '${parsed.err}' — '축=값' 으로 입력하세요.`);
+      return;
+    }
+    try {
+      await Bridge.call(SCREEN, "set_tags", { name, tags: parsed.tags });
+    } catch (err) {
+      window.alert(String((err && err.message) || err));  // 백엔드 loud 거절 재진술
+    }
+  }
+
   function onJobsClick(e) {
     const run = e.target.closest("[data-run]");
     if (run && !run.disabled) { runJob(run.dataset.run); return; }
+    const edit = e.target.closest("[data-edit]");
+    if (edit) { editJob(edit.dataset.edit); return; }
+    const tg = e.target.closest("[data-tags]");
+    if (tg) { editTags(tg.dataset.tags); return; }
     const del = e.target.closest("[data-del]");
     if (del) {
       const name = del.dataset.del;
@@ -185,12 +285,17 @@
   }
 
   function wire() {
+    // 새로고침 실패(레지스트리 IO 등)를 조용히 삼키지 않는다(N1) — rejection 을 표면화.
+    $("homeRefresh").addEventListener("click", () =>
+      Bridge.call(SCREEN, "refresh", {}).catch((err) =>
+        window.alert(String((err && err.message) || err))));
     $("homeNewJob").addEventListener("click", () => window.Nav.go("editor"));
     $("homeMatrix").addEventListener("click", () => window.Nav.go("matrix"));
     $("homeNewTxt").addEventListener("click", () => window.Nav.go("txt"));
     $("homeJobs").addEventListener("click", onJobsClick);
     $("homeEmpty").addEventListener("click", onJobsClick);
     $("homeContinue").addEventListener("click", onJobsClick);
+    $("homeCorrupt").addEventListener("click", onCorruptClick);  // 손상 조치(#26 #8)
     $("homeTxt").addEventListener("click", (e) => {
       const open = e.target.closest("[data-open]");
       if (open) openTxt(open.dataset.open);

@@ -22,7 +22,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .job import _slug, guard_slug_collision
+from .job import _slug, guard_slug_collision, load_isolated
 from hwpxcore.atomic import write_text_atomic
 
 # 항목 상태 — active(실행 대상) / archived(사이클 유휴, 복구 가능) / retired(은퇴, 숨김).
@@ -167,13 +167,28 @@ class DatasetPoolRegistry:
             return []
         return sorted(self.directory.glob("*" + self.SUFFIX), key=lambda p: p.name)
 
-    def list_items(self, status: "str | None" = None) -> "list[DatasetPoolItem]":
+    def list_items(
+        self,
+        status: "str | None" = None,
+        *,
+        corrupted: "list[tuple[Path, str]] | None" = None,
+    ) -> "list[DatasetPoolItem]":
         """항목 목록(이름순). ``status`` 지정 시 그 상태만(예: 실행 후보=``STATUS_ACTIVE``).
 
-        읽을 수 없는 파일은 조용히 감추지 않고 **건너뛰되** — 여기선 관대하게 무시하지 않고
-        예외를 전파한다(손상 파일은 시끄럽게). 호출측(뷰모델)이 표면화한다.
+        **파일 단위 격리(RC-05, :func:`~hwpxfiller.core.job.load_isolated` 공유):**
+        손상된 ``.dataset.json`` 1개(손편집·구버전·잘림)가 목록 전체(→풀 뷰모델·앱 부팅·
+        실행 겨눔 피커)를 죽이지 않도록, ``corrupted`` 리스트를 넘긴 호출측에는 파싱 실패를
+        파일별로 잡아 ``(경로, 오류 문자열)`` 로 수집해 준다 — 호출측이 시끄럽게 표면화할
+        책임을 진다(확인-또는-경보).
+
+        **``corrupted`` 미전달 시에는 읽기 실패가 그대로 raise 된다(C5)** — 한때 미전달
+        호출자에게 손상 항목을 무표시로 드롭했는데, 실행 피커·카운트에서 데이터셋이
+        조용히 증발하는 정합 결함이었다. 격리를 원하는 표면은 명시적으로 수집 리스트를
+        넘기고 손상 건수를 병기하라(풀 화면·피커·홈 KPI 가 그렇게 한다).
         """
-        items = [DatasetPoolItem.load(p) for p in self._files()]
+        items: "list[DatasetPoolItem]" = load_isolated(
+            self._files(), DatasetPoolItem.load, corrupted
+        )
         items.sort(key=lambda it: it.name)
         if status is not None:
             items = [it for it in items if it.status == status]

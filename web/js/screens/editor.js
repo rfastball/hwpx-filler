@@ -10,9 +10,7 @@
   const STEP_TITLES = ["템플릿 선택", "데이터 선택", "필드 매핑 확정", "작업 저장"];
   let LAST = null;
 
-  function esc(s) {
-    return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  }
+  const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
 
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
@@ -33,10 +31,14 @@
   }
 
   function stepBody(s) {
-    if (s.step === 0) return step0(s);
-    if (s.step === 1) return step1(s);
-    if (s.step === 2) return step2(s);
-    return step3(s);
+    // 세션 통지(#26) — 편집 복원·프로파일 반영·데이터 교체 보존을 시끄럽게 재진술.
+    const notice = s.notice
+      ? `<p class="note ${s.notice.level === "ok" ? "okbox" : "warnbox"}" style="white-space:pre-line">${esc(s.notice.text)}</p>`
+      : "";
+    if (s.step === 0) return notice + step0(s);
+    if (s.step === 1) return notice + step1(s);
+    if (s.step === 2) return notice + step2(s);
+    return notice + step3(s);
   }
 
   /* ---- 1단계: 템플릿 ---- */
@@ -102,16 +104,26 @@
       <div class="stepper">${stepper}<span style="flex:1"></span>${counts}</div>
       <div class="gate">
         <span class="gatecount ${s.is_complete ? "ok" : "pend"}">확정 ${(s.rows || []).filter((r) => r.confirmed).length}/${(s.rows || []).length}</span>
+        ${s.base_name ? `<span class="muted" style="font-size:12px">프로파일: ${esc(s.base_name)}</span>` : ""}
         <span style="flex:1"></span>
+        <button class="btn" data-act="profile-apply">프로파일 적용…</button>
+        <button class="btn" data-act="profile-save">프로파일로 저장…</button>
+        <button class="btn" data-act="profile-delete">프로파일 삭제…</button>
         <button class="btn" data-act="confirm-all">모두 확정</button>
         <button class="btn" data-act="unconfirm-all">모두 해제</button>
       </div>`;
   }
 
   function mapRow(r, s) {
+    const known = (s.source_fields || []).includes(r.source);
     const srcOpts = [`<option value=""${r.source ? "" : " selected"}>(비움)</option>`]
       .concat((s.source_fields || []).map((f) =>
         `<option value="${esc(f)}"${f === r.source ? " selected" : ""} title="${esc(f)}">${esc(f)}</option>`))
+      // 복원·데이터 교체로 현재 소스 목록에 없는 소스를 참조하는 행 — (비움)으로
+      // 오표시하지 않고 명시 옵션으로 시끄럽게 드러낸다(#26 조용한 소실 금지).
+      .concat(r.source && !known
+        ? [`<option value="${esc(r.source)}" selected title="현재 데이터에 없는 소스">${esc(r.source)} (데이터에 없음)</option>`]
+        : [])
       .join("");
     const typeOpts = (s.type_options || []).map((t) =>
       `<option value="${esc(t)}"${t === r.type ? " selected" : ""}>${esc(TYPE_LABEL[t] || t)}</option>`).join("");
@@ -139,15 +151,29 @@
 
   /* ---- 4단계: 저장 ---- */
   function step3(s) {
-    return `<div class="wtitle">4단계 — 작업 저장</div>
+    return `<div class="wtitle">4단계 — 작업 저장${s.editing_origin ? ` <span class="pill">편집: ${esc(s.editing_origin)}</span>` : ""}</div>
       <p class="wsub">이 작업(템플릿·매핑·파일명)을 저장합니다. 데이터·행은 저장하지 않습니다 —
         실행할 때 고릅니다.</p>
       <div class="row" style="margin-bottom:9px"><span class="lbl" style="width:76px">작업 이름</span>
         <input class="field" data-act="name" value="${esc(s.name)}" placeholder="예: 공고서 자동생성"></div>
       <div class="row"><span class="lbl" style="width:76px">파일명 패턴</span>
         <input class="field mono" data-act="pattern" value="${esc(s.pattern)}"></div>
+      ${datasetBlock(s)}
       ${filenameTokenHelp(s)}
       <div id="save-msg" class="note" style="display:none"></div>`;
+  }
+
+  /* 선언 데이터 자동등록(#26/#18 31A5A484-C) — 검토용으로 고른 데이터를 등록 데이터로
+     자동등록한다. 참조(경로·시트)만 저장 — 행·내용은 저장하지 않는다. */
+  function datasetBlock(s) {
+    if (!s.data_path) return "";
+    return `<div class="grp" style="margin-top:10px">
+      <span class="cap">선언 데이터 자동등록</span>
+      <p class="hint" style="margin-top:0">저장하면 이 작업이 쓴 데이터(${esc(s.data_name)})를
+        등록 데이터로 함께 등록합니다 — 경로 참조만 저장(행·내용 없음), 실행 때 다시 읽습니다.</p>
+      <div class="row"><span class="lbl" style="width:76px">등록 이름</span>
+        <input class="field" data-act="dataset-name" value="${esc(s.dataset_name)}"></div>
+    </div>`;
   }
 
   /* 파일명 패턴 토큰 도우미(#17) — Qt SaveJobPage._refresh_filename_help 웹 포트.
@@ -231,7 +257,10 @@
       case "row-confirm": Bridge.call(SCREEN, "set_confirmed", { index: idx, confirmed: el.checked }); break;
       case "back": Bridge.call(SCREEN, "goto_step", { step: LAST.step - 1 }); break;
       case "next": Bridge.call(SCREEN, "goto_step", { step: LAST.step + 1 }); break;
-      case "save": await doSave(false); break;
+      case "save": await doSave({}); break;
+      case "profile-apply": await profileApply(); break;
+      case "profile-save": await profileSave(); break;
+      case "profile-delete": await profileDelete(); break;
       default: break;
     }
   }
@@ -247,8 +276,60 @@
       case "row-const": Bridge.call(SCREEN, "set_const", { index: idx, const: el.value }); break;
       case "name": Bridge.call(SCREEN, "set_name", { name: el.value }); break;
       case "pattern": Bridge.call(SCREEN, "set_pattern", { pattern: el.value }); break;
+      case "dataset-name": Bridge.call(SCREEN, "set_dataset_name", { name: el.value }); break;
       default: break;
     }
+  }
+
+  /* ---- 매핑 프로파일(#26 #5) — 목록 재진술 → 이름 확정 → 반영/저장(확인 라운드트립) ---- */
+  async function profileApply() {
+    const res = await Bridge.call(SCREEN, "profile_list", {});
+    const bases = (res && res.bases) || [];
+    const corrupt = ((res && res.corrupted) || [])
+      .map((c) => `! ${c.file} — 손상: ${c.error}`).join("\n");
+    if (!bases.length) {
+      window.alert("저장된 매핑 프로파일이 없습니다." + (corrupt ? "\n\n" + corrupt : ""));
+      return;
+    }
+    const listing = bases
+      .map((b) => `· ${b.name} (필드 ${b.field_count} · 참조 작업 ${b.job_refs})`).join("\n");
+    const name = window.prompt(
+      `적용할 프로파일 이름을 입력하세요:\n\n${listing}${corrupt ? "\n" + corrupt : ""}`,
+      bases[0].name);
+    if (name === null || !name.trim()) return;
+    const r = await Bridge.call(SCREEN, "profile_apply", { name: name.trim() });
+    if (r && r.ok === false) window.alert(r.error || "프로파일을 적용할 수 없습니다.");
+  }
+
+  async function profileSave() {
+    const name = window.prompt("저장할 프로파일 이름:", (LAST && LAST.base_name) || "");
+    if (name === null || !name.trim()) return;
+    let r = await Bridge.call(SCREEN, "profile_save", { name: name.trim() });
+    if (r && r.needs_confirm) {
+      if (!window.confirm(r.confirm_text)) return;
+      r = await Bridge.call(SCREEN, "profile_save", { name: name.trim(), confirm: true });
+    }
+    if (r && r.ok === false) window.alert(r.error || "프로파일을 저장할 수 없습니다.");
+  }
+
+  async function profileDelete() {
+    const res = await Bridge.call(SCREEN, "profile_list", {});
+    const bases = (res && res.bases) || [];
+    if (!bases.length) {
+      window.alert("저장된 매핑 프로파일이 없습니다.");
+      return;
+    }
+    const listing = bases
+      .map((b) => `· ${b.name} (필드 ${b.field_count} · 참조 작업 ${b.job_refs})`).join("\n");
+    const name = window.prompt(`삭제할 프로파일 이름을 입력하세요:\n\n${listing}`, "");
+    if (name === null || !name.trim()) return;
+    let r = await Bridge.call(SCREEN, "profile_delete", { name: name.trim() });
+    if (r && r.needs_confirm) {
+      // 파괴 확정 — 참조 작업 수를 재진술한 뒤에만 삭제(confirm-or-alarm).
+      if (!window.confirm(r.confirm_text)) return;
+      r = await Bridge.call(SCREEN, "profile_delete", { name: name.trim(), confirm: true });
+    }
+    if (r && r.ok === false) window.alert(r.error || "프로파일을 삭제할 수 없습니다.");
   }
 
   /* 모두 확정 — 내용 행 즉시 확정 + 비움 승격 이름게이트(ADR-E 반사적 dismiss 봉쇄). */
@@ -262,15 +343,46 @@
     if (ok) Bridge.call(SCREEN, "confirm_blanks", { fields: blanks });
   }
 
-  /* 저장 — 차단 사유·덮어쓰기 확인 재진술(조용한 덮어쓰기 금지). */
-  async function doSave(confirmOverwrite) {
-    const res = await Bridge.call(SCREEN, "save", { confirm_overwrite: confirmOverwrite });
-    if (res.ok) { alertMsg(`✓ 작업 '${res.saved_name}' 저장됨.`, "ok"); return; }
-    if (res.needs_overwrite) {
-      if (window.confirm(res.overwrite_text + "\n\n계속할까요?")) doSave(true);
+  /* 저장 — 차단 사유·덮어쓰기·자동등록 확인 재진술(조용한 덮어쓰기 금지).
+     flags 는 확인 라운드트립을 누적한다({confirm_overwrite, confirm_dataset}).
+     브리지 예외도 잡아 표시한다 — 백엔드가 반저장(작업 저장 후 실패) 상태로 던지면
+     화면이 무반응이 되는 함정 봉쇄(실패는 언제나 시끄럽게). */
+  async function doSave(flags) {
+    let res;
+    try {
+      res = await Bridge.call(SCREEN, "save", flags || {});
+    } catch (err) {
+      window.alert("저장 처리 중 오류가 발생했습니다 — 작업이 저장됐는지 홈에서 확인하세요.\n" + err);
       return;
     }
-    alertMsg(res.block_reason || "저장할 수 없습니다.");
+    if (!res || typeof res !== "object") {
+      alertMsg("저장 결과를 확인할 수 없습니다 — 작업이 저장됐는지 홈에서 확인하세요.");
+      return;
+    }
+    if (res.ok) {
+      let msg = `✓ 작업 '${res.saved_name}' 저장됨.`;
+      if (res.dataset_registered) msg += ` 데이터 '${res.dataset_registered}' 등록됨.`;
+      if (res.dataset_register_error) {
+        // 반저장(작업 저장 성공 + 데이터 등록 실패) — 성공으로 뭉개지 않고 경고로 재진술.
+        alertMsg(msg + " " + res.dataset_register_error);
+      } else {
+        alertMsg(msg, "ok");
+      }
+      return;
+    }
+    if (res.needs_overwrite) {
+      if (window.confirm(res.overwrite_text + "\n\n계속할까요?")) {
+        doSave(Object.assign({}, flags, { confirm_overwrite: true }));
+      }
+      return;
+    }
+    if (res.needs_dataset_confirm) {
+      if (window.confirm(res.dataset_text)) {
+        doSave(Object.assign({}, flags, { confirm_dataset: true }));
+      }
+      return;
+    }
+    alertMsg(res.dataset_error || res.block_reason || "저장할 수 없습니다.");
   }
 
   function alertMsg(msg, level) {

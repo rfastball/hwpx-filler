@@ -186,3 +186,28 @@ def test_unknown_matrix_action_is_loud(tmp_path):
     ctrl, _ = _controller(tmp_path)
     with pytest.raises(ValueError, match="알 수 없는 matrix 액션"):
         ctrl.dispatch("frobnicate", {})
+
+
+# ============================================================ #26 #6 — 2소스(등록 데이터)
+from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
+from hwpxfiller.webapp.screen_matrix import MatrixController
+
+
+def test_matrix_load_pool_and_nara_frozen(tmp_path):
+    """매트릭스 공통 데이터의 풀 겨눔 — 엑셀 참조 성공(재읽기·라벨), 나라는 동결 거절."""
+    pool = DatasetPoolRegistry(tmp_path / "pool")
+    pool.save(DatasetPoolItem(name="공통7월", kind="excel", opts={"path": _data_csv(tmp_path)}))
+    pool.save(DatasetPoolItem(name="나라쿼리", kind="nara", opts={"bgn_dt": "202607010000", "end_dt": "202607080000"}))
+    pushes: list = []
+    ctrl = MatrixController(_registry(tmp_path), lambda s, snap: pushes.append((s, snap)),
+                            pool_registry=pool)
+    res = ctrl.dispatch("load_pool", {"name": "공통7월"})
+    assert res["ok"] is True and res["label"] == "등록 데이터: 공통7월"
+    assert ctrl.snapshot()["data_source_label"] == "등록 데이터: 공통7월"
+    res2 = ctrl.dispatch("load_pool", {"name": "나라쿼리"})
+    assert res2["ok"] is False and "동결" in res2["error"]
+    # 실패가 성공 상태를 오염시키지 않음.
+    assert ctrl.snapshot()["data_source_label"] == "등록 데이터: 공통7월"
+    # 목록은 active 만 + nara 표시(은닉 금지).
+    names = [i["name"] for i in ctrl.dispatch("pool_sources", {})["items"]]
+    assert names == ["공통7월", "나라쿼리"]

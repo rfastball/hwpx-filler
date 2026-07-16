@@ -31,13 +31,16 @@ WEB_JS_DIR = Path(__file__).resolve().parents[1] / "web" / "js"
 PRESERVE_WRAPPED_SCREENS = ("txt", "editor", "run", "matrix")
 
 # 여섯 화면 루트 — 셸 라우터가 표시/숨김으로 전환하는 최상위 컨테이너(회귀 시 화면 소실).
-SCREEN_ROOTS = ("scr-home", "scr-editor", "scr-run", "scr-matrix", "scr-txt", "scr-tpl")
+SCREEN_ROOTS = (
+    "scr-home", "scr-editor", "scr-run", "scr-matrix", "scr-txt", "scr-tpl",
+    "scr-pool",  # 데이터 관리(#26 #4)
+)
 
 # 화면별 데이터 라벨은 반드시 고유 id 여야 한다(#27 dup-id 회귀 가드).
 SCOPED_DATA_LABELS = ("runDataLabel", "txtDataLabel", "mxDataLabel")
 
 # 접힘 상태에서 라벨이 사라지는 여섯 내비 버튼(회귀 시 접근 이름·툴팁 소실 → #27).
-NAV_SCREENS = ("home", "editor", "run", "matrix", "txt", "tpl")
+NAV_SCREENS = ("home", "editor", "run", "matrix", "txt", "tpl", "pool")  # +pool(#26 #4)
 
 # 커스텀 모달 → aria-labelledby 가 가리켜야 할 제목 id(다이얼로그 시맨틱, #27/#28).
 # sheetModal 은 다중 시트 확정 게이트(#33) — 같은 Modal 헬퍼·다이얼로그 계약을 공유한다.
@@ -45,6 +48,8 @@ MODAL_LABELLEDBY = {
     "txtEditModal": "txtEditTitle",
     "pasteModal": "pasteTitle",
     "sheetModal": "sheetTitle",
+    "poolRegModal": "poolRegTitle",  # 데이터 등록(#26 #4)
+    "poolModal": "poolTitle",  # 등록 데이터 선택(#26 #6) — 정적 골격 이관(r3 K12)
 }
 
 

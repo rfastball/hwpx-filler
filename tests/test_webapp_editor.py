@@ -234,3 +234,309 @@ def test_save_blocks_when_model_schema_mismatches_template(tmp_path):
     ctrl.load_template_path(str(TPL_PARTIAL))
     res = ctrl.dispatch("save", {})
     assert res["ok"] is False and "일치하지 않습니다" in res["block_reason"]
+
+
+# ============================================================ #26 패리티 회수
+# 편집 모드(#1)·매핑 프로파일(#5)·선언 데이터 자동등록(#3)의 헤드리스 계약.
+from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
+from hwpxfiller.core.job import Job
+from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.core.mapping_base import MappingBaseRegistry
+
+
+def _controller26(tmp_path: Path):
+    """레지스트리 3종(작업·베이스·풀)을 tmp 로 격리 주입한 컨트롤러."""
+    pushes: list = []
+    ctrl = EditorController(
+        JobRegistry(tmp_path / "jobs"),
+        lambda s, snap: pushes.append((s, snap)),
+        base_registry=MappingBaseRegistry(tmp_path / "bases"),
+        pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
+    )
+    return ctrl, pushes
+
+
+# ------------------------------------------------------------ 편집 모드(#1)
+def test_load_job_restores_edit_session(tmp_path):
+    """저장 작업 → load_job: 이름·패턴·확정 매핑·단계가 복원되고 원점이 기록된다."""
+    ctrl, _ = _controller26(tmp_path)
+    assert _save_named(ctrl, "원본작업")["ok"] is True   # 저장 후 세션 리셋
+
+    ctrl.load_job("원본작업")
+    snap = ctrl.snapshot()
+    assert snap["step"] == 2                             # 매핑 확정 단계로 착지
+    assert snap["name"] == "원본작업"
+    assert snap["editing_origin"] == "원본작업"
+    assert snap["is_complete"] is True                   # 1 const + 9 blank 전부 확정 복원
+    assert snap["rows"][0]["type"] == "const" and snap["rows"][0]["const"] == "v"
+    assert snap["notice"] and "편집 모드" in snap["notice"]["text"]
+
+
+def test_load_job_model_survives_step_navigation(tmp_path):
+    """_model_key 함정 봉쇄 — 복원 직후 단계를 오가도 확정 매핑이 초안으로 대체되지 않는다."""
+    ctrl, _ = _controller26(tmp_path)
+    _save_named(ctrl, "이동작업")
+    ctrl.load_job("이동작업")
+    ctrl.dispatch("goto_step", {"step": 1})              # 뒤로
+    ctrl.dispatch("goto_step", {"step": 2})              # 다시 매핑 진입(_ensure_model 경유)
+    snap = ctrl.snapshot()
+    assert snap["is_complete"] is True                   # 확정 유지(재생성 아님)
+    assert snap["rows"][0]["const"] == "v"
+
+
+def test_load_job_missing_template_is_loud(tmp_path):
+    """템플릿 파일이 사라진 작업의 편집 열기는 조용히 반쯤 열리지 않고 시끄럽게 거절."""
+    ctrl, _ = _controller26(tmp_path)
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="유실", template_path=str(tmp_path / "없는파일.hwpx")))
+    with pytest.raises(ValueError, match="찾을 수 없습니다"):
+        ctrl.load_job("유실")
+
+
+def test_load_job_template_drift_is_restated(tmp_path):
+    """저장 매핑에 있으나 현 스키마에 없는 필드는 조용히 누락되지 않고 notice 로 재진술."""
+    ctrl, _ = _controller26(tmp_path)
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(
+        name="드리프트",
+        template_path=str(TPL_COMPILED),
+        mapping=MappingProfile(mappings=[
+            FieldMapping(template_field="유령필드", source="", type="const", const="x"),
+        ]),
+    ))
+    ctrl.load_job("드리프트")
+    snap = ctrl.snapshot()
+    assert snap["notice"]["level"] == "warn"
+    assert "유령필드" in snap["notice"]["text"]          # 제외 필드 이름 재진술
+    assert snap["is_complete"] is False                  # 새 스키마 필드는 미확정(사람 확정 필요)
+
+
+def test_edit_save_self_update_skips_overwrite_and_preserves_meta(tmp_path):
+    """편집 원점 그대로 재저장 = 자기-갱신(확인 불요) + 태그·마지막 실행 메타 보존."""
+    ctrl, _ = _controller26(tmp_path)
+    _save_named(ctrl, "메타작업")
+    reg = JobRegistry(tmp_path / "jobs")
+    job = reg.load("메타작업")
+    job.tags = {"물품": "의약품"}
+    job.last_run_at = "2026-07-01T09:00:00"
+    reg.save(job, allow_overwrite=True)
+
+    ctrl.load_job("메타작업")
+    res = ctrl.dispatch("save", {})                      # 같은 이름 재저장
+    assert res["ok"] is True                             # needs_overwrite 없이 통과(자기-갱신)
+    saved = reg.load("메타작업")
+    assert saved.tags == {"물품": "의약품"}              # 태그 조용한 소실 없음
+    assert saved.last_run_at == "2026-07-01T09:00:00"
+
+
+def test_edit_save_renamed_still_confirms_overwrite(tmp_path):
+    """편집 중 이름을 다른 기존 작업으로 바꾸면 평소처럼 덮어쓰기 확인을 요구."""
+    ctrl, _ = _controller26(tmp_path)
+    _save_named(ctrl, "작업일")
+    _save_named(ctrl, "작업이")
+    ctrl.load_job("작업일")
+    ctrl.dispatch("set_name", {"name": "작업이"})        # 다른 작업을 겨냥
+    res = ctrl.dispatch("save", {})
+    assert res["ok"] is False and res.get("needs_overwrite") is True
+
+
+def test_ensure_model_carries_values_but_requires_reconfirm_on_data_change(tmp_path):
+    """데이터 교체 시 값(소스·유형·서식)은 제안으로 이월하되 확정은 전원 해제(r3 C1).
+
+    이전 확정을 확정 상태 그대로 되살리면 같은 이름 컬럼('금액' 등)이 의미가 다른 새
+    데이터에서 사람 검토 없이 ``is_complete`` 를 통과해 저장·실행까지 흐른다 — 구
+    불변식 '키 변경 시 전원 미확정 초안'을 복원하고 notice 로 재확정 필요를 재진술한다.
+    """
+    ctrl, _ = _controller26(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("skip_data", {})
+    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_const", {"index": 0, "const": "보존값"})
+    r = ctrl.dispatch("confirm_all", {})
+    ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
+    assert ctrl.snapshot()["is_complete"] is True
+
+    ctrl.dispatch("goto_step", {"step": 1})              # 데이터 단계로 회귀
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("goto_step", {"step": 2})              # 키 변경 → 재생성 경로
+    snap = ctrl.snapshot()
+    assert snap["rows"][0]["const"] == "보존값"          # 값 이월(조용한 소실 없음)
+    assert snap["rows"][0]["type"] == "const"
+    assert all(row["confirmed"] is False for row in snap["rows"])  # 확정 전원 해제
+    assert snap["is_complete"] is False                  # 재확정 없이는 저장 게이트 미통과
+    assert snap["notice"] and "미확정" in snap["notice"]["text"]
+    assert "다시 확정" in snap["notice"]["text"]         # 재확정 필요를 loud 재진술
+
+
+# ------------------------------------------------------- 선언 데이터 자동등록(#3)
+def _complete_with_data(ctrl, name: str) -> None:
+    """데이터(다중시트 확정) 연결 세션을 저장 직전까지 구성."""
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("goto_step", {"step": 2})
+    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_const", {"index": 0, "const": "v"})
+    r = ctrl.dispatch("confirm_all", {})
+    ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
+    ctrl.dispatch("set_name", {"name": name})
+    ctrl.dispatch("set_pattern", {"pattern": "p-{{ID}}"})
+
+
+def test_save_autoregisters_declared_dataset_with_sheet(tmp_path):
+    """저장 시 선언 데이터가 참조(경로+확정 시트)로 자동등록된다 — 행·내용 없음."""
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "데이터작업")
+    assert ctrl.snapshot()["dataset_name"] == "multi_sheet"   # 기본 이름 = 파일 스템
+    res = ctrl.dispatch("save", {})
+    assert res["ok"] is True and res["dataset_registered"] == "multi_sheet"
+    item = DatasetPoolRegistry(tmp_path / "pool").load("multi_sheet")
+    assert item.kind == "excel" and item.is_active
+    assert item.opts["path"] == str(MULTI_SHEET)
+    assert item.opts["sheet"] == "낙찰현황"                   # 확정 시트 동봉(모호 참조 방지)
+    assert "records" not in item.opts                         # 행 미저장 불변식
+
+
+def test_save_without_data_registers_nothing(tmp_path):
+    ctrl, _ = _controller26(tmp_path)
+    res = _save_named(ctrl, "무데이터")
+    assert res["ok"] is True and res["dataset_registered"] == ""
+    assert DatasetPoolRegistry(tmp_path / "pool").list_items() == []
+
+
+def test_save_dataset_same_name_requires_confirm(tmp_path):
+    """동명 기존 등록 데이터는 조용한 opts 덮어쓰기가 아니라 확인 승격(기존 참조 재진술)."""
+    pool = DatasetPoolRegistry(tmp_path / "pool")
+    pool.save(DatasetPoolItem(name="multi_sheet", kind="excel", opts={"path": "old.xlsx"}))
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "충돌작업")
+    res = ctrl.dispatch("save", {})
+    assert res["ok"] is False and res.get("needs_dataset_confirm") is True
+    assert "old.xlsx" in res["dataset_text"]                  # 기존 참조 재진술(거짓 확인 방지)
+    assert not JobRegistry(tmp_path / "jobs").exists("충돌작업")  # 반저장 없음(선차단)
+    res2 = ctrl.dispatch("save", {"confirm_dataset": True})
+    assert res2["ok"] is True
+    assert pool.load("multi_sheet").opts["path"] == str(MULTI_SHEET)
+
+
+def test_save_dataset_slug_collision_demands_rename(tmp_path):
+    """다른 이름·같은 slug 는 덮어쓰기 경로 없이 이름 변경만 안내(소유 항목 보호)."""
+    pool = DatasetPoolRegistry(tmp_path / "pool")
+    pool.save(DatasetPoolItem(name="multi/sheet", kind="excel", opts={"path": "x.xlsx"}))
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "슬러그작업")
+    res = ctrl.dispatch("save", {})
+    assert res["ok"] is False and "같은 파일" in res["dataset_error"]
+    assert not JobRegistry(tmp_path / "jobs").exists("슬러그작업")
+    # 이름을 바꾸면 통과.
+    ctrl.dispatch("set_dataset_name", {"name": "낙찰데이터"})
+    res2 = ctrl.dispatch("save", {})
+    assert res2["ok"] is True and res2["dataset_registered"] == "낙찰데이터"
+
+
+# ------------------------------------------------------- 매핑 프로파일(#5)
+def test_profile_save_apply_list_delete_roundtrip(tmp_path):
+    ctrl, _ = _controller26(tmp_path)
+    _build_complete_session(ctrl, "프로작업")
+    r = ctrl.dispatch("profile_save", {"name": "표준매핑"})
+    assert r["ok"] is True and r["rows"] == 10
+
+    assert ctrl.dispatch("save", {})["ok"] is True        # 작업 저장 → 계보 기록
+    reg = JobRegistry(tmp_path / "jobs")
+    assert reg.load("프로작업").base_mapping_name == "표준매핑"
+
+    lst = ctrl.dispatch("profile_list", {})
+    assert lst["bases"][0]["name"] == "표준매핑"
+    assert lst["bases"][0]["job_refs"] == 1               # 참조 작업 수(전파 경고 근거)
+
+    # 새 세션에 적용 → 전 행 확정 도착.
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("skip_data", {})
+    r2 = ctrl.dispatch("profile_apply", {"name": "표준매핑"})
+    assert r2["ok"] is True and r2["applied"] == 10 and r2["dropped"] == []
+    snap = ctrl.snapshot()
+    assert snap["is_complete"] is True and snap["base_name"] == "표준매핑"
+
+    # 동명 재저장 → 참조 수와 함께 확인 승격.
+    r3 = ctrl.dispatch("profile_save", {"name": "표준매핑"})
+    assert r3.get("needs_confirm") is True and "1개" in r3["confirm_text"]
+    assert ctrl.dispatch("profile_save", {"name": "표준매핑", "confirm": True})["ok"] is True
+
+    # 삭제 라운드트립(참조 재진술 → 확정).
+    d1 = ctrl.dispatch("profile_delete", {"name": "표준매핑"})
+    assert d1.get("needs_confirm") is True
+    assert ctrl.dispatch("profile_delete", {"name": "표준매핑", "confirm": True})["ok"] is True
+    assert ctrl.dispatch("profile_list", {})["bases"] == []
+
+
+def test_profile_save_requires_confirmed_rows(tmp_path):
+    ctrl, _ = _controller26(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("skip_data", {})                        # 모델 생성, 전 행 미확정
+    res = ctrl.dispatch("profile_save", {"name": "빈베이스"})
+    assert res["ok"] is False and "확정" in res["error"]
+
+
+def test_profile_apply_missing_is_loud(tmp_path):
+    ctrl, _ = _controller26(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("skip_data", {})
+    res = ctrl.dispatch("profile_apply", {"name": "없는베이스"})
+    assert res["ok"] is False and "불러올 수 없습니다" in res["error"]
+
+
+def test_profile_save_different_name_same_slug_demands_rename(tmp_path):
+    """다른 이름·같은 slug 프로파일은 동명 오인 후 파괴가 아니라 이름 변경만 안내(#26 #4).
+
+    slug 은 비단사라 exists(name) 은 다른 이름·같은 파일도 True 로 잡는다 — 실제 이름을
+    대조하지 않으면 무관한 프로파일을 '동명'으로 오인해 confirm 후 덮어써 durable 매핑을 파괴한다.
+    """
+    ctrl, _ = _controller26(tmp_path)
+    _build_complete_session(ctrl, "계보작업")
+    assert ctrl.dispatch("profile_save", {"name": "예산/2026"})["ok"] is True
+
+    res = ctrl.dispatch("profile_save", {"name": "예산_2026"})  # 같은 slug
+    assert res["ok"] is False and "같은 파일" in res["error"]
+    assert res.get("needs_confirm") is not True                 # 동명 확인 승격 아님
+    # 원본 프로파일은 무변형(파괴 없음).
+    assert MappingBaseRegistry(tmp_path / "bases").load("예산/2026").name == "예산/2026"
+
+
+def test_edit_save_preserves_concurrent_home_tag_edit(tmp_path):
+    """편집 세션이 열린 사이 홈에서 단 태그를, 에디터 저장이 stale 스냅샷으로 되돌리지 않는다(#26 #2·#5).
+
+    load_job 시점 태그 스냅샷이 아니라 저장 직전 디스크 상태를 재읽어 보존해야 한다.
+    """
+    ctrl, _ = _controller26(tmp_path)
+    _save_named(ctrl, "태그작업")
+    ctrl.load_job("태그작업")                       # 에디터가 빈 태그 스냅샷을 뜬다
+    # 편집 세션이 열린 사이 홈 태그 편집(같은 레지스트리 디스크 갱신)을 시뮬레이션.
+    reg = JobRegistry(tmp_path / "jobs")
+    job = reg.load("태그작업")
+    job.tags = {"물품": "의약품"}
+    reg.save(job, allow_overwrite=True)
+
+    assert ctrl.dispatch("save", {})["ok"] is True   # 아직 열린 편집 세션 저장
+    assert reg.load("태그작업").tags == {"물품": "의약품"}   # 조용한 소실 없음
+
+
+def test_autoregister_preserves_archived_status_and_note(tmp_path):
+    """자동등록이 기존 보관 데이터셋을 조용히 재활성화하거나 메모를 지우지 않는다(#26 #6).
+
+    확인 문구는 참조 덮어쓰기만 재진술하므로, 상태·메모는 건드리지 않는 것이 문구와 일치한다.
+    """
+    pool = DatasetPoolRegistry(tmp_path / "pool")
+    prior = DatasetPoolItem(
+        name="multi_sheet", kind="excel", opts={"path": "old.xlsx"}, note="계약 종료분")
+    prior.archive()
+    pool.save(prior)
+
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "재사용작업")           # dataset_name 기본 = multi_sheet(스템)
+    res = ctrl.dispatch("save", {"confirm_dataset": True})   # 동명 → 확인 승격 확정
+    assert res["ok"] is True and res["dataset_registered"] == "multi_sheet"
+
+    item = pool.load("multi_sheet")
+    assert item.status == "archived"                  # 재활성화 없음(수명 상태 보존)
+    assert item.note == "계약 종료분"                  # 메모 보존
+    assert item.opts["path"] == str(MULTI_SHEET)      # 참조(opts)만 갱신
+    assert item.opts["sheet"] == "낙찰현황"

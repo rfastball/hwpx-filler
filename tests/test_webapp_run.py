@@ -179,3 +179,103 @@ def test_generate_without_job_is_loud_not_silent(tmp_path):
     ctrl, _ = _controller(tmp_path)
     res = ctrl.generate()
     assert res["ok"] is False and "작업" in res["error"]
+
+
+# ============================================================ #26 #6 — 2소스(등록 데이터)
+from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
+
+
+def _pool_controller(tmp_path):
+    """풀 레지스트리를 tmp 로 격리 주입한 실행 컨트롤러 + 풀."""
+    pool = DatasetPoolRegistry(tmp_path / "pool")
+    pushes: list = []
+    ctrl = RunController(
+        _registry(tmp_path), lambda s, snap: pushes.append((s, snap)),
+        pool_registry=pool,
+    )
+    return ctrl, pool
+
+
+def test_pool_sources_lists_active_only_including_nara(tmp_path):
+    """실행 후보 목록 = **active 만**(ADR J) — nara 항목도 숨기지 않고 표시(거절은 겨눔 시점)."""
+    ctrl, pool = _pool_controller(tmp_path)
+    pool.save(DatasetPoolItem(name="7월공고", kind="excel", opts={"path": _data_csv(tmp_path)}))
+    pool.save(DatasetPoolItem(name="나라쿼리", kind="nara", opts={"bgn_dt": "202607010000", "end_dt": "202607080000"}))
+    archived = DatasetPoolItem(name="지난분기", kind="excel", opts={"path": "x.csv"})
+    archived.archive()
+    pool.save(archived)
+    items = ctrl.dispatch("pool_sources", {})["items"]
+    names = [i["name"] for i in items]
+    assert "7월공고" in names and "나라쿼리" in names   # nara 표시(은닉 금지)
+    assert "지난분기" not in names                       # archived 는 실행 후보 아님
+
+
+def test_load_pool_targets_excel_reference(tmp_path):
+    """등록 데이터 겨눔 성공 — 실행 시점 재읽기(싱크) + 소스 병기 라벨 + 선택 초기화."""
+    ctrl, pool = _pool_controller(tmp_path)
+    pool.save(DatasetPoolItem(name="7월공고", kind="excel", opts={"path": _data_csv(tmp_path)}))
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    res = ctrl.dispatch("load_pool", {"name": "7월공고"})
+    assert res["ok"] is True and res["label"] == "등록 데이터: 7월공고"
+    snap = ctrl.snapshot()
+    assert snap["data_source_label"] == "등록 데이터: 7월공고"
+    assert snap["record_count"] == 2                     # d.csv 2행 재읽기
+
+
+def test_load_pool_rejects_nara_frozen_loudly(tmp_path):
+    """나라장터 항목 겨눔 = 동결 거절 문구 재진술(조용한 실패 금지)."""
+    ctrl, pool = _pool_controller(tmp_path)
+    pool.save(DatasetPoolItem(name="나라쿼리", kind="nara", opts={"bgn_dt": "202607010000", "end_dt": "202607080000"}))
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    res = ctrl.dispatch("load_pool", {"name": "나라쿼리"})
+    assert res["ok"] is False and "동결" in res["error"]
+
+
+def test_load_pool_dead_reference_is_restated(tmp_path):
+    """죽은 참조(파일 이동·삭제)는 사용자 문구로 재진술 — 기존 겨눔은 무변경."""
+    ctrl, pool = _pool_controller(tmp_path)
+    pool.save(DatasetPoolItem(name="유실참조", kind="excel", opts={"path": str(tmp_path / "없음.csv")}))
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    res = ctrl.dispatch("load_pool", {"name": "유실참조"})
+    assert res["ok"] is False and "불러올 수 없습니다" in res["error"]
+    assert ctrl.snapshot()["data_source_label"] == ""    # 실패가 상태를 오염시키지 않음
+
+
+def test_load_pool_multi_sheet_without_sheet_is_rejected_loudly(tmp_path):
+    """시트 미지정 다중시트 참조 겨눔 = 조용한 첫 시트 로드 대신 loud 거절(#26 #3, #33 재확립).
+
+    등록 시점 게이트가 있어도 그 이전에 만들어진 모호 항목까지 겨눔 시점 단일 관문이 잡는다.
+    """
+    multi = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "multi_sheet.xlsx"
+    ctrl, pool = _pool_controller(tmp_path)
+    pool.save(DatasetPoolItem(name="모호참조", kind="excel", opts={"path": str(multi)}))
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    res = ctrl.dispatch("load_pool", {"name": "모호참조"})
+    assert res["ok"] is False and "시트" in res["error"]
+    assert ctrl.snapshot()["data_source_label"] == ""    # 실패가 상태를 오염시키지 않음
+    # 확정 시트가 참조에 있으면 관문이 존중해 통과.
+    pool.save(DatasetPoolItem(
+        name="확정참조", kind="excel", opts={"path": str(multi), "sheet": "낙찰현황"}))
+    assert ctrl.dispatch("load_pool", {"name": "확정참조"})["ok"] is True
+
+
+def test_load_pool_missing_item_is_loud(tmp_path):
+    ctrl, _pool = _pool_controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    res = ctrl.dispatch("load_pool", {"name": "없는이름"})
+    assert res["ok"] is False and "찾을 수 없습니다" in res["error"]
+
+
+def test_load_pool_without_job_is_loud(tmp_path):
+    ctrl, pool = _pool_controller(tmp_path)
+    pool.save(DatasetPoolItem(name="7월공고", kind="excel", opts={"path": _data_csv(tmp_path)}))
+    res = ctrl.dispatch("load_pool", {"name": "7월공고"})
+    assert res["ok"] is False and "작업" in res["error"]
+
+
+def test_file_load_sets_source_label_too(tmp_path):
+    """파일 겨눔도 소스 병기 라벨을 낸다 — 두 소스의 라벨 문법 대칭."""
+    ctrl, _pool = _pool_controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    assert ctrl.snapshot()["data_source_label"] == "파일: d.csv"

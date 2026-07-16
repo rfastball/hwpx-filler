@@ -9,10 +9,7 @@
 (function () {
   const $ = (id) => document.getElementById(id);
 
-  function escHtml(s) {
-    return String(s).replace(/[&<>"]/g, (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  }
+  const escHtml = window.escHtml;  // 공유 이스케이퍼(esc.js)
 
   /** needs_sheet 페이로드로 모달을 띄워 시트를 확정받고 그 시트로 로드한다. */
   function choose(screen, payload) {
