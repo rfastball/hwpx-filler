@@ -62,6 +62,7 @@ def test_same_name_reregister_needs_confirm_then_overwrites(tmp_path):
     """동명 재등록 = 조용한 참조 재지정 함정 — 1차는 기존 참조 재진술, confirm 시에만 덮는다."""
     ctrl, reg, _ = _controller(tmp_path)
     ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/data/a.xlsx"})
+    assert "추가했습니다" in ctrl.snapshot()["result"]["text"]  # 신규 = 추가
 
     res1 = ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/data/b.xlsx"})
     assert res1["needs_confirm"] is True
@@ -72,6 +73,8 @@ def test_same_name_reregister_needs_confirm_then_overwrites(tmp_path):
         "register_excel", {"name": "발주", "path": "C:/data/b.xlsx", "confirm": True})
     assert res2["ok"] is True
     assert reg.load("발주").opts["path"] == "C:/data/b.xlsx"
+    # 동명 갱신은 항목 추가가 아니라 참조 교체 — 결과줄이 실제 일어난 일을 말한다(#45).
+    assert "갱신했습니다" in ctrl.snapshot()["result"]["text"]
 
 
 def test_slug_collision_is_worded_not_raised(tmp_path):

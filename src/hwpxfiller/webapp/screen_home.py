@@ -25,18 +25,21 @@
 
 **남은 스코프 경계(조용히 빠뜨리지 않고 명시)**:
 - **매핑 프로파일(어휘) 워크벤치**: 전용 관리 화면은 없다 — 에디터 3단계의 적용/저장/삭제가
-  현재 표면이다. pool_count KPI 는 목업이 표면화하지 않으므로 pool_registry 를 붙이지 않는다
-  (데이터 관리 자체는 pool 화면 소유).
+  현재 표면이다. pool_count KPI 는 목업이 표면화하지 않으므로 웹에 싣지 않는다(데이터 관리
+  자체는 pool 화면 소유). 단 ``pool_corrupted`` (손상 파일 수)는 싣는다(#45) — 손상은
+  KPI 취향이 아니라 경보라서, 미부착이면 VM 이 세는 손상 수가 웹에서 무표시 증발한다
+  (confirm-or-alarm 위반).
 """
 from __future__ import annotations
 
 from pathlib import Path
 
+from ..core.dataset_pool import DatasetPoolRegistry
 from ..core.job import JobRegistry
 from ..core.text_registry import TextTemplateRegistry
 from ..gui.compile_badge import badge_level
 from ..gui.home_state import HomeViewModel, JobRow
-from .screens import PushSink
+from .screens import PushSink, default_pool_registry
 
 # 이어서 실행(continue-runs) 목록 상한 — 최근 실행순 상위 N. 대시보드 요약이라 짧게 유지.
 _CONTINUE_LIMIT = 5
@@ -67,9 +70,14 @@ class HomeController:
     name = "home"
 
     def __init__(self, registry: JobRegistry, text_registry: TextTemplateRegistry,
-                 push: PushSink) -> None:
-        # pool_registry 는 붙이지 않는다(pool_count KPI 미표면 — docstring 스코프 경계).
-        self.vm = HomeViewModel(registry, text_registry)
+                 push: PushSink,
+                 pool_registry: "DatasetPoolRegistry | None" = None) -> None:
+        # pool_registry 는 pool_corrupted 경보(#45) 용 — pool_count KPI 는 여전히 미표면
+        # (docstring 스코프 경계). 미주입 시 다른 컨트롤러들과 같은 단일 출처 팩토리.
+        self.vm = HomeViewModel(
+            registry, text_registry,
+            pool_registry if pool_registry is not None else default_pool_registry(),
+        )
         self._push_sink = push
 
     # ------------------------------------------------------------- 관측 푸시
@@ -117,6 +125,8 @@ class HomeController:
                 "job_count": kpi.job_count,
                 "missing_template_count": kpi.missing_template_count,
                 "txt_template_count": kpi.txt_template_count,
+                # 데이터 풀 손상 파일 수(#45) — VM 이 세는 값을 웹까지 나른다(0 위장 금지).
+                "pool_corrupted": kpi.pool_corrupted,
             },
             "is_empty": self.vm.is_empty(),
             "continue_runs": self._continue_runs(),
@@ -166,25 +176,12 @@ class HomeController:
 
     # ------------------------------------------------------- 태그 편집(#26 #2·D14)
     def _do_set_tags(self, p: dict) -> None:
-        """작업의 분류 태그(축→값)를 통째로 교체·저장 — 빈 dict = 전체 해제.
+        """작업의 분류 태그(축→값)를 통째로 교체·저장 — VM seam 위임(#44).
 
-        축·값은 모두 비어 있지 않은 문자열이어야 한다(loud — Job.from_dict 의 타입 계약
-        미러). 같은 이름 재저장은 자기-갱신이라 slug 가드를 자연 통과한다. 저장 후
-        refresh 로 axes/facets 가 즉시 재발견된다(퇴화-코퍼스 불변식 유지).
+        검증(비어 있지 않은 축·값 문자열)·저장·refresh 는 전부
+        :meth:`HomeViewModel.set_tags` 가 소유한다 — 다른 액션들과 같은 위임 규약.
         """
-        name = p["name"]
-        raw = p.get("tags", {})
-        if not isinstance(raw, dict):
-            raise ValueError("태그는 {축: 값} 사전이어야 합니다")
-        tags: "dict[str, str]" = {}
-        for k, v in raw.items():
-            if not isinstance(k, str) or not isinstance(v, str) or not k.strip() or not v.strip():
-                raise ValueError("태그의 축·값은 비어 있지 않은 문자열이어야 합니다")
-            tags[k.strip()] = v.strip()
-        job = self.vm.registry.load(name)  # 부재·손상 → loud raise
-        job.tags = tags
-        self.vm.registry.save(job, allow_overwrite=True)  # 자기-갱신
-        self.vm.refresh()
+        self.vm.set_tags(p["name"], p.get("tags", {}))
 
     # ------------------------------------------------- 손상 작업 조치(#26 #8·UD-44)
     def validate_corrupt_path(self, raw: str) -> Path:

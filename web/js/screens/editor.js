@@ -229,39 +229,46 @@
     if (!el) return;
     const act = el.dataset.act;
     const idx = el.dataset.index !== undefined ? Number(el.dataset.index) : null;
-    switch (act) {
-      case "pick-template": {
-        // 새 템플릿 선택 = 새 작업 세션 → 미저장 세션은 조용히 버리지 않고 확인(#25).
-        if (LAST && LAST.has_unsaved_work && !window.confirm(
-          "저장하지 않은 작업 세션이 있습니다.\n" +
-          "새 템플릿으로 시작하면 이전의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?")) break;
-        const r = await Bridge.pickTemplateFile(SCREEN);
-        if (typeof r === "string" && r.startsWith("ERROR:")) alertMsg(r.slice(6).trim());
-        break;
-      }
-      case "ack-gate": Bridge.call(SCREEN, "ack_gate", {}); break;
-      case "pick-data": {
-        let r = await Bridge.pickDataFile(SCREEN);
-        if (r && typeof r === "object" && r.needs_sheet) {   // 다중 시트 → 확정 게이트(#33)
-          r = await SheetPicker.choose(SCREEN, r);
-          if (r === null) break;                              // 취소 = 중단(첫 시트 강등 없음)
+    // 브리지 rejection 이 unhandled 로 삼켜지면 버튼이 조용히 무반응이 된다 — 개별 핸들러가
+    // 아니라 디스패처에서 한 번에 loud 재진술한다(pool.js onListClick 미러, #45). 새 case 가
+    // 늘어도 가드를 자동 상속한다(profile_* 만 봉합하고 confirmAll 을 빠뜨렸던 재발 방지).
+    try {
+      switch (act) {
+        case "pick-template": {
+          // 새 템플릿 선택 = 새 작업 세션 → 미저장 세션은 조용히 버리지 않고 확인(#25).
+          if (LAST && LAST.has_unsaved_work && !window.confirm(
+            "저장하지 않은 작업 세션이 있습니다.\n" +
+            "새 템플릿으로 시작하면 이전의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?")) break;
+          const r = await Bridge.pickTemplateFile(SCREEN);
+          if (typeof r === "string" && r.startsWith("ERROR:")) alertMsg(r.slice(6).trim());
+          break;
         }
-        if (typeof r === "string" && r.startsWith("ERROR:")) alertMsg(r.slice(6).trim());
-        break;
+        case "ack-gate": await Bridge.call(SCREEN, "ack_gate", {}); break;
+        case "pick-data": {
+          let r = await Bridge.pickDataFile(SCREEN);
+          if (r && typeof r === "object" && r.needs_sheet) {   // 다중 시트 → 확정 게이트(#33)
+            r = await SheetPicker.choose(SCREEN, r);
+            if (r === null) break;                              // 취소 = 중단(첫 시트 강등 없음)
+          }
+          if (typeof r === "string" && r.startsWith("ERROR:")) alertMsg(r.slice(6).trim());
+          break;
+        }
+        case "skip-data": await Bridge.call(SCREEN, "skip_data", {}); break;
+        case "prev-rec": await Bridge.call(SCREEN, "step_preview", { delta: -1 }); break;
+        case "next-rec": await Bridge.call(SCREEN, "step_preview", { delta: 1 }); break;
+        case "unconfirm-all": await Bridge.call(SCREEN, "unconfirm_all", {}); break;
+        case "confirm-all": await confirmAll(); break;
+        case "row-confirm": await Bridge.call(SCREEN, "set_confirmed", { index: idx, confirmed: el.checked }); break;
+        case "back": await Bridge.call(SCREEN, "goto_step", { step: LAST.step - 1 }); break;
+        case "next": await Bridge.call(SCREEN, "goto_step", { step: LAST.step + 1 }); break;
+        case "save": await doSave({}); break;
+        case "profile-apply": await profileApply(); break;
+        case "profile-save": await profileSave(); break;
+        case "profile-delete": await profileDelete(); break;
+        default: break;
       }
-      case "skip-data": Bridge.call(SCREEN, "skip_data", {}); break;
-      case "prev-rec": Bridge.call(SCREEN, "step_preview", { delta: -1 }); break;
-      case "next-rec": Bridge.call(SCREEN, "step_preview", { delta: 1 }); break;
-      case "unconfirm-all": Bridge.call(SCREEN, "unconfirm_all", {}); break;
-      case "confirm-all": await confirmAll(); break;
-      case "row-confirm": Bridge.call(SCREEN, "set_confirmed", { index: idx, confirmed: el.checked }); break;
-      case "back": Bridge.call(SCREEN, "goto_step", { step: LAST.step - 1 }); break;
-      case "next": Bridge.call(SCREEN, "goto_step", { step: LAST.step + 1 }); break;
-      case "save": await doSave({}); break;
-      case "profile-apply": await profileApply(); break;
-      case "profile-save": await profileSave(); break;
-      case "profile-delete": await profileDelete(); break;
-      default: break;
+    } catch (err) {
+      window.alert(String((err && err.message) || err));
     }
   }
 
@@ -281,7 +288,9 @@
     }
   }
 
-  /* ---- 매핑 프로파일(#26 #5) — 목록 재진술 → 이름 확정 → 반영/저장(확인 라운드트립) ---- */
+  /* ---- 매핑 프로파일(#26 #5) — 목록 재진술 → 이름 확정 → 반영/저장(확인 라운드트립).
+     브리지 rejection(디스크·권한 등) 가드는 onClick 디스패처가 소유한다(#45) —
+     여기 함수들은 await 로 던지기만 하면 조용한 무반응 없이 loud 재진술된다. ---- */
   async function profileApply() {
     const res = await Bridge.call(SCREEN, "profile_list", {});
     const bases = (res && res.bases) || [];
@@ -340,7 +349,8 @@
     const ok = window.confirm(
       `아래 ${blanks.length}개 필드는 채우지 않고 '비움'으로 확정합니다:\n\n${blanks.join(", ")}\n\n계속할까요?`
     );
-    if (ok) Bridge.call(SCREEN, "confirm_blanks", { fields: blanks });
+    // await 로 던진다 — fire-and-forget 이면 rejection 이 디스패처 가드 밖으로 샌다(#45).
+    if (ok) await Bridge.call(SCREEN, "confirm_blanks", { fields: blanks });
   }
 
   /* 저장 — 차단 사유·덮어쓰기·자동등록 확인 재진술(조용한 덮어쓰기 금지).

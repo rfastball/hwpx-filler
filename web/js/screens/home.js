@@ -21,14 +21,19 @@
     renderTxt(s.txt_rows);
   }
 
-  /* KPI — 목업 3타일(저장된 작업·템플릿 없는 작업·기안 템플릿). 전부 실재 데이터. */
+  /* KPI — 목업 3타일(저장된 작업·템플릿 없는 작업·기안 템플릿). 전부 실재 데이터.
+     손상된 등록 데이터(pool_corrupted)는 KPI 가 아니라 경보라 >0 일 때만 danger 타일로
+     끼어든다(#45) — 0 은 정상이라 상시 타일은 소음, 손상은 조용히 감추지 않는다. */
   function renderKpis(k) {
-    k = k || { job_count: 0, missing_template_count: 0, txt_template_count: 0 };
+    k = k || { job_count: 0, missing_template_count: 0, txt_template_count: 0, pool_corrupted: 0 };
     const warn = k.missing_template_count > 0 ? " warn" : "";
     $("homeKpis").innerHTML =
       tile(k.job_count, "저장된 작업 · HWPX") +
       tile(k.missing_template_count, "템플릿 없는 작업", warn) +
-      tile(k.txt_template_count, "기안 템플릿 · txt");
+      tile(k.txt_template_count, "기안 템플릿 · txt") +
+      (k.pool_corrupted > 0
+        ? tile(k.pool_corrupted, "손상된 등록 데이터 — 데이터 관리에서 확인", " danger")
+        : "");
   }
   function tile(v, label, cls) {
     return `<div class="kpi${cls || ""}"><div class="v">${v}</div><div class="l">${esc(label)}</div></div>`;

@@ -290,6 +290,7 @@ tr.r-confirmed td,tr.r-schemaonly td{background:var(--a-card)}
 .kpi .v{font-size:23px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:var(--a-ink)}
 .kpi .l{font-size:11.5px;color:var(--a-muted);margin-top:2px}
 .kpi.warn .v{color:var(--a-warn)}
+.kpi.danger .v{color:var(--a-danger)}
 
 /* 이어서 실행 */
 .continue-runs{background:var(--a-card);border:1px solid var(--a-border);border-radius:9px;

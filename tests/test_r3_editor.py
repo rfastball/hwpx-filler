@@ -155,6 +155,39 @@ def test_c4_editor_js_dosave_guards_and_surfaces_half_save():
     assert "dataset_register_error" in body          # 반저장 경고 표면화
 
 
+def test_editor_js_click_dispatch_guards_bridge_rejection():
+    """정적 계약(#45): onClick 디스패처가 try/catch + alert 로 브리지 rejection 을 가드한다.
+
+    개별 핸들러만 감싸는 처치는 다음 핸들러를 또 빠뜨린다(실제로 profile_* 봉합 라운드에서
+    confirmAll 이 무방비로 남아 있었다) — pool.js onListClick 미러로 가드를 디스패처에 두고,
+    awaited 핸들러 전부가 상속하게 고정한다. 절단은 test_r3_pool._segment 공유(단일 슬라이서).
+    """
+    import re
+
+    from test_r3_pool import _segment
+    src = (REPO / "web" / "js" / "screens" / "editor.js").read_text(encoding="utf-8")
+    body = _segment(src, "async function onClick", "function onChange")
+    assert "try {" in body and "catch" in body and "window.alert" in body, (
+        "onClick 디스패처가 브리지 rejection 을 가드하지 않습니다 — 무반응 버튼(#45)."
+    )
+    # awaited 여야 rejection 이 디스패처 가드로 올라온다 — fire-and-forget 강등 금지.
+    # 개별 이름 나열이 아니라 onClick 안의 **모든** Bridge.* 호출을 검사한다(PR #46 P2 —
+    # ack_gate·step_preview 등 직접 호출이 무대기라 가드 밖으로 새던 잔여 봉합).
+    unawaited = re.findall(r"(?<!await )Bridge\.\w+\(", body)
+    assert not unawaited, (
+        f"onClick 안에 await 없는 Bridge 호출이 있습니다 — rejection 이 가드 밖으로 샙니다(#45): "
+        f"{unawaited}"
+    )
+    for frag in ("await confirmAll()", "await doSave({})", "await profileApply()",
+                 "await profileSave()", "await profileDelete()"):
+        assert frag in body, f"onClick 이 '{frag}' 로 대기하지 않습니다 — 가드 상속 단절(#45)."
+    # confirmAll 내부 2차 호출(confirm_blanks)도 fire-and-forget 이면 가드 밖으로 샌다.
+    confirm_body = _segment(src, "async function confirmAll", "async function doSave")
+    assert 'await Bridge.call(SCREEN, "confirm_blanks"' in confirm_body, (
+        "confirmAll 의 confirm_blanks 호출이 awaited 가 아닙니다 — rejection 이 삼켜집니다(#45)."
+    )
+
+
 # ================================================================ C10 (MED)
 # 자기-갱신 저장이라도 편집 중 외부 변경은 무확인으로 덮지 않는다.
 def test_c10_self_update_confirms_when_disk_changed_externally(tmp_path):
