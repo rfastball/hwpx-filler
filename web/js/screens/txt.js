@@ -47,7 +47,8 @@
       $("tokPanel").innerHTML = rows || `<p class="muted">토큰이 없는 템플릿입니다.</p>`;
 
       $("renderView").innerHTML = buildPreview(s.template_text, s.record);
-      $("txtDataLabel").value = s.data_label || "";  // 서버 소유(P4)·화면별 고유 id(#27) — run/matrix 와 분리
+      // 소스 종류 병기(#26 #6) 우선 — 서버 소유(P4)·화면별 고유 id(#27), run/matrix 와 분리.
+      $("txtDataLabel").value = s.data_source_label || s.data_label || "";
       setStatus(s.missing_fields, s.empty_fields);
       resetNote();
     });
@@ -95,6 +96,10 @@
       if (r === null) return;                      // 취소
       if (typeof r === "string" && r.startsWith("ERROR:")) { warnNote(r.slice(6).trim()); return; }
       // 파일명은 load_data_path 가 스냅샷(data_label)으로 밀어 render 가 채운다(P4 서버 소유).
+    });
+    // 등록 데이터(풀) 겨눔(#26 #6) — 취소=중단, 실패는 모달 안에서 재진술(PoolPicker).
+    $("btnTxtPoolData").addEventListener("click", async () => {
+      await PoolPicker.choose(SCREEN);             // 라벨은 스냅샷(data_source_label)이 채운다
     });
 
     $("btnCopy").addEventListener("click", async () =>

@@ -268,3 +268,27 @@ def test_web_assets_present_and_wired():
     for scr in ("home", "editor", "run", "txt"):
         assert f'data-scr="{scr}"' in html, f"레일에 {scr} 없음"
     assert 'id="scr-txt"' in html
+
+
+# ============================================================ #26 #6 — txt 2소스
+from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
+
+
+def test_txt_load_pool_and_nara_frozen(tmp_path):
+    """즉시 기안의 풀 겨눔(UD-25 비대칭 해소) — 엑셀 참조 성공(라벨 서버 소유), 나라 동결 거절."""
+    csv = tmp_path / "d.csv"
+    csv.write_text("공고명,담당자\n전산장비,김주무\n", encoding="utf-8")
+    pool = DatasetPoolRegistry(tmp_path / "pool")
+    pool.save(DatasetPoolItem(name="기안데이터", kind="excel", opts={"path": str(csv)}))
+    pool.save(DatasetPoolItem(name="나라쿼리", kind="nara", opts={"bgn_dt": "202607010000", "end_dt": "202607080000"}))
+    (tmp_path / "샘플기안.txt").write_text("제목: {{공고명}}", encoding="utf-8")
+    pushes: list = []
+    ctrl = TxtController(TextTemplateRegistry(tmp_path), lambda s, snap: pushes.append((s, snap)),
+                         pool_registry=pool)
+    res = ctrl.dispatch("load_pool", {"name": "기안데이터"})
+    assert res["ok"] is True and res["label"] == "등록 데이터: 기안데이터"
+    snap = ctrl.snapshot()
+    assert snap["data_source_label"] == "등록 데이터: 기안데이터"
+    assert snap["record"].get("공고명") == "전산장비"     # 참조 재읽기로 실 레코드 도착
+    res2 = ctrl.dispatch("load_pool", {"name": "나라쿼리"})
+    assert res2["ok"] is False and "동결" in res2["error"]

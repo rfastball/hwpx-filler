@@ -69,7 +69,8 @@
   }
 
   function renderData(s) {
-    $("runDataLabel").value = s.data_label || "";  // 화면별 고유 id(#27) — txt 의 라벨과 분리
+    // 소스 종류 병기 라벨("파일: x" / "등록 데이터: 이름", #26 #6) 우선 — 없으면 구 라벨.
+    $("runDataLabel").value = s.data_source_label || s.data_label || "";
     $("outDir").value = s.out_dir || "";
   }
 
@@ -250,6 +251,12 @@
       if (r === null) return;                       // 취소
       if (typeof r === "string" && r.startsWith("ERROR:")) { log("데이터 오류: " + r.slice(6).trim()); return; }
       log(`데이터 불러옴: ${r}`);
+    });
+    // 등록 데이터(풀) 겨눔(#26 #6) — 취소=중단, 실패는 모달 안에서 재진술(PoolPicker).
+    $("btnPoolData").addEventListener("click", async () => {
+      const label = await PoolPicker.choose(SCREEN);
+      if (label === null) return;                   // 취소 = 겨눔 중단
+      log(`등록 데이터 불러옴: ${label}`);
     });
     $("btnPickFolder").addEventListener("click", async () => {
       const r = await Bridge.pickOutputFolder(SCREEN);
