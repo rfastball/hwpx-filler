@@ -144,6 +144,8 @@ class DatasetPoolViewModel:
             else DatasetPoolRegistry(default_dataset_pool_dir())
         )
         self._rows: "list[DatasetPoolRow]" = []
+        # 손상 파일 격리 목록(RC-05) — refresh 가 채우고 표현 계층이 시끄럽게 표면화한다.
+        self._corrupted: "list[tuple[Path, str]]" = []
         self._subs: list = []
         self.refresh()
 
@@ -157,11 +159,18 @@ class DatasetPoolViewModel:
 
     # ---------------------------------------------------------- 데이터
     def refresh(self) -> None:
-        self._rows = [DatasetPoolRow.from_item(it) for it in self.registry.list_items()]
+        corrupted: "list[tuple[Path, str]]" = []
+        items = self.registry.list_items(corrupted=corrupted)
+        self._rows = [DatasetPoolRow.from_item(it) for it in items]
+        self._corrupted = corrupted
         self._notify()
 
     def rows(self) -> "list[DatasetPoolRow]":
         return list(self._rows)
+
+    def corrupted(self) -> "list[tuple[Path, str]]":
+        """격리된 손상 파일 목록 ``(경로, 오류)`` — 표현 계층이 '손상됨' 항목으로 재진술한다."""
+        return list(self._corrupted)
 
     def is_empty(self) -> bool:
         return not self._rows

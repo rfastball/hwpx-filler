@@ -37,7 +37,7 @@ from ..naming import make_output_filename
 from .screens import (
     PushSink,
     default_pool_registry,
-    load_pool_item_checked,
+    load_pool_into,
     pool_source_rows,
 )
 
@@ -205,24 +205,18 @@ class MatrixController:
         return {"items": pool_source_rows(self.pool_registry)}
 
     def _do_load_pool(self, p: dict) -> dict:
-        """등록 데이터 항목을 이름으로 겨눔(공통 데이터) — 나라(동결)·죽은 참조는 시끄럽게 거절.
+        """등록 데이터 항목을 이름으로 겨눔(공통 데이터) — 공유 관문(:func:`load_pool_into`)에 위임.
 
         실패는 raise 대신 오류 dict 재진술(웹이 모달 안에서 그대로 표시) — generate 와
         같은 문법. 풀 겨눔도 파일과 동일하게 새 데이터 = 전체 선택·ack 초기화를 탄다.
         """
         name = p["name"]
-        try:
-            item = load_pool_item_checked(self.pool_registry, name)
-            records = self.vm.load_pool_item(item)  # 링1 리졸버 — 실행 시점 재읽기(싱크)
-        except ValueError as exc:  # 동결 거절·항목 부재 — 문구 그대로 재진술
-            return {"ok": False, "error": str(exc)}
-        except Exception as exc:  # noqa: BLE001 — 죽은 참조(파일 이동 등) 사용자 문구로
-            return {"ok": False, "error": f"등록 데이터를 불러올 수 없습니다: {exc}"}
-        if not records:
-            return {"ok": False, "error": "레코드 0건 — 데이터를 바꾸지 않았습니다."}
+        res = load_pool_into(self.pool_registry, name, self.vm.load_pool_item)
+        if not res["ok"]:
+            return res
         self.data_label = name
         self.data_source_label = f"등록 데이터: {name}"
-        self.selection = SelectionModel(len(records))  # 데이터 변경 → 전체 선택 초기화
+        self.selection = SelectionModel(len(res["records"]))  # 데이터 변경 → 전체 선택 초기화
         return {"ok": True, "label": self.data_source_label}
 
     # ------------------------------------------------------------------ 생성

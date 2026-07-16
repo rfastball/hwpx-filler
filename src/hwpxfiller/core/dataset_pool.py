@@ -167,13 +167,28 @@ class DatasetPoolRegistry:
             return []
         return sorted(self.directory.glob("*" + self.SUFFIX), key=lambda p: p.name)
 
-    def list_items(self, status: "str | None" = None) -> "list[DatasetPoolItem]":
+    def list_items(
+        self,
+        status: "str | None" = None,
+        *,
+        corrupted: "list[tuple[Path, str]] | None" = None,
+    ) -> "list[DatasetPoolItem]":
         """항목 목록(이름순). ``status`` 지정 시 그 상태만(예: 실행 후보=``STATUS_ACTIVE``).
 
-        읽을 수 없는 파일은 조용히 감추지 않고 **건너뛰되** — 여기선 관대하게 무시하지 않고
-        예외를 전파한다(손상 파일은 시끄럽게). 호출측(뷰모델)이 표면화한다.
+        **파일 단위 격리(RC-05, :meth:`~hwpxfiller.core.job.JobRegistry.list_jobs` 미러):**
+        손상된 ``.dataset.json`` 1개(손편집·구버전·잘림)가 목록 전체(→풀 뷰모델·앱 부팅·
+        실행 겨눔 피커)를 죽이지 않도록 파싱 실패를 파일별로 잡는다. 예전엔 예외를 그대로
+        전파해 어떤 호출측도 잡지 않아 웹 앱 부팅(7화면 전부)이 손상 파일 1개로 무너졌다.
+        손상 항목은 결과에서 제외하되 조용히 버리지 않는다 — ``corrupted`` 리스트를 넘기면
+        ``(경로, 오류 문자열)`` 로 수집되어 호출측이 시끄럽게 표면화한다(확인-또는-경보).
         """
-        items = [DatasetPoolItem.load(p) for p in self._files()]
+        items: "list[DatasetPoolItem]" = []
+        for p in self._files():
+            try:
+                items.append(DatasetPoolItem.load(p))
+            except Exception as exc:  # noqa: BLE001 — 손상 1개의 전멸 방지(격리 후 표면화)
+                if corrupted is not None:
+                    corrupted.append((p, str(exc)))
         items.sort(key=lambda it: it.name)
         if status is not None:
             items = [it for it in items if it.status == status]

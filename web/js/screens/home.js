@@ -82,9 +82,15 @@
     const dc = e.target.closest("[data-del-corrupt]");
     if (dc) {
       const path = dc.dataset.delCorrupt;
-      const res = await Bridge.call(SCREEN, "delete_corrupt", { path });
-      if (res && res.needs_confirm && window.confirm(res.confirm_text)) {
-        await Bridge.call(SCREEN, "delete_corrupt", { path, confirm: true });
+      // 백엔드가 거절할 수 있다(목록에 없는 stale 경로 → ValueError, 잠긴 파일 → PermissionError).
+      // try/catch 없이는 rejection 이 삼켜져 클릭이 무반응이 된다 — 시끄럽게 재진술한다(editTags 미러).
+      try {
+        const res = await Bridge.call(SCREEN, "delete_corrupt", { path });
+        if (res && res.needs_confirm && window.confirm(res.confirm_text)) {
+          await Bridge.call(SCREEN, "delete_corrupt", { path, confirm: true });
+        }
+      } catch (err) {
+        window.alert(String((err && err.message) || err));
       }
     }
   }

@@ -21,6 +21,7 @@ from ..core.dataset_pool import (
     DatasetPoolRegistry,
     default_dataset_pool_dir,
 )
+from ..data.excel import ambiguous_sheets  # 다중 시트 확정 게이트 판정(#33)
 from ..core.text_registry import TextTemplateRegistry
 from ..core.text_render import RenderReport
 from ..gui.dataset_pool_state import DatasetPoolRow
@@ -70,14 +71,57 @@ def pool_source_rows(pool_registry: DatasetPoolRegistry) -> "list[dict]":
 def load_pool_item_checked(
     pool_registry: DatasetPoolRegistry, name: str
 ) -> DatasetPoolItem:
-    """이름으로 풀 항목을 로드하되 나라(동결)는 시끄럽게 거절 — 웹 2소스 경계의 단일 관문."""
+    """이름으로 풀 항목을 로드하되 나라(동결)·모호 시트는 시끄럽게 거절 — 웹 2소스 경계의 단일 관문.
+
+    **다중 시트 확정 게이트(#33) 재확립:** 시트를 지정하지 않은 엑셀 참조는 실행 복원 때
+    ``ExcelDataSource(sheet=None)`` 이 **조용히 첫 시트**를 읽는다 — 파일 선택 경로가 #33 에서
+    봉인한 바로 그 함정이 풀 경로로 재개방된 것. 워크북에 시트가 여럿이면 여기서 loud 거절해
+    사용자가 데이터 관리에서 시트를 지정해 다시 등록하게 한다(등록 시점 게이트가 있어도, 그
+    이전에 만들어진 모호 항목까지 여기 단일 관문이 잡는다). CSV·단일 시트·읽기 실패(죽은 참조)
+    는 ``ambiguous_sheets`` 가 빈 목록/예외로 지나가며, 죽은 참조는 이어지는 실제 로드가 재진술.
+    """
     try:
         item = pool_registry.load(name)
     except FileNotFoundError:
         raise ValueError(f"등록 데이터를 찾을 수 없습니다: {name}") from None
     if item.kind == "nara":
         raise ValueError(NARA_FROZEN_TEXT)
+    if item.kind == "excel" and not item.opts.get("sheet"):
+        path = str(item.opts.get("path", ""))
+        try:
+            overview = ambiguous_sheets(path)  # 모호할 때만 비지 않음(빈 목록=단일/CSV)
+        except Exception:  # noqa: BLE001 — 읽기 실패(죽은 참조 등)는 후속 로드가 시끄럽게 처리
+            overview = []
+        if overview:
+            raise ValueError(
+                f"등록 데이터 '{name}' 에 시트가 지정되지 않았고 워크북에 시트가 여러 개입니다 "
+                "— 데이터 관리에서 시트를 지정해 다시 등록하세요."
+            )
     return item
+
+
+def load_pool_into(
+    pool_registry: DatasetPoolRegistry, name: str, loader: "Callable[[DatasetPoolItem], list]"
+) -> dict:
+    """등록 데이터 겨눔의 공유 실행부 — 나라 동결·모호 시트·죽은 참조·레코드 0건을 단일
+    문구 체계로 재진술한다(run/matrix/txt 3화면 동형).
+
+    ``loader(item)`` 는 각 화면 VM 의 ``load_pool_item`` (실행 시점 재읽기="싱크"). 성공 시
+    ``{"ok": True, "records": [...]}`` 를, 실패 시 ``{"ok": False, "error": ...}`` 를 돌려준다
+    — 라벨·선택 초기화 등 화면별 후처리는 호출측이 결과 레코드로 수행한다. 예전엔 이 20줄
+    try/except 사다리가 세 컨트롤러에 복붙돼 문구가 이미 표류했다(txt '상태' vs run/matrix
+    '데이터') — 여기로 수렴해 락스텝 편집 부담과 재표류를 없앤다.
+    """
+    try:
+        item = load_pool_item_checked(pool_registry, name)
+        records = loader(item)
+    except ValueError as exc:  # 동결 거절·항목 부재·모호 시트 — 문구 그대로 재진술
+        return {"ok": False, "error": str(exc)}
+    except Exception as exc:  # noqa: BLE001 — 죽은 참조(파일 이동 등) 사용자 문구로
+        return {"ok": False, "error": f"등록 데이터를 불러올 수 없습니다: {exc}"}
+    if not records:
+        return {"ok": False, "error": "레코드 0건 — 데이터를 바꾸지 않았습니다."}
+    return {"ok": True, "records": records}
 
 
 class ScreenController(Protocol):
@@ -169,21 +213,15 @@ class TxtController:
         return {"items": pool_source_rows(self.pool_registry)}
 
     def _do_load_pool(self, p: dict) -> dict:
-        """등록 데이터 항목을 이름으로 겨눔 — 나라(동결)·죽은 참조는 시끄럽게 거절.
+        """등록 데이터 항목을 이름으로 겨눔 — 공유 관문(:func:`load_pool_into`)에 위임.
 
         실패는 raise 대신 오류 dict 재진술(웹이 모달 안에서 그대로 표시) — generate 계열과
         같은 문법. 성공 시 라벨은 스냅샷(data_label)이 서버 소유로 반영한다(P4).
         """
         name = p["name"]
-        try:
-            item = load_pool_item_checked(self.pool_registry, name)
-            records = self.vm.load_pool_item(item)
-        except ValueError as exc:  # 동결 거절·항목 부재 — 문구 그대로 재진술
-            return {"ok": False, "error": str(exc)}
-        except Exception as exc:  # noqa: BLE001 — 죽은 참조(파일 이동 등) 사용자 문구로
-            return {"ok": False, "error": f"등록 데이터를 불러올 수 없습니다: {exc}"}
-        if not records:
-            return {"ok": False, "error": "레코드 0건 — 상태를 바꾸지 않았습니다."}
+        res = load_pool_into(self.pool_registry, name, self.vm.load_pool_item)
+        if not res["ok"]:
+            return res
         self.data_label = name
         self.data_source_label = f"등록 데이터: {name}"
         return {"ok": True, "label": self.data_source_label}

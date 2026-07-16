@@ -415,10 +415,13 @@ class EditorController:
             prior = self.model.to_profile()
         self.model = MappingModel.from_suggestions(self.schema, self.source_fields)
         if prior is not None:
-            kept = self.model.apply_profile(prior)
+            # require_source: 새 데이터에 더는 없는 컬럼을 겨눈 확정 행은 되살리지 않는다
+            # (미확정 유지 → 저장 게이트가 재확정을 강제). 조용한 게이트 우회 봉쇄.
+            kept = self.model.apply_profile(prior, require_source=True)
             self._set_notice(
                 f"데이터가 바뀌어 매핑 초안을 다시 만들었습니다 — "
-                f"확정돼 있던 {kept}개 행은 유지했습니다(빈 미리보기는 소스 확인).",
+                f"확정돼 있던 {kept}개 행은 유지했습니다"
+                "(새 데이터에 없는 소스를 겨눈 행은 재확정이 필요합니다).",
                 "warn",
             )
         self._model_key = key
@@ -545,14 +548,26 @@ class EditorController:
             blocked = self._dataset_gate(p)
             if blocked is not None:
                 return blocked
+        # 태그·마지막 실행 메타는 편집 세션 밖(홈 태그 편집 등)에서 바뀌었을 수 있어
+        # load_job 시점 스냅샷이 아니라 저장 직전 디스크 상태를 다시 읽어 보존한다 — 편집
+        # 세션이 열린 사이 홈에서 단 태그를 조용히 되돌리지 않는다(#26 confirm-or-alarm).
+        preserved_tags = dict(self._preserved_tags)
+        preserved_last_run = self._preserved_last_run
+        if self._editing_origin:
+            try:
+                current = self.registry.load(self._editing_origin)
+                preserved_tags = dict(current.tags)
+                preserved_last_run = current.last_run_at
+            except Exception:  # noqa: BLE001 — 원본이 사라졌으면 스냅샷 유지(추측 없음)
+                pass
         job = Job(
             name=self.job_name,
             template_path=self.template_path,
             mapping=verdict.profile,
             filename_pattern=self.pattern,
-            last_run_at=self._preserved_last_run,
+            last_run_at=preserved_last_run,
             base_mapping_name=self._base_name,
-            tags=dict(self._preserved_tags),
+            tags=preserved_tags,
         )
         # 위 게이트(needs_overwrite_confirm→confirm_overwrite)가 victim 을 재진술 확인시킨 뒤라
         # slug 충돌이어도 사용자가 확정한 상태 → core 가드에 명시적 opt-in 을 통과한다.
@@ -564,10 +579,24 @@ class EditorController:
             opts: "dict[str, object]" = {"path": self.data_path}
             if self.data_sheet:
                 opts["sheet"] = self.data_sheet
-            self.pool_registry.save(
-                DatasetPoolItem(name=self.dataset_name, kind="excel", opts=opts),
-                allow_overwrite=True,
-            )
+            # 기존 동명 항목이 있으면 상태(보관/은퇴)·메모·생성시각을 보존하고 참조(opts)만
+            # 갱신한다 — 새 항목으로 통째 갈아치우면 보관해 둔 데이터셋이 조용히 재활성화되고
+            # 메모가 지워진다(durable 수명 상태 소실). 확인 문구가 참조 덮어쓰기만 재진술하므로
+            # 상태/메모는 건드리지 않는 것이 문구와도 일치한다(#26 confirm-or-alarm).
+            existing = None
+            try:
+                if self.pool_registry.exists(self.dataset_name):
+                    existing = self.pool_registry.load(self.dataset_name)
+            except Exception:  # noqa: BLE001 — 손상: _dataset_gate 가 이미 이름 변경을 안내
+                existing = None
+            if existing is not None and existing.name == self.dataset_name:
+                existing.opts = opts
+                self.pool_registry.save(existing, allow_overwrite=True)
+            else:
+                self.pool_registry.save(
+                    DatasetPoolItem(name=self.dataset_name, kind="excel", opts=opts),
+                    allow_overwrite=True,
+                )
             registered = self.dataset_name
         saved = self.job_name
         self._reset()  # 저장 후 새 작업 준비(에디터 초기화)
@@ -640,6 +669,27 @@ class EditorController:
         if self.model is None or not self.model.confirmed_count():
             return {"ok": False, "error": "확정된 매핑 행이 없습니다 — 행을 확정한 뒤 저장하세요."}
         if self.base_registry.exists(name) and not p.get("confirm"):
+            # slug 는 비단사라 exists(name) 은 **다른 이름·같은 파일**(충돌)도 True 로 잡는다.
+            # 저장된 실제 이름을 대조하지 않으면 무관한 프로파일을 "동명"으로 오인해 confirm
+            # 후 덮어써 파괴한다(_dataset_gate·register_excel 이 이미 하는 대조를 여기도 한다).
+            try:
+                existing = self.base_registry.load(name)
+            except Exception:  # noqa: BLE001 — 손상: 소유 불명, 조용히 덮지 않는다
+                return {
+                    "ok": False,
+                    "error": (
+                        f"'{name}' 자리의 기존 프로파일 파일이 손상돼 확인할 수 없습니다 "
+                        "— 다른 이름을 지정하세요."
+                    ),
+                }
+            if existing.name != name:  # 다른 이름·같은 slug — 덮어쓰기 경로 없이 이름 변경만
+                return {
+                    "ok": False,
+                    "error": (
+                        f"'{name}' 은 기존 매핑 프로파일 '{existing.name}' 과 같은 파일로 "
+                        "저장됩니다 — 다른 이름을 지정하세요."
+                    ),
+                }
             refs = sum(
                 1 for j in self.registry.list_jobs() if j.base_mapping_name == name
             )

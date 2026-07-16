@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from ..core.dataset_pool import DatasetPoolRegistry, default_dataset_pool_dir
 from ..core.job import SlugCollisionError
+from ..data.excel import ambiguous_sheets  # 다중 시트 확정 게이트 판정(#33)
 from ..gui.dataset_pool_state import DatasetPoolViewModel, reference_summary
 from .screens import PushSink
 
@@ -70,11 +71,19 @@ class PoolController:
             for r in self.vm.rows()
         ]
 
+    def _corrupted_rows(self) -> "list[dict]":
+        """격리된 손상 파일을 웹이 시끄럽게 표면화할 행으로(RC-05 — 조용한 은닉 금지)."""
+        return [
+            {"file": path.name, "error": err}
+            for path, err in self.vm.corrupted()
+        ]
+
     def snapshot(self) -> dict:
         return {
             "rows": self._rows(),
             "count": self.vm.count_label(),
             "empty": self.vm.is_empty(),
+            "corrupted": self._corrupted_rows(),
             "result": {"text": self.result_text, "level": self.result_level},
         }
 
@@ -137,6 +146,23 @@ class PoolController:
         path = p.get("path") or ""
         sheet = p.get("sheet") or None
         note = p.get("note") or ""
+        # 다중 시트 확정 게이트(#33) — 시트 미지정 참조는 실행 복원 때 첫 시트를 조용히 읽는다.
+        # 워크북에 시트가 여럿이면 등록을 막고 시트 지정을 요구한다(에디터 자동등록은 확정
+        # 시트를 동봉하는데 수동 등록만 뚫려 있던 구멍). 읽기 실패(경로 부재·잠김)는 참조
+        # 등록 의미(파일 미개봉)를 지켜 통과시키고, 겨눔 시점 단일 관문이 다시 방어한다.
+        if path and sheet is None:
+            try:
+                overview = ambiguous_sheets(path)
+            except Exception:  # noqa: BLE001 — 읽을 수 없으면 참조로 등록(겨눔 관문이 재방어)
+                overview = []
+            if overview:
+                names = ", ".join(n for n, _r, _c in overview)
+                msg = (
+                    f"이 워크북은 시트가 여러 개입니다({names}) — "
+                    "시트를 지정해 등록하세요(첫 시트 자동 선택은 조용한 오독 위험)."
+                )
+                self._set_result(msg, "danger")
+                return {"ok": False, "error": msg}
         # 동명 기존 항목 = 같은 slug 라 가드를 통과해 opts 가 조용히 재지정된다(ST-09 의 사각).
         # 1차 호출에선 기존 참조 요약을 재진술하고 확인을 요구한다. 단 exists() 는 slug 기반이라
         # **다른 이름·같은 slug**(충돌)도 잡힌다 — 저장된 실제 이름을 대조해 진짜 동명만 확인

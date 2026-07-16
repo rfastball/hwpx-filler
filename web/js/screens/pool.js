@@ -22,8 +22,24 @@
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
     $("poolCount").textContent = s.count || "";
+    renderCorrupt(s);
     renderRows(s);
     renderResult(s);
+  }
+
+  /* 손상 등록 데이터 파일 — 숨기지 않고 시끄러운 위험 카드로(RC-05). 손상 1개가 목록 전체·
+     앱 부팅을 죽이지 않도록 격리되며, 여기서 파일명·오류를 재진술한다(조용한 은닉 금지). */
+  function renderCorrupt(s) {
+    const box = $("poolCorrupt");
+    const rows = s.corrupted || [];
+    if (!rows.length) { box.style.display = "none"; box.innerHTML = ""; return; }
+    box.style.display = "";
+    box.innerHTML = rows.map((c) =>
+      `<div class="tplcard muted"><div class="tplcard-top">` +
+      `<span class="tplcard-name">${esc(c.file)}</span>` +
+      `<span class="pill danger">손상됨</span></div>` +
+      `<div class="tplcard-meta muted">${esc(c.error)}</div></div>`
+    ).join("");
   }
 
   /* 풀 카드 — 이름 + 종류 + 상태 배지 + 참조 요약 + 상태별 게이트 액션(불투명 div). */

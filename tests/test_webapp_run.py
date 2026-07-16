@@ -241,6 +241,24 @@ def test_load_pool_dead_reference_is_restated(tmp_path):
     assert ctrl.snapshot()["data_source_label"] == ""    # 실패가 상태를 오염시키지 않음
 
 
+def test_load_pool_multi_sheet_without_sheet_is_rejected_loudly(tmp_path):
+    """시트 미지정 다중시트 참조 겨눔 = 조용한 첫 시트 로드 대신 loud 거절(#26 #3, #33 재확립).
+
+    등록 시점 게이트가 있어도 그 이전에 만들어진 모호 항목까지 겨눔 시점 단일 관문이 잡는다.
+    """
+    multi = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "multi_sheet.xlsx"
+    ctrl, pool = _pool_controller(tmp_path)
+    pool.save(DatasetPoolItem(name="모호참조", kind="excel", opts={"path": str(multi)}))
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    res = ctrl.dispatch("load_pool", {"name": "모호참조"})
+    assert res["ok"] is False and "시트" in res["error"]
+    assert ctrl.snapshot()["data_source_label"] == ""    # 실패가 상태를 오염시키지 않음
+    # 확정 시트가 참조에 있으면 관문이 존중해 통과.
+    pool.save(DatasetPoolItem(
+        name="확정참조", kind="excel", opts={"path": str(multi), "sheet": "낙찰현황"}))
+    assert ctrl.dispatch("load_pool", {"name": "확정참조"})["ok"] is True
+
+
 def test_load_pool_missing_item_is_loud(tmp_path):
     ctrl, _pool = _pool_controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})

@@ -474,3 +474,61 @@ def test_profile_apply_missing_is_loud(tmp_path):
     ctrl.dispatch("skip_data", {})
     res = ctrl.dispatch("profile_apply", {"name": "없는베이스"})
     assert res["ok"] is False and "불러올 수 없습니다" in res["error"]
+
+
+def test_profile_save_different_name_same_slug_demands_rename(tmp_path):
+    """다른 이름·같은 slug 프로파일은 동명 오인 후 파괴가 아니라 이름 변경만 안내(#26 #4).
+
+    slug 은 비단사라 exists(name) 은 다른 이름·같은 파일도 True 로 잡는다 — 실제 이름을
+    대조하지 않으면 무관한 프로파일을 '동명'으로 오인해 confirm 후 덮어써 durable 매핑을 파괴한다.
+    """
+    ctrl, _ = _controller26(tmp_path)
+    _build_complete_session(ctrl, "계보작업")
+    assert ctrl.dispatch("profile_save", {"name": "예산/2026"})["ok"] is True
+
+    res = ctrl.dispatch("profile_save", {"name": "예산_2026"})  # 같은 slug
+    assert res["ok"] is False and "같은 파일" in res["error"]
+    assert res.get("needs_confirm") is not True                 # 동명 확인 승격 아님
+    # 원본 프로파일은 무변형(파괴 없음).
+    assert MappingBaseRegistry(tmp_path / "bases").load("예산/2026").name == "예산/2026"
+
+
+def test_edit_save_preserves_concurrent_home_tag_edit(tmp_path):
+    """편집 세션이 열린 사이 홈에서 단 태그를, 에디터 저장이 stale 스냅샷으로 되돌리지 않는다(#26 #2·#5).
+
+    load_job 시점 태그 스냅샷이 아니라 저장 직전 디스크 상태를 재읽어 보존해야 한다.
+    """
+    ctrl, _ = _controller26(tmp_path)
+    _save_named(ctrl, "태그작업")
+    ctrl.load_job("태그작업")                       # 에디터가 빈 태그 스냅샷을 뜬다
+    # 편집 세션이 열린 사이 홈 태그 편집(같은 레지스트리 디스크 갱신)을 시뮬레이션.
+    reg = JobRegistry(tmp_path / "jobs")
+    job = reg.load("태그작업")
+    job.tags = {"물품": "의약품"}
+    reg.save(job, allow_overwrite=True)
+
+    assert ctrl.dispatch("save", {})["ok"] is True   # 아직 열린 편집 세션 저장
+    assert reg.load("태그작업").tags == {"물품": "의약품"}   # 조용한 소실 없음
+
+
+def test_autoregister_preserves_archived_status_and_note(tmp_path):
+    """자동등록이 기존 보관 데이터셋을 조용히 재활성화하거나 메모를 지우지 않는다(#26 #6).
+
+    확인 문구는 참조 덮어쓰기만 재진술하므로, 상태·메모는 건드리지 않는 것이 문구와 일치한다.
+    """
+    pool = DatasetPoolRegistry(tmp_path / "pool")
+    prior = DatasetPoolItem(
+        name="multi_sheet", kind="excel", opts={"path": "old.xlsx"}, note="계약 종료분")
+    prior.archive()
+    pool.save(prior)
+
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "재사용작업")           # dataset_name 기본 = multi_sheet(스템)
+    res = ctrl.dispatch("save", {"confirm_dataset": True})   # 동명 → 확인 승격 확정
+    assert res["ok"] is True and res["dataset_registered"] == "multi_sheet"
+
+    item = pool.load("multi_sheet")
+    assert item.status == "archived"                  # 재활성화 없음(수명 상태 보존)
+    assert item.note == "계약 종료분"                  # 메모 보존
+    assert item.opts["path"] == str(MULTI_SHEET)      # 참조(opts)만 갱신
+    assert item.opts["sheet"] == "낙찰현황"

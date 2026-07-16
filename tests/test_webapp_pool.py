@@ -132,6 +132,43 @@ def test_unknown_action_is_loud(tmp_path):
         ctrl.dispatch("drop_all", {})
 
 
+MULTI_SHEET = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "multi_sheet.xlsx"
+
+
+def test_corrupt_pool_file_is_quarantined_not_boot_crash(tmp_path):
+    """손상 .dataset.json 1개가 화면·부팅을 죽이지 않고 격리·표면화된다(RC-05, #26 #2).
+
+    예전엔 list_items 가 예외를 전파했고 어떤 호출측도 잡지 않아 컨트롤러 생성(=앱 부팅
+    경로, 7화면 전부)이 손상 파일 하나로 무너졌다. 지금은 정상 항목이 살고 손상은 재진술된다.
+    """
+    reg = DatasetPoolRegistry(tmp_path / "datasets")
+    reg.save(DatasetPoolItem(name="살아있음", kind="excel", opts={"path": "C:/a.xlsx"}))
+    # 손상 파일 투입(잘린 JSON) — 손편집·크래시 잔여 시뮬레이션.
+    (reg.directory / ("깨진" + reg.SUFFIX)).write_text("{ not json", encoding="utf-8")
+
+    # 컨트롤러 생성(=앱 부팅 경로)이 손상 파일 하나로 크래시하지 않아야 한다.
+    ctrl, _, _ = _controller(tmp_path)
+    snap = ctrl.snapshot()
+    assert [r["name"] for r in snap["rows"]] == ["살아있음"]   # 정상 항목 생존
+    assert snap["corrupted"] and snap["corrupted"][0]["file"].endswith(reg.SUFFIX)
+
+
+def test_register_excel_multi_sheet_without_sheet_is_blocked(tmp_path):
+    """수동 등록에서 시트 미지정 다중시트 워크북은 등록을 막고 시트 지정을 요구(#26 #3, #33 대칭).
+
+    등록은 참조 저장이라 파일을 열지 않지만, 시트가 여럿인데 미지정이면 실행 복원 때 첫
+    시트를 조용히 읽는다 — 등록 시점에 막아 에디터 자동등록(확정 시트 동봉)과 대칭을 맞춘다.
+    """
+    ctrl, reg, _ = _controller(tmp_path)
+    res = ctrl.dispatch("register_excel", {"name": "모호", "path": str(MULTI_SHEET)})
+    assert res["ok"] is False and "시트" in res["error"]
+    assert not reg.exists("모호")                     # 등록되지 않음(모호 참조 방지)
+    # 시트를 지정하면 통과 — 확정 시트가 참조에 남는다.
+    res2 = ctrl.dispatch(
+        "register_excel", {"name": "확정", "path": str(MULTI_SHEET), "sheet": "낙찰현황"})
+    assert res2["ok"] is True and reg.load("확정").opts["sheet"] == "낙찰현황"
+
+
 def test_existing_nara_item_is_shown_not_hidden(tmp_path):
     """나라 등록은 동결로 미노출이지만, 기존 nara 항목은 숨기지 않고 표시한다(조용한 은닉 금지)."""
     ctrl, reg, _ = _controller(tmp_path)

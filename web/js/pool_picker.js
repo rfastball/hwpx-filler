@@ -21,7 +21,10 @@
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   }
 
-  /* 모달 골격 — 이미 있으면(정적 이관 후 등) 재사용, 없으면 1회 생성. */
+  /* 모달 골격 — 이미 있으면(정적 이관 후 등) 재사용, 없으면 1회 생성.
+     목록 id 는 #poolPickList — 데이터 관리 화면(#scr-pool)의 정적 #poolList 와 **다른** id 다.
+     둘이 같으면 getElementById 가 문서순 첫(정적) 요소로 해소돼 옵션 버튼이 숨은 화면에
+     주입되고 피커가 빈 채로 뜬다(등록 데이터 겨눔 전면 사망). id 충돌 금지. */
   function build() {
     if ($("poolModal")) return;
     const el = document.createElement("div");
@@ -35,7 +38,7 @@
         <h3 id="poolTitle">등록 데이터 선택</h3>
         <p class="muted" style="font-size:12px;margin:4px 0 8px">활성 상태의 등록 데이터(참조)만
           실행 후보입니다 — 선택하면 지금 시점의 원본을 다시 읽어 옵니다.</p>
-        <div id="poolList" class="sheet-list"></div>
+        <div id="poolPickList" class="sheet-list"></div>
         <p id="poolNote" class="note dangerbox" style="display:none;white-space:pre-line"></p>
         <div class="modal-actions">
           <button class="btn" id="poolCancel">취소</button>
@@ -49,10 +52,19 @@
   /** 활성 풀 목록 모달을 띄워 항목을 확정받고 그 참조로 로드한다. */
   async function choose(screen) {
     build();
-    const res = await Bridge.call(screen, "pool_sources", {});
+    let res;
+    try {
+      res = await Bridge.call(screen, "pool_sources", {});
+    } catch (err) {
+      // confirm-or-alarm: 목록 조회 실패(브리지 거절 등)를 조용히 삼키지 않고 시끄럽게
+      // 재진술한 뒤 중단(null)으로 해소한다 — 죽은 모달을 남기지 않는다.
+      window.alert("등록 데이터 목록을 불러올 수 없습니다:\n" +
+        String((err && err.message) || err));
+      return null;
+    }
     const items = (res && res.items) || [];
     return new Promise((resolve) => {
-      const list = $("poolList");
+      const list = $("poolPickList");
       const note = $("poolNote");
       note.style.display = "none";
       note.textContent = "";

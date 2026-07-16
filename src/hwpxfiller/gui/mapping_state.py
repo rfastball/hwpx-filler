@@ -302,12 +302,22 @@ class MappingModel:
             ],
         )
 
-    def apply_profile(self, profile: MappingProfile) -> int:
+    def apply_profile(
+        self, profile: MappingProfile, *, require_source: bool = False
+    ) -> int:
         """저장 프로파일을 행에 반영 — 일치 필드는 값 복원 + ``confirmed=True`` 도착.
 
         프로파일에 없는 필드는 건드리지 않는다(미확정 유지 — 사람이 마저 확정).
-        반영된 행 수를 반환한다.
+        반영(확정 도착)된 행 수를 반환한다.
+
+        ``require_source=True``: 복원한 행이 참조하는 소스 컬럼이 현재 소스 어휘
+        (``source_fields``)에 **없으면 확정 도착시키지 않는다**(값은 복원하되 미확정 유지).
+        데이터를 바꿔 이전 확정을 되살릴 때, 사라진 컬럼을 겨눈 행이 조용히 확정 상태로
+        남아 저장 게이트(``is_complete``)를 통과하고 빈 값 문서를 찍는 함정을 막는다 —
+        그런 행은 미확정으로 남아 사람 재검토를 강제한다(빈/const 행은 소스 의존이 없어
+        영향 없음). 기본(False)은 종전 거동(전 일치 행 확정)이라 다른 호출측은 불변이다.
         """
+        available = set(self.source_fields)
         by_field = {m.template_field: m for m in profile.mappings}
         applied = 0
         for row in self.rows:
@@ -318,8 +328,15 @@ class MappingModel:
             row.type = "text" if m.is_blank else m.type
             row.const = "" if m.is_blank else m.const
             row.fmt = "" if m.is_blank else m.fmt
-            row.confirmed = True
-            applied += 1
+            missing_source = (
+                require_source
+                and not m.is_blank
+                and bool(m.source)
+                and m.source not in available
+            )
+            row.confirmed = not missing_source
+            if not missing_source:
+                applied += 1
         return applied
 
 
