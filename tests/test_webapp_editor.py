@@ -34,6 +34,45 @@ def test_compiled_template_opens_advance_gate(tmp_path):
     assert ctrl.can_advance(0) is True  # COMPILED → 진행 가능
 
 
+def test_snapshot_exposes_structured_fields(tmp_path):
+    """1단계 구조화 표(#16 98DDFE96) — 스냅샷이 필드별 명세를 실어야 한다.
+
+    나열식 요약(schema_summary)은 헤더로 존치하되, 표 렌더가 소비할 fields 배열이
+    필드 수만큼·정해진 키로 있어야 한다. 템플릿 로드 전엔 빈 배열.
+    """
+    ctrl, pushes = _controller(tmp_path)
+    assert ctrl.snapshot()["fields"] == []  # 스키마 없으면 빈 배열
+    ctrl.load_template_path(str(TPL_COMPILED))
+    snap = pushes[-1][1]
+    fields = snap["fields"]
+    assert isinstance(fields, list) and len(fields) == snap["field_count"]
+    assert snap["schema_summary"]  # 헤더 요약은 존치
+    for f in fields:
+        assert set(f) >= {"name", "inferred_type", "in_table", "occurrences", "context"}
+        assert isinstance(f["name"], str) and f["name"]
+        assert isinstance(f["in_table"], bool)
+
+
+def test_snapshot_exposes_sample_rows_projected_and_capped(tmp_path):
+    """2단계 데이터 미리보기(#16) — 스냅샷이 source_fields 순서로 투영한 샘플 행을 싣는다.
+
+    데이터 로드 전엔 빈 배열, 로드 후엔 record_count 를 넘지 않는 소량(≤_SAMPLE_ROWS)의
+    문자열 셀 행. 각 행 폭은 컬럼 수와 일치(투영 정합).
+    """
+    from hwpxfiller.webapp.screen_editor import _SAMPLE_ROWS
+
+    ctrl, pushes = _controller(tmp_path)
+    assert ctrl.snapshot()["sample_rows"] == []  # 데이터 없으면 빈 배열
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    snap = pushes[-1][1]
+    cols = snap["source_fields"]
+    sample = snap["sample_rows"]
+    assert 0 < len(sample) <= min(snap["record_count"], _SAMPLE_ROWS)
+    for row in sample:
+        assert len(row) == len(cols)  # source_fields 순서로 정확히 투영
+        assert all(isinstance(c, str) for c in row)  # 렌더 esc 안전 위해 문자열
+
+
 def test_partial_template_blocks_until_acked(tmp_path):
     ctrl, _ = _controller(tmp_path)
     ctrl.load_template_path(str(TPL_PARTIAL))
@@ -224,6 +263,24 @@ def test_new_job_session_prevents_mixed_save(tmp_path):
     ctrl.new_job_session(str(TPL_COMPILED))              # 저장 없이 새 세션(같은 템플릿이어도 초기화)
     res = ctrl.dispatch("save", {})
     assert res["ok"] is False and "확정" in res["block_reason"]  # 모델 리셋 → 미확정 차단
+
+
+# --------------------------------------------------- #16 1·2단계 구조화 렌더 가드
+_EDITOR_JS = REPO / "web" / "js" / "screens" / "editor.js"
+
+
+def test_editor_renders_structured_field_and_data_tables():
+    """1·2단계가 나열식 텍스트가 아니라 구조화 표로 렌더돼야 한다(#16 98DDFE96).
+
+    나열식 `.fields-line` 은 제거되고, 1단계는 `schema-fields` 표·2단계는 `data-preview`
+    표로 승격. 빈 셀은 ADR-B 대로 "(빈 값)"으로 시끄럽게 표기한다. 실 렌더 되읽기는
+    selftest 게이트가 하고, 여기선 마크업 배선의 존재/부재를 정적으로 가드한다.
+    """
+    src = _EDITOR_JS.read_text(encoding="utf-8")
+    assert "fields-line" not in src, "나열식 .fields-line 이 남아 있습니다 — 구조화 표로 교체(#16)."
+    assert 'class="schema-fields"' in src, "1단계 필드 구조화 표(schema-fields)가 없습니다(#16)."
+    assert 'class="data-preview"' in src, "2단계 데이터 미리보기 표(data-preview)가 없습니다(#16)."
+    assert "(빈 값)" in src, "2단계 빈 셀의 시끄러운 표기가 없습니다 — ADR-B 위반(#16)."
 
 
 def test_save_blocks_when_model_schema_mismatches_template(tmp_path):
