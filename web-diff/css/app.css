@@ -120,3 +120,16 @@ tr.flash td{animation:flash 0.9s ease-out}
   .split{grid-template-columns:1fr;grid-template-rows:minmax(140px,240px) 1fr}
   .kpis{grid-template-columns:repeat(2,1fr)}
 }
+
+/* ---- 강제 색상 모드(Windows 고대비) 대응 — WCAG 1.4.3 (#3, web/ 와 짝) ----
+   .cbadge/.ktag 는 항상 종류 라벨 텍스트를 담고 색은 인라인(snapshot KIND_COLORS)이라
+   자동 재매핑만으로 충분 — 여기선 건드리지 않는다(!important 로 인라인과 싸우지 않는다). */
+@media (forced-colors:active){
+  .btn:focus-visible{outline-color:Highlight}
+  .btn.primary:not(:disabled){background:Highlight;color:HighlightText;border-color:Highlight}
+  .chg.sel{background:Highlight;border-color:Highlight}
+  .chg.sel .clabel,.chg.sel .cdetail{color:HighlightText}
+
+  /* 단어 단위 삽입(ins) — del 은 line-through 로 이미 색 외 신호가 있으나 ins 는 배경 틴트뿐 */
+  .doctable ins{text-decoration:underline}
+}
