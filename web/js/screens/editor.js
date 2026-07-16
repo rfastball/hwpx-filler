@@ -54,7 +54,7 @@
     } else if (s.gate_error) {
       out += `<p class="note dangerbox">템플릿 상태를 확인할 수 없습니다 — 진행할 수 없습니다.</p>`;
     } else if (s.field_count) {
-      out += `<p class="fields-line">${esc(s.schema_summary)}</p>`;
+      out += schemaTable(s);
       if (s.gate) {
         out += `<div class="note warnbox" style="white-space:pre-line">${esc(s.gate.message)}</div>`;
         if (!s.gate.acked) {
@@ -63,6 +63,48 @@
       }
     }
     return out;
+  }
+
+  // 1단계 필드표: 나열식 요약을 구조화(#16 98DDFE96). 필드·추정타입·위치·문맥.
+  function schemaTable(s) {
+    const rows = (s.fields || []).map((f) => {
+      const type = INFERRED_LABEL[f.inferred_type] || f.inferred_type || "";
+      const where = f.in_table ? "표 안" : "본문";  // in_table → 위치 라벨(색 아닌 텍스트)
+      const ctx = f.context || "";
+      const ctxCell = ctx
+        ? `<span title="${esc(ctx)}">${esc(ctx)}</span>`
+        : `<span class="pv emptyval">—</span>`;
+      return `<tr>
+        <td><span class="fname">${esc(f.name)}</span></td>
+        <td><span class="tbadge">${esc(type)}</span></td>
+        <td class="muted">${esc(where)}</td>
+        <td class="fctx">${ctxCell}</td></tr>`;
+    }).join("");
+    return `<p class="fields-head">${esc(s.schema_summary)}</p>
+      <div class="tblwrap"><table class="schema-fields"><thead><tr>
+        <th>필드</th><th>추정 타입</th><th>위치</th><th>문맥</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`;
+  }
+
+  // 2단계 데이터 미리보기: 개수만 있던 표시를 컬럼 헤더 + 샘플 행 그리드로(#16).
+  function dataPreview(s) {
+    if (!s.record_count) return "";
+    const cols = s.source_fields || [];
+    const head = cols.map((c) => `<th title="${esc(c)}">${esc(c)}</th>`).join("");
+    const sample = s.sample_rows || [];
+    const body = sample.map((row) =>
+      `<tr>${cols.map((_, i) => {
+        const v = row[i];
+        return (v === "" || v == null)
+          ? `<td><span class="pv emptyval">(빈 값)</span></td>`  // ADR-B: 빈 셀 시끄럽게
+          : `<td><span class="pv">${esc(v)}</span></td>`;
+      }).join("")}</tr>`).join("");
+    const more = s.record_count > sample.length
+      ? `<p class="fields-head muted">샘플 ${sample.length}행 표시 — 외 ${s.record_count - sample.length}건</p>`
+      : "";
+    return `<p class="note okbox">컬럼 ${cols.length}개, 레코드 ${s.record_count}건 로드.</p>
+      <div class="tblwrap"><table class="data-preview"><thead><tr>${head}</tr></thead>
+        <tbody>${body}</tbody></table></div>${more}`;
   }
 
   /* ---- 2단계: 데이터(선택적) ---- */
@@ -75,7 +117,7 @@
           placeholder="데이터를 선택하거나 건너뛰세요">
         <button class="btn" data-act="pick-data">찾아보기…</button>
         <button class="btn" data-act="skip-data">데이터 없이 진행 →</button></div>
-      ${s.record_count ? `<p class="note okbox">컬럼 ${s.source_fields.length}개, 레코드 ${s.record_count}건 로드.</p>` : ""}`;
+      ${dataPreview(s)}`;
   }
 
   /* ---- 3단계: 매핑 표 ---- */
