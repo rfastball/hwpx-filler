@@ -123,9 +123,11 @@ class MatrixController:
         return self.snapshot()
 
     # ------------------------------------------- 네이티브 보조(브리지가 다이얼로그 담당)
-    def load_data_path(self, path: str) -> None:
-        """선택된 데이터 파일을 링1 VM 으로 겨눔(공통 데이터). 레코드 0건이면 시끄럽게 실패."""
-        records = self.vm.load_file(path)  # 파일 소스 리졸버(Qt-free). 실패는 raise.
+    def load_data_path(self, path: str, *, sheet: "str | None" = None) -> None:
+        """선택된 데이터 파일을 링1 VM 으로 겨눔(공통 데이터). 레코드 0건이면 시끄럽게 실패.
+
+        ``sheet`` = 웹에서 확정한 시트명(다중 시트 확정 게이트 #33, None=CSV·단일 시트)."""
+        records = self.vm.load_file(path, sheet=sheet)  # 파일 소스 리졸버(Qt-free). 실패는 raise.
         if not records:
             raise ValueError("레코드 0건 — 데이터를 바꾸지 않았습니다.")
         self.data_label = Path(path).name

@@ -168,6 +168,64 @@ def test_pick_data_file_multi_sheet_defers_and_asks(tmp_path, monkeypatch):
     assert frontend.controllers["editor"].data_path == ""
 
 
+@pytest.mark.parametrize("screen", ["editor", "run", "txt", "matrix"])
+def test_pick_data_file_multi_sheet_defers_on_every_screen(screen, tmp_path, monkeypatch):
+    """pick_data_file 반환 계약은 screen-불가지 — 데이터를 붙이는 네 화면 모두 needs_sheet 로
+    보류돼야 한다(리뷰 P1: txt·matrix 가 객체를 못 다뤄 첫 시트로 조용히 강등되던 회귀 차단)."""
+    from hwpxfiller.webapp import app as app_mod
+
+    frontend = _frontend(tmp_path, monkeypatch)
+    monkeypatch.setattr(app_mod, "open_file_dialog", lambda *a, **k: str(MULTI_SHEET))
+    result = frontend.pick_data_file(screen)
+    assert isinstance(result, dict) and result["needs_sheet"] is True
+    assert [s["name"] for s in result["sheets"]] == ["공고목록", "낙찰현황"]
+
+
+def test_load_data_sheet_threads_confirmed_sheet_into_txt_controller(tmp_path, monkeypatch):
+    """확정 시트가 브리지→컨트롤러(load_data_path sheet=)→링1 VM 까지 관통해 로드된다(리뷰 P1).
+
+    txt 컨트롤러는 작업 없이 단독 로드 가능해 브리지 경로 검증에 쓴다 — 다른 화면(editor·run·
+    matrix)의 sheet 관통은 각자의 컨트롤러 테스트가 픽스처와 함께 본다.
+    """
+    frontend = _frontend(tmp_path, monkeypatch)
+    result = frontend.load_data_sheet("txt", str(MULTI_SHEET), "낙찰현황")
+    assert result == "multi_sheet.xlsx"
+    txt = frontend.controllers["txt"]
+    assert txt.data_label == "multi_sheet.xlsx"
+    # 첫 시트(공고목록, 2건)가 아니라 확정 시트(낙찰현황, 3건)가 실렸는가 — 조용한 강등 아님.
+    assert txt.snapshot()["record_count"] == 3
+
+
+def test_pick_data_file_corrupt_workbook_returns_error_not_raise(tmp_path, monkeypatch):
+    """손상 xlsx 의 시트 메타 조회 실패는 날것 예외로 새지 않고 ERROR: 로 시끄럽게 반환한다.
+
+    리뷰 P2: ambiguous_sheets(=sheet_overview) 가 예외 변환 경계 밖이면 BadZipFile 이 pywebview
+    Promise 로 그대로 전파돼 웹 핸들러(ERROR: 접두 검사)가 못 잡고 조용해진다.
+    """
+    from hwpxfiller.webapp import app as app_mod
+
+    frontend = _frontend(tmp_path, monkeypatch)
+    broken = tmp_path / "broken.xlsx"
+    broken.write_bytes(b"not a real zip/xlsx")  # openpyxl → BadZipFile
+    monkeypatch.setattr(app_mod, "open_file_dialog", lambda *a, **k: str(broken))
+    result = frontend.pick_data_file("editor")
+    assert isinstance(result, str) and result.startswith("ERROR:"), (
+        f"손상 워크북이 ERROR: 로 안 돌아옴(날것 예외 유출 위험): {result!r}"
+    )
+    assert frontend.controllers["editor"].data_path == ""  # 로드 안 됨
+
+
+def test_load_data_sheet_vanished_file_returns_error_not_raise(tmp_path, monkeypatch):
+    """모달을 연 뒤 파일이 사라지면(경로 부재) load_data_sheet 의 sheet_overview 도 같은
+    ERROR: 경계로 감싸져 시끄럽게 되돌린다(리뷰 P2 — load_data_sheet 측 대칭)."""
+    frontend = _frontend(tmp_path, monkeypatch)
+    gone = tmp_path / "gone.xlsx"  # 만들지 않음 → 조회 시 실패
+    result = frontend.load_data_sheet("run", str(gone), "Sheet1")
+    assert isinstance(result, str) and result.startswith("ERROR:"), (
+        f"사라진 파일이 ERROR: 로 안 돌아옴: {result!r}"
+    )
+
+
 def test_pick_data_file_single_sheet_loads_directly(tmp_path, monkeypatch):
     """단일 시트/CSV = 물을 것이 없음 → 확정 게이트 없이 곧장 로드(파일명 반환)."""
     from hwpxfiller.webapp import app as app_mod

@@ -126,15 +126,18 @@ class WebFrontend:
         log(f"pick_data_file: dialog returned {path!r}")
         if not path:
             return None
-        overview = ambiguous_sheets(path)  # 모호할 때만 확정을 요구(빈 목록=단일/CSV)
-        if overview:
-            return {
-                "needs_sheet": True,
-                "path": path,
-                "name": Path(path).name,
-                "sheets": [{"name": n, "rows": r, "cols": c} for n, r, c in overview],
-            }
+        # 메타데이터 조회(ambiguous_sheets)와 로드를 같은 예외 변환 경계 안에 둔다 — 손상·잠긴
+        # xlsx 의 BadZipFile/OSError 가 pywebview Promise 로 날것으로 새면 웹 핸들러가 못 잡아
+        # 사용자에게 조용해진다(confirm-or-alarm). 모호하면 로드 전에 시트 확정 요구로 빠진다.
         try:
+            overview = ambiguous_sheets(path)  # 모호할 때만 확정을 요구(빈 목록=단일/CSV)
+            if overview:
+                return {
+                    "needs_sheet": True,
+                    "path": path,
+                    "name": Path(path).name,
+                    "sheets": [{"name": n, "rows": r, "cols": c} for n, r, c in overview],
+                }
             self._controller(screen).load_data_path(path)
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
@@ -145,11 +148,13 @@ class WebFrontend:
 
         ``sheet`` 는 반드시 해당 워크북의 **실제 시트명**이어야 한다 — 모르는 이름을 조용히
         첫 시트로 강등하지 않고 시끄럽게 거절한다(confirm-or-alarm). 실패는 ``ERROR:`` 접두.
+        시트 재조회(sheet_overview)도 로드와 같은 예외 변환 경계 안에 둔다 — 모달을 연 뒤
+        파일이 사라지거나 잠기면 그 실패도 웹에 시끄럽게 되돌린다(P2).
         """
-        names = [n for n, _r, _c in sheet_overview(path)]
-        if sheet not in names:
-            return f"ERROR: '{sheet}' 시트를 찾을 수 없습니다 — 시트를 다시 선택하세요."
         try:
+            names = [n for n, _r, _c in sheet_overview(path)]
+            if sheet not in names:
+                return f"ERROR: '{sheet}' 시트를 찾을 수 없습니다 — 시트를 다시 선택하세요."
             self._controller(screen).load_data_path(path, sheet=sheet)
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"

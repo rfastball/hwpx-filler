@@ -285,22 +285,28 @@ def test_forced_colors_block_present_in_web_diff():
     )
 
 
-def test_sheet_picker_loaded_and_wired_on_both_data_screens():
+# pickDataFile(=pick_data_file) 을 소비하는 모든 화면 — 브리지 반환 계약이 screen-불가지라
+# needs_sheet 분기를 처리해야 다중 시트가 첫 시트로 강등되지 않는다(리뷰 P1: txt·matrix 누락 회귀).
+DATA_PICK_SCREENS = ("editor", "run", "txt", "matrix")
+
+
+def test_sheet_picker_loaded_and_wired_on_all_data_screens():
     """다중 시트 확정 게이트 배선 정적 가드(#33) — 조용한 첫 시트 로드 회귀 차단.
 
     실 시트 선택 거동(모달 개폐·확정 로드)은 Modal/브리지 계약 테스트가 본다 — 여기선
-    (a) 헬퍼·모달 골격 존재, (b) 데이터를 붙이는 두 화면(에디터·실행)이 pickDataFile 의
-    needs_sheet 를 받아 SheetPicker 로 확정을 태우는 배선이 살아있는지를 정적으로 가드한다.
-    어느 화면이 이 분기를 조용히 떨구면 그 화면에서 다중 시트가 첫 시트로 강등되는 회귀.
+    (a) 헬퍼·모달 골격 존재, (b) 데이터를 붙이는 **모든** 화면(에디터·실행·즉시기안·매트릭스)이
+    pickDataFile 의 needs_sheet 를 받아 SheetPicker 로 확정을 태우는 배선이 살아있는지를 정적
+    가드한다. pickDataFile 계약이 screen-불가지라, 한 화면이라도 이 분기를 떨구면 그 화면에서
+    다중 시트가 조용히 첫 시트로 강등되는 회귀(리뷰 P1 재발 차단).
     """
     index = WEB_INDEX.read_text(encoding="utf-8")
     assert 'src="js/sheet_picker.js"' in index, "sheet_picker.js 가 index.html 에 로드되지 않았습니다(#33)."
     assert 'id="sheetList"' in index and 'id="sheetCancel"' in index, "시트 선택 모달 골격이 없습니다(#33)."
-    for scr in ("editor", "run"):
+    for scr in DATA_PICK_SCREENS:
         src = (WEB_JS_DIR / "screens" / f"{scr}.js").read_text(encoding="utf-8")
         assert "needs_sheet" in src and "SheetPicker.choose" in src, (
             f"{scr}.js 가 다중 시트 확정 게이트(needs_sheet→SheetPicker) 배선을 잃었습니다 — "
-            "이 화면에서 다중 시트가 조용히 첫 시트로 강등됩니다(#33)."
+            "이 화면에서 다중 시트가 조용히 첫 시트로 강등됩니다(#33, 리뷰 P1)."
         )
 
 
