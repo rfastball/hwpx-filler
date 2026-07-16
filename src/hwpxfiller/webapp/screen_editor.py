@@ -55,6 +55,10 @@ from .screens import PushSink, default_pool_registry
 # 표시형 프리셋은 유형별 고정 → 한 번 계산해 스냅샷에 싣는다(코어 라벨 그대로).
 _FMT_OPTIONS = {t: [{"code": code, "label": label} for label, code in format_presets(t)] for t in TYPES}
 
+# 2단계 데이터 미리보기에 싣는 샘플 행 수(#16 98DDFE96) — 전체 적재는 이미 self.records
+# 에 있으나 스냅샷엔 매핑 감(感)만 주는 소량만 노출한다(record_count 로 "외 M건" 표기).
+_SAMPLE_ROWS = 3
+
 
 def _job_content_fingerprint(job: Job) -> str:
     """편집 세션이 덮어쓰는 작업 **내용**의 지문 — 외부 변경 감지(자기-갱신 확인 게이트).
@@ -200,6 +204,9 @@ class EditorController:
             "template_name": self.template_path.rsplit("\\", 1)[-1].rsplit("/", 1)[-1],
             "field_count": len(self.schema.fields) if self.schema else 0,
             "schema_summary": self._schema_summary(),
+            # 1단계 구조화 표(#16): 필드별 name/inferred_type/in_table/occurrences/context.
+            # 나열식 요약(schema_summary)은 표 위 헤더 한 줄로 존치.
+            "fields": [f.to_dict() for f in self.schema.fields] if self.schema else [],
             "raw_block": self.raw_block,
             "gate": self._gate_snapshot(),
             "gate_error": self.gate_error,
@@ -207,6 +214,9 @@ class EditorController:
             "data_name": self.data_path.rsplit("\\", 1)[-1].rsplit("/", 1)[-1],
             "record_count": len(self.records),
             "source_fields": self.source_fields,
+            # 2단계 데이터 미리보기(#16): source_fields 순서로 투영한 샘플 행 소량.
+            # 빈 셀은 "" 로 보존해 렌더가 (빈 값)으로 시끄럽게 표기(ADR-B).
+            "sample_rows": self._sample_rows(),
             "type_options": list(TYPES),
             "fmt_options": _FMT_OPTIONS,
             "name": self.job_name,
@@ -246,6 +256,16 @@ class EditorController:
         head = ", ".join(f"{f.name}({f.inferred_type})" for f in self.schema.fields[:6])
         extra = "" if len(self.schema.fields) <= 6 else f" 외 {len(self.schema.fields) - 6}개"
         return f"필드 {len(self.schema.fields)}개: {head}{extra}"
+
+    def _sample_rows(self) -> "list[list[str]]":
+        """2단계 미리보기용 샘플 행 — source_fields 순서로 투영한 문자열 셀.
+
+        빈 셀은 ``""`` 로 남겨 렌더가 "(빈 값)"으로 시끄럽게 표기하게 한다(ADR-B).
+        """
+        return [
+            ["" if (v := rec.get(col)) is None else str(v) for col in self.source_fields]
+            for rec in self.records[:_SAMPLE_ROWS]
+        ]
 
     def _gate_snapshot(self) -> "dict | None":
         g = self.gate
