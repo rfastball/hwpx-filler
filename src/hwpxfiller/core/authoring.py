@@ -281,8 +281,36 @@ def _t_length(t_el: etree._Element) -> int:
     return len(_text_with_inline_events(t_el)[0])
 
 
+def _zero_width_in_slice(
+    pos: int, lo: int, hi: int, keep_lo: bool, keep_hi: bool
+) -> bool:
+    """폭-0 요소(속성만 있는 hp:t·구조 자식)를 구간 ``[lo, hi)`` 에 배정할지 판정.
+
+    폭-0 요소는 오프셋만으론 시작 경계에서 인접 토큰과 동률이 돼(예: 토큰 바로
+    앞의 ``<hp:t marker/>`` 는 토큰 첫 글자와 시작 오프셋이 같다) 순수 ``lo <= pos``
+    규칙으론 값 구간으로 빨려 들어간다. 그래서 경계 지점 배정을 호출자가 형제 순서
+    기준으로 지정하게 한다 — ``keep_lo`` 는 하단(``pos==lo``), ``keep_hi`` 는 상단
+    (``pos==hi``) 경계 포함 여부. 토큰 앞/뒤 슬라이스는 자기 쪽 경계만 포함(True),
+    값 슬라이스는 양 경계 모두 제외(False)해, 경계의 폭-0 요소가 필드 값 밖에
+    남도록 한다. 구간 내부(``lo < pos < hi``)는 언제나 포함.
+    """
+    if lo < pos < hi:
+        return True
+    if pos == lo:
+        return keep_lo
+    if pos == hi:
+        return keep_hi
+    return False
+
+
 def _clip_t(
-    t_el: etree._Element, base: int, lo: int, hi: int
+    t_el: etree._Element,
+    base: int,
+    lo: int,
+    hi: int,
+    *,
+    keep_zero_lo: bool,
+    keep_zero_hi: bool,
 ) -> "etree._Element | None":
     """``hp:t`` 의 혼합 콘텐츠를 depth-0 오프셋 ``[lo, hi)`` 로 잘라 새 ``hp:t`` 로 복원.
 
@@ -292,11 +320,11 @@ def _clip_t(
     ``t_el`` 자체가 텍스트·자식 없이 속성만 있으면(예: ``<hp:t marker="KEEP"/>``)
     위치 폭이 0 이라 문자/자식 단위로는 어느 구간에도 걸리지 않는다 — 그대로 두면
     세 구간 호출 모두 ``None`` 을 반환해 요소가 통째로 소실된다. 폭-0 지점으로
-    취급해(``_clip_run`` 의 ctrl/구조 자식과 동일한 ``lo <= pos < hi`` 관례) 정확히
-    한 구간에만 보존한다.
+    취급하되, 경계 배정은 ``keep_zero_lo``/``keep_zero_hi`` 로 형제 순서를 반영해
+    (토큰 앞의 마커가 값 구간으로 빨려 들어가지 않도록) 정확히 한 구간에만 보존한다.
     """
     if not t_el.text and len(t_el) == 0:
-        if lo <= base < hi:
+        if _zero_width_in_slice(base, lo, hi, keep_zero_lo, keep_zero_hi):
             return etree.Element(t_el.tag, dict(t_el.attrib))
         return None
     items: "list[tuple[int, str, object, int]]" = []  # (pos, kind, payload, width)
@@ -314,8 +342,11 @@ def _clip_t(
 
     lead: "list[str]" = []
     kids: "list[list]" = []  # [clone, tail_chars]
-    for item_pos, kind, payload, _width in items:
-        if not (lo <= item_pos < hi):
+    for item_pos, kind, payload, width in items:
+        if width == 0:
+            if not _zero_width_in_slice(item_pos, lo, hi, keep_zero_lo, keep_zero_hi):
+                continue
+        elif not (lo <= item_pos < hi):
             continue
         if kind == "char":
             if kids:
@@ -338,25 +369,39 @@ def _clip_t(
 
 
 def _clip_run(
-    run: etree._Element, base: int, lo: int, hi: int
+    run: etree._Element,
+    base: int,
+    lo: int,
+    hi: int,
+    *,
+    keep_zero_lo: bool,
+    keep_zero_hi: bool,
 ) -> "etree._Element | None":
     """런을 depth-0 오프셋 ``[lo, hi)`` 로 잘라 속성·구조를 보존한 새 런으로 복원.
 
     토큰 구간이 깨끗한(구조 경계 없는) 런에만 쓴다 — 그래서 이 런의 모든 자식이
-    depth-0 이고 pos 추적이 depth-0 좌표와 일치한다.
+    depth-0 이고 pos 추적이 depth-0 좌표와 일치한다. 폭-0 자식의 경계 배정은
+    ``keep_zero_lo``/``keep_zero_hi`` 로 형제 순서를 반영한다(``_zero_width_in_slice``).
     """
     new_run = etree.Element(run.tag, dict(run.attrib))
     pos = base
     for child in run:
         local = _local(child.tag)
         if local == "t":
-            clipped = _clip_t(child, pos, lo, hi)
+            clipped = _clip_t(
+                child, pos, lo, hi, keep_zero_lo=keep_zero_lo, keep_zero_hi=keep_zero_hi
+            )
             if clipped is not None:
                 new_run.append(clipped)
             pos += _t_length(child)
         else:
             width = 1 if local in ("tab", "lineBreak") else 0
-            if lo <= pos < hi:
+            keep = (
+                _zero_width_in_slice(pos, lo, hi, keep_zero_lo, keep_zero_hi)
+                if width == 0
+                else lo <= pos < hi
+            )
+            if keep:
                 new_run.append(copy.deepcopy(child))
             pos += width
     return new_run if len(new_run) else None
@@ -520,22 +565,26 @@ def _replace_composite_token(
 
     new_runs: "list[etree._Element]" = []
     # 토큰 앞: 첫 걸친 런의 토큰 이전 부분(제어·탭 등 구조 원형 보존).
+    # 경계(pos==tstart)의 폭-0 요소(토큰 앞 마커)는 이 앞 슬라이스가 가져간다 →
+    # keep_zero_hi=True. 그래야 값 슬라이스로 새지 않고 필드 밖에 남는다.
     for run in covered:
-        left = _clip_run(run, run_base[run], 0, tstart)
+        left = _clip_run(run, run_base[run], 0, tstart, keep_zero_lo=True, keep_zero_hi=True)
         if left is not None:
             new_runs.append(left)
     # 누름틀 여는 경계 — 토큰 시작 런 속성 승계.
     new_runs.append(_begin_run(dict(covered[0].attrib), span.name, begin_id, field_id))
     # 값: 토큰 구간을 각 걸친 런에서 잘라 조각별 속성 보존(구간은 깨끗한 텍스트뿐).
+    # 양 경계의 폭-0 요소는 앞/뒤 슬라이스 소관 → 값에선 제외(keep_zero_*=False).
     for run in covered:
-        value = _clip_run(run, run_base[run], tstart, tend)
+        value = _clip_run(run, run_base[run], tstart, tend, keep_zero_lo=False, keep_zero_hi=False)
         if value is not None:
             new_runs.append(value)
     # 닫는 경계 — 토큰 끝 런 속성 승계.
     new_runs.append(_end_run(dict(covered[-1].attrib), begin_id, field_id))
     # 토큰 뒤: 마지막 걸친 런의 토큰 이후 부분.
+    # 경계(pos==tend)의 폭-0 요소(토큰 뒤 마커)는 이 뒤 슬라이스가 가져간다 → keep_zero_lo=True.
     for run in covered:
-        right = _clip_run(run, run_base[run], tend, 1 << 30)
+        right = _clip_run(run, run_base[run], tend, 1 << 30, keep_zero_lo=True, keep_zero_hi=True)
         if right is not None:
             new_runs.append(right)
 
