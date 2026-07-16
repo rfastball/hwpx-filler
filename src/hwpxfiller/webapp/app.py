@@ -24,6 +24,7 @@ from pathlib import Path
 
 from ..core.job import JobRegistry, default_jobs_dir
 from ..core.text_registry import TextTemplateRegistry, default_text_templates_dir
+from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확정 게이트 판정(#33)
 from ..gui.file_filters import EXCEL_FILTER_PATTERN  # 확장자 단일 출처(RC-34) — Qt-free 상수
 from hwpxcore.native._debug import log
 from hwpxcore.native.clipboard import set_clipboard_text
@@ -112,16 +113,44 @@ class WebFrontend:
             return f"ERROR: {exc}"
         return Path(path).name
 
-    def pick_data_file(self, screen: str) -> "str | None":
-        """Win32 파일 다이얼로그 → 링1 VM 로드. 실패는 ``ERROR:`` 접두로 시끄럽게 반환."""
+    def pick_data_file(self, screen: str) -> "str | dict | None":
+        """Win32 파일 다이얼로그 → 링1 VM 로드. 실패는 ``ERROR:`` 접두로 시끄럽게 반환.
+
+        다중 시트 워크북이면 **조용히 첫 시트를 쓰지 않는다**(#33) — 로드를 미루고 시트
+        목록을 실은 ``{"needs_sheet": True, ...}`` 를 돌려줘 웹이 시트를 확정받게 한다.
+        확정된 시트로의 실제 로드는 :meth:`load_data_sheet` 가 담당한다.
+        """
         log(f"pick_data_file: enter screen={screen}")
         filters = [("엑셀/CSV 데이터", EXCEL_FILTER_PATTERN), ("모든 파일", "*.*")]
         path = open_file_dialog(filters, owner_title=WINDOW_TITLE)
         log(f"pick_data_file: dialog returned {path!r}")
         if not path:
             return None
+        overview = ambiguous_sheets(path)  # 모호할 때만 확정을 요구(빈 목록=단일/CSV)
+        if overview:
+            return {
+                "needs_sheet": True,
+                "path": path,
+                "name": Path(path).name,
+                "sheets": [{"name": n, "rows": r, "cols": c} for n, r, c in overview],
+            }
         try:
             self._controller(screen).load_data_path(path)
+        except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
+            return f"ERROR: {exc}"
+        return Path(path).name
+
+    def load_data_sheet(self, screen: str, path: str, sheet: str) -> "str | None":
+        """웹에서 확정한 시트로 데이터 로드(#33) — 다중 시트 확정 게이트의 착지 지점.
+
+        ``sheet`` 는 반드시 해당 워크북의 **실제 시트명**이어야 한다 — 모르는 이름을 조용히
+        첫 시트로 강등하지 않고 시끄럽게 거절한다(confirm-or-alarm). 실패는 ``ERROR:`` 접두.
+        """
+        names = [n for n, _r, _c in sheet_overview(path)]
+        if sheet not in names:
+            return f"ERROR: '{sheet}' 시트를 찾을 수 없습니다 — 시트를 다시 선택하세요."
+        try:
+            self._controller(screen).load_data_path(path, sheet=sheet)
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
         return Path(path).name
@@ -218,6 +247,54 @@ _MODAL_A11Y_PROBE_JS = r"""
     focus_before: before,         // 열기 직전 트리거(내비 data-scr)
     focus_restored: restored      // 닫은 뒤 포커스가 트리거로 복귀했는가
   };
+})()
+"""
+
+
+# 다중 시트 확정 게이트 프로브(#33) — 실 브라우저에서 SheetPicker.choose 를 end-to-end 로 구동한다.
+# 조용한 첫 시트 로드 금지의 핵심 보장을 실 DOM 에서 되읽는다: (1) 확정(시트 클릭)하면 그 시트로
+# 로드돼 파일명이 해소되고, (2) 취소(Escape)하면 로드가 일어나지 않고 null 로 해소(중단)된다.
+# Bridge.loadDataSheet 는 창을 실제로 열지 않도록 스텁(확정 시 파일명 반환) — 저장/복원한다.
+# choose 는 async·상호작용 구동이라 setup 에서 fire→window.__sheetProbe 에 stash, 뒤에서 되읽는다.
+_SHEET_PROBE_SETUP_JS = r"""
+(function () {
+  window.__sheetProbe = { status: 'running' };
+  var origLoad = window.Bridge.loadDataSheet;
+  window.Bridge.loadDataSheet = function (screen, path, sheet) {
+    return Promise.resolve('확정됨:' + sheet);  // 실 다이얼로그 대신 확정 시트명을 되쏨
+  };
+  var payload = {
+    needs_sheet: true, path: 'C:/x/multi.xlsx', name: 'multi.xlsx',
+    sheets: [{ name: '공고목록', rows: 3, cols: 2 }, { name: '낙찰현황', rows: 4, cols: 3 }]
+  };
+  (async function () {
+    try {
+      // (1) 확정 경로 — 열림·버튼수·초기포커스 되읽고 둘째 시트를 클릭해 해소.
+      var p1 = window.SheetPicker.choose('run', payload);
+      var opened = !document.getElementById('sheetModal').classList.contains('hidden');
+      var btns = document.querySelectorAll('#sheetList .sheet-opt');
+      var focusFirst = document.activeElement === btns[0];
+      btns[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      var picked = await p1;
+      // (2) 취소 경로 — 다시 열고 Escape → null 로 해소(로드 없음).
+      var p2 = window.SheetPicker.choose('run', payload);
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      var cancelled = await p2;
+      window.__sheetProbe = {
+        status: 'done',
+        opened: opened,                 // choose 가 모달을 열었는가
+        btn_count: btns.length,         // 시트 수만큼 옵션 버튼
+        focus_first: focusFirst,        // 초기 포커스가 첫 옵션에
+        picked: picked,                 // 확정 시 확정 시트로 로드된 결과(확정됨:낙찰현황)
+        cancelled: cancelled,           // 취소 시 null(중단 — 첫 시트 강등 없음)
+        closed_after: document.getElementById('sheetModal').classList.contains('hidden')
+      };
+    } catch (e) {
+      window.__sheetProbe = { status: 'throw', message: e && e.message };
+    } finally {
+      window.Bridge.loadDataSheet = origLoad;
+    }
+  })();
 })()
 """
 
@@ -330,6 +407,11 @@ def _selftest_drive(window: "object") -> None:
         window.resize(1180, 820)  # type: ignore[attr-defined]  # 기본 크기 = 경계 위 → 2판 복귀
         time.sleep(0.6)
         result["grid_wide"] = window.evaluate_js(grid_probe)  # type: ignore[attr-defined]
+        # 다중 시트 확정 게이트(#33) — SheetPicker.choose 를 실 DOM 에서 구동(확정→로드, 취소→중단).
+        # async·상호작용 구동이라 fire 후 짧게 대기하고 stash 를 되읽는다(preserve_real 패턴).
+        window.evaluate_js(_SHEET_PROBE_SETUP_JS)  # type: ignore[attr-defined]
+        time.sleep(0.8)  # choose 두 회차(확정·취소) 마이크로태스크 해소 여유
+        result["sheet_gate"] = window.evaluate_js("window.__sheetProbe")  # type: ignore[attr-defined]
         # 상호작용 보존(#28) — Preserve 헬퍼가 재구성 가로질러 포커스·캐럿·스크롤 유지하는지(기제).
         result["preserve"] = window.evaluate_js(_PRESERVE_PROBE_JS)  # type: ignore[attr-defined]
         # 실화면 회귀(#28) — 실 컨트롤러 스냅샷으로 4화면 실 render() 구동 + txt 스크롤 보존 end-to-end.

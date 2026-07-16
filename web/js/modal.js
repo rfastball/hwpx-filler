@@ -11,6 +11,7 @@
 (function () {
   let active = null; // 현재 열린 모달 요소(단일 — 동시 다중 모달 없음)
   let returnFocus = null; // 열기 직전 포커스 요소 — 닫을 때 복귀 대상(#28)
+  let onCloseCb = null; // 닫힐 때(Escape 포함) 1회 호출 — 시트 선택 취소=중단 판정용(#33)
 
   function onKeydown(e) {
     // Escape → 활성 모달 닫기. 캡처 단계로 걸어 배경 핸들러보다 먼저 받는다.
@@ -24,6 +25,7 @@
     const el = document.getElementById(id);
     if (!el) return;
     returnFocus = document.activeElement; // 닫을 때 여기로 복귀
+    onCloseCb = (opts && opts.onClose) || null; // Escape·취소 등 어떤 경로로 닫혀도 통지
     el.classList.remove("hidden");
     active = el;
     document.addEventListener("keydown", onKeydown, true);
@@ -43,6 +45,9 @@
       active = null;
       if (returnFocus && returnFocus.focus) returnFocus.focus(); // 트리거로 복귀(#28)
       returnFocus = null;
+      const cb = onCloseCb; // 널로 먼저 비운 뒤 호출 — 콜백이 재차 close() 해도 재진입 안전
+      onCloseCb = null;
+      if (cb) cb();
     }
   }
 

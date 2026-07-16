@@ -12,8 +12,9 @@
 **이번 이관의 스코프 경계(조용히 빠뜨리지 않고 명시)** — 아래는 이 커밋에서 미구현이며
 후속 이관 대상이다(confirm-or-alarm: 없는 기능을 있는 척하지 않는다):
 - 편집 모드(기존 Job 로드)·태그 분류(D12)·데이터풀 자동등록·매핑 베이스 프로파일 적용/저장.
-- 다중 시트 xlsx 의 시트 선택(기본 시트 사용) · 인라인 누름틀 변환(fieldize).
-RAW 차단·PARTIAL 게이트·의도적 비움 이름게이트·저장 게이트·덮어쓰기 확인은 모두 포함한다.
+- 인라인 누름틀 변환(fieldize).
+RAW 차단·PARTIAL 게이트·의도적 비움 이름게이트·저장 게이트·덮어쓰기 확인·다중 시트 확정
+게이트(#33)는 모두 포함한다.
 """
 from __future__ import annotations
 
@@ -226,9 +227,10 @@ class EditorController:
             self.gate_error = True
         self._push()
 
-    def load_data_path(self, path: str) -> None:
-        """선택된 데이터 파일 로드 — 기본 시트(다중 시트 선택은 후속 이관)."""
-        source = source_for_path(path)
+    def load_data_path(self, path: str, *, sheet: "str | None" = None) -> None:
+        """선택된 데이터 파일 로드. ``sheet`` = 웹에서 확정한 시트명(다중 시트 게이트 #33,
+        None = CSV·단일 시트라 물을 것이 없는 경우)."""
+        source = source_for_path(path, sheet=sheet)
         records = source.records()
         if not records:
             raise ValueError("레코드 0건 — 데이터를 바꾸지 않았습니다.")

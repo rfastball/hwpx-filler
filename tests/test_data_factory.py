@@ -14,6 +14,7 @@ from hwpxfiller.data import (
     DataSource,
     ExcelDataSource,
     InlineDataSource,
+    ambiguous_sheets,
     make_source,
     sheet_overview,
     source_for_path,
@@ -108,6 +109,32 @@ def test_sheet_overview_single_sheet_returns_length_one(tmp_path):
     overview = sheet_overview(xlsx)
     assert len(overview) == 1
     assert overview[0][0] == "유일시트"
+
+
+# ambiguous_sheets = "모호할 때만 묻는다"의 판정 단일 출처 — CLI(--sheet 게이트)와
+# 웹(시트 선택 게이트 #33)이 공유한다. 2+ 시트만 비어있지 않은 목록을 준다.
+
+
+def test_ambiguous_sheets_returns_overview_for_multi_sheet():
+    """2+ 시트 = 모호 → sheet_overview 그대로(웹이 확정받을 근거)."""
+    assert ambiguous_sheets(MULTI_SHEET) == sheet_overview(MULTI_SHEET)
+    assert [name for name, _, _ in ambiguous_sheets(MULTI_SHEET)] == ["공고목록", "낙찰현황"]
+
+
+def test_ambiguous_sheets_empty_for_csv_and_single_sheet(tmp_path):
+    """CSV·단일 시트 = 물을 것이 없음 → 빈 목록(조용히 로드해도 되는 유일 선택)."""
+    csv = tmp_path / "rec.csv"
+    csv.write_text("공고명,추정가격\n전산장비,1000\n", encoding="utf-8-sig")
+    assert ambiguous_sheets(csv) == []
+
+    from openpyxl import Workbook
+
+    xlsx = tmp_path / "one.xlsx"
+    wb = Workbook()
+    wb.active.title = "유일시트"
+    wb.active.append(["공고명"])
+    wb.save(xlsx)
+    assert ambiguous_sheets(xlsx) == []
 
 
 def test_source_for_path_passes_sheet_through():

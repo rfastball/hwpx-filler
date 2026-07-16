@@ -15,6 +15,7 @@ from hwpxfiller.webapp.screen_editor import EditorController
 REPO = Path(__file__).resolve().parents[1]
 TPL_COMPILED = REPO / "tests" / "corpus" / "scenario" / "templates" / "구매요청서.hwpx"
 TPL_PARTIAL = REPO / "tests" / "fixtures" / "template_v1.hwpx"
+MULTI_SHEET = REPO / "tests" / "fixtures" / "multi_sheet.xlsx"
 
 
 def _controller(tmp_path: Path) -> "tuple[EditorController, list]":
@@ -45,6 +46,24 @@ def test_partial_template_blocks_until_acked(tmp_path):
     ctrl.dispatch("ack_gate", {})
     assert ctrl.can_advance(0) is True
     assert ctrl.snapshot()["gate"]["acked"] is True
+
+
+def test_load_data_honors_confirmed_sheet(tmp_path):
+    """다중 시트 확정 게이트(#33) — load_data_path(sheet=) 가 확정 시트를 관통 로드.
+
+    첫 시트(공고목록)가 아닌 낙찰현황을 확정하면 그 시트의 필드·레코드가 온다 —
+    조용한 첫 시트 강등이 아니라 확정값이 반영됨을 못박는다.
+    """
+    ctrl, pushes = _controller(tmp_path)
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    snap = pushes[-1][1]
+    assert snap["source_fields"] == ["업체명", "낙찰금액", "계약일"]
+    assert snap["record_count"] == 3
+    # 대조군: 시트 미지정(None)은 첫 시트(공고목록) — 브리지가 모호할 때만 확정을 요구하므로
+    # 컨트롤러 계약 자체는 None=첫/유일 시트로 유지된다.
+    ctrl2, pushes2 = _controller(tmp_path)
+    ctrl2.load_data_path(str(MULTI_SHEET))
+    assert pushes2[-1][1]["source_fields"] == ["공고명", "추정가격"]
 
 
 def test_full_new_job_flow_schema_only_const(tmp_path):

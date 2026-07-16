@@ -17,6 +17,15 @@ from hwpxfiller.webapp.screens import TxtController
 
 REPO = Path(__file__).resolve().parents[1]
 WEB = REPO / "web"
+MULTI_SHEET = REPO / "tests" / "fixtures" / "multi_sheet.xlsx"
+
+
+def _frontend(tmp_path, monkeypatch):
+    """WebFrontend 브리지 — 실 사용자 jobs 디렉터리를 건드리지 않게 tmp 로 우회."""
+    from hwpxfiller.webapp import app as app_mod
+
+    monkeypatch.setattr(app_mod, "default_jobs_dir", lambda: tmp_path / "jobs")
+    return app_mod.WebFrontend(tmp_path / "txt")
 
 
 def _controller(tmp_path: Path) -> "tuple[TxtController, list]":
@@ -135,6 +144,59 @@ def test_win32_filter_block_derives_from_exts_and_is_double_null_terminated():
     assert block.endswith("\0\0")  # 이중 널 종결(comdlg32 요구)
     assert block.count("\0") == 5  # 4항목 사이 널 3 + 종결 널 2
     assert f"엑셀/CSV 데이터 ({EXCEL_FILTER_PATTERN})" in block
+
+
+# ------------------------------------------------------------- 다중 시트 확정 게이트(#33)
+# 브리지가 모호(2+ 시트) 워크북을 조용히 첫 시트로 로드하지 않고 웹에 시트 확정을 요구하는지,
+# 확정된 시트만 로드하고 모르는 시트는 시끄럽게 거절하는지 — 창 없이(다이얼로그 우회) 가드.
+
+
+def test_pick_data_file_multi_sheet_defers_and_asks(tmp_path, monkeypatch):
+    """다중 시트 = 조용히 첫 시트 로드 금지 → needs_sheet 페이로드로 확정 요구, 로드 보류."""
+    from hwpxfiller.webapp import app as app_mod
+
+    frontend = _frontend(tmp_path, monkeypatch)
+    monkeypatch.setattr(app_mod, "open_file_dialog", lambda *a, **k: str(MULTI_SHEET))
+
+    result = frontend.pick_data_file("editor")
+    assert isinstance(result, dict) and result["needs_sheet"] is True
+    assert result["path"] == str(MULTI_SHEET)
+    assert result["name"] == "multi_sheet.xlsx"
+    assert [s["name"] for s in result["sheets"]] == ["공고목록", "낙찰현황"]
+    assert result["sheets"][0]["rows"] and result["sheets"][0]["cols"]  # 행×열 근사 동반
+    # 핵심: 아직 아무 것도 로드하지 않았다(조용한 첫 시트 강등 없음).
+    assert frontend.controllers["editor"].data_path == ""
+
+
+def test_pick_data_file_single_sheet_loads_directly(tmp_path, monkeypatch):
+    """단일 시트/CSV = 물을 것이 없음 → 확정 게이트 없이 곧장 로드(파일명 반환)."""
+    from hwpxfiller.webapp import app as app_mod
+
+    frontend = _frontend(tmp_path, monkeypatch)
+    csv = tmp_path / "d.csv"
+    csv.write_text("공고명,추정가격\n전산장비,1000\n", encoding="utf-8-sig")
+    monkeypatch.setattr(app_mod, "open_file_dialog", lambda *a, **k: str(csv))
+
+    result = frontend.pick_data_file("editor")
+    assert result == "d.csv"
+    assert frontend.controllers["editor"].data_path == str(csv)
+
+
+def test_load_data_sheet_loads_confirmed_sheet(tmp_path, monkeypatch):
+    """확정한 시트로 로드 → 그 시트의 필드가 컨트롤러에 반영(파일명 반환)."""
+    frontend = _frontend(tmp_path, monkeypatch)
+    result = frontend.load_data_sheet("editor", str(MULTI_SHEET), "낙찰현황")
+    assert result == "multi_sheet.xlsx"
+    assert frontend.controllers["editor"].source_fields == ["업체명", "낙찰금액", "계약일"]
+
+
+def test_load_data_sheet_rejects_unknown_sheet_loudly(tmp_path, monkeypatch):
+    """모르는 시트명은 조용히 첫 시트로 강등하지 않고 시끄럽게 거절(로드 안 함)."""
+    frontend = _frontend(tmp_path, monkeypatch)
+    result = frontend.load_data_sheet("editor", str(MULTI_SHEET), "없는시트")
+    assert isinstance(result, str) and result.startswith("ERROR:")
+    assert "없는시트" in result
+    assert frontend.controllers["editor"].data_path == ""  # 로드되지 않음
 
 
 def test_web_assets_present_and_wired():

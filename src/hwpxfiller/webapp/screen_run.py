@@ -16,8 +16,9 @@ Qt 위젯과 **같은** 보강을 얻는다.
 후속 이관 대상이다(confirm-or-alarm: 없는 기능을 있는 척하지 않는다):
 - 데이터 소스 = **파일(.xlsx/.csv)만**. 등록 데이터 풀·나라장터 애드혹 취득(3소스 겨눔)은 후속.
 - 기존 문서 이어채우기(#18 결정으로 실행 화면에선 강등/숨김 — seam 은 링1 에 존치).
-- 협조적 취소(RC-06)·생성 원장 opt-in·다중 시트 선택.
-덮어쓰기 확인·미입력 강제 확인 게이트·구조 드리프트 차단·미입력 표식은 모두 포함한다.
+- 협조적 취소(RC-06)·생성 원장 opt-in.
+덮어쓰기 확인·미입력 강제 확인 게이트·구조 드리프트 차단·미입력 표식·다중 시트 확정
+게이트(#33)는 모두 포함한다.
 """
 from __future__ import annotations
 
@@ -124,11 +125,15 @@ class RunController:
         return self.snapshot()
 
     # ------------------------------------------- 네이티브 보조(브리지가 다이얼로그 담당)
-    def load_data_path(self, path: str) -> None:
-        """선택된 데이터 파일을 링1 VM 으로 로드(기본 시트). 레코드 0건이면 시끄럽게 실패."""
+    def load_data_path(self, path: str, *, sheet: "str | None" = None) -> None:
+        """선택된 데이터 파일을 링1 VM 으로 로드. 레코드 0건이면 시끄럽게 실패.
+
+        ``sheet`` 는 사용자가 웹에서 **확정한** 시트명(다중 시트 확정 게이트, #33) — None 이면
+        CSV·단일 시트라 물을 것이 없는 경우다(브리지가 모호할 때만 확정을 요구하므로).
+        """
         if self.vm is None:
             raise ValueError("실행할 작업을 먼저 선택하세요.")
-        records = self.vm.load_data(path)  # 파일 소스 리졸버(Qt-free). 실패는 raise.
+        records = self.vm.load_data(path, sheet=sheet)  # 파일 소스 리졸버(Qt-free). 실패는 raise.
         if not records:
             raise ValueError("레코드 0건 — 데이터를 바꾸지 않았습니다.")
         self.data_label = Path(path).name

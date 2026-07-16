@@ -88,6 +88,20 @@ class TestWebSelftestGate:
         assert m["closed_by_escape"] is True
         assert m["focus_restored"] == m["focus_before"]
 
+    def test_sheet_gate_confirm_loads_chosen_sheet(self, selftest_result: dict) -> None:
+        # 다중 시트 확정 게이트(#33) — SheetPicker.choose 가 실 DOM 에서 모달을 열고, 시트를
+        # 확정(클릭)하면 그 시트로 로드돼 결과가 해소된다(첫 시트 강등이 아니라 확정값 반영).
+        s = selftest_result["sheet_gate"]
+        assert s.get("status") == "done", f"시트 게이트 프로브 실패: {s!r}"
+        assert s["opened"] is True and s["btn_count"] == 2 and s["focus_first"] is True
+        assert s["picked"] == "확정됨:낙찰현황", f"확정 시트로 로드 안 됨: {s['picked']!r}"
+
+    def test_sheet_gate_cancel_aborts_without_loading(self, selftest_result: dict) -> None:
+        # 취소(Escape)는 조용한 첫 시트 강등이 아니라 중단 — null 로 해소되고 모달이 닫힌다(#33).
+        s = selftest_result["sheet_gate"]
+        assert s["cancelled"] is None, f"취소가 null(중단)로 해소 안 됨: {s.get('cancelled')!r}"
+        assert s["closed_after"] is True, "취소 후 시트 모달이 닫히지 않았습니다(#33)."
+
     def test_responsive_layout_collapses_at_min_width(self, selftest_result: dict) -> None:
         # 최소폭(760<820 경계)에서 .app 이 세로 단일열(1 track)로 접힘 — 최소 크기 가로 오버플로 회귀 가드(#27).
         narrow = selftest_result["grid_narrow"]
