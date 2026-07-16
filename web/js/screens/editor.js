@@ -243,7 +243,7 @@
           if (typeof r === "string" && r.startsWith("ERROR:")) alertMsg(r.slice(6).trim());
           break;
         }
-        case "ack-gate": Bridge.call(SCREEN, "ack_gate", {}); break;
+        case "ack-gate": await Bridge.call(SCREEN, "ack_gate", {}); break;
         case "pick-data": {
           let r = await Bridge.pickDataFile(SCREEN);
           if (r && typeof r === "object" && r.needs_sheet) {   // 다중 시트 → 확정 게이트(#33)
@@ -253,14 +253,14 @@
           if (typeof r === "string" && r.startsWith("ERROR:")) alertMsg(r.slice(6).trim());
           break;
         }
-        case "skip-data": Bridge.call(SCREEN, "skip_data", {}); break;
-        case "prev-rec": Bridge.call(SCREEN, "step_preview", { delta: -1 }); break;
-        case "next-rec": Bridge.call(SCREEN, "step_preview", { delta: 1 }); break;
-        case "unconfirm-all": Bridge.call(SCREEN, "unconfirm_all", {}); break;
+        case "skip-data": await Bridge.call(SCREEN, "skip_data", {}); break;
+        case "prev-rec": await Bridge.call(SCREEN, "step_preview", { delta: -1 }); break;
+        case "next-rec": await Bridge.call(SCREEN, "step_preview", { delta: 1 }); break;
+        case "unconfirm-all": await Bridge.call(SCREEN, "unconfirm_all", {}); break;
         case "confirm-all": await confirmAll(); break;
-        case "row-confirm": Bridge.call(SCREEN, "set_confirmed", { index: idx, confirmed: el.checked }); break;
-        case "back": Bridge.call(SCREEN, "goto_step", { step: LAST.step - 1 }); break;
-        case "next": Bridge.call(SCREEN, "goto_step", { step: LAST.step + 1 }); break;
+        case "row-confirm": await Bridge.call(SCREEN, "set_confirmed", { index: idx, confirmed: el.checked }); break;
+        case "back": await Bridge.call(SCREEN, "goto_step", { step: LAST.step - 1 }); break;
+        case "next": await Bridge.call(SCREEN, "goto_step", { step: LAST.step + 1 }); break;
         case "save": await doSave({}); break;
         case "profile-apply": await profileApply(); break;
         case "profile-save": await profileSave(); break;
