@@ -231,6 +231,19 @@ def _forced_colors_block(css_path: Path) -> str:
     return css[i + len(marker) : j - 1]
 
 
+def _rule_body(block: str, selector: str) -> str:
+    """공백 제거 블록에서 ``selector{...}`` 규칙의 **본문**만 반환(없으면 "").
+
+    선언을 셀렉터에 묶어 검사하려는 것 — 블록 전역 부분문자열 검사는 한 셀렉터의
+    선언을 비워도(예: ``tr.r-unmatched td{}``) 다른 셀렉터에 남은 같은 토큰
+    (``border-left``)이 통과시켜, 특정 상태의 보더 신호 소실을 못 잡는다. 공백 제거로
+    후손 결합자가 붙으므로(``tr.r-unmatched td`` → ``tr.r-unmatchedtd``) selector 도
+    같은 형태로 넘긴다.
+    """
+    m = re.search(re.escape(selector) + r"\{([^}]*)\}", block)
+    return m.group(1) if m else ""
+
+
 def test_forced_colors_media_query_exists():
     """web/ 강제 색상 모드(Windows 고대비) 보더 신호가 **블록 안에** 있어야 한다(#3, WCAG 1.4.3).
 
@@ -241,12 +254,13 @@ def test_forced_colors_media_query_exists():
     """
     block = _forced_colors_block(WEB_CSS)
     assert block, "강제 색상 모드 대응 @media(forced-colors:active) 블록이 사라졌습니다(#3)."
-    assert (
-        "tr.r-unconfirmed" in block and "tr.r-unmatched" in block and "border-left" in block
-    ), (
-        "매핑 표 행 상태의 강제색 보더 대체 신호가 블록에서 사라졌습니다 — 배경 틴트만으론 "
-        "고대비에서 행 상태가 완전히 사라집니다(#3)."
-    )
+    # 두 행 상태 셀렉터가 '각자' 보더 신호를 가져야 한다 — 블록 전역 부분문자열 검사는
+    # 한 셀렉터의 보더만 비워도(다른 셀렉터에 border-left 잔존) 통과하므로 셀렉터에 묶는다.
+    for selector in ("tr.r-unconfirmedtd", "tr.r-unmatchedtd"):
+        assert "border-left" in _rule_body(block, selector), (
+            f"매핑 표 행 상태({selector})의 강제색 보더 대체 신호가 사라졌습니다 — "
+            "배경 틴트만으론 고대비에서 행 상태가 사라집니다(#3)."
+        )
 
 
 def test_forced_colors_block_present_in_web_diff():
@@ -258,9 +272,11 @@ def test_forced_colors_block_present_in_web_diff():
     """
     block = _forced_colors_block(WEB_DIFF_CSS)
     assert block, "web-diff 강제 색상 모드 @media(forced-colors:active) 블록이 사라졌습니다(#3)."
-    assert "ins{text-decoration" in block, (
-        "diff 삽입(ins)의 강제색 밑줄 신호가 사라졌습니다 — 배경 틴트만으론 고대비에서 "
-        "삽입 구간이 사라집니다(#3)."
+    # 값까지 검사한다 — text-decoration 선언이 있어도 값이 none 이면 밑줄 신호가 무력화되므로
+    # underline 값 자체를 단언(선언 존재만 보면 none 으로 바꿔도 통과).
+    assert "underline" in _rule_body(block, ".doctableins"), (
+        "diff 삽입(ins)의 강제색 밑줄(text-decoration:underline) 신호가 사라졌습니다 — "
+        "배경 틴트만으론 고대비에서 삽입 구간이 사라집니다(#3)."
     )
 
 
