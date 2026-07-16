@@ -32,12 +32,17 @@ from hwpxcore.native.dialogs import open_file_dialog, open_folder_dialog, save_f
 from .screen_editor import EditorController
 from .screen_home import HomeController
 from .screen_matrix import MatrixController
+from .screen_pool import PoolController
 from .screen_run import RunController
 from .screen_template import TemplateController
-from .screens import TxtController
+from .screens import TxtController, default_pool_registry
 
 
 WINDOW_TITLE = "HWPX Filler"  # 창 제목 = 파일 다이얼로그 소유주 창을 FindWindowW 로 찾는 키
+
+# 파일 선택 다이얼로그 필터 — pick_data_file·pick_pool_data_file 공유 단일 출처(둘 다
+# "엑셀/CSV 데이터" 참조를 다루므로 필터가 같다; 확장자 자체의 단일 출처는 EXCEL_FILTER_PATTERN).
+_EXCEL_OR_ANY_FILTERS = [("엑셀/CSV 데이터", EXCEL_FILTER_PATTERN), ("모든 파일", "*.*")]
 
 
 # ------------------------------------------------------------------ 경로 해석
@@ -65,16 +70,21 @@ class WebFrontend:
         self._window: "object | None" = None  # webview.Window (지연 배선)
         registry = TextTemplateRegistry(text_templates_dir)
         job_registry = JobRegistry(default_jobs_dir())
+        # 데이터셋 풀(#26) — 단일 인스턴스를 화면들이 공유: 에디터 자동등록(#3)·실행 겨눔(#6)·
+        # 관리 화면(#4)의 변경이 서로 즉시 보인다(레지스트리는 무상태 디렉터리 어댑터).
+        pool_registry = default_pool_registry()
         # 화면 등록 — 새 화면 = 컨트롤러 1개 추가(순수 데이터는 dispatch, 네이티브는 아래 메서드).
         controllers = [
             # 홈(대시보드) — 허브. TXT 레지스트리는 즉시 기안·템플릿 관리와 공유(변경이 반영).
             HomeController(job_registry, registry, self._push),
-            TxtController(registry, self._push),
-            EditorController(job_registry, self._push),
-            RunController(job_registry, self._push),
-            MatrixController(job_registry, self._push),
+            TxtController(registry, self._push, pool_registry=pool_registry),
+            EditorController(job_registry, self._push, pool_registry=pool_registry),
+            RunController(job_registry, self._push, pool_registry=pool_registry),
+            MatrixController(job_registry, self._push, pool_registry=pool_registry),
             # 템플릿 관리(#13) — TXT 레지스트리는 즉시 기안과 공유(변경이 양쪽에 반영).
             TemplateController(registry, self._push),
+            # 데이터 관리(#26 #4) — 등록 데이터 참조·수명.
+            PoolController(pool_registry, self._push),
         ]
         self.controllers = {c.name: c for c in controllers}
 
@@ -121,7 +131,7 @@ class WebFrontend:
         확정된 시트로의 실제 로드는 :meth:`load_data_sheet` 가 담당한다.
         """
         log(f"pick_data_file: enter screen={screen}")
-        filters = [("엑셀/CSV 데이터", EXCEL_FILTER_PATTERN), ("모든 파일", "*.*")]
+        filters = _EXCEL_OR_ANY_FILTERS
         path = open_file_dialog(filters, owner_title=WINDOW_TITLE)
         log(f"pick_data_file: dialog returned {path!r}")
         if not path:
@@ -216,6 +226,44 @@ class WebFrontend:
     def editor_has_unsaved_work(self) -> bool:
         """에디터에 진행 중인(미저장) 작업 세션이 있는가 — 크로스스크린 진입 전 폐기 확인용(#25)."""
         return self._controller("editor").has_unsaved_work()
+
+    def pick_pool_data_file(self) -> "str | None":
+        """데이터 관리 등록 모달 '찾아보기' → **경로만** 반환(#26 #4).
+
+        ``pick_data_file`` 과 달리 어떤 컨트롤러에도 로드하지 않는다 — 등록은 참조
+        저장이지 데이터 로드가 아니다(행 미저장 불변식). None = 취소.
+        """
+        filters = _EXCEL_OR_ANY_FILTERS
+        return open_file_dialog(filters, owner_title=WINDOW_TITLE)
+
+    def reveal_corrupt_job(self, path: str) -> "str | None":
+        """홈 손상 카드 '폴더 열기' → 탐색기에서 해당 파일 표시(#26 #8 해소 동선).
+
+        경로는 홈 컨트롤러의 손상 목록 화이트리스트로 검증한다 — 웹 페이로드로 임의
+        경로를 여는 통로를 봉쇄. 실패는 ``ERROR:`` 접두.
+        """
+        import subprocess
+
+        try:
+            target = self._controller("home").validate_corrupt_path(path)
+            # explorer /select = 파일을 선택한 채 폴더 열기(사용자가 바로 복구/검사).
+            subprocess.Popen(["explorer", "/select,", str(target)])
+        except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
+            return f"ERROR: {exc}"
+        return None
+
+    def open_job_in_editor(self, name: str) -> "str | None":
+        """홈 '편집' → 저장된 작업을 에디터 편집 세션으로 복원(#26 편집 모드).
+
+        웹은 이 호출 후 에디터 화면으로 전환한다. 실패(작업 손상·템플릿 부재·RAW)는
+        ``ERROR:`` 접두로 시끄럽게 반환. 미저장 세션 확인은 웹이 ``editor_has_unsaved_work``
+        로 선판단한다(#25 미러).
+        """
+        try:
+            self._controller("editor").load_job(name)
+        except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
+            return f"ERROR: {exc}"
+        return name
 
     def load_template_into_editor(self, path: str) -> "str | None":
         """템플릿 관리 '작업 만들기' → 그 템플릿을 에디터에 로드(크로스스크린). 파일명·``ERROR:``.
@@ -398,6 +446,13 @@ def _selftest_drive(window: "object") -> None:
             "document.getElementById('scr-home').classList.contains('on')")
         result["home_kpi_count"] = window.evaluate_js(  # type: ignore[attr-defined]
             "document.querySelectorAll('#homeKpis .kpi').length")
+        # 데이터 관리 화면(#26 #4) — 7번째 화면이 실제 init·렌더됐는지(빈 상태 문구도 렌더).
+        result["pool_rendered"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "(document.getElementById('poolList')||{innerHTML:''}).innerHTML.length > 0")
+        # 2소스 진입점(#26 #6) — 세 실행 표면의 '등록 데이터…' 버튼 실재.
+        result["pool_buttons"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "['btnPoolData','btnMxPoolData','btnTxtPoolData']"
+            ".every(function(i){return !!document.getElementById(i)})")
         # 커스텀 모달 접근성 동적 거동(#27/#28) — 정적 계약(role/aria)은 test_web_dom_contract 가
         # 보고, 여기선 실 브라우저에서 Modal 헬퍼가 초기포커스·Escape 닫기·트리거 복귀를 실제로
         # 수행하는지 되읽는다. 알려진 트리거(첫 내비 버튼)에 포커스를 두고 열었다가 Escape 로 닫는다.

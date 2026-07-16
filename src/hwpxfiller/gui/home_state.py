@@ -155,6 +155,7 @@ class DashboardKpi:
     missing_template_count: int
     txt_template_count: int
     pool_count: int = 0        # 데이터 풀 활성 항목 수(durable 참조)
+    pool_corrupted: int = 0    # 데이터 풀 손상 파일 수 — 0 위장 금지, 병기 표시(C5)
 
 
 # ── 작업 브라우저(패싯 탐색) — group-by 렌즈 + facet (JOB_BROWSER_DESIGN §4) ──────
@@ -272,25 +273,31 @@ class HomeViewModel:
             recent = f"{_fmt_iso(latest.last_run_at)[5:10]} · {latest.name}"
         else:
             recent = "—"
+        pool_count, pool_corrupted = self._pool_counts()
         return DashboardKpi(
             job_count=len(self._rows),
             recent_run=recent,
             missing_template_count=sum(1 for r in self._rows if r.template_missing),
             txt_template_count=self.text_registry.count() if self.text_registry else 0,
-            pool_count=self._pool_count(),
+            pool_count=pool_count,
+            pool_corrupted=pool_corrupted,
         )
 
-    def _pool_count(self) -> int:
-        """데이터 풀 활성(active) 항목 수. 레지스트리 없거나 읽기 실패면 0(조용히 감춤 아님 —
-        관리 표면이 손상 파일을 시끄럽게 노출; KPI 는 요약이라 0 으로 안전 강등)."""
-        if self.pool_registry is None:
-            return 0
-        try:
-            from ..core.dataset_pool import STATUS_ACTIVE
+    def _pool_counts(self) -> "tuple[int, int]":
+        """데이터 풀 ``(활성 항목 수, 손상 파일 수)``. 레지스트리 없으면 ``(0, 0)``.
 
-            return len(self.pool_registry.list_items(status=STATUS_ACTIVE))
-        except Exception:  # noqa: BLE001
-            return 0
+        손상 파일은 격리 수집해 **수를 병기**한다(C5) — 예전의 '읽기 실패 전부 0' 포괄
+        강등은 손상 데이터셋을 KPI 에서 무표시 증발시켰다(조용한 드롭 금지). 상세 조치는
+        관리 표면(데이터 관리 화면)이 노출하고, 여기는 요약 카운트만 나른다. 파일 단위
+        손상 밖의 실패(디렉터리 접근 불가 등)는 그대로 전파한다 — 0 으로 위장하지 않는다.
+        """
+        if self.pool_registry is None:
+            return (0, 0)
+        from ..core.dataset_pool import STATUS_ACTIVE
+
+        corrupted: "list" = []
+        active = self.pool_registry.list_items(status=STATUS_ACTIVE, corrupted=corrupted)
+        return (len(active), len(corrupted))
 
     def txt_rows(self) -> "list[TxtRow]":
         """txt 기안 템플릿 목록(정해진 루트). 레지스트리 없으면 빈 목록."""

@@ -7,10 +7,7 @@
   let LAST = null;
   let generating = false;
 
-  function esc(s) {
-    return String(s).replace(/[&<>"]/g, (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  }
+  const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
 
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
@@ -69,7 +66,8 @@
   }
 
   function renderData(s) {
-    $("runDataLabel").value = s.data_label || "";  // 화면별 고유 id(#27) — txt 의 라벨과 분리
+    // 소스 종류 병기 라벨("파일: x" / "등록 데이터: 이름", #26 #6) — 서버가 플래그에서 합성(K8).
+    $("runDataLabel").value = s.data_source_label || "";
     $("outDir").value = s.out_dir || "";
   }
 
@@ -163,10 +161,11 @@
   }
 
   /* ---- 웹→Python 이벤트 ---- */
+  /* busy 잠금 대상은 하드코딩 id 배열이 아니라 [data-busy-lock] 속성으로 선언한다 — 새
+     컨트롤을 추가할 때 이 함수를 잊고 지나쳐도(#26 setBusy 누락 회귀) 속성만 붙이면
+     자동으로 잠긴다(구조적 재발 방지). */
   function setBusy(busy) {
-    for (const id of ["btnPickData", "btnPickFolder", "jobSel", "selAll", "selNone"]) {
-      $(id).disabled = busy;
-    }
+    $("scr-run").querySelectorAll("[data-busy-lock]").forEach((el) => { el.disabled = busy; });
     $("genBtn").disabled = busy || !(LAST && LAST.gate && LAST.gate.enabled);
     $("genBtn").textContent = busy ? "생성 중…" : "이 작업으로 문서 생성";
   }
@@ -250,6 +249,12 @@
       if (r === null) return;                       // 취소
       if (typeof r === "string" && r.startsWith("ERROR:")) { log("데이터 오류: " + r.slice(6).trim()); return; }
       log(`데이터 불러옴: ${r}`);
+    });
+    // 등록 데이터(풀) 겨눔(#26 #6) — 취소=중단, 실패는 모달 안에서 재진술(PoolPicker).
+    $("btnPoolData").addEventListener("click", async () => {
+      const label = await PoolPicker.choose(SCREEN);
+      if (label === null) return;                   // 취소 = 겨눔 중단
+      log(`등록 데이터 불러옴: ${label}`);
     });
     $("btnPickFolder").addEventListener("click", async () => {
       const r = await Bridge.pickOutputFolder(SCREEN);

@@ -12,10 +12,7 @@
   let editMode = "new";
   let editPath = "";
 
-  function esc(s) {
-    return String(s).replace(/[&<>"]/g, (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  }
+  const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
 
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
@@ -164,6 +161,11 @@
   }
 
   function wire() {
+    // 새로고침 실패(브리지 예외)도 fire-and-forget 로 삼키지 않는다(N1).
+    $("tplRefresh").addEventListener("click", async () => {
+      try { await Bridge.call(SCREEN, "refresh", {}); }
+      catch (err) { window.alert(String((err && err.message) || err)); }
+    });
     $("tplHwpxList").addEventListener("click", onHwpxClick);
     $("tplTxtList").addEventListener("click", onTxtClick);
     $("btnTplNewTxt").addEventListener("click", () => openEditModal("new", "", "", ""));

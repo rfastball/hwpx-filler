@@ -120,6 +120,66 @@ def guard_slug_collision(path: Path, name: str, load_name, *, kind: str) -> None
         )
 
 
+def load_isolated(paths, loader, corrupted):
+    """손상 격리 로드 루프 — 세 레지스트리 목록 메서드의 공용 몸통(RC-05 단일 출처).
+
+    예전엔 이 try/except-수집 루프가 :meth:`JobRegistry.list_jobs`·:meth:`~hwpxfiller.core.
+    dataset_pool.DatasetPoolRegistry.list_items`·:meth:`~hwpxfiller.core.mapping_base.
+    MappingBaseRegistry.list_bases` 에 바이트 단위로 복붙돼 있었다 — 여기로 수렴해
+    락스텝 편집 부담과 정책 표류를 없앤다.
+
+    - ``corrupted`` 가 **리스트**면: ``loader(path)`` 실패를 파일별로 잡아
+      ``(경로, 오류 문자열)`` 로 수집하고 정상 항목만 돌려준다 — 손상 1개가 목록 전체를
+      죽이지 않되, 호출측이 수집분을 시끄럽게 표면화할 책임을 진다(확인-또는-경보).
+    - ``corrupted`` 가 **None** 이면: 예외를 **그대로 전파**한다 — 수집처가 없는데
+      격리하면 손상 항목이 무표시로 증발한다(조용한 드롭 금지, C5). 호출자는 둘 중
+      하나를 명시적으로 고른다: 수집해 표면화하거나, raise 를 받아 실패를 표시하거나.
+    """
+    items = []
+    for p in paths:
+        if corrupted is None:
+            items.append(loader(p))  # 수집처 없음 = 격리 없음 — 실패는 그대로 전파(loud)
+            continue
+        try:
+            items.append(loader(p))
+        except Exception as exc:  # noqa: BLE001 — 손상 1개의 전멸 방지(격리 후 표면화)
+            corrupted.append((p, str(exc)))
+    return items
+
+
+def classify_existing(registry, name: str):
+    """이름 자리(slug 파일)의 선점 상태 분류 — 동명 확인 승격·충돌 차단 게이트의 공용 판정.
+
+    저장 전에 ``exists → load → 손상? → 이름 불일치? → 동명`` 사다리를 타는 화면 게이트
+    (pool 수동 등록·에디터 데이터셋 자동등록·프로파일 저장)가 이 분류를 공유한다 —
+    사본마다 확인 문구·비교 누락이 표류한 전력(e4ba3bd)을 봉인한다.
+
+    ``registry`` 는 ``exists(name)``/``load(name)`` 을 가진 레지스트리
+    (:class:`JobRegistry`·:class:`~hwpxfiller.core.dataset_pool.DatasetPoolRegistry`·
+    :class:`~hwpxfiller.core.mapping_base.MappingBaseRegistry` 공통 표면).
+
+    반환 ``(kind, item)``:
+
+    - ``("absent", None)`` — 자리 비어 있음. 게이트 불필요, 바로 저장.
+    - ``("same", item)`` — **같은 이름** 항목 존재. slug 가드는 자기-갱신으로 통과시켜
+      조용한 덮어쓰기가 되므로, 호출측이 기존 내용을 재진술하고 **확인을 승격**해야 한다.
+    - ``("collision", item)`` — **다른 이름·같은 slug 파일**. 덮어쓰기 경로를 열지 말고
+      이름 변경만 안내한다(:func:`guard_slug_collision` 과 동일 판정 — ``item.name`` 이
+      기존 소유자 이름).
+    - ``("corrupt", None)`` — 자리 파일이 손상돼 소유 불명. 조용히 덮지 않는다
+      (이름 변경 안내 또는 slug 가드의 loud 거절에 위임).
+    """
+    if not registry.exists(name):
+        return ("absent", None)
+    try:
+        item = registry.load(name)
+    except Exception:  # noqa: BLE001 — 손상: 소유 불명(추측 금지)
+        return ("corrupt", None)
+    if getattr(item, "name", "") != name:
+        return ("collision", item)
+    return ("same", item)
+
+
 def default_jobs_dir() -> Path:
     """GUI 기본 작업 레지스트리 위치 — 사용자 홈(``~/.hwpxfiller/jobs``).
 
@@ -289,18 +349,16 @@ class JobRegistry:
     ) -> "list[Job]":
         """저장된 전 작업을 이름순으로. 빈/없는 디렉터리면 빈 리스트.
 
-        **파일 단위 격리(RC-05):** 손상된 ``.job.json`` 1개가 목록 전체(→홈·앱 시작)를
-        죽이지 않도록 파싱 실패를 파일별로 잡는다. 손상 항목은 결과에서 제외하되
-        조용히 버리지 않는다 — ``corrupted`` 리스트를 넘기면 ``(경로, 오류 문자열)``
-        로 수집되며, 홈이 이를 '손상됨' 행으로 시끄럽게 표면화한다(확인-또는-경보).
+        **파일 단위 격리(RC-05, :func:`load_isolated` 공유):** 손상된 ``.job.json`` 1개가
+        목록 전체(→홈·앱 시작)를 죽이지 않도록 파싱 실패를 파일별로 잡는다. ``corrupted``
+        리스트를 넘기면 ``(경로, 오류 문자열)`` 로 수집되며, 홈이 이를 '손상됨' 행으로
+        시끄럽게 표면화한다(확인-또는-경보). **미전달 시 손상 파일은 목록에서 제외된다**
+        — 작업의 주 표면(홈)이 늘 수집·표면화하므로 부속 소비자(피커·참조수 집계)에선
+        제외를 허용한다(데이터셋 풀은 이 관용이 C5 로 봉합돼 미전달=raise — 비대칭 유의).
         """
-        jobs: "list[Job]" = []
-        for p in self._files():
-            try:
-                jobs.append(Job.load(p))
-            except Exception as exc:  # noqa: BLE001 — 손상 1개의 전멸 방지(격리 후 표면화)
-                if corrupted is not None:
-                    corrupted.append((p, str(exc)))
+        jobs: "list[Job]" = load_isolated(
+            self._files(), Job.load, corrupted if corrupted is not None else []
+        )
         return sorted(jobs, key=lambda j: j.name)
 
     def names(self) -> "list[str]":

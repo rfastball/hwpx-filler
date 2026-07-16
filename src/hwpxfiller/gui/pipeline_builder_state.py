@@ -79,15 +79,19 @@ class PipelineBuilderViewModel:
         self.steps: "list[dict]" = []
 
     # ------------------------------------------------------------- 후보 소스
-    def available_source_names(self) -> "list[str]":
+    def available_source_names(self, *, corrupted=None) -> "list[str]":
         """서브소스 후보 = 풀의 **active** 항목(파이프라인 제외).
 
         파이프라인-속-파이프라인은 v1 밖 — KA 재귀 복원이 기술적으로 지원하나, 최소
         표면 원칙 + 자기참조 순환(무한 재귀) 위험 차단을 위해 후보에서 뺀다.
+
+        ``corrupted`` 리스트를 넘기면 손상 파일이 ``(경로, 오류)`` 로 격리 수집된다 —
+        호출측이 병기 표면화할 책임을 진다. **미전달 시 손상 파일은 raise** (조용한
+        후보 증발 금지, C5 — ``list_items`` 계약 그대로 통과).
         """
         return [
             it.name
-            for it in self.registry.list_items(status=STATUS_ACTIVE)
+            for it in self.registry.list_items(status=STATUS_ACTIVE, corrupted=corrupted)
             if it.kind != "pipeline"
         ]
 

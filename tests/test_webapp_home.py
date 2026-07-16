@@ -110,3 +110,67 @@ def test_unknown_home_action_is_loud(tmp_path):
     ctrl, _ = _controller(tmp_path)
     with pytest.raises(ValueError, match="알 수 없는 home 액션"):
         ctrl.dispatch("frobnicate", {})
+
+
+# ============================================================ #26 홈 조치
+def test_set_tags_replaces_and_refreshes_axes(tmp_path):
+    """태그 통째 교체 저장(#2·D14) — 저장 후 axes/facets 즉시 재발견 + 카드 프리필 노출."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("set_tags", {"name": "공고서", "tags": {"물품": "의약품"}})
+    snap = ctrl.snapshot()
+    assert "물품" in snap["axes"]                        # 새 축 재발견
+    row = next(r for sec in snap["grouped_rows"] for r in sec["rows"] if r["name"] == "공고서")
+    assert row["tags"] == {"물품": "의약품"}             # 교체(기존 금액구간 소거) + 프리필 노출
+    # durable 확인 — 레지스트리에 실제 저장됐다.
+    assert JobRegistry(tmp_path / "jobs").load("공고서").tags == {"물품": "의약품"}
+
+
+def test_set_tags_empty_clears_all(tmp_path):
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("set_tags", {"name": "공고서", "tags": {}})
+    assert JobRegistry(tmp_path / "jobs").load("공고서").tags == {}
+
+
+def test_set_tags_rejects_malformed_loudly(tmp_path):
+    ctrl, _ = _controller(tmp_path)
+    with pytest.raises(ValueError, match="문자열"):
+        ctrl.dispatch("set_tags", {"name": "공고서", "tags": {"축": 3}})
+    with pytest.raises(ValueError, match="문자열"):
+        ctrl.dispatch("set_tags", {"name": "공고서", "tags": {"": "값"}})
+    # 실패해도 기존 태그는 무손상.
+    assert JobRegistry(tmp_path / "jobs").load("공고서").tags == {"금액구간": "1억미만"}
+
+
+def _corrupt_file(tmp_path) -> "tuple[HomeController, str]":
+    """레지스트리에 손상 .job.json 을 심고 컨트롤러와 그 경로를 돌려준다."""
+    bad = tmp_path / "jobs" / "깨진작업.job.json"
+    bad.write_text("{ 이건 json 아님", encoding="utf-8")
+    pushes: list = []
+    ctrl = HomeController(JobRegistry(tmp_path / "jobs"), _text_reg(tmp_path),
+                          lambda s, snap: pushes.append((s, snap)))
+    rows = ctrl.snapshot()["corrupt_rows"]
+    assert len(rows) == 1 and rows[0]["path"]            # 경로가 조치용으로 노출된다(#8)
+    return ctrl, rows[0]["path"]
+
+
+def test_delete_corrupt_confirm_roundtrip(tmp_path):
+    """손상 파일 삭제(#8) — 1차=재진술, 2차 확정=삭제·목록 갱신(조용한 삭제 금지)."""
+    (tmp_path / "jobs").mkdir()
+    ctrl, path = _corrupt_file(tmp_path)
+    res = ctrl.dispatch("delete_corrupt", {"path": path})
+    assert res["needs_confirm"] is True and "복구 불가" in res["confirm_text"]
+    assert ctrl.snapshot()["corrupt_rows"]               # 아직 안 지워짐
+    res2 = ctrl.dispatch("delete_corrupt", {"path": path, "confirm": True})
+    assert res2["ok"] is True
+    assert ctrl.snapshot()["corrupt_rows"] == []         # 해소 + 갱신
+
+
+def test_corrupt_actions_reject_foreign_paths(tmp_path):
+    """조치 경로는 손상 목록 화이트리스트만 — 웹 페이로드의 임의 경로 삭제 봉쇄."""
+    (tmp_path / "jobs").mkdir()
+    ctrl, _path = _corrupt_file(tmp_path)
+    victim = tmp_path / "무관파일.txt"
+    victim.write_text("x", encoding="utf-8")
+    with pytest.raises(ValueError, match="목록에 없는"):
+        ctrl.dispatch("delete_corrupt", {"path": str(victim), "confirm": True})
+    assert victim.exists()                               # 무손상

@@ -12,9 +12,15 @@ Qt 위젯과 **같은** 보강을 얻는다.
 레일 '실행' 진입은 독립적이라 화면 상단에 **작업 선택기**를 둔다(홈 이관 전까지의 진입점).
 목업도 이를 반영한다(작업 헤더 → 선택기).
 
-**이번 이관의 스코프 경계(조용히 빠뜨리지 않고 명시)** — 아래는 이 커밋에서 미구현이며
+**데이터 소스(#26/#6)**: **파일(.xlsx/.csv) + 등록 데이터(데이터셋 풀 참조)** 2소스.
+풀 겨눔은 링1 :meth:`~hwpxfiller.gui.run_state.RunViewModel.load_pool_item`(실행 시점
+재읽기="싱크") 재사용. **나라장터 소스는 동결**(내부망 API 미확인 — #10/#24 정합)이라 웹에
+노출하지 않는다 — 풀의 nara 항목은 목록에 보이되 겨눔은 시끄럽게 거절(:mod:`.screens`
+``load_pool_item_checked`` 단일 관문).
+
+**이번 이관의 스코프 경계(조용히 빠뜨리지 않고 명시)** — 아래는 미구현이며
 후속 이관 대상이다(confirm-or-alarm: 없는 기능을 있는 척하지 않는다):
-- 데이터 소스 = **파일(.xlsx/.csv)만**. 등록 데이터 풀·나라장터 애드혹 취득(3소스 겨눔)은 후속.
+- 나라장터 소스 겨눔(동결 해제 시 재배선)·나라 애드혹 취득.
 - 기존 문서 이어채우기(#18 결정으로 실행 화면에선 강등/숨김 — seam 은 링1 에 존치).
 - 협조적 취소(RC-06)·생성 원장 opt-in.
 덮어쓰기 확인·미입력 강제 확인 게이트·구조 드리프트 차단·미입력 표식·다중 시트 확정
@@ -28,28 +34,45 @@ from pathlib import Path
 from ..batch import generate_batch
 from ..core.job import MISSING_MARKER, JobRegistry
 from ..data import source_for_path
+from ..core.dataset_pool import DatasetPoolRegistry
 from ..gui.result_errors import describe_result_error
 from ..gui.run_state import RunViewModel
 from ..gui.selection_state import SelectionModel
-from .screens import PushSink
+from .screens import (
+    PoolTargetingMixin,
+    PushSink,
+    default_pool_registry,
+    source_label,
+)
 
 # 사전검증 성공 문구는 링2 사용자 어휘로 순화한다(#18/D0D92672-A) — 위젯 run_view 와 동일.
 _PREFLIGHT_OK_TEXT = "검증 완료 — 문서를 생성할 준비가 됐습니다."
 
 
-class RunController:
+class RunController(PoolTargetingMixin):
     """실행 화면 — 작업 선택 상태 소유 + 링1 RunViewModel/SelectionModel 위임."""
 
     name = "run"
 
-    def __init__(self, registry: JobRegistry, push: PushSink) -> None:
+    def __init__(
+        self,
+        registry: JobRegistry,
+        push: PushSink,
+        *,
+        pool_registry: "DatasetPoolRegistry | None" = None,
+    ) -> None:
         self.registry = registry
         self._push_sink = push
         self.vm: "RunViewModel | None" = None
         self.selection = SelectionModel(0)
         self.data_label = ""
+        self.data_source = ""  # 소스 종류 플래그('file'|'pool') — 병기 라벨은 스냅샷이 합성(K8)
         self.out_dir = ""
         self._marked_fields: "list[str]" = []
+        # 등록 데이터(풀) 겨눔(#26/#6) — 기본은 홈 레지스트리, 테스트는 주입.
+        self.pool_registry = (
+            pool_registry if pool_registry is not None else default_pool_registry()
+        )
 
     # ------------------------------------------------------------- 관측 푸시
     def _push(self) -> None:
@@ -84,6 +107,8 @@ class RunController:
             "has_job": self.vm is not None,
             "out_dir": self.out_dir,
             "data_label": self.data_label,
+            # 소스 종류 병기 라벨(#26) — 저장 상태가 아니라 플래그에서 매번 합성(K8).
+            "data_source_label": source_label(self.data_source, self.data_label),
         }
         if self.vm is None:
             base.update({
@@ -137,6 +162,7 @@ class RunController:
         if not records:
             raise ValueError("레코드 0건 — 데이터를 바꾸지 않았습니다.")
         self.data_label = Path(path).name
+        self.data_source = "file"  # 병기 라벨은 스냅샷이 합성(#26·K8)
         self.selection = SelectionModel(len(records))  # 데이터 변경 → 전체 선택 초기화
         self._push()
 
@@ -154,6 +180,15 @@ class RunController:
         self._push()
         return result
 
+    def _do_refresh(self, p: dict) -> None:
+        """레지스트리 재스캔 반영(C6 — 전환 자동 + 필요 시 수동) — 스냅샷 고착 방지.
+
+        작업 목록은 스냅샷이 매번 ``registry.names()`` 를 재읽으므로 상태 갱신이 필요
+        없다 — dispatch 말미의 ``_push()`` 가 새 스냅샷을 밀어내는 것이 이 액션의 전부다
+        (home/pool/tpl 은 VM 이 행을 캐시해 ``vm.refresh()`` 를 태우는 것과 대비).
+        없으면 에디터에서 막 저장한 작업이 실행 화면 드롭다운에 안 보인다(C6 잔여).
+        """
+
     def _do_select_job(self, p: dict) -> None:
         """작업 선택 → RunViewModel 재구성. 저장 폴더 기본값 = 템플릿 폴더/Results(Qt 동형)."""
         name = p["name"]
@@ -161,12 +196,14 @@ class RunController:
             self.vm = None
             self.selection = SelectionModel(0)
             self.data_label = ""
+            self.data_source = ""
             self.out_dir = ""
             return
         job = self.registry.load(name)
         self.vm = RunViewModel(job)
         self.selection = SelectionModel(0)
         self.data_label = ""
+        self.data_source = ""
         self.out_dir = (
             str(Path(job.template_path).parent / "Results") if job.template_path else ""
         )
@@ -191,6 +228,15 @@ class RunController:
         if self.vm is None:
             raise ValueError("작업이 선택되지 않았습니다.")
         self.vm.unacknowledge(p["field"])
+
+    # -------------------------- 등록 데이터(풀) 겨눔(#26/#6) — 공용 래퍼(K4)의 화면별 훅
+    def _pool_guard(self) -> "str | None":
+        """겨눔 전제 = 작업 선택 — 미선택이면 공용 래퍼가 오류 dict 로 재진술한다."""
+        return "실행할 작업을 먼저 선택하세요." if self.vm is None else None
+
+    def _after_pool_load(self, records: list) -> None:
+        """풀 겨눔도 파일과 동일하게 새 데이터 = 전체 선택·ack 초기화를 탄다."""
+        self.selection = SelectionModel(len(records))  # 데이터 변경 → 전체 선택 초기화
 
     # ------------------------------------------------------------------ 생성
     def _push_progress(self, done: int, total: int) -> None:

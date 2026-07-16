@@ -386,6 +386,33 @@ def test_apply_profile_roundtrip_restores_confirmed_state(tmp_path):
     assert not fresh.is_complete()
 
 
+def test_apply_profile_require_source_skips_confirm_for_missing_column():
+    """require_source: 현재 소스 어휘에 없는 컬럼을 겨눈 행은 확정 도착하지 않는다(#26 #7).
+
+    데이터를 바꿔 이전 확정을 되살릴 때, 사라진 컬럼을 겨눈 행이 조용히 확정으로 남아
+    저장 게이트를 통과하고 빈 값 문서를 찍는 함정을 봉쇄한다 — 그런 행은 미확정으로 남는다.
+    """
+    profile = MappingProfile(mappings=[
+        FieldMapping("공고명", source="bidNtceNm"),
+        FieldMapping("추정가격", source="presmptPrce"),  # 어휘에 없는 소스
+    ])
+    model = MappingModel(
+        rows=[RowState("공고명"), RowState("추정가격")],
+        source_fields=["bidNtceNm"],  # '추정가격'이 겨눌 presmptPrce 는 없음
+    )
+    applied = model.apply_profile(profile, require_source=True)
+    rows = {r.template_field: r for r in model.rows}
+    assert rows["공고명"].confirmed              # 어휘에 있는 소스 → 확정
+    assert not rows["추정가격"].confirmed         # 어휘에 없는 소스 → 미확정(재검토 강제)
+    assert rows["추정가격"].source == "presmptPrce"  # 값은 복원(loud 표면화용)
+    assert applied == 1                          # 확정 도착 1개만
+    assert not model.is_complete()               # 저장 게이트 닫힘
+    # 기본(require_source=False)은 종전대로 일치 행 전부 확정.
+    model2 = MappingModel(
+        rows=[RowState("공고명"), RowState("추정가격")], source_fields=["bidNtceNm"])
+    assert model2.apply_profile(profile) == 2
+
+
 # ------------------------------------------------- 실 픽스처: 영문키→한글 초안
 def test_real_fixture_record_keys_produce_korean_field_drafts():
     """실 나라장터 레코드 키 + NARA_ALIASES 로 한글 템플릿 필드 초안이 잡힌다."""
