@@ -329,3 +329,20 @@ def test_preserve_helper_loaded_and_wraps_screen_renders():
         assert "Preserve.around" in src, (
             f"{scr}.js 의 render() 가 Preserve.around 래핑을 잃었습니다 — 재렌더 시 상호작용 유실(#28)."
         )
+def test_unhandledrejection_backstop_present_in_both_shells():
+    """비동기 실패 최종 백스톱 — 두 셸이 unhandledrejection 을 alert 로 재진술해야 한다.
+
+    무대기·무catch 브리지 호출의 rejection 이 조용한 무반응으로 증발하는 결함류가
+    파일 단위 봉합(F8·F9→#45 profile_*→PR #46 P2 onClick)으로 반복 재발했다 — 사이트별
+    규율 대신 셸 전역 안전망으로 구조 차단한다. 지역 가드가 잡은 실패는 여기 오지
+    않으므로 이 백스톱은 "가드를 잊은 곳" 전용이다. preventDefault 없이 alert 만 하면
+    콘솔 소음이 남고, alert 없이 preventDefault 만 하면 완전 침묵(최악)이라 둘 다 단언한다.
+    """
+    for app_js in (WEB_JS_DIR / "app.js",
+                   WEB_JS_DIR.parents[1] / "web-diff" / "js" / "app.js"):
+        src = app_js.read_text(encoding="utf-8")
+        m = re.search(r'addEventListener\("unhandledrejection",[\s\S]*?\}\);', src)
+        assert m, f"{app_js} 에 unhandledrejection 백스톱이 없습니다 — 조용한 무반응 결함류 재개방."
+        block = m.group(0)
+        assert "window.alert" in block, f"{app_js} 백스톱이 alert 로 재진술하지 않습니다."
+        assert "preventDefault" in block, f"{app_js} 백스톱이 rejection 을 handled 처리하지 않습니다."

@@ -76,7 +76,8 @@ class WebFrontend:
         # 화면 등록 — 새 화면 = 컨트롤러 1개 추가(순수 데이터는 dispatch, 네이티브는 아래 메서드).
         controllers = [
             # 홈(대시보드) — 허브. TXT 레지스트리는 즉시 기안·템플릿 관리와 공유(변경이 반영).
-            HomeController(job_registry, registry, self._push),
+            # pool_registry 공유 = 데이터 관리에서 생긴 손상이 홈 KPI 경보에 즉시 보인다(#45).
+            HomeController(job_registry, registry, self._push, pool_registry=pool_registry),
             TxtController(registry, self._push, pool_registry=pool_registry),
             EditorController(job_registry, self._push, pool_registry=pool_registry),
             RunController(job_registry, self._push, pool_registry=pool_registry),

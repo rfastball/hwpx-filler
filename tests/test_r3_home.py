@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from hwpxfiller.core.dataset_pool import DatasetPoolRegistry
 from hwpxfiller.core.job import Job, JobRegistry
 from hwpxfiller.core.text_registry import TextTemplateRegistry
 from hwpxfiller.webapp.screen_home import HomeController
@@ -80,7 +81,8 @@ def test_backend_set_tags_accepts_comma_values(tmp_path):
     reg.save(Job(name="공고서", template_path="", filename_pattern="공고-{{ID}}"))
     txt = tmp_path / "txt"
     txt.mkdir()
-    ctrl = HomeController(reg, TextTemplateRegistry(txt), lambda s, snap: None)
+    ctrl = HomeController(reg, TextTemplateRegistry(txt), lambda s, snap: None,
+                          pool_registry=DatasetPoolRegistry(tmp_path / "datasets"))
     ctrl.dispatch("set_tags", {"name": "공고서", "tags": {"지역": "본청, 대전"}})
     assert reg.load("공고서").tags == {"지역": "본청, 대전"}
     # 웹 스냅샷 프리필 표면에도 그대로 실린다 — home.js 왕복 가드가 다루는 바로 그 값.

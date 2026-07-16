@@ -8,10 +8,16 @@ from __future__ import annotations
 
 import pytest
 
+from hwpxfiller.core.dataset_pool import DatasetPoolRegistry
 from hwpxfiller.core.job import Job, JobRegistry
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.core.text_registry import TextTemplateRegistry
 from hwpxfiller.webapp.screen_home import HomeController
+
+
+def _pool(tmp_path) -> DatasetPoolRegistry:
+    """빈 풀 레지스트리 — 미주입 시 실사용자 홈 디렉터리로 새는 걸 막는다(밀폐)."""
+    return DatasetPoolRegistry(tmp_path / "datasets")
 
 
 def _reg(tmp_path) -> JobRegistry:
@@ -41,7 +47,8 @@ def _text_reg(tmp_path) -> TextTemplateRegistry:
 def _controller(tmp_path) -> "tuple[HomeController, list]":
     pushes: list = []
     ctrl = HomeController(_reg(tmp_path), _text_reg(tmp_path),
-                          lambda s, snap: pushes.append((s, snap)))
+                          lambda s, snap: pushes.append((s, snap)),
+                          pool_registry=_pool(tmp_path))
     return ctrl, pushes
 
 
@@ -55,10 +62,26 @@ def test_initial_kpis_and_txt_rows(tmp_path):
     assert snap["txt_rows"] == [{"name": "온나라_기안", "field_count": 2}]
 
 
+def test_kpi_snapshot_carries_pool_corruption(tmp_path):
+    """홈 KPI 스냅샷 — 데이터 풀 손상 수가 웹까지 실린다(#45, 0 위장 금지).
+
+    VM(kpi.pool_corrupted)은 세는데 스냅샷 dict 이 누락하면 confirm-or-alarm 이
+    링1에서 끊긴다 — 웹 타일이 렌더할 값 자체가 없다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    assert ctrl.snapshot()["kpi"]["pool_corrupted"] == 0    # 손상 없으면 0(거짓 경보 없음)
+    # 연결된 풀 디렉터리에 손상 파일이 생기면 다음 스냅샷이 살아있는 재계수로 잡는다.
+    pool_dir = tmp_path / "datasets"
+    pool_dir.mkdir()
+    (pool_dir / ("깨진" + DatasetPoolRegistry.SUFFIX)).write_text("{ not json", encoding="utf-8")
+    assert ctrl.snapshot()["kpi"]["pool_corrupted"] == 1
+
+
 def test_empty_registry_is_loudly_empty(tmp_path):
     pushes: list = []
     ctrl = HomeController(JobRegistry(tmp_path / "j"), TextTemplateRegistry(tmp_path / "t"),
-                          lambda s, snap: pushes.append((s, snap)))
+                          lambda s, snap: pushes.append((s, snap)),
+                          pool_registry=_pool(tmp_path))
     snap = ctrl.initial()
     assert snap["is_empty"] is True
     assert snap["kpi"]["job_count"] == 0
@@ -137,6 +160,9 @@ def test_set_tags_rejects_malformed_loudly(tmp_path):
         ctrl.dispatch("set_tags", {"name": "공고서", "tags": {"축": 3}})
     with pytest.raises(ValueError, match="문자열"):
         ctrl.dispatch("set_tags", {"name": "공고서", "tags": {"": "값"}})
+    # 공백 변형 중복 축 — 조용한 last-wins 로 값 하나가 증발하지 않고 loud 거절.
+    with pytest.raises(ValueError, match="중복된 태그 축"):
+        ctrl.dispatch("set_tags", {"name": "공고서", "tags": {"지역": "본청", " 지역": "대전"}})
     # 실패해도 기존 태그는 무손상.
     assert JobRegistry(tmp_path / "jobs").load("공고서").tags == {"금액구간": "1억미만"}
 
@@ -147,7 +173,8 @@ def _corrupt_file(tmp_path) -> "tuple[HomeController, str]":
     bad.write_text("{ 이건 json 아님", encoding="utf-8")
     pushes: list = []
     ctrl = HomeController(JobRegistry(tmp_path / "jobs"), _text_reg(tmp_path),
-                          lambda s, snap: pushes.append((s, snap)))
+                          lambda s, snap: pushes.append((s, snap)),
+                          pool_registry=_pool(tmp_path))
     rows = ctrl.snapshot()["corrupt_rows"]
     assert len(rows) == 1 and rows[0]["path"]            # 경로가 조치용으로 노출된다(#8)
     return ctrl, rows[0]["path"]
