@@ -15,7 +15,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from .job import _slug, guard_slug_collision
+from .job import _slug, guard_slug_collision, load_isolated
 from .mapping import MappingProfile
 
 
@@ -88,20 +88,17 @@ class MappingBaseRegistry:
     ) -> "list[MappingProfile]":
         """베이스 목록(이름순).
 
-        **파일 단위 격리(RC-05, :meth:`~hwpxfiller.core.job.JobRegistry.list_jobs` 미러):**
+        **파일 단위 격리(RC-05, :func:`~hwpxfiller.core.job.load_isolated` 공유):**
         손상된 base 파일 1개(손편집·구버전·미지 transform)가 목록 전체(→매핑 프로파일
         관리 패널·셸 재진입 ``refresh()``)를 죽이지 않도록 파싱 실패를 파일별로 잡는다.
-        손상 항목은 결과에서 제외하되 조용히 버리지 않는다 — ``corrupted`` 리스트를
-        넘기면 ``(경로, 오류 문자열)`` 로 수집되어 호출측이 시끄럽게 표면화한다
-        (확인-또는-경보). 예전엔 예외를 그대로 전파해 호출측(워크벤치 refresh)이 이를
-        표면화하지 않아 패널 전체가 크래시했다."""
-        bases: "list[MappingProfile]" = []
-        for p in self._files():
-            try:
-                bases.append(MappingProfile.load(p))
-            except Exception as exc:  # noqa: BLE001 — 손상 1개의 전멸 방지(격리 후 표면화)
-                if corrupted is not None:
-                    corrupted.append((p, str(exc)))
+        ``corrupted`` 리스트를 넘기면 ``(경로, 오류 문자열)`` 로 수집되어 호출측이
+        시끄럽게 표면화한다(확인-또는-경보). **미전달 시 손상 파일은 목록에서 제외된다**
+        — 베이스의 관리 표면(에디터 프로파일 목록·워크벤치)이 늘 수집·표면화하므로
+        부속 소비자에선 제외를 허용한다(데이터셋 풀은 이 관용이 C5 로 봉합돼
+        미전달=raise — 비대칭 유의)."""
+        bases: "list[MappingProfile]" = load_isolated(
+            self._files(), MappingProfile.load, corrupted if corrupted is not None else []
+        )
         bases.sort(key=lambda b: b.name)
         return bases
 

@@ -35,10 +35,10 @@ from ..gui.result_errors import describe_result_error
 from ..gui.selection_state import SelectionModel
 from ..naming import make_output_filename
 from .screens import (
+    PoolTargetingMixin,
     PushSink,
     default_pool_registry,
-    load_pool_into,
-    pool_source_rows,
+    source_label,
 )
 
 # 공유 데이터 행은 작업마다 파일명 패턴이 달라 단일 패턴이 없다 — Qt(RecordSelector "행-{{seq}}")
@@ -46,7 +46,7 @@ from .screens import (
 _ROW_PATTERN = "행-{{seq}}"
 
 
-class MatrixController:
+class MatrixController(PoolTargetingMixin):
     """여러 작업 실행 화면 — 작업 다중선택 + 공유 데이터 겨눔 + 작업별 게이트."""
 
     name = "matrix"
@@ -68,7 +68,7 @@ class MatrixController:
         self.vm = MatrixRunViewModel(registry, pool_registry=self.pool_registry)
         self.selection = SelectionModel(0)
         self.data_label = ""
-        self.data_source_label = ""  # 소스 종류 병기 라벨("파일: x" / "등록 데이터: 이름", #26)
+        self.data_source = ""  # 소스 종류 플래그('file'|'pool') — 병기 라벨은 스냅샷이 합성(K8)
         self.out_dir = ""
 
     # ------------------------------------------------------------- 관측 푸시
@@ -131,7 +131,8 @@ class MatrixController:
             "jobs": self._job_rows(),
             "selection_count": self.vm.selection_count(),
             "data_label": self.data_label,
-            "data_source_label": self.data_source_label,  # 소스 종류 병기(#26)
+            # 소스 종류 병기 라벨(#26) — 저장 상태가 아니라 플래그에서 매번 합성(K8).
+            "data_source_label": source_label(self.data_source, self.data_label),
             "has_data": self.vm.datasource is not None,
             "out_dir": self.out_dir,
             "record_count": len(self.vm.records),
@@ -153,7 +154,7 @@ class MatrixController:
         if not records:
             raise ValueError("레코드 0건 — 데이터를 바꾸지 않았습니다.")
         self.data_label = Path(path).name
-        self.data_source_label = f"파일: {self.data_label}"  # 소스 종류 병기(#26)
+        self.data_source = "file"  # 병기 라벨은 스냅샷이 합성(#26·K8)
         self.selection = SelectionModel(len(records))  # 데이터 변경 → 전체 선택 초기화
         self._push()
 
@@ -170,6 +171,14 @@ class MatrixController:
         result = handler(payload)
         self._push()
         return result
+
+    def _do_refresh(self, p: dict) -> None:
+        """레지스트리 재스캔 반영(C6 — 전환 자동 + 필요 시 수동) — 스냅샷 고착 방지.
+
+        작업 행은 스냅샷이 매번 ``vm.all_job_names()``(=``registry.names()`` 재읽기)로
+        그리므로 상태 갱신이 필요 없다 — dispatch 말미의 ``_push()`` 가 전부다(run 미러).
+        사라진 작업의 선택은 ``selected_job_names`` 가 목록 대조로 자연 소거한다.
+        """
 
     def _do_toggle_job(self, p: dict) -> None:
         self.vm.set_job_selected(p["name"], bool(p["value"]))
@@ -199,25 +208,10 @@ class MatrixController:
         """ack 칩 재클릭 = 확인 철회(UD-19 토글) — 게이트가 다시 닫힌다."""
         self.vm.unacknowledge(p["job"], p["field"])
 
-    # ---------------------------------------------- 등록 데이터(풀) 겨눔(#26/#6)
-    def _do_pool_sources(self, p: dict) -> dict:
-        """활성 등록 데이터 목록 — 웹 선택 모달이 소비(이름·종류·참조 요약)."""
-        return {"items": pool_source_rows(self.pool_registry)}
-
-    def _do_load_pool(self, p: dict) -> dict:
-        """등록 데이터 항목을 이름으로 겨눔(공통 데이터) — 공유 관문(:func:`load_pool_into`)에 위임.
-
-        실패는 raise 대신 오류 dict 재진술(웹이 모달 안에서 그대로 표시) — generate 와
-        같은 문법. 풀 겨눔도 파일과 동일하게 새 데이터 = 전체 선택·ack 초기화를 탄다.
-        """
-        name = p["name"]
-        res = load_pool_into(self.pool_registry, name, self.vm.load_pool_item)
-        if not res["ok"]:
-            return res
-        self.data_label = name
-        self.data_source_label = f"등록 데이터: {name}"
-        self.selection = SelectionModel(len(res["records"]))  # 데이터 변경 → 전체 선택 초기화
-        return {"ok": True, "label": self.data_source_label}
+    # -------------------------- 등록 데이터(풀) 겨눔(#26/#6) — 공용 래퍼(K4)의 화면별 훅
+    def _after_pool_load(self, records: list) -> None:
+        """풀 겨눔도 파일과 동일하게 새 데이터 = 전체 선택·ack 초기화를 탄다(공통 데이터)."""
+        self.selection = SelectionModel(len(records))  # 데이터 변경 → 전체 선택 초기화
 
     # ------------------------------------------------------------------ 생성
     def _push_progress(self, done: int, total: int) -> None:

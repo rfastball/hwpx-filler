@@ -21,7 +21,7 @@ from ..core.dataset_pool import (
     DatasetPoolRegistry,
     default_dataset_pool_dir,
 )
-from ..data.excel import ambiguous_sheets  # 다중 시트 확정 게이트 판정(#33)
+from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
 from ..core.text_registry import TextTemplateRegistry
 from ..core.text_render import RenderReport
 from ..gui.dataset_pool_state import DatasetPoolRow
@@ -47,14 +47,20 @@ def default_pool_registry() -> DatasetPoolRegistry:
     return DatasetPoolRegistry(default_dataset_pool_dir())
 
 
-def pool_source_rows(pool_registry: DatasetPoolRegistry) -> "list[dict]":
-    """**활성** 풀 항목의 웹 직렬화(이름·종류·참조 요약) — 실행 후보는 active 만(ADR J).
+def pool_sources_payload(pool_registry: DatasetPoolRegistry) -> dict:
+    """피커 페이로드 ``{"items": 활성 풀 항목 행, "corrupted_note": 손상 병기 문구}``.
 
+    **활성** 풀 항목의 웹 직렬화(이름·종류·참조 요약) — 실행 후보는 active 만(ADR J).
     행 성형은 링1 :class:`~hwpxfiller.gui.dataset_pool_state.DatasetPoolRow` 재사용
     (참조 요약·종류 라벨 재구현 금지). nara 항목도 그대로 실린다 — 존재를 숨기지 않고
     겨눔 시점에 :func:`load_pool_item_checked` 가 거절한다.
+
+    **손상 병기(C5)**: 손상 ``.dataset.json`` 은 격리 수집해 ``corrupted_note`` 로
+    함께 싣는다(없으면 ``""``) — 예전엔 미수집 격리로 손상 데이터셋이 피커에서
+    무표시 증발했다(조용한 드롭 금지). 상세 조치는 데이터 관리 화면 몫.
     """
-    return [
+    corrupted: "list[tuple[Path, str]]" = []
+    rows = [
         {
             "name": row.name,
             "kind": row.kind,
@@ -63,9 +69,13 @@ def pool_source_rows(pool_registry: DatasetPoolRegistry) -> "list[dict]":
         }
         for row in (
             DatasetPoolRow.from_item(it)
-            for it in pool_registry.list_items(status=STATUS_ACTIVE)
+            for it in pool_registry.list_items(status=STATUS_ACTIVE, corrupted=corrupted)
         )
     ]
+    note = (
+        f"손상 {len(corrupted)}건 — 데이터 관리에서 확인" if corrupted else ""
+    )
+    return {"items": rows, "corrupted_note": note}
 
 
 def load_pool_item_checked(
@@ -77,8 +87,9 @@ def load_pool_item_checked(
     ``ExcelDataSource(sheet=None)`` 이 **조용히 첫 시트**를 읽는다 — 파일 선택 경로가 #33 에서
     봉인한 바로 그 함정이 풀 경로로 재개방된 것. 워크북에 시트가 여럿이면 여기서 loud 거절해
     사용자가 데이터 관리에서 시트를 지정해 다시 등록하게 한다(등록 시점 게이트가 있어도, 그
-    이전에 만들어진 모호 항목까지 여기 단일 관문이 잡는다). CSV·단일 시트·읽기 실패(죽은 참조)
-    는 ``ambiguous_sheets`` 가 빈 목록/예외로 지나가며, 죽은 참조는 이어지는 실제 로드가 재진술.
+    이전에 만들어진 모호 항목까지 여기 단일 관문이 잡는다). 판정+문구·읽기 실패(죽은 참조)
+    통과 정책은 :func:`~hwpxfiller.data.excel.ambiguous_sheet_error` 단일 출처(등록 게이트와
+    공유 — 두 사이트의 문구 표류 봉인), 죽은 참조는 이어지는 실제 로드가 재진술.
     """
     try:
         item = pool_registry.load(name)
@@ -87,16 +98,12 @@ def load_pool_item_checked(
     if item.kind == "nara":
         raise ValueError(NARA_FROZEN_TEXT)
     if item.kind == "excel" and not item.opts.get("sheet"):
-        path = str(item.opts.get("path", ""))
-        try:
-            overview = ambiguous_sheets(path)  # 모호할 때만 비지 않음(빈 목록=단일/CSV)
-        except Exception:  # noqa: BLE001 — 읽기 실패(죽은 참조 등)는 후속 로드가 시끄럽게 처리
-            overview = []
-        if overview:
-            raise ValueError(
-                f"등록 데이터 '{name}' 에 시트가 지정되지 않았고 워크북에 시트가 여러 개입니다 "
-                "— 데이터 관리에서 시트를 지정해 다시 등록하세요."
-            )
+        err = ambiguous_sheet_error(
+            str(item.opts.get("path", "")),
+            prefix=f"등록 데이터 '{name}' 에 시트가 지정되지 않았습니다 — ",
+        )
+        if err:
+            raise ValueError(err)
     return item
 
 
@@ -124,6 +131,69 @@ def load_pool_into(
     return {"ok": True, "records": records}
 
 
+def source_label(source: str, data_label: str) -> str:
+    """소스 종류 플래그(``'file'``|``'pool'``)+표시명 → 병기 라벨 합성(K8).
+
+    예전엔 ``data_source_label`` 이 ``data_label`` 과 쌍으로 세 컨트롤러 여섯 지점에서
+    저장·리셋되는 전(全)파생 중복 상태였다 — 저장하지 않고 스냅샷이 매번 여기서 합성한다
+    (단일 출처 = 문구 표류·리셋 누락 봉인). 미지 플래그는 시끄럽게 실패한다
+    (confirm-or-alarm: 조용한 빈 라벨 금지)."""
+    if not source:
+        return ""
+    if source == "file":
+        return f"파일: {data_label}"
+    if source == "pool":
+        return f"등록 데이터: {data_label}"
+    raise ValueError(f"알 수 없는 데이터 소스 종류: {source!r}")
+
+
+class PoolTargetingMixin:
+    """등록 데이터(풀) 겨눔 래퍼 공용화(K4) — ``_do_pool_sources``/``_do_load_pool`` 3화면 동형.
+
+    예전엔 이 두 래퍼가 run/matrix/txt 세 컨트롤러에 독스트링('(#26/#6)')까지 복붙돼
+    있었다 — 게이트 실행부(:func:`load_pool_into`)만 공용이고 래퍼는 3벌. 여기로 수렴하고
+    화면별 차이는 두 훅으로만 남긴다:
+
+    - :meth:`_pool_guard` — 겨눔 전제 미충족 시 사용자 문구 반환(기본 없음, run=작업 선택).
+    - :meth:`_after_pool_load` — 성공 후처리(기본 no-op, run/matrix=행 선택 초기화).
+
+    요구 표면: ``pool_registry``·``vm.load_pool_item``·``data_label``·``data_source``.
+    """
+
+    pool_registry: DatasetPoolRegistry
+    data_label: str
+    data_source: str  # ''(미겨눔) | 'file' | 'pool' — 라벨은 source_label 이 합성(K8)
+
+    def _pool_guard(self) -> "str | None":
+        """겨눔 전제조건 검사 — 미충족이면 사용자 문구, 충족이면 None."""
+        return None
+
+    def _after_pool_load(self, records: list) -> None:
+        """겨눔 성공 후 화면별 후처리(행 선택 초기화 등). 기본 no-op."""
+
+    def _do_pool_sources(self, p: dict) -> dict:
+        """활성 등록 데이터 목록 — 웹 선택 모달이 소비(이름·종류·참조 요약 + 손상 병기)."""
+        return pool_sources_payload(self.pool_registry)
+
+    def _do_load_pool(self, p: dict) -> dict:
+        """등록 데이터 항목을 이름으로 겨눔 — 공유 관문(:func:`load_pool_into`)에 위임.
+
+        실패는 raise 대신 오류 dict 재진술(웹이 모달 안에서 그대로 표시) — generate 계열과
+        같은 문법. 성공 시 라벨은 스냅샷이 소스 플래그로 합성해 반영한다(K8).
+        """
+        blocked = self._pool_guard()
+        if blocked:
+            return {"ok": False, "error": blocked}
+        name = p["name"]
+        res = load_pool_into(self.pool_registry, name, self.vm.load_pool_item)
+        if not res["ok"]:
+            return res
+        self.data_label = name
+        self.data_source = "pool"
+        self._after_pool_load(res["records"])
+        return {"ok": True, "label": source_label("pool", name)}
+
+
 class ScreenController(Protocol):
     """브리지가 라우팅하는 화면 컨트롤러 표면. 새 화면 = 이 표면 구현 + 등록."""
 
@@ -134,7 +204,7 @@ class ScreenController(Protocol):
     def dispatch(self, action: str, payload: dict) -> object: ...  # 값 반환 가능(예: 확인 게이트)
 
 
-class TxtController:
+class TxtController(PoolTargetingMixin):
     """즉시 기안(txt) 화면 — :class:`TxtDraftViewModel` 소유·위임.
 
     스파이크가 끝까지 검증한 첫 실화면(SPIKE_FINDINGS.md). 표현 재진술(빨강 미입력 ``{{토큰}}`` ·
@@ -153,7 +223,7 @@ class TxtController:
         self.vm = TxtDraftViewModel(registry)
         self._push_sink = push
         self.data_label = ""  # 겨눈 데이터 파일 표시명(서버 소유 — run/matrix 와 정렬, P4)
-        self.data_source_label = ""  # 소스 종류 병기 라벨("파일: x" / "등록 데이터: 이름", #26)
+        self.data_source = ""  # 소스 종류 플래그('file'|'pool') — 병기 라벨은 스냅샷이 합성(K8)
         # 등록 데이터(풀) 겨눔(#26/#6) — 기본은 홈 레지스트리, 테스트는 주입.
         self.pool_registry = (
             pool_registry if pool_registry is not None else default_pool_registry()
@@ -181,7 +251,8 @@ class TxtController:
             "missing_fields": report.missing_fields,
             "empty_fields": report.empty_fields,
             "data_label": self.data_label,  # 서버 소유(P4) — 붙여넣기/템플릿 전환에도 실상태 반영
-            "data_source_label": self.data_source_label,  # 소스 종류 병기(#26)
+            # 소스 종류 병기 라벨(#26) — 저장 상태가 아니라 플래그에서 매번 합성(K8).
+            "data_source_label": source_label(self.data_source, self.data_label),
         }
 
     def initial(self) -> dict:
@@ -207,24 +278,8 @@ class TxtController:
     def _do_step(self, p: dict) -> None:
         self.vm.step(int(p["delta"]))
 
-    # ---------------------------------------------- 등록 데이터(풀) 겨눔(#26/#6)
-    def _do_pool_sources(self, p: dict) -> dict:
-        """활성 등록 데이터 목록 — 웹 선택 모달이 소비(이름·종류·참조 요약)."""
-        return {"items": pool_source_rows(self.pool_registry)}
-
-    def _do_load_pool(self, p: dict) -> dict:
-        """등록 데이터 항목을 이름으로 겨눔 — 공유 관문(:func:`load_pool_into`)에 위임.
-
-        실패는 raise 대신 오류 dict 재진술(웹이 모달 안에서 그대로 표시) — generate 계열과
-        같은 문법. 성공 시 라벨은 스냅샷(data_label)이 서버 소유로 반영한다(P4).
-        """
-        name = p["name"]
-        res = load_pool_into(self.pool_registry, name, self.vm.load_pool_item)
-        if not res["ok"]:
-            return res
-        self.data_label = name
-        self.data_source_label = f"등록 데이터: {name}"
-        return {"ok": True, "label": self.data_source_label}
+    # 등록 데이터(풀) 겨눔(#26/#6)은 PoolTargetingMixin 공용 래퍼(K4) — txt 는 훅 기본값
+    # 그대로(전제조건·후처리 없음).
 
     # ------------------------------------------------ 네이티브 보조(브리지가 다이얼로그 담당)
     def load_data_path(self, path: str, *, sheet: "str | None" = None) -> None:
@@ -235,7 +290,7 @@ class TxtController:
         if not records:
             raise ValueError("레코드 0건 — 상태를 바꾸지 않았습니다.")
         self.data_label = Path(path).name  # 서버 소유(P4)
-        self.data_source_label = f"파일: {self.data_label}"  # 소스 종류 병기(#26)
+        self.data_source = "file"  # 병기 라벨은 스냅샷이 합성(#26·K8)
         self._push()
 
     def render(self) -> "tuple[str, RenderReport]":

@@ -10,9 +10,7 @@
   const STEP_TITLES = ["템플릿 선택", "데이터 선택", "필드 매핑 확정", "작업 저장"];
   let LAST = null;
 
-  function esc(s) {
-    return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  }
+  const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
 
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
@@ -346,13 +344,30 @@
   }
 
   /* 저장 — 차단 사유·덮어쓰기·자동등록 확인 재진술(조용한 덮어쓰기 금지).
-     flags 는 확인 라운드트립을 누적한다({confirm_overwrite, confirm_dataset}). */
+     flags 는 확인 라운드트립을 누적한다({confirm_overwrite, confirm_dataset}).
+     브리지 예외도 잡아 표시한다 — 백엔드가 반저장(작업 저장 후 실패) 상태로 던지면
+     화면이 무반응이 되는 함정 봉쇄(실패는 언제나 시끄럽게). */
   async function doSave(flags) {
-    const res = await Bridge.call(SCREEN, "save", flags || {});
+    let res;
+    try {
+      res = await Bridge.call(SCREEN, "save", flags || {});
+    } catch (err) {
+      window.alert("저장 처리 중 오류가 발생했습니다 — 작업이 저장됐는지 홈에서 확인하세요.\n" + err);
+      return;
+    }
+    if (!res || typeof res !== "object") {
+      alertMsg("저장 결과를 확인할 수 없습니다 — 작업이 저장됐는지 홈에서 확인하세요.");
+      return;
+    }
     if (res.ok) {
       let msg = `✓ 작업 '${res.saved_name}' 저장됨.`;
       if (res.dataset_registered) msg += ` 데이터 '${res.dataset_registered}' 등록됨.`;
-      alertMsg(msg, "ok");
+      if (res.dataset_register_error) {
+        // 반저장(작업 저장 성공 + 데이터 등록 실패) — 성공으로 뭉개지 않고 경고로 재진술.
+        alertMsg(msg + " " + res.dataset_register_error);
+      } else {
+        alertMsg(msg, "ok");
+      }
       return;
     }
     if (res.needs_overwrite) {

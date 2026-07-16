@@ -7,9 +7,7 @@
   const STATE_LABEL = { fill: "✓ 채움", blank: "◦ 빈 값", missing: "● 항목 없음" };
   let LAST = null;
 
-  function esc(s) {
-    return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-  }
+  const esc = window.escHtml;  // 공유 이스케이퍼(esc.js) — " 도 escape 해 속성 컨텍스트 안전
 
   /* 템플릿 토큰을 레코드로 치환하되 미충족을 명시 재진술 — txt_view._build_preview_html 의 웹 이식.
      항목없음=빨강 {{토큰}}, 빈값=〈빈 값〉 마커, 채움=값 그대로. VM 로직 아님(순수 표현). */
@@ -47,8 +45,8 @@
       $("tokPanel").innerHTML = rows || `<p class="muted">토큰이 없는 템플릿입니다.</p>`;
 
       $("renderView").innerHTML = buildPreview(s.template_text, s.record);
-      // 소스 종류 병기(#26 #6) 우선 — 서버 소유(P4)·화면별 고유 id(#27), run/matrix 와 분리.
-      $("txtDataLabel").value = s.data_source_label || s.data_label || "";
+      // 소스 종류 병기 라벨(#26 #6) — 서버가 플래그에서 합성(K8)·화면별 고유 id(#27), run/matrix 와 분리.
+      $("txtDataLabel").value = s.data_source_label || "";
       setStatus(s.missing_fields, s.empty_fields);
       resetNote();
     });

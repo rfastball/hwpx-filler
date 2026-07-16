@@ -7,10 +7,7 @@
   let LAST = null;
   let generating = false;
 
-  function esc(s) {
-    return String(s).replace(/[&<>"]/g, (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  }
+  const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
 
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
@@ -69,8 +66,8 @@
   }
 
   function renderData(s) {
-    // 소스 종류 병기 라벨("파일: x" / "등록 데이터: 이름", #26 #6) 우선 — 없으면 구 라벨.
-    $("runDataLabel").value = s.data_source_label || s.data_label || "";
+    // 소스 종류 병기 라벨("파일: x" / "등록 데이터: 이름", #26 #6) — 서버가 플래그에서 합성(K8).
+    $("runDataLabel").value = s.data_source_label || "";
     $("outDir").value = s.out_dir || "";
   }
 

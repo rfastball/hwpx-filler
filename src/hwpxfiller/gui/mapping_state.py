@@ -46,6 +46,21 @@ def default_transform_for(inferred_type: str) -> str:
     return _DEFAULT_TYPE.get(inferred_type, "text")
 
 
+def profile_source_vocabulary(profile) -> "list[str]":
+    """프로파일이 참조하는 소스 키 합집합 — 선언순·중복 제거(단일 출처).
+
+    malformed blank+source(구/훼손 프로파일이 blank 선언에 source 를 남긴 경우)는
+    어휘에 흘리지 않는다 — 유령 키가 소스 피커 후보로 오표시되는 것을 막는다.
+    :meth:`MappingModel.from_profile` 과 에디터 편집 모드 복원(``load_job``)이 같은
+    합집합을 써야 드롭다운 오표시가 표류하지 않아 여기 한 곳에 모은다.
+    """
+    seen: "dict[str, None]" = {}
+    for m in profile.mappings:
+        if not m.is_blank and m.source:
+            seen.setdefault(m.source, None)
+    return list(seen)
+
+
 @dataclass
 class RowState:
     """템플릿 필드 1개의 매핑 편집 상태 — 단일 ``source`` 를 ``type`` 으로 서식.
@@ -138,11 +153,10 @@ class MappingModel:
 
         각 ``FieldMapping`` → **확정** ``RowState``(과거 사람 확정의 복원, ``apply_profile`` 선례).
         워크벤치가 베이스를 표시·재편집할 때 쓴다. ``source_fields`` 는 프로파일이 참조하는
-        소스 키 합집합(테이블 소스 피커의 후보) — 별도 소스 주입 없이도 기존 매핑을 손본다.
+        소스 키 합집합(테이블 소스 피커의 후보, :func:`profile_source_vocabulary` 공유 —
+        유령 키 필터 문서화도 그쪽) — 별도 소스 주입 없이도 기존 매핑을 손본다.
         """
         rows: "list[RowState]" = []
-        seen: "set[str]" = set()
-        source_fields: "list[str]" = []
         for m in profile.mappings:
             is_blank = m.is_blank
             rows.append(RowState(
@@ -153,13 +167,9 @@ class MappingModel:
                 fmt="" if is_blank else m.fmt,
                 confirmed=True,  # 베이스는 확정본
             ))
-            # malformed blank+source도 복원 시 완전히 정규화: 행 source뿐 아니라
-            # 소스 선택 어휘에도 유령 키를 흘리지 않는다.
-            src = "" if is_blank else m.source
-            if src and src not in seen:
-                seen.add(src)
-                source_fields.append(src)
-        return cls(rows=rows, source_fields=source_fields, aliases={})
+        return cls(
+            rows=rows, source_fields=profile_source_vocabulary(profile), aliases={}
+        )
 
     # ------------------------------------------------------------ 행 편집 API
     def set_source(self, index: int, source: str) -> None:
@@ -303,12 +313,16 @@ class MappingModel:
         )
 
     def apply_profile(
-        self, profile: MappingProfile, *, require_source: bool = False
+        self,
+        profile: MappingProfile,
+        *,
+        require_source: bool = False,
+        confirm: bool = True,
     ) -> int:
         """저장 프로파일을 행에 반영 — 일치 필드는 값 복원 + ``confirmed=True`` 도착.
 
         프로파일에 없는 필드는 건드리지 않는다(미확정 유지 — 사람이 마저 확정).
-        반영(확정 도착)된 행 수를 반환한다.
+        반영된 행 수(값이 복원되고 확정 자격이 있는 행)를 반환한다.
 
         ``require_source=True``: 복원한 행이 참조하는 소스 컬럼이 현재 소스 어휘
         (``source_fields``)에 **없으면 확정 도착시키지 않는다**(값은 복원하되 미확정 유지).
@@ -316,6 +330,12 @@ class MappingModel:
         남아 저장 게이트(``is_complete``)를 통과하고 빈 값 문서를 찍는 함정을 막는다 —
         그런 행은 미확정으로 남아 사람 재검토를 강제한다(빈/const 행은 소스 의존이 없어
         영향 없음). 기본(False)은 종전 거동(전 일치 행 확정)이라 다른 호출측은 불변이다.
+
+        ``confirm=False``: 값(소스/유형/상수/서식)만 이월하고 **어느 행도 확정 도착시키지
+        않는다** — 전 행 미확정 초안. 템플릿/데이터 키가 바뀐 재초안 경로가 쓴다: 같은
+        이름 컬럼이라도 새 데이터에선 의미가 다를 수 있어, 이전 확정을 확정 상태로 되살리면
+        사람 검토 없이 ``is_complete`` 를 통과해 저장·실행까지 흐른다(조용한 게이트 우회).
+        기본(True)은 종전 거동(프로파일 로드=사람 확정 산출물 복원)이라 다른 호출측은 불변.
         """
         available = set(self.source_fields)
         by_field = {m.template_field: m for m in profile.mappings}
@@ -334,7 +354,7 @@ class MappingModel:
                 and bool(m.source)
                 and m.source not in available
             )
-            row.confirmed = not missing_source
+            row.confirmed = confirm and not missing_source
             if not missing_source:
                 applied += 1
         return applied

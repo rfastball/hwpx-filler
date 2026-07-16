@@ -45,6 +45,33 @@ def ambiguous_sheets(path: "str | Path") -> "list[tuple[str, int, int]]":
     return overview if len(overview) >= 2 else []
 
 
+def ambiguous_sheet_error(path: "str | Path", *, prefix: str = "") -> "str | None":
+    """#33 멀티시트 게이트의 공유 판정+문구 — 모호(2+ 시트)면 거절 문구, 아니면 ``None``.
+
+    정책 3요소의 단일 출처(수동 등록=pool 화면·겨눔=``load_pool_item_checked`` 공유 —
+    두 사이트에 복붙돼 문구가 표류하던 것을 여기로 수렴):
+
+    - 판정은 :func:`ambiguous_sheets` (빈 목록=CSV·단일 시트 → 통과=``None``).
+    - **읽기 실패(경로 부재·잠김·손상)는 통과(``None``)** — 참조 등록 의미(파일 미개봉)를
+      지키고, 죽은 참조는 이어지는 실제 로드/겨눔 관문이 시끄럽게 재진술한다.
+    - 2+ 시트면 시트 목록을 병기한 거절 문구를 돌려준다(첫 시트 자동 선택은 조용한
+      오독 위험 — 시끄럽게 확정을 요구).
+
+    ``prefix`` 는 호출 컨텍스트 병기용(예: ``"등록 데이터 'x' 에 시트가 지정되지 않았습니다 — "``).
+    """
+    try:
+        overview = ambiguous_sheets(path)
+    except Exception:  # noqa: BLE001 — 읽기 실패는 참조 의미상 통과(후속 관문이 재방어)
+        return None
+    if not overview:
+        return None
+    names = ", ".join(n for n, _r, _c in overview)
+    return (
+        f"{prefix}워크북에 시트가 여러 개입니다({names}) — "
+        "데이터 관리에서 시트를 지정해 등록하세요(첫 시트 자동 선택은 조용한 오독 위험)."
+    )
+
+
 class ExcelDataSource:
     def __init__(self, path: str, sheet: "str | None" = None, header_row: int = 1):
         self.path = path

@@ -49,6 +49,7 @@ MODAL_LABELLEDBY = {
     "pasteModal": "pasteTitle",
     "sheetModal": "sheetTitle",
     "poolRegModal": "poolRegTitle",  # 데이터 등록(#26 #4)
+    "poolModal": "poolTitle",  # 등록 데이터 선택(#26 #6) — 정적 골격 이관(r3 K12)
 }
 
 

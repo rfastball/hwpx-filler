@@ -6,10 +6,7 @@
   const SCREEN = "home";
   const $ = (id) => document.getElementById(id);
 
-  function esc(s) {
-    return String(s).replace(/[&<>"]/g, (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  }
+  const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
 
   let LAST = null;  // 마지막 스냅샷 — 태그 편집 프리필 등 이벤트 핸들러가 참조(#26)
 
@@ -201,6 +198,23 @@
     window.Nav.go("editor");
   }
 
+  /* '축=값, 축=값' 텍스트 → 태그 dict. 형식 오류면 {err: 문제 조각} — 호출부가 loud 처리. */
+  function parseTags(text) {
+    const tags = {};
+    for (const part of text.split(",")) {
+      const t = part.trim();
+      if (!t) continue;
+      const i = t.indexOf("=");
+      if (i <= 0 || !t.slice(i + 1).trim()) return { err: t };
+      tags[t.slice(0, i).trim()] = t.slice(i + 1).trim();
+    }
+    return { tags };
+  }
+  function sameTags(a, b) {
+    const ka = Object.keys(a);
+    return ka.length === Object.keys(b).length && ka.every((k) => b[k] === a[k]);
+  }
+
   /* 태그 편집(#26 #2·D14) — 현재 태그를 '축=값' 쌍으로 재진술·프리필하고 통째 교체 저장.
      비우면 전체 해제(사용자가 명시적으로 지운 것 — 추측 아님). 형식 오류는 loud. */
   async function editTags(name) {
@@ -208,23 +222,29 @@
     (LAST && LAST.grouped_rows || []).forEach((sec) =>
       (sec.rows || []).forEach((r) => { if (r.name === name) cur = r.tags || {}; }));
     const ser = Object.entries(cur).map(([k, v]) => `${k}=${v}`).join(", ");
+    // 왕복 가드(C9): 직렬화 직후 재파싱해 원본과 대조 — 값에 쉼표, 축에 쉼표/등호가 있으면
+    // (백엔드 _do_set_tags 는 허용, 수동 .job.json 편집으로 도달 가능) 이 인라인 프롬프트는
+    // 프리필을 그대로 OK 해도 태그를 조용히 쪼개 재작성하거나 형식 오류로 막는다.
+    // 왕복 불가면 조용히 진행하지 않고 시끄럽게 중단한다(confirm-or-alarm).
+    const rt = parseTags(ser);
+    if (rt.err !== undefined || !sameTags(rt.tags, cur)) {
+      window.alert(
+        `'${name}' 의 태그에 쉼표(값) 또는 등호/쉼표(축)가 포함돼 있어\n` +
+        `'축=값, …' 인라인 편집으로는 안전하게 수정할 수 없습니다.\n\n` +
+        `현재 태그: ${ser}\n\n작업 파일(.job.json)의 tags 를 직접 수정하세요.`);
+      return;
+    }
     const input = window.prompt(
       `'${name}' 의 분류 태그 — '축=값' 쌍을 쉼표로 구분해 입력하세요.\n` +
       `(예: 물품=의약품, 금액구간=소액)\n비우면 태그를 전부 해제합니다.`, ser);
     if (input === null) return;
-    const tags = {};
-    for (const part of input.split(",")) {
-      const t = part.trim();
-      if (!t) continue;
-      const i = t.indexOf("=");
-      if (i <= 0 || !t.slice(i + 1).trim()) {
-        window.alert(`태그 형식 오류: '${t}' — '축=값' 으로 입력하세요.`);
-        return;
-      }
-      tags[t.slice(0, i).trim()] = t.slice(i + 1).trim();
+    const parsed = parseTags(input);
+    if (parsed.err !== undefined) {
+      window.alert(`태그 형식 오류: '${parsed.err}' — '축=값' 으로 입력하세요.`);
+      return;
     }
     try {
-      await Bridge.call(SCREEN, "set_tags", { name, tags });
+      await Bridge.call(SCREEN, "set_tags", { name, tags: parsed.tags });
     } catch (err) {
       window.alert(String((err && err.message) || err));  // 백엔드 loud 거절 재진술
     }
@@ -265,7 +285,10 @@
   }
 
   function wire() {
-    $("homeRefresh").addEventListener("click", () => Bridge.call(SCREEN, "refresh", {}));
+    // 새로고침 실패(레지스트리 IO 등)를 조용히 삼키지 않는다(N1) — rejection 을 표면화.
+    $("homeRefresh").addEventListener("click", () =>
+      Bridge.call(SCREEN, "refresh", {}).catch((err) =>
+        window.alert(String((err && err.message) || err))));
     $("homeNewJob").addEventListener("click", () => window.Nav.go("editor"));
     $("homeMatrix").addEventListener("click", () => window.Nav.go("matrix"));
     $("homeNewTxt").addEventListener("click", () => window.Nav.go("txt"));

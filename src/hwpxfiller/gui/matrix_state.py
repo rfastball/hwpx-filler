@@ -132,8 +132,20 @@ class MatrixRunViewModel:
         self.reset_acks()  # 새 데이터 → 미입력 확인 재평가(UD-04)
         return records
 
-    def active_pool_names(self) -> "list[str]":
-        return [it.name for it in self.pool_registry.list_items(status=STATUS_ACTIVE)]
+    def active_pool_names(self, *, corrupted=None) -> "list[str]":
+        """활성 풀 항목 이름 목록(실행 겨눔 후보).
+
+        ``corrupted`` 리스트를 넘기면 손상 파일이 ``(경로, 오류)`` 로 격리 수집된다 —
+        호출측이 병기 표면화할 책임을 진다. **미전달 시 손상 파일은 raise** (조용한
+        후보 증발 금지, C5 — :meth:`~hwpxfiller.core.dataset_pool.DatasetPoolRegistry.
+        list_items` 계약 그대로 통과).
+        """
+        return [
+            it.name
+            for it in self.pool_registry.list_items(
+                status=STATUS_ACTIVE, corrupted=corrupted
+            )
+        ]
 
     def load_pool_item(self, item) -> "list[dict]":
         source, records = resolve_pool_source(

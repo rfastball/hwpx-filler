@@ -5,19 +5,16 @@
    확인 라운드트립 2곳(confirm-or-alarm): 삭제(파괴)·동명 재등록(조용한 참조 재지정 함정).
    나라장터 등록은 동결로 미노출(기존 nara 항목 표시는 유지 — 숨김 금지).
 
-   기대 DOM(통합 단계에서 index.html 에 추가):
-   #scr-pool 섹션 안에 #poolCount #poolList #poolResult #btnPoolRegister,
-   등록 모달 #poolRegModal(#poolRegName #poolRegPath #poolRegSheet #poolRegNote
-   #poolRegCancel #poolRegOk). 파일 선택은 통합 단계에서 브리지 메서드 추가 예정
-   (제안: pick_pool_data_file() — 경로만 반환, 컨트롤러 로드 없음) — 그때까지 경로 직접 입력. */
+   DOM 은 index.html 에 정적으로 있다(dom_contract 가드): #scr-pool 섹션 안에
+   #poolCount #poolList #poolResult #btnPoolRegister, 등록 모달 #poolRegModal
+   (#poolRegName #poolRegPath #poolRegBrowse #poolRegSheet #poolRegNote
+   #poolRegCancel #poolRegOk). 파일 선택은 #poolRegBrowse → Bridge.pickPoolDataFile
+   (경로만 반환, 컨트롤러 로드 없음)로 배선돼 있고 경로 직접 입력도 여전히 허용. */
 (function () {
   const SCREEN = "pool";
   const $ = (id) => document.getElementById(id);
 
-  function esc(s) {
-    return String(s).replace(/[&<>"]/g, (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  }
+  const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
 
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
@@ -73,19 +70,25 @@
   }
 
   /* ---- 상태/삭제 액션 ---- */
+  /* try/catch 없이는 브리지 rejection(stale 카드의 FileNotFoundError 류)이 삼켜져 버튼이
+     무반응이 된다 — 시끄럽게 재진술한다(home.js onCorruptClick 미러, confirm-or-alarm). */
   async function onListClick(e) {
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
     const act = btn.dataset.act;
     const name = btn.dataset.name;
-    if (act === "delete") {
-      // 파괴 확정 — 1차=재진술(needs_confirm), 확인 시에만 2차 삭제(조용한 소실 금지).
-      const res = await Bridge.call(SCREEN, "delete", { name });
-      if (res && res.needs_confirm && window.confirm(res.confirm_text + "\n\n삭제할까요?")) {
-        Bridge.call(SCREEN, "delete", { name, confirm: true });
+    try {
+      if (act === "delete") {
+        // 파괴 확정 — 1차=재진술(needs_confirm), 확인 시에만 2차 삭제(조용한 소실 금지).
+        const res = await Bridge.call(SCREEN, "delete", { name });
+        if (res && res.needs_confirm && window.confirm(res.confirm_text + "\n\n삭제할까요?")) {
+          await Bridge.call(SCREEN, "delete", { name, confirm: true });
+        }
+      } else {
+        await Bridge.call(SCREEN, act, { name });  // archive/retire/activate — 비파괴 즉시
       }
-    } else {
-      Bridge.call(SCREEN, act, { name });  // archive/retire/activate — 비파괴 즉시
+    } catch (err) {
+      window.alert(String((err && err.message) || err));
     }
   }
 
@@ -107,22 +110,32 @@
       sheet: $("poolRegSheet").value,
       note: $("poolRegNote").value,
     };
-    let res = await Bridge.call(SCREEN, "register_excel", payload);
-    if (res && res.needs_confirm) {
-      // 동명 재등록 = 기존 참조 재지정 — 조용히 덮지 않고 확인 승격.
-      if (!window.confirm(res.confirm_text + "\n\n계속할까요?")) return;
-      res = await Bridge.call(SCREEN, "register_excel", { ...payload, confirm: true });
+    // 브리지 rejection 이 unhandled 로 삼켜지면 [등록] 버튼이 무반응이 된다 — loud 재진술.
+    // 모달은 열어 둔다(입력 보존, 사용자가 고쳐 재시도 가능).
+    try {
+      let res = await Bridge.call(SCREEN, "register_excel", payload);
+      if (res && res.needs_confirm) {
+        // 동명 재등록 = 기존 참조 재지정 — 조용히 덮지 않고 확인 승격.
+        if (!window.confirm(res.confirm_text + "\n\n계속할까요?")) return;
+        res = await Bridge.call(SCREEN, "register_excel", { ...payload, confirm: true });
+      }
+      if (res && res.ok === false) {
+        // confirm-or-alarm: 검증·충돌 실패는 조용히 삼키지 않고 시끄럽게(결과줄에도 재진술됨).
+        window.alert(res.error);
+        return;
+      }
+      closeRegModal();
+    } catch (err) {
+      window.alert(String((err && err.message) || err));
     }
-    if (res && res.ok === false) {
-      // confirm-or-alarm: 검증·충돌 실패는 조용히 삼키지 않고 시끄럽게(결과줄에도 재진술됨).
-      window.alert(res.error);
-      return;
-    }
-    closeRegModal();
   }
 
   function wire() {
-    $("poolRefresh").addEventListener("click", () => Bridge.call(SCREEN, "refresh", {}));
+    // 새로고침 실패(브리지 예외)도 fire-and-forget 로 삼키지 않는다(N1).
+    $("poolRefresh").addEventListener("click", async () => {
+      try { await Bridge.call(SCREEN, "refresh", {}); }
+      catch (err) { window.alert(String((err && err.message) || err)); }
+    });
     $("poolList").addEventListener("click", onListClick);
     $("btnPoolRegister").addEventListener("click", openRegModal);
     $("poolRegCancel").addEventListener("click", closeRegModal);

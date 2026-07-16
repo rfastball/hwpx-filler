@@ -408,6 +408,22 @@
       </div>
     </div>
 
+    <!-- 등록 데이터 선택 모달(#26 #6) — run·matrix·txt 공유 겨눔 게이트(거동은 pool_picker.js 소유).
+         목록 id 는 poolPickList — 데이터 관리 화면(#scr-pool)의 poolList 와 반드시 다른 id 여야 한다
+         (같으면 getElementById 가 숨은 화면 요소로 해소돼 피커가 빈 채로 뜬다). -->
+    <div id="poolModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="poolTitle">
+      <div class="modal-card">
+        <h3 id="poolTitle">등록 데이터 선택</h3>
+        <p class="muted" style="font-size:12px;margin:4px 0 8px">활성 상태의 등록 데이터(참조)만
+          실행 후보입니다 — 선택하면 지금 시점의 원본을 다시 읽어 옵니다.</p>
+        <div id="poolPickList" class="sheet-list"></div>
+        <p id="poolNote" class="note dangerbox" style="display:none;white-space:pre-line"></p>
+        <div class="modal-actions">
+          <button class="btn" id="poolCancel">취소</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 붙여넣기 모달(세션 템플릿) -->
     <div id="pasteModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="pasteTitle">
       <div class="modal-card">
@@ -424,6 +440,7 @@
 </div>
 
 <script src="js/bridge.js"></script>
+<script src="js/esc.js"></script>
 <script src="js/preserve.js"></script>
 <script src="js/modal.js"></script>
 <script src="js/sheet_picker.js"></script>

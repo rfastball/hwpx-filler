@@ -340,8 +340,13 @@ def test_edit_save_renamed_still_confirms_overwrite(tmp_path):
     assert res["ok"] is False and res.get("needs_overwrite") is True
 
 
-def test_ensure_model_preserves_confirmations_across_data_change(tmp_path):
-    """데이터 교체가 확정 매핑을 조용히 초안으로 갈아치우지 않는다(보존 + notice)."""
+def test_ensure_model_carries_values_but_requires_reconfirm_on_data_change(tmp_path):
+    """데이터 교체 시 값(소스·유형·서식)은 제안으로 이월하되 확정은 전원 해제(r3 C1).
+
+    이전 확정을 확정 상태 그대로 되살리면 같은 이름 컬럼('금액' 등)이 의미가 다른 새
+    데이터에서 사람 검토 없이 ``is_complete`` 를 통과해 저장·실행까지 흐른다 — 구
+    불변식 '키 변경 시 전원 미확정 초안'을 복원하고 notice 로 재확정 필요를 재진술한다.
+    """
     ctrl, _ = _controller26(tmp_path)
     ctrl.load_template_path(str(TPL_COMPILED))
     ctrl.dispatch("skip_data", {})
@@ -355,9 +360,12 @@ def test_ensure_model_preserves_confirmations_across_data_change(tmp_path):
     ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
     ctrl.dispatch("goto_step", {"step": 2})              # 키 변경 → 재생성 경로
     snap = ctrl.snapshot()
-    assert snap["is_complete"] is True                   # 확정 보존(소실 없음)
-    assert snap["rows"][0]["const"] == "보존값"
-    assert snap["notice"] and "유지했습니다" in snap["notice"]["text"]
+    assert snap["rows"][0]["const"] == "보존값"          # 값 이월(조용한 소실 없음)
+    assert snap["rows"][0]["type"] == "const"
+    assert all(row["confirmed"] is False for row in snap["rows"])  # 확정 전원 해제
+    assert snap["is_complete"] is False                  # 재확정 없이는 저장 게이트 미통과
+    assert snap["notice"] and "미확정" in snap["notice"]["text"]
+    assert "다시 확정" in snap["notice"]["text"]         # 재확정 필요를 loud 재진술
 
 
 # ------------------------------------------------------- 선언 데이터 자동등록(#3)

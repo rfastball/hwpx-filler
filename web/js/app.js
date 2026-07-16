@@ -4,10 +4,24 @@
   const navs = document.querySelectorAll(".navbtn");
   const scrs = document.querySelectorAll(".scr");
 
+  /* 전환 시 자동 새로고침 대상(C6) — 다른 화면의 변경(에디터 자동등록·삭제 등)이 부팅
+     스냅샷에 가려지는 고착 방지. 백엔드에 _do_refresh 가 있는 컨트롤러만 화이트리스트로
+     보낸다(미지 액션은 백엔드가 loud 거절하므로 무차별 dispatch 금지). 수동 새로고침
+     버튼은 유지된다(명시적 재스캔 경로). run/matrix 도 레지스트리 파생 작업 목록을
+     스냅샷으로 그리므로 포함한다 — 빼면 에디터에서 막 저장한 작업이 주 실행 표면에
+     안 보인다(r4). */
+  const REFRESH_ON_NAV = ["home", "pool", "tpl", "run", "matrix"];
+
   /* 화면 전환 — 레일 클릭과 허브(홈) 카드의 프로그램적 이동이 공유하는 단일 경로. */
   function go(id) {
     navs.forEach((x) => x.setAttribute("aria-current", x.dataset.scr === id ? "true" : "false"));
     scrs.forEach((s) => s.classList.toggle("on", s.id === "scr-" + id));
+    // pywebview 미준비(브라우저 단독 미리보기·부팅 직전)면 새로고칠 백엔드 자체가 없다.
+    if (REFRESH_ON_NAV.includes(id) && window.pywebview && window.Bridge) {
+      // 실패는 조용히 삼키지 않는다(confirm-or-alarm) — 화면은 이미 전환됐고 스냅샷만 낡음.
+      Bridge.call(id, "refresh", {}).catch((err) =>
+        window.alert(String((err && err.message) || err)));
+    }
   }
   navs.forEach((b) => b.addEventListener("click", () => go(b.dataset.scr)));
   // 홈(허브)이 카드/버튼에서 워크플로 화면으로 보내는 진입점(home.js 가 소비).
