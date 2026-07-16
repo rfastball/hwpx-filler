@@ -207,6 +207,23 @@ def test_responsive_breakpoint_collapses_layout():
     )
 
 
+def test_forced_colors_media_query_exists():
+    """강제 색상 모드(Windows 고대비) 대응 규칙이 CSS 에 있어야 한다(#3, WCAG 1.4.3).
+
+    실 고대비 렌더 검증은 헤드리스로 불가능(ST-14 원 보류 사유와 동일) — 여기선 규칙
+    자체의 존재를 정적으로 가드해, 다음 웹 이관/리팩터가 조용히 이 블록을 떨구는
+    회귀를 CI 에서 차단한다.
+    """
+    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    assert "@media(forced-colors:active){" in css, (
+        "강제 색상 모드 대응 @media(forced-colors:active) 블록이 사라졌습니다(#3)."
+    )
+    assert "tr.r-unconfirmed" in css and "tr.r-unmatched" in css and "border-left" in css, (
+        "매핑 표 행 상태의 강제색 보더 대체 신호가 사라졌습니다 — 배경 틴트만으론 "
+        "고대비에서 행 상태가 완전히 사라집니다(#3)."
+    )
+
+
 def test_preserve_helper_loaded_and_wraps_screen_renders():
     """상호작용 보존 헬퍼가 로드되고 4개 화면 render() 가 Preserve.around 로 감싸져 있어야 한다(#28).
 

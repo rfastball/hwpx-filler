@@ -146,8 +146,33 @@
         <input class="field" data-act="name" value="${esc(s.name)}" placeholder="예: 공고서 자동생성"></div>
       <div class="row"><span class="lbl" style="width:76px">파일명 패턴</span>
         <input class="field mono" data-act="pattern" value="${esc(s.pattern)}"></div>
-      <p class="muted" style="font-size:11.5px;margin:8px 0 0 84px">토큰: {{필드}}, {{date:YYYYMMDD}}, {{seq:001}}</p>
+      ${filenameTokenHelp(s)}
       <div id="save-msg" class="note" style="display:none"></div>`;
+  }
+
+  /* 파일명 패턴 토큰 도우미(#17) — Qt SaveJobPage._refresh_filename_help 웹 포트.
+     s.rows 는 스텝2 매핑 확정 시점에 이미 계산돼 스냅샷에 실려온다 — 신규 브리지 호출 없음. */
+  function filenameTokenHelp(s) {
+    const rows = (s.rows || []).filter((r) => r.has_content);
+    const fieldsHtml = rows.length
+      ? rows.map((r) => `<code>{{${esc(r.template_field)}}}</code> → ${fnPreviewText(r, s)}`).join(" &nbsp;·&nbsp; ")
+      : `<span class="muted">매핑을 완료하면 파일명에 쓸 수 있는 필드가 여기 표시됩니다.</span>`;
+    return `<div class="grp" style="margin-top:10px">
+      <span class="cap">파일명에 넣을 수 있는 값</span>
+      <p class="hint" style="margin-top:0">${fieldsHtml}</p>
+      <p class="hint">
+        날짜: <code>{{date}}</code> → 생성 날짜(YYYYMMDD) · <code>{{date:YYYY-MM-DD}}</code> → 하이픈 포함 날짜<br>
+        순번: <code>{{seq}}</code> → 1부터 증가 · <code>{{seq:001}}</code> → 001부터 세 자리로 증가
+      </p>
+    </div>`;
+  }
+
+  function fnPreviewText(r, s) {
+    if (r.preview_error) return `<span class="pv emptyval">(미리보기 오류)</span>`;
+    if (r.preview_empty) return `<span class="pv emptyval">${s.record_count ? "(빈 값)" : "(샘플 데이터 없음)"}</span>`;
+    let display = String(r.preview).replace(/[\r\n]+/g, " ");
+    if (display.length > 40) display = display.slice(0, 39) + "…";
+    return `<span class="pv">${esc(display)}</span>`;
   }
 
   /* ---- 푸터 내비 ---- */
