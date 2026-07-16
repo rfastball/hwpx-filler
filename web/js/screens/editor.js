@@ -281,55 +281,69 @@
     }
   }
 
-  /* ---- 매핑 프로파일(#26 #5) — 목록 재진술 → 이름 확정 → 반영/저장(확인 라운드트립) ---- */
+  /* ---- 매핑 프로파일(#26 #5) — 목록 재진술 → 이름 확정 → 반영/저장(확인 라운드트립).
+     브리지 rejection(디스크·권한 등)이 unhandled 로 삼켜지면 버튼이 무반응이 된다 —
+     try/catch 로 loud 재진술(pool.js onListClick 미러, #45). ---- */
   async function profileApply() {
-    const res = await Bridge.call(SCREEN, "profile_list", {});
-    const bases = (res && res.bases) || [];
-    const corrupt = ((res && res.corrupted) || [])
-      .map((c) => `! ${c.file} — 손상: ${c.error}`).join("\n");
-    if (!bases.length) {
-      window.alert("저장된 매핑 프로파일이 없습니다." + (corrupt ? "\n\n" + corrupt : ""));
-      return;
+    try {
+      const res = await Bridge.call(SCREEN, "profile_list", {});
+      const bases = (res && res.bases) || [];
+      const corrupt = ((res && res.corrupted) || [])
+        .map((c) => `! ${c.file} — 손상: ${c.error}`).join("\n");
+      if (!bases.length) {
+        window.alert("저장된 매핑 프로파일이 없습니다." + (corrupt ? "\n\n" + corrupt : ""));
+        return;
+      }
+      const listing = bases
+        .map((b) => `· ${b.name} (필드 ${b.field_count} · 참조 작업 ${b.job_refs})`).join("\n");
+      const name = window.prompt(
+        `적용할 프로파일 이름을 입력하세요:\n\n${listing}${corrupt ? "\n" + corrupt : ""}`,
+        bases[0].name);
+      if (name === null || !name.trim()) return;
+      const r = await Bridge.call(SCREEN, "profile_apply", { name: name.trim() });
+      if (r && r.ok === false) window.alert(r.error || "프로파일을 적용할 수 없습니다.");
+    } catch (err) {
+      window.alert(String((err && err.message) || err));
     }
-    const listing = bases
-      .map((b) => `· ${b.name} (필드 ${b.field_count} · 참조 작업 ${b.job_refs})`).join("\n");
-    const name = window.prompt(
-      `적용할 프로파일 이름을 입력하세요:\n\n${listing}${corrupt ? "\n" + corrupt : ""}`,
-      bases[0].name);
-    if (name === null || !name.trim()) return;
-    const r = await Bridge.call(SCREEN, "profile_apply", { name: name.trim() });
-    if (r && r.ok === false) window.alert(r.error || "프로파일을 적용할 수 없습니다.");
   }
 
   async function profileSave() {
-    const name = window.prompt("저장할 프로파일 이름:", (LAST && LAST.base_name) || "");
-    if (name === null || !name.trim()) return;
-    let r = await Bridge.call(SCREEN, "profile_save", { name: name.trim() });
-    if (r && r.needs_confirm) {
-      if (!window.confirm(r.confirm_text)) return;
-      r = await Bridge.call(SCREEN, "profile_save", { name: name.trim(), confirm: true });
+    try {
+      const name = window.prompt("저장할 프로파일 이름:", (LAST && LAST.base_name) || "");
+      if (name === null || !name.trim()) return;
+      let r = await Bridge.call(SCREEN, "profile_save", { name: name.trim() });
+      if (r && r.needs_confirm) {
+        if (!window.confirm(r.confirm_text)) return;
+        r = await Bridge.call(SCREEN, "profile_save", { name: name.trim(), confirm: true });
+      }
+      if (r && r.ok === false) window.alert(r.error || "프로파일을 저장할 수 없습니다.");
+    } catch (err) {
+      window.alert(String((err && err.message) || err));
     }
-    if (r && r.ok === false) window.alert(r.error || "프로파일을 저장할 수 없습니다.");
   }
 
   async function profileDelete() {
-    const res = await Bridge.call(SCREEN, "profile_list", {});
-    const bases = (res && res.bases) || [];
-    if (!bases.length) {
-      window.alert("저장된 매핑 프로파일이 없습니다.");
-      return;
+    try {
+      const res = await Bridge.call(SCREEN, "profile_list", {});
+      const bases = (res && res.bases) || [];
+      if (!bases.length) {
+        window.alert("저장된 매핑 프로파일이 없습니다.");
+        return;
+      }
+      const listing = bases
+        .map((b) => `· ${b.name} (필드 ${b.field_count} · 참조 작업 ${b.job_refs})`).join("\n");
+      const name = window.prompt(`삭제할 프로파일 이름을 입력하세요:\n\n${listing}`, "");
+      if (name === null || !name.trim()) return;
+      let r = await Bridge.call(SCREEN, "profile_delete", { name: name.trim() });
+      if (r && r.needs_confirm) {
+        // 파괴 확정 — 참조 작업 수를 재진술한 뒤에만 삭제(confirm-or-alarm).
+        if (!window.confirm(r.confirm_text)) return;
+        r = await Bridge.call(SCREEN, "profile_delete", { name: name.trim(), confirm: true });
+      }
+      if (r && r.ok === false) window.alert(r.error || "프로파일을 삭제할 수 없습니다.");
+    } catch (err) {
+      window.alert(String((err && err.message) || err));
     }
-    const listing = bases
-      .map((b) => `· ${b.name} (필드 ${b.field_count} · 참조 작업 ${b.job_refs})`).join("\n");
-    const name = window.prompt(`삭제할 프로파일 이름을 입력하세요:\n\n${listing}`, "");
-    if (name === null || !name.trim()) return;
-    let r = await Bridge.call(SCREEN, "profile_delete", { name: name.trim() });
-    if (r && r.needs_confirm) {
-      // 파괴 확정 — 참조 작업 수를 재진술한 뒤에만 삭제(confirm-or-alarm).
-      if (!window.confirm(r.confirm_text)) return;
-      r = await Bridge.call(SCREEN, "profile_delete", { name: name.trim(), confirm: true });
-    }
-    if (r && r.ok === false) window.alert(r.error || "프로파일을 삭제할 수 없습니다.");
   }
 
   /* 모두 확정 — 내용 행 즉시 확정 + 비움 승격 이름게이트(ADR-E 반사적 dismiss 봉쇄). */

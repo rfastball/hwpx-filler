@@ -326,6 +326,27 @@ class HomeViewModel:
             self._selected = None
         self.refresh()
 
+    def set_tags(self, name: str, raw) -> None:
+        """작업의 분류 태그(축→값)를 통째로 교체·저장 — 빈 dict = 전체 해제(#26 D14).
+
+        축·값은 모두 비어 있지 않은 문자열이어야 한다(loud — Job.from_dict 의 타입 계약
+        미러). 같은 이름 재저장은 자기-갱신이라 slug 가드를 자연 통과한다. 저장 후
+        refresh 로 axes/facets 가 즉시 재발견된다(퇴화-코퍼스 불변식 유지). 검증까지
+        여기 사는 이유: 이 뷰모델의 공개 표면이 seam 계약이다(#44) — 컨트롤러가
+        registry 를 직접 만지면 규칙이 표면 밖으로 샌다.
+        """
+        if not isinstance(raw, dict):
+            raise ValueError("태그는 {축: 값} 사전이어야 합니다")
+        tags: "dict[str, str]" = {}
+        for k, v in raw.items():
+            if not isinstance(k, str) or not isinstance(v, str) or not k.strip() or not v.strip():
+                raise ValueError("태그의 축·값은 비어 있지 않은 문자열이어야 합니다")
+            tags[k.strip()] = v.strip()
+        job = self.registry.load(name)  # 부재·손상 → loud raise
+        job.tags = tags
+        self.registry.save(job, allow_overwrite=True)  # 자기-갱신
+        self.refresh()
+
     # ------------------------------------------------- 작업 브라우저(group/facet)
     def axes(self) -> "list[str]":
         """사용 가능한 분류 축 목록 — 작업들에 실제 붙은 태그 키의 합집합(D3 발견).

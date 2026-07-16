@@ -155,6 +155,23 @@ def test_c4_editor_js_dosave_guards_and_surfaces_half_save():
     assert "dataset_register_error" in body          # 반저장 경고 표면화
 
 
+def test_editor_js_profile_actions_guard_bridge_rejection():
+    """정적 계약(#45): profile 적용/저장/삭제도 try/catch + alert 재진술이어야 한다.
+
+    같은 라운드에서 pool.js 는 봉합됐는데 editor 의 profile 경로만 못 받아 브리지
+    rejection 시 버튼이 조용히 무반응이 됐다 — 세 함수 각각에 가드를 고정한다.
+    """
+    src = (REPO / "web" / "js" / "screens" / "editor.js").read_text(encoding="utf-8")
+    for fn in ("profileApply", "profileSave", "profileDelete"):
+        start = src.index(f"async function {fn}")
+        end = src.index("async function", start + 1)
+        body = src[start:end]
+        assert "try {" in body and "catch" in body, (
+            f"{fn} 이 브리지 rejection 을 가드하지 않습니다 — 무반응 버튼(#45)."
+        )
+        assert "window.alert" in body, f"{fn} 실패가 alert 로 재진술되지 않습니다(#45)."
+
+
 # ================================================================ C10 (MED)
 # 자기-갱신 저장이라도 편집 중 외부 변경은 무확인으로 덮지 않는다.
 def test_c10_self_update_confirms_when_disk_changed_externally(tmp_path):

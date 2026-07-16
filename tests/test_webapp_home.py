@@ -8,10 +8,16 @@ from __future__ import annotations
 
 import pytest
 
+from hwpxfiller.core.dataset_pool import DatasetPoolRegistry
 from hwpxfiller.core.job import Job, JobRegistry
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.core.text_registry import TextTemplateRegistry
 from hwpxfiller.webapp.screen_home import HomeController
+
+
+def _pool(tmp_path) -> DatasetPoolRegistry:
+    """빈 풀 레지스트리 — 미주입 시 실사용자 홈 디렉터리로 새는 걸 막는다(밀폐)."""
+    return DatasetPoolRegistry(tmp_path / "datasets")
 
 
 def _reg(tmp_path) -> JobRegistry:
@@ -41,7 +47,8 @@ def _text_reg(tmp_path) -> TextTemplateRegistry:
 def _controller(tmp_path) -> "tuple[HomeController, list]":
     pushes: list = []
     ctrl = HomeController(_reg(tmp_path), _text_reg(tmp_path),
-                          lambda s, snap: pushes.append((s, snap)))
+                          lambda s, snap: pushes.append((s, snap)),
+                          pool_registry=_pool(tmp_path))
     return ctrl, pushes
 
 
@@ -55,10 +62,28 @@ def test_initial_kpis_and_txt_rows(tmp_path):
     assert snap["txt_rows"] == [{"name": "온나라_기안", "field_count": 2}]
 
 
+def test_kpi_snapshot_carries_pool_corruption(tmp_path):
+    """홈 KPI 스냅샷 — 데이터 풀 손상 수가 웹까지 실린다(#45, 0 위장 금지).
+
+    VM(kpi.pool_corrupted)은 세는데 스냅샷 dict 이 누락하면 confirm-or-alarm 이
+    링1에서 끊긴다 — 웹 타일이 렌더할 값 자체가 없다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    assert ctrl.snapshot()["kpi"]["pool_corrupted"] == 0    # 손상 없으면 0(거짓 경보 없음)
+    # 손상 풀은 자기 디렉터리를 쓴다(깨끗한 풀과 격리); 작업·txt 레지스트리는 재사용.
+    pool = DatasetPoolRegistry(tmp_path / "pool_corrupt")
+    pool.directory.mkdir()
+    (pool.directory / ("깨진" + pool.SUFFIX)).write_text("{ not json", encoding="utf-8")
+    ctrl2 = HomeController(JobRegistry(tmp_path / "jobs"), TextTemplateRegistry(tmp_path / "txt"),
+                           lambda s, snap: None, pool_registry=pool)
+    assert ctrl2.snapshot()["kpi"]["pool_corrupted"] == 1
+
+
 def test_empty_registry_is_loudly_empty(tmp_path):
     pushes: list = []
     ctrl = HomeController(JobRegistry(tmp_path / "j"), TextTemplateRegistry(tmp_path / "t"),
-                          lambda s, snap: pushes.append((s, snap)))
+                          lambda s, snap: pushes.append((s, snap)),
+                          pool_registry=_pool(tmp_path))
     snap = ctrl.initial()
     assert snap["is_empty"] is True
     assert snap["kpi"]["job_count"] == 0
@@ -147,7 +172,8 @@ def _corrupt_file(tmp_path) -> "tuple[HomeController, str]":
     bad.write_text("{ 이건 json 아님", encoding="utf-8")
     pushes: list = []
     ctrl = HomeController(JobRegistry(tmp_path / "jobs"), _text_reg(tmp_path),
-                          lambda s, snap: pushes.append((s, snap)))
+                          lambda s, snap: pushes.append((s, snap)),
+                          pool_registry=_pool(tmp_path))
     rows = ctrl.snapshot()["corrupt_rows"]
     assert len(rows) == 1 and rows[0]["path"]            # 경로가 조치용으로 노출된다(#8)
     return ctrl, rows[0]["path"]

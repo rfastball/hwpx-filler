@@ -230,5 +230,7 @@ class PoolController:
             msg = f"등록 데이터 저장에 실패했습니다: {exc}"
             self._set_result(msg, "danger")
             return {"ok": False, "error": msg}
-        self._set_result(f"등록 데이터를 추가했습니다: {item.name} — {reference_summary(item)}")
+        # 동명 갱신은 참조(opts) 교체지 새 항목 추가가 아니다 — 실제 일어난 일을 재진술(#45).
+        verb = "갱신" if kind == "same" else "추가"
+        self._set_result(f"등록 데이터를 {verb}했습니다: {item.name} — {reference_summary(item)}")
         return {"ok": True, "name": item.name}
