@@ -155,21 +155,28 @@ def test_c4_editor_js_dosave_guards_and_surfaces_half_save():
     assert "dataset_register_error" in body          # 반저장 경고 표면화
 
 
-def test_editor_js_profile_actions_guard_bridge_rejection():
-    """정적 계약(#45): profile 적용/저장/삭제도 try/catch + alert 재진술이어야 한다.
+def test_editor_js_click_dispatch_guards_bridge_rejection():
+    """정적 계약(#45): onClick 디스패처가 try/catch + alert 로 브리지 rejection 을 가드한다.
 
-    같은 라운드에서 pool.js 는 봉합됐는데 editor 의 profile 경로만 못 받아 브리지
-    rejection 시 버튼이 조용히 무반응이 됐다 — 세 함수 각각에 가드를 고정한다.
+    개별 핸들러만 감싸는 처치는 다음 핸들러를 또 빠뜨린다(실제로 profile_* 봉합 라운드에서
+    confirmAll 이 무방비로 남아 있었다) — pool.js onListClick 미러로 가드를 디스패처에 두고,
+    awaited 핸들러 전부가 상속하게 고정한다. 절단은 test_r3_pool._segment 공유(단일 슬라이서).
     """
+    from test_r3_pool import _segment
     src = (REPO / "web" / "js" / "screens" / "editor.js").read_text(encoding="utf-8")
-    for fn in ("profileApply", "profileSave", "profileDelete"):
-        start = src.index(f"async function {fn}")
-        end = src.index("async function", start + 1)
-        body = src[start:end]
-        assert "try {" in body and "catch" in body, (
-            f"{fn} 이 브리지 rejection 을 가드하지 않습니다 — 무반응 버튼(#45)."
-        )
-        assert "window.alert" in body, f"{fn} 실패가 alert 로 재진술되지 않습니다(#45)."
+    body = _segment(src, "async function onClick", "function onChange")
+    assert "try {" in body and "catch" in body and "window.alert" in body, (
+        "onClick 디스패처가 브리지 rejection 을 가드하지 않습니다 — 무반응 버튼(#45)."
+    )
+    # awaited 여야 rejection 이 디스패처 가드로 올라온다 — fire-and-forget 강등 금지.
+    for frag in ("await confirmAll()", "await doSave({})", "await profileApply()",
+                 "await profileSave()", "await profileDelete()"):
+        assert frag in body, f"onClick 이 '{frag}' 로 대기하지 않습니다 — 가드 상속 단절(#45)."
+    # confirmAll 내부 2차 호출(confirm_blanks)도 fire-and-forget 이면 가드 밖으로 샌다.
+    confirm_body = _segment(src, "async function confirmAll", "async function doSave")
+    assert 'await Bridge.call(SCREEN, "confirm_blanks"' in confirm_body, (
+        "confirmAll 의 confirm_blanks 호출이 awaited 가 아닙니다 — rejection 이 삼켜집니다(#45)."
+    )
 
 
 # ================================================================ C10 (MED)

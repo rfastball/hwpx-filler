@@ -34,6 +34,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..core.dataset_pool import DatasetPoolRegistry
 from ..core.job import JobRegistry
 from ..core.text_registry import TextTemplateRegistry
 from ..gui.compile_badge import badge_level
@@ -69,7 +70,8 @@ class HomeController:
     name = "home"
 
     def __init__(self, registry: JobRegistry, text_registry: TextTemplateRegistry,
-                 push: PushSink, pool_registry=None) -> None:
+                 push: PushSink,
+                 pool_registry: "DatasetPoolRegistry | None" = None) -> None:
         # pool_registry 는 pool_corrupted 경보(#45) 용 — pool_count KPI 는 여전히 미표면
         # (docstring 스코프 경계). 미주입 시 다른 컨트롤러들과 같은 단일 출처 팩토리.
         self.vm = HomeViewModel(

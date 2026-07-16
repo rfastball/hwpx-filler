@@ -70,13 +70,11 @@ def test_kpi_snapshot_carries_pool_corruption(tmp_path):
     """
     ctrl, _ = _controller(tmp_path)
     assert ctrl.snapshot()["kpi"]["pool_corrupted"] == 0    # 손상 없으면 0(거짓 경보 없음)
-    # 손상 풀은 자기 디렉터리를 쓴다(깨끗한 풀과 격리); 작업·txt 레지스트리는 재사용.
-    pool = DatasetPoolRegistry(tmp_path / "pool_corrupt")
-    pool.directory.mkdir()
-    (pool.directory / ("깨진" + pool.SUFFIX)).write_text("{ not json", encoding="utf-8")
-    ctrl2 = HomeController(JobRegistry(tmp_path / "jobs"), TextTemplateRegistry(tmp_path / "txt"),
-                           lambda s, snap: None, pool_registry=pool)
-    assert ctrl2.snapshot()["kpi"]["pool_corrupted"] == 1
+    # 연결된 풀 디렉터리에 손상 파일이 생기면 다음 스냅샷이 살아있는 재계수로 잡는다.
+    pool_dir = tmp_path / "datasets"
+    pool_dir.mkdir()
+    (pool_dir / ("깨진" + DatasetPoolRegistry.SUFFIX)).write_text("{ not json", encoding="utf-8")
+    assert ctrl.snapshot()["kpi"]["pool_corrupted"] == 1
 
 
 def test_empty_registry_is_loudly_empty(tmp_path):
@@ -162,6 +160,9 @@ def test_set_tags_rejects_malformed_loudly(tmp_path):
         ctrl.dispatch("set_tags", {"name": "공고서", "tags": {"축": 3}})
     with pytest.raises(ValueError, match="문자열"):
         ctrl.dispatch("set_tags", {"name": "공고서", "tags": {"": "값"}})
+    # 공백 변형 중복 축 — 조용한 last-wins 로 값 하나가 증발하지 않고 loud 거절.
+    with pytest.raises(ValueError, match="중복된 태그 축"):
+        ctrl.dispatch("set_tags", {"name": "공고서", "tags": {"지역": "본청", " 지역": "대전"}})
     # 실패해도 기존 태그는 무손상.
     assert JobRegistry(tmp_path / "jobs").load("공고서").tags == {"금액구간": "1억미만"}
 

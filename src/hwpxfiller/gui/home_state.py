@@ -341,6 +341,8 @@ class HomeViewModel:
         for k, v in raw.items():
             if not isinstance(k, str) or not isinstance(v, str) or not k.strip() or not v.strip():
                 raise ValueError("태그의 축·값은 비어 있지 않은 문자열이어야 합니다")
+            if k.strip() in tags:  # 공백 변형 중복 축 — 조용한 last-wins 소실 금지(loud)
+                raise ValueError(f"중복된 태그 축입니다: {k.strip()!r}")
             tags[k.strip()] = v.strip()
         job = self.registry.load(name)  # 부재·손상 → loud raise
         job.tags = tags
