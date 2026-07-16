@@ -215,7 +215,11 @@
       }
       case "ack-gate": Bridge.call(SCREEN, "ack_gate", {}); break;
       case "pick-data": {
-        const r = await Bridge.pickDataFile(SCREEN);
+        let r = await Bridge.pickDataFile(SCREEN);
+        if (r && typeof r === "object" && r.needs_sheet) {   // 다중 시트 → 확정 게이트(#33)
+          r = await SheetPicker.choose(SCREEN, r);
+          if (r === null) break;                              // 취소 = 중단(첫 시트 강등 없음)
+        }
         if (typeof r === "string" && r.startsWith("ERROR:")) alertMsg(r.slice(6).trim());
         break;
       }

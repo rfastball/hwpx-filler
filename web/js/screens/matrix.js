@@ -230,7 +230,11 @@
     $("mxGenBtn").addEventListener("click", () => doGenerate(false));
 
     $("btnMxPickData").addEventListener("click", async () => {
-      const r = await Bridge.pickDataFile(SCREEN);
+      let r = await Bridge.pickDataFile(SCREEN);
+      if (r && typeof r === "object" && r.needs_sheet) {   // 다중 시트 → 확정 게이트(#33)
+        r = await SheetPicker.choose(SCREEN, r);
+        if (r === null) { log("공통 데이터 선택 취소 — 시트를 확정하지 않았습니다."); return; }
+      }
       if (r === null) return;                       // 취소
       if (typeof r === "string" && r.startsWith("ERROR:")) { log("데이터 오류: " + r.slice(6).trim()); return; }
       log(`공통 데이터 불러옴: ${r}`);

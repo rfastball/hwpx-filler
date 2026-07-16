@@ -95,9 +95,11 @@ class TxtController:
         self.vm.step(int(p["delta"]))
 
     # ------------------------------------------------ 네이티브 보조(브리지가 다이얼로그 담당)
-    def load_data_path(self, path: str) -> None:
-        """선택된 파일 경로를 링1 VM 으로 로드(레코드 0건이면 시끄럽게 실패·상태 불변)."""
-        records = self.vm.load_data(path)
+    def load_data_path(self, path: str, *, sheet: "str | None" = None) -> None:
+        """선택된 파일 경로를 링1 VM 으로 로드(레코드 0건이면 시끄럽게 실패·상태 불변).
+
+        ``sheet`` = 웹에서 확정한 시트명(다중 시트 확정 게이트 #33, None=CSV·단일 시트)."""
+        records = self.vm.load_data(path, sheet=sheet)
         if not records:
             raise ValueError("레코드 0건 — 상태를 바꾸지 않았습니다.")
         self.data_label = Path(path).name  # 서버 소유(P4)

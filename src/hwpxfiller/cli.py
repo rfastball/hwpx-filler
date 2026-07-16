@@ -32,7 +32,7 @@ from .core.job import DEFAULT_FILENAME_PATTERN
 from .data.nara import NaraFetchError
 from .naming import pattern_field_tokens
 from hwpxcore.validate import validate
-from .data.excel import ExcelDataSource, sheet_overview
+from .data.excel import ExcelDataSource, ambiguous_sheets
 
 
 def _schema_main(argv: "list[str]") -> int:
@@ -259,12 +259,13 @@ def _require_sheet_if_ambiguous(
 
     ``--sheet`` 가 명시됐거나 CSV·단일 시트면 통과("모호할 때만 묻는다"). 2+ 시트인데
     미지정이면 시트 목록을 stderr 에 나열하고 ``ap.error`` 로 중단(exit 2, ``--sheet`` 요구).
-    판정 단일 출처는 :func:`sheet_overview`(빈 리스트=CSV, 길이 1=단일, 2+=모호).
+    판정 단일 출처는 :func:`ambiguous_sheets`(빈 목록=CSV·단일=물을 것 없음, 비면 모호) —
+    웹 시트 선택 게이트(#33)와 같은 판정을 공유한다.
     """
     if sheet is not None:
         return
-    overview = sheet_overview(path)
-    if len(overview) >= 2:
+    overview = ambiguous_sheets(path)
+    if overview:
         listing = "\n".join(
             f"  - {name} ({rows}행 x {cols}열)" for name, rows, cols in overview
         )

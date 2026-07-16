@@ -87,7 +87,11 @@
     $("recNext").addEventListener("click", () => Bridge.call(SCREEN, "step", { delta: 1 }));
 
     $("btnPick").addEventListener("click", async () => {
-      const r = await Bridge.pickDataFile(SCREEN);
+      let r = await Bridge.pickDataFile(SCREEN);
+      if (r && typeof r === "object" && r.needs_sheet) {   // 다중 시트 → 확정 게이트(#33)
+        r = await SheetPicker.choose(SCREEN, r);
+        if (r === null) return;                            // 취소 = 중단(첫 시트 강등 없음)
+      }
       if (r === null) return;                      // 취소
       if (typeof r === "string" && r.startsWith("ERROR:")) { warnNote(r.slice(6).trim()); return; }
       // 파일명은 load_data_path 가 스냅샷(data_label)으로 밀어 render 가 채운다(P4 서버 소유).

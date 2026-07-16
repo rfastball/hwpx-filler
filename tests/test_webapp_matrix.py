@@ -73,6 +73,22 @@ def _data_csv(tmp_path: Path) -> str:
     return str(csv)
 
 
+MULTI_SHEET = Path(__file__).resolve().parents[0] / "fixtures" / "multi_sheet.xlsx"
+
+
+def test_load_data_honors_confirmed_sheet(tmp_path):
+    """다중 시트 확정 게이트(#33, 리뷰 P1) — matrix load_data_path(sheet=) 가 확정 시트를 관통.
+
+    브리지가 모호할 때만 확정을 요구하므로 컨트롤러는 확정 시트명을 그대로 링1 VM 으로 넘긴다.
+    첫 시트(공고목록 2건)가 아니라 낙찰현황(3건)이 실려야 조용한 첫 시트 강등이 아니다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    snap = ctrl.snapshot()
+    assert snap["data_label"] == "multi_sheet.xlsx"
+    assert snap["has_data"] is True and snap["record_count"] == 3
+
+
 def test_initial_lists_jobs_and_loud_gate(tmp_path):
     ctrl, _ = _controller(tmp_path)
     snap = ctrl.initial()
