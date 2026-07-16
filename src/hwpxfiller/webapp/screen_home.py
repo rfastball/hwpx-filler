@@ -12,19 +12,25 @@
 화면이 이관 전까지 두던 자체 작업 선택기는 홈 착지 후에도 독립 진입점으로 남는다(중복 아님 —
 레일 직접 진입 경로).
 
-**이번 이관의 스코프 경계(조용히 빠뜨리지 않고 명시)** — 아래는 미구현이며, 홈에서는 없는
-어포던스를 있는 척하지 않는다(confirm-or-alarm):
-- **작업 편집(edit)**: 저장된 작업을 에디터로 되불러오는 편집 모드가 아직 웹에 없다
-  (screen_editor 는 신규 작성 4단계 마법사만). → 카드 '편집' 버튼은 비활성 + 사유 툴팁.
-- **데이터 풀 관리·매핑 프로파일(어휘) 워크벤치**: 대응 웹 화면이 없다 → 홈에 버튼을 두지 않는다
-  (Qt 홈의 manage_pool/manage_vocab 시그널은 이관 보류). pool_count KPI 도 목업이 표면화하지
-  않으므로 pool_registry 를 붙이지 않는다.
-- **손상 작업 파일 조치(열기·삭제)**: 네이티브/파괴 동작이라 보류 — 손상 행은 삭제/숨김이
-  아니라 **시끄러운 위험 카드**로 노출만 한다(RC-05).
-- **태그 편집(D14 수동 태깅)**: 브라우저는 태그를 **읽어** group-by/facet 하지만 태그를
-  붙이는 UI 는 보류(홈은 퇴화-코퍼스 불변식대로 태그 없으면 평면 목록).
+**#26 패리티 회수(이 라운드 포함)**:
+- **작업 편집(edit)**: 카드 '편집' → 브리지 ``open_job_in_editor`` 로 에디터 편집 세션 복원
+  (:meth:`~hwpxfiller.webapp.screen_editor.EditorController.load_job`). 미저장 세션 확인은
+  웹이 선판단(#25 미러).
+- **태그 편집(D14 수동 태깅)**: ``set_tags`` 액션 — 작업의 분류 태그(축→값)를 통째로
+  교체·저장한다. 카드는 태그를 직접 렌더하지 않는 D8 불변을 지키고(섹션·칩만 소비),
+  편집 어포던스(버튼)만 카드에 둔다.
+- **손상 작업 파일 조치(열기·삭제)**: ``delete_corrupt``(확인 라운드트립) + 브리지
+  ``reveal_corrupt_job``(탐색기 표시). 경로는 레지스트리 디렉터리 안의 ``.job.json`` 만
+  허용한다(웹 페이로드로 임의 파일을 지우는 경로 봉쇄).
+
+**남은 스코프 경계(조용히 빠뜨리지 않고 명시)**:
+- **매핑 프로파일(어휘) 워크벤치**: 전용 관리 화면은 없다 — 에디터 3단계의 적용/저장/삭제가
+  현재 표면이다. pool_count KPI 는 목업이 표면화하지 않으므로 pool_registry 를 붙이지 않는다
+  (데이터 관리 자체는 pool 화면 소유).
 """
 from __future__ import annotations
+
+from pathlib import Path
 
 from ..core.job import JobRegistry
 from ..core.text_registry import TextTemplateRegistry
@@ -50,6 +56,8 @@ def _job_row_dict(r: JobRow) -> dict:
         "last_run_display": r.last_run_display,
         "template_missing": r.template_missing,
         "runnable": r.is_runnable(),
+        # 태그 편집(#26 D14) 프리필용 — 카드는 직접 렌더하지 않는다(D8 불변).
+        "tags": dict(r.tags),
     }
 
 
@@ -117,9 +125,9 @@ class HomeController:
             "group_by": self.vm.effective_group_by(),
             "facets": self._facets(),
             "grouped_rows": self._grouped(),
-            # 손상 작업 — 숨기지 않고 시끄러운 위험 카드로(RC-05).
+            # 손상 작업 — 숨기지 않고 시끄러운 위험 카드로(RC-05) + 조치 경로(#26 #8).
             "corrupt_rows": [
-                {"file_name": c.file_name, "detail_line": c.detail_line()}
+                {"file_name": c.file_name, "detail_line": c.detail_line(), "path": c.path}
                 for c in self.vm.corrupt_rows()
             ],
             # txt 트랙 — 즉시 기안 템플릿 목록(정해진 루트).
@@ -155,3 +163,52 @@ class HomeController:
     def _do_refresh(self, p: dict) -> None:
         """레지스트리 재조회(다른 화면에서 작업 저장/삭제 후 홈 복귀 시 최신화)."""
         self.vm.refresh()
+
+    # ------------------------------------------------------- 태그 편집(#26 #2·D14)
+    def _do_set_tags(self, p: dict) -> None:
+        """작업의 분류 태그(축→값)를 통째로 교체·저장 — 빈 dict = 전체 해제.
+
+        축·값은 모두 비어 있지 않은 문자열이어야 한다(loud — Job.from_dict 의 타입 계약
+        미러). 같은 이름 재저장은 자기-갱신이라 slug 가드를 자연 통과한다. 저장 후
+        refresh 로 axes/facets 가 즉시 재발견된다(퇴화-코퍼스 불변식 유지).
+        """
+        name = p["name"]
+        raw = p.get("tags", {})
+        if not isinstance(raw, dict):
+            raise ValueError("태그는 {축: 값} 사전이어야 합니다")
+        tags: "dict[str, str]" = {}
+        for k, v in raw.items():
+            if not isinstance(k, str) or not isinstance(v, str) or not k.strip() or not v.strip():
+                raise ValueError("태그의 축·값은 비어 있지 않은 문자열이어야 합니다")
+            tags[k.strip()] = v.strip()
+        job = self.vm.registry.load(name)  # 부재·손상 → loud raise
+        job.tags = tags
+        self.vm.registry.save(job, allow_overwrite=True)  # 자기-갱신
+        self.vm.refresh()
+
+    # ------------------------------------------------- 손상 작업 조치(#26 #8·UD-44)
+    def validate_corrupt_path(self, raw: str) -> Path:
+        """손상 작업 조치 대상 경로 검증 — 레지스트리 밖·비 job 파일은 loud 거절.
+
+        웹 페이로드의 경로를 그대로 신뢰하면 임의 파일 삭제/열기 통로가 된다. 현재
+        손상 목록에 실재하는 경로만 허용한다(스냅샷이 곧 화이트리스트).
+        """
+        candidates = {str(c.path) for c in self.vm.corrupt_rows()}
+        if raw not in candidates:
+            raise ValueError("손상 작업 목록에 없는 경로입니다 — 새로고침 후 다시 시도하세요.")
+        return Path(raw)
+
+    def _do_delete_corrupt(self, p: dict) -> dict:
+        """손상 작업 파일 삭제 — 파괴이므로 확인 라운드트립(1차=재진술, 2차=삭제)."""
+        path = self.validate_corrupt_path(p["path"])
+        if not p.get("confirm"):
+            return {
+                "ok": True, "needs_confirm": True, "path": str(path),
+                "confirm_text": (
+                    f"손상된 작업 파일을 삭제합니다(복구 불가):\n{path}\n"
+                    "내용을 확인하려면 먼저 '폴더 열기'로 살펴보세요."
+                ),
+            }
+        path.unlink()
+        self.vm.refresh()
+        return {"ok": True}

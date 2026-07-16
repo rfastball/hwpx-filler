@@ -9,8 +9,9 @@
 </head>
 <body>
 <!-- 웹 프론트엔드 셸 — 목업 docs/UI_PROTOTYPE_APPB.html 의 앱윈도 구조를 스튜디오 크롬(마스트헤드·
-     주석·캔버스) 없이 실앱으로 전개. 좌 레일(6화면 라우팅) + 우 스테이지. 링1 VM 에 브리지로 배선.
-     실화면 전부 이관 완료: home(허브·기본)·txt·editor(#15·#16)·run(#18)·matrix(#14)·tpl(#13). -->
+     주석·캔버스) 없이 실앱으로 전개. 좌 레일(7화면 라우팅) + 우 스테이지. 링1 VM 에 브리지로 배선.
+     실화면 전부 이관 완료: home(허브·기본)·txt·editor(#15·#16)·run(#18)·matrix(#14)·tpl(#13)·
+     pool(데이터 관리 · #26 #4). -->
 <div class="app">
   <nav class="rail" aria-label="화면 전환">
     <div class="brand">HWPX Filler
@@ -34,6 +35,8 @@
       <span class="ni">즉</span><span class="n">즉시 기안 (txt)</span><span class="d">템플릿+데이터 → 실시간 → 복사</span></button>
     <button class="navbtn" data-scr="tpl" aria-label="템플릿 관리" title="템플릿 관리">
       <span class="ni">템</span><span class="n">템플릿 관리</span><span class="d">HWPX·TXT 라이브러리 · 상태·변환·검토</span></button>
+    <button class="navbtn" data-scr="pool" aria-label="데이터 관리" title="데이터 관리">
+      <span class="ni">데</span><span class="n">데이터 관리</span><span class="d">등록 데이터(참조) · 수명 관리</span></button>
   </nav>
 
   <main class="stage">
@@ -121,10 +124,11 @@
         <div class="grp"><span class="cap">대상 문서</span>
           <span id="targetLine" class="muted">작업을 선택하세요.</span></div>
 
-        <!-- 데이터 -->
+        <!-- 데이터 — 2소스(등록 데이터/파일, #26 #6 · 나라는 동결) -->
         <div class="run-row"><span class="lbl">데이터(.xlsx/.csv)</span>
           <input class="field ro" id="runDataLabel" type="text" readonly
                  placeholder="데이터를 선택하세요">
+          <button class="btn" id="btnPoolData">등록 데이터…</button>
           <button class="btn" id="btnPickData">파일 선택…</button></div>
 
         <!-- 사전검증 -->
@@ -167,7 +171,7 @@
     <!-- 목업 scr-matrix 이관. 안정 DOM(id) + matrix.js 가 window.__push('matrix', snapshot)
          로 값만 채운다(run 패턴). 링1 MatrixRunViewModel·SelectionModel 에 브리지로 배선 —
          VM 로직 재구현 없음. 작업 다중선택기는 진입 어포던스(홈 이관 전까지 자체 진입점).
-         데이터 스코프 = 파일만(풀·나라는 후속, screen_matrix.py docstring 참조). -->
+         데이터 스코프 = 등록 데이터(풀)+파일 2소스(#26 #6 · 나라장터는 동결, screen_matrix.py docstring 참조). -->
     <section class="scr" id="scr-matrix">
       <header class="scr-head">
         <div>
@@ -190,10 +194,11 @@
           <div class="reclist" id="mxJobList" data-preserve-scroll></div>
         </div>
 
-        <!-- 2. 함께 적용할 데이터(공통 1개) -->
+        <!-- 2. 함께 적용할 데이터(공통 1개) — 2소스(등록 데이터/파일, #26 #6) -->
         <div class="run-row"><span class="lbl">함께 적용할 데이터 (공통 1개)</span>
           <input class="field ro" id="mxDataLabel" type="text" readonly
                  placeholder="데이터를 선택하세요 (.xlsx/.csv)">
+          <button class="btn" id="btnMxPoolData">등록 데이터…</button>
           <button class="btn" id="btnMxPickData">파일 선택…</button></div>
 
         <!-- 3. 작업별 미입력 필드 확인(상시 인라인 + 강제 확인 게이트, ADR-E·UD-04) -->
@@ -248,6 +253,7 @@
           <input class="field ro" id="txtDataLabel" type="text" readonly
                  placeholder="데이터를 선택하세요 — 없으면 토큰이 그대로 남습니다"></label>
         <div class="ctl-actions">
+          <button class="btn" id="btnTxtPoolData">등록 데이터…</button>
           <button class="btn" id="btnPick">파일 선택…</button>
           <button class="btn" id="btnPaste">템플릿 붙여넣기…</button>
         </div>
@@ -321,6 +327,55 @@
       <div id="tplResult" class="run-result"></div>
     </section>
 
+    <!-- ============ 데이터 관리 (등록 데이터 참조 · 수명, #26 #4) ============ -->
+    <!-- 안정 DOM(id) + pool.js 가 window.__push('pool', snapshot) 로 값만 채운다(tpl 패턴).
+         링1 DatasetPoolViewModel(참조 등록·상태 전이·행 성형)에 브리지로 배선 — VM 재구현 없음.
+         참조만 저장(행·ServiceKey 없음, ADR J) — 실행 때 원본을 다시 읽는다("싱크").
+         나라장터 등록은 동결로 미노출(기존 nara 항목 표시는 유지 — 숨김 금지). -->
+    <section class="scr" id="scr-pool">
+      <header class="scr-head">
+        <div>
+          <h1>데이터 관리</h1>
+          <p class="sub">등록 데이터는 참조(경로·시트)만 저장합니다 — 실행할 때 원본을 다시 읽습니다.
+            계약 사이클이 끝나면 보관/은퇴로 정리하세요.</p>
+        </div>
+      </header>
+      <div class="tpl-catalogs">
+        <section class="grp tpl-cat">
+          <span class="cap">등록 데이터</span>
+          <div class="tpl-cathead">
+            <span class="muted" id="poolCount" style="font-size:12px"></span>
+            <button class="btn sm" id="btnPoolRegister">＋ 데이터 등록…</button>
+          </div>
+          <div class="tpllist" id="poolList"></div>
+        </section>
+      </div>
+      <div id="poolResult" class="run-result"></div>
+    </section>
+
+    <!-- 데이터 등록 모달(#26 #4) — 참조만(경로 포인터). 동명 재등록은 확인 승격. -->
+    <div id="poolRegModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="poolRegTitle">
+      <div class="modal-card">
+        <h3 id="poolRegTitle">데이터 등록</h3>
+        <p class="muted" style="font-size:12px;margin:4px 0 8px">경로 참조만 저장합니다 —
+          행·내용은 저장하지 않고 실행할 때 다시 읽습니다.</p>
+        <label class="ctl"><span class="lbl">이름</span>
+          <input class="field" id="poolRegName" type="text" placeholder="예: 7월 공고목록"></label>
+        <label class="ctl"><span class="lbl">파일 경로(.xlsx/.csv)</span>
+          <span class="row" style="display:flex;gap:6px">
+            <input class="field mono" id="poolRegPath" type="text" placeholder="C:\...\데이터.xlsx" style="flex:1">
+            <button class="btn" id="poolRegBrowse" type="button">찾아보기…</button></span></label>
+        <label class="ctl"><span class="lbl">시트(선택)</span>
+          <input class="field" id="poolRegSheet" type="text" placeholder="비우면 첫/유일 시트"></label>
+        <label class="ctl"><span class="lbl">메모(선택)</span>
+          <input class="field" id="poolRegNote" type="text"></label>
+        <div class="modal-actions">
+          <button class="btn" id="poolRegCancel">취소</button>
+          <button class="btn primary" id="poolRegOk">등록</button>
+        </div>
+      </div>
+    </div>
+
     <!-- TXT 템플릿 편집/생성 모달(네이티브 입력 대체 — 인페이지 textarea) -->
     <div id="txtEditModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="txtEditTitle">
       <div class="modal-card">
@@ -368,12 +423,14 @@
 <script src="js/preserve.js"></script>
 <script src="js/modal.js"></script>
 <script src="js/sheet_picker.js"></script>
+<script src="js/pool_picker.js"></script>
 <script src="js/screens/home.js"></script>
 <script src="js/screens/txt.js"></script>
 <script src="js/screens/editor.js"></script>
 <script src="js/screens/run.js"></script>
 <script src="js/screens/matrix.js"></script>
 <script src="js/screens/template.js"></script>
+<script src="js/screens/pool.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

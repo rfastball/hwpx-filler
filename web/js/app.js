@@ -28,5 +28,6 @@
     if (window.RunScreen) window.RunScreen.init();
     if (window.MatrixScreen) window.MatrixScreen.init();
     if (window.TemplateScreen) window.TemplateScreen.init();
+    if (window.PoolScreen) window.PoolScreen.init();  // 데이터 관리(#26 #4)
   });
 })();

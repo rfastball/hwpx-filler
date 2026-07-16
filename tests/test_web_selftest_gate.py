@@ -64,13 +64,21 @@ class TestWebSelftestGate:
         # 실 DOM 의 document.title 이 비어있지 않음 = 문서 부팅·셸 로드 확인.
         assert selftest_result["title_dom"]
 
-    def test_all_six_nav_buttons_rendered(self, selftest_result: dict) -> None:
-        # 6화면 내비(.navbtn) 가 실체로 그려짐 — 화면 소실 회귀 가드.
-        assert selftest_result["nav_count"] == 6
+    def test_all_nav_buttons_rendered(self, selftest_result: dict) -> None:
+        # 7화면 내비(.navbtn) 가 실체로 그려짐 — 화면 소실 회귀 가드(+pool, #26 #4).
+        assert selftest_result["nav_count"] == 7
 
     def test_home_is_default_screen(self, selftest_result: dict) -> None:
         # 허브(홈)가 기본 활성 화면으로 뜸(scr-home.on).
         assert selftest_result["home_on"] is True
+
+    def test_pool_screen_actually_rendered(self, selftest_result: dict) -> None:
+        # 데이터 관리 화면(#26 #4)이 실앱에서 init·렌더됨(빈 상태 문구도 렌더로 침).
+        assert selftest_result["pool_rendered"] is True
+
+    def test_pool_source_buttons_present(self, selftest_result: dict) -> None:
+        # 2소스 진입점(#26 #6) — run·matrix·txt 의 '등록 데이터…' 버튼이 실 DOM 에 있다.
+        assert selftest_result["pool_buttons"] is True
 
     def test_home_kpis_actually_rendered(self, selftest_result: dict) -> None:
         # home.js 가 push 스냅샷으로 KPI 타일을 실제 렌더 = Python→웹 관측 푸시 왕복 확인.
