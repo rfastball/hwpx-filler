@@ -248,6 +248,11 @@ tr.r-confirmed td,tr.r-schemaonly td{background:var(--a-card)}
 .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
 .modal-card .ctl{display:flex;flex-direction:column;gap:4px;margin-top:4px}
 .modal-card .ctl .field{width:100%}
+/* 시트 선택 목록(#33) — 각 시트가 왼쪽 정렬 전폭 버튼. 이름·치수를 한 줄에. */
+.sheet-list{display:flex;flex-direction:column;gap:6px;max-height:min(50vh,320px);overflow:auto}
+.sheet-opt{display:flex;align-items:baseline;gap:10px;justify-content:flex-start;text-align:left;width:100%}
+.sheet-opt .sheet-name{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sheet-opt .sheet-dim{margin-left:auto;white-space:nowrap;font-size:11px}
 
 /* ---- 템플릿 관리(#13) ---- */
 /* 상태 배지(pill) — compile_badge level(muted/warn/ok/danger)을 fb 토큰 계열로 렌더.

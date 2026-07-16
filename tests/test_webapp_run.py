@@ -82,6 +82,23 @@ def test_select_job_then_data_populates_records_and_badges(tmp_path):
     assert snap["out_dir"].endswith("Results")
 
 
+MULTI_SHEET = Path(__file__).resolve().parents[0] / "fixtures" / "multi_sheet.xlsx"
+
+
+def test_load_data_honors_confirmed_sheet(tmp_path):
+    """다중 시트 확정 게이트(#33, 리뷰 P1) — run load_data_path(sheet=) 가 확정 시트를 관통.
+
+    작업 선택 후 낙찰현황(3건)을 확정하면 첫 시트(공고목록 2건)가 아니라 그 시트가 실린다 —
+    조용한 첫 시트 강등이 아니라 확정값 반영.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    snap = ctrl.snapshot()
+    assert snap["data_label"] == "multi_sheet.xlsx"
+    assert snap["has_data"] is True and snap["record_count"] == 3
+
+
 def test_missing_gate_blocks_generate_until_acked(tmp_path):
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})

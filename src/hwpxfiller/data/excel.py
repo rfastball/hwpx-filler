@@ -33,6 +33,18 @@ def sheet_overview(path: "str | Path") -> "list[tuple[str, int, int]]":
         wb.close()
 
 
+def ambiguous_sheets(path: "str | Path") -> "list[tuple[str, int, int]]":
+    """시트 확정이 필요한(2+ 시트) 워크북이면 개요를, 아니면 빈 목록을 준다.
+
+    "모호할 때만 묻는다"의 판정 **단일 출처** — :func:`sheet_overview` 위에 얇게 얹는다:
+    CSV·단일 시트는 물을 것이 없어 빈 목록, 2+ 시트는 조용한 첫 시트 선택을 막고 사용자에게
+    확정을 요구할 근거(시트 목록)를 돌려준다. CLI(``--sheet`` 게이트)와 웹(시트 선택
+    다이얼로그, #33)이 같은 이 판정을 공유한다 — 두 표면의 판정 드리프트를 원천 차단.
+    """
+    overview = sheet_overview(path)
+    return overview if len(overview) >= 2 else []
+
+
 class ExcelDataSource:
     def __init__(self, path: str, sheet: "str | None" = None, header_row: int = 1):
         self.path = path
