@@ -164,10 +164,11 @@
   }
 
   /* ---- 웹→Python 이벤트 ---- */
+  /* busy 잠금 대상은 하드코딩 id 배열이 아니라 [data-busy-lock] 속성으로 선언한다 — 새
+     컨트롤을 추가할 때 이 함수를 잊고 지나쳐도(#26 setBusy 누락 회귀) 속성만 붙이면
+     자동으로 잠긴다(구조적 재발 방지). */
   function setBusy(busy) {
-    for (const id of ["btnPickData", "btnPickFolder", "jobSel", "selAll", "selNone"]) {
-      $(id).disabled = busy;
-    }
+    $("scr-run").querySelectorAll("[data-busy-lock]").forEach((el) => { el.disabled = busy; });
     $("genBtn").disabled = busy || !(LAST && LAST.gate && LAST.gate.enabled);
     $("genBtn").textContent = busy ? "생성 중…" : "이 작업으로 문서 생성";
   }

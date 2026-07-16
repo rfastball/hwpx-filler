@@ -40,6 +40,10 @@ from .screens import TxtController, default_pool_registry
 
 WINDOW_TITLE = "HWPX Filler"  # 창 제목 = 파일 다이얼로그 소유주 창을 FindWindowW 로 찾는 키
 
+# 파일 선택 다이얼로그 필터 — pick_data_file·pick_pool_data_file 공유 단일 출처(둘 다
+# "엑셀/CSV 데이터" 참조를 다루므로 필터가 같다; 확장자 자체의 단일 출처는 EXCEL_FILTER_PATTERN).
+_EXCEL_OR_ANY_FILTERS = [("엑셀/CSV 데이터", EXCEL_FILTER_PATTERN), ("모든 파일", "*.*")]
+
 
 # ------------------------------------------------------------------ 경로 해석
 def _repo_root() -> Path:
@@ -127,7 +131,7 @@ class WebFrontend:
         확정된 시트로의 실제 로드는 :meth:`load_data_sheet` 가 담당한다.
         """
         log(f"pick_data_file: enter screen={screen}")
-        filters = [("엑셀/CSV 데이터", EXCEL_FILTER_PATTERN), ("모든 파일", "*.*")]
+        filters = _EXCEL_OR_ANY_FILTERS
         path = open_file_dialog(filters, owner_title=WINDOW_TITLE)
         log(f"pick_data_file: dialog returned {path!r}")
         if not path:
@@ -229,7 +233,7 @@ class WebFrontend:
         ``pick_data_file`` 과 달리 어떤 컨트롤러에도 로드하지 않는다 — 등록은 참조
         저장이지 데이터 로드가 아니다(행 미저장 불변식). None = 취소.
         """
-        filters = [("엑셀/CSV 데이터", EXCEL_FILTER_PATTERN), ("모든 파일", "*.*")]
+        filters = _EXCEL_OR_ANY_FILTERS
         return open_file_dialog(filters, owner_title=WINDOW_TITLE)
 
     def reveal_corrupt_job(self, path: str) -> "str | None":

@@ -110,6 +110,7 @@
         <span style="flex:1"></span>
         <button class="btn" data-act="profile-apply">프로파일 적용…</button>
         <button class="btn" data-act="profile-save">프로파일로 저장…</button>
+        <button class="btn" data-act="profile-delete">프로파일 삭제…</button>
         <button class="btn" data-act="confirm-all">모두 확정</button>
         <button class="btn" data-act="unconfirm-all">모두 해제</button>
       </div>`;
@@ -261,6 +262,7 @@
       case "save": await doSave({}); break;
       case "profile-apply": await profileApply(); break;
       case "profile-save": await profileSave(); break;
+      case "profile-delete": await profileDelete(); break;
       default: break;
     }
   }
@@ -310,6 +312,26 @@
       r = await Bridge.call(SCREEN, "profile_save", { name: name.trim(), confirm: true });
     }
     if (r && r.ok === false) window.alert(r.error || "프로파일을 저장할 수 없습니다.");
+  }
+
+  async function profileDelete() {
+    const res = await Bridge.call(SCREEN, "profile_list", {});
+    const bases = (res && res.bases) || [];
+    if (!bases.length) {
+      window.alert("저장된 매핑 프로파일이 없습니다.");
+      return;
+    }
+    const listing = bases
+      .map((b) => `· ${b.name} (필드 ${b.field_count} · 참조 작업 ${b.job_refs})`).join("\n");
+    const name = window.prompt(`삭제할 프로파일 이름을 입력하세요:\n\n${listing}`, "");
+    if (name === null || !name.trim()) return;
+    let r = await Bridge.call(SCREEN, "profile_delete", { name: name.trim() });
+    if (r && r.needs_confirm) {
+      // 파괴 확정 — 참조 작업 수를 재진술한 뒤에만 삭제(confirm-or-alarm).
+      if (!window.confirm(r.confirm_text)) return;
+      r = await Bridge.call(SCREEN, "profile_delete", { name: name.trim(), confirm: true });
+    }
+    if (r && r.ok === false) window.alert(r.error || "프로파일을 삭제할 수 없습니다.");
   }
 
   /* 모두 확정 — 내용 행 즉시 확정 + 비움 승격 이름게이트(ADR-E 반사적 dismiss 봉쇄). */

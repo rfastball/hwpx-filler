@@ -265,6 +265,7 @@
   }
 
   function wire() {
+    $("homeRefresh").addEventListener("click", () => Bridge.call(SCREEN, "refresh", {}));
     $("homeNewJob").addEventListener("click", () => window.Nav.go("editor"));
     $("homeMatrix").addEventListener("click", () => window.Nav.go("matrix"));
     $("homeNewTxt").addEventListener("click", () => window.Nav.go("txt"));

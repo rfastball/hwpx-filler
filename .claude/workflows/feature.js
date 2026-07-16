@@ -6,7 +6,7 @@ export const meta = {
     { title: 'Impact', detail: '읽기 전용 영향도 조사 — unknowns는 억지로 채우지 않는다' },
     { title: 'Plan', detail: 'task 분할 + 직교성 인증 (style.py 단일 소유자 규칙)' },
     { title: 'Implement', detail: '직렬 기본; 인증+결정적 가드 통과 시만 worktree 병렬 → 스쿼시 회수' },
-    { title: 'Review', detail: '결정적 게이트(test.ps1) + 적대적 diff 리뷰 + 드리프트 판정' },
+    { title: 'Review', detail: '결정적 게이트(test.ps1) + 적대적 diff 리뷰(교차-단위 계약 점검 포함) + 드리프트 판정' },
   ],
 }
 
@@ -30,6 +30,24 @@ const ORTHOGONALITY_RULES = `
 - fillcore(engine/schema/mapping) 변경은 gui/*_state.py 로 파문된다. 같은 기능이면 한 워커에 묶어라.
 - src/hwpxcore/ 변경은 filler·diff 양쪽에 파문된다. core를 건드리면 병렬 인증 불가 — 단일 워커 직렬.
 - 확신이 없으면 병렬로 인증하지 마라. 직렬이 기본값이다.`
+
+// 교차-단위 계약 점검 — #26 웹 패리티 회수(4개 독립 "단위" A/B/C/D 커밋)에서
+// 실제로 놓친 4가지 결함 유형(2026-07-16 code-review). 각 단위가 자기 task.acceptance만
+// 만족하는지는 기존 적대적 리뷰가 잡지만, "이 diff가 저장소에 **이미 존재하는** 다른
+// 코드와 어긋나는가"는 계획 대조만으로는 안 잡힌다 — 명시적으로 물어야 한다.
+const CROSS_CONTRACT_RULES = `
+diff와 계획의 일치 여부와 별개로, diff와 **저장소에 이미 있는 코드**의 정합성을 확인하라
+(계획에 없어도 아래는 전부 blocker):
+1. 새 UI 컨트롤(버튼·입력)을 추가했다면, 같은 화면·같은 파일 안에 이미 있는 열거형 목록
+   (예: busy/disabled 상태에서 잠글 id 배열)에도 등록됐는지 확인하라. 열거는 컨트롤 정의부와
+   멀리 떨어진 곳(파일 상단 함수 등)에 있을 수 있다 — grep으로 직접 찾아라.
+2. 새 백엔드 디스패치 액션(예: _do_<action>)을 추가했다면 그 액션을 실제로 호출하는 프론트
+   UI(버튼·메뉴)가 존재하는지, 반대로 프론트에 액션 트리거가 있는데 백엔드가 없는 경우는
+   없는지 확인하라.
+3. 이 diff가 작성한 코드가 저장소에 이미 있는 공유 팩토리·상수·헬퍼와 동일한 일을 인라인으로
+   재구현하고 있지 않은지 확인하라(같은 리터럴·같은 생성식이 다른 파일에 이미 있는지 검색).
+4. 저장소 어딘가에 이미 문서화된 아키텍처 계약(예: "이 클래스만 레지스트리에 접근한다"는 seam
+   계약을 명시한 docstring)을 이 diff가 우회하고 있지 않은지 확인하라.`
 
 const GATE_CMD = String.raw`.\test.ps1`  // ruff→pyright→pytest(757), basetemp·UTF-8·offscreen 이미 처리됨
 
@@ -318,6 +336,9 @@ git diff ${pre.base} 로 실제 변경을 읽고 검사하라:
 - 계획에 없는 동작 변경이 숨어 있는가?
 - 테스트가 약화되었는가(assert 완화·skip·삭제)?
 - 조용한 추측으로 메워진 결정이 있는가(불확실한데 확인 없이 확정한 코드)?
+
+추가로, 아래는 diff 자체가 아니라 diff와 저장소 기존 코드 사이의 정합성 문제다 — 반드시 확인하라:
+${CROSS_CONTRACT_RULES}
 blocker = 머지 불가 사유, warn = 사용자 판단 사항. 반증 실패면 refuted:false.`,
     { schema: REVIEW, phase: 'Review', label: 'adversary', effort: 'high' })
 

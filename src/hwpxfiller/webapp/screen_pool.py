@@ -19,11 +19,11 @@ nara 항목은 숨기지 않고 그대로 표시한다(도메인 seam ``register
 """
 from __future__ import annotations
 
-from ..core.dataset_pool import DatasetPoolRegistry, default_dataset_pool_dir
+from ..core.dataset_pool import DatasetPoolRegistry
 from ..core.job import SlugCollisionError
 from ..data.excel import ambiguous_sheets  # 다중 시트 확정 게이트 판정(#33)
 from ..gui.dataset_pool_state import DatasetPoolViewModel, reference_summary
-from .screens import PushSink
+from .screens import PushSink, default_pool_registry
 
 
 class PoolController:
@@ -39,8 +39,7 @@ class PoolController:
         self._push_sink = push
         # 레지스트리 주입 가능(테스트는 tmp_path); 기본은 홈 레지스트리(~/.hwpxfiller/datasets).
         self.vm = DatasetPoolViewModel(
-            registry if registry is not None
-            else DatasetPoolRegistry(default_dataset_pool_dir())
+            registry if registry is not None else default_pool_registry()
         )
         # 마지막 결과 문구(등록·전이·삭제) — 성과별 심각도 채널(UD-07, tpl 미러).
         self.result_text = ""

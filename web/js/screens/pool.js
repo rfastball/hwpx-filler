@@ -122,6 +122,7 @@
   }
 
   function wire() {
+    $("poolRefresh").addEventListener("click", () => Bridge.call(SCREEN, "refresh", {}));
     $("poolList").addEventListener("click", onListClick);
     $("btnPoolRegister").addEventListener("click", openRegModal);
     $("poolRegCancel").addEventListener("click", closeRegModal);

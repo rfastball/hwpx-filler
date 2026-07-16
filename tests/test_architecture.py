@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -113,6 +114,33 @@ def test_filler_data_package_imports_no_core_or_qt() -> None:
                 assert not n.startswith("hwpxfiller.core"), (
                     f"data/{path.name} 가 hwpxfiller.core 를 임포트한다 — 역의존 금지"
                 )
+
+
+def test_pool_registry_construction_has_one_call_site() -> None:
+    """webapp 의 ``DatasetPoolRegistry(...)`` 생성은 ``screens.py`` 의
+    ``default_pool_registry()`` 단일 출처를 통해서만 — 인라인 재구현 재유입 차단.
+
+    2026-07-16 high 코드리뷰(#26 웹 패리티 2차)에서 이 팩토리보다 나중에 커밋된
+    ``screen_editor.py``가 팩토리를 쓰지 않고 ``DatasetPoolRegistry(default_dataset_pool_dir())``
+    를 그대로 복붙한 결함이 확정됐다(``screen_pool.py`` 도 동형 — 다만 그쪽은 팩토리
+    도입보다 먼저 작성돼 역사적으로는 이해 가능하나 지금은 정합 대상). 팩토리가 나중에
+    바뀌면(캐싱·환경변수 오버라이드 등) 인라인 사본은 조용히 구식 동작을 유지한다 — 그
+    드리프트를 재유입 즉시 차단한다. ``gui/`` 계층(Qt 시절 VM, 팩토리보다 먼저 존재)은
+    이 규칙 밖이다 — webapp 이 아래로 임포트하는 방향이라 gui 가 webapp 을 참조할 수 없다.
+    """
+    pattern = re.compile(r"\bDatasetPoolRegistry\(")
+    offenders: list[str] = []
+    webapp_dir = ROOT / "src" / "hwpxfiller" / "webapp"
+    for path in sorted(webapp_dir.glob("*.py")):
+        if path.name == "screens.py":
+            continue  # 단일 출처(default_pool_registry 정의부)
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if pattern.search(line):
+                offenders.append(f"{path.relative_to(ROOT)}:{lineno}: {line.strip()}")
+    assert not offenders, (
+        "DatasetPoolRegistry 인라인 재구현 재유입 — "
+        "webapp/screens.py 의 default_pool_registry() 를 참조하라:\n" + "\n".join(offenders)
+    )
 
 
 def test_core_mapping_carries_no_source_specific_vocabulary() -> None:

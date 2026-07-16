@@ -164,6 +164,7 @@
   }
 
   function wire() {
+    $("tplRefresh").addEventListener("click", () => Bridge.call(SCREEN, "refresh", {}));
     $("tplHwpxList").addEventListener("click", onHwpxClick);
     $("tplTxtList").addEventListener("click", onTxtClick);
     $("btnTplNewTxt").addEventListener("click", () => openEditModal("new", "", "", ""));

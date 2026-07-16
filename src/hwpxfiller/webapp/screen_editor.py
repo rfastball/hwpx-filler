@@ -23,11 +23,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..core.dataset_pool import (
-    DatasetPoolItem,
-    DatasetPoolRegistry,
-    default_dataset_pool_dir,
-)
+from ..core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
 from ..core.format_engine import presets as format_presets
 from ..core.job import DEFAULT_FILENAME_PATTERN, Job, JobRegistry, SlugCollisionError
 from ..core.mapping import TYPES
@@ -46,7 +42,7 @@ from ..gui.mapping_state import (
     PartialGate,
     gate_for_template,
 )
-from .screens import PushSink
+from .screens import PushSink, default_pool_registry
 
 # 표시형 프리셋은 유형별 고정 → 한 번 계산해 스냅샷에 싣는다(코어 라벨 그대로).
 _FMT_OPTIONS = {t: [{"code": code, "label": label} for label, code in format_presets(t)] for t in TYPES}
@@ -73,8 +69,7 @@ class EditorController:
             else MappingBaseRegistry(default_mapping_bases_dir())
         )
         self.pool_registry = (
-            pool_registry if pool_registry is not None
-            else DatasetPoolRegistry(default_dataset_pool_dir())
+            pool_registry if pool_registry is not None else default_pool_registry()
         )
         self._reset()
 
