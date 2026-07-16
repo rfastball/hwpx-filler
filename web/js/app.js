@@ -1,6 +1,17 @@
 /* 라우터 + 부팅 — 레일 나비로 화면 전환, pywebview 준비 시 실화면 초기화.
    화면별 로직은 js/screens/*.js 가 소유(TxtScreen.init 등). 여기선 배선만. */
 (function () {
+  /* 비동기 실패 최종 백스톱 — 지역 가드(디스패처 try/catch·.catch)를 빠뜨린 브리지
+     rejection 이 조용한 무반응으로 증발하는 결함류(F8·F9·#45 profile_*·P2 onClick)가
+     파일마다 반복 재발했다. 사이트별 규율 대신 셸에서 구조적으로 받는다: 여기 도달한
+     rejection 은 "가드를 잊은 곳"뿐이며(지역에서 잡힌 실패는 오지 않는다) alert 로
+     시끄럽게 재진술한다(confirm-or-alarm). 개별 화면의 맞춤 가드는 계속 1차 방어선. */
+  window.addEventListener("unhandledrejection", (e) => {
+    e.preventDefault();
+    const r = e.reason;
+    window.alert(String((r && r.message) || r));
+  });
+
   const navs = document.querySelectorAll(".navbtn");
   const scrs = document.querySelectorAll(".scr");
 
