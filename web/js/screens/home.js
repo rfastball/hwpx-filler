@@ -259,20 +259,13 @@
     }
   }
 
-  /* 템플릿 다시 연결(#67) — run.js doRelinkTemplate 과 같은 pick→confirm 흐름. */
-  async function relinkTemplate(name) {
-    try {
-      const path = await Bridge.pickTemplatePath();
-      if (!path) return;                            // 취소
-      let res = await Bridge.call(SCREEN, "relink_template", { name, path });
-      if (res && res.needs_confirm) {
-        if (!window.confirm(res.confirm_text + "\n\n계속할까요?")) return;
-        res = await Bridge.call(SCREEN, "relink_template", { name, path, confirm: true });
-      }
-      if (res && res.ok === false) { window.alert(res.error); return; }
-    } catch (err) {
-      window.alert(String((err && err.message) || err));
-    }
+  /* 템플릿 다시 연결(#67) — 공용 흐름(relink.js)에 위임. 홈은 로그 패널이 없어 커밋
+     재진술을 alert 로 병기한다(카드만 조용히 바뀌는 것 방지, PR #70 리뷰) — 사용자
+     취소는 본인 행위라 재알림 소음 생략, 실패는 공용 흐름이 이미 alert. */
+  function relinkTemplate(name) {
+    Relink.relinkTemplate(SCREEN, name, (msg, kind) => {
+      if (kind === "ok") window.alert(msg);
+    });
   }
 
   function onJobsClick(e) {

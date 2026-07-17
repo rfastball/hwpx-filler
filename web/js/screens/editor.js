@@ -298,6 +298,9 @@
     } else if (d.status === "dead") {
       line = `<p class="hint danger" style="margin-top:0">⚠ 기본 데이터: <b>${esc(d.name)}</b> —
         참조 파일이 없습니다(${esc(d.path)}). 데이터 관리에서 [다시 연결…]하세요.</p>`;
+    } else if (d.status === "corrupt") {  // 항목 JSON 손상 — 삭제와 다른 조치(데이터 관리 격리 표시와 정합)
+      line = `<p class="hint danger" style="margin-top:0">⚠ 기본 데이터: <b>${esc(d.name)}</b> —
+        등록 데이터를 읽을 수 없습니다(손상). 데이터 관리에서 확인하세요.</p>`;
     } else {  // missing — 풀 항목 자체가 사라짐
       line = `<p class="hint danger" style="margin-top:0">⚠ 기본 데이터: <b>${esc(d.name)}</b> —
         등록 데이터에 없습니다(삭제됨). 데이터 관리에서 등록하거나 데이터를 다시 선택하세요.</p>`;

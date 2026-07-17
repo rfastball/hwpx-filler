@@ -91,6 +91,9 @@
     if (act === "relink") {
       // 다시 연결(#67) — dispatch 아님: 등록 모달을 행 값으로 프리필해 열고, 확정은
       // 기존 동명 등록 confirm 경로(register_excel needs_confirm)가 그대로 담당한다.
+      // 시트 프리필 주의: 다른 워크북으로 바꾸면 옛 시트명이 실려갈 수 있다 — 등록의
+      // 모호 시트 게이트는 sheet 미지정만 보므로 여기선 못 잡고, 겨눔 관문
+      // (load_pool_item_checked)이 loud 하게 잡는다(수용, PR #70 리뷰 기록).
       const row = ((LAST && LAST.rows) || []).find((r) => r.name === name);
       if (row) openRegModal({
         name: row.name, path: row.locate_path, sheet: row.sheet, note: row.note,

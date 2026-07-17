@@ -288,11 +288,11 @@ class PoolTargetingMixin:
             return res
         self.data_label = name
         self.data_source = "pool"
-        # 로케이트 경로 캐시(#67) — 파일 참조(excel)만 경로가 있다(nara 등은 "").
-        opts = res["item"].opts
-        self.data_track_path = (
-            opts.get("path", "") if isinstance(opts, dict) else ""
-        ) or ""
+        # 로케이트 경로 캐시(#67) — kind 판정을 DatasetPoolRow.locate_path 와 동형으로
+        # (excel 만 파일 경로; opts["path"]만 보면 두 사이트의 판정이 표류한다 — PR #70 리뷰).
+        item = res["item"]
+        raw = item.opts.get("path") if isinstance(item.opts, dict) else None
+        self.data_track_path = raw if (item.kind == "excel" and isinstance(raw, str)) else ""
         self._after_pool_load(res["records"])
         return {"ok": True, "label": source_label("pool", name)}
 

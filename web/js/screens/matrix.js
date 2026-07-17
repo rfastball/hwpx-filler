@@ -50,7 +50,7 @@
     }
     // 로케이트 버튼은 <label> 밖(#67) — 라벨 클릭 전달로 체크박스가 오토글되지 않게.
     host.innerHTML = jobs.map((j) =>
-      `<div class="rec"><label style="display:flex;gap:var(--sp-8);align-items:center;flex:1">` +
+      `<div class="rec"><label class="rec-main">` +
       `<input type="checkbox" data-job="${esc(j.name)}"${j.selected ? " checked" : ""}>` +
       `<span class="rf">${esc(j.name)}</span></label>` +
       `${PathTrack.affordances(j.template_path, { only: ["reveal", "copy"] })}</div>`).join("");

@@ -823,8 +823,10 @@ def test_default_dataset_linked_shown_at_save_step(tmp_path):
     assert d == {"name": "multi_sheet", "status": "linked", "path": str(MULTI_SHEET)}
 
 
-def test_default_dataset_dead_and_missing_are_restated(tmp_path):
-    """참조 파일 이동(dead)·풀 항목 삭제(missing)를 조용히 두지 않고 재진술(#67)."""
+def test_default_dataset_dead_corrupt_missing_are_restated(tmp_path):
+    """파일 이동(dead)·항목 JSON 손상(corrupt)·항목 삭제(missing)를 각각 정직하게
+    재진술한다(#67) — 손상을 '삭제됨'으로 합치면 데이터 관리 화면(손상 격리 표시)과
+    다른 조치를 안내하게 된다(PR #70 리뷰)."""
     ctrl, _ = _controller26(tmp_path)
     _complete_with_data(ctrl, "끊김표시")
     ctrl.dispatch("save", {})
@@ -838,7 +840,14 @@ def test_default_dataset_dead_and_missing_are_restated(tmp_path):
     d = ctrl.snapshot()["default_dataset"]
     assert d["status"] == "dead" and d["path"].endswith("이동됨.xlsx")
 
-    pool.delete("multi_sheet")                             # 항목 자체 소멸(missing)
+    corrupted = next((tmp_path / "pool").glob("*.dataset.json"))
+    corrupted.write_text("{깨진 JSON", encoding="utf-8")   # 항목 손상(corrupt)
+    ctrl.load_job("끊김표시")
+    ctrl.dispatch("goto_step", {"step": 3})
+    d = ctrl.snapshot()["default_dataset"]
+    assert d == {"name": "multi_sheet", "status": "corrupt", "path": ""}
+
+    corrupted.unlink()                                     # 항목 자체 소멸(missing)
     ctrl.load_job("끊김표시")
     ctrl.dispatch("goto_step", {"step": 3})
     d = ctrl.snapshot()["default_dataset"]

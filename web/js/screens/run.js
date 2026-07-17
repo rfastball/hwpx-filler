@@ -25,6 +25,9 @@
       $("runBody").style.display = s.has_job ? "" : "none";
       // 작업·데이터·선택이 바뀐 새 스냅샷 → 이전 생성 결과 무효화(#28, UD-10). txt.resetNote 패턴.
       if (!generating) resetGenResult();
+      // data-busy-lock 불변식 재적용(#67 재연결 버튼 = 첫 동적 삽입 잠금 대상) — setBusy 는
+      // 생성 경로에서만 불려 재렌더로 새로 만들어진 컨트롤이 잠금을 놓칠 수 있다(PR #70 리뷰).
+      setBusy(generating);
     });
   }
 
@@ -244,26 +247,10 @@
     Bridge.call(SCREEN, act, { field: badgeEl.dataset.f });
   }
 
-  /* 템플릿 다시 연결(#67) — 피커(경로만) → 1차 재진술(needs_confirm, 드리프트 병기)
-     → 확인 시에만 커밋. 커밋 후 서버가 작업을 재적재하므로 결과 문구를 그대로 로그. */
-  async function doRelinkTemplate() {
+  /* 템플릿 다시 연결(#67) — 공용 흐름(relink.js)에 위임, 결과 재진술 채널만 log 주입. */
+  function doRelinkTemplate() {
     if (!(LAST && LAST.job_name)) return;
-    try {
-      const path = await Bridge.pickTemplatePath();
-      if (!path) return;                            // 취소
-      let res = await Bridge.call(SCREEN, "relink_template", { name: LAST.job_name, path });
-      if (res && res.needs_confirm) {
-        if (!window.confirm(res.confirm_text + "\n\n계속할까요?")) {
-          log("다시 연결 취소 — 템플릿 연결을 바꾸지 않았습니다."); return;
-        }
-        res = await Bridge.call(SCREEN, "relink_template",
-          { name: LAST.job_name, path, confirm: true });
-      }
-      if (res && res.ok === false) { window.alert(res.error); log("다시 연결 실패: " + res.error); return; }
-      if (res && res.restated) log(res.restated);
-    } catch (err) {
-      window.alert(String((err && err.message) || err));
-    }
+    Relink.relinkTemplate(SCREEN, LAST.job_name, (msg) => log(msg));
   }
 
   function onRecChange(e) {
