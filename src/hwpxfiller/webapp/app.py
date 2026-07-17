@@ -20,6 +20,7 @@ from __future__ import annotations
 import datetime
 import json
 import os
+import shutil
 import sys
 import threading
 from pathlib import Path
@@ -525,10 +526,13 @@ def _selftest_drive(window: "object") -> None:
             # 실사용 경로 그대로 구동 — 토글 클릭이 지나는 theme.js Theme.set→Bridge.setTheme→
             # api.set_theme 홉 전체(브리지 가드 포함)를 게이트가 덮는다(api 직접 호출로 바꾸면
             # theme.js 결함이 무커버가 된다). evaluate_js 는 promise 를 대기하지 않으므로
-            # 디스패치·파일 쓰기 완료를 짧게 기다린 뒤 in-process 로 판독해 확정한다(#74).
+            # 디스패치·파일 쓰기 완료를 데드라인까지 폴링해 확정한다(#74) — 고정 sleep 은
+            # 느린 러너에서 정상 빌드를 빨갛게 만드는 게이트 플레이크(#75 리뷰).
             window.evaluate_js(  # type: ignore[attr-defined]
                 "window.Theme.set(" + json.dumps(set_theme) + ")")
-            time.sleep(1.0)  # 브리지 디스패치 + save_theme 디스크 반영 여유
+            deadline = time.monotonic() + 10.0
+            while settings.load_theme() != set_theme and time.monotonic() < deadline:
+                time.sleep(0.1)
             result["set_result"] = settings.load_theme()  # 종료 전 실제 디스크 반영 확정
         except Exception as exc:  # noqa: BLE001
             result["error"] = repr(exc)
@@ -616,6 +620,25 @@ def _alarm(msg: str, window: "object | None" = None) -> None:
             pass
 
 
+def _sweep_stale_profiles(root: Path) -> None:
+    """고아 WebView2 프로필 정리 — 크래시 잔재·구판 단일 폴더 레이아웃(EBWebView)을 지운다.
+
+    살아있는 인스턴스 판별은 rename 프로브: 열린 파일(profile.lock, 프로세스 수명 동안 유지)이
+    있는 폴더는 Windows 에서 rename 이 실패한다 — 실패하면 건너뛴다. rmtree 직접 시도와 달리
+    프로브 실패에 부분 삭제가 없다(살아있는 프로필 무손상)."""
+    if not root.is_dir():
+        return
+    for child in root.iterdir():
+        if not child.is_dir():
+            continue
+        probe = child.with_name(f"{child.name}.{os.getpid()}.sweep")
+        try:
+            child.rename(probe)
+        except OSError:
+            continue  # 사용 중(다른 인스턴스) 또는 일시 잠김 — 다음 부팅에 재시도
+        shutil.rmtree(probe, ignore_errors=True)
+
+
 def main() -> int:
     import webview
 
@@ -639,13 +662,21 @@ def main() -> int:
     # '은닉'을 쓴다 — 창을 숨긴 채 띄우고 DOM 로드(loaded) 시 저장 테마를 data-theme 로 주입한
     # 뒤 show 하여, 라이트 첫 페인트를 화면 밖에서 소진시킨다. show 는 정확히 1회.
     shown = threading.Event()
+    loaded_seen = threading.Event()  # 폴백 오경보 판별 — 미발화 vs 발화-후-진행중 구분(#75 리뷰)
+    show_lock = threading.Lock()  # check-then-show 원자화 — loaded 핸들러 vs 폴백 타이머 스레드
 
-    def _show_once() -> None:
-        if not shown.is_set():
+    def _show_once() -> bool:
+        """창 표시(정확히 1회). **이 호출이 실제 표시를 수행했으면** True — 경합 경로가
+        '내가 강제로 띄웠는가'를 판별해 오경보를 내지 않게 한다."""
+        with show_lock:
+            if shown.is_set():
+                return False
             window.show()  # type: ignore[attr-defined]
             shown.set()  # show 성공 **후** — 먼저 세우면 show 실패가 다른 경로까지 영구 차단
+            return True
 
     def _apply_theme_then_show() -> None:  # loaded 콜백(0-인자로 호출됨, event.py:40)
+        loaded_seen.set()
         err: "object | None" = None
         try:
             theme = settings.load_theme()
@@ -659,20 +690,36 @@ def main() -> int:
                     err = f"window.Theme 부재(evaluate_js 반환={ok!r})"
         except Exception as exc:  # noqa: BLE001  테마 실패로 창이 안 뜨면 안 된다 — show 진행 후 경보
             err = exc
-        _show_once()
+        try:
+            _show_once()
+        except Exception as exc:  # noqa: BLE001  pywebview Event.set 이 logger 로 삼키면(#75 리뷰)
+            # 창은 안 보이는데 경보가 없다 — 여기서 직접 경보(창 은닉 상태라 alert 채널은 생략).
+            _alarm(f"창 표시(show) 실패: {exc!r}")
         if err is not None:
             _alarm(f"테마 주입 실패: {err!r}", window)
 
     window.events.loaded += _apply_theme_then_show
 
     # 폴백(confirm-or-alarm): loaded 가 끝내 안 오면 창이 영영 숨겨진다 — 상한 후 강제 show + 경보.
+    # 순서 계약(#75 리뷰): show 가 경보보다 **먼저**다 — _alarm 의 evaluate_js 는 pywebview 가
+    # _pywebviewready 를 최대 20s 대기하므로, 미발화 시나리오에서 경보를 먼저 하면 은닉 상한이
+    # 사실상 40s 로 배가된다.
     def _fallback_show() -> None:
-        if not shown.is_set():
-            _alarm("loaded 미발화 — 폴백으로 창 표시(테마 미주입 가능)", window)
-            try:
-                _show_once()
-            except Exception as exc:  # noqa: BLE001  타이머 데몬 스레드 — 조용한 증발 금지
-                _alarm(f"폴백 show 실패: {exc!r}")
+        if loaded_seen.is_set() and shown.wait(10.0):
+            return  # loaded 도착·핸들러 진행 중이었고 유예 안에 정상 완주 — 경보 없음
+        try:
+            forced = _show_once()
+        except Exception as exc:  # noqa: BLE001  타이머 데몬 스레드 — 조용한 증발 금지
+            _alarm(f"폴백 show 실패: {exc!r}")
+            return
+        if not forced:
+            return  # 그 사이 loaded 핸들러가 표시 완료 — 정상 부팅, 경보 없음
+        _alarm(
+            "loaded 후 표시 매달림 — 폴백으로 창 표시(테마 미주입 가능)"
+            if loaded_seen.is_set()
+            else "loaded 미발화 — 폴백으로 창 표시(테마 미주입 가능)",
+            window,
+        )
 
     # 20s: 타이머가 webview.start() 전에 걸리므로 예산이 WebView2 콜드스타트(초회 런타임 부팅·
     # AV 스캔) 전체를 포함한다 — 짧으면 정상 부팅에서 폴백이 선발화해 무테마 창(FOUC)+거짓 경보.
@@ -681,17 +728,37 @@ def main() -> int:
     timer.start()
 
     # private_mode 기본(True) = 랜덤 빈 포트 + InPrivate(비영속) → 포트 스쿼팅·캐시 스테일·서버
-    # 크로스톡 클래스 구조 소멸(#74). storage_path 는 고정 핀 — 미지정 시 pywebview 가 부팅마다
-    # %TEMP% 에 새 WebView2 프로필을 만들고 정상 닫기에만 rmtree 하므로(winforms init_storage)
-    # 크래시·강제종료마다 수십 MB 가 고아로 쌓인다. 고정 폴더면 재사용·정상 종료 시 삭제로 유계.
-    # InPrivate 는 storage_path 와 독립(IsInPrivateModeEnabled)이라 #74 이득은 그대로다.
+    # 크로스톡 클래스 구조 소멸(#74). 프로필은 홈/webview/profile-<pid> 로 **인스턴스별** 분리 —
+    # 고정 단일 폴더는 private_mode 의 clear_user_data(정상 닫기 시 rmtree, edgechromium)가
+    # 동시 실행 중인 다른 인스턴스의 프로필을 밑에서 지운다(#75 리뷰). 크래시 고아는 다음 부팅의
+    # _sweep_stale_profiles 가 정리하므로 유계는 유지되고, 매 부팅 새 폴더 = 재시작 간 공유 디스크
+    # 캐시가 InPrivate 의미론과 무관하게 없다(스테일 자산 클래스의 이중 차단).
+    # resolve() 필수: 상대 storage_path 는 WebView2 생성 실패 → MSHTML(IE) 조용한 폴백(#69/#71 실측).
     # 정상 닫기 = webview.start 반환 = 클린 종료(소이슈 ①).
-    storage = str(settings.home_dir() / "webview")
-    if "--selftest" in sys.argv:
-        webview.start(_selftest_drive, window, gui=gui, storage_path=storage)
-    else:
-        webview.start(gui=gui, storage_path=storage)
-    timer.cancel()
+    webview_root = (settings.home_dir() / "webview").resolve()
+    try:
+        # 구판 영속처(고정 오리진 localStorage) 테마 일회 이관 — 스윕이 구 프로필을 지우기 전에.
+        settings.migrate_legacy_theme(
+            webview_root / "EBWebView" / "Default" / "Local Storage" / "leveldb")
+    except Exception as exc:  # noqa: BLE001  이관 실패가 부팅을 막으면 안 된다 — 경보 후 진행
+        _alarm(f"구판 테마 이관 실패(기본값으로 진행): {exc!r}")
+    _sweep_stale_profiles(webview_root)
+    storage_dir = webview_root / f"profile-{os.getpid()}"
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    # 수명 잠금: 열린 파일이 있는 폴더는 rename 이 실패한다(Windows) — 다른 인스턴스의 스윕
+    # 프로브가 살아있는 이 프로필을 고아로 오인해 지우지 못하게 프로세스 수명 동안 쥔다.
+    profile_lock = (storage_dir / "profile.lock").open("w")
+    try:
+        if "--selftest" in sys.argv:
+            webview.start(_selftest_drive, window, gui=gui, storage_path=str(storage_dir))
+        else:
+            webview.start(gui=gui, storage_path=str(storage_dir))
+    finally:
+        timer.cancel()
+        profile_lock.close()
+        # 자기 정리 — pywebview 의 clear_user_data rmtree 는 profile.lock 때문에 부분 실패하므로
+        # 잠금 해제 후 잔여를 여기서 마저 지운다(크래시로 못 지우면 다음 부팅 스윕이 담당).
+        shutil.rmtree(storage_dir, ignore_errors=True)
     return 0
 
 

@@ -12,7 +12,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import time
 from pathlib import Path
+
+from hwpxcore.atomic import write_text_atomic
 
 VALID_THEMES = ("system", "light", "dark")
 
@@ -58,18 +62,66 @@ def load_theme() -> str:
     return theme if theme in VALID_THEMES else "system"
 
 
-def save_theme(mode: str) -> None:
-    """테마 선택 영속 — 다른 키 보존(read-modify-write) + 원자 교체.
+_REPLACE_RETRIES = 5  # Windows 공유 위반(아래) 일시 충돌 흡수 상한 — 총 ~0.5s
 
-    비유효 ``mode`` 는 조용히 무시하지 않고 ``ValueError`` (confirm-or-alarm)."""
+
+def save_theme(mode: str) -> None:
+    """테마 선택 영속 — 다른 키 보존(read-modify-write) + 원자 교체(정본 write_text_atomic).
+
+    비유효 ``mode`` 는 조용히 무시하지 않고 ``ValueError`` (confirm-or-alarm).
+
+    Windows 교체 경합: 다른 인스턴스(#74 지원 상태)가 settings.json 을 읽는 순간의 교체는
+    PermissionError(공유 위반 — CPython 은 FILE_SHARE_DELETE 없이 연다)로 튄다. 아무 문제
+    없는 일시 충돌이 사용자 alert 로 승격되지 않도록 유계 재시도 후에만 전파한다."""
     if mode not in VALID_THEMES:
         raise ValueError(f"유효하지 않은 테마: {mode!r} (허용: {VALID_THEMES})")
     path = _settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    data = _read_for_update(path)
-    data["theme"] = mode
-    # tmp 이름에 pid — 동시 실행 인스턴스(#74 지원 상태)가 같은 tmp 를 겹쳐 쓰면 한쪽 replace 가
-    # FileNotFoundError 로 사용자 alert 까지 튄다. 프로세스별 이름이면 각자 원자 교체로 수렴.
-    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(path)  # 원자 교체 — 부분 쓰기가 판독되지 않도록
+    for attempt in range(_REPLACE_RETRIES):
+        data = _read_for_update(path)  # 재시도마다 재판독 — 경합 상대가 갱신한 다른 키를 보존
+        data["theme"] = mode
+        try:
+            write_text_atomic(path, json.dumps(data, ensure_ascii=False, indent=2))
+            return
+        except PermissionError:
+            if attempt == _REPLACE_RETRIES - 1:
+                raise
+            time.sleep(0.05 * (attempt + 1))
+
+
+# 구판 localStorage 값의 LevelDB 물리 표현 — 레코드는 키 바이트 직후(.ldb 는 0바이트,
+# .log 는 값 길이 varint 1바이트 간격)에 값(``\x01`` 접두 + UTF-8)이 온다 → 유계 간격 스캔.
+_LEGACY_THEME_RECORD = re.compile(rb"hwpxfiller\.theme.{0,8}?\x01(system|light|dark)", re.DOTALL)
+
+
+def migrate_legacy_theme(legacy_leveldb_dir: Path) -> "str | None":
+    """구판(#74 이전) 영속처에서 저장 테마를 일회 이관 — 업그레이드의 조용한 설정 소실 방지.
+
+    구판은 고정 오리진(``http://127.0.0.1:42001``)의 localStorage ``hwpxfiller.theme`` 에
+    저장했다(프로필 = 홈/webview). 신판 ``settings.json`` 에 ``theme`` 키가 없고 구 프로필이
+    남아 있으면 LevelDB 파일에서 마지막 기록을 회수해 저장한다 — mtime 오름차순 × 파일 내
+    마지막 매치가 최신 기록이다.
+
+    반환: 이관·저장된 테마, 이관 대상 없으면 ``None``. 실패(예외)는 호출부가 경보한다."""
+    if "theme" in _read():
+        return None  # 신판 값이 이미 있다 — 구판이 이겨선 안 된다
+    if not legacy_leveldb_dir.is_dir():
+        return None
+    try:
+        files = sorted(legacy_leveldb_dir.iterdir(), key=lambda p: p.stat().st_mtime)
+    except OSError:
+        return None
+    found: "str | None" = None
+    for f in files:
+        if f.suffix not in (".log", ".ldb"):
+            continue
+        try:
+            blob = f.read_bytes()
+        except OSError:
+            continue
+        for m in _LEGACY_THEME_RECORD.finditer(blob):
+            found = m.group(1).decode("ascii")
+    if found is None:
+        return None
+    save_theme(found)
+    return found

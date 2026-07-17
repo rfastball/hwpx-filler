@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -56,14 +57,83 @@ def test_save_theme_propagates_unreadable_file(home):
         settings.save_theme("dark")
 
 
-def test_save_theme_tmp_name_is_per_process(home):
-    """동시 실행 인스턴스(#74 지원 상태)가 같은 tmp 를 겹쳐 쓰면 한쪽 replace 가
-    FileNotFoundError 로 사용자 alert 까지 튄다 — tmp 이름은 프로세스 고유여야 한다."""
-    from pathlib import Path
+def test_save_theme_routes_through_canonical_atomic_write(home, monkeypatch):
+    """durable 쓰기는 정본 hwpxcore.atomic 을 지나야 한다(#75 리뷰) — 수제 tmp+replace 는
+    실패 시 고아 tmp 를 영구히 남기고, 같은 pid 의 두 스레드가 같은 tmp 를 겹쳐 쓴다."""
+    calls: list[str] = []
+    real = settings.write_text_atomic
 
-    src = Path(settings.__file__).read_text(encoding="utf-8")
-    assert "os.getpid()" in src.split("def save_theme")[1], (
-        "save_theme 의 tmp 파일명에 pid 가 없습니다 — 동시 실행 교체 경합(#75 리뷰).")
+    def spy(path, text, *a, **k):
+        calls.append(Path(path).name)
+        return real(path, text, *a, **k)
+
+    monkeypatch.setattr(settings, "write_text_atomic", spy)
     settings.save_theme("dark")
-    assert not list(home.glob("settings.json.*.tmp"))  # 교체 후 잔여 tmp 없음
+    assert calls == ["settings.json"]
     assert settings.load_theme() == "dark"
+    assert not list(home.glob("settings.json*.tmp"))  # 교체 후 잔여 tmp 없음
+
+
+def test_save_theme_retries_transient_permission_error(home, monkeypatch):
+    """다른 인스턴스(#74 지원 상태)가 읽는 순간의 교체는 PermissionError(Windows 공유 위반) —
+    일시 충돌은 재시도로 흡수해야 하고(사용자 alert 승격 금지), 지속 실패만 전파한다(#75 리뷰)."""
+    real = settings.write_text_atomic
+    remaining = {"fails": 2}
+
+    def flaky(path, text, *a, **k):
+        if remaining["fails"] > 0:
+            remaining["fails"] -= 1
+            raise PermissionError(13, "공유 위반 모사")
+        return real(path, text, *a, **k)
+
+    monkeypatch.setattr(settings, "write_text_atomic", flaky)
+    monkeypatch.setattr(settings.time, "sleep", lambda s: None)
+    settings.save_theme("dark")
+    assert settings.load_theme() == "dark"
+
+    def always_fails(path, text, *a, **k):
+        raise PermissionError(13, "지속 실패 모사")
+
+    monkeypatch.setattr(settings, "write_text_atomic", always_fails)
+    with pytest.raises(PermissionError):
+        settings.save_theme("light")
+
+
+# ---------------------------------------------------------------- 구판 테마 이관(#75 리뷰)
+def _leveldb_log_record(key: bytes, value: bytes) -> bytes:
+    # .log 레코드 근사 — 키 바이트 직후 값 길이 varint(1바이트) + 값. 스캐너는 유계 간격만 가정.
+    return key + bytes([len(value)]) + value
+
+
+_LEGACY_KEY = b"_http://127.0.0.1:42001\x00\x01hwpxfiller.theme"
+
+
+def test_migrate_legacy_theme_recovers_last_written_value(home, tmp_path):
+    lvl = tmp_path / "leveldb"
+    lvl.mkdir()
+    (lvl / "000003.log").write_bytes(
+        b"\x00junk"
+        + _leveldb_log_record(_LEGACY_KEY, b"\x01light")
+        + b"\x7f"
+        + _leveldb_log_record(_LEGACY_KEY, b"\x01dark")
+        + b"tail")
+    assert settings.migrate_legacy_theme(lvl) == "dark"  # 마지막 기록이 이긴다
+    assert settings.load_theme() == "dark"  # settings.json 까지 실저장
+
+
+def test_migrate_legacy_theme_never_overrides_new_settings(home, tmp_path):
+    settings.save_theme("light")
+    lvl = tmp_path / "leveldb"
+    lvl.mkdir()
+    (lvl / "000003.log").write_bytes(_leveldb_log_record(_LEGACY_KEY, b"\x01dark"))
+    assert settings.migrate_legacy_theme(lvl) is None
+    assert settings.load_theme() == "light"
+
+
+def test_migrate_legacy_theme_absent_or_empty_is_noop(home, tmp_path):
+    assert settings.migrate_legacy_theme(tmp_path / "없음") is None
+    empty = tmp_path / "leveldb"
+    empty.mkdir()
+    (empty / "000003.log").write_bytes(b"\x00no-theme-here")
+    assert settings.migrate_legacy_theme(empty) is None
+    assert settings.load_theme() == "system"
