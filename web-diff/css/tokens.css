@@ -1,8 +1,8 @@
 /* 생성 파일 — scripts/gen_design_tokens.py 가 src/hwpxfiller/gui/design_tokens.json 에서 찍는다.
    직접 편집 금지. 색을 바꾸려면 JSON 을 고치고 `python scripts/gen_design_tokens.py` 실행.
    diff 웹 번들 전용 사본(web/css/tokens.css 와 동일 팔레트, 값의 단일 출처는 그 JSON). */
+/* <gen:tokens> */
 :root{
-  /* <gen:tokens> */
   --a-primary:#2874a6;
   --a-primary-h:#1f5a80;
   --a-warn:#a05a00;
@@ -13,6 +13,8 @@
   --a-card:#ffffff;
   --a-window:#f6f7f9;
   --a-ink:#1c2126;
+  --a-on-accent:#ffffff;
+  --a-shadow:rgba(0,0,0,.2);
   --a-unconf:#fff3bf;
   --a-unmatch:#ffd8d8;
   --a-empty:#b00020;
@@ -38,5 +40,88 @@
   --n-ink-control:#2b3038;
   --log-surface:#1e242b;
   --log-ink:#c6d0da;
-  /* </gen:tokens> */
+  color-scheme:light;
 }
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --a-primary:#4a9bde;
+    --a-primary-h:#6bb0e8;
+    --a-warn:#e0a850;
+    --a-danger:#ec7264;
+    --a-ok:#43b877;
+    --a-muted:#98a0ab;
+    --a-border:#333a44;
+    --a-card:#1c2127;
+    --a-window:#131619;
+    --a-ink:#e7eaee;
+    --a-on-accent:#0f1418;
+    --a-shadow:rgba(0,0,0,.5);
+    --a-unconf:#3a3320;
+    --a-unmatch:#3f2626;
+    --a-empty:#f2705f;
+    --a-sel:#10314a;
+    --fb-fill-bg:#17301f;
+    --fb-fill-bd:#2f5e3f;
+    --fb-blank-bg:#33291a;
+    --fb-blank-bd:#5c4a2b;
+    --fb-missing-bg:#3a221f;
+    --fb-missing-bd:#6b3a34;
+    --fb-ack-bg:#262340;
+    --fb-ack-fg:#b7aef0;
+    --fb-ack-bd:#453f6b;
+    --n-surface-alt:#23272d;
+    --n-hover:#262b31;
+    --n-pressed:#2d333a;
+    --n-track:#2a2f36;
+    --n-header-bg:#191d22;
+    --n-border-strong:#454c56;
+    --n-border-control:#6b7280;
+    --n-ink-soft:#aab1bb;
+    --n-header-ink:#c2c8d0;
+    --n-ink-control:#dbe0e6;
+    --log-surface:#12161b;
+    --log-ink:#c6d0da;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --a-primary:#4a9bde;
+  --a-primary-h:#6bb0e8;
+  --a-warn:#e0a850;
+  --a-danger:#ec7264;
+  --a-ok:#43b877;
+  --a-muted:#98a0ab;
+  --a-border:#333a44;
+  --a-card:#1c2127;
+  --a-window:#131619;
+  --a-ink:#e7eaee;
+  --a-on-accent:#0f1418;
+  --a-shadow:rgba(0,0,0,.5);
+  --a-unconf:#3a3320;
+  --a-unmatch:#3f2626;
+  --a-empty:#f2705f;
+  --a-sel:#10314a;
+  --fb-fill-bg:#17301f;
+  --fb-fill-bd:#2f5e3f;
+  --fb-blank-bg:#33291a;
+  --fb-blank-bd:#5c4a2b;
+  --fb-missing-bg:#3a221f;
+  --fb-missing-bd:#6b3a34;
+  --fb-ack-bg:#262340;
+  --fb-ack-fg:#b7aef0;
+  --fb-ack-bd:#453f6b;
+  --n-surface-alt:#23272d;
+  --n-hover:#262b31;
+  --n-pressed:#2d333a;
+  --n-track:#2a2f36;
+  --n-header-bg:#191d22;
+  --n-border-strong:#454c56;
+  --n-border-control:#6b7280;
+  --n-ink-soft:#aab1bb;
+  --n-header-ink:#c2c8d0;
+  --n-ink-control:#dbe0e6;
+  --log-surface:#12161b;
+  --log-ink:#c6d0da;
+  color-scheme:dark;
+}
+/* </gen:tokens> */

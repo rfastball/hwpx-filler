@@ -1,5 +1,5 @@
 {
-  "_note": "앱 B 디자인 토큰 단일 출처. 색을 바꾸려면 여기만 고치고 `python scripts/gen_design_tokens.py` 실행 — style.py(Qt QSS)와 목업 CSS가 함께 재생성된다. 백엔드 무접촉. neutral(중성 회색)·badge tint 는 style.py 전용(QSS 내부 크롬). space/radius/type 은 V14 에서 실제 배선됨(BASE_QSS metric 상수 + 소비 뷰 여백/타이포).",
+  "_note": "앱 B 디자인 토큰 단일 출처. 색을 바꾸려면 여기만 고치고 `python scripts/gen_design_tokens.py` 실행 — 웹 CSS(web·web-diff)와 목업 CSS가 함께 재생성된다. 백엔드 무접촉. 최상위 그룹(color/state/badge/neutral/log)이 라이트 팔레트, 형제 `dark` 섹션이 같은 group/key 로 다크 팔레트다(gen 이 :root + @media(prefers-color-scheme:dark) + [data-theme=dark] 3블록 방출). space/radius/type 은 라이트 전용(웹 미방출; 스케일 토큰은 별도 라운드).",
   "color": {
     "primary": "#2874a6",
     "primary_hover": "#1f5a80",
@@ -10,7 +10,9 @@
     "border": "#e2e4e8",
     "card_bg": "#ffffff",
     "window_bg": "#f6f7f9",
-    "ink": "#1c2126"
+    "ink": "#1c2126",
+    "on_accent": "#ffffff",
+    "shadow": "rgba(0,0,0,.2)"
   },
   "state": {
     "unconfirmed_bg": "#fff3bf",
@@ -45,6 +47,57 @@
   "log": {
     "surface": "#1e242b",
     "ink": "#c6d0da"
+  },
+  "dark": {
+    "_note": "다크 팔레트 — 단순 반전이 아니라 손으로 재산출. 원칙: 밝은 accent(primary/ok)는 흰글씨 대신 어두운 on_accent 잉크를 얹고 다크 표면 위 텍스트로도 읽히게 밝힘(라이트에선 accent 가 어두워 흰글씨였던 이중용도 충돌 해소). 파스텔 틴트(state/badge)는 같은 색조의 어둡고 저채도 배경 + 밝힌 전경/보더. 중성 램프는 극성 반전(hover 가 surface 보다 밝음). 대비 하한은 test_contrast_wcag 가 기계 비준.",
+    "color": {
+      "primary": "#4a9bde",
+      "primary_hover": "#6bb0e8",
+      "warn": "#e0a850",
+      "danger": "#ec7264",
+      "ok": "#43b877",
+      "muted": "#98a0ab",
+      "border": "#333a44",
+      "card_bg": "#1c2127",
+      "window_bg": "#131619",
+      "ink": "#e7eaee",
+      "on_accent": "#0f1418",
+      "shadow": "rgba(0,0,0,.5)"
+    },
+    "state": {
+      "unconfirmed_bg": "#3a3320",
+      "unmatched_bg": "#3f2626",
+      "data_empty_fg": "#f2705f",
+      "select_bg": "#10314a"
+    },
+    "badge": {
+      "fill_bg": "#17301f",
+      "blank_bg": "#33291a",
+      "missing_bg": "#3a221f",
+      "ack_bg": "#262340",
+      "ack_fg": "#b7aef0",
+      "fill_border": "#2f5e3f",
+      "blank_border": "#5c4a2b",
+      "missing_border": "#6b3a34",
+      "ack_border": "#453f6b",
+      "missing_press": "#472925"
+    },
+    "neutral": {
+      "surface_alt": "#23272d",
+      "hover": "#262b31",
+      "pressed": "#2d333a",
+      "track": "#2a2f36",
+      "header_bg": "#191d22",
+      "border_strong": "#454c56",
+      "border_control": "#6b7280",
+      "ink_soft": "#aab1bb",
+      "header_ink": "#c2c8d0",
+      "ink_control": "#dbe0e6"
+    },
+    "log": {
+      "surface": "#12161b",
+      "ink": "#c6d0da"
+    }
   },
   "space": { "xs": 2, "sm": 6, "md": 12, "lg": 18 },
   "radius": { "xs": 3, "sm": 4, "md": 6, "lg": 9, "pill": 11 },

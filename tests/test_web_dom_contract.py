@@ -20,6 +20,7 @@ WEB_INDEX = Path(__file__).resolve().parents[1] / "web" / "index.html"
 WEB_CSS = Path(__file__).resolve().parents[1] / "web" / "css" / "app.css"
 # web-diff(2판 diff 뷰어)는 별개 산출물이지만 강제색 대응은 web/ 와 짝 — 둘 다 가드한다.
 WEB_DIFF_CSS = Path(__file__).resolve().parents[1] / "web-diff" / "css" / "app.css"
+WEB_DIFF_INDEX = Path(__file__).resolve().parents[1] / "web-diff" / "index.html"
 
 # 반응형 경계(#27): 창 최소폭(760)보다 넓은 이 경계에서 2판 레이아웃이 세로 적층으로 접혀야
 # 최소 크기에서도 가로 오버플로 없이 쓸 수 있다. 경계나 접힘 규칙이 사라지면 회귀.
@@ -353,6 +354,58 @@ def test_component_gallery_links_real_stylesheets_drift_free():
     assert not re.search(r"--a-[\w-]+\s*:\s*#", html), (
         "갤러리 인라인 스타일이 앱 색 토큰(--a-*)을 재정의합니다 — "
         "링크된 tokens.css 만 쓰세요(인라인 복사는 드리프트 재도입)."
+    )
+
+
+def test_web_diff_pinned_to_light_until_tints_themed():
+    """web-diff 는 다크 셀 틴트가 준비될 때까지 라이트로 고정돼야 한다(<html data-theme="light">).
+
+    공유 tokens.css 가 다크 3블록을 함께 실어 web-diff 도 OS 다크를 자동 추종하게 되는데, diff
+    표의 added/removed 셀 배경은 백엔드 스냅샷의 라이트 파스텔을 인라인 style 로 박아 테마를
+    안 따른다 — 다크에선 밝은 본문 잉크가 밝은 틴트 위에 얹혀 판독 불가. 셀 틴트를 토큰화하기
+    전까지 라이트 고정이 정답이며, 이 핀이 조용히 풀려 깨진 자동 다크가 재개방되는 걸 막는다.
+    """
+    html = WEB_DIFF_INDEX.read_text(encoding="utf-8")
+    m = re.search(r"<html\b[^>]*>", html)
+    assert m and 'data-theme="light"' in m.group(0), (
+        "web-diff <html> 이 data-theme=\"light\" 로 고정돼야 합니다 — "
+        "diff 셀 틴트가 테마-불가지라 자동 다크에서 표가 깨집니다."
+    )
+
+
+def test_theme_helper_loaded_and_toggle_present():
+    """다크모드 토글 배선 정적 가드 — theme.js 로드 + 레일 토글 버튼(접근 이름·툴팁).
+
+    토글이 사라지면 사용자는 OS 자동에만 묶여 앱 내 override 를 잃는다. 버튼은 navbtn 이
+    아니어야 한다(라우터가 .navbtn 전부에 go(data-scr) 를 배선 → data-scr 없는 토글이 navbtn
+    이면 클릭이 화면을 지운다) — id 존재 + a11y 속성만 정적으로 단언한다.
+    """
+    index = WEB_INDEX.read_text(encoding="utf-8")
+    assert 'src="js/theme.js"' in index, "theme.js 가 index.html 에 로드되지 않았습니다(다크모드 토글)."
+    m = re.search(r'<button\b[^>]*\bid="themeToggle"[^>]*>', index)
+    assert m, "테마 토글 버튼(id=themeToggle)이 없습니다."
+    tag = m.group(0)
+    assert "navbtn" not in tag, "themeToggle 은 navbtn 이 아니어야 합니다 — 라우터가 클릭 시 화면을 지웁니다."
+    for attr in ("aria-label", "title"):
+        am = re.search(attr + r'="([^"]*)"', tag)
+        assert am and am.group(1).strip(), f"themeToggle 에 비어있지 않은 {attr} 이 필요합니다."
+
+
+def test_fouc_guard_applies_theme_before_stylesheets():
+    """FOUC 방지 인라인이 스타일시트 링크 **전에** 저장 테마를 documentElement 에 적용해야 한다.
+
+    theme.js 는 body 말미 로드라 첫 페인트가 라이트로 번쩍인다 — head 인라인이 tokens.css
+    링크보다 앞서 localStorage 를 동기 되읽어 data-theme 를 세워야 깜빡임이 없다. 순서까지 가드.
+    """
+    index = WEB_INDEX.read_text(encoding="utf-8")
+    fouc = re.search(r'localStorage\.getItem\(\s*["\']hwpxfiller\.theme["\']\s*\)', index)
+    assert fouc, "FOUC 방지 인라인(localStorage 'hwpxfiller.theme' 되읽기)이 없습니다."
+    assert "setAttribute" in index[fouc.start(): fouc.start() + 200], (
+        "FOUC 인라인이 data-theme 를 setAttribute 하지 않습니다."
+    )
+    tokens_link = index.find('href="css/tokens.css"')
+    assert tokens_link != -1 and fouc.start() < tokens_link, (
+        "FOUC 인라인이 tokens.css 링크보다 뒤에 있습니다 — 첫 페인트 라이트 번쩍임(FOUC) 회귀."
     )
 
 

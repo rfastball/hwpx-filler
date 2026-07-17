@@ -147,3 +147,55 @@ class TestWebSelftestGate:
         assert isinstance(top, (int, float)) and abs(top - 150) < 2, (
             f"실화면 스크롤 유실(재구성이 0 으로 리셋됐거나 예외): {top!r}"
         )
+
+    def test_theme_defaults_to_system_when_unpersisted(self, selftest_result: dict) -> None:
+        # 저장된 테마 선택이 없으면 앱은 OS 를 따른다 — data-theme 속성이 없어야(=system) @media 지배.
+        # 실수로 특정 테마가 강제되면(속성 상주) OS 추종이 깨지므로 되읽어 가드한다.
+        tp = selftest_result["theme_persist"]
+        assert tp["data_theme"] is None, f"미저장인데 data-theme 이 강제됨: {tp!r}"
+        assert tp["a_card"] == "#ffffff", f"미저장 기본이 라이트 카드가 아님: {tp!r}"
+
+
+@pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
+def test_theme_choice_persists_across_restart_without_flicker(tmp_path) -> None:
+    """다크모드 선택이 프로세스 재시작을 넘어 유지되고 콜드부트 첫 페인트 전 적용된다(영속+무깜빡임).
+
+    이번 변경의 유일한 런타임 미검증 고리 — private_mode=False + storage_path 가 실제로
+    localStorage 를 디스크에 남기는지 — 를 두 프로세스로 end-to-end 실증한다. 단일 프로세스
+    reload 는 private_mode 참/거짓을 구분 못 하므로(같은 세션 내 localStorage 는 어느 쪽이든
+    삶) 반드시 별개 콜드부트여야 한다:
+      (1) 쓰기 프로세스가 Theme.set('dark') 로 심고 정식 종료(디스크 플러시).
+      (2) 같은 HWPXFILLER_HOME(=storage_path) 로 새 콜드부트 → head FOUC 인라인이 그 값을
+          첫 페인트 전 data-theme='dark' 로 세우고 --a-card 가 다크값으로 해소된다.
+    유지 안 되면 data_theme=null(리셋), FOUC 미적용이면 속성 부재로 각각 시끄럽게 실패한다.
+    """
+    import gen_design_tokens as gen
+
+    home = tmp_path / "home"
+    out_write = tmp_path / "write.json"
+    out_read = tmp_path / "read.json"
+    base = dict(os.environ, HWPXFILLER_HOME=str(home))
+    cmd = [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"]
+
+    # (1) 쓰기 단계 — 저장 테마를 심고 종료.
+    w = subprocess.run(
+        cmd, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
+        env=dict(base, HWPX_SELFTEST_OUT=str(out_write), HWPX_SELFTEST_SET_THEME="dark"),
+    )
+    assert out_write.exists(), (
+        f"쓰기 단계 결과 미생성 — rc={w.returncode}\nstderr={w.stderr[-2000:]}")
+    written = json.loads(out_write.read_text(encoding="utf-8"))
+    assert written.get("set_result") == "dark", f"쓰기 단계 Theme.set 실패: {written}"
+
+    # (2) 읽기 단계 — 같은 storage_path 로 콜드부트, FOUC 적용 결과 되읽기.
+    r = subprocess.run(
+        cmd, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
+        env=dict(base, HWPX_SELFTEST_OUT=str(out_read)),
+    )
+    assert out_read.exists(), (
+        f"읽기 단계 결과 미생성 — rc={r.returncode}\nstderr={r.stderr[-2000:]}")
+    tp = json.loads(out_read.read_text(encoding="utf-8"))["theme_persist"]
+    assert tp["data_theme"] == "dark", (
+        f"콜드부트에서 저장 테마 미적용 — 영속(private_mode/storage_path) 또는 FOUC 실패: {tp!r}")
+    dark_card = gen.load_tokens()["dark"]["color"]["card_bg"]
+    assert tp["a_card"] == dark_card, f"다크 --a-card({dark_card}) 미해소: {tp!r}"

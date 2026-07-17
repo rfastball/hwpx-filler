@@ -37,12 +37,19 @@ body{padding:0}
 .galapp .stage{padding:16px;overflow:visible}
 .galapp .rail{overflow:visible}
 .stack{display:flex;flex-direction:column;gap:9px}
+/* 테마 검증 토글 — 색은 앱 토큰 참조만(하드코딩 금지, 드리프트-0 가드 준수). */
+.gal-theme{margin-top:10px;font:inherit;font-size:12px;cursor:pointer;
+  border:1px solid var(--n-border-strong);background:var(--a-card);color:var(--n-ink-control);
+  padding:5px 12px;border-radius:6px}
+.gal-theme:hover{background:var(--n-hover)}
 </style>
 </head>
 <body>
 <header class="gal-mast">
   <h1>컴포넌트 갤러리</h1>
-  <p>실 <span class="path">web/css/tokens.css</span> + <span class="path">web/css/app.css</span> 를 그대로 링크 — <b>드리프트 0</b>. 앱 컴포넌트를 모든 상태로 전시하는 디자인 참조·반복 표면(라이트 전용, 현재 앱 거울 — 다크모드는 app.css 에 들어오면 자동 반영).</p>
+  <p>실 <span class="path">web/css/tokens.css</span> + <span class="path">web/css/app.css</span> 를 그대로 링크 — <b>드리프트 0</b>. 앱 컴포넌트를 모든 상태로 전시하는 디자인 참조·반복 표면. tokens.css 가 다크 팔레트를 실으므로 아래 토글로 전 컴포넌트를 다크에서 한눈에 눈검증한다(다크값 튜닝 표면).</p>
+  <!-- 검증 전용 토글 — data-theme 만 세팅(색 리터럴 없음). 실앱 토글은 web/js/theme.js 소유. -->
+  <button class="gal-theme" id="galTheme" type="button">테마: 시스템</button>
 </header>
 
 <main class="catalog">
@@ -197,5 +204,25 @@ body{padding:0}
   </div>
 
 </main>
+<script>
+/* 갤러리 테마 검증 토글 — System→Light→Dark 순환. documentElement 의 data-theme 만 세팅해
+   링크된 tokens.css 의 :root[data-theme] override 를 켠다(실앱 theme.js 와 같은 기제, 여기선
+   영속 없이 순간 검증만). 색 리터럴을 일절 두지 않아 드리프트-0 가드를 통과한다. */
+(function () {
+  var ORDER = ["system", "light", "dark"];
+  var TEXT = { system: "시스템", light: "라이트", dark: "다크" };
+  var btn = document.getElementById("galTheme");
+  function cur() {
+    var v = document.documentElement.getAttribute("data-theme");
+    return v === "light" || v === "dark" ? v : "system";
+  }
+  btn.addEventListener("click", function () {
+    var next = ORDER[(ORDER.indexOf(cur()) + 1) % ORDER.length];
+    if (next === "system") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", next);
+    btn.textContent = "테마: " + TEXT[next];
+  });
+})();
+</script>
 </body>
 </html>
