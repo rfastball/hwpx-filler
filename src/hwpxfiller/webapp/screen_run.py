@@ -43,6 +43,7 @@ from .screens import (
     PushSink,
     default_pool_registry,
     load_pool_into,
+    relink_job_template,
     source_label,
 )
 
@@ -256,6 +257,26 @@ class RunController(PoolTargetingMixin):
                 "다른 데이터를 직접 선택하거나 데이터 관리에서 참조를 다시 연결하세요."
             )
             self.data_notice_level = "warn"
+
+    def _do_relink_template(self, p: dict) -> dict:
+        """작업 템플릿 다시 연결(#67) — 공유 확정 게이트에 위임 + 기선택 작업 재적재.
+
+        커밋된 작업이 지금 화면에 선택돼 있으면 옛 경로의 VM 이 stale 이므로
+        ``_do_select_job`` 으로 재구성한다 — 이는 데이터 겨눔·저장 폴더를 초기화하므로
+        (자동 조준은 재실행) 조용히 두지 않고 결과 문구로 재진술한다(confirm-or-alarm).
+        """
+        res = relink_job_template(
+            self.registry, p["name"], p.get("path", ""), confirm=bool(p.get("confirm")),
+        )
+        if res.get("relinked") and self.vm is not None and self.vm.job.name == p["name"]:
+            self._do_select_job({"name": p["name"]})
+            res["restated"] = (
+                "템플릿을 다시 연결했습니다 — 작업을 다시 불러왔습니다. "
+                "데이터·저장 폴더 선택을 확인하세요."
+            )
+        elif res.get("relinked"):
+            res["restated"] = "템플릿을 다시 연결했습니다."
+        return res
 
     def _do_toggle_record(self, p: dict) -> None:
         self.selection.toggle(int(p["index"]), bool(p["value"]))

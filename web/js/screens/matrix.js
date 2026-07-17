@@ -48,15 +48,22 @@
         `<div class="rec muted">저장된 작업이 없습니다 — 작업 에디터에서 작업을 먼저 만드세요.</div>`;
       return;
     }
+    // 로케이트 버튼은 <label> 밖(#67) — 라벨 클릭 전달로 체크박스가 오토글되지 않게.
     host.innerHTML = jobs.map((j) =>
-      `<label class="rec"><input type="checkbox" data-job="${esc(j.name)}"${j.selected ? " checked" : ""}>` +
-      `<span class="rf">${esc(j.name)}</span></label>`).join("");
+      `<div class="rec"><label class="rec-main">` +
+      `<input type="checkbox" data-job="${esc(j.name)}"${j.selected ? " checked" : ""}>` +
+      `<span class="rf">${esc(j.name)}</span></label>` +
+      `${PathTrack.affordances(j.template_path, { only: ["reveal", "copy"] })}</div>`).join("");
   }
 
   function renderData(s) {
     // 소스 종류 병기 라벨("파일: x" / "등록 데이터: 이름", #26 #6) — 서버가 플래그에서 합성(K8).
     $("mxDataLabel").value = s.data_source_label || "";
     $("mxOutDir").value = s.out_dir || "";
+    // 공통 데이터·저장 폴더 로케이트(#67) — run 화면(#outTrack) 미러, 위임은 pathtrack 전역.
+    $("mxDataTrack").innerHTML = PathTrack.affordances(s.data_track_path);
+    $("mxOutTrack").innerHTML =
+      PathTrack.affordances(s.out_dir, { only: ["reveal", "copy"] });
   }
 
   /* 작업별 3상태 배지(ADR-B/E) — 작업 헤더로 묶고, 미입력만 클릭형(확인/철회 토글). */

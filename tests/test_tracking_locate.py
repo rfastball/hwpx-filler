@@ -89,3 +89,32 @@ def test_pool_row_locate_path_excel_only():
     nara = DatasetPoolRow.from_item(
         DatasetPoolItem(name="n", kind="nara", opts={"bgn_dt": "1", "end_dt": "2"}))
     assert nara.locate_path == ""
+
+
+# ------------------------------------------- 매트릭스 세션 경로 화이트리스트(#67)
+def test_frontend_whitelist_covers_matrix_session_paths(tmp_path, monkeypatch):
+    """매트릭스가 파일로 겨눈 공통 데이터·저장 폴더가 소유 화이트리스트에 들어간다(#67).
+
+    #53-B 의 세션 목록은 editor.template_path/data_path·run.out_dir 뿐이라 매트릭스
+    화면 자신의 로케이트 버튼이 loud 거부되는 갭이 있었다 — 갭 봉합의 회귀 심.
+    """
+    from hwpxfiller.webapp import app as app_mod
+
+    monkeypatch.setattr(app_mod, "default_jobs_dir", lambda: tmp_path / "jobs")
+    monkeypatch.setattr(
+        app_mod, "default_pool_registry",
+        lambda: DatasetPoolRegistry(tmp_path / "pool"))
+    frontend = app_mod.WebFrontend(tmp_path / "txt")
+
+    csv = tmp_path / "공통.csv"
+    csv.write_text("a,b\n1,2\n", encoding="utf-8")
+    out = tmp_path / "결과"
+    out.mkdir()
+
+    mx = frontend._controller("matrix")
+    with pytest.raises(ValueError):                       # 겨눔 전 = 세션 밖(거부)
+        frontend._validate_owned(str(csv))
+    mx.load_data_path(str(csv))
+    mx.set_output_folder(str(out))
+    assert frontend._validate_owned(str(csv)) == str(csv)  # 겨눔 후 = 소유
+    assert frontend._validate_owned(str(out)) == str(out)

@@ -254,6 +254,12 @@ class EditorController:
             "dataset_name": self.dataset_name,
             # 작성 출처 provenance(#53-C) — 편집 모드에서 복원한 것(없으면 None).
             "provenance": self._loaded_provenance or None,
+            # 기본 데이터 연결 상태(#67) — 4단계에서만 계산: 표시가 4단계뿐이라
+            # 매핑 편집 등 1~3단계의 잦은 push 가 레지스트리 읽기+exists() 를
+            # 지불할 이유가 없다(4단계 자체의 push 는 change 단위라 비용 무시 수준).
+            "default_dataset": (
+                self._default_dataset_snapshot() if self.step == 3 else None
+            ),
             "notice": (
                 {"text": self.notice_text, "level": self.notice_level}
                 if self.notice_text else None
@@ -277,6 +283,33 @@ class EditorController:
             snap["rows"] = []
             snap["is_complete"] = False
         return snap
+
+    def _default_dataset_snapshot(self) -> "dict | None":
+        """복원한 기본 데이터 참조(#53-A)의 연결 상태 재진술(#67) — 4단계 전용.
+
+        이 세션이 데이터를 새로 골랐으면(저장 시 참조가 그 이름으로 바뀜) 자동등록
+        블록이 이미 그 연결을 말하므로 None(이중 서사 금지). 참조가 없어도 None.
+        상태: ``linked``(풀 항목·파일 실존) / ``dead``(항목은 있으나 파일 이동·삭제)
+        / ``missing``(풀 항목 삭제) / ``corrupt``(항목 JSON 손상). 삭제와 손상을 한
+        문구로 합치면 데이터 관리 화면(손상 격리 표시)과 다른 조치를 안내하게 된다
+        (재진술 정직성 — PR #70 리뷰). 비파일 참조(nara 등)는 경로 없이 linked 로
+        본다 — 파일 실존 판정 대상이 아니다(조준 시점 관문이 거절 담당).
+        """
+        ref = self.default_dataset_ref
+        if self.data_path or not ref:
+            return None
+        try:
+            item = self.pool_registry.load(ref)
+        except FileNotFoundError:
+            return {"name": ref, "status": "missing", "path": ""}
+        except Exception:  # noqa: BLE001 — 손상 JSON 등: '삭제됨'으로 오진술 금지
+            return {"name": ref, "status": "corrupt", "path": ""}
+        raw = item.opts.get("path") if isinstance(item.opts, dict) else None
+        path = raw if (item.kind == "excel" and isinstance(raw, str)) else ""
+        if not path:
+            return {"name": ref, "status": "linked", "path": ""}
+        status = "linked" if Path(path).exists() else "dead"
+        return {"name": ref, "status": status, "path": path}
 
     def _schema_summary(self) -> str:
         if self.schema is None:
@@ -408,7 +441,8 @@ class EditorController:
         if not Path(job.template_path).exists():
             raise ValueError(
                 f"템플릿 파일을 찾을 수 없습니다: {job.template_path}\n"
-                "템플릿을 옮겼거나 지웠으면 파일을 되돌리거나 새 작업으로 다시 만들어 주세요."
+                "템플릿을 옮겼거나 지웠으면 파일을 되돌리거나, 실행/홈 화면의 "
+                "[템플릿 다시 연결…]로 경로를 바꿔 주세요."
             )
         self._reset()
         self.load_template_path(job.template_path)

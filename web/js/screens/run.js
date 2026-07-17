@@ -25,6 +25,9 @@
       $("runBody").style.display = s.has_job ? "" : "none";
       // 작업·데이터·선택이 바뀐 새 스냅샷 → 이전 생성 결과 무효화(#28, UD-10). txt.resetNote 패턴.
       if (!generating) resetGenResult();
+      // data-busy-lock 불변식 재적용(#67 재연결 버튼 = 첫 동적 삽입 잠금 대상) — setBusy 는
+      // 생성 경로에서만 불려 재렌더로 새로 만들어진 컨트롤이 잠금을 놓칠 수 있다(PR #70 리뷰).
+      setBusy(generating);
     });
   }
 
@@ -61,7 +64,9 @@
       `<span class="mono">${esc(s.template_name || "(템플릿 없음)")}</span>` +
       ` · 파일명 <span class="mono">${esc(s.filename_pattern)}</span>` +
       // 템플릿 로케이트(#53-B) — 열기·폴더보기·경로복사(소유 화이트리스트 검증).
-      ` ${PathTrack.affordances(s.template_path)}`;
+      ` ${PathTrack.affordances(s.template_path)}` +
+      // 템플릿 다시 연결(#67) — 파일 이동/삭제 시 저장 경로 갱신(confirm 게이트).
+      ` <button class="btn sm" data-act="relink-template" data-busy-lock>템플릿 다시 연결…</button>`;
     $("targetLine").innerHTML = s.template_name
       ? `새 문서 생성 — 작업 템플릿(<span class="mono">${esc(s.template_name)}</span>)으로 한 번에 완성합니다.`
       : `작업 템플릿 경로가 비어 있습니다 — 에디터에서 템플릿을 지정하세요.`;
@@ -242,6 +247,12 @@
     Bridge.call(SCREEN, act, { field: badgeEl.dataset.f });
   }
 
+  /* 템플릿 다시 연결(#67) — 공용 흐름(relink.js)에 위임, 결과 재진술 채널만 log 주입. */
+  function doRelinkTemplate() {
+    if (!(LAST && LAST.job_name)) return;
+    Relink.relinkTemplate(SCREEN, LAST.job_name, (msg) => log(msg));
+  }
+
   function onRecChange(e) {
     const cb = e.target.closest('input[type="checkbox"][data-i]');
     if (!cb) return;
@@ -254,6 +265,10 @@
     $("selAll").addEventListener("click", () => Bridge.call(SCREEN, "set_all", {}));
     $("selNone").addEventListener("click", () => Bridge.call(SCREEN, "set_none", {}));
     $("recList").addEventListener("change", onRecChange);
+    // 재렌더에도 살아남게 안정 컨테이너(#jobMeta)에 위임(#67).
+    $("jobMeta").addEventListener("click", (e) => {
+      if (e.target.closest('[data-act="relink-template"]')) doRelinkTemplate();
+    });
     $("fieldBadges").addEventListener("click", onClick);
     $("fieldBadges").addEventListener("keydown", onBadgeKey);
     $("genBtn").addEventListener("click", () => doGenerate(false));

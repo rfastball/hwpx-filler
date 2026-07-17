@@ -360,3 +360,87 @@ def test_auto_aim_ambiguous_sheet_ref_is_warn(tmp_path):
     snap = ctrl.snapshot()
     assert snap["has_data"] is False and snap["data_notice"]["level"] == "warn"
     assert "시트" in snap["data_notice"]["text"]
+
+
+# ------------------------------------------------- 템플릿 다시 연결(#67)
+def test_relink_template_needs_confirm_restates_paths(tmp_path):
+    """1차 호출 = 기존→새 경로 재진술 확인 요구. 구조 동일이면 드리프트 문구 없음(#67)."""
+    ctrl, _ = _controller(tmp_path)
+    new_tpl = tmp_path / "moved.hwpx"
+    _write_template(new_tpl, ["공고명", "추정가격"])       # 같은 구조 — 드리프트 0
+    res = ctrl.dispatch("relink_template", {"name": "공고서", "path": str(new_tpl)})
+    assert res["ok"] is True and res["needs_confirm"] is True
+    assert "t.hwpx" in res["confirm_text"]                # 기존 경로 재진술
+    assert "moved.hwpx" in res["confirm_text"]            # 새 경로 재진술
+    assert "구조가" not in res["confirm_text"]            # 무드리프트 = 소음 금지
+    # 확인 전엔 durable 불변.
+    assert ctrl.registry.load("공고서").template_path.endswith("t.hwpx")
+
+
+def test_relink_template_drift_restated_in_confirm(tmp_path):
+    """새 파일 구조가 확정 매핑과 다르면 확인 문구에 드리프트 상세+생성 차단 경고 병기(#67)."""
+    ctrl, _ = _controller(tmp_path)
+    new_tpl = tmp_path / "changed.hwpx"
+    _write_template(new_tpl, ["공고명", "낙찰자"])         # 추정가격 소멸 + 낙찰자 유입
+    res = ctrl.dispatch("relink_template", {"name": "공고서", "path": str(new_tpl)})
+    assert res["needs_confirm"] is True
+    assert "구조가" in res["confirm_text"]
+    assert "낙찰자" in res["confirm_text"]                 # describe() 상세(단일 출처)
+    assert "추정가격" in res["confirm_text"]
+    assert "생성이 차단됩니다" in res["confirm_text"]      # 기존 게이트 백스톱 재진술
+
+
+def test_relink_template_unreadable_is_blocked(tmp_path):
+    """읽을 수 없는 파일은 확인으로도 템플릿이 될 수 없다 — 하드 차단 + JSON 불변(#67)."""
+    ctrl, _ = _controller(tmp_path)
+    res = ctrl.dispatch(
+        "relink_template",
+        {"name": "공고서", "path": str(tmp_path / "없는파일.hwpx"), "confirm": True})
+    assert res["ok"] is False
+    assert "연결을 바꾸지 않았습니다" in res["error"]
+    assert ctrl.registry.load("공고서").template_path.endswith("t.hwpx")
+
+
+def test_relink_template_confirm_commits_single_field(tmp_path):
+    """확정 커밋 = template_path 단일 필드 뮤테이션 — 매핑·태그·기본 데이터 참조 보존(#67)."""
+    ctrl, _ = _controller(tmp_path)
+    job = ctrl.registry.load("공고서")
+    job.tags = {"금액구간": "1억미만"}
+    job.default_dataset_ref = "7월공고"
+    ctrl.registry.save(job, allow_overwrite=True)
+    new_tpl = tmp_path / "moved.hwpx"
+    _write_template(new_tpl, ["공고명", "추정가격"])
+    res = ctrl.dispatch(
+        "relink_template", {"name": "공고서", "path": str(new_tpl), "confirm": True})
+    assert res["ok"] is True and res["relinked"] is True
+    saved = ctrl.registry.load("공고서")
+    assert saved.template_path == str(new_tpl)
+    assert saved.tags == {"금액구간": "1억미만"}           # 보존
+    assert saved.default_dataset_ref == "7월공고"          # 보존
+    assert [m.template_field for m in saved.mapping.mappings] == ["공고명", "추정가격"]
+
+
+def test_relink_selected_job_reloads_vm_and_restates(tmp_path):
+    """지금 선택된 작업을 재연결하면 stale VM 을 재적재하고 상태 초기화를 재진술한다(#67)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))               # 데이터 겨눔(재적재로 초기화될 상태)
+    new_tpl = tmp_path / "moved.hwpx"
+    _write_template(new_tpl, ["공고명", "추정가격"])
+    res = ctrl.dispatch(
+        "relink_template", {"name": "공고서", "path": str(new_tpl), "confirm": True})
+    assert res["relinked"] is True
+    assert "다시 불러왔습니다" in res["restated"]           # 조용한 상태 소실 금지
+    assert ctrl.vm.job.template_path == str(new_tpl)       # VM 재구성
+    snap = ctrl.snapshot()
+    assert snap["has_data"] is False                       # 데이터 겨눔 초기화(재진술 대상)
+    assert snap["template_name"] == "moved.hwpx"
+
+
+def test_relink_missing_job_is_loud(tmp_path):
+    """삭제된 작업 이름은 조용한 무반응 대신 loud 재진술(#67 — stale 카드 동형)."""
+    ctrl, _ = _controller(tmp_path)
+    new_tpl = tmp_path / "moved.hwpx"
+    _write_template(new_tpl, ["공고명"])
+    res = ctrl.dispatch("relink_template", {"name": "없는작업", "path": str(new_tpl)})
+    assert res["ok"] is False and "찾을 수 없습니다" in res["error"]

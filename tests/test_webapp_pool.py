@@ -189,3 +189,32 @@ def test_existing_nara_item_is_shown_not_hidden(tmp_path):
     # 동결 결정 회귀 — 나라 등록 액션은 존재하지 않는다(웹 표면 부재가 계약).
     with pytest.raises(ValueError, match="알 수 없는 pool 액션"):
         ctrl.dispatch("register_nara", {"name": "x", "bgn_dt": "a", "end_dt": "b"})
+
+
+# ------------------------------------------------- 다시 연결 표면(#67)
+def test_rows_expose_sheet_and_missing_for_relink(tmp_path):
+    """행이 시트(프리필)와 참조 끊김(missing)을 노출한다 — 죽은 참조를 조용히 두지 않는다(#67)."""
+    ctrl, _, _ = _controller(tmp_path)
+    live = tmp_path / "살아있는.csv"
+    live.write_text("a,b\n1,2\n", encoding="utf-8")
+    ctrl.dispatch("register_excel", {"name": "살아있음", "path": str(live)})
+    ctrl.dispatch("register_excel",
+                  {"name": "끊김", "path": str(tmp_path / "이동된.xlsx"), "sheet": "낙찰현황"})
+    rows = {r["name"]: r for r in ctrl.snapshot()["rows"]}
+    assert rows["살아있음"]["missing"] is False
+    assert rows["살아있음"]["sheet"] == ""
+    assert rows["끊김"]["missing"] is True                 # 파일 부재 → 배지 대상
+    assert rows["끊김"]["sheet"] == "낙찰현황"              # 다시 연결 모달 프리필
+
+
+def test_nara_row_has_no_missing_badge(tmp_path):
+    """비파일 참조(nara)는 locate_path 가 없어 missing 판정 대상이 아니다(#67)."""
+    from hwpxfiller.core.dataset_pool import DatasetPoolItem
+
+    ctrl, reg, _ = _controller(tmp_path)
+    reg.save(DatasetPoolItem(
+        name="나라7월", kind="nara",
+        opts={"bgn_dt": "202607010000", "end_dt": "202607080000"}))
+    ctrl.dispatch("refresh", {})
+    row = ctrl.snapshot()["rows"][0]
+    assert row["missing"] is False and row["locate_path"] == ""

@@ -13,11 +13,13 @@
 (function () {
   const SCREEN = "pool";
   const $ = (id) => document.getElementById(id);
+  let LAST = null;  // 마지막 스냅샷 — 다시 연결 프리필(#67)이 행 데이터를 되찾는다.
 
   const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
 
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
+    LAST = s;
     $("poolCount").textContent = s.count || "";
     renderCorrupt(s);
     renderRows(s);
@@ -49,9 +51,15 @@
       return;
     }
     host.innerHTML = rows.map((r) => {
-      const acts = (r.actions || []).map((a) =>
+      let acts = (r.actions || []).map((a) =>
         `<button class="btn sm" data-act="${esc(a.key)}" data-name="${esc(r.name)}">${esc(a.label)}</button>`
       ).join("");
+      // 다시 연결(#67) — 엑셀 참조만. 기존 동명 등록 confirm 흐름(모달 프리필)으로 합류.
+      if (r.kind === "excel") {
+        acts += `<button class="btn sm" data-act="relink" data-name="${esc(r.name)}">다시 연결…</button>`;
+      }
+      // 참조 끊김(#67) — 파일 이동/삭제를 조용히 두지 않고 배지로 재진술.
+      const broken = r.missing ? `<span class="pill danger">참조 끊김</span>` : "";
       const note = r.note ? `<div class="tplcard-meta muted">${esc(r.note)}</div>` : "";
       // 파일 참조 로케이트(#53-B) — 엑셀 항목만(nara/파이프라인은 locate_path="").
       const track = r.locate_path
@@ -59,7 +67,7 @@
       return `<div class="tplcard">
         <div class="tplcard-top"><span class="tplcard-name" title="${esc(r.reference)}">${esc(r.name)}</span>
           <span class="pill muted">${esc(r.kind_label)}</span>
-          <span class="pill ${esc(r.badge_level)}">${esc(r.badge_label)}</span></div>
+          <span class="pill ${esc(r.badge_level)}">${esc(r.badge_label)}</span>${broken}</div>
         <div class="tplcard-meta muted">${esc(r.reference)}</div>${note}${track}
         <div class="tplcard-acts">${acts}</div></div>`;
     }).join("");
@@ -80,6 +88,18 @@
     if (!btn) return;
     const act = btn.dataset.act;
     const name = btn.dataset.name;
+    if (act === "relink") {
+      // 다시 연결(#67) — dispatch 아님: 등록 모달을 행 값으로 프리필해 열고, 확정은
+      // 기존 동명 등록 confirm 경로(register_excel needs_confirm)가 그대로 담당한다.
+      // 시트 프리필 주의: 다른 워크북으로 바꾸면 옛 시트명이 실려갈 수 있다 — 등록의
+      // 모호 시트 게이트는 sheet 미지정만 보므로 여기선 못 잡고, 겨눔 관문
+      // (load_pool_item_checked)이 loud 하게 잡는다(수용, PR #70 리뷰 기록).
+      const row = ((LAST && LAST.rows) || []).find((r) => r.name === name);
+      if (row) openRegModal({
+        name: row.name, path: row.locate_path, sheet: row.sheet, note: row.note,
+      });
+      return;
+    }
     try {
       if (act === "delete") {
         // 파괴 확정 — 1차=재진술(needs_confirm), 확인 시에만 2차 삭제(조용한 소실 금지).
@@ -95,13 +115,17 @@
     }
   }
 
-  /* ---- 등록 모달(참조만 — 경로 포인터) ---- */
-  function openRegModal() {
-    $("poolRegName").value = "";
-    $("poolRegPath").value = "";
-    $("poolRegSheet").value = "";
-    $("poolRegNote").value = "";
-    window.Modal.open("poolRegModal", { initialFocus: $("poolRegName") });
+  /* ---- 등록 모달(참조만 — 경로 포인터). prefill 있으면 다시 연결(#67) 프리필. ---- */
+  function openRegModal(prefill) {
+    const p = prefill || {};
+    $("poolRegName").value = p.name || "";
+    $("poolRegPath").value = p.path || "";
+    $("poolRegSheet").value = p.sheet || "";
+    $("poolRegNote").value = p.note || "";
+    // 프리필(다시 연결)은 경로 교체가 목적 — 초점을 경로 입력에 둔다.
+    window.Modal.open("poolRegModal", {
+      initialFocus: p.name ? $("poolRegPath") : $("poolRegName"),
+    });
   }
 
   function closeRegModal() { window.Modal.close("poolRegModal"); }

@@ -211,3 +211,41 @@ def test_matrix_load_pool_and_nara_frozen(tmp_path):
     # 목록은 active 만 + nara 표시(은닉 금지).
     names = [i["name"] for i in ctrl.dispatch("pool_sources", {})["items"]]
     assert names == ["공통7월", "나라쿼리"]
+
+
+# ------------------------------------------------- 매트릭스 로케이트(#67)
+def test_job_rows_expose_template_path(tmp_path):
+    """작업 행이 템플릿 전체 경로를 노출한다 — PathTrack 어포던스 배선용(#67)."""
+    ctrl, _ = _controller(tmp_path)
+    rows = {j["name"]: j for j in ctrl.snapshot()["jobs"]}
+    assert rows["공고서"]["template_path"].endswith("gonggo.hwpx")
+    assert rows["낙찰통지"]["template_path"].endswith("nakchal.hwpx")
+
+
+def test_data_track_path_caches_file_and_pool_aim(tmp_path):
+    """공통 데이터 로케이트 경로 — 파일/풀 겨눔 시점에 캐시(렌더당 I/O 0, #67)."""
+    pool = DatasetPoolRegistry(tmp_path / "pool")
+    csv = _data_csv(tmp_path)
+    pool.save(DatasetPoolItem(name="공통7월", kind="excel", opts={"path": csv}))
+    pushes: list = []
+    ctrl = MatrixController(_registry(tmp_path), lambda s, snap: pushes.append((s, snap)),
+                            pool_registry=pool)
+    assert ctrl.snapshot()["data_track_path"] == ""       # 미겨눔 = 빈 경로
+    ctrl.load_data_path(csv)                              # 파일 겨눔
+    assert ctrl.snapshot()["data_track_path"] == csv
+    ctrl.dispatch("load_pool", {"name": "공통7월"})        # 풀 겨눔 — 항목 opts 경로
+    assert ctrl.snapshot()["data_track_path"] == csv
+
+
+def test_data_track_path_survives_failed_pool_aim(tmp_path):
+    """겨눔 실패(나라 동결)는 성공 캐시를 오염시키지 않는다 — 상태 보존(#67)."""
+    pool = DatasetPoolRegistry(tmp_path / "pool")
+    csv = _data_csv(tmp_path)
+    pool.save(DatasetPoolItem(name="공통7월", kind="excel", opts={"path": csv}))
+    pool.save(DatasetPoolItem(
+        name="나라쿼리", kind="nara",
+        opts={"bgn_dt": "202607010000", "end_dt": "202607080000"}))
+    ctrl = MatrixController(_registry(tmp_path), lambda s, snap: None, pool_registry=pool)
+    ctrl.dispatch("load_pool", {"name": "공통7월"})
+    assert ctrl.dispatch("load_pool", {"name": "나라쿼리"})["ok"] is False
+    assert ctrl.snapshot()["data_track_path"] == csv      # 실패가 캐시를 지우지 않음

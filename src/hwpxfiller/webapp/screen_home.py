@@ -39,7 +39,7 @@ from ..core.job import JobRegistry
 from ..core.text_registry import TextTemplateRegistry
 from ..gui.compile_badge import badge_level
 from ..gui.home_state import HomeViewModel, JobRow
-from .screens import PushSink, default_pool_registry
+from .screens import PushSink, default_pool_registry, relink_job_template
 
 # 이어서 실행(continue-runs) 목록 상한 — 최근 실행순 상위 N. 대시보드 요약이라 짧게 유지.
 _CONTINUE_LIMIT = 5
@@ -78,6 +78,10 @@ class HomeController:
             registry, text_registry,
             pool_registry if pool_registry is not None else default_pool_registry(),
         )
+        # 템플릿 다시 연결(#67)용 주입 레지스트리 — vm.registry 우회 금지 가드(#44,
+        # test_architecture)와 정합: seam 밖 durable 뮤테이션은 공유 게이트
+        # (relink_job_template)가 담당하므로 주입분을 직접 보관한다(run.registry 동형).
+        self._job_registry = registry
         self._push_sink = push
 
     # ------------------------------------------------------------- 관측 푸시
@@ -169,6 +173,21 @@ class HomeController:
     def _do_delete_job(self, p: dict) -> None:
         """작업 삭제(웹이 확인 후 호출). VM 이 레지스트리에서 지우고 목록을 갱신·통지한다."""
         self.vm.delete(p["name"])
+
+    def _do_relink_template(self, p: dict) -> dict:
+        """작업 템플릿 다시 연결(#67) — run 과 공유하는 확정 게이트에 위임(단일 출처).
+
+        커밋되면 카드('템플릿 없음' KPI·runnable)를 최신화한다. 실행 화면에 같은 작업이
+        선택돼 있어도 여기서 갱신하지 않는다 — 옛 경로는 죽어 있어 실행 게이트가
+        fail-closed 로 차단하고, 재선택 시 재적재된다(수용, run 쪽 주석과 쌍).
+        """
+        res = relink_job_template(
+            self._job_registry, p["name"], p.get("path", ""), confirm=bool(p.get("confirm")),
+        )
+        if res.get("relinked"):
+            self.vm.refresh()
+            res["restated"] = "템플릿을 다시 연결했습니다."
+        return res
 
     def _do_refresh(self, p: dict) -> None:
         """레지스트리 재조회(다른 화면에서 작업 저장/삭제 후 홈 복귀 시 최신화)."""

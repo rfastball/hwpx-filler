@@ -151,6 +151,9 @@
     const badge = r.compile_badge
       ? ` <span class="pill ${esc(r.badge_level)}">${esc(r.compile_badge)}</span>` : "";
     const runAttr = r.runnable ? "" : " disabled";
+    // 템플릿 다시 연결(#67) — 파일이 사라진 작업(template_missing)에만 복구 동선 노출.
+    const relink = r.template_missing
+      ? `<button class="btn sm" data-relink="${nm}">템플릿 다시 연결…</button>` : "";
     return `<div class="jcard">` +
       `<div class="jn">${nm}${badge}</div>` +
       `<div class="jm">${esc(r.meta_line)}</div>` +
@@ -158,6 +161,7 @@
       `<span class="row">` +
       `<button class="btn primary sm" data-run="${nm}"${runAttr}>실행</button>` +
       `<button class="btn sm" data-edit="${nm}">편집</button>` +
+      relink +
       `<button class="btn sm" data-tags="${nm}">태그</button>` +
       `<button class="btn sm" data-del="${nm}">삭제</button>` +
       `</span></div></div>`;
@@ -255,11 +259,22 @@
     }
   }
 
+  /* 템플릿 다시 연결(#67) — 공용 흐름(relink.js)에 위임. 홈은 로그 패널이 없어 커밋
+     재진술을 alert 로 병기한다(카드만 조용히 바뀌는 것 방지, PR #70 리뷰) — 사용자
+     취소는 본인 행위라 재알림 소음 생략, 실패는 공용 흐름이 이미 alert. */
+  function relinkTemplate(name) {
+    Relink.relinkTemplate(SCREEN, name, (msg, kind) => {
+      if (kind === "ok") window.alert(msg);
+    });
+  }
+
   function onJobsClick(e) {
     const run = e.target.closest("[data-run]");
     if (run && !run.disabled) { runJob(run.dataset.run); return; }
     const edit = e.target.closest("[data-edit]");
     if (edit) { editJob(edit.dataset.edit); return; }
+    const rl = e.target.closest("[data-relink]");
+    if (rl) { relinkTemplate(rl.dataset.relink); return; }
     const tg = e.target.closest("[data-tags]");
     if (tg) { editTags(tg.dataset.tags); return; }
     const del = e.target.closest("[data-del]");
