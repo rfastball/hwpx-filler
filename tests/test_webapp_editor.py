@@ -808,3 +808,52 @@ def test_load_job_reedit_starts_all_active(tmp_path):
     assert "낙찰금액" in snap["source_fields"]            # 저장 매핑 소스로 어휘 복원
     assert snap["ignored_count"] == 0                    # 전원 활성(미사용 0)
     assert snap["active_source_fields"] == snap["source_fields"]
+
+
+# ------------------------------------------- 기본 데이터 연결 상태(#67)
+def test_default_dataset_linked_shown_at_save_step(tmp_path):
+    """재편집 4단계 — 복원 참조가 살아 있으면 (연결됨) + 로케이트 경로 노출(#67)."""
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "연결표시")
+    ctrl.dispatch("save", {})
+    ctrl.load_job("연결표시")                              # 데이터 없이 편집 세션 복원
+    assert ctrl.snapshot()["default_dataset"] is None      # step 2 — 미계산(비용 가드)
+    ctrl.dispatch("goto_step", {"step": 3})
+    d = ctrl.snapshot()["default_dataset"]
+    assert d == {"name": "multi_sheet", "status": "linked", "path": str(MULTI_SHEET)}
+
+
+def test_default_dataset_dead_and_missing_are_restated(tmp_path):
+    """참조 파일 이동(dead)·풀 항목 삭제(missing)를 조용히 두지 않고 재진술(#67)."""
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "끊김표시")
+    ctrl.dispatch("save", {})
+
+    pool = ctrl.pool_registry
+    item = pool.load("multi_sheet")
+    item.opts = {"path": str(tmp_path / "이동됨.xlsx"), "sheet": "낙찰현황"}
+    pool.save(item, allow_overwrite=True)                  # 파일만 죽음(dead)
+    ctrl.load_job("끊김표시")
+    ctrl.dispatch("goto_step", {"step": 3})
+    d = ctrl.snapshot()["default_dataset"]
+    assert d["status"] == "dead" and d["path"].endswith("이동됨.xlsx")
+
+    pool.delete("multi_sheet")                             # 항목 자체 소멸(missing)
+    ctrl.load_job("끊김표시")
+    ctrl.dispatch("goto_step", {"step": 3})
+    d = ctrl.snapshot()["default_dataset"]
+    assert d == {"name": "multi_sheet", "status": "missing", "path": ""}
+
+
+def test_default_dataset_none_when_fresh_data_or_no_ref(tmp_path):
+    """이번 세션이 데이터를 골랐거나 참조가 없으면 None — 자동등록 블록과 이중 서사 금지(#67)."""
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "이중서사금지")
+    ctrl.dispatch("goto_step", {"step": 3})
+    assert ctrl.snapshot()["default_dataset"] is None      # data_path 有 → 자동등록 블록 몫
+
+    ctrl2, _ = _controller26(tmp_path)
+    _save_named(ctrl2, "무참조작업")                        # 데이터 없이 저장 = ref ""
+    ctrl2.load_job("무참조작업")
+    ctrl2.dispatch("goto_step", {"step": 3})
+    assert ctrl2.snapshot()["default_dataset"] is None

@@ -254,6 +254,11 @@ class EditorController:
             "dataset_name": self.dataset_name,
             # 작성 출처 provenance(#53-C) — 편집 모드에서 복원한 것(없으면 None).
             "provenance": self._loaded_provenance or None,
+            # 기본 데이터 연결 상태(#67) — 4단계에서만 계산(레지스트리 읽기+exists()
+            # 비용 — 에디터는 이름 타이핑마다 push 되므로 렌더당 I/O 를 가드).
+            "default_dataset": (
+                self._default_dataset_snapshot() if self.step == 3 else None
+            ),
             "notice": (
                 {"text": self.notice_text, "level": self.notice_level}
                 if self.notice_text else None
@@ -277,6 +282,29 @@ class EditorController:
             snap["rows"] = []
             snap["is_complete"] = False
         return snap
+
+    def _default_dataset_snapshot(self) -> "dict | None":
+        """복원한 기본 데이터 참조(#53-A)의 연결 상태 재진술(#67) — 4단계 전용.
+
+        이 세션이 데이터를 새로 골랐으면(저장 시 참조가 그 이름으로 바뀜) 자동등록
+        블록이 이미 그 연결을 말하므로 None(이중 서사 금지). 참조가 없어도 None.
+        상태: ``linked``(풀 항목·파일 실존) / ``dead``(항목은 있으나 파일 이동·삭제)
+        / ``missing``(풀 항목 자체가 삭제·손상). 비파일 참조(nara 등)는 경로 없이
+        linked 로 본다 — 파일 실존 판정 대상이 아니다(조준 시점 관문이 거절 담당).
+        """
+        ref = self.default_dataset_ref
+        if self.data_path or not ref:
+            return None
+        try:
+            item = self.pool_registry.load(ref)
+        except Exception:  # noqa: BLE001 — 부재(FileNotFoundError)·손상(ValueError) 동일 재진술
+            return {"name": ref, "status": "missing", "path": ""}
+        raw = item.opts.get("path") if isinstance(item.opts, dict) else None
+        path = raw if (item.kind == "excel" and isinstance(raw, str)) else ""
+        if not path:
+            return {"name": ref, "status": "linked", "path": ""}
+        status = "linked" if Path(path).exists() else "dead"
+        return {"name": ref, "status": status, "path": path}
 
     def _schema_summary(self) -> str:
         if self.schema is None:
