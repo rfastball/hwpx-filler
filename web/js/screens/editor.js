@@ -248,7 +248,8 @@
     return `<div class="grp" style="margin-top:10px">
       <span class="cap">선언 데이터 자동등록</span>
       <p class="hint" style="margin-top:0">저장하면 이 작업이 쓴 데이터(${esc(s.data_name)})를
-        등록 데이터로 함께 등록합니다 — 경로 참조만 저장(행·내용 없음), 실행 때 다시 읽습니다.</p>
+        등록 데이터로 함께 등록하고 <b>이 작업의 기본 데이터로 연결</b>합니다(#53-A) — 경로 참조만
+        저장(행·내용 없음), 실행 화면에서 작업을 고르면 자동 조준해 실행 때 다시 읽습니다.</p>
       <div class="row"><span class="lbl" style="width:76px">등록 이름</span>
         <input class="field" data-act="dataset-name" value="${esc(s.dataset_name)}"></div>
     </div>`;

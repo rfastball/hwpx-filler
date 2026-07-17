@@ -42,6 +42,7 @@ from .screens import (
     PoolTargetingMixin,
     PushSink,
     default_pool_registry,
+    load_pool_into,
     source_label,
 )
 
@@ -69,6 +70,10 @@ class RunController(PoolTargetingMixin):
         self.data_source = ""  # 소스 종류 플래그('file'|'pool') — 병기 라벨은 스냅샷이 합성(K8)
         self.out_dir = ""
         self._marked_fields: "list[str]" = []
+        # 기본 데이터셋 자동 조준(#53-A) 결과 재진술 — 성공(ok)/실패(warn)를 스냅샷에 노출.
+        # 실패는 조용한 폴백 금지: 데이터 미겨눔으로 남기고 원인·복구 동선을 시끄럽게 알린다.
+        self.data_notice_text = ""
+        self.data_notice_level = ""
         # 등록 데이터(풀) 겨눔(#26/#6) — 기본은 홈 레지스트리, 테스트는 주입.
         self.pool_registry = (
             pool_registry if pool_registry is not None else default_pool_registry()
@@ -109,6 +114,11 @@ class RunController(PoolTargetingMixin):
             "data_label": self.data_label,
             # 소스 종류 병기 라벨(#26) — 저장 상태가 아니라 플래그에서 매번 합성(K8).
             "data_source_label": source_label(self.data_source, self.data_label),
+            # 기본 데이터셋 자동 조준 재진술(#53-A) — 없으면 None.
+            "data_notice": (
+                {"level": self.data_notice_level, "text": self.data_notice_text}
+                if self.data_notice_text else None
+            ),
         }
         if self.vm is None:
             base.update({
@@ -164,6 +174,7 @@ class RunController(PoolTargetingMixin):
         self.data_label = Path(path).name
         self.data_source = "file"  # 병기 라벨은 스냅샷이 합성(#26·K8)
         self.selection = SelectionModel(len(records))  # 데이터 변경 → 전체 선택 초기화
+        self._clear_data_notice()  # 사용자가 직접 데이터를 겨눔 → 자동 조준 재진술 소거
         self._push()
 
     def set_output_folder(self, path: str) -> None:
@@ -190,8 +201,13 @@ class RunController(PoolTargetingMixin):
         """
 
     def _do_select_job(self, p: dict) -> None:
-        """작업 선택 → RunViewModel 재구성. 저장 폴더 기본값 = 템플릿 폴더/Results(Qt 동형)."""
+        """작업 선택 → RunViewModel 재구성. 저장 폴더 기본값 = 템플릿 폴더/Results(Qt 동형).
+
+        작업에 기본 데이터셋 참조(#53-A)가 있으면 실행 시점에 다시 읽어 자동 조준한다 —
+        없으면 현행처럼 사용자가 파일/등록 데이터를 수동 선택한다.
+        """
         name = p["name"]
+        self._clear_data_notice()
         if not name:  # 선택 해제 = 빈 상태로
             self.vm = None
             self.selection = SelectionModel(0)
@@ -207,6 +223,38 @@ class RunController(PoolTargetingMixin):
         self.out_dir = (
             str(Path(job.template_path).parent / "Results") if job.template_path else ""
         )
+        if job.default_dataset_ref:
+            self._auto_aim_default(job.default_dataset_ref)
+
+    def _clear_data_notice(self) -> None:
+        self.data_notice_text = ""
+        self.data_notice_level = ""
+
+    def _auto_aim_default(self, ref: str) -> None:
+        """저장된 기본 데이터셋을 실행 시점에 다시 읽어 자동 조준한다(#53-A).
+
+        실패(참조 부재·죽은 파일·모호 시트·나라 동결·레코드 0건)는 **조용한 폴백 금지** —
+        데이터를 미겨눔으로 남기고 원인과 복구 동선(수동 선택·재연결)을 시끄럽게 재진술한다
+        (confirm-or-alarm). 성공/실패 모두 겨눔 관문(``load_pool_into``)을 파일·수동 겨눔과
+        공유해 문구 체계가 갈리지 않는다.
+        """
+        res = load_pool_into(self.pool_registry, ref, self.vm.load_pool_item)
+        if res["ok"]:
+            self.data_label = ref
+            self.data_source = "pool"
+            # 풀 겨눔 공유 후처리(선택 초기화·재진술 소거)를 재사용 — 수동 겨눔 경로와
+            # 갈리지 않게(K4 복붙 방지). notice 는 소거 뒤에 세팅(순서 중요).
+            self._after_pool_load(res["records"])
+            self.data_notice_text = (
+                f"기본 데이터 '{ref}' 를 자동 연결했습니다 — 실행 시점에 다시 읽었습니다."
+            )
+            self.data_notice_level = "ok"
+        else:
+            self.data_notice_text = (
+                f"기본 데이터 '{ref}' 를 자동으로 열 수 없습니다: {res['error']}\n"
+                "다른 데이터를 직접 선택하거나 데이터 관리에서 참조를 다시 연결하세요."
+            )
+            self.data_notice_level = "warn"
 
     def _do_toggle_record(self, p: dict) -> None:
         self.selection.toggle(int(p["index"]), bool(p["value"]))
@@ -237,6 +285,7 @@ class RunController(PoolTargetingMixin):
     def _after_pool_load(self, records: list) -> None:
         """풀 겨눔도 파일과 동일하게 새 데이터 = 전체 선택·ack 초기화를 탄다."""
         self.selection = SelectionModel(len(records))  # 데이터 변경 → 전체 선택 초기화
+        self._clear_data_notice()  # 사용자가 직접 겨눔 → 자동 조준 재진술 소거
 
     # ------------------------------------------------------------------ 생성
     def _push_progress(self, done: int, total: int) -> None:
