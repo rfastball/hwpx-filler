@@ -17,6 +17,7 @@
 """
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import sys
@@ -131,10 +132,6 @@ class WebFrontend:
     def dispatch(self, screen: str, action: str, payload: "dict | None" = None):
         """순수 데이터 액션(창 불필요) 라우팅. 액션이 값을 돌려주면 그대로 웹에 반환."""
         return self._controller(screen).dispatch(action, payload or {})
-
-    def get_theme(self) -> str:
-        """저장된 테마 선택(오리진 비의존 Python 설정, #74). 미저장 시 ``"system"``."""
-        return settings.load_theme()
 
     def set_theme(self, mode: str) -> str:
         """테마 선택 영속 — 프런트 토글이 부른다(#74). 확정값 반환(비유효는 ValueError)."""
@@ -525,11 +522,12 @@ def _selftest_drive(window: "object") -> None:
         time.sleep(4.0)  # 콜드부트 + 브리지(pywebview.api) 준비 대기
         result: dict = {"theme_write": set_theme}
         try:
-            # 실사용 경로(JS→Python 브리지)로 settings.json 에 쓴다. evaluate_js 는 promise 를
-            # 대기하지 않으므로(반환=미해소 promise), 디스패치·파일 쓰기 완료를 짧게 기다린 뒤
-            # in-process 로 판독해 확정한다 — 이 파일이 곧 다음 콜드부트의 판독원(#74).
+            # 실사용 경로 그대로 구동 — 토글 클릭이 지나는 theme.js Theme.set→Bridge.setTheme→
+            # api.set_theme 홉 전체(브리지 가드 포함)를 게이트가 덮는다(api 직접 호출로 바꾸면
+            # theme.js 결함이 무커버가 된다). evaluate_js 는 promise 를 대기하지 않으므로
+            # 디스패치·파일 쓰기 완료를 짧게 기다린 뒤 in-process 로 판독해 확정한다(#74).
             window.evaluate_js(  # type: ignore[attr-defined]
-                "window.pywebview.api.set_theme(" + json.dumps(set_theme) + ")")
+                "window.Theme.set(" + json.dumps(set_theme) + ")")
             time.sleep(1.0)  # 브리지 디스패치 + save_theme 디스크 반영 여유
             result["set_result"] = settings.load_theme()  # 종료 전 실제 디스크 반영 확정
         except Exception as exc:  # noqa: BLE001
@@ -595,6 +593,29 @@ def _selftest_drive(window: "object") -> None:
 
 
 # ------------------------------------------------------------------ 엔트리
+def _alarm(msg: str, window: "object | None" = None) -> None:
+    """부팅 경보 — stderr + 홈 로그 파일 + (가능하면) JS alert.
+
+    동결 exe 는 console=False(packaging spec)라 stderr 가 소실된다 — 경보가 아무에게도
+    안 닿으면 confirm-or-alarm 이 공집합 채널로 무력화되므로 홈 로그에 반드시 남긴다.
+    JS alert 는 fire-and-forget(setTimeout) — evaluate_js 가 alert 해소를 기다리다
+    호출 스레드(loaded 핸들러·폴백 타이머)를 매달지 않게 한다."""
+    print(f"[hwpx] {msg}", file=sys.stderr)
+    try:
+        log_path = settings.home_dir() / "webapp-alerts.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write(f"{datetime.datetime.now().isoformat(timespec='seconds')} {msg}\n")
+    except OSError:
+        pass  # 로그 채널 자체의 실패로 부팅을 막지 않는다 — stderr·alert 는 이미/이후 시도
+    if window is not None:
+        try:
+            window.evaluate_js(  # type: ignore[attr-defined]
+                f"setTimeout(function(){{window.alert({json.dumps('[hwpx] ' + msg)})}},0)")
+        except Exception:  # noqa: BLE001  창이 그 정도로 죽었으면 alert 채널도 없다
+            pass
+
+
 def main() -> int:
     import webview
 
@@ -621,37 +642,55 @@ def main() -> int:
 
     def _show_once() -> None:
         if not shown.is_set():
-            shown.set()
             window.show()  # type: ignore[attr-defined]
+            shown.set()  # show 성공 **후** — 먼저 세우면 show 실패가 다른 경로까지 영구 차단
 
     def _apply_theme_then_show() -> None:  # loaded 콜백(0-인자로 호출됨, event.py:40)
+        err: "object | None" = None
         try:
             theme = settings.load_theme()
             if theme in ("light", "dark"):
-                window.evaluate_js(  # type: ignore[attr-defined]
-                    f'document.documentElement.setAttribute("data-theme", {json.dumps(theme)})')
-        except Exception as exc:  # noqa: BLE001  테마 실패로 창이 안 뜨면 안 된다 — 알리고 show 진행
-            print(f"[hwpx] 테마 주입 실패: {exc!r}", file=sys.stderr)
+                # Theme.apply(theme.js) 경유 — data-theme 설정 + themechange 발신으로 레일
+                # 라벨까지 재동기된다(직접 setAttribute 는 라벨을 어긋난 채 남겼다). loaded 는
+                # body 스크립트 실행 후라 window.Theme 실재가 계약 — 부재는 곧 주입 실패.
+                ok = window.evaluate_js(  # type: ignore[attr-defined]
+                    f"window.Theme ? (window.Theme.apply({json.dumps(theme)}), true) : false")
+                if ok is not True:
+                    err = f"window.Theme 부재(evaluate_js 반환={ok!r})"
+        except Exception as exc:  # noqa: BLE001  테마 실패로 창이 안 뜨면 안 된다 — show 진행 후 경보
+            err = exc
         _show_once()
+        if err is not None:
+            _alarm(f"테마 주입 실패: {err!r}", window)
 
     window.events.loaded += _apply_theme_then_show
 
     # 폴백(confirm-or-alarm): loaded 가 끝내 안 오면 창이 영영 숨겨진다 — 상한 후 강제 show + 경보.
     def _fallback_show() -> None:
         if not shown.is_set():
-            print("[hwpx] loaded 미발화 — 폴백으로 창 표시(테마 미주입 가능)", file=sys.stderr)
-            _show_once()
+            _alarm("loaded 미발화 — 폴백으로 창 표시(테마 미주입 가능)", window)
+            try:
+                _show_once()
+            except Exception as exc:  # noqa: BLE001  타이머 데몬 스레드 — 조용한 증발 금지
+                _alarm(f"폴백 show 실패: {exc!r}")
 
-    timer = threading.Timer(8.0, _fallback_show)
+    # 20s: 타이머가 webview.start() 전에 걸리므로 예산이 WebView2 콜드스타트(초회 런타임 부팅·
+    # AV 스캔) 전체를 포함한다 — 짧으면 정상 부팅에서 폴백이 선발화해 무테마 창(FOUC)+거짓 경보.
+    timer = threading.Timer(20.0, _fallback_show)
     timer.daemon = True
     timer.start()
 
-    # private_mode 기본(True) = 랜덤 빈 포트 + 인메모리 프로필 → 포트 스쿼팅·캐시 스테일·서버
-    # 크로스톡 클래스 구조 소멸(#74). 정상 닫기 = webview.start 반환 = 클린 종료(소이슈 ①).
+    # private_mode 기본(True) = 랜덤 빈 포트 + InPrivate(비영속) → 포트 스쿼팅·캐시 스테일·서버
+    # 크로스톡 클래스 구조 소멸(#74). storage_path 는 고정 핀 — 미지정 시 pywebview 가 부팅마다
+    # %TEMP% 에 새 WebView2 프로필을 만들고 정상 닫기에만 rmtree 하므로(winforms init_storage)
+    # 크래시·강제종료마다 수십 MB 가 고아로 쌓인다. 고정 폴더면 재사용·정상 종료 시 삭제로 유계.
+    # InPrivate 는 storage_path 와 독립(IsInPrivateModeEnabled)이라 #74 이득은 그대로다.
+    # 정상 닫기 = webview.start 반환 = 클린 종료(소이슈 ①).
+    storage = str(settings.home_dir() / "webview")
     if "--selftest" in sys.argv:
-        webview.start(_selftest_drive, window, gui=gui)
+        webview.start(_selftest_drive, window, gui=gui, storage_path=storage)
     else:
-        webview.start(gui=gui)
+        webview.start(gui=gui, storage_path=storage)
     timer.cancel()
     return 0
 

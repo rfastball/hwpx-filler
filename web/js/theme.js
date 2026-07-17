@@ -22,13 +22,18 @@
       // system: 속성 제거 → @media 지배로 되돌린다.
       document.documentElement.removeAttribute("data-theme");
     }
+    // 관심자(app.js 레일 라벨 등)에게 재진술 — 토글이든 부팅 주입(app.py loaded)이든 같은 신호.
+    window.dispatchEvent(new CustomEvent("hwpx:themechange"));
   }
 
   function set(mode) {
     apply(mode);
     // 브리지 부재(브라우저 단독 프리뷰)면 영속 생략 — 셸 상태만 갱신, 무해 통과.
     if (window.pywebview && window.pywebview.api) {
-      try { window.Bridge.setTheme(current()); } catch (e) { /* 무시 */ }
+      // 동기 throw(Bridge 부재 등)도 삼키지 않는다(confirm-or-alarm) — 비동기 rejection 은
+      // app.js 의 unhandledrejection 백스톱이 받는다.
+      try { window.Bridge.setTheme(current()); }
+      catch (e) { window.alert(String((e && e.message) || e)); }
     }
     return current();
   }
@@ -37,5 +42,6 @@
     return set(ORDER[(ORDER.indexOf(current()) + 1) % ORDER.length]);
   }
 
-  window.Theme = { set: set, toggle: toggle, current: current };
+  // apply 는 부팅 주입 경로(app.py _apply_theme_then_show)가 영속 없이 쓴다 — set 은 영속 포함.
+  window.Theme = { set: set, toggle: toggle, current: current, apply: apply };
 })();

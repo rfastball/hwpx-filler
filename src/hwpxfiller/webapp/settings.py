@@ -17,10 +17,15 @@ from pathlib import Path
 VALID_THEMES = ("system", "light", "dark")
 
 
-def _settings_path() -> Path:
-    """설정 파일 위치 — 홈 아래 ``settings.json``. ``HWPXFILLER_HOME`` 로 재지정 가능."""
+def home_dir() -> Path:
+    """앱 홈 — ``HWPXFILLER_HOME`` 또는 ``~/.hwpxfiller`` (레지스트리들과 같은 규약)."""
     root = os.environ.get("HWPXFILLER_HOME") or (Path.home() / ".hwpxfiller")
-    return Path(root) / "settings.json"
+    return Path(root)
+
+
+def _settings_path() -> Path:
+    """설정 파일 위치 — 홈 아래 ``settings.json``."""
+    return home_dir() / "settings.json"
 
 
 def _read() -> dict:
@@ -29,6 +34,21 @@ def _read() -> dict:
         data = json.loads(_settings_path().read_text(encoding="utf-8"))
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
+        return {}
+
+
+def _read_for_update(path: Path) -> dict:
+    """RMW 판독 — 부재·JSON 손상은 빈 dict 로 새 출발(손상 파일 위에 유효 내용을 쓰는 게 복구),
+    그 외 OSError(잠김·권한)는 전파한다: 빈 dict 로 접으면 일시 장애가 다른 키 전멸로 조용히
+    승격된다(read-modify-write 약속 위반, confirm-or-alarm)."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {}
+    try:
+        data = json.loads(text)
+        return data if isinstance(data, dict) else {}
+    except ValueError:
         return {}
 
 
@@ -46,8 +66,10 @@ def save_theme(mode: str) -> None:
         raise ValueError(f"유효하지 않은 테마: {mode!r} (허용: {VALID_THEMES})")
     path = _settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    data = _read()
+    data = _read_for_update(path)
     data["theme"] = mode
-    tmp = path.with_name(path.name + ".tmp")
+    # tmp 이름에 pid — 동시 실행 인스턴스(#74 지원 상태)가 같은 tmp 를 겹쳐 쓰면 한쪽 replace 가
+    # FileNotFoundError 로 사용자 alert 까지 튄다. 프로세스별 이름이면 각자 원자 교체로 수렴.
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(path)  # 원자 교체 — 부분 쓰기가 판독되지 않도록

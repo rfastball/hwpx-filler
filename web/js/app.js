@@ -54,8 +54,12 @@
     if (themeLabel && window.Theme) themeLabel.textContent = THEME_TEXT[window.Theme.current()];
   }
   if (themeToggle && window.Theme) {
-    themeToggle.addEventListener("click", () => { window.Theme.toggle(); syncThemeLabel(); });
-    syncThemeLabel();  // 부팅 시 loaded 핸들러(app.py)가 주입한 초기 모드를 라벨에 반영.
+    themeToggle.addEventListener("click", () => { window.Theme.toggle(); });
+    // 라벨 동기는 themechange 단일 경로 — 토글이든 부팅 주입(app.py loaded→Theme.apply)이든
+    // 같은 신호로 반영된다. 이 스크립트는 주입 **전**(body 말미)에 돌므로 직접 호출은 기본
+    // system 라벨만 세우고, 저장 테마는 주입 시 이벤트로 재동기된다(#74 라벨 어긋남 방지).
+    window.addEventListener("hwpx:themechange", syncThemeLabel);
+    syncThemeLabel();
   }
 
   // pywebview.api 준비 후 실화면 초기화(브라우저 단독 미리보기에선 안 뜸 — 정상).

@@ -419,6 +419,33 @@ def test_theme_persistence_is_origin_independent():
     )
 
 
+def test_boot_hides_window_until_theme_applied():
+    """FOUC 은닉의 구조 가드(#74) — 창은 숨김 생성, 테마 주입이 show **앞**이어야 한다.
+
+    옛 가드(head 인라인이 tokens.css 링크보다 앞)는 pre-paint 적용을 정적 순서로 보증했다.
+    localStorage 이관으로 인라인이 사라진 뒤의 등가물: ``hidden=True`` 로 창을 만들고
+    ``_apply_theme_then_show`` 안에서 Theme.apply 주입이 ``_show_once()`` 보다 먼저여야
+    라이트 첫 페인트가 화면 밖에서 소진된다. 런타임 게이트(theme_persist)는 부팅 한참 뒤
+    스냅샷이라 '주입이 show 앞이었나'를 구분 못 한다 — 순서는 여기서 정적으로 가드한다.
+    """
+    app_py = Path(__file__).resolve().parents[1] / "src" / "hwpxfiller" / "webapp" / "app.py"
+    src = app_py.read_text(encoding="utf-8")
+    # create_window 호출부 슬라이스 — 다음 문장(frontend._window 배선)까지가 호출 인자 범위.
+    create = src[src.index("webview.create_window("): src.index("frontend._window")]
+    assert "hidden=True" in create, (
+        "create_window 에 hidden=True 가 없습니다 — 저장 테마 주입 전 라이트 첫 페인트가 "
+        "화면에 노출됩니다(FOUC 회귀, #74)."
+    )
+    body_start = src.index("def _apply_theme_then_show")
+    body = src[body_start: src.index("window.events.loaded")]
+    apply_at = body.find("Theme.apply")
+    show_at = body.find("_show_once()")
+    assert apply_at != -1 and show_at != -1 and apply_at < show_at, (
+        "_apply_theme_then_show 에서 Theme.apply 주입이 _show_once() 보다 앞이어야 합니다 — "
+        "뒤집히면 창이 라이트로 뜬 뒤 다크로 스냅(FOUC, #74)."
+    )
+
+
 def test_unhandledrejection_backstop_present_in_both_shells():
     """비동기 실패 최종 백스톱 — 두 셸이 unhandledrejection 을 alert 로 재진술해야 한다.
 

@@ -170,7 +170,8 @@ def test_theme_choice_persists_across_restart_without_flicker(tmp_path) -> None:
     **랜덤 빈 포트**(private_mode=True 기본)를 잡아 오리진이 서로 다르다. localStorage 기반이면
     여기서 리셋됐겠지만, Python 설정(settings.json)은 오리진 비의존이라 유지된다 — 옛 게이트가
     포트를 인위 고정해야만 초록이던 유효성 공백(실사용 미반영)을 이 테스트가 닫는다:
-      (1) 쓰기 프로세스가 set_theme('dark') 로 settings.json 에 심고 정식 종료.
+      (1) 쓰기 프로세스가 실사용 경로(Theme.set('dark') → Bridge → api.set_theme)로
+          settings.json 에 심고 정식 종료 — theme.js 홉까지 게이트 커버리지에 들어간다.
       (2) 같은 HWPXFILLER_HOME 으로 새 콜드부트(다른 포트) → loaded 핸들러가 show 전에
           data-theme='dark' 를 주입하고 --a-card 가 다크값으로 해소된다.
     유지 안 되면 data_theme=null(리셋), 주입 실패면 속성 부재로 각각 시끄럽게 실패한다.
@@ -193,7 +194,7 @@ def test_theme_choice_persists_across_restart_without_flicker(tmp_path) -> None:
     assert out_write.exists(), (
         f"쓰기 단계 결과 미생성 — rc={w.returncode}\nstderr={w.stderr[-2000:]}")
     written = json.loads(out_write.read_text(encoding="utf-8"))
-    assert written.get("set_result") == "dark", f"쓰기 단계 set_theme 실패: {written}"
+    assert written.get("set_result") == "dark", f"쓰기 단계 Theme.set 실패: {written}"
 
     # (2) 읽기 단계 — 같은 HWPXFILLER_HOME(다른 포트)으로 콜드부트, 주입 적용 결과 되읽기.
     r = subprocess.run(
