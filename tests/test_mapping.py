@@ -36,9 +36,9 @@ def _nara_record() -> dict:
 
 
 # ------------------------------------------------------------------ 값 유형
-def test_transform_date_renders_korean_default():
-    """단일 날짜 값 → 한글 날짜(기본 표시형)."""
-    assert apply_transform("date", "2026-06-15") == "2026년 6월 15일"
+def test_transform_date_renders_standard_default():
+    """단일 날짜 값 → 공문서 표준 날짜(기본 표시형)."""
+    assert apply_transform("date", "2026-06-15") == "2026. 6. 15."
 
 
 def test_transform_date_time_only_value():
@@ -76,7 +76,7 @@ def test_apply_transform_known_kinds_and_blank():
 def test_field_mapping_reads_single_source():
     rec = _nara_record()
     assert FieldMapping("추정가격", "presmptPrce", type="amount").value_for(rec) == "65,454,545원"
-    assert FieldMapping("개찰일", "opengDate", type="date").value_for(rec) == "2026년 6월 15일"
+    assert FieldMapping("개찰일", "opengDate", type="date").value_for(rec) == "2026. 6. 15."
     assert FieldMapping("개찰시각", "opengTm", type="date", fmt="%H:%M").value_for(rec) == "18:00"
 
 
@@ -141,7 +141,7 @@ def test_profile_apply_produces_template_dict():
     assert out["입찰공고번호"] == "R26BK01561738"
     assert out["계약방법"] == "제한경쟁"
     assert out["추정가격"] == "65,454,545원"
-    assert out["개찰일"] == "2026년 6월 15일"
+    assert out["개찰일"] == "2026. 6. 15."
     assert out["개찰시각"] == "18:00"
 
 
@@ -253,4 +253,4 @@ def test_end_to_end_api_record_fills_real_template(tmp_path):
     text = b"".join(pkg.entries[n] for n in pkg.content_xml_names()).decode("utf-8")
     assert "R26BK01561738" in text
     assert "65,454,545원" in text
-    assert "2026년 6월 15일" in text
+    assert "2026. 6. 15." in text

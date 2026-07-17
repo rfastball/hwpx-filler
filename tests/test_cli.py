@@ -337,7 +337,7 @@ def test_nara_source_with_profile_fills_template(tmp_path, monkeypatch, capsys):
     with zipfile.ZipFile(gen) as zf:
         blob = b"".join(zf.read(n) for n in zf.namelist() if n.endswith(".xml")).decode("utf-8")
     assert "65,454,545원" in blob
-    assert "2026년 6월 15일" in blob
+    assert "2026. 6. 15." in blob
     # 취득 로그가 stderr 로 나온다.
     assert "[나라장터]" in capsys.readouterr().err
 

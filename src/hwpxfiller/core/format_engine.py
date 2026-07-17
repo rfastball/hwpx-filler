@@ -9,7 +9,7 @@
   - 표시형은 값을 **파싱→서식→실패 시 원본(degrade)**. 타입 *주장*이 아니라 관대한 *시도*.
   - 서식 코드는 유형(kind)이 해석기를 고른다: amount→``str.format`` 스펙, date→strftime.
   - 자주 쓰는 코드는 **프리셋**(분류해 클릭), 고급 사용자는 **코드 직접 입력**. 빈 코드("")는
-    각 kind 의 기본 표시(원 붙임 / 한글 날짜).
+    각 kind 의 기본 표시(원 붙임 / 공문서 표준 날짜 ``2026. 7. 17.``).
 """
 
 from __future__ import annotations
@@ -75,11 +75,30 @@ def _parse_time(value: str) -> "tuple[int, int] | None":
 
 
 def _korean_dt(value: str) -> str:
-    """기본 날짜 표시(코드 없음) — ``2026년 6월 15일 [09:00]``(월/일 비패딩)."""
+    """한글 날짜 표시(예약코드 ``kor``) — ``2026년 6월 15일 [09:00]``(월/일 비패딩)."""
     dt = _parse_dt(value)
     if dt is None:
         return value
     out = f"{dt.year}년 {dt.month}월 {dt.day}일"
+    t = re.search(r"\d{1,2}:\d{2}", value)
+    if t:
+        out += f" {t.group(0)}"
+    return out
+
+
+def _dot_dt(value: str, *, short: bool = False) -> str:
+    """공문서 표준 날짜 표시 — ``2026. 7. 17. [09:00]``(월/일 비패딩·끝점·점 뒤 공백).
+
+    ``short=True`` → ``'26.7.17.``(2자리 연도·공백 없는 축약형). 둘 다 strftime 으로는
+    이식 가능하게 못 내므로(``%-d``=glibc·``%#d``=Windows 전용) f-string 으로 수동 조립.
+    """
+    dt = _parse_dt(value)
+    if dt is None:
+        return value
+    if short:
+        out = f"'{dt.year % 100:02d}.{dt.month}.{dt.day}."
+    else:
+        out = f"{dt.year}. {dt.month}. {dt.day}."
     t = re.search(r"\d{1,2}:\d{2}", value)
     if t:
         out += f" {t.group(0)}"
@@ -125,7 +144,9 @@ class StdlibFormatEngine:
             ("백분율", "{:.1%}"),        # (0.05 → 5.0%)
         ],
         "date": [
-            ("한글", ""),                      # 2026년 6월 15일 (기본)
+            ("표준", ""),                      # 2026. 7. 17. (공문서 표준·기본)
+            ("표준(약식)", "y2"),               # '26.7.17. (2자리 연도 축약·추천 2순위)
+            ("한글", "kor"),                    # 2026년 6월 15일
             ("ISO", "%Y-%m-%d"),               # 2026-06-15
             ("점", "%Y.%m.%d"),                # 2026.06.15
             ("연-월", "%Y-%m"),                # 2026-06
@@ -163,7 +184,11 @@ class StdlibFormatEngine:
 
     def _date(self, code: str, value: str) -> str:
         if not code:
-            return _korean_dt(value)  # 기본 한글 표시(비패딩)
+            return _dot_dt(value)  # 공문서 표준 기본(2026. 7. 17.)
+        if code == "y2":
+            return _dot_dt(value, short=True)  # 예약코드: 축약형('26.7.17.)
+        if code == "kor":
+            return _korean_dt(value)  # 예약코드: 한글 표기(비패딩)
         dt = _parse_dt(value)
         if dt is None:
             # 날짜가 없으면 시각 단독값('1400'·'18:00')으로 재시도 — 시각 서식용.
