@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+from hwpxfiller.webapp import app as webapp_app
 from hwpxfiller.webapp.app import _prepare_webview_profile
 
 
@@ -29,6 +30,23 @@ def test_prepare_purges_orphans_and_legacy_layout(tmp_path):
 
 
 def test_prepare_first_boot_creates_root(tmp_path):
-    # 첫 부팅 — webview_root 자체가 없어도 예외 없이 프로필을 만든다.
+    # 첫 부팅 — webview_root 자체가 없어도 예외 없이(경보 없이) 프로필을 만든다.
     storage = _prepare_webview_profile(tmp_path / "webview")
     assert storage.is_dir()
+
+
+def test_prepare_alarms_when_purge_fails(tmp_path, monkeypatch):
+    """청소 실패(좀비/AV 락)는 조용히 삼키지 않는다(#75 리뷰4 #1) — 스테일 프로필 재사용이
+    신호 없이 일어나지 않게 경보한 뒤 부팅은 진행한다(불사)."""
+    root = tmp_path / "webview"
+    (root / "profile").mkdir(parents=True)
+    alerts: list[str] = []
+    monkeypatch.setattr(webapp_app.settings, "alert", lambda m: alerts.append(m))
+
+    def boom(_p):
+        raise PermissionError(13, "락 보유 모사")
+
+    monkeypatch.setattr(webapp_app.shutil, "rmtree", boom)
+    storage = _prepare_webview_profile(root)  # 예외 전파 없이 진행
+    assert storage.is_dir()                    # 부팅 불사 — 프로필은 만들어진다
+    assert alerts and "청소 실패" in alerts[0]  # 시끄러운 경보

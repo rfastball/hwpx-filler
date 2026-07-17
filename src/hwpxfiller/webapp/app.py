@@ -17,7 +17,6 @@
 """
 from __future__ import annotations
 
-import datetime
 import json
 import os
 import shutil
@@ -611,20 +610,13 @@ def _selftest_drive(window: "object") -> None:
 
 # ------------------------------------------------------------------ 엔트리
 def _alarm(msg: str, window: "object | None" = None) -> None:
-    """부팅 경보 — stderr + 홈 로그 파일 + (가능하면) JS alert.
+    """부팅 경보 — 내구성 채널(stderr + 홈 로그, settings.alert) + (가능하면) JS alert.
 
-    동결 exe 는 console=False(packaging spec)라 stderr 가 소실된다 — 경보가 아무에게도
-    안 닿으면 confirm-or-alarm 이 공집합 채널로 무력화되므로 홈 로그에 반드시 남긴다.
+    내구성 채널은 settings.alert 가 소유한다(홈 경로·경보 로그가 거기 있고, settings 층 코드도
+    같은 채널로 알려야 한다 — 순환 import 회피). 이 함수는 그 위에 창(JS alert) 계층만 얹는다.
     JS alert 는 fire-and-forget(setTimeout) — evaluate_js 가 alert 해소를 기다리다
     호출 스레드(loaded 핸들러·폴백 타이머)를 매달지 않게 한다."""
-    print(f"[hwpx] {msg}", file=sys.stderr)
-    try:
-        log_path = settings.home_dir() / "webapp-alerts.log"
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        with log_path.open("a", encoding="utf-8") as f:
-            f.write(f"{datetime.datetime.now().isoformat(timespec='seconds')} {msg}\n")
-    except OSError:
-        pass  # 로그 채널 자체의 실패로 부팅을 막지 않는다 — stderr·alert 는 이미/이후 시도
+    settings.alert(msg)
     if window is not None:
         try:
             window.evaluate_js(  # type: ignore[attr-defined]
@@ -642,8 +634,17 @@ def _prepare_webview_profile(webview_root: Path) -> Path:
     (settings.json)은 홈 **루트** 에 있어 webview_root 와 분리 — 통째 삭제가 안전하다.
     이전의 per-pid 폴더 + 부팅 스윕 + profile.lock 기계 전부를 대체한다(#74 리뷰3).
 
-    ``resolve()`` 필수: 상대 storage_path 는 WebView2 생성 실패 → MSHTML(IE) 조용한 폴백(#69/#71)."""
-    shutil.rmtree(webview_root, ignore_errors=True)
+    ``resolve()`` 필수: 상대 storage_path 는 WebView2 생성 실패 → MSHTML(IE) 조용한 폴백(#69/#71).
+
+    청소 실패(좀비 WebView2·AV 가 락 보유)는 **조용히 삼키지 않는다**(#75 리뷰4 #1): 삭제한
+    _purge_webview_http_cache 가 이 OSError 를 경보했던 것처럼, 스테일 프로필 재사용(=구자산
+    서빙, #69/#71 클래스)이 신호 없이 일어나지 않게 시끄럽게 알린 뒤 진행한다(부팅 불사)."""
+    try:
+        shutil.rmtree(webview_root)
+    except FileNotFoundError:
+        pass  # 첫 부팅 — 청소할 것이 없다(정상)
+    except OSError as exc:
+        settings.alert(f"WebView2 프로필 청소 실패 — 스테일 프로필 재사용 가능(구자산 서빙): {exc!r}")
     storage_dir = webview_root / "profile"
     storage_dir.mkdir(parents=True, exist_ok=True)
     return storage_dir

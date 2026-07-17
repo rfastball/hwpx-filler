@@ -403,9 +403,9 @@ def test_theme_persistence_is_origin_independent():
     리셋됐다. 영속을 오리진 비의존 Python 설정(app.py set_theme → settings.json)으로 옮기고
     (private_mode 기본 복원) FOUC 는 부팅 시 loaded 핸들러 주입으로 은닉한다. 그러므로:
       - index.html 은 테마용 localStorage 판독을 **가져선 안 된다**(원인 결합 재도입 금지).
-      - theme.js 는 브리지(Bridge.setTheme)로 영속해야 한다(앱 경로).
-      - localStorage 는 **브라우저 단독 프리뷰 한정** 으로만 허용된다(브리지 부재 분기): 앱은
-        브리지가 있어 그 경로에 도달하지 않으므로 오리진 결합이 재도입되지 않는다(#75 리뷰 #4).
+      - theme.js 는 브리지(Bridge.setTheme)로 영속해야 하고 localStorage 를 **일절 쓰지 않는다**.
+    브라우저 단독 프리뷰의 새로고침 간 미영속은 의도된 트레이드오프다(#75 리뷰4 #4/#7): 프리뷰를
+    영속하려면 오리진 결합 localStorage 판독이 되살아나므로, 개발 전용 프리뷰 편의보다 불변식을 택한다.
     """
     index = WEB_INDEX.read_text(encoding="utf-8")
     assert not re.search(r'localStorage[^;]*hwpxfiller\.theme', index), (
@@ -416,14 +416,9 @@ def test_theme_persistence_is_origin_independent():
     assert "Bridge.setTheme" in theme_js, (
         "theme.js 가 브리지로 영속하지 않습니다(Bridge.setTheme 부재) — #74 영속 경로."
     )
-    # localStorage 자체를 금하는 대신, 쓰이더라도 **브리지 부재 가드(hasBridge) 뒤** 임을 강제한다.
-    # 앱은 hasBridge()=true 라 localStorage 분기 미도달 → 오리진 비의존 영속(#74) 유지, 프리뷰만
-    # 대체 영속(#75 리뷰 #4). 실제 앱 경로가 브리지로만 영속함은 selftest 게이트가 end-to-end 검증.
-    if re.search(r"localStorage\s*\.", theme_js):
-        assert "hasBridge" in theme_js, (
-            "theme.js 가 localStorage 를 쓰면서 브리지 부재 가드(hasBridge)가 없다 — "
-            "프리뷰 한정 게이팅이 깨지면 앱이 오리진 결합 영속(#74)으로 회귀한다."
-        )
+    assert not re.search(r"localStorage\s*\.", theme_js), (
+        "theme.js 가 localStorage 를 실사용 — 오리진 비의존 영속(#74)과 상충. 프리뷰 미영속은 의도(#75 리뷰4)."
+    )
 
 
 def test_boot_hides_window_until_theme_applied():

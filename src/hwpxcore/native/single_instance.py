@@ -64,10 +64,15 @@ def acquire(home: Path) -> "object | None":
 
 
 def focus_existing(window_title: str) -> bool:
-    """이미 떠 있는 인스턴스의 창을 찾아 복원·전면화한다(best-effort).
+    """이미 떠 있는 인스턴스의 **보이는** 창을 찾아 복원·전면화한다(best-effort).
 
     실패해도 무해 — 두 번째 인스턴스는 어차피 종료한다(조용한 종료 폴백). 창 제목으로 찾는다
-    (``webview.create_window(WINDOW_TITLE, …)`` 가 캡션으로 심는 값과 동일)."""
+    (``webview.create_window(WINDOW_TITLE, …)`` 가 캡션으로 심는 값과 동일).
+
+    **가시성 가드(#75 리뷰4 #3)**: 첫 인스턴스가 아직 콜드부트 중이면 창은 hidden 상태로 생성돼
+    있다(FOUC 은닉 — 테마 주입 전 show 대기). 그 창에 SW_RESTORE 를 걸면 테마 미주입 창을 강제
+    노출해 FOUC 를 낸다. 보이는 창일 때만 전면화하고, 부팅 중(숨김)이면 건드리지 않는다 —
+    첫 인스턴스가 준비되면 스스로 show 한다."""
     if sys.platform != "win32":
         return False
     user32 = ctypes.windll.user32
@@ -76,6 +81,8 @@ def focus_existing(window_title: str) -> bool:
     hwnd = user32.FindWindowW(None, window_title)
     if not hwnd:
         return False
+    if not user32.IsWindowVisible(hwnd):
+        return False  # 부팅 중 숨김창 — 강제 노출로 FOUC 내지 않는다(첫 인스턴스가 곧 show)
     user32.ShowWindow(hwnd, _SW_RESTORE)      # 최소화돼 있으면 복원
     user32.SetForegroundWindow(hwnd)
     return True

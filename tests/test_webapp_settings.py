@@ -117,8 +117,9 @@ def test_load_theme_retries_transient_read_error(home, monkeypatch):
     assert settings.load_theme() == "dark"  # 일시 실패를 넘겨 저장값 회수(리셋 아님)
 
 
-def test_load_theme_persistent_read_error_falls_back_to_system(home, monkeypatch):
-    """지속 판독 실패는 재시도를 거친 뒤 'system' 으로 접는다 — 테마 하나로 부팅을 죽일 순 없다."""
+def test_load_theme_persistent_read_error_alarms_then_falls_back(home, monkeypatch):
+    """지속 판독 실패는 재시도를 거친 뒤 'system' 으로 접되(테마 하나로 부팅 불사), **조용히
+    넘기지 않고 경보한다**(#75 리뷰4 #2) — 조용한 리셋은 저장 선택의 무단 소실이다."""
     settings.save_theme("dark")
     real_read_text = Path.read_text
 
@@ -127,6 +128,29 @@ def test_load_theme_persistent_read_error_falls_back_to_system(home, monkeypatch
             raise PermissionError(13, "지속 실패 모사")
         return real_read_text(self, *a, **k)
 
+    alerts: list[str] = []
+    monkeypatch.setattr(settings, "alert", lambda m: alerts.append(m))
     monkeypatch.setattr(settings.time, "sleep", lambda s: None)
     monkeypatch.setattr(Path, "read_text", always_fails)
     assert settings.load_theme() == "system"
+    assert alerts and "판독" in alerts[0]  # 시끄러운 경보가 실제로 났다
+
+
+def test_save_theme_retries_transient_read_share_violation(home, monkeypatch):
+    """토글 순간의 일시 읽기 공유위반(RMW 재판독)도 재시도로 흡수해야 한다 — 쓰기만 관대하고
+    그 직전 읽기는 spurious alert 로 승격되던 비대칭을 닫는다(#75 리뷰4 #4)."""
+    settings.save_theme("light")  # 시드(다른 키 보존 확인용은 아니지만 파일 존재)
+    real_read_text = Path.read_text
+    remaining = {"fails": 2}
+
+    def flaky_read(self, *a, **k):
+        if self.name == "settings.json" and remaining["fails"] > 0:
+            remaining["fails"] -= 1
+            raise PermissionError(13, "읽기 공유 위반 모사")
+        return real_read_text(self, *a, **k)
+
+    monkeypatch.setattr(settings.time, "sleep", lambda s: None)
+    monkeypatch.setattr(Path, "read_text", flaky_read)
+    settings.save_theme("dark")  # 재판독이 2회 튕겨도 재시도로 흡수 → 성공(예외 전파 없음)
+    monkeypatch.setattr(Path, "read_text", real_read_text)
+    assert settings.load_theme() == "dark"

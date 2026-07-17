@@ -10,8 +10,10 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -27,6 +29,21 @@ def home_dir() -> Path:
     """앱 홈 — ``HWPXFILLER_HOME`` 또는 ``~/.hwpxfiller`` (레지스트리들과 같은 규약)."""
     root = os.environ.get("HWPXFILLER_HOME") or (Path.home() / ".hwpxfiller")
     return Path(root)
+
+
+def alert(msg: str) -> None:
+    """내구성 경보 채널 — stderr + 홈 ``webapp-alerts.log``. 창(JS alert) 계층은 app._alarm 이
+    이 위에 얹는다. settings 계층이 소유하는 이유: 홈 경로·경보 로그가 여기 있고, 이 모듈이 app 을
+    import 하면 순환(app→settings)이다. 동결 exe 는 console=False 라 stderr 가 소실되므로 홈 로그가
+    유일하게 남는 채널 — confirm-or-alarm 이 공집합 채널로 무력화되지 않게 반드시 파일에 남긴다."""
+    print(f"[hwpx] {msg}", file=sys.stderr)
+    try:
+        log_path = home_dir() / "webapp-alerts.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write(f"{datetime.datetime.now().isoformat(timespec='seconds')} {msg}\n")
+    except OSError:
+        pass  # 로그 채널 자체의 실패로 부팅/저장을 막지 않는다 — stderr 는 이미 시도됨
 
 
 def _settings_path() -> Path:
@@ -47,18 +64,22 @@ def _parse_settings(text: str) -> dict:
 def _read() -> dict:
     """전체 설정 dict 반환 — 부재는 빈 dict(첫 실행). **일시 OSError 는 유계 재시도 후에만**
     폴백한다: AV 스캔·원자 교체 순간의 공유 위반 같은 일시 판독 장애가 저장 테마의 조용한
-    'system' 리셋으로 승격되지 않게(#75 리뷰 #6, confirm-or-alarm). save_theme 재시도와 대칭 —
-    지속 실패만 빈 dict 로 접되(부팅을 테마 하나로 죽일 순 없다) 그 전에 재시도를 거친다."""
+    'system' 리셋으로 승격되지 않게(#75 리뷰 #6, confirm-or-alarm). save_theme 재시도와 대칭.
+
+    재시도를 소진한 **지속** 실패는 빈 dict 로 접되(부팅을 테마 하나로 죽일 순 없다) 조용히
+    넘기지 않고 시끄럽게 알린다(#75 리뷰4 #2) — 조용한 리셋은 곧 저장 선택의 무단 소실이다."""
     path = _settings_path()
+    last_exc: "OSError | None" = None
     for attempt in range(_READ_RETRIES):
         try:
             return _parse_settings(path.read_text(encoding="utf-8"))
         except FileNotFoundError:
-            return {}  # 첫 실행 — 재시도 무의미
-        except OSError:
-            if attempt == _READ_RETRIES - 1:
-                return {}
-            time.sleep(0.05 * (attempt + 1))
+            return {}  # 첫 실행 — 재시도·경보 무의미
+        except OSError as exc:
+            last_exc = exc
+            if attempt < _READ_RETRIES - 1:
+                time.sleep(0.05 * (attempt + 1))
+    alert(f"설정 판독 지속 실패 — 테마 등 저장값을 회수 못 하고 기본값으로 진행: {last_exc!r}")
     return {}
 
 
@@ -93,9 +114,13 @@ def save_theme(mode: str) -> None:
     path = _settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     for attempt in range(_REPLACE_RETRIES):
-        data = _read_for_update(path)  # 재시도마다 재판독 — 손상·갱신된 다른 키를 보존
-        data["theme"] = mode
         try:
+            # 재판독을 try 안에 둔다 — 일시 공유 위반은 판독 쪽에서도 튈 수 있고(원자 교체 순간
+            # 타 프로세스의 읽기 락), 이를 재시도로 흡수하지 않으면 쓰기만 관대하고 그 직전 읽기는
+            # spurious alert 로 승격되는 비대칭이 된다(#75 리뷰4 #4). 재시도마다 재판독 = 손상·
+            # 갱신된 다른 키 보존.
+            data = _read_for_update(path)
+            data["theme"] = mode
             write_text_atomic(path, json.dumps(data, ensure_ascii=False, indent=2))
             return
         except PermissionError:
