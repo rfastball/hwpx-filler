@@ -20,8 +20,10 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 from pathlib import Path
 
+from . import settings
 from ..core.job import JobRegistry, default_jobs_dir
 from ..core.text_registry import TextTemplateRegistry, default_text_templates_dir
 from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확정 게이트 판정(#33)
@@ -129,6 +131,15 @@ class WebFrontend:
     def dispatch(self, screen: str, action: str, payload: "dict | None" = None):
         """순수 데이터 액션(창 불필요) 라우팅. 액션이 값을 돌려주면 그대로 웹에 반환."""
         return self._controller(screen).dispatch(action, payload or {})
+
+    def get_theme(self) -> str:
+        """저장된 테마 선택(오리진 비의존 Python 설정, #74). 미저장 시 ``"system"``."""
+        return settings.load_theme()
+
+    def set_theme(self, mode: str) -> str:
+        """테마 선택 영속 — 프런트 토글이 부른다(#74). 확정값 반환(비유효는 ValueError)."""
+        settings.save_theme(mode)
+        return mode
 
     def pick_template_file(self, screen: str) -> "str | None":
         """Win32 열기 다이얼로그(HWPX) → 링1 스키마/게이트 로드. 실패는 ``ERROR:`` 접두."""
@@ -504,20 +515,23 @@ def _finish_selftest(window: "object", result: dict) -> None:
 def _selftest_drive(window: "object") -> None:
     """동결 exe 부팅 자가검증 — 창이 뜨고 렌더/브리지가 도는지 되읽어 파일로 확정 후 정식 종료.
 
-    ``HWPX_SELFTEST_SET_THEME`` 이 설정되면 **쓰기 단계**로 동작한다: 저장 테마를 심고 바로 정식
-    종료해 localStorage 를 storage_path 에 남긴다(다음 콜드부트의 영속·무깜빡임 되읽기용 사전 단계).
+    ``HWPX_SELFTEST_SET_THEME`` 이 설정되면 **쓰기 단계**로 동작한다: 저장 테마를 Python 설정
+    (settings.json)에 심고 바로 정식 종료한다(다음 콜드부트의 오리진 비의존 영속 되읽기용 사전 단계, #74).
     """
     import time
 
     set_theme = os.environ.get("HWPX_SELFTEST_SET_THEME")
     if set_theme:
-        time.sleep(4.0)  # 콜드부트 + theme.js 로드 대기
+        time.sleep(4.0)  # 콜드부트 + 브리지(pywebview.api) 준비 대기
         result: dict = {"theme_write": set_theme}
         try:
-            # 실 토글 헬퍼로 심는다(setAttribute + localStorage.setItem) — 실사용 경로와 동형.
-            result["set_result"] = window.evaluate_js(  # type: ignore[attr-defined]
-                "window.Theme.set(" + json.dumps(set_theme) + ")")
-            time.sleep(1.2)  # WebView2 가 storage_path 로 플러시할 여유
+            # 실사용 경로(JS→Python 브리지)로 settings.json 에 쓴다. evaluate_js 는 promise 를
+            # 대기하지 않으므로(반환=미해소 promise), 디스패치·파일 쓰기 완료를 짧게 기다린 뒤
+            # in-process 로 판독해 확정한다 — 이 파일이 곧 다음 콜드부트의 판독원(#74).
+            window.evaluate_js(  # type: ignore[attr-defined]
+                "window.pywebview.api.set_theme(" + json.dumps(set_theme) + ")")
+            time.sleep(1.0)  # 브리지 디스패치 + save_theme 디스크 반영 여유
+            result["set_result"] = settings.load_theme()  # 종료 전 실제 디스크 반영 확정
         except Exception as exc:  # noqa: BLE001
             result["error"] = repr(exc)
         _finish_selftest(window, result)
@@ -568,76 +582,19 @@ def _selftest_drive(window: "object") -> None:
         window.evaluate_js(_PRESERVE_REAL_SETUP_JS)  # type: ignore[attr-defined]  # 비동기 initial fire
         time.sleep(1.2)  # initial() 해소 + 렌더 안정
         result["preserve_real"] = window.evaluate_js(_PRESERVE_REAL_PROBE_JS)  # type: ignore[attr-defined]
-        # 다크모드 영속·무깜빡임(콜드부트 되읽기) — head FOUC 인라인이 이전 세션이 남긴 저장 테마를
-        # 첫 페인트 전 data-theme 로 세웠는지. 저장값이 없으면 data_theme=null(=system). 앞선 쓰기
-        # 프로세스가 남긴 값이 여기서 보이면 private_mode=False+storage_path 디스크 영속이 실증된다.
+        # 다크모드 영속·무깜빡임(콜드부트 되읽기, #74) — 부팅 시 loaded 핸들러가 저장 테마
+        # (settings.json, 오리진 비의존)를 show 전에 data-theme 로 주입했는지. 저장값이 없으면
+        # data_theme=null(=system). 앞선 쓰기 프로세스가 남긴 값이 여기서 보이면 Python 설정
+        # 영속이 실증된다(포트/오리진이 부팅마다 달라도 유지 = 실사용 그대로).
         result["theme_persist"] = window.evaluate_js(  # type: ignore[attr-defined]
             "({data_theme: document.documentElement.getAttribute('data-theme'),"
             " a_card: getComputedStyle(document.documentElement).getPropertyValue('--a-card').trim()})")
-        # 자산 스탬프(#71 스테일 캐시 회귀 관측점) — 게이트가 web 사본 JS 에 심은 전역을 되읽어
-        # "실제로 실행된 자산이 어느 판인지"를 확정한다. 스탬프 미주입 실행(일반 부팅)은 null.
-        result["asset_stamp"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "window.__HWPX_ASSET_STAMP__ === undefined ? null : window.__HWPX_ASSET_STAMP__")
     except Exception as exc:  # noqa: BLE001
         result["error"] = repr(exc)
     _finish_selftest(window, result)
 
 
 # ------------------------------------------------------------------ 엔트리
-def _webview_storage_dir() -> str:
-    """WebView2 영속 저장소(localStorage 등) 위치 — 홈 아래 ``webview/``.
-
-    pywebview 기본 ``private_mode=True`` 는 세션 간 localStorage 를 버린다 — 테마 선택 영속에
-    필요해 ``private_mode=False`` 로 지속화하되, 저장 위치는 다른 GUI 상태와 같은 홈 seam
-    (``HWPXFILLER_HOME`` 또는 ``~/.hwpxfiller``) 아래로 모은다(레지스트리들과 동일 규약).
-
-    반환은 반드시 절대경로 — 상대 storage_path 는 WebView2 생성이 실패한 뒤 pywebview 가
-    **조용히 MSHTML(IE) 로 폴백**하는 실함정이다(2026-07-17 실측, #69/#71 규명 라운드)."""
-    root = os.environ.get("HWPXFILLER_HOME") or (Path.home() / ".hwpxfiller")
-    return str((Path(root) / "webview").resolve())
-
-
-def _purge_webview_http_cache(storage: str) -> None:
-    """부팅 전 WebView2 HTTP 디스크 캐시 퍼지 — 스테일 자산 서빙 클래스 제거(#69/#71).
-
-    실측(2026-07-17 통제실험): WebView2 는 pywebview 서버의 no-store 헤더에도 자산을 디스크
-    캐시에 저장하고, 서빙 파일 mtime 이 후퇴하면(워크트리 전환·다운그레이드·백업 복원)
-    Last-Modified 304 재검증이 캐시된 구판/남의 바디를 실행시킨다. ``--disable-http-cache``
-    는 브라우저 프로세스에 도달해도 무효(HTTP 캐시를 쥔 network service 에 미전파)라 프로필의
-    ``Cache`` 하위만 삭제한다 — ``Local Storage``(테마 영속)는 불건드림(생존 실증). 이 경로는
-    WebView2 내부 레이아웃이라 바뀔 수 있다 — 퍼지가 헛돌면 게이트의 스테일 회귀 테스트가
-    시끄럽게 잡는다."""
-    import shutil
-
-    for cache in Path(storage).glob("EBWebView/*/Cache"):
-        try:
-            shutil.rmtree(cache)
-        except OSError as exc:
-            # 조용한 퍼지 실패 금지 — 스테일 가능성이 남음을 알리되 부팅은 계속한다
-            # (캐시 잔존은 기능 저하이지 중단 사유가 아니다).
-            print(f"[hwpx] WebView2 캐시 퍼지 실패({cache}): {exc!r}", file=sys.stderr)
-
-
-def _webview_http_port() -> "int | None":
-    """pywebview 내부 서버 포트 결정 — 실사용은 고정, selftest 는 hermetic.
-
-    실사용 경로는 반드시 ``None``(= pywebview 기본 42001 고정)을 유지한다: localStorage 는
-    오리진(host:port) 키라 포트가 바뀌면 사용자 테마 영속이 리셋된다. ``HWPX_WEBVIEW_PORT``
-    는 테스트 seam(테마 영속 게이트가 두 콜드부트의 오리진을 일치시킬 때). ``--selftest`` 는
-    env 미지정 시 빈 포트를 골라 — 동시 실행 중인 실앱(42001 점유)과의 서버·캐시 오리진
-    충돌을 차단한다(#69)."""
-    port_env = os.environ.get("HWPX_WEBVIEW_PORT")
-    if port_env:
-        return int(port_env)
-    if "--selftest" in sys.argv:
-        import socket
-
-        with socket.socket() as s:
-            s.bind(("127.0.0.1", 0))
-            return s.getsockname()[1]
-    return None
-
-
 def main() -> int:
     import webview
 
@@ -649,20 +606,53 @@ def main() -> int:
         width=1180,
         height=820,
         min_size=(760, 600),
+        hidden=True,  # 테마 주입 후 show — FOUC 은닉(#74, 아래 _apply_theme_then_show)
     )
     frontend._window = window
     # 소이슈 ②: Windows 는 EdgeChromium(WebView2) 백엔드 명시 핀.
     gui = "edgechromium" if sys.platform == "win32" else None
-    # 테마 선택을 세션 간 유지 — localStorage 지속화(private_mode=False + 홈 아래 storage_path).
-    storage = _webview_storage_dir()
-    _purge_webview_http_cache(storage)  # 브라우저 프로세스 부재 시점에 실행(#69/#71)
-    http_port = _webview_http_port()
+
+    # FOUC 은닉(#74): 테마 영속을 오리진 비의존 Python 설정으로 옮기면서(private_mode 기본 복원)
+    # head 동기 인라인 판독원(localStorage)이 사라졌다. pywebview 엔 첫 페인트 전 주입 훅이
+    # 없어(WebView2 AddScriptToExecuteOnDocumentCreated 미노출) 표준 pre-paint '예방' 대신
+    # '은닉'을 쓴다 — 창을 숨긴 채 띄우고 DOM 로드(loaded) 시 저장 테마를 data-theme 로 주입한
+    # 뒤 show 하여, 라이트 첫 페인트를 화면 밖에서 소진시킨다. show 는 정확히 1회.
+    shown = threading.Event()
+
+    def _show_once() -> None:
+        if not shown.is_set():
+            shown.set()
+            window.show()  # type: ignore[attr-defined]
+
+    def _apply_theme_then_show() -> None:  # loaded 콜백(0-인자로 호출됨, event.py:40)
+        try:
+            theme = settings.load_theme()
+            if theme in ("light", "dark"):
+                window.evaluate_js(  # type: ignore[attr-defined]
+                    f'document.documentElement.setAttribute("data-theme", {json.dumps(theme)})')
+        except Exception as exc:  # noqa: BLE001  테마 실패로 창이 안 뜨면 안 된다 — 알리고 show 진행
+            print(f"[hwpx] 테마 주입 실패: {exc!r}", file=sys.stderr)
+        _show_once()
+
+    window.events.loaded += _apply_theme_then_show
+
+    # 폴백(confirm-or-alarm): loaded 가 끝내 안 오면 창이 영영 숨겨진다 — 상한 후 강제 show + 경보.
+    def _fallback_show() -> None:
+        if not shown.is_set():
+            print("[hwpx] loaded 미발화 — 폴백으로 창 표시(테마 미주입 가능)", file=sys.stderr)
+            _show_once()
+
+    timer = threading.Timer(8.0, _fallback_show)
+    timer.daemon = True
+    timer.start()
+
+    # private_mode 기본(True) = 랜덤 빈 포트 + 인메모리 프로필 → 포트 스쿼팅·캐시 스테일·서버
+    # 크로스톡 클래스 구조 소멸(#74). 정상 닫기 = webview.start 반환 = 클린 종료(소이슈 ①).
     if "--selftest" in sys.argv:
-        webview.start(_selftest_drive, window, gui=gui, private_mode=False,
-                      storage_path=storage, http_port=http_port)
+        webview.start(_selftest_drive, window, gui=gui)
     else:
-        # 정상 닫기 = 클린 종료(소이슈 ①)
-        webview.start(gui=gui, private_mode=False, storage_path=storage, http_port=http_port)
+        webview.start(gui=gui)
+    timer.cancel()
     return 0
 
 

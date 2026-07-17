@@ -4,11 +4,10 @@
    :root[data-theme="dark"] / :not([data-theme="light"]) override 를 켠다:
      - "system"(속성 없음) → @media(prefers-color-scheme) 가 OS 를 따른다.
      - "light"/"dark"        → 앱 토글이 OS 를 양방향으로 덮는다.
-   선택은 localStorage 에 영속(app.py 가 private_mode=False+storage_path 로 세션 간 지속화).
-   FOUC 방지 인라인 스크립트(index.html <head>)가 첫 페인트 전 같은 키를 동기 되읽어 적용하므로,
-   이 파일은 body 말미 로드로 충분하다(토글·라벨 동기화 담당). 브리지 무관 — 순수 프론트 셸 상태. */
+   선택은 오리진 비의존 Python 설정(app.py set_theme → settings.json)에 영속(#74). 부팅 시 Python 이
+   창을 숨긴 채 loaded 에서 저장 테마를 data-theme 로 주입하고 show 하므로(FOUC 은닉), localStorage
+   없이도 콜드부트를 넘어 유지된다. 이 파일은 토글·라벨 동기와 선택의 영속 왕복만 담당한다. */
 (function () {
-  var KEY = "hwpxfiller.theme";
   var ORDER = ["system", "light", "dark"];
 
   function current() {
@@ -16,14 +15,20 @@
     return v === "light" || v === "dark" ? v : "system";
   }
 
-  function set(mode) {
+  function apply(mode) {
     if (mode === "light" || mode === "dark") {
       document.documentElement.setAttribute("data-theme", mode);
-      try { localStorage.setItem(KEY, mode); } catch (e) { /* private/미지원 — 무시 */ }
     } else {
       // system: 속성 제거 → @media 지배로 되돌린다.
       document.documentElement.removeAttribute("data-theme");
-      try { localStorage.removeItem(KEY); } catch (e) { /* 무시 */ }
+    }
+  }
+
+  function set(mode) {
+    apply(mode);
+    // 브리지 부재(브라우저 단독 프리뷰)면 영속 생략 — 셸 상태만 갱신, 무해 통과.
+    if (window.pywebview && window.pywebview.api) {
+      try { window.Bridge.setTheme(current()); } catch (e) { /* 무시 */ }
     }
     return current();
   }
