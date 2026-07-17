@@ -213,7 +213,8 @@
           <input class="field ro" id="mxDataLabel" type="text" readonly
                  placeholder="데이터를 선택하세요 (.xlsx/.csv)">
           <button class="btn" id="btnMxPoolData" data-busy-lock>등록 데이터…</button>
-          <button class="btn" id="btnMxPickData" data-busy-lock>파일 선택…</button></div>
+          <button class="btn" id="btnMxPickData" data-busy-lock>파일 선택…</button>
+          <span id="mxDataTrack"></span></div>
 
         <!-- 3. 작업별 미입력 필드 확인(상시 인라인 + 강제 확인 게이트, ADR-E·UD-04) -->
         <div class="grp"><span class="cap">3. 작업별 미입력 필드 확인</span>
@@ -236,7 +237,8 @@
         <div class="run-row"><span class="lbl">저장 폴더 · 작업별 하위폴더</span>
           <input class="field ro" id="mxOutDir" type="text" readonly
                  placeholder="이 폴더 아래에 작업별 하위 폴더로 저장합니다">
-          <button class="btn" id="btnMxPickFolder" data-busy-lock>찾아보기…</button></div>
+          <button class="btn" id="btnMxPickFolder" data-busy-lock>찾아보기…</button>
+          <span id="mxOutTrack"></span></div>
 
         <!-- 액션 · 진행 · 결과 · 로그 -->
         <div class="run-actions">

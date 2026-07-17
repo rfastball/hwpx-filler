@@ -299,8 +299,12 @@ class WebFrontend:
         :func:`screens.collect_owned_paths`/`validate_owned_path`(헤드리스 테스트 대상)."""
         ed = self._controller("editor")
         run = self._controller("run")
+        mx = self._controller("matrix")
+        # 매트릭스 세션 경로(#67) — 파일로 겨눈 공통 데이터·저장 폴더는 durable 레지스트리
+        # 밖이라 세션 목록에 없으면 자기 화면의 로케이트가 loud 거부된다(53-B 잔여 갭).
         session = [getattr(ed, "template_path", ""), getattr(ed, "data_path", ""),
-                   getattr(run, "out_dir", "")]
+                   getattr(run, "out_dir", ""),
+                   getattr(mx, "out_dir", ""), getattr(mx, "data_track_path", "")]
         owned = collect_owned_paths(self._job_registry, self._pool_registry, session)
         return validate_owned_path(path, owned)
 

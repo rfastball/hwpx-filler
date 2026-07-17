@@ -426,3 +426,14 @@ def test_unhandledrejection_backstop_present_in_both_shells():
         block = m.group(0)
         assert "window.alert" in block, f"{app_js} 백스톱이 alert 로 재진술하지 않습니다."
         assert "preventDefault" in block, f"{app_js} 백스톱이 rejection 을 handled 처리하지 않습니다."
+
+
+def test_matrix_locate_anchors_present():
+    """매트릭스 로케이트 앵커(#67) — 공통 데이터·저장 폴더 어포던스 착지점 실재.
+
+    matrix.js renderData 가 innerHTML 로 채우는 두 span 이 정적 DOM 에서 사라지면
+    로케이트가 조용히 미렌더된다(전역 유일성은 test_all_element_ids 가 커버).
+    """
+    ids = set(_collect_ids())
+    missing = [i for i in ("mxDataTrack", "mxOutTrack") if i not in ids]
+    assert not missing, f"매트릭스 로케이트 앵커가 없습니다: {missing}"

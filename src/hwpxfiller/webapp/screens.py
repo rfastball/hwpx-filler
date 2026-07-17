@@ -169,7 +169,8 @@ def load_pool_into(
         return {"ok": False, "error": f"등록 데이터를 불러올 수 없습니다: {exc}"}
     if not records:
         return {"ok": False, "error": "레코드 0건 — 데이터를 바꾸지 않았습니다."}
-    return {"ok": True, "records": records}
+    # item 동봉(#67) — 호출측이 로케이트 경로(opts["path"]) 등 참조 메타를 재사용한다.
+    return {"ok": True, "records": records, "item": item}
 
 
 def source_label(source: str, data_label: str) -> str:
@@ -257,6 +258,9 @@ class PoolTargetingMixin:
     pool_registry: DatasetPoolRegistry
     data_label: str
     data_source: str  # ''(미겨눔) | 'file' | 'pool' — 라벨은 source_label 이 합성(K8)
+    # 로케이트 대상 파일 경로(#67) — 겨눔 시점에 캐시(렌더당 I/O 0). 겨눔 후 풀 항목이
+    # 재연결되면 구식화되지만, 이는 로드된 레코드와 동일한 sync-at-aim 신선도 의미다.
+    data_track_path: str = ""
 
     def _pool_guard(self) -> "str | None":
         """겨눔 전제조건 검사 — 미충족이면 사용자 문구, 충족이면 None."""
@@ -284,6 +288,11 @@ class PoolTargetingMixin:
             return res
         self.data_label = name
         self.data_source = "pool"
+        # 로케이트 경로 캐시(#67) — 파일 참조(excel)만 경로가 있다(nara 등은 "").
+        opts = res["item"].opts
+        self.data_track_path = (
+            opts.get("path", "") if isinstance(opts, dict) else ""
+        ) or ""
         self._after_pool_load(res["records"])
         return {"ok": True, "label": source_label("pool", name)}
 
