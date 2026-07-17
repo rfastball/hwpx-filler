@@ -19,13 +19,17 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
+import threading
 from pathlib import Path
 
+from . import settings
 from ..core.job import JobRegistry, default_jobs_dir
 from ..core.text_registry import TextTemplateRegistry, default_text_templates_dir
 from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확정 게이트 판정(#33)
 from ..gui.file_filters import EXCEL_FILTER_PATTERN  # 확장자 단일 출처(RC-34) — Qt-free 상수
+from hwpxcore.native import single_instance
 from hwpxcore.native._debug import log
 from hwpxcore.native.clipboard import set_clipboard_text
 from hwpxcore.native.dialogs import open_file_dialog, open_folder_dialog, save_file_dialog
@@ -129,6 +133,11 @@ class WebFrontend:
     def dispatch(self, screen: str, action: str, payload: "dict | None" = None):
         """순수 데이터 액션(창 불필요) 라우팅. 액션이 값을 돌려주면 그대로 웹에 반환."""
         return self._controller(screen).dispatch(action, payload or {})
+
+    def set_theme(self, mode: str) -> str:
+        """테마 선택 영속 — 프런트 토글이 부른다(#74). 확정값 반환(비유효는 ValueError)."""
+        settings.save_theme(mode)
+        return mode
 
     def pick_template_file(self, screen: str) -> "str | None":
         """Win32 열기 다이얼로그(HWPX) → 링1 스키마/게이트 로드. 실패는 ``ERROR:`` 접두."""
@@ -504,20 +513,39 @@ def _finish_selftest(window: "object", result: dict) -> None:
 def _selftest_drive(window: "object") -> None:
     """동결 exe 부팅 자가검증 — 창이 뜨고 렌더/브리지가 도는지 되읽어 파일로 확정 후 정식 종료.
 
-    ``HWPX_SELFTEST_SET_THEME`` 이 설정되면 **쓰기 단계**로 동작한다: 저장 테마를 심고 바로 정식
-    종료해 localStorage 를 storage_path 에 남긴다(다음 콜드부트의 영속·무깜빡임 되읽기용 사전 단계).
+    ``HWPX_SELFTEST_SET_THEME`` 이 설정되면 **쓰기 단계**로 동작한다: 저장 테마를 Python 설정
+    (settings.json)에 심고 바로 정식 종료한다(다음 콜드부트의 오리진 비의존 영속 되읽기용 사전 단계, #74).
     """
     import time
 
     set_theme = os.environ.get("HWPX_SELFTEST_SET_THEME")
     if set_theme:
-        time.sleep(4.0)  # 콜드부트 + theme.js 로드 대기
         result: dict = {"theme_write": set_theme}
         try:
-            # 실 토글 헬퍼로 심는다(setAttribute + localStorage.setItem) — 실사용 경로와 동형.
-            result["set_result"] = window.evaluate_js(  # type: ignore[attr-defined]
+            # 실사용 경로 그대로 구동 — 토글 클릭이 지나는 theme.js Theme.set→Bridge.setTheme→
+            # api.set_theme 홉 전체(브리지 가드 포함)를 게이트가 덮는다(api 직접 호출로 바꾸면
+            # theme.js 결함이 무커버가 된다). 단 Theme.set 의 브리지 가드는 pywebview.api 미준비
+            # 시 **조용히 no-op** 이라, 고정 sleep 으로 준비를 어림하면 느린 콜드부트에서 쓰기가
+            # 아예 발화 안 돼 정상 빌드가 빨개진다(#75 리뷰 #5). 준비를 명시 폴링하고, 시한 초과는
+            # 조용한 통과가 아니라 시끄러운 error 로 확정한다(confirm-or-alarm).
+            ready_probe = "!!(window.pywebview && window.pywebview.api && window.Bridge && window.Theme)"
+            ready_deadline = time.monotonic() + 15.0
+            while time.monotonic() < ready_deadline:
+                if window.evaluate_js(ready_probe):  # type: ignore[attr-defined]
+                    break
+                time.sleep(0.1)
+            else:
+                result["error"] = "브리지(pywebview.api) 준비 시한 초과 — Theme.set 미구동"
+                _finish_selftest(window, result)
+                return
+            window.evaluate_js(  # type: ignore[attr-defined]
                 "window.Theme.set(" + json.dumps(set_theme) + ")")
-            time.sleep(1.2)  # WebView2 가 storage_path 로 플러시할 여유
+            # evaluate_js 는 promise 를 대기하지 않으므로 디스패치·파일 쓰기 완료를 데드라인까지
+            # 폴링해 확정한다(#74).
+            deadline = time.monotonic() + 10.0
+            while settings.load_theme() != set_theme and time.monotonic() < deadline:
+                time.sleep(0.1)
+            result["set_result"] = settings.load_theme()  # 종료 전 실제 디스크 반영 확정
         except Exception as exc:  # noqa: BLE001
             result["error"] = repr(exc)
         _finish_selftest(window, result)
@@ -568,78 +596,73 @@ def _selftest_drive(window: "object") -> None:
         window.evaluate_js(_PRESERVE_REAL_SETUP_JS)  # type: ignore[attr-defined]  # 비동기 initial fire
         time.sleep(1.2)  # initial() 해소 + 렌더 안정
         result["preserve_real"] = window.evaluate_js(_PRESERVE_REAL_PROBE_JS)  # type: ignore[attr-defined]
-        # 다크모드 영속·무깜빡임(콜드부트 되읽기) — head FOUC 인라인이 이전 세션이 남긴 저장 테마를
-        # 첫 페인트 전 data-theme 로 세웠는지. 저장값이 없으면 data_theme=null(=system). 앞선 쓰기
-        # 프로세스가 남긴 값이 여기서 보이면 private_mode=False+storage_path 디스크 영속이 실증된다.
+        # 다크모드 영속·무깜빡임(콜드부트 되읽기, #74) — 부팅 시 loaded 핸들러가 저장 테마
+        # (settings.json, 오리진 비의존)를 show 전에 data-theme 로 주입했는지. 저장값이 없으면
+        # data_theme=null(=system). 앞선 쓰기 프로세스가 남긴 값이 여기서 보이면 Python 설정
+        # 영속이 실증된다(포트/오리진이 부팅마다 달라도 유지 = 실사용 그대로).
         result["theme_persist"] = window.evaluate_js(  # type: ignore[attr-defined]
             "({data_theme: document.documentElement.getAttribute('data-theme'),"
             " a_card: getComputedStyle(document.documentElement).getPropertyValue('--a-card').trim()})")
-        # 자산 스탬프(#71 스테일 캐시 회귀 관측점) — 게이트가 web 사본 JS 에 심은 전역을 되읽어
-        # "실제로 실행된 자산이 어느 판인지"를 확정한다. 스탬프 미주입 실행(일반 부팅)은 null.
-        result["asset_stamp"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "window.__HWPX_ASSET_STAMP__ === undefined ? null : window.__HWPX_ASSET_STAMP__")
     except Exception as exc:  # noqa: BLE001
         result["error"] = repr(exc)
     _finish_selftest(window, result)
 
 
 # ------------------------------------------------------------------ 엔트리
-def _webview_storage_dir() -> str:
-    """WebView2 영속 저장소(localStorage 등) 위치 — 홈 아래 ``webview/``.
+def _alarm(msg: str, window: "object | None" = None) -> None:
+    """부팅 경보 — 내구성 채널(stderr + 홈 로그, settings.alert) + (가능하면) JS alert.
 
-    pywebview 기본 ``private_mode=True`` 는 세션 간 localStorage 를 버린다 — 테마 선택 영속에
-    필요해 ``private_mode=False`` 로 지속화하되, 저장 위치는 다른 GUI 상태와 같은 홈 seam
-    (``HWPXFILLER_HOME`` 또는 ``~/.hwpxfiller``) 아래로 모은다(레지스트리들과 동일 규약).
-
-    반환은 반드시 절대경로 — 상대 storage_path 는 WebView2 생성이 실패한 뒤 pywebview 가
-    **조용히 MSHTML(IE) 로 폴백**하는 실함정이다(2026-07-17 실측, #69/#71 규명 라운드)."""
-    root = os.environ.get("HWPXFILLER_HOME") or (Path.home() / ".hwpxfiller")
-    return str((Path(root) / "webview").resolve())
-
-
-def _purge_webview_http_cache(storage: str) -> None:
-    """부팅 전 WebView2 HTTP 디스크 캐시 퍼지 — 스테일 자산 서빙 클래스 제거(#69/#71).
-
-    실측(2026-07-17 통제실험): WebView2 는 pywebview 서버의 no-store 헤더에도 자산을 디스크
-    캐시에 저장하고, 서빙 파일 mtime 이 후퇴하면(워크트리 전환·다운그레이드·백업 복원)
-    Last-Modified 304 재검증이 캐시된 구판/남의 바디를 실행시킨다. ``--disable-http-cache``
-    는 브라우저 프로세스에 도달해도 무효(HTTP 캐시를 쥔 network service 에 미전파)라 프로필의
-    ``Cache`` 하위만 삭제한다 — ``Local Storage``(테마 영속)는 불건드림(생존 실증). 이 경로는
-    WebView2 내부 레이아웃이라 바뀔 수 있다 — 퍼지가 헛돌면 게이트의 스테일 회귀 테스트가
-    시끄럽게 잡는다."""
-    import shutil
-
-    for cache in Path(storage).glob("EBWebView/*/Cache"):
+    내구성 채널은 settings.alert 가 소유한다(홈 경로·경보 로그가 거기 있고, settings 층 코드도
+    같은 채널로 알려야 한다 — 순환 import 회피). 이 함수는 그 위에 창(JS alert) 계층만 얹는다.
+    JS alert 는 fire-and-forget(setTimeout) — evaluate_js 가 alert 해소를 기다리다
+    호출 스레드(loaded 핸들러·폴백 타이머)를 매달지 않게 한다."""
+    settings.alert(msg)
+    if window is not None:
         try:
-            shutil.rmtree(cache)
-        except OSError as exc:
-            # 조용한 퍼지 실패 금지 — 스테일 가능성이 남음을 알리되 부팅은 계속한다
-            # (캐시 잔존은 기능 저하이지 중단 사유가 아니다).
-            print(f"[hwpx] WebView2 캐시 퍼지 실패({cache}): {exc!r}", file=sys.stderr)
+            window.evaluate_js(  # type: ignore[attr-defined]
+                f"setTimeout(function(){{window.alert({json.dumps('[hwpx] ' + msg)})}},0)")
+        except Exception:  # noqa: BLE001  창이 그 정도로 죽었으면 alert 채널도 없다
+            pass
 
 
-def _webview_http_port() -> "int | None":
-    """pywebview 내부 서버 포트 결정 — 실사용은 고정, selftest 는 hermetic.
+def _prepare_webview_profile(webview_root: Path) -> Path:
+    """부팅용 WebView2 프로필 준비 — ``webview_root`` 를 통째 청소하고 고정 ``profile`` 폴더를 만든다.
 
-    실사용 경로는 반드시 ``None``(= pywebview 기본 42001 고정)을 유지한다: localStorage 는
-    오리진(host:port) 키라 포트가 바뀌면 사용자 테마 영속이 리셋된다. ``HWPX_WEBVIEW_PORT``
-    는 테스트 seam(테마 영속 게이트가 두 콜드부트의 오리진을 일치시킬 때). ``--selftest`` 는
-    env 미지정 시 빈 포트를 골라 — 동시 실행 중인 실앱(42001 점유)과의 서버·캐시 오리진
-    충돌을 차단한다(#69)."""
-    port_env = os.environ.get("HWPX_WEBVIEW_PORT")
-    if port_env:
-        return int(port_env)
-    if "--selftest" in sys.argv:
-        import socket
+    단일 인스턴스 가드(main() 뮤텍스)가 이 홈에 우리뿐임을 보장하므로 ``webview_root`` 전체가
+    우리 것이다 → 크래시 고아 프로필·구판 단일 폴더 잔재(EBWebView)·재시작 간 공유 디스크
+    캐시(#69/#71 스테일 자산)를 iterate·프로브 없이 한 줄로 소거한다. 오리진 비의존 영속
+    (settings.json)은 홈 **루트** 에 있어 webview_root 와 분리 — 통째 삭제가 안전하다.
+    이전의 per-pid 폴더 + 부팅 스윕 + profile.lock 기계 전부를 대체한다(#74 리뷰3).
 
-        with socket.socket() as s:
-            s.bind(("127.0.0.1", 0))
-            return s.getsockname()[1]
-    return None
+    ``resolve()`` 필수: 상대 storage_path 는 WebView2 생성 실패 → MSHTML(IE) 조용한 폴백(#69/#71).
+
+    청소 실패(좀비 WebView2·AV 가 락 보유)는 **조용히 삼키지 않는다**(#75 리뷰4 #1): 삭제한
+    _purge_webview_http_cache 가 이 OSError 를 경보했던 것처럼, 스테일 프로필 재사용(=구자산
+    서빙, #69/#71 클래스)이 신호 없이 일어나지 않게 시끄럽게 알린 뒤 진행한다(부팅 불사)."""
+    try:
+        shutil.rmtree(webview_root)
+    except FileNotFoundError:
+        pass  # 첫 부팅 — 청소할 것이 없다(정상)
+    except OSError as exc:
+        settings.alert(f"WebView2 프로필 청소 실패 — 스테일 프로필 재사용 가능(구자산 서빙): {exc!r}")
+    storage_dir = webview_root / "profile"
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    return storage_dir
 
 
 def main() -> int:
     import webview
+
+    # 단일 인스턴스(이 홈 기준): 두 번째 실행은 기존 창을 앞으로 내고 조용히 종료한다. private_mode
+    # 의 clear_user_data 가 동시 인스턴스 프로필을 밑에서 지우던 경합과, 그를 막으려던 per-pid
+    # 프로필·부팅 스윕·profile.lock 기계 전부를 이 가드가 대체한다(#74 리뷰3). rc=0 = 정상 이중
+    # 실행(오류 아님). --selftest 는 테스트 하네스 부팅(격리 홈, 순차 실행)이라 우회한다.
+    if "--selftest" not in sys.argv:
+        # 뮤텍스 핸들은 프로세스 종료 시 OS 가 회수하므로 파이썬 참조를 붙들 필요는 없다 —
+        # None(=다른 인스턴스 보유)일 때만 분기하면 된다.
+        if single_instance.acquire(settings.home_dir()) is None:
+            single_instance.focus_existing(WINDOW_TITLE)
+            return 0
 
     frontend = WebFrontend(default_text_templates_dir())
     window = webview.create_window(
@@ -649,20 +672,98 @@ def main() -> int:
         width=1180,
         height=820,
         min_size=(760, 600),
+        hidden=True,  # 테마 주입 후 show — FOUC 은닉(#74, 아래 _apply_theme_then_show)
     )
     frontend._window = window
     # 소이슈 ②: Windows 는 EdgeChromium(WebView2) 백엔드 명시 핀.
     gui = "edgechromium" if sys.platform == "win32" else None
-    # 테마 선택을 세션 간 유지 — localStorage 지속화(private_mode=False + 홈 아래 storage_path).
-    storage = _webview_storage_dir()
-    _purge_webview_http_cache(storage)  # 브라우저 프로세스 부재 시점에 실행(#69/#71)
-    http_port = _webview_http_port()
-    if "--selftest" in sys.argv:
-        webview.start(_selftest_drive, window, gui=gui, private_mode=False,
-                      storage_path=storage, http_port=http_port)
-    else:
-        # 정상 닫기 = 클린 종료(소이슈 ①)
-        webview.start(gui=gui, private_mode=False, storage_path=storage, http_port=http_port)
+
+    # FOUC 은닉(#74): 테마 영속을 오리진 비의존 Python 설정으로 옮기면서(private_mode 기본 복원)
+    # head 동기 인라인 판독원(localStorage)이 사라졌다. pywebview 엔 첫 페인트 전 주입 훅이
+    # 없어(WebView2 AddScriptToExecuteOnDocumentCreated 미노출) 표준 pre-paint '예방' 대신
+    # '은닉'을 쓴다 — 창을 숨긴 채 띄우고 DOM 로드(loaded) 시 저장 테마를 data-theme 로 주입한
+    # 뒤 show 하여, 라이트 첫 페인트를 화면 밖에서 소진시킨다. show 는 정확히 1회.
+    shown = threading.Event()
+    loaded_seen = threading.Event()  # 폴백 오경보 판별 — 미발화 vs 발화-후-진행중 구분(#75 리뷰)
+    show_lock = threading.Lock()  # check-then-show 원자화 — loaded 핸들러 vs 폴백 타이머 스레드
+
+    def _show_once() -> bool:
+        """창 표시(정확히 1회). **이 호출이 실제 표시를 수행했으면** True — 경합 경로가
+        '내가 강제로 띄웠는가'를 판별해 오경보를 내지 않게 한다."""
+        with show_lock:
+            if shown.is_set():
+                return False
+            window.show()  # type: ignore[attr-defined]
+            shown.set()  # show 성공 **후** — 먼저 세우면 show 실패가 다른 경로까지 영구 차단
+            return True
+
+    def _apply_theme_then_show() -> None:  # loaded 콜백(0-인자로 호출됨, event.py:40)
+        loaded_seen.set()
+        err: "object | None" = None
+        try:
+            theme = settings.load_theme()
+            if theme in ("light", "dark"):
+                # Theme.apply(theme.js) 경유 — data-theme 설정 + themechange 발신으로 레일
+                # 라벨까지 재동기된다(직접 setAttribute 는 라벨을 어긋난 채 남겼다). loaded 는
+                # body 스크립트 실행 후라 window.Theme 실재가 계약 — 부재는 곧 주입 실패.
+                ok = window.evaluate_js(  # type: ignore[attr-defined]
+                    f"window.Theme ? (window.Theme.apply({json.dumps(theme)}), true) : false")
+                if ok is not True:
+                    err = f"window.Theme 부재(evaluate_js 반환={ok!r})"
+        except Exception as exc:  # noqa: BLE001  테마 실패로 창이 안 뜨면 안 된다 — show 진행 후 경보
+            err = exc
+        try:
+            _show_once()
+        except Exception as exc:  # noqa: BLE001  pywebview Event.set 이 logger 로 삼키면(#75 리뷰)
+            # 창은 안 보이는데 경보가 없다 — 여기서 직접 경보(창 은닉 상태라 alert 채널은 생략).
+            _alarm(f"창 표시(show) 실패: {exc!r}")
+        if err is not None:
+            _alarm(f"테마 주입 실패: {err!r}", window)
+
+    window.events.loaded += _apply_theme_then_show
+
+    # 폴백(confirm-or-alarm): loaded 가 끝내 안 오면 창이 영영 숨겨진다 — 상한 후 강제 show + 경보.
+    # 순서 계약(#75 리뷰): show 가 경보보다 **먼저**다 — _alarm 의 evaluate_js 는 pywebview 가
+    # _pywebviewready 를 최대 20s 대기하므로, 미발화 시나리오에서 경보를 먼저 하면 은닉 상한이
+    # 사실상 40s 로 배가된다.
+    def _fallback_show() -> None:
+        if loaded_seen.is_set() and shown.wait(10.0):
+            return  # loaded 도착·핸들러 진행 중이었고 유예 안에 정상 완주 — 경보 없음
+        try:
+            forced = _show_once()
+        except Exception as exc:  # noqa: BLE001  타이머 데몬 스레드 — 조용한 증발 금지
+            _alarm(f"폴백 show 실패: {exc!r}")
+            return
+        if not forced:
+            return  # 그 사이 loaded 핸들러가 표시 완료 — 정상 부팅, 경보 없음
+        _alarm(
+            "loaded 후 표시 매달림 — 폴백으로 창 표시(테마 미주입 가능)"
+            if loaded_seen.is_set()
+            else "loaded 미발화 — 폴백으로 창 표시(테마 미주입 가능)",
+            window,
+        )
+
+    # 20s: 타이머가 webview.start() 전에 걸리므로 예산이 WebView2 콜드스타트(초회 런타임 부팅·
+    # AV 스캔) 전체를 포함한다 — 짧으면 정상 부팅에서 폴백이 선발화해 무테마 창(FOUC)+거짓 경보.
+    timer = threading.Timer(20.0, _fallback_show)
+    timer.daemon = True
+    timer.start()
+
+    # private_mode 기본(True) = 랜덤 빈 포트 + InPrivate(비영속) → 포트 스쿼팅·캐시 스테일·서버
+    # 크로스톡 클래스 구조 소멸(#74). 프로필은 홈/webview/profile 고정 폴더 — 단일 인스턴스
+    # 가드(위)가 이 홈에 우리뿐임을 보장하므로 부팅마다 webview_root 를 통째 청소하고 새로
+    # 만든다(크래시 고아·구판 EBWebView 잔재·재시작 간 공유 디스크 캐시를 한 번에 소거).
+    # 정상 닫기 = webview.start 반환 = 클린 종료(소이슈 ①); 크래시 잔재는 다음 부팅 청소가 담당.
+    webview_root = (settings.home_dir() / "webview").resolve()
+    storage_dir = _prepare_webview_profile(webview_root)
+    try:
+        if "--selftest" in sys.argv:
+            webview.start(_selftest_drive, window, gui=gui, storage_path=str(storage_dir))
+        else:
+            webview.start(gui=gui, storage_path=str(storage_dir))
+    finally:
+        timer.cancel()
+        shutil.rmtree(storage_dir, ignore_errors=True)  # 자기 정리(크래시로 못 지우면 다음 부팅 청소)
     return 0
 
 
