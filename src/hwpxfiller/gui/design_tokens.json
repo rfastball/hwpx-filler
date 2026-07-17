@@ -1,8 +1,8 @@
 {
   "_note": "앱 B 디자인 토큰 단일 출처. 값을 바꾸려면 여기만 고치고 `python scripts/gen_design_tokens.py` 실행 — 웹 CSS(web·web-diff)와 목업 CSS가 함께 재생성된다. 백엔드 무접촉. 최상위 그룹(color/state/badge/neutral/log)이 라이트 팔레트, 형제 `dark` 섹션이 같은 group/key 로 다크 팔레트다(gen 이 :root + @media(prefers-color-scheme:dark) + [data-theme=dark] 3블록 방출). space/radius/type 스케일도 gen 이 CSS 변수(--sp-*·--rad-*·--fs-*)로 방출하되 **테마 불변**이라 라이트 :root 블록에만 찍는다(다크 미중복). space 는 수치키(px 값=키; padding/margin/gap 이 촘촘해 t-shirt 대신 수치 사다리), radius/type 은 역할 의미키. 무단위 정수 → gen 이 px 부착.",
   "color": {
-    "primary": "#2874a6",
-    "primary_hover": "#1f5a80",
+    "primary": "#2f5fbf",
+    "primary_hover": "#274fa0",
     "warn": "#a05a00",
     "danger": "#c0392b",
     "ok": "#1e8449",
@@ -18,7 +18,7 @@
     "unconfirmed_bg": "#fff3bf",
     "unmatched_bg": "#ffd8d8",
     "data_empty_fg": "#b00020",
-    "select_bg": "#dce9f5"
+    "select_bg": "#dfe6fb"
   },
   "badge": {
     "fill_bg": "#e5f2ea",
@@ -51,8 +51,8 @@
   "dark": {
     "_note": "다크 팔레트 — 단순 반전이 아니라 손으로 재산출. 원칙: 밝은 accent(primary/ok)는 흰글씨 대신 어두운 on_accent 잉크를 얹고 다크 표면 위 텍스트로도 읽히게 밝힘(라이트에선 accent 가 어두워 흰글씨였던 이중용도 충돌 해소). 파스텔 틴트(state/badge)는 같은 색조의 어둡고 저채도 배경 + 밝힌 전경/보더. 중성 램프는 극성 반전(hover 가 surface 보다 밝음). 대비 하한은 test_contrast_wcag 가 기계 비준.",
     "color": {
-      "primary": "#4a9bde",
-      "primary_hover": "#6bb0e8",
+      "primary": "#6f97e8",
+      "primary_hover": "#8badf0",
       "warn": "#e0a850",
       "danger": "#ec7264",
       "ok": "#43b877",
@@ -68,7 +68,7 @@
       "unconfirmed_bg": "#3a3320",
       "unmatched_bg": "#3f2626",
       "data_empty_fg": "#f2705f",
-      "select_bg": "#10314a"
+      "select_bg": "#1e2846"
     },
     "badge": {
       "fill_bg": "#17301f",
