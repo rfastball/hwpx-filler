@@ -372,6 +372,17 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
     if argv and argv[0] == "render":
         return _render_main(argv[1:])
 
+    # 여기까지 왔으면 알려진 하위명령이 아니다. generate(기본 경로)는 positional 을
+    # 받지 않으므로, 대시로 시작하지 않는 첫 토큰은 오타난 하위명령이다 — 조용히
+    # generate 로 흘려보내 '--template 필요'로 오도(사용자는 하위명령을 의도)하지 말고,
+    # 이름을 짚어 시끄럽게 거절한다(confirm-or-alarm: 조용한 추측 금지).
+    if argv and not argv[0].startswith("-"):
+        print(f"[오류] 알 수 없는 하위명령: {argv[0]!r}", file=sys.stderr)
+        print("문서 생성은 'hwpxfiller --template ...' 이고, 하위명령은 아래와 같습니다:",
+              file=sys.stderr)
+        print(_SUBCOMMANDS_EPILOG, file=sys.stderr)
+        return 2
+
     ap = argparse.ArgumentParser(
         prog="hwpxfiller",
         epilog=_SUBCOMMANDS_EPILOG,
