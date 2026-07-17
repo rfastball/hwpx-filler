@@ -23,13 +23,24 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .rail .brand{font-weight:800;font-size:var(--fs-heading);padding:var(--sp-6) var(--sp-10) var(--sp-2);letter-spacing:-.01em}
 .rail .rl{font-size:var(--fs-micro);letter-spacing:.16em;text-transform:uppercase;
   color:var(--a-muted);padding:var(--sp-10) var(--sp-10) var(--sp-6);font-weight:700}
+/* 레일 항목: 아이콘(.ni SVG 상시) + 라벨열(.lbl=.n+.d). 부제 .d 는 기본 숨김·활성 항목에만
+   인라인 노출(호버 지터 회피; 전체 설명은 title 호버 툴팁). 활성=틴트+좌측 3px 막대(조용한 표시). */
 .navbtn{width:100%;text-align:left;font:inherit;cursor:pointer;border:0;background:transparent;
-  color:var(--n-ink-control);padding:var(--sp-8) var(--sp-10);border-radius:var(--rad-lg);display:block}
-.navbtn .n{font-size:var(--fs-body);font-weight:600;display:block}
-.navbtn .d{font-size:var(--fs-label);color:var(--a-muted);margin-top:1px}
+  color:var(--n-ink-control);padding:var(--sp-8) var(--sp-10);border-radius:var(--rad-lg);
+  display:flex;align-items:center;gap:var(--sp-10)}
+.navbtn .ni{flex:none;display:flex;align-items:center;justify-content:center;color:var(--a-muted)}
+.navbtn .ni svg{width:18px;height:18px;display:block}
+.navbtn .lbl{display:flex;flex-direction:column;min-width:0;line-height:1.25}
+.navbtn .n{font-size:var(--fs-body);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.navbtn .d{font-size:var(--fs-label);color:var(--a-muted);margin-top:1px;display:none;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .navbtn:hover{background:var(--n-hover)}
-.navbtn[aria-current="true"]{background:var(--a-primary);color:var(--a-on-accent)}
-.navbtn[aria-current="true"] .d{color:var(--a-sel)}
+.navbtn:hover .ni{color:var(--n-ink-control)}
+.navbtn[aria-current="true"]{background:var(--a-sel);color:var(--a-primary);font-weight:600;
+  box-shadow:inset 3px 0 0 var(--a-primary)}
+.navbtn[aria-current="true"] .ni{color:var(--a-primary)}
+.navbtn[aria-current="true"] .n{font-weight:600}
+.navbtn[aria-current="true"] .d{display:block;color:var(--a-muted)}
 .navbtn:focus-visible{outline:2px solid var(--a-primary);outline-offset:-2px}
 
 /* ---- 스테이지 · 화면 전환 ---- */
@@ -258,15 +269,12 @@ tr.r-confirmed td,tr.r-schemaonly td{background:var(--a-card)}
   background:var(--a-card);color:var(--n-ink-control);border-radius:var(--rad-md);padding:1px var(--sp-6)}
 .rail-toggle:hover{background:var(--n-hover)}
 .app.rail-collapsed{grid-template-columns:48px 1fr}
+/* 접힘: 라벨열(.lbl)만 숨긴다 — 아이콘(.ni)은 상시라 시각 표지가 이어진다(#27 개정). */
 .app.rail-collapsed .rail .rl,
-.app.rail-collapsed .navbtn .n,
-.app.rail-collapsed .navbtn .d{display:none}
+.app.rail-collapsed .navbtn .lbl{display:none}
 .app.rail-collapsed .rail .brand{font-size:0}                 /* 로고 글자 접기 */
 .app.rail-collapsed .rail-toggle{font-size:var(--fs-title);transform:rotate(180deg)}
-.app.rail-collapsed .navbtn{text-align:center;padding:var(--sp-8) var(--sp-4)}
-/* .ni: 접힘 시각 표지 — 펼침엔 숨고, 접힘엔 라벨 대신 노출(#27) */
-.navbtn .ni{display:none;font-weight:700;font-size:var(--fs-title)}
-.app.rail-collapsed .navbtn .ni{display:block;text-align:center}
+.app.rail-collapsed .navbtn{justify-content:center;padding:var(--sp-8) var(--sp-4)}
 
 /* ---- 테마 전환(레일 하단) — System→Light→Dark 순환(theme.js). navbtn 이 아니므로 라우팅
    대상이 아니고, 접힘 표지는 .ni 가 아닌 .ti 를 써 #27 시각표지 카운트를 오염시키지 않는다.

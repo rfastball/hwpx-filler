@@ -22,24 +22,23 @@
       <button class="rail-toggle" id="railToggle" title="사이드 패널 접기/펼치기"
               aria-label="사이드 패널 접기/펼치기">«</button></div>
     <div class="rl">투트랙 허브</div>
-    <!-- #27: 접힘(rail-collapsed) 시 .n/.d 가 display:none 이라 접근 이름·툴팁이 소실됨 →
-         각 버튼에 주 라벨을 aria-label(SR 이름)+title(호버 툴팁)로 고정. rail-toggle 선례와 동일. -->
-    <!-- .ni: 접힘(rail-collapsed) 시 .n/.d 가 숨으면 노출되는 시각적 표지(라벨 첫 글자) — #27
-         "식별 가능한 이름(aria/title)과 시각적 표지" 완료기준. 펼침 상태에선 display:none. -->
-    <button class="navbtn" data-scr="home" aria-current="true" aria-label="대시보드" title="대시보드">
-      <span class="ni">대</span><span class="n">대시보드</span><span class="d">두 트랙 허브 · 요약</span></button>
-    <button class="navbtn" data-scr="editor" aria-label="작업 에디터" title="작업 에디터">
-      <span class="ni">작</span><span class="n">작업 에디터</span><span class="d">HWPX · 4스텝</span></button>
-    <button class="navbtn" data-scr="run" aria-label="실행" title="실행">
-      <span class="ni">실</span><span class="n">실행</span><span class="d">HWPX · 데이터 겨눔 → 생성</span></button>
-    <button class="navbtn" data-scr="matrix" aria-label="여러 작업 실행" title="여러 작업 실행">
-      <span class="ni">여</span><span class="n">여러 작업 실행</span><span class="d">여러 작업 × 공통 데이터 → 생성</span></button>
-    <button class="navbtn" data-scr="txt" aria-label="즉시 기안 (txt)" title="즉시 기안 (txt)">
-      <span class="ni">즉</span><span class="n">즉시 기안 (txt)</span><span class="d">템플릿+데이터 → 실시간 → 복사</span></button>
-    <button class="navbtn" data-scr="tpl" aria-label="템플릿 관리" title="템플릿 관리">
-      <span class="ni">템</span><span class="n">템플릿 관리</span><span class="d">HWPX·TXT 라이브러리 · 상태·변환·검토</span></button>
-    <button class="navbtn" data-scr="pool" aria-label="데이터 관리" title="데이터 관리">
-      <span class="ni">데</span><span class="n">데이터 관리</span><span class="d">등록 데이터(참조) · 수명 관리</span></button>
+    <!-- #27(개정): .ni 는 이제 SVG 상시 아이콘 표지 — 접힘/펼침 모두 노출. 접힘 시 라벨(.lbl=.n+.d)만
+         숨어 아이콘이 표지를 잇는다(옛 '펼침 숨김' 계약 폐기 — 아이콘+라벨 공존은 스캔 보조). 접근
+         이름=aria-label, 호버 툴팁=title("이름 — 설명"). 부제 .d 는 활성 항목에만 인라인 노출. -->
+    <button class="navbtn" data-scr="home" aria-current="true" aria-label="대시보드" title="대시보드 — 두 트랙 허브 · 요약">
+      <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l7-6 7 6M5 9v7h4v-4h2v4h4V9"/></svg></span><span class="lbl"><span class="n">대시보드</span><span class="d">두 트랙 허브 · 요약</span></span></button>
+    <button class="navbtn" data-scr="editor" aria-label="작업 에디터" title="작업 에디터 — HWPX · 4스텝">
+      <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 4.5l2 2L7 15l-3 1 1-3zM12 6l2 2"/></svg></span><span class="lbl"><span class="n">작업 에디터</span><span class="d">HWPX · 4스텝</span></span></button>
+    <button class="navbtn" data-scr="run" aria-label="실행" title="실행 — HWPX · 데이터 겨눔 → 생성">
+      <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l10 6-10 6z"/></svg></span><span class="lbl"><span class="n">실행</span><span class="d">HWPX · 데이터 겨눔 → 생성</span></span></button>
+    <button class="navbtn" data-scr="matrix" aria-label="여러 작업 실행" title="여러 작업 실행 — 여러 작업 × 공통 데이터 → 생성">
+      <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h6v6H3zM11 3h6v6h-6zM3 11h6v6H3zM11 11h6v6h-6z"/></svg></span><span class="lbl"><span class="n">여러 작업 실행</span><span class="d">여러 작업 × 공통 데이터 → 생성</span></span></button>
+    <button class="navbtn" data-scr="txt" aria-label="즉시 기안 (txt)" title="즉시 기안 (txt) — 템플릿+데이터 → 실시간 → 복사">
+      <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h5l3 3v11H6zM11 3v3h3M8 11h5M8 14h5"/></svg></span><span class="lbl"><span class="n">즉시 기안 (txt)</span><span class="d">템플릿+데이터 → 실시간 → 복사</span></span></button>
+    <button class="navbtn" data-scr="tpl" aria-label="템플릿 관리" title="템플릿 관리 — HWPX·TXT 라이브러리 · 상태·변환·검토">
+      <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3l7 4-7 4-7-4zM3 11l7 4 7-4"/></svg></span><span class="lbl"><span class="n">템플릿 관리</span><span class="d">HWPX·TXT 라이브러리 · 상태·변환·검토</span></span></button>
+    <button class="navbtn" data-scr="pool" aria-label="데이터 관리" title="데이터 관리 — 등록 데이터(참조) · 수명 관리">
+      <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3c3.3 0 6 1 6 2.3S13.3 7.7 10 7.7 4 6.7 4 5.3 6.7 3 10 3M4 5.3v9.4C4 16 6.7 17 10 17s6-1 6-2.3V5.3"/></svg></span><span class="lbl"><span class="n">데이터 관리</span><span class="d">등록 데이터(참조) · 수명 관리</span></span></button>
     <!-- 테마 전환(레일 하단, margin-top:auto) — navbtn 이 아니라 라우팅되지 않는다. 접힘 표지는
          .ti(≠.ni)라 #27 시각표지 카운트와 무관. 라벨은 app.js 가 현재 모드로 갱신(themeLabel). -->
     <button class="rail-theme" id="themeToggle" aria-label="테마 전환 (시스템 → 라이트 → 다크)"
