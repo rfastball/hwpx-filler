@@ -99,41 +99,34 @@ def test_save_theme_retries_transient_permission_error(home, monkeypatch):
         settings.save_theme("light")
 
 
-# ---------------------------------------------------------------- 구판 테마 이관(#75 리뷰)
-def _leveldb_log_record(key: bytes, value: bytes) -> bytes:
-    # .log 레코드 근사 — 키 바이트 직후 값 길이 varint(1바이트) + 값. 스캐너는 유계 간격만 가정.
-    return key + bytes([len(value)]) + value
+def test_load_theme_retries_transient_read_error(home, monkeypatch):
+    """일시 판독 장애(AV 스캔·원자 교체 순간의 공유 위반)는 재시도로 흡수하고, 저장 테마를
+    조용한 'system' 리셋으로 승격하지 않는다(#75 리뷰 #6 — save 재시도와 대칭)."""
+    settings.save_theme("dark")
+    real_read_text = Path.read_text
+    remaining = {"fails": 2}
+
+    def flaky_read_text(self, *a, **k):
+        if self.name == "settings.json" and remaining["fails"] > 0:
+            remaining["fails"] -= 1
+            raise PermissionError(13, "공유 위반 모사")
+        return real_read_text(self, *a, **k)
+
+    monkeypatch.setattr(settings.time, "sleep", lambda s: None)
+    monkeypatch.setattr(Path, "read_text", flaky_read_text)
+    assert settings.load_theme() == "dark"  # 일시 실패를 넘겨 저장값 회수(리셋 아님)
 
 
-_LEGACY_KEY = b"_http://127.0.0.1:42001\x00\x01hwpxfiller.theme"
+def test_load_theme_persistent_read_error_falls_back_to_system(home, monkeypatch):
+    """지속 판독 실패는 재시도를 거친 뒤 'system' 으로 접는다 — 테마 하나로 부팅을 죽일 순 없다."""
+    settings.save_theme("dark")
+    real_read_text = Path.read_text
 
+    def always_fails(self, *a, **k):
+        if self.name == "settings.json":
+            raise PermissionError(13, "지속 실패 모사")
+        return real_read_text(self, *a, **k)
 
-def test_migrate_legacy_theme_recovers_last_written_value(home, tmp_path):
-    lvl = tmp_path / "leveldb"
-    lvl.mkdir()
-    (lvl / "000003.log").write_bytes(
-        b"\x00junk"
-        + _leveldb_log_record(_LEGACY_KEY, b"\x01light")
-        + b"\x7f"
-        + _leveldb_log_record(_LEGACY_KEY, b"\x01dark")
-        + b"tail")
-    assert settings.migrate_legacy_theme(lvl) == "dark"  # 마지막 기록이 이긴다
-    assert settings.load_theme() == "dark"  # settings.json 까지 실저장
-
-
-def test_migrate_legacy_theme_never_overrides_new_settings(home, tmp_path):
-    settings.save_theme("light")
-    lvl = tmp_path / "leveldb"
-    lvl.mkdir()
-    (lvl / "000003.log").write_bytes(_leveldb_log_record(_LEGACY_KEY, b"\x01dark"))
-    assert settings.migrate_legacy_theme(lvl) is None
-    assert settings.load_theme() == "light"
-
-
-def test_migrate_legacy_theme_absent_or_empty_is_noop(home, tmp_path):
-    assert settings.migrate_legacy_theme(tmp_path / "없음") is None
-    empty = tmp_path / "leveldb"
-    empty.mkdir()
-    (empty / "000003.log").write_bytes(b"\x00no-theme-here")
-    assert settings.migrate_legacy_theme(empty) is None
+    monkeypatch.setattr(settings.time, "sleep", lambda s: None)
+    monkeypatch.setattr(Path, "read_text", always_fails)
     assert settings.load_theme() == "system"

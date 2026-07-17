@@ -212,6 +212,7 @@ def test_theme_choice_persists_across_restart_without_flicker(tmp_path) -> None:
 # NOTE(#74): test_stale_cached_asset_not_served_across_restart 삭제 — private_mode=True(인메모리
 # 프로필) 복원으로 재시작 간 공유 디스크 캐시가 없어 스테일 자산 서빙 실패모드가 구조적으로
 # 불가능해졌다. 지키던 헬퍼 _purge_webview_http_cache 와 asset_stamp 프로브도 함께 은퇴(#69/#71).
-# #75 리뷰 보강: InPrivate 의미론이 미래 pywebview/WebView2 에서 변해도, 프로필이 인스턴스별
-# (홈/webview/profile-<pid>, 매 부팅 새 폴더·정상 종료 자기 삭제·크래시 고아는 부팅 스윕)이라
-# 재시작 간 공유 캐시는 우리 코드 층에서 이중 차단된다 — 스윕 가드는 test_webapp_profile_sweep.
+# 리뷰3(#74) 보강: InPrivate 의미론이 미래 pywebview/WebView2 에서 변해도, 부팅마다 webview_root
+# 를 통째 청소하고 고정 프로필을 새로 만들므로(단일 인스턴스 가드가 이 홈에 우리뿐임을 보장)
+# 재시작 간 공유 캐시·구판 잔재는 우리 코드 층에서 이중 차단된다 — 부팅 청소 가드는
+# test_webapp_profile.test_prepare_purges_orphans_and_legacy_layout.

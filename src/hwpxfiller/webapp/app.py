@@ -30,6 +30,7 @@ from ..core.job import JobRegistry, default_jobs_dir
 from ..core.text_registry import TextTemplateRegistry, default_text_templates_dir
 from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확정 게이트 판정(#33)
 from ..gui.file_filters import EXCEL_FILTER_PATTERN  # 확장자 단일 출처(RC-34) — Qt-free 상수
+from hwpxcore.native import single_instance
 from hwpxcore.native._debug import log
 from hwpxcore.native.clipboard import set_clipboard_text
 from hwpxcore.native.dialogs import open_file_dialog, open_folder_dialog, save_file_dialog
@@ -520,16 +521,28 @@ def _selftest_drive(window: "object") -> None:
 
     set_theme = os.environ.get("HWPX_SELFTEST_SET_THEME")
     if set_theme:
-        time.sleep(4.0)  # 콜드부트 + 브리지(pywebview.api) 준비 대기
         result: dict = {"theme_write": set_theme}
         try:
             # 실사용 경로 그대로 구동 — 토글 클릭이 지나는 theme.js Theme.set→Bridge.setTheme→
             # api.set_theme 홉 전체(브리지 가드 포함)를 게이트가 덮는다(api 직접 호출로 바꾸면
-            # theme.js 결함이 무커버가 된다). evaluate_js 는 promise 를 대기하지 않으므로
-            # 디스패치·파일 쓰기 완료를 데드라인까지 폴링해 확정한다(#74) — 고정 sleep 은
-            # 느린 러너에서 정상 빌드를 빨갛게 만드는 게이트 플레이크(#75 리뷰).
+            # theme.js 결함이 무커버가 된다). 단 Theme.set 의 브리지 가드는 pywebview.api 미준비
+            # 시 **조용히 no-op** 이라, 고정 sleep 으로 준비를 어림하면 느린 콜드부트에서 쓰기가
+            # 아예 발화 안 돼 정상 빌드가 빨개진다(#75 리뷰 #5). 준비를 명시 폴링하고, 시한 초과는
+            # 조용한 통과가 아니라 시끄러운 error 로 확정한다(confirm-or-alarm).
+            ready_probe = "!!(window.pywebview && window.pywebview.api && window.Bridge && window.Theme)"
+            ready_deadline = time.monotonic() + 15.0
+            while time.monotonic() < ready_deadline:
+                if window.evaluate_js(ready_probe):  # type: ignore[attr-defined]
+                    break
+                time.sleep(0.1)
+            else:
+                result["error"] = "브리지(pywebview.api) 준비 시한 초과 — Theme.set 미구동"
+                _finish_selftest(window, result)
+                return
             window.evaluate_js(  # type: ignore[attr-defined]
                 "window.Theme.set(" + json.dumps(set_theme) + ")")
+            # evaluate_js 는 promise 를 대기하지 않으므로 디스패치·파일 쓰기 완료를 데드라인까지
+            # 폴링해 확정한다(#74).
             deadline = time.monotonic() + 10.0
             while settings.load_theme() != set_theme and time.monotonic() < deadline:
                 time.sleep(0.1)
@@ -620,27 +633,35 @@ def _alarm(msg: str, window: "object | None" = None) -> None:
             pass
 
 
-def _sweep_stale_profiles(root: Path) -> None:
-    """고아 WebView2 프로필 정리 — 크래시 잔재·구판 단일 폴더 레이아웃(EBWebView)을 지운다.
+def _prepare_webview_profile(webview_root: Path) -> Path:
+    """부팅용 WebView2 프로필 준비 — ``webview_root`` 를 통째 청소하고 고정 ``profile`` 폴더를 만든다.
 
-    살아있는 인스턴스 판별은 rename 프로브: 열린 파일(profile.lock, 프로세스 수명 동안 유지)이
-    있는 폴더는 Windows 에서 rename 이 실패한다 — 실패하면 건너뛴다. rmtree 직접 시도와 달리
-    프로브 실패에 부분 삭제가 없다(살아있는 프로필 무손상)."""
-    if not root.is_dir():
-        return
-    for child in root.iterdir():
-        if not child.is_dir():
-            continue
-        probe = child.with_name(f"{child.name}.{os.getpid()}.sweep")
-        try:
-            child.rename(probe)
-        except OSError:
-            continue  # 사용 중(다른 인스턴스) 또는 일시 잠김 — 다음 부팅에 재시도
-        shutil.rmtree(probe, ignore_errors=True)
+    단일 인스턴스 가드(main() 뮤텍스)가 이 홈에 우리뿐임을 보장하므로 ``webview_root`` 전체가
+    우리 것이다 → 크래시 고아 프로필·구판 단일 폴더 잔재(EBWebView)·재시작 간 공유 디스크
+    캐시(#69/#71 스테일 자산)를 iterate·프로브 없이 한 줄로 소거한다. 오리진 비의존 영속
+    (settings.json)은 홈 **루트** 에 있어 webview_root 와 분리 — 통째 삭제가 안전하다.
+    이전의 per-pid 폴더 + 부팅 스윕 + profile.lock 기계 전부를 대체한다(#74 리뷰3).
+
+    ``resolve()`` 필수: 상대 storage_path 는 WebView2 생성 실패 → MSHTML(IE) 조용한 폴백(#69/#71)."""
+    shutil.rmtree(webview_root, ignore_errors=True)
+    storage_dir = webview_root / "profile"
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    return storage_dir
 
 
 def main() -> int:
     import webview
+
+    # 단일 인스턴스(이 홈 기준): 두 번째 실행은 기존 창을 앞으로 내고 조용히 종료한다. private_mode
+    # 의 clear_user_data 가 동시 인스턴스 프로필을 밑에서 지우던 경합과, 그를 막으려던 per-pid
+    # 프로필·부팅 스윕·profile.lock 기계 전부를 이 가드가 대체한다(#74 리뷰3). rc=0 = 정상 이중
+    # 실행(오류 아님). --selftest 는 테스트 하네스 부팅(격리 홈, 순차 실행)이라 우회한다.
+    if "--selftest" not in sys.argv:
+        # 뮤텍스 핸들은 프로세스 종료 시 OS 가 회수하므로 파이썬 참조를 붙들 필요는 없다 —
+        # None(=다른 인스턴스 보유)일 때만 분기하면 된다.
+        if single_instance.acquire(settings.home_dir()) is None:
+            single_instance.focus_existing(WINDOW_TITLE)
+            return 0
 
     frontend = WebFrontend(default_text_templates_dir())
     window = webview.create_window(
@@ -728,26 +749,12 @@ def main() -> int:
     timer.start()
 
     # private_mode 기본(True) = 랜덤 빈 포트 + InPrivate(비영속) → 포트 스쿼팅·캐시 스테일·서버
-    # 크로스톡 클래스 구조 소멸(#74). 프로필은 홈/webview/profile-<pid> 로 **인스턴스별** 분리 —
-    # 고정 단일 폴더는 private_mode 의 clear_user_data(정상 닫기 시 rmtree, edgechromium)가
-    # 동시 실행 중인 다른 인스턴스의 프로필을 밑에서 지운다(#75 리뷰). 크래시 고아는 다음 부팅의
-    # _sweep_stale_profiles 가 정리하므로 유계는 유지되고, 매 부팅 새 폴더 = 재시작 간 공유 디스크
-    # 캐시가 InPrivate 의미론과 무관하게 없다(스테일 자산 클래스의 이중 차단).
-    # resolve() 필수: 상대 storage_path 는 WebView2 생성 실패 → MSHTML(IE) 조용한 폴백(#69/#71 실측).
-    # 정상 닫기 = webview.start 반환 = 클린 종료(소이슈 ①).
+    # 크로스톡 클래스 구조 소멸(#74). 프로필은 홈/webview/profile 고정 폴더 — 단일 인스턴스
+    # 가드(위)가 이 홈에 우리뿐임을 보장하므로 부팅마다 webview_root 를 통째 청소하고 새로
+    # 만든다(크래시 고아·구판 EBWebView 잔재·재시작 간 공유 디스크 캐시를 한 번에 소거).
+    # 정상 닫기 = webview.start 반환 = 클린 종료(소이슈 ①); 크래시 잔재는 다음 부팅 청소가 담당.
     webview_root = (settings.home_dir() / "webview").resolve()
-    try:
-        # 구판 영속처(고정 오리진 localStorage) 테마 일회 이관 — 스윕이 구 프로필을 지우기 전에.
-        settings.migrate_legacy_theme(
-            webview_root / "EBWebView" / "Default" / "Local Storage" / "leveldb")
-    except Exception as exc:  # noqa: BLE001  이관 실패가 부팅을 막으면 안 된다 — 경보 후 진행
-        _alarm(f"구판 테마 이관 실패(기본값으로 진행): {exc!r}")
-    _sweep_stale_profiles(webview_root)
-    storage_dir = webview_root / f"profile-{os.getpid()}"
-    storage_dir.mkdir(parents=True, exist_ok=True)
-    # 수명 잠금: 열린 파일이 있는 폴더는 rename 이 실패한다(Windows) — 다른 인스턴스의 스윕
-    # 프로브가 살아있는 이 프로필을 고아로 오인해 지우지 못하게 프로세스 수명 동안 쥔다.
-    profile_lock = (storage_dir / "profile.lock").open("w")
+    storage_dir = _prepare_webview_profile(webview_root)
     try:
         if "--selftest" in sys.argv:
             webview.start(_selftest_drive, window, gui=gui, storage_path=str(storage_dir))
@@ -755,10 +762,7 @@ def main() -> int:
             webview.start(gui=gui, storage_path=str(storage_dir))
     finally:
         timer.cancel()
-        profile_lock.close()
-        # 자기 정리 — pywebview 의 clear_user_data rmtree 는 profile.lock 때문에 부분 실패하므로
-        # 잠금 해제 후 잔여를 여기서 마저 지운다(크래시로 못 지우면 다음 부팅 스윕이 담당).
-        shutil.rmtree(storage_dir, ignore_errors=True)
+        shutil.rmtree(storage_dir, ignore_errors=True)  # 자기 정리(크래시로 못 지우면 다음 부팅 청소)
     return 0
 
 

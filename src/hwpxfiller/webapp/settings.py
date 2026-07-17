@@ -12,13 +12,15 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import time
 from pathlib import Path
 
 from hwpxcore.atomic import write_text_atomic
 
 VALID_THEMES = ("system", "light", "dark")
+
+_READ_RETRIES = 5   # 일시 판독 충돌(AV 스캔·원자 교체 순간의 공유 위반) 흡수 상한 — save 측과 대칭
+_REPLACE_RETRIES = 5  # Windows 공유 위반(아래) 일시 충돌 흡수 상한 — 총 ~0.5s
 
 
 def home_dir() -> Path:
@@ -32,13 +34,32 @@ def _settings_path() -> Path:
     return home_dir() / "settings.json"
 
 
-def _read() -> dict:
-    """전체 설정 dict 반환 — 파일 부재·손상 시 빈 dict(조용한 폴백은 여기서만, 값 판독 아님)."""
+def _parse_settings(text: str) -> dict:
+    """JSON 파싱 + dict 검증 — 손상(비-JSON·비-dict)은 빈 dict(복구 새 출발). ``_read`` ·
+    ``_read_for_update`` 공용 파서(#75 리뷰 #8): 직렬화 형식 변경 시 한 곳만 고치면 된다."""
     try:
-        data = json.loads(_settings_path().read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except (OSError, ValueError):
+        data = json.loads(text)
+    except ValueError:
         return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _read() -> dict:
+    """전체 설정 dict 반환 — 부재는 빈 dict(첫 실행). **일시 OSError 는 유계 재시도 후에만**
+    폴백한다: AV 스캔·원자 교체 순간의 공유 위반 같은 일시 판독 장애가 저장 테마의 조용한
+    'system' 리셋으로 승격되지 않게(#75 리뷰 #6, confirm-or-alarm). save_theme 재시도와 대칭 —
+    지속 실패만 빈 dict 로 접되(부팅을 테마 하나로 죽일 순 없다) 그 전에 재시도를 거친다."""
+    path = _settings_path()
+    for attempt in range(_READ_RETRIES):
+        try:
+            return _parse_settings(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return {}  # 첫 실행 — 재시도 무의미
+        except OSError:
+            if attempt == _READ_RETRIES - 1:
+                return {}
+            time.sleep(0.05 * (attempt + 1))
+    return {}
 
 
 def _read_for_update(path: Path) -> dict:
@@ -49,11 +70,7 @@ def _read_for_update(path: Path) -> dict:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         return {}
-    try:
-        data = json.loads(text)
-        return data if isinstance(data, dict) else {}
-    except ValueError:
-        return {}
+    return _parse_settings(text)
 
 
 def load_theme() -> str:
@@ -62,23 +79,21 @@ def load_theme() -> str:
     return theme if theme in VALID_THEMES else "system"
 
 
-_REPLACE_RETRIES = 5  # Windows 공유 위반(아래) 일시 충돌 흡수 상한 — 총 ~0.5s
-
-
 def save_theme(mode: str) -> None:
     """테마 선택 영속 — 다른 키 보존(read-modify-write) + 원자 교체(정본 write_text_atomic).
 
     비유효 ``mode`` 는 조용히 무시하지 않고 ``ValueError`` (confirm-or-alarm).
 
-    Windows 교체 경합: 다른 인스턴스(#74 지원 상태)가 settings.json 을 읽는 순간의 교체는
-    PermissionError(공유 위반 — CPython 은 FILE_SHARE_DELETE 없이 연다)로 튄다. 아무 문제
-    없는 일시 충돌이 사용자 alert 로 승격되지 않도록 유계 재시도 후에만 전파한다."""
+    교체 경합(방어적): 앱은 홈당 단일 인스턴스(app.py 뮤텍스 가드)라 교차-프로세스 경합은
+    구조적으로 없지만, AV 스캔 등 일시 파일 잠금이 원자 교체를 PermissionError(공유 위반 —
+    CPython 은 FILE_SHARE_DELETE 없이 연다)로 튕길 수 있다. 아무 문제 없는 일시 충돌이 사용자
+    alert 로 승격되지 않도록 유계 재시도 후에만 전파한다."""
     if mode not in VALID_THEMES:
         raise ValueError(f"유효하지 않은 테마: {mode!r} (허용: {VALID_THEMES})")
     path = _settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     for attempt in range(_REPLACE_RETRIES):
-        data = _read_for_update(path)  # 재시도마다 재판독 — 경합 상대가 갱신한 다른 키를 보존
+        data = _read_for_update(path)  # 재시도마다 재판독 — 손상·갱신된 다른 키를 보존
         data["theme"] = mode
         try:
             write_text_atomic(path, json.dumps(data, ensure_ascii=False, indent=2))
@@ -87,41 +102,3 @@ def save_theme(mode: str) -> None:
             if attempt == _REPLACE_RETRIES - 1:
                 raise
             time.sleep(0.05 * (attempt + 1))
-
-
-# 구판 localStorage 값의 LevelDB 물리 표현 — 레코드는 키 바이트 직후(.ldb 는 0바이트,
-# .log 는 값 길이 varint 1바이트 간격)에 값(``\x01`` 접두 + UTF-8)이 온다 → 유계 간격 스캔.
-_LEGACY_THEME_RECORD = re.compile(rb"hwpxfiller\.theme.{0,8}?\x01(system|light|dark)", re.DOTALL)
-
-
-def migrate_legacy_theme(legacy_leveldb_dir: Path) -> "str | None":
-    """구판(#74 이전) 영속처에서 저장 테마를 일회 이관 — 업그레이드의 조용한 설정 소실 방지.
-
-    구판은 고정 오리진(``http://127.0.0.1:42001``)의 localStorage ``hwpxfiller.theme`` 에
-    저장했다(프로필 = 홈/webview). 신판 ``settings.json`` 에 ``theme`` 키가 없고 구 프로필이
-    남아 있으면 LevelDB 파일에서 마지막 기록을 회수해 저장한다 — mtime 오름차순 × 파일 내
-    마지막 매치가 최신 기록이다.
-
-    반환: 이관·저장된 테마, 이관 대상 없으면 ``None``. 실패(예외)는 호출부가 경보한다."""
-    if "theme" in _read():
-        return None  # 신판 값이 이미 있다 — 구판이 이겨선 안 된다
-    if not legacy_leveldb_dir.is_dir():
-        return None
-    try:
-        files = sorted(legacy_leveldb_dir.iterdir(), key=lambda p: p.stat().st_mtime)
-    except OSError:
-        return None
-    found: "str | None" = None
-    for f in files:
-        if f.suffix not in (".log", ".ldb"):
-            continue
-        try:
-            blob = f.read_bytes()
-        except OSError:
-            continue
-        for m in _LEGACY_THEME_RECORD.finditer(blob):
-            found = m.group(1).decode("ascii")
-    if found is None:
-        return None
-    save_theme(found)
-    return found
