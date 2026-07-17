@@ -59,6 +59,11 @@
 
     /** 데이터 관리 등록 모달 '찾아보기' → 경로만 반환(로드 없음, #26 #4). null=취소. */
     pickPoolDataFile() { return window.pywebview.api.pick_pool_data_file(); },
+
+    /** 추적성 로케이트(#53-B) — 소유 경로 검증 후 열기/폴더보기/복사. null·"ERROR:…". */
+    openPath(path) { return window.pywebview.api.open_path(path); },
+    revealPath(path) { return window.pywebview.api.reveal_path(path); },
+    copyPath(path) { return window.pywebview.api.copy_path(path); },
   };
 
   // Python→웹 푸시 진입점(app.py 의 evaluate_js 가 호출). 전역 노출.

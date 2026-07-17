@@ -138,6 +138,7 @@ class RunController(PoolTargetingMixin):
         base.update({
             "job_name": job.name,
             "template_name": Path(job.template_path).name if job.template_path else "",
+            "template_path": job.template_path,  # 추적성 로케이트(#53-B) — 전체 경로
             "filename_pattern": job.filename_pattern,
             "has_data": self.vm.datasource is not None,
             "record_count": len(self.vm.records),
