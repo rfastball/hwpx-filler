@@ -53,11 +53,14 @@
         `<button class="btn sm" data-act="${esc(a.key)}" data-name="${esc(r.name)}">${esc(a.label)}</button>`
       ).join("");
       const note = r.note ? `<div class="tplcard-meta muted">${esc(r.note)}</div>` : "";
+      // 파일 참조 로케이트(#53-B) — 엑셀 항목만(nara/파이프라인은 locate_path="").
+      const track = r.locate_path
+        ? `<div class="tplcard-meta">${PathTrack.affordances(r.locate_path)}</div>` : "";
       return `<div class="tplcard">
         <div class="tplcard-top"><span class="tplcard-name" title="${esc(r.reference)}">${esc(r.name)}</span>
           <span class="pill muted">${esc(r.kind_label)}</span>
           <span class="pill ${esc(r.badge_level)}">${esc(r.badge_label)}</span></div>
-        <div class="tplcard-meta muted">${esc(r.reference)}</div>${note}
+        <div class="tplcard-meta muted">${esc(r.reference)}</div>${note}${track}
         <div class="tplcard-acts">${acts}</div></div>`;
     }).join("");
   }

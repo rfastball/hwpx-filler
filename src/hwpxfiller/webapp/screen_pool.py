@@ -68,6 +68,7 @@ class PoolController:
                 "badge_label": r.badge_label,
                 "badge_level": r.badge_level,
                 "reference": r.reference,
+                "locate_path": r.locate_path,  # 추적성 로케이트(#53-B) — 엑셀 파일 경로
                 "note": r.note,
                 "actions": [{"key": a.key, "label": a.label} for a in r.actions()],
             }

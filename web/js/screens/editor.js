@@ -48,7 +48,8 @@
       <div class="row"><span class="lbl">템플릿(.hwpx)</span>
         <input class="field ro" readonly value="${esc(s.template_name || "")}"
           placeholder="템플릿을 선택하세요">
-        <button class="btn" data-act="pick-template">찾아보기…</button></div>`;
+        <button class="btn" data-act="pick-template">찾아보기…</button>
+        ${PathTrack.affordances(s.template_path)}</div>`;
     if (s.raw_block) {
       out += `<p class="note dangerbox" style="white-space:pre-line">${esc(s.raw_block)}</p>`;
     } else if (s.gate_error) {
@@ -116,7 +117,8 @@
         <input class="field ro" readonly value="${esc(s.data_name || "")}"
           placeholder="데이터를 선택하거나 건너뛰세요">
         <button class="btn" data-act="pick-data">찾아보기…</button>
-        <button class="btn" data-act="skip-data">데이터 없이 진행 →</button></div>
+        <button class="btn" data-act="skip-data">데이터 없이 진행 →</button>
+        ${PathTrack.affordances(s.data_path)}</div>
       ${dataPreview(s)}`;
   }
 
