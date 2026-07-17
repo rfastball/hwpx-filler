@@ -61,7 +61,14 @@ def _repo_root() -> Path:
 
 
 def web_dir() -> Path:
-    """정적 자산 루트 — 동결 시 ``sys._MEIPASS/web``, 개발 시 ``<repo>/web``."""
+    """정적 자산 루트 — 동결 시 ``sys._MEIPASS/web``, 개발 시 ``<repo>/web``.
+
+    ``HWPXFILLER_WEB_DIR`` 는 테스트 seam(홈 seam ``HWPXFILLER_HOME`` 과 동일 관용구) —
+    스테일 캐시 회귀 게이트(#71)가 부팅 사이에 자산을 수정하려면 사본 루트를 서빙해야 한다.
+    """
+    override = os.environ.get("HWPXFILLER_WEB_DIR")
+    if override:
+        return Path(override)
     if getattr(sys, "frozen", False):
         return Path(sys._MEIPASS) / "web"  # type: ignore[attr-defined]
     return _repo_root() / "web"
@@ -567,6 +574,10 @@ def _selftest_drive(window: "object") -> None:
         result["theme_persist"] = window.evaluate_js(  # type: ignore[attr-defined]
             "({data_theme: document.documentElement.getAttribute('data-theme'),"
             " a_card: getComputedStyle(document.documentElement).getPropertyValue('--a-card').trim()})")
+        # 자산 스탬프(#71 스테일 캐시 회귀 관측점) — 게이트가 web 사본 JS 에 심은 전역을 되읽어
+        # "실제로 실행된 자산이 어느 판인지"를 확정한다. 스탬프 미주입 실행(일반 부팅)은 null.
+        result["asset_stamp"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "window.__HWPX_ASSET_STAMP__ === undefined ? null : window.__HWPX_ASSET_STAMP__")
     except Exception as exc:  # noqa: BLE001
         result["error"] = repr(exc)
     _finish_selftest(window, result)
@@ -578,9 +589,53 @@ def _webview_storage_dir() -> str:
 
     pywebview 기본 ``private_mode=True`` 는 세션 간 localStorage 를 버린다 — 테마 선택 영속에
     필요해 ``private_mode=False`` 로 지속화하되, 저장 위치는 다른 GUI 상태와 같은 홈 seam
-    (``HWPXFILLER_HOME`` 또는 ``~/.hwpxfiller``) 아래로 모은다(레지스트리들과 동일 규약)."""
+    (``HWPXFILLER_HOME`` 또는 ``~/.hwpxfiller``) 아래로 모은다(레지스트리들과 동일 규약).
+
+    반환은 반드시 절대경로 — 상대 storage_path 는 WebView2 생성이 실패한 뒤 pywebview 가
+    **조용히 MSHTML(IE) 로 폴백**하는 실함정이다(2026-07-17 실측, #69/#71 규명 라운드)."""
     root = os.environ.get("HWPXFILLER_HOME") or (Path.home() / ".hwpxfiller")
-    return str(Path(root) / "webview")
+    return str((Path(root) / "webview").resolve())
+
+
+def _purge_webview_http_cache(storage: str) -> None:
+    """부팅 전 WebView2 HTTP 디스크 캐시 퍼지 — 스테일 자산 서빙 클래스 제거(#69/#71).
+
+    실측(2026-07-17 통제실험): WebView2 는 pywebview 서버의 no-store 헤더에도 자산을 디스크
+    캐시에 저장하고, 서빙 파일 mtime 이 후퇴하면(워크트리 전환·다운그레이드·백업 복원)
+    Last-Modified 304 재검증이 캐시된 구판/남의 바디를 실행시킨다. ``--disable-http-cache``
+    는 브라우저 프로세스에 도달해도 무효(HTTP 캐시를 쥔 network service 에 미전파)라 프로필의
+    ``Cache`` 하위만 삭제한다 — ``Local Storage``(테마 영속)는 불건드림(생존 실증). 이 경로는
+    WebView2 내부 레이아웃이라 바뀔 수 있다 — 퍼지가 헛돌면 게이트의 스테일 회귀 테스트가
+    시끄럽게 잡는다."""
+    import shutil
+
+    for cache in Path(storage).glob("EBWebView/*/Cache"):
+        try:
+            shutil.rmtree(cache)
+        except OSError as exc:
+            # 조용한 퍼지 실패 금지 — 스테일 가능성이 남음을 알리되 부팅은 계속한다
+            # (캐시 잔존은 기능 저하이지 중단 사유가 아니다).
+            print(f"[hwpx] WebView2 캐시 퍼지 실패({cache}): {exc!r}", file=sys.stderr)
+
+
+def _webview_http_port() -> "int | None":
+    """pywebview 내부 서버 포트 결정 — 실사용은 고정, selftest 는 hermetic.
+
+    실사용 경로는 반드시 ``None``(= pywebview 기본 42001 고정)을 유지한다: localStorage 는
+    오리진(host:port) 키라 포트가 바뀌면 사용자 테마 영속이 리셋된다. ``HWPX_WEBVIEW_PORT``
+    는 테스트 seam(테마 영속 게이트가 두 콜드부트의 오리진을 일치시킬 때). ``--selftest`` 는
+    env 미지정 시 빈 포트를 골라 — 동시 실행 중인 실앱(42001 점유)과의 서버·캐시 오리진
+    충돌을 차단한다(#69)."""
+    port_env = os.environ.get("HWPX_WEBVIEW_PORT")
+    if port_env:
+        return int(port_env)
+    if "--selftest" in sys.argv:
+        import socket
+
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            return s.getsockname()[1]
+    return None
 
 
 def main() -> int:
@@ -600,10 +655,14 @@ def main() -> int:
     gui = "edgechromium" if sys.platform == "win32" else None
     # 테마 선택을 세션 간 유지 — localStorage 지속화(private_mode=False + 홈 아래 storage_path).
     storage = _webview_storage_dir()
+    _purge_webview_http_cache(storage)  # 브라우저 프로세스 부재 시점에 실행(#69/#71)
+    http_port = _webview_http_port()
     if "--selftest" in sys.argv:
-        webview.start(_selftest_drive, window, gui=gui, private_mode=False, storage_path=storage)
+        webview.start(_selftest_drive, window, gui=gui, private_mode=False,
+                      storage_path=storage, http_port=http_port)
     else:
-        webview.start(gui=gui, private_mode=False, storage_path=storage)  # 정상 닫기 = 클린 종료(소이슈 ①)
+        # 정상 닫기 = 클린 종료(소이슈 ①)
+        webview.start(gui=gui, private_mode=False, storage_path=storage, http_port=http_port)
     return 0
 
 

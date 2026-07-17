@@ -16,8 +16,12 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import socket
 import subprocess
 import sys
+import time
+from pathlib import Path
 
 import pytest
 
@@ -29,15 +33,28 @@ _GATE_REASON = "실앱 WebView2 게이트 — Windows 데스크톱 세션 전용
 _SELFTEST_TIMEOUT = 90
 
 
+def _free_port() -> int:
+    """빈 포트 하나 — selftest 오리진을 실사용 고정 포트(42001)에서 떼어낼 때 쓴다(#69)."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
 @pytest.fixture(scope="module")
 def selftest_result(tmp_path_factory) -> dict:
     """``--selftest`` 로 앱을 모듈당 1회 구동하고 DOM 되읽기 결과 JSON 을 로드한다.
 
     WebView2 콜드스타트가 비싸므로 창을 한 번만 띄우고 그 스냅샷에 여러 단언을 건다.
     출력 경로는 ``HWPX_SELFTEST_OUT`` 로 결정(하네스가 소유) — 동결 exe 옆에 쓰는 기본 거동과 분리.
+
+    ``HWPXFILLER_HOME`` 은 여기서 **명시로** 격리한다(#69): conftest 의 autouse 격리는
+    function 스코프라 이 module 스코프 픽스처가 먼저 인스턴스화된다 — os.environ 상속에
+    맡기면 서브프로세스가 격리 전 실홈(``~/.hwpxfiller``, 공유 WebView2 프로필)을 물려받아
+    다른 워크트리/브랜치가 남긴 캐시로 교차오염된다(실측 위양성).
     """
     out = tmp_path_factory.mktemp("selftest") / "selftest_result.json"
-    env = dict(os.environ, HWPX_SELFTEST_OUT=str(out))
+    home = tmp_path_factory.mktemp("selftest-home")
+    env = dict(os.environ, HWPX_SELFTEST_OUT=str(out), HWPXFILLER_HOME=str(home))
     proc = subprocess.run(
         [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"],
         env=env,
@@ -174,7 +191,9 @@ def test_theme_choice_persists_across_restart_without_flicker(tmp_path) -> None:
     home = tmp_path / "home"
     out_write = tmp_path / "write.json"
     out_read = tmp_path / "read.json"
-    base = dict(os.environ, HWPXFILLER_HOME=str(home))
+    # 두 콜드부트에 **같은** 포트를 명시한다 — localStorage 는 오리진(host:port) 키라서
+    # selftest 기본(빈 포트 자동 선택, #69)에 맡기면 쓰기·읽기 오리진이 갈려 영속이 위음성.
+    base = dict(os.environ, HWPXFILLER_HOME=str(home), HWPX_WEBVIEW_PORT=str(_free_port()))
     cmd = [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"]
 
     # (1) 쓰기 단계 — 저장 테마를 심고 종료.
@@ -199,3 +218,51 @@ def test_theme_choice_persists_across_restart_without_flicker(tmp_path) -> None:
         f"콜드부트에서 저장 테마 미적용 — 영속(private_mode/storage_path) 또는 FOUC 실패: {tp!r}")
     dark_card = gen.load_tokens()["dark"]["color"]["card_bg"]
     assert tp["a_card"] == dark_card, f"다크 --a-card({dark_card}) 미해소: {tp!r}"
+
+
+@pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
+def test_stale_cached_asset_not_served_across_restart(tmp_path) -> None:
+    """부팅 사이 자산이 바뀌면 mtime 이 후퇴했어도 반드시 신판 JS 가 실행된다(#69/#71 회귀 가드).
+
+    통제실험(2026-07-17)으로 확정된 재현법: WebView2 는 no-store 헤더에도 자산을 영속 프로필
+    디스크 캐시에 저장하고, 서빙 파일 mtime 이 캐시 시점보다 **과거**면(워크트리 전환·
+    다운그레이드·백업 복원이 정확히 이 조건) Last-Modified 304 재검증이 캐시된 구판 바디를
+    실행시킨다. 정방향 편집(mtime 전진)은 재현 못 하므로 반드시 mtime 을 되돌려야 한다.
+
+    부팅①로 v1 을 캐시에 워밍 → v2 로 교체 + mtime 1시간 후퇴 → 같은 홈·같은 포트(오리진
+    동일 = 캐시 키 충돌 조건)로 부팅② → 실행된 판을 되읽는다. 부팅 시 캐시 퍼지
+    (:func:`hwpxfiller.webapp.app._purge_webview_http_cache`)가 죽거나 WebView2 프로필
+    레이아웃이 바뀌어 퍼지가 헛돌면 v1 이 되읽혀 시끄럽게 실패한다 — 퍼지의 상시 알람.
+    """
+    web_copy = tmp_path / "web"
+    shutil.copytree(Path(__file__).resolve().parents[1] / "web", web_copy)
+    # index.html 이 로드하는 실제 JS 에 스탬프를 덧붙인다(별도 파일 추가는 index 수정이 필요).
+    probe = web_copy / "js" / "theme.js"
+    original = probe.read_text(encoding="utf-8")
+    probe.write_text(original + '\nwindow.__HWPX_ASSET_STAMP__ = "v1";\n', encoding="utf-8")
+
+    home = tmp_path / "home"
+    base = dict(os.environ, HWPXFILLER_HOME=str(home), HWPXFILLER_WEB_DIR=str(web_copy),
+                HWPX_WEBVIEW_PORT=str(_free_port()))
+    cmd = [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"]
+
+    out1 = tmp_path / "boot1.json"
+    r1 = subprocess.run(cmd, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
+                        env=dict(base, HWPX_SELFTEST_OUT=str(out1)))
+    assert out1.exists(), f"부팅① 결과 미생성 — rc={r1.returncode}\nstderr={r1.stderr[-2000:]}"
+    warmed = json.loads(out1.read_text(encoding="utf-8"))["asset_stamp"]
+    assert warmed == "v1", f"부팅①이 심은 스탬프를 못 읽음(전제 붕괴): {warmed!r}"
+
+    # 신판 교체 + mtime 후퇴 — 304 스테일이 가능한 최악 조건을 의도적으로 구성.
+    probe.write_text(original + '\nwindow.__HWPX_ASSET_STAMP__ = "v2";\n', encoding="utf-8")
+    past = time.time() - 3600
+    os.utime(probe, (past, past))
+
+    out2 = tmp_path / "boot2.json"
+    r2 = subprocess.run(cmd, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
+                        env=dict(base, HWPX_SELFTEST_OUT=str(out2)))
+    assert out2.exists(), f"부팅② 결과 미생성 — rc={r2.returncode}\nstderr={r2.stderr[-2000:]}"
+    stamp = json.loads(out2.read_text(encoding="utf-8"))["asset_stamp"]
+    assert stamp == "v2", (
+        f"스테일 캐시 자산이 실행됨(#71) — 디스크는 v2 인데 {stamp!r} 실행. "
+        "부팅 캐시 퍼지 실패 또는 WebView2 프로필 레이아웃 변경 가능성.")
