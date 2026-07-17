@@ -21,8 +21,8 @@ def test_tokens_in_sync():
 def test_web_region_renders_expected_palette_and_tints():
     """웹 CSS 변수 영역이 핵심 팔레트·배지/중성 틴트를 design_tokens.json 에서 생성한다."""
     region = gen.render_web_region(gen.load_tokens())
-    assert "--a-primary:#2874a6;" in region
-    assert "--a-sel:#dce9f5;" in region            # 선택 하이라이트
+    assert "--a-primary:#2f5fbf;" in region
+    assert "--a-sel:#dfe6fb;" in region            # 선택 하이라이트
     assert "--a-unconf:#fff3bf;" in region         # 미확정 배경
     # 배지·중성 틴트(V14/UD-33 환원)가 웹 변수로 실린다.
     assert "--fb-missing-bg:#fbe6e3;" in region
@@ -32,8 +32,8 @@ def test_web_region_renders_expected_palette_and_tints():
 
 def test_mockup_region_maps_app_palette():
     region = gen.render_mockup_region(gen.load_tokens())
-    assert "--a-primary:#2874a6;" in region
-    assert "--a-sel:#dce9f5;" in region
+    assert "--a-primary:#2f5fbf;" in region
+    assert "--a-sel:#dfe6fb;" in region
 
 
 # ---- 다크모드(prefers-color-scheme + [data-theme] override) 가드 ----

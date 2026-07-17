@@ -171,22 +171,26 @@ def test_nav_buttons_have_accessible_name_and_tooltip():
 
 
 def test_collapsed_nav_has_visual_marker():
-    """접힘 상태에서 라벨(.n/.d)이 숨겨져도 각 내비 버튼에 눈에 보이는 시각적 표지(.ni)가 있어야 한다(#27).
+    """각 내비 버튼에 상시 보이는 아이콘 표지(.ni SVG)가 있고, 접힘 시 라벨열(.lbl)이 숨겨져도
+    그 표지는 남아야 한다(#27 개정).
 
-    aria-label/title 는 SR 이름·호버 툴팁이고, 이건 접힘 상태에서 상시 보이는 시각 표지다 —
-    #27 완료기준 '식별 가능한 이름과 시각적 표지'의 후자. 여섯 버튼 각각 1개 + 접힘 시 노출 규칙.
+    옛 계약은 '.ni 글자표지를 펼침엔 숨기고 접힘에만 노출'이었으나, 앱 디자인 언어 채택으로 .ni 가
+    SVG 아이콘으로 승격돼 라벨과 상시 공존한다(중복이 아니라 스캔 보조). 따라서 계약을 뒤집는다 —
+    아이콘 상시 표지 + 접힘 시 라벨열(.lbl)만 숨김. aria-label/title 은 SR 이름·호버 툴팁으로 유지.
     """
     index = WEB_INDEX.read_text(encoding="utf-8")
     marker_count = index.count('class="ni"')
     assert marker_count == len(NAV_SCREENS), (
-        f"내비 시각 표지(.ni)가 {marker_count}개 — 여섯 버튼 각각 정확히 1개여야 합니다(#27)."
+        f"내비 시각 표지(.ni)가 {marker_count}개 — 버튼마다 정확히 1개여야 합니다(#27)."
     )
     css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
-    assert ".app.rail-collapsed.navbtn.ni{display:block" in css, (
-        "접힘 상태에서 .ni 시각 표지를 노출하는 규칙이 사라졌습니다(#27)."
+    # 아이콘(.ni svg)은 상시 표지 — 크기 규칙 존재로 SVG 아이콘 착지를 확인(펼침 숨김 규칙 폐기).
+    assert ".navbtn.nisvg{width:18px" in css, (
+        "내비 아이콘(.ni svg) 상시 표지 규칙이 사라졌습니다(#27 개정)."
     )
-    assert ".navbtn.ni{display:none" in css, (
-        "펼침 상태에서 .ni 를 숨기는 규칙이 사라졌습니다 — 라벨과 중복 노출(#27)."
+    # 접힘 시 라벨열(.lbl)을 숨겨 작업영역을 넓히되, 아이콘은 남아 표지를 잇는다.
+    assert ".app.rail-collapsed.navbtn.lbl{display:none" in css, (
+        "접힘 상태에서 라벨열(.lbl)을 숨기는 규칙이 사라졌습니다(#27)."
     )
 
 
