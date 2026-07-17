@@ -59,7 +59,9 @@
     box.style.display = "";
     box.innerHTML =
       `<span class="mono">${esc(s.template_name || "(템플릿 없음)")}</span>` +
-      ` · 파일명 <span class="mono">${esc(s.filename_pattern)}</span>`;
+      ` · 파일명 <span class="mono">${esc(s.filename_pattern)}</span>` +
+      // 템플릿 로케이트(#53-B) — 열기·폴더보기·경로복사(소유 화이트리스트 검증).
+      ` ${PathTrack.affordances(s.template_path)}`;
     $("targetLine").innerHTML = s.template_name
       ? `새 문서 생성 — 작업 템플릿(<span class="mono">${esc(s.template_name)}</span>)으로 한 번에 완성합니다.`
       : `작업 템플릿 경로가 비어 있습니다 — 에디터에서 템플릿을 지정하세요.`;
@@ -69,6 +71,9 @@
     // 소스 종류 병기 라벨("파일: x" / "등록 데이터: 이름", #26 #6) — 서버가 플래그에서 합성(K8).
     $("runDataLabel").value = s.data_source_label || "";
     $("outDir").value = s.out_dir || "";
+    // 저장 폴더 로케이트(#53-B) — 폴더 열기·경로복사(폴더라 '열기'는 탐색기로 동일).
+    const ot = $("outTrack");
+    if (ot) ot.innerHTML = PathTrack.affordances(s.out_dir, { only: ["reveal", "copy"] });
     // 기본 데이터셋 자동 조준 재진술(#53-A) — 성공(ok)/실패(warn) 시끄럽게 표시.
     const note = $("runDataNotice");
     if (note) {

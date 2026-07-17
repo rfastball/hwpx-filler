@@ -75,6 +75,7 @@ def test_select_job_then_data_populates_records_and_badges(tmp_path):
     snap = ctrl.snapshot()
     assert snap["has_data"] is True and snap["record_count"] == 2
     assert snap["selected_count"] == 2  # 데이터 겨눔 = 전체 선택 초기화
+    assert snap["template_path"].endswith("t.hwpx")  # 추적성 로케이트용 전체 경로(#53-B)
     states = {s["name"]: s["state"] for s in snap["field_states"]}
     assert states["공고명"] == "filled"
     assert states["추정가격"] == "missing"  # rec0 빈값 → 미입력
