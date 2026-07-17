@@ -116,6 +116,12 @@ class MappingProfile:
 
     name: str = ""
     mappings: "list[FieldMapping]" = field(default_factory=list)
+    # 작성 출처 메타(#53-C) — **순수 설명·추적 메타**. 실행 경로에 무영향(엔진은 mappings 만
+    # 소비)이며 실행 게이트는 여전히 라이브 검증(source_report·template_structure_drift)이다.
+    # 파일 참조가 유일 실행 의존이 되지 않게, 이건 "어떤 템플릿·데이터 스키마에서 작성됐는가"
+    # 를 나중에 되짚는 지문일 뿐이다. 키(모두 선택적 문자열): template·dataset·template_fields·
+    # source_keys(스키마 지문, ' · ' 결합)·authored_at·updated_at.
+    provenance: "dict[str, str]" = field(default_factory=dict)
 
     def template_fields(self) -> "list[str]":
         """실제로 값을 방출하는 필드(기존 엔진/ADR-E 계약).
@@ -164,13 +170,30 @@ class MappingProfile:
         return [self.apply(r) for r in records]
 
     def to_dict(self) -> dict:
-        return {"name": self.name, "mappings": [m.to_dict() for m in self.mappings]}
+        return {
+            "name": self.name,
+            "mappings": [m.to_dict() for m in self.mappings],
+            "provenance": dict(self.provenance),
+        }
 
     @classmethod
     def from_dict(cls, d: dict) -> "MappingProfile":
+        # 가산 필드 provenance(#53-C)는 .get 하위호환(구 JSON→{}) — 존재하는데 dict 가
+        # 아니거나 축·값이 str 이 아니면 loud raise(Job.tags 선례, 조용한 오염 금지).
+        raw = d.get("provenance", {})
+        if not isinstance(raw, dict):
+            raise ValueError(
+                f"'provenance' 는 사전이어야 하는데 {type(raw).__name__} 입니다"
+            )
+        provenance: "dict[str, str]" = {}
+        for k, v in raw.items():
+            if not isinstance(k, str) or not isinstance(v, str):
+                raise ValueError("'provenance' 의 키·값은 모두 문자열이어야 합니다")
+            provenance[k] = v
         return cls(
             name=d.get("name", ""),
             mappings=[FieldMapping.from_dict(m) for m in d.get("mappings", [])],
+            provenance=provenance,
         )
 
     def save(self, path: "str | Path") -> None:
