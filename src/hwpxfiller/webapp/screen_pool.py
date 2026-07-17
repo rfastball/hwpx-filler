@@ -19,6 +19,8 @@ nara 항목은 숨기지 않고 그대로 표시한다(도메인 seam ``register
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from ..core.dataset_pool import STATUS_ACTIVE, DatasetPoolRegistry
 from ..core.job import SlugCollisionError, classify_existing
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
@@ -69,6 +71,10 @@ class PoolController:
                 "badge_level": r.badge_level,
                 "reference": r.reference,
                 "locate_path": r.locate_path,  # 추적성 로케이트(#53-B) — 엑셀 파일 경로
+                "sheet": r.sheet,  # 다시 연결 프리필(#67)
+                # 참조 끊김(#67) — 파일이 이동/삭제된 엑셀 참조를 배지로 표면화한다.
+                # exists() 는 풀 액션 시에만 push 되는 이 화면에서만 지불(렌더당 I/O 아님).
+                "missing": bool(r.locate_path) and not Path(r.locate_path).exists(),
                 "note": r.note,
                 "actions": [{"key": a.key, "label": a.label} for a in r.actions()],
             }

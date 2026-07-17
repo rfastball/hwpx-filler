@@ -247,6 +247,15 @@ class WebFrontend:
         filters = _EXCEL_OR_ANY_FILTERS
         return open_file_dialog(filters, owner_title=WINDOW_TITLE)
 
+    def pick_template_path(self) -> "str | None":
+        """템플릿 다시 연결(#67) '찾아보기' → **경로만** 반환(``pick_pool_data_file`` 미러).
+
+        ``pick_template_file`` 과 달리 어떤 컨트롤러에도 로드하지 않는다 — 재연결의
+        검증·확정은 dispatch(``relink_template``)의 confirm 게이트가 담당. None = 취소.
+        """
+        return open_file_dialog([("HWPX 템플릿", "*.hwpx"), ("모든 파일", "*.*")],
+                                owner_title=WINDOW_TITLE)
+
     def reveal_corrupt_job(self, path: str) -> "str | None":
         """홈 손상 카드 '폴더 열기' → 탐색기에서 해당 파일 표시(#26 #8 해소 동선).
 

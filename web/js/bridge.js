@@ -60,6 +60,9 @@
     /** 데이터 관리 등록 모달 '찾아보기' → 경로만 반환(로드 없음, #26 #4). null=취소. */
     pickPoolDataFile() { return window.pywebview.api.pick_pool_data_file(); },
 
+    /** 템플릿 다시 연결(#67) '찾아보기' → 경로만 반환(로드 없음). null=취소. */
+    pickTemplatePath() { return window.pywebview.api.pick_template_path(); },
+
     /** 추적성 로케이트(#53-B) — 소유 경로 검증 후 열기/폴더보기/복사. null·"ERROR:…". */
     openPath(path) { return window.pywebview.api.open_path(path); },
     revealPath(path) { return window.pywebview.api.reveal_path(path); },

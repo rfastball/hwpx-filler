@@ -23,6 +23,7 @@ from ..core.dataset_pool import (
     default_dataset_pool_dir,
 )
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
+from ..core.fill_ledger import template_path_drift  # 재연결 드리프트 재진술(#67)
 from ..core.text_registry import TextTemplateRegistry
 from ..core.text_render import RenderReport
 from ..gui.dataset_pool_state import DatasetPoolRow
@@ -185,6 +186,59 @@ def source_label(source: str, data_label: str) -> str:
     if source == "pool":
         return f"등록 데이터: {data_label}"
     raise ValueError(f"알 수 없는 데이터 소스 종류: {source!r}")
+
+
+# ------------------------------------------------- 템플릿 다시 연결(#67)
+def relink_job_template(job_registry, name: str, path: str, *, confirm: bool = False) -> dict:
+    """작업 템플릿 참조 재지정 — run/home 공유 확정 게이트(교차-단위 계약 단일 출처).
+
+    파일 이동/삭제로 끊긴 ``Job.template_path`` 를 새 파일로 갱신하는 유일한 durable
+    뮤테이션 경로다. 에디터는 죽은 템플릿 작업을 loud 차단해 열지 못하므로(#67 결정)
+    여기가 막다른길을 푸는 입구이며, 드리프트 정책은 그 순서를 따른다:
+
+    - **read_error = 하드 차단**: 읽을 수 없는 파일은 확인으로도 템플릿이 될 수 없다(알람).
+    - **구조 드리프트 = 재진술 확인 후 허용**: 커밋해도 생성은 기존 드리프트 게이트
+      (:meth:`~hwpxfiller.gui.run_state.RunViewModel` fail-closed)가 매핑 재확정 전까지
+      차단하므로 안전하다. 여기서 막으면 '이동+구조 변경' 작업은 영구 복구 불능이 된다.
+    - 드리프트가 없어도 durable JSON 뮤테이션이므로 기존→새 경로 재진술 확인 1회.
+
+    실패는 raise 대신 오류 dict 재진술(``_do_register_excel`` 문법) — 웹이 그대로 표시.
+    """
+    if not path:
+        return {"ok": False, "error": "새 템플릿 경로가 비어 있습니다."}
+    try:
+        job = job_registry.load(name)
+    except FileNotFoundError:
+        return {"ok": False, "error": f"작업을 찾을 수 없습니다(이미 삭제된 작업): {name}"}
+    except ValueError as exc:  # 손상 JSON — 격리 대상, 재연결로 고칠 수 없다.
+        return {"ok": False, "error": f"작업을 읽을 수 없습니다: {exc}"}
+    drift = template_path_drift(path, job.mapping)
+    if drift.read_error:  # has_drift 는 read_error 를 포함하므로 반드시 선판정
+        return {
+            "ok": False,
+            "error": f"새 템플릿을 읽을 수 없습니다: {drift.read_error} — 연결을 바꾸지 않았습니다.",
+        }
+    if not confirm:
+        drift_clause = (
+            (
+                "\n\n⚠ 새 파일의 구조가 이 작업의 확정 매핑과 다릅니다:\n"
+                f"{drift.describe()}\n"
+                "저장해도 에디터에서 매핑을 재확정하기 전에는 생성이 차단됩니다."
+            )
+            if drift.has_drift else ""
+        )
+        return {
+            "ok": True, "needs_confirm": True, "name": name,
+            "confirm_text": (
+                f"작업 '{name}' 의 템플릿 연결을 바꿉니다.\n"
+                f"기존: {job.template_path or '(비어 있음)'}\n"
+                f"새 파일: {path}{drift_clause}"
+            ),
+        }
+    old = job.template_path
+    job.template_path = path  # 단일 필드 뮤테이션 — 매핑·태그·기본 데이터 참조 보존
+    job_registry.save(job, allow_overwrite=True)
+    return {"ok": True, "relinked": True, "name": name, "old": old, "path": path}
 
 
 class PoolTargetingMixin:

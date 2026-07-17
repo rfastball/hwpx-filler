@@ -61,7 +61,9 @@
       `<span class="mono">${esc(s.template_name || "(템플릿 없음)")}</span>` +
       ` · 파일명 <span class="mono">${esc(s.filename_pattern)}</span>` +
       // 템플릿 로케이트(#53-B) — 열기·폴더보기·경로복사(소유 화이트리스트 검증).
-      ` ${PathTrack.affordances(s.template_path)}`;
+      ` ${PathTrack.affordances(s.template_path)}` +
+      // 템플릿 다시 연결(#67) — 파일 이동/삭제 시 저장 경로 갱신(confirm 게이트).
+      ` <button class="btn sm" data-act="relink-template" data-busy-lock>템플릿 다시 연결…</button>`;
     $("targetLine").innerHTML = s.template_name
       ? `새 문서 생성 — 작업 템플릿(<span class="mono">${esc(s.template_name)}</span>)으로 한 번에 완성합니다.`
       : `작업 템플릿 경로가 비어 있습니다 — 에디터에서 템플릿을 지정하세요.`;
@@ -242,6 +244,28 @@
     Bridge.call(SCREEN, act, { field: badgeEl.dataset.f });
   }
 
+  /* 템플릿 다시 연결(#67) — 피커(경로만) → 1차 재진술(needs_confirm, 드리프트 병기)
+     → 확인 시에만 커밋. 커밋 후 서버가 작업을 재적재하므로 결과 문구를 그대로 로그. */
+  async function doRelinkTemplate() {
+    if (!(LAST && LAST.job_name)) return;
+    try {
+      const path = await Bridge.pickTemplatePath();
+      if (!path) return;                            // 취소
+      let res = await Bridge.call(SCREEN, "relink_template", { name: LAST.job_name, path });
+      if (res && res.needs_confirm) {
+        if (!window.confirm(res.confirm_text + "\n\n계속할까요?")) {
+          log("다시 연결 취소 — 템플릿 연결을 바꾸지 않았습니다."); return;
+        }
+        res = await Bridge.call(SCREEN, "relink_template",
+          { name: LAST.job_name, path, confirm: true });
+      }
+      if (res && res.ok === false) { window.alert(res.error); log("다시 연결 실패: " + res.error); return; }
+      if (res && res.restated) log(res.restated);
+    } catch (err) {
+      window.alert(String((err && err.message) || err));
+    }
+  }
+
   function onRecChange(e) {
     const cb = e.target.closest('input[type="checkbox"][data-i]');
     if (!cb) return;
@@ -254,6 +278,10 @@
     $("selAll").addEventListener("click", () => Bridge.call(SCREEN, "set_all", {}));
     $("selNone").addEventListener("click", () => Bridge.call(SCREEN, "set_none", {}));
     $("recList").addEventListener("change", onRecChange);
+    // 재렌더에도 살아남게 안정 컨테이너(#jobMeta)에 위임(#67).
+    $("jobMeta").addEventListener("click", (e) => {
+      if (e.target.closest('[data-act="relink-template"]')) doRelinkTemplate();
+    });
     $("fieldBadges").addEventListener("click", onClick);
     $("fieldBadges").addEventListener("keydown", onBadgeKey);
     $("genBtn").addEventListener("click", () => doGenerate(false));

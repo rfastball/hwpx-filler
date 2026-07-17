@@ -408,7 +408,8 @@ class EditorController:
         if not Path(job.template_path).exists():
             raise ValueError(
                 f"템플릿 파일을 찾을 수 없습니다: {job.template_path}\n"
-                "템플릿을 옮겼거나 지웠으면 파일을 되돌리거나 새 작업으로 다시 만들어 주세요."
+                "템플릿을 옮겼거나 지웠으면 파일을 되돌리거나, 실행/홈 화면의 "
+                "[템플릿 다시 연결…]로 경로를 바꿔 주세요."
             )
         self._reset()
         self.load_template_path(job.template_path)
