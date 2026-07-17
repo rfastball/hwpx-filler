@@ -102,7 +102,7 @@ def test_web_region_emits_scale_tokens():
     region = gen.render_web_region(gen.load_tokens())
     assert "--sp-12:12px;" in region       # 여백 그리드
     assert "--sp-8:8px;" in region
-    assert "--rad-md:6px;" in region        # 모서리
+    assert "--rad-control:6px;" in region   # 모서리(역할 문법 #59)
     assert "--rad-pill:999px;" in region    # 완전 둥근 pill
     assert "--fs-body:13px;" in region      # 본문 폰트
     assert "--fs-kpi:23px;" in region
