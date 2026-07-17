@@ -1,5 +1,5 @@
 {
-  "_note": "앱 B 디자인 토큰 단일 출처. 색을 바꾸려면 여기만 고치고 `python scripts/gen_design_tokens.py` 실행 — 웹 CSS(web·web-diff)와 목업 CSS가 함께 재생성된다. 백엔드 무접촉. 최상위 그룹(color/state/badge/neutral/log)이 라이트 팔레트, 형제 `dark` 섹션이 같은 group/key 로 다크 팔레트다(gen 이 :root + @media(prefers-color-scheme:dark) + [data-theme=dark] 3블록 방출). space/radius/type 은 라이트 전용(웹 미방출; 스케일 토큰은 별도 라운드).",
+  "_note": "앱 B 디자인 토큰 단일 출처. 값을 바꾸려면 여기만 고치고 `python scripts/gen_design_tokens.py` 실행 — 웹 CSS(web·web-diff)와 목업 CSS가 함께 재생성된다. 백엔드 무접촉. 최상위 그룹(color/state/badge/neutral/log)이 라이트 팔레트, 형제 `dark` 섹션이 같은 group/key 로 다크 팔레트다(gen 이 :root + @media(prefers-color-scheme:dark) + [data-theme=dark] 3블록 방출). space/radius/type 스케일도 gen 이 CSS 변수(--sp-*·--rad-*·--fs-*)로 방출하되 **테마 불변**이라 라이트 :root 블록에만 찍는다(다크 미중복). space 는 수치키(px 값=키; padding/margin/gap 이 촘촘해 t-shirt 대신 수치 사다리), radius/type 은 역할 의미키. 무단위 정수 → gen 이 px 부착.",
   "color": {
     "primary": "#2874a6",
     "primary_hover": "#1f5a80",
@@ -99,7 +99,7 @@
       "ink": "#c6d0da"
     }
   },
-  "space": { "xs": 2, "sm": 6, "md": 12, "lg": 18 },
-  "radius": { "xs": 3, "sm": 4, "md": 6, "lg": 9, "pill": 11 },
-  "type": { "label": 11, "small": 12, "body": 13, "title": 14, "heading": 15, "kpi": 22 }
+  "space": { "2": 2, "4": 4, "6": 6, "8": 8, "10": 10, "12": 12, "14": 14, "16": 16, "20": 20, "24": 24, "28": 28, "40": 40 },
+  "radius": { "sm": 4, "md": 6, "lg": 9, "xl": 12, "pill": 999 },
+  "type": { "micro": 10, "label": 11, "small": 12, "body": 13, "title": 14, "heading": 15, "section": 19, "kpi": 23 }
 }
