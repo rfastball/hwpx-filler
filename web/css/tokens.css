@@ -39,6 +39,31 @@
   --n-ink-control:#2b3038;
   --log-surface:#1e242b;
   --log-ink:#c6d0da;
+  --sp-2:2px;
+  --sp-4:4px;
+  --sp-6:6px;
+  --sp-8:8px;
+  --sp-10:10px;
+  --sp-12:12px;
+  --sp-14:14px;
+  --sp-16:16px;
+  --sp-20:20px;
+  --sp-24:24px;
+  --sp-28:28px;
+  --sp-40:40px;
+  --rad-sm:4px;
+  --rad-md:6px;
+  --rad-lg:9px;
+  --rad-xl:12px;
+  --rad-pill:999px;
+  --fs-micro:10px;
+  --fs-label:11px;
+  --fs-small:12px;
+  --fs-body:13px;
+  --fs-title:14px;
+  --fs-heading:15px;
+  --fs-section:19px;
+  --fs-kpi:23px;
   color-scheme:light;
 }
 @media (prefers-color-scheme:dark){

@@ -87,3 +87,52 @@ def test_web_region_dark_declares_every_light_variable():
     for name in names:
         assert re.search(rf"{re.escape(name)}\s*:", light_block), f"라이트 블록에 {name} 누락"
         assert re.search(rf"{re.escape(name)}\s*:", dark_block), f"다크 블록에 {name} 누락"
+
+
+# ---- 스케일 토큰(space/radius/type — 테마 불변) 가드 ----
+
+_APP_CSS = (
+    gen.ROOT / "web" / "css" / "app.css",
+    gen.ROOT / "web-diff" / "css" / "app.css",
+)
+
+
+def test_web_region_emits_scale_tokens():
+    """웹 CSS 영역이 여백·모서리·폰트크기 스케일 변수를 px 부착으로 방출한다(대표값 검증)."""
+    region = gen.render_web_region(gen.load_tokens())
+    assert "--sp-12:12px;" in region       # 여백 그리드
+    assert "--sp-8:8px;" in region
+    assert "--rad-md:6px;" in region        # 모서리
+    assert "--rad-pill:999px;" in region    # 완전 둥근 pill
+    assert "--fs-body:13px;" in region      # 본문 폰트
+    assert "--fs-kpi:23px;" in region
+
+
+def test_scale_tokens_theme_invariant():
+    """스케일 변수는 라이트 :root 에만 실리고 다크 두 블록(@media·[data-theme=dark])엔 없다.
+
+    스케일은 테마 불변이라 다크에서 재선언할 이유가 없다 — 색 3블록 패턴과 달리 :root 한 곳뿐임을
+    정적으로 강제해, 훗날 다크 블록에 스케일이 새어들어 중복·불일치가 생기는 회귀를 막는다.
+    """
+    region = gen.render_web_region(gen.load_tokens())
+    light_block = region.split("@media", 1)[0]
+    dark_region = region.split("@media", 1)[1]  # @media + [data-theme=dark] 두 다크 블록 전부
+    for prefix in ("--sp-", "--rad-", "--fs-"):
+        assert prefix in light_block, f"라이트 :root 에 {prefix} 스케일 누락"
+        assert prefix not in dark_region, f"다크 블록에 {prefix} 스케일이 새어듦(테마 불변 위반)"
+
+
+def test_app_css_free_of_metric_literals():
+    """채택 완료 축(font-size·border-radius)은 app.css 에 px 리터럴이 남지 않는다(색 리터럴 가드의 스케일판).
+
+    허용 예외: ``font-size:0``(로고 접기)·``border-radius:50%``(원형)·``border-radius:0``은 스케일 값이
+    아니라 리터럴 유지. 여백(padding/margin/gap)은 구조 치수가 리터럴로 남아 가드 대상에서 제외.
+    """
+    import re
+
+    for path in _APP_CSS:
+        css = path.read_text(encoding="utf-8")
+        fs = re.search(r"font-size:\s*[\d.]+px", css)
+        assert fs is None, f"{path.name}: font-size px 리터럴 잔존 → var(--fs-*) 로 (`{fs.group(0)}`)"
+        rad = re.search(r"border-radius:[^;{}]*\d+px", css)
+        assert rad is None, f"{path.name}: border-radius px 리터럴 잔존 → var(--rad-*) 로 (`{rad.group(0)}`)"
