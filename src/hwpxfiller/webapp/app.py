@@ -427,12 +427,39 @@ _PRESERVE_REAL_PROBE_JS = r"""
 
 
 # ------------------------------------------------------------------ 자가검증(Q3)
+def _finish_selftest(window: "object", result: dict) -> None:
+    """되읽기 결과를 결정적 위치에 쓰고 정식 종료한다(쓰기·읽기 단계 공용).
+
+    출력 경로: 테스트 하네스(#30 접근 A)가 HWPX_SELFTEST_OUT 로 결정적 위치를 준다.
+    미설정 시 동결 exe 옆(dist) — 기존 부팅 자가검증 거동 불변. destroy 는 os._exit 대체(소이슈 ①).
+    """
+    out_override = os.environ.get("HWPX_SELFTEST_OUT")
+    out = Path(out_override) if out_override else Path(sys.executable).resolve().parent / "selftest_result.json"
+    out.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    window.destroy()  # type: ignore[attr-defined]
+
+
 def _selftest_drive(window: "object") -> None:
     """동결 exe 부팅 자가검증 — 창이 뜨고 렌더/브리지가 도는지 되읽어 파일로 확정 후 정식 종료.
 
-    소이슈 ①: ``os._exit`` 대신 ``window.destroy()`` 로 이벤트 루프를 정식 종료한다.
+    ``HWPX_SELFTEST_SET_THEME`` 이 설정되면 **쓰기 단계**로 동작한다: 저장 테마를 심고 바로 정식
+    종료해 localStorage 를 storage_path 에 남긴다(다음 콜드부트의 영속·무깜빡임 되읽기용 사전 단계).
     """
     import time
+
+    set_theme = os.environ.get("HWPX_SELFTEST_SET_THEME")
+    if set_theme:
+        time.sleep(4.0)  # 콜드부트 + theme.js 로드 대기
+        result: dict = {"theme_write": set_theme}
+        try:
+            # 실 토글 헬퍼로 심는다(setAttribute + localStorage.setItem) — 실사용 경로와 동형.
+            result["set_result"] = window.evaluate_js(  # type: ignore[attr-defined]
+                "window.Theme.set(" + json.dumps(set_theme) + ")")
+            time.sleep(1.2)  # WebView2 가 storage_path 로 플러시할 여유
+        except Exception as exc:  # noqa: BLE001
+            result["error"] = repr(exc)
+        _finish_selftest(window, result)
+        return
 
     time.sleep(4.5)
     result: dict = {}
@@ -479,17 +506,28 @@ def _selftest_drive(window: "object") -> None:
         window.evaluate_js(_PRESERVE_REAL_SETUP_JS)  # type: ignore[attr-defined]  # 비동기 initial fire
         time.sleep(1.2)  # initial() 해소 + 렌더 안정
         result["preserve_real"] = window.evaluate_js(_PRESERVE_REAL_PROBE_JS)  # type: ignore[attr-defined]
+        # 다크모드 영속·무깜빡임(콜드부트 되읽기) — head FOUC 인라인이 이전 세션이 남긴 저장 테마를
+        # 첫 페인트 전 data-theme 로 세웠는지. 저장값이 없으면 data_theme=null(=system). 앞선 쓰기
+        # 프로세스가 남긴 값이 여기서 보이면 private_mode=False+storage_path 디스크 영속이 실증된다.
+        result["theme_persist"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "({data_theme: document.documentElement.getAttribute('data-theme'),"
+            " a_card: getComputedStyle(document.documentElement).getPropertyValue('--a-card').trim()})")
     except Exception as exc:  # noqa: BLE001
         result["error"] = repr(exc)
-    # 출력 경로: 테스트 하네스(#30 접근 A)가 HWPX_SELFTEST_OUT 로 결정적 위치를 준다.
-    # 미설정 시 동결 exe 옆(dist) — 기존 부팅 자가검증 거동 불변.
-    out_override = os.environ.get("HWPX_SELFTEST_OUT")
-    out = Path(out_override) if out_override else Path(sys.executable).resolve().parent / "selftest_result.json"
-    out.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
-    window.destroy()  # type: ignore[attr-defined]  # 정식 종료(os._exit 대체)
+    _finish_selftest(window, result)
 
 
 # ------------------------------------------------------------------ 엔트리
+def _webview_storage_dir() -> str:
+    """WebView2 영속 저장소(localStorage 등) 위치 — 홈 아래 ``webview/``.
+
+    pywebview 기본 ``private_mode=True`` 는 세션 간 localStorage 를 버린다 — 테마 선택 영속에
+    필요해 ``private_mode=False`` 로 지속화하되, 저장 위치는 다른 GUI 상태와 같은 홈 seam
+    (``HWPXFILLER_HOME`` 또는 ``~/.hwpxfiller``) 아래로 모은다(레지스트리들과 동일 규약)."""
+    root = os.environ.get("HWPXFILLER_HOME") or (Path.home() / ".hwpxfiller")
+    return str(Path(root) / "webview")
+
+
 def main() -> int:
     import webview
 
@@ -505,10 +543,12 @@ def main() -> int:
     frontend._window = window
     # 소이슈 ②: Windows 는 EdgeChromium(WebView2) 백엔드 명시 핀.
     gui = "edgechromium" if sys.platform == "win32" else None
+    # 테마 선택을 세션 간 유지 — localStorage 지속화(private_mode=False + 홈 아래 storage_path).
+    storage = _webview_storage_dir()
     if "--selftest" in sys.argv:
-        webview.start(_selftest_drive, window, gui=gui)
+        webview.start(_selftest_drive, window, gui=gui, private_mode=False, storage_path=storage)
     else:
-        webview.start(gui=gui)  # 정상 닫기 = 여기서 반환 → 클린 종료(소이슈 ①)
+        webview.start(gui=gui, private_mode=False, storage_path=storage)  # 정상 닫기 = 클린 종료(소이슈 ①)
     return 0
 
 

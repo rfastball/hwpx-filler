@@ -1,5 +1,10 @@
 <!DOCTYPE html>
-<html lang="ko">
+<!-- data-theme="light" 로 라이트 고정 — tokens.css 는 filler 와 공유라 다크 3블록을 함께 싣지만,
+     diff 표 셀 틴트(added/removed)가 백엔드 스냅샷의 라이트 파스텔을 인라인 style 로 박아
+     테마를 안 따른다(본문 잉크는 다크에서 밝아짐 → 밝은 잉크 on 밝은 틴트 판독불가). 셀 틴트를
+     토큰화하기 전까지 이 번들은 라이트로 고정한다(속성이 있으면 @media dark 의 :not([data-theme=light])
+     이 배제되고 [data-theme=dark] 도 켜지지 않아 항상 라이트). filler(web/)는 정상 다크 지원. -->
+<html lang="ko" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

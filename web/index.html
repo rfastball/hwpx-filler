@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HWPX Filler</title>
+<!-- FOUC 방지 — 스타일 페인트 전 저장 테마를 동기 적용한다(js/theme.js 는 body 말미라 늦어
+     첫 페인트가 라이트로 번쩍인다). localStorage 만 동기 되읽기가 가능해 백엔드 영속 대신 씀. -->
+<script>(function(){try{var m=localStorage.getItem("hwpxfiller.theme");if(m==="light"||m==="dark")document.documentElement.setAttribute("data-theme",m);}catch(e){}})();</script>
 <link rel="stylesheet" href="css/tokens.css">
 <link rel="stylesheet" href="css/app.css">
 </head>
@@ -37,6 +40,12 @@
       <span class="ni">템</span><span class="n">템플릿 관리</span><span class="d">HWPX·TXT 라이브러리 · 상태·변환·검토</span></button>
     <button class="navbtn" data-scr="pool" aria-label="데이터 관리" title="데이터 관리">
       <span class="ni">데</span><span class="n">데이터 관리</span><span class="d">등록 데이터(참조) · 수명 관리</span></button>
+    <!-- 테마 전환(레일 하단, margin-top:auto) — navbtn 이 아니라 라우팅되지 않는다. 접힘 표지는
+         .ti(≠.ni)라 #27 시각표지 카운트와 무관. 라벨은 app.js 가 현재 모드로 갱신(themeLabel). -->
+    <button class="rail-theme" id="themeToggle" aria-label="테마 전환 (시스템 → 라이트 → 다크)"
+            title="테마 전환 (시스템 → 라이트 → 다크)">
+      <span class="ti">◐</span><span class="n">테마</span>
+      <span class="d" id="themeLabel">시스템</span></button>
   </nav>
 
   <main class="stage">
@@ -440,6 +449,7 @@
 </div>
 
 <script src="js/bridge.js"></script>
+<script src="js/theme.js"></script>
 <script src="js/esc.js"></script>
 <script src="js/preserve.js"></script>
 <script src="js/modal.js"></script>

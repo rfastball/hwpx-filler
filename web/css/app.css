@@ -26,7 +26,7 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:12p
 .navbtn .n{font-size:13.5px;font-weight:600;display:block}
 .navbtn .d{font-size:11px;color:var(--a-muted);margin-top:1px}
 .navbtn:hover{background:var(--n-hover)}
-.navbtn[aria-current="true"]{background:var(--a-primary);color:#fff}
+.navbtn[aria-current="true"]{background:var(--a-primary);color:var(--a-on-accent)}
 .navbtn[aria-current="true"] .d{color:var(--a-sel)}
 .navbtn:focus-visible{outline:2px solid var(--a-primary);outline-offset:-2px}
 
@@ -45,7 +45,7 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:12p
 .btn:disabled{opacity:.5;cursor:not-allowed}
 .btn.sm{font-size:12px;padding:4px 10px}
 .btn.icon{padding:5px 9px}
-.btn.primary{background:var(--a-primary);color:#fff;border-color:var(--a-primary);font-weight:600;padding:6px 16px}
+.btn.primary{background:var(--a-primary);color:var(--a-on-accent);border-color:var(--a-primary);font-weight:600;padding:6px 16px}
 .btn.primary:hover{background:var(--a-primary-h);border-color:var(--a-primary-h)}
 .btn.primary:disabled{background:var(--a-muted);border-color:var(--a-muted)}
 .btn:focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
@@ -123,8 +123,8 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:12p
   background:var(--n-pressed);color:var(--n-ink-soft);font-size:11px;font-weight:700}
 .wstep-tab[aria-current="true"]{color:var(--a-primary);font-weight:700;background:var(--a-card);
   box-shadow:inset 0 -2px 0 var(--a-primary)}
-.wstep-tab[aria-current="true"] .k{background:var(--a-primary);color:#fff}
-.wstep-tab.done .k{background:var(--a-ok);color:#fff}
+.wstep-tab[aria-current="true"] .k{background:var(--a-primary);color:var(--a-on-accent)}
+.wstep-tab.done .k{background:var(--a-ok);color:var(--a-on-accent)}
 .wbody{flex:1;min-height:0;overflow:auto;padding:4px 2px}
 .wfoot{display:flex;align-items:center;gap:10px;margin-top:12px;padding-top:12px;
   border-top:1px solid var(--a-border)}
@@ -227,7 +227,10 @@ tr.r-confirmed td,tr.r-schemaonly td{background:var(--a-card)}
 .bar>i{display:block;height:100%;width:0;background:var(--a-primary);transition:width .25s ease}
 .run-result{font-size:12.5px;margin-top:8px;font-weight:600;min-height:1.2em}
 .run-result.ok{color:var(--a-ok)} .run-result.warn{color:var(--a-warn)} .run-result.danger{color:var(--a-danger)}
+/* border 는 항상 — 라이트에선 어두운 콘솔의 은은한 테두리, 다크에선 카드와 붙는 콘솔을 분리
+   (다크에선 로그 표면·페이지가 둘 다 어두워 경계가 소실되므로 보더가 승강을 대신한다). */
 .logbox{margin-top:10px;background:var(--log-surface);color:var(--log-ink);border-radius:6px;
+  border:1px solid var(--a-border);
   padding:9px 11px;font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:11px;
   height:110px;overflow:auto;white-space:pre-wrap}
 @media (prefers-reduced-motion:reduce){.bar>i{transition:none}}
@@ -248,12 +251,27 @@ tr.r-confirmed td,tr.r-schemaonly td{background:var(--a-card)}
 .navbtn .ni{display:none;font-weight:700;font-size:14px}
 .app.rail-collapsed .navbtn .ni{display:block;text-align:center}
 
+/* ---- 테마 전환(레일 하단) — System→Light→Dark 순환(theme.js). navbtn 이 아니므로 라우팅
+   대상이 아니고, 접힘 표지는 .ni 가 아닌 .ti 를 써 #27 시각표지 카운트를 오염시키지 않는다.
+   margin-top:auto 로 레일 바닥에 고정(접힘에서도 생존). ---- */
+.rail-theme{margin-top:auto;width:100%;text-align:left;font:inherit;cursor:pointer;border:0;
+  background:transparent;color:var(--n-ink-control);padding:9px 11px;border-radius:8px;display:block}
+.rail-theme:hover{background:var(--n-hover)}
+.rail-theme .n{font-size:13px;font-weight:600;display:block}
+.rail-theme .d{font-size:11px;color:var(--a-muted);margin-top:1px;display:block}
+.rail-theme:focus-visible{outline:2px solid var(--a-primary);outline-offset:-2px}
+.rail-theme .ti{display:none;font-weight:700;font-size:14px}
+.app.rail-collapsed .rail-theme{text-align:center;padding:9px 4px}
+.app.rail-collapsed .rail-theme .n,
+.app.rail-collapsed .rail-theme .d{display:none}
+.app.rail-collapsed .rail-theme .ti{display:block;text-align:center}
+
 /* ---- 모달 ---- */
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;
   justify-content:center;z-index:10}
 .modal.hidden{display:none}
 .modal-card{background:var(--a-card);border-radius:12px;padding:20px;width:min(560px,92vw);
-  box-shadow:0 12px 40px rgba(0,0,0,.2)}
+  box-shadow:0 12px 40px var(--a-shadow)}
 .modal-card h3{margin:0 0 6px}
 .modal-card textarea{width:100%;border:1px solid var(--a-border);border-radius:8px;padding:10px;
   font-family:inherit;font-size:13px;resize:vertical;color:var(--a-ink);background:var(--a-card)}
