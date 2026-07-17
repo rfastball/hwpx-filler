@@ -164,12 +164,12 @@ def test_nara_mapping_fills_bid_notice_with_formatting(tmp_path):
     assert "친환경 선박용 소화장비 구매" in blob
     assert "45,000,000원" in blob                # amount 변환
     # 개찰일시가 두 누름틀(개찰일자/개찰시각)로 분해 — hwpx 에선 별도 런이라 각각 검사.
-    assert "2026년 7월 22일" in blob              # 개찰일자(date 기본 서식)
+    assert "2026. 7. 22." in blob                # 개찰일자(date 기본 서식)
     assert "10:00" in blob                       # 개찰시각(date fmt=%H:%M)
     # 입찰개시·입찰마감도 일자+시각 두 누름틀로 분해 — 종전 시각 유실이 복원된다.
-    assert "2026년 7월 15일" in blob              # 입찰개시일자
+    assert "2026. 7. 15." in blob                # 입찰개시일자
     assert "09:00" in blob                       # 입찰개시시각(date fmt=%H:%M)
-    assert "2026년 7월 21일" in blob              # 입찰마감일자
+    assert "2026. 7. 21." in blob                # 입찰마감일자
     assert "17:00" in blob                       # 입찰마감시각(date fmt=%H:%M)
     assert "적격심사" in blob                     # 낙찰자결정방법
 
@@ -221,8 +221,8 @@ def test_txt_templates_render_from_mapped_records():
     assert "[입찰공고 게시 요청] 친환경 선박용 소화장비 구매" in text
     assert "나. 추정가격 : 45,000,000원" in text
     # 입찰마감이 인접 일자/시각 토큰으로 — 종전 유실된 시각(17:00)이 채워진다.
-    assert "다. 입찰마감 : 2026년 7월 21일 17:00" in text
-    assert "라. 개찰일시 : 2026년 7월 22일 10:00" in text
+    assert "다. 입찰마감 : 2026. 7. 21. 17:00" in text
+    assert "라. 개찰일시 : 2026. 7. 22. 10:00" in text
     assert report.missing_fields == []  # 매핑이 이 템플릿의 전 필드를 공급
 
     summary = (TEXT_TEMPLATES / "게시요약.txt").read_text(encoding="utf-8")
