@@ -30,6 +30,9 @@ RESPONSIVE_BREAKPOINT_PX = 820
 WEB_JS_DIR = Path(__file__).resolve().parents[1] / "web" / "js"
 PRESERVE_WRAPPED_SCREENS = ("txt", "editor", "run", "matrix")
 
+# 살아있는 컴포넌트 갤러리(개발 전용) — 실 tokens.css+app.css 를 <link> 로 물어 드리프트 0.
+GALLERY = Path(__file__).resolve().parents[1] / "docs" / "UI_GALLERY.html"
+
 # 여섯 화면 루트 — 셸 라우터가 표시/숨김으로 전환하는 최상위 컨테이너(회귀 시 화면 소실).
 SCREEN_ROOTS = (
     "scr-home", "scr-editor", "scr-run", "scr-matrix", "scr-txt", "scr-tpl",
@@ -329,6 +332,30 @@ def test_preserve_helper_loaded_and_wraps_screen_renders():
         assert "Preserve.around" in src, (
             f"{scr}.js 의 render() 가 Preserve.around 래핑을 잃었습니다 — 재렌더 시 상호작용 유실(#28)."
         )
+def test_component_gallery_links_real_stylesheets_drift_free():
+    """살아있는 컴포넌트 갤러리(docs/UI_GALLERY.html)는 실 stylesheet 를 <link> 로 물어야 한다.
+
+    갤러리의 유일한 존재 이유는 드리프트-0 — app.css 를 고치면 자동 반영되는 정직한 거울이다.
+    CSS 를 인라인 복사하면 실앱과 조용히 어긋난다(목업 docs/UI_PROTOTYPE_APPB.html 이 그 함정:
+    색만 생성기 동기, 나머지 드리프트). 따라서 갤러리는 반드시 (a) 실 tokens.css+app.css 를
+    링크하고 (b) 인라인 스타일에서 앱 색 토큰(--a-*)을 재정의하지 않는다 — 복사본 재유입을
+    loud 하게 차단한다.
+    """
+    assert GALLERY.exists(), f"컴포넌트 갤러리가 없습니다: {GALLERY}"
+    html = GALLERY.read_text(encoding="utf-8")
+    _IdCollector().feed(html)  # 구문 파싱 OK(기존 관례 HTMLParser).
+    assert 'href="../web/css/tokens.css"' in html, (
+        "갤러리가 실 tokens.css 를 링크하지 않습니다 — 드리프트-0 불변식 위반."
+    )
+    assert 'href="../web/css/app.css"' in html, (
+        "갤러리가 실 app.css 를 링크하지 않습니다 — 드리프트-0 불변식 위반."
+    )
+    assert not re.search(r"--a-[\w-]+\s*:\s*#", html), (
+        "갤러리 인라인 스타일이 앱 색 토큰(--a-*)을 재정의합니다 — "
+        "링크된 tokens.css 만 쓰세요(인라인 복사는 드리프트 재도입)."
+    )
+
+
 def test_unhandledrejection_backstop_present_in_both_shells():
     """비동기 실패 최종 백스톱 — 두 셸이 unhandledrejection 을 alert 로 재진술해야 한다.
 
