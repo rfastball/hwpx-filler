@@ -2,7 +2,7 @@
 
 ADR J 축확정: 데이터 수명 = 계약 사이클(발주~지급, 최소 60일)이라 세션-일회 recents 로는
 부족 → 데이터는 **durable 풀 항목**이되 **연결/참조**(엑셀 경로·나라 쿼리)로만 저장하고
-실행 때 재읽기("싱크")한다. 사이클 종료 = **아카이브/은퇴**(add/delete 아닌 retire).
+실행 때 재읽기("싱크")한다. 사이클 종료 = **보관**(add/delete 아닌 archive — 실행 후보에서만 제외).
 "데이터·행 미저장" 불변식(포인터만 직렬화)을 유지한다 — 풀 항목은 **소스를 어떻게 다시
 여는가**(kind + opts)만 담고 레코드는 담지 않는다.
 
@@ -25,12 +25,21 @@ from pathlib import Path
 from .job import _slug, guard_slug_collision, load_isolated
 from hwpxcore.atomic import write_text_atomic
 
-# 항목 상태 — active(실행 대상) / archived(사이클 유휴, 복구 가능) / retired(은퇴, 숨김).
-# add/delete 가 아니라 retire 로 수명 종료를 표현한다(참조는 남기되 실행 후보에서 제외).
+# 항목 상태(2상태, #5) — active(실행 대상) / archived(지난 것: 실행 후보 제외, 참조 보존·복구 가능).
+# add/delete 가 아니라 archive 로 수명 종료를 표현한다(참조는 남기되 실행 후보에서 제외).
+#
+# **왜 2상태인가**: 한때 archived 위에 retired("은퇴, 숨김") 3번째 상태가 있었으나, 행동 차이가
+# 없었다 — 둘 다 실행 후보에서 빠지고(status=ACTIVE 로만 겨눔) 둘 다 풀 목록에 muted 로 표시됐다
+# ("숨김"은 구현된 적 없는 허구). 명목만 다른 상태가 라벨↔버튼 desync 를 낳아(#5) archived 로
+# 정준 병합했다. STATUS_RETIRED 는 **디스크 마이그레이션 별칭으로만** 남는다(아래 from_dict).
 STATUS_ACTIVE = "active"
 STATUS_ARCHIVED = "archived"
+_STATUSES = (STATUS_ACTIVE, STATUS_ARCHIVED)
+
+# 폐기된 상태(구 .dataset.json 호환). 읽기 시 archived 로 정규화 — 무손실(retired 와 archived 는
+# 실행 후보 여부가 동일해 사용자 결정·데이터 소실 없음). 새로 이 값을 저장하지는 않는다.
 STATUS_RETIRED = "retired"
-_STATUSES = (STATUS_ACTIVE, STATUS_ARCHIVED, STATUS_RETIRED)
+_LEGACY_STATUS_ALIASES = {STATUS_RETIRED: STATUS_ARCHIVED}
 
 
 def default_dataset_pool_dir() -> Path:
@@ -73,9 +82,6 @@ class DatasetPoolItem:
     def archive(self) -> None:
         self.status = STATUS_ARCHIVED
 
-    def retire(self) -> None:
-        self.status = STATUS_RETIRED
-
     def activate(self) -> None:
         self.status = STATUS_ACTIVE
 
@@ -97,11 +103,15 @@ class DatasetPoolItem:
 
     @classmethod
     def from_dict(cls, d: dict) -> "DatasetPoolItem":
+        # 폐기된 상태(retired) 는 읽기 시 정준 상태로 접는다(migrate-on-read, #5) — 구 파일이
+        # loud raise("알 수 없는 상태") 로 죽지 않고 조용히 forward-정규화된다(무손실이라 정당).
+        status = d.get("status", STATUS_ACTIVE)
+        status = _LEGACY_STATUS_ALIASES.get(status, status)
         return cls(
             name=d.get("name", ""),
             kind=d.get("kind", ""),
             opts=dict(d.get("opts", {})),
-            status=d.get("status", STATUS_ACTIVE),
+            status=status,
             created_at=d.get("created_at", ""),
             note=d.get("note", ""),
             version=d.get("version", 1),

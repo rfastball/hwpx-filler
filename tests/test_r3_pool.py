@@ -1,6 +1,6 @@
 """코드리뷰 3차(pool 클러스터) 회귀 가드 — C3·C7·N1·C6.
 
-C3: 동명 확정 재등록이 항목을 통째 교체해 보관/은퇴가 조용히 active 로 복귀(실행 후보
+C3: 동명 확정 재등록이 항목을 통째 교체해 보관이 조용히 active 로 복귀(실행 후보
     재등장)하고 note·created_at 이 소실됐다. 참조(opts)만 갱신하고 수명을 보존한다
     (에디터 ``_do_save`` 미러) + 비활성 상태면 확인 문구가 보존 계약을 재진술한다.
 C7: pool.js 액션이 try/catch 없는 await/fire-and-forget 이라 stale 카드(다른 표면에서
@@ -51,7 +51,7 @@ def test_confirmed_reregister_preserves_status_note_created_at(tmp_path):
     # 1차: 비활성 상태 재등록 확인 문구가 수명 보존 계약을 재진술한다.
     res1 = ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/d/b.xlsx"})
     assert res1["needs_confirm"] is True
-    assert "보관/은퇴 상태는 유지됩니다" in res1["confirm_text"]
+    assert "보관 상태는 유지됩니다" in res1["confirm_text"]
     assert "활성화" in res1["confirm_text"]  # 되돌리는 명시 경로 안내
 
     # 2차(confirm): 참조만 바뀌고 상태·메모·생성시각은 그대로.
@@ -66,12 +66,12 @@ def test_confirmed_reregister_preserves_status_note_created_at(tmp_path):
 
 
 def test_active_reregister_confirm_text_omits_state_clause(tmp_path):
-    """활성 항목 재등록 확인 문구에는 보관/은퇴 보존 문구가 붙지 않는다(불필요한 소음 금지)."""
+    """활성 항목 재등록 확인 문구에는 보관 보존 문구가 붙지 않는다(불필요한 소음 금지)."""
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/d/a.xlsx"})
     res = ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/d/b.xlsx"})
     assert res["needs_confirm"] is True
-    assert "보관/은퇴 상태는 유지됩니다" not in res["confirm_text"]
+    assert "보관 상태는 유지됩니다" not in res["confirm_text"]
 
 
 def test_confirmed_reregister_with_note_replaces_note_only(tmp_path):
@@ -138,7 +138,7 @@ def test_stale_transition_is_loud_and_resyncs(tmp_path):
     ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/d/a.xlsx"})
     reg.path_for("발주").unlink()  # 다른 표면(CLI 등)에서 삭제 — 화면 카드는 stale
 
-    for act in ("archive", "retire", "activate"):
+    for act in ("archive", "activate"):
         res = ctrl.dispatch(act, {"name": "발주"})
         assert res["ok"] is False and "찾을 수 없습니다" in res["error"]
     snap = ctrl.snapshot()

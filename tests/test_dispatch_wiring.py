@@ -9,7 +9,7 @@
 **검사 방식**: 각 ``screen_*.py`` 컨트롤러의 ``def _do_<action>(`` 메서드마다, 그 액션
 문자열이 저장소 전체( ``src/hwpxfiller/`` + ``web/`` )의 다른 어딘가에 리터럴로 등장하는지
 찾는다. 화면별 JS 파일 하나만 보면 오탐이 컸다 — ``pool_sources``/``load_pool`` 은 공유
-모듈(``pool_picker.js``)이 호출하고, ``archive``/``retire``/``activate`` 는 서버가 내려주는
+모듈(``pool_picker.js``)이 호출하고, ``archive``/``activate`` 는 서버가 내려주는
 동적 액션 키(``gui/dataset_pool_state.py`` 의 ``PoolAction``)로 렌더된다. 저장소 전체를
 haystack 으로 삼으면 이 두 정당한 패턴은 통과하고, 진짜 미배선(호출자 0)만 남는다.
 

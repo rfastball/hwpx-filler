@@ -1,7 +1,7 @@
 """데이터 관리(pool) 화면 컨트롤러 — 등록 데이터(데이터셋 풀) 관리(webview 비의존).
 
 웹 패리티 회수(#26 단위 A, #4). 링1 VM 을 **그대로 임포트**해 구동한다: 풀 항목 목록·상태
-배지·상태별 게이트 액션(보관/은퇴/활성화/삭제)·참조 등록은
+배지·상태별 게이트 액션(보관/활성화/삭제)·참조 등록은
 :class:`~hwpxfiller.gui.dataset_pool_state.DatasetPoolViewModel`(Qt-free)가 소유한다.
 표현 계층(카드 렌더·확인 라운드트립)만 웹(js/screens/pool.js)으로 이식한다 — VM 로직
 재구현이 아니다.
@@ -124,14 +124,6 @@ class PoolController:
         self._set_result(f"데이터셋을 보관했습니다: {p['name']}")
         return {"ok": True}
 
-    def _do_retire(self, p: dict) -> dict:
-        try:
-            self.vm.retire(p["name"])
-        except FileNotFoundError:
-            return self._stale_item_result(p["name"])
-        self._set_result(f"데이터셋을 은퇴시켰습니다: {p['name']}")
-        return {"ok": True}
-
     def _do_activate(self, p: dict) -> dict:
         try:
             self.vm.activate(p["name"])
@@ -186,13 +178,13 @@ class PoolController:
         if name and not p.get("confirm"):
             kind, existing = classify_existing(self.vm.registry, name)
             if kind == "same":
-                # 재등록은 참조 교체만 한다 — 보관/은퇴 상태·메모·생성시각은 보존되므로
+                # 재등록은 참조 교체만 한다 — 보관 상태·메모·생성시각은 보존되므로
                 # (아래 확정 경로) 문구도 그 계약을 재진술한다(C3). 재활성화를 여기서 함께
                 # 묻지 않는 이유: 확인 1회에 두 결정(참조 교체+활성화)을 겹치면 사용자가
                 # 어느 쪽을 승인했는지 모호해진다 — 활성화는 카드의 [활성화] 버튼이 이미
                 # 명시적 단독 경로다(confirm-or-alarm: 결정 1확인 1).
                 keep = (
-                    "\n(보관/은퇴 상태는 유지됩니다 — 실행 후보로 되돌리려면 [활성화])"
+                    "\n(보관 상태는 유지됩니다 — 실행 후보로 되돌리려면 [활성화])"
                     if existing.status != STATUS_ACTIVE else ""
                 )
                 return {
@@ -209,7 +201,7 @@ class PoolController:
                 }
         try:
             # 동명 확정 재등록은 항목 통째 교체가 아니라 참조(opts)만 갱신한다(C3) —
-            # 통째 교체는 보관/은퇴가 조용히 active 로 복귀(실행 후보 재등장)하고
+            # 통째 교체는 보관이 조용히 active 로 복귀(실행 후보 재등장)하고
             # note·created_at 이 소실되는 durable 수명 파괴였다(에디터 _do_save 미러).
             kind, existing = (
                 classify_existing(self.vm.registry, name) if name else ("absent", None)
