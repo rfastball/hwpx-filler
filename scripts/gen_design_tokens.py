@@ -51,6 +51,9 @@ _WEB_MAP = [
     ("--a-warn", "color.warn"), ("--a-danger", "color.danger"), ("--a-ok", "color.ok"),
     ("--a-muted", "color.muted"), ("--a-border", "color.border"), ("--a-card", "color.card_bg"),
     ("--a-window", "color.window_bg"), ("--a-ink", "color.ink"),
+    # on_accent = 컬러 accent(primary/ok) 필 위 글씨. 라이트=흰색, 다크=어두운 잉크(accent 를
+    # 밝혀 텍스트로도 읽히게 하므로 흰글씨가 대비 미달 → 잉크로 뒤집는다). shadow = 모달 승강 그림자.
+    ("--a-on-accent", "color.on_accent"), ("--a-shadow", "color.shadow"),
     ("--a-unconf", "state.unconfirmed_bg"), ("--a-unmatch", "state.unmatched_bg"),
     ("--a-empty", "state.data_empty_fg"), ("--a-sel", "state.select_bg"),
     ("--fb-fill-bg", "badge.fill_bg"), ("--fb-fill-bd", "badge.fill_border"),
@@ -89,11 +92,32 @@ def render_mockup_region(tokens: dict) -> str:
     return "\n".join(lines)
 
 
+def _web_vars(root: dict, indent: str) -> "list[str]":
+    """``_WEB_MAP`` 을 ``root`` 기준으로 판 CSS 변수 선언들(indent 접두)."""
+    return [f"{indent}{name}:{_dig(root, path)};" for name, path in _WEB_MAP]
+
+
 def render_web_region(tokens: dict) -> str:
-    """웹 ``web/css/tokens.css`` 의 ``:root`` 안 ``<gen:tokens>`` 영역 전문(2칸 들여쓰기)."""
-    lines = [_WEB_INDENT + OPEN_CSS]
-    lines += [f"{_WEB_INDENT}{name}:{_dig(tokens, path)};" for name, path in _WEB_MAP]
-    lines.append(_WEB_INDENT + CLOSE_CSS)
+    """웹 ``web/css/tokens.css`` 의 ``<gen:tokens>`` 영역 전문(:root 래퍼까지 생성물).
+
+    표준 견고 패턴을 방출한다 — OS 기본은 미디어쿼리, 앱 토글([data-theme])이 양방향으로 이긴다:
+      :root{ 라이트; color-scheme:light }
+      @media(prefers-color-scheme:dark){ :root:not([data-theme=light]){ 다크; color-scheme:dark } }
+      :root[data-theme=dark]{ 다크; color-scheme:dark }
+    다크 선언은 미디어쿼리·명시 셀렉터에 두 번 실린다(CSS 변수는 재사용 include 가 없어 반복이 정답).
+    color-scheme 로 WebView2 네이티브 크롬(스크롤바·<select>·체크박스)도 테마를 추종한다.
+    마커(<gen:tokens>)는 이제 :root 를 포함한 전체 영역을 감싼다 — tokens.css 의 :root 수기 래퍼는 제거됨."""
+    dark = tokens["dark"]
+    lines = [OPEN_CSS, ":root{"]
+    lines += _web_vars(tokens, "  ")
+    lines += ["  color-scheme:light;", "}",
+              "@media (prefers-color-scheme:dark){",
+              '  :root:not([data-theme="light"]){']
+    lines += _web_vars(dark, "    ")
+    lines += ["    color-scheme:dark;", "  }", "}",
+              ':root[data-theme="dark"]{']
+    lines += _web_vars(dark, "  ")
+    lines += ["  color-scheme:dark;", "}", CLOSE_CSS]
     return "\n".join(lines)
 
 

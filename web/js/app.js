@@ -45,6 +45,19 @@
       document.querySelector(".app").classList.toggle("rail-collapsed"));
   }
 
+  // 테마 전환(System→Light→Dark) — 셸 전역, 브리지 무관. Theme(theme.js)가 data-theme·
+  // localStorage 를 소유하고, 여기선 배선 + 레일 라벨을 현재 모드로 동기화만 한다.
+  const themeToggle = document.getElementById("themeToggle");
+  const themeLabel = document.getElementById("themeLabel");
+  const THEME_TEXT = { system: "시스템", light: "라이트", dark: "다크" };
+  function syncThemeLabel() {
+    if (themeLabel && window.Theme) themeLabel.textContent = THEME_TEXT[window.Theme.current()];
+  }
+  if (themeToggle && window.Theme) {
+    themeToggle.addEventListener("click", () => { window.Theme.toggle(); syncThemeLabel(); });
+    syncThemeLabel();  // 부팅 시 FOUC 인라인이 세운 초기 모드를 라벨에 반영.
+  }
+
   // pywebview.api 준비 후 실화면 초기화(브라우저 단독 미리보기에선 안 뜸 — 정상).
   window.addEventListener("pywebviewready", () => {
     if (window.HomeScreen) window.HomeScreen.init();
