@@ -242,7 +242,9 @@ class RunController(PoolTargetingMixin):
         if res["ok"]:
             self.data_label = ref
             self.data_source = "pool"
-            self.selection = SelectionModel(len(res["records"]))
+            # 풀 겨눔 공유 후처리(선택 초기화·재진술 소거)를 재사용 — 수동 겨눔 경로와
+            # 갈리지 않게(K4 복붙 방지). notice 는 소거 뒤에 세팅(순서 중요).
+            self._after_pool_load(res["records"])
             self.data_notice_text = (
                 f"기본 데이터 '{ref}' 를 자동 연결했습니다 — 실행 시점에 다시 읽었습니다."
             )

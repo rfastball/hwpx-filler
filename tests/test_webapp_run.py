@@ -335,3 +335,27 @@ def test_manual_data_clears_auto_aim_notice(tmp_path):
     assert snap["data_source_label"].startswith("파일:")
     # 실행 화면은 작업 JSON 을 쓰지 않으므로 기본 데이터 참조는 그대로다(임시 override).
     assert ctrl.registry.load("공고서").default_dataset_ref == "7월공고"
+
+
+def test_auto_aim_nara_ref_is_frozen_warn(tmp_path):
+    """기본 참조가 나라 항목이면 자동 조준도 동결 거절 warn — 공유 관문 문구 그대로(#53-A)."""
+    ctrl, pool = _pool_controller(tmp_path)
+    pool.save(DatasetPoolItem(
+        name="나라기본", kind="nara", opts={"bgn_dt": "202607010000", "end_dt": "202607080000"}))
+    _job_with_default(ctrl, pool, tmp_path, "나라기본", register=False)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    snap = ctrl.snapshot()
+    assert snap["has_data"] is False and snap["data_notice"]["level"] == "warn"
+    assert "동결" in snap["data_notice"]["text"]
+
+
+def test_auto_aim_ambiguous_sheet_ref_is_warn(tmp_path):
+    """기본 참조가 시트 미지정 다중시트면 자동 조준도 조용한 첫 시트 대신 warn 거절(#33·#53-A)."""
+    multi = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "multi_sheet.xlsx"
+    ctrl, pool = _pool_controller(tmp_path)
+    pool.save(DatasetPoolItem(name="모호기본", kind="excel", opts={"path": str(multi)}))
+    _job_with_default(ctrl, pool, tmp_path, "모호기본", register=False)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    snap = ctrl.snapshot()
+    assert snap["has_data"] is False and snap["data_notice"]["level"] == "warn"
+    assert "시트" in snap["data_notice"]["text"]

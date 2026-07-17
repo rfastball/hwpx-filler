@@ -634,3 +634,20 @@ def test_edit_save_without_new_data_preserves_default_ref(tmp_path):
     job = JobRegistry(tmp_path / "jobs").load("편집대상")
     assert job.default_dataset_ref == "multi_sheet"   # 편집 저장에도 보존
     assert job.filename_pattern == "새패턴-{{ID}}"
+
+
+def test_save_links_ref_even_when_dataset_register_fails(tmp_path):
+    """등록 실패(반저장)해도 작업의 기본 데이터 참조는 저장되고, 실패 문구가 연결 완성
+    경로를 안내한다(#53-A 리뷰) — 참조 이름이 안정적이라 그 이름으로 수동 등록하면 링크 완성."""
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "등록실패작업")
+
+    def _boom(*a, **k):
+        raise OSError("디스크 꽉 참")
+    ctrl.pool_registry.save = _boom                    # 데이터셋 등록만 실패시킴
+
+    res = ctrl.dispatch("save", {})
+    assert res["ok"] is True                           # 작업 저장 자체는 성공(반저장)
+    assert "기본 데이터로 연결" in res["dataset_register_error"]
+    # 참조는 저장됨 — 사용자가 같은 이름으로 등록하면 연결이 완성된다.
+    assert JobRegistry(tmp_path / "jobs").load("등록실패작업").default_dataset_ref == "multi_sheet"
