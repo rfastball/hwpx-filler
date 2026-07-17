@@ -597,3 +597,72 @@ def test_autoregister_preserves_archived_status_and_note(tmp_path):
     assert item.note == "계약 종료분"                  # 메모 보존
     assert item.opts["path"] == str(MULTI_SHEET)      # 참조(opts)만 갱신
     assert item.opts["sheet"] == "낙찰현황"
+
+
+# ------------------------------------------------- 사용할 헤더 선택(#49)
+def test_header_selection_defaults_all_active_then_narrows(tmp_path):
+    """데이터 로드 = 전원 활성. 선택 항목만 사용 → 나머지 일괄 미사용, 카운트 재진술."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    snap = ctrl.snapshot()
+    assert snap["source_fields"] == ["업체명", "낙찰금액", "계약일"]       # 전체 헤더 불변
+    assert snap["active_source_fields"] == ["업체명", "낙찰금액", "계약일"]  # 기본 전원 활성
+    assert snap["active_count"] == 3 and snap["ignored_count"] == 0
+
+    ctrl.dispatch("use_only_selected", {"fields": ["업체명"]})
+    snap = ctrl.snapshot()
+    assert snap["active_source_fields"] == ["업체명"]                    # 활성만 후보(원 순서)
+    assert snap["ignored_source_fields"] == ["낙찰금액", "계약일"]
+    assert snap["active_count"] == 1 and snap["ignored_count"] == 2
+    assert snap["notice"] and "사용 헤더 1개 · 미사용 2개" in snap["notice"]["text"]
+
+
+def test_ignoring_mapped_header_clears_row_and_restates(tmp_path):
+    """이미 매핑된 헤더를 미사용 전환 → 그 행만 source=''·confirmed=False, warn 재진술.
+    다른 매핑·원본 데이터는 불변."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("goto_step", {"step": 2})              # 매핑 진입 → 모델 생성
+    ctrl.dispatch("set_source", {"index": 0, "source": "낙찰금액"})
+    ctrl.dispatch("set_source", {"index": 1, "source": "업체명"})
+    ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": True})
+    ctrl.dispatch("set_confirmed", {"index": 1, "confirmed": True})
+
+    ctrl.dispatch("use_only_selected", {"fields": ["업체명", "계약일"]})  # 낙찰금액 미사용
+    snap = ctrl.snapshot()
+    assert snap["rows"][0]["source"] == "" and snap["rows"][0]["confirmed"] is False
+    assert snap["rows"][1]["source"] == "업체명" and snap["rows"][1]["confirmed"] is True
+    assert "낙찰금액" not in snap["active_source_fields"]
+    assert snap["notice"]["level"] == "warn" and "재확정" in snap["notice"]["text"]
+
+
+def test_reactivate_and_use_all_headers(tmp_path):
+    """미사용 헤더 개별 재활성 + 모두 사용 일괄 복원."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("use_only_selected", {"fields": ["업체명"]})
+    assert ctrl.snapshot()["ignored_source_fields"] == ["낙찰금액", "계약일"]
+
+    ctrl.dispatch("toggle_source_active", {"field": "낙찰금액"})       # 개별 재활성
+    snap = ctrl.snapshot()
+    assert "낙찰금액" in snap["active_source_fields"]
+    assert "낙찰금액" not in snap["ignored_source_fields"]
+
+    ctrl.dispatch("use_all_headers", {})                              # 일괄 복원
+    assert ctrl.snapshot()["ignored_count"] == 0
+
+
+def test_new_data_resets_ignored_headers(tmp_path):
+    """새 데이터 로드 = 새 헤더 어휘 → 이전 미사용 선택이 조용히 남지 않는다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("use_only_selected", {"fields": ["업체명"]})
+    assert ctrl.snapshot()["ignored_count"] == 2
+    ctrl.load_data_path(str(MULTI_SHEET))                             # 첫 시트(공고목록)=새 헤더
+    snap = ctrl.snapshot()
+    assert snap["source_fields"] == ["공고명", "추정가격"]
+    assert snap["ignored_count"] == 0 and snap["active_source_fields"] == ["공고명", "추정가격"]

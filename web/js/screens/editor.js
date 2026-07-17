@@ -117,7 +117,41 @@
           placeholder="데이터를 선택하거나 건너뛰세요">
         <button class="btn" data-act="pick-data">찾아보기…</button>
         <button class="btn" data-act="skip-data">데이터 없이 진행 →</button></div>
-      ${dataPreview(s)}`;
+      ${dataPreview(s)}
+      ${headerSelect(s)}`;
+  }
+
+  /* 사용할 헤더 선택(#49) — 헤더가 많은 데이터에서 실제 쓸 헤더만 남긴다. 미사용 헤더는
+     자동 매핑 제안·소스 드롭다운 후보에서 빠진다(원본 데이터·다른 매핑은 불변). 저장은
+     하지 않는다 — 매핑이 곧 사용 헤더의 기억이라 재편집 시 저장 매핑에서 파생된다. */
+  function headerSelect(s) {
+    const all = s.all_source_fields || s.source_fields || [];
+    if (!all.length) return "";
+    const active = new Set(s.active_source_fields || []);
+    const ignored = s.ignored_source_fields || [];
+    const boxes = all.filter((f) => active.has(f)).map((f) =>
+      `<label class="hchip"><input type="checkbox" class="hbx" value="${esc(f)}" checked> ${esc(f)}</label>`
+    ).join("");
+    // 미사용 헤더는 접어서 'N개 숨김'으로 재진술 + 개별 '다시 사용'(재활성).
+    const ignoredBlock = ignored.length
+      ? `<details class="hidden-hdrs"><summary>미사용 ${ignored.length}개 숨김 — 자동 매핑·소스 후보에서 제외 (펼쳐 다시 사용)</summary>
+           <div class="hchips">${ignored.map((f) =>
+              `<span class="hchip ign">${esc(f)} <button class="btn sm" data-act="reactivate-source" data-field="${esc(f)}">다시 사용</button></span>`).join("")}</div>
+         </details>`
+      : "";
+    return `<div class="grp" style="margin-top:10px">
+      <span class="cap">사용할 헤더 선택</span>
+      <p class="hint" style="margin-top:0">문서 생성에 쓸 헤더만 남기세요. 미사용 헤더는 자동 매핑 제안과
+        소스 드롭다운 후보에서 빠집니다 — 원본 데이터·다른 매핑은 바뀌지 않습니다.</p>
+      <div class="hchips">${boxes || '<span class="muted">활성 헤더가 없습니다.</span>'}</div>
+      <div class="row" style="margin-top:8px">
+        <span class="muted">사용 ${s.active_count} · 미사용 ${s.ignored_count}</span>
+        <span style="flex:1"></span>
+        <button class="btn sm" data-act="use-selected">선택 항목만 사용</button>
+        ${s.ignored_count ? `<button class="btn sm" data-act="use-all-headers">모두 사용</button>` : ""}
+      </div>
+      ${ignoredBlock}
+    </div>`;
   }
 
   /* ---- 3단계: 매핑 표 ---- */
@@ -157,9 +191,11 @@
   }
 
   function mapRow(r, s) {
-    const known = (s.source_fields || []).includes(r.source);
+    // 후보는 활성 헤더만(#49) — 미사용 헤더는 소스 드롭다운에서 빠진다.
+    const candidates = s.active_source_fields || s.source_fields || [];
+    const known = candidates.includes(r.source);
     const srcOpts = [`<option value=""${r.source ? "" : " selected"}>(비움)</option>`]
-      .concat((s.source_fields || []).map((f) =>
+      .concat(candidates.map((f) =>
         `<option value="${esc(f)}"${f === r.source ? " selected" : ""} title="${esc(f)}">${esc(f)}</option>`))
       // 복원·데이터 교체로 현재 소스 목록에 없는 소스를 참조하는 행 — (비움)으로
       // 오표시하지 않고 명시 옵션으로 시끄럽게 드러낸다(#26 조용한 소실 금지).
@@ -296,6 +332,16 @@
           break;
         }
         case "skip-data": await Bridge.call(SCREEN, "skip_data", {}); break;
+        case "use-selected": {
+          // 활성 체크박스 중 체크된 것만 사용 → 나머지(체크 해제 + 이미 미사용) 일괄 미사용.
+          const fields = Array.from(
+            document.querySelectorAll("#scr-editor .hbx:checked")).map((b) => b.value);
+          await Bridge.call(SCREEN, "use_only_selected", { fields });
+          break;
+        }
+        case "use-all-headers": await Bridge.call(SCREEN, "use_all_headers", {}); break;
+        case "reactivate-source":
+          await Bridge.call(SCREEN, "toggle_source_active", { field: el.dataset.field }); break;
         case "prev-rec": await Bridge.call(SCREEN, "step_preview", { delta: -1 }); break;
         case "next-rec": await Bridge.call(SCREEN, "step_preview", { delta: 1 }); break;
         case "unconfirm-all": await Bridge.call(SCREEN, "unconfirm_all", {}); break;

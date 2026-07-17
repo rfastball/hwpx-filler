@@ -109,6 +109,10 @@ class EditorController:
         self.data_path = ""
         self.data_sheet = ""  # 다중 시트 확정값(#33) — 자동등록 참조에 함께 저장(#26)
         self.source_fields: "list[str]" = []
+        # '미사용' 헤더(#49) — 세션 국소 상태. durable 저장 없음: 매핑이 곧 사용 헤더의
+        # 기억(job.source_keys)이므로 재편집 시 활성 헤더는 저장 매핑에서 파생된다.
+        # 자동 제안·소스 드롭다운 후보만 활성 헤더로 좁힌다(원본 데이터·매핑 계약 불변).
+        self._ignored_sources: "set[str]" = set()
         self.records: "list[dict]" = []
         self.model: "MappingModel | None" = None
         self._model_key: "tuple | None" = None
@@ -155,6 +159,11 @@ class EditorController:
         if from_step == 2:
             return self.model is not None and self.model.is_complete()
         return False
+
+    # --------------------------------------------------- 활성 헤더(#49)
+    def _active_sources(self) -> "list[str]":
+        """미사용을 뺀 활성 헤더(원 순서 보존) — 자동 제안·소스 드롭다운 후보의 단일 출처."""
+        return [f for f in self.source_fields if f not in self._ignored_sources]
 
     # ------------------------------------------------------------- 스냅샷
     def _current_record(self) -> "dict":
@@ -213,7 +222,13 @@ class EditorController:
             "data_path": self.data_path,
             "data_name": self.data_path.rsplit("\\", 1)[-1].rsplit("/", 1)[-1],
             "record_count": len(self.records),
+            # 전체 헤더(데이터 미리보기 컬럼·sample_rows 정렬의 짝, 불변).
             "source_fields": self.source_fields,
+            # 활성/미사용 헤더(#49) — 드롭다운 후보는 활성만, 헤더 선택 UI는 둘 다 쓴다.
+            "active_source_fields": self._active_sources(),
+            "ignored_source_fields": [f for f in self.source_fields if f in self._ignored_sources],
+            "active_count": len(self._active_sources()),
+            "ignored_count": len(self._ignored_sources),
             # 2단계 데이터 미리보기(#16): source_fields 순서로 투영한 샘플 행 소량.
             # 빈 셀은 "" 로 보존해 렌더가 (빈 값)으로 시끄럽게 표기(ADR-B).
             "sample_rows": self._sample_rows(),
@@ -330,6 +345,8 @@ class EditorController:
         self.data_path = path
         self.data_sheet = sheet or ""  # 자동등록 참조에 확정 시트 동봉(#26 — 모호 참조 방지)
         self.source_fields = source.fields()
+        # 새 데이터 = 새 헤더 어휘 → 이전 미사용 선택이 조용히 남지 않게 전원 활성으로.
+        self._ignored_sources = set()
         self.records = records
         self.preview_index = 0
         # 자동등록 기본 이름 = 파일 스템(사용자가 4단계에서 수정 가능). 데이터를 바꾸면
@@ -433,10 +450,51 @@ class EditorController:
         self.data_sheet = ""
         self.dataset_name = ""
         self.source_fields = []
+        self._ignored_sources = set()
         self.records = []
         self.preview_index = 0
         self._ensure_model()
         self.step = 2
+
+    # ---- 사용 헤더 선택(#49) — 활성/미사용 전환. 원본 데이터·매핑 계약은 불변.
+    def _do_use_only_selected(self, p: dict) -> None:
+        """선택한 헤더만 활성으로, 나머지 일괄 미사용(#49)."""
+        selected = {str(f) for f in (p.get("fields") or [])}
+        self._apply_active(selected)
+
+    def _do_use_all_headers(self, p: dict) -> None:
+        """전체 헤더를 다시 활성으로 — 미사용 일괄 해제(#49)."""
+        self._apply_active(set(self.source_fields))
+
+    def _do_toggle_source_active(self, p: dict) -> None:
+        """헤더 1개의 활성/미사용 토글(개별 재활성 포함, #49)."""
+        field = str(p["field"])
+        active = set(self._active_sources())
+        active.discard(field) if field in active else active.add(field)
+        self._apply_active(active)
+
+    def _apply_active(self, active: "set[str]") -> None:
+        """활성 헤더 집합을 확정한다 — 데이터에 있는 것만 채택하고, 새로 미사용이 된
+        헤더에 매핑된 행은 해제(``ignore_source``)해 사람 재검토를 강제·재진술한다."""
+        active = {f for f in active if f in self.source_fields}
+        new_ignored = {f for f in self.source_fields if f not in active}
+        newly_ignored = new_ignored - self._ignored_sources
+        self._ignored_sources = new_ignored
+        affected: "list[str]" = []
+        if self.model is not None:
+            for f in sorted(newly_ignored):
+                affected += self.model.ignore_source(f)
+        n_active = len(self._active_sources())
+        n_ignored = len(self._ignored_sources)
+        msg = f"사용 헤더 {n_active}개 · 미사용 {n_ignored}개."
+        if affected:
+            self._set_notice(
+                msg + f"\n미사용으로 바꾸며 매핑을 해제한 필드 {len(affected)}개"
+                "(재확정 필요): " + ", ".join(affected),
+                "warn",
+            )
+        else:
+            self._set_notice(msg, "muted")
 
     def _ensure_model(self) -> None:
         """매핑 진입 시 초안 생성 — 키(템플릿·데이터·소스) 불변이면 그대로, 바뀌면
@@ -458,7 +516,9 @@ class EditorController:
         prior = None
         if self.model is not None and self.model.confirmed_count():
             prior = self.model.to_profile()
-        self.model = MappingModel.from_suggestions(self.schema, self.source_fields)
+        # 미사용 헤더(#49)는 자동 제안 후보에서 제외 — 매핑 진입 전 좁혀두면 여기서
+        # 반영된다(진입 후 좁히면 _apply_active 가 ignore_source 로 행을 해제).
+        self.model = MappingModel.from_suggestions(self.schema, self._active_sources())
         if prior is not None:
             carried = self.model.apply_profile(prior, confirm=False)
             self._set_notice(

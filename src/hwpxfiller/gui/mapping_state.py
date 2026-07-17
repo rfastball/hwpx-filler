@@ -208,6 +208,22 @@ class MappingModel:
         for row in self.rows:
             row.confirmed = False
 
+    def ignore_source(self, source: str) -> "list[str]":
+        """소스 헤더 1개를 '미사용'으로 전환 — 그 소스를 쓰던 행을 해제한다(#49).
+
+        해당 소스를 참조하는 행만 ``source=""`` · ``confirmed=False`` 로 되돌려
+        **사람의 재검토를 강제**한다(``set_source`` 선례). 상수(const) 행은 소스가
+        없어 영향받지 않고, blank/다른 소스 행은 보존한다. 반환값은 영향받은 템플릿
+        필드 이름(문서순) — 뷰가 개수·이름을 시끄럽게 재진술하는 근거(confirm-or-alarm).
+        """
+        affected: "list[str]" = []
+        for row in self.rows:
+            if row.source == source:
+                row.source = ""
+                row.confirmed = False
+                affected.append(row.template_field)
+        return affected
+
     # --------------------------------------------------- 대량 확정 게이트(UD-05)
     # '모두 확정'은 ADR-D 의 '고신뢰 매칭 일괄 수락'만 담당한다: 내용 있는 행만
     # 즉시 확정하고, 내용 없는 미매칭 행의 **의도적 비움 승격**은 뷰가 이름 재진술
