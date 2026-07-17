@@ -218,6 +218,11 @@ class Job:
     # **순수 메타** — 코드는 "물품"·"금액구간"이 뭔지 모르고 얇은 매핑만 든다(run-path 무영향).
     # 축·값은 이름 문자열이지 enum/bool 타입 필드 발명 금지(도메인을 코드에 안 박는다).
     tags: "dict[str, str]" = field(default_factory=dict)
+    # 선택적 기본 데이터셋 참조(#53-A) = 데이터셋 풀 항목 이름(""=없음, 하위호환). 실행 화면이
+    # 작업 선택 시 이 참조를 실행 시점에 다시 읽어 자동 조준하는 **조준 힌트**다 — 매핑의
+    # 소스 키 계약(source_keys)이 실행의 진짜 게이트이지 이 참조가 아니다(파일이 월별로
+    # 바뀌어도 헤더가 같으면 재사용). 참조가 유일 실행 의존이 되지 않게 한다.
+    default_dataset_ref: str = ""
 
     def template_fields(self) -> "list[str]":
         """이 작업이 채우는 템플릿 필드(매핑이 방출하는 집합). 실행 사전검증의 요구필드."""
@@ -246,6 +251,7 @@ class Job:
             "last_run_at": self.last_run_at,
             "base_mapping_name": self.base_mapping_name,
             "tags": dict(self.tags),
+            "default_dataset_ref": self.default_dataset_ref,
         }
 
     @classmethod
@@ -284,6 +290,7 @@ class Job:
             last_run_at=_str("last_run_at"),
             base_mapping_name=_str("base_mapping_name"),
             tags=tags,
+            default_dataset_ref=_str("default_dataset_ref"),
         )
 
     def save(self, path: "str | Path") -> None:

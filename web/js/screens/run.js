@@ -74,6 +74,19 @@
     // 저장 폴더 로케이트(#53-B) — 폴더 열기·경로복사(폴더라 '열기'는 탐색기로 동일).
     const ot = $("outTrack");
     if (ot) ot.innerHTML = PathTrack.affordances(s.out_dir, { only: ["reveal", "copy"] });
+    // 기본 데이터셋 자동 조준 재진술(#53-A) — 성공(ok)/실패(warn) 시끄럽게 표시.
+    const note = $("runDataNotice");
+    if (note) {
+      const n = s.data_notice;
+      if (n && n.text) {
+        note.style.display = "block";
+        note.className = "note " + (n.level === "ok" ? "okbox" : "warnbox");
+        note.textContent = (n.level === "ok" ? "✓ " : "⚠ ") + n.text;
+      } else {
+        note.style.display = "none";
+        note.textContent = "";
+      }
+    }
   }
 
   function renderPreflight(s) {

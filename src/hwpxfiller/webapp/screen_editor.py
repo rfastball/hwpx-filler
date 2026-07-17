@@ -65,8 +65,12 @@ def _job_content_fingerprint(job: Job) -> str:
 
     태그·마지막 실행은 제외한다: 편집 저장이 어차피 저장 직전 디스크 값을 재읽어 보존하므로
     (홈 태그 편집과의 공존, ``_do_save``) 그 둘의 변경은 파괴가 아니다. 나머지(템플릿·매핑·
-    파일명 패턴·계보)는 편집 세션 상태로 덮어써지므로, 로드 시점과 달라져 있으면 '편집 중
-    외부 변경'으로 확인을 요구해야 한다(무확인 파괴 금지).
+    파일명 패턴·계보·**기본 데이터셋 참조**)는 편집 세션 상태로 덮어써지므로, 로드 시점과
+    달라져 있으면 '편집 중 외부 변경'으로 확인을 요구해야 한다(무확인 파괴 금지).
+
+    기본 데이터셋 참조(#53-A)는 ``to_dict()`` 에 들어가 여기 지문에 **자동 포함**된다 —
+    #53-B 가 재연결 동선을 추가해 외부에서 참조가 바뀌어도 편집 저장이 조용히 되돌리지
+    않고 확인을 띄운다(의도된 설계).
     """
     d = job.to_dict()
     d.pop("tags", None)
@@ -109,6 +113,10 @@ class EditorController:
         self.data_path = ""
         self.data_sheet = ""  # 다중 시트 확정값(#33) — 자동등록 참조에 함께 저장(#26)
         self.source_fields: "list[str]" = []
+        # '미사용' 헤더(#49) — 세션 국소 상태. durable 저장 없음: 매핑이 곧 사용 헤더의
+        # 기억(job.source_keys)이므로 재편집 시 활성 헤더는 저장 매핑에서 파생된다.
+        # 자동 제안·소스 드롭다운 후보만 활성 헤더로 좁힌다(원본 데이터·매핑 계약 불변).
+        self._ignored_sources: "set[str]" = set()
         self.records: "list[dict]" = []
         self.model: "MappingModel | None" = None
         self._model_key: "tuple | None" = None
@@ -116,6 +124,9 @@ class EditorController:
         self.job_name = ""
         self.pattern = DEFAULT_FILENAME_PATTERN
         self.dataset_name = ""  # 자동등록 이름(기본=데이터 파일 스템, 사용자 수정 가능)
+        # 편집 모드에서 복원한 기본 데이터셋 참조(#53-A) — 데이터를 새로 안 고르고 저장하면
+        # 이 값을 보존한다(편집 저장이 조용히 기본 데이터 연결을 소실시키지 않게).
+        self.default_dataset_ref = ""
         # 편집 모드 상태(#26): 원점 이름(자기-갱신 판정)·보존 메타(태그·마지막 실행) —
         # 편집 저장이 브라우저 태그·이력을 조용히 소실시키지 않는다.
         self._editing_origin = ""
@@ -155,6 +166,11 @@ class EditorController:
         if from_step == 2:
             return self.model is not None and self.model.is_complete()
         return False
+
+    # --------------------------------------------------- 활성 헤더(#49)
+    def _active_sources(self) -> "list[str]":
+        """미사용을 뺀 활성 헤더(원 순서 보존) — 자동 제안·소스 드롭다운 후보의 단일 출처."""
+        return [f for f in self.source_fields if f not in self._ignored_sources]
 
     # ------------------------------------------------------------- 스냅샷
     def _current_record(self) -> "dict":
@@ -197,6 +213,7 @@ class EditorController:
         }
 
     def snapshot(self) -> dict:
+        active_sources = self._active_sources()  # 활성/카운트 재사용(1회 계산)
         snap: dict = {
             "step": self.step,
             "reachable": [self.can_advance(s) for s in range(3)],  # 0→1,1→2,2→3
@@ -213,7 +230,13 @@ class EditorController:
             "data_path": self.data_path,
             "data_name": self.data_path.rsplit("\\", 1)[-1].rsplit("/", 1)[-1],
             "record_count": len(self.records),
+            # 전체 헤더(데이터 미리보기 컬럼·sample_rows 정렬의 짝, 불변).
             "source_fields": self.source_fields,
+            # 활성/미사용 헤더(#49) — 드롭다운 후보는 활성만, 헤더 선택 UI는 둘 다 쓴다.
+            "active_source_fields": active_sources,
+            "ignored_source_fields": [f for f in self.source_fields if f in self._ignored_sources],
+            "active_count": len(active_sources),
+            "ignored_count": len(self._ignored_sources),
             # 2단계 데이터 미리보기(#16): source_fields 순서로 투영한 샘플 행 소량.
             # 빈 셀은 "" 로 보존해 렌더가 (빈 값)으로 시끄럽게 표기(ADR-B).
             "sample_rows": self._sample_rows(),
@@ -330,6 +353,8 @@ class EditorController:
         self.data_path = path
         self.data_sheet = sheet or ""  # 자동등록 참조에 확정 시트 동봉(#26 — 모호 참조 방지)
         self.source_fields = source.fields()
+        # 새 데이터 = 새 헤더 어휘 → 이전 미사용 선택이 조용히 남지 않게 전원 활성으로.
+        self._ignored_sources = set()
         self.records = records
         self.preview_index = 0
         # 자동등록 기본 이름 = 파일 스템(사용자가 4단계에서 수정 가능). 데이터를 바꾸면
@@ -373,6 +398,7 @@ class EditorController:
         # 무확인으로 덮지 않기 위한 대조 기준(_do_save).
         self._editing_fingerprint = _job_content_fingerprint(job)
         self._base_name = job.base_mapping_name
+        self.default_dataset_ref = job.default_dataset_ref  # 편집 저장 시 보존(#53-A)
         # 소스 어휘 = 저장 매핑이 참조하는 키 합집합(profile_source_vocabulary 단일 출처,
         # from_profile 과 공유) — 데이터 없이도 복원된 source 가 선택지에 있어야 드롭다운이
         # (비움)으로 오표시되지 않는다.
@@ -433,10 +459,64 @@ class EditorController:
         self.data_sheet = ""
         self.dataset_name = ""
         self.source_fields = []
+        self._ignored_sources = set()
         self.records = []
         self.preview_index = 0
         self._ensure_model()
         self.step = 2
+
+    # ---- 사용 헤더 선택(#49) — 활성/미사용 전환. 원본 데이터·매핑 계약은 불변.
+    def _do_use_only_selected(self, p: dict) -> None:
+        """선택한 헤더만 활성으로, 나머지 일괄 미사용(#49)."""
+        selected = {str(f) for f in (p.get("fields") or [])}
+        self._apply_active(selected)
+
+    def _do_use_all_headers(self, p: dict) -> None:
+        """전체 헤더를 다시 활성으로 — 미사용 일괄 해제(#49)."""
+        self._apply_active(set(self.source_fields))
+
+    def _do_toggle_source_active(self, p: dict) -> None:
+        """헤더 1개의 활성/미사용 토글(개별 재활성 포함, #49)."""
+        field = str(p["field"])
+        active = set(self._active_sources())
+        if field in active:
+            active.discard(field)
+        else:
+            active.add(field)
+        self._apply_active(active)
+
+    def _apply_active(self, active: "set[str]") -> None:
+        """활성 헤더 집합을 확정한다 — 데이터에 있는 것만 채택하고, 새로 미사용이 된
+        헤더에 매핑된 행은 해제(``ignore_source``)해 사람 재검토를 강제·재진술한다.
+
+        confirm-or-alarm: **전부 미사용은 시끄럽게 거부**한다. 헤더 한 개 미사용은 강제
+        재확정이 안전장치이지만, 전부 미사용은 확정 매핑 전 행을 한 번에 해제하고 '모두
+        사용'으로도 지워진 행이 복구되지 않는(후보 자격만 되돌림) 되돌리기 불가 파괴다 —
+        되돌릴 수 없는 파괴는 사후 통보가 아니라 사전 차단이 맞다(리뷰 #62 🔴)."""
+        active = {f for f in active if f in self.source_fields}
+        if self.source_fields and not active:
+            raise ValueError(
+                "사용할 헤더를 하나 이상 남겨 두세요 — 전부 미사용은 확정한 매핑을 "
+                "모두 해제하며 되돌릴 수 없습니다."
+            )
+        new_ignored = {f for f in self.source_fields if f not in active}
+        newly_ignored = new_ignored - self._ignored_sources
+        self._ignored_sources = new_ignored
+        affected: "list[str]" = []
+        if self.model is not None:
+            for f in sorted(newly_ignored):
+                affected += self.model.ignore_source(f)
+        n_active = len(self._active_sources())
+        n_ignored = len(self._ignored_sources)
+        msg = f"사용 헤더 {n_active}개 · 미사용 {n_ignored}개."
+        if affected:
+            self._set_notice(
+                msg + f"\n미사용으로 바꾸며 매핑을 해제한 필드 {len(affected)}개"
+                "(재확정 필요): " + ", ".join(affected),
+                "warn",
+            )
+        else:
+            self._set_notice(msg, "muted")
 
     def _ensure_model(self) -> None:
         """매핑 진입 시 초안 생성 — 키(템플릿·데이터·소스) 불변이면 그대로, 바뀌면
@@ -449,6 +529,12 @@ class EditorController:
         ``is_complete`` 를 통과, 저장·실행까지 흐르는 조용한 게이트 우회였다. 지금은
         값만 이월하고 확정은 전원 해제(``confirm=False``), 재확정 필요를 notice 로
         시끄럽게 재진술한다(조용한 소실도, 조용한 승계도 금지).
+
+        키(#49 주의): 키는 **전체** ``source_fields`` 만 담고 미사용 집합은 담지 않는다 —
+        의도된 설계다. 매핑 진입 후 헤더를 재활성해도 모델이 재생성되지 않아 그 헤더는
+        자동 제안을 다시 받지 못하고 수동 선택만 가능하다. 대신 이미 확정한 매핑을 재활성
+        토글이 날리지 않는다(재생성=전원 미확정). 자동제안 재수확 < 확정 보존이라 이 쪽을
+        택한다(버그 아님).
         """
         if self.schema is None:
             raise ValueError("템플릿이 로드되지 않았습니다.")
@@ -458,7 +544,9 @@ class EditorController:
         prior = None
         if self.model is not None and self.model.confirmed_count():
             prior = self.model.to_profile()
-        self.model = MappingModel.from_suggestions(self.schema, self.source_fields)
+        # 미사용 헤더(#49)는 자동 제안 후보에서 제외 — 매핑 진입 전 좁혀두면 여기서
+        # 반영된다(진입 후 좁히면 _apply_active 가 ignore_source 로 행을 해제).
+        self.model = MappingModel.from_suggestions(self.schema, self._active_sources())
         if prior is not None:
             carried = self.model.apply_profile(prior, confirm=False)
             self._set_notice(
@@ -642,6 +730,10 @@ class EditorController:
                 preserved_last_run = current.last_run_at
             except Exception:  # noqa: BLE001 — 원본이 사라졌으면 스냅샷 유지(추측 없음)
                 pass
+        # 기본 데이터셋 참조(#53-A): 이 세션이 데이터를 골랐으면 곧 자동등록될 이름과 연결,
+        # 아니면(편집 저장 등 데이터 미변경) 복원한 참조를 보존. 등록 실패해도 참조 이름은
+        # 안정적이라 사용자가 그 이름으로 수동 등록하면 링크가 완성된다.
+        default_dataset_ref = self.dataset_name if self.data_path else self.default_dataset_ref
         job = Job(
             name=self.job_name,
             template_path=self.template_path,
@@ -650,6 +742,7 @@ class EditorController:
             last_run_at=preserved_last_run,
             base_mapping_name=self._base_name,
             tags=preserved_tags,
+            default_dataset_ref=default_dataset_ref,
         )
         # 위 게이트(needs_overwrite_confirm→confirm_overwrite)가 victim 을 재진술 확인시킨 뒤라
         # slug 충돌이어도 사용자가 확정한 상태 → core 가드에 명시적 opt-in 을 통과한다.
@@ -688,7 +781,8 @@ class EditorController:
                 register_error = (
                     f"작업 '{self.job_name}' 은 저장됐지만 등록 데이터 "
                     f"'{self.dataset_name}' 등록에 실패했습니다: {exc} — "
-                    "데이터 관리 화면에서 직접 등록해 주세요."
+                    f"이 작업은 '{self.dataset_name}' 을 기본 데이터로 연결해 뒀으니, "
+                    "데이터 관리 화면에서 같은 이름으로 등록하면 연결이 완성됩니다(#53-A)."
                 )
         saved = self.job_name
         self._reset()  # 저장 후 새 작업 준비(에디터 초기화)
