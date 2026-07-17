@@ -74,14 +74,20 @@ _WEB_MAP = [
 # 라이트 :root 블록에만 방출하고 다크 블록엔 중복하지 않는다. 값은 무단위 정수 → px 부착.
 # space 는 수치키(--sp-8 = 8px, 촘촘한 px 그리드), radius/type 은 역할 의미키.
 _SCALE_MAP = [
+    # 여백은 2px 기저 수치 사다리 — 희소 오드볼(14·20·28)은 꼬리청소로 퇴역(#60), 인접값 스냅.
+    # 6·8·10·12·16 유지(현행 밀도가 스위트스팟, A/B/C 실화면 왕복 검증). 엄격 4px 격자는 기각.
     ("--sp-2", "space.2"), ("--sp-4", "space.4"), ("--sp-6", "space.6"),
     ("--sp-8", "space.8"), ("--sp-10", "space.10"), ("--sp-12", "space.12"),
-    ("--sp-14", "space.14"), ("--sp-16", "space.16"), ("--sp-20", "space.20"),
-    ("--sp-24", "space.24"), ("--sp-28", "space.28"), ("--sp-40", "space.40"),
-    ("--rad-sm", "radius.sm"), ("--rad-md", "radius.md"), ("--rad-lg", "radius.lg"),
-    ("--rad-xl", "radius.xl"), ("--rad-pill", "radius.pill"),
-    ("--fs-micro", "type.micro"), ("--fs-label", "type.label"), ("--fs-small", "type.small"),
-    ("--fs-body", "type.body"), ("--fs-title", "type.title"), ("--fs-heading", "type.heading"),
+    ("--sp-16", "space.16"), ("--sp-24", "space.24"), ("--sp-40", "space.40"),
+    # 모서리는 크기 사다리가 아니라 역할 문법(#59) — 이름이 역할을 강제해 "같은 컨트롤인데 다른
+    # 모서리"류 자의적 배정을 구조로 차단. control=버튼·필드·탭·행·칩·메뉴항목, surface=카드·판·
+    # 콜아웃·placeholder, overlay=모달·메뉴, pill=완전 둥금.
+    ("--rad-control", "radius.control"), ("--rad-surface", "radius.surface"),
+    ("--rad-overlay", "radius.overlay"), ("--rad-pill", "radius.pill"),
+    # 타이포는 크기 4단(11/13/15/19)+kpi 역할 사다리 — 1px 밀집을 없애고 층위는 크기, 역할은
+    # 색(--a-muted)·굵기(600)로 진다(#58). caption=muted 라벨·배지·캡션, body=주 읽기+밀집
+    # 2차(muted 색으로 구분), strong=헤딩·강조, section=화면/섹션 제목, kpi=대시보드 수치.
+    ("--fs-caption", "type.caption"), ("--fs-body", "type.body"), ("--fs-strong", "type.strong"),
     ("--fs-section", "type.section"), ("--fs-kpi", "type.kpi"),
 ]
 
