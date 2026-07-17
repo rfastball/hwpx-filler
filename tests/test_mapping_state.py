@@ -109,6 +109,41 @@ def test_editing_a_confirmed_row_resets_confirmation():
     assert not model.rows[0].confirmed
 
 
+# -------------------------------------------------- 미사용 헤더 전환(#49)
+def test_ignore_source_clears_only_matching_rows_and_forces_recheck():
+    """소스 헤더 미사용 전환 → 그 소스를 쓰던 행만 해제(source='', confirmed=False),
+    다른 매핑·확정은 불변. 반환은 영향 필드 이름(재진술 근거)."""
+    model = _model()
+    model.confirm_all()  # 전 행 확정
+    affected = model.ignore_source("bidNtceNo")
+    assert affected == ["입찰공고번호"]
+    rows = {r.template_field: r for r in model.rows}
+    assert rows["입찰공고번호"].source == "" and rows["입찰공고번호"].confirmed is False
+    # 다른 행의 소스·확정은 그대로.
+    assert rows["공고명"].source == "bidNtceNm" and rows["공고명"].confirmed is True
+    assert rows["추정가격"].source == "presmptPrce" and rows["추정가격"].confirmed is True
+
+
+def test_ignore_source_absent_is_noop():
+    """아무 행도 안 쓰는 소스 미사용은 무영향(빈 반환·확정 불변)."""
+    model = _model()
+    model.confirm_all()
+    assert model.ignore_source("존재안함zzz") == []
+    assert all(r.confirmed for r in model.rows)
+
+
+def test_ignore_source_empty_string_is_noop():
+    """빈 소스("")는 무시 — const·blank·미매칭 행이 모두 source=='' 라 무더기 해제 방지(리뷰 #62)."""
+    model = MappingModel(rows=[
+        RowState("계약방법", type="const", const="수의계약", confirmed=True),  # source=""
+        RowState("비고", confirmed=True),                                      # 미매칭 빈 행
+        RowState("공고명", source="bidNtceNm", confirmed=True),
+    ])
+    assert model.ignore_source("") == []                 # 아무 행도 안 건드림
+    assert all(r.confirmed for r in model.rows)          # 전 행 확정 불변
+    assert model.rows[0].const == "수의계약"             # const 보존
+
+
 def test_emits_any_value_false_when_all_rows_blank_confirmed():
     """RC-08 회귀: 전부 비움 확정은 is_complete 통과 + mappings 비지 않음 — 그래도
     실제 값은 하나도 방출하지 않으므로 '전부 비움' 저장 가드 질의는 False 다."""
