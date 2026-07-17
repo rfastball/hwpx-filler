@@ -125,7 +125,7 @@
      자동 매핑 제안·소스 드롭다운 후보에서 빠진다(원본 데이터·다른 매핑은 불변). 저장은
      하지 않는다 — 매핑이 곧 사용 헤더의 기억이라 재편집 시 저장 매핑에서 파생된다. */
   function headerSelect(s) {
-    const all = s.all_source_fields || s.source_fields || [];
+    const all = s.source_fields || [];  // 전체 헤더(스냅샷 계약 키) — 활성/미사용은 파생
     if (!all.length) return "";
     const active = new Set(s.active_source_fields || []);
     const ignored = s.ignored_source_fields || [];
@@ -139,12 +139,12 @@
               `<span class="hchip ign">${esc(f)} <button class="btn sm" data-act="reactivate-source" data-field="${esc(f)}">다시 사용</button></span>`).join("")}</div>
          </details>`
       : "";
-    return `<div class="grp" style="margin-top:10px">
+    return `<div class="grp" style="margin-top:var(--sp-12)">
       <span class="cap">사용할 헤더 선택</span>
       <p class="hint" style="margin-top:0">문서 생성에 쓸 헤더만 남기세요. 미사용 헤더는 자동 매핑 제안과
         소스 드롭다운 후보에서 빠집니다 — 원본 데이터·다른 매핑은 바뀌지 않습니다.</p>
       <div class="hchips">${boxes || '<span class="muted">활성 헤더가 없습니다.</span>'}</div>
-      <div class="row" style="margin-top:8px">
+      <div class="row" style="margin-top:var(--sp-8)">
         <span class="muted">사용 ${s.active_count} · 미사용 ${s.ignored_count}</span>
         <span style="flex:1"></span>
         <button class="btn sm" data-act="use-selected">선택 항목만 사용</button>

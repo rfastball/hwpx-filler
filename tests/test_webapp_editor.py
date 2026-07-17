@@ -666,3 +666,53 @@ def test_new_data_resets_ignored_headers(tmp_path):
     snap = ctrl.snapshot()
     assert snap["source_fields"] == ["공고명", "추정가격"]
     assert snap["ignored_count"] == 0 and snap["active_source_fields"] == ["공고명", "추정가격"]
+
+
+def test_empty_selection_is_loud_and_preserves_mappings(tmp_path):
+    """전부 미사용은 시끄럽게 거부(리뷰 #62 🔴) — 되돌릴 수 없는 매핑 전멸을 사전 차단.
+
+    빈 선택(use_only_selected [])·마지막 헤더까지 끄는 토글 둘 다 같은 종착지라
+    가드를 _apply_active 에 두어 두 경로 모두 막고, 확정 매핑을 보존한다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("goto_step", {"step": 2})
+    ctrl.dispatch("set_source", {"index": 0, "source": "낙찰금액"})
+    ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": True})
+
+    with pytest.raises(ValueError, match="하나 이상"):
+        ctrl.dispatch("use_only_selected", {"fields": []})            # 전부 미사용 거부
+    # 매핑·활성 상태 불변(파괴 없음).
+    snap = ctrl.snapshot()
+    assert snap["rows"][0]["source"] == "낙찰금액" and snap["rows"][0]["confirmed"] is True
+    assert snap["ignored_count"] == 0
+
+    # 마지막 남은 헤더를 토글로 끄는 경로도 같은 가드에 막힌다.
+    ctrl.dispatch("use_only_selected", {"fields": ["낙찰금액"]})
+    with pytest.raises(ValueError, match="하나 이상"):
+        ctrl.dispatch("toggle_source_active", {"field": "낙찰금액"})
+
+
+def test_load_job_reedit_starts_all_active(tmp_path):
+    """재편집 진입 = 활성 헤더가 저장 매핑에서 파생(#49 핵심 주장) — 미사용 0.
+
+    실제 소스 매핑을 저작해 저장한 뒤 재로드하면 source_fields 가 저장 매핑의 소스 키로
+    복원되고(profile_source_vocabulary) 전원 활성이다 — durable ignored 없이도 '매핑이
+    곧 기억'이 성립함을 못박는다."""
+    ctrl, _ = _controller26(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("goto_step", {"step": 2})
+    ctrl.dispatch("set_source", {"index": 0, "source": "낙찰금액"})   # 실 소스 매핑
+    ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": True})
+    r = ctrl.dispatch("confirm_all", {})
+    ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
+    ctrl.dispatch("set_name", {"name": "재편집대상"})
+    ctrl.dispatch("set_pattern", {"pattern": "p-{{ID}}"})
+    assert ctrl.dispatch("save", {})["ok"] is True
+
+    ctrl.load_job("재편집대상")
+    snap = ctrl.snapshot()
+    assert "낙찰금액" in snap["source_fields"]            # 저장 매핑 소스로 어휘 복원
+    assert snap["ignored_count"] == 0                    # 전원 활성(미사용 0)
+    assert snap["active_source_fields"] == snap["source_fields"]

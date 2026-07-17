@@ -215,7 +215,12 @@ class MappingModel:
         **사람의 재검토를 강제**한다(``set_source`` 선례). 상수(const) 행은 소스가
         없어 영향받지 않고, blank/다른 소스 행은 보존한다. 반환값은 영향받은 템플릿
         필드 이름(문서순) — 뷰가 개수·이름을 시끄럽게 재진술하는 근거(confirm-or-alarm).
+
+        빈 소스("")는 무시한다 — const·blank·미매칭 행은 모두 ``source==""`` 이라, 빈
+        문자열을 소스로 받으면 무관한 행을 무더기 해제한다(공개 메서드의 값싼 보험).
         """
+        if not source:
+            return []
         affected: "list[str]" = []
         for row in self.rows:
             if row.source == source:

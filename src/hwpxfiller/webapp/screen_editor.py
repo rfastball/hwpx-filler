@@ -206,6 +206,7 @@ class EditorController:
         }
 
     def snapshot(self) -> dict:
+        active_sources = self._active_sources()  # 활성/카운트 재사용(1회 계산)
         snap: dict = {
             "step": self.step,
             "reachable": [self.can_advance(s) for s in range(3)],  # 0→1,1→2,2→3
@@ -225,9 +226,9 @@ class EditorController:
             # 전체 헤더(데이터 미리보기 컬럼·sample_rows 정렬의 짝, 불변).
             "source_fields": self.source_fields,
             # 활성/미사용 헤더(#49) — 드롭다운 후보는 활성만, 헤더 선택 UI는 둘 다 쓴다.
-            "active_source_fields": self._active_sources(),
+            "active_source_fields": active_sources,
             "ignored_source_fields": [f for f in self.source_fields if f in self._ignored_sources],
-            "active_count": len(self._active_sources()),
+            "active_count": len(active_sources),
             "ignored_count": len(self._ignored_sources),
             # 2단계 데이터 미리보기(#16): source_fields 순서로 투영한 샘플 행 소량.
             # 빈 셀은 "" 로 보존해 렌더가 (빈 값)으로 시끄럽게 표기(ADR-B).
@@ -470,13 +471,26 @@ class EditorController:
         """헤더 1개의 활성/미사용 토글(개별 재활성 포함, #49)."""
         field = str(p["field"])
         active = set(self._active_sources())
-        active.discard(field) if field in active else active.add(field)
+        if field in active:
+            active.discard(field)
+        else:
+            active.add(field)
         self._apply_active(active)
 
     def _apply_active(self, active: "set[str]") -> None:
         """활성 헤더 집합을 확정한다 — 데이터에 있는 것만 채택하고, 새로 미사용이 된
-        헤더에 매핑된 행은 해제(``ignore_source``)해 사람 재검토를 강제·재진술한다."""
+        헤더에 매핑된 행은 해제(``ignore_source``)해 사람 재검토를 강제·재진술한다.
+
+        confirm-or-alarm: **전부 미사용은 시끄럽게 거부**한다. 헤더 한 개 미사용은 강제
+        재확정이 안전장치이지만, 전부 미사용은 확정 매핑 전 행을 한 번에 해제하고 '모두
+        사용'으로도 지워진 행이 복구되지 않는(후보 자격만 되돌림) 되돌리기 불가 파괴다 —
+        되돌릴 수 없는 파괴는 사후 통보가 아니라 사전 차단이 맞다(리뷰 #62 🔴)."""
         active = {f for f in active if f in self.source_fields}
+        if self.source_fields and not active:
+            raise ValueError(
+                "사용할 헤더를 하나 이상 남겨 두세요 — 전부 미사용은 확정한 매핑을 "
+                "모두 해제하며 되돌릴 수 없습니다."
+            )
         new_ignored = {f for f in self.source_fields if f not in active}
         newly_ignored = new_ignored - self._ignored_sources
         self._ignored_sources = new_ignored
@@ -507,6 +521,12 @@ class EditorController:
         ``is_complete`` 를 통과, 저장·실행까지 흐르는 조용한 게이트 우회였다. 지금은
         값만 이월하고 확정은 전원 해제(``confirm=False``), 재확정 필요를 notice 로
         시끄럽게 재진술한다(조용한 소실도, 조용한 승계도 금지).
+
+        키(#49 주의): 키는 **전체** ``source_fields`` 만 담고 미사용 집합은 담지 않는다 —
+        의도된 설계다. 매핑 진입 후 헤더를 재활성해도 모델이 재생성되지 않아 그 헤더는
+        자동 제안을 다시 받지 못하고 수동 선택만 가능하다. 대신 이미 확정한 매핑을 재활성
+        토글이 날리지 않는다(재생성=전원 미확정). 자동제안 재수확 < 확정 보존이라 이 쪽을
+        택한다(버그 아님).
         """
         if self.schema is None:
             raise ValueError("템플릿이 로드되지 않았습니다.")
