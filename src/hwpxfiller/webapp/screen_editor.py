@@ -65,8 +65,12 @@ def _job_content_fingerprint(job: Job) -> str:
 
     태그·마지막 실행은 제외한다: 편집 저장이 어차피 저장 직전 디스크 값을 재읽어 보존하므로
     (홈 태그 편집과의 공존, ``_do_save``) 그 둘의 변경은 파괴가 아니다. 나머지(템플릿·매핑·
-    파일명 패턴·계보)는 편집 세션 상태로 덮어써지므로, 로드 시점과 달라져 있으면 '편집 중
-    외부 변경'으로 확인을 요구해야 한다(무확인 파괴 금지).
+    파일명 패턴·계보·**기본 데이터셋 참조**)는 편집 세션 상태로 덮어써지므로, 로드 시점과
+    달라져 있으면 '편집 중 외부 변경'으로 확인을 요구해야 한다(무확인 파괴 금지).
+
+    기본 데이터셋 참조(#53-A)는 ``to_dict()`` 에 들어가 여기 지문에 **자동 포함**된다 —
+    #53-B 가 재연결 동선을 추가해 외부에서 참조가 바뀌어도 편집 저장이 조용히 되돌리지
+    않고 확인을 띄운다(의도된 설계).
     """
     d = job.to_dict()
     d.pop("tags", None)
@@ -120,6 +124,9 @@ class EditorController:
         self.job_name = ""
         self.pattern = DEFAULT_FILENAME_PATTERN
         self.dataset_name = ""  # 자동등록 이름(기본=데이터 파일 스템, 사용자 수정 가능)
+        # 편집 모드에서 복원한 기본 데이터셋 참조(#53-A) — 데이터를 새로 안 고르고 저장하면
+        # 이 값을 보존한다(편집 저장이 조용히 기본 데이터 연결을 소실시키지 않게).
+        self.default_dataset_ref = ""
         # 편집 모드 상태(#26): 원점 이름(자기-갱신 판정)·보존 메타(태그·마지막 실행) —
         # 편집 저장이 브라우저 태그·이력을 조용히 소실시키지 않는다.
         self._editing_origin = ""
@@ -391,6 +398,7 @@ class EditorController:
         # 무확인으로 덮지 않기 위한 대조 기준(_do_save).
         self._editing_fingerprint = _job_content_fingerprint(job)
         self._base_name = job.base_mapping_name
+        self.default_dataset_ref = job.default_dataset_ref  # 편집 저장 시 보존(#53-A)
         # 소스 어휘 = 저장 매핑이 참조하는 키 합집합(profile_source_vocabulary 단일 출처,
         # from_profile 과 공유) — 데이터 없이도 복원된 source 가 선택지에 있어야 드롭다운이
         # (비움)으로 오표시되지 않는다.
@@ -722,6 +730,10 @@ class EditorController:
                 preserved_last_run = current.last_run_at
             except Exception:  # noqa: BLE001 — 원본이 사라졌으면 스냅샷 유지(추측 없음)
                 pass
+        # 기본 데이터셋 참조(#53-A): 이 세션이 데이터를 골랐으면 곧 자동등록될 이름과 연결,
+        # 아니면(편집 저장 등 데이터 미변경) 복원한 참조를 보존. 등록 실패해도 참조 이름은
+        # 안정적이라 사용자가 그 이름으로 수동 등록하면 링크가 완성된다.
+        default_dataset_ref = self.dataset_name if self.data_path else self.default_dataset_ref
         job = Job(
             name=self.job_name,
             template_path=self.template_path,
@@ -730,6 +742,7 @@ class EditorController:
             last_run_at=preserved_last_run,
             base_mapping_name=self._base_name,
             tags=preserved_tags,
+            default_dataset_ref=default_dataset_ref,
         )
         # 위 게이트(needs_overwrite_confirm→confirm_overwrite)가 victim 을 재진술 확인시킨 뒤라
         # slug 충돌이어도 사용자가 확정한 상태 → core 가드에 명시적 opt-in 을 통과한다.
@@ -768,7 +781,8 @@ class EditorController:
                 register_error = (
                     f"작업 '{self.job_name}' 은 저장됐지만 등록 데이터 "
                     f"'{self.dataset_name}' 등록에 실패했습니다: {exc} — "
-                    "데이터 관리 화면에서 직접 등록해 주세요."
+                    f"이 작업은 '{self.dataset_name}' 을 기본 데이터로 연결해 뒀으니, "
+                    "데이터 관리 화면에서 같은 이름으로 등록하면 연결이 완성됩니다(#53-A)."
                 )
         saved = self.job_name
         self._reset()  # 저장 후 새 작업 준비(에디터 초기화)

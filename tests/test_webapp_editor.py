@@ -599,6 +599,60 @@ def test_autoregister_preserves_archived_status_and_note(tmp_path):
     assert item.opts["sheet"] == "낙찰현황"
 
 
+# ------------------------------------------- 기본 데이터셋 연결(#53-A)
+def test_save_with_data_links_default_dataset_ref(tmp_path):
+    """데이터를 골라 저장하면 자동등록 이름이 작업의 기본 데이터셋 참조로 연결된다(#53-A)."""
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "연결작업")             # dataset_name 기본 = multi_sheet(스템)
+    res = ctrl.dispatch("save", {})
+    assert res["ok"] is True and res["dataset_registered"] == "multi_sheet"
+    job = JobRegistry(tmp_path / "jobs").load("연결작업")
+    assert job.default_dataset_ref == "multi_sheet"   # 자동등록 이름과 연결
+
+
+def test_save_without_data_leaves_default_ref_empty(tmp_path):
+    """데이터 없이 저장한 작업은 기본 데이터셋 참조가 비어 있다(현행 수동 선택 유지)."""
+    ctrl, _ = _controller26(tmp_path)
+    _save_named(ctrl, "무데이터작업")
+    assert JobRegistry(tmp_path / "jobs").load("무데이터작업").default_dataset_ref == ""
+
+
+def test_edit_save_without_new_data_preserves_default_ref(tmp_path):
+    """편집 저장 시 데이터를 새로 안 고르면 기존 기본 데이터셋 참조가 보존된다(#53-A).
+
+    데이터를 다시 로드하지 않으므로 data_path 는 비어 있다 — 그때 참조를 "" 로 덮으면
+    편집 한 번에 기본 데이터 연결이 조용히 소실된다(태그·이력 보존 선례와 동형)."""
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "편집대상")
+    ctrl.dispatch("save", {})
+    assert JobRegistry(tmp_path / "jobs").load("편집대상").default_dataset_ref == "multi_sheet"
+
+    ctrl.load_job("편집대상")                          # 데이터 없이 편집 세션 복원
+    ctrl.dispatch("set_pattern", {"pattern": "새패턴-{{ID}}"})
+    res = ctrl.dispatch("save", {"confirm_overwrite": True})
+    assert res["ok"] is True
+    job = JobRegistry(tmp_path / "jobs").load("편집대상")
+    assert job.default_dataset_ref == "multi_sheet"   # 편집 저장에도 보존
+    assert job.filename_pattern == "새패턴-{{ID}}"
+
+
+def test_save_links_ref_even_when_dataset_register_fails(tmp_path):
+    """등록 실패(반저장)해도 작업의 기본 데이터 참조는 저장되고, 실패 문구가 연결 완성
+    경로를 안내한다(#53-A 리뷰) — 참조 이름이 안정적이라 그 이름으로 수동 등록하면 링크 완성."""
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "등록실패작업")
+
+    def _boom(*a, **k):
+        raise OSError("디스크 꽉 참")
+    ctrl.pool_registry.save = _boom                    # 데이터셋 등록만 실패시킴
+
+    res = ctrl.dispatch("save", {})
+    assert res["ok"] is True                           # 작업 저장 자체는 성공(반저장)
+    assert "기본 데이터로 연결" in res["dataset_register_error"]
+    # 참조는 저장됨 — 사용자가 같은 이름으로 등록하면 연결이 완성된다.
+    assert JobRegistry(tmp_path / "jobs").load("등록실패작업").default_dataset_ref == "multi_sheet"
+
+
 # ------------------------------------------------- 사용할 헤더 선택(#49)
 def test_header_selection_defaults_all_active_then_narrows(tmp_path):
     """데이터 로드 = 전원 활성. 선택 항목만 사용 → 나머지 일괄 미사용, 카운트 재진술."""

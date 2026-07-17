@@ -127,6 +127,23 @@ def test_tags_roundtrip_and_backward_compat():
     assert loaded2.tags == {"목적물": "용역"}
 
 
+def test_default_dataset_ref_roundtrip_and_backward_compat():
+    """가산 필드 default_dataset_ref(#53-A) — 왕복 보존 + 구 JSON(키 부재)은 기본값 ""
+    (version 1 유지). 없으면 실행 화면이 현행처럼 수동 데이터 선택."""
+    job = _job()
+    job.default_dataset_ref = "월별_낙찰현황"
+    loaded = Job.from_dict(job.to_dict())
+    assert loaded.default_dataset_ref == "월별_낙찰현황"
+    assert loaded.version == 1
+
+    old_dict = _job().to_dict()
+    del old_dict["default_dataset_ref"]  # 필드 도입 전 저장된 JSON
+    from_old = Job.from_dict(old_dict)
+    assert from_old.default_dataset_ref == ""  # 기본 데이터 없음으로 동작
+    assert from_old.version == 1
+    assert Job().default_dataset_ref == ""     # 미연결이 기본(선택적)
+
+
 def test_from_dict_rejects_type_corrupt_durable_values():
     """durable 로드 경계 — 문자열 계약 필드가 비문자열이면 loud 하게 던진다(내구성 라운드 #1·3·4).
 
@@ -141,6 +158,7 @@ def test_from_dict_rejects_type_corrupt_durable_values():
         {**base, "last_run_at": 1720000000},   # 비문자열 시각 → refresh 의 _fmt_iso 지뢰
         {**base, "base_mapping_name": 12345},  # 비문자열 → 계보 비교 int==str 무성 무효화
         {**base, "name": 5},                   # 비문자열 이름
+        {**base, "default_dataset_ref": 7},    # 비문자열 참조 → 겨눔 이름 조회 지뢰
     ]
     for d in corrupt_variants:
         with pytest.raises(ValueError):
