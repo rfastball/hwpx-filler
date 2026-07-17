@@ -503,6 +503,23 @@ def test_top_level_help_lists_subcommands(capsys):
         assert name in out
 
 
+def test_unknown_subcommand_fails_loudly_not_misleading(capsys):
+    """오타난 하위명령은 조용히 generate 로 흘러 '--template 필요'로 오도하지 않고,
+    이름을 짚어 시끄럽게 거절한다(confirm-or-alarm: 조용한 추측 금지).
+
+    generate 는 positional 을 받지 않으므로 대시로 시작하지 않는 첫 토큰은 무조건
+    하위명령 시도 — 오타 시 방향(유효 하위명령)을 함께 제시한다.
+    """
+    rc = main(["bogsub"])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "알 수 없는 하위명령" in err and "bogsub" in err
+    # 기존 오도 문구('the following arguments are required: --template')가 아니다
+    assert "the following arguments are required" not in err
+    # 방향 제시 — 유효 하위명령을 안내
+    assert "schema" in err and "lint" in err
+
+
 # ------------------------------------------------- lint --vocab BOM(RC-33)
 def test_lint_vocab_utf8_bom_does_not_pollute_first_entry(tmp_path, capsys):
     """메모장/PowerShell 이 남긴 BOM(U+FEFF)이 첫 어휘 항목을 오염시키지 않는다."""
