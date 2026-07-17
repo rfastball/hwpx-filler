@@ -67,6 +67,10 @@
     openPath(path) { return window.pywebview.api.open_path(path); },
     revealPath(path) { return window.pywebview.api.reveal_path(path); },
     copyPath(path) { return window.pywebview.api.copy_path(path); },
+
+    /** 테마 선택 영속(오리진 비의존 Python 설정, #74). 확정값(문자열) 반환.
+     *  당김(get)은 없다 — 부팅 주입(app.py loaded→Theme.apply)이 유일한 읽기 경로. */
+    setTheme(mode) { return window.pywebview.api.set_theme(mode); },
   };
 
   // Python→웹 푸시 진입점(app.py 의 evaluate_js 가 호출). 전역 노출.

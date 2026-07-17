@@ -395,21 +395,56 @@ def test_theme_helper_loaded_and_toggle_present():
         assert am and am.group(1).strip(), f"themeToggle 에 비어있지 않은 {attr} 이 필요합니다."
 
 
-def test_fouc_guard_applies_theme_before_stylesheets():
-    """FOUC 방지 인라인이 스타일시트 링크 **전에** 저장 테마를 documentElement 에 적용해야 한다.
+def test_theme_persistence_is_origin_independent():
+    """테마 영속이 오리진(포트)에 결합된 localStorage 로 회귀하지 않도록 정적 가드(#74).
 
-    theme.js 는 body 말미 로드라 첫 페인트가 라이트로 번쩍인다 — head 인라인이 tokens.css
-    링크보다 앞서 localStorage 를 동기 되읽어 data-theme 를 세워야 깜빡임이 없다. 순서까지 가드.
+    #74 이전엔 head 동기 인라인이 ``localStorage['hwpxfiller.theme']`` 를 되읽어 FOUC 를 막았으나,
+    localStorage 는 오리진(host:port) 스코프라 pywebview 내부 포트가 바뀌면 테마가 조용히
+    리셋됐다. 영속을 오리진 비의존 Python 설정(app.py set_theme → settings.json)으로 옮기고
+    (private_mode 기본 복원) FOUC 는 부팅 시 loaded 핸들러 주입으로 은닉한다. 그러므로:
+      - index.html 은 테마용 localStorage 판독을 **가져선 안 된다**(원인 결합 재도입 금지).
+      - theme.js 는 브리지(Bridge.setTheme)로 영속해야 하고 localStorage 를 **일절 쓰지 않는다**.
+    브라우저 단독 프리뷰의 새로고침 간 미영속은 의도된 트레이드오프다(#75 리뷰4 #4/#7): 프리뷰를
+    영속하려면 오리진 결합 localStorage 판독이 되살아나므로, 개발 전용 프리뷰 편의보다 불변식을 택한다.
     """
     index = WEB_INDEX.read_text(encoding="utf-8")
-    fouc = re.search(r'localStorage\.getItem\(\s*["\']hwpxfiller\.theme["\']\s*\)', index)
-    assert fouc, "FOUC 방지 인라인(localStorage 'hwpxfiller.theme' 되읽기)이 없습니다."
-    assert "setAttribute" in index[fouc.start(): fouc.start() + 200], (
-        "FOUC 인라인이 data-theme 를 setAttribute 하지 않습니다."
+    assert not re.search(r'localStorage[^;]*hwpxfiller\.theme', index), (
+        "index.html 이 테마를 localStorage 로 다룬다 — 오리진 결합 영속 회귀(#74). "
+        "영속은 브리지(set_theme)/Python 설정으로만."
     )
-    tokens_link = index.find('href="css/tokens.css"')
-    assert tokens_link != -1 and fouc.start() < tokens_link, (
-        "FOUC 인라인이 tokens.css 링크보다 뒤에 있습니다 — 첫 페인트 라이트 번쩍임(FOUC) 회귀."
+    theme_js = (WEB_JS_DIR / "theme.js").read_text(encoding="utf-8")
+    assert "Bridge.setTheme" in theme_js, (
+        "theme.js 가 브리지로 영속하지 않습니다(Bridge.setTheme 부재) — #74 영속 경로."
+    )
+    assert not re.search(r"localStorage\s*\.", theme_js), (
+        "theme.js 가 localStorage 를 실사용 — 오리진 비의존 영속(#74)과 상충. 프리뷰 미영속은 의도(#75 리뷰4)."
+    )
+
+
+def test_boot_hides_window_until_theme_applied():
+    """FOUC 은닉의 구조 가드(#74) — 창은 숨김 생성, 테마 주입이 show **앞**이어야 한다.
+
+    옛 가드(head 인라인이 tokens.css 링크보다 앞)는 pre-paint 적용을 정적 순서로 보증했다.
+    localStorage 이관으로 인라인이 사라진 뒤의 등가물: ``hidden=True`` 로 창을 만들고
+    ``_apply_theme_then_show`` 안에서 Theme.apply 주입이 ``_show_once()`` 보다 먼저여야
+    라이트 첫 페인트가 화면 밖에서 소진된다. 런타임 게이트(theme_persist)는 부팅 한참 뒤
+    스냅샷이라 '주입이 show 앞이었나'를 구분 못 한다 — 순서는 여기서 정적으로 가드한다.
+    """
+    app_py = Path(__file__).resolve().parents[1] / "src" / "hwpxfiller" / "webapp" / "app.py"
+    src = app_py.read_text(encoding="utf-8")
+    # create_window 호출부 슬라이스 — 다음 문장(frontend._window 배선)까지가 호출 인자 범위.
+    create = src[src.index("webview.create_window("): src.index("frontend._window")]
+    assert "hidden=True" in create, (
+        "create_window 에 hidden=True 가 없습니다 — 저장 테마 주입 전 라이트 첫 페인트가 "
+        "화면에 노출됩니다(FOUC 회귀, #74)."
+    )
+    body_start = src.index("def _apply_theme_then_show")
+    body = src[body_start: src.index("window.events.loaded")]
+    apply_at = body.find("Theme.apply")
+    show_at = body.find("_show_once()")
+    assert apply_at != -1 and show_at != -1 and apply_at < show_at, (
+        "_apply_theme_then_show 에서 Theme.apply 주입이 _show_once() 보다 앞이어야 합니다 — "
+        "뒤집히면 창이 라이트로 뜬 뒤 다크로 스냅(FOUC, #74)."
     )
 
 

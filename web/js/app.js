@@ -45,8 +45,8 @@
       document.querySelector(".app").classList.toggle("rail-collapsed"));
   }
 
-  // 테마 전환(System→Light→Dark) — 셸 전역, 브리지 무관. Theme(theme.js)가 data-theme·
-  // localStorage 를 소유하고, 여기선 배선 + 레일 라벨을 현재 모드로 동기화만 한다.
+  // 테마 전환(System→Light→Dark) — 셸 전역. Theme(theme.js)가 data-theme 를 소유하고
+  // 브리지로 Python 설정에 영속(#74), 여기선 배선 + 레일 라벨을 현재 모드로 동기화만 한다.
   const themeToggle = document.getElementById("themeToggle");
   const themeLabel = document.getElementById("themeLabel");
   const THEME_TEXT = { system: "시스템", light: "라이트", dark: "다크" };
@@ -54,8 +54,12 @@
     if (themeLabel && window.Theme) themeLabel.textContent = THEME_TEXT[window.Theme.current()];
   }
   if (themeToggle && window.Theme) {
-    themeToggle.addEventListener("click", () => { window.Theme.toggle(); syncThemeLabel(); });
-    syncThemeLabel();  // 부팅 시 FOUC 인라인이 세운 초기 모드를 라벨에 반영.
+    themeToggle.addEventListener("click", () => { window.Theme.toggle(); });
+    // 라벨 동기는 themechange 단일 경로 — 토글이든 부팅 주입(app.py loaded→Theme.apply)이든
+    // 같은 신호로 반영된다. 이 스크립트는 주입 **전**(body 말미)에 돌므로 직접 호출은 기본
+    // system 라벨만 세우고, 저장 테마는 주입 시 이벤트로 재동기된다(#74 라벨 어긋남 방지).
+    window.addEventListener("hwpx:themechange", syncThemeLabel);
+    syncThemeLabel();
   }
 
   // pywebview.api 준비 후 실화면 초기화(브라우저 단독 미리보기에선 안 뜸 — 정상).

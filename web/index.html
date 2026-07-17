@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HWPX Filler</title>
-<!-- FOUC 방지 — 스타일 페인트 전 저장 테마를 동기 적용한다(js/theme.js 는 body 말미라 늦어
-     첫 페인트가 라이트로 번쩍인다). localStorage 만 동기 되읽기가 가능해 백엔드 영속 대신 씀. -->
-<script>(function(){try{var m=localStorage.getItem("hwpxfiller.theme");if(m==="light"||m==="dark")document.documentElement.setAttribute("data-theme",m);}catch(e){}})();</script>
+<!-- 테마 영속은 오리진 비의존 Python 설정으로 이관(#74) — 부팅 시 app.py 가 창을 숨긴 채 loaded
+     에서 저장 테마를 data-theme 로 주입한 뒤 show 한다(FOUC 은닉). pywebview 엔 첫 페인트 전
+     주입 훅이 없어 head 동기 인라인(구 localStorage 판독)은 불가·불필요해 제거했다. -->
 <link rel="stylesheet" href="css/tokens.css">
 <link rel="stylesheet" href="css/app.css">
 </head>
