@@ -663,7 +663,7 @@ class EditorController:
             if self.data_sheet:
                 opts["sheet"] = self.data_sheet
             # 기존 동명 항목(_dataset_gate 가 이번 호출에서 분류·stash — 재로드·재판정 없음)
-            # 이 있으면 상태(보관/은퇴)·메모·생성시각을 보존하고 참조(opts)만 갱신한다 —
+            # 이 있으면 상태(보관)·메모·생성시각을 보존하고 참조(opts)만 갱신한다 —
             # 새 항목으로 통째 갈아치우면 보관해 둔 데이터셋이 조용히 재활성화되고 메모가
             # 지워진다(durable 수명 상태 소실). 확인 문구가 참조 덮어쓰기만 재진술하므로
             # 상태/메모는 건드리지 않는 것이 문구와도 일치한다(#26 confirm-or-alarm).

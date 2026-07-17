@@ -1,6 +1,6 @@
 """데이터 관리(pool) 화면 컨트롤러 계약 가드 — pywebview/Qt 불필요(헤드리스).
 
-웹 패리티 회수(#26 단위 A, #4)의 회귀 심. 풀 목록·상태 배지·상태별 게이트 액션(보관/은퇴/
+웹 패리티 회수(#26 단위 A, #4)의 회귀 심. 풀 목록·상태 배지·상태별 게이트 액션(보관/
 활성화/삭제 확인 라운드트립)·참조 등록(동명 확인 승격·slug 충돌 문구 재진술) end-to-end 를
 창 없이 확인한다. 레지스트리는 tmp 주입(위치-불가지) — 파일 피커만 브리지 담당.
 
@@ -44,8 +44,8 @@ def test_register_excel_reflects_in_rows_and_pushes(tmp_path):
     assert row["kind_label"] == "엑셀/CSV"
     assert row["status"] == "active" and row["badge_label"] == "활성"
     assert "발주.xlsx" in row["reference"]
-    # 상태 게이트: 활성 → [보관][은퇴][삭제].
-    assert [a["key"] for a in row["actions"]] == ["archive", "retire", "delete"]
+    # 상태 게이트: 활성 → [보관][삭제].
+    assert [a["key"] for a in row["actions"]] == ["archive", "delete"]
     assert ctrl.snapshot()["result"]["level"] == "ok"
 
 
@@ -96,22 +96,26 @@ def test_empty_name_is_worded_not_raised(tmp_path):
 
 
 def test_state_transitions_gate_actions(tmp_path):
-    """보관→[활성화][은퇴][삭제], 은퇴→[활성화][삭제], 활성화 복귀 — 상태 게이트 단일 출처."""
+    """활성→[보관][삭제], 보관→[활성화][삭제], 활성화 복귀 — 2상태 게이트 단일 출처(#5)."""
     ctrl, _, _ = _controller(tmp_path)
     ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/d/a.xlsx"})
 
     ctrl.dispatch("archive", {"name": "발주"})
     row = ctrl.snapshot()["rows"][0]
     assert row["status"] == "archived" and row["badge_label"] == "보관"
-    assert [a["key"] for a in row["actions"]] == ["activate", "retire", "delete"]
-
-    ctrl.dispatch("retire", {"name": "발주"})
-    row = ctrl.snapshot()["rows"][0]
-    assert row["status"] == "retired" and row["badge_level"] == "muted"
+    assert row["badge_level"] == "muted"
     assert [a["key"] for a in row["actions"]] == ["activate", "delete"]
 
     ctrl.dispatch("activate", {"name": "발주"})
     assert ctrl.snapshot()["rows"][0]["status"] == "active"
+
+
+def test_retire_action_is_rejected_loudly(tmp_path):
+    """폐기된 retire 액션(#5)은 웹 경계에서 loud ValueError — 조용한 무반응 금지."""
+    ctrl, _, _ = _controller(tmp_path)
+    ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/d/a.xlsx"})
+    with pytest.raises(ValueError, match="알 수 없는 pool 액션"):
+        ctrl.dispatch("retire", {"name": "발주"})
 
 
 def test_delete_two_phase_confirm_roundtrip(tmp_path):

@@ -85,7 +85,7 @@
           await Bridge.call(SCREEN, "delete", { name, confirm: true });
         }
       } else {
-        await Bridge.call(SCREEN, act, { name });  // archive/retire/activate — 비파괴 즉시
+        await Bridge.call(SCREEN, act, { name });  // archive/activate — 비파괴 즉시
       }
     } catch (err) {
       window.alert(String((err && err.message) || err));

@@ -53,10 +53,26 @@ def test_status_transitions():
     assert it.is_active
     it.archive()
     assert it.status == STATUS_ARCHIVED and not it.is_active
-    it.retire()
-    assert it.status == STATUS_RETIRED
     it.activate()
     assert it.is_active
+
+
+def test_retired_status_migrates_to_archived_on_read():
+    """폐기된 retired 상태의 구 .dataset.json 은 읽기 시 archived 로 정준 정규화(#5).
+
+    무손실 forward-마이그레이션 — retired 와 archived 는 실행 후보 여부가 동일했다.
+    loud raise 로 죽지 않고 조용히 접어, durable 참조가 보존된다.
+    """
+    it = DatasetPoolItem.from_dict(
+        {"name": "구은퇴", "kind": "excel", "opts": {"path": "/d.xlsx"}, "status": STATUS_RETIRED}
+    )
+    assert it.status == STATUS_ARCHIVED and not it.is_active
+
+
+def test_retired_not_a_valid_constructed_status():
+    """retired 는 이제 직접 생성할 수 없다(마이그레이션 별칭 전용, #5) — 새 저장 금지."""
+    with pytest.raises(ValueError):
+        DatasetPoolItem(name="x", kind="excel", status=STATUS_RETIRED)
 
 
 def test_from_dict_backward_compatible_defaults():
@@ -81,10 +97,10 @@ def test_registry_save_load_list_delete(tmp_path):
 def test_registry_filters_by_status(tmp_path):
     reg = DatasetPoolRegistry(tmp_path)
     active = DatasetPoolItem(name="살아있음", kind="excel", opts={"path": "/x.xlsx"})
-    retired = DatasetPoolItem(name="은퇴", kind="excel", opts={"path": "/y.xlsx"})
-    retired.retire()
+    archived = DatasetPoolItem(name="보관됨", kind="excel", opts={"path": "/y.xlsx"})
+    archived.archive()
     reg.save(active)
-    reg.save(retired)
+    reg.save(archived)
     assert [it.name for it in reg.list_items(status=STATUS_ACTIVE)] == ["살아있음"]
     assert len(reg.list_items()) == 2
 
