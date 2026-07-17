@@ -190,6 +190,19 @@ tr.r-confirmed td,tr.r-schemaonly td{background:var(--a-card)}
   padding:0 var(--sp-6);font-size:var(--fs-small);font-weight:600;color:var(--n-header-ink)}
 .grp .hint{margin:var(--sp-2) 0 0}
 
+/* 추적성 로케이트 버튼(#53-B) — 열기·폴더보기·경로복사 */
+.track-affords{display:inline-flex;gap:var(--sp-4);flex-wrap:wrap;align-items:center}
+.track-btn{white-space:nowrap}
+
+/* 사용할 헤더 선택(#49) — 활성 헤더 칩(체크박스)·미사용 접힘 */
+.hchips{display:flex;flex-wrap:wrap;gap:var(--sp-6);margin-top:var(--sp-8)}
+.hchip{display:inline-flex;align-items:center;gap:var(--sp-4);font-size:var(--fs-small);
+  padding:var(--sp-2) var(--sp-8);border:1px solid var(--a-border);border-radius:var(--rad-pill);
+  background:var(--a-window);cursor:pointer;white-space:nowrap}
+.hchip.ign{color:var(--a-muted);border-style:dashed;cursor:default}
+.hidden-hdrs{margin-top:var(--sp-8);font-size:var(--fs-small)}
+.hidden-hdrs>summary{cursor:pointer;color:var(--a-muted)}
+
 .run-row{display:flex;align-items:center;gap:var(--sp-8);margin-top:var(--sp-12)}
 .run-row .field{flex:1;min-width:0}
 .run-recs-head{justify-content:space-between}

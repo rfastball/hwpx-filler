@@ -141,6 +141,9 @@
           <button class="btn" id="btnPoolData" data-busy-lock>등록 데이터…</button>
           <button class="btn" id="btnPickData" data-busy-lock>파일 선택…</button></div>
 
+        <!-- 기본 데이터셋 자동 조준 재진술(#53-A) -->
+        <div class="note" id="runDataNotice" style="display:none;white-space:pre-line"></div>
+
         <!-- 사전검증 -->
         <div class="preflight note" id="preflight" style="display:none"></div>
 
@@ -164,7 +167,8 @@
         <div class="run-row"><span class="lbl">저장 폴더</span>
           <input class="field ro" id="outDir" type="text" readonly
                  placeholder="작업별 하위 폴더 없이 이 폴더에 저장합니다">
-          <button class="btn" id="btnPickFolder" data-busy-lock>찾아보기…</button></div>
+          <button class="btn" id="btnPickFolder" data-busy-lock>찾아보기…</button>
+          <span id="outTrack"></span></div>
 
         <!-- 액션 · 진행 · 결과 · 로그 -->
         <div class="run-actions">
@@ -455,6 +459,7 @@
 <script src="js/modal.js"></script>
 <script src="js/sheet_picker.js"></script>
 <script src="js/pool_picker.js"></script>
+<script src="js/pathtrack.js"></script>
 <script src="js/screens/home.js"></script>
 <script src="js/screens/txt.js"></script>
 <script src="js/screens/editor.js"></script>

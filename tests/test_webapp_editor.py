@@ -635,3 +635,176 @@ def test_new_session_has_no_provenance(tmp_path):
     ctrl, _ = _controller26(tmp_path)
     ctrl.load_template_path(str(TPL_COMPILED))
     assert ctrl.snapshot()["provenance"] is None
+
+
+# ------------------------------------------- 기본 데이터셋 연결(#53-A)
+def test_save_with_data_links_default_dataset_ref(tmp_path):
+    """데이터를 골라 저장하면 자동등록 이름이 작업의 기본 데이터셋 참조로 연결된다(#53-A)."""
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "연결작업")             # dataset_name 기본 = multi_sheet(스템)
+    res = ctrl.dispatch("save", {})
+    assert res["ok"] is True and res["dataset_registered"] == "multi_sheet"
+    job = JobRegistry(tmp_path / "jobs").load("연결작업")
+    assert job.default_dataset_ref == "multi_sheet"   # 자동등록 이름과 연결
+
+
+def test_save_without_data_leaves_default_ref_empty(tmp_path):
+    """데이터 없이 저장한 작업은 기본 데이터셋 참조가 비어 있다(현행 수동 선택 유지)."""
+    ctrl, _ = _controller26(tmp_path)
+    _save_named(ctrl, "무데이터작업")
+    assert JobRegistry(tmp_path / "jobs").load("무데이터작업").default_dataset_ref == ""
+
+
+def test_edit_save_without_new_data_preserves_default_ref(tmp_path):
+    """편집 저장 시 데이터를 새로 안 고르면 기존 기본 데이터셋 참조가 보존된다(#53-A).
+
+    데이터를 다시 로드하지 않으므로 data_path 는 비어 있다 — 그때 참조를 "" 로 덮으면
+    편집 한 번에 기본 데이터 연결이 조용히 소실된다(태그·이력 보존 선례와 동형)."""
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "편집대상")
+    ctrl.dispatch("save", {})
+    assert JobRegistry(tmp_path / "jobs").load("편집대상").default_dataset_ref == "multi_sheet"
+
+    ctrl.load_job("편집대상")                          # 데이터 없이 편집 세션 복원
+    ctrl.dispatch("set_pattern", {"pattern": "새패턴-{{ID}}"})
+    res = ctrl.dispatch("save", {"confirm_overwrite": True})
+    assert res["ok"] is True
+    job = JobRegistry(tmp_path / "jobs").load("편집대상")
+    assert job.default_dataset_ref == "multi_sheet"   # 편집 저장에도 보존
+    assert job.filename_pattern == "새패턴-{{ID}}"
+
+
+def test_save_links_ref_even_when_dataset_register_fails(tmp_path):
+    """등록 실패(반저장)해도 작업의 기본 데이터 참조는 저장되고, 실패 문구가 연결 완성
+    경로를 안내한다(#53-A 리뷰) — 참조 이름이 안정적이라 그 이름으로 수동 등록하면 링크 완성."""
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "등록실패작업")
+
+    def _boom(*a, **k):
+        raise OSError("디스크 꽉 참")
+    ctrl.pool_registry.save = _boom                    # 데이터셋 등록만 실패시킴
+
+    res = ctrl.dispatch("save", {})
+    assert res["ok"] is True                           # 작업 저장 자체는 성공(반저장)
+    assert "기본 데이터로 연결" in res["dataset_register_error"]
+    # 참조는 저장됨 — 사용자가 같은 이름으로 등록하면 연결이 완성된다.
+    assert JobRegistry(tmp_path / "jobs").load("등록실패작업").default_dataset_ref == "multi_sheet"
+
+
+# ------------------------------------------------- 사용할 헤더 선택(#49)
+def test_header_selection_defaults_all_active_then_narrows(tmp_path):
+    """데이터 로드 = 전원 활성. 선택 항목만 사용 → 나머지 일괄 미사용, 카운트 재진술."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    snap = ctrl.snapshot()
+    assert snap["source_fields"] == ["업체명", "낙찰금액", "계약일"]       # 전체 헤더 불변
+    assert snap["active_source_fields"] == ["업체명", "낙찰금액", "계약일"]  # 기본 전원 활성
+    assert snap["active_count"] == 3 and snap["ignored_count"] == 0
+
+    ctrl.dispatch("use_only_selected", {"fields": ["업체명"]})
+    snap = ctrl.snapshot()
+    assert snap["active_source_fields"] == ["업체명"]                    # 활성만 후보(원 순서)
+    assert snap["ignored_source_fields"] == ["낙찰금액", "계약일"]
+    assert snap["active_count"] == 1 and snap["ignored_count"] == 2
+    assert snap["notice"] and "사용 헤더 1개 · 미사용 2개" in snap["notice"]["text"]
+
+
+def test_ignoring_mapped_header_clears_row_and_restates(tmp_path):
+    """이미 매핑된 헤더를 미사용 전환 → 그 행만 source=''·confirmed=False, warn 재진술.
+    다른 매핑·원본 데이터는 불변."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("goto_step", {"step": 2})              # 매핑 진입 → 모델 생성
+    ctrl.dispatch("set_source", {"index": 0, "source": "낙찰금액"})
+    ctrl.dispatch("set_source", {"index": 1, "source": "업체명"})
+    ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": True})
+    ctrl.dispatch("set_confirmed", {"index": 1, "confirmed": True})
+
+    ctrl.dispatch("use_only_selected", {"fields": ["업체명", "계약일"]})  # 낙찰금액 미사용
+    snap = ctrl.snapshot()
+    assert snap["rows"][0]["source"] == "" and snap["rows"][0]["confirmed"] is False
+    assert snap["rows"][1]["source"] == "업체명" and snap["rows"][1]["confirmed"] is True
+    assert "낙찰금액" not in snap["active_source_fields"]
+    assert snap["notice"]["level"] == "warn" and "재확정" in snap["notice"]["text"]
+
+
+def test_reactivate_and_use_all_headers(tmp_path):
+    """미사용 헤더 개별 재활성 + 모두 사용 일괄 복원."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("use_only_selected", {"fields": ["업체명"]})
+    assert ctrl.snapshot()["ignored_source_fields"] == ["낙찰금액", "계약일"]
+
+    ctrl.dispatch("toggle_source_active", {"field": "낙찰금액"})       # 개별 재활성
+    snap = ctrl.snapshot()
+    assert "낙찰금액" in snap["active_source_fields"]
+    assert "낙찰금액" not in snap["ignored_source_fields"]
+
+    ctrl.dispatch("use_all_headers", {})                              # 일괄 복원
+    assert ctrl.snapshot()["ignored_count"] == 0
+
+
+def test_new_data_resets_ignored_headers(tmp_path):
+    """새 데이터 로드 = 새 헤더 어휘 → 이전 미사용 선택이 조용히 남지 않는다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("use_only_selected", {"fields": ["업체명"]})
+    assert ctrl.snapshot()["ignored_count"] == 2
+    ctrl.load_data_path(str(MULTI_SHEET))                             # 첫 시트(공고목록)=새 헤더
+    snap = ctrl.snapshot()
+    assert snap["source_fields"] == ["공고명", "추정가격"]
+    assert snap["ignored_count"] == 0 and snap["active_source_fields"] == ["공고명", "추정가격"]
+
+
+def test_empty_selection_is_loud_and_preserves_mappings(tmp_path):
+    """전부 미사용은 시끄럽게 거부(리뷰 #62 🔴) — 되돌릴 수 없는 매핑 전멸을 사전 차단.
+
+    빈 선택(use_only_selected [])·마지막 헤더까지 끄는 토글 둘 다 같은 종착지라
+    가드를 _apply_active 에 두어 두 경로 모두 막고, 확정 매핑을 보존한다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("goto_step", {"step": 2})
+    ctrl.dispatch("set_source", {"index": 0, "source": "낙찰금액"})
+    ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": True})
+
+    with pytest.raises(ValueError, match="하나 이상"):
+        ctrl.dispatch("use_only_selected", {"fields": []})            # 전부 미사용 거부
+    # 매핑·활성 상태 불변(파괴 없음).
+    snap = ctrl.snapshot()
+    assert snap["rows"][0]["source"] == "낙찰금액" and snap["rows"][0]["confirmed"] is True
+    assert snap["ignored_count"] == 0
+
+    # 마지막 남은 헤더를 토글로 끄는 경로도 같은 가드에 막힌다.
+    ctrl.dispatch("use_only_selected", {"fields": ["낙찰금액"]})
+    with pytest.raises(ValueError, match="하나 이상"):
+        ctrl.dispatch("toggle_source_active", {"field": "낙찰금액"})
+
+
+def test_load_job_reedit_starts_all_active(tmp_path):
+    """재편집 진입 = 활성 헤더가 저장 매핑에서 파생(#49 핵심 주장) — 미사용 0.
+
+    실제 소스 매핑을 저작해 저장한 뒤 재로드하면 source_fields 가 저장 매핑의 소스 키로
+    복원되고(profile_source_vocabulary) 전원 활성이다 — durable ignored 없이도 '매핑이
+    곧 기억'이 성립함을 못박는다."""
+    ctrl, _ = _controller26(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("goto_step", {"step": 2})
+    ctrl.dispatch("set_source", {"index": 0, "source": "낙찰금액"})   # 실 소스 매핑
+    ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": True})
+    r = ctrl.dispatch("confirm_all", {})
+    ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
+    ctrl.dispatch("set_name", {"name": "재편집대상"})
+    ctrl.dispatch("set_pattern", {"pattern": "p-{{ID}}"})
+    assert ctrl.dispatch("save", {})["ok"] is True
+
+    ctrl.load_job("재편집대상")
+    snap = ctrl.snapshot()
+    assert "낙찰금액" in snap["source_fields"]            # 저장 매핑 소스로 어휘 복원
+    assert snap["ignored_count"] == 0                    # 전원 활성(미사용 0)
+    assert snap["active_source_fields"] == snap["source_fields"]

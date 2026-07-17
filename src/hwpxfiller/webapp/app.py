@@ -29,13 +29,20 @@ from ..gui.file_filters import EXCEL_FILTER_PATTERN  # 확장자 단일 출처(R
 from hwpxcore.native._debug import log
 from hwpxcore.native.clipboard import set_clipboard_text
 from hwpxcore.native.dialogs import open_file_dialog, open_folder_dialog, save_file_dialog
+from hwpxcore.native.reveal import open_path as _native_open_path
+from hwpxcore.native.reveal import reveal_in_explorer as _native_reveal
 from .screen_editor import EditorController
 from .screen_home import HomeController
 from .screen_matrix import MatrixController
 from .screen_pool import PoolController
 from .screen_run import RunController
 from .screen_template import TemplateController
-from .screens import TxtController, default_pool_registry
+from .screens import (
+    TxtController,
+    collect_owned_paths,
+    default_pool_registry,
+    validate_owned_path,
+)
 
 
 WINDOW_TITLE = "HWPX Filler"  # 창 제목 = 파일 다이얼로그 소유주 창을 FindWindowW 로 찾는 키
@@ -73,6 +80,9 @@ class WebFrontend:
         # 데이터셋 풀(#26) — 단일 인스턴스를 화면들이 공유: 에디터 자동등록(#3)·실행 겨눔(#6)·
         # 관리 화면(#4)의 변경이 서로 즉시 보인다(레지스트리는 무상태 디렉터리 어댑터).
         pool_registry = default_pool_registry()
+        # 추적성 로케이트 화이트리스트(#53-B)용 레지스트리 참조(밑줄=js_api 반영 제외).
+        self._job_registry = job_registry
+        self._pool_registry = pool_registry
         # 화면 등록 — 새 화면 = 컨트롤러 1개 추가(순수 데이터는 dispatch, 네이티브는 아래 메서드).
         controllers = [
             # 홈(대시보드) — 허브. TXT 레지스트리는 즉시 기안·템플릿 관리와 공유(변경이 반영).
@@ -243,15 +253,47 @@ class WebFrontend:
         경로는 홈 컨트롤러의 손상 목록 화이트리스트로 검증한다 — 웹 페이로드로 임의
         경로를 여는 통로를 봉쇄. 실패는 ``ERROR:`` 접두.
         """
-        import subprocess
-
         try:
             target = self._controller("home").validate_corrupt_path(path)
-            # explorer /select = 파일을 선택한 채 폴더 열기(사용자가 바로 복구/검사).
-            subprocess.Popen(["explorer", "/select,", str(target)])
+            _native_reveal(target)  # explorer /select 승격 헬퍼 재사용(#53-B)
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
         return None
+
+    # ---------------------------------------- 추적성 로케이트(#53-B)
+    def copy_path(self, path: str) -> "str | None":
+        """추적성 '경로 복사' → 검증된 소유 경로를 클립보드에. 실패는 ``ERROR:`` 접두."""
+        try:
+            set_clipboard_text(str(self._validate_owned(path)))
+        except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
+            return f"ERROR: {exc}"
+        return None
+
+    def reveal_path(self, path: str) -> "str | None":
+        """추적성 '폴더에서 보기' → 검증된 소유 경로를 탐색기에서 선택 표시."""
+        try:
+            _native_reveal(self._validate_owned(path))
+        except Exception as exc:  # noqa: BLE001
+            return f"ERROR: {exc}"
+        return None
+
+    def open_path(self, path: str) -> "str | None":
+        """추적성 '열기' → 검증된 소유 경로를 OS 기본 앱으로 연다."""
+        try:
+            _native_open_path(self._validate_owned(path))
+        except Exception as exc:  # noqa: BLE001
+            return f"ERROR: {exc}"
+        return None
+
+    def _validate_owned(self, path: str) -> str:
+        """소유 화이트리스트(작업 템플릿·등록 데이터·현재 세션 경로)로 검증 — 순수 로직은
+        :func:`screens.collect_owned_paths`/`validate_owned_path`(헤드리스 테스트 대상)."""
+        ed = self._controller("editor")
+        run = self._controller("run")
+        session = [getattr(ed, "template_path", ""), getattr(ed, "data_path", ""),
+                   getattr(run, "out_dir", "")]
+        owned = collect_owned_paths(self._job_registry, self._pool_registry, session)
+        return validate_owned_path(path, owned)
 
     def open_job_in_editor(self, name: str) -> "str | None":
         """홈 '편집' → 저장된 작업을 에디터 편집 세션으로 복원(#26 편집 모드).

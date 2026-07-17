@@ -75,6 +75,7 @@ def test_select_job_then_data_populates_records_and_badges(tmp_path):
     snap = ctrl.snapshot()
     assert snap["has_data"] is True and snap["record_count"] == 2
     assert snap["selected_count"] == 2  # 데이터 겨눔 = 전체 선택 초기화
+    assert snap["template_path"].endswith("t.hwpx")  # 추적성 로케이트용 전체 경로(#53-B)
     states = {s["name"]: s["state"] for s in snap["field_states"]}
     assert states["공고명"] == "filled"
     assert states["추정가격"] == "missing"  # rec0 빈값 → 미입력
@@ -279,3 +280,83 @@ def test_file_load_sets_source_label_too(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     ctrl.load_data_path(_data_csv(tmp_path))
     assert ctrl.snapshot()["data_source_label"] == "파일: d.csv"
+
+
+# ------------------------------------------- 기본 데이터셋 자동 조준(#53-A)
+def _job_with_default(ctrl, pool, tmp_path, ref, *, register=True):
+    """'공고서' 작업에 기본 데이터셋 참조를 붙여 재저장. register=True 면 동명 CSV 풀 항목 등록."""
+    job = ctrl.registry.load("공고서")
+    job.default_dataset_ref = ref
+    ctrl.registry.save(job, allow_overwrite=True)
+    if register:
+        pool.save(DatasetPoolItem(name=ref, kind="excel", opts={"path": _data_csv(tmp_path)}))
+
+
+def test_select_job_auto_aims_default_dataset(tmp_path):
+    """기본 데이터셋 참조가 있으면 작업 선택 시 실행 시점에 다시 읽어 자동 조준(#53-A)."""
+    ctrl, pool = _pool_controller(tmp_path)
+    _job_with_default(ctrl, pool, tmp_path, "7월공고")
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    snap = ctrl.snapshot()
+    assert snap["has_data"] is True and snap["record_count"] == 2      # 자동 재읽기(싱크)
+    assert snap["data_source_label"] == "등록 데이터: 7월공고"
+    assert snap["selected_count"] == 2                                  # 겨눔 = 전체 선택 초기화
+    assert snap["data_notice"]["level"] == "ok" and "자동 연결" in snap["data_notice"]["text"]
+
+
+def test_select_job_dead_default_ref_is_loud_no_silent_fallback(tmp_path):
+    """죽은 기본 참조는 조용한 폴백 금지 — 미겨눔 + 원인·복구 동선(다시 연결)을 재진술(#53-A)."""
+    ctrl, pool = _pool_controller(tmp_path)
+    _job_with_default(ctrl, pool, tmp_path, "없는참조", register=False)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    snap = ctrl.snapshot()
+    assert snap["has_data"] is False                       # 자동 겨눔 실패 = 미겨눔(폴백 없음)
+    assert snap["data_source_label"] == ""
+    assert snap["data_notice"]["level"] == "warn"
+    assert "없는참조" in snap["data_notice"]["text"] and "다시 연결" in snap["data_notice"]["text"]
+
+
+def test_select_job_without_default_ref_keeps_manual(tmp_path):
+    """참조 없는 작업은 현행처럼 데이터 미겨눔으로 시작 — 자동 재진술도 없음."""
+    ctrl, _pool = _pool_controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})       # 기본 참조 없음
+    snap = ctrl.snapshot()
+    assert snap["has_data"] is False and snap["data_notice"] is None
+
+
+def test_manual_data_clears_auto_aim_notice(tmp_path):
+    """자동 조준 후 사용자가 직접 데이터를 겨누면 자동 조준 재진술이 소거된다(임시 데이터=기본 불변)."""
+    ctrl, pool = _pool_controller(tmp_path)
+    _job_with_default(ctrl, pool, tmp_path, "7월공고")
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    assert ctrl.snapshot()["data_notice"] is not None
+    ctrl.load_data_path(_data_csv(tmp_path))               # 수동 파일 겨눔
+    snap = ctrl.snapshot()
+    assert snap["data_notice"] is None
+    assert snap["data_source_label"].startswith("파일:")
+    # 실행 화면은 작업 JSON 을 쓰지 않으므로 기본 데이터 참조는 그대로다(임시 override).
+    assert ctrl.registry.load("공고서").default_dataset_ref == "7월공고"
+
+
+def test_auto_aim_nara_ref_is_frozen_warn(tmp_path):
+    """기본 참조가 나라 항목이면 자동 조준도 동결 거절 warn — 공유 관문 문구 그대로(#53-A)."""
+    ctrl, pool = _pool_controller(tmp_path)
+    pool.save(DatasetPoolItem(
+        name="나라기본", kind="nara", opts={"bgn_dt": "202607010000", "end_dt": "202607080000"}))
+    _job_with_default(ctrl, pool, tmp_path, "나라기본", register=False)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    snap = ctrl.snapshot()
+    assert snap["has_data"] is False and snap["data_notice"]["level"] == "warn"
+    assert "동결" in snap["data_notice"]["text"]
+
+
+def test_auto_aim_ambiguous_sheet_ref_is_warn(tmp_path):
+    """기본 참조가 시트 미지정 다중시트면 자동 조준도 조용한 첫 시트 대신 warn 거절(#33·#53-A)."""
+    multi = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "multi_sheet.xlsx"
+    ctrl, pool = _pool_controller(tmp_path)
+    pool.save(DatasetPoolItem(name="모호기본", kind="excel", opts={"path": str(multi)}))
+    _job_with_default(ctrl, pool, tmp_path, "모호기본", register=False)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    snap = ctrl.snapshot()
+    assert snap["has_data"] is False and snap["data_notice"]["level"] == "warn"
+    assert "시트" in snap["data_notice"]["text"]
