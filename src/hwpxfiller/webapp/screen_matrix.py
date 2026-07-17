@@ -80,8 +80,15 @@ class MatrixController(PoolTargetingMixin):
         return self.selection.selected_indices()
 
     def _job_rows(self) -> "list[dict]":
+        # 작업별 템플릿 로케이트(#67) — 스냅샷당 1회 목록 조회로 경로 맵 구성(행별 load 금지).
+        # 손상 작업은 list_jobs 가 이미 제외 → 맵 미존재 = "" → PathTrack 미렌더.
+        tpl = {j.name: j.template_path for j in self.registry.list_jobs()}
         return [
-            {"name": n, "selected": self.vm.is_selected(n)}
+            {
+                "name": n,
+                "selected": self.vm.is_selected(n),
+                "template_path": tpl.get(n, ""),
+            }
             for n in self.vm.all_job_names()
         ]
 
@@ -134,6 +141,8 @@ class MatrixController(PoolTargetingMixin):
             # 소스 종류 병기 라벨(#26) — 저장 상태가 아니라 플래그에서 매번 합성(K8).
             "data_source_label": source_label(self.data_source, self.data_label),
             "has_data": self.vm.datasource is not None,
+            # 공통 데이터 로케이트(#67) — 겨눔 시점 캐시(PoolTargetingMixin/load_data_path).
+            "data_track_path": self.data_track_path,
             "out_dir": self.out_dir,
             "record_count": len(self.vm.records),
             "selected_count": self.selection.selected_count(),
@@ -155,6 +164,7 @@ class MatrixController(PoolTargetingMixin):
             raise ValueError("레코드 0건 — 데이터를 바꾸지 않았습니다.")
         self.data_label = Path(path).name
         self.data_source = "file"  # 병기 라벨은 스냅샷이 합성(#26·K8)
+        self.data_track_path = path  # 로케이트(#67) — 겨눔 시점 캐시
         self.selection = SelectionModel(len(records))  # 데이터 변경 → 전체 선택 초기화
         self._push()
 

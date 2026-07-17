@@ -125,6 +125,8 @@ class DatasetPoolRow:
     note: str = ""
     # 로케이트 대상 파일 경로(추적성 #53-B) — 엑셀 참조만. nara/파이프라인은 파일이 아니라 "".
     locate_path: str = ""
+    # 확정 시트(#67 다시 연결 프리필) — 엑셀 참조만. 미지정/비엑셀은 "".
+    sheet: str = ""
 
     def actions(self) -> "list[PoolAction]":
         return available_actions(self.status)
@@ -133,6 +135,8 @@ class DatasetPoolRow:
     def from_item(cls, item: DatasetPoolItem) -> "DatasetPoolRow":
         raw = item.opts.get("path") if isinstance(item.opts, dict) else None
         locate_path = raw if (item.kind == "excel" and isinstance(raw, str)) else ""
+        raw_sheet = item.opts.get("sheet") if isinstance(item.opts, dict) else None
+        sheet = raw_sheet if (item.kind == "excel" and isinstance(raw_sheet, str)) else ""
         return cls(
             name=item.name,
             kind=item.kind,
@@ -143,6 +147,7 @@ class DatasetPoolRow:
             reference=reference_summary(item),
             note=item.note,
             locate_path=locate_path,
+            sheet=sheet,
         )
 
 

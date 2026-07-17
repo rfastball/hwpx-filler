@@ -240,6 +240,7 @@
         <input class="field mono" data-act="pattern" value="${esc(s.pattern)}"></div>
       ${provenanceBlock(s)}
       ${datasetBlock(s)}
+      ${defaultDatasetBlock(s)}
       ${filenameTokenHelp(s)}
       <div id="save-msg" class="note" style="display:none"></div>`;
   }
@@ -282,6 +283,30 @@
         저장(행·내용 없음), 실행 화면에서 작업을 고르면 자동 조준해 실행 때 다시 읽습니다.</p>
       <div class="row"><span class="lbl" style="width:76px">등록 이름</span>
         <input class="field" data-act="dataset-name" value="${esc(s.dataset_name)}"></div>
+    </div>`;
+  }
+
+  /* 기본 데이터 연결 상태(#67) — 편집 모드에서 복원한 참조의 현재 상태 재진술 + 로케이트.
+     이 세션이 데이터를 새로 골랐으면 서버가 null 을 줘 자동등록 블록이 서사를 맡는다. */
+  function defaultDatasetBlock(s) {
+    const d = s.default_dataset;
+    if (!d) return "";
+    let line;
+    if (d.status === "linked") {
+      line = `<p class="hint" style="margin-top:0">기본 데이터: <b>${esc(d.name)}</b> (연결됨)
+        ${PathTrack.affordances(d.path)}</p>`;
+    } else if (d.status === "dead") {
+      line = `<p class="hint danger" style="margin-top:0">⚠ 기본 데이터: <b>${esc(d.name)}</b> —
+        참조 파일이 없습니다(${esc(d.path)}). 데이터 관리에서 [다시 연결…]하세요.</p>`;
+    } else if (d.status === "corrupt") {  // 항목 JSON 손상 — 삭제와 다른 조치(데이터 관리 격리 표시와 정합)
+      line = `<p class="hint danger" style="margin-top:0">⚠ 기본 데이터: <b>${esc(d.name)}</b> —
+        등록 데이터를 읽을 수 없습니다(손상). 데이터 관리에서 확인하세요.</p>`;
+    } else {  // missing — 풀 항목 자체가 사라짐
+      line = `<p class="hint danger" style="margin-top:0">⚠ 기본 데이터: <b>${esc(d.name)}</b> —
+        등록 데이터에 없습니다(삭제됨). 데이터 관리에서 등록하거나 데이터를 다시 선택하세요.</p>`;
+    }
+    return `<div class="grp" style="margin-top:10px">
+      <span class="cap">기본 데이터 연결</span>${line}
     </div>`;
   }
 

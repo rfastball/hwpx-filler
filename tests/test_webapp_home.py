@@ -201,3 +201,34 @@ def test_corrupt_actions_reject_foreign_paths(tmp_path):
     with pytest.raises(ValueError, match="목록에 없는"):
         ctrl.dispatch("delete_corrupt", {"path": str(victim), "confirm": True})
     assert victim.exists()                               # 무손상
+
+
+# ------------------------------------------------- 템플릿 다시 연결(#67)
+def test_home_relink_template_commits_and_refreshes(tmp_path):
+    """홈 카드 재연결 — run 과 공유하는 게이트로 커밋 후 KPI/카드가 최신화된다(#67)."""
+    from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+
+    ctrl, _ = _controller(tmp_path)
+    assert ctrl.snapshot()["kpi"]["missing_template_count"] == 1  # /none/t.hwpx 부재
+    tpl = tmp_path / "새템플릿.hwpx"
+    body = (
+        '<hp:run><hp:ctrl><hp:fieldBegin name="공고명"/></hp:ctrl></hp:run>'
+        '<hp:run><hp:t>{{공고명}}</hp:t></hp:run>'
+        '<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>'
+    )
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" '
+        'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p>'
+        + body + '</hp:p></hs:sec>'
+    ).encode()
+    HwpxPackage(entries={MIMETYPE_NAME: MIMETYPE_VALUE,
+                         "Contents/section0.xml": xml}).save(str(tpl))
+
+    res = ctrl.dispatch("relink_template", {"name": "공고서", "path": str(tpl)})
+    assert res["needs_confirm"] is True                    # 1차 = 재진술 확인
+    res = ctrl.dispatch(
+        "relink_template", {"name": "공고서", "path": str(tpl), "confirm": True})
+    assert res["relinked"] is True and res["restated"]
+    snap = ctrl.snapshot()
+    assert snap["kpi"]["missing_template_count"] == 0      # 카드/KPI 최신화(refresh)
