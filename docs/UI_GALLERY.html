@@ -1,0 +1,201 @@
+<!doctype html>
+<!--
+  살아있는 컴포넌트 갤러리 (개발 전용 · 배포 exe 미포함).
+  실 web/css/tokens.css + web/css/app.css 를 <link> 로 그대로 물어 드리프트 0 —
+  app.css 를 고치면 이 페이지가 자동 반영된다. 컴포넌트를 모든 상태로 한눈에 보는
+  디자인 참조이자 반복 작업 표면. 대조: docs/UI_PROTOTYPE_APPB.html 은 CSS 를 인라인
+  복사(색만 생성기 동기)라 드리프트 가능 — 갤러리가 그 갭을 메운다.
+  여는 법: 저장소 루트에서 `python -m http.server` 후 http://localhost:8000/docs/UI_GALLERY.html
+  (또는 브라우저로 파일 직접 열기). 새 컴포넌트가 생기면 아래에 스니펫 한 조각을 추가한다.
+-->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HWPX 필러 · 컴포넌트 갤러리</title>
+<link rel="stylesheet" href="../web/css/tokens.css">
+<link rel="stylesheet" href="../web/css/app.css">
+<style>
+/* 갤러리 전용 레이아웃 스캐폴드 — 색은 앱 토큰(--a-*·--n-*) 참조만, 하드코딩 금지.
+   app.css 전역 body(배경·타이포)를 그대로 상속한다. 앱 클래스와 이름 충돌 없음. */
+html,body{height:auto}
+body{padding:0}
+.gal-mast{padding:22px 24px 18px;border-bottom:1px solid var(--a-border);background:var(--a-card)}
+.gal-mast h1{margin:0;font-size:19px;letter-spacing:-.01em}
+.gal-mast p{margin:6px 0 0;color:var(--a-muted);font-size:12.5px;line-height:1.6;max-width:88ch}
+.gal-mast .path{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:11px;
+  color:var(--n-ink-soft);background:var(--n-track);padding:1px 6px;border-radius:4px}
+.catalog{padding:18px;display:flex;flex-direction:column;gap:14px;max-width:1120px;margin:0 auto}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:680px){.grid2{grid-template-columns:1fr}}
+.spec{border:1px solid var(--a-border);border-radius:10px;background:var(--a-card);padding:13px 15px}
+.spec-h{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:10px;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--a-muted);margin-bottom:11px}
+.spec .row{flex-wrap:wrap}
+.galapp{height:auto!important;min-height:230px;border:1px solid var(--a-border);
+  border-radius:10px;overflow:hidden}
+.galapp .stage{padding:16px;overflow:visible}
+.galapp .rail{overflow:visible}
+.stack{display:flex;flex-direction:column;gap:9px}
+</style>
+</head>
+<body>
+<header class="gal-mast">
+  <h1>컴포넌트 갤러리</h1>
+  <p>실 <span class="path">web/css/tokens.css</span> + <span class="path">web/css/app.css</span> 를 그대로 링크 — <b>드리프트 0</b>. 앱 컴포넌트를 모든 상태로 전시하는 디자인 참조·반복 표면(라이트 전용, 현재 앱 거울 — 다크모드는 app.css 에 들어오면 자동 반영).</p>
+</header>
+
+<main class="catalog">
+
+  <div class="spec">
+    <div class="spec-h">.app · rail nav — 앱 셸</div>
+    <div class="app galapp">
+      <nav class="rail">
+        <div class="brand">HWPX 필러</div>
+        <div class="rl">작성</div>
+        <button class="navbtn" aria-current="true"><span class="ni">홈</span><span class="n">홈</span><span class="d">대시보드</span></button>
+        <button class="navbtn"><span class="ni">편</span><span class="n">작업 편집</span><span class="d">템플릿·매핑</span></button>
+        <button class="navbtn"><span class="ni">실</span><span class="n">실행</span><span class="d">단일 생성</span></button>
+        <button class="navbtn"><span class="ni">매</span><span class="n">매트릭스</span><span class="d">다중 작업</span></button>
+        <div class="rl">라이브러리</div>
+        <button class="navbtn"><span class="ni">템</span><span class="n">템플릿 관리</span><span class="d">HWPX·TXT</span></button>
+      </nav>
+      <div class="stage">
+        <div class="scr-head"><div><h1>홈</h1><p class="sub">등록된 작업과 최근 실행</p></div><span class="status" data-level="ok">준비됨</span></div>
+        <div class="kpis">
+          <div class="kpi"><div class="v">128</div><div class="l">등록 작업</div></div>
+          <div class="kpi warn"><div class="v">3</div><div class="l">확인 대기</div></div>
+          <div class="kpi danger"><div class="v">1</div><div class="l">손상 템플릿</div></div>
+        </div>
+        <div class="tracks">
+          <div class="track hwpx"><div class="th"><span class="tt">HWPX 트랙</span><span class="status" data-level="ok">준비됨</span></div><p class="tsub">서식 문서 채우기</p>
+            <div class="jcard"><div class="jn">물품 구매 공고 <span class="pill ok">컴파일됨</span></div><div class="jm">mulpum.hwpx · 12 필드</div><div class="jfoot"><span class="jr">2일 전 실행</span><button class="btn sm">실행</button></div></div>
+          </div>
+          <div class="track txt"><div class="th"><span class="tt">TXT 트랙</span></div><p class="tsub">즉시 기안</p>
+            <div class="tplcard"><div class="tplcard-top"><span class="tplcard-name">회의 안내문</span><span class="pill muted">초안</span></div><div class="tplcard-meta muted">6 토큰</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="spec"><div class="spec-h">.btn — primary / default / sm / icon / disabled</div>
+      <div class="row"><button class="btn primary">문서 생성</button><button class="btn">취소</button><button class="btn sm">작게</button><button class="btn icon">⋯</button><button class="btn primary" disabled>비활성</button></div>
+    </div>
+    <div class="spec"><div class="spec-h">.status[data-level] — 3 상태</div>
+      <div class="row"><span class="status">대기</span><span class="status" data-level="ok">완료</span><span class="status" data-level="warn">확인 필요</span></div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="spec"><div class="spec-h">.fb — 필드 상태 배지 5종</div>
+      <div class="statebadges"><span class="fb fill">이름 <b>채움</b></span><span class="fb blank">비고 <b>빈칸</b></span><span class="fb missing">금액 <b>미입력</b></span><span class="fb missing ack">금액 <b>확인함</b></span><span class="fb drift">규격 <b>드리프트</b></span></div>
+    </div>
+    <div class="spec"><div class="spec-h">.pill — compile_badge 4종</div>
+      <div class="row"><span class="pill ok">컴파일됨</span><span class="pill warn">필드화 필요</span><span class="pill danger">오류</span><span class="pill muted">미확인</span></div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="spec"><div class="spec-h">.tok — 토큰 상태 칩 (txt)</div>
+      <div class="stack" style="gap:0">
+        <div class="tok fill"><span class="tname">{{기관명}}</span><span class="st">채움</span></div>
+        <div class="tok blank"><span class="tname">{{비고}}</span><span class="st">빈칸</span></div>
+        <div class="tok missing"><span class="tname">{{계약금액}}</span><span class="st">미입력</span></div>
+      </div>
+    </div>
+    <div class="spec"><div class="spec-h">.jcard — 작업 카드 (정상/손상)</div>
+      <div class="stack">
+        <div class="jcard"><div class="jn">용역 계약서 <span class="pill ok">컴파일됨</span></div><div class="jm">yongyeok.hwpx · 8 필드</div><div class="jfoot"><span class="jr">방금</span><button class="btn sm">실행</button></div></div>
+        <div class="jcard corrupt"><div class="jn">낡은 서식 <span class="pill danger">손상</span></div><div class="jm">열 수 없음</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="spec"><div class="spec-h">table.map — 매핑 표 4 행 상태 (confirmed / unconfirmed / unmatched / schema-only)</div>
+    <div class="tblwrap"><table class="map"><thead><tr><th></th><th>필드</th><th>소스</th><th>미리보기</th></tr></thead><tbody>
+      <tr class="r-confirmed"><td><input class="cbx" type="checkbox" checked></td><td class="fname">기관명 <span class="tbadge">TEXT</span></td><td><select class="sel"><option>A열</option></select></td><td class="pv">조달청</td></tr>
+      <tr class="r-unconfirmed"><td><input class="cbx" type="checkbox"></td><td class="fname">담당자</td><td><select class="sel"><option>B열</option></select></td><td class="pv">홍길동</td></tr>
+      <tr class="r-unmatched"><td><input class="cbx" type="checkbox"></td><td class="fname">계약금액</td><td><select class="sel"><option>—</option></select></td><td class="pv emptyval">미매칭</td></tr>
+      <tr class="r-schemaonly"><td><input class="cbx" type="checkbox"></td><td class="fname">비고</td><td><select class="sel"><option>없음</option></select></td><td class="pv">—</td></tr>
+    </tbody></table></div>
+  </div>
+
+  <div class="grid2">
+    <div class="spec"><div class="spec-h">.wsteps — 마법사 단계 탭</div>
+      <div class="wsteps"><div class="wstep-tab done"><span class="k">1</span>템플릿</div><div class="wstep-tab done"><span class="k">2</span>데이터</div><div class="wstep-tab" aria-current="true"><span class="k">3</span>매핑</div><div class="wstep-tab"><span class="k">4</span>저장</div></div>
+    </div>
+    <div class="spec"><div class="spec-h">.reclist — 대상 문서 목록</div>
+      <div class="reclist" style="margin:0">
+        <div class="rec"><input type="checkbox" checked><span class="rf">조달청_2024_0012.hwpx</span></div>
+        <div class="rec"><input type="checkbox" checked><span class="rf">조달청_2024_0013.hwpx</span></div>
+        <div class="rec muted"><span>3건 더…</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="spec"><div class="spec-h">.field / .ctl — 입력·라벨</div>
+      <div class="row" style="gap:12px;align-items:flex-end">
+        <div class="ctl" style="min-width:200px"><span class="lbl">파일명 패턴</span><input class="field" value="{기관}_{일자}"></div>
+        <div class="ctl" style="min-width:160px"><span class="lbl">읽기 전용</span><input class="field ro" value="자동 생성" readonly></div>
+      </div>
+    </div>
+    <div class="spec"><div class="spec-h">.jobbrowser — group-by 렌즈 + facet 칩</div>
+      <div class="jobbrowser" style="margin:0">
+        <div class="ctl"><span class="lbl">묶기</span><select class="field sm"><option>상태별</option><option>템플릿별</option></select></div>
+        <div class="facets"><span class="pill ok">컴파일됨 12</span><span class="pill warn">필드화 3</span><span class="pill muted" disabled>미확인 0</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="spec"><div class="spec-h">.bar / .run-result / .logbox — 진행·결과·로그</div>
+      <div class="bar"><i style="width:66%"></i></div>
+      <div class="run-result ok">12건 중 12건 생성 완료</div>
+      <div class="logbox">[10:22:01] 시작…
+[10:22:03] 조달청_2024_0012.hwpx ✓
+[10:22:05] 조달청_2024_0013.hwpx ✓</div>
+    </div>
+    <div class="spec"><div class="spec-h">.note — 게이트·경고·성공 박스</div>
+      <div class="stack" style="gap:0">
+        <div class="note okbox">모든 필드가 확정되었습니다.</div>
+        <div class="note warnbox">2개 필드가 비어 있습니다 — 확인 후 진행하세요.</div>
+        <div class="note dangerbox">계약금액이 미입력 상태입니다. 생성할 수 없습니다.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="spec" style="background:var(--a-window)"><div class="spec-h">.grp — 캡션 필드셋</div>
+      <div class="grp" style="margin-top:4px"><span class="cap">데이터 소스</span>
+        <div class="row" style="gap:9px"><input class="field" value="자료.xlsx" readonly><button class="btn sm">변경</button></div>
+        <p class="hint">엑셀 파일에서 값을 가져옵니다.</p>
+      </div>
+    </div>
+    <div class="spec"><div class="spec-h">.continue-runs — 이어서 실행</div>
+      <div class="continue-runs" style="margin:0">
+        <div class="cr-head">이어서 실행</div>
+        <div class="continue-run"><span class="name">물품 구매 공고</span><span class="when">2일 전</span><button class="btn sm">실행</button></div>
+        <div class="continue-run"><span class="name">용역 계약서</span><span class="when">어제</span><button class="btn sm">실행</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="spec"><div class="spec-h">.empty — 빈 상태(온보딩)</div>
+      <div class="empty" style="margin:0"><div class="heading">아직 작업이 없습니다</div><p>템플릿을 등록하고 첫 작업을 만들어 보세요.</p><button class="btn primary">새 작업</button></div>
+    </div>
+    <div class="spec"><div class="spec-h">.modal-card — 확인 다이얼로그</div>
+      <div class="modal-card" style="max-width:100%">
+        <h3>덮어쓰기 확인</h3>
+        <p class="muted" style="margin:0;font-size:13px">이미 존재하는 3개 문서를 덮어씁니다. 계속할까요?</p>
+        <div class="modal-actions"><button class="btn">취소</button><button class="btn primary">덮어쓰기</button></div>
+      </div>
+    </div>
+  </div>
+
+</main>
+</body>
+</html>
