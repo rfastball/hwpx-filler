@@ -599,6 +599,44 @@ def test_autoregister_preserves_archived_status_and_note(tmp_path):
     assert item.opts["sheet"] == "낙찰현황"
 
 
+# ------------------------------------------------- 작성 출처 provenance(#53-C)
+def test_save_stamps_provenance_on_mapping(tmp_path):
+    """저장 시 매핑에 작성 출처 지문(템플릿·데이터·스키마·시각)이 새겨진다(#53-C)."""
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "출처작업")
+    ctrl.dispatch("save", {})
+    prov = JobRegistry(tmp_path / "jobs").load("출처작업").mapping.provenance
+    assert prov["template"].endswith(".hwpx")
+    assert prov["dataset"] == "multi_sheet"
+    assert prov["template_fields"]                    # 템플릿 스키마 지문
+    assert prov["authored_at"] and prov["updated_at"]  # 작성/갱신 시각
+    # 순수 메타 — 실행 계약(source_keys)과 별개 축.
+    assert isinstance(prov, dict)
+
+
+def test_edit_save_preserves_authored_at_updates_updated_at(tmp_path):
+    """편집 재저장은 최초 작성시각(authored_at)을 보존하고 updated_at 만 갱신한다(#53-C)."""
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "출처편집")
+    ctrl.dispatch("save", {})
+    first = JobRegistry(tmp_path / "jobs").load("출처편집").mapping.provenance
+    authored = first["authored_at"]
+
+    ctrl.load_job("출처편집")
+    assert ctrl.snapshot()["provenance"]["template"].endswith(".hwpx")  # 편집 모드 표시
+    ctrl.dispatch("set_pattern", {"pattern": "새-{{ID}}"})
+    ctrl.dispatch("save", {"confirm_overwrite": True})
+    second = JobRegistry(tmp_path / "jobs").load("출처편집").mapping.provenance
+    assert second["authored_at"] == authored          # 최초 작성시각 보존
+
+
+def test_new_session_has_no_provenance(tmp_path):
+    """저장 전(신규 세션)엔 표시할 작성 출처가 없다."""
+    ctrl, _ = _controller26(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    assert ctrl.snapshot()["provenance"] is None
+
+
 # ------------------------------------------- 기본 데이터셋 연결(#53-A)
 def test_save_with_data_links_default_dataset_ref(tmp_path):
     """데이터를 골라 저장하면 자동등록 이름이 작업의 기본 데이터셋 참조로 연결된다(#53-A)."""

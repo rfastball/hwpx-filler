@@ -238,9 +238,37 @@
         <input class="field" data-act="name" value="${esc(s.name)}" placeholder="예: 공고서 자동생성"></div>
       <div class="row"><span class="lbl" style="width:76px">파일명 패턴</span>
         <input class="field mono" data-act="pattern" value="${esc(s.pattern)}"></div>
+      ${provenanceBlock(s)}
       ${datasetBlock(s)}
       ${filenameTokenHelp(s)}
       <div id="save-msg" class="note" style="display:none"></div>`;
+  }
+
+  /* 작성 출처 provenance(#53-C) — 이 매핑이 어느 템플릿·데이터 스키마에서 작성됐는지
+     되짚는 설명 메타(실행 게이트 아님). 편집 모드에서 복원된 경우만 표시. */
+  function provenanceBlock(s) {
+    const p = s.provenance;
+    if (!p) return "";
+    const when = p.updated_at
+      ? (p.authored_at && p.authored_at !== p.updated_at
+          ? `작성 ${esc(p.authored_at)} · 갱신 ${esc(p.updated_at)}`
+          : `작성 ${esc(p.updated_at)}`)
+      : "";
+    const line = (label, val) =>
+      val ? `<div class="hint" style="margin-top:0"><b>${label}</b> ${esc(val)}</div>` : "";
+    const drift = (p.template_fields && s.fields && s.fields.length
+        && p.template_fields !== s.fields.map((f) => f.name).join(" · "))
+      ? `<div class="hint danger" style="margin-top:var(--sp-4)">⚠ 작성 당시와 템플릿 필드 구성이 다릅니다 — 매핑 재검토가 필요할 수 있습니다.</div>`
+      : "";
+    return `<div class="grp" style="margin-top:var(--sp-12)">
+      <span class="cap">작성 출처</span>
+      ${line("템플릿", p.template)}
+      ${line("데이터", p.dataset)}
+      ${line("템플릿 스키마", p.template_fields)}
+      ${line("데이터 스키마", p.source_keys)}
+      ${when ? `<div class="hint muted" style="margin-top:0">${when}</div>` : ""}
+      ${drift}
+    </div>`;
   }
 
   /* 선언 데이터 자동등록(#26/#18 31A5A484-C) — 검토용으로 고른 데이터를 등록 데이터로

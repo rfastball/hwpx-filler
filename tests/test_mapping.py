@@ -217,6 +217,33 @@ def test_profile_load_rejects_unknown_type(tmp_path):
         MappingProfile.load(path)
 
 
+def test_provenance_roundtrip_and_backward_compat():
+    """작성 출처 provenance(#53-C) — 왕복 보존 + 구 JSON(키 부재)은 기본값 {}. 순수 메타라
+    apply/실행 계약과 무관(실행은 여전히 mappings 만 소비)."""
+    profile = MappingProfile(
+        name="p",
+        mappings=[FieldMapping("공고명", "bidNtceNm")],
+        provenance={"template": "공고서.hwpx", "authored_at": "2026-07-17T10:00:00"},
+    )
+    back = MappingProfile.from_dict(profile.to_dict())
+    assert back.provenance == {"template": "공고서.hwpx", "authored_at": "2026-07-17T10:00:00"}
+    # 순수 메타 — 값 방출은 mappings 만으로 결정(provenance 무영향).
+    assert back.apply({"bidNtceNm": "x"}) == {"공고명": "x"}
+
+    old = {"name": "p", "mappings": []}  # provenance 필드 도입 전 JSON
+    assert MappingProfile.from_dict(old).provenance == {}
+    assert MappingProfile().provenance == {}
+
+
+def test_provenance_rejects_corrupt_type():
+    """provenance 가 dict 아니거나 축·값이 비문자열이면 loud raise(조용한 오염 금지)."""
+    base = MappingProfile(name="p").to_dict()
+    with pytest.raises(ValueError, match="provenance"):
+        MappingProfile.from_dict({**base, "provenance": ["x"]})
+    with pytest.raises(ValueError, match="문자열"):
+        MappingProfile.from_dict({**base, "provenance": {"template": 5}})
+
+
 def test_missing_type_defaults_to_text_not_blank():
     """type 생략은 값 매핑 text literal 이며 blank 선언이 아니다."""
     loaded = MappingProfile.from_dict({"mappings": [{
