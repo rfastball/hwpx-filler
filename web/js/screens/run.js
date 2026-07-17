@@ -69,6 +69,19 @@
     // 소스 종류 병기 라벨("파일: x" / "등록 데이터: 이름", #26 #6) — 서버가 플래그에서 합성(K8).
     $("runDataLabel").value = s.data_source_label || "";
     $("outDir").value = s.out_dir || "";
+    // 기본 데이터셋 자동 조준 재진술(#53-A) — 성공(ok)/실패(warn) 시끄럽게 표시.
+    const note = $("runDataNotice");
+    if (note) {
+      const n = s.data_notice;
+      if (n && n.text) {
+        note.style.display = "block";
+        note.className = "note " + (n.level === "ok" ? "okbox" : "warnbox");
+        note.textContent = (n.level === "ok" ? "✓ " : "⚠ ") + n.text;
+      } else {
+        note.style.display = "none";
+        note.textContent = "";
+      }
+    }
   }
 
   function renderPreflight(s) {
