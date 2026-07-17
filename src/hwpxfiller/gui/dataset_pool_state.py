@@ -1,9 +1,11 @@
 """데이터셋 풀 워크숍 ViewModel — Qt 비의존(링1). durable 데이터 참조 관리면.
 
-위젯(:class:`~hwpxfiller.gui.dataset_pool_panel.DatasetPoolPanel`)은 이 뷰모델을 들고
-``rows()``·``register_excel``/``register_nara``·``archive``/``retire``/``delete`` 로
-**렌더·오케스트레이션만** 한다. 참조 등록·상태 전이·행 성형은 전부 여기 산다 —
-PySide6 임포트 없이 헤드리스로 테스트된다(template_manager_state 분리를 미러링).
+웹 컨트롤러(:class:`~hwpxfiller.webapp.screen_pool.PoolController`)가 이 뷰모델을 들고
+``rows()``·``register_excel``/``register_nara``·``archive``/``activate``/``delete`` 로
+**렌더·오케스트레이션만** 한다(액션 키→핸들러 라우팅과 stale 항목 봉합은 컨트롤러 몫).
+참조 등록·상태 전이·행 성형은 전부 여기 산다 — PySide6 임포트 없이 헤드리스로
+테스트된다(template_manager_state 분리를 미러링). *(구 Qt ``DatasetPoolPanel`` 은
+PySide6 철거로 제거됨 — 이제 소비자는 웹 컨트롤러다.)*
 
 **새 코어 없음.** 레지스트리·항목은 :mod:`~hwpxfiller.core.dataset_pool` 재사용.
 등록은 **참조만** 저장한다(레코드·ServiceKey 없음) — 나라 키는 실행 복원 때 OS 저장소에서.
@@ -17,7 +19,6 @@ from pathlib import Path
 from ..core.dataset_pool import (
     STATUS_ACTIVE,
     STATUS_ARCHIVED,
-    STATUS_RETIRED,
     DatasetPoolItem,
     DatasetPoolRegistry,
     default_dataset_pool_dir,
@@ -25,18 +26,14 @@ from ..core.dataset_pool import (
 from .nara_state import NaraAcquireViewModel  # 기간 검증 단일 출처(링1→링1)
 
 # 상태 → 사람이 읽는 배지 라벨/레벨(style.py QLabel[level=...] 팔레트와 통일).
-# 경보 위계는 활성>지난(RC-26): '활성'(지금 실행에 쓰는 것)만 prominent(ok)로 세우고,
-# 보관·은퇴는 둘 다 '지난 것'이라 muted 로 둔다. 은퇴=warn(보관=muted보다 강한 경보)는
-# 위계 역전이었다 — 은퇴가 활성보다 시끄러울 이유가 없다.
+# 2상태(#5): '활성'(지금 실행에 쓰는 것)만 prominent(ok), '보관'(지난 것)은 muted.
 _BADGE_LABELS = {
     STATUS_ACTIVE: "활성",
     STATUS_ARCHIVED: "보관",
-    STATUS_RETIRED: "은퇴",
 }
 _BADGE_LEVELS = {
     STATUS_ACTIVE: "ok",
     STATUS_ARCHIVED: "muted",
-    STATUS_RETIRED: "muted",
 }
 _KIND_LABELS = {"excel": "엑셀/CSV", "nara": "나라장터", "pipeline": "파이프라인"}
 
@@ -49,22 +46,16 @@ class PoolAction:
     label: str
 
 
-# 상태 → 허용 액션(순수 단일 출처).
-#   active   → [보관][은퇴][삭제]
-#   archived → [활성화][은퇴][삭제]
-#   retired  → [활성화][삭제]
+# 상태 → 허용 액션(순수 단일 출처, 2상태·#5).
+#   active   → [보관][삭제]
+#   archived → [활성화][삭제]
+# 각 상태 정확히 2액션·겹침 0 → 라벨↔버튼 1:1(desync 구조적 제거).
 _STATE_ACTIONS = {
     STATUS_ACTIVE: (
         PoolAction("archive", "보관"),
-        PoolAction("retire", "은퇴"),
         PoolAction("delete", "삭제"),
     ),
     STATUS_ARCHIVED: (
-        PoolAction("activate", "활성화"),
-        PoolAction("retire", "은퇴"),
-        PoolAction("delete", "삭제"),
-    ),
-    STATUS_RETIRED: (
         PoolAction("activate", "활성화"),
         PoolAction("delete", "삭제"),
     ),
@@ -224,7 +215,7 @@ class DatasetPoolViewModel:
     ) -> DatasetPoolItem:
         """동명 재등록 확정 — 기존 항목의 **참조(kind+opts)만** 갱신한다(수명 보존, C3).
 
-        새 항목으로 통째 교체하면 보관/은퇴 상태가 조용히 active 로 복귀해 실행 후보에
+        새 항목으로 통째 교체하면 보관 상태가 조용히 active 로 복귀해 실행 후보에
         재등장하고 note·created_at 이 소실된다 — 확인 문구는 '참조가 새 파일로 바뀐다'만
         재진술하므로 상태·생성시각은 건드리지 않는 것이 문구와 일치한다(에디터
         ``_do_save`` 의 보존 갱신 미러). 메모는 입력이 있을 때만 교체한다 — 빈 입력은
@@ -286,15 +277,12 @@ class DatasetPoolViewModel:
     # ---------------------------------------------------------- 상태/삭제
     def _transition(self, name: str, action: str) -> None:
         item = self.registry.load(name)
-        getattr(item, action)()  # archive/retire/activate — 순수 전이
+        getattr(item, action)()  # archive/activate — 순수 전이
         self.registry.save(item)
         self.refresh()
 
     def archive(self, name: str) -> None:
         self._transition(name, "archive")
-
-    def retire(self, name: str) -> None:
-        self._transition(name, "retire")
 
     def activate(self, name: str) -> None:
         self._transition(name, "activate")
@@ -302,10 +290,3 @@ class DatasetPoolViewModel:
     def delete(self, name: str) -> None:
         self.registry.delete(name)
         self.refresh()
-
-    def dispatch(self, key: str, name: str) -> None:
-        """상태 액션 키를 전이/삭제로 라우팅(위젯 디스패처의 순수 몫)."""
-        if key in ("archive", "retire", "activate"):
-            self._transition(name, key)
-        elif key == "delete":
-            self.delete(name)

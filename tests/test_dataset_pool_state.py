@@ -10,7 +10,6 @@ import pytest
 from hwpxfiller.core.dataset_pool import (
     STATUS_ACTIVE,
     STATUS_ARCHIVED,
-    STATUS_RETIRED,
     DatasetPoolRegistry,
 )
 from hwpxfiller.gui.dataset_pool_state import (
@@ -81,23 +80,21 @@ def test_register_nara_validates_range(tmp_path):
     assert vm.is_empty()  # 거절된 등록은 흔적 없음
 
 
-def test_status_transitions_via_dispatch(tmp_path):
+def test_status_transitions(tmp_path):
+    """VM 전이 메서드(웹 컨트롤러가 _do_* 에서 직접 호출) — 활성↔보관, 삭제."""
     vm = _vm(tmp_path)
     vm.register_excel("D", "/d.xlsx")
-    vm.dispatch("archive", "D")
+    vm.archive("D")
     assert vm.rows()[0].status == STATUS_ARCHIVED
-    vm.dispatch("retire", "D")
-    assert vm.rows()[0].status == STATUS_RETIRED
-    vm.dispatch("activate", "D")
+    vm.activate("D")
     assert vm.rows()[0].status == STATUS_ACTIVE
-    vm.dispatch("delete", "D")
+    vm.delete("D")
     assert vm.is_empty()
 
 
 def test_available_actions_per_status():
-    assert [a.key for a in available_actions(STATUS_ACTIVE)] == ["archive", "retire", "delete"]
-    assert [a.key for a in available_actions(STATUS_ARCHIVED)] == ["activate", "retire", "delete"]
-    assert [a.key for a in available_actions(STATUS_RETIRED)] == ["activate", "delete"]
+    assert [a.key for a in available_actions(STATUS_ACTIVE)] == ["archive", "delete"]
+    assert [a.key for a in available_actions(STATUS_ARCHIVED)] == ["activate", "delete"]
 
 
 def test_reference_summary_unknown_kind():
@@ -136,7 +133,7 @@ def test_home_kpi_counts_active_pool_items(tmp_path):
     pvm = DatasetPoolViewModel(pool)
     pvm.register_excel("A", "/a.xlsx")
     pvm.register_excel("B", "/b.xlsx")
-    pvm.dispatch("retire", "B")  # 은퇴는 활성 카운트에서 제외
+    pvm.archive("B")  # 보관은 활성 카운트에서 제외
 
     home = HomeViewModel(JobRegistry(tmp_path / "jobs"), pool_registry=pool)
     assert home.kpi().pool_count == 1  # A 만 활성
