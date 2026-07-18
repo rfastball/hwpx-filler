@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- R-info 1부 시안 박제본(v8 확정판, 2026-07-18) — 아티팩트 게시본과 동일 내용.
+<!-- R-info 1부 시안 박제본(v8.1 확정판+12조항 개명, 2026-07-18) — 아티팩트 게시본과 동일 내용.
      라이브: https://claude.ai/code/artifact/e0bce119-c728-4595-b5fa-bd4cba4ccc14
      합의문: docs/R_INFO_JOB_HOME.md -->
 <meta charset="utf-8">
@@ -228,7 +228,7 @@ button{font:inherit}
 
 <div class="studio">
   <div class="studio-head">
-    <h1>R-info 시안 v8 — 「작업」 화면 · 변형 B 확정판</h1>
+    <h1>R-info 시안 v8.1 — 「작업」 화면 · 변형 B 확정판 (+12조항 「빠른 기안」 개명)</h1>
     <p><b>변형 B 확정(2026-07-18)</b>: 두 구획 목록 + 4존 세션 패널(상시 master-detail).
        접힘-펼침 정책 승인 · 일화 툴팁 강등 확정 · 개수 표기 규칙 확정(펼침=무표기·접힘=(N) 표지만).
        상단 두-열 프레임은 <b>기각 대안(v6) 아카이브</b> — 변형 B 프레임들이 확정안.
@@ -243,7 +243,7 @@ button{font:inherit}
       <button class="navbtn on"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l7-6 7 6M5 9v7h4v-4h2v4h4V9"/></svg></span><span class="lbl"><span class="n">작업 <i class="an">1</i></span><span class="d">저장된 작업 · 찾기와 실행</span></span></button>
       <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 4.5l2 2L7 15l-3 1 1-3zM12 6l2 2"/></svg></span><span class="lbl"><span class="n">작업 에디터</span></span></button>
       <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l10 6-10 6z"/></svg></span><span class="lbl"><span class="n">실행</span></span></button>
-      <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h5l3 3v11H6zM11 3v3h3M8 11h5M8 14h5"/></svg></span><span class="lbl"><span class="n">기안문 채우기 (txt)</span></span></button>
+      <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h5l3 3v11H6zM11 3v3h3M8 11h5M8 14h5"/></svg></span><span class="lbl"><span class="n">빠른 기안</span></span></button>
       <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3l7 4-7 4-7-4zM3 11l7 4 7-4"/></svg></span><span class="lbl"><span class="n">템플릿 관리</span></span></button>
       <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3c3.3 0 6 1 6 2.3S13.3 7.7 10 7.7 4 6.7 4 5.3 6.7 3 10 3M4 5.3v9.4C4 16 6.7 17 10 17s6-1 6-2.3V5.3"/></svg></span><span class="lbl"><span class="n">데이터 관리</span></span></button>
       <button class="rail-theme"><span class="n">테마</span><span class="d">시스템</span></button>
@@ -397,7 +397,7 @@ button{font:inherit}
         <button class="navbtn on"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l7-6 7 6M5 9v7h4v-4h2v4h4V9"/></svg></span><span class="lbl"><span class="n">작업</span><span class="d">찾기 · 실행 · 관리</span></span></button>
         <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 4.5l2 2L7 15l-3 1 1-3zM12 6l2 2"/></svg></span><span class="lbl"><span class="n">작업 에디터</span></span></button>
         <button class="navbtn" style="opacity:.35"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l10 6-10 6z"/></svg></span><span class="lbl"><span class="n">실행 <i class="an">B5</i></span></span></button>
-        <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h5l3 3v11H6zM11 3v3h3M8 11h5M8 14h5"/></svg></span><span class="lbl"><span class="n">기안문 채우기 (txt)</span></span></button>
+        <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h5l3 3v11H6zM11 3v3h3M8 11h5M8 14h5"/></svg></span><span class="lbl"><span class="n">빠른 기안</span></span></button>
         <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3l7 4-7 4-7-4zM3 11l7 4 7-4"/></svg></span><span class="lbl"><span class="n">템플릿 관리</span></span></button>
         <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3c3.3 0 6 1 6 2.3S13.3 7.7 10 7.7 4 6.7 4 5.3 6.7 3 10 3M4 5.3v9.4C4 16 6.7 17 10 17s6-1 6-2.3V5.3"/></svg></span><span class="lbl"><span class="n">데이터 관리</span></span></button>
         <button class="rail-theme"><span class="n">테마</span><span class="d">시스템</span></button>
@@ -505,7 +505,7 @@ button{font:inherit}
             <span style="font-size:var(--fs-caption);color:var(--a-muted)">복사 = 완료 이벤트(마지막 실행 스탬프) <i class="an">B9</i></span>
           </div>
           <p style="font-size:var(--fs-caption);color:var(--a-muted);margin-top:var(--sp-8)">
-            ※ 텍스트 파일 저장은 보조 동작 · 일회성 기안은 레일 「기안문 채우기」 그대로(작업 없이)</p>
+            ※ 텍스트 파일 저장은 보조 동작 · 일회성 기안은 레일 「빠른 기안」(구 기안문 채우기, 12조항)으로 — 값 수동 폼 + 템플릿 급조 버퍼, 데이터 바인딩 없음</p>
         </section>
       </div>
     </main></div>
@@ -621,7 +621,7 @@ button{font:inherit}
         <div class="h">저장된 기안 작업이 없습니다</div>
         <p>단골 기안을 작업으로 저장하면 매핑·표시형으로
 데이터가 자동으로 채워집니다.
-일회성 기안은 왼쪽 레일의 「기안문 채우기」로.</p>
+일회성 기안은 왼쪽 레일의 「빠른 기안」으로.</p>
         <button class="btn primary">＋ 새 기안 작업</button>
       </div>
     </section>
