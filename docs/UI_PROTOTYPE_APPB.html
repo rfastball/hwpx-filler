@@ -528,12 +528,8 @@
                     <span style="flex:1"></span>
                     <button class="btn" id="confAll" data-vm="MappingModel.confirm_all">모두 확정</button>
                     <button class="btn" id="unconfAll" data-vm="MappingModel.unconfirm_all">모두 해제</button>
-                    <span class="muted">매핑 프로파일</span>
-                    <button class="btn">적용…</button>
-                    <button class="btn">저장…</button>
-                    <span class="muted">JSON 파일</span>
-                    <button class="btn">불러오기…</button>
-                    <button class="btn">내보내기…</button>
+                    <!-- 매핑 프로파일 적용/저장·JSON 불러오기/내보내기 버튼은 F22 로 제거 —
+                         작업이 매핑을 자족 저장·복원, 재사용은 홈 「작업 복제」. -->
                   </div>
                 </div>
 
@@ -717,7 +713,7 @@
                     <h4>필드 상태 (토큰)</h4>
                     <div id="tokPanel" data-vm="TxtDraftViewModel.token_states"></div>
                     <p class="muted" style="font-size:11.5px;margin:10px 0 0">
-                      값은 데이터에서 채움(표시형은 매핑 프로파일 있으면 적용).
+                      값은 데이터에서 채움(순수 토큰 치환).
                       <span class="danger">미입력</span>은 <span class="mono">{{토큰}}</span> 그대로 남김.</p>
                   </div>
                   <div class="pane">

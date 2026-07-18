@@ -159,7 +159,6 @@ def test_from_dict_rejects_type_corrupt_durable_values():
         {**base, "tags": None},                # dict(None) 크래시 대신 loud
         {**base, "tags": ["금액구간"]},         # tags 가 리스트
         {**base, "last_run_at": 1720000000},   # 비문자열 시각 → refresh 의 _fmt_iso 지뢰
-        {**base, "base_mapping_name": 12345},  # 비문자열 → 계보 비교 int==str 무성 무효화
         {**base, "name": 5},                   # 비문자열 이름
         {**base, "default_dataset_ref": 7},    # 비문자열 참조 → 겨눔 이름 조회 지뢰
     ]
@@ -169,11 +168,16 @@ def test_from_dict_rejects_type_corrupt_durable_values():
 
 
 def test_from_dict_backward_compat_survives_boundary():
-    """경계 강화가 가산 하위호환을 깨지 않는다 — 신 필드 없는 구 JSON 은 여전히 기본값 로드."""
-    old = {"name": "구작업", "template_path": "/t.hwpx"}  # tags·base·last_run·version 전무
+    """경계 강화가 가산 하위호환을 깨지 않는다 — 신 필드 없는 구 JSON 은 여전히 기본값 로드.
+
+    역방향도 대칭: 제거된 필드(base_mapping_name, F22)가 남은 구 JSON 은 미지 키로
+    무시된다(타입이 깨져 있어도 — 읽지 않는 키는 검증 대상이 아니다).
+    """
+    old = {"name": "구작업", "template_path": "/t.hwpx"}  # tags·last_run·version 전무
     job = Job.from_dict(old)
     assert job.name == "구작업" and job.tags == {} and job.last_run_at == ""
-    assert job.base_mapping_name == "" and job.version == 1
+    assert job.version == 1
+    assert Job.from_dict({"name": "잔재", "base_mapping_name": "베이스"}).name == "잔재"
     assert Job.from_dict({}).name == ""  # 완전 빈 dict 도 기본값 작업
 
 
@@ -480,3 +484,21 @@ def test_job_save_failure_preserves_existing_json(tmp_path, monkeypatch):
         job.save(path)
     assert path.read_text(encoding="utf-8") == existing  # 무손상
     assert Job.load(path).name == "계약"                  # 여전히 로드 가능
+
+
+def test_clone_concurrent_calls_get_unique_names(tmp_path):
+    """동시 복제 원자화(F22 리뷰 P2) — pywebview 스레드별 호출의 동시 진입 재현.
+
+    잠금 없이는 여러 호출이 같은 '(복사본)' 이름을 고르고(파일 1개만 남음, 일부는
+    원자 쓰기 교체 경합으로 OSError) 이름이 조용히 중복 반환됐다 — 후보 선점~저장을
+    인스턴스 잠금으로 직렬화해 4개 동시 호출이 전부 유일 이름·실파일을 얻는다.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(_job())
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        names = list(ex.map(lambda _i: reg.clone("입찰공고서"), range(4)))
+    assert len(set(names)) == 4                       # 중복 이름 없음
+    for n in names:
+        assert reg.exists(n) and reg.load(n).name == n  # 이름만큼 실파일 실재

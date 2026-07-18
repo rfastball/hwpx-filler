@@ -19,9 +19,10 @@
 - **링1 — 앱/ViewModel** (Qt-free): `mapping_state.MappingModel`·`selection_state.SelectionModel`
   (기존) + `home_state.HomeViewModel`·`run_state.RunViewModel`(신규) + `data/factory.py`.
   이후 착지 VM 들도 같은 링이다: `dataset_pool_state`·`pipeline_builder_state`·
-  `vocab_workbench_state`·`template_manager_state`·`nara_state`(전부 PySide6 무임포트 —
-  `matrix_state` 는 F9 로 화면과 함께 제거,
-  링0/`data`만 의존, 2026-07-12 임포트 확인). **PySide6 임포트 금지.** 변경 통지는 Qt 시그널이 아니라 순수 옵저버 콜백. 상태는 직렬화 가능
+  `template_manager_state`·`nara_state`(전부 PySide6 무임포트 — 링0/`data`만 의존,
+  2026-07-12 임포트 확인; `matrix_state` 는 F9 로 화면과 함께,
+  `vocab_workbench_state` 는 F22 로 공유 베이스와 함께 제거).
+  **PySide6 임포트 금지.** 변경 통지는 Qt 시그널이 아니라 순수 옵저버 콜백. 상태는 직렬화 가능
   dataclass(`JobRow`·`PreflightResult`·`PrevNote`·`GateError`)로 낸다.
 - **링2 — 프레젠테이션/Qt + 토큰** (얇은 렌더러): `style.py`·위젯·화면·`app.py`. ViewModel을 들고
   바인딩, Qt 시그널·`QThread`·`QMessageBox`·`QFileDialog`는 여기서만. **디자인 패스가 만지는
