@@ -64,7 +64,7 @@
       const meta = err ? `파일을 읽을 수 없습니다: ${esc(r.error)}` : `토큰 ${r.field_count}개`;
       const edit = err ? ""
         : `<button class="btn sm" data-txt="edit" data-path="${esc(r.path)}" data-name="${esc(r.name)}">내용 편집</button>` +
-          `<button class="btn sm" data-txt="open" data-name="${esc(r.name)}">즉시 기안에서 열기</button>`;
+          `<button class="btn sm" data-txt="open" data-name="${esc(r.name)}">기안문 채우기에서 열기</button>`;
       return `<div class="tplcard">
         <div class="tplcard-top"><span class="tplcard-name" title="${esc(r.path)}">${esc(r.name)}</span>${badge}</div>
         <div class="tplcard-meta muted">${meta}</div>

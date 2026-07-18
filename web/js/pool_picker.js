@@ -105,8 +105,8 @@
             `<span class="mono sheet-name">${escHtml(it.name)}</span>` +
             `<span class="muted sheet-dim">${escHtml(it.kind_label)} · ${escHtml(it.reference)}</span></button>`
           ).join("")
-        : `<p class="muted capnote">활성 등록 데이터가 없습니다 — 작업 저장 시
-           선언한 데이터가 여기 등록되거나, 데이터 관리 화면에서 추가할 수 있습니다.</p>`)
+        : `<p class="muted capnote">활성 등록 데이터가 없습니다 — 작업 저장 때
+           함께 등록한 데이터가 여기 나타나거나, 데이터 관리 화면에서 추가할 수 있습니다.</p>`)
         + (corrupted
             ? `<p class="note dangerbox" style="margin:var(--sp-8) 0 0">⚠ ${escHtml(corrupted)}</p>`
             : "");

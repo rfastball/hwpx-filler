@@ -47,7 +47,7 @@
     const rows = s.rows || [];
     if (!rows.length) {
       host.innerHTML =
-        `<div class="tplcard muted">등록된 데이터가 없습니다 — [데이터 등록]으로 추가하거나, 작업 저장 시 선언한 데이터가 여기 모입니다.</div>`;
+        `<div class="tplcard muted">등록된 데이터가 없습니다 — [데이터 등록]으로 추가하거나, 작업 저장 때 함께 등록한 데이터가 여기 모입니다.</div>`;
       return;
     }
     host.innerHTML = rows.map((r) => {

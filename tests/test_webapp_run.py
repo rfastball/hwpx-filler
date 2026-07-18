@@ -167,7 +167,7 @@ def test_select_none_closes_record_gate(tmp_path):
     ctrl.dispatch("set_none", {})
     snap = ctrl.snapshot()
     assert snap["selected_count"] == 0
-    assert snap["gate"]["enabled"] is False and "레코드" in snap["gate"]["text"]
+    assert snap["gate"]["enabled"] is False and "생성할 문서" in snap["gate"]["text"]
 
 
 def test_unknown_run_action_is_loud(tmp_path):

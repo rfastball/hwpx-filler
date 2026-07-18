@@ -216,7 +216,7 @@ class TemplateController:
         if not p.get("confirm"):
             return {
                 "ok": True, "needs_confirm": True, "path": str(path),
-                "confirm_text": f"삭제하면 즉시 기안 목록에서도 사라집니다:\n{path}",
+                "confirm_text": f"삭제하면 기안문 채우기 목록에서도 사라집니다:\n{path}",
             }
         path.unlink()
         self._set_result(_ok(f"TXT 템플릿을 삭제했습니다: {path.stem}"))
