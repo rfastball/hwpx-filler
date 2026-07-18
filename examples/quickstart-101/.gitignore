@@ -4,6 +4,7 @@ jobs/
 datasets/
 mapping_bases/
 ui_settings.ini
+settings.json
 
 # 문서 생성 산출물
 out/
