@@ -100,6 +100,40 @@ def test_set_template_text_is_session_template(tmp_path):
     assert [t["name"] for t in snap["tokens"]] == ["이름"]
 
 
+def test_new_draft_action_resets_session(tmp_path):
+    """홈 「＋ 새 기안」의 new_draft 액션 — 세션 원자 초기화(F11, F10 「새 작업」과 대칭).
+
+    종전 bare nav 는 직전 기안의 붙여넣은 텍스트·데이터·레코드 위치를 그대로 남겨
+    라벨 '새'와 어긋났다. 초기 상태는 생성자와 같은 경로(_fresh_session) — 첫 템플릿
+    자동 선택·데이터 라벨 소거.
+    """
+    ctrl, pushes = _controller(tmp_path)
+    csv = tmp_path / "d.csv"
+    csv.write_text("공고명,추정가격,담당자\nA,1,x\nB,2,y\n", encoding="utf-8")
+    ctrl.load_data_path(str(csv))
+    ctrl.dispatch("step", {"delta": 1})                             # 레코드 2/2 로 이동
+    ctrl.dispatch("set_template_text", {"text": "붙여넣은 {{본문}}"})  # 세션 템플릿 오염
+    ctrl.dispatch("new_draft", {})
+    snap = pushes[-1][1]
+    assert snap["template_name"] == "샘플기안"                       # 첫 템플릿 재선택(생성자 동형)
+    assert "{{공고명}}" in snap["template_text"]                     # 붙여넣기 텍스트 폐기
+    assert snap["record_count"] == 0 and snap["record_index"] == 0   # 데이터 폐기
+    assert snap["data_label"] == "" and snap["data_source_label"] == ""
+
+
+def test_new_draft_without_templates_is_empty_session(tmp_path):
+    """템플릿 루트가 비어도 new_draft 는 조용한 예외 없이 빈 세션으로 초기화된다."""
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    pushes: list = []
+    ctrl = TxtController(
+        TextTemplateRegistry(empty), lambda s, snap: pushes.append((s, snap))
+    )
+    ctrl.dispatch("new_draft", {})
+    snap = pushes[-1][1]
+    assert snap["template_name"] == "(붙여넣은 텍스트)" and snap["template_text"] == ""
+
+
 def test_unknown_action_is_loud(tmp_path):
     """confirm-or-alarm: 미지 액션은 조용히 무시하지 않고 시끄럽게 거부."""
     ctrl, _ = _controller(tmp_path)

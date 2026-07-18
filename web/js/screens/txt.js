@@ -33,6 +33,10 @@
   function render(s) {
     Preserve.around(() => {  // 재구성 가로질러 포커스·캐럿·프리뷰/토큰 스크롤 보존(#28)
       LAST = s;
+      // 템플릿 콤보를 스냅샷에 동기(F11) — 서버측 선택 변경(새 기안 초기화·홈 '기안
+      // 열기' 진입)이 콤보에 보이게. 옵션에 없는 이름(붙여넣은 텍스트)은 선택 해제로 남는다.
+      const sel = $("tplSel");
+      if (sel.value !== s.template_name) sel.value = s.template_name;
       $("recIdx").textContent = `${s.record_index} / ${s.record_count}`;
       $("recPrev").disabled = s.record_count <= 1;
       $("recNext").disabled = s.record_count <= 1;

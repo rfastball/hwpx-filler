@@ -510,3 +510,70 @@ def test_source_pointer_falls_back_to_path_then_type_name(tmp_path):
     assert vm.source_pointer() == "_Src"
     vm.datasource = None
     assert vm.source_pointer() == ""
+
+
+# ------------------------------------------------ 파일명 토큰 계약 게이트(F34, RC-20 GUI 짝)
+def _job_with_pattern(tmp_path, pattern, *, blank_price=False):
+    """파일명 패턴만 바꾼 실행 작업 — blank_price=True 면 추정가격을 '비움' 선언."""
+    job = _job(tmp_path)
+    job.filename_pattern = pattern
+    if blank_price:
+        job.mapping = MappingProfile(mappings=[
+            FieldMapping(template_field="공고명", source="bidNtceNm"),
+            FieldMapping(template_field="추정가격", type="blank"),
+        ])
+    return job
+
+
+def test_unresolved_name_token_closes_gate_danger(tmp_path):
+    """매핑이 채우지 않는 파일명 토큰 = danger 차단 + 사전검증 녹색 금지(F34).
+
+    101 워크스루 실증 결함: '공고서-{{ID}}' 패턴이 무경고 통과해 미해소 {{ID}} 가
+    실파일명으로 출하됐다(CLI 엔 게이트 있음 — 표면 비대칭).
+    """
+    vm = RunViewModel(_job_with_pattern(tmp_path, "공고서-{{ID}}"))
+    vm.datasource = _Src()
+    vm.records = vm.datasource.records()
+    status = vm.refresh([0, 1], str(tmp_path / "out"))
+    assert status.gate.enabled is False and status.gate.level == "danger"
+    assert "{{ID}}" in status.gate.text and "파일명 패턴" in status.gate.text
+    assert status.preflight.level == "danger"              # '검증 완료' 녹색과 공존 금지
+    assert "파일명" in status.preflight.text
+
+
+def test_unresolved_name_token_fires_before_data_selection(tmp_path):
+    """토큰 계약은 작업 정의 수준 — 데이터 미겨눔에서도 danger 로 먼저 발화한다(F34).
+
+    고칠 수 없는 작업에 데이터부터 고르게 하지 않는다(경고 순서의 정직성)."""
+    vm = RunViewModel(_job_with_pattern(tmp_path, "공고서-{{ID}}"))  # 데이터 없음
+    status = vm.refresh([])
+    assert status.gate.enabled is False and status.gate.level == "danger"
+    assert "{{ID}}" in status.gate.text
+
+
+def test_unresolved_name_token_blocks_generate_backstop(tmp_path):
+    """validate_generate 백스톱 — 게이트 우회(워커/API 직접 호출)도 danger 차단(F34)."""
+    vm = RunViewModel(_job_with_pattern(tmp_path, "공고서-{{ID}}"))
+    vm.datasource = _Src()
+    vm.records = vm.datasource.records()
+    errors = vm.validate_generate([0, 1], str(tmp_path / "out"))
+    assert errors and errors[0].level == "danger" and "{{ID}}" in errors[0].message
+
+
+def test_blank_declared_field_token_is_unresolved(tmp_path):
+    """'비움' 선언 필드의 토큰도 미해소다 — 매핑 출력 dict 에서 빠져 리터럴로 남는다(F34)."""
+    vm = RunViewModel(_job_with_pattern(tmp_path, "doc-{{추정가격}}", blank_price=True))
+    assert vm.unresolved_name_tokens() == ["추정가격"]
+
+
+def test_mapped_and_reserved_tokens_open_gate(tmp_path):
+    """매핑 커버 토큰·예약 토큰({{date}}/{{seq}})·기본 패턴은 게이트를 닫지 않는다(F34b)."""
+    from hwpxfiller.core.job import DEFAULT_FILENAME_PATTERN
+
+    for pattern in ("doc-{{공고명}}", "doc-{{date}}-{{seq:001}}", DEFAULT_FILENAME_PATTERN):
+        vm = RunViewModel(_job_with_pattern(tmp_path, pattern))
+        vm.datasource = _Src()
+        vm.records = vm.datasource.records()
+        assert vm.unresolved_name_tokens() == []
+        status = vm.refresh([0, 1], str(tmp_path / "out"))
+        assert "파일명 패턴" not in status.gate.text
