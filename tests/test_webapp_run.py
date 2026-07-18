@@ -501,3 +501,31 @@ def test_unresolved_pattern_gate_surfaces_in_snapshot(tmp_path):
     assert "{{ID}}" in snap["gate"]["text"]
     res = ctrl.generate()
     assert res["ok"] is False and "{{ID}}" in res["error"]
+
+
+def test_generate_uses_previewed_name_timestamp(tmp_path):
+    """미리보기가 보여준 시각 = 생성 파일명 시각(리뷰 P2 — 표시=확인=생성 삼자 일치).
+
+    시·분·초 date 토큰 패턴에서 미리보기 스냅샷과 생성 클릭 사이 시계가 흘러도,
+    generate 는 마지막 미리보기(_names_now)의 시각을 재사용해 화면이 보여준 실파일명
+    그대로 생성한다(RC-02 '확인 대상=생성 대상'의 미리보기 확장).
+    """
+    from datetime import datetime
+
+    ctrl, _ = _controller(tmp_path)
+    job = ctrl.registry.load("공고서")
+    job.filename_pattern = "doc-{{date:HHmmSS}}-{{seq}}"
+    ctrl.registry.save(job, allow_overwrite=True)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    out = tmp_path / "out"
+    ctrl.set_output_folder(str(out))
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+
+    # 스냅샷 미리보기가 시각을 캡처한다 — 이후 시계 전진을 결정적으로 모사(주입).
+    assert ctrl.snapshot()["records"][0]["name"].startswith("doc-")
+    ctrl._names_now = datetime(2026, 1, 2, 3, 4, 5)
+    res = ctrl.generate()
+    assert res["ok"] is True
+    made = sorted(p.name for p in out.glob("*.hwpx"))
+    assert made == ["doc-030405-1.hwpx", "doc-030405-2.hwpx"]  # 미리보기 시각 그대로

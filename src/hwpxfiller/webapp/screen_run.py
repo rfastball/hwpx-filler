@@ -87,6 +87,9 @@ class RunController(PoolTargetingMixin):
         self.data_source = ""  # 소스 종류 플래그('file'|'pool') — 병기 라벨은 스냅샷이 합성(K8)
         self.out_dir = ""
         self._marked_fields: "list[str]" = []
+        # 레코드 미리보기의 날짜 토큰 기준 시각(F33) — 스냅샷마다 갱신되고 generate 가
+        # 재사용한다(미리보기=실파일명, RC-02 확장). None=미리보기 전(헤드리스 직행).
+        self._names_now: "datetime | None" = None
         # 기본 데이터셋 자동 조준(#53-A) 결과 재진술 — 성공(ok)/실패(warn)를 스냅샷에 노출.
         # 실패는 조용한 폴백 금지: 데이터 미겨눔으로 남기고 원인·복구 동선을 시끄럽게 알린다.
         self.data_notice_text = ""
@@ -117,6 +120,10 @@ class RunController(PoolTargetingMixin):
         레코드에만 이름을 계산한다 — 미선택 행에 확정되지 않은 이름을 지어내지
         않는다(확인-또는-경보). 식별 요약은 매핑 전 원본 값이다 — 사용자가 데이터에서
         본 그 어휘로 '어느 데이터의 문서인지'를 드러낸다.
+
+        날짜 토큰 기준 시각은 여기서 캡처해 ``_names_now`` 로 남긴다 — :meth:`generate`
+        가 같은 값을 쓰므로 시·분·초 date 토큰에서도 화면이 보여준 이름 그대로
+        생성된다(RC-02 '확인 대상=생성 대상'의 미리보기 확장).
         """
         if self.vm is None:
             return []
@@ -125,9 +132,12 @@ class RunController(PoolTargetingMixin):
         indices = self._indices()
         names: "dict[int, str]" = {}
         if indices:
-            names = dict(zip(indices, plan_output_names(
-                self.vm.job.filename_pattern, self.vm.mapped_records(indices)
-            )))
+            self._names_now = datetime.now()
+            planned = plan_output_names(
+                self.vm.job.filename_pattern, self.vm.mapped_records(indices),
+                now=self._names_now,
+            )
+            names = dict(zip(indices, planned, strict=True))
         return [
             {
                 "index": i,
@@ -375,7 +385,11 @@ class RunController(PoolTargetingMixin):
         marker = MISSING_MARKER if blanks else ""
 
         # 4) 덮어쓰기 확인(RC-02) — 같은 날짜 토큰 시각을 고정해 확인·생성이 일치하게.
-        now = datetime.now()
+        # 시각은 마지막 미리보기(_record_rows)가 캡처한 값을 재사용한다: 시·분·초 date
+        # 토큰에서도 화면의 실파일명 미리보기 그대로 생성된다(표시=확인=생성 삼자 일치).
+        # 스냅샷은 상호작용마다 다시 밀리므로 통상 초 단위 신선도다. 미리보기 없이 직행한
+        # 헤드리스 호출만 현재 시각 폴백.
+        now = self._names_now or datetime.now()
         conflicts = self.vm.output_conflicts(indices, out_dir, mark_missing=marker, now=now)
         if conflicts and not confirm_overwrite:
             names = [Path(p).name for p in conflicts]
