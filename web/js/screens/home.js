@@ -192,6 +192,25 @@
     window.Nav.go("txt");
   }
 
+  /* '＋ 새 작업'(F10) — 라벨-행동 일치: 이전 에디터 세션을 초기화한 뒤 이동한다.
+     종전 bare nav 는 직전 세션을 그대로 복원해 '새'가 '이어서 작성'을 몰래 겸했다.
+     미저장 세션은 editJob 과 대칭으로 확인 후 버린다(조용한 복원·조용한 소실 둘 다 금지). */
+  async function newJob() {
+    const busy = await Bridge.editorHasUnsavedWork();
+    if (busy && !window.confirm(
+      "에디터에 저장하지 않은 작업 세션이 있습니다.\n" +
+      "새 작업을 시작하면 그 세션의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?")) return;
+    await Bridge.call("editor", "new_session", {});
+    window.Nav.go("editor");
+  }
+
+  /* '＋ 새 기안'(F11) — F10 과 대칭. txt 출력은 일회성(복사/저장 즉시 완결)이라
+     버릴 durable 상태가 없어 확인 없이 초기화한다(원장 F11 확정). */
+  async function newTxt() {
+    await Bridge.call("txt", "new_draft", {});
+    window.Nav.go("txt");
+  }
+
   /* ---- 웹→Python 이벤트(위임) ---- */
   /* 편집 진입(#26) — 미저장 에디터 세션은 조용히 버리지 않고 확인(#25 미러) 후 복원. */
   async function editJob(name) {
@@ -287,7 +306,7 @@
       return;
     }
     const nj = e.target.closest("[data-new-job]");
-    if (nj) { window.Nav.go("editor"); return; }
+    if (nj) { newJob(); return; }
   }
 
   function onBrowserChange(e) {
@@ -309,9 +328,9 @@
     $("homeRefresh").addEventListener("click", () =>
       Bridge.call(SCREEN, "refresh", {}).catch((err) =>
         window.alert(String((err && err.message) || err))));
-    $("homeNewJob").addEventListener("click", () => window.Nav.go("editor"));
+    $("homeNewJob").addEventListener("click", newJob);
     $("homeMatrix").addEventListener("click", () => window.Nav.go("matrix"));
-    $("homeNewTxt").addEventListener("click", () => window.Nav.go("txt"));
+    $("homeNewTxt").addEventListener("click", newTxt);
     $("homeJobs").addEventListener("click", onJobsClick);
     $("homeEmpty").addEventListener("click", onJobsClick);
     $("homeContinue").addEventListener("click", onJobsClick);

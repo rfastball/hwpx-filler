@@ -498,6 +498,17 @@ class EditorController:
         self._push()
         return result
 
+    # ---- 세션 수명주기(F10)
+    def _do_new_session(self, p: dict) -> None:
+        """홈 「＋ 새 작업」 — 이전 세션 전량 초기화(라벨-행동 일치, F10).
+
+        종전 홈 버튼은 bare nav 라 직전 세션(이름·데이터·매핑·편집 원점)이 그대로
+        복원돼 '새'가 사실상 '이전 작성 계속'이었다. 미저장 확인은 호출측(웹)이
+        ``has_unsaved_work`` 로 선판단한다 — ``new_job_session``(템플릿 진입 seam)과
+        같은 분담. 초기 상태 notice 는 두지 않는다(정상은 조용히).
+        """
+        self._reset()
+
     # ---- 마법사 이동
     def _do_goto_step(self, p: dict) -> None:
         target = int(p["step"])

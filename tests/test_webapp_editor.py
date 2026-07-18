@@ -265,6 +265,26 @@ def test_new_job_session_prevents_mixed_save(tmp_path):
     assert res["ok"] is False and "확정" in res["block_reason"]  # 모델 리셋 → 미확정 차단
 
 
+def test_new_session_action_resets_prior_session(tmp_path):
+    """홈 「＋ 새 작업」의 new_session 액션 — 진행 세션 전량 초기화(F10).
+
+    종전 홈 버튼은 bare nav 라 직전 세션(이름·데이터·매핑·단계)이 그대로 복원돼
+    라벨 '새'가 사실상 '이전 작성 계속'이었다. 초기화 뒤엔 미저장 판정도 소거된다
+    (방금 저장 직후처럼 — 다음 「새 작업」이 불필요한 확인을 띄우지 않게).
+    """
+    from hwpxfiller.core.job import DEFAULT_FILENAME_PATTERN
+
+    ctrl, pushes = _controller(tmp_path)
+    _build_complete_session(ctrl, "작업A")
+    assert ctrl.has_unsaved_work() is True
+    ctrl.dispatch("new_session", {})
+    snap = pushes[-1][1]                                 # dispatch 말미 자동 푸시
+    assert ctrl.has_unsaved_work() is False
+    assert snap["step"] == 0 and snap["name"] == ""
+    assert snap["rows"] == [] and snap["data_path"] == ""
+    assert snap["pattern"] == DEFAULT_FILENAME_PATTERN   # 패턴도 기본으로 복원
+
+
 # --------------------------------------------------- #16 1·2단계 구조화 렌더 가드
 _EDITOR_JS = REPO / "web" / "js" / "screens" / "editor.js"
 
@@ -327,6 +347,22 @@ def test_load_job_restores_edit_session(tmp_path):
     assert snap["is_complete"] is True                   # 1 const + 9 blank 전부 확정 복원
     assert snap["rows"][0]["type"] == "const" and snap["rows"][0]["const"] == "v"
     assert snap["notice"] and "편집 모드" in snap["notice"]["text"]
+
+
+def test_new_session_action_clears_edit_mode(tmp_path):
+    """편집 모드 중 「＋ 새 작업」(new_session) — 편집 원점·복원 notice 까지 소거(F10).
+
+    남으면 새 세션 저장이 '원본작업' 자기-갱신으로 오판되거나 편집 배너가 거짓으로 남는다.
+    """
+    ctrl, pushes = _controller26(tmp_path)
+    _save_named(ctrl, "원본작업")
+    ctrl.load_job("원본작업")
+    assert ctrl.snapshot()["editing_origin"] == "원본작업"
+    ctrl.dispatch("new_session", {})
+    snap = pushes[-1][1]
+    assert snap["editing_origin"] == "" and snap["name"] == ""
+    assert snap["notice"] is None                        # 편집 모드 배너 소거
+    assert ctrl.has_unsaved_work() is False
 
 
 def test_load_job_model_survives_step_navigation(tmp_path):
