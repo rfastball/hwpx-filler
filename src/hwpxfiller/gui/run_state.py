@@ -153,7 +153,7 @@ def export_plan_ledger(plan: GenerationPlan, batch) -> str:
     return str(sidecar)
 
 
-# ------------------------------------------ 데이터 겨눔 리졸버(단일 실행·매트릭스 공용)
+# ------------------------------------------------------------ 데이터 겨눔 리졸버
 def resolve_file_source(path: str, *, sheet: "str | None" = None) -> "tuple[object, list[dict]]":
     """파일 경로 → (DataSource, records). 팩토리가 종류 선택(엑셀/CSV). 로드 실패는 raise.
 
@@ -170,7 +170,7 @@ def resolve_pool_source(item, *, secret_store=None, fetcher=None) -> "tuple[obje
     나라장터는 N2 취득 경로(:class:`~hwpxfiller.gui.nara_state.NaraAcquireViewModel`)를 재사용
     — resultCode '00' 정합·기간 재검증·키 마스킹 관통, 만료·인증실패는 조용한 "0건"이 아니라
     **시끄러운** ``RuntimeError``. 성공은 **키 없는 스냅샷**이라 반복 조회가 재-fetch·키 재사용을
-    하지 않는다. 엑셀 등 파일 소스는 라이브(파일 재읽기=싱크). 단일 실행·매트릭스가 공유한다.
+    하지 않는다. 엑셀 등 파일 소스는 라이브(파일 재읽기=싱크).
     """
     if getattr(item, "kind", None) == "nara":
         from .nara_state import NaraAcquireViewModel
@@ -262,7 +262,7 @@ class RunViewModel:
 
         키는 복원 순간에만 저장소에서 읽혀 스냅샷·레코드 어디에도 남지 않는다. 취득 실패는
         **마스킹된 채** raise(위젯이 시끄럽게 표시), 레코드 0건이면 상태 불변(위젯이 경고).
-        실제 복원·마스킹·스냅샷은 :func:`resolve_pool_source`(단일 실행·매트릭스 공용)가 한다."""
+        실제 복원·마스킹·스냅샷은 :func:`resolve_pool_source` 가 한다."""
         source, records = resolve_pool_source(
             item, secret_store=secret_store, fetcher=fetcher
         )
@@ -276,9 +276,9 @@ class RunViewModel:
     def set_acquired(self, datasource, records: "list[dict]") -> None:
         """이미 만들어진(키 없는) 소스·레코드를 직접 겨눈다 — 나라 애드혹 취득 등.
 
-        매트릭스 VM 과 같은 seam(RC-22) — datasource/records 직접 대입 + ``reset_acks``
-        수동 호출 관례에 의존하다 누락 시 stale ack 로 미입력 게이트가 무단 통과하던
-        잠복 함정을 원자 진입점으로 봉합한다.
+        datasource/records 직접 대입 + ``reset_acks`` 수동 호출 관례(RC-22)에 의존하다
+        누락 시 stale ack 로 미입력 게이트가 무단 통과하던 잠복 함정을 원자 진입점으로
+        봉합한다.
         """
         self.datasource = datasource
         self.records = list(records)

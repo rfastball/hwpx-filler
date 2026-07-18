@@ -110,16 +110,16 @@ ADR-E 인라인 게이트 최종형(강제 상호작용)은 위젯만 손대면 
 `<작업명> · 등록 데이터` 참조로 자동 등록된다. 여러 소스 조합은 작업 마법사에 넣지 않고
 데이터 관리의 **고급 파이프라인**에서 구성한다(#18/31A5A484-B·C).
 
-2026-07-14 #14 결정으로 두 생성 축을 모두 유지하되 사용자 레이블에서 곱의 축을 명시한다.
-단일 실행은 **`작업 1개로 선택한 데이터의 각 행마다 문서 1건`**, 매트릭스 실행은
-**`선택한 작업 여러 개에 같은 데이터 적용`**이다. 진입명은 `이 작업 실행`과
-`같은 데이터로 여러 작업 실행`, 실행 버튼은 `이 작업으로 문서 생성`과
-`여러 작업 문서 생성`으로 구분한다.
+2026-07-14 #14 결정으로 두 생성 축(단일 실행·매트릭스 실행)을 모두 유지하되 사용자
+레이블에서 곱의 축을 명시했다. (**뒤집힘 2026-07-18, F9**: 매트릭스 실행은 실사용 부재
++ "실행이 두 종류"라는 사용자 모델 오염으로 **제거** — 실행 축은 단일 실행
+(`작업 1개로 선택한 데이터의 각 행마다 문서 1건`) 하나다.
+`UX_FINDINGS_101_WALKTHROUGH.md` F9 참조.)
 
 **데이터 겨눔 콜백 계약(T2 확장).** 파일·풀·나라 겨눔을 공용화한 링2 컨트롤러
 `DataAcquireController`(`gui/batch_run.py`)는 VM 을 콜백으로만 문다 —
-**`load_file(path, sheet=None) -> records`**. run 은 `RunViewModel.load_data`, matrix 는
-`MatrixRunViewModel.load_file`, txt 는 `TxtDraftViewModel.load_data`가 이 시그니처(키워드
+**`load_file(path, sheet=None) -> records`**. run 은 `RunViewModel.load_data`,
+txt 는 `TxtDraftViewModel.load_data`가 이 시그니처(키워드
 `sheet` 확장)로 물린다. `sheet`는 링2 시트 확정 다이얼로그(`view_helpers.ask_sheet_choice`,
 [ADR M](UI_DESIGN_DECISIONS.md))가 받아낸 **확정 시트명**(None = 기본 시트) — 링1 VM 은
 다이얼로그를 모른 채 값만 수취해 팩토리(`source_for_path(path, sheet=…)`)로 관통시킨다

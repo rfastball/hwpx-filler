@@ -106,7 +106,7 @@ def test_load_data_targets_confirmed_sheet(tmp_path):
 
 
 def test_resolve_file_source_passes_sheet(tmp_path):
-    """단일 실행·매트릭스 공용 리졸버도 같은 관통 — 한쪽만 고쳐지는 드리프트 방지."""
+    """공용 리졸버도 같은 관통 — VM 경로와 갈라지는 드리프트 방지."""
     from hwpxfiller.gui.run_state import resolve_file_source
 
     _source, recs = resolve_file_source(str(MULTI_SHEET), sheet="낙찰현황")

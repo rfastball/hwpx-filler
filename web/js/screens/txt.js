@@ -45,7 +45,7 @@
       $("tokPanel").innerHTML = rows || `<p class="muted">토큰이 없는 템플릿입니다.</p>`;
 
       $("renderView").innerHTML = buildPreview(s.template_text, s.record);
-      // 소스 종류 병기 라벨(#26 #6) — 서버가 플래그에서 합성(K8)·화면별 고유 id(#27), run/matrix 와 분리.
+      // 소스 종류 병기 라벨(#26 #6) — 서버가 플래그에서 합성(K8)·화면별 고유 id(#27), run 과 분리.
       $("txtDataLabel").value = s.data_source_label || "";
       setStatus(s.missing_fields, s.empty_fields);
       resetNote();

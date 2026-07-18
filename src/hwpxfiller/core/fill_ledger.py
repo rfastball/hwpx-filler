@@ -115,7 +115,7 @@ mapping_drift = template_structure_drift
 def template_path_drift(path: "str", mapping: MappingProfile) -> TemplateStructureDrift:
     """HWPX 경로를 매 호출 다시 읽어 구조 드리프트를 fail-closed로 계산한다.
 
-    단건 실행·매트릭스·CLI가 공유하는 경계다. 파일 부재/손상/파싱 실패를 정상
+    GUI 실행·CLI가 공유하는 경계다. 파일 부재/손상/파싱 실패를 정상
     빈 템플릿으로 오인하지 않고 ``read_error`` 로 반환한다.
     """
     if not path:

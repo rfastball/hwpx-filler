@@ -29,22 +29,22 @@ RESPONSIVE_BREAKPOINT_PX = 820
 # 전체 스냅샷 재렌더가 포커스·캐럿·스크롤을 뭉개지 않도록 render() 를 Preserve.around 로 감싸는
 # 화면들(#28). 어느 화면이 래핑을 조용히 떨구면 상호작용 유실 회귀 → 정적 가드로 차단.
 WEB_JS_DIR = Path(__file__).resolve().parents[1] / "web" / "js"
-PRESERVE_WRAPPED_SCREENS = ("txt", "editor", "run", "matrix")
+PRESERVE_WRAPPED_SCREENS = ("txt", "editor", "run")
 
 # 살아있는 컴포넌트 갤러리(개발 전용) — 실 tokens.css+app.css 를 <link> 로 물어 드리프트 0.
 GALLERY = Path(__file__).resolve().parents[1] / "docs" / "UI_GALLERY.html"
 
-# 여섯 화면 루트 — 셸 라우터가 표시/숨김으로 전환하는 최상위 컨테이너(회귀 시 화면 소실).
+# 화면 루트 — 셸 라우터가 표시/숨김으로 전환하는 최상위 컨테이너(회귀 시 화면 소실).
 SCREEN_ROOTS = (
-    "scr-home", "scr-editor", "scr-run", "scr-matrix", "scr-txt", "scr-tpl",
+    "scr-home", "scr-editor", "scr-run", "scr-txt", "scr-tpl",
     "scr-pool",  # 데이터 관리(#26 #4)
 )
 
 # 화면별 데이터 라벨은 반드시 고유 id 여야 한다(#27 dup-id 회귀 가드).
-SCOPED_DATA_LABELS = ("runDataLabel", "txtDataLabel", "mxDataLabel")
+SCOPED_DATA_LABELS = ("runDataLabel", "txtDataLabel")
 
-# 접힘 상태에서 라벨이 사라지는 여섯 내비 버튼(회귀 시 접근 이름·툴팁 소실 → #27).
-NAV_SCREENS = ("home", "editor", "run", "matrix", "txt", "tpl", "pool")  # +pool(#26 #4)
+# 접힘 상태에서 라벨이 사라지는 내비 버튼(회귀 시 접근 이름·툴팁 소실 → #27).
+NAV_SCREENS = ("home", "editor", "run", "txt", "tpl", "pool")  # +pool(#26 #4)
 
 # 커스텀 모달 → aria-labelledby 가 가리켜야 할 제목 id(다이얼로그 시맨틱, #27/#28).
 # sheetModal 은 다중 시트 확정 게이트(#33) — 같은 Modal 헬퍼·다이얼로그 계약을 공유한다.
@@ -299,15 +299,15 @@ def test_forced_colors_block_present_in_web_diff():
 
 
 # pickDataFile(=pick_data_file) 을 소비하는 모든 화면 — 브리지 반환 계약이 screen-불가지라
-# needs_sheet 분기를 처리해야 다중 시트가 첫 시트로 강등되지 않는다(리뷰 P1: txt·matrix 누락 회귀).
-DATA_PICK_SCREENS = ("editor", "run", "txt", "matrix")
+# needs_sheet 분기를 처리해야 다중 시트가 첫 시트로 강등되지 않는다(리뷰 P1: txt 누락 회귀).
+DATA_PICK_SCREENS = ("editor", "run", "txt")
 
 
 def test_sheet_picker_loaded_and_wired_on_all_data_screens():
     """다중 시트 확정 게이트 배선 정적 가드(#33) — 조용한 첫 시트 로드 회귀 차단.
 
     실 시트 선택 거동(모달 개폐·확정 로드)은 Modal/브리지 계약 테스트가 본다 — 여기선
-    (a) 헬퍼·모달 골격 존재, (b) 데이터를 붙이는 **모든** 화면(에디터·실행·즉시기안·매트릭스)이
+    (a) 헬퍼·모달 골격 존재, (b) 데이터를 붙이는 **모든** 화면(에디터·실행·즉시기안)이
     pickDataFile 의 needs_sheet 를 받아 SheetPicker 로 확정을 태우는 배선이 살아있는지를 정적
     가드한다. pickDataFile 계약이 screen-불가지라, 한 화면이라도 이 분기를 떨구면 그 화면에서
     다중 시트가 조용히 첫 시트로 강등되는 회귀(리뷰 P1 재발 차단).
@@ -465,14 +465,3 @@ def test_unhandledrejection_backstop_present_in_both_shells():
         block = m.group(0)
         assert "window.alert" in block, f"{app_js} 백스톱이 alert 로 재진술하지 않습니다."
         assert "preventDefault" in block, f"{app_js} 백스톱이 rejection 을 handled 처리하지 않습니다."
-
-
-def test_matrix_locate_anchors_present():
-    """매트릭스 로케이트 앵커(#67) — 공통 데이터·저장 폴더 어포던스 착지점 실재.
-
-    matrix.js renderData 가 innerHTML 로 채우는 두 span 이 정적 DOM 에서 사라지면
-    로케이트가 조용히 미렌더된다(전역 유일성은 test_all_element_ids 가 커버).
-    """
-    ids = set(_collect_ids())
-    missing = [i for i in ("mxDataTrack", "mxOutTrack") if i not in ids]
-    assert not missing, f"매트릭스 로케이트 앵커가 없습니다: {missing}"

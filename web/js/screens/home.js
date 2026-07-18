@@ -310,7 +310,6 @@
       Bridge.call(SCREEN, "refresh", {}).catch((err) =>
         window.alert(String((err && err.message) || err))));
     $("homeNewJob").addEventListener("click", () => window.Nav.go("editor"));
-    $("homeMatrix").addEventListener("click", () => window.Nav.go("matrix"));
     $("homeNewTxt").addEventListener("click", () => window.Nav.go("txt"));
     $("homeJobs").addEventListener("click", onJobsClick);
     $("homeEmpty").addEventListener("click", onJobsClick);

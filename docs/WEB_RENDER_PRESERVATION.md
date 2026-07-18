@@ -92,11 +92,11 @@
 
 ## 검증
 
-- 정적(`tests/test_web_dom_contract.py`): `preserve.js` 로드 + 4개 화면(`txt`·`editor`·`run`·
-  `matrix`) `render()` 의 `Preserve.around` 래핑 존재 — 헤드리스 포함 전 플랫폼.
+- 정적(`tests/test_web_dom_contract.py`): `preserve.js` 로드 + 3개 화면(`txt`·`editor`·`run`)
+  `render()` 의 `Preserve.around` 래핑 존재 — 헤드리스 포함 전 플랫폼.
 - 동적(`tests/test_web_selftest_gate.py` + `--selftest` 프로브):
   - **기제**: 합성 픽스처로 `innerHTML` 재구성을 가로질러 포커스·캐럿(선택 범위)·옵트인 스크롤이
     실제로 보존되는지 실 WebView2 에서 되읽어 단언.
-  - **실화면 회귀**: shipped `window.__push` 경로로 4화면(`txt`·`editor`·`run`·`matrix`) 실
+  - **실화면 회귀**: shipped `window.__push` 경로로 3화면(`txt`·`editor`·`run`) 실
     `render()` 를 실 컨트롤러 스냅샷으로 구동해 `Preserve.around` 래핑이 render 를 깨지 않는지,
     그리고 `txt` 프리뷰의 스크롤이 실 재렌더를 가로질러 유지되는지(강제 오버플로) end-to-end 단언.

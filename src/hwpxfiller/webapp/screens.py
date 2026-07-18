@@ -152,12 +152,12 @@ def load_pool_into(
     pool_registry: DatasetPoolRegistry, name: str, loader: "Callable[[DatasetPoolItem], list]"
 ) -> dict:
     """등록 데이터 겨눔의 공유 실행부 — 나라 동결·모호 시트·죽은 참조·레코드 0건을 단일
-    문구 체계로 재진술한다(run/matrix/txt 3화면 동형).
+    문구 체계로 재진술한다(run/txt 화면 동형).
 
     ``loader(item)`` 는 각 화면 VM 의 ``load_pool_item`` (실행 시점 재읽기="싱크"). 성공 시
     ``{"ok": True, "records": [...]}`` 를, 실패 시 ``{"ok": False, "error": ...}`` 를 돌려준다
     — 라벨·선택 초기화 등 화면별 후처리는 호출측이 결과 레코드로 수행한다. 예전엔 이 20줄
-    try/except 사다리가 세 컨트롤러에 복붙돼 문구가 이미 표류했다(txt '상태' vs run/matrix
+    try/except 사다리가 컨트롤러마다 복붙돼 문구가 이미 표류했다(txt '상태' vs run
     '데이터') — 여기로 수렴해 락스텝 편집 부담과 재표류를 없앤다.
     """
     try:
@@ -176,7 +176,7 @@ def load_pool_into(
 def source_label(source: str, data_label: str) -> str:
     """소스 종류 플래그(``'file'``|``'pool'``)+표시명 → 병기 라벨 합성(K8).
 
-    예전엔 ``data_source_label`` 이 ``data_label`` 과 쌍으로 세 컨트롤러 여섯 지점에서
+    예전엔 ``data_source_label`` 이 ``data_label`` 과 쌍으로 컨트롤러 여러 지점에서
     저장·리셋되는 전(全)파생 중복 상태였다 — 저장하지 않고 스냅샷이 매번 여기서 합성한다
     (단일 출처 = 문구 표류·리셋 누락 봉인). 미지 플래그는 시끄럽게 실패한다
     (confirm-or-alarm: 조용한 빈 라벨 금지)."""
@@ -243,14 +243,14 @@ def relink_job_template(job_registry, name: str, path: str, *, confirm: bool = F
 
 
 class PoolTargetingMixin:
-    """등록 데이터(풀) 겨눔 래퍼 공용화(K4) — ``_do_pool_sources``/``_do_load_pool`` 3화면 동형.
+    """등록 데이터(풀) 겨눔 래퍼 공용화(K4) — ``_do_pool_sources``/``_do_load_pool`` 화면 동형.
 
-    예전엔 이 두 래퍼가 run/matrix/txt 세 컨트롤러에 독스트링('(#26/#6)')까지 복붙돼
-    있었다 — 게이트 실행부(:func:`load_pool_into`)만 공용이고 래퍼는 3벌. 여기로 수렴하고
+    예전엔 이 두 래퍼가 실행 표면 컨트롤러들에 독스트링('(#26/#6)')까지 복붙돼
+    있었다 — 게이트 실행부(:func:`load_pool_into`)만 공용이고 래퍼는 여러 벌. 여기로 수렴하고
     화면별 차이는 두 훅으로만 남긴다:
 
     - :meth:`_pool_guard` — 겨눔 전제 미충족 시 사용자 문구 반환(기본 없음, run=작업 선택).
-    - :meth:`_after_pool_load` — 성공 후처리(기본 no-op, run/matrix=행 선택 초기화).
+    - :meth:`_after_pool_load` — 성공 후처리(기본 no-op, run=행 선택 초기화).
 
     요구 표면: ``pool_registry``·``vm.load_pool_item``·``data_label``·``data_source``.
     """
@@ -325,7 +325,7 @@ class TxtController(PoolTargetingMixin):
     ) -> None:
         self.vm = TxtDraftViewModel(registry)
         self._push_sink = push
-        self.data_label = ""  # 겨눈 데이터 파일 표시명(서버 소유 — run/matrix 와 정렬, P4)
+        self.data_label = ""  # 겨눈 데이터 파일 표시명(서버 소유 — run 과 정렬, P4)
         self.data_source = ""  # 소스 종류 플래그('file'|'pool') — 병기 라벨은 스냅샷이 합성(K8)
         # 등록 데이터(풀) 겨눔(#26/#6) — 기본은 홈 레지스트리, 테스트는 주입.
         self.pool_registry = (

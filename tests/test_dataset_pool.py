@@ -239,10 +239,8 @@ def test_run_load_pool_item_excel_live(tmp_path):
     assert vm.datasource is not None
 
 
-def test_run_and_matrix_pool_targeting_returns_specified_sheet_records(tmp_path):
-    """T2 — sheet 임베딩 풀 항목의 run/matrix 겨눔이 지정 시트 레코드를 반환한다."""
-    from hwpxfiller.core.job import JobRegistry
-    from hwpxfiller.gui.matrix_state import MatrixRunViewModel
+def test_run_pool_targeting_returns_specified_sheet_records(tmp_path):
+    """T2 — sheet 임베딩 풀 항목의 run 겨눔이 지정 시트 레코드를 반환한다."""
     from hwpxfiller.gui.run_state import RunViewModel
 
     it = DatasetPoolItem(
@@ -252,11 +250,6 @@ def test_run_and_matrix_pool_targeting_returns_specified_sheet_records(tmp_path)
     vm = RunViewModel(_job())
     recs = vm.load_pool_item(it)
     assert [r["업체명"] for r in recs] == ["가나상사", "다라물산", "마바테크"]
-
-    pool = DatasetPoolRegistry(tmp_path / "pool")
-    pool.save(it)
-    mvm = MatrixRunViewModel(JobRegistry(tmp_path / "jobs"), pool_registry=pool)
-    assert mvm.load_pool_by_name("다중") == recs
 
 
 def test_run_load_pool_item_nara_snapshots_once(tmp_path):

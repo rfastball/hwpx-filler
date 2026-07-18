@@ -22,7 +22,7 @@ WEB_JS = WEB / "js"
 ESC_CONSUMERS = (
     "sheet_picker.js", "pool_picker.js",
     "screens/home.js", "screens/txt.js", "screens/editor.js", "screens/run.js",
-    "screens/matrix.js", "screens/template.js", "screens/pool.js",
+    "screens/template.js", "screens/pool.js",
 )
 
 
