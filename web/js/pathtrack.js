@@ -10,11 +10,13 @@
     copy:   { label: "경로 복사",     fn: (p) => Bridge.copyPath(p) },
   };
 
-  /* path 를 열기/폴더/복사 버튼 묶음 HTML 로. 전체경로는 title 툴팁. path 없으면 "".
-     opts.only = 표시할 액션 배열(기본 3개 전부). */
+  /* path 를 로케이트 버튼 묶음 HTML 로. 전체경로는 title 툴팁. path 없으면 "".
+     opts.only = 표시할 액션 배열. 기본은 열기·폴더보기 2개(F29) — 「경로 복사」는
+     「폴더에서 보기」와 중복 어포던스라 기본에서 빼고, 경로 텍스트가 실제로 필요한
+     곳(예: 실행 화면 저장 폴더)만 only 로 명시해 살린다. */
   function affordances(path, opts) {
     if (!path) return "";
-    const which = (opts && opts.only) || ["open", "reveal", "copy"];
+    const which = (opts && opts.only) || ["open", "reveal"];
     const btns = which.map((k) =>
       `<button type="button" class="btn sm track-btn" data-track-act="${k}"` +
       ` data-path="${esc(path)}" title="${esc(path)}">${ACTS[k].label}</button>`

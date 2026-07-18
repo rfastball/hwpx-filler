@@ -60,13 +60,17 @@
     const box = $("jobMeta");
     if (!s.has_job) { box.textContent = ""; box.style.display = "none"; return; }
     box.style.display = "";
+    // 템플릿 다시 연결(#67)은 복구 동선 — 파일이 실제로 없을 때만 노출(F30, 홈 카드와 대칭).
+    // 정상 상태에선 숨겨 "정상은 조용히"를 지킨다.
+    const relink = s.template_missing
+      ? ` <button class="btn sm" data-act="relink-template" data-busy-lock>템플릿 다시 연결…</button>`
+      : "";
+    // 한 줄 이어붙이기(F28) 대신 줄 단위 구조화 — 템플릿 줄(이름+로케이트) · 파일명 줄.
     box.innerHTML =
-      `<span class="mono">${esc(s.template_name || "(템플릿 없음)")}</span>` +
-      ` · 파일명 <span class="mono">${esc(s.filename_pattern)}</span>` +
-      // 템플릿 로케이트(#53-B) — 열기·폴더보기·경로복사(소유 화이트리스트 검증).
-      ` ${PathTrack.affordances(s.template_path)}` +
-      // 템플릿 다시 연결(#67) — 파일 이동/삭제 시 저장 경로 갱신(confirm 게이트).
-      ` <button class="btn sm" data-act="relink-template" data-busy-lock>템플릿 다시 연결…</button>`;
+      `<div class="jm-line"><span class="mono">${esc(s.template_name || "(템플릿 없음)")}</span>` +
+      // 템플릿 로케이트(#53-B) — 열기·폴더보기(소유 화이트리스트 검증).
+      ` ${PathTrack.affordances(s.template_path)}${relink}</div>` +
+      `<div class="jm-line">파일명 <span class="mono">${esc(s.filename_pattern)}</span></div>`;
     $("targetLine").innerHTML = s.template_name
       ? `새 문서 생성 — 작업 템플릿(<span class="mono">${esc(s.template_name)}</span>)으로 한 번에 완성합니다.`
       : `작업 템플릿 경로가 비어 있습니다 — 에디터에서 템플릿을 지정하세요.`;
@@ -79,14 +83,15 @@
     // 저장 폴더 로케이트(#53-B) — 폴더 열기·경로복사(폴더라 '열기'는 탐색기로 동일).
     const ot = $("outTrack");
     if (ot) ot.innerHTML = PathTrack.affordances(s.out_dir, { only: ["reveal", "copy"] });
-    // 기본 데이터셋 자동 조준 재진술(#53-A) — 성공(ok)/실패(warn) 시끄럽게 표시.
+    // 기본 데이터셋 자동 조준 재진술(#53-A) — 실패(warn)만 시끄럽게, 성공(ok)은 muted
+    // 한 줄(F32: 정상 상태 초록 배너는 노이즈 — 데이터 라벨이 이미 상태를 보여준다).
     const note = $("runDataNotice");
     if (note) {
       const n = s.data_notice;
       if (n && n.text) {
         note.style.display = "block";
-        note.className = "note " + (n.level === "ok" ? "okbox" : "warnbox");
-        note.textContent = (n.level === "ok" ? "✓ " : "⚠ ") + n.text;
+        note.className = "note " + (n.level === "ok" ? "quiet" : "warnbox");
+        note.textContent = (n.level === "ok" ? "" : "⚠ ") + n.text;
       } else {
         note.style.display = "none";
         note.textContent = "";
@@ -99,7 +104,8 @@
     const p = s.preflight || { level: "", text: "" };
     if (!s.has_data || !p.text) { box.style.display = "none"; return; }
     box.style.display = "block";
-    const cls = p.level === "ok" ? "okbox" : p.level === "danger" ? "dangerbox" : "warnbox";
+    // ok(검증 통과)는 muted 한 줄(F32) — 상태 pill·게이트가 이미 "생성 준비"를 말한다.
+    const cls = p.level === "ok" ? "quiet" : p.level === "danger" ? "dangerbox" : "warnbox";
     box.className = "preflight note " + cls;
     box.style.whiteSpace = "pre-line";
     box.textContent = p.text;
@@ -111,7 +117,7 @@
     const states = s.field_states || [];
     if (!states.length) {
       host.innerHTML = s.has_job
-        ? `<span class="muted" style="font-size:12px">데이터를 선택하면 필드별 채움 상태가 여기에 표시됩니다.</span>`
+        ? `<span class="muted capnote">데이터를 선택하면 필드별 채움 상태가 여기에 표시됩니다.</span>`
         : "";
       return;
     }
