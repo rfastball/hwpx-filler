@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<!-- R-info 1부 시안 박제본(v8.1 확정판+12조항 개명, 2026-07-18) — 아티팩트 게시본과 동일 내용.
+<!-- R-info 1부 시안 박제본(v8.2 확정판 — 12조항 개명·13조항 레일 실행 제거, 2026-07-18)
+     — 아티팩트 게시본과 동일 내용.
      라이브: https://claude.ai/code/artifact/e0bce119-c728-4595-b5fa-bd4cba4ccc14
      합의문: docs/R_INFO_JOB_HOME.md -->
 <meta charset="utf-8">
@@ -228,7 +229,7 @@ button{font:inherit}
 
 <div class="studio">
   <div class="studio-head">
-    <h1>R-info 시안 v8.1 — 「작업」 화면 · 변형 B 확정판 (+12조항 「빠른 기안」 개명)</h1>
+    <h1>R-info 시안 v8.2 — 「작업」 화면 · 변형 B 확정판 (12조항 「빠른 기안」·13조항 레일 「실행」 제거)</h1>
     <p><b>변형 B 확정(2026-07-18)</b>: 두 구획 목록 + 4존 세션 패널(상시 master-detail).
        접힘-펼침 정책 승인 · 일화 툴팁 강등 확정 · 개수 표기 규칙 확정(펼침=무표기·접힘=(N) 표지만).
        상단 두-열 프레임은 <b>기각 대안(v6) 아카이브</b> — 변형 B 프레임들이 확정안.
@@ -396,8 +397,7 @@ button{font:inherit}
         <div class="brand">HWPX Filler <button class="rail-toggle">«</button></div>
         <button class="navbtn on"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l7-6 7 6M5 9v7h4v-4h2v4h4V9"/></svg></span><span class="lbl"><span class="n">작업</span><span class="d">찾기 · 실행 · 관리</span></span></button>
         <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 4.5l2 2L7 15l-3 1 1-3zM12 6l2 2"/></svg></span><span class="lbl"><span class="n">작업 에디터</span></span></button>
-        <button class="navbtn" style="opacity:.35"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l10 6-10 6z"/></svg></span><span class="lbl"><span class="n">실행 <i class="an">B5</i></span></span></button>
-        <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h5l3 3v11H6zM11 3v3h3M8 11h5M8 14h5"/></svg></span><span class="lbl"><span class="n">빠른 기안</span></span></button>
+        <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h5l3 3v11H6zM11 3v3h3M8 11h5M8 14h5"/></svg></span><span class="lbl"><span class="n">빠른 기안 <i class="an">B5</i></span></span></button>
         <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3l7 4-7 4-7-4zM3 11l7 4 7-4"/></svg></span><span class="lbl"><span class="n">템플릿 관리</span></span></button>
         <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3c3.3 0 6 1 6 2.3S13.3 7.7 10 7.7 4 6.7 4 5.3 6.7 3 10 3M4 5.3v9.4C4 16 6.7 17 10 17s6-1 6-2.3V5.3"/></svg></span><span class="lbl"><span class="n">데이터 관리</span></span></button>
         <button class="rail-theme"><span class="n">테마</span><span class="d">시스템</span></button>
@@ -652,7 +652,7 @@ button{font:inherit}
       <li><i class="an">B2</i><span><b>선택 상태</b>: 클릭-고정(호버 아님) — 선택 행이 틴트+좌측 막대로 상주 표시. 실행 패널의 주인이 항상 목록에 보임.</span></li>
       <li><i class="an">B3</i><span><b>in-pane 실행 세션</b>: 행 클릭 → 이 자리에 세션이 열림, 화면 전환 0. "누르면 넘어가버림"의 소멸이 master-detail의 본뜻. 세션 내부(데이터→행→게이트→생성)는 R-flow에서 확정.</span></li>
       <li><i class="an">B4</i><span><b>세션 가드</b>(R-flow 쟁점): 입력 진행 중 다른 행을 클릭하면 조용히 버리지 않고 확인(editJob 미저장 가드와 대칭). 강제확인 게이트는 그대로 상속.</span></li>
-      <li><i class="an">B5</i><span><b>파급</b>: 채택 시 레일 「실행」 잉여화(회색 표시는 시안 표기일 뿐) · 실행 화면의 작업 드롭다운 소멸 — 앞서 세운 경계 표지가 실제로 발효되는 지점.</span></li>
+      <li><i class="an">B5</i><span><b>레일 「실행」 제거 확정</b>(v8.2 격상): 실행 화면 기능 전부가 패널 4존과 1:1 겹침 — 잔존 이유 0. 레일 = 5항목(작업·작업 에디터·빠른 기안·템플릿 관리·데이터 관리). 구현은 패널 착지와 동시 + <b>계약 승계 점검</b>(RC-20 파일명 토큰 게이트·강제확인 게이트·run_state 재진술 — "삭제는 의무 상속", 조용한 드롭 F40 전례 방지).</span></li>
       <li><i class="an">B6</i><span><b>txt 세션 = 같은 4존 패널 문법</b>(헤더·데이터·본문·완료), 내부만 출력별: 데이터는 <b>한 행</b>(기안은 단건), 본문은 매핑 선채움+라이브 잔여+미리보기, 완료는 「복사」. 행위 층 분리가 패널 내부에서 실현됨(원칙 ③).</span></li>
       <li><i class="an">B7</i><span><b>표시형 선채움 실물</b>: "38,500,000원" — cli.py:169이 증명한 코어 경로(매핑+format_engine)의 GUI 착지. F36 서식 갭이 소멸하는 그 지점. 미채움 필드는 미리보기에 {{담당자}}로 정직하게 노출.</span></li>
       <li><i class="an">B8</i><span><b>빈칸 게이트</b>: hwpx의 강제확인 게이트 대신 기안은 <b>미채움 경보</b> — 산출물 무게(법적 문서 파일 vs 클립보드)에 비례한 게이트 무게. 조용한 빈칸 금지(confirm-or-alarm).</span></li>
