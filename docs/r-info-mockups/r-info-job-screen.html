@@ -1,6 +1,6 @@
 <!DOCTYPE html>
-<!-- R-info 1부 시안 박제본(v8.2 확정판 — 12조항 개명·13조항 레일 실행 제거, 2026-07-18)
-     — 아티팩트 게시본과 동일 내용.
+<!-- R-info 1부 시안 박제 정본(v9, 2026-07-18) — 상단 = 확정안(변형 B 상태 0·1·2·규모검증),
+     하단 회색 워터마크 = 기각안 아카이브(두-열 디자인·구 레일). 아티팩트 게시본과 동일.
      라이브: https://claude.ai/code/artifact/e0bce119-c728-4595-b5fa-bd4cba4ccc14
      합의문: docs/R_INFO_JOB_HOME.md -->
 <meta charset="utf-8">
@@ -185,6 +185,12 @@ button{font:inherit}
 .variant{margin-top:var(--sp-16)}
 .variant .cap{font-size:var(--fs-body);color:var(--a-muted);margin-bottom:var(--sp-8)}
 .variant .col{max-width:460px}
+/* 기각 아카이브 — 채택 아님을 오독 불가능하게: 배너 + 회색화 + 워터마크 */
+.rejban{color:var(--a-danger);font-weight:700}
+.rejected{position:relative;filter:grayscale(.55) opacity(.75)}
+.rejected::after{content:"기각안 — 채택 아님";position:absolute;inset:0;display:flex;
+  align-items:center;justify-content:center;font-size:56px;font-weight:800;
+  color:var(--a-danger);opacity:.22;transform:rotate(-12deg);pointer-events:none;z-index:9}
 /* 변형 B — master-detail 전면 시안(클릭-고정 in-pane 실행 · R-flow 소관, 미결정) */
 .mdx{display:grid;grid-template-columns:300px 1fr;gap:var(--sp-16);flex:1;min-height:0}
 .mlist{background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface);
@@ -229,120 +235,12 @@ button{font:inherit}
 
 <div class="studio">
   <div class="studio-head">
-    <h1>R-info 시안 v8.2 — 「작업」 화면 · 변형 B 확정판 (12조항 「빠른 기안」·13조항 레일 「실행」 제거)</h1>
-    <p><b>변형 B 확정(2026-07-18)</b>: 두 구획 목록 + 4존 세션 패널(상시 master-detail).
-       접힘-펼침 정책 승인 · 일화 툴팁 강등 확정 · 개수 표기 규칙 확정(펼침=무표기·접힘=(N) 표지만).
-       상단 두-열 프레임은 <b>기각 대안(v6) 아카이브</b> — 변형 B 프레임들이 확정안.
+    <h1>R-info 시안 v9 — 「작업」 화면 확정안 정본 (변형 B · 13조항 완결)</h1>
+    <p><b>이 문서의 상단부가 확정안 전부다</b>: 변형 B 상태 0(초기)·1(hwpx 세션)·2(txt 세션)·
+       규모 검증(N=50). 레일 5항목(작업·작업 에디터·빠른 기안·템플릿 관리·데이터 관리 —
+       「실행」 제거 13조항·「빠른 기안」 개명 12조항 반영).
+       <b>하단 회색 워터마크 구획은 기각안 아카이브</b>(두-열 디자인·구 레일) — 채택 아님.
        보라 번호는 주석 · 카피는 초안(R-copy 확정) · 세션 내부·가드는 R-flow 소관.</p>
-  </div>
-
-  <div class="canvas-wrap">
-  <div class="frame"><div class="app">
-
-    <nav class="rail">
-      <div class="brand">HWPX Filler <button class="rail-toggle">«</button></div>
-      <button class="navbtn on"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l7-6 7 6M5 9v7h4v-4h2v4h4V9"/></svg></span><span class="lbl"><span class="n">작업 <i class="an">1</i></span><span class="d">저장된 작업 · 찾기와 실행</span></span></button>
-      <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 4.5l2 2L7 15l-3 1 1-3zM12 6l2 2"/></svg></span><span class="lbl"><span class="n">작업 에디터</span></span></button>
-      <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l10 6-10 6z"/></svg></span><span class="lbl"><span class="n">실행</span></span></button>
-      <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h5l3 3v11H6zM11 3v3h3M8 11h5M8 14h5"/></svg></span><span class="lbl"><span class="n">빠른 기안</span></span></button>
-      <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3l7 4-7 4-7-4zM3 11l7 4 7-4"/></svg></span><span class="lbl"><span class="n">템플릿 관리</span></span></button>
-      <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3c3.3 0 6 1 6 2.3S13.3 7.7 10 7.7 4 6.7 4 5.3 6.7 3 10 3M4 5.3v9.4C4 16 6.7 17 10 17s6-1 6-2.3V5.3"/></svg></span><span class="lbl"><span class="n">데이터 관리</span></span></button>
-      <button class="rail-theme"><span class="n">테마</span><span class="d">시스템</span></button>
-    </nav>
-
-    <main class="stage">
-      <header class="scr-head">
-        <div>
-          <h2>작업 <i class="an">1</i></h2>
-          <p class="sub">만들 문서의 작업을 찾아 실행합니다 — 템플릿과 데이터는 작업을 위한 자원입니다.</p>
-        </div>
-      </header>
-
-      <div class="tbar">
-        <span class="lbl">정렬</span>
-        <select class="field"><option>이름순</option><option>최근 실행순</option><option>만든 날짜순</option></select>
-        <i class="an">15</i>
-        <input class="field flt" placeholder="이름으로 걸러내기">
-        <i class="an">2</i>
-      </div>
-
-      <div class="cols">
-        <!-- 왼쪽 열: 문서 작업(hwpx) · N=13 — 목록만 내부 스크롤 -->
-        <section class="col hwpx">
-          <div class="ch"><span class="ct">문서 작업 <span class="mut">HWPX</span> <i class="an">7</i></span>
-            <span><button class="btn">＋ 새 작업</button> <i class="an">8</i></span></div>
-          <div class="list"><i class="an" style="position:absolute;right:28px">9</i>
-
-            <div class="gh"><span class="caret">▾</span>물품 입찰공고 <span class="gc">(4)</span> <i class="an">10</i></div>
-            <div class="row ind" title="마지막 실행: 7/02 · 사무용 소모품 외 1행"><span class="rn">물품 입찰공고-2천만미만 <i class="an">3</i> <i class="an">14</i></span>
-              <span class="ra"><button class="btn more">⋯</button></span></div>
-            <div class="row ind hover" title="마지막 실행: 7/12 · ○○의약품 외 2행"><span class="rn">물품 입찰공고-5천만미만 <i class="an">4</i></span>
-              <span class="ra"><button class="btn more">⋯</button> <i class="an">5</i></span></div>
-            <div class="row ind alert"><span class="rn">⚠ 물품 입찰공고-긴급 <i class="an">6</i></span><span class="rm">템플릿을 찾을 수 없음 — 긴급공고_v3.hwpx</span>
-              <span class="ra"><button class="btn">템플릿 다시 연결…</button><button class="btn more">⋯</button></span></div>
-            <div class="row ind" title="마지막 실행: 5/30 · 실험기자재"><span class="rn">물품 입찰공고-재공고</span>
-              <span class="ra"><button class="btn more">⋯</button></span></div>
-
-            <div class="gh collapsed"><span class="caret">▸</span>용역 입찰공고 <span class="gc">(2)</span> <i class="an">11</i></div>
-
-            <div class="gh"><span class="caret">▾</span>적격심사 안내</div>
-            <div class="row ind open" title="마지막 실행: 7/01 · ○○의약품"><span class="rn">적격심사 안내-물품</span>
-              <span class="ra"><button class="btn more">⋯</button> <i class="an">12</i></span>
-              <div class="menu">
-                <div class="mi">편집</div>
-                <div class="mi">복제</div>
-                <hr>
-                <div class="mi hl">그룹으로 이동 <span class="sub-arrow">▸</span></div>
-                <hr>
-                <div class="mi danger">삭제</div>
-                <div class="submenu">
-                  <div class="mi">물품 입찰공고</div>
-                  <div class="mi on">적격심사 안내 ✓</div>
-                  <div class="mi">용역 입찰공고</div>
-                  <hr>
-                  <div class="mi">새 그룹…</div>
-                  <div class="mi">그룹 해제</div>
-                </div>
-              </div></div>
-            <div class="row ind"><span class="rn">적격심사 안내-용역</span>
-              <span class="ra"><button class="btn more">⋯</button></span></div>
-
-            <div class="gh"><span class="caret">▾</span>그룹 없음 <span class="gc">(5)</span> <i class="an">13</i></div>
-            <div class="row ind" title="마지막 실행: 6/20 · 전산장비 입찰"><span class="rn">개찰결과 통보</span>
-              <span class="ra"><button class="btn more">⋯</button></span></div>
-            <div class="row ind"><span class="rn">검사·검수 요청</span>
-              <span class="ra"><button class="btn more">⋯</button></span></div>
-            <div class="row ind" title="마지막 실행: 6/25 · 청사 경비용역"><span class="rn">계약체결 통보</span>
-              <span class="ra"><button class="btn more">⋯</button></span></div>
-            <div class="row ind" title="마지막 실행: 7/08 · 소방설비 점검"><span class="rn">수의계약 견적제출 안내</span>
-              <span class="ra"><button class="btn more">⋯</button></span></div>
-            <div class="row ind" title="마지막 실행: 7/15 · 사무용 가구"><span class="rn">종합쇼핑몰 납품요구</span>
-              <span class="ra"><button class="btn more">⋯</button></span></div>
-          </div>
-        </section>
-
-        <!-- 오른쪽 열: 기안 작업(txt) -->
-        <section class="col txt">
-          <div class="ch"><span class="ct">기안 작업 <span class="mut">TXT</span></span>
-            <button class="btn">＋ 새 기안 작업</button></div>
-          <div class="list">
-            <div class="gh"><span class="caret">▾</span>계약·구매 <span class="gc">(2)</span> <i class="an">17</i></div>
-            <div class="row ind" title="마지막 실행: 6/30 · 전산 유지보수"><span class="rn">수의계약 체결 기안</span>
-              <span class="ra"><button class="btn more">⋯</button></span></div>
-            <div class="row ind" title="마지막 실행: 7/12 · ○○의약품 외 2행"><span class="rn">의약품 구매 기안</span>
-              <span class="ra"><button class="btn more">⋯</button></span></div>
-
-            <div class="gh"><span class="caret">▾</span>그룹 없음</div>
-            <div class="row ind"><span class="rn">개산급 지급 기안</span>
-              <span class="ra"><button class="btn more">⋯</button></span></div>
-            <div class="row ind" title="마지막 실행: 7/10 · 소모품 대금"><span class="rn">지출결의 기안</span>
-              <span class="ra"><button class="btn more">⋯</button></span></div>
-          </div>
-        </section>
-      </div>
-    </main>
-
-  </div></div>
   </div>
 
   <!-- 변형 B: v6과 경쟁하는 별개 대안 — 두 열 상태가 아예 존재하지 않는 상시 master-detail -->
@@ -611,6 +509,119 @@ button{font:inherit}
     </div>
   </div>
 
+  <!-- ================= 기각 아카이브 ================= -->
+  <div class="variant">
+    <p class="cap rejban">아래는 기각안 아카이브 — 채택 아님. 두-열(문서 작업/기안 작업 별도 열) 디자인과 그 빈 상태는 변형 B 확정으로 폐기됐고, 프레임 속 레일의 「실행」·「기안문 채우기」도 구 상태다(13·12조항으로 제거·개명). 기각 근거는 docs/R_INFO_JOB_HOME.md 기각 대안 절.</p>
+    <div class="rejected">
+  <div class="canvas-wrap">
+  <div class="frame"><div class="app">
+
+    <nav class="rail">
+      <div class="brand">HWPX Filler <button class="rail-toggle">«</button></div>
+      <button class="navbtn on"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l7-6 7 6M5 9v7h4v-4h2v4h4V9"/></svg></span><span class="lbl"><span class="n">작업 <i class="an">1</i></span><span class="d">저장된 작업 · 찾기와 실행</span></span></button>
+      <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 4.5l2 2L7 15l-3 1 1-3zM12 6l2 2"/></svg></span><span class="lbl"><span class="n">작업 에디터</span></span></button>
+      <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l10 6-10 6z"/></svg></span><span class="lbl"><span class="n">실행</span></span></button>
+      <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h5l3 3v11H6zM11 3v3h3M8 11h5M8 14h5"/></svg></span><span class="lbl"><span class="n">빠른 기안</span></span></button>
+      <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3l7 4-7 4-7-4zM3 11l7 4 7-4"/></svg></span><span class="lbl"><span class="n">템플릿 관리</span></span></button>
+      <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3c3.3 0 6 1 6 2.3S13.3 7.7 10 7.7 4 6.7 4 5.3 6.7 3 10 3M4 5.3v9.4C4 16 6.7 17 10 17s6-1 6-2.3V5.3"/></svg></span><span class="lbl"><span class="n">데이터 관리</span></span></button>
+      <button class="rail-theme"><span class="n">테마</span><span class="d">시스템</span></button>
+    </nav>
+
+    <main class="stage">
+      <header class="scr-head">
+        <div>
+          <h2>작업 <i class="an">1</i></h2>
+          <p class="sub">만들 문서의 작업을 찾아 실행합니다 — 템플릿과 데이터는 작업을 위한 자원입니다.</p>
+        </div>
+      </header>
+
+      <div class="tbar">
+        <span class="lbl">정렬</span>
+        <select class="field"><option>이름순</option><option>최근 실행순</option><option>만든 날짜순</option></select>
+        <i class="an">15</i>
+        <input class="field flt" placeholder="이름으로 걸러내기">
+        <i class="an">2</i>
+      </div>
+
+      <div class="cols">
+        <!-- 왼쪽 열: 문서 작업(hwpx) · N=13 — 목록만 내부 스크롤 -->
+        <section class="col hwpx">
+          <div class="ch"><span class="ct">문서 작업 <span class="mut">HWPX</span> <i class="an">7</i></span>
+            <span><button class="btn">＋ 새 작업</button> <i class="an">8</i></span></div>
+          <div class="list"><i class="an" style="position:absolute;right:28px">9</i>
+
+            <div class="gh"><span class="caret">▾</span>물품 입찰공고 <span class="gc">(4)</span> <i class="an">10</i></div>
+            <div class="row ind" title="마지막 실행: 7/02 · 사무용 소모품 외 1행"><span class="rn">물품 입찰공고-2천만미만 <i class="an">3</i> <i class="an">14</i></span>
+              <span class="ra"><button class="btn more">⋯</button></span></div>
+            <div class="row ind hover" title="마지막 실행: 7/12 · ○○의약품 외 2행"><span class="rn">물품 입찰공고-5천만미만 <i class="an">4</i></span>
+              <span class="ra"><button class="btn more">⋯</button> <i class="an">5</i></span></div>
+            <div class="row ind alert"><span class="rn">⚠ 물품 입찰공고-긴급 <i class="an">6</i></span><span class="rm">템플릿을 찾을 수 없음 — 긴급공고_v3.hwpx</span>
+              <span class="ra"><button class="btn">템플릿 다시 연결…</button><button class="btn more">⋯</button></span></div>
+            <div class="row ind" title="마지막 실행: 5/30 · 실험기자재"><span class="rn">물품 입찰공고-재공고</span>
+              <span class="ra"><button class="btn more">⋯</button></span></div>
+
+            <div class="gh collapsed"><span class="caret">▸</span>용역 입찰공고 <span class="gc">(2)</span> <i class="an">11</i></div>
+
+            <div class="gh"><span class="caret">▾</span>적격심사 안내</div>
+            <div class="row ind open" title="마지막 실행: 7/01 · ○○의약품"><span class="rn">적격심사 안내-물품</span>
+              <span class="ra"><button class="btn more">⋯</button> <i class="an">12</i></span>
+              <div class="menu">
+                <div class="mi">편집</div>
+                <div class="mi">복제</div>
+                <hr>
+                <div class="mi hl">그룹으로 이동 <span class="sub-arrow">▸</span></div>
+                <hr>
+                <div class="mi danger">삭제</div>
+                <div class="submenu">
+                  <div class="mi">물품 입찰공고</div>
+                  <div class="mi on">적격심사 안내 ✓</div>
+                  <div class="mi">용역 입찰공고</div>
+                  <hr>
+                  <div class="mi">새 그룹…</div>
+                  <div class="mi">그룹 해제</div>
+                </div>
+              </div></div>
+            <div class="row ind"><span class="rn">적격심사 안내-용역</span>
+              <span class="ra"><button class="btn more">⋯</button></span></div>
+
+            <div class="gh"><span class="caret">▾</span>그룹 없음 <span class="gc">(5)</span> <i class="an">13</i></div>
+            <div class="row ind" title="마지막 실행: 6/20 · 전산장비 입찰"><span class="rn">개찰결과 통보</span>
+              <span class="ra"><button class="btn more">⋯</button></span></div>
+            <div class="row ind"><span class="rn">검사·검수 요청</span>
+              <span class="ra"><button class="btn more">⋯</button></span></div>
+            <div class="row ind" title="마지막 실행: 6/25 · 청사 경비용역"><span class="rn">계약체결 통보</span>
+              <span class="ra"><button class="btn more">⋯</button></span></div>
+            <div class="row ind" title="마지막 실행: 7/08 · 소방설비 점검"><span class="rn">수의계약 견적제출 안내</span>
+              <span class="ra"><button class="btn more">⋯</button></span></div>
+            <div class="row ind" title="마지막 실행: 7/15 · 사무용 가구"><span class="rn">종합쇼핑몰 납품요구</span>
+              <span class="ra"><button class="btn more">⋯</button></span></div>
+          </div>
+        </section>
+
+        <!-- 오른쪽 열: 기안 작업(txt) -->
+        <section class="col txt">
+          <div class="ch"><span class="ct">기안 작업 <span class="mut">TXT</span></span>
+            <button class="btn">＋ 새 기안 작업</button></div>
+          <div class="list">
+            <div class="gh"><span class="caret">▾</span>계약·구매 <span class="gc">(2)</span> <i class="an">17</i></div>
+            <div class="row ind" title="마지막 실행: 6/30 · 전산 유지보수"><span class="rn">수의계약 체결 기안</span>
+              <span class="ra"><button class="btn more">⋯</button></span></div>
+            <div class="row ind" title="마지막 실행: 7/12 · ○○의약품 외 2행"><span class="rn">의약품 구매 기안</span>
+              <span class="ra"><button class="btn more">⋯</button></span></div>
+
+            <div class="gh"><span class="caret">▾</span>그룹 없음</div>
+            <div class="row ind"><span class="rn">개산급 지급 기안</span>
+              <span class="ra"><button class="btn more">⋯</button></span></div>
+            <div class="row ind" title="마지막 실행: 7/10 · 소모품 대금"><span class="rn">지출결의 기안</span>
+              <span class="ra"><button class="btn more">⋯</button></span></div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+  </div></div>
+  </div>
+
   <!-- 변형: 첫날 오른쪽 열(⑤(a)의 정직한 비용 처리) -->
   <div class="variant">
     <p class="cap">변형 — 첫날의 기안 작업 열(빈 상태): 강제 이주 없음, 승격 어포던스 + 일회성 경로 안내</p>
@@ -627,8 +638,14 @@ button{font:inherit}
     </section>
   </div>
 
+    </div>
+  </div>
+
   <div class="legend">
     <h3>주석 — 결정 대응표</h3>
+    <p style="font-size:var(--fs-caption);color:var(--a-muted);margin:0 0 var(--sp-10)">
+      ①~⑮는 두-열 시안(현재 기각 아카이브)에서 도출된 결정 기록 — 열 구조 항목(⑯)을 제외하고
+      전부 변형 B에 승계·유효. B0~B11이 확정 형상의 주석.</p>
     <ol>
       <li><i class="an">1</i><span>화면명 「작업」·부팅 랜딩. 부제가 멘탈 모델을 진술. KPI·이어서 실행·태그 바는 부재가 곧 설계(⑥·⑦·⑧).</span></li>
       <li><i class="an">2</i><span>화면급 툴바 — 정렬 3종(기본 이름순·선택 영속)과 이름 필터가 두 열 공통. 스크롤과 무관하게 상시 노출.</span></li>
