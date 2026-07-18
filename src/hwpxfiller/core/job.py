@@ -83,8 +83,8 @@ class SlugCollisionError(Exception):
     slug 이 비단사라 ``예산/2026`` 과 ``예산_2026`` 이 같은 파일이 된다. 확인 없는 덮어쓰기는
     durable 데이터(템플릿·매핑·태그·참조)를 조용히 소실시키므로(confirm-or-alarm 위반),
     각 레지스트리의 ``save`` 가 명시적 ``allow_overwrite`` 없이는 여기서 막는다.
-    JobRegistry·DatasetPoolRegistry·MappingBaseRegistry 가 :func:`guard_slug_collision` 로
-    공유하는 단일 계약(#1 JobRegistry 에서 확립, #34 세 레지스트리로 일반화).
+    JobRegistry·DatasetPoolRegistry 가 :func:`guard_slug_collision` 로
+    공유하는 단일 계약(#1 JobRegistry 에서 확립, #34 레지스트리 일반화).
     """
 
 
@@ -101,7 +101,7 @@ def guard_slug_collision(path: Path, name: str, load_name, *, kind: str) -> None
     를 던진다 — 조용한 durable 소실 방지. 같은 이름 재저장(자기 갱신)은 충돌이 아니라 통과.
     호출측이 확정 덮어쓰기를 받았으면 ``allow_overwrite`` 로 이 함수를 아예 건너뛴다.
 
-    ``kind`` 는 메시지에 쓰는 항목 종류 라벨('작업'·'데이터셋'·'매핑 프로파일').
+    ``kind`` 는 메시지에 쓰는 항목 종류 라벨('작업'·'데이터셋').
     """
     if not path.exists():
         return
@@ -124,9 +124,8 @@ def load_isolated(paths, loader, corrupted):
     """손상 격리 로드 루프 — 세 레지스트리 목록 메서드의 공용 몸통(RC-05 단일 출처).
 
     예전엔 이 try/except-수집 루프가 :meth:`JobRegistry.list_jobs`·:meth:`~hwpxfiller.core.
-    dataset_pool.DatasetPoolRegistry.list_items`·:meth:`~hwpxfiller.core.mapping_base.
-    MappingBaseRegistry.list_bases` 에 바이트 단위로 복붙돼 있었다 — 여기로 수렴해
-    락스텝 편집 부담과 정책 표류를 없앤다.
+    dataset_pool.DatasetPoolRegistry.list_items` 등에 바이트 단위로 복붙돼 있었다 —
+    여기로 수렴해 락스텝 편집 부담과 정책 표류를 없앤다.
 
     - ``corrupted`` 가 **리스트**면: ``loader(path)`` 실패를 파일별로 잡아
       ``(경로, 오류 문자열)`` 로 수집하고 정상 항목만 돌려준다 — 손상 1개가 목록 전체를
@@ -151,12 +150,12 @@ def classify_existing(registry, name: str):
     """이름 자리(slug 파일)의 선점 상태 분류 — 동명 확인 승격·충돌 차단 게이트의 공용 판정.
 
     저장 전에 ``exists → load → 손상? → 이름 불일치? → 동명`` 사다리를 타는 화면 게이트
-    (pool 수동 등록·에디터 데이터셋 자동등록·프로파일 저장)가 이 분류를 공유한다 —
+    (pool 수동 등록·에디터 데이터셋 자동등록)가 이 분류를 공유한다 —
     사본마다 확인 문구·비교 누락이 표류한 전력(e4ba3bd)을 봉인한다.
 
     ``registry`` 는 ``exists(name)``/``load(name)`` 을 가진 레지스트리
-    (:class:`JobRegistry`·:class:`~hwpxfiller.core.dataset_pool.DatasetPoolRegistry`·
-    :class:`~hwpxfiller.core.mapping_base.MappingBaseRegistry` 공통 표면).
+    (:class:`JobRegistry`·:class:`~hwpxfiller.core.dataset_pool.DatasetPoolRegistry`
+    공통 표면).
 
     반환 ``(kind, item)``:
 
@@ -210,10 +209,6 @@ class Job:
     # 마지막 성공 실행 시각(ISO-8601, ""=미실행). 작업 자체의 사용 메타 — 실행의
     # 데이터·행을 저장하는 게 아니므로 "Job 에 데이터 미포함" 불변식과 무관.
     last_run_at: str = ""
-    # 이 작업의 매핑을 시드한 공유 베이스 이름(J3 계보, ""=베이스 무관). **순수 메타** —
-    # 엔진은 여전히 합성된 ``mapping`` 만 소비한다(run-path 무영향). 베이스 편집 시 "이 베이스를
-    # 참조하는 작업 N개" loud 경고의 근거(전파는 경고이지 자동 재투영 아님).
-    base_mapping_name: str = ""
     # 브라우징용 분류 태그 {축이름 → 값}(차원-불가지·선택적, JOB_BROWSER_DESIGN D1·D2·D12·D13).
     # **순수 메타** — 코드는 "물품"·"금액구간"이 뭔지 모르고 얇은 매핑만 든다(run-path 무영향).
     # 축·값은 이름 문자열이지 enum/bool 타입 필드 발명 금지(도메인을 코드에 안 박는다).
@@ -249,7 +244,6 @@ class Job:
             "filename_pattern": self.filename_pattern,
             "mapping": self.mapping.to_dict(),
             "last_run_at": self.last_run_at,
-            "base_mapping_name": self.base_mapping_name,
             "tags": dict(self.tags),
             "default_dataset_ref": self.default_dataset_ref,
         }
@@ -287,8 +281,9 @@ class Job:
             mapping=MappingProfile.from_dict(d.get("mapping", {})),
             filename_pattern=_str("filename_pattern", DEFAULT_FILENAME_PATTERN),
             version=d.get("version", 1),
+            # base_mapping_name(구 J3 공유 베이스 계보)은 F22 로 개념째 제거 — 구 JSON 의
+            # 해당 키는 미지 키로 무시된다(가산 스키마 규율의 역방향, 하위호환 무해).
             last_run_at=_str("last_run_at"),
-            base_mapping_name=_str("base_mapping_name"),
             tags=tags,
             default_dataset_ref=_str("default_dataset_ref"),
         )
@@ -340,6 +335,28 @@ class JobRegistry:
 
     def load(self, name: str) -> Job:
         return Job.load(self.path_for(name))
+
+    def clone(self, name: str) -> str:
+        """작업 복제 — '<이름> (복사본[ N])' 유일 이름으로 저장하고 새 이름을 반환(F22).
+
+        매핑 재사용의 단일 동선이다: 공유 베이스 프로파일을 걷어낸 자리를 「복제 후
+        필요한 부분만 수정」이 맡는다. 템플릿·매핑·파일명 패턴·태그·기본 데이터 참조는
+        그대로 계승하되 **실행 이력(last_run_at)은 계승하지 않는다** — 복사본은 아직
+        실행된 적 없다는 사실을 홈 카드가 그대로 말하게(조용한 이력 위조 금지).
+        원본 부재·손상은 loud raise(호출측이 재진술). 자리 선점 검사는 파일 존재
+        기준(:meth:`path_for`)이라 slug 충돌 자리도 건너뛴다 — 후보가 비어 있을 때만
+        저장하므로 :meth:`save` 의 slug 가드는 백스톱으로 남는다.
+        """
+        job = self.load(name)
+        base = f"{name} (복사본)"
+        candidate, i = base, 2
+        while self.path_for(candidate).exists():
+            candidate = f"{base[:-1]} {i})"  # '… (복사본)' → '… (복사본 2)'
+            i += 1
+        job.name = candidate
+        job.last_run_at = ""
+        self.save(job)
+        return candidate
 
     def delete(self, name: str) -> None:
         p = self.path_for(name)

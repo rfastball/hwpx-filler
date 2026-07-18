@@ -156,7 +156,6 @@ def test_from_dict_rejects_type_corrupt_durable_values():
         {**base, "tags": None},                # dict(None) 크래시 대신 loud
         {**base, "tags": ["금액구간"]},         # tags 가 리스트
         {**base, "last_run_at": 1720000000},   # 비문자열 시각 → refresh 의 _fmt_iso 지뢰
-        {**base, "base_mapping_name": 12345},  # 비문자열 → 계보 비교 int==str 무성 무효화
         {**base, "name": 5},                   # 비문자열 이름
         {**base, "default_dataset_ref": 7},    # 비문자열 참조 → 겨눔 이름 조회 지뢰
     ]
@@ -166,11 +165,16 @@ def test_from_dict_rejects_type_corrupt_durable_values():
 
 
 def test_from_dict_backward_compat_survives_boundary():
-    """경계 강화가 가산 하위호환을 깨지 않는다 — 신 필드 없는 구 JSON 은 여전히 기본값 로드."""
-    old = {"name": "구작업", "template_path": "/t.hwpx"}  # tags·base·last_run·version 전무
+    """경계 강화가 가산 하위호환을 깨지 않는다 — 신 필드 없는 구 JSON 은 여전히 기본값 로드.
+
+    역방향도 대칭: 제거된 필드(base_mapping_name, F22)가 남은 구 JSON 은 미지 키로
+    무시된다(타입이 깨져 있어도 — 읽지 않는 키는 검증 대상이 아니다).
+    """
+    old = {"name": "구작업", "template_path": "/t.hwpx"}  # tags·last_run·version 전무
     job = Job.from_dict(old)
     assert job.name == "구작업" and job.tags == {} and job.last_run_at == ""
-    assert job.base_mapping_name == "" and job.version == 1
+    assert job.version == 1
+    assert Job.from_dict({"name": "잔재", "base_mapping_name": "베이스"}).name == "잔재"
     assert Job.from_dict({}).name == ""  # 완전 빈 dict 도 기본값 작업
 
 

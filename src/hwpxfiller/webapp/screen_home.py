@@ -174,6 +174,20 @@ class HomeController:
         """작업 삭제(웹이 확인 후 호출). VM 이 레지스트리에서 지우고 목록을 갱신·통지한다."""
         self.vm.delete(p["name"])
 
+    def _do_clone_job(self, p: dict) -> dict:
+        """작업 복제(F22) — 매핑 재사용의 단일 동선(공유 베이스 프로파일의 대체).
+
+        새 카드가 목록에 나타나는 것이 곧 성공 신호라 성공 배너는 내지 않는다
+        (정상은 조용히 — 원장 정련 원칙 1). 원본 부재·손상·저장 실패는 오류 dict 로
+        시끄럽게 재진술한다(웹이 alert).
+        """
+        try:
+            new_name = self._job_registry.clone(p["name"])
+        except Exception as exc:  # noqa: BLE001 — 부재·손상·slug 백스톱: 문구로 loud
+            return {"ok": False, "error": f"작업을 복제할 수 없습니다: {exc}"}
+        self.vm.refresh()
+        return {"ok": True, "cloned": new_name}
+
     def _do_relink_template(self, p: dict) -> dict:
         """작업 템플릿 다시 연결(#67) — run 과 공유하는 확정 게이트에 위임(단일 출처).
 

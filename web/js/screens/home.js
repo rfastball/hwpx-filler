@@ -161,6 +161,7 @@
       `<span class="row">` +
       `<button class="btn primary sm" data-run="${nm}"${runAttr}>실행</button>` +
       `<button class="btn sm" data-edit="${nm}">편집</button>` +
+      `<button class="btn sm" data-clone="${nm}">복제</button>` +
       relink +
       `<button class="btn sm" data-tags="${nm}">태그</button>` +
       `<button class="btn sm" data-del="${nm}">삭제</button>` +
@@ -205,6 +206,17 @@
       return;
     }
     window.Nav.go("editor");
+  }
+
+  /* 작업 복제(F22) — 매핑 재사용의 단일 동선(공유 베이스 프로파일의 대체). 성공은 새
+     카드가 목록에 나타나는 것으로 족해 배너를 내지 않고(정상은 조용히), 실패만 loud. */
+  async function cloneJob(name) {
+    try {
+      const r = await Bridge.call(SCREEN, "clone_job", { name });
+      if (r && r.ok === false) window.alert(r.error || "작업을 복제할 수 없습니다.");
+    } catch (err) {
+      window.alert(String((err && err.message) || err));
+    }
   }
 
   /* '축=값, 축=값' 텍스트 → 태그 dict. 형식 오류면 {err: 문제 조각} — 호출부가 loud 처리. */
@@ -273,6 +285,8 @@
     if (run && !run.disabled) { runJob(run.dataset.run); return; }
     const edit = e.target.closest("[data-edit]");
     if (edit) { editJob(edit.dataset.edit); return; }
+    const cl = e.target.closest("[data-clone]");
+    if (cl) { cloneJob(cl.dataset.clone); return; }
     const rl = e.target.closest("[data-relink]");
     if (rl) { relinkTemplate(rl.dataset.relink); return; }
     const tg = e.target.closest("[data-tags]");
