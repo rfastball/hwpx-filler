@@ -101,7 +101,7 @@
           : `<td><span class="pv">${esc(v)}</span></td>`;
       }).join("")}</tr>`).join("");
     const more = s.record_count > sample.length
-      ? `<p class="fields-head muted">샘플 ${sample.length}행 표시 — 외 ${s.record_count - sample.length}건</p>`
+      ? `<p class="fields-head muted">샘플 ${sample.length}행 표시 — 외 ${s.record_count - sample.length}행</p>`
       : "";
     return `<p class="fields-head">컬럼 ${cols.length}개 · ${s.record_count}행 불러옴.</p>
       <div class="tblwrap"><table class="data-preview"><thead><tr>${head}</tr></thead>
