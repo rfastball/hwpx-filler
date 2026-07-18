@@ -444,3 +444,60 @@ def test_relink_missing_job_is_loud(tmp_path):
     _write_template(new_tpl, ["공고명"])
     res = ctrl.dispatch("relink_template", {"name": "없는작업", "path": str(new_tpl)})
     assert res["ok"] is False and "찾을 수 없습니다" in res["error"]
+
+
+# ------------------------------------------- 레코드 식별·실파일명 미리보기(F33)
+def test_record_rows_carry_real_names_and_source_summary(tmp_path):
+    """행 = 생성과 동일 규칙의 실파일명 + 원본 데이터 식별 요약 — 눈감고 선택 금지(F33)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    rows = ctrl.snapshot()["records"]
+    # 전체 선택 기본 → 생성이 실제 만들 이름 그대로(doc-{{seq:001}} + .hwpx 보장).
+    assert [r["name"] for r in rows] == ["doc-001.hwpx", "doc-002.hwpx"]
+    # 식별 요약 = 매핑 전 원본 값(사용자가 데이터에서 본 어휘). 빈 값은 건너뜀.
+    assert "bidNtceNm: 전산장비" in rows[0]["summary"]
+    assert "presmptPrce: 2000000" in rows[1]["summary"]
+
+
+def test_record_names_follow_selection_not_invented(tmp_path):
+    """미선택 행 이름은 지어내지 않는다 — {{seq}}·충돌 접미사는 선택 집합에 따라
+    달라지므로, 선택 변경 시 남은 행 이름이 생성 결과대로 재계산된다(F33)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.dispatch("toggle_record", {"index": 0, "value": False})
+    rows = ctrl.snapshot()["records"]
+    assert rows[0]["name"] == "" and rows[0]["selected"] is False
+    # 남은 1건만 생성하면 그 파일이 doc-001 — 미리보기도 같은 사실을 말한다.
+    assert rows[1]["name"] == "doc-001.hwpx" and rows[1]["selected"] is True
+
+
+def test_record_name_preview_uses_mapped_records(tmp_path):
+    """파일명 토큰은 **매핑 적용 후** 값으로 해소된다 — 소스 열 이름(bidNtceNm)과
+    템플릿 필드 이름(공고명)이 다르면 종전 원본-레코드 미리보기는 토큰을 리터럴로
+    남겨 실파일명과 갈라졌다(F33 회귀 방지)."""
+    ctrl, _ = _controller(tmp_path)
+    job = ctrl.registry.load("공고서")
+    job.filename_pattern = "doc-{{공고명}}"
+    ctrl.registry.save(job, allow_overwrite=True)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    rows = ctrl.snapshot()["records"]
+    assert [r["name"] for r in rows] == ["doc-전산장비.hwpx", "doc-사무비품.hwpx"]
+
+
+def test_unresolved_pattern_gate_surfaces_in_snapshot(tmp_path):
+    """미해소 파일명 토큰 작업 = 스냅샷 게이트 danger 차단 + 생성 백스톱(F34 관통)."""
+    ctrl, _ = _controller(tmp_path)
+    job = ctrl.registry.load("공고서")
+    job.filename_pattern = "공고서-{{ID}}"                 # 101 워크스루 실증 지뢰
+    ctrl.registry.save(job, allow_overwrite=True)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    snap = ctrl.snapshot()
+    assert snap["gate"]["enabled"] is False and snap["gate"]["level"] == "danger"
+    assert "{{ID}}" in snap["gate"]["text"]
+    res = ctrl.generate()
+    assert res["ok"] is False and "{{ID}}" in res["error"]

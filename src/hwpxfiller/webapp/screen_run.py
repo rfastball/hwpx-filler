@@ -50,6 +50,22 @@ from .screens import (
 # 사전검증 성공 문구는 링2 사용자 어휘로 순화한다(#18/D0D92672-A) — 위젯 run_view 와 동일.
 _PREFLIGHT_OK_TEXT = "검증 완료 — 문서를 생성할 준비가 됐습니다."
 
+# 레코드 식별 요약(F33)에 넣을 원본 데이터 앞쪽 열 수 — 파일명만으로 레코드가 안
+# 갈리는 패턴(예약 토큰만·상수 패턴)에서도 '어느 데이터의 문서인지'가 보이게 한다.
+_SUMMARY_FIELDS = 3
+
+
+def _record_summary(rec: dict) -> str:
+    """원본 레코드 앞쪽 값들로 만드는 한 줄 식별 요약 — 빈 값은 건너뛴다."""
+    parts = [
+        f"{k}: {v}" for k, v in list(rec.items())[:_SUMMARY_FIELDS]
+        if str(v).strip()
+    ]
+    if not parts:
+        return ""
+    tail = " …" if len(rec) > _SUMMARY_FIELDS else ""
+    return " · ".join(parts) + tail
+
 
 class RunController(PoolTargetingMixin):
     """실행 화면 — 작업 선택 상태 소유 + 링1 RunViewModel/SelectionModel 위임."""
@@ -92,20 +108,35 @@ class RunController(PoolTargetingMixin):
         return self.selection.selected_indices()
 
     def _record_rows(self) -> "list[dict]":
-        """각 레코드 = 그 행이 만들 출력 파일명 미리보기 + 선택 여부(record_select 웹 짝)."""
+        """각 레코드 = 원본 데이터 식별 요약 + 그 행이 만들 **실**파일명 미리보기(F33).
+
+        파일명은 생성과 동일 규칙으로 계산한다 — 매핑 적용 레코드 + 배치 내 충돌
+        접미사(:func:`~hwpxfiller.naming.plan_output_names`). 종전엔 매핑 **전** 원본
+        레코드로 치환해 소스 열 이름과 템플릿 필드 이름이 다르면 미리보기와 실파일명이
+        갈라졌다. ``{{seq}}``·충돌 접미사는 최종 선택 집합에 따라 달라지므로 **선택된**
+        레코드에만 이름을 계산한다 — 미선택 행에 확정되지 않은 이름을 지어내지
+        않는다(확인-또는-경보). 식별 요약은 매핑 전 원본 값이다 — 사용자가 데이터에서
+        본 그 어휘로 '어느 데이터의 문서인지'를 드러낸다.
+        """
         if self.vm is None:
             return []
-        from ..naming import make_output_filename
+        from ..naming import plan_output_names
 
-        pattern = self.vm.job.filename_pattern
-        rows: "list[dict]" = []
-        for i, rec in enumerate(self.vm.records):
-            rows.append({
+        indices = self._indices()
+        names: "dict[int, str]" = {}
+        if indices:
+            names = dict(zip(indices, plan_output_names(
+                self.vm.job.filename_pattern, self.vm.mapped_records(indices)
+            )))
+        return [
+            {
                 "index": i,
-                "label": f"{i + 1}. {make_output_filename(pattern, rec, seq=i + 1)}",
                 "selected": self.selection.is_selected(i),
-            })
-        return rows
+                "name": names.get(i, ""),
+                "summary": _record_summary(rec),
+            }
+            for i, rec in enumerate(self.vm.records)
+        ]
 
     def snapshot(self) -> dict:
         base = {
