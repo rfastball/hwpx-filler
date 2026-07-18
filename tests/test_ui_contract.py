@@ -13,7 +13,6 @@ from hwpxfiller.core.job import Job
 from hwpxfiller.core.text_registry import TextTemplateRegistry
 from hwpxfiller.gui.home_state import HomeViewModel, JobRow, TxtRow
 from hwpxfiller.gui.mapping_state import MappingModel, RowState
-from hwpxfiller.gui.matrix_state import JobFieldSummary, MatrixRunViewModel
 from hwpxfiller.gui.run_state import RunViewModel
 from hwpxfiller.gui.selection_state import SelectionModel
 from hwpxfiller.gui.template_manager_state import TemplateManagerViewModel, TemplateRow
@@ -40,9 +39,6 @@ _INSTANCES = {
         compile_state=None, compile_badge="",  # C2 파생 컴파일 배지 seam(C4)
     ),
     "RunViewModel": RunViewModel(Job()),
-    # 매트릭스(#14) — pool_registry 를 스텁으로 주입해 기본 풀 디렉터리 접촉을 피한다.
-    "MatrixRunViewModel": MatrixRunViewModel(_StubRegistry(), pool_registry=_StubRegistry()),
-    "JobFieldSummary": JobFieldSummary(job_name="", field_states=()),
     # 템플릿 관리(#13) — library_dir 미지정이면 빈 라이브러리(파일 접촉 없음).
     "TemplateManagerViewModel": TemplateManagerViewModel(library_dir=None),
     "TemplateRow": TemplateRow(
@@ -98,7 +94,7 @@ def test_every_data_vm_resolves_to_a_real_viewmodel_member():
 def test_all_three_viewmodels_are_referenced():
     seen = {r.split(".")[0] for r in _collect()}
     for required in (
-        "HomeViewModel", "RunViewModel", "MatrixRunViewModel", "MappingModel",
+        "HomeViewModel", "RunViewModel", "MappingModel",
         "SelectionModel", "TxtDraftViewModel",
     ):
         assert required in seen, f"{required} 를 겨누는 목업 요소가 없습니다"
