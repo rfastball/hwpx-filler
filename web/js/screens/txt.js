@@ -1,4 +1,4 @@
-/* 즉시 기안(txt) 화면 — 브리지로 링1 TxtDraftViewModel 과 왕복. 첫 실화면(스파이크 승격).
+/* 기안문 채우기(txt) 화면 — 브리지로 링1 TxtDraftViewModel 과 왕복. 첫 실화면(스파이크 승격).
    렌더는 Python 이 window.__push('txt', snapshot) 로 밀어 넣는다(관측 방향). 프리뷰 재진술
    (빨강 항목없음 {{토큰}}·〈빈 값〉)은 표현 계층이라 여기서 만든다 = 링2 대체, VM 로직 아님. */
 (function () {
@@ -66,7 +66,7 @@
   function resetNote() {
     const n = $("txtNote");
     n.dataset.level = "idle";
-    n.textContent = "복사가 commit — 실시간 view가 곧 산출물. 항목 없는 토큰은 그대로 노출됩니다.";
+    n.textContent = window.Copy.TXT_NOTE;  // 단일 출처(copy.js) — index.html 정적 중복 제거(F15)
   }
 
   /* 완료 동작(복사/저장) 후 리포트를 재진술 — confirm-or-alarm: 미충족 포함 시 시끄럽게. */

@@ -39,6 +39,7 @@ from ..gui.result_errors import describe_result_error
 from ..gui.run_state import RunViewModel
 from ..gui.selection_state import SelectionModel
 from .screens import (
+    NO_ROWS_TEXT,
     PoolTargetingMixin,
     PushSink,
     default_pool_registry,
@@ -218,7 +219,7 @@ class RunController(PoolTargetingMixin):
             raise ValueError("실행할 작업을 먼저 선택하세요.")
         records = self.vm.load_data(path, sheet=sheet)  # 파일 소스 리졸버(Qt-free). 실패는 raise.
         if not records:
-            raise ValueError("레코드 0건 — 데이터를 바꾸지 않았습니다.")
+            raise ValueError(NO_ROWS_TEXT)
         self.data_label = Path(path).name
         self.data_source = "file"  # 병기 라벨은 스냅샷이 합성(#26·K8)
         self.selection = SelectionModel(len(records))  # 데이터 변경 → 전체 선택 초기화

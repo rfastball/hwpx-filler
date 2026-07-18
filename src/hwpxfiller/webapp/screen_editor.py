@@ -50,7 +50,7 @@ from ..gui.mapping_state import (
     gate_for_template,
     profile_source_vocabulary,
 )
-from .screens import PushSink, default_pool_registry
+from .screens import NO_ROWS_TEXT, PushSink, default_pool_registry
 
 # 표시형 프리셋은 유형별 고정 → 한 번 계산해 스냅샷에 싣는다(코어 라벨 그대로).
 _FMT_OPTIONS = {t: [{"code": code, "label": label} for label, code in format_presets(t)] for t in TYPES}
@@ -401,7 +401,7 @@ class EditorController:
         source = source_for_path(path, sheet=sheet)
         records = source.records()
         if not records:
-            raise ValueError("레코드 0건 — 데이터를 바꾸지 않았습니다.")
+            raise ValueError(NO_ROWS_TEXT)
         self.data_path = path
         self.data_sheet = sheet or ""  # 자동등록 참조에 확정 시트 동봉(#26 — 모호 참조 방지)
         self.source_fields = source.fields()
@@ -466,7 +466,8 @@ class EditorController:
             if m.template_field not in row_fields
         ]
         fresh = [r.template_field for r in self.model.rows if not r.confirmed]
-        notice = f"작업 '{job.name}' 을 편집 모드로 열었습니다 — 매핑 {applied}개 행 복원."
+        # 사용자 어휘 재진술(F17) — "매핑 N행 복원" 같은 로그 어휘를 UI 로 내보내지 않는다.
+        notice = f"'{job.name}' 을(를) 편집합니다 — 저장된 매핑 {applied}행을 불러왔습니다."
         if dropped:
             notice += (
                 f"\n템플릿에 더는 없는 저장 필드 {len(dropped)}개는 제외했습니다: "

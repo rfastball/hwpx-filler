@@ -132,7 +132,7 @@ def test_validate_generate_gate_order(tmp_path):
     assert "데이터" in vm0.validate_generate([0], "out")[0].message
 
     vm = _vm(tmp_path)
-    assert vm.validate_generate([], "out")[0].message.startswith("생성할 레코드")  # 선택 0
+    assert vm.validate_generate([], "out")[0].message.startswith("생성할 문서")  # 선택 0
     assert vm.validate_generate([0], "")[0].message.startswith("저장 폴더")        # 폴더 미지정
     assert vm.validate_generate([0, 1], "out") == []                              # 신규 다건 OK
 
@@ -194,9 +194,9 @@ def test_gate_absorbs_preconditions_inline(tmp_path):
     # 저장 폴더 미지정 → 인라인 warn(모달 아님).
     gate = vm.gate_state([0, 1])
     assert gate.enabled is False and gate.level == "warn" and "저장 폴더" in gate.text
-    # 레코드 0건 → 인라인 warn.
+    # 선택 0건 → 인라인 warn(문구는 사용자 어휘 '문서', R-copy PR #85 리뷰).
     gate = vm.gate_state([], "out")
-    assert gate.enabled is False and gate.level == "warn" and "레코드" in gate.text
+    assert gate.enabled is False and gate.level == "warn" and "생성할 문서" in gate.text
     # 이어채우기 모드 + 문서 미선택 → 인라인 warn.
     vm.set_target_mode("continue")
     gate = vm.gate_state([0], "out")

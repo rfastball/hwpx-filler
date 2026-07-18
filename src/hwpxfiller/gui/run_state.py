@@ -455,11 +455,11 @@ class RunViewModel:
         if not out_dir:
             return GateState(False, "warn", "저장 폴더를 지정하세요.")
         if not indices:
-            return GateState(False, "warn", "생성할 레코드를 최소 1건 선택하세요.")
+            return GateState(False, "warn", "생성할 문서를 최소 1건 선택하세요.")
         if self.template_override and len(indices) != 1:
             return GateState(
                 False, "warn",
-                "기존 문서 이어채우기는 레코드 1건만 지원합니다 — 레코드를 1건만 선택하세요.",
+                "기존 문서 이어채우기는 1건만 지원합니다 — 생성 대상을 1건만 선택하세요.",
             )
         return GateState(True, "", "")
 
@@ -544,12 +544,12 @@ class RunViewModel:
         if not out_dir:
             return [GateError("저장 폴더를 지정하세요.", "warn")]
         if not indices:
-            return [GateError("생성할 레코드를 최소 1건 선택하세요.", "warn")]
+            return [GateError("생성할 문서를 최소 1건 선택하세요.", "warn")]
         if self.template_override and len(indices) != 1:
             # 누적 v1 = 단건. 배치 누적(이전출력↔레코드 파일키 매칭)은 별개 설계 — 파킹.
             return [GateError(
-                "기존 문서 이어채우기는 레코드 1건만 지원합니다 — 문서 1개에 여러 "
-                "레코드를 겹쳐 쓸 수 없습니다. 레코드를 1건만 선택하세요.", "warn")]
+                "기존 문서 이어채우기는 1건만 지원합니다 — 문서 1개에 데이터 여러 "
+                "행을 겹쳐 쓸 수 없습니다. 생성 대상을 1건만 선택하세요.", "warn")]
         return []
 
     def mapped_records(self, indices: "list[int]", mark_missing: str = "") -> "list[dict]":

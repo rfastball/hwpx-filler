@@ -148,6 +148,11 @@ def load_pool_item_checked(
     return item
 
 
+# 빈 데이터 재진술 단일 출처(R-copy) — run/editor/pool 공유. "레코드"는 개발 어휘라
+# 사용자 문구에선 "행"(엑셀 어휘)으로 통일한다(101 순회 F15 계열).
+NO_ROWS_TEXT = "데이터에 행이 없습니다 — 데이터를 바꾸지 않았습니다."
+
+
 def load_pool_into(
     pool_registry: DatasetPoolRegistry, name: str, loader: "Callable[[DatasetPoolItem], list]"
 ) -> dict:
@@ -168,7 +173,7 @@ def load_pool_into(
     except Exception as exc:  # noqa: BLE001 — 죽은 참조(파일 이동 등) 사용자 문구로
         return {"ok": False, "error": f"등록 데이터를 불러올 수 없습니다: {exc}"}
     if not records:
-        return {"ok": False, "error": "레코드 0건 — 데이터를 바꾸지 않았습니다."}
+        return {"ok": False, "error": NO_ROWS_TEXT}
     # item 동봉(#67) — 호출측이 로케이트 경로(opts["path"]) 등 참조 메타를 재사용한다.
     return {"ok": True, "records": records, "item": item}
 
@@ -408,7 +413,7 @@ class TxtController(PoolTargetingMixin):
         ``sheet`` = 웹에서 확정한 시트명(다중 시트 확정 게이트 #33, None=CSV·단일 시트)."""
         records = self.vm.load_data(path, sheet=sheet)
         if not records:
-            raise ValueError("레코드 0건 — 상태를 바꾸지 않았습니다.")
+            raise ValueError(NO_ROWS_TEXT)  # 표류 변형('상태를…')도 단일 출처로 수렴(R-copy)
         self.data_label = Path(path).name  # 서버 소유(P4)
         self.data_source = "file"  # 병기 라벨은 스냅샷이 합성(#26·K8)
         self._push()

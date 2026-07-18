@@ -72,7 +72,7 @@
       ` ${PathTrack.affordances(s.template_path)}${relink}</div>` +
       `<div class="jm-line">파일명 <span class="mono">${esc(s.filename_pattern)}</span></div>`;
     $("targetLine").innerHTML = s.template_name
-      ? `새 문서 생성 — 작업 템플릿(<span class="mono">${esc(s.template_name)}</span>)으로 한 번에 완성합니다.`
+      ? `작업 템플릿 <span class="mono">${esc(s.template_name)}</span> 으로 새 문서를 만듭니다.`
       : `작업 템플릿 경로가 비어 있습니다 — 에디터에서 템플릿을 지정하세요.`;
   }
 

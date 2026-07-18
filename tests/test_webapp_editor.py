@@ -344,7 +344,7 @@ def test_load_job_restores_edit_session(tmp_path):
     assert snap["editing_origin"] == "원본작업"
     assert snap["is_complete"] is True                   # 1 const + 9 blank 전부 확정 복원
     assert snap["rows"][0]["type"] == "const" and snap["rows"][0]["const"] == "v"
-    assert snap["notice"] and "편집 모드" in snap["notice"]["text"]
+    assert snap["notice"] and "편집합니다" in snap["notice"]["text"]
 
 
 def test_new_session_action_clears_edit_mode(tmp_path):
