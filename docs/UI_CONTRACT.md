@@ -29,9 +29,9 @@
 | `.titem .tm` | `TxtRow.field_count` | 상태 | H |
 
 HWPX 카드별 액션과 "이어서 실행"은 위젯 Qt 시그널(`run/edit/delete_job_requested`), txt 진입은 `open_txt/new_txt_requested`
-(라우팅 `app.py`). 이후 착지한 홈 진입 시그널 3종(`home.py:200-204`)도 같은 방식 — "데이터 풀 관리"
-버튼→`manage_pool_requested`(J1) · "같은 데이터로 여러 작업 실행" 버튼→`matrix_run_requested`(J2) ·
-"어휘 워크벤치" 버튼→`manage_vocab_requested`(J3), `app.py`가 `hasattr` 가드로 라우팅(전방호환).
+(라우팅 `app.py`)였다 — Qt 시그널 서술은 Qt 셸 시대(#23 철거 전)의 기록이다. 웹 셸의
+허브 이동은 링2(`home.js` → 대상 화면 dispatch → `window.Nav`)가 맡는다.
+J2 「같은 데이터로 여러 작업 실행」 버튼·화면은 **F9 로 제거**(뒤집힘 표기는 아래 #14 절).
 Qt 시그널은 VM 표면이 아니므로 `data-vm` 계약 검사 대상이 아니다(목업엔 버튼만).
 선택/삭제/갱신: `HomeViewModel.select`/`delete`/`refresh`.
 

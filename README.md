@@ -65,7 +65,6 @@ uv sync --locked --all-extras --group dev --group build
 
 **곁들여진 화면**
 
-- **매트릭스** — 여러 작업 × 여러 데이터를 한눈에 교차 실행.
 - **템플릿 관리** — 위생 점검(유사 필드명·미치환 토큰)과 판본 간 필드 드리프트,
   평문 `{{토큰}}` 초안을 누름틀 템플릿으로 컴파일하는 저작 보조.
 - **텍스트 기안** — 온나라 등 평문 `.txt` 서식에 데이터 1건을 렌더해 클립보드로 복사.
@@ -115,7 +114,7 @@ python -m hwpxfiller.cli lint T.hwpx        # 위생 점검 / drift·fieldize·r
 | `data/nara.py` | 나라장터 조달청 API 취득 소스(stdlib urllib) |
 | `data/pipeline.py` | 소스 조립 파이프라인: 여러 DataSource → 하나 |
 | `data/secret_store.py` | 비밀 저장소 포트(OS 자격증명) + ServiceKey 마스킹 |
-| `webapp/` · `gui/` | pywebview 웹 UI(작업 홈·에디터·실행·매트릭스·템플릿 관리) |
+| `webapp/` · `gui/` | pywebview 웹 UI(작업 홈·에디터·실행·템플릿 관리·데이터 관리) |
 
 ## Windows 빌드와 배포
 

@@ -7,6 +7,11 @@
 > **착지 완료(2026-07-13)** — S1~S7 전량, 최종 게이트 834 passed(+13 신규)·ruff·pyright.
 > 착지 기록은 §5 표. 이후 이 문서는 셸 계약(§1~§4·§6·§7)의 원장으로 산다.
 
+> **역사 문서 표기(2026-07-18).** 이 문서가 다루는 Qt(PySide6) 셸은 웹 셸로 이관 후
+> 철거됐고(#20·#23 — 웹 셸 계약은 `web/js/app.js`·`UI_CONTRACT.md`), 본문의 matrix
+> (여러 작업 실행) 표면은 **F9 로 제거**됐다(`UX_FINDINGS_101_WALKTHROUGH.md`).
+> 아래 내용은 당시 결정의 기록으로 보존한다.
+
 > **문제(ST-01):** `AppController` 의 7개 `_open_*` 가 능력마다 별도 최상위 창을 생성해
 > `win.show()` — 인-윈도 전환·복귀·현재 위치 표지가 없다(Nielsen H3/H4 · Fluent
 > NavigationView). `app.py` 모듈 docstring 이 임베드를 "후속 리팩터"로 자인해 온 상태.
