@@ -176,9 +176,11 @@ table.data-preview td{white-space:nowrap}
 .note.okbox{background:var(--fb-fill-bg);border:1px solid var(--fb-fill-bd);color:var(--a-ok)}
 
 /* 매핑 표 — table-layout:fixed(F23): 값 길이에 따라 열폭이 변해 행 스텝마다 레이아웃이
-   튀던 것을 고정 열폭으로 봉쇄. 열폭은 th(첫 행)에 지정, 넘치는 값은 셀 안에서 말줄임. */
+   튀던 것을 고정 열폭으로 봉쇄. 열폭은 th(첫 행)에 지정, 넘치는 값은 셀 안에서 말줄임.
+   min-width 는 고정 열 합(674px) + 유연 2열(템플릿 필드)의 실용 최소폭 — 좁은 창에서
+   가로 스크롤로 밀리더라도 핵심 식별자 열이 짜부라지지 않는다(PR #84 리뷰). */
 .tblwrap{overflow-x:auto;border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card);margin-top:var(--sp-10)}
-table.map{border-collapse:collapse;width:100%;font-size:var(--fs-body);min-width:680px;table-layout:fixed}
+table.map{border-collapse:collapse;width:100%;font-size:var(--fs-body);min-width:900px;table-layout:fixed}
 table.map th{background:var(--n-header-bg);color:var(--n-header-ink);font-weight:600;text-align:left;
   padding:var(--sp-6) var(--sp-8);border-bottom:1px solid var(--a-border);position:sticky;top:0}
 table.map th:nth-child(1){width:44px}   /* 확정 체크 */

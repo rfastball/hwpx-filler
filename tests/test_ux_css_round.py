@@ -31,6 +31,11 @@ def _fn_body(src: str, name: str, next_name: str) -> str:
 
 # ------------------------------------------------------------------ F23·F24: 매핑표
 
+# 유연 열(2열 '템플릿 필드 · 추정')이 최소 폭에서 보장받아야 하는 실용 하한(px).
+# 이 밑으로 내려가면 좁은 창에서 핵심 식별자 열이 짜부라져 매핑 검토가 불가능하다(PR #84 리뷰).
+_FLEX_COL_FLOOR = 180
+
+
 def test_map_table_fixed_layout_prevents_column_jumps():
     """매핑표는 table-layout:fixed 여야 한다(F23) — auto 로 돌아가면 값 길이에 따라
     열폭이 변해 이전/다음 행 스텝마다 레이아웃이 튄다."""
@@ -43,6 +48,25 @@ def test_map_table_fixed_layout_prevents_column_jumps():
     # 첫 행 내용으로 임의 분배해 사실상 auto 와 같은 튐이 재발한다.
     assert re.search(r"table\.mapth:nth-child\(\d\)\{width:", css), (
         "table.map 열폭 지정(th:nth-child width)이 사라졌습니다(F23)."
+    )
+
+
+def test_map_table_flex_column_survives_min_width():
+    """min-width 에서 유연 열(폭 미지정 2열)에 남는 공간이 실용 하한 이상이어야 한다.
+
+    고정 열 합이 min-width 를 거의 다 먹으면(fixed 레이아웃에서 잔여=유연 열 폭)
+    좁은 창에서 '템플릿 필드 · 추정' 열이 수 px 로 짜부라진다 — 고정폭·min-width 중
+    어느 쪽을 조정하든 이 배분 불변식이 성립해야 한다(PR #84 리뷰 회귀 가드).
+    """
+    css = _css()
+    table = re.search(r"table\.map\{([^}]*)\}", css).group(1)
+    min_width = int(re.search(r"min-width:(\d+)px", table).group(1))
+    fixed = [int(w) for w in re.findall(r"table\.mapth:nth-child\(\d\)\{width:(\d+)px", css)]
+    assert fixed, "고정 열폭 선언이 없습니다(F23 전제)."
+    remaining = min_width - sum(fixed)
+    assert remaining >= _FLEX_COL_FLOOR, (
+        f"min-width({min_width}) - 고정 열 합({sum(fixed)}) = {remaining}px — 유연 열이 "
+        f"{_FLEX_COL_FLOOR}px 미만으로 짜부라집니다. min-width 를 올리거나 고정폭을 줄이세요."
     )
 
 
