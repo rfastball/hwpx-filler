@@ -31,9 +31,9 @@
   }
 
   function stepBody(s) {
-    // 세션 통지(#26) — 편집 복원·데이터 교체 보존을 시끄럽게 재진술.
+    // 세션 통지(#26) — 문제(warn)만 시끄럽게, 정상(ok)은 muted 한 줄(F32).
     const notice = s.notice
-      ? `<p class="note ${s.notice.level === "ok" ? "okbox" : "warnbox"}" style="white-space:pre-line">${esc(s.notice.text)}</p>`
+      ? `<p class="note ${s.notice.level === "ok" ? "quiet" : "warnbox"}" style="white-space:pre-line">${esc(s.notice.text)}</p>`
       : "";
     if (s.step === 0) return notice + step0(s);
     if (s.step === 1) return notice + step1(s);
@@ -103,14 +103,14 @@
     const more = s.record_count > sample.length
       ? `<p class="fields-head muted">샘플 ${sample.length}행 표시 — 외 ${s.record_count - sample.length}건</p>`
       : "";
-    return `<p class="note okbox">컬럼 ${cols.length}개, 레코드 ${s.record_count}건 로드.</p>
+    return `<p class="fields-head">컬럼 ${cols.length}개, 레코드 ${s.record_count}건 로드.</p>
       <div class="tblwrap"><table class="data-preview"><thead><tr>${head}</tr></thead>
         <tbody>${body}</tbody></table></div>${more}`;
   }
 
   /* ---- 2단계: 데이터(선택적) ---- */
   function step1(s) {
-    return `<div class="wtitle">2단계 — 데이터 선택 <span class="muted" style="font-weight:400;font-size:12px">(선택)</span></div>
+    return `<div class="wtitle">2단계 — 데이터 선택 <span class="muted capnote" style="font-weight:400">(선택)</span></div>
       <p class="wsub">레코드(행)마다 문서 1건을 생성할 데이터 파일. 작업엔 데이터가 저장되지 않습니다 —
         매핑 검토용 샘플입니다. 데이터 없이 진행하면 스키마만으로 매핑합니다.</p>
       <div class="row"><span class="lbl">데이터(.xlsx/.csv)</span>
@@ -141,14 +141,14 @@
               `<span class="hchip ign">${esc(f)} <button class="btn sm" data-act="reactivate-source" data-field="${esc(f)}">다시 사용</button></span>`).join("")}</div>
          </details>`
       : "";
-    return `<div class="grp" style="margin-top:var(--sp-12)">
+    return `<div class="grp">
       <span class="cap">사용할 헤더 선택</span>
       <p class="hint" style="margin-top:0">문서 생성에 쓸 헤더만 남기세요. 미사용 헤더는 자동 매핑 제안과
         소스 드롭다운 후보에서 빠집니다 — 원본 데이터·다른 매핑은 바뀌지 않습니다.</p>
       <div class="hchips">${boxes || '<span class="muted">활성 헤더가 없습니다.</span>'}</div>
       <div class="row" style="margin-top:var(--sp-8)">
         <span class="muted">사용 ${s.active_count} · 미사용 ${s.ignored_count}</span>
-        <span style="flex:1"></span>
+        <span class="spacer"></span>
         <button class="btn sm" data-act="use-selected">선택 항목만 사용</button>
         ${s.ignored_count ? `<button class="btn sm" data-act="use-all-headers">모두 사용</button>` : ""}
       </div>
@@ -179,10 +179,10 @@
         <th>확정</th><th>템플릿 필드 · 추정</th><th>데이터 항목</th>
         <th>타입 / 고정값</th><th>표시형</th><th>미리보기</th></tr></thead>
         <tbody>${rows}</tbody></table></div>
-      <div class="stepper">${stepper}<span style="flex:1"></span>${counts}</div>
+      <div class="stepper">${stepper}<span class="spacer"></span>${counts}</div>
       <div class="gate">
         <span class="gatecount ${s.is_complete ? "ok" : "pend"}">확정 ${(s.rows || []).filter((r) => r.confirmed).length}/${(s.rows || []).length}</span>
-        <span style="flex:1"></span>
+        <span class="spacer"></span>
         <button class="btn" data-act="confirm-all">모두 확정</button>
         <button class="btn" data-act="unconfirm-all">모두 해제</button>
       </div>`;
@@ -230,9 +230,9 @@
     return `<div class="wtitle">4단계 — 작업 저장${s.editing_origin ? ` <span class="pill">편집: ${esc(s.editing_origin)}</span>` : ""}</div>
       <p class="wsub">이 작업(템플릿·매핑·파일명)을 저장합니다. 데이터·행은 저장하지 않습니다 —
         실행할 때 고릅니다.</p>
-      <div class="row" style="margin-bottom:9px"><span class="lbl" style="width:76px">작업 이름</span>
+      <div class="row"><span class="lbl lbl-fixed">작업 이름</span>
         <input class="field" data-act="name" value="${esc(s.name)}" placeholder="예: 공고서 자동생성"></div>
-      <div class="row"><span class="lbl" style="width:76px">파일명 패턴</span>
+      <div class="row"><span class="lbl lbl-fixed">파일명 패턴</span>
         <input class="field mono" data-act="pattern" value="${esc(s.pattern)}"></div>
       ${provenanceBlock(s)}
       ${datasetBlock(s)}
@@ -257,7 +257,7 @@
         && p.template_fields !== s.fields.map((f) => f.name).join(" · "))
       ? `<div class="hint danger" style="margin-top:var(--sp-4)">⚠ 작성 당시와 템플릿 필드 구성이 다릅니다 — 매핑 재검토가 필요할 수 있습니다.</div>`
       : "";
-    return `<div class="grp" style="margin-top:var(--sp-12)">
+    return `<div class="grp">
       <span class="cap">작성 출처</span>
       ${line("템플릿", p.template)}
       ${line("데이터", p.dataset)}
@@ -272,12 +272,12 @@
      자동등록한다. 참조(경로·시트)만 저장 — 행·내용은 저장하지 않는다. */
   function datasetBlock(s) {
     if (!s.data_path) return "";
-    return `<div class="grp" style="margin-top:10px">
+    return `<div class="grp">
       <span class="cap">선언 데이터 자동등록</span>
       <p class="hint" style="margin-top:0">저장하면 이 작업이 쓴 데이터(${esc(s.data_name)})를
         등록 데이터로 함께 등록하고 <b>이 작업의 기본 데이터로 연결</b>합니다(#53-A) — 경로 참조만
         저장(행·내용 없음), 실행 화면에서 작업을 고르면 자동 조준해 실행 때 다시 읽습니다.</p>
-      <div class="row"><span class="lbl" style="width:76px">등록 이름</span>
+      <div class="row"><span class="lbl lbl-fixed">등록 이름</span>
         <input class="field" data-act="dataset-name" value="${esc(s.dataset_name)}"></div>
     </div>`;
   }
@@ -301,7 +301,7 @@
       line = `<p class="hint danger" style="margin-top:0">⚠ 기본 데이터: <b>${esc(d.name)}</b> —
         등록 데이터에 없습니다(삭제됨). 데이터 관리에서 등록하거나 데이터를 다시 선택하세요.</p>`;
     }
-    return `<div class="grp" style="margin-top:10px">
+    return `<div class="grp">
       <span class="cap">기본 데이터 연결</span>${line}
     </div>`;
   }
@@ -313,7 +313,7 @@
     const fieldsHtml = rows.length
       ? rows.map((r) => `<code>{{${esc(r.template_field)}}}</code> → ${fnPreviewText(r, s)}`).join(" &nbsp;·&nbsp; ")
       : `<span class="muted">매핑을 완료하면 파일명에 쓸 수 있는 필드가 여기 표시됩니다.</span>`;
-    return `<div class="grp" style="margin-top:10px">
+    return `<div class="grp">
       <span class="cap">파일명에 넣을 수 있는 값</span>
       <p class="hint" style="margin-top:0">${fieldsHtml}</p>
       <p class="hint">
@@ -343,8 +343,8 @@
       next = `<button class="btn primary" data-act="save">작업 저장</button>`;
     }
     const hint = (s.step < 3 && !s.reachable[s.step])
-      ? `<span class="muted" style="font-size:12px">${gateHint(s)}</span>` : "";
-    return `${back}<span style="flex:1"></span>${hint}${next}`;
+      ? `<span class="muted capnote">${gateHint(s)}</span>` : "";
+    return `${back}<span class="spacer"></span>${hint}${next}`;
   }
 
   function gateHint(s) {

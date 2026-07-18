@@ -165,6 +165,7 @@ class RunController(PoolTargetingMixin):
         if self.vm is None:
             base.update({
                 "job_name": "", "template_name": "", "filename_pattern": "",
+                "template_missing": False,
                 "record_count": 0, "selected_count": 0, "records": [],
                 "preflight": {"level": "", "text": ""},
                 "field_states": [], "has_data": False,
@@ -181,6 +182,10 @@ class RunController(PoolTargetingMixin):
             "job_name": job.name,
             "template_name": Path(job.template_path).name if job.template_path else "",
             "template_path": job.template_path,  # 추적성 로케이트(#53-B) — 전체 경로
+            # 템플릿 부재 시에만 복구 동선(다시 연결)을 노출한다(F30) — 홈 카드와 대칭.
+            "template_missing": (
+                not job.template_path or not Path(job.template_path).exists()
+            ),
             "filename_pattern": job.filename_pattern,
             "has_data": self.vm.datasource is not None,
             "record_count": len(self.vm.records),

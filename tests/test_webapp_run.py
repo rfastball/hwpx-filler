@@ -338,6 +338,22 @@ def test_manual_data_clears_auto_aim_notice(tmp_path):
     assert ctrl.registry.load("공고서").default_dataset_ref == "7월공고"
 
 
+# ------------------------------------------- 템플릿 부재 재진술(F30)
+def test_snapshot_reports_template_missing_only_when_file_gone(tmp_path):
+    """template_missing 은 파일이 실제로 없을 때만 True(F30) — 웹이 이 플래그로
+    「템플릿 다시 연결」 복구 동선을 조건부 노출한다(정상 상태엔 숨김, 홈 카드와 대칭)."""
+    ctrl, _ = _controller(tmp_path)
+    snap = ctrl.initial()
+    assert snap["template_missing"] is False               # 미선택 = 버튼 표면 자체가 없음
+
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    snap = ctrl.snapshot()
+    assert snap["template_missing"] is False               # 정상 = 복구 동선 숨김
+
+    Path(snap["template_path"]).unlink()                    # 템플릿 파일 소실 재현
+    assert ctrl.snapshot()["template_missing"] is True      # 부재 = 복구 동선 노출
+
+
 def test_auto_aim_nara_ref_is_frozen_warn(tmp_path):
     """기본 참조가 나라 항목이면 자동 조준도 동결 거절 warn — 공유 관문 문구 그대로(#53-A)."""
     ctrl, pool = _pool_controller(tmp_path)

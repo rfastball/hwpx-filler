@@ -57,7 +57,8 @@
           <h1>대시보드</h1>
           <p class="sub">두 트랙 허브 — 저장된 작업(HWPX)과 즉시 기안 템플릿(txt)을 한눈에.</p>
         </div>
-        <button class="btn sm" id="homeRefresh">새로고침</button>
+        <!-- 수동 새로고침 버튼 제거(F6) — 화면 진입 시 자동 갱신(app.js REFRESH_ON_NAV)이 대체.
+             tpl·pool 의 새로고침은 외부 파일시스템 재스캔 용도라 존치(다른 문제). -->
       </header>
 
       <!-- KPI — 전부 실재 데이터(레지스트리·템플릿 상태·txt 루트). 가짜 지표 없음. -->
@@ -73,8 +74,7 @@
         <!-- HWPX 트랙 — 작업 브라우저(group-by 렌즈 + facet 칩) -->
         <div class="track hwpx">
           <div class="th"><span class="tt">정식 문서 생성 · HWPX</span>
-            <span class="row">
-              <button class="btn primary sm" id="homeNewJob">＋ 새 작업</button></span></div>
+            <button class="btn primary sm" id="homeNewJob">＋ 새 작업</button></div>
           <p class="tsub">누름틀 템플릿 + 매핑을 작업으로 저장 → 데이터 겨눠 .hwpx 생성.</p>
           <!-- 작업 브라우저 바(태그 없으면 렌더 안 됨 — 퇴화-코퍼스 불변식) -->
           <div class="jobbrowser" id="homeBrowser" style="display:none"></div>
@@ -153,7 +153,7 @@
         <!-- 생성 대상 문서 -->
         <div class="run-row run-recs-head">
           <span class="lbl" style="font-weight:600">생성 대상 문서</span>
-          <div class="row"><span class="muted" id="selCount" style="font-size:12px">선택 0/0</span>
+          <div class="acts"><span class="muted capnote" id="selCount">선택 0/0</span>
             <button class="btn sm" id="selAll" data-busy-lock>전체 선택</button>
             <button class="btn sm" id="selNone" data-busy-lock>전체 해제</button></div>
         </div>
@@ -169,7 +169,7 @@
         <!-- 액션 · 진행 · 결과 · 로그 -->
         <div class="run-actions">
           <button class="btn primary" id="genBtn" disabled>이 작업으로 문서 생성</button>
-          <span class="muted" id="genGate" style="font-size:12px"></span>
+          <span class="muted capnote" id="genGate"></span>
         </div>
         <div class="bar"><i id="genBar"></i></div>
         <div id="genResult" class="run-result"></div>
@@ -248,7 +248,7 @@
         <section class="grp tpl-cat">
           <span class="cap">HWPX 템플릿</span>
           <div class="tpl-cathead">
-            <span class="muted" id="tplHwpxCount" style="font-size:12px"></span>
+            <span class="muted capnote" id="tplHwpxCount"></span>
             <div class="tpl-catdir"><span class="muted mono" id="tplLibDir"></span>
               <button class="btn sm" id="btnTplLibDir">폴더 선택…</button></div>
           </div>
@@ -259,7 +259,7 @@
         <section class="grp tpl-cat">
           <span class="cap">TXT 템플릿</span>
           <div class="tpl-cathead">
-            <span class="muted" id="tplTxtCount" style="font-size:12px"></span>
+            <span class="muted capnote" id="tplTxtCount"></span>
             <div class="tpl-catdir"><span class="muted mono" id="tplTxtDir"></span>
               <button class="btn sm" id="btnTplNewTxt">새 TXT 템플릿…</button></div>
           </div>
@@ -288,7 +288,7 @@
         <section class="grp tpl-cat">
           <span class="cap">등록 데이터</span>
           <div class="tpl-cathead">
-            <span class="muted" id="poolCount" style="font-size:12px"></span>
+            <span class="muted capnote" id="poolCount"></span>
             <button class="btn sm" id="btnPoolRegister">＋ 데이터 등록…</button>
           </div>
           <div id="poolCorrupt"></div>
@@ -302,13 +302,13 @@
     <div id="poolRegModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="poolRegTitle">
       <div class="modal-card">
         <h3 id="poolRegTitle">데이터 등록</h3>
-        <p class="muted" style="font-size:12px;margin:4px 0 8px">경로 참조만 저장합니다 —
+        <p class="modal-sub">경로 참조만 저장합니다 —
           행·내용은 저장하지 않고 실행할 때 다시 읽습니다.</p>
         <label class="ctl"><span class="lbl">이름</span>
           <input class="field" id="poolRegName" type="text" placeholder="예: 7월 공고목록"></label>
         <label class="ctl"><span class="lbl">파일 경로(.xlsx/.csv)</span>
-          <span class="row" style="display:flex;gap:6px">
-            <input class="field mono" id="poolRegPath" type="text" placeholder="C:\...\데이터.xlsx" style="flex:1">
+          <span class="row">
+            <input class="field mono spacer" id="poolRegPath" type="text" placeholder="C:\...\데이터.xlsx">
             <button class="btn" id="poolRegBrowse" type="button">찾아보기…</button></span></label>
         <label class="ctl"><span class="lbl">시트(선택)</span>
           <input class="field" id="poolRegSheet" type="text" placeholder="비우면 첫/유일 시트"></label>
@@ -327,7 +327,7 @@
         <h3 id="txtEditTitle">새 TXT 템플릿</h3>
         <label class="ctl" id="txtNameRow"><span class="lbl">이름(확장자 제외)</span>
           <input class="field" id="txtEditName" type="text" placeholder="예: 회의결과보고"></label>
-        <p class="muted" style="font-size:12px;margin:8px 0 4px">{{필드}} 토큰을 포함한 템플릿 내용</p>
+        <p class="modal-sub">{{필드}} 토큰을 포함한 템플릿 내용</p>
         <textarea id="txtEditContent" rows="10" placeholder="제목: {{공고명}} ..."></textarea>
         <div class="modal-actions">
           <button class="btn" id="txtEditCancel">취소</button>
@@ -341,7 +341,7 @@
     <div id="sheetModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
       <div class="modal-card">
         <h3 id="sheetTitle">시트 선택</h3>
-        <p class="muted" style="font-size:12px;margin:4px 0 8px"><span class="mono" id="sheetModalFile"></span> 에 시트가 여러 개입니다 — 어느 시트로 채울지 확정하세요. 조용히 첫 시트를 쓰지 않습니다.</p>
+        <p class="modal-sub"><span class="mono" id="sheetModalFile"></span> 에 시트가 여러 개입니다 — 어느 시트로 채울지 확정하세요. 조용히 첫 시트를 쓰지 않습니다.</p>
         <div id="sheetList" class="sheet-list"></div>
         <div class="modal-actions">
           <button class="btn" id="sheetCancel">취소</button>
@@ -355,7 +355,7 @@
     <div id="poolModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="poolTitle">
       <div class="modal-card">
         <h3 id="poolTitle">등록 데이터 선택</h3>
-        <p class="muted" style="font-size:12px;margin:4px 0 8px">활성 상태의 등록 데이터(참조)만
+        <p class="modal-sub">활성 상태의 등록 데이터(참조)만
           실행 후보입니다 — 선택하면 지금 시점의 원본을 다시 읽어 옵니다.</p>
         <div id="poolPickList" class="sheet-list"></div>
         <p id="poolNote" class="note dangerbox" style="display:none;white-space:pre-line"></p>

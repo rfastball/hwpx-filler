@@ -6,8 +6,10 @@ C9: home.js editTags 가 현재 태그를 '축=값, 축=값' 콤마 직렬화로
 봉합: 직렬화 직후 재파싱해 원본과 대조하는 왕복 가드 — 불일치면 인라인 편집 불가를
 시끄럽게 알리고 중단한다(confirm-or-alarm, 조용한 재작성 금지).
 
-N1: $("homeRefresh") → Bridge.call(SCREEN,"refresh") 이 fire-and-forget 이라 레지스트리
-IO 실패 등의 rejection 이 삼켜져 클릭이 무반응이 됐다. .catch 로 표면화한다.
+N1: 새로고침 경로의 Bridge.call 이 fire-and-forget 이라 레지스트리 IO 실패 등의
+rejection 이 삼켜져 무반응이 됐다. .catch 로 표면화한다. 수동 새로고침 버튼(homeRefresh)은
+F6 으로 제거됐다 — 홈 갱신은 전환 자동 새로고침(app.js REFRESH_ON_NAV)이 유일 경로이므로
+N1 가드도 그 배선으로 이관한다(버튼 재도입·자동 갱신 탈락 둘 다 회귀).
 
 순수 JS 지점이라 정적 계약 테스트(test_r3_js.py 패턴) + 백엔드 전제(콤마 값 허용)는
 HomeController 로 실행 검증한다.
@@ -90,17 +92,38 @@ def test_backend_set_tags_accepts_comma_values(tmp_path):
     assert rows[0]["tags"] == {"지역": "본청, 대전"}
 
 
-# --------------------------------------------------------------- N1: 새로고침 배선
+# --------------------------------------------------------------- N1: 새로고침 배선(F6 이관)
 
-def test_home_refresh_rejection_surfaced():
-    """homeRefresh 클릭 배선이 rejection 을 표면화해야 한다(N1) — fire-and-forget 회귀 가드."""
-    src = HOME_JS.read_text(encoding="utf-8")
-    # 배선 문장 전체(첫 ';' 까지 — 내부에 세미콜론 없음)를 잡아 .catch 존재를 검사한다.
-    m = re.search(r'\$\("homeRefresh"\)\.addEventListener\([^;]*;', src, re.S)
-    assert m, "homeRefresh → refresh 배선이 없습니다."
-    assert '"refresh"' in m.group(0), "homeRefresh 배선이 refresh 액션을 호출하지 않습니다."
-    wiring = m.group(0)
-    assert ".catch" in wiring, (
-        "homeRefresh 의 Bridge.call 이 fire-and-forget 입니다 — 실패가 조용히 삼켜집니다(N1)."
+APP_JS = Path(__file__).resolve().parents[1] / "web" / "js" / "app.js"
+WEB_INDEX = Path(__file__).resolve().parents[1] / "web" / "index.html"
+
+
+def test_manual_home_refresh_button_removed():
+    """수동 새로고침 버튼은 제거 상태를 유지해야 한다(F6) — 자동 갱신(REFRESH_ON_NAV)과
+    중복인 잉여 어포던스의 재도입 회귀 가드. tpl·pool 의 새로고침(외부 파일 재스캔)과 다르다."""
+    assert 'id="homeRefresh"' not in WEB_INDEX.read_text(encoding="utf-8"), (
+        "homeRefresh 버튼이 다시 들어왔습니다 — 홈은 전환 자동 새로고침이 유일 경로입니다(F6)."
     )
-    assert "window.alert" in wiring, "homeRefresh 실패 표면화가 alert 로 재진술되지 않습니다(N1)."
+    assert "homeRefresh" not in HOME_JS.read_text(encoding="utf-8"), (
+        "home.js 가 제거된 homeRefresh 를 참조합니다(F6)."
+    )
+
+
+def test_nav_refresh_covers_home_and_surfaces_rejection():
+    """홈 갱신의 유일 경로(전환 자동 새로고침)가 home 을 포함하고 rejection 을 표면화한다(N1).
+
+    home 이 REFRESH_ON_NAV 에서 빠지면 수동 버튼 없는 홈은 스냅샷이 고착되고,
+    .catch 가 빠지면 갱신 실패가 조용히 삼켜진다 — 둘 다 시끄럽게 잡는다.
+    """
+    src = APP_JS.read_text(encoding="utf-8")
+    m = re.search(r"const REFRESH_ON_NAV = \[[^\]]*\]", src)
+    assert m and '"home"' in m.group(0), (
+        "app.js REFRESH_ON_NAV 에 home 이 없습니다 — 수동 버튼 제거(F6) 전제가 무너집니다."
+    )
+    block = re.search(r"if \(REFRESH_ON_NAV\.includes\(id\)[\s\S]*?\n  \}", src)
+    assert block, "전환 자동 새로고침 분기가 없습니다(REFRESH_ON_NAV 소비처 소실)."
+    wiring = block.group(0)
+    assert '"refresh"' in wiring, "자동 새로고침이 refresh 액션을 호출하지 않습니다."
+    assert ".catch" in wiring and "window.alert" in wiring, (
+        "자동 새로고침 Bridge.call 이 fire-and-forget 입니다 — 실패가 조용히 삼켜집니다(N1)."
+    )
