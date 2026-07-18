@@ -39,7 +39,8 @@
     return `<div class="kpi${cls || ""}"><div class="v">${v}</div><div class="l">${esc(label)}</div></div>`;
   }
 
-  /* 이어서 실행 — 실행 이력 있는 작업 최근순(있을 때만 노출). */
+  /* 이어서 실행 — 실행 이력 있는 작업 최근순(있을 때만 노출). 버튼 라벨은 섹션 제목과
+     겹치지 않게 "실행"(F14) — 작업 카드의 실행 버튼과 같은 동작·같은 어휘. */
   function renderContinue(rows) {
     const box = $("homeContinue");
     rows = rows || [];
@@ -50,7 +51,7 @@
       rows.map((r) =>
         `<div class="continue-run"><span class="name">${esc(r.name)}</span>` +
         `<span class="when">${esc(r.last_run_display)}</span>` +
-        `<button class="btn sm" data-run="${esc(r.name)}"${r.runnable ? "" : " disabled"}>이어서 실행</button></div>`
+        `<button class="btn sm" data-run="${esc(r.name)}"${r.runnable ? "" : " disabled"}>실행</button></div>`
       ).join("");
   }
 
@@ -66,7 +67,7 @@
       rows.map((c) =>
         `<div class="jcard corrupt"><div class="jn">${esc(c.file_name)} <span class="pill danger">손상됨</span></div>` +
         `<div class="jm">${esc(c.detail_line)}</div>` +
-        `<div class="jfoot"><span></span><span class="row">` +
+        `<div class="jfoot"><span></span><span class="acts">` +
         `<button class="btn sm" data-reveal="${esc(c.path)}">폴더 열기</button>` +
         `<button class="btn sm" data-del-corrupt="${esc(c.path)}">삭제</button>` +
         `</span></div></div>`
@@ -158,7 +159,7 @@
       `<div class="jn">${nm}${badge}</div>` +
       `<div class="jm">${esc(r.meta_line)}</div>` +
       `<div class="jfoot"><span class="jr">${esc(r.last_run_display)}</span>` +
-      `<span class="row">` +
+      `<span class="acts">` +
       `<button class="btn primary sm" data-run="${nm}"${runAttr}>실행</button>` +
       `<button class="btn sm" data-edit="${nm}">편집</button>` +
       `<button class="btn sm" data-clone="${nm}">복제</button>` +
@@ -338,10 +339,8 @@
   }
 
   function wire() {
-    // 새로고침 실패(레지스트리 IO 등)를 조용히 삼키지 않는다(N1) — rejection 을 표면화.
-    $("homeRefresh").addEventListener("click", () =>
-      Bridge.call(SCREEN, "refresh", {}).catch((err) =>
-        window.alert(String((err && err.message) || err))));
+    // 수동 새로고침 버튼은 제거(F6) — 화면 진입 자동 갱신(app.js REFRESH_ON_NAV)이 유일 경로.
+    // 실패 표면화(N1)는 그 경로의 .catch → alert 가 담당한다.
     $("homeNewJob").addEventListener("click", newJob);
     $("homeNewTxt").addEventListener("click", newTxt);
     $("homeJobs").addEventListener("click", onJobsClick);

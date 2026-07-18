@@ -50,7 +50,7 @@
       el.innerHTML =
         `<div class="modal-card">
           <h3 id="poolTitle">등록 데이터 선택</h3>
-          <p class="muted" style="font-size:12px;margin:4px 0 8px">활성 상태의 등록 데이터(참조)만
+          <p class="modal-sub">활성 상태의 등록 데이터(참조)만
             실행 후보입니다 — 선택하면 지금 시점의 원본을 다시 읽어 옵니다.</p>
           <div id="poolPickList" class="sheet-list"></div>
           <p id="poolNote" class="note dangerbox" style="display:none;white-space:pre-line"></p>
@@ -105,10 +105,10 @@
             `<span class="mono sheet-name">${escHtml(it.name)}</span>` +
             `<span class="muted sheet-dim">${escHtml(it.kind_label)} · ${escHtml(it.reference)}</span></button>`
           ).join("")
-        : `<p class="muted" style="font-size:12px">활성 등록 데이터가 없습니다 — 작업 저장 시
+        : `<p class="muted capnote">활성 등록 데이터가 없습니다 — 작업 저장 시
            선언한 데이터가 여기 등록되거나, 데이터 관리 화면에서 추가할 수 있습니다.</p>`)
         + (corrupted
-            ? `<p class="note dangerbox" style="font-size:12px;margin:8px 0 0">⚠ ${escHtml(corrupted)}</p>`
+            ? `<p class="note dangerbox" style="margin:var(--sp-8) 0 0">⚠ ${escHtml(corrupted)}</p>`
             : "");
 
       let settled = false;

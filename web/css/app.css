@@ -66,6 +66,16 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
   padding:var(--sp-6) var(--sp-8);color:var(--a-ink);font:inherit;font-size:var(--fs-body);width:100%}
 .field.ro{background:var(--n-surface-alt);color:var(--n-ink-soft)}
 .lbl{font-size:var(--fs-body);color:var(--n-header-ink);white-space:nowrap}
+.lbl-fixed{width:76px}                /* 폼 라벨 열 고정폭(에디터 4단계) — 구조 치수 */
+
+/* ---- 배치 유틸(R-css 전수조사) — 인라인 style 리터럴 대체 ---- */
+.spacer{flex:1}                       /* flex 스페이서(<span style="flex:1"> 대체) */
+.capnote{font-size:var(--fs-caption)} /* 캡션급 보조문(off-scale 12px 인라인 대체) */
+.acts{display:inline-flex;align-items:center;gap:var(--sp-6);flex-wrap:wrap}  /* 우측 액션 버튼 묶음 */
+/* 정상 상태 재진술(F32) — "정상은 조용히": ok 레벨은 초록 박스 대신 muted 한 줄 */
+.note.quiet{color:var(--a-muted);font-size:var(--fs-body);margin-top:var(--sp-10);line-height:1.5}
+/* 모달 보조 설명문 — 제목 아래 한 줄(인라인 font-size 리터럴 대체) */
+.modal-sub{font-size:var(--fs-caption);color:var(--a-muted);margin:var(--sp-4) 0 var(--sp-8)}
 
 /* ---- txt 화면 머리말 + 상태 pill ---- */
 .scr-head{display:flex;align-items:flex-end;gap:var(--sp-16);margin-bottom:var(--sp-12)}
@@ -165,16 +175,28 @@ table.data-preview td{white-space:nowrap}
 .note.dangerbox{background:var(--fb-missing-bg);border:1px solid var(--fb-missing-bd);color:var(--a-danger)}
 .note.okbox{background:var(--fb-fill-bg);border:1px solid var(--fb-fill-bd);color:var(--a-ok)}
 
-/* 매핑 표 */
+/* 매핑 표 — table-layout:fixed(F23): 값 길이에 따라 열폭이 변해 행 스텝마다 레이아웃이
+   튀던 것을 고정 열폭으로 봉쇄. 열폭은 th(첫 행)에 지정, 넘치는 값은 셀 안에서 말줄임. */
 .tblwrap{overflow-x:auto;border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card);margin-top:var(--sp-10)}
-table.map{border-collapse:collapse;width:100%;font-size:var(--fs-body);min-width:680px}
+table.map{border-collapse:collapse;width:100%;font-size:var(--fs-body);min-width:680px;table-layout:fixed}
 table.map th{background:var(--n-header-bg);color:var(--n-header-ink);font-weight:600;text-align:left;
   padding:var(--sp-6) var(--sp-8);border-bottom:1px solid var(--a-border);position:sticky;top:0}
-table.map td{padding:var(--sp-6) var(--sp-8);border-bottom:1px solid var(--n-track);vertical-align:middle}
+table.map th:nth-child(1){width:44px}   /* 확정 체크 */
+table.map th:nth-child(3){width:170px}  /* 데이터 항목 */
+table.map th:nth-child(4){width:150px}  /* 타입/고정값 */
+table.map th:nth-child(5){width:130px}  /* 표시형 */
+table.map th:nth-child(6){width:180px}  /* 미리보기 */
+table.map td{padding:var(--sp-6) var(--sp-8);border-bottom:1px solid var(--n-track);vertical-align:middle;
+  overflow:hidden}
+table.map .sel{width:100%}
+table.map td .pv{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 table.map tr:last-child td{border-bottom:0}
 tr.r-unconfirmed td{background:var(--a-unconf)}
 tr.r-unmatched td{background:var(--a-unmatch)}
-tr.r-confirmed td,tr.r-schemaonly td{background:var(--a-card)}
+/* 확정 = 완료 신호(F24) — 은은한 녹색 틴트(완료=녹색 직관, 상태색은 액센트와 분리 유지).
+   스키마온리(데이터 미연결)는 '완료'가 아니라 중립 유지. */
+tr.r-confirmed td{background:var(--fb-fill-bg)}
+tr.r-schemaonly td{background:var(--a-card)}
 .cbx{width:15px;height:15px;accent-color:var(--a-primary);cursor:pointer}
 .fname{font-weight:600}
 .tbadge{font-size:var(--fs-caption);color:var(--n-ink-soft);font-weight:600;margin-left:var(--sp-4)}
@@ -191,7 +213,10 @@ tr.r-confirmed td,tr.r-schemaonly td{background:var(--a-card)}
 .run-jobbar{display:flex;flex-wrap:wrap;gap:var(--sp-10) var(--sp-16);align-items:flex-end;
   background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface);
   padding:var(--sp-12) var(--sp-12);margin-bottom:var(--sp-12)}
-.run-jobmeta{font-size:var(--fs-body);color:var(--a-muted);padding-bottom:var(--sp-6)}
+/* 작업 메타(F28) — 한 줄에 이어붙이던 템플릿명·패턴·버튼 뭉치를 줄 단위로 구조화. */
+.run-jobmeta{font-size:var(--fs-body);color:var(--a-muted);padding-bottom:var(--sp-2);
+  display:flex;flex-direction:column;gap:var(--sp-4)}
+.run-jobmeta .jm-line{display:flex;align-items:center;gap:var(--sp-6);flex-wrap:wrap}
 .run-body{display:flex;flex-direction:column;min-height:0}
 
 /* 캡션 박스(목업 .grp 이식) */
@@ -217,7 +242,6 @@ tr.r-confirmed td,tr.r-schemaonly td{background:var(--a-card)}
 .run-row{display:flex;align-items:center;gap:var(--sp-8);margin-top:var(--sp-12)}
 .run-row .field{flex:1;min-width:0}
 .run-recs-head{justify-content:space-between}
-.run-recs-head .row{gap:var(--sp-8)}
 
 /* 사전검증 박스 */
 .preflight{margin-top:var(--sp-12);font-size:var(--fs-body);padding:var(--sp-8) var(--sp-10);border-radius:var(--rad-surface);line-height:1.5}
@@ -265,8 +289,11 @@ tr.r-confirmed td,tr.r-schemaonly td{background:var(--a-card)}
 
 /* ---- 사이드 패널 접기(#18/9B2AB35D-A) ---- */
 .rail .brand{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-8)}
+/* 접기 토글(F2) — 텍스트 글리프(«)를 패딩 상자에 얹어 베이스라인이 뜨던 것을
+   고정 정사각 + grid 중앙정렬로 봉쇄. 크기는 구조 치수 리터럴. */
 .rail-toggle{font:inherit;font-size:var(--fs-body);line-height:1;cursor:pointer;border:1px solid var(--n-border-strong);
-  background:var(--a-card);color:var(--n-ink-control);border-radius:var(--rad-control);padding:1px var(--sp-6)}
+  background:var(--a-card);color:var(--n-ink-control);border-radius:var(--rad-control);
+  width:22px;height:22px;padding:0;display:grid;place-items:center;flex:none}
 .rail-toggle:hover{background:var(--n-hover)}
 .app.rail-collapsed{grid-template-columns:48px 1fr}
 /* 접힘: 라벨열(.lbl)만 숨긴다 — 아이콘(.ni)은 상시라 시각 표지가 이어진다(#27 개정). */
