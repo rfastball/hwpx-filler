@@ -337,9 +337,6 @@
       <button class="navbtn" data-scr="run">
         <span class="n"><span class="num">3</span>실행</span>
         <span class="d">HWPX · 데이터 겨눔 → 생성</span></button>
-      <button class="navbtn" data-scr="matrix">
-        <span class="n"><span class="num">⧉</span>여러 작업 실행</span>
-        <span class="d">여러 작업 × 공통 데이터 → 생성</span></button>
       <button class="navbtn" data-scr="txt">
         <span class="n"><span class="num">✎</span>즉시 기안 (txt)</span>
         <span class="d">템플릿+데이터 → 실시간 → 복사</span></button>
@@ -376,8 +373,7 @@
                 <div class="tracks">
                   <div class="track hwpx">
                     <div class="th"><span class="tt">정식 문서 생성 · HWPX</span>
-                      <span class="row"><!-- Qt 시그널 matrix_run_requested(J2) — VM 표면 아님 -->
-                        <button class="btn sm">같은 데이터로 여러 작업 실행</button>
+                      <span class="row">
                         <button class="btn primary sm">＋ 새 작업</button></span></div>
                     <p class="tsub">누름틀 템플릿 + 매핑을 작업으로 저장 → 데이터 겨눠 .hwpx 생성.</p>
                     <!-- 작업 브라우저(패싯 탐색, JOB_BROWSER_DESIGN §4): 사용자 소유 group-by 렌즈
@@ -683,110 +679,6 @@
               <p>개별 실행은 저빈도·고위험 → 데이터 겨눔 → 행 선택 → 사전검증 → 생성의
                  가이드형. <b>매핑 재확정은 없음</b>(에디터에서 1회).</p>
               <div class="src">HANDOFF §4 · ADR A</div></div>
-          </aside>
-        </div>
-      </section>
-
-      <!-- ============ MATRIX 여러 작업 실행 ============ -->
-      <!-- 여러 작업(=템플릿+매핑) × 공통 데이터(N행) 일괄 생성. Qt 는 홈의 '같은 데이터로
-           여러 작업 실행'(matrix_run_requested)로 진입하는 독립 셸 페이지 — 목업엔 화면이
-           없었으므로 이관(#14) 시점에 이 섹션을 신설한다(목업=스펙 심 유지). 링1
-           MatrixRunViewModel 표면을 겨눈다. 단일 실행의 3상태 배지·강제 확인 게이트를
-           작업별로 이식(ADR-B/E, UD-04) — 매트릭스 우회로 게이트가 조용히 소멸하지 않는다. -->
-      <section class="scr" id="scr-matrix">
-        <div class="stage">
-          <div class="canvas">
-            <div class="win" style="max-width:820px">
-              <div class="titlebar"><span class="t">HWPX Filler — 같은 데이터로 여러 작업 실행</span>
-                <span class="caps"><span>—</span><span>▢</span><span class="x">✕</span></span></div>
-              <div class="body">
-                <div class="heading">선택한 작업 여러 개에 같은 데이터를 적용합니다.
-                  작업마다 선택한 행 수만큼 문서가 생성되고, 작업별 하위 폴더에 저장됩니다.</div>
-
-                <!-- 1. 작업 다중선택 -->
-                <div class="grp" style="margin-top:14px"><span class="cap">1. 적용할 작업 (여러 개)</span>
-                  <div class="row" style="justify-content:space-between">
-                    <span class="muted" data-vm="MatrixRunViewModel.selection_count">선택 2개</span>
-                    <div class="row">
-                      <button class="btn" data-vm="MatrixRunViewModel.set_job_selected">전체 선택</button>
-                      <button class="btn">전체 해제</button></div>
-                  </div>
-                  <div class="reclist" data-vm="MatrixRunViewModel.all_job_names">
-                    <label class="rec"><input type="checkbox" checked><span class="rf">공고서 자동생성</span></label>
-                    <label class="rec"><input type="checkbox" checked><span class="rf">낙찰통지서</span></label>
-                    <label class="rec"><input type="checkbox"><span class="rf">계약서 초안</span></label>
-                  </div>
-                </div>
-
-                <!-- 2. 공통 데이터 (웹 이관 스코프: 파일만; 풀·나라는 후속) -->
-                <div class="row" style="margin-top:14px"><span class="lbl">함께 적용할 데이터 (공통 1개)</span>
-                  <input class="field ro" value="입찰공고_2026Q3.xlsx" readonly>
-                  <button class="btn" data-vm="MatrixRunViewModel.load_file">파일 선택…</button></div>
-
-                <!-- 3. 작업별 미입력 필드 확인 — 작업별 3상태 배지 + 강제 확인 게이트(UD-04) -->
-                <div class="grp" style="margin-top:16px"><span class="cap">3. 작업별 미입력 필드 확인</span>
-                  <p style="font-size:12px;margin:2px 0 0;color:#4a505a">선택한 각 작업의 필드
-                    상태를 확인하세요. <b class="danger">미입력</b> 필드는 <b>직접 클릭해 확인</b>해야
-                    여러 작업 문서를 생성할 수 있습니다.</p>
-                  <div class="statebadges" data-vm="MatrixRunViewModel.field_summaries">
-                    <span class="muted" data-vm="JobFieldSummary.job_name">[공고서 자동생성]</span>
-                    <span class="fb fill" data-vm="JobFieldSummary.field_states">✓ 공고명</span>
-                    <span class="fb blank">◦ 비고 (비움)</span>
-                    <span class="fb missing" data-f="특이사항" tabindex="0" role="button">● 특이사항 — 미입력 확인</span>
-                    <span class="muted">[낙찰통지서]</span>
-                    <span class="fb fill">✓ 업체명</span>
-                    <span class="fb fill">✓ 낙찰금액</span>
-                  </div>
-                </div>
-
-                <!-- 4. 공통 데이터에서 사용할 행 -->
-                <div style="margin-top:14px">
-                  <div class="row" style="justify-content:space-between">
-                    <span class="lbl" style="font-weight:600">공통 데이터에서 사용할 행</span>
-                    <div class="row"><span class="muted" style="font-size:12px" data-vm="SelectionModel.selected_count">선택 3/3</span>
-                      <button class="btn" data-vm="SelectionModel.set_all">전체 선택</button>
-                      <button class="btn" data-vm="SelectionModel.set_none">전체 해제</button></div>
-                  </div>
-                  <div class="reclist" data-vm="SelectionModel.selected_indices">
-                    <label class="rec"><input type="checkbox" checked><span class="rf">1. 행-1</span></label>
-                    <label class="rec"><input type="checkbox" checked><span class="rf">2. 행-2</span></label>
-                    <label class="rec"><input type="checkbox" checked><span class="rf">3. 행-3</span></label>
-                  </div>
-                </div>
-
-                <!-- 5. 저장 폴더 (작업별 하위폴더) -->
-                <div class="row" style="margin-top:12px"><span class="lbl">저장 폴더 · 작업별 하위폴더</span>
-                  <input class="field ro" value="C:\양식\Results" readonly>
-                  <button class="btn">찾아보기…</button></div>
-
-                <div class="row" style="margin-top:14px">
-                  <button class="btn primary" disabled data-vm="MatrixRunViewModel.validate">여러 작업 문서 생성</button>
-                  <span class="muted" style="font-size:12px" data-vm="MatrixRunViewModel.missing_gate">
-                    미입력 1필드를 확인해야 일괄 생성이 열립니다</span></div>
-                <div class="bar"><i data-vm="MatrixRunViewModel.output_conflicts"></i></div>
-                <div style="font-size:12.5px;margin-top:8px;font-weight:600"></div>
-                <div class="logbox">[대기] 작업·데이터·저장 폴더를 확인한 뒤 생성하세요.</div>
-              </div>
-            </div>
-          </div>
-
-          <aside class="ann">
-            <h3>이 화면을 지배하는 결정</h3>
-            <div class="dcard"><div class="dh"><span class="dchip">J</span><span class="dt">M작업 × 공유 데이터</span></div>
-              <p>1:1 실행 표면 인공물 해소 — 선택 작업들이 <b>공통 1개</b> 데이터를 나눠
-                 쓰고, 결과는 <b>작업별 하위 폴더</b>에 저장해 교차 충돌을 원천 차단합니다.
-                 매핑은 작업 정의 때 확정(재확정 없음).</p>
-              <div class="src">batch.generate_matrix · ADR J</div></div>
-            <div class="dcard"><div class="dh"><span class="dchip E">E</span><span class="dt">작업별 강제 확인 게이트 <span style="font-weight:400;font-size:10px;color:var(--a-warn)">(이식)</span></span></div>
-              <p>단일 실행의 미입력 하드스톱이 매트릭스 우회로 <b>조용히 소멸</b>하던 결함을
-                 봉합 — 작업별 필드 스냅샷을 배지로 노출하고, 미확인 미입력이 하나라도
-                 있으면 일괄 생성을 막습니다.</p>
-              <div class="src">matrix_state.py missing_gate · UD-04 · ADR E</div></div>
-            <div class="dcard"><div class="dh"><span class="dchip">7E</span><span class="dt">레이블 명확화</span></div>
-              <p>'한 작업×N행'(실행)과 '여러 작업×공통데이터'(이 화면)를 <b>둘 다 유지</b>하되
-                 이름으로 갈랐습니다 — 적용할 작업(여러 개) → 함께 적용할 데이터(공통 1개)
-                 → 공통 데이터에서 사용할 행.</p>
-              <div class="src">이슈 #14 · 결정 7E4C2B91</div></div>
           </aside>
         </div>
       </section>

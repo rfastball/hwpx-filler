@@ -1,8 +1,8 @@
 """생성 실패 원문 → 행동 지향 안내(RC-30) — Qt 비의존 순수 문자열 로직(링1).
 
 원시 errno/WinError 문자열을 사용자가 취할 조치가 있는 문장으로 보강하되, **원문은
-괄호로 보존**한다(증거 무손실 — 조용한 재작성 금지). Qt 위젯(run_view·matrix_view)과
-webview 컨트롤러(webapp.screen_run)가 함께 소비하므로 위젯 계층에서 분리해 둔다 —
+괄호로 보존**한다(증거 무손실 — 조용한 재작성 금지). webview 컨트롤러
+(webapp.screen_run)가 소비하며 위젯 계층에서 분리해 둔다 —
 :mod:`~hwpxfiller.gui.batch_run` 은 하위호환으로 이 이름을 재export 한다.
 """
 from __future__ import annotations

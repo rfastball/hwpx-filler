@@ -31,7 +31,6 @@ WEB = ROOT / "web"
 CONTROLLER_FILES = [
     "screen_editor.py",
     "screen_home.py",
-    "screen_matrix.py",
     "screen_pool.py",
     "screen_run.py",
     "screen_template.py",

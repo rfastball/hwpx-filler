@@ -26,7 +26,6 @@ from hwpxfiller.core.dataset_pool import (
 from hwpxfiller.core.job import JobRegistry, classify_existing, load_isolated
 from hwpxfiller.data.excel import ambiguous_sheet_error
 from hwpxfiller.gui.home_state import HomeViewModel
-from hwpxfiller.gui.matrix_state import MatrixRunViewModel
 from hwpxfiller.gui.pipeline_builder_state import PipelineBuilderViewModel
 from hwpxfiller.webapp.screen_pool import PoolController
 from hwpxfiller.webapp.screen_run import RunController
@@ -113,16 +112,9 @@ def test_home_kpi_counts_pool_corruption(tmp_path):
     assert kpi.pool_corrupted == 1      # 손상은 감춰지지 않고 병기된다
 
 
-def test_matrix_and_pipeline_pool_name_lists_follow_c5_contract(tmp_path):
-    """matrix·pipeline 후보 목록 — 미전달=raise, 명시 수집=격리(list_items 계약 통과)."""
+def test_pipeline_pool_name_lists_follow_c5_contract(tmp_path):
+    """pipeline 후보 목록 — 미전달=raise, 명시 수집=격리(list_items 계약 통과)."""
     reg = _pool_with_corruption(tmp_path)
-    vm = MatrixRunViewModel(JobRegistry(tmp_path / "jobs"), pool_registry=reg)
-    with pytest.raises(ValueError):  # json.JSONDecodeError ⊂ ValueError
-        vm.active_pool_names()
-    corrupted: "list[tuple]" = []
-    assert vm.active_pool_names(corrupted=corrupted) == ["살아있음"]
-    assert len(corrupted) == 1
-
     builder = PipelineBuilderViewModel(reg)
     with pytest.raises(ValueError):  # json.JSONDecodeError ⊂ ValueError
         builder.available_source_names()

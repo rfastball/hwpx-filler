@@ -474,13 +474,17 @@ def test_nara_fetch_error_translated_exit_1(monkeypatch, capsys):
 
 # ------------------------------------------------- 파일명 패턴 계약(RC-20)
 def test_pattern_token_missing_from_data_fails_loud(tmp_path, monkeypatch, capsys):
-    """기본 패턴의 {{ID}} 가 나라 레코드에 없음 → 'output-{{ID}}.hwpx' 조용 생성 대신 오류."""
+    """패턴의 {{ID}} 가 나라 레코드에 없음 → '공고서-{{ID}}.hwpx' 조용 생성 대신 오류.
+
+    구 기본 패턴이던 '공고서-{{ID}}' 를 명시 지정한다 — 기본값은 F34b 로 예약 토큰만
+    쓰게 바뀌어 항상 해소되지만, 게이트 계약(RC-20) 자체는 기본값과 무관하게 유지된다.
+    """
     _patch_nara(monkeypatch)
     out = tmp_path / "out"
     with pytest.raises(SystemExit) as ei:
         main(["--template", TEMPLATE, "--source", "nara",
               "--service-key", "DUMMY", "--bgn", "202606010000", "--end", "202606302359",
-              "--out", str(out)])
+              "--out", str(out), "--pattern", "공고서-{{ID}}"])
     assert ei.value.code == 2
     assert "파일명 패턴의 토큰이 데이터에 없어" in capsys.readouterr().err
     assert not out.exists()              # 미치환 이름의 파일이 만들어지지 않았다

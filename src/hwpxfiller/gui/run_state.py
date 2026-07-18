@@ -25,7 +25,7 @@ from ..core.fill_ledger import (
 from ..core.job import Job, RunRequest
 from ..core.mapping import MappingProfile
 from ..data import source_for_path
-from ..naming import existing_outputs, plan_output_names
+from ..naming import existing_outputs, pattern_field_tokens, plan_output_names
 
 
 @dataclass
@@ -153,7 +153,7 @@ def export_plan_ledger(plan: GenerationPlan, batch) -> str:
     return str(sidecar)
 
 
-# ------------------------------------------ 데이터 겨눔 리졸버(단일 실행·매트릭스 공용)
+# ------------------------------------------------------------ 데이터 겨눔 리졸버
 def resolve_file_source(path: str, *, sheet: "str | None" = None) -> "tuple[object, list[dict]]":
     """파일 경로 → (DataSource, records). 팩토리가 종류 선택(엑셀/CSV). 로드 실패는 raise.
 
@@ -170,7 +170,7 @@ def resolve_pool_source(item, *, secret_store=None, fetcher=None) -> "tuple[obje
     나라장터는 N2 취득 경로(:class:`~hwpxfiller.gui.nara_state.NaraAcquireViewModel`)를 재사용
     — resultCode '00' 정합·기간 재검증·키 마스킹 관통, 만료·인증실패는 조용한 "0건"이 아니라
     **시끄러운** ``RuntimeError``. 성공은 **키 없는 스냅샷**이라 반복 조회가 재-fetch·키 재사용을
-    하지 않는다. 엑셀 등 파일 소스는 라이브(파일 재읽기=싱크). 단일 실행·매트릭스가 공유한다.
+    하지 않는다. 엑셀 등 파일 소스는 라이브(파일 재읽기=싱크).
     """
     if getattr(item, "kind", None) == "nara":
         from .nara_state import NaraAcquireViewModel
@@ -262,7 +262,7 @@ class RunViewModel:
 
         키는 복원 순간에만 저장소에서 읽혀 스냅샷·레코드 어디에도 남지 않는다. 취득 실패는
         **마스킹된 채** raise(위젯이 시끄럽게 표시), 레코드 0건이면 상태 불변(위젯이 경고).
-        실제 복원·마스킹·스냅샷은 :func:`resolve_pool_source`(단일 실행·매트릭스 공용)가 한다."""
+        실제 복원·마스킹·스냅샷은 :func:`resolve_pool_source` 가 한다."""
         source, records = resolve_pool_source(
             item, secret_store=secret_store, fetcher=fetcher
         )
@@ -276,9 +276,9 @@ class RunViewModel:
     def set_acquired(self, datasource, records: "list[dict]") -> None:
         """이미 만들어진(키 없는) 소스·레코드를 직접 겨눈다 — 나라 애드혹 취득 등.
 
-        매트릭스 VM 과 같은 seam(RC-22) — datasource/records 직접 대입 + ``reset_acks``
-        수동 호출 관례에 의존하다 누락 시 stale ack 로 미입력 게이트가 무단 통과하던
-        잠복 함정을 원자 진입점으로 봉합한다.
+        datasource/records 직접 대입 + ``reset_acks`` 수동 호출 관례(RC-22)에 의존하다
+        누락 시 stale ack 로 미입력 게이트가 무단 통과하던 잠복 함정을 원자 진입점으로
+        봉합한다.
         """
         self.datasource = datasource
         self.records = list(records)
@@ -324,6 +324,33 @@ class RunViewModel:
         return list(self.refresh(indices).field_states)
 
     # ------------------------------------------------ 상태 스냅샷·게이트 단일 산출(RC-23)
+    def unresolved_name_tokens(self) -> "list[str]":
+        """파일명 패턴이 요구하는데 이 작업이 채우지 못하는 데이터 토큰(F34, RC-20 GUI 짝).
+
+        생성 파일명은 **매핑 적용 후** 레코드({템플릿필드: 값})에서 해소되므로 해소
+        가능 집합 = 비움 아닌 매핑 커버 필드다(blank 선언 필드는 출력 dict 에서 빠져
+        토큰이 리터럴로 남는다). 매핑 적용 키는 전 레코드 균일이라 CLI 의 '일부
+        레코드 누락' 경고 분기는 GUI 에 원리적으로 없다. 데이터 없이도 판정 가능한
+        작업 정의 수준의 계약 검사다.
+        """
+        resolved = set(self.job.mapping.cover_fields()) - set(self.job.mapping.blank_fields())
+        return [
+            t for t in pattern_field_tokens(self.job.filename_pattern)
+            if t not in resolved
+        ]
+
+    def _name_token_gate(self) -> "GateState | None":
+        """미해소 파일명 토큰의 게이트 발화(danger·차단) — 없으면 None."""
+        unresolved = self.unresolved_name_tokens()
+        if not unresolved:
+            return None
+        toks = ", ".join("{{" + t + "}}" for t in unresolved)
+        return GateState(
+            False, "danger",
+            f"파일명 패턴의 토큰이 이 작업이 채우는 값에 없어 파일명에 그대로 남습니다: "
+            f"{toks} — 작업 에디터에서 파일명 패턴을 고쳐야 생성할 수 있습니다.",
+        )
+
     def refresh(self, indices: "list[int]", out_dir: str = "") -> RunStatus:
         """상태 리프레시 1회의 단일 스냅샷 — 사전검증·필드 배지·게이트를 동시 파생.
 
@@ -332,11 +359,15 @@ class RunViewModel:
         데이터 미겨눔이면 표시면은 공백이되 게이트는 **닫힌 인라인 사유**로 발화한다
         (UD-06: '활성 primary + 클릭 후 모달' 이원화를 '버튼 비활성 + 인라인 사유'로 통일
         — 초기 상태 침묵 해소). 저장 폴더·레코드 선택 같은 warn 급 전제조건도 여기서
-        게이트로 흡수해 모달은 danger 예외에만 남긴다.
+        게이트로 흡수해 모달은 danger 예외에만 남긴다. 파일명 토큰 계약(F34)은 데이터
+        없이도 판정되므로 미겨눔 상태에서도 danger 로 먼저 발화한다 — 고칠 수 없는
+        작업에 데이터부터 고르게 하지 않는다.
         """
+        name_gate = self._name_token_gate()
         if self.datasource is None:
             return RunStatus(
-                PreflightResult(), (), GateState(False, "warn", "먼저 데이터를 선택하세요."),
+                PreflightResult(), (),
+                name_gate or GateState(False, "warn", "먼저 데이터를 선택하세요."),
             )
         idx = list(indices)
         req = self.request(idx)
@@ -345,9 +376,9 @@ class RunViewModel:
         drift, current_fields = self._structure_snapshot()
         states = self._compose_field_states(set(out.empty_valued), drift, current_fields)
         return RunStatus(
-            preflight=self._compose_preflight(src, out, drift),
+            preflight=self._compose_preflight(src, out, drift, name_gate is not None),
             field_states=tuple(states),
-            gate=self._compose_gate(states, drift, idx, out_dir),
+            gate=self._compose_gate(states, drift, idx, out_dir, name_gate),
         )
 
     def gate_state(self, indices: "list[int]", out_dir: str = "") -> GateState:
@@ -391,9 +422,10 @@ class RunViewModel:
 
     def _compose_gate(
         self, states: "list[FieldState]", drift: TemplateStructureDrift,
-        indices: "list[int]", out_dir: str,
+        indices: "list[int]", out_dir: str, name_gate: "GateState | None" = None,
     ) -> GateState:
-        """게이트 표시 결정 — 드리프트(danger·차단) > 미확인 미입력(warn) > 전제조건(warn) > 열림.
+        """게이트 표시 결정 — 드리프트(danger·차단) > 파일명 토큰(danger) > 미확인
+        미입력(warn) > 전제조건(warn) > 열림.
 
         UD-06: 이어채우기 문서·저장 폴더·레코드 선택 같은 warn 급 전제조건을 이 단일
         산출로 흡수해 '버튼 비활성 + 인라인 사유' 문법으로 통일한다(클릭 후 차단 모달
@@ -411,6 +443,8 @@ class RunViewModel:
                 "템플릿 구조가 확정 매핑과 달라졌습니다 — 매핑을 다시 확정해야 생성할 "
                 "수 있습니다: " + ", ".join(names),
             )
+        if name_gate is not None:
+            return name_gate
         unmet = [s.name for s in states if s.state == "missing" and not s.acknowledged]
         if unmet:
             return GateState(
@@ -429,7 +463,9 @@ class RunViewModel:
             )
         return GateState(True, "", "")
 
-    def _compose_preflight(self, src, out, drift: TemplateStructureDrift) -> PreflightResult:
+    def _compose_preflight(
+        self, src, out, drift: TemplateStructureDrift, name_unresolved: bool = False,
+    ) -> PreflightResult:
         parts: "list[str]" = []
         if src.missing_columns:
             parts.append(
@@ -438,11 +474,15 @@ class RunViewModel:
         if drift.has_drift:
             # 게이트가 상세 사유를 렌더한다 — 여기선 '통과' 녹색이 남지 않게만 알린다.
             parts.append("[치명] 템플릿 구조가 확정 매핑과 다릅니다 — 아래 차단 사유를 확인하세요.")
+        if name_unresolved:
+            # 상세(토큰 목록·복구 동선)는 게이트가 렌더한다(F34) — 여기선 '통과' 녹색이
+            # 미해소 파일명과 공존하는 모순 신호만 차단한다(RC-23 동형).
+            parts.append("[치명] 파일명 패턴에 해소되지 않는 토큰이 있습니다 — 아래 차단 사유를 확인하세요.")
         if out.empty_valued:
             # 상태 어휘 경계(UD-20): 사전검증 경고도 배지·게이트와 같은 '미입력'으로 통일
             # (같은 상태 2이름 해소) — '미입력'=출력값 빔(ack 대상).
             parts.append("[경고] 미입력 필드: " + ", ".join(out.empty_valued))
-        if src.missing_columns or drift.has_drift:
+        if src.missing_columns or drift.has_drift or name_unresolved:
             level = "danger"
         elif out.empty_valued:
             level = "warn"
@@ -496,6 +536,11 @@ class RunViewModel:
                 "회복해야 생성할 수 있습니다.\n" + drift.describe(),
                 "danger",
             )]
+        name_gate = self._name_token_gate()
+        if name_gate is not None:
+            # 파일명 토큰 계약(F34) — 게이트 버튼이 이미 비활성이어도 워커/API 우회를
+            # 방어적으로 재차단한다(CLI RC-20 게이트의 GUI 짝, 문구 동일 출처).
+            return [GateError(name_gate.text, "danger")]
         if not out_dir:
             return [GateError("저장 폴더를 지정하세요.", "warn")]
         if not indices:

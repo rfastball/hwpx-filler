@@ -60,10 +60,13 @@ def _job() -> Job:
 # ------------------------------------------------------------------ 직렬화
 def test_default_filename_pattern_is_single_source():
     """기본 패턴 단일 출처(RC-20) — dataclass·from_dict 하위호환이 같은 상수를 참조하고,
-    값은 사용자-가시 표면(에디터 프리필·목업)이 써온 '공고서-{{ID}}' 다."""
+    값은 **예약 토큰만** 쓴다(F34b) — 데이터 필드 토큰이 섞이면 그 열이 없는 데이터에서
+    기본값이 곧 보장된 미해소 파일명 + 전 레코드 동일명이 된다."""
     from hwpxfiller.core.job import DEFAULT_FILENAME_PATTERN
+    from hwpxfiller.naming import pattern_field_tokens
 
-    assert DEFAULT_FILENAME_PATTERN == "공고서-{{ID}}"
+    assert DEFAULT_FILENAME_PATTERN == "공고서-{{date}}-{{seq:001}}"
+    assert pattern_field_tokens(DEFAULT_FILENAME_PATTERN) == []  # 데이터 토큰 0 = 항상 해소
     assert Job().filename_pattern == DEFAULT_FILENAME_PATTERN
     assert Job.from_dict({}).filename_pattern == DEFAULT_FILENAME_PATTERN
 
