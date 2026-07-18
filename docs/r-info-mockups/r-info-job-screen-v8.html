@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<!-- R-info 1부 시안 박제본(v8 확정판, 2026-07-18) — 아티팩트 게시본과 동일 내용.
+     라이브: https://claude.ai/code/artifact/e0bce119-c728-4595-b5fa-bd4cba4ccc14
+     합의문: docs/R_INFO_JOB_HOME.md -->
+<meta charset="utf-8">
+<title>R-info 시안 — 「작업」 화면</title>
+<style>
+/* ==== 실토큰 (web/css/tokens.css 사본 — 드리프트 방지: 값 수정 금지) ====
+   테마 3블록은 앱 tokens.css 와 동일 패턴: 라이트 기본 → OS 다크(명시 라이트 제외) → 명시 다크. */
+:root{
+  --a-primary:#2f5fbf; --a-primary-h:#274fa0; --a-warn:#a05a00; --a-danger:#c0392b;
+  --a-ok:#1e8449; --a-muted:#656a72; --a-border:#e2e4e8; --a-card:#ffffff;
+  --a-window:#f6f7f9; --a-ink:#1c2126; --a-on-accent:#ffffff; --a-shadow:rgba(0,0,0,.2);
+  --a-sel:#dfe6fb; --fb-missing-bg:#fbe6e3; --fb-missing-bd:#e6a49c;
+  --n-surface-alt:#f3f4f6; --n-hover:#f0f2f5; --n-track:#eef0f3; --n-header-bg:#eef1f4;
+  --n-border-strong:#cbd0d6; --n-ink-soft:#5c626b; --n-header-ink:#4a505a; --n-ink-control:#2b3038;
+  --sp-2:2px; --sp-4:4px; --sp-6:6px; --sp-8:8px; --sp-10:10px; --sp-12:12px; --sp-16:16px; --sp-24:24px; --sp-40:40px;
+  --rad-control:6px; --rad-surface:9px; --rad-overlay:12px; --rad-pill:999px;
+  --fs-caption:11px; --fs-body:13px; --fs-strong:15px; --fs-section:19px;
+  --ann:#8b5cf6;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+  --a-primary:#6f97e8; --a-primary-h:#8badf0; --a-warn:#e0a850; --a-danger:#ec7264;
+  --a-ok:#43b877; --a-muted:#98a0ab; --a-border:#333a44; --a-card:#1c2127;
+  --a-window:#131619; --a-ink:#e7eaee; --a-on-accent:#0f1418; --a-shadow:rgba(0,0,0,.5);
+  --a-sel:#1e2846; --fb-missing-bg:#3a221f; --fb-missing-bd:#6b3a34;
+  --n-surface-alt:#23272d; --n-hover:#262b31; --n-track:#2a2f36; --n-header-bg:#191d22;
+  --n-border-strong:#454c56; --n-ink-soft:#aab1bb; --n-header-ink:#c2c8d0; --n-ink-control:#dbe0e6;
+  --ann:#a78bfa;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --a-primary:#6f97e8; --a-primary-h:#8badf0; --a-warn:#e0a850; --a-danger:#ec7264;
+  --a-ok:#43b877; --a-muted:#98a0ab; --a-border:#333a44; --a-card:#1c2127;
+  --a-window:#131619; --a-ink:#e7eaee; --a-on-accent:#0f1418; --a-shadow:rgba(0,0,0,.5);
+  --a-sel:#1e2846; --fb-missing-bg:#3a221f; --fb-missing-bd:#6b3a34;
+  --n-surface-alt:#23272d; --n-hover:#262b31; --n-track:#2a2f36; --n-header-bg:#191d22;
+  --n-border-strong:#454c56; --n-ink-soft:#aab1bb; --n-header-ink:#c2c8d0; --n-ink-control:#dbe0e6;
+  --ann:#a78bfa;
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--a-window);color:var(--a-ink);
+  font:13px/1.45 "Pretendard","Malgun Gothic",system-ui,sans-serif;padding:var(--sp-24)}
+h1,h2,h3,p{margin:0}
+button{font:inherit}
+
+/* ==== 스튜디오 크롬(시안 전용 — 앱 아님) ==== */
+.studio{max-width:1160px;margin:0 auto}
+.studio-head{margin-bottom:var(--sp-16)}
+.studio-head h1{font-size:var(--fs-section);text-wrap:balance}
+.studio-head p{color:var(--a-muted);margin-top:var(--sp-4)}
+.canvas-wrap{overflow-x:auto;padding-bottom:var(--sp-8)}
+.frame{width:1080px;background:var(--a-window);border:1px solid var(--n-border-strong);
+  border-radius:var(--rad-overlay);box-shadow:0 8px 28px var(--a-shadow);overflow:hidden}
+
+/* ==== 앱 프레임(실문법 사본) — 화면 전체는 스크롤하지 않는다 ==== */
+.app{display:grid;grid-template-columns:212px 1fr;height:660px}
+.rail{background:var(--n-header-bg);border-right:1px solid var(--a-border);
+  padding:var(--sp-12) var(--sp-10);display:flex;flex-direction:column;gap:var(--sp-2)}
+.brand{font-weight:800;font-size:var(--fs-strong);padding:var(--sp-6) var(--sp-10) var(--sp-2);
+  letter-spacing:-.01em;display:flex;align-items:center;justify-content:space-between;gap:var(--sp-8)}
+.rail-toggle{font-size:var(--fs-body);line-height:1;border:1px solid var(--n-border-strong);
+  background:var(--a-card);color:var(--n-ink-control);border-radius:var(--rad-control);
+  width:22px;height:22px;padding:0;display:grid;place-items:center;flex:none}
+.navbtn{width:100%;text-align:left;border:0;background:transparent;
+  color:var(--n-ink-control);padding:var(--sp-8) var(--sp-10);border-radius:var(--rad-control);
+  display:flex;align-items:center;gap:var(--sp-10)}
+.navbtn .ni{flex:none;display:flex;color:var(--a-muted)}
+.navbtn .ni svg{width:18px;height:18px;display:block}
+.navbtn .lbl{display:flex;flex-direction:column;min-width:0;line-height:1.25}
+.navbtn .n{font-size:var(--fs-body);font-weight:500;white-space:nowrap}
+.navbtn .d{font-size:var(--fs-caption);color:var(--a-muted);margin-top:1px;display:none;white-space:nowrap}
+.navbtn.on{background:var(--a-sel);color:var(--a-primary);box-shadow:inset 3px 0 0 var(--a-primary)}
+.navbtn.on .ni{color:var(--a-primary)} .navbtn.on .n{font-weight:600} .navbtn.on .d{display:block}
+.rail-theme{margin-top:auto;text-align:left;border:0;background:transparent;color:var(--n-ink-control);
+  padding:var(--sp-8) var(--sp-10)}
+.rail-theme .n{font-size:var(--fs-body);font-weight:600;display:block}
+.rail-theme .d{font-size:var(--fs-caption);color:var(--a-muted);display:block}
+
+.stage{padding:var(--sp-24);display:flex;flex-direction:column;min-height:0}
+.scr-head{display:flex;align-items:flex-end;gap:var(--sp-16);margin-bottom:var(--sp-12);flex:none}
+.scr-head h2{font-size:var(--fs-section)}
+.scr-head .sub{margin-top:var(--sp-2);color:var(--a-muted);font-size:var(--fs-body)}
+.scr-head>div{flex:1}
+
+/* 화면급 툴바 — 두 열 위에 걸침(정렬·필터 공통), 스크롤과 무관하게 상시 노출 */
+.tbar{display:flex;align-items:center;gap:var(--sp-12);margin-bottom:var(--sp-16);flex:none}
+.tbar .lbl{font-size:var(--fs-body);color:var(--n-header-ink);white-space:nowrap}
+.field{background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-control);
+  padding:var(--sp-4) var(--sp-8);color:var(--a-ink);font:inherit;font-size:var(--fs-body)}
+.field.flt{width:240px;color:var(--a-muted)}
+
+/* 두 열 — 열 머리는 고정, 목록만 내부 스크롤(독립).
+   v6: 일화 텍스트 소멸로 행=이름-단독 → 열 폭 상한(사이드바 유래 과폭 교정).
+   남는 폭은 정직한 여백 — 구조적 세입자 후보(실행 패널 master-detail)는 변형 B·R-flow 소관. */
+.cols{display:grid;grid-template-columns:minmax(0,400px) minmax(0,360px);
+  gap:var(--sp-16);align-items:stretch;flex:1;min-height:0}
+.col{background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface);
+  padding:var(--sp-12) var(--sp-16);display:flex;flex-direction:column;min-height:0}
+.col.hwpx{border-top:3px solid var(--a-primary)}
+.col.txt{border-top:3px solid var(--a-ok)}
+.ch{display:flex;justify-content:space-between;align-items:center;gap:var(--sp-10);margin-bottom:var(--sp-8);flex:none}
+.ct{font-size:var(--fs-strong);font-weight:800}
+.ct .mut{font-weight:600;font-size:var(--fs-caption);color:var(--a-muted);margin-left:var(--sp-4)}
+.list{overflow-y:auto;min-height:0;flex:1;padding-right:var(--sp-2);position:relative}
+
+/* 버튼(실문법) */
+.btn{font-size:var(--fs-body);border:1px solid var(--n-border-strong);background:var(--a-card);
+  color:var(--n-ink-control);padding:var(--sp-4) var(--sp-10);border-radius:var(--rad-control);white-space:nowrap}
+.btn.primary{background:var(--a-primary);color:var(--a-on-accent);border-color:var(--a-primary);font-weight:600}
+.btn.more{padding:var(--sp-4) var(--sp-8);letter-spacing:1px}
+.btn:focus-visible,.navbtn:focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
+
+/* 작업 행(v4) — 행 자체가 주동사(클릭=세션 진입, CC 이식). 보조 ⋮는 호버/포커스 노출.
+   경보 행만 예외: 재연결 버튼 상시 노출(경보 어포던스는 숨지 않는다). */
+.row{display:flex;align-items:center;gap:var(--sp-10);padding:var(--sp-4) var(--sp-8);
+  border-radius:var(--rad-control);border-left:3px solid transparent;position:relative;min-height:34px;
+  cursor:pointer}
+.row:hover{background:var(--n-hover)}
+/* v6: 그룹 소속 행 들여쓰기 강화(26px, CC 수준) — 그룹 0개 평면(퇴화)에선 안 붙는 클래스 */
+.row.ind{margin-left:26px}
+.row .rn{font-weight:700;flex:1;min-width:0;display:inline-flex;gap:var(--sp-6);align-items:center;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .rm{font-size:var(--fs-body);color:var(--a-muted);flex:1;min-width:0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .ra{display:inline-flex;gap:var(--sp-6);flex:none;align-items:center}
+.row .more{opacity:0;pointer-events:none;transition:opacity .1s}
+.row:hover .more,.row.hover .more,.row.open .more{opacity:1;pointer-events:auto}
+.row.hover{background:var(--n-hover)}   /* 정적 호버 데모(스크린샷 독자용) */
+.row.alert{border-left-color:var(--a-danger);background:var(--fb-missing-bg)}
+.row.alert .rm{color:var(--a-danger)}
+.row.alert .btn{opacity:1;pointer-events:auto}
+
+/* ⋯ 메뉴 열림 상태(정적 데모) */
+.row.open{z-index:5}
+.menu{position:absolute;right:var(--sp-8);top:calc(100% - var(--sp-2));min-width:132px;
+  background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-overlay);
+  box-shadow:0 6px 20px var(--a-shadow);padding:var(--sp-4);z-index:6}
+.menu .mi{padding:var(--sp-6) var(--sp-12);border-radius:var(--rad-control);font-size:var(--fs-body);
+  display:flex;justify-content:space-between;align-items:center;gap:var(--sp-10)}
+.menu .mi:hover,.menu .mi.hl{background:var(--n-hover)}
+.menu hr{border:0;border-top:1px solid var(--a-border);margin:var(--sp-4) 0}
+.menu .mi.danger{color:var(--a-danger)}
+.menu .mi .sub-arrow{color:var(--a-muted);font-size:10px}
+/* 서브메뉴(그룹으로 이동 ▸) — 메뉴 왼쪽에 병렬 패널(정적 데모) */
+.submenu{position:absolute;right:calc(100% + var(--sp-4));top:44px;min-width:128px;
+  background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-overlay);
+  box-shadow:0 6px 20px var(--a-shadow);padding:var(--sp-4)}
+.submenu .mi.on{color:var(--a-primary);font-weight:600}
+
+/* 그룹 헤더(v6) — 접힘 화살표는 이름 오른쪽·평시 숨김·호버 노출(CC 문법).
+   접힌 그룹만 화살표 상시 노출(접힘 상태는 숨기지 않는다). 그룹 간 여백 > 행 간 여백. */
+.gh{display:flex;align-items:center;gap:var(--sp-6);padding:var(--sp-2) var(--sp-8);
+  font-size:var(--fs-caption);font-weight:700;color:var(--n-header-ink);letter-spacing:.02em;
+  cursor:pointer;margin-top:var(--sp-12)}
+.list>.gh:first-child{margin-top:0}
+.gh .caret{font-size:10px;color:var(--a-muted);order:1;opacity:0;transition:opacity .1s}
+.gh:hover .caret,.gh.collapsed .caret{opacity:1}
+.gh .gc{color:var(--a-muted);font-weight:600}
+.gh:hover{color:var(--a-ink)}
+.gh.collapsed{color:var(--a-muted)}
+
+/* 빈 상태(오른쪽 열 첫날) */
+.empty{border:1px dashed var(--a-border);border-radius:var(--rad-surface);
+  padding:var(--sp-24);text-align:center}
+.empty .h{font-size:var(--fs-strong);font-weight:700;margin-bottom:var(--sp-6)}
+.empty p{color:var(--a-muted);margin-bottom:var(--sp-12);white-space:pre-line}
+
+/* ==== 주석(시안 전용 표기 — 앱 UI 아님) ==== */
+.an{display:inline-flex;min-width:16px;height:16px;padding:0 3px;border-radius:8px;background:var(--ann);color:#fff;
+  font-size:10.5px;font-weight:700;font-style:normal;align-items:center;justify-content:center;flex:none}
+.legend{margin-top:var(--sp-16);background:var(--a-card);border:1px solid var(--a-border);
+  border-radius:var(--rad-surface);padding:var(--sp-16) var(--sp-24)}
+.legend h3{font-size:var(--fs-strong);margin-bottom:var(--sp-10)}
+.legend ol{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:var(--sp-8)}
+.legend li{display:flex;gap:var(--sp-10);align-items:baseline;color:var(--a-ink)}
+.legend li .an{position:relative;top:2px}
+.legend .mut{color:var(--a-muted)}
+.tag-open{display:inline-block;font-size:var(--fs-caption);font-weight:700;color:var(--a-warn);
+  border:1px solid currentColor;border-radius:var(--rad-pill);padding:0 var(--sp-8);margin-left:var(--sp-4)}
+.variant{margin-top:var(--sp-16)}
+.variant .cap{font-size:var(--fs-body);color:var(--a-muted);margin-bottom:var(--sp-8)}
+.variant .col{max-width:460px}
+/* 변형 B — master-detail 전면 시안(클릭-고정 in-pane 실행 · R-flow 소관, 미결정) */
+.mdx{display:grid;grid-template-columns:300px 1fr;gap:var(--sp-16);flex:1;min-height:0}
+.mlist{background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface);
+  padding:var(--sp-10) var(--sp-12);display:flex;flex-direction:column;min-height:0}
+.mlist .mtb{display:flex;gap:var(--sp-6);margin-bottom:var(--sp-8)}
+.mlist .mtb .field{flex:1;min-width:0}
+.mlist .sec{font-size:var(--fs-caption);font-weight:800;color:var(--n-header-ink);letter-spacing:.02em;
+  display:flex;justify-content:space-between;align-items:center;margin:var(--sp-10) 0 var(--sp-2)}
+.mlist .sec.hw{border-left:3px solid var(--a-primary);padding-left:var(--sp-6)}
+.mlist .sec.tx{border-left:3px solid var(--a-ok);padding-left:var(--sp-6)}
+.mempty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  color:var(--a-muted);text-align:center;gap:var(--sp-8)}
+.mempty .h{font-size:var(--fs-strong);font-weight:700;color:var(--n-ink-soft)}
+.mlist .sec:first-of-type{margin-top:0}
+.mlist .mls{overflow-y:auto;min-height:0}
+.row.sel{background:var(--a-sel);border-left-color:var(--a-primary)}
+.row.sel .rn{color:var(--a-primary)}
+.mdetail{background:var(--a-card);border:1px solid var(--a-border);border-top:3px solid var(--a-primary);
+  border-radius:var(--rad-surface);padding:var(--sp-16);display:flex;flex-direction:column;min-height:0}
+.mdetail .mh{display:flex;justify-content:space-between;align-items:center;gap:var(--sp-10);margin-bottom:var(--sp-10)}
+.mdetail .mh .t{font-size:var(--fs-strong);font-weight:800}
+.mrow{display:flex;gap:var(--sp-8);align-items:center;margin:var(--sp-6) 0}
+.mtbl{width:100%;border-collapse:collapse;font-size:var(--fs-body);margin-top:var(--sp-8)}
+.mtbl th{background:var(--n-header-bg);text-align:left;padding:var(--sp-4) var(--sp-8);
+  font-size:var(--fs-caption);color:var(--n-header-ink)}
+.mtbl td{padding:var(--sp-4) var(--sp-8);border-top:1px solid var(--a-border)}
+.mtbl tr.on td{background:var(--a-sel)}
+.mfoot{margin-top:auto;padding-top:var(--sp-12);display:flex;align-items:center;gap:var(--sp-10)}
+/* 변형 B — txt 세션 상태: 필드 채움 그리드 + 미리보기. 채움 상태색은 실토큰(fb-*) */
+.fgrid{display:grid;grid-template-columns:76px 1fr;gap:var(--sp-6) var(--sp-10);align-items:center;margin-top:var(--sp-8)}
+.field.df{background:var(--fb-fill-bg);border-color:var(--fb-fill-bd)}
+.field.bl{background:var(--fb-blank-bg);border-color:var(--fb-blank-bd)}
+.pv{background:var(--n-surface-alt);border:1px solid var(--a-border);border-radius:var(--rad-control);
+  padding:var(--sp-10) var(--sp-12);font-size:var(--fs-body);line-height:1.6;margin-top:var(--sp-10);white-space:pre-line}
+.warnpill{padding:var(--sp-2) var(--sp-10);border-radius:var(--rad-pill);font-size:var(--fs-caption);
+  background:var(--fb-blank-bg);color:var(--a-warn);white-space:nowrap}
+/* 규모 검증(N=50) — 정상상태 vs 최악 병치 */
+.stress{display:grid;grid-template-columns:300px 300px;gap:var(--sp-16)}
+.stress .mlist{height:460px}
+.stress .scap{font-size:var(--fs-caption);font-weight:700;color:var(--n-header-ink);margin-bottom:var(--sp-6)}
+</style>
+
+<div class="studio">
+  <div class="studio-head">
+    <h1>R-info 시안 v8 — 「작업」 화면 · 변형 B 확정판</h1>
+    <p><b>변형 B 확정(2026-07-18)</b>: 두 구획 목록 + 4존 세션 패널(상시 master-detail).
+       접힘-펼침 정책 승인 · 일화 툴팁 강등 확정 · 개수 표기 규칙 확정(펼침=무표기·접힘=(N) 표지만).
+       상단 두-열 프레임은 <b>기각 대안(v6) 아카이브</b> — 변형 B 프레임들이 확정안.
+       보라 번호는 주석 · 카피는 초안(R-copy 확정) · 세션 내부·가드는 R-flow 소관.</p>
+  </div>
+
+  <div class="canvas-wrap">
+  <div class="frame"><div class="app">
+
+    <nav class="rail">
+      <div class="brand">HWPX Filler <button class="rail-toggle">«</button></div>
+      <button class="navbtn on"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l7-6 7 6M5 9v7h4v-4h2v4h4V9"/></svg></span><span class="lbl"><span class="n">작업 <i class="an">1</i></span><span class="d">저장된 작업 · 찾기와 실행</span></span></button>
+      <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 4.5l2 2L7 15l-3 1 1-3zM12 6l2 2"/></svg></span><span class="lbl"><span class="n">작업 에디터</span></span></button>
+      <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l10 6-10 6z"/></svg></span><span class="lbl"><span class="n">실행</span></span></button>
+      <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h5l3 3v11H6zM11 3v3h3M8 11h5M8 14h5"/></svg></span><span class="lbl"><span class="n">기안문 채우기 (txt)</span></span></button>
+      <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3l7 4-7 4-7-4zM3 11l7 4 7-4"/></svg></span><span class="lbl"><span class="n">템플릿 관리</span></span></button>
+      <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3c3.3 0 6 1 6 2.3S13.3 7.7 10 7.7 4 6.7 4 5.3 6.7 3 10 3M4 5.3v9.4C4 16 6.7 17 10 17s6-1 6-2.3V5.3"/></svg></span><span class="lbl"><span class="n">데이터 관리</span></span></button>
+      <button class="rail-theme"><span class="n">테마</span><span class="d">시스템</span></button>
+    </nav>
+
+    <main class="stage">
+      <header class="scr-head">
+        <div>
+          <h2>작업 <i class="an">1</i></h2>
+          <p class="sub">만들 문서의 작업을 찾아 실행합니다 — 템플릿과 데이터는 작업을 위한 자원입니다.</p>
+        </div>
+      </header>
+
+      <div class="tbar">
+        <span class="lbl">정렬</span>
+        <select class="field"><option>이름순</option><option>최근 실행순</option><option>만든 날짜순</option></select>
+        <i class="an">15</i>
+        <input class="field flt" placeholder="이름으로 걸러내기">
+        <i class="an">2</i>
+      </div>
+
+      <div class="cols">
+        <!-- 왼쪽 열: 문서 작업(hwpx) · N=13 — 목록만 내부 스크롤 -->
+        <section class="col hwpx">
+          <div class="ch"><span class="ct">문서 작업 <span class="mut">HWPX</span> <i class="an">7</i></span>
+            <span><button class="btn">＋ 새 작업</button> <i class="an">8</i></span></div>
+          <div class="list"><i class="an" style="position:absolute;right:28px">9</i>
+
+            <div class="gh"><span class="caret">▾</span>물품 입찰공고 <span class="gc">(4)</span> <i class="an">10</i></div>
+            <div class="row ind" title="마지막 실행: 7/02 · 사무용 소모품 외 1행"><span class="rn">물품 입찰공고-2천만미만 <i class="an">3</i> <i class="an">14</i></span>
+              <span class="ra"><button class="btn more">⋯</button></span></div>
+            <div class="row ind hover" title="마지막 실행: 7/12 · ○○의약품 외 2행"><span class="rn">물품 입찰공고-5천만미만 <i class="an">4</i></span>
+              <span class="ra"><button class="btn more">⋯</button> <i class="an">5</i></span></div>
+            <div class="row ind alert"><span class="rn">⚠ 물품 입찰공고-긴급 <i class="an">6</i></span><span class="rm">템플릿을 찾을 수 없음 — 긴급공고_v3.hwpx</span>
+              <span class="ra"><button class="btn">템플릿 다시 연결…</button><button class="btn more">⋯</button></span></div>
+            <div class="row ind" title="마지막 실행: 5/30 · 실험기자재"><span class="rn">물품 입찰공고-재공고</span>
+              <span class="ra"><button class="btn more">⋯</button></span></div>
+
+            <div class="gh collapsed"><span class="caret">▸</span>용역 입찰공고 <span class="gc">(2)</span> <i class="an">11</i></div>
+
+            <div class="gh"><span class="caret">▾</span>적격심사 안내</div>
+            <div class="row ind open" title="마지막 실행: 7/01 · ○○의약품"><span class="rn">적격심사 안내-물품</span>
+              <span class="ra"><button class="btn more">⋯</button> <i class="an">12</i></span>
+              <div class="menu">
+                <div class="mi">편집</div>
+                <div class="mi">복제</div>
+                <hr>
+                <div class="mi hl">그룹으로 이동 <span class="sub-arrow">▸</span></div>
+                <hr>
+                <div class="mi danger">삭제</div>
+                <div class="submenu">
+                  <div class="mi">물품 입찰공고</div>
+                  <div class="mi on">적격심사 안내 ✓</div>
+                  <div class="mi">용역 입찰공고</div>
+                  <hr>
+                  <div class="mi">새 그룹…</div>
+                  <div class="mi">그룹 해제</div>
+                </div>
+              </div></div>
+            <div class="row ind"><span class="rn">적격심사 안내-용역</span>
+              <span class="ra"><button class="btn more">⋯</button></span></div>
+
+            <div class="gh"><span class="caret">▾</span>그룹 없음 <span class="gc">(5)</span> <i class="an">13</i></div>
+            <div class="row ind" title="마지막 실행: 6/20 · 전산장비 입찰"><span class="rn">개찰결과 통보</span>
+              <span class="ra"><button class="btn more">⋯</button></span></div>
+            <div class="row ind"><span class="rn">검사·검수 요청</span>
+              <span class="ra"><button class="btn more">⋯</button></span></div>
+            <div class="row ind" title="마지막 실행: 6/25 · 청사 경비용역"><span class="rn">계약체결 통보</span>
+              <span class="ra"><button class="btn more">⋯</button></span></div>
+            <div class="row ind" title="마지막 실행: 7/08 · 소방설비 점검"><span class="rn">수의계약 견적제출 안내</span>
+              <span class="ra"><button class="btn more">⋯</button></span></div>
+            <div class="row ind" title="마지막 실행: 7/15 · 사무용 가구"><span class="rn">종합쇼핑몰 납품요구</span>
+              <span class="ra"><button class="btn more">⋯</button></span></div>
+          </div>
+        </section>
+
+        <!-- 오른쪽 열: 기안 작업(txt) -->
+        <section class="col txt">
+          <div class="ch"><span class="ct">기안 작업 <span class="mut">TXT</span></span>
+            <button class="btn">＋ 새 기안 작업</button></div>
+          <div class="list">
+            <div class="gh"><span class="caret">▾</span>계약·구매 <span class="gc">(2)</span> <i class="an">17</i></div>
+            <div class="row ind" title="마지막 실행: 6/30 · 전산 유지보수"><span class="rn">수의계약 체결 기안</span>
+              <span class="ra"><button class="btn more">⋯</button></span></div>
+            <div class="row ind" title="마지막 실행: 7/12 · ○○의약품 외 2행"><span class="rn">의약품 구매 기안</span>
+              <span class="ra"><button class="btn more">⋯</button></span></div>
+
+            <div class="gh"><span class="caret">▾</span>그룹 없음</div>
+            <div class="row ind"><span class="rn">개산급 지급 기안</span>
+              <span class="ra"><button class="btn more">⋯</button></span></div>
+            <div class="row ind" title="마지막 실행: 7/10 · 소모품 대금"><span class="rn">지출결의 기안</span>
+              <span class="ra"><button class="btn more">⋯</button></span></div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+  </div></div>
+  </div>
+
+  <!-- 변형 B: v6과 경쟁하는 별개 대안 — 두 열 상태가 아예 존재하지 않는 상시 master-detail -->
+  <div class="variant">
+    <p class="cap"><b>변형 B — 상태 0: 초기(선택 전)</b> <i class="an">B0</i> —
+      v6(상단)과 <b>경쟁하는 별개 대안</b>이지 클릭 전/후가 아님: 변형 B의 세계엔 두 열 상태가 없고,
+      txt 구획은 <b>앱을 켠 순간부터 왼쪽 목록의 두 번째 구획</b>. 오른쪽은 빈 패널로 시작하며
+      클릭은 패널 내용만 채운다 — 레이아웃은 한 번도 변하지 않음(애니메이션 불요).</p>
+    <div class="canvas-wrap">
+    <div class="frame"><main class="stage" style="padding:var(--sp-16);height:480px">
+      <div class="mdx">
+        <section class="mlist">
+          <div class="mtb">
+            <select class="field"><option>이름순</option></select>
+            <input class="field" placeholder="걸러내기">
+          </div>
+          <div class="mls">
+            <div class="sec hw">문서 작업 · HWPX<button class="btn more" style="opacity:1">＋</button></div>
+            <div class="gh"><span class="caret">▾</span>물품 입찰공고</div>
+            <div class="row ind"><span class="rn">물품 입찰공고-2천만미만</span></div>
+            <div class="row ind"><span class="rn">물품 입찰공고-5천만미만</span></div>
+            <div class="row ind alert"><span class="rn">⚠ 물품 입찰공고-긴급</span></div>
+            <div class="row ind"><span class="rn">물품 입찰공고-재공고</span></div>
+            <div class="gh collapsed"><span class="caret">▸</span>용역 입찰공고 <span class="gc">(2)</span></div>
+            <div class="gh collapsed"><span class="caret">▸</span>적격심사 안내 <span class="gc">(2)</span></div>
+            <div class="gh collapsed"><span class="caret">▸</span>그룹 없음 <span class="gc">(5)</span></div>
+            <div class="sec tx" style="margin-top:var(--sp-12)">기안 작업 · TXT<button class="btn more" style="opacity:1">＋</button></div>
+            <div class="row"><span class="rn">수의계약 체결 기안</span></div>
+            <div class="row"><span class="rn">의약품 구매 기안</span></div>
+            <div class="row"><span class="rn">지출결의 기안</span></div>
+          </div>
+        </section>
+        <section class="mdetail" style="border-top-color:var(--a-border)">
+          <div class="mempty">
+            <div class="h">작업을 선택하세요</div>
+            <p>왼쪽 목록에서 작업을 클릭하면
+이 자리에서 바로 실행이 시작됩니다.</p>
+          </div>
+        </section>
+      </div>
+    </main></div>
+    </div>
+  </div>
+
+  <!-- 변형 B 상태 1: 클릭-고정 in-pane 실행 master-detail(R-flow 소관, 미결정) -->
+  <div class="variant">
+    <p class="cap"><b>변형 B — 상태 1: 문서 작업 선택(hwpx 세션)</b> — 행 클릭 = 오른쪽 패널에서 실행 세션이 열림(화면 전환 0).
+      「작업」이 회수+실행의 단일 표면이 되고 레일 「실행」이 잉여화. <b>탐구용 — R-flow 라운드 소관, 미결정.</b></p>
+    <div class="canvas-wrap">
+    <div class="frame"><div class="app" style="height:600px">
+      <nav class="rail">
+        <div class="brand">HWPX Filler <button class="rail-toggle">«</button></div>
+        <button class="navbtn on"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l7-6 7 6M5 9v7h4v-4h2v4h4V9"/></svg></span><span class="lbl"><span class="n">작업</span><span class="d">찾기 · 실행 · 관리</span></span></button>
+        <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 4.5l2 2L7 15l-3 1 1-3zM12 6l2 2"/></svg></span><span class="lbl"><span class="n">작업 에디터</span></span></button>
+        <button class="navbtn" style="opacity:.35"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l10 6-10 6z"/></svg></span><span class="lbl"><span class="n">실행 <i class="an">B5</i></span></span></button>
+        <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h5l3 3v11H6zM11 3v3h3M8 11h5M8 14h5"/></svg></span><span class="lbl"><span class="n">기안문 채우기 (txt)</span></span></button>
+        <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3l7 4-7 4-7-4zM3 11l7 4 7-4"/></svg></span><span class="lbl"><span class="n">템플릿 관리</span></span></button>
+        <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3c3.3 0 6 1 6 2.3S13.3 7.7 10 7.7 4 6.7 4 5.3 6.7 3 10 3M4 5.3v9.4C4 16 6.7 17 10 17s6-1 6-2.3V5.3"/></svg></span><span class="lbl"><span class="n">데이터 관리</span></span></button>
+        <button class="rail-theme"><span class="n">테마</span><span class="d">시스템</span></button>
+      </nav>
+      <main class="stage" style="padding:var(--sp-16)">
+        <div class="mdx">
+          <!-- 목록 패널: 두 열이 한 목록의 두 구획으로 접힘 -->
+          <section class="mlist">
+            <div class="mtb">
+              <select class="field"><option>이름순</option></select>
+              <input class="field" placeholder="걸러내기">
+            </div>
+            <div class="mls">
+              <div class="sec hw">문서 작업 · HWPX <i class="an">B1</i><button class="btn more" style="opacity:1">＋</button></div>
+              <div class="gh"><span class="caret">▾</span>물품 입찰공고</div>
+              <div class="row ind"><span class="rn">물품 입찰공고-2천만미만</span></div>
+              <div class="row ind sel"><span class="rn">물품 입찰공고-5천만미만 <i class="an">B2</i></span></div>
+              <div class="row ind alert"><span class="rn">⚠ 물품 입찰공고-긴급</span></div>
+              <div class="row ind"><span class="rn">물품 입찰공고-재공고</span></div>
+              <div class="gh collapsed"><span class="caret">▸</span>용역 입찰공고 <span class="gc">(2)</span></div>
+              <div class="gh collapsed"><span class="caret">▸</span>적격심사 안내 <span class="gc">(2)</span></div>
+              <div class="gh"><span class="caret">▾</span>그룹 없음</div>
+              <div class="row ind"><span class="rn">개찰결과 통보</span></div>
+              <div class="row ind"><span class="rn">검사·검수 요청</span></div>
+              <div class="sec tx" style="margin-top:var(--sp-12)">기안 작업 · TXT<button class="btn more" style="opacity:1">＋</button></div>
+              <div class="row"><span class="rn">수의계약 체결 기안</span></div>
+              <div class="row"><span class="rn">의약품 구매 기안</span></div>
+            </div>
+          </section>
+          <!-- 실행 패널: 선택 작업의 세션이 이 자리에서 -->
+          <section class="mdetail">
+            <div class="mh"><span class="t">물품 입찰공고-5천만미만 — 실행 <i class="an">B3</i></span>
+              <span class="status" style="background:var(--n-track)">행 선택</span></div>
+            <div class="mrow"><span class="lbl">데이터</span>
+              <select class="field" style="width:260px"><option>2026 조달대장.xlsx</option></select>
+              <button class="btn">다시 읽기</button></div>
+            <table class="mtbl">
+              <thead><tr><th></th><th>품명</th><th>수량</th><th>기초금액</th></tr></thead>
+              <tbody>
+                <tr><td>☐</td><td>사무용 소모품 일괄</td><td>120</td><td>18,400,000</td></tr>
+                <tr class="on"><td>☑</td><td>○○의약품 외 2행</td><td>3</td><td>38,500,000</td></tr>
+                <tr><td>☐</td><td>실험기자재(현미경)</td><td>2</td><td>44,000,000</td></tr>
+              </tbody>
+            </table>
+            <p class="cap" style="margin-top:var(--sp-8);font-size:var(--fs-caption);color:var(--a-muted)">
+              생성 파일명: 공고서-20260718-001.hwpx · 저장 폴더: …\물품 입찰공고-5천만미만\</p>
+            <div class="mfoot">
+              <button class="btn primary">문서 생성</button>
+              <span style="font-size:var(--fs-caption);color:var(--a-muted)">생성 전 강제확인 게이트 그대로 <i class="an">B4</i></span>
+            </div>
+            <p style="font-size:var(--fs-caption);color:var(--a-muted);margin-top:var(--sp-8)">
+              ※ 세션 내부 구성은 R-flow 라운드에서 확정 — 본 시안은 구조(전환 0 · 목록 상주 · 세션 가드)만 검증용</p>
+          </section>
+        </div>
+      </main>
+    </div></div>
+    </div>
+  </div>
+
+  <!-- 변형 B — txt 세션 상태: 기안 작업 클릭 시 같은 패널 문법의 내부만 출력별로 -->
+  <div class="variant">
+    <p class="cap"><b>변형 B — 상태 2: 기안 작업 선택(txt 세션)</b>: 같은 4존 패널 문법(헤더·데이터·본문·완료)에
+      내부만 출력별 — 매핑 선채움(표시형)+라이브 잔여+미리보기, 완료 동작은 「복사」.</p>
+    <div class="canvas-wrap">
+    <div class="frame"><main class="stage" style="padding:var(--sp-16);height:520px">
+      <div class="mdx">
+        <section class="mlist">
+          <div class="mtb">
+            <select class="field"><option>이름순</option></select>
+            <input class="field" placeholder="걸러내기">
+          </div>
+          <div class="mls">
+            <div class="sec hw">문서 작업 · HWPX<button class="btn more" style="opacity:1">＋</button></div>
+            <div class="gh collapsed"><span class="caret">▸</span>물품 입찰공고 <span class="gc">(4)</span></div>
+            <div class="gh collapsed"><span class="caret">▸</span>용역 입찰공고 <span class="gc">(2)</span></div>
+            <div class="gh collapsed"><span class="caret">▸</span>적격심사 안내 <span class="gc">(2)</span></div>
+            <div class="gh collapsed"><span class="caret">▸</span>그룹 없음 <span class="gc">(5)</span></div>
+            <div class="sec tx" style="margin-top:var(--sp-12)">기안 작업 · TXT<button class="btn more" style="opacity:1">＋</button></div>
+            <div class="gh"><span class="caret">▾</span>계약·구매</div>
+            <div class="row ind sel"><span class="rn">의약품 구매 기안</span></div>
+            <div class="row ind"><span class="rn">수의계약 체결 기안</span></div>
+            <div class="gh"><span class="caret">▾</span>그룹 없음</div>
+            <div class="row ind"><span class="rn">개산급 지급 기안</span></div>
+            <div class="row ind"><span class="rn">지출결의 기안</span></div>
+          </div>
+        </section>
+        <section class="mdetail" style="border-top-color:var(--a-ok)">
+          <div class="mh"><span class="t">의약품 구매 기안 — 기안 채우기 <i class="an">B6</i></span>
+            <span class="status" style="background:var(--n-track)">채우는 중</span></div>
+          <div class="mrow"><span class="lbl">데이터</span>
+            <select class="field" style="width:230px"><option>2026 조달대장.xlsx</option></select>
+            <span class="lbl">행</span>
+            <select class="field" style="width:190px"><option>○○의약품 외 2행</option></select></div>
+          <div class="fgrid">
+            <span class="lbl">품명</span><input class="field df" value="○○의약품 외 2건">
+            <span class="lbl">기초금액</span><input class="field df" value="38,500,000원 (표시형 적용)">
+            <span class="lbl">계약방법</span><input class="field df" value="수의계약(1인 견적)">
+            <span class="lbl">담당자</span><input class="field bl" placeholder="라이브 입력 — 미채움"> </div>
+          <div class="pv">위 물품을 아래와 같이 구매하고자 합니다.
+품명: ○○의약품 외 2건 · 기초금액: 38,500,000원 · 계약방법: 수의계약(1인 견적)
+담당자: {{담당자}} <i class="an">B7</i></div>
+          <div class="mfoot">
+            <button class="btn primary">복사</button>
+            <span class="warnpill">미채움 1칸 — 복사 전 확인 <i class="an">B8</i></span>
+            <span style="font-size:var(--fs-caption);color:var(--a-muted)">복사 = 완료 이벤트(마지막 실행 스탬프) <i class="an">B9</i></span>
+          </div>
+          <p style="font-size:var(--fs-caption);color:var(--a-muted);margin-top:var(--sp-8)">
+            ※ 텍스트 파일 저장은 보조 동작 · 일회성 기안은 레일 「기안문 채우기」 그대로(작업 없이)</p>
+        </section>
+      </div>
+    </main></div>
+    </div>
+  </div>
+
+  <!-- 변형 B — 규모 검증: N=50에서 접힘 정상상태 vs 전부 펼침 최악 -->
+  <div class="variant">
+    <p class="cap"><b>변형 B — 규모 검증(N=50)</b> <i class="an">B10</i>:
+      좌 = 접힘 정상상태(단골 그룹만 펼침 — 한 파에 다 들어옴) ·
+      우 = 전부 펼침 최악(독립 스크롤로 감당, 오른쪽 목록을 실제로 스크롤해 보세요).
+      필터는 양쪽 모두에서 즉시 지름길.</p>
+    <div class="stress">
+      <section class="mlist">
+        <div class="scap">정상상태 — 접힘 수렴(그룹 8 중 1 펼침)</div>
+        <div class="mls">
+          <div class="sec hw">문서 작업 · HWPX</div>
+          <div class="gh"><span class="caret">▾</span>물품 입찰공고</div>
+          <div class="row ind"><span class="rn">물품 입찰공고-2천만미만</span></div>
+          <div class="row ind"><span class="rn">물품 입찰공고-5천만미만</span></div>
+          <div class="row ind"><span class="rn">물품 입찰공고-긴급</span></div>
+          <div class="row ind"><span class="rn">물품 입찰공고-재공고</span></div>
+          <div class="row ind"><span class="rn">물품 입찰공고-협상</span></div>
+          <div class="row ind"><span class="rn">물품 입찰공고-2단계</span></div>
+          <div class="gh collapsed"><span class="caret">▸</span>용역 입찰공고 <span class="gc">(5)</span>
+            <span style="color:var(--a-danger);font-weight:700">⚠</span> <i class="an">B11</i></div>
+          <div class="gh collapsed"><span class="caret">▸</span>공사 입찰공고 <span class="gc">(4)</span></div>
+          <div class="gh collapsed"><span class="caret">▸</span>적격심사 안내 <span class="gc">(6)</span></div>
+          <div class="gh collapsed"><span class="caret">▸</span>계약 통보 <span class="gc">(5)</span></div>
+          <div class="gh collapsed"><span class="caret">▸</span>검사·검수 <span class="gc">(4)</span></div>
+          <div class="gh collapsed"><span class="caret">▸</span>그룹 없음 <span class="gc">(10)</span></div>
+          <div class="sec tx" style="margin-top:var(--sp-12)">기안 작업 · TXT</div>
+          <div class="gh collapsed"><span class="caret">▸</span>계약·구매 <span class="gc">(6)</span></div>
+          <div class="gh collapsed"><span class="caret">▸</span>그룹 없음 <span class="gc">(4)</span></div>
+        </div>
+      </section>
+      <section class="mlist">
+        <div class="scap">최악 — 전부 펼침(독립 스크롤)</div>
+        <div class="mls">
+          <div class="sec hw">문서 작업 · HWPX</div>
+          <div class="gh"><span class="caret">▾</span>물품 입찰공고</div>
+          <div class="row ind"><span class="rn">물품 입찰공고-2천만미만</span></div>
+          <div class="row ind"><span class="rn">물품 입찰공고-5천만미만</span></div>
+          <div class="row ind"><span class="rn">물품 입찰공고-긴급</span></div>
+          <div class="row ind"><span class="rn">물품 입찰공고-재공고</span></div>
+          <div class="row ind"><span class="rn">물품 입찰공고-협상</span></div>
+          <div class="row ind"><span class="rn">물품 입찰공고-2단계</span></div>
+          <div class="gh"><span class="caret">▾</span>용역 입찰공고</div>
+          <div class="row ind"><span class="rn">용역 입찰공고-일반</span></div>
+          <div class="row ind"><span class="rn">용역 입찰공고-긴급</span></div>
+          <div class="row ind"><span class="rn">용역 입찰공고-협상</span></div>
+          <div class="row ind"><span class="rn">용역 입찰공고-재공고</span></div>
+          <div class="row ind"><span class="rn">용역 입찰공고-수의</span></div>
+          <div class="gh"><span class="caret">▾</span>공사 입찰공고</div>
+          <div class="row ind"><span class="rn">공사 입찰공고-소액</span></div>
+          <div class="row ind"><span class="rn">공사 입찰공고-일반</span></div>
+          <div class="row ind"><span class="rn">공사 입찰공고-긴급</span></div>
+          <div class="row ind"><span class="rn">공사 입찰공고-재공고</span></div>
+          <div class="gh"><span class="caret">▾</span>적격심사 안내</div>
+          <div class="row ind"><span class="rn">적격심사 안내-물품</span></div>
+          <div class="row ind"><span class="rn">적격심사 안내-용역</span></div>
+          <div class="row ind"><span class="rn">적격심사 안내-공사</span></div>
+          <div class="row ind"><span class="rn">적격심사 안내-소액</span></div>
+          <div class="row ind"><span class="rn">적격심사 안내-협상</span></div>
+          <div class="row ind"><span class="rn">적격심사 안내-2단계</span></div>
+          <div class="gh"><span class="caret">▾</span>계약 통보</div>
+          <div class="row ind"><span class="rn">계약체결 통보</span></div>
+          <div class="row ind"><span class="rn">계약해지 통보</span></div>
+          <div class="row ind"><span class="rn">낙찰자 결정 통보</span></div>
+          <div class="row ind"><span class="rn">개찰결과 통보</span></div>
+          <div class="row ind"><span class="rn">유찰 안내</span></div>
+          <div class="gh"><span class="caret">▾</span>검사·검수</div>
+          <div class="row ind"><span class="rn">검사·검수 요청</span></div>
+          <div class="row ind"><span class="rn">검사·검수 결과</span></div>
+          <div class="row ind"><span class="rn">납품확인서</span></div>
+          <div class="row ind"><span class="rn">지체상금 통보</span></div>
+          <div class="gh"><span class="caret">▾</span>그룹 없음</div>
+          <div class="row ind"><span class="rn">수의계약 견적제출 안내</span></div>
+          <div class="row ind"><span class="rn">종합쇼핑몰 납품요구</span></div>
+          <div class="row ind"><span class="rn">입찰참가자격 확인</span></div>
+          <div class="row ind"><span class="rn">보증금 반환 안내</span></div>
+          <div class="row ind"><span class="rn">계약변경 합의서</span></div>
+          <div class="row ind"><span class="rn">과업변경 지시</span></div>
+          <div class="row ind"><span class="rn">대가지급 청구 안내</span></div>
+          <div class="row ind"><span class="rn">하자보수 요청</span></div>
+          <div class="row ind"><span class="rn">하자검사 통보</span></div>
+          <div class="row ind"><span class="rn">선금 지급 안내</span></div>
+          <div class="sec tx" style="margin-top:var(--sp-12)">기안 작업 · TXT</div>
+          <div class="gh"><span class="caret">▾</span>계약·구매</div>
+          <div class="row ind"><span class="rn">의약품 구매 기안</span></div>
+          <div class="row ind"><span class="rn">수의계약 체결 기안</span></div>
+          <div class="row ind"><span class="rn">물품 구매 기안</span></div>
+          <div class="row ind"><span class="rn">용역 계약 기안</span></div>
+          <div class="row ind"><span class="rn">계약변경 기안</span></div>
+          <div class="row ind"><span class="rn">검수조서 기안</span></div>
+          <div class="gh"><span class="caret">▾</span>그룹 없음</div>
+          <div class="row ind"><span class="rn">개산급 지급 기안</span></div>
+          <div class="row ind"><span class="rn">지출결의 기안</span></div>
+          <div class="row ind"><span class="rn">출장 결과 기안</span></div>
+          <div class="row ind"><span class="rn">행사 협조 기안</span></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- 변형: 첫날 오른쪽 열(⑤(a)의 정직한 비용 처리) -->
+  <div class="variant">
+    <p class="cap">변형 — 첫날의 기안 작업 열(빈 상태): 강제 이주 없음, 승격 어포던스 + 일회성 경로 안내</p>
+    <section class="col txt">
+      <div class="ch"><span class="ct">기안 작업 <span class="mut">TXT</span></span>
+        <button class="btn">＋ 새 기안 작업</button></div>
+      <div class="empty">
+        <div class="h">저장된 기안 작업이 없습니다</div>
+        <p>단골 기안을 작업으로 저장하면 매핑·표시형으로
+데이터가 자동으로 채워집니다.
+일회성 기안은 왼쪽 레일의 「기안문 채우기」로.</p>
+        <button class="btn primary">＋ 새 기안 작업</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="legend">
+    <h3>주석 — 결정 대응표</h3>
+    <ol>
+      <li><i class="an">1</i><span>화면명 「작업」·부팅 랜딩. 부제가 멘탈 모델을 진술. KPI·이어서 실행·태그 바는 부재가 곧 설계(⑥·⑦·⑧).</span></li>
+      <li><i class="an">2</i><span>화면급 툴바 — 정렬 3종(기본 이름순·선택 영속)과 이름 필터가 두 열 공통. 스크롤과 무관하게 상시 노출.</span></li>
+      <li><i class="an">3</i><span>이름순 기본이 만드는 변형 군집 인접(입찰공고-2천만미만/-5천만미만/-긴급/-재공고) — 금액구간 선택은 데이터가 결정.</span></li>
+      <li><i class="an">4</i><span><b>v5 일화 강등 제안</b>: 「마지막 실행: …」 텍스트를 행 면에서 제거 — 회수의 마지막 수는 데이터 대조(③)라 일화가 일상 루프에 하중이 없고, CC 행 문법도 이름-단독. 일화 경로는 <b>호버 툴팁으로 강등</b>(이 시안에서 실제로 행에 마우스를 올리면 브라우저 툴팁으로 뜸) — 영구 소음 0, 필요 시 접근 가능. 시간 정보가 필요하면 정렬 「최근 실행순」이 대신함. <span class="tag-open" style="color:var(--a-ok)">확정</span></span></li>
+      <li><i class="an">5</i><span><b>v4 행 클릭 = 주동사</b>(CC 이식): 행 자체를 클릭하면 출력별 세션 진입(왼쪽=실행, 오른쪽=기안 채우기 — 생성은 강제확인 게이트 뒤라 비파괴 내비). 동사 버튼 소멸, ⋯는 호버·포커스 시에만 노출(이 행이 호버 상태의 정적 데모 — 실제로도 마우스를 올리면 나타남).</span></li>
+      <li><i class="an">6</i><span>경보 행: 끊긴 작업은 행 전체가 경보 틴트, 「템플릿 다시 연결…」이 <b>상시 노출</b> — 경보 어포던스는 호버 뒤에 숨지 않는다. 행 클릭도 실행이 아니라 재연결로. 화면급 손상 경보는 현행 유지(조건부).</span></li>
+      <li><i class="an">7</i><span><b>개수 표기 규칙 확정</b>: 펼친 그룹·구획 머리의 개수는 전부 제거(아래 행이 보이는데 세는 것 = KPI와 같은 과시 함정). <b>접힌 그룹의 "(N)"만 유지</b> — 보이지 않는 내용물의 유일한 표지(F8 접힘 문법·confirm-or-alarm). 과시/표지의 경계 = 접힘 여부. <span class="tag-open" style="color:var(--a-ok)">확정</span></span></li>
+      <li><i class="an">8</i><span>창작 어포던스 — 열마다 ＋(매체 맥락 상속). <span class="tag-open">미확정 3</span></span></li>
+      <li><i class="an">9</i><span><b>v2 스크롤 처리</b>: 카드→행(~34px, 2.5배 밀도) + 화면 전체 스크롤 제거 — 각 열의 목록만 독립 스크롤(열 머리·툴바 고정). N=13이 한 파에 다 보이고, N=40이어도 ~1.5파 + 필터 지름길.</span></li>
+      <li><i class="an">10</i><span><b>v3 간단 그룹화</b>: 작업당 <b>선택적 그룹 하나</b>(단일 소속) — 다축 태그(⑥ 제거)의 부활이 아님: 축도 DSL도 렌즈도 없음. 무그룹이면 v2와 완전히 동일(퇴화-코퍼스 불변식). 정렬은 그룹 내 적용, 그룹 배열은 이름순 고정·그룹 우선(탐색기 관례). <span class="tag-open" style="color:var(--a-ok)">확정</span></span></li>
+      <li><i class="an">11</i><span>접힘 — 헤더 클릭으로 그룹 접힘, 「이름 (N)」이 곧 표지(F8 접힘 문법: 사라지는 게 아니라 접힘). 안 쓰는 계열을 접어 단골만 한 파에 남기는 게 이 기능의 실효.</span></li>
+      <li><i class="an">12</i><span><b>v4 메뉴 문법</b>(CC 이식): 편집 / 복제 / ─ / <b>그룹으로 이동 ▸</b>(서브메뉴: 기존 그룹 목록 + 현재 소속 ✓ + 새 그룹… + 그룹 해제 — 모달 왕복 제거) / ─ / 삭제(위험 동사는 빨강·맨 아래 격리 + 확인 모달). 구현은 modal.js 계열, 네이티브 금지(F7 교훈).</span></li>
+      <li><i class="an">13</i><span><b>v4 「그룹 없음」 명명 섹션</b>(CC 이식): 그룹이 하나라도 있으면 무그룹 작업도 라벨 있는 접이식 구획에 — 모호한 중간 상태 제거. 그룹이 0개면 헤더 자체가 없는 평면(불변식 유지).</span></li>
+      <li><i class="an">14</i><span><b>v6 들여쓰기 강화</b>(CC 수준 26px) + <b>그룹 간 여백 &gt; 행 간 여백</b>(헤더 상단 12px) — 그룹 위계가 들여쓰기(수평)와 여백(수직) 두 축으로 읽힘. 그룹 0개 평면에선 들여쓰기 없음(불변식).</span></li>
+      <li><i class="an">15</i><span><b>v5.1 정렬 규칙(수정)</b>: <b>그룹 배열은 안정 — 이름순 고정, 「그룹 없음」 마지막.</b> 정렬 키는 <b>그룹 내부에만</b> 적용. 앞판(대표값으로 그룹도 재배열)은 폐기 — CC가 프로젝트 그룹에서 활동순 자동 배열을 썼다가 "그룹이 뛰어다닌다"는 사용자 불만(이슈 #70104)으로 안정 배열 요구를 받은 실전 반증 + 그룹 위치의 공간 기억 보존. 그룹은 소수(≤8)라 최근 항목 찾기에 손해 미미.</span></li>
+      <li><i class="an">16</i><span><b>v6 열 폭 상한</b>: 일화 텍스트 소멸로 행=이름-단독이 되자 사이드바 유래의 과폭이 드러남 → 열 폭을 내용에 맞게 상한(400/360px). 남는 폭은 당장 정직한 여백으로 두고, <b>구조적 세입자 후보 = 변형 B의 master-detail</b>(행 클릭 → 오른쪽 실행 세션). 채택 시 「작업」이 일상 루프 전체의 단일 표면이 되고 레일 「실행」이 잉여화 — R-flow 라운드 소관으로 인계, 여기선 미결정.</span></li>
+      <li><i class="an">17</i><span><b>v6 그룹 접힘 화살표</b>(CC 문법): 이름 오른쪽·평시 숨김·호버 노출(헤더에 마우스를 올리면 나타남). 단 <b>접힌 그룹은 화살표 상시 노출</b> — 접힘 상태 표지는 숨기지 않는다(confirm-or-alarm의 시각판).</span></li>
+      <li><i class="an">B0</i><span><b>초기 상태(선택 전)</b>: 변형 B는 v6과 경쟁하는 별개 대안 — 두 열 상태가 존재하지 않고 txt 구획은 처음부터 왼쪽 목록의 두 번째 구획. 오른쪽은 빈 패널로 시작, 클릭은 패널 내용만 채움(레이아웃 불변·애니메이션 불요). 구획 헤더의 색 막대(파랑/초록)가 열 틴트를 승계해 맥락 분리를 시각으로 유지. 접힘 상태는 사용자 소유·영속(자동 접힘 없음 — 철회 합의).</span></li>
+      <li><i class="an">B1</i><span><b>변형 B 목록 단일화</b>: master-detail에선 두 열이 <b>한 목록의 두 구획</b>(문서/기안 섹션)으로 접힘 — CC 사이드바와 같은 형상. 짝-날엔 같은 목록 안에서 구획만 오르내림.</span></li>
+      <li><i class="an">B2</i><span><b>선택 상태</b>: 클릭-고정(호버 아님) — 선택 행이 틴트+좌측 막대로 상주 표시. 실행 패널의 주인이 항상 목록에 보임.</span></li>
+      <li><i class="an">B3</i><span><b>in-pane 실행 세션</b>: 행 클릭 → 이 자리에 세션이 열림, 화면 전환 0. "누르면 넘어가버림"의 소멸이 master-detail의 본뜻. 세션 내부(데이터→행→게이트→생성)는 R-flow에서 확정.</span></li>
+      <li><i class="an">B4</i><span><b>세션 가드</b>(R-flow 쟁점): 입력 진행 중 다른 행을 클릭하면 조용히 버리지 않고 확인(editJob 미저장 가드와 대칭). 강제확인 게이트는 그대로 상속.</span></li>
+      <li><i class="an">B5</i><span><b>파급</b>: 채택 시 레일 「실행」 잉여화(회색 표시는 시안 표기일 뿐) · 실행 화면의 작업 드롭다운 소멸 — 앞서 세운 경계 표지가 실제로 발효되는 지점.</span></li>
+      <li><i class="an">B6</i><span><b>txt 세션 = 같은 4존 패널 문법</b>(헤더·데이터·본문·완료), 내부만 출력별: 데이터는 <b>한 행</b>(기안은 단건), 본문은 매핑 선채움+라이브 잔여+미리보기, 완료는 「복사」. 행위 층 분리가 패널 내부에서 실현됨(원칙 ③).</span></li>
+      <li><i class="an">B7</i><span><b>표시형 선채움 실물</b>: "38,500,000원" — cli.py:169이 증명한 코어 경로(매핑+format_engine)의 GUI 착지. F36 서식 갭이 소멸하는 그 지점. 미채움 필드는 미리보기에 {{담당자}}로 정직하게 노출.</span></li>
+      <li><i class="an">B8</i><span><b>빈칸 게이트</b>: hwpx의 강제확인 게이트 대신 기안은 <b>미채움 경보</b> — 산출물 무게(법적 문서 파일 vs 클립보드)에 비례한 게이트 무게. 조용한 빈칸 금지(confirm-or-alarm).</span></li>
+      <li><i class="an">B9</i><span><b>복사 = 완료 이벤트</b>: 여기서 last_run_at 스탬프 — 「최근 실행순」 정렬·일화 툴팁의 txt 쪽 의미론이 이걸로 확정.</span></li>
+      <li><i class="an">B11</i><span><b>접힘-펼침 정책</b>: ①마지막 상태 영속(Python 설정 — webview 저장소 금지, #74 전례) ②무상태 기본=전부 펼침, 새 그룹=펼침 ③<b>필터는 접힘 관통</b>(매치 그룹 임시 펼침, 해제 시 영속 상태 복원) ④<b>경보는 접힘 관통</b> — 자동 펼침 대신 접힌 헤더에 ⚠ 표지(문제는 접혀도 시끄럽게) ⑤선택 행의 그룹을 접어도 선택 유지.</span></li>
+      <li><i class="an">B10</i><span><b>규모 검증(N=50)</b>: 접힘 정상상태(그룹 헤더 8 + 펼친 단골 1그룹 + 구획 헤더 2 ≈ 한 파)가 실사용 수렴점 — 접힘 영속이 이 수렴을 만든다. 최악(전부 펼침 ≈ 2.5파)도 목록 독립 스크롤 + 이름순 위치 고정 + 필터로 감당. 안전판 둘 예비: 구획(문서/기안) 자체도 접힘 가능 · 그룹 없음 비대 시 그룹화가 자연 유도됨(헤더의 (10)이 스스로 신호).</span></li>
+    </ol>
+  </div>
+</div>
