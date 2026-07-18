@@ -314,20 +314,18 @@ def test_save_blocks_when_model_schema_mismatches_template(tmp_path):
 
 
 # ============================================================ #26 패리티 회수
-# 편집 모드(#1)·매핑 프로파일(#5)·선언 데이터 자동등록(#3)의 헤드리스 계약.
+# 편집 모드(#1)·선언 데이터 자동등록(#3)의 헤드리스 계약.
 from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
 from hwpxfiller.core.job import Job
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
-from hwpxfiller.core.mapping_base import MappingBaseRegistry
 
 
 def _controller26(tmp_path: Path):
-    """레지스트리 3종(작업·베이스·풀)을 tmp 로 격리 주입한 컨트롤러."""
+    """레지스트리(작업·풀)를 tmp 로 격리 주입한 컨트롤러."""
     pushes: list = []
     ctrl = EditorController(
         JobRegistry(tmp_path / "jobs"),
         lambda s, snap: pushes.append((s, snap)),
-        base_registry=MappingBaseRegistry(tmp_path / "bases"),
         pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
     )
     return ctrl, pushes
@@ -526,72 +524,32 @@ def test_save_dataset_slug_collision_demands_rename(tmp_path):
     assert res2["ok"] is True and res2["dataset_registered"] == "낙찰데이터"
 
 
-# ------------------------------------------------------- 매핑 프로파일(#5)
-def test_profile_save_apply_list_delete_roundtrip(tmp_path):
-    ctrl, _ = _controller26(tmp_path)
-    _build_complete_session(ctrl, "프로작업")
-    r = ctrl.dispatch("profile_save", {"name": "표준매핑"})
-    assert r["ok"] is True and r["rows"] == 10
+# ------------------------------------------------------- 매핑 프로파일 제거(F22)
+def test_profile_actions_are_gone_loudly(tmp_path):
+    """구 매핑 프로파일 액션(_do_profile_*)은 미지 액션으로 시끄럽게 거절된다(F22).
 
-    assert ctrl.dispatch("save", {})["ok"] is True        # 작업 저장 → 계보 기록
-    reg = JobRegistry(tmp_path / "jobs")
-    assert reg.load("프로작업").base_mapping_name == "표준매핑"
-
-    lst = ctrl.dispatch("profile_list", {})
-    assert lst["bases"][0]["name"] == "표준매핑"
-    assert lst["bases"][0]["job_refs"] == 1               # 참조 작업 수(전파 경고 근거)
-
-    # 새 세션에 적용 → 전 행 확정 도착.
-    ctrl.load_template_path(str(TPL_COMPILED))
-    ctrl.dispatch("skip_data", {})
-    r2 = ctrl.dispatch("profile_apply", {"name": "표준매핑"})
-    assert r2["ok"] is True and r2["applied"] == 10 and r2["dropped"] == []
-    snap = ctrl.snapshot()
-    assert snap["is_complete"] is True and snap["base_name"] == "표준매핑"
-
-    # 동명 재저장 → 참조 수와 함께 확인 승격.
-    r3 = ctrl.dispatch("profile_save", {"name": "표준매핑"})
-    assert r3.get("needs_confirm") is True and "1개" in r3["confirm_text"]
-    assert ctrl.dispatch("profile_save", {"name": "표준매핑", "confirm": True})["ok"] is True
-
-    # 삭제 라운드트립(참조 재진술 → 확정).
-    d1 = ctrl.dispatch("profile_delete", {"name": "표준매핑"})
-    assert d1.get("needs_confirm") is True
-    assert ctrl.dispatch("profile_delete", {"name": "표준매핑", "confirm": True})["ok"] is True
-    assert ctrl.dispatch("profile_list", {})["bases"] == []
-
-
-def test_profile_save_requires_confirmed_rows(tmp_path):
-    ctrl, _ = _controller26(tmp_path)
-    ctrl.load_template_path(str(TPL_COMPILED))
-    ctrl.dispatch("skip_data", {})                        # 모델 생성, 전 행 미확정
-    res = ctrl.dispatch("profile_save", {"name": "빈베이스"})
-    assert res["ok"] is False and "확정" in res["error"]
-
-
-def test_profile_apply_missing_is_loud(tmp_path):
-    ctrl, _ = _controller26(tmp_path)
-    ctrl.load_template_path(str(TPL_COMPILED))
-    ctrl.dispatch("skip_data", {})
-    res = ctrl.dispatch("profile_apply", {"name": "없는베이스"})
-    assert res["ok"] is False and "불러올 수 없습니다" in res["error"]
-
-
-def test_profile_save_different_name_same_slug_demands_rename(tmp_path):
-    """다른 이름·같은 slug 프로파일은 동명 오인 후 파괴가 아니라 이름 변경만 안내(#26 #4).
-
-    slug 은 비단사라 exists(name) 은 다른 이름·같은 파일도 True 로 잡는다 — 실제 이름을
-    대조하지 않으면 무관한 프로파일을 '동명'으로 오인해 confirm 후 덮어써 durable 매핑을 파괴한다.
+    작업이 매핑을 자족 저장·복원하므로 별도 프로파일 저장 개념은 제거 — 재사용은
+    「작업 복제」(홈 clone_job)로 수렴한다. 조용한 no-op 잔존이 아니라 표면째 소멸.
     """
     ctrl, _ = _controller26(tmp_path)
-    _build_complete_session(ctrl, "계보작업")
-    assert ctrl.dispatch("profile_save", {"name": "예산/2026"})["ok"] is True
+    for action in ("profile_list", "profile_apply", "profile_save", "profile_delete"):
+        with pytest.raises(ValueError, match="알 수 없는 editor 액션"):
+            ctrl.dispatch(action, {"name": "x"})
 
-    res = ctrl.dispatch("profile_save", {"name": "예산_2026"})  # 같은 slug
-    assert res["ok"] is False and "같은 파일" in res["error"]
-    assert res.get("needs_confirm") is not True                 # 동명 확인 승격 아님
-    # 원본 프로파일은 무변형(파괴 없음).
-    assert MappingBaseRegistry(tmp_path / "bases").load("예산/2026").name == "예산/2026"
+
+def test_old_job_json_with_base_mapping_name_still_loads(tmp_path):
+    """구 JSON 의 base_mapping_name(제거된 J3 계보 메타)은 미지 키로 무시된다 — 하위호환."""
+    ctrl, _ = _controller26(tmp_path)
+    assert _save_named(ctrl, "구식작업")["ok"] is True
+    reg = JobRegistry(tmp_path / "jobs")
+    path = reg.path_for("구식작업")
+    import json as _json
+    payload = _json.loads(path.read_text(encoding="utf-8"))
+    payload["base_mapping_name"] = "지워진베이스"          # 구버전이 남긴 키 시뮬레이션
+    path.write_text(_json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    job = reg.load("구식작업")                              # loud raise 없이 로드
+    assert job.name == "구식작업"
+    assert "base_mapping_name" not in job.to_dict()         # 재저장 시 키 소멸
 
 
 def test_edit_save_preserves_concurrent_home_tag_edit(tmp_path):

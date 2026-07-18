@@ -176,7 +176,7 @@ def _render_main(argv: "list[str]") -> int:
     ap.add_argument("--data", required=True, help="엑셀/CSV 데이터 경로")
     ap.add_argument("--profile", default=None,
                     help="매핑 프로파일 JSON(소스→필드 + 표시형 적용). 없으면 원본 값 치환. "
-                         "GUI에서 저장한 매핑 프로파일을 그대로 씁니다")
+                         "작업(.job.json)의 mapping 과 같은 형식의 독립 JSON 입니다")
     ap.add_argument("--record", type=int, default=1, help="렌더할 레코드 번호(1-based, 기본 1)")
     ap.add_argument("--sheet", default=None, help="엑셀 시트명(기본: 첫 시트)")
     ap.add_argument("--out", default=None, help="출력 파일 경로(생략 시 표준출력)")
@@ -399,7 +399,7 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
     ap.add_argument("--sheet", default=None, help="엑셀 시트명(기본: 첫 시트)")
     ap.add_argument("--profile", default=None,
                     help="매핑 프로파일 JSON(소스 키→템플릿 필드; 나라장터 영문키에 사실상 필수). "
-                         "GUI에서 '매핑 프로파일로 저장'한 JSON을 그대로 씁니다")
+                         "작업(.job.json)의 mapping 과 같은 형식의 독립 JSON 입니다")
     ap.add_argument("--fields", action="store_true", help="템플릿 요구 필드만 출력")
     ap.add_argument("--overwrite", action="store_true",
                     help="같은 이름의 기존 산출물 덮어쓰기 허용(옵트인). 없으면 대상 "

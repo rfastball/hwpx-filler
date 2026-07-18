@@ -232,3 +232,44 @@ def test_home_relink_template_commits_and_refreshes(tmp_path):
     assert res["relinked"] is True and res["restated"]
     snap = ctrl.snapshot()
     assert snap["kpi"]["missing_template_count"] == 0      # 카드/KPI 최신화(refresh)
+
+
+# ------------------------------------------------------- 작업 복제(F22)
+def test_clone_job_creates_unique_copy_without_history(tmp_path):
+    """복제 = 매핑·패턴·태그·기본참조 계승 + 유일 이름 + 실행 이력 미계승(F22).
+
+    공유 베이스 프로파일을 걷어낸 자리의 재사용 동선 — 새 카드 출현이 성공 신호라
+    성공 배너 없이 스냅샷 갱신만 한다(정상은 조용히).
+    """
+    ctrl, pushes = _controller(tmp_path)
+    res = ctrl.dispatch("clone_job", {"name": "공고서"})
+    assert res["ok"] is True and res["cloned"] == "공고서 (복사본)"
+
+    reg = JobRegistry(tmp_path / "jobs")
+    copy = reg.load("공고서 (복사본)")
+    original = reg.load("공고서")
+    assert copy.mapping.to_dict() == original.mapping.to_dict()   # 매핑 계승
+    assert copy.filename_pattern == original.filename_pattern
+    assert copy.tags == original.tags
+    assert copy.last_run_at == ""                                  # 이력 미계승(위조 금지)
+    assert original.last_run_at == "2026-07-09T15:42:00"           # 원본 불변
+    # dispatch 말미 푸시 스냅샷에 새 카드가 실린다(성공 배너 대신 목록 출현).
+    names = [
+        r["name"] for sec in pushes[-1][1]["grouped_rows"] for r in sec["rows"]
+    ]
+    assert "공고서 (복사본)" in names
+
+
+def test_clone_job_dedupes_copy_names(tmp_path):
+    """반복 복제 = '(복사본)' → '(복사본 2)' → '(복사본 3)' 유일 이름 연쇄."""
+    ctrl, _ = _controller(tmp_path)
+    assert ctrl.dispatch("clone_job", {"name": "공고서"})["cloned"] == "공고서 (복사본)"
+    assert ctrl.dispatch("clone_job", {"name": "공고서"})["cloned"] == "공고서 (복사본 2)"
+    assert ctrl.dispatch("clone_job", {"name": "공고서"})["cloned"] == "공고서 (복사본 3)"
+
+
+def test_clone_missing_job_is_loud(tmp_path):
+    """원본 부재 복제는 조용한 무반응 대신 오류 dict 재진술(웹이 alert)."""
+    ctrl, _ = _controller(tmp_path)
+    res = ctrl.dispatch("clone_job", {"name": "없는작업"})
+    assert res["ok"] is False and "복제할 수 없습니다" in res["error"]

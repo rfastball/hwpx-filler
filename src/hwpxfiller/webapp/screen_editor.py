@@ -10,9 +10,10 @@
 0→1 은 스키마 有+게이트 통과, 1→2 은 무조건(데이터 선택적, ADR-J), 2→3 은 ``is_complete()``.
 
 **#26 패리티 회수(이 라운드 포함)**: 편집 모드(:meth:`EditorController.load_job`) ·
-선언 데이터 자동등록(#18 31A5A484-C, ``_do_save`` 선차단 게이트) · 매핑 베이스 프로파일
-적용/저장/삭제(ADR J 축2, ``_do_profile_*``). 자동등록은 **참조만** 저장한다(행·ServiceKey
-없음 — [[nara-freeze-decision]]과 무관한 excel 참조).
+선언 데이터 자동등록(#18 31A5A484-C, ``_do_save`` 선차단 게이트). 자동등록은 **참조만**
+저장한다(행·ServiceKey 없음 — [[nara-freeze-decision]]과 무관한 excel 참조).
+매핑 베이스 프로파일(``_do_profile_*``, ADR J 축2)은 F22 로 제거 — 작업이 매핑을 자족
+저장·복원하므로 재사용은 「작업 복제」로 수렴한다.
 
 **남은 스코프 경계(조용히 빠뜨리지 않고 명시)** — 태그 분류 편집(D14, #26 홈 조치 단위)·
 인라인 누름틀 변환(fieldize, tpl 화면 경유로 충족 — 위저드 인라인은 별도 제안)은 여기 없다.
@@ -31,11 +32,9 @@ from ..core.job import (
     DEFAULT_FILENAME_PATTERN,
     Job,
     JobRegistry,
-    SlugCollisionError,
     classify_existing,
 )
 from ..core.mapping import TYPES
-from ..core.mapping_base import MappingBaseRegistry, default_mapping_bases_dir
 from ..core.schema import extract_schema
 from ..data import source_for_path
 from ..gui.dataset_pool_state import kind_transition_clause, reference_summary
@@ -89,16 +88,11 @@ class EditorController:
         registry: JobRegistry,
         push: PushSink,
         *,
-        base_registry: "MappingBaseRegistry | None" = None,
         pool_registry: "DatasetPoolRegistry | None" = None,
     ) -> None:
         self.registry = registry
         self._push_sink = push
-        # 프로파일·데이터풀 레지스트리 — 주입 가능(테스트), 기본은 홈 레지스트리(ADR J).
-        self.base_registry = (
-            base_registry if base_registry is not None
-            else MappingBaseRegistry(default_mapping_bases_dir())
-        )
+        # 데이터풀 레지스트리 — 주입 가능(테스트), 기본은 홈 레지스트리(ADR J).
         self.pool_registry = (
             pool_registry if pool_registry is not None else default_pool_registry()
         )
@@ -139,7 +133,6 @@ class EditorController:
         # _dataset_gate 가 로드한 동명 기존 풀 항목 stash — _do_save 말미 등록이 같은
         # .dataset.json 을 재로드·재판정하지 않게 한다(게이트/저장 판정 표류 방지).
         self._dataset_existing: "DatasetPoolItem | None" = None
-        self._base_name = ""  # 이 세션 매핑을 시드/저장한 베이스 이름(J3 계보)
         # 편집 모드에서 복원한 작성 출처 메타(#53-C) — 표시용 + 재저장 시 최초 작성시각 보존.
         self._loaded_provenance: "dict[str, str]" = {}
         self.notice_text = ""  # 복원·프로파일 반영 등 세션 통지(loud 재진술 채널)
@@ -250,7 +243,6 @@ class EditorController:
             "has_unsaved_work": self.has_unsaved_work(),
             # #26 편집 모드·프로파일·자동등록 표면.
             "editing_origin": self._editing_origin,
-            "base_name": self._base_name,
             "dataset_name": self.dataset_name,
             # 작성 출처 provenance(#53-C) — 편집 모드에서 복원한 것(없으면 None).
             "provenance": self._loaded_provenance or None,
@@ -458,7 +450,6 @@ class EditorController:
         # 로드 시점 내용 지문 — 자기-갱신 저장 시 편집 중 외부 변경(같은 이름 작업 교체)을
         # 무확인으로 덮지 않기 위한 대조 기준(_do_save).
         self._editing_fingerprint = _job_content_fingerprint(job)
-        self._base_name = job.base_mapping_name
         self._loaded_provenance = dict(job.mapping.provenance)  # 작성 출처 표시(#53-C)
         self.default_dataset_ref = job.default_dataset_ref  # 편집 저장 시 보존(#53-A)
         # 소스 어휘 = 저장 매핑이 참조하는 키 합집합(profile_source_vocabulary 단일 출처,
@@ -815,7 +806,6 @@ class EditorController:
             mapping=verdict.profile,
             filename_pattern=self.pattern,
             last_run_at=preserved_last_run,
-            base_mapping_name=self._base_name,
             tags=preserved_tags,
             default_dataset_ref=default_dataset_ref,
         )
@@ -866,164 +856,3 @@ class EditorController:
             result["dataset_register_error"] = register_error
         return result
 
-    # ---- 매핑 베이스 프로파일(#26 #5 — ADR J 축2)
-    def _base_ref_counts(self) -> "dict[str, int]":
-        """베이스 이름 → 참조 작업 수(잡 1회 스캔) — 전파·삭제 경고 수치의 단일 출처.
-
-        한때 같은 ``sum(1 for j in registry.list_jobs() ...)`` 스캔이 목록/저장/삭제에
-        3중 복붙돼 있었다 — 여기로 수렴한다(K6).
-        """
-        refs: "dict[str, int]" = {}
-        for j in self.registry.list_jobs():
-            if j.base_mapping_name:
-                refs[j.base_mapping_name] = refs.get(j.base_mapping_name, 0) + 1
-        return refs
-
-    def _base_refs(self, name: str) -> int:
-        """베이스 ``name`` 을 참조하는 작업 수 — 덮어쓰기/삭제 확인 문구의 근거."""
-        return self._base_ref_counts().get(name, 0)
-
-    def _do_profile_list(self, p: dict) -> dict:
-        """베이스 목록 + 각 베이스를 참조하는 작업 수(loud 전파 경고의 근거).
-
-        손상 베이스 파일은 격리 수집해 함께 재진술한다(조용한 은닉 금지 — RC-05 미러).
-        """
-        corrupted: "list[tuple[Path, str]]" = []
-        bases = self.base_registry.list_bases(corrupted=corrupted)
-        refs = self._base_ref_counts()
-        return {
-            "bases": [
-                {
-                    "name": b.name,
-                    "field_count": len(b.mappings),
-                    "job_refs": refs.get(b.name, 0),
-                }
-                for b in bases
-            ],
-            "corrupted": [
-                {"file": path.name, "error": err} for path, err in corrupted
-            ],
-        }
-
-    def _do_profile_apply(self, p: dict) -> dict:
-        """베이스를 현재 매핑에 반영 — 일치 필드는 확정 도착, 스키마 밖 필드는 세어 재진술.
-
-        ``apply_profile`` 은 스키마에 없는 베이스 필드를 조용히 누락시키므로(드리프트)
-        여기서 dropped 로 세어 웹이 재진술한다. ``require_source=True``: 현재 데이터에
-        없는 소스를 겨눈 베이스 행은 확정으로 도착시키지 않는다 — 확정 도착이 그대로
-        ``is_complete`` 를 통과해 실행 시 전 레코드 빈 값을 찍는 함정 봉쇄. 그런 필드는
-        ``missing_source`` 로 세어 시끄럽게 재진술한다(미확정 = 사람 재확정 강제).
-        반영 성공 시 이 세션의 베이스 계보를 갱신한다(J3 — ``base_mapping_name``).
-        """
-        if self.model is None:
-            self._ensure_model()
-        name = p["name"]
-        try:
-            base = self.base_registry.load(name)
-        except Exception as exc:  # noqa: BLE001 — 부재·손상: 웹에 문구로 loud
-            return {"ok": False, "error": f"매핑 프로파일을 불러올 수 없습니다: {exc}"}
-        applied = self.model.apply_profile(base, require_source=True)
-        row_fields = {r.template_field for r in self.model.rows}
-        dropped = [
-            m.template_field for m in base.mappings if m.template_field not in row_fields
-        ]
-        available = set(self.source_fields)
-        missing_source = [
-            m.template_field
-            for m in base.mappings
-            if m.template_field in row_fields
-            and not m.is_blank and m.source and m.source not in available
-        ]
-        self._base_name = name
-        notice = f"매핑 프로파일 '{name}' 반영 — {applied}개 행 확정 도착."
-        if missing_source:
-            notice += (
-                f"\n현재 데이터에 없는 소스를 참조하는 필드 {len(missing_source)}개는 "
-                "미확정으로 남았습니다(재확정 필요): " + ", ".join(missing_source)
-            )
-        if dropped:
-            notice += (
-                f"\n이 템플릿에 없는 프로파일 필드 {len(dropped)}개는 제외했습니다: "
-                + ", ".join(dropped)
-            )
-        self._set_notice(notice, "warn" if (dropped or missing_source) else "ok")
-        return {
-            "ok": True,
-            "applied": applied,
-            "dropped": dropped,
-            "missing_source": missing_source,
-        }
-
-    def _do_profile_save(self, p: dict) -> dict:
-        """확정 행을 명명 베이스로 저장 — 동명 덮어쓰기는 참조 작업 수와 함께 확인 승격.
-
-        베이스는 사람 확정 산출물이므로 확정 행이 없으면 저장을 거부한다. 부분 확정
-        상태의 저장은 허용된다(sparse 베이스 — ADR J '변경 행만 덮는' 오버레이 설계).
-        """
-        name = (p.get("name") or "").strip()
-        if not name:
-            return {"ok": False, "error": "프로파일 이름을 입력하세요."}
-        if self.model is None or not self.model.confirmed_count():
-            return {"ok": False, "error": "확정된 매핑 행이 없습니다 — 행을 확정한 뒤 저장하세요."}
-        # 분류(부재/동명/충돌/손상)는 classify_existing 단일 출처 — slug 는 비단사라
-        # exists(name) 만으론 **다른 이름·같은 파일**(충돌)을 동명으로 오인해 confirm 후
-        # 덮어써 파괴한다(_dataset_gate·pool 수동 등록과 같은 사다리). 충돌·손상은 confirm
-        # 플래그와 무관하게 차단(이름 변경만 안내), 진짜 동명만 확인 승격.
-        kind, existing = classify_existing(self.base_registry, name)
-        if kind == "corrupt":
-            return {
-                "ok": False,
-                "error": (
-                    f"'{name}' 자리의 기존 프로파일 파일이 손상돼 확인할 수 없습니다 "
-                    "— 다른 이름을 지정하세요."
-                ),
-            }
-        if kind == "collision":  # 다른 이름·같은 slug — 덮어쓰기 경로 없이 이름 변경만
-            return {
-                "ok": False,
-                "error": (
-                    f"'{name}' 은 기존 매핑 프로파일 '{existing.name}' 과 같은 파일로 "
-                    "저장됩니다 — 다른 이름을 지정하세요."
-                ),
-            }
-        if kind == "same" and not p.get("confirm"):
-            refs = self._base_refs(name)
-            warn = (
-                f"\n이 프로파일을 참조하는 작업이 {refs}개 있습니다 — "
-                "오버레이 없는 행이 바뀝니다." if refs else ""
-            )
-            return {
-                "ok": False,
-                "needs_confirm": True,
-                "confirm_text": (
-                    f"매핑 프로파일 '{name}' 이 이미 있습니다.{warn}\n덮어쓸까요?"
-                ),
-            }
-        profile = self.model.to_profile(name)
-        try:
-            self.base_registry.save(profile, allow_overwrite=bool(p.get("confirm")))
-        except SlugCollisionError as exc:  # 다른 이름·같은 파일 — 이름 변경 안내
-            return {"ok": False, "error": str(exc)}
-        self._base_name = name
-        self._set_notice(
-            f"매핑 프로파일 '{name}' 저장 — 확정 {len(profile.mappings)}개 행.", "ok"
-        )
-        return {"ok": True, "saved": name, "rows": len(profile.mappings)}
-
-    def _do_profile_delete(self, p: dict) -> dict:
-        """베이스 삭제 — 파괴이므로 확인 라운드트립 + 참조 작업 수 재진술."""
-        name = p["name"]
-        if not p.get("confirm"):
-            refs = self._base_refs(name)
-            warn = (
-                f"\n이 프로파일을 참조하는 작업이 {refs}개 있습니다"
-                "(작업 자체는 남지만 계보가 끊깁니다)." if refs else ""
-            )
-            return {
-                "ok": False,
-                "needs_confirm": True,
-                "confirm_text": f"매핑 프로파일 '{name}' 을 삭제합니다.{warn}\n계속할까요?",
-            }
-        self.base_registry.delete(name)
-        self._set_notice(f"매핑 프로파일 '{name}' 삭제됨.", "ok")
-        return {"ok": True}

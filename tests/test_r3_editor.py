@@ -11,7 +11,6 @@ from pathlib import Path
 from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
 from hwpxfiller.core.job import Job, JobRegistry
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
-from hwpxfiller.core.mapping_base import MappingBaseRegistry
 from hwpxfiller.gui.mapping_state import MappingModel, profile_source_vocabulary
 from hwpxfiller.webapp.screen_editor import EditorController
 
@@ -21,11 +20,10 @@ MULTI_SHEET = REPO / "tests" / "fixtures" / "multi_sheet.xlsx"
 
 
 def _controller(tmp_path: Path, *, pool_registry=None) -> EditorController:
-    """레지스트리 3종을 tmp 로 격리한 컨트롤러(풀은 주입 가능 — 실패/계수 더블용)."""
+    """레지스트리를 tmp 로 격리한 컨트롤러(풀은 주입 가능 — 실패/계수 더블용)."""
     return EditorController(
         JobRegistry(tmp_path / "jobs"),
         lambda s, snap: None,
-        base_registry=MappingBaseRegistry(tmp_path / "bases"),
         pool_registry=(
             pool_registry if pool_registry is not None
             else DatasetPoolRegistry(tmp_path / "pool")
@@ -99,34 +97,6 @@ def test_c1_apply_profile_confirm_false_carries_values_only():
     assert model.rows[0].source == "금액" and model.rows[0].type == "amount"
 
 
-# ================================================================ C2 (HIGH)
-# 프로파일 적용 시 require_source — 사라진 소스를 겨눈 행은 확정으로 도착 금지.
-def test_c2_profile_apply_missing_source_stays_unconfirmed_and_is_restated(tmp_path):
-    ctrl = _controller(tmp_path)
-    ctrl.load_template_path(str(TPL_COMPILED))
-    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")  # 업체명·낙찰금액·계약일
-    ctrl.dispatch("goto_step", {"step": 2})
-    snap = ctrl.snapshot()
-    f0 = snap["rows"][0]["template_field"]
-    f1 = snap["rows"][1]["template_field"]
-    MappingBaseRegistry(tmp_path / "bases").save(MappingProfile(name="구베이스", mappings=[
-        FieldMapping(template_field=f0, source="없는컬럼", type="text"),
-        FieldMapping(template_field=f1, source="업체명", type="text"),
-    ]))
-
-    r = ctrl.dispatch("profile_apply", {"name": "구베이스"})
-    assert r["ok"] is True
-    assert r["missing_source"] == [f0]               # 사라진 소스 필드 loud 명시
-    assert r["applied"] == 1                         # 존재 소스만 확정 도착
-    snap = ctrl.snapshot()
-    rows = {row["template_field"]: row for row in snap["rows"]}
-    assert rows[f0]["confirmed"] is False            # is_complete 우회 봉쇄
-    assert rows[f0]["source"] == "없는컬럼"          # 값은 복원(고스트 옵션으로 표시)
-    assert rows[f1]["confirmed"] is True
-    assert snap["notice"]["level"] == "warn"
-    assert f0 in snap["notice"]["text"] and "없는 소스" in snap["notice"]["text"]
-
-
 # ================================================================ C4 (HIGH)
 # 저장 후 pool 등록 실패 = 무반응 반저장 금지 — 결과 dict 로 정직 재진술.
 class _FailingPool(DatasetPoolRegistry):
@@ -178,8 +148,7 @@ def test_editor_js_click_dispatch_guards_bridge_rejection():
         f"onClick 안에 await 없는 Bridge 호출이 있습니다 — rejection 이 가드 밖으로 샙니다(#45): "
         f"{unawaited}"
     )
-    for frag in ("await confirmAll()", "await doSave({})", "await profileApply()",
-                 "await profileSave()", "await profileDelete()"):
+    for frag in ("await confirmAll()", "await doSave({})"):
         assert frag in body, f"onClick 이 '{frag}' 로 대기하지 않습니다 — 가드 상속 단절(#45)."
     # confirmAll 내부 2차 호출(confirm_blanks)도 fire-and-forget 이면 가드 밖으로 샌다.
     confirm_body = _segment(src, "async function confirmAll", "async function doSave")
@@ -304,18 +273,6 @@ def test_r4_cross_kind_dataset_confirm_restates_and_normalizes_kind(tmp_path):
     item = pool.load("multi_sheet")
     assert item.kind == "excel"
     assert item.opts == {"path": str(MULTI_SHEET), "sheet": "낙찰현황"}
-
-
-# ================================================================ K6
-def test_k6_base_refs_single_source_counts(tmp_path):
-    ctrl = _controller(tmp_path)
-    reg = ctrl.registry
-    reg.save(Job(name="갑", template_path="t", base_mapping_name="공용베이스"))
-    reg.save(Job(name="을", template_path="t", base_mapping_name="공용베이스"))
-    reg.save(Job(name="병", template_path="t"))
-    assert ctrl._base_refs("공용베이스") == 2
-    assert ctrl._base_refs("무참조") == 0
-    assert ctrl._base_ref_counts() == {"공용베이스": 2}
 
 
 # ================================================================ K10

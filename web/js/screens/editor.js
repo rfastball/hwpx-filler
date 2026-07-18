@@ -31,7 +31,7 @@
   }
 
   function stepBody(s) {
-    // 세션 통지(#26) — 편집 복원·프로파일 반영·데이터 교체 보존을 시끄럽게 재진술.
+    // 세션 통지(#26) — 편집 복원·데이터 교체 보존을 시끄럽게 재진술.
     const notice = s.notice
       ? `<p class="note ${s.notice.level === "ok" ? "okbox" : "warnbox"}" style="white-space:pre-line">${esc(s.notice.text)}</p>`
       : "";
@@ -182,11 +182,7 @@
       <div class="stepper">${stepper}<span style="flex:1"></span>${counts}</div>
       <div class="gate">
         <span class="gatecount ${s.is_complete ? "ok" : "pend"}">확정 ${(s.rows || []).filter((r) => r.confirmed).length}/${(s.rows || []).length}</span>
-        ${s.base_name ? `<span class="muted" style="font-size:12px">프로파일: ${esc(s.base_name)}</span>` : ""}
         <span style="flex:1"></span>
-        <button class="btn" data-act="profile-apply">프로파일 적용…</button>
-        <button class="btn" data-act="profile-save">프로파일로 저장…</button>
-        <button class="btn" data-act="profile-delete">프로파일 삭제…</button>
         <button class="btn" data-act="confirm-all">모두 확정</button>
         <button class="btn" data-act="unconfirm-all">모두 해제</button>
       </div>`;
@@ -406,9 +402,6 @@
         case "back": await Bridge.call(SCREEN, "goto_step", { step: LAST.step - 1 }); break;
         case "next": await Bridge.call(SCREEN, "goto_step", { step: LAST.step + 1 }); break;
         case "save": await doSave({}); break;
-        case "profile-apply": await profileApply(); break;
-        case "profile-save": await profileSave(); break;
-        case "profile-delete": await profileDelete(); break;
         default: break;
       }
     } catch (err) {
@@ -430,59 +423,6 @@
       case "dataset-name": Bridge.call(SCREEN, "set_dataset_name", { name: el.value }); break;
       default: break;
     }
-  }
-
-  /* ---- 매핑 프로파일(#26 #5) — 목록 재진술 → 이름 확정 → 반영/저장(확인 라운드트립).
-     브리지 rejection(디스크·권한 등) 가드는 onClick 디스패처가 소유한다(#45) —
-     여기 함수들은 await 로 던지기만 하면 조용한 무반응 없이 loud 재진술된다. ---- */
-  async function profileApply() {
-    const res = await Bridge.call(SCREEN, "profile_list", {});
-    const bases = (res && res.bases) || [];
-    const corrupt = ((res && res.corrupted) || [])
-      .map((c) => `! ${c.file} — 손상: ${c.error}`).join("\n");
-    if (!bases.length) {
-      window.alert("저장된 매핑 프로파일이 없습니다." + (corrupt ? "\n\n" + corrupt : ""));
-      return;
-    }
-    const listing = bases
-      .map((b) => `· ${b.name} (필드 ${b.field_count} · 참조 작업 ${b.job_refs})`).join("\n");
-    const name = window.prompt(
-      `적용할 프로파일 이름을 입력하세요:\n\n${listing}${corrupt ? "\n" + corrupt : ""}`,
-      bases[0].name);
-    if (name === null || !name.trim()) return;
-    const r = await Bridge.call(SCREEN, "profile_apply", { name: name.trim() });
-    if (r && r.ok === false) window.alert(r.error || "프로파일을 적용할 수 없습니다.");
-  }
-
-  async function profileSave() {
-    const name = window.prompt("저장할 프로파일 이름:", (LAST && LAST.base_name) || "");
-    if (name === null || !name.trim()) return;
-    let r = await Bridge.call(SCREEN, "profile_save", { name: name.trim() });
-    if (r && r.needs_confirm) {
-      if (!window.confirm(r.confirm_text)) return;
-      r = await Bridge.call(SCREEN, "profile_save", { name: name.trim(), confirm: true });
-    }
-    if (r && r.ok === false) window.alert(r.error || "프로파일을 저장할 수 없습니다.");
-  }
-
-  async function profileDelete() {
-    const res = await Bridge.call(SCREEN, "profile_list", {});
-    const bases = (res && res.bases) || [];
-    if (!bases.length) {
-      window.alert("저장된 매핑 프로파일이 없습니다.");
-      return;
-    }
-    const listing = bases
-      .map((b) => `· ${b.name} (필드 ${b.field_count} · 참조 작업 ${b.job_refs})`).join("\n");
-    const name = window.prompt(`삭제할 프로파일 이름을 입력하세요:\n\n${listing}`, "");
-    if (name === null || !name.trim()) return;
-    let r = await Bridge.call(SCREEN, "profile_delete", { name: name.trim() });
-    if (r && r.needs_confirm) {
-      // 파괴 확정 — 참조 작업 수를 재진술한 뒤에만 삭제(confirm-or-alarm).
-      if (!window.confirm(r.confirm_text)) return;
-      r = await Bridge.call(SCREEN, "profile_delete", { name: name.trim(), confirm: true });
-    }
-    if (r && r.ok === false) window.alert(r.error || "프로파일을 삭제할 수 없습니다.");
   }
 
   /* 모두 확정 — 내용 행 즉시 확정 + 비움 승격 이름게이트(ADR-E 반사적 dismiss 봉쇄). */
