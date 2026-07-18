@@ -481,3 +481,21 @@ def test_job_save_failure_preserves_existing_json(tmp_path, monkeypatch):
         job.save(path)
     assert path.read_text(encoding="utf-8") == existing  # 무손상
     assert Job.load(path).name == "계약"                  # 여전히 로드 가능
+
+
+def test_clone_concurrent_calls_get_unique_names(tmp_path):
+    """동시 복제 원자화(F22 리뷰 P2) — pywebview 스레드별 호출의 동시 진입 재현.
+
+    잠금 없이는 여러 호출이 같은 '(복사본)' 이름을 고르고(파일 1개만 남음, 일부는
+    원자 쓰기 교체 경합으로 OSError) 이름이 조용히 중복 반환됐다 — 후보 선점~저장을
+    인스턴스 잠금으로 직렬화해 4개 동시 호출이 전부 유일 이름·실파일을 얻는다.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(_job())
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        names = list(ex.map(lambda _i: reg.clone("입찰공고서"), range(4)))
+    assert len(set(names)) == 4                       # 중복 이름 없음
+    for n in names:
+        assert reg.exists(n) and reg.load(n).name == n  # 이름만큼 실파일 실재

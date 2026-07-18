@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -311,6 +312,9 @@ class JobRegistry:
 
     def __init__(self, directory: "str | Path"):
         self.directory = Path(directory)
+        # 복제 원자화(F22 리뷰 P2) — pywebview 는 API 호출을 스레드별로 돌리므로 빠른
+        # 연속 클릭이 동시 진입한다. 후보 이름 선점 검사~저장을 이 잠금으로 묶는다.
+        self._clone_lock = threading.Lock()
 
     def path_for(self, name: str) -> Path:
         return self.directory / (_slug(name) + self.SUFFIX)
@@ -346,17 +350,25 @@ class JobRegistry:
         원본 부재·손상은 loud raise(호출측이 재진술). 자리 선점 검사는 파일 존재
         기준(:meth:`path_for`)이라 slug 충돌 자리도 건너뛴다 — 후보가 비어 있을 때만
         저장하므로 :meth:`save` 의 slug 가드는 백스톱으로 남는다.
+
+        **원자화(리뷰 P2)**: pywebview 는 호출마다 별도 스레드라 빠른 연속 클릭이 동시
+        진입한다 — 후보 선택과 저장 사이 무잠금이면 여러 호출이 같은 '(복사본)' 을
+        고르고(파일 1개만 남고 일부는 원자 쓰기 교체 경합으로 PermissionError) 이름이
+        조용히 중복 반환된다. 선점 검사~저장을 인스턴스 잠금으로 직렬화한다(같은
+        레지스트리 인스턴스를 공유하는 앱 내 호출이 대상 — 프로세스 간은 단일 인스턴스
+        가드 소관).
         """
-        job = self.load(name)
-        base = f"{name} (복사본)"
-        candidate, i = base, 2
-        while self.path_for(candidate).exists():
-            candidate = f"{base[:-1]} {i})"  # '… (복사본)' → '… (복사본 2)'
-            i += 1
-        job.name = candidate
-        job.last_run_at = ""
-        self.save(job)
-        return candidate
+        with self._clone_lock:
+            job = self.load(name)
+            base = f"{name} (복사본)"
+            candidate, i = base, 2
+            while self.path_for(candidate).exists():
+                candidate = f"{base[:-1]} {i})"  # '… (복사본)' → '… (복사본 2)'
+                i += 1
+            job.name = candidate
+            job.last_run_at = ""
+            self.save(job)
+            return candidate
 
     def delete(self, name: str) -> None:
         p = self.path_for(name)
