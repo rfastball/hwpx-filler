@@ -1,8 +1,8 @@
 """코드리뷰 3차(runmx 클러스터) 회귀 가드 — 풀 래퍼 공용화(K4)·소스 라벨 합성(K8).
 
-K4: ``_do_pool_sources``/``_do_load_pool`` 이 run/matrix/txt 세 컨트롤러에 독스트링까지
-복붙된 3벌이었다 — :class:`~hwpxfiller.webapp.screens.PoolTargetingMixin` 하나로 수렴하고
-화면별 차이(run=작업 선택 전제, run/matrix=행 선택 초기화)는 훅으로만 남긴다. 사본이
+K4: ``_do_pool_sources``/``_do_load_pool`` 이 실행 표면 컨트롤러들에 독스트링까지
+복붙돼 있었다 — :class:`~hwpxfiller.webapp.screens.PoolTargetingMixin` 하나로 수렴하고
+화면별 차이(run=작업 선택 전제·행 선택 초기화)는 훅으로만 남긴다. 사본이
 조용히 재유입되는 회귀를 동일성 검사로 차단한다.
 
 K8: ``data_source_label`` 은 항상 '파일: '+data_label / '등록 데이터: '+이름 으로
@@ -21,7 +21,6 @@ from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
 from hwpxfiller.core.job import Job, JobRegistry
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.core.text_registry import TextTemplateRegistry
-from hwpxfiller.webapp.screen_matrix import MatrixController
 from hwpxfiller.webapp.screen_run import RunController
 from hwpxfiller.webapp.screens import PoolTargetingMixin, TxtController, source_label
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
@@ -80,8 +79,8 @@ def _sink() -> "tuple[list, callable]":
 
 # ============================================================ K4 — 풀 래퍼 공용화(믹스인)
 def test_pool_wrappers_are_shared_not_copied():
-    """세 컨트롤러의 풀 래퍼가 믹스인 단일 구현이어야 한다 — 복붙 3벌 재유입 가드(K4)."""
-    for ctrl_cls in (RunController, MatrixController, TxtController):
+    """컨트롤러들의 풀 래퍼가 믹스인 단일 구현이어야 한다 — 복붙 재유입 가드(K4)."""
+    for ctrl_cls in (RunController, TxtController):
         assert issubclass(ctrl_cls, PoolTargetingMixin), (
             f"{ctrl_cls.__name__} 이 PoolTargetingMixin 을 상속하지 않습니다(K4)."
         )
@@ -111,16 +110,6 @@ def test_run_pool_load_resets_selection_via_hook(tmp_path):
     assert snap["record_count"] == 2 and snap["selected_count"] == 2  # 새 데이터 = 전체 선택
 
 
-def test_matrix_pool_load_resets_selection_via_hook(tmp_path):
-    """matrix 훅: 공통 데이터 풀 겨눔도 전체 선택 초기화를 탄다(K4 훅 경유)."""
-    pushes, sink = _sink()
-    ctrl = MatrixController(_registry(tmp_path), sink, pool_registry=_pool(tmp_path))
-    res = ctrl.dispatch("load_pool", {"name": "7월공고"})
-    assert res["ok"] is True and res["label"] == "등록 데이터: 7월공고"
-    snap = ctrl.snapshot()
-    assert snap["record_count"] == 2 and snap["selected_count"] == 2
-
-
 def test_txt_pool_load_uses_default_hooks(tmp_path):
     """txt: 훅 기본값(전제·후처리 없음) 그대로 공용 래퍼가 겨눔을 완주한다(K4)."""
     (tmp_path / "샘플기안.txt").write_text("제목: {{bidNtceNm}}", encoding="utf-8")
@@ -146,7 +135,6 @@ def test_no_stored_data_source_label_attribute(tmp_path):
     pushes, sink = _sink()
     controllers = [
         RunController(_registry(tmp_path), sink, pool_registry=_pool(tmp_path)),
-        MatrixController(_registry(tmp_path), sink, pool_registry=_pool(tmp_path)),
         TxtController(TextTemplateRegistry(tmp_path), sink, pool_registry=_pool(tmp_path)),
     ]
     for ctrl in controllers:
@@ -180,9 +168,9 @@ def test_js_dead_fallback_removed():
     """JS 사어 폴백 ``s.data_source_label || s.data_label`` 재유입 가드(K8).
 
     라벨은 서버가 항상 합성해 내려보내므로(data_source_label 키 상존) 구 라벨 폴백은
-    도달 불가한 죽은 분기다 — 세 화면 모두 제거 상태를 유지해야 한다.
+    도달 불가한 죽은 분기다 — 두 화면 모두 제거 상태를 유지해야 한다.
     """
-    for rel in ("screens/run.js", "screens/matrix.js", "screens/txt.js"):
+    for rel in ("screens/run.js", "screens/txt.js"):
         src = (WEB_JS / rel).read_text(encoding="utf-8")
         assert "data_source_label" in src, f"{rel} 이 data_source_label 을 소비하지 않습니다."
         assert "data_source_label || s.data_label" not in src, (

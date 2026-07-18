@@ -142,7 +142,7 @@ def test_unknown_action_is_loud(tmp_path):
 
 
 def test_data_label_is_server_owned_and_survives_paste(tmp_path):
-    """P4: data_label 을 스냅샷(서버)이 소유 — run/matrix 와 정렬, 붙여넣기에도 실상태 반영.
+    """P4: data_label 을 스냅샷(서버)이 소유 — run 과 정렬, 붙여넣기에도 실상태 반영.
 
     초기엔 빈 라벨. 데이터 로드 후 파일명이 스냅샷에 실린다. 붙여넣기(set_template_text)는
     템플릿만 바꾸고 겨눈 데이터(datasource)를 유지하므로 라벨도 유지돼야 한다 — 예전 JS 의
@@ -202,10 +202,10 @@ def test_pick_data_file_multi_sheet_defers_and_asks(tmp_path, monkeypatch):
     assert frontend.controllers["editor"].data_path == ""
 
 
-@pytest.mark.parametrize("screen", ["editor", "run", "txt", "matrix"])
+@pytest.mark.parametrize("screen", ["editor", "run", "txt"])
 def test_pick_data_file_multi_sheet_defers_on_every_screen(screen, tmp_path, monkeypatch):
-    """pick_data_file 반환 계약은 screen-불가지 — 데이터를 붙이는 네 화면 모두 needs_sheet 로
-    보류돼야 한다(리뷰 P1: txt·matrix 가 객체를 못 다뤄 첫 시트로 조용히 강등되던 회귀 차단)."""
+    """pick_data_file 반환 계약은 screen-불가지 — 데이터를 붙이는 세 화면 모두 needs_sheet 로
+    보류돼야 한다(리뷰 P1: txt 가 객체를 못 다뤄 첫 시트로 조용히 강등되던 회귀 차단)."""
     from hwpxfiller.webapp import app as app_mod
 
     frontend = _frontend(tmp_path, monkeypatch)
@@ -218,8 +218,8 @@ def test_pick_data_file_multi_sheet_defers_on_every_screen(screen, tmp_path, mon
 def test_load_data_sheet_threads_confirmed_sheet_into_txt_controller(tmp_path, monkeypatch):
     """확정 시트가 브리지→컨트롤러(load_data_path sheet=)→링1 VM 까지 관통해 로드된다(리뷰 P1).
 
-    txt 컨트롤러는 작업 없이 단독 로드 가능해 브리지 경로 검증에 쓴다 — 다른 화면(editor·run·
-    matrix)의 sheet 관통은 각자의 컨트롤러 테스트가 픽스처와 함께 본다.
+    txt 컨트롤러는 작업 없이 단독 로드 가능해 브리지 경로 검증에 쓴다 — 다른 화면
+    (editor·run)의 sheet 관통은 각자의 컨트롤러 테스트가 픽스처와 함께 본다.
     """
     frontend = _frontend(tmp_path, monkeypatch)
     result = frontend.load_data_sheet("txt", str(MULTI_SHEET), "낙찰현황")

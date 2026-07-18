@@ -13,8 +13,8 @@
 <body>
 <!-- 웹 프론트엔드 셸 — 목업 docs/UI_PROTOTYPE_APPB.html 의 앱윈도 구조를 스튜디오 크롬(마스트헤드·
      주석·캔버스) 없이 실앱으로 전개. 좌 레일(7화면 라우팅) + 우 스테이지. 링1 VM 에 브리지로 배선.
-     실화면 전부 이관 완료: home(허브·기본)·txt·editor(#15·#16)·run(#18)·matrix(#14)·tpl(#13)·
-     pool(데이터 관리 · #26 #4). -->
+     실화면 전부 이관 완료: home(허브·기본)·txt·editor(#15·#16)·run(#18)·tpl(#13)·
+     pool(데이터 관리 · #26 #4). matrix(여러 작업 실행)는 F9 로 제거 — 실행 모델은 하나다. -->
 <div class="app">
   <nav class="rail" aria-label="화면 전환">
     <div class="brand">HWPX Filler
@@ -31,8 +31,6 @@
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 4.5l2 2L7 15l-3 1 1-3zM12 6l2 2"/></svg></span><span class="lbl"><span class="n">작업 에디터</span><span class="d">HWPX · 4스텝</span></span></button>
     <button class="navbtn" data-scr="run" aria-label="실행" title="실행 — HWPX · 데이터 겨눔 → 생성">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l10 6-10 6z"/></svg></span><span class="lbl"><span class="n">실행</span><span class="d">HWPX · 데이터 겨눔 → 생성</span></span></button>
-    <button class="navbtn" data-scr="matrix" aria-label="여러 작업 실행" title="여러 작업 실행 — 여러 작업 × 공통 데이터 → 생성">
-      <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h6v6H3zM11 3h6v6h-6zM3 11h6v6H3zM11 11h6v6h-6z"/></svg></span><span class="lbl"><span class="n">여러 작업 실행</span><span class="d">여러 작업 × 공통 데이터 → 생성</span></span></button>
     <button class="navbtn" data-scr="txt" aria-label="즉시 기안 (txt)" title="즉시 기안 (txt) — 템플릿+데이터 → 실시간 → 복사">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h5l3 3v11H6zM11 3v3h3M8 11h5M8 14h5"/></svg></span><span class="lbl"><span class="n">즉시 기안 (txt)</span><span class="d">템플릿+데이터 → 실시간 → 복사</span></span></button>
     <button class="navbtn" data-scr="tpl" aria-label="템플릿 관리" title="템플릿 관리 — HWPX·TXT 라이브러리 · 상태·변환·검토">
@@ -76,7 +74,6 @@
         <div class="track hwpx">
           <div class="th"><span class="tt">정식 문서 생성 · HWPX</span>
             <span class="row">
-              <button class="btn sm" id="homeMatrix">같은 데이터로 여러 작업 실행</button>
               <button class="btn primary sm" id="homeNewJob">＋ 새 작업</button></span></div>
           <p class="tsub">누름틀 템플릿 + 매핑을 작업으로 저장 → 데이터 겨눠 .hwpx 생성.</p>
           <!-- 작업 브라우저 바(태그 없으면 렌더 안 됨 — 퇴화-코퍼스 불변식) -->
@@ -177,76 +174,6 @@
         <div class="bar"><i id="genBar"></i></div>
         <div id="genResult" class="run-result"></div>
         <div class="logbox" id="genLog">[대기] 작업·데이터·저장 폴더를 확인한 뒤 생성하세요.</div>
-      </div>
-    </section>
-
-    <!-- ============ 여러 작업 실행 (M 작업 × 공통 데이터, #14) ============ -->
-    <!-- 목업 scr-matrix 이관. 안정 DOM(id) + matrix.js 가 window.__push('matrix', snapshot)
-         로 값만 채운다(run 패턴). 링1 MatrixRunViewModel·SelectionModel 에 브리지로 배선 —
-         VM 로직 재구현 없음. 작업 다중선택기는 진입 어포던스(홈 이관 전까지 자체 진입점).
-         데이터 스코프 = 등록 데이터(풀)+파일 2소스(#26 #6 · 나라장터는 동결, screen_matrix.py docstring 참조). -->
-    <section class="scr" id="scr-matrix">
-      <header class="scr-head">
-        <div>
-          <h1>여러 작업 실행</h1>
-          <p class="sub">선택한 작업 여러 개에 같은 데이터를 적용합니다 — 작업마다 선택한 행 수만큼
-            문서를 만들어 작업별 하위 폴더에 저장합니다.</p>
-        </div>
-        <div class="status" id="mxStatus" data-level="idle">작업 선택</div>
-      </header>
-
-      <div class="run-body" id="mxBody">
-        <!-- 1. 적용할 작업(여러 개) -->
-        <div class="grp"><span class="cap">1. 적용할 작업 (여러 개)</span>
-          <div class="run-row run-recs-head">
-            <span class="muted" id="mxJobCount" style="font-size:12px">선택 0개</span>
-            <div class="row">
-              <button class="btn sm" id="mxJobAll" data-busy-lock>전체 선택</button>
-              <button class="btn sm" id="mxJobNone" data-busy-lock>전체 해제</button></div>
-          </div>
-          <div class="reclist" id="mxJobList" data-preserve-scroll></div>
-        </div>
-
-        <!-- 2. 함께 적용할 데이터(공통 1개) — 2소스(등록 데이터/파일, #26 #6) -->
-        <div class="run-row"><span class="lbl">함께 적용할 데이터 (공통 1개)</span>
-          <input class="field ro" id="mxDataLabel" type="text" readonly
-                 placeholder="데이터를 선택하세요 (.xlsx/.csv)">
-          <button class="btn" id="btnMxPoolData" data-busy-lock>등록 데이터…</button>
-          <button class="btn" id="btnMxPickData" data-busy-lock>파일 선택…</button>
-          <span id="mxDataTrack"></span></div>
-
-        <!-- 3. 작업별 미입력 필드 확인(상시 인라인 + 강제 확인 게이트, ADR-E·UD-04) -->
-        <div class="grp"><span class="cap">3. 작업별 미입력 필드 확인</span>
-          <p class="muted hint">선택한 각 작업의 필드 상태를 배지로 노출합니다.
-            <span class="danger">미입력</span> 필드는 반사적 dismiss를 막기 위해
-            <b>직접 클릭해 확인</b>해야 일괄 생성이 열립니다.</p>
-          <div class="statebadges" id="mxFieldBadges"></div>
-        </div>
-
-        <!-- 4. 공통 데이터에서 사용할 행 -->
-        <div class="run-row run-recs-head">
-          <span class="lbl" style="font-weight:600">공통 데이터에서 사용할 행</span>
-          <div class="row"><span class="muted" id="mxSelCount" style="font-size:12px">선택 0/0</span>
-            <button class="btn sm" id="mxSelAll" data-busy-lock>전체 선택</button>
-            <button class="btn sm" id="mxSelNone" data-busy-lock>전체 해제</button></div>
-        </div>
-        <div class="reclist" id="mxRecList" data-preserve-scroll></div>
-
-        <!-- 5. 저장 폴더(작업별 하위폴더) -->
-        <div class="run-row"><span class="lbl">저장 폴더 · 작업별 하위폴더</span>
-          <input class="field ro" id="mxOutDir" type="text" readonly
-                 placeholder="이 폴더 아래에 작업별 하위 폴더로 저장합니다">
-          <button class="btn" id="btnMxPickFolder" data-busy-lock>찾아보기…</button>
-          <span id="mxOutTrack"></span></div>
-
-        <!-- 액션 · 진행 · 결과 · 로그 -->
-        <div class="run-actions">
-          <button class="btn primary" id="mxGenBtn" disabled>여러 작업 문서 생성</button>
-          <span class="muted" id="mxGenGate" style="font-size:12px"></span>
-        </div>
-        <div class="bar"><i id="mxGenBar"></i></div>
-        <div id="mxGenResult" class="run-result"></div>
-        <div class="logbox" id="mxGenLog">[대기] 작업·데이터·저장 폴더를 확인한 뒤 생성하세요.</div>
       </div>
     </section>
 
@@ -422,7 +349,7 @@
       </div>
     </div>
 
-    <!-- 등록 데이터 선택 모달(#26 #6) — run·matrix·txt 공유 겨눔 게이트(거동은 pool_picker.js 소유).
+    <!-- 등록 데이터 선택 모달(#26 #6) — run·txt 공유 겨눔 게이트(거동은 pool_picker.js 소유).
          목록 id 는 poolPickList — 데이터 관리 화면(#scr-pool)의 poolList 와 반드시 다른 id 여야 한다
          (같으면 getElementById 가 숨은 화면 요소로 해소돼 피커가 빈 채로 뜬다). -->
     <div id="poolModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="poolTitle">
@@ -466,7 +393,6 @@
 <script src="js/screens/txt.js"></script>
 <script src="js/screens/editor.js"></script>
 <script src="js/screens/run.js"></script>
-<script src="js/screens/matrix.js"></script>
 <script src="js/screens/template.js"></script>
 <script src="js/screens/pool.js"></script>
 <script src="js/app.js"></script>

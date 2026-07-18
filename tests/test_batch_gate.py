@@ -1,4 +1,4 @@
-"""생성 경계 게이트(RC-03) + 협조적 취소(RC-06) — generate_batch/generate_matrix 헤드리스.
+"""생성 경계 게이트(RC-03) + 협조적 취소(RC-06) — generate_batch 헤드리스.
 
 검증이 호출자(GUI validate·CLI --profile 분기)에만 있으면 validate 이후 템플릿 교체
 (TOCTOU)나 새 호출측(파이프라인·API)이 자동으로 게이트 밖이 된다 — 경계 자체가 막는지,
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from hwpxfiller.batch import generate_batch, generate_matrix
+from hwpxfiller.batch import generate_batch
 from hwpxfiller.core.engine import GenerateResult
 from hwpxfiller.core.fill_ledger import TemplateStructureDrift
 from hwpxfiller.core.job import Job
@@ -153,38 +153,3 @@ def test_generate_batch_cancelled_before_start_writes_nothing(tmp_path):
     )
     assert res.cancelled and res.attempted == 0
     assert not list((tmp_path / "out").glob("*.hwpx"))
-
-
-def test_generate_matrix_cancel_skips_remaining_jobs(tmp_path):
-    """작업 1의 레코드 1 직후 취소 → 작업 2는 시작조차 안 한다 + 부분 결과 집계."""
-    def _job(name, tfield, source, pattern):
-        path = tmp_path / f"{name}.hwpx"
-        _write_template(path, [tfield])
-        return Job(
-            name=name, template_path=str(path),
-            mapping=MappingProfile(
-                mappings=[FieldMapping(template_field=tfield, source=source)]
-            ),
-            filename_pattern=pattern,
-        )
-
-    jobs = [
-        _job("공고", "공고명", "bidNtceNm", "공고-{{공고명}}"),
-        _job("요청", "품명", "itemNm", "요청-{{품명}}"),
-    ]
-    src = _Src([{"bidNtceNm": "A", "itemNm": "X"}, {"bidNtceNm": "B", "itemNm": "Y"}])
-    out = tmp_path / "out"
-    flag = {"stop": False}
-
-    def progress(done, total):
-        if done == 1:
-            flag["stop"] = True
-
-    res = generate_matrix(
-        jobs, src, [0, 1], str(out), engine=_FakeEngine(),
-        progress=progress, cancelled=lambda: flag["stop"],
-    )
-    assert res.cancelled is True
-    assert len(res.per_job) == 1 and res.per_job[0].batch.cancelled
-    assert res.per_job[0].batch.attempted == 1
-    assert not (out / "요청").exists()  # 다음 작업 미착수

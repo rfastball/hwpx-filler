@@ -37,7 +37,6 @@ from hwpxcore.native.reveal import open_path as _native_open_path
 from hwpxcore.native.reveal import reveal_in_explorer as _native_reveal
 from .screen_editor import EditorController
 from .screen_home import HomeController
-from .screen_matrix import MatrixController
 from .screen_pool import PoolController
 from .screen_run import RunController
 from .screen_template import TemplateController
@@ -104,7 +103,6 @@ class WebFrontend:
             TxtController(registry, self._push, pool_registry=pool_registry),
             EditorController(job_registry, self._push, pool_registry=pool_registry),
             RunController(job_registry, self._push, pool_registry=pool_registry),
-            MatrixController(job_registry, self._push, pool_registry=pool_registry),
             # 템플릿 관리(#13) — TXT 레지스트리는 즉시 기안과 공유(변경이 양쪽에 반영).
             TemplateController(registry, self._push),
             # 데이터 관리(#26 #4) — 등록 데이터 참조·수명.
@@ -315,12 +313,8 @@ class WebFrontend:
         :func:`screens.collect_owned_paths`/`validate_owned_path`(헤드리스 테스트 대상)."""
         ed = self._controller("editor")
         run = self._controller("run")
-        mx = self._controller("matrix")
-        # 매트릭스 세션 경로(#67) — 파일로 겨눈 공통 데이터·저장 폴더는 durable 레지스트리
-        # 밖이라 세션 목록에 없으면 자기 화면의 로케이트가 loud 거부된다(53-B 잔여 갭).
         session = [getattr(ed, "template_path", ""), getattr(ed, "data_path", ""),
-                   getattr(run, "out_dir", ""),
-                   getattr(mx, "out_dir", ""), getattr(mx, "data_track_path", "")]
+                   getattr(run, "out_dir", "")]
         owned = collect_owned_paths(self._job_registry, self._pool_registry, session)
         return validate_owned_path(path, owned)
 
@@ -455,14 +449,14 @@ _PRESERVE_PROBE_JS = r"""
 """
 
 # 실화면 회귀(#28 완료기준) — 위 기제 프로브는 합성 픽스처였고, 여기선 shipped __push 경로로
-# 실 컨트롤러 스냅샷을 4개 실화면 render() 에 흘려 (a) Preserve.around 래핑이 실 render 를
+# 실 컨트롤러 스냅샷을 3개 실화면 render() 에 흘려 (a) Preserve.around 래핑이 실 render 를
 # 깨지 않는지, (b) txt 프리뷰(#renderView)의 스크롤이 실 재렌더를 가로질러 유지되는지 되읽는다.
 # 스냅샷은 실 컨트롤러 initial()(비동기) 로 당겨 stash 하고, 스크롤은 가시 화면에서만 유효하므로
 # txt 를 가시화한다. 셋업(비동기 fire)과 되읽기 사이에 한 번 대기.
 _PRESERVE_REAL_SETUP_JS = r"""
 (function () {
   window.__snaps = {};
-  ['txt', 'editor', 'run', 'matrix'].forEach(function (scr) {
+  ['txt', 'editor', 'run'].forEach(function (scr) {
     window.pywebview.api.initial(scr).then(function (s) { window.__snaps[scr] = s; });
   });
   window.Nav.go('txt');  // 스크롤은 가시 화면에서만 유효 → txt 가시화
@@ -472,7 +466,7 @@ _PRESERVE_REAL_SETUP_JS = r"""
 _PRESERVE_REAL_PROBE_JS = r"""
 (function () {
   var out = {}, snaps = window.__snaps || {};
-  ['txt', 'editor', 'run', 'matrix'].forEach(function (scr) {
+  ['txt', 'editor', 'run'].forEach(function (scr) {
     try {
       if (!snaps[scr]) { out[scr] = 'no-snap'; return; }
       window.__push(scr, snaps[scr]);   // 실 render() (Preserve.around 래핑)
@@ -567,9 +561,9 @@ def _selftest_drive(window: "object") -> None:
         # 데이터 관리 화면(#26 #4) — 7번째 화면이 실제 init·렌더됐는지(빈 상태 문구도 렌더).
         result["pool_rendered"] = window.evaluate_js(  # type: ignore[attr-defined]
             "(document.getElementById('poolList')||{innerHTML:''}).innerHTML.length > 0")
-        # 2소스 진입점(#26 #6) — 세 실행 표면의 '등록 데이터…' 버튼 실재.
+        # 2소스 진입점(#26 #6) — 두 실행 표면(run·txt)의 '등록 데이터…' 버튼 실재.
         result["pool_buttons"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "['btnPoolData','btnMxPoolData','btnTxtPoolData']"
+            "['btnPoolData','btnTxtPoolData']"
             ".every(function(i){return !!document.getElementById(i)})")
         # 커스텀 모달 접근성 동적 거동(#27/#28) — 정적 계약(role/aria)은 test_web_dom_contract 가
         # 보고, 여기선 실 브라우저에서 Modal 헬퍼가 초기포커스·Escape 닫기·트리거 복귀를 실제로
