@@ -323,14 +323,22 @@ class TxtController(PoolTargetingMixin):
         *,
         pool_registry: "DatasetPoolRegistry | None" = None,
     ) -> None:
-        self.vm = TxtDraftViewModel(registry)
+        self._registry = registry
         self._push_sink = push
-        self.data_label = ""  # 겨눈 데이터 파일 표시명(서버 소유 — run/matrix 와 정렬, P4)
-        self.data_source = ""  # 소스 종류 플래그('file'|'pool') — 병기 라벨은 스냅샷이 합성(K8)
         # 등록 데이터(풀) 겨눔(#26/#6) — 기본은 홈 레지스트리, 테스트는 주입.
         self.pool_registry = (
             pool_registry if pool_registry is not None else default_pool_registry()
         )
+        self._fresh_session()
+
+    def _fresh_session(self) -> None:
+        """기안 세션 초기 상태 — VM 재구성 + 첫 템플릿 자동 선택 + 데이터 라벨 소거.
+
+        생성자와 「새 기안」(F11)이 같은 경로를 탄다 — 두 초기 상태가 갈라지지 않게.
+        """
+        self.vm = TxtDraftViewModel(self._registry)
+        self.data_label = ""  # 겨눈 데이터 파일 표시명(서버 소유 — run/matrix 와 정렬, P4)
+        self.data_source = ""  # 소스 종류 플래그('file'|'pool') — 병기 라벨은 스냅샷이 합성(K8)
         names = self.vm.template_names()
         if names:
             self.vm.select_template(names[0])
@@ -374,6 +382,15 @@ class TxtController(PoolTargetingMixin):
 
     def _do_select_template(self, p: dict) -> None:
         self.vm.select_template(p["name"])
+
+    def _do_new_draft(self, p: dict) -> None:
+        """홈 「＋ 새 기안」 — 세션 원자 초기화(F11, F10 「새 작업」과 대칭 문법).
+
+        종전 bare nav 는 직전 기안의 템플릿 선택·붙여넣은 텍스트·데이터·레코드 위치를
+        그대로 남겨 라벨 '새'와 어긋났다. txt 출력은 일회성(복사/저장 즉시 완결)이라
+        버릴 durable 상태가 없어 확인 없이 초기화한다(원장 F11 확정).
+        """
+        self._fresh_session()
 
     def _do_set_template_text(self, p: dict) -> None:
         self.vm.set_template_text(p["text"])
