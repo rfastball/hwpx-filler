@@ -1,0 +1,277 @@
+<!-- R-flow 칩-라이브 계약 데모 v4 (2026-07-19) — 인터랙티브 소형 목업. 상태 1의 라이브 변경
+     (재제안·소유권·전체쌍·분리 구역·열 압축)이 본체라 본시안(r-flow-editor-wizard.html)과 쌍으로 아카이브.
+     라이브: https://claude.ai/code/artifact/384983a0-afbc-4ce0-ae9f-101ab27821ad
+     계약: 미확정·미접촉 행 = 시스템 소유(활성 헤더 기준 라이브 재제안) / 수동·확정 행 = 사람 소유
+     (칩이 못 덮음; 단 소스 헤더를 끄면 시끄러운 강등 R4). 벌크 = 전체 사용/전체 미사용 대칭쌍. -->
+<title>칩-라이브 계약 데모</title>
+<style>
+:root{
+  --a-primary:#2f5fbf; --a-primary-h:#274fa0; --a-warn:#a05a00; --a-danger:#c0392b;
+  --a-ok:#1e8449; --a-muted:#656a72; --a-border:#e2e4e8; --a-card:#ffffff;
+  --a-window:#f6f7f9; --a-ink:#1c2126; --a-on-accent:#ffffff; --a-shadow:rgba(0,0,0,.2);
+  --a-sel:#dfe6fb;
+  --n-surface-alt:#f3f4f6; --n-header-bg:#eef1f4; --n-border-strong:#cbd0d6;
+  --n-ink-soft:#5c626b; --n-header-ink:#4a505a; --n-ink-control:#2b3038;
+  --sp-2:2px; --sp-4:4px; --sp-6:6px; --sp-8:8px; --sp-10:10px; --sp-12:12px; --sp-16:16px; --sp-24:24px;
+  --rad-control:6px; --rad-surface:9px; --rad-pill:999px;
+  --fs-caption:11px; --fs-body:13px; --fs-strong:15px; --fs-section:19px;
+  --pend-bg:#fdf3d7; --pend-bd:#e8cf8a; --ann:#8b5cf6;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+  --a-primary:#6f97e8; --a-primary-h:#8badf0; --a-warn:#e0a850; --a-danger:#ec7264;
+  --a-ok:#43b877; --a-muted:#98a0ab; --a-border:#333a44; --a-card:#1c2127;
+  --a-window:#131619; --a-ink:#e7eaee; --a-on-accent:#0f1418; --a-shadow:rgba(0,0,0,.5);
+  --a-sel:#1e2846;
+  --n-surface-alt:#23272d; --n-header-bg:#191d22; --n-border-strong:#454c56;
+  --n-ink-soft:#aab1bb; --n-header-ink:#c2c8d0; --n-ink-control:#dbe0e6;
+  --pend-bg:#3a3320; --pend-bd:#6b5c2e; --ann:#a78bfa;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --a-primary:#6f97e8; --a-primary-h:#8badf0; --a-warn:#e0a850; --a-danger:#ec7264;
+  --a-ok:#43b877; --a-muted:#98a0ab; --a-border:#333a44; --a-card:#1c2127;
+  --a-window:#131619; --a-ink:#e7eaee; --a-on-accent:#0f1418; --a-shadow:rgba(0,0,0,.5);
+  --a-sel:#1e2846;
+  --n-surface-alt:#23272d; --n-header-bg:#191d22; --n-border-strong:#454c56;
+  --n-ink-soft:#aab1bb; --n-header-ink:#c2c8d0; --n-ink-control:#dbe0e6;
+  --pend-bg:#3a3320; --pend-bd:#6b5c2e; --ann:#a78bfa;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--a-window);color:var(--a-ink);
+  font:13px/1.45 "Pretendard","Malgun Gothic",system-ui,sans-serif;padding:var(--sp-24)}
+h1,h2,p{margin:0}
+button{font:inherit;cursor:pointer}
+button:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
+.wrap{max-width:880px;margin:0 auto;display:flex;flex-direction:column;gap:var(--sp-16)}
+.head h1{font-size:var(--fs-section);text-wrap:balance}
+.head p{color:var(--a-muted);margin-top:var(--sp-4);max-width:72ch}
+.frame{background:var(--a-card);border:1px solid var(--n-border-strong);border-radius:var(--rad-surface);
+  box-shadow:0 6px 20px var(--a-shadow);padding:var(--sp-16);display:flex;flex-direction:column;gap:var(--sp-12)}
+
+.hh{display:flex;align-items:center;gap:var(--sp-8);flex-wrap:wrap}
+.hh b{font-weight:700}
+.hh .cnt{color:var(--a-muted)}
+.hh .acts{margin-left:auto;display:flex;gap:var(--sp-6)}
+.btn{font-size:var(--fs-body);border:1px solid var(--n-border-strong);background:var(--a-card);
+  color:var(--n-ink-control);padding:var(--sp-2) var(--sp-10);border-radius:var(--rad-control);white-space:nowrap}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.chips{display:flex;flex-wrap:wrap;gap:var(--sp-8)}
+.hchip{border:1px solid var(--a-primary);background:var(--a-sel);color:var(--a-primary);font-weight:600;
+  border-radius:var(--rad-pill);padding:var(--sp-4) var(--sp-12);font-size:var(--fs-body)}
+.hidden-hdrs{border:1px solid var(--a-border);border-radius:var(--rad-control);
+  background:var(--n-surface-alt);padding:var(--sp-6) var(--sp-10)}
+.hidden-hdrs summary{font-size:var(--fs-caption);color:var(--a-muted);cursor:pointer;padding:var(--sp-2) 0}
+.hidden-hdrs .chips{margin-top:var(--sp-8);margin-bottom:var(--sp-4)}
+.hidden-hdrs .hchip{border-color:var(--a-border);background:var(--a-card);color:var(--a-muted);font-weight:400}
+
+.notice{font-size:var(--fs-body);border-radius:var(--rad-control);padding:var(--sp-6) var(--sp-10);white-space:pre-line}
+.notice.muted{color:var(--a-muted);background:var(--n-surface-alt)}
+.notice.warn{color:var(--a-warn);background:var(--pend-bg);border:1px solid var(--pend-bd)}
+.notice.danger{color:var(--a-danger);background:var(--n-surface-alt);border:1px solid var(--a-danger)}
+
+table{width:100%;border-collapse:collapse;font-size:var(--fs-body)}
+th{font-size:var(--fs-caption);color:var(--n-header-ink);text-align:left;font-weight:600;
+  background:var(--n-header-bg);padding:var(--sp-6) var(--sp-10);border-bottom:1px solid var(--a-border);white-space:nowrap}
+td{padding:var(--sp-6) var(--sp-10);border-bottom:1px solid var(--a-border);white-space:nowrap;vertical-align:middle}
+tr.pend td{background:var(--pend-bg)}
+.fld{font-weight:600}
+.pv{color:var(--n-ink-soft);font-variant-numeric:tabular-nums;max-width:220px;overflow:hidden;text-overflow:ellipsis}
+select{background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-control);
+  padding:var(--sp-2) var(--sp-6);color:var(--a-ink);font:inherit;font-size:var(--fs-body);max-width:170px}
+select:disabled{opacity:.6}
+.tag{font-size:var(--fs-caption);border-radius:var(--rad-pill);padding:1px var(--sp-8);white-space:nowrap;font-weight:600}
+.tag.sugg{background:var(--pend-bg);border:1px solid var(--pend-bd);color:var(--a-warn)}
+.tag.man{background:var(--a-sel);color:var(--a-primary)}
+.tag.conf{background:color-mix(in srgb,var(--a-ok) 14%,transparent);color:var(--a-ok)}
+.tag.none{background:var(--n-surface-alt);color:var(--a-muted);font-weight:400}
+
+.pvwrap{overflow-x:auto}
+.pvgrid th,.pvgrid td{font-size:var(--fs-caption);padding:var(--sp-4) var(--sp-8)}
+.pvgrid td{color:var(--n-ink-soft)}
+.legend{font-size:var(--fs-caption);color:var(--a-muted);max-width:76ch}
+.legend b{color:var(--n-ink-soft)}
+.try{border:1px dashed var(--n-border-strong);border-radius:var(--rad-surface);padding:var(--sp-10) var(--sp-12);
+  font-size:var(--fs-body);color:var(--n-ink-soft)}
+.try ol{margin:var(--sp-4) 0 0;padding-left:18px}
+.try li{margin-top:var(--sp-2)}
+</style>
+
+<div class="wrap">
+  <div class="head">
+    <h1>칩-라이브 계약 데모</h1>
+    <p>계약 한 줄: <b>미확정·미접촉 행의 제안은 활성 헤더를 따라 라이브로 다시 선다 —
+       수동 지정·확정 행은 사람 소유라 칩이 못 덮는다</b>(그 소스 헤더를 끄면 조용히가 아니라
+       시끄럽게 강등된다). 아래는 실제로 동작합니다 — 칩과 표를 눌러보세요.</p>
+  </div>
+
+  <div class="frame">
+    <div class="hh"><b>사용할 헤더</b><span class="cnt" id="cnt"></span>
+      <span class="acts">
+        <button class="btn" id="useAll">전체 사용</button>
+        <button class="btn" id="useNone">전체 미사용</button>
+      </span></div>
+    <div class="chips" id="activeChips"></div>
+    <details class="hidden-hdrs" id="foldWrap"><summary id="foldSum"></summary>
+      <div class="chips" id="ignoredChips"></div>
+      <div class="legend">미사용 헤더는 자동 제안과 소스 후보에서 빠집니다. 칩을 클릭하면 다시 사용합니다.</div>
+    </details>
+    <div class="notice muted" id="notice">사용 헤더를 조정하거나 표를 편집해 보세요.</div>
+    <table>
+      <thead><tr><th>템플릿 필드</th><th>데이터항목</th><th>미리보기 (1행 표본)</th><th>상태</th><th></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div>
+      <div class="hh" style="margin-bottom:var(--sp-4)"><b>데이터 미리보기</b>
+        <span class="cnt" id="pvCnt"></span></div>
+      <div class="pvwrap"><table class="pvgrid">
+        <thead id="pvHead"></thead><tbody id="pvBody"></tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <div class="try"><b>이걸 눌러보세요</b>
+    <ol>
+      <li>「품명」 칩을 끈다 → {{품명}} 제안이 '세부품명'으로 즉시 다시 선다(라이브 재제안). 다시 켜면 '품명'으로 복귀.</li>
+      <li>{{공고번호}}를 「확정」하고 1번을 반복 → 확정 행은 미동도 없다(사람 소유). 이제 「공고번호」 칩을 끄면 — 시끄러운 강등.</li>
+      <li>아무 행의 데이터항목을 직접 골라본다(수동) → 칩을 아무리 토글해도 그 행은 안 바뀐다. 드롭다운 맨 아래 「(자동 제안으로 되돌리기)」로 다시 시스템 소유.</li>
+      <li>「전체 미사용」 → 원하는 칩만 켜 간다(고른다→매핑한다). 확정 행이 있으면 전체 미사용이 거부되는 것도 확인.</li>
+      <li>칩을 끄면 <b>데이터 미리보기의 그 열이 뷰에서 즉시 빠진다</b>(F21 라이브 압축) — 다시 켜면 복귀.
+          매핑 표의 행은 반대로 안 숨는다: 후보 잃은 필드는 제자리에서 노랗게 남는 것이 의무(조용한 빈칸 금지).</li>
+    </ol>
+  </div>
+
+  <p class="legend">상태: <b>제안</b>=시스템 소유(노랑, 칩 따라 유동) · <b>수동</b>=사람 지정, 미확정 ·
+     <b>확정</b>=사람 소유, 불가침 · <b>후보 없음</b>=활성 헤더에 맞는 후보 부재.
+     실토큰 사본 · R-flow 토의용 소형 목업(2026-07-19) — docs/r-flow-mockups/chip-live-demo.html</p>
+</div>
+
+<script>
+"use strict";
+const HEADERS = ["공고번호","품명","세부품명","규격","단위","수량","추정가격","납품기한","수요기관","계약방법","낙찰방법","비고"];
+const REC = {"공고번호":"제20260712-00871호","품명":"사무용 복합기","세부품명":"A3 컬러 복합기 외 2종","규격":"A3","단위":"대","수량":"3","추정가격":"12,000,000","납품기한":"2026-08-31","수요기관":"조달청 대전지방조달청","계약방법":"일반경쟁","낙찰방법":"적격심사","비고":"-"};
+const SAMPLES = [REC,
+  {"공고번호":"제20260713-00412호","품명":"이동식 서가","세부품명":"목재 5단 서가 외 1종","규격":"-","단위":"대","수량":"12","추정가격":"38,500,000","납품기한":"2026-09-15","수요기관":"국립중앙도서관","계약방법":"일반경쟁","낙찰방법":"적격심사","비고":"-"},
+  {"공고번호":"제20260715-00098호","품명":"제습기","세부품명":"산업용 제습기","규격":"-","단위":"대","수량":"6","추정가격":"9,800,000","납품기한":"2026-08-20","수요기관":"조달청 대전지방조달청","계약방법":"수의계약","낙찰방법":"-","비고":"긴급"}];
+const FIELDS = ["공고번호","품명","수량","추정가격","납품기한","수요기관"];
+
+const ignored = new Set();
+// touched: 사람이 소스를 직접 고름(수동). confirmed: 확정. 소스는 touched/confirmed일 때만 저장.
+const rows = FIELDS.map(f => ({ field: f, touched: false, confirmed: false, source: "" }));
+
+function active(){ return HEADERS.filter(h => !ignored.has(h)); }
+function score(field, header){
+  if (field === header) return 1;
+  if (header.includes(field) || field.includes(header)) return 0.6;
+  return 0;
+}
+function suggest(field){
+  let best = "", bs = 0;
+  for (const h of active()){ const s = score(field, h); if (s > bs){ bs = s; best = h; } }
+  return best;
+}
+function effSource(r){ return (r.touched || r.confirmed) ? r.source : suggest(r.field); }
+
+const $ = (id) => document.getElementById(id);
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function notice(text, level){ const n = $("notice"); n.textContent = text; n.className = "notice " + (level || "muted"); }
+function counts(){ return `사용 ${active().length} · 미사용 ${ignored.size}.`; }
+
+function demoteRowsUsing(headers){
+  // R4: 꺼진 헤더를 소스로 쓰던 사람-소유 행은 해제·강등하고 이름을 호명한다.
+  const hit = [];
+  for (const r of rows){
+    if ((r.touched || r.confirmed) && headers.has(r.source)){
+      r.touched = false; r.confirmed = false; r.source = "";
+      hit.push("{{" + r.field + "}}");
+    }
+  }
+  return hit;
+}
+
+function toggleChip(h){
+  if (ignored.has(h)){
+    ignored.delete(h);
+    notice(counts() + `\n'${h}'을(를) 다시 사용합니다. 미확정 행의 제안 후보로 돌아왔습니다.`, "muted");
+  } else {
+    if (active().length === 1){ notice("사용할 헤더를 하나 이상 남겨 두세요.", "danger"); return; }
+    ignored.add(h);
+    const hit = demoteRowsUsing(new Set([h]));
+    if (hit.length) notice(counts() + `\n'${h}'을(를) 미사용으로 바꾸며 매핑을 해제한 필드 ${hit.length}개(재확정 필요): ` + hit.join(", "), "warn");
+    else notice(counts(), "muted");
+  }
+  render();
+}
+
+$("useAll").addEventListener("click", () => {
+  ignored.clear(); notice(counts() + "\n전체 헤더를 다시 사용합니다.", "muted"); render();
+});
+$("useNone").addEventListener("click", () => {
+  if (rows.some(r => r.confirmed)){
+    notice("확정한 매핑이 있어 전체 미사용을 할 수 없습니다. 확정을 먼저 해제하거나 칩을 하나씩 끄세요.", "danger");
+    return;
+  }
+  const hit = demoteRowsUsing(new Set(HEADERS));
+  HEADERS.forEach(h => ignored.add(h));
+  let msg = "모든 헤더를 미사용으로 옮겼습니다. 사용할 헤더를 골라 켜 주세요.";
+  if (hit.length) msg += `\n수동 지정을 해제한 필드 ${hit.length}개: ` + hit.join(", ");
+  notice(msg, hit.length ? "warn" : "muted");
+  $("foldWrap").open = true;  // 고르는 흐름의 시작점 — 접힌 채면 고를 수 없다.
+  render();
+});
+
+function render(){
+  $("cnt").textContent = `${HEADERS.length}개 중 ${active().length}개 사용`;
+  $("useNone").disabled = rows.some(r => r.confirmed);
+  $("activeChips").innerHTML = active().map(h =>
+    `<button class="hchip" data-h="${esc(h)}" title="클릭 = 미사용으로">${esc(h)}</button>`).join("")
+    || `<span class="tag none">사용 중인 헤더가 없습니다. 미사용 목록에서 골라 켜 주세요.</span>`;
+  const ign = HEADERS.filter(h => ignored.has(h));
+  $("foldWrap").style.display = ign.length ? "" : "none";
+  $("foldSum").textContent = `미사용 ${ign.length}개 (펼쳐서 다시 사용)`;
+  $("ignoredChips").innerHTML = ign.map(h =>
+    `<button class="hchip" data-h="${esc(h)}" title="클릭 = 다시 사용">${esc(h)}</button>`).join("");
+
+  $("rows").innerHTML = rows.map((r, i) => {
+    const src = effSource(r);
+    const st = r.confirmed ? ["conf","확정"] : r.touched ? ["man","수동"] : src ? ["sugg","제안"] : ["none","후보 없음"];
+    // 셀렉트 값 = 항상 실제 컬럼(제안이어도) — '자동 제안됨'은 상태 태그가 말한다.
+    const opts = [`<option value="" ${src ? "hidden" : "selected"}>(선택)</option>`]
+      .concat(active().map(h => `<option value="${esc(h)}"${src === h ? " selected" : ""}>${esc(h)}</option>`))
+      .concat(r.touched ? [`<option value="__auto__">(자동 제안으로 되돌리기)</option>`] : []);
+    return `<tr class="${r.confirmed ? "" : "pend"}">
+      <td class="fld">{{${esc(r.field)}}}</td>
+      <td><select data-i="${i}" ${r.confirmed ? "disabled" : ""}>${opts.join("")}</select></td>
+      <td class="pv">${src ? esc(REC[src] ?? "") : "—"}</td>
+      <td><span class="tag ${st[0]}">${st[1]}</span></td>
+      <td><button class="btn" data-c="${i}" ${!src ? "disabled" : ""}>${r.confirmed ? "해제" : "확정"}</button></td>
+    </tr>`;
+  }).join("");
+
+  // 데이터 미리보기 그리드 — 열 = 활성 헤더만(F21 라이브 압축: 미사용 열은 뷰 제외, 재활성 시 복귀).
+  const act = active();
+  $("pvCnt").textContent = ign.length
+    ? `3행 표본 · 열 ${act.length}/${HEADERS.length} (미사용 ${ign.length}열은 뷰에서 제외)`
+    : `3행 표본 · 전체 ${HEADERS.length}열`;
+  $("pvHead").innerHTML = "<tr>" + act.map(h => `<th>${esc(h)}</th>`).join("") + "</tr>";
+  $("pvBody").innerHTML = act.length
+    ? SAMPLES.map(rec => "<tr>" + act.map(h => `<td>${esc(rec[h] ?? "")}</td>`).join("") + "</tr>").join("")
+    : `<tr><td class="pv">표시할 열이 없습니다.</td></tr>`;
+
+  document.querySelectorAll("[data-h]").forEach(b => b.addEventListener("click", () => toggleChip(b.dataset.h)));
+  document.querySelectorAll("select[data-i]").forEach(s => s.addEventListener("change", () => {
+    const r = rows[+s.dataset.i];
+    if (s.value === "__auto__"){ r.touched = false; r.source = ""; notice(`{{${r.field}}}을(를) 자동 제안에 다시 맡깁니다.`, "muted"); }
+    else if (s.value){ r.touched = true; r.source = s.value; notice(`{{${r.field}}} ← '${s.value}' 수동 지정. 칩 토글은 이 행을 바꾸지 못합니다.`, "muted"); }
+    render();
+  }));
+  document.querySelectorAll("button[data-c]").forEach(b => b.addEventListener("click", () => {
+    const r = rows[+b.dataset.c];
+    if (r.confirmed){ r.confirmed = false; notice(`{{${r.field}}} 확정을 해제했습니다. 다시 편집할 수 있습니다.`, "muted"); }
+    else { r.source = effSource(r); r.confirmed = true; r.touched = false; notice(`{{${r.field}}} ← '${r.source}' 확정. 칩 토글은 이 행을 바꾸지 못합니다.`, "muted"); }
+    render();
+  }));
+}
+render();
+</script>

@@ -1,0 +1,447 @@
+<!-- R-flow 토의 시안 v3 (2026-07-19) — 에디터 매핑 단계 접기 (F18·F26·F27) + 칩-라이브 계약
+     (F19a=커밋 소멸·F19b=시간축 접힘·F21=라이브 재제안+열 압축; 동작 실증=chip-live-demo.html).
+     라이브: https://claude.ai/code/artifact/f995ac44-8b9e-4a7f-827a-773810b3ecac
+     동반 데모: https://claude.ai/code/artifact/384983a0-afbc-4ce0-ae9f-101ab27821ad
+     박제 정본 아님: 블록 2 합의 확정 후 개정·박제 예정. 합의 원장: 세션 로그 → 라운드 종결 시 docs/R_FLOW_*.md
+     실토큰은 web/css/tokens.css 사본(1부 시안과 동일 관례 — 값 수정 금지). -->
+<title>R-flow 시안 — 에디터 매핑 단계</title>
+<style>
+/* ==== 실토큰 (web/css/tokens.css 사본 — 드리프트 방지: 값 수정 금지) ==== */
+:root{
+  --a-primary:#2f5fbf; --a-primary-h:#274fa0; --a-warn:#a05a00; --a-danger:#c0392b;
+  --a-ok:#1e8449; --a-muted:#656a72; --a-border:#e2e4e8; --a-card:#ffffff;
+  --a-window:#f6f7f9; --a-ink:#1c2126; --a-on-accent:#ffffff; --a-shadow:rgba(0,0,0,.2);
+  --a-sel:#dfe6fb; --fb-missing-bg:#fbe6e3; --fb-missing-bd:#e6a49c;
+  --n-surface-alt:#f3f4f6; --n-hover:#f0f2f5; --n-track:#eef0f3; --n-header-bg:#eef1f4;
+  --n-border-strong:#cbd0d6; --n-ink-soft:#5c626b; --n-header-ink:#4a505a; --n-ink-control:#2b3038;
+  --sp-2:2px; --sp-4:4px; --sp-6:6px; --sp-8:8px; --sp-10:10px; --sp-12:12px; --sp-16:16px; --sp-24:24px; --sp-40:40px;
+  --rad-control:6px; --rad-surface:9px; --rad-overlay:12px; --rad-pill:999px;
+  --fs-caption:11px; --fs-body:13px; --fs-strong:15px; --fs-section:19px;
+  --ann:#8b5cf6; --pend-bg:#fdf3d7; --pend-bd:#e8cf8a;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+  --a-primary:#6f97e8; --a-primary-h:#8badf0; --a-warn:#e0a850; --a-danger:#ec7264;
+  --a-ok:#43b877; --a-muted:#98a0ab; --a-border:#333a44; --a-card:#1c2127;
+  --a-window:#131619; --a-ink:#e7eaee; --a-on-accent:#0f1418; --a-shadow:rgba(0,0,0,.5);
+  --a-sel:#1e2846; --fb-missing-bg:#3a221f; --fb-missing-bd:#6b3a34;
+  --n-surface-alt:#23272d; --n-hover:#262b31; --n-track:#2a2f36; --n-header-bg:#191d22;
+  --n-border-strong:#454c56; --n-ink-soft:#aab1bb; --n-header-ink:#c2c8d0; --n-ink-control:#dbe0e6;
+  --ann:#a78bfa; --pend-bg:#3a3320; --pend-bd:#6b5c2e;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --a-primary:#6f97e8; --a-primary-h:#8badf0; --a-warn:#e0a850; --a-danger:#ec7264;
+  --a-ok:#43b877; --a-muted:#98a0ab; --a-border:#333a44; --a-card:#1c2127;
+  --a-window:#131619; --a-ink:#e7eaee; --a-on-accent:#0f1418; --a-shadow:rgba(0,0,0,.5);
+  --a-sel:#1e2846; --fb-missing-bg:#3a221f; --fb-missing-bd:#6b3a34;
+  --n-surface-alt:#23272d; --n-hover:#262b31; --n-track:#2a2f36; --n-header-bg:#191d22;
+  --n-border-strong:#454c56; --n-ink-soft:#aab1bb; --n-header-ink:#c2c8d0; --n-ink-control:#dbe0e6;
+  --ann:#a78bfa; --pend-bg:#3a3320; --pend-bd:#6b5c2e;
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--a-window);color:var(--a-ink);
+  font:13px/1.45 "Pretendard","Malgun Gothic",system-ui,sans-serif;padding:var(--sp-24)}
+h1,h2,h3,p{margin:0}
+button{font:inherit}
+button:focus-visible,a:focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
+
+/* ==== 스튜디오 크롬(시안 전용 — 앱 아님) ==== */
+.studio{max-width:1024px;margin:0 auto;display:flex;flex-direction:column;gap:var(--sp-40)}
+.studio-head h1{font-size:var(--fs-section);text-wrap:balance}
+.studio-head p{color:var(--a-muted);margin-top:var(--sp-4);max-width:70ch}
+.sect>h2{font-size:var(--fs-strong);margin-bottom:var(--sp-4)}
+.sect>.cap{color:var(--a-muted);font-size:var(--fs-body);margin-bottom:var(--sp-12);max-width:78ch}
+.canvas-wrap{overflow-x:auto;padding-bottom:var(--sp-8)}
+.frame{width:920px;background:var(--a-card);border:1px solid var(--n-border-strong);
+  border-radius:var(--rad-overlay);box-shadow:0 8px 28px var(--a-shadow);overflow:hidden}
+.frame-note{font-size:var(--fs-caption);color:var(--a-muted);margin-top:var(--sp-6)}
+
+/* 주석(시안 전용) — 보라 번호 칩, 결정 대응 범례와 연동 */
+.ann{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:var(--rad-pill);
+  background:var(--ann);color:#fff;font-size:10px;font-weight:700;vertical-align:2px;margin-left:var(--sp-4);flex:none}
+
+/* ==== 단계 비교 스트립 ==== */
+.steps-cmp{display:flex;flex-direction:column;gap:var(--sp-10)}
+.steps-line{display:flex;align-items:center;gap:var(--sp-8);flex-wrap:wrap}
+.steps-line .who{width:64px;font-size:var(--fs-caption);color:var(--n-header-ink);font-weight:600;flex:none}
+.stp{border:1px solid var(--a-border);background:var(--a-card);border-radius:var(--rad-pill);
+  padding:var(--sp-4) var(--sp-12);font-size:var(--fs-body);white-space:nowrap}
+.stp.gone{color:var(--a-muted);text-decoration:line-through;border-style:dashed;background:transparent}
+.stp.into{border-color:var(--a-primary);color:var(--a-primary);font-weight:600;background:var(--a-sel)}
+.steps-line .arr{color:var(--a-muted)}
+
+/* ==== 에디터 프레임 내부(실문법 지향 사본) ==== */
+.ed{display:flex;flex-direction:column}
+.ed-head{display:flex;align-items:center;gap:var(--sp-16);padding:var(--sp-12) var(--sp-24);
+  background:var(--n-header-bg);border-bottom:1px solid var(--a-border)}
+.ed-head .t{font-size:var(--fs-strong);font-weight:800}
+.ed-head .job{color:var(--a-muted);font-size:var(--fs-body)}
+.ed-steps{margin-left:auto;display:flex;align-items:center;gap:var(--sp-6)}
+.est{display:flex;align-items:center;gap:var(--sp-6);font-size:var(--fs-caption);color:var(--a-muted);
+  padding:var(--sp-2) var(--sp-8);border-radius:var(--rad-pill)}
+.est.done{color:var(--a-ok)}
+.est.now{background:var(--a-sel);color:var(--a-primary);font-weight:700}
+.ed-body{padding:var(--sp-16) var(--sp-24) var(--sp-24);display:flex;flex-direction:column;gap:var(--sp-16)}
+
+/* 데이터 관문(매핑 단계 머리) — F18 착지 지점 */
+.gateway{display:flex;align-items:center;gap:var(--sp-10);flex-wrap:wrap}
+.gateway .glbl{font-size:var(--fs-body);font-weight:700;white-space:nowrap}
+.btn{font-size:var(--fs-body);border:1px solid var(--n-border-strong);background:var(--a-card);
+  color:var(--n-ink-control);padding:var(--sp-4) var(--sp-10);border-radius:var(--rad-control);white-space:nowrap}
+.btn.primary{background:var(--a-primary);color:var(--a-on-accent);border-color:var(--a-primary);font-weight:600}
+.btn.focusd{outline:2px solid var(--a-primary);outline-offset:2px}
+.filechip{display:inline-flex;align-items:center;gap:var(--sp-8);border:1px solid var(--a-border);
+  background:var(--n-surface-alt);border-radius:var(--rad-control);padding:var(--sp-4) var(--sp-10);font-size:var(--fs-body)}
+.filechip b{font-weight:600}
+.filechip .sheet{color:var(--a-muted);font-size:var(--fs-caption)}
+.optout{margin-left:auto;font-size:var(--fs-caption);color:var(--a-muted);background:none;border:0;
+  text-decoration:underline;text-underline-offset:2px;cursor:pointer;padding:var(--sp-2)}
+
+/* 헤더 칩(F19b·F21 — v3 복원: 자동 제안 후보 좁히기·라이브 반영, 스케일은 벌크 동사) */
+.hdrs{border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card)}
+.hdrs .hh{display:flex;align-items:center;gap:var(--sp-8);padding:var(--sp-8) var(--sp-12);font-size:var(--fs-body)}
+.hdrs .hh .tw{color:var(--a-muted);flex:none;width:12px;text-align:center}
+.hdrs .hh b{font-weight:700}
+.hdrs .hh .cnt{color:var(--a-muted)}
+.hdrs .hh .hh-acts{margin-left:auto;display:flex;gap:var(--sp-6)}
+.btn.sm{padding:var(--sp-2) var(--sp-8);font-size:var(--fs-caption)}
+.chipwall{display:flex;flex-wrap:wrap;gap:var(--sp-8);padding:0 var(--sp-12) var(--sp-10)}
+.hchip{border:1px solid var(--a-primary);background:var(--a-sel);border-radius:var(--rad-pill);
+  padding:var(--sp-4) var(--sp-10);font-size:var(--fs-body);color:var(--a-primary);font-weight:600}
+.hdrfold{margin:0 var(--sp-12) var(--sp-10);border:1px solid var(--a-border);border-radius:var(--rad-control);
+  background:var(--n-surface-alt);padding:var(--sp-4) var(--sp-10);font-size:var(--fs-caption);color:var(--a-muted)}
+.pvwrap{overflow-x:auto;margin-top:var(--sp-6)}
+.pvgrid{width:100%;border-collapse:collapse}
+.pvgrid th{font-size:var(--fs-caption);color:var(--n-header-ink);text-align:left;font-weight:600;
+  background:var(--n-header-bg);padding:var(--sp-4) var(--sp-8);border-bottom:1px solid var(--a-border);white-space:nowrap}
+.pvgrid td{font-size:var(--fs-caption);color:var(--n-ink-soft);padding:var(--sp-4) var(--sp-8);
+  border-bottom:1px solid var(--a-border);white-space:nowrap}
+
+/* 검색형 드롭다운 열린 상태(스케일 보조 — 활성 헤더 안에서 타이핑 필터) */
+.ddhost{position:relative}
+.maptbl-wrap.ov-vis{overflow:visible}
+.ddpop{position:absolute;top:100%;left:var(--sp-10);z-index:5;margin-top:2px;width:210px;
+  background:var(--a-card);border:1px solid var(--n-border-strong);border-radius:var(--rad-control);
+  box-shadow:0 6px 18px var(--a-shadow);padding:var(--sp-6)}
+.ddpop .dds{border:1px solid var(--a-primary);border-radius:var(--rad-control);
+  padding:var(--sp-2) var(--sp-6);font-size:var(--fs-caption);margin-bottom:var(--sp-4);color:var(--a-ink)}
+.ddpop .ddi{padding:var(--sp-4) var(--sp-6);border-radius:4px;font-size:var(--fs-body)}
+.ddpop .ddi.on{background:var(--a-sel);color:var(--a-primary);font-weight:600}
+.ddpop .ddn{font-size:var(--fs-caption);color:var(--a-muted);padding:var(--sp-2) var(--sp-6)}
+
+/* 매핑 표(실문법: 데이터항목·표시형·미리보기·미확정 하이라이트) */
+.maptbl-wrap{overflow-x:auto}
+.maptbl{width:100%;border-collapse:collapse;font-size:var(--fs-body)}
+.maptbl th{font-size:var(--fs-caption);color:var(--n-header-ink);text-align:left;font-weight:600;
+  background:var(--n-header-bg);padding:var(--sp-6) var(--sp-10);border-bottom:1px solid var(--a-border);white-space:nowrap}
+.maptbl td{padding:var(--sp-6) var(--sp-10);border-bottom:1px solid var(--a-border);white-space:nowrap;vertical-align:middle}
+.maptbl .fld{font-weight:600}
+.maptbl .pv{color:var(--n-ink-soft);font-variant-numeric:tabular-nums}
+.maptbl .dim{color:var(--a-muted)}
+.maptbl tr.pend td{background:var(--pend-bg)}
+.sel{display:inline-flex;align-items:center;gap:var(--sp-6);border:1px solid var(--a-border);
+  background:var(--a-card);border-radius:var(--rad-control);padding:var(--sp-2) var(--sp-8);min-width:120px;justify-content:space-between}
+.sel .car{color:var(--a-muted);font-size:10px}
+.sel.empty{color:var(--a-muted);border-style:dashed;background:transparent}
+.tag{font-size:var(--fs-caption);border-radius:var(--rad-pill);padding:1px var(--sp-8);white-space:nowrap}
+.tag.okc{background:color-mix(in srgb,var(--a-ok) 14%,transparent);color:var(--a-ok);font-weight:600}
+.tag.pendc{background:var(--pend-bg);border:1px solid var(--pend-bd);color:var(--a-warn);font-weight:600}
+.hint{font-size:var(--fs-caption);color:var(--a-muted)}
+.ed-acts{display:flex;gap:var(--sp-8);justify-content:flex-end;align-items:center}
+.ed-acts .spacer{flex:1}
+
+/* 저장 단계 */
+.formrow{display:flex;align-items:center;gap:var(--sp-10);flex-wrap:wrap}
+.formrow .flbl{width:96px;flex:none;font-size:var(--fs-body);font-weight:700}
+.field{background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-control);
+  padding:var(--sp-4) var(--sp-8);color:var(--a-ink);font:inherit;font-size:var(--fs-body)}
+.field.pat{width:420px;font-family:Consolas,"Pretendard",monospace}
+.live-ex{display:flex;align-items:baseline;gap:var(--sp-8);margin-left:106px;font-size:var(--fs-body)}
+.live-ex .exlbl{font-size:var(--fs-caption);color:var(--a-muted);flex:none}
+.live-ex code{font-family:Consolas,monospace;font-size:12px}
+.live-ex.ok code{color:var(--a-ok)}
+.live-ex.warn code{color:var(--a-warn)}
+.live-ex.warn .why{font-size:var(--fs-caption);color:var(--a-warn)}
+.tok-fold{margin-left:106px;font-size:var(--fs-body)}
+.tok-fold>.twl{color:var(--n-ink-soft);background:none;border:0;padding:var(--sp-2) 0;cursor:pointer;font-size:var(--fs-body)}
+.tokpanel{margin-top:var(--sp-8);border:1px solid var(--a-border);border-radius:var(--rad-surface);
+  background:var(--n-surface-alt);padding:var(--sp-10) var(--sp-12);max-width:560px}
+.tokpanel h4{margin:0 0 var(--sp-4);font-size:var(--fs-caption);color:var(--n-header-ink);
+  text-transform:none;letter-spacing:.02em}
+.tokpanel .tg{display:flex;flex-wrap:wrap;gap:var(--sp-6);margin-bottom:var(--sp-8)}
+.tok{font-family:Consolas,monospace;font-size:11px;border:1px solid var(--a-border);background:var(--a-card);
+  border-radius:var(--rad-control);padding:1px var(--sp-6)}
+.tokpanel .syn{font-size:var(--fs-caption);color:var(--a-muted)}
+
+/* 결정 대응 범례 */
+.legend{border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card);padding:var(--sp-12) var(--sp-16)}
+.legend h2{font-size:var(--fs-strong);margin-bottom:var(--sp-8)}
+.legend ol{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-6) var(--sp-24)}
+.legend li{display:flex;gap:var(--sp-8);font-size:var(--fs-body);align-items:baseline}
+.legend li .ann{margin:0;vertical-align:0}
+.legend li b{font-weight:600}
+@media (max-width:760px){.legend ol{grid-template-columns:1fr}}
+.draftnote{font-size:var(--fs-caption);color:var(--a-muted)}
+</style>
+
+<div class="studio">
+  <div class="studio-head">
+    <h1>R-flow 시안 — 에디터 매핑 단계 접기</h1>
+    <p>블록 2 토의 시안 v3. 2단계 「데이터 선택 (선택)」을 삭제하고 매핑 단계의 관문으로 인라인
+       — 행위는 격상, 단계 크롬은 소멸(F18). 칩-라이브 계약 합류: 미확정·미접촉 행은 시스템
+       소유(라이브 재제안), 수동·확정 행은 사람 소유. F19a=커밋 버튼 소멸, F19b=시간축 접힘,
+       F21=라이브 반영+미리보기 열 압축으로 해소. 동작 실증은 별도 데모 아티팩트
+       (chip-live-demo). 보라 번호 칩은 하단 결정 범례와 연동.</p>
+  </div>
+
+  <!-- ═══ 단계 비교 ═══ -->
+  <div class="sect">
+    <h2>마법사 4단계 → 3단계</h2>
+    <p class="cap">삭제되는 것은 벽이지 내용이 아니다 — 파일 선택·시트 확정·헤더 선택 전부
+       매핑 단계 안으로 이사한다.</p>
+    <div class="steps-cmp">
+      <div class="steps-line"><span class="who">현행</span>
+        <span class="stp">1 템플릿</span><span class="arr">→</span>
+        <span class="stp gone">2 데이터 선택 (선택)</span><span class="arr">→</span>
+        <span class="stp">3 필드 매핑</span><span class="arr">→</span>
+        <span class="stp">4 저장</span>
+      </div>
+      <div class="steps-line"><span class="who">시안</span>
+        <span class="stp">1 템플릿</span><span class="arr">→</span>
+        <span class="stp into">2 매핑 (데이터 관문 내장<span class="ann">①</span>)</span><span class="arr">→</span>
+        <span class="stp">3 저장</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ 상태 0 ═══ -->
+  <div class="sect">
+    <h2>상태 0 — 매핑 단계 진입 직후 (새 작업)</h2>
+    <p class="cap">초기 포커스가 파일 선택에 떨어진다 — 데이터-우선(F20)의 표현은 별도 단계가
+       아니라 <b>머리 자리 + 포커스</b>. opt-out은 구석의 조용한 링크. 표는 템플릿 필드만 싣고
+       조용히 기다린다.</p>
+    <div class="canvas-wrap"><div class="frame"><div class="ed">
+      <div class="ed-head">
+        <span class="t">작업 에디터</span><span class="job">새 문서 작업 · 템플릿: 공고서.hwpx</span>
+        <div class="ed-steps">
+          <span class="est done">✓ 템플릿</span><span class="est now">● 매핑</span><span class="est">저장</span>
+        </div>
+      </div>
+      <div class="ed-body">
+        <div class="gateway">
+          <span class="glbl">이 작업의 데이터<span class="ann">①</span></span>
+          <button class="btn primary focusd">파일 선택…</button>
+          <button class="optout">데이터 없이 진행<span class="ann">②</span></button>
+        </div>
+        <div class="maptbl-wrap"><table class="maptbl">
+          <thead><tr><th>템플릿 필드</th><th>데이터항목</th><th>표시형</th><th>미리보기</th><th>상태</th></tr></thead>
+          <tbody>
+            <tr><td class="fld">{{공고번호}}</td><td><span class="sel empty">(데이터 대기)<span class="car">▾</span></span></td><td class="dim">—</td><td class="pv dim">—</td><td><span class="tag pendc">미확정</span></td></tr>
+            <tr><td class="fld">{{품명}}</td><td><span class="sel empty">(데이터 대기)<span class="car">▾</span></span></td><td class="dim">—</td><td class="pv dim">—</td><td><span class="tag pendc">미확정</span></td></tr>
+            <tr><td class="fld">{{수량}}</td><td><span class="sel empty">(데이터 대기)<span class="car">▾</span></span></td><td class="dim">—</td><td class="pv dim">—</td><td><span class="tag pendc">미확정</span></td></tr>
+            <tr><td class="fld">{{추정가격}}</td><td><span class="sel empty">(데이터 대기)<span class="car">▾</span></span></td><td class="dim">—</td><td class="pv dim">—</td><td><span class="tag pendc">미확정</span></td></tr>
+            <tr><td class="fld">{{납품기한}}</td><td><span class="sel empty">(데이터 대기)<span class="car">▾</span></span></td><td class="dim">—</td><td class="pv dim">—</td><td><span class="tag pendc">미확정</span></td></tr>
+            <tr><td class="fld">{{수요기관}}</td><td><span class="sel empty">(데이터 대기)<span class="car">▾</span></span></td><td class="dim">—</td><td class="pv dim">—</td><td><span class="tag pendc">미확정</span></td></tr>
+          </tbody>
+        </table></div>
+        <p class="hint">데이터를 선택하면 컬럼·표본이 이 표에 그대로 차오릅니다. 고정값 매핑은 데이터 없이도 가능합니다.</p>
+        <div class="ed-acts"><span class="spacer"></span>
+          <button class="btn">이전</button><button class="btn">다음 (저장)</button>
+        </div>
+      </div>
+    </div></div>
+    <p class="frame-note">프레임은 에디터 스테이지만 — 레일·창 크롬 생략(1부 시안과 달리 화면 국소 시안).</p></div>
+  </div>
+
+  <!-- ═══ 상태 1 ═══ -->
+  <div class="sect">
+    <h2>상태 1 — 파일 겨눔 직후 (첫 대면)</h2>
+    <p class="cap">선택과 결과가 같은 지면: 파일이 꽂히는 순간 제안이 즉시 돌고, 칩 벽·표·미리보기가
+       그 자리에서 차오른다. 칩의 일 = 자동 제안·드롭다운 후보·미리보기 열을 세션에서 좁히기(#49).
+       토글은 즉시 반영되고 커밋 버튼은 없다(F19a 해소). 미사용 칩은 벽에서 빠져 접힌 구역으로,
+       미리보기에서는 열이 빠진다. 다열 스케일은 「전체 미사용」 후 골라 켜기 + 검색 드롭다운이 감당.</p>
+    <div class="canvas-wrap"><div class="frame"><div class="ed">
+      <div class="ed-head">
+        <span class="t">작업 에디터</span><span class="job">새 문서 작업 · 템플릿: 공고서.hwpx</span>
+        <div class="ed-steps">
+          <span class="est done">✓ 템플릿</span><span class="est now">● 매핑</span><span class="est">저장</span>
+        </div>
+      </div>
+      <div class="ed-body">
+        <div class="gateway">
+          <span class="glbl">이 작업의 데이터</span>
+          <span class="filechip"><b>대장_7월.xlsx</b><span class="sheet">시트: 물품<span class="ann">⑬</span></span></span>
+          <button class="btn">바꾸기…</button>
+          <button class="optout">데이터 없이 진행</button>
+        </div>
+        <div class="hdrs">
+          <div class="hh"><span class="tw">▾</span><b>사용할 헤더<span class="ann">③</span></b>
+            <span class="cnt">12개 중 8개 사용<span class="ann">④</span></span>
+            <span class="hh-acts"><button class="btn sm">전체 사용</button>
+              <button class="btn sm">전체 미사용<span class="ann">⑤</span></button></span></div>
+          <div class="chipwall">
+            <span class="hchip">공고번호</span><span class="hchip">품명</span>
+            <span class="hchip">수량</span><span class="hchip">추정가격</span>
+            <span class="hchip">납품기한</span><span class="hchip">수요기관</span>
+            <span class="hchip">계약방법</span><span class="hchip">담당전화</span>
+          </div>
+          <div class="hdrfold">▸ 미사용 4개 (펼쳐서 다시 사용)<span class="ann">⑥</span></div>
+        </div>
+        <div class="maptbl-wrap ov-vis"><table class="maptbl">
+          <thead><tr><th>템플릿 필드</th><th>데이터항목</th><th>표시형</th><th>미리보기</th><th>상태</th></tr></thead>
+          <tbody>
+            <tr><td class="fld">{{공고번호}}</td><td><span class="sel">공고번호<span class="car">▾</span></span></td><td>그대로</td><td class="pv">제20260712-00871호</td><td><span class="tag okc">확정</span></td></tr>
+            <tr><td class="fld">{{품명}}</td><td><span class="sel">품명<span class="car">▾</span></span></td><td>그대로</td><td class="pv">사무용 복합기</td><td><span class="tag okc">확정</span></td></tr>
+            <tr><td class="fld">{{수량}}</td><td><span class="sel">수량<span class="car">▾</span></span></td><td>숫자(콤마)</td><td class="pv">3</td><td><span class="tag okc">확정</span></td></tr>
+            <tr class="pend"><td class="fld">{{추정가격}}</td><td class="ddhost"><span class="sel">추정가격<span class="car">▴</span></span>
+              <div class="ddpop"><div class="dds">추정<span class="ann">⑧</span></div>
+                <div class="ddi on">추정가격</div>
+                <div class="ddn">활성 헤더 8개 중 1개 일치</div>
+              </div></td><td><span class="sel">금액(콤마+원)<span class="car">▾</span></span></td><td class="pv">12,000,000원</td><td><span class="tag pendc">제안</span></td></tr>
+            <tr class="pend"><td class="fld">{{납품기한}}</td><td><span class="sel">납품기한<span class="car">▾</span></span></td><td><span class="sel">날짜(2026. 8. 31.)<span class="car">▾</span></span></td><td class="pv">2026. 8. 31.</td><td><span class="tag pendc">제안</span></td></tr>
+            <tr><td class="fld">{{수요기관}}</td><td><span class="sel">수요기관<span class="car">▾</span></span></td><td>그대로</td><td class="pv">조달청 대전지방조달청</td><td><span class="tag okc">확정</span></td></tr>
+          </tbody>
+        </table></div>
+        <div>
+          <div class="hh" style="padding:0"><span class="hint">데이터 미리보기 · 3행 표본 · 열 8/12
+            (미사용 4열은 뷰에서 제외)<span class="ann">⑦</span></span></div>
+          <div class="pvwrap"><table class="pvgrid">
+            <thead><tr><th>공고번호</th><th>품명</th><th>수량</th><th>추정가격</th><th>납품기한</th><th>수요기관</th><th>계약방법</th><th>담당전화</th></tr></thead>
+            <tbody>
+              <tr><td>제20260712-00871호</td><td>사무용 복합기</td><td>3</td><td>12,000,000</td><td>2026-08-31</td><td>조달청 대전지방조달청</td><td>일반경쟁</td><td>042-000-0000</td></tr>
+              <tr><td>제20260713-00412호</td><td>이동식 서가</td><td>12</td><td>38,500,000</td><td>2026-09-15</td><td>국립중앙도서관</td><td>일반경쟁</td><td>02-000-0000</td></tr>
+              <tr><td>제20260715-00098호</td><td>제습기</td><td>6</td><td>9,800,000</td><td>2026-08-20</td><td>조달청 대전지방조달청</td><td>수의계약</td><td>042-000-0000</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+        <div class="ed-acts">
+          <span class="spacer"></span>
+          <button class="btn">모두 확정</button><button class="btn">다음 (저장)</button>
+        </div>
+      </div>
+    </div></div></div>
+  </div>
+
+  <!-- ═══ 상태 2 ═══ -->
+  <div class="sect">
+    <h2>상태 2 — 재방문 (기존 작업 편집)</h2>
+    <p class="cap">시간축 점진 공개: 재방문엔 칩 벽이 개수 한 줄로 접힌다(활성 상태는 저장 매핑에서
+       파생 — #49). 파일을 바꾸면 안 맞게 된 매핑 행이 <b>그 자리에서</b> 미확정으로 강등 —
+       단계를 오가며 생기던 유령 상태 질문이 사라진다(아래 {{담당자}} 행이 그 모습).</p>
+    <div class="canvas-wrap"><div class="frame"><div class="ed">
+      <div class="ed-head">
+        <span class="t">작업 에디터</span><span class="job">물품 공고서 (5천만 미만) · 편집</span>
+        <div class="ed-steps">
+          <span class="est done">✓ 템플릿</span><span class="est now">● 매핑</span><span class="est">저장</span>
+        </div>
+      </div>
+      <div class="ed-body">
+        <div class="gateway">
+          <span class="glbl">이 작업의 데이터</span>
+          <span class="filechip"><b>대장_8월.xlsx</b><span class="sheet">시트: 물품</span></span>
+          <button class="btn">바꾸기…</button>
+          <button class="optout">데이터 없이 진행</button>
+        </div>
+        <div class="hdrs">
+          <div class="hh"><span class="tw">▸</span><b>사용할 헤더</b>
+            <span class="cnt">11개 중 8개 사용 (펼쳐서 변경)<span class="ann">③</span></span></div>
+        </div>
+        <div class="maptbl-wrap"><table class="maptbl">
+          <thead><tr><th>템플릿 필드</th><th>데이터항목</th><th>표시형</th><th>미리보기</th><th>상태</th></tr></thead>
+          <tbody>
+            <tr><td class="fld">{{공고번호}}</td><td><span class="sel">공고번호<span class="car">▾</span></span></td><td>그대로</td><td class="pv">제20260803-00214호</td><td><span class="tag okc">확정</span></td></tr>
+            <tr><td class="fld">{{품명}}</td><td><span class="sel">품명<span class="car">▾</span></span></td><td>그대로</td><td class="pv">이동식 서가</td><td><span class="tag okc">확정</span></td></tr>
+            <tr><td class="fld">{{추정가격}}</td><td><span class="sel">추정가격<span class="car">▾</span></span></td><td>금액(콤마+원)</td><td class="pv">38,500,000원</td><td><span class="tag okc">확정</span></td></tr>
+            <tr class="pend"><td class="fld">{{담당자}}</td><td><span class="sel empty">(컬럼 없음 — 재지정<span class="ann">⑨</span>)<span class="car">▾</span></span></td><td class="dim">—</td><td class="pv dim">—</td><td><span class="tag pendc">미확정</span></td></tr>
+            <tr><td class="fld">{{납품기한}}</td><td><span class="sel">납품기한<span class="car">▾</span></span></td><td>날짜(2026. 9. 15.)</td><td class="pv">2026. 9. 15.</td><td><span class="tag okc">확정</span></td></tr>
+          </tbody>
+        </table></div>
+        <div class="ed-acts"><span class="spacer"></span>
+          <button class="btn">모두 확정</button><button class="btn">다음 (저장)</button>
+        </div>
+      </div>
+    </div></div></div>
+  </div>
+
+  <!-- ═══ 저장 단계 ═══ -->
+  <div class="sect">
+    <h2>저장 단계 — 파일명은 실물이 안내한다</h2>
+    <p class="cap">토큰 목록 나열 대신 <b>라이브 예시</b>가 기본(표시=확인=생성의 저작 시점 판) —
+       미해소 토큰은 여기서부터 정직하게 경고(RC-20 게이트에 닿기 전에). 토큰 참조는
+       전문성축 접힘 뒤로 — 아래는 펼친 모습.</p>
+    <div class="canvas-wrap"><div class="frame"><div class="ed">
+      <div class="ed-head">
+        <span class="t">작업 에디터</span><span class="job">새 문서 작업 · 템플릿: 공고서.hwpx</span>
+        <div class="ed-steps">
+          <span class="est done">✓ 템플릿</span><span class="est done">✓ 매핑</span><span class="est now">● 저장</span>
+        </div>
+      </div>
+      <div class="ed-body">
+        <div class="formrow">
+          <span class="flbl">작업 이름</span>
+          <input class="field" style="width:280px" value="물품 공고서 (5천만 미만)" readonly>
+        </div>
+        <div class="formrow">
+          <span class="flbl">파일명 패턴</span>
+          <input class="field pat" value="공고서-{{date}}-{{seq:001}}-{{품명}}" readonly>
+        </div>
+        <div class="live-ex ok">
+          <span class="exlbl">예<span class="ann">⑩</span></span>
+          <code>공고서-2026-07-18-001-사무용 복합기.hwpx</code>
+          <span class="hint">1행 표본 한 줄 고정 — 전수 파일명은 실행 세션의 몫</span>
+        </div>
+        <div class="live-ex warn">
+          <span class="exlbl">예<span class="ann">⑪</span></span>
+          <code>공고서-2026-07-18-001-{{담당자}}.hwpx</code>
+          <span class="why">⚠ {{담당자}}는 매핑에 없는 토큰 — 이대로면 파일명에 그대로 남습니다</span>
+        </div>
+        <div class="tok-fold">
+          <button class="twl">▾ 토큰 안내<span class="ann">⑫</span></button>
+          <div class="tokpanel">
+            <h4>데이터 컬럼 (매핑된 필드)</h4>
+            <div class="tg"><span class="tok">{{공고번호}}</span><span class="tok">{{품명}}</span><span class="tok">{{수량}}</span><span class="tok">{{추정가격}}</span><span class="tok">{{납품기한}}</span><span class="tok">{{수요기관}}</span></div>
+            <h4>시스템 토큰</h4>
+            <div class="tg"><span class="tok">{{date}}</span><span class="tok">{{seq:001}}</span></div>
+            <p class="syn">{{seq:001}} — 3자리 일련번호(001부터). {{date}} — 생성 시점 날짜.
+               같은 파일명이 되는 레코드가 있으면 생성 전에 확인을 요구합니다.</p>
+          </div>
+        </div>
+        <div class="ed-acts"><span class="spacer"></span>
+          <button class="btn">이전</button><button class="btn primary">저장</button>
+        </div>
+      </div>
+    </div></div>
+    <p class="frame-note">⑪의 경고 줄은 미해소 토큰이 있을 때만 나타난다 — 정상 패턴에는 ⑩ 한 줄뿐.
+       접힘 기본 상태에서는 「▸ 토큰 안내」 한 줄만 보인다. 예시는 언제나 1행 표본 —
+       레코드 수만큼의 파일명 나열은 여기 없다(전수 미리보기는 세션 본문 존: 소량 전부 ·
+       대량 표본+「⋯ 외 N건」 펼침).</p></div>
+  </div>
+
+  <!-- ═══ 결정 범례 ═══ -->
+  <div class="legend">
+    <h2>결정 대응 범례</h2>
+    <ol>
+      <li><span class="ann">①</span><span><b>F18</b> — 단계 크롬 소멸: 데이터는 매핑 단계의 관문(머리 자리+초기 포커스). 행위-피드백 동일 지면.</span></li>
+      <li><span class="ann">②</span><span><b>F20</b> — 무데이터는 조용한 opt-out 링크(기본이되 강제 아님 — 등급으로 표현).</span></li>
+      <li><span class="ann">③</span><span><b>F19b</b> — 칩 벽 첫 대면 펼침 / 재방문은 개수 한 줄 접힘. 재방문 활성 상태는 저장 매핑에서 파생(#49: 사용=매핑).</span></li>
+      <li><span class="ann">④</span><span><b>칩-라이브 계약</b> — 겨눔 즉시 제안. 미확정·미접촉 행=시스템 소유(활성 헤더 따라 라이브 재제안), 수동·확정=사람 소유. 매핑된 헤더를 끄면 시끄러운 강등(재확정 필요). 커밋 버튼 없음=F19a 해소. 확정↔해제.</span></li>
+      <li><span class="ann">⑤</span><span><b>전체 사용·전체 미사용</b> — 대칭 벌크 쌍. 전체 미사용은 확정 존재 시 차단(#62 정밀화), 실행 시 미사용 구역 자동 펼침(고른다→매핑한다).</span></li>
+      <li><span class="ann">⑥</span><span><b>미사용 분리 구역</b> — 벽에서 완전 이탈, 평시 접힘 "(펼쳐서 다시 사용)". 흐린 칩 혼재 벽은 기각.</span></li>
+      <li><span class="ann">⑦</span><span><b>F21 열 압축</b> — 데이터 미리보기 열=활성 헤더만(미사용 열은 뷰에서 제외, 재활성 시 복귀). 매핑 행은 반대로 숨김 불가 — 의무 잔존(조용한 빈칸 금지).</span></li>
+      <li><span class="ann">⑧</span><span><b>검색형 드롭다운</b> — 다열 스케일 보조(타이핑 필터, 활성 헤더 안에서).</span></li>
+      <li><span class="ann">⑨</span><span>파일 교체 시 안 맞는 행 in-place 미확정 강등 — 단계 왕복의 유령 상태 질문 소멸.</span></li>
+      <li><span class="ann">⑩</span><span><b>F26</b> — 라이브 예시가 기본 안내. 1행 표본 한 줄 고정 — 전수 나열은 세션 본문 존 소관(소량 전부·대량 표본+펼침).</span></li>
+      <li><span class="ann">⑪</span><span><b>RC-20 사전 노출</b> — 미해소 토큰은 저작 단계부터 경고(게이트 도달 전 정직).</span></li>
+      <li><span class="ann">⑫</span><span><b>F27</b> — 토큰 참조는 전문성축 접힘 뒤(기본 화면 = 입력창+라이브 예시만).</span></li>
+      <li><span class="ann">⑬</span><span><b>#33</b> — 다중 시트 확정도 관문 안에서(시트 칩) — 결과가 같은 지면에서 갱신.</span></li>
+    </ol>
+  </div>
+
+  <p class="draftnote">R-flow 토의 시안 v3 (2026-07-19) — 박제 정본 아님. v2→v3: 칩-라이브 계약 합류
+     (칩 벽 복원 + 라이브 재제안·소유권·전체쌍·분리 구역·미리보기 열 압축 — 인터랙티브 실증은
+     chip-live-demo 아티팩트). 실토큰: web/css/tokens.css 사본.
+     파일: docs/r-flow-mockups/r-flow-editor-wizard.html</p>
+</div>
