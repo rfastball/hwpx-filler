@@ -141,9 +141,17 @@
         : "";
       return;
     }
+    // 행 = 체크박스 + 실파일명(선택 행만 — {{seq}}·충돌 접미사가 선택 집합에 따라 달라
+    // 미선택 행 이름은 지어내지 않는다) + 원본 데이터 식별 요약(F33 — 어느 데이터의
+    // 문서인지 눈감고 고르지 않게).
     host.innerHTML = recs.map((r) =>
       `<label class="rec"><input type="checkbox" data-i="${r.index}"${r.selected ? " checked" : ""}>` +
-      `<span class="rf">${esc(r.label)}</span></label>`).join("");
+      `<span class="rec-no">${r.index + 1}.</span>` +
+      `<span class="rec-body">` +
+      (r.name ? `<span class="rf">${esc(r.name)}</span>`
+              : `<span class="rf rec-off">선택하면 파일명이 정해집니다</span>`) +
+      (r.summary ? `<span class="rec-id">${esc(r.summary)}</span>` : "") +
+      `</span></label>`).join("");
   }
 
   function renderGate(s) {
