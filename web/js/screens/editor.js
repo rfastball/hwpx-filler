@@ -103,7 +103,7 @@
     const more = s.record_count > sample.length
       ? `<p class="fields-head muted">샘플 ${sample.length}행 표시 — 외 ${s.record_count - sample.length}건</p>`
       : "";
-    return `<p class="fields-head">컬럼 ${cols.length}개, 레코드 ${s.record_count}건 로드.</p>
+    return `<p class="fields-head">컬럼 ${cols.length}개 · ${s.record_count}행 불러옴.</p>
       <div class="tblwrap"><table class="data-preview"><thead><tr>${head}</tr></thead>
         <tbody>${body}</tbody></table></div>${more}`;
   }
@@ -111,8 +111,8 @@
   /* ---- 2단계: 데이터(선택적) ---- */
   function step1(s) {
     return `<div class="wtitle">2단계 — 데이터 선택 <span class="muted capnote" style="font-weight:400">(선택)</span></div>
-      <p class="wsub">레코드(행)마다 문서 1건을 생성할 데이터 파일. 작업엔 데이터가 저장되지 않습니다 —
-        매핑 검토용 샘플입니다. 데이터 없이 진행하면 스키마만으로 매핑합니다.</p>
+      <p class="wsub">행마다 문서 1건을 만들 데이터 파일. 작업엔 데이터가 저장되지 않습니다 —
+        매핑 검토용 샘플입니다. 데이터 없이 진행하면 템플릿 필드만으로 매핑합니다.</p>
       <div class="row"><span class="lbl">데이터(.xlsx/.csv)</span>
         <input class="field ro" readonly value="${esc(s.data_name || "")}"
           placeholder="데이터를 선택하거나 건너뛰세요">
@@ -163,13 +163,13 @@
       ? `<button class="btn sm" data-act="prev-rec">◀ 이전 행</button>
          <span class="mono">행 ${s.preview_index}/${s.preview_count}</span>
          <button class="btn sm" data-act="next-rec">다음 행 ▶</button>`
-      : `<span class="muted">행 0/0 — 데이터 미연결(스키마만)</span>`;
+      : `<span class="muted">행 0/0 — 데이터 없음(템플릿 필드만)</span>`;
     const counts = s.counts
       ? `<span class="muted">채움 ${s.counts.filled} · 빈 값 ${s.counts.empty} · 미매핑 ${s.counts.unmapped}` +
         `${s.preview_empties && s.preview_empties.length ? " — " + esc(s.preview_empties.join(", ")) : ""}</span>`
       : "";
     const banner = s.schema_only
-      ? `<p class="note warnbox">데이터 미연결(스키마온리) — 내용 없는 행은 '미매칭'이 아니라 '데이터 없음'입니다. 고정값을 넣거나 비움으로 확정하세요.</p>`
+      ? `<p class="note warnbox">데이터 없이 매핑 중 — 값이 비어 보이는 건 '미매칭'이 아니라 '데이터 없음'입니다. 고정값을 넣거나 비움으로 확정하세요.</p>`
       : "";
     return `<div class="wtitle">3단계 — 필드 매핑 확정</div>
       <p class="wsub">자동 제안은 초안입니다. 모든 행을 검토·확정해야 다음으로 진행합니다.
@@ -213,7 +213,7 @@
     const inferred = INFERRED_LABEL[r.inferred_type] || r.inferred_type || "";
     let preview;
     if (r.preview_error) preview = `<span class="pv emptyval">(미리보기 오류)</span>`;
-    else if (r.preview_empty) preview = `<span class="pv emptyval">(이 레코드에서 빈 값)</span>`;
+    else if (r.preview_empty) preview = `<span class="pv emptyval">(이 행에서 빈 값)</span>`;
     else preview = `<span class="pv">${esc(r.preview)}</span>`;
     return `<tr class="r-${r.row_state}">
       <td><input type="checkbox" class="cbx" data-act="row-confirm" data-index="${r.index}"${r.confirmed ? " checked" : ""}></td>
@@ -261,8 +261,8 @@
       <span class="cap">작성 출처</span>
       ${line("템플릿", p.template)}
       ${line("데이터", p.dataset)}
-      ${line("템플릿 스키마", p.template_fields)}
-      ${line("데이터 스키마", p.source_keys)}
+      ${line("템플릿 필드", p.template_fields)}
+      ${line("데이터 항목", p.source_keys)}
       ${when ? `<div class="hint muted" style="margin-top:0">${when}</div>` : ""}
       ${drift}
     </div>`;
@@ -273,10 +273,10 @@
   function datasetBlock(s) {
     if (!s.data_path) return "";
     return `<div class="grp">
-      <span class="cap">선언 데이터 자동등록</span>
+      <span class="cap">데이터 함께 등록</span>
       <p class="hint" style="margin-top:0">저장하면 이 작업이 쓴 데이터(${esc(s.data_name)})를
-        등록 데이터로 함께 등록하고 <b>이 작업의 기본 데이터로 연결</b>합니다(#53-A) — 경로 참조만
-        저장(행·내용 없음), 실행 화면에서 작업을 고르면 자동 조준해 실행 때 다시 읽습니다.</p>
+        등록 데이터에 올리고 <b>이 작업의 기본 데이터로 연결</b>합니다 — 경로 참조만
+        저장(행·내용 없음), 실행 화면에서 작업을 고르면 자동으로 연결해 그때 다시 읽습니다.</p>
       <div class="row"><span class="lbl lbl-fixed">등록 이름</span>
         <input class="field" data-act="dataset-name" value="${esc(s.dataset_name)}"></div>
     </div>`;
