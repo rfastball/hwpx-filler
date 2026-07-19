@@ -248,6 +248,20 @@ class TestWebSelftestGate:
         j = selftest_result["job_mirror"]
         assert j["panel_hidden"] is True, "colpanel [hidden] 이 display:flex 에 져서 항시 떠 있습니다."
 
+    def test_job_guard_body_composes_counts_and_losses(self, selftest_result: dict) -> None:
+        # 세션 가드 확인 본문(결정 27 종류별 수치 재진술, 슬라이스 4 PR-3) — 합성 문안을 되읽어
+        # 수치 배치·소실 목록(행 선택+필터 정의)이 조용히 드리프트하지 않게 한다(RC-02 짝 동형).
+        body = selftest_result["job_mirror"]["guard_body"]
+        assert "직접 선택 3행" in body, f"선택 수치 미표기: {body!r}"
+        assert "정의 매치 2" in body and "정의 밖 1" in body, f"S4 델타 병기 누락: {body!r}"
+        assert "작업을 전환하면" in body, f"전이 동사구 누락: {body!r}"
+        assert "필터 정의(2개 조건)" in body, f"필터 소실 재진술 누락: {body!r}"
+        # 데이터 재겨눔 사전 확인은 JS 전용 가드 지점 — 존재 핀(삭제 = 결정 26 절반의 조용한
+        # 회귀인데 다른 테스트가 못 잡는다, 리뷰 #6).
+        assert selftest_result["job_mirror"]["data_guard_wired"] is True, (
+            "confirmDataSwapIfArmed 배선이 사라졌습니다 — 데이터 재겨눔 가드(결정 26) 회귀."
+        )
+
     def test_job_drift_replaces_mirror_with_blocking_banner(self, selftest_result: dict) -> None:
         # danger(구조 드리프트)는 거울 표와 섞이지 않고 차단 배너 + 행동 링크로 **교체**된다
         # (결정 36·S9). overlay 로 표 위에 얹히는 게 아니라 실제로 표가 사라지고 배너가 선다.
