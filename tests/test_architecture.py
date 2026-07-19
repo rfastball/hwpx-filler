@@ -187,3 +187,44 @@ def test_core_mapping_carries_no_source_specific_vocabulary() -> None:
         assert forbidden not in text, (
             f"core/mapping.py 에 소스별 어휘 {forbidden!r} 가 남아 있다 — 소스로 승격하라"
         )
+
+
+def test_job_panel_imports_ring1_and_does_not_reimplement() -> None:
+    """#87(R-flow 슬라이스 1): 「작업」 패널 컨트롤러는 링1 VM 을 임포트하고 재구현하지 않는다.
+
+    부록 A 의 구조 관찰("계약 대부분은 링1이 소유하고, 죽는 것은 링2 표면뿐")을 못박는다 —
+    패널은 새 링2 표면이되 실행 결정(사전검증·게이트 단일 산출·생성 계획·ack 상태기계)은
+    :class:`RunViewModel`/:class:`SelectionModel` 이 소유한다. 컨트롤러가 이 링1 결정 메서드를
+    스스로 정의하면(우회 재구현) 이중 진실이 재발하므로 시끄럽게 막는다. AST 만 스캔한다.
+    """
+    path = ROOT / "src" / "hwpxfiller" / "webapp" / "screen_job.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+
+    # (1) 링1 VM 을 실제로 임포트한다(docstring 언급이 아니라 AST 임포트).
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            imported.update(a.name for a in node.names)
+    for required in ("RunViewModel", "SelectionModel"):
+        assert required in imported, (
+            f"screen_job.py 가 링1 {required} 를 임포트하지 않는다 — 패널은 링1 VM 을 "
+            "소유·위임해야 한다(재구현 금지, #87)."
+        )
+
+    # (2) 링1 결정 메서드를 스스로 정의하지 않는다(우회 재구현 차단). 이들은 self.vm 에서
+    #     호출만 해야 한다. 'generate' 는 컨트롤러의 오케스트레이션이라 허용(계획 조립은 VM).
+    forbidden_methods = {
+        "refresh", "gate_state", "validate_generate", "build_generation_plan",
+        "unmet_blanks", "output_conflicts", "structure_drift", "mapped_records",
+        "_compose_gate", "_compose_field_states", "_compose_preflight",
+    }
+    defined: set[str] = set()
+    for cls in (n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)):
+        for item in cls.body:
+            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                defined.add(item.name)
+    reimplemented = forbidden_methods & defined
+    assert not reimplemented, (
+        "screen_job.py 가 링1 결정 메서드를 재구현한다(우회 이중 진실): "
+        f"{sorted(reimplemented)} — RunViewModel 에 위임하라(#87)."
+    )
