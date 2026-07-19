@@ -66,7 +66,7 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
   padding:var(--sp-6) var(--sp-8);color:var(--a-ink);font:inherit;font-size:var(--fs-body);width:100%}
 .field.ro{background:var(--n-surface-alt);color:var(--n-ink-soft)}
 .lbl{font-size:var(--fs-body);color:var(--n-header-ink);white-space:nowrap}
-.lbl-fixed{width:76px}                /* 폼 라벨 열 고정폭(에디터 4단계) — 구조 치수 */
+.lbl-fixed{width:76px}                /* 폼 라벨 열 고정폭(에디터 저장 단계) — 구조 치수 */
 
 /* ---- 배치 유틸(R-css 전수조사) — 인라인 style 리터럴 대체 ---- */
 .spacer{flex:1}                       /* flex 스페이서(<span style="flex:1"> 대체) */
@@ -233,6 +233,16 @@ tr.r-schemaonly td{background:var(--a-card)}
 .hchip.ign{color:var(--a-muted);border-style:dashed;cursor:default}
 .hidden-hdrs{margin-top:var(--sp-8);font-size:var(--fs-body)}
 .hidden-hdrs>summary{cursor:pointer;color:var(--a-muted)}
+
+/* 데이터 관문(R-flow 슬라이스 5 — 매핑 단계의 머리, 3단계 접기) */
+.row.gateway{margin-bottom:var(--sp-12);flex-wrap:wrap}
+.filechip{display:inline-flex;align-items:center;gap:var(--sp-8);border:1px solid var(--a-border);
+  background:var(--n-surface-alt);border-radius:var(--rad-control);padding:var(--sp-4) var(--sp-10);font-size:var(--fs-body)}
+.filechip b{font-weight:600}
+.filechip .sheet{color:var(--a-muted);font-size:var(--fs-caption)}
+.btn.linklike{border:0;background:none;color:var(--a-muted);text-decoration:underline;
+  text-underline-offset:2px;padding:var(--sp-2) var(--sp-4);font-size:var(--fs-caption)}
+.btn.linklike:hover{color:var(--a-ink)}
 
 .run-row{display:flex;align-items:center;gap:var(--sp-8);margin-top:var(--sp-12)}
 .run-row .field{flex:1;min-width:0}

@@ -48,7 +48,7 @@ def _complete_with_data(ctrl: EditorController, name: str) -> None:
     """데이터(다중시트 확정) 연결 세션을 저장 직전까지 구성."""
     ctrl.load_template_path(str(TPL_COMPILED))
     ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
-    ctrl.dispatch("goto_step", {"step": 2})
+    ctrl.dispatch("goto_step", {"step": 1})   # 매핑 진입(데이터 겨눔 — 3단계 접기)
     ctrl.dispatch("set_type", {"index": 0, "type": "const"})
     ctrl.dispatch("set_const", {"index": 0, "const": "v"})
     r = ctrl.dispatch("confirm_all", {})
@@ -64,16 +64,14 @@ def test_c1_data_change_never_arrives_confirmed(tmp_path):
     ctrl = _controller(tmp_path)
     ctrl.load_template_path(str(TPL_COMPILED))
     ctrl.load_data_path(str(MULTI_SHEET))            # 첫 시트(공고명·추정가격)
-    ctrl.dispatch("goto_step", {"step": 2})
+    ctrl.dispatch("goto_step", {"step": 1})          # 매핑 진입(데이터 겨눔 — 3단계 접기)
     ctrl.dispatch("set_source", {"index": 0, "source": "추정가격"})
     r = ctrl.dispatch("confirm_all", {})
     ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
     assert ctrl.snapshot()["is_complete"] is True
 
-    # 같은 이름 컬럼이 의미가 다를 수 있는 새 데이터로 교체 — 사람 재검토 강제.
-    ctrl.dispatch("goto_step", {"step": 1})
-    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
-    ctrl.dispatch("goto_step", {"step": 2})
+    # 같은 이름 컬럼이 의미가 다를 수 있는 새 데이터로 관문 교체 — 그 자리에서 재검토 강제.
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")   # in-place 재생성(단계 왕복 없음)
     snap = ctrl.snapshot()
     assert all(row["confirmed"] is False for row in snap["rows"])
     assert snap["is_complete"] is False              # is_complete 우회 봉쇄

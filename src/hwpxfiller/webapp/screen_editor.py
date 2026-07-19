@@ -1,4 +1,4 @@
-"""작업 에디터(HWPX) 화면 컨트롤러 — 4단계 마법사 오케스트레이션(webview 비의존).
+"""작업 에디터(HWPX) 화면 컨트롤러 — 3단계 마법사 오케스트레이션(webview 비의존).
 
 목업 scr-editor 의 웹 이관(에픽 #20, 화면 #15·#16). 링1 VM 을 **그대로 임포트**해 구동한다:
 매핑은 :class:`~hwpxfiller.gui.mapping_state.MappingModel`, PARTIAL 게이트는
@@ -6,8 +6,12 @@
 :func:`~hwpxfiller.gui.job_editor_state.validate_save`. 이들은 Qt-free 라 그대로 산다
 (스파이크 Q1 배당금). 표현 계층(단계 UI·행 색·표시형)만 웹으로 이식한다.
 
-**단계**: 0 템플릿 → 1 데이터(선택) → 2 매핑 확정 → 3 저장. 진행 게이트는 Qt 위저드와 동일:
-0→1 은 스키마 有+게이트 통과, 1→2 은 무조건(데이터 선택적, ADR-J), 2→3 은 ``is_complete()``.
+**단계**: 0 템플릿 → 1 매핑(데이터 관문 내장) → 2 저장. 진행 게이트: 0→1 은 스키마 有+
+게이트 통과, 1→2 은 ``is_complete()``. R-flow 슬라이스 5 블록 2 결정 11(3단계 접기):
+구 2단계 '데이터 선택'을 매핑 단계의 관문으로 인라인했다 — 데이터는 별도 단계가 아니라
+매핑 단계의 머리(파일 선택/바꾸기·데이터 없이 진행)이며, 관문에서 데이터를 고르면 매핑표가
+**그 자리에서** 다시 선다(단계 왕복이 만들던 유령 상태 소멸, 결정 11·12). 데이터 선택성은
+단계 경계가 아니라 관문 옵트아웃(``skip_data``)으로 표현된다(ADR-J 승계).
 
 **#26 패리티 회수(이 라운드 포함)**: 편집 모드(:meth:`EditorController.load_job`) ·
 선언 데이터 자동등록(#18 31A5A484-C, ``_do_save`` 선차단 게이트). 자동등록은 **참조만**
@@ -154,12 +158,14 @@ class EditorController:
         )
 
     def can_advance(self, from_step: int) -> bool:
-        """from_step → from_step+1 진행 가부(Qt 위저드 isComplete 미러)."""
+        """from_step → from_step+1 진행 가부(Qt 위저드 isComplete 미러).
+
+        3단계 접기(블록 2 결정 11): 데이터 선택이 매핑 단계의 관문으로 들어와 별도 단계가
+        아니게 됐다 — 0→1(템플릿→매핑)은 템플릿 준비, 1→2(매핑→저장)은 매핑 확정.
+        """
         if from_step == 0:
             return self._template_ready()
         if from_step == 1:
-            return True  # 데이터는 선택적(ADR-J)
-        if from_step == 2:
             return self.model is not None and self.model.is_complete()
         return False
 
@@ -212,7 +218,7 @@ class EditorController:
         active_sources = self._active_sources()  # 활성/카운트 재사용(1회 계산)
         snap: dict = {
             "step": self.step,
-            "reachable": [self.can_advance(s) for s in range(3)],  # 0→1,1→2,2→3
+            "reachable": [self.can_advance(s) for s in range(2)],  # 0→1(템플릿→매핑),1→2(매핑→저장)
             "template_path": self.template_path,
             "template_name": self.template_path.rsplit("\\", 1)[-1].rsplit("/", 1)[-1],
             "field_count": len(self.schema.fields) if self.schema else 0,
@@ -225,6 +231,7 @@ class EditorController:
             "gate_error": self.gate_error,
             "data_path": self.data_path,
             "data_name": self.data_path.rsplit("\\", 1)[-1].rsplit("/", 1)[-1],
+            "data_sheet": self.data_sheet,  # 관문 파일칩 시트 표기(#33 확정 시트)
             "record_count": len(self.records),
             # 전체 헤더(데이터 미리보기 컬럼·sample_rows 정렬의 짝, 불변).
             "source_fields": self.source_fields,
@@ -246,11 +253,11 @@ class EditorController:
             "dataset_name": self.dataset_name,
             # 작성 출처 provenance(#53-C) — 편집 모드에서 복원한 것(없으면 None).
             "provenance": self._loaded_provenance or None,
-            # 기본 데이터 연결 상태(#67) — 4단계에서만 계산: 표시가 4단계뿐이라
-            # 매핑 편집 등 1~3단계의 잦은 push 가 레지스트리 읽기+exists() 를
-            # 지불할 이유가 없다(4단계 자체의 push 는 change 단위라 비용 무시 수준).
+            # 기본 데이터 연결 상태(#67) — 저장 단계(2)에서만 계산: 표시가 저장 단계뿐이라
+            # 매핑 편집 등의 잦은 push 가 레지스트리 읽기+exists() 를 지불할 이유가 없다
+            # (저장 단계 자체의 push 는 change 단위라 비용 무시 수준).
             "default_dataset": (
-                self._default_dataset_snapshot() if self.step == 3 else None
+                self._default_dataset_snapshot() if self.step == 2 else None
             ),
             "notice": (
                 {"text": self.notice_text, "level": self.notice_level}
@@ -277,7 +284,7 @@ class EditorController:
         return snap
 
     def _default_dataset_snapshot(self) -> "dict | None":
-        """복원한 기본 데이터 참조(#53-A)의 연결 상태 재진술(#67) — 4단계 전용.
+        """복원한 기본 데이터 참조(#53-A)의 연결 상태 재진술(#67) — 저장 단계(2) 전용.
 
         이 세션이 데이터를 새로 골랐으면(저장 시 참조가 그 이름으로 바뀜) 자동등록
         블록이 이미 그 연결을 말하므로 None(이중 서사 금지). 참조가 없어도 None.
@@ -409,14 +416,20 @@ class EditorController:
         self._ignored_sources = set()
         self.records = records
         self.preview_index = 0
-        # 자동등록 기본 이름 = 파일 스템(사용자가 4단계에서 수정 가능). 데이터를 바꾸면
+        # 자동등록 기본 이름 = 파일 스템(사용자가 저장 단계에서 수정 가능). 데이터를 바꾸면
         # 이전 파일 이름이 조용히 남지 않게 매번 재유도한다.
         self.dataset_name = Path(path).stem
+        # 3단계 접기(블록 2 결정 11·12): 매핑 단계 관문에서 데이터를 고르면(모델이 이미
+        # 있으면) 매핑표를 **그 자리에서** 다시 세운다 — 새 컬럼·자동 제안 반영, 안 맞게 된
+        # 확정 행은 미확정 강등(_ensure_model 이 값 이월+재확정 재진술). 모델 전(step 0
+        # 선로드·테스트 헬퍼)엔 goto_step 1 이 세우므로 여기선 세우지 않는다.
+        if self.model is not None:
+            self._ensure_model()
         self._push()
 
     # ------------------------------------------------------- 편집 모드(#26 #1)
     def load_job(self, name: str) -> None:
-        """저장된 작업을 편집 세션으로 복원 — 4단계 상태 재구성(단순 배선 아님).
+        """저장된 작업을 편집 세션으로 복원 — 3단계 상태 재구성(단순 배선 아님).
 
         복원 경로: ``load_template_path``(스키마·게이트) → ``from_suggestions`` 초안 →
         ``apply_profile``(저장 매핑을 확정 상태로) → ``_model_key`` 정합 세팅(단계 이동이
@@ -458,8 +471,8 @@ class EditorController:
         self.source_fields = profile_source_vocabulary(job.mapping)
         self.model = MappingModel.from_suggestions(self.schema, self.source_fields)
         applied = self.model.apply_profile(job.mapping)
-        self._model_key = (self.template_path, self.data_path, tuple(self.source_fields))
-        self.step = 2  # 매핑 확정 단계로 — 저장까지 사람 재검토를 거친다.
+        self._model_key = (self.template_path, self.data_path, self.data_sheet, tuple(self.source_fields))
+        self.step = 1  # 매핑 확정 단계로 — 저장까지 사람 재검토를 거친다(3단계 접기).
         row_fields = {r.template_field for r in self.model.rows}
         dropped = [
             m.template_field for m in job.mapping.mappings
@@ -508,9 +521,9 @@ class EditorController:
             for s in range(self.step, target):
                 if not self.can_advance(s):
                     raise ValueError(f"{s}단계 게이트 미통과 — 진행할 수 없습니다.")
-        if target == 2:
+        if target == 1:  # 매핑 진입(3단계 접기) — 데이터 유무 불문 모델 초안 생성.
             self._ensure_model()
-        self.step = max(0, min(3, target))
+        self.step = max(0, min(2, target))
 
     def _do_ack_gate(self, p: dict) -> None:
         """PARTIAL 게이트 명시 확인 — 재진술된 미해결 토큰 전체를 확인(ADR-E)."""
@@ -519,7 +532,12 @@ class EditorController:
         self.gate.acknowledge(self.gate.unmet_tokens)
 
     def _do_skip_data(self, p: dict) -> None:
-        """데이터 없이 매핑으로(스키마온리) — 선택적 데이터 단계 건너뛰기."""
+        """데이터 없이 진행(스키마온리) — 매핑 단계 관문의 옵트아웃(F20).
+
+        3단계 접기 후 별도 '데이터 단계'는 없다 — 이 액션은 매핑 관문에서 데이터 참조를
+        비우고(고른 게 있었으면 해제) 스키마온리 모델로 매핑을 잇는다. 매핑 단계(1)에
+        머문다(관문에서 호출) — step 0 에서 shortcut 으로 불려도 매핑으로 착지한다.
+        """
         self.data_path = ""
         self.data_sheet = ""
         self.dataset_name = ""
@@ -528,7 +546,7 @@ class EditorController:
         self.records = []
         self.preview_index = 0
         self._ensure_model()
-        self.step = 2
+        self.step = 1
 
     # ---- 사용 헤더 선택(#49) — 활성/미사용 전환. 원본 데이터·매핑 계약은 불변.
     def _do_use_only_selected(self, p: dict) -> None:
@@ -584,7 +602,7 @@ class EditorController:
             self._set_notice(msg, "muted")
 
     def _ensure_model(self) -> None:
-        """매핑 진입 시 초안 생성 — 키(템플릿·데이터·소스) 불변이면 그대로, 바뀌면
+        """매핑 진입 시 초안 생성 — 키(템플릿·데이터·시트·소스) 불변이면 그대로, 바뀌면
         **전원 미확정 초안으로 재생성**하되 이전 확정 행의 값(소스·유형·상수·서식)은
         제안으로 이월한다(#26 UX 유지 + 확정 불변식 복원).
 
@@ -600,10 +618,16 @@ class EditorController:
         자동 제안을 다시 받지 못하고 수동 선택만 가능하다. 대신 이미 확정한 매핑을 재활성
         토글이 날리지 않는다(재생성=전원 미확정). 자동제안 재수확 < 확정 보존이라 이 쪽을
         택한다(버그 아님).
+
+        **``data_sheet`` 는 키 성분이다**(3단계 접기 리뷰 F1): 관문에서 같은 workbook 의
+        다른 시트로 재겨눔했는데 두 시트의 헤더명이 우연히 같으면(예: 둘 다 '업체명·금액')
+        ``source_fields`` 가 안 바뀌어 키가 불변→조기 반환→확정 행이 이전 시트 기준으로 남아
+        저장·실행되는 **조용한 게이트 우회**가 된다(슬라이스 4 '정체 키 성분 누락' 교훈).
+        ``load_job`` 도 같은 성분 순서로 키를 세워 정합을 지킨다.
         """
         if self.schema is None:
             raise ValueError("템플릿이 로드되지 않았습니다.")
-        key = (self.template_path, self.data_path, tuple(self.source_fields))
+        key = (self.template_path, self.data_path, self.data_sheet, tuple(self.source_fields))
         if self.model is not None and self._model_key == key:
             return
         prior = None
@@ -663,7 +687,7 @@ class EditorController:
         self.pattern = p["pattern"]
 
     def _do_set_dataset_name(self, p: dict) -> None:
-        """자동등록 데이터셋 이름 수정(4단계) — 기본은 데이터 파일 스템."""
+        """자동등록 데이터셋 이름 수정(저장 단계) — 기본은 데이터 파일 스템."""
         self.dataset_name = p["name"]
 
     def _dataset_gate(self, p: dict) -> "dict | None":
