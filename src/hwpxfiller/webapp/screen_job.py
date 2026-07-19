@@ -45,6 +45,16 @@ from ..core.dataset_pool import DatasetPoolRegistry
 from ..core.identity_summary import identity_summary
 from ..core.job import MISSING_MARKER, JobRegistry
 from ..core.mapping import SOURCE_CARRIER_TYPES
+from ..gui.filter_state import (
+    KIND_AMOUNT,
+    KIND_DATE,
+    KIND_TEXT,
+    FilterModel,
+    RangeClause,
+    RangeCondition,
+    cell_text,
+    sniff_column_kinds,
+)
 from ..gui.result_errors import describe_result_error
 from ..gui.run_state import RunViewModel
 from ..gui.selection_state import SelectionModel
@@ -60,6 +70,19 @@ from .screens import (
 
 # 사전검증 성공 문구는 링2 사용자 어휘로 순화한다(실행 화면 _PREFLIGHT_OK_TEXT 동형).
 _PREFLIGHT_OK_TEXT = "검증 완료 — 문서를 생성할 준비가 됐습니다."
+
+# 데이터 미겨눔 상태의 필터/테이블/재진술 빈 골격 — 표면이 분기 없이 그린다.
+_EMPTY_FILTER = {
+    "active": False, "search": "", "chips": [], "definition": "",
+    "branches": [], "columns": [],
+}
+_EMPTY_TABLE = {"columns": [], "rows": [], "visible_count": 0, "hidden_selected": []}
+_EMPTY_RESTATE = {
+    "origin": None, "filter_active": False, "in_def": 0, "extra": 0, "sample": [],
+}
+
+# 재진술 이름 목록 표본 크기 — 소량(≤N)=전부, 대량=층화 표본 N + 「외 …건 펼치기」(결정 5·36).
+_RESTATE_SAMPLE = 3
 
 
 class JobController(PoolTargetingMixin):
@@ -87,6 +110,9 @@ class JobController(PoolTargetingMixin):
         self._push_sink = push
         self.vm: "RunViewModel | None" = None
         self.selection = SelectionModel(0)
+        # 필터 선언 상태(블록 4, 결정 23~25) — 스코프 = 세션(작업×데이터, 결정 24).
+        # 데이터 겨눔 시 생성, 작업 전환·데이터 교체 시 재생성(전환 인계는 PR-4 결정 28).
+        self.filter: "FilterModel | None" = None
         self.job_name = ""  # 좌 목록에서 겨눈 작업(패널 세션의 주체)
         self.data_label = ""
         self.data_source = ""  # 소스 종류 플래그('file'|'pool') — 병기 라벨은 스냅샷이 합성(K8)
@@ -254,6 +280,73 @@ class JobController(PoolTargetingMixin):
                 })
         return rows, drift
 
+    def _filter_sections(
+        self, indices: "list[int]", record_rows: "list[dict]"
+    ) -> "tuple[dict, dict, dict]":
+        """필터·테이블·재진술 유래 스냅샷(블록 4) — 평가는 FilterView 1회(캐시 계약).
+
+        - **table**: 가시 행만 + 셀 = 하이라이트 세그먼트(파이썬이 잘라 조각으로 — 매치
+          인덱스를 웹에 건네지 않는다, jamo 계약). 선두 「문서」 열 소재(이름·요약)는
+          ``record_rows`` 재사용(F33 승계 — 조용한 드롭 아님).
+        - **hidden_selected**: 필터 밖 선택 = 하단 고정 스트립 소재(결정 3, 선택 관통).
+        - **restate.origin**: 선택 유래는 **집합 비교로 매 스냅샷 판정**(무상태 — 캡처
+          시점 정의 텍스트가 스테일해지는 창이 없다): 선택==현 매치 전체 = 정의-유래,
+          그 외 = 직접(필터 활성이면 매치/밖 수치 병기 — S4 델타).
+        - **restate.sample**: 층화 표본(결정 5) — 광의 OR 에서 소수 가지가 반드시 등장.
+        """
+        if self.filter is None or self.vm is None:
+            return _EMPTY_FILTER, _EMPTY_TABLE, _EMPTY_RESTATE
+        records = self.vm.records
+        fm = self.filter
+        view = fm.view(records)  # 가지 1회 산출 — 렌더 경로 캐시 계약(filter_state)
+        visible = view.visible_indices()
+        vis_set = set(visible)
+        sel_set = set(indices)
+        rows_by_index = {r["index"]: r for r in record_rows}
+        columns = fm.columns
+        table_rows = [
+            {
+                **rows_by_index[i],
+                # 셀 텍스트 = 필터와 같은 읽기(cell_text 단일 출처) — `or ""` 류는 0·False 를
+                # 빈칸으로 붕괴시켜 "필터는 남겼는데 표면은 빈 셀"이 된다(리뷰 #8).
+                "cells": [view.segments(c, cell_text(records[i], c)) for c in columns],
+            }
+            for i in visible
+        ]
+        filter_snap = {
+            "active": fm.is_active(),
+            "search": fm.search_text,
+            "chips": view.describe_parts(),   # 칩 줄 문안(정의줄 단일 출처, 결정 4)
+            "definition": view.describe(),
+            "branches": view.branches,        # 가지 칩(× 프루닝)
+            "columns": [
+                {"name": c, "kind": fm.kind(c), "active": fm.has_condition(c)}
+                for c in columns
+            ],
+        }
+        table_snap = {
+            "columns": columns,
+            "rows": table_rows,
+            "visible_count": len(visible),
+            # 필터 밖 선택 — 스트립이 상시 진술(결정 3). 원본 순서.
+            "hidden_selected": [rows_by_index[i] for i in indices if i not in vis_set],
+        }
+        f_active = fm.is_active()
+        origin = None
+        if indices:
+            origin = "definition" if (f_active and sel_set == vis_set) else "manual"
+        restate_snap = {
+            "origin": origin,
+            "filter_active": f_active,
+            "in_def": len(sel_set & vis_set) if f_active else 0,
+            "extra": len(sel_set - vis_set) if f_active else 0,
+            "sample": (
+                view.stratified_sample(indices, _RESTATE_SAMPLE)
+                if f_active else indices[:_RESTATE_SAMPLE]
+            ),
+        }
+        return filter_snap, table_snap, restate_snap
+
     def snapshot(self) -> dict:
         """4존 패널 스냅샷 — 필드는 실행 화면과 평행(링1 배선 감사 가능), 좌 목록 동봉.
 
@@ -280,6 +373,7 @@ class JobController(PoolTargetingMixin):
                 "record_count": 0, "selected_count": 0, "records": [],
                 "preflight": {"level": "", "text": ""},
                 "mirror": [], "drift": [],
+                "filter": _EMPTY_FILTER, "table": _EMPTY_TABLE, "restate": _EMPTY_RESTATE,
                 "gate": {"enabled": False, "level": "warn", "text": "왼쪽에서 작업을 선택하세요."},
             })
             return base
@@ -292,6 +386,8 @@ class JobController(PoolTargetingMixin):
             _PREFLIGHT_OK_TEXT if status.preflight.level == "ok" else status.preflight.text
         )
         mirror_rows, drift_fields = self._mirror(indices, status, mapped)
+        record_rows = self._record_rows(indices, mapped)
+        filter_snap, table_snap, restate_snap = self._filter_sections(indices, record_rows)
         base.update({
             "template_name": Path(job.template_path).name if job.template_path else "",
             "template_path": job.template_path,  # 추적성 로케이트(#53-B) — 전체 경로
@@ -303,7 +399,11 @@ class JobController(PoolTargetingMixin):
             "has_data": self.vm.datasource is not None,
             "record_count": len(self.vm.records),
             "selected_count": self.selection.selected_count(),
-            "records": self._record_rows(indices, mapped),
+            "records": record_rows,
+            # 필터 상태·데이터 테이블·재진술 유래(블록 4) — 표면은 받은 것을 그리기만.
+            "filter": filter_snap,
+            "table": table_snap,
+            "restate": restate_snap,
             "preflight": {"level": status.preflight.level, "text": preflight_text},
             # 본문 존 거울(필드 채움 테이블) + drift 필드(차단 배너로 분리, 결정 36).
             "mirror": mirror_rows,
@@ -334,6 +434,7 @@ class JobController(PoolTargetingMixin):
         self.data_label = Path(path).name
         self.data_source = "file"  # 병기 라벨은 스냅샷이 합성(#26·K8)
         self.selection = SelectionModel(len(records))  # 데이터 변경 → 전체 선택 초기화
+        self._init_filter()  # 데이터 교체 = 필터 재생성(결정 24 — 열 지형이 바뀐다)
         self._clear_data_notice()  # 사용자가 직접 데이터를 겨눔 → 자동 조준 재진술 소거
         self._push()
 
@@ -372,6 +473,7 @@ class JobController(PoolTargetingMixin):
         """
         name = p["name"]
         self._clear_data_notice()
+        self.filter = None  # 필터 정의 = 세션 휘발(결정 8·24) — 작업 전환 시 소멸
         if not name:  # 선택 해제 = 빈 패널
             self.vm = None
             self.selection = SelectionModel(0)
@@ -441,11 +543,119 @@ class JobController(PoolTargetingMixin):
     def _do_toggle_record(self, p: dict) -> None:
         self.selection.toggle(int(p["index"]), bool(p["value"]))
 
-    def _do_set_all(self, p: dict) -> None:
-        self.selection.set_all()
+    def _do_select_range(self, p: dict) -> None:
+        """Shift 범위 — 앵커 행의 상태를 범위에 전파(결정 2). 표면이 가시 순서 범위를 준다."""
+        value = bool(p["value"])
+        for i in p["indices"]:
+            self.selection.toggle(int(i), value)
+
+    def _do_set_all(self, p: dict) -> dict:
+        """「전체 선택」 — 필터 활성 시 **매치 전체를 가산**한다(결정 4·26 "전체 선택 가산적").
+
+        필터 밖 기존 선택은 유지된다(선택은 필터를 관통, 결정 3) — '매치'의 담보는 버튼
+        이름이 아니라 게이트 정의줄 재진술이 진다. 반환 ``added`` = 새로 선택된 행 수 —
+        전멸 필터에서의 무동작(0)을 표면이 정직하게 알린다(confirm-or-alarm, 리뷰 #9:
+        아무 반응 없는 버튼은 결함으로 읽힌다).
+        """
+        before = self.selection.selected_count()
+        if self.filter is not None and self.filter.is_active():
+            for i in self.filter.visible_indices(self.vm.records):
+                self.selection.toggle(i, True)
+        else:
+            self.selection.set_all()
+        return {"added": self.selection.selected_count() - before}
 
     def _do_set_none(self, p: dict) -> None:
+        """「전체 해제」 — 명시 동사라 가드 불요(T4), 필터와 무관하게 전부 해제."""
         self.selection.set_none()
+
+    # ------------------------------------------------- 필터 액션(블록 4, 결정 23~25)
+    def _filter_or_raise(self) -> FilterModel:
+        if self.filter is None:  # 표면 오배선 검출 — 데이터 없이 필터 액션은 프로그램 결함
+            raise ValueError("데이터를 먼저 선택하세요.")
+        return self.filter
+
+    def _records(self) -> list:
+        return self.vm.records if self.vm is not None else []
+
+    def _do_filter_search(self, p: dict) -> None:
+        """전열 검색 = 재현 OR 그룹 재정의(교체) — 검색창이 그룹 편집기다."""
+        self._filter_or_raise().set_search(p.get("text", ""))
+
+    def _do_filter_col_text(self, p: dict) -> None:
+        self._filter_or_raise().set_text(p["column"], p.get("text", ""))
+
+    def _do_filter_col_values(self, p: dict) -> None:
+        """값 체크리스트 — ``values=None`` 은 (전체)=무조건. 순서=패널 표시 순서."""
+        values = p.get("values")
+        self._filter_or_raise().set_values(
+            p["column"], None if values is None else [str(v) for v in values]
+        )
+
+    def _do_filter_col_range(self, p: dict) -> dict:
+        """범위 조건 — 피연산자 검증 실패는 시끄럽되 uncaught 아님(패널 인라인 재진술).
+
+        빈 첫 절 = 조건 해제. 반환 dict 의 ``error`` 를 표면이 패널 안에서 재진술한다
+        (confirm-or-alarm: 조용한 강등 대신 보이는 거절).
+        """
+        fm = self._filter_or_raise()
+        first = p.get("first")
+        try:
+            if not first or not str(first.get("operand", "")).strip():
+                fm.set_range(p["column"], None)
+                return {"ok": True}
+            second = p.get("second")
+            cond = RangeCondition(
+                first=RangeClause(first["op"], str(first["operand"]).strip()),
+                second=(
+                    RangeClause(second["op"], str(second["operand"]).strip())
+                    if second and str(second.get("operand", "")).strip() else None
+                ),
+                joiner=p.get("joiner", "and"),
+            )
+            fm.set_range(p["column"], cond)
+            return {"ok": True}
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def _do_filter_prune(self, p: dict) -> None:
+        """가지 쳐내기 — 마지막 가지면 그룹 해산(시안 동형, filter_state 소관)."""
+        self._filter_or_raise().prune_branch(p["column"], self._records())
+
+    def _do_filter_clear(self, p: dict) -> None:
+        self._filter_or_raise().clear()
+
+    def _do_filter_clear_col(self, p: dict) -> None:
+        self._filter_or_raise().clear_column(p["column"])
+
+    def _do_filter_panel(self, p: dict) -> dict:
+        """열 패널 열기 질의 — 현 조건 + 값 목록(다른 조건 통과 행 기준, 엑셀 동형).
+
+        스냅샷에 전 열 값 목록을 상시 싣지 않는다(53열 코퍼스 낭비) — 패널이 열릴 때만
+        당긴다. 반환 값 목록의 ``""`` 은 (빈값) 일급 값이다.
+        """
+        fm = self._filter_or_raise()
+        col = p["column"]
+        state = fm.column_state(col)
+        return {
+            "column": col,
+            "kind": fm.kind(col),
+            "text": state["text"],
+            "checked": state["values"],    # None=(전체)
+            "options": fm.view(self._records()).column_values(col),
+            "range": state["range"],
+        }
+
+    def _init_filter(self) -> None:
+        """데이터 겨눔 시 필터 신설(결정 24) — 열 유형은 매핑 확정 힌트 우선 + 값 스니핑."""
+        records = self.vm.records if self.vm is not None else []
+        hints = {
+            m.source: m.type
+            for m in (self.vm.job.mapping.mappings if self.vm is not None else [])
+            if m.source and m.type in (KIND_TEXT, KIND_DATE, KIND_AMOUNT)
+        }
+        columns = list(records[0].keys()) if records else []
+        self.filter = FilterModel(columns, sniff_column_kinds(records, hints))
 
     def _do_ack_field(self, p: dict) -> None:
         """미입력 배지 클릭 = 직접 확인(강제 상호작용, ADR-E). 다 확인되면 생성이 열린다."""
@@ -465,8 +675,9 @@ class JobController(PoolTargetingMixin):
         return "먼저 작업을 선택하세요." if self.vm is None else None
 
     def _after_pool_load(self, records: list) -> None:
-        """풀 겨눔도 파일과 동일하게 새 데이터 = 전체 선택·ack 초기화를 탄다."""
+        """풀 겨눔도 파일과 동일하게 새 데이터 = 전체 선택·ack·필터 초기화를 탄다."""
         self.selection = SelectionModel(len(records))  # 데이터 변경 → 전체 선택 초기화
+        self._init_filter()  # 데이터 교체 = 필터 재생성(결정 24)
         self._clear_data_notice()  # 사용자가 직접 겨눔 → 자동 조준 재진술 소거
 
     # ------------------------------------------------------------------ 생성
