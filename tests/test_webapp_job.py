@@ -852,3 +852,54 @@ def test_guard_free_paths_do_not_block(tmp_path):
     ctrl.registry.delete("공고서2")
     ctrl.dispatch("refresh", {})
     assert ctrl.snapshot()["has_job"] is False
+
+
+def test_guard_state_query_is_live_and_pushless(tmp_path):
+    """guard_state = 실시간 무변이 질의(리뷰 #4·#8) — 판정은 항상 Python 이 지금 내린다.
+
+    스냅샷 캐시(LAST.guard)는 generate(디스패치 밖, 무푸시) 뒤 stale — 표면 사전 확인이
+    이 질의를 소비해 거짓 모달/무확인 통과 양방향 오판을 막는다. 질의는 push 도 없다.
+    """
+    ctrl, pushes = _session(tmp_path)
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("toggle_record", {"index": 0, "value": True})
+    before = len(pushes)
+    g = ctrl.dispatch("guard_state", {})
+    assert g["armed"] is True and g["sel_count"] == 1
+    assert len(pushes) == before                       # 무변이 질의 = push 생략
+
+
+def test_needs_confirm_does_not_push(tmp_path):
+    """가드 차단 왕복은 무변이 — 동일 스냅샷 전량 재계산·재렌더를 얹지 않는다(리뷰 #8)."""
+    ctrl, pushes = _session(tmp_path)
+    _second_job(ctrl, tmp_path)
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("toggle_record", {"index": 0, "value": True})
+    before = len(pushes)
+    res = ctrl.dispatch("select_job", {"name": "공고서2"})
+    assert res["needs_confirm"] is True
+    assert len(pushes) == before                       # 차단 = 상태 그대로 = push 생략
+
+
+def test_partial_failure_keeps_guard_armed(tmp_path, monkeypatch):
+    """부분 실패 런은 완주가 아니다(리뷰 #1) — 실패분 재시도 선택을 무확인 파괴에서 지킨다."""
+    import hwpxfiller.webapp.screen_job as sj
+
+    class _FakeResult:
+        def __init__(self):
+            self.ok = False
+            self.output_path = "x.hwpx"
+            self.error = "boom"  # describe_result_error 는 문자열 계약
+
+    class _FakeBatch:
+        succeeded, failed, total = 0, 1, 1
+        results = [_FakeResult()]
+
+    monkeypatch.setattr(sj, "generate_batch", lambda *a, **k: _FakeBatch())
+    ctrl, _ = _session(tmp_path)
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("toggle_record", {"index": 1, "value": True})  # 수작업 1행
+    res = ctrl.generate()
+    assert res["ok"] is True and res["failed"] == 1
+    assert ctrl.dispatch("guard_state", {})["armed"] is True     # 무장 유지(재시도 보호)

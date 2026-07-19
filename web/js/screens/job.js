@@ -379,14 +379,10 @@
         (restateExpanded ? "접기" : `⋯ 외 ${sel.length - shown.length}건 펼치기`) + `</button>`
       : "";
     // 선택 유래 문안(결정 4·S4) — 정의-유래 = 정의줄 재진술이 「전체 선택」의 담보.
-    let selLine;
-    if (rs.origin === "definition") {
-      selLine = `정의 매치 전체 ${sel.length}행 — ${esc((s.filter && s.filter.definition) || "")}`;
-    } else if (rs.filter_active) {
-      selLine = `직접 선택 ${sel.length}행 (정의 매치 ${rs.in_def} · 정의 밖 ${rs.extra})`;
-    } else {
-      selLine = `직접 선택 ${sel.length}행`;
-    }
+    // 직접 선택 문안은 가드 모달과 공유 합성기(selectionLine, 리뷰 #9)로 단일 출처.
+    const selLine = (rs.origin === "definition")
+      ? `정의 매치 전체 ${sel.length}행 — ${esc((s.filter && s.filter.definition) || "")}`
+      : esc(selectionLine(sel.length, rs.filter_active, rs.in_def, rs.extra));
     box.innerHTML =
       `<span class="dl">선택</span><span>${selLine}</span>` +
       `<span class="dl">생성</span><span>문서 ${sel.length}건 · 저장 폴더: ${esc(s.out_dir || "미지정")}` +
@@ -643,42 +639,77 @@
   /* ---- 웹→Python 이벤트 ---- */
   /* ---- 세션 가드(블록 4, 결정 26·27) — 파괴 전이의 수치 재진술 본문 합성 ----
      술어·수치는 Python(_guard_state)이 판정하고, 여기는 문안만 입힌다. verbPhrase 로
-     전이 종류(T1 작업 전환 / 데이터 재겨눔)를 구분 — 무엇이 사라지는지 명시. */
+     전이 종류(T1 작업 전환 / 데이터 재겨눔 / 템플릿 재연결)를 구분 — 무엇이 사라지는지 명시. */
+
+  /* 선택 재진술 한 줄 — 재진술 블록(renderRestate)과 가드 모달(guardBody)의 **공유
+     합성기**(리뷰 #9): 같은 수치를 두 곳이 따로 조립하면 문안이 갈라져 모달이 화면
+     재진술과 모순되는 드리프트 클래스가 생긴다. */
+  function selectionLine(count, filterActive, inDef, extra) {
+    return filterActive
+      ? `직접 선택 ${count}행 (정의 매치 ${inDef} · 정의 밖 ${extra})`
+      : `직접 선택 ${count}행`;
+  }
+
   function guardBody(g, verbPhrase) {
-    const selDetail = g.filter_active
-      ? `직접 선택 ${g.sel_count}행(정의 매치 ${g.in_def} · 정의 밖 ${g.extra})`
-      : `직접 선택 ${g.sel_count}행`;
     const lost = g.filter_parts > 0
       ? `행 선택과 필터 정의(${g.filter_parts}개 조건)가 사라집니다.`
       : `행 선택이 사라집니다.`;
-    return `이 세션에는 다시 만들기 어려운 선택이 있습니다: ${selDetail}.\n` +
+    return `이 세션에는 다시 만들기 어려운 선택이 있습니다: ` +
+      `${selectionLine(g.sel_count, g.filter_active, g.in_def, g.extra)}.\n` +
       `${verbPhrase} ${lost}`;
   }
 
-  /* 데이터 재겨눔 사전 확인 — T1 동류 파괴 전이(세션 재구성: 선택·필터 소실). 피커를
+  /* 파괴 전이 사전 확인(데이터 재겨눔·템플릿 재연결 — T1 동류 세션 재구성). 피커/흐름을
      열기 **전에** 묻는다(파일까지 고른 뒤 "머무르기"는 고른 노동을 또 버리게 한다).
-     무장 판정은 스냅샷 guard(Python 단일 출처) 소비. true=진행, false=머무르기. */
-  async function confirmDataSwapIfArmed() {
-    const g = LAST && LAST.guard;
+     무장 판정은 guard_state **실시간 질의**(리뷰 #4: 스냅샷 캐시는 generate 무푸시
+     경로·왕복 지연에서 stale — 완주 직후 거짓 모달·무장 직후 무확인 통과 양방향 오판).
+     true=진행, false=머무르기. */
+  async function confirmDestructiveIfArmed(title, verbPhrase, confirmLabel) {
+    const g = await Bridge.call(SCREEN, "guard_state", {});
     if (!g || !g.armed) return true;
     return window.Modal.confirm({
-      title: "데이터 변경 확인",
-      body: guardBody(g, "다른 데이터를 겨누면"),
-      confirmLabel: "데이터 바꾸고 버리기", cancelLabel: "머무르기",
+      title, body: guardBody(g, verbPhrase),
+      confirmLabel, cancelLabel: "머무르기",
     });
   }
 
+  function confirmDataSwapIfArmed() {
+    return confirmDestructiveIfArmed(
+      "데이터 변경 확인", "다른 데이터를 겨누면", "데이터 바꾸고 버리기");
+  }
+
+  /* 대기 중 검색 디바운스 정산 — 세션 전환 시도 **전에** 미적용 검색어를 먼저 적용한다
+     (리뷰 #2: 취소만 하면 「머무르기」로 남은 세션에서 마지막 타이핑이 조용히 증발).
+     전환이 확정되면 필터째 죽으니 선적용은 무해하고, 머무르면 타이핑이 보존된다. */
+  async function flushPendingSearch() {
+    clearTimeout(searchTimer);
+    const si = $("jobFilterSearch");
+    if (LAST && LAST.has_data && LAST.filter
+        && si.value !== (LAST.filter.search || "")) {
+      await Bridge.call(SCREEN, "filter_search", { text: si.value });
+    }
+  }
+
   /* T1 가드 왕복(RC-02 동형): 무변이 needs_confirm → modal.js 이진 확인(기본 포커스=
-     머무르기·Escape=머무르기) → 확인 시에만 confirm=true 재호출. */
+     머무르기·Escape=머무르기) → 확인 시에만 confirm=true 재호출. 단일 실행(switching)
+     — 더블클릭이 두 왕복·두 모달을 만들면 modal.js 재진입 가드가 loud 거절을 띄운다
+     (리뷰 #5: 정상 제스처에 오류성 경보). */
+  let switching = false;
   async function selectJobGuarded(name) {
-    const res = await Bridge.call(SCREEN, "select_job", { name });
-    if (res && res.needs_confirm) {
-      const ok = await window.Modal.confirm({
-        title: "작업 전환 확인",
-        body: guardBody(res, "작업을 전환하면"),
-        confirmLabel: "전환하고 버리기", cancelLabel: "머무르기",
-      });
-      if (ok) await Bridge.call(SCREEN, "select_job", { name, confirm: true });
+    if (switching) return;
+    switching = true;
+    try {
+      const res = await Bridge.call(SCREEN, "select_job", { name });
+      if (res && res.needs_confirm) {
+        const ok = await window.Modal.confirm({
+          title: "작업 전환 확인",
+          body: guardBody(res, "작업을 전환하면"),
+          confirmLabel: "전환하고 버리기", cancelLabel: "머무르기",
+        });
+        if (ok) await Bridge.call(SCREEN, "select_job", { name, confirm: true });
+      }
+    } finally {
+      switching = false;
     }
   }
 
@@ -687,10 +718,9 @@
     if (!item) return;
     // 이미 선택된 작업 재클릭 = 무동작(세션 재구성으로 데이터 겨눔이 날아가지 않게).
     if (item.getAttribute("aria-current") === "true") return;
-    // 대기 중 검색 디바운스를 즉시 취소 — 렌더 시점 취소만으론 왕복 창에서 새 세션에
-    // 이전 검색이 오발된다(리뷰 #1). 필터 = 세션 휘발(결정 24).
-    clearTimeout(searchTimer);
-    selectJobGuarded(item.dataset.job);
+    // 미적용 검색어는 전환 시도 전에 정산(적용) — 취소만 하면 「머무르기」 세션에서
+    // 마지막 타이핑이 증발한다(리뷰 #2). 새 세션 오발도 함께 차단(PR-2b 리뷰 #1).
+    flushPendingSearch().then(() => selectJobGuarded(item.dataset.job));
   }
 
   /* 허브(홈)에서 이 작업을 열기 — 좌 목록 재클릭 무동작 가드(onMasterClick)와 동형.
@@ -698,8 +728,8 @@
      않게 — 리뷰 F1) 그대로 두고 화면만 전환한다. 아니면 겨눠 진입한다. */
   function openJob(name) {
     if (!(LAST && LAST.job_name === name)) {
-      clearTimeout(searchTimer);  // 세션 전환 — 대기 중 검색 오발 차단(리뷰 #1)
-      selectJobGuarded(name);     // T1 가드 승계 — 허브 진입도 같은 파괴 전이(결정 26)
+      // 미적용 검색 정산 후 T1 가드 승계 — 허브 진입도 같은 파괴 전이(결정 26).
+      flushPendingSearch().then(() => selectJobGuarded(name));
     }
     window.Nav.go(SCREEN);
   }
@@ -730,9 +760,15 @@
     if (LAST && LAST.job_name) EditorEntry.openGuarded(LAST.job_name);
   }
 
-  /* 템플릿 다시 연결(#67) — 공용 흐름(relink.js)에 위임, 결과 재진술 채널만 log 주입. */
-  function doRelinkTemplate() {
+  /* 템플릿 다시 연결(#67) — 공용 흐름(relink.js)에 위임, 결과 재진술 채널만 log 주입.
+     재연결 확정은 기선택 작업을 재적재해 세션(선택·필터·겨눔)을 재구성한다 — T1 동류
+     파괴 전이이므로 무장 시 먼저 확인한다(리뷰 #0: 재연결 확인문은 템플릿 경로만
+     재진술해 선택 소실이 조용히 지나갔다). */
+  async function doRelinkTemplate() {
     if (!(LAST && LAST.job_name)) return;
+    const ok = await confirmDestructiveIfArmed(
+      "템플릿 다시 연결 확인", "템플릿을 다시 연결하면", "다시 연결하고 버리기");
+    if (!ok) return;
     Relink.relinkTemplate(SCREEN, LAST.job_name, (msg) => log(msg));
   }
 
@@ -834,5 +870,7 @@
 
   // overwriteBody·guardBody 는 순수 합성기 — 실앱 게이트가 합성 결과(수치·문안 배치)를
   // 되읽어 회귀를 막는다(파괴적 확인의 조용한 드리프트 금지 — RC-02 판과 가드 판 동형).
-  window.JobScreen = { init, overwriteBody, guardBody, openJob };
+  // confirmDataSwapIfArmed 는 배선 존재 핀(리뷰 #6 — JS 전용 가드 지점이라 삭제 회귀를
+  // 실앱 게이트가 잡을 표식이 없었다).
+  window.JobScreen = { init, overwriteBody, guardBody, confirmDataSwapIfArmed, openJob };
 })();

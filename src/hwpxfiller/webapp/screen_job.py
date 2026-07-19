@@ -287,7 +287,7 @@ class JobController(PoolTargetingMixin):
 
     def _filter_sections(
         self, indices: "list[int]", record_rows: "list[dict]"
-    ) -> "tuple[dict, dict, dict]":
+    ) -> "tuple[dict, dict, dict, dict]":
         """필터·테이블·재진술 유래 스냅샷(블록 4) — 평가는 FilterView 1회(캐시 계약).
 
         - **table**: 가시 행만 + 셀 = 하이라이트 세그먼트(파이썬이 잘라 조각으로 — 매치
@@ -300,7 +300,7 @@ class JobController(PoolTargetingMixin):
         - **restate.sample**: 층화 표본(결정 5) — 광의 OR 에서 소수 가지가 반드시 등장.
         """
         if self.filter is None or self.vm is None:
-            return _EMPTY_FILTER, _EMPTY_TABLE, _EMPTY_RESTATE
+            return _EMPTY_FILTER, _EMPTY_TABLE, _EMPTY_RESTATE, self._guard_state()
         records = self.vm.records
         fm = self.filter
         view = fm.view(records)  # 가지 1회 산출 — 렌더 경로 캐시 계약(filter_state)
@@ -350,10 +350,11 @@ class JobController(PoolTargetingMixin):
                 if f_active else indices[:_RESTATE_SAMPLE]
             ),
         }
-        return filter_snap, table_snap, restate_snap
+        # 가드 무장도 같은 뷰의 가시 집합으로 판정 — 스냅샷 경로 필터 이중 평가 금지(리뷰 #7).
+        return filter_snap, table_snap, restate_snap, self._guard_state(vis_set=vis_set)
 
     # ------------------------------------------------- 세션 가드(블록 4, 결정 26·27)
-    def _guard_state(self) -> dict:
+    def _guard_state(self, vis_set: "set[int] | None" = None) -> dict:
         """무장 판정 = 집합 비교(결정 27) — "재현 불가능한 수작업"이 있는가.
 
         무장 조건: 선택이 비어 있지 않고 ∧ **마지막 생성·완주 집합**과 다르고(완료 이벤트 =
@@ -361,6 +362,10 @@ class JobController(PoolTargetingMixin):
         아니다. 필터 정의 자체는 술어 불포함 — 재타이핑 몇 초 + 직전 필터 재적용(결정 28,
         PR-4)이 복원을 담보한다(프루닝 동일). 수동 필드 입력·큐 부분 진행 성분은 해당
         표면(블록 5·3)이 슬라이스 5~7 에서 합류한다.
+
+        ``vis_set`` 은 렌더 경로(:meth:`_filter_sections`)가 이미 산출한 가시 집합 —
+        스냅샷에서 필터를 이중 평가하지 않기 위한 전달이다(FilterView 캐시 계약,
+        고효율 리뷰 #7). 디스패치 단발 판정(select_job·guard_state)은 생략하고 직접 평가.
 
         수치는 modal.js 재진술 본문 소재(결정 27 "종류별 수치 재진술") — 표면이 합성한다.
         """
@@ -377,7 +382,10 @@ class JobController(PoolTargetingMixin):
         if sel and sel != set(self._last_generated or ()) and len(sel) != len(records):
             if f_active:
                 assert self.filter is not None
-                vis = set(self.filter.visible_indices(records))
+                vis = (
+                    vis_set if vis_set is not None
+                    else set(self.filter.visible_indices(records))
+                )
                 armed = sel != vis  # 정의-유래(매치 전체)는 정의줄이 재현을 담보
                 in_def, extra = len(sel & vis), len(sel - vis)
             else:
@@ -391,6 +399,17 @@ class JobController(PoolTargetingMixin):
             "filter_parts": filter_parts,
         }
 
+    def _do_guard_state(self, p: dict) -> dict:
+        """무장 상태 실시간 질의 — 표면의 파괴 전이 사전 확인(데이터 재겨눔·재연결)이 소비.
+
+        스냅샷 캐시(LAST.guard)는 왕복 지연·무푸시 경로(``generate`` 는 dispatch 밖이라
+        push 가 없다)에서 stale 이 된다 — 판정은 항상 Python 이 지금 내린다(고효율 리뷰
+        #4: 완주 직후 데이터 재겨눔에 거짓 확인 모달·#3: 무장 직후 창에 무확인 통과).
+        """
+        return self._guard_state()
+
+    _do_guard_state.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
+
     def snapshot(self) -> dict:
         """4존 패널 스냅샷 — 필드는 실행 화면과 평행(링1 배선 감사 가능), 좌 목록 동봉.
 
@@ -400,9 +419,9 @@ class JobController(PoolTargetingMixin):
             "job_rows": self._job_rows(),   # 좌 master 목록
             "job_name": self.job_name,
             "has_job": self.vm is not None,
-            # 세션 가드 무장 상태(결정 26·27) — 표면이 파괴 전이(데이터 재겨눔 등) 전에
-            # 확인 모달을 세울지 판단하는 소재. 작업 전환은 needs_confirm 왕복이 정본.
-            "guard": self._guard_state() if self.vm is not None else {
+            # 세션 가드 무장 상태(결정 26·27) — 표면 참고용(진실은 guard_state 실시간 질의;
+            # 렌더 판은 _filter_sections 가 같은 뷰로 산출해 아래 update 가 덮는다).
+            "guard": {
                 "armed": False, "sel_count": 0, "in_def": 0, "extra": 0,
                 "filter_active": False, "filter_parts": 0,
             },
@@ -437,7 +456,9 @@ class JobController(PoolTargetingMixin):
         )
         mirror_rows, drift_fields = self._mirror(indices, status, mapped)
         record_rows = self._record_rows(indices, mapped)
-        filter_snap, table_snap, restate_snap = self._filter_sections(indices, record_rows)
+        filter_snap, table_snap, restate_snap, guard_snap = self._filter_sections(
+            indices, record_rows
+        )
         base.update({
             "template_name": Path(job.template_path).name if job.template_path else "",
             "template_path": job.template_path,  # 추적성 로케이트(#53-B) — 전체 경로
@@ -450,10 +471,11 @@ class JobController(PoolTargetingMixin):
             "record_count": len(self.vm.records),
             "selected_count": self.selection.selected_count(),
             "records": record_rows,
-            # 필터 상태·데이터 테이블·재진술 유래(블록 4) — 표면은 받은 것을 그리기만.
+            # 필터 상태·데이터 테이블·재진술 유래·가드(블록 4) — 표면은 받은 것을 그리기만.
             "filter": filter_snap,
             "table": table_snap,
             "restate": restate_snap,
+            "guard": guard_snap,
             "preflight": {"level": status.preflight.level, "text": preflight_text},
             # 본문 존 거울(필드 채움 테이블) + drift 필드(차단 배너로 분리, 결정 36).
             "mirror": mirror_rows,
@@ -499,7 +521,13 @@ class JobController(PoolTargetingMixin):
         if handler is None:  # confirm-or-alarm: 미지 액션은 시끄럽게.
             raise ValueError(f"알 수 없는 작업 화면 액션: {action!r}")
         result = handler(payload)
-        self._push()
+        # 무변이 경로는 push 를 생략한다(고효율 리뷰 #8) — ① is_query 표식 핸들러(순수
+        # 질의: filter_panel·guard_state) ② needs_confirm 반환(가드가 전이를 막아 상태
+        # 그대로). 동일 스냅샷 전량 재계산+재렌더가 모달 여는 중에 겹치는 낭비 제거.
+        is_query = getattr(handler, "is_query", False)
+        blocked = isinstance(result, dict) and result.get("needs_confirm")
+        if not is_query and not blocked:
+            self._push()
         return result
 
     def _do_refresh(self, p: dict) -> None:
@@ -708,6 +736,8 @@ class JobController(PoolTargetingMixin):
             "range": state["range"],
         }
 
+    _do_filter_panel.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
+
     def _init_filter(self) -> None:
         """데이터 겨눔 시 필터 신설(결정 24) — 열 유형은 매핑 확정 힌트 우선 + 값 스니핑."""
         records = self.vm.records if self.vm is not None else []
@@ -806,8 +836,12 @@ class JobController(PoolTargetingMixin):
             progress=self._push_progress,
         )
 
-        # 완료 이벤트 = 가드 무장 해제(결정 27) — 이 선택 집합의 내역은 완료 존이 담보한다.
-        self._last_generated = set(indices)
+        # 완료 이벤트 = 가드 무장 해제(결정 27) — 단 **완주**(전건 성공)만이다(고효율 리뷰
+        # #1): 부분 실패 런에서 해제하면 실패분 재시도에 필요한 수작업 선택이 무확인
+        # 파괴 가능해지고, 전환이 세션 지문을 바꿔 실패 목록(완료 존)까지 지워져 "내역은
+        # 완료 존이 담보"의 전제가 깨진다.
+        if batch.failed == 0:
+            self._last_generated = set(indices)
 
         summary = f"완료. 성공 {batch.succeeded}/{batch.total}, 실패 {batch.failed}."
         if blanks:

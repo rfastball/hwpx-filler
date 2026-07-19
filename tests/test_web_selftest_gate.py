@@ -256,6 +256,11 @@ class TestWebSelftestGate:
         assert "정의 매치 2" in body and "정의 밖 1" in body, f"S4 델타 병기 누락: {body!r}"
         assert "작업을 전환하면" in body, f"전이 동사구 누락: {body!r}"
         assert "필터 정의(2개 조건)" in body, f"필터 소실 재진술 누락: {body!r}"
+        # 데이터 재겨눔 사전 확인은 JS 전용 가드 지점 — 존재 핀(삭제 = 결정 26 절반의 조용한
+        # 회귀인데 다른 테스트가 못 잡는다, 리뷰 #6).
+        assert selftest_result["job_mirror"]["data_guard_wired"] is True, (
+            "confirmDataSwapIfArmed 배선이 사라졌습니다 — 데이터 재겨눔 가드(결정 26) 회귀."
+        )
 
     def test_job_drift_replaces_mirror_with_blocking_banner(self, selftest_result: dict) -> None:
         # danger(구조 드리프트)는 거울 표와 섞이지 않고 차단 배너 + 행동 링크로 **교체**된다
