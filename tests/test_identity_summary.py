@@ -143,10 +143,8 @@ def test_scene4_true_duplicate_backstop_stops_quietly() -> None:
     assert res.residual_collisions == 2  # 1·2행 잔존 충돌 — 정직 표기
     assert res.token_mode is False
     assert res.steps[-1].layer == "stop"  # 조용한 정지 흔적
-    # 1·2행은 요약이 겹치고(정직), 3·4행은 고유
-    assert res.is_collision(rows, rows[0]) is True
-    assert res.is_collision(rows, rows[1]) is True
-    assert res.is_collision(rows, rows[2]) is False
+    # 1·2행은 요약이 겹치고(정직), 3·4행은 고유 — Counter 1회 구성 일괄 판정(리뷰 #5)
+    assert res.collision_flags(rows) == (True, True, False, False)
 
 
 # ─────────────────────────────────────────────────────── 결격 5종 단위
@@ -166,7 +164,7 @@ def test_constant_column_disqualified() -> None:
 
 
 def test_ordinal_column_disqualified() -> None:
-    """값이 1씩 증가하는 순번 열은 결격(연번·행번호)."""
+    """값이 행 서수(1..N)와 일치하는 순번 열은 결격(연번·행번호)."""
     rows = [{"seq": str(i + 1), "name": f"n{i % 2}"} for i in range(4)]
     res = identity_summary(rows, ["seq", "name"])
     assert "seq" not in res.columns
@@ -251,3 +249,67 @@ def test_normalization_matches_js_inorm(val: object, expected: str) -> None:
     rows = [{"k": val}, {"k": "other"}]
     res = identity_summary(rows, ["k"])
     assert res.summary_for(rows[0]) == expected
+
+
+# ─────────────────────────────────────── 리뷰 회귀(PR #91 — 발견 1~4)
+
+def test_review1_collision_key_separator_prevents_phantom_collisions() -> None:
+    """리뷰 #1 — 값 연쇄 모호성: '1'+'23' 과 '12'+'3' 은 충돌이 아니다.
+
+    구분자 없는 키잉(시연 iColl 의 join(""))은 둘 다 '123' 으로 키잉해 유령 충돌을
+    만들고(잔여 과대·불필요 열 첨부), 표시(' · ')와 판정이 갈라진다. 모호성 없는
+    구분자 키잉으로 잔여 0 이어야 한다.
+    """
+    rows = [{"a": "1", "b": "23"}, {"a": "12", "b": "3"}]
+    res = identity_summary(rows, ["a", "b"])
+    assert res.columns == ("a", "b")
+    assert res.residual_collisions == 0  # 종전엔 키 '123' 동일로 유령 충돌 2
+    assert res.collision_flags(rows) == (False, False)
+    assert res.steps[-1].layer != "stop"  # 유령 잔여로 인한 정지 흔적 없음
+
+
+def test_review2_auto_increment_id_survives_as_identifier() -> None:
+    """리뷰 #2 — 순번 결격은 '값=행 서수'만(결정 37 문언): 1001 시작 자동증가 ID 는
+    유일 식별자로 산다. 종전엔 임의 +1 등차를 전부 기각해 유일 구별 열을 조용히 잃었다."""
+    rows = [{"공고번호": str(1001 + i), "부서": "총무과"} for i in range(3)]
+    res = identity_summary(rows, ["공고번호", "부서"])
+    assert res.columns == ("공고번호",)  # 종전: () — 식별 불능
+    assert res.residual_collisions == 0
+    assert res.disqualified.ordinal == ()
+    assert res.disqualified.constant == 1  # 부서
+
+
+def test_review2_zero_based_row_ordinal_still_disqualified() -> None:
+    """행 서수는 0 기점(0..N-1)도 순번이다 — 결격 유지."""
+    rows = [{"idx": str(i), "name": f"n{i % 2}"} for i in range(4)]
+    res = identity_summary(rows, ["idx", "name"])
+    assert "idx" not in res.columns
+    assert res.disqualified.ordinal == ("idx",)
+
+
+def test_review3_token_mode_zero_gain_appends_nothing() -> None:
+    """리뷰 #3 — 토큰 모드 첫 픽도 이득 0이면 조용히 정지.
+
+    적격 열(등급)이 있어도 어떤 충돌 행도 못 가르면(4→4) 덧붙이지 않는다 — 비구별
+    열을 구별자인 양 제시 금지. 재인·구별은 파일명(품명 토큰+접미사)이 담보.
+    """
+    rows = [
+        {"품명": "P1", "등급": "상"},
+        {"품명": "P2", "등급": "상"},
+        {"품명": "P3", "등급": "하"},
+        {"품명": "P4", "등급": "하"},
+    ]
+    res = identity_summary(rows, ["품명", "등급"], filename_tokens=["품명"])
+    assert res.token_mode is True
+    assert res.columns == ()  # 종전: ('등급',) — 여전히 전행 충돌인데 첨부
+    assert res.steps[-1].layer == "stop"
+    assert res.residual_collisions == 4
+
+
+def test_review4_single_row_residual_is_zero() -> None:
+    """리뷰 #4 — 1행 집합: 충돌 상대가 없으니 잔여 0(종전 len(rows)=1 과대집계)."""
+    rows = [{"품명": "볼펜", "수량": "10"}]
+    res = identity_summary(rows, ["품명", "수량"])
+    assert res.columns == ()  # 1행 → 전 열 상수 결격
+    assert res.residual_collisions == 0
+    assert res.collision_flags(rows) == (False,)
