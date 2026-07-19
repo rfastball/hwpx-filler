@@ -21,7 +21,7 @@
      버튼은 유지된다(명시적 재스캔 경로). run 도 레지스트리 파생 작업 목록을
      스냅샷으로 그리므로 포함한다 — 빼면 에디터에서 막 저장한 작업이 주 실행 표면에
      안 보인다(r4). */
-  const REFRESH_ON_NAV = ["home", "pool", "tpl", "run"];
+  const REFRESH_ON_NAV = ["home", "pool", "tpl", "run", "job"];
 
   /* 화면 전환 — 레일 클릭과 허브(홈) 카드의 프로그램적 이동이 공유하는 단일 경로. */
   function go(id) {
@@ -67,6 +67,7 @@
     if (window.HomeScreen) window.HomeScreen.init();
     if (window.TxtScreen) window.TxtScreen.init();
     if (window.EditorScreen) window.EditorScreen.init();
+    if (window.JobScreen) window.JobScreen.init();  // 「작업」 화면(#90)
     if (window.RunScreen) window.RunScreen.init();
     if (window.TemplateScreen) window.TemplateScreen.init();
     if (window.PoolScreen) window.PoolScreen.init();  // 데이터 관리(#26 #4)

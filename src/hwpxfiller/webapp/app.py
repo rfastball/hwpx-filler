@@ -37,6 +37,7 @@ from hwpxcore.native.reveal import open_path as _native_open_path
 from hwpxcore.native.reveal import reveal_in_explorer as _native_reveal
 from .screen_editor import EditorController
 from .screen_home import HomeController
+from .screen_job import JobController
 from .screen_pool import PoolController
 from .screen_run import RunController
 from .screen_template import TemplateController
@@ -102,6 +103,10 @@ class WebFrontend:
             HomeController(job_registry, registry, self._push, pool_registry=pool_registry),
             TxtController(registry, self._push, pool_registry=pool_registry),
             EditorController(job_registry, self._push, pool_registry=pool_registry),
+            # 「작업」 화면(R-flow 슬라이스 1, #90) — 좌 목록 + 우 세션 패널 4존. 실행 화면과
+            # 병존한다(레일 「실행」 제거는 게이트 패리티 도달 = 슬라이스 3). 링1 VM 을 직접
+            # 소유해 실행 화면과 같은 계약을 소비하되 별개 링2 표면(부록 A: 죽는 것은 링2뿐).
+            JobController(job_registry, self._push, pool_registry=pool_registry),
             RunController(job_registry, self._push, pool_registry=pool_registry),
             # 템플릿 관리(#13) — TXT 레지스트리는 즉시 기안과 공유(변경이 양쪽에 반영).
             TemplateController(registry, self._push),

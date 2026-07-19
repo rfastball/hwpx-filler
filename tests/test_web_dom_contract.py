@@ -29,7 +29,7 @@ RESPONSIVE_BREAKPOINT_PX = 820
 # 전체 스냅샷 재렌더가 포커스·캐럿·스크롤을 뭉개지 않도록 render() 를 Preserve.around 로 감싸는
 # 화면들(#28). 어느 화면이 래핑을 조용히 떨구면 상호작용 유실 회귀 → 정적 가드로 차단.
 WEB_JS_DIR = Path(__file__).resolve().parents[1] / "web" / "js"
-PRESERVE_WRAPPED_SCREENS = ("txt", "editor", "run")
+PRESERVE_WRAPPED_SCREENS = ("txt", "editor", "run", "job")  # +job(R-flow 슬라이스 1, #90)
 
 # 살아있는 컴포넌트 갤러리(개발 전용) — 실 tokens.css+app.css 를 <link> 로 물어 드리프트 0.
 GALLERY = Path(__file__).resolve().parents[1] / "docs" / "UI_GALLERY.html"
@@ -38,13 +38,14 @@ GALLERY = Path(__file__).resolve().parents[1] / "docs" / "UI_GALLERY.html"
 SCREEN_ROOTS = (
     "scr-home", "scr-editor", "scr-run", "scr-txt", "scr-tpl",
     "scr-pool",  # 데이터 관리(#26 #4)
+    "scr-job",  # 「작업」 화면(R-flow 슬라이스 1, #90)
 )
 
 # 화면별 데이터 라벨은 반드시 고유 id 여야 한다(#27 dup-id 회귀 가드).
-SCOPED_DATA_LABELS = ("runDataLabel", "txtDataLabel")
+SCOPED_DATA_LABELS = ("runDataLabel", "txtDataLabel", "jobDataLabel")
 
 # 접힘 상태에서 라벨이 사라지는 내비 버튼(회귀 시 접근 이름·툴팁 소실 → #27).
-NAV_SCREENS = ("home", "editor", "run", "txt", "tpl", "pool")  # +pool(#26 #4)
+NAV_SCREENS = ("home", "job", "editor", "run", "txt", "tpl", "pool")  # +job(#90) +pool(#26 #4)
 
 # 커스텀 모달 → aria-labelledby 가 가리켜야 할 제목 id(다이얼로그 시맨틱, #27/#28).
 # sheetModal 은 다중 시트 확정 게이트(#33) — 같은 Modal 헬퍼·다이얼로그 계약을 공유한다.
@@ -54,6 +55,7 @@ MODAL_LABELLEDBY = {
     "sheetModal": "sheetTitle",
     "poolRegModal": "poolRegTitle",  # 데이터 등록(#26 #4)
     "poolModal": "poolTitle",  # 등록 데이터 선택(#26 #6) — 정적 골격 이관(r3 K12)
+    "jobOverwriteModal": "jobOverwriteTitle",  # 「작업」 덮어쓰기 확인(R-flow 슬라이스 1, RC-02)
 }
 
 
@@ -300,7 +302,7 @@ def test_forced_colors_block_present_in_web_diff():
 
 # pickDataFile(=pick_data_file) 을 소비하는 모든 화면 — 브리지 반환 계약이 screen-불가지라
 # needs_sheet 분기를 처리해야 다중 시트가 첫 시트로 강등되지 않는다(리뷰 P1: txt 누락 회귀).
-DATA_PICK_SCREENS = ("editor", "run", "txt")
+DATA_PICK_SCREENS = ("editor", "run", "txt", "job")  # +job(R-flow 슬라이스 1, #90)
 
 
 def test_sheet_picker_loaded_and_wired_on_all_data_screens():
