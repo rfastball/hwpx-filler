@@ -104,7 +104,7 @@
       if (act === "delete") {
         // 파괴 확정 — 1차=재진술(needs_confirm), 확인 시에만 2차 삭제(조용한 소실 금지).
         const res = await Bridge.call(SCREEN, "delete", { name });
-        if (res && res.needs_confirm && window.confirm(res.confirm_text + "\n\n삭제할까요?")) {
+        if (res && res.needs_confirm && (await Modal.confirm({ body: res.confirm_text + "\n\n삭제할까요?" }))) {
           await Bridge.call(SCREEN, "delete", { name, confirm: true });
         }
       } else {
@@ -143,7 +143,7 @@
       let res = await Bridge.call(SCREEN, "register_excel", payload);
       if (res && res.needs_confirm) {
         // 동명 재등록 = 기존 참조 재지정 — 조용히 덮지 않고 확인 승격.
-        if (!window.confirm(res.confirm_text + "\n\n계속할까요?")) return;
+        if (!(await Modal.confirm({ body: res.confirm_text + "\n\n계속할까요?" }))) return;
         res = await Bridge.call(SCREEN, "register_excel", { ...payload, confirm: true });
       }
       if (res && res.ok === false) {

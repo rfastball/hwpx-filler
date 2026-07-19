@@ -102,6 +102,23 @@ class TestWebSelftestGate:
         assert m["closed_by_escape"] is True
         assert m["focus_restored"] == m["focus_before"]
 
+    def test_confirm_modal_toggles_display_and_focuses_cancel(self, selftest_result: dict) -> None:
+        # #86/부록 B-9: 네이티브 confirm 대체 모달이 실 앱에서 실제로 열리고 닫히는지 계산 스타일로
+        # 확인한다 — .modal{display:flex} 가 hidden 을 덮으면(B-9 결함 클래스) 닫아도 계속 보인다.
+        m = selftest_result["modal_a11y"]
+        assert m["confirm_display_closed_before"] == "none", "열기 전 confirmModal 이 이미 보입니다."
+        assert m["confirm_opened"] is True, "Modal.confirm 이 hidden 을 해제하지 못했습니다."
+        assert m["confirm_display_open"] == "flex", "열린 confirmModal 의 display 가 flex 가 아닙니다."
+        # 기본 포커스=취소(머무르기) — Enter-반사 파괴 차단(F7, 결정 27/36/38).
+        assert m["confirm_focus"] == "confirmModalCancel", (
+            f"확인 모달 초기 포커스가 취소가 아닙니다(현재: {m['confirm_focus']!r})."
+        )
+        assert m["confirm_closed"] is True, "확인 클릭 후 confirmModal 이 다시 hidden 이 아닙니다."
+        assert m["confirm_display_closed"] == "none", (
+            "닫힌 confirmModal 의 display 가 none 이 아닙니다 — .modal.hidden 이 display:flex 를 "
+            "이기지 못합니다(부록 B-9 결함 재발)."
+        )
+
     def test_sheet_gate_confirm_loads_chosen_sheet(self, selftest_result: dict) -> None:
         # 다중 시트 확정 게이트(#33) — SheetPicker.choose 가 실 DOM 에서 모달을 열고, 시트를
         # 확정(클릭)하면 그 시트로 로드돼 결과가 해소된다(첫 시트 강등이 아니라 확정값 반영).

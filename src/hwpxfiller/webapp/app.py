@@ -359,12 +359,29 @@ _MODAL_A11Y_PROBE_JS = r"""
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   var closed = document.getElementById('pasteModal').classList.contains('hidden');
   var restored = document.activeElement.getAttribute('data-scr');
+  // #86/B-9: 네이티브 confirm 대체 모달의 실 개폐 — .modal{display:flex} 가 hidden 을 덮지
+  // 않는지 계산 스타일로 확인한다(부록 B-9 결함 클래스). 기본 포커스=취소(머무르기, 결정 27/36/38).
+  var cm = document.getElementById('confirmModal');
+  var cDisplayClosedBefore = getComputedStyle(cm).display;   // 열기 전 'none'
+  window.Modal.confirm({ body: '테스트 확인 본문' });
+  var cOpened = !cm.classList.contains('hidden');
+  var cDisplayOpen = getComputedStyle(cm).display;           // 열린 뒤 'flex'
+  var cFocus = document.activeElement.id;                    // 취소 버튼에 초기 포커스
+  document.getElementById('confirmModalOk').click();         // 확인 클릭 → 닫힘 + resolve
+  var cClosed = cm.classList.contains('hidden');
+  var cDisplayClosed = getComputedStyle(cm).display;         // 닫힌 뒤 'none'
   return {
     opened: opened,               // 열기 후 hidden 해제됐는가
     focus_in: focusIn,            // 초기 포커스가 모달 안(pasteText)으로 들어갔는가
     closed_by_escape: closed,     // Escape 로 닫혔는가
     focus_before: before,         // 열기 직전 트리거(내비 data-scr)
-    focus_restored: restored      // 닫은 뒤 포커스가 트리거로 복귀했는가
+    focus_restored: restored,     // 닫은 뒤 포커스가 트리거로 복귀했는가
+    confirm_display_closed_before: cDisplayClosedBefore,  // #86: 열기 전 display(none 기대)
+    confirm_opened: cOpened,      // #86: Modal.confirm 이 hidden 해제했는가
+    confirm_display_open: cDisplayOpen,  // #86/B-9: 열린 동안 display(flex 기대)
+    confirm_focus: cFocus,        // #86: 초기 포커스가 취소(머무르기)인가
+    confirm_closed: cClosed,      // #86: 확인 클릭 후 다시 hidden 인가
+    confirm_display_closed: cDisplayClosed  // #86/B-9: 닫힌 뒤 display(none 기대, hidden 이 flex 를 이긴다)
   };
 })()
 """

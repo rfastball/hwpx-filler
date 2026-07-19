@@ -366,9 +366,9 @@
       switch (act) {
         case "pick-template": {
           // 새 템플릿 선택 = 새 작업 세션 → 미저장 세션은 조용히 버리지 않고 확인(#25).
-          if (LAST && LAST.has_unsaved_work && !window.confirm(
+          if (LAST && LAST.has_unsaved_work && !(await Modal.confirm({ body:
             "저장하지 않은 작업 세션이 있습니다.\n" +
-            "새 템플릿으로 시작하면 이전의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?")) break;
+            "새 템플릿으로 시작하면 이전의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?" }))) break;
           const r = await Bridge.pickTemplateFile(SCREEN);
           if (typeof r === "string" && r.startsWith("ERROR:")) alertMsg(r.slice(6).trim());
           break;
@@ -430,9 +430,9 @@
     const res = await Bridge.call(SCREEN, "confirm_all", {});
     const blanks = (res && res.blanks) || [];
     if (!blanks.length) return;
-    const ok = window.confirm(
+    const ok = await Modal.confirm({ body:
       `아래 ${blanks.length}개 필드는 채우지 않고 '비움'으로 확정합니다:\n\n${blanks.join(", ")}\n\n계속할까요?`
-    );
+    });
     // await 로 던진다 — fire-and-forget 이면 rejection 이 디스패처 가드 밖으로 샌다(#45).
     if (ok) await Bridge.call(SCREEN, "confirm_blanks", { fields: blanks });
   }
@@ -465,13 +465,13 @@
       return;
     }
     if (res.needs_overwrite) {
-      if (window.confirm(res.overwrite_text + "\n\n계속할까요?")) {
+      if (await Modal.confirm({ body: res.overwrite_text + "\n\n계속할까요?" })) {
         doSave(Object.assign({}, flags, { confirm_overwrite: true }));
       }
       return;
     }
     if (res.needs_dataset_confirm) {
-      if (window.confirm(res.dataset_text)) {
+      if (await Modal.confirm({ body: res.dataset_text })) {
         doSave(Object.assign({}, flags, { confirm_dataset: true }));
       }
       return;

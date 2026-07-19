@@ -219,7 +219,7 @@
     if (res.ok) { renderResult(res); return; }
     if (res.needs_overwrite) {
       // 조용한 덮어쓰기 금지 — 재진술 후 확인 시에만 재호출(RC-02).
-      if (window.confirm(res.overwrite_text + "\n\n계속할까요?")) { doGenerate(true); }
+      if (await Modal.confirm({ body: res.overwrite_text + "\n\n계속할까요?" })) { doGenerate(true); }
       else { log("생성 취소 — 기존 파일 덮어쓰기를 확정하지 않았습니다."); }
       return;
     }

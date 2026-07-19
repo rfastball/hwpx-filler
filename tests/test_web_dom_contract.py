@@ -54,6 +54,8 @@ MODAL_LABELLEDBY = {
     "sheetModal": "sheetTitle",
     "poolRegModal": "poolRegTitle",  # 데이터 등록(#26 #4)
     "poolModal": "poolTitle",  # 등록 데이터 선택(#26 #6) — 정적 골격 이관(r3 K12)
+    "confirmModal": "confirmModalTitle",  # 네이티브 window.confirm 대체(#86)
+    "promptModal": "promptModalTitle",  # 네이티브 window.prompt 대체(#86)
 }
 
 
