@@ -77,6 +77,7 @@ alarm) — 칩 줄·게이트가 같은 문안을 나른다.
 """
 from __future__ import annotations
 
+import operator
 import re
 from dataclasses import dataclass
 from typing import Iterable
@@ -106,6 +107,13 @@ RANGE_OP_LABELS = {"eq": "=", "ne": "≠", "gt": ">", "ge": "≥", "lt": "<", "l
 
 # 결합자 표시 — 정의줄 재진술(∧/∨)용.
 _JOINER_LABELS = {"and": "∧", "or": "∨"}
+
+# 비교 연산자 실행 함수 — operator 모듈 재사용(6종 전부 계산하는 dict 리터럴 대신
+# 해당 연산 하나만 평가, 타입도 정합).
+_RANGE_OPS = {
+    "eq": operator.eq, "ne": operator.ne, "gt": operator.gt,
+    "ge": operator.ge, "lt": operator.lt, "le": operator.le,
+}
 
 # 날짜 선언(스니핑·피연산자) 판정용 형태 — 값 선두부터 「YYYY 구분 M 구분 D」(구분자 2개
 # 필수, 한글 연월일 포함) 또는 8자리 압축(YYYYMMDD)일 것 + parse_dt 성공. parse_dt 는
@@ -343,30 +351,34 @@ class FilterModel:
         self._pruned = set()
 
     # ------------------------------------------------------------- 평가(술어)
-    def _parse_operand(self, kind: str, value: str):
-        return parse_number(value) if kind == KIND_AMOUNT else parse_dt(value)
-
     def _clause_pass(self, kind: str, clause: RangeClause, cell: str) -> bool:
         """절 평가 — 셀이 파싱 불가면 불매치(엑셀 동형: 빈칸·텍스트 셀은 수 필터 밖).
 
         날짜 입도(고효율 리뷰): 피연산자에 시각이 없으면 **날짜 입도로 비교**한다 —
         「≤ 2026-07-15」 가 당일 14:00 셀을 자정 비교로 조용히 탈락시키지 않게. 시각을
         쓴 피연산자는 분 입도 그대로(선언한 만큼 정밀하게).
+
+        피연산자 파싱은 :meth:`set_range` 가 담보했다 — 그래도 실패하면 계약 위반이므로
+        시끄럽게(도달 불가 방어 재확인). 유형별 분기는 타입 정합(수↔날짜 비교 배제)도 겸한다.
         """
-        cell_v = self._parse_operand(kind, cell)
-        if cell_v is None:
+        op = _RANGE_OPS[clause.op]
+        if kind == KIND_AMOUNT:
+            cell_n = parse_number(cell)
+            if cell_n is None:
+                return False
+            op_n = parse_number(clause.operand)
+            if op_n is None:
+                raise ValueError(f"범위 피연산자를 해석할 수 없습니다: {clause.operand!r}")
+            return op(cell_n, op_n)
+        cell_d = parse_dt(cell)
+        if cell_d is None:
             return False
-        op_v = self._parse_operand(kind, clause.operand)  # set_range 가 검증했으므로 항상 성공
-        if kind == KIND_DATE and not _TIME_RE.search(clause.operand):
-            cell_v, op_v = cell_v.date(), op_v.date()
-        return {
-            "eq": cell_v == op_v,
-            "ne": cell_v != op_v,
-            "gt": cell_v > op_v,
-            "ge": cell_v >= op_v,
-            "lt": cell_v < op_v,
-            "le": cell_v <= op_v,
-        }[clause.op]
+        op_d = parse_dt(clause.operand)
+        if op_d is None:
+            raise ValueError(f"범위 피연산자를 해석할 수 없습니다: {clause.operand!r}")
+        if not _TIME_RE.search(clause.operand):
+            return op(cell_d.date(), op_d.date())
+        return op(cell_d, op_d)
 
     def _range_pass(self, kind: str, cond: RangeCondition, cell: str) -> bool:
         first = self._clause_pass(kind, cond.first, cell)
