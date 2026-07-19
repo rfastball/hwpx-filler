@@ -210,20 +210,22 @@
   async function doGenerate(confirmOverwrite) {
     generating = true; setBusy(true);
     if (!confirmOverwrite) { $("genBar").style.width = "0%"; log("생성 요청"); }
-    let res;
+    // busy-lock 은 덮어쓰기 모달 종료까지 유지한다(PR #92 리뷰 #2, job.js f6026ea 와 동형) —
+    // finally 가 모달 await 앞에 오면 확인이 미결인 동안 생성 버튼이 재활성돼 두 번째 생성이
+    // 겹쳐 시작되는 재진입 경합이 열린다. run.js 는 슬라이스 3 에서 사망 예정이라 최소 수리.
     try {
-      res = await Bridge.generate(SCREEN, confirmOverwrite);
+      const res = await Bridge.generate(SCREEN, confirmOverwrite);
+      if (res.ok) { renderResult(res); return; }
+      if (res.needs_overwrite) {
+        // 조용한 덮어쓰기 금지 — 재진술 후 확인 시에만 재호출(RC-02). 모달 대기 동안 busy 유지.
+        if (await Modal.confirm({ body: res.overwrite_text + "\n\n계속할까요?" })) { await doGenerate(true); }
+        else { log("생성 취소 — 기존 파일 덮어쓰기를 확정하지 않았습니다."); }
+        return;
+      }
+      warnResult(res.error || "생성할 수 없습니다.", res.level);
     } finally {
       generating = false; setBusy(false);
     }
-    if (res.ok) { renderResult(res); return; }
-    if (res.needs_overwrite) {
-      // 조용한 덮어쓰기 금지 — 재진술 후 확인 시에만 재호출(RC-02).
-      if (window.confirm(res.overwrite_text + "\n\n계속할까요?")) { doGenerate(true); }
-      else { log("생성 취소 — 기존 파일 덮어쓰기를 확정하지 않았습니다."); }
-      return;
-    }
-    warnResult(res.error || "생성할 수 없습니다.", res.level);
   }
 
   function renderResult(res) {

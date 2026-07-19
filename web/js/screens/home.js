@@ -89,7 +89,7 @@
       // try/catch 없이는 rejection 이 삼켜져 클릭이 무반응이 된다 — 시끄럽게 재진술한다(editTags 미러).
       try {
         const res = await Bridge.call(SCREEN, "delete_corrupt", { path });
-        if (res && res.needs_confirm && window.confirm(res.confirm_text)) {
+        if (res && res.needs_confirm && (await Modal.confirm({ body: res.confirm_text }))) {
           await Bridge.call(SCREEN, "delete_corrupt", { path, confirm: true });
         }
       } catch (err) {
@@ -199,9 +199,9 @@
      미저장 세션은 editJob 과 대칭으로 확인 후 버린다(조용한 복원·조용한 소실 둘 다 금지). */
   async function newJob() {
     const busy = await Bridge.editorHasUnsavedWork();
-    if (busy && !window.confirm(
+    if (busy && !(await Modal.confirm({ body:
       "에디터에 저장하지 않은 작업 세션이 있습니다.\n" +
-      "새 작업을 시작하면 그 세션의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?")) return;
+      "새 작업을 시작하면 그 세션의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?" }))) return;
     await Bridge.call("editor", "new_session", {});
     window.Nav.go("editor");
   }
@@ -217,9 +217,9 @@
   /* 편집 진입(#26) — 미저장 에디터 세션은 조용히 버리지 않고 확인(#25 미러) 후 복원. */
   async function editJob(name) {
     const busy = await Bridge.editorHasUnsavedWork();
-    if (busy && !window.confirm(
+    if (busy && !(await Modal.confirm({ body:
       "에디터에 저장하지 않은 작업 세션이 있습니다.\n" +
-      `'${name}' 편집을 열면 그 세션의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?`)) return;
+      `'${name}' 편집을 열면 그 세션의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?` }))) return;
     const r = await Bridge.openJobInEditor(name);
     if (typeof r === "string" && r.startsWith("ERROR:")) {
       window.alert(r.slice(6).trim());   // 손상·템플릿 부재 → loud (조용한 무시 금지)
@@ -275,9 +275,12 @@
         `현재 태그: ${ser}\n\n작업 파일(.job.json)의 tags 를 직접 수정하세요.`);
       return;
     }
-    const input = window.prompt(
-      `'${name}' 의 분류 태그 — '축=값' 쌍을 쉼표로 구분해 입력하세요.\n` +
-      `(예: 물품=의약품, 금액구간=소액)\n비우면 태그를 전부 해제합니다.`, ser);
+    const input = await Modal.prompt({
+      body:
+        `'${name}' 의 분류 태그 — '축=값' 쌍을 쉼표로 구분해 입력하세요.\n` +
+        `(예: 물품=의약품, 금액구간=소액)\n비우면 태그를 전부 해제합니다.`,
+      value: ser,
+    });
     if (input === null) return;
     const parsed = parseTags(input);
     if (parsed.err !== undefined) {
@@ -300,6 +303,15 @@
     });
   }
 
+  /* 작업 삭제 — 조용한 삭제 금지, 재진술 후 확인 시에만(confirm-or-alarm). onJobsClick 이
+     동기라 여기로 뽑아 await 를 쓴다(Modal.confirm 은 Promise 기반). 삭제 호출은 원래처럼
+     fire-and-forget — rejection 은 셸 unhandledrejection 백스톱이 loud 재진술한다(#45). */
+  async function deleteJob(name) {
+    if (await Modal.confirm({ body: `작업 '${name}' 을(를) 삭제할까요? 되돌릴 수 없습니다.` })) {
+      Bridge.call(SCREEN, "delete_job", { name });
+    }
+  }
+
   function onJobsClick(e) {
     const run = e.target.closest("[data-run]");
     if (run && !run.disabled) { runJob(run.dataset.run); return; }
@@ -312,14 +324,7 @@
     const tg = e.target.closest("[data-tags]");
     if (tg) { editTags(tg.dataset.tags); return; }
     const del = e.target.closest("[data-del]");
-    if (del) {
-      const name = del.dataset.del;
-      // 조용한 삭제 금지 — 재진술 후 확인 시에만(confirm-or-alarm).
-      if (window.confirm(`작업 '${name}' 을(를) 삭제할까요? 되돌릴 수 없습니다.`)) {
-        Bridge.call(SCREEN, "delete_job", { name });
-      }
-      return;
-    }
+    if (del) { deleteJob(del.dataset.del); return; }
     const nj = e.target.closest("[data-new-job]");
     if (nj) { newJob(); return; }
   }

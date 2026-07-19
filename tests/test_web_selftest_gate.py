@@ -103,6 +103,52 @@ class TestWebSelftestGate:
         assert m["closed_by_escape"] is True
         assert m["focus_restored"] == m["focus_before"]
 
+    def test_confirm_modal_toggles_display_and_focuses_cancel(self, selftest_result: dict) -> None:
+        # #86/부록 B-9: 네이티브 confirm 대체 모달이 실 앱에서 실제로 열리고 닫히는지 계산 스타일로
+        # 확인한다 — .modal{display:flex} 가 hidden 을 덮으면(B-9 결함 클래스) 닫아도 계속 보인다.
+        m = selftest_result["modal_a11y"]
+        assert m["confirm_display_closed_before"] == "none", "열기 전 confirmModal 이 이미 보입니다."
+        assert m["confirm_opened"] is True, "Modal.confirm 이 hidden 을 해제하지 못했습니다."
+        assert m["confirm_display_open"] == "flex", "열린 confirmModal 의 display 가 flex 가 아닙니다."
+        # 기본 포커스=취소(머무르기) — Enter-반사 파괴 차단(F7, 결정 27/36/38).
+        assert m["confirm_focus"] == "confirmModalCancel", (
+            f"확인 모달 초기 포커스가 취소가 아닙니다(현재: {m['confirm_focus']!r})."
+        )
+        assert m["confirm_closed"] is True, "확인 클릭 후 confirmModal 이 다시 hidden 이 아닙니다."
+        assert m["confirm_display_closed"] == "none", (
+            "닫힌 confirmModal 의 display 가 none 이 아닙니다 — .modal.hidden 이 display:flex 를 "
+            "이기지 못합니다(부록 B-9 결함 재발)."
+        )
+
+    def test_confirm_modal_serializes_single_inflight(self, selftest_result: dict) -> None:
+        # PR #92 리뷰 #1: promise 다이얼로그는 동시 1건 — 미결 confirm 위에 두 번째 confirm 을
+        # 요청하면 즉시 안전측 거절(false) + loud(alert) 이어야 하고, 첫 다이얼로그의 본문·리스너가
+        # 덮이면 안 된다(덮이면 OK 1클릭에 두 파괴 동작이 디스패치되는 이중 삭제 결함).
+        m = selftest_result["modal_a11y"]
+        assert m["confirm_reentry_alerts"] == 1, (
+            f"재진입 거절이 loud 하지 않습니다(alert {m['confirm_reentry_alerts']}회) — "
+            "조용한 거절은 confirm-or-alarm 위반(리뷰 #1/#4)."
+        )
+        assert m["confirm_body_after_reentry"] == "첫 확인 본문", (
+            "재진입이 첫 다이얼로그 본문을 덮어썼습니다 — 단일 실행 직렬화 실패(리뷰 #1)."
+        )
+        s = selftest_result["modal_confirm_serial"]
+        assert s["first"] is True, f"첫 confirm 이 확인 클릭으로 true 해소되지 않았습니다: {s!r}"
+        assert s["second"] is False, (
+            f"재진입 confirm 이 안전측 거절(false)로 해소되지 않았습니다: {s!r} — "
+            "이중 바인딩이면 first 확정이 second 에도 새어 두 동작이 함께 실행됩니다(리뷰 #1)."
+        )
+
+    def test_confirm_modal_traps_tab_within_card(self, selftest_result: dict) -> None:
+        # PR #92 리뷰 #1: 포커스 트랩 — 모달의 마지막 포커서블(확인)에서 Tab 이 배경 버튼으로
+        # 새지 않고 모달 안 첫 요소(취소)로 순환해야 한다. 배경 버튼 Tab+Enter 로 두 번째 파괴
+        # 동작이 발화되는 경로(이중/오대상 삭제·생성 동시 실행)의 원천 차단.
+        m = selftest_result["modal_a11y"]
+        assert m["confirm_trap_wrapped"] == "confirmModalCancel", (
+            f"Tab 이 모달 안에서 순환하지 않습니다(현재 포커스: {m['confirm_trap_wrapped']!r}) — "
+            "배경으로 새면 미결 확인 뒤 두 번째 파괴 동작이 가능합니다(리뷰 #1)."
+        )
+
     def test_sheet_gate_confirm_loads_chosen_sheet(self, selftest_result: dict) -> None:
         # 다중 시트 확정 게이트(#33) — SheetPicker.choose 가 실 DOM 에서 모달을 열고, 시트를
         # 확정(클릭)하면 그 시트로 로드돼 결과가 해소된다(첫 시트 강등이 아니라 확정값 반영).

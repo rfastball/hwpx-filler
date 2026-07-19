@@ -48,9 +48,10 @@ def test_edit_tags_roundtrip_guard_before_prompt():
     )
     assert "sameTags(" in body, "editTags 왕복 가드가 의미 동치 비교(sameTags)를 하지 않습니다(C9)."
     guard_pos = body.index("parseTags(ser)")
-    prompt_pos = body.index("window.prompt")
+    # 네이티브 window.prompt 는 Modal.prompt 로 이관됨(#86) — 가드는 여전히 그 이전이어야 한다.
+    prompt_pos = body.index("Modal.prompt")
     assert guard_pos < prompt_pos, (
-        "왕복 가드가 window.prompt 뒤에 있습니다 — 편집 진입 전에 중단해야 합니다(C9)."
+        "왕복 가드가 Modal.prompt 뒤에 있습니다 — 편집 진입 전에 중단해야 합니다(C9)."
     )
     # 가드 불일치 분기는 조용한 진행이 아니라 loud alert + 중단이어야 한다.
     guard_branch = body[guard_pos:prompt_pos]

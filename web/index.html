@@ -492,6 +492,32 @@
         </div>
       </div>
     </div>
+
+    <!-- 확인 모달(#86) — 네이티브 window.confirm 대체. 기본 포커스=취소(머무르기), Escape=머무르기.
+         파괴 동작의 수치 재진술은 호출부가 본문(confirmModalBody)에 그대로 싣는다(조용한 통과 금지). -->
+    <div id="confirmModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirmModalTitle">
+      <div class="modal-card">
+        <h3 id="confirmModalTitle">확인</h3>
+        <p class="modal-body" id="confirmModalBody"></p>
+        <div class="modal-actions">
+          <button class="btn" id="confirmModalCancel">취소</button>
+          <button class="btn primary" id="confirmModalOk">확인</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 입력 모달(#86) — 네이티브 window.prompt 대체. 기본 포커스=입력칸, Enter=확인, Escape=취소. -->
+    <div id="promptModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="promptModalTitle">
+      <div class="modal-card">
+        <h3 id="promptModalTitle">입력</h3>
+        <p class="modal-body" id="promptModalBody"></p>
+        <input class="field" id="promptModalInput" type="text">
+        <div class="modal-actions">
+          <button class="btn" id="promptModalCancel">취소</button>
+          <button class="btn primary" id="promptModalOk">확인</button>
+        </div>
+      </div>
+    </div>
   </main>
 </div>
 
