@@ -641,6 +641,47 @@
   }
 
   /* ---- 웹→Python 이벤트 ---- */
+  /* ---- 세션 가드(블록 4, 결정 26·27) — 파괴 전이의 수치 재진술 본문 합성 ----
+     술어·수치는 Python(_guard_state)이 판정하고, 여기는 문안만 입힌다. verbPhrase 로
+     전이 종류(T1 작업 전환 / 데이터 재겨눔)를 구분 — 무엇이 사라지는지 명시. */
+  function guardBody(g, verbPhrase) {
+    const selDetail = g.filter_active
+      ? `직접 선택 ${g.sel_count}행(정의 매치 ${g.in_def} · 정의 밖 ${g.extra})`
+      : `직접 선택 ${g.sel_count}행`;
+    const lost = g.filter_parts > 0
+      ? `행 선택과 필터 정의(${g.filter_parts}개 조건)가 사라집니다.`
+      : `행 선택이 사라집니다.`;
+    return `이 세션에는 다시 만들기 어려운 선택이 있습니다: ${selDetail}.\n` +
+      `${verbPhrase} ${lost}`;
+  }
+
+  /* 데이터 재겨눔 사전 확인 — T1 동류 파괴 전이(세션 재구성: 선택·필터 소실). 피커를
+     열기 **전에** 묻는다(파일까지 고른 뒤 "머무르기"는 고른 노동을 또 버리게 한다).
+     무장 판정은 스냅샷 guard(Python 단일 출처) 소비. true=진행, false=머무르기. */
+  async function confirmDataSwapIfArmed() {
+    const g = LAST && LAST.guard;
+    if (!g || !g.armed) return true;
+    return window.Modal.confirm({
+      title: "데이터 변경 확인",
+      body: guardBody(g, "다른 데이터를 겨누면"),
+      confirmLabel: "데이터 바꾸고 버리기", cancelLabel: "머무르기",
+    });
+  }
+
+  /* T1 가드 왕복(RC-02 동형): 무변이 needs_confirm → modal.js 이진 확인(기본 포커스=
+     머무르기·Escape=머무르기) → 확인 시에만 confirm=true 재호출. */
+  async function selectJobGuarded(name) {
+    const res = await Bridge.call(SCREEN, "select_job", { name });
+    if (res && res.needs_confirm) {
+      const ok = await window.Modal.confirm({
+        title: "작업 전환 확인",
+        body: guardBody(res, "작업을 전환하면"),
+        confirmLabel: "전환하고 버리기", cancelLabel: "머무르기",
+      });
+      if (ok) await Bridge.call(SCREEN, "select_job", { name, confirm: true });
+    }
+  }
+
   function onMasterClick(e) {
     const item = e.target.closest(".job-item[data-job]");
     if (!item) return;
@@ -649,7 +690,7 @@
     // 대기 중 검색 디바운스를 즉시 취소 — 렌더 시점 취소만으론 왕복 창에서 새 세션에
     // 이전 검색이 오발된다(리뷰 #1). 필터 = 세션 휘발(결정 24).
     clearTimeout(searchTimer);
-    Bridge.call(SCREEN, "select_job", { name: item.dataset.job });
+    selectJobGuarded(item.dataset.job);
   }
 
   /* 허브(홈)에서 이 작업을 열기 — 좌 목록 재클릭 무동작 가드(onMasterClick)와 동형.
@@ -658,7 +699,7 @@
   function openJob(name) {
     if (!(LAST && LAST.job_name === name)) {
       clearTimeout(searchTimer);  // 세션 전환 — 대기 중 검색 오발 차단(리뷰 #1)
-      Bridge.call(SCREEN, "select_job", { name });
+      selectJobGuarded(name);     // T1 가드 승계 — 허브 진입도 같은 파괴 전이(결정 26)
     }
     window.Nav.go(SCREEN);
   }
@@ -759,6 +800,7 @@
     $("jobGenBtn").addEventListener("click", () => doGenerate(false));
 
     $("jobBtnPickData").addEventListener("click", async () => {
+      if (!(await confirmDataSwapIfArmed())) return;  // 데이터 재겨눔 = T1 동류 파괴 전이
       let r = await Bridge.pickDataFile(SCREEN);
       if (r && typeof r === "object" && r.needs_sheet) {   // 다중 시트 → 확정 게이트(#33)
         r = await SheetPicker.choose(SCREEN, r);
@@ -770,6 +812,7 @@
     });
     // 등록 데이터(풀) 겨눔(#26 #6) — 취소=중단, 실패는 모달 안에서 재진술(PoolPicker).
     $("jobBtnPoolData").addEventListener("click", async () => {
+      if (!(await confirmDataSwapIfArmed())) return;  // 데이터 재겨눔 = T1 동류 파괴 전이
       const label = await PoolPicker.choose(SCREEN);
       if (label === null) return;                   // 취소 = 겨눔 중단
       log(`등록 데이터 불러옴: ${label}`);
@@ -789,7 +832,7 @@
     render(await Bridge.initial(SCREEN));
   }
 
-  // overwriteBody 는 순수 합성기 — 실앱 게이트가 합성 결과(수치·이름 배치)를 되읽어 회귀를
-  // 막는다(백엔드 overwrite_text 단언 폐기의 커버리지 짝, 리뷰). 파괴적 확인이라 조용한 드리프트 금지.
-  window.JobScreen = { init, overwriteBody, openJob };
+  // overwriteBody·guardBody 는 순수 합성기 — 실앱 게이트가 합성 결과(수치·문안 배치)를
+  // 되읽어 회귀를 막는다(파괴적 확인의 조용한 드리프트 금지 — RC-02 판과 가드 판 동형).
+  window.JobScreen = { init, overwriteBody, guardBody, openJob };
 })();
