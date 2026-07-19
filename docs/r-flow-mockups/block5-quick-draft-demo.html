@@ -1,7 +1,11 @@
-<!-- R-flow 블록 5 시연 v1.3 (2026-07-19) — 확정 승인 완료.
+<!-- R-flow 블록 5 시연 v1.4 (2026-07-19) — 확정 승인 완료(증보 포함).
      확정 승인(2026-07-19, v1.3): 확정 요청 5건 전부 승인 — 표면 형상(파이프라인 폼+내용 크기
        출력 칩) · 행 재겨눔 3분류 · 승격 게이트(1모달 2이름·미확정 착지) · 휘발도 잔여 2
-       (앱 종료 무가드·슬롯 1) · 누름틀 표지 소급(패널 기안 세션·블록 3 큐 렌더). 블록 5 종결.
+       (앱 종료 무가드·슬롯 1) · 누름틀 표지 소급(패널 기안 세션·블록 3 큐 렌더).
+     증보 승인(2026-07-19, v1.4): 재개 3건 전부 승인 — 데이터 소스 이원(등록+무등록 파일,
+       비오염 데이터 판) · 템플릿 세션 사본+라이브 편집((수정됨) 강등·명시 승격만) ·
+       비대칭 원리(지속성 축 3호). 구현 시 데이터 부착은 풀 선택 모달(PoolPicker)/네이티브
+       파일 다이얼로그+#33 시트 게이트 승계 확인(시연의 즉시 부착은 지름길). 블록 5 종결.
      빠른 기안 = 휘발성 작업. 토의 확정 지형 위의 첫 실물.
      확정 지형(이 시연이 전제로 깔고 있는 것):
        ① 존치 확정 + 본질 재정의 — 빠른 기안 = 작업의 휘발 쌍둥이(같은 개체 구조, 영속성만 0).
@@ -49,6 +53,16 @@
        왼끝 레일(↳ 들여쓰기)이 고정이라 오른끝 가변은 문서 글줄의 들쭉날쭉으로 읽힘 —
        무질서가 아니라 내용량 정보(짧은 값=짧은 칩, 긴 값=줄바꿈). 폼의 칩과 미리보기
        채움 표지가 크기까지 같은 계열이 됨. 빈 칩=최소폭 점선+「입력」 플레이스홀더.
+     v1.4 증보(2026-07-19, 승인 직후 재개 3건): ① 데이터 소스 이원화 — 등록 데이터(자산)와
+       임의 파일(무등록 임시 겨눔) 둘 다. 파일을 물려도 데이터 관리에 등록되지 않는다 =
+       비오염 정책의 데이터 판. 표 행 클립보드 붙여넣기는 미결, '겨눔' 어휘 정정은 R-copy.
+       ② 템플릿 = 세션 사본 + 라이브 편집 — 라이브러리 유래도 참조가 아니라 사본이라 두 출발
+       모두 세션 내 자유 편집. 편집 순간 라벨 정직 강등 「(수정됨)」(칩-라이브 소유권 강등
+       동형). 역반영 자동 없음 — 명시 승격 「템플릿으로 저장」만, 동명 덮어쓰기=확인 게이트.
+       우측 판 [미리보기|원문 편집] 탭, 원문 타이핑이 토큰 폼을 라이브 재구성.
+       ③ 비대칭의 원리 — 정규 기안 세션은 안정화된 레시피의 소비 표면(편집·소비 분리,
+       편집=에디터 소관·관리층 단일 원칙), 빠른 기안은 안정화 이전의 임시 작업(편집·소비
+       미분화가 본질). 제스처 매핑·완화 조항에 이은 지속성 축 비대칭 3호.
      범위 절제: 글꼴 선언·정렬 린트는 블록 3 확정(전역 영속 값 승계)이라 드롭다운만 배선.
        빈칸 게이트는 현행 사후 경보 승계(차단 없음). 블록 1~4 아카이브(0de1d12·ff971a4·
        76d4e00·a401285)의 토큰·주석 관례 승계. 박제 정본 아님. -->
@@ -162,6 +176,12 @@ h2{font-size:var(--fs-section);text-wrap:balance}
 .tk-fill{background:var(--a-sel);border-radius:3px;padding:0 2px;
   box-shadow:inset 0 -1px 0 var(--a-primary)}
 .prevnote{font-size:var(--fs-caption);color:var(--a-muted);margin:0}
+/* 우측 판 탭(v1.4 ②) — 미리보기 ↔ 원문 편집 */
+.tabbar{display:flex;gap:var(--sp-2)}
+.tabbar .btn.sm[aria-pressed="true"]{background:var(--a-sel);border-color:var(--a-primary);
+  color:var(--a-primary);font-weight:600}
+textarea.srcedit{flex:1;min-height:220px;font-family:Consolas,monospace;font-size:12px;
+  line-height:1.6;resize:none}
 
 /* 값 폼 행 — 파이프라인 문법(v1.2): 윗줄 = 이름 · 소스 → 표시형 · 칩,
    아랫줄 = ↳ 출력(들여쓰기+음영 표지로 "결과"임을 형태가 말한다. 가변 길이는 자동 높이) */
@@ -268,7 +288,7 @@ textarea.val.empty{background:transparent;border:1px dashed var(--n-border-stron
 <div class="wrap">
 
   <div class="head">
-    <div class="eyebrow">R-FLOW 블록 5 · 빠른 기안 시연 v1.3 · 합의 종결</div>
+    <div class="eyebrow">R-FLOW 블록 5 · 빠른 기안 시연 v1.4 · 합의 종결</div>
     <h1>휘발 쌍둥이: 아무것도 저장하지 않는 작업</h1>
     <p>빠른 기안을 <b>작업의 휘발 쌍둥이</b>로 재정의한 합의의 첫 실물입니다. 두 방향
        (라이브러리×수기 / 붙여넣기×데이터)과 표현형 3층(자동 추측 → 드롭다운 정정 → 직접 수정),
@@ -310,7 +330,8 @@ textarea.val.empty{background:transparent;border:1px dashed var(--n-border-stron
           <span class="none" id="dataNone">겨눈 데이터가 없습니다.</span>
           <span class="dlabel" id="dataLabel" hidden></span>
           <select id="rowSel" aria-label="행 선택" hidden></select>
-          <button class="btn sm" id="btnData">데이터 겨눔…</button>
+          <button class="btn sm" id="btnPool">등록 데이터…</button>
+          <button class="btn sm" id="btnFile">파일…</button>
           <button class="btn sm" id="btnUnData" hidden>해제</button>
         </div>
       </div>
@@ -370,6 +391,17 @@ textarea.val.empty{background:transparent;border:1px dashed var(--n-border-stron
         구분되고 클립보드에는 흐르지 않는다(캡션으로 명기해 "이대로 복사됩니다"의 정직성 유지).
         소급 범위 = 표준 텍스트 기안 경로 전체(패널 기안 세션 미리보기·블록 3 큐 원문 렌더) —
         라운드 종결 시 블록 3 문안에 합류.</div>
+      <div class="ann"><span class="ref">㉩</span><b>템플릿 = 세션 사본, 라이브 편집(v1.4)</b> —
+        라이브러리 유래도 참조가 아니라 사본이라 두 출발 모두 원문 편집 탭에서 자유 수정,
+        타이핑이 토큰 폼을 즉시 재구성한다. 편집 순간 라벨 정직 강등 「(수정됨)」(칩-라이브
+        소유권 강등 동형). 역반영 자동 없음 — 명시 승격 「템플릿으로 저장」만, 동명 덮어쓰기는
+        확인 게이트. 정규 기안 세션과의 비대칭은 원리다: 안정화된 레시피의 소비 표면(편집=
+        에디터 소관) vs 안정화 이전의 임시 작업(편집·소비 미분화가 본질) — 지속성 축 비대칭
+        3호(제스처 매핑·완화 조항에 이어).</div>
+      <div class="ann"><span class="ref">㉪</span><b>데이터 소스 이원(v1.4)</b> — 등록
+        데이터(자산, 읽기 전용 참조)와 임의 파일(무등록 임시 겨눔) 둘 다 받는다. 파일을
+        물려도 데이터 관리에 등록되지 않는다 — 라이브러리 비오염 정책의 데이터 판. 표 행
+        클립보드 붙여넣기는 미결, '겨눔' 어휘 정정은 R-copy 소관.</div>
     </div>
   </div>
 
@@ -396,6 +428,17 @@ textarea.val.empty{background:transparent;border:1px dashed var(--n-border-stron
       </ul>
     </div>
     <div class="qcard">
+      <h3><span class="qnum">＋</span>증보 판단 3 (v1.4, 승인 직후 재개)</h3>
+      <ul>
+        <li><b>데이터 소스 이원(㉪)</b> — 등록 데이터+임의 파일(무등록), 비오염 정책의
+          데이터 판 명문화.</li>
+        <li><b>템플릿 세션 사본+라이브 편집(㉩)</b> — 두 출발 모두 원문 편집, (수정됨) 정직
+          강등, 역반영은 명시 승격만(동명 덮어쓰기 확인 게이트).</li>
+        <li><b>비대칭의 원리</b> — 정규 기안 세션은 템플릿 수정 불가(안정화된 레시피),
+          빠른 기안은 편집·소비 미분화(안정화 이전) — 지속성 축 비대칭 3호로 합의문 기록.</li>
+      </ul>
+    </div>
+    <div class="qcard">
       <h3><span class="qnum">…</span>미결 (구현 라운드 또는 후속 토의)</h3>
       <ul>
         <li><b>템플릿 전환 가드</b> — 작성 중 템플릿을 바꾸면 동명 토큰 값은 승계하고 나머지는
@@ -413,7 +456,7 @@ textarea.val.empty{background:transparent;border:1px dashed var(--n-border-stron
   </div>
 
   <div class="foot">
-    R-flow 블록 5 · 빠른 기안(휘발성 작업) 시연 v1.3 · 2026-07-19 ·
+    R-flow 블록 5 · 빠른 기안(휘발성 작업) 시연 v1.4 · 2026-07-19 ·
     확정 지형은 파일 상단 주석 참조 · 데이터·템플릿은 나라장터 코퍼스 모사 표본 ·
     박제 정본 아님(라운드 종결 시 합의문과 함께 개정)
   </div>
@@ -559,8 +602,9 @@ textarea.val.empty{background:transparent;border:1px dashed var(--n-border-stron
   /* ── 상태 ── */
   var S;
   function freshState() {
-    S = { tplName: null, tplText: "", pasted: false, data: null, rowIdx: 0,
-          font: "malgun", tokens: [], armed: false };
+    S = { origin: null, tplName: null, tplText: "", modified: false,
+          data: null, dataKind: null, dataName: "", rowIdx: 0,
+          font: "malgun", tab: "preview", tokens: [], armed: false };
   }
   freshState();
 
@@ -587,17 +631,21 @@ textarea.val.empty{background:transparent;border:1px dashed var(--n-border-stron
     return t.text;
   }
 
-  /* 템플릿 적용 — 동명 토큰 값 승계(수기·수정), 나머지는 새로 */
-  function setTemplate(name, text, pasted) {
+  /* 토큰 재구성 — 동명 토큰 값 승계(수기·수정), 나머지는 새로. 원문 라이브 편집도 이 경로 */
+  function retokenize() {
     var old = {};
     S.tokens.forEach(function (t) { old[t.name] = t; });
-    S.tplName = name; S.tplText = text; S.pasted = pasted;
-    S.tokens = parseTokens(text).map(function (n) {
+    S.tokens = parseTokens(S.tplText).map(function (n) {
       var p = old[n];
       if (p) return p;
       return { name: n, col: null, fmtKey: "raw", edited: false, text: "" };
     });
     if (S.data) autoBind(false);
+  }
+  /* 템플릿 적용 — 라이브러리 유래도 참조가 아니라 세션 사본(v1.4 ②) */
+  function setTemplate(origin, name, text) {
+    S.origin = origin; S.tplName = name; S.tplText = text; S.modified = false;
+    retokenize();
   }
 
   /* 정확 일치 자동 결속 — 사람 텍스트가 있는 토큰은 덮지 않는다(⑦) */
@@ -738,18 +786,22 @@ textarea.val.empty{background:transparent;border:1px dashed var(--n-border-stron
     withPreserve(function () {
       /* 슬롯 */
       var sel = $("tplSel"), opts = '<option value="">(선택하세요)</option>';
+      var pseudo = S.origin === "paste";
       Object.keys(LIB).forEach(function (n) {
-        opts += '<option value="' + esc(n) + '"' + (S.tplName === n ? " selected" : "") + ">" + esc(n) + "</option>";
+        var isCur = !pseudo && !S.modified && S.tplName === n;
+        opts += '<option value="' + esc(n) + '"' + (isCur ? " selected" : "") + ">" + esc(n) + "</option>";
       });
-      if (S.pasted) opts += '<option value="__pasted" selected>(붙여넣은 텍스트)</option>';
+      if (pseudo) opts += '<option value="__pasted" selected>(붙여넣은 텍스트)</option>';
+      else if (S.modified) opts += '<option value="__mod" selected>' + esc(S.tplName || "") + " (수정됨)</option>";
       sel.innerHTML = opts;
-      if (!S.pasted) sel.value = S.tplName || "";
+      if (!pseudo && !S.modified) sel.value = S.tplName || "";
 
       var has = !!S.data;
       $("dataNone").hidden = has; $("dataLabel").hidden = !has;
-      $("rowSel").hidden = !has; $("btnUnData").hidden = !has; $("btnData").hidden = has;
+      $("rowSel").hidden = !has; $("btnUnData").hidden = !has;
+      $("btnPool").hidden = has; $("btnFile").hidden = has;
       if (has) {
-        $("dataLabel").textContent = DATA.label;
+        $("dataLabel").textContent = (S.dataKind === "pool" ? "등록: " : "파일: ") + S.dataName;
         $("rowSel").innerHTML = S.data.rows.map(function (r, i) {
           return '<option value="' + i + '"' + (i === S.rowIdx ? " selected" : "") + ">" +
             (i + 1) + " · " + esc(r[S.data.columns[0]]) + "</option>";
@@ -767,24 +819,46 @@ textarea.val.empty{background:transparent;border:1px dashed var(--n-border-stron
           '<div class="dircard"><h4>붙여넣기로 시작</h4>' +
           "<p>메신저나 문서에서 받은 서식을 붙여 넣습니다. 라이브러리에 저장되지 않습니다.</p>" +
           '<button class="btn" id="emB">붙여넣기…</button></div></div>';
-        $("emA").addEventListener("click", function () { setTemplate(Object.keys(LIB)[0], LIB[Object.keys(LIB)[0]], false); armWork(); render(); });
+        $("emA").addEventListener("click", function () { var n = Object.keys(LIB)[0]; setTemplate("lib", n, LIB[n]); armWork(); render(); });
         $("emB").addEventListener("click", openPaste);
       } else {
+        var src = S.tab === "source";
+        var right;
+        if (src) {
+          right = '<textarea class="srcedit" id="srcEdit" aria-label="템플릿 원문">' + esc(S.tplText) + "</textarea>" +
+            '<p class="prevnote">여기서 고친 템플릿은 이 세션의 사본입니다. 라이브러리는 바뀌지 않습니다. 남기려면 「템플릿으로 저장」을 쓰세요.</p>';
+        } else {
+          right = '<div class="render" id="render" style="font-family:' + FONTS[S.font] + '">' + previewHtml() + "</div>" +
+            '<p class="prevnote">이대로 복사됩니다. 파란 음영은 채운 자리 표지로, 화면에만 보이고 복사되지 않습니다.</p>';
+        }
         b.innerHTML =
           '<div class="formpane"><h4>값 채우기</h4>' +
           S.tokens.map(rowHtml).join("") +
           '<p class="formhint">소스를 열로 바꾸면 그 열 값이 자동 서식으로 들어옵니다. 값을 직접 고치면 사람 소유가 됩니다.</p></div>' +
-          '<div class="prevpane"><div class="prevhead"><h4>미리보기 · 이대로 복사됩니다</h4>' +
+          '<div class="prevpane"><div class="prevhead"><div class="tabbar">' +
+          '<button class="btn sm" id="tabPrev" aria-pressed="' + (!src) + '">미리보기</button>' +
+          '<button class="btn sm" id="tabSrc" aria-pressed="' + src + '">원문 편집</button></div>' +
           '<div class="sp"><label for="fontSel">대상 글꼴</label><select id="fontSel">' +
           '<option value="malgun"' + (S.font === "malgun" ? " selected" : "") + ">맑은 고딕</option>" +
           '<option value="gulim"' + (S.font === "gulim" ? " selected" : "") + ">굴림체</option>" +
           '<option value="dotum"' + (S.font === "dotum" ? " selected" : "") + ">돋움체</option>" +
-          "</select></div></div>" +
-          '<div class="render" id="render" style="font-family:' + FONTS[S.font] + '">' + previewHtml() + "</div>" +
-          '<p class="prevnote">파란 음영은 채운 자리 표지입니다. 화면에만 보이고 복사되지 않습니다.</p></div>';
+          "</select></div></div>" + right + "</div>";
         wireRows();
         growAll();
         $("fontSel").addEventListener("change", function (e) { S.font = e.target.value; render(); });
+        $("tabPrev").addEventListener("click", function () { S.tab = "preview"; render(); });
+        $("tabSrc").addEventListener("click", function () { S.tab = "source"; render(); });
+        if (src) $("srcEdit").addEventListener("input", function (e) {
+          /* 원문 라이브 편집(v1.4 ②) — 타이핑이 토큰 폼을 즉시 재구성한다 */
+          S.tplText = e.target.value;
+          if (S.origin === "lib" && !S.modified) {
+            S.modified = true;
+            note("idle", "템플릿을 고쳤습니다. 이 세션의 사본이며 라이브러리 원본은 그대로입니다.");
+          }
+          armWork();
+          retokenize();
+          render();
+        });
       }
 
       /* 알약 */
@@ -892,28 +966,35 @@ textarea.val.empty{background:transparent;border:1px dashed var(--n-border-stron
   /* ── 슬롯 동작 ── */
   $("tplSel").addEventListener("change", function (e) {
     var v = e.target.value;
-    if (v === "__pasted" || v === "") return;
-    setTemplate(v, LIB[v], false);
+    if (v === "__pasted" || v === "__mod" || v === "") return;
+    setTemplate("lib", v, LIB[v]);
     note("idle", "템플릿을 바꿨습니다. 이름이 같은 토큰의 값은 이어집니다.");
     render();
   });
   function openPaste() {
-    $("psText").value = S.pasted ? S.tplText : PASTE_DEFAULT;
+    $("psText").value = S.origin === "paste" ? S.tplText : PASTE_DEFAULT;
     $("ovPaste").hidden = false; $("psText").focus();
   }
   $("btnPaste").addEventListener("click", openPaste);
   $("psCancel").addEventListener("click", function () { $("ovPaste").hidden = true; });
   $("psOk").addEventListener("click", function () {
     $("ovPaste").hidden = true;
-    setTemplate(null, $("psText").value, true);
+    setTemplate("paste", null, $("psText").value);
     armWork();
     if (S.data) { autoBind(true); } else { note("idle", "토큰 " + S.tokens.length + "개를 찾았습니다."); }
     render();
   });
 
-  $("btnData").addEventListener("click", function () {
-    S.data = DATA; S.rowIdx = 0;
+  /* 데이터 이원 소스(v1.4 ①) — 등록 데이터는 자산 참조, 파일은 무등록 임시 겨눔 */
+  $("btnPool").addEventListener("click", function () {
+    S.data = DATA; S.dataKind = "pool"; S.dataName = DATA.label; S.rowIdx = 0;
     autoBind(true);
+    render();
+  });
+  $("btnFile").addEventListener("click", function () {
+    S.data = DATA; S.dataKind = "file"; S.dataName = "개찰현황-0719.xlsx"; S.rowIdx = 0;
+    autoBind(true);
+    note("idle", "파일을 겨눴습니다. 이 파일은 데이터 관리에 등록되지 않습니다.");
     render();
   });
   $("btnUnData").addEventListener("click", function () {
@@ -975,12 +1056,13 @@ textarea.val.empty{background:transparent;border:1px dashed var(--n-border-stron
   }
   $("btnNew").addEventListener("click", function () {
     var c = humanCounts();
-    var work = c.man + c.edit;
-    if (S.armed && (work > 0 || S.pasted)) {
+    var tplWork = S.origin === "paste" || S.modified;
+    if (S.armed && (c.man + c.edit > 0 || tplWork)) {
       var parts = [];
       if (c.man) parts.push("직접 입력 " + c.man + "개");
       if (c.edit) parts.push("직접 수정 " + c.edit + "개");
-      if (S.pasted) parts.push("붙여넣은 템플릿");
+      if (S.origin === "paste") parts.push("붙여넣은 템플릿");
+      else if (S.modified) parts.push("수정한 템플릿");
       confirmModal("새 기안으로 비울까요?",
         parts.join(" · ") + "이(가) 아직 복사되지 않았습니다. 비우면 되살릴 수 없습니다.",
         "비우기", doNew);
@@ -990,6 +1072,7 @@ textarea.val.empty{background:transparent;border:1px dashed var(--n-border-stron
   /* ── 승격 동사 ── */
   $("btnSaveTpl").addEventListener("click", function () {
     if (!S.tplText) { note("warn", "저장할 템플릿이 없습니다."); return; }
+    if (S.tplName) $("tsName").value = S.tplName;
     $("ovTpl").hidden = false; $("tsName").focus();
   });
   $("tsCancel").addEventListener("click", function () { $("ovTpl").hidden = true; });
@@ -1000,7 +1083,7 @@ textarea.val.empty{background:transparent;border:1px dashed var(--n-border-stron
 
   $("btnSaveJob").addEventListener("click", function () {
     if (!S.tplText) { note("warn", "저장할 결합이 없습니다. 템플릿부터 고르세요."); return; }
-    $("jsTplRow").style.display = S.pasted ? "" : "none";
+    $("jsTplRow").style.display = (S.origin === "paste" || S.modified) ? "" : "none";
     var rows = "<tr><th>필드</th><th>소스</th><th>표시형</th><th>상태</th></tr>";
     S.tokens.forEach(function (t) {
       var src, fmt;
@@ -1036,9 +1119,9 @@ textarea.val.empty{background:transparent;border:1px dashed var(--n-border-stron
   });
   $("scB").addEventListener("click", function () {
     freshState();
-    setTemplate(null, PASTE_DEFAULT, true);
+    setTemplate("paste", null, PASTE_DEFAULT);
     S.armed = true;
-    S.data = DATA; S.rowIdx = 0;
+    S.data = DATA; S.dataKind = "pool"; S.dataName = DATA.label; S.rowIdx = 0;
     autoBind(false);
     note("idle", "방향 B: 붙여넣은 서식에 데이터 1행을 겨눴습니다. 정확 일치 3개는 자동 연결, 사업명칭은 제안만 떠 있습니다.");
     render();
