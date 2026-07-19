@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,8 @@ from hwpxfiller.gui.run_state import RunViewModel
 from hwpxfiller.gui.selection_state import SelectionModel
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+
+MULTI_SHEET = Path(__file__).resolve().parents[0] / "fixtures" / "multi_sheet.xlsx"
 
 
 def _write_template(path, fields) -> None:
@@ -455,9 +458,8 @@ def test_auto_aim_nara_ref_is_frozen_warn(tmp_path):
 
 def test_auto_aim_ambiguous_sheet_ref_is_warn(tmp_path):
     """기본 참조가 시트 미지정 다중시트면 자동 조준도 조용한 첫 시트 대신 warn 거절(#33·#53-A)."""
-    multi = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "multi_sheet.xlsx"
     ctrl, pool = _pool_controller(tmp_path)
-    pool.save(DatasetPoolItem(name="모호기본", kind="excel", opts={"path": str(multi)}))
+    pool.save(DatasetPoolItem(name="모호기본", kind="excel", opts={"path": str(MULTI_SHEET)}))
     _job_with_default(ctrl, pool, tmp_path, "모호기본", register=False)
     ctrl.dispatch("select_job", {"name": "공고서"})
     snap = ctrl.snapshot()
@@ -526,3 +528,86 @@ def test_relink_selected_job_reloads_vm_and_restates(tmp_path):
     assert res["relinked"] is True
     assert "다시 불러왔으니" in res["restated"]             # 조용한 상태 소실 금지(재적재 재진술)
     assert ctrl.vm.job.template_path == str(new_tpl)       # VM 재구성
+
+
+# ---- 실행 화면 사망(슬라이스 3)으로 test_webapp_run 에서 유실된 confirm-or-alarm 회귀 심 승계
+# ---- (별도세션 리뷰 #99-1~5, CONFIRMED). JobController 동작은 살아 있으나 무테스트였다.
+def test_load_data_honors_confirmed_sheet(tmp_path):
+    """다중 시트 확정 게이트(#33, 리뷰 #99-1) — load_data_path(sheet=) 가 확정 시트를 관통.
+
+    작업 선택 후 낙찰현황(3건)을 확정하면 첫 시트(공고목록 2건)가 아니라 그 시트가 실린다 —
+    조용한 첫 시트 강등이 아니라 확정값 반영(test_webapp_bridge 의 job 컨트롤러측 대응물).
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    snap = ctrl.snapshot()
+    assert snap["data_label"] == "multi_sheet.xlsx"
+    assert snap["has_data"] is True and snap["record_count"] == 3
+
+
+def test_record_names_follow_selection_not_invented(tmp_path):
+    """미선택 행 이름은 지어내지 않는다(F33, 리뷰 #99-2) — {{seq}}·충돌 접미사는 선택 집합에
+    따라 달라지므로 선택 변경 시 남은 행 이름이 생성 결과대로 재계산된다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.dispatch("toggle_record", {"index": 0, "value": False})
+    rows = ctrl.snapshot()["records"]
+    assert rows[0]["name"] == "" and rows[0]["selected"] is False   # 미선택 = 이름 없음
+    # 남은 1건만 생성하면 그 파일이 doc-001 — 미리보기도 같은 사실을 말한다.
+    assert rows[1]["name"] == "doc-001.hwpx" and rows[1]["selected"] is True
+
+
+def test_generate_uses_previewed_name_timestamp(tmp_path):
+    """미리보기가 보여준 시각 = 생성 파일명 시각(RC-02 표시=확인=생성, 리뷰 #99-3).
+
+    시·분·초 date 토큰 패턴에서 미리보기 스냅샷과 생성 클릭 사이 시계가 흘러도, generate 는
+    마지막 미리보기(``_names_now``)의 시각을 재사용해 화면이 보여준 실파일명 그대로 생성한다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    job = ctrl.registry.load("공고서")
+    job.filename_pattern = "doc-{{date:HHmmSS}}-{{seq}}"
+    ctrl.registry.save(job, allow_overwrite=True)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    out = tmp_path / "out"
+    ctrl.set_output_folder(str(out))
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+
+    # 스냅샷 미리보기가 시각을 캡처 → 이후 시계 전진을 결정적으로 모사(주입) → 생성이 캡처값 재사용.
+    assert ctrl.snapshot()["records"][0]["name"].startswith("doc-")
+    ctrl._names_now = datetime(2026, 1, 2, 3, 4, 5)
+    res = ctrl.generate()
+    assert res["ok"] is True
+    made = sorted(p.name for p in out.glob("*.hwpx"))
+    assert made and all(n.startswith("doc-030405-") for n in made)  # 주입 시각 그대로
+
+
+def test_snapshot_reports_template_missing_only_when_file_gone(tmp_path):
+    """template_missing 은 파일이 실제로 없을 때만 True(F30, 리뷰 #99-4) — 웹이 이 플래그로
+    「템플릿 다시 연결」 복구 동선을 조건부 노출한다(Python 층 실행 — JS 렌더 가드와 별개)."""
+    ctrl, _ = _controller(tmp_path)
+    snap = ctrl.initial()
+    assert snap["template_missing"] is False               # 미선택 = 버튼 표면 자체가 없음
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    snap = ctrl.snapshot()
+    assert snap["template_missing"] is False               # 정상 = 복구 동선 숨김
+    Path(snap["template_path"]).unlink()                    # 템플릿 파일 소실 재현
+    assert ctrl.snapshot()["template_missing"] is True      # 부재 = 복구 동선 노출
+
+
+def test_unresolved_pattern_gate_surfaces_in_snapshot(tmp_path):
+    """미해소 파일명 토큰 작업 = 스냅샷 게이트 danger 차단 + 생성 백스톱(F34, 리뷰 #99-5)."""
+    ctrl, _ = _controller(tmp_path)
+    job = ctrl.registry.load("공고서")
+    job.filename_pattern = "공고서-{{ID}}"                 # 101 워크스루 실증 지뢰(데이터에 ID 없음)
+    ctrl.registry.save(job, allow_overwrite=True)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    snap = ctrl.snapshot()
+    assert snap["gate"]["enabled"] is False and snap["gate"]["level"] == "danger"
+    assert "{{ID}}" in snap["gate"]["text"]
+    res = ctrl.generate()
+    assert res["ok"] is False and "{{ID}}" in res["error"]  # 생성 백스톱도 리터럴 방지
