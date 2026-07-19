@@ -31,8 +31,8 @@ WEB = ROOT / "web"
 CONTROLLER_FILES = [
     "screen_editor.py",
     "screen_home.py",
+    "screen_job.py",  # 「작업」 세션 패널(R-flow) — run 사망(슬라이스 3) 후 유일 생성 표면
     "screen_pool.py",
-    "screen_run.py",
     "screen_template.py",
     "screens.py",  # TxtController
 ]

@@ -226,6 +226,10 @@
   /* ---- 본문 존: 게이트·저장 폴더·생성 버튼 ---- */
   function renderGateAndFolder(s) {
     $("jobOutDir").value = s.out_dir || "";
+    // 저장 폴더 열기/경로 복사 어포던스(#53-B) — 실행 화면에서 승계(리뷰 F3). 생성 후 앱에서
+    // 바로 폴더를 열거나 경로를 복사한다(빈 out_dir 이면 PathTrack 이 알아서 아무것도 안 그림).
+    const ot = $("jobOutTrack");
+    if (ot) ot.innerHTML = PathTrack.affordances(s.out_dir, { only: ["reveal", "copy"] });
     const g = s.gate || { enabled: false, level: "", text: "" };
     $("jobGenBtn").disabled = !g.enabled || generating;
     const gate = $("jobGate");
@@ -332,6 +336,16 @@
     Bridge.call(SCREEN, "select_job", { name: item.dataset.job });
   }
 
+  /* 허브(홈)에서 이 작업을 열기 — 좌 목록 재클릭 무동작 가드(onMasterClick)와 동형.
+     이미 이 작업 세션이면 재구성하지 않고(진행 중 데이터 겨눔·행 선택·확인이 조용히 소실되지
+     않게 — 리뷰 F1) 그대로 두고 화면만 전환한다. 아니면 겨눠 진입한다. */
+  function openJob(name) {
+    if (!(LAST && LAST.job_name === name)) {
+      Bridge.call(SCREEN, "select_job", { name });
+    }
+    window.Nav.go(SCREEN);
+  }
+
   /* 거울 미입력 행 = ADR-E 배지 — 클릭=확인·재클릭=철회(UD-19). ackd 클래스로 토글 방향 판정. */
   function mirrorAck(rowEl) {
     const act = rowEl.classList.contains("ackd") ? "unack_field" : "ack_field";
@@ -426,5 +440,5 @@
 
   // overwriteBody 는 순수 합성기 — 실앱 게이트가 합성 결과(수치·이름 배치)를 되읽어 회귀를
   // 막는다(백엔드 overwrite_text 단언 폐기의 커버리지 짝, 리뷰). 파괴적 확인이라 조용한 드리프트 금지.
-  window.JobScreen = { init, overwriteBody };
+  window.JobScreen = { init, overwriteBody, openJob };
 })();

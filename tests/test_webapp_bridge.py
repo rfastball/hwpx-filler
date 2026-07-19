@@ -202,10 +202,12 @@ def test_pick_data_file_multi_sheet_defers_and_asks(tmp_path, monkeypatch):
     assert frontend.controllers["editor"].data_path == ""
 
 
-@pytest.mark.parametrize("screen", ["editor", "run", "txt"])
+@pytest.mark.parametrize("screen", ["editor", "job", "txt"])
 def test_pick_data_file_multi_sheet_defers_on_every_screen(screen, tmp_path, monkeypatch):
     """pick_data_file 반환 계약은 screen-불가지 — 데이터를 붙이는 세 화면 모두 needs_sheet 로
-    보류돼야 한다(리뷰 P1: txt 가 객체를 못 다뤄 첫 시트로 조용히 강등되던 회귀 차단)."""
+    보류돼야 한다(리뷰 P1: txt 가 객체를 못 다뤄 첫 시트로 조용히 강등되던 회귀 차단).
+
+    run 사망(슬라이스 3) 후 데이터-부착 화면은 editor·job·txt — 세 화면 모두 관통을 지킨다."""
     from hwpxfiller.webapp import app as app_mod
 
     frontend = _frontend(tmp_path, monkeypatch)
@@ -219,7 +221,7 @@ def test_load_data_sheet_threads_confirmed_sheet_into_txt_controller(tmp_path, m
     """확정 시트가 브리지→컨트롤러(load_data_path sheet=)→링1 VM 까지 관통해 로드된다(리뷰 P1).
 
     txt 컨트롤러는 작업 없이 단독 로드 가능해 브리지 경로 검증에 쓴다 — 다른 화면
-    (editor·run)의 sheet 관통은 각자의 컨트롤러 테스트가 픽스처와 함께 본다.
+    (editor·job)의 sheet 관통은 각자의 컨트롤러 테스트가 픽스처와 함께 본다.
     """
     frontend = _frontend(tmp_path, monkeypatch)
     result = frontend.load_data_sheet("txt", str(MULTI_SHEET), "낙찰현황")
@@ -254,7 +256,7 @@ def test_load_data_sheet_vanished_file_returns_error_not_raise(tmp_path, monkeyp
     ERROR: 경계로 감싸져 시끄럽게 되돌린다(리뷰 P2 — load_data_sheet 측 대칭)."""
     frontend = _frontend(tmp_path, monkeypatch)
     gone = tmp_path / "gone.xlsx"  # 만들지 않음 → 조회 시 실패
-    result = frontend.load_data_sheet("run", str(gone), "Sheet1")
+    result = frontend.load_data_sheet("job", str(gone), "Sheet1")
     assert isinstance(result, str) and result.startswith("ERROR:"), (
         f"사라진 파일이 ERROR: 로 안 돌아옴: {result!r}"
     )
@@ -299,7 +301,7 @@ def test_web_assets_present_and_wired():
     html = (WEB / "index.html").read_text(encoding="utf-8")
     assert "css/tokens.css" in html and "js/bridge.js" in html
     # 4화면 레일 + txt 실화면 심.
-    for scr in ("home", "editor", "run", "txt"):
+    for scr in ("home", "editor", "job", "txt"):
         assert f'data-scr="{scr}"' in html, f"레일에 {scr} 없음"
     assert 'id="scr-txt"' in html
 

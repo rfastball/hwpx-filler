@@ -2,7 +2,7 @@
 
 원시 errno/WinError 문자열을 사용자가 취할 조치가 있는 문장으로 보강하되, **원문은
 괄호로 보존**한다(증거 무손실 — 조용한 재작성 금지). webview 컨트롤러
-(webapp.screen_run)가 소비하며 위젯 계층에서 분리해 둔다 —
+(webapp.screen_job)가 소비하며 위젯 계층에서 분리해 둔다 —
 :mod:`~hwpxfiller.gui.batch_run` 은 하위호환으로 이 이름을 재export 한다.
 """
 from __future__ import annotations

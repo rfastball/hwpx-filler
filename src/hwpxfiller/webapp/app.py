@@ -39,7 +39,6 @@ from .screen_editor import EditorController
 from .screen_home import HomeController
 from .screen_job import JobController
 from .screen_pool import PoolController
-from .screen_run import RunController
 from .screen_template import TemplateController
 from .screens import (
     TxtController,
@@ -103,11 +102,10 @@ class WebFrontend:
             HomeController(job_registry, registry, self._push, pool_registry=pool_registry),
             TxtController(registry, self._push, pool_registry=pool_registry),
             EditorController(job_registry, self._push, pool_registry=pool_registry),
-            # 「작업」 화면(R-flow 슬라이스 1, #90) — 좌 목록 + 우 세션 패널 4존. 실행 화면과
-            # 병존한다(레일 「실행」 제거는 게이트 패리티 도달 = 슬라이스 3). 링1 VM 을 직접
-            # 소유해 실행 화면과 같은 계약을 소비하되 별개 링2 표면(부록 A: 죽는 것은 링2뿐).
+            # 「작업」 화면(R-flow, #90) — 좌 목록 + 우 세션 패널 4존. 링1 VM 을 직접 소유해
+            # 실행 결정 계약을 소비하는 **유일 세션 표면**이다(실행 화면은 슬라이스 3에서 사망 —
+            # 게이트 패리티 도달, 레일 「실행」 동시 제거, 부록 A-4-35~37·#94 중복 자연 소멸).
             JobController(job_registry, self._push, pool_registry=pool_registry),
-            RunController(job_registry, self._push, pool_registry=pool_registry),
             # 템플릿 관리(#13) — TXT 레지스트리는 즉시 기안과 공유(변경이 양쪽에 반영).
             TemplateController(registry, self._push),
             # 데이터 관리(#26 #4) — 등록 데이터 참조·수명.
@@ -226,7 +224,7 @@ class WebFrontend:
         }
 
     def pick_output_folder(self, screen: str) -> "str | None":
-        """Win32 폴더 피커(SHBrowseForFolder) → 저장 폴더 지정. 실행 화면의 신규 네이티브 표면.
+        """Win32 폴더 피커(SHBrowseForFolder) → 저장 폴더 지정. 「작업」 세션 패널의 네이티브 표면.
 
         선택 경로의 표시명 또는 None(취소). 실패는 ``ERROR:`` 접두로 시끄럽게 반환.
         """
@@ -240,7 +238,7 @@ class WebFrontend:
         return path
 
     def generate(self, screen: str, confirm_overwrite: bool = False) -> dict:
-        """실행 화면 동기 생성 — 게이트 판정·덮어쓰기 재진술·결과 요약을 dict 로 반환."""
+        """세션 패널(screen 파라미터) 동기 생성 — 게이트 판정·덮어쓰기 재진술·결과 요약 dict."""
         return self._controller(screen).generate(confirm_overwrite=bool(confirm_overwrite))
 
     def pick_library_folder(self) -> "str | None":
@@ -317,9 +315,9 @@ class WebFrontend:
         """소유 화이트리스트(작업 템플릿·등록 데이터·현재 세션 경로)로 검증 — 순수 로직은
         :func:`screens.collect_owned_paths`/`validate_owned_path`(헤드리스 테스트 대상)."""
         ed = self._controller("editor")
-        run = self._controller("run")
+        job = self._controller("job")
         session = [getattr(ed, "template_path", ""), getattr(ed, "data_path", ""),
-                   getattr(run, "out_dir", "")]
+                   getattr(job, "out_dir", "")]
         owned = collect_owned_paths(self._job_registry, self._pool_registry, session)
         return validate_owned_path(path, owned)
 
@@ -429,14 +427,14 @@ _SHEET_PROBE_SETUP_JS = r"""
   (async function () {
     try {
       // (1) 확정 경로 — 열림·버튼수·초기포커스 되읽고 둘째 시트를 클릭해 해소.
-      var p1 = window.SheetPicker.choose('run', payload);
+      var p1 = window.SheetPicker.choose('job', payload);
       var opened = !document.getElementById('sheetModal').classList.contains('hidden');
       var btns = document.querySelectorAll('#sheetList .sheet-opt');
       var focusFirst = document.activeElement === btns[0];
       btns[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
       var picked = await p1;
       // (2) 취소 경로 — 다시 열고 Escape → null 로 해소(로드 없음).
-      var p2 = window.SheetPicker.choose('run', payload);
+      var p2 = window.SheetPicker.choose('job', payload);
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       var cancelled = await p2;
       window.__sheetProbe = {
@@ -496,7 +494,7 @@ _PRESERVE_PROBE_JS = r"""
 _PRESERVE_REAL_SETUP_JS = r"""
 (function () {
   window.__snaps = {};
-  ['txt', 'editor', 'run'].forEach(function (scr) {
+  ['txt', 'editor', 'job'].forEach(function (scr) {
     window.pywebview.api.initial(scr).then(function (s) { window.__snaps[scr] = s; });
   });
   window.Nav.go('txt');  // 스크롤은 가시 화면에서만 유효 → txt 가시화
@@ -506,7 +504,7 @@ _PRESERVE_REAL_SETUP_JS = r"""
 _PRESERVE_REAL_PROBE_JS = r"""
 (function () {
   var out = {}, snaps = window.__snaps || {};
-  ['txt', 'editor', 'run'].forEach(function (scr) {
+  ['txt', 'editor', 'job'].forEach(function (scr) {
     try {
       if (!snaps[scr]) { out[scr] = 'no-snap'; return; }
       window.__push(scr, snaps[scr]);   // 실 render() (Preserve.around 래핑)
@@ -654,9 +652,9 @@ def _selftest_drive(window: "object") -> None:
         # 데이터 관리 화면(#26 #4) — 7번째 화면이 실제 init·렌더됐는지(빈 상태 문구도 렌더).
         result["pool_rendered"] = window.evaluate_js(  # type: ignore[attr-defined]
             "(document.getElementById('poolList')||{innerHTML:''}).innerHTML.length > 0")
-        # 2소스 진입점(#26 #6) — 두 실행 표면(run·txt)의 '등록 데이터…' 버튼 실재.
+        # 2소스 진입점(#26 #6) — 두 생성 표면(작업·txt)의 '등록 데이터…' 버튼 실재.
         result["pool_buttons"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "['btnPoolData','btnTxtPoolData']"
+            "['jobBtnPoolData','btnTxtPoolData']"
             ".every(function(i){return !!document.getElementById(i)})")
         # 커스텀 모달 접근성 동적 거동(#27/#28) — 정적 계약(role/aria)은 test_web_dom_contract 가
         # 보고, 여기선 실 브라우저에서 Modal 헬퍼가 초기포커스·Escape 닫기·트리거 복귀를 실제로

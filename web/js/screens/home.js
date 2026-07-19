@@ -186,8 +186,13 @@
 
   /* ---- 허브 이동: 대상 화면을 미리 겨눈 뒤 셸 라우터로 전환 ---- */
   function runJob(name) {
-    Bridge.call("run", "select_job", { name });   // run 컨트롤러가 스냅샷 푸시 → run.js 렌더
-    window.Nav.go("run");
+    // 실행 화면 사망(슬라이스 3) → 「작업」 세션 패널이 유일 생성 표면. JobScreen.openJob 이
+    // 좌 목록 재클릭 무동작 가드를 승계한다 — 이미 이 작업 세션이 진행 중이면 재구성하지 않아
+    // 데이터 겨눔·행 선택·확인이 조용히 소실되지 않는다(리뷰 F1). 그 상태로 화면만 전환.
+    // app.js 의 init 가드와 동형으로 전역 참조를 방어한다(리뷰 #99-6): job.js 미로드(정적 순서상
+    // 도달 불가)면 uncaught TypeError 대신 화면만 전환한다.
+    if (window.JobScreen) { window.JobScreen.openJob(name); return; }
+    window.Nav.go("job");
   }
   function openTxt(name) {
     Bridge.call("txt", "select_template", { name });
