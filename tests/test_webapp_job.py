@@ -611,3 +611,155 @@ def test_unresolved_pattern_gate_surfaces_in_snapshot(tmp_path):
     assert "{{ID}}" in snap["gate"]["text"]
     res = ctrl.generate()
     assert res["ok"] is False and "{{ID}}" in res["error"]  # 생성 백스톱도 리터럴 방지
+
+
+# ------------------------------------------------- 필터 배선(블록 4, 슬라이스 4 PR-2b)
+def _session(tmp_path):
+    """작업 선택 + 데이터 겨눔까지 마친 컨트롤러 — 필터 계약 테스트 공용."""
+    ctrl, pushes = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    return ctrl, pushes
+
+
+def test_filter_lifecycle_session_scoped(tmp_path):
+    """필터 = 세션 수명(결정 24): 데이터 겨눔에 생성, 작업 전환에 소멸, 재겨눔에 재생성."""
+    ctrl, _ = _session(tmp_path)
+    assert ctrl.filter is not None
+    # 매핑 확정 유형(text)이 힌트로 우선한다 — 수치 열이어도 사용자 확정 존중.
+    snap = ctrl.snapshot()
+    kinds = {c["name"]: c["kind"] for c in snap["filter"]["columns"]}
+    assert kinds == {"bidNtceNm": "text", "presmptPrce": "text"}
+    ctrl.dispatch("filter_search", {"text": "전산"})
+    assert ctrl.filter.is_active()
+    ctrl.dispatch("select_job", {"name": ""})  # 작업 전환 = 필터 소멸(세션 휘발, 결정 8)
+    assert ctrl.filter is None
+    assert ctrl.snapshot()["filter"] == {
+        "active": False, "search": "", "chips": [], "definition": "",
+        "branches": [], "columns": [],
+    }
+
+
+def test_filter_search_shapes_table_and_chips(tmp_path):
+    """전열 검색 → 재현 OR 그룹: 가시 행·가지·칩·셀 세그먼트가 스냅샷으로 온다."""
+    ctrl, _ = _session(tmp_path)
+    ctrl.dispatch("filter_search", {"text": "전산"})
+    snap = ctrl.snapshot()
+    t = snap["table"]
+    assert t["columns"] == ["bidNtceNm", "presmptPrce"]
+    assert t["visible_count"] == 1 and [r["index"] for r in t["rows"]] == [0]
+    assert snap["filter"]["branches"] == ["bidNtceNm"]
+    assert any("전산" in c for c in snap["filter"]["chips"])
+    # 셀 = 하이라이트 세그먼트(파이썬이 잘라 조각으로 — 인덱스 무전달, jamo 계약).
+    # 파이썬 층에선 튜플, json.dumps 가 배열로 직렬화한다.
+    cells = t["rows"][0]["cells"]
+    assert cells[0] == [("전산", True), ("장비", False)]
+    assert cells[1] == []  # 빈 셀 = 빈 세그먼트
+
+
+def test_set_all_is_additive_over_matches(tmp_path):
+    """「전체 선택」 = 매치 전체 가산(결정 4·26) — 필터 밖 기존 선택은 유지(관통, 결정 3)."""
+    ctrl, _ = _session(tmp_path)
+    ctrl.dispatch("filter_search", {"text": "전산"})   # 매치 = 0행뿐
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("toggle_record", {"index": 1, "value": True})  # 필터 밖 행 직접 선택
+    ctrl.dispatch("set_all", {})                        # 매치(0행) 가산
+    snap = ctrl.snapshot()
+    assert snap["selected_count"] == 2                  # 1행 선택이 지워지지 않았다
+    # 필터 밖 선택 = 스트립 소재(결정 3 — 상시 가시).
+    assert [r["index"] for r in snap["table"]["hidden_selected"]] == [1]
+
+
+def test_select_range_propagates_anchor_state(tmp_path):
+    """Shift 범위 = 앵커 상태 전파(결정 2) — 선택도 해제도 범위로."""
+    ctrl, _ = _session(tmp_path)
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("select_range", {"indices": [0, 1], "value": True})
+    assert ctrl.snapshot()["selected_count"] == 2
+    ctrl.dispatch("select_range", {"indices": [1], "value": False})
+    assert ctrl.snapshot()["selected_count"] == 1
+
+
+def test_restate_origin_by_set_comparison(tmp_path):
+    """선택 유래 = 집합 비교 무상태 판정: 매치 전체=정의-유래, 이탈=직접+수치 병기(S4)."""
+    ctrl, _ = _session(tmp_path)
+    ctrl.dispatch("filter_search", {"text": "전산"})
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("set_all", {})
+    r = ctrl.snapshot()["restate"]
+    assert r["origin"] == "definition" and r["filter_active"] is True
+    assert r["in_def"] == 1 and r["extra"] == 0
+    ctrl.dispatch("toggle_record", {"index": 1, "value": True})  # 정의 밖 가산 → 혼합
+    r = ctrl.snapshot()["restate"]
+    assert r["origin"] == "manual" and r["in_def"] == 1 and r["extra"] == 1
+    assert set(r["sample"]) <= {0, 1} and len(r["sample"]) <= 3
+
+
+def test_filter_range_on_amount_column_and_inline_error(tmp_path):
+    """범위 조건 배선 — 매핑 amount 확정 열, 오독 피연산자는 인라인 오류 dict(비폭발)."""
+    template = tmp_path / "t2.hwpx"
+    _write_template(template, ["공고명", "추정가격"])
+    reg = JobRegistry(tmp_path / "jobs2")
+    reg.save(Job(
+        name="금액작업", template_path=str(template),
+        mapping=MappingProfile(mappings=[
+            FieldMapping(template_field="공고명", source="bidNtceNm"),
+            FieldMapping(template_field="추정가격", source="presmptPrce", type="amount"),
+        ]),
+        filename_pattern="doc-{{seq:001}}",
+    ))
+    ctrl = JobController(reg, lambda s, snap: None)
+    ctrl.dispatch("select_job", {"name": "금액작업"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    kinds = {c["name"]: c["kind"] for c in ctrl.snapshot()["filter"]["columns"]}
+    assert kinds["presmptPrce"] == "amount"              # 매핑 확정 유형 힌트
+    res = ctrl.dispatch("filter_col_range", {
+        "column": "presmptPrce", "first": {"op": "ge", "operand": "1억"}})
+    assert res["ok"] is False and "읽을 수 없습니다" in res["error"]
+    res = ctrl.dispatch("filter_col_range", {
+        "column": "presmptPrce", "first": {"op": "ge", "operand": "1000000"}})
+    assert res["ok"] is True
+    assert ctrl.snapshot()["table"]["visible_count"] == 1  # 2000000 행만
+    # 빈 첫 절 = 조건 해제.
+    res = ctrl.dispatch("filter_col_range", {"column": "presmptPrce", "first": None})
+    assert res["ok"] is True and ctrl.snapshot()["table"]["visible_count"] == 2
+
+
+def test_filter_panel_query_returns_options_and_state(tmp_path):
+    """열 패널 질의 — 현 조건 + 값 목록((빈값)="" 일급, 말미)."""
+    ctrl, _ = _session(tmp_path)
+    res = ctrl.dispatch("filter_panel", {"column": "presmptPrce"})
+    assert res["kind"] == "text" and res["checked"] is None and res["range"] is None
+    assert res["options"] == ["2000000", ""]             # 빈 셀 = 정식 값, 말미
+    ctrl.dispatch("filter_col_values", {"column": "presmptPrce", "values": [""]})
+    res = ctrl.dispatch("filter_panel", {"column": "presmptPrce"})
+    assert res["checked"] == [""]
+    assert ctrl.snapshot()["table"]["visible_count"] == 1  # 빈값 행(0행)만
+
+
+def test_filter_actions_without_data_are_loud(tmp_path):
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    with pytest.raises(ValueError, match="데이터를 먼저"):
+        ctrl.dispatch("filter_search", {"text": "x"})
+
+
+def test_set_all_reports_added_count_for_dead_button_honesty(tmp_path):
+    """「전체 선택」 반환 added — 전멸 필터의 무동작(0)을 표면이 알린다(리뷰 #9)."""
+    ctrl, _ = _session(tmp_path)
+    ctrl.dispatch("set_none", {})
+    assert ctrl.dispatch("set_all", {}) == {"added": 2}      # 필터 없음 = 전체
+    ctrl.dispatch("filter_search", {"text": "존재하지않는말"})  # 전멸
+    assert ctrl.dispatch("set_all", {}) == {"added": 0}      # 무동작 정직 보고
+    ctrl.dispatch("filter_search", {"text": "전산"})
+    ctrl.dispatch("set_none", {})
+    assert ctrl.dispatch("set_all", {}) == {"added": 1}      # 매치만 가산
+
+
+def test_table_cell_preserves_falsy_values(tmp_path):
+    """셀 텍스트 = cell_text 단일 출처(리뷰 #8) — 0 이 빈칸으로 붕괴하지 않는다."""
+    ctrl, _ = _session(tmp_path)
+    ctrl.vm.records[1]["presmptPrce"] = 0                    # 풀(JSON) 유래 수치형 재현
+    snap = ctrl.snapshot()
+    row1 = next(r for r in snap["table"]["rows"] if r["index"] == 1)
+    assert row1["cells"][1] == [("0", False)]                # 필터가 보는 그대로 표면도

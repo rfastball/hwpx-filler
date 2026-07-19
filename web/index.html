@@ -153,11 +153,30 @@
 
               <div class="run-row run-recs-head">
                 <span class="lbl" style="font-weight:600">생성 대상 문서</span>
+                <!-- 전열 검색 = 재현 OR 그룹 편집기(블록 4 결정 23) — 검색창을 비우면 그룹이 걷힌다. -->
+                <input class="field jobsearch" id="jobFilterSearch" type="search"
+                       placeholder="전체 열 검색" autocomplete="off" data-busy-lock>
                 <div class="acts"><span class="muted capnote" id="jobSelCount">선택 0/0</span>
                   <button class="btn sm" id="jobSelAll" data-busy-lock>전체 선택</button>
                   <button class="btn sm" id="jobSelNone" data-busy-lock>전체 해제</button></div>
               </div>
-              <div class="reclist" id="jobRecList" data-preserve-scroll></div>
+              <!-- 칩 줄 — 필터 정의 재진술(정의줄 단일 출처, 결정 4) + 가지 칩(× 프루닝) + 지우기. -->
+              <div class="fchips" id="jobFilterChips" style="display:none"></div>
+              <!-- 데이터 테이블 — 선두 「문서」 열(파일명·식별 요약, F33 승계) + 원본 데이터 열
+                   (열 머리 필터 아이콘 = 엑셀식 펼침, 결정 25). 행 클릭 토글 + Shift 범위(결정 2). -->
+              <div class="jobtb-host" id="jobTableHost">
+                <div class="tbwrap jobtbwrap" id="jobTableWrap" data-preserve-scroll>
+                  <table class="tb jobtb">
+                    <thead id="jobTableHead"></thead>
+                    <tbody id="jobTableBody"></tbody>
+                  </table>
+                </div>
+                <div class="job-empty muted" id="jobTableEmpty">데이터를 선택하면 생성 대상 문서가 여기에 표시됩니다.</div>
+                <!-- 열 필터 패널 — 열별 부분일치 검색 + 값 체크리스트(같은 열 OR) + 범위(일자·금액) 동거. -->
+                <div class="colpanel" id="jobColPanel" hidden></div>
+              </div>
+              <!-- 필터 밖 선택 스트립(결정 3) — 선택은 필터를 관통하고, 밖은 여기서 상시 가시. -->
+              <div class="fstrip" id="jobSelStrip" style="display:none"></div>
             </div>
 
             <!-- 본문 존 — 라이브 거울(필드 채움 테이블) + 재진술 블록 + 생성 의식 1회 -->

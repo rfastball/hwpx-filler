@@ -515,3 +515,74 @@ tr.r-schemaonly td{background:var(--a-card)}
   .bar{border:1px solid CanvasText;background:Canvas}
   .bar>i{background:Highlight}
 }
+
+/* ---- 작업 데이터 존 필터 표면(R-flow 블록 4, 슬라이스 4 PR-2b) ----
+   테이블 = 선두 「문서」 열 + 원본 데이터 열(가로 스크롤). 하이라이트 <mark> 는 자모
+   역매핑 세그먼트(Python 이 잘라 보낸 조각) — 여기선 칠만 한다. */
+.jobsearch{flex:1;min-width:140px;max-width:280px}
+.jobtb-host{position:relative}
+.jobtbwrap{max-height:280px;overflow:auto;border:1px solid var(--a-border);
+  border-radius:var(--rad-surface);background:var(--a-card)}
+.jobtb{width:100%;border-collapse:collapse;font-size:var(--fs-caption)}
+.jobtb th{position:sticky;top:0;z-index:1;background:var(--a-card);text-align:left;
+  color:var(--a-muted);font-weight:600;padding:var(--sp-4) var(--sp-8);
+  border-bottom:1px solid var(--a-border);white-space:nowrap}
+.jobtb td{padding:var(--sp-4) var(--sp-8);border-bottom:1px solid var(--a-border);
+  white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis;vertical-align:top}
+.jobtb tbody tr:last-child td{border-bottom:0}
+.jobtb tbody tr{cursor:pointer}
+.jobtb tbody tr:hover td{background:color-mix(in srgb, var(--a-sel) 40%, transparent)}
+.jobtb tbody tr.on td{background:var(--a-sel)}
+.jobtb mark{background:transparent;color:var(--a-primary);font-weight:700}
+.jobtb .doccol{min-width:180px}
+.jobtb td.doccol{display:flex;gap:var(--sp-6);align-items:flex-start}
+/* 체크박스는 시각 표지 전용(결정 26 체크박스 문법) — 동사는 행 클릭이 소유한다(이중 토글 방지). */
+.jobtb td.doccol input{accent-color:var(--a-primary);margin-top:2px;flex:none;pointer-events:none}
+.jobtb .doc-name{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;
+  overflow:hidden;text-overflow:ellipsis}
+.jobtb .doc-off,.jobtb .doc-sum{color:var(--a-muted)}
+.jobtb .doc-body{display:flex;flex-direction:column;gap:var(--sp-2);min-width:0}
+
+/* 열 머리 필터 아이콘 — 조건 활성 열은 액센트로 상시 표지(발견성 보완 = 칩 줄과 이중). */
+.fico{border:1px solid transparent;background:transparent;color:var(--a-muted);cursor:pointer;
+  border-radius:var(--rad-control);padding:0 var(--sp-4);font-size:var(--fs-caption);line-height:1.4}
+.fico:hover{border-color:var(--a-border);color:var(--a-ink)}
+.fico.on{color:var(--a-primary);font-weight:700}
+
+/* 칩 줄 — 정의 재진술(문안 = describe_parts 단일 출처) + 가지 칩(× 프루닝). */
+.fchips{display:flex;flex-wrap:wrap;gap:var(--sp-4);align-items:center;margin:var(--sp-6) 0}
+.fchip{display:inline-flex;gap:var(--sp-4);align-items:center;border:1px solid var(--a-border);
+  border-radius:var(--rad-pill);background:var(--a-card);padding:var(--sp-2) var(--sp-8);
+  font-size:var(--fs-caption);color:var(--a-ink)}
+.fchip.branch{border-style:dashed;color:var(--a-muted)}
+.fchip button{border:0;background:transparent;color:var(--a-muted);cursor:pointer;
+  font-size:var(--fs-caption);padding:0}
+.fchip button:hover{color:var(--a-danger)}
+
+/* 필터 밖 선택 스트립(결정 3) — 관통 가시성. */
+.fstrip{border:1px dashed var(--a-border);border-radius:var(--rad-surface);
+  background:var(--a-card);padding:var(--sp-4) var(--sp-10);margin-top:var(--sp-6);
+  font-size:var(--fs-caption);color:var(--a-muted)}
+.fstrip b{color:var(--a-ink)}
+
+/* 열 필터 패널(엑셀식 아이콘 펼침, 결정 25) — 데이터 존 내 부유 패널. */
+.colpanel{position:absolute;z-index:30;top:34px;left:0;min-width:240px;max-width:340px;
+  background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-overlay);
+  box-shadow:var(--a-shadow);padding:var(--sp-10);display:flex;flex-direction:column;gap:var(--sp-8)}
+.colpanel[hidden]{display:none}
+.colpanel .cp-head{display:flex;justify-content:space-between;align-items:center;
+  font-weight:600;font-size:var(--fs-body)}
+.colpanel .cp-head button{border:0;background:transparent;cursor:pointer;color:var(--a-muted)}
+.colpanel .cp-sec{display:flex;flex-direction:column;gap:var(--sp-4)}
+.colpanel .cp-cap{font-size:var(--fs-caption);color:var(--a-muted)}
+.colpanel input.field,.colpanel select.field{font-size:var(--fs-caption)}
+.colpanel .cp-vals{max-height:160px;overflow:auto;border:1px solid var(--a-border);
+  border-radius:var(--rad-control);padding:var(--sp-4)}
+.colpanel .cp-vals label{display:flex;gap:var(--sp-6);align-items:center;
+  font-size:var(--fs-caption);padding:var(--sp-2) var(--sp-4);cursor:pointer}
+.colpanel .cp-vals input{accent-color:var(--a-primary)}
+.colpanel .cp-range-row{display:flex;gap:var(--sp-4);align-items:center}
+.colpanel .cp-range-row select{flex:none}
+.colpanel .cp-range-row input{flex:1;min-width:0}
+.colpanel .cp-err{color:var(--a-danger);font-size:var(--fs-caption);white-space:pre-line}
+.colpanel .cp-acts{display:flex;gap:var(--sp-6);justify-content:flex-end}
