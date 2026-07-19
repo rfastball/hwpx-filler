@@ -1,0 +1,937 @@
+<!-- R-flow 블록 4 우회 토의 시연 v3 (2026-07-19) — 토의 시안, 미확정.
+     블록 4 본안(세션 가드·건 연속성) 토의 중 데이터 존 필터의 선언 모델이 미결임이 드러나
+     우회 토의로 분기. 이 데모는 그 문제의식의 시연이다.
+     경위(v1): 필터는 블록 1의 발명(의미론만 확정: 보기만·매치 전체 선택·전체 해제·관통),
+       선언 형식 미설계. 「매치 전체 선택」 revisit — 명시성의 실질은 "매치 정의의 진술
+       가능성". 정의 없는 매치에 집합 동사 허용 시 오버매치 조용 편입 + 표본 재진술 통과.
+     v2: ①자모(초/중/종성) 분해 부분일치 검색 ②열별 드롭다운(엑셀-쿼리) ③검색=좁힘 전용,
+       "제안→칩 결정화" 철회.
+     v3 피드백 반영(2026-07-19, 엑셀 필터 모델을 선생으로):
+       ⑧ 검색↔필터 계약 확정 기울기 — 검색은 화면에 직접 작용하지 않고 **항상 필터를 통해서만**
+          작용한다(단일 기제·사용자 모델 명료성). 화면에 보이는 것은 언제나 필터 상태 하나로
+          설명된다. 검색창은 필터 상태를 쓰는 입력기다.
+       ⑨ 전열 검색 = 재현 필터 설치 — 전체를 부분일치로 찾고, 그 결과 전체를 재현하는
+          필터 조건을 설치한다. 주의: 개념적으로 열 간 **OR 그룹**(공고명 포함 X ∨ 수요기관
+          포함 X ∨ …)이라 열별 AND 조건보다 정교하게 작동해야 함 — 가지(브랜치)는 실제
+          매치가 있는 열만 설치하고, 가지별로 쳐낼(프루닝) 수 있다. 부수 효과: "정의 없음"
+          상태 자체가 소멸 — 모든 매치가 진술 가능해지고, v2 갈림길(선언-후 잠금)의 논거가
+          약화되며 새 질문(광의 OR 정의의 게이트 처우)으로 재정형화된다.
+       ⑩ 열 필터 UI 경합 — A: 별도 필터 행(한 단 아래 드롭다운) vs B: 엑셀을 본받은 동일행
+          아이콘-펼침(머리 아이콘 → 열별 부분일치 검색 + 값 체크리스트 패널). 토글로 병존
+          체험. 값 체크리스트는 같은 열 안에서 OR(엑셀 동형), 열 간은 AND.
+     v3.1 피드백 반영(2026-07-19):
+       ⑪ 동사명 간소화 — 「매치 전체 선택」 → 「전체 선택」. 담보는 이제 게이트 정의줄이
+          지므로 버튼명이 정의를 업고 다닐 필요가 없다(의미는 동일: 보이는 매치 전체).
+       ⑫ 클릭 선택 문법 — 자연 기대 반영: Shift+클릭 범위 일괄(앵커의 적용 상태를 범위에
+          전파). 플레인 클릭은 토글 유지(블록 1 「행 클릭 토글」 승계) — Explorer 문법
+          (플레인=단독 교체)을 채택하면 블록 1 문언 개정 + 오클릭 한 번이 선택 집합을
+          갈아치우는 파괴 전이(세션 가드 본안 되먹임)라 갈림길로 보존.
+          로직은 중앙화 전제로 독립 함수(applyClick)로 격리 — 실구현 시 web/js 공유 헬퍼
+          (modal.js·preserve.js 전례)로 승격해 클릭-선택 표면들이 돌려 쓴다.
+     v3.2 정정(2026-07-19): Ctrl+클릭은 오범주화로 확정·어휘에서 제거 — 토글 모델에서는
+          플레인 클릭이 이미 개별 선택(Ctrl의 역할)이라 Ctrl은 빈 수식. 동작은 무해 통과
+          (분기 없음). Ctrl이 의미를 얻는 것은 Explorer 문법 채택 시뿐(갈림길에 귀속).
+     v3.3 수선(2026-07-19): 빈값 필터 결손 — 값 체크리스트가 비어 있지 않은 값만 나열해
+          「(빈값)」을 표현할 수 없었고, 비고처럼 거의 빈 열에서 유일 값을 해제하면 빈값
+          행까지 전부 탈락(전무 매치)해 "비고 ≠ 이관분"이 표현 불가였다. 엑셀 (Blanks)
+          동형의 「(빈값)」 정식 값을 체크리스트·별도 행 드롭다운·칩 표기에 추가(내부
+          표현은 빈 문자열 정준). 교훈: 값 목록 필터는 빈값을 일급 값으로 세워야 여집합
+          연산이 성립한다 — confirm-or-alarm의 "조용한 빈칸 금지"의 필터 판.
+     블록 1·2·3 아카이브(0de1d12·ff971a4)의 토큰·주석 관례 승계. 박제 정본 아님. -->
+<title>블록 4 우회 · 매치 담보 데모</title>
+<style>
+:root{
+  --a-primary:#2f5fbf; --a-primary-h:#274fa0; --a-warn:#a05a00; --a-danger:#c0392b;
+  --a-ok:#1e8449; --a-muted:#656a72; --a-border:#e2e4e8; --a-card:#ffffff;
+  --a-window:#f6f7f9; --a-ink:#1c2126; --a-on-accent:#ffffff; --a-shadow:rgba(0,0,0,.2);
+  --a-sel:#dfe6fb;
+  --n-surface-alt:#f3f4f6; --n-header-bg:#eef1f4; --n-border-strong:#cbd0d6;
+  --n-ink-soft:#5c626b; --n-header-ink:#4a505a; --n-ink-control:#2b3038;
+  --sp-2:2px; --sp-4:4px; --sp-6:6px; --sp-8:8px; --sp-10:10px; --sp-12:12px; --sp-16:16px; --sp-24:24px;
+  --rad-control:6px; --rad-surface:9px; --rad-pill:999px;
+  --fs-caption:11px; --fs-body:13px; --fs-strong:15px; --fs-section:19px;
+  --pend-bg:#fdf3d7; --pend-bd:#e8cf8a; --ann:#8b5cf6; --ann-bg:#f5f1fe;
+  --ok-tint:#e2f3e9; --danger-tint:#fdeae7;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+  --a-primary:#6f97e8; --a-primary-h:#8badf0; --a-warn:#e0a850; --a-danger:#ec7264;
+  --a-ok:#43b877; --a-muted:#98a0ab; --a-border:#333a44; --a-card:#1c2127;
+  --a-window:#131619; --a-ink:#e7eaee; --a-on-accent:#0f1418; --a-shadow:rgba(0,0,0,.5);
+  --a-sel:#1e2846;
+  --n-surface-alt:#23272d; --n-header-bg:#191d22; --n-border-strong:#454c56;
+  --n-ink-soft:#aab1bb; --n-header-ink:#c2c8d0; --n-ink-control:#dbe0e6;
+  --pend-bg:#3a3320; --pend-bd:#6b5c2e; --ann:#a78bfa; --ann-bg:#241f33;
+  --ok-tint:#1c3327; --danger-tint:#3a2220;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --a-primary:#6f97e8; --a-primary-h:#8badf0; --a-warn:#e0a850; --a-danger:#ec7264;
+  --a-ok:#43b877; --a-muted:#98a0ab; --a-border:#333a44; --a-card:#1c2127;
+  --a-window:#131619; --a-ink:#e7eaee; --a-on-accent:#0f1418; --a-shadow:rgba(0,0,0,.5);
+  --a-sel:#1e2846;
+  --n-surface-alt:#23272d; --n-header-bg:#191d22; --n-border-strong:#454c56;
+  --n-ink-soft:#aab1bb; --n-header-ink:#c2c8d0; --n-ink-control:#dbe0e6;
+  --pend-bg:#3a3320; --pend-bd:#6b5c2e; --ann:#a78bfa; --ann-bg:#241f33;
+  --ok-tint:#1c3327; --danger-tint:#3a2220;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--a-window);color:var(--a-ink);
+  font:13px/1.5 "Pretendard","Malgun Gothic",system-ui,sans-serif;padding:var(--sp-24)}
+h1,h2,h3,p,ul{margin:0}
+button{font:inherit;cursor:pointer}
+button:focus-visible,[tabindex]:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
+.wrap{max-width:920px;margin:0 auto;display:flex;flex-direction:column;gap:var(--sp-24)}
+
+.eyebrow{font-size:var(--fs-caption);letter-spacing:.08em;color:var(--ann);font-weight:700}
+.head h1{font-size:26px;line-height:1.25;text-wrap:balance;margin-top:var(--sp-6)}
+.head p{color:var(--a-muted);margin-top:var(--sp-8);max-width:70ch}
+.head b{color:var(--a-ink)}
+
+h2{font-size:var(--fs-section);text-wrap:balance}
+.sec{display:flex;flex-direction:column;gap:var(--sp-12)}
+.seclede{color:var(--a-muted);max-width:70ch}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-12)}
+@media (max-width:700px){.grid2{grid-template-columns:1fr}}
+.doc{background:var(--a-card);border:1px solid var(--n-border-strong);border-radius:var(--rad-surface);
+  padding:var(--sp-12) var(--sp-16);display:flex;flex-direction:column;gap:var(--sp-8)}
+.doc .src{font-size:var(--fs-caption);color:var(--n-header-ink);font-weight:700;letter-spacing:.04em}
+.doc blockquote{margin:0;border-left:3px solid var(--n-border-strong);padding-left:var(--sp-10);
+  color:var(--n-ink-soft);font-size:var(--fs-body)}
+.doc blockquote b{color:var(--a-ink)}
+.doc .verdict{font-size:var(--fs-caption);color:var(--a-muted)}
+.reframe{border:1px solid var(--a-primary);border-radius:var(--rad-surface);background:var(--a-sel);
+  padding:var(--sp-12) var(--sp-16);font-size:var(--fs-strong);line-height:1.5}
+.reframe b{color:var(--a-primary)}
+.reframe .sub{display:block;font-size:var(--fs-body);color:var(--n-ink-soft);margin-top:var(--sp-4)}
+.reframe2{border:1px dashed var(--ann);border-radius:var(--rad-surface);background:var(--ann-bg);
+  padding:var(--sp-12) var(--sp-16);font-size:var(--fs-strong);line-height:1.5}
+.reframe2 b{color:var(--ann)}
+.reframe2 .sub{display:block;font-size:var(--fs-body);color:var(--n-ink-soft);margin-top:var(--sp-4)}
+
+.scn{display:flex;gap:var(--sp-8);flex-wrap:wrap;align-items:center}
+.scn .lbl{font-size:var(--fs-caption);color:var(--a-muted)}
+.btn{font-size:var(--fs-body);border:1px solid var(--n-border-strong);background:var(--a-card);
+  color:var(--n-ink-control);padding:var(--sp-4) var(--sp-12);border-radius:var(--rad-control);white-space:nowrap}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.on{border-color:var(--a-primary);color:var(--a-primary);background:var(--a-sel);font-weight:600}
+.btn.primary{border-color:var(--a-primary);background:var(--a-primary);color:var(--a-on-accent);font-weight:600}
+.btn.primary:hover:enabled{background:var(--a-primary-h)}
+.seg{display:inline-flex;border:1px solid var(--n-border-strong);border-radius:var(--rad-control);overflow:hidden}
+.seg button{border:0;background:var(--a-card);color:var(--n-ink-control);
+  padding:var(--sp-2) var(--sp-10);font-size:var(--fs-caption)}
+.seg button.on{background:var(--a-sel);color:var(--a-primary);font-weight:700}
+.seg button+button{border-left:1px solid var(--n-border-strong)}
+
+.stage{background:var(--a-card);border:1px solid var(--n-border-strong);border-radius:var(--rad-surface);
+  box-shadow:0 6px 20px var(--a-shadow);padding:var(--sp-16);display:flex;flex-direction:column;gap:var(--sp-16)}
+.zl{font-size:var(--fs-caption);color:var(--n-header-ink);font-weight:700;letter-spacing:.06em}
+.zone{display:flex;flex-direction:column;gap:var(--sp-6)}
+.hh{display:flex;align-items:center;gap:var(--sp-8);flex-wrap:wrap}
+.hh .acts{margin-left:auto;display:flex;gap:var(--sp-6);align-items:center}
+
+/* 필터 바: 전열 검색(필터 입력기) + 칩(정본 상태의 재진술) */
+.filterbar{display:flex;gap:var(--sp-8);align-items:center;flex-wrap:wrap}
+.filterbar input[type=search]{background:var(--a-card);border:1px solid var(--n-border-strong);
+  border-radius:var(--rad-control);padding:var(--sp-4) var(--sp-10);color:var(--a-ink);
+  font:inherit;font-size:var(--fs-body);min-width:240px}
+.searchcap{font-size:var(--fs-caption);color:var(--a-muted)}
+.chips{display:flex;gap:var(--sp-6);flex-wrap:wrap;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:var(--sp-6);border:1px solid var(--a-primary);
+  color:var(--a-primary);background:var(--a-sel);border-radius:var(--rad-pill);
+  padding:var(--sp-2) var(--sp-10);font-size:var(--fs-body);font-weight:600}
+.chip button{border:0;background:none;color:inherit;font-weight:700;padding:0;line-height:1}
+.chip.grp{border-style:dashed;flex-wrap:wrap}
+.bchip{display:inline-flex;align-items:center;gap:var(--sp-2);border:1px solid var(--a-primary);
+  border-radius:var(--rad-pill);padding:0 var(--sp-6);font-size:var(--fs-caption);font-weight:600;
+  background:var(--a-card)}
+.bchip button{border:0;background:none;color:inherit;font-weight:700;padding:0;line-height:1}
+.orop{font-size:var(--fs-caption);opacity:.7}
+
+.tblwrap{overflow-x:auto;border:1px solid var(--a-border);border-radius:var(--rad-control)}
+table{width:100%;border-collapse:collapse;font-size:var(--fs-body)}
+th{font-size:var(--fs-caption);color:var(--n-header-ink);text-align:left;font-weight:600;
+  background:var(--n-header-bg);padding:var(--sp-6) var(--sp-10);border-bottom:1px solid var(--a-border);white-space:nowrap}
+th .hcell{display:flex;align-items:center;gap:var(--sp-4)}
+.icobtn{border:1px solid transparent;background:none;color:var(--n-header-ink);
+  border-radius:var(--rad-control);padding:0 var(--sp-4);font-size:10px;line-height:1.5}
+.icobtn:hover{border-color:var(--n-border-strong);background:var(--a-card)}
+.icobtn.active{color:var(--a-primary);border-color:var(--a-primary);background:var(--a-sel)}
+.icobtn:disabled{opacity:.4;cursor:help}
+tr.fr th{padding:var(--sp-2) var(--sp-6);border-bottom:1px solid var(--n-border-strong)}
+tr.fr select{background:var(--a-card);border:1px solid var(--n-border-strong);
+  border-radius:var(--rad-control);padding:1px var(--sp-4);color:var(--a-ink);
+  font:inherit;font-size:var(--fs-caption);max-width:150px}
+tr.fr .nofilter{color:var(--a-muted);font-weight:400;cursor:help}
+td{padding:var(--sp-6) var(--sp-10);border-bottom:1px solid var(--a-border);white-space:nowrap;vertical-align:middle}
+tbody{user-select:none}
+tbody tr{cursor:pointer}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:var(--n-surface-alt)}
+tbody tr.sel td{background:var(--a-sel)}
+td.num{text-align:right;font-variant-numeric:tabular-nums;color:var(--n-ink-soft)}
+mark{background:var(--pend-bg);color:inherit;border-radius:2px;padding:0 1px}
+.strip{border:1px dashed var(--n-border-strong);border-radius:var(--rad-control);background:var(--n-surface-alt);
+  padding:var(--sp-6) var(--sp-10);font-size:var(--fs-caption);color:var(--n-ink-soft)}
+
+/* 열 필터 패널 (B: 아이콘-펼침) */
+.fpanel{position:fixed;z-index:40;background:var(--a-card);border:1px solid var(--n-border-strong);
+  border-radius:var(--rad-surface);box-shadow:0 6px 20px var(--a-shadow);
+  padding:var(--sp-10);display:flex;flex-direction:column;gap:var(--sp-6);min-width:210px;max-width:280px}
+.fpanel .ttl{font-size:var(--fs-caption);color:var(--n-header-ink);font-weight:700}
+.fpanel input[type=search]{background:var(--a-card);border:1px solid var(--n-border-strong);
+  border-radius:var(--rad-control);padding:var(--sp-2) var(--sp-8);color:var(--a-ink);
+  font:inherit;font-size:var(--fs-body);width:100%}
+.fpanel .vals{display:flex;flex-direction:column;gap:var(--sp-2);max-height:170px;overflow-y:auto}
+.fpanel label{font-size:var(--fs-body);display:flex;gap:var(--sp-6);align-items:center;cursor:pointer}
+.fpanel .row{display:flex;gap:var(--sp-6)}
+.fpanel .cap{font-size:var(--fs-caption);color:var(--a-muted)}
+
+.slot{border:1px solid var(--a-border);border-radius:var(--rad-control);background:var(--n-surface-alt);
+  padding:var(--sp-6) var(--sp-10);font-size:var(--fs-body)}
+.slot b{color:var(--a-primary)}
+
+/* 게이트 */
+.gate{border:1px solid var(--n-border-strong);border-radius:var(--rad-control);background:var(--n-surface-alt);
+  padding:var(--sp-8) var(--sp-12);display:flex;flex-direction:column;gap:var(--sp-6)}
+.gate ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:var(--sp-2)}
+.gate li{font-size:var(--fs-body);color:var(--n-ink-soft)}
+.gate li .org{color:var(--a-muted);font-size:var(--fs-caption)}
+.gate .more{align-self:flex-start}
+.defline{font-size:var(--fs-body);border-radius:var(--rad-control);padding:var(--sp-4) var(--sp-10)}
+.defline.conf{color:var(--a-ok);background:var(--ok-tint);border:1px solid var(--a-ok)}
+.defline.broad{color:var(--a-ink);background:var(--ann-bg);border:1px dashed var(--ann)}
+.defline.broad b{color:var(--ann)}
+.defline.manual{color:var(--a-muted);background:var(--n-surface-alt);border:1px dashed var(--n-border-strong)}
+
+.notice{font-size:var(--fs-body);border-radius:var(--rad-control);padding:var(--sp-6) var(--sp-10);white-space:pre-line}
+.notice.warn{color:var(--a-warn);background:var(--pend-bg);border:1px solid var(--pend-bd)}
+.notice.hint{color:var(--a-muted);background:var(--n-surface-alt)}
+.notice.contam{color:var(--a-danger);background:var(--danger-tint);border:1px solid var(--a-danger)}
+
+.done ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:var(--sp-4)}
+.done li{font-size:var(--fs-body);color:var(--n-ink-soft);display:flex;gap:var(--sp-8);align-items:baseline;flex-wrap:wrap}
+.done .ok{color:var(--a-ok);font-weight:600}
+.done .bad{color:var(--a-danger);font-weight:600}
+.done .meta{font-size:var(--fs-caption);color:var(--a-muted)}
+.done .none{color:var(--a-muted);font-size:var(--fs-caption)}
+
+.ann{border:1px dashed var(--ann);border-radius:var(--rad-control);background:var(--ann-bg);
+  color:var(--a-ink);padding:var(--sp-6) var(--sp-10);font-size:var(--fs-caption);line-height:1.6}
+.ann .ref{display:inline-block;border:1px solid var(--ann);color:var(--ann);border-radius:var(--rad-pill);
+  padding:0 var(--sp-8);font-weight:700;margin-right:var(--sp-4)}
+
+.qcard{background:var(--a-card);border:1px solid var(--n-border-strong);border-radius:var(--rad-surface);
+  padding:var(--sp-12) var(--sp-16);display:flex;flex-direction:column;gap:var(--sp-8)}
+.qcard h3{font-size:var(--fs-strong);display:flex;align-items:center;gap:var(--sp-8);flex-wrap:wrap}
+.qnum{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;
+  border-radius:var(--rad-pill);background:var(--ann);color:var(--a-on-accent);font-size:var(--fs-caption);font-weight:700}
+.qcard p{color:var(--n-ink-soft);max-width:72ch}
+.qcard ul{padding-left:18px;display:flex;flex-direction:column;gap:var(--sp-4);color:var(--n-ink-soft)}
+.qcard li b{color:var(--a-ink)}
+
+.foot{font-size:var(--fs-caption);color:var(--a-muted);border-top:1px solid var(--a-border);
+  padding-top:var(--sp-12);line-height:1.8}
+</style>
+
+<div class="wrap">
+
+  <div class="head">
+    <div class="eyebrow">R-FLOW 블록 4 우회 토의 · 문제의식 시연 v3 · 미확정</div>
+    <h1>검색은 필터로 번역된다</h1>
+    <p>v3 계약: 화면을 편집하는 기제는 <b>필터 상태 하나뿐</b>이고, 전열 검색은 그 상태를
+       쓰는 입력기입니다 — 전체를 자모 부분일치로 찾고, 결과 전체를 재현하는 <b>열별 포함
+       조건의 OR 그룹</b>을 설치합니다(가지는 실제 매치가 있는 열만·가지별 프루닝 가능).
+       부수 효과: "정의 없음" 상태가 소멸하고 모든 매치가 진술 가능해집니다 — 문제는
+       "정의가 없다"에서 <b>"정의가 넓다"</b>로 이동합니다. 열 필터 UI는 A(별도 행)와
+       B(엑셀식 아이콘-펼침)를 토글로 경합시켜 보세요.</p>
+  </div>
+
+  <!-- ── 1. 계보와 계약 ── -->
+  <div class="sec">
+    <h2>1. 계보: 이 동사의 출생 조건, 그리고 계약</h2>
+    <div class="grid2">
+      <div class="doc">
+        <div class="src">블록 1 결정 (r-flow 원장)</div>
+        <blockquote>선택 모델 = <b>열거형</b>(행 클릭 토글). "필터=선택" 발명 기각.
+          필터 = <b>보기만</b> · 「매치 전체 선택」+「전체 해제」 · 선택은 필터를 <b>관통</b> ·
+          게이트 = 선택 스냅샷 재진술(소량 전부 · <b>대량 표본+「외 N건」 펼침</b>).</blockquote>
+        <div class="verdict">「매치 전체 선택」 = "필터=선택" 기각의 보상 지불로 출생.
+          명시성의 실질은 "매치 정의의 진술 가능성"에 얹혀 있다.</div>
+      </div>
+      <div class="doc">
+        <div class="src">현행 코드 (web/js/screens/run.js)</div>
+        <blockquote>필터는 <b>존재하지 않음</b> — 레코드 체크박스 목록 + 「선택 N/M」 카운터가
+          전부. 필터는 블록 1의 발명이며, 선언 형식(어느 열에 어떻게 거는가)은 <b>미설계</b>.</blockquote>
+        <div class="verdict">지금 정하는 것은 개정이 아니라 신설이다.</div>
+      </div>
+    </div>
+    <div class="reframe">계약 v3: <b>검색은 항상 필터를 통해서만 작용한다.</b>
+      <span class="sub">두 기제가 각자 화면을 편집하면 서로에게 주는 영향이 불명료해진다(v2의
+      잔여 결함). 단일 기제로 통일: 필터 상태(열-조건 목록 + OR 그룹 하나)가 정본이고, 보이는
+      것은 언제나 이 상태 하나로 설명된다. 열 머리는 열-조건을 쓰고(같은 열 값들은 OR·열 간
+      AND — 엑셀 동형), 전열 검색은 "찾은 전체를 재현하는 OR 그룹"을 쓴다. 검색창을 비우면
+      그룹이 걷힌다 — 검색창은 그룹의 편집기일 뿐이다.</span>
+    </div>
+    <div class="reframe2">이동한 문제: <b>정의 없음 → 정의가 넓다.</b>
+      <span class="sub">v2까지의 갈림길("정의 없는 매치에 집합 동사를 허용하는가")은 이 계약으로
+      전제가 소거된다 — OR 그룹은 진술 가능한 정의다("(수요기관 ∨ 비고) 포함 「행복도시」").
+      남는 질문: 게이트가 광의 OR 정의를 어떻게 대접하는가 — 평문 진술로 충분한가, 가지를
+      강조하고 프루닝을 권해야 하는가. 오버매치는 이제 숨지 않고 정의 안에서 광고된다.</span>
+    </div>
+  </div>
+
+  <!-- ── 2. 데모 ── -->
+  <div class="sec">
+    <h2>2. 걸어보기: 같은 동사, 넓은 정의와 좁힌 정의</h2>
+    <p class="seclede">「행복도시」를 치면(「행복도ㅅ」 단계에서 이미) 수요기관 5행과 비고란
+       1행(세종청사관리소 건)이 걸리고, OR 그룹 칩이 가지를 진술합니다. 그대로 동사를 걸면
+       게이트 정의줄이 "비고 포함"을 광고하지만 표본은 그 행을 감춥니다. 그룹 칩에서 비고
+       가지를 쳐내거나 열 필터로 선언하면 같은 동사가 좁은 정의를 담보로 섭니다.</p>
+    <div class="scn">
+      <span class="lbl">시나리오</span>
+      <button class="btn" id="scnA">A. 광의 경로 (OR 그룹 그대로)</button>
+      <button class="btn" id="scnB">B. 프루닝 경로 (가지 쳐내기)</button>
+      <button class="btn" id="scnReset">초기화</button>
+      <span class="lbl" style="margin-left:auto">열 필터 UI</span>
+      <span class="seg" role="group" aria-label="열 필터 UI 선택">
+        <button id="uiB" class="on">B 아이콘 펼침</button>
+        <button id="uiA">A 별도 행</button>
+      </span>
+    </div>
+
+    <div class="stage" id="stage" tabindex="0" aria-label="필터 계약 데모 스테이지">
+
+      <div class="zone">
+        <div class="hh">
+          <span class="zl">데이터 존</span>
+          <span class="acts">
+            <button class="btn" id="selMatch">전체 선택</button>
+            <button class="btn" id="selNone">전체 해제</button>
+          </span>
+        </div>
+        <div class="filterbar">
+          <input type="search" id="q" placeholder="전열 검색 — 필터로 번역되어 적용됩니다" aria-label="전열 검색(재현 필터 설치)">
+          <span class="searchcap" id="qcap"></span>
+        </div>
+        <div class="chips" id="chips" hidden></div>
+        <div class="tblwrap"><table>
+          <thead>
+            <tr id="hrow">
+              <th>공고번호</th>
+              <th><span class="hcell">공고명<button class="icobtn" id="ico_name" aria-label="공고명 필터">▾</button></span></th>
+              <th><span class="hcell">수요기관<button class="icobtn" id="ico_org" aria-label="수요기관 필터">▾</button></span></th>
+              <th><span class="hcell">추정가격<button class="icobtn" disabled title="범위 조건(이하·구간)은 값 목록으로 표현 불가 — 별도 문법 미설계(미결)">▾</button></span></th>
+              <th><span class="hcell">마감일<button class="icobtn" id="ico_due" aria-label="마감일 필터">▾</button></span></th>
+              <th><span class="hcell">비고<button class="icobtn" id="ico_note" aria-label="비고 필터">▾</button></span></th>
+            </tr>
+            <tr class="fr" id="frow" hidden>
+              <th><span class="nofilter" title="유일키 — 필터 문법 없음">—</span></th>
+              <th><select id="hf_name" aria-label="공고명 필터(별도 행)"></select></th>
+              <th><select id="hf_org" aria-label="수요기관 필터(별도 행)"></select></th>
+              <th><span class="nofilter" title="범위 조건 미설계(미결)">범위…</span></th>
+              <th><select id="hf_due" aria-label="마감일 필터(별도 행)"></select></th>
+              <th><select id="hf_note" aria-label="비고 필터(별도 행)"></select></th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table></div>
+        <div class="strip" id="strip" hidden></div>
+        <div class="notice warn" id="alarm" hidden></div>
+        <div class="ann"><span class="ref">계약</span>화면을 편집하는 기제는 필터 상태 하나뿐입니다.
+          전열 검색은 상태의 입력기(OR 그룹 설치·검색창 비우면 그룹 걷힘), 열 머리는 열-조건의
+          입력기(같은 열 값 체크 = OR·열 간 = AND, 엑셀 동형). 칩 줄이 상태 전체를 재진술하고,
+          게이트와 「전체 선택」은 상태만 읽습니다. 필터=보기만 · 선택은 관통(블록 1 승계).</div>
+        <div class="ann"><span class="ref">자모</span>검색·열 검색 모두 자모(초·중·종성) 분해
+          부분일치입니다: 「바ㄴ」(ㅂㅏㄴ)이 「바나나」(ㅂㅏㄴㅏㄴㅏ)에 걸리고 겹받침은 성분
+          확장(ㄺ=ㄹㄱ). 하이라이트는 자모 위치를 원문 음절 범위로 역매핑. OR 그룹의 가지는
+          실제 매치가 있는 열에만 섭니다 — "전체를 찾고, 전체를 재현하는 조건을 적용"의 구현.
+          일자·금액 열은 전열 검색 대상에서 제외(범위 문법 소관 — 미결).</div>
+        <div class="ann"><span class="ref">클릭</span>클릭 = 개별 토글(블록 1 「행 클릭 토글」
+          승계 — 이미 개별 선택이므로 Ctrl 수식은 어휘에 없음, Explorer 문법 채택 시에만 의미
+          발생) · Shift+클릭 = 앵커부터 보이는 순서로 범위에 앵커의 상태를 일괄
+          전파(선택도 해제도 범위로). 동사명은 「매치 전체 선택」→「전체 선택」 간소화 —
+          담보는 게이트 정의줄이 지므로 버튼명이 정의를 업고 다닐 필요가 없습니다. 로직은
+          applyClick 하나로 격리 — 실구현 시 공유 헬퍼(selection.js, modal.js·preserve.js
+          전례)로 승격해 다른 클릭-선택 표면과 동일 작동시키는 것이 중앙화 방향입니다.</div>
+      </div>
+
+      <div class="zone">
+        <span class="zl">슬롯</span>
+        <div class="slot" id="slot"></div>
+      </div>
+
+      <div class="zone">
+        <span class="zl">게이트 (선택 스냅샷 재진술)</span>
+        <div class="gate" id="gate"></div>
+        <div class="ann"><span class="ref">표본</span>재진술은 블록 1 결정 그대로(소량 전부·대량
+          표본+「외 N건」 펼침) + 정의줄. v3에서 정의줄은 항상 섭니다 — 초록(좁은 정의)과
+          보라 점선(광의 OR — 가지 진술 포함)의 두 어조. 오버매치 행은 여전히 표본 뒤에 숨을
+          수 있으나, 정의가 "비고 포함"을 광고하므로 방어선이 무(無)에서 진술로 승격됩니다.
+          진술로 충분한가가 남은 질문입니다.</div>
+      </div>
+
+      <div class="zone">
+        <span class="zl">승인 동사 (집합 1회 의식)</span>
+        <div class="hh">
+          <button class="btn primary" id="genBtn">생성</button>
+        </div>
+      </div>
+
+      <div class="zone done">
+        <span class="zl">완료 존 (세션 스코프)</span>
+        <ul id="doneList"><li class="none">아직 완료가 없습니다.</li></ul>
+        <div class="notice contam" id="verdict" hidden></div>
+        <div class="notice hint" id="hint">시나리오 버튼으로 시작하거나, 검색창에 「행복도ㅅ」을 쳐보세요.</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── 3. 경합·미결 ── -->
+  <div class="sec">
+    <h2>3. 경합과 미결</h2>
+
+    <div class="qcard">
+      <h3><span class="qnum">?</span>열 필터 UI 경합 — A 별도 행 vs B 아이콘 펼침 (토글로 체험)</h3>
+      <ul>
+        <li><b>A. 별도 필터 행</b> — 필터 자리가 상시 노출되어 발견성이 좋고 시선 이동이 없다.
+          대신 세로 한 단을 상시 지불하고, 드롭다운 하나로는 값 다중 선택(OR)·열별 부분일치를
+          담기 어렵다(이 데모의 A는 단일값 등가 조건만).</li>
+        <li><b>B. 엑셀식 아이콘 펼침</b> — 머리 한 줄 유지(행 절약), 패널 안에 열별 부분일치
+          검색 + 값 체크리스트(같은 열 OR)가 자연스럽게 동거. 엑셀 학습효과를 그대로 상속.
+          대신 필터 존재가 아이콘 상태색에만 실리므로 발견성은 칩 줄이 보완해야 한다.</li>
+        <li>공통: 어느 UI로 걸든 같은 필터 상태에 쓴다 — 경합은 입력기의 형태이지 상태 모델이
+          아니다.</li>
+      </ul>
+    </div>
+
+    <div class="qcard">
+      <h3><span class="qnum">?</span>재정형화된 갈림길 — 광의 OR 정의의 게이트 처우</h3>
+      <ul>
+        <li><b>(가) 평문 진술</b> — 정의줄이 가지를 나열하는 것으로 충분하다고 본다. 읽지 않는
+          사용자에게는 여전히 조용하다.</li>
+        <li><b>(나) 가지 강조 + 프루닝 권유</b> — 게이트가 OR 정의일 때 가지별 매치 수를 펼쳐
+          보이고("비고 포함: 1행") 쳐낼 것을 권한다. 시끄러움 비용.</li>
+        <li><b>(다) 소수 가지 자동 표본 승격</b> — 표본 추출이 가지별 층화(비고 1행은 반드시
+          표본에 포함)로 바뀌면 "표본 뒤에 숨는 오버매치"가 구조적으로 소멸. 표본 규칙의
+          개정이라 블록 1 결정 문안 수정 필요.</li>
+      </ul>
+      <p>v2 갈림길(선언-후 잠금)은 전제("정의 없음")가 소거되어 폐기 후보 — 잠금이 지키려던
+        것을 이제 정의줄이 진술로 지킨다. 남은 것은 진술의 세기다.</p>
+    </div>
+
+    <div class="qcard">
+      <h3><span class="qnum">…</span>미결 (이 우회 토의의 잔여)</h3>
+      <ul>
+        <li><b>플레인 클릭의 문법</b>: 데모는 토글 유지(블록 1 승계)+Shift 범위. Ctrl은
+          오범주화로 어휘에서 제거(토글이 이미 개별 선택 — v3.2 정정). Explorer 문법
+          (플레인=단독 교체·Ctrl=토글·Shift=범위 교체)을 채택하면 자연 기대엔 더 가깝지만
+          블록 1 「행 클릭 토글」 문언 개정이 필요하고, 오클릭 한 번이 공들인 선택을
+          갈아치우는 파괴 전이가 생긴다(세션 가드 본안 되먹임).</li>
+        <li><b>클릭-선택 로직의 중앙화 범위</b>: 같은 문법을 쓸 다른 클릭-선택 표면의 전수
+          목록(에디터 데이터 표·txt 큐 색인·작업 목록 등) — 공유 헬퍼(selection.js) 승격은
+          목록 확정 후.</li>
+        <li><b>프루닝의 지속성</b>: 가지를 쳐낸 뒤 검색 텍스트를 고치면 가지가 재계산되어
+          프루닝이 풀린다(데모도 동일) — 프루닝을 텍스트 수명에 묶을지, 열 단위로 기억할지.</li>
+        <li><b>연속 검색의 의미론</b>: 새 검색어는 그룹 교체인가 누적(그룹 2개)인가 — 데모는
+          교체(그룹은 항상 하나).</li>
+        <li><b>범위 조건 문법</b>: 추정가격 이하·마감일 구간 — 값 목록으로 표현 불가, 열별
+          범위 UI 미설계.</li>
+        <li><b>열-조건과 그룹의 중복 표현</b>: "수요기관 포함 X" 열-조건과 가지 하나짜리 OR
+          그룹은 동치 — 정규화(가지 1개면 열-조건으로 강등)할지.</li>
+        <li><b>필터 상태의 세션 스코프</b>: 선택=세션 휘발은 블록 1 명문이나, 필터 상태(칩·
+          그룹)도 함께 휘발인지는 미결 — 세션 가드 본안과 접합.</li>
+        <li><b>블록 4 본안과의 되먹임</b>: 선언 모델이 정해져야 "공들인 선택 집합"의 재구성
+          비용이 정해지고, 그것이 세션 가드의 무게를 정한다.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="foot">
+    출처: r-flow 라운드 원장 블록 1(열거형·보기만·관통·표본 재진술) · web/js/screens/run.js(필터
+    부재 확인) · docs/R_INFO_JOB_HOME.md(세션 패널 인계) · 사용자 피드백(v2: 자모 부분일치·
+    열별 드롭다운·검색=좁힘 전용 / v3: 검색↔필터 단일 기제 계약·재현 OR 그룹·UI 경합 A/B).
+    이 시연은 블록 4 본안(세션 가드·건 연속성) 토의에서 분기한 우회 토의이며, 합의 전까지
+    확정 동작이 아닙니다. 표본 데이터는 실존 기관·공고와 무관한 예시입니다. 판 이력은 문서
+    상단 주석에 기록되어 있습니다.
+  </div>
+
+</div>
+
+<script>
+(function(){
+  var ROWS=[
+    {id:201,name:"복사용지(A4) 구매",org:"행복도시건설청",price:45000000,due:"2026-08-14",note:""},
+    {id:202,name:"사무용 의자 교체",org:"행복도시건설청",price:62300000,due:"2026-08-21",note:""},
+    {id:203,name:"회의실 영상장비 구매",org:"국립세종도서관",price:118000000,due:"2026-09-04",note:""},
+    {id:204,name:"청사 LED 조명 교체",org:"행복도시건설청",price:38500000,due:"2026-08-28",note:""},
+    {id:205,name:"문서고 이동식 서가 설치",org:"세종청사관리소",price:41200000,due:"2026-09-02",note:"행복도시 이관분"},
+    {id:206,name:"방역 소독 물품 구매",org:"국립세종도서관",price:12800000,due:"2026-08-07",note:""},
+    {id:207,name:"전산 소모품(토너) 구매",org:"행복도시건설청",price:27400000,due:"2026-08-18",note:""},
+    {id:208,name:"제설 자재(염화칼슘) 구매",org:"세종청사관리소",price:96000000,due:"2026-11-30",note:""},
+    {id:209,name:"냉난방기 필터 교체",org:"국립세종도서관",price:19600000,due:"2026-08-25",note:""},
+    {id:210,name:"보안 출입카드 리더 구매",org:"행복도시건설청",price:55000000,due:"2026-09-11",note:""},
+    {id:211,name:"공기청정기 렌탈",org:"세종청사관리소",price:33000000,due:"2026-08-30",note:""},
+    {id:212,name:"잉크젯 프린터 구매",org:"국립세종도서관",price:8900000,due:"2026-08-12",note:""}
+  ];
+  var TRAP=205, SAMPLE=3, SMALL=4;
+  var COLS=[{key:"name",label:"공고명"},{key:"org",label:"수요기관"},
+            {key:"due",label:"마감일"},{key:"note",label:"비고"}];
+  var GRP_CANDIDATES=["name","org","note"]; // 일자·금액 제외(범위 문법 소관)
+
+  /* ── 필터 상태 (정본) ── */
+  var colC={};      // key → {text:"", vals:null|Array}
+  COLS.forEach(function(c){colC[c.key]={text:"",vals:null};});
+  var grp={text:"",branches:[]};   // 전열 검색 OR 그룹(항상 최대 1개)
+  var sel=new Set();
+  var anchorId=null, anchorState=true;   // Shift 범위의 기준점과 전파할 상태
+  var bulkSnapshot=null;           // 집합 동사 시점의 정의 스냅샷 {desc, broad, hadNote}
+  var expanded=false, uiMode="B";
+
+  /* ── 클릭-선택 문법 (중앙화 후보: 실구현 시 web/js 공유 헬퍼 selection.js 승격) ──
+     클릭 = 개별 토글(블록 1 「행 클릭 토글」 승계, 앵커 갱신). Ctrl 수식은 어휘에 없음 —
+     토글이 이미 개별 선택이라 빈 수식(오범주화 정정 v3.2), 눌러도 무해 통과(분기 없음).
+     Shift+클릭 = 앵커부터 현재 행까지, 보이는 순서 기준 범위에 앵커의 적용 상태를 전파.
+     Explorer 문법(플레인=단독 교체·Ctrl=토글)은 갈림길로 보존 — 채택 시 블록 1 문언 개정. */
+  function applyClick(selSet,orderedIds,clickedId,ev){
+    if(ev.shiftKey&&anchorId!==null&&orderedIds.indexOf(anchorId)>=0){
+      var a=orderedIds.indexOf(anchorId), b=orderedIds.indexOf(clickedId);
+      if(b<0) return;
+      var lo=Math.min(a,b), hi=Math.max(a,b);
+      for(var i=lo;i<=hi;i++){
+        if(anchorState) selSet.add(orderedIds[i]);
+        else selSet.delete(orderedIds[i]);
+      }
+    }else{
+      if(selSet.has(clickedId)){selSet.delete(clickedId);anchorState=false;}
+      else{selSet.add(clickedId);anchorState=true;}
+      anchorId=clickedId;
+    }
+  }
+
+  var $=function(id){return document.getElementById(id);};
+  var tbody=$("tbody"), slot=$("slot"), strip=$("strip"), gate=$("gate"),
+      chips=$("chips"), alarm=$("alarm"), hint=$("hint"), verdict=$("verdict"),
+      doneList=$("doneList"), q=$("q"), qcap=$("qcap"), selMatch=$("selMatch"),
+      stage=$("stage"), frow=$("frow");
+  var reduceMotion=window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ── 자모 분해 부분일치 (초 ⌊v/588⌋ · 중 ⌊v%588/28⌋ · 종 v%28, 겹받침 성분 확장) ── */
+  var CHO=["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
+  var JUNG=["ㅏ","ㅐ","ㅑ","ㅒ","ㅓ","ㅔ","ㅕ","ㅖ","ㅗ","ㅘ","ㅙ","ㅚ","ㅛ","ㅜ","ㅝ","ㅞ","ㅟ","ㅠ","ㅡ","ㅢ","ㅣ"];
+  var JONG=["","ㄱ","ㄲ","ㄱㅅ","ㄴ","ㄴㅈ","ㄴㅎ","ㄷ","ㄹ","ㄹㄱ","ㄹㅁ","ㄹㅂ","ㄹㅅ","ㄹㅌ","ㄹㅍ","ㄹㅎ",
+            "ㅁ","ㅂ","ㅂㅅ","ㅅ","ㅆ","ㅇ","ㅈ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"];
+  function jamoMap(s){
+    var j="",pos=[];
+    for(var i=0;i<s.length;i++){
+      var c=s.charCodeAt(i);
+      if(c>=0xAC00&&c<=0xD7A3){
+        var v=c-0xAC00;
+        var part=CHO[(v/588)|0]+JUNG[((v%588)/28)|0]+JONG[v%28];
+        for(var k=0;k<part.length;k++){j+=part[k];pos.push(i);}
+      }else{j+=s[i];pos.push(i);}
+    }
+    return {j:j,pos:pos};
+  }
+  function jamoFind(hay,needle){
+    if(!needle) return null;
+    var h=jamoMap(hay), n=jamoMap(needle).j;
+    var at=h.j.indexOf(n);
+    if(at<0) return null;
+    return [h.pos[at], h.pos[at+n.length-1]+1];
+  }
+  function jhit(hay,needle){return jamoFind(hay,needle)!==null;}
+
+  function no(r){return "제2026-"+r.id+"호";}
+  function rowById(id){return ROWS.find(function(r){return r.id===id;});}
+
+  /* ── 매치 판정: 상태만 읽는다 ── */
+  function colPass(r,except){
+    return COLS.every(function(c){
+      if(except&&c.key===except) return true;
+      var f=colC[c.key], v=r[c.key]||"";
+      if(f.vals&&f.vals.indexOf(v)<0) return false;
+      if(f.text&&!jhit(v,f.text)) return false;
+      return true;
+    });
+  }
+  function grpPass(r){
+    if(!grp.text||!grp.branches.length) return !grp.text;
+    return grp.branches.some(function(b){return jhit(r[b]||"",grp.text);});
+  }
+  function visible(){
+    return ROWS.filter(function(r){return colPass(r)&&(!grp.text||grpPass(r));});
+  }
+  /* 전열 검색 → 재현 그룹: 실제 매치가 있는 열에만 가지 설치 */
+  function recomputeBranches(){
+    if(!grp.text){grp.branches=[];return;}
+    grp.branches=GRP_CANDIDATES.filter(function(b){
+      return ROWS.some(function(r){return colPass(r)&&jhit(r[b]||"",grp.text);});
+    });
+  }
+  function colLabel(k){return COLS.find(function(c){return c.key===k;}).label;}
+  function valLabel(v){return v===""?"(빈값)":v;}   // 빈값 = 일급 값(엑셀 (Blanks) 동형)
+  function colDesc(c){
+    var f=colC[c.key], parts=[];
+    if(f.vals) parts.push(c.label+(f.vals.length===1?" = "+valLabel(f.vals[0])
+      :" ∈ {"+f.vals.map(valLabel).join(", ")+"}"));
+    if(f.text) parts.push(c.label+" 포함 「"+f.text+"」");
+    return parts;
+  }
+  /* 열의 값 목록: 다른 열 조건+그룹을 통과한 행 기준, 빈값이 있으면 ""를 정식 값으로 포함 */
+  function colValues(key){
+    var vals=[], hasEmpty=false;
+    ROWS.filter(function(r){return colPass(r,key)&&(!grp.text||grpPass(r));})
+      .forEach(function(r){
+        var v=r[key]||"";
+        if(v===""){hasEmpty=true;return;}
+        if(vals.indexOf(v)<0) vals.push(v);
+      });
+    if(hasEmpty) vals.push("");
+    return vals;
+  }
+  function grpDesc(){
+    if(!grp.text||!grp.branches.length) return "";
+    return "("+grp.branches.map(colLabel).join(" ∨ ")+") 포함 「"+grp.text+"」";
+  }
+  function fullDesc(){
+    var parts=[];
+    COLS.forEach(function(c){parts=parts.concat(colDesc(c));});
+    var g=grpDesc(); if(g) parts.push(g);
+    return parts.join(" · ");
+  }
+  function hasCond(key){var f=colC[key];return !!(f.vals||f.text);}
+
+  function mark(text,terms){
+    for(var i=0;i<terms.length;i++){
+      var f=jamoFind(text,terms[i]);
+      if(f) return text.slice(0,f[0])+"<mark>"+text.slice(f[0],f[1])+"</mark>"+text.slice(f[1]);
+    }
+    return text;
+  }
+  function setAlarm(msg){
+    if(msg){alarm.textContent=msg;alarm.hidden=false;}
+    else alarm.hidden=true;
+  }
+  function setHint(msg){hint.textContent=msg;}
+
+  /* ── A: 별도 행 드롭다운 (단일값 등가 조건만 — 경합용 현상 유지) ── */
+  var EMPTY_OPT="__EMPTY__";   // select value=""는 (전체)가 쓰므로 빈값은 센티널로
+  function renderFilterRow(){
+    COLS.forEach(function(c){
+      var s=$("hf_"+c.key), vals=colValues(c.key);
+      var f=colC[c.key];
+      var cur=(f.vals&&f.vals.length===1)?(f.vals[0]===""?EMPTY_OPT:f.vals[0]):"";
+      var html='<option value="">(전체)</option>';
+      vals.forEach(function(v){
+        var ov=(v===""?EMPTY_OPT:v);
+        html+='<option value="'+ov+'"'+(cur===ov?" selected":"")+">"+valLabel(v)+"</option>";
+      });
+      s.innerHTML=html;
+      if(!cur) s.value="";
+    });
+  }
+  COLS.forEach(function(c){
+    $("hf_"+c.key).addEventListener("change",function(){
+      colC[c.key].vals=this.value?[this.value===EMPTY_OPT?"":this.value]:null;
+      recomputeBranches(); setAlarm(null); render();
+    });
+  });
+
+  /* ── B: 아이콘-펼침 패널 (열별 부분일치 + 값 체크리스트) ── */
+  var panel=null, panelKey=null;
+  function closePanel(){
+    if(panel){panel.remove();panel=null;panelKey=null;}
+  }
+  function openPanel(key,anchor){
+    if(panelKey===key){closePanel();return;}
+    closePanel();
+    panelKey=key;
+    var c=COLS.find(function(x){return x.key===key;});
+    panel=document.createElement("div");
+    panel.className="fpanel";
+    panel.setAttribute("role","dialog");
+    panel.setAttribute("aria-label",c.label+" 필터");
+    var vals=colValues(key);
+    var f=colC[key];
+    var html='<span class="ttl">'+c.label+" 필터</span>"
+      +'<input type="search" id="fp_text" placeholder="열 부분일치 (자모)" value="'+(f.text||"")+'">'
+      +'<div class="row"><button class="btn" id="fp_all">전체</button>'
+      +'<button class="btn" id="fp_none">해제</button>'
+      +'<button class="btn" id="fp_close">닫기</button></div>'
+      +'<div class="vals" id="fp_vals"></div>'
+      +'<span class="cap">값 체크 = 같은 열 OR · 열 사이 = AND (엑셀 동형)</span>';
+    panel.innerHTML=html;
+    document.body.appendChild(panel);
+    var rect=anchor.getBoundingClientRect();
+    var pw=panel.offsetWidth;
+    var left=Math.min(rect.left,window.innerWidth-pw-12);
+    panel.style.top=(rect.bottom+4)+"px";
+    panel.style.left=Math.max(8,left)+"px";
+    var valsEl=panel.querySelector("#fp_vals");
+    vals.forEach(function(v){
+      var lb=document.createElement("label");
+      var checked=!f.vals||f.vals.indexOf(v)>=0;
+      lb.innerHTML='<input type="checkbox"'+(checked?" checked":"")
+        +' style="accent-color:var(--a-primary)"> <span>'+valLabel(v)+"</span>";
+      lb.querySelector("input").addEventListener("change",function(){
+        var cur=f.vals?f.vals.slice():vals.slice();
+        if(this.checked){if(cur.indexOf(v)<0)cur.push(v);}
+        else cur=cur.filter(function(x){return x!==v;});
+        f.vals=(cur.length===vals.length)?null:cur;
+        recomputeBranches(); render();
+      });
+      valsEl.appendChild(lb);
+    });
+    panel.querySelector("#fp_text").addEventListener("input",function(){
+      f.text=this.value.trim();
+      recomputeBranches(); render();
+    });
+    panel.querySelector("#fp_all").addEventListener("click",function(){
+      f.vals=null; recomputeBranches(); render(); closePanel(); openPanel(key,anchor);
+    });
+    panel.querySelector("#fp_none").addEventListener("click",function(){
+      f.vals=[]; recomputeBranches(); render(); closePanel(); openPanel(key,anchor);
+    });
+    panel.querySelector("#fp_close").addEventListener("click",closePanel);
+  }
+  ["name","org","due","note"].forEach(function(key){
+    $("ico_"+key).addEventListener("click",function(e){
+      e.stopPropagation(); openPanel(key,this);
+    });
+  });
+  document.addEventListener("mousedown",function(e){
+    if(panel&&!panel.contains(e.target)) closePanel();
+  });
+
+  /* ── UI 경합 토글 ── */
+  $("uiA").addEventListener("click",function(){
+    uiMode="A"; frow.hidden=false;
+    $("uiA").classList.add("on"); $("uiB").classList.remove("on");
+    closePanel(); render();
+  });
+  $("uiB").addEventListener("click",function(){
+    uiMode="B"; frow.hidden=true;
+    $("uiB").classList.add("on"); $("uiA").classList.remove("on");
+    render();
+  });
+
+  function render(){
+    renderFilterRow();
+    var vis=visible(), visIds=vis.map(function(r){return r.id;}), n=sel.size;
+    var terms=[grp.text].concat(COLS.map(function(c){return colC[c.key].text;}))
+      .filter(function(t){return t;});
+
+    // 아이콘 활성 상태
+    ["name","org","due","note"].forEach(function(key){
+      $("ico_"+key).classList.toggle("active",hasCond(key));
+    });
+
+    // 칩 줄 — 상태 전체의 재진술
+    chips.innerHTML="";
+    var any=false;
+    COLS.forEach(function(c){
+      colDesc(c).forEach(function(d){
+        any=true;
+        var sp=document.createElement("span");
+        sp.className="chip";
+        sp.innerHTML=d+' <button aria-label="'+c.label+' 조건 해제">×</button>';
+        sp.querySelector("button").addEventListener("click",function(){
+          colC[c.key]={text:"",vals:null};
+          recomputeBranches(); setAlarm(null); render();
+        });
+        chips.appendChild(sp);
+      });
+    });
+    if(grp.text&&grp.branches.length){
+      any=true;
+      var g=document.createElement("span");
+      g.className="chip grp";
+      var inner='포함 「'+grp.text+'」:';
+      g.innerHTML=inner;
+      grp.branches.forEach(function(b,i){
+        if(i>0){
+          var op=document.createElement("span");
+          op.className="orop"; op.textContent="∨";
+          g.appendChild(op);
+        }
+        var bc=document.createElement("span");
+        bc.className="bchip";
+        bc.innerHTML=colLabel(b)+' <button aria-label="'+colLabel(b)+' 가지 제거">×</button>';
+        bc.querySelector("button").addEventListener("click",function(){
+          grp.branches=grp.branches.filter(function(x){return x!==b;});
+          if(!grp.branches.length){grp.text="";q.value="";}
+          setAlarm(null); render();
+          setHint(colLabel(b)+" 가지를 쳐냈습니다 — 정의가 좁아졌습니다. 검색 텍스트를 고치면 가지가 재계산됩니다(미결).");
+        });
+        g.appendChild(bc);
+      });
+      var gx=document.createElement("button");
+      gx.setAttribute("aria-label","그룹 해제");
+      gx.textContent="×";
+      gx.addEventListener("click",function(){
+        grp.text=""; grp.branches=[]; q.value=""; setAlarm(null); render();
+      });
+      g.appendChild(gx);
+      chips.appendChild(g);
+    }
+    chips.hidden=!any;
+
+    // 검색 캡션
+    if(grp.text){
+      qcap.textContent=grp.branches.length
+        ?"재현 필터 설치됨 — 가지 "+grp.branches.length+"열 · 매치 "+vis.length+"행"
+        :"매치 없음";
+    }else qcap.textContent="";
+
+    // 표
+    tbody.innerHTML="";
+    vis.forEach(function(r){
+      var tr=document.createElement("tr");
+      tr.className=sel.has(r.id)?"sel":"";
+      tr.innerHTML="<td>"+no(r)+"</td><td>"+mark(r.name,terms)+"</td><td>"+mark(r.org,terms)+"</td>"
+        +'<td class="num">'+r.price.toLocaleString("ko-KR")+"</td><td>"+r.due+"</td>"
+        +"<td>"+mark(r.note||"",terms)+"</td>";
+      tr.addEventListener("click",function(ev){
+        applyClick(sel,visIds,r.id,ev);
+        bulkSnapshot=null; setAlarm(null); render();
+      });
+      tbody.appendChild(tr);
+    });
+
+    // 관통 스트립
+    var outside=Array.from(sel).filter(function(id){return visIds.indexOf(id)<0;});
+    if(outside.length){
+      strip.hidden=false;
+      var f=rowById(outside[0]);
+      strip.textContent="필터 밖 선택 "+outside.length+"행: "+no(f)
+        +(outside.length>1?" 외 "+(outside.length-1)+"행":"")+" (선택은 필터를 관통합니다)";
+    }else strip.hidden=true;
+
+    // 슬롯 — 총계 상시 진술
+    var fd=fullDesc();
+    slot.innerHTML="선택 <b>"+n+"행</b> / 전체 "+ROWS.length+"행 · 보이는 매치 "+vis.length+"행"
+      +(fd?" · 필터: "+fd:"");
+
+    // 게이트 재진술
+    var ids=Array.from(sel).sort(function(a,b){return a-b;});
+    if(!n){
+      gate.innerHTML='<span style="font-size:var(--fs-caption);color:var(--a-muted)">선택 0행 — 재진술할 스냅샷이 없습니다.</span>';
+    }else{
+      var lines=(n<=SMALL||expanded)?ids:ids.slice(0,SAMPLE);
+      var html="<ul>";
+      lines.forEach(function(id){
+        var r=rowById(id);
+        html+="<li>"+no(r)+" "+r.name+' <span class="org">— '+r.org+"</span></li>";
+      });
+      html+="</ul>";
+      if(n>SMALL&&!expanded)
+        html+='<button class="btn more" id="moreBtn">외 '+(n-SAMPLE)+"건 펼치기</button>";
+      if(n>SMALL&&expanded)
+        html+='<button class="btn more" id="lessBtn">표본으로 접기</button>';
+      var defHtml;
+      var exactCover=ids.length===vis.length
+        &&ids.every(function(id){return visIds.indexOf(id)>=0;});
+      if(bulkSnapshot&&exactCover){
+        if(bulkSnapshot.broad){
+          defHtml='<div class="defline broad">매치 정의(광의): <b>'+bulkSnapshot.desc
+            +"</b> · "+n+"행 전부 — ∨ 가지가 넓습니다. 그룹 칩에서 가지를 쳐내 좁힐 수 있습니다.</div>";
+        }else{
+          defHtml='<div class="defline conf">매치 정의: '+(bulkSnapshot.desc||"전체 "+ROWS.length+"행(필터 없음)")
+            +" · "+n+"행 전부 — 표본 밖도 이 정의가 담보합니다.</div>";
+        }
+      }else{
+        defHtml='<div class="defline manual">수동 열거 선택 — 정의 진술 없음(소량 눈 검증 전제).</div>';
+      }
+      gate.innerHTML=html+defHtml;
+      var mb=$("moreBtn"); if(mb) mb.addEventListener("click",function(){expanded=true;render();});
+      var lb=$("lessBtn"); if(lb) lb.addEventListener("click",function(){expanded=false;render();});
+    }
+  }
+
+  function pushDone(kind,text,meta,bad){
+    var none=doneList.querySelector(".none"); if(none) none.remove();
+    var li=document.createElement("li");
+    li.innerHTML='<span class="'+(bad?"bad":"ok")+'">'+kind+"</span> "+text
+      +' <span class="meta">'+meta+"</span>";
+    doneList.insertBefore(li,doneList.firstChild);
+    while(doneList.children.length>8) doneList.removeChild(doneList.lastChild);
+  }
+
+  q.addEventListener("input",function(){
+    grp.text=q.value.trim();
+    recomputeBranches();
+    setAlarm(null); render();
+  });
+
+  selMatch.addEventListener("click",function(){
+    var vis=visible();
+    vis.forEach(function(r){sel.add(r.id);});
+    var broad=grp.text&&grp.branches.length>1;
+    bulkSnapshot={desc:fullDesc(),broad:broad,
+      hadNote:grp.text?grp.branches.indexOf("note")>=0:false};
+    setHint(broad
+      ?"광의 OR 정의로 "+vis.length+"행이 선택되었습니다 — 게이트 정의줄이 가지를 진술합니다. 표본이 감춘 행도 정의 안에 광고되어 있습니다."
+      :(fullDesc()?"정의된 매치 "+vis.length+"행이 선택되었습니다. 게이트의 정의줄을 확인하세요.":"전체 "+vis.length+"행이 선택되었습니다."));
+    setAlarm(null); render();
+  });
+  $("selNone").addEventListener("click",function(){
+    sel.clear(); anchorId=null; bulkSnapshot=null; expanded=false; setAlarm(null); render();
+  });
+
+  $("genBtn").addEventListener("click",function(){
+    if(!sel.size){setAlarm("선택 0행 — 생성할 스냅샷이 없습니다.");return;}
+    var ids=Array.from(sel).sort(function(a,b){return a-b;});
+    ids.forEach(function(id){
+      var r=rowById(id);
+      pushDone("생성",no(r)+" "+r.name,"→ "+r.org+" 문서 1건",false);
+    });
+    if(bulkSnapshot&&bulkSnapshot.hadNote&&sel.has(TRAP)){
+      var t=rowById(TRAP);
+      verdict.hidden=false;
+      verdict.textContent="코호트 오염: 행복도시건설청 묶음에 "+t.org+" 문서 1건("+no(t)
+        +")이 섞여 출하되었습니다. v2와의 차이 — 이번엔 정의줄이 「비고 포함」을 진술하고 "
+        +"있었습니다(읽었다면 잡을 수 있었음). 남은 질문: 진술로 충분한가, 게이트가 가지를 "
+        +"강조하고 프루닝을 권해야 하는가, 표본이 가지별 층화로 바뀌어야 하는가(3절 갈림길).";
+      setHint("초기화 후 시나리오 B에서 비고 가지를 쳐내고 같은 동사를 걸어보세요.");
+    }else{
+      verdict.hidden=true;
+      var okMsg=(bulkSnapshot&&bulkSnapshot.desc)
+        ?ids.length+"건 생성 — 재진술 정의("+bulkSnapshot.desc+")와 개수가 일치합니다."
+        :ids.length+"건 생성.";
+      pushDone("일괄 완료",okMsg,"",false);
+      setHint(okMsg+" 정상은 조용히.");
+    }
+    render();
+  });
+
+  $("scnA").addEventListener("click",function(){
+    resetState();
+    grp.text="행복도시"; q.value=grp.text; recomputeBranches(); render();
+    setHint("전열 검색이 재현 필터를 설치했습니다: (수요기관 ∨ 비고) 포함 「행복도시」 · 6행. 「행복도ㅅ」 단계에서 이미 걸립니다. 이대로 「전체 선택」 → 게이트 정의줄 확인 → 「생성」을 눌러보세요.");
+    stage.focus(); stage.scrollIntoView({behavior:reduceMotion?"auto":"smooth",block:"start"});
+  });
+  $("scnB").addEventListener("click",function(){
+    resetState();
+    grp.text="행복도시"; q.value=grp.text; recomputeBranches(); render();
+    setHint("그룹 칩에서 「비고」 가지의 ×를 눌러 쳐내면 5행으로 좁아집니다(또는 수요기관 열 ▾에서 값을 선언하거나, 비고 열 ▾에서 「행복도시 이관분」을 해제하고 「(빈값)」만 남겨도 같은 결과 — 여집합 표현은 빈값이 일급 값이라 성립). 그 뒤 같은 「전체 선택」 → 「생성」을 걸어 정의줄의 어조 차이를 확인하세요.");
+    stage.focus(); stage.scrollIntoView({behavior:reduceMotion?"auto":"smooth",block:"start"});
+  });
+  function resetState(){
+    COLS.forEach(function(c){colC[c.key]={text:"",vals:null};});
+    grp={text:"",branches:[]}; q.value="";
+    sel.clear(); anchorId=null; bulkSnapshot=null; expanded=false;
+    verdict.hidden=true; setAlarm(null); closePanel();
+    doneList.innerHTML='<li class="none">아직 완료가 없습니다.</li>';
+  }
+  $("scnReset").addEventListener("click",function(){
+    resetState();
+    setHint("시나리오 버튼으로 시작하거나, 검색창에 「행복도ㅅ」을 쳐보세요."); render();
+  });
+
+  render();
+})();
+</script>
