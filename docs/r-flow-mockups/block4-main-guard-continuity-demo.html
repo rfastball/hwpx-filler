@@ -1,0 +1,742 @@
+<!-- R-flow 블록 4 본안 시연 v1.3 (2026-07-19) — 확정 승인 완료.
+     확정 승인(2026-07-19, v1.3): 재정 4건 전부 승인 — ④ 서열(3안 즉채택→2안·1안 조건부
+       유보) · ㉥ 재적용↔전체 선택 분리(2클릭 유지) · ㉣ 소스 일치 게이트(소스별 맵 기각) ·
+       ㉠ 술어 정련("∧ ≠ 마지막 생성·완주 집합" 절을 ③ 확정문에 추가). 블록 4 본안 종결.
+     경위: 블록 4 본안(세션 가드·건 연속성) 재개 토의. 논점 ①~③은 합의 종결, ④는 제안 상태에서
+       "목업으로 실증안을 봐야 판단이 서겠다"는 요청으로 이 시연이 만들어졌다.
+     확정 지형(이 시연이 전제로 깔고 있는 것):
+       ① 필터 정의 스코프 — 세션 내 생존(재방문 포함)·작업 전환/앱 종료 시 소멸, 단 전환 시점에
+          인계용 값 객체로 전달 가능(저장 아닌 전달, 작업 무기억 비침해).
+       ② 파괴 전이 원장 — Explorer 문법 기각(체크박스 시각 문법=토글 자연 기대), 가드 대상=
+          T1(행 전환)·T3(txt 큐 진행 중 전환), T2(마법사 인계)=비파괴화, T4(전체 해제)=명시 동사,
+          T5(앱 종료)=수용 손실.
+       ③ 가드 형식 — 술어=B1 집합 비교("재현 불가능한 수작업이 남아 있는가": 선택≠정의-유래 ∨
+          미소비 필드 입력 ∨ 큐 부분 진행)·완료 이벤트 무장해제·modal.js 이진 확인·종류별 수치
+          재진술·기존 #25 네이티브 confirm 3곳 이관 의무.
+       ④ 제안(이 시연의 판단 대상) — 기제 서열: 3안 정의 재적용 즉채택(직전 1개·세션 메모리·
+          A3의 프루닝 복원 겸용) → 2안 선택 집합 직접 인계 유보 → 1안 묶음 즐겨찾기 유보.
+          미세 결정: 재적용↔전체 선택 분리 · 열 결손 시 부분 설치+탈락 가지 고지.
+     시연 중 발견한 술어 정련(v1에서 제안): 완료 무장해제를 B1과 정합시키려면 선택 성분은
+       "선택 ≠ 정의-유래 ∧ 선택 ≠ 마지막 생성/완주 집합"이어야 한다 — 생성이 끝난 수동 열거는
+       미수 노동이 아니므로. 이 시연은 그 형태로 구현했다.
+     v1.2 피드백 반영(2026-07-19): 재적용 칩의 소스 분기 난점(소스가 갈리면 소스별 최신 정의
+       관리·클릭 분기·수명 관리가 증식) — 소스별 맵(O3)은 "직전의 전달"이 "소스별 필터 기억"으로
+       변질되어 ①에서 기각한 필터 영속의 뒷문이라 기각. 해소=노출 게이트에 소스 일치 조건 추가:
+       직전 정의 존재 ∧ 현 필터 빈 상태 ∧ 직전 정의의 소스 = 현 작업의 소스. 슬롯은 여전히
+       1개·수명 규칙 하나(정의 가진 세션이 죽을 때 덮어씀). 소스 교차 재사용은 재타이핑 몇 초
+       (차등 논거 그대로)라 포기, 끼어들기 소실(A정의→B정의→A기안)도 수용 — 직전성이 연속성의
+       본질. 부수: ㉤ 열 결손 부분 설치는 설계 경로에서 소멸, 외부 편집으로 열이 사라진 edge의
+       백스톱 고지로 강등(코드는 잔존).
+     v1.3 수선(2026-07-19): 검색창 입력 불가 — 매 입력마다 전체 재렌더로 입력 요소가
+       파괴·재생성되어 포커스가 튐. 실앱 preserve.js 계약(포커스·캐럿 스냅샷+복원)의 대역을
+       render()에 이식. 실구현 시엔 preserve.js 실물을 쓰면 되는 결함 클래스임을 확인한 셈.
+     범위 절제: 자모 부분일치·Shift 범위·열 머리 필터·관통 스트립은 우회 시안(block4-filter-
+       crystallize-demo.html v3.3)에서 이미 시연·합의된 것이라 여기서는 평문 부분일치로 대체.
+       블록 3 큐 카드도 stub(본체는 block3-verb-n-demo.html v4.2).
+     블록 1~4 아카이브(0de1d12·ff971a4·76d4e00)의 토큰·주석 관례 승계. 박제 정본 아님. -->
+<title>블록 4 본안 · 가드·연속성 데모</title>
+<style>
+:root{
+  --a-primary:#2f5fbf; --a-primary-h:#274fa0; --a-warn:#a05a00; --a-danger:#c0392b;
+  --a-ok:#1e8449; --a-muted:#656a72; --a-border:#e2e4e8; --a-card:#ffffff;
+  --a-window:#f6f7f9; --a-ink:#1c2126; --a-on-accent:#ffffff; --a-shadow:rgba(0,0,0,.2);
+  --a-sel:#dfe6fb;
+  --n-surface-alt:#f3f4f6; --n-header-bg:#eef1f4; --n-border-strong:#cbd0d6;
+  --n-ink-soft:#5c626b; --n-header-ink:#4a505a; --n-ink-control:#2b3038;
+  --sp-2:2px; --sp-4:4px; --sp-6:6px; --sp-8:8px; --sp-10:10px; --sp-12:12px; --sp-16:16px; --sp-24:24px;
+  --rad-control:6px; --rad-surface:9px; --rad-pill:999px;
+  --fs-caption:11px; --fs-body:13px; --fs-strong:15px; --fs-section:19px;
+  --pend-bg:#fdf3d7; --pend-bd:#e8cf8a; --ann:#8b5cf6; --ann-bg:#f5f1fe;
+  --ok-tint:#e2f3e9; --danger-tint:#fdeae7;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+  --a-primary:#6f97e8; --a-primary-h:#8badf0; --a-warn:#e0a850; --a-danger:#ec7264;
+  --a-ok:#43b877; --a-muted:#98a0ab; --a-border:#333a44; --a-card:#1c2127;
+  --a-window:#131619; --a-ink:#e7eaee; --a-on-accent:#0f1418; --a-shadow:rgba(0,0,0,.5);
+  --a-sel:#1e2846;
+  --n-surface-alt:#23272d; --n-header-bg:#191d22; --n-border-strong:#454c56;
+  --n-ink-soft:#aab1bb; --n-header-ink:#c2c8d0; --n-ink-control:#dbe0e6;
+  --pend-bg:#3a3320; --pend-bd:#6b5c2e; --ann:#a78bfa; --ann-bg:#241f33;
+  --ok-tint:#1c3327; --danger-tint:#3a2220;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --a-primary:#6f97e8; --a-primary-h:#8badf0; --a-warn:#e0a850; --a-danger:#ec7264;
+  --a-ok:#43b877; --a-muted:#98a0ab; --a-border:#333a44; --a-card:#1c2127;
+  --a-window:#131619; --a-ink:#e7eaee; --a-on-accent:#0f1418; --a-shadow:rgba(0,0,0,.5);
+  --a-sel:#1e2846;
+  --n-surface-alt:#23272d; --n-header-bg:#191d22; --n-border-strong:#454c56;
+  --n-ink-soft:#aab1bb; --n-header-ink:#c2c8d0; --n-ink-control:#dbe0e6;
+  --pend-bg:#3a3320; --pend-bd:#6b5c2e; --ann:#a78bfa; --ann-bg:#241f33;
+  --ok-tint:#1c3327; --danger-tint:#3a2220;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--a-window);color:var(--a-ink);
+  font:13px/1.5 "Pretendard","Malgun Gothic",system-ui,sans-serif;padding:var(--sp-24)}
+h1,h2,h3,p,ul{margin:0}
+button{font:inherit;cursor:pointer}
+button:focus-visible,[tabindex]:focus-visible,input:focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
+.wrap{max-width:980px;margin:0 auto;display:flex;flex-direction:column;gap:var(--sp-24)}
+
+.eyebrow{font-size:var(--fs-caption);letter-spacing:.08em;color:var(--ann);font-weight:700}
+.head h1{font-size:26px;line-height:1.25;text-wrap:balance;margin-top:var(--sp-6)}
+.head p{color:var(--a-muted);margin-top:var(--sp-8);max-width:70ch}
+.head b{color:var(--a-ink)}
+
+h2{font-size:var(--fs-section);text-wrap:balance}
+.sec{display:flex;flex-direction:column;gap:var(--sp-12)}
+.seclede{color:var(--a-muted);max-width:72ch}
+.seclede b{color:var(--a-ink)}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-12)}
+@media (max-width:700px){.grid2{grid-template-columns:1fr}}
+.doc{background:var(--a-card);border:1px solid var(--n-border-strong);border-radius:var(--rad-surface);
+  padding:var(--sp-12) var(--sp-16);display:flex;flex-direction:column;gap:var(--sp-8)}
+.doc .src{font-size:var(--fs-caption);color:var(--n-header-ink);font-weight:700;letter-spacing:.04em}
+.doc blockquote{margin:0;border-left:3px solid var(--n-border-strong);padding-left:var(--sp-10);
+  color:var(--n-ink-soft);font-size:var(--fs-body)}
+.doc blockquote b{color:var(--a-ink)}
+.reframe{border:1px solid var(--a-primary);border-radius:var(--rad-surface);background:var(--a-sel);
+  padding:var(--sp-12) var(--sp-16);font-size:var(--fs-strong);line-height:1.5}
+.reframe b{color:var(--a-primary)}
+.reframe .sub{display:block;font-size:var(--fs-body);color:var(--n-ink-soft);margin-top:var(--sp-4)}
+
+.scn{display:flex;gap:var(--sp-8);flex-wrap:wrap;align-items:center}
+.scn .lbl{font-size:var(--fs-caption);color:var(--a-muted)}
+.btn{font-size:var(--fs-body);border:1px solid var(--n-border-strong);background:var(--a-card);
+  color:var(--n-ink-control);padding:var(--sp-4) var(--sp-12);border-radius:var(--rad-control);white-space:nowrap}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.primary{border-color:var(--a-primary);background:var(--a-primary);color:var(--a-on-accent);font-weight:600}
+.btn.primary:hover:enabled{background:var(--a-primary-h)}
+.btn.danger{border-color:var(--a-danger);color:var(--a-danger)}
+
+.stage2{display:grid;grid-template-columns:230px minmax(0,1fr);gap:var(--sp-16);
+  background:var(--a-card);border:1px solid var(--n-border-strong);border-radius:var(--rad-surface);
+  box-shadow:0 6px 20px var(--a-shadow);padding:var(--sp-16)}
+@media (max-width:760px){.stage2{grid-template-columns:1fr}}
+
+/* 좌: 작업 목록 (변형 B 두 구획, 열 틴트 승계) */
+.joblist{display:flex;flex-direction:column;gap:var(--sp-10)}
+.jsec{display:flex;flex-direction:column;gap:var(--sp-2)}
+.jsec .jh{font-size:var(--fs-caption);font-weight:700;letter-spacing:.05em;
+  padding:var(--sp-2) var(--sp-8);border-left:3px solid var(--tint);color:var(--n-header-ink)}
+.jrow{display:flex;align-items:center;gap:var(--sp-6);border:1px solid transparent;background:none;
+  text-align:left;color:var(--n-ink-control);padding:var(--sp-4) var(--sp-8);
+  border-radius:var(--rad-control);font-size:var(--fs-body)}
+.jrow:hover{background:var(--n-surface-alt)}
+.jrow.cur{background:var(--a-sel);color:var(--a-primary);font-weight:600}
+.jrow.fresh{background:var(--pend-bg);border-color:var(--pend-bd)}
+.jrow .jm{margin-left:auto;font-size:var(--fs-caption);color:var(--a-muted);font-weight:400}
+.jnote{font-size:var(--fs-caption);color:var(--a-warn);background:var(--pend-bg);
+  border:1px solid var(--pend-bd);border-radius:var(--rad-control);padding:var(--sp-4) var(--sp-8);line-height:1.5}
+
+/* 우: 세션 패널 */
+.panel{display:flex;flex-direction:column;gap:var(--sp-16);min-width:0}
+.zl{font-size:var(--fs-caption);color:var(--n-header-ink);font-weight:700;letter-spacing:.06em}
+.zone{display:flex;flex-direction:column;gap:var(--sp-6)}
+.hh{display:flex;align-items:center;gap:var(--sp-8);flex-wrap:wrap}
+.hh .acts{margin-left:auto;display:flex;gap:var(--sp-6);align-items:center}
+.sesshead{font-size:var(--fs-strong);font-weight:700}
+.sesshead .kind{font-size:var(--fs-caption);font-weight:600;border-radius:var(--rad-pill);
+  padding:0 var(--sp-8);margin-left:var(--sp-6);vertical-align:middle}
+.kind.hwpx{color:var(--a-primary);border:1px solid var(--a-primary);background:var(--a-sel)}
+.kind.txt{color:var(--a-ok);border:1px solid var(--a-ok);background:var(--ok-tint)}
+
+.filterbar{display:flex;gap:var(--sp-8);align-items:center;flex-wrap:wrap}
+.filterbar input[type=search]{background:var(--a-card);border:1px solid var(--n-border-strong);
+  border-radius:var(--rad-control);padding:var(--sp-4) var(--sp-10);color:var(--a-ink);
+  font:inherit;font-size:var(--fs-body);min-width:220px}
+.chips{display:flex;gap:var(--sp-6);flex-wrap:wrap;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:var(--sp-6);border:1px dashed var(--a-primary);
+  color:var(--a-primary);background:var(--a-sel);border-radius:var(--rad-pill);
+  padding:var(--sp-2) var(--sp-10);font-size:var(--fs-body);font-weight:600;flex-wrap:wrap}
+.bchip{display:inline-flex;align-items:center;gap:var(--sp-2);border:1px solid var(--a-primary);
+  border-radius:var(--rad-pill);padding:0 var(--sp-6);font-size:var(--fs-caption);font-weight:600;
+  background:var(--a-card)}
+.bchip button{border:0;background:none;color:inherit;font-weight:700;padding:0;line-height:1}
+.orop{font-size:var(--fs-caption);opacity:.7}
+/* ㉣ 직전 필터 재적용 칩 — 정의가 요약을 업는다 */
+.reapply{display:inline-flex;align-items:center;gap:var(--sp-6);border:1px dashed var(--ann);
+  color:var(--a-ink);background:var(--ann-bg);border-radius:var(--rad-pill);
+  padding:var(--sp-2) var(--sp-10);font-size:var(--fs-body)}
+.reapply b{color:var(--ann)}
+.reapply .src{font-size:var(--fs-caption);color:var(--a-muted)}
+
+.tblwrap{overflow-x:auto;border:1px solid var(--a-border);border-radius:var(--rad-control)}
+table{width:100%;border-collapse:collapse;font-size:var(--fs-body)}
+th{font-size:var(--fs-caption);color:var(--n-header-ink);text-align:left;font-weight:600;
+  background:var(--n-header-bg);padding:var(--sp-6) var(--sp-10);border-bottom:1px solid var(--a-border);white-space:nowrap}
+td{padding:var(--sp-6) var(--sp-10);border-bottom:1px solid var(--a-border);white-space:nowrap;vertical-align:middle}
+tbody{user-select:none}
+tbody tr{cursor:pointer}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:var(--n-surface-alt)}
+tbody tr.sel td{background:var(--a-sel)}
+td.num{text-align:right;font-variant-numeric:tabular-nums;color:var(--n-ink-soft)}
+mark{background:var(--pend-bg);color:inherit;border-radius:2px;padding:0 1px}
+
+.slot{border:1px solid var(--a-border);border-radius:var(--rad-control);background:var(--n-surface-alt);
+  padding:var(--sp-6) var(--sp-10);font-size:var(--fs-body)}
+.slot b{color:var(--a-primary)}
+.notice{font-size:var(--fs-body);border-radius:var(--rad-control);padding:var(--sp-6) var(--sp-10);white-space:pre-line}
+.notice.warn{color:var(--a-warn);background:var(--pend-bg);border:1px solid var(--pend-bd)}
+.notice.hint{color:var(--a-muted);background:var(--n-surface-alt)}
+
+.gate{border:1px solid var(--n-border-strong);border-radius:var(--rad-control);background:var(--n-surface-alt);
+  padding:var(--sp-8) var(--sp-12);display:flex;flex-direction:column;gap:var(--sp-6)}
+.gate .defline{font-size:var(--fs-body);color:var(--a-ok);background:var(--ok-tint);
+  border:1px solid var(--a-ok);border-radius:var(--rad-control);padding:var(--sp-4) var(--sp-10)}
+.gate .defline.manual{color:var(--a-muted);background:var(--n-surface-alt);border:1px dashed var(--n-border-strong)}
+
+.queuebox{border:1px solid var(--a-ok);border-radius:var(--rad-control);background:var(--ok-tint);
+  padding:var(--sp-8) var(--sp-12);display:flex;flex-direction:column;gap:var(--sp-6)}
+.queuebox .qline{font-size:var(--fs-body)}
+.queuebox .qline b{color:var(--a-ok)}
+.qidx{display:flex;gap:var(--sp-4);flex-wrap:wrap}
+.qdot{min-width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;
+  border-radius:var(--rad-pill);font-size:var(--fs-caption);font-weight:700;
+  border:1px solid var(--n-border-strong);background:var(--a-card);color:var(--n-ink-soft)}
+.qdot.done{border-color:var(--a-ok);color:var(--a-ok);background:var(--ok-tint)}
+.qdot.cur{border-color:var(--a-primary);color:var(--a-primary);background:var(--a-sel)}
+.qcardstub{border:1px solid var(--n-border-strong);border-radius:var(--rad-control);background:var(--a-card);
+  padding:var(--sp-8) var(--sp-12);display:flex;flex-direction:column;gap:var(--sp-6)}
+.qcardstub .t{display:flex;align-items:center;gap:var(--sp-8);flex-wrap:wrap}
+.qcardstub .t b{font-size:var(--fs-body)}
+.qcardstub pre{margin:0;font:12px/1.6 Consolas,monospace;color:var(--n-ink-soft);
+  background:var(--n-surface-alt);border-radius:var(--rad-control);padding:var(--sp-6) var(--sp-10);
+  overflow-x:auto;white-space:pre}
+.fields{display:flex;gap:var(--sp-8);flex-wrap:wrap}
+.fields label{font-size:var(--fs-caption);color:var(--n-header-ink);display:flex;
+  flex-direction:column;gap:var(--sp-2)}
+.fields input{background:var(--a-card);border:1px solid var(--n-border-strong);
+  border-radius:var(--rad-control);padding:var(--sp-2) var(--sp-8);color:var(--a-ink);
+  font:inherit;font-size:var(--fs-body);width:150px}
+
+.done ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:var(--sp-4)}
+.done li{font-size:var(--fs-body);color:var(--n-ink-soft)}
+.done .ok{color:var(--a-ok);font-weight:600}
+.done .none{color:var(--a-muted);font-size:var(--fs-caption)}
+
+/* ③ 가드 모달 — modal.js 문법의 시연 대역 */
+.overlay{position:fixed;inset:0;background:var(--a-shadow);display:flex;
+  align-items:center;justify-content:center;z-index:60}
+.overlay[hidden]{display:none}
+.modal{background:var(--a-card);border:1px solid var(--n-border-strong);border-radius:var(--rad-surface);
+  box-shadow:0 10px 30px var(--a-shadow);padding:var(--sp-16);max-width:420px;
+  display:flex;flex-direction:column;gap:var(--sp-10)}
+.modal h3{font-size:var(--fs-strong)}
+.modal .loss{font-size:var(--fs-body);color:var(--n-ink-soft)}
+.modal .loss b{color:var(--a-danger)}
+.modal .row{display:flex;gap:var(--sp-8);justify-content:flex-end}
+
+.ann{border:1px dashed var(--ann);border-radius:var(--rad-control);background:var(--ann-bg);
+  color:var(--a-ink);padding:var(--sp-6) var(--sp-10);font-size:var(--fs-caption);line-height:1.6}
+.ann .ref{display:inline-block;border:1px solid var(--ann);color:var(--ann);border-radius:var(--rad-pill);
+  padding:0 var(--sp-8);font-weight:700;margin-right:var(--sp-4)}
+.anngrid{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-8)}
+@media (max-width:700px){.anngrid{grid-template-columns:1fr}}
+
+.qcard{background:var(--a-card);border:1px solid var(--n-border-strong);border-radius:var(--rad-surface);
+  padding:var(--sp-12) var(--sp-16);display:flex;flex-direction:column;gap:var(--sp-8)}
+.qcard h3{font-size:var(--fs-strong);display:flex;align-items:center;gap:var(--sp-8);flex-wrap:wrap}
+.qnum{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;
+  border-radius:var(--rad-pill);background:var(--ann);color:var(--a-on-accent);font-size:var(--fs-caption);font-weight:700}
+.qcard p{color:var(--n-ink-soft);max-width:72ch}
+.qcard ul{padding-left:18px;display:flex;flex-direction:column;gap:var(--sp-4);color:var(--n-ink-soft)}
+.qcard li b{color:var(--a-ink)}
+
+.foot{font-size:var(--fs-caption);color:var(--a-muted);border-top:1px solid var(--a-border);
+  padding-top:var(--sp-12);line-height:1.8}
+</style>
+
+<div class="wrap">
+
+  <div class="head">
+    <div class="eyebrow">R-FLOW 블록 4 본안 · 가드·연속성 시연 v1.3 · 합의 종결</div>
+    <h1>가드는 미수 노동을 지키고, 정의는 세션을 건넌다</h1>
+    <p>확정된 ①~③(스코프·전이 원장·가드 형식) 위에서, 제안 상태인 ④의 실물을 걷습니다 —
+       공고서 세션의 필터 정의가 <b>인계용 값 객체</b>로 살아남아 기안 세션의
+       <b>「직전 필터 재적용」</b> 칩이 되는 흐름. 가드 모달(수치 재진술)·완료 무장해제·
+       마법사 비파괴화 고지·열 결손 부분 설치가 전부 동작합니다.</p>
+  </div>
+
+  <!-- ── 1. 걸어보기 ── -->
+  <div class="sec">
+    <h2>1. 걸어보기: 공고서 → 기안, 같은 건의 두 출력</h2>
+    <p class="seclede">권장 동선 — <b>①</b> 상태 버튼으로 공고서 세션을 만들고
+       <b>②</b> 좌측 「물품 구매 기안」을 클릭해 전환 반응(무발화/모달)을 확인,
+       <b>③</b> 기안 세션에서 보라 점선의 재적용 칩 → 「전체 선택」으로 큐 선언,
+       <b>④</b> 「복사」로 큐를 진행하다 행을 전환해 T3 가드 확인.
+       「용역 정산 기안」은 데이터 소스가 달라 <b>칩 자체가 나타나지 않습니다</b>
+       (v1.2 소스 일치 게이트). 「마법사 완료」 버튼은 D2 비파괴화를 시연합니다.</p>
+    <div class="scn">
+      <span class="lbl">공고서 세션 상태</span>
+      <button class="btn" id="stA">A. 정의-유래 선택 (검색 「조달」+전체 선택)</button>
+      <button class="btn" id="stB">B. A + 수동 흔적 (2행 해제)</button>
+      <button class="btn" id="stC">C. B + 생성 완료</button>
+      <button class="btn" id="stWiz" style="margin-left:auto">마법사 완료 시뮬레이션</button>
+      <button class="btn" id="stReset">초기화</button>
+    </div>
+
+    <div class="stage2">
+      <div class="joblist" id="joblist"></div>
+      <div class="panel" id="panel"></div>
+    </div>
+
+    <div class="anngrid">
+      <div class="ann"><span class="ref">㉠</span><b>가드 술어 = 재현 불가능성(B1)</b> —
+        선택이 정의-유래 집합과도, 마지막 생성·완주 집합과도 다를 때만 선택 성분이 선다.
+        상태 A(정의-유래)와 상태 C(생성 완료)의 전환은 조용히 통과하고, 상태 B만 모달이 선다.
+        더티 비트가 아니라 집합 비교라 켰다-끈 순변화 0도 오발화하지 않는다.</div>
+      <div class="ann"><span class="ref">㉡</span><b>수치 재진술</b> — 모달은 실재하는 성분만
+        문장에 올린다(수동 선택 N건 · 입력 필드 M개 · 복사 진행 M/N건). 무엇을 만들지의
+        게이트는 표본 열거가 필요했지만, 무엇을 잃는지의 고지는 종류와 규모면 충분하다.
+        기본 포커스=「머무르기」, Escape=머무르기.</div>
+      <div class="ann"><span class="ref">㉣</span><b>재적용 칩(3안)</b> — 직전 세션의 필터
+        정의(직전 1개·세션 메모리)가 있고, 현 필터가 비어 있고, <b>직전 정의의 데이터 소스가
+        현 작업과 같을 때만</b> 나타나는 명시 동사(v1.2). 소스별 맵은 "전달"이 "기억"으로
+        변질되는 뒷문이라 기각 — 슬롯 1개·수명 규칙 하나. 소스 교차는 재타이핑 몇 초로
+        족하다(차등 논거). 저장이 아니라 전달 — 작업 무기억 비침해.</div>
+      <div class="ann"><span class="ref">㉥</span><b>재적용 ↔ 선택 분리</b> — 칩은 정의
+        설치까지만 하고, 큐 선언은 「전체 선택」으로 사용자가 한다. 하나는 보기의 복원,
+        하나는 게이트로 이어지는 선언 — 의사표시의 격이 달라 2클릭을 유지한다
+        (블록 1 "포커스=첫 미답 질문"과 동형).</div>
+      <div class="ann"><span class="ref">㉤</span><b>열 결손 = 백스톱으로 강등(v1.2)</b> —
+        소스 일치 게이트가 서면 열 결손은 설계 경로에서 사라지고, 세션 사이에 대장 파일의
+        열이 외부 편집으로 사라진 드문 edge만 남는다. 그때는 부분 설치+탈락 가지 고지,
+        설치 가능한 가지 0이면 거부+이유(코드 잔존). 조용한 부분 적용만 아니면
+        confirm-or-alarm이 지켜진다.</div>
+      <div class="ann"><span class="ref">㉢</span><b>T2 비파괴화(D2)</b> — 마법사 완료 시
+        진행 중 세션이 있으면 자동 선택을 애초에 생략하고 조용한 고지 한 줄을 남긴다.
+        파괴를 확인으로 지키는 게 아니라 전이 자체를 비파괴로 만든다(Explorer 기각과
+        같은 상류 제거). 새 작업은 강조 표시로 위치만 알린다.</div>
+    </div>
+  </div>
+
+  <!-- ── 2. 판단 대상 ── -->
+  <div class="sec">
+    <h2>2. 이 시연이 묻는 것</h2>
+    <div class="reframe">④ 제안: <b>기제 서열 = 영속성 사다리의 아래부터.</b>
+      <span class="sub">3안 정의 재적용 즉채택(무영속·무객체·A3의 프루닝 복원 겸용) →
+      2안 선택 집합 직접 인계는 "수동 열거를 큐로 넘겨야 하는 마찰"의 실사용 실증 시 →
+      1안 묶음 즐겨찾기는 1부 아카이브 착수 조건(짝-날 재선택 마찰 실증) 유지, 채택 시
+      2안을 흡수. 위 칸의 착수 조건은 아래 칸의 갭 실증이다.</span>
+    </div>
+    <div class="qcard">
+      <h3><span class="qnum">?</span>확정 요청 3 + 시연 발견 1</h3>
+      <ul>
+        <li><b>서열 그 자체</b> — 3안 즉채택·2안/1안 조건부 유보가 이 실물로 성립하는가.</li>
+        <li><b>재적용 ↔ 전체 선택 분리(㉥)</b> — 2클릭이 마찰인가 의사표시인가.
+          붙이면 재적용이 곧 큐 선언이 된다.</li>
+        <li><b>소스 일치 게이트(㉣, v1.2)</b> — 소스 분기 난점의 해소로 노출 조건에 소스
+          일치를 추가. 슬롯 1개 유지·소스별 맵 기각. 열 결손 처우(㉤)는 백스톱으로 강등.</li>
+        <li><b>술어 정련(㉠, 시연 중 발견)</b> — ③의 완료 무장해제를 B1과 정합시키려면
+          선택 성분은 "≠ 정의-유래 <b>∧</b> ≠ 마지막 생성·완주 집합"이어야 한다.
+          생성이 끝난 수동 열거는 미수 노동이 아니다. ③ 확정문에 이 절 추가를 제안.</li>
+      </ul>
+    </div>
+    <div class="qcard">
+      <h3><span class="qnum">…</span>미결 (구현 라운드로 넘어가는 것)</h3>
+      <ul>
+        <li><b>재적용 후 프루닝 상태</b> — 시연은 프루닝된 가지를 정의의 일부로 함께 나른다
+          (A3의 취지). 우회 잔여 "프루닝의 지속성"(텍스트 수명 문제)과 접합.</li>
+        <li><b>재적용 칩의 수명</b> — 시연은 설치 후 숨김·정의 소거 시 재노출. 새 검색으로
+          그룹을 덮어쓰면 직전 정의도 그 새 정의로 교체된다(직전 1개 원칙).</li>
+        <li><b>#25 계보 이관</b> — 이 모달을 modal.js 공유 헬퍼로 짓고 기존 네이티브
+          confirm 3곳(editor·template·home)을 같은 헬퍼로 이관(③ 확정 의무).</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="foot">
+    출처: r-flow 라운드 원장 블록 4(본안 재개 토의 ①~③ 확정·④ 제안) ·
+    docs/R_INFO_JOB_HOME.md 인계 2·3(세션 가드·건 연속성) ·
+    block4-filter-crystallize-demo.html v3.3(필터 선언 모델·아카이브 76d4e00) ·
+    block3-verb-n-demo.html v4.2(전-선언 큐 — 여기서는 stub).
+    이 시연은 토의 시안이며 ④와 술어 정련은 합의 전까지 확정 동작이 아닙니다.
+    표본 데이터는 실존 기관·공고와 무관한 예시입니다. 판 이력은 문서 상단 주석에 있습니다.
+  </div>
+
+</div>
+
+<div class="overlay" id="overlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <h3 id="mTitle">이 세션에는 저장되지 않는 작업이 남아 있습니다.</h3>
+    <p class="loss" id="mLoss"></p>
+    <div class="row">
+      <button class="btn" id="mStay">머무르기</button>
+      <button class="btn danger" id="mDrop">버리고 전환</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ── 표본 데이터 (실존 기관·공고와 무관) ── */
+const DATA = {
+  mulpum: {
+    label: "물품 대장",
+    cols: ["공고번호","공고명","수요기관","추정가격","비고"],
+    rows: [
+      ["20260701-00012","사무용 가구 구매(조달)","세종특별자치시청","48,500,000",""],
+      ["20260701-00034","전산 소모품 조달 구매","행정중심복합도시건설청","12,300,000",""],
+      ["20260702-00005","실험 기자재 구매","국립세종수목원","95,000,000","조달 특례 검토"],
+      ["20260702-00019","청사 비품 교체 구매(조달)","세종청사관리소","33,800,000",""],
+      ["20260703-00002","도서관 자료 구매","세종시립도서관","7,900,000",""],
+      ["20260703-00021","보안 장비 구매","세종경찰청","54,200,000",""],
+      ["20260704-00008","급식 설비 조달 구매","세종교육청","28,700,000",""],
+      ["20260704-00030","조경 자재 구매","세종호수공원사업소","19,400,000",""]
+    ]
+  },
+  yongyeok: {
+    label: "용역 대장",
+    cols: ["공고번호","공고명","수요기관","추정가격"],
+    rows: [
+      ["20260705-00003","시설 유지관리 용역(조달)","세종특별자치시청","120,000,000"],
+      ["20260705-00017","전산망 운영 용역","행정중심복합도시건설청","88,000,000"],
+      ["20260706-00006","경비 용역 조달 계약","세종청사관리소","64,500,000"],
+      ["20260706-00024","청소 용역","세종시립도서관","41,000,000"]
+    ]
+  }
+};
+let JOBS = [
+  {id:"hwpx1", name:"물품 공고서", kind:"hwpx", data:"mulpum"},
+  {id:"txt1",  name:"물품 구매 기안", kind:"txt", data:"mulpum"},
+  {id:"txt2",  name:"용역 정산 기안", kind:"txt", data:"yongyeok"}
+];
+
+/* ── 세션 상태 ── */
+let S = null;          // 현재 세션 (작업 전환으로 소멸 — ① (c))
+let prevDef = null;    // 직전 필터 정의 {term, branches:[열], from} — 인계용 값 객체(직전 1개)
+let freshJobId = null; // D2: 마법사가 만들었으나 자동 선택하지 않은 작업
+let wizNote = "";
+
+function newSession(jobId){
+  return { jobId, term:"", group:null, selected:new Set(), lastGen:null,
+           fieldA:"", fieldB:"", queue:null, notice:"" };
+}
+const job = () => JOBS.find(j => j.id === S.jobId);
+const ds  = () => DATA[job().data];
+const jobName = id => (JOBS.find(j => j.id === id) || {name:"?"}).name;
+
+/* 필터: 그룹(전열 검색의 재현 OR 그룹)만 — 열 머리 조건은 우회 시안 소관이라 생략 */
+function rowMatches(r){
+  if(!S.group) return true;
+  const cols = ds().cols;
+  return S.group.branches.some(b => {
+    const i = cols.indexOf(b);
+    return i >= 0 && String(r[i]).includes(S.group.term);
+  });
+}
+function matchedIdx(){
+  const out = [];
+  ds().rows.forEach((r,i) => { if(rowMatches(r)) out.push(i); });
+  return out;
+}
+function derivedSet(){ return S.group ? new Set(matchedIdx()) : null; }
+function setEq(a,b){
+  if(!a || !b || a.size !== b.size) return false;
+  for(const v of a) if(!b.has(v)) return false;
+  return true;
+}
+
+/* ㉠ 가드 술어(B1 + 시연 정련): 재현 불가능한 수작업이 남아 있는가 */
+function guardParts(){
+  if(!S) return [];
+  const parts = [];
+  const der = derivedSet();
+  const manual = S.selected.size > 0
+    && !(der && setEq(S.selected, der))
+    && !(S.lastGen && setEq(S.selected, S.lastGen));
+  if(manual) parts.push("수동 선택 " + S.selected.size + "건");
+  const nf = (S.fieldA ? 1 : 0) + (S.fieldB ? 1 : 0);
+  if(nf > 0) parts.push("입력한 필드 " + nf + "개");
+  if(S.queue && S.queue.done > 0 && S.queue.done < S.queue.items.length)
+    parts.push("복사 진행 " + S.queue.done + "/" + S.queue.items.length + "건");
+  return parts;
+}
+
+/* ── 전환 (T1: 가드 / T2: 비파괴화) ── */
+function requestSwitch(jobId){
+  if(S && S.jobId === jobId) return;            // ① (b): 같은 행 재클릭은 비파괴
+  const parts = guardParts();
+  if(parts.length){ openModal(parts, () => doSwitch(jobId)); }
+  else doSwitch(jobId);
+}
+function doSwitch(jobId){
+  if(S && S.group)                              // ① (c): 소멸 직전, 정의만 값으로 전달
+    prevDef = { term:S.group.term, branches:S.group.branches.slice(),
+                from:jobName(S.jobId), data:job().data };
+  S = newSession(jobId);
+  if(freshJobId === jobId){ freshJobId = null; wizNote = ""; }
+  render();
+}
+
+/* ── 검색 = 그룹 편집기 (우회 확정 계약; 평문 부분일치로 대역) ── */
+function applySearch(term){
+  S.term = term;
+  if(!term){ S.group = null; render(); return; }
+  const cols = ds().cols;
+  const branches = cols.filter((c,ci) =>
+    ci !== 0 && ds().rows.some(r => String(r[ci]).includes(term)));
+  S.group = branches.length ? { term, branches } : null;
+  render();
+}
+function pruneBranch(col){
+  if(!S.group) return;
+  S.group.branches = S.group.branches.filter(b => b !== col);
+  if(!S.group.branches.length){ S.group = null; S.term = ""; }
+  render();
+}
+
+/* ㉣㉤ 재적용: 정의 설치까지만, 열 결손은 부분 설치 + 고지 */
+function reapply(){
+  const cols = ds().cols;
+  const ok = prevDef.branches.filter(c => cols.includes(c));
+  const dropped = prevDef.branches.filter(c => !cols.includes(c));
+  if(!ok.length){
+    S.notice = "재적용하지 못했습니다 — 이 데이터에는 「" + dropped.join("·") +
+               "」 열이 없어 설치할 수 있는 가지가 없습니다.";
+    render(); return;
+  }
+  S.term = prevDef.term;
+  S.group = { term: prevDef.term, branches: ok };
+  S.notice = dropped.length
+    ? "이 데이터에는 「" + dropped.join("·") + "」 열이 없어 가지 " + dropped.length +
+      "개를 설치하지 않았습니다."
+    : "";
+  render();
+}
+
+/* ㉥ 전체 선택: hwpx=선택, txt=큐 선언 (분리된 두 번째 클릭) */
+function selectAll(){
+  const m = matchedIdx();
+  m.forEach(i => S.selected.add(i));
+  if(job().kind === "txt") S.queue = { items: [...S.selected].sort((a,b)=>a-b), done: 0 };
+  render();
+}
+function clearAll(){ S.selected.clear(); S.queue = null; render(); }
+function toggleRow(i){
+  if(S.selected.has(i)) S.selected.delete(i); else S.selected.add(i);
+  if(job().kind === "txt" && S.queue)
+    S.queue = { items: [...S.selected].sort((a,b)=>a-b), done: Math.min(S.queue.done, S.selected.size) };
+  render();
+}
+
+/* ㉦ 완료 이벤트 = 무장 해제 */
+function generate(){                              // hwpx 생성 의식 1회
+  if(!S.selected.size) return;
+  S.lastGen = new Set(S.selected);
+  S.doneLog = (S.doneLog || []);
+  S.doneLog.push("공고서 " + S.selected.size + "건 생성");
+  render();
+}
+function copyNext(){                              // txt 큐: 카드 1장 복사
+  if(!S.queue || S.queue.done >= S.queue.items.length) return;
+  S.queue.done++;
+  if(S.queue.done === S.queue.items.length){      // 완주 = 미처리 소진 → 무장 해제
+    S.lastGen = new Set(S.queue.items);
+    S.fieldA = ""; S.fieldB = "";
+    S.doneLog = (S.doneLog || []);
+    S.doneLog.push("기안 " + S.queue.items.length + "건 복사 완주");
+  }
+  render();
+}
+
+/* ㉢ D2: 마법사 완료 — 무장 시 자동 선택 생략 + 고지 */
+function wizardDone(){
+  if(!JOBS.some(j => j.id === "txt3"))
+    JOBS.push({id:"txt3", name:"신규 기안 작업", kind:"txt", data:"mulpum"});
+  if(guardParts().length){
+    freshJobId = "txt3";
+    wizNote = "진행 중인 세션이 있어 새 작업을 자동으로 열지 않았습니다.";
+    render();
+  } else { doSwitch("txt3"); }
+}
+
+/* ── 모달 (③: modal.js 문법의 대역) ── */
+const overlay = document.getElementById("overlay");
+let onDrop = null;
+function openModal(parts, fn){
+  onDrop = fn;
+  document.getElementById("mLoss").innerHTML =
+    "<b>" + parts.join(" · ") + "</b>이 지워집니다. 전환할까요?";
+  overlay.hidden = false;
+  document.getElementById("mStay").focus();
+}
+function closeModal(){ overlay.hidden = true; onDrop = null; }
+document.getElementById("mStay").addEventListener("click", closeModal);
+document.getElementById("mDrop").addEventListener("click", () => {
+  const fn = onDrop; closeModal(); if(fn) fn();
+});
+document.addEventListener("keydown", e => {
+  if(e.key === "Escape" && !overlay.hidden) closeModal();
+});
+
+/* ── 렌더 ── */
+const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+function hl(s){
+  if(!S.group || !S.term || !String(s).includes(S.term)) return esc(s);
+  return esc(s).split(esc(S.term)).join("<mark>" + esc(S.term) + "</mark>");
+}
+function render(){
+  /* 재렌더 포커스·캐럿 보존 (실앱 preserve.js 계약의 대역 — v1.3) */
+  const ae = document.activeElement;
+  const keep = ae && (ae.id === "q" || ae.id === "fA" || ae.id === "fB")
+    ? { id: ae.id, s: ae.selectionStart, e: ae.selectionEnd } : null;
+  /* 좌: 작업 목록 */
+  const secs = [
+    {t:"문서 작업 · HWPX", tint:"var(--a-primary)", kind:"hwpx"},
+    {t:"기안 작업 · TXT",  tint:"var(--a-ok)",      kind:"txt"}
+  ];
+  document.getElementById("joblist").innerHTML = secs.map(sec =>
+    '<div class="jsec" style="--tint:' + sec.tint + '"><div class="jh">' + sec.t + '</div>' +
+    JOBS.filter(j => j.kind === sec.kind).map(j =>
+      '<button class="jrow' + (S && S.jobId === j.id ? ' cur' : '') +
+      (freshJobId === j.id ? ' fresh' : '') + '" data-job="' + j.id + '">' +
+      esc(j.name) + '<span class="jm">' + DATA[j.data].label + '</span></button>'
+    ).join("") + '</div>'
+  ).join("") + (wizNote ? '<div class="jnote">' + esc(wizNote) + '</div>' : "");
+  document.querySelectorAll(".jrow").forEach(b =>
+    b.addEventListener("click", () => requestSwitch(b.dataset.job)));
+
+  /* 우: 세션 패널 */
+  const p = document.getElementById("panel");
+  if(!S){ p.innerHTML = '<p class="none" style="color:var(--a-muted)">행을 클릭하면 세션이 열립니다.</p>'; return; }
+  const j = job(), d = ds(), m = matchedIdx(), der = derivedSet();
+  const isTxt = j.kind === "txt";
+  const showReapply = prevDef && !S.group && prevDef.data === j.data; // v1.2: 소스 일치 게이트
+  let h = '<div class="sesshead">' + esc(j.name) +
+    '<span class="kind ' + j.kind + '">' + (isTxt ? 'TXT' : 'HWPX') + '</span></div>';
+
+  /* 데이터 존 */
+  h += '<div class="zone"><div class="hh"><span class="zl">데이터 존 — ' + esc(d.label) + '</span>' +
+    '<span class="acts"><button class="btn" id="selAll">전체 선택</button>' +
+    '<button class="btn" id="selNone">전체 해제</button></span></div>' +
+    '<div class="filterbar"><input type="search" id="q" value="' + esc(S.term) +
+    '" placeholder="전열 검색 — 필터로 번역되어 적용됩니다" aria-label="전열 검색"></div>';
+  if(showReapply){
+    h += '<div class="chips"><button class="reapply" id="reap"><b>직전 필터 재적용</b> (' +
+      prevDef.branches.map(esc).join(' <span class="orop">∨</span> ') + ') 포함 「' +
+      esc(prevDef.term) + '」 <span class="src">출처: ' + esc(prevDef.from) + ' 세션</span></button></div>';
+  }
+  if(S.group){
+    h += '<div class="chips"><span class="chip">(' +
+      S.group.branches.map(b =>
+        '<span class="bchip">' + esc(b) + ' <button data-prune="' + esc(b) +
+        '" aria-label="' + esc(b) + ' 가지 제거">✕</button></span>'
+      ).join('<span class="orop">∨</span>') +
+      ') 포함 「' + esc(S.group.term) + '」</span></div>';
+  }
+  if(S.notice) h += '<div class="notice warn">' + esc(S.notice) + '</div>';
+  h += '<div class="tblwrap"><table><thead><tr><th></th>' +
+    d.cols.map(c => '<th>' + esc(c) + '</th>').join("") + '</tr></thead><tbody>' +
+    d.rows.map((r,i) => {
+      if(!rowMatches(r)) return "";
+      const sel = S.selected.has(i);
+      return '<tr class="' + (sel ? 'sel' : '') + '" data-row="' + i + '">' +
+        '<td><input type="checkbox" tabindex="-1" ' + (sel ? 'checked' : '') + '></td>' +
+        r.map((c,ci) => '<td class="' + (ci === 3 ? 'num' : '') + '">' + hl(c) + '</td>').join("") +
+        '</tr>';
+    }).join("") + '</tbody></table></div>' +
+    '<div class="slot">전체 <b>' + d.rows.length + '</b>행 · 매치 <b>' + m.length +
+    '</b>행 · 선택 <b>' + S.selected.size + '</b>건' +
+    (der && setEq(S.selected, der) ? ' — 정의-유래(재현 가능)' :
+     (S.lastGen && setEq(S.selected, S.lastGen) ? ' — 생성 완료분(무장 해제)' :
+      (S.selected.size ? ' — 수동 흔적 있음(가드 대상)' : ''))) + '</div></div>';
+
+  /* 본문/큐 존 */
+  if(isTxt){
+    h += '<div class="zone"><div class="hh"><span class="zl">큐 존 (블록 3 stub)</span></div>';
+    if(S.queue && S.queue.items.length){
+      const q = S.queue, cur = q.items[q.done];
+      h += '<div class="queuebox"><div class="qline">큐 <b>' + q.items.length +
+        '</b>건 편성 · 처리 <b>' + q.done + '/' + q.items.length + '</b></div>' +
+        '<div class="qidx">' + q.items.map((it,k) =>
+          '<span class="qdot ' + (k < q.done ? 'done' : (k === q.done ? 'cur' : '')) + '">' +
+          (k + 1) + '</span>').join("") + '</div>';
+      if(q.done < q.items.length){
+        h += '<div class="qcardstub"><div class="t"><b>' + esc(d.rows[cur][1]) +
+          '</b><span class="orop">' + esc(d.rows[cur][2]) + '</span>' +
+          '<span style="margin-left:auto"><button class="btn primary" id="copyBtn">복사</button></span></div>' +
+          '<pre>기안 본문 렌더 (원문 코드블록 문법 — 블록 3 시안 참조)</pre></div>';
+      } else {
+        h += '<div class="qline">완주 — 미처리가 소진되었습니다.</div>';
+      }
+      h += '</div>';
+    } else {
+      h += '<div class="notice hint">「전체 선택」이 큐를 선언합니다 (전-선언 큐 — 블록 3 확정).</div>';
+    }
+    h += '<div class="fields"><label>기안자 (잔여 필드)<input id="fA" value="' + esc(S.fieldA) +
+      '"></label><label>시행일자 (잔여 필드)<input id="fB" value="' + esc(S.fieldB) +
+      '"></label></div></div>';
+  } else {
+    h += '<div class="zone"><div class="hh"><span class="zl">본문 존 (라이브 거울 — 블록 1)</span></div>' +
+      '<div class="gate"><div class="defline' + (S.group ? '' : ' manual') + '">' +
+      (S.group ? '정의: (' + S.group.branches.map(esc).join(' ∨ ') + ') 포함 「' +
+        esc(S.group.term) + '」' : '정의 없음 — 수동 열거') +
+      ' · 선택 ' + S.selected.size + '건</div>' +
+      '<div class="hh"><span class="orop">게이트 재진술은 블록 1 확정 그대로(표본+외 N건)</span>' +
+      '<span class="acts"><button class="btn primary" id="genBtn"' +
+      (S.selected.size ? '' : ' disabled') + '>생성</button></span></div></div></div>';
+  }
+
+  /* 완료 존 */
+  h += '<div class="zone done"><div class="hh"><span class="zl">완료 존 (세션 스코프)</span></div>' +
+    ((S.doneLog && S.doneLog.length)
+      ? '<ul>' + S.doneLog.map(t => '<li><span class="ok">✓</span> ' + esc(t) + '</li>').join("") + '</ul>'
+      : '<span class="none">이 세션의 완료 기록이 없습니다.</span>') + '</div>';
+
+  p.innerHTML = h;
+
+  /* 바인딩 */
+  const q = document.getElementById("q");
+  q.addEventListener("input", () => applySearch(q.value.trim()));
+  document.getElementById("selAll").addEventListener("click", selectAll);
+  document.getElementById("selNone").addEventListener("click", clearAll);
+  const reap = document.getElementById("reap");
+  if(reap) reap.addEventListener("click", reapply);
+  document.querySelectorAll("[data-prune]").forEach(b =>
+    b.addEventListener("click", e => { e.stopPropagation(); pruneBranch(b.dataset.prune); }));
+  document.querySelectorAll("tbody tr").forEach(tr =>
+    tr.addEventListener("click", () => toggleRow(Number(tr.dataset.row))));
+  const gen = document.getElementById("genBtn");
+  if(gen) gen.addEventListener("click", generate);
+  const cp = document.getElementById("copyBtn");
+  if(cp) cp.addEventListener("click", copyNext);
+  const fA = document.getElementById("fA"), fB = document.getElementById("fB");
+  if(fA) fA.addEventListener("change", () => { S.fieldA = fA.value.trim(); render(); });
+  if(fB) fB.addEventListener("change", () => { S.fieldB = fB.value.trim(); render(); });
+
+  if(keep){
+    const el = document.getElementById(keep.id);
+    if(el){ el.focus(); try{ el.setSelectionRange(keep.s, keep.e); }catch(err){} }
+  }
+}
+
+/* ── 시나리오 ── */
+function stateA(){
+  reset(false); S = newSession("hwpx1"); applySearch("조달"); selectAll();
+}
+function stateB(){
+  stateA();
+  const m = matchedIdx();                        // 매치 중 2행 해제 = 수동 흔적
+  if(m.length > 1){ S.selected.delete(m[0]); S.selected.delete(m[1]); }
+  render();
+}
+function stateC(){ stateB(); generate(); }
+function reset(doRender){
+  S = null; prevDef = null; freshJobId = null; wizNote = "";
+  JOBS = JOBS.filter(j => j.id !== "txt3");
+  if(doRender !== false) render();
+}
+document.getElementById("stA").addEventListener("click", stateA);
+document.getElementById("stB").addEventListener("click", stateB);
+document.getElementById("stC").addEventListener("click", stateC);
+document.getElementById("stWiz").addEventListener("click", wizardDone);
+document.getElementById("stReset").addEventListener("click", () => reset());
+
+stateA();
+</script>
