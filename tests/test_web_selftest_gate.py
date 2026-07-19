@@ -71,8 +71,9 @@ class TestWebSelftestGate:
         assert selftest_result["title_dom"]
 
     def test_all_nav_buttons_rendered(self, selftest_result: dict) -> None:
-        # 6화면 내비(.navbtn) 가 실체로 그려짐 — 화면 소실 회귀 가드(matrix 제거 후, F9).
-        assert selftest_result["nav_count"] == 6
+        # 7화면 내비(.navbtn) 가 실체로 그려짐 — 화면 소실 회귀 가드(matrix 제거 후 F9;
+        # +「작업」 화면 R-flow 슬라이스 1 #90, 실행 화면과 병존 → 6→7).
+        assert selftest_result["nav_count"] == 7
 
     def test_home_is_default_screen(self, selftest_result: dict) -> None:
         # 허브(홈)가 기본 활성 화면으로 뜸(scr-home.on).
