@@ -359,12 +359,47 @@ _MODAL_A11Y_PROBE_JS = r"""
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   var closed = document.getElementById('pasteModal').classList.contains('hidden');
   var restored = document.activeElement.getAttribute('data-scr');
+  // #86/B-9: 네이티브 confirm 대체 모달의 실 개폐 — .modal{display:flex} 가 hidden 을 덮지
+  // 않는지 계산 스타일로 확인한다(부록 B-9 결함 클래스). 기본 포커스=취소(머무르기, 결정 27/36/38).
+  // + PR #92 리뷰 #1: 단일 실행 직렬화(재진입 loud 거절)와 Tab 트랩을 실 DOM 에서 되읽는다.
+  var cm = document.getElementById('confirmModal');
+  var cDisplayClosedBefore = getComputedStyle(cm).display;   // 열기 전 'none'
+  var alerts = [];
+  var origAlert = window.alert;                              // 재진입 거절의 loud alert 를 기록으로 대체
+  window.alert = function (m) { alerts.push(String(m)); };
+  window.__cf1 = 'pending'; window.__cf2 = 'pending';
+  window.Modal.confirm({ body: '첫 확인 본문' }).then(function (v) { window.__cf1 = v; });
+  var cOpened = !cm.classList.contains('hidden');
+  var cDisplayOpen = getComputedStyle(cm).display;           // 열린 뒤 'flex'
+  var cFocus = document.activeElement.id;                    // 취소 버튼에 초기 포커스
+  // 재진입 시도(#92 리뷰 #1) — 즉시 거절(refusal)돼야 하고 loud 해야 하며, 첫 다이얼로그의
+  // 본문·리스너가 덮이지 않아야 한다(이중 바인딩이면 아래 OK 1클릭에 두 확정이 디스패치된다).
+  window.Modal.confirm({ body: '둘째 확인 본문' }).then(function (v) { window.__cf2 = v; });
+  var reentryAlerts = alerts.length;                         // 거절이 loud 였는가(1 기대)
+  var bodyAfterReentry = document.getElementById('confirmModalBody').textContent;
+  // Tab 트랩(#92 리뷰 #1) — 마지막 포커서블(확인)에서 Tab 이 배경으로 새지 않고 첫 요소로 순환.
+  document.getElementById('confirmModalOk').focus();
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+  var trapWrapped = document.activeElement.id;               // confirmModalCancel 기대
+  document.getElementById('confirmModalOk').click();         // 확인 클릭 → 닫힘 + resolve(true)
+  var cClosed = cm.classList.contains('hidden');
+  var cDisplayClosed = getComputedStyle(cm).display;         // 닫힌 뒤 'none'
+  window.alert = origAlert;
   return {
     opened: opened,               // 열기 후 hidden 해제됐는가
     focus_in: focusIn,            // 초기 포커스가 모달 안(pasteText)으로 들어갔는가
     closed_by_escape: closed,     // Escape 로 닫혔는가
     focus_before: before,         // 열기 직전 트리거(내비 data-scr)
-    focus_restored: restored      // 닫은 뒤 포커스가 트리거로 복귀했는가
+    focus_restored: restored,     // 닫은 뒤 포커스가 트리거로 복귀했는가
+    confirm_display_closed_before: cDisplayClosedBefore,  // #86: 열기 전 display(none 기대)
+    confirm_opened: cOpened,      // #86: Modal.confirm 이 hidden 해제했는가
+    confirm_display_open: cDisplayOpen,  // #86/B-9: 열린 동안 display(flex 기대)
+    confirm_focus: cFocus,        // #86: 초기 포커스가 취소(머무르기)인가
+    confirm_reentry_alerts: reentryAlerts,       // #92 #1: 재진입 거절이 loud 였는가(1 기대)
+    confirm_body_after_reentry: bodyAfterReentry, // #92 #1: 첫 본문이 덮이지 않았는가
+    confirm_trap_wrapped: trapWrapped,           // #92 #1: Tab 이 모달 안에서 순환했는가
+    confirm_closed: cClosed,      // #86: 확인 클릭 후 다시 hidden 인가
+    confirm_display_closed: cDisplayClosed  // #86/B-9: 닫힌 뒤 display(none 기대, hidden 이 flex 를 이긴다)
   };
 })()
 """
@@ -569,6 +604,11 @@ def _selftest_drive(window: "object") -> None:
         # 보고, 여기선 실 브라우저에서 Modal 헬퍼가 초기포커스·Escape 닫기·트리거 복귀를 실제로
         # 수행하는지 되읽는다. 알려진 트리거(첫 내비 버튼)에 포커스를 두고 열었다가 Escape 로 닫는다.
         result["modal_a11y"] = window.evaluate_js(_MODAL_A11Y_PROBE_JS)  # type: ignore[attr-defined]
+        # promise 다이얼로그 해소값(#92 리뷰 #1) — 프로브가 .then 으로 stash 한 값을 별도
+        # evaluate_js 로 되읽는다(마이크로태스크는 앞 스크립트 스택 해제 시 이미 플러시됨).
+        # 첫 confirm=true(확인 클릭), 재진입 confirm=false(즉시 안전측 거절)여야 한다.
+        result["modal_confirm_serial"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "({ first: window.__cf1, second: window.__cf2 })")
         # 반응형 경계(#27) — 창을 최소폭(760<820 경계)으로 줄였다 넓히며 .app 그리드 열 수를
         # 실 엔진에서 되읽는다. 정적 CSS 경계 존재는 test_web_dom_contract 가, 실제 접힘/펴짐은
         # 여기가 가드. resize 는 OS 이벤트라 relayout 안정까지 짧게 대기(게이트는 flaky 금지).

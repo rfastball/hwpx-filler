@@ -85,7 +85,7 @@
     // 1차: 스캔(dry-run). needs_confirm 이면 재진술 후 확인 시에만 적용(조용한 파괴 금지).
     const res = await Bridge.call(SCREEN, "compile", { path });
     if (res && res.needs_confirm) {
-      if (window.confirm(res.confirm_text + "\n\n지금 변환할까요?")) {
+      if (await Modal.confirm({ body: res.confirm_text + "\n\n지금 변환할까요?" })) {
         await Bridge.call(SCREEN, "compile", { path, confirm: true });
       }
     }
@@ -93,9 +93,9 @@
 
   async function makeJob(path) {
     // 새 템플릿 진입 = 새 작업 세션 → 에디터에 미저장 세션이 있으면 조용히 버리지 않고 확인(#25).
-    if (await Bridge.editorHasUnsavedWork() && !window.confirm(
+    if (await Bridge.editorHasUnsavedWork() && !(await Modal.confirm({ body:
       "작업 에디터에 저장하지 않은 작업 세션이 있습니다.\n" +
-      "새 템플릿으로 시작하면 이전의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?")) return;
+      "새 템플릿으로 시작하면 이전의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?" }))) return;
     const r = await Bridge.loadTemplateIntoEditor(path);
     if (typeof r === "string" && r.startsWith("ERROR:")) { window.alert(r); return; }
     window.Nav.go("editor");   // 셸 라우터 단일 경로(P3) — navbtn .click() 합성 폐기
@@ -121,7 +121,7 @@
       window.Nav.go("txt");   // 셸 라우터 단일 경로(P3)
     } else if (act === "delete") {
       const res = await Bridge.call(SCREEN, "txt_delete", { path: btn.dataset.path });
-      if (res && res.needs_confirm && window.confirm(res.confirm_text + "\n\n삭제할까요?")) {
+      if (res && res.needs_confirm && (await Modal.confirm({ body: res.confirm_text + "\n\n삭제할까요?" }))) {
         Bridge.call(SCREEN, "txt_delete", { path: btn.dataset.path, confirm: true });
       }
     } else if (act === "edit") {

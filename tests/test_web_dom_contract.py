@@ -54,6 +54,8 @@ MODAL_LABELLEDBY = {
     "sheetModal": "sheetTitle",
     "poolRegModal": "poolRegTitle",  # 데이터 등록(#26 #4)
     "poolModal": "poolTitle",  # 등록 데이터 선택(#26 #6) — 정적 골격 이관(r3 K12)
+    "confirmModal": "confirmModalTitle",  # 네이티브 window.confirm 대체(#86)
+    "promptModal": "promptModalTitle",  # 네이티브 window.prompt 대체(#86)
 }
 
 
@@ -337,6 +339,46 @@ def test_preserve_helper_loaded_and_wraps_screen_renders():
         assert "Preserve.around" in src, (
             f"{scr}.js 의 render() 가 Preserve.around 래핑을 잃었습니다 — 재렌더 시 상호작용 유실(#28)."
         )
+def test_run_overwrite_keeps_busy_lock_through_modal():
+    """PR #92 리뷰 #2 회귀 가드: 실행 화면 덮어쓰기 모달 대기 동안 생성 버튼이 재활성되지 않는다.
+
+    덮어쓰기 확인이 blocking window.confirm 에서 비블로킹 Modal.confirm 으로 이관돼(#86),
+    busy-lock 해제(``generating = false``)가 모달 await 앞(옛 finally 위치)에 오면 확인이
+    미결인 동안 생성 버튼이 살아나 두 번째 생성이 겹쳐 시작된다. 해제가 덮어쓰기 확인
+    **뒤**에 와야 한다 — 소스 순서 정적 가드(PR #93 job.js 의 동형 가드와 짝). run.js 는
+    슬라이스 3 에서 사망 예정이라 최소로 유지하고, 사망 시 이 테스트도 함께 걷는다.
+    """
+    src = (WEB_JS_DIR / "screens" / "run.js").read_text(encoding="utf-8")
+    assert "Modal.confirm" in src, "덮어쓰기 재진술 경로(Modal.confirm)가 사라졌습니다(#92 #2)."
+    i_confirm = src.index("Modal.confirm")
+    i_release = src.index("generating = false; setBusy(false);")
+    assert i_confirm < i_release, (
+        "busy-lock 해제가 덮어쓰기 모달 await 전에 옵니다 — 모달 열림 동안 생성 버튼 재활성으로 "
+        "생성 동시 실행(리뷰 #2). finally 를 needs_overwrite 흐름 뒤로 미루세요."
+    )
+
+
+def test_modal_promise_dialog_serialization_guards_present():
+    """PR #92 리뷰 #1/#3/#4 정적 가드: modal.js 가 native 단일-실행 직렬화의 세 다리를 유지한다.
+
+    실 거동(재진입 loud 거절·Tab 순환·개폐)은 selftest 게이트가 되읽는다 — 여기선 헤드리스
+    포함 전 플랫폼에서 가드 코드의 존재를 정적으로 단언해 조용한 삭제 회귀를 막는다:
+      - 재진입 가드(pendingDialog): promise 다이얼로그 동시 1건 — 없으면 공유 골격에 리스너가
+        이중 바인딩돼 확인 1클릭으로 두 파괴 동작이 실행된다(리뷰 #1).
+      - 포커스 트랩(trapTab): 배경 버튼 Tab+Enter 발화 차단(리뷰 #1).
+      - IME 조합 가드(isComposing): 한글 조합 확정 Enter 조기 제출로 잘린 값 저장 방지(리뷰 #3).
+      - loud 거절(window.alert + console.error): 골격 부재·재진입의 조용한 no-op 금지(리뷰 #4).
+    """
+    src = (WEB_JS_DIR / "modal.js").read_text(encoding="utf-8")
+    assert "pendingDialog" in src, "promise 다이얼로그 재진입 가드(pendingDialog)가 사라졌습니다(#92 #1)."
+    assert "trapTab" in src, "포커스 트랩(trapTab)이 사라졌습니다 — 배경 Tab 이탈 재개방(#92 #1)."
+    assert "isComposing" in src, "IME 조합 가드(isComposing)가 사라졌습니다 — 조기 제출 회귀(#92 #3)."
+    assert "window.alert" in src and "console.error" in src, (
+        "골격 부재/재진입 거절의 loud 경로(window.alert/console.error)가 사라졌습니다 — "
+        "조용한 no-op 는 confirm-or-alarm 위반(#92 #4)."
+    )
+
+
 def test_component_gallery_links_real_stylesheets_drift_free():
     """살아있는 컴포넌트 갤러리(docs/UI_GALLERY.html)는 실 stylesheet 를 <link> 로 물어야 한다.
 

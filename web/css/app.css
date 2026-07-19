@@ -327,6 +327,7 @@ tr.r-schemaonly td{background:var(--a-card)}
 .modal-card{background:var(--a-card);border-radius:var(--rad-overlay);padding:var(--sp-24);width:min(560px,92vw);
   box-shadow:0 12px 40px var(--a-shadow)}
 .modal-card h3{margin:0 0 var(--sp-6)}
+.modal-body{white-space:pre-wrap;margin:var(--sp-4) 0 var(--sp-8);color:var(--a-ink);font-size:var(--fs-body)}
 .modal-card textarea{width:100%;border:1px solid var(--a-border);border-radius:var(--rad-control);padding:var(--sp-10);
   font-family:inherit;font-size:var(--fs-body);resize:vertical;color:var(--a-ink);background:var(--a-card)}
 .modal-actions{display:flex;justify-content:flex-end;gap:var(--sp-8);margin-top:var(--sp-12)}

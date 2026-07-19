@@ -12,7 +12,7 @@
       if (!path) return;                            // 피커 취소 — 아무것도 안 바뀜
       let res = await Bridge.call(screen, "relink_template", { name, path });
       if (res && res.needs_confirm) {
-        if (!window.confirm(res.confirm_text + "\n\n계속할까요?")) {
+        if (!(await Modal.confirm({ body: res.confirm_text + "\n\n계속할까요?" }))) {
           say("다시 연결 취소 — 템플릿 연결을 바꾸지 않았습니다.", "cancel");
           return;
         }
