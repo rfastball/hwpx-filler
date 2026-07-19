@@ -95,6 +95,57 @@ def test_select_job_then_data_populates_records_and_badges(tmp_path):
     assert states["추정가격"] == "missing"  # rec0 빈값 → 미입력
 
 
+# ------------------------------------------------------ 식별 요약 링1 소비(A-1-15, PR-1)
+def test_record_summary_consumes_ring1_identity_not_keyed_temp(tmp_path):
+    """식별 요약은 링1 ``identity_summary`` 소비 — 원본 값만 병기(임시 'key: value' 판 폐기).
+
+    슬라이스 1의 임시 요약은 ``bidNtceNm: 전산장비`` 처럼 키를 접두했다. 링1 판은 사용자가
+    데이터에서 본 값만 ``' · '`` 로 병기한다(A-1-15) — 키 접두가 사라졌음을 못박는다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    summaries = [r["summary"] for r in ctrl.snapshot()["records"]]
+    assert all("bidNtceNm" not in s for s in summaries)  # 임시 판의 키 접두 폐기(값만 병기)
+    # display_for: rec0 은 presmptPrce 빈값이라 마커로 자리 보존(매달린 구분자 아님), rec1 은
+    # 두 값 병기. 인지층 = 왼쪽 2열(bidNtceNm·presmptPrce).
+    assert summaries == ["전산장비 · (빈칸)", "사무비품 · 2000000"]
+
+
+def test_filename_token_mode_back_resolves_and_excludes_non_carriers(tmp_path):
+    """파일명이 나르는 템플릿 필드를 매핑 ``source``(원본 열)로 역해소(결정 37 토큰 모드).
+
+    파일명 토큰은 **매핑 후** 네임스페이스(``공고명``)인데 식별 요약은 **원본 열**(``bidNtceNm``)
+    을 본다 — 역해소가 없으면 토큰 모드가 엉뚱한 네임스페이스로 오발한다(confirm-or-alarm).
+    세 배제 가드를 모두 태운다: ``const``(리터럴, source 무의존)·``blank``·부재 source.
+    """
+    template = tmp_path / "t.hwpx"
+    _write_template(template, ["공고명", "상수", "빈칸", "유령"])
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(
+        name="공고서",
+        template_path=str(template),
+        mapping=MappingProfile(mappings=[
+            FieldMapping(template_field="공고명", source="bidNtceNm"),          # text·present → 포함
+            FieldMapping(template_field="상수", source="dmndInsttNm", type="const", const="고정"),  # const → 배제
+            FieldMapping(template_field="빈칸", source="ntceInsttNm", type="blank"),  # blank → 배제
+            FieldMapping(template_field="유령", source="does_not_exist"),        # 부재 source → 배제
+        ]),
+        # 네 템플릿 필드를 모두 파일명이 요구(가드가 없으면 넷 다 토큰 모드로 샘).
+        filename_pattern="{{공고명}}-{{상수}}-{{빈칸}}-{{유령}}-{{seq:001}}",
+    ))
+    csv = tmp_path / "d.csv"
+    csv.write_text(
+        "bidNtceNm,presmptPrce,dmndInsttNm,ntceInsttNm\n전산장비,,조달청,조달청\n사무비품,2000000,경찰청,경찰청\n",
+        encoding="utf-8",
+    )
+    ctrl = JobController(reg, lambda s, snap: None)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(str(csv))
+    # text·present 인 공고명(→bidNtceNm)만 나르는 열. const·blank·부재 source 는 배제.
+    assert ctrl._filename_source_columns() == ["bidNtceNm"]
+
+
 # ---------------------------------------------------------------- 게이트·생성(링1 계약)
 def test_missing_gate_blocks_generate_until_acked(tmp_path):
     ctrl, _ = _controller(tmp_path)
