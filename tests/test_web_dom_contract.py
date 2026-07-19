@@ -55,8 +55,9 @@ MODAL_LABELLEDBY = {
     "sheetModal": "sheetTitle",
     "poolRegModal": "poolRegTitle",  # 데이터 등록(#26 #4)
     "poolModal": "poolTitle",  # 등록 데이터 선택(#26 #6) — 정적 골격 이관(r3 K12)
-    "jobOverwriteModal": "jobOverwriteTitle",  # 「작업」 덮어쓰기 확인(R-flow 슬라이스 1, RC-02)
-    "confirmModal": "confirmModalTitle",  # 네이티브 window.confirm 대체(#86)
+    # 「작업」 덮어쓰기 확인은 슬라이스 2(A-2-22)에서 공용 confirmModal(수치 합성 본문)로 이관 —
+    # 전용 jobOverwriteModal DOM 폐기(아래 test_job_overwrite_uses_shared_confirm_modal 가드).
+    "confirmModal": "confirmModalTitle",  # 네이티브 window.confirm 대체(#86) + 덮어쓰기 확인
     "promptModal": "promptModalTitle",  # 네이티브 window.prompt 대체(#86)
 }
 
@@ -341,18 +342,29 @@ def test_preserve_helper_loaded_and_wraps_screen_renders():
         assert "Preserve.around" in src, (
             f"{scr}.js 의 render() 가 Preserve.around 래핑을 잃었습니다 — 재렌더 시 상호작용 유실(#28)."
         )
+def test_job_overwrite_uses_shared_confirm_modal():
+    """덮어쓰기 확인이 공용 Modal.confirm(수치 합성 본문)을 쓴다 — 전용 모달·window.confirm 무사용.
+
+    슬라이스 2(A-2-22): 전용 jobOverwriteModal 폐기, 수치 합성(총량·파괴분·신규분)은
+    overwriteBody 가 조립해 Modal.confirm 본문으로 넘긴다. 네이티브 window.confirm 무사용은
+    별도 코멘트-인지 가드(test_web_native_dialog_guard)가 담보한다.
+    """
+    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    assert "Modal.confirm({" in src, "덮어쓰기 확인이 공용 Modal.confirm 을 쓰지 않습니다(A-2-22)."
+    assert "function overwriteBody(" in src, "수치 합성 본문(overwriteBody)이 없습니다(A-2-22)."
+
+
 def test_job_overwrite_keeps_busy_lock_through_modal():
     """리뷰 #1 회귀 가드: 작업 화면 덮어쓰기 모달 대기 동안 생성 버튼이 재활성되지 않는다.
 
     modal.js 는 포커스 트랩이 없어(blocking window.confirm 과 다름) 모달 뒤 살아있는 생성
     버튼에 Tab+Enter 가 닿으면 두 번째 생성이 첫 확인 미결인 채 시작된다(같은 폴더 동시 기록).
-    busy-lock 해제(``generating = false``)가 덮어쓰기 확인(``confirmOverwrite``) **뒤**에 와야
-    한다 — 소스 순서로 정적 가드(실 거동은 selftest 게이트 소관).
+    busy-lock 해제(``generating = false``)가 덮어쓰기 확인 await **뒤**에 와야 한다 — 소스
+    순서로 정적 가드(실 거동은 selftest 게이트 소관).
     """
     src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
-    assert "confirmOverwrite(res.overwrite_text)" in src, "덮어쓰기 재진술 경로가 사라졌습니다(#1)."
-    # doGenerate 안에서 busy 해제가 모달 대기보다 앞서면(옛 구조) 이 순서가 뒤집힌다.
-    i_confirm = src.index("confirmOverwrite(res.overwrite_text)")
+    # doGenerate 안에서 busy 해제가 모달 await 보다 앞서면(옛 구조) 이 순서가 뒤집힌다.
+    i_confirm = src.index("await window.Modal.confirm({")
     i_release = src.index("generating = false; setBusy(false);")
     assert i_confirm < i_release, (
         "busy-lock 해제가 덮어쓰기 모달 await 전에 온다 — 모달 열림 동안 생성 버튼 재활성으로 "

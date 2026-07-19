@@ -201,6 +201,33 @@ class TestWebSelftestGate:
             f"실화면 스크롤 유실(재구성이 0 으로 리셋됐거나 예외): {top!r}"
         )
 
+    def test_job_mirror_table_renders_four_state_rows(self, selftest_result: dict) -> None:
+        # 「작업」 본문 존 거울(블록 6 ⓑ, 슬라이스 2) — 합성 스냅샷을 실 render() 에 흘려 필드
+        # 채움 테이블이 실 WebView2 에서 4행(채움·채움+표시형·미입력·빈칸)으로 그려지고 미입력
+        # 행이 클릭형(role=button)인지 되읽는다. 배지=거울의 행(별도 UI 아님)의 실물 검증.
+        j = selftest_result["job_mirror"]
+        assert j.get("error") is None, f"거울 프로브 예외: {j.get('error')!r}"
+        assert j["mirror_rows"] == 4, f"거울 행이 4개가 아닙니다: {j!r}"
+        assert j["miss_clickable"] is True, "미입력 거울 행이 클릭형(role=button)이 아닙니다(ADR-E)."
+        chips = j["chips"]
+        assert any("채움 · 표시형" in c for c in chips), f"표시형 칩 미렌더: {chips!r}"
+        assert any("미입력 · 클릭=확인" in c for c in chips), f"미입력 칩 미렌더: {chips!r}"
+        assert any("빈칸 선언" in c for c in chips), f"의도적 빈칸 칩 미렌더: {chips!r}"
+
+    def test_job_restate_block_lists_selected_names(self, selftest_result: dict) -> None:
+        # 재진술 블록(블록 6 D1-B, 슬라이스 2) — 선택 2행의 이름 목록이 상시 블록으로 실렌더된다.
+        j = selftest_result["job_mirror"]
+        assert j["restate_shown"] is True, "재진술 블록이 표시되지 않았습니다(선택 있음)."
+        assert j["restate_names"] == 2, f"재진술 이름 목록이 선택 수와 다릅니다: {j['restate_names']!r}"
+
+    def test_job_drift_replaces_mirror_with_blocking_banner(self, selftest_result: dict) -> None:
+        # danger(구조 드리프트)는 거울 표와 섞이지 않고 차단 배너 + 행동 링크로 **교체**된다
+        # (결정 36·S9). overlay 로 표 위에 얹히는 게 아니라 실제로 표가 사라지고 배너가 선다.
+        j = selftest_result["job_mirror"]
+        assert j["drift_banner"] is True, "드리프트 차단 배너(role=alert)가 렌더되지 않았습니다."
+        assert j["drift_fix_link"] is True, "「작업 에디터에서 매핑 확정…」 행동 링크가 없습니다(막다른 경보 금지)."
+        assert j["drift_no_table"] is True, "드리프트인데 거울 표가 남아 있습니다(배너로 교체 안 됨)."
+
     def test_theme_defaults_to_system_when_unpersisted(self, selftest_result: dict) -> None:
         # 저장된 테마 선택이 없으면 앱은 OS 를 따른다 — data-theme 속성이 없어야(=system) @media 지배.
         # 실수로 특정 테마가 강제되면(속성 상주) OS 추종이 깨지므로 되읽어 가드한다.

@@ -184,6 +184,63 @@ class JobController(PoolTargetingMixin):
             for i, rec in enumerate(self.vm.records)
         ]
 
+    # ---- 본문 존 거울(D2 ⓑ, 결정 36) — 필드 채움 테이블 값 집계 --------------
+    def _formatted_fields(self) -> "set[str]":
+        """표시형(값 변환)이 붙는 필드 — 거울이 '채움 · 표시형'으로 병기한다.
+
+        date·amount 는 언제나 값을 변환하고, text 도 표시형 코드(``fmt``)가 있으면 변환한다.
+        const 는 리터럴이라 데이터 변환이 아니다(그냥 '채움').
+        """
+        return {
+            m.template_field for m in self.vm.job.mapping.mappings
+            if not m.is_blank and (m.type in ("date", "amount") or m.fmt)
+        }
+
+    def _field_value_display(self, state: str, name: str, mapped: "list[dict]") -> str:
+        """거울 행의 값 표시 — 상태별. 값은 매핑 출력(``mapped_records``)에서 온다(재구현 금지).
+
+        - ``blank``(의도적 빈칸) = 값 없음 표지.
+        - ``missing`` = 선택분 중 몇 행이 비었는지 재진술(낙관 서사 해소).
+        - ``filled`` = 실값. 선택 N>1 이고 값이 **실제로 다르면** 표본 명시 병기(S10) — 다 같으면
+          그냥 값(허위 '행마다 다름' 금지 — confirm-or-alarm 정직).
+        """
+        if state == "blank":
+            return "(의도적 빈칸)"
+        n = len(mapped)
+        vals = [str(r.get(name, "")) for r in mapped]
+        if state == "missing":
+            blank_n = sum(1 for v in vals if not v.strip())
+            return f"(미입력) 선택 {n}행 중 {blank_n}행에서 값이 비어 있습니다."
+        distinct = list(dict.fromkeys(vals))
+        if len(distinct) <= 1:
+            return distinct[0] if distinct else ""
+        return f"{vals[0]} (행마다 다름 · 표본, 외 {n - 1}행)"
+
+    def _mirror(self, indices: "list[int]", status) -> "tuple[list[dict], list[str]]":
+        """거울 행(비-drift 필드 값 테이블) + drift 필드 목록(차단 배너로 분리, 결정 36).
+
+        거울 = "생성될 문서의 채움 상태"(hwpx 본문은 앱에서 안 렌더). ADR-E 배지는 별도 UI 가
+        아니라 거울의 행이다. **drift(구조 불일치)는 미입력(ack 로 풀림)과 같은 표에 섞지 않는다**
+        — 거울 자리 차단 배너로 분리한다(danger, 에디터 가야 풀림). RC-23 심각도 서열의 공간 번역.
+        """
+        mapped = self.vm.mapped_records(indices) if indices else []
+        fmt = self._formatted_fields()
+        rows: "list[dict]" = []
+        drift: "list[str]" = []
+        for st in status.field_states:
+            if st.state == "drift":
+                drift.append(st.name)  # 구조 불일치는 선택과 무관 — 0 선택에서도 배너로 발화.
+            elif indices:
+                # 선택 0 = 생성될 문서 없음 → 거울 행 없음(빈 값을 '채움'으로 오도하지 않는다).
+                rows.append({
+                    "name": st.name,
+                    "state": st.state,
+                    "acknowledged": st.acknowledged,
+                    "value": self._field_value_display(st.state, st.name, mapped),
+                    "formatted": st.name in fmt,
+                })
+        return rows, drift
+
     def snapshot(self) -> dict:
         """4존 패널 스냅샷 — 필드는 실행 화면과 평행(링1 배선 감사 가능), 좌 목록 동봉.
 
@@ -209,7 +266,7 @@ class JobController(PoolTargetingMixin):
                 "template_missing": False, "has_data": False,
                 "record_count": 0, "selected_count": 0, "records": [],
                 "preflight": {"level": "", "text": ""},
-                "field_states": [],
+                "mirror": [], "drift": [],
                 "gate": {"enabled": False, "level": "warn", "text": "왼쪽에서 작업을 선택하세요."},
             })
             return base
@@ -219,6 +276,7 @@ class JobController(PoolTargetingMixin):
         preflight_text = (
             _PREFLIGHT_OK_TEXT if status.preflight.level == "ok" else status.preflight.text
         )
+        mirror_rows, drift_fields = self._mirror(indices, status)
         base.update({
             "template_name": Path(job.template_path).name if job.template_path else "",
             "template_path": job.template_path,  # 추적성 로케이트(#53-B) — 전체 경로
@@ -232,10 +290,9 @@ class JobController(PoolTargetingMixin):
             "selected_count": self.selection.selected_count(),
             "records": self._record_rows(),
             "preflight": {"level": status.preflight.level, "text": preflight_text},
-            "field_states": [
-                {"name": s.name, "state": s.state, "acknowledged": s.acknowledged}
-                for s in status.field_states
-            ],
+            # 본문 존 거울(필드 채움 테이블) + drift 필드(차단 배너로 분리, 결정 36).
+            "mirror": mirror_rows,
+            "drift": drift_fields,
             "gate": {
                 "enabled": status.gate.enabled,
                 "level": status.gate.level,
@@ -432,19 +489,20 @@ class JobController(PoolTargetingMixin):
         marker = MISSING_MARKER if blanks else ""
 
         # 4) 덮어쓰기 확인(RC-02) — 미리보기가 캡처한 날짜 토큰 시각을 재사용(표시=확인=생성 일치).
+        #    수치 합성(결정 36): 총량·파괴분(덮어씀)·신규분을 종류별로 재진술한다(블록 4 가드
+        #    형식 "종류별 수치 재진술" 승계). 모달은 파괴 지점=덮어쓰기에만 선다. 표면(job.js)이
+        #    이 수치로 modal.js 본문을 합성한다 — 별도 재진술 모달을 만들지 않는다.
         now = self._names_now or datetime.now()
         conflicts = self.vm.output_conflicts(indices, out_dir, mark_missing=marker, now=now)
         if conflicts and not confirm_overwrite:
             names = [Path(p).name for p in conflicts]
-            shown = "\n".join(names[:10]) + (
-                f"\n외 {len(names) - 10}개" if len(names) > 10 else ""
-            )
             return {
                 "ok": False, "needs_overwrite": True,
-                "overwrite_text": (
-                    f"저장 폴더에 같은 이름의 파일이 이미 있습니다.\n"
-                    f"계속하면 기존 파일 {len(conflicts)}개를 덮어씁니다.\n\n{shown}"
-                ),
+                "total": len(indices),                      # 총량
+                "overwrite_count": len(conflicts),          # 파괴분(기존 덮어씀)
+                "new_count": len(indices) - len(conflicts),  # 신규분(새 파일)
+                "conflict_names": names[:10],               # 파괴분 표본
+                "conflict_more": max(0, len(names) - 10),
             }
         overwrite = bool(conflicts)
 

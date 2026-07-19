@@ -1,14 +1,15 @@
-/* 「작업」 화면 — 좌 master 목록 + 우 세션 패널 4존(R-flow 슬라이스 1, #90).
+/* 「작업」 화면 — 좌 master 목록 + 우 세션 패널 4존(R-flow 슬라이스 1~2, #90).
    안정 DOM(index.html) + Python 이 window.__push('job', snapshot) 로 값만 채운다(run/txt 패턴).
-   표현 계층(3상태 배지·게이트 재진술·진행/로그)만 여기서 만든다 — VM 로직 아님(링2 대체, #87).
-   덮어쓰기 확인은 window.confirm 이 아니라 전용 모달(Modal.open)로 — 새 표면은 #86 재유입
-   가드에 처음부터 부합한다. 존 배치(헤더·데이터·본문·완료)는 여기서 안정 DOM 에 값을 채운다. */
+   표현 계층(거울 테이블·재진술 블록·게이트·진행/로그)만 여기서 만든다 — VM 로직 아님(링2 대체, #87).
+   덮어쓰기 확인은 공용 Modal.confirm(수치 합성 본문)으로 — 네이티브 다이얼로그 무사용이라 #86
+   재유입 가드에 처음부터 부합한다. 존 배치(헤더·데이터·본문·완료)는 여기서 안정 DOM 에 값을 채운다. */
 (function () {
   const SCREEN = "job";
   const $ = (id) => document.getElementById(id);
   let LAST = null;
   let generating = false;
   let lastSessionKey = null;  // 완료 존 세션 스코프 판정(결정 7) — 세션 변경 시에만 리셋
+  let restateExpanded = false;  // 재진술 블록 이름 목록 펼침(대량 표본+「외 N건」, 결정 36)
 
   const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
 
@@ -25,8 +26,9 @@
         renderHeader(s);
         renderData(s);
         renderPreflight(s);
-        renderBadges(s);
+        renderMirror(s);
         renderRecords(s);
+        renderRestate(s);
         renderGateAndFolder(s);
       }
       renderStatus(s);
@@ -119,27 +121,74 @@
     box.textContent = p.text;
   }
 
-  /* ---- 본문 존: 3상태 배지(ADR-B/E) — 미입력만 클릭형(확인/철회 토글) ---- */
-  function renderBadges(s) {
-    const host = $("jobFieldBadges");
-    const states = s.field_states || [];
-    if (!states.length) {
-      host.innerHTML = `<span class="muted capnote">데이터를 선택하면 필드별 채움 상태가 여기에 표시됩니다.</span>`;
+  /* ---- 본문 존 거울 = 필드 채움 테이블(결정 36 ⓑ) ----
+     hwpx 본문은 앱에서 렌더 못 하므로 거울이 비추는 것은 "생성될 문서의 채움 상태"다. ADR-E
+     배지는 별도 UI가 아니라 거울의 행: 미입력 행 클릭=확인, 재클릭=철회(UD-19). danger(드리프트)는
+     ack 로 안 풀리므로 같은 표에 섞지 않고 거울 자리 차단 배너 + 행동 링크로 분리한다(결정 36·S9). */
+  function renderMirror(s) {
+    const host = $("jobMirror");
+    const drift = s.drift || [];
+    if (drift.length) {
+      // danger = 차단 배너 + 상시 행동 링크(막다른 경보 금지 — 경보 어포던스는 숨지 않는다).
+      host.innerHTML =
+        `<div class="mir-drift" role="alert">` +
+        `<p>템플릿 구조가 확정 매핑과 달라졌습니다. 어긋난 필드: <b>${esc(drift.join(", "))}</b>. ` +
+        `매핑을 다시 확정해야 문서를 생성할 수 있습니다.</p>` +
+        `<button class="btn sm" data-act="fix-mapping" data-busy-lock>작업 에디터에서 매핑 확정…</button>` +
+        `</div>`;
       return;
     }
-    host.innerHTML = states.map(badge).join("");
+    const rows = s.mirror || [];
+    if (!rows.length) {  // 선택 0(또는 데이터 미겨눔) = 생성될 문서 없음
+      host.innerHTML = `<p class="mirempty muted capnote">행을 선택하면 이 문서에 들어갈 값이 여기 비칩니다.</p>`;
+      return;
+    }
+    host.innerHTML =
+      `<div class="tbwrap"><table class="tb mir"><tbody>` +
+      rows.map(mirrorRow).join("") + `</tbody></table></div>`;
   }
 
-  function badge(st) {
-    const nm = esc(st.name);
-    if (st.state === "filled") return `<span class="fb fill">✓ ${nm}</span>`;
-    if (st.state === "blank") return `<span class="fb blank">◦ ${nm} (비움)</span>`;
-    if (st.state === "drift") return `<span class="fb drift">⚠ ${nm} 매핑 재확정 필요</span>`;
-    if (st.acknowledged) {
-      return `<span class="fb missing ack" data-f="${nm}" role="button" tabindex="0"
-        title="다시 눌러 확인을 취소합니다. 게이트가 다시 닫힙니다.">✓ ${nm} 미입력 표시 예정</span>`;
+  function mirrorRow(r) {
+    const nm = esc(r.name);
+    const val = esc(r.value);
+    if (r.state === "filled") {
+      return `<tr class="mir-row"><td class="mir-f">${nm}</td><td class="mir-v">${val}</td>` +
+        `<td class="mir-s"><span class="st filled">채움${r.formatted ? " · 표시형" : ""}</span></td></tr>`;
     }
-    return `<span class="fb missing" data-f="${nm}" role="button" tabindex="0">● ${nm} 미입력 확인</span>`;
+    if (r.state === "blank") {
+      return `<tr class="mir-row blankd"><td class="mir-f">${nm}</td><td class="mir-v">${val}</td>` +
+        `<td class="mir-s"><span class="st blankd">빈칸 선언</span></td></tr>`;
+    }
+    // missing — 클릭형 행(확인/철회 토글). ack 여부로 색·칩 전환.
+    const ack = r.acknowledged;
+    const chip = ack ? `<span class="st ackd">확인됨 · 클릭=철회</span>`
+                     : `<span class="st miss">미입력 · 클릭=확인</span>`;
+    return `<tr class="mir-row miss${ack ? " ackd" : ""}" role="button" tabindex="0" ` +
+      `data-f="${nm}" aria-pressed="${ack ? "true" : "false"}">` +
+      `<td class="mir-f">${nm}</td><td class="mir-v">${val}</td><td class="mir-s">${chip}</td></tr>`;
+  }
+
+  /* ---- 게이트 · 재진술 블록(상시, 결정 36 D1-B) — 선택 유래 + 산출 요약 + 이름 목록.
+     이미 보이는 것을 재검증하지 않으므로 모달이 아니라 상시 블록이다. 이름 = 실파일명(정준) ·
+     식별 요약(보조, PR-1 identity_summary). 소량(≤3)=전부, 대량=표본 3 + 「외 N건 펼치기」.
+     층화 표본(결정 5)은 필터(슬라이스 4) 착지 후 합류 — 지금은 단순 앞 표본. */
+  function renderRestate(s) {
+    const box = $("jobRestate");
+    const sel = (s.records || []).filter((r) => r.selected);
+    if (!s.has_data || !sel.length) { box.style.display = "none"; box.innerHTML = ""; return; }
+    box.style.display = "";
+    const shown = (sel.length <= 3 || restateExpanded) ? sel : sel.slice(0, 3);
+    const list = shown.map((r) =>
+      `<span class="nm"><b>${esc(r.name || "(파일명 미정)")}</b>` +
+      (r.summary ? ` · ${esc(r.summary)}` : "") + `</span>`).join("");
+    const more = (sel.length > 3)
+      ? `<button class="btn sm" data-act="restate-more" data-busy-lock>` +
+        (restateExpanded ? "접기" : `⋯ 외 ${sel.length - 3}건 펼치기`) + `</button>`
+      : "";
+    box.innerHTML =
+      `<span class="dl">선택</span><span>직접 선택 ${sel.length}행</span>` +
+      `<span class="dl">생성</span><span>문서 ${sel.length}건 · 저장 폴더: ${esc(s.out_dir || "미지정")}` +
+      `<div class="namelist">${list}${more}</div></span>`;
   }
 
   /* ---- 데이터 존: 생성 대상 문서(행 선택) ---- */
@@ -208,23 +257,15 @@
     $("jobGenBtn").textContent = busy ? "생성 중…" : "이 작업으로 문서 생성";
   }
 
-  /* ---- 덮어쓰기 확인 모달(RC-02) — 기본 포커스=취소, Escape=취소(반사적 확정 방지).
-     Promise 로 확정(true)/취소(false)를 해소한다. 확인이 finish 를 먼저 잡으므로 close 가
-     부르는 onClose 의 취소 해소는 무효화된다(재진입 안전). 슬라이스 2가 modal.js 수치
-     재진술 판(#86 합류)으로 대체. */
-  function confirmOverwrite(text) {
-    return new Promise((resolve) => {
-      $("jobOverwriteText").textContent = text;
-      let done = false;
-      const finish = (v) => { if (!done) { done = true; resolve(v); } };
-      const confirmBtn = $("jobOverwriteConfirm");
-      const onConfirm = () => { finish(true); window.Modal.close("jobOverwriteModal"); };
-      confirmBtn.addEventListener("click", onConfirm, { once: true });
-      window.Modal.open("jobOverwriteModal", {
-        initialFocus: $("jobOverwriteCancel"),
-        onClose: () => { confirmBtn.removeEventListener("click", onConfirm); finish(false); },
-      });
-    });
+  /* ---- 덮어쓰기 확인 본문 = 수치 합성(A-2-22, 결정 36) — 총량·파괴분·신규분을 종류별로
+     재진술한다(블록 4 가드 형식 승계). 별도 재진술 모달을 만들지 않고, 어차피 떠야 하는 RC-02
+     덮어쓰기 모달이 수치를 나른다. 공용 modal.js Modal.confirm(기본 포커스=머무르기·Escape=
+     머무르기)이 담당한다 — 새 표면은 처음부터 #86 재유입 가드에 부합(window.confirm 무사용). */
+  function overwriteBody(res) {
+    const names = res.conflict_names || [];
+    const more = res.conflict_more ? `\n외 ${res.conflict_more}개` : "";
+    return `${res.total}건을 생성합니다. 이 중 ${res.overwrite_count}건이 기존 파일을 덮어씁니다:\n` +
+      `${names.join("\n")}${more}\n\n나머지 ${res.new_count}건은 새 파일입니다.`;
   }
 
   async function doGenerate(confirmOverwriteFlag) {
@@ -238,8 +279,11 @@
       const res = await Bridge.generate(SCREEN, confirmOverwriteFlag);
       if (res.ok) { renderResult(res); return; }
       if (res.needs_overwrite) {
-        // 조용한 덮어쓰기 금지 — 재진술 후 확인 시에만 재호출(RC-02). 모달 대기 동안 busy 유지.
-        const ok = await confirmOverwrite(res.overwrite_text);
+        // 조용한 덮어쓰기 금지 — 수치 재진술 후 확인 시에만 재호출(RC-02). 모달 대기 동안 busy 유지.
+        const ok = await window.Modal.confirm({
+          title: "덮어쓰기 확인", body: overwriteBody(res),
+          confirmLabel: "덮어쓰고 생성", cancelLabel: "머무르기",
+        });
         if (ok) { await doGenerate(true); }
         else { log("생성 취소. 기존 파일 덮어쓰기를 확정하지 않았습니다."); }
         return;
@@ -276,20 +320,37 @@
     Bridge.call(SCREEN, "select_job", { name: item.dataset.job });
   }
 
-  function onBadgeClick(e) {
-    const badgeEl = e.target.closest(".fb.missing");
-    if (!badgeEl) return;
-    const act = badgeEl.classList.contains("ack") ? "unack_field" : "ack_field";
-    Bridge.call(SCREEN, act, { field: badgeEl.dataset.f });
+  /* 거울 미입력 행 = ADR-E 배지 — 클릭=확인·재클릭=철회(UD-19). ackd 클래스로 토글 방향 판정. */
+  function mirrorAck(rowEl) {
+    const act = rowEl.classList.contains("ackd") ? "unack_field" : "ack_field";
+    Bridge.call(SCREEN, act, { field: rowEl.dataset.f });
   }
 
-  function onBadgeKey(e) {
+  function onMirrorClick(e) {
+    if (e.target.closest('[data-act="fix-mapping"]')) { fixMapping(); return; }
+    const row = e.target.closest(".mir-row.miss");
+    if (row) mirrorAck(row);
+  }
+
+  function onMirrorKey(e) {
     if (e.key !== "Enter" && e.key !== " ") return;
-    const badgeEl = e.target.closest(".fb.missing");
-    if (!badgeEl) return;
+    const row = e.target.closest(".mir-row.miss");
+    if (!row) return;
     e.preventDefault();
-    const act = badgeEl.classList.contains("ack") ? "unack_field" : "ack_field";
-    Bridge.call(SCREEN, act, { field: badgeEl.dataset.f });
+    mirrorAck(row);
+  }
+
+  /* danger(구조 드리프트) 수리 동선 — 이 작업을 에디터에 열어 매핑을 재확정한다(home.editJob
+     대칭: 미저장 에디터 세션은 조용히 버리지 않고 확인 후 이동). 확정 후 복귀하면 세션 재개. */
+  async function fixMapping() {
+    if (!(LAST && LAST.job_name)) return;
+    const busy = await Bridge.editorHasUnsavedWork();
+    if (busy && !(await window.Modal.confirm({ body:
+      "에디터에 저장하지 않은 작업 세션이 있습니다.\n" +
+      `'${LAST.job_name}' 편집을 열면 그 세션의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?` }))) return;
+    const r = await Bridge.openJobInEditor(LAST.job_name);
+    if (typeof r === "string" && r.startsWith("ERROR:")) { window.alert(r.slice(6).trim()); return; }
+    window.Nav.go("editor");
   }
 
   /* 템플릿 다시 연결(#67) — 공용 흐름(relink.js)에 위임, 결과 재진술 채널만 log 주입. */
@@ -313,10 +374,17 @@
     $("jobRelink").addEventListener("click", (e) => {
       if (e.target.closest('[data-act="relink-template"]')) doRelinkTemplate();
     });
-    $("jobFieldBadges").addEventListener("click", onBadgeClick);
-    $("jobFieldBadges").addEventListener("keydown", onBadgeKey);
+    // 거울(재렌더에도 살아남게 안정 컨테이너에 위임) — 미입력 행 ack + 드리프트 수리 링크.
+    $("jobMirror").addEventListener("click", onMirrorClick);
+    $("jobMirror").addEventListener("keydown", onMirrorKey);
+    // 재진술 블록 이름 목록 펼침/접기(대량 표본).
+    $("jobRestate").addEventListener("click", (e) => {
+      if (e.target.closest('[data-act="restate-more"]')) {
+        restateExpanded = !restateExpanded;
+        if (LAST) renderRestate(LAST);
+      }
+    });
     $("jobGenBtn").addEventListener("click", () => doGenerate(false));
-    $("jobOverwriteCancel").addEventListener("click", () => window.Modal.close("jobOverwriteModal"));
 
     $("jobBtnPickData").addEventListener("click", async () => {
       let r = await Bridge.pickDataFile(SCREEN);

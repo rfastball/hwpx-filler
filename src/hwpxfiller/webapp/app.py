@@ -531,6 +531,50 @@ _PRESERVE_REAL_PROBE_JS = r"""
 """
 
 
+# 「작업」 본문 존 거울 + 재진술 블록(블록 6 D2/D1, 슬라이스 2) — 합성 스냅샷을 shipped __push 로
+# 실 render() 에 흘려 거울 테이블 4상태 행·미입력 클릭형·재진술 이름 목록·드리프트 차단 배너가
+# 실 WebView2 에서 실제로 그려지는지 되읽는다(정적 계약은 test_web_dom_contract, 값 합성은
+# test_webapp_job 가 보고, 여기선 렌더 거동 — 부록 B-9 overlay/hidden 눈검증의 자동판).
+_JOB_MIRROR_PROBE_JS = r"""
+(function () {
+  var out = {};
+  try {
+    window.Nav.go('job');
+    var snap = {
+      job_rows: [{name:'공고서', selected:true}], job_name:'공고서', has_job:true,
+      out_dir:'C:\\Results', data_label:'d.csv', data_source_label:'d.csv (파일)', data_notice:null,
+      template_name:'t.hwpx', template_path:'C:\\t.hwpx', template_missing:false,
+      filename_pattern:'doc-{{seq}}', has_data:true, record_count:2, selected_count:2,
+      records:[{index:0, selected:true, name:'doc-001.hwpx', summary:'전산장비'},
+               {index:1, selected:true, name:'doc-002.hwpx', summary:'사무비품'}],
+      preflight:{level:'ok', text:'ok'},
+      mirror:[
+        {name:'공고명', state:'filled', acknowledged:false, value:'전산장비 (행마다 다름 · 표본, 외 1행)', formatted:false},
+        {name:'금액', state:'filled', acknowledged:false, value:'2,000,000원', formatted:true},
+        {name:'낙찰율', state:'missing', acknowledged:false, value:'(미입력) 선택 2행 중 1행에서 값이 비어 있습니다.', formatted:false},
+        {name:'비고', state:'blank', acknowledged:false, value:'(의도적 빈칸)', formatted:false}
+      ],
+      drift:[], gate:{enabled:true, level:'', text:'생성 준비'}
+    };
+    window.__push('job', snap);
+    out.mirror_rows = document.querySelectorAll('#jobMirror table.mir tbody tr').length;
+    out.miss_clickable = !!document.querySelector('#jobMirror .mir-row.miss[role="button"]');
+    out.chips = Array.prototype.map.call(
+      document.querySelectorAll('#jobMirror .mir .st'), function (e) { return e.textContent; });
+    out.restate_shown = getComputedStyle(document.getElementById('jobRestate')).display !== 'none';
+    out.restate_names = document.querySelectorAll('#jobRestate .namelist .nm').length;
+    // 드리프트 스냅샷 → 거울 표가 차단 배너 + 행동 링크로 교체되는지(overlay 아닌 실제 교체).
+    snap.drift = ['유령', '계약조건']; snap.mirror = [];
+    window.__push('job', snap);
+    out.drift_banner = !!document.querySelector('#jobMirror .mir-drift[role="alert"]');
+    out.drift_fix_link = !!document.querySelector('#jobMirror [data-act="fix-mapping"]');
+    out.drift_no_table = !document.querySelector('#jobMirror table.mir');
+  } catch (e) { out.error = 'throw:' + (e && e.message); }
+  return out;
+})()
+"""
+
+
 # ------------------------------------------------------------------ 자가검증(Q3)
 def _finish_selftest(window: "object", result: dict) -> None:
     """되읽기 결과를 결정적 위치에 쓰고 정식 종료한다(쓰기·읽기 단계 공용).
@@ -635,6 +679,8 @@ def _selftest_drive(window: "object") -> None:
         window.evaluate_js(_PRESERVE_REAL_SETUP_JS)  # type: ignore[attr-defined]  # 비동기 initial fire
         time.sleep(1.2)  # initial() 해소 + 렌더 안정
         result["preserve_real"] = window.evaluate_js(_PRESERVE_REAL_PROBE_JS)  # type: ignore[attr-defined]
+        # 「작업」 거울 + 재진술 블록(슬라이스 2) — 합성 스냅샷으로 실 render() 구동 후 DOM 되읽기.
+        result["job_mirror"] = window.evaluate_js(_JOB_MIRROR_PROBE_JS)  # type: ignore[attr-defined]
         # 다크모드 영속·무깜빡임(콜드부트 되읽기, #74) — 부팅 시 loaded 핸들러가 저장 테마
         # (settings.json, 오리진 비의존)를 show 전에 data-theme 로 주입했는지. 저장값이 없으면
         # data_theme=null(=system). 앞선 쓰기 프로세스가 남긴 값이 여기서 보이면 Python 설정
