@@ -214,18 +214,10 @@
   }
 
   /* ---- 웹→Python 이벤트(위임) ---- */
-  /* 편집 진입(#26) — 미저장 에디터 세션은 조용히 버리지 않고 확인(#25 미러) 후 복원. */
-  async function editJob(name) {
-    const busy = await Bridge.editorHasUnsavedWork();
-    if (busy && !(await Modal.confirm({ body:
-      "에디터에 저장하지 않은 작업 세션이 있습니다.\n" +
-      `'${name}' 편집을 열면 그 세션의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?` }))) return;
-    const r = await Bridge.openJobInEditor(name);
-    if (typeof r === "string" && r.startsWith("ERROR:")) {
-      window.alert(r.slice(6).trim());   // 손상·템플릿 부재 → loud (조용한 무시 금지)
-      return;
-    }
-    window.Nav.go("editor");
+  /* 편집 진입(#26) — 미저장 에디터 세션은 조용히 버리지 않고 확인(#25 미러) 후 복원.
+     공용 흐름 EditorEntry.openGuarded 에 위임(job.fixMapping 과 단일 출처, PR #97 리뷰). */
+  function editJob(name) {
+    EditorEntry.openGuarded(name);
   }
 
   /* 작업 복제(F22) — 매핑 재사용의 단일 동선(공유 베이스 프로파일의 대체). 성공은 새

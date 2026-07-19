@@ -161,17 +161,21 @@
               <div class="reclist" id="jobRecList" data-preserve-scroll></div>
             </div>
 
-            <!-- 본문 존 — 라이브 거울(필드 채움 배지) + 게이트 + 생성 의식 1회 -->
+            <!-- 본문 존 — 라이브 거울(필드 채움 테이블) + 재진술 블록 + 생성 의식 1회 -->
             <div class="zone zone-body">
-              <div class="zone-cap">본문</div>
-              <p class="muted hint">필드 상태를 상시 배지로 노출합니다. <span class="danger">미입력</span>
-                필드는 반사적 확인 취소를 막기 위해 <b>직접 클릭해 확인</b>해야 생성이 열립니다.</p>
-              <div class="statebadges" id="jobFieldBadges"></div>
+              <div class="zone-cap">본문 · 거울</div>
+              <p class="muted hint">이 문서에 들어갈 값입니다. <span class="danger">미입력</span>
+                필드 행은 반사적 확인 취소를 막기 위해 <b>직접 눌러 확인</b>해야 생성이 열립니다.</p>
+              <!-- 거울 = 필드 채움 테이블(결정 36 ⓑ). danger(드리프트·토큰)는 차단 배너로 분리. -->
+              <div id="jobMirror"></div>
 
               <div class="run-row"><span class="lbl">저장 폴더</span>
                 <input class="field ro" id="jobOutDir" type="text" readonly
                        placeholder="이 폴더에 문서를 저장합니다">
                 <button class="btn" id="jobBtnPickFolder" data-busy-lock>찾아보기…</button></div>
+
+              <!-- 게이트 · 재진술 블록(상시 — 이미 보이는 것 재검증 안 함, 결정 36 D1-B). -->
+              <div class="defblk" id="jobRestate" style="display:none"></div>
 
               <div class="run-actions">
                 <button class="btn primary" id="jobGenBtn" disabled>이 작업으로 문서 생성</button>
@@ -450,19 +454,8 @@
       </div>
     </div>
 
-    <!-- 「작업」 덮어쓰기 확인 모달(R-flow 슬라이스 1, RC-02) — 새 패널 표면은 window.confirm 을
-         쓰지 않는다(#86 재유입 가드). 기본 포커스=취소, Escape=취소(반사적 확정 방지). 슬라이스 2
-         (블록 6, A-2-22)가 modal.js 수치 재진술 판으로 대체·#86 confirm 헬퍼와 합류. -->
-    <div id="jobOverwriteModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="jobOverwriteTitle">
-      <div class="modal-card">
-        <h3 id="jobOverwriteTitle">기존 파일 덮어쓰기 확인</h3>
-        <p id="jobOverwriteText" class="modal-sub" style="white-space:pre-line"></p>
-        <div class="modal-actions">
-          <button class="btn" id="jobOverwriteCancel">취소</button>
-          <button class="btn primary" id="jobOverwriteConfirm">덮어쓰고 생성</button>
-        </div>
-      </div>
-    </div>
+    <!-- 「작업」 덮어쓰기 확인은 공용 modal.js Modal.confirm(수치 합성 본문)이 담당한다 —
+         전용 모달 DOM 폐기(슬라이스 2, A-2-22: 총량·파괴분·신규분 종류별 재진술). -->
 
     <!-- 등록 데이터 선택 모달(#26 #6) — run·txt 공유 겨눔 게이트(거동은 pool_picker.js 소유).
          목록 id 는 poolPickList — 데이터 관리 화면(#scr-pool)의 poolList 와 반드시 다른 id 여야 한다
@@ -531,6 +524,7 @@
 <script src="js/pool_picker.js"></script>
 <script src="js/pathtrack.js"></script>
 <script src="js/relink.js"></script>
+<script src="js/editor_entry.js"></script>
 <script src="js/screens/home.js"></script>
 <script src="js/screens/txt.js"></script>
 <script src="js/screens/editor.js"></script>

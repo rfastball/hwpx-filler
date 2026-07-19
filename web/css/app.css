@@ -275,6 +275,44 @@ tr.r-schemaonly td{background:var(--a-card)}
 .rec-off{color:var(--a-muted);font-family:inherit}
 .rec-id{color:var(--a-muted);font-size:var(--fs-caption);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
+/* ── 본문 존 거울 = 필드 채움 테이블(결정 36 ⓑ) — 배지=거울의 행. 색은 .fb 배지와 같은
+   토큰이라 표지 언어가 통일된다(블록 5 삼분과 동형). ── */
+.tbwrap{overflow-x:auto}
+.tb.mir{width:100%;border-collapse:collapse;margin-top:var(--sp-10);font-size:var(--fs-body)}
+.tb.mir td{padding:var(--sp-4) var(--sp-8);border-top:1px solid var(--a-border);vertical-align:top}
+.tb.mir tr:first-child td{border-top:0}
+.mir-f{font-weight:600;white-space:nowrap;width:120px;color:var(--n-header-ink)}
+.mir-v{min-width:0;word-break:break-word}
+.mir-s{white-space:nowrap;text-align:right;width:1%}
+.mir-row.miss td{background:var(--fb-missing-bg)}
+.mir-row.miss{cursor:pointer}
+.mir-row.ackd td{background:var(--fb-ack-bg)}
+.mir-row.blankd td{background:var(--n-surface-alt);color:var(--a-muted)}
+.mir-row.miss:focus-visible{outline:2px solid var(--a-danger);outline-offset:-2px}
+.mir .st{font-size:var(--fs-caption);border-radius:var(--rad-pill);padding:1px var(--sp-8);
+  white-space:nowrap;font-weight:600;display:inline-block}
+.mir .st.filled{background:var(--fb-fill-bg);color:var(--a-ok)}
+.mir .st.miss{background:var(--fb-missing-bg);color:var(--a-danger)}
+.mir .st.ackd{background:var(--fb-ack-bg);color:var(--fb-ack-fg)}
+.mir .st.blankd{background:var(--n-surface-alt);color:var(--a-muted)}
+.mirempty{padding:var(--sp-8) 0}
+/* danger(구조 드리프트·미해소 토큰)는 ack 로 안 풀림 — 거울 표와 섞지 않고 차단 배너 +
+   상시 행동 링크로 분리(결정 36·S9, 막다른 경보 금지). */
+.mir-drift{background:var(--fb-missing-bg);border:1px solid var(--a-danger);border-radius:var(--rad-surface);
+  padding:var(--sp-10) var(--sp-12);margin-top:var(--sp-10);display:flex;flex-direction:column;
+  gap:var(--sp-8);align-items:flex-start}
+.mir-drift p{margin:0;color:var(--a-danger)}
+/* 재진술 블록(결정 36 D1-B) — 선택 유래 + 산출 요약 + 이름 목록(소량 전부·대량 표본+펼침). */
+.defblk{display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--sp-2) var(--sp-10);
+  margin-top:var(--sp-16);padding:var(--sp-10) var(--sp-12);background:var(--a-card);
+  border:1px solid var(--a-border);border-radius:var(--rad-surface);font-size:var(--fs-body)}
+.defblk .dl{font-size:var(--fs-caption);color:var(--n-header-ink);font-weight:700;padding-top:2px}
+.namelist{display:flex;flex-direction:column;gap:2px;margin-top:var(--sp-4)}
+.namelist .nm{font-size:var(--fs-caption);color:var(--a-muted);font-variant-numeric:tabular-nums;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.namelist .nm b{color:var(--a-ink);font-weight:600}
+.namelist .btn{align-self:flex-start;margin-top:2px}
+
 /* 액션 · 진행 · 결과 · 로그 */
 .run-actions{display:flex;align-items:center;gap:var(--sp-12);margin-top:var(--sp-16);flex-wrap:wrap}
 .bar{height:8px;background:var(--n-track);border-radius:var(--rad-pill);overflow:hidden;margin-top:var(--sp-12)}
