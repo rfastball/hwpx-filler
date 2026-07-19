@@ -432,3 +432,47 @@ def test_clear_column_and_clear_all() -> None:
     m.clear()
     assert not m.is_active()
     assert m.visible_indices(ROWS) == [0, 1, 2, 3]
+
+
+# ------------------------------------------- 정의 이송(직전 필터 슬롯, 결정 28)
+def test_export_apply_roundtrip_including_pruning() -> None:
+    """정의 왕복 — 검색·프루닝·값 순서·텍스트·범위가 그대로 복원된다(결정 27 소실 창 복원)."""
+    m = model()
+    m.set_values("수요기관", ["조달청", "행복도시건설청"])
+    m.set_text("공고명", "물품")
+    m.set_range("금액", RangeCondition(RangeClause("ge", "1000"), RangeClause("le", "2000000"), joiner="and"))
+    m.set_search("행복도")
+    m.prune_branch("비고", ROWS)
+    state = m.export_state()
+    m2 = model()
+    installed, dropped = m2.apply_state(state)
+    assert set(installed) == {"수요기관", "공고명", "금액"} and dropped == []
+    assert m2.describe(ROWS) == m.describe(ROWS)          # 정의줄 동일 = 재현 담보
+    assert m2.group_branches(ROWS) == m.group_branches(ROWS)  # 프루닝 포함(비고 제외)
+
+
+def test_apply_state_partial_column_loss() -> None:
+    """열 결손 백스톱(결정 28) — 부분 설치 + 탈락 목록, 유형 변경 범위는 그 조건만 탈락."""
+    m = model()
+    m.set_values("수요기관", ["조달청"])
+    m.set_range("금액", RangeCondition(RangeClause("ge", "1000")))
+    m.set_search("긴급")
+    state = m.export_state()
+    # 새 지형: 수요기관 없음, 금액은 텍스트 열로 변함.
+    m2 = FilterModel(["공고명", "금액"], {"공고명": KIND_TEXT, "금액": KIND_TEXT})
+    installed, dropped = m2.apply_state(state)
+    assert installed == []                                 # 값·범위 다 못 섰다
+    assert set(dropped) == {"수요기관", "금액(범위)"}
+    assert m2.search_text == "긴급"                        # 검색은 열 불가지 — 생존
+
+
+def test_apply_state_prunes_only_existing_columns() -> None:
+    m = model()
+    m.set_search("행복도")
+    m.prune_branch("비고", ROWS)
+    state = m.export_state()
+    m2 = FilterModel(["공고명", "수요기관"])                # 비고 없음
+    m2.apply_state(state)
+    assert m2.search_text == "행복도"
+    assert "수요기관" in m2.group_branches(
+        [{"공고명": "x", "수요기관": "행복도시청"}])        # 부재 열 프루닝은 조용히 소거

@@ -374,6 +374,69 @@ class FilterModel:
         self._require(column)
         self._cols[column] = _ColumnCondition()
 
+    # ------------------------------------------- 정의 이송(직전 필터 슬롯, 결정 28)
+    def export_state(self) -> dict:
+        """필터 정의의 직렬 상태 — 직전 필터 슬롯이 세션 사이로 나른다(결정 28).
+
+        검색·프루닝 포함(프루닝 소실 창의 복원은 재적용의 소관 — 결정 27 명문). 활성
+        조건이 있는 열만 담는다. **저장이 아니라 전달**이다 — 슬롯은 세션 메모리(앱
+        수명)이고 디스크에 남지 않는다(필터 영속 뒷문 금지, 결정 8·24).
+        """
+        return {
+            "search": self._search,
+            "pruned": sorted(self._pruned),
+            "columns": {
+                col: self.column_state(col)
+                for col in self._columns if self._cols[col].is_active()
+            },
+        }
+
+    def apply_state(self, state: dict) -> "tuple[list[str], list[str]]":
+        """직전 정의를 현 열 지형에 설치 — ``(설치 열, 탈락 항목)`` 반환(결정 28 백스톱).
+
+        열 결손 강등: 현재 데이터에 없는 열의 조건은 조용히 버리지 않고 탈락 목록으로
+        돌려준다(부분 설치 + 고지 — 호출부가 재진술). 유형이 변해 범위 조건이 더는
+        성립하지 않는 열도 그 조건만 탈락으로 돌린다(``열명(범위)``). 검색은 열
+        불가지(가지는 라이브 산출)라 항상 설치되고, 프루닝은 실재 열만 복원한다.
+        전탈락 거부는 호출부 소관 — 이 메서드는 기존 조건을 지우지 않으므로 호출부가
+        깨끗한 모델(또는 :meth:`clear` 후)에 적용해야 정의가 섞이지 않는다.
+        """
+        installed: "list[str]" = []
+        dropped: "list[str]" = []
+        for col, cond in (state.get("columns") or {}).items():
+            if col not in self._cols:
+                dropped.append(col)
+                continue
+            got_any = False
+            if cond.get("values") is not None:
+                self.set_values(col, cond["values"])
+                got_any = True
+            if cond.get("text"):
+                self.set_text(col, cond["text"])
+                got_any = got_any or self._cols[col].text != ""
+            rng = cond.get("range")
+            if rng:
+                try:
+                    second = rng.get("second")
+                    self.set_range(col, RangeCondition(
+                        first=RangeClause(rng["first"]["op"], rng["first"]["operand"]),
+                        second=(
+                            RangeClause(second["op"], second["operand"])
+                            if second else None
+                        ),
+                        joiner=rng.get("joiner", "and"),
+                    ))
+                    got_any = True
+                except ValueError:
+                    dropped.append(f"{col}(범위)")  # 열 유형 변경 등 — 그 조건만 탈락
+            if got_any:
+                installed.append(col)
+        search = str(state.get("search") or "").strip()
+        if search:
+            self._search = search
+            self._pruned = {p for p in state.get("pruned") or () if p in self._cols}
+        return installed, dropped
+
     def clear(self) -> None:
         """전체 해제 — 열 조건·그룹·프루닝 전부."""
         self._cols = {c: _ColumnCondition() for c in self._columns}

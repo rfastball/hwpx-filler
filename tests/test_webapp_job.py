@@ -635,8 +635,8 @@ def test_filter_lifecycle_session_scoped(tmp_path):
     ctrl.dispatch("select_job", {"name": ""})  # 작업 전환 = 필터 소멸(세션 휘발, 결정 8)
     assert ctrl.filter is None
     assert ctrl.snapshot()["filter"] == {
-        "active": False, "search": "", "chips": [], "definition": "",
-        "branches": [], "columns": [],
+        "active": False, "reapply_available": False, "search": "", "chips": [],
+        "definition": "", "branches": [], "columns": [],
     }
 
 
@@ -903,3 +903,62 @@ def test_partial_failure_keeps_guard_armed(tmp_path, monkeypatch):
     res = ctrl.generate()
     assert res["ok"] is True and res["failed"] == 1
     assert ctrl.dispatch("guard_state", {})["armed"] is True     # 무장 유지(재시도 보호)
+
+
+# ------------------------------------------- 건 연속성(직전 필터 재적용, 결정 28, PR-4)
+def test_reapply_slot_written_on_session_death_and_source_gated(tmp_path):
+    """슬롯 = 정의 가진 세션이 죽을 때 덮어씀 · 소스 일치 게이트(다른 소스엔 미제공)."""
+    ctrl, _ = _session(tmp_path)
+    csv1 = _data_csv(tmp_path)
+    ctrl.dispatch("filter_search", {"text": "전산"})
+    assert ctrl.snapshot()["filter"]["reapply_available"] is False  # 아직 산 세션
+    ctrl.load_data_path(_data_csv3(tmp_path))               # 데이터 교체 = 옛 정의 슬롯행
+    snap = ctrl.snapshot()
+    assert snap["filter"]["active"] is False                # 새 세션 필터는 백지
+    assert snap["filter"]["reapply_available"] is False     # 소스 다름(d.csv≠d3.csv) — 게이트
+    ctrl.load_data_path(csv1)                               # 같은 소스로 복귀
+    assert ctrl.snapshot()["filter"]["reapply_available"] is True
+
+
+def test_reapply_restores_definition_only_two_click_split(tmp_path):
+    """재적용 = 정의(보기)만 복원 — 선택 불변(전체 선택과 2클릭 분리, 결정 28)."""
+    ctrl, _ = _session(tmp_path)
+    csv1 = _data_csv(tmp_path)
+    ctrl.dispatch("filter_search", {"text": "전산"})
+    ctrl.load_data_path(_data_csv3(tmp_path))               # 죽음 → 슬롯
+    ctrl.load_data_path(csv1)                               # 같은 소스 재겨눔
+    ctrl.dispatch("set_none", {})
+    before_sel = ctrl.snapshot()["selected_count"]
+    res = ctrl.dispatch("filter_reapply", {})
+    assert res["ok"] is True and res["dropped"] == []
+    snap = ctrl.snapshot()
+    assert snap["filter"]["active"] is True
+    assert snap["table"]["visible_count"] == 1              # 「전산」 재적용 — 보기 좁힘
+    assert snap["selected_count"] == before_sel             # 선택은 그대로(2클릭 분리)
+
+
+def test_reapply_full_drop_refused_without_touching_current(tmp_path):
+    """전탈락 = 거부 + 이유(결정 28 백스톱, 외부 편집 edge) — 현 정의를 건드리지 않는다.
+
+    열 결손은 같은 경로(소스 일치)인데 파일이 밖에서 편집돼 열 지형이 바뀐 경우에만
+    생긴다(정본 명시 edge) — 다른 파일이면 소스 게이트가 애초에 재적용을 안 준다.
+    """
+    ctrl, _ = _session(tmp_path)
+    csv1 = _data_csv(tmp_path)
+    ctrl.dispatch("filter_col_values", {"column": "bidNtceNm", "values": ["전산장비"]})
+    other = tmp_path / "other.csv"
+    other.write_text("colA,colB\nx,y\n", encoding="utf-8")
+    ctrl.load_data_path(str(other))                         # 죽음 → 슬롯(csv1 열 조건만)
+    Path(csv1).write_text("colA,colB\nx,y\n", encoding="utf-8")  # 외부 편집 — 열 전면 교체
+    ctrl.load_data_path(csv1)                               # 같은 경로 재겨눔 → 소스 일치
+    assert ctrl.snapshot()["filter"]["reapply_available"] is True
+    ctrl.dispatch("filter_search", {"text": "x"})           # 현 세션에 산 정의
+    res = ctrl.dispatch("filter_reapply", {})
+    assert res["ok"] is False and "하나도 남지 않아" in res["error"]
+    assert ctrl.snapshot()["filter"]["search"] == "x"       # 현 정의 무변이
+
+
+def test_reapply_without_slot_is_loud(tmp_path):
+    ctrl, _ = _session(tmp_path)
+    with pytest.raises(ValueError, match="직전 필터가 없습니다"):
+        ctrl.dispatch("filter_reapply", {})
