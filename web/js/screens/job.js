@@ -183,9 +183,10 @@
     const rkey = (s.job_name || "") + "|" + (s.data_source_label || "");
     if (rkey !== lastRestateKey) { restateExpanded = false; lastRestateKey = rkey; }
     const sel = (s.records || []).filter((r) => r.selected);
-    // 드리프트(danger 차단) 중엔 재진술을 숨긴다 — 위 차단 배너가 "생성 불가"인데 "N건 생성"을
-    // 동시에 진술하면 모순(confirm-or-alarm 위반, 리뷰 반영). 생성이 실제로 가능할 때만 의식을 건다.
-    const blocked = !!(s.drift && s.drift.length);
+    // danger 차단(드리프트·미해소 파일명 토큰) 중엔 재진술을 숨긴다 — "생성 불가"인데 "N건 생성"을
+    // 동시에 진술하면 모순(confirm-or-alarm, 리뷰). '차단' 판정은 게이트 단일 출처를 소비한다
+    // (drift 를 독립 재유도하지 않는다 — 백엔드 RC-23 서열이 danger 를 이미 합성; 토큰 danger 도 포섭).
+    const blocked = !!(s.gate && s.gate.level === "danger");
     if (!s.has_data || !sel.length || blocked) { box.style.display = "none"; box.innerHTML = ""; return; }
     box.style.display = "";
     const shown = (sel.length <= 3 || restateExpanded) ? sel : sel.slice(0, 3);
@@ -193,7 +194,7 @@
       `<span class="nm"><b>${esc(r.name || "(파일명 미정)")}</b>` +
       (r.summary ? ` · ${esc(r.summary)}` : "") + `</span>`).join("");
     const more = (sel.length > 3)
-      ? `<button class="btn sm" data-act="restate-more" data-busy-lock>` +
+      ? `<button class="btn sm" id="jobRestateMore" data-act="restate-more" data-busy-lock>` +
         (restateExpanded ? "접기" : `⋯ 외 ${sel.length - 3}건 펼치기`) + `</button>`
       : "";
     box.innerHTML =
@@ -351,17 +352,10 @@
     mirrorAck(row);
   }
 
-  /* danger(구조 드리프트) 수리 동선 — 이 작업을 에디터에 열어 매핑을 재확정한다(home.editJob
-     대칭: 미저장 에디터 세션은 조용히 버리지 않고 확인 후 이동). 확정 후 복귀하면 세션 재개. */
-  async function fixMapping() {
-    if (!(LAST && LAST.job_name)) return;
-    const busy = await Bridge.editorHasUnsavedWork();
-    if (busy && !(await window.Modal.confirm({ body:
-      "에디터에 저장하지 않은 작업 세션이 있습니다.\n" +
-      `'${LAST.job_name}' 편집을 열면 그 세션의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?` }))) return;
-    const r = await Bridge.openJobInEditor(LAST.job_name);
-    if (typeof r === "string" && r.startsWith("ERROR:")) { window.alert(r.slice(6).trim()); return; }
-    window.Nav.go("editor");
+  /* danger(구조 드리프트) 수리 동선 — 이 작업을 에디터에 열어 매핑을 재확정한다(공용
+     EditorEntry.openGuarded: 미저장 세션 확인 후 이동). 확정 후 복귀하면 세션 재개. */
+  function fixMapping() {
+    if (LAST && LAST.job_name) EditorEntry.openGuarded(LAST.job_name);
   }
 
   /* 템플릿 다시 연결(#67) — 공용 흐름(relink.js)에 위임, 결과 재진술 채널만 log 주입. */
@@ -392,7 +386,9 @@
     $("jobRestate").addEventListener("click", (e) => {
       if (e.target.closest('[data-act="restate-more"]')) {
         restateExpanded = !restateExpanded;
-        if (LAST) renderRestate(LAST);
+        // Preserve.around 로 감싼다 — 토글 버튼(id=jobRestateMore)이 innerHTML 재구성을
+        // 가로질러 포커스를 유지하게(거울-행 ack 경로와 같은 규율, 리뷰). 밖에서 부르면 body 낙하.
+        if (LAST) Preserve.around(() => renderRestate(LAST));
       }
     });
     $("jobGenBtn").addEventListener("click", () => doGenerate(false));
@@ -428,5 +424,7 @@
     render(await Bridge.initial(SCREEN));
   }
 
-  window.JobScreen = { init };
+  // overwriteBody 는 순수 합성기 — 실앱 게이트가 합성 결과(수치·이름 배치)를 되읽어 회귀를
+  // 막는다(백엔드 overwrite_text 단언 폐기의 커버리지 짝, 리뷰). 파괴적 확인이라 조용한 드리프트 금지.
+  window.JobScreen = { init, overwriteBody };
 })();

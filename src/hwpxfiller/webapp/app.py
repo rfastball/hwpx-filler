@@ -564,13 +564,20 @@ _JOB_MIRROR_PROBE_JS = r"""
     out.restate_shown = getComputedStyle(document.getElementById('jobRestate')).display !== 'none';
     out.restate_names = document.querySelectorAll('#jobRestate .namelist .nm').length;
     // 드리프트 스냅샷 → 거울 표가 차단 배너 + 행동 링크로 교체되는지(overlay 아닌 실제 교체).
+    // 실앱에서 드리프트는 게이트 danger 를 합성하므로 게이트도 danger 로 세운다(재진술 은닉은
+    // 게이트 단일 출처를 소비한다 — 리뷰).
     snap.drift = ['유령', '계약조건']; snap.mirror = [];
+    snap.gate = {enabled:false, level:'danger', text:'템플릿 구조가 확정 매핑과 달라졌습니다.'};
     window.__push('job', snap);
     out.drift_banner = !!document.querySelector('#jobMirror .mir-drift[role="alert"]');
     out.drift_fix_link = !!document.querySelector('#jobMirror [data-act="fix-mapping"]');
     out.drift_no_table = !document.querySelector('#jobMirror table.mir');
-    // 드리프트(차단) 중엔 재진술 블록을 숨긴다 — "생성 불가" 배너와 "N건 생성" 모순 방지(리뷰).
+    // danger 차단 중엔 재진술 블록을 숨긴다 — "생성 불가" 배너와 "N건 생성" 모순 방지(리뷰).
     out.restate_hidden_on_drift = getComputedStyle(document.getElementById('jobRestate')).display === 'none';
+    // 덮어쓰기 확인 본문 합성(수치·이름 배치) 되읽기 — 백엔드 overwrite_text 단언 폐기의 커버리지
+    // 짝(리뷰). overwrite_count/new_count 스왑·이름 목록 누락이 여기서 잡힌다.
+    out.ow_body = window.JobScreen.overwriteBody(
+      {total:10, overwrite_count:3, new_count:7, conflict_names:['a.hwpx','b.hwpx'], conflict_more:5});
   } catch (e) { out.error = 'throw:' + (e && e.message); }
   return out;
 })()

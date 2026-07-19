@@ -227,10 +227,21 @@ class TestWebSelftestGate:
         assert j["drift_banner"] is True, "드리프트 차단 배너(role=alert)가 렌더되지 않았습니다."
         assert j["drift_fix_link"] is True, "「작업 에디터에서 매핑 확정…」 행동 링크가 없습니다(막다른 경보 금지)."
         assert j["drift_no_table"] is True, "드리프트인데 거울 표가 남아 있습니다(배너로 교체 안 됨)."
-        # 재진술 블록은 드리프트(생성 불가) 중 숨는다 — "N건 생성" 진술이 차단 배너와 모순 금지.
+        # 재진술 블록은 danger 차단(드리프트 등) 중 숨는다 — "N건 생성" 진술이 차단 배너와 모순 금지.
         assert j["restate_hidden_on_drift"] is True, (
-            "드리프트인데 재진술 블록이 계속 '문서 N건 생성'을 진술합니다 — 차단 배너와 모순."
+            "danger 차단인데 재진술 블록이 계속 '문서 N건 생성'을 진술합니다 — 차단 배너와 모순."
         )
+
+    def test_job_overwrite_body_composes_counts_and_names(self, selftest_result: dict) -> None:
+        # 파괴적 덮어쓰기 확인 본문(A-2-22) — 백엔드 overwrite_text 단언 폐기의 커버리지 짝(리뷰).
+        # 수치 배치(총량·파괴분·신규분)와 파일 이름 목록이 합성되는지 실 함수 출력으로 되읽는다.
+        # count 스왑·이름 목록 누락이 조용히 배포돼 사용자가 축소된 그림 위에서 덮어쓰는 것을 막는다.
+        body = selftest_result["job_mirror"]["ow_body"]
+        assert "10건을 생성합니다" in body, f"총량 미표기: {body!r}"
+        assert "3건이 기존 파일을 덮어씁니다" in body, f"파괴분 미표기(new_count 와 스왑?): {body!r}"
+        assert "나머지 7건은 새 파일" in body, f"신규분 미표기: {body!r}"
+        assert "a.hwpx" in body and "b.hwpx" in body, f"덮어쓸 파일 이름 목록 누락: {body!r}"
+        assert "외 5개" in body, f"초과분(conflict_more) 미표기: {body!r}"
 
     def test_theme_defaults_to_system_when_unpersisted(self, selftest_result: dict) -> None:
         # 저장된 테마 선택이 없으면 앱은 OS 를 따른다 — data-theme 속성이 없어야(=system) @media 지배.
