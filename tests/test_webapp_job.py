@@ -170,6 +170,37 @@ def test_deselect_job_returns_to_empty_panel(tmp_path):
     assert snap["job_rows"] == [{"name": "공고서", "selected": False}]
 
 
+def test_refresh_invalidates_session_when_job_deleted(tmp_path):
+    """master-detail 불변식(리뷰 #2): 선택된 작업이 다른 화면에서 삭제돼 레지스트리에서 사라지면
+    refresh 가 세션을 무효화한다 — 존재하지 않는 작업의 라이브 세션이 활성 생성 버튼과 함께
+    남아 유령 작업에서 생성되는 것을 막는다."""
+    reg = _registry(tmp_path)
+    ctrl = JobController(reg, lambda s, snap: None)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    assert ctrl.snapshot()["has_job"] is True
+
+    reg.delete("공고서")  # 다른 화면이 삭제(그 화면으로 가려면 작업 화면 이탈 → 복귀 시 refresh)
+    ctrl.dispatch("refresh", {})
+    snap = ctrl.snapshot()
+    assert snap["has_job"] is False and snap["job_name"] == ""
+    assert snap["job_rows"] == []  # 좌 목록에서도 사라져 상실이 보인다
+    # 유령 작업 생성 시도도 loud 차단(세션 무효화 후).
+    res = ctrl.generate()
+    assert res["ok"] is False
+
+
+def test_refresh_keeps_session_when_job_still_present(tmp_path):
+    """refresh 가 멀쩡한 세션을 건드리지 않는다 — 무효화는 삭제/개명된 작업에만(과잉 리셋 방지)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.dispatch("refresh", {})
+    snap = ctrl.snapshot()
+    assert snap["has_job"] is True and snap["job_name"] == "공고서"
+    assert snap["record_count"] == 2  # 데이터 겨눔도 보존
+
+
 def test_unknown_action_is_loud(tmp_path):
     ctrl, _ = _controller(tmp_path)
     with pytest.raises(ValueError, match="알 수 없는 작업 화면 액션"):

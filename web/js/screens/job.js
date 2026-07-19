@@ -8,6 +8,7 @@
   const $ = (id) => document.getElementById(id);
   let LAST = null;
   let generating = false;
+  let lastSessionKey = null;  // 완료 존 세션 스코프 판정(결정 7) — 세션 변경 시에만 리셋
 
   const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
 
@@ -29,8 +30,13 @@
         renderGateAndFolder(s);
       }
       renderStatus(s);
-      // 작업·데이터·선택이 바뀐 새 스냅샷 → 이전 생성 결과 무효화(#28, UD-10).
-      if (!generating) resetGenResult();
+      // 완료 존(생성 결과·로그)은 세션 스코프로 보존한다(결정 7) — 매 push 가 아니라 세션이
+      // 실제로 바뀔 때만 무효화한다. 레일 이탈 후 복귀(REFRESH_ON_NAV 재push)는 세션 불변이라
+      // 결과가 살아남고(리뷰 #3: 결정 7 위배 봉합), 작업·데이터·선택 변경(#28 UD-10)에서만
+      // 이전 결과를 지운다. nav 는 CSS 토글이라 DOM 은 어차피 살아있다.
+      const key = sessionKey(s);
+      if (!generating && key !== lastSessionKey) resetGenResult();
+      lastSessionKey = key;
       setBusy(generating);
     });
   }
@@ -43,6 +49,15 @@
     r.className = "run-result";
     $("jobGenLog").textContent = "";
     logStarted = false;
+  }
+
+  /* 세션 지문 — 완료 존 보존 판정(결정 7). 작업·데이터·저장 폴더·선택 집합이 그대로면 같은
+     세션이라 이전 생성 결과가 유효하다. 선택은 정확한 인덱스 집합으로(개수만으론 행 교체를
+     놓친다). 작업 미선택이면 빈 문자열 = 세션 없음. */
+  function sessionKey(s) {
+    if (!s.has_job) return "";
+    const sel = (s.records || []).filter((r) => r.selected).map((r) => r.index).join(",");
+    return [s.job_name, s.data_source_label, s.out_dir, sel].join("|");
   }
 
   /* ---- 좌 master 목록(HWPX 구획) ---- */
@@ -215,21 +230,24 @@
   async function doGenerate(confirmOverwriteFlag) {
     generating = true; setBusy(true);
     if (!confirmOverwriteFlag) { $("jobGenBar").style.width = "0%"; log("생성 요청"); }
-    let res;
+    // busy-lock 은 덮어쓰기 모달 종료까지 유지한다 — finally 를 needs_overwrite 흐름 뒤에 두어,
+    // 모달이 열린 동안 생성 버튼이 재활성돼 두 번째 생성이 첫 확인 미결인 채 시작되는 재진입
+    // 경합을 막는다(리뷰 #1: modal.js 는 blocking window.confirm 과 달리 포커스 트랩이 없어
+    // 백드롭 뒤 살아있는 버튼에 Tab+Enter 가 닿는다 — run.js 엔 없던 창).
     try {
-      res = await Bridge.generate(SCREEN, confirmOverwriteFlag);
+      const res = await Bridge.generate(SCREEN, confirmOverwriteFlag);
+      if (res.ok) { renderResult(res); return; }
+      if (res.needs_overwrite) {
+        // 조용한 덮어쓰기 금지 — 재진술 후 확인 시에만 재호출(RC-02). 모달 대기 동안 busy 유지.
+        const ok = await confirmOverwrite(res.overwrite_text);
+        if (ok) { await doGenerate(true); }
+        else { log("생성 취소. 기존 파일 덮어쓰기를 확정하지 않았습니다."); }
+        return;
+      }
+      warnResult(res.error || "생성할 수 없습니다.", res.level);
     } finally {
       generating = false; setBusy(false);
     }
-    if (res.ok) { renderResult(res); return; }
-    if (res.needs_overwrite) {
-      // 조용한 덮어쓰기 금지 — 재진술 후 확인 시에만 재호출(RC-02).
-      const ok = await confirmOverwrite(res.overwrite_text);
-      if (ok) { doGenerate(true); }
-      else { log("생성 취소. 기존 파일 덮어쓰기를 확정하지 않았습니다."); }
-      return;
-    }
-    warnResult(res.error || "생성할 수 없습니다.", res.level);
   }
 
   function renderResult(res) {

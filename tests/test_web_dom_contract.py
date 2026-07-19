@@ -339,6 +339,41 @@ def test_preserve_helper_loaded_and_wraps_screen_renders():
         assert "Preserve.around" in src, (
             f"{scr}.js 의 render() 가 Preserve.around 래핑을 잃었습니다 — 재렌더 시 상호작용 유실(#28)."
         )
+def test_job_overwrite_keeps_busy_lock_through_modal():
+    """리뷰 #1 회귀 가드: 작업 화면 덮어쓰기 모달 대기 동안 생성 버튼이 재활성되지 않는다.
+
+    modal.js 는 포커스 트랩이 없어(blocking window.confirm 과 다름) 모달 뒤 살아있는 생성
+    버튼에 Tab+Enter 가 닿으면 두 번째 생성이 첫 확인 미결인 채 시작된다(같은 폴더 동시 기록).
+    busy-lock 해제(``generating = false``)가 덮어쓰기 확인(``confirmOverwrite``) **뒤**에 와야
+    한다 — 소스 순서로 정적 가드(실 거동은 selftest 게이트 소관).
+    """
+    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    assert "confirmOverwrite(res.overwrite_text)" in src, "덮어쓰기 재진술 경로가 사라졌습니다(#1)."
+    # doGenerate 안에서 busy 해제가 모달 대기보다 앞서면(옛 구조) 이 순서가 뒤집힌다.
+    i_confirm = src.index("confirmOverwrite(res.overwrite_text)")
+    i_release = src.index("generating = false; setBusy(false);")
+    assert i_confirm < i_release, (
+        "busy-lock 해제가 덮어쓰기 모달 await 전에 온다 — 모달 열림 동안 생성 버튼 재활성으로 "
+        "재진입 경합(리뷰 #1). finally 를 needs_overwrite 흐름 뒤로 미뤄라."
+    )
+
+
+def test_job_completion_zone_reset_gated_by_session_change():
+    """리뷰 #3 회귀 가드: 완료 존 리셋이 매 push 가 아니라 세션 변경에 결속된다(결정 7).
+
+    작업 화면은 REFRESH_ON_NAV 에 있어 레일 복귀마다 full re-push 가 돈다 — 리셋이 무조건이면
+    세션 불변인데도 생성 리포트가 소멸(결정 7: 완료 존 = 세션 스코프 보존 위배). 세션 지문
+    (``sessionKey``)이 바뀔 때만 리셋해야 한다.
+    """
+    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    assert "function sessionKey(" in src, "완료 존 세션 지문(sessionKey)이 없습니다(#3)."
+    assert "key !== lastSessionKey" in src, "리셋이 세션 변경에 결속되지 않았습니다(#3)."
+    # 옛 무조건 리셋(if (!generating) resetGenResult();)이 남아 있으면 안 된다.
+    assert "if (!generating) resetGenResult()" not in src, (
+        "무조건 완료 존 리셋이 남아 있습니다 — nav 복귀마다 생성 리포트 소멸(리뷰 #3, 결정 7)."
+    )
+
+
 def test_component_gallery_links_real_stylesheets_drift_free():
     """살아있는 컴포넌트 갤러리(docs/UI_GALLERY.html)는 실 stylesheet 를 <link> 로 물어야 한다.
 

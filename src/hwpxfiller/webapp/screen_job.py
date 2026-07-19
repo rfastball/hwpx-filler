@@ -67,7 +67,18 @@ def _record_summary(rec: dict) -> str:
 
 
 class JobController(PoolTargetingMixin):
-    """「작업」 화면 — 좌 작업 목록 선택 + 우 세션 패널(링1 RunViewModel/SelectionModel 위임)."""
+    """「작업」 화면 — 좌 작업 목록 선택 + 우 세션 패널(링1 RunViewModel/SelectionModel 위임).
+
+    **한시적 링2 중복(리뷰 #4·#5, 의도적 미추출)**: 이 컨트롤러의 링2 배선(``load_data_path``·
+    ``dispatch``·``_do_*``·``_auto_aim_default``·``snapshot`` 골자)은 :class:`~hwpxfiller.webapp.
+    screen_run.RunController` 와 크게 겹친다. 결정(2026-07-19): 공유 베이스를 **지금 추출하지
+    않는다** — ① 실행 화면은 슬라이스 3(게이트 패리티 도달)에서 사망하므로 그 뒤 JobController 가
+    유일 세션 표면이 되어 중복이 자연 소멸, ② 패널은 실행 화면과 이미 갈라진다(덮어쓰기 모달
+    재진입 안전=리뷰 #1, 완료 존 세션 보존=결정 7·리뷰 #3, master-detail 좌 목록) — 공유 베이스는
+    override 훅투성이 leaky 베이스가 되고 죽어가는 ``screen_run.py`` 를 건드린다. **주의(가드
+    사각)**: ``test_job_panel_imports_ring1_and_does_not_reimplement`` 는 **링1 VM 메서드 재정의만**
+    막는다 — 이 링2 중복은 통과한다. 슬라이스 3 착지(실행 화면 제거) 시 이 중복이 해소 대상이며,
+    추적 이슈 #94 로 명시한다(조용한 드롭 아님)."""
 
     name = "job"
 
@@ -247,8 +258,18 @@ class JobController(PoolTargetingMixin):
         return result
 
     def _do_refresh(self, p: dict) -> None:
-        """레지스트리 재스캔 반영(C6) — 좌 목록 고착 방지. 스냅샷이 매번 ``names()`` 재읽으므로
-        dispatch 말미 ``_push()`` 가 새 목록을 밀어내는 것이 전부(에디터 저장분 즉시 반영)."""
+        """레지스트리 재스캔 반영(C6) + stale 세션 무효화(master-detail 불변식).
+
+        좌 목록(``registry.names()``)과 우 패널(``self.vm``)이 갈라지지 않게 조정한다: 선택된
+        작업이 다른 화면에서 삭제·개명돼 레지스트리에서 사라졌으면 세션을 무효화한다 — 안 그러면
+        존재하지 않는 작업의 라이브 세션이 활성 생성 버튼과 함께 남아 유령 작업에서 생성된다
+        (리뷰 #2). 조용히 두지 않고 빈 패널로 재진술(작업이 좌 목록에서도 사라져 상실이 보인다).
+        재스캔 자체는 스냅샷이 매번 ``names()`` 를 재읽어 반영(에디터 저장분 즉시 노출).
+        작업 화면은 REFRESH_ON_NAV 에 있어 이 액션이 레일 복귀마다 발화하므로, 타 화면에서의
+        삭제(그 화면으로 가려면 반드시 작업 화면을 이탈)가 복귀 시점에 잡힌다.
+        """
+        if self.job_name and self.job_name not in self.registry.names():
+            self._do_select_job({"name": ""})  # 세션 무효화(vm·job_name·데이터·폴더 clear)
 
     def _do_select_job(self, p: dict) -> None:
         """좌 목록 클릭 → RunViewModel 재구성(패널 세션 진입). 저장 폴더 기본 = 템플릿/Results.
