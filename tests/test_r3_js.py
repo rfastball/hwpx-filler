@@ -21,7 +21,7 @@ WEB_JS = WEB / "js"
 # 공유 이스케이퍼를 소비하는 파일들 — 전부 esc.js 뒤에 로드돼야 한다.
 ESC_CONSUMERS = (
     "sheet_picker.js", "pool_picker.js",
-    "screens/home.js", "screens/txt.js", "screens/editor.js", "screens/run.js",
+    "screens/home.js", "screens/txt.js", "screens/editor.js", "screens/job.js",
     "screens/template.js", "screens/pool.js",
 )
 

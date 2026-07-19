@@ -13,8 +13,9 @@
 <body>
 <!-- 웹 프론트엔드 셸 — 목업 docs/UI_PROTOTYPE_APPB.html 의 앱윈도 구조를 스튜디오 크롬(마스트헤드·
      주석·캔버스) 없이 실앱으로 전개. 좌 레일(7화면 라우팅) + 우 스테이지. 링1 VM 에 브리지로 배선.
-     실화면 전부 이관 완료: home(허브·기본)·txt·editor(#15·#16)·run(#18)·tpl(#13)·
-     pool(데이터 관리 · #26 #4). matrix(여러 작업 실행)는 F9 로 제거 — 실행 모델은 하나다. -->
+     실화면 전부 이관 완료: home(허브·기본)·작업(R-flow 세션 패널 · #90)·txt·editor(#15·#16)·
+     tpl(#13)·pool(데이터 관리 · #26 #4). 실행 화면(#18)은 슬라이스 3에서 사망 — 「작업」이 유일
+     생성 표면. matrix(여러 작업 실행)는 F9 로 제거 — 실행 모델은 하나다. -->
 <div class="app">
   <nav class="rail" aria-label="화면 전환">
     <div class="brand">HWPX Filler
@@ -29,15 +30,13 @@
          이름=aria-label, 호버 툴팁=title("이름 — 설명"). 부제 .d 는 활성 항목에만 인라인 노출. -->
     <button class="navbtn" data-scr="home" aria-current="true" aria-label="대시보드" title="대시보드 — 저장된 작업과 기안 템플릿 요약">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l7-6 7 6M5 9v7h4v-4h2v4h4V9"/></svg></span><span class="lbl"><span class="n">대시보드</span><span class="d">작업·기안 요약</span></span></button>
-    <!-- 「작업」(R-flow 슬라이스 1, #90) — 좌 목록 + 우 세션 패널. 실행 화면과 병존(레일 「실행」
-         제거는 슬라이스 3). R-info 1부는 이 화면을 부팅 랜딩으로 확정했으나, 랜딩 전환은 레일
-         재편(슬라이스 3) 몫이라 슬라이스 1은 탐색 가능한 화면으로만 추가한다. -->
+    <!-- 「작업」(R-flow, #90) — 좌 목록 + 우 세션 패널. 데이터를 채워 문서를 생성하는 유일
+         표면이다(실행 화면은 슬라이스 3에서 사망, 레일 「실행」 동시 제거 · 부록 A-4-36).
+         R-info 1부는 이 화면을 부팅 랜딩으로 확정했으나, 랜딩 전환(기본 화면 교체)은 별도 후속. -->
     <button class="navbtn" data-scr="job" aria-label="작업" title="작업 — 저장된 작업을 골라 세션 패널에서 데이터를 채워 생성">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h5v12H4zM11 4h5v7h-5z"/></svg></span><span class="lbl"><span class="n">작업</span><span class="d">목록 + 세션 패널</span></span></button>
     <button class="navbtn" data-scr="editor" aria-label="작업 에디터" title="작업 에디터 — HWPX 작업 만들기 · 4단계">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 4.5l2 2L7 15l-3 1 1-3zM12 6l2 2"/></svg></span><span class="lbl"><span class="n">작업 에디터</span><span class="d">HWPX · 4단계</span></span></button>
-    <button class="navbtn" data-scr="run" aria-label="실행" title="실행 — 작업에 데이터를 골라 문서 생성">
-      <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l10 6-10 6z"/></svg></span><span class="lbl"><span class="n">실행</span><span class="d">데이터 선택 → 생성</span></span></button>
     <button class="navbtn" data-scr="txt" aria-label="기안문 채우기 (txt)" title="기안문 채우기 (txt) — 템플릿을 실시간으로 채워 복사">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h5l3 3v11H6zM11 3v3h3M8 11h5M8 14h5"/></svg></span><span class="lbl"><span class="n">기안문 채우기 (txt)</span><span class="d">실시간 채움 → 복사</span></span></button>
     <button class="navbtn" data-scr="tpl" aria-label="템플릿 관리" title="템플릿 관리 — HWPX·TXT 라이브러리 · 상태·변환·검토">
@@ -172,7 +171,8 @@
               <div class="run-row"><span class="lbl">저장 폴더</span>
                 <input class="field ro" id="jobOutDir" type="text" readonly
                        placeholder="이 폴더에 문서를 저장합니다">
-                <button class="btn" id="jobBtnPickFolder" data-busy-lock>찾아보기…</button></div>
+                <button class="btn" id="jobBtnPickFolder" data-busy-lock>찾아보기…</button>
+                <span id="jobOutTrack"></span></div>
 
               <!-- 게이트 · 재진술 블록(상시 — 이미 보이는 것 재검증 안 함, 결정 36 D1-B). -->
               <div class="defblk" id="jobRestate" style="display:none"></div>
@@ -200,84 +200,12 @@
       <header class="scr-head">
         <div>
           <h1>작업 에디터</h1>
-          <p class="sub">누름틀 템플릿과 매핑을 작업으로 저장합니다 — 실행 화면에서 데이터를 골라 .hwpx 문서를 만듭니다.</p>
+          <p class="sub">누름틀 템플릿과 매핑을 작업으로 저장합니다 — 「작업」 화면에서 데이터를 골라 .hwpx 문서를 만듭니다.</p>
         </div>
       </header>
       <div class="wsteps" id="editor-steps"></div>
       <div class="wbody" id="editor-body" data-preserve-scroll></div>
       <footer class="wfoot" id="editor-foot"></footer>
-    </section>
-
-    <!-- ============ 실행 (등록된 작업 실행, #18) ============ -->
-    <!-- 목업 scr-run 이관. 안정 DOM(id) + run.js 가 window.__push('run', snapshot) 로 값만 채운다
-         (txt 패턴). 링1 RunViewModel·SelectionModel 에 브리지로 배선 — VM 로직 재구현 없음.
-         작업 선택기는 진입 어포던스(홈 이관 전까지 실행 화면 자체 진입점). -->
-    <section class="scr" id="scr-run">
-      <header class="scr-head">
-        <div>
-          <h1>실행</h1>
-          <p class="sub">저장된 작업을 골라 데이터와 행을 선택해 문서를 생성합니다.</p>
-        </div>
-        <div class="status" id="runStatus" data-level="idle">작업 선택</div>
-      </header>
-
-      <!-- 작업 선택(진입 어포던스) -->
-      <div class="run-jobbar">
-        <label class="ctl grow"><span class="lbl">실행할 작업</span>
-          <select class="field" id="jobSel" data-busy-lock></select></label>
-        <div class="run-jobmeta" id="jobMeta"></div>
-      </div>
-
-      <div class="run-body" id="runBody">
-        <!-- 대상 문서(#18/31A5A484-A: 신규 생성 고정, 이어채우기 강등) -->
-        <div class="grp"><span class="cap">대상 문서</span>
-          <span id="targetLine" class="muted">작업을 선택하세요.</span></div>
-
-        <!-- 데이터 — 2소스(등록 데이터/파일, #26 #6 · 나라는 동결) -->
-        <div class="run-row"><span class="lbl">데이터(.xlsx/.csv)</span>
-          <input class="field ro" id="runDataLabel" type="text" readonly
-                 placeholder="데이터를 선택하세요">
-          <button class="btn" id="btnPoolData" data-busy-lock>등록 데이터…</button>
-          <button class="btn" id="btnPickData" data-busy-lock>파일 선택…</button></div>
-
-        <!-- 기본 데이터셋 자동 조준 재진술(#53-A) -->
-        <div class="note" id="runDataNotice" style="display:none;white-space:pre-line"></div>
-
-        <!-- 사전검증 -->
-        <div class="preflight note" id="preflight" style="display:none"></div>
-
-        <!-- 빈칸 표면화(상시 인라인 + 강제 확인 게이트, ADR-E) -->
-        <div class="grp"><span class="cap">미입력 필드 확인</span>
-          <p class="muted hint">필드 상태를 상시 배지로 노출합니다. <span class="danger">미입력</span>
-            필드는 반사적 dismiss를 막기 위해 <b>직접 클릭해 확인</b>해야 생성이 열립니다.</p>
-          <div class="statebadges" id="fieldBadges"></div>
-        </div>
-
-        <!-- 생성 대상 문서 -->
-        <div class="run-row run-recs-head">
-          <span class="lbl" style="font-weight:600">생성 대상 문서</span>
-          <div class="acts"><span class="muted capnote" id="selCount">선택 0/0</span>
-            <button class="btn sm" id="selAll" data-busy-lock>전체 선택</button>
-            <button class="btn sm" id="selNone" data-busy-lock>전체 해제</button></div>
-        </div>
-        <div class="reclist" id="recList" data-preserve-scroll></div>
-
-        <!-- 저장 폴더 -->
-        <div class="run-row"><span class="lbl">저장 폴더</span>
-          <input class="field ro" id="outDir" type="text" readonly
-                 placeholder="작업별 하위 폴더 없이 이 폴더에 저장합니다">
-          <button class="btn" id="btnPickFolder" data-busy-lock>찾아보기…</button>
-          <span id="outTrack"></span></div>
-
-        <!-- 액션 · 진행 · 결과 · 로그 -->
-        <div class="run-actions">
-          <button class="btn primary" id="genBtn" disabled>이 작업으로 문서 생성</button>
-          <span class="muted capnote" id="genGate"></span>
-        </div>
-        <div class="bar"><i id="genBar"></i></div>
-        <div id="genResult" class="run-result"></div>
-        <div class="logbox" id="genLog">[대기] 작업·데이터·저장 폴더를 확인한 뒤 생성하세요.</div>
-      </div>
     </section>
 
     <!-- ============ TXT 기안문 채우기 (첫 실화면) ============ -->
@@ -442,7 +370,7 @@
     </div>
 
     <!-- 시트 선택 모달(#33) — 다중 시트 워크북 확정 게이트. 조용한 첫 시트 로드 금지:
-         에디터·실행 두 화면이 공유하며, 취소·Escape 는 로드를 중단한다(첫 시트 강등 없음). -->
+         에디터·작업 두 화면이 공유하며, 취소·Escape 는 로드를 중단한다(첫 시트 강등 없음). -->
     <div id="sheetModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
       <div class="modal-card">
         <h3 id="sheetTitle">시트 선택</h3>
@@ -457,7 +385,7 @@
     <!-- 「작업」 덮어쓰기 확인은 공용 modal.js Modal.confirm(수치 합성 본문)이 담당한다 —
          전용 모달 DOM 폐기(슬라이스 2, A-2-22: 총량·파괴분·신규분 종류별 재진술). -->
 
-    <!-- 등록 데이터 선택 모달(#26 #6) — run·txt 공유 겨눔 게이트(거동은 pool_picker.js 소유).
+    <!-- 등록 데이터 선택 모달(#26 #6) — 작업·txt 공유 겨눔 게이트(거동은 pool_picker.js 소유).
          목록 id 는 poolPickList — 데이터 관리 화면(#scr-pool)의 poolList 와 반드시 다른 id 여야 한다
          (같으면 getElementById 가 숨은 화면 요소로 해소돼 피커가 빈 채로 뜬다). -->
     <div id="poolModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="poolTitle">
@@ -529,7 +457,6 @@
 <script src="js/screens/txt.js"></script>
 <script src="js/screens/editor.js"></script>
 <script src="js/screens/job.js"></script>
-<script src="js/screens/run.js"></script>
 <script src="js/screens/template.js"></script>
 <script src="js/screens/pool.js"></script>
 <script src="js/app.js"></script>

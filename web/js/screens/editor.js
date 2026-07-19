@@ -276,7 +276,7 @@
       <span class="cap">데이터 함께 등록</span>
       <p class="hint" style="margin-top:0">저장하면 이 작업이 쓴 데이터(${esc(s.data_name)})를
         등록 데이터에 올리고 <b>이 작업의 기본 데이터로 연결</b>합니다 — 경로 참조만
-        저장(행·내용 없음), 실행 화면에서 작업을 고르면 자동으로 연결해 그때 다시 읽습니다.</p>
+        저장(행·내용 없음), 「작업」 화면에서 작업을 고르면 자동으로 연결해 그때 다시 읽습니다.</p>
       <div class="row"><span class="lbl lbl-fixed">등록 이름</span>
         <input class="field" data-act="dataset-name" value="${esc(s.dataset_name)}"></div>
     </div>`;

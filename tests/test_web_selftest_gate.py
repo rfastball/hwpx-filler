@@ -71,9 +71,9 @@ class TestWebSelftestGate:
         assert selftest_result["title_dom"]
 
     def test_all_nav_buttons_rendered(self, selftest_result: dict) -> None:
-        # 7화면 내비(.navbtn) 가 실체로 그려짐 — 화면 소실 회귀 가드(matrix 제거 후 F9;
-        # +「작업」 화면 R-flow 슬라이스 1 #90, 실행 화면과 병존 → 6→7).
-        assert selftest_result["nav_count"] == 7
+        # 6화면 내비(.navbtn) 가 실체로 그려짐 — 화면 소실 회귀 가드(matrix 제거 후 F9;
+        # +「작업」 화면 #90 → 7, 실행 화면 사망(슬라이스 3, 레일 「실행」 제거) → 6).
+        assert selftest_result["nav_count"] == 6
 
     def test_home_is_default_screen(self, selftest_result: dict) -> None:
         # 허브(홈)가 기본 활성 화면으로 뜸(scr-home.on).
@@ -84,7 +84,7 @@ class TestWebSelftestGate:
         assert selftest_result["pool_rendered"] is True
 
     def test_pool_source_buttons_present(self, selftest_result: dict) -> None:
-        # 2소스 진입점(#26 #6) — run·txt 의 '등록 데이터…' 버튼이 실 DOM 에 있다.
+        # 2소스 진입점(#26 #6) — 작업·txt 의 '등록 데이터…' 버튼이 실 DOM 에 있다.
         assert selftest_result["pool_buttons"] is True
 
     def test_home_kpis_actually_rendered(self, selftest_result: dict) -> None:
@@ -188,7 +188,7 @@ class TestWebSelftestGate:
         # 3개 실화면이 shipped __push 경로로 실 스냅샷을 재렌더해도 던지지 않는다 —
         # Preserve.around 래핑이 실 render() 를 깨지 않음을 실 DOM 에서 가드(#28 완료기준).
         p = selftest_result["preserve_real"]
-        for scr in ("txt", "editor", "run"):
+        for scr in ("txt", "editor", "job"):
             assert p.get(scr) == "ok", f"{scr} 실화면 재렌더 실패: {p.get(scr)!r}"
 
     def test_real_screen_scroll_preserved_end_to_end(self, selftest_result: dict) -> None:

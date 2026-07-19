@@ -210,16 +210,9 @@ tr.r-schemaonly td{background:var(--a-card)}
 .gatecount{font-size:var(--fs-body);font-weight:700}
 .gatecount.ok{color:var(--a-ok)} .gatecount.pend{color:var(--a-muted)}
 
-/* ---- 실행 화면 (#18) ---- */
-/* 진입 어포던스: 작업 선택 바 */
-.run-jobbar{display:flex;flex-wrap:wrap;gap:var(--sp-10) var(--sp-16);align-items:flex-end;
-  background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface);
-  padding:var(--sp-12) var(--sp-12);margin-bottom:var(--sp-12)}
-/* 작업 메타(F28) — 한 줄에 이어붙이던 템플릿명·패턴·버튼 뭉치를 줄 단위로 구조화. */
-.run-jobmeta{font-size:var(--fs-body);color:var(--a-muted);padding-bottom:var(--sp-2);
-  display:flex;flex-direction:column;gap:var(--sp-4)}
-.run-jobmeta .jm-line{display:flex;align-items:center;gap:var(--sp-6);flex-wrap:wrap}
-.run-body{display:flex;flex-direction:column;min-height:0}
+/* (실행 화면(#18) 전용 레이아웃 규칙 .run-jobbar/.run-jobmeta/.jm-line/.run-body 삭제 —
+   scr-run 사망(슬라이스 3)으로 참조 0. 공유 .run-row/.run-result/.run-actions 는 「작업」
+   패널이 계속 쓰므로 잔존.) */
 
 /* 캡션 박스(목업 .grp 이식) */
 .grp{border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card);

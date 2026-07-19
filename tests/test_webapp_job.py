@@ -7,6 +7,9 @@
 """
 from __future__ import annotations
 
+from datetime import datetime
+from pathlib import Path
+
 import pytest
 
 from hwpxfiller.core.job import Job, JobRegistry
@@ -15,6 +18,8 @@ from hwpxfiller.gui.run_state import RunViewModel
 from hwpxfiller.gui.selection_state import SelectionModel
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+
+MULTI_SHEET = Path(__file__).resolve().parents[0] / "fixtures" / "multi_sheet.xlsx"
 
 
 def _write_template(path, fields) -> None:
@@ -401,3 +406,208 @@ def test_load_pool_without_job_is_loud(tmp_path):
     pool.save(DatasetPoolItem(name="7월공고", kind="excel", opts={"path": _data_csv(tmp_path)}))
     res = ctrl.dispatch("load_pool", {"name": "7월공고"})
     assert res["ok"] is False and "작업" in res["error"]
+
+
+# --------------------------------------- 기본 데이터셋 자동 조준(#53-A, A-1-11) — 리뷰 F4
+# 실행 화면 사망(슬라이스 3)으로 test_webapp_run 의 자동 조준 회귀 심이 사라졌다 — JobController
+# 의 '조용한 폴백 금지'(성공=ok 재진술 / 실패=warn 미겨눔) 계약을 여기서 이어 가드한다.
+def _job_with_default(ctrl, pool, tmp_path, ref, *, register=True):
+    """'공고서' 작업에 기본 데이터셋 참조를 붙여 재저장. register=True 면 동명 CSV 풀 항목 등록."""
+    job = ctrl.registry.load("공고서")
+    job.default_dataset_ref = ref
+    ctrl.registry.save(job, allow_overwrite=True)
+    if register:
+        pool.save(DatasetPoolItem(name=ref, kind="excel", opts={"path": _data_csv(tmp_path)}))
+
+
+def test_select_job_auto_aims_default_dataset(tmp_path):
+    """기본 데이터셋 참조가 있으면 작업 선택 시 실행 시점에 다시 읽어 자동 조준(#53-A)."""
+    ctrl, pool = _pool_controller(tmp_path)
+    _job_with_default(ctrl, pool, tmp_path, "7월공고")
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    snap = ctrl.snapshot()
+    assert snap["has_data"] is True and snap["record_count"] == 2      # 자동 재읽기(싱크)
+    assert snap["data_source_label"] == "등록 데이터: 7월공고"
+    assert snap["selected_count"] == 2                                  # 겨눔 = 전체 선택 초기화
+    assert snap["data_notice"]["level"] == "ok" and "자동" in snap["data_notice"]["text"]
+
+
+def test_select_job_dead_default_ref_is_loud_no_silent_fallback(tmp_path):
+    """죽은 기본 참조는 조용한 폴백 금지 — 미겨눔 + 원인·복구 동선(다시 연결)을 재진술(#53-A)."""
+    ctrl, pool = _pool_controller(tmp_path)
+    _job_with_default(ctrl, pool, tmp_path, "없는참조", register=False)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    snap = ctrl.snapshot()
+    assert snap["has_data"] is False                       # 자동 겨눔 실패 = 미겨눔(폴백 없음)
+    assert snap["data_source_label"] == ""
+    assert snap["data_notice"]["level"] == "warn"
+    assert "없는참조" in snap["data_notice"]["text"] and "다시 연결" in snap["data_notice"]["text"]
+
+
+def test_auto_aim_nara_ref_is_frozen_warn(tmp_path):
+    """기본 참조가 나라 항목이면 자동 조준도 동결 거절 warn — 공유 관문 문구 그대로(#53-A)."""
+    ctrl, pool = _pool_controller(tmp_path)
+    pool.save(DatasetPoolItem(
+        name="나라기본", kind="nara", opts={"bgn_dt": "202607010000", "end_dt": "202607080000"}))
+    _job_with_default(ctrl, pool, tmp_path, "나라기본", register=False)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    snap = ctrl.snapshot()
+    assert snap["has_data"] is False and snap["data_notice"]["level"] == "warn"
+    assert "동결" in snap["data_notice"]["text"]
+
+
+def test_auto_aim_ambiguous_sheet_ref_is_warn(tmp_path):
+    """기본 참조가 시트 미지정 다중시트면 자동 조준도 조용한 첫 시트 대신 warn 거절(#33·#53-A)."""
+    ctrl, pool = _pool_controller(tmp_path)
+    pool.save(DatasetPoolItem(name="모호기본", kind="excel", opts={"path": str(MULTI_SHEET)}))
+    _job_with_default(ctrl, pool, tmp_path, "모호기본", register=False)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    snap = ctrl.snapshot()
+    assert snap["has_data"] is False and snap["data_notice"]["level"] == "warn"
+    assert "시트" in snap["data_notice"]["text"]
+
+
+def test_manual_data_clears_auto_aim_notice(tmp_path):
+    """자동 조준 후 사용자가 직접 데이터를 겨누면 자동 조준 재진술이 소거된다(임시 데이터=기본 불변)."""
+    ctrl, pool = _pool_controller(tmp_path)
+    _job_with_default(ctrl, pool, tmp_path, "7월공고")
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    assert ctrl.snapshot()["data_notice"] is not None
+    ctrl.load_data_path(_data_csv(tmp_path))               # 수동 파일 겨눔
+    snap = ctrl.snapshot()
+    assert snap["data_notice"] is None
+    assert snap["data_source_label"].startswith("파일:")
+    assert ctrl.registry.load("공고서").default_dataset_ref == "7월공고"  # 임시 override, 기본 불변
+
+
+# --------------------------------------------- 템플릿 다시 연결(#67, A-1-2 계열) — 리뷰 F5
+# 실행 화면 사망으로 test_webapp_run 의 relink 회귀 심(x6)이 사라졌다 — 패널의 재연결 흐름
+# (경로 재진술·드리프트 병기·읽기불가 하드차단·선택 작업 stale VM 재적재)을 여기서 잇는다.
+def test_relink_template_needs_confirm_restates_paths(tmp_path):
+    """1차 호출 = 기존→새 경로 재진술 확인 요구. 구조 동일이면 드리프트 문구 없음(#67)."""
+    ctrl, _ = _controller(tmp_path)
+    new_tpl = tmp_path / "moved.hwpx"
+    _write_template(new_tpl, ["공고명", "추정가격"])       # 같은 구조 — 드리프트 0
+    res = ctrl.dispatch("relink_template", {"name": "공고서", "path": str(new_tpl)})
+    assert res["ok"] is True and res["needs_confirm"] is True
+    assert "t.hwpx" in res["confirm_text"] and "moved.hwpx" in res["confirm_text"]  # 양경로 재진술
+    assert "구조가" not in res["confirm_text"]             # 무드리프트 = 소음 금지
+    assert ctrl.registry.load("공고서").template_path.endswith("t.hwpx")  # 확인 전 durable 불변
+
+
+def test_relink_template_drift_restated_in_confirm(tmp_path):
+    """새 파일 구조가 확정 매핑과 다르면 확인 문구에 드리프트 상세+생성 차단 경고 병기(#67)."""
+    ctrl, _ = _controller(tmp_path)
+    new_tpl = tmp_path / "changed.hwpx"
+    _write_template(new_tpl, ["공고명", "낙찰자"])         # 추정가격 소멸 + 낙찰자 유입
+    res = ctrl.dispatch("relink_template", {"name": "공고서", "path": str(new_tpl)})
+    assert res["needs_confirm"] is True and "구조가" in res["confirm_text"]
+    assert "낙찰자" in res["confirm_text"] and "추정가격" in res["confirm_text"]  # describe() 단일 출처
+    assert "생성이 차단됩니다" in res["confirm_text"]      # 기존 게이트 백스톱 재진술
+
+
+def test_relink_template_unreadable_is_blocked(tmp_path):
+    """읽을 수 없는 파일은 확인으로도 템플릿이 될 수 없다 — 하드 차단 + JSON 불변(#67)."""
+    ctrl, _ = _controller(tmp_path)
+    res = ctrl.dispatch(
+        "relink_template",
+        {"name": "공고서", "path": str(tmp_path / "없는파일.hwpx"), "confirm": True})
+    assert res["ok"] is False and "연결을 바꾸지 않았습니다" in res["error"]
+    assert ctrl.registry.load("공고서").template_path.endswith("t.hwpx")
+
+
+def test_relink_selected_job_reloads_vm_and_restates(tmp_path):
+    """지금 선택된 작업을 재연결하면 stale VM 을 재적재하고 상태 초기화를 재진술한다(#67)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))               # 데이터 겨눔(재적재로 초기화될 상태)
+    new_tpl = tmp_path / "moved.hwpx"
+    _write_template(new_tpl, ["공고명", "추정가격"])
+    res = ctrl.dispatch(
+        "relink_template", {"name": "공고서", "path": str(new_tpl), "confirm": True})
+    assert res["relinked"] is True
+    assert "다시 불러왔으니" in res["restated"]             # 조용한 상태 소실 금지(재적재 재진술)
+    assert ctrl.vm.job.template_path == str(new_tpl)       # VM 재구성
+
+
+# ---- 실행 화면 사망(슬라이스 3)으로 test_webapp_run 에서 유실된 confirm-or-alarm 회귀 심 승계
+# ---- (별도세션 리뷰 #99-1~5, CONFIRMED). JobController 동작은 살아 있으나 무테스트였다.
+def test_load_data_honors_confirmed_sheet(tmp_path):
+    """다중 시트 확정 게이트(#33, 리뷰 #99-1) — load_data_path(sheet=) 가 확정 시트를 관통.
+
+    작업 선택 후 낙찰현황(3건)을 확정하면 첫 시트(공고목록 2건)가 아니라 그 시트가 실린다 —
+    조용한 첫 시트 강등이 아니라 확정값 반영(test_webapp_bridge 의 job 컨트롤러측 대응물).
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    snap = ctrl.snapshot()
+    assert snap["data_label"] == "multi_sheet.xlsx"
+    assert snap["has_data"] is True and snap["record_count"] == 3
+
+
+def test_record_names_follow_selection_not_invented(tmp_path):
+    """미선택 행 이름은 지어내지 않는다(F33, 리뷰 #99-2) — {{seq}}·충돌 접미사는 선택 집합에
+    따라 달라지므로 선택 변경 시 남은 행 이름이 생성 결과대로 재계산된다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.dispatch("toggle_record", {"index": 0, "value": False})
+    rows = ctrl.snapshot()["records"]
+    assert rows[0]["name"] == "" and rows[0]["selected"] is False   # 미선택 = 이름 없음
+    # 남은 1건만 생성하면 그 파일이 doc-001 — 미리보기도 같은 사실을 말한다.
+    assert rows[1]["name"] == "doc-001.hwpx" and rows[1]["selected"] is True
+
+
+def test_generate_uses_previewed_name_timestamp(tmp_path):
+    """미리보기가 보여준 시각 = 생성 파일명 시각(RC-02 표시=확인=생성, 리뷰 #99-3).
+
+    시·분·초 date 토큰 패턴에서 미리보기 스냅샷과 생성 클릭 사이 시계가 흘러도, generate 는
+    마지막 미리보기(``_names_now``)의 시각을 재사용해 화면이 보여준 실파일명 그대로 생성한다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    job = ctrl.registry.load("공고서")
+    job.filename_pattern = "doc-{{date:HHmmSS}}-{{seq}}"
+    ctrl.registry.save(job, allow_overwrite=True)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    out = tmp_path / "out"
+    ctrl.set_output_folder(str(out))
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+
+    # 스냅샷 미리보기가 시각을 캡처 → 이후 시계 전진을 결정적으로 모사(주입) → 생성이 캡처값 재사용.
+    assert ctrl.snapshot()["records"][0]["name"].startswith("doc-")
+    ctrl._names_now = datetime(2026, 1, 2, 3, 4, 5)
+    res = ctrl.generate()
+    assert res["ok"] is True
+    made = sorted(p.name for p in out.glob("*.hwpx"))
+    assert made and all(n.startswith("doc-030405-") for n in made)  # 주입 시각 그대로
+
+
+def test_snapshot_reports_template_missing_only_when_file_gone(tmp_path):
+    """template_missing 은 파일이 실제로 없을 때만 True(F30, 리뷰 #99-4) — 웹이 이 플래그로
+    「템플릿 다시 연결」 복구 동선을 조건부 노출한다(Python 층 실행 — JS 렌더 가드와 별개)."""
+    ctrl, _ = _controller(tmp_path)
+    snap = ctrl.initial()
+    assert snap["template_missing"] is False               # 미선택 = 버튼 표면 자체가 없음
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    snap = ctrl.snapshot()
+    assert snap["template_missing"] is False               # 정상 = 복구 동선 숨김
+    Path(snap["template_path"]).unlink()                    # 템플릿 파일 소실 재현
+    assert ctrl.snapshot()["template_missing"] is True      # 부재 = 복구 동선 노출
+
+
+def test_unresolved_pattern_gate_surfaces_in_snapshot(tmp_path):
+    """미해소 파일명 토큰 작업 = 스냅샷 게이트 danger 차단 + 생성 백스톱(F34, 리뷰 #99-5)."""
+    ctrl, _ = _controller(tmp_path)
+    job = ctrl.registry.load("공고서")
+    job.filename_pattern = "공고서-{{ID}}"                 # 101 워크스루 실증 지뢰(데이터에 ID 없음)
+    ctrl.registry.save(job, allow_overwrite=True)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    snap = ctrl.snapshot()
+    assert snap["gate"]["enabled"] is False and snap["gate"]["level"] == "danger"
+    assert "{{ID}}" in snap["gate"]["text"]
+    res = ctrl.generate()
+    assert res["ok"] is False and "{{ID}}" in res["error"]  # 생성 백스톱도 리터럴 방지

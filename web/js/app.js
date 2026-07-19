@@ -18,10 +18,10 @@
   /* 전환 시 자동 새로고침 대상(C6) — 다른 화면의 변경(에디터 자동등록·삭제 등)이 부팅
      스냅샷에 가려지는 고착 방지. 백엔드에 _do_refresh 가 있는 컨트롤러만 화이트리스트로
      보낸다(미지 액션은 백엔드가 loud 거절하므로 무차별 dispatch 금지). 수동 새로고침
-     버튼은 유지된다(명시적 재스캔 경로). run 도 레지스트리 파생 작업 목록을
-     스냅샷으로 그리므로 포함한다 — 빼면 에디터에서 막 저장한 작업이 주 실행 표면에
-     안 보인다(r4). */
-  const REFRESH_ON_NAV = ["home", "pool", "tpl", "run", "job"];
+     버튼은 유지된다(명시적 재스캔 경로). 「작업」 화면도 레지스트리 파생 작업 목록(좌 master
+     목록)을 스냅샷으로 그리므로 포함한다 — 빼면 에디터에서 막 저장한 작업이 좌 목록에 안
+     보인다. 실행 화면(run)은 사망(슬라이스 3)이라 목록에서 제거. */
+  const REFRESH_ON_NAV = ["home", "pool", "tpl", "job"];
 
   /* 화면 전환 — 레일 클릭과 허브(홈) 카드의 프로그램적 이동이 공유하는 단일 경로. */
   function go(id) {
@@ -67,8 +67,7 @@
     if (window.HomeScreen) window.HomeScreen.init();
     if (window.TxtScreen) window.TxtScreen.init();
     if (window.EditorScreen) window.EditorScreen.init();
-    if (window.JobScreen) window.JobScreen.init();  // 「작업」 화면(#90)
-    if (window.RunScreen) window.RunScreen.init();
+    if (window.JobScreen) window.JobScreen.init();  // 「작업」 화면(#90) — 유일 생성 표면
     if (window.TemplateScreen) window.TemplateScreen.init();
     if (window.PoolScreen) window.PoolScreen.init();  // 데이터 관리(#26 #4)
   });
