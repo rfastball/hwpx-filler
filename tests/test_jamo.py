@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import functools
 import re
 from pathlib import Path
 
@@ -29,10 +30,15 @@ MOCKUP = (
 
 
 # ---------------------------------------------------------------- 시안 패리티
+@functools.cache
+def _mockup_text() -> str:
+    """시안 HTML 1회 읽기 캐시 — 파라미터 케이스마다 재읽지 않는다(고효율 리뷰 #2)."""
+    return MOCKUP.read_text(encoding="utf-8")
+
+
 def _mockup_table(name: str) -> "tuple[str, ...]":
     """시안 JS 의 ``var CHO=[...]`` 테이블을 원문에서 회수한다(줄바꿈 허용)."""
-    text = MOCKUP.read_text(encoding="utf-8")
-    m = re.search(rf"var {name}=\[(.*?)\];", text, re.DOTALL)
+    m = re.search(rf"var {name}=\[(.*?)\];", _mockup_text(), re.DOTALL)
     assert m, f"시안에서 {name} 테이블을 찾지 못했습니다(사양 정본 이동?)"
     return tuple(re.findall(r'"([^"]*)"', m.group(1)))
 
@@ -151,3 +157,17 @@ def test_highlight_slice_roundtrip() -> None:
     hay = "세종특별자치시 이전"
     start, end = jamo_find(hay, "자치")
     assert hay[start:end] == "자치"
+
+
+def test_index_unit_is_python_codepoint_not_utf16() -> None:
+    """인덱스 단위 = 파이썬 코드포인트(선언된 시안 편차, 고효율 리뷰 #1).
+
+    비-BMP 문자(이모지)가 매치 앞에 오면 시안 JS(UTF-16)와 인덱스가 갈라진다 —
+    시안이라면 [4, 6). 그래서 계약은 '파이썬 슬라이싱 전용'이고 하이라이트는 Python
+    이 잘라 세그먼트로 싣는다(인덱스를 웹으로 건네지 않는다). 이 테스트는 그 단위
+    선언 자체를 못박는다 — 파이썬 슬라이싱으로는 정확해야 한다.
+    """
+    hay = "\U0001f4cb 행복도시"  # 이모지(비-BMP) + 공백 + 본문
+    rng = jamo_find(hay, "복도")
+    assert rng == (3, 5)  # 코드포인트 인덱스(UTF-16 이라면 (4, 6))
+    assert hay[rng[0]:rng[1]] == "복도"  # 파이썬 슬라이싱은 정확
