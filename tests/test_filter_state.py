@@ -75,6 +75,20 @@ def test_sniff_all_blank_is_text() -> None:
     assert sniff_column_kinds(rows)["c"] == KIND_TEXT
 
 
+def test_sniff_codelike_text_not_promoted_to_amount() -> None:
+    """「1차」·「A-1」·「3층」류 코드성 텍스트는 금액 승격 금지(리뷰 #2).
+
+    승격의 대가 = 전열 검색 가지 제외(침묵 배제) — 오판의 안전 방향은 text 뿐이다.
+    """
+    assert sniff_column_kinds([{"c": "1차"}, {"c": "2차"}])["c"] == KIND_TEXT
+    assert sniff_column_kinds([{"c": "A-1"}, {"c": "B-2"}])["c"] == KIND_TEXT
+    assert sniff_column_kinds([{"c": "3층"}, {"c": "5층"}])["c"] == KIND_TEXT
+    assert sniff_column_kinds([{"c": "1억"}, {"c": "2억"}])["c"] == KIND_TEXT
+    # 엄격 형태는 승격 유지 — 콤마 그룹·원 접미·소수점.
+    assert sniff_column_kinds([{"c": "1,000,000원"}, {"c": "500원"}])["c"] == KIND_AMOUNT
+    assert sniff_column_kinds([{"c": "1.5"}, {"c": "-3"}])["c"] == KIND_AMOUNT
+
+
 # ------------------------------------------------------------- 열 조건(AND·OR)
 def test_value_checklist_or_within_column() -> None:
     m = model()
@@ -145,7 +159,7 @@ def test_pruning_survives_column_edit_dies_on_text_edit() -> None:
     """프루닝 = 텍스트 수명(미결 확정 1) — 열 편집엔 생존, 검색어 수정에 복귀."""
     m = model()
     m.set_search("행복도")
-    m.prune_branch("비고")
+    m.prune_branch("비고", ROWS)
     assert m.group_branches(ROWS) == ["수요기관"]
     m.set_values("마감일", None)  # 열 편집 — 프루닝 생존
     assert m.group_branches(ROWS) == ["수요기관"]
@@ -171,11 +185,33 @@ def test_single_branch_group_is_not_normalized() -> None:
     assert "(비고) 포함 「긴급」" in m.describe(ROWS)
 
 
+def test_pruning_last_branch_dissolves_group() -> None:
+    """마지막 가지 프루닝 = 그룹 해산(시안 동형, 리뷰 #3) — 빈 화면 함정 아님."""
+    m = model()
+    m.set_search("긴급")
+    m.prune_branch("비고", ROWS)  # 유일 가지 — 검색 해제 의사
+    assert m.search_text == ""
+    assert not m.is_active()
+    assert m.visible_indices(ROWS) == [0, 1, 2, 3]  # 전 행 복귀(빈 화면·거짓 정의줄 없음)
+
+
+def test_search_and_text_inputs_are_trimmed() -> None:
+    """양끝 공백 트리밍(시안 동형, 리뷰 #4) — 보이지 않는 문자가 조건이 되지 않는다."""
+    m = model()
+    m.set_search("  ")
+    assert not m.is_active()
+    assert m.visible_indices(ROWS) == [0, 1, 2, 3]
+    m.set_search(" 행복도 ")
+    assert m.search_text == "행복도"
+    m.set_text("공고명", "  ")
+    assert not m.has_condition("공고명")
+
+
 # ------------------------------------------------------------------ 범위 조건
 def test_range_amount_comparisons() -> None:
     m = model()
     m.set_range("금액", RangeCondition(RangeClause("ge", "1,000,000")))
-    assert m.visible_indices(ROWS) == [0, 1, 3]  # 피연산자도 관대 파싱(콤마 허용)
+    assert m.visible_indices(ROWS) == [0, 1, 3]  # 콤마 그룹은 엄격 형태에 포함
     m.set_range("금액", RangeCondition(RangeClause("lt", "1000000")))
     assert m.visible_indices(ROWS) == [2]
     m.set_range("금액", RangeCondition(RangeClause("eq", "2500000")))
@@ -211,6 +247,34 @@ def test_range_bad_operand_is_loud() -> None:
         m.set_range("마감일", RangeCondition(RangeClause("ge", "다음주")))
     with pytest.raises(ValueError, match="읽을 수 없습니다"):
         m.set_range("금액", RangeCondition(RangeClause("ge", "많이")))
+
+
+def test_range_misreadable_operand_is_loud() -> None:
+    """관대 파싱의 조용한 오독도 거절(리뷰 #1) — 「1억」이 1로 읽혀 전 행 매치되는 함정."""
+    m = model()
+    with pytest.raises(ValueError, match="읽을 수 없습니다"):
+        m.set_range("금액", RangeCondition(RangeClause("ge", "1억")))
+    with pytest.raises(ValueError, match="읽을 수 없습니다"):
+        m.set_range("마감일", RangeCondition(RangeClause("le", "제2026-15호")))
+
+
+def test_range_none_first_clause_is_loud() -> None:
+    """첫 절 None = 설정 시점 거절(리뷰 #5) — 평가 중 지연 폭발 금지."""
+    m = model()
+    with pytest.raises(ValueError, match="첫 절"):
+        m.set_range("금액", RangeCondition(None))  # type: ignore[arg-type]
+
+
+def test_range_date_granularity_follows_operand() -> None:
+    """날짜 입도(리뷰 #0) — 시각 없는 피연산자는 날짜 입도, 시각 쓰면 분 입도."""
+    rows = [{"마감": "2026-07-15 14:00"}, {"마감": "2026-07-16 09:00"}]
+    m = FilterModel(["마감"], {"마감": KIND_DATE})
+    m.set_range("마감", RangeCondition(RangeClause("le", "2026-07-15")))
+    assert m.visible_indices(rows) == [0]  # 당일 14:00 이 자정 비교로 탈락하지 않는다
+    m.set_range("마감", RangeCondition(RangeClause("eq", "2026-07-15")))
+    assert m.visible_indices(rows) == [0]  # 같은 날 = 매치
+    m.set_range("마감", RangeCondition(RangeClause("le", "2026-07-15 13:00")))
+    assert m.visible_indices(rows) == []  # 시각 선언 = 분 입도 그대로
 
 
 def test_range_bad_op_or_joiner_is_loud() -> None:
@@ -264,7 +328,7 @@ def test_describe_parts_shapes() -> None:
 
 def test_describe_multi_values_and_blank_label() -> None:
     m = model()
-    m.set_values("비고", {"긴급", ""})
+    m.set_values("비고", ["긴급", ""])
     (part,) = m.describe_parts(ROWS)
     assert part == "비고 ∈ {긴급, (빈값)}"
 
@@ -327,13 +391,13 @@ def test_segments_group_term_only_on_branch_column() -> None:
     assert m.segments("마감일", "2026-07-20", ROWS) == [("2026-07-20", False)]
 
 
-def test_segments_column_term_wins_over_group() -> None:
-    """적용 순서 = 열 텍스트 → 전열 검색(첫 매치 하나만, 시안 mark 동형)."""
+def test_segments_search_term_wins_over_column_term() -> None:
+    """적용 순서 = 전열 검색 → 열 텍스트(첫 매치 하나만, 시안 mark 동형 — 리뷰 #6)."""
     m = model()
     m.set_text("수요기관", "건설청")
     m.set_search("행복도")
     segs = m.segments("수요기관", "행복도시건설청", ROWS)
-    assert segs == [("행복도시", False), ("건설청", True)]
+    assert segs == [("행복도", True), ("시건설청", False)]
 
 
 def test_segments_empty_value() -> None:
@@ -341,12 +405,26 @@ def test_segments_empty_value() -> None:
     assert m.segments("비고", "", ROWS) == []
 
 
+# ------------------------------------------------------------------ 평가 뷰
+def test_view_caches_branches_and_matches_model_delegates() -> None:
+    """렌더 경로 계약(리뷰 #9) — view() 가 가지를 1회 산출·캐시, 위임과 결과 동일."""
+    m = model()
+    m.set_search("행복도")
+    v = m.view(ROWS)
+    assert v.branches == m.group_branches(ROWS)
+    assert v.visible_indices() == m.visible_indices(ROWS)
+    assert v.describe() == m.describe(ROWS)
+    # 셀 반복 호출(렌더 루프의 그 패턴)이 같은 뷰에서 일관 — 가지 재산출 없음.
+    for r in ROWS:
+        assert v.segments("수요기관", r["수요기관"]) == m.segments("수요기관", r["수요기관"], ROWS)
+
+
 # ------------------------------------------------------------------ 초기화·해제
 def test_clear_column_and_clear_all() -> None:
     m = model()
     m.set_values("수요기관", {"조달청"})
     m.set_search("긴급")
-    m.prune_branch("공고명")
+    m.prune_branch("공고명", ROWS)
     assert m.is_active()
     m.clear_column("수요기관")
     assert not m.has_condition("수요기관")
