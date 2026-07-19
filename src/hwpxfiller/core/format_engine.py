@@ -31,8 +31,10 @@ class FormatEngine(Protocol):
         ...
 
 
-# ------------------------------------------------------------------ 파싱 헬퍼
-def _parse_number(value: str) -> "int | float | None":
+# ---------------------------------------------------------------- 파싱 헬퍼
+# 공개 표면 — 표시형 렌더 외에 필터 범위 비교(gui/filter_state.py, R-flow 블록 4)가
+# 피연산자·셀 파싱을 여기서 재사용한다(값 해석 단일 출처 — 표시가 읽는 대로 비교한다).
+def parse_number(value: str) -> "int | float | None":
     """문자열에서 수를 관대하게 추출('150,000,000원'→150000000). 실패 시 None."""
     s = re.sub(r"[^\d.\-]", "", value)
     if not s or s.strip("-.") == "":
@@ -43,7 +45,7 @@ def _parse_number(value: str) -> "int | float | None":
         return None
 
 
-def _parse_dt(value: str) -> "datetime | None":
+def parse_dt(value: str) -> "datetime | None":
     """문자열에서 날짜(+선택 시각)를 관대하게 파싱. 실패 시 None."""
     m = re.search(r"(\d{4})\D?(\d{1,2})\D?(\d{1,2})", value)
     if not m:
@@ -76,7 +78,7 @@ def _parse_time(value: str) -> "tuple[int, int] | None":
 
 def _korean_dt(value: str) -> str:
     """한글 날짜 표시(예약코드 ``kor``) — ``2026년 6월 15일 [09:00]``(월/일 비패딩)."""
-    dt = _parse_dt(value)
+    dt = parse_dt(value)
     if dt is None:
         return value
     out = f"{dt.year}년 {dt.month}월 {dt.day}일"
@@ -92,7 +94,7 @@ def _dot_dt(value: str, *, short: bool = False) -> str:
     ``short=True`` → ``'26.7.17.``(2자리 연도·공백 없는 축약형). 둘 다 strftime 으로는
     이식 가능하게 못 내므로(``%-d``=glibc·``%#d``=Windows 전용) f-string 으로 수동 조립.
     """
-    dt = _parse_dt(value)
+    dt = parse_dt(value)
     if dt is None:
         return value
     if short:
@@ -174,7 +176,7 @@ class StdlibFormatEngine:
         return list(self._PRESETS.get(kind, []))
 
     def _amount(self, code: str, value: str) -> str:
-        num = _parse_number(value)
+        num = parse_number(value)
         if num is None:
             return value  # 수가 아니면 원본(degrade)
         try:
@@ -189,7 +191,7 @@ class StdlibFormatEngine:
             return _dot_dt(value, short=True)  # 예약코드: 축약형('26.7.17.)
         if code == "kor":
             return _korean_dt(value)  # 예약코드: 한글 표기(비패딩)
-        dt = _parse_dt(value)
+        dt = parse_dt(value)
         if dt is None:
             # 날짜가 없으면 시각 단독값('1400'·'18:00')으로 재시도 — 시각 서식용.
             t = _parse_time(value)
