@@ -603,6 +603,11 @@ _JOB_MIRROR_PROBE_JS = r"""
     // 짝(리뷰). overwrite_count/new_count 스왑·이름 목록 누락이 여기서 잡힌다.
     out.ow_body = window.JobScreen.overwriteBody(
       {total:10, overwrite_count:3, new_count:7, conflict_names:['a.hwpx','b.hwpx'], conflict_more:5});
+    // 세션 가드 재진술 본문 합성(결정 27 수치 재진술) — 되읽어 수치·소실 목록 드리프트를 막는다.
+    out.guard_body = window.JobScreen.guardBody(
+      {sel_count:3, in_def:2, extra:1, filter_active:true, filter_parts:2}, '작업을 전환하면');
+    // 데이터 변경 사전 확인 배선 존재 핀(리뷰 #6) — JS 전용 가드 지점의 삭제 회귀 표식.
+    out.data_guard_wired = typeof window.JobScreen.confirmDataSwapIfArmed === 'function';
   } catch (e) { out.error = 'throw:' + (e && e.message); }
   return out;
 })()

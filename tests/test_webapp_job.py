@@ -763,3 +763,143 @@ def test_table_cell_preserves_falsy_values(tmp_path):
     snap = ctrl.snapshot()
     row1 = next(r for r in snap["table"]["rows"] if r["index"] == 1)
     assert row1["cells"][1] == [("0", False)]                # 필터가 보는 그대로 표면도
+
+
+# ------------------------------------------------- 세션 가드(블록 4, 결정 26·27, PR-3)
+def _data_csv3(tmp_path) -> str:
+    """3행 코퍼스 — 2행 판에선 '정의 밖 가산'이 곧 전체 선택(비무장)이 되어 무장 케이스를
+    못 가른다(가드 술어의 전체=1클릭 재현 절과 겹침)."""
+    csv = tmp_path / "d3.csv"
+    csv.write_text(
+        "bidNtceNm,presmptPrce\n전산장비,1000\n사무비품,2000000\n책상,500\n",
+        encoding="utf-8",
+    )
+    return str(csv)
+
+
+def _second_job(ctrl, tmp_path):
+    """가드 전환 테스트용 두 번째 작업 — 같은 템플릿 재사용."""
+    job = ctrl.registry.load("공고서")
+    ctrl.registry.save(Job(
+        name="공고서2", template_path=job.template_path, mapping=job.mapping,
+        filename_pattern=job.filename_pattern,
+    ))
+
+
+def test_guard_armed_by_set_comparison(tmp_path):
+    """무장 술어(결정 27) — 전체/빈/정의-유래/완주 집합은 비무장, 수작업 열거만 무장."""
+    ctrl, _ = _session(tmp_path)
+    ctrl.load_data_path(_data_csv3(tmp_path))
+    assert ctrl.snapshot()["guard"]["armed"] is False       # 초기 전체 선택 = 1클릭 재현
+    ctrl.dispatch("set_none", {})
+    assert ctrl.snapshot()["guard"]["armed"] is False       # 빈 선택 = 지킬 것 없음
+    ctrl.dispatch("toggle_record", {"index": 0, "value": True})
+    g = ctrl.snapshot()["guard"]
+    assert g["armed"] is True and g["sel_count"] == 1       # 필터 없는 부분 선택 = 수작업
+    # 정의-유래(매치 전체)는 정의줄이 재현을 담보 — 비무장.
+    ctrl.dispatch("filter_search", {"text": "전산"})
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("set_all", {})
+    g = ctrl.snapshot()["guard"]
+    assert g["armed"] is False and g["filter_active"] is True and g["filter_parts"] == 1
+    # 정의 이탈(밖 행 가산) = 무장 + 수치 병기 소재.
+    ctrl.dispatch("toggle_record", {"index": 1, "value": True})
+    g = ctrl.snapshot()["guard"]
+    assert g["armed"] is True and g["in_def"] == 1 and g["extra"] == 1
+
+
+def test_guard_disarmed_by_generation_completion(tmp_path):
+    """완료 이벤트 = 무장 해제(결정 27) — 내역은 완료 존이 담보. 재편집 시 재무장."""
+    ctrl, _ = _session(tmp_path)
+    ctrl.load_data_path(_data_csv3(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("toggle_record", {"index": 1, "value": True})  # 수작업 1행(빈칸 없는 행)
+    assert ctrl.snapshot()["guard"]["armed"] is True
+    res = ctrl.generate()
+    assert res["ok"] is True
+    assert ctrl.snapshot()["guard"]["armed"] is False       # 완주 집합과 일치 = 해제
+    ctrl.dispatch("toggle_record", {"index": 0, "value": True})  # 완주 밖 재편집 = 재무장
+    assert ctrl.snapshot()["guard"]["armed"] is True
+
+
+def test_guard_blocks_job_switch_until_confirmed(tmp_path):
+    """T1 가드 왕복(RC-02 동형) — 무변이 needs_confirm, confirm=True 만 전환."""
+    ctrl, _ = _session(tmp_path)
+    _second_job(ctrl, tmp_path)
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("toggle_record", {"index": 0, "value": True})  # 무장
+    res = ctrl.dispatch("select_job", {"name": "공고서2"})
+    assert res["needs_confirm"] is True and res["kind"] == "switch_job"
+    assert res["sel_count"] == 1 and res["target"] == "공고서2"
+    snap = ctrl.snapshot()
+    assert snap["job_name"] == "공고서"                      # 무변이 — 세션 그대로
+    assert snap["has_data"] is True
+    ctrl.dispatch("select_job", {"name": "공고서2", "confirm": True})
+    assert ctrl.snapshot()["job_name"] == "공고서2"          # 확인 후 전환
+
+
+def test_guard_free_paths_do_not_block(tmp_path):
+    """비무장 전환·같은 작업 재선택·레지스트리 소실 무효화는 가드에 안 걸린다."""
+    ctrl, _ = _session(tmp_path)
+    _second_job(ctrl, tmp_path)
+    assert ctrl.dispatch("select_job", {"name": "공고서2"}) is None  # 비무장 = 즉시 전환
+    assert ctrl.snapshot()["job_name"] == "공고서2"
+    # 소실 무효화(C6) — 무장 상태여도 유령 세션으로 좌초시키지 않는다(confirm 승계).
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("toggle_record", {"index": 0, "value": True})
+    ctrl.registry.delete("공고서2")
+    ctrl.dispatch("refresh", {})
+    assert ctrl.snapshot()["has_job"] is False
+
+
+def test_guard_state_query_is_live_and_pushless(tmp_path):
+    """guard_state = 실시간 무변이 질의(리뷰 #4·#8) — 판정은 항상 Python 이 지금 내린다.
+
+    스냅샷 캐시(LAST.guard)는 generate(디스패치 밖, 무푸시) 뒤 stale — 표면 사전 확인이
+    이 질의를 소비해 거짓 모달/무확인 통과 양방향 오판을 막는다. 질의는 push 도 없다.
+    """
+    ctrl, pushes = _session(tmp_path)
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("toggle_record", {"index": 0, "value": True})
+    before = len(pushes)
+    g = ctrl.dispatch("guard_state", {})
+    assert g["armed"] is True and g["sel_count"] == 1
+    assert len(pushes) == before                       # 무변이 질의 = push 생략
+
+
+def test_needs_confirm_does_not_push(tmp_path):
+    """가드 차단 왕복은 무변이 — 동일 스냅샷 전량 재계산·재렌더를 얹지 않는다(리뷰 #8)."""
+    ctrl, pushes = _session(tmp_path)
+    _second_job(ctrl, tmp_path)
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("toggle_record", {"index": 0, "value": True})
+    before = len(pushes)
+    res = ctrl.dispatch("select_job", {"name": "공고서2"})
+    assert res["needs_confirm"] is True
+    assert len(pushes) == before                       # 차단 = 상태 그대로 = push 생략
+
+
+def test_partial_failure_keeps_guard_armed(tmp_path, monkeypatch):
+    """부분 실패 런은 완주가 아니다(리뷰 #1) — 실패분 재시도 선택을 무확인 파괴에서 지킨다."""
+    import hwpxfiller.webapp.screen_job as sj
+
+    class _FakeResult:
+        def __init__(self):
+            self.ok = False
+            self.output_path = "x.hwpx"
+            self.error = "boom"  # describe_result_error 는 문자열 계약
+
+    class _FakeBatch:
+        succeeded, failed, total = 0, 1, 1
+        results = [_FakeResult()]
+
+    monkeypatch.setattr(sj, "generate_batch", lambda *a, **k: _FakeBatch())
+    ctrl, _ = _session(tmp_path)
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("toggle_record", {"index": 1, "value": True})  # 수작업 1행
+    res = ctrl.generate()
+    assert res["ok"] is True and res["failed"] == 1
+    assert ctrl.dispatch("guard_state", {})["armed"] is True     # 무장 유지(재시도 보호)
