@@ -425,6 +425,9 @@
     si.style.display = hasData ? "" : "none";
     // 타이핑 중엔 스냅샷이 입력값을 덮지 않는다(왕복 경합 — 확정은 다음 blur/재진입 렌더).
     if (document.activeElement !== si) si.value = f.search || "";
+    // 직전 필터 재적용(결정 28) — 슬롯 존재 ∧ 소스 일치일 때만 어포던스 노출.
+    $("jobFilterReapply").style.display =
+      hasData && f.reapply_available ? "" : "none";
     const wrap = $("jobTableWrap");
     const empty = $("jobTableEmpty");
     if (!hasData) {
@@ -799,6 +802,15 @@
       clearTimeout(searchTimer);
       const text = e.target.value;
       searchTimer = setTimeout(() => Bridge.call(SCREEN, "filter_search", { text }), 200);
+    });
+    // 직전 필터 재적용(결정 28) — 정의만 복원(선택 불변), 탈락은 시끄럽게 고지(백스톱).
+    $("jobFilterReapply").addEventListener("click", async () => {
+      const res = await Bridge.call(SCREEN, "filter_reapply", {});
+      if (!res.ok) { log("확인 필요: " + res.error); return; }
+      log(`직전 필터를 재적용했습니다 (조건 열: ${res.installed.join(", ") || "검색만"}).`);
+      if (res.dropped.length) {
+        log(`확인 필요: 현재 데이터에 없는 조건은 빠졌습니다 — ${res.dropped.join(", ")}`);
+      }
     });
     // 필터 밖 선택 스트립 — 항목별 × 해제(리뷰 #6).
     $("jobSelStrip").addEventListener("click", (e) => {

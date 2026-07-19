@@ -547,7 +547,8 @@ _JOB_MIRROR_PROBE_JS = r"""
                {index:1, selected:true, name:'doc-002.hwpx', summary:'사무비품'}],
       // 필터 표면(블록 4, 슬라이스 4 PR-2b) — 검색 「전산」이 공고명 가지에 선 상태를 합성:
       // 가시 1행(하이라이트 세그먼트) + 필터 밖 선택 1행(스트립) + 유래 수치 병기(S4).
-      filter:{active:true, search:'전산', chips:['(공고명) 포함 「전산」'],
+      filter:{active:true, reapply_available:true, search:'전산',
+              chips:['(공고명) 포함 「전산」'],
               definition:'(공고명) 포함 「전산」', branches:['공고명'],
               columns:[{name:'공고명', kind:'text', active:false},
                        {name:'금액', kind:'amount', active:false}]},
@@ -608,6 +609,13 @@ _JOB_MIRROR_PROBE_JS = r"""
       {sel_count:3, in_def:2, extra:1, filter_active:true, filter_parts:2}, '작업을 전환하면');
     // 데이터 변경 사전 확인 배선 존재 핀(리뷰 #6) — JS 전용 가드 지점의 삭제 회귀 표식.
     out.data_guard_wired = typeof window.JobScreen.confirmDataSwapIfArmed === 'function';
+    // 직전 필터 재적용 버튼(결정 28) — reapply_available 스냅샷이 어포던스를 실제로 켜고 끈다.
+    // 양 분기 모두 핀(리뷰 #3): 켜짐만 고정하면 "항상 떠 있는 죽은 버튼" 회귀가 초록으로 샌다.
+    out.reapply_shown = getComputedStyle(document.getElementById('jobFilterReapply')).display !== 'none';
+    snap.filter.reapply_available = false;
+    window.__push('job', snap);
+    out.reapply_hidden = getComputedStyle(document.getElementById('jobFilterReapply')).display === 'none';
+    snap.filter.reapply_available = true;
   } catch (e) { out.error = 'throw:' + (e && e.message); }
   return out;
 })()
