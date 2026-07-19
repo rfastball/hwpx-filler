@@ -29,7 +29,7 @@ RESPONSIVE_BREAKPOINT_PX = 820
 # 전체 스냅샷 재렌더가 포커스·캐럿·스크롤을 뭉개지 않도록 render() 를 Preserve.around 로 감싸는
 # 화면들(#28). 어느 화면이 래핑을 조용히 떨구면 상호작용 유실 회귀 → 정적 가드로 차단.
 WEB_JS_DIR = Path(__file__).resolve().parents[1] / "web" / "js"
-PRESERVE_WRAPPED_SCREENS = ("txt", "editor", "run")
+PRESERVE_WRAPPED_SCREENS = ("txt", "editor", "run", "job")  # +job(R-flow 슬라이스 1, #90)
 
 # 살아있는 컴포넌트 갤러리(개발 전용) — 실 tokens.css+app.css 를 <link> 로 물어 드리프트 0.
 GALLERY = Path(__file__).resolve().parents[1] / "docs" / "UI_GALLERY.html"
@@ -38,13 +38,14 @@ GALLERY = Path(__file__).resolve().parents[1] / "docs" / "UI_GALLERY.html"
 SCREEN_ROOTS = (
     "scr-home", "scr-editor", "scr-run", "scr-txt", "scr-tpl",
     "scr-pool",  # 데이터 관리(#26 #4)
+    "scr-job",  # 「작업」 화면(R-flow 슬라이스 1, #90)
 )
 
 # 화면별 데이터 라벨은 반드시 고유 id 여야 한다(#27 dup-id 회귀 가드).
-SCOPED_DATA_LABELS = ("runDataLabel", "txtDataLabel")
+SCOPED_DATA_LABELS = ("runDataLabel", "txtDataLabel", "jobDataLabel")
 
 # 접힘 상태에서 라벨이 사라지는 내비 버튼(회귀 시 접근 이름·툴팁 소실 → #27).
-NAV_SCREENS = ("home", "editor", "run", "txt", "tpl", "pool")  # +pool(#26 #4)
+NAV_SCREENS = ("home", "job", "editor", "run", "txt", "tpl", "pool")  # +job(#90) +pool(#26 #4)
 
 # 커스텀 모달 → aria-labelledby 가 가리켜야 할 제목 id(다이얼로그 시맨틱, #27/#28).
 # sheetModal 은 다중 시트 확정 게이트(#33) — 같은 Modal 헬퍼·다이얼로그 계약을 공유한다.
@@ -54,6 +55,7 @@ MODAL_LABELLEDBY = {
     "sheetModal": "sheetTitle",
     "poolRegModal": "poolRegTitle",  # 데이터 등록(#26 #4)
     "poolModal": "poolTitle",  # 등록 데이터 선택(#26 #6) — 정적 골격 이관(r3 K12)
+    "jobOverwriteModal": "jobOverwriteTitle",  # 「작업」 덮어쓰기 확인(R-flow 슬라이스 1, RC-02)
     "confirmModal": "confirmModalTitle",  # 네이티브 window.confirm 대체(#86)
     "promptModal": "promptModalTitle",  # 네이티브 window.prompt 대체(#86)
 }
@@ -302,7 +304,7 @@ def test_forced_colors_block_present_in_web_diff():
 
 # pickDataFile(=pick_data_file) 을 소비하는 모든 화면 — 브리지 반환 계약이 screen-불가지라
 # needs_sheet 분기를 처리해야 다중 시트가 첫 시트로 강등되지 않는다(리뷰 P1: txt 누락 회귀).
-DATA_PICK_SCREENS = ("editor", "run", "txt")
+DATA_PICK_SCREENS = ("editor", "run", "txt", "job")  # +job(R-flow 슬라이스 1, #90)
 
 
 def test_sheet_picker_loaded_and_wired_on_all_data_screens():
@@ -339,6 +341,41 @@ def test_preserve_helper_loaded_and_wraps_screen_renders():
         assert "Preserve.around" in src, (
             f"{scr}.js 의 render() 가 Preserve.around 래핑을 잃었습니다 — 재렌더 시 상호작용 유실(#28)."
         )
+def test_job_overwrite_keeps_busy_lock_through_modal():
+    """리뷰 #1 회귀 가드: 작업 화면 덮어쓰기 모달 대기 동안 생성 버튼이 재활성되지 않는다.
+
+    modal.js 는 포커스 트랩이 없어(blocking window.confirm 과 다름) 모달 뒤 살아있는 생성
+    버튼에 Tab+Enter 가 닿으면 두 번째 생성이 첫 확인 미결인 채 시작된다(같은 폴더 동시 기록).
+    busy-lock 해제(``generating = false``)가 덮어쓰기 확인(``confirmOverwrite``) **뒤**에 와야
+    한다 — 소스 순서로 정적 가드(실 거동은 selftest 게이트 소관).
+    """
+    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    assert "confirmOverwrite(res.overwrite_text)" in src, "덮어쓰기 재진술 경로가 사라졌습니다(#1)."
+    # doGenerate 안에서 busy 해제가 모달 대기보다 앞서면(옛 구조) 이 순서가 뒤집힌다.
+    i_confirm = src.index("confirmOverwrite(res.overwrite_text)")
+    i_release = src.index("generating = false; setBusy(false);")
+    assert i_confirm < i_release, (
+        "busy-lock 해제가 덮어쓰기 모달 await 전에 온다 — 모달 열림 동안 생성 버튼 재활성으로 "
+        "재진입 경합(리뷰 #1). finally 를 needs_overwrite 흐름 뒤로 미뤄라."
+    )
+
+
+def test_job_completion_zone_reset_gated_by_session_change():
+    """리뷰 #3 회귀 가드: 완료 존 리셋이 매 push 가 아니라 세션 변경에 결속된다(결정 7).
+
+    작업 화면은 REFRESH_ON_NAV 에 있어 레일 복귀마다 full re-push 가 돈다 — 리셋이 무조건이면
+    세션 불변인데도 생성 리포트가 소멸(결정 7: 완료 존 = 세션 스코프 보존 위배). 세션 지문
+    (``sessionKey``)이 바뀔 때만 리셋해야 한다.
+    """
+    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    assert "function sessionKey(" in src, "완료 존 세션 지문(sessionKey)이 없습니다(#3)."
+    assert "key !== lastSessionKey" in src, "리셋이 세션 변경에 결속되지 않았습니다(#3)."
+    # 옛 무조건 리셋(if (!generating) resetGenResult();)이 남아 있으면 안 된다.
+    assert "if (!generating) resetGenResult()" not in src, (
+        "무조건 완료 존 리셋이 남아 있습니다 — nav 복귀마다 생성 리포트 소멸(리뷰 #3, 결정 7)."
+    )
+
+
 def test_run_overwrite_keeps_busy_lock_through_modal():
     """PR #92 리뷰 #2 회귀 가드: 실행 화면 덮어쓰기 모달 대기 동안 생성 버튼이 재활성되지 않는다.
 
