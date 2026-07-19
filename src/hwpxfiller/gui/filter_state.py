@@ -251,6 +251,30 @@ class FilterModel:
         self._require(column)
         return self._cols[column].is_active()
 
+    def column_state(self, column: str) -> dict:
+        """열 조건의 직렬 상태 — 표면 패널 프리필용(내부 표현 비공개 유지).
+
+        ``values`` 는 체크 목록(None=(전체)), ``range`` 는 절/결합자 dict(None=없음).
+        """
+        self._require(column)
+        cond = self._cols[column]
+        rng = None
+        if cond.range_ is not None:
+            r = cond.range_
+            rng = {
+                "first": {"op": r.first.op, "operand": r.first.operand},
+                "second": (
+                    {"op": r.second.op, "operand": r.second.operand}
+                    if r.second is not None else None
+                ),
+                "joiner": r.joiner,
+            }
+        return {
+            "text": cond.text,
+            "values": list(cond.values) if cond.values is not None else None,
+            "range": rng,
+        }
+
     @property
     def search_text(self) -> str:
         return self._search

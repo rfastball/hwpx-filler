@@ -545,6 +545,18 @@ _JOB_MIRROR_PROBE_JS = r"""
       filename_pattern:'doc-{{seq}}', has_data:true, record_count:2, selected_count:2,
       records:[{index:0, selected:true, name:'doc-001.hwpx', summary:'전산장비'},
                {index:1, selected:true, name:'doc-002.hwpx', summary:'사무비품'}],
+      // 필터 표면(블록 4, 슬라이스 4 PR-2b) — 검색 「전산」이 공고명 가지에 선 상태를 합성:
+      // 가시 1행(하이라이트 세그먼트) + 필터 밖 선택 1행(스트립) + 유래 수치 병기(S4).
+      filter:{active:true, search:'전산', chips:['(공고명) 포함 「전산」'],
+              definition:'(공고명) 포함 「전산」', branches:['공고명'],
+              columns:[{name:'공고명', kind:'text', active:false},
+                       {name:'금액', kind:'amount', active:false}]},
+      table:{columns:['공고명','금액'],
+             rows:[{index:0, selected:true, name:'doc-001.hwpx', summary:'전산장비',
+                    cells:[[['전산',true],['장비',false]], [['1,000,000원',false]]]}],
+             visible_count:1,
+             hidden_selected:[{index:1, selected:true, name:'doc-002.hwpx', summary:'사무비품'}]},
+      restate:{origin:'manual', filter_active:true, in_def:1, extra:1, sample:[0]},
       preflight:{level:'ok', text:'ok'},
       mirror:[
         {name:'공고명', state:'filled', acknowledged:false, value:'전산장비 (표본 · 외 1개 값)', formatted:false},
@@ -561,6 +573,19 @@ _JOB_MIRROR_PROBE_JS = r"""
       document.querySelectorAll('#jobMirror .mir .st'), function (e) { return e.textContent; });
     out.restate_shown = getComputedStyle(document.getElementById('jobRestate')).display !== 'none';
     out.restate_names = document.querySelectorAll('#jobRestate .namelist .nm').length;
+    // 필터 표면 되읽기(블록 4) — 가시 행·하이라이트·칩·가지 ×·스트립·유래 수치·아이콘.
+    out.tbl_rows = document.querySelectorAll('#jobTableBody tr[data-i]').length;
+    out.tbl_mark = (function(){ var m = document.querySelector('#jobTableBody mark');
+      return m ? m.textContent : ''; })();
+    out.ficos = document.querySelectorAll('#jobTableHead .fico[data-col]').length;
+    out.chips_text = document.getElementById('jobFilterChips').textContent;
+    out.branch_prune = !!document.querySelector('#jobFilterChips [data-prune="공고명"]');
+    out.strip_shown = getComputedStyle(document.getElementById('jobSelStrip')).display !== 'none';
+    out.strip_text = document.getElementById('jobSelStrip').textContent;
+    out.sel_line = document.getElementById('jobRestate').textContent;
+    // 열 패널 기본 닫힘 — [hidden] 이 display:flex 를 실제로 이긴다(부록 B-9 overlay/hidden
+    // 결함류의 자동 눈검증: .colpanel 은 flex 라 override 가 없으면 hidden 이 은닉에 실패한다).
+    out.panel_hidden = getComputedStyle(document.getElementById('jobColPanel')).display === 'none';
     // 드리프트 스냅샷 → 거울 표가 차단 배너 + 행동 링크로 교체되는지(overlay 아닌 실제 교체).
     // 실앱에서 드리프트는 게이트 danger 를 합성하므로 게이트도 danger 로 세운다(재진술 은닉은
     // 게이트 단일 출처를 소비한다 — 리뷰).

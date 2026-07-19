@@ -220,6 +220,31 @@ class TestWebSelftestGate:
         assert j["restate_shown"] is True, "재진술 블록이 표시되지 않았습니다(선택 있음)."
         assert j["restate_names"] == 2, f"재진술 이름 목록이 선택 수와 다릅니다: {j['restate_names']!r}"
 
+    def test_job_filter_surface_renders_table_chips_strip(self, selftest_result: dict) -> None:
+        # 필터 표면(블록 4, 슬라이스 4 PR-2b) — 합성 필터 스냅샷이 실 WebView2 에서:
+        # 가시 1행 테이블 + <mark> 하이라이트(Python 세그먼트를 그대로 칠함) + 열 머리 필터
+        # 아이콘 + 칩 줄(정의 재진술)·가지 ×(프루닝) + 필터 밖 선택 스트립(결정 3) + 선택
+        # 유래 수치 병기(S4)로 되읽힌다.
+        j = selftest_result["job_mirror"]
+        assert j["tbl_rows"] == 1, f"가시 행 렌더 수가 다릅니다: {j['tbl_rows']!r}"
+        assert j["tbl_mark"] == "전산", f"하이라이트 세그먼트 미렌더: {j['tbl_mark']!r}"
+        assert j["ficos"] == 2, f"열 머리 필터 아이콘 수가 다릅니다: {j['ficos']!r}"
+        assert "「전산」" in j["chips_text"], f"칩 줄 정의 재진술 누락: {j['chips_text']!r}"
+        assert j["branch_prune"] is True, "가지 칩 × 프루닝 어포던스가 없습니다."
+        assert j["strip_shown"] is True, "필터 밖 선택 스트립이 표시되지 않았습니다(결정 3)."
+        assert "1행" in j["strip_text"] and "doc-002.hwpx" in j["strip_text"], (
+            f"스트립이 필터 밖 선택을 재진술하지 않습니다: {j['strip_text']!r}"
+        )
+        assert "정의 매치 1" in j["sel_line"] and "정의 밖 1" in j["sel_line"], (
+            f"선택 유래 수치 병기(S4) 누락: {j['sel_line']!r}"
+        )
+
+    def test_job_filter_panel_hidden_beats_flex(self, selftest_result: dict) -> None:
+        # 열 필터 패널 기본 닫힘 — [hidden] 이 .colpanel 의 display:flex 를 실제로 이긴다
+        # (부록 B-9 overlay/hidden 충돌 결함류의 자동 눈검증 — 시연에서 실증된 그 결함).
+        j = selftest_result["job_mirror"]
+        assert j["panel_hidden"] is True, "colpanel [hidden] 이 display:flex 에 져서 항시 떠 있습니다."
+
     def test_job_drift_replaces_mirror_with_blocking_banner(self, selftest_result: dict) -> None:
         # danger(구조 드리프트)는 거울 표와 섞이지 않고 차단 배너 + 행동 링크로 **교체**된다
         # (결정 36·S9). overlay 로 표 위에 얹히는 게 아니라 실제로 표가 사라지고 배너가 선다.
