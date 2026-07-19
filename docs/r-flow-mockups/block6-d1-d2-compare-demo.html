@@ -1,0 +1,1014 @@
+<!-- R-flow 블록 6 비교 시연 v1.1 (2026-07-19) — D1·D2 추천안 택일용. 미확정(토의 중).
+     v1.1 피드백 반영(2026-07-19): ① D1 정의줄→정의 블록(선택/생성 2행 + 산출물 이름 목록,
+       소량 전부·대량 표본+펼침 = 블록 1 문언 실물화) — 무충돌 시나리오의 명료성 부족 지적 반영.
+       ② D2 드리프트 배너에 행동 링크 「작업 에디터에서 매핑 확정…」(경보 어포던스는 숨지
+       않는다, F30 경보 행 동형) — 막다른 경보 지적 반영. ③ 행의 대표 이름 = 실파일명 정준 +
+       식별 요약(F33) 보조 병기(임의 열 추측 배제 — 파일명 패턴이 사용자가 선언한 행 정체성,
+       주석 10) — 대표 데이터 임의성 질문의 설계 답.
+     v1.2 증보(2026-07-19, 식별 요약 휴리스틱 확정 반영): 부록 섹션 — 확정 사양 v2(2층 구조:
+       인지층 2 고정+구별층 조건부 1 · 자격 문턱 폐기[실데이터 반증 3건: 문턱 민감도 널뜀·최소
+       식별의 재인 빈곤·유일 키 이후 직교성 붕괴] · 결격 5종=빈/상수/순번/파일명 내용 토큰/중복
+       열[행별 값 동일] · 고정 체인·가변 깊이 · MITM 기각[탐색 공간 소멸·안정성·가독성])을
+       JS로 이식해 실데이터(나라 실수확 12행×53열 임베드·합성 함정·진성 중복)에서 라이브 계산
+       하는 4장면. 실험 원본 = scratchpad 프로브(나라·101 CSV 2벌·합성) — 4장면은 링1 단일
+       함수의 회귀 테스트 후보.
+     블록 6 = 계약 승계 점검표. 이 시연은 그중 표면 설계 파급이 큰 두 항목의 비교 실물:
+       D1 — 생성 의식의 합성: A안(클릭 시 선택 재진술 모달, 충돌 시 2연타) vs
+            B안(게이트 정의줄 인라인 상시 + 덮어쓰기 단일 모달이 수치 합성을 겸함, 추천).
+            근거 삼각: 블록 1 "이미 보이는 것 재검증 안 함" · UD-06 "모달은 danger 예외만" ·
+            블록 4 우회 "담보는 게이트 정의줄이 진다"의 완성. 무충돌 생성은 가산적·재실행
+            가능이라 블록 4 소거 판정(자가복구=가드 불요)상 파괴가 아니고, 파괴 지점은
+            덮어쓰기뿐 → 모달은 정확히 거기 1회.
+       D2 — ADR-E 필드 배지의 4존 거처: ⓐ데이터 존 열머리 / ⓒ게이트 푸터(현행 run.js 계승)
+            대비 ⓑ본문 존 거울=필드 채움 테이블(추천) — 배지가 별도 UI가 아니라 거울의 행.
+            블록 5 채움 표지 삼분(원문/채움 음영/미채움 빨강)과 색 언어 통일, danger(드리프트·
+            토큰)는 거울 자리 차단 배너로 분리, 원인 탐색(어느 행)은 데이터 존 (빈값) 필터 소관.
+     서브 결정 4건 승인 반영(2026-07-19): S4 혼합 정의줄=델타 병기 · S8 ack 스코프=필드×데이터
+       유지(새 데이터만 리셋) · S10 N>1 값 열=표본 명시 병기 · S9 포커스 서열=작업 흐름순
+       (게이트 서열은 심각도순과 분리).
+     승계 계약 재주행 포함: RC-23 게이트 단일 산출 문구 그대로 · RC-02 삼자 일치(_names_now,
+       F33 실파일명 미리보기=선택 행만) · ADR-E ack/UD-19 철회 · 완료 요약 미입력 병기 ·
+       모달=modal.js 문법(기본 포커스=머무르기, Escape=머무르기; run.js:222 window.confirm 의
+       승계 지점, D3 연동).
+     관례: 블록 1~5 아카이브(0de1d12·ff971a4·76d4e00·a401285·a83d107/75fc878)의 토큰·보라
+       결정 주석 승계. UI 문구 em-dash 금지(블록 3 카피 교훈) — 현행 run_state 문구 인용부는
+       원문 유지(R-copy 라운드 소관). 박제 정본 아님. -->
+<title>블록 6 · D1 생성 의식 · D2 배지 거처 — 비교 시연</title>
+<style>
+:root{
+  --a-primary:#2f5fbf; --a-primary-h:#274fa0; --a-warn:#a05a00; --a-danger:#c0392b;
+  --a-ok:#1e8449; --a-muted:#656a72; --a-border:#e2e4e8; --a-card:#ffffff;
+  --a-window:#f6f7f9; --a-ink:#1c2126; --a-on-accent:#ffffff; --a-shadow:rgba(0,0,0,.2);
+  --a-sel:#dfe6fb;
+  --n-surface-alt:#f3f4f6; --n-header-bg:#eef1f4; --n-border-strong:#cbd0d6;
+  --n-ink-soft:#5c626b; --n-header-ink:#4a505a; --n-ink-control:#2b3038;
+  --sp-2:2px; --sp-4:4px; --sp-6:6px; --sp-8:8px; --sp-10:10px; --sp-12:12px; --sp-16:16px; --sp-24:24px;
+  --rad-control:6px; --rad-surface:9px; --rad-pill:999px;
+  --fs-caption:11px; --fs-body:13px; --fs-strong:15px; --fs-section:19px;
+  --ann:#8b5cf6; --ann-bg:#f5f1fe;
+  --ok-tint:#e2f3e9; --warn-tint:#fdf3d7; --danger-tint:#fdeae7;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+  --a-primary:#6f97e8; --a-primary-h:#8badf0; --a-warn:#e0a850; --a-danger:#ec7264;
+  --a-ok:#43b877; --a-muted:#98a0ab; --a-border:#333a44; --a-card:#1c2127;
+  --a-window:#131619; --a-ink:#e7eaee; --a-on-accent:#0f1418; --a-shadow:rgba(0,0,0,.5);
+  --a-sel:#1e2846;
+  --n-surface-alt:#23272d; --n-header-bg:#191d22; --n-border-strong:#454c56;
+  --n-ink-soft:#aab1bb; --n-header-ink:#c2c8d0; --n-ink-control:#dbe0e6;
+  --ann:#a78bfa; --ann-bg:#241f33;
+  --ok-tint:#1c3327; --warn-tint:#3a3320; --danger-tint:#3a2220;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --a-primary:#6f97e8; --a-primary-h:#8badf0; --a-warn:#e0a850; --a-danger:#ec7264;
+  --a-ok:#43b877; --a-muted:#98a0ab; --a-border:#333a44; --a-card:#1c2127;
+  --a-window:#131619; --a-ink:#e7eaee; --a-on-accent:#0f1418; --a-shadow:rgba(0,0,0,.5);
+  --a-sel:#1e2846;
+  --n-surface-alt:#23272d; --n-header-bg:#191d22; --n-border-strong:#454c56;
+  --n-ink-soft:#aab1bb; --n-header-ink:#c2c8d0; --n-ink-control:#dbe0e6;
+  --ann:#a78bfa; --ann-bg:#241f33;
+  --ok-tint:#1c3327; --warn-tint:#3a3320; --danger-tint:#3a2220;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--a-window);color:var(--a-ink);
+  font:13px/1.5 "Pretendard","Malgun Gothic",system-ui,sans-serif;padding:var(--sp-24)}
+h1,h2,h3,h4,p,ul{margin:0}
+button{font:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
+.wrap{max-width:1060px;margin:0 auto;display:flex;flex-direction:column;gap:var(--sp-24)}
+
+.eyebrow{font-size:var(--fs-caption);letter-spacing:.08em;color:var(--ann);font-weight:700}
+.head h1{font-size:26px;line-height:1.25;text-wrap:balance;margin-top:var(--sp-6)}
+.head p{color:var(--a-muted);margin-top:var(--sp-8);max-width:70ch}
+.head b{color:var(--a-ink)}
+h2{font-size:var(--fs-section);text-wrap:balance}
+.sec{display:flex;flex-direction:column;gap:var(--sp-12)}
+.seclede{color:var(--a-muted);max-width:76ch}
+.seclede b{color:var(--a-ink)}
+
+.btn{font-size:var(--fs-body);border:1px solid var(--n-border-strong);background:var(--a-card);
+  color:var(--n-ink-control);padding:var(--sp-4) var(--sp-12);border-radius:var(--rad-control);white-space:nowrap}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.primary{border-color:var(--a-primary);background:var(--a-primary);color:var(--a-on-accent);font-weight:600}
+.btn.primary:hover:enabled{background:var(--a-primary-h)}
+.btn.sm{font-size:var(--fs-caption);padding:var(--sp-2) var(--sp-8)}
+
+/* 시나리오 선택 */
+.scn{display:flex;gap:var(--sp-8);flex-wrap:wrap;align-items:center}
+.scn .lbl{font-size:var(--fs-caption);color:var(--a-muted);font-weight:700}
+.scnbtn{font-size:var(--fs-caption);border:1px solid var(--n-border-strong);background:var(--a-card);
+  color:var(--n-ink-control);padding:var(--sp-2) var(--sp-10);border-radius:var(--rad-pill)}
+.scnbtn.on{border-color:var(--a-primary);background:var(--a-sel);color:var(--a-ink);font-weight:600}
+
+/* 비교 그리드 */
+.duo{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-16);align-items:start}
+@media (max-width:920px){.duo{grid-template-columns:1fr}}
+
+/* 화면 스테이지(미니 세션 패널) */
+.stage{position:relative;overflow:hidden;background:var(--a-card);border:1px solid var(--n-border-strong);
+  border-radius:var(--rad-surface);box-shadow:0 6px 20px var(--a-shadow);display:flex;flex-direction:column}
+.stg-tag{font-size:var(--fs-caption);font-weight:700;padding:var(--sp-6) var(--sp-16);
+  border-bottom:1px solid var(--a-border);background:var(--n-header-bg);color:var(--n-header-ink);
+  display:flex;align-items:center;gap:var(--sp-8)}
+.stg-tag .rec{color:var(--a-ok);background:var(--ok-tint);border-radius:var(--rad-pill);padding:0 var(--sp-8)}
+.scr-head{display:flex;align-items:center;gap:var(--sp-10);padding:var(--sp-10) var(--sp-16);
+  border-bottom:1px solid var(--a-border)}
+.scr-head h3{font-size:var(--fs-strong)}
+.pill{margin-left:auto;font-size:var(--fs-caption);font-weight:700;border-radius:var(--rad-pill);
+  padding:2px var(--sp-10);white-space:nowrap}
+.pill[data-level="ok"]{background:var(--ok-tint);color:var(--a-ok)}
+.pill[data-level="warn"]{background:var(--warn-tint);color:var(--a-warn)}
+.pill[data-level="danger"]{background:var(--danger-tint);color:var(--a-danger)}
+.pill[data-level="idle"]{background:var(--n-surface-alt);color:var(--a-muted)}
+
+.zone{padding:var(--sp-8) var(--sp-16);border-bottom:1px solid var(--a-border);
+  display:flex;flex-direction:column;gap:var(--sp-6)}
+.zone:last-child{border-bottom:none}
+.zlbl{font-size:var(--fs-caption);letter-spacing:.06em;color:var(--n-header-ink);font-weight:700}
+.slotline{display:flex;gap:var(--sp-8);align-items:center;flex-wrap:wrap;font-size:var(--fs-body)}
+.dlabel{color:var(--n-ink-control);background:var(--n-surface-alt);border:1px solid var(--a-border);
+  border-radius:var(--rad-control);padding:1px var(--sp-8);font-size:var(--fs-caption)}
+
+.tbwrap{overflow-x:auto}
+table.tb{width:100%;border-collapse:collapse;font-size:var(--fs-body)}
+.tb th{font-size:var(--fs-caption);color:var(--n-header-ink);text-align:left;font-weight:700;
+  padding:var(--sp-2) var(--sp-8);white-space:nowrap}
+.tb td{padding:var(--sp-4) var(--sp-8);border-top:1px solid var(--a-border);vertical-align:top}
+.tb td.num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.tb tr.on td{background:var(--a-sel)}
+.fname{font-size:var(--fs-caption);color:var(--a-muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* 거울(필드 채움 테이블) */
+.mir tr td:first-child{font-weight:600;white-space:nowrap;width:96px}
+.mir tr.miss td{background:var(--danger-tint)}
+.mir tr.miss{cursor:pointer}
+.mir tr.ackd td{background:var(--warn-tint)}
+.mir tr.ackd{cursor:pointer}
+.mir tr.blankd td{background:var(--n-surface-alt);color:var(--a-muted)}
+.mir .sample{color:var(--a-muted)}
+.st{font-size:var(--fs-caption);border-radius:var(--rad-pill);padding:1px var(--sp-8);white-space:nowrap;font-weight:600}
+.st.filled{background:var(--ok-tint);color:var(--a-ok)}
+.st.miss{background:var(--danger-tint);color:var(--a-danger)}
+.st.ackd{background:var(--warn-tint);color:var(--a-warn)}
+.st.blankd{background:var(--n-surface-alt);color:var(--a-muted)}
+.drift{background:var(--danger-tint);color:var(--a-danger);border:1px solid var(--a-danger);
+  border-radius:var(--rad-control);padding:var(--sp-8) var(--sp-12);font-size:var(--fs-body);
+  display:flex;flex-direction:column;gap:var(--sp-6);align-items:flex-start}
+.drift p{margin:0}
+.drnote{font-size:var(--fs-caption)}
+.mirempty{color:var(--a-muted);font-size:var(--fs-body);padding:var(--sp-4) 0}
+
+/* 게이트 존 */
+.defline{font-size:var(--fs-body);color:var(--a-ink)}
+.defline[data-level="warn"]{color:var(--a-warn)}
+.defline[data-level="danger"]{color:var(--a-danger)}
+.defline[data-level="muted"]{color:var(--a-muted)}
+.defblk{display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--sp-2) var(--sp-10);
+  font-size:var(--fs-body);align-items:start}
+.defblk .dl{font-size:var(--fs-caption);color:var(--n-header-ink);font-weight:700;
+  padding-top:2px;white-space:nowrap}
+.namelist{display:flex;flex-direction:column;gap:2px;margin-top:var(--sp-4)}
+.namelist .nm{font-size:var(--fs-caption);color:var(--a-muted);font-variant-numeric:tabular-nums}
+.namelist .nm b{color:var(--a-ink);font-weight:600}
+.namelist .btn{align-self:flex-start;margin-top:2px}
+.gline{display:flex;gap:var(--sp-10);align-items:center;flex-wrap:wrap}
+.bar{height:6px;background:var(--n-surface-alt);border-radius:var(--rad-pill);overflow:hidden;flex:1;min-width:80px}
+.bar i{display:block;height:100%;width:0;background:var(--a-primary);transition:width .5s}
+.done{font-size:var(--fs-body);color:var(--a-ok);min-height:20px}
+.done:empty::before{content:"아직 이 세션의 완료 기록이 없습니다.";color:var(--a-muted)}
+
+.tally{display:flex;gap:var(--sp-12);font-size:var(--fs-caption);color:var(--a-muted);
+  padding:var(--sp-8) var(--sp-16);border-top:1px dashed var(--n-border-strong);background:var(--n-header-bg)}
+.tally b{color:var(--a-ink);font-variant-numeric:tabular-nums}
+
+/* 모달(modal.js 문법) */
+.ovl{position:absolute;inset:0;background:var(--a-shadow);display:flex;align-items:center;
+  justify-content:center;padding:var(--sp-16);z-index:5}
+.ovl[hidden]{display:none!important}
+.modal{background:var(--a-card);border:1px solid var(--n-border-strong);border-radius:var(--rad-surface);
+  box-shadow:0 10px 30px var(--a-shadow);max-width:430px;width:100%;padding:var(--sp-16);
+  display:flex;flex-direction:column;gap:var(--sp-10)}
+.modal h4{font-size:var(--fs-strong)}
+.modal .mb{white-space:pre-line}
+.modal .mlist{font-variant-numeric:tabular-nums;background:var(--n-surface-alt);
+  border-radius:var(--rad-control);padding:var(--sp-6) var(--sp-10);font-size:var(--fs-caption)}
+.macts{display:flex;justify-content:flex-end;gap:var(--sp-8)}
+
+/* 탈락 후보 카드 */
+.altduo{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-16)}
+@media (max-width:920px){.altduo{grid-template-columns:1fr}}
+.alt{background:var(--a-card);border:1px dashed var(--n-border-strong);border-radius:var(--rad-surface);
+  padding:var(--sp-12) var(--sp-16);display:flex;flex-direction:column;gap:var(--sp-8)}
+.alt h3{font-size:var(--fs-body)}
+.alt .why{font-size:var(--fs-caption);color:var(--a-muted)}
+.alt .why b{color:var(--a-danger)}
+.chips{display:flex;gap:var(--sp-6);flex-wrap:wrap}
+.fb{font-size:var(--fs-caption);border:1px solid var(--n-border-strong);border-radius:var(--rad-pill);
+  padding:1px var(--sp-8);background:var(--a-card);color:var(--n-ink-control)}
+.fb.miss{border-color:var(--a-danger);color:var(--a-danger);background:var(--danger-tint)}
+.fb.blankd{color:var(--a-muted);background:var(--n-surface-alt)}
+.colbadge{font-size:var(--fs-caption);color:var(--a-danger);background:var(--danger-tint);
+  border-radius:var(--rad-pill);padding:0 var(--sp-6);white-space:nowrap}
+
+/* 보라 결정 주석 */
+/* 부록 — 휴리스틱 4장면 */
+.ilog{display:flex;flex-direction:column;gap:2px;font-size:var(--fs-caption)}
+.ilog .ok{color:var(--a-ink)}
+.ilog .muted{color:var(--a-muted)}
+.ilog .warn{color:var(--a-warn)}
+th.hlc{background:var(--a-sel);color:var(--a-ink)}
+th.rejc{color:var(--a-muted);font-weight:400}
+th.rejc .x{color:var(--a-danger);font-weight:700}
+.cap2{font-size:var(--fs-caption);color:var(--a-muted)}
+.collide{color:var(--a-warn)}
+
+i.an{font-style:normal;background:var(--ann-bg);color:var(--ann);border-radius:var(--rad-pill);
+  font-size:10px;padding:0 5px;font-weight:700;vertical-align:super}
+.annlist{background:var(--ann-bg);border-radius:var(--rad-surface);padding:var(--sp-12) var(--sp-16);
+  display:flex;flex-direction:column;gap:var(--sp-6);font-size:var(--fs-body)}
+.annlist li{margin-left:var(--sp-16)}
+.annlist b{color:var(--ann)}
+
+@media (prefers-reduced-motion:reduce){ .bar i{transition:none} }
+</style>
+
+<div class="wrap">
+  <header class="head">
+    <div class="eyebrow">R-FLOW · 블록 6 — 계약 승계 점검표 · 비교 시연 v1</div>
+    <h1>D1 생성 의식 · D2 배지 거처</h1>
+    <p>토의에서 추천한 두 안을 실물로 비교한다. <b>D1</b>은 같은 시나리오를 A안·B안에서 나란히
+      재주행해 확인 의식(모달·클릭)의 차이를 계수하고, <b>D2</b>는 탈락 후보 2종을 정적 카드로,
+      추천안 ⓑ(거울=필드 채움 테이블)를 전체 인터랙티브 패널로 세운다. 승인된 서브 결정
+      4건(혼합 델타 병기·ack 스코프·표본 병기·포커스 서열)이 반영돼 있다. 박제 정본 아님.</p>
+  </header>
+
+  <!-- ══════════════════════════ D1 ══════════════════════════ -->
+  <section class="sec" id="d1">
+    <h2>D1 — 생성 의식: 재진술은 어디서, 모달은 몇 번인가</h2>
+    <p class="seclede">시나리오를 고르고 양쪽에서 「문서 생성」을 눌러 보라. <b>A안</b>은 재진술이
+      클릭 뒤(모달)에 숨고, <b>B안</b>은 <b>재진술 블록</b>(선택 유래 + 산출 요약 + 이름
+      목록)이 상시 발화한다<i class="an">1</i>. 충돌 시나리오(S3)에서 A안은 확인 2연타,
+      B안은 수치 합성 모달 1회<i class="an">2</i>. 모달은 modal.js 문법: 기본 포커스=머무르기,
+      Escape=머무르기<i class="an">3</i>. 이름 목록의 행 이름 규칙은 주석 10.</p>
+    <div class="scn" role="group" aria-label="시나리오 선택">
+      <span class="lbl">시나리오</span>
+      <button class="scnbtn on" data-scn="s1">S1 루틴 3건(무충돌)</button>
+      <button class="scnbtn" data-scn="s3">S3 재실행 10건(충돌 3)</button>
+      <button class="scnbtn" data-scn="s4">S4 혼합 가감 11건(무충돌)</button>
+    </div>
+    <div class="duo">
+
+      <!-- A안 -->
+      <div class="stage" id="stgA">
+        <div class="stg-tag">A안 · 클릭 시 재진술 모달</div>
+        <div class="scr-head"><h3>물품 입찰공고-5천만미만 · 실행</h3>
+          <span class="pill" data-level="ok" id="pillA">생성 준비</span></div>
+        <div class="zone">
+          <span class="zlbl">데이터</span>
+          <div class="slotline"><span class="dlabel">2026 조달대장.xlsx (파일)</span>
+            <span class="fname" id="selA">선택 3행</span></div>
+        </div>
+        <div class="zone">
+          <span class="zlbl">게이트</span>
+          <div class="defline" data-level="muted">재진술은 「문서 생성」을 누른 뒤 모달로 표시됩니다.</div>
+          <div class="gline">
+            <button class="btn primary" id="genA">문서 생성</button>
+            <div class="bar"><i id="barA"></i></div>
+          </div>
+        </div>
+        <div class="zone">
+          <span class="zlbl">완료</span>
+          <div class="done" id="doneA"></div>
+        </div>
+        <div class="tally">확인 의식 합계 <span>모달 <b id="tmA">0</b>회</span>
+          <span>클릭 <b id="tcA">0</b>회</span></div>
+        <div class="ovl" id="ovlA1" hidden>
+          <div class="modal" role="dialog" aria-modal="true" aria-label="선택 재진술">
+            <h4>생성 전 확인</h4>
+            <p class="mb" id="mbA1"></p>
+            <div class="macts">
+              <button class="btn" id="a1stay" data-def="1">취소</button>
+              <button class="btn primary" id="a1go">계속</button>
+            </div>
+          </div>
+        </div>
+        <div class="ovl" id="ovlA2" hidden>
+          <div class="modal" role="dialog" aria-modal="true" aria-label="덮어쓰기 확인">
+            <h4>덮어쓰기 확인</h4>
+            <p class="mb">저장 폴더에 같은 이름의 파일이 이미 있습니다.
+계속하면 기존 파일 3개를 덮어씁니다:</p>
+            <p class="mlist">공고서-20260719-001.hwpx<br>공고서-20260719-002.hwpx<br>공고서-20260719-003.hwpx</p>
+            <div class="macts">
+              <button class="btn" id="a2stay" data-def="1">머무르기</button>
+              <button class="btn primary" id="a2go">덮어쓰고 생성</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- B안 -->
+      <div class="stage" id="stgB">
+        <div class="stg-tag">B안 · 정의줄 인라인 + 덮어쓰기 단일 모달 <span class="rec">추천</span></div>
+        <div class="scr-head"><h3>물품 입찰공고-5천만미만 · 실행</h3>
+          <span class="pill" data-level="ok" id="pillB">생성 준비</span></div>
+        <div class="zone">
+          <span class="zlbl">데이터</span>
+          <div class="slotline"><span class="dlabel">2026 조달대장.xlsx (파일)</span></div>
+        </div>
+        <div class="zone">
+          <span class="zlbl">게이트 · 재진술 블록<i class="an">1</i></span>
+          <div class="defblk" id="defB"></div>
+          <div class="gline">
+            <button class="btn primary" id="genB">문서 생성</button>
+            <div class="bar"><i id="barB"></i></div>
+          </div>
+        </div>
+        <div class="zone">
+          <span class="zlbl">완료</span>
+          <div class="done" id="doneB"></div>
+        </div>
+        <div class="tally">확인 의식 합계 <span>모달 <b id="tmB">0</b>회</span>
+          <span>클릭 <b id="tcB">0</b>회</span></div>
+        <div class="ovl" id="ovlB" hidden>
+          <div class="modal" role="dialog" aria-modal="true" aria-label="덮어쓰기 확인">
+            <h4>덮어쓰기 확인</h4>
+            <p class="mb"><b>10건을 생성합니다.</b> 이 중 3건이 기존 파일을 덮어씁니다:</p>
+            <p class="mlist">공고서-20260719-001.hwpx<br>공고서-20260719-002.hwpx<br>공고서-20260719-003.hwpx</p>
+            <p class="mb">나머지 7건은 새 파일입니다.<i class="an">2</i></p>
+            <div class="macts">
+              <button class="btn" id="bstay" data-def="1">머무르기</button>
+              <button class="btn primary" id="bgo">덮어쓰고 생성</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <ul class="annlist">
+      <li><b>1 재진술 블록 상시 발화</b>(v1.1: 정의줄 1행의 명료성 부족 지적으로 2행+목록
+        구조로 재편) — 블록 4 우회 "담보는 게이트 정의줄이 진다"의 완성. <b>선택</b> 행 =
+        유래(정의 재진술 S1 / 델타 병기 S4, 승인된 서브 결정), <b>생성</b> 행 = 산출 요약
+        (건수·저장 폴더) + 산출물 이름 목록: 소량(3건 이하)=전부, 대량=표본 3건+「외 N건
+        펼치기」 — 블록 1 문언(소량 전부·대량 표본+펼침)의 실물화. 블록 1 "이미 보이는 것
+        재검증 안 함"이 모달 재진술을 금지하는 근거.</li>
+      <li><b>2 수치 합성</b> — 별도 재진술 모달을 만드는 게 아니라, 어차피 떠야 하는 RC-02
+        덮어쓰기 모달이 총량(10)·파괴분(3)·신규분(7)을 종류별로 병기한다(블록 4 가드 형식
+        "종류별 수치 재진술" 승계). 무충돌 생성은 가산적·재실행 가능이라 파괴가 아니고(블록 4
+        소거 판정), 모달은 파괴 지점=덮어쓰기에만 선다(UD-06 "모달은 danger 예외만").</li>
+      <li><b>3 modal.js 문법</b> — 기본 포커스=머무르기·Escape=머무르기(블록 4 가드 형식).
+        현행 run.js:222 window.confirm 의 승계 지점: #25 이관 목록에 없던 실물 부채로,
+        패널의 덮어쓰기 확인은 처음부터 modal.js 로 태어난다(D3 연동).</li>
+      <li><b>4 RC-02 삼자 일치</b> — 정의줄·행 미리보기가 캡처한 시각(_names_now)을 충돌
+        조회와 생성이 재사용한다: 화면이 보여준 것=확인한 것=생성된 것. 링1은 살고,
+        "미리보기를 그리는 쪽이 시각을 고정한다"는 절반이 표면 승계 의무.</li>
+    </ul>
+  </section>
+
+  <!-- ══════════════════════════ D2 ══════════════════════════ -->
+  <section class="sec" id="d2">
+    <h2>D2 — ADR-E 배지의 거처: 후보 3</h2>
+    <p class="seclede">필드 3상태 배지(채움/의도적 빈칸/미입력+확인/드리프트)를 어디에 둘 것인가.
+      탈락 후보 ⓐ·ⓒ를 먼저 보고, 추천안 ⓑ를 아래 인터랙티브 패널에서 조작해 보라 —
+      행 선택을 바꾸면 거울이 라이브 반응하고(S8), 빨강 행 클릭=확인·재클릭=철회(ADR-E·UD-19),
+      드리프트 토글로 danger 분리(S9)를 볼 수 있다.</p>
+
+    <div class="altduo">
+      <div class="alt">
+        <h3>ⓐ 데이터 존 열머리 배지 — 탈락</h3>
+        <div class="tbwrap"><table class="tb">
+          <thead><tr><th></th><th>품명</th><th>기초금액</th>
+            <th>낙찰하한율 <span class="colbadge">미입력 2행</span></th></tr></thead>
+          <tbody>
+            <tr><td>☑</td><td>사무용 소모품 일괄</td><td class="num">18,400,000</td><td class="num">87.745%</td></tr>
+            <tr><td>☑</td><td>○○의약품 외 2행</td><td class="num">38,500,000</td><td></td></tr>
+          </tbody>
+        </table></div>
+        <p class="why"><b>탈락 사유</b>: 열이 없는 필드를 걸 곳이 없다 — 템플릿 전용 필드(드리프트
+          신규 유입)·의도적 빈칸 선언·매핑 밖 필드는 데이터 열에 대응이 없다. 관문 존이
+          탐색(필터)과 확인(ack)을 겸해 과밀해지는 부담도 있다.</p>
+      </div>
+      <div class="alt">
+        <h3>ⓒ 게이트 푸터 배지 나열 — 탈락(현행 run.js 계승형)</h3>
+        <div class="chips">
+          <span class="fb">품명 · 채움</span>
+          <span class="fb">기초금액 · 채움</span>
+          <span class="fb miss">낙찰하한율 · 미입력</span>
+          <span class="fb blankd">담당부서 · 빈칸</span>
+        </div>
+        <p class="why"><b>탈락 사유</b>: 집계 칩이 문서 구조와 무관하게 나열되고, hwpx 세션의
+          본문 존이 비어버린다(거울이 비출 실체 상실). 블록 5 채움 표지 삼분과 색 언어가
+          이원화되고, "어느 행이 비었나" 원인 동선도 없다.</p>
+      </div>
+    </div>
+
+    <div class="scn">
+      <span class="lbl">추천안 ⓑ 조작</span>
+      <button class="scnbtn" id="driftBtn">드리프트 시뮬레이션</button>
+      <button class="scnbtn" id="rereadBtn">데이터 다시 읽기(ack 리셋)</button>
+    </div>
+
+    <!-- ⓑ 추천안: 거울=필드 채움 테이블 -->
+    <div class="stage" id="stgD">
+      <div class="stg-tag">ⓑ 본문 존 거울 = 필드 채움 테이블 <span class="rec">추천</span></div>
+      <div class="scr-head"><h3>물품 입찰공고-5천만미만 · 실행</h3>
+        <span class="pill" data-level="ok" id="pillD">생성 준비</span></div>
+
+      <div class="zone">
+        <span class="zlbl">데이터 · 관문(행 선택·필터·원인 탐색<i class="an">7</i>)</span>
+        <div class="slotline"><span class="dlabel">2026 조달대장.xlsx (파일)</span>
+          <span class="fname">기본 데이터 자동 연결됨 · 실행 시점에 다시 읽음</span></div>
+        <div class="tbwrap"><table class="tb" id="dzTbl">
+          <thead><tr><th></th><th>품명</th><th>기초금액</th><th>낙찰하한율</th>
+            <th>생성 파일명<i class="an">8</i></th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+
+      <div class="zone">
+        <span class="zlbl">본문 · 거울(이 문서에 들어갈 값<i class="an">5</i>)</span>
+        <div id="mirBox"></div>
+      </div>
+
+      <div class="zone">
+        <span class="zlbl">게이트 · 정의줄</span>
+        <div class="defline" id="defD"></div>
+        <div class="gline">
+          <button class="btn primary" id="genD">문서 생성</button>
+          <div class="bar"><i id="barD"></i></div>
+        </div>
+      </div>
+
+      <div class="zone">
+        <span class="zlbl">완료</span>
+        <div class="done" id="doneD"></div>
+      </div>
+    </div>
+
+    <ul class="annlist">
+      <li><b>5 거울=필드 채움 테이블</b> — hwpx 는 본문을 앱에서 렌더하지 않으므로, 거울이
+        비추는 것은 "생성될 문서의 채움 상태"다. ADR-E 배지는 별도 UI가 아니라 거울의 행:
+        빨강 행 클릭=확인(ack), 재클릭=철회(UD-19). 블록 5 표지 삼분(원문/채움 음영/미채움
+        빨강)과 같은 색 언어 — txt 는 본문 위 표지, hwpx 는 테이블 표지로 문법 통일.</li>
+      <li><b>6 ack 스코프=필드×데이터</b>(승인된 서브 결정) — 선택을 바꿔도 확인이 유지되고,
+        「데이터 다시 읽기」만 리셋한다(링1 reset_acks 현행 의미론). 사후 가시성은 완료
+        요약의 미입력 병기가 담보 — 생성해 보면 "미입력 표시 필드 1개(낙찰하한율)"가 남는다.</li>
+      <li><b>7 원인 탐색은 데이터 존 소관</b> — "어느 행이 비었나"는 블록 4 우회의 (빈값)
+        일급 값 필터가 담당(낙찰하한율 열 필터에서 (빈값) 선택). 배지=집계·확인(본문 존),
+        탐색=필터(데이터 존)로 두 존의 역할이 갈린다. 배지에서 해당 열 (빈값) 필터로
+        점프하는 결속은 구현 라운드 후보로만 메모.</li>
+      <li><b>8 F33 실파일명 미리보기</b> — 선택된 행에만 이름을 계산한다(미선택 행에 확정되지
+        않은 이름을 지어내지 않는다). N&gt;1 값 열은 "행마다 다름 · 표본" 명시 병기(승인된
+        서브 결정) — 표본임을 선언하므로 F33 과 충돌하지 않는다(블록 1 대량 재진술 문법 동형).</li>
+      <li><b>9 danger 는 거울 자리 차단 배너 + 행동 링크</b>(v1.1: 막다른 경보 지적 반영) —
+        드리프트·토큰(danger, 에디터 가야 풀림)은 미입력(warn, ack 로 풀림)과 같은 표에
+        섞지 않는다. RC-23 서열(심각도순)의 공간 번역. 배너는 다음 행동 「작업 에디터에서
+        매핑 확정…」을 상시 노출한다(경보 어포던스는 숨지 않는다 — R-info 7조항 경보 행·
+        F30 재연결 동형). 포커스 서열은 작업 흐름순(데이터→행→첫 미확인 배지→폴더, 승인된
+        서브 결정)이며 danger 는 포커스가 아니라 배너가 담당.</li>
+      <li><b>10 행의 대표 이름 = 실파일명 정준 + 식별 요약 보조</b>(v1.1: "대표 데이터는
+        본질적으로 임의적" 질문의 설계 답) — 재진술 목록(재진술 블록·충돌 모달·완료 기록)의
+        행 이름은 임의 열 추측이 아니다. <b>파일명 패턴은 사용자가 이미 선언한 행 정체성</b>이고
+        (RC-20 게이트가 토큰 해소를, 배치 내 충돌 접미사가 유일성을 담보), 따라서 실파일명이
+        정준 이름이다. 파일명이 행 구분 정보를 안 가질 때(상수+{{seq}} 패턴)만 식별 요약
+        (F33: 원본 데이터 앞쪽 열, 사용자가 데이터에서 본 그 어휘)을 보조 병기한다 — 이
+        시연의 「파일명 · 품명」 쌍이 그 형상. 데이터 존 표 자체는 실데이터 전체 열 + 열
+        머리 필터(블록 4)가 정본이고, 이 시연의 3열은 발췌다.</li>
+    </ul>
+  </section>
+
+  <!-- ══════════════════════ 부록 — 식별 요약 휴리스틱 4장면 ══════════════════════ -->
+  <section class="sec" id="d2i">
+    <h2>부록 — 식별 요약 휴리스틱(확정 사양) 4장면</h2>
+    <p class="seclede">승인된 사양<i class="an">11</i>을 이 페이지의 스크립트로 그대로 이식해
+      <b>실데이터 위에서 라이브로 계산</b>한다 — 아래 표·로그·착지 목록은 렌더 시점에
+      휴리스틱이 실제로 돌린 결과다. 장면 1은 나라장터 실수확 12행×53열 임베드,
+      장면 4는 백스톱 한계 상황이다.</p>
+    <div class="scn" role="group" aria-label="장면 선택">
+      <span class="lbl">장면</span>
+      <button class="scnbtn on" data-isc="i1">1 나라 실수확 53열</button>
+      <button class="scnbtn" data-isc="i2">2 합성 함정</button>
+      <button class="scnbtn" data-isc="i3">3 토큰 모드</button>
+      <button class="scnbtn" data-isc="i4">4 진성 중복 백스톱</button>
+    </div>
+    <div class="stage">
+      <div class="stg-tag" id="iTag"></div>
+      <div class="zone">
+        <span class="zlbl">데이터(발췌 표시 · 계산은 전체 열)</span>
+        <div class="tbwrap" id="iData"></div>
+        <p class="cap2" id="iNote"></p>
+      </div>
+      <div class="zone">
+        <span class="zlbl">결격 · 선택 체인 로그</span>
+        <div class="ilog" id="iLog"></div>
+      </div>
+      <div class="zone">
+        <span class="zlbl">재진술 블록 착지 — 파일명(정준) · 식별 요약(보조)</span>
+        <div class="namelist" id="iOut"></div>
+      </div>
+    </div>
+    <ul class="annlist">
+      <li><b>11 확정 사양(2026-07-19 승인)</b> — 결격 5종(빈·상수·<b>순번</b>[값=행 서수]·파일명
+        내용 토큰·<b>중복 열</b>[기선택 열과 행별 값 동일]) → <b>인지층</b>: 왼쪽 스캔 비결격
+        2열 고정(자격 문턱 없음) → <b>구별층</b>: 선택 집합 내 충돌이 남을 때만 조건부 최대
+        이득 1열(동률=왼쪽, 상한 3, 이득 0이면 조용히 정지). 토큰 모드 = 파일명에 내용 토큰
+        존재 시 인지층 생략(이름은 파일명이 나름). 체인은 데이터 겨눔 시 1회 계산·세션 고정,
+        렌더는 깊이만 가변. MITM/최적 부분집합 탐색 기각(탐색 공간 소멸·안정성·가독성).</li>
+      <li><b>12 실험 이력</b> — v1(자격 문턱형)은 실데이터 반증 3건으로 폐기: ①문턱 민감도
+        널뜀(합성에서 0.3/0.5/0.8 → 품명/규격/기초금액; 나라 공고명도 중복 실재[Adobe 2건]라
+        과장 아님) ②최소 식별의 재인 빈곤("2026-001" 1열 정지 — 식별≠인지) ③유일 키 확보
+        순간 조건부 직교성 붕괴(refNtceNo[잉여]와 공고명[가치]을 분포로 구별 불가 — 행별 값
+        동일 검사만 강건, 실데이터 12/12 적중).</li>
+      <li><b>13 승계·유보</b> — 이 4장면 = 링1 단일 함수(식별 요약 산출)의 회귀 테스트 후보,
+        계약 승계 점검표에 "식별 요약 = 링1 단일 출처" 행으로 편입. 유보 2: 열 이름 의미론
+        가중(발명 축적)·인지층 낭비 열 수용(상한 3 내 비용). 구별층 2자리로 커지는 극단에서
+        쌍 전수조사 대체는 구현 재량(계약 문언 불변).</li>
+    </ul>
+  </section>
+</div>
+
+<script id="naraData" type="application/json">[{"bidNtceNo":"R26BK01621756","bidNtceOrd":"000","refNtceNo":"R26BK01621756","refNtceOrd":"000","ppsNtceYn":"Y","bidNtceNm":"Adobe Creative Cloud 라이선스 연간사용권 구매","bidNtceSttusNm":"재입찰공고","bidNtceDate":"2026-07-07","bidNtceBgn":"18:54","bsnsDivNm":"물품","intrntnlBidYn":"N","cmmnCntrctYn":"Y","cmmnReciptMethdNm":"","elctrnBidYn":"N","cntrctCnclsSttusNm":"총액계약","cntrctCnclsMthdNm":"제한경쟁","bidwinrDcsnMthdNm":"제한적최저가(낙찰하한율)","ntceInsttNm":"호남대학교","ntceInsttCd":"7002321","ntceInsttOfclDeptNm":"","ntceInsttOfclNm":"담당자","ntceInsttOfclTel":"000-000-0000","ntceInsttOfclEmailAdrs":"official@example.go.kr","dmndInsttNm":"호남대학교","dmndInsttCd":"7002321","dmndInsttOfclDeptNm":"","dmndInsttOfclNm":"담당자","dmndInsttOfclTel":"0000000000","dmndInsttOfclEmailAdrs":"","presnatnOprtnYn":"","presnatnOprtnDate":"","presnatnOprtnTm":"","presnatnOprtnPlce":"","bidPrtcptQlfctRgstClseDate":"","bidPrtcptQlfctRgstClseTm":"","cmmnReciptAgrmntClseDate":"","cmmnReciptAgrmntClseTm":"","bidBeginDate":"","bidBeginTm":"","bidClseDate":"","bidClseTm":"","opengDate":"2026-07-13","opengTm":"14:30","opengPlce":"대학본부동 2층 회의실(15209호)","asignBdgtAmt":"108150000","presmptPrce":"98318182","rsrvtnPrceDcsnMthdNm":"비예가","rgnLmtYn":"N","prtcptPsblRgnNm":"","indstrytyLmtYn":"Y","bidprcPsblIndstrytyNm":"소프트웨어사업자(컴퓨터관련서비스사업)","bidNtceUrl":"https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01621756&bidPbancOrd=000","dataBssDate":"2026-07-14"},{"bidNtceNo":"R26BK01610529","bidNtceOrd":"000","refNtceNo":"R26BK01610529","refNtceOrd":"000","ppsNtceYn":"Y","bidNtceNm":"Adobe Creative Cloud 라이선스 연간사용권 구매","bidNtceSttusNm":"일반공고","bidNtceDate":"2026-07-01","bidNtceBgn":"10:16","bsnsDivNm":"물품","intrntnlBidYn":"N","cmmnCntrctYn":"Y","cmmnReciptMethdNm":"","elctrnBidYn":"N","cntrctCnclsSttusNm":"총액계약","cntrctCnclsMthdNm":"제한경쟁","bidwinrDcsnMthdNm":"제한적최저가(낙찰하한율)","ntceInsttNm":"호남대학교","ntceInsttCd":"7002321","ntceInsttOfclDeptNm":"","ntceInsttOfclNm":"담당자","ntceInsttOfclTel":"000-000-0000","ntceInsttOfclEmailAdrs":"official@example.go.kr","dmndInsttNm":"호남대학교","dmndInsttCd":"7002321","dmndInsttOfclDeptNm":"","dmndInsttOfclNm":"담당자","dmndInsttOfclTel":"0000000000","dmndInsttOfclEmailAdrs":"","presnatnOprtnYn":"","presnatnOprtnDate":"","presnatnOprtnTm":"","presnatnOprtnPlce":"","bidPrtcptQlfctRgstClseDate":"","bidPrtcptQlfctRgstClseTm":"","cmmnReciptAgrmntClseDate":"","cmmnReciptAgrmntClseTm":"","bidBeginDate":"","bidBeginTm":"","bidClseDate":"","bidClseTm":"","opengDate":"2026-07-07","opengTm":"16:00","opengPlce":"대학본부동 2층 회의실(15209호)","asignBdgtAmt":"108150000","presmptPrce":"98318182","rsrvtnPrceDcsnMthdNm":"비예가","rgnLmtYn":"N","prtcptPsblRgnNm":"","indstrytyLmtYn":"Y","bidprcPsblIndstrytyNm":"소프트웨어사업자(컴퓨터관련서비스사업)","bidNtceUrl":"https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01610529&bidPbancOrd=000","dataBssDate":"2026-07-14"},{"bidNtceNo":"R26BK01626820","bidNtceOrd":"000","refNtceNo":"R26BK01626820","refNtceOrd":"000","ppsNtceYn":"Y","bidNtceNm":"경찰부대 형광파카 구매","bidNtceSttusNm":"일반공고","bidNtceDate":"2026-07-10","bidNtceBgn":"14:58","bsnsDivNm":"물품","intrntnlBidYn":"N","cmmnCntrctYn":"Y","cmmnReciptMethdNm":"","elctrnBidYn":"Y","cntrctCnclsSttusNm":"총액계약","cntrctCnclsMthdNm":"수의계약","bidwinrDcsnMthdNm":"수의시담","ntceInsttNm":"조달청","ntceInsttCd":"1230000","ntceInsttOfclDeptNm":"","ntceInsttOfclNm":"담당자","ntceInsttOfclTel":"000-000-0000","ntceInsttOfclEmailAdrs":"official@example.go.kr","dmndInsttNm":"경찰청","dmndInsttCd":"1320000","dmndInsttOfclDeptNm":"","dmndInsttOfclNm":"담당자","dmndInsttOfclTel":"0000000000","dmndInsttOfclEmailAdrs":"official@example.go.kr","presnatnOprtnYn":"","presnatnOprtnDate":"","presnatnOprtnTm":"","presnatnOprtnPlce":"","bidPrtcptQlfctRgstClseDate":"2026-07-14","bidPrtcptQlfctRgstClseTm":"18:00","cmmnReciptAgrmntClseDate":"","cmmnReciptAgrmntClseTm":"","bidBeginDate":"2026-07-15","bidBeginTm":"10:00","bidClseDate":"2026-07-15","bidClseTm":"11:00","opengDate":"2026-07-15","opengTm":"12:00","opengPlce":"","asignBdgtAmt":"1910480000","presmptPrce":"1736800000","rsrvtnPrceDcsnMthdNm":"단일예가","rgnLmtYn":"N","prtcptPsblRgnNm":"","indstrytyLmtYn":"N","bidprcPsblIndstrytyNm":"","bidNtceUrl":"https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01626820&bidPbancOrd=000","dataBssDate":"2026-07-14"},{"bidNtceNo":"R26BK01623111","bidNtceOrd":"000","refNtceNo":"R26BK01623111","refNtceOrd":"000","ppsNtceYn":"Y","bidNtceNm":"울산과학기술원 P4 프로그래머블 고성능 AI/데이터센터용 400GBE 이더넷 스위치 구매","bidNtceSttusNm":"일반공고","bidNtceDate":"2026-07-08","bidNtceBgn":"14:06","bsnsDivNm":"물품","intrntnlBidYn":"N","cmmnCntrctYn":"Y","cmmnReciptMethdNm":"","elctrnBidYn":"Y","cntrctCnclsSttusNm":"총액계약","cntrctCnclsMthdNm":"제한경쟁","bidwinrDcsnMthdNm":"규격가격동시입찰","ntceInsttNm":"울산과학기술원","ntceInsttCd":"B553562","ntceInsttOfclDeptNm":"","ntceInsttOfclNm":"담당자","ntceInsttOfclTel":"000-000-0000","ntceInsttOfclEmailAdrs":"official@example.go.kr","dmndInsttNm":"울산과학기술원","dmndInsttCd":"B553562","dmndInsttOfclDeptNm":"","dmndInsttOfclNm":"담당자","dmndInsttOfclTel":"0000000000","dmndInsttOfclEmailAdrs":"","presnatnOprtnYn":"","presnatnOprtnDate":"","presnatnOprtnTm":"","presnatnOprtnPlce":"","bidPrtcptQlfctRgstClseDate":"2026-07-15","bidPrtcptQlfctRgstClseTm":"18:00","cmmnReciptAgrmntClseDate":"","cmmnReciptAgrmntClseTm":"","bidBeginDate":"2026-07-14","bidBeginTm":"09:00","bidClseDate":"2026-07-16","bidClseTm":"10:00","opengDate":"2026-07-16","opengTm":"11:00","opengPlce":"국가종합전자조달시스템(나라장터)","asignBdgtAmt":"29590000","presmptPrce":"26900000","rsrvtnPrceDcsnMthdNm":"복수예가","rgnLmtYn":"N","prtcptPsblRgnNm":"","indstrytyLmtYn":"N","bidprcPsblIndstrytyNm":"","bidNtceUrl":"https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01623111&bidPbancOrd=000","dataBssDate":"2026-07-14"},{"bidNtceNo":"R26BK01617419","bidNtceOrd":"000","refNtceNo":"R26BK01617419","refNtceOrd":"000","ppsNtceYn":"Y","bidNtceNm":"2026 제107회 전국체육대회 경기운영 종사자 단복 및 모자 제작","bidNtceSttusNm":"일반공고","bidNtceDate":"2026-07-06","bidNtceBgn":"11:22","bsnsDivNm":"물품","intrntnlBidYn":"N","cmmnCntrctYn":"Y","cmmnReciptMethdNm":"","elctrnBidYn":"N","cntrctCnclsSttusNm":"총액계약","cntrctCnclsMthdNm":"제한경쟁","bidwinrDcsnMthdNm":"협상에의한계약","ntceInsttNm":"제주특별자치도체육회","ntceInsttCd":"Z005232","ntceInsttOfclDeptNm":"","ntceInsttOfclNm":"담당자","ntceInsttOfclTel":"000-000-00000","ntceInsttOfclEmailAdrs":"official@example.go.kr","dmndInsttNm":"제주특별자치도체육회","dmndInsttCd":"Z005232","dmndInsttOfclDeptNm":"","dmndInsttOfclNm":"담당자","dmndInsttOfclTel":"0000000000","dmndInsttOfclEmailAdrs":"","presnatnOprtnYn":"","presnatnOprtnDate":"","presnatnOprtnTm":"","presnatnOprtnPlce":"","bidPrtcptQlfctRgstClseDate":"","bidPrtcptQlfctRgstClseTm":"","cmmnReciptAgrmntClseDate":"","cmmnReciptAgrmntClseTm":"","bidBeginDate":"","bidBeginTm":"","bidClseDate":"","bidClseTm":"","opengDate":"2026-07-30","opengTm":"16:00","opengPlce":"제주특별자치도체육회 2층 기획총무부","asignBdgtAmt":"226000000","presmptPrce":"205454545","rsrvtnPrceDcsnMthdNm":"비예가","rgnLmtYn":"N","prtcptPsblRgnNm":"","indstrytyLmtYn":"N","bidprcPsblIndstrytyNm":"","bidNtceUrl":"https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01617419&bidPbancOrd=000","dataBssDate":"2026-07-14"},{"bidNtceNo":"R26BK01625381","bidNtceOrd":"000","refNtceNo":"R26BK01625381","refNtceOrd":"000","ppsNtceYn":"Y","bidNtceNm":"해양환경공단 대산지사 선박용 연료유 구매(단가)","bidNtceSttusNm":"일반공고","bidNtceDate":"2026-07-10","bidNtceBgn":"09:12","bsnsDivNm":"물품","intrntnlBidYn":"N","cmmnCntrctYn":"Y","cmmnReciptMethdNm":"","elctrnBidYn":"Y","cntrctCnclsSttusNm":"총액계약","cntrctCnclsMthdNm":"수의계약","bidwinrDcsnMthdNm":"수의시담","ntceInsttNm":"해양환경공단 대산지사","ntceInsttCd":"Z012463","ntceInsttOfclDeptNm":"","ntceInsttOfclNm":"담당자","ntceInsttOfclTel":"000-000-0000","ntceInsttOfclEmailAdrs":"official@example.go.kr","dmndInsttNm":"해양환경공단 대산지사","dmndInsttCd":"Z012463","dmndInsttOfclDeptNm":"","dmndInsttOfclNm":"담당자","dmndInsttOfclTel":"0000000000","dmndInsttOfclEmailAdrs":"","presnatnOprtnYn":"","presnatnOprtnDate":"","presnatnOprtnTm":"","presnatnOprtnPlce":"","bidPrtcptQlfctRgstClseDate":"2026-07-10","bidPrtcptQlfctRgstClseTm":"10:00","cmmnReciptAgrmntClseDate":"","cmmnReciptAgrmntClseTm":"","bidBeginDate":"2026-07-10","bidBeginTm":"10:00","bidClseDate":"2026-07-10","bidClseTm":"11:30","opengDate":"2026-07-10","opengTm":"12:30","opengPlce":"국가종합전자조달시스템(나라장터)","asignBdgtAmt":"41790000","presmptPrce":"37990909","rsrvtnPrceDcsnMthdNm":"단일예가","rgnLmtYn":"N","prtcptPsblRgnNm":"","indstrytyLmtYn":"N","bidprcPsblIndstrytyNm":"","bidNtceUrl":"https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01625381&bidPbancOrd=000","dataBssDate":"2026-07-14"},{"bidNtceNo":"R26BK01626870","bidNtceOrd":"000","refNtceNo":"R26BK01626870","refNtceOrd":"000","ppsNtceYn":"Y","bidNtceNm":"방탄조끼 및 방탄헬멧 일괄 구매","bidNtceSttusNm":"재입찰공고","bidNtceDate":"2026-07-10","bidNtceBgn":"14:57","bsnsDivNm":"물품","intrntnlBidYn":"N","cmmnCntrctYn":"Y","cmmnReciptMethdNm":"","elctrnBidYn":"Y","cntrctCnclsSttusNm":"총액계약","cntrctCnclsMthdNm":"일반경쟁","bidwinrDcsnMthdNm":"규격가격동시입찰","ntceInsttNm":"조달청","ntceInsttCd":"1230000","ntceInsttOfclDeptNm":"","ntceInsttOfclNm":"담당자","ntceInsttOfclTel":"000-000-0000","ntceInsttOfclEmailAdrs":"official@example.go.kr","dmndInsttNm":"외교부","dmndInsttCd":"1262000","dmndInsttOfclDeptNm":"","dmndInsttOfclNm":"담당자","dmndInsttOfclTel":"0000000000","dmndInsttOfclEmailAdrs":"official@example.go.kr","presnatnOprtnYn":"","presnatnOprtnDate":"","presnatnOprtnTm":"","presnatnOprtnPlce":"","bidPrtcptQlfctRgstClseDate":"2026-07-20","bidPrtcptQlfctRgstClseTm":"18:00","cmmnReciptAgrmntClseDate":"","cmmnReciptAgrmntClseTm":"","bidBeginDate":"2026-07-17","bidBeginTm":"10:00","bidClseDate":"2026-07-21","bidClseTm":"10:00","opengDate":"2026-07-21","opengTm":"11:00","opengPlce":"","asignBdgtAmt":"268436390","presmptPrce":"241912727","rsrvtnPrceDcsnMthdNm":"복수예가","rgnLmtYn":"N","prtcptPsblRgnNm":"","indstrytyLmtYn":"N","bidprcPsblIndstrytyNm":"","bidNtceUrl":"https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01626870&bidPbancOrd=000","dataBssDate":"2026-07-14"},{"bidNtceNo":"R26BK01620476","bidNtceOrd":"000","refNtceNo":"R26BK01620476","refNtceOrd":"000","ppsNtceYn":"Y","bidNtceNm":"2026년 궁능유적본부 직원 근무복 제작 재공고","bidNtceSttusNm":"재입찰공고","bidNtceDate":"2026-07-07","bidNtceBgn":"17:17","bsnsDivNm":"물품","intrntnlBidYn":"N","cmmnCntrctYn":"Y","cmmnReciptMethdNm":"공동이행","elctrnBidYn":"Y","cntrctCnclsSttusNm":"일반단가계약","cntrctCnclsMthdNm":"제한경쟁","bidwinrDcsnMthdNm":"규격가격동시입찰","ntceInsttNm":"조달청","ntceInsttCd":"1230000","ntceInsttOfclDeptNm":"","ntceInsttOfclNm":"담당자","ntceInsttOfclTel":"000-000-0000","ntceInsttOfclEmailAdrs":"official@example.go.kr","dmndInsttNm":"국가유산청 궁능유적본부","dmndInsttCd":"1833120","dmndInsttOfclDeptNm":"","dmndInsttOfclNm":"담당자","dmndInsttOfclTel":"0000000000","dmndInsttOfclEmailAdrs":"official@example.go.kr","presnatnOprtnYn":"","presnatnOprtnDate":"","presnatnOprtnTm":"","presnatnOprtnPlce":"","bidPrtcptQlfctRgstClseDate":"2026-07-20","bidPrtcptQlfctRgstClseTm":"18:00","cmmnReciptAgrmntClseDate":"2026-07-20","cmmnReciptAgrmntClseTm":"18:00","bidBeginDate":"2026-07-16","bidBeginTm":"10:00","bidClseDate":"2026-07-21","bidClseTm":"10:00","opengDate":"2026-07-21","opengTm":"11:00","opengPlce":"","asignBdgtAmt":"309643200","presmptPrce":"279090909","rsrvtnPrceDcsnMthdNm":"복수예가","rgnLmtYn":"N","prtcptPsblRgnNm":"","indstrytyLmtYn":"N","bidprcPsblIndstrytyNm":"","bidNtceUrl":"https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01620476&bidPbancOrd=000","dataBssDate":"2026-07-14"},{"bidNtceNo":"R26BK01631147","bidNtceOrd":"000","refNtceNo":"R26BK01631147","refNtceOrd":"000","ppsNtceYn":"Y","bidNtceNm":"2026년 경상정비용 자산성 공기구 및 측정장비 통합 구매","bidNtceSttusNm":"일반공고","bidNtceDate":"2026-07-14","bidNtceBgn":"13:05","bsnsDivNm":"물품","intrntnlBidYn":"N","cmmnCntrctYn":"Y","cmmnReciptMethdNm":"","elctrnBidYn":"Y","cntrctCnclsSttusNm":"총액계약","cntrctCnclsMthdNm":"제한경쟁","bidwinrDcsnMthdNm":"제한적최저가(낙찰하한율)","ntceInsttNm":"(주)한국가스기술공사  인천기지지사","ntceInsttCd":"Z008149","ntceInsttOfclDeptNm":"","ntceInsttOfclNm":"담당자","ntceInsttOfclTel":"000-000-0000","ntceInsttOfclEmailAdrs":"official@example.go.kr","dmndInsttNm":"(주)한국가스기술공사  인천기지지사","dmndInsttCd":"Z008149","dmndInsttOfclDeptNm":"","dmndInsttOfclNm":"담당자","dmndInsttOfclTel":"000-000-0000","dmndInsttOfclEmailAdrs":"","presnatnOprtnYn":"","presnatnOprtnDate":"","presnatnOprtnTm":"","presnatnOprtnPlce":"","bidPrtcptQlfctRgstClseDate":"2026-07-21","bidPrtcptQlfctRgstClseTm":"18:00","cmmnReciptAgrmntClseDate":"","cmmnReciptAgrmntClseTm":"","bidBeginDate":"2026-07-20","bidBeginTm":"10:00","bidClseDate":"2026-07-22","bidClseTm":"10:00","opengDate":"2026-07-22","opengTm":"11:00","opengPlce":"입찰담당자 PC","asignBdgtAmt":"166831500","presmptPrce":"151665000","rsrvtnPrceDcsnMthdNm":"복수예가","rgnLmtYn":"Y","prtcptPsblRgnNm":"서울특별시,경기도,인천광역시","indstrytyLmtYn":"N","bidprcPsblIndstrytyNm":"","bidNtceUrl":"https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01631147&bidPbancOrd=000","dataBssDate":"2026-07-14"},{"bidNtceNo":"R26BK01619047","bidNtceOrd":"000","refNtceNo":"R26BK01619047","refNtceOrd":"000","ppsNtceYn":"Y","bidNtceNm":"2026년 국립춘천박물관 상설전시실 강원의 고대 전시환경 개선","bidNtceSttusNm":"일반공고","bidNtceDate":"2026-07-07","bidNtceBgn":"10:30","bsnsDivNm":"물품","intrntnlBidYn":"N","cmmnCntrctYn":"Y","cmmnReciptMethdNm":"공동이행 또는 분담이행","elctrnBidYn":"Y","cntrctCnclsSttusNm":"총액계약","cntrctCnclsMthdNm":"제한경쟁","bidwinrDcsnMthdNm":"규격가격동시입찰","ntceInsttNm":"조달청","ntceInsttCd":"1230000","ntceInsttOfclDeptNm":"","ntceInsttOfclNm":"담당자","ntceInsttOfclTel":"000-000-00000","ntceInsttOfclEmailAdrs":"official@example.go.kr","dmndInsttNm":"문화체육관광부 국립중앙박물관 춘천박물관","dmndInsttCd":"1371089","dmndInsttOfclDeptNm":"","dmndInsttOfclNm":"담당자","dmndInsttOfclTel":"0000000000","dmndInsttOfclEmailAdrs":"official@example.go.kr","presnatnOprtnYn":"","presnatnOprtnDate":"","presnatnOprtnTm":"","presnatnOprtnPlce":"","bidPrtcptQlfctRgstClseDate":"2026-07-20","bidPrtcptQlfctRgstClseTm":"18:00","cmmnReciptAgrmntClseDate":"2026-07-20","cmmnReciptAgrmntClseTm":"18:00","bidBeginDate":"2026-07-16","bidBeginTm":"10:00","bidClseDate":"2026-07-21","bidClseTm":"10:00","opengDate":"2026-07-21","opengTm":"11:00","opengPlce":"","asignBdgtAmt":"352970000","presmptPrce":"318181818","rsrvtnPrceDcsnMthdNm":"복수예가","rgnLmtYn":"N","prtcptPsblRgnNm":"","indstrytyLmtYn":"Y","bidprcPsblIndstrytyNm":"실내건축공사업","bidNtceUrl":"https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01619047&bidPbancOrd=000","dataBssDate":"2026-07-14"},{"bidNtceNo":"R26BK01625395","bidNtceOrd":"000","refNtceNo":"R26BK01625395","refNtceOrd":"000","ppsNtceYn":"Y","bidNtceNm":"낙생초 2026학년도 2학기 학습준비물 구매 소액수의 견적제출 안내","bidNtceSttusNm":"일반공고","bidNtceDate":"2026-07-09","bidNtceBgn":"16:38","bsnsDivNm":"물품","intrntnlBidYn":"N","cmmnCntrctYn":"Y","cmmnReciptMethdNm":"","elctrnBidYn":"Y","cntrctCnclsSttusNm":"총액계약","cntrctCnclsMthdNm":"수의계약","bidwinrDcsnMthdNm":"소액수의견적","ntceInsttNm":"경기도성남교육청 낙생초등학교","ntceInsttCd":"7550051","ntceInsttOfclDeptNm":"","ntceInsttOfclNm":"담당자","ntceInsttOfclTel":"000-000-00000","ntceInsttOfclEmailAdrs":"official@example.go.kr","dmndInsttNm":"경기도성남교육청 낙생초등학교","dmndInsttCd":"7550051","dmndInsttOfclDeptNm":"","dmndInsttOfclNm":"담당자","dmndInsttOfclTel":"0000000000","dmndInsttOfclEmailAdrs":"","presnatnOprtnYn":"","presnatnOprtnDate":"","presnatnOprtnTm":"","presnatnOprtnPlce":"","bidPrtcptQlfctRgstClseDate":"2026-07-15","bidPrtcptQlfctRgstClseTm":"18:00","cmmnReciptAgrmntClseDate":"","cmmnReciptAgrmntClseTm":"","bidBeginDate":"2026-07-10","bidBeginTm":"10:00","bidClseDate":"2026-07-16","bidClseTm":"10:00","opengDate":"2026-07-16","opengTm":"11:00","opengPlce":"국가종합전자조달시스템(나라장터)","asignBdgtAmt":"13251610","presmptPrce":"12046918","rsrvtnPrceDcsnMthdNm":"복수예가","rgnLmtYn":"Y","prtcptPsblRgnNm":"경기도 성남시,경기도 광주시,경기도 용인시,경기도 하남시","indstrytyLmtYn":"N","bidprcPsblIndstrytyNm":"","bidNtceUrl":"https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01625395&bidPbancOrd=000","dataBssDate":"2026-07-14"},{"bidNtceNo":"R26BK01623300","bidNtceOrd":"000","refNtceNo":"R26BK01623300","refNtceOrd":"000","ppsNtceYn":"Y","bidNtceNm":"성주군 통합바이오 에너지화시설 설치사업 관급자재(중간저장조 교반기 외 5종) 구입","bidNtceSttusNm":"일반공고","bidNtceDate":"2026-07-13","bidNtceBgn":"13:13","bsnsDivNm":"물품","intrntnlBidYn":"N","cmmnCntrctYn":"Y","cmmnReciptMethdNm":"","elctrnBidYn":"Y","cntrctCnclsSttusNm":"총액계약","cntrctCnclsMthdNm":"수의계약","bidwinrDcsnMthdNm":"수의시담","ntceInsttNm":"조달청","ntceInsttCd":"1230000","ntceInsttOfclDeptNm":"","ntceInsttOfclNm":"담당자","ntceInsttOfclTel":"000-000-00000","ntceInsttOfclEmailAdrs":"official@example.go.kr","dmndInsttNm":"경상북도 성주군 자원순환사업소","dmndInsttCd":"5210109","dmndInsttOfclDeptNm":"","dmndInsttOfclNm":"담당자","dmndInsttOfclTel":"","dmndInsttOfclEmailAdrs":"official@example.go.kr","presnatnOprtnYn":"","presnatnOprtnDate":"","presnatnOprtnTm":"","presnatnOprtnPlce":"","bidPrtcptQlfctRgstClseDate":"2026-07-13","bidPrtcptQlfctRgstClseTm":"18:00","cmmnReciptAgrmntClseDate":"","cmmnReciptAgrmntClseTm":"","bidBeginDate":"2026-07-14","bidBeginTm":"10:00","bidClseDate":"2026-07-14","bidClseTm":"11:00","opengDate":"2026-07-14","opengTm":"12:00","opengPlce":"","asignBdgtAmt":"274074920","presmptPrce":"247000000","rsrvtnPrceDcsnMthdNm":"단일예가","rgnLmtYn":"N","prtcptPsblRgnNm":"","indstrytyLmtYn":"N","bidprcPsblIndstrytyNm":"","bidNtceUrl":"https://www.g2b.go.kr/link/PNPE027_01/single/?bidPbancNo=R26BK01623300&bidPbancOrd=000","dataBssDate":"2026-07-14"}]</script>
+<script>
+(function(){
+"use strict";
+function $(id){ return document.getElementById(id); }
+
+/* ══════════ D1 — A안/B안 비교 ══════════ */
+var ITEMS = [
+  "사무용 소모품 일괄", "○○의약품 외 2행", "실험기자재(현미경)", "복사용지 A4",
+  "프린터 토너", "실험용 시약", "네트워크 장비 스위치", "사무용 의자",
+  "빔프로젝터 램프", "청소용 소모품", "계측기 교정 용역"
+];
+var SCN = {
+  s1: { sel:"선택 3행",
+    origin:"담당=김○○ 매치 3행 전체",
+    restate:"선택 3행: 사무용 소모품 일괄, ○○의약품 외 2행, 실험기자재(현미경).\n문서 3건을 만듭니다. 계속할까요?",
+    items:ITEMS.slice(0, 3), total:3, conflict:false },
+  s3: { sel:"선택 10행",
+    origin:"'2월 공고' 매치 10행 전체",
+    restate:"선택 10행(표본: 사무용 소모품 일괄, ○○의약품 외 2행, 실험기자재(현미경) 외 7행).\n문서 10건을 만듭니다. 계속할까요?",
+    items:ITEMS.slice(0, 10), total:10, conflict:true },
+  s4: { sel:"선택 11행",
+    origin:"'담당=김○○' 매치 12행 중 10행 + 필터 밖 1행 = 11행",
+    restate:"선택 11행(매치 12행 중 10행, 필터 밖 1행).\n문서 11건을 만듭니다. 계속할까요?",
+    items:ITEMS.slice(0, 11), total:11, conflict:false }
+};
+var cur = "s1";
+var expB = false;
+var tally = { mA:0, cA:0, mB:0, cB:0 };
+
+/* 재진술 블록(B안): 선택 유래 + 산출 요약 + 이름 목록(소량 전부·대량 표본+펼침).
+   행 이름 = 실파일명(정준) · 식별 요약(보조 병기) — 주석 10. */
+function renderDefB(){
+  var s = SCN[cur];
+  var names = s.items.map(function(it, i){
+    var seq = ("00" + (i + 1)).slice(-3);
+    return { f:"공고서-20260719-" + seq + ".hwpx", s:it };
+  });
+  var shown = (names.length <= 3 || expB) ? names : names.slice(0, 3);
+  var list = shown.map(function(n){
+    return "<span class=\"nm\"><b>" + n.f + "</b> · " + n.s + "</span>";
+  }).join("");
+  var more = "";
+  if (names.length > 3){
+    more = "<button class=\"btn sm\" id=\"expBtnB\">" +
+      (expB ? "접기" : "⋯ 외 " + (names.length - 3) + "건 펼치기") + "</button>";
+  }
+  $("defB").innerHTML =
+    "<span class=\"dl\">선택</span><span>" + s.origin + "</span>" +
+    "<span class=\"dl\">생성</span><span>문서 " + s.total + "건 · 저장 폴더: …\\Results" +
+    "<div class=\"namelist\">" + list + more + "</div></span>";
+  var eb = $("expBtnB");
+  if (eb) eb.addEventListener("click", function(){ expB = !expB; renderDefB(); });
+}
+
+function updTally(){
+  $("tmA").textContent = tally.mA; $("tcA").textContent = tally.cA;
+  $("tmB").textContent = tally.mB; $("tcB").textContent = tally.cB;
+}
+function setBar(id, pct){ $(id).style.width = pct + "%"; }
+function openModal(id){
+  var ovl = $(id);
+  ovl.hidden = false;
+  var def = ovl.querySelector("[data-def]");
+  if (def) def.focus();
+}
+function closeModal(id){ $(id).hidden = true; }
+function finishD1(side){
+  var s = SCN[cur];
+  setBar("bar" + side, 100);
+  $("done" + side).textContent =
+    "완료. 성공 " + s.total + "/" + s.total + ", 실패 0건.";
+}
+function resetD1(){
+  tally = { mA:0, cA:0, mB:0, cB:0 };
+  updTally();
+  closeModal("ovlA1"); closeModal("ovlA2"); closeModal("ovlB");
+  $("doneA").textContent = ""; $("doneB").textContent = "";
+  setBar("barA", 0); setBar("barB", 0);
+  $("selA").textContent = SCN[cur].sel;
+  expB = false;
+  renderDefB();
+}
+var scnBtns = document.querySelectorAll(".scnbtn[data-scn]");
+Array.prototype.forEach.call(scnBtns, function(btn){
+  btn.addEventListener("click", function(){
+    Array.prototype.forEach.call(scnBtns, function(b){ b.classList.remove("on"); });
+    btn.classList.add("on");
+    cur = btn.getAttribute("data-scn");
+    resetD1();
+  });
+});
+
+/* A안: 클릭 → 재진술 모달 → (충돌 시) 덮어쓰기 모달 → 생성 */
+$("genA").addEventListener("click", function(){
+  tally.cA++; tally.mA++;
+  $("mbA1").textContent = SCN[cur].restate;
+  updTally(); openModal("ovlA1");
+});
+$("a1stay").addEventListener("click", function(){
+  tally.cA++; updTally(); closeModal("ovlA1");
+});
+$("a1go").addEventListener("click", function(){
+  tally.cA++; closeModal("ovlA1");
+  if (SCN[cur].conflict){ tally.mA++; updTally(); openModal("ovlA2"); }
+  else { updTally(); finishD1("A"); }
+});
+$("a2stay").addEventListener("click", function(){
+  tally.cA++; updTally(); closeModal("ovlA2");
+});
+$("a2go").addEventListener("click", function(){
+  tally.cA++; updTally(); closeModal("ovlA2"); finishD1("A");
+});
+
+/* B안: 정의줄 상시 + 충돌 시에만 합성 모달 1회 */
+$("genB").addEventListener("click", function(){
+  tally.cB++;
+  if (SCN[cur].conflict){ tally.mB++; updTally(); openModal("ovlB"); }
+  else { updTally(); finishD1("B"); }
+});
+$("bstay").addEventListener("click", function(){
+  tally.cB++; updTally(); closeModal("ovlB");
+});
+$("bgo").addEventListener("click", function(){
+  tally.cB++; updTally(); closeModal("ovlB"); finishD1("B");
+});
+
+/* Escape = 머무르기(열린 모달 닫기) */
+document.addEventListener("keydown", function(ev){
+  if (ev.key !== "Escape") return;
+  ["ovlA1","ovlA2","ovlB"].forEach(function(id){
+    if (!$(id).hidden) closeModal(id);
+  });
+});
+
+resetD1();
+
+/* ══════════ D2 — 추천안 ⓑ 인터랙티브 ══════════ */
+var ROWS = [
+  { name:"사무용 소모품 일괄", base:"18,400,000", rate:"87.745%" },
+  { name:"○○의약품 외 2행",  base:"38,500,000", rate:"" },
+  { name:"실험기자재(현미경)", base:"44,000,000", rate:"" }
+];
+var sel = [true, true, false];
+var acked = {};          // 필드×데이터 스코프(S8): 선택 변경에도 유지, 다시 읽기만 리셋
+var drift = false;
+var lastBlanks = 0;
+
+function selRows(){ return ROWS.filter(function(_, i){ return sel[i]; }); }
+
+function renderDataTable(){
+  var tb = $("dzTbl").querySelector("tbody");
+  var html = "";
+  var seq = 0;
+  for (var i = 0; i < ROWS.length; i++){
+    var r = ROWS[i];
+    var name = "";
+    if (sel[i]){ seq++; name = "공고서-20260719-00" + seq + ".hwpx"; }
+    html += "<tr" + (sel[i] ? " class=\"on\"" : "") + ">" +
+      "<td><input type=\"checkbox\" data-row=\"" + i + "\"" +
+      (sel[i] ? " checked" : "") + (drift ? " disabled" : "") +
+      " aria-label=\"" + r.name + " 선택\"></td>" +
+      "<td>" + r.name + "</td>" +
+      "<td class=\"num\">" + r.base + "</td>" +
+      "<td class=\"num\">" + (r.rate || "") + "</td>" +
+      "<td class=\"fname\">" + name + "</td></tr>";
+  }
+  tb.innerHTML = html;
+  Array.prototype.forEach.call(tb.querySelectorAll("input[data-row]"), function(cb){
+    cb.addEventListener("change", function(){
+      sel[Number(cb.getAttribute("data-row"))] = cb.checked;
+      renderD2();
+    });
+  });
+}
+
+function valueCell(vals){
+  /* N=1 실값 · N>1 표본 명시 병기(S10, 승인) */
+  if (vals.length === 1) return vals[0];
+  return vals[0] + " <span class=\"sample\">(행마다 다름 · 표본, 외 " +
+    (vals.length - 1) + "행)</span>";
+}
+
+function renderMirror(){
+  var box = $("mirBox");
+  if (drift){
+    box.innerHTML = "<div class=\"drift\">" +
+      "<p>템플릿 구조가 확정 매핑과 달라졌습니다. 어긋난 필드: 낙찰하한율, 계약조건. " +
+      "매핑을 다시 확정해야 생성할 수 있습니다.</p>" +
+      "<button class=\"btn sm\" id=\"driftGo\">작업 에디터에서 매핑 확정…</button>" +
+      "<p class=\"drnote\" id=\"drNote\" hidden>(시연) 실앱에서는 이 작업의 매핑 재확정 " +
+      "화면(작업 에디터)으로 이동합니다. 확정을 마치고 돌아오면 이 세션이 다시 열립니다.</p>" +
+      "</div>";
+    var go = $("driftGo");
+    if (go) go.addEventListener("click", function(){ $("drNote").hidden = false; });
+    return;
+  }
+  var rows = selRows();
+  if (!rows.length){
+    box.innerHTML = "<p class=\"mirempty\">행을 선택하면 이 문서에 들어갈 값이 여기 비칩니다.</p>";
+    return;
+  }
+  var n = rows.length;
+  var blankN = rows.filter(function(r){ return !r.rate; }).length;
+  var isMiss = blankN > 0;
+  var isAck = isMiss && acked["낙찰하한율"];
+  var rateCls = isMiss ? (isAck ? "ackd" : "miss") : "";
+  var rateChip = isMiss
+    ? (isAck ? "<span class=\"st ackd\">확인됨 · 클릭=철회</span>"
+             : "<span class=\"st miss\">미입력 · 클릭=확인</span>")
+    : "<span class=\"st filled\">채움</span>";
+  var rateVal = isMiss
+    ? "(미입력) 선택 " + n + "행 중 " + blankN + "행에서 값이 비어 있습니다."
+    : valueCell(rows.map(function(r){ return r.rate; }));
+  var html = "<div class=\"tbwrap\"><table class=\"tb mir\"><tbody>" +
+    "<tr><td>품명</td><td>" + valueCell(rows.map(function(r){ return r.name; })) +
+      "</td><td><span class=\"st filled\">채움</span></td></tr>" +
+    "<tr><td>기초금액</td><td>" + valueCell(rows.map(function(r){ return r.base + "원"; })) +
+      "</td><td><span class=\"st filled\">채움 · 표시형</span></td></tr>" +
+    "<tr id=\"rateRow\" class=\"" + rateCls + "\"" +
+      (isMiss ? " role=\"button\" tabindex=\"0\" aria-pressed=\"" + (isAck ? "true" : "false") + "\"" : "") +
+      "><td>낙찰하한율</td><td>" + rateVal + "</td><td>" + rateChip + "</td></tr>" +
+    "<tr class=\"blankd\"><td>담당부서</td><td>(의도적 빈칸)</td>" +
+      "<td><span class=\"st blankd\">빈칸 선언</span></td></tr>" +
+    "</tbody></table></div>";
+  box.innerHTML = html;
+  var rr = $("rateRow");
+  if (rr && isMiss){
+    var toggle = function(){
+      if (acked["낙찰하한율"]) delete acked["낙찰하한율"];
+      else acked["낙찰하한율"] = true;
+      renderD2();
+    };
+    rr.addEventListener("click", toggle);
+    rr.addEventListener("keydown", function(ev){
+      if (ev.key === "Enter" || ev.key === " "){ ev.preventDefault(); toggle(); }
+    });
+  }
+}
+
+function renderGate(){
+  var def = $("defD"), pill = $("pillD"), gen = $("genD");
+  var rows = selRows();
+  var blankN = rows.filter(function(r){ return !r.rate; }).length;
+  lastBlanks = blankN;
+  if (drift){
+    def.textContent = "템플릿 구조가 확정 매핑과 달라졌습니다. 위 배너의 " +
+      "「작업 에디터에서 매핑 확정…」으로 수리하세요.";
+    def.setAttribute("data-level", "danger");
+    pill.textContent = "차단"; pill.setAttribute("data-level", "danger");
+    gen.disabled = true; return;
+  }
+  if (!rows.length){
+    def.textContent = "생성할 문서를 최소 1건 선택하세요.";
+    def.setAttribute("data-level", "warn");
+    pill.textContent = "행 선택"; pill.setAttribute("data-level", "warn");
+    gen.disabled = true; return;
+  }
+  if (blankN > 0 && !acked["낙찰하한율"]){
+    def.textContent = "미입력 필드 1개의 배지를 눌러 확인해야 문서 생성이 가능합니다: 낙찰하한율";
+    def.setAttribute("data-level", "warn");
+    pill.textContent = "확인 필요"; pill.setAttribute("data-level", "warn");
+    gen.disabled = true; return;
+  }
+  def.textContent = "담당=김○○ 매치 " + rows.length + "행 · 문서 " + rows.length +
+    "건 생성 · 저장 폴더: …\\Results";
+  def.setAttribute("data-level", "");
+  pill.textContent = "생성 준비"; pill.setAttribute("data-level", "ok");
+  gen.disabled = false;
+}
+
+function renderD2(){
+  renderDataTable();
+  renderMirror();
+  renderGate();
+}
+
+$("genD").addEventListener("click", function(){
+  var n = selRows().length;
+  setBar("barD", 100);
+  var txt = "완료. 성공 " + n + "/" + n + ", 실패 0건.";
+  if (lastBlanks > 0 && acked["낙찰하한율"]) txt += " · 미입력 표시 필드 1개(낙찰하한율)";
+  $("doneD").textContent = txt;
+});
+$("driftBtn").addEventListener("click", function(){
+  drift = !drift;
+  $("driftBtn").classList.toggle("on", drift);
+  renderD2();
+});
+$("rereadBtn").addEventListener("click", function(){
+  acked = {};            // 새 데이터 겨눔 = ack 리셋(링1 reset_acks 의미론)
+  setBar("barD", 0);
+  $("doneD").textContent = "";
+  renderD2();
+});
+
+renderD2();
+
+/* ══════════ 부록 — 식별 요약 휴리스틱(확정 사양 v2) 라이브 계산 ══════════ */
+function inorm(v){ return v == null ? "" : String(v).trim(); }
+function icol(rows, c){ return rows.map(function(r){ return inorm(r[c]); }); }
+function iEmpty(rows, c){ return icol(rows, c).every(function(v){ return !v; }); }
+function iConst(rows, c){
+  var s = {}; icol(rows, c).forEach(function(v){ s[v] = 1; });
+  return Object.keys(s).length <= 1;
+}
+function iOrd(rows, c){
+  var vs = icol(rows, c);
+  if (vs.length < 2 || vs.some(function(v){ return !/^\d+$/.test(v); })) return false;
+  for (var i = 1; i < vs.length; i++){
+    if (Number(vs[i]) - Number(vs[i - 1]) !== 1) return false;
+  }
+  return true;
+}
+function iDup(rows, c, chosen){
+  return chosen.some(function(d){
+    return rows.every(function(r){ return inorm(r[c]) === inorm(r[d]); });
+  });
+}
+function iColl(rows, cols){
+  var m = {}, s = 0;
+  rows.forEach(function(r){
+    var k = cols.map(function(c){ return inorm(r[c]); }).join("");
+    m[k] = (m[k] || 0) + 1;
+  });
+  Object.keys(m).forEach(function(k){ if (m[k] > 1) s += m[k]; });
+  return s;
+}
+function iEligible(rows, c, chosen, given){
+  if (given.indexOf(c) >= 0 || chosen.indexOf(c) >= 0) return false;
+  if (iEmpty(rows, c) || iConst(rows, c) || iOrd(rows, c)) return false;
+  return !iDup(rows, c, chosen);
+}
+function iPick(rows, cols, given){
+  var log = [], chosen = [];
+  if (!given.length){
+    for (var k = 0; k < cols.length && chosen.length < 2; k++){
+      if (iEligible(rows, cols[k], chosen, given)){
+        chosen.push(cols[k]);
+        log.push({ t:"인지층: " + cols[k] + " (왼쪽 첫 비결격)", l:"ok" });
+      }
+    }
+  } else {
+    log.push({ t:"토큰 모드: 파일명이 내용 토큰(" + given.join(", ") +
+      ")을 나르므로 인지층 생략 — 구별층만", l:"muted" });
+  }
+  while (chosen.length < 3){
+    var cur = chosen.length ? iColl(rows, chosen) : rows.length;
+    if (chosen.length && cur === 0) break;
+    var best = null, bc = null;
+    for (var j = 0; j < cols.length; j++){
+      if (!iEligible(rows, cols[j], chosen, given)) continue;
+      var n = iColl(rows, chosen.concat([cols[j]]));
+      if (best === null || n < best){ best = n; bc = cols[j]; }
+    }
+    if (bc === null || (chosen.length && best >= cur)){
+      log.push({ t:"이득 있는 열 없음 → 조용히 정지(잔여 충돌 " + cur +
+        "행) — 파일명 접미사가 최후 담보", l:"warn" });
+      break;
+    }
+    chosen.push(bc);
+    log.push({ t:"구별층: " + bc + " (잔여 충돌 " + best + "행)", l:"ok" });
+    if (!given.length && best === 0) break;
+  }
+  return { cols:chosen, resid:iColl(rows, chosen), log:log };
+}
+function iRejStats(rows, cols, chosen, given){
+  var empt = 0, cons = 0, ordi = [], dups = [];
+  cols.forEach(function(c){
+    if (given.indexOf(c) >= 0) return;
+    if (iEmpty(rows, c)) empt++;
+    else if (iConst(rows, c)) cons++;
+    else if (iOrd(rows, c)) ordi.push(c);
+    else if (chosen.indexOf(c) < 0 && iDup(rows, c, chosen)) dups.push(c);
+  });
+  return "결격 요약 — 빈 " + empt + "열 · 상수 " + cons + "열 · 순번 " +
+    (ordi.length ? ordi.join(",") : "없음") + " · 중복 열 " +
+    (dups.length ? dups.join(",") : "없음");
+}
+function itrunc(v, n){ return v.length > n ? v.slice(0, n) + "…" : v; }
+
+var NARA = JSON.parse(document.getElementById("naraData").textContent);
+var SYNTH = [];
+(function(){
+  var dam = ["김OO", "김OO", "이OO", "이OO"];
+  var pum = ["사무용 소모품 일괄", "OO의약품 외 2행", "사무용 소모품 일괄", "실험기자재"];
+  var gyu = ["A형", "-", "B형", "C형"];
+  for (var i = 0; i < 8; i++){
+    SYNTH.push({ "연번":String(i + 1), "부서":"재무과", "담당자":dam[i % 4],
+      "품명":pum[i % 4], "규격":gyu[i % 4], "기초금액":String(10000000 + i * 137) });
+  }
+})();
+var DUPROWS = [
+  { "품명":"A4 복사용지", "규격":"80g", "수량":"100" },
+  { "품명":"A4 복사용지", "규격":"80g", "수량":"100" },
+  { "품명":"프린터 토너", "규격":"HP정품", "수량":"2" },
+  { "품명":"무선 마우스", "규격":"2.4GHz", "수량":"10" }
+];
+var ISCENES = {
+  i1: { tag:"장면 1 · 나라장터 실수확 12행×53열 — 잉여 ID·차수·상수 무리를 뚫고 공고번호·공고명 도달",
+    rows:NARA, cols:Object.keys(NARA[0]), given:[],
+    disp:["bidNtceNo","bidNtceOrd","refNtceNo","bidNtceNm","ntceInsttNm","asignBdgtAmt"],
+    note:"표는 6열 발췌·5행 표시(계산은 53열×12행 전체). refNtceNo 는 공고번호와 12행 전부 " +
+      "행별 동일 = 중복 열 결격. 공고명 중복(Adobe 2건)은 공고번호가 가름.",
+    fname:function(r, i){ return "공고서-20260719-" + ("00" + (i + 1)).slice(-3) + ".hwpx"; } },
+  i2: { tag:"장면 2 · 합성 함정(연번·상수·저구별·품명 중복) — 문턱 없이 품명이 살아남는가",
+    rows:SYNTH, cols:["연번","부서","담당자","품명","규격","기초금액"], given:[],
+    disp:["연번","부서","담당자","품명","규격","기초금액"],
+    note:"연번=순번 결격 · 부서=상수 결격. v1(자격 문턱형)은 여기서 품명을 잃었다(문턱 " +
+      "0.3/0.5/0.8 → 품명/규격/기초금액 널뜀) — v2는 문턱 없이 담당자·품명 인지층 + 금액 구별층.",
+    fname:function(r, i){ return "공고서-20260719-" + ("00" + (i + 1)).slice(-3) + ".hwpx"; } },
+  i3: { tag:"장면 3 · 토큰 모드 — 파일명 패턴 공고서-{{품명}}-{{seq}}: 이름은 파일명이 나른다",
+    rows:SYNTH, cols:["연번","부서","담당자","품명","규격","기초금액"], given:["품명"],
+    disp:["연번","부서","담당자","품명","규격","기초금액"],
+    note:"내용 토큰(품명)이 파일명에 있으므로 요약은 순수 구분자 — 인지층 생략, 조건부 이득 " +
+      "최대인 기초금액 1열만. 쌍(파일명·요약)이 재인과 구별을 나눠 진다.",
+    fname:function(r, i){ return "공고서-" + inorm(r["품명"]) + "-" + ("00" + (i + 1)).slice(-3) + ".hwpx"; } },
+  i4: { tag:"장면 4 · 진성 중복 백스톱 — 데이터가 정말 같은 두 행은 요약이 못 가른다(그래도 됨)",
+    rows:DUPROWS, cols:["품명","규격","수량"], given:[],
+    disp:["품명","규격","수량"],
+    note:"1·2행은 전 열 동일(사용자 데이터의 사실이지 오류 아님) — 체인이 조용히 정지하고 " +
+      "잔여 충돌은 파일명 접미사(-001/-002)가 최후 담보. 시끄러울 이유 없음(완화 조항 자리).",
+    fname:function(r, i){ return "공고서-20260719-" + ("00" + (i + 1)).slice(-3) + ".hwpx"; } }
+};
+var icur = "i1";
+function renderI(){
+  var sc = ISCENES[icur];
+  var res = iPick(sc.rows, sc.cols, sc.given);
+  $("iTag").textContent = sc.tag;
+  // 데이터 표(발췌): 선택 열 하이라이트, 결격 열 취소선+사유
+  var showRows = sc.rows.slice(0, 5);
+  var h = "<table class=\"tb\"><thead><tr>";
+  sc.disp.forEach(function(c){
+    var cls = "", mark = "";
+    if (res.cols.indexOf(c) >= 0){ cls = " class=\"hlc\""; }
+    else if (sc.given.indexOf(c) >= 0){ cls = " class=\"rejc\""; mark = " <span class=\"x\">토큰</span>"; }
+    else if (iEmpty(sc.rows, c)){ cls = " class=\"rejc\""; mark = " <span class=\"x\">빈</span>"; }
+    else if (iConst(sc.rows, c)){ cls = " class=\"rejc\""; mark = " <span class=\"x\">상수</span>"; }
+    else if (iOrd(sc.rows, c)){ cls = " class=\"rejc\""; mark = " <span class=\"x\">순번</span>"; }
+    else if (iDup(sc.rows, c, res.cols)){ cls = " class=\"rejc\""; mark = " <span class=\"x\">중복</span>"; }
+    h += "<th" + cls + ">" + c + mark + "</th>";
+  });
+  h += "</tr></thead><tbody>";
+  showRows.forEach(function(r){
+    h += "<tr>" + sc.disp.map(function(c){
+      return "<td>" + itrunc(inorm(r[c]), 16) + "</td>";
+    }).join("") + "</tr>";
+  });
+  h += "</tbody></table>";
+  $("iData").innerHTML = h;
+  $("iNote").textContent = sc.note +
+    (sc.rows.length > 5 ? " (표시 5/" + sc.rows.length + "행)" : "");
+  // 로그
+  $("iLog").innerHTML =
+    "<span class=\"muted\">" + iRejStats(sc.rows, sc.cols, res.cols, sc.given) + "</span>" +
+    res.log.map(function(e){ return "<span class=\"" + e.l + "\">" + e.t + "</span>"; }).join("");
+  // 착지 목록: 파일명(정준) · 요약(보조), 충돌 행은 정직 표기
+  var keyCount = {};
+  sc.rows.forEach(function(r){
+    var k = res.cols.map(function(c){ return inorm(r[c]); }).join("");
+    keyCount[k] = (keyCount[k] || 0) + 1;
+  });
+  $("iOut").innerHTML = sc.rows.slice(0, 5).map(function(r, i){
+    var summ = res.cols.map(function(c){ return itrunc(inorm(r[c]), 22); }).join(" · ");
+    var k = res.cols.map(function(c){ return inorm(r[c]); }).join("");
+    var dup = res.cols.length && keyCount[k] > 1
+      ? " <span class=\"collide\">(요약 동일 — 파일명으로 구별)</span>" : "";
+    return "<span class=\"nm\"><b>" + sc.fname(r, i) + "</b>" +
+      (summ ? " · " + summ : "") + dup + "</span>";
+  }).join("") + (sc.rows.length > 5
+    ? "<span class=\"nm\">⋯ 외 " + (sc.rows.length - 5) + "건</span>" : "");
+}
+Array.prototype.forEach.call(document.querySelectorAll(".scnbtn[data-isc]"), function(btn){
+  btn.addEventListener("click", function(){
+    Array.prototype.forEach.call(document.querySelectorAll(".scnbtn[data-isc]"),
+      function(b){ b.classList.remove("on"); });
+    btn.classList.add("on");
+    icur = btn.getAttribute("data-isc");
+    renderI();
+  });
+});
+renderI();
+})();
+</script>
