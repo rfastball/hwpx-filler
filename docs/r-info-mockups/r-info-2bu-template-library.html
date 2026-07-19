@@ -1,0 +1,428 @@
+<title>R-info 2부 시안 — B안</title>
+<style>
+  :root{
+    --a-primary:#2f5fbf; --a-primary-h:#274fa0; --a-warn:#a05a00; --a-danger:#c0392b;
+    --a-ok:#1e8449; --a-muted:#656a72; --a-border:#e2e4e8; --a-card:#ffffff;
+    --a-window:#f6f7f9; --a-ink:#1c2126; --a-on-accent:#ffffff; --a-sel:#dfe6fb;
+    --fb-fill-bg:#e5f2ea; --fb-fill-bd:#bfe0cb; --fb-blank-bg:#f6ecdb; --fb-blank-bd:#e6c98f;
+    --fb-missing-bg:#fbe6e3; --fb-missing-bd:#e6a49c;
+    --n-header-bg:#eef1f4; --n-hover:#f0f2f5; --n-surface-alt:#f3f4f6; --n-track:#eef0f3;
+    --n-border-strong:#cbd0d6; --n-ink-control:#2b3038;
+    --pin:#274fa0; --pin-bg:#dfe6fb;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --a-primary:#6f97e8; --a-primary-h:#8badf0; --a-warn:#e0a850; --a-danger:#ec7264;
+      --a-ok:#43b877; --a-muted:#98a0ab; --a-border:#333a44; --a-card:#1c2127;
+      --a-window:#131619; --a-ink:#e7eaee; --a-on-accent:#0f1418; --a-sel:#1e2846;
+      --fb-fill-bg:#17301f; --fb-fill-bd:#2b5738; --fb-blank-bg:#33291a; --fb-blank-bd:#5c4a26;
+      --fb-missing-bg:#3a2320; --fb-missing-bd:#5f342e;
+      --n-header-bg:#191d23; --n-hover:#232830; --n-surface-alt:#20252c; --n-track:#20252c;
+      --n-border-strong:#3d4550; --n-ink-control:#d4d9df;
+      --pin:#8badf0; --pin-bg:#1e2846;
+    }
+  }
+  :root[data-theme="dark"]{
+    --a-primary:#6f97e8; --a-primary-h:#8badf0; --a-warn:#e0a850; --a-danger:#ec7264;
+    --a-ok:#43b877; --a-muted:#98a0ab; --a-border:#333a44; --a-card:#1c2127;
+    --a-window:#131619; --a-ink:#e7eaee; --a-on-accent:#0f1418; --a-sel:#1e2846;
+    --fb-fill-bg:#17301f; --fb-fill-bd:#2b5738; --fb-blank-bg:#33291a; --fb-blank-bd:#5c4a26;
+    --fb-missing-bg:#3a2320; --fb-missing-bd:#5f342e;
+    --n-header-bg:#191d23; --n-hover:#232830; --n-surface-alt:#20252c; --n-track:#20252c;
+    --n-border-strong:#3d4550; --n-ink-control:#d4d9df;
+    --pin:#8badf0; --pin-bg:#1e2846;
+  }
+  :root[data-theme="light"]{
+    --a-primary:#2f5fbf; --a-primary-h:#274fa0; --a-warn:#a05a00; --a-danger:#c0392b;
+    --a-ok:#1e8449; --a-muted:#656a72; --a-border:#e2e4e8; --a-card:#ffffff;
+    --a-window:#f6f7f9; --a-ink:#1c2126; --a-on-accent:#ffffff; --a-sel:#dfe6fb;
+    --fb-fill-bg:#e5f2ea; --fb-fill-bd:#bfe0cb; --fb-blank-bg:#f6ecdb; --fb-blank-bd:#e6c98f;
+    --fb-missing-bg:#fbe6e3; --fb-missing-bd:#e6a49c;
+    --n-header-bg:#eef1f4; --n-hover:#f0f2f5; --n-surface-alt:#f3f4f6; --n-track:#eef0f3;
+    --n-border-strong:#cbd0d6; --n-ink-control:#2b3038;
+    --pin:#274fa0; --pin-bg:#dfe6fb;
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--a-window);color:var(--a-ink);
+    font-family:"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;
+    font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .mono{font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
+  .muted{color:var(--a-muted)}
+
+  .page{max-width:1180px;margin:0 auto;padding:28px 24px 64px}
+  .topbar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+  .topbar h1{font-size:22px;margin:0;font-weight:700;letter-spacing:-.01em}
+  .topbar .tag{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--a-primary);background:var(--a-sel);padding:3px 9px;border-radius:999px}
+  .lede{color:var(--a-muted);margin:2px 0 20px;max-width:74ch}
+  .lede b{color:var(--a-ink);font-weight:600}
+  .spacer{flex:1}
+  .tbtn{border:1px solid var(--a-border);background:var(--a-card);color:var(--a-ink);
+    border-radius:6px;padding:6px 12px;font:inherit;cursor:pointer}
+  .tbtn:hover{background:var(--n-hover)}
+  .tbtn:focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
+
+  .tabs{display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--a-border)}
+  .tab{border:0;background:none;color:var(--a-muted);font:inherit;font-size:14px;font-weight:600;
+    padding:9px 14px;cursor:pointer;border-radius:6px 6px 0 0;position:relative;top:1px}
+  .tab[aria-selected="true"]{color:var(--a-primary);background:var(--a-card);
+    box-shadow:inset 0 -2px 0 var(--a-primary);border:1px solid var(--a-border);border-bottom:0}
+  .tab:focus-visible{outline:2px solid var(--a-primary);outline-offset:-2px}
+
+  .layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:22px;align-items:start}
+  @media(max-width:900px){.layout{grid-template-columns:1fr}}
+
+  .app{border:1px solid var(--n-border-strong);border-radius:11px;overflow:hidden;
+    box-shadow:0 12px 34px -18px rgba(0,0,0,.25);background:var(--a-card);
+    display:grid;grid-template-columns:186px minmax(0,1fr);min-height:560px}
+  @media(max-width:520px){.app{grid-template-columns:1fr}.rail{display:none!important}}
+  .rail{background:var(--n-header-bg);border-right:1px solid var(--a-border);padding:12px 8px;
+    display:flex;flex-direction:column;gap:2px}
+  .railcap{font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--a-muted);padding:8px 10px 6px}
+  .navbtn{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;
+    color:var(--n-ink-control);cursor:default;font-size:13px}
+  .navbtn .ni{width:16px;height:16px;flex:none;color:var(--a-muted);text-align:center}
+  .navbtn[aria-current="true"]{background:var(--a-sel);color:var(--a-primary);font-weight:600;
+    box-shadow:inset 3px 0 0 var(--a-primary)}
+  .navbtn[aria-current="true"] .ni{color:var(--a-primary)}
+
+  .screen{padding:20px 22px;min-width:0;overflow:auto}
+  .scr-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+  .scr-head h2{margin:0;font-size:19px;font-weight:700}
+  .scr-head .sub{color:var(--a-muted);font-size:13px;margin:0}
+  .libbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:14px 0 6px;
+    padding:8px 10px;background:var(--n-surface-alt);border:1px solid var(--a-border);border-radius:8px}
+  .libbar .path{font-size:12px;color:var(--a-muted)}
+  .libbar .path b{color:var(--a-ink);font-weight:600}
+
+  .btn{border:1px solid var(--n-border-strong);background:var(--a-card);color:var(--n-ink-control);
+    border-radius:6px;padding:5px 11px;font:inherit;font-size:12px;cursor:pointer;white-space:nowrap}
+  .btn:hover{background:var(--n-hover)}
+  .btn.sm{padding:3px 9px;font-size:12px}
+  .btn.primary{background:var(--a-primary);color:var(--a-on-accent);border-color:var(--a-primary);font-weight:600}
+  .btn.primary:hover{background:var(--a-primary-h);border-color:var(--a-primary-h)}
+  .btn.more{border-color:transparent;background:none;color:var(--a-muted);padding:3px 7px;font-size:14px;line-height:1}
+  .btn.more:hover{background:var(--n-hover);color:var(--a-ink)}
+
+  /* medium band = intrinsic hard-axis section (hwpx / txt) */
+  .band{display:flex;align-items:center;gap:9px;margin:18px 0 2px;padding:0 2px}
+  .band .bk{font-size:11px;font-weight:700;letter-spacing:.05em;padding:2px 9px;border-radius:5px;
+    background:var(--a-ink);color:var(--a-card)}
+  .band .btxt{font-weight:700;font-size:14px}
+  .band .bsub{color:var(--a-muted);font-size:12px}
+  .band .rule{flex:1;height:1px;background:var(--a-border)}
+  .band .bcount{color:var(--a-muted);font-size:12px;font-variant-numeric:tabular-nums}
+
+  /* grouped collapsible list (reused job model) */
+  .grp{margin-top:8px}
+  .grphead{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:6px;cursor:pointer;user-select:none}
+  .grphead:hover{background:var(--n-hover)}
+  .grphead .chev{width:14px;color:var(--a-muted);transition:transform .12s;font-size:11px}
+  .grp.collapsed .chev{transform:rotate(-90deg)}
+  .grphead .gname{font-weight:700;font-size:13px}
+  .grphead .gcount{color:var(--a-muted);font-size:12px;font-variant-numeric:tabular-nums}
+  .grphead .gnone{color:var(--a-muted);font-weight:600;font-style:italic}
+  .grpbody{display:flex;flex-direction:column;gap:8px;padding:6px 0 4px 22px}
+  .grp.collapsed .grpbody{display:none}
+
+  .tplcard{border:1px solid var(--a-border);border-radius:8px;padding:9px 11px;background:var(--a-card);
+    display:flex;flex-direction:column;gap:6px}
+  .tplcard:hover{border-color:var(--n-border-strong)}
+  .tplcard:hover .btn.more{background:var(--n-surface-alt)}
+  .tc-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .tc-name{font-weight:600;font-size:13px}
+  .tc-meta{color:var(--a-muted);font-size:12px}
+  .tc-acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .pill{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap;border:1px solid transparent}
+  .pill.ok{background:var(--fb-fill-bg);color:var(--a-ok);border-color:var(--fb-fill-bd)}
+  .pill.warn{background:var(--fb-blank-bg);color:var(--a-warn);border-color:var(--fb-blank-bd)}
+  .pill.danger{background:var(--fb-missing-bg);color:var(--a-danger);border-color:var(--fb-missing-bd)}
+  /* assign verb — shown ONLY where the group header can't convey it (그룹 없음) */
+  .gchip.assign{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:3px 9px;border-radius:999px;
+    background:none;color:var(--a-muted);border:1px dashed var(--n-border-strong);cursor:pointer;font-weight:500}
+  .gchip.assign:hover{color:var(--a-primary);border-color:var(--a-primary)}
+  .spread{flex:1}
+
+  /* editor step-0 select variant */
+  .steps{display:flex;gap:2px;margin:14px 0 6px;border-bottom:1px solid var(--a-border)}
+  .stab{font-size:13px;color:var(--a-muted);padding:8px 12px;border-radius:6px 6px 0 0}
+  .stab.cur{color:var(--a-primary);font-weight:700;background:var(--a-card);box-shadow:inset 0 -2px 0 var(--a-primary)}
+  .selrow{display:flex;align-items:center;gap:10px;border:1px solid var(--a-border);border-radius:8px;
+    padding:8px 11px;cursor:pointer;background:var(--a-card)}
+  .selrow:hover{border-color:var(--n-border-strong);background:var(--n-hover)}
+  .selrow.sel{border-color:var(--a-primary);background:var(--a-sel)}
+  .selrow .radio{width:15px;height:15px;border-radius:999px;border:2px solid var(--n-border-strong);flex:none;
+    display:grid;place-items:center}
+  .selrow.sel .radio{border-color:var(--a-primary)}
+  .selrow.sel .radio::after{content:"";width:7px;height:7px;border-radius:999px;background:var(--a-primary)}
+  .selrow .nm{font-weight:600}
+  .grpbody.select{gap:5px}
+  .wsub{color:var(--a-muted);margin:6px 0 4px;font-size:13px}
+  .filternote{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--a-muted);
+    background:var(--n-surface-alt);border:1px solid var(--a-border);border-radius:6px;padding:5px 10px;margin:2px 0 4px}
+  .filternote .bk{font-size:10px;font-weight:700;letter-spacing:.05em;padding:1px 7px;border-radius:4px;
+    background:var(--a-ink);color:var(--a-card)}
+  .import-foot{display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:12px;
+    border-top:1px dashed var(--a-border);flex-wrap:wrap}
+  .navrow{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+
+  .pin{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:999px;
+    background:var(--pin);color:#fff;font-size:11px;font-weight:700;flex:none;font-family:"Cascadia Code",monospace}
+  .pin.on-canvas{box-shadow:0 0 0 3px var(--pin-bg)}
+
+  .legend{position:sticky;top:16px;border:1px solid var(--a-border);border-radius:11px;background:var(--a-card);padding:16px 16px 8px}
+  .legend h3{margin:0 0 3px;font-size:14px}
+  .legend .lsub{color:var(--a-muted);font-size:12px;margin:0 0 12px}
+  .lrow{display:flex;gap:10px;padding:11px 0;border-top:1px solid var(--a-border)}
+  .lrow .lt{font-weight:600;font-size:13px;margin:0 0 2px}
+  .lrow .ld{color:var(--a-muted);font-size:12px;margin:0;line-height:1.5}
+  .lrow .ld b{color:var(--a-ink);font-weight:600}
+  .repeal{margin-top:6px;padding:10px 12px;border-radius:8px;background:var(--fb-blank-bg);
+    border:1px solid var(--fb-blank-bd);font-size:12px;color:var(--a-warn);line-height:1.5}
+  .repeal b{color:var(--a-warn)}
+  .footnote{max-width:78ch;color:var(--a-muted);font-size:12px;margin:22px auto 0;line-height:1.6;
+    border-top:1px solid var(--a-border);padding-top:14px}
+  .hide{display:none}
+</style>
+
+<div class="page">
+  <div class="topbar">
+    <h1>R-info 2부 시안</h1>
+    <span class="tag">B안 · 작업 모델 재사용 · v2</span>
+    <span class="spacer"></span>
+    <button class="tbtn" id="themeBtn" type="button">다크/라이트</button>
+  </div>
+  <p class="lede"><b>매체(HWPX/TXT)는 구조로 분리</b>하고, 그 안에서 작업 목록과 <b>같은 그룹+접힘 모델</b>을 씁니다.
+    매체는 동사를 가르는 경성 축이라 구획으로, 그룹은 사용자가 매기는 연성 축이라 접힘으로 — 배울 규칙은 그룹 하나뿐.</p>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" aria-selected="true" id="tab-mgr" type="button">화면 1 — 템플릿 관리</button>
+    <button class="tab" role="tab" aria-selected="false" id="tab-editor" type="button">화면 2 — 에디터 1단계 접합</button>
+  </div>
+
+  <div class="layout">
+    <!-- ===================== 화면 1: 템플릿 관리 ===================== -->
+    <div class="app" id="view-mgr">
+      <nav class="rail" aria-label="레일">
+        <div class="railcap">HWPX 필러</div>
+        <div class="navbtn"><span class="ni">▤</span>작업</div>
+        <div class="navbtn"><span class="ni">✎</span>작업 에디터</div>
+        <div class="navbtn"><span class="ni">⚡</span>빠른 기안</div>
+        <div class="navbtn" aria-current="true"><span class="ni">▣</span>템플릿 관리</div>
+        <div class="navbtn"><span class="ni">▦</span>데이터 관리</div>
+      </nav>
+      <section class="screen">
+        <div class="scr-head"><h2>템플릿 관리</h2><p class="sub">문서를 만들 원본 서식을 한 곳에서 관리합니다.</p></div>
+
+        <div class="libbar">
+          <span class="path">라이브러리 <b>~/.hwpxfiller/templates</b></span>
+          <span class="spread"></span>
+          <span class="pin on-canvas" title="결정 ③">3</span>
+          <button class="btn">가져오기…</button>
+          <button class="btn">새 TXT 템플릿</button>
+        </div>
+
+        <!-- ===== 매체 구획: HWPX ===== -->
+        <div class="band">
+          <span class="bk">HWPX</span><span class="btxt">서식</span>
+          <span class="bsub">작업 에디터로 .hwpx 문서를 만듭니다</span>
+          <span class="rule"></span><span class="pin on-canvas" title="결정 ①">1</span><span class="bcount">4개</span>
+        </div>
+
+        <div class="grp">
+          <div class="grphead"><span class="chev">▾</span><span class="gname">입찰·공고</span><span class="gcount">2</span></div>
+          <div class="grpbody">
+            <div class="tplcard">
+              <div class="tc-top"><span class="tc-name">물품구매 입찰공고서.hwpx</span>
+                <span class="pill ok">누름틀 준비됨</span></div>
+              <div class="tc-meta">필드 14개 · 표 안 9 · 본문 5</div>
+              <div class="tc-acts"><button class="btn sm">새 작업</button>
+                <button class="btn sm">점검</button><button class="btn sm">열기</button>
+                <span class="spread"></span><button class="btn more" title="그룹 이동 · 삭제">⋮</button></div>
+            </div>
+            <div class="tplcard">
+              <div class="tc-top"><span class="tc-name">용역 입찰공고문.hwpx</span>
+                <span class="pill warn">누름틀 변환 필요</span></div>
+              <div class="tc-meta">토큰 11개 — 3개 변환 대기</div>
+              <div class="tc-acts"><button class="btn sm">누름틀로 변환…</button>
+                <button class="btn sm">점검</button><button class="btn sm">열기</button>
+                <span class="spread"></span><button class="btn more" title="그룹 이동 · 삭제">⋮</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="grp collapsed">
+          <div class="grphead"><span class="chev">▾</span><span class="gname">계약</span><span class="gcount">1</span></div>
+          <div class="grpbody">
+            <div class="tplcard"><div class="tc-top"><span class="tc-name">일반용역 계약서.hwpx</span>
+              <span class="pill ok">누름틀 준비됨</span></div></div>
+          </div>
+        </div>
+        <div class="grp">
+          <div class="grphead"><span class="chev">▾</span><span class="gnone">그룹 없음</span><span class="gcount">1</span>
+            <span class="spread"></span><span class="pin on-canvas" title="결정 ②">2</span></div>
+          <div class="grpbody">
+            <div class="tplcard">
+              <div class="tc-top"><span class="tc-name">착수계_2026.hwpx</span>
+                <span class="pill ok">누름틀 준비됨</span><span class="spread"></span>
+                <span class="gchip assign">＋ 그룹 지정</span></div>
+              <div class="tc-meta">방금 가져옴 · 필드 8개</div>
+              <div class="tc-acts"><button class="btn sm">새 작업</button>
+                <button class="btn sm">점검</button><button class="btn sm">열기</button>
+                <span class="spread"></span><button class="btn more" title="삭제">⋮</button></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== 매체 구획: TXT ===== -->
+        <div class="band">
+          <span class="bk">TXT</span><span class="btxt">서식</span>
+          <span class="bsub">빠른 기안·기안문 채우기로 클립보드에 복사합니다</span>
+          <span class="rule"></span><span class="bcount">2개</span>
+        </div>
+
+        <div class="grp">
+          <div class="grphead"><span class="chev">▾</span><span class="gname">입찰·공고</span><span class="gcount">1</span></div>
+          <div class="grpbody">
+            <div class="tplcard">
+              <div class="tc-top"><span class="tc-name">긴급 공고 안내.txt</span></div>
+              <div class="tc-meta">토큰 4개</div>
+              <div class="tc-acts"><button class="btn sm">내용 편집</button>
+                <button class="btn sm">기안문 채우기에서 열기</button>
+                <span class="spread"></span><button class="btn more" title="그룹 이동 · 삭제">⋮</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="grp">
+          <div class="grphead"><span class="chev">▾</span><span class="gnone">그룹 없음</span><span class="gcount">1</span></div>
+          <div class="grpbody">
+            <div class="tplcard">
+              <div class="tc-top"><span class="tc-name">협조전.txt</span><span class="spread"></span>
+                <span class="gchip assign">＋ 그룹 지정</span></div>
+              <div class="tc-meta">토큰 6개 · 탐색기에서 넣음</div>
+              <div class="tc-acts"><button class="btn sm">내용 편집</button>
+                <button class="btn sm">기안문 채우기에서 열기</button>
+                <span class="spread"></span><button class="btn more" title="삭제">⋮</button></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ===================== 화면 2: 에디터 1단계 ===================== -->
+    <div class="app hide" id="view-editor">
+      <nav class="rail" aria-label="레일">
+        <div class="railcap">HWPX 필러</div>
+        <div class="navbtn"><span class="ni">▤</span>작업</div>
+        <div class="navbtn" aria-current="true"><span class="ni">✎</span>작업 에디터</div>
+        <div class="navbtn"><span class="ni">⚡</span>빠른 기안</div>
+        <div class="navbtn"><span class="ni">▣</span>템플릿 관리</div>
+        <div class="navbtn"><span class="ni">▦</span>데이터 관리</div>
+      </nav>
+      <section class="screen">
+        <div class="scr-head"><h2>작업 에디터</h2><p class="sub">템플릿 → 매핑 → 저장. 3단계.</p></div>
+        <div class="steps">
+          <span class="stab cur">1 · 템플릿 선택</span><span class="stab">2 · 필드 매핑</span><span class="stab">3 · 작업 저장</span>
+        </div>
+        <p class="wsub">라이브러리에서 서식을 고릅니다. 실행할 때 데이터를 겨눠 .hwpx를 만듭니다.
+          <span class="pin" title="결정 ④">4</span></p>
+        <div class="filternote"><span class="bk">HWPX</span> 이 마법사는 .hwpx를 만들므로 HWPX 서식만 보입니다 — 그룹은 관리 화면과 동일.</div>
+
+        <div class="grp">
+          <div class="grphead"><span class="chev">▾</span><span class="gname">입찰·공고</span><span class="gcount">2</span></div>
+          <div class="grpbody select">
+            <div class="selrow sel"><span class="radio"></span><span class="nm">물품구매 입찰공고서.hwpx</span>
+              <span class="pill ok">준비됨</span><span class="spread"></span><span class="tc-meta">필드 14개</span></div>
+            <div class="selrow"><span class="radio"></span><span class="nm">용역 입찰공고문.hwpx</span>
+              <span class="pill warn">변환 필요</span><span class="spread"></span><span class="tc-meta">토큰 11개</span></div>
+          </div>
+        </div>
+        <div class="grp collapsed">
+          <div class="grphead"><span class="chev">▾</span><span class="gname">계약</span><span class="gcount">1</span></div>
+          <div class="grpbody select"></div>
+        </div>
+        <div class="grp">
+          <div class="grphead"><span class="chev">▾</span><span class="gnone">그룹 없음</span><span class="gcount">1</span></div>
+          <div class="grpbody select">
+            <div class="selrow"><span class="radio"></span><span class="nm">착수계_2026.hwpx</span>
+              <span class="pill ok">준비됨</span><span class="spread"></span><span class="tc-meta">필드 8개</span></div>
+          </div>
+        </div>
+
+        <div class="import-foot">
+          <span class="muted">찾는 서식이 없나요?</span>
+          <button class="btn">파일에서 가져오기…</button>
+          <span class="muted" style="font-size:12px">가져오면 라이브러리에 추가되고 여기서 바로 고를 수 있습니다.</span>
+        </div>
+        <div class="navrow"><button class="btn" disabled>◀ 뒤로</button><button class="btn primary">다음 ▶</button></div>
+      </section>
+    </div>
+
+    <!-- ===================== 범례 ===================== -->
+    <aside class="legend" aria-label="이 시안이 보여주는 것">
+      <h3>이 시안이 보여주는 것</h3>
+      <p class="lsub">B안 v2 — 캔버스의 핀과 대응</p>
+
+      <div class="lrow"><span class="pin">1</span><div>
+        <p class="lt">매체 = 구조, 그룹 = 그 안에서</p>
+        <p class="ld">HWPX/TXT는 <b>동사를 가르는 경성 축</b>이라 구획으로 나눕니다(현실이 자명 —
+          배울 규칙 아님). 그 안에서만 <b>작업과 같은 그룹+접힘</b>. 관리 로직은 하나.</p></div></div>
+
+      <div class="lrow"><span class="pin">2</span><div>
+        <p class="lt">「그룹 없음」이 받아냄</p>
+        <p class="ld">방금 가져왔거나 탐색기로 떨군 템플릿은 <b>조용히 사라지지 않고</b> 각 매체의 여기로.
+          「＋ 그룹 지정」으로 승격 — 이 동사는 헤더가 그룹을 못 알려주는 여기서만 노출.</p></div></div>
+
+      <div class="lrow"><span class="pin">3</span><div>
+        <p class="lt">가져오기 = 루트로 복사</p>
+        <p class="ld">파일을 <b>라이브러리 단일 루트로 복사</b>(제자리 등록 아님). 루트 파편화 차단 —
+          "습관 고정" 원칙. 복사본은 처음엔 「그룹 없음」.</p></div></div>
+
+      <div class="lrow"><span class="pin">4</span><div>
+        <p class="lt">에디터 1단계 = 고르기 전용 (HWPX만)</p>
+        <p class="ld">마법사가 .hwpx를 만들므로 <b>HWPX 서식만 자동 필터</b> — 소비 표면은 늘 단일 매체.
+          같은 그룹 목록을 <b>선택 전용</b>으로 재사용. 옛 파일버튼 4개는 「가져오기…」 하나로 붕괴(F16).</p></div></div>
+
+      <div class="lrow" style="border-top:1px solid var(--a-border)"><span class="pin" style="background:var(--a-muted)">･</span><div>
+        <p class="lt">그룹 라벨은 카드에 반복 안 함</p>
+        <p class="ld">이미 그룹 헤더 아래 있으니 칩은 잉여. 그룹 <b>이동</b>은 호버 <b>⋮</b> 메뉴로(작업 모델 동형).
+          라벨이 아니라 동사만 남김.</p></div></div>
+
+      <div class="repeal"><b>재기록 대상</b> — 1부 결정 ③(서브폴더=폴더트리 그룹, 앱이 미러링) <b>폐기</b>·교체.
+        근거: 작업 group+접힘 모델 구현됨 + 멘탈 모델 불증가 우선. 단 매체 축은 템플릿 고유(작업엔 없음)라 구조로 보존.</div>
+    </aside>
+  </div>
+
+  <p class="footnote">실제 앱 토큰(royal blue #2f5fbf · 맑은고딕 스택 · 간격·모서리 스케일)으로 렌더. 상호작용은
+    정적 시안 — 그룹 접힘/선택은 최종 형상 감을 주기 위한 표시입니다. 라벨(점검 등)은 R-copy 방향으로 손봤으나
+    확정 아님. 이 문서는 토의용 시안이며, 합의 시 <span class="mono">docs/r-info-mockups/</span>로 박제됩니다.</p>
+</div>
+
+<script>
+  (function(){
+    var root=document.documentElement;
+    document.getElementById("themeBtn").addEventListener("click",function(){
+      var cur=root.getAttribute("data-theme");
+      if(!cur){cur=matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light";}
+      root.setAttribute("data-theme",cur==="dark"?"light":"dark");
+    });
+    var tM=document.getElementById("tab-mgr"),tE=document.getElementById("tab-editor");
+    var vM=document.getElementById("view-mgr"),vE=document.getElementById("view-editor");
+    function sel(mgr){
+      tM.setAttribute("aria-selected",mgr?"true":"false");
+      tE.setAttribute("aria-selected",mgr?"false":"true");
+      vM.classList.toggle("hide",!mgr); vE.classList.toggle("hide",mgr);
+    }
+    tM.addEventListener("click",function(){sel(true);});
+    tE.addEventListener("click",function(){sel(false);});
+    document.querySelectorAll(".grphead").forEach(function(h){
+      h.addEventListener("click",function(){h.parentElement.classList.toggle("collapsed");});
+    });
+    document.querySelectorAll(".selrow").forEach(function(r){
+      r.addEventListener("click",function(){
+        r.closest(".app").querySelectorAll(".selrow").forEach(function(x){x.classList.remove("sel");});
+        r.classList.add("sel");
+      });
+    });
+  })();
+</script>
