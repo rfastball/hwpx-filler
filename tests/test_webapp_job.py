@@ -90,7 +90,8 @@ def test_select_job_then_data_populates_records_and_badges(tmp_path):
     assert snap["has_data"] is True and snap["record_count"] == 2
     assert snap["selected_count"] == 2  # 데이터 겨눔 = 전체 선택 초기화
     assert snap["template_path"].endswith("t.hwpx")  # 추적성 로케이트용 전체 경로(#53-B)
-    states = {s["name"]: s["state"] for s in snap["field_states"]}
+    # 본문 존 거울 행(비-drift 필드) — 이름·상태·값 병기.
+    states = {s["name"]: s["state"] for s in snap["mirror"]}
     assert states["공고명"] == "filled"
     assert states["추정가격"] == "missing"  # rec0 빈값 → 미입력
 
@@ -191,12 +192,103 @@ def test_overwrite_confirm_flow(tmp_path):
     ctrl.dispatch("ack_field", {"field": "추정가격"})
     assert ctrl.generate()["ok"] is True  # 최초 생성
 
-    # 같은 폴더 재생성 → 조용한 덮어쓰기 금지: 재진술 요구.
+    # 같은 폴더 재생성 → 조용한 덮어쓰기 금지: 수치 합성 재진술 요구(총량·파괴분·신규분).
     res = ctrl.generate()
     assert res["ok"] is False and res.get("needs_overwrite") is True
-    assert "덮어" in res["overwrite_text"]
+    assert res["total"] == 2 and res["overwrite_count"] == 2 and res["new_count"] == 0
+    assert len(res["conflict_names"]) == 2 and res["conflict_more"] == 0
     # 확인 후 재호출 → 생성.
     assert ctrl.generate(confirm_overwrite=True)["ok"] is True
+
+
+# ---------------------------------------------- 본문 존 거울(블록 6 D2 ⓑ, PR-2)
+def _mirror_job(tmp_path) -> JobRegistry:
+    """거울 케이스용 작업 — 채움(text)·미입력(amount, rec0 빈값)·의도적 빈칸 3필드."""
+    template = tmp_path / "t.hwpx"
+    _write_template(template, ["공고명", "추정가격", "비고"])
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(
+        name="공고서", template_path=str(template),
+        mapping=MappingProfile(mappings=[
+            FieldMapping(template_field="공고명", source="bidNtceNm"),
+            FieldMapping(template_field="추정가격", source="presmptPrce", type="amount"),
+            FieldMapping(template_field="비고", type="blank"),
+        ]),
+        filename_pattern="doc-{{seq:001}}",
+    ))
+    return reg
+
+
+def test_mirror_value_display_filled_sample_missing_blank(tmp_path):
+    """거울 행 = 필드별 값 집계(재구현 아님, mapped_records 소비). 상태별 값·표시형 병기."""
+    ctrl = JobController(_mirror_job(tmp_path), lambda s, snap: None)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    m = {r["name"]: r for r in ctrl.snapshot()["mirror"]}
+    # 공고명: 선택 2행 값이 달라 표본 명시 병기(S10) — 서로 다른 값 1개 더, text 라 표시형 아님.
+    assert m["공고명"]["state"] == "filled"
+    assert m["공고명"]["value"] == "전산장비 (표본 · 외 1개 값)"
+    assert m["공고명"]["formatted"] is False
+    # 추정가격: rec0 빈값 → missing, 값 = 빈 행수 재진술(낙관 서사 해소), amount → 표시형.
+    assert m["추정가격"]["state"] == "missing"
+    assert "선택 2행 중 1행" in m["추정가격"]["value"]
+    assert m["추정가격"]["formatted"] is True
+    # 비고: 의도적 빈칸 표지.
+    assert m["비고"]["state"] == "blank" and m["비고"]["value"] == "(의도적 빈칸)"
+
+
+def test_mirror_filled_same_value_is_not_labeled_sample(tmp_path):
+    """선택 N>1 이라도 값이 다 같으면 표본 라벨 없이 그냥 값(허위 '행마다 다름' 금지)."""
+    ctrl = JobController(_mirror_job(tmp_path), lambda s, snap: None)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    csv = tmp_path / "same.csv"
+    csv.write_text("bidNtceNm,presmptPrce\n동일공고,100\n동일공고,200\n", encoding="utf-8")
+    ctrl.load_data_path(str(csv))
+    m = {r["name"]: r for r in ctrl.snapshot()["mirror"]}
+    assert m["공고명"]["value"] == "동일공고"  # 표본 라벨 없음
+
+
+def test_mirror_sample_counts_distinct_values_not_rows(tmp_path):
+    """표본 병기 '외 K개 값'은 서로 다른 값 수로 센다 — 대부분 같고 하나만 달라도 과장 없음."""
+    ctrl = JobController(_mirror_job(tmp_path), lambda s, snap: None)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    csv = tmp_path / "mostly_same.csv"
+    # 4행 '전산장비' + 1행 '사무비품' → 서로 다른 값은 2종(외 1개), 행 수(5)로 세면 과장(외 4).
+    csv.write_text(
+        "bidNtceNm,presmptPrce\n전산장비,1\n전산장비,2\n전산장비,3\n전산장비,4\n사무비품,5\n",
+        encoding="utf-8",
+    )
+    ctrl.load_data_path(str(csv))
+    m = {r["name"]: r for r in ctrl.snapshot()["mirror"]}
+    assert m["공고명"]["value"] == "전산장비 (표본 · 외 1개 값)"  # 행 수 아님(외 4행 금지)
+
+
+def test_mirror_empty_when_no_selection(tmp_path):
+    """선택 0 = 생성될 문서 없음 → 거울 행 없음(빈 값을 '채움'으로 오도하지 않는다)."""
+    ctrl = JobController(_mirror_job(tmp_path), lambda s, snap: None)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.dispatch("set_none", {})
+    snap = ctrl.snapshot()
+    assert snap["mirror"] == [] and snap["drift"] == []
+
+
+def test_mirror_drift_split_into_blocking_list(tmp_path):
+    """drift(구조 불일치) 필드는 거울 표에서 빠져 별도 drift 목록으로 — 차단 배너 분리(결정 36)."""
+    template = tmp_path / "t.hwpx"
+    _write_template(template, ["공고명", "유령"])  # 유령 = 템플릿 전용(매핑 미커버) → drift
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(
+        name="공고서", template_path=str(template),
+        mapping=MappingProfile(mappings=[FieldMapping(template_field="공고명", source="bidNtceNm")]),
+        filename_pattern="doc-{{seq:001}}",
+    ))
+    ctrl = JobController(reg, lambda s, snap: None)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    snap = ctrl.snapshot()
+    assert snap["drift"] == ["유령"]
+    assert [r["name"] for r in snap["mirror"]] == ["공고명"]  # drift 필드는 표에서 제외
 
 
 def test_select_none_closes_record_gate(tmp_path):
