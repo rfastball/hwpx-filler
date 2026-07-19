@@ -35,6 +35,7 @@ from ..batch import generate_batch
 from ..core.dataset_pool import DatasetPoolRegistry
 from ..core.identity_summary import identity_summary
 from ..core.job import MISSING_MARKER, JobRegistry
+from ..core.mapping import SOURCE_CARRIER_TYPES
 from ..gui.result_errors import describe_result_error
 from ..gui.run_state import RunViewModel
 from ..gui.selection_state import SelectionModel
@@ -125,10 +126,11 @@ class JobController(PoolTargetingMixin):
         템플릿 필드를 매핑의 ``source`` 로 역해소해 원본 열로 돌려준다 — 그렇지 않으면 토큰
         모드가 엉뚱한 네임스페이스로 오발한다(confirm-or-alarm).
 
-        **원본 열을 실제로 나르는 유형만** 대상이다(``text``·``date``·``amount``). ``const`` 는
-        리터럴을 방출해 ``source`` 값과 무관하고(옛 매핑에서 ``source`` 가 남아 있어도 파일명은
-        그 열을 나르지 않는다), ``blank`` 은 빈 값이다 — 둘을 나르는 열로 오인하면 구별 열이
-        토큰 모드로 침묵 배제된다(리뷰 반영). 원본 레코드에 실재하는 열만 반환한다(부재 열 헛발 방지).
+        **원본 열을 실제로 나르는 유형만** 대상이다(:data:`~hwpxfiller.core.mapping.
+        SOURCE_CARRIER_TYPES`). ``const`` 은 리터럴을 방출해 ``source`` 값과 무관하고(옛 매핑에서
+        ``source`` 가 남아 있어도 파일명은 그 열을 나르지 않는다), ``blank`` 은 빈 값이다 — 둘을
+        나르는 열로 오인하면 구별 열이 토큰 모드로 침묵 배제된다(리뷰 반영). 원본 레코드에
+        실재하는 열만 반환한다(부재 열 헛발 방지).
         """
         from ..naming import pattern_field_tokens
 
@@ -136,8 +138,8 @@ class JobController(PoolTargetingMixin):
         present = set(self.vm.records[0].keys()) if self.vm.records else set()
         cols: "list[str]" = []
         for m in self.vm.job.mapping.mappings:
-            # source 유래 유형만 파일명이 그 열을 나른다(const=리터럴·blank=빈값은 제외).
-            if (m.template_field in tokens and m.type in ("text", "date", "amount")
+            # source 유래 유형만 파일명이 그 열을 나른다(단일 출처 SOURCE_CARRIER_TYPES).
+            if (m.template_field in tokens and m.type in SOURCE_CARRIER_TYPES
                     and m.source in present and m.source not in cols):
                 cols.append(m.source)
         return cols

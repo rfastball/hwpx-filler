@@ -40,6 +40,12 @@ from hwpxcore.atomic import write_text_atomic
 # ``blank`` 는 empty-confirmed 행의 내부 영속 마커라 공용 UI 목록에 노출하지 않는다.
 TYPES = ("text", "date", "amount", "const")
 
+# 원본 소스 값을 실제로 나르는 유형 — ``const`` 는 리터럴을 방출해 ``source`` 와 무관하다
+# (:func:`apply_transform` 의 분기와 일치). '파일명이 이 열을 나르는가'(식별 요약 토큰 모드
+# 등)를 묻는 곳의 단일 출처 — 화이트리스트를 곳곳에 재적지 않는다. ``blank`` 은 TYPES 에
+# 없는 내부 마커라 자연히 제외된다.
+SOURCE_CARRIER_TYPES = tuple(t for t in TYPES if t != "const")
+
 
 # ------------------------------------------------------------------ 변환
 def apply_transform(kind: str, value: str = "", const: str = "", fmt: str = "") -> str:

@@ -107,9 +107,9 @@ def test_record_summary_consumes_ring1_identity_not_keyed_temp(tmp_path):
     ctrl.load_data_path(_data_csv(tmp_path))
     summaries = [r["summary"] for r in ctrl.snapshot()["records"]]
     assert all("bidNtceNm" not in s for s in summaries)  # 임시 판의 키 접두 폐기(값만 병기)
-    # 표시는 빈 세그먼트 생략(display_for): rec0 은 presmptPrce 빈값이라 매달린 ' · ' 없이
-    # 값만, rec1 은 두 값 병기. 인지층 = 왼쪽 2열(bidNtceNm·presmptPrce).
-    assert summaries == ["전산장비", "사무비품 · 2000000"]
+    # display_for: rec0 은 presmptPrce 빈값이라 마커로 자리 보존(매달린 구분자 아님), rec1 은
+    # 두 값 병기. 인지층 = 왼쪽 2열(bidNtceNm·presmptPrce).
+    assert summaries == ["전산장비 · (빈칸)", "사무비품 · 2000000"]
 
 
 def test_filename_token_mode_back_resolves_and_excludes_non_carriers(tmp_path):

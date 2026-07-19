@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from hwpxfiller.core.identity_summary import (
+    BLANK_CELL_MARK,
     COGNITION_WIDTH,
     MAX_COLUMNS,
     DisqualifierStats,
@@ -147,19 +148,32 @@ def test_scene4_true_duplicate_backstop_stops_quietly() -> None:
     assert res.collision_flags(rows) == (True, True, False, False)
 
 
-def test_display_for_omits_blank_segments_but_summary_for_keeps_them() -> None:
-    """표시 판(``display_for``)은 빈 셀 세그먼트를 생략, 충돌 키 판(``summary_for``)은 유지.
+def test_display_for_marks_blank_cells_preserving_position() -> None:
+    """표시 판(``display_for``)은 빈 셀을 마커로 채워 자리를 지킨다(매달린 구분자 방지).
 
-    고른 두 열 중 한 셀이 비면 ``summary_for`` 는 매달린 구분자('X · ')를 내(충돌 키 폭
-    보존), ``display_for`` 는 값만 낸다('X') — 잘라내기는 표현 계층 몫(코어 판정 불변).
+    ``summary_for`` 는 충돌 키 충실도로 빈 세그먼트를 그대로 두지만('X · '), ``display_for``
+    는 :data:`BLANK_CELL_MARK` 로 자리를 채워 표현을 해치지 않으면서 위치를 보존한다.
     """
     rows = [{"a": "X", "b": ""}, {"a": "Y", "b": "9"}]
     res = identity_summary(rows, ["a", "b"])
     assert res.columns == ("a", "b")
-    assert res.summary_for(rows[0]) == "X · "   # 충돌 키 충실도 — 빈 세그먼트 유지
-    assert res.display_for(rows[0]) == "X"       # 표시 — 매달린 구분자 생략
-    assert res.summary_for(rows[1]) == "Y · 9"
-    assert res.display_for(rows[1]) == "Y · 9"   # 빈 셀 없으면 둘이 같다
+    assert res.summary_for(rows[0]) == "X · "                 # 충돌 키 충실도 — 빈 세그먼트 유지
+    assert res.display_for(rows[0]) == f"X · {BLANK_CELL_MARK}"  # 표시 — 마커로 자리 보존
+    assert res.display_for(rows[1]) == "Y · 9"                # 빈 셀 없으면 마커 없음
+
+
+def test_display_for_is_injective_with_collision_flags() -> None:
+    """표시가 빈 셀을 생략하면 서로 다른 행이 같은 문자열로 붕괴해 충돌 판정과 어긋난다 —
+    마커가 자리를 지켜 표시상 동일 ⟺ 충돌(전폭 키)이 일치함을 못박는다(리뷰 반영).
+
+    ``(a='', b='X')`` 와 ``(a='X', b='')`` 는 서로 다른 행 — 생략 판이면 둘 다 'X'로 붕괴하지만
+    마커 판은 ``'(빈칸) · X'`` vs ``'X · (빈칸)'`` 로 구별되고 ``collision_flags`` 도 비충돌.
+    """
+    rows = [{"a": "", "b": "X"}, {"a": "X", "b": ""}]
+    res = identity_summary(rows, ["a", "b"])
+    d0, d1 = res.display_for(rows[0]), res.display_for(rows[1])
+    assert d0 != d1                              # 표시가 두 행을 구별
+    assert res.collision_flags(rows) == (False, False)  # 충돌 판정도 비충돌 — 일치
 
 
 # ─────────────────────────────────────────────────────── 결격 5종 단위
