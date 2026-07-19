@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from hwpxfiller.core.job import Job, JobRegistry
@@ -401,3 +403,126 @@ def test_load_pool_without_job_is_loud(tmp_path):
     pool.save(DatasetPoolItem(name="7월공고", kind="excel", opts={"path": _data_csv(tmp_path)}))
     res = ctrl.dispatch("load_pool", {"name": "7월공고"})
     assert res["ok"] is False and "작업" in res["error"]
+
+
+# --------------------------------------- 기본 데이터셋 자동 조준(#53-A, A-1-11) — 리뷰 F4
+# 실행 화면 사망(슬라이스 3)으로 test_webapp_run 의 자동 조준 회귀 심이 사라졌다 — JobController
+# 의 '조용한 폴백 금지'(성공=ok 재진술 / 실패=warn 미겨눔) 계약을 여기서 이어 가드한다.
+def _job_with_default(ctrl, pool, tmp_path, ref, *, register=True):
+    """'공고서' 작업에 기본 데이터셋 참조를 붙여 재저장. register=True 면 동명 CSV 풀 항목 등록."""
+    job = ctrl.registry.load("공고서")
+    job.default_dataset_ref = ref
+    ctrl.registry.save(job, allow_overwrite=True)
+    if register:
+        pool.save(DatasetPoolItem(name=ref, kind="excel", opts={"path": _data_csv(tmp_path)}))
+
+
+def test_select_job_auto_aims_default_dataset(tmp_path):
+    """기본 데이터셋 참조가 있으면 작업 선택 시 실행 시점에 다시 읽어 자동 조준(#53-A)."""
+    ctrl, pool = _pool_controller(tmp_path)
+    _job_with_default(ctrl, pool, tmp_path, "7월공고")
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    snap = ctrl.snapshot()
+    assert snap["has_data"] is True and snap["record_count"] == 2      # 자동 재읽기(싱크)
+    assert snap["data_source_label"] == "등록 데이터: 7월공고"
+    assert snap["selected_count"] == 2                                  # 겨눔 = 전체 선택 초기화
+    assert snap["data_notice"]["level"] == "ok" and "자동" in snap["data_notice"]["text"]
+
+
+def test_select_job_dead_default_ref_is_loud_no_silent_fallback(tmp_path):
+    """죽은 기본 참조는 조용한 폴백 금지 — 미겨눔 + 원인·복구 동선(다시 연결)을 재진술(#53-A)."""
+    ctrl, pool = _pool_controller(tmp_path)
+    _job_with_default(ctrl, pool, tmp_path, "없는참조", register=False)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    snap = ctrl.snapshot()
+    assert snap["has_data"] is False                       # 자동 겨눔 실패 = 미겨눔(폴백 없음)
+    assert snap["data_source_label"] == ""
+    assert snap["data_notice"]["level"] == "warn"
+    assert "없는참조" in snap["data_notice"]["text"] and "다시 연결" in snap["data_notice"]["text"]
+
+
+def test_auto_aim_nara_ref_is_frozen_warn(tmp_path):
+    """기본 참조가 나라 항목이면 자동 조준도 동결 거절 warn — 공유 관문 문구 그대로(#53-A)."""
+    ctrl, pool = _pool_controller(tmp_path)
+    pool.save(DatasetPoolItem(
+        name="나라기본", kind="nara", opts={"bgn_dt": "202607010000", "end_dt": "202607080000"}))
+    _job_with_default(ctrl, pool, tmp_path, "나라기본", register=False)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    snap = ctrl.snapshot()
+    assert snap["has_data"] is False and snap["data_notice"]["level"] == "warn"
+    assert "동결" in snap["data_notice"]["text"]
+
+
+def test_auto_aim_ambiguous_sheet_ref_is_warn(tmp_path):
+    """기본 참조가 시트 미지정 다중시트면 자동 조준도 조용한 첫 시트 대신 warn 거절(#33·#53-A)."""
+    multi = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "multi_sheet.xlsx"
+    ctrl, pool = _pool_controller(tmp_path)
+    pool.save(DatasetPoolItem(name="모호기본", kind="excel", opts={"path": str(multi)}))
+    _job_with_default(ctrl, pool, tmp_path, "모호기본", register=False)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    snap = ctrl.snapshot()
+    assert snap["has_data"] is False and snap["data_notice"]["level"] == "warn"
+    assert "시트" in snap["data_notice"]["text"]
+
+
+def test_manual_data_clears_auto_aim_notice(tmp_path):
+    """자동 조준 후 사용자가 직접 데이터를 겨누면 자동 조준 재진술이 소거된다(임시 데이터=기본 불변)."""
+    ctrl, pool = _pool_controller(tmp_path)
+    _job_with_default(ctrl, pool, tmp_path, "7월공고")
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    assert ctrl.snapshot()["data_notice"] is not None
+    ctrl.load_data_path(_data_csv(tmp_path))               # 수동 파일 겨눔
+    snap = ctrl.snapshot()
+    assert snap["data_notice"] is None
+    assert snap["data_source_label"].startswith("파일:")
+    assert ctrl.registry.load("공고서").default_dataset_ref == "7월공고"  # 임시 override, 기본 불변
+
+
+# --------------------------------------------- 템플릿 다시 연결(#67, A-1-2 계열) — 리뷰 F5
+# 실행 화면 사망으로 test_webapp_run 의 relink 회귀 심(x6)이 사라졌다 — 패널의 재연결 흐름
+# (경로 재진술·드리프트 병기·읽기불가 하드차단·선택 작업 stale VM 재적재)을 여기서 잇는다.
+def test_relink_template_needs_confirm_restates_paths(tmp_path):
+    """1차 호출 = 기존→새 경로 재진술 확인 요구. 구조 동일이면 드리프트 문구 없음(#67)."""
+    ctrl, _ = _controller(tmp_path)
+    new_tpl = tmp_path / "moved.hwpx"
+    _write_template(new_tpl, ["공고명", "추정가격"])       # 같은 구조 — 드리프트 0
+    res = ctrl.dispatch("relink_template", {"name": "공고서", "path": str(new_tpl)})
+    assert res["ok"] is True and res["needs_confirm"] is True
+    assert "t.hwpx" in res["confirm_text"] and "moved.hwpx" in res["confirm_text"]  # 양경로 재진술
+    assert "구조가" not in res["confirm_text"]             # 무드리프트 = 소음 금지
+    assert ctrl.registry.load("공고서").template_path.endswith("t.hwpx")  # 확인 전 durable 불변
+
+
+def test_relink_template_drift_restated_in_confirm(tmp_path):
+    """새 파일 구조가 확정 매핑과 다르면 확인 문구에 드리프트 상세+생성 차단 경고 병기(#67)."""
+    ctrl, _ = _controller(tmp_path)
+    new_tpl = tmp_path / "changed.hwpx"
+    _write_template(new_tpl, ["공고명", "낙찰자"])         # 추정가격 소멸 + 낙찰자 유입
+    res = ctrl.dispatch("relink_template", {"name": "공고서", "path": str(new_tpl)})
+    assert res["needs_confirm"] is True and "구조가" in res["confirm_text"]
+    assert "낙찰자" in res["confirm_text"] and "추정가격" in res["confirm_text"]  # describe() 단일 출처
+    assert "생성이 차단됩니다" in res["confirm_text"]      # 기존 게이트 백스톱 재진술
+
+
+def test_relink_template_unreadable_is_blocked(tmp_path):
+    """읽을 수 없는 파일은 확인으로도 템플릿이 될 수 없다 — 하드 차단 + JSON 불변(#67)."""
+    ctrl, _ = _controller(tmp_path)
+    res = ctrl.dispatch(
+        "relink_template",
+        {"name": "공고서", "path": str(tmp_path / "없는파일.hwpx"), "confirm": True})
+    assert res["ok"] is False and "연결을 바꾸지 않았습니다" in res["error"]
+    assert ctrl.registry.load("공고서").template_path.endswith("t.hwpx")
+
+
+def test_relink_selected_job_reloads_vm_and_restates(tmp_path):
+    """지금 선택된 작업을 재연결하면 stale VM 을 재적재하고 상태 초기화를 재진술한다(#67)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))               # 데이터 겨눔(재적재로 초기화될 상태)
+    new_tpl = tmp_path / "moved.hwpx"
+    _write_template(new_tpl, ["공고명", "추정가격"])
+    res = ctrl.dispatch(
+        "relink_template", {"name": "공고서", "path": str(new_tpl), "confirm": True})
+    assert res["relinked"] is True
+    assert "다시 불러왔으니" in res["restated"]             # 조용한 상태 소실 금지(재적재 재진술)
+    assert ctrl.vm.job.template_path == str(new_tpl)       # VM 재구성

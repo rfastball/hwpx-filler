@@ -13,7 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
 APP_CSS = WEB / "css" / "app.css"
-RUN_JS = WEB / "js" / "screens" / "run.js"
+JOB_JS = WEB / "js" / "screens" / "job.js"  # run.js 사망(슬라이스 3) → 「작업」 패널이 생성 표면
 EDITOR_JS = WEB / "js" / "screens" / "editor.js"
 PATHTRACK_JS = WEB / "js" / "pathtrack.js"
 
@@ -98,13 +98,13 @@ def test_pathtrack_default_affordances_are_open_and_reveal():
 
 # ------------------------------------------------------------------ F30: 복구 동선 조건부
 
-def test_run_relink_button_gated_by_template_missing():
-    """실행 화면 「템플릿 다시 연결」은 template_missing 일 때만 렌더(F30) — 상시 노출은
-    정상 상태 노이즈이자 홈 카드(조건부)와의 비대칭."""
-    src = RUN_JS.read_text(encoding="utf-8")
-    body = _fn_body(src, "renderJobMeta", "renderData")
-    assert "relink-template" in body, "실행 화면 템플릿 재연결 동선이 사라졌습니다(#67)."
-    assert re.search(r"s\.template_missing\s*\?", body), (
+def test_job_relink_button_gated_by_template_missing():
+    """「작업」 패널 「템플릿 다시 연결」은 template_missing 일 때만 렌더(F30) — 상시 노출은
+    정상 상태 노이즈이자 홈 카드(조건부)와의 비대칭. (run.js 사망 후 job.js renderHeader 이 소관.)"""
+    src = JOB_JS.read_text(encoding="utf-8")
+    body = _fn_body(src, "renderHeader", "renderData")
+    assert "relink-template" in body, "「작업」 패널 템플릿 재연결 동선이 사라졌습니다(#67)."
+    assert "s.template_missing" in body, (
         "재연결 버튼이 template_missing 조건 없이 상시 렌더됩니다(F30)."
     )
     gate = body.index("s.template_missing")
@@ -118,18 +118,18 @@ def test_run_relink_button_gated_by_template_missing():
 def test_normal_state_restatements_are_quiet_not_green_boxes():
     """정상 상태(ok) 재진술은 quiet(muted 한 줄)여야 한다(F32) — 초록 okbox 상시 배너 금지.
 
-    run(자동 연결·사전검증)과 editor(세션 통지)의 상태 재진술이 대상. 사용자 행위의 직접
-    결과(저장 완료 등)는 대상이 아니다 — 이 가드는 run.js 전체 무-okbox 와 editor 통지의
-    quiet 분기만 본다.
+    작업 패널(자동 연결·사전검증)과 editor(세션 통지)의 상태 재진술이 대상. 사용자 행위의 직접
+    결과(저장 완료 등)는 대상이 아니다 — 이 가드는 job.js 전체 무-okbox 와 editor 통지의
+    quiet 분기만 본다. (run.js 사망(슬라이스 3) 후 job.js 가 생성 표면.)
     """
-    run_src = RUN_JS.read_text(encoding="utf-8")
-    assert "okbox" not in run_src, (
-        "run.js 에 okbox 가 재도입됐습니다 — 정상 상태 초록 배너는 노이즈입니다(F32)."
+    job_src = JOB_JS.read_text(encoding="utf-8")
+    assert "okbox" not in job_src, (
+        "job.js 에 okbox 가 재도입됐습니다 — 정상 상태 초록 배너는 노이즈입니다(F32)."
     )
-    for fn, nxt in (("renderData", "renderPreflight"), ("renderPreflight", "renderBadges")):
-        body = _fn_body(run_src, fn, nxt)
+    for fn, nxt in (("renderData", "renderPreflight"), ("renderPreflight", "renderMirror")):
+        body = _fn_body(job_src, fn, nxt)
         if '"ok"' in body:
-            assert '"quiet"' in body, f"run.js {fn} 의 ok 레벨이 quiet 로 렌더되지 않습니다(F32)."
+            assert '"quiet"' in body, f"job.js {fn} 의 ok 레벨이 quiet 로 렌더되지 않습니다(F32)."
     ed_src = EDITOR_JS.read_text(encoding="utf-8")
     assert re.search(r'notice\.level === "ok" \? "quiet"', ed_src), (
         "editor.js 세션 통지의 ok 레벨이 quiet 가 아닙니다(F32)."

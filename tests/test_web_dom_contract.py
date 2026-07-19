@@ -29,23 +29,23 @@ RESPONSIVE_BREAKPOINT_PX = 820
 # 전체 스냅샷 재렌더가 포커스·캐럿·스크롤을 뭉개지 않도록 render() 를 Preserve.around 로 감싸는
 # 화면들(#28). 어느 화면이 래핑을 조용히 떨구면 상호작용 유실 회귀 → 정적 가드로 차단.
 WEB_JS_DIR = Path(__file__).resolve().parents[1] / "web" / "js"
-PRESERVE_WRAPPED_SCREENS = ("txt", "editor", "run", "job")  # +job(R-flow 슬라이스 1, #90)
+PRESERVE_WRAPPED_SCREENS = ("txt", "editor", "job")  # run 사망(슬라이스 3) → job 이 생성 표면
 
 # 살아있는 컴포넌트 갤러리(개발 전용) — 실 tokens.css+app.css 를 <link> 로 물어 드리프트 0.
 GALLERY = Path(__file__).resolve().parents[1] / "docs" / "UI_GALLERY.html"
 
 # 화면 루트 — 셸 라우터가 표시/숨김으로 전환하는 최상위 컨테이너(회귀 시 화면 소실).
 SCREEN_ROOTS = (
-    "scr-home", "scr-editor", "scr-run", "scr-txt", "scr-tpl",
+    "scr-home", "scr-editor", "scr-txt", "scr-tpl",
     "scr-pool",  # 데이터 관리(#26 #4)
-    "scr-job",  # 「작업」 화면(R-flow 슬라이스 1, #90)
+    "scr-job",  # 「작업」 화면(R-flow · #90) — 실행 화면(scr-run) 사망(슬라이스 3) 후 유일 생성 표면
 )
 
 # 화면별 데이터 라벨은 반드시 고유 id 여야 한다(#27 dup-id 회귀 가드).
-SCOPED_DATA_LABELS = ("runDataLabel", "txtDataLabel", "jobDataLabel")
+SCOPED_DATA_LABELS = ("txtDataLabel", "jobDataLabel")
 
 # 접힘 상태에서 라벨이 사라지는 내비 버튼(회귀 시 접근 이름·툴팁 소실 → #27).
-NAV_SCREENS = ("home", "job", "editor", "run", "txt", "tpl", "pool")  # +job(#90) +pool(#26 #4)
+NAV_SCREENS = ("home", "job", "editor", "txt", "tpl", "pool")  # run 사망(슬라이스 3); +pool(#26 #4)
 
 # 커스텀 모달 → aria-labelledby 가 가리켜야 할 제목 id(다이얼로그 시맨틱, #27/#28).
 # sheetModal 은 다중 시트 확정 게이트(#33) — 같은 Modal 헬퍼·다이얼로그 계약을 공유한다.
@@ -305,7 +305,7 @@ def test_forced_colors_block_present_in_web_diff():
 
 # pickDataFile(=pick_data_file) 을 소비하는 모든 화면 — 브리지 반환 계약이 screen-불가지라
 # needs_sheet 분기를 처리해야 다중 시트가 첫 시트로 강등되지 않는다(리뷰 P1: txt 누락 회귀).
-DATA_PICK_SCREENS = ("editor", "run", "txt", "job")  # +job(R-flow 슬라이스 1, #90)
+DATA_PICK_SCREENS = ("editor", "txt", "job")  # run 사망(슬라이스 3); job 이 생성 표면
 
 
 def test_sheet_picker_loaded_and_wired_on_all_data_screens():
@@ -388,23 +388,8 @@ def test_job_completion_zone_reset_gated_by_session_change():
     )
 
 
-def test_run_overwrite_keeps_busy_lock_through_modal():
-    """PR #92 리뷰 #2 회귀 가드: 실행 화면 덮어쓰기 모달 대기 동안 생성 버튼이 재활성되지 않는다.
-
-    덮어쓰기 확인이 blocking window.confirm 에서 비블로킹 Modal.confirm 으로 이관돼(#86),
-    busy-lock 해제(``generating = false``)가 모달 await 앞(옛 finally 위치)에 오면 확인이
-    미결인 동안 생성 버튼이 살아나 두 번째 생성이 겹쳐 시작된다. 해제가 덮어쓰기 확인
-    **뒤**에 와야 한다 — 소스 순서 정적 가드(PR #93 job.js 의 동형 가드와 짝). run.js 는
-    슬라이스 3 에서 사망 예정이라 최소로 유지하고, 사망 시 이 테스트도 함께 걷는다.
-    """
-    src = (WEB_JS_DIR / "screens" / "run.js").read_text(encoding="utf-8")
-    assert "Modal.confirm" in src, "덮어쓰기 재진술 경로(Modal.confirm)가 사라졌습니다(#92 #2)."
-    i_confirm = src.index("Modal.confirm")
-    i_release = src.index("generating = false; setBusy(false);")
-    assert i_confirm < i_release, (
-        "busy-lock 해제가 덮어쓰기 모달 await 전에 옵니다 — 모달 열림 동안 생성 버튼 재활성으로 "
-        "생성 동시 실행(리뷰 #2). finally 를 needs_overwrite 흐름 뒤로 미루세요."
-    )
+# (구 test_run_overwrite_keeps_busy_lock_through_modal 삭제 — run.js 사망(슬라이스 3).
+#  동형 가드는 test_job_overwrite_keeps_busy_lock_through_modal 가 job.js 에서 이어받는다.)
 
 
 def test_modal_promise_dialog_serialization_guards_present():

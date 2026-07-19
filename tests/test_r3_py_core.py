@@ -27,8 +27,8 @@ from hwpxfiller.core.job import JobRegistry, classify_existing, load_isolated
 from hwpxfiller.data.excel import ambiguous_sheet_error
 from hwpxfiller.gui.home_state import HomeViewModel
 from hwpxfiller.gui.pipeline_builder_state import PipelineBuilderViewModel
+from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp.screen_pool import PoolController
-from hwpxfiller.webapp.screen_run import RunController
 from hwpxfiller.webapp.screens import load_pool_item_checked, pool_sources_payload
 
 MULTI_SHEET = Path(__file__).resolve().parent / "fixtures" / "multi_sheet.xlsx"
@@ -93,11 +93,11 @@ def test_pool_sources_payload_surfaces_corruption_note(tmp_path):
     assert pool_sources_payload(clean)["corrupted_note"] == ""
 
 
-def test_run_pool_sources_action_carries_corruption_note(tmp_path):
-    """실행 화면 pool_sources 액션도 노트를 나른다 — 화면 하나의 손상이 다른 화면을
+def test_job_pool_sources_action_carries_corruption_note(tmp_path):
+    """작업 화면 pool_sources 액션도 노트를 나른다 — 화면 하나의 손상이 다른 화면을
     전멸시키지 않되(items 생존), 어디서도 조용히 사라지지 않는다(corrupted_note)."""
     reg = _pool_with_corruption(tmp_path)
-    ctrl = RunController(JobRegistry(tmp_path / "jobs"), _push_noop, pool_registry=reg)
+    ctrl = JobController(JobRegistry(tmp_path / "jobs"), _push_noop, pool_registry=reg)
     res = ctrl.dispatch("pool_sources", {})
     assert [i["name"] for i in res["items"]] == ["살아있음"]
     assert "손상 1건" in res["corrupted_note"]
