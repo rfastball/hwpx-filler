@@ -962,3 +962,61 @@ def test_reapply_without_slot_is_loud(tmp_path):
     ctrl, _ = _session(tmp_path)
     with pytest.raises(ValueError, match="직전 필터가 없습니다"):
         ctrl.dispatch("filter_reapply", {})
+
+
+def test_reapply_source_key_distinguishes_sheets(tmp_path):
+    """소스 키 = 경로+시트(리뷰 #0) — 같은 워크북의 다른 시트는 다른 소스다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="공고목록")
+    ctrl.dispatch("filter_search", {"text": "물"})           # 정의 있는 세션
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")  # 같은 파일·다른 시트
+    assert ctrl.snapshot()["filter"]["reapply_available"] is False  # 교차 재사용 차단
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="공고목록")  # 같은 시트 복귀
+    # 무정의 세션(낙찰현황)의 죽음은 슬롯을 보존한다 — 공고목록 정의가 제 시트에 제공.
+    assert ctrl.snapshot()["filter"]["reapply_available"] is True
+
+
+def test_reapply_source_key_normalizes_path_spelling(tmp_path):
+    """경로 표기 변형(대소문자)에도 같은 실파일이면 소스 일치(리뷰 #8 — 조용한 강등 방지)."""
+    ctrl, _ = _session(tmp_path)
+    csv1 = _data_csv(tmp_path)
+    ctrl.dispatch("filter_search", {"text": "전산"})
+    ctrl.load_data_path(_data_csv3(tmp_path))               # 죽음 → 슬롯(csv1 키)
+    ctrl.load_data_path(csv1.upper())                       # 같은 파일, 표기만 다름(Windows)
+    assert ctrl.snapshot()["filter"]["reapply_available"] is True
+
+
+def test_reapply_pool_key_includes_reference_identity(tmp_path):
+    """풀 소스 키 = 이름+참조 정체(리뷰 #6) — 같은 이름 재등록(다른 파일)은 다른 소스."""
+    ctrl, pool = _pool_controller(tmp_path)
+    pool.save(DatasetPoolItem(name="7월공고", kind="excel", opts={"path": _data_csv(tmp_path)}))
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.dispatch("load_pool", {"name": "7월공고"})
+    ctrl.dispatch("filter_search", {"text": "전산"})
+    # 같은 이름으로 다른 파일 재등록(참조 교체) 후 재겨눔 — 이름만 같은 다른 소스.
+    pool.save(DatasetPoolItem(name="7월공고", kind="excel",
+                              opts={"path": _data_csv3(tmp_path)}), allow_overwrite=True)
+    ctrl.dispatch("load_pool", {"name": "7월공고"})          # 죽음 → 슬롯(옛 참조 키)
+    assert ctrl.snapshot()["filter"]["reapply_available"] is False
+
+
+def test_reapply_abandons_pruning_when_branches_all_lost(tmp_path):
+    """가지 소실 시 프루닝 복원 포기(리뷰 #2) — 거짓 「매치 없음」 빈 화면을 만들지 않는다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    both = tmp_path / "both.csv"
+    both.write_text("bidNtceNm,memo\n전산장비,전산비고\n사무비품,일반\n", encoding="utf-8")
+    ctrl.load_data_path(str(both))
+    ctrl.dispatch("filter_search", {"text": "전산"})         # 가지 = bidNtceNm·memo
+    ctrl.dispatch("filter_prune", {"column": "bidNtceNm"})   # 가지 하나 쳐냄(memo 잔존)
+    ctrl.load_data_path(_data_csv(tmp_path))                 # 죽음 → 슬롯
+    # 외부 편집: memo 열 소실 — 프루닝 대상(bidNtceNm)만 남는 지형.
+    both.write_text("bidNtceNm\n전산장비\n사무비품\n", encoding="utf-8")
+    ctrl.load_data_path(str(both))
+    res = ctrl.dispatch("filter_reapply", {})
+    assert res["ok"] is True
+    assert any("프루닝" in d for d in res["dropped"])         # 포기 고지
+    snap = ctrl.snapshot()
+    assert snap["table"]["visible_count"] == 1               # 매치가 산다(거짓 전멸 아님)
+    assert snap["filter"]["branches"] == ["bidNtceNm"]       # 가지 부활

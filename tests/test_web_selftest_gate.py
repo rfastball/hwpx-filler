@@ -261,9 +261,13 @@ class TestWebSelftestGate:
         assert selftest_result["job_mirror"]["data_guard_wired"] is True, (
             "confirmDataSwapIfArmed 배선이 사라졌습니다 — 데이터 재겨눔 가드(결정 26) 회귀."
         )
-        # 직전 필터 재적용 어포던스(결정 28) — reapply_available 스냅샷이 버튼을 실제로 켠다.
+        # 직전 필터 재적용 어포던스(결정 28) — 양 분기 핀(켜짐만 고정하면 "항상 떠 있는
+        # 죽은 버튼" 회귀가 초록으로 샌다, 리뷰 #3).
         assert selftest_result["job_mirror"]["reapply_shown"] is True, (
             "reapply_available=true 인데 「직전 필터 재적용」 버튼이 표시되지 않았습니다."
+        )
+        assert selftest_result["job_mirror"]["reapply_hidden"] is True, (
+            "reapply_available=false 인데 「직전 필터 재적용」 버튼이 계속 떠 있습니다."
         )
 
     def test_job_drift_replaces_mirror_with_blocking_banner(self, selftest_result: dict) -> None:

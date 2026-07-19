@@ -413,7 +413,7 @@ class FilterModel:
                 got_any = True
             if cond.get("text"):
                 self.set_text(col, cond["text"])
-                got_any = got_any or self._cols[col].text != ""
+                got_any = True  # export 는 트리밍된 비공백 텍스트만 담는다(리뷰 — 재검사 불요)
             rng = cond.get("range")
             if rng:
                 try:
