@@ -235,6 +235,9 @@ class TestWebSelftestGate:
         assert "1행" in j["strip_text"] and "doc-002.hwpx" in j["strip_text"], (
             f"스트립이 필터 밖 선택을 재진술하지 않습니다: {j['strip_text']!r}"
         )
+        assert j["strip_unsel"] is True, (
+            "스트립에 항목별 × 해제 어포던스가 없습니다 — 필터 밖 선택을 개별로 뺄 수 없다."
+        )
         assert "정의 매치 1" in j["sel_line"] and "정의 밖 1" in j["sel_line"], (
             f"선택 유래 수치 병기(S4) 누락: {j['sel_line']!r}"
         )

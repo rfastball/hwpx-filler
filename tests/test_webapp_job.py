@@ -742,3 +742,24 @@ def test_filter_actions_without_data_are_loud(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     with pytest.raises(ValueError, match="데이터를 먼저"):
         ctrl.dispatch("filter_search", {"text": "x"})
+
+
+def test_set_all_reports_added_count_for_dead_button_honesty(tmp_path):
+    """「전체 선택」 반환 added — 전멸 필터의 무동작(0)을 표면이 알린다(리뷰 #9)."""
+    ctrl, _ = _session(tmp_path)
+    ctrl.dispatch("set_none", {})
+    assert ctrl.dispatch("set_all", {}) == {"added": 2}      # 필터 없음 = 전체
+    ctrl.dispatch("filter_search", {"text": "존재하지않는말"})  # 전멸
+    assert ctrl.dispatch("set_all", {}) == {"added": 0}      # 무동작 정직 보고
+    ctrl.dispatch("filter_search", {"text": "전산"})
+    ctrl.dispatch("set_none", {})
+    assert ctrl.dispatch("set_all", {}) == {"added": 1}      # 매치만 가산
+
+
+def test_table_cell_preserves_falsy_values(tmp_path):
+    """셀 텍스트 = cell_text 단일 출처(리뷰 #8) — 0 이 빈칸으로 붕괴하지 않는다."""
+    ctrl, _ = _session(tmp_path)
+    ctrl.vm.records[1]["presmptPrce"] = 0                    # 풀(JSON) 유래 수치형 재현
+    snap = ctrl.snapshot()
+    row1 = next(r for r in snap["table"]["rows"] if r["index"] == 1)
+    assert row1["cells"][1] == [("0", False)]                # 필터가 보는 그대로 표면도

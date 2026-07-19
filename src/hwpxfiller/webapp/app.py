@@ -582,6 +582,8 @@ _JOB_MIRROR_PROBE_JS = r"""
     out.branch_prune = !!document.querySelector('#jobFilterChips [data-prune="공고명"]');
     out.strip_shown = getComputedStyle(document.getElementById('jobSelStrip')).display !== 'none';
     out.strip_text = document.getElementById('jobSelStrip').textContent;
+    // 스트립 항목별 × 해제 어포던스(리뷰 #6 — 진술만 하고 행동을 못 주면 반쪽).
+    out.strip_unsel = !!document.querySelector('#jobSelStrip [data-unsel="1"]');
     out.sel_line = document.getElementById('jobRestate').textContent;
     // 열 패널 기본 닫힘 — [hidden] 이 display:flex 를 실제로 이긴다(부록 B-9 overlay/hidden
     // 결함류의 자동 눈검증: .colpanel 은 flex 라 override 가 없으면 hidden 이 은닉에 실패한다).

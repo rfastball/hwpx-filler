@@ -92,6 +92,7 @@ __all__ = [
     "RANGE_OP_LABELS",
     "RangeClause",
     "RangeCondition",
+    "cell_text",
     "sniff_column_kinds",
     "FilterModel",
     "FilterView",
@@ -135,8 +136,13 @@ _AMOUNTISH_RE = re.compile(
 _TIME_RE = re.compile(r"\d{1,2}:\d{2}")
 
 
-def _cell(record: "dict", column: str) -> str:
-    """레코드 셀 값 — 부재·None 은 빈 문자열(시안 ``r[key]||""`` 동형)."""
+def cell_text(record: "dict", column: str) -> str:
+    """레코드 셀 텍스트 — 부재·None 만 빈 문자열, 그 외 str 화(시안 ``r[key]||""`` 동형).
+
+    **값 읽기 단일 출처** — 매칭·값 목록·하이라이트·표면 테이블 렌더가 전부 이걸 쓴다.
+    ``or ""`` 류(0·False 도 빈칸으로 붕괴)를 쓰면 필터는 남긴 행의 셀이 표면에서 비어
+    보이는 어긋남이 생긴다(고효율 리뷰 PR-2b #8).
+    """
     v = record.get(column)
     return "" if v is None else str(v)
 
@@ -172,7 +178,7 @@ def sniff_column_kinds(
         if hint in (KIND_TEXT, KIND_AMOUNT, KIND_DATE):
             kinds[col] = hint
             continue
-        values = [v for r in records if (v := _cell(r, col).strip())]
+        values = [v for r in records if (v := cell_text(r, col).strip())]
         if values and all(_is_amountish(v) for v in values):
             kinds[col] = KIND_AMOUNT
         elif values and all(_is_dateish(v) for v in values):
@@ -416,7 +422,7 @@ class FilterModel:
         for col, cond in self._cols.items():
             if col == except_column or not cond.is_active():
                 continue
-            cell = _cell(record, col)
+            cell = cell_text(record, col)
             if cond.values is not None and cell not in cond.values:
                 return False
             if cond.text and not jamo_contains(cell, cond.text):
@@ -488,7 +494,7 @@ class FilterView:
             col for col in m._columns
             if m._kinds.get(col, KIND_TEXT) == KIND_TEXT
             and col not in m._pruned
-            and any(jamo_contains(_cell(r, col), m._search) for r in passing)
+            and any(jamo_contains(cell_text(r, col), m._search) for r in passing)
         ]
 
     def _group_pass(self, record: "dict") -> bool:
@@ -497,7 +503,7 @@ class FilterView:
             return True
         if not self.branches:  # 어느 열에도 매치 없음 = 전멸(빈 화면 + 정의줄 재진술)
             return False
-        return any(jamo_contains(_cell(record, b), m._search) for b in self.branches)
+        return any(jamo_contains(cell_text(record, b), m._search) for b in self.branches)
 
     # ------------------------------------------------------------- 가시 집합
     def visible_indices(self) -> "list[int]":
@@ -520,7 +526,7 @@ class FilterView:
         for r in self._records:
             if not (self._m.col_pass(r, except_column=column) and self._group_pass(r)):
                 continue
-            v = _cell(r, column)
+            v = cell_text(r, column)
             if v == "":
                 has_empty = True
             else:
@@ -595,7 +601,7 @@ class FilterView:
             for i in indices:
                 if i in picked:
                     continue
-                if jamo_contains(_cell(records[i], branch), m._search):
+                if jamo_contains(cell_text(records[i], branch), m._search):
                     picked.append(i)
                     break
         for i in indices:

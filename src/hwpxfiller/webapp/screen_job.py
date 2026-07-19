@@ -52,6 +52,7 @@ from ..gui.filter_state import (
     FilterModel,
     RangeClause,
     RangeCondition,
+    cell_text,
     sniff_column_kinds,
 )
 from ..gui.result_errors import describe_result_error
@@ -306,7 +307,9 @@ class JobController(PoolTargetingMixin):
         table_rows = [
             {
                 **rows_by_index[i],
-                "cells": [view.segments(c, str(records[i].get(c) or "")) for c in columns],
+                # 셀 텍스트 = 필터와 같은 읽기(cell_text 단일 출처) — `or ""` 류는 0·False 를
+                # 빈칸으로 붕괴시켜 "필터는 남겼는데 표면은 빈 셀"이 된다(리뷰 #8).
+                "cells": [view.segments(c, cell_text(records[i], c)) for c in columns],
             }
             for i in visible
         ]
@@ -546,17 +549,21 @@ class JobController(PoolTargetingMixin):
         for i in p["indices"]:
             self.selection.toggle(int(i), value)
 
-    def _do_set_all(self, p: dict) -> None:
+    def _do_set_all(self, p: dict) -> dict:
         """「전체 선택」 — 필터 활성 시 **매치 전체를 가산**한다(결정 4·26 "전체 선택 가산적").
 
         필터 밖 기존 선택은 유지된다(선택은 필터를 관통, 결정 3) — '매치'의 담보는 버튼
-        이름이 아니라 게이트 정의줄 재진술이 진다.
+        이름이 아니라 게이트 정의줄 재진술이 진다. 반환 ``added`` = 새로 선택된 행 수 —
+        전멸 필터에서의 무동작(0)을 표면이 정직하게 알린다(confirm-or-alarm, 리뷰 #9:
+        아무 반응 없는 버튼은 결함으로 읽힌다).
         """
+        before = self.selection.selected_count()
         if self.filter is not None and self.filter.is_active():
             for i in self.filter.visible_indices(self.vm.records):
                 self.selection.toggle(i, True)
         else:
             self.selection.set_all()
+        return {"added": self.selection.selected_count() - before}
 
     def _do_set_none(self, p: dict) -> None:
         """「전체 해제」 — 명시 동사라 가드 불요(T4), 필터와 무관하게 전부 해제."""
