@@ -147,6 +147,21 @@ def test_scene4_true_duplicate_backstop_stops_quietly() -> None:
     assert res.collision_flags(rows) == (True, True, False, False)
 
 
+def test_display_for_omits_blank_segments_but_summary_for_keeps_them() -> None:
+    """표시 판(``display_for``)은 빈 셀 세그먼트를 생략, 충돌 키 판(``summary_for``)은 유지.
+
+    고른 두 열 중 한 셀이 비면 ``summary_for`` 는 매달린 구분자('X · ')를 내(충돌 키 폭
+    보존), ``display_for`` 는 값만 낸다('X') — 잘라내기는 표현 계층 몫(코어 판정 불변).
+    """
+    rows = [{"a": "X", "b": ""}, {"a": "Y", "b": "9"}]
+    res = identity_summary(rows, ["a", "b"])
+    assert res.columns == ("a", "b")
+    assert res.summary_for(rows[0]) == "X · "   # 충돌 키 충실도 — 빈 세그먼트 유지
+    assert res.display_for(rows[0]) == "X"       # 표시 — 매달린 구분자 생략
+    assert res.summary_for(rows[1]) == "Y · 9"
+    assert res.display_for(rows[1]) == "Y · 9"   # 빈 셀 없으면 둘이 같다
+
+
 # ─────────────────────────────────────────────────────── 결격 5종 단위
 
 def test_empty_column_disqualified() -> None:

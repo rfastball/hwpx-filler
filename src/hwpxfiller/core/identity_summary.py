@@ -190,9 +190,20 @@ class IdentitySummary:
         """한 레코드의 식별 요약 한 줄 — 고른 열들의 정규화 값을 ``' · '`` 로 병기.
 
         빈 값도 건너뛰지 않는다(고른 열은 전열 빈칸이 아니지만 개별 셀은 빌 수 있다) —
-        시연 ``iOut`` 과 동형. 고른 열이 없으면 빈 문자열.
+        시연 ``iOut`` 과 동형. **충돌 키 충실도**를 위한 판이라 :meth:`collision_flags` 와
+        같은 세그먼트 폭을 쓴다. 화면 표시는 :meth:`display_for` 를 쓴다. 고른 열이 없으면 빈 문자열.
         """
         return " · ".join(_norm(record.get(c)) for c in self.columns)
+
+    def display_for(self, record: Mapping) -> str:
+        """표시용 식별 요약 — :meth:`summary_for` 에서 **빈 셀 세그먼트를 생략**한 판.
+
+        ``summary_for`` 는 충돌 키 충실도로 빈 값도 ``' · '`` 로 병기하지만, 화면에서 빈
+        세그먼트는 매달린 구분자(``'○○의약품 · '``)로 보여 표현을 해친다. 표시는 빈 값을
+        건너뛴다 — 잘라내기·색과 같은 **표현 계층** 몫(코어 판정=어느 열은 불변). 소비처가
+        여럿이라(재진술 블록·거울·완료 기록 등) 이 트리밍을 링1에 두어 표면 재구현을 막는다.
+        """
+        return " · ".join(v for c in self.columns if (v := _norm(record.get(c))))
 
     def collision_flags(self, rows: Sequence[Mapping]) -> tuple[bool, ...]:
         """행별 '요약이 집합 안 다른 행과 겹치는가' 일괄 판정(정직 병기 — 파일명이 가름).
