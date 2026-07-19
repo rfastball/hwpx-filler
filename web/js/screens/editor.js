@@ -137,35 +137,37 @@
   /* 사용할 헤더 선택(#49) — 헤더가 많은 데이터에서 실제 쓸 헤더만 남긴다. 미사용 헤더는
      자동 매핑 제안·소스 드롭다운 후보에서 빠진다(원본 데이터·다른 매핑은 불변). 저장은
      하지 않는다 — 매핑이 곧 사용 헤더의 기억이라 재편집 시 저장 매핑에서 파생된다. */
+  /* 사용할 헤더 = 칩-라이브(결정 12·13). 체크박스 스테이징 소거 — 칩 클릭이 곧 즉시 토글.
+     활성 칩(클릭=미사용) + 미사용 접힘 구역(칩 클릭=다시 사용) + 전체 사용/전체 미사용 대칭쌍.
+     활성 변화는 백엔드 apply_active_sources 가 처리: 미접촉 행은 라이브 재제안, 사람 소유
+     행은 소스가 꺼지면 R4 시끄러운 강등(notice). '전체 미사용' 후 미사용 구역 자동 펼침. */
   function headerSelect(s) {
     // 헤더 선택은 데이터가 로드됐을 때만(관문 겨눔 후) 성립한다 — 편집 모드처럼 데이터 없이
     // source_fields 가 저장 매핑 어휘에서 채워진 경우엔 '사용할 헤더'가 없다(복원 행을 헤더
-    // 토글로 언매핑하는 유령 표면 방지, 3단계 접기 리뷰 F4). mockup 상태 1(파일 겨눔 후)=칩벽 등장.
+    // 토글로 언매핑하는 유령 표면 방지, 리뷰 F4). mockup 상태 1(파일 겨눔 후)=칩벽 등장.
     const all = s.source_fields || [];  // 전체 헤더(스냅샷 계약 키) — 활성/미사용은 파생
     if (!all.length || !s.record_count) return "";
     const active = new Set(s.active_source_fields || []);
     const ignored = s.ignored_source_fields || [];
-    const boxes = all.filter((f) => active.has(f)).map((f) =>
-      `<label class="hchip"><input type="checkbox" class="hbx" value="${esc(f)}" checked> ${esc(f)}</label>`
-    ).join("");
-    // 미사용 헤더는 접어서 'N개 숨김'으로 재진술 + 개별 '다시 사용'(재활성).
+    const activeChips = all.filter((f) => active.has(f)).map((f) =>
+      `<button class="hchip on" data-act="toggle-header" data-field="${esc(f)}" title="클릭 = 미사용으로">${esc(f)}</button>`
+    ).join("") || '<span class="muted">사용 중인 헤더가 없습니다 — 아래 미사용 목록에서 골라 켜세요.</span>';
+    // 미사용 = 벽 이탈 + 접힘 구역(결정 13). '전체 미사용'이 ignored_expanded 로 자동 펼침.
     const ignoredBlock = ignored.length
-      ? `<details class="hidden-hdrs"><summary>미사용 ${ignored.length}개 숨김 — 자동 매핑·소스 후보에서 제외 (펼쳐 다시 사용)</summary>
+      ? `<details class="hidden-hdrs"${s.ignored_expanded ? " open" : ""}><summary>미사용 ${ignored.length}개 (펼쳐 다시 사용)</summary>
            <div class="hchips">${ignored.map((f) =>
-              `<span class="hchip ign">${esc(f)} <button class="btn sm" data-act="reactivate-source" data-field="${esc(f)}">다시 사용</button></span>`).join("")}</div>
+              `<button class="hchip ign" data-act="toggle-header" data-field="${esc(f)}" title="클릭 = 다시 사용">${esc(f)}</button>`).join("")}</div>
+           <p class="hint" style="margin-top:var(--sp-4)">미사용 헤더는 자동 매핑 제안·소스 후보에서 빠집니다. 클릭하면 다시 사용합니다.</p>
          </details>`
       : "";
     return `<div class="grp">
-      <span class="cap">사용할 헤더 선택</span>
-      <p class="hint" style="margin-top:0">문서 생성에 쓸 헤더만 남기세요. 미사용 헤더는 자동 매핑 제안과
-        소스 드롭다운 후보에서 빠집니다 — 원본 데이터·다른 매핑은 바뀌지 않습니다.</p>
-      <div class="hchips">${boxes || '<span class="muted">활성 헤더가 없습니다.</span>'}</div>
-      <div class="row" style="margin-top:var(--sp-8)">
-        <span class="muted">사용 ${s.active_count} · 미사용 ${s.ignored_count}</span>
+      <div class="row" style="margin-bottom:var(--sp-4)"><span class="cap">사용할 헤더</span>
+        <span class="muted" style="margin-left:var(--sp-8)">${all.length}개 중 ${s.active_count}개 사용</span>
         <span class="spacer"></span>
-        <button class="btn sm" data-act="use-selected">선택 항목만 사용</button>
-        ${s.ignored_count ? `<button class="btn sm" data-act="use-all-headers">모두 사용</button>` : ""}
+        ${s.ignored_count ? `<button class="btn sm" data-act="use-all-headers">전체 사용</button>` : ""}
+        <button class="btn sm" data-act="use-none">전체 미사용</button>
       </div>
+      <div class="hchips">${activeChips}</div>
       ${ignoredBlock}
     </div>`;
   }
@@ -194,7 +196,7 @@
       ${banner}
       <div class="tblwrap"><table class="map"><thead><tr>
         <th>확정</th><th>템플릿 필드 · 추정</th><th>데이터 항목</th>
-        <th>타입 / 고정값</th><th>표시형</th><th>미리보기</th></tr></thead>
+        <th>타입 / 고정값</th><th>표시형</th><th>미리보기</th><th>상태</th></tr></thead>
         <tbody>${rows}</tbody></table></div>
       <div class="stepper">${stepper}<span class="spacer"></span>${counts}</div>
       <div class="gate">
@@ -204,6 +206,15 @@
         <button class="btn" data-act="unconfirm-all">모두 해제</button>
       </div>
       ${dataPreview(s)}`;
+  }
+
+  // 소유권 태그(칩-라이브 결정 12) — 확정/수동(touched)/제안(시스템)/후보 없음.
+  function ownerTag(r, s) {
+    if (r.confirmed) return `<span class="tag conf">확정</span>`;
+    if (r.touched) return `<span class="tag man">수동</span>`;
+    if (r.source) return `<span class="tag sugg">제안</span>`;  // 시스템 소유(활성 따라 유동)
+    // 미접촉·소스 없음: 데이터 있으면 '후보 없음', 스키마온리면 중립(오경보 방지).
+    return s.record_count ? `<span class="tag none">후보 없음</span>` : `<span class="tag none">—</span>`;
   }
 
   function mapRow(r, s) {
@@ -219,6 +230,11 @@
         ? [`<option value="${esc(r.source)}" selected title="현재 데이터에 없는 소스">${esc(r.source)} (데이터에 없음)</option>`]
         : [])
       .join("");
+    // 사람 소유(touched) 행은 전용 '↩' 버튼으로 자동 제안 복귀(리뷰 R5: 센티넬 옵션은 동명
+    // 실열과 충돌 — 별도 액션 revert-source). 데이터 있을 때만(재제안할 활성 소스가 있어야).
+    const revertBtn = r.touched && s.record_count
+      ? ` <button class="btn sm" data-act="revert-source" data-index="${r.index}" title="자동 제안으로 되돌리기">↩</button>`
+      : "";
     const typeOpts = (s.type_options || []).map((t) =>
       `<option value="${esc(t)}"${t === r.type ? " selected" : ""}>${esc(TYPE_LABEL[t] || t)}</option>`).join("");
     const fmtList = (s.fmt_options && s.fmt_options[r.type]) || [];
@@ -237,10 +253,11 @@
       <td><input type="checkbox" class="cbx" data-act="row-confirm" data-index="${r.index}"${r.confirmed ? " checked" : ""}></td>
       <td><span class="fname" title="${esc(r.context || r.template_field)}">${esc(r.template_field)}</span>
         <span class="tbadge">[추정: ${esc(inferred)}]</span></td>
-      <td><select class="sel" data-act="row-source" data-index="${r.index}">${srcOpts}</select></td>
+      <td><select class="sel" data-act="row-source" data-index="${r.index}">${srcOpts}</select>${revertBtn}</td>
       <td><select class="sel" data-act="row-type" data-index="${r.index}">${typeOpts}</select> ${constInput}</td>
       <td><select class="sel" data-act="row-fmt" data-index="${r.index}"${fmtList.length ? "" : " disabled"}>${fmtOpts}</select></td>
-      <td>${preview}</td></tr>`;
+      <td>${preview}</td>
+      <td>${ownerTag(r, s)}</td></tr>`;
   }
 
   /* ---- 3단계: 저장 ---- */
@@ -325,7 +342,7 @@
   }
 
   /* 파일명 패턴 토큰 도우미(#17) — Qt SaveJobPage._refresh_filename_help 웹 포트.
-     s.rows 는 스텝2 매핑 확정 시점에 이미 계산돼 스냅샷에 실려온다 — 신규 브리지 호출 없음. */
+     s.rows 는 매핑 확정 시점(스텝1)에 이미 계산돼 스냅샷에 실려온다 — 신규 브리지 호출 없음. */
   function filenameTokenHelp(s) {
     const rows = (s.rows || []).filter((r) => r.has_content);
     const fieldsHtml = rows.length
@@ -371,6 +388,18 @@
     return "";
   }
 
+  /* 확정 매핑 보호(PR#105 리뷰 F1) — 관문의 데이터 교체/비우기는 _ensure_model 재초안으로
+     확정 행을 미확정으로 되돌린다(값은 carry 로 보존되나 재확정 필요). 편집 모드 복원 확정을
+     '검토만' 하려던 1클릭이 매핑 표 바로 위 관문에서 조용히 리셋하지 않게, 확정 행이 있으면
+     파괴 전 확인한다(confirm-or-alarm). 확정 0이면 조용히 진행(새 작업 첫 데이터 겨눔 등). */
+  async function confirmMappingResetIfConfirmed(verbPhrase) {
+    const n = ((LAST && LAST.rows) || []).filter((r) => r.confirmed).length;
+    if (!n) return true;
+    return Modal.confirm({ body:
+      `확정한 매핑 ${n}개가 있습니다.\n${verbPhrase} 그 매핑을 다시 확인해야 합니다` +
+      `(값은 남지만 미확정으로 돌아갑니다).\n\n계속할까요?` });
+  }
+
   /* ---- 이벤트 위임(innerHTML 재구성이라 위임이 안전) ---- */
   async function onClick(e) {
     const el = e.target.closest("[data-act]");
@@ -393,6 +422,7 @@
         }
         case "ack-gate": await Bridge.call(SCREEN, "ack_gate", {}); break;
         case "pick-data": {
+          if (!(await confirmMappingResetIfConfirmed("데이터를 바꾸면"))) break;  // 확정 보호(F1)
           let r = await Bridge.pickDataFile(SCREEN);
           if (r && typeof r === "object" && r.needs_sheet) {   // 다중 시트 → 확정 게이트(#33)
             r = await SheetPicker.choose(SCREEN, r);
@@ -401,17 +431,27 @@
           if (typeof r === "string" && r.startsWith("ERROR:")) alertMsg(r.slice(6).trim());
           break;
         }
-        case "skip-data": await Bridge.call(SCREEN, "skip_data", {}); break;
-        case "use-selected": {
-          // 활성 체크박스 중 체크된 것만 사용 → 나머지(체크 해제 + 이미 미사용) 일괄 미사용.
-          const fields = Array.from(
-            document.querySelectorAll("#scr-editor .hbx:checked")).map((b) => b.value);
-          await Bridge.call(SCREEN, "use_only_selected", { fields });
+        case "skip-data": {
+          if (!(await confirmMappingResetIfConfirmed("데이터 없이 진행하면"))) break;  // 확정 보호(F1)
+          await Bridge.call(SCREEN, "skip_data", {});
           break;
         }
-        case "use-all-headers": await Bridge.call(SCREEN, "use_all_headers", {}); break;
-        case "reactivate-source":
+        // 칩-라이브(결정 13): 칩 클릭 = 즉시 토글(활성↔미사용). 전체 사용/전체 미사용 대칭쌍.
+        case "toggle-header":
           await Bridge.call(SCREEN, "toggle_source_active", { field: el.dataset.field }); break;
+        case "use-all-headers": await Bridge.call(SCREEN, "use_all_headers", {}); break;
+        case "use-none": {
+          // 미확정 수동 지정은 전체 미사용으로 해제된다(다시 켜도 자동 제안으로만 복원) —
+          // 파괴 전 확인(리뷰 R2). 확정 존재는 백엔드가 loud 차단(결정 13).
+          const man = ((LAST && LAST.rows) || []).filter((r) => r.touched && !r.confirmed).length;
+          if (man && !(await Modal.confirm({ body:
+            `수동 지정한 매핑 ${man}개가 있습니다.\n전체 미사용하면 이 수동 지정이 해제됩니다` +
+            `(다시 켜도 자동 제안으로만 복원됩니다).\n\n계속할까요?` }))) break;
+          await Bridge.call(SCREEN, "use_none", {});
+          break;
+        }
+        case "revert-source":
+          await Bridge.call(SCREEN, "revert_source", { index: idx }); break;
         case "prev-rec": await Bridge.call(SCREEN, "step_preview", { delta: -1 }); break;
         case "next-rec": await Bridge.call(SCREEN, "step_preview", { delta: 1 }); break;
         case "unconfirm-all": await Bridge.call(SCREEN, "unconfirm_all", {}); break;

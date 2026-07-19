@@ -59,7 +59,7 @@ from .screens import NO_ROWS_TEXT, PushSink, default_pool_registry
 # 표시형 프리셋은 유형별 고정 → 한 번 계산해 스냅샷에 싣는다(코어 라벨 그대로).
 _FMT_OPTIONS = {t: [{"code": code, "label": label} for label, code in format_presets(t)] for t in TYPES}
 
-# 2단계 데이터 미리보기에 싣는 샘플 행 수(#16 98DDFE96) — 전체 적재는 이미 self.records
+# 매핑 단계 내 데이터 미리보기에 싣는 샘플 행 수(#16 98DDFE96) — 전체 적재는 이미 self.records
 # 에 있으나 스냅샷엔 매핑 감(感)만 주는 소량만 노출한다(record_count 로 "외 M건" 표기).
 _SAMPLE_ROWS = 3
 
@@ -116,6 +116,9 @@ class EditorController:
         # 기억(job.source_keys)이므로 재편집 시 활성 헤더는 저장 매핑에서 파생된다.
         # 자동 제안·소스 드롭다운 후보만 활성 헤더로 좁힌다(원본 데이터·매핑 계약 불변).
         self._ignored_sources: "set[str]" = set()
+        # 미사용 구역 펼침 힌트(칩-라이브 결정 13) — '전체 미사용'이 세팅, 새 데이터·전체
+        # 사용이 해제. 뷰가 미사용 칩 접힘 구역을 열어 '고른다→매핑한다'를 잇게 한다.
+        self._ignored_expanded = False
         self.records: "list[dict]" = []
         self.model: "MappingModel | None" = None
         self._model_key: "tuple | None" = None
@@ -206,6 +209,7 @@ class EditorController:
             "const": row.const,
             "fmt": row.fmt,
             "confirmed": row.confirmed,
+            "touched": row.touched,  # 소유권(칩-라이브 결정 12) — 뷰가 제안/수동 태그 파생
             "has_content": row.has_content(),
             "suggestion_score": round(row.suggestion_score, 3),
             "preview": preview,
@@ -240,7 +244,8 @@ class EditorController:
             "ignored_source_fields": [f for f in self.source_fields if f in self._ignored_sources],
             "active_count": len(active_sources),
             "ignored_count": len(self._ignored_sources),
-            # 2단계 데이터 미리보기(#16): source_fields 순서로 투영한 샘플 행 소량.
+            "ignored_expanded": self._ignored_expanded,  # 미사용 구역 펼침 힌트(결정 13)
+            # 매핑 단계 내 데이터 미리보기(#16): source_fields 순서로 투영한 샘플 행 소량.
             # 빈 셀은 "" 로 보존해 렌더가 (빈 값)으로 시끄럽게 표기(ADR-B).
             "sample_rows": self._sample_rows(),
             "type_options": list(TYPES),
@@ -340,7 +345,7 @@ class EditorController:
         return prov
 
     def _sample_rows(self) -> "list[list[str]]":
-        """2단계 미리보기용 샘플 행 — source_fields 순서로 투영한 문자열 셀.
+        """매핑 단계 데이터 미리보기용 샘플 행 — source_fields 순서로 투영한 문자열 셀.
 
         빈 셀은 ``""`` 로 남겨 렌더가 "(빈 값)"으로 시끄럽게 표기하게 한다(ADR-B).
         """
@@ -414,6 +419,7 @@ class EditorController:
         self.source_fields = source.fields()
         # 새 데이터 = 새 헤더 어휘 → 이전 미사용 선택이 조용히 남지 않게 전원 활성으로.
         self._ignored_sources = set()
+        self._ignored_expanded = False  # 새 데이터 = 펼침 힌트 초기화(결정 13)
         self.records = records
         self.preview_index = 0
         # 자동등록 기본 이름 = 파일 스템(사용자가 저장 단계에서 수정 가능). 데이터를 바꾸면
@@ -537,7 +543,16 @@ class EditorController:
         3단계 접기 후 별도 '데이터 단계'는 없다 — 이 액션은 매핑 관문에서 데이터 참조를
         비우고(고른 게 있었으면 해제) 스키마온리 모델로 매핑을 잇는다. 매핑 단계(1)에
         머문다(관문에서 호출) — step 0 에서 shortcut 으로 불려도 매핑으로 착지한다.
+
+        **템플릿 게이트 선통과 필수**(PR#105 리뷰 F2): step 0 shortcut 진입은 ``goto_step(1)``
+        과 달리 게이트를 안 거치므로, PARTIAL(미해결 토큰 미확인)·RAW 템플릿을 이 액션이
+        매핑으로 밀어 넣어 게이트를 우회할 수 있다 — ``can_advance(0)`` 를 먼저 세워 막는다.
         """
+        if not self.can_advance(0):
+            raise ValueError(
+                "템플릿 게이트를 통과해야 매핑으로 진행할 수 있습니다 — "
+                "미해결 토큰을 확인하거나 템플릿을 정리하세요."
+            )
         self.data_path = ""
         self.data_sheet = ""
         self.dataset_name = ""
@@ -548,54 +563,64 @@ class EditorController:
         self._ensure_model()
         self.step = 1
 
-    # ---- 사용 헤더 선택(#49) — 활성/미사용 전환. 원본 데이터·매핑 계약은 불변.
-    def _do_use_only_selected(self, p: dict) -> None:
-        """선택한 헤더만 활성으로, 나머지 일괄 미사용(#49)."""
-        selected = {str(f) for f in (p.get("fields") or [])}
-        self._apply_active(selected)
-
+    # ---- 사용 헤더 칩(#49 + 칩-라이브 결정 12·13) — 즉시 동사, 활성/미사용 전환.
+    # 체크박스 스테이징 소거(결정 13): 칩 토글이 곧 즉시 반영. 활성 집합 변화는 model.
+    # apply_active_sources 단일 관문이 처리한다 — 시스템 소유 행은 라이브 재제안(조용),
+    # 사람 소유 행은 소스가 꺼지면 R4 시끄러운 강등. 원본 데이터·매핑 계약은 불변.
     def _do_use_all_headers(self, p: dict) -> None:
-        """전체 헤더를 다시 활성으로 — 미사용 일괄 해제(#49)."""
+        """전체 헤더를 다시 활성으로 — 미사용 일괄 해제(결정 13 대칭쌍)."""
+        self._ignored_expanded = False
         self._apply_active(set(self.source_fields))
 
+    def _do_use_none(self, p: dict) -> None:
+        """전체 미사용(결정 13) — 확정 존재 시 차단, 아니면 전부 미사용 + 미사용 구역 자동 펼침.
+
+        구 '전부 미사용 무조건 거부'(리뷰 #62)를 결정 13 이 개정: **확정이 있을 때만** 차단하고
+        (되돌릴 수 없는 확정 파괴 방지), 확정이 없으면 '고른다→매핑한다' 흐름의 출발점으로
+        허용한다(수동 touched 행은 강등·재진술하되 진행). 미사용 구역을 펼쳐 고르게 한다.
+        """
+        if self.model is not None and self.model.confirmed_count():
+            raise ValueError(
+                "확정한 매핑이 있어 전체 미사용을 할 수 없습니다 — 확정을 먼저 해제하거나 "
+                "칩을 하나씩 끄세요."
+            )
+        self._ignored_expanded = True  # 고르는 흐름의 시작점 — 미사용 구역 펼침(결정 13)
+        self._apply_active(set(), allow_empty=True)
+
     def _do_toggle_source_active(self, p: dict) -> None:
-        """헤더 1개의 활성/미사용 토글(개별 재활성 포함, #49)."""
+        """헤더 1개의 활성/미사용 즉시 토글(칩 클릭 — 결정 13). 마지막 활성은 남긴다."""
         field = str(p["field"])
         active = set(self._active_sources())
         if field in active:
             active.discard(field)
         else:
             active.add(field)
-        self._apply_active(active)
+        self._apply_active(active)  # allow_empty=False → 마지막 헤더 토글은 '하나 이상'으로 차단
 
-    def _apply_active(self, active: "set[str]") -> None:
-        """활성 헤더 집합을 확정한다 — 데이터에 있는 것만 채택하고, 새로 미사용이 된
-        헤더에 매핑된 행은 해제(``ignore_source``)해 사람 재검토를 강제·재진술한다.
+    def _apply_active(self, active: "set[str]", *, allow_empty: bool = False) -> None:
+        """활성 헤더 집합을 확정한다 — 데이터에 있는 것만 채택하고, model.apply_active_sources
+        단일 관문으로 라이브 재제안(시스템 소유) + R4 강등(사람 소유)을 재계산·재진술한다.
 
-        confirm-or-alarm: **전부 미사용은 시끄럽게 거부**한다. 헤더 한 개 미사용은 강제
-        재확정이 안전장치이지만, 전부 미사용은 확정 매핑 전 행을 한 번에 해제하고 '모두
-        사용'으로도 지워진 행이 복구되지 않는(후보 자격만 되돌림) 되돌리기 불가 파괴다 —
-        되돌릴 수 없는 파괴는 사후 통보가 아니라 사전 차단이 맞다(리뷰 #62 🔴)."""
+        개별 토글은 마지막 활성 헤더를 남긴다(``allow_empty=False`` — '하나 이상'). 명시
+        동사 '전체 미사용'(``_do_use_none``)만 ``allow_empty=True`` 로 0개를 허용하되,
+        확정이 있으면 그쪽에서 먼저 차단한다(결정 13 — 확정 파괴만 사전 차단)."""
         active = {f for f in active if f in self.source_fields}
-        if self.source_fields and not active:
+        if self.source_fields and not active and not allow_empty:
             raise ValueError(
-                "사용할 헤더를 하나 이상 남겨 두세요 — 전부 미사용은 확정한 매핑을 "
-                "모두 해제하며 되돌릴 수 없습니다."
+                "사용할 헤더를 하나 이상 남겨 두세요 — 하나씩 끄되 마지막 하나는 남기거나, "
+                "'전체 미사용'으로 다시 골라 켜세요."
             )
-        new_ignored = {f for f in self.source_fields if f not in active}
-        newly_ignored = new_ignored - self._ignored_sources
-        self._ignored_sources = new_ignored
-        affected: "list[str]" = []
+        self._ignored_sources = {f for f in self.source_fields if f not in active}
+        demoted: "list[str]" = []
         if self.model is not None:
-            for f in sorted(newly_ignored):
-                affected += self.model.ignore_source(f)
+            demoted = self.model.apply_active_sources(self._active_sources())
         n_active = len(self._active_sources())
         n_ignored = len(self._ignored_sources)
         msg = f"사용 헤더 {n_active}개 · 미사용 {n_ignored}개."
-        if affected:
+        if demoted:
             self._set_notice(
-                msg + f"\n미사용으로 바꾸며 매핑을 해제한 필드 {len(affected)}개"
-                "(재확정 필요): " + ", ".join(affected),
+                msg + f"\n미사용으로 바꾸며 확정·수동 매핑을 해제한 필드 {len(demoted)}개"
+                "(재확정 필요): " + ", ".join(demoted),
                 "warn",
             )
         else:
@@ -630,17 +655,19 @@ class EditorController:
         key = (self.template_path, self.data_path, self.data_sheet, tuple(self.source_fields))
         if self.model is not None and self._model_key == key:
             return
+        # 사람 소유 행(확정 + touched 미확정 수동 편집)을 이월한다 — 확정 전용 to_profile 이
+        # 아니라 carry_profile 로(리뷰 F2: 미확정 수동 편집도 데이터 교체에 조용히 잃지 않는다).
+        # 미접촉 제안(시스템 소유)은 담지 않는다 — 새 데이터 기준으로 재제안돼야 한다.
         prior = None
-        if self.model is not None and self.model.confirmed_count():
-            prior = self.model.to_profile()
-        # 미사용 헤더(#49)는 자동 제안 후보에서 제외 — 매핑 진입 전 좁혀두면 여기서
-        # 반영된다(진입 후 좁히면 _apply_active 가 ignore_source 로 행을 해제).
+        if self.model is not None and self.model.human_owned_rows():
+            prior = self.model.carry_profile()
+        # 미사용 헤더(#49)는 자동 제안 후보에서 제외 — 매핑 진입 전 좁혀두면 여기서 반영된다.
         self.model = MappingModel.from_suggestions(self.schema, self._active_sources())
         if prior is not None:
-            carried = self.model.apply_profile(prior, confirm=False)
+            carried = self.model.apply_profile(prior, confirm=False)  # 값 이월 + touched=True
             self._set_notice(
-                f"템플릿/데이터가 바뀌어 매핑 초안을 다시 만들었습니다 — 이전에 확정했던 "
-                f"{carried}개 행의 소스·유형·서식은 제안으로 이월했지만 전 행이 미확정입니다.\n"
+                f"템플릿/데이터가 바뀌어 매핑 초안을 다시 만들었습니다 — 이전에 정한 "
+                f"{carried}개 행의 소스·유형·서식은 이월했지만 전 행이 미확정입니다.\n"
                 "같은 이름 컬럼이라도 새 데이터에서는 의미가 다를 수 있습니다 — "
                 "저장하려면 전 행을 다시 확정하세요.",
                 "warn",
@@ -649,7 +676,21 @@ class EditorController:
 
     # ---- 매핑 행 편집(모두 편집=확정 해제, VM 이 처리)
     def _do_set_source(self, p: dict) -> None:
+        """소스 지정(수동=사람 소유). 실제 데이터 열만 받는다 — '자동으로 되돌리기'는 별도
+        액션 ``revert_source``(리뷰 R5: 센티넬을 소스값에 얹으면 동명 실열과 충돌해 그 열을
+        영영 못 겨눈다 — 전용 액션으로 분리)."""
         self.model.set_source(int(p["index"]), p["source"])
+
+    def _do_revert_source(self, p: dict) -> None:
+        """소스를 자동 제안으로 되돌린다(칩-라이브 결정 12) — 그 행을 시스템 소유로 완전 리셋
+        (소스·유형·상수·표시형)하고 **그 행만** 활성 집합 기준 재제안한다.
+
+        전집합 apply_active_sources 가 아니라 단일 행 resuggest_row 를 쓴다(리뷰 R4): 되돌리기는
+        그 행 하나의 의사표시라, 전집합을 돌리면 무관한 stale 사람 소유 행까지 조용히 강등된다.
+        """
+        index = int(p["index"])
+        self.model.revert_to_auto(index)
+        self.model.resuggest_row(index, self._active_sources())
 
     def _do_set_type(self, p: dict) -> None:
         self.model.set_type(int(p["index"]), p["type"])

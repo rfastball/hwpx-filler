@@ -214,6 +214,23 @@ class TestWebSelftestGate:
         assert any("미입력 · 클릭=확인" in c for c in chips), f"미입력 칩 미렌더: {chips!r}"
         assert any("빈칸 선언" in c for c in chips), f"의도적 빈칸 칩 미렌더: {chips!r}"
 
+    def test_editor_chip_live_renders_ownership_and_toggle_chips(self, selftest_result: dict) -> None:
+        # 에디터 매핑 단계 칩-라이브(블록 2 결정 12·13, 슬라이스 5 PR-2) — 합성 step-1 스냅샷을
+        # 실 render() 에 흘려 사용할 헤더가 즉시 토글 칩(체크박스 스테이징 소거)으로, 미사용
+        # 구역이 펼쳐지고, 소유권 태그 4종과 touched 행 '자동 제안으로 되돌리기'가 실 WebView2 에
+        # 그려지는지 되읽는다(백엔드 apply_active_sources 는 test_mapping_state 가 커버, 여긴 렌더).
+        e = selftest_result["editor_chip"]
+        assert e.get("error") is None, f"칩-라이브 프로브 예외: {e.get('error')!r}"
+        assert e["active_chips"] == 3, f"활성 칩(즉시 토글)이 3개가 아닙니다: {e!r}"
+        assert e["has_checkbox_staging"] is False, "체크박스 스테이징이 남아 있습니다 — 결정 13 소거 위반."
+        assert e["ignored_chip"] is True, "미사용 칩(토글형)이 없습니다."
+        assert e["ignored_fold_open"] is True, "ignored_expanded 인데 미사용 구역이 펼쳐지지 않았습니다(결정 13)."
+        assert e["use_none_btn"] is True, "'전체 미사용' 버튼이 없습니다(결정 13 대칭쌍)."
+        tags = e["tags"]
+        for want in ("확정", "수동", "제안", "후보 없음"):
+            assert want in tags, f"소유권 태그 '{want}' 미렌더(칩-라이브 결정 12): {tags!r}"
+        assert e["auto_revert_option"] is True, "touched 행에 '자동 제안으로 되돌리기'(↩) 버튼이 없습니다(리뷰 R5)."
+
     def test_job_restate_block_lists_selected_names(self, selftest_result: dict) -> None:
         # 재진술 블록(블록 6 D1-B, 슬라이스 2) — 선택 2행의 이름 목록이 상시 블록으로 실렌더된다.
         j = selftest_result["job_mirror"]

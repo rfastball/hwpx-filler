@@ -88,6 +88,22 @@ def test_partial_template_blocks_until_acked(tmp_path):
     assert ctrl.snapshot()["gate"]["acked"] is True
 
 
+def test_skip_data_requires_template_gate(tmp_path):
+    """PR#105 F2 — skip_data(관문 옵트아웃·step-0 shortcut)도 템플릿 게이트 선통과 필수.
+
+    goto_step(1) 과 달리 게이트를 안 거치는 경로라, PARTIAL(미해결 토큰 미확인)을 이 액션이
+    매핑으로 밀어 넣어 게이트를 우회할 수 있었다 — can_advance(0) 선검사로 막는다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_PARTIAL))            # PARTIAL — 게이트 미통과
+    assert ctrl.can_advance(0) is False
+    with pytest.raises(ValueError, match="게이트를 통과"):
+        ctrl.dispatch("skip_data", {})                  # 우회 시도 → 시끄럽게 거부
+    assert ctrl.snapshot()["step"] == 0                 # 매핑으로 넘어가지 않음
+    ctrl.dispatch("ack_gate", {})                       # 미해결 토큰 확인
+    ctrl.dispatch("skip_data", {})                      # 이제 통과
+    assert ctrl.snapshot()["step"] == 1
+
+
 def test_load_data_honors_confirmed_sheet(tmp_path):
     """다중 시트 확정 게이트(#33) — load_data_path(sheet=) 가 확정 시트를 관통 로드.
 
@@ -156,6 +172,28 @@ def test_gateway_data_pick_rebuilds_mapping_in_place(tmp_path):
     assert snap["schema_only"] is False                  # 데이터 반영 — 스키마온리 탈출
     assert snap["source_fields"] == ["업체명", "낙찰금액", "계약일"]
     assert snap["active_source_fields"] == ["업체명", "낙찰금액", "계약일"]  # 소스 후보 채워짐
+
+
+def test_gateway_repick_preserves_touched_unconfirmed_edits(tmp_path):
+    """칩-라이브 리뷰 F2 정본(컨트롤러 end-to-end) — 미확정 **수동** 편집(touched)은 관문
+    데이터 재겨눔에도 조용히 소실되지 않는다.
+
+    carry_profile 이 확정뿐 아니라 touched 미확정 행도 이월(confirm=False)한다 — 값은 살고
+    전 행 미확정으로 재검토를 강제(결정 12 '수동=사람 소유'). 구 to_profile(확정-only)이면
+    이 수동 편집은 재초안에서 조용히 사라졌다(F2). 미접촉 제안은 반대로 새 데이터 재제안."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("goto_step", {"step": 1})
+    ctrl.dispatch("set_source", {"index": 0, "source": "낙찰금액"})   # 수동(touched)·미확정
+    snap = ctrl.snapshot()
+    assert snap["rows"][0]["touched"] is True and snap["rows"][0]["confirmed"] is False
+
+    ctrl.load_data_path(str(MULTI_SHEET))                            # 관문에서 첫 시트로 재겨눔
+    snap = ctrl.snapshot()
+    assert snap["rows"][0]["source"] == "낙찰금액"                   # 수동 편집 이월(F2 — 소실 아님)
+    assert snap["rows"][0]["touched"] is True                       # 사람 소유 유지
+    assert snap["rows"][0]["confirmed"] is False                    # 재검토 강제(전 행 미확정)
 
 
 def test_same_file_different_sheet_repick_demotes_confirmed(tmp_path):
@@ -748,7 +786,7 @@ def test_save_links_ref_even_when_dataset_register_fails(tmp_path):
 
 # ------------------------------------------------- 사용할 헤더 선택(#49)
 def test_header_selection_defaults_all_active_then_narrows(tmp_path):
-    """데이터 로드 = 전원 활성. 선택 항목만 사용 → 나머지 일괄 미사용, 카운트 재진술."""
+    """데이터 로드 = 전원 활성. 칩을 하나씩 끄면(즉시 토글) 나머지만 활성, 카운트 재진술(결정 13)."""
     ctrl, _ = _controller(tmp_path)
     ctrl.load_template_path(str(TPL_COMPILED))
     ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
@@ -757,7 +795,8 @@ def test_header_selection_defaults_all_active_then_narrows(tmp_path):
     assert snap["active_source_fields"] == ["업체명", "낙찰금액", "계약일"]  # 기본 전원 활성
     assert snap["active_count"] == 3 and snap["ignored_count"] == 0
 
-    ctrl.dispatch("use_only_selected", {"fields": ["업체명"]})
+    ctrl.dispatch("toggle_source_active", {"field": "낙찰금액"})          # 칩 즉시 토글 off
+    ctrl.dispatch("toggle_source_active", {"field": "계약일"})
     snap = ctrl.snapshot()
     assert snap["active_source_fields"] == ["업체명"]                    # 활성만 후보(원 순서)
     assert snap["ignored_source_fields"] == ["낙찰금액", "계약일"]
@@ -765,9 +804,9 @@ def test_header_selection_defaults_all_active_then_narrows(tmp_path):
     assert snap["notice"] and "사용 헤더 1개 · 미사용 2개" in snap["notice"]["text"]
 
 
-def test_ignoring_mapped_header_clears_row_and_restates(tmp_path):
-    """이미 매핑된 헤더를 미사용 전환 → 그 행만 source=''·confirmed=False, warn 재진술.
-    다른 매핑·원본 데이터는 불변."""
+def test_ignoring_mapped_header_r4_demotes_human_owned_and_restates(tmp_path):
+    """사람 소유(확정) 행의 소스 헤더를 끄면 R4 시끄러운 강등 — 확정 해제·이름 재진술(결정 12).
+    활성 소스를 쓰는 다른 사람 소유 행은 그대로. 원본 데이터는 불변."""
     ctrl, _ = _controller(tmp_path)
     ctrl.load_template_path(str(TPL_COMPILED))
     ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
@@ -777,20 +816,23 @@ def test_ignoring_mapped_header_clears_row_and_restates(tmp_path):
     ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": True})
     ctrl.dispatch("set_confirmed", {"index": 1, "confirmed": True})
 
-    ctrl.dispatch("use_only_selected", {"fields": ["업체명", "계약일"]})  # 낙찰금액 미사용
+    ctrl.dispatch("toggle_source_active", {"field": "낙찰금액"})          # 낙찰금액 칩 off
     snap = ctrl.snapshot()
-    assert snap["rows"][0]["source"] == "" and snap["rows"][0]["confirmed"] is False
+    # 행 0(낙찰금액 사용, 확정)은 R4 강등 — 확정 해제·시스템 소유로(touched=False).
+    assert snap["rows"][0]["confirmed"] is False and snap["rows"][0]["touched"] is False
+    # 행 1(업체명, 활성)은 사람 소유 그대로.
     assert snap["rows"][1]["source"] == "업체명" and snap["rows"][1]["confirmed"] is True
     assert "낙찰금액" not in snap["active_source_fields"]
     assert snap["notice"]["level"] == "warn" and "재확정" in snap["notice"]["text"]
 
 
 def test_reactivate_and_use_all_headers(tmp_path):
-    """미사용 헤더 개별 재활성 + 모두 사용 일괄 복원."""
+    """미사용 헤더 개별 재활성 + 모두 사용 일괄 복원(즉시 토글)."""
     ctrl, _ = _controller(tmp_path)
     ctrl.load_template_path(str(TPL_COMPILED))
     ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
-    ctrl.dispatch("use_only_selected", {"fields": ["업체명"]})
+    ctrl.dispatch("toggle_source_active", {"field": "낙찰금액"})
+    ctrl.dispatch("toggle_source_active", {"field": "계약일"})
     assert ctrl.snapshot()["ignored_source_fields"] == ["낙찰금액", "계약일"]
 
     ctrl.dispatch("toggle_source_active", {"field": "낙찰금액"})       # 개별 재활성
@@ -807,7 +849,8 @@ def test_new_data_resets_ignored_headers(tmp_path):
     ctrl, _ = _controller(tmp_path)
     ctrl.load_template_path(str(TPL_COMPILED))
     ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
-    ctrl.dispatch("use_only_selected", {"fields": ["업체명"]})
+    ctrl.dispatch("toggle_source_active", {"field": "낙찰금액"})
+    ctrl.dispatch("toggle_source_active", {"field": "계약일"})
     assert ctrl.snapshot()["ignored_count"] == 2
     ctrl.load_data_path(str(MULTI_SHEET))                             # 첫 시트(공고목록)=새 헤더
     snap = ctrl.snapshot()
@@ -815,11 +858,12 @@ def test_new_data_resets_ignored_headers(tmp_path):
     assert snap["ignored_count"] == 0 and snap["active_source_fields"] == ["공고명", "추정가격"]
 
 
-def test_empty_selection_is_loud_and_preserves_mappings(tmp_path):
-    """전부 미사용은 시끄럽게 거부(리뷰 #62 🔴) — 되돌릴 수 없는 매핑 전멸을 사전 차단.
+def test_use_none_blocks_on_confirmed_but_allows_when_clean(tmp_path):
+    """전체 미사용(결정 13 개정) — 확정 있으면 차단(파괴 방지), 없으면 허용 + 미사용 구역 펼침.
 
-    빈 선택(use_only_selected [])·마지막 헤더까지 끄는 토글 둘 다 같은 종착지라
-    가드를 _apply_active 에 두어 두 경로 모두 막고, 확정 매핑을 보존한다."""
+    구 '전부 미사용 무조건 거부'(#62)를 결정 13 이 개정: 되돌릴 수 없는 **확정** 파괴만
+    사전 차단하고, 확정이 없으면 '고른다→매핑한다'의 출발점으로 허용한다. 마지막 헤더를
+    토글로 끄는 개별 경로는 여전히 '하나 이상'."""
     ctrl, _ = _controller(tmp_path)
     ctrl.load_template_path(str(TPL_COMPILED))
     ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
@@ -827,17 +871,25 @@ def test_empty_selection_is_loud_and_preserves_mappings(tmp_path):
     ctrl.dispatch("set_source", {"index": 0, "source": "낙찰금액"})
     ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": True})
 
-    with pytest.raises(ValueError, match="하나 이상"):
-        ctrl.dispatch("use_only_selected", {"fields": []})            # 전부 미사용 거부
-    # 매핑·활성 상태 불변(파괴 없음).
+    # 확정 존재 → 전체 미사용 차단(파괴 방지).
+    with pytest.raises(ValueError, match="확정한 매핑이 있어"):
+        ctrl.dispatch("use_none", {})
     snap = ctrl.snapshot()
     assert snap["rows"][0]["source"] == "낙찰금액" and snap["rows"][0]["confirmed"] is True
-    assert snap["ignored_count"] == 0
+    assert snap["ignored_count"] == 0                                # 파괴 없음
 
-    # 마지막 남은 헤더를 토글로 끄는 경로도 같은 가드에 막힌다.
-    ctrl.dispatch("use_only_selected", {"fields": ["낙찰금액"]})
+    # 마지막 남은 헤더를 토글로 끄는 개별 경로는 '하나 이상'으로 차단.
+    ctrl.dispatch("toggle_source_active", {"field": "업체명"})
+    ctrl.dispatch("toggle_source_active", {"field": "계약일"})       # 활성=[낙찰금액]
     with pytest.raises(ValueError, match="하나 이상"):
         ctrl.dispatch("toggle_source_active", {"field": "낙찰금액"})
+
+    # 확정 해제 후엔 전체 미사용 허용 + 미사용 구역 펼침(고르는 흐름 시작점).
+    ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": False})
+    ctrl.dispatch("use_none", {})
+    snap = ctrl.snapshot()
+    assert snap["active_count"] == 0 and snap["ignored_count"] == 3
+    assert snap["ignored_expanded"] is True
 
 
 def test_load_job_reedit_starts_all_active(tmp_path):

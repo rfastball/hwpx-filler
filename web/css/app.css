@@ -180,7 +180,7 @@ table.data-preview td{white-space:nowrap}
    min-width 는 고정 열 합(674px) + 유연 2열(템플릿 필드)의 실용 최소폭 — 좁은 창에서
    가로 스크롤로 밀리더라도 핵심 식별자 열이 짜부라지지 않는다(PR #84 리뷰). */
 .tblwrap{overflow-x:auto;border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card);margin-top:var(--sp-10)}
-table.map{border-collapse:collapse;width:100%;font-size:var(--fs-body);min-width:900px;table-layout:fixed}
+table.map{border-collapse:collapse;width:100%;font-size:var(--fs-body);min-width:940px;table-layout:fixed}
 table.map th{background:var(--n-header-bg);color:var(--n-header-ink);font-weight:600;text-align:left;
   padding:var(--sp-6) var(--sp-8);border-bottom:1px solid var(--a-border);position:sticky;top:0}
 table.map th:nth-child(1){width:44px}   /* 확정 체크 */
@@ -227,10 +227,10 @@ tr.r-schemaonly td{background:var(--a-card)}
 
 /* 사용할 헤더 선택(#49) — 활성 헤더 칩(체크박스)·미사용 접힘 */
 .hchips{display:flex;flex-wrap:wrap;gap:var(--sp-6);margin-top:var(--sp-8)}
-.hchip{display:inline-flex;align-items:center;gap:var(--sp-4);font-size:var(--fs-body);
+.hchip{display:inline-flex;align-items:center;gap:var(--sp-4);font-family:inherit;font-size:var(--fs-body);
   padding:var(--sp-2) var(--sp-8);border:1px solid var(--a-border);border-radius:var(--rad-pill);
   background:var(--a-window);cursor:pointer;white-space:nowrap}
-.hchip.ign{color:var(--a-muted);border-style:dashed;cursor:default}
+.hchip.ign{color:var(--a-muted);border-style:dashed}  /* 이제 클릭형(다시 사용) — pointer 유지(리뷰 R6) */
 .hidden-hdrs{margin-top:var(--sp-8);font-size:var(--fs-body)}
 .hidden-hdrs>summary{cursor:pointer;color:var(--a-muted)}
 
@@ -243,6 +243,15 @@ tr.r-schemaonly td{background:var(--a-card)}
 .btn.linklike{border:0;background:none;color:var(--a-muted);text-decoration:underline;
   text-underline-offset:2px;padding:var(--sp-2) var(--sp-4);font-size:var(--fs-caption)}
 .btn.linklike:hover{color:var(--a-ink)}
+
+/* 칩-라이브(R-flow 슬라이스 5 결정 12·13) — 즉시 토글 칩 + 소유권 태그 (기본 .hchip 는 위 참조) */
+.hchip.on{border-color:var(--a-primary);background:var(--a-sel);color:var(--a-primary);font-weight:600}
+.tag{font-size:var(--fs-caption);border-radius:var(--rad-pill);padding:1px var(--sp-8);white-space:nowrap;font-weight:600}
+.tag.sugg{background:color-mix(in srgb,var(--a-warn) 14%,transparent);color:var(--a-warn)}   /* 제안=시스템 소유(유동) */
+.tag.man{background:var(--a-sel);color:var(--a-primary)}                                      /* 수동=사람 소유 */
+.tag.conf{background:color-mix(in srgb,var(--a-ok) 14%,transparent);color:var(--a-ok)}        /* 확정 */
+.tag.none{background:var(--n-surface-alt);color:var(--a-muted);font-weight:400}               /* 후보 없음 */
+table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 
 .run-row{display:flex;align-items:center;gap:var(--sp-8);margin-top:var(--sp-12)}
 .run-row .field{flex:1;min-width:0}

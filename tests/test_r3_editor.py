@@ -123,6 +123,20 @@ def test_c4_editor_js_dosave_guards_and_surfaces_half_save():
     assert "dataset_register_error" in body          # 반저장 경고 표면화
 
 
+def test_editor_js_gateway_guards_confirmed_mapping_reset():
+    """PR#105 F1 정적 계약 — 관문 데이터 교체/비우기(pick-data·skip-data)는 확정 매핑이 있으면
+    파괴 전 확인한다(confirmMappingResetIfConfirmed). 편집 모드 복원 확정이 매핑 표 바로 위
+    관문의 1클릭으로 조용히 미확정 재초안되던 것을 막는다(confirm-or-alarm)."""
+    from test_r3_pool import _segment
+    src = (REPO / "web" / "js" / "screens" / "editor.js").read_text(encoding="utf-8")
+    assert "async function confirmMappingResetIfConfirmed" in src, "확정 보호 가드 헬퍼 부재(F1)."
+    body = _segment(src, "async function onClick", "function onChange")
+    # pick-data·skip-data 두 파괴 경로 모두 가드를 통과한다(둘 다 _ensure_model 재초안 유발).
+    assert body.count("confirmMappingResetIfConfirmed(") >= 2, (
+        "관문 파괴 경로(pick-data·skip-data)에 확정 보호 가드가 둘 다 걸리지 않았습니다(F1)."
+    )
+
+
 def test_editor_js_click_dispatch_guards_bridge_rejection():
     """정적 계약(#45): onClick 디스패처가 try/catch + alert 로 브리지 rejection 을 가드한다.
 
