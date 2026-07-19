@@ -227,6 +227,10 @@ class TestWebSelftestGate:
         assert j["drift_banner"] is True, "드리프트 차단 배너(role=alert)가 렌더되지 않았습니다."
         assert j["drift_fix_link"] is True, "「작업 에디터에서 매핑 확정…」 행동 링크가 없습니다(막다른 경보 금지)."
         assert j["drift_no_table"] is True, "드리프트인데 거울 표가 남아 있습니다(배너로 교체 안 됨)."
+        # 재진술 블록은 드리프트(생성 불가) 중 숨는다 — "N건 생성" 진술이 차단 배너와 모순 금지.
+        assert j["restate_hidden_on_drift"] is True, (
+            "드리프트인데 재진술 블록이 계속 '문서 N건 생성'을 진술합니다 — 차단 배너와 모순."
+        )
 
     def test_theme_defaults_to_system_when_unpersisted(self, selftest_result: dict) -> None:
         # 저장된 테마 선택이 없으면 앱은 OS 를 따른다 — data-theme 속성이 없어야(=system) @media 지배.

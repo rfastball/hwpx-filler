@@ -144,8 +144,11 @@ class JobController(PoolTargetingMixin):
                 cols.append(m.source)
         return cols
 
-    def _record_rows(self) -> "list[dict]":
+    def _record_rows(self, indices: "list[int]", mapped: "list[dict]") -> "list[dict]":
         """각 레코드 = 원본 식별 요약 + 그 행이 만들 **실**파일명 미리보기(F33).
+
+        ``indices``·``mapped`` 는 :meth:`snapshot` 가 1회 계산해 넘긴다(``_mirror`` 와 공유 —
+        매핑 이중 적용 방지, 리뷰 반영).
 
         식별 요약은 링1 단일 함수(:func:`~hwpxfiller.core.identity_summary.identity_summary`,
         결정 37·A-1-15)가 **전체 레코드 집합 위에서 1회** 판정한다 — 어느 열로 요약할지는
@@ -162,13 +165,11 @@ class JobController(PoolTargetingMixin):
             return []
         from ..naming import plan_output_names
 
-        indices = self._indices()
         names: "dict[int, str]" = {}
         if indices:
             self._names_now = datetime.now()
             planned = plan_output_names(
-                self.vm.job.filename_pattern, self.vm.mapped_records(indices),
-                now=self._names_now,
+                self.vm.job.filename_pattern, mapped, now=self._names_now,
             )
             names = dict(zip(indices, planned, strict=True))
         isum = identity_summary(
@@ -214,16 +215,21 @@ class JobController(PoolTargetingMixin):
         distinct = list(dict.fromkeys(vals))
         if len(distinct) <= 1:
             return distinct[0] if distinct else ""
-        return f"{vals[0]} (행마다 다름 · 표본, 외 {n - 1}행)"
+        # 표본 병기(S10) — '외 K개 값'은 **서로 다른 값 수**(len(distinct)-1)로 센다. 행 수로 세면
+        # 5행 중 4행이 같고 1행만 달라도 '외 4행'이 되어 변화를 과장한다(리뷰 반영, 정직).
+        return f"{vals[0]} (표본 · 외 {len(distinct) - 1}개 값)"
 
-    def _mirror(self, indices: "list[int]", status) -> "tuple[list[dict], list[str]]":
+    def _mirror(
+        self, indices: "list[int]", status, mapped: "list[dict]"
+    ) -> "tuple[list[dict], list[str]]":
         """거울 행(비-drift 필드 값 테이블) + drift 필드 목록(차단 배너로 분리, 결정 36).
 
         거울 = "생성될 문서의 채움 상태"(hwpx 본문은 앱에서 안 렌더). ADR-E 배지는 별도 UI 가
         아니라 거울의 행이다. **drift(구조 불일치)는 미입력(ack 로 풀림)과 같은 표에 섞지 않는다**
         — 거울 자리 차단 배너로 분리한다(danger, 에디터 가야 풀림). RC-23 심각도 서열의 공간 번역.
+
+        ``mapped`` 는 :meth:`snapshot` 가 1회 계산해 넘긴다(``_record_rows`` 와 공유 — 이중 적용 방지).
         """
-        mapped = self.vm.mapped_records(indices) if indices else []
         fmt = self._formatted_fields()
         rows: "list[dict]" = []
         drift: "list[str]" = []
@@ -272,11 +278,13 @@ class JobController(PoolTargetingMixin):
             return base
         job = self.vm.job
         indices = self._indices()
+        # 선택분 매핑 적용은 1회 — 파일명 미리보기(_record_rows)와 거울 값(_mirror)이 공유한다.
+        mapped = self.vm.mapped_records(indices) if indices else []
         status = self.vm.refresh(indices, self.out_dir)  # 사전검증+배지+게이트 단일 산출(RC-23)
         preflight_text = (
             _PREFLIGHT_OK_TEXT if status.preflight.level == "ok" else status.preflight.text
         )
-        mirror_rows, drift_fields = self._mirror(indices, status)
+        mirror_rows, drift_fields = self._mirror(indices, status, mapped)
         base.update({
             "template_name": Path(job.template_path).name if job.template_path else "",
             "template_path": job.template_path,  # 추적성 로케이트(#53-B) — 전체 경로
@@ -288,7 +296,7 @@ class JobController(PoolTargetingMixin):
             "has_data": self.vm.datasource is not None,
             "record_count": len(self.vm.records),
             "selected_count": self.selection.selected_count(),
-            "records": self._record_rows(),
+            "records": self._record_rows(indices, mapped),
             "preflight": {"level": status.preflight.level, "text": preflight_text},
             # 본문 존 거울(필드 채움 테이블) + drift 필드(차단 배너로 분리, 결정 36).
             "mirror": mirror_rows,

@@ -10,6 +10,7 @@
   let generating = false;
   let lastSessionKey = null;  // 완료 존 세션 스코프 판정(결정 7) — 세션 변경 시에만 리셋
   let restateExpanded = false;  // 재진술 블록 이름 목록 펼침(대량 표본+「외 N건」, 결정 36)
+  let lastRestateKey = null;    // 펼침 리셋 판정 — 작업/데이터 전환 시 펼침을 끈다(세션 누수 방지)
 
   const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
 
@@ -148,22 +149,25 @@
       rows.map(mirrorRow).join("") + `</tbody></table></div>`;
   }
 
-  function mirrorRow(r) {
+  function mirrorRow(r, i) {
     const nm = esc(r.name);
     const val = esc(r.value);
+    // 안정 id — 클릭형 미입력 행이 ack 재렌더를 가로질러 포커스를 잃지 않게(preserve.js 는 id 로
+    // 복원). 행 index 는 필드 집합이 안정인 세션 내에서 안정하다(이름 특수문자 회피).
+    const id = `jobMirF-${i}`;
     if (r.state === "filled") {
-      return `<tr class="mir-row"><td class="mir-f">${nm}</td><td class="mir-v">${val}</td>` +
+      return `<tr class="mir-row" id="${id}"><td class="mir-f">${nm}</td><td class="mir-v">${val}</td>` +
         `<td class="mir-s"><span class="st filled">채움${r.formatted ? " · 표시형" : ""}</span></td></tr>`;
     }
     if (r.state === "blank") {
-      return `<tr class="mir-row blankd"><td class="mir-f">${nm}</td><td class="mir-v">${val}</td>` +
+      return `<tr class="mir-row blankd" id="${id}"><td class="mir-f">${nm}</td><td class="mir-v">${val}</td>` +
         `<td class="mir-s"><span class="st blankd">빈칸 선언</span></td></tr>`;
     }
     // missing — 클릭형 행(확인/철회 토글). ack 여부로 색·칩 전환.
     const ack = r.acknowledged;
     const chip = ack ? `<span class="st ackd">확인됨 · 클릭=철회</span>`
                      : `<span class="st miss">미입력 · 클릭=확인</span>`;
-    return `<tr class="mir-row miss${ack ? " ackd" : ""}" role="button" tabindex="0" ` +
+    return `<tr class="mir-row miss${ack ? " ackd" : ""}" id="${id}" role="button" tabindex="0" ` +
       `data-f="${nm}" aria-pressed="${ack ? "true" : "false"}">` +
       `<td class="mir-f">${nm}</td><td class="mir-v">${val}</td><td class="mir-s">${chip}</td></tr>`;
   }
@@ -174,8 +178,15 @@
      층화 표본(결정 5)은 필터(슬라이스 4) 착지 후 합류 — 지금은 단순 앞 표본. */
   function renderRestate(s) {
     const box = $("jobRestate");
+    // 펼침 상태는 작업/데이터 전환에 리셋한다(모듈 전역이 다른 세션으로 새지 않게). 선택 토글은
+    // 유지 — 같은 세션 내 편집이므로. 세션 지문(선택 제외)으로 판정.
+    const rkey = (s.job_name || "") + "|" + (s.data_source_label || "");
+    if (rkey !== lastRestateKey) { restateExpanded = false; lastRestateKey = rkey; }
     const sel = (s.records || []).filter((r) => r.selected);
-    if (!s.has_data || !sel.length) { box.style.display = "none"; box.innerHTML = ""; return; }
+    // 드리프트(danger 차단) 중엔 재진술을 숨긴다 — 위 차단 배너가 "생성 불가"인데 "N건 생성"을
+    // 동시에 진술하면 모순(confirm-or-alarm 위반, 리뷰 반영). 생성이 실제로 가능할 때만 의식을 건다.
+    const blocked = !!(s.drift && s.drift.length);
+    if (!s.has_data || !sel.length || blocked) { box.style.display = "none"; box.innerHTML = ""; return; }
     box.style.display = "";
     const shown = (sel.length <= 3 || restateExpanded) ? sel : sel.slice(0, 3);
     const list = shown.map((r) =>

@@ -549,7 +549,7 @@ _JOB_MIRROR_PROBE_JS = r"""
                {index:1, selected:true, name:'doc-002.hwpx', summary:'사무비품'}],
       preflight:{level:'ok', text:'ok'},
       mirror:[
-        {name:'공고명', state:'filled', acknowledged:false, value:'전산장비 (행마다 다름 · 표본, 외 1행)', formatted:false},
+        {name:'공고명', state:'filled', acknowledged:false, value:'전산장비 (표본 · 외 1개 값)', formatted:false},
         {name:'금액', state:'filled', acknowledged:false, value:'2,000,000원', formatted:true},
         {name:'낙찰율', state:'missing', acknowledged:false, value:'(미입력) 선택 2행 중 1행에서 값이 비어 있습니다.', formatted:false},
         {name:'비고', state:'blank', acknowledged:false, value:'(의도적 빈칸)', formatted:false}
@@ -569,6 +569,8 @@ _JOB_MIRROR_PROBE_JS = r"""
     out.drift_banner = !!document.querySelector('#jobMirror .mir-drift[role="alert"]');
     out.drift_fix_link = !!document.querySelector('#jobMirror [data-act="fix-mapping"]');
     out.drift_no_table = !document.querySelector('#jobMirror table.mir');
+    // 드리프트(차단) 중엔 재진술 블록을 숨긴다 — "생성 불가" 배너와 "N건 생성" 모순 방지(리뷰).
+    out.restate_hidden_on_drift = getComputedStyle(document.getElementById('jobRestate')).display === 'none';
   } catch (e) { out.error = 'throw:' + (e && e.message); }
   return out;
 })()

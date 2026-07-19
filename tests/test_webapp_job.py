@@ -225,9 +225,9 @@ def test_mirror_value_display_filled_sample_missing_blank(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     ctrl.load_data_path(_data_csv(tmp_path))
     m = {r["name"]: r for r in ctrl.snapshot()["mirror"]}
-    # 공고명: 선택 2행 값이 달라 표본 명시 병기(S10), text 라 표시형 아님.
+    # 공고명: 선택 2행 값이 달라 표본 명시 병기(S10) — 서로 다른 값 1개 더, text 라 표시형 아님.
     assert m["공고명"]["state"] == "filled"
-    assert "행마다 다름 · 표본, 외 1행" in m["공고명"]["value"]
+    assert m["공고명"]["value"] == "전산장비 (표본 · 외 1개 값)"
     assert m["공고명"]["formatted"] is False
     # 추정가격: rec0 빈값 → missing, 값 = 빈 행수 재진술(낙관 서사 해소), amount → 표시형.
     assert m["추정가격"]["state"] == "missing"
@@ -246,6 +246,21 @@ def test_mirror_filled_same_value_is_not_labeled_sample(tmp_path):
     ctrl.load_data_path(str(csv))
     m = {r["name"]: r for r in ctrl.snapshot()["mirror"]}
     assert m["공고명"]["value"] == "동일공고"  # 표본 라벨 없음
+
+
+def test_mirror_sample_counts_distinct_values_not_rows(tmp_path):
+    """표본 병기 '외 K개 값'은 서로 다른 값 수로 센다 — 대부분 같고 하나만 달라도 과장 없음."""
+    ctrl = JobController(_mirror_job(tmp_path), lambda s, snap: None)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    csv = tmp_path / "mostly_same.csv"
+    # 4행 '전산장비' + 1행 '사무비품' → 서로 다른 값은 2종(외 1개), 행 수(5)로 세면 과장(외 4).
+    csv.write_text(
+        "bidNtceNm,presmptPrce\n전산장비,1\n전산장비,2\n전산장비,3\n전산장비,4\n사무비품,5\n",
+        encoding="utf-8",
+    )
+    ctrl.load_data_path(str(csv))
+    m = {r["name"]: r for r in ctrl.snapshot()["mirror"]}
+    assert m["공고명"]["value"] == "전산장비 (표본 · 외 1개 값)"  # 행 수 아님(외 4행 금지)
 
 
 def test_mirror_empty_when_no_selection(tmp_path):
