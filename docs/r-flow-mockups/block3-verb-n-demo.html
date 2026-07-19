@@ -1,0 +1,704 @@
+<!-- R-flow 블록 3 문제인식·형상 데모 v4.3 (2026-07-19) — 토의 시안, 합의 종결(2026-07-19).
+     라이브: https://claude.ai/code/artifact/20eef0b3-d02f-463c-b64f-22cf4bc3e5f5
+     1부 합의문 문언 개정(결정 11 정밀화·블록 2 "txt N=1" 문구·공유 스테이지 대칭 문안)은
+     관례대로 R-flow 라운드 종결 시 합의문과 함께 수행.
+     v1: 결정 11 "데이터 1행" vs F37 일괄 저장 갭의 긴장 + 화해안(단건 = 「복사」 동사의 클립보드 제약).
+     v2 정정: 일괄 저장 = 파생 수요(기록 원본은 내부 시스템) → 진짜 필요는 루프 마찰 제거.
+     v3 형상: 선택 전체 스택 렌더로 「그 기안」 실물 확인.
+     v4 확정 반영(토의 종결분):
+       ① 전-선언 어휘 — 레코드 선택 = 복사 선언이 아니라 "복사용 렌더링 큐를 만들라"는 전-선언.
+          선택=큐 확정, hwpx와 문법 대칭 복원(차이는 선언의 입도뿐: 집합 1회 vs 건별 반복).
+       ② 합성 프레젠테이션 — 반전: 커서가 목록을 걷는 대신 큐가 고정 작업점(한 장 카드)을 지나감.
+          페이지 넘김형 + 처리분 후미 이동(멱등 재복사·완주 감지) + 상태 색인(위치·처리·빈칸 지도).
+       ③ 복사 동사 = 카드 우상단 아이콘(전역 버튼 제거, 키보드 Enter 경로 유지, 빈칸 게이트도 카드 결속).
+       ④ 복사=전진 옵션 기본 꺼짐(넘어가기 = 사용자의 사실상 붙여넣기 서명) · 「복사됨」 정직 라벨.
+       잔여 미결: 대규모 색인 압축 · 건별 「저장」 강등 여부 · 미루기 동사 채택 · 재배열 전례 긴장 기록.
+     v4.1: 작업점 렌더를 카드 문법에서 코드블록형 원문 렌더로 교체(고정폭 pre·헤더 스트립·
+       보이는 그대로 복사) — 산출물이 평문이므로 렌더도 평문 충실. 표시형 서식(결정 11)은
+       값의 문자열 형식이라 원문에 포함됨.
+     v4.2: **대상 글꼴 선언** — 클립보드 평문은 글꼴을 운반하지 않으므로(글꼴=목적지 소유)
+       배치 약속은 "글자 그대로"로 정정하고, 전역 설정 열거형(굴림체·돋움체·맑은고딕 = 공문
+       타이포 사실상 전부)으로 목적지 글꼴을 선언받아 원문 렌더가 그 글꼴을 따름(실제로 넘기지
+       않지만 넘기려는 글꼴로 미리 확인 = 그대로 넘어가는 감각). 린트는 선언-조건부: 비례폭
+       (맑은고딕) 선언에서만 연속 ASCII 공백 정렬을 경보하고 전각 공백(U+3000) 치환을 제안
+       (한글·전각은 전 글꼴 균일폭이라 견고). 글꼴의 클립보드 동승(다중 포맷)은 기각 아닌
+       유보 — 기안작성기 입력 특성(평문/리치) 실증까지(U+00A0 오염·붙여넣기 정규화 위험).
+     v4.3: 글꼴 컨트롤을 세그먼트 버튼에서 **큐 상단 드롭다운**으로 이동(워드프로세서 멘탈
+       모델: 글꼴 = 문서 위 툴바의 드롭다운; 배치≠스코프 — 위젯은 큐 상단, 값은 전역 영속).
+     블록 1·2 아카이브(0de1d12)의 토큰·주석 관례 승계. 박제 정본 아님. -->
+<title>블록 3 문제인식 데모</title>
+<style>
+:root{
+  --a-primary:#2f5fbf; --a-primary-h:#274fa0; --a-warn:#a05a00; --a-danger:#c0392b;
+  --a-ok:#1e8449; --a-muted:#656a72; --a-border:#e2e4e8; --a-card:#ffffff;
+  --a-window:#f6f7f9; --a-ink:#1c2126; --a-on-accent:#ffffff; --a-shadow:rgba(0,0,0,.2);
+  --a-sel:#dfe6fb;
+  --n-surface-alt:#f3f4f6; --n-header-bg:#eef1f4; --n-border-strong:#cbd0d6;
+  --n-ink-soft:#5c626b; --n-header-ink:#4a505a; --n-ink-control:#2b3038;
+  --sp-2:2px; --sp-4:4px; --sp-6:6px; --sp-8:8px; --sp-10:10px; --sp-12:12px; --sp-16:16px; --sp-24:24px;
+  --rad-control:6px; --rad-surface:9px; --rad-pill:999px;
+  --fs-caption:11px; --fs-body:13px; --fs-strong:15px; --fs-section:19px;
+  --pend-bg:#fdf3d7; --pend-bd:#e8cf8a; --ann:#8b5cf6; --ann-bg:#f5f1fe;
+  --ok-tint:#e2f3e9;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+  --a-primary:#6f97e8; --a-primary-h:#8badf0; --a-warn:#e0a850; --a-danger:#ec7264;
+  --a-ok:#43b877; --a-muted:#98a0ab; --a-border:#333a44; --a-card:#1c2127;
+  --a-window:#131619; --a-ink:#e7eaee; --a-on-accent:#0f1418; --a-shadow:rgba(0,0,0,.5);
+  --a-sel:#1e2846;
+  --n-surface-alt:#23272d; --n-header-bg:#191d22; --n-border-strong:#454c56;
+  --n-ink-soft:#aab1bb; --n-header-ink:#c2c8d0; --n-ink-control:#dbe0e6;
+  --pend-bg:#3a3320; --pend-bd:#6b5c2e; --ann:#a78bfa; --ann-bg:#241f33;
+  --ok-tint:#1c3327;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --a-primary:#6f97e8; --a-primary-h:#8badf0; --a-warn:#e0a850; --a-danger:#ec7264;
+  --a-ok:#43b877; --a-muted:#98a0ab; --a-border:#333a44; --a-card:#1c2127;
+  --a-window:#131619; --a-ink:#e7eaee; --a-on-accent:#0f1418; --a-shadow:rgba(0,0,0,.5);
+  --a-sel:#1e2846;
+  --n-surface-alt:#23272d; --n-header-bg:#191d22; --n-border-strong:#454c56;
+  --n-ink-soft:#aab1bb; --n-header-ink:#c2c8d0; --n-ink-control:#dbe0e6;
+  --pend-bg:#3a3320; --pend-bd:#6b5c2e; --ann:#a78bfa; --ann-bg:#241f33;
+  --ok-tint:#1c3327;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--a-window);color:var(--a-ink);
+  font:13px/1.5 "Pretendard","Malgun Gothic",system-ui,sans-serif;padding:var(--sp-24)}
+h1,h2,h3,p,ul{margin:0}
+button{font:inherit;cursor:pointer}
+button:focus-visible,[tabindex]:focus-visible,input:focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
+.wrap{max-width:920px;margin:0 auto;display:flex;flex-direction:column;gap:var(--sp-24)}
+
+.eyebrow{font-size:var(--fs-caption);letter-spacing:.08em;color:var(--ann);font-weight:700}
+.head h1{font-size:26px;line-height:1.25;text-wrap:balance;margin-top:var(--sp-6)}
+.head p{color:var(--a-muted);margin-top:var(--sp-8);max-width:70ch}
+.head b{color:var(--a-ink)}
+
+h2{font-size:var(--fs-section);text-wrap:balance}
+.sec{display:flex;flex-direction:column;gap:var(--sp-12)}
+.seclede{color:var(--a-muted);max-width:70ch}
+
+/* ── 긴장: 두 문서 대면 ── */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-12)}
+@media (max-width:700px){.grid2{grid-template-columns:1fr}}
+.doc{background:var(--a-card);border:1px solid var(--n-border-strong);border-radius:var(--rad-surface);
+  padding:var(--sp-12) var(--sp-16);display:flex;flex-direction:column;gap:var(--sp-8)}
+.doc .src{font-size:var(--fs-caption);color:var(--n-header-ink);font-weight:700;letter-spacing:.04em}
+.doc blockquote{margin:0;border-left:3px solid var(--n-border-strong);padding-left:var(--sp-10);
+  color:var(--n-ink-soft);font-size:var(--fs-body)}
+.doc blockquote b{color:var(--a-ink)}
+.doc .verdict{font-size:var(--fs-caption);color:var(--a-muted)}
+.collide{border:1px solid var(--a-danger);border-radius:var(--rad-control);background:var(--n-surface-alt);
+  color:var(--a-danger);padding:var(--sp-8) var(--sp-12);font-size:var(--fs-body)}
+.reframe{border:1px solid var(--a-primary);border-radius:var(--rad-surface);background:var(--a-sel);
+  padding:var(--sp-12) var(--sp-16);font-size:var(--fs-strong);line-height:1.5}
+.reframe b{color:var(--a-primary)}
+.reframe .sub{display:block;font-size:var(--fs-body);color:var(--n-ink-soft);margin-top:var(--sp-4)}
+.reframe2{border:1px dashed var(--ann);border-radius:var(--rad-surface);background:var(--ann-bg);
+  padding:var(--sp-12) var(--sp-16);font-size:var(--fs-strong);line-height:1.5}
+.reframe2 b{color:var(--ann)}
+.reframe2 .sub{display:block;font-size:var(--fs-body);color:var(--n-ink-soft);margin-top:var(--sp-4)}
+
+/* ── 데모 스테이지 ── */
+.scn{display:flex;gap:var(--sp-8);flex-wrap:wrap;align-items:center}
+.scn .lbl{font-size:var(--fs-caption);color:var(--a-muted)}
+.btn{font-size:var(--fs-body);border:1px solid var(--n-border-strong);background:var(--a-card);
+  color:var(--n-ink-control);padding:var(--sp-4) var(--sp-12);border-radius:var(--rad-control);white-space:nowrap}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.on{border-color:var(--a-primary);color:var(--a-primary);background:var(--a-sel);font-weight:600}
+.btn.ghost{border-style:dashed;background:transparent;color:var(--a-muted)}
+
+.stage{background:var(--a-card);border:1px solid var(--n-border-strong);border-radius:var(--rad-surface);
+  box-shadow:0 6px 20px var(--a-shadow);padding:var(--sp-16);display:flex;flex-direction:column;gap:var(--sp-12)}
+.zl{font-size:var(--fs-caption);color:var(--n-header-ink);font-weight:700;letter-spacing:.06em}
+.zone{display:flex;flex-direction:column;gap:var(--sp-6)}
+.hh{display:flex;align-items:center;gap:var(--sp-8);flex-wrap:wrap}
+.hh .acts{margin-left:auto;display:flex;gap:var(--sp-6)}
+
+.tblwrap{overflow-x:auto;border:1px solid var(--a-border);border-radius:var(--rad-control)}
+table{width:100%;border-collapse:collapse;font-size:var(--fs-body)}
+th{font-size:var(--fs-caption);color:var(--n-header-ink);text-align:left;font-weight:600;
+  background:var(--n-header-bg);padding:var(--sp-6) var(--sp-10);border-bottom:1px solid var(--a-border);white-space:nowrap}
+td{padding:var(--sp-6) var(--sp-10);border-bottom:1px solid var(--a-border);white-space:nowrap;vertical-align:middle}
+tbody tr{cursor:pointer}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:var(--n-surface-alt)}
+tbody tr.sel td{background:var(--a-sel)}
+tbody tr.cur td:first-child{box-shadow:inset 3px 0 0 var(--a-primary)}
+td.num{text-align:right;font-variant-numeric:tabular-nums;color:var(--n-ink-soft)}
+td.blank{color:var(--a-warn);font-weight:600}
+.tag{font-size:var(--fs-caption);border-radius:var(--rad-pill);padding:1px var(--sp-8);white-space:nowrap;font-weight:600}
+.tag.conf{background:var(--ok-tint);color:var(--a-ok)}
+.strip{border:1px dashed var(--n-border-strong);border-radius:var(--rad-control);background:var(--n-surface-alt);
+  padding:var(--sp-6) var(--sp-10);font-size:var(--fs-caption);color:var(--n-ink-soft)}
+
+.slot{border:1px solid var(--a-border);border-radius:var(--rad-control);background:var(--n-surface-alt);
+  padding:var(--sp-6) var(--sp-10);font-size:var(--fs-body)}
+.slot b{color:var(--a-primary)}
+.slot .prog{color:var(--a-ok);font-weight:600}
+
+.verbs{display:flex;gap:var(--sp-16);flex-wrap:wrap;align-items:flex-start}
+.verb{display:flex;flex-direction:column;gap:var(--sp-4)}
+.verb .cond{font-size:var(--fs-caption);color:var(--a-muted)}
+.badge-rej{font-size:var(--fs-caption);border:1px solid var(--n-border-strong);border-radius:var(--rad-pill);
+  padding:0 var(--sp-8);color:var(--a-muted);background:var(--n-surface-alt);font-weight:600}
+
+.notice{font-size:var(--fs-body);border-radius:var(--rad-control);padding:var(--sp-6) var(--sp-10);white-space:pre-line}
+.notice.warn{color:var(--a-warn);background:var(--pend-bg);border:1px solid var(--pend-bd)}
+.notice.hint{color:var(--a-muted);background:var(--n-surface-alt)}
+.notice.annbox{color:var(--a-ink);background:var(--ann-bg);border:1px dashed var(--ann)}
+.notice.okquiet{color:var(--a-ok);background:var(--ok-tint);border:1px solid var(--a-ok)}
+
+/* ── 작업점(고정 카드) + 상태 색인 ── */
+.workpoint{display:flex;flex-direction:column;gap:var(--sp-8)}
+.fontbar{gap:var(--sp-8)}
+.fontbar label{font-size:var(--fs-body);color:var(--n-ink-control)}
+.fontbar select{background:var(--a-card);border:1px solid var(--n-border-strong);
+  border-radius:var(--rad-control);padding:var(--sp-2) var(--sp-6);color:var(--a-ink);
+  font:inherit;font-size:var(--fs-body)}
+.fontbar .capnote{font-size:var(--fs-caption);color:var(--a-muted)}
+.idx{display:flex;gap:var(--sp-6);align-items:center;flex-wrap:wrap}
+.idx .cap{font-size:var(--fs-caption);color:var(--a-muted)}
+.idx .divider{width:1px;height:16px;background:var(--n-border-strong)}
+.dot{width:15px;height:15px;border-radius:var(--rad-pill);border:1px solid var(--n-border-strong);
+  background:var(--a-card);cursor:pointer;padding:0}
+.dot.blank{border-color:var(--a-warn);background:var(--pend-bg)}
+.dot.done{border-color:var(--a-ok);background:var(--ok-tint)}
+.dot.cur{outline:2px solid var(--a-primary);outline-offset:1px}
+
+.pagecard{border:1px solid var(--a-primary);box-shadow:inset 3px 0 0 var(--a-primary);
+  border-radius:var(--rad-control);background:var(--a-card);max-width:64ch;overflow:hidden}
+.pagecard.done{border-color:var(--a-ok);box-shadow:inset 3px 0 0 var(--a-ok)}
+.tr-head{display:flex;align-items:center;gap:var(--sp-8);flex-wrap:wrap;
+  background:var(--n-header-bg);border-bottom:1px solid var(--a-border);
+  padding:var(--sp-4) var(--sp-10);font-size:var(--fs-caption);color:var(--n-header-ink)}
+.tr-head .lbl2{font-weight:600}
+.tr-acts{margin-left:auto;display:flex;gap:var(--sp-6)}
+.tr-body{margin:0;padding:var(--sp-12) var(--sp-16);overflow-x:auto;white-space:pre;
+  font-family:"D2Coding","Nanum Gothic Coding",Consolas,"Courier New",monospace;
+  font-size:12.5px;line-height:1.9;color:var(--a-ink);background:var(--n-surface-alt)}
+.tr-body.f-gulimche{font-family:"GulimChe","굴림체","Gulim",monospace}
+.tr-body.f-dotumche{font-family:"DotumChe","돋움체","Dotum",monospace}
+.tr-body.f-malgun{font-family:"Malgun Gothic","맑은 고딕",sans-serif;font-size:13px}
+.iconbtn{font-size:var(--fs-body);border:1px solid var(--a-primary);background:var(--a-primary);
+  color:var(--a-on-accent);padding:var(--sp-2) var(--sp-10);border-radius:var(--rad-control);font-weight:600}
+.iconbtn:hover{background:var(--a-primary-h)}
+.iconbtn.warnstate{background:var(--pend-bg);border-color:var(--pend-bd);color:var(--a-warn)}
+.iconbtn.minor{background:var(--a-card);border-color:var(--n-border-strong);color:var(--n-ink-control);font-weight:400}
+.tok{font-family:Consolas,monospace;font-size:12px;color:var(--a-warn);background:var(--pend-bg);
+  border:1px solid var(--pend-bd);border-radius:var(--rad-control);padding:0 var(--sp-4)}
+
+.done ul{list-style:none;padding:0;display:flex;flex-direction:column;gap:var(--sp-4)}
+.done li{font-size:var(--fs-body);color:var(--n-ink-soft);display:flex;gap:var(--sp-8);align-items:baseline;flex-wrap:wrap}
+.done .t{font-variant-numeric:tabular-nums;font-size:var(--fs-caption);color:var(--a-muted)}
+.done .ok{color:var(--a-ok);font-weight:600}
+.done .meta{font-size:var(--fs-caption);color:var(--a-muted)}
+.done .none{color:var(--a-muted);font-size:var(--fs-caption)}
+
+.kbd{display:inline-block;border:1px solid var(--n-border-strong);border-bottom-width:2px;border-radius:var(--rad-control);
+  background:var(--n-surface-alt);padding:0 var(--sp-6);font-size:var(--fs-caption);font-weight:700;color:var(--n-ink-control)}
+
+.ann{border:1px dashed var(--ann);border-radius:var(--rad-control);background:var(--ann-bg);
+  color:var(--a-ink);padding:var(--sp-6) var(--sp-10);font-size:var(--fs-caption);line-height:1.6}
+.ann .ref{display:inline-block;border:1px solid var(--ann);color:var(--ann);border-radius:var(--rad-pill);
+  padding:0 var(--sp-8);font-weight:700;margin-right:var(--sp-4)}
+
+/* ── 확정·잔여 ── */
+.qcard{background:var(--a-card);border:1px solid var(--n-border-strong);border-radius:var(--rad-surface);
+  padding:var(--sp-12) var(--sp-16);display:flex;flex-direction:column;gap:var(--sp-8)}
+.qcard h3{font-size:var(--fs-strong);display:flex;align-items:center;gap:var(--sp-8);flex-wrap:wrap}
+.qnum{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;
+  border-radius:var(--rad-pill);background:var(--ann);color:var(--a-on-accent);font-size:var(--fs-caption);font-weight:700}
+.qnum.okn{background:var(--a-ok)}
+.qcard p{color:var(--n-ink-soft);max-width:72ch}
+.qcard ul{padding-left:18px;display:flex;flex-direction:column;gap:var(--sp-4);color:var(--n-ink-soft)}
+.qcard li b{color:var(--a-ink)}
+.qcard .lean{font-size:var(--fs-caption);color:var(--a-muted)}
+
+.foot{font-size:var(--fs-caption);color:var(--a-muted);border-top:1px solid var(--a-border);
+  padding-top:var(--sp-12);line-height:1.8}
+</style>
+
+<div class="wrap">
+
+  <div class="head">
+    <div class="eyebrow">R-FLOW 블록 3 · 토의 시안 v4 · 합의문 개정 승인 대기</div>
+    <h1>「단건」의 주인은 세션인가, 동사인가</h1>
+    <p>문제인식 2단과 형상 토의를 거쳐 v4에 확정 기울기를 반영했습니다. <b>선택 = 전-선언</b>
+       (복사용 렌더링 큐를 만들라는 선언), <b>고정 작업점</b>(커서가 목록을 걷는 대신 큐가
+       한 장 카드를 지나감), <b>처리분 후미 이동</b>(멱등 재복사·완주 감지), <b>상태
+       색인</b>(위치·처리·빈칸 지도), <b>복사 동사는 카드 위</b>(전역 버튼 없음).
+       시나리오 B를 누르고 카드 우상단 「복사」와 <span class="kbd">↓</span>,
+       색인 점 클릭을 걸어보세요.</p>
+  </div>
+
+  <!-- ── 1. 긴장과 화해의 서사 ── -->
+  <div class="sec">
+    <h2>1. 긴장: 두 기록이 정반대를 가리킨다</h2>
+    <div class="grid2">
+      <div class="doc">
+        <div class="src">1부 합의문 · 결정 11 (R_INFO_JOB_HOME.md)</div>
+        <blockquote>txt 세션 의미론: 데이터 <b>1행(기안은 단건)</b> · 매핑 선채움(표시형 서식)
+          + 라이브 잔여 필드 + 실시간 미리보기 · <b>복사 = 완료 이벤트</b>(last_run_at) ·
+          게이트 = 빈칸 경보.</blockquote>
+        <div class="verdict">세션이 단건이라면, 일괄 저장이 설 자리가 없습니다.</div>
+      </div>
+      <div class="doc">
+        <div class="src">순회 원장 · F37 (UX_FINDINGS_101_WALKTHROUGH.md)</div>
+        <blockquote><b>일괄 저장 부재</b>(복사/저장 건별만) = 기능 갭. F37 일괄 저장은
+          <b>트랙 A 배치의 텍스트 판</b>. 하위결정: 분할 vs 라인구분(기존=라인구분) ·
+          일괄 복사는 제외 확정.</blockquote>
+        <div class="verdict">배치가 갭이라면, 세션은 단건일 수 없습니다.</div>
+      </div>
+    </div>
+    <div class="collide">문언 충돌: 결정 11의 「1행」과 F37의 「일괄」은 같은 화면을 서로 다르게 정의합니다.</div>
+    <div class="reframe">화해안 1단: <b>「단건」의 주인은 세션이 아니라 「복사」 동사입니다.</b>
+      <span class="sub">기안문의 최종 목적지는 파일이 아니라 내부 시스템의 입력창이고, 클립보드는
+      본성상 한 번에 하나만 담습니다.</span>
+    </div>
+    <div class="reframe2">정정 2단: <b>일괄 저장 자체가 파생 수요입니다.</b>
+      <span class="sub">기안은 어차피 붙여넣어져 내부 시스템에 저장되므로 텍스트 산출물을 소유할
+      이유가 없습니다. 필요한 것은 일괄 저장이 아니라 건별 복사-붙여넣기 루프의 마찰 제거입니다.
+      이에 따라 라인구분 vs 분할·일괄 빈칸 경보 미결은 소멸했습니다.</span>
+    </div>
+    <div class="reframe2">형상 3단(v4 확정 기울기): <b>전-선언 큐가 고정 작업점을 지나갑니다.</b>
+      <span class="sub">레코드 선택은 복사 선언이 아니라 <b>전-선언</b> — 복사용 렌더링 큐를
+      만들라는 선언입니다. 선언이 아니므로 카드 위 「복사」와 우선권을 다툴 수 없고, hwpx와의
+      문법 대칭이 복원됩니다(선택=전-선언 → 재진술/실물 확인 → 선언; 차이는 선언의 입도뿐 —
+      집합 1회 「생성」 vs 건별 반복 「복사」). 프레젠테이션은 반전 합성안: 커서가 목록을 걷지
+      않고, 큐가 한 장 카드(작업점)를 지나갑니다. 처리분은 색인 후미로 이동해 멱등 재복사와
+      완주 감지를 얻고, 상태 색인이 위치·처리·빈칸의 지도가 됩니다. 위치는 앱이 소유합니다:
+      다음 = 항상 첫 미처리(블록 1 「포커스=첫 미답 질문」의 큐 판).</span>
+    </div>
+  </div>
+
+  <!-- ── 2. 데모 ── -->
+  <div class="sec">
+    <h2>2. 걸어보기: 고정 작업점 루프</h2>
+    <p class="seclede">데이터 존에서 행을 고르면(전-선언) 큐가 만들어지고, 작업점 카드에 첫
+       미처리 기안이 실물로 섭니다. 복사는 카드 우상단에서. 복사된 기안은 색인 후미로 넘어가고
+       다음 미처리가 자동으로 작업점에 올라옵니다.</p>
+    <div class="scn">
+      <span class="lbl">시나리오</span>
+      <button class="btn" id="scnA">A. 복사 루프 (일상)</button>
+      <button class="btn" id="scnB">B. 수백 건의 날 (큐 루프)</button>
+      <button class="btn" id="scnReset">초기화</button>
+    </div>
+
+    <div class="stage" id="stage" tabindex="0" aria-label="기안 세션 스테이지 데모">
+
+      <div class="zone">
+        <div class="hh">
+          <span class="zl">데이터 존 (전-선언)</span>
+          <button class="btn" id="filterChip">필터: 추정가격 5천만 이하</button>
+          <span class="acts">
+            <button class="btn" id="selMatch">매치 전체 선택</button>
+            <button class="btn" id="selNone">전체 해제</button>
+          </span>
+        </div>
+        <div class="tblwrap"><table>
+          <thead><tr><th>공고번호</th><th>공고명</th><th>추정가격</th><th>납품기한</th><th>처리</th></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table></div>
+        <div class="strip" id="strip" hidden></div>
+        <div class="ann"><span class="ref">전-선언</span>행 클릭은 복사 선언이 아니라 큐 편성입니다
+          (블록 1 열거형 선택 승계 · 필터는 보기만 · 선택은 필터를 관통). 복사 의도는 오직
+          작업점 카드 위에서만 선언됩니다 — 우선권 질문은 어휘로 소거되었습니다.</div>
+      </div>
+
+      <div class="zone">
+        <span class="zl">슬롯</span>
+        <div class="slot" id="slot"></div>
+      </div>
+
+      <div class="zone workpoint">
+        <span class="zl">작업점 (고정 · 큐가 지나감)</span>
+        <div class="hh fontbar">
+          <label for="fontSel">대상 글꼴</label>
+          <select id="fontSel" title="붙여넣는 곳(기안작성기)의 표준 글꼴">
+            <option value="gulimche">굴림체</option>
+            <option value="dotumche">돋움체</option>
+            <option value="malgun">맑은고딕</option>
+          </select>
+          <span class="capnote">붙여넣는 곳의 표준 글꼴 · 전역 설정으로 저장됩니다</span>
+        </div>
+        <div class="idx" id="idx"></div>
+        <div id="cardWrap"></div>
+        <div class="notice warn" id="lint" hidden></div>
+        <div class="notice warn" id="alarm" hidden></div>
+        <div class="notice hint" id="hint">행을 선택하거나 시나리오 버튼으로 시작해 보세요.</div>
+        <label class="ann" style="cursor:pointer"><span class="ref">옵션</span>
+          <input type="checkbox" id="autoAdv" style="vertical-align:middle;accent-color:var(--a-primary)">
+          복사 후 자동으로 다음 미처리로 이동 — 기본 꺼짐. 「넘어가기」가 사용자의 사실상
+          붙여넣기 서명이므로, 자동화는 그 서명을 생략하는 선택입니다(opt-in).</label>
+        <div class="ann"><span class="ref">형상</span>원문 렌더는 코드블록 문법입니다. 클립보드는
+          글꼴을 운반하지 않으므로(글꼴=목적지 소유) 약속은 <b>글자 그대로</b>이고, 배치는
+          <b>대상 글꼴 선언</b>이 맡습니다: 굴림체·돋움체(고정폭)·맑은고딕(비례폭)이면 공문
+          타이포가 사실상 전부 커버되며, 넘기려는 글꼴로 미리 보므로 그대로 넘어가는 감각이
+          성립합니다. 린트는 선언-조건부: 비례폭 선언에서만 연속 공백 정렬을 경보하고 전각
+          공백 치환을 제안합니다(한글·전각은 전 글꼴 균일폭이라 견고). 표시형 서식(결정 11)은
+          값의 문자열 형식이라 원문에 포함됩니다. 키보드: <span class="kbd">↓</span>/<span class="kbd">↑</span>
+          큐 이동 · <span class="kbd">Enter</span> 복사. 빈칸 게이트는 블록에 결속, 색인의 노란
+          점=빈칸·초록 점=처리 후미. 「복사됨」 라벨은 앱이 아는 사실만 주장합니다.</div>
+      </div>
+
+      <div class="zone">
+        <span class="zl">승인 동사 (전역)</span>
+        <div class="verbs">
+          <div class="verb">
+            <button class="btn ghost" id="saveBtn">파일로 저장 <span class="badge-rej">기각 후보</span></button>
+            <span class="cond">정정 2단에 따라 강등. 눌러서 근거를 확인하세요.</span>
+          </div>
+        </div>
+        <div class="ann"><span class="ref">입도</span>전역 「복사」 버튼은 없습니다. 선언의 입도가
+          동사의 위치를 정합니다: 집합 1회 의식(hwpx 「생성」)은 동사 존에, 건별 반복 동사(txt
+          「복사」)는 대상 위에. 일괄 복사 제외(F37 확정)는 그대로 섭니다.</div>
+      </div>
+
+      <div class="zone done">
+        <span class="zl">완료 존 (세션 스코프)</span>
+        <ul id="doneList"><li class="none">아직 완료가 없습니다.</li></ul>
+        <div class="ann"><span class="ref">인계 6</span>산출이 실제로 나간 순간만 완료입니다:
+          복사가 last_run_at을 찍고(작업 단위), 큐 완주는 조용한 한 줄로만 알립니다
+          (정상은 조용히).</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── 3. 확정 대기·잔여 ── -->
+  <div class="sec">
+    <h2>3. 확정 대기 목록과 잔여 미결</h2>
+
+    <div class="qcard">
+      <h3><span class="qnum okn">✓</span>확정 기울기 (다음 세션 합의문 개정 승인 대상)</h3>
+      <ul>
+        <li><b>전-선언 어휘</b>: 선택 = 복사용 렌더링 큐 편성 선언. 선택=큐 확정, 우선권 질문 소거.</li>
+        <li><b>결정 11 정밀화 문안</b>: 「데이터 1행」 → 「세션은 큐(N행)를 전-선언으로 담고,
+          동사 「복사」가 작업점에서 1건씩 소비한다」. 블록 2 기록 「txt N=1」 문구 동반 수정.</li>
+        <li><b>공유 스테이지 대칭 문안</b>: 두 트랙 모두 선택=전-선언 → 재진술/실물 확인 → 선언.
+          차이는 선언의 입도(집합 1회 vs 건별 반복)와 재진술 매체(스냅샷 vs 실물)뿐.</li>
+        <li><b>합성 프레젠테이션</b>: 고정 작업점(한 장 카드) + 처리분 후미 이동(멱등 재복사·
+          완주=미처리 소진) + 상태 색인(위치·처리·빈칸). 파생 지정 = 항상 첫 미처리.</li>
+        <li><b>복사 동사 = 카드 우상단</b>(전역 버튼 제거) + 키보드 Enter 경로 + 빈칸 게이트 카드 결속.</li>
+        <li><b>복사=전진 옵션 기본 꺼짐</b> · <b>「복사됨」 정직 라벨</b>(붙여넣음을 주장하지 않음).</li>
+        <li><b>대상 글꼴 선언</b>: 클립보드 평문은 글꼴을 운반하지 않으므로 약속은 「글자
+          그대로」로 정정하고, 배치는 전역 설정 열거형(굴림체·돋움체·맑은고딕 = 공문 타이포
+          사실상 전부)으로 목적지 글꼴을 선언받아 해결 — 원문 렌더가 선언을 따르고(넘기려는
+          글꼴로 미리 확인 = 그대로 넘어가는 감각), 린트는 선언-조건부(비례폭 선언에서만 연속
+          공백 정렬 경보 + 전각 치환 제안). 클립보드는 평문(문자·공백만) 유지.</li>
+        <li><b>F37 재처분</b>: 갭 실재·처방 교체(배치 파일 → 루프 마찰 제거). 일괄 저장은 수요
+          실증 시 재개 가능한 불채택. 라인구분 vs 분할·일괄 빈칸 경보 미결 동반 소멸.</li>
+      </ul>
+    </div>
+
+    <div class="qcard">
+      <h3><span class="qnum">1</span>잔여 미결</h3>
+      <ul>
+        <li><b>대규모 색인 압축</b>: 수백 건 큐에서 점 색인의 문법(구간 묶음·스크러버 등) —
+          구현 라운드 소관, 블록 1 규모 문법 재사용 후보.</li>
+        <li><b>기존 건별 「저장」 강등 여부</b>: 산출물 무소유 논리가 동일 적용되나, 있는 기능의
+          제거는 별도 수요 확인 필요(삭제는 의무를 상속한다).</li>
+        <li><b>미루기 동사 채택</b>: 미처리 카드를 큐 뒤로 보내는 보류 동사(재배치안에서 파생) —
+          이 데모는 미포함, 필요성 토의.</li>
+        <li><b>재배열 전례 긴장의 기록</b>: 처리분 후미 이동은 사용자-원인·색인 점 이동이라
+          배열 안정 전례(대표값 재배열 폐기)와 구분되나, 합의문에 구분 근거를 명기할지.</li>
+        <li><b>글꼴 동승 재개 조건</b>: 다중 포맷 클립보드(평문+리치)는 기술적으로 가능하나
+          U+00A0 오염(문자 충실 훼손)·리치 붙여넣기 정규화 편차·목적지 미확인의 세 위험으로
+          유보 — 기안작성기 입력 특성(평문/리치) 실증 후에만 재개, 접합부만 기록.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="foot">
+    출처: docs/R_INFO_JOB_HOME.md 결정 11·12조항·인계 6 · docs/UX_FINDINGS_101_WALKTHROUGH.md
+    F37~F39·정련 원칙 3 · 블록 1·2 아카이브(0de1d12).
+    레일의 「빠른 기안」은 데이터 바인딩이 없으므로(12조항) 이 논의와 무관합니다. 논의 대상은
+    txt 작업 세션만입니다. 이 시안은 토의 확정 기울기의 반영이며, 합의문 개정 승인 전까지
+    확정 동작이 아닙니다. 판 이력은 문서 상단 주석에 기록되어 있습니다.
+  </div>
+
+</div>
+
+<script>
+(function(){
+  var ROWS=[
+    {id:101,name:"복사용지(A4) 구매",price:45000000,due:"2026-08-14"},
+    {id:102,name:"사무용 의자 교체",price:62300000,due:"2026-08-21"},
+    {id:103,name:"회의실 영상장비 구매",price:118000000,due:"2026-09-04"},
+    {id:104,name:"청사 LED 조명 교체",price:38500000,due:"2026-08-28"},
+    {id:105,name:"문서고 이동식 서가 설치",price:41200000,due:""},
+    {id:106,name:"방역 소독 물품 구매",price:12800000,due:"2026-08-07"},
+    {id:107,name:"전산 소모품(토너) 구매",price:27400000,due:"2026-08-18"},
+    {id:108,name:"제설 자재(염화칼슘) 구매",price:96000000,due:"2026-11-30"},
+    {id:109,name:"냉난방기 필터 교체",price:19600000,due:"2026-08-25"},
+    {id:110,name:"보안 출입카드 리더 구매",price:55000000,due:"2026-09-11"}
+  ];
+  var LIMIT=50000000;
+  var sel=new Set();          // 전-선언
+  var uncopiedOrder=[];       // 미처리 큐(id, 순서 보존)
+  var copiedOrder=[];         // 처리 후미(id, 처리순)
+  var copied=new Set();
+  var currentId=null, filterOn=false, armed=null, doneAnnounced=false;
+  var targetFont="gulimche", fwAligned=false;
+
+  var $=function(id){return document.getElementById(id);};
+  var tbody=$("tbody"), slot=$("slot"), strip=$("strip"), alarm=$("alarm"), hint=$("hint"),
+      idx=$("idx"), cardWrap=$("cardWrap"), lint=$("lint"), doneList=$("doneList"),
+      saveBtn=$("saveBtn"), filterChip=$("filterChip"), autoAdv=$("autoAdv"), stage=$("stage");
+  var fontSel=$("fontSel");
+  var reduceMotion=window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function no(r){return "제2026-"+r.id+"호";}
+  function won(n){return "금"+n.toLocaleString("ko-KR")+"원";}
+  function rowById(id){return ROWS.find(function(r){return r.id===id;});}
+  function visible(){return filterOn?ROWS.filter(function(r){return r.price<=LIMIT;}):ROWS.slice();}
+
+  function rebuildQueue(){
+    uncopiedOrder=ROWS.filter(function(r){return sel.has(r.id)&&!copied.has(r.id);})
+      .map(function(r){return r.id;});
+    copiedOrder=copiedOrder.filter(function(id){return sel.has(id);});
+  }
+  function dispIds(){return uncopiedOrder.concat(copiedOrder);}
+  function normalizeCurrent(){
+    var d=dispIds();
+    if(!d.length){currentId=null;return;}
+    if(currentId===null||d.indexOf(currentId)<0) currentId=uncopiedOrder[0]!==undefined?uncopiedOrder[0]:d[0];
+  }
+
+  function setAlarm(msg,cls){
+    if(msg){alarm.textContent=msg;alarm.className="notice "+(cls||"warn");alarm.hidden=false;}
+    else{alarm.hidden=true;}
+  }
+  function setHint(msg){ hint.textContent=msg; }
+
+  function render(){
+    rebuildQueue(); normalizeCurrent();
+    var vis=visible(), n=sel.size;
+    // 데이터 존
+    tbody.innerHTML="";
+    vis.forEach(function(r){
+      var tr=document.createElement("tr");
+      tr.className=(sel.has(r.id)?"sel":"")+(r.id===currentId?" cur":"");
+      tr.innerHTML="<td>"+no(r)+"</td><td>"+r.name+"</td>"
+        +'<td class="num">'+r.price.toLocaleString("ko-KR")+"</td>"
+        +(r.due?"<td>"+r.due+"</td>":'<td class="blank">비어 있음</td>')
+        +"<td>"+(copied.has(r.id)?'<span class="tag conf">복사됨</span>':"")+"</td>";
+      tr.addEventListener("click",function(){
+        if(sel.has(r.id)){sel.delete(r.id);}
+        else{sel.add(r.id);currentId=copied.has(r.id)?currentId:r.id;}
+        armed=null; setAlarm(null); render();
+      });
+      tbody.appendChild(tr);
+    });
+    // 관통 스트립
+    var outsideSel=filterOn?ROWS.filter(function(r){return sel.has(r.id)&&r.price>LIMIT;}):[];
+    if(outsideSel.length){
+      strip.hidden=false;
+      strip.textContent="필터 밖 선택 "+outsideSel.length+"행: "+no(outsideSel[0])
+        +(outsideSel.length>1?" 외 "+(outsideSel.length-1)+"행":"")+" (큐에는 그대로 남습니다)";
+    }else strip.hidden=true;
+    // 슬롯
+    var cur=currentId?rowById(currentId):null;
+    var prog=(n>0&&copiedOrder.length>0)?' · <span class="prog">처리 '+copiedOrder.length+"/"+n+"행</span>":"";
+    if(n===0) slot.innerHTML="큐 <b>0행</b>. 행을 클릭해 전-선언하세요.";
+    else if(!cur) slot.innerHTML="큐 <b>"+n+"행</b>."+prog;
+    else{
+      var state=copied.has(cur.id)?"처리 후미":"미처리 "+(uncopiedOrder.indexOf(cur.id)+1)+"번째";
+      slot.innerHTML="큐 <b>"+n+"행</b>(전-선언) · 작업점: "+no(cur)+" ("+state+")"+prog;
+    }
+    // 색인
+    idx.innerHTML="";
+    if(n>0){
+      var capU=document.createElement("span"); capU.className="cap"; capU.textContent="미처리";
+      idx.appendChild(capU);
+      uncopiedOrder.forEach(function(id){idx.appendChild(dot(id));});
+      if(copiedOrder.length){
+        var dv=document.createElement("span"); dv.className="divider"; idx.appendChild(dv);
+        var capD=document.createElement("span"); capD.className="cap"; capD.textContent="처리됨";
+        idx.appendChild(capD);
+        copiedOrder.forEach(function(id){idx.appendChild(dot(id));});
+      }
+    }
+    // 작업점 카드
+    if(n===0){
+      cardWrap.innerHTML='<div class="notice hint">큐가 비어 있습니다. 데이터 존에서 행을 선택하면 첫 미처리 기안이 여기 섭니다.</div>';
+    }else if(!uncopiedOrder.length && cur===null){
+      cardWrap.innerHTML="";
+    }else if(!uncopiedOrder.length && !copied.has(currentId)){
+      cardWrap.innerHTML="";
+    }else if(cur){
+      var isDone=copied.has(cur.id);
+      var due=cur.due?cur.due:'<span class="tok">{{납품기한}}</span>';
+      var warnBtn=(armed==="copy"&&!cur.due);
+      var lbl=fwAligned?"건　　명":"건    명";
+      var txt="물 품 구 매 기 안\n"
+        +"\n"
+        +"1. "+lbl+" : "+cur.name+"\n"
+        +"2. 공고번호 : "+no(cur)+"\n"
+        +"3. 추정가격 : "+won(cur.price)+"\n"
+        +"4. 납품기한 : "+due+"\n"
+        +"5. 위와 같이 구매하고자 하니 검토하여 주시기 바랍니다.\n"
+        +"\n"
+        +"끝.";
+      cardWrap.innerHTML='<div class="pagecard'+(isDone?" done":"")+'">'
+        +'<div class="tr-head"><span class="lbl2">'+no(cur)+' · 원문</span>'
+        +(isDone?'<span class="tag conf">복사됨</span>':"")
+        +'<span class="tr-acts">'
+        +(isDone?'':'<button class="iconbtn minor" id="deferBtn" title="이 기안을 큐 뒤로 미룹니다">미루기</button>')
+        +'<button class="iconbtn'+(warnBtn?" warnstate":"")+'" id="cardCopy">'
+        +(warnBtn?"빈칸 그대로 복사":"⧉ 복사")+"</button></span></div>"
+        +'<pre class="tr-body f-'+targetFont+'">'+txt+"</pre></div>";
+      $("cardCopy").addEventListener("click",doCopy);
+      var db=$("deferBtn");
+      if(db) db.addEventListener("click",doDefer);
+    }
+    // 대상 글꼴 드롭다운 동기 + 선언-조건부 정렬 린트
+    fontSel.value=targetFont;
+    if(cur && targetFont==="malgun" && !fwAligned){
+      lint.hidden=false;
+      lint.innerHTML="정렬 취약: 연속 공백 정렬(건    명)은 선언된 비례폭(맑은고딕)에서 흐트러질 수 있습니다. "
+        +"한글·전각은 모든 글꼴에서 균일폭이라 견고합니다. "
+        +'<button class="btn" id="fwFix">전각 공백으로 치환</button>';
+      $("fwFix").addEventListener("click",function(){
+        fwAligned=true;
+        setHint("전각 공백으로 치환했습니다. 이제 어느 선언 글꼴에서도 정렬이 유지됩니다.");
+        render();
+      });
+    }else lint.hidden=true;
+    // 완주 감지 (조용한 한 줄)
+    if(n>0 && uncopiedOrder.length===0){
+      if(!doneAnnounced){
+        doneAnnounced=true;
+        pushDone("큐 완주",n+"행 처리 완료","미처리 0행 · 재복사는 색인 후미에서");
+      }
+      setAlarm("큐 완주: 미처리 0행. 놓친 기안은 처리됨 색인에서 열어 다시 복사할 수 있습니다.","okquiet");
+    }else if(doneAnnounced && uncopiedOrder.length>0){
+      doneAnnounced=false;
+      if(!alarm.hidden && alarm.className.indexOf("okquiet")>=0) setAlarm(null);
+    }
+  }
+
+  function dot(id){
+    var r=rowById(id);
+    var b=document.createElement("button");
+    b.className="dot"+(copied.has(id)?" done":(r.due?"":" blank"))+(id===currentId?" cur":"");
+    b.title=no(r)+" "+r.name+(r.due?"":" · 빈칸 있음")+(copied.has(id)?" · 복사됨":"");
+    b.setAttribute("aria-label",b.title);
+    b.addEventListener("click",function(){currentId=id;armed=null;setAlarm(null);render();});
+    return b;
+  }
+
+  function pushDone(kind,text,meta){
+    var none=doneList.querySelector(".none"); if(none) none.remove();
+    var t=new Date().toTimeString().slice(0,5);
+    var li=document.createElement("li");
+    li.innerHTML='<span class="t">'+t+'</span><span class="ok">'+kind+"</span> "+text
+      +' <span class="meta">'+meta+"</span>";
+    doneList.insertBefore(li,doneList.firstChild);
+    while(doneList.children.length>4) doneList.removeChild(doneList.lastChild);
+  }
+
+  function doCopy(){
+    var r=currentId?rowById(currentId):null; if(!r) return;
+    if(!r.due && armed!=="copy"){
+      armed="copy";
+      setAlarm("빈칸 경보: 납품기한 값이 비어 있습니다. {{납품기한}} 그대로 복사하려면 「빈칸 그대로 복사」를 한 번 더 누르세요.");
+      render(); return;
+    }
+    armed=null; setAlarm(null);
+    var was=copied.has(r.id);
+    copied.add(r.id);
+    copiedOrder=copiedOrder.filter(function(id){return id!==r.id;});
+    copiedOrder.push(r.id);
+    pushDone(was?"재복사":"복사 완료",no(r)+" "+r.name,"클립보드 1건 · last_run_at 갱신");
+    rebuildQueue();
+    if(autoAdv.checked && uncopiedOrder.length){
+      currentId=uncopiedOrder[0];
+      setHint("복사=전진이 켜져 있어 다음 미처리로 이동했습니다. 붙여넣기 서명이 생략되는 선택임을 기억하세요.");
+    }else if(uncopiedOrder.length){
+      setHint("붙여넣은 뒤 ↓ 키(또는 다음 색인 점)로 다음 미처리로 넘어가세요. 넘어가기가 사실상의 붙여넣기 서명입니다.");
+    }
+    render();
+  }
+
+  function doDefer(){
+    if(!currentId||copied.has(currentId)) return;
+    var i=uncopiedOrder.indexOf(currentId); if(i<0) return;
+    uncopiedOrder.splice(i,1); uncopiedOrder.push(currentId);
+    currentId=uncopiedOrder[Math.min(i,uncopiedOrder.length-1)];
+    armed=null; setAlarm(null);
+    setHint("미뤘습니다. 이 기안은 큐 맨 뒤에서 다시 만납니다(잔여 미결: 미루기 동사 채택 여부).");
+    render();
+  }
+
+  function advance(dir){
+    var d=dispIds(); if(!d.length) return;
+    var i=d.indexOf(currentId);
+    if(i<0) i=0; else i=Math.max(0,Math.min(d.length-1,i+dir));
+    currentId=d[i]; armed=null; setAlarm(null); render();
+  }
+
+  fontSel.addEventListener("change",function(){
+    targetFont=fontSel.value;
+    setHint(targetFont==="malgun"
+      ?"맑은고딕(비례폭)을 선언했습니다. 취약 정렬이 있으면 경보가 섭니다."
+      :"고정폭 표준("+(targetFont==="gulimche"?"굴림체":"돋움체")+")을 선언했습니다. 공백 정렬이 정당한 저작이므로 경보는 침묵합니다.");
+    render();
+  });
+
+  saveBtn.addEventListener("click",function(){
+    setAlarm("기각 후보의 근거(정정 2단): 일괄 저장은 클립보드가 건별 전환을 못 하는 데서 나온 대책입니다. 기안의 기록 원본은 내부 시스템이라 텍스트 파일을 소유할 이유가 없고, 파일을 열어 한 줄씩 복사하는 순간 실물 확인·빈칸 게이트를 모두 잃습니다. 불채택은 수요 실증 시 재개할 수 있습니다.","annbox");
+  });
+
+  filterChip.addEventListener("click",function(){
+    filterOn=!filterOn;
+    filterChip.classList.toggle("on",filterOn);
+    setHint(filterOn?"필터는 보기만 바꿉니다. 큐는 그대로입니다.":"필터를 껐습니다.");
+    render();
+  });
+  $("selMatch").addEventListener("click",function(){
+    visible().forEach(function(r){sel.add(r.id);});
+    armed=null; setAlarm(null); render();
+  });
+  $("selNone").addEventListener("click",function(){
+    sel.clear(); currentId=null; armed=null; setAlarm(null); render();
+  });
+
+  $("scnA").addEventListener("click",function(){
+    filterOn=false; filterChip.classList.remove("on");
+    sel=new Set([101]); currentId=101; armed=null; setAlarm(null); render();
+    setHint("단건 루프: 카드 우상단 「복사」로 붙여넣으세요. 큐 1행도 같은 작업점 문법입니다.");
+    stage.focus(); stage.scrollIntoView({behavior:reduceMotion?"auto":"smooth",block:"start"});
+  });
+  $("scnB").addEventListener("click",function(){
+    filterOn=true; filterChip.classList.add("on");
+    sel=new Set(visible().map(function(r){return r.id;}));
+    currentId=null; armed=null; setAlarm(null); render();
+    setHint("매치 "+visible().length+"행이 큐로 전-선언되었습니다. 「복사」→붙여넣기→↓의 리듬으로 순회하세요. 105호에서 빈칸 게이트를, 완주 시 조용한 완료를 만납니다.");
+    stage.focus(); stage.scrollIntoView({behavior:reduceMotion?"auto":"smooth",block:"start"});
+  });
+  $("scnReset").addEventListener("click",function(){
+    filterOn=false; filterChip.classList.remove("on");
+    sel.clear(); copied.clear(); copiedOrder=[]; uncopiedOrder=[];
+    currentId=null; armed=null; doneAnnounced=false; setAlarm(null);
+    targetFont="gulimche"; fwAligned=false;
+    doneList.innerHTML='<li class="none">아직 완료가 없습니다.</li>';
+    autoAdv.checked=false;
+    setHint("행을 선택하거나 시나리오 버튼으로 시작해 보세요."); render();
+  });
+
+  document.addEventListener("keydown",function(e){
+    var tag=document.activeElement?document.activeElement.tagName:"";
+    if(tag==="INPUT"||tag==="TEXTAREA"||tag==="SELECT") return;
+    if(e.key==="ArrowDown"){e.preventDefault();advance(1);}
+    else if(e.key==="ArrowUp"){e.preventDefault();advance(-1);}
+    else if(e.key==="Enter"&&currentId){e.preventDefault();doCopy();}
+  });
+
+  render();
+})();
+</script>
