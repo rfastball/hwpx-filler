@@ -336,31 +336,8 @@ class MappingModel:
                 demoted.append(row.template_field)
         return demoted
 
-    def ignore_source(self, source: str) -> "list[str]":
-        """소스 헤더 1개를 '미사용'으로 전환 — 그 소스를 쓰던 행을 해제한다(#49).
-
-        **구판 경로 전용(한시)**: 헤더 사용/미사용의 정본 관문은 :meth:`apply_active_sources`
-        (칩-라이브 결정 12·13)이며, 본 메서드는 아직 그리로 재배선되지 않은 기존 에디터
-        표면(``screen_editor._apply_active``)만 소비한다 — 재배선 PR 에서 제거된다.
-
-        **착지 상태는 신판 강등 정의와 동일**(:meth:`RowState.reset_to_system` — 리뷰 반영):
-        구판이 touched·유형·상수를 남기면 ①사람소유-빈 좀비(어느 신판 관문도 재제안·강등
-        불가, 필드 영구 조용한 공백) ②잔존 상수의 하이브리드 방출이 생긴다. 그래서 구판
-        표면 거동(그 소스를 쓰던 행만 해제·재검토 강제·영향 이름 재진술)은 유지하되, 행의
-        착지는 시스템 소유 완전 리셋으로 통일한다(유형·표시형 커스텀도 함께 초기화 — 재검토
-        강제의 정직한 형태).
-
-        빈 소스("")는 무시한다 — const·blank·미매칭 행은 모두 ``source==""`` 이라, 빈
-        문자열을 소스로 받으면 무관한 행을 무더기 해제한다(공개 메서드의 값싼 보험).
-        """
-        if not source:
-            return []
-        affected: "list[str]" = []
-        for row in self.rows:
-            if row.source == source:
-                row.reset_to_system()
-                affected.append(row.template_field)
-        return affected
+    # 구판 ignore_source(헤더별 무차별 해제)는 칩-라이브 재배선으로 소비자가 소멸해 제거됐다
+    # — 헤더 사용/미사용의 유일 관문은 apply_active_sources(결정 12·13).
 
     # --------------------------------------------------- 대량 확정 게이트(UD-05)
     # '모두 확정'은 ADR-D 의 '고신뢰 매칭 일괄 수락'만 담당한다: 내용 있는 행만
