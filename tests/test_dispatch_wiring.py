@@ -35,6 +35,7 @@ CONTROLLER_FILES = [
     "screen_pool.py",
     "screen_template.py",
     "screens.py",  # TxtController
+    "data_zone.py",  # 데이터 존 공유 믹스인(슬라이스 6 PR-2b) — 호출자는 datazone.js 팩토리
 ]
 
 _ACTION_DEF = re.compile(r"def _do_([a-zA-Z0-9_]+)\(")

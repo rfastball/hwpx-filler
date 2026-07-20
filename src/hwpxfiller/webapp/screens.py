@@ -27,7 +27,10 @@ from ..core.fill_ledger import template_path_drift  # 재연결 드리프트 재
 from ..core.text_registry import TextTemplateRegistry
 from ..core.text_render import RenderReport
 from ..gui.dataset_pool_state import DatasetPoolRow
+from ..gui.selection_state import SelectionModel
+from ..gui.txt_queue import TxtQueueModel
 from ..gui.txt_state import TxtDraftViewModel
+from .data_zone import DataZoneMixin
 
 # 푸시 sink: (화면 id, 스냅샷 dict) → None. 앱=evaluate_js, 테스트=수집.
 PushSink = Callable[[str, dict], None]
@@ -312,11 +315,18 @@ class ScreenController(Protocol):
     def dispatch(self, action: str, payload: dict) -> object: ...  # 값 반환 가능(예: 확인 게이트)
 
 
-class TxtController(PoolTargetingMixin):
+class TxtController(DataZoneMixin, PoolTargetingMixin):
     """즉시 기안(txt) 화면 — :class:`TxtDraftViewModel` 소유·위임.
 
     스파이크가 끝까지 검증한 첫 실화면(SPIKE_FINDINGS.md). 표현 재진술(빨강 미입력 ``{{토큰}}`` ·
     〈빈 값〉)은 링2 대체라 웹(js/screens/txt.js)에서 만든다 — VM 로직 재구현이 아니다.
+
+    **데이터 존(블록 3·4, 슬라이스 6 PR-2b)**: 행 선택 = 복사용 렌더링 큐의 **전-선언**
+    (결정 16 — hwpx 와 문법 대칭, 차이는 선언 입도뿐). 필터·선택 디스패치와 스냅샷 합성은
+    :class:`~hwpxfiller.webapp.data_zone.DataZoneMixin` 공유(작업 화면과 단일 출처), 큐
+    상태는 링1 :class:`~hwpxfiller.gui.txt_queue.TxtQueueModel` 이 소유한다(재구현 금지) —
+    선택 변경마다 :meth:`TxtQueueModel.reconcile` 로 재봉합(``copied ⊆ selected`` 자가복구).
+    작업점 카드·복사 동사·상태 색인은 PR-3, 글꼴·린트·T3 가드는 PR-4.
     """
 
     name = "txt"
@@ -334,19 +344,36 @@ class TxtController(PoolTargetingMixin):
         self.pool_registry = (
             pool_registry if pool_registry is not None else default_pool_registry()
         )
+        # 직전 필터 슬롯·소스 키(결정 28)는 **컨트롤러 수명** — 세션(「새 기안」)이 죽어도
+        # 직전 "정의"의 연속성은 남는다. filter 는 _fresh_session 의 스태시 판정이 첫
+        # 호출에서도 안전하게 미리 눕힌다.
+        self._last_filter = None
+        self._data_key = ""
+        self.filter = None
         self._fresh_session()
 
     def _fresh_session(self) -> None:
         """기안 세션 초기 상태 — VM 재구성 + 첫 템플릿 자동 선택 + 데이터 라벨 소거.
 
         생성자와 「새 기안」(F11)이 같은 경로를 탄다 — 두 초기 상태가 갈라지지 않게.
+        죽는 세션의 활성 필터 정의는 직전 슬롯으로 넘긴다(결정 28 — 슬롯은 세션보다
+        오래 산다). 선택·큐·필터 자체는 세션 휘발(결정 8·24)이라 세션과 함께 죽는다.
         """
+        self._stash_filter()  # 옛 소스 키 기준 — 키 소거 전에
         self.vm = TxtDraftViewModel(self._registry)
         self.data_label = ""  # 겨눈 데이터 파일 표시명(서버 소유 — run 과 정렬, P4)
         self.data_source = ""  # 소스 종류 플래그('file'|'pool') — 병기 라벨은 스냅샷이 합성(K8)
+        self._data_key = ""
+        # 데이터 존(슬라이스 6) — 레코드 정체 = 세션 내 인덱스(SelectionModel 키를 큐가 재사용).
+        self.selection = SelectionModel(0)
+        self.queue = TxtQueueModel(self.selection)
+        self.filter = None
         names = self.vm.template_names()
         if names:
             self.vm.select_template(names[0])
+
+    def _records(self) -> list:
+        return self.vm.records
 
     # ------------------------------------------------------------- 관측 푸시
     def _push(self) -> None:
@@ -356,6 +383,28 @@ class TxtController(PoolTargetingMixin):
         vm = self.vm
         text, report = vm.render()
         n = vm.record_count()
+        # 데이터 존(블록 3·4) — 선두 「큐」 열 소재 = 큐 표지(대기·복사됨·작업점).
+        # 복사 동사·카드는 PR-3 — 표지는 링1 모델 상태의 정직한 사영이라 먼저 선다.
+        # 큐 조회는 **1회 O(n) 선계산** 후 O(1) 로 본다(PR-2b 리뷰: position_of·is_copied 는
+        # 각각 리스트 스캔이라 행마다 부르면 매 push 가 O(n²) — 대형 코퍼스에서 타건마다 지연).
+        indices = self.selection.selected_indices()
+        qpos_of = {idx: k + 1 for k, idx in enumerate(self.queue.uncopied())}
+        copied_set = set(self.queue.copied_tail())
+        current = self.queue.current
+
+        def lead_for(i: int) -> dict:
+            return {
+                "index": i,
+                "selected": self.selection.is_selected(i),
+                # 미처리 큐 순번 — 표면은 이 수를 **행 표에 렌더하지 않는다**(큐-꼬리 순서라
+                # 레코드 순서 표에서 비단조로 읽힌다, PR-2b 리뷰). 큐 순서로 그리는 상태
+                # 색인·작업점 카드(PR-3)가 소비할 링1 진실이라 스냅샷엔 싣는다.
+                "qpos": qpos_of.get(i),
+                "copied": i in copied_set,
+                "current": current == i,
+            }
+
+        filter_snap, table_snap, _view, _visible = self._zone_sections(indices, lead_for)
         return {
             "template_name": vm.template_name or "(붙여넣은 텍스트)",
             "template_text": vm.template_text,
@@ -369,6 +418,16 @@ class TxtController(PoolTargetingMixin):
             "data_label": self.data_label,  # 서버 소유(P4) — 붙여넣기/템플릿 전환에도 실상태 반영
             # 소스 종류 병기 라벨(#26) — 저장 상태가 아니라 플래그에서 매번 합성(K8).
             "data_source_label": source_label(self.data_source, self.data_label),
+            # 데이터 존 계약(datazone.js 소비 키) — 작업 화면과 같은 모양.
+            # ``data_key`` = 소스 **정체**(경로 정규화·시트/참조 병기) — 표시 라벨은
+            # basename 이라 `folder1/명단.xlsx`↔`folder2/명단.xlsx` 가 같은 문자열이 된다.
+            # 표면의 세션 리셋(Shift 앵커·디바운스·고지)은 이 키에 겨눠야 동명 전환에서
+            # stale 앵커로 엉뚱한 범위가 조용히 선택되지 않는다(PR-2b 리뷰).
+            "data_key": self._data_key,
+            "has_data": vm.datasource is not None,
+            "selected_count": self.selection.selected_count(),
+            "filter": filter_snap,
+            "table": table_snap,
         }
 
     def initial(self) -> dict:
@@ -377,12 +436,20 @@ class TxtController(PoolTargetingMixin):
 
     # ------------------------------------------------------- 웹→Python 데이터 액션
     def dispatch(self, action: str, payload: dict):
-        """순수 데이터 액션(창 불필요) 라우팅 후 푸시. 미지 액션은 시끄럽게 거부(P5: 타 화면 규약과 정렬)."""
+        """순수 데이터 액션(창 불필요) 라우팅 후 푸시. 미지 액션은 시끄럽게 거부(P5: 타 화면 규약과 정렬).
+
+        액션 후 큐 재봉합(:meth:`TxtQueueModel.reconcile`) — 선택·필터 변이가 큐 지형을
+        바꾼다(``copied ⊆ selected`` 자가복구, 블록 3). reconcile 은 멱등이라 액션별 분기
+        없이 공통 후처리로 둔다. 무변이 질의(``is_query`` — filter_panel)는 push 를
+        생략한다(작업 화면 규약 승계 — 패널 여는 중 동일 스냅샷 재렌더 낭비 제거).
+        """
         handler = getattr(self, f"_do_{action}", None)
         if handler is None:  # confirm-or-alarm: 조용한 무시 금지.
             raise ValueError(f"알 수 없는 txt 액션: {action!r}")
         result = handler(payload)
-        self._push()
+        self.queue.reconcile()
+        if not getattr(handler, "is_query", False):
+            self._push()
         return result
 
     def _do_select_template(self, p: dict) -> None:
@@ -403,8 +470,15 @@ class TxtController(PoolTargetingMixin):
     def _do_step(self, p: dict) -> None:
         self.vm.step(int(p["delta"]))
 
-    # 등록 데이터(풀) 겨눔(#26/#6)은 PoolTargetingMixin 공용 래퍼(K4) — txt 는 훅 기본값
-    # 그대로(전제조건·후처리 없음).
+    # 등록 데이터(풀) 겨눔(#26/#6)은 PoolTargetingMixin 공용 래퍼(K4) — txt 화면별 후처리는
+    # _after_pool_load(데이터 존 리셋)가 진다.
+    def _after_pool_load(self, records: list) -> None:
+        """풀 겨눔도 파일과 동일 리셋 — 전체 선택·새 큐·필터 재생성(작업 화면과 동형)."""
+        self._stash_filter()  # 죽는 세션의 정의 → 슬롯(옛 소스 키 기준 — 키 갱신 전에)
+        self._data_key = self._pool_key()  # 라벨은 공용 래퍼가 이미 세팅
+        self.selection = SelectionModel(len(records))  # 데이터 변경 → 전체 선택 초기화
+        self.queue = TxtQueueModel(self.selection)     # 큐 = 세션 휘발 — 새 데이터 = 새 큐
+        self._install_filter(records, {})  # txt 는 매핑 힌트 없음 — 값 스니핑만(결정 24)
 
     # ------------------------------------------------ 네이티브 보조(브리지가 다이얼로그 담당)
     def load_data_path(self, path: str, *, sheet: "str | None" = None) -> None:
@@ -414,8 +488,13 @@ class TxtController(PoolTargetingMixin):
         records = self.vm.load_data(path, sheet=sheet)
         if not records:
             raise ValueError(NO_ROWS_TEXT)  # 표류 변형('상태를…')도 단일 출처로 수렴(R-copy)
+        self._stash_filter()  # 죽는 세션의 정의 → 직전 필터 슬롯(결정 28, 옛 소스 키 기준)
         self.data_label = Path(path).name  # 서버 소유(P4)
         self.data_source = "file"  # 병기 라벨은 스냅샷이 합성(#26·K8)
+        self._data_key = self._file_key(path, sheet)  # 소스 일치 게이트(결정 28)
+        self.selection = SelectionModel(len(records))  # 데이터 변경 → 전체 선택 초기화
+        self.queue = TxtQueueModel(self.selection)     # 큐 = 세션 휘발 — 새 데이터 = 새 큐
+        self._install_filter(records, {})  # txt 는 매핑 힌트 없음 — 값 스니핑만(결정 24)
         self._push()
 
     def render(self) -> "tuple[str, RenderReport]":
