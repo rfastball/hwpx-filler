@@ -35,9 +35,10 @@ class TxtQueueModel:
 
     def __init__(self, selection: SelectionModel) -> None:
         self._sel = selection
-        self._copied: "set[int]" = set()          # 복사 완료된 인덱스(⊆ selected)
-        self._copied_order: "list[int]" = []       # 처리 후미(복사순)
-        self._uncopied_order: "list[int]" = []      # 미처리 큐(순서=선택순 + 미루기 반영)
+        # 처리 후미(복사순) — 복사 상태의 단일 출처. ``is_copied`` 는 이 목록 멤버십이다
+        # (별도 set 을 손으로 동기하지 않는다 — 두 구조가 어긋나는 결함류의 구조적 제거).
+        self._copied_order: "list[int]" = []
+        self._uncopied_order: "list[int]" = []      # 미처리 큐(순서=편입순 + 미루기 반영)
         self._current: "int | None" = None
         self.reconcile()
 
@@ -48,16 +49,20 @@ class TxtQueueModel:
         기존 미처리 순서(미루기 포함)는 보존한다: 선택 변경은 지형만 바꾸고 순서를
         갈아엎지 않는다. 복사 상태는 선택에 종속(``copied ⊆ selected``)이라 해제된 행은
         복사 이력까지 빠진다(재선택 시 새 미처리).
+
+        **신규 편입 순서 = 인덱스 순**(reconcile 호출 단위): :class:`SelectionModel` 은
+        클릭 순서를 모르는 bool 배열이라 한 번에 여러 개가 편입되면(범위 선택) 인덱스 순으로
+        후미에 붙는다. 컨트롤러가 사용자 동작마다 reconcile 하면 동작 순서가 보존된다 —
+        즉 순서 담보는 reconcile 입도까지이고, 시안 rebuild(ROWS 순)와도 정합.
         """
-        selected = self._sel.selected_indices()
-        sel_set = set(selected)
-        self._copied &= sel_set
+        sel_set = set(self._sel.selected_indices())
         self._copied_order = [i for i in self._copied_order if i in sel_set]
+        copied_set = set(self._copied_order)
         self._uncopied_order = [
-            i for i in self._uncopied_order if i in sel_set and i not in self._copied
+            i for i in self._uncopied_order if i in sel_set and i not in copied_set
         ]
-        tracked = set(self._uncopied_order) | self._copied
-        for i in selected:  # 신규 선택분을 선택 순서로 미처리 후미에 추가
+        tracked = set(self._uncopied_order) | copied_set
+        for i in self._sel.selected_indices():  # 신규 편입분을 인덱스 순으로 미처리 후미에 추가
             if i not in tracked:
                 self._uncopied_order.append(i)
         self._normalize_current()
@@ -85,7 +90,7 @@ class TxtQueueModel:
         return self._uncopied_order + self._copied_order
 
     def is_copied(self, index: int) -> bool:
-        return index in self._copied
+        return index in self._copied_order
 
     @property
     def current(self) -> "int | None":
@@ -129,19 +134,21 @@ class TxtQueueModel:
     def copy(self, index: "int | None" = None) -> bool:
         """대상(기본=작업점)을 처리 후미로 — 멱등. 이미 복사분이면 후미 재정렬만.
 
-        반환 = 이번이 재복사인가(``True``=이미 복사됐던 것). 작업점은 복사한 카드에 머문다
-        (전진은 표면의 opt-in). 대상이 선택 밖이면 무시(선택=큐 편성의 전제)."""
+        반환 = 이번이 재복사인가(``True``=이미 복사됐던 것). **작업점은 건드리지 않는다** —
+        작업점 카드를 복사하면 그 카드는 후미로 가되 작업점은 여전히 그 카드를 가리키고(머묾),
+        비작업점 카드를 명시 복사하면 작업점은 있던 자리에 그대로 있다(조용한 작업점 이동
+        금지). 전진은 표면의 opt-in(:meth:`advance_to_next_uncopied`). 대상이 선택 밖·범위
+        밖이면 무시(선택=큐 편성의 전제, confirm-or-alarm: 크래시 아닌 무동작 False)."""
         i = self._current if index is None else index
-        if i is None or not self._sel.is_selected(i):
+        if i is None or not (0 <= i < len(self._sel)) or not self._sel.is_selected(i):
             return False
-        was = i in self._copied
-        self._copied.add(i)
+        was = i in self._copied_order
         if i in self._uncopied_order:
             self._uncopied_order.remove(i)
         if i in self._copied_order:
             self._copied_order.remove(i)
         self._copied_order.append(i)
-        self._current = i
+        self._normalize_current()  # 작업점이 여전히 유효(후미로 간 카드 포함) — 이동시키지 않음
         return was
 
     def advance_to_next_uncopied(self) -> None:
@@ -150,12 +157,18 @@ class TxtQueueModel:
             self._current = self._uncopied_order[0]
 
     def defer(self, index: "int | None" = None) -> None:
-        """미처리 카드를 큐 뒤로(결정 19) — 처리분·큐 밖은 무시. 작업점은 같은 자리의 다음으로."""
+        """미처리 카드를 큐 뒤로(결정 19) — 처리분·큐 밖은 무시.
+
+        **작업점 이동은 미룬 카드가 작업점일 때만**: 작업점을 미루면 같은 자리(빈 슬롯)의
+        다음 미처리로 넘어간다(막힌 카드에서 계속 걷는 탈출구). 비작업점 카드를 미루면
+        (건별 미루기 버튼) 작업점은 있던 카드에 그대로 있다 — 조용한 작업점 이동 금지."""
         i = self._current if index is None else index
-        if i is None or i in self._copied or i not in self._uncopied_order:
+        if i is None or i in self._copied_order or i not in self._uncopied_order:
             return
+        was_current = i == self._current
         pos = self._uncopied_order.index(i)
         self._uncopied_order.remove(i)
         self._uncopied_order.append(i)
-        uncopied = self._uncopied_order
-        self._current = uncopied[min(pos, len(uncopied) - 1)] if uncopied else None
+        if was_current:
+            uncopied = self._uncopied_order
+            self._current = uncopied[min(pos, len(uncopied) - 1)] if uncopied else None

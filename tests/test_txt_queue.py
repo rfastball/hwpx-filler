@@ -41,6 +41,22 @@ def test_copy_moves_to_tail_current_stays_on_card():
     assert q.current == 0  # 넘어가기는 사용자 서명 — 자동 전진 안 함
 
 
+def test_copy_non_current_index_leaves_work_point():
+    """비작업점 카드를 명시 복사해도 작업점은 있던 자리에 머문다(조용한 이동 금지)."""
+    sel, q = make(3)
+    assert q.current == 0
+    q.copy(2)  # 작업점 아님(0)인데 2 를 복사
+    assert q.is_copied(2)
+    assert q.current == 0  # 작업점 불변
+
+
+def test_copy_out_of_range_returns_false_no_crash():
+    """범위 밖 인덱스는 IndexError 대신 무동작 False(confirm-or-alarm: 크래시 아님)."""
+    sel, q = make(2)
+    assert q.copy(5) is False  # 레코드 수 초과 — 조용한 무동작
+    assert q.copied_tail() == []
+
+
 def test_recopy_is_idempotent_and_reorders_tail():
     sel, q = make(3)
     q.copy(0)
@@ -90,6 +106,16 @@ def test_defer_moves_uncopied_to_tail_and_persists():
     assert q.uncopied() == [1, 2, 0]
 
 
+def test_defer_non_current_leaves_work_point():
+    """비작업점 카드를 미뤄도 작업점은 튀지 않는다(건별 미루기 버튼 대비)."""
+    sel, q = make(3)
+    q.set_current(2)
+    assert q.current == 2
+    q.defer(0)  # 작업점(2) 아닌 0 을 미룸
+    assert q.uncopied() == [1, 2, 0]
+    assert q.current == 2  # 작업점 불변
+
+
 def test_defer_ignores_copied_and_out_of_queue():
     sel, q = make(2)
     q.copy(0)
@@ -112,13 +138,23 @@ def test_deselect_drops_from_queue_including_copy_history():
     assert not q.is_copied(0)
 
 
-def test_new_selection_appends_to_uncopied_tail():
+def test_new_selection_preserves_reconcile_order():
+    """동작마다 reconcile 하면 편입(동작) 순서가 보존된다 — 1 먼저, 0 나중 → [1, 0]."""
     sel, q = make(3, all_selected=False)
     sel.toggle(1, True)
     q.reconcile()
     sel.toggle(0, True)
     q.reconcile()
-    assert q.uncopied() == [1, 0]  # 선택 순서로 후미 추가(원본 인덱스 순 아님)
+    assert q.uncopied() == [1, 0]
+
+
+def test_batched_selection_joins_in_index_order():
+    """한 reconcile 에 여러 개가 편입되면(범위 선택) 인덱스 순 — SelectionModel 은 클릭 순서 모름."""
+    sel, q = make(3, all_selected=False)
+    sel.toggle(2, True)
+    sel.toggle(0, True)  # reconcile 전에 배치 선택(2 먼저 클릭했어도)
+    q.reconcile()
+    assert q.uncopied() == [0, 2]  # 인덱스 순(순서 담보는 reconcile 입도까지)
 
 
 def test_completion_when_all_uncopied_drained():
