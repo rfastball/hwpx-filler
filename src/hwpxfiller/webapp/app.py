@@ -39,6 +39,7 @@ from .screen_editor import EditorController
 from .screen_home import HomeController
 from .screen_job import JobController
 from .screen_pool import PoolController
+from .screen_quickdraft import QuickDraftController
 from .screen_template import TemplateController
 from .screens import (
     TxtController,
@@ -101,6 +102,9 @@ class WebFrontend:
             # pool_registry 공유 = 데이터 관리에서 생긴 손상이 홈 KPI 경보에 즉시 보인다(#45).
             HomeController(job_registry, registry, self._push, pool_registry=pool_registry),
             TxtController(registry, self._push, pool_registry=pool_registry),
+            # 빠른 기안(R-flow 블록 5, #90 슬라이스 7) — 작업의 휘발 쌍둥이. TXT 레지스트리는
+            # txt·템플릿 관리와 공유(라이브러리 변경이 반영), 풀도 공유 인스턴스.
+            QuickDraftController(registry, self._push, pool_registry=pool_registry),
             # 「작업」 화면(R-flow, #90) — 좌 목록 + 우 세션 패널 4존. 링1 VM 을 직접 소유해
             # 실행 결정 계약을 소비하는 **유일 세션 표면**이다(실행 화면은 슬라이스 3에서 사망 —
             # 게이트 패리티 도달, 레일 「실행」 동시 제거, 부록 A-4-35~37·#94 중복 자연 소멸).

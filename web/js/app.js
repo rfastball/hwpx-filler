@@ -68,6 +68,7 @@
   window.addEventListener("pywebviewready", () => {
     if (window.HomeScreen) window.HomeScreen.init();
     if (window.TxtScreen) window.TxtScreen.init();
+    if (window.QuickDraftScreen) window.QuickDraftScreen.init();  // 빠른 기안(#90 슬라이스 7)
     if (window.EditorScreen) window.EditorScreen.init();
     if (window.JobScreen) window.JobScreen.init();  // 「작업」 화면(#90) — 유일 생성 표면
     if (window.TemplateScreen) window.TemplateScreen.init();
