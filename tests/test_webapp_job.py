@@ -323,6 +323,33 @@ def test_snapshot_carries_unresolved_name_tokens_for_banner(tmp_path):
     assert ctrl.snapshot()["name_tokens"] == []
 
 
+def test_name_token_banner_yields_to_template_read_error(tmp_path):
+    """게이트 서열을 거울이 재유도하지 않는다(리뷰 F2) — 템플릿을 못 읽으면 그쪽이 이긴다.
+
+    토큰 미해소는 템플릿 상태와 무관하게 참이라, 사실만 보고 배너를 그리면 게이트는
+    "구조를 읽을 수 없다"고 막는데 거울은 "파일명을 고치라"고 말한다 — 사용자를 엉뚱한
+    수리로 보낸다(#128 이 없앤 어긋남의 반대 방향 재발).
+    """
+    template = tmp_path / "t.hwpx"
+    _write_template(template, ["공고명"])
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(
+        name="공고서", template_path=str(template),
+        mapping=MappingProfile(mappings=[FieldMapping(template_field="공고명", source="bidNtceNm")]),
+        filename_pattern="doc-{{미해소}}",
+    ))
+    ctrl = JobController(reg, lambda s, snap: None)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    assert ctrl.snapshot()["name_tokens"] == ["미해소"]     # 정상 지형에선 토큰이 이긴다
+    template.write_bytes(b"not a zip")                      # 템플릿 손상 → 구조 재읽기 실패
+    snap = ctrl.snapshot()
+    assert snap["gate"]["level"] == "danger" and "읽을 수 없어" in snap["gate"]["text"]
+    assert snap["name_tokens"] == [], (
+        "템플릿을 못 읽는데 거울이 파일명 토큰 배너를 세웁니다 — 게이트와 다른 수리를 지시."
+    )
+
+
 def test_select_none_closes_record_gate(tmp_path):
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})

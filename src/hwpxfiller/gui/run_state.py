@@ -78,6 +78,11 @@ class GateState:
     enabled: bool
     level: str  # ""/"warn"/"danger" (style.mark 레벨)
     text: str
+    #: 차단 사유의 기계 판독 이름 — **표시면이 게이트 서열을 재유도하지 않게** 한다(리뷰 F2).
+    #: 거울 배너는 자기 사실(드리프트 목록·미해소 토큰)을 따로 보고 그리면 게이트가 실제로
+    #: 막고 있는 이유와 다른 것을 크게 말할 수 있다(예: 템플릿을 못 읽는데 "파일명을 고치라").
+    #: ""=이 사유 축과 무관(warn·열림). 값: drift | template_unreadable | name_tokens
+    reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -352,6 +357,7 @@ class RunViewModel:
             False, "danger",
             f"파일명 패턴의 토큰이 이 작업이 채우는 값에 없어 파일명에 그대로 남습니다: "
             f"{toks} — 편집에서 파일명 패턴을 고쳐야 생성할 수 있습니다.",
+            reason="name_tokens",
         )
 
     def refresh(self, indices: "list[int]", out_dir: str = "") -> RunStatus:
@@ -439,12 +445,16 @@ class RunViewModel:
             return GateState(False, "warn", "이어채울 기존 문서(.hwpx)를 선택하세요.")
         if drift.has_drift:
             if drift.read_error:
-                return GateState(False, "danger", "템플릿 구조를 읽을 수 없어 생성이 차단됩니다.")
+                return GateState(
+                    False, "danger", "템플릿 구조를 읽을 수 없어 생성이 차단됩니다.",
+                    reason="template_unreadable",
+                )
             names = list(drift.template_only) + list(drift.mapping_only) + list(drift.conflicting)
             return GateState(
                 False, "danger",
                 "템플릿 구조가 확정 매핑과 달라졌습니다 — 매핑을 다시 확정해야 생성할 "
                 "수 있습니다: " + ", ".join(names),
+                reason="drift",
             )
         if name_gate is not None:
             return name_gate
