@@ -34,17 +34,9 @@
         window.alert(String((err && err.message) || err)));
     }
   }
-  navs.forEach((b) => b.addEventListener("click", () => {
-    // 에디터 흡수(결정 39) 과도기 심 — 레일 「작업 에디터」는 「작업」 패널의 편집 모드로
-    // 연다(별도 화면 사망, 정의 세션은 이어서 노출). 착지는 EditorEntry.land 단일 정의.
-    // 레일 항목 자체의 제거(레일 축소)는 삭제 PR 소관이라 그때 이 분기도 함께 죽는다.
-    if (b.dataset.scr === "editor") {
-      if (window.EditorEntry) { window.EditorEntry.land(); }
-      else go("job");  // 진입 셔틀 미로드 방어(#99-6 동형) — 최소한 화면은 전환
-      return;
-    }
-    go(b.dataset.scr);
-  }));
+  // 레일 「작업 에디터」 과도기 심은 항목 사망(슬라이스 5 삭제 PR)과 함께 제거 — 편집
+  // 진입은 EditorEntry.land 소비처(홈·템플릿 관리·작업 ⋮)가 담당한다.
+  navs.forEach((b) => b.addEventListener("click", () => go(b.dataset.scr)));
   // 홈(허브)이 카드/버튼에서 워크플로 화면으로 보내는 진입점(home.js 가 소비).
   window.Nav = { go };
 

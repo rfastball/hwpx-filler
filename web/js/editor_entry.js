@@ -5,12 +5,26 @@
    에디터 흡수(결정 39~41): 목적지가 별도 화면에서 「작업」 패널의 편집 모드로 바뀌었다 —
    가드·로드 계약은 그대로, 마지막 착지만 Nav("job")+showEditMode 다. */
 (function () {
-  /* land() — 편집 모드 착지의 단일 정의(PR-2 리뷰: 4곳 축자 복붙은 착지 변경 시 드리프트
-     표면 — 한 곳이 밀리면 실행 모드에 조용히 오착지한다). 신규(home.newJob·template.makeJob·
-     레일 심)와 기존 작업 열기(openGuarded)가 전부 이 착지를 소비한다. */
+  /* land() — 편집 모드 착지의 단일 정의(PR-2 리뷰: 축자 복붙은 착지 변경 시 드리프트 표면 —
+     한 곳이 밀리면 실행 모드에 조용히 오착지한다). 소비처 = 신규 초안(newDraft — 홈 ＋·작업
+     구획 ＋·template.makeJob 후속 착지)·기존 작업 열기(openGuarded)·미저장 초안 복귀(작업
+     화면 T2 고지). JobScreen 미로드는 **loud**(PR-5 리뷰 F3: 백엔드 세션은 이미 초기화됐는데
+     실행 모드에 조용히 떨어지면 사용자에게 설명 없는 무반응이 된다 — 조용한 오착지 금지). */
   function land() {
     window.Nav.go("job");
     if (window.JobScreen && window.JobScreen.showEditMode) window.JobScreen.showEditMode();
+    else window.alert("편집 모드를 열 수 없습니다 — 화면 구성 요소(JobScreen)가 로드되지 않았습니다.");
+  }
+
+  /* newDraft() — 「＋ 새 작업」의 단일 정의(PR-5 리뷰 F2: 홈·작업 구획 ＋ 가 같은 흐름을
+     복붙하면 폐기 확인·착지가 드리프트한다): 폐기 확인 → 세션 초기화 → 편집 모드 착지. */
+  async function newDraft() {
+    if (!(await confirmDiscard(
+      "저장하지 않은 편집(정의) 세션이 있습니다.\n" +
+      "새 작업을 시작하면 그 세션의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?"))) return false;
+    await Bridge.call("editor", "new_session", {});
+    land();
+    return true;
   }
 
   /* 미저장 정의 세션 폐기 확인의 **단일 출처**(PR-4 리뷰 F9 — 3중 복붙 수렴): 판정은 브리지
@@ -37,5 +51,5 @@
     return true;
   }
 
-  window.EditorEntry = { openGuarded, land, confirmDiscard };
+  window.EditorEntry = { openGuarded, land, confirmDiscard, newDraft };
 })();

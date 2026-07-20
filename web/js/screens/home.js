@@ -203,13 +203,9 @@
      종전 bare nav 는 직전 세션을 그대로 복원해 '새'가 '이어서 작성'을 몰래 겸했다.
      미저장 세션은 editJob 과 대칭으로 확인 후 버린다(조용한 복원·조용한 소실 둘 다 금지). */
   async function newJob() {
-    // 폐기 확인은 EditorEntry.confirmDiscard 단일 출처(PR-4 리뷰 F9 — 문구만 여기 소유).
-    if (!(await EditorEntry.confirmDiscard(
-      "저장하지 않은 편집(정의) 세션이 있습니다.\n" +
-      "새 작업을 시작하면 그 세션의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?"))) return;
-    await Bridge.call("editor", "new_session", {});
-    // 에디터 흡수(결정 39·41) — 신규 마법사도 「작업」 패널 편집 모드에 산다(별도 화면 사망).
-    EditorEntry.land();
+    // 흐름 전체가 EditorEntry.newDraft 단일 출처(PR-5 리뷰 F2 — 작업 구획 ＋ 와 공유).
+    if (window.EditorEntry) { await EditorEntry.newDraft(); return; }
+    window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다.");  // #99-6 동형 loud
   }
 
   /* '＋ 새 기안'(F11) — F10 과 대칭. txt 출력은 일회성(복사/저장 즉시 완결)이라
@@ -223,6 +219,9 @@
   /* 편집 진입(#26) — 미저장 에디터 세션은 조용히 버리지 않고 확인(#25 미러) 후 복원.
      공용 흐름 EditorEntry.openGuarded 에 위임(job.fixMapping 과 단일 출처, PR #97 리뷰). */
   function editJob(name) {
+    // #99-6 동형 방어(PR-5 리뷰 F4) — 진입 셔틀 미로드 시 동기 ReferenceError 는 조용한
+    // 무반응이 된다(unhandledrejection 백스톱은 동기 throw 를 못 받는다). loud 로.
+    if (!window.EditorEntry) { window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다."); return; }
     EditorEntry.openGuarded(name);
   }
 

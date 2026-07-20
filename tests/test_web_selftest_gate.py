@@ -71,9 +71,11 @@ class TestWebSelftestGate:
         assert selftest_result["title_dom"]
 
     def test_all_nav_buttons_rendered(self, selftest_result: dict) -> None:
-        # 6화면 내비(.navbtn) 가 실체로 그려짐 — 화면 소실 회귀 가드(matrix 제거 후 F9;
-        # +「작업」 화면 #90 → 7, 실행 화면 사망(슬라이스 3, 레일 「실행」 제거) → 6).
-        assert selftest_result["nav_count"] == 6
+        # 내비(.navbtn) 가 실체로 그려짐 — 화면 소실 회귀 가드. 기대 수는 NAV_SCREENS
+        # 단일 출처(PR-5 리뷰 F7): matrix 제거 F9 → 실행 사망(슬라이스 3) → 작업 에디터
+        # 흡수 사망(슬라이스 5, 결정 39)의 역사는 그 목록의 주석이 진다.
+        from test_web_dom_contract import NAV_SCREENS
+        assert selftest_result["nav_count"] == len(NAV_SCREENS)
 
     def test_home_is_default_screen(self, selftest_result: dict) -> None:
         # 허브(홈)가 기본 활성 화면으로 뜸(scr-home.on).
