@@ -79,10 +79,10 @@
     // 표시형은 **데이터에서 오는 값**에만 뜻이 있다 — 무결속 수기 값이나 사람이 직접 고친
     // 값(hand)에 띄우면 골라도 화면이 안 바뀌는 손잡이가 된다(dead control 금지).
     const fmtSel = t.col && t.state !== "hand"
-      ? `<select class="field sm qd-fmt" id="qdFmt-${i}" data-i="${i}" aria-label="${esc(t.name)} 표시형">${fmts}</select>`
+      ? `<select class="field sm" id="qdFmt-${i}" data-i="${i}" aria-label="${esc(t.name)} 표시형">${fmts}</select>`
       : "";
     const revert = t.state === "hand"
-      ? `<button class="btn sm qd-revert" id="qdRevert-${i}" data-i="${i}">자동으로 되돌리기</button>`
+      ? `<button class="btn sm" id="qdRevert-${i}" data-i="${i}">자동으로 되돌리기</button>`
       : "";
     // 결정 34 문언은 `토큰|소스→표시형` — **방향 화살표**가 문법의 일부다(값이 소스에서
     // 표시형을 거쳐 나온다는 진술). 구현에 그것이 빠져 두 드롭다운이 나란한 동급으로
@@ -90,7 +90,7 @@
     // 여기서 바꾸지 않는다 — 화살표는 표시형이 실제로 뜰 때만 세운다(없는 단계 암시 금지).
     const arrow = fmtSel ? `<span class="qd-arrow" aria-hidden="true">→</span>` : "";
     return `<div class="qd-pipe"><span class="qd-elbow" aria-hidden="true">↳</span>` +
-      `<select class="field sm qd-src" id="qdSrc-${i}" data-i="${i}" aria-label="${esc(t.name)} 데이터 열">` +
+      `<select class="field sm" id="qdSrc-${i}" data-i="${i}" aria-label="${esc(t.name)} 데이터 열">` +
       `<option value="">(직접 입력)</option>${cols}</select>` +
       `${arrow}${fmtSel}${revert}</div>`;
   }
@@ -407,7 +407,7 @@
       const cur = $("qdRevert-" + i);
       if (t.state === "hand" && !cur) {
         const b = document.createElement("button");
-        b.className = "btn sm qd-revert";
+        b.className = "btn sm";
         b.id = "qdRevert-" + i;
         b.textContent = "자동으로 되돌리기";
         b.addEventListener("click", () => Bridge.call(SCREEN, "revert_token", { name: t.name }));

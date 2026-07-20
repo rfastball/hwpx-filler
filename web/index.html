@@ -123,7 +123,7 @@
         <!-- 좌 master 목록 — 2구획(문서 작업 HWPX / 기안 작업 TXT). 구획 헤더 열 틴트 승계.
              구획 안 사용자 그룹 + 접힘 + 행/그룹 ⋮ 관리 메뉴(결정 43·A안 확정). -->
         <aside class="job-master">
-          <div class="job-section">
+          <div>
             <!-- 구획 ＋(1부 결정 10 — 매체 맥락 상속): 레일 「작업 에디터」 사망(결정 39)이
                  남긴 생성 진입 의무를 이 화면 자신이 승계한다(PR-5 리뷰 F2). -->
             <div class="job-sec-head hwpx">문서 작업 · HWPX
@@ -133,7 +133,7 @@
           </div>
           <!-- 행/그룹 ⋮ 컨텍스트 메뉴 — job.js 가 대상별 항목을 채우고 fixed 좌표로 편다. -->
           <div id="jobRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
-          <div class="job-section">
+          <div>
             <div class="job-sec-head txt">기안 작업 · TXT</div>
             <!-- draft-as-job(블록 3·5) 착지 전까지 빈 구획 — 없는 걸 있는 척하지 않는다. -->
             <div class="muted job-empty">준비 중입니다.</div>
@@ -150,7 +150,7 @@
                  리셋·재렌더에 증발하지 않고, 확인 버튼/편집 재진입으로만 걷힌다(job.js 소유). -->
             <div class="note warnbox" id="jobEditExitNote" style="display:none"></div>
             <!-- 헤더 존 — 작업 정체(이름·템플릿·소스) -->
-            <div class="zone zone-header">
+            <div class="zone">
               <div class="zone-cap">헤더</div>
               <div class="job-head-title" id="jobHeadTitle"></div>
               <div class="job-head-tpl muted" id="jobHeadTpl"></div>
@@ -158,7 +158,7 @@
             </div>
 
             <!-- 데이터 존 — 겨눔 + 행 선택 -->
-            <div class="zone zone-data">
+            <div class="zone">
               <div class="zone-cap">데이터</div>
               <div class="run-row"><span class="lbl">데이터(.xlsx/.csv)</span>
                 <input class="field ro" id="jobDataLabel" type="text" readonly
@@ -201,7 +201,7 @@
             </div>
 
             <!-- 본문 존 — 라이브 거울(필드 채움 테이블) + 재진술 블록 + 생성 의식 1회 -->
-            <div class="zone zone-body">
+            <div class="zone">
               <div class="zone-cap">본문 · 거울</div>
               <p class="muted hint">이 문서에 들어갈 값입니다. <span class="danger">미입력</span>
                 필드 행은 반사적 확인 취소를 막기 위해 <b>직접 눌러 확인</b>해야 생성이 열립니다.</p>
@@ -224,7 +224,7 @@
             </div>
 
             <!-- 완료 존 — 세션 스코프(진행·결과·로그) -->
-            <div class="zone zone-done">
+            <div class="zone">
               <div class="zone-cap">완료</div>
               <div class="bar"><i id="jobGenBar"></i></div>
               <div id="jobGenResult" class="run-result"></div>

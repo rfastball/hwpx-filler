@@ -1,10 +1,12 @@
 <!doctype html>
 <!--
   살아있는 컴포넌트 갤러리 (개발 전용 · 배포 exe 미포함).
-  실 web/css/tokens.css + web/css/app.css 를 <link> 로 그대로 물어 드리프트 0 —
-  app.css 를 고치면 이 페이지가 자동 반영된다. 컴포넌트를 모든 상태로 한눈에 보는
-  디자인 참조이자 반복 작업 표면. 대조: docs/UI_PROTOTYPE_APPB.html 은 CSS 를 인라인
-  복사(색만 생성기 동기)라 드리프트 가능 — 갤러리가 그 갭을 메운다.
+  실 web/css/tokens.css + web/css/app.css 를 <link> 로 그대로 물어 **스타일** 드리프트 0 —
+  app.css 를 고치면 이 페이지 색·간격·규칙이 자동 반영된다. 대조: docs/UI_PROTOTYPE_APPB.html
+  은 CSS 를 인라인 복사(색만 생성기 동기)라 드리프트 가능 — 갤러리가 그 갭을 메운다.
+  단, 아래 컴포넌트 **마크업은 손으로 짠 표본**이라 실앱과 자동 동기되지 않는다(인벤토리는
+  부분 커버리지 · 링크 가드는 스타일만 강제). 컴포넌트를 여러 상태로 한눈에 보는 디자인
+  참조이자 반복 작업 표면.
   여는 법: 저장소 루트에서 `python -m http.server` 후 http://localhost:8000/docs/UI_GALLERY.html
   (또는 브라우저로 파일 직접 열기). 새 컴포넌트가 생기면 아래에 스니펫 한 조각을 추가한다.
 -->
@@ -47,7 +49,7 @@ body{padding:0}
 <body>
 <header class="gal-mast">
   <h1>컴포넌트 갤러리</h1>
-  <p>실 <span class="path">web/css/tokens.css</span> + <span class="path">web/css/app.css</span> 를 그대로 링크 — <b>드리프트 0</b>. 앱 컴포넌트를 모든 상태로 전시하는 디자인 참조·반복 표면. tokens.css 가 다크 팔레트를 실으므로 아래 토글로 전 컴포넌트를 다크에서 한눈에 눈검증한다(다크값 튜닝 표면).</p>
+  <p>실 <span class="path">web/css/tokens.css</span> + <span class="path">web/css/app.css</span> 를 그대로 링크 — <b>스타일 드리프트 0</b>(색·간격·규칙이 실 파일). 단 아래 마크업은 손으로 짠 표본이라 자동 미러가 아니다(인벤토리는 부분 커버리지). 앱 컴포넌트를 여러 상태로 전시하는 디자인 참조·반복 표면. tokens.css 가 다크 팔레트를 실으므로 아래 토글로 전 컴포넌트를 다크에서 한눈에 눈검증한다(다크값 튜닝 표면).</p>
   <!-- 검증 전용 토글 — data-theme 만 세팅(색 리터럴 없음). 실앱 토글은 web/js/theme.js 소유. -->
   <button class="gal-theme" id="galTheme" type="button">테마: 시스템</button>
 </header>
@@ -58,12 +60,13 @@ body{padding:0}
     <div class="spec-h">.app · rail nav — 앱 셸</div>
     <div class="app galapp">
       <nav class="rail">
-        <div class="brand">HWPX 필러</div>
-        <!-- 실 레일 5항목 미러(드리프트 0) — 실행·매트릭스는 슬라이스 3/F9, 작업 에디터는
-             슬라이스 5(결정 39 흡수)에서 사망. -->
+        <div class="brand">HWPX Filler</div>
+        <!-- 실 레일 6항목 미러 — 실행·매트릭스는 슬라이스 3/F9, 작업 에디터는 슬라이스 5
+             (결정 39 흡수)에서 사망. 손짠 표본이라 실앱과 자동 동기되지 않는다(항목이 늘면 수동 반영). -->
         <button class="navbtn" aria-current="true"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l7-6 7 6M5 9v7h4v-4h2v4h4V9"/></svg></span><span class="lbl"><span class="n">대시보드</span><span class="d">작업·기안 요약</span></span></button>
         <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h5v12H4zM11 4h5v7h-5z"/></svg></span><span class="lbl"><span class="n">작업</span><span class="d">목록 + 세션 패널</span></span></button>
         <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h5l3 3v11H6zM11 3v3h3M8 11h5M8 14h5"/></svg></span><span class="lbl"><span class="n">기안문 채우기 (txt)</span><span class="d">실시간 채움 → 복사</span></span></button>
+        <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2L5 11h4l-1 7 6-9h-4z"/></svg></span><span class="lbl"><span class="n">빠른 기안</span><span class="d">저장 없이 채워 복사</span></span></button>
         <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3l7 4-7 4-7-4zM3 11l7 4 7-4"/></svg></span><span class="lbl"><span class="n">템플릿 관리</span><span class="d">HWPX·TXT</span></span></button>
         <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3c3.3 0 6 1 6 2.3S13.3 7.7 10 7.7 4 6.7 4 5.3 6.7 3 10 3M4 5.3v9.4C4 16 6.7 17 10 17s6-1 6-2.3V5.3"/></svg></span><span class="lbl"><span class="n">데이터 관리</span><span class="d">등록 데이터(참조)</span></span></button>
       </nav>
@@ -95,13 +98,8 @@ body{padding:0}
     </div>
   </div>
 
-  <div class="grid2">
-    <div class="spec"><div class="spec-h">.fb — 필드 상태 배지 5종</div>
-      <div class="statebadges"><span class="fb fill">이름 <b>채움</b></span><span class="fb blank">비고 <b>빈칸</b></span><span class="fb missing">금액 <b>미입력</b></span><span class="fb missing ack">금액 <b>확인함</b></span><span class="fb drift">규격 <b>드리프트</b></span></div>
-    </div>
-    <div class="spec"><div class="spec-h">.pill — compile_badge 4종</div>
-      <div class="row"><span class="pill ok">컴파일됨</span><span class="pill warn">필드화 필요</span><span class="pill danger">오류</span><span class="pill muted">미확인</span></div>
-    </div>
+  <div class="spec"><div class="spec-h">.pill — compile_badge 4종</div>
+    <div class="row"><span class="pill ok">컴파일됨</span><span class="pill warn">필드화 필요</span><span class="pill danger">오류</span><span class="pill muted">미확인</span></div>
   </div>
 
   <div class="grid2">
@@ -129,17 +127,8 @@ body{padding:0}
     </tbody></table></div>
   </div>
 
-  <div class="grid2">
-    <div class="spec"><div class="spec-h">.wsteps — 마법사 단계 탭</div>
-      <div class="wsteps"><div class="wstep-tab done"><span class="k">1</span>템플릿</div><div class="wstep-tab done"><span class="k">2</span>데이터</div><div class="wstep-tab" aria-current="true"><span class="k">3</span>매핑</div><div class="wstep-tab"><span class="k">4</span>저장</div></div>
-    </div>
-    <div class="spec"><div class="spec-h">.reclist — 대상 문서 목록</div>
-      <div class="reclist" style="margin:0">
-        <div class="rec"><input type="checkbox" checked><span class="rf">조달청_2024_0012.hwpx</span></div>
-        <div class="rec"><input type="checkbox" checked><span class="rf">조달청_2024_0013.hwpx</span></div>
-        <div class="rec muted"><span>3건 더…</span></div>
-      </div>
-    </div>
+  <div class="spec"><div class="spec-h">.wsteps — 마법사 단계 탭</div>
+    <div class="wsteps"><div class="wstep-tab done"><span class="k">1</span>템플릿</div><div class="wstep-tab done"><span class="k">2</span>데이터</div><div class="wstep-tab" aria-current="true"><span class="k">3</span>매핑</div><div class="wstep-tab"><span class="k">4</span>저장</div></div>
   </div>
 
   <div class="grid2">
