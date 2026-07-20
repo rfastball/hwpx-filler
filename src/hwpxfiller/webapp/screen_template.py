@@ -34,25 +34,13 @@ from ..core.template_status import default_templates_dir
 from ..core.text_registry import TextTemplateRegistry
 from ..gui.template_manager_state import TemplateManagerViewModel
 from .screens import PushSink
-from .template_groups import TemplateGroupModel
+from .template_groups import TemplateGroupModel, rel_key
 
 # TXT 이름 검증 — Qt TemplateManagerPanel._validated_txt_name 미러(확장자·경로문자 배제).
 _BAD_NAME = re.compile(r'[\\/:*?"<>|]')
 
 # HWPX 미리보기 액션은 작업 위저드와 중복이라 링2에서 노출하지 않는다(#13 10F2FF98-B).
 _HIDDEN_ACTIONS = frozenset({"preview"})
-
-
-def _rel_key(path: "str | Path", root: "Path | None") -> str:
-    """루트 상대경로(POSIX)를 그룹 식별키로(결정 8). 루트 직속 파일은 곧 파일명, 관용된
-    하위폴더 파일은 ``하위폴더/이름``. 루트 밖(방어)·루트 미지정이면 파일명으로 폴백."""
-    p = Path(path)
-    if root is not None:
-        try:
-            return p.relative_to(root).as_posix()
-        except ValueError:
-            pass
-    return p.name
 
 
 class TemplateController:
@@ -108,7 +96,7 @@ class TemplateController:
         root = self.vm.library_dir
         rows: "list[dict]" = []
         for r in self.vm.rows():
-            key = _rel_key(r.path, root)
+            key = rel_key(r.path, root)
             rows.append({
                 "key": key,
                 "group": self.hwpx_groups.group_of(key),
@@ -137,7 +125,7 @@ class TemplateController:
                 field_count = len(t.fields())
             except Exception as exc:  # noqa: BLE001 — 손상 파일도 삭제 가능한 행으로 loud 노출
                 error = str(exc)
-            key = _rel_key(t.path, root)
+            key = rel_key(t.path, root)
             rows.append({
                 "key": key,
                 "group": self.txt_groups.group_of(key),
@@ -323,9 +311,9 @@ class TemplateController:
         """현 스캔의 살아있는 식별키 — 그룹 소속 수 판정용(캐시된 행 소비, 재파싱 없음)."""
         if media == "hwpx":
             root = self.vm.library_dir
-            return [_rel_key(r.path, root) for r in self.vm.rows()]
+            return [rel_key(r.path, root) for r in self.vm.rows()]
         root = self.text_registry.directory
-        return [_rel_key(t.path, root) for t in self.text_registry.list_templates()]
+        return [rel_key(t.path, root) for t in self.text_registry.list_templates()]
 
     @staticmethod
     def _norm(path: "str | Path") -> str:

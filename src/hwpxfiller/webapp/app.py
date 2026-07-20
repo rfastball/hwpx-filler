@@ -127,6 +127,9 @@ class WebFrontend:
                 job_registry, self._push,
                 pool_registry=pool_registry,
                 template_library=tpl_ctrl.vm,
+                # 1단계 피커 그룹 구획 = tpl 화면과 **같은 hwpx 그룹 모델**(#108 슬라이스 3):
+                # 별도 인스턴스면 접힘·지정 인메모리 캐시가 갈라져 두 표면이 다른 조직을 보인다.
+                template_groups=tpl_ctrl.hwpx_groups,
             ),
         )
         self.controllers = {c.name: c for c in controllers}
@@ -1090,6 +1093,56 @@ _TPL_LIST_GROUP_PROBE_JS = r"""
 """
 
 
+# 에디터 1단계 피커(#108 슬라이스 3) — 라이브러리를 관리 화면과 **같은 그룹 구획**(선택 전용)으로
+# 실 WebView2 에 그리는지. 그룹 헤더·접힌 그룹 행 제외·선택 전용 행·현 선택 표지·필터 고지·퇴화
+# 평면을 되읽는다(관리 화면 tpl 프로브와 대칭 — 두 표면이 한 조직을 보인다는 실증).
+_EDITOR_LIB_PICKER_PROBE_JS = r"""
+(function () {
+  var out = {};
+  try {
+    window.Nav.go('job');
+    window.JobScreen.showEditMode();
+    var it = function (name, badge, level, cur) {
+      return {key:name, name:name, path:'C:/lib/' + name, badge_label:badge, badge_level:level,
+              is_error:false, detail:'필드 3개', current:!!cur};
+    };
+    var draft = {step:0, reachable:[false,false], template_path:'', template_name:'',
+      field_count:0, fields:[], raw_block:'', gate_error:false, gate:null, notice:null,
+      editing_origin:'',
+      library:{flat:false, sections:[
+        {group:'입찰', collapsed:false, count:2,
+         items:[it('a.hwpx','준비됨','ok',true), it('b.hwpx','변환 필요','warn',false)]},
+        {group:'계약', collapsed:true, count:1, items:[it('c.hwpx','준비됨','ok',false)]},
+        {group:'', collapsed:false, count:1, items:[it('d.hwpx','준비됨','ok',false)]}
+      ]}};
+    window.__push('editor', draft);
+    var host = document.getElementById('jobEditHost');
+    out.grp_heads = host.querySelectorAll('.job-grp-head').length;              // 입찰·계약·그룹없음
+    out.rows_visible = host.querySelectorAll('.libselrow').length;             // 계약 접힘 → 2+1
+    out.pick_btns = host.querySelectorAll('.libselrow button[data-act="use-library"]').length;
+    out.current_marked = host.querySelectorAll('.libselrow.cur').length;       // 현 선택(a) 1
+    out.import_btn = !!host.querySelector('button[data-act="import-template"]');
+    out.filter_notice = /HWPX 서식만/.test(host.textContent);  // 줄바꿈 무관 부분매치
+    var caret = host.querySelector('.job-grp-head[aria-expanded="false"] .grp-caret');
+    out.caret_collapsed = caret ? getComputedStyle(caret).visibility : 'missing';
+    // F13 — 그룹 헤더에 안정 id(재렌더 뒤 포커스 복원 근거). F14 — 파일명 칸 말줄임/축소.
+    var head0 = host.querySelector('.job-grp-head');
+    out.grp_head_has_id = !!(head0 && head0.id);
+    var fn = host.querySelector('.libselrow .fname');
+    out.fname_ellipsis = fn ? getComputedStyle(fn).textOverflow : 'missing';
+    out.fname_minwidth = fn ? getComputedStyle(fn).minWidth : 'missing';
+    // 퇴화 평면(그룹 0개) — 헤더 없는 선택 행 나열.
+    draft.library = {flat:true, sections:[{group:'', collapsed:false, count:1, items:[it('d.hwpx','준비됨','ok',false)]}]};
+    window.__push('editor', draft);
+    out.flat_heads = host.querySelectorAll('.job-grp-head').length;
+    out.flat_rows = host.querySelectorAll('.libselrow').length;
+    out.error = null;
+  } catch (e) { out.error = 'throw:' + (e && e.message); }
+  return out;
+})()
+"""
+
+
 # ------------------------------------------------------------------ 자가검증(Q3)
 def _finish_selftest(window: "object", result: dict) -> None:
     """되읽기 결과를 결정적 위치에 쓰고 정식 종료한다(쓰기·읽기 단계 공용).
@@ -1207,6 +1260,8 @@ def _selftest_drive(window: "object") -> None:
         result["quickdraft"] = window.evaluate_js(_QUICKDRAFT_PROBE_JS)  # type: ignore[attr-defined]
         # 템플릿 관리(#108) — 매체 구획+그룹·⋮ 메뉴·＋그룹지정 칩·이동 다이얼로그 실렌더 되읽기.
         result["tpl_groups"] = window.evaluate_js(_TPL_LIST_GROUP_PROBE_JS)  # type: ignore[attr-defined]
+        # 에디터 1단계 피커(#108 슬라이스 3) — 라이브러리 그룹 구획(선택 전용) 실렌더 되읽기.
+        result["editor_lib"] = window.evaluate_js(_EDITOR_LIB_PICKER_PROBE_JS)  # type: ignore[attr-defined]
         # 다크모드 영속·무깜빡임(콜드부트 되읽기, #74) — 부팅 시 loaded 핸들러가 저장 테마
         # (settings.json, 오리진 비의존)를 show 전에 data-theme 로 주입했는지. 저장값이 없으면
         # data_theme=null(=system). 앞선 쓰기 프로세스가 남긴 값이 여기서 보이면 Python 설정

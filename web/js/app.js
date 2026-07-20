@@ -33,6 +33,11 @@
       Bridge.call(id, "refresh", {}).catch((err) =>
         window.alert(String((err && err.message) || err)));
     }
+    // 「작업」 복귀 시 편집 호스트의 에디터도 재렌더(#138 리뷰 F12) — job refresh 는 좌 목록만
+    // 갱신하고 편집 모드 1단계 피커는 놔둬, 관리 화면에서 바뀐 공유 그룹 접힘이 stale 로 남는다.
+    if (id === "job" && window.EditorScreen && window.EditorScreen.rerender) {
+      window.EditorScreen.rerender();
+    }
   }
   // 레일 「작업 에디터」 과도기 심은 항목 사망(슬라이스 5 삭제 PR)과 함께 제거 — 편집
   // 진입은 EditorEntry.land 소비처(홈·템플릿 관리·작업 ⋮)가 담당한다.
