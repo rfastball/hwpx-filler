@@ -329,6 +329,39 @@ class TestWebSelftestGate:
             assert want in tags, f"소유권 태그 '{want}' 미렌더(칩-라이브 결정 12): {tags!r}"
         assert e["auto_revert_option"] is True, "touched 행에 '자동 제안으로 되돌리기'(↩) 버튼이 없습니다(리뷰 R5)."
 
+    def test_txt_zone_renders_queue_table_chips_strip(self, selftest_result: dict) -> None:
+        # txt 데이터 존(블록 3, 슬라이스 6 PR-2b) — datazone.js **두 번째 인스턴스**가 실
+        # WebView2 의 txt 화면에서 가시 행·<mark> 하이라이트·선두 「큐」 열 표지(작업점 ▶·
+        # 대기 순번, 결정 16)·칩 줄·필터 밖 선택 스트립(결정 3)을 실제로 그리는지 되읽는다.
+        z = selftest_result["txt_zone"]
+        assert z.get("error") is None, f"txt 존 프로브 예외: {z.get('error')!r}"
+        assert z["rows"] == 1, f"가시 행 렌더 수가 다릅니다: {z!r}"
+        assert z["mark"] == "전산", f"하이라이트 세그먼트 미렌더: {z['mark']!r}"
+        assert z["head_lead"] == "큐", f"선두 열 머리가 「큐」가 아닙니다: {z['head_lead']!r}"
+        assert "▶" in z["lead"] and "작업점" in z["lead"], (
+            f"큐 표지(작업점 ▶)가 렌더되지 않았습니다: {z['lead']!r}"
+        )
+        # 순번은 이 표에 렌더하지 않는다 — 큐-꼬리 순서라 레코드 순서 표에선 비단조로
+        # 읽힌다(PR-2b 리뷰). 거처는 큐 순서로 그리는 상태 색인(PR-3).
+        assert "대기 1" not in z["lead"], (
+            f"레코드 순서 표에 큐 순번이 되살아났습니다(비단조 오독): {z['lead']!r}"
+        )
+        assert "「전산」" in z["chips_text"], f"칩 줄 정의 재진술 누락: {z['chips_text']!r}"
+        assert z["strip_shown"] is True, "필터 밖 선택 스트립이 표시되지 않았습니다(결정 3)."
+        assert "2행" in z["strip_text"], f"스트립 재진술이 다릅니다: {z['strip_text']!r}"
+        assert "선택 2/2" in z["sel_count"] and "표시 1" in z["sel_count"], (
+            f"선택/표시 수치 재진술이 다릅니다: {z['sel_count']!r}"
+        )
+
+    def test_txt_zone_panel_hidden_and_instance_isolated(self, selftest_result: dict) -> None:
+        # 열 패널 기본 닫힘([hidden] vs display:flex — 부록 B-9 자동 눈검증의 txt 판) +
+        # 두 인스턴스 격리(txt 존 렌더가 작업 화면 데이터 존 DOM 을 만지지 않는다 — id 분리).
+        z = selftest_result["txt_zone"]
+        assert z["panel_hidden"] is True, "txt colpanel [hidden] 이 display:flex 에 져서 떠 있습니다."
+        assert z["job_body_untouched"] is True, (
+            "txt 존 렌더가 작업 화면 테이블 DOM 에 흘러들었습니다 — 인스턴스 격리 파손."
+        )
+
     def test_job_drift_replaces_mirror_with_blocking_banner(self, selftest_result: dict) -> None:
         # danger(구조 드리프트)는 거울 표와 섞이지 않고 차단 배너 + 행동 링크로 **교체**된다
         # (결정 36·S9). overlay 로 표 위에 얹히는 게 아니라 실제로 표가 사라지고 배너가 선다.

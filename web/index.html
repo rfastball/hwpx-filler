@@ -272,6 +272,37 @@
         </div>
       </div>
 
+      <!-- 데이터 존(전-선언 큐 선택 · 블록 3, 슬라이스 6 PR-2b) — 공용 팩토리(datazone.js)의
+           두 번째 인스턴스. 구조·표면 클래스는 scr-job 데이터 존과 동형(jobtb 계열 클래스는
+           화면 공유 표면), id 만 화면 고유(txt*). 행 선택 = 복사용 렌더링 큐의 전-선언
+           (결정 16) — 작업점 카드·복사 동사·상태 색인은 다음 PR, 선두 「큐」 열 표지(대기
+           순번·작업점)는 링1 큐 모델의 사영이라 먼저 선다. -->
+      <div class="run-row run-recs-head">
+        <span class="lbl" style="font-weight:600">기안 대상 행</span>
+        <input class="field jobsearch" id="txtFilterSearch" type="search"
+               placeholder="전체 열 검색" autocomplete="off" data-busy-lock>
+        <button class="btn sm" id="txtFilterReapply" style="display:none"
+                data-busy-lock>직전 필터 재적용</button>
+        <div class="acts"><span class="muted capnote" id="txtSelCount">선택 0/0</span>
+          <button class="btn sm" id="txtSelAll" data-busy-lock>전체 선택</button>
+          <button class="btn sm" id="txtSelNone" data-busy-lock>전체 해제</button></div>
+      </div>
+      <div class="fchips" id="txtFilterChips" style="display:none"></div>
+      <div class="jobtb-host" id="txtTableHost">
+        <div class="tbwrap jobtbwrap" id="txtTableWrap" data-preserve-scroll>
+          <table class="tb jobtb">
+            <thead id="txtTableHead"></thead>
+            <tbody id="txtTableBody"></tbody>
+          </table>
+        </div>
+        <div class="job-empty muted" id="txtTableEmpty">데이터를 선택하면 기안 대상 행이 여기에 표시됩니다.</div>
+        <div class="colpanel" id="txtColPanel" hidden></div>
+      </div>
+      <div class="fstrip" id="txtSelStrip" style="display:none"></div>
+      <!-- 데이터 존 고지(재적용 결과·전멸 필터 무동작 등) — 렌더 함수가 안 만지는 JS 소유
+           요소(T2 고지 관례): 푸시 재렌더에 증발하지 않고 데이터 전환 때 걷힌다. -->
+      <div class="note warnbox" id="txtZoneNote" style="display:none"></div>
+
       <!-- 2판(반응형 C): 좌=토큰 상태, 우=실시간 렌더. 좁으면 세로 적층 -->
       <div class="panes">
         <section class="pane tokens">
