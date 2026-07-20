@@ -948,6 +948,9 @@ _QUICKDRAFT_PROBE_JS = r"""
       has_data:false, data_label:'', data_kind:''});
     out.fresh_visible_before = vis('qdBtnFresh');
     out.foot_visible_before = vis('qdFoot');
+    // 휘발 표지는 **빈손에서도** 서 있다(#134) — 알약과 별개 요소라 내용이 생겨도 안 꺼진다.
+    out.volatile_visible_before = vis('qdVolatile');
+    out.pill_before = document.getElementById('qdStatus').textContent;
     var snap = {
       origin:'lib', template_name:'개찰참관보고',
       template_text:'제목: {{사업명}}\n금액: {{추정가격}}', modified:false,
@@ -958,9 +961,33 @@ _QUICKDRAFT_PROBE_JS = r"""
                 {text:'\n금액: ', kind:'literal', name:''},
                 {text:'{{추정가격}}', kind:'missing', name:'추정가격'}],
       missing_fields:['추정가격'], empty_fields:[], unfilled_count:1,
-      has_data:false, data_label:'', data_kind:''
+      has_data:false, data_label:'', data_kind:'',
+      // 대상 글꼴 선언·정렬 린트 합류(#134 (g)) — 미리보기가 선언을 추종하고, 린트가
+      // 선언-조건부로 서며 처방 버튼을 다는지 되읽는다.
+      target_font:'malgun',
+      lint:{proportional:true, space_run:true, applied:false, active:true}
     };
     window.__push('quickdraft', snap);
+    // 내용이 실려도 휘발 표지는 살아 있다 — 잃을 것이 생긴 시점에 경고가 꺼지지 않는다.
+    out.volatile_visible = vis('qdVolatile');
+    out.render_font_class = (document.getElementById('qdRender') || {}).className || '';
+    out.lint_text = (document.querySelector('#qdBody .qd-lint .txt') || {}).textContent || '';
+    out.lint_action = (document.getElementById('qdLintAction') || {}).dataset
+      ? document.getElementById('qdLintAction').dataset.act : '';
+    // man 칩(사람이 친 값)의 **중립 티어** — 채움 계열 초록(--a-ok)을 쓰면 "검증된 값"으로
+    // 읽힌다. 색 이름이 아니라 실제 계산색을 토큰 값과 대조한다(테마 무관 판정).
+    out.chip_man_color = (function () {
+      var c = document.querySelector('#qdBody .qd-chip.man');
+      return c ? getComputedStyle(c).color : '';
+    })();
+    out.ok_color = (function () {
+      var probe = document.createElement('span');
+      probe.style.color = 'var(--a-ok)';
+      document.body.appendChild(probe);
+      var v = getComputedStyle(probe).color;
+      probe.remove();
+      return v;
+    })();
     // 파이프라인 토큰 폼 — 행 수·값 textarea·칩 상태(무결속 수기 = man, 빈칸 = blank).
     out.rows = document.querySelectorAll('#qdBody .qd-trow').length;
     out.val0 = (document.getElementById('qdVal-0') || {}).value;
@@ -1030,6 +1057,10 @@ _QUICKDRAFT_PROBE_JS = r"""
     var src1 = document.getElementById('qdSrc-1');
     out.src1 = src1 ? src1.value : null;
     out.fmt1 = !!document.getElementById('qdFmt-1');
+    // 파이프라인 방향 화살표(결정 34 `소스→표시형`, #134) — 표시형이 실제로 뜨는 행에만
+    // 선다(없는 단계를 암시하지 않는다). 결속 행(0)엔 있고 무결속 행(1)엔 없다.
+    out.pipe_arrow0 = !!document.querySelector('.qd-trow[data-i="0"] .qd-pipe .qd-arrow');
+    out.pipe_arrow1 = !!document.querySelector('.qd-trow[data-i="1"] .qd-pipe .qd-arrow');
     out.suggest1 = !!document.getElementById('qdTake-1');
     out.suggest_text = (document.querySelector('#qdBody .qd-suggest') || {}).textContent || '';
     // 경보 되읽기 — frozen_notice 가 실리면 상자가 뜨고 문구가 그대로 선다(알람 갈래).

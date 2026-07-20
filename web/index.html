@@ -43,7 +43,8 @@
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h5l3 3v11H6zM11 3v3h3M8 11h5M8 14h5"/></svg></span><span class="lbl"><span class="n">기안문 채우기 (txt)</span><span class="d">실시간 채움 → 복사</span></span></button>
     <!-- 빠른 기안(R-flow 블록 5, #90 슬라이스 7) — 작업의 휘발 쌍둥이. 최종 레일 형상
          (작업·빠른 기안·템플릿·데이터)에서 「작업」 바로 다음 순번이라 txt 뒤·템플릿 앞에
-         앉힌다(txt 제거·랜딩 전환은 후속, 그때 5→4 완성). 레일 문구는 R-copy(PR-4)에서 확정. -->
+         앉힌다. 현재는 이 항목이 더해져 **6항목**이고, txt 흡수·랜딩 전환(둘 다 에픽 #90
+         스코프 밖 후속)이 끝나야 4항목이 된다. 레일 문구는 R-copy(PR-4)에서 확정. -->
     <button class="navbtn" data-scr="quickdraft" aria-label="빠른 기안" title="빠른 기안 — 저장 없이 한 번 쓰고 복사하는 휘발 표면">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2L5 11h4l-1 7 6-9h-4z"/></svg></span><span class="lbl"><span class="n">빠른 기안</span><span class="d">저장 없이 채워 복사</span></span></button>
     <button class="navbtn" data-scr="tpl" aria-label="템플릿 관리" title="템플릿 관리 — HWPX·TXT 라이브러리 · 상태·변환·검토">
@@ -370,12 +371,15 @@
           <h1>빠른 기안</h1>
           <p class="sub">템플릿과 데이터를 세션 안에서만 결합해 복사합니다 — 저장 없이 한 번 쓰고 버리는 휘발 표면입니다.</p>
         </div>
-        <!-- 헤더 우측 = 휘발 표지 + 「새 기안」. 표지는 아무것도 저장하지 않음을 말하고(결정 29)
-             비어있음/미채움/전량 채움 3상으로 산다(quickdraft.js 가 토큰 상태로 갱신). 「새 기안」은
-             세션을 비운다(결정 32 휘발도 사다리) — 버릴 노동이 있으면 quickdraft.js 가 먼저 확인
-             모달을 세운다(session_guard). 빈손이면 조용히 통과(죽은 확인 없음). -->
+        <!-- 헤더 우측 = 휘발 표지(상시) + 채움 상태 알약 + 「새 기안」.
+             **표지와 알약은 별개다**(#134): 종전엔 하나였는데, 내용이 생기는 순간 알약이
+             비어있음→미채움으로 바뀌며 「세션 휘발 · 저장 없음」 신호가 꺼졌다 — 잃을 것이
+             생긴 바로 그 시점에 경고가 사라지는 방향이다. 표지는 이 화면의 성질이라 상시
+             병존하고, 알약은 미채움/전량 채움을 말한다. 「새 기안」은 세션을 비운다(결정 32) —
+             버릴 노동이 있으면 quickdraft.js 가 먼저 확인 모달을 세운다(session_guard). -->
         <div class="scr-head-actions">
-          <div class="status" id="qdStatus" data-level="idle">세션 휘발 · 저장 없음</div>
+          <span class="qd-volatile" id="qdVolatile">세션 휘발 · 저장 없음</span>
+          <div class="status" id="qdStatus" data-level="idle">비어 있음</div>
           <button class="btn sm" id="qdBtnFresh" hidden>새 기안</button>
         </div>
       </header>

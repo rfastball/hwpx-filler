@@ -527,6 +527,10 @@ class TestWebSelftestGate:
         # 무결속 토큰 = (직접 입력) + 표시형 없음(아무 일도 안 하는 손잡이 금지) + 제안 버튼.
         assert q["src1"] == "", f"무결속 토큰의 소스가 (직접 입력)이 아닙니다: {q['src1']!r}"
         assert q["fmt1"] is False, "무결속 토큰에 표시형 드롭다운이 떴습니다(dead control)."
+        # 방향 화살표(결정 34 `소스→표시형`, #134) — 두 드롭다운이 나란한 동급이 아니라
+        # 값이 소스에서 표시형을 거쳐 나온다는 진술이다. 표시형이 없는 행엔 서지 않는다.
+        assert q["pipe_arrow0"] is True, "결속 행 파이프라인에 방향 화살표가 없습니다."
+        assert q["pipe_arrow1"] is False, "표시형이 없는 행에 화살표가 섰습니다(없는 단계 암시)."
         assert q["suggest1"] is True, "근사 제안 원클릭 버튼이 없습니다(결정 30 — 자동 금지·제안 필수)."
         assert "추정가격(원)" in q["suggest_text"], f"제안 문안에 열 이름이 없습니다: {q['suggest_text']!r}"
         assert "—" not in q["suggest_text"], f"제안 문안에 em-dash 가 있습니다(R-copy 가드): {q['suggest_text']!r}"
@@ -556,6 +560,37 @@ class TestWebSelftestGate:
         assert "—" not in q["promote_note"], f"승격 사유에 em-dash 가 있습니다(R-copy 가드): {q['promote_note']!r}"
         # 소유권 색 — 자동 결속 값(사업명)이 own-auto 로 페인트된다(폼 칩과 한 색 언어, 결정 33).
         assert q["own_auto"] is True, "자동 결속 값에 소유권 색(own-auto)이 붙지 않았습니다."
+
+    def test_quickdraft_volatility_badge_survives_content(self, selftest_result: dict) -> None:
+        # #134 — 휘발 표지는 채움 알약과 **별개로 상시** 산다. 종전엔 한 자리를 나눠 써서
+        # 내용이 생기는 순간(비어있음 → 미채움) 「세션 휘발 · 저장 없음」 신호가 꺼졌다:
+        # 잃을 것이 생긴 바로 그 시점에 경고가 사라지는 방향이었다.
+        q = selftest_result["quickdraft"]
+        assert q["volatile_visible_before"] is True, "빈손에서 휘발 표지가 보이지 않습니다."
+        assert q["volatile_visible"] is True, (
+            "내용이 실리자 휘발 표지가 사라졌습니다 — 잃을 것이 생긴 시점에 경고 소멸."
+        )
+        assert q["pill_before"] == "비어 있음", f"빈손 알약 문안이 다릅니다: {q['pill_before']!r}"
+        assert q["pill"] == "미채움 1", f"채움 상태 알약이 다릅니다: {q['pill']!r}"
+
+    def test_quickdraft_font_declaration_and_align_lint(self, selftest_result: dict) -> None:
+        # #134 부록 B-7 (g) — 미리보기가 **전역 선언**을 추종하고(하드코딩 f-malgun 회귀 핀),
+        # 정렬 린트가 선언-조건부로 서며 처방 버튼을 단다(txt 큐와 같은 술어·같은 문안).
+        q = selftest_result["quickdraft"]
+        assert "f-malgun" in q["render_font_class"], (
+            f"미리보기가 선언 글꼴을 추종하지 않습니다: {q['render_font_class']!r}"
+        )
+        assert "정렬 취약" in q["lint_text"], f"선언-조건부 린트 경보가 서지 않았습니다: {q['lint_text']!r}"
+        assert q["lint_action"] == "fix", f"치환 처방 버튼이 없습니다: {q['lint_action']!r}"
+
+    def test_quickdraft_manual_chip_is_neutral_not_verified(self, selftest_result: dict) -> None:
+        # #134 — 「직접 입력」 칩이 채움 계열 초록(--a-ok)을 쓰면 "사람이 친 값"이 "검증된 값"
+        # 처럼 읽힌다. 사람이 친 값은 아직 아무것도 대조되지 않은 값이다.
+        q = selftest_result["quickdraft"]
+        assert q["chip_man_color"], "man 칩을 찾지 못했습니다(프로브 오염 가능)."
+        assert q["chip_man_color"] != q["ok_color"], (
+            f"man 칩이 채움 초록과 같은 색입니다: {q['chip_man_color']!r}"
+        )
 
     def test_tpl_media_groups_render_collapse_and_menu(self, selftest_result: dict) -> None:
         # 템플릿 관리(#108) — 매체 구획 + 그 안 그룹(작업 모델 재사용)이 실 WebView2 에서 서는지.

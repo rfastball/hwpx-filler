@@ -70,6 +70,10 @@ def test_snapshot_empty_session_shape(tmp_path):
         "row_idx": 0,
         "row_label": "",
         "frozen_notice": "",
+        # 대상 글꼴 선언·정렬 린트 합류(#134 부록 B-7 (g)) — 선언은 전역 영속이라 빈 세션에도
+        # 실린다(미리보기가 첫 렌더부터 선언을 추종해야 "이대로 복사됩니다"가 참이 된다).
+        "target_font": "gulimche",
+        "lint": {"proportional": False, "space_run": False, "applied": False, "active": False},
     }
     assert set(fmt_options) == {"text", "date", "amount", "const"}
 
@@ -435,6 +439,25 @@ def test_carry_notice_wording_follows_the_gesture(tmp_path):
     assert "새 데이터" not in clear and "굳습니다" in clear
 
 
+def test_clear_gesture_announces_ownership_transfer_of_bound_values(tmp_path):
+    """해제만의 고지(#134) — 결속 값이 평문으로 굳어 소유권이 「자동」→「직접 입력」으로 넘어간다.
+
+    값이 눈에 남으니 조용한 소실은 아니지만, 전이가 무언이면 사용자는 화면의 값이 여전히
+    데이터에서 온다고 믿는다. 교체·행 이동에선 같은 자리가 조용히 재생성되므로 이 문장을
+    세우지 않는다 — 제스처별 정확한 술어(over-warn 도 거짓이다).
+    """
+    ctrl, _ = _aimed(tmp_path)
+    ctrl.dispatch("set_source", {"name": "수요기관", "col": "수요기관명"})
+    clear = ctrl.dispatch("carry_notice", {"gesture": "clear"})
+    assert clear["armed"] is False                       # 막지 않는다(고지 갈래)
+    assert "수요기관" in clear["notice"] and "직접 입력" in clear["notice"]
+    for gesture in ("swap", "row"):
+        other = ctrl.dispatch("carry_notice", {"gesture": gesture})
+        assert "굳고" not in other["notice"], (
+            f"{gesture} 에서 해제 전용 문장이 섰습니다(재생성되는 자리를 소실로 말함): {other!r}"
+        )
+
+
 def test_manual_values_notify_without_blocking(tmp_path):
     """무결속 수기 = 유지 + **고지**(가드 아님, 결정 32) — 매 행 이동마다 모달이 서면 반복이다."""
     ctrl, _ = _aimed(tmp_path)
@@ -597,3 +620,72 @@ def test_copy_clipboard_bridge_blocks_empty_hand(tmp_path, monkeypatch):
     frontend = app_mod.WebFrontend(tmp_path / "txt")
     res = frontend.copy_clipboard("quickdraft")
     assert res["copied"] is False and written == []
+
+
+# ------------------- 대상 글꼴 선언·정렬 린트 합류(#134 부록 B-7 (g), 결정 17) -------------------
+def test_target_font_declaration_is_read_not_copied(tmp_path, monkeypatch):
+    """선언은 **전역 영속**이라 이 화면이 사본을 들지 않는다 — txt 큐에서 바꾸면 여기도 따라온다.
+
+    사본을 들면 두 화면이 서로 다른 글꼴로 "이대로 복사됩니다"라고 말한다.
+    """
+    from hwpxfiller.webapp import screen_quickdraft as sq
+
+    ctrl, _ = _controller(tmp_path)
+    font = {"v": "gulimche"}
+    monkeypatch.setattr(sq, "load_draft_target_font", lambda: font["v"])
+    ctrl.dispatch("select_template", {"name": "개찰참관보고"})
+    assert ctrl.snapshot()["target_font"] == "gulimche"
+    font["v"] = "malgun"                      # 다른 화면에서 선언 변경
+    assert ctrl.snapshot()["target_font"] == "malgun"
+
+
+def _aligned_ctrl(tmp_path: Path, monkeypatch) -> "tuple[QuickDraftController, list]":
+    """연속 공백 정렬이 있는 템플릿 + 비례폭 선언 — 린트가 발화하는 지형."""
+    from hwpxfiller.webapp import screen_quickdraft as sq
+
+    (tmp_path / "정렬.txt").write_text("수신    {{수신처}}\n제목    {{제목}}", encoding="utf-8")
+    pushes: list = []
+    ctrl = QuickDraftController(
+        TextTemplateRegistry(tmp_path),
+        lambda s, snap: pushes.append((s, snap)),
+        pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
+    )
+    monkeypatch.setattr(sq, "load_draft_target_font", lambda: "malgun")  # 비례폭
+    ctrl.dispatch("select_template", {"name": "정렬"})
+    return ctrl, pushes
+
+
+def test_lint_is_declaration_conditional_and_prescribes(tmp_path, monkeypatch):
+    """린트 술어는 txt 큐와 같다 — 선언-조건부 경보 + 치환 처방(표면은 판정하지 않는다)."""
+    ctrl, _ = _aligned_ctrl(tmp_path, monkeypatch)
+    lint = ctrl.snapshot()["lint"]
+    assert lint == {"proportional": True, "space_run": True, "applied": False, "active": True}
+    ctrl.dispatch("set_fullwidth", {"value": True})
+    lint = ctrl.snapshot()["lint"]
+    assert lint["applied"] is True and lint["active"] is True
+    # 치환 후에도 space_run 이 참인 이유: 술어는 **치환 전 원문** 기준이라 "무엇을 고쳤는지"를
+    # 되돌리기 상태에서도 정직하게 말한다(결정 17).
+    assert lint["space_run"] is True
+
+
+def test_fullwidth_applies_to_preview_and_clipboard_through_one_path(tmp_path, monkeypatch):
+    """미리보기와 클립보드가 한 통로를 지난다 — 갈라지면 "보이는 것과 복사되는 것"이 어긋난다."""
+    ctrl, _ = _aligned_ctrl(tmp_path, monkeypatch)
+    ctrl.dispatch("set_fullwidth", {"value": True})
+    text, _report = ctrl.render()
+    seg_text = "".join(s["text"] for s in ctrl.snapshot()["segments"])
+    assert text == seg_text
+    assert "　" in text and "    " not in text      # 전각으로 치환됨
+    ctrl.dispatch("set_fullwidth", {"value": False})
+    assert "    " in ctrl.render()[0]                    # 되돌리면 원문 그대로
+
+
+def test_fullwidth_dies_with_the_source_it_judged(tmp_path, monkeypatch):
+    """치환은 그 원문에 대한 판단 — 원문이 바뀌면 함께 죽는다(txt 동형, 조용한 승계 금지)."""
+    ctrl, _ = _aligned_ctrl(tmp_path, monkeypatch)
+    ctrl.dispatch("set_fullwidth", {"value": True})
+    ctrl.dispatch("paste_template", {"text": "새 원문 {{토큰}}"})
+    assert ctrl.snapshot()["lint"]["applied"] is False
+    ctrl.dispatch("set_fullwidth", {"value": True})
+    ctrl.dispatch("fresh", {})
+    assert ctrl.snapshot()["lint"]["applied"] is False

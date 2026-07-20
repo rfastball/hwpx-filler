@@ -400,13 +400,18 @@ class QuickDraftViewModel:
 
         - ``edited``: 결속인데 사람이 직접 고친 값 — 새 행에서도 그대로 남아 **혼합**이 된다.
         - ``manual``: 무결속 수기 값 — 유지되며 고지 대상.
+        - ``bound``: 결속·무수정 — 교체·행 이동에선 조용히 재생성되므로 말할 것이 없지만,
+          **해제(clear)에서는 이야기가 다르다**: :meth:`clear_data` 가 이들을 평문으로
+          동결시켜 소유권이 「자동」에서 「직접 입력」으로 통째 넘어간다(#134). 값이 눈에
+          남으니 조용한 소실은 아니나, 전이가 무언이면 사용자는 화면의 값이 여전히
+          데이터에서 온다고 믿는다. 어느 제스처에서 이 목록을 쓸지는 컨트롤러가 정한다.
 
-        결속·무수정은 관계에서 조용히 재생성되므로 여기 담기지 않는다. 표면은 이 분류로
-        가드 문안을 합성한다(판정은 링1, 문안 합성은 컨트롤러).
+        표면은 이 분류로 가드 문안을 합성한다(판정은 링1, 문안 합성은 컨트롤러).
         """
         return {
             "edited": [t.name for t in self.tokens if t.col and t.edited],
             "manual": [t.name for t in self.tokens if not t.col and t.text.strip() != ""],
+            "bound": [t.name for t in self.tokens if t.col and not t.edited],
         }
 
     # ------------------------------------------------- 휘발도 가드(PR-4, 결정 32·34)

@@ -84,10 +84,15 @@
     const revert = t.state === "hand"
       ? `<button class="btn sm qd-revert" id="qdRevert-${i}" data-i="${i}">자동으로 되돌리기</button>`
       : "";
+    // 결정 34 문언은 `토큰|소스→표시형` — **방향 화살표**가 문법의 일부다(값이 소스에서
+    // 표시형을 거쳐 나온다는 진술). 구현에 그것이 빠져 두 드롭다운이 나란한 동급으로
+    // 읽혔다(#134). 머리줄 병합(속줄 ↳ 폐지)은 이 이슈 자신이 표지 라운드로 미룬 판단이라
+    // 여기서 바꾸지 않는다 — 화살표는 표시형이 실제로 뜰 때만 세운다(없는 단계 암시 금지).
+    const arrow = fmtSel ? `<span class="qd-arrow" aria-hidden="true">→</span>` : "";
     return `<div class="qd-pipe"><span class="qd-elbow" aria-hidden="true">↳</span>` +
       `<select class="field sm qd-src" id="qdSrc-${i}" data-i="${i}" aria-label="${esc(t.name)} 데이터 열">` +
       `<option value="">(직접 입력)</option>${cols}</select>` +
-      `${fmtSel}${revert}</div>`;
+      `${arrow}${fmtSel}${revert}</div>`;
   }
 
   /* 근사 제안(결정 30) — 자동으로 붙지 않는다. 보이는 제안 + 원클릭이 규칙이다. */
@@ -147,11 +152,36 @@
       : "채움 표지를 껐습니다. 지금 보이는 그대로 복사됩니다.";
   }
 
+  /* 선언-조건부 정렬 린트(결정 17 · #134 (g) 합류) — txt 큐와 **같은 술어·같은 처방**이다.
+     판정은 Python(lint.active/applied)이 하고 여기선 문안만 입힌다: 글꼴 이름으로 비례폭을
+     재판별하거나 공백 런 정규식을 다시 걷지 않는다(파생경계 번역오류 차단). 문안도 txt 와
+     같은 문장을 쓴다 — 같은 사실을 두 화면이 다르게 말하면 어느 쪽이 참인지 알 수 없다. */
+  function lintHtml(lint) {
+    if (!lint.active) return "";
+    const applied = !!lint.applied;
+    const msg = applied
+      ? "전각 공백으로 치환했습니다. 어느 글꼴에서도 정렬이 유지되며, 복사되는 텍스트도 " +
+        "지금 보이는 그대로입니다."
+      : "정렬 취약: 연속 공백으로 맞춘 정렬은 선언된 비례폭 글꼴에서 흐트러질 수 있습니다. " +
+        "한글과 전각 공백은 모든 글꼴에서 폭이 같아 견고합니다.";
+    // 처방 버튼 id 는 두 상태에서 같다 — 누르면 곧바로 재렌더되는데 id 가 바뀌면 preserve.js
+    // 가 포커스를 복원할 대상을 잃는다(txt 선례).
+    return `<p class="note qd-lint" data-level="${applied ? "ok" : "warn"}">` +
+      `<span class="txt">${msg}</span>` +
+      `<button class="btn sm" id="qdLintAction" data-act="${applied ? "undo" : "fix"}">` +
+      `${applied ? "되돌리기" : "전각 공백으로 치환"}</button></p>`;
+  }
+
   function rightPaneHtml(s) {
     const right = tab === "source"
       ? `<textarea class="qd-srcedit" id="qdSrc" aria-label="템플릿 원문">${esc(s.template_text)}</textarea>` +
         `<p class="qd-prevnote">여기서 고친 템플릿은 이 세션의 사본입니다. 라이브러리는 바뀌지 않습니다.</p>`
-      : `<pre class="wc-render f-malgun" id="qdRender">${previewInner(s)}</pre>` +
+      // 대상 글꼴 선언(결정 17 · #134)은 **전역 영속**이라 이 화면도 추종한다. 하드코딩된
+      // f-malgun 은 사용자가 굴림체로 선언해도 여기만 다른 글꼴로 그려서, 바로 아래
+      // "이대로 복사됩니다"의 정직성을 갉았다. 폭 성질 판정은 Python 몫 — 여기선 클래스만.
+      : `<pre class="wc-render f-${esc(s.target_font || "gulimche")}" id="qdRender">` +
+        `${previewInner(s)}</pre>` +
+        lintHtml(s.lint || {}) +
         `<p class="qd-prevnote" id="qdPrevNote">${previewNoteText()}</p>`;
     // 표지 토글은 미리보기 탭에서만 뜬다(원문 편집엔 표지가 없다). aria-pressed 로 상태 낭독.
     const toggle = tab === "source" ? "" :
@@ -279,7 +309,9 @@
 
   function setPill(s) {
     const pill = $("qdStatus");
-    if (!s.template_text) { pill.dataset.level = "idle"; pill.textContent = "세션 휘발 · 저장 없음"; return; }
+    // 휘발 표지(#qdVolatile)는 이 알약과 **별개로 상시** 산다(#134) — 종전엔 한 자리를
+    // 나눠 써서 내용이 생기는 순간 휘발 신호가 꺼졌다(잃을 것이 생긴 시점에 경고 소멸).
+    if (!s.template_text) { pill.dataset.level = "idle"; pill.textContent = "비어 있음"; return; }
     const un = s.unfilled_count || 0;
     if (un) { pill.dataset.level = "warn"; pill.textContent = `미채움 ${un}`; }
     else { pill.dataset.level = "ok"; pill.textContent = "전량 채움"; }
@@ -465,6 +497,13 @@
       const note = $("qdPrevNote");  // 범례가 표지보다 오래 살지 않게 함께 갱신(리뷰 F5)
       if (note) note.textContent = previewNoteText();
       mt.setAttribute("aria-pressed", String(markers));
+    });
+    // 정렬 린트 처방(#134 (g)) — 치환은 **세션 렌더 옵션**이라 서버가 소유한다(미리보기와
+    // 클립보드가 한 통로를 지나게). 편집 중이면 DOM 값을 흡수한 뒤 보내 마지막 글자 보존.
+    const la = $("qdLintAction");
+    if (la) la.addEventListener("click", () => {
+      syncEditsIntoLast();
+      Bridge.call(SCREEN, "set_fullwidth", { value: la.dataset.act === "fix" });
     });
   }
 
