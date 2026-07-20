@@ -566,6 +566,20 @@ def test_blank_declared_field_token_is_unresolved(tmp_path):
     assert vm.unresolved_name_tokens() == ["추정가격"]
 
 
+def test_name_token_gate_points_at_a_screen_that_exists(tmp_path):
+    """게이트 문안이 사망한 화면을 지시하지 않는다(#128) — 「작업 에디터」는 결정 39·40 으로 사망.
+
+    같은 자리 드리프트 배너는 이미 "편집에서…"로 개정돼 있었다. 두 danger 가 같은 목적지를
+    다르게 부르면 둘 중 하나는 반드시 존재하지 않는 곳을 가리킨다.
+    """
+    vm = RunViewModel(_job_with_pattern(tmp_path, "공고서-{{ID}}"))
+    vm.datasource = _Src()
+    vm.records = vm.datasource.records()
+    text = vm.refresh([0, 1], str(tmp_path / "out")).gate.text
+    assert "작업 에디터" not in text, f"사망한 화면을 지시합니다: {text!r}"
+    assert "편집에서 파일명 패턴을 고쳐야" in text, text
+
+
 def test_mapped_and_reserved_tokens_open_gate(tmp_path):
     """매핑 커버 토큰·예약 토큰({{date}}/{{seq}})·기본 패턴은 게이트를 닫지 않는다(F34b)."""
     from hwpxfiller.core.job import DEFAULT_FILENAME_PATTERN

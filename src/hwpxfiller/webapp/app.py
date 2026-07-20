@@ -639,6 +639,19 @@ _JOB_MIRROR_PROBE_JS = r"""
     out.drift_no_table = !document.querySelector('#jobMirror table.mir');
     // danger 차단 중엔 재진술 블록을 숨긴다 — "생성 불가" 배너와 "N건 생성" 모순 방지(리뷰).
     out.restate_hidden_on_drift = getComputedStyle(document.getElementById('jobRestate')).display === 'none';
+    // 파일명 토큰 danger(#128) — 드리프트와 **같은 자리·같은 형상**으로 서는지. 거울이 「채움」
+    // 표를 그려 건강해 보이고 재진술은 사라지는(신호 없는 차단) 회귀의 핀.
+    snap.drift = []; snap.name_tokens = ['납품기한'];
+    snap.mirror = [{name:'공고명', state:'filled', acknowledged:false, value:'전산장비', formatted:false}];
+    snap.gate = {enabled:false, level:'danger', text:'파일명 패턴의 토큰이…'};
+    window.__push('job', snap);
+    out.token_banner = !!document.querySelector('#jobMirror .mir-drift[role="alert"]');
+    out.token_fix_link = !!document.querySelector('#jobMirror [data-act="fix-filename"]');
+    out.token_no_table = !document.querySelector('#jobMirror table.mir');
+    out.token_banner_text = (function(){ var b = document.querySelector('#jobMirror .mir-drift');
+      return b ? b.textContent : ''; })();
+    out.token_restate_hidden = getComputedStyle(document.getElementById('jobRestate')).display === 'none';
+    snap.name_tokens = [];
     // 덮어쓰기 확인 본문 합성(수치·이름 배치) 되읽기 — 백엔드 overwrite_text 단언 폐기의 커버리지
     // 짝(리뷰). overwrite_count/new_count 스왑·이름 목록 누락이 여기서 잡힌다.
     out.ow_body = window.JobScreen.overwriteBody(
