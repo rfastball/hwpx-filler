@@ -3,7 +3,15 @@
 from __future__ import annotations
 
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
-from hwpxfiller.core.text_render import render_record, template_fields
+from hwpxfiller.core.text_render import (
+    SEG_BLANK,
+    SEG_FILL,
+    SEG_LITERAL,
+    SEG_MISSING,
+    render_record,
+    render_segments,
+    template_fields,
+)
 
 
 def test_basic_substitution_and_labeled_items():
@@ -56,4 +64,50 @@ def test_profile_supplies_display_format_then_pure_substitution():
     tpl = "예산: {{배정예산}} / 개찰: {{개찰일시}}"
     text, report = render_record(tpl, record)
     assert text == "예산: 150,000,000원 / 개찰: 2026-06-15"
+    assert not report.has_issues
+
+
+# ------------------------------------------------ 채움 표지 삼분(결정 22·33) — render_segments
+def test_segments_three_way_marking():
+    """원문/채움/미채움 + 빈값 4종 — 종류와 원문 텍스트가 정확히 분류된다."""
+    tpl = "1. 건명: {{건명}}\n2. 기한: {{기한}}\n3. 담당: {{담당}}"
+    rec = {"건명": "복사용지 구매", "기한": ""}  # 담당=미채움(레코드에 없음)
+    segments, report = render_segments(tpl, rec)
+    got = [(s.kind, s.text, s.name) for s in segments]
+    assert got == [
+        (SEG_LITERAL, "1. 건명: ", ""),
+        (SEG_FILL, "복사용지 구매", "건명"),
+        (SEG_LITERAL, "\n2. 기한: ", ""),
+        (SEG_BLANK, "", "기한"),
+        (SEG_LITERAL, "\n3. 담당: ", ""),
+        (SEG_MISSING, "{{담당}}", "담당"),
+    ]
+    assert report.missing_fields == ["담당"]
+    assert report.empty_fields == ["기한"]
+
+
+def test_segments_text_join_equals_render_record():
+    """불변식: 세그먼트 텍스트 연결 == render_record 텍스트(표지는 앱 렌더 전용·평문 불변)."""
+    tpl = "{{a}} 사이 {{b}} 끝 {{c}}"
+    rec = {"a": "값A", "b": ""}  # c 미채움
+    segments, _ = render_segments(tpl, rec)
+    text, _ = render_record(tpl, rec)
+    assert "".join(s.text for s in segments) == text
+
+
+def test_segments_adjacent_tokens_no_empty_literal():
+    """토큰이 붙어 있으면 빈 literal 조각을 내지 않는다(양끝·사이 모두)."""
+    segments, _ = render_segments("{{a}}{{b}}", {"a": "1", "b": "2"})
+    assert [(s.kind, s.text) for s in segments] == [(SEG_FILL, "1"), (SEG_FILL, "2")]
+
+
+def test_segments_consecutive_literals_merged():
+    """토큰 없는 순수 원문은 literal 한 조각으로 합쳐진다."""
+    segments, _ = render_segments("머리말만 있는 문장", {})
+    assert [(s.kind, s.text) for s in segments] == [(SEG_LITERAL, "머리말만 있는 문장")]
+
+
+def test_segments_empty_template_yields_nothing():
+    segments, report = render_segments("", {})
+    assert segments == []
     assert not report.has_issues

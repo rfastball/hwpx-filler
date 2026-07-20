@@ -21,6 +21,13 @@ from hwpxcore.atomic import write_text_atomic
 
 VALID_THEMES = ("system", "light", "dark")
 
+# 대상 글꼴 선언(R-flow 블록 3 결정 17) — 붙여넣는 곳(기안작성기)의 표준 글꼴. 클립보드
+# 평문은 글꼴을 운반하지 않으므로(글꼴=목적지 소유) 이건 원문 렌더가 미리 따를 글꼴일 뿐이고,
+# 열거형 3종이 공문 타이포를 사실상 전부 커버한다(굴림·돋움=고정폭, 맑은고딕=비례폭). 값은
+# 배치가 아니라 전역 영속(워드프로세서 멘탈 모델 — 문서 위 툴바 드롭다운). 린트는 선언-조건부:
+# 비례폭 선언에서만 연속 공백 정렬 경보(한글·전각은 전 글꼴 균일폭이라 견고).
+VALID_DRAFT_FONTS = ("gulimche", "dotumche", "malgun")
+
 _READ_RETRIES = 5   # 일시 판독 충돌(AV 스캔·원자 교체 순간의 공유 위반) 흡수 상한 — save 측과 대칭
 _REPLACE_RETRIES = 5  # Windows 공유 위반(아래) 일시 충돌 흡수 상한 — 총 ~0.5s
 
@@ -132,6 +139,24 @@ def save_theme(mode: str) -> None:
     if mode not in VALID_THEMES:
         raise ValueError(f"유효하지 않은 테마: {mode!r} (허용: {VALID_THEMES})")
     _save_key("theme", mode)
+
+
+def load_draft_target_font() -> str:
+    """저장된 대상 글꼴 선언 — ``VALID_DRAFT_FONTS`` 중 하나. 미저장·비유효 시 기본 굴림체.
+
+    기본이 굴림체인 이유: 공문 표준 고정폭이라 연속 공백 정렬이 정당한 저작이고(린트 침묵),
+    비례폭(맑은고딕)을 기본으로 두면 첫 화면부터 정렬 경보가 서는 역효과가 난다."""
+    font = _read().get("draft_target_font")
+    return font if font in VALID_DRAFT_FONTS else "gulimche"
+
+
+def save_draft_target_font(font: str) -> None:
+    """대상 글꼴 선언 영속 — 비유효 값은 조용히 무시하지 않고 ``ValueError`` (confirm-or-alarm).
+
+    보존·원자성·재시도 계약은 :func:`_save_key` 공용 몸통이 진다(테마·접힌 그룹과 동형)."""
+    if font not in VALID_DRAFT_FONTS:
+        raise ValueError(f"유효하지 않은 대상 글꼴: {font!r} (허용: {VALID_DRAFT_FONTS})")
+    _save_key("draft_target_font", font)
 
 
 def load_job_collapsed_groups() -> "list[str]":
