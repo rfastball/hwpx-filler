@@ -101,9 +101,9 @@ class RowState:
 
         소유권 해제(touched/confirmed)만으로는 부족하다(리뷰 R1 동류): 유형·상수·표시형이
         남으면 이후 재제안이 소스만 얹어 '제안 표시 ≠ 실제 출력(옛 상수 방출)' 하이브리드가
-        된다. 세 강등 경로(``revert_to_auto``·``apply_active_sources`` R4·구판
-        ``ignore_source``)가 전부 이 정의로 착지해 관문 간 상태 불일치를 막는다. 소스
-        재제안은 호출측 소관(단일 행=``resuggest_row``, 집합=다음 활성 변화)."""
+        된다. 두 강등 경로(``revert_to_auto``·``apply_active_sources`` R4)가 전부 이 정의로
+        착지해 관문 간 상태 불일치를 막는다(구판 ``ignore_source`` 는 관문 단일화로 소멸).
+        소스 재제안은 호출측 소관(단일 행=``resuggest_row``, 집합=다음 활성 변화)."""
         self.touched = False
         self.confirmed = False
         self.source = ""
@@ -306,12 +306,20 @@ class MappingModel:
         }
         self._score_row(row, drafts.get(row.template_field))
 
-    def apply_active_sources(self, active_sources: "list[str]") -> "list[str]":
+    def apply_active_sources(
+        self, active_sources: "list[str]", *, vocabulary: "list[str] | None" = None
+    ) -> "list[str]":
         """활성 소스 집합 변경을 반영한다(칩-라이브 결정 12·13 — 헤더 사용/미사용의 단일 관문).
 
         - **시스템 소유 행**(미확정·미접촉): 활성 헤더 중 최선으로 **라이브 재제안**(조용).
         - **사람 소유 행**(확정·touched)의 소스가 **비활성이 되면 시끄러운 강등**(R4):
           ``source=""`` · ``confirmed=False`` · ``touched=False`` 로 되돌리고 이름을 반환한다.
+
+        ``vocabulary``(현재 데이터의 전체 헤더)를 주면 강등은 **어휘 안 소스**로 한정된다
+        (PR-3 리뷰 F1): 어휘 밖 소스를 겨눈 사람 소유 행(이월된 stale — 뷰가 「데이터에 없음」
+        으로 이미 시끄럽게 표시)은 헤더 칩 조작과 무관하므로 건드리지 않는다 — 전집합 강등이면
+        무관한 칩 토글 한 번에 이월 값이 소실되고 통지는 끈 적 없는 헤더를 지목한다(오귀속).
+        None(기본)이면 종전 거동(활성 밖 전부 강등) — 어휘 개념이 없는 호출측 호환.
 
         **순서가 계약이다**(리뷰 R3): 재제안을 **먼저** 하고 강등을 **나중**에 한다. 그러면
         강등된 사람 소유 행은 ``source=""`` 로 **비어 남는다** — 재제안이 다른 그럴싸한 소스를
@@ -328,39 +336,22 @@ class MappingModel:
         부분 리셋일 이유가 없다).
         """
         active_set = set(active_sources)
+        vocab = set(vocabulary) if vocabulary is not None else None
         self._resuggest_system_rows(active_sources)  # 1) 항상 시스템이던 행만 재제안(강등 전)
         demoted: "list[str]" = []
         for row in self.rows:  # 2) 사람 소유 행 R4 강등 — 비운 채 남긴다(재제안 안 함)
-            if row.is_human_owned() and row.source and row.source not in active_set:
+            if (
+                row.is_human_owned()
+                and row.source
+                and row.source not in active_set
+                and (vocab is None or row.source in vocab)  # 어휘 밖 stale 은 불건드림(F1)
+            ):
                 row.reset_to_system()
                 demoted.append(row.template_field)
         return demoted
 
-    def ignore_source(self, source: str) -> "list[str]":
-        """소스 헤더 1개를 '미사용'으로 전환 — 그 소스를 쓰던 행을 해제한다(#49).
-
-        **구판 경로 전용(한시)**: 헤더 사용/미사용의 정본 관문은 :meth:`apply_active_sources`
-        (칩-라이브 결정 12·13)이며, 본 메서드는 아직 그리로 재배선되지 않은 기존 에디터
-        표면(``screen_editor._apply_active``)만 소비한다 — 재배선 PR 에서 제거된다.
-
-        **착지 상태는 신판 강등 정의와 동일**(:meth:`RowState.reset_to_system` — 리뷰 반영):
-        구판이 touched·유형·상수를 남기면 ①사람소유-빈 좀비(어느 신판 관문도 재제안·강등
-        불가, 필드 영구 조용한 공백) ②잔존 상수의 하이브리드 방출이 생긴다. 그래서 구판
-        표면 거동(그 소스를 쓰던 행만 해제·재검토 강제·영향 이름 재진술)은 유지하되, 행의
-        착지는 시스템 소유 완전 리셋으로 통일한다(유형·표시형 커스텀도 함께 초기화 — 재검토
-        강제의 정직한 형태).
-
-        빈 소스("")는 무시한다 — const·blank·미매칭 행은 모두 ``source==""`` 이라, 빈
-        문자열을 소스로 받으면 무관한 행을 무더기 해제한다(공개 메서드의 값싼 보험).
-        """
-        if not source:
-            return []
-        affected: "list[str]" = []
-        for row in self.rows:
-            if row.source == source:
-                row.reset_to_system()
-                affected.append(row.template_field)
-        return affected
+    # 구판 ignore_source(헤더별 무차별 해제)는 칩-라이브 재배선으로 소비자가 소멸해 제거됐다
+    # — 헤더 사용/미사용의 유일 관문은 apply_active_sources(결정 12·13).
 
     # --------------------------------------------------- 대량 확정 게이트(UD-05)
     # '모두 확정'은 ADR-D 의 '고신뢰 매칭 일괄 수락'만 담당한다: 내용 있는 행만
