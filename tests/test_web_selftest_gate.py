@@ -271,6 +271,12 @@ class TestWebSelftestGate:
         assert selftest_result["job_mirror"]["reapply_hidden"] is True, (
             "reapply_available=false 인데 「직전 필터 재적용」 버튼이 계속 떠 있습니다."
         )
+        # 무엇이 설치되는지 업고 있는가(#127) — 게이트를 3연언으로 좁혀 파괴는 막았지만,
+        # 버튼이 여전히 "직전 필터"라고만 말하면 사용자는 누르기 전엔 알 수 없다.
+        assert "(공고명) 포함 「전산」" in selftest_result["job_mirror"]["reapply_title"], (
+            "「직전 필터 재적용」 버튼이 설치할 정의를 업고 있지 않습니다: "
+            f"{selftest_result['job_mirror']['reapply_title']!r}"
+        )
 
     def test_job_list_groups_render_collapse_and_menu(self, selftest_result: dict) -> None:
         # 좌 목록 그룹·관리 메뉴(결정 43, A안: 구획 안 그룹) — 합성 구획 스냅샷을 실 render()

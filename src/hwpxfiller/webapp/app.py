@@ -583,7 +583,10 @@ _JOB_MIRROR_PROBE_JS = r"""
                {index:1, selected:true, name:'doc-002.hwpx', summary:'사무비품'}],
       // 필터 표면(블록 4, 슬라이스 4 PR-2b) — 검색 「전산」이 공고명 가지에 선 상태를 합성:
       // 가시 1행(하이라이트 세그먼트) + 필터 밖 선택 1행(스트립) + 유래 수치 병기(S4).
-      filter:{active:true, reapply_available:true, search:'전산',
+      // reapply_available 는 여기서만 active 와 공존한다 — 실모델의 3연언(#127)은 현 필터가
+      // 빈 상태에서만 켜므로 이 조합은 합성이다. 어포던스 배선(켜짐/꺼짐·title)만 되읽는다.
+      filter:{active:true, reapply_available:true, reapply_hint:'(공고명) 포함 「전산」',
+              search:'전산',
               chips:['(공고명) 포함 「전산」'],
               definition:'(공고명) 포함 「전산」', branches:['공고명'],
               columns:[{name:'공고명', kind:'text', active:false},
@@ -648,6 +651,8 @@ _JOB_MIRROR_PROBE_JS = r"""
     // 직전 필터 재적용 버튼(결정 28) — reapply_available 스냅샷이 어포던스를 실제로 켜고 끈다.
     // 양 분기 모두 핀(리뷰 #3): 켜짐만 고정하면 "항상 떠 있는 죽은 버튼" 회귀가 초록으로 샌다.
     out.reapply_shown = getComputedStyle(document.getElementById('jobFilterReapply')).display !== 'none';
+    // 버튼이 설치할 정의를 업고 있는가(#127) — "무엇이 설치되는지 말하지 않는 버튼" 회귀 핀.
+    out.reapply_title = document.getElementById('jobFilterReapply').title;
     snap.filter.reapply_available = false;
     window.__push('job', snap);
     out.reapply_hidden = getComputedStyle(document.getElementById('jobFilterReapply')).display === 'none';
