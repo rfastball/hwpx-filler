@@ -925,6 +925,59 @@ _QUICKDRAFT_PROBE_JS = r"""
     // 껍데기 격리 — 빠른 기안 폼(qd-trow)이 작업 화면 데이터 존 DOM 으로 새지 않는다(id 분리).
     // jobTableBody 는 앞선 job 프로브가 채우므로 '빈가'가 아니라 '누출 없음'으로 판정한다.
     out.job_body_untouched = !document.querySelector('#jobTableBody .qd-trow');
+    // 양성/음성 대조(계측 리트머스) — 클래스 토큰이 아니라 **실제 표시 여부**를 잰다.
+    // 데이터가 없는 지금은 「데이터 해제」·경보 상자가 화면에서 사라져 있어야 한다.
+    var vis = function (id) {
+      var el = document.getElementById(id);
+      return !!(el && el.offsetParent !== null);
+    };
+    out.clear_visible_before = vis('qdBtnClearData');
+    out.note_visible_before = vis('qdNote');
+
+    // ---- PR-3: 데이터 선택 스냅샷 — 경량 슬롯(라벨·행 스테퍼)·파이프라인 2열·근사 제안이
+    // 실 WebView2 에서 그려지는지 되읽는다(결정 30·31·34).
+    var aimed = {
+      origin:'lib', template_name:'개찰참관보고',
+      template_text:'제목: {{사업명}}\n금액: {{추정가격}}', modified:false,
+      tokens:[{name:'사업명', state:'auto', value:'행정정보시스템', col:'사업명',
+               fmt_kind:'text', fmt_code:'', suggest:''},
+              {name:'추정가격', state:'blank', value:'', col:'',
+               fmt_kind:'text', fmt_code:'', suggest:'추정가격(원)'}],
+      segments:[{text:'제목: ', kind:'literal', name:''},
+                {text:'행정정보시스템', kind:'fill', name:'사업명'},
+                {text:'\n금액: ', kind:'literal', name:''},
+                {text:'{{추정가격}}', kind:'missing', name:'추정가격'}],
+      missing_fields:['추정가격'], empty_fields:[], unfilled_count:1,
+      has_data:true, data_label:'낙찰현황.csv', data_kind:'file',
+      data_source_label:'파일: 낙찰현황.csv',
+      columns:['사업명','추정가격(원)'], record_count:12, row_idx:2,
+      row_label:'행정정보시스템 유지보수',
+      fmt_options:{text:[{code:'', label:'그대로'}], date:[], amount:[], const:[]}
+    };
+    window.__push('quickdraft', aimed);
+    out.data_label_text = document.getElementById('qdDataLine').textContent;
+    // 행 스테퍼 — 양끝이 아니면 두 버튼 다 살아 있다(경계에서만 disabled).
+    var prev = document.getElementById('qdRowPrev'), next = document.getElementById('qdRowNext');
+    out.stepper = !!prev && !!next && !prev.disabled && !next.disabled;
+    out.clear_visible = vis('qdBtnClearData');
+    // 교체로 굳은 자리 경보가 실제로 보이는지(문구는 Python 이 합성) — 지금 스냅샷엔 없다.
+    out.note_visible = vis('qdNote');
+    // 파이프라인 2열 — 결속 토큰은 소스 select 가 그 열을 고른 채 뜨고 표시형이 함께 산다.
+    var src0 = document.getElementById('qdSrc-0');
+    out.src0 = src0 ? src0.value : null;
+    out.fmt0 = !!document.getElementById('qdFmt-0');
+    // 무결속 토큰: 소스는 (직접 입력), 표시형 없음(dead control 금지), 근사 제안 버튼 존재.
+    var src1 = document.getElementById('qdSrc-1');
+    out.src1 = src1 ? src1.value : null;
+    out.fmt1 = !!document.getElementById('qdFmt-1');
+    out.suggest1 = !!document.getElementById('qdTake-1');
+    out.suggest_text = (document.querySelector('#qdBody .qd-suggest') || {}).textContent || '';
+    // 경보 되읽기 — frozen_notice 가 실리면 상자가 뜨고 문구가 그대로 선다(알람 갈래).
+    var alarmed = JSON.parse(JSON.stringify(aimed));
+    alarmed.frozen_notice = '바뀐 데이터에 없는 열이라 1개 자리(추정가격)의 값이 이전 값 그대로 굳었습니다.';
+    window.__push('quickdraft', alarmed);
+    out.note_visible_after = vis('qdNote');
+    out.note_text = document.getElementById('qdNote').textContent;
     out.error = null;
   } catch (e) { out.error = String((e && e.message) || e); }
   return out;

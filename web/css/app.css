@@ -208,6 +208,16 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .qd-chip.auto{background:var(--fb-fill-bg);color:var(--a-primary)}
 .qd-chip.hand{background:var(--fb-blank-bg);color:var(--a-warn)}
 .qd-chip.blank{background:var(--a-window);color:var(--a-muted)}
+/* 파이프라인 2열(소스 → 표시형)·근사 제안 — 값 줄과 같은 들여쓰기라 "이 토큰의 속줄"로 읽힌다 */
+.qd-pipe,.qd-suggest{display:flex;align-items:center;gap:var(--sp-6);padding-left:var(--sp-16);
+  flex-wrap:wrap}
+.qd-pipe .field.sm{width:auto;max-width:200px;flex:none}
+.qd-suggest{font-size:var(--fs-caption);color:var(--a-muted)}
+/* 데이터 슬롯 — 겨눔 라벨 + 행 스테퍼(단건 표면의 행 재겨눔) */
+.qd-dataline{display:flex;align-items:center;gap:var(--sp-6);min-width:0;font-size:var(--fs-caption)}
+.qd-datalabel{font-weight:600;color:var(--a-ink);white-space:nowrap}
+.qd-rowpos{color:var(--a-muted);white-space:nowrap}
+.qd-rowlabel{color:var(--a-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
 .qd-vline{display:flex;align-items:flex-start;gap:var(--sp-6);padding-left:var(--sp-16)}
 .qd-elbow{color:var(--a-muted);flex:none;line-height:1.6}
 /* 출력칸 = 내용 크기 칩(결정 34, field-sizing) — 폭이 값의 실제 길이를 따른다. 미지원(폴백)은

@@ -223,6 +223,68 @@ def test_custom_modals_have_dialog_semantics():
         assert label_id in ids, f"{mid} 의 aria-labelledby 대상 id '{label_id}' 가 DOM 에 없습니다."
 
 
+# 숨김 관례(슬라이스 7 PR-3 리뷰): 이 앱의 CSS 에는 **일반 `.hidden` 규칙이 없다** —
+# `.modal.hidden{display:none}` 하나뿐이라 클래스 방식은 모달 전용이고, 그 밖의 숨김은
+# 전부 `hidden` **속성**이다. 다른 앱 습관대로 `class="hidden"` 을 붙이면 아무 일도 안
+# 일어나 요소가 계속 보인다 — 테두리만 남은 빈 경고 상자·항상 서 있는 dead 버튼이 되는데,
+# 눈으로 안 보면 모르는 결함이라(실제로 리뷰에서 처음 잡혔다) 정적으로 막는다.
+_HIDDEN_OK_JS = {"modal.js"}  # 모달 개폐 헬퍼만 클래스 토글의 임자
+_CLASS_ATTR_RE = re.compile(r"""class\s*=\s*\\?["']([^"']*)\\?["']""")
+_CLASSLIST_HIDDEN_RE = re.compile(r"""classList\s*\.\s*\w+\s*\(\s*["']hidden["']""")
+
+
+class _HiddenClassCollector(HTMLParser):
+    """``hidden`` 클래스를 단 요소를 (태그, id, class) 로 수집."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.found: "list[tuple[str, str, str]]" = []
+
+    def handle_starttag(self, tag, attrs):
+        d = {name: (value or "") for name, value in attrs}
+        classes = d.get("class", "").split()
+        if "hidden" in classes:
+            self.found.append((tag, d.get("id", ""), d.get("class", "")))
+
+
+def test_hidden_class_is_modal_only_elsewhere_use_the_attribute():
+    """`.hidden` 은 모달 전용 — 그 밖의 숨김은 `hidden` 속성이어야 한다(무효 클래스 차단).
+
+    세 갈래를 함께 본다: (a) CSS 에 일반 `.hidden` 규칙이 생기지 않았는가(생겼다면 관례가
+    바뀐 것이니 이 테스트부터 고쳐야 한다), (b) index.html 의 `class="… hidden …"` 이 전부
+    `.modal` 인가, (c) JS 가 modal.js 밖에서 hidden 클래스를 조작하거나 마크업에 심지 않는가.
+    """
+    css = WEB_CSS.read_text(encoding="utf-8")
+    generic = re.search(r"(?m)^\s*\.hidden\s*[,{]", css)
+    assert not generic, (
+        "일반 `.hidden` 규칙이 생겼습니다 — 숨김 기제가 둘(속성·클래스)로 갈라지면 어느 쪽이"
+        " 먹는지 사이트마다 달라집니다. 도입이 의도라면 이 가드와 관례 주석을 함께 고치세요."
+    )
+    assert ".modal.hidden" in css, "모달 숨김 규칙(.modal.hidden)이 사라졌습니다 — 모달이 항상 떠 있게 됩니다."
+
+    parser = _HiddenClassCollector()
+    parser.feed(WEB_INDEX.read_text(encoding="utf-8"))
+    strays = [f"<{tag} id={mid!r} class={cls!r}>" for tag, mid, cls in parser.found
+              if "modal" not in cls.split()]
+    assert not strays, (
+        "모달이 아닌 요소에 `hidden` 클래스가 붙었습니다 — 이 앱엔 일반 .hidden 규칙이 없어"
+        " **숨겨지지 않습니다**. `hidden` 속성을 쓰세요:\n" + "\n".join(strays)
+    )
+
+    offenders: "list[str]" = []
+    for js in sorted(WEB_JS_DIR.rglob("*.js")):
+        if js.name in _HIDDEN_OK_JS:
+            continue
+        text = js.read_text(encoding="utf-8")
+        for m in _CLASSLIST_HIDDEN_RE.finditer(text):
+            offenders.append(f"{js.name}: {m.group(0)} — el.hidden = … 로 바꾸세요")
+        for m in _CLASS_ATTR_RE.finditer(text):
+            classes = m.group(1).split()
+            if "hidden" in classes and "modal" not in classes:
+                offenders.append(f"{js.name}: class={m.group(1)!r} — hidden 속성을 쓰세요")
+    assert not offenders, "무효 hidden 클래스 사용:\n" + "\n".join(offenders)
+
+
 def test_responsive_breakpoint_collapses_layout():
     """좁은 폭 경계에서 2판 레이아웃이 세로 단일열로 접히는 규칙이 CSS 에 있어야 한다(#27).
 
@@ -310,14 +372,15 @@ def test_forced_colors_block_present_in_web_diff():
 
 # pickDataFile(=pick_data_file) 을 소비하는 모든 화면 — 브리지 반환 계약이 screen-불가지라
 # needs_sheet 분기를 처리해야 다중 시트가 첫 시트로 강등되지 않는다(리뷰 P1: txt 누락 회귀).
-DATA_PICK_SCREENS = ("editor", "txt", "job")  # run 사망(슬라이스 3); job 이 생성 표면
+DATA_PICK_SCREENS = ("editor", "txt", "job", "quickdraft")  # run 사망(슬라이스 3);
+# job=생성 표면 · quickdraft=휘발 표면의 임의 파일 선택(슬라이스 7 PR-3)
 
 
 def test_sheet_picker_loaded_and_wired_on_all_data_screens():
     """다중 시트 확정 게이트 배선 정적 가드(#33) — 조용한 첫 시트 로드 회귀 차단.
 
     실 시트 선택 거동(모달 개폐·확정 로드)은 Modal/브리지 계약 테스트가 본다 — 여기선
-    (a) 헬퍼·모달 골격 존재, (b) 데이터를 붙이는 **모든** 화면(에디터·실행·즉시기안)이
+    (a) 헬퍼·모달 골격 존재, (b) 데이터를 붙이는 **모든** 화면(에디터·작업·txt·빠른 기안)이
     pickDataFile 의 needs_sheet 를 받아 SheetPicker 로 확정을 태우는 배선이 살아있는지를 정적
     가드한다. pickDataFile 계약이 screen-불가지라, 한 화면이라도 이 분기를 떨구면 그 화면에서
     다중 시트가 조용히 첫 시트로 강등되는 회귀(리뷰 P1 재발 차단).

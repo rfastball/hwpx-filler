@@ -50,6 +50,7 @@ def test_snapshot_empty_session_shape(tmp_path):
     """빈 세션 = 휘발 그릇 초기 형상. 없는 걸 있는 척하지 않는다(confirm-or-alarm)."""
     ctrl, _ = _controller(tmp_path)
     snap = ctrl.snapshot()
+    fmt_options = snap.pop("fmt_options")  # 유형별 프리셋 표는 아래 별도 가드가 본다
     assert snap == {
         "origin": None,
         "template_name": None,
@@ -63,7 +64,14 @@ def test_snapshot_empty_session_shape(tmp_path):
         "has_data": False,
         "data_label": "",
         "data_kind": "",
+        "data_source_label": "",
+        "columns": [],
+        "record_count": 0,
+        "row_idx": 0,
+        "row_label": "",
+        "frozen_notice": "",
     }
+    assert set(fmt_options) == {"text", "date", "amount", "const"}
 
 
 def test_dispatch_unknown_action_raises(tmp_path):
@@ -155,6 +163,296 @@ def test_clipboard_text_keeps_unfilled_token_literal(tmp_path):
     snap = ctrl.dispatch("set_token", {"name": "사업명", "text": "행정정보시스템"})
     plain = "".join(s["text"] for s in snap["segments"])
     assert plain == "제목: 행정정보시스템 개찰 참관 보고\n금액: {{추정가격}}"
+
+
+# ------------------------------------------- 데이터 겨눔·제스처 결속·표현형(PR-3)
+
+def _csv(tmp_path: Path, name: str = "낙찰현황.csv") -> str:
+    """열 이름이 토큰과 정확히 같은 열·근사 열·금액 열을 섞은 2행 데이터."""
+    p = tmp_path / name
+    p.write_text(
+        "사업명,추정가격,수요기관명\n행정정보시스템,1234000,조달청\n통합관제,9900,서울시\n",
+        encoding="utf-8-sig",
+    )
+    return str(p)
+
+
+def _aimed(tmp_path) -> "tuple[QuickDraftController, list]":
+    ctrl, pushes = _controller(tmp_path)
+    (tmp_path / "기안.txt").write_text(
+        "{{사업명}} / {{추정가격}} / {{수요기관}}", encoding="utf-8"
+    )
+    ctrl.dispatch("select_template", {"name": "기안"})
+    ctrl.load_data_path(_csv(tmp_path))
+    return ctrl, pushes
+
+
+def test_load_data_path_aims_and_pushes(tmp_path):
+    """임의 파일 겨눔(결정 34) — 브리지 경로라 스스로 푸시하고, 라벨은 K8 합성 단일 출처."""
+    ctrl, pushes = _aimed(tmp_path)
+    snap = pushes[-1][1]
+    assert snap["has_data"] is True and snap["data_kind"] == "file"
+    assert snap["data_source_label"] == "파일: 낙찰현황.csv"
+    assert snap["columns"] == ["사업명", "추정가격", "수요기관명"]
+    assert snap["record_count"] == 2 and snap["row_idx"] == 0
+    assert snap["row_label"]  # 식별 요약 열 값 병기(행 스테퍼 재진술)
+
+
+def test_load_data_path_empty_is_loud_and_leaves_state(tmp_path):
+    """0행 파일은 시끄럽게 실패하고 세션은 불변 — 빈 데이터로 갈아엎지 않는다(단일 문구)."""
+    ctrl, _ = _controller(tmp_path)
+    empty = tmp_path / "빈.csv"
+    empty.write_text("사업명,추정가격\n", encoding="utf-8-sig")
+    with pytest.raises(ValueError) as exc:
+        ctrl.load_data_path(str(empty))
+    assert "행이 없습니다" in str(exc.value)
+    assert ctrl.snapshot()["has_data"] is False
+
+
+def test_exact_match_autobinds_near_match_only_suggests(tmp_path):
+    """결속 규칙(결정 30): 정확 일치=자동 · 근사=자동 금지 + 보이는 제안."""
+    ctrl, pushes = _aimed(tmp_path)
+    by_name = {t["name"]: t for t in pushes[-1][1]["tokens"]}
+    assert by_name["사업명"]["col"] == "사업명" and by_name["사업명"]["state"] == "auto"
+    assert by_name["사업명"]["value"] == "행정정보시스템"
+    # 「수요기관」 ⊄ 열 이름 정확 일치 — 자동 결속 금지, 제안만 뜬다(자모 부분일치 재사용).
+    assert by_name["수요기관"]["col"] == ""
+    assert by_name["수요기관"]["suggest"] == "수요기관명"
+    assert by_name["수요기관"]["state"] == "blank"
+
+
+def test_autobind_respects_hand_typed_value(tmp_path):
+    """수기 텍스트 존중 — 사람이 이미 친 값은 자동 결속이 덮지 않는다(조용한 소실 금지)."""
+    ctrl, pushes = _controller(tmp_path)
+    (tmp_path / "기안.txt").write_text("{{사업명}}", encoding="utf-8")
+    ctrl.dispatch("select_template", {"name": "기안"})
+    ctrl.dispatch("set_token", {"name": "사업명", "text": "손으로 친 값"})
+    ctrl.load_data_path(_csv(tmp_path))
+    t = pushes[-1][1]["tokens"][0]
+    assert t["col"] == "" and t["value"] == "손으로 친 값"
+
+
+def test_suggestion_one_click_binds_with_sniffed_format(tmp_path):
+    """제안 원클릭 = set_source — 결속 시 표현형 1층(열 유형 자동 추측)이 함께 깔린다."""
+    ctrl, pushes = _aimed(tmp_path)
+    ctrl.dispatch("set_source", {"name": "수요기관", "col": "수요기관명"})
+    by_name = {t["name"]: t for t in pushes[-1][1]["tokens"]}
+    assert by_name["수요기관"]["col"] == "수요기관명" and by_name["수요기관"]["value"] == "조달청"
+    # 금액 열은 스니핑이 amount 로 승격 → 기본 프리셋이 「1,234,000원」을 낸다(보이는 추측).
+    assert by_name["추정가격"]["fmt_kind"] == "amount"
+    assert by_name["추정가격"]["value"] == "1,234,000원"
+
+
+def test_set_fmt_corrects_expression_layer_two(tmp_path):
+    """표현형 2층 — 드롭다운 정정은 매핑과 같은 프리셋 코드로 값만 다시 그린다."""
+    ctrl, pushes = _aimed(tmp_path)
+    ctrl.dispatch("set_fmt", {"name": "추정가격", "code": "{:,}"})
+    by_name = {t["name"]: t for t in pushes[-1][1]["tokens"]}
+    assert by_name["추정가격"]["value"] == "1,234,000"
+
+
+def test_direct_edit_demotes_and_revert_restores(tmp_path):
+    """표현형 3층 강등과 그 **출구** — 막다른 강등 금지(결정 31)."""
+    ctrl, _ = _aimed(tmp_path)
+    snap = ctrl.dispatch("set_token", {"name": "사업명", "text": "사람이 고침"})
+    t = {x["name"]: x for x in snap["tokens"]}["사업명"]
+    assert t["state"] == "hand" and t["col"] == "사업명" and t["value"] == "사람이 고침"
+    ctrl.dispatch("revert_token", {"name": "사업명"})
+    t = {x["name"]: x for x in ctrl.snapshot()["tokens"]}["사업명"]
+    assert t["state"] == "auto" and t["value"] == "행정정보시스템"
+
+
+def test_set_row_reprojects_bound_and_keeps_human_values(tmp_path):
+    """행 재겨눔 3분류(결정 32): 결속·무수정=조용 재생성 · 직접 수정·수기=유지(혼합)."""
+    ctrl, pushes = _aimed(tmp_path)
+    ctrl.dispatch("set_token", {"name": "추정가격", "text": "협의"})  # 결속 값 직접 수정
+    ctrl.dispatch("set_token", {"name": "수요기관", "text": "직접 입력"})  # 무결속 수기
+    ctrl.dispatch("step_row", {"delta": 1})
+    snap = pushes[-1][1]
+    by_name = {t["name"]: t for t in snap["tokens"]}
+    assert by_name["사업명"]["value"] == "통합관제"  # 관계에서 재생성
+    assert by_name["추정가격"]["value"] == "협의"  # 사람 소유 — 유지(혼합)
+    assert by_name["수요기관"]["value"] == "직접 입력"
+
+
+def test_set_row_out_of_range_is_loud(tmp_path):
+    """번호 지정 재겨눔(스테퍼가 클램프해 부르는 링1 진입점)은 범위 밖을 조용히 자르지 않는다."""
+    ctrl, _ = _aimed(tmp_path)
+    with pytest.raises(ValueError):
+        ctrl.vm.set_row(9)
+
+
+def test_carry_notice_speaks_only_of_non_regenerating_values(tmp_path):
+    """고지는 재생성되지 않는 값만 말한다 — 결속·무수정만 있으면 무장하지 않는다(무의미 확인 금지)."""
+    ctrl, _ = _aimed(tmp_path)
+    assert ctrl.dispatch("carry_notice", {})["armed"] is False
+    ctrl.dispatch("set_token", {"name": "사업명", "text": "고침"})
+    g = ctrl.dispatch("carry_notice", {})
+    assert g["armed"] is True and g["edited"] == ["사업명"] and "사업명" in g["message"]
+
+
+def test_carry_notice_is_query_and_does_not_push(tmp_path):
+    """고지 질의는 무변이 — 재렌더를 유발하면 확인 창을 띄우는 사이 화면이 요동친다."""
+    ctrl, pushes = _aimed(tmp_path)
+    n = len(pushes)
+    ctrl.dispatch("carry_notice", {})
+    assert len(pushes) == n
+
+
+def test_clear_data_freezes_bound_values_as_plain_text(tmp_path):
+    """데이터 해제 = 결속 값 평문 동결(결정 30) — 화면이 곧 산출물이라 값이 증발하면 결과가 증발한다."""
+    ctrl, pushes = _aimed(tmp_path)
+    ctrl.dispatch("set_source", {"name": "수요기관", "col": "수요기관명"})
+    ctrl.dispatch("clear_data", {})
+    snap = pushes[-1][1]
+    assert snap["has_data"] is False and snap["data_source_label"] == ""
+    by_name = {t["name"]: t for t in snap["tokens"]}
+    assert by_name["추정가격"]["value"] == "1,234,000원"  # 표현형 적용 후 평문으로 동결
+    assert by_name["추정가격"]["state"] == "man" and by_name["추정가격"]["col"] == ""
+    assert "".join(s["text"] for s in snap["segments"]).startswith("행정정보시스템 / 1,234,000원")
+
+
+def test_unbind_one_token_also_freezes(tmp_path):
+    """토큰 하나만 손으로 떼어내도 값은 남는다 — 해제와 같은 규율(부분 소실 금지)."""
+    ctrl, pushes = _aimed(tmp_path)
+    ctrl.dispatch("set_source", {"name": "사업명", "col": ""})
+    t = {x["name"]: x for x in pushes[-1][1]["tokens"]}["사업명"]
+    assert t["col"] == "" and t["value"] == "행정정보시스템" and t["state"] == "man"
+
+
+def test_bind_unknown_column_is_loud(tmp_path):
+    """데이터에 없는 열 결속은 시끄럽게 거절 — 조용한 무결속 강등 금지."""
+    ctrl, _ = _aimed(tmp_path)
+    with pytest.raises(ValueError):
+        ctrl.dispatch("set_source", {"name": "사업명", "col": "없는열"})
+
+
+def test_bound_empty_cell_renders_blank_not_missing(tmp_path):
+    """결속인데 데이터가 빈칸 = blank(〈빈 값〉) · 아직 안 채운 자리 = missing({{토큰}}) — 다른 사실."""
+    ctrl, _ = _controller(tmp_path)
+    (tmp_path / "기안.txt").write_text("{{사업명}} / {{비고}}", encoding="utf-8")
+    ctrl.dispatch("select_template", {"name": "기안"})
+    p = tmp_path / "빈칸.csv"
+    p.write_text("사업명,비고\n행정정보시스템,\n", encoding="utf-8-sig")
+    ctrl.load_data_path(str(p))
+    snap = ctrl.snapshot()
+    kinds = {s.get("name"): s["kind"] for s in snap["segments"] if s["kind"] != "literal"}
+    assert kinds["비고"] == "blank"
+    assert {t["name"]: t["state"] for t in snap["tokens"]}["비고"] == "auto"
+
+
+def test_new_token_from_live_edit_autobinds(tmp_path):
+    """원문에 토큰을 더 쓰면 그 자리가 데이터에서 채워진다 — 승계 토큰의 소유권은 불변."""
+    ctrl, _ = _aimed(tmp_path)
+    ctrl.dispatch("set_source", {"name": "수요기관", "col": ""})
+    snap = ctrl.dispatch("edit_source", {"text": "{{사업명}} / {{수요기관명}}"})
+    by_name = {t["name"]: t for t in snap["tokens"]}
+    assert by_name["수요기관명"]["col"] == "수요기관명" and by_name["수요기관명"]["value"] == "조달청"
+
+
+def test_data_swap_freezes_dead_bindings_and_alarms(tmp_path):
+    """교체로 열이 없어진 결속은 평문 동결 + 경보(고효율 리뷰 P1).
+
+    그냥 두면 없는 열이 빈 문자열로 읽혀 blank(〈빈 값〉 = 데이터의 빈칸)로 렌더된다 —
+    열 자체가 없는데 "빈칸"이라 말하는 그럴싸한 거짓(결정 31의 엄격 유지 대상).
+    """
+    ctrl, pushes = _aimed(tmp_path)
+    other = tmp_path / "다른데이터.csv"
+    other.write_text("공고명,금액\n통합관제,500\n", encoding="utf-8-sig")
+    ctrl.load_data_path(str(other))
+    snap = pushes[-1][1]
+    by_name = {t["name"]: t for t in snap["tokens"]}
+    assert by_name["사업명"]["col"] == "" and by_name["사업명"]["state"] == "man"
+    assert by_name["사업명"]["value"] == "행정정보시스템"  # 동결(소실 금지)
+    assert "굳었습니다" in snap["frozen_notice"] and "사업명" in snap["frozen_notice"]
+    # 세그먼트에 blank(데이터 빈칸)가 섞이지 않는다 — 동결 값은 fill 이다.
+    kinds = {s.get("name"): s["kind"] for s in snap["segments"] if s["kind"] != "literal"}
+    assert kinds["사업명"] == "fill"
+
+
+def test_frozen_alarm_heals_when_rebound(tmp_path):
+    """낡은 경보는 그 자체로 거짓 — 다시 결속하면 경보가 스스로 사라진다."""
+    ctrl, pushes = _aimed(tmp_path)
+    other = tmp_path / "다른데이터.csv"
+    other.write_text("사업명,금액\n통합관제,500\n", encoding="utf-8-sig")
+    ctrl.load_data_path(str(other))  # 「추정가격」·「수요기관」 열 소멸, 「사업명」은 생존
+    assert "추정가격" in pushes[-1][1]["frozen_notice"]
+    ctrl.dispatch("set_source", {"name": "추정가격", "col": "금액", "confirm": True})
+    assert pushes[-1][1]["frozen_notice"] == ""
+
+
+def test_data_swap_resniffs_kind_of_surviving_binding(tmp_path):
+    """살아남은 결속의 열 유형은 새 데이터로 다시 스니핑한다 — 옛 amount 가 눌어붙지 않게."""
+    ctrl, pushes = _aimed(tmp_path)
+    other = tmp_path / "문자금액.csv"
+    other.write_text("사업명,추정가격,수요기관명\n통합관제,협의,서울시\n", encoding="utf-8-sig")
+    ctrl.load_data_path(str(other))
+    by_name = {t["name"]: t for t in pushes[-1][1]["tokens"]}
+    assert by_name["추정가격"]["fmt_kind"] == "text" and by_name["추정가격"]["value"] == "협의"
+
+
+def test_bind_over_hand_typed_value_asks_first(tmp_path):
+    """수기 값 덮어쓰기는 되돌릴 수 없다 — 확인을 받고 나서 실행한다(재진술 확인 후 허용)."""
+    ctrl, pushes = _controller(tmp_path)
+    (tmp_path / "기안.txt").write_text("{{수요기관}}", encoding="utf-8")
+    ctrl.dispatch("select_template", {"name": "기안"})
+    ctrl.dispatch("set_token", {"name": "수요기관", "text": "손으로 쓴 값"})
+    ctrl.load_data_path(_csv(tmp_path))
+    r = ctrl.dispatch("set_source", {"name": "수요기관", "col": "수요기관명"})
+    assert r and "손으로 쓴 값" in r["confirm"], "덮어쓸 값을 문안이 인용하지 않습니다."
+    t = {x["name"]: x for x in pushes[-1][1]["tokens"]}["수요기관"]
+    assert t["value"] == "손으로 쓴 값" and t["col"] == "", "확인 전에 이미 덮어썼습니다."
+    ctrl.dispatch("set_source", {"name": "수요기관", "col": "수요기관명", "confirm": True})
+    t = {x["name"]: x for x in pushes[-1][1]["tokens"]}["수요기관"]
+    assert t["col"] == "수요기관명" and t["value"] == "조달청"
+
+
+def test_detached_token_is_not_rebound_by_retokenize(tmp_path):
+    """손으로 끊은 결속은 다음 타이핑이 도로 붙이지 않는다 — 명시 제스처의 조용한 뒤집기 금지."""
+    ctrl, _ = _aimed(tmp_path)
+    ctrl.dispatch("set_source", {"name": "사업명", "col": ""})
+    snap = ctrl.dispatch("edit_source", {"text": "{{사업명}} / {{추정가격}} / {{신규}}"})
+    by_name = {t["name"]: t for t in snap["tokens"]}
+    assert by_name["사업명"]["col"] == "" and by_name["사업명"]["suggest"] == ""
+    assert by_name["추정가격"]["col"] == "추정가격"  # 손대지 않은 자리는 그대로
+
+
+def test_human_cleared_bound_value_renders_missing_not_blank(tmp_path):
+    """사람이 비운 자리는 missing({{토큰}}) — blank 로 그리면 빈칸의 임자를 거짓으로 말한다."""
+    ctrl, _ = _aimed(tmp_path)
+    snap = ctrl.dispatch("set_token", {"name": "사업명", "text": ""})
+    kinds = {s.get("name"): s["kind"] for s in snap["segments"] if s["kind"] != "literal"}
+    assert kinds["사업명"] == "missing"
+
+
+def test_carry_notice_wording_follows_the_gesture(tmp_path):
+    """한 문장을 세 동사에 돌려쓰지 않는다 — 해제 확인이 있지도 않은 「새 데이터」를 말하면 거짓."""
+    ctrl, _ = _aimed(tmp_path)
+    ctrl.dispatch("set_token", {"name": "사업명", "text": "고침"})
+    assert "새 데이터" in ctrl.dispatch("carry_notice", {"gesture": "swap"})["message"]
+    assert "새 행" in ctrl.dispatch("carry_notice", {"gesture": "row"})["message"]
+    clear = ctrl.dispatch("carry_notice", {"gesture": "clear"})["message"]
+    assert "새 데이터" not in clear and "굳습니다" in clear
+
+
+def test_manual_values_notify_without_blocking(tmp_path):
+    """무결속 수기 = 유지 + **고지**(가드 아님, 결정 32) — 매 행 이동마다 모달이 서면 반복이다."""
+    ctrl, _ = _aimed(tmp_path)
+    ctrl.dispatch("set_source", {"name": "수요기관", "col": ""})
+    ctrl.dispatch("set_token", {"name": "수요기관", "text": "직접 입력"})
+    g = ctrl.dispatch("carry_notice", {"gesture": "row"})
+    assert g["armed"] is False and "수요기관" in g["notice"]
+
+
+def test_step_row_computed_server_side_and_clamped(tmp_path):
+    """스테퍼는 델타를 받아 서버가 계산한다 — 양끝은 제자리(버튼이 이미 비활성인 자리)."""
+    ctrl, pushes = _aimed(tmp_path)
+    ctrl.dispatch("step_row", {"delta": 1})
+    assert pushes[-1][1]["row_idx"] == 1
+    ctrl.dispatch("step_row", {"delta": 1})  # 마지막 행에서 한 칸 더
+    assert pushes[-1][1]["row_idx"] == 1
+    ctrl.dispatch("step_row", {"delta": -5})
+    assert pushes[-1][1]["row_idx"] == 0
 
 
 def test_registered_in_frontend(tmp_path, monkeypatch):
