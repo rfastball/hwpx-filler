@@ -272,6 +272,29 @@ class TestWebSelftestGate:
             "reapply_available=false 인데 「직전 필터 재적용」 버튼이 계속 떠 있습니다."
         )
 
+    def test_job_list_groups_render_collapse_and_menu(self, selftest_result: dict) -> None:
+        # 좌 목록 그룹·관리 메뉴(결정 43, A안: 구획 안 그룹) — 합성 구획 스냅샷을 실 render()
+        # 에 흘려 그룹 헤더 3개(이름 그룹 2 + 「그룹 없음」)·접힌 그룹 행 뷰 제외·행/그룹 ⋮·
+        # 접힘 화살표 가시성 계약(결정 5: 접힌 그룹만 상시 노출)·메뉴 개폐를 되읽는다.
+        j = selftest_result["job_list_groups"]
+        assert j.get("error") is None, f"그룹 목록 프로브 예외: {j.get('error')!r}"
+        assert j["grp_heads"] == 3, f"그룹 헤더 수가 다릅니다: {j!r}"
+        assert j["rows_visible"] == 3, f"접힌 그룹 행이 뷰에서 제외되지 않았습니다: {j!r}"
+        assert j["grp_more"] == 2, "그룹 ⋮ 는 이름 그룹에만 있어야 합니다(「그룹 없음」 제외)."
+        assert j["row_more"] == 3, f"행 ⋮ 수가 가시 행 수와 다릅니다: {j!r}"
+        # 접힘 화살표: 접힌 그룹=상시 노출, 펼친 그룹=호버 전 은닉(결정 5 — visibility 자동 눈검증).
+        assert j["caret_collapsed"] == "visible", f"접힌 그룹 화살표가 상시 노출이 아닙니다: {j!r}"
+        assert j["caret_expanded"] == "hidden", f"펼친 그룹 화살표가 호버 전에 보입니다: {j!r}"
+        # 행 ⋮ 메뉴 — 실개방(항목 구성 포함) + 바깥 pointerdown 닫기.
+        assert j["menu_shown"] is True, "행 ⋮ 클릭에 메뉴가 열리지 않았습니다."
+        assert j["menu_items"] == ["edit", "clone", "rename", "move", "delete"], (
+            f"메뉴 항목 구성이 결정 43(편집·복제·이름 변경·그룹 이동·삭제)과 다릅니다: {j['menu_items']!r}"
+        )
+        assert j["menu_closed"] is True, "바깥 클릭에 메뉴가 닫히지 않았습니다."
+        assert j["move_modal_hidden"] is True, "그룹 이동 다이얼로그가 기본 닫힘이 아닙니다."
+        # 퇴화 불변식(결정 5) — 그룹 0개면 헤더·들여쓰기 없는 평면.
+        assert j["flat_heads"] == 0 and j["flat_rows"] == 1, f"퇴화 평면 위반: {j!r}"
+
     def test_job_edit_mode_hosts_definition_surface(self, selftest_result: dict) -> None:
         # 에디터 흡수(블록 2 개정, 결정 39~41) — 편집 모드 전환이 실 WebView2 에서 편집 호스트를
         # 켜고 세션 4존을 숨기며(배타 표시 = B-9 overlay/hidden 눈검증의 자동판), 이사한 정의

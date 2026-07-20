@@ -642,6 +642,64 @@ _JOB_MIRROR_PROBE_JS = r"""
 })()
 """
 
+# 「작업」 좌 목록 그룹·관리 메뉴(결정 43) — 합성 구획 스냅샷을 실 render() 에 흘려 그룹 헤더·
+# 접힘(뷰 제외)·⋮ 메뉴 실개방/바깥닫기·접힘 화살표 가시성(결정 5: 접힌 그룹 상시 노출)·퇴화
+# 불변식(그룹 0개=평면)을 실 WebView2 에서 되읽는다(부록 B-9 overlay/hidden 자동 눈검증 동형).
+_JOB_LIST_GROUP_PROBE_JS = r"""
+(function () {
+  var out = {};
+  try {
+    window.Nav.go('job');
+    var snap = {
+      job_rows: [{name:'물품 공고서', selected:false},{name:'물품 기안', selected:false},
+                 {name:'용역 공고서', selected:false},{name:'회의 기안', selected:false}],
+      job_flat: false,
+      job_group_names: ['2026 상반기', '입찰'],
+      job_sections: [
+        {group:'2026 상반기', collapsed:false, count:2,
+         rows:[{name:'물품 공고서', selected:false},{name:'물품 기안', selected:false}]},
+        {group:'입찰', collapsed:true, count:1, rows:[{name:'용역 공고서', selected:false}]},
+        {group:'', collapsed:false, count:1, rows:[{name:'회의 기안', selected:false}]}
+      ],
+      job_name:'', has_job:false,
+      guard:{armed:false, sel_count:0, in_def:0, extra:0, filter_active:false, filter_parts:0},
+      out_dir:'', data_label:'', data_source_label:'', data_notice:null,
+      gate:{enabled:false, level:'warn', text:'왼쪽에서 작업을 선택하세요.'}
+    };
+    window.__push('job', snap);
+    out.grp_heads = document.querySelectorAll('#jobListHwpx .job-grp-head').length;
+    out.rows_visible = document.querySelectorAll('#jobListHwpx .job-item').length;
+    out.grp_more = document.querySelectorAll('#jobListHwpx .grp-more').length;
+    out.row_more = document.querySelectorAll('#jobListHwpx .job-more[data-more]').length;
+    var caretOf = function (expanded) {
+      var c = document.querySelector(
+        '#jobListHwpx .job-grp-head[aria-expanded="' + expanded + '"] .grp-caret');
+      return c ? getComputedStyle(c).visibility : 'missing';
+    };
+    out.caret_collapsed = caretOf('false');
+    out.caret_expanded = caretOf('true');
+    var more = document.querySelector('#jobListHwpx .job-more[data-more]');
+    more.click();
+    var menu = document.getElementById('jobRowMenu');
+    out.menu_shown = getComputedStyle(menu).display !== 'none';
+    out.menu_items = Array.prototype.map.call(
+      menu.querySelectorAll('button[data-menu]'), function (b) { return b.dataset.menu; });
+    document.body.dispatchEvent(new MouseEvent('pointerdown', {bubbles:true}));
+    out.menu_closed = getComputedStyle(menu).display === 'none';
+    out.move_modal_hidden = document.getElementById('groupMoveModal').classList.contains('hidden');
+    snap.job_flat = true;
+    snap.job_group_names = [];
+    snap.job_sections = [
+      {group:'', collapsed:false, count:1, rows:[{name:'회의 기안', selected:false}]}
+    ];
+    window.__push('job', snap);
+    out.flat_heads = document.querySelectorAll('#jobListHwpx .job-grp-head').length;
+    out.flat_rows = document.querySelectorAll('#jobListHwpx .job-item').length;
+  } catch (e) { out.error = 'throw:' + (e && e.message); }
+  return out;
+})()
+"""
+
 # 「작업」 패널 두 모드(에디터 흡수, 블록 2 개정 결정 39~41) — 편집 호스트/세션 4존의 배타
 # 표시와 신규=단계(번호 표지)·편집=탭(자유 이동 버튼) 이원 표현을 실 render 로 되읽는다
 # (부록 B-9 overlay/hidden 눈검증의 자동판 — 이사한 DOM 이 실 WebView2 에서 실제로 선다).
@@ -830,6 +888,8 @@ def _selftest_drive(window: "object") -> None:
         result["preserve_real"] = window.evaluate_js(_PRESERVE_REAL_PROBE_JS)  # type: ignore[attr-defined]
         # 「작업」 거울 + 재진술 블록(슬라이스 2) — 합성 스냅샷으로 실 render() 구동 후 DOM 되읽기.
         result["job_mirror"] = window.evaluate_js(_JOB_MIRROR_PROBE_JS)  # type: ignore[attr-defined]
+        # 「작업」 좌 목록 그룹·⋮ 관리 메뉴(결정 43) — 그룹 헤더·접힘·메뉴 개폐 실렌더 되읽기.
+        result["job_list_groups"] = window.evaluate_js(_JOB_LIST_GROUP_PROBE_JS)  # type: ignore[attr-defined]
         result["job_editmode"] = window.evaluate_js(_JOB_EDITMODE_PROBE_JS)  # type: ignore[attr-defined]
         # 매핑 칩-라이브(슬라이스 5 PR-3) — 합성 매핑 스냅샷으로 실 render() 구동 후 칩·태그 되읽기.
         result["editor_chip"] = window.evaluate_js(_EDITOR_CHIP_PROBE_JS)  # type: ignore[attr-defined]

@@ -366,6 +366,38 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .job-item:hover{background:var(--n-hover)}
 .job-item[aria-current="true"]{background:var(--a-primary);color:var(--a-on-accent);font-weight:600}
 .job-empty{font-size:var(--fs-body);padding:var(--sp-6)}
+/* ---- 좌 목록 관리(결정 43) — 행 ⋮·그룹 헤더·접힘·인라인 이름 변경 ---- */
+.job-row{display:flex;align-items:center;min-width:0}
+.job-row .job-item{flex:1;min-width:0}
+.job-more{flex:none;border:0;background:none;font:inherit;font-size:var(--fs-body);cursor:pointer;
+  color:var(--a-muted);padding:var(--sp-2) var(--sp-6);border-radius:var(--rad-control);visibility:hidden}
+.job-row:hover .job-more,.job-row:focus-within .job-more,
+.job-grp:hover .grp-more,.job-grp:focus-within .grp-more{visibility:visible}
+.job-more:hover{background:var(--n-hover);color:var(--a-ink)}
+.job-grp{display:flex;align-items:center;min-width:0;margin-top:var(--sp-6)}
+.job-grp-head{flex:1;min-width:0;display:flex;align-items:center;gap:var(--sp-6);border:0;background:none;
+  font:inherit;font-size:var(--fs-body);font-weight:600;cursor:pointer;text-align:left;color:var(--a-ink);
+  padding:var(--sp-4) var(--sp-6);border-radius:var(--rad-control)}
+.job-grp-head:hover{background:var(--n-hover)}
+.grp-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.grp-count{color:var(--a-muted);font-size:var(--fs-caption);font-variant-numeric:tabular-nums}
+/* 접힘 화살표: 이름 오른쪽·호버 노출, 접힌 그룹은 상시 노출(결정 5). */
+.grp-caret{color:var(--a-muted);font-size:var(--fs-caption);flex:none;visibility:hidden}
+.job-grp:hover .grp-caret,.job-grp-head:focus-visible .grp-caret,
+.job-grp-head[aria-expanded="false"] .grp-caret{visibility:visible}
+.job-grp-rows{display:flex;flex-direction:column;padding-left:26px} /* 위계 들여쓰기(결정 5) */
+.job-rename{width:100%;font-size:var(--fs-body)}
+.ctx-menu{position:fixed;z-index:60;background:var(--a-card);border:1px solid var(--n-border-strong);
+  border-radius:var(--rad-surface);box-shadow:var(--a-shadow);padding:var(--sp-4);min-width:150px}
+.ctx-menu button{display:block;width:100%;text-align:left;border:0;background:none;font:inherit;
+  font-size:var(--fs-body);color:var(--a-ink);padding:var(--sp-6) var(--sp-10);
+  border-radius:var(--rad-control);cursor:pointer}
+.ctx-menu button:hover,.ctx-menu button:focus-visible{background:var(--n-hover)}
+.ctx-menu button.danger{color:var(--a-danger)}
+.ctx-menu .sep{height:1px;background:var(--a-border);margin:var(--sp-4) var(--sp-2)}
+.grp-opt{display:flex;align-items:center;gap:var(--sp-8);padding:var(--sp-4) var(--sp-2);
+  font-size:var(--fs-body)}
+.grp-opt .field{flex:1}
 .job-panel{flex:1;min-width:0;overflow:auto;display:flex;flex-direction:column}
 .job-empty-panel{padding:var(--sp-16);font-size:var(--fs-body)}
 .job-zones{display:flex;flex-direction:column;gap:var(--sp-12)}

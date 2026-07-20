@@ -502,3 +502,125 @@ def test_clone_concurrent_calls_get_unique_names(tmp_path):
     assert len(set(names)) == 4                       # 중복 이름 없음
     for n in names:
         assert reg.exists(n) and reg.load(n).name == n  # 이름만큼 실파일 실재
+
+
+# ------------------------------------------------------------------ 그룹·이름 변경(결정 43)
+def test_group_roundtrip_and_backward_compat():
+    job = _job()
+    job.group = "2026 상반기"
+    d = job.to_dict()
+    assert d["group"] == "2026 상반기"
+    assert Job.from_dict(d).group == "2026 상반기"
+    d.pop("group")  # 구 JSON(가산 스키마) — migrate-on-read 관용으로 기본값
+    assert Job.from_dict(d).group == ""
+
+
+def test_group_type_corruption_is_loud():
+    d = _job().to_dict()
+    d["group"] = 3
+    with pytest.raises(ValueError):
+        Job.from_dict(d)
+
+
+def test_registry_rename_moves_file_and_updates_name(tmp_path):
+    reg = JobRegistry(tmp_path)
+    job = _job()
+    reg.save(job)
+    reg.rename(job.name, "개명된 작업")
+    assert not reg.exists(job.name)  # 옛 파일 제거(저장 후 — 중단 시 소실 없음)
+    assert reg.load("개명된 작업").name == "개명된 작업"
+
+
+def test_registry_rename_rejects_empty_and_taken_name(tmp_path):
+    reg = JobRegistry(tmp_path)
+    a = _job()
+    reg.save(a)
+    b = _job()
+    b.name = "둘째 작업"
+    reg.save(b)
+    with pytest.raises(ValueError):
+        reg.rename(a.name, "   ")  # 빈 이름 loud
+    with pytest.raises(ValueError):
+        reg.rename(a.name, "둘째 작업")  # 자리 선점 — 동명 작업을 조용히 덮지 않는다
+    assert reg.exists(a.name) and reg.load("둘째 작업").name == "둘째 작업"  # 실패 무손상
+
+
+def test_registry_rename_same_slug_updates_in_place(tmp_path):
+    # '예산/2026' 과 '예산_2026' 은 같은 slug 파일 — 제자리 갱신이지 선점 충돌이 아니다.
+    reg = JobRegistry(tmp_path)
+    job = _job()
+    job.name = "예산/2026"
+    reg.save(job)
+    reg.rename("예산/2026", "예산_2026")
+    assert reg.names() == ["예산_2026"]
+    assert reg.load("예산_2026").name == "예산_2026"
+
+
+def test_registry_rename_same_name_is_noop(tmp_path):
+    reg = JobRegistry(tmp_path)
+    job = _job()
+    reg.save(job)
+    reg.rename(job.name, job.name)
+    assert reg.names() == [job.name]
+
+
+def test_registry_set_group_and_groups_listing(tmp_path):
+    reg = JobRegistry(tmp_path)
+    a = _job()
+    reg.save(a)
+    b = _job()
+    b.name = "둘째 작업"
+    reg.save(b)
+    reg.set_group(a.name, " 입찰 ")  # 공백 트리밍
+    assert reg.load(a.name).group == "입찰"
+    assert reg.groups() == ["입찰"]  # 소속 있는 그룹만
+    reg.set_group(a.name, "")  # 해제 = 「그룹 없음」
+    assert reg.groups() == []
+
+
+def test_registry_clone_inherits_group(tmp_path):
+    reg = JobRegistry(tmp_path)
+    job = _job()
+    job.group = "입찰"
+    reg.save(job)
+    copy = reg.clone(job.name)
+    assert reg.load(copy).group == "입찰"  # 복사본이 원본 옆 같은 그룹(결정 43 인접)
+
+
+def test_registry_rename_group_moves_members(tmp_path):
+    reg = JobRegistry(tmp_path)
+    a = _job()
+    reg.save(a)
+    b = _job()
+    b.name = "둘째 작업"
+    reg.save(b)
+    reg.set_group(a.name, "입찰")
+    reg.set_group(b.name, "입찰")
+    assert reg.rename_group("입찰", "2026 입찰") == 2
+    assert reg.groups() == ["2026 입찰"]
+    with pytest.raises(ValueError):
+        reg.rename_group("2026 입찰", "  ")  # 빈 새 이름 loud
+
+
+def test_registry_rename_group_into_existing_merges(tmp_path):
+    reg = JobRegistry(tmp_path)
+    a = _job()
+    reg.save(a)
+    b = _job()
+    b.name = "둘째 작업"
+    reg.save(b)
+    reg.set_group(a.name, "입찰")
+    reg.set_group(b.name, "수의")
+    assert reg.rename_group("수의", "입찰") == 1  # 병합(확인 재진술은 화면 게이트 소관)
+    assert reg.groups() == ["입찰"]
+
+
+def test_registry_disband_group_returns_members_to_ungrouped(tmp_path):
+    reg = JobRegistry(tmp_path)
+    a = _job()
+    reg.save(a)
+    reg.set_group(a.name, "입찰")
+    assert reg.disband_group("입찰") == 1
+    assert reg.load(a.name).group == "" and reg.groups() == []
+    with pytest.raises(ValueError):
+        reg.disband_group("")  # ""(그룹 없음)는 그룹이 아니다 — 무그룹 전원 오이동 차단

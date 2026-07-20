@@ -139,15 +139,48 @@
     });
   }
 
-  /* ---- 좌 master 목록(HWPX 구획) ---- */
+  /* ---- 좌 master 목록(HWPX 구획 + 사용자 그룹, 결정 43) ----
+     구획/그룹/접힘의 판정은 Python(_job_sections)이 내리고 여기는 받은 구획을 그리기만 한다.
+     행 면 = 이름 단독(결정 7) + 호버·포커스 노출 ⋮(관리 메뉴). 그룹 0개면 job_flat 로
+     헤더·들여쓰기 없는 평면(퇴화 불변식 — 현행 모습 그대로). */
+  let RENAMING = null;  // {name, value} 인라인 이름 변경 중(재렌더 생존용 지역 상태)
+
+  function rowHtml(r) {
+    if (RENAMING && RENAMING.name === r.name) {
+      return `<div class="job-row"><input class="field job-rename" id="jobRenameInput"` +
+        ` data-orig="${esc(r.name)}" value="${esc(RENAMING.value)}" aria-label="새 이름"></div>`;
+    }
+    return `<div class="job-row">` +
+      `<button class="job-item" data-job="${esc(r.name)}" aria-current="${r.selected ? "true" : "false"}">${esc(r.name)}</button>` +
+      `<button class="job-more" data-more="${esc(r.name)}" aria-haspopup="true" aria-label="작업 관리">⋮</button></div>`;
+  }
+
   function renderMaster(s) {
     const host = $("jobListHwpx");
     const empty = $("jobListHwpxEmpty");
-    const rows = s.job_rows || [];
-    empty.style.display = rows.length ? "none" : "";
-    host.innerHTML = rows.map((r) =>
-      `<button class="job-item" data-job="${esc(r.name)}" aria-current="${r.selected ? "true" : "false"}">` +
-      `${esc(r.name)}</button>`).join("");
+    const sections = s.job_sections || [];
+    const total = sections.reduce((n, sec) => n + sec.rows.length, 0);
+    empty.style.display = total ? "none" : "";
+    if (s.job_flat) {
+      host.innerHTML = sections.map((sec) => sec.rows.map(rowHtml).join("")).join("");
+      return;
+    }
+    host.innerHTML = sections.map((sec) => {
+      const label = sec.group || "그룹 없음";
+      // 접힘 화살표는 이름 오른쪽·호버 노출, 접힌 그룹은 상시 노출(결정 5 — CSS 가 담당).
+      const head =
+        `<div class="job-grp">` +
+        `<button class="job-grp-head" data-grp-toggle="${esc(sec.group)}" aria-expanded="${sec.collapsed ? "false" : "true"}">` +
+        `<span class="grp-name">${esc(label)}</span>` +
+        `<span class="grp-count">${sec.count}</span>` +
+        `<span class="grp-caret">${sec.collapsed ? "▸" : "▾"}</span></button>` +
+        (sec.group
+          ? `<button class="job-more grp-more" data-grp-more="${esc(sec.group)}" aria-haspopup="true" aria-label="그룹 관리">⋮</button>`
+          : "") +
+        `</div>` +
+        (sec.collapsed ? "" : `<div class="job-grp-rows">${sec.rows.map(rowHtml).join("")}</div>`);
+      return head;
+    }).join("");
   }
 
   /* ---- 헤더 존 — 작업 정체(이름·템플릿·재연결 동선) ---- */
@@ -398,6 +431,11 @@
   }
 
   function onDocPointerDown(e) {
+    // 행/그룹 ⋮ 메뉴 — 바깥 클릭 닫기(열 패널과 같은 소비 규율).
+    if (menuFor !== null && !e.target.closest("#jobRowMenu") && !e.target.closest(".job-more")) {
+      closeRowMenu();
+      suppressNextClick = true;
+    }
     if (panelCol === null) return;
     if (e.target.closest("#jobColPanel") || e.target.closest(".fico")) return;
     closeColPanel();
@@ -407,6 +445,7 @@
   }
 
   function onDocKeydown(e) {
+    if (e.key === "Escape" && menuFor !== null) closeRowMenu();
     if (e.key === "Escape" && panelCol !== null) closeColPanel();
   }
 
@@ -795,6 +834,17 @@
   }
 
   function onMasterClick(e) {
+    // 관리 어포던스(⋮·그룹 헤더)가 행 진입 동사보다 먼저 — 행 클릭=실행(주동사)과 분리.
+    const more = e.target.closest(".job-more[data-more]");
+    if (more) { toggleRowMenu("job", more.dataset.more, more); return; }
+    const gmore = e.target.closest(".grp-more[data-grp-more]");
+    if (gmore) { toggleRowMenu("group", gmore.dataset.grpMore, gmore); return; }
+    const grp = e.target.closest(".job-grp-head[data-grp-toggle]");
+    if (grp) {
+      // 접힘 토글은 보기만 바꾼다 — 선택·세션 무영향(결정 6-⑤). ""=「그룹 없음」.
+      Bridge.call(SCREEN, "toggle_group", { group: grp.getAttribute("data-grp-toggle") });
+      return;
+    }
     const item = e.target.closest(".job-item[data-job]");
     if (!item) return;
     const already = item.getAttribute("aria-current") === "true";
@@ -818,6 +868,226 @@
     // 미적용 검색어는 전환 시도 전에 정산(적용) — 취소만 하면 「머무르기」 세션에서
     // 마지막 타이핑이 증발한다(리뷰 #2). 새 세션 오발도 함께 차단(PR-2b 리뷰 #1).
     flushPendingSearch().then(() => selectJobGuarded(item.dataset.job));
+  }
+
+  /* ---- 좌 목록 관리(결정 43) — ⋮ 메뉴·인라인 이름 변경·그룹 이동/관리 ----
+     파괴·병합 판정과 수치는 Python(_do_delete_job 등 needs_confirm 왕복)이 내리고,
+     여기는 문안을 입혀 modal.js 로 재진술한다(네이티브 다이얼로그 금지 #86). */
+  let menuFor = null;  // {kind:"job"|"group", name} — 열린 ⋮ 메뉴의 대상
+
+  function closeRowMenu() {
+    menuFor = null;
+    const m = $("jobRowMenu");
+    m.style.display = "none";
+    m.innerHTML = "";
+  }
+
+  function toggleRowMenu(kind, name, btn) {
+    if (menuFor && menuFor.kind === kind && menuFor.name === name) { closeRowMenu(); return; }
+    openRowMenu(kind, name, btn);
+  }
+
+  function openRowMenu(kind, name, btn) {
+    const m = $("jobRowMenu");
+    menuFor = { kind, name };
+    m.innerHTML = kind === "job"
+      ? `<button data-menu="edit">편집</button>` +
+        `<button data-menu="clone">복제</button>` +
+        `<button data-menu="rename">이름 변경</button>` +
+        `<div class="sep"></div>` +
+        `<button data-menu="move">그룹으로 이동…</button>` +
+        `<div class="sep"></div>` +
+        `<button data-menu="delete" class="danger">삭제</button>`
+      : `<button data-menu="grp-rename">그룹 이름 변경</button>` +
+        `<button data-menu="grp-disband">그룹 해산</button>`;
+    m.style.display = "";
+    // position:fixed 좌표 — 트리거 rect 기준, 아래 공간이 없으면 위로 편다(overflow 클리핑 회피).
+    const r = btn.getBoundingClientRect();
+    const below = r.bottom + 4 + m.offsetHeight <= window.innerHeight;
+    m.style.top = (below ? r.bottom + 4 : Math.max(4, r.top - m.offsetHeight - 4)) + "px";
+    m.style.left = Math.max(4, Math.min(r.left, window.innerWidth - m.offsetWidth - 4)) + "px";
+    const first = m.querySelector("button");
+    if (first) first.focus();
+  }
+
+  async function onRowMenuClick(e) {
+    const b = e.target.closest("button[data-menu]");
+    if (!b || !menuFor) return;
+    const act = b.dataset.menu;
+    const { kind, name } = menuFor;
+    closeRowMenu();
+    if (kind === "job") {
+      if (act === "edit") { EditorEntry.openGuarded(name); return; }  // PR-5 에서 패널 편집 모드로 repoint
+      if (act === "clone") {
+        const r = await Bridge.call(SCREEN, "clone_job", { name });
+        if (r && r.name) log(`복제: '${name}' → '${r.name}'`);
+        return;
+      }
+      if (act === "rename") { startRename(name); return; }
+      if (act === "move") { openGroupMove(name); return; }
+      if (act === "delete") { deleteJob(name); return; }
+    }
+    if (act === "grp-rename") { renameGroup(name); return; }
+    if (act === "grp-disband") { disbandGroup(name); }
+  }
+
+  /* 인라인 이름 변경 — 행이 입력칸으로 바뀐다(결정 43). Enter=확정·Escape=취소·포커스
+     이탈=확정 시도. 확정 실패(선점·빈 이름)는 loud 재진술 후 Enter 경로만 편집을 복원한다
+     (이탈 경로 복원은 사용자가 이미 다른 곳을 겨눈 포커스를 빼앗는다). */
+  function startRename(name) {
+    RENAMING = { name, value: name };
+    if (LAST) renderMaster(LAST);
+    const inp = $("jobRenameInput");
+    if (inp) { inp.focus(); inp.select(); }
+  }
+
+  async function commitRename(restoreOnError) {
+    const inp = $("jobRenameInput");
+    if (!inp || !RENAMING) return;
+    const orig = RENAMING.name;
+    const typed = inp.value;
+    RENAMING = null;  // 디스패치의 push 재렌더가 입력칸을 되살리지 않게 먼저 걷는다
+    if (typed.trim() === orig) { if (LAST) renderMaster(LAST); return; }  // 무변경 = 조용히 복귀
+    const r = await Bridge.call(SCREEN, "rename_job", { name: orig, new: typed });
+    if (r && r.ok) { log(`이름 변경: '${orig}' → '${typed.trim()}'`); return; }
+    log("이름 변경 실패: " + ((r && r.error) || "알 수 없는 오류"));
+    if (restoreOnError) {
+      RENAMING = { name: orig, value: typed };
+      if (LAST) renderMaster(LAST);
+      const again = $("jobRenameInput");
+      if (again) { again.focus(); again.select(); }
+    } else if (LAST) {
+      renderMaster(LAST);
+    }
+  }
+
+  function cancelRename() {
+    RENAMING = null;
+    if (LAST) renderMaster(LAST);
+  }
+
+  function onMasterKeydown(e) {
+    if (e.target.id !== "jobRenameInput") return;
+    // 한글 IME 조합 확정 Enter 는 제출이 아니다(modal.js 관례 승계).
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === "Enter") { e.preventDefault(); commitRename(true); }
+    if (e.key === "Escape") { e.preventDefault(); cancelRename(); }
+  }
+
+  function onMasterFocusOut(e) {
+    if (e.target.id === "jobRenameInput" && RENAMING) commitRename(false);
+  }
+
+  /* 그룹 이동 다이얼로그(결정 43) — 기존 그룹 + 새 그룹 입력 동거 + 해제. 새 그룹 라디오는
+     값 센티넬 대신 data-new 로 식별한다(사용자 그룹 이름과의 충돌 클래스 봉쇄). */
+  let groupMoveTarget = null;
+
+  function currentGroupOf(name) {
+    const sections = (LAST && LAST.job_sections) || [];
+    for (const sec of sections) {
+      if (sec.rows.some((r) => r.name === name)) return sec.group;
+    }
+    return "";
+  }
+
+  function openGroupMove(name) {
+    groupMoveTarget = name;
+    const cur = currentGroupOf(name);
+    const groups = (LAST && LAST.job_group_names) || [];
+    $("groupMoveJob").textContent = `작업 '${name}' 을(를) 옮길 그룹을 고르세요.`;
+    $("groupMoveList").innerHTML =
+      groups.map((g) =>
+        `<label class="grp-opt"><input type="radio" name="grpMove" value="${esc(g)}"${g === cur ? " checked" : ""}> ${esc(g)}</label>`
+      ).join("") +
+      `<label class="grp-opt"><input type="radio" name="grpMove" value=""${cur === "" ? " checked" : ""}> 그룹 없음(해제)</label>` +
+      `<label class="grp-opt"><input type="radio" name="grpMove" value="" data-new="1" id="grpMoveNewRadio"> 새 그룹:` +
+      ` <input class="field" id="grpMoveNewName" type="text" placeholder="새 그룹 이름"></label>`;
+    const err = $("groupMoveErr");
+    err.style.display = "none";
+    err.textContent = "";
+    // 새 그룹 이름을 만지면 새 그룹 라디오가 자동 선택된다(입력=의도).
+    $("grpMoveNewName").addEventListener("focus", () => { $("grpMoveNewRadio").checked = true; });
+    window.Modal.open("groupMoveModal", { onClose: () => { groupMoveTarget = null; } });
+  }
+
+  async function confirmGroupMove() {
+    if (!groupMoveTarget) return;
+    const sel = document.querySelector('input[name="grpMove"]:checked');
+    if (!sel) return;
+    let group = sel.value;
+    if (sel.dataset.new) {
+      group = $("grpMoveNewName").value.trim();
+      if (!group) {
+        const err = $("groupMoveErr");
+        err.textContent = "새 그룹 이름이 비어 있습니다. 이름을 넣거나 다른 항목을 고르세요.";
+        err.style.display = "";
+        return;  // 조용한 무동작 금지 — 열린 채 재진술
+      }
+    }
+    const name = groupMoveTarget;
+    window.Modal.close("groupMoveModal");
+    await Bridge.call(SCREEN, "set_group", { name, group });
+    log(group ? `그룹 이동: '${name}' → '${group}'` : `그룹 해제: '${name}'`);
+  }
+
+  async function deleteJob(name) {
+    const res = await Bridge.call(SCREEN, "delete_job", { name });
+    if (!(res && res.needs_confirm)) return;
+    let body = `작업 '${name}' 을(를) 삭제합니다. 템플릿 연결과 매핑 정의가 함께 사라집니다.`;
+    if (res.open_session) {
+      body += `\n지금 열려 있는 세션도 닫힙니다.`;
+      if (res.armed) {
+        body += ` 세션에는 다시 만들기 어려운 선택이 있습니다: ` +
+          `${selectionLine(res.sel_count, res.filter_active, res.in_def, res.extra)}.`;
+      }
+    }
+    const ok = await window.Modal.confirm({
+      title: "작업 삭제 확인", body,
+      confirmLabel: "삭제", cancelLabel: "머무르기",
+    });
+    if (!ok) return;
+    await Bridge.call(SCREEN, "delete_job", { name, confirm: true });
+    log(`작업 삭제: '${name}'`);
+  }
+
+  async function renameGroup(old) {
+    const val = await window.Modal.prompt({
+      title: "그룹 이름 변경", body: `그룹 '${old}' 의 새 이름을 넣으세요.`, value: old,
+    });
+    if (val === null) return;
+    const r = await Bridge.call(SCREEN, "rename_group", { name: old, new: val });
+    if (r && r.needs_confirm) {
+      // 기존 그룹으로의 개명 = 병합 — 수치 재진술 후 확정(조용한 병합 금지).
+      const ok = await window.Modal.confirm({
+        title: "그룹 병합 확인",
+        body: `'${r.new}' 그룹이 이미 있습니다. '${old}' 의 작업 ${r.count}개를 ` +
+          `'${r.new}'(현재 ${r.target_count}개)에 합칩니다. 그룹은 하나가 됩니다.`,
+        confirmLabel: "합치기", cancelLabel: "머무르기",
+      });
+      if (!ok) return;
+      const r2 = await Bridge.call(SCREEN, "rename_group", { name: old, new: val, confirm: true });
+      if (r2 && r2.ok) log(`그룹 병합: '${old}' → '${val.trim()}' (작업 ${r2.count}개 이동)`);
+      return;
+    }
+    if (r && r.ok) {
+      if (r.count) log(`그룹 이름 변경: '${old}' → '${val.trim()}'`);
+    } else if (r) {
+      log("그룹 이름 변경 실패: " + r.error);
+    }
+  }
+
+  async function disbandGroup(name) {
+    const res = await Bridge.call(SCREEN, "disband_group", { name });
+    if (!(res && res.needs_confirm)) return;
+    const ok = await window.Modal.confirm({
+      title: "그룹 해산 확인",
+      body: `그룹 '${name}' 을(를) 해산합니다. 소속 작업 ${res.count}개는 「그룹 없음」으로 ` +
+        `이동합니다. 작업 자체는 삭제되지 않습니다.`,
+      confirmLabel: "해산", cancelLabel: "머무르기",
+    });
+    if (!ok) return;
+    const r = await Bridge.call(SCREEN, "disband_group", { name, confirm: true });
+    if (r && r.ok) log(`그룹 해산: '${name}' (작업 ${r.count}개 이동)`);
   }
 
   /* 허브(홈)에서 이 작업을 열기 — 좌 목록 재클릭 무동작 가드(onMasterClick)와 동형.
@@ -898,6 +1168,15 @@
       }
     }, true);
     $("jobListHwpx").addEventListener("click", onMasterClick);
+    $("jobListHwpx").addEventListener("keydown", onMasterKeydown);
+    $("jobListHwpx").addEventListener("focusout", onMasterFocusOut);
+    $("jobRowMenu").addEventListener("click", onRowMenuClick);
+    // 목록 스크롤 시 fixed 메뉴가 트리거와 어긋난다 — 어긋난 채 남기지 말고 닫는다.
+    document.querySelector(".job-master").addEventListener("scroll", () => {
+      if (menuFor !== null) closeRowMenu();
+    }, true);
+    $("grpMoveOk").addEventListener("click", confirmGroupMove);
+    $("grpMoveCancel").addEventListener("click", () => window.Modal.close("groupMoveModal"));
     $("jobSelAll").addEventListener("click", async () => {
       const r = await Bridge.call(SCREEN, "set_all", {});
       // 전멸 필터에서의 무동작은 정직하게 알린다(confirm-or-alarm, 리뷰 #9).
