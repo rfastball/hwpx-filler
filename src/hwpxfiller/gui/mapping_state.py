@@ -69,6 +69,12 @@ class RowState:
     확정** — "이 필드는 채우지 않는다"를 사람이 명시한 상태다(``to_profile`` 이
     명시적 ``blank`` 선언으로 영속화 — L1).
     ``suggestion_score`` 는 자동 제안의 유사도(0=제안 없음) — 뷰가 신뢰도 툴팁에 쓴다.
+
+    **소유권(칩-라이브 계약, R-flow 슬라이스 5 블록 2 결정 12)**: ``touched`` 는 사람이 소스/
+    내용을 직접 골랐거나 편집했는가다. **미확정·미접촉**(``not confirmed and not touched``)
+    = 시스템 소유 → 활성 헤더가 바뀌면 최선으로 **라이브 재제안**된다(조용). **수동(touched)·
+    확정** = 사람 소유 → 칩 토글이 못 덮고, 매핑된 헤더가 꺼지면 **시끄러운 강등**(R4)한다.
+    ``from_suggestions`` 초안은 ``touched=False``(제안일 뿐), 사람 편집·프로파일 복원은 True.
     """
 
     template_field: str
@@ -79,6 +85,32 @@ class RowState:
     fmt: str = ""  # 표시형 프리셋 키(유형 내). "" = 기본.
     confirmed: bool = False
     suggestion_score: float = 0.0
+    touched: bool = False  # 사람이 소스/내용을 직접 정함(수동=사람 소유). 미접촉=시스템 소유.
+
+    def is_system_owned(self) -> bool:
+        """시스템 소유 행 — 미확정·미접촉이라 활성 헤더 따라 라이브 재제안 대상(결정 12)."""
+        return not self.confirmed and not self.touched
+
+    def is_human_owned(self) -> bool:
+        """사람 소유 행(확정 또는 touched) — 소유권 술어의 단일 정의(리뷰: 3중 재진술이
+        강등·재제안·이월을 어긋나게 하는 조용한 드리프트류). 강등 조건·이월 대상이 이걸 쓴다."""
+        return not self.is_system_owned()
+
+    def reset_to_system(self) -> None:
+        """행을 갓 제안 전의 **시스템 소유 초기 상태**로 완전 리셋 — 강등·되돌리기의 단일 정의.
+
+        소유권 해제(touched/confirmed)만으로는 부족하다(리뷰 R1 동류): 유형·상수·표시형이
+        남으면 이후 재제안이 소스만 얹어 '제안 표시 ≠ 실제 출력(옛 상수 방출)' 하이브리드가
+        된다. 세 강등 경로(``revert_to_auto``·``apply_active_sources`` R4·구판
+        ``ignore_source``)가 전부 이 정의로 착지해 관문 간 상태 불일치를 막는다. 소스
+        재제안은 호출측 소관(단일 행=``resuggest_row``, 집합=다음 활성 변화)."""
+        self.touched = False
+        self.confirmed = False
+        self.source = ""
+        self.const = ""
+        self.fmt = ""
+        self.type = default_transform_for(self.spec.inferred_type if self.spec else "")
+        self.suggestion_score = 0.0
 
     def has_content(self) -> bool:
         """매핑 내용이 있는가 — 소스가 있거나 비어 있지 않은 상수."""
@@ -166,16 +198,20 @@ class MappingModel:
                 const="" if is_blank else m.const,
                 fmt="" if is_blank else m.fmt,
                 confirmed=True,  # 베이스는 확정본
+                touched=True,  # 사람 소유(과거 확정 산출물) — 라이브 재제안 비대상(결정 12)
             ))
         return cls(
             rows=rows, source_fields=profile_source_vocabulary(profile), aliases={}
         )
 
     # ------------------------------------------------------------ 행 편집 API
+    # 사람의 편집은 모두 ``touched=True`` — 그 행은 사람 소유가 되어 활성 헤더 변화의 라이브
+    # 재제안이 덮지 못한다(칩-라이브 결정 12). 자동 제안으로 되돌리려면 ``revert_to_auto``.
     def set_source(self, index: int, source: str) -> None:
         row = self.rows[index]
         row.source = source
         row.confirmed = False
+        row.touched = True
 
     def set_type(self, index: int, type_: str) -> None:
         if type_ not in TYPES:
@@ -184,17 +220,32 @@ class MappingModel:
         row.type = type_
         row.fmt = ""  # 유형이 바뀌면 이전 표시형 키는 무효 → 기본으로.
         row.confirmed = False
+        row.touched = True
 
     def set_fmt(self, index: int, fmt: str) -> None:
         """표시형(유형 내 프리셋) 변경 — 편집이므로 확정 해제."""
         row = self.rows[index]
         row.fmt = fmt
         row.confirmed = False
+        row.touched = True
 
     def set_const(self, index: int, const: str) -> None:
         row = self.rows[index]
         row.const = const
         row.confirmed = False
+        row.touched = True
+
+    def revert_to_auto(self, index: int) -> None:
+        """사람 소유(touched) 행을 시스템 소유로 **완전** 되돌린다 — 자동 제안에 다시 맡김(칩-라이브).
+
+        소스뿐 아니라 사람이 손댄 유형·상수·표시형도 초기화한다(리뷰 R1): 소스만 풀면 재제안이
+        새 소스를 얹어 '제안'으로 보이는데 type=const 가 남아 ``to_mapping`` 이 옛 상수를 그대로
+        방출하는 하이브리드(제안 표시 ≠ 실제 출력)가 된다 — 되돌리기는 갓 제안된 행과 동형이어야
+        한다. 소스는 여기서 세우지 않는다 — 호출측이 활성 집합으로 ``resuggest_row`` 를 돌려 그
+        행만 라이브 재제안한다(무관 행 불건드림, 리뷰 R4). 리셋 정의는
+        :meth:`RowState.reset_to_system` 단일 출처(강등 경로들과 동일 착지).
+        """
+        self.rows[index].reset_to_system()
 
     def set_confirmed(self, index: int, confirmed: bool = True) -> None:
         """사람의 행별 확정/해제 — 빈 행 확정은 '의도적 비움'을 뜻한다."""
@@ -208,13 +259,96 @@ class MappingModel:
         for row in self.rows:
             row.confirmed = False
 
+    def _score_row(self, row: "RowState", m) -> None:
+        """제안 결과(FieldMapping | None)를 행에 얹는다 — 소스·제안 점수(후보 없으면 비움).
+
+        점수는 ``from_suggestions`` 와 같은 방식(alias 라벨 대상 유사도)으로 복원한다 —
+        ``suggest_mappings`` 가 점수를 돌려주지 않아 재계산한다(리뷰 R8: from_suggestions 와
+        동일 패턴, 필드·소스 수가 작아 무시 수준). 단일 출처화로 재제안 경로가 어긋나지 않는다.
+        """
+        if m is not None and m.source:
+            row.source = m.source
+            row.suggestion_score = similarity(row.template_field, self.aliases.get(m.source, m.source))
+        else:
+            row.source = ""
+            row.suggestion_score = 0.0
+
+    def _resuggest_system_rows(self, active_sources: "list[str]") -> None:
+        """시스템 소유 행(미확정·미접촉)의 소스를 활성 헤더 중 최선으로 다시 세운다(라이브 재제안).
+
+        칩-라이브 결정 12의 '미접촉 = 시스템 소유, 활성 헤더 따라 라이브 재제안'. ``suggest_mappings``
+        를 활성 소스만으로 다시 돌려(from_suggestions 와 같은 산출) 시스템 행의 소스·제안 점수를
+        갱신한다. 활성 중 맞는 후보가 없으면 ``source=""``(후보 없음). 사람 소유 행은 건드리지 않는다.
+        """
+        system_fields = [r.template_field for r in self.rows if r.is_system_owned()]
+        if not system_fields:
+            return
+        drafts = {
+            m.template_field: m
+            for m in suggest_mappings(system_fields, active_sources, self.aliases)
+        }
+        for row in self.rows:
+            if row.is_system_owned():
+                self._score_row(row, drafts.get(row.template_field))
+
+    def resuggest_row(self, index: int, active_sources: "list[str]") -> None:
+        """**단일** 행만 활성 헤더 중 최선으로 재제안한다(``revert_to_auto`` 직후 — 리뷰 R4).
+
+        전집합 ``apply_active_sources`` 를 쓰면 무관한 stale 사람 소유 행까지 강등돼 조용히
+        파괴된다(되돌리기는 그 행 하나의 의사표시일 뿐) — 그 행만 다시 세운다. 사람 소유 행에는
+        무영향(시스템 소유일 때만 동작)."""
+        row = self.rows[index]
+        if not row.is_system_owned():
+            return
+        drafts = {
+            m.template_field: m
+            for m in suggest_mappings([row.template_field], active_sources, self.aliases)
+        }
+        self._score_row(row, drafts.get(row.template_field))
+
+    def apply_active_sources(self, active_sources: "list[str]") -> "list[str]":
+        """활성 소스 집합 변경을 반영한다(칩-라이브 결정 12·13 — 헤더 사용/미사용의 단일 관문).
+
+        - **시스템 소유 행**(미확정·미접촉): 활성 헤더 중 최선으로 **라이브 재제안**(조용).
+        - **사람 소유 행**(확정·touched)의 소스가 **비활성이 되면 시끄러운 강등**(R4):
+          ``source=""`` · ``confirmed=False`` · ``touched=False`` 로 되돌리고 이름을 반환한다.
+
+        **순서가 계약이다**(리뷰 R3): 재제안을 **먼저** 하고 강등을 **나중**에 한다. 그러면
+        강등된 사람 소유 행은 ``source=""`` 로 **비어 남는다** — 재제안이 다른 그럴싸한 소스를
+        얹어 사용자가 재확정 시 원래와 다른 열로 조용히 치환되는 것을 막고, 의식적 재선택을
+        강제한다(구 ``ignore_source`` 의 안전 거동 복원). '항상 시스템이었던' 행만 재제안되고,
+        이번에 강등된 행은 다음 활성 변화에서야 시스템 소유로 재제안된다.
+
+        구 ``ignore_source``(헤더별 무차별 해제)의 대체 — 헤더/모델 정합을 한 번에 재계산해
+        같은 파일 재겨눔 시 헤더 UI 와 모델이 어긋나던 창을 닫는다(리뷰 F3). 반환 = R4 강등 이름.
+
+        강등은 **완전 리셋**(:meth:`RowState.reset_to_system`)이다: 소스·확정만 풀고 유형·
+        상수를 남기면 강등 행이 시스템 소유가 된 뒤 다음 재제안이 소스를 얹어 '제안 표시 ≠
+        옛 상수 방출' 하이브리드가 된다(``revert_to_auto`` 리뷰 R1 과 같은 근거 — 강등 경로만
+        부분 리셋일 이유가 없다).
+        """
+        active_set = set(active_sources)
+        self._resuggest_system_rows(active_sources)  # 1) 항상 시스템이던 행만 재제안(강등 전)
+        demoted: "list[str]" = []
+        for row in self.rows:  # 2) 사람 소유 행 R4 강등 — 비운 채 남긴다(재제안 안 함)
+            if row.is_human_owned() and row.source and row.source not in active_set:
+                row.reset_to_system()
+                demoted.append(row.template_field)
+        return demoted
+
     def ignore_source(self, source: str) -> "list[str]":
         """소스 헤더 1개를 '미사용'으로 전환 — 그 소스를 쓰던 행을 해제한다(#49).
 
-        해당 소스를 참조하는 행만 ``source=""`` · ``confirmed=False`` 로 되돌려
-        **사람의 재검토를 강제**한다(``set_source`` 선례). 상수(const) 행은 소스가
-        없어 영향받지 않고, blank/다른 소스 행은 보존한다. 반환값은 영향받은 템플릿
-        필드 이름(문서순) — 뷰가 개수·이름을 시끄럽게 재진술하는 근거(confirm-or-alarm).
+        **구판 경로 전용(한시)**: 헤더 사용/미사용의 정본 관문은 :meth:`apply_active_sources`
+        (칩-라이브 결정 12·13)이며, 본 메서드는 아직 그리로 재배선되지 않은 기존 에디터
+        표면(``screen_editor._apply_active``)만 소비한다 — 재배선 PR 에서 제거된다.
+
+        **착지 상태는 신판 강등 정의와 동일**(:meth:`RowState.reset_to_system` — 리뷰 반영):
+        구판이 touched·유형·상수를 남기면 ①사람소유-빈 좀비(어느 신판 관문도 재제안·강등
+        불가, 필드 영구 조용한 공백) ②잔존 상수의 하이브리드 방출이 생긴다. 그래서 구판
+        표면 거동(그 소스를 쓰던 행만 해제·재검토 강제·영향 이름 재진술)은 유지하되, 행의
+        착지는 시스템 소유 완전 리셋으로 통일한다(유형·표시형 커스텀도 함께 초기화 — 재검토
+        강제의 정직한 형태).
 
         빈 소스("")는 무시한다 — const·blank·미매칭 행은 모두 ``source==""`` 이라, 빈
         문자열을 소스로 받으면 무관한 행을 무더기 해제한다(공개 메서드의 값싼 보험).
@@ -224,8 +358,7 @@ class MappingModel:
         affected: "list[str]" = []
         for row in self.rows:
             if row.source == source:
-                row.source = ""
-                row.confirmed = False
+                row.reset_to_system()
                 affected.append(row.template_field)
         return affected
 
@@ -333,6 +466,32 @@ class MappingModel:
             ],
         )
 
+    def human_owned_rows(self) -> "list[RowState]":
+        """사람 소유 행 — 확정됐거나 손댐(touched). 미접촉 제안(시스템 소유)은 제외."""
+        return [r for r in self.rows if r.is_human_owned()]
+
+    def carry_profile(self, name: str = "") -> MappingProfile:
+        """데이터 교체 재초안 시 **이월용** 프로파일 — 사람 소유 행의 값(소스/유형/상수/서식).
+
+        확정 전용 :meth:`to_profile` 과 달리 **touched 미확정 행도 담는다**(리뷰 F2: 미확정
+        수동 편집도 '사람 소유'라 데이터를 바꿔도 조용히 소실시키지 않는다). 미접촉 제안(시스템
+        소유)은 담지 않는다 — 새 데이터 기준으로 재제안돼야 하므로. ``apply_profile(confirm=False)``
+        로 적용해 값만 이월하고 전 행 미확정으로 착지시킨다(사람 재검토 강제).
+
+        단 **내용 없는 touched 미확정 행은 담지 않는다**(리뷰 반영): 비움 확정(blank 선언)도
+        아니고 이월할 값도 없는데 담으면, ``apply_profile`` 이 touched 를 재날인해 그 필드가
+        새 데이터에서 **영구히 라이브 재제안에서 제외**된다(조용한 동결). 그런 행은 시스템
+        소유로 낙착시켜 새 데이터 기준 자동 제안을 다시 받게 한다.
+        """
+        return MappingProfile(
+            name=name,
+            mappings=[
+                r.to_mapping(blank=r.is_empty_confirmed())
+                for r in self.human_owned_rows()
+                if r.confirmed or r.has_content()
+            ],
+        )
+
     def apply_profile(
         self,
         profile: MappingProfile,
@@ -369,6 +528,10 @@ class MappingModel:
             row.type = "text" if m.is_blank else m.type
             row.const = "" if m.is_blank else m.const
             row.fmt = "" if m.is_blank else m.fmt
+            # 프로파일 복원/이월된 행은 **사람 소유**(과거 확정 산출물 또는 touched 이월) —
+            # touched=True 로 라이브 재제안이 덮지 못하게 한다(칩-라이브 결정 12). 확정 여부는
+            # confirm 인자·missing_source 가 따로 결정한다(값 복원 ≠ 확정 도착).
+            row.touched = True
             missing_source = (
                 require_source
                 and not m.is_blank
