@@ -48,7 +48,7 @@ def _complete_with_data(ctrl: EditorController, name: str) -> None:
     """데이터(다중시트 확정) 연결 세션을 저장 직전까지 구성."""
     ctrl.load_template_path(str(TPL_COMPILED))
     ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
-    ctrl.dispatch("goto_step", {"step": 2})
+    ctrl.dispatch("goto_step", {"step": 1})   # 매핑 진입(데이터 겨눔 — 3단계 접기)
     ctrl.dispatch("set_type", {"index": 0, "type": "const"})
     ctrl.dispatch("set_const", {"index": 0, "const": "v"})
     r = ctrl.dispatch("confirm_all", {})
@@ -64,16 +64,14 @@ def test_c1_data_change_never_arrives_confirmed(tmp_path):
     ctrl = _controller(tmp_path)
     ctrl.load_template_path(str(TPL_COMPILED))
     ctrl.load_data_path(str(MULTI_SHEET))            # 첫 시트(공고명·추정가격)
-    ctrl.dispatch("goto_step", {"step": 2})
+    ctrl.dispatch("goto_step", {"step": 1})          # 매핑 진입(데이터 겨눔 — 3단계 접기)
     ctrl.dispatch("set_source", {"index": 0, "source": "추정가격"})
     r = ctrl.dispatch("confirm_all", {})
     ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
     assert ctrl.snapshot()["is_complete"] is True
 
-    # 같은 이름 컬럼이 의미가 다를 수 있는 새 데이터로 교체 — 사람 재검토 강제.
-    ctrl.dispatch("goto_step", {"step": 1})
-    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
-    ctrl.dispatch("goto_step", {"step": 2})
+    # 같은 이름 컬럼이 의미가 다를 수 있는 새 데이터로 관문 교체 — 그 자리에서 재검토 강제.
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")   # in-place 재생성(단계 왕복 없음)
     snap = ctrl.snapshot()
     assert all(row["confirmed"] is False for row in snap["rows"])
     assert snap["is_complete"] is False              # is_complete 우회 봉쇄
@@ -123,6 +121,21 @@ def test_c4_editor_js_dosave_guards_and_surfaces_half_save():
     body = src[start:start + 2000]
     assert "try {" in body and "catch" in body       # 브리지 예외 무반응 금지
     assert "dataset_register_error" in body          # 반저장 경고 표면화
+
+
+def test_editor_js_gateway_guards_confirmed_mapping_reset():
+    """PR#105 F1 정적 계약 — 관문 데이터 교체/비우기(pick-data·skip-data)는 사람 소유 매핑이
+    있으면 파괴 전 확인한다(confirmMappingResetIfConfirmed — 수치는 Python stakes 질의).
+    편집 복원 확정이 매핑 표 바로 위 관문의 1클릭으로 조용히 미확정 재초안되던 것을 막는다."""
+    from test_r3_pool import _segment
+    src = (REPO / "web" / "js" / "screens" / "editor.js").read_text(encoding="utf-8")
+    assert "async function confirmMappingResetIfConfirmed" in src, "확정 보호 가드 헬퍼 부재(F1)."
+    assert "mapping_reset_stakes" in src, "가드 수치의 Python 즉시 질의 배선 부재(리뷰 F7)."
+    body = _segment(src, "async function onClick", "function onChange")
+    # pick-data·skip-data 두 파괴 경로 모두 가드를 통과한다(둘 다 _ensure_model 재초안 유발).
+    assert body.count("confirmMappingResetIfConfirmed(") >= 2, (
+        "관문 파괴 경로(pick-data·skip-data)에 확정 보호 가드가 둘 다 걸리지 않았습니다(F1)."
+    )
 
 
 def test_editor_js_click_dispatch_guards_bridge_rejection():
@@ -294,3 +307,40 @@ def test_k10_profile_source_vocabulary_is_shared_single_source(tmp_path):
     ctrl = _controller(tmp_path)
     ctrl.load_job("어휘작업")
     assert ctrl.source_fields == ["갑", "을"]
+
+
+def test_editor_js_template_stage_is_library_first():
+    """정적 계약(R-info 2부) — 신규 1단계는 라이브러리 피커가 정본: 생 파일 직접 로드
+    (pick-template)는 소멸하고, 라이브러리 선택(use-library)과 가져오기=복사
+    (import-template)만 남는다. 토큰 참조는 접힘(F27)."""
+    src = (REPO / "web" / "js" / "screens" / "editor.js").read_text(encoding="utf-8")
+    assert 'data-act="pick-template"' not in src, "생 파일 직접 로드 버튼이 부활했습니다(2부 위반)."
+    assert 'data-act="use-library"' in src, "라이브러리 선택 배선이 없습니다."
+    assert 'data-act="import-template"' in src, "가져오기=복사 배선이 없습니다."
+    assert "pattern_preview" in src, "파일명 라이브 예시(F26) 소비가 없습니다."
+
+
+def test_editor_shares_tpl_library_vm_wiring():
+    """조립 계약(PR-4 리뷰 F2) — 에디터의 템플릿 라이브러리는 tpl 화면 VM 과 같은 인스턴스
+    (라이브러리=단일 실체: 폴더 재지정이 두 표면에 함께 반영). 배선이 떨어지면 신규 1단계
+    피커·가져오기가 관리 화면이 안 보여주는 폴더로 조용히 발산한다."""
+    src = (REPO / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(encoding="utf-8")
+    assert "template_library=tpl_ctrl.vm" in src, "에디터-tpl 라이브러리 VM 공유 배선 소실."
+
+
+def test_discard_confirm_has_single_source():
+    """정적 계약(PR-4 리뷰 F9) — 미저장 정의 폐기 확인은 EditorEntry.confirmDiscard 단일
+    출처(3중 복붙은 문구·판정 드리프트 표면). 소비처 셋 전부가 그 헬퍼를 부른다."""
+    entry = (REPO / "web" / "js" / "editor_entry.js").read_text(encoding="utf-8")
+    assert "function confirmDiscard" in entry, "confirmDiscard 단일 정의 소실."
+    # 홈 ＋ 는 newDraft(내부가 confirmDiscard)로 한 층 더 수렴했다(PR-5 리뷰 F2).
+    for rel, needle in (
+        ("screens/home.js", "EditorEntry.newDraft"),
+        ("screens/template.js", "EditorEntry.confirmDiscard"),
+        ("screens/editor.js", "EditorEntry.confirmDiscard"),
+    ):
+        src = (REPO / "web" / "js" / rel).read_text(encoding="utf-8")
+        assert needle in src, f"{rel} 가 폐기 확인 단일 출처({needle})를 쓰지 않습니다."
+    # 편집(탭) 맥락 전환 확인(리뷰 F1) — 클린 복원이어도 맥락 닫힘은 의식적이어야 한다.
+    editor = (REPO / "web" / "js" / "screens" / "editor.js").read_text(encoding="utf-8")
+    assert "편집을 닫고 새 작업 초안" in editor, "편집 맥락 전환 확인 문구가 사라졌습니다(F1)."

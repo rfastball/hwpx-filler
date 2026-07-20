@@ -12,10 +12,10 @@
 </head>
 <body>
 <!-- 웹 프론트엔드 셸 — 목업 docs/UI_PROTOTYPE_APPB.html 의 앱윈도 구조를 스튜디오 크롬(마스트헤드·
-     주석·캔버스) 없이 실앱으로 전개. 좌 레일(7화면 라우팅) + 우 스테이지. 링1 VM 에 브리지로 배선.
-     실화면 전부 이관 완료: home(허브·기본)·작업(R-flow 세션 패널 · #90)·txt·editor(#15·#16)·
-     tpl(#13)·pool(데이터 관리 · #26 #4). 실행 화면(#18)은 슬라이스 3에서 사망 — 「작업」이 유일
-     생성 표면. matrix(여러 작업 실행)는 F9 로 제거 — 실행 모델은 하나다. -->
+     주석·캔버스) 없이 실앱으로 전개. 좌 레일(5화면 라우팅) + 우 스테이지. 링1 VM 에 브리지로 배선.
+     화면: home(허브·기본)·작업(R-flow 세션+편집 두 모드 · #90)·txt·tpl(#13)·pool(데이터 관리 ·
+     #26 #4). 실행 화면(#18)은 슬라이스 3, 작업 에디터 별도 화면은 슬라이스 5(블록 2 개정 결정
+     39 — 「작업」 편집 모드로 흡수)에서 사망. matrix 는 F9 로 제거 — 실행 모델은 하나다. -->
 <div class="app">
   <nav class="rail" aria-label="화면 전환">
     <div class="brand">HWPX Filler
@@ -23,7 +23,7 @@
       <button class="rail-toggle" id="railToggle" title="사이드 패널 접기/펼치기"
               aria-label="사이드 패널 접기/펼치기">«</button></div>
     <!-- 섹션 라벨("투트랙 허브")은 R-copy 에서 삭제(F1) — 개발결정 용어(ADR I)인 데다
-         6항목 단일 목록엔 섹션 구분 정보가 없다. -->
+         5항목 단일 목록엔 섹션 구분 정보가 없다. -->
 
     <!-- #27(개정): .ni 는 이제 SVG 상시 아이콘 표지 — 접힘/펼침 모두 노출. 접힘 시 라벨(.lbl=.n+.d)만
          숨어 아이콘이 표지를 잇는다(옛 '펼침 숨김' 계약 폐기 — 아이콘+라벨 공존은 스캔 보조). 접근
@@ -35,8 +35,10 @@
          R-info 1부는 이 화면을 부팅 랜딩으로 확정했으나, 랜딩 전환(기본 화면 교체)은 별도 후속. -->
     <button class="navbtn" data-scr="job" aria-label="작업" title="작업 — 저장된 작업을 골라 세션 패널에서 데이터를 채워 생성">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h5v12H4zM11 4h5v7h-5z"/></svg></span><span class="lbl"><span class="n">작업</span><span class="d">목록 + 세션 패널</span></span></button>
-    <button class="navbtn" data-scr="editor" aria-label="작업 에디터" title="작업 에디터 — HWPX 작업 만들기 · 4단계">
-      <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 4.5l2 2L7 15l-3 1 1-3zM12 6l2 2"/></svg></span><span class="lbl"><span class="n">작업 에디터</span><span class="d">HWPX · 4단계</span></span></button>
+    <!-- 레일 「작업 에디터」 사망(결정 39 — 에디터 흡수 완결): 생성 진입은 「작업」 구획
+         ＋ 새 작업(#jobNewBtn — 이 삭제가 승계 신설)·홈 ＋/카드 편집·템플릿 관리 「작업
+         만들기」가 담당한다(카드 ⋮ 편집 메뉴는 #110 목록 관리 소관). 레일 5→4 의 최종
+         형상은 빠른 기안[블록 5]·랜딩 전환 후속과 함께 완성. -->
     <button class="navbtn" data-scr="txt" aria-label="기안문 채우기 (txt)" title="기안문 채우기 (txt) — 템플릿을 실시간으로 채워 복사">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h5l3 3v11H6zM11 3v3h3M8 11h5M8 14h5"/></svg></span><span class="lbl"><span class="n">기안문 채우기 (txt)</span><span class="d">실시간 채움 → 복사</span></span></button>
     <button class="navbtn" data-scr="tpl" aria-label="템플릿 관리" title="템플릿 관리 — HWPX·TXT 라이브러리 · 상태·변환·검토">
@@ -116,7 +118,10 @@
              구획 안 사용자 그룹 + 접힘 + 행/그룹 ⋮ 관리 메뉴(결정 43·A안 확정). -->
         <aside class="job-master">
           <div class="job-section">
-            <div class="job-sec-head hwpx">문서 작업 · HWPX</div>
+            <!-- 구획 ＋(1부 결정 10 — 매체 맥락 상속): 레일 「작업 에디터」 사망(결정 39)이
+                 남긴 생성 진입 의무를 이 화면 자신이 승계한다(PR-5 리뷰 F2). -->
+            <div class="job-sec-head hwpx">문서 작업 · HWPX
+              <button class="btn sm" id="jobNewBtn" title="새 작업 — 편집 모드에서 초안을 만듭니다">＋ 새 작업</button></div>
             <div id="jobListHwpx" class="job-list"></div>
             <div id="jobListHwpxEmpty" class="muted job-empty" style="display:none">저장된 작업이 없습니다.</div>
           </div>
@@ -135,6 +140,9 @@
           <div class="job-empty-panel muted" id="jobEmptyPanel">왼쪽에서 작업을 선택하면 세션 패널이 열립니다.</div>
 
           <div class="job-zones" id="jobZones" style="display:none">
+            <!-- T2 복귀 고지(결정 45 재정의) — 렌더 함수가 안 만지는 JS 소유 요소: 세션 전환
+                 리셋·재렌더에 증발하지 않고, 확인 버튼/편집 재진입으로만 걷힌다(job.js 소유). -->
+            <div class="note warnbox" id="jobEditExitNote" style="display:none"></div>
             <!-- 헤더 존 — 작업 정체(이름·템플릿·소스) -->
             <div class="zone zone-header">
               <div class="zone-cap">헤더</div>
@@ -217,22 +225,22 @@
               <div class="logbox" id="jobGenLog">작업, 데이터, 저장 폴더를 확인한 뒤 생성하세요.</div>
             </div>
           </div>
+
+          <!-- 편집 모드(정의) 호스트 — 에디터 흡수(R-flow 블록 2 개정, 결정 39~41).
+               에디터 화면의 세 컨테이너를 문안째 이관: editor.js 렌더러가 같은 id 를 그대로
+               소유한다(옮긴 것은 거처뿐). 신규=마법사 단계·편집=탭은 렌더러가 스냅샷
+               editing_origin 으로 가른다. 표시는 job.js 의 모드 상태가 소유(실행 기본). -->
+          <div class="job-edit-host" id="jobEditHost" style="display:none">
+            <div class="wsteps" id="editor-steps"></div>
+            <div class="wbody" id="editor-body" data-preserve-scroll></div>
+            <footer class="wfoot" id="editor-foot"></footer>
+          </div>
         </div>
       </div>
     </section>
 
-    <!-- ============ 작업 에디터 (HWPX 4단계 마법사, #15·#16) ============ -->
-    <section class="scr" id="scr-editor">
-      <header class="scr-head">
-        <div>
-          <h1>작업 에디터</h1>
-          <p class="sub">누름틀 템플릿과 매핑을 작업으로 저장합니다 — 「작업」 화면에서 데이터를 골라 .hwpx 문서를 만듭니다.</p>
-        </div>
-      </header>
-      <div class="wsteps" id="editor-steps"></div>
-      <div class="wbody" id="editor-body" data-preserve-scroll></div>
-      <footer class="wfoot" id="editor-foot"></footer>
-    </section>
+    <!-- 작업 에디터 별도 화면(scr-editor)은 슬라이스 5에서 사망(결정 39 — 「작업」 패널
+         편집 모드로 흡수). 정의 surface 는 scr-job 의 #jobEditHost, 렌더러는 editor.js 존속. -->
 
     <!-- ============ TXT 기안문 채우기 (첫 실화면) ============ -->
     <section class="scr" id="scr-txt">

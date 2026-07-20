@@ -1,28 +1,54 @@
-/* 작업 에디터(HWPX) 화면 — 브리지로 링1 EditorController 와 왕복. 4단계 마법사.
-   목업 scr-editor 이관(#15·#16). 렌더는 Python 이 window.__push('editor', snapshot) 로 밀어 넣는다.
-   표현 계층(단계 UI·매핑표·행 색·표시형 라벨)만 여기서 만든다 — VM 로직 아님. */
+/* 작업 정의(HWPX) 렌더러 — 브리지로 링1 EditorController 와 왕복. 3분류(템플릿·매핑·저장).
+   에디터 흡수(R-flow 블록 2 개정, 결정 39~41): 표면은 「작업」 패널의 편집 모드(#jobEditHost)에
+   산다 — 신규 초안은 마법사 **단계**(전진 게이트·푸터 내비), 저장된 작업 편집은 **탭**(자유
+   이동, editing_origin 으로 가른다). 구 2단계 '데이터 선택'은 매핑 단계의 관문으로 인라인
+   (3단계 접기) — 템플릿(0) → 매핑(1, 데이터 관문 내장) → 저장(2).
+   렌더는 Python 이 window.__push('editor', snapshot) 로 밀어 넣는다.
+   표현 계층(단계/탭 UI·매핑표·행 색·표시형 라벨)만 여기서 만든다 — VM 로직 아님. */
 (function () {
   const SCREEN = "editor";
   const $ = (id) => document.getElementById(id);
   // 표시형/타입 라벨은 표현 계층 → 여기(뷰)에 둔다(Qt mapping_table 의 웹 짝).
   const TYPE_LABEL = { text: "텍스트", date: "날짜", amount: "금액", const: "고정값" };
   const INFERRED_LABEL = { text: "텍스트", date: "날짜", amount: "금액", number: "숫자", phone: "전화번호" };
-  const STEP_TITLES = ["템플릿 선택", "데이터 선택", "필드 매핑 확정", "작업 저장"];
+  const STEP_TITLES = ["템플릿 선택", "필드 매핑", "작업 저장"];
   let LAST = null;
 
   const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
 
+  // 편집(탭) vs 신규(마법사 단계) — 정보 완전 동등, 공개 방식만 상이(결정 41).
+  const isEditing = (s) => !!s.editing_origin;
+
+  // <details> 의 유효 펼침 — 재렌더 관통 보존(PR-3 리뷰 F8: preserve.js 는 details open 을
+  // 스냅샷하지 않아 수동으로 연 접힘이 매 push 에 도로 닫혔다). 접힘별 전용 변수(혼합 금지).
+  let foldOpen = false;     // 미사용 헤더 접힘(.ign-fold)
+  let tokFoldOpen = false;  // 파일명 토큰 참조 접힘(.tok-fold, F27 — PR-4 리뷰 F6)
+
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
     Preserve.around(() => {  // 마법사 폼 포커스·캐럿·본문 스크롤 보존(#28)
+      // 재구성 전 현 펼침을 읽어 이월(수동 개폐 존중) — 접힘별 전용 클래스로 분리 판독.
+      const fold = document.querySelector("#jobEditHost details.ign-fold");
+      if (fold) foldOpen = fold.open;
+      const tokFold = document.querySelector("#jobEditHost details.tok-fold");
+      if (tokFold) tokFoldOpen = tokFold.open;
       LAST = s;
       $("editor-steps").innerHTML = stepHeader(s);
       $("editor-body").innerHTML = stepBody(s);
       $("editor-foot").innerHTML = footer(s);
+      // 편집(탭)에선 저장 탭에만 푸터가 있다 — 빈 푸터의 고아 경계선 방지.
+      $("editor-foot").style.display = (isEditing(s) && s.step < 2) ? "none" : "";
     });
   }
 
+  /* 헤더: 신규=단계 표지(번호·게이트), 편집=탭(자유 이동 버튼). 같은 .wstep-tab 룩 재사용. */
   function stepHeader(s) {
+    if (isEditing(s)) {
+      return STEP_TITLES.map((t, i) => {
+        const cur = i === s.step ? ' aria-current="true"' : "";
+        return `<button class="wstep-tab as-tab" data-act="goto-tab" data-step="${i}"${cur}>${esc(t)}</button>`;
+      }).join("");
+    }
     return STEP_TITLES.map((t, i) => {
       const cur = i === s.step ? ' aria-current="true"' : "";
       const done = i < s.step ? " done" : "";
@@ -30,26 +56,58 @@
     }).join("");
   }
 
+  /* 본문 표제 — 신규는 단계 서수를 말하고, 편집(탭)은 분류 이름만 말한다. */
+  function stageTitle(s, i) {
+    return isEditing(s) ? STEP_TITLES[i] : `${i + 1}단계 — ${STEP_TITLES[i]}`;
+  }
+
   function stepBody(s) {
     // 세션 통지(#26) — 문제(warn)만 시끄럽게, 정상(ok)은 muted 한 줄(F32).
     const notice = s.notice
       ? `<p class="note ${s.notice.level === "ok" ? "quiet" : "warnbox"}" style="white-space:pre-line">${esc(s.notice.text)}</p>`
       : "";
-    if (s.step === 0) return notice + step0(s);
-    if (s.step === 1) return notice + step1(s);
-    if (s.step === 2) return notice + step2(s);
-    return notice + step3(s);
+    if (s.step === 0) return notice + templateStage(s);
+    if (s.step === 1) return notice + mappingStage(s);
+    return notice + saveStage(s);  // 2 = 저장
   }
 
-  /* ---- 1단계: 템플릿 ---- */
-  function step0(s) {
-    let out = `<div class="wtitle">1단계 — 템플릿 선택</div>
-      <p class="wsub">누름틀이 들어 있는 HWPX 템플릿을 선택하세요.</p>
-      <div class="row"><span class="lbl">템플릿(.hwpx)</span>
-        <input class="field ro" readonly value="${esc(s.template_name || "")}"
-          placeholder="템플릿을 선택하세요">
-        <button class="btn" data-act="pick-template">찾아보기…</button>
+  /* ---- 분류 0: 템플릿 — 신규 1단계 = **라이브러리에서 고르기**(R-info 2부: 생 파일 선택
+     폐기). 바깥 파일은 「가져오기…」=라이브러리로 복사 후 그 사본으로 시작(앱 소유 루트 —
+     원본 수정 불파급). 라이브러리 전체 개편(그룹·구획·F16)은 #108 소관, 여긴 피커만. ---- */
+  function libraryPicker(s) {
+    const items = s.library || [];
+    const list = items.length ? items.map((t) => {
+      // 상태 사유(detail)는 배지 title 로 — 오류 행은 선택 버튼 대신 사유를 보여준다(리뷰 F8:
+      // 죽은 버튼이 생 예외 alert 로 끝나는 반쪽 노출 금지 — 원인 있는 사용 불가).
+      const badge = t.badge_label
+        ? `<span class="tbadge" title="${esc(t.detail || "")}">${esc(t.badge_label)}</span>` : "";
+      const pick = t.is_error
+        ? `<span class="muted capnote" title="${esc(t.detail || "")}">사용 불가</span>`
+        : (t.current
+          ? `<span class="muted capnote">선택됨</span>`
+          : `<button class="btn sm" data-act="use-library" data-path="${esc(t.path)}">이 템플릿으로</button>`);
+      return `<tr><td><span class="fname">${esc(t.name)}</span></td><td>${badge}</td><td>${pick}</td></tr>`;
+    }).join("")
+      : `<tr><td colspan="3" class="muted">라이브러리에 템플릿이 없습니다 — 「가져오기…」로 추가하거나 템플릿 관리에서 폴더를 확인하세요.</td></tr>`;
+    return `<div class="grp">
+      <div class="row" style="margin-bottom:var(--sp-4)"><span class="cap">템플릿 라이브러리</span>
+        <span class="spacer"></span>
+        <button class="btn sm" data-act="import-template">가져오기…</button></div>
+      <div class="tblwrap"><table class="schema-fields"><thead><tr>
+        <th>템플릿</th><th>상태</th><th></th></tr></thead><tbody>${list}</tbody></table></div>
+    </div>`;
+  }
+
+  function templateStage(s) {
+    let out = `<div class="wtitle">${esc(stageTitle(s, 0))}</div>
+      <p class="wsub">라이브러리에서 누름틀 템플릿을 고르세요. 다른 파일은 「가져오기…」로
+        라이브러리에 복사해 시작합니다.</p>
+      ${libraryPicker(s)}`;
+    if (s.template_name) {
+      out += `<div class="row"><span class="lbl">선택한 템플릿</span>
+        <span class="filechip"><b>${esc(s.template_name)}</b></span>
         ${PathTrack.affordances(s.template_path)}</div>`;
+    }
     if (s.raw_block) {
       out += `<p class="note dangerbox" style="white-space:pre-line">${esc(s.raw_block)}</p>`;
     } else if (s.gate_error) {
@@ -87,77 +145,89 @@
         <tbody>${rows}</tbody></table></div>`;
   }
 
-  // 2단계 데이터 미리보기: 개수만 있던 표시를 컬럼 헤더 + 샘플 행 그리드로(#16).
+  // 데이터 미리보기: 컬럼 헤더 + 샘플 행 그리드(#16). F21 열 압축(블록 2 결정 14): 미리보기
+  // 열 = 활성 헤더만(미사용 열은 뷰에서 제외, 재활성 시 복귀). 매핑표 행은 반대로 안 숨긴다
+  // (mapRow 의무 잔존, 조용한 빈칸 금지) — 여긴 데이터 감(感)을 주는 미리보기라 압축이 맞다.
   function dataPreview(s) {
     if (!s.record_count) return "";
-    const cols = s.source_fields || [];
-    const head = cols.map((c) => `<th title="${esc(c)}">${esc(c)}</th>`).join("");
+    const all = s.source_fields || [];
+    const active = new Set(s.active_source_fields || all);
+    // sample_rows 는 전체 source_fields 순서로 투영된 배열 — 원 인덱스를 물고 활성 열만 남긴다.
+    const cols = all.map((name, i) => ({ name, i })).filter((c) => active.has(c.name));
+    const head = cols.map((c) => `<th title="${esc(c.name)}">${esc(c.name)}</th>`).join("");
     const sample = s.sample_rows || [];
     const body = sample.map((row) =>
-      `<tr>${cols.map((_, i) => {
-        const v = row[i];
+      `<tr>${cols.map((c) => {
+        const v = row[c.i];
         return (v === "" || v == null)
           ? `<td><span class="pv emptyval">(빈 값)</span></td>`  // ADR-B: 빈 셀 시끄럽게
           : `<td><span class="pv">${esc(v)}</span></td>`;
       }).join("")}</tr>`).join("");
+    const hiddenCols = all.length - cols.length;
+    const colNote = hiddenCols
+      ? ` · 열 ${cols.length}/${all.length} (미사용 ${hiddenCols}열 제외)`
+      : ` · 전체 ${all.length}열`;
     const more = s.record_count > sample.length
       ? `<p class="fields-head muted">샘플 ${sample.length}행 표시 — 외 ${s.record_count - sample.length}행</p>`
       : "";
-    return `<p class="fields-head">컬럼 ${cols.length}개 · ${s.record_count}행 불러옴.</p>
+    return `<p class="fields-head">${s.record_count}행 불러옴${colNote}.</p>
       <div class="tblwrap"><table class="data-preview"><thead><tr>${head}</tr></thead>
         <tbody>${body}</tbody></table></div>${more}`;
   }
 
-  /* ---- 2단계: 데이터(선택적) ---- */
-  function step1(s) {
-    return `<div class="wtitle">2단계 — 데이터 선택 <span class="muted capnote" style="font-weight:400">(선택)</span></div>
-      <p class="wsub">행마다 문서 1건을 만들 데이터 파일. 작업엔 데이터가 저장되지 않습니다 —
-        매핑 검토용 샘플입니다. 데이터 없이 진행하면 템플릿 필드만으로 매핑합니다.</p>
-      <div class="row"><span class="lbl">데이터(.xlsx/.csv)</span>
-        <input class="field ro" readonly value="${esc(s.data_name || "")}"
-          placeholder="데이터를 선택하거나 건너뛰세요">
-        <button class="btn" data-act="pick-data">찾아보기…</button>
-        <button class="btn" data-act="skip-data">데이터 없이 진행 →</button>
-        ${PathTrack.affordances(s.data_path)}</div>
-      ${dataPreview(s)}
-      ${headerSelect(s)}`;
+  /* 데이터 관문(F18·F20) — 매핑 단계의 머리(3단계 접기). 파일 선택/바꾸기 + '데이터 없이
+     진행' 옵트아웃. 선택과 결과가 같은 지면: 파일을 고르면 매핑표가 그 자리에서 차오른다
+     (Python 이 load_data_path 에서 모델 재구성 → 다음 push). 작업엔 데이터가 저장되지 않는다. */
+  function dataGateway(s) {
+    const has = !!s.data_path;
+    const picker = has
+      ? `<span class="filechip"><b>${esc(s.data_name)}</b>${s.data_sheet ? ` <span class="sheet">시트: ${esc(s.data_sheet)}</span>` : ""}</span>
+         <button class="btn" data-act="pick-data">바꾸기…</button>`
+      : `<button class="btn primary" data-act="pick-data">파일 선택…</button>`;
+    return `<div class="row gateway">
+      <span class="lbl">이 작업의 데이터</span>
+      ${picker}
+      <button class="btn linklike" data-act="skip-data">데이터 없이 진행</button>
+      ${has ? PathTrack.affordances(s.data_path) : ""}</div>`;
   }
 
-  /* 사용할 헤더 선택(#49) — 헤더가 많은 데이터에서 실제 쓸 헤더만 남긴다. 미사용 헤더는
-     자동 매핑 제안·소스 드롭다운 후보에서 빠진다(원본 데이터·다른 매핑은 불변). 저장은
-     하지 않는다 — 매핑이 곧 사용 헤더의 기억이라 재편집 시 저장 매핑에서 파생된다. */
+  /* 사용할 헤더 = 칩-라이브(결정 12·13). 체크박스 스테이징 소거 — 칩 클릭이 곧 즉시 토글.
+     활성 칩(클릭=미사용) + 미사용 접힘 구역(칩 클릭=다시 사용) + 전체 사용/전체 미사용 대칭쌍.
+     활성 변화는 백엔드 apply_active_sources 가 처리: 미접촉 행은 라이브 재제안, 사람 소유
+     행은 소스가 꺼지면 R4 시끄러운 강등(notice). '전체 미사용' 후 미사용 구역 자동 펼침. */
   function headerSelect(s) {
+    // 헤더 선택은 데이터가 로드됐을 때만(관문 겨눔 후) 성립한다 — 편집 모드처럼 데이터 없이
+    // source_fields 가 저장 매핑 어휘에서 채워진 경우엔 '사용할 헤더'가 없다(복원 행을 헤더
+    // 토글로 언매핑하는 유령 표면 방지, 리뷰 F4). mockup 상태 1(파일 겨눔 후)=칩벽 등장.
     const all = s.source_fields || [];  // 전체 헤더(스냅샷 계약 키) — 활성/미사용은 파생
-    if (!all.length) return "";
+    if (!all.length || !s.record_count) return "";
     const active = new Set(s.active_source_fields || []);
     const ignored = s.ignored_source_fields || [];
-    const boxes = all.filter((f) => active.has(f)).map((f) =>
-      `<label class="hchip"><input type="checkbox" class="hbx" value="${esc(f)}" checked> ${esc(f)}</label>`
-    ).join("");
-    // 미사용 헤더는 접어서 'N개 숨김'으로 재진술 + 개별 '다시 사용'(재활성).
+    const activeChips = all.filter((f) => active.has(f)).map((f) =>
+      `<button class="hchip on" data-act="toggle-header" data-field="${esc(f)}" title="클릭 = 미사용으로">${esc(f)}</button>`
+    ).join("") || '<span class="muted">사용 중인 헤더가 없습니다 — 아래 미사용 목록에서 골라 켜세요.</span>';
+    // 미사용 = 벽 이탈 + 접힘 구역(결정 13). '전체 미사용'이 ignored_expanded 로 자동 펼침.
     const ignoredBlock = ignored.length
-      ? `<details class="hidden-hdrs"><summary>미사용 ${ignored.length}개 숨김 — 자동 매핑·소스 후보에서 제외 (펼쳐 다시 사용)</summary>
+      ? `<details class="hidden-hdrs ign-fold"${(s.ignored_expanded || foldOpen) ? " open" : ""}><summary>미사용 ${ignored.length}개 (펼쳐 다시 사용)</summary>
            <div class="hchips">${ignored.map((f) =>
-              `<span class="hchip ign">${esc(f)} <button class="btn sm" data-act="reactivate-source" data-field="${esc(f)}">다시 사용</button></span>`).join("")}</div>
+              `<button class="hchip ign" data-act="toggle-header" data-field="${esc(f)}" title="클릭 = 다시 사용">${esc(f)}</button>`).join("")}</div>
+           <p class="hint" style="margin-top:var(--sp-4)">미사용 헤더는 자동 매핑 제안·소스 후보에서 빠집니다. 클릭하면 다시 사용합니다.</p>
          </details>`
       : "";
     return `<div class="grp">
-      <span class="cap">사용할 헤더 선택</span>
-      <p class="hint" style="margin-top:0">문서 생성에 쓸 헤더만 남기세요. 미사용 헤더는 자동 매핑 제안과
-        소스 드롭다운 후보에서 빠집니다 — 원본 데이터·다른 매핑은 바뀌지 않습니다.</p>
-      <div class="hchips">${boxes || '<span class="muted">활성 헤더가 없습니다.</span>'}</div>
-      <div class="row" style="margin-top:var(--sp-8)">
-        <span class="muted">사용 ${s.active_count} · 미사용 ${s.ignored_count}</span>
+      <div class="row" style="margin-bottom:var(--sp-4)"><span class="cap">사용할 헤더</span>
+        <span class="muted" style="margin-left:var(--sp-8)">${all.length}개 중 ${s.active_count}개 사용</span>
         <span class="spacer"></span>
-        <button class="btn sm" data-act="use-selected">선택 항목만 사용</button>
-        ${s.ignored_count ? `<button class="btn sm" data-act="use-all-headers">모두 사용</button>` : ""}
+        ${s.ignored_count ? `<button class="btn sm" data-act="use-all-headers">전체 사용</button>` : ""}
+        <button class="btn sm" data-act="use-none">전체 미사용</button>
       </div>
+      <div class="hchips">${activeChips}</div>
       ${ignoredBlock}
     </div>`;
   }
 
-  /* ---- 3단계: 매핑 표 ---- */
-  function step2(s) {
+  /* ---- 분류 1: 필드 매핑 (데이터 관문 내장, 3단계 접기) ---- */
+  function mappingStage(s) {
     const rows = (s.rows || []).map((r) => mapRow(r, s)).join("");
     const stepper = s.preview_count
       ? `<button class="btn sm" data-act="prev-rec">◀ 이전 행</button>
@@ -171,13 +241,16 @@
     const banner = s.schema_only
       ? `<p class="note warnbox">데이터 없이 매핑 중 — 값이 비어 보이는 건 '미매칭'이 아니라 '데이터 없음'입니다. 고정값을 넣거나 비움으로 확정하세요.</p>`
       : "";
-    return `<div class="wtitle">3단계 — 필드 매핑 확정</div>
-      <p class="wsub">자동 제안은 초안입니다. 모든 행을 검토·확정해야 다음으로 진행합니다.
-        채우지 않을 필드는 소스를 (비움)으로 두고 확정하세요.</p>
+    return `<div class="wtitle">${esc(stageTitle(s, 1))}</div>
+      <p class="wsub">데이터를 고르면 컬럼·표본이 아래 표에 그대로 차오릅니다. 자동 제안은
+        초안이니 모든 행을 검토·확정해야 저장으로 진행합니다. 채우지 않을 필드는 소스를
+        (비움)으로 두고 확정하세요. 작업엔 데이터가 저장되지 않습니다 — 매핑 검토용 샘플입니다.</p>
+      ${dataGateway(s)}
+      ${headerSelect(s)}
       ${banner}
       <div class="tblwrap"><table class="map"><thead><tr>
         <th>확정</th><th>템플릿 필드 · 추정</th><th>데이터 항목</th>
-        <th>타입 / 고정값</th><th>표시형</th><th>미리보기</th></tr></thead>
+        <th>타입 / 고정값</th><th>표시형</th><th>미리보기</th><th>상태</th></tr></thead>
         <tbody>${rows}</tbody></table></div>
       <div class="stepper">${stepper}<span class="spacer"></span>${counts}</div>
       <div class="gate">
@@ -185,7 +258,17 @@
         <span class="spacer"></span>
         <button class="btn" data-act="confirm-all">모두 확정</button>
         <button class="btn" data-act="unconfirm-all">모두 해제</button>
-      </div>`;
+      </div>
+      ${dataPreview(s)}`;
+  }
+
+  // 소유권 태그(칩-라이브 결정 12) — 확정/수동(touched)/제안(시스템)/후보 없음.
+  function ownerTag(r, s) {
+    if (r.confirmed) return `<span class="tag conf">확정</span>`;
+    if (r.touched) return `<span class="tag man">수동</span>`;
+    if (r.source) return `<span class="tag sugg">제안</span>`;  // 시스템 소유(활성 따라 유동)
+    // 미접촉·소스 없음: 데이터 있으면 '후보 없음', 스키마온리면 중립(오경보 방지).
+    return s.record_count ? `<span class="tag none">후보 없음</span>` : `<span class="tag none">—</span>`;
   }
 
   function mapRow(r, s) {
@@ -201,6 +284,13 @@
         ? [`<option value="${esc(r.source)}" selected title="현재 데이터에 없는 소스">${esc(r.source)} (데이터에 없음)</option>`]
         : [])
       .join("");
+    // 수동(touched·미확정) 행만 전용 '↩' 버튼으로 자동 제안 복귀(리뷰 R5: 센티넬 옵션은 동명
+    // 실열과 충돌 — 별도 액션 revert-source). 확정 행은 제외(PR-3 리뷰 F2: 확정도 touched 라
+    // 무가드면 오클릭 한 번에 확정이 풀리고 다른 열로 치환 — 확정 해제가 의식적 1단계).
+    // 데이터 있을 때만(재제안할 활성 소스가 있어야).
+    const revertBtn = r.touched && !r.confirmed && s.record_count
+      ? ` <button class="btn sm" data-act="revert-source" data-index="${r.index}" title="자동 제안으로 되돌리기">↩</button>`
+      : "";
     const typeOpts = (s.type_options || []).map((t) =>
       `<option value="${esc(t)}"${t === r.type ? " selected" : ""}>${esc(TYPE_LABEL[t] || t)}</option>`).join("");
     const fmtList = (s.fmt_options && s.fmt_options[r.type]) || [];
@@ -219,21 +309,23 @@
       <td><input type="checkbox" class="cbx" data-act="row-confirm" data-index="${r.index}"${r.confirmed ? " checked" : ""}></td>
       <td><span class="fname" title="${esc(r.context || r.template_field)}">${esc(r.template_field)}</span>
         <span class="tbadge">[추정: ${esc(inferred)}]</span></td>
-      <td><select class="sel" data-act="row-source" data-index="${r.index}">${srcOpts}</select></td>
+      <td><select class="sel" data-act="row-source" data-index="${r.index}">${srcOpts}</select>${revertBtn}</td>
       <td><select class="sel" data-act="row-type" data-index="${r.index}">${typeOpts}</select> ${constInput}</td>
       <td><select class="sel" data-act="row-fmt" data-index="${r.index}"${fmtList.length ? "" : " disabled"}>${fmtOpts}</select></td>
-      <td>${preview}</td></tr>`;
+      <td>${preview}</td>
+      <td>${ownerTag(r, s)}</td></tr>`;
   }
 
-  /* ---- 4단계: 저장 ---- */
-  function step3(s) {
-    return `<div class="wtitle">4단계 — 작업 저장${s.editing_origin ? ` <span class="pill">편집: ${esc(s.editing_origin)}</span>` : ""}</div>
+  /* ---- 분류 2: 저장 ---- */
+  function saveStage(s) {
+    return `<div class="wtitle">${esc(stageTitle(s, 2))}${s.editing_origin ? ` <span class="pill">편집: ${esc(s.editing_origin)}</span>` : ""}</div>
       <p class="wsub">이 작업(템플릿·매핑·파일명)을 저장합니다. 데이터·행은 저장하지 않습니다 —
         실행할 때 고릅니다.</p>
       <div class="row"><span class="lbl lbl-fixed">작업 이름</span>
         <input class="field" data-act="name" value="${esc(s.name)}" placeholder="예: 공고서 자동생성"></div>
       <div class="row"><span class="lbl lbl-fixed">파일명 패턴</span>
         <input class="field mono" data-act="pattern" value="${esc(s.pattern)}"></div>
+      ${s.pattern_preview ? `<p class="hint mono" style="margin-top:0">예: ${esc(s.pattern_preview)}${s.record_count ? " — 표본 1행 기준" : ""}</p>` : ""}
       ${provenanceBlock(s)}
       ${datasetBlock(s)}
       ${defaultDatasetBlock(s)}
@@ -308,19 +400,20 @@
 
   /* 파일명 패턴 토큰 도우미(#17) — Qt SaveJobPage._refresh_filename_help 웹 포트.
      s.rows 는 스텝2 매핑 확정 시점에 이미 계산돼 스냅샷에 실려온다 — 신규 브리지 호출 없음. */
+  /* 토큰 참조 = 접힘(F27, 결정 14) — 라이브 예시(F26)가 상시 답을 주므로 참조표는 부피만
+     차지한다. 펼침은 사용자 선택(기본 접힘). */
   function filenameTokenHelp(s) {
     const rows = (s.rows || []).filter((r) => r.has_content);
     const fieldsHtml = rows.length
       ? rows.map((r) => `<code>{{${esc(r.template_field)}}}</code> → ${fnPreviewText(r, s)}`).join(" &nbsp;·&nbsp; ")
       : `<span class="muted">매핑을 완료하면 파일명에 쓸 수 있는 필드가 여기 표시됩니다.</span>`;
-    return `<div class="grp">
-      <span class="cap">파일명에 넣을 수 있는 값</span>
-      <p class="hint" style="margin-top:0">${fieldsHtml}</p>
+    return `<details class="hidden-hdrs tok-fold"${tokFoldOpen ? " open" : ""}><summary>파일명에 넣을 수 있는 값 (펼쳐 보기)</summary>
+      <p class="hint" style="margin-top:var(--sp-4)">${fieldsHtml}</p>
       <p class="hint">
         날짜: <code>{{date}}</code> → 생성 날짜(YYYYMMDD) · <code>{{date:YYYY-MM-DD}}</code> → 하이픈 포함 날짜<br>
         순번: <code>{{seq}}</code> → 1부터 증가 · <code>{{seq:001}}</code> → 001부터 세 자리로 증가
       </p>
-    </div>`;
+    </details>`;
   }
 
   function fnPreviewText(r, s) {
@@ -331,26 +424,67 @@
     return `<span class="pv">${esc(display)}</span>`;
   }
 
-  /* ---- 푸터 내비 ---- */
+  /* ---- 푸터 내비 — 신규=마법사(뒤로/다음/저장), 편집=탭이라 내비 없음(저장 탭에 저장만).
+     복귀 어포던스 불설치(결정 40): "저장하고 실행으로" 류 포커스 튕김 버튼은 두지 않는다 —
+     실행 복귀는 좌 목록 행 클릭이 담당하고, 저장은 제자리에서 완결된다. ---- */
   function footer(s) {
+    if (isEditing(s)) {
+      return s.step === 2
+        ? `<span class="spacer"></span><button class="btn primary" data-act="save">저장</button>`
+        : "";
+    }
     const back = s.step > 0
       ? `<button class="btn" data-act="back">◀ 뒤로</button>` : `<button class="btn" disabled>◀ 뒤로</button>`;
     let next;
-    if (s.step < 3) {
+    if (s.step < 2) {
       const can = s.reachable[s.step];
       next = `<button class="btn primary" data-act="next"${can ? "" : " disabled"}>다음 ▶</button>`;
     } else {
       next = `<button class="btn primary" data-act="save">작업 저장</button>`;
     }
-    const hint = (s.step < 3 && !s.reachable[s.step])
+    const hint = (s.step < 2 && !s.reachable[s.step])
       ? `<span class="muted capnote">${gateHint(s)}</span>` : "";
     return `${back}<span class="spacer"></span>${hint}${next}`;
   }
 
   function gateHint(s) {
     if (s.step === 0) return "템플릿을 선택하고 게이트를 통과해야 진행할 수 있습니다";
-    if (s.step === 2) return "전 행을 확정해야 진행할 수 있습니다";
+    if (s.step === 1) return "전 행을 확정해야 진행할 수 있습니다";
     return "";
+  }
+
+  /* 확정·수동 매핑 보호(PR#105 리뷰 F1) — 관문의 데이터 교체/비우기는 _ensure_model 재초안으로
+     사람 소유 행을 미확정으로 되돌린다(값은 carry_profile 로 이월). 편집 복원 확정을 '검토만'
+     하려던 1클릭이 매핑 표 바로 위 관문에서 조용히 리셋하지 않게 파괴 전 확인한다(confirm-or-
+     alarm). 수치는 **Python 이 지금** 판정한다(PR-2 리뷰 F7 — LAST 는 push 지연 창에서 stale 이라
+     방금 확정한 행이 안 보여 확인이 조용히 생략됐다). 0이면 조용히 진행(새 작업 첫 겨눔 등). */
+  /* 새 템플릿 진입 = 새 작업 세션 확인 — 폐기 판정은 EditorEntry.confirmDiscard 단일 출처
+     (PR-4 리뷰 F9). 편집(탭) 맥락에선 미저장이 없어도(클린 복원) 확인한다(리뷰 F1: 「이
+     템플릿으로」가 열려 있는 작업의 편집 맥락을 조용히 닫고 새 초안으로 갈아타면 안 된다 —
+     저장본은 남지만 '이 작업을 고치는 중'이라는 맥락의 전환은 의식적이어야 한다). */
+  async function confirmNewSessionIfUnsaved() {
+    const editing = LAST && LAST.editing_origin;
+    if (editing) {
+      const busy = await Bridge.editorHasUnsavedWork();
+      return Modal.confirm({ body:
+        `'${editing}' 편집을 닫고 새 작업 초안을 시작합니다.\n` +
+        (busy
+          ? "저장하지 않은 변경은 사라집니다."
+          : `저장된 '${editing}' 은 그대로 남습니다.`) +
+        "\n\n계속할까요?" });
+    }
+    return EditorEntry.confirmDiscard(
+      "저장하지 않은 작업 세션이 있습니다.\n" +
+      "새 템플릿으로 시작하면 이전의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?");
+  }
+
+  async function confirmMappingResetIfConfirmed(verbPhrase) {
+    const st = await Bridge.call(SCREEN, "mapping_reset_stakes", {});
+    const n = (st && st.human) || 0;
+    if (!n) return true;
+    return Modal.confirm({ body:
+      `확정했거나 직접 편집한 매핑 ${n}개가 있습니다.\n${verbPhrase} 값은 이월되지만 ` +
+      `전부 미확정으로 돌아가 다시 확인해야 합니다.\n\n계속할까요?` });
   }
 
   /* ---- 이벤트 위임(innerHTML 재구성이라 위임이 안전) ---- */
@@ -364,17 +498,20 @@
     // 늘어도 가드를 자동 상속한다(profile_* 만 봉합하고 confirmAll 을 빠뜨렸던 재발 방지).
     try {
       switch (act) {
-        case "pick-template": {
-          // 새 템플릿 선택 = 새 작업 세션 → 미저장 세션은 조용히 버리지 않고 확인(#25).
-          if (LAST && LAST.has_unsaved_work && !(await Modal.confirm({ body:
-            "저장하지 않은 작업 세션이 있습니다.\n" +
-            "새 템플릿으로 시작하면 이전의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?" }))) break;
-          const r = await Bridge.pickTemplateFile(SCREEN);
+        case "use-library": {
+          if (!(await confirmNewSessionIfUnsaved())) break;
+          await Bridge.call(SCREEN, "use_library_template", { path: el.dataset.path });
+          break;
+        }
+        case "import-template": {
+          if (!(await confirmNewSessionIfUnsaved())) break;
+          const r = await Bridge.importTemplateFile(SCREEN);
           if (typeof r === "string" && r.startsWith("ERROR:")) alertMsg(r.slice(6).trim());
           break;
         }
         case "ack-gate": await Bridge.call(SCREEN, "ack_gate", {}); break;
         case "pick-data": {
+          if (!(await confirmMappingResetIfConfirmed("데이터를 바꾸면"))) break;  // 확정 보호(F1)
           let r = await Bridge.pickDataFile(SCREEN);
           if (r && typeof r === "object" && r.needs_sheet) {   // 다중 시트 → 확정 게이트(#33)
             r = await SheetPicker.choose(SCREEN, r);
@@ -383,17 +520,37 @@
           if (typeof r === "string" && r.startsWith("ERROR:")) alertMsg(r.slice(6).trim());
           break;
         }
-        case "skip-data": await Bridge.call(SCREEN, "skip_data", {}); break;
-        case "use-selected": {
-          // 활성 체크박스 중 체크된 것만 사용 → 나머지(체크 해제 + 이미 미사용) 일괄 미사용.
-          const fields = Array.from(
-            document.querySelectorAll("#scr-editor .hbx:checked")).map((b) => b.value);
-          await Bridge.call(SCREEN, "use_only_selected", { fields });
+        case "skip-data": {
+          if (!(await confirmMappingResetIfConfirmed("데이터 없이 진행하면"))) break;  // 확정 보호(F1)
+          await Bridge.call(SCREEN, "skip_data", {});
           break;
         }
-        case "use-all-headers": await Bridge.call(SCREEN, "use_all_headers", {}); break;
-        case "reactivate-source":
+        case "goto-tab":  // 편집(탭) 자유 이동(결정 41) — 게이트는 백엔드가 editing 기준으로 판정.
+          await Bridge.call(SCREEN, "goto_step", { step: Number(el.dataset.step) });
+          break;
+        // 칩-라이브(결정 13): 칩 클릭 = 즉시 토글(활성↔미사용). 전체 사용/전체 미사용 대칭쌍.
+        case "toggle-header":
           await Bridge.call(SCREEN, "toggle_source_active", { field: el.dataset.field }); break;
+        case "use-all-headers": await Bridge.call(SCREEN, "use_all_headers", {}); break;
+        case "use-none": {
+          // 수치는 Python 이 지금 판정(stale LAST 우회 차단 — F7 동형). 확정 존재는 확인
+          // 모달 **전에** 선차단(PR-3 리뷰 F5: 파괴를 승인시킨 뒤 오류로 거부하는 확인-후-
+          // 오류 순서 금지) — 백엔드 loud 차단은 백스톱으로 존속. 소스 겨눈 수동 미확정만
+          // 실제 강등 집합이라 그 수치로 확인한다(리뷰 F4 — 문안=파괴 집합).
+          const st = await Bridge.call(SCREEN, "mapping_reset_stakes", {});
+          if (st && st.confirmed) {
+            window.alert(`확정한 매핑 ${st.confirmed}개가 있어 전체 미사용을 할 수 없습니다 — 확정을 먼저 해제하거나 칩을 하나씩 끄세요.`);
+            break;
+          }
+          const man = (st && st.manual_unconfirmed) || 0;
+          if (man && !(await Modal.confirm({ body:
+            `직접 소스를 고른 매핑 ${man}개가 있습니다.\n전체 미사용하면 이 수동 지정이 해제됩니다` +
+            `(다시 켜도 자동 제안으로만 복원됩니다).\n\n계속할까요?` }))) break;
+          await Bridge.call(SCREEN, "use_none", {});
+          break;
+        }
+        case "revert-source":
+          await Bridge.call(SCREEN, "revert_source", { index: idx }); break;
         case "prev-rec": await Bridge.call(SCREEN, "step_preview", { delta: -1 }); break;
         case "next-rec": await Bridge.call(SCREEN, "step_preview", { delta: 1 }); break;
         case "unconfirm-all": await Bridge.call(SCREEN, "unconfirm_all", {}); break;
@@ -454,13 +611,15 @@
       return;
     }
     if (res.ok) {
-      let msg = `✓ 작업 '${res.saved_name}' 저장됨.`;
-      if (res.dataset_registered) msg += ` 데이터 '${res.dataset_registered}' 등록됨.`;
+      // 저장은 제자리(결정 40 — 포커스 튕김 없음). 좌 목록만 갱신해 새/개명 작업이 바로 보이게
+      // 한다(에디터 흡수로 목록과 같은 화면에 산다 — REFRESH_ON_NAV 를 기다릴 이유가 없다).
+      if (window.JobScreen && window.JobScreen.refreshList) window.JobScreen.refreshList();
+      // 성공 재진술은 Python notice(ok) 채널 — 저장 착지가 저장본 편집 세션 재로드 push 라
+      // #save-msg 는 그 재렌더에 증발한다(PR-2 리뷰 F2: push/반환 경합에 안 걸리는 채널만).
+      // 반저장(작업 저장 성공 + 데이터 등록 실패)만 여기서 loud — 성공으로 뭉개지 않는다.
       if (res.dataset_register_error) {
-        // 반저장(작업 저장 성공 + 데이터 등록 실패) — 성공으로 뭉개지 않고 경고로 재진술.
-        alertMsg(msg + " " + res.dataset_register_error);
-      } else {
-        alertMsg(msg, "ok");
+        window.alert(`작업 '${res.saved_name}' 은 저장됐지만 데이터 등록이 실패했습니다.\n`
+          + res.dataset_register_error);
       }
       return;
     }
@@ -492,7 +651,8 @@
 
   function init() {
     Bridge.onPush(SCREEN, render);
-    const root = $("scr-editor");
+    // 에디터 흡수(결정 39) — 표면 거처는 「작업」 패널의 편집 호스트. 위임 루트도 함께 이사.
+    const root = $("jobEditHost");
     root.addEventListener("click", onClick);
     root.addEventListener("change", onChange);
     Bridge.initial(SCREEN).then(render);

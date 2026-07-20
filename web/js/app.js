@@ -34,6 +34,8 @@
         window.alert(String((err && err.message) || err)));
     }
   }
+  // 레일 「작업 에디터」 과도기 심은 항목 사망(슬라이스 5 삭제 PR)과 함께 제거 — 편집
+  // 진입은 EditorEntry.land 소비처(홈·템플릿 관리·작업 ⋮)가 담당한다.
   navs.forEach((b) => b.addEventListener("click", () => go(b.dataset.scr)));
   // 홈(허브)이 카드/버튼에서 워크플로 화면으로 보내는 진입점(home.js 가 소비).
   window.Nav = { go };
