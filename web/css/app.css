@@ -177,11 +177,73 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .pane.workcard .note[data-level="warn"]{color:var(--a-warn)}
 .pane.workcard.complete .wc-readout{color:var(--a-ok)}
 
+/* ---- 빠른 기안(작업의 휘발 쌍둥이 · R-flow 블록 5 · 슬라이스 7) ----
+   미리보기는 txt 의 .wc-render(+.seg-*·f-* 글꼴)를 그대로 재사용한다 — 채움 표지 삼분이
+   두 표면에서 같은 계약(결정 22·33). 여기선 슬롯·2판·파이프라인 토큰 폼·탭·빈손 카드만 둔다. */
+.qd-slots{display:flex;gap:var(--sp-16);flex-wrap:wrap;align-items:center;
+  padding:var(--sp-10) var(--sp-12);background:var(--a-card);border:1px solid var(--a-border);
+  border-radius:var(--rad-surface);margin-bottom:var(--sp-12)}
+.qd-slot{display:flex;align-items:center;gap:var(--sp-8);min-width:0}
+.qd-slot .lbl{font-size:var(--fs-caption);color:var(--a-muted);font-weight:700;flex:none}
+.qd-slot .field.sm{flex:none;width:auto;max-width:240px}
+.qd-body{flex:1;min-height:0;display:flex}
+/* 값 폼 | 미리보기 2판 — 좁으면 세로 적층(반응형 C 동형) */
+.qd-2pane{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  gap:var(--sp-16)}
+.qd-formpane,.qd-prevpane{background:var(--a-card);border:1px solid var(--a-border);
+  border-radius:var(--rad-surface);padding:var(--sp-12);display:flex;flex-direction:column;min-height:0}
+.qd-formpane{overflow:auto}
+.qd-formpane h4,.qd-prevpane h4{margin:0 0 var(--sp-10);font-size:var(--fs-caption);
+  color:var(--a-muted);font-weight:700}
+/* 파이프라인 토큰 행(결정 34) — 윗줄=이름·칩, 아랫줄=↳ 출력(들여쓰기+음영 = "결과"임을 형태가 말함) */
+.qd-trow{display:flex;flex-direction:column;gap:var(--sp-6);padding:var(--sp-8) 0;
+  border-bottom:1px dashed var(--a-border)}
+.qd-trow:last-of-type{border-bottom:0}
+.qd-trow-head{display:flex;align-items:center;gap:var(--sp-8)}
+.qd-tname{flex:1;min-width:0;font-family:"Cascadia Code","Consolas",ui-monospace,monospace;
+  font-size:var(--fs-body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--a-ink)}
+.qd-chip{flex:none;font-size:var(--fs-caption);border-radius:var(--rad-pill);padding:1px var(--sp-8);
+  font-weight:600;white-space:nowrap}
+.qd-chip.man{background:var(--fb-fill-bg);color:var(--a-ok)}
+.qd-chip.auto{background:var(--fb-fill-bg);color:var(--a-primary)}
+.qd-chip.hand{background:var(--fb-blank-bg);color:var(--a-warn)}
+.qd-chip.blank{background:var(--a-window);color:var(--a-muted)}
+.qd-vline{display:flex;align-items:flex-start;gap:var(--sp-6);padding-left:var(--sp-16)}
+.qd-elbow{color:var(--a-muted);flex:none;line-height:1.6}
+/* 출력칸 = 내용 크기 칩(결정 34, field-sizing) — 폭이 값의 실제 길이를 따른다. 미지원(폴백)은
+   전폭 + JS 높이 보정. 음영 = 미리보기 채움 표지(seg-fill)와 같은 계열(폼 출력=렌더 채움 자리). */
+.qd-val{field-sizing:content;width:auto;min-width:10ch;max-width:100%;resize:none;overflow-y:hidden;
+  line-height:1.5;min-height:26px;padding:var(--sp-4) var(--sp-6);border:1px solid transparent;
+  border-radius:var(--rad-control);background:var(--fb-fill-bg);color:var(--a-ink);
+  font:inherit}
+@supports not (field-sizing:content){.qd-val{width:100%;flex:1}}
+.qd-val:hover,.qd-val:focus{border-color:var(--a-border);background:var(--a-card);outline:none}
+.qd-val:focus-visible{outline:2px solid var(--a-primary);outline-offset:1px}
+.qd-val.empty{background:transparent;border:1px dashed var(--a-border)}
+.qd-formhint{font-size:var(--fs-caption);color:var(--a-muted);margin:var(--sp-8) 0 0}
+/* 우측 판 탭 — 미리보기 ↔ 원문 편집(결정 34) */
+.qd-prevhead{display:flex;align-items:center;gap:var(--sp-8);margin-bottom:var(--sp-10)}
+.qd-tabs{display:flex;gap:var(--sp-2)}
+.qd-tabs .btn[aria-pressed="true"]{background:var(--fb-fill-bg);border-color:var(--a-primary);
+  color:var(--a-primary);font-weight:600}
+.qd-srcedit{flex:1;min-height:220px;resize:none;font-size:var(--fs-body);line-height:1.6;
+  font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
+.qd-prevnote{font-size:var(--fs-caption);color:var(--a-muted);margin:var(--sp-8) 0 0}
+/* 빈손 진입 카드 — 두 방향(라이브러리 / 붙여넣기) */
+.qd-emptywrap{flex:1;display:flex;gap:var(--sp-16);align-items:stretch;justify-content:center;
+  flex-wrap:wrap;padding:var(--sp-24)}
+.qd-dircard{flex:1;max-width:320px;border:1px dashed var(--a-border);border-radius:var(--rad-surface);
+  padding:var(--sp-16);display:flex;flex-direction:column;gap:var(--sp-8);background:var(--a-card)}
+.qd-dircard h4{margin:0;font-size:var(--fs-strong)}
+.qd-dircard p{margin:0;flex:1;font-size:var(--fs-body);color:var(--a-muted)}
+.qd-dircard .btn{align-self:flex-start}
+
 /* ---- 반응형 C: 좁으면 2판 → 세로 적층 ---- */
 @media (max-width:820px){
   .app{grid-template-columns:1fr}
   .rail{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--a-border)}
   .panes{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+  .qd-2pane{grid-template-columns:1fr;grid-template-rows:auto auto}
 }
 
 /* ---- 작업 에디터 마법사 (#15·#16) ---- */
