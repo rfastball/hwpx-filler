@@ -370,17 +370,41 @@
           <h1>빠른 기안</h1>
           <p class="sub">템플릿과 데이터를 세션 안에서만 결합해 복사합니다 — 저장 없이 한 번 쓰고 버리는 휘발 표면입니다.</p>
         </div>
-        <!-- 휘발 표지 — 이 화면은 아무것도 저장하지 않는다(결정 29). 상태 배지는 후속 PR 에서
-             비어있음/미채움/전량 채움 3상으로 산다. -->
+        <!-- 휘발 표지 — 이 화면은 아무것도 저장하지 않는다(결정 29). 비어있음/미채움/전량 채움
+             3상으로 산다(quickdraft.js 가 토큰 상태로 갱신). -->
         <div class="status" id="qdStatus" data-level="idle">세션 휘발 · 저장 없음</div>
       </header>
 
-      <!-- 껍데기 본문 — PR-2 이후 슬롯·토큰 폼·미리보기 2판이 여기 들어선다. 지금은 정직한
-           준비 표지(빈 dead 버튼 대신)로 둔다. -->
-      <div id="qdBody">
-        <div class="muted job-empty">준비 중입니다.</div>
+      <!-- 슬롯 — 템플릿 선택 + 붙여넣기. 데이터 버튼(등록/파일)은 PR-3(데이터 이원)에서
+           붙는다(지금 넣으면 dead 버튼 — 없는 걸 있는 척하지 않는다). -->
+      <div class="qd-slots">
+        <div class="qd-slot">
+          <span class="lbl">템플릿</span>
+          <select class="field sm" id="qdTplSel" aria-label="템플릿 선택"></select>
+          <button class="btn sm" id="qdBtnPaste">붙여넣기…</button>
+        </div>
       </div>
+
+      <!-- 본문 = 값 폼 + 미리보기 2판, 또는 빈손 진입 카드. quickdraft.js 가 스냅샷으로 채운다
+           (안정 컨테이너, run/txt 패턴). 데이터 이원·제스처 결속(PR-3)·복사/가드(PR-4)는 이
+           안을 확장한다. 정적 부트스트랩 표지 — render 가 즉시 갈아치우지만, init 이 실패하면
+           빈 화면 대신 이 문구가 남고 전역 rejection 백스톱(app.js)이 시끄럽게 알린다. -->
+      <div class="qd-body" id="qdBody"><div class="muted job-empty">불러오는 중…</div></div>
     </section>
+
+    <!-- 붙여넣기 모달(빠른 기안 전용) — txt 의 #pasteModal 과 별개 id 여야 리스너 충돌이 없다
+         (화면별 고유 겨눔). 세션 사본으로만 쓰고 라이브러리에 저장하지 않는다(결정 34). -->
+    <div id="qdPasteModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="qdPasteTitle">
+      <div class="modal-card">
+        <h3 id="qdPasteTitle">템플릿 붙여넣기</h3>
+        <p class="muted">받은 서식을 그대로 붙여 넣으세요. {{필드}} 토큰을 찾아 폼을 만듭니다. 라이브러리에는 저장되지 않습니다.</p>
+        <textarea id="qdPasteText" rows="10" placeholder="제목: {{사업명}} ..."></textarea>
+        <div class="modal-actions">
+          <button class="btn" id="qdPasteCancel">취소</button>
+          <button class="btn primary" id="qdPasteOk">이 텍스트로 시작</button>
+        </div>
+      </div>
+    </div>
 
     <!-- ============ 템플릿 관리 (HWPX·TXT 라이브러리, #13) ============ -->
     <!-- 목업 scr-tpl 이관. 안정 DOM(id) + template.js 가 window.__push('tpl', snapshot) 로 값만
@@ -582,6 +606,7 @@
 <script src="js/copy.js"></script>
 <script src="js/theme.js"></script>
 <script src="js/esc.js"></script>
+<script src="js/segview.js"></script>
 <script src="js/preserve.js"></script>
 <script src="js/modal.js"></script>
 <script src="js/sheet_picker.js"></script>

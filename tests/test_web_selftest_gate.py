@@ -419,6 +419,31 @@ class TestWebSelftestGate:
             "txt 존 렌더가 작업 화면 테이블 DOM 에 흘러들었습니다 — 인스턴스 격리 파손."
         )
 
+    def test_quickdraft_token_form_and_preview_fill_marking(self, selftest_result: dict) -> None:
+        # 빠른 기안(R-flow 블록 5, 슬라이스 7 PR-2) — 파이프라인 토큰 폼·미리보기 채움 표지가
+        # 실 WebView2 에서 그려지는지 되읽는다(render_segments 사영, 결정 22·34). 원문 편집 탭
+        # 전환은 이 엔진 evaluate_js 의 합성 클릭이 파싱 노드에 안 닿아 프로브로 구동 불가라
+        # 여기서 되읽지 않는다 — 버튼 존재는 아래·DOM 계약이, 라이브 재구성 거동은 백엔드
+        # test_edit_source_live_retokenizes_and_demotes 가 가드(상보 커버리지).
+        q = selftest_result["quickdraft"]
+        assert q.get("error") is None, f"빠른 기안 프로브 예외: {q.get('error')!r}"
+        assert q["rows"] == 2, f"토큰 폼 행 수가 다릅니다: {q!r}"
+        assert q["val0"] == "행정정보시스템", f"수기 값 textarea 미렌더: {q['val0']!r}"
+        assert q["chip1"] == "비어 있음", f"빈 토큰 칩 상태가 다릅니다: {q['chip1']!r}"
+        # 채움 표지 삼분: fill(음영 값) + missing({{토큰}} 빨강)이 실제로 페인트된다.
+        assert "행정정보시스템" in q["render_text"], f"미리보기 채움 렌더 누락: {q['render_text']!r}"
+        assert "{{추정가격}}" in q["render_text"], f"미채움 토큰 원문 미노출: {q['render_text']!r}"
+        assert q["seg_fill"] is True and q["seg_missing"] is True, (
+            f"채움 표지 세그먼트 클래스 미부착(fill·missing): {q!r}"
+        )
+        assert q["pill"] == "미채움 1", f"미채움 알약 재진술이 다릅니다: {q['pill']!r}"
+        # 미리보기/원문 편집 두 탭 진입점이 렌더된다(전환 거동은 상보 커버리지가 가드).
+        assert q["tabs"] == 2, f"미리보기/원문 편집 탭 버튼이 2개가 아닙니다: {q!r}"
+        # 껍데기 격리 — 빠른 기안 렌더가 작업 화면 데이터 존 DOM 에 흘러들지 않는다(id 분리).
+        assert q["job_body_untouched"] is True, (
+            "빠른 기안 렌더가 작업 화면 테이블 DOM 에 흘러들었습니다 — 인스턴스 격리 파손."
+        )
+
     def test_job_drift_replaces_mirror_with_blocking_banner(self, selftest_result: dict) -> None:
         # danger(구조 드리프트)는 거울 표와 섞이지 않고 차단 배너 + 행동 링크로 **교체**된다
         # (결정 36·S9). overlay 로 표 위에 얹히는 게 아니라 실제로 표가 사라지고 배너가 선다.

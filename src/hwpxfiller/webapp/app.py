@@ -884,6 +884,54 @@ _TXT_ZONE_PROBE_JS = r"""
 """
 
 
+# 빠른 기안(R-flow 블록 5, 슬라이스 7 PR-2) — 파이프라인 토큰 폼 + 미리보기 채움 표지가 실
+# WebView2 에서 그려지는지 되읽는다(txt 존 프로브 동형: 합성 스냅샷 push → DOM 되읽기).
+# 미리보기·폼은 push 구동 렌더라 동기로 잡힌다. **탭 전환(원문 편집)은 여기서 되읽지 않는다**:
+# 이 엔진의 evaluate_js 에서 dispatchEvent 로 만든 합성 클릭이 innerHTML 로 파싱된 노드의
+# 리스너에 닿지 않아(순수 createElement 노드는 발화되나 파싱 노드는 불발 — 실측) 실 사용자
+# 클릭과 달리 프로브로 구동 불가하다. 탭 버튼 존재는 DOM 계약이, 라이브 재구성·(수정됨) 강등
+# 거동은 백엔드 test_edit_source_live_retokenizes_and_demotes 가 가드한다.
+_QUICKDRAFT_PROBE_JS = r"""
+(function () {
+  var out = {};
+  try {
+    window.Nav.go('quickdraft');
+    var snap = {
+      origin:'lib', template_name:'개찰참관보고',
+      template_text:'제목: {{사업명}}\n금액: {{추정가격}}', modified:false,
+      tokens:[{name:'사업명', state:'man', value:'행정정보시스템'},
+              {name:'추정가격', state:'blank', value:''}],
+      segments:[{text:'제목: ', kind:'literal', name:''},
+                {text:'행정정보시스템', kind:'fill', name:'사업명'},
+                {text:'\n금액: ', kind:'literal', name:''},
+                {text:'{{추정가격}}', kind:'missing', name:'추정가격'}],
+      missing_fields:['추정가격'], empty_fields:[], unfilled_count:1,
+      has_data:false, data_label:'', data_kind:''
+    };
+    window.__push('quickdraft', snap);
+    // 파이프라인 토큰 폼 — 행 수·값 textarea·칩 상태(무결속 수기 = man, 빈칸 = blank).
+    out.rows = document.querySelectorAll('#qdBody .qd-trow').length;
+    out.val0 = (document.getElementById('qdVal-0') || {}).value;
+    out.chip1 = (document.getElementById('qdChip-1') || {}).textContent;
+    // 미리보기 채움 표지 삼분 — fill(음영 값)·missing({{토큰}} 빨강)이 실제로 페인트된다.
+    var render = document.getElementById('qdRender');
+    out.render_text = render ? render.textContent : '';
+    out.seg_fill = !!document.querySelector('#qdRender .seg-fill');
+    out.seg_missing = !!document.querySelector('#qdRender .seg-missing');
+    // 미채움 알약(휘발 표지 3상) — missing 1건이면 「미채움 1」.
+    out.pill = document.getElementById('qdStatus').textContent;
+    // 두 탭 버튼 존재(원문 편집 탭 진입점) — 전환 거동은 위 주석대로 백엔드/DOM 계약이 가드.
+    out.tabs = document.querySelectorAll('#qdBody .qd-tabs .btn').length;
+    // 껍데기 격리 — 빠른 기안 폼(qd-trow)이 작업 화면 데이터 존 DOM 으로 새지 않는다(id 분리).
+    // jobTableBody 는 앞선 job 프로브가 채우므로 '빈가'가 아니라 '누출 없음'으로 판정한다.
+    out.job_body_untouched = !document.querySelector('#jobTableBody .qd-trow');
+    out.error = null;
+  } catch (e) { out.error = String((e && e.message) || e); }
+  return out;
+})()
+"""
+
+
 # ------------------------------------------------------------------ 자가검증(Q3)
 def _finish_selftest(window: "object", result: dict) -> None:
     """되읽기 결과를 결정적 위치에 쓰고 정식 종료한다(쓰기·읽기 단계 공용).
@@ -997,6 +1045,8 @@ def _selftest_drive(window: "object") -> None:
         result["editor_chip"] = window.evaluate_js(_EDITOR_CHIP_PROBE_JS)  # type: ignore[attr-defined]
         # txt 데이터 존(슬라이스 6 PR-2b) — datazone.js 두 번째 인스턴스 실렌더 되읽기.
         result["txt_zone"] = window.evaluate_js(_TXT_ZONE_PROBE_JS)  # type: ignore[attr-defined]
+        # 빠른 기안(슬라이스 7 PR-2) — 파이프라인 토큰 폼·미리보기 채움 표지 실렌더 되읽기.
+        result["quickdraft"] = window.evaluate_js(_QUICKDRAFT_PROBE_JS)  # type: ignore[attr-defined]
         # 다크모드 영속·무깜빡임(콜드부트 되읽기, #74) — 부팅 시 loaded 핸들러가 저장 테마
         # (settings.json, 오리진 비의존)를 show 전에 data-theme 로 주입했는지. 저장값이 없으면
         # data_theme=null(=system). 앞선 쓰기 프로세스가 남긴 값이 여기서 보이면 Python 설정
