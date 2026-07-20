@@ -263,14 +263,20 @@
     if (!g) return true;
     // 무결속 수기 값은 유지 + **고지**(막지 않는다, 결정 32) — 매 행 이동마다 모달이 서면
     // 그건 완화 조항이 경계하는 반복이다. 확인은 혼합이 생기는 직접 수정에만.
-    pendingNote = g.notice || "";
-    if (!g.armed) return true;
-    return window.Modal.confirm({
+    //
+    // 고지는 **제스처가 실제로 일어난 뒤에만** 큐에 넣는다(리뷰 F4): 확인 모달에서 「머무르기」를
+    // 고르면 아무 일도 안 일어났는데, 미리 넣어 둔 고지는 다음 전면 렌더에 실려 "값이 굳었고
+    // 표지가 바뀌었다"는 일어나지 않은 사실을 진술한다(고지도 거짓이면 경보와 똑같이 해롭다).
+    const notice = g.notice || "";
+    if (!g.armed) { pendingNote = notice; return true; }
+    const go = await window.Modal.confirm({
       title: title,
       body: g.message,
       confirmLabel: confirmLabel,
       cancelLabel: "머무르기",
     });
+    if (go) pendingNote = notice;
+    return go;
   }
 
   /* 휘발도 가드(결정 32) — 세션을 비우는/바꾸는 제스처 전에 저장 안 된 노동을 재진술한다.

@@ -689,3 +689,16 @@ def test_fullwidth_dies_with_the_source_it_judged(tmp_path, monkeypatch):
     ctrl.dispatch("set_fullwidth", {"value": True})
     ctrl.dispatch("fresh", {})
     assert ctrl.snapshot()["lint"]["applied"] is False
+
+
+def test_live_source_edit_keeps_the_visible_fullwidth_decision(tmp_path, monkeypatch):
+    """라이브 편집은 치환을 리셋하지 않는다(리뷰 F3 결론) — 타건마다 꺼지면 손가락 밑에서
+    "적용됨"이 사라진다. 이월이 조용하지도 않다: 린트 줄이 편집 내내 「되돌리기」로 서 있고,
+    미리보기와 클립보드가 한 통로라 화면이 곧 결과다.
+    """
+    ctrl, _ = _aligned_ctrl(tmp_path, monkeypatch)
+    ctrl.dispatch("set_fullwidth", {"value": True})
+    snap = ctrl.dispatch("edit_source", {"text": "수신    {{수신처}}\n참조    {{참조}}"})
+    assert snap["lint"]["applied"] is True          # 이월
+    assert snap["lint"]["active"] is True           # 그리고 화면에 계속 진술된다
+    assert "　" in "".join(s["text"] for s in snap["segments"])
