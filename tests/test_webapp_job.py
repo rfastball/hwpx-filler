@@ -323,6 +323,33 @@ def test_snapshot_carries_unresolved_name_tokens_for_banner(tmp_path):
     assert ctrl.snapshot()["name_tokens"] == []
 
 
+def test_name_token_banner_yields_to_template_read_error(tmp_path):
+    """게이트 서열을 거울이 재유도하지 않는다(리뷰 F2) — 템플릿을 못 읽으면 그쪽이 이긴다.
+
+    토큰 미해소는 템플릿 상태와 무관하게 참이라, 사실만 보고 배너를 그리면 게이트는
+    "구조를 읽을 수 없다"고 막는데 거울은 "파일명을 고치라"고 말한다 — 사용자를 엉뚱한
+    수리로 보낸다(#128 이 없앤 어긋남의 반대 방향 재발).
+    """
+    template = tmp_path / "t.hwpx"
+    _write_template(template, ["공고명"])
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(
+        name="공고서", template_path=str(template),
+        mapping=MappingProfile(mappings=[FieldMapping(template_field="공고명", source="bidNtceNm")]),
+        filename_pattern="doc-{{미해소}}",
+    ))
+    ctrl = JobController(reg, lambda s, snap: None)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    assert ctrl.snapshot()["name_tokens"] == ["미해소"]     # 정상 지형에선 토큰이 이긴다
+    template.write_bytes(b"not a zip")                      # 템플릿 손상 → 구조 재읽기 실패
+    snap = ctrl.snapshot()
+    assert snap["gate"]["level"] == "danger" and "읽을 수 없어" in snap["gate"]["text"]
+    assert snap["name_tokens"] == [], (
+        "템플릿을 못 읽는데 거울이 파일명 토큰 배너를 세웁니다 — 게이트와 다른 수리를 지시."
+    )
+
+
 def test_select_none_closes_record_gate(tmp_path):
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
@@ -1010,6 +1037,26 @@ def test_reapply_gated_off_while_current_filter_is_live(tmp_path):
     assert snap["filter"]["active"] is True and snap["table"]["visible_count"] == 1
     ctrl.dispatch("filter_clear", {})                       # 지우면 복원 어포던스가 돌아온다
     assert ctrl.snapshot()["filter"]["reapply_available"] is True
+
+
+def test_reapply_hint_describes_the_dying_session_not_the_incoming_data(tmp_path):
+    """정의줄은 **죽는 세션의 데이터**로 지어야 한다(리뷰 F1) — 겨눔 경로가 레코드를 먼저
+    갈아치우므로, 스태시 시점에 새로 지으면 남의 데이터에 대고 옛 정의를 묘사하게 된다.
+
+    증상: 새 소스에 매치가 없으면 describe 가 「매치 없음」으로 떨어져, 원 소스로 돌아왔을 때
+    버튼이 "매치 없음"이라는 거짓을 업고 뜬다(그 소스에선 멀쩡히 매치되는 정의인데도).
+    """
+    ctrl, _ = _session(tmp_path)
+    csv1 = _data_csv(tmp_path)
+    ctrl.dispatch("filter_search", {"text": "전산"})
+    alive = ctrl.snapshot()["filter"]["definition"]
+    assert "전산" in alive and "매치 없음" not in alive
+    other = tmp_path / "other.csv"                       # 열도 값도 다른 소스(매치 0)
+    other.write_text("colA,colB\nx,y\n", encoding="utf-8")
+    ctrl.load_data_path(str(other))                      # 죽음 → 슬롯(레코드는 이미 교체됨)
+    ctrl.load_data_path(csv1)                            # 원 소스 복귀
+    hint = ctrl.snapshot()["filter"]["reapply_hint"]
+    assert hint == alive, f"슬롯 문안이 죽는 세션이 아니라 새 데이터로 지어졌습니다: {hint!r}"
 
 
 def test_reapply_hint_carries_definition_to_be_installed(tmp_path):

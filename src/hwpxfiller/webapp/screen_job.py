@@ -469,8 +469,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 미해소 파일명 토큰(#128) — 드리프트와 **같은 danger 자격**이라 같은 자리(거울)에서
             # 차단 배너 + 행동 링크로 발화한다. 종전엔 게이트 캡션 한 줄뿐이라 거울은 전 행
             # 「채움」으로 건강해 보이고 재진술은 말없이 사라지는, 신호 없는 차단이었다.
-            # 게이트 문안과 같은 사실의 두 표현이므로 산출은 run_state 단일 출처를 그대로 쓴다.
-            "name_tokens": self.vm.unresolved_name_tokens(),
+            #
+            # **게이트가 실제로 이 사유로 막을 때만** 싣는다(리뷰 F2): 토큰 미해소는 템플릿을
+            # 못 읽는 상태에서도 참이라, 사실만 보고 그리면 게이트는 "구조를 읽을 수 없다"고
+            # 막는데 거울은 크게 "파일명을 고치라"고 말한다 — 사용자를 엉뚱한 수리로 보내고,
+            # #128 이 없앤 바로 그 어긋남(문안 ≠ 실제 집합)을 반대 방향으로 되살린다.
+            # 서열 판정은 run_state 단일 출처(gate.reason)를 소비하고 여기서 재유도하지 않는다.
+            "name_tokens": (
+                self.vm.unresolved_name_tokens()
+                if status.gate.reason == "name_tokens" else []
+            ),
             "gate": {
                 "enabled": status.gate.enabled,
                 "level": status.gate.level,
