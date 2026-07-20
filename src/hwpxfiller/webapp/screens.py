@@ -25,12 +25,24 @@ from ..core.dataset_pool import (
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
 from ..core.fill_ledger import template_path_drift  # 재연결 드리프트 재진술(#67)
 from ..core.text_registry import TextTemplateRegistry
-from ..core.text_render import RenderReport, render_record, render_segments, template_fields
+from ..core.text_render import (
+    RenderReport,
+    align_segments,
+    render_segments,
+    segments_have_space_run,
+    template_fields,
+)
 from ..gui.dataset_pool_state import DatasetPoolRow
 from ..gui.selection_state import SelectionModel
 from ..gui.txt_queue import TxtQueueModel
 from ..gui.txt_state import TxtDraftViewModel
 from .data_zone import DataZoneMixin
+from .settings import (
+    VALID_DRAFT_FONTS,
+    is_proportional_font,
+    load_draft_target_font,
+    save_draft_target_font,
+)
 
 # 푸시 sink: (화면 id, 스냅샷 dict) → None. 앱=evaluate_js, 테스트=수집.
 PushSink = Callable[[str, dict], None]
@@ -332,7 +344,14 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
     (채움 표지 삼분, 결정 22)로 사영하고 상태 색인(위치·처리·빈칸 지도)을 싣는다. :meth:`render`
     는 자유 레코드 커서가 아니라 큐 작업점을 렌더하며(복사=완료의 대상), :meth:`note_copied` 가
     복사 후 큐를 전진시킨다(전진 opt-in=``_advance_after``, 기본 꺼짐). 건별 파일 저장은 사망
-    (결정 18) — 새 큐 표면에 재구현하지 않는다. 글꼴 선언·린트·T3 가드는 PR-4.
+    (결정 18) — 새 큐 표면에 재구현하지 않는다.
+
+    **대상 글꼴 선언·정렬 린트·T3 가드(블록 3, 슬라이스 6 PR-4)**: 클립보드 평문은 글꼴을
+    운반하지 않으므로(글꼴 = 목적지 소유) 붙여넣을 곳의 표준 글꼴을 선언받고 카드 렌더가 그
+    선언을 따른다(결정 17 — 넘기려는 모습으로 미리 봄). 선언이 비례폭일 때만 연속 공백 정렬을
+    경보하고 전각 치환을 제안하며, 치환은 **세션 렌더 옵션**(``_fullwidth``)이라 템플릿 원본은
+    불변이고 카드와 클립보드가 같은 함수를 통과한다(보이는 것이 복사되는 것). T3 가드는
+    데이터 교체가 큐의 부분 진행을 조용히 버리지 못하게 막는다(결정 26·27).
     """
 
     name = "txt"
@@ -359,6 +378,13 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
         # 복사 후 전진 옵션(결정 16, 기본 꺼짐) — 컨트롤러 수명(세션 「새 기안」을 넘어 유지,
         # 워드프로세서 토글 멘탈 모델). 넘어가기 = 사용자의 사실상 붙여넣기 서명이라 opt-in.
         self._advance_after = False
+        # 대상 글꼴 선언(결정 17) — **전역 영속**(설정 파일)이라 컨트롤러보다 오래 산다.
+        # 배치는 큐 상단 드롭다운이지만 스코프는 앱 전역(워드프로세서 툴바 멘탈 모델).
+        self._target_font = load_draft_target_font()
+        # 전각 정렬 치환(결정 17 린트 처방) — **세션 렌더 옵션**. 템플릿 원본은 건드리지 않고
+        # (이름 있는 템플릿이 조용히 「이름 없는 세션 템플릿」으로 강등되지 않게) 렌더 단계에서만
+        # 적용한다. 카드와 클립보드가 같은 변환을 통과하므로 되읽기가 곧 검증이다.
+        self._fullwidth = False
         # 직전 복사 확정(스냅샷 구동 완료 노트) — 복사가 세팅, 어떤 동작이든 무효화(결정 16).
         self._last_copy: "dict | None" = None
         # 빈칸 지도 캐시(리뷰 F6) — (records 정체, 템플릿) 키. 데이터/템플릿 불변이면 재계산 안 함.
@@ -382,6 +408,9 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
         self.selection = SelectionModel(0)
         self.queue = TxtQueueModel(self.selection)
         self.filter = None
+        # 전각 치환은 그 원문에 대한 판단이라 세션과 함께 죽는다(대상 글꼴 선언은 전역 영속이라
+        # 살아남는 것과 대비 — 선언은 사용자의 환경 사실, 치환은 이번 원문의 조치).
+        self._fullwidth = False
         names = self.vm.template_names()
         if names:
             self.vm.select_template(names[0])
@@ -430,6 +459,11 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
         preview_idx = current if (current is not None and 0 <= current < n) else (0 if n else None)
         card_rec = records[preview_idx] if preview_idx is not None else {}
         segments, card_report = render_segments(vm.template_text, card_rec)
+        # 정렬 린트 술어는 **치환 전 원문** 기준(결정 17) — 치환하면 런이 사라지므로 원문
+        # 기준으로 보아야 "적용됨 · 되돌리기" 상태에서도 무엇을 고쳤는지 정직하게 말한다.
+        space_run = segments_have_space_run(segments)
+        proportional = is_proportional_font(self._target_font)
+        segments = self._aligned(segments)
 
         # 빈칸 지도(has_gap)는 레코드 값+템플릿에만 의존(선택·작업점 무관) — 네비게이션·필터
         # 타건마다 O(행×필드)로 재계산하지 않게 (records 정체, 템플릿) 키로 캐시한다(리뷰 F6:
@@ -481,6 +515,15 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
             "missing_fields": card_report.missing_fields,
             "empty_fields": card_report.empty_fields,
             "index_map": index_map,
+            # 선언-조건부 정렬 린트(결정 17) — 표면은 **판정하지 않는다**(글꼴 이름으로
+            # 비례폭을 재판별하거나 정규식을 다시 걷지 않는다, 파생경계 번역오류 차단).
+            # active = 경보/확인 줄을 세울지: 비례폭 선언 ∧ (원문에 런이 있거나 이미 치환함).
+            "lint": {
+                "proportional": proportional,
+                "space_run": space_run,
+                "applied": self._fullwidth,
+                "active": proportional and (space_run or self._fullwidth),
+            },
             # 직전 복사 확정(결정 16 복사=완료) — **스냅샷 구동**이라 announce 순서 경합이 없다:
             # 노트가 카드와 같은 push 로 오고(어긋남 불가), 복사한 행을 명시(전진 시 카드는 다음
             # 행이라 행 번호로 어느 카드가 복사됐는지 못박는다). 어떤 동작이든(dispatch·데이터
@@ -506,6 +549,9 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
             "data_key": self._data_key,
             "has_data": vm.datasource is not None,
             "selected_count": self.selection.selected_count(),
+            # 대상 글꼴 선언(결정 17) — 카드가 아니라 최상위: 값의 스코프가 전역 영속이라
+            # 카드/세션과 수명이 다르다(카드에 실으면 세션 값처럼 읽힌다).
+            "target_font": self._target_font,
             "filter": filter_snap,
             "table": table_snap,
             "card": card,
@@ -569,6 +615,53 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
         """복사 후 전진 옵션(결정 16, 기본 꺼짐) — 컨트롤러 수명(세션 넘어 유지)."""
         self._advance_after = bool(p["value"])
 
+    def _do_set_target_font(self, p: dict) -> None:
+        """대상 글꼴 선언(결정 17) — 열거형 밖 값은 조용히 무시하지 않고 시끄럽게 거부한다.
+
+        저장이 먼저다: 영속에 실패하면 화면 값만 바뀌어 "다음 부팅에 조용히 되돌아가는"
+        어긋남이 생긴다(save 가 던지면 상태 불변 + 브리지 경보).
+        """
+        font = p["font"]
+        if font not in VALID_DRAFT_FONTS:
+            raise ValueError(f"유효하지 않은 대상 글꼴: {font!r} (허용: {VALID_DRAFT_FONTS})")
+        save_draft_target_font(font)
+        self._target_font = font
+
+    def _do_set_fullwidth(self, p: dict) -> None:
+        """전각 정렬 치환 적용/해제(결정 17 린트 처방) — 세션 렌더 옵션, 템플릿 원본 불변."""
+        self._fullwidth = bool(p["value"])
+
+    # ------------------------------------------------- 세션 가드(T3, 블록 4 결정 26·27)
+    def _guard_state(self) -> dict:
+        """무장 판정 = 선택 성분(공유 술어) ∨ **큐 부분 진행**(T3) — 데이터 교체가 소비한다.
+
+        T3 성분: ``0 < 복사 < 선택``. 큐를 절반 걷다 데이터를 갈아치우면 처리 표지가 통째로
+        증발하는데(새 데이터 = 새 큐), 어디까지 붙여넣었는지는 앱 밖 기억이라 복구 불가다.
+        완주(``복사 == 선택``)는 완료 이벤트라 무장 해제 — 선택 성분에도 완주 집합을
+        ``settled`` 로 넘겨 "다 복사한 선택"이 수작업으로 재고발되지 않게 한다.
+
+        템플릿 교체·「새 기안」은 가드 대상이 아니다(착수 토의 확정): 전자는 큐를 죽이지 않고
+        후자는 명시 동사 + F11 원자 초기화 계약이 이미 선다.
+        """
+        copied, selected = self.queue.copied_count(), self.selection.selected_count()
+        complete = self.queue.is_complete() and selected > 0
+        settled = set(self.selection.selected_indices()) if complete else set()
+        g = self._selection_guard(settled=settled)
+        queue_partial = 0 < copied < selected
+        g["copied_count"] = copied
+        g["queue_partial"] = queue_partial
+        g["armed"] = g["armed"] or queue_partial
+        return g
+
+    def _do_guard_state(self, p: dict) -> dict:
+        """무장 상태 실시간 질의 — 표면의 데이터 재겨눔 사전 확인이 소비(작업 화면과 동형).
+
+        스냅샷 캐시가 아니라 지금 Python 이 판정한다(왕복 지연·무푸시 경로의 stale 오판 차단).
+        """
+        return self._guard_state()
+
+    _do_guard_state.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
+
     # 등록 데이터(풀) 겨눔(#26/#6)은 PoolTargetingMixin 공용 래퍼(K4) — txt 화면별 후처리는
     # _after_pool_load(데이터 존 리셋)가 진다.
     def _after_pool_load(self, records: list) -> None:
@@ -607,7 +700,15 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
         cur = self.queue.current
         records = self._records()
         rec = records[cur] if (cur is not None and 0 <= cur < len(records)) else {}
-        return render_record(self.vm.template_text, rec)
+        # 클립보드 텍스트 = **카드와 같은 변환의 결과**(결정 17 치환의 계약): 세그먼트를
+        # 이어붙여 만든다. render_record 를 그냥 부르면 치환이 카드에만 걸려 "보이는 것과
+        # 복사되는 것"이 갈라진다 — 세그먼트 경로 하나로 묶어 그 어긋남을 구조적으로 없앤다.
+        segments, report = render_segments(self.vm.template_text, rec)
+        return "".join(s.text for s in self._aligned(segments)), report
+
+    def _aligned(self, segments: list) -> list:
+        """전각 치환 적용(세션 옵션이 켜졌을 때만) — 카드 렌더·클립보드 공용 통로."""
+        return align_segments(segments) if self._fullwidth else segments
 
     def can_copy(self) -> bool:
         """복사 가능 = 작업점 실재(리뷰 F3) — 브리지가 이걸로 게이트해 작업점 없을 때 빈 템플릿

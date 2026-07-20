@@ -111,6 +111,55 @@ def render_segments(
     return segments, report
 
 
+# 연속 ASCII 공백(2칸 이상) — 표 흉내 정렬("건    명")의 문자적 흔적. 1칸은 낱말 사이라
+# 정렬 의도가 아니므로 제외한다(경보 남발 차단).
+_SPACE_RUN = re.compile(r" {2,}")
+
+# 전각 공백 — 한글·전각과 같은 폭이라 **모든 글꼴에서 균일**(고정폭·비례폭 불문). 반각 2칸
+# 폭과 같으므로 아래 치환은 고정폭 선언에서의 열 위치도 보존한다.
+FULLWIDTH_SPACE = "　"
+
+
+def has_space_run(text: str) -> bool:
+    """연속 공백 정렬이 있는가 — 선언-조건부 정렬 린트(R-flow 블록 3 결정 17)의 술어.
+
+    비례폭 글꼴을 대상으로 선언했을 때만 표면이 이 경보를 낸다: 고정폭(굴림체·돋움체)에서
+    연속 공백 정렬은 정당한 저작이므로 경보하면 소음이다.
+    """
+    return _SPACE_RUN.search(text) is not None
+
+
+def align_fullwidth(text: str) -> str:
+    """연속 ASCII 공백을 전각 공백으로 치환 — 폭 보존(반각 2칸 = 전각 1칸), 홀수 잔여 1칸 유지.
+
+    치환 후에는 :func:`has_space_run` 이 거짓이 된다(잔여는 1칸뿐) — 술어와 처방이 서로를
+    닫는다(경보가 조치 후에도 남는 무한 잔소리 방지).
+    """
+    return _SPACE_RUN.sub(
+        lambda m: FULLWIDTH_SPACE * (len(m.group(0)) // 2) + " " * (len(m.group(0)) % 2),
+        text,
+    )
+
+
+def segments_have_space_run(segments: "list[RenderSegment]") -> bool:
+    """세그먼트 어디든 연속 공백 정렬이 있는가 — 카드 린트 술어(세그먼트 단위, 아래 주석)."""
+    return any(has_space_run(s.text) for s in segments)
+
+
+def align_segments(segments: "list[RenderSegment]") -> "list[RenderSegment]":
+    """세그먼트별 전각 치환 — 표지 삼분과 클립보드 평문의 **일치 불변식을 유지**한다.
+
+    조각을 이어붙인 뒤가 아니라 **조각마다** 치환하는 이유: 카드 렌더(세그먼트)와 클립보드
+    (:func:`render_record` 자리의 이어붙임)가 같은 함수를 통과해야 "보이는 것이 복사되는 것"이
+    성립한다. 대가로 세그먼트 경계를 걸친 공백(리터럴 끝 1칸 + 값 앞 1칸)은 잡지 않는다 —
+    각 조각 1칸씩이라 사용자가 저작한 정렬 런이 아니므로 수용한다.
+    """
+    return [
+        RenderSegment(align_fullwidth(s.text), s.kind, s.name) if s.text else s
+        for s in segments
+    ]
+
+
 def render_record(template: str, record: "dict[str, object]") -> "tuple[str, RenderReport]":
     """``template`` 의 ``{{필드}}`` 를 ``record`` 값으로 순수 치환한 텍스트와 리포트를 반환한다.
 

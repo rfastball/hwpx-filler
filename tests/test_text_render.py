@@ -4,12 +4,17 @@ from __future__ import annotations
 
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.core.text_render import (
+    FULLWIDTH_SPACE,
     SEG_BLANK,
     SEG_FILL,
     SEG_LITERAL,
     SEG_MISSING,
+    align_fullwidth,
+    align_segments,
+    has_space_run,
     render_record,
     render_segments,
+    segments_have_space_run,
     template_fields,
 )
 
@@ -111,3 +116,48 @@ def test_segments_empty_template_yields_nothing():
     segments, report = render_segments("", {})
     assert segments == []
     assert not report.has_issues
+
+
+# --------------------------------------- 선언-조건부 정렬 린트(R-flow 블록 3 결정 17)
+
+def test_space_run_predicate_ignores_single_space():
+    """1칸 공백은 낱말 사이라 정렬 의도가 아니다 — 경보 남발 차단."""
+    assert has_space_run("건 명: 전산장비") is False
+    assert has_space_run("건    명: 전산장비") is True
+    assert has_space_run("들여쓰기\n  둘째 줄") is True  # 줄 첫머리 정렬도 런
+
+
+def test_align_fullwidth_preserves_width_and_odd_remainder():
+    """반각 2칸 = 전각 1칸(폭 보존). 홀수 잔여 1칸은 반각으로 남는다."""
+    assert align_fullwidth("건    명") == "건" + FULLWIDTH_SPACE * 2 + "명"
+    assert align_fullwidth("건   명") == "건" + FULLWIDTH_SPACE + " 명"
+    assert align_fullwidth("건 명") == "건 명"  # 1칸은 불변
+
+
+def test_align_closes_the_lint_predicate():
+    """술어와 처방이 서로를 닫는다 — 치환 후엔 경보가 재발하지 않는다(무한 잔소리 금지)."""
+    for src in ("건    명", "건   명", "a  b   c    d"):
+        assert has_space_run(align_fullwidth(src)) is False
+
+
+def test_align_segments_keeps_join_invariant_and_kinds():
+    """세그먼트별 치환도 '이어붙이면 클립보드 평문' 불변식과 표지 종류를 지킨다."""
+    tpl = "건    명: {{공고명}}\n금    액: {{금액}}"
+    rec = {"공고명": "전산장비  구매", "금액": ""}
+    segments, _ = render_segments(tpl, rec)
+    assert segments_have_space_run(segments) is True
+    aligned = align_segments(segments)
+    assert [s.kind for s in aligned] == [s.kind for s in segments]
+    assert [s.name for s in aligned] == [s.name for s in segments]
+    assert segments_have_space_run(aligned) is False
+    joined = "".join(s.text for s in aligned)
+    assert FULLWIDTH_SPACE in joined and "  " not in joined
+    # 값 안의 런도 함께 치환된다(데이터에서 온 정렬도 목적지에선 같은 취약점).
+    assert "전산장비" + FULLWIDTH_SPACE + "구매" in joined
+
+
+def test_align_segments_leaves_empty_segments_untouched():
+    """빈 값(blank) 조각은 그대로 — 표지 계약(빈 텍스트)이 치환으로 변질되지 않는다."""
+    segments, _ = render_segments("{{a}}  끝", {"a": ""})
+    aligned = align_segments(segments)
+    assert aligned[0].text == "" and aligned[0].kind == SEG_BLANK

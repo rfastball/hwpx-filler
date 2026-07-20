@@ -119,6 +119,15 @@
       }).join("");
     }
     // 카드 정체 + 렌더.
+    // 대상 글꼴 선언(결정 17) — 콤보 동기 + 원문 렌더가 선언을 추종한다("넘어가는 감각").
+    // 폭 성질(비례폭 여부) 판정은 Python 이 한다 — 여기선 클래스만 갈아 끼운다.
+    const font = s.target_font || "gulimche";
+    const fontSel = $("txtTargetFont");
+    if (fontSel.value !== font) fontSel.value = font;
+    const pre = $("txtCardRender");
+    pre.classList.remove("f-gulimche", "f-dotumche", "f-malgun");
+    pre.classList.add("f-" + font);
+    renderLint(c.lint || {});
     $("txtCardTitle").textContent = !c.has_current
       ? "이대로 복사됩니다 (미리보기 — 데이터 미선택)"
       : c.is_copied ? "복사됨 — 다시 복사하면 클립보드가 갱신됩니다" : "이대로 복사됩니다";
@@ -132,6 +141,28 @@
     $("txtCardPrev").disabled = ci <= 0;
     $("txtCardNext").disabled = ci < 0 || ci >= order.length - 1;
     $("txtAdvance").checked = !!c.advance_after;
+  }
+
+  /* 선언-조건부 정렬 린트(결정 17) — 술어는 Python(card.lint)이 판정하고 여기는 문안만 입힌다.
+     비례폭을 선언했을 때만 선다: 고정폭(굴림체·돋움체)에서 연속 공백 정렬은 정당한 저작이라
+     경보하면 소음이다. 치환은 세션 렌더 옵션이라 템플릿 원본을 건드리지 않고, 바뀐 결과가
+     카드에 그대로 보이며 클립보드도 같은 텍스트다(되읽기 = 검증). 되돌리기는 항상 열려 있다. */
+  function renderLint(lint) {
+    const box = $("txtCardLint");
+    if (!lint.active) { box.hidden = true; box.innerHTML = ""; return; }
+    box.hidden = false;
+    const applied = !!lint.applied;
+    box.dataset.level = applied ? "ok" : "warn";
+    const msg = applied
+      ? "전각 공백으로 치환했습니다. 어느 글꼴에서도 정렬이 유지되며, 복사되는 텍스트도 " +
+        "지금 보이는 그대로입니다."
+      : "정렬 취약: 연속 공백으로 맞춘 정렬은 선언된 비례폭 글꼴에서 흐트러질 수 있습니다. " +
+        "한글과 전각 공백은 모든 글꼴에서 폭이 같아 견고합니다.";
+    // 처방 버튼의 **id 는 두 상태에서 같다**: 누르면 곧바로 재렌더되는데 id 가 바뀌면
+    // preserve.js 가 포커스를 복원할 대상을 잃는다(키보드 사용자가 자리를 놓친다).
+    box.innerHTML = `<span class="txt">${msg}</span>` +
+      `<button class="btn sm" id="txtLintAction" data-act="${applied ? "undo" : "fix"}">` +
+      `${applied ? "되돌리기" : "전각 공백으로 치환"}</button>`;
   }
 
   /* Python→웹 푸시 렌더. Bridge.onPush 로 등록된다. */
@@ -217,6 +248,37 @@
     await Bridge.copyClipboard(SCREEN);  // 완료 노트는 note_copied 재푸시가 스냅샷 구동으로 렌더
   }
 
+  /* ---- 세션 가드(T3 — 블록 4 결정 26·27) : 데이터 교체가 큐 진행을 조용히 버리지 않게 ----
+     술어·수치는 Python(_guard_state)이 판정하고 여기는 문안만 입힌다(작업 화면과 같은 규율).
+     T3 성분(큐 부분 진행)이 이 화면 고유다: 어디까지 붙여넣었는지는 앱 밖 기억이라, 처리
+     표지가 증발하면 복구할 방법이 없다. 잃는 것을 종류별로 명시한다(결정 27 수치 재진술). */
+  function guardBody(g) {
+    const lost = [];
+    if (g.queue_partial) lost.push(`복사 진행 ${g.copied_count}/${g.sel_count}행(처리 표지)`);
+    if (g.sel_count) {
+      lost.push(g.filter_active
+        ? `행 선택 ${g.sel_count}행(정의 매치 ${g.in_def} · 정의 밖 ${g.extra})`
+        : `행 선택 ${g.sel_count}행`);
+    }
+    if (g.filter_parts > 0) lost.push(`필터 정의 ${g.filter_parts}개 조건`);
+    return `다른 데이터를 겨누면 이 큐는 새로 만들어집니다.\n` +
+      `사라지는 것: ${lost.join(" · ")}.`;
+  }
+
+  /* 데이터 교체 사전 확인 — 피커를 열기 **전에** 묻는다(파일까지 고른 뒤 "머무르기"는 고른
+     노동을 또 버리게 한다). 무장 판정은 실시간 질의(스냅샷 캐시는 왕복 지연에서 stale).
+     true=진행, false=머무르기. */
+  async function confirmDataSwapIfArmed() {
+    const g = await Bridge.call(SCREEN, "guard_state", {});
+    if (!g || !g.armed) return true;
+    return window.Modal.confirm({
+      title: "데이터 변경 확인",
+      body: guardBody(g),
+      confirmLabel: "데이터 바꾸고 버리기",
+      cancelLabel: "머무르기",
+    });
+  }
+
   /* 웹→Python 이벤트 배선. */
   function wire() {
     // 데이터 존(테이블·열 패널·칩·스트립·전체 선택/해제·문서 레벨 닫기)은 팩토리 몫 배선.
@@ -243,10 +305,20 @@
     $("txtAdvance").addEventListener("change", (e) =>
       Bridge.call(SCREEN, "toggle_advance", { value: e.target.checked }));
 
+    // 대상 글꼴 선언(결정 17) — 값은 Python 이 전역 설정에 영속한다(웹 저장소 아님, #74 전례).
+    $("txtTargetFont").addEventListener("change", (e) =>
+      Bridge.call(SCREEN, "set_target_font", { font: e.target.value }));
+    // 린트 처방(치환·되돌리기) — 버튼은 매 렌더 재생성이라 위임으로 받는다.
+    $("txtCardLint").addEventListener("click", (e) => {
+      const act = e.target.closest("#txtLintAction");
+      if (act) Bridge.call(SCREEN, "set_fullwidth", { value: act.dataset.act === "fix" });
+    });
+
     $("btnPick").addEventListener("click", async () => {
       // 데이터 재선택 = 필터 세션의 죽음 — 대기 중 검색 디바운스를 먼저 정산해 직전 필터
       // 슬롯(결정 28)에 마지막 타이핑까지 실린다(작업 화면 flush 규율 승계).
       await dz.flushPendingSearch();
+      if (!(await confirmDataSwapIfArmed())) return;  // T3 가드(결정 26·27) — 피커 열기 전에
       let r = await Bridge.pickDataFile(SCREEN);
       if (r && typeof r === "object" && r.needs_sheet) {   // 다중 시트 → 확정 게이트(#33)
         r = await SheetPicker.choose(SCREEN, r);
@@ -259,6 +331,7 @@
     // 등록 데이터(풀) 겨눔(#26 #6) — 취소=중단, 실패는 모달 안에서 재진술(PoolPicker).
     $("btnTxtPoolData").addEventListener("click", async () => {
       await dz.flushPendingSearch();  // 재겨눔 전 검색 정산(위 btnPick 과 같은 규율)
+      if (!(await confirmDataSwapIfArmed())) return;  // T3 가드 — 파일 경로와 같은 규율
       await PoolPicker.choose(SCREEN);             // 라벨은 스냅샷(data_source_label)이 채운다
     });
 
@@ -287,5 +360,6 @@
     render(initState);
   }
 
-  window.TxtScreen = { init };
+  // guardBody 는 순수 합성기 — 실앱 게이트가 합성 결과(수치·문안 배치)를 되읽는다(job 관례).
+  window.TxtScreen = { init, guardBody };
 })();

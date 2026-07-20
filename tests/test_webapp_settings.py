@@ -207,3 +207,12 @@ def test_collapsed_groups_corrupt_value_falls_back_to_expanded(home):
     (home / "settings.json").write_text(
         json.dumps({"job_collapsed_groups": ["입찰", 3, None]}), encoding="utf-8")
     assert settings.load_job_collapsed_groups() == ["입찰"]  # 부분 손상은 항목만 걸러낸다
+
+
+def test_proportional_font_is_single_source(home):
+    """비례폭 판정은 설정 모듈 소유 — 표면·컨트롤러가 글꼴 이름으로 재판별하지 않는다(결정 17)."""
+    assert settings.is_proportional_font("malgun") is True
+    assert settings.is_proportional_font("gulimche") is False
+    assert settings.is_proportional_font("dotumche") is False
+    # 비례폭 목록은 유효 열거형의 부분집합이어야 한다(오타 방지).
+    assert set(settings.PROPORTIONAL_DRAFT_FONTS) <= set(settings.VALID_DRAFT_FONTS)

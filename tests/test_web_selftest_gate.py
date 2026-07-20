@@ -375,6 +375,40 @@ class TestWebSelftestGate:
             "전역 복사(btnCopy)·저장(btnSave) 버튼이 남아 있습니다 — 결정 16·18 위반."
         )
 
+    def test_txt_target_font_and_alignment_lint(self, selftest_result: dict) -> None:
+        # 대상 글꼴 선언·선언-조건부 정렬 린트(블록 3, 슬라이스 6 PR-4) — 선언이 원문 렌더에
+        # 실제로 걸리고(글꼴 클래스), 비례폭 선언에서 경보 줄과 처방 버튼이 서는지 되읽는다.
+        z = selftest_result["txt_zone"]
+        assert z.get("error") is None, f"txt 존 프로브 예외: {z.get('error')!r}"
+        assert z["font_sel"] == "malgun", f"대상 글꼴 콤보가 선언과 어긋납니다: {z['font_sel']!r}"
+        assert "f-malgun" in z["font_class"], (
+            f"원문 렌더가 선언 글꼴을 추종하지 않습니다: {z['font_class']!r}"
+        )
+        assert z["lint_shown"] is True, "비례폭 선언인데 정렬 린트 줄이 서지 않았습니다(결정 17)."
+        assert "정렬 취약" in z["lint_text"], f"린트 경보 문안이 다릅니다: {z['lint_text']!r}"
+        assert z["lint_fix"] == "fix", (
+            f"전각 치환 처방 버튼이 없거나 동사가 다릅니다(막다른 경보 금지): {z['lint_fix']!r}"
+        )
+        # 고정폭으로 되밀면 린트는 **실제로** 사라진다(부록 B-9: display:flex 가 [hidden] 을
+        # 이기는 함정 — hidden 프로퍼티가 아니라 계산된 표시로 판정한다).
+        assert z["lint_silent_display"] == "none", (
+            f"고정폭 선언인데 린트 상자가 계산상 남아 있습니다: {z['lint_silent_display']!r}"
+        )
+        assert "f-gulimche" in z["font_class_fixed"] and "f-malgun" not in z["font_class_fixed"], (
+            f"글꼴 클래스가 교체되지 않고 누적됐습니다: {z['font_class_fixed']!r}"
+        )
+
+    def test_txt_t3_guard_body_restates_progress_and_selection(self, selftest_result: dict) -> None:
+        # T3 가드(결정 26·27) — 데이터 교체 확인 본문이 **종류별 수치**를 재진술하는지.
+        # 복사 진행이 첫 자리인 이유: 큐 진행은 앱 밖 기억(어디까지 붙여넣었나)이라 복구 불가.
+        body = selftest_result["txt_zone"]["guard_body"]
+        assert "복사 진행 2/5행" in body, f"큐 진행 재진술 누락: {body!r}"
+        assert "행 선택 5행" in body and "정의 매치 3" in body and "정의 밖 2" in body, (
+            f"선택 재진술이 종류별로 서지 않았습니다: {body!r}"
+        )
+        assert "필터 정의 2개 조건" in body, f"필터 정의 재진술 누락: {body!r}"
+        assert "—" not in body, f"가드 본문에 em-dash 가 있습니다(R-copy 가드): {body!r}"
+
     def test_txt_zone_panel_hidden_and_instance_isolated(self, selftest_result: dict) -> None:
         # 열 패널 기본 닫힘([hidden] vs display:flex — 부록 B-9 자동 눈검증의 txt 판) +
         # 두 인스턴스 격리(txt 존 렌더가 작업 화면 데이터 존 DOM 을 만지지 않는다 — id 분리).

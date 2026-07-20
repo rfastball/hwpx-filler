@@ -308,6 +308,19 @@
             <span class="mono">{{토큰}}</span> 그대로 남깁니다.</p>
         </section>
         <section class="pane workcard" id="txtCard">
+          <!-- 대상 글꼴 선언(결정 17) — 붙여넣을 곳(기안작성기)의 표준 글꼴. 클립보드 평문은
+               글꼴을 운반하지 않으므로 약속은 「글자 그대로」이고, 이 선언은 원문 렌더가 미리
+               따를 글꼴이다. 배치는 큐 상단(워드프로세서 툴바 멘탈 모델)이지만 값은 전역 영속. -->
+          <div class="wc-fontbar">
+            <label class="lbl" for="txtTargetFont">대상 글꼴</label>
+            <select class="field sm" id="txtTargetFont"
+                    title="붙여넣는 곳(기안작성기)의 표준 글꼴입니다.">
+              <option value="gulimche">굴림체</option>
+              <option value="dotumche">돋움체</option>
+              <option value="malgun">맑은고딕</option>
+            </select>
+            <span class="muted capnote">붙여넣는 곳의 표준 글꼴입니다. 전역 설정으로 저장됩니다.</span>
+          </div>
           <!-- 상태 색인: 위치·처리·빈칸 지도(결정 16). 점 클릭 = 작업점 지정("포커스=첫 미답"의
                큐 판). 순번은 큐 순서라 여기선 단조롭다(레코드 순서 표와 달리). -->
           <div class="wc-index">
@@ -331,6 +344,9 @@
           <!-- 원문 렌더 = 코드블록 문법(고정폭 pre + 채움 표지 삼분, 결정 16·22). Enter=복사. -->
           <pre class="wc-render" id="txtCardRender" aria-live="polite" data-preserve-scroll
                tabindex="0"></pre>
+          <!-- 선언-조건부 정렬 린트(결정 17) — 비례폭을 선언했을 때만 연속 공백 정렬을 경보하고
+               전각 공백 치환을 제안한다. 문안·버튼 라벨은 txt.js 가 상태에 맞춰 채운다. -->
+          <div class="wc-lint" id="txtCardLint" hidden></div>
           <!-- 기본 안내문은 copy.js(Copy.TXT_NOTE) 단일 출처 — txt.js 가 부팅·리셋 때 채운다. -->
           <p class="note" id="txtNote"></p>
         </section>
