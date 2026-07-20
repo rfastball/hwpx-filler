@@ -204,7 +204,10 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
   font-size:var(--fs-body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--a-ink)}
 .qd-chip{flex:none;font-size:var(--fs-caption);border-radius:var(--rad-pill);padding:1px var(--sp-8);
   font-weight:600;white-space:nowrap}
-.qd-chip.man{background:var(--fb-fill-bg);color:var(--a-ok)}
+/* man(사람이 친 값) = **중립 티어**(#134): 종전의 fill-bg+ok 는 초록이라 "검증된 값"으로
+   읽혔다 — 사람이 친 값은 아직 아무것도 대조되지 않은 값이다. 채움 계열 색을 쓰지 않고
+   잉크색으로 서서 "여기 값이 있다"만 말한다(blank 의 muted 와도 구분된다). */
+.qd-chip.man{background:var(--a-window);color:var(--a-ink);border:1px solid var(--a-border)}
 .qd-chip.auto{background:var(--fb-fill-bg);color:var(--a-primary)}
 .qd-chip.hand{background:var(--fb-blank-bg);color:var(--a-warn)}
 .qd-chip.blank{background:var(--a-window);color:var(--a-muted)}
@@ -220,6 +223,8 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .qd-rowlabel{color:var(--a-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
 .qd-vline{display:flex;align-items:flex-start;gap:var(--sp-6);padding-left:var(--sp-16)}
 .qd-elbow{color:var(--a-muted);flex:none;line-height:1.6}
+/* 파이프라인 방향 화살표(결정 34 `소스→표시형`) — 표시형이 뜰 때만 선다 */
+.qd-arrow{color:var(--a-muted);flex:none}
 /* 출력칸 = 내용 크기 칩(결정 34, field-sizing) — 폭이 값의 실제 길이를 따른다. 미지원(폴백)은
    전폭 + JS 높이 보정. 음영 = 미리보기 채움 표지(seg-fill)와 같은 계열(폼 출력=렌더 채움 자리). */
 .qd-val{field-sizing:content;width:auto;min-width:10ch;max-width:100%;resize:none;overflow-y:hidden;
@@ -239,6 +244,14 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .qd-srcedit{flex:1;min-height:220px;resize:none;font-size:var(--fs-body);line-height:1.6;
   font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
 .qd-prevnote{font-size:var(--fs-caption);color:var(--a-muted);margin:var(--sp-8) 0 0}
+/* 휘발 표지 — 채움 알약과 별개로 **상시** 서는 화면 성질 배지(#134). 상태가 아니라 성질이라
+   data-level 색 체계를 쓰지 않고 조용한 중립으로 둔다(경보가 아니라 상시 사실). */
+.qd-volatile{font-size:var(--fs-caption);color:var(--a-muted);border:1px solid var(--a-border);
+  border-radius:var(--rad-pill);padding:1px var(--sp-8);white-space:nowrap}
+/* 정렬 린트 줄 — txt 카드 린트와 같은 형상(문안·처방 버튼 한 줄) */
+.qd-lint{display:flex;align-items:center;gap:var(--sp-8);margin:var(--sp-8) 0 0;
+  font-size:var(--fs-caption)}
+.qd-lint .txt{flex:1 1 auto}
 /* 빈손 진입 카드 — 두 방향(라이브러리 / 붙여넣기) */
 .qd-emptywrap{flex:1;display:flex;gap:var(--sp-16);align-items:stretch;justify-content:center;
   flex-wrap:wrap;padding:var(--sp-24)}
