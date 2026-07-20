@@ -51,6 +51,11 @@ EMPTY_TABLE = {"columns": [], "rows": [], "visible_count": 0, "hidden_selected":
 class DataZoneMixin:
     """필터·선택 디스패치(``_do_*``)와 존 스냅샷 합성 — 컨트롤러 공유 표면(모듈 독스트링 참조)."""
 
+    #: 현 세션 필터 정의줄의 **살아있는 데이터 기준** 문안(:meth:`_zone_sections` 가 갱신).
+    #: 슬롯 스태시가 이걸 복사해 간다 — 스태시 시점엔 레코드가 이미 교체됐을 수 있어서
+    #: 그때 새로 지으면 남의 데이터로 죽은 세션을 묘사하게 된다(리뷰 F1). 미겨눔·무정의는 "".
+    _filter_desc: str = ""
+
     selection: SelectionModel
     filter: "FilterModel | None"
     _last_filter: "dict | None"   # {"source_key": str, "state": dict} — 결정 28 슬롯
@@ -176,17 +181,16 @@ class DataZoneMixin:
         (결정 8 예외) — 컨트롤러 수명(앱 수명)뿐, 디스크에 남지 않는다.
         """
         if self.filter is not None and self.filter.is_active() and self._data_key:
-            try:
-                # 정의줄은 **죽는 시점의 레코드로** 짓는다 — 되살릴 때는 그 데이터가 없을 수도
-                # 있다. 버튼이 무엇을 설치하는지 말하기 위한 문안(#127)이라, 못 지으면 빈
-                # 문자열로 강등한다(어포던스 자체는 살린다 — 문안 부재가 복원을 막을 이유는 없다).
-                summary = self.filter.view(self._records()).describe()
-            except Exception:  # noqa: BLE001
-                summary = ""
             self._last_filter = {
                 "source_key": self._data_key,
                 "state": self.filter.export_state(),
-                "summary": summary,
+                # 정의줄은 **직전 스냅샷이 지어 둔 것**을 쓴다(리뷰 F1). 여기서 새로 지으면
+                # 안 된다: 데이터 겨눔 경로는 `vm.load_data()` 로 레코드를 **먼저 갈아치운
+                # 뒤** 이 함수를 부르므로(옛 소스 키를 쓰기 위한 순서), 지금 view 를 지으면
+                # 죽는 세션의 정의를 **새 데이터**에 대고 묘사하게 된다 — 「매치 없음」이나
+                # 남의 데이터 가지 이름이 슬롯에 박혀, 원 소스로 돌아왔을 때 버튼이 거짓을
+                # 업고 뜬다. 캐시는 그 스냅샷이 이미 계산한 값이라 추가 비용도 없다.
+                "summary": self._filter_desc,
             }
 
     def _current_filter_empty(self) -> bool:
@@ -359,10 +363,14 @@ class DataZoneMixin:
         같은 함수를 통과하므로 소재는 여전히 단일 출처다. 미겨눔(filter None)은 빈 골격.
         """
         if self.filter is None:
+            self._filter_desc = ""
             return EMPTY_FILTER, EMPTY_TABLE, None, []
         records = self._records()
         fm = self.filter
         view = fm.view(records)  # 가지 1회 산출 — 렌더 경로 캐시 계약(filter_state)
+        # 슬롯 스태시가 복사해 갈 정의줄 — **지금 살아있는 데이터 기준**으로 여기서만 짓는다
+        # (리뷰 F1: 스태시 시점엔 레코드가 이미 교체됐다). 아래 "definition" 과 같은 값이다.
+        self._filter_desc = view.describe() if fm.is_active() else ""
         visible = view.visible_indices()
         vis_set = set(visible)
         columns = fm.columns
