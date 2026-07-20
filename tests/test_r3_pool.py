@@ -203,7 +203,7 @@ def test_refresh_buttons_are_guarded():
     """poolRefresh·tplRefresh — fire-and-forget refresh 배선 금지(N1)."""
     wiring = (
         ("screens/pool.js", "poolRefresh", '$("poolList")'),
-        ("screens/template.js", "tplRefresh", '$("tplHwpxList")'),
+        ("screens/template.js", "tplRefresh", '$("tplHwpxGroups")'),
     )
     for rel, btn, nxt in wiring:
         src = _js(rel)

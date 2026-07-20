@@ -440,44 +440,48 @@
       </div>
     </div>
 
-    <!-- ============ 템플릿 관리 (HWPX·TXT 라이브러리, #13) ============ -->
-    <!-- 목업 scr-tpl 이관. 안정 DOM(id) + template.js 가 window.__push('tpl', snapshot) 로 값만
-         채운다(run 패턴). 링1 TemplateManagerViewModel + 코어 TextTemplateRegistry 에 브리지로 배선.
-         [B] 61C7ADF8: Qt 카드 하이라이트 비침 렌더 버그는 불투명 배경 div 카드라 구성상 소멸.
-         결정: 미리보기 액션 미노출(10F2FF98-B)·TXT 동등 관리(10F2FF98-C)·드리프트 UI 미노출(10F2FF98-D). -->
+    <!-- ============ 템플릿 관리 (HWPX·TXT 라이브러리, #13 → R-info 2부 #108) ============ -->
+    <!-- 매체(HWPX/TXT) 2구획 + 그 안 작업 목록과 같은 그룹+접힘. 안정 DOM(id) + template.js 가
+         window.__push('tpl', snapshot) 로 값만 채운다(판정은 Python). 그룹 헤더·행 ⋮·이동 다이얼로그·
+         ＋그룹지정 칩·가져오기는 job.js 기계 이식.
+         [B] 61C7ADF8: 불투명 배경 div 카드라 Qt 하이라이트 비침 렌더 버그 구성상 소멸.
+         결정: 미리보기 액션 미노출(10F2FF98-B)·드리프트 UI 미노출(10F2FF98-D). -->
     <section class="scr" id="scr-tpl">
       <header class="scr-head">
         <div>
           <h1>템플릿 관리</h1>
-          <p class="sub">HWPX와 TXT 템플릿을 한곳에서 관리합니다 — 누름틀 상태를 배지로 보고, 상태별로
-            변환·검토하세요. 판본 비교(diff)는 별도 제품(hwpxdiff)이 담당합니다.</p>
+          <p class="sub">문서를 만들 원본 서식을 한곳에서 관리합니다 — 매체(HWPX·TXT)로 나뉘고, 그 안에서
+            작업 목록과 같은 그룹으로 정리합니다. 판본 비교(diff)는 별도 제품(hwpxdiff)이 담당합니다.</p>
         </div>
         <button class="btn sm" id="tplRefresh">새로고침</button>
       </header>
 
-      <div class="tpl-catalogs">
-        <!-- HWPX 템플릿 카탈로그 -->
-        <section class="grp tpl-cat">
-          <span class="cap">HWPX 템플릿</span>
-          <div class="tpl-cathead">
-            <span class="muted capnote" id="tplHwpxCount"></span>
-            <div class="tpl-catdir"><span class="muted mono" id="tplLibDir"></span>
-              <button class="btn sm" id="btnTplLibDir">폴더 선택…</button></div>
-          </div>
-          <div class="tpllist" id="tplHwpxList"></div>
-        </section>
-
-        <!-- TXT 템플릿 카탈로그(HWPX와 동등 · 10F2FF98-C) -->
-        <section class="grp tpl-cat">
-          <span class="cap">TXT 템플릿</span>
-          <div class="tpl-cathead">
-            <span class="muted capnote" id="tplTxtCount"></span>
-            <div class="tpl-catdir"><span class="muted mono" id="tplTxtDir"></span>
-              <button class="btn sm" id="btnTplNewTxt">새 TXT 템플릿…</button></div>
-          </div>
-          <div class="tpllist" id="tplTxtList"></div>
-        </section>
+      <!-- 라이브러리 바 — 고정 루트(결정 4)라 폴더 재지정 없음. 가져오기=복사·새 TXT 저작. -->
+      <div class="tpl-libbar">
+        <button class="btn sm" id="btnTplImport">가져오기…</button>
+        <button class="btn sm" id="btnTplNewTxt">새 TXT 템플릿…</button>
       </div>
+
+      <!-- HWPX 매체 구획 — 소비 동사=작업 에디터. 열 틴트 파랑 승계. -->
+      <div class="tpl-band hwpx">
+        <span class="tb-k">HWPX</span><span class="tb-t">서식</span>
+        <span class="tb-sub">작업 에디터로 .hwpx 문서를 만듭니다</span>
+        <span class="spacer"></span><span class="muted capnote" id="tplHwpxCount"></span>
+      </div>
+      <div class="tpl-banddir"><span class="muted mono" id="tplLibDir"></span></div>
+      <div class="tpl-groups" id="tplHwpxGroups"></div>
+
+      <!-- TXT 매체 구획 — 소비 동사=빠른 기안·기안문 채우기. 열 틴트 초록 승계. -->
+      <div class="tpl-band txt">
+        <span class="tb-k">TXT</span><span class="tb-t">서식</span>
+        <span class="tb-sub">빠른 기안·기안문 채우기로 클립보드에 복사합니다</span>
+        <span class="spacer"></span><span class="muted capnote" id="tplTxtCount"></span>
+      </div>
+      <div class="tpl-banddir"><span class="muted mono" id="tplTxtDir"></span></div>
+      <div class="tpl-groups" id="tplTxtGroups"></div>
+
+      <!-- 공유 행/그룹 ⋮ 컨텍스트 메뉴 — template.js 가 대상별 항목을 채우고 fixed 좌표로 편다. -->
+      <div id="tplRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
 
       <div id="tplResult" class="run-result"></div>
     </section>
@@ -604,6 +608,21 @@
         <div class="modal-actions">
           <button class="btn" id="grpMoveCancel">취소</button>
           <button class="btn primary" id="grpMoveOk">이동</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 템플릿 그룹 이동 다이얼로그(#108, groupMoveModal 동형·별도 요소) — 화면별 wiring 격리.
+         기존 그룹 + 새 그룹 입력 동거 + 해제. 목록은 template.js 가 스냅샷 그룹명으로 채운다. -->
+    <div id="tplMoveModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="tplMoveTitle">
+      <div class="modal-card">
+        <h3 id="tplMoveTitle">그룹으로 이동</h3>
+        <p class="modal-sub" id="tplMoveName"></p>
+        <div id="tplMoveList" class="sheet-list"></div>
+        <p id="tplMoveErr" class="note dangerbox" style="display:none"></p>
+        <div class="modal-actions">
+          <button class="btn" id="tplMoveCancel">취소</button>
+          <button class="btn primary" id="tplMoveOk">이동</button>
         </div>
       </div>
     </div>

@@ -498,6 +498,35 @@ class TestWebSelftestGate:
         # 소유권 색 — 자동 결속 값(사업명)이 own-auto 로 페인트된다(폼 칩과 한 색 언어, 결정 33).
         assert q["own_auto"] is True, "자동 결속 값에 소유권 색(own-auto)이 붙지 않았습니다."
 
+    def test_tpl_media_groups_render_collapse_and_menu(self, selftest_result: dict) -> None:
+        # 템플릿 관리(#108) — 매체 구획 + 그 안 그룹(작업 모델 재사용)이 실 WebView2 에서 서는지.
+        # 합성 스냅샷을 실 render() 에 흘려 그룹 헤더 3개·접힌 그룹 카드 제외·그룹/카드 ⋮·＋그룹지정
+        # 칩(「그룹 없음」에만)·접힘 캐럿 가시성·이동 다이얼로그 개폐를 되읽는다(부록 B-9 자동판).
+        t = selftest_result["tpl_groups"]
+        assert t.get("error") is None, f"템플릿 그룹 프로브 예외: {t.get('error')!r}"
+        assert t["grp_heads"] == 3, f"그룹 헤더 수가 다릅니다(입찰·계약·그룹없음): {t!r}"
+        assert t["cards_visible"] == 3, f"접힌 그룹(계약) 카드가 뷰에서 제외되지 않았습니다: {t!r}"
+        assert t["grp_more"] == 2, "그룹 ⋮ 는 이름 그룹에만 있어야 합니다(「그룹 없음」 제외)."
+        assert t["card_more"] == 3, f"카드 ⋮ 수가 가시 카드 수와 다릅니다: {t!r}"
+        assert t["assign_chips"] == 1, "＋그룹지정 칩은 「그룹 없음」 카드에만 노출돼야 합니다(결정 2)."
+        # 접힘 화살표: 접힌 그룹=상시 노출, 펼친 그룹=호버 전 은닉(결정 5, job 목록 동형).
+        assert t["caret_collapsed"] == "visible", f"접힌 그룹 화살표가 상시 노출이 아닙니다: {t!r}"
+        assert t["caret_expanded"] == "hidden", f"펼친 그룹 화살표가 호버 전에 보입니다: {t!r}"
+        # 그룹에 속한 카드 ⋮ = [이동, 삭제] · 그룹 헤더 ⋮ = [개명, 해산].
+        assert t["menu_shown"] is True, "카드 ⋮ 클릭에 메뉴가 열리지 않았습니다."
+        assert t["card_menu_items"] == ["move", "delete"], (
+            f"그룹 있는 카드 ⋮ 구성이 [이동·삭제]와 다릅니다: {t['card_menu_items']!r}"
+        )
+        assert t["menu_closed"] is True, "바깥 클릭에 메뉴가 닫히지 않았습니다."
+        assert t["group_menu_items"] == ["grp-rename", "grp-disband"], (
+            f"그룹 헤더 ⋮ 구성이 [개명·해산]과 다릅니다: {t['group_menu_items']!r}"
+        )
+        # ＋그룹지정 칩 → 이동 다이얼로그 개폐.
+        assert t["move_hidden_before"] is True, "이동 다이얼로그가 기본 닫힘이 아닙니다."
+        assert t["move_shown_after_chip"] is True, "＋그룹지정 칩이 이동 다이얼로그를 열지 않았습니다."
+        # 퇴화 불변식(결정 5) — 그룹 0개면 헤더 없는 평면.
+        assert t["flat_heads"] == 0 and t["flat_cards"] == 1, f"퇴화 평면 위반: {t!r}"
+
     def test_job_drift_replaces_mirror_with_blocking_banner(self, selftest_result: dict) -> None:
         # danger(구조 드리프트)는 거울 표와 섞이지 않고 차단 배너 + 행동 링크로 **교체**된다
         # (결정 36·S9). overlay 로 표 위에 얹히는 게 아니라 실제로 표가 사라지고 배너가 선다.

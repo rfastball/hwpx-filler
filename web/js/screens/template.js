@@ -1,76 +1,108 @@
-/* 템플릿 관리(tpl) 화면 — 브리지로 링1 TemplateManagerViewModel + 코어 TextTemplateRegistry 와 왕복.
-   목업 scr-tpl 이관(#13). 안정 DOM(index.html) + Python 이 window.__push('tpl', snapshot) 로 값만
-   채운다(run 패턴). 표현 계층(카드 렌더·확인 라운드트립·모달)만 여기서 만든다 — VM 로직 아님.
+/* 템플릿 관리(tpl) 화면 — 브리지로 링1 TemplateManagerViewModel + 코어 TextTemplateRegistry 왕복.
+   R-info 2부 개편(#108): 매체(HWPX/TXT) 2구획 + 그 안 **작업 목록과 같은 그룹+접힘 모델**.
+   그룹 헤더·행 ⋮ 메뉴·이동 다이얼로그·＋그룹지정 칩·「가져오기」는 job.js 기계를 이식한다.
+   안정 DOM(index.html) + Python 이 window.__push('tpl', snapshot) 로 값만 채운다(판정은 Python).
 
-   [B] 61C7ADF8: Qt 카드 하이라이트 비침 렌더 버그는 여기서 불투명 배경 div 카드로 그려 구성상
-   소멸(숨긴 아이템 텍스트 레이어 자체가 없음). 결정: 미리보기 액션 미노출(10F2FF98-B, Python 이
-   이미 제외)·TXT 동등 관리(10F2FF98-C)·드리프트 UI 미노출(10F2FF98-D). */
+   [B] 61C7ADF8: 불투명 배경 div 카드라 Qt 카드 하이라이트 비침 렌더 버그가 구성상 소멸. */
 (function () {
   const SCREEN = "tpl";
   const $ = (id) => document.getElementById(id);
-  // 편집 모달 상태 — mode: "new" | "edit", path: 편집 대상(신규는 빈 문자열).
-  let editMode = "new";
-  let editPath = "";
+  const esc = window.escHtml;
 
-  const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
+  let LAST = { hwpx: {}, txt: {} };   // 스냅샷 캐시 — 그룹명·현 그룹·행 조회(메뉴/다이얼로그).
+  let editMode = "new", editPath = "";
+  let menuFor = null;                 // 열린 ⋮ 메뉴: {media, kind:"row"|"group", key?, group?, item?}
+  let moveTarget = null;              // 이동 다이얼로그 대상: {media, key}
 
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
-    renderHwpx(s);
-    renderTxt(s);
+    LAST = s || { hwpx: {}, txt: {} };
+    renderBand("hwpx", s.hwpx, $("tplHwpxGroups"), $("tplHwpxCount"), $("tplLibDir"));
+    renderBand("txt", s.txt, $("tplTxtGroups"), $("tplTxtCount"), $("tplTxtDir"));
     renderResult(s);
   }
 
-  /* HWPX 카드 — 이름 + 상태 배지 + 상세 + 상태별 게이트 액션(불투명 div, 비침 없음). */
-  function renderHwpx(s) {
-    $("tplHwpxCount").textContent = s.hwpx_count || "";
-    $("tplLibDir").textContent = s.library_dir || "";
-    const host = $("tplHwpxList");
-    const rows = s.hwpx_rows || [];
-    if (!rows.length) {
-      host.innerHTML = `<div class="tplcard muted">${esc(s.empty_hint || "표시할 템플릿이 없습니다.")}</div>`;
+  function renderBand(media, band, host, countEl, dirEl) {
+    band = band || {};
+    countEl.textContent = band.count ? `${band.count}개` : "";
+    if (dirEl) { dirEl.textContent = band.dir || ""; dirEl.title = band.dir || ""; }
+    if (!band.count) {
+      const hint = media === "hwpx"
+        ? (band.empty_hint || "표시할 템플릿이 없습니다.")
+        : "표시할 TXT 템플릿이 없습니다 — [새 TXT 템플릿]으로 만들거나 [가져오기]로 넣으세요.";
+      host.innerHTML = `<div class="tplcard muted">${esc(hint)}</div>`;
       return;
     }
-    host.innerHTML = rows.map((r) => {
-      const badge = r.is_error
-        ? `<span class="pill danger">${esc(r.badge_label)}</span>`
-        : `<span class="pill ${esc(r.badge_level)}">${esc(r.badge_label)}</span>`;
-      const acts = (r.actions || []).map((a) =>
-        `<button class="btn sm" data-act="${esc(a.key)}" data-path="${esc(r.path)}">${esc(a.label)}</button>`
+    const sections = band.sections || [];
+    if (band.flat) {
+      // 퇴화 불변식(그룹 0개) — 헤더·들여쓰기 없는 평면.
+      host.innerHTML = sections.map((sec) =>
+        `<div class="tpl-grp-rows flat">${sec.items.map((it) => cardHtml(media, it)).join("")}</div>`
       ).join("");
-      return `<div class="tplcard">
-        <div class="tplcard-top"><span class="tplcard-name" title="${esc(r.path)}">${esc(r.name)}</span>${badge}</div>
-        <div class="tplcard-meta muted">${esc(r.detail)}</div>
-        <div class="tplcard-acts">${acts}</div></div>`;
-    }).join("");
+      return;
+    }
+    host.innerHTML = sections.map((sec) => sectionHtml(media, sec)).join("");
   }
 
-  /* TXT 카드 — HWPX와 동등 관리(열기·편집·삭제). 손상 파일도 삭제 가능한 loud 행으로. */
-  function renderTxt(s) {
-    const rows = s.txt_rows || [];
-    $("tplTxtCount").textContent = `${rows.length}건`;
-    $("tplTxtDir").textContent = s.txt_dir || "";
-    const host = $("tplTxtList");
-    if (!rows.length) {
-      host.innerHTML =
-        `<div class="tplcard muted">표시할 TXT 템플릿이 없습니다 — [새 TXT 템플릿]으로 만드세요.</div>`;
-      return;
-    }
-    host.innerHTML = rows.map((r) => {
-      const err = !!r.error;
-      const badge = err
-        ? `<span class="pill danger">읽기 실패</span>`
-        : `<span class="pill muted">TXT</span>`;
-      const meta = err ? `파일을 읽을 수 없습니다: ${esc(r.error)}` : `토큰 ${r.field_count}개`;
-      const edit = err ? ""
-        : `<button class="btn sm" data-txt="edit" data-path="${esc(r.path)}" data-name="${esc(r.name)}">내용 편집</button>` +
-          `<button class="btn sm" data-txt="open" data-name="${esc(r.name)}">기안문 채우기에서 열기</button>`;
-      return `<div class="tplcard">
-        <div class="tplcard-top"><span class="tplcard-name" title="${esc(r.path)}">${esc(r.name)}</span>${badge}</div>
-        <div class="tplcard-meta muted">${meta}</div>
-        <div class="tplcard-acts">
-          <button class="btn sm" data-txt="delete" data-path="${esc(r.path)}">삭제</button>${edit}</div></div>`;
-    }).join("");
+  /* 그룹 구획(job.js 동형) — 헤더(접힘 화살표·이름·개수·그룹 ⋮) + 접히면 바디 생략. */
+  function sectionHtml(media, sec) {
+    const label = sec.group || "그룹 없음";
+    const head =
+      `<div class="job-grp">` +
+        `<button class="job-grp-head" data-grp-toggle="${esc(sec.group)}" data-media="${media}"` +
+        ` aria-expanded="${sec.collapsed ? "false" : "true"}">` +
+          `<span class="grp-name">${esc(label)}</span>` +
+          `<span class="grp-count">${sec.count}</span>` +
+          `<span class="grp-caret">${sec.collapsed ? "▸" : "▾"}</span></button>` +
+        (sec.group
+          ? `<button class="job-more grp-more" data-grp-more="${esc(sec.group)}" data-media="${media}"` +
+            ` aria-haspopup="true" aria-label="그룹 관리">⋮</button>`
+          : "") +
+      `</div>`;
+    const body = sec.collapsed ? "" :
+      `<div class="tpl-grp-rows">${sec.items.map((it) => cardHtml(media, it)).join("")}</div>`;
+    return head + body;
+  }
+
+  function cardHtml(media, it) {
+    return media === "hwpx" ? hwpxCard(it) : txtCard(it);
+  }
+
+  /* 카드 상단 우측 어포던스 — 「그룹 없음」이면 ＋그룹지정 칩(결정 2), 늘 ⋮ 메뉴. */
+  function cardTail(media, it) {
+    const chip = it.group ? "" :
+      `<button class="tpl-assign" data-assign="${esc(it.key)}" data-media="${media}">＋ 그룹 지정</button>`;
+    return `<span class="spacer"></span>${chip}` +
+      `<button class="job-more tplcard-more" data-tpl-more="${esc(it.key)}" data-media="${media}"` +
+      ` aria-haspopup="true" aria-label="템플릿 관리">⋮</button>`;
+  }
+
+  function hwpxCard(it) {
+    const badge = it.is_error
+      ? `<span class="pill danger">${esc(it.badge_label)}</span>`
+      : `<span class="pill ${esc(it.badge_level)}">${esc(it.badge_label)}</span>`;
+    const acts = (it.actions || []).map((a) =>
+      `<button class="btn sm" data-act="${esc(a.key)}" data-path="${esc(it.path)}">${esc(a.label)}</button>`
+    ).join("");
+    return `<div class="tplcard">
+      <div class="tplcard-top"><span class="tplcard-name" title="${esc(it.path)}">${esc(it.name)}</span>${badge}${cardTail("hwpx", it)}</div>
+      <div class="tplcard-meta muted">${esc(it.detail)}</div>
+      <div class="tplcard-acts">${acts}</div></div>`;
+  }
+
+  function txtCard(it) {
+    const err = !!it.error;
+    const badge = err
+      ? `<span class="pill danger">읽기 실패</span>`
+      : `<span class="pill muted">TXT</span>`;
+    const meta = err ? `파일을 읽을 수 없습니다: ${esc(it.error)}` : `토큰 ${it.field_count}개`;
+    const acts = err ? "" :
+      `<button class="btn sm" data-txt="edit" data-path="${esc(it.path)}" data-name="${esc(it.name)}">내용 편집</button>` +
+      `<button class="btn sm" data-txt="open" data-name="${esc(it.name)}">기안문 채우기에서 열기</button>`;
+    return `<div class="tplcard">
+      <div class="tplcard-top"><span class="tplcard-name" title="${esc(it.path)}">${esc(it.name)}</span>${badge}${cardTail("txt", it)}</div>
+      <div class="tplcard-meta muted">${meta}</div>
+      <div class="tplcard-acts">${acts}</div></div>`;
   }
 
   function renderResult(s) {
@@ -80,12 +112,150 @@
     el.className = "run-result " + (r.level === "muted" ? "" : r.level);
   }
 
-  /* ---- HWPX 액션 ---- */
+  /* ---- 스냅샷 조회(메뉴/다이얼로그가 현 그룹·경로 필요) ---- */
+  function findItem(media, key) {
+    const band = LAST[media] || {};
+    for (const sec of band.sections || []) {
+      for (const it of sec.items || []) if (it.key === key) return it;
+    }
+    return null;
+  }
+
+  /* ---- 공유 ⋮ 컨텍스트 메뉴(job.js 동형 — 단일 부유 요소) ---- */
+  function closeRowMenu() {
+    menuFor = null;
+    const menu = $("tplRowMenu");
+    menu.style.display = "none";
+    menu.innerHTML = "";
+  }
+
+  function openRowMenu(media, kind, id, btn) {
+    const menu = $("tplRowMenu");
+    if (kind === "group") {
+      menu.innerHTML =
+        `<button data-menu="grp-rename">그룹 이름 변경</button>` +
+        `<button data-menu="grp-disband">그룹 해산</button>`;
+      menuFor = { media, kind, group: id };
+    } else {
+      const it = findItem(media, id);
+      // 그룹에 속한 카드만 「그룹으로 이동」(무그룹은 ＋그룹지정 칩이 담당, 결정 2) — 늘 삭제.
+      menu.innerHTML =
+        (it && it.group ? `<button data-menu="move">그룹으로 이동…</button><div class="sep"></div>` : "") +
+        `<button data-menu="delete" class="danger">삭제</button>`;
+      menuFor = { media, kind, key: id, item: it };
+    }
+    positionMenu(menu, btn);
+  }
+
+  function toggleRowMenu(media, kind, id, btn) {
+    const same = menuFor && menuFor.kind === kind && menuFor.media === media &&
+      (kind === "group" ? menuFor.group === id : menuFor.key === id);
+    if (same) { closeRowMenu(); return; }
+    openRowMenu(media, kind, id, btn);
+  }
+
+  function positionMenu(menu, btn) {
+    menu.style.display = "block";
+    const r = btn.getBoundingClientRect();
+    const mh = menu.offsetHeight, mw = menu.offsetWidth;
+    let top = r.bottom + 2;
+    if (top + mh > window.innerHeight) top = Math.max(4, r.top - mh - 2);  // 아래 공간 없으면 위로
+    let left = Math.min(r.left, window.innerWidth - mw - 4);
+    menu.style.top = `${Math.max(4, top)}px`;
+    menu.style.left = `${Math.max(4, left)}px`;
+    const first = menu.querySelector("button");
+    if (first) first.focus();
+  }
+
+  async function onRowMenuClick(e) {
+    const btn = e.target.closest("button[data-menu]");
+    if (!btn || !menuFor) return;
+    const m = menuFor, act = btn.dataset.menu;
+    closeRowMenu();
+    if (act === "move") openMoveDialog(m.media, m.item);
+    else if (act === "delete") deleteTemplate(m.media, m.item);
+    else if (act === "grp-rename") renameGroup(m.media, m.group);
+    else if (act === "grp-disband") disbandGroup(m.media, m.group);
+  }
+
+  /* ---- 그룹 이동 다이얼로그(job.js 동형) ---- */
+  function openMoveDialog(media, item) {
+    if (!item) return;
+    moveTarget = { media, key: item.key };
+    const groups = (LAST[media] && LAST[media].group_names) || [];
+    const cur = item.group || "";
+    $("tplMoveList").innerHTML =
+      groups.map((g) =>
+        `<label class="grp-opt"><input type="radio" name="tplMove" value="${esc(g)}"${g === cur ? " checked" : ""}> ${esc(g)}</label>`
+      ).join("") +
+      `<label class="grp-opt"><input type="radio" name="tplMove" value=""${cur === "" ? " checked" : ""}> 그룹 없음(해제)</label>` +
+      `<label class="grp-opt"><input type="radio" name="tplMove" value="" data-new="1" id="tplMoveNewRadio"> 새 그룹:` +
+      ` <input class="field" id="tplMoveNewName" type="text" placeholder="새 그룹 이름"></label>`;
+    $("tplMoveName").textContent = item.name;
+    $("tplMoveErr").style.display = "none";
+    window.Modal.open("tplMoveModal", { onClose: () => { moveTarget = null; } });
+    // 새 그룹 입력에 포커스하면 그 라디오를 고른다(값 센티넬 충돌은 data-new 로 구분).
+    const nn = $("tplMoveNewName");
+    if (nn) nn.addEventListener("focus", () => { const r = $("tplMoveNewRadio"); if (r) r.checked = true; });
+  }
+
+  async function confirmMove() {
+    if (!moveTarget) return;
+    const sel = document.querySelector('input[name="tplMove"]:checked');
+    let group = sel ? sel.value : "";
+    if (sel && sel.dataset.new) {
+      group = ($("tplMoveNewName").value || "").trim();
+      if (!group) {  // 빈 새 이름은 조용히 넘기지 않고 인라인 재진술(모달 유지).
+        const err = $("tplMoveErr");
+        err.textContent = "새 그룹 이름을 입력하세요.";
+        err.style.display = "";
+        return;
+      }
+    }
+    const t = moveTarget;
+    window.Modal.close("tplMoveModal");
+    await Bridge.call(SCREEN, "set_group", { media: t.media, key: t.key, group });
+  }
+
+  /* ---- 그룹 헤더 ⋮ 동작(개명 병합 확인 · 해산 확인) ---- */
+  async function renameGroup(media, old) {
+    const val = await window.Modal.prompt({ title: "그룹 이름 변경", body: `'${old}' 의 새 이름`, value: old });
+    if (val === null) return;
+    const r = await Bridge.call(SCREEN, "rename_group", { media, group: old, new: val });
+    if (r && r.needs_confirm) {
+      if (await window.Modal.confirm({
+        body: `'${r.new}' 그룹이 이미 있습니다. '${old}' 의 ${r.count}개를 '${r.new}'(${r.target}개)에 합칠까요?`,
+      })) {
+        await Bridge.call(SCREEN, "rename_group", { media, group: old, new: val, confirm: true });
+      }
+    } else if (r && r.error) {
+      window.alert(r.error);
+    }
+  }
+
+  async function disbandGroup(media, name) {
+    const r = await Bridge.call(SCREEN, "disband_group", { media, group: name });
+    if (r && r.needs_confirm && (await window.Modal.confirm({
+      body: `'${name}' 그룹을 해산하면 ${r.count}개가 「그룹 없음」으로 이동합니다. 해산할까요?`,
+    }))) {
+      await Bridge.call(SCREEN, "disband_group", { media, group: name, confirm: true });
+    }
+  }
+
+  /* ---- 삭제(HWPX·TXT 공통 · 확인 라운드트립) ---- */
+  async function deleteTemplate(media, item) {
+    if (!item) return;
+    const r = await Bridge.call(SCREEN, "delete", { media, path: item.path });
+    if (r && r.needs_confirm && (await window.Modal.confirm({ body: r.confirm_text + "\n\n삭제할까요?" }))) {
+      await Bridge.call(SCREEN, "delete", { media, path: item.path, confirm: true });
+    }
+  }
+
+  /* ---- HWPX 상태 게이트 액션 ---- */
   async function doCompile(path) {
-    // 1차: 스캔(dry-run). needs_confirm 이면 재진술 후 확인 시에만 적용(조용한 파괴 금지).
     const res = await Bridge.call(SCREEN, "compile", { path });
     if (res && res.needs_confirm) {
-      if (await Modal.confirm({ body: res.confirm_text + "\n\n지금 변환할까요?" })) {
+      if (await window.Modal.confirm({ body: res.confirm_text + "\n\n지금 변환할까요?" })) {
         await Bridge.call(SCREEN, "compile", { path, confirm: true });
       }
     }
@@ -98,36 +268,36 @@
       "새 템플릿으로 시작하면 이전의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?"))) return;
     const r = await Bridge.loadTemplateIntoEditor(path);
     if (typeof r === "string" && r.startsWith("ERROR:")) { window.alert(r); return; }
-    // 에디터 흡수(결정 39·41) — 착지 = 「작업」 패널 편집 모드(단일 착지 EditorEntry.land).
-    EditorEntry.land();
+    EditorEntry.land();  // 에디터 흡수(결정 39·41) — 「작업」 패널 편집 모드 단일 착지.
   }
 
-  function onHwpxClick(e) {
-    const btn = e.target.closest("button[data-act]");
-    if (!btn) return;
-    const path = btn.dataset.path;
-    const act = btn.dataset.act;
-    if (act === "compile") doCompile(path);
-    else if (act === "review") Bridge.call(SCREEN, "review", { path });
-    else if (act === "make_job") makeJob(path);
-  }
-
-  /* ---- TXT 액션 ---- */
-  async function onTxtClick(e) {
-    const btn = e.target.closest("button[data-txt]");
-    if (!btn) return;
-    const act = btn.dataset.txt;
-    if (act === "open") {
-      Bridge.call("txt", "select_template", { name: btn.dataset.name });
-      window.Nav.go("txt");   // 셸 라우터 단일 경로(P3)
-    } else if (act === "delete") {
-      const res = await Bridge.call(SCREEN, "txt_delete", { path: btn.dataset.path });
-      if (res && res.needs_confirm && (await Modal.confirm({ body: res.confirm_text + "\n\n삭제할까요?" }))) {
-        Bridge.call(SCREEN, "txt_delete", { path: btn.dataset.path, confirm: true });
+  /* ---- 밴드 클릭 위임(토글·메뉴 트리거·칩·카드 액션) ---- */
+  function onBandClick(media, e) {
+    const toggle = e.target.closest(".job-grp-head[data-grp-toggle]");
+    if (toggle) { Bridge.call(SCREEN, "toggle_group", { media, group: toggle.getAttribute("data-grp-toggle") }); return; }
+    const grpMore = e.target.closest(".grp-more[data-grp-more]");
+    if (grpMore) { toggleRowMenu(media, "group", grpMore.getAttribute("data-grp-more"), grpMore); return; }
+    const rowMore = e.target.closest(".tplcard-more[data-tpl-more]");
+    if (rowMore) { toggleRowMenu(media, "row", rowMore.getAttribute("data-tpl-more"), rowMore); return; }
+    const assign = e.target.closest(".tpl-assign[data-assign]");
+    if (assign) { openMoveDialog(media, findItem(media, assign.getAttribute("data-assign"))); return; }
+    if (media === "hwpx") {
+      const act = e.target.closest("button[data-act]");
+      if (!act) return;
+      const path = act.dataset.path, key = act.dataset.act;
+      if (key === "compile") doCompile(path);
+      else if (key === "review") Bridge.call(SCREEN, "review", { path });
+      else if (key === "make_job") makeJob(path);
+    } else {
+      const btn = e.target.closest("button[data-txt]");
+      if (!btn) return;
+      if (btn.dataset.txt === "open") {
+        Bridge.call("txt", "select_template", { name: btn.dataset.name });
+        window.Nav.go("txt");
+      } else if (btn.dataset.txt === "edit") {
+        Bridge.call(SCREEN, "txt_content", { path: btn.dataset.path }).then((res) =>
+          openEditModal("edit", btn.dataset.path, btn.dataset.name, (res && res.content) || ""));
       }
-    } else if (act === "edit") {
-      const res = await Bridge.call(SCREEN, "txt_content", { path: btn.dataset.path });
-      openEditModal("edit", btn.dataset.path, btn.dataset.name, (res && res.content) || "");
     }
   }
 
@@ -139,12 +309,9 @@
     $("txtNameRow").style.display = mode === "new" ? "" : "none";
     $("txtEditName").value = "";
     $("txtEditContent").value = content || "";
-    // 초기 포커스: 새 템플릿은 이름, 편집은 내용. 복귀·Escape 는 Modal 헬퍼가 소유(#27/#28).
     const focusTo = mode === "new" ? $("txtEditName") : $("txtEditContent");
     window.Modal.open("txtEditModal", { initialFocus: focusTo });
   }
-
-  function closeEditModal() { window.Modal.close("txtEditModal"); }
 
   async function submitEditModal() {
     const content = $("txtEditContent").value;
@@ -154,32 +321,38 @@
       } else {
         await Bridge.call(SCREEN, "txt_edit", { path: editPath, content });
       }
-      closeEditModal();
+      window.Modal.close("txtEditModal");
     } catch (err) {
-      // confirm-or-alarm: 이름 검증·중복 실패는 조용히 삼키지 않고 시끄럽게.
-      window.alert(String((err && err.message) || err));
+      window.alert(String((err && err.message) || err));  // confirm-or-alarm: 검증 실패 시끄럽게.
     }
   }
 
   function wire() {
-    // 새로고침 실패(브리지 예외)도 fire-and-forget 로 삼키지 않는다(N1).
     $("tplRefresh").addEventListener("click", async () => {
       try { await Bridge.call(SCREEN, "refresh", {}); }
       catch (err) { window.alert(String((err && err.message) || err)); }
     });
-    $("tplHwpxList").addEventListener("click", onHwpxClick);
-    $("tplTxtList").addEventListener("click", onTxtClick);
+    $("tplHwpxGroups").addEventListener("click", (e) => onBandClick("hwpx", e));
+    $("tplTxtGroups").addEventListener("click", (e) => onBandClick("txt", e));
+    $("tplRowMenu").addEventListener("click", onRowMenuClick);
     $("btnTplNewTxt").addEventListener("click", () => openEditModal("new", "", "", ""));
-    $("txtEditCancel").addEventListener("click", closeEditModal);
+    $("txtEditCancel").addEventListener("click", () => window.Modal.close("txtEditModal"));
     $("txtEditOk").addEventListener("click", submitEditModal);
-    $("btnTplLibDir").addEventListener("click", async () => {
-      const r = await Bridge.pickLibraryFolder();
+    $("tplMoveCancel").addEventListener("click", () => window.Modal.close("tplMoveModal"));
+    $("tplMoveOk").addEventListener("click", confirmMove);
+    $("btnTplImport").addEventListener("click", async () => {
+      const r = await Bridge.importLibraryTemplate();
       if (typeof r === "string" && r.startsWith("ERROR:")) window.alert(r);
       // 성공/취소는 푸시 스냅샷이 목록을 갱신한다(취소는 무변).
     });
+    // ⋮ 메뉴 바깥 닫기(job.js 동형) — 캡처 클릭 억제 + 바깥 pointerdown + Escape.
+    window.Popover.wireDismiss({
+      isOpen: () => menuFor !== null,
+      contains: (t) => !!(t.closest("#tplRowMenu") || t.closest(".job-more")),
+      close: closeRowMenu,
+    });
   }
 
-  /* 화면 부팅 — 라우터(app.js)가 pywebviewready 후 호출. */
   async function init() {
     Bridge.onPush(SCREEN, render);
     wire();
