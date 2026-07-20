@@ -225,7 +225,10 @@ def test_overwrite_confirm_flow(tmp_path):
     ctrl.dispatch("set_pattern", {"pattern": "p-{{ID}}"})
     assert ctrl.dispatch("save", {})["ok"] is True
 
-    # 같은 이름 재저장 → 덮어쓰기 확인 요구(조용한 덮어쓰기 금지).
+    # **새 세션**에서 같은 이름 저장 → 덮어쓰기 확인 요구(조용한 덮어쓰기 금지).
+    # 저장 착지가 편집 세션이 된 뒤(PR-2 리뷰 F2)로는 같은 세션의 같은 이름 재저장은
+    # 자기-갱신(확인 불요)이 맞다 — 충돌 시나리오는 새 세션으로 재현한다.
+    ctrl.dispatch("new_session", {})
     ctrl.load_template_path(str(TPL_COMPILED))
     ctrl.dispatch("skip_data", {})
     ctrl.dispatch("set_type", {"index": 0, "type": "const"})
@@ -957,3 +960,114 @@ def test_goto_step_free_movement_when_editing(tmp_path):
     ctrl2.dispatch("goto_step", {"step": 1})             # 0→1 은 스키마 有로 통과
     with pytest.raises(ValueError, match="게이트 미통과"):
         ctrl2.dispatch("goto_step", {"step": 2})         # 매핑 미확정 → 저장 전진 차단
+
+
+# ---------------------------------------- PR-2 고효율 리뷰 반영(파괴 경로·클린 세션·판정 위치)
+def test_save_lands_in_edit_session_of_saved_job(tmp_path):
+    """저장 착지 = 방금 저장한 작업의 편집 세션(리뷰 F2 — 빈 마법사 방치·성공 표지 증발 봉합).
+
+    결정 40(저장 제자리)·41(전환점=저장: 초안은 저장으로 작업이 되고 이후 편집은 탭)의 이행.
+    성공 재진술은 push 경합에 안 걸리는 notice(ok) 채널로 온다."""
+    ctrl, _ = _controller26(tmp_path)
+    res = _save_named(ctrl, "착지작업")
+    assert res["ok"] is True
+    snap = ctrl.snapshot()
+    assert snap["editing_origin"] == "착지작업"          # 빈 마법사가 아니라 저장본 위
+    assert snap["step"] == 1 and snap["is_complete"] is True
+    assert snap["notice"] and "저장했습니다" in snap["notice"]["text"]
+    assert snap["notice"]["level"] == "ok"
+    assert ctrl.has_unsaved_work() is False              # 클린 착지 — 직후 전환 헛확인 금지
+
+
+def test_load_job_marks_session_clean_until_edited(tmp_path):
+    """편집 복원 직후는 클린(디스크 저장본과 동일) — 손대기 전 전환·새 작업이 "저장하지 않은
+    세션" 헛확인을 띄우지 않는다(리뷰). 변이 액션 하나로 다시 미저장이 된다."""
+    ctrl, _ = _controller26(tmp_path)
+    _save_named(ctrl, "클린작업")
+    ctrl.load_job("클린작업")
+    assert ctrl.has_unsaved_work() is False              # 복원 직후 = 버릴 것 없음
+    ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": False})
+    assert ctrl.has_unsaved_work() is True               # 변이 → 미저장
+
+
+def test_skip_data_is_noop_in_dataless_edit_session(tmp_path):
+    """비울 참조가 없으면 어휘·모델 보존(리뷰 F3) — 편집 복원 세션(데이터 무)에서 「데이터
+    없이 진행」 클릭이 저장-매핑 어휘를 지워 전 행을 "(데이터에 없음)" 강등하던 결함."""
+    ctrl, _ = _controller26(tmp_path)
+    _save_named(ctrl, "무데이터편집")
+    ctrl.load_job("무데이터편집")
+    before = ctrl.snapshot()
+    ctrl.dispatch("skip_data", {})
+    after = ctrl.snapshot()
+    assert after["source_fields"] == before["source_fields"]      # 어휘 보존
+    assert after["is_complete"] is True                           # 확정 복원 행 무강등
+    assert after["step"] == 1
+
+
+def test_skip_data_allowed_in_partial_edit_session(tmp_path):
+    """편집 세션(매핑에 정당히 착지)에선 PARTIAL 게이트가 skip_data 를 막지 않는다(리뷰 F6).
+
+    게이트 확인은 세션 국소라 load_job 이 미확인으로 복원한다 — step 0 shortcut 우회 차단
+    (리뷰 F2)은 step 0 에만 적용하고, 매핑 관문의 클릭은 통과한다."""
+    ctrl, _ = _controller26(tmp_path)
+    ctrl.load_template_path(str(TPL_PARTIAL))
+    ctrl.dispatch("ack_gate", {})
+    ctrl.dispatch("skip_data", {})
+    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_const", {"index": 0, "const": "v"})
+    r = ctrl.dispatch("confirm_all", {})
+    ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
+    ctrl.dispatch("set_name", {"name": "부분템플릿작업"})
+    assert ctrl.dispatch("save", {})["ok"] is True       # 저장 착지 = 편집 세션(게이트 미확인 복원)
+    assert ctrl.snapshot()["gate"]["acked"] is False
+    ctrl.dispatch("skip_data", {})                       # step 1 — 게이트 없이 통과(무예외)
+    assert ctrl.step == 1
+
+
+def test_skip_data_detach_restores_mapping_vocabulary(tmp_path):
+    """편집 세션에서 데이터 분리는 빈 어휘가 아니라 현재 매핑이 참조하는 소스 어휘로 복귀
+    (리뷰 F3 — load_job 초기 상태와 동형, "(데이터에 없음)" 오표시 금지)."""
+    ctrl, _ = _controller26(tmp_path)
+    _save_named(ctrl, "분리작업")                        # 착지 = 편집 세션
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("set_source", {"index": 0, "source": "업체명"})
+    ctrl.dispatch("skip_data", {})                       # 분리(detach)
+    snap = ctrl.snapshot()
+    assert snap["data_path"] == "" and snap["record_count"] == 0
+    assert "업체명" in snap["source_fields"]             # 매핑 참조 어휘로 복귀(빈 어휘 아님)
+    assert snap["rows"][0]["source"] == "업체명"          # 이월 + 드롭다운 정상 후보
+
+
+def test_mapping_reset_stakes_judged_by_python_now(tmp_path):
+    """관문 파괴 확인의 근거 수치는 Python 이 지금 판정(리뷰 F7 — stale LAST 우회 차단).
+
+    수치 = 이월 대상(확정 + 내용 있는 touched) — _ensure_model carry 와 같은 집합이라
+    확인 문안("값은 이월")과 실제 이월이 어긋나지 않는다(리뷰 F1)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    assert ctrl.dispatch("mapping_reset_stakes", {}) == {"human": 0}   # 모델 전
+    ctrl.dispatch("skip_data", {})
+    assert ctrl.dispatch("mapping_reset_stakes", {}) == {"human": 0}   # 미접촉 제안뿐
+    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_const", {"index": 0, "const": "v"})
+    assert ctrl.dispatch("mapping_reset_stakes", {}) == {"human": 1}   # 내용 있는 수동
+    r = ctrl.dispatch("confirm_all", {})
+    ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
+    stakes = ctrl.dispatch("mapping_reset_stakes", {})
+    assert stakes["human"] == ctrl.snapshot()["field_count"]           # 전 행 확정(비움 포함)
+
+
+def test_ensure_model_carries_touched_unconfirmed_rows(tmp_path):
+    """관문 재겨눔이 미확정 수동 편집을 이월한다(리뷰 F1 — carry_profile 실배선).
+
+    확정-전용 이월(to_profile)은 "값은 이월된다"는 확인 문안과 달리 직접 고른 상수를
+    조용히 버렸다 — 확정 0·수동 1 세션에서 데이터를 겨눠도 값이 남아야 한다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("skip_data", {})
+    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_const", {"index": 0, "const": "수동값"})        # touched·미확정
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")            # 관문 겨눔 = 재초안
+    row0 = ctrl.snapshot()["rows"][0]
+    assert row0["type"] == "const" and row0["const"] == "수동값"       # 값 이월(소실 금지)
+    assert row0["confirmed"] is False                                  # 재검토 강제는 유지

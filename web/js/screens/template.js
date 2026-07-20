@@ -98,9 +98,8 @@
       "새 템플릿으로 시작하면 이전의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?" }))) return;
     const r = await Bridge.loadTemplateIntoEditor(path);
     if (typeof r === "string" && r.startsWith("ERROR:")) { window.alert(r); return; }
-    // 에디터 흡수(결정 39·41) — 착지 = 「작업」 패널 편집 모드(셸 라우터 단일 경로 P3 유지).
-    window.Nav.go("job");
-    if (window.JobScreen && window.JobScreen.showEditMode) window.JobScreen.showEditMode();
+    // 에디터 흡수(결정 39·41) — 착지 = 「작업」 패널 편집 모드(단일 착지 EditorEntry.land).
+    EditorEntry.land();
   }
 
   function onHwpxClick(e) {

@@ -134,6 +134,9 @@
           <div class="job-empty-panel muted" id="jobEmptyPanel">왼쪽에서 작업을 선택하면 세션 패널이 열립니다.</div>
 
           <div class="job-zones" id="jobZones" style="display:none">
+            <!-- T2 복귀 고지(결정 45 재정의) — 렌더 함수가 안 만지는 JS 소유 요소: 세션 전환
+                 리셋·재렌더에 증발하지 않고, 확인 버튼/편집 재진입으로만 걷힌다(job.js 소유). -->
+            <div class="note warnbox" id="jobEditExitNote" style="display:none"></div>
             <!-- 헤더 존 — 작업 정체(이름·템플릿·소스) -->
             <div class="zone zone-header">
               <div class="zone-cap">헤더</div>

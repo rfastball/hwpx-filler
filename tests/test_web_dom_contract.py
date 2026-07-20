@@ -565,9 +565,13 @@ def test_editor_surface_lives_in_job_panel():
         'scr-editor 는 껍데기 — Nav.go("editor") 는 빈 화면으로 보내는 죽은 경로입니다'
         "(편집 진입은 JobScreen.showEditMode 로)."
     )
-    for fname in ("editor_entry.js", "app.js", "screens/home.js"):
+    # 착지는 EditorEntry.land 단일 정의(리뷰: 4곳 축자 복붙=드리프트 표면 — template.js 가
+    # 가드 사각이었다). 소비처 셋 전부가 그 헬퍼를 부르는지 가드한다.
+    entry_src = (WEB_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
+    assert "function land" in entry_src, "editor_entry.js 의 착지 단일 정의(land)가 사라졌습니다."
+    for fname in ("app.js", "screens/home.js", "screens/template.js"):
         src = (WEB_JS_DIR / fname).read_text(encoding="utf-8")
-        assert "showEditMode" in src, f"{fname} 의 편집 모드 착지 배선이 사라졌습니다."
+        assert "EditorEntry.land" in src, f"{fname} 가 착지 헬퍼(EditorEntry.land)를 쓰지 않습니다."
     editor_js = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
     assert '$("jobEditHost")' in editor_js, "editor.js 위임 루트가 편집 호스트로 이사하지 않았습니다."
     job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")

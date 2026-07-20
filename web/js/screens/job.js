@@ -91,32 +91,49 @@
     MODE = "edit";
     syncModeDisplay(!!(LAST && LAST.has_job));
     setEditStatus();
+    $("jobEditExitNote").style.display = "none";  // 편집 재진입 = 복귀 고지 소임 종료
   }
 
   /* 실행 복귀(T2 재정의, 블록 2 개정 결정 45) — 가드 대상이 화면 인계에서 "편집 중 행 클릭"
      으로 이동했다. 전환은 **비파괴**다: 정의 세션은 EditorController 에 그대로 살고, 미저장
      정의를 덮을 수 있는 유일한 경로(다른 작업 편집·새 작업)는 openGuarded/newJob 확인이
-     지킨다. 그래서 묻지 않고 **한 줄 고지**만 한다(T2 종결 해석과 동형 — 물을 파괴가 없으면
-     확인 모달은 소음이다). 고지 내용 = 상실 아님 재진술 + 저장 전 실행 불반영(조용한 오해 차단). */
+     지킨다. 그래서 묻지 않고 **고지**만 한다(T2 종결 해석과 동형 — 물을 파괴가 없으면 확인
+     모달은 소음이다). 반환 = 미저장 편집 존재 여부(호출측이 고지 표면을 켠다). */
   async function exitEditToRun() {
-    if (MODE !== "run") {
-      MODE = "run";
-      syncModeDisplay(!!(LAST && LAST.has_job));
-      if (LAST) renderStatus(LAST);
-      try {
-        if (await Bridge.editorHasUnsavedWork()) {
-          log("편집 모드에서 나왔습니다. 저장하지 않은 편집은 편집으로 돌아가면 그대로 있고, 저장 전에는 실행에 반영되지 않습니다.");
-        }
-      } catch (err) {
-        log("편집 상태 확인 실패: " + String((err && err.message) || err));
-      }
+    if (MODE === "run") return false;
+    let busy = false;
+    try {
+      busy = await Bridge.editorHasUnsavedWork();
+    } catch (err) {
+      log("편집 상태 확인 실패: " + String((err && err.message) || err));
     }
+    MODE = "run";
+    syncModeDisplay(!!(LAST && LAST.has_job));
+    if (LAST) renderStatus(LAST);
+    return busy;
   }
 
-  /* 좌 목록 갱신 — 편집 저장 직후 새/개명 작업이 바로 보이게(editor.js doSave 가 호출). */
+  /* T2 고지 표면(PR-2 리뷰 F4) — 완료 존 log() 는 세션 전환 리셋(resetGenResult)·존 은닉에
+     증발했다. 이 요소는 어떤 렌더 함수도 쓰지 않는 JS 소유라 push·세션 리셋을 관통해
+     살아남고, 사용자가 확인 버튼으로 걷거나 편집 재진입 때 걷힌다(고지=읽힐 때까지). */
+  function showExitNote() {
+    const el = $("jobEditExitNote");
+    el.innerHTML =
+      `저장하지 않은 편집이 있습니다 — 편집으로 돌아가면 그대로 있고, ` +
+      `저장 전에는 실행에 반영되지 않습니다. ` +
+      `<button class="btn sm" data-act="dismiss-exit-note">확인</button>`;
+    el.style.display = "";
+  }
+
+  /* 좌 목록 갱신 — 편집 저장 직후 새/개명 작업이 바로 보이게(editor.js doSave 가 호출).
+     실패 재진술은 모드를 따른다(PR-2 리뷰 F10): 편집 모드에선 완료 존 log 가 숨어 있어
+     조용한 실패가 된다 — 그때는 alert 로 loud. */
   function refreshList() {
-    Bridge.call(SCREEN, "refresh", {}).catch((err) =>
-      log("목록 갱신 실패: " + String((err && err.message) || err)));
+    Bridge.call(SCREEN, "refresh", {}).catch((err) => {
+      const msg = "목록 갱신 실패: " + String((err && err.message) || err);
+      if (MODE === "edit") window.alert(msg);
+      else log(msg);
+    });
   }
 
   /* ---- 좌 master 목록(HWPX 구획) ---- */
@@ -753,7 +770,9 @@
      (리뷰 #5: 정상 제스처에 오류성 경보). */
   let switching = false;
   async function selectJobGuarded(name) {
-    if (switching) return;
+    /* 반환 = 전환 성사 여부(false=머무르기/재진입 거절) — 편집 모드 이탈이 이 판정을
+       기다린다(가드 선행·전환 후행, PR-2 리뷰 F5: 취소는 무변화여야 한다). */
+    if (switching) return false;
     switching = true;
     try {
       const res = await Bridge.call(SCREEN, "select_job", { name });
@@ -763,8 +782,10 @@
           body: guardBody(res, "작업을 전환하면"),
           confirmLabel: "전환하고 버리기", cancelLabel: "머무르기",
         });
-        if (ok) await Bridge.call(SCREEN, "select_job", { name, confirm: true });
+        if (!ok) return false;
+        await Bridge.call(SCREEN, "select_job", { name, confirm: true });
       }
+      return true;
     } finally {
       switching = false;
     }
@@ -774,12 +795,19 @@
     const item = e.target.closest(".job-item[data-job]");
     if (!item) return;
     const already = item.getAttribute("aria-current") === "true";
-    // 편집 중 행 클릭 = 실행 복귀(결정 40 — 복귀 어포던스는 좌 목록이 담당). 같은 작업
-    // 재클릭이면 진행 중 세션을 그대로 다시 노출한다(재구성 없음 — 아래 무동작 가드와 동근).
+    // 편집 중 행 클릭 = 실행 복귀(결정 40 — 복귀 어포던스는 좌 목록이 담당). **가드 선행·
+    // 전환 후행**(PR-2 리뷰 F5): T1 확인이 끝나기 전엔 편집 표면을 걷지 않는다 —
+    // 「머무르기」=무변화(취소가 편집 화면을 잃게 하면 안 된다). 선택을 먼저 성사시키는
+    // 구조라 지연 선택이 뒤늦게 클릭을 추월하는 창도 없다(리뷰 F8). 같은 작업 재클릭이면
+    // 진행 중 세션을 그대로 다시 노출한다(재구성 없음 — 아래 무동작 가드와 동근).
     if (MODE === "edit") {
-      exitEditToRun().then(() => {
-        if (!already) flushPendingSearch().then(() => selectJobGuarded(item.dataset.job));
-      });
+      (async () => {
+        if (!already) {
+          await flushPendingSearch();
+          if ((await selectJobGuarded(item.dataset.job)) === false) return;  // 머무르기
+        }
+        if (await exitEditToRun()) showExitNote();  // T2 고지(미저장 편집 있을 때만)
+      })();
       return;
     }
     // 이미 선택된 작업 재클릭 = 무동작(세션 재구성으로 데이터 겨눔이 날아가지 않게).
@@ -793,16 +821,26 @@
      이미 이 작업 세션이면 재구성하지 않고(진행 중 데이터 겨눔·행 선택·확인이 조용히 소실되지
      않게 — 리뷰 F1) 그대로 두고 화면만 전환한다. 아니면 겨눠 진입한다. */
   function openJob(name) {
-    const proceed = () => {
-      if (!(LAST && LAST.job_name === name)) {
-        // 미적용 검색 정산 후 T1 가드 승계 — 허브 진입도 같은 파괴 전이(결정 26).
-        flushPendingSearch().then(() => selectJobGuarded(name));
-      }
-      window.Nav.go(SCREEN);
-    };
-    // 허브발 실행 진입도 행 클릭과 동형 — 편집 중이면 먼저 실행 모드로(비파괴·한 줄 고지).
-    if (MODE === "edit") { exitEditToRun().then(proceed); return; }
-    proceed();
+    // 허브발 실행 진입도 행 클릭과 동형 — 가드 선행·전환 후행(리뷰 F5), 미저장 편집은 고지.
+    if (MODE === "edit") {
+      (async () => {
+        if (!(LAST && LAST.job_name === name)) {
+          await flushPendingSearch();
+          if ((await selectJobGuarded(name)) === false) {
+            window.Nav.go(SCREEN);  // 머무르기 — 편집 표면 유지한 채 화면만 노출
+            return;
+          }
+        }
+        if (await exitEditToRun()) showExitNote();
+        window.Nav.go(SCREEN);
+      })();
+      return;
+    }
+    if (!(LAST && LAST.job_name === name)) {
+      // 미적용 검색 정산 후 T1 가드 승계 — 허브 진입도 같은 파괴 전이(결정 26).
+      flushPendingSearch().then(() => selectJobGuarded(name));
+    }
+    window.Nav.go(SCREEN);
   }
 
   /* 거울 미입력 행 = ADR-E 배지 — 클릭=확인·재클릭=철회(UD-19). ackd 클래스로 토글 방향 판정. */
@@ -898,6 +936,12 @@
     $("jobColPanel").addEventListener("click", onPanelClick);
     document.addEventListener("pointerdown", onDocPointerDown);
     document.addEventListener("keydown", onDocKeydown);
+    // T2 복귀 고지 — 확인 버튼으로 걷는다(읽힐 때까지 존속, 리뷰 F4).
+    $("jobEditExitNote").addEventListener("click", (e) => {
+      if (e.target.closest('[data-act="dismiss-exit-note"]')) {
+        $("jobEditExitNote").style.display = "none";
+      }
+    });
     // 재렌더에도 살아남게 안정 컨테이너에 위임(#67).
     $("jobRelink").addEventListener("click", (e) => {
       if (e.target.closest('[data-act="relink-template"]')) doRelinkTemplate();

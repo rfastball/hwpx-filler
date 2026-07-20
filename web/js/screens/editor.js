@@ -56,13 +56,13 @@
     const notice = s.notice
       ? `<p class="note ${s.notice.level === "ok" ? "quiet" : "warnbox"}" style="white-space:pre-line">${esc(s.notice.text)}</p>`
       : "";
-    if (s.step === 0) return notice + step0(s);
+    if (s.step === 0) return notice + templateStage(s);
     if (s.step === 1) return notice + mappingStage(s);
-    return notice + step3(s);  // 2 = 저장
+    return notice + saveStage(s);  // 2 = 저장
   }
 
-  /* ---- 1단계: 템플릿 ---- */
-  function step0(s) {
+  /* ---- 분류 0: 템플릿 ---- */
+  function templateStage(s) {
     let out = `<div class="wtitle">${esc(stageTitle(s, 0))}</div>
       <p class="wsub">누름틀이 들어 있는 HWPX 템플릿을 선택하세요.</p>
       <div class="row"><span class="lbl">템플릿(.hwpx)</span>
@@ -189,7 +189,7 @@
     </div>`;
   }
 
-  /* ---- 2단계: 필드 매핑 (데이터 관문 내장, 3단계 접기) ---- */
+  /* ---- 분류 1: 필드 매핑 (데이터 관문 내장, 3단계 접기) ---- */
   function mappingStage(s) {
     const rows = (s.rows || []).map((r) => mapRow(r, s)).join("");
     const stepper = s.preview_count
@@ -262,8 +262,8 @@
       <td>${preview}</td></tr>`;
   }
 
-  /* ---- 3단계: 저장 ---- */
-  function step3(s) {
+  /* ---- 분류 2: 저장 ---- */
+  function saveStage(s) {
     return `<div class="wtitle">${esc(stageTitle(s, 2))}${s.editing_origin ? ` <span class="pill">편집: ${esc(s.editing_origin)}</span>` : ""}</div>
       <p class="wsub">이 작업(템플릿·매핑·파일명)을 저장합니다. 데이터·행은 저장하지 않습니다 —
         실행할 때 고릅니다.</p>
@@ -397,16 +397,18 @@
     return "";
   }
 
-  /* 확정 매핑 보호(PR#105 리뷰 F1) — 관문의 데이터 교체/비우기는 _ensure_model 재초안으로
-     확정 행을 미확정으로 되돌린다(값은 carry 로 보존되나 재확정 필요). 편집 모드 복원 확정을
-     '검토만' 하려던 1클릭이 매핑 표 바로 위 관문에서 조용히 리셋하지 않게, 확정 행이 있으면
-     파괴 전 확인한다(confirm-or-alarm). 확정 0이면 조용히 진행(새 작업 첫 데이터 겨눔 등). */
+  /* 확정·수동 매핑 보호(PR#105 리뷰 F1) — 관문의 데이터 교체/비우기는 _ensure_model 재초안으로
+     사람 소유 행을 미확정으로 되돌린다(값은 carry_profile 로 이월). 편집 복원 확정을 '검토만'
+     하려던 1클릭이 매핑 표 바로 위 관문에서 조용히 리셋하지 않게 파괴 전 확인한다(confirm-or-
+     alarm). 수치는 **Python 이 지금** 판정한다(PR-2 리뷰 F7 — LAST 는 push 지연 창에서 stale 이라
+     방금 확정한 행이 안 보여 확인이 조용히 생략됐다). 0이면 조용히 진행(새 작업 첫 겨눔 등). */
   async function confirmMappingResetIfConfirmed(verbPhrase) {
-    const n = ((LAST && LAST.rows) || []).filter((r) => r.confirmed).length;
+    const st = await Bridge.call(SCREEN, "mapping_reset_stakes", {});
+    const n = (st && st.human) || 0;
     if (!n) return true;
     return Modal.confirm({ body:
-      `확정한 매핑 ${n}개가 있습니다.\n${verbPhrase} 그 매핑을 다시 확인해야 합니다` +
-      `(값은 남지만 미확정으로 돌아갑니다).\n\n계속할까요?` });
+      `확정했거나 직접 편집한 매핑 ${n}개가 있습니다.\n${verbPhrase} 값은 이월되지만 ` +
+      `전부 미확정으로 돌아가 다시 확인해야 합니다.\n\n계속할까요?` });
   }
 
   /* ---- 이벤트 위임(innerHTML 재구성이라 위임이 안전) ---- */
@@ -521,13 +523,12 @@
       // 저장은 제자리(결정 40 — 포커스 튕김 없음). 좌 목록만 갱신해 새/개명 작업이 바로 보이게
       // 한다(에디터 흡수로 목록과 같은 화면에 산다 — REFRESH_ON_NAV 를 기다릴 이유가 없다).
       if (window.JobScreen && window.JobScreen.refreshList) window.JobScreen.refreshList();
-      let msg = `✓ 작업 '${res.saved_name}' 저장됨.`;
-      if (res.dataset_registered) msg += ` 데이터 '${res.dataset_registered}' 등록됨.`;
+      // 성공 재진술은 Python notice(ok) 채널 — 저장 착지가 저장본 편집 세션 재로드 push 라
+      // #save-msg 는 그 재렌더에 증발한다(PR-2 리뷰 F2: push/반환 경합에 안 걸리는 채널만).
+      // 반저장(작업 저장 성공 + 데이터 등록 실패)만 여기서 loud — 성공으로 뭉개지 않는다.
       if (res.dataset_register_error) {
-        // 반저장(작업 저장 성공 + 데이터 등록 실패) — 성공으로 뭉개지 않고 경고로 재진술.
-        alertMsg(msg + " " + res.dataset_register_error);
-      } else {
-        alertMsg(msg, "ok");
+        window.alert(`작업 '${res.saved_name}' 은 저장됐지만 데이터 등록이 실패했습니다.\n`
+          + res.dataset_register_error);
       }
       return;
     }

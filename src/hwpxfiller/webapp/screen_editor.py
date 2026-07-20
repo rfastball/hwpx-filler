@@ -146,6 +146,11 @@ class EditorController:
         self._loaded_provenance: "dict[str, str]" = {}
         self.notice_text = ""  # 복원·프로파일 반영 등 세션 통지(loud 재진술 채널)
         self.notice_level = "muted"
+        # 클린 세션 표지 — 편집 복원 직후·저장 착지 직후처럼 "디스크 저장본과 동일" 상태.
+        # 사용자가 손대면(변이 액션·데이터/템플릿 로드) 꺼진다. has_unsaved_work 가 소비해
+        # 미변경 세션의 헛확인(폐기 확인·T2 고지)을 억제한다(리뷰 — confirm-or-alarm 의
+        # 「불필요한 프롬프트 억제」 확장).
+        self._session_clean = False
 
     def _set_notice(self, text: str, level: str = "muted") -> None:
         self.notice_text = text
@@ -369,12 +374,16 @@ class EditorController:
 
     # ------------------------------------------- 세션 수명주기(confirm-or-alarm)
     def has_unsaved_work(self) -> bool:
-        """진행 중인 작업 세션이 있는가 — 폐기 전 확인 판단에 쓴다(#25).
+        """버려질 **미저장** 변경이 있는가 — 폐기 전 확인·T2 고지 판단에 쓴다(#25).
 
-        ``_reset()`` 직후(방금 저장 포함)엔 False. 이름·데이터·매핑 모델 중 하나라도
-        있으면 사용자가 손댄 세션이므로 True — 템플릿만 갓 로드한 상태(모델 전)는 아직
-        버릴 게 없어 False(불필요한 프롬프트 억제).
+        ``_reset()`` 직후엔 False. **클린 세션**(편집 복원 직후·저장 착지 직후 —
+        ``_session_clean``)도 False: 내용이 디스크 저장본과 동일해 버릴 것이 없다(리뷰 —
+        미변경 편집 세션의 전환마다 헛확인이 떴었다). 그 외엔 이름·데이터·매핑 모델 중
+        하나라도 있으면 사용자가 손댄 세션이므로 True — 템플릿만 갓 로드한 상태(모델 전)는
+        아직 버릴 게 없어 False(불필요한 프롬프트 억제).
         """
+        if self._session_clean:
+            return False
         return bool(self.job_name or self.data_path or self.model is not None)
 
     def new_job_session(self, path: str) -> None:
@@ -391,6 +400,7 @@ class EditorController:
     # ------------------------------------------- 네이티브 보조(브리지가 다이얼로그 담당)
     def load_template_path(self, path: str) -> None:
         """선택된 .hwpx 를 로드 — 스키마 추출 + PARTIAL 게이트 계산(Qt 위저드 _load_template 미러)."""
+        self._session_clean = False  # 브리지 직행 변이(디스패치 밖) — 클린 표지 해제
         self.template_path = path
         self.gate = None
         self.gate_error = False
@@ -414,6 +424,7 @@ class EditorController:
         records = source.records()
         if not records:
             raise ValueError(NO_ROWS_TEXT)
+        self._session_clean = False  # 브리지 직행 변이(디스패치 밖) — 클린 표지 해제
         self.data_path = path
         self.data_sheet = sheet or ""  # 자동등록 참조에 확정 시트 동봉(#26 — 모호 참조 방지)
         self.source_fields = source.fields()
@@ -497,13 +508,22 @@ class EditorController:
                 + ", ".join(fresh)
             )
         self._set_notice(notice, "warn" if (dropped or fresh) else "ok")
+        # 복원 직후 = 디스크 저장본과 동일(클린) — 손대기 전 전환·새 작업이 "저장하지 않은
+        # 세션" 헛확인을 띄우지 않는다(리뷰). 내부의 load_template_path 가 표지를 껐으므로
+        # 마지막에 켠다. 드리프트 경고(warn)가 있어도 내용 동일성은 참이다.
+        self._session_clean = True
         self._push()
+
+    # 세션 내용을 바꾸지 않는 액션 — 클린 표지를 끄지 않는다(보기 이동·미리보기·질의).
+    _NONMUTATING_ACTIONS = frozenset({"goto_step", "step_preview", "mapping_reset_stakes"})
 
     # ------------------------------------------------------- 웹→Python 데이터 액션
     def dispatch(self, action: str, payload: dict):
         handler = getattr(self, f"_do_{action}", None)
         if handler is None:  # confirm-or-alarm: 미지 액션은 시끄럽게.
             raise ValueError(f"알 수 없는 editor 액션: {action!r}")
+        if action not in self._NONMUTATING_ACTIONS:
+            self._session_clean = False  # 변이 = 더는 저장본과 동일하지 않다
         result = handler(payload)
         self._push()
         return result
@@ -551,22 +571,39 @@ class EditorController:
         비우고(고른 게 있었으면 해제) 스키마온리 모델로 매핑을 잇는다. 매핑 단계(1)에
         머문다(관문에서 호출) — step 0 에서 shortcut 으로 불려도 매핑으로 착지한다.
 
-        **템플릿 게이트 선통과 필수**(PR#105 리뷰 F2): step 0 shortcut 진입은 ``goto_step(1)``
-        과 달리 게이트를 안 거치므로, PARTIAL(미해결 토큰 미확인)·RAW 템플릿을 이 액션이
-        매핑으로 밀어 넣어 게이트를 우회할 수 있다 — ``can_advance(0)`` 를 먼저 세워 막는다.
+        **템플릿 게이트 선통과는 step 0 shortcut 에만**(PR#105 리뷰 F2 + PR-2 리뷰 F6):
+        step 0 진입은 ``goto_step(1)`` 과 달리 게이트를 안 거치므로 PARTIAL 미확인 템플릿을
+        매핑으로 밀어 넣을 수 있어 막는다. 이미 매핑에 정당히 서 있는 세션(편집 복원 —
+        게이트 확인은 세션 국소라 재로드 시 미확인으로 돌아온다)의 관문 클릭까지 막으면,
+        전부터 되던 옵트아웃이 엉뚱한 처방("토큰 확인")과 함께 하드 실패한다.
+
+        **비울 참조가 없으면 어휘를 지우지 않는다**(PR-2 리뷰 F3): 편집 복원 세션은 데이터
+        없이 저장-매핑 어휘(``profile_source_vocabulary``)로 서는데, 이 링크가 no-op 으로
+        읽히는 상황에서 어휘를 비우면 전 행이 미확정 강등 + "(데이터에 없음)" 오표시된다.
+        데이터가 실재할 때만 해제하고, 편집 세션의 해제는 현재 매핑이 참조하는 소스 어휘로
+        복귀한다(load_job 초기 상태와 동형 — 빈 어휘 강등 금지).
         """
-        if not self.can_advance(0):
+        if self.step == 0 and not self.can_advance(0):
             raise ValueError(
                 "템플릿 게이트를 통과해야 매핑으로 진행할 수 있습니다 — "
                 "미해결 토큰을 확인하거나 템플릿을 정리하세요."
             )
+        had_data = bool(self.data_path)
         self.data_path = ""
         self.data_sheet = ""
         self.dataset_name = ""
-        self.source_fields = []
-        self._ignored_sources = set()
         self.records = []
         self.preview_index = 0
+        if had_data:
+            if self._editing_origin and self.model is not None:
+                seen: "list[str]" = []
+                for row in self.model.rows:
+                    if row.source and row.source not in seen:
+                        seen.append(row.source)
+                self.source_fields = seen
+            else:
+                self.source_fields = []
+            self._ignored_sources = set()
         self._ensure_model()
         self.step = 1
 
@@ -653,21 +690,41 @@ class EditorController:
         if self.model is not None and self._model_key == key:
             return
         prior = None
-        if self.model is not None and self.model.confirmed_count():
-            prior = self.model.to_profile()
+        if self.model is not None:
+            # 이월 = carry_profile(확정 + 내용 있는 touched — PR-2 리뷰 F1): 확정-전용
+            # to_profile 로는 미확정 수동 편집(직접 고른 소스·상수)이 관문 재겨눔에서 조용히
+            # 소실된다 — 확인 대화가 "값은 이월된다"고 말한 그 값이다. 내용 없는 touched 는
+            # carry_profile 이 걸러 시스템 소유로 낙착시킨다(PR-1 리뷰 — 영구 동결 방지).
+            carried_prior = self.model.carry_profile()
+            if carried_prior.mappings:
+                prior = carried_prior
         # 미사용 헤더(#49)는 자동 제안 후보에서 제외 — 매핑 진입 전 좁혀두면 여기서
         # 반영된다(진입 후 좁히면 _apply_active 가 ignore_source 로 행을 해제).
         self.model = MappingModel.from_suggestions(self.schema, self._active_sources())
         if prior is not None:
             carried = self.model.apply_profile(prior, confirm=False)
             self._set_notice(
-                f"템플릿/데이터가 바뀌어 매핑 초안을 다시 만들었습니다 — 이전에 확정했던 "
-                f"{carried}개 행의 소스·유형·서식은 제안으로 이월했지만 전 행이 미확정입니다.\n"
+                f"템플릿/데이터가 바뀌어 매핑 초안을 다시 만들었습니다 — 확정했거나 직접 "
+                f"편집한 {carried}개 행의 소스·유형·서식은 이월했지만 전 행이 미확정입니다.\n"
                 "같은 이름 컬럼이라도 새 데이터에서는 의미가 다를 수 있습니다 — "
                 "저장하려면 전 행을 다시 확정하세요.",
                 "warn",
             )
         self._model_key = key
+
+    def _do_mapping_reset_stakes(self, p: dict) -> dict:
+        """관문 파괴 확인(데이터 교체/비우기)의 근거 수치 — **지금** Python 이 판정한다.
+
+        웹 지역 스냅샷(LAST)으로 세면 push 지연 창에서 방금 확정한 행이 안 보여 확인
+        대화가 조용히 생략된다(PR-2 리뷰 F7 — 슬라이스 4 stale 판독류, 처방="판정은
+        Python 이 지금, JS 는 문안만"). 수치 = 이월 대상(확정 + 내용 있는 touched)
+        — ``_ensure_model`` 의 carry_profile 과 같은 집합이라 확인 문안과 실제 이월이
+        어긋나지 않는다.
+        """
+        if self.model is None:
+            return {"human": 0}
+        rows = [r for r in self.model.human_owned_rows() if r.confirmed or r.has_content()]
+        return {"human": len(rows)}
 
     # ---- 매핑 행 편집(모두 편집=확정 해제, VM 이 처리)
     def _do_set_source(self, p: dict) -> None:
@@ -897,7 +954,13 @@ class EditorController:
                     "데이터 관리 화면에서 같은 이름으로 등록하면 연결이 완성됩니다(#53-A)."
                 )
         saved = self.job_name
-        self._reset()  # 저장 후 새 작업 준비(에디터 초기화)
+        # 저장 착지 = 방금 저장한 작업의 **편집 세션**(결정 40 저장 제자리 · 결정 41 전환점=저장:
+        # 초안은 저장으로 작업이 되고 이후 편집은 탭). 구판 ``_reset()`` 은 사용자를 빈 0단계
+        # 마법사에 방치하고, 그 리셋 push 가 성공 표지(#save-msg)를 지워 완결 신호가 증발했다
+        # (리뷰 F2 — 슬라이스 4 push/반환 경합류). 재로드는 디스크 저장본 기준이라 지문·원점이
+        # 새로 서고, 클린 착지(_session_clean)라 직후 전환·새 작업이 헛확인을 띄우지 않는다.
+        self.load_job(saved)
+        self._set_notice(f"작업 '{saved}' 을(를) 저장했습니다.", "ok")
         result = {"ok": True, "saved_name": saved, "dataset_registered": registered}
         if register_error:
             result["dataset_register_error"] = register_error
