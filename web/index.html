@@ -264,12 +264,6 @@
           <button class="btn" id="btnPick">파일 선택…</button>
           <button class="btn" id="btnPaste">템플릿 붙여넣기…</button>
         </div>
-        <div class="stepper">
-          <span class="lbl">행</span>
-          <button class="btn sm icon" id="recPrev" title="이전 행" aria-label="이전 행">◀</button>
-          <span class="mono recidx" id="recIdx">0 / 0</span>
-          <button class="btn sm icon" id="recNext" title="다음 행" aria-label="다음 행">▶</button>
-        </div>
       </div>
 
       <!-- 데이터 존(전-선언 큐 선택 · 블록 3, 슬라이스 6 PR-2b) — 공용 팩토리(datazone.js)의
@@ -303,27 +297,44 @@
            요소(T2 고지 관례): 푸시 재렌더에 증발하지 않고 데이터 전환 때 걷힌다. -->
       <div class="note warnbox" id="txtZoneNote" style="display:none"></div>
 
-      <!-- 2판(반응형 C): 좌=토큰 상태, 우=실시간 렌더. 좁으면 세로 적층 -->
-      <div class="panes">
+      <!-- 작업점 카드(블록 3, 결정 16) — 커서가 목록을 걷지 않고 큐가 한 장 카드를 지나간다.
+           좌=필드 상태(작업점의 빈칸 지도 상세), 우=카드(상태 색인 + 코드블록 렌더 + 카드 결속
+           복사 동사). 자유 레코드 스테퍼·전역 복사/저장 버튼은 사망(결정 16·18). 좁으면 세로 적층. -->
+      <div class="panes cardzone">
         <section class="pane tokens">
-          <h4>필드 상태 (토큰)</h4>
+          <h4>필드 상태 (작업점)</h4>
           <div id="tokPanel" data-preserve-scroll></div>
           <p class="muted hint">값은 데이터에서 채움. <span class="danger">항목 없음</span>은
             <span class="mono">{{토큰}}</span> 그대로 남깁니다.</p>
         </section>
-        <section class="pane preview">
-          <h4>실시간 미리보기 — 이대로 복사됩니다</h4>
-          <div class="render" id="renderView" aria-live="polite" data-preserve-scroll></div>
+        <section class="pane workcard" id="txtCard">
+          <!-- 상태 색인: 위치·처리·빈칸 지도(결정 16). 점 클릭 = 작업점 지정("포커스=첫 미답"의
+               큐 판). 순번은 큐 순서라 여기선 단조롭다(레코드 순서 표와 달리). -->
+          <div class="wc-index">
+            <div class="wc-readout" id="txtCardReadout"></div>
+            <div class="wc-nav">
+              <button class="btn sm icon" id="txtCardPrev" title="이전 카드" aria-label="이전 카드">◀</button>
+              <button class="btn sm icon" id="txtCardNext" title="다음 카드" aria-label="다음 카드">▶</button>
+            </div>
+          </div>
+          <div class="wc-dots" id="txtCardDots" role="list" aria-label="큐 상태 색인"></div>
+          <!-- 카드 헤더: 정체 + 복사 동사(우상단, 결정 16) + 미루기 + 복사 후 전진(기본 꺼짐) -->
+          <div class="wc-head">
+            <span class="wc-title" id="txtCardTitle">이대로 복사됩니다</span>
+            <div class="wc-acts">
+              <label class="wc-advance" title="켜면 복사 후 다음 미처리 카드로 넘어갑니다">
+                <input type="checkbox" id="txtAdvance"> 복사 후 다음으로</label>
+              <button class="btn sm" id="txtCardDefer" title="막힌 카드를 큐 뒤로 보냅니다">미루기</button>
+              <button class="btn primary" id="txtCardCopy">📋 복사</button>
+            </div>
+          </div>
+          <!-- 원문 렌더 = 코드블록 문법(고정폭 pre + 채움 표지 삼분, 결정 16·22). Enter=복사. -->
+          <pre class="wc-render" id="txtCardRender" aria-live="polite" data-preserve-scroll
+               tabindex="0"></pre>
+          <!-- 기본 안내문은 copy.js(Copy.TXT_NOTE) 단일 출처 — txt.js 가 부팅·리셋 때 채운다. -->
+          <p class="note" id="txtNote"></p>
         </section>
       </div>
-
-      <footer class="txt-foot">
-        <button class="btn primary" id="btnCopy">📋 클립보드로 복사</button>
-        <button class="btn" id="btnSave">텍스트 파일로 저장…</button>
-        <!-- 기본 안내문은 copy.js(Copy.TXT_NOTE) 단일 출처 — txt.js 가 부팅·리셋 때 채운다.
-             종전엔 여기와 txt.js 에 같은 문장이 두 벌 있어 드리프트 위험(F15/R-copy). -->
-        <p class="note" id="txtNote"></p>
-      </footer>
     </section>
 
     <!-- ============ 템플릿 관리 (HWPX·TXT 라이브러리, #13) ============ -->

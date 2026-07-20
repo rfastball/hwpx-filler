@@ -83,6 +83,59 @@ def test_queue_copied_marker_projected(tmp_path):
     assert rows[1]["qpos"] == 1  # 미처리 큐 선두로 승격
 
 
+# ------------------------------------------------------------------ 작업점 카드(PR-3)
+
+def test_card_preview_without_data(tmp_path):
+    """데이터 미겨눔 = 작업점 부재 + 템플릿 미리보기(전 토큰 미충족) — 없는 걸 있는 척 안 함.
+
+    카드는 빈 레코드로 템플릿을 미리 보여준다(결정 16): 세그먼트는 literal+missing 뿐,
+    작업점 없음(복사는 표면이 게이트).
+    """
+    ctrl, _ = _controller(tmp_path)
+    card = ctrl.snapshot()["card"]
+    assert card["has_current"] is False and card["index"] is None
+    assert card["index_map"] == [] and card["is_complete"] is False
+    kinds = {seg["kind"] for seg in card["segments"]}
+    assert kinds == {"literal", "missing"}  # 채움·빈 값 없음(데이터 없음)
+
+
+def test_copy_marks_current_and_stays(tmp_path):
+    """복사(note_copied) = 작업점을 처리 후미로(멱등), **작업점은 그 카드에 머문다**(결정 16).
+
+    복사 후 전진은 opt-in(기본 꺼짐) — 넘어가기가 사용자의 사실상 붙여넣기 서명이라.
+    """
+    ctrl, pushes = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))          # 3행, 작업점 = 행 0
+    ctrl.note_copied()                           # app.py copy_clipboard 가 복사 후 부르는 경로
+    card = pushes[-1][1]["card"]
+    assert card["index"] == 0 and card["is_copied"] is True   # 작업점 머묾 + 복사됨
+    assert card["copied_count"] == 1 and card["uncopied_count"] == 2
+    imap = pushes[-1][1]["card"]["index_map"]
+    assert [d["state"] for d in imap] == ["uncopied", "uncopied", "current"]  # 복사분 후미
+
+
+def test_copy_with_advance_moves_to_next_uncopied(tmp_path):
+    """복사 후 전진 켜짐 = 작업점이 다음 미처리로(↓ 서명) — 큐를 걷는 감각."""
+    ctrl, pushes = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))
+    ctrl.dispatch("toggle_advance", {"value": True})
+    ctrl.note_copied()                           # 행 0 복사 → 전진
+    card = pushes[-1][1]["card"]
+    assert card["index"] == 1 and card["is_copied"] is False   # 다음 미처리로 전진
+    assert card["copied_count"] == 1 and card["position"] == 1  # 작업점 = 남은 첫 미처리
+
+
+def test_copy_all_reaches_completion(tmp_path):
+    """전부 복사 = 완주(미처리 소진) — 상태 색인이 완주를 진술."""
+    ctrl, pushes = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))
+    ctrl.dispatch("toggle_advance", {"value": True})
+    for _ in range(3):
+        ctrl.note_copied()
+    card = pushes[-1][1]["card"]
+    assert card["is_complete"] is True and card["copied_count"] == 3 and card["uncopied_count"] == 0
+
+
 # ------------------------------------------------------------------ 선택·reconcile
 
 def test_toggle_reconciles_queue(tmp_path):

@@ -6,6 +6,7 @@
   const $ = (id) => document.getElementById(id);
   const STATE_LABEL = { fill: "✓ 채움", blank: "◦ 빈 값", missing: "● 항목 없음" };
   let LAST = null;
+  let noteKey = null;  // txtNote(완료 로그) 리셋 게이트 — 데이터 소스 정체(data_key) 변경 시만 걷는다
 
   const esc = window.escHtml;  // 공유 이스케이퍼(esc.js) — " 도 escape 해 속성 컨텍스트 안전
 
@@ -63,37 +64,71 @@
     log: zoneLog,
   });
 
-  /* 템플릿 토큰을 레코드로 치환하되 미충족을 명시 재진술 — txt_view._build_preview_html 의 웹 이식.
-     항목없음=빨강 {{토큰}}, 빈값=〈빈 값〉 마커, 채움=값 그대로. VM 로직 아님(순수 표현). */
-  function buildPreview(template, record) {
-    const re = /\{\{\s*([^{}|]+?)\s*\}\}/g;
-    let out = "", last = 0, m;
-    while ((m = re.exec(template)) !== null) {
-      out += esc(template.slice(last, m.index));
-      const name = m[1].trim();
-      if (!(name in record)) {
-        out += `<span class="tok-missing">{{${esc(name)}}}</span>`;
-      } else {
-        const v = record[name] ?? "";
-        out += String(v).trim() === "" ? `<span class="tok-blank">〈빈 값〉</span>` : esc(v);
-      }
-      last = re.lastIndex;
+  /* 작업점 카드 렌더 = 링1 render_segments(채움 표지 삼분)의 페인트. **웹은 토큰 정규식을
+     재구현하지 않는다**(PR-1 이 예고한 파생경계 번역오류 상류 차단 — 종전 buildPreview 는
+     Python 렌더와 두 벌로 걷다 어긋날 위험). 세그먼트 텍스트는 클립보드 평문 그대로라
+     이어붙이면 render_record 와 같다(불변식). literal=원문, fill=값(음영), blank=〈빈 값〉
+     표지, missing={{토큰}} 원문(빨강). */
+  function paintCard(segments) {
+    return (segments || []).map((s) => {
+      if (s.kind === "fill") return `<span class="seg-fill">${esc(s.text)}</span>`;
+      if (s.kind === "blank")
+        return `<span class="seg-blank" title="{{${esc(s.name)}}} — 빈 값">〈빈 값〉</span>`;
+      if (s.kind === "missing") return `<span class="seg-missing">${esc(s.text)}</span>`;
+      return esc(s.text);  // literal
+    }).join("");
+  }
+
+  /* 작업점 카드(결정 16) — 상태 색인(위치·처리·빈칸 지도) + 코드블록 렌더 + 동사 게이트.
+     커서가 목록을 걷지 않고 큐가 이 한 장을 지나간다: 작업점=첫 미처리, 복사분은 후미로. */
+  function renderCard(s) {
+    const c = s.card || {};
+    const complete = !!c.is_complete;
+    $("txtCard").classList.toggle("complete", complete);
+    // 상태 색인 재진술 — 위치·처리 진척·빈칸 수.
+    const readout = $("txtCardReadout");
+    if (!c.has_current) {
+      readout.textContent = s.has_data
+        ? "선택된 카드가 없습니다 — 위 표에서 행을 선택하면 큐에 담깁니다."
+        : "데이터를 선택하면 기안 대상 행이 카드로 들어옵니다.";
+    } else if (complete) {
+      readout.textContent = `완주 — ${c.selected_count}건 전부 복사했습니다.`;
+    } else {
+      const posTxt = c.position
+        ? `작업점 ${c.position}/${c.uncopied_count} 미처리`
+        : "복사됨 카드";
+      const gaps = (c.missing_fields || []).length + (c.empty_fields || []).length;
+      readout.textContent =
+        `${posTxt} · 복사 ${c.copied_count}/${c.selected_count}` + (gaps ? ` · 빈칸 ${gaps}건` : "");
     }
-    out += esc(template.slice(last));
-    return out;
+    // 상태 색인 점 — 큐 표시 순서(단조). 클릭 = 작업점 지정. 빈칸 카드엔 빨강 표지(빈칸 지도).
+    $("txtCardDots").innerHTML = (c.index_map || []).map((d) =>
+      `<button class="wc-dot ${d.state}${d.has_gap ? " gap" : ""}" role="listitem"` +
+      ` data-i="${d.index}" aria-label="${d.index + 1}행 ${d.state}${d.has_gap ? " 빈칸있음" : ""}"` +
+      ` title="${d.index + 1}행${d.has_gap ? " · 빈칸 있음" : ""}"></button>`
+    ).join("");
+    // 카드 정체 + 렌더.
+    $("txtCardTitle").textContent = !c.has_current
+      ? "이대로 복사됩니다 (미리보기 — 데이터 미선택)"
+      : c.is_copied ? "복사됨 — 다시 복사하면 클립보드가 갱신됩니다" : "이대로 복사됩니다";
+    $("txtCardRender").innerHTML = paintCard(c.segments);
+    // 동사 게이트 — 작업점 없으면 복사·미루기 불가, 복사분은 못 미룬다(모델 계약의 표면 반영).
+    $("txtCardCopy").disabled = !c.has_current;
+    $("txtCardDefer").disabled = !c.has_current || c.is_copied;
+    const single = (c.index_map || []).length <= 1;
+    $("txtCardPrev").disabled = single;
+    $("txtCardNext").disabled = single;
+    $("txtAdvance").checked = !!c.advance_after;
   }
 
   /* Python→웹 푸시 렌더. Bridge.onPush 로 등록된다. */
   function render(s) {
-    Preserve.around(() => {  // 재구성 가로질러 포커스·캐럿·프리뷰/토큰 스크롤 보존(#28)
+    Preserve.around(() => {  // 재구성 가로질러 포커스·캐럿·카드/토큰 스크롤 보존(#28)
       LAST = s;
       // 템플릿 콤보를 스냅샷에 동기(F11) — 서버측 선택 변경(새 기안 초기화·홈 '기안
       // 열기' 진입)이 콤보에 보이게. 옵션에 없는 이름(붙여넣은 텍스트)은 선택 해제로 남는다.
       const sel = $("tplSel");
       if (sel.value !== s.template_name) sel.value = s.template_name;
-      $("recIdx").textContent = `${s.record_index} / ${s.record_count}`;
-      $("recPrev").disabled = s.record_count <= 1;
-      $("recNext").disabled = s.record_count <= 1;
 
       const rows = s.tokens.map((t) =>
         `<div class="tok ${t.state}">` +
@@ -102,7 +137,7 @@
       ).join("");
       $("tokPanel").innerHTML = rows || `<p class="muted">토큰이 없는 템플릿입니다.</p>`;
 
-      $("renderView").innerHTML = buildPreview(s.template_text, s.record);
+      renderCard(s);  // 작업점 카드(상태 색인·코드블록 렌더·동사 게이트) — 큐 판(결정 16)
       // 소스 종류 병기 라벨(#26 #6) — 서버가 플래그에서 합성(K8)·화면별 고유 id(#27), run 과 분리.
       $("txtDataLabel").value = s.data_source_label || "";
       dz.render(s);  // 데이터 존(테이블·칩·스트립) — 팩토리 소유(datazone.js). 게이트 없는
@@ -117,7 +152,10 @@
         $("txtZoneNote").textContent = "";
       }
       setStatus(s.missing_fields, s.empty_fields);
-      resetNote();
+      // txtNote 는 완료 로그(복사 확정·오류) — **매 push 에 지우지 않는다**: 복사=완료
+      // (note_copied)가 큐 전진 재푸시를 유발하므로, 무조건 resetNote 하면 방금 announce 한
+      // 확정 문구가 곧장 지워진다(순서 경합). zoneNote 와 동형으로 데이터 소스가 바뀔 때만 걷는다.
+      if (zkey !== noteKey) { noteKey = zkey; resetNote(); }
     });
   }
 
@@ -147,14 +185,41 @@
     const n = $("txtNote"); n.dataset.level = "warn"; n.textContent = "⚠ " + msg;
   }
 
+  /* 카드 결속 복사(결정 16) — 작업점 카드 렌더를 클립보드로(복사=완료). Python(copy_clipboard→
+     note_copied)이 복사분을 후미로 옮기고 전진 opt-in 후 재푸시하므로, 확정 문구(announce)는
+     그 재푸시 뒤에 선다 — txtNote 는 데이터 소스 변경 때만 리셋이라 확정이 유지된다(순서 경합
+     차단). 빈칸 게이트 = 카드 결속(결정 16): 미충족 포함 복사는 전면 가시 렌더(빨강 세그먼트)
+     + announce 로 시끄럽게 알린다(완화 조항 — 전면 가시성 표면의 "틀리면 보이는" 경보). */
+  async function copyCard() {
+    if ($("txtCardCopy").disabled) return;  // 작업점 없음 = 무동작(모델 계약의 표면 반영)
+    announce("복사", await Bridge.copyClipboard(SCREEN));
+  }
+
   /* 웹→Python 이벤트 배선. */
   function wire() {
     // 데이터 존(테이블·열 패널·칩·스트립·전체 선택/해제·문서 레벨 닫기)은 팩토리 몫 배선.
     dz.wire();
     $("tplSel").addEventListener("change", (e) =>
       Bridge.call(SCREEN, "select_template", { name: e.target.value }));
-    $("recPrev").addEventListener("click", () => Bridge.call(SCREEN, "step", { delta: -1 }));
-    $("recNext").addEventListener("click", () => Bridge.call(SCREEN, "step", { delta: 1 }));
+
+    // 작업점 카드 동사(결정 16) — 큐 네비게이션(↓/↑ 경계 멈춤·점 클릭)·복사(카드 결속·Enter)·
+    // 미루기·복사 후 전진 토글. 자유 레코드 스테퍼는 사망(커서가 아니라 큐가 카드를 지나간다).
+    $("txtCardPrev").addEventListener("click", () => Bridge.call(SCREEN, "step", { delta: -1 }));
+    $("txtCardNext").addEventListener("click", () => Bridge.call(SCREEN, "step", { delta: 1 }));
+    $("txtCardDots").addEventListener("click", (e) => {
+      const dot = e.target.closest(".wc-dot");
+      if (dot) Bridge.call(SCREEN, "set_current", { index: Number(dot.dataset.i) });
+    });
+    $("txtCardCopy").addEventListener("click", copyCard);
+    // Enter=복사(결정 16 Enter 경로) — 코드블록에 포커스가 있을 때. pre 는 비편집이라 안전.
+    $("txtCardRender").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); copyCard(); }
+    });
+    $("txtCardDefer").addEventListener("click", () => {
+      if (!$("txtCardDefer").disabled) Bridge.call(SCREEN, "defer", {});  // index 생략=작업점
+    });
+    $("txtAdvance").addEventListener("change", (e) =>
+      Bridge.call(SCREEN, "toggle_advance", { value: e.target.checked }));
 
     $("btnPick").addEventListener("click", async () => {
       // 데이터 재선택 = 필터 세션의 죽음 — 대기 중 검색 디바운스를 먼저 정산해 직전 필터
@@ -173,13 +238,6 @@
     $("btnTxtPoolData").addEventListener("click", async () => {
       await dz.flushPendingSearch();  // 재겨눔 전 검색 정산(위 btnPick 과 같은 규율)
       await PoolPicker.choose(SCREEN);             // 라벨은 스냅샷(data_source_label)이 채운다
-    });
-
-    $("btnCopy").addEventListener("click", async () =>
-      announce("복사", await Bridge.copyClipboard(SCREEN)));
-    $("btnSave").addEventListener("click", async () => {
-      const r = await Bridge.saveFile(SCREEN);
-      if (r) announce("저장", r);
     });
 
     // 붙여넣기 모달(세션 템플릿) — 개폐·초기포커스·복귀·Escape 는 Modal 헬퍼가 소유(#27/#28).

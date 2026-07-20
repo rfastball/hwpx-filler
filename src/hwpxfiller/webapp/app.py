@@ -32,7 +32,7 @@ from ..gui.file_filters import EXCEL_FILTER_PATTERN  # 확장자 단일 출처(R
 from hwpxcore.native import single_instance
 from hwpxcore.native._debug import log
 from hwpxcore.native.clipboard import set_clipboard_text
-from hwpxcore.native.dialogs import open_file_dialog, open_folder_dialog, save_file_dialog
+from hwpxcore.native.dialogs import open_file_dialog, open_folder_dialog
 from hwpxcore.native.reveal import open_path as _native_open_path
 from hwpxcore.native.reveal import reveal_in_explorer as _native_reveal
 from .screen_editor import EditorController
@@ -215,28 +215,19 @@ class WebFrontend:
         return Path(path).name
 
     def copy_clipboard(self, screen: str) -> dict:
-        """현재 렌더 텍스트를 OS 클립보드로(완료=commit). 리포트를 돌려줘 웹이 재진술."""
-        text, report = self._controller(screen).render()
+        """작업점 카드 렌더를 OS 클립보드로(복사=완료, 결정 16). 리포트를 돌려줘 웹이 재진술.
+
+        복사 후 큐를 전진시킨다(작업점→처리 후미, 전진 opt-in) — 큐 상태 기제는 컨트롤러의
+        :meth:`~hwpxfiller.webapp.screens.TxtController.note_copied` 가 소유(클립보드 쓰기는
+        네이티브라 브리지 몫). 큐가 없는 화면(``note_copied`` 부재)은 렌더·복사만 한다.
+        """
+        ctrl = self._controller(screen)
+        text, report = ctrl.render()
         set_clipboard_text(text)
+        note = getattr(ctrl, "note_copied", None)
+        if note is not None:  # txt 큐 카드 — 복사분 후미 이동·전진·재푸시
+            note()
         return {"missing_fields": report.missing_fields, "empty_fields": report.empty_fields}
-
-    def save_file(self, screen: str) -> "dict | None":
-        """Win32 저장 다이얼로그 → 원자 쓰기(덮어쓰기 확인 포함)."""
-        from hwpxcore.atomic import write_text_atomic
-
-        path = save_file_dialog(
-            "기안.txt", [("텍스트", "*.txt"), ("모든 파일", "*.*")],
-            default_ext="txt", owner_title=WINDOW_TITLE,
-        )
-        if not path:
-            return None
-        text, report = self._controller(screen).render()
-        write_text_atomic(path, text)
-        return {
-            "path": Path(path).name,
-            "missing_fields": report.missing_fields,
-            "empty_fields": report.empty_fields,
-        }
 
     def pick_output_folder(self, screen: str) -> "str | None":
         """Win32 폴더 피커(SHBrowseForFolder) → 저장 폴더 지정. 「작업」 세션 패널의 네이티브 표면.
@@ -509,7 +500,7 @@ _PRESERVE_PROBE_JS = r"""
 
 # 실화면 회귀(#28 완료기준) — 위 기제 프로브는 합성 픽스처였고, 여기선 shipped __push 경로로
 # 실 컨트롤러 스냅샷을 3개 실화면 render() 에 흘려 (a) Preserve.around 래핑이 실 render 를
-# 깨지 않는지, (b) txt 프리뷰(#renderView)의 스크롤이 실 재렌더를 가로질러 유지되는지 되읽는다.
+# 깨지 않는지, (b) txt 작업점 카드 렌더(#txtCardRender)의 스크롤이 실 재렌더를 가로질러 유지되는지 되읽는다.
 # 스냅샷은 실 컨트롤러 initial()(비동기) 로 당겨 stash 하고, 스크롤은 가시 화면에서만 유효하므로
 # txt 를 가시화한다. 셋업(비동기 fire)과 되읽기 사이에 한 번 대기.
 _PRESERVE_REAL_SETUP_JS = r"""
@@ -532,18 +523,21 @@ _PRESERVE_REAL_PROBE_JS = r"""
       out[scr] = 'ok';
     } catch (e) { out[scr] = 'throw:' + (e && e.message); }
   });
-  // txt 스크롤 보존 end-to-end: 프리뷰를 강제로 길게 → 오버플로 → 스크롤 → 재렌더 → 유지?
+  // txt 스크롤 보존 end-to-end: 작업점 카드 렌더를 강제로 길게 → 오버플로 → 스크롤 → 재렌더 →
+  // 유지? 카드 렌더는 링1 render_segments(card.segments)를 페인트하므로(웹 정규식 사망, PR-3),
+  // template_text 가 아니라 card.segments 를 200줄로 덮어 오버플로를 만든다.
   try {
     var snap = snaps['txt'];
     if (!snap) { out.txt_scroll_top = 'no-snap'; return out; }
-    var lines = [];
-    for (var i = 0; i < 200; i++) { lines.push('라인 ' + i + ' {{공고명}}'); }
-    snap.template_text = lines.join('\n');
+    var segs = [];
+    for (var i = 0; i < 200; i++) { segs.push({ text: '라인 ' + i + '\n', kind: 'literal', name: '' }); }
+    snap.card = snap.card || {};
+    snap.card.segments = segs;
     window.__push('txt', snap);
-    var box = document.getElementById('renderView');
+    var box = document.getElementById('txtCardRender');
     box.scrollTop = 150;
     window.__push('txt', snap);         // 실 재렌더 — Preserve 가 스크롤 복원해야
-    out.txt_scroll_top = document.getElementById('renderView').scrollTop;
+    out.txt_scroll_top = document.getElementById('txtCardRender').scrollTop;
   } catch (e) { out.txt_scroll_top = 'throw:' + (e && e.message); }
   return out;
 })()
@@ -807,12 +801,35 @@ _TXT_ZONE_PROBE_JS = r"""
              rows:[{index:0, selected:true, qpos:1, copied:false, current:true,
                     cells:[[['전산',true],['장비 구매',false]]]}],
              visible_count:1,
-             hidden_selected:[{index:1, selected:true, qpos:2, copied:false, current:false}]}
+             hidden_selected:[{index:1, selected:true, qpos:2, copied:false, current:false}]},
+      // 작업점 카드(블록 3, 결정 16) — 상태 색인·채움 표지 삼분 세그먼트·동사 게이트.
+      card:{index:0, has_current:true, is_copied:false, position:1,
+            uncopied_count:2, copied_count:0, selected_count:2, is_complete:false,
+            advance_after:false,
+            segments:[{text:'제목: ', kind:'literal', name:''},
+                      {text:'전산장비 구매', kind:'fill', name:'공고명'},
+                      {text:'', kind:'blank', name:'담당자'}],
+            missing_fields:[], empty_fields:['담당자'],
+            index_map:[{index:0, state:'current', has_gap:false},
+                       {index:1, state:'uncopied', has_gap:true}]}
     };
     window.__push('txt', snap);
     out.rows = document.querySelectorAll('#txtTableBody tr[data-i]').length;
     out.mark = (function(){ var m = document.querySelector('#txtTableBody mark');
       return m ? m.textContent : ''; })();
+    // 작업점 카드 되읽기 — 코드블록 렌더(채움 표지 삼분)·상태 색인 점·복사 동사(우상단).
+    out.card_render = document.getElementById('txtCardRender').textContent;
+    out.card_fill = !!document.querySelector('#txtCardRender .seg-fill');
+    out.card_blank = !!document.querySelector('#txtCardRender .seg-blank');
+    out.card_dots = document.querySelectorAll('#txtCardDots .wc-dot').length;
+    out.card_current_dot = !!document.querySelector('#txtCardDots .wc-dot.current');
+    out.card_gap_dot = !!document.querySelector('#txtCardDots .wc-dot.gap');
+    // 복사 동사는 카드에 결속되고(전역 버튼 사망), 작업점이 있으면 활성.
+    var cp = document.getElementById('txtCardCopy');
+    out.card_copy_enabled = !!cp && !cp.disabled;
+    out.card_global_copy_dead = !document.getElementById('btnCopy')
+      && !document.getElementById('btnSave');  // 전역 복사·저장 버튼 소멸(결정 16·18)
+    out.card_readout = document.getElementById('txtCardReadout').textContent;
     // 선두 「큐」 열 — 작업점 ▶ 표지(링1 큐 모델 사영, 결정 16). 순번은 큐 순서로 그리는
     // 상태 색인(PR-3) 몫이라 이 표엔 렌더하지 않는다(비단조 오독 차단, PR-2b 리뷰).
     out.lead = (function(){ var d = document.querySelector('#txtTableBody .doc-body');
