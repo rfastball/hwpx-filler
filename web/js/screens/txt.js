@@ -71,15 +71,7 @@
      Python 렌더와 두 벌로 걷다 어긋날 위험). 세그먼트 텍스트는 클립보드 평문 그대로라
      이어붙이면 render_record 와 같다(불변식). literal=원문, fill=값(음영), blank=〈빈 값〉
      표지, missing={{토큰}} 원문(빨강). */
-  function paintCard(segments) {
-    return (segments || []).map((s) => {
-      if (s.kind === "fill") return `<span class="seg-fill">${esc(s.text)}</span>`;
-      if (s.kind === "blank")
-        return `<span class="seg-blank" title="{{${esc(s.name)}}} — 빈 값">〈빈 값〉</span>`;
-      if (s.kind === "missing") return `<span class="seg-missing">${esc(s.text)}</span>`;
-      return esc(s.text);  // literal
-    }).join("");
-  }
+  const paintCard = window.SegView.paint;  // 공유 세그먼트 페인터(segview.js) — 빠른 기안과 한 계약
 
   /* 작업점 카드(결정 16) — 상태 색인(위치·처리·빈칸 지도) + 코드블록 렌더 + 동사 게이트.
      커서가 목록을 걷지 않고 큐가 이 한 장을 지나간다: 작업점=첫 미처리, 복사분은 후미로. */
