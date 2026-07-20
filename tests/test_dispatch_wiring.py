@@ -33,6 +33,7 @@ CONTROLLER_FILES = [
     "screen_home.py",
     "screen_job.py",  # 「작업」 세션 패널(R-flow) — run 사망(슬라이스 3) 후 유일 생성 표면
     "screen_pool.py",
+    "screen_quickdraft.py",  # 빠른 기안(R-flow 블록 5) — 호출자는 quickdraft.js
     "screen_template.py",
     "screens.py",  # TxtController
     "data_zone.py",  # 데이터 존 공유 믹스인(슬라이스 6 PR-2b) — 호출자는 datazone.js 팩토리
