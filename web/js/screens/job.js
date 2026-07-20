@@ -20,6 +20,41 @@
 
   const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
 
+  /* ---- 데이터 존(필터 테이블·열 패널·칩·스트립) = 공용 팩토리(datazone.js, PR-2a 추출) ----
+     표면 계약·리뷰 결정 주석은 팩토리가 소유한다 — 여기는 화면 고유값만 주입한다:
+     id 묶음 · 선두 「문서」 열(F33 승계: 실파일명 + 식별 요약) · 빈 상태/스트립 문안 ·
+     세션 지문(renderTable 리셋 판정 — 완료 존 sessionKey 와 다른 축: 선택 제외) · log 채널.
+     log 는 함수 선언이라 호이스팅으로 이 시점 참조가 안전하다. */
+  const dz = window.DataZone.create({
+    screen: SCREEN,
+    ids: {
+      selCount: "jobSelCount", search: "jobFilterSearch", reapply: "jobFilterReapply",
+      chips: "jobFilterChips", strip: "jobSelStrip",
+      tableHost: "jobTableHost", tableWrap: "jobTableWrap", tableEmpty: "jobTableEmpty",
+      tableHead: "jobTableHead", tableBody: "jobTableBody", colPanel: "jobColPanel",
+      selAll: "jobSelAll", selNone: "jobSelNone",
+    },
+    rowIdPrefix: "jobRow-",  // preserve.js 가 id 로 포커스 복원 — 접두 변경은 보존 계약 파손
+    lead: {
+      header: "문서",
+      bodyHtml(r) {
+        const doc = r.name
+          ? `<span class="doc-name">${esc(r.name)}</span>`
+          : `<span class="doc-name doc-off">선택하면 파일명이 정해집니다</span>`;
+        const sum = r.summary ? `<span class="doc-sum">${esc(r.summary)}</span>` : "";
+        return doc + sum;
+      },
+    },
+    copy: {
+      emptyNoData: "데이터를 선택하면 생성 대상 문서가 여기에 표시됩니다.",
+      emptyFiltered: "필터와 일치하는 행이 없습니다. 위 칩의 정의를 확인하세요.",
+      emptyNoRows: "데이터에 행이 없습니다.",
+      stripLead: (n) => `필터 밖 선택 <b>${n}행</b> — 화면엔 안 보이지만 생성에 포함됩니다: `,
+    },
+    tableKey: (s) => (s.job_name || "") + "|" + (s.data_source_label || ""),
+    log,
+  });
+
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
     if (s && s.progress) { renderProgress(s.progress); return; }  // 진행 델타(경량)
@@ -33,9 +68,7 @@
         renderData(s);
         renderPreflight(s);
         renderMirror(s);
-        renderTable(s);
-        renderChips(s);
-        renderStrip(s);
+        dz.render(s);  // 데이터 존(테이블·칩·스트립) — 팩토리 소유(datazone.js)
         renderRestate(s);
         renderGateAndFolder(s);
       }
@@ -281,180 +314,22 @@
       `<td class="mir-f">${nm}</td><td class="mir-v">${val}</td><td class="mir-s">${chip}</td></tr>`;
   }
 
-  /* ---- 열 필터 패널(엑셀식 아이콘 펼침, 결정 25) ----
-     열별 부분일치 검색 + 값 체크리스트(같은 열 OR) 동거, 일자·금액 열은 범위 폼(비교 6종
-     + 2절 그리고/또는 — 엑셀 사용자 지정 동형). 값 목록은 열릴 때만 당긴다(filter_panel
-     질의 — 53열 코퍼스에서 스냅샷 상시 적재 낭비 방지). 범위 오독 피연산자는 패널 안
-     인라인 재진술(조용한 강등 금지). */
-  let panelCol = null;   // 열린 패널의 열(null=닫힘)
-  let panelData = null;  // 패널이 연 시점의 filter_panel 질의 결과(체크 상태 병합용, 리뷰 #4)
-  const RANGE_OPS = [["ge", "≥"], ["gt", ">"], ["le", "≤"], ["lt", "<"], ["eq", "="], ["ne", "≠"]];
-
-  function closeColPanel() {
-    const p = $("jobColPanel");
-    p.hidden = true;
-    p.innerHTML = "";
-    panelCol = null;
-    panelData = null;
-  }
-
-  async function openColPanel(col, anchorBtn) {
-    // 앵커 좌표는 await **전에** 캡처한다 — dispatch 가 push 를 먼저 흘리면 head 재렌더로
-    // anchorBtn 이 DOM 에서 떨어져 rect 가 0이 되고 패널이 엉뚱한 위치에 뜬다(리뷰 #5).
-    const rectBefore = anchorBtn.getBoundingClientRect();
-    const d = await Bridge.call(SCREEN, "filter_panel", { column: col });
-    panelCol = col;
-    panelData = d;
-    renderColPanel(d);
-    // 재렌더됐을 수 있으니 현 DOM 의 같은 열 버튼을 재조회하고, 없으면 캡처 좌표로.
-    const btnNow = document.querySelector(`.fico[data-col="${CSS.escape(col)}"]`);
-    positionColPanel(btnNow ? btnNow.getBoundingClientRect() : rectBefore);
-  }
-
-  function positionColPanel(rect) {
-    const p = $("jobColPanel");
-    const host = $("jobTableHost").getBoundingClientRect();
-    const left = Math.max(0, Math.min(rect.left - host.left, host.width - 260));
-    p.style.left = `${left}px`;
-    p.style.top = `${rect.bottom - host.top + 4}px`;
-  }
-
-  function rangeRow(slot, clause) {
-    const ops = RANGE_OPS.map(([k, sym]) =>
-      `<option value="${k}"${clause && clause.op === k ? " selected" : ""}>${sym}</option>`).join("");
-    return `<div class="cp-range-row"><select class="field" data-rop="${slot}" data-busy-lock>${ops}</select>` +
-      `<input class="field" data-rval="${slot}" type="text" data-busy-lock ` +
-      `value="${clause ? esc(clause.operand) : ""}" placeholder="${slot === 1 ? "값" : "값(선택)"}"></div>`;
-  }
-
-  function renderColPanel(d) {
-    const p = $("jobColPanel");
-    const isRange = d.kind === "amount" || d.kind === "date";
-    const checked = d.checked; // null=(전체)
-    const allOn = checked === null;
-    const vals = d.options.map((v) => {
-      const on = allOn || checked.includes(v);
-      return `<label><input type="checkbox" data-val="${esc(v)}" data-busy-lock${on ? " checked" : ""}>` +
-        `${esc(v === "" ? "(빈값)" : v)}</label>`;
-    }).join("");
-    const range = isRange
-      ? `<div class="cp-sec"><span class="cp-cap">범위 조건(${d.kind === "amount" ? "금액" : "날짜"})</span>` +
-        rangeRow(1, d.range && d.range.first) +
-        `<select class="field" data-rjoin data-busy-lock>` +
-        `<option value="and"${!d.range || d.range.joiner !== "or" ? " selected" : ""}>그리고</option>` +
-        `<option value="or"${d.range && d.range.joiner === "or" ? " selected" : ""}>또는</option></select>` +
-        rangeRow(2, d.range && d.range.second) +
-        `<div class="cp-err" data-rerr style="display:none"></div>` +
-        `<div class="cp-acts"><button class="btn sm" data-act="range-apply" data-busy-lock>범위 적용</button></div>` +
-        `</div>`
-      : `<div class="cp-sec"><span class="cp-cap">부분일치 검색(자모)</span>` +
-        `<input class="field" data-ctext type="text" value="${esc(d.text || "")}" ` +
-        `placeholder="치는 동안 바로 좁혀집니다" data-busy-lock></div>`;
-    p.innerHTML =
-      `<div class="cp-head"><span>「${esc(d.column)}」 필터</span>` +
-      `<button data-act="panel-close" aria-label="닫기">✕</button></div>` +
-      range +
-      `<div class="cp-sec"><span class="cp-cap">값 선택(같은 열 안은 OR)</span>` +
-      `<div class="cp-vals">` +
-      `<label><input type="checkbox" data-val-all${allOn ? " checked" : ""}><b>(전체)</b></label>` +
-      `${vals}</div></div>` +
-      `<div class="cp-acts"><button class="btn sm" data-act="col-clear" data-busy-lock>이 열 조건 지우기</button></div>`;
-    p.hidden = false;
-  }
-
-  function panelValues() {
-    // 체크 상태 수집 + **화면에 없는 기체크 값 병합**(리뷰 #4) — 다른 조건 변화로 값 목록에서
-    // 사라진 기체크 값('X')은 사용자가 해제한 적이 없으므로 조건에서 조용히 탈락시키지
-    // 않는다(조용한 조건 변형 금지). (전체) 토글만이 그것들을 명시적으로 걷는다.
-    const boxes = Array.from($("jobColPanel").querySelectorAll("input[data-val]"));
-    const on = boxes.filter((b) => b.checked).map((b) => b.dataset.val);
-    const options = boxes.map((b) => b.dataset.val);
-    const hidden = ((panelData && panelData.checked) || [])
-      .filter((v) => !options.includes(v));
-    if (!hidden.length && on.length === boxes.length) return null;  // 전부 체크 = (전체)
-    return on.concat(hidden);
-  }
-
-  let colTextTimer = 0;
-  function onPanelInput(e) {
-    if (e.target.matches("[data-ctext]")) {
-      clearTimeout(colTextTimer);
-      const text = e.target.value;
-      const col = panelCol;  // 타이머 발화 시점이 아니라 입력 시점의 열에 결속(리뷰 #0 —
-                             // 창 안에 패널을 닫거나 다른 열을 열면 엉뚱한 열에 오발)
-      colTextTimer = setTimeout(
-        () => Bridge.call(SCREEN, "filter_col_text", { column: col, text }), 200);
-    }
-  }
-
-  function onPanelChange(e) {
-    if (e.target.matches("[data-val-all]")) {
-      const all = e.target.checked;
-      $("jobColPanel").querySelectorAll("input[data-val]").forEach((b) => { b.checked = all; });
-      Bridge.call(SCREEN, "filter_col_values", { column: panelCol, values: all ? null : [] });
-      return;
-    }
-    if (e.target.matches("input[data-val]")) {
-      const values = panelValues();
-      const allBox = $("jobColPanel").querySelector("[data-val-all]");
-      if (allBox) allBox.checked = values === null;
-      Bridge.call(SCREEN, "filter_col_values", { column: panelCol, values });
-    }
-  }
-
-  async function onPanelClick(e) {
-    if (e.target.closest('[data-act="panel-close"]')) { closeColPanel(); return; }
-    if (e.target.closest('[data-act="col-clear"]')) {
-      const col = panelCol;
-      await Bridge.call(SCREEN, "filter_clear_col", { column: col });
-      const btn = document.querySelector(`.fico[data-col="${CSS.escape(col)}"]`);
-      if (btn) openColPanel(col, btn); else closeColPanel();
-      return;
-    }
-    if (e.target.closest('[data-act="range-apply"]')) {
-      const p = $("jobColPanel");
-      const clause = (slot) => {
-        const op = p.querySelector(`[data-rop="${slot}"]`).value;
-        const operand = p.querySelector(`[data-rval="${slot}"]`).value;
-        return operand.trim() ? { op, operand } : null;
-      };
-      const res = await Bridge.call(SCREEN, "filter_col_range", {
-        column: panelCol, first: clause(1), second: clause(2),
-        joiner: p.querySelector("[data-rjoin]").value,
-      });
-      const err = p.querySelector("[data-rerr]");
-      if (err) {
-        err.style.display = res.ok ? "none" : "";
-        err.textContent = res.ok ? "" : res.error;
-      }
-    }
-  }
+  /* (열 필터 패널·필터 테이블·칩 줄·스트립·검색 정산은 datazone.js 팩토리로 이동 — PR-2a
+     추출. 표면 계약·리뷰 결정 주석은 팩토리가 소유한다. 아래에는 화면 고유 popover인
+     행/그룹 ⋮ 메뉴의 문서 레벨 소비만 남는다.) */
+  let suppressNextClick = false; // 메뉴 바깥클릭 닫기 제스처가 원래 동사로 새지 않게 — 팩토리의
+                                 // 동명 상태와 별개(각자 캡처 소비, preventDefault 멱등이라 겹침 무해)
 
   function onDocPointerDown(e) {
-    // 행/그룹 ⋮ 메뉴 — 바깥 클릭 닫기(열 패널과 같은 소비 규율).
+    // 행/그룹 ⋮ 메뉴 — 바깥 클릭 닫기(데이터 존 열 패널과 같은 소비 규율 — 그쪽은 팩토리 몫).
     if (menuFor !== null && !e.target.closest("#jobRowMenu") && !e.target.closest(".job-more")) {
       closeRowMenu();
       suppressNextClick = true;
     }
-    if (panelCol === null) return;
-    if (e.target.closest("#jobColPanel") || e.target.closest(".fico")) return;
-    closeColPanel();
-    // 닫기 제스처가 그 클릭의 원래 동사(행 토글·버튼)로 새지 않게 다음 click 하나를
-    // 캡처 단계에서 소비한다(리뷰 #3 — 패널을 닫으려는 행 클릭이 생성 집합을 바꿨다).
-    suppressNextClick = true;
   }
 
   function onDocKeydown(e) {
     if (e.key === "Escape" && menuFor !== null) closeRowMenu();
-    if (e.key === "Escape" && panelCol !== null) closeColPanel();
-  }
-
-  function onHeadClick(e) {
-    const btn = e.target.closest(".fico[data-col]");
-    if (!btn) return;
-    const col = btn.dataset.col;
-    if (panelCol === col) { closeColPanel(); return; }
-    openColPanel(col, btn);
   }
 
   /* ---- 게이트 · 재진술 블록(상시, 결정 36 D1-B) — 선택 유래 + 산출 요약 + 이름 목록.
@@ -500,152 +375,6 @@
       `<span class="dl">선택</span><span>${selLine}</span>` +
       `<span class="dl">생성</span><span>문서 ${sel.length}건 · 저장 폴더: ${esc(s.out_dir || "미지정")}` +
       `<div class="namelist">${list}${more}</div></span>`;
-  }
-
-  /* ---- 데이터 존: 필터 테이블(블록 4, 결정 23~25) ----
-     선두 「문서」 열(체크 표지 + 실파일명 + 식별 요약, F33 승계) + 원본 데이터 열.
-     셀 텍스트는 Python 이 잘라 보낸 하이라이트 세그먼트를 그리기만 한다(자모 역매핑 —
-     매치 인덱스를 받지 않는다, 파생경계 번역오류의 상류 차단). 가시 행만 렌더 —
-     필터 밖 선택은 스트립(renderStrip)이 상시 진술한다(결정 3). */
-  let selAnchor = null;      // Shift 범위 앵커(행 index) — 세션 전환 시 리셋
-  let selAnchorState = null; // 앵커의 **현재** 선택 상태 — 마지막 디스패치 값 기준(리뷰 #2:
-                             // LAST 는 왕복 전이라 앵커 자신의 토글이 아직 안 비쳐 stale)
-  let lastTableKey = null;   // 앵커 리셋 판정(작업·데이터 지문)
-  let searchTimer = 0;       // 전열 검색 디바운스 — 세션 전환 시 취소(리뷰 #1: 다음 세션 오발)
-  let suppressNextClick = false; // 패널 바깥클릭 닫기 제스처가 행 토글로 새지 않게(리뷰 #3)
-
-  function segsHtml(segs) {
-    if (!segs || !segs.length) return "";
-    return segs.map(([t, hit]) => (hit ? `<mark>${esc(t)}</mark>` : esc(t))).join("");
-  }
-
-  function renderTable(s) {
-    const tkey = (s.job_name || "") + "|" + (s.data_source_label || "");
-    if (tkey !== lastTableKey) {
-      // 세션 전환 — 앵커·패널·대기 중 디바운스 전부 무효(이전 세션의 선언이 새 세션에
-      // 오발되지 않게: 필터=세션 휘발, 결정 24). (리뷰 #1)
-      selAnchor = null; selAnchorState = null; lastTableKey = tkey;
-      clearTimeout(searchTimer); clearTimeout(colTextTimer);
-      closeColPanel();
-    }
-    const hasData = !!s.has_data;
-    const t = s.table || { columns: [], rows: [], visible_count: 0 };
-    const f = s.filter || { active: false, columns: [] };
-    $("jobSelCount").textContent =
-      `선택 ${s.selected_count}/${s.record_count}` +
-      (f.active ? ` · 표시 ${t.visible_count}` : "");
-    const si = $("jobFilterSearch");
-    si.style.display = hasData ? "" : "none";
-    // 타이핑 중엔 스냅샷이 입력값을 덮지 않는다(왕복 경합 — 확정은 다음 blur/재진입 렌더).
-    if (document.activeElement !== si) si.value = f.search || "";
-    // 직전 필터 재적용(결정 28) — 슬롯 존재 ∧ 소스 일치일 때만 어포던스 노출.
-    $("jobFilterReapply").style.display =
-      hasData && f.reapply_available ? "" : "none";
-    const wrap = $("jobTableWrap");
-    const empty = $("jobTableEmpty");
-    if (!hasData) {
-      wrap.style.display = "none";
-      empty.style.display = "";
-      empty.textContent = "데이터를 선택하면 생성 대상 문서가 여기에 표시됩니다.";
-      return;
-    }
-    wrap.style.display = "";
-    if (!t.rows.length) {
-      // 전멸도 정직하게 — 이유(정의)는 칩 줄이 재진술한다.
-      empty.style.display = "";
-      empty.textContent = f.active
-        ? "필터와 일치하는 행이 없습니다. 위 칩의 정의를 확인하세요."
-        : "데이터에 행이 없습니다.";
-    } else {
-      empty.style.display = "none";
-    }
-    $("jobTableHead").innerHTML =
-      `<tr><th class="doccol">문서</th>` +
-      t.columns.map((c, ci) => {
-        const meta = f.columns[ci] || { active: false };
-        return `<th><span>${esc(c)}</span> ` +
-          `<button class="fico${meta.active ? " on" : ""}" data-col="${esc(c)}" ` +
-          `aria-label="${esc(c)} 열 필터" aria-expanded="${panelCol === c}" ` +
-          `data-busy-lock>▾</button></th>`;
-      }).join("") + `</tr>`;
-    $("jobTableBody").innerHTML = t.rows.map((r) => {
-      const doc = r.name
-        ? `<span class="doc-name">${esc(r.name)}</span>`
-        : `<span class="doc-name doc-off">선택하면 파일명이 정해집니다</span>`;
-      const sum = r.summary ? `<span class="doc-sum">${esc(r.summary)}</span>` : "";
-      return `<tr data-i="${r.index}" id="jobRow-${r.index}" class="${r.selected ? "on" : ""}" ` +
-        `role="checkbox" aria-checked="${r.selected ? "true" : "false"}" tabindex="0">` +
-        `<td class="doccol"><input type="checkbox" tabindex="-1"${r.selected ? " checked" : ""}>` +
-        `<span class="doc-body">${doc}${sum}</span></td>` +
-        r.cells.map((segs) => `<td>${segsHtml(segs)}</td>`).join("") + `</tr>`;
-    }).join("");
-  }
-
-  /* 행 선택 — 클릭 = 개별 토글, Shift = 앵커 상태를 가시 순서 범위에 전파(결정 2).
-     앵커 상태는 마지막 디스패치 값(selAnchorState)을 쓴다 — LAST 스냅샷은 왕복 전이라
-     앵커 자신의 직전 토글이 아직 안 비쳐, 빠른 클릭+Shift 에서 범위 전체가 반대로
-     전파되는 stale 결함이 있다(리뷰 #2). */
-  function toggleRow(idx, shift) {
-    const rows = (LAST && LAST.table && LAST.table.rows) || [];
-    const visOrder = rows.map((r) => r.index);
-    if (shift && selAnchor !== null && visOrder.includes(selAnchor) && visOrder.includes(idx)) {
-      const a = visOrder.indexOf(selAnchor), b = visOrder.indexOf(idx);
-      const range = visOrder.slice(Math.min(a, b), Math.max(a, b) + 1);
-      const anchorRow = rows.find((r) => r.index === selAnchor);
-      const value = selAnchorState !== null
-        ? selAnchorState : !!(anchorRow && anchorRow.selected);
-      Bridge.call(SCREEN, "select_range", { indices: range, value });
-      return;
-    }
-    selAnchor = idx;
-    const row = rows.find((r) => r.index === idx);
-    selAnchorState = !(row && row.selected);  // 이번 디스패치가 만드는 상태 = 앵커의 현재
-    Bridge.call(SCREEN, "toggle_record", { index: idx, value: selAnchorState });
-  }
-
-  function onTableClick(e) {
-    const tr = e.target.closest("tr[data-i]");
-    if (!tr) return;
-    toggleRow(Number(tr.dataset.i), e.shiftKey);
-  }
-
-  function onTableKey(e) {
-    if (e.key !== "Enter" && e.key !== " ") return;
-    const tr = e.target.closest("tr[data-i]");
-    if (!tr) return;
-    e.preventDefault();
-    toggleRow(Number(tr.dataset.i), e.shiftKey);
-  }
-
-  /* ---- 칩 줄 — 정의 재진술(describe_parts 단일 출처) + 가지 칩(× 프루닝) ---- */
-  function renderChips(s) {
-    const box = $("jobFilterChips");
-    const f = s.filter || { active: false };
-    if (!s.has_data || !f.active) { box.style.display = "none"; box.innerHTML = ""; return; }
-    box.style.display = "";
-    box.innerHTML =
-      (f.chips || []).map((c) => `<span class="fchip">${esc(c)}</span>`).join("") +
-      (f.branches || []).map((b) =>
-        `<span class="fchip branch">${esc(b)}` +
-        `<button data-prune="${esc(b)}" aria-label="${esc(b)} 가지 제거" data-busy-lock>×</button></span>`
-      ).join("") +
-      `<button class="btn sm" data-act="filter-clear" data-busy-lock>필터 지우기</button>`;
-  }
-
-  /* ---- 필터 밖 선택 스트립(결정 3) — 선택은 관통, 밖은 상시 가시 ---- */
-  function renderStrip(s) {
-    const box = $("jobSelStrip");
-    const hs = (s.table && s.table.hidden_selected) || [];
-    if (!s.has_data || !hs.length) { box.style.display = "none"; box.innerHTML = ""; return; }
-    box.style.display = "";
-    // 항목별 × = 개별 해제 어포던스(리뷰 #6 — 구 목록의 행별 체크박스가 지던 의무 승계:
-    // 필터를 허물거나 전체 해제하지 않고도 필터 밖 선택 하나만 뺄 수 있어야 한다).
-    const chips = hs.map((r) =>
-      `<span class="fchip">${esc(r.name || r.summary || `${r.index + 1}행`)}` +
-      `<button data-unsel="${r.index}" aria-label="${r.index + 1}행 선택 해제" data-busy-lock>×</button></span>`
-    ).join("");
-    box.innerHTML =
-      `필터 밖 선택 <b>${hs.length}행</b> — 화면엔 안 보이지만 생성에 포함됩니다: ${chips}`;
   }
 
   /* ---- 본문 존: 게이트·저장 폴더·생성 버튼 ---- */
@@ -794,18 +523,6 @@
       "데이터 변경 확인", "다른 데이터를 겨누면", "데이터 바꾸고 버리기");
   }
 
-  /* 대기 중 검색 디바운스 정산 — 세션 전환 시도 **전에** 미적용 검색어를 먼저 적용한다
-     (리뷰 #2: 취소만 하면 「머무르기」로 남은 세션에서 마지막 타이핑이 조용히 증발).
-     전환이 확정되면 필터째 죽으니 선적용은 무해하고, 머무르면 타이핑이 보존된다. */
-  async function flushPendingSearch() {
-    clearTimeout(searchTimer);
-    const si = $("jobFilterSearch");
-    if (LAST && LAST.has_data && LAST.filter
-        && si.value !== (LAST.filter.search || "")) {
-      await Bridge.call(SCREEN, "filter_search", { text: si.value });
-    }
-  }
-
   /* T1 가드 왕복(RC-02 동형): 무변이 needs_confirm → modal.js 이진 확인(기본 포커스=
      머무르기·Escape=머무르기) → 확인 시에만 confirm=true 재호출. 단일 실행(switching)
      — 더블클릭이 두 왕복·두 모달을 만들면 modal.js 재진입 가드가 loud 거절을 띄운다
@@ -856,7 +573,7 @@
     if (MODE === "edit") {
       (async () => {
         if (!already) {
-          await flushPendingSearch();
+          await dz.flushPendingSearch();
           if ((await selectJobGuarded(item.dataset.job)) === false) return;  // 머무르기
         }
         if (await exitEditToRun()) showExitNote();  // T2 고지(미저장 편집 있을 때만)
@@ -867,7 +584,7 @@
     if (already) return;
     // 미적용 검색어는 전환 시도 전에 정산(적용) — 취소만 하면 「머무르기」 세션에서
     // 마지막 타이핑이 증발한다(리뷰 #2). 새 세션 오발도 함께 차단(PR-2b 리뷰 #1).
-    flushPendingSearch().then(() => selectJobGuarded(item.dataset.job));
+    dz.flushPendingSearch().then(() => selectJobGuarded(item.dataset.job));
   }
 
   /* ---- 좌 목록 관리(결정 43) — ⋮ 메뉴·인라인 이름 변경·그룹 이동/관리 ----
@@ -1098,7 +815,7 @@
     if (MODE === "edit") {
       (async () => {
         if (!(LAST && LAST.job_name === name)) {
-          await flushPendingSearch();
+          await dz.flushPendingSearch();
           if ((await selectJobGuarded(name)) === false) {
             window.Nav.go(SCREEN);  // 머무르기 — 편집 표면 유지한 채 화면만 노출
             return;
@@ -1111,7 +828,7 @@
     }
     if (!(LAST && LAST.job_name === name)) {
       // 미적용 검색 정산 후 T1 가드 승계 — 허브 진입도 같은 파괴 전이(결정 26).
-      flushPendingSearch().then(() => selectJobGuarded(name));
+      dz.flushPendingSearch().then(() => selectJobGuarded(name));
     }
     window.Nav.go(SCREEN);
   }
@@ -1158,8 +875,8 @@
   }
 
   function wire() {
-    // 패널 바깥클릭 닫기 제스처의 click 을 캡처 단계에서 1회 소비(리뷰 #3) — 닫기와
-    // 행 토글/버튼 실행이 한 클릭에 겹치지 않게.
+    // ⋮ 메뉴 바깥클릭 닫기 제스처의 click 을 캡처 단계에서 1회 소비(리뷰 #3 규율) — 닫기와
+    // 행 진입/버튼 실행이 한 클릭에 겹치지 않게. 데이터 존 몫은 팩토리가 자기 상태로 소비.
     document.addEventListener("click", (e) => {
       if (suppressNextClick) {
         suppressNextClick = false;
@@ -1171,55 +888,17 @@
     $("jobListHwpx").addEventListener("keydown", onMasterKeydown);
     $("jobListHwpx").addEventListener("focusout", onMasterFocusOut);
     $("jobRowMenu").addEventListener("click", onRowMenuClick);
+    // ⋮ 메뉴 바깥 클릭 닫기·Escape — 화면 몫 문서 레벨 리스너(패널 몫은 팩토리가 따로 등록).
+    document.addEventListener("pointerdown", onDocPointerDown);
+    document.addEventListener("keydown", onDocKeydown);
     // 목록 스크롤 시 fixed 메뉴가 트리거와 어긋난다 — 어긋난 채 남기지 말고 닫는다.
     document.querySelector(".job-master").addEventListener("scroll", () => {
       if (menuFor !== null) closeRowMenu();
     }, true);
     $("grpMoveOk").addEventListener("click", confirmGroupMove);
     $("grpMoveCancel").addEventListener("click", () => window.Modal.close("groupMoveModal"));
-    $("jobSelAll").addEventListener("click", async () => {
-      const r = await Bridge.call(SCREEN, "set_all", {});
-      // 전멸 필터에서의 무동작은 정직하게 알린다(confirm-or-alarm, 리뷰 #9).
-      if (r && r.added === 0) {
-        log("전체 선택: 현재 필터와 일치하는 새로 추가할 행이 없습니다.");
-      }
-    });
-    $("jobSelNone").addEventListener("click", () => Bridge.call(SCREEN, "set_none", {}));
-    // 데이터 테이블(블록 4) — 행 클릭 토글 + Shift 범위, 열 머리 필터 아이콘, 전열 검색.
-    $("jobTableBody").addEventListener("click", onTableClick);
-    $("jobTableBody").addEventListener("keydown", onTableKey);
-    $("jobTableHead").addEventListener("click", onHeadClick);
-    $("jobFilterSearch").addEventListener("input", (e) => {
-      clearTimeout(searchTimer);
-      const text = e.target.value;
-      searchTimer = setTimeout(() => Bridge.call(SCREEN, "filter_search", { text }), 200);
-    });
-    // 직전 필터 재적용(결정 28) — 정의만 복원(선택 불변), 탈락은 시끄럽게 고지(백스톱).
-    $("jobFilterReapply").addEventListener("click", async () => {
-      const res = await Bridge.call(SCREEN, "filter_reapply", {});
-      if (!res.ok) { log("확인 필요: " + res.error); return; }
-      log(`직전 필터를 재적용했습니다 (조건 열: ${res.installed.join(", ") || "검색만"}).`);
-      if (res.dropped.length) {
-        log(`확인 필요: 현재 데이터에 없는 조건은 빠졌습니다 — ${res.dropped.join(", ")}`);
-      }
-    });
-    // 필터 밖 선택 스트립 — 항목별 × 해제(리뷰 #6).
-    $("jobSelStrip").addEventListener("click", (e) => {
-      const un = e.target.closest("[data-unsel]");
-      if (un) Bridge.call(SCREEN, "toggle_record", { index: Number(un.dataset.unsel), value: false });
-    });
-    // 칩 줄 — 가지 프루닝 ×·필터 지우기(재렌더 생존 위임).
-    $("jobFilterChips").addEventListener("click", (e) => {
-      const pr = e.target.closest("[data-prune]");
-      if (pr) { Bridge.call(SCREEN, "filter_prune", { column: pr.dataset.prune }); return; }
-      if (e.target.closest('[data-act="filter-clear"]')) Bridge.call(SCREEN, "filter_clear", {});
-    });
-    // 열 필터 패널 — 내부 위임 + 바깥 클릭/Escape 닫기.
-    $("jobColPanel").addEventListener("input", onPanelInput);
-    $("jobColPanel").addEventListener("change", onPanelChange);
-    $("jobColPanel").addEventListener("click", onPanelClick);
-    document.addEventListener("pointerdown", onDocPointerDown);
-    document.addEventListener("keydown", onDocKeydown);
+    // 데이터 존(테이블·열 패널·칩·스트립·전체 선택/해제·문서 레벨 닫기)은 팩토리 몫 배선.
+    dz.wire();
     // T2 복귀 고지 — 확인=걷기, 돌아가기=비파괴 편집 재진입(세션 무접촉 — 리뷰 F1/F4).
     $("jobEditExitNote").addEventListener("click", (e) => {
       if (e.target.closest('[data-act="return-to-edit"]')) { showEditMode(); return; }
