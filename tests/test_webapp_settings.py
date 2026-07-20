@@ -154,3 +154,34 @@ def test_save_theme_retries_transient_read_share_violation(home, monkeypatch):
     settings.save_theme("dark")  # 재판독이 2회 튕겨도 재시도로 흡수 → 성공(예외 전파 없음)
     monkeypatch.setattr(Path, "read_text", real_read_text)
     assert settings.load_theme() == "dark"
+
+
+# ------------------------------------------------ 「작업」 그룹 접힘 영속(결정 43·R-info 결정 6)
+def test_collapsed_groups_default_empty_and_roundtrip(home):
+    assert settings.load_job_collapsed_groups() == []  # 무상태 기본 = 전부 펼침
+    settings.save_job_collapsed_groups(["나", "가", "가", ""])  # ""=「그룹 없음」 구획
+    assert settings.load_job_collapsed_groups() == ["", "가", "나"]  # 정렬·중복 제거 정규화
+
+
+def test_collapsed_groups_preserve_theme_and_vice_versa(home):
+    settings.save_theme("dark")
+    settings.save_job_collapsed_groups(["입찰"])
+    assert settings.load_theme() == "dark"  # RMW — 서로 다른 키 보존
+    settings.save_theme("light")
+    assert settings.load_job_collapsed_groups() == ["입찰"]
+
+
+def test_collapsed_groups_invalid_arg_is_loud(home):
+    with pytest.raises(ValueError):
+        settings.save_job_collapsed_groups("입찰")  # type: ignore[arg-type]
+    with pytest.raises(ValueError):
+        settings.save_job_collapsed_groups(["입찰", 3])  # type: ignore[list-item]
+
+
+def test_collapsed_groups_corrupt_value_falls_back_to_expanded(home):
+    (home / "settings.json").write_text(
+        json.dumps({"job_collapsed_groups": "입찰", "theme": "dark"}), encoding="utf-8")
+    assert settings.load_job_collapsed_groups() == []  # 비리스트 = 전부 펼침(부팅 불사)
+    (home / "settings.json").write_text(
+        json.dumps({"job_collapsed_groups": ["입찰", 3, None]}), encoding="utf-8")
+    assert settings.load_job_collapsed_groups() == ["입찰"]  # 부분 손상은 항목만 걸러낸다

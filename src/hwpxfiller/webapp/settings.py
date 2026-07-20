@@ -100,17 +100,13 @@ def load_theme() -> str:
     return theme if theme in VALID_THEMES else "system"
 
 
-def save_theme(mode: str) -> None:
-    """테마 선택 영속 — 다른 키 보존(read-modify-write) + 원자 교체(정본 write_text_atomic).
-
-    비유효 ``mode`` 는 조용히 무시하지 않고 ``ValueError`` (confirm-or-alarm).
+def _save_key(key: str, value) -> None:
+    """단일 키 영속 공용 몸통 — 다른 키 보존(read-modify-write) + 원자 교체(정본 write_text_atomic).
 
     교체 경합(방어적): 앱은 홈당 단일 인스턴스(app.py 뮤텍스 가드)라 교차-프로세스 경합은
     구조적으로 없지만, AV 스캔 등 일시 파일 잠금이 원자 교체를 PermissionError(공유 위반 —
     CPython 은 FILE_SHARE_DELETE 없이 연다)로 튕길 수 있다. 아무 문제 없는 일시 충돌이 사용자
     alert 로 승격되지 않도록 유계 재시도 후에만 전파한다."""
-    if mode not in VALID_THEMES:
-        raise ValueError(f"유효하지 않은 테마: {mode!r} (허용: {VALID_THEMES})")
     path = _settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     for attempt in range(_REPLACE_RETRIES):
@@ -120,10 +116,41 @@ def save_theme(mode: str) -> None:
             # spurious alert 로 승격되는 비대칭이 된다(#75 리뷰4 #4). 재시도마다 재판독 = 손상·
             # 갱신된 다른 키 보존.
             data = _read_for_update(path)
-            data["theme"] = mode
+            data[key] = value
             write_text_atomic(path, json.dumps(data, ensure_ascii=False, indent=2))
             return
         except PermissionError:
             if attempt == _REPLACE_RETRIES - 1:
                 raise
             time.sleep(0.05 * (attempt + 1))
+
+
+def save_theme(mode: str) -> None:
+    """테마 선택 영속 — 비유효 ``mode`` 는 조용히 무시하지 않고 ``ValueError`` (confirm-or-alarm).
+
+    보존·원자성·재시도 계약은 :func:`_save_key` 공용 몸통이 진다."""
+    if mode not in VALID_THEMES:
+        raise ValueError(f"유효하지 않은 테마: {mode!r} (허용: {VALID_THEMES})")
+    _save_key("theme", mode)
+
+
+def load_job_collapsed_groups() -> "list[str]":
+    """「작업」 좌 목록의 접힌 그룹 이름들(``""``=「그룹 없음」 구획) — 마지막 상태 영속.
+
+    미저장·비유효 값은 빈 리스트 = 전부 펼침(무상태 기본, R-info 1부 결정 6-①②). 새 그룹은
+    이 목록에 없으므로 자동으로 펼침이다. 리스트 안의 비문자열 항목만 걸러낸다(부분 손상이
+    전체 리셋으로 승격되지 않게)."""
+    raw = _read().get("job_collapsed_groups")
+    if not isinstance(raw, list):
+        return []
+    return [g for g in raw if isinstance(g, str)]
+
+
+def save_job_collapsed_groups(groups: "list[str]") -> None:
+    """접힌 그룹 집합 영속 — webview 저장소가 아니라 Python 설정(#74 전례: 오리진 결합 리셋).
+
+    비유효 인자(비리스트·비문자열 포함)는 조용히 무시하지 않고 ``ValueError`` (confirm-or-alarm).
+    저장은 정렬·중복 제거로 정규화한다 — 파일 diff 안정성."""
+    if not isinstance(groups, list) or any(not isinstance(g, str) for g in groups):
+        raise ValueError("접힌 그룹 목록은 문자열 리스트여야 합니다")
+    _save_key("job_collapsed_groups", sorted(set(groups)))

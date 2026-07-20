@@ -72,6 +72,7 @@ from .screens import (
     relink_job_template,
     source_label,
 )
+from .settings import load_job_collapsed_groups, save_job_collapsed_groups
 
 # 사전검증 성공 문구는 링2 사용자 어휘로 순화한다(실행 화면 _PREFLIGHT_OK_TEXT 동형).
 _PREFLIGHT_OK_TEXT = "검증 완료 — 문서를 생성할 준비가 됐습니다."
@@ -125,6 +126,9 @@ class JobController(PoolTargetingMixin):
         self._last_filter: "dict | None" = None  # {"source_key": str, "state": dict}
         self._data_key = ""  # 현 데이터 소스 정체(file:경로 | pool:참조) — 소스 일치 판정
         self.job_name = ""  # 좌 목록에서 겨눈 작업(패널 세션의 주체)
+        # 좌 목록 접힌 그룹(결정 43·R-info 결정 6) — 마지막 상태를 Python 설정에서 복원.
+        # 앱은 홈당 단일 인스턴스(뮤텍스 가드)라 메모리 캐시가 디스크와 갈라질 경로가 없다.
+        self._collapsed: "set[str]" = set(load_job_collapsed_groups())
         self.data_label = ""
         self.data_source = ""  # 소스 종류 플래그('file'|'pool') — 병기 라벨은 스냅샷이 합성(K8)
         self.out_dir = ""
@@ -145,17 +149,44 @@ class JobController(PoolTargetingMixin):
         self._push_sink(self.name, self.snapshot())
 
     # ------------------------------------------------------------- 좌 목록
-    def _job_rows(self) -> "list[dict]":
-        """좌 master 목록 — 저장된 작업(HWPX 구획). 슬라이스 1은 이름 + 선택 표지만.
+    def _job_rows(self, jobs) -> "list[dict]":
+        """좌 master 목록의 평면 뷰 — 이름 + 선택 표지(슬라이스 1 형태 유지).
 
-        2구획 틴트·group-by·컴파일 배지 등 풍부화는 후속 슬라이스(홈 브라우저 VM 채택).
+        그룹 렌더는 :meth:`_job_sections` 가 담당한다 — 이 평면 뷰는 "그룹과 무관한 전체
+        집합" 소비자(테스트·세션 판정)를 위해 남는다. 두 뷰가 어긋나지 않게 :meth:`snapshot`
+        이 ``list_jobs`` 를 1회 읽어 같은 ``jobs`` 를 둘에 넘긴다.
         기안 작업(TXT) 구획은 draft-as-job(블록 3/5) 착지 전까지 빈 채로 둔다(없는 걸 있는
         척하지 않는다) — job.js 가 라벨만 렌더.
         """
-        return [
-            {"name": n, "selected": n == self.job_name}
-            for n in self.registry.names()
+        return [{"name": j.name, "selected": j.name == self.job_name} for j in jobs]
+
+    def _job_sections(self, jobs) -> "tuple[list[dict], bool]":
+        """그룹 구획 뷰(결정 43·A안: 매체 구획 안 사용자 그룹) — ``(sections, flat)`` 반환.
+
+        - 그룹 배열 = 이름순 안정(R-info 결정 4), 「그룹 없음」(``group==""``)은 마지막.
+        - ``flat=True`` = 그룹 0개 **퇴화 불변식**: 헤더·들여쓰기 없는 평면(현행 모습 그대로).
+          이때도 sections 는 무그룹 1구획으로 돌아가 표면이 분기 없이 그린다.
+        - ``collapsed`` 는 영속 접힘 집합(결정 6-①)의 사영 — 행은 접혀도 **집합에서 빠지지
+          않는다**(선택·세션 판정은 전체 집합 위 — 결정 6-⑤ 접어도 선택 유지).
+        """
+        grouped: "dict[str, list[dict]]" = {}
+        for j in jobs:
+            grouped.setdefault(j.group, []).append(
+                {"name": j.name, "selected": j.name == self.job_name}
+            )
+        named = sorted(g for g in grouped if g)
+        flat = not named
+        order = named + ([""] if "" in grouped else [])
+        sections = [
+            {
+                "group": g,
+                "collapsed": (not flat) and g in self._collapsed,
+                "count": len(grouped[g]),
+                "rows": grouped[g],
+            }
+            for g in order
         ]
+        return sections, flat
 
     # ------------------------------------------------------------- 스냅샷
     def _indices(self) -> "list[int]":
@@ -423,8 +454,14 @@ class JobController(PoolTargetingMixin):
 
         존 배치는 job.js 소관(헤더=작업 정체, 데이터=겨눔·행, 본문=배지·게이트, 완료=결과).
         """
+        # 좌 목록은 레지스트리 1회 판독에서 평면·구획 두 뷰를 함께 파생한다(드리프트 봉쇄).
+        jobs = self.registry.list_jobs()
+        sections, flat = self._job_sections(jobs)
         base = {
-            "job_rows": self._job_rows(),   # 좌 master 목록
+            "job_rows": self._job_rows(jobs),   # 좌 master 목록(평면 뷰)
+            "job_sections": sections,           # 그룹 구획 뷰(결정 43) — 표면 렌더 원천
+            "job_flat": flat,                   # 퇴화 불변식: 그룹 0개 = 헤더 없는 평면
+            "job_group_names": [s["group"] for s in sections if s["group"]],
             "job_name": self.job_name,
             "has_job": self.vm is not None,
             # 세션 가드 무장 상태(결정 26·27) — 표면 참고용(진실은 guard_state 실시간 질의;
@@ -641,6 +678,106 @@ class JobController(PoolTargetingMixin):
         elif res.get("relinked"):
             res["restated"] = "템플릿을 다시 연결했습니다."
         return res
+
+    # --------------------------------------------- 좌 목록 관리(결정 43·R-info 결정 5·7)
+    def _do_toggle_group(self, p: dict) -> None:
+        """그룹 접힘/펼침 토글 — 마지막 상태를 Python 설정에 영속(결정 6-①, #74 전례).
+
+        접힘은 **보기**만 바꾼다: 행은 집합에서 빠지지 않아 선택·세션 판정에 무영향
+        (결정 6-⑤ 접어도 선택 유지). ``""`` 는 「그룹 없음」 구획.
+        """
+        g = p["group"]
+        if g in self._collapsed:
+            self._collapsed.discard(g)
+        else:
+            self._collapsed.add(g)
+        save_job_collapsed_groups(sorted(self._collapsed))
+
+    def _do_rename_job(self, p: dict) -> dict:
+        """작업 이름 변경(인라인 편집 커밋) — 검증 실패는 ``{"ok": False, error}`` 재진술.
+
+        열린 세션의 작업이면 세션 정체(``job_name``·VM)가 새 이름을 **추종**한다 — 이름
+        변경은 비파괴(같은 작업)라 가드 없이 조용히 따라가되, 헤더가 즉시 새 이름을
+        재진술하므로 변경이 보인다(전면 가시성).
+        """
+        name, new = p["name"], p.get("new", "")
+        try:
+            self.registry.rename(name, new)
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        if self.job_name == name:
+            new_clean = new.strip()
+            self.job_name = new_clean
+            if self.vm is not None:
+                self.vm.job.name = new_clean
+        return {"ok": True}
+
+    def _do_clone_job(self, p: dict) -> dict:
+        """작업 복제 — 레지스트리 clone(유일 이름 합성·이력 미계승) 위임. 그룹 계승 = 인접."""
+        return {"ok": True, "name": self.registry.clone(p["name"])}
+
+    def _do_delete_job(self, p: dict) -> "dict | None":
+        """작업 삭제 — 무확인 호출은 재진술 자료를 돌려주고 멈춘다(RC-02 왕복 동형).
+
+        열린 세션의 작업이면 세션도 함께 닫힌다 — 재진술에 ``open_session`` 과 무장 수치
+        (:meth:`_guard_state`)를 동봉해 표면이 파괴 전모(durable 삭제 + 세션 선택 소실)를
+        한 모달로 말하게 한다(confirm-or-alarm).
+        """
+        name = p["name"]
+        if not p.get("confirm"):
+            out = {"needs_confirm": True, "name": name,
+                   "open_session": name == self.job_name}
+            if name == self.job_name:
+                out.update(self._guard_state())
+            return out
+        self.registry.delete(name)
+        if name == self.job_name:
+            # 세션 주체가 사라졌다 — 빈 패널로 재진술(레지스트리 소실 무효화와 동일 경로).
+            self._do_select_job({"name": "", "confirm": True})
+
+    def _do_set_group(self, p: dict) -> None:
+        """그룹 지정/해제(이동 다이얼로그 확정) — ``group=""`` 는 「그룹 없음」으로 이동.
+
+        새 그룹 = 다이얼로그의 새 이름 입력이 이 액션으로 그대로 들어온다(소속=생성,
+        빈 그룹 불가 불변식은 모델 구조가 담보).
+        """
+        self.registry.set_group(p["name"], p.get("group", ""))
+
+    def _do_rename_group(self, p: dict) -> dict:
+        """그룹 이름 변경 — 새 이름이 **기존 그룹**이면 병합이므로 확인 승격(무확인 반환).
+
+        순수 개명이면 접힘 상태를 새 이름으로 승계한다(이름만 바뀐 같은 그룹). 병합이면
+        대상 그룹의 접힘 상태를 존중하고 옛 이름만 접힘 집합에서 걷는다.
+        """
+        old, new = p["name"], p.get("new", "").strip()
+        if not new:
+            return {"ok": False, "error": "그룹 이름이 비어 있습니다."}
+        if new == old:
+            return {"ok": True, "count": 0}
+        target_members = sum(1 for j in self.registry.list_jobs() if j.group == new)
+        if target_members and not p.get("confirm"):
+            count = sum(1 for j in self.registry.list_jobs() if j.group == old)
+            return {"needs_confirm": True, "kind": "merge_group", "name": old,
+                    "new": new, "count": count, "target_count": target_members}
+        count = self.registry.rename_group(old, new)
+        if old in self._collapsed:
+            self._collapsed.discard(old)
+            if not target_members:
+                self._collapsed.add(new)
+            save_job_collapsed_groups(sorted(self._collapsed))
+        return {"ok": True, "count": count}
+
+    def _do_disband_group(self, p: dict) -> dict:
+        """그룹 해산(결정 43) — 무확인 호출은 소속 수 재진술로 멈춘다. 소속은 「그룹 없음」으로."""
+        name = p["name"]
+        if not p.get("confirm"):
+            count = sum(1 for j in self.registry.list_jobs() if j.group == name)
+            return {"needs_confirm": True, "name": name, "count": count}
+        count = self.registry.disband_group(name)
+        if name in self._collapsed:
+            self._collapsed.discard(name)
+            save_job_collapsed_groups(sorted(self._collapsed))
+        return {"ok": True, "count": count}
 
     def _do_toggle_record(self, p: dict) -> None:
         self.selection.toggle(int(p["index"]), bool(p["value"]))

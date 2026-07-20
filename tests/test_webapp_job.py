@@ -1020,3 +1020,160 @@ def test_reapply_abandons_pruning_when_branches_all_lost(tmp_path):
     snap = ctrl.snapshot()
     assert snap["table"]["visible_count"] == 1               # 매치가 산다(거짓 전멸 아님)
     assert snap["filter"]["branches"] == ["bidNtceNm"]       # 가지 부활
+
+
+# ---------------------------------------------------------------- 좌 목록 관리(결정 43)
+def test_sections_flat_when_no_groups(tmp_path):
+    # 퇴화 불변식(R-info 결정 5): 그룹 0개 = 헤더·들여쓰기 없는 평면(현행 모습 그대로).
+    ctrl, _ = _controller(tmp_path)
+    snap = ctrl.snapshot()
+    assert snap["job_flat"] is True
+    assert snap["job_group_names"] == []
+    assert [s["group"] for s in snap["job_sections"]] == [""]
+    assert snap["job_sections"][0]["rows"] == snap["job_rows"]
+    assert snap["job_sections"][0]["collapsed"] is False
+
+
+def test_sections_group_order_and_counts(tmp_path):
+    # 그룹 배열 = 이름순 안정, 「그룹 없음」 = 마지막(R-info 결정 4·5). 두 뷰는 같은 판독에서 파생.
+    ctrl, _ = _controller(tmp_path)
+    reg = ctrl.registry
+    reg.save(Job(name="나 작업"))
+    reg.set_group("나 작업", "하 그룹")
+    reg.save(Job(name="다 작업"))
+    reg.set_group("다 작업", "가 그룹")
+    snap = ctrl.snapshot()
+    assert snap["job_flat"] is False
+    assert [s["group"] for s in snap["job_sections"]] == ["가 그룹", "하 그룹", ""]
+    assert snap["job_group_names"] == ["가 그룹", "하 그룹"]
+    by_group = {s["group"]: s for s in snap["job_sections"]}
+    assert [r["name"] for r in by_group[""]["rows"]] == ["공고서"]
+    assert by_group["가 그룹"]["count"] == 1 and by_group["하 그룹"]["count"] == 1
+    # 평면 뷰(job_rows)는 전체 집합 이름순 그대로 — 구획 뷰와 같은 원천.
+    assert [r["name"] for r in snap["job_rows"]] == ["공고서", "나 작업", "다 작업"]
+
+
+def test_toggle_group_collapses_persists_and_keeps_selection(tmp_path):
+    ctrl, _ = _controller(tmp_path)
+    reg = ctrl.registry
+    reg.set_group("공고서", "입찰")
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    assert ctrl.snapshot()["selected_count"] == 2
+    ctrl.dispatch("toggle_group", {"group": "입찰"})
+    snap = ctrl.snapshot()
+    assert next(s for s in snap["job_sections"] if s["group"] == "입찰")["collapsed"] is True
+    assert snap["selected_count"] == 2  # 접힘은 보기만 — 선택 유지(결정 6-⑤)
+    # 마지막 상태 영속(Python 설정) — 새 컨트롤러(재부팅 동형)가 접힘을 복원한다.
+    ctrl2 = JobController(reg, lambda s, snap: None)
+    snap2 = ctrl2.snapshot()
+    assert next(s for s in snap2["job_sections"] if s["group"] == "입찰")["collapsed"] is True
+    # 재토글 = 펼침 복원.
+    ctrl2.dispatch("toggle_group", {"group": "입찰"})
+    assert next(
+        s for s in ctrl2.snapshot()["job_sections"] if s["group"] == "입찰"
+    )["collapsed"] is False
+
+
+def test_rename_job_follows_open_session(tmp_path):
+    # 이름 변경은 비파괴 — 열린 세션의 정체(job_name·헤더)가 새 이름을 추종한다.
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    res = ctrl.dispatch("rename_job", {"name": "공고서", "new": " 개명 공고서 "})
+    assert res == {"ok": True}
+    snap = ctrl.snapshot()
+    assert snap["job_name"] == "개명 공고서" and snap["has_job"] is True
+    assert ctrl.registry.exists("개명 공고서") and not ctrl.registry.exists("공고서")
+
+
+def test_rename_job_collision_and_empty_are_restated(tmp_path):
+    ctrl, _ = _controller(tmp_path)
+    ctrl.registry.save(Job(name="둘째"))
+    res = ctrl.dispatch("rename_job", {"name": "공고서", "new": "둘째"})
+    assert res["ok"] is False and "사용 중" in res["error"]
+    res = ctrl.dispatch("rename_job", {"name": "공고서", "new": "  "})
+    assert res["ok"] is False and "비어" in res["error"]
+    assert ctrl.registry.exists("공고서")  # 실패 무손상
+
+
+def test_delete_open_session_job_confirm_roundtrip_closes_panel(tmp_path):
+    # RC-02 왕복 동형: 무확인 = 재진술 자료 반환·무변이, 확인 = 삭제 + 세션 닫힘(빈 패널 재진술).
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.dispatch("toggle_record", {"index": 0, "value": False})  # 수작업 선택 = 무장
+    res = ctrl.dispatch("delete_job", {"name": "공고서"})
+    assert res["needs_confirm"] is True and res["open_session"] is True
+    assert res["armed"] is True and res["sel_count"] == 1  # 파괴 전모(세션 선택 소실) 수치 동봉
+    assert ctrl.registry.exists("공고서")  # 무확인 = 무변이
+    ctrl.dispatch("delete_job", {"name": "공고서", "confirm": True})
+    snap = ctrl.snapshot()
+    assert not ctrl.registry.exists("공고서")
+    assert snap["has_job"] is False and snap["job_rows"] == []
+
+
+def test_delete_other_job_restates_without_session_fields(tmp_path):
+    ctrl, _ = _controller(tmp_path)
+    ctrl.registry.save(Job(name="둘째"))
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    res = ctrl.dispatch("delete_job", {"name": "둘째"})
+    assert res["needs_confirm"] is True and res["open_session"] is False
+    assert "armed" not in res  # 열린 세션이 아니면 세션 수치를 싣지 않는다(오귀속 방지)
+    ctrl.dispatch("delete_job", {"name": "둘째", "confirm": True})
+    assert ctrl.snapshot()["job_name"] == "공고서"  # 무관 세션 무영향
+
+
+def test_clone_job_returns_unique_name_and_inherits_group(tmp_path):
+    ctrl, _ = _controller(tmp_path)
+    ctrl.registry.set_group("공고서", "입찰")
+    res = ctrl.dispatch("clone_job", {"name": "공고서"})
+    assert res["ok"] is True and res["name"] == "공고서 (복사본)"
+    assert ctrl.registry.load(res["name"]).group == "입찰"  # 인접(같은 그룹) 승계
+
+
+def test_set_group_moves_between_sections(tmp_path):
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("set_group", {"name": "공고서", "group": "입찰"})
+    snap = ctrl.snapshot()
+    assert snap["job_group_names"] == ["입찰"]
+    ctrl.dispatch("set_group", {"name": "공고서", "group": ""})  # 해제 = 그룹 없음
+    assert ctrl.snapshot()["job_flat"] is True
+
+
+def test_rename_group_merge_needs_confirm_roundtrip(tmp_path):
+    ctrl, _ = _controller(tmp_path)
+    reg = ctrl.registry
+    reg.save(Job(name="둘째"))
+    reg.set_group("공고서", "입찰")
+    reg.set_group("둘째", "수의")
+    res = ctrl.dispatch("rename_group", {"name": "수의", "new": "입찰"})
+    assert res["needs_confirm"] is True and res["kind"] == "merge_group"
+    assert res["count"] == 1 and res["target_count"] == 1  # 병합 수치 재진술
+    assert set(reg.groups()) == {"수의", "입찰"}  # 무변이
+    res2 = ctrl.dispatch("rename_group", {"name": "수의", "new": "입찰", "confirm": True})
+    assert res2["ok"] is True and reg.groups() == ["입찰"]
+
+
+def test_rename_group_carries_collapse_state(tmp_path):
+    ctrl, _ = _controller(tmp_path)
+    ctrl.registry.set_group("공고서", "입찰")
+    ctrl.dispatch("toggle_group", {"group": "입찰"})
+    ctrl.dispatch("rename_group", {"name": "입찰", "new": "2026 입찰"})
+    snap = ctrl.snapshot()
+    assert next(
+        s for s in snap["job_sections"] if s["group"] == "2026 입찰"
+    )["collapsed"] is True  # 이름만 바뀐 같은 그룹 — 접힘 승계
+
+
+def test_disband_group_confirm_roundtrip(tmp_path):
+    ctrl, _ = _controller(tmp_path)
+    ctrl.registry.set_group("공고서", "입찰")
+    ctrl.dispatch("toggle_group", {"group": "입찰"})
+    res = ctrl.dispatch("disband_group", {"name": "입찰"})
+    assert res["needs_confirm"] is True and res["count"] == 1
+    assert ctrl.registry.groups() == ["입찰"]  # 무확인 = 무변이
+    res2 = ctrl.dispatch("disband_group", {"name": "입찰", "confirm": True})
+    assert res2["ok"] is True and ctrl.registry.groups() == []
+    # 사라진 그룹의 접힘 잔재는 걷는다 — 같은 이름 재생성 시 유령 접힘 방지.
+    from hwpxfiller.webapp.settings import load_job_collapsed_groups
+    assert "입찰" not in load_job_collapsed_groups()
