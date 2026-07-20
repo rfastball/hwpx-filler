@@ -230,13 +230,49 @@
     const n = $("txtNote"); n.dataset.level = "warn"; n.textContent = "⚠ " + msg;
   }
 
+  /* 빈칸 게이트 본문(결정 16 · 부록 A-3-28) — 무엇이 채워지지 않은 채 나가는지 열거한다.
+     집합은 Python 이 복사와 같은 render 통로로 확정해 주므로(copy_precheck) 여기서 세는 것과
+     실제 나가는 텍스트가 갈라지지 않는다 = 열거해도 되는 경우다. 긴 목록은 앞 6개만 적고
+     나머지는 수치로 접는다(모달이 스크롤로 번지면 정작 결론 버튼이 안 보인다). */
+  function copyGateBody(pre) {
+    const row = pre.row + 1, lines = [];
+    const list = (names) => {
+      const head = names.slice(0, 6).join(", ");
+      return names.length > 6 ? `${head} 외 ${names.length - 6}개` : head;
+    };
+    const mi = pre.missing_fields || [], em = pre.empty_fields || [];
+    if (mi.length) lines.push(`항목 없음 ${mi.length}건: ${list(mi)}`);
+    if (em.length) lines.push(`빈 값 ${em.length}건: ${list(em)}`);
+    // 꼬리 문장은 해당 종류가 실제로 있을 때만 — 빈 값만 있는 카드에 "{{토큰}} 원문이
+    // 실린다"고 말하면 일어나지 않는 일을 경고하는 것이 된다(over-warn 도 거짓이다).
+    const tail = mi.length ? "\n항목 없음은 {{토큰}} 원문 그대로 클립보드에 실립니다." : "";
+    return `${row}행을 이대로 복사하면 아래 항목이 채워지지 않은 채 나갑니다.\n` +
+      lines.join("\n") + tail;
+  }
+
   /* 카드 결속 복사(결정 16) — 작업점 카드 렌더를 클립보드로(복사=완료). Python(copy_clipboard→
      note_copied)이 복사분을 후미로 옮기고 전진 opt-in 후 재푸시하며, 완료 노트는 그 스냅샷
      (card.last_copy)이 실어 온다(renderNote) — JS 가 별도로 announce 하지 않으므로 순서 경합이
-     없다. 빈칸 게이트 = 카드 결속(결정 16): 미충족 포함 복사는 전면 가시 렌더(빨강 세그먼트)
-     + 완료 노트로 시끄럽게 알린다(완화 조항 — 전면 가시성 표면의 "틀리면 보이는" 경보). */
+     없다.
+
+     빈칸 게이트 = 카드 결속(결정 16, #125): 결손이 있으면 **복사 전에** 확인을 받는다. 종전에는
+     전면 가시 렌더(빨강 세그먼트) + 사후 완료 노트로 갈음하며 완화 조항(결정 31)을 근거로 들었는데,
+     그 조항의 범위는 "틀리면 보이는 추측(표현형)"이고 미해소 토큰은 같은 결정이 **엄격 유지**로
+     분류한 '그럴싸한 오류'다 — 붙여넣기 전까지 아무도 그것이 오류인 줄 모른다. */
   async function copyCard() {
     if ($("txtCardCopy").disabled) return;  // 작업점 없음 = 무동작(모델 계약의 표면 반영)
+    // 판정은 Python 이 지금(스냅샷 캐시는 왕복 지연에서 stale — 작업 화면 가드와 같은 규율).
+    const pre = await Bridge.call(SCREEN, "copy_precheck", {});
+    if (!pre || !pre.can_copy) return;  // 작업점 소실(레이스) — 브리지도 같은 술어로 막는다
+    if ((pre.missing_fields || []).length || (pre.empty_fields || []).length) {
+      const go = await window.Modal.confirm({
+        title: "빈칸이 있습니다",
+        body: copyGateBody(pre),
+        confirmLabel: "그대로 복사",
+        cancelLabel: "취소",
+      });
+      if (!go) return;  // 머무르기 = 클립보드 불변(직전 복사분도 건드리지 않는다)
+    }
     await Bridge.copyClipboard(SCREEN);  // 완료 노트는 note_copied 재푸시가 스냅샷 구동으로 렌더
   }
 
@@ -244,7 +280,7 @@
      술어·수치는 Python(_guard_state)이 판정하고 여기는 문안만 입힌다(작업 화면과 같은 규율).
      T3 성분(큐 부분 진행)이 이 화면 고유다: 어디까지 붙여넣었는지는 앱 밖 기억이라, 처리
      표지가 증발하면 복구할 방법이 없다. 잃는 것을 종류별로 명시한다(결정 27 수치 재진술). */
-  function guardBody(g) {
+  function guardBody(g, lead) {
     const lost = [];
     if (g.queue_partial) lost.push(`복사 진행 ${g.copied_count}/${g.sel_count}행(처리 표지)`);
     // 선택 재진술 조각은 「작업」 가드와 **공유**(guard.js, 리뷰 F6) — 같은 가드 상태를 두
@@ -253,7 +289,8 @@
       lost.push(window.Guard.selectionLine(g.sel_count, g.filter_active, g.in_def, g.extra));
     }
     if (g.filter_parts > 0) lost.push(`필터 정의 ${g.filter_parts}개 조건`);
-    return `다른 데이터를 겨누면 이 큐는 새로 만들어집니다.\n` +
+    // 앞머리만 제스처별로 갈린다(데이터 교체 / 새 기안) — 잃는 것의 열거는 같은 술어를 공유한다.
+    return `${lead || "다른 데이터를 겨누면"} 이 큐는 새로 만들어집니다.\n` +
       `사라지는 것: ${lost.join(" · ")}.`;
   }
 
@@ -265,8 +302,23 @@
     if (!g || !g.armed) return true;
     return window.Modal.confirm({
       title: "데이터 변경 확인",
-      body: guardBody(g),
+      body: guardBody(g, "다른 데이터를 겨누면"),
       confirmLabel: "데이터 바꾸고 버리기",
+      cancelLabel: "머무르기",
+    });
+  }
+
+  /* 「＋ 새 기안」 사전 확인(#126 — T3 면제 철회). 원장 F11 의 면제 근거("txt 출력은 일회성이라
+     버릴 durable 상태가 없다")는 블록 3 전-선언 큐 신설로 거짓이 됐다: 20건 중 12건까지 붙여넣은
+     큐가 클릭 한 번에 사라지고, 어디까지 처리했는지는 앱 밖 기억이라 복원 수단이 없다. 술어·수치는
+     데이터 교체 가드와 **같은 _guard_state** 를 쓴다(두 파괴 경로가 한 술어를 공유). true=진행. */
+  async function confirmNewDraftIfArmed() {
+    const g = await Bridge.call(SCREEN, "guard_state", {});
+    if (!g || !g.armed) return true;
+    return window.Modal.confirm({
+      title: "새 기안 확인",
+      body: guardBody(g, "새 기안을 시작하면"),
+      confirmLabel: "새로 시작하고 버리기",
       cancelLabel: "머무르기",
     });
   }
@@ -352,6 +404,7 @@
     render(initState);
   }
 
-  // guardBody 는 순수 합성기 — 실앱 게이트가 합성 결과(수치·문안 배치)를 되읽는다(job 관례).
-  window.TxtScreen = { init, guardBody };
+  // guardBody·copyGateBody 는 순수 합성기 — 실앱 게이트가 합성 결과(수치·문안 배치)를
+  // 되읽는다(job 관례). confirmNewDraftIfArmed 는 홈의 「＋ 새 기안」이 소비(#126).
+  window.TxtScreen = { init, guardBody, copyGateBody, confirmNewDraftIfArmed };
 })();
