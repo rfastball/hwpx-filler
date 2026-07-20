@@ -12,6 +12,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from hwpxfiller.core.text_registry import TextTemplateRegistry
+from hwpxfiller.gui.selection_state import SelectionModel
+from hwpxfiller.gui.txt_queue import TxtQueueModel
 from hwpxfiller.webapp.screens import TxtController
 
 
@@ -99,6 +101,12 @@ def test_card_preview_without_data(tmp_path):
     assert kinds == {"literal", "missing"}  # 채움·빈 값 없음(데이터 없음)
 
 
+def _copy(ctrl):
+    """app.py copy_clipboard 브리지 경로 대역 — 작업점 카드 렌더 리포트로 note_copied 호출."""
+    _, report = ctrl.render()
+    ctrl.note_copied(report)
+
+
 def test_copy_marks_current_and_stays(tmp_path):
     """복사(note_copied) = 작업점을 처리 후미로(멱등), **작업점은 그 카드에 머문다**(결정 16).
 
@@ -106,23 +114,60 @@ def test_copy_marks_current_and_stays(tmp_path):
     """
     ctrl, pushes = _controller(tmp_path)
     ctrl.load_data_path(_csv(tmp_path))          # 3행, 작업점 = 행 0
-    ctrl.note_copied()                           # app.py copy_clipboard 가 복사 후 부르는 경로
+    _copy(ctrl)
     card = pushes[-1][1]["card"]
     assert card["index"] == 0 and card["is_copied"] is True   # 작업점 머묾 + 복사됨
     assert card["copied_count"] == 1 and card["uncopied_count"] == 2
-    imap = pushes[-1][1]["card"]["index_map"]
+    imap = card["index_map"]
     assert [d["state"] for d in imap] == ["uncopied", "uncopied", "current"]  # 복사분 후미
+    # 완료 노트 = 스냅샷 구동(card.last_copy) — 복사한 행 명시(전량 채움이라 미충족 없음).
+    assert card["last_copy"] == {"row": 0, "missing_fields": [], "empty_fields": []}
+
+
+def test_copy_note_names_row_and_reports_gaps(tmp_path):
+    """미충족 포함 복사 = last_copy 가 그 행·리포트를 실어 온다(빈칸 게이트 재진술)."""
+    csv = tmp_path / "gap.csv"
+    csv.write_text("공고명,추정가격\n전산장비,\n비품,2000\n", encoding="utf-8")  # 행0 추정가격 빈 값
+    ctrl, pushes = _controller(tmp_path)
+    ctrl.load_data_path(str(csv))
+    _copy(ctrl)                                  # 행 0(추정가격 빈 값) 복사
+    lc = pushes[-1][1]["card"]["last_copy"]
+    assert lc["row"] == 0 and lc["empty_fields"] == ["추정가격"]
+    # 어떤 변이 동작이든 완료 노트를 걷는다(카드가 바뀌므로 모순 방지, 리뷰 F1).
+    ctrl.dispatch("step", {"delta": 1})
+    assert pushes[-1][1]["card"]["last_copy"] is None
 
 
 def test_copy_with_advance_moves_to_next_uncopied(tmp_path):
-    """복사 후 전진 켜짐 = 작업점이 다음 미처리로(↓ 서명) — 큐를 걷는 감각."""
+    """복사 후 전진 켜짐 = 작업점이 다음 미처리로(↓ 서명) — 큐를 걷는 감각.
+
+    전진해도 완료 노트(last_copy.row)는 **복사한 행**을 못박는다(카드는 다음 행, 리뷰 F2).
+    """
     ctrl, pushes = _controller(tmp_path)
     ctrl.load_data_path(_csv(tmp_path))
     ctrl.dispatch("toggle_advance", {"value": True})
-    ctrl.note_copied()                           # 행 0 복사 → 전진
+    _copy(ctrl)                                  # 행 0 복사 → 전진
     card = pushes[-1][1]["card"]
-    assert card["index"] == 1 and card["is_copied"] is False   # 다음 미처리로 전진
+    assert card["index"] == 1 and card["is_copied"] is False   # 카드는 다음 미처리로 전진
     assert card["copied_count"] == 1 and card["position"] == 1  # 작업점 = 남은 첫 미처리
+    assert card["last_copy"]["row"] == 0                        # 노트는 복사한 행(0)을 명시
+
+
+def test_gap_predicate_matches_render_segments_for_zero(tmp_path):
+    """빈칸 지도·토큰 술어 = render_segments 와 **동일**(리뷰 F4) — 값 0(falsy 비-None)은 채움.
+
+    종전 ``str(v or "").strip()==""`` 은 0·False 를 빈칸으로 오판해, 값 0 인 행이 상태 색인엔
+    빨강 빈칸 점인데 카드는 '0' 을 채움으로 렌더하는 모순을 냈다. 단일 술어로 봉합.
+    """
+    ctrl, _ = _controller(tmp_path)  # 템플릿 = 제목:{{공고명}} 금액:{{추정가격}}
+    ctrl.vm.set_acquired(object(), [{"공고명": "전산장비", "추정가격": 0}])
+    ctrl.selection = SelectionModel(1)
+    ctrl.queue = TxtQueueModel(ctrl.selection)
+    snap = ctrl.snapshot()
+    assert snap["card"]["index_map"][0]["has_gap"] is False   # 0 = 채움, 빈칸 지도 빨강 아님
+    assert snap["missing_fields"] == [] and snap["empty_fields"] == []
+    assert {t["name"]: t["state"] for t in snap["tokens"]} == {"공고명": "fill", "추정가격": "fill"}
+    assert "0" in snap["render_text"]  # 카드 렌더도 0 을 채움으로(술어 일치 실증)
 
 
 def test_copy_all_reaches_completion(tmp_path):
@@ -131,7 +176,7 @@ def test_copy_all_reaches_completion(tmp_path):
     ctrl.load_data_path(_csv(tmp_path))
     ctrl.dispatch("toggle_advance", {"value": True})
     for _ in range(3):
-        ctrl.note_copied()
+        _copy(ctrl)
     card = pushes[-1][1]["card"]
     assert card["is_complete"] is True and card["copied_count"] == 3 and card["uncopied_count"] == 0
 

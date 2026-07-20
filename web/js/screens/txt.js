@@ -5,8 +5,9 @@
   const SCREEN = "txt";
   const $ = (id) => document.getElementById(id);
   const STATE_LABEL = { fill: "✓ 채움", blank: "◦ 빈 값", missing: "● 항목 없음" };
+  // 상태 색인 점 상태어(한글) — aria-label/title 이 영문 토큰(current/copied/uncopied)을 누출하지 않게.
+  const DOT_STATE_LABEL = { current: "작업점", copied: "복사됨", uncopied: "대기" };
   let LAST = null;
-  let noteKey = null;  // txtNote(완료 로그) 리셋 게이트 — 데이터 소스 정체(data_key) 변경 시만 걷는다
 
   const esc = window.escHtml;  // 공유 이스케이퍼(esc.js) — " 도 escape 해 속성 컨텍스트 안전
 
@@ -102,11 +103,13 @@
         `${posTxt} · 복사 ${c.copied_count}/${c.selected_count}` + (gaps ? ` · 빈칸 ${gaps}건` : "");
     }
     // 상태 색인 점 — 큐 표시 순서(단조). 클릭 = 작업점 지정. 빈칸 카드엔 빨강 표지(빈칸 지도).
-    $("txtCardDots").innerHTML = (c.index_map || []).map((d) =>
-      `<button class="wc-dot ${d.state}${d.has_gap ? " gap" : ""}" role="listitem"` +
-      ` data-i="${d.index}" aria-label="${d.index + 1}행 ${d.state}${d.has_gap ? " 빈칸있음" : ""}"` +
-      ` title="${d.index + 1}행${d.has_gap ? " · 빈칸 있음" : ""}"></button>`
-    ).join("");
+    // 상태어는 한글로 번역해 aria-label 에 싣는다(리뷰: 영문 토큰 current/copied 누출 차단).
+    $("txtCardDots").innerHTML = (c.index_map || []).map((d) => {
+      const label = DOT_STATE_LABEL[d.state] || d.state;
+      return `<button class="wc-dot ${d.state}${d.has_gap ? " gap" : ""}" role="listitem"` +
+        ` data-i="${d.index}" aria-label="${d.index + 1}행 ${label}${d.has_gap ? " 빈칸있음" : ""}"` +
+        ` title="${d.index + 1}행 · ${label}${d.has_gap ? " · 빈칸 있음" : ""}"></button>`;
+    }).join("");
     // 카드 정체 + 렌더.
     $("txtCardTitle").textContent = !c.has_current
       ? "이대로 복사됩니다 (미리보기 — 데이터 미선택)"
@@ -152,10 +155,7 @@
         $("txtZoneNote").textContent = "";
       }
       setStatus(s.missing_fields, s.empty_fields);
-      // txtNote 는 완료 로그(복사 확정·오류) — **매 push 에 지우지 않는다**: 복사=완료
-      // (note_copied)가 큐 전진 재푸시를 유발하므로, 무조건 resetNote 하면 방금 announce 한
-      // 확정 문구가 곧장 지워진다(순서 경합). zoneNote 와 동형으로 데이터 소스가 바뀔 때만 걷는다.
-      if (zkey !== noteKey) { noteKey = zkey; resetNote(); }
+      renderNote(s.card || {});  // 완료 노트 = 스냅샷 구동(card.last_copy) — announce 순서 경합 없음
     });
   }
 
@@ -172,13 +172,24 @@
     n.textContent = window.Copy.TXT_NOTE;  // 단일 출처(copy.js) — index.html 정적 중복 제거(F15)
   }
 
-  /* 완료 동작(복사/저장) 후 리포트를 재진술 — confirm-or-alarm: 미충족 포함 시 시끄럽게. */
-  function announce(action, report) {
-    const n = $("txtNote");
-    const mi = report.missing_fields || [], em = report.empty_fields || [];
-    if (mi.length) { n.dataset.level = "warn"; n.textContent = `⚠ 항목 없음 ${mi.length}건(${mi.join(", ")}) 포함 ${action}됨 — 빨간 토큰 확인 후 사용하세요.`; }
-    else if (em.length) { n.dataset.level = "warn"; n.textContent = `⚠ 빈 값 ${em.length}건(${em.join(", ")}) 포함 ${action}됨 — 확인 후 사용하세요.`; }
-    else { n.dataset.level = "ok"; n.textContent = `✓ 전량 채움 ${action} 완료.`; }
+  /* 완료 노트(복사 확정) = **스냅샷 구동**. Python 이 복사한 행 번호와 리포트를 card.last_copy 로
+     싣고(어떤 변이 동작이든 무효화), 여기선 그 스냅샷을 그대로 진술한다 — JS announce 후 재푸시가
+     지우는 순서 경합도, 전진 시 카드가 바뀌어 노트가 딴 카드를 가리키는 desync 도 구조적으로
+     없다(리뷰 F1·F2). 없으면 기본 안내(resetNote). 미충족 포함 복사는 시끄럽게(빈칸 게이트). */
+  function renderNote(c) {
+    const lc = c.last_copy;
+    if (!lc) { resetNote(); return; }
+    const n = $("txtNote"), mi = lc.missing_fields || [], em = lc.empty_fields || [], row = lc.row + 1;
+    if (mi.length) {
+      n.dataset.level = "warn";
+      n.textContent = `⚠ ${row}행 복사됨 — 항목 없음 ${mi.length}건(${mi.join(", ")}) 포함. 빨간 토큰 확인 후 사용하세요.`;
+    } else if (em.length) {
+      n.dataset.level = "warn";
+      n.textContent = `⚠ ${row}행 복사됨 — 빈 값 ${em.length}건(${em.join(", ")}) 포함. 확인 후 사용하세요.`;
+    } else {
+      n.dataset.level = "ok";
+      n.textContent = `✓ ${row}행 전량 채움 복사 완료.`;
+    }
   }
 
   function warnNote(msg) {
@@ -186,13 +197,13 @@
   }
 
   /* 카드 결속 복사(결정 16) — 작업점 카드 렌더를 클립보드로(복사=완료). Python(copy_clipboard→
-     note_copied)이 복사분을 후미로 옮기고 전진 opt-in 후 재푸시하므로, 확정 문구(announce)는
-     그 재푸시 뒤에 선다 — txtNote 는 데이터 소스 변경 때만 리셋이라 확정이 유지된다(순서 경합
-     차단). 빈칸 게이트 = 카드 결속(결정 16): 미충족 포함 복사는 전면 가시 렌더(빨강 세그먼트)
-     + announce 로 시끄럽게 알린다(완화 조항 — 전면 가시성 표면의 "틀리면 보이는" 경보). */
+     note_copied)이 복사분을 후미로 옮기고 전진 opt-in 후 재푸시하며, 완료 노트는 그 스냅샷
+     (card.last_copy)이 실어 온다(renderNote) — JS 가 별도로 announce 하지 않으므로 순서 경합이
+     없다. 빈칸 게이트 = 카드 결속(결정 16): 미충족 포함 복사는 전면 가시 렌더(빨강 세그먼트)
+     + 완료 노트로 시끄럽게 알린다(완화 조항 — 전면 가시성 표면의 "틀리면 보이는" 경보). */
   async function copyCard() {
     if ($("txtCardCopy").disabled) return;  // 작업점 없음 = 무동작(모델 계약의 표면 반영)
-    announce("복사", await Bridge.copyClipboard(SCREEN));
+    await Bridge.copyClipboard(SCREEN);  // 완료 노트는 note_copied 재푸시가 스냅샷 구동으로 렌더
   }
 
   /* 웹→Python 이벤트 배선. */

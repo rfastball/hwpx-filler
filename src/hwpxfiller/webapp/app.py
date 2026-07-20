@@ -225,8 +225,8 @@ class WebFrontend:
         text, report = ctrl.render()
         set_clipboard_text(text)
         note = getattr(ctrl, "note_copied", None)
-        if note is not None:  # txt 큐 카드 — 복사분 후미 이동·전진·재푸시
-            note()
+        if note is not None:  # txt 큐 카드 — 복사분 후미 이동·전진·재푸시(리포트 재사용, 재렌더 없음)
+            note(report)
         return {"missing_fields": report.missing_fields, "empty_fields": report.empty_fields}
 
     def pick_output_folder(self, screen: str) -> "str | None":
@@ -787,9 +787,8 @@ _TXT_ZONE_PROBE_JS = r"""
     window.Nav.go('txt');
     var snap = {
       template_name:'샘플기안', template_text:'제목: {{공고명}}',
-      record:{'공고명':'전산장비 구매'},
       tokens:[{name:'공고명', state:'fill'}],
-      record_index:1, record_count:2, render_text:'제목: 전산장비 구매',
+      record_count:2, render_text:'제목: 전산장비 구매',
       missing_fields:[], empty_fields:[],
       data_label:'d.csv', data_source_label:'파일: d.csv', data_key:'file:c:/d/d.csv',
       has_data:true, selected_count:2,
