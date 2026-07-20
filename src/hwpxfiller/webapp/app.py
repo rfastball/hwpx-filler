@@ -621,6 +621,33 @@ _JOB_MIRROR_PROBE_JS = r"""
 })()
 """
 
+# 「작업」 패널 두 모드(에디터 흡수, 블록 2 개정 결정 39~41) — 편집 호스트/세션 4존의 배타
+# 표시와 신규=단계(번호 표지)·편집=탭(자유 이동 버튼) 이원 표현을 실 render 로 되읽는다
+# (부록 B-9 overlay/hidden 눈검증의 자동판 — 이사한 DOM 이 실 WebView2 에서 실제로 선다).
+_JOB_EDITMODE_PROBE_JS = r"""
+(function () {
+  var out = {};
+  try {
+    window.Nav.go('job');
+    window.JobScreen.showEditMode();
+    out.edit_host_shown = getComputedStyle(document.getElementById('jobEditHost')).display !== 'none';
+    out.zones_hidden = getComputedStyle(document.getElementById('jobZones')).display === 'none';
+    out.status_text = document.getElementById('jobStatus').textContent;
+    var draft = {step:0, reachable:[false,false], template_path:'', template_name:'',
+      field_count:0, fields:[], raw_block:'', gate_error:false, gate:null, notice:null,
+      editing_origin:''};
+    window.__push('editor', draft);
+    out.wizard_steps = document.querySelectorAll('#editor-steps .wstep-tab .k').length;
+    out.foot_shown_new = getComputedStyle(document.getElementById('editor-foot')).display !== 'none';
+    draft.editing_origin = '공고서';
+    window.__push('editor', draft);
+    out.edit_tabs = document.querySelectorAll('#editor-steps button.wstep-tab.as-tab').length;
+    out.foot_hidden_edit = getComputedStyle(document.getElementById('editor-foot')).display === 'none';
+  } catch (e) { out.error = 'throw:' + (e && e.message); }
+  return out;
+})()
+"""
+
 
 # ------------------------------------------------------------------ 자가검증(Q3)
 def _finish_selftest(window: "object", result: dict) -> None:
@@ -728,6 +755,7 @@ def _selftest_drive(window: "object") -> None:
         result["preserve_real"] = window.evaluate_js(_PRESERVE_REAL_PROBE_JS)  # type: ignore[attr-defined]
         # 「작업」 거울 + 재진술 블록(슬라이스 2) — 합성 스냅샷으로 실 render() 구동 후 DOM 되읽기.
         result["job_mirror"] = window.evaluate_js(_JOB_MIRROR_PROBE_JS)  # type: ignore[attr-defined]
+        result["job_editmode"] = window.evaluate_js(_JOB_EDITMODE_PROBE_JS)  # type: ignore[attr-defined]
         # 다크모드 영속·무깜빡임(콜드부트 되읽기, #74) — 부팅 시 loaded 핸들러가 저장 테마
         # (settings.json, 오리진 비의존)를 show 전에 data-theme 로 주입했는지. 저장값이 없으면
         # data_theme=null(=system). 앞선 쓰기 프로세스가 남긴 값이 여기서 보이면 Python 설정

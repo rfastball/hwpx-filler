@@ -270,12 +270,29 @@ class TestWebSelftestGate:
             "reapply_available=false 인데 「직전 필터 재적용」 버튼이 계속 떠 있습니다."
         )
 
+    def test_job_edit_mode_hosts_definition_surface(self, selftest_result: dict) -> None:
+        # 에디터 흡수(블록 2 개정, 결정 39~41) — 편집 모드 전환이 실 WebView2 에서 편집 호스트를
+        # 켜고 세션 4존을 숨기며(배타 표시 = B-9 overlay/hidden 눈검증의 자동판), 이사한 정의
+        # surface 가 같은 3분류를 신규=단계(번호 표지)·편집=탭(자유 이동 버튼)으로 갈라 렌더한다.
+        j = selftest_result["job_editmode"]
+        assert j.get("error") is None, f"편집 모드 프로브 예외: {j.get('error')!r}"
+        assert j["edit_host_shown"] is True and j["zones_hidden"] is True, (
+            f"두 모드 배타 표시 실패(호스트/존 동시 표시·동시 은닉): {j!r}"
+        )
+        assert j["status_text"] == "편집 모드", f"상태 pill 이 편집 모드를 말하지 않습니다: {j['status_text']!r}"
+        assert j["wizard_steps"] == 3, f"신규 마법사 단계 표지(번호) 수: {j['wizard_steps']!r}"
+        assert j["foot_shown_new"] is True, "신규 마법사 푸터(뒤로/다음)가 표시되지 않았습니다."
+        assert j["edit_tabs"] == 3, f"편집 탭 버튼 수: {j['edit_tabs']!r}"
+        assert j["foot_hidden_edit"] is True, (
+            "편집(탭)의 비저장 탭에서 푸터가 숨지 않았습니다 — 고아 경계선/죽은 내비 잔존."
+        )
+
     def test_job_drift_replaces_mirror_with_blocking_banner(self, selftest_result: dict) -> None:
         # danger(구조 드리프트)는 거울 표와 섞이지 않고 차단 배너 + 행동 링크로 **교체**된다
         # (결정 36·S9). overlay 로 표 위에 얹히는 게 아니라 실제로 표가 사라지고 배너가 선다.
         j = selftest_result["job_mirror"]
         assert j["drift_banner"] is True, "드리프트 차단 배너(role=alert)가 렌더되지 않았습니다."
-        assert j["drift_fix_link"] is True, "「작업 에디터에서 매핑 확정…」 행동 링크가 없습니다(막다른 경보 금지)."
+        assert j["drift_fix_link"] is True, "「편집에서 매핑 확정…」 행동 링크가 없습니다(막다른 경보 금지)."
         assert j["drift_no_table"] is True, "드리프트인데 거울 표가 남아 있습니다(배너로 교체 안 됨)."
         # 재진술 블록은 danger 차단(드리프트 등) 중 숨는다 — "N건 생성" 진술이 차단 배너와 모순 금지.
         assert j["restate_hidden_on_drift"] is True, (
