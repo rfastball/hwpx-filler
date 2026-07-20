@@ -13,13 +13,19 @@
     if (window.JobScreen && window.JobScreen.showEditMode) window.JobScreen.showEditMode();
   }
 
+  /* 미저장 정의 세션 폐기 확인의 **단일 출처**(PR-4 리뷰 F9 — 3중 복붙 수렴): 판정은 브리지
+     즉시 질의(stale LAST 금지), 문구만 호출측이 준다. 미저장 없으면 조용히 통과. */
+  async function confirmDiscard(body) {
+    if (!(await Bridge.editorHasUnsavedWork())) return true;
+    return window.Modal.confirm({ body });
+  }
+
   /* openGuarded(name) — 미저장 정의 확인 → 작업 로드 → 「작업」 편집 모드. 취소·손상 시 무이동.
      반환: 열었으면 true, 확인 취소·오류로 중단했으면 false(호출부 후속 판단용). */
   async function openGuarded(name) {
-    const busy = await Bridge.editorHasUnsavedWork();
-    if (busy && !(await window.Modal.confirm({ body:
+    if (!(await confirmDiscard(
       "저장하지 않은 편집(정의) 세션이 있습니다.\n" +
-      `'${name}' 편집을 열면 그 세션의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?` }))) {
+      `'${name}' 편집을 열면 그 세션의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?`))) {
       return false;
     }
     const r = await Bridge.openJobInEditor(name);
@@ -31,5 +37,5 @@
     return true;
   }
 
-  window.EditorEntry = { openGuarded, land };
+  window.EditorEntry = { openGuarded, land, confirmDiscard };
 })();

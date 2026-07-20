@@ -25,8 +25,10 @@
       return window.pywebview.api.load_data_sheet(screen, path, sheet);
     },
 
-    /** 네이티브 열기 다이얼로그(HWPX 템플릿) → 스키마/게이트 로드. 파일명·"ERROR:…"·null. */
-    pickTemplateFile(screen) { return window.pywebview.api.pick_template_file(screen); },
+    /** 템플릿 가져오기=복사(R-info 2부, 생 파일 직접 로드 pickTemplateFile 의 후계 — 신규
+        1단계는 라이브러리가 정본) — 다이얼로그 → 라이브러리 복사 → 사본으로 새 세션.
+        파일명·"ERROR:…"·null. */
+    importTemplateFile(screen) { return window.pywebview.api.import_template_file(screen); },
 
     /** 현재 렌더를 OS 클립보드로(완료=commit). 리포트(missing/empty) 반환. */
     copyClipboard(screen) { return window.pywebview.api.copy_clipboard(screen); },

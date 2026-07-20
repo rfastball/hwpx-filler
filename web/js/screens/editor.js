@@ -19,15 +19,19 @@
   // 편집(탭) vs 신규(마법사 단계) — 정보 완전 동등, 공개 방식만 상이(결정 41).
   const isEditing = (s) => !!s.editing_origin;
 
-  // 미사용 <details> 의 유효 펼침 — 재렌더 관통 보존(PR-3 리뷰 F8: preserve.js 는 details
-  // open 을 스냅샷하지 않아, 수동으로 연 접힘 구역이 칩 재활성 클릭마다 도로 닫혔다).
-  let foldOpen = false;
+  // <details> 의 유효 펼침 — 재렌더 관통 보존(PR-3 리뷰 F8: preserve.js 는 details open 을
+  // 스냅샷하지 않아 수동으로 연 접힘이 매 push 에 도로 닫혔다). 접힘별 전용 변수(혼합 금지).
+  let foldOpen = false;     // 미사용 헤더 접힘(.ign-fold)
+  let tokFoldOpen = false;  // 파일명 토큰 참조 접힘(.tok-fold, F27 — PR-4 리뷰 F6)
 
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
     Preserve.around(() => {  // 마법사 폼 포커스·캐럿·본문 스크롤 보존(#28)
-      const fold = document.querySelector("#jobEditHost details.hidden-hdrs");
-      if (fold) foldOpen = fold.open;  // 재구성 전 현 펼침을 읽어 이월(수동 개폐 존중)
+      // 재구성 전 현 펼침을 읽어 이월(수동 개폐 존중) — 접힘별 전용 클래스로 분리 판독.
+      const fold = document.querySelector("#jobEditHost details.ign-fold");
+      if (fold) foldOpen = fold.open;
+      const tokFold = document.querySelector("#jobEditHost details.tok-fold");
+      if (tokFold) tokFoldOpen = tokFold.open;
       LAST = s;
       $("editor-steps").innerHTML = stepHeader(s);
       $("editor-body").innerHTML = stepBody(s);
@@ -67,15 +71,43 @@
     return notice + saveStage(s);  // 2 = 저장
   }
 
-  /* ---- 분류 0: 템플릿 ---- */
+  /* ---- 분류 0: 템플릿 — 신규 1단계 = **라이브러리에서 고르기**(R-info 2부: 생 파일 선택
+     폐기). 바깥 파일은 「가져오기…」=라이브러리로 복사 후 그 사본으로 시작(앱 소유 루트 —
+     원본 수정 불파급). 라이브러리 전체 개편(그룹·구획·F16)은 #108 소관, 여긴 피커만. ---- */
+  function libraryPicker(s) {
+    const items = s.library || [];
+    const list = items.length ? items.map((t) => {
+      // 상태 사유(detail)는 배지 title 로 — 오류 행은 선택 버튼 대신 사유를 보여준다(리뷰 F8:
+      // 죽은 버튼이 생 예외 alert 로 끝나는 반쪽 노출 금지 — 원인 있는 사용 불가).
+      const badge = t.badge_label
+        ? `<span class="tbadge" title="${esc(t.detail || "")}">${esc(t.badge_label)}</span>` : "";
+      const pick = t.is_error
+        ? `<span class="muted capnote" title="${esc(t.detail || "")}">사용 불가</span>`
+        : (t.current
+          ? `<span class="muted capnote">선택됨</span>`
+          : `<button class="btn sm" data-act="use-library" data-path="${esc(t.path)}">이 템플릿으로</button>`);
+      return `<tr><td><span class="fname">${esc(t.name)}</span></td><td>${badge}</td><td>${pick}</td></tr>`;
+    }).join("")
+      : `<tr><td colspan="3" class="muted">라이브러리에 템플릿이 없습니다 — 「가져오기…」로 추가하거나 템플릿 관리에서 폴더를 확인하세요.</td></tr>`;
+    return `<div class="grp">
+      <div class="row" style="margin-bottom:var(--sp-4)"><span class="cap">템플릿 라이브러리</span>
+        <span class="spacer"></span>
+        <button class="btn sm" data-act="import-template">가져오기…</button></div>
+      <div class="tblwrap"><table class="schema-fields"><thead><tr>
+        <th>템플릿</th><th>상태</th><th></th></tr></thead><tbody>${list}</tbody></table></div>
+    </div>`;
+  }
+
   function templateStage(s) {
     let out = `<div class="wtitle">${esc(stageTitle(s, 0))}</div>
-      <p class="wsub">누름틀이 들어 있는 HWPX 템플릿을 선택하세요.</p>
-      <div class="row"><span class="lbl">템플릿(.hwpx)</span>
-        <input class="field ro" readonly value="${esc(s.template_name || "")}"
-          placeholder="템플릿을 선택하세요">
-        <button class="btn" data-act="pick-template">찾아보기…</button>
+      <p class="wsub">라이브러리에서 누름틀 템플릿을 고르세요. 다른 파일은 「가져오기…」로
+        라이브러리에 복사해 시작합니다.</p>
+      ${libraryPicker(s)}`;
+    if (s.template_name) {
+      out += `<div class="row"><span class="lbl">선택한 템플릿</span>
+        <span class="filechip"><b>${esc(s.template_name)}</b></span>
         ${PathTrack.affordances(s.template_path)}</div>`;
+    }
     if (s.raw_block) {
       out += `<p class="note dangerbox" style="white-space:pre-line">${esc(s.raw_block)}</p>`;
     } else if (s.gate_error) {
@@ -176,7 +208,7 @@
     ).join("") || '<span class="muted">사용 중인 헤더가 없습니다 — 아래 미사용 목록에서 골라 켜세요.</span>';
     // 미사용 = 벽 이탈 + 접힘 구역(결정 13). '전체 미사용'이 ignored_expanded 로 자동 펼침.
     const ignoredBlock = ignored.length
-      ? `<details class="hidden-hdrs"${(s.ignored_expanded || foldOpen) ? " open" : ""}><summary>미사용 ${ignored.length}개 (펼쳐 다시 사용)</summary>
+      ? `<details class="hidden-hdrs ign-fold"${(s.ignored_expanded || foldOpen) ? " open" : ""}><summary>미사용 ${ignored.length}개 (펼쳐 다시 사용)</summary>
            <div class="hchips">${ignored.map((f) =>
               `<button class="hchip ign" data-act="toggle-header" data-field="${esc(f)}" title="클릭 = 다시 사용">${esc(f)}</button>`).join("")}</div>
            <p class="hint" style="margin-top:var(--sp-4)">미사용 헤더는 자동 매핑 제안·소스 후보에서 빠집니다. 클릭하면 다시 사용합니다.</p>
@@ -293,6 +325,7 @@
         <input class="field" data-act="name" value="${esc(s.name)}" placeholder="예: 공고서 자동생성"></div>
       <div class="row"><span class="lbl lbl-fixed">파일명 패턴</span>
         <input class="field mono" data-act="pattern" value="${esc(s.pattern)}"></div>
+      ${s.pattern_preview ? `<p class="hint mono" style="margin-top:0">예: ${esc(s.pattern_preview)}${s.record_count ? " — 표본 1행 기준" : ""}</p>` : ""}
       ${provenanceBlock(s)}
       ${datasetBlock(s)}
       ${defaultDatasetBlock(s)}
@@ -367,19 +400,20 @@
 
   /* 파일명 패턴 토큰 도우미(#17) — Qt SaveJobPage._refresh_filename_help 웹 포트.
      s.rows 는 스텝2 매핑 확정 시점에 이미 계산돼 스냅샷에 실려온다 — 신규 브리지 호출 없음. */
+  /* 토큰 참조 = 접힘(F27, 결정 14) — 라이브 예시(F26)가 상시 답을 주므로 참조표는 부피만
+     차지한다. 펼침은 사용자 선택(기본 접힘). */
   function filenameTokenHelp(s) {
     const rows = (s.rows || []).filter((r) => r.has_content);
     const fieldsHtml = rows.length
       ? rows.map((r) => `<code>{{${esc(r.template_field)}}}</code> → ${fnPreviewText(r, s)}`).join(" &nbsp;·&nbsp; ")
       : `<span class="muted">매핑을 완료하면 파일명에 쓸 수 있는 필드가 여기 표시됩니다.</span>`;
-    return `<div class="grp">
-      <span class="cap">파일명에 넣을 수 있는 값</span>
-      <p class="hint" style="margin-top:0">${fieldsHtml}</p>
+    return `<details class="hidden-hdrs tok-fold"${tokFoldOpen ? " open" : ""}><summary>파일명에 넣을 수 있는 값 (펼쳐 보기)</summary>
+      <p class="hint" style="margin-top:var(--sp-4)">${fieldsHtml}</p>
       <p class="hint">
         날짜: <code>{{date}}</code> → 생성 날짜(YYYYMMDD) · <code>{{date:YYYY-MM-DD}}</code> → 하이픈 포함 날짜<br>
         순번: <code>{{seq}}</code> → 1부터 증가 · <code>{{seq:001}}</code> → 001부터 세 자리로 증가
       </p>
-    </div>`;
+    </details>`;
   }
 
   function fnPreviewText(r, s) {
@@ -424,6 +458,26 @@
      하려던 1클릭이 매핑 표 바로 위 관문에서 조용히 리셋하지 않게 파괴 전 확인한다(confirm-or-
      alarm). 수치는 **Python 이 지금** 판정한다(PR-2 리뷰 F7 — LAST 는 push 지연 창에서 stale 이라
      방금 확정한 행이 안 보여 확인이 조용히 생략됐다). 0이면 조용히 진행(새 작업 첫 겨눔 등). */
+  /* 새 템플릿 진입 = 새 작업 세션 확인 — 폐기 판정은 EditorEntry.confirmDiscard 단일 출처
+     (PR-4 리뷰 F9). 편집(탭) 맥락에선 미저장이 없어도(클린 복원) 확인한다(리뷰 F1: 「이
+     템플릿으로」가 열려 있는 작업의 편집 맥락을 조용히 닫고 새 초안으로 갈아타면 안 된다 —
+     저장본은 남지만 '이 작업을 고치는 중'이라는 맥락의 전환은 의식적이어야 한다). */
+  async function confirmNewSessionIfUnsaved() {
+    const editing = LAST && LAST.editing_origin;
+    if (editing) {
+      const busy = await Bridge.editorHasUnsavedWork();
+      return Modal.confirm({ body:
+        `'${editing}' 편집을 닫고 새 작업 초안을 시작합니다.\n` +
+        (busy
+          ? "저장하지 않은 변경은 사라집니다."
+          : `저장된 '${editing}' 은 그대로 남습니다.`) +
+        "\n\n계속할까요?" });
+    }
+    return EditorEntry.confirmDiscard(
+      "저장하지 않은 작업 세션이 있습니다.\n" +
+      "새 템플릿으로 시작하면 이전의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?");
+  }
+
   async function confirmMappingResetIfConfirmed(verbPhrase) {
     const st = await Bridge.call(SCREEN, "mapping_reset_stakes", {});
     const n = (st && st.human) || 0;
@@ -444,12 +498,14 @@
     // 늘어도 가드를 자동 상속한다(profile_* 만 봉합하고 confirmAll 을 빠뜨렸던 재발 방지).
     try {
       switch (act) {
-        case "pick-template": {
-          // 새 템플릿 선택 = 새 작업 세션 → 미저장 세션은 조용히 버리지 않고 확인(#25).
-          if (LAST && LAST.has_unsaved_work && !(await Modal.confirm({ body:
-            "저장하지 않은 작업 세션이 있습니다.\n" +
-            "새 템플릿으로 시작하면 이전의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?" }))) break;
-          const r = await Bridge.pickTemplateFile(SCREEN);
+        case "use-library": {
+          if (!(await confirmNewSessionIfUnsaved())) break;
+          await Bridge.call(SCREEN, "use_library_template", { path: el.dataset.path });
+          break;
+        }
+        case "import-template": {
+          if (!(await confirmNewSessionIfUnsaved())) break;
+          const r = await Bridge.importTemplateFile(SCREEN);
           if (typeof r === "string" && r.startsWith("ERROR:")) alertMsg(r.slice(6).trim());
           break;
         }
