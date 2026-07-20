@@ -29,7 +29,7 @@ RESPONSIVE_BREAKPOINT_PX = 820
 # 전체 스냅샷 재렌더가 포커스·캐럿·스크롤을 뭉개지 않도록 render() 를 Preserve.around 로 감싸는
 # 화면들(#28). 어느 화면이 래핑을 조용히 떨구면 상호작용 유실 회귀 → 정적 가드로 차단.
 WEB_JS_DIR = Path(__file__).resolve().parents[1] / "web" / "js"
-PRESERVE_WRAPPED_SCREENS = ("txt", "editor", "job")  # run 사망(슬라이스 3) → job 이 생성 표면
+PRESERVE_WRAPPED_SCREENS = ("txt", "editor", "job", "quickdraft")  # run 사망(슬라이스 3) → job 이 생성 표면
 
 # 살아있는 컴포넌트 갤러리(개발 전용) — 실 tokens.css+app.css 를 <link> 로 물어 드리프트 0.
 GALLERY = Path(__file__).resolve().parents[1] / "docs" / "UI_GALLERY.html"
@@ -41,13 +41,15 @@ SCREEN_ROOTS = (
     # 「작업」(R-flow · #90) — 유일 생성 표면(실행 화면=슬라이스 3 사망) + 편집 모드(작업
     # 에디터 별도 화면=슬라이스 5 사망, 결정 39 흡수 — 정의 surface 는 scr-job 내부).
     "scr-job",
+    # 빠른 기안(R-flow 블록 5 · #90 슬라이스 7) — 작업의 휘발 쌍둥이(신설·공존, 레일 6 임시).
+    "scr-quickdraft",
 )
 
 # 화면별 데이터 라벨은 반드시 고유 id 여야 한다(#27 dup-id 회귀 가드).
 SCOPED_DATA_LABELS = ("txtDataLabel", "jobDataLabel")
 
 # 접힘 상태에서 라벨이 사라지는 내비 버튼(회귀 시 접근 이름·툴팁 소실 → #27).
-NAV_SCREENS = ("home", "job", "txt", "tpl", "pool")  # run=슬라이스 3·editor=슬라이스 5 사망(흡수)
+NAV_SCREENS = ("home", "job", "txt", "quickdraft", "tpl", "pool")  # run=슬라이스 3·editor=슬라이스 5 사망(흡수); quickdraft=슬라이스 7 신설(레일 6 임시)
 
 # 커스텀 모달 → aria-labelledby 가 가리켜야 할 제목 id(다이얼로그 시맨틱, #27/#28).
 # sheetModal 은 다중 시트 확정 게이트(#33) — 같은 Modal 헬퍼·다이얼로그 계약을 공유한다.
