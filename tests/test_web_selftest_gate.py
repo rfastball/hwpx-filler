@@ -475,6 +475,29 @@ class TestWebSelftestGate:
         assert q["note_visible_after"] is True, "frozen_notice 를 실었는데 경보 상자가 뜨지 않았습니다."
         assert "굳었습니다" in q["note_text"], f"경보 문구가 그대로 서지 않았습니다: {q['note_text']!r}"
 
+    def test_quickdraft_exit_footer_guard_surface_and_ownership(self, selftest_result: dict) -> None:
+        # 슬라이스 7 PR-4 — 출구 크롬(새 기안·복사·승격 표면)·소유권 색이 실 WebView2 에서
+        # 계약대로 그려지는지 되읽는다. 음성 대조(빈손엔 숨음)로 표시 판정에 판별력을 준다.
+        q = selftest_result["quickdraft"]
+        assert q.get("error") is None, f"빠른 기안 프로브 예외: {q.get('error')!r}"
+        # 「새 기안」·출구 푸터는 빈손엔 숨고 템플릿이 실리면 선다(dead 크롬 금지, 음성 대조 짝).
+        assert q["fresh_visible_before"] is False, "빈손인데 「새 기안」이 서 있습니다(dead 버튼)."
+        assert q["foot_visible_before"] is False, "빈손인데 출구 푸터가 서 있습니다(dead 크롬)."
+        assert q["fresh_visible"] is True, "템플릿이 실렸는데 「새 기안」이 숨어 있습니다."
+        assert q["foot_visible"] is True, "템플릿이 실렸는데 출구 푸터가 숨어 있습니다."
+        assert q["copy_btn"] is True, "복사 버튼이 없습니다(휘발 세션의 유일한 실동작 출구)."
+        # 채움 표지 토글 — 미리보기 기본이라 켜짐(aria-pressed=true)으로 뜬다.
+        assert q["marker_toggle"] is True, "채움 표지 토글 버튼이 없습니다."
+        assert q["marker_pressed"] == "true", f"표지 토글 초기 상태가 ON 이 아닙니다: {q['marker_pressed']!r}"
+        # 승격 2동사 = 표면만(정직한 비활성 + 인라인 사유 — 죽은 버튼 금지, confirm-or-alarm).
+        assert q["save_job_disabled"] is True and q["save_tpl_disabled"] is True, (
+            "승격 버튼이 활성입니다 — 이 라운드는 표면만이고 실동작은 후속입니다."
+        )
+        assert "복사" in q["promote_note"], f"비활성 승격의 인라인 사유(복사로 남기라)가 없습니다: {q['promote_note']!r}"
+        assert "—" not in q["promote_note"], f"승격 사유에 em-dash 가 있습니다(R-copy 가드): {q['promote_note']!r}"
+        # 소유권 색 — 자동 결속 값(사업명)이 own-auto 로 페인트된다(폼 칩과 한 색 언어, 결정 33).
+        assert q["own_auto"] is True, "자동 결속 값에 소유권 색(own-auto)이 붙지 않았습니다."
+
     def test_job_drift_replaces_mirror_with_blocking_banner(self, selftest_result: dict) -> None:
         # danger(구조 드리프트)는 거울 표와 섞이지 않고 차단 배너 + 행동 링크로 **교체**된다
         # (결정 36·S9). overlay 로 표 위에 얹히는 게 아니라 실제로 표가 사라지고 배너가 선다.
