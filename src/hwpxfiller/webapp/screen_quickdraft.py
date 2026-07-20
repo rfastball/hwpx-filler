@@ -14,21 +14,24 @@ QuickDraftViewModel` 을 소유·위임하는 얇은 어댑터다 — 다른 실
   도달 가능한 빈손 화면이다(템플릿 소스·토큰 폼·데이터는 아직 없다).
 - PR-2: 템플릿 소스(라이브러리·붙여넣기·원문 라이브 편집) + 파이프라인 토큰 폼 + 미리보기
   채움 표지(결정 22·34).
-- **PR-3(이 커밋)**: 데이터 소스 이원(등록 데이터·임의 파일) + 제스처 결속(정확=자동·
-  근사=제안 원클릭) + 행 재겨눔 3분류 고지 + 표현형 3층(결정 30·31·32·34).
-- PR-4: 휘발도 가드(「새 기안」·템플릿 전환) + 복사(사후 경보 승계) + 표지 토글·소유권 색 +
-  레일 문구 + 승격 2동사 표면.
+- PR-3: 데이터 소스 이원(등록 데이터·임의 파일) + 제스처 결속(정확=자동·근사=제안 원클릭)
+  + 행 재겨눔 3분류 고지 + 표현형 3층(결정 30·31·32·34).
+- **PR-4(이 커밋)**: 휘발도 가드(「새 기안」·템플릿 전환 — session_loss 판정 + 세션 노동 재진술) +
+  복사(공유 copy_clipboard 관통 → 사후 경보 승계) + 표지 토글·소유권 색(auto/hand/man) +
+  상태 배지 3상 + 승격 2동사 표면(결정 32·33).
 
 **스코프 경계 — 미구현 명시**: 승격 2동사(「작업으로 저장」·「템플릿으로 저장」, 결정 33)는
-이 라운드에서 표면만 짓고 승격 자체는 후속으로 분리한다. 승격이 매핑 초안을 미확정 착지시켜
-에디터 확정 워크플로가 엄격성을 재부과하는 국경(결정 31)은 그 후속의 계약이다.
+이 라운드에서 **표면만** 짓고(정직한 비활성 + 인라인 사유 — 죽은 버튼 금지, confirm-or-alarm)
+승격 실동작 자체는 후속으로 분리한다. 승격이 매핑 초안을 미확정 착지시켜 에디터 확정
+워크플로가 엄격성을 재부과하는 국경(결정 31)은 그 후속의 계약이다. 남기려면 복사가 유일한
+출구다 — 그래서 복사(PR-4)와 승격 표면은 한 라운드에서 함께 선다.
 """
 from __future__ import annotations
 
 from ..core.format_engine import presets as format_presets
 from ..core.mapping import TYPES
 from ..core.text_registry import TextTemplateRegistry
-from ..core.text_render import render_segments
+from ..core.text_render import RenderReport, render_record, render_segments
 from ..gui.quickdraft_state import QuickDraftViewModel, QuickToken
 from .screens import (
     NO_ROWS_TEXT,
@@ -129,7 +132,8 @@ class QuickDraftController:
         결정 22·33)를 소비한다: 웹은 토큰 정규식을 재구현하지 않는다(파생경계 번역오류 상류
         차단). 토큰 상태 배지도 같은 값 레코드에서 파생해 카드와 한 출처가 되게 한다.
         데이터 절반(겨눔 라벨·행 스테퍼·열 목록·표시형 표)은 경량 슬롯이 소비한다 —
-        필터·다중 선택 존은 N 행 표면의 문법이라 여기 없다. 복사·승격은 PR-4 다.
+        필터·다중 선택 존은 N 행 표면의 문법이라 여기 없다. 복사는 공유 copy_clipboard 관통
+        (render/can_copy), 소유권 색은 토큰 state 를 웹이 그대로 소비(파생 판정 금지).
         """
         vm = self.vm
         record = vm.values_record()
@@ -198,7 +202,8 @@ class QuickDraftController:
 
         구조 액션(템플릿 선택·붙여넣기)은 관측 푸시로 전면 재렌더한다. 타이핑 액션은
         :attr:`_NO_PUSH` 라 푸시 대신 스냅샷을 반환해 JS 가 겨냥 패치하게 한다(위 설명).
-        데이터 결속(PR-3)·휘발도 가드/복사(PR-4)가 액션을 더 얹는다(미배선 금지, dispatch_wiring).
+        휘발도 가드(session_guard)·새 기안(fresh)은 PR-4 가 얹었다. 복사는 dispatch 가 아니라
+        공유 copy_clipboard 브리지 관통이다(render/can_copy — txt 카드와 같은 진입점).
         """
         handler = getattr(self, f"_do_{action}", None)
         if handler is None:  # confirm-or-alarm: 조용한 무시 금지.
@@ -219,12 +224,14 @@ class QuickDraftController:
     def _do_paste_template(self, p: dict) -> None:
         """붙여넣기 모달 확정 — 이름 없는 세션 사본(라이브러리 비저장, 결정 34).
 
-        빈 붙여넣기(공백뿐)는 세션을 비운다 — origin='paste' 로 두면 슬롯은 「붙여넣은 텍스트」를
-        가리키는데 본문·알약은 빈손을 말해 세 표면이 어긋난다(리뷰 확정, confirm-or-alarm 위반).
+        빈 붙여넣기(공백뿐)는 **템플릿만 비우고 데이터 겨눔은 남긴다**(clear_template) — origin=
+        'paste' 로 두면 슬롯은 「붙여넣은 텍스트」를 가리키는데 본문·알약은 빈손을 말해 세 표면이
+        어긋난다(confirm-or-alarm 위반). fresh 로 겨눔까지 버리면 전환 가드가 "데이터는
+        이어집니다"라 한 약속을 어긴다(리뷰 F2) — 그래서 데이터는 남기고 템플릿만 비운다.
         """
         text = p["text"]
         if text.strip() == "":
-            self.vm.fresh()
+            self.vm.clear_template()
         else:
             self.vm.apply_paste(text)
 
@@ -348,6 +355,107 @@ class QuickDraftController:
         }
 
     _do_carry_notice.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
+
+    # ------------------------------------------------ 휘발도 가드·복사(PR-4, 결정 32·33)
+    #
+    # 제스처별 술어·문안(지배 결함류 = 확인 문안 ≠ 실제 집합, 슬라이스 4·5 교훈 + 이 PR 리뷰):
+    # - **fresh**(새 기안 = 통째 폐기): 세션의 모든 노동이 사라지므로 종류별로 **열거**한다
+    #   (데이터 겨눔·원문·사람 값 전부 정확히 인용 — 결정 27 수치 재진술).
+    # - **switch**(다른 템플릿으로 전환): _set_template 이 **동명 토큰의 값을 승계**하고 데이터
+    #   겨눔도 **유지**한다(_retokenize·datasource 불변). 그래서 사람 값을 "사라진다"고 열거하면
+    #   실제 살아남는 것을 거짓으로 말한다(리뷰 F4) — 대신 **규칙만** 말한다: 확정 손실은 원문
+    #   (붙여넣은 원문·라이브러리 원문 수정)뿐이고 값은 "같은 이름이면 이어지고 없으면 사라진다".
+    #   정확 손실 집합은 새 템플릿에 달려 있어 가드 시점에 알 수 없으므로 토큰을 열거하지 않는다.
+    def _do_session_guard(self, p: dict) -> dict:
+        """「새 기안」·템플릿 전환 전 세션 폐기 확인 — **지금** 판정한다(스냅샷 캐시 아님).
+
+        휘발도 사다리(결정 32): 레일 이탈은 무가드로 살지만 세션을 비우는/바꾸는 제스처는
+        재현 불가한 노동을 버린다. 무장 아니면 조용히 통과(빈손·미노동엔 죽은 확인 금지). 판정
+        재료는 링1 :meth:`~hwpxfiller.gui.quickdraft_state.QuickDraftViewModel.session_loss`
+        (토큰 1회 순회), 무장 연역·문안 합성만 컨트롤러다(carry_notice 와 같은 규율).
+        """
+        loss = self.vm.session_loss()
+        if p.get("gesture", "fresh") == "switch":
+            return self._switch_guard(loss)
+        return self._fresh_guard(loss)
+
+    _do_session_guard.is_query = True  # 무변이 질의 — 재렌더 유발 금지
+
+    @staticmethod
+    def _fresh_guard(loss: dict) -> dict:
+        """새 기안(통째 폐기) 가드 — 사라지는 노동을 종류별로 정확히 열거한다.
+
+        빈손이면 버릴 게 없다(origin None). 붙여넣은 원문은 재선택 복원 경로가 없어 그 자체가
+        노동이고(리뷰 F1), 라이브러리 무수정 원문은 재선택으로 되살아나므로 열거하지 않는다.
+        """
+        parts: "list[str]" = []
+        if loss["paste_body"]:
+            parts.append("붙여넣은 템플릿 원문")
+        elif loss["modified"]:
+            parts.append(f"「{loss['template_name']}」 원문 수정" if loss["template_name"] else "원문 수정")
+        if loss["data_label"]:
+            parts.append(f"선택한 데이터 {loss['data_label']}")
+        if loss["manual"]:
+            parts.append(f"직접 입력 {len(loss['manual'])}곳({_names(loss['manual'])})")
+        if loss["edited"]:
+            parts.append(f"직접 고친 값 {len(loss['edited'])}곳({_names(loss['edited'])})")
+        if not parts:  # origin None 이거나 순수 라이브러리 무수정 — 버릴 노동 없음
+            return {"armed": False, "message": ""}
+        return {
+            "armed": True,
+            "message": (
+                "이 세션을 비우면 지금까지 만든 내용이 모두 사라집니다. "
+                f"사라지는 항목: {' · '.join(parts)}. "
+                "빠른 기안은 저장하지 않으니, 남기려면 먼저 복사하세요."
+            ),
+        }
+
+    @staticmethod
+    def _switch_guard(loss: dict) -> dict:
+        """템플릿 전환 가드 — 규칙만 말한다(토큰 열거 금지, 리뷰 F4).
+
+        확정 손실은 원문(붙여넣은 원문·라이브러리 원문 수정)뿐이다. 사람 값은 새 템플릿에
+        같은 이름이 있으면 이어지고 없으면 사라지는데, 어느 쪽인지는 전환 대상에 달려 있어
+        여기서 알 수 없다 — 그래서 "사라진다"고 단정하지 않고 규칙을 재진술한다.
+        """
+        human = loss["manual"] + loss["edited"]
+        lost_body = ""
+        if loss["paste_body"]:
+            lost_body = "붙여넣은 템플릿 원문"
+        elif loss["modified"]:
+            lost_body = f"「{loss['template_name']}」 원문 수정" if loss["template_name"] else "원문 수정"
+        if not (lost_body or human):  # 원문 손실도 사람 값도 없으면 전환은 아무것도 안 버린다
+            return {"armed": False, "message": ""}
+        head = f"다른 템플릿으로 바꾸면 {lost_body}이 사라집니다. " if lost_body else "다른 템플릿으로 바꾸면 "
+        return {
+            "armed": True,
+            "message": (
+                head
+                + "같은 이름의 자리와 선택한 데이터는 새 템플릿에서도 이어집니다. "
+                "다만 새 템플릿에 없는 자리에 직접 넣은 값은 남지 않습니다. 남기려면 먼저 복사하세요."
+            ),
+        }
+
+    def _do_fresh(self, p: dict) -> None:
+        """「새 기안」 — 세션을 빈손으로 되돌린다(결정 32). 가드는 웹이 먼저 묻는다(위)."""
+        self.vm.fresh()
+
+    def render(self) -> "tuple[str, RenderReport]":
+        """빠른 기안 렌더 = 링1 :func:`~hwpxfiller.core.text_render.render_record`.
+
+        클립보드 평문은 세그먼트 이어붙임과 같다(불변식) — **표지는 화면 전용**, 클립보드엔
+        음영이 없다(결정 33). 공유 :meth:`~hwpxfiller.webapp.app.Api.copy_clipboard` 이 이
+        ``(text, report)`` 계약을 소비한다(txt 카드와 같은 진입점 — 손복사 없음).
+        """
+        return render_record(self.vm.template_text, self.vm.values_record())
+
+    def can_copy(self) -> bool:
+        """복사 가능 = 템플릿이 깔려 있음 — 빈손 클립보드 쓰기 차단(리뷰 F3 동형).
+
+        미채움이 있어도 복사는 막지 않는다(완화 조항 — 미리보기에서 빨강으로 보이고, 경보는
+        복사 **후**에 온다: 결정 33 사후 경보). 여기 게이트는 "쓸 게 아예 없음"만 막는다.
+        """
+        return bool(self.vm.template_text.strip())
 
     # ------------------------------------------- 네이티브 보조(브리지가 다이얼로그 담당)
     def load_data_path(self, path: str, *, sheet: "str | None" = None) -> None:
