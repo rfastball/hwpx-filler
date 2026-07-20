@@ -592,10 +592,40 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
         """홈 「＋ 새 기안」 — 세션 원자 초기화(F11, F10 「새 작업」과 대칭 문법).
 
         종전 bare nav 는 직전 기안의 템플릿 선택·붙여넣은 텍스트·데이터·레코드 위치를
-        그대로 남겨 라벨 '새'와 어긋났다. txt 출력은 일회성(복사/저장 즉시 완결)이라
-        버릴 durable 상태가 없어 확인 없이 초기화한다(원장 F11 확정).
+        그대로 남겨 라벨 '새'와 어긋났다.
+
+        **면제 철회(#126)**: 원장 F11 의 무확인 근거는 "txt 출력은 일회성이라 버릴 durable
+        상태가 없다"였는데, 블록 3 전-선언 큐가 신설되면서 거짓이 됐다. 큐의 복사 진행은
+        durable 은 아니어도 **복구 불가**다 — 어디까지 붙여넣었는지는 앱 밖 기억이다. 이제
+        이 전이도 T3 술어(:meth:`_guard_state`)를 지나며, 확인은 제스처를 소유한 표면
+        (``TxtScreen.confirmNewDraftIfArmed``)이 큐 진행을 재진술해 받는다. 결정 32 가 빠른
+        기안에서 같은 F11 전제를 이미 부분 개정했다(수기 폼 신설로 버릴 상태가 생김).
         """
         self._fresh_session()
+
+    def _do_copy_precheck(self, p: dict) -> dict:
+        """복사 전 빈칸 게이트 질의(결정 16 · 부록 A-3-28) — 클립보드로 나갈 카드의 결손 보고.
+
+        게이트를 **복사 앞**에 세우기 위한 질의다: 종전에는 :meth:`can_copy`(작업점 실재)만
+        보고 곧바로 클립보드에 쓴 뒤 결손을 사후 노트로 알렸다. 그러면 미해소 ``{{토큰}}`` 이
+        확인 없이 나가고, 사용자는 온나라 기안작성기에 붙여넣은 **다음에야** 안다.
+
+        판정은 여기서 지금 한다(JS 는 문안만) — 복사와 같은 :meth:`render` 통로를 타므로
+        게이트가 본 집합과 실제 나가는 텍스트가 갈라지지 않는다. 완화 조항(결정 31)은
+        "틀리면 보이는 추측(표현형)"에만 적용되고 미해소 토큰은 **그럴싸한 오류** 쪽이라
+        엄격 유지가 같은 결정의 명문이다.
+        """
+        if not self.can_copy():
+            return {"can_copy": False, "row": None, "missing_fields": [], "empty_fields": []}
+        _text, report = self.render()
+        return {
+            "can_copy": True,
+            "row": self.queue.current,
+            "missing_fields": list(report.missing_fields),
+            "empty_fields": list(report.empty_fields),
+        }
+
+    _do_copy_precheck.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
 
     def _do_set_template_text(self, p: dict) -> None:
         self.vm.set_template_text(p["text"])
@@ -644,8 +674,9 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
         완주(``복사 == 선택``)는 완료 이벤트라 무장 해제 — 선택 성분에도 완주 집합을
         ``settled`` 로 넘겨 "다 복사한 선택"이 수작업으로 재고발되지 않게 한다.
 
-        템플릿 교체·「새 기안」은 가드 대상이 아니다(착수 토의 확정): 전자는 큐를 죽이지 않고
-        후자는 명시 동사 + F11 원자 초기화 계약이 이미 선다.
+        소비처는 **둘**이다: 데이터 재겨눔(원 T3)과 「＋ 새 기안」(#126 — 면제 철회, 근거
+        상세는 :meth:`_do_new_draft`). 템플릿 교체는 여전히 가드 대상이 아니다 — 큐를 죽이지
+        않으므로 잃을 진행이 없다.
         """
         copied, selected = self.queue.copied_count(), self.selection.selected_count()
         complete = self.queue.is_complete() and selected > 0

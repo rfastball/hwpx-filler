@@ -137,6 +137,68 @@ def test_can_copy_gates_on_work_point(tmp_path):
     assert ctrl.can_copy() is False           # 선택 0 = 작업점 없음
 
 
+def test_copy_precheck_reports_gaps_of_the_card_that_will_be_copied(tmp_path):
+    """빈칸 게이트 질의(#125 · 결정 16 · A-3-28) — 복사 **전에** 결손 집합을 확정한다.
+
+    같은 :meth:`render` 통로를 타므로 게이트가 본 집합과 실제 클립보드로 나갈 텍스트가
+    갈라지지 않는다. 작업점이 이동하면 보고 대상도 그 카드로 따라간다(딴 카드의 결손을
+    근거로 확인을 받으면 그 확인은 거짓이다).
+    """
+    ctrl, _ = _controller(tmp_path)  # 템플릿: 제목:{{공고명}} 금액:{{추정가격}}
+    gapped = tmp_path / "gap.csv"
+    gapped.write_text("공고명,추정가격\n전산장비,1000\n사무비품,\n", encoding="utf-8")
+    ctrl.load_data_path(str(gapped))
+    first = ctrl.dispatch("copy_precheck", {})
+    assert first["can_copy"] is True and first["row"] == 0
+    assert first["missing_fields"] == [] and first["empty_fields"] == []  # 0행은 전량 채움
+    ctrl.dispatch("step", {"delta": 1})                    # 작업점 → 1행(추정가격 빈칸)
+    second = ctrl.dispatch("copy_precheck", {})
+    assert second["row"] == 1 and second["empty_fields"] == ["추정가격"]
+    ctrl.dispatch("set_none", {})                          # 작업점 소실
+    assert ctrl.dispatch("copy_precheck", {})["can_copy"] is False
+
+
+def test_copy_precheck_flags_unresolved_tokens_as_missing(tmp_path):
+    """데이터에 없는 토큰은 '항목 없음'으로 선다 — 이게 확인 없이 나가던 그 집합(#125)."""
+    ctrl, _ = _controller(tmp_path)
+    other = tmp_path / "other.csv"
+    other.write_text("공고명\n전산장비\n", encoding="utf-8")  # 추정가격 열 자체가 없음
+    ctrl.load_data_path(str(other))
+    pre = ctrl.dispatch("copy_precheck", {})
+    assert pre["missing_fields"] == ["추정가격"]
+    text, _report = ctrl.render()
+    assert "{{추정가격}}" in text  # 게이트가 막지 않으면 이 원문이 그대로 클립보드로 간다
+
+
+def test_copy_precheck_is_a_query(tmp_path):
+    """게이트 질의는 무변이 — 확인을 받기도 전에 큐가 전진하면 그것이 조용한 파괴다."""
+    ctrl, pushes = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))
+    before = len(pushes)
+    ctrl.dispatch("copy_precheck", {})
+    assert len(pushes) == before                      # 푸시 없음(is_query)
+    assert ctrl.queue.copied_count() == 0             # 큐 진행 불변
+    assert ctrl.snapshot()["card"]["index"] == 0      # 작업점 불변
+
+
+def test_new_draft_guard_arms_on_partial_queue(tmp_path):
+    """#126 면제 철회 — 「＋ 새 기안」이 소비하는 T3 술어가 큐 부분 진행에서 무장한다.
+
+    데이터 교체 가드와 **같은** ``guard_state`` 다(두 파괴 경로가 한 술어를 공유). 완주는
+    완료 이벤트라 무장 해제 — 다 복사한 큐를 새로 시작하는 건 버리는 노동이 없다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))               # 3행 전체 선택
+    assert ctrl.dispatch("guard_state", {})["queue_partial"] is False
+    ctrl.dispatch("toggle_advance", {"value": True})  # 복사 후 다음 미처리로(전진 opt-in)
+    _copy(ctrl)                                       # 1/3 복사 = 부분 진행
+    g = ctrl.dispatch("guard_state", {})
+    assert g["queue_partial"] is True and g["armed"] is True and g["copied_count"] == 1
+    _copy(ctrl)
+    _copy(ctrl)                                       # 완주
+    assert ctrl.dispatch("guard_state", {})["queue_partial"] is False
+
+
 def test_copy_marks_current_and_stays(tmp_path):
     """복사(note_copied) = 작업점을 처리 후미로(멱등), **작업점은 그 카드에 머문다**(결정 16).
 

@@ -865,10 +865,22 @@ _TXT_ZONE_PROBE_JS = r"""
     out.lint_text = document.getElementById('txtCardLint').textContent;
     out.lint_fix = (function(){ var b = document.getElementById('txtLintAction');
       return b ? b.dataset.act : ''; })();
-    // T3 가드 본문 합성기(순수) — 수치 재진술이 종류별로 서는지(결정 27).
-    out.guard_body = window.TxtScreen.guardBody(
-      {armed:true, sel_count:5, in_def:3, extra:2, filter_active:true, filter_parts:2,
-       copied_count:2, queue_partial:true});
+    // T3 가드 본문 합성기(순수) — 수치 재진술이 종류별로 서는지(결정 27). 앞머리는 제스처별로
+    // 갈리고(데이터 교체 / 새 기안, #126) 잃는 것의 열거는 같은 술어를 공유한다.
+    var guardState = {armed:true, sel_count:5, in_def:3, extra:2, filter_active:true,
+                      filter_parts:2, copied_count:2, queue_partial:true};
+    out.guard_body = window.TxtScreen.guardBody(guardState, '다른 데이터를 겨누면');
+    out.guard_body_newdraft = window.TxtScreen.guardBody(guardState, '새 기안을 시작하면');
+    // 「＋ 새 기안」 가드 배선 존재 핀(#126) — 홈이 소비하는 진입점의 삭제 회귀 표식.
+    out.new_draft_guard_wired = typeof window.TxtScreen.confirmNewDraftIfArmed === 'function';
+    // 빈칸 게이트 본문(#125 · 결정 16) — 복사 **전** 확인 모달의 문안 합성. 종류별 수치·열거와
+    // 6개 초과 접기를 되읽는다(모달이 스크롤로 번지면 결론 버튼이 안 보인다).
+    out.copy_gate_body = window.TxtScreen.copyGateBody(
+      {row:2, missing_fields:['납품기한'], empty_fields:['비고']});
+    out.copy_gate_body_many = window.TxtScreen.copyGateBody(
+      {row:0, missing_fields:['a','b','c','d','e','f','g','h'], empty_fields:[]});
+    out.copy_gate_body_empty_only = window.TxtScreen.copyGateBody(
+      {row:0, missing_fields:[], empty_fields:['비고']});
     // 선두 「큐」 열 — 작업점 ▶ 표지(링1 큐 모델 사영, 결정 16). 순번은 큐 순서로 그리는
     // 상태 색인(PR-3) 몫이라 이 표엔 렌더하지 않는다(비단조 오독 차단, PR-2b 리뷰).
     out.lead = (function(){ var d = document.querySelector('#txtTableBody .doc-body');
