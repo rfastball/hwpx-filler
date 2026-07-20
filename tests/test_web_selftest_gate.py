@@ -527,6 +527,22 @@ class TestWebSelftestGate:
         # 퇴화 불변식(결정 5) — 그룹 0개면 헤더 없는 평면.
         assert t["flat_heads"] == 0 and t["flat_cards"] == 1, f"퇴화 평면 위반: {t!r}"
 
+    def test_editor_library_picker_renders_grouped_select(self, selftest_result: dict) -> None:
+        # 에디터 1단계 피커(#108 슬라이스 3) — 라이브러리가 관리 화면과 같은 그룹 구획(선택 전용)
+        # 으로 실 WebView2 에 서는지. 접힌 그룹 행 제외·현 선택 표지·필터 고지·퇴화 평면 되읽기.
+        e = selftest_result["editor_lib"]
+        assert e.get("error") is None, f"에디터 피커 프로브 예외: {e.get('error')!r}"
+        assert e["grp_heads"] == 3, f"그룹 헤더 수가 다릅니다(입찰·계약·그룹없음): {e!r}"
+        assert e["rows_visible"] == 3, f"접힌 그룹(계약) 행이 뷰에서 제외되지 않았습니다: {e!r}"
+        # 선택 전용 — 현 선택은 「선택됨」(버튼 아님), 나머지 가시 행만 「이 템플릿으로」.
+        assert e["current_marked"] == 1, f"현 선택 표지가 다릅니다: {e!r}"
+        assert e["pick_btns"] == 2, f"선택 버튼 수가 가시·미선택 행과 다릅니다: {e!r}"
+        assert e["import_btn"] is True, "「가져오기…」 어포던스가 없습니다."
+        assert e["filter_notice"] is True, "매체 자동 필터 고지가 렌더되지 않았습니다(결정 6)."
+        assert e["caret_collapsed"] == "visible", f"접힌 그룹 화살표가 상시 노출이 아닙니다: {e!r}"
+        # 퇴화 불변식 — 그룹 0개면 헤더 없는 평면.
+        assert e["flat_heads"] == 0 and e["flat_rows"] == 1, f"퇴화 평면 위반: {e!r}"
+
     def test_job_drift_replaces_mirror_with_blocking_banner(self, selftest_result: dict) -> None:
         # danger(구조 드리프트)는 거울 표와 섞이지 않고 차단 배너 + 행동 링크로 **교체**된다
         # (결정 36·S9). overlay 로 표 위에 얹히는 게 아니라 실제로 표가 사라지고 배너가 선다.

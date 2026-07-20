@@ -18,7 +18,24 @@
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from . import settings
+
+
+def rel_key(path: "str | Path", root: "Path | None") -> str:
+    """루트 상대경로(POSIX)를 그룹 식별키로(결정 8). 루트 직속 파일은 곧 파일명, 관용된
+    하위폴더 파일은 ``하위폴더/이름``. 루트 밖(방어)·루트 미지정이면 파일명으로 폴백.
+
+    관리 화면·에디터 1단계 피커가 **같은 키 규칙**으로 같은 그룹 지정을 소비하는 단일 출처
+    (한쪽만 basename, 다른쪽 상대경로면 같은 파일이 두 키로 갈라져 그룹이 어긋난다)."""
+    p = Path(path)
+    if root is not None:
+        try:
+            return p.relative_to(root).as_posix()
+        except ValueError:
+            pass
+    return p.name
 
 
 class TemplateGroupModel:

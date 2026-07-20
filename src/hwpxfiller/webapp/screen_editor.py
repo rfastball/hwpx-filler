@@ -64,6 +64,7 @@ from ..gui.mapping_state import (
 from ..gui.template_manager_state import TemplateManagerViewModel
 from ..naming import make_output_filename
 from .screens import NO_ROWS_TEXT, PushSink, default_pool_registry
+from .template_groups import TemplateGroupModel, rel_key
 
 # 표시형 프리셋은 유형별 고정 → 한 번 계산해 스냅샷에 싣는다(코어 라벨 그대로).
 _FMT_OPTIONS = {t: [{"code": code, "label": label} for label, code in format_presets(t)] for t in TYPES}
@@ -103,6 +104,7 @@ class EditorController:
         *,
         pool_registry: "DatasetPoolRegistry | None" = None,
         template_library: "TemplateManagerViewModel | None" = None,
+        template_groups: "TemplateGroupModel | None" = None,
     ) -> None:
         self.registry = registry
         self._push_sink = push
@@ -110,6 +112,11 @@ class EditorController:
         self.pool_registry = (
             pool_registry if pool_registry is not None else default_pool_registry()
         )
+        # HWPX 그룹 모델(#108 슬라이스 3) — **앱 조립에선 tpl 화면의 hwpx_groups 같은 인스턴스를
+        # 주입**한다. 별도 인스턴스면 두 표면의 접힘·지정 인메모리 캐시가 갈라져(한쪽 토글이
+        # 다른쪽에 반영 안 됨) 1단계 피커가 관리 화면과 다른 구획을 조용히 보인다(단일 실체).
+        # 미주입 시 첫 접근에 표준 hwpx 모델을 지연 생성(라이브러리 VM 지연 생성과 대칭).
+        self._template_groups = template_groups
         # 템플릿 라이브러리(R-info 2부 접합 최소분) — 신규 1단계=라이브러리에서 고르기(생 파일
         # 선택 폐기)·가져오기=복사. **앱 조립에선 tpl 화면의 VM 같은 인스턴스를 주입**(리뷰 F2:
         # 라이브러리=단일 실체 — 폴더 재지정이 두 표면에 함께 반영). 미주입 시 표준 라이브러리를
@@ -180,6 +187,16 @@ class EditorController:
         if self._template_library is None:
             self._template_library = TemplateManagerViewModel(default_templates_dir())
         return self._template_library
+
+    @property
+    def template_groups(self) -> TemplateGroupModel:
+        """HWPX 그룹 모델 — 미주입이면 첫 접근 때 표준 hwpx 모델 지연 생성(라이브러리 VM 대칭).
+
+        에디터가 만드는 매체는 hwpx 뿐이라(마법사=.hwpx 산출) 그룹 축도 hwpx 하나면 족하다 —
+        매체 자동 필터가 곧 단일 매체 소비 표면(결정 3·6)."""
+        if self._template_groups is None:
+            self._template_groups = TemplateGroupModel("hwpx")
+        return self._template_groups
 
     def _refresh_library(self) -> None:
         """라이브러리 재스캔 + 캐시 갱신 — 스캔은 여기 한 곳(이중 스캔 방지, 리뷰 F5)."""
@@ -314,10 +331,12 @@ class EditorController:
             "default_dataset": (
                 self._default_dataset_snapshot() if self.step == 2 else None
             ),
-            # 템플릿 라이브러리(신규 1단계=라이브러리에서 고르기, R-info 2부 접합) — 템플릿
-            # 분류(0)에서만 스캔한다(파일시스템 재스캔이라 매핑 편집의 잦은 push 에 지불 금지;
-            # default_dataset 선례). 그 외 단계는 빈 배열.
-            "library": self._library_snapshot() if self.step == 0 else [],
+            # 템플릿 라이브러리(신규 1단계=라이브러리에서 그룹 구획으로 고르기, #108 슬라이스 3)
+            # — 템플릿 분류(0)에서만 스캔한다(파일시스템 재스캔이라 매핑 편집의 잦은 push 에 지불
+            # 금지; default_dataset 선례). 그 외 단계는 빈 구획.
+            "library": (
+                self._library_snapshot() if self.step == 0 else {"sections": [], "flat": True}
+            ),
             # F26 — 파일명 라이브 예시(표본 1행 고정). 저장 분류(2)에서만 계산.
             "pattern_preview": self._pattern_preview() if self.step == 2 else "",
             "notice": (
@@ -344,20 +363,23 @@ class EditorController:
             snap["is_complete"] = False
         return snap
 
-    def _library_snapshot(self) -> "list[dict]":
-        """템플릿 라이브러리 목록(신규 1단계 피커, R-info 2부) — 이름·상태 배지·현 선택 표지.
+    def _library_snapshot(self) -> "dict":
+        """1단계 피커 = 라이브러리를 **관리 화면과 같은 그룹 구획**으로(선택 전용, #108 슬라이스 3).
 
-        상태 판정·배지는 tpl 화면과 같은 링1(TemplateManagerViewModel)이 소유한다 — 여기는
-        노출만. 오류 행(is_error)도 숨기지 않고 detail(원인)과 함께 싣는다(리뷰 F8 — 뷰가
-        선택 버튼 대신 사유를 보여준다). 스캔은 캐시 경유(리뷰 F5) — 분류 재진입·리셋·
-        가져오기·화이트리스트 확인 때만 실 재스캔한다.
+        매체는 hwpx 하나뿐(마법사=.hwpx 산출 → 매체 자동 필터). 관리 화면 HWPX 구획과 같은
+        그룹 모델·같은 build_sections 로 성형해 두 표면이 한 조직을 보인다(결정 6). 여기는
+        **선택 전용** — 카드 ⋮·이동·삭제·＋그룹지정 없이 상태 배지·선택 버튼만. 상태 판정·
+        배지는 링1(TemplateManagerViewModel) 소유, 오류 행도 숨기지 않고 detail 과 함께 싣는다
+        (리뷰 F8). 스캔은 캐시 경유(리뷰 F5). ``{sections, flat}`` 반환(작업/관리 목록 동형).
         """
         rows = self._library_rows
         if rows is None:
             self._refresh_library()
             rows = self._library_rows or []
-        return [
+        root = self.template_library.library_dir
+        items = [
             {
+                "key": rel_key(r.path, root),
                 "name": r.name,
                 "path": r.path,
                 "badge_label": r.badge_label,
@@ -368,6 +390,9 @@ class EditorController:
             }
             for r in rows
         ]
+        self.template_groups.reconcile([it["key"] for it in items])
+        sections, flat = self.template_groups.build_sections(items, key_of=lambda it: it["key"])
+        return {"sections": sections, "flat": flat}
 
     def _pattern_preview(self) -> str:
         """F26 — 파일명 패턴의 라이브 예시 1행(표본 고정 = 첫 레코드, seq=1).
@@ -508,6 +533,12 @@ class EditorController:
         path = str(p["path"])
         self.assert_library_path(path)
         self.new_job_session(path)
+
+    def _do_toggle_library_group(self, p: dict) -> None:
+        """1단계 피커 그룹 접힘 토글 — **관리 화면과 같은 모델**을 토글해 한 조직을 공유한다
+        (한 표면에서 접으면 다른 표면도 접힌 채로; 설정 영속). 세션 변이가 아니라 뷰 상태라
+        _session_clean 을 건드리지 않는다."""
+        self.template_groups.toggle_collapse(p["group"])
 
     def import_template(self, path: str) -> str:
         """템플릿 **가져오기 = 복사**(R-info 2부: 앱 소유 루트 — 생 파일 참조 금지).
@@ -680,7 +711,9 @@ class EditorController:
         self._push()
 
     # 세션 내용을 바꾸지 않는 액션 — 클린 표지를 끄지 않는다(보기 이동·미리보기·질의).
-    _NONMUTATING_ACTIONS = frozenset({"goto_step", "step_preview", "mapping_reset_stakes"})
+    _NONMUTATING_ACTIONS = frozenset(
+        {"goto_step", "step_preview", "mapping_reset_stakes", "toggle_library_group"}
+    )
 
     # ------------------------------------------------------- 웹→Python 데이터 액션
     def dispatch(self, action: str, payload: dict):
