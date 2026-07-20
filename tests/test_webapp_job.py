@@ -635,8 +635,8 @@ def test_filter_lifecycle_session_scoped(tmp_path):
     ctrl.dispatch("select_job", {"name": ""})  # 작업 전환 = 필터 소멸(세션 휘발, 결정 8)
     assert ctrl.filter is None
     assert ctrl.snapshot()["filter"] == {
-        "active": False, "reapply_available": False, "search": "", "chips": [],
-        "definition": "", "branches": [], "columns": [],
+        "active": False, "reapply_available": False, "reapply_hint": "", "search": "",
+        "chips": [], "definition": "", "branches": [], "columns": [],
     }
 
 
@@ -952,16 +952,54 @@ def test_reapply_full_drop_refused_without_touching_current(tmp_path):
     Path(csv1).write_text("colA,colB\nx,y\n", encoding="utf-8")  # 외부 편집 — 열 전면 교체
     ctrl.load_data_path(csv1)                               # 같은 경로 재겨눔 → 소스 일치
     assert ctrl.snapshot()["filter"]["reapply_available"] is True
-    ctrl.dispatch("filter_search", {"text": "x"})           # 현 세션에 산 정의
     res = ctrl.dispatch("filter_reapply", {})
     assert res["ok"] is False and "하나도 남지 않아" in res["error"]
-    assert ctrl.snapshot()["filter"]["search"] == "x"       # 현 정의 무변이
+    assert ctrl.snapshot()["filter"]["active"] is False     # 부분 설치 없음(현 정의 무변이)
 
 
 def test_reapply_without_slot_is_loud(tmp_path):
     ctrl, _ = _session(tmp_path)
     with pytest.raises(ValueError, match="직전 필터가 없습니다"):
         ctrl.dispatch("filter_reapply", {})
+
+
+def test_reapply_gated_off_while_current_filter_is_live(tmp_path):
+    """게이트 3연언의 '현 필터 빈 상태'(#127) — 조건을 세워 둔 위에는 재적용을 제공하지 않는다.
+
+    제공했다면 클릭 한 번이 현 정의를 **확인 없이 원자 교체**한다(파괴 경로). 표면이 어긋나
+    직접 호출되더라도 백엔드가 사유를 구분해 시끄럽게 거부한다.
+    """
+    ctrl, _ = _session(tmp_path)
+    csv1 = _data_csv(tmp_path)
+    ctrl.dispatch("filter_search", {"text": "전산"})
+    ctrl.load_data_path(_data_csv3(tmp_path))               # 죽음 → 슬롯
+    ctrl.load_data_path(csv1)                               # 같은 소스 복귀 = 슬롯·소스 연언 충족
+    assert ctrl.snapshot()["filter"]["reapply_available"] is True   # 백지 상태에선 제공
+    ctrl.dispatch("filter_col_values", {"column": "bidNtceNm", "values": ["사무비품"]})
+    assert ctrl.snapshot()["filter"]["reapply_available"] is False  # 정의가 서면 회수
+    with pytest.raises(ValueError, match="현재 필터가 설정돼 있어"):
+        ctrl.dispatch("filter_reapply", {})
+    snap = ctrl.snapshot()
+    assert snap["filter"]["active"] is True and snap["table"]["visible_count"] == 1
+    ctrl.dispatch("filter_clear", {})                       # 지우면 복원 어포던스가 돌아온다
+    assert ctrl.snapshot()["filter"]["reapply_available"] is True
+
+
+def test_reapply_hint_carries_definition_to_be_installed(tmp_path):
+    """버튼이 설치할 정의를 업는다(#127 조치 2 — 목업 칩 문법 승계).
+
+    어포던스가 회수되면 문안도 함께 내려간다(죽은 힌트가 남으면 그 자체가 거짓 진술).
+    """
+    ctrl, _ = _session(tmp_path)
+    csv1 = _data_csv(tmp_path)
+    ctrl.dispatch("filter_search", {"text": "전산"})
+    ctrl.load_data_path(_data_csv3(tmp_path))               # 죽음 → 슬롯(정의줄 동반)
+    assert ctrl.snapshot()["filter"]["reapply_hint"] == ""  # 소스 불일치 = 문안도 없음
+    ctrl.load_data_path(csv1)
+    hint = ctrl.snapshot()["filter"]["reapply_hint"]
+    assert "전산" in hint, hint
+    ctrl.dispatch("filter_search", {"text": "사무"})         # 정의가 서면 어포던스·문안 회수
+    assert ctrl.snapshot()["filter"]["reapply_hint"] == ""
 
 
 def test_reapply_source_key_distinguishes_sheets(tmp_path):

@@ -235,9 +235,15 @@
       si.style.display = hasData ? "" : "none";
       // 타이핑 중엔 스냅샷이 입력값을 덮지 않는다(왕복 경합 — 확정은 다음 blur/재진입 렌더).
       if (document.activeElement !== si) si.value = f.search || "";
-      // 직전 필터 재적용(결정 28) — 슬롯 존재 ∧ 소스 일치일 때만 어포던스 노출.
-      $(ids.reapply).style.display =
-        hasData && f.reapply_available ? "" : "none";
+      // 직전 필터 재적용(결정 28) — 3연언(슬롯 ∧ **현 필터 빈 상태** ∧ 소스 일치)일 때만
+      // 어포던스 노출. 판정은 Python 이 하고 여기선 문안만 — 둘째 연언이 빠지면 조건을 쌓아
+      // 둔 필터 위에서 한 번 누르는 것만으로 현 정의가 원자 교체된다(#127).
+      const reapplyBtn = $(ids.reapply);
+      reapplyBtn.style.display = hasData && f.reapply_available ? "" : "none";
+      // 무엇이 설치되는지 업고 있다(목업 칩 문법 승계) — 정의 문안이 없으면 라벨만 남긴다.
+      reapplyBtn.title = f.reapply_hint
+        ? `직전 필터 재적용 — ${f.reapply_hint}`
+        : "직전 필터 재적용";
       const wrap = $(ids.tableWrap);
       const empty = $(ids.tableEmpty);
       if (!hasData) {

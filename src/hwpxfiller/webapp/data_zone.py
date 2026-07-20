@@ -42,8 +42,8 @@ from ..gui.selection_state import SelectionModel
 
 # 데이터 미겨눔 상태의 필터/테이블 빈 골격 — 표면이 분기 없이 그린다.
 EMPTY_FILTER = {
-    "active": False, "reapply_available": False, "search": "", "chips": [],
-    "definition": "", "branches": [], "columns": [],
+    "active": False, "reapply_available": False, "reapply_hint": "", "search": "",
+    "chips": [], "definition": "", "branches": [], "columns": [],
 }
 EMPTY_TABLE = {"columns": [], "rows": [], "visible_count": 0, "hidden_selected": []}
 
@@ -176,18 +176,39 @@ class DataZoneMixin:
         (결정 8 예외) — 컨트롤러 수명(앱 수명)뿐, 디스크에 남지 않는다.
         """
         if self.filter is not None and self.filter.is_active() and self._data_key:
+            try:
+                # 정의줄은 **죽는 시점의 레코드로** 짓는다 — 되살릴 때는 그 데이터가 없을 수도
+                # 있다. 버튼이 무엇을 설치하는지 말하기 위한 문안(#127)이라, 못 지으면 빈
+                # 문자열로 강등한다(어포던스 자체는 살린다 — 문안 부재가 복원을 막을 이유는 없다).
+                summary = self.filter.view(self._records()).describe()
+            except Exception:  # noqa: BLE001
+                summary = ""
             self._last_filter = {
                 "source_key": self._data_key,
                 "state": self.filter.export_state(),
+                "summary": summary,
             }
 
+    def _current_filter_empty(self) -> bool:
+        """현 세션 필터가 백지인가 — 재적용 게이트의 셋째 연언(#127)."""
+        return self.filter is None or not self.filter.is_active()
+
     def _reapply_available(self) -> bool:
-        """재적용 제공 판정 — 슬롯 존재 ∧ 소스 일치(결정 28 게이트: 소스별 맵은 필터
-        영속 뒷문이라 기각 — 교차 재사용은 재타이핑 몇 초)."""
+        """재적용 제공 판정 — **3연언**: 슬롯 존재 ∧ 현 필터 빈 상태 ∧ 소스 일치.
+
+        소스 일치는 결정 28 이 **추가**한 조항이고(소스별 맵은 필터 영속 뒷문이라 기각 —
+        교차 재사용은 재타이핑 몇 초), '현 필터 빈 상태'는 시안 v1.2 확정 지형 ㉣ 의 원
+        게이트다. 둘째 연언을 빠뜨리면(#127) 조건을 쌓아 둔 필터 위에도 버튼이 떠서, 한 번
+        누르면 현 정의가 **확인 없이 통째로 교체**된다(:meth:`_do_filter_reapply` 는 원자
+        교체다). 결정 27 이 필터 정의를 세션 가드 술어에서 뺀 근거가 "재적용이 복원해 준다"
+        였으므로, 그 재적용 자신이 파괴자가 되면 근거째 무너진다 — 복원 전용 어포던스로
+        묶어 두는 것이 정본이자 이 화면의 유일한 필터 안전망이다.
+        """
         return (
             self._last_filter is not None
             and bool(self._data_key)
             and self._last_filter["source_key"] == self._data_key
+            and self._current_filter_empty()
         )
 
     def _do_filter_reapply(self, p: dict) -> dict:
@@ -203,8 +224,15 @@ class DataZoneMixin:
         """
         fm = self._filter_or_raise()
         slot = self._last_filter
+        # 아래 두 거부는 표면 오배선에서만 닿는다(정상 경로는 버튼 미노출). 사유를 가르는
+        # 이유(#127): "슬롯 없음"으로 뭉뚱그리면 현 정의를 지킨 거부가 없는 슬롯처럼 읽힌다.
+        if not self._current_filter_empty():
+            raise ValueError(
+                "현재 필터가 설정돼 있어 직전 필터를 재적용하지 않았습니다 — "
+                "재적용은 필터를 지운 뒤에만 할 수 있습니다."
+            )
         if slot is None or not self._reapply_available():
-            raise ValueError("재적용할 직전 필터가 없습니다.")  # 표면 오배선(버튼 미노출이 정상)
+            raise ValueError("재적용할 직전 필터가 없습니다.")
         state = slot["state"]
         kinds = {c: fm.kind(c) for c in fm.columns}
         probe = FilterModel(fm.columns, kinds)
@@ -349,8 +377,13 @@ class DataZoneMixin:
         ]
         filter_snap = {
             "active": fm.is_active(),
-            # 직전 필터 재적용 어포던스(결정 28) — 슬롯 존재 ∧ 소스 일치일 때만.
+            # 직전 필터 재적용 어포던스(결정 28) — 3연언(슬롯 ∧ 현 필터 빈 상태 ∧ 소스 일치).
             "reapply_available": self._reapply_available(),
+            # 그 버튼이 설치할 정의(#127) — 어포던스가 살아있을 때만 싣는다.
+            "reapply_hint": (
+                self._last_filter.get("summary", "")
+                if self._reapply_available() and self._last_filter else ""
+            ),
             "search": fm.search_text,
             "chips": view.describe_parts(),   # 칩 줄 문안(정의줄 단일 출처, 결정 4)
             "definition": view.describe(),
