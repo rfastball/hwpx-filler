@@ -253,7 +253,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "index": i,
                 "selected": self.selection.is_selected(i),
                 "name": names.get(i, ""),
-                "summary": isum.display_for(rec),  # 표시=빈 세그먼트 생략(매달린 구분자 방지)
+                "summary": isum.display_for(rec),  # 표시=빈 세그먼트를 마커(빈칸)로 채워 위치 보존(생략 아님 — 서로 다른 행이 동일 문자열로 붕괴하는 것 차단)
             }
             for i, rec in enumerate(self.vm.records)
         ]
