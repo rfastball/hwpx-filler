@@ -244,6 +244,25 @@ class TestWebSelftestGate:
             f"선택 유래 수치 병기(S4) 누락: {j['sel_line']!r}"
         )
 
+    def test_job_filename_token_danger_blocks_with_an_exit(self, selftest_result: dict) -> None:
+        # #128 — 파일명 토큰 danger 는 드리프트와 **같은 자격**이라 같은 자리에서 차단 배너 +
+        # 행동 링크로 선다. 종전엔 거울이 「채움」 표를 그려 문서가 건강해 보이고, 재진술은
+        # danger 라 말없이 사라지고, 남는 신호는 하단 회색 캡션 한 줄뿐인 막다른 경보였다.
+        j = selftest_result["job_mirror"]
+        assert j["token_banner"] is True, "미해소 파일명 토큰에 차단 배너가 서지 않았습니다."
+        assert j["token_no_table"] is True, (
+            "차단 중인데 거울 표가 그대로 남아 문서가 건강해 보입니다(전 행 「채움」)."
+        )
+        assert j["token_fix_link"] is True, (
+            "배너에 행동 링크가 없습니다 — 막다른 경보 금지(결정 36)."
+        )
+        assert "납품기한" in j["token_banner_text"], (
+            f"배너가 남는 토큰을 재진술하지 않습니다: {j['token_banner_text']!r}"
+        )
+        assert j["token_restate_hidden"] is True, (
+            "danger 차단 중 재진술 블록이 떠 있습니다 — '생성 불가'와 'N건 생성'의 모순."
+        )
+
     def test_job_filter_panel_hidden_beats_flex(self, selftest_result: dict) -> None:
         # 열 필터 패널 기본 닫힘 — [hidden] 이 .colpanel 의 display:flex 를 실제로 이긴다
         # (부록 B-9 overlay/hidden 충돌 결함류의 자동 눈검증 — 시연에서 실증된 그 결함).
