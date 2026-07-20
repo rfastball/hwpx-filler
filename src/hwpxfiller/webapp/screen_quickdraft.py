@@ -20,6 +20,22 @@ QuickDraftViewModel` 을 소유·위임하는 얇은 어댑터다 — 다른 실
   복사(공유 copy_clipboard 관통 → 사후 경보 승계) + 표지 토글·소유권 색(auto/hand/man) +
   상태 배지 3상 + 승격 2동사 표면(결정 32·33).
 
+**부록 B-7 처분 기록(#134)** — 미구현·미채택은 문안째 박제한다(표기가 없으면 "PR 본문에 적힌
+스코프만 진실"이 되고 다음 라운드가 구멍을 못 본다 = confirm-or-alarm 위반의 문서판):
+
+- **(c) 붙여넣기 진입 모달 유지 — 채택된 결론**. 원문의 라이브 인라인 편집은 착지했지만
+  **진입은 모달로 남긴다**. 근거 둘: ①빈손 상태에는 붙여넣을 대상 textarea 가 화면에 없다
+  (본문이 진입 카드 2장뿐) — 인라인 진입을 만들려면 빈손 전용 편집 표면을 하나 더 지어야
+  하는데, 그것은 원문 탭과 같은 일을 하는 두 번째 표면이다. ②모달 열기가 **세션 교체 제스처의
+  확인 지점**(``sessionGuardOk("switch")``)과 결속돼 있다 — 인라인이면 "어디부터가 교체인가"의
+  경계가 흐려져 저장 안 된 노동을 언제 물을지 정할 수 없다.
+- **(e) 데이터 행 클립보드 붙여넣기 — 미구현(유보)**. 표에서 복사한 행을 붙여 데이터로 삼는
+  경로는 저장소 전체에 없다(클립보드 **읽기** 자체가 없다 — 쓰기만 있다). 데이터 겨눔은
+  등록 데이터·임의 파일 둘뿐이다. 착수하려면 네이티브 클립보드 읽기 + 구분자 추론 +
+  머리행 판정이 필요하고, 그 추론들은 전부 confirm-or-alarm 판단을 새로 요구한다(조용한
+  오추론 금지) — 별도 라운드 몫이라 여기서 있는 척하지 않는다.
+- (g) 대상 글꼴 선언·정렬 린트 합류: **착지**(이 파일 ``target_font``·``lint``·``_aligned``).
+
 **스코프 경계 — 미구현 명시**: 승격 2동사(「작업으로 저장」·「템플릿으로 저장」, 결정 33)는
 이 라운드에서 **표면만** 짓고(정직한 비활성 + 인라인 사유 — 죽은 버튼 금지, confirm-or-alarm)
 승격 실동작 자체는 후속으로 분리한다. 승격이 매핑 초안을 미확정 착지시켜 에디터 확정
@@ -31,7 +47,12 @@ from __future__ import annotations
 from ..core.format_engine import presets as format_presets
 from ..core.mapping import TYPES
 from ..core.text_registry import TextTemplateRegistry
-from ..core.text_render import RenderReport, render_record, render_segments
+from ..core.text_render import (
+    RenderReport,
+    align_segments,
+    render_segments,
+    segments_have_space_run,
+)
 from ..gui.quickdraft_state import QuickDraftViewModel, QuickToken
 from .screens import (
     NO_ROWS_TEXT,
@@ -42,6 +63,7 @@ from .screens import (
     pool_sources_payload,
     source_label,
 )
+from .settings import is_proportional_font, load_draft_target_font
 
 # 표시형 프리셋 목록(유형별) — 에디터 스냅샷과 **같은 표(format_engine)**에서 뽑는다.
 # 빠른 기안의 fmt 코드가 승격 시 매핑 행의 fmt 로 그대로 이관되려면 두 표면이 같은 어휘를
@@ -120,6 +142,11 @@ class QuickDraftController:
         )
         # 템플릿 라이브러리는 txt·템플릿 관리와 공유 레지스트리(변경이 양쪽에 반영).
         self.vm = QuickDraftViewModel(registry)
+        # 전각 정렬 치환(결정 17 린트 처방, #134 (g) 합류) — **세션 렌더 옵션**이라 템플릿
+        # 원본은 건드리지 않는다. 대상 글꼴 선언은 반대로 전역 영속이라 여기 사본을 두지
+        # 않고 매번 설정에서 읽는다(txt 큐에서 바꾼 선언이 이 화면에도 즉시 보여야 한다 —
+        # 사본을 들면 두 화면이 서로 다른 글꼴로 "이대로 복사됩니다"라고 말한다).
+        self._fullwidth = False
 
     # ------------------------------------------------------------- 관측 푸시
     def _push(self) -> None:
@@ -139,6 +166,12 @@ class QuickDraftController:
         record = vm.values_record()
         segments, report = render_segments(vm.template_text, record)
         missing, empty = report.missing_fields, report.empty_fields
+        # 정렬 린트 술어는 **치환 전 원문** 기준(결정 17) — 치환하면 런이 사라지므로, 원문
+        # 기준으로 보아야 "적용됨 · 되돌리기" 상태에서도 무엇을 고쳤는지 정직하게 말한다.
+        space_run = segments_have_space_run(segments)
+        target_font = load_draft_target_font()
+        proportional = is_proportional_font(target_font)
+        segments = self._aligned(segments)
         tokens = [
             {
                 "name": t.name,
@@ -182,6 +215,18 @@ class QuickDraftController:
             "row_idx": vm.row_idx,
             "row_label": vm.row_label(),
             "fmt_options": _FMT_OPTIONS,
+            # 대상 글꼴 선언(결정 17) — **전역 영속**이라 이 화면이 사본을 들지 않고 읽어 쓴다.
+            # 미리보기가 선언을 추종하지 않으면(#134) 사용자가 굴림체로 선언해도 이 화면만
+            # 다른 글꼴로 그려서, 바로 아래 "이대로 복사됩니다"의 정직성을 갉는다.
+            "target_font": target_font,
+            # 선언-조건부 정렬 린트(결정 17) — 표면은 판정하지 않는다(글꼴 이름으로 비례폭을
+            # 재판별하거나 정규식을 다시 걷지 않는다). txt 큐와 같은 술어·같은 처방.
+            "lint": {
+                "proportional": proportional,
+                "space_run": space_run,
+                "applied": self._fullwidth,
+                "active": self._fullwidth or (proportional and space_run),
+            },
             # 교체로 열이 없어져 평문 동결된 자리의 경보(확인이 불가능한 사후 사실이라 알람
             # 쪽). 이미 다시 결속했거나 사람이 손댄 자리는 빼서 낡은 경보가 남지 않게 한다.
             "frozen_notice": _frozen_notice(vm),
@@ -220,6 +265,7 @@ class QuickDraftController:
     def _do_select_template(self, p: dict) -> None:
         """슬롯 드롭다운·빈손 카드에서 라이브러리 템플릿 선택 — 세션 사본 적용(결정 34)."""
         self.vm.apply_library(p["name"])
+        self._fullwidth = False  # 치환은 그 원문에 대한 판단 — 원문이 바뀌면 함께 죽는다(txt 동형)
 
     def _do_paste_template(self, p: dict) -> None:
         """붙여넣기 모달 확정 — 이름 없는 세션 사본(라이브러리 비저장, 결정 34).
@@ -234,11 +280,20 @@ class QuickDraftController:
             self.vm.clear_template()
         else:
             self.vm.apply_paste(text)
+        self._fullwidth = False  # 새 원문에 옛 치환 결정이 승계되지 않는다
 
     def _do_edit_source(self, p: dict) -> dict:
         """원문 편집 탭 라이브 편집 — 타이핑이 토큰 폼을 즉시 재구성((수정됨) 강등, 결정 34).
 
         _NO_PUSH: 반환 스냅샷으로 JS 가 폼 패인만 재구성하고 포커스된 원문 textarea 는 안 만진다.
+
+        **전각 치환(``_fullwidth``)을 여기서 리셋하지 않는다** — 템플릿 선택·붙여넣기와 다른
+        판단이다(리뷰 F3 의 지적에 대한 결론). 저 둘은 원문을 통째로 갈아치우는 한 번의 사건이라
+        옛 판단을 승계하면 조용한 이월이 되지만, 이 경로는 **타건마다** 불린다: 리셋하면 사용자가
+        치환을 켠 뒤 원문에 한 글자만 쳐도 치환이 소리 없이 꺼져, "적용됨" 상태가 손가락 밑에서
+        사라진다. 이월이 조용하지도 않다 — ``lint.active`` 는 ``applied`` 가 참인 동안 계속 참이라
+        「전각 공백으로 치환했습니다 · 되돌리기」 줄이 편집 내내 서 있고, 미리보기와 클립보드가
+        :meth:`_aligned` 한 통로를 지나므로 화면이 곧 결과다(보이는 이월은 조용한 이월이 아니다).
         """
         self.vm.edit_source(p["text"])
         return self.snapshot()
@@ -343,15 +398,29 @@ class QuickDraftController:
                 f"직접 고친 값 {len(edited)}개({_names(edited)})는 {where}. "
                 "확인하고 계속하세요."
             )
-        notice = ""
+        parts = []
         if manual:
-            notice = f"직접 입력한 값 {len(manual)}개({_names(manual)})는 데이터와 무관하게 그대로 남습니다."
+            parts.append(
+                f"직접 입력한 값 {len(manual)}개({_names(manual)})는 데이터와 무관하게 그대로 남습니다."
+            )
+        # 해제만의 고지(#134): clear_data 가 결속 자리를 평문으로 동결해 소유권이 「자동」에서
+        # 「직접 입력」으로 통째 넘어간다. 값이 눈에 남으니 조용한 소실은 아니지만, 전이가
+        # 무언이면 사용자는 화면의 값이 여전히 데이터에서 온다고 믿는다 — 교체·행 이동에선
+        # 같은 자리가 조용히 재생성되므로 이 문장을 세우지 않는다(제스처별 정확한 술어).
+        if p.get("gesture") == "clear" and carry["bound"]:
+            bound = carry["bound"]
+            parts.append(
+                f"데이터에서 오던 값 {len(bound)}개({_names(bound)})는 지금 보이는 값으로 굳고 "
+                "표지가 「직접 입력」으로 바뀝니다."
+            )
+        notice = " ".join(parts)
         return {
             "armed": bool(edited),
             "message": message,
             "notice": notice,
             "edited": edited,
             "manual": manual,
+            "bound": carry["bound"],
         }
 
     _do_carry_notice.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
@@ -439,15 +508,31 @@ class QuickDraftController:
     def _do_fresh(self, p: dict) -> None:
         """「새 기안」 — 세션을 빈손으로 되돌린다(결정 32). 가드는 웹이 먼저 묻는다(위)."""
         self.vm.fresh()
+        self._fullwidth = False  # 세션 렌더 옵션은 세션과 함께 죽는다
+
+    def _do_set_fullwidth(self, p: dict) -> None:
+        """전각 정렬 치환 적용/해제(결정 17 린트 처방, #134 (g)) — 세션 렌더 옵션.
+
+        템플릿 원본은 건드리지 않는다(이름 있는 라이브러리 사본이 조용히 강등되지 않게).
+        미리보기와 클립보드가 :meth:`_aligned` 한 통로를 지나므로 되읽기가 곧 검증이다.
+        """
+        self._fullwidth = bool(p["value"])
 
     def render(self) -> "tuple[str, RenderReport]":
-        """빠른 기안 렌더 = 링1 :func:`~hwpxfiller.core.text_render.render_record`.
+        """빠른 기안 렌더 — 미리보기와 **같은 세그먼트 통로**로 클립보드 평문을 만든다.
 
-        클립보드 평문은 세그먼트 이어붙임과 같다(불변식) — **표지는 화면 전용**, 클립보드엔
-        음영이 없다(결정 33). 공유 :meth:`~hwpxfiller.webapp.app.Api.copy_clipboard` 이 이
-        ``(text, report)`` 계약을 소비한다(txt 카드와 같은 진입점 — 손복사 없음).
+        표지는 화면 전용이라 클립보드엔 음영이 없다(결정 33). 종전엔 ``render_record`` 를
+        따로 불렀는데, 정렬 치환이 합류하면서(#134 부록 B-7 (g)) 그러면 치환이 미리보기에만
+        걸려 "보이는 것과 복사되는 것"이 갈라진다 — txt 카드와 같은 처방으로 세그먼트 경로
+        하나에 묶어 그 어긋남을 구조적으로 없앤다. 공유
+        :meth:`~hwpxfiller.webapp.app.Api.copy_clipboard` 이 ``(text, report)`` 계약을 소비한다.
         """
-        return render_record(self.vm.template_text, self.vm.values_record())
+        segments, report = render_segments(self.vm.template_text, self.vm.values_record())
+        return "".join(s.text for s in self._aligned(segments)), report
+
+    def _aligned(self, segments: list) -> list:
+        """전각 치환 적용(세션 옵션이 켜졌을 때만) — 미리보기·클립보드 공용 통로(txt 동형)."""
+        return align_segments(segments) if self._fullwidth else segments
 
     def can_copy(self) -> bool:
         """복사 가능 = 템플릿이 깔려 있음 — 빈손 클립보드 쓰기 차단(리뷰 F3 동형).
