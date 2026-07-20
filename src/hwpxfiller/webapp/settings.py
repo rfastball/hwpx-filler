@@ -14,10 +14,18 @@ import datetime
 import json
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 
 from hwpxcore.atomic import write_text_atomic
+
+# 설정 RMW 직렬화 잠금(#136 리뷰 F3) — 원자 교체는 개별 쓰기만 보호하고 판독→변이→쓰기 구간은
+# 보호하지 않는다. pywebview 호출은 서로 다른 스레드에서 동시 진입하므로, 두 스레드가 같은
+# 설정을 읽은 뒤 각각 hwpx·txt 그룹을 저장하면 마지막 교체가 먼저 저장분을 통째로 지운다(중첩
+# 키 '다른 매체 보존' 계약 붕괴). 프로세스 내 단일 잠금으로 재시도 포함 RMW 전체를 직렬화한다
+# (앱은 홈당 단일 인스턴스라 프로세스 간 경합은 없다 — 스레드 간만 막으면 족하다).
+_MUTATE_LOCK = threading.Lock()
 
 VALID_THEMES = ("system", "light", "dark")
 
@@ -130,16 +138,18 @@ def _mutate(mutator) -> None:
     alert 로 승격되는 비대칭이 된다(#75 리뷰4 #4). 재시도마다 재판독 = 손상·갱신된 다른 키 보존."""
     path = _settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    for attempt in range(_REPLACE_RETRIES):
-        try:
-            data = _read_for_update(path)
-            mutator(data)
-            write_text_atomic(path, json.dumps(data, ensure_ascii=False, indent=2))
-            return
-        except PermissionError:
-            if attempt == _REPLACE_RETRIES - 1:
-                raise
-            time.sleep(0.05 * (attempt + 1))
+    # 판독→변이→쓰기 전체를 잠금 안에서(재시도 포함) — 동시 저장의 lost-update 차단(F3).
+    with _MUTATE_LOCK:
+        for attempt in range(_REPLACE_RETRIES):
+            try:
+                data = _read_for_update(path)
+                mutator(data)
+                write_text_atomic(path, json.dumps(data, ensure_ascii=False, indent=2))
+                return
+            except PermissionError:
+                if attempt == _REPLACE_RETRIES - 1:
+                    raise
+                time.sleep(0.05 * (attempt + 1))
 
 
 def _save_key(key: str, value) -> None:
@@ -253,12 +263,7 @@ def save_template_group_map(media: str, mapping: "dict[str, str]") -> None:
 
     비유효 인자(비dict·비문자열 키/값)는 조용히 무시하지 않고 ``ValueError`` (confirm-or-alarm)."""
     _check_media(media)
-    if not isinstance(mapping, dict) or any(
-        not isinstance(k, str) or not isinstance(v, str) for k, v in mapping.items()
-    ):
-        raise ValueError("템플릿 그룹 지정은 {문자열: 문자열} 이어야 합니다")
-    cleaned = {k: v for k, v in mapping.items() if v}  # 빈 그룹명 = 미지정
-    _save_nested("template_groups", media, cleaned)
+    _save_nested("template_groups", media, _clean_group_map(mapping))
 
 
 def load_template_collapsed_groups(media: str) -> "list[str]":
@@ -281,6 +286,44 @@ def save_template_collapsed_groups(media: str, groups: "list[str]") -> None:
 
     비유효 인자는 조용히 무시하지 않고 ``ValueError`` (job 접힘과 동형)."""
     _check_media(media)
+    _save_nested("template_collapsed_groups", media, _norm_collapsed(groups))
+
+
+def _clean_group_map(mapping: "dict[str, str]") -> "dict[str, str]":
+    if not isinstance(mapping, dict) or any(
+        not isinstance(k, str) or not isinstance(v, str) for k, v in mapping.items()
+    ):
+        raise ValueError("템플릿 그룹 지정은 {문자열: 문자열} 이어야 합니다")
+    return {k: v for k, v in mapping.items() if v}  # 빈 그룹명 = 미지정
+
+
+def _norm_collapsed(groups: "list[str]") -> "list[str]":
     if not isinstance(groups, list) or any(not isinstance(g, str) for g in groups):
         raise ValueError("접힌 그룹 목록은 문자열 리스트여야 합니다")
-    _save_nested("template_collapsed_groups", media, sorted(set(groups)))
+    return sorted(set(groups))
+
+
+def save_template_group_state(
+    media: str, mapping: "dict[str, str]", collapsed: "list[str]"
+) -> None:
+    """매체의 그룹 지정 **+** 접힘을 **한 번의 원자 변이**로 함께 저장(#136 리뷰 F5).
+
+    지정과 접힘을 두 번의 별도 저장으로 쓰면 앞은 성공하고 뒤가 실패해 반쪽 상태(개명된
+    멤버 + 옛 이름 접힘)가 디스크에 남을 수 있다. 그룹 모델이 지정+접힘의 단일 소유자이므로
+    두 값을 하나의 ``_mutate`` 안에서 함께 기록한다(다른 매체 칸은 보존). 비유효 인자는 loud."""
+    _check_media(media)
+    cleaned = _clean_group_map(mapping)
+    norm = _norm_collapsed(collapsed)
+
+    def mutate(data: dict) -> None:
+        for top_key, value in (
+            ("template_groups", cleaned),
+            ("template_collapsed_groups", norm),
+        ):
+            bucket = data.get(top_key)
+            if not isinstance(bucket, dict):
+                bucket = {}
+            bucket[media] = value
+            data[top_key] = bucket
+
+    _mutate(mutate)

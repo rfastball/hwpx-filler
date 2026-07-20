@@ -64,11 +64,12 @@ class TemplateGroupModel:
     def set_group(self, key: str, group: str) -> None:
         """그룹 지정/해제 — 소속이 곧 존재(빈 그룹명은 스토어에서 부재, 「그룹 없음」과 동치)."""
         group = group.strip()
+        new = dict(self._assign)
         if group:
-            self._assign[key] = group
+            new[key] = group
         else:
-            self._assign.pop(key, None)
-        self._save_assign()
+            new.pop(key, None)
+        self._persist(new, self._collapsed)
 
     def existing_groups(self, keys: "list[str] | None" = None) -> "list[str]":
         """소속이 있는(=live 멤버가 있는) 그룹 이름들, 이름순 — 이동 다이얼로그 후보.
@@ -97,18 +98,19 @@ class TemplateGroupModel:
         if old == new:
             return sum(1 for g in self._assign.values() if g == old)
         new_preexisting = any(g == new for g in self._assign.values())
+        new_assign = dict(self._assign)
         count = 0
-        for key, g in list(self._assign.items()):
+        for key, g in self._assign.items():
             if g == old:
-                self._assign[key] = new
+                new_assign[key] = new
                 count += 1
-        if count:
-            self._save_assign()
-        if old in self._collapsed:
-            self._collapsed.discard(old)
+        new_collapsed = set(self._collapsed)
+        if old in new_collapsed:
+            new_collapsed.discard(old)
             if not new_preexisting:
-                self._collapsed.add(new)  # 순수 개명 = 같은 그룹, 접힘 유지
-            self._save_collapsed()
+                new_collapsed.add(new)  # 순수 개명 = 같은 그룹, 접힘 유지
+        # 지정·접힘을 한 원자 저장으로(F5) — 반쪽 상태(개명 멤버 + 옛 접힘) 방지.
+        self._persist(new_assign, new_collapsed)
         return count
 
     def disband_group(self, old: str) -> int:
@@ -118,16 +120,11 @@ class TemplateGroupModel:
             # ""(그룹 없음)은 그룹이 아니라 부재 — 일괄 대상으로 받으면 무그룹 전원이 조용히
             # 움직인다(호출 버그의 파급 상한을 loud 로 자른다; JobRegistry 동형).
             raise ValueError("대상 그룹 이름이 비어 있습니다")
-        count = 0
-        for key, g in list(self._assign.items()):
-            if g == old:
-                del self._assign[key]
-                count += 1
-        if count:
-            self._save_assign()
-        if old in self._collapsed:
-            self._collapsed.discard(old)
-            self._save_collapsed()
+        new_assign = {k: g for k, g in self._assign.items() if g != old}
+        count = len(self._assign) - len(new_assign)
+        new_collapsed = set(self._collapsed)
+        new_collapsed.discard(old)
+        self._persist(new_assign, new_collapsed)  # 지정·접힘 원자 저장(F5)
         return count
 
     def reconcile(self, live_keys: "list[str]") -> None:
@@ -137,11 +134,9 @@ class TemplateGroupModel:
         이 정리는 설정 파일이 삭제된 파일의 지정으로 무한히 부풀지 않게 하는 위생일 뿐이다.
         루트 전수 스캔의 부재 = 진짜 삭제(로컬 디렉터리)라 일시 부재 오판 위험은 무시할 수준."""
         live = set(live_keys)
-        ghosts = [k for k in self._assign if k not in live]
-        if ghosts:
-            for k in ghosts:
-                del self._assign[k]
-            self._save_assign()
+        new_assign = {k: g for k, g in self._assign.items() if k in live}
+        if len(new_assign) != len(self._assign):  # 유령 있었음 → 변경 시에만 저장
+            self._persist(new_assign, self._collapsed)
 
     # -------------------------------------------------------------- 접힘
     def is_collapsed(self, group: str) -> bool:
@@ -149,11 +144,9 @@ class TemplateGroupModel:
 
     def toggle_collapse(self, group: str) -> None:
         """그룹 접힘/펼침 토글 — 마지막 상태 영속(결정 6-①). ``""``=「그룹 없음」 구획."""
-        if group in self._collapsed:
-            self._collapsed.discard(group)
-        else:
-            self._collapsed.add(group)
-        self._save_collapsed()
+        new_collapsed = set(self._collapsed)
+        new_collapsed.symmetric_difference_update({group})
+        self._persist(self._assign, new_collapsed)
 
     # ---------------------------------------------------------- 구획 뷰
     def build_sections(self, items: "list", key_of) -> "tuple[list[dict], bool]":
@@ -183,10 +176,15 @@ class TemplateGroupModel:
         return sections, flat
 
     # ----------------------------------------------------------- 영속
-    def _save_assign(self) -> None:
-        self._settings.save_template_group_map(self.media, self._assign)
+    def _persist(self, new_assign: "dict[str, str]", new_collapsed: "set[str]") -> None:
+        """지정+접힘을 원자 저장한 **뒤에만** 라이브 상태를 교체한다(#136 리뷰 F4·F5).
 
-    def _save_collapsed(self) -> None:
-        self._settings.save_template_collapsed_groups(
-            self.media, sorted(self._collapsed)
+        F4(영속-후-교체): 저장이 PermissionError 로 최종 실패하면 ``self._assign``/
+        ``self._collapsed`` 는 이전 값 그대로 남아 ``group_of`` 가 실패한 변경을 반환하거나
+        다음 저장이 실패분을 뒤늦게 영속하는 일이 없다. F5(원자성): 지정·접힘을 한 번의
+        변이로 함께 써 반쪽 상태를 막는다. 저장이 던지면 인메모리 미변경(호출측이 재진술)."""
+        self._settings.save_template_group_state(
+            self.media, new_assign, sorted(new_collapsed)
         )
+        self._assign = new_assign
+        self._collapsed = set(new_collapsed)
