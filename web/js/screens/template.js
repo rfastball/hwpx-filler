@@ -92,13 +92,14 @@
   }
 
   async function makeJob(path) {
-    // 새 템플릿 진입 = 새 작업 세션 → 에디터에 미저장 세션이 있으면 조용히 버리지 않고 확인(#25).
+    // 새 템플릿 진입 = 새 작업 세션 → 미저장 편집(정의) 세션은 조용히 버리지 않고 확인(#25).
     if (await Bridge.editorHasUnsavedWork() && !(await Modal.confirm({ body:
-      "작업 에디터에 저장하지 않은 작업 세션이 있습니다.\n" +
+      "저장하지 않은 편집(정의) 세션이 있습니다.\n" +
       "새 템플릿으로 시작하면 이전의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?" }))) return;
     const r = await Bridge.loadTemplateIntoEditor(path);
     if (typeof r === "string" && r.startsWith("ERROR:")) { window.alert(r); return; }
-    window.Nav.go("editor");   // 셸 라우터 단일 경로(P3) — navbtn .click() 합성 폐기
+    // 에디터 흡수(결정 39·41) — 착지 = 「작업」 패널 편집 모드(단일 착지 EditorEntry.land).
+    EditorEntry.land();
   }
 
   function onHwpxClick(e) {

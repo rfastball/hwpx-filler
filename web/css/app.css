@@ -66,7 +66,7 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
   padding:var(--sp-6) var(--sp-8);color:var(--a-ink);font:inherit;font-size:var(--fs-body);width:100%}
 .field.ro{background:var(--n-surface-alt);color:var(--n-ink-soft)}
 .lbl{font-size:var(--fs-body);color:var(--n-header-ink);white-space:nowrap}
-.lbl-fixed{width:76px}                /* 폼 라벨 열 고정폭(에디터 4단계) — 구조 치수 */
+.lbl-fixed{width:76px}                /* 폼 라벨 열 고정폭(에디터 저장 단계) — 구조 치수 */
 
 /* ---- 배치 유틸(R-css 전수조사) — 인라인 style 리터럴 대체 ---- */
 .spacer{flex:1}                       /* flex 스페이서(<span style="flex:1"> 대체) */
@@ -148,6 +148,10 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
   box-shadow:inset 0 -2px 0 var(--a-primary)}
 .wstep-tab[aria-current="true"] .k{background:var(--a-primary);color:var(--a-on-accent)}
 .wstep-tab.done .k{background:var(--a-ok);color:var(--a-on-accent)}
+/* 편집 모드(결정 41) — 같은 3분류를 탭 버튼으로(자유 이동). 단계 룩 재사용 + 버튼 리셋. */
+.wstep-tab.as-tab{border:0;background:none;font:inherit;font-size:var(--fs-body);cursor:pointer}
+.wstep-tab.as-tab:hover{color:var(--a-ink)}
+.wstep-tab.as-tab:focus-visible{outline:2px solid var(--a-primary);outline-offset:-2px}
 .wbody{flex:1;min-height:0;overflow:auto;padding:var(--sp-4) var(--sp-2)}
 .wfoot{display:flex;align-items:center;gap:var(--sp-10);margin-top:var(--sp-12);padding-top:var(--sp-12);
   border-top:1px solid var(--a-border)}
@@ -233,6 +237,20 @@ tr.r-schemaonly td{background:var(--a-card)}
 .hchip.ign{color:var(--a-muted);border-style:dashed;cursor:default}
 .hidden-hdrs{margin-top:var(--sp-8);font-size:var(--fs-body)}
 .hidden-hdrs>summary{cursor:pointer;color:var(--a-muted)}
+
+/* 데이터 관문(R-flow 슬라이스 5 — 매핑 단계의 머리, 3단계 접기) */
+.row.gateway{margin-bottom:var(--sp-12);flex-wrap:wrap}
+.filechip{display:inline-flex;align-items:center;gap:var(--sp-8);border:1px solid var(--a-border);
+  background:var(--n-surface-alt);border-radius:var(--rad-control);padding:var(--sp-4) var(--sp-10);font-size:var(--fs-body)}
+.filechip b{font-weight:600}
+.filechip .sheet{color:var(--a-muted);font-size:var(--fs-caption)}
+.btn.linklike{border:0;background:none;color:var(--a-muted);text-decoration:underline;
+  text-underline-offset:2px;padding:var(--sp-2) var(--sp-4);font-size:var(--fs-caption)}
+.btn.linklike:hover{color:var(--a-ink)}
+
+/* 편집 모드 호스트(에디터 흡수, 결정 39~41) — 패널 안에서 마법사/탭 컨테이너가 세로로 선다.
+   .wsteps/.wbody/.wfoot 은 화면 시절 규칙 그대로 재사용(옮긴 것은 거처뿐). */
+.job-edit-host{flex:1;min-height:0;display:flex;flex-direction:column}
 
 .run-row{display:flex;align-items:center;gap:var(--sp-8);margin-top:var(--sp-12)}
 .run-row .field{flex:1;min-width:0}
