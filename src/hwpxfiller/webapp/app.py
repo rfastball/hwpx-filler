@@ -648,6 +648,60 @@ _JOB_EDITMODE_PROBE_JS = r"""
 })()
 """
 
+# 매핑 분류 칩-라이브(블록 2 결정 12·13, 슬라이스 5 PR-3) — 합성 매핑 스냅샷을 __push 로 실
+# render() 에 흘려 (a) 사용할 헤더가 **즉시 토글 칩**(체크박스 스테이징 소거)으로, (b) 미사용
+# 구역이 펼쳐지고(ignored_expanded), (c) 소유권 태그 4종(확정·수동·제안·후보 없음)이,
+# (d) touched 행에 '자동 제안으로 되돌리기'(↩)가 실 WebView2 에서 그려지는지 되읽는다.
+# 정의 surface 는 흡수(결정 39)로 「작업」 패널 편집 호스트에 산다 — 루트도 #jobEditHost.
+_EDITOR_CHIP_PROBE_JS = r"""
+(function () {
+  var out = {};
+  try {
+    var row = function (i, f, src, conf, touch, hascontent) {
+      return {index:i, template_field:f, inferred_type:"text", context:"", source:src,
+        type:"text", const:"", fmt:"", confirmed:conf, touched:touch, has_content:hascontent,
+        suggestion_score:src?1:0, preview:src?"값":"", preview_empty:false, preview_error:false,
+        row_state: conf?"confirmed":(hascontent?"unconfirmed":"unmatched")};
+    };
+    var snap = {
+      step:1, notice:null, reachable:[true,false],
+      template_path:"C:/t/공고서.hwpx", template_name:"공고서.hwpx", field_count:4,
+      schema_summary:"", fields:[], raw_block:"", gate:null, gate_error:false,
+      data_path:"C:/d/대장.xlsx", data_name:"대장.xlsx", data_sheet:"물품", record_count:3,
+      source_fields:["품명","세부품명","수량","비고"],
+      active_source_fields:["품명","수량","비고"], ignored_source_fields:["세부품명"],
+      active_count:3, ignored_count:1, ignored_expanded:true,
+      sample_rows:[["A","a","3","-"],["B","b","6","x"],["C","c","1","-"]],
+      type_options:["text","date","amount","const"],
+      fmt_options:{text:[],date:[],amount:[],const:[]},
+      name:"", pattern:"x", has_unsaved_work:true, editing_origin:"", dataset_name:"대장",
+      provenance:null, default_dataset:null,
+      rows:[row(0,"품명","품명",true,true,true),     // 확정
+            row(1,"수량","수량",false,true,true),     // 수동(touched 미확정)
+            row(2,"규격","비고",false,false,true),    // 제안(시스템 소유)
+            row(3,"담당자","",false,false,false)],    // 후보 없음
+      counts:{filled:3,empty:0,unmapped:1}, preview_empties:[], preview_index:1, preview_count:3,
+      is_complete:false, schema_only:false
+    };
+    window.Nav.go('job');
+    window.JobScreen.showEditMode();
+    window.__push('editor', snap);
+    var root = document.getElementById('jobEditHost');
+    out.active_chips = root.querySelectorAll('.hchip.on[data-act="toggle-header"]').length;
+    out.has_checkbox_staging = !!root.querySelector('.hbx');  // 스테이징 소거 → false 여야
+    out.ignored_chip = !!root.querySelector('.hchip.ign[data-act="toggle-header"]');
+    out.ignored_fold_open = !!root.querySelector('details.hidden-hdrs[open]');
+    out.use_none_btn = !!root.querySelector('[data-act="use-none"]');
+    out.tags = Array.from(root.querySelectorAll('table.map .tag')).map(function (t) {
+      return t.textContent.trim();
+    });
+    out.auto_revert_option = !!root.querySelector('table.map [data-act="revert-source"]');
+    out.error = null;
+  } catch (e) { out.error = String((e && e.message) || e); }
+  return out;
+})()
+"""
+
 
 # ------------------------------------------------------------------ 자가검증(Q3)
 def _finish_selftest(window: "object", result: dict) -> None:
@@ -756,6 +810,8 @@ def _selftest_drive(window: "object") -> None:
         # 「작업」 거울 + 재진술 블록(슬라이스 2) — 합성 스냅샷으로 실 render() 구동 후 DOM 되읽기.
         result["job_mirror"] = window.evaluate_js(_JOB_MIRROR_PROBE_JS)  # type: ignore[attr-defined]
         result["job_editmode"] = window.evaluate_js(_JOB_EDITMODE_PROBE_JS)  # type: ignore[attr-defined]
+        # 매핑 칩-라이브(슬라이스 5 PR-3) — 합성 매핑 스냅샷으로 실 render() 구동 후 칩·태그 되읽기.
+        result["editor_chip"] = window.evaluate_js(_EDITOR_CHIP_PROBE_JS)  # type: ignore[attr-defined]
         # 다크모드 영속·무깜빡임(콜드부트 되읽기, #74) — 부팅 시 loaded 핸들러가 저장 테마
         # (settings.json, 오리진 비의존)를 show 전에 data-theme 로 주입했는지. 저장값이 없으면
         # data_theme=null(=system). 앞선 쓰기 프로세스가 남긴 값이 여기서 보이면 Python 설정

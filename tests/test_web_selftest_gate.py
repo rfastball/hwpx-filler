@@ -287,6 +287,23 @@ class TestWebSelftestGate:
             "편집(탭)의 비저장 탭에서 푸터가 숨지 않았습니다 — 고아 경계선/죽은 내비 잔존."
         )
 
+    def test_editor_chip_live_renders_ownership_and_toggle_chips(self, selftest_result: dict) -> None:
+        # 매핑 분류 칩-라이브(블록 2 결정 12·13, 슬라이스 5 PR-3) — 합성 매핑 스냅샷을 실
+        # render() 에 흘려 사용할 헤더가 즉시 토글 칩(체크박스 스테이징 소거)으로, 미사용
+        # 구역이 펼쳐지고, 소유권 태그 4종과 touched 행 ↩(자동 제안 복귀)가 흡수된 편집
+        # 호스트(#jobEditHost) 실 WebView2 에 그려지는지 되읽는다(백엔드는 test_mapping_state).
+        e = selftest_result["editor_chip"]
+        assert e.get("error") is None, f"칩-라이브 프로브 예외: {e.get('error')!r}"
+        assert e["active_chips"] == 3, f"활성 칩(즉시 토글)이 3개가 아닙니다: {e!r}"
+        assert e["has_checkbox_staging"] is False, "체크박스 스테이징이 남아 있습니다 — 결정 13 소거 위반."
+        assert e["ignored_chip"] is True, "미사용 칩(토글형)이 없습니다."
+        assert e["ignored_fold_open"] is True, "ignored_expanded 인데 미사용 구역이 펼쳐지지 않았습니다(결정 13)."
+        assert e["use_none_btn"] is True, "'전체 미사용' 버튼이 없습니다(결정 13 대칭쌍)."
+        tags = e["tags"]
+        for want in ("확정", "수동", "제안", "후보 없음"):
+            assert want in tags, f"소유권 태그 '{want}' 미렌더(칩-라이브 결정 12): {tags!r}"
+        assert e["auto_revert_option"] is True, "touched 행에 '자동 제안으로 되돌리기'(↩) 버튼이 없습니다(리뷰 R5)."
+
     def test_job_drift_replaces_mirror_with_blocking_banner(self, selftest_result: dict) -> None:
         # danger(구조 드리프트)는 거울 표와 섞이지 않고 차단 배너 + 행동 링크로 **교체**된다
         # (결정 36·S9). overlay 로 표 위에 얹히는 게 아니라 실제로 표가 사라지고 배너가 선다.
