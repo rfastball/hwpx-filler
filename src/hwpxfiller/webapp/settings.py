@@ -28,6 +28,15 @@ VALID_THEMES = ("system", "light", "dark")
 # 비례폭 선언에서만 연속 공백 정렬 경보(한글·전각은 전 글꼴 균일폭이라 견고).
 VALID_DRAFT_FONTS = ("gulimche", "dotumche", "malgun")
 
+# 비례폭 선언 — 정렬 린트(결정 17)가 이 선언에서만 발화한다. 열거형이 3종뿐이라 표 대신
+# 튜플 하나로 족하고, 글꼴 성질의 단일 출처가 되어 표면·컨트롤러가 이름을 다시 판별하지 않는다.
+PROPORTIONAL_DRAFT_FONTS = ("malgun",)
+
+
+def is_proportional_font(font: str) -> bool:
+    """선언된 대상 글꼴이 비례폭인가 — 정렬 린트 발화 조건(결정 17)."""
+    return font in PROPORTIONAL_DRAFT_FONTS
+
 _READ_RETRIES = 5   # 일시 판독 충돌(AV 스캔·원자 교체 순간의 공유 위반) 흡수 상한 — save 측과 대칭
 _REPLACE_RETRIES = 5  # Windows 공유 위반(아래) 일시 충돌 흡수 상한 — 총 ~0.5s
 

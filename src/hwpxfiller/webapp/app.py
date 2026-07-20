@@ -816,7 +816,10 @@ _TXT_ZONE_PROBE_JS = r"""
                       {text:'', kind:'blank', name:'담당자'}],
             missing_fields:[], empty_fields:['담당자'],
             index_map:[{index:0, state:'current', has_gap:false},
-                       {index:1, state:'uncopied', has_gap:true}]}
+                       {index:1, state:'uncopied', has_gap:true}],
+            // 선언-조건부 정렬 린트(결정 17) — 비례폭 선언 + 원문에 정렬 런 = 경보 상태.
+            lint:{proportional:true, space_run:true, applied:false, active:true}},
+      target_font:'malgun'
     };
     window.__push('txt', snap);
     out.rows = document.querySelectorAll('#txtTableBody tr[data-i]').length;
@@ -835,6 +838,18 @@ _TXT_ZONE_PROBE_JS = r"""
     out.card_global_copy_dead = !document.getElementById('btnCopy')
       && !document.getElementById('btnSave');  // 전역 복사·저장 버튼 소멸(결정 16·18)
     out.card_readout = document.getElementById('txtCardReadout').textContent;
+    // 대상 글꼴 선언(결정 17) — 콤보 동기 + 원문 렌더가 선언 글꼴 클래스를 추종한다.
+    out.font_sel = document.getElementById('txtTargetFont').value;
+    out.font_class = document.getElementById('txtCardRender').className;
+    // 정렬 린트 — 경보 줄이 실제로 서고 처방 버튼이 있는가(선언-조건부 발화의 렌더 되읽음).
+    out.lint_shown = !document.getElementById('txtCardLint').hidden;
+    out.lint_text = document.getElementById('txtCardLint').textContent;
+    out.lint_fix = (function(){ var b = document.getElementById('txtLintAction');
+      return b ? b.dataset.act : ''; })();
+    // T3 가드 본문 합성기(순수) — 수치 재진술이 종류별로 서는지(결정 27).
+    out.guard_body = window.TxtScreen.guardBody(
+      {armed:true, sel_count:5, in_def:3, extra:2, filter_active:true, filter_parts:2,
+       copied_count:2, queue_partial:true});
     // 선두 「큐」 열 — 작업점 ▶ 표지(링1 큐 모델 사영, 결정 16). 순번은 큐 순서로 그리는
     // 상태 색인(PR-3) 몫이라 이 표엔 렌더하지 않는다(비단조 오독 차단, PR-2b 리뷰).
     out.lead = (function(){ var d = document.querySelector('#txtTableBody .doc-body');
@@ -846,6 +861,15 @@ _TXT_ZONE_PROBE_JS = r"""
     out.strip_text = document.getElementById('txtSelStrip').textContent;
     out.panel_hidden = getComputedStyle(document.getElementById('txtColPanel')).display === 'none';
     out.sel_count = document.getElementById('txtSelCount').textContent;
+    // 린트 침묵 상태의 **계산된 표시**(부록 B-9 결함 클래스 2): hidden 프로퍼티만 보면
+    // display:flex 가 UA [hidden] 을 이겨 빈 상자가 남는 함정을 못 잡는다. 고정폭 선언으로
+    // 되밀어 실제로 사라지는지 본다(이 재푸시는 위 되읽기가 모두 끝난 뒤라 무해).
+    snap.target_font = 'gulimche';
+    snap.card.lint = {proportional:false, space_run:true, applied:false, active:false};
+    window.__push('txt', snap);
+    out.lint_silent_display =
+      getComputedStyle(document.getElementById('txtCardLint')).display;
+    out.font_class_fixed = document.getElementById('txtCardRender').className;
     // 두 인스턴스 격리 — txt 존 렌더가 작업 화면 데이터 존 DOM 을 만지지 않는다(id 분리).
     out.job_body_untouched = document.getElementById('jobTableBody').children.length === 0
       || !document.querySelector('#jobTableBody #txtRow-0');

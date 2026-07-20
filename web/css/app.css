@@ -142,7 +142,26 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .wc-acts{display:flex;align-items:center;gap:var(--sp-8);flex:none}
 .wc-advance{display:flex;align-items:center;gap:var(--sp-4);font-size:var(--fs-caption);
   color:var(--a-muted);cursor:pointer;white-space:nowrap}
-/* 원문 렌더 = 코드블록 문법(고정폭 pre + 채움 표지 삼분). 대상 글꼴 선언은 PR-4. */
+/* 대상 글꼴 선언 바(결정 17) — 큐 상단 드롭다운. 값은 전역 영속(배치 ≠ 스코프). */
+.wc-fontbar{display:flex;align-items:center;gap:var(--sp-8);margin-bottom:var(--sp-10);flex-wrap:wrap}
+.wc-fontbar .lbl{font-size:var(--fs-caption);color:var(--a-muted);font-weight:700;flex:none}
+.wc-fontbar .field{flex:none;width:auto}
+.wc-fontbar .capnote{flex:1;min-width:0}
+/* 선언-조건부 정렬 린트 — 경보(치환 전)와 확인(치환 후) 두 상태를 같은 자리에서 말한다. */
+.wc-lint{display:flex;align-items:center;gap:var(--sp-8);flex-wrap:wrap;margin-top:var(--sp-8);
+  padding:var(--sp-6) var(--sp-10);border-radius:var(--rad-control);font-size:var(--fs-body);
+  background:var(--fb-blank-bg);border:1px solid var(--fb-blank-bd);color:var(--a-ink)}
+/* display:flex 는 UA 의 [hidden]{display:none} 을 특이도로 이긴다(부록 B-9 결함 클래스 2 —
+   시연에서 .overlay 가 같은 함정에 빠졌다). 침묵해야 할 린트가 빈 상자로 남지 않게 명시 차단. */
+.wc-lint[hidden]{display:none}
+.wc-lint[data-level="ok"]{background:var(--fb-fill-bg);border-color:var(--fb-fill-bd)}
+.wc-lint .txt{flex:1;min-width:0}
+/* 원문 렌더 = 코드블록 문법(고정폭 pre + 채움 표지 삼분) + 선언된 대상 글꼴 추종(결정 17):
+   굴림체·돋움체는 고정폭, 맑은고딕은 비례폭이라 연속 공백 정렬이 실제로 흐트러져 보인다 —
+   그 눈으로 보이는 사실이 린트 경보의 근거이므로 글꼴 폴백도 성질을 지키는 순서로 둔다. */
+.wc-render.f-gulimche{font-family:"GulimChe","굴림체","Gulim",ui-monospace,monospace}
+.wc-render.f-dotumche{font-family:"DotumChe","돋움체","Dotum",ui-monospace,monospace}
+.wc-render.f-malgun{font-family:"Malgun Gothic","맑은 고딕",system-ui,sans-serif}
 .wc-render{background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface);
   padding:var(--sp-16) var(--sp-24);flex:1;overflow:auto;font-size:var(--fs-body);line-height:1.85;
   white-space:pre-wrap;color:var(--a-ink);margin:0;box-shadow:inset 0 1px 3px rgba(0,0,0,.03);

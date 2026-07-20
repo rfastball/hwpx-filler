@@ -477,12 +477,9 @@
 
   /* 선택 재진술 한 줄 — 재진술 블록(renderRestate)과 가드 모달(guardBody)의 **공유
      합성기**(리뷰 #9): 같은 수치를 두 곳이 따로 조립하면 문안이 갈라져 모달이 화면
-     재진술과 모순되는 드리프트 클래스가 생긴다. */
-  function selectionLine(count, filterActive, inDef, extra) {
-    return filterActive
-      ? `직접 선택 ${count}행 (정의 매치 ${inDef} · 정의 밖 ${extra})`
-      : `직접 선택 ${count}행`;
-  }
+     재진술과 모순되는 드리프트 클래스가 생긴다. 이제 그 공유 범위가 화면 밖으로도
+     넓어졌다 — txt T3 가드와 같은 조각을 쓴다(guard.js, PR-4 리뷰 F6). */
+  const selectionLine = window.Guard.selectionLine;
 
   function guardBody(g, verbPhrase) {
     const lost = g.filter_parts > 0
