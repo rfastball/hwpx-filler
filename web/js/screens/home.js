@@ -222,7 +222,7 @@
 
   /* ---- 웹→Python 이벤트(위임) ---- */
   /* 편집 진입(#26) — 미저장 에디터 세션은 조용히 버리지 않고 확인(#25 미러) 후 복원.
-     공용 흐름 EditorEntry.openGuarded 에 위임(job.fixMapping 과 단일 출처, PR #97 리뷰). */
+     공용 흐름 EditorEntry.openGuarded 에 위임(job.openEditForRepair 와 단일 출처, PR #97 리뷰). */
   function editJob(name) {
     // #99-6 동형 방어(PR-5 리뷰 F4) — 진입 셔틀 미로드 시 동기 ReferenceError 는 조용한
     // 무반응이 된다(unhandledrejection 백스톱은 동기 throw 를 못 받는다). loud 로.

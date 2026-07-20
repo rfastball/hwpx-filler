@@ -427,7 +427,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "template_missing": False, "has_data": False,
                 "record_count": 0, "selected_count": 0, "records": [],
                 "preflight": {"level": "", "text": ""},
-                "mirror": [], "drift": [],
+                "mirror": [], "drift": [], "name_tokens": [],
                 "filter": _EMPTY_FILTER, "table": _EMPTY_TABLE, "restate": _EMPTY_RESTATE,
                 "gate": {"enabled": False, "level": "warn", "text": "왼쪽에서 작업을 선택하세요."},
             })
@@ -466,6 +466,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 본문 존 거울(필드 채움 테이블) + drift 필드(차단 배너로 분리, 결정 36).
             "mirror": mirror_rows,
             "drift": drift_fields,
+            # 미해소 파일명 토큰(#128) — 드리프트와 **같은 danger 자격**이라 같은 자리(거울)에서
+            # 차단 배너 + 행동 링크로 발화한다. 종전엔 게이트 캡션 한 줄뿐이라 거울은 전 행
+            # 「채움」으로 건강해 보이고 재진술은 말없이 사라지는, 신호 없는 차단이었다.
+            # 게이트 문안과 같은 사실의 두 표현이므로 산출은 run_state 단일 출처를 그대로 쓴다.
+            "name_tokens": self.vm.unresolved_name_tokens(),
             "gate": {
                 "enabled": status.gate.enabled,
                 "level": status.gate.level,

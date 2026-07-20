@@ -283,6 +283,21 @@
         `</div>`;
       return;
     }
+    // 미해소 파일명 토큰(#128) — **드리프트와 같은 danger 자격**이라 같은 자리에서 같은 형상으로
+    // 발화한다(주석 9: 배너 소관은 드리프트·토큰 둘 다). 종전엔 이 자리가 전 행 「채움」 표를
+    // 그려 문서가 건강해 보이고, 재진술 블록은 danger 라 말없이 사라지고, 남는 신호는 하단 회색
+    // 캡션 한 줄뿐이었다 — 차단은 걸렸는데 무엇을 하라는 출구가 없는 막다른 경보.
+    const nameTokens = s.name_tokens || [];
+    if (nameTokens.length) {
+      const toks = nameTokens.map((t) => `{{${t}}}`).join(", ");
+      host.innerHTML =
+        `<div class="mir-drift" role="alert">` +
+        `<p>파일명 패턴의 토큰을 이 작업이 채우지 못합니다. 남는 토큰: <b>${esc(toks)}</b>. ` +
+        `파일명 패턴을 고쳐야 문서를 생성할 수 있습니다.</p>` +
+        `<button class="btn sm" data-act="fix-filename" data-busy-lock>편집에서 파일명 패턴 고치기…</button>` +
+        `</div>`;
+      return;
+    }
     const rows = s.mirror || [];
     if (!rows.length) {  // 선택 0(또는 데이터 미겨눔) = 생성될 문서 없음
       host.innerHTML = `<p class="mirempty muted capnote">행을 선택하면 이 문서에 들어갈 값이 여기 비칩니다.</p>`;
@@ -826,7 +841,12 @@
   }
 
   function onMirrorClick(e) {
-    if (e.target.closest('[data-act="fix-mapping"]')) { fixMapping(); return; }
+    // 두 danger 배너의 행동 링크(#128) — 목적지는 같은 편집 모드다(매핑도 파일명 패턴도 거기
+    // 산다). 진입 흐름을 공유하되 라벨은 각자 고칠 것을 말한다.
+    if (e.target.closest('[data-act="fix-mapping"],[data-act="fix-filename"]')) {
+      openEditForRepair();
+      return;
+    }
     const row = e.target.closest(".mir-row.miss");
     if (row) mirrorAck(row);
   }
@@ -842,7 +862,7 @@
   /* danger(구조 드리프트) 수리 동선 — 이 작업을 **패널 편집 모드**에 열어 매핑을 재확정한다
      (공용 EditorEntry.openGuarded: 미저장 정의 확인 후 모드 전환 — 에디터 흡수로 화면 이동이
      아니라 제자리 모드 전환이 됐다). 확정·저장 후 좌 목록 행 클릭으로 세션 재개. */
-  function fixMapping() {
+  function openEditForRepair() {
     // #99-6 동형 방어(PR-5 리뷰 F4) — 셔틀 미로드의 동기 ReferenceError 는 조용한 무반응.
     if (!window.EditorEntry) { window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다."); return; }
     if (LAST && LAST.job_name) EditorEntry.openGuarded(LAST.job_name);

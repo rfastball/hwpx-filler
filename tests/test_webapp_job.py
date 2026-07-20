@@ -296,6 +296,33 @@ def test_mirror_drift_split_into_blocking_list(tmp_path):
     assert [r["name"] for r in snap["mirror"]] == ["공고명"]  # drift 필드는 표에서 제외
 
 
+def test_snapshot_carries_unresolved_name_tokens_for_banner(tmp_path):
+    """미해소 파일명 토큰이 스냅샷에 실린다(#128) — 거울 자리 차단 배너의 재료.
+
+    종전엔 이 danger 가 게이트 캡션 한 줄로만 살아서, 거울은 전 행 「채움」으로 건강해
+    보이고 재진술 블록은 danger 라 말없이 사라졌다(신호 없는 차단). 게이트 문안과 같은
+    사실이므로 산출은 run_state 단일 출처를 그대로 싣는다.
+    """
+    template = tmp_path / "t.hwpx"
+    _write_template(template, ["공고명"])
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(
+        name="공고서", template_path=str(template),
+        mapping=MappingProfile(mappings=[FieldMapping(template_field="공고명", source="bidNtceNm")]),
+        filename_pattern="doc-{{미해소}}",
+    ))
+    ctrl = JobController(reg, lambda s, snap: None)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    snap = ctrl.snapshot()
+    assert snap["name_tokens"] == ["미해소"]
+    assert snap["gate"]["level"] == "danger" and snap["gate"]["enabled"] is False
+    # 거울 표는 여전히 「채움」으로 건강하다 — 그래서 배너가 없으면 신호가 사라진다.
+    assert [r["state"] for r in snap["mirror"]] == ["filled"]
+    ctrl.dispatch("select_job", {"name": ""})           # 미겨눔 골격도 키를 갖춘다
+    assert ctrl.snapshot()["name_tokens"] == []
+
+
 def test_select_none_closes_record_gate(tmp_path):
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})

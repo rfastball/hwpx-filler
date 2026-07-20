@@ -345,10 +345,13 @@ class RunViewModel:
         if not unresolved:
             return None
         toks = ", ".join("{{" + t + "}}" for t in unresolved)
+        # 문안이 사망한 화면을 지시하지 않게(#128): 「작업 에디터」 화면·레일 항목은 결정 39·40
+        # 으로 사망했고 같은 자리 드리프트 배너는 이미 "편집에서…"로 개정돼 있었다. 두 danger 가
+        # 같은 목적지를 다르게 부르면, 둘 중 하나는 반드시 존재하지 않는 곳을 가리킨다.
         return GateState(
             False, "danger",
             f"파일명 패턴의 토큰이 이 작업이 채우는 값에 없어 파일명에 그대로 남습니다: "
-            f"{toks} — 작업 에디터에서 파일명 패턴을 고쳐야 생성할 수 있습니다.",
+            f"{toks} — 편집에서 파일명 패턴을 고쳐야 생성할 수 있습니다.",
         )
 
     def refresh(self, indices: "list[int]", out_dir: str = "") -> RunStatus:
