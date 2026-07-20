@@ -26,12 +26,13 @@
      tableKey(s),               // 세션 지문 — 앵커·패널·대기 디바운스 리셋 판정
      log(msg),                  // 완료 존 로그 채널(재진술은 화면이 소유)
    }
-   반환: { wire, render, flushPendingSearch }
+   반환: { wire, render, sync, flushPendingSearch }
+     sync(s)   — 렌더 없이 스냅샷만 관측(화면이 존 렌더를 게이트하는 push 에서도 호출) —
+                 flushPendingSearch 판정이 항상-최신 스냅샷을 보게(리뷰: stale LAST 오발 차단)
 
-   문서 레벨 리스너(패널 바깥닫기 pointerdown·Escape·닫기 클릭 1회 소비)는 인스턴스가
-   **자기 몫만** 등록한다 — 화면의 다른 popover(작업 행 ⋮ 메뉴 등)와 suppressNextClick
-   상태를 공유하지 않는다. 같은 document 노드의 capture 리스너끼리는 stopPropagation 에
-   서로 막히지 않아 각자 소비해도 겹침이 무해하다(preventDefault 는 멱등). */
+   패널 바깥닫기(pointerdown·Escape·닫기 클릭 1회 소비)는 공용 Popover.wireDismiss 가
+   기제를 소유하고, 인스턴스는 자기 술어(isOpen·contains·close)만 주입한다 — 화면의 다른
+   popover(작업 행 ⋮ 메뉴 등)와 suppress 상태를 공유하지 않는다(표면별 인스턴스). */
 (function () {
   const $ = (id) => document.getElementById(id);
   const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
@@ -191,23 +192,6 @@
       }
     }
 
-    function onDocPointerDown(e) {
-      // 열 패널 바깥 클릭 닫기 — 자기 패널·자기 head 의 .fico 만 예외(다른 popover 는
-      // 각자의 리스너가 같은 규율로 소비한다 — 공유 상태 없음).
-      if (panelCol === null) return;
-      if (e.target.closest("#" + ids.colPanel)) return;
-      const ico = e.target.closest(".fico");
-      if (ico && $(ids.tableHead).contains(ico)) return;
-      closeColPanel();
-      // 닫기 제스처가 그 클릭의 원래 동사(행 토글·버튼)로 새지 않게 다음 click 하나를
-      // 캡처 단계에서 소비한다(리뷰 #3 — 패널을 닫으려는 행 클릭이 생성 집합을 바꿨다).
-      suppressNextClick = true;
-    }
-
-    function onDocKeydown(e) {
-      if (e.key === "Escape" && panelCol !== null) closeColPanel();
-    }
-
     function onHeadClick(e) {
       const btn = e.target.closest(".fico[data-col]");
       if (!btn) return;
@@ -226,7 +210,6 @@
                                // LAST 는 왕복 전이라 앵커 자신의 토글이 아직 안 비쳐 stale)
     let lastTableKey = null;   // 앵커 리셋 판정(화면 주입 세션 지문 — cfg.tableKey)
     let searchTimer = 0;       // 전열 검색 디바운스 — 세션 전환 시 취소(리뷰 #1: 다음 세션 오발)
-    let suppressNextClick = false; // 패널 바깥클릭 닫기 제스처가 행 토글로 새지 않게(리뷰 #3)
 
     function segsHtml(segs) {
       if (!segs || !segs.length) return "";
@@ -367,6 +350,14 @@
       }
     }
 
+    /* 스냅샷 관측만 — 렌더 없이 LAST 를 최신으로 유지한다. 화면이 존 렌더를 게이트하는
+       push(작업 미선택 등)에서도 호출해, flushPendingSearch 가 직전 세션의 stale 스냅샷
+       (has_data=true·옛 검색어)으로 죽은 세션에 filter_search 를 오발하는 창을 닫는다
+       (리뷰: master 의 "무조건 LAST = s" 계약 복원). */
+    function sync(s) {
+      LAST = s;
+    }
+
     /* 존 렌더 — 화면 render() 가 스냅샷마다 호출(Preserve.around 래핑은 호출측 소유). */
     function render(s) {
       LAST = s;
@@ -376,15 +367,17 @@
     }
 
     function wire() {
-      // 패널 바깥클릭 닫기 제스처의 click 을 캡처 단계에서 1회 소비(리뷰 #3) — 닫기와
-      // 행 토글/버튼 실행이 한 클릭에 겹치지 않게. 이 소비자는 인스턴스 소유다.
-      document.addEventListener("click", (e) => {
-        if (suppressNextClick) {
-          suppressNextClick = false;
-          e.stopPropagation();
-          e.preventDefault();
-        }
-      }, true);
+      // 패널 바깥닫기·Escape·닫기 클릭 소비 — 기제는 공용 Popover.wireDismiss(단일 출처),
+      // 여기는 자기 술어만 주입한다. .fico 는 자기 head 스코프만 예외(2-인스턴스 혼선 차단).
+      Popover.wireDismiss({
+        isOpen: () => panelCol !== null,
+        contains: (t) => {
+          if (t.closest("#" + ids.colPanel)) return true;
+          const ico = t.closest(".fico");
+          return !!(ico && $(ids.tableHead).contains(ico));
+        },
+        close: closeColPanel,
+      });
       // 행 클릭 토글 + Shift 범위, 열 머리 필터 아이콘, 전열 검색.
       $(ids.tableBody).addEventListener("click", onTableClick);
       $(ids.tableBody).addEventListener("keydown", onTableKey);
@@ -414,12 +407,10 @@
         if (pr) { Bridge.call(SCREEN, "filter_prune", { column: pr.dataset.prune }); return; }
         if (e.target.closest('[data-act="filter-clear"]')) Bridge.call(SCREEN, "filter_clear", {});
       });
-      // 열 필터 패널 — 내부 위임 + 바깥 클릭/Escape 닫기.
+      // 열 필터 패널 — 내부 위임(바깥 클릭/Escape 닫기는 위 Popover.wireDismiss 주입).
       $(ids.colPanel).addEventListener("input", onPanelInput);
       $(ids.colPanel).addEventListener("change", onPanelChange);
       $(ids.colPanel).addEventListener("click", onPanelClick);
-      document.addEventListener("pointerdown", onDocPointerDown);
-      document.addEventListener("keydown", onDocKeydown);
       $(ids.selAll).addEventListener("click", async () => {
         const r = await Bridge.call(SCREEN, "set_all", {});
         // 전멸 필터에서의 무동작은 정직하게 알린다(confirm-or-alarm, 리뷰 #9).
@@ -430,7 +421,7 @@
       $(ids.selNone).addEventListener("click", () => Bridge.call(SCREEN, "set_none", {}));
     }
 
-    return { wire, render, flushPendingSearch };
+    return { wire, render, sync, flushPendingSearch };
   }
 
   window.DataZone = { create };

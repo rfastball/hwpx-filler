@@ -60,6 +60,8 @@
     if (s && s.progress) { renderProgress(s.progress); return; }  // 진행 델타(경량)
     Preserve.around(() => {  // 매핑/레코드 포커스·스크롤 보존(#28)
       LAST = s;
+      dz.sync(s);  // 존 렌더는 아래 hasJob 게이트를 타지만 스냅샷 관측은 무조건 — 팩토리
+                   // flushPendingSearch 의 stale LAST 오발 차단(리뷰: master 계약 복원)
       renderMaster(s);
       const hasJob = !!s.has_job;
       syncModeDisplay(hasJob);
@@ -315,22 +317,9 @@
   }
 
   /* (열 필터 패널·필터 테이블·칩 줄·스트립·검색 정산은 datazone.js 팩토리로 이동 — PR-2a
-     추출. 표면 계약·리뷰 결정 주석은 팩토리가 소유한다. 아래에는 화면 고유 popover인
-     행/그룹 ⋮ 메뉴의 문서 레벨 소비만 남는다.) */
-  let suppressNextClick = false; // 메뉴 바깥클릭 닫기 제스처가 원래 동사로 새지 않게 — 팩토리의
-                                 // 동명 상태와 별개(각자 캡처 소비, preventDefault 멱등이라 겹침 무해)
-
-  function onDocPointerDown(e) {
-    // 행/그룹 ⋮ 메뉴 — 바깥 클릭 닫기(데이터 존 열 패널과 같은 소비 규율 — 그쪽은 팩토리 몫).
-    if (menuFor !== null && !e.target.closest("#jobRowMenu") && !e.target.closest(".job-more")) {
-      closeRowMenu();
-      suppressNextClick = true;
-    }
-  }
-
-  function onDocKeydown(e) {
-    if (e.key === "Escape" && menuFor !== null) closeRowMenu();
-  }
+     추출. 표면 계약·리뷰 결정 주석은 팩토리가 소유한다. 화면 고유 popover 인 행/그룹 ⋮
+     메뉴의 바깥-닫기는 공용 Popover.wireDismiss 주입(wire) — 기제 단일 출처, 상태는
+     표면별 인스턴스라 패널 몫과 교차하지 않는다.) */
 
   /* ---- 게이트 · 재진술 블록(상시, 결정 36 D1-B) — 선택 유래 + 산출 요약 + 이름 목록.
      이미 보이는 것을 재검증하지 않으므로 모달이 아니라 상시 블록이다. 이름 = 실파일명(정준) ·
@@ -875,22 +864,17 @@
   }
 
   function wire() {
-    // ⋮ 메뉴 바깥클릭 닫기 제스처의 click 을 캡처 단계에서 1회 소비(리뷰 #3 규율) — 닫기와
-    // 행 진입/버튼 실행이 한 클릭에 겹치지 않게. 데이터 존 몫은 팩토리가 자기 상태로 소비.
-    document.addEventListener("click", (e) => {
-      if (suppressNextClick) {
-        suppressNextClick = false;
-        e.stopPropagation();
-        e.preventDefault();
-      }
-    }, true);
     $("jobListHwpx").addEventListener("click", onMasterClick);
     $("jobListHwpx").addEventListener("keydown", onMasterKeydown);
     $("jobListHwpx").addEventListener("focusout", onMasterFocusOut);
     $("jobRowMenu").addEventListener("click", onRowMenuClick);
-    // ⋮ 메뉴 바깥 클릭 닫기·Escape — 화면 몫 문서 레벨 리스너(패널 몫은 팩토리가 따로 등록).
-    document.addEventListener("pointerdown", onDocPointerDown);
-    document.addEventListener("keydown", onDocKeydown);
+    // ⋮ 메뉴 바깥 클릭 닫기+클릭 1회 소비·Escape — 기제는 공용 Popover.wireDismiss(단일
+    // 출처), 여기는 메뉴 술어만 주입한다(패널 몫은 팩토리가 자기 인스턴스로 주입).
+    Popover.wireDismiss({
+      isOpen: () => menuFor !== null,
+      contains: (t) => !!(t.closest("#jobRowMenu") || t.closest(".job-more")),
+      close: closeRowMenu,
+    });
     // 목록 스크롤 시 fixed 메뉴가 트리거와 어긋난다 — 어긋난 채 남기지 말고 닫는다.
     document.querySelector(".job-master").addEventListener("scroll", () => {
       if (menuFor !== null) closeRowMenu();

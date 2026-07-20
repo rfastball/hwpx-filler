@@ -11,8 +11,12 @@
    결함 클래스라 팩토리에만 있어야 한다.
 4. 화면 불가지 — 팩토리에 job 고유 id(``jobXxx``)·화면 루트가 하드코딩되면 PR-2b 의 두 번째
    인스턴스가 조용히 첫 화면 DOM 을 만진다(getElementById 는 숨은 화면으로도 해소된다).
-5. 문서 레벨 리스너·suppressNextClick 분리 — 메뉴(화면 몫)와 열 패널(팩토리 몫)이 각자
-   상태로 소비한다(공유 플래그의 교차 소거 금지).
+5. 팝오버 바깥-닫기 = popover.js 단일 출처(PR 리뷰) — 기제(suppress 플래그·캡처 소비·
+   pointerdown·Escape)는 Popover.wireDismiss 만 소유하고, 메뉴(job.js)·열 패널(팩토리)은
+   각자 술어(isOpen·contains·close)만 주입한다. 손수 판 사본이 되살아나면 드리프트 재개.
+6. 팩토리 LAST 관측 계약(PR 리뷰) — 화면이 존 렌더를 hasJob 로 게이트해도 스냅샷 관측
+   (dz.sync)은 무조건이어야 한다. 빠지면 flushPendingSearch 가 직전 세션의 stale 스냅샷으로
+   죽은 세션에 filter_search 를 오발한다(master 의 "무조건 LAST = s" 계약).
 
 실 거동 패리티(가시 행·하이라이트·칩·스트립·패널 기본 닫힘·메뉴 개폐)는 실앱 WebView2
 게이트(test_web_selftest_gate)가 같은 id 로 되읽어 담보한다 — 여기는 구조만.
@@ -26,6 +30,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
 WEB_INDEX = WEB / "index.html"
 DZ_JS = WEB / "js" / "datazone.js"
+POPOVER_JS = WEB / "js" / "popover.js"
 JOB_JS = WEB / "js" / "screens" / "job.js"
 
 # 데이터 존이 소유하는 디스패치 액션 — 전부 팩토리 단일 출처여야 한다(가드 3).
@@ -53,14 +58,18 @@ def test_factory_exists_and_exposes_create():
     assert "function create(cfg)" in src, "DataZone 팩토리(create)가 없습니다."
 
 
-def test_load_order_esc_then_datazone_then_job():
-    """로드 순서 — esc.js < datazone.js < screens/job.js (미정의 시점 참조 방지, 가드 1)."""
+def test_load_order_esc_then_shared_then_job():
+    """로드 순서 — esc.js < popover.js·datazone.js < screens/job.js (미정의 시점 참조 방지)."""
     index = WEB_INDEX.read_text(encoding="utf-8")
-    for needle in ('src="js/esc.js"', 'src="js/datazone.js"', 'src="js/screens/job.js"'):
+    for needle in ('src="js/esc.js"', 'src="js/popover.js"', 'src="js/datazone.js"',
+                   'src="js/screens/job.js"'):
         assert needle in index, f"{needle} 가 index.html 에 없습니다."
-    assert index.index('src="js/esc.js"') < index.index('src="js/datazone.js"') < index.index(
-        'src="js/screens/job.js"'
-    ), "로드 순서가 esc.js → datazone.js → screens/job.js 가 아닙니다."
+    esc_pos = index.index('src="js/esc.js"')
+    job_pos = index.index('src="js/screens/job.js"')
+    for shared in ('src="js/popover.js"', 'src="js/datazone.js"'):
+        assert esc_pos < index.index(shared) < job_pos, (
+            f"로드 순서가 esc.js → {shared} → screens/job.js 가 아닙니다."
+        )
 
 
 def test_job_consumes_factory_with_job_identity():
@@ -101,32 +110,53 @@ def test_factory_is_screen_agnostic():
     assert not hits, f"datazone.js 에 job 고유 식별자가 하드코딩됐습니다: {sorted(set(hits))}"
 
 
-def test_click_suppression_state_is_owned_per_surface():
-    """suppressNextClick 은 표면별 소유(가드 5) — 메뉴(job.js)·열 패널(팩토리) 각자 선언·소비.
+def test_popover_dismiss_mechanism_single_sourced():
+    """팝오버 바깥-닫기 기제는 popover.js 단일 출처(가드 5, PR 리뷰) — 사본 재유입 금지.
 
-    한쪽이 자기 선언을 잃고 상대 상태를 참조하면(전역 승격 등) 교차 소거가 생긴다: 메뉴
-    닫기 클릭이 패널 몫 소비를 지우고 행 토글로 새는 류. 각 파일이 자기 ``let`` 선언과
-    캡처 단계 소비자를 유지해야 한다.
+    기제(인스턴스별 suppress 플래그·캡처 단계 클릭 1회 소비·pointerdown 바깥 닫기·Escape)는
+    Popover.wireDismiss 만 소유한다. 메뉴(job.js)·열 패널(datazone.js)은 각자 술어만 주입 —
+    양 표면이 손수 판을 되살리면(이 PR 이전 형태) 한쪽 수정이 다른 쪽에 미러링되지 않는
+    드리프트 클래스가 재개된다. 바깥 pointerdown 닫기의 실 거동은 실앱 게이트
+    ``menu_closed`` 프로브가 되읽는다.
     """
+    pop = POPOVER_JS.read_text(encoding="utf-8")
+    assert "window.Popover" in pop and "function wireDismiss(" in pop, (
+        "popover.js 가 Popover.wireDismiss 를 노출하지 않습니다."
+    )
+    assert "let suppressNextClick" in pop, "popover.js 가 인스턴스별 suppress 플래그를 잃었습니다."
+    for needle, what in (
+        (r'addEventListener\("click",[\s\S]{0,200}?suppressNextClick', "캡처 클릭 소비자"),
+        (r'addEventListener\("pointerdown",', "바깥 pointerdown 닫기"),
+        (r'addEventListener\("keydown",[\s\S]{0,120}?Escape', "Escape 닫기"),
+    ):
+        assert re.search(needle, pop), f"popover.js 에 {what}가 없습니다."
+    # 두 표면은 헬퍼 소비만 — 손수 판(자기 suppress 플래그) 재유입 금지(주석 제외).
     for path, owner in ((JOB_JS, "행/그룹 ⋮ 메뉴"), (DZ_JS, "열 필터 패널")):
-        src = path.read_text(encoding="utf-8")
-        assert "let suppressNextClick = false" in src, (
-            f"{path.name} 이 자기 suppressNextClick 선언을 잃었습니다({owner} 몫)."
+        src = _strip_js_comments(path.read_text(encoding="utf-8"))
+        assert "Popover.wireDismiss({" in src, (
+            f"{path.name} 이 Popover.wireDismiss 를 소비하지 않습니다({owner} 몫)."
         )
-        assert re.search(r'addEventListener\("click",[\s\S]{0,200}?suppressNextClick', src), (
-            f"{path.name} 에 캡처 단계 클릭 소비자가 없습니다({owner} 몫)."
+        assert "suppressNextClick" not in src, (
+            f"{path.name} 에 손수 판 suppress 상태가 재유입됐습니다 — popover.js 단일 출처 위반."
         )
-    # 문서 레벨 pointerdown/keydown 도 각자 등록 — 메뉴 몫이 팩토리 이동에 휩쓸려 미배선되면
-    # 바깥 클릭/Escape 닫기가 조용히 죽는다(이번 추출에서 실제로 났던 봉합 누락).
-    job = JOB_JS.read_text(encoding="utf-8")
+
+
+def test_factory_snapshot_observed_unconditionally():
+    """팩토리 LAST 관측(dz.sync)은 존 렌더 게이트와 무관하게 무조건이어야 한다(가드 6).
+
+    빠지면 has_job=false push(작업 제거 등) 뒤 팩토리가 직전 세션의 has_data=true 스냅샷을
+    보유한 채 flushPendingSearch 가 죽은 세션에 filter_search 를 디스패치한다(PR 리뷰 —
+    master 의 무조건 ``LAST = s`` 계약 복원).
+    """
     dz = DZ_JS.read_text(encoding="utf-8")
-    for src, name in ((job, "job.js"), (dz, "datazone.js")):
-        assert 'addEventListener("pointerdown", onDocPointerDown)' in src, (
-            f"{name} 의 문서 레벨 pointerdown(바깥 클릭 닫기)이 미배선입니다."
-        )
-        assert 'addEventListener("keydown", onDocKeydown)' in src, (
-            f"{name} 의 문서 레벨 keydown(Escape 닫기)이 미배선입니다."
-        )
+    assert "function sync(" in dz, "datazone.js 에 스냅샷 관측(sync)이 없습니다."
+    assert re.search(r"return \{[^}]*\bsync\b", dz), "sync 가 팩토리 반환 API 에 없습니다."
+    job = JOB_JS.read_text(encoding="utf-8")
+    assert "dz.sync(s)" in job, "job.js 가 dz.sync 를 호출하지 않습니다 — stale LAST 오발 창."
+    # sync 는 hasJob 게이트 **앞**(무조건 경로)에 있어야 한다 — 렌더 호출로의 강등 금지.
+    assert job.index("dz.sync(s)") < job.index("if (hasJob)"), (
+        "dz.sync 가 hasJob 게이트 뒤로 밀렸습니다 — 무조건 관측 계약 위반(PR 리뷰)."
+    )
 
 
 def test_moved_surfaces_not_redefined_in_job():
