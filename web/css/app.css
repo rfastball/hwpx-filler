@@ -647,6 +647,13 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
   padding:var(--sp-2) var(--sp-8);border-radius:var(--rad-pill);background:none;color:var(--a-muted);
   border:1px dashed var(--n-border-strong);cursor:pointer}
 .tpl-assign:hover{color:var(--a-primary);border-color:var(--a-primary)}
+/* 에디터 1단계 선택-전용 행(#108 슬라이스 3) — 같은 그룹 구획 안, 카드보다 가벼운 고르기 행. */
+.libselrow{display:flex;align-items:center;gap:var(--sp-8);padding:var(--sp-6) var(--sp-8);
+  border:1px solid var(--a-border);border-radius:var(--rad-control);background:var(--a-card)}
+.libselrow.cur{border-color:var(--a-primary);background:var(--a-sel)}
+/* 긴 파일명이 선택 동작을 화면 밖으로 밀지 않게(#138 리뷰 F14) — 이름 칸만 줄고 배지·동작 고정. */
+.libselrow .fname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.libselrow .tbadge,.libselrow .capnote,.libselrow .btn{flex:none}
 
 /* [B] 61C7ADF8: 불투명 배경 카드 — 뒤에 비칠 숨김 텍스트 레이어가 없어 겹침 렌더 버그가
    구성상 소멸(Qt QListWidget 반투명 하이라이트의 웹 대체). */

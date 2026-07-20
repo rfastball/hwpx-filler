@@ -13,6 +13,7 @@ import pytest
 from hwpxfiller.core.job import JobRegistry
 from hwpxfiller.gui.template_manager_state import TemplateManagerViewModel
 from hwpxfiller.webapp.screen_editor import EditorController
+from hwpxfiller.webapp.template_groups import TemplateGroupModel
 
 REPO = Path(__file__).resolve().parents[1]
 TPL_COMPILED = REPO / "tests" / "corpus" / "scenario" / "templates" / "구매요청서.hwpx"
@@ -1218,22 +1219,84 @@ def _controller_lib(tmp_path, paths=None, lib_dir=None):
     return ctrl, pushes
 
 
+def _lib_items(snap):
+    """1단계 피커의 그룹 구획을 평평화한 아이템(#108 슬라이스 3 — library 는 {sections,flat})."""
+    return [it for sec in snap["library"]["sections"] for it in sec["items"]]
+
+
 def test_snapshot_exposes_library_on_template_stage(tmp_path):
-    """템플릿 분류(0)의 스냅샷은 라이브러리 목록(이름·상태 배지·현 선택)을 싣는다 — 신규
-    1단계=라이브러리에서 고르기(R-info 2부, 생 파일 선택 폐기). 다른 단계는 빈 배열(스캔
-    비용을 매핑 편집 push 에 지불하지 않는다)."""
+    """템플릿 분류(0)의 스냅샷은 라이브러리를 **그룹 구획**으로 싣는다(#108 슬라이스 3 — 관리
+    화면과 같은 조직, 선택 전용). 그룹 0개면 flat. 다른 단계는 빈 구획(스캔 비용을 매핑 편집
+    push 에 지불하지 않는다)."""
     ctrl, _ = _controller_lib(tmp_path, paths=[TPL_COMPILED, TPL_PARTIAL])
     snap = ctrl.snapshot()
-    names = [t["name"] for t in snap["library"]]
+    names = [t["name"] for t in _lib_items(snap)]
     assert TPL_COMPILED.name in names and TPL_PARTIAL.name in names
+    assert snap["library"]["flat"] is True  # 그룹 0개 = 퇴화 평면
     assert all(set(t) >= {"name", "path", "badge_label", "badge_level", "current", "detail"}
-               for t in snap["library"])
+               for t in _lib_items(snap))
     ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})
     snap = ctrl.snapshot()
     assert snap["template_name"] == TPL_COMPILED.name                  # 선택 = 새 세션 로드
-    assert [t["current"] for t in snap["library"]] == [True, False]    # 현 선택 표지
+    assert [t["current"] for t in _lib_items(snap)] == [True, False]   # 현 선택 표지
     ctrl.dispatch("goto_step", {"step": 1})
-    assert ctrl.snapshot()["library"] == []                            # 매핑 단계는 빈 배열
+    assert ctrl.snapshot()["library"] == {"sections": [], "flat": True}  # 매핑 단계는 빈 구획
+
+
+def test_library_picker_shares_groups_and_collapse_with_management(tmp_path):
+    """1단계 피커가 관리 화면과 **같은 hwpx 그룹 모델**을 소비 — 지정·접힘이 두 표면에 함께
+    반영된다(결정 6, 단일 실체). 토글은 뷰 상태라 세션을 더럽히지 않는다."""
+    groups = TemplateGroupModel("hwpx")
+    # 명시 경로 라이브러리는 library_dir 이 None → 키=파일명(rel_key 폴백).
+    groups.set_group(TPL_COMPILED.name, "계약")
+    pushes: list = []
+    ctrl = EditorController(
+        JobRegistry(tmp_path / "jobs"),
+        lambda s, snap: pushes.append((s, snap)),
+        template_library=TemplateManagerViewModel(paths=[TPL_COMPILED, TPL_PARTIAL]),
+        template_groups=groups,
+    )
+    lib = ctrl.snapshot()["library"]
+    assert lib["flat"] is False
+    by = {sec["group"]: sec for sec in lib["sections"]}
+    assert [it["name"] for it in by["계약"]["items"]] == [TPL_COMPILED.name]
+    assert TPL_PARTIAL.name in [it["name"] for it in by[""]["items"]]  # 미지정 = 「그룹 없음」
+    # 접힘 토글 = 공유 모델 경유 → 같은 모델이 접힌 채(관리 화면도 접혀 보인다) · 세션 불변.
+    ctrl.dispatch("toggle_library_group", {"group": "계약"})
+    assert groups.is_collapsed("계약")
+    assert {s["group"]: s for s in ctrl.snapshot()["library"]["sections"]}["계약"]["collapsed"] is True
+    assert ctrl.has_unsaved_work() is False
+
+
+def test_editor_picker_reflects_shared_vm_refresh_without_stale_cache(tmp_path):
+    """#137·#138 리뷰 F8 — 관리 화면 가져오기(공유 VM refresh)가 에디터 피커에 즉시 반영된다
+    (별도 행 캐시 발산 제거 — 공유 VM rows() 직독)."""
+    import shutil
+
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    vm = TemplateManagerViewModel(library_dir=lib)  # 빈 라이브러리로 시작
+    ctrl = EditorController(
+        JobRegistry(tmp_path / "jobs"), lambda s, snap: None, template_library=vm
+    )
+    assert _lib_items(ctrl.snapshot()) == []
+    shutil.copy2(TPL_COMPILED, lib / "새서식.hwpx")  # 관리 화면 가져오기 시뮬레이션
+    vm.refresh()
+    assert "새서식.hwpx" in {it["name"] for it in _lib_items(ctrl.snapshot())}
+
+
+def test_editor_picker_does_not_reconcile_away_offscreen_group(tmp_path):
+    """#138 리뷰 F11 — 에디터 피커는 reconcile 하지 않는다. 에디터 VM 에 아직 없는 파일의
+    그룹 지정을 (부분/필터된) 목록으로 지우면 안 된다(위생은 관리 화면 소관)."""
+    groups = TemplateGroupModel("hwpx")
+    groups.set_group("아직없는.hwpx", "입찰")  # 에디터 VM 밖 파일
+    ctrl = EditorController(
+        JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
+        template_library=TemplateManagerViewModel(paths=[TPL_COMPILED]),  # 그 파일 없음
+        template_groups=groups,
+    )
+    ctrl.snapshot()  # step 0 = 피커 build_sections(reconcile 없음)
+    assert TemplateGroupModel("hwpx").group_of("아직없는.hwpx") == "입찰"  # 지정 생존
 
 
 def test_use_library_template_rejects_paths_outside_library(tmp_path):
@@ -1298,8 +1361,8 @@ def test_use_library_rejection_refreshes_stale_list(tmp_path):
     ghost = lib / "유령.hwpx"
     ghost.write_bytes(TPL_COMPILED.read_bytes())
     ctrl, pushes = _controller_lib(tmp_path, lib_dir=lib)
-    assert [t["name"] for t in ctrl.snapshot()["library"]] == ["유령.hwpx"]
+    assert [t["name"] for t in _lib_items(ctrl.snapshot())] == ["유령.hwpx"]
     ghost.unlink()                                                     # 외부 삭제
     with pytest.raises(ValueError, match="라이브러리에 없는"):
         ctrl.dispatch("use_library_template", {"path": str(ghost)})
-    assert pushes[-1][1]["library"] == []                              # 거절 전 push 로 걷힘
+    assert _lib_items(pushes[-1][1]) == []                             # 거절 전 push 로 걷힘
