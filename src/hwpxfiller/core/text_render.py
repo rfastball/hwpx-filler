@@ -111,6 +111,65 @@ def render_segments(
     return segments, report
 
 
+# 연속 ASCII 공백(2칸 이상) — 표 흉내 정렬("건    명")의 문자적 흔적. 1칸은 낱말 사이라
+# 정렬 의도가 아니므로 제외한다(경보 남발 차단).
+_SPACE_RUN = re.compile(r" {2,}")
+
+# 전각 공백 — 한글·전각과 같은 폭이라 **모든 글꼴에서 균일**(고정폭·비례폭 불문). 반각 2칸
+# 폭과 같으므로 아래 치환은 고정폭 선언에서의 열 위치도 보존한다.
+FULLWIDTH_SPACE = "　"
+
+
+def has_space_run(text: str) -> bool:
+    """연속 공백 정렬이 있는가 — 선언-조건부 정렬 린트(R-flow 블록 3 결정 17)의 술어.
+
+    비례폭 글꼴을 대상으로 선언했을 때만 표면이 이 경보를 낸다: 고정폭(굴림체·돋움체)에서
+    연속 공백 정렬은 정당한 저작이므로 경보하면 소음이다.
+    """
+    return _SPACE_RUN.search(text) is not None
+
+
+def align_fullwidth(text: str) -> str:
+    """연속 ASCII 공백을 전각 공백으로 치환 — 폭 보존(반각 2칸 = 전각 1칸), 홀수 잔여 1칸 유지.
+
+    치환 후에는 :func:`has_space_run` 이 거짓이 된다(잔여는 1칸뿐) — 술어와 처방이 서로를
+    닫는다(경보가 조치 후에도 남는 무한 잔소리 방지).
+    """
+    return _SPACE_RUN.sub(
+        lambda m: FULLWIDTH_SPACE * (len(m.group(0)) // 2) + " " * (len(m.group(0)) % 2),
+        text,
+    )
+
+
+def segments_have_space_run(segments: "list[RenderSegment]") -> bool:
+    """**템플릿 원문 조각**에 연속 공백 정렬이 있는가 — 카드 린트 술어.
+
+    literal 만 본다: 정렬 런은 사용자가 템플릿에 저작한 것이고, 값(fill) 안의 연속 공백은
+    데이터의 사실이다(규격·코드 표기 등). 값까지 술어에 넣으면 저작하지도 않은 정렬을
+    고치라고 경보하게 된다.
+    """
+    return any(s.kind == SEG_LITERAL and has_space_run(s.text) for s in segments)
+
+
+def align_segments(segments: "list[RenderSegment]") -> "list[RenderSegment]":
+    """**템플릿 원문 조각만** 전각 치환 — 데이터 값은 원본 그대로 복사된다.
+
+    값(fill)을 건드리지 않는 이유: 복사되는 데이터가 원본과 글자 단위로 같아야 한다는 것이
+    이 도구의 텔로스다. 정렬은 사용자가 템플릿에 저작한 배치이므로 처방의 대상이지만, 값
+    안의 ``12  345`` 는 데이터의 사실이라 앱이 고쳐 쓸 자격이 없다.
+
+    조각을 이어붙인 뒤가 아니라 **조각마다** 치환하므로 카드 렌더(세그먼트)와 클립보드
+    (세그먼트 이어붙임)가 같은 함수를 통과한다 — "보이는 것이 복사되는 것". 대가로 세그먼트
+    경계를 걸친 공백(리터럴 끝 1칸 + 값 앞 1칸)은 잡지 않는다: 각 조각 1칸씩이라 저작된
+    정렬 런이 아니므로 수용한다.
+    """
+    return [
+        RenderSegment(align_fullwidth(s.text), s.kind, s.name)
+        if (s.kind == SEG_LITERAL and s.text) else s
+        for s in segments
+    ]
+
+
 def render_record(template: str, record: "dict[str, object]") -> "tuple[str, RenderReport]":
     """``template`` 의 ``{{필드}}`` 를 ``record`` 값으로 순수 치환한 텍스트와 리포트를 반환한다.
 

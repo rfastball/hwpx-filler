@@ -11,7 +11,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from hwpxfiller.core.text_registry import TextTemplateRegistry
+from hwpxfiller.core.text_render import FULLWIDTH_SPACE
 from hwpxfiller.gui.selection_state import SelectionModel
 from hwpxfiller.gui.txt_queue import TxtQueueModel
 from hwpxfiller.webapp.screens import TxtController
@@ -363,3 +366,182 @@ def test_new_draft_kills_zone_but_keeps_slot(tmp_path):
     assert snap["filter"]["active"] is False
     ctrl.load_data_path(src)
     assert pushes[-1][1]["filter"]["reapply_available"] is True
+
+
+# ------------------------- 대상 글꼴 선언·정렬 린트·T3 가드(블록 3 결정 17 · 블록 4 결정 26·27)
+
+def _aligned_controller(tmp_path: Path, template: str) -> "tuple[TxtController, list]":
+    """정렬 런이 있는 템플릿 + 격리된 설정 홈 — 글꼴/린트 회귀의 공용 지그."""
+    (tmp_path / "정렬기안.txt").write_text(template, encoding="utf-8")
+    pushes: list = []
+    ctrl = TxtController(TextTemplateRegistry(tmp_path), lambda s, snap: pushes.append((s, snap)))
+    return ctrl, pushes
+
+
+def test_target_font_defaults_and_persists(tmp_path, monkeypatch):
+    """대상 글꼴 선언은 **전역 영속**(설정 파일) — 새 컨트롤러가 그 값으로 태어난다(결정 17)."""
+    home = tmp_path / "home"
+    monkeypatch.setenv("HWPXFILLER_HOME", str(home))
+    ctrl, pushes = _controller(tmp_path)
+    assert ctrl.snapshot()["target_font"] == "gulimche"  # 고정폭 기본(첫 화면 경보 없음)
+    ctrl.dispatch("set_target_font", {"font": "malgun"})
+    assert pushes[-1][1]["target_font"] == "malgun"
+    fresh, _ = _controller(tmp_path)
+    assert fresh.snapshot()["target_font"] == "malgun"  # 컨트롤러보다 오래 산다
+
+
+def test_target_font_rejects_unknown_value_loudly(tmp_path, monkeypatch):
+    """열거형 밖 값은 조용히 무시하지 않는다 — 상태도 불변(confirm-or-alarm)."""
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    ctrl, _ = _controller(tmp_path)
+    with pytest.raises(ValueError):
+        ctrl.dispatch("set_target_font", {"font": "궁서체"})
+    assert ctrl.snapshot()["target_font"] == "gulimche"
+
+
+def test_lint_is_declaration_conditional(tmp_path, monkeypatch):
+    """린트는 **비례폭 선언에서만** 발화 — 고정폭에서 연속 공백은 정당한 저작이라 침묵."""
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    ctrl, _ = _aligned_controller(tmp_path, "건    명: {{공고명}}")
+    ctrl.dispatch("select_template", {"name": "정렬기안"})
+    ctrl.load_data_path(_csv(tmp_path))
+    lint = ctrl.snapshot()["card"]["lint"]
+    assert lint["space_run"] is True and lint["proportional"] is False
+    assert lint["active"] is False  # 굴림체 선언 = 경보 없음
+    ctrl.dispatch("set_target_font", {"font": "malgun"})
+    lint = ctrl.snapshot()["card"]["lint"]
+    assert lint["proportional"] is True and lint["active"] is True and lint["applied"] is False
+
+
+def test_lint_silent_without_space_run(tmp_path, monkeypatch):
+    """비례폭 선언이어도 정렬 런이 없으면 침묵 — 조건 두 개가 모두 서야 발화."""
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    ctrl, _ = _controller(tmp_path)  # 샘플기안엔 연속 공백이 없다
+    ctrl.load_data_path(_csv(tmp_path))
+    ctrl.dispatch("set_target_font", {"font": "malgun"})
+    assert ctrl.snapshot()["card"]["lint"]["active"] is False
+
+
+def test_fullwidth_applies_to_card_and_clipboard_alike(tmp_path, monkeypatch):
+    """치환은 카드와 클립보드를 **같은 통로**로 지난다 — 보이는 것이 복사되는 것.
+
+    템플릿 원본은 불변(세션 렌더 옵션) — 이름 있는 템플릿이 조용히 강등되지 않는다.
+    """
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    ctrl, _ = _aligned_controller(tmp_path, "건    명: {{공고명}}")
+    ctrl.dispatch("select_template", {"name": "정렬기안"})
+    ctrl.load_data_path(_csv(tmp_path))
+    ctrl.dispatch("set_target_font", {"font": "malgun"})
+    ctrl.dispatch("set_fullwidth", {"value": True})
+    snap = ctrl.snapshot()
+    card_text = "".join(s["text"] for s in snap["card"]["segments"])
+    clip, _report = ctrl.render()
+    assert card_text == clip
+    assert FULLWIDTH_SPACE in clip and "  " not in clip
+    assert snap["template_text"] == "건    명: {{공고명}}"  # 원본 불변
+    assert snap["template_name"] == "정렬기안"              # 강등 없음
+    assert snap["card"]["lint"] == {
+        "proportional": True, "space_run": True, "applied": True, "active": True,
+    }
+    ctrl.dispatch("set_fullwidth", {"value": False})       # 되돌리기는 항상 열려 있다
+    assert FULLWIDTH_SPACE not in ctrl.render()[0]
+
+
+def test_fullwidth_dies_with_session_but_font_survives(tmp_path, monkeypatch):
+    """치환 = 이번 원문의 조치(세션 휘발) · 글꼴 선언 = 사용자 환경 사실(전역 영속)."""
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    ctrl, _ = _aligned_controller(tmp_path, "건    명: {{공고명}}")
+    ctrl.dispatch("select_template", {"name": "정렬기안"})
+    ctrl.dispatch("set_target_font", {"font": "malgun"})
+    ctrl.dispatch("set_fullwidth", {"value": True})
+    ctrl.dispatch("new_draft", {})
+    snap = ctrl.snapshot()
+    assert snap["card"]["lint"]["applied"] is False
+    assert snap["target_font"] == "malgun"
+
+
+def test_t3_guard_arms_on_partial_queue_progress(tmp_path):
+    """T3(결정 26·27): 큐 부분 진행 = 무장. 완주는 완료 이벤트라 무장 해제."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))          # 3행 전체 선택 = 1클릭 재현 가능
+    assert ctrl.dispatch("guard_state", {})["armed"] is False
+    ctrl.note_copied(ctrl.render()[1])           # 1/3 복사 — 어디까지 붙여넣었는지는 앱 밖 기억
+    g = ctrl.dispatch("guard_state", {})
+    assert g["armed"] is True and g["queue_partial"] is True
+    assert (g["copied_count"], g["sel_count"]) == (1, 3)
+    for _ in range(2):                           # 완주까지 마저 복사
+        ctrl.queue.set_current(None)
+        ctrl.note_copied(ctrl.render()[1])
+    g = ctrl.dispatch("guard_state", {})
+    assert g["copied_count"] == 3
+    assert g["queue_partial"] is False and g["armed"] is False
+
+
+def test_t3_guard_arms_on_handmade_selection(tmp_path):
+    """선택 성분(작업 화면과 공유 술어)도 txt 에서 선다 — 복사 0건이어도 수작업 열거는 무장."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))
+    ctrl.dispatch("toggle_record", {"index": 2, "value": False})  # 필터 없는 부분 선택
+    g = ctrl.dispatch("guard_state", {})
+    assert g["armed"] is True and g["queue_partial"] is False
+    assert g["sel_count"] == 2 and g["filter_active"] is False
+
+
+def test_guard_state_is_pushless_query(tmp_path):
+    """무변이 질의 — 재렌더 낭비도, 직전 복사 확정의 조용한 소거도 없다(작업 화면 규약 승계)."""
+    ctrl, pushes = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))
+    ctrl.note_copied(ctrl.render()[1])
+    before = len(pushes)
+    ctrl.dispatch("guard_state", {})
+    assert len(pushes) == before
+    assert pushes[-1][1]["card"]["last_copy"] is not None
+
+
+def test_lint_row_survives_switch_to_fixed_width(tmp_path, monkeypatch):
+    """치환이 걸린 채 고정폭으로 되돌려도 린트 줄은 선다(리뷰 F1) — 조용한 변환 금지.
+
+    줄이 사라지면 전각 공백이 계속 클립보드로 나가는데 사용자는 통보도, 되돌릴 손잡이도
+    잃는다(confirm-or-alarm 위반). 경보(치환 전)만 선언-조건부다.
+    """
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    ctrl, _ = _aligned_controller(tmp_path, "건    명: {{공고명}}")
+    ctrl.dispatch("select_template", {"name": "정렬기안"})
+    ctrl.dispatch("set_target_font", {"font": "malgun"})
+    ctrl.dispatch("set_fullwidth", {"value": True})
+    ctrl.dispatch("set_target_font", {"font": "gulimche"})
+    lint = ctrl.snapshot()["card"]["lint"]
+    assert lint["applied"] is True and lint["proportional"] is False
+    assert lint["active"] is True, "치환이 걸렸는데 되돌릴 줄이 사라졌습니다(리뷰 F1)."
+    assert FULLWIDTH_SPACE in ctrl.render()[0]  # 변환은 유지 — 몰래 되돌리지도 않는다
+
+
+def test_fullwidth_dies_on_template_change(tmp_path, monkeypatch):
+    """치환 결정은 그 원문 것 — 템플릿 교체·붙여넣기에 승계되지 않는다(리뷰 F2).
+
+    승계되면 새 템플릿의 의도된 정렬이 동의 없이 변환되고, 런이 없는 템플릿에선 린트가
+    「치환했습니다」를 거짓 주장한다.
+    """
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    (tmp_path / "둘째기안.txt").write_text("항  목: {{공고명}}", encoding="utf-8")
+    ctrl, _ = _aligned_controller(tmp_path, "건    명: {{공고명}}")
+    ctrl.dispatch("select_template", {"name": "정렬기안"})
+    ctrl.dispatch("set_target_font", {"font": "malgun"})
+    ctrl.dispatch("set_fullwidth", {"value": True})
+    ctrl.dispatch("select_template", {"name": "둘째기안"})
+    assert ctrl.snapshot()["card"]["lint"]["applied"] is False
+    ctrl.dispatch("set_fullwidth", {"value": True})
+    ctrl.dispatch("set_template_text", {"text": "붙여넣은  원문"})
+    assert ctrl.snapshot()["card"]["lint"]["applied"] is False
+
+
+def test_lint_ignores_runs_inside_data_values(tmp_path, monkeypatch):
+    """값 안의 연속 공백은 경보 대상이 아니다(리뷰 F3) — 복사 데이터는 원본과 글자 단위 동일."""
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    csv = tmp_path / "spec.csv"
+    csv.write_text("공고명,추정가격\n규격 12  345,1000\n", encoding="utf-8")
+    ctrl, _ = _controller(tmp_path)  # 템플릿(샘플기안)엔 정렬 런이 없다
+    ctrl.load_data_path(str(csv))
+    ctrl.dispatch("set_target_font", {"font": "malgun"})
+    assert ctrl.snapshot()["card"]["lint"]["space_run"] is False
+    assert "규격 12  345" in ctrl.render()[0]

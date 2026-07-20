@@ -264,6 +264,59 @@ class DataZoneMixin:
         columns = list(records[0].keys()) if records else []
         self.filter = FilterModel(columns, sniff_column_kinds(records, hints))
 
+    # ------------------------------------------------- 세션 가드 술어(블록 4, 결정 26·27)
+    def _selection_guard(
+        self,
+        *,
+        settled: "set[int] | None" = None,
+        vis_set: "set[int] | None" = None,
+    ) -> dict:
+        """"재현 불가능한 수작업 선택"이 있는가 — 세션 가드 술어의 **선택 성분**(결정 27).
+
+        무장 조건: 선택이 비어 있지 않고 ∧ ``settled``(그 화면의 완료 이벤트가 설명하는
+        집합 — 작업=마지막 생성분, txt=완주한 큐)와 다르고 ∧ **정의-유래**(현 필터 매치
+        전체)가 아니고 ∧ **전체 선택**(1클릭 재현)도 아니다. 필터 정의 자체는 술어 불포함 —
+        재타이핑 몇 초 + 직전 필터 재적용(결정 28)이 복원을 담보한다(프루닝 동일).
+
+        두 소비 화면(작업 T1·txt T3)이 같은 판정을 쓰도록 믹스인이 소유한다 — 컨트롤러마다
+        복붙하면 한쪽만 고쳐지는 드리프트가 곧 "조용히 통과하는 파괴 전이"가 된다(#94 동형).
+        화면 고유 성분(txt 큐 부분 진행)은 소비처가 이 dict 위에 얹는다.
+
+        ``vis_set`` 은 렌더 경로가 이미 산출한 가시 집합 — 스냅샷에서 필터를 이중 평가하지
+        않기 위한 전달이다(FilterView 캐시 계약). 단발 판정은 생략하고 직접 평가한다.
+
+        수치는 modal.js 재진술 본문 소재(결정 27 "종류별 수치 재진술") — 표면이 합성한다.
+        """
+        records = self._records()
+        sel = set(self.selection.selected_indices())
+        f_active = self.filter is not None and self.filter.is_active()
+        filter_parts = 0
+        if self.filter is not None and f_active:
+            filter_parts = sum(
+                1 for c in self.filter.columns if self.filter.has_condition(c)
+            ) + (1 if self.filter.search_text else 0)
+        in_def = extra = 0
+        armed = False
+        if sel and sel != (settled or set()) and len(sel) != len(records):
+            if f_active:
+                assert self.filter is not None
+                vis = (
+                    vis_set if vis_set is not None
+                    else set(self.filter.visible_indices(records))
+                )
+                armed = sel != vis  # 정의-유래(매치 전체)는 정의줄이 재현을 담보
+                in_def, extra = len(sel & vis), len(sel - vis)
+            else:
+                armed = True  # 필터 없는 부분 선택 = 순수 수작업 열거
+        return {
+            "armed": armed,
+            "sel_count": len(sel),
+            "in_def": in_def,
+            "extra": extra,
+            "filter_active": f_active,
+            "filter_parts": filter_parts,
+        }
+
     def _zone_sections(
         self, indices: "list[int]", lead_for: "Callable[[int], dict]"
     ) -> "tuple[dict, dict, FilterView | None, list[int]]":
