@@ -119,6 +119,27 @@ def test_txt_consumes_factory_with_queue_identity():
     )
 
 
+def test_txt_session_keys_use_source_identity_not_label():
+    """txt 세션 지문·고지 키는 **정체**(data_key)여야 한다 — 표시 라벨(basename) 금지(리뷰).
+
+    라벨은 ``folder1/명단.xlsx``↔``folder2/명단.xlsx`` 가 같은 문자열이라, 라벨로 겨누면
+    동명 다른 폴더 전환에서 세션 리셋(Shift 앵커·검색 디바운스·존 고지)이 발화하지 않고
+    이전 파일의 앵커가 살아남아 새 파일에서 엉뚱한 범위가 조용히 선택된다.
+    """
+    src = _strip_js_comments(TXT_JS.read_text(encoding="utf-8"))
+    assert "tableKey: (s) => s.data_key" in src, (
+        "txt tableKey 가 소스 정체(data_key)를 쓰지 않습니다 — 동명 파일 전환에 stale 앵커."
+    )
+    # 존 고지 키도 같은 정체에 겨눈다(라벨이면 동명 전환에 이전 고지가 남는다). 표시 라벨
+    # 자체의 소비(#txtDataLabel 채우기)는 정당하므로 **키 대입만** 본다.
+    assert re.search(r"zkey\s*=\s*s\.data_key", src), (
+        "존 고지 키(zoneNoteKey)가 소스 정체를 쓰지 않습니다 — 동명 전환에 고지 잔존."
+    )
+    assert not re.search(r"(tableKey|zkey)\s*[:=][^\n]*data_source_label", src), (
+        "표시 라벨을 세션 키로 쓰는 코드가 남아 있습니다(basename 동명 충돌)."
+    )
+
+
 def test_factory_is_screen_agnostic():
     """팩토리에 job 고유 id·화면 루트 하드코딩 금지(가드 4) — 전부 config 주입이어야 한다.
 

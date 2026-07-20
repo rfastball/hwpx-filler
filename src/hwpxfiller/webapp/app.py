@@ -797,7 +797,7 @@ _TXT_ZONE_PROBE_JS = r"""
       tokens:[{name:'공고명', state:'fill'}],
       record_index:1, record_count:2, render_text:'제목: 전산장비 구매',
       missing_fields:[], empty_fields:[],
-      data_label:'d.csv', data_source_label:'파일: d.csv',
+      data_label:'d.csv', data_source_label:'파일: d.csv', data_key:'file:c:/d/d.csv',
       has_data:true, selected_count:2,
       filter:{active:true, reapply_available:false, search:'전산',
               chips:['(공고명) 포함 「전산」'], definition:'(공고명) 포함 「전산」',
@@ -813,7 +813,8 @@ _TXT_ZONE_PROBE_JS = r"""
     out.rows = document.querySelectorAll('#txtTableBody tr[data-i]').length;
     out.mark = (function(){ var m = document.querySelector('#txtTableBody mark');
       return m ? m.textContent : ''; })();
-    // 선두 「큐」 열 — 작업점 ▶ + 대기 순번(링1 큐 모델 사영, 결정 16).
+    // 선두 「큐」 열 — 작업점 ▶ 표지(링1 큐 모델 사영, 결정 16). 순번은 큐 순서로 그리는
+    // 상태 색인(PR-3) 몫이라 이 표엔 렌더하지 않는다(비단조 오독 차단, PR-2b 리뷰).
     out.lead = (function(){ var d = document.querySelector('#txtTableBody .doc-body');
       return d ? d.textContent : ''; })();
     out.head_lead = (function(){ var h = document.querySelector('#txtTableHead th.doccol');

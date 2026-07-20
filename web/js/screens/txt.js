@@ -36,11 +36,16 @@
     rowIdPrefix: "txtRow-",  // preserve.js 가 id 로 포커스 복원 — job 행과 전역 유일
     lead: {
       header: "큐",
+      /* 큐 표지 — **순번(qpos)은 여기 렌더하지 않는다**(리뷰): 이 표는 레코드 순서인데
+         순번은 큐-꼬리 순서라, 해제 후 재선택한 행이 꼬리로 가면 위→아래로 1,2,5,3,4 처럼
+         비단조로 읽힌다(의도된 큐 의미론이지만 화면에선 렌더 버그로 보인다). 순번의 거처는
+         **큐 순서로 그리는 상태 색인·작업점 카드**(PR-3)다 — 거기선 단조롭다. 여기선
+         상태(작업점·대기·복사됨)만 정직하게 말한다. */
       bodyHtml(r) {
         if (!r.selected) return `<span class="doc-off">선택하면 큐에 담깁니다</span>`;
         if (r.copied) return `<span class="doc-sum">복사됨</span>`;  // 정직 라벨(결정 16)
-        const cur = r.current ? "▶ " : "";
-        return `<span class="doc-name">${cur}대기 ${r.qpos}</span>`;
+        if (r.current) return `<span class="doc-name">▶ 작업점</span>`;
+        return `<span class="doc-name">대기</span>`;
       },
     },
     copy: {
@@ -49,7 +54,12 @@
       emptyNoRows: "데이터에 행이 없습니다.",
       stripLead: (n) => `필터 밖 선택 <b>${n}행</b> — 화면엔 안 보이지만 큐에 포함됩니다: `,
     },
-    tableKey: (s) => s.data_source_label || "",
+    /* 세션 지문 = 소스 **정체**(data_key: 정규화 경로+시트 / 풀 참조) — 표시 라벨이 아니다
+       (리뷰): 라벨은 basename 이라 `folder1/명단.xlsx`↔`folder2/명단.xlsx` 가 같은 문자열이 돼
+       세션 리셋이 발화하지 않고, 이전 파일의 Shift 앵커가 살아남아 새 파일에서 엉뚱한 범위가
+       조용히 선택된다. 작업 화면이 `작업명|라벨` 복합 키로 우연히 피한 함정을 여기선 정체
+       키로 정면 차단한다(Python `_data_key` 와 같은 판정 = 재적용 게이트와도 일치). */
+    tableKey: (s) => s.data_key || "",
     log: zoneLog,
   });
 
@@ -98,7 +108,9 @@
       dz.render(s);  // 데이터 존(테이블·칩·스트립) — 팩토리 소유(datazone.js). 게이트 없는
                      // 전량 렌더라 별도 dz.sync 불요(LAST 는 매 push 최신).
       // 존 고지는 데이터 소스가 바뀌면 걷는다(다른 세션으로의 누수 방지 — 읽힐 때까지 유지).
-      const zkey = s.data_source_label || "";
+      // 키는 표시 라벨이 아니라 정체(data_key) — 동명 다른 폴더 전환에서 이전 소스의 고지가
+      // 남는 같은 함정을 tableKey 와 함께 닫는다(리뷰).
+      const zkey = s.data_key || "";
       if (zkey !== zoneNoteKey) {
         zoneNoteKey = zkey;
         $("txtZoneNote").style.display = "none";

@@ -68,7 +68,6 @@ from .screens import (
     PushSink,
     default_pool_registry,
     load_pool_into,
-    load_pool_item_checked,
     relink_job_template,
     source_label,
 )
@@ -334,8 +333,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         if self.filter is None or self.vm is None:
             return _EMPTY_FILTER, _EMPTY_TABLE, _EMPTY_RESTATE, self._guard_state()
+        # 선두 열 소재는 ``record_rows`` 재사용 — 이 화면은 그 목록을 스냅샷 ``records`` 로도
+        # 싣기 때문에 이미 전량 지어져 있다(믹스인은 실리는 행에만 이 조회를 부른다).
         rows_by_index = {r["index"]: r for r in record_rows}
-        filter_snap, table_snap, view, visible = self._zone_sections(indices, rows_by_index)
+        filter_snap, table_snap, view, visible = self._zone_sections(
+            indices, rows_by_index.__getitem__
+        )
         assert view is not None  # filter 존재를 위에서 확인 — 믹스인 빈 골격 분기 아님
         vis_set = set(visible)
         sel_set = set(indices)

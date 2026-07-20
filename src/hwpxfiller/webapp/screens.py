@@ -383,20 +383,28 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
         vm = self.vm
         text, report = vm.render()
         n = vm.record_count()
-        # 데이터 존(블록 3·4) — 선두 「큐」 열 소재 = 큐 표지(대기 순번·복사됨·작업점).
+        # 데이터 존(블록 3·4) — 선두 「큐」 열 소재 = 큐 표지(대기·복사됨·작업점).
         # 복사 동사·카드는 PR-3 — 표지는 링1 모델 상태의 정직한 사영이라 먼저 선다.
+        # 큐 조회는 **1회 O(n) 선계산** 후 O(1) 로 본다(PR-2b 리뷰: position_of·is_copied 는
+        # 각각 리스트 스캔이라 행마다 부르면 매 push 가 O(n²) — 대형 코퍼스에서 타건마다 지연).
         indices = self.selection.selected_indices()
-        rows_by_index = {
-            i: {
+        qpos_of = {idx: k + 1 for k, idx in enumerate(self.queue.uncopied())}
+        copied_set = set(self.queue.copied_tail())
+        current = self.queue.current
+
+        def lead_for(i: int) -> dict:
+            return {
                 "index": i,
                 "selected": self.selection.is_selected(i),
-                "qpos": self.queue.position_of(i),
-                "copied": self.queue.is_copied(i),
-                "current": self.queue.current == i,
+                # 미처리 큐 순번 — 표면은 이 수를 **행 표에 렌더하지 않는다**(큐-꼬리 순서라
+                # 레코드 순서 표에서 비단조로 읽힌다, PR-2b 리뷰). 큐 순서로 그리는 상태
+                # 색인·작업점 카드(PR-3)가 소비할 링1 진실이라 스냅샷엔 싣는다.
+                "qpos": qpos_of.get(i),
+                "copied": i in copied_set,
+                "current": current == i,
             }
-            for i in range(n)
-        }
-        filter_snap, table_snap, _view, _visible = self._zone_sections(indices, rows_by_index)
+
+        filter_snap, table_snap, _view, _visible = self._zone_sections(indices, lead_for)
         return {
             "template_name": vm.template_name or "(붙여넣은 텍스트)",
             "template_text": vm.template_text,
@@ -411,6 +419,11 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
             # 소스 종류 병기 라벨(#26) — 저장 상태가 아니라 플래그에서 매번 합성(K8).
             "data_source_label": source_label(self.data_source, self.data_label),
             # 데이터 존 계약(datazone.js 소비 키) — 작업 화면과 같은 모양.
+            # ``data_key`` = 소스 **정체**(경로 정규화·시트/참조 병기) — 표시 라벨은
+            # basename 이라 `folder1/명단.xlsx`↔`folder2/명단.xlsx` 가 같은 문자열이 된다.
+            # 표면의 세션 리셋(Shift 앵커·디바운스·고지)은 이 키에 겨눠야 동명 전환에서
+            # stale 앵커로 엉뚱한 범위가 조용히 선택되지 않는다(PR-2b 리뷰).
+            "data_key": self._data_key,
             "has_data": vm.datasource is not None,
             "selected_count": self.selection.selected_count(),
             "filter": filter_snap,

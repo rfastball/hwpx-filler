@@ -60,6 +60,7 @@ def test_load_defaults_to_all_selected_queue(tmp_path):
     assert snap["record_count"] == 3 and snap["selected_count"] == 3
     rows = snap["table"]["rows"]
     assert [r["index"] for r in rows] == [0, 1, 2]
+    # qpos = 미처리 큐 순번(링1 진실 — 표면은 큐 순서로 그리는 상태 색인(PR-3)에서 소비).
     assert [r["qpos"] for r in rows] == [1, 2, 3]
     assert [r["copied"] for r in rows] == [False, False, False]
     assert [r["current"] for r in rows] == [True, False, False]  # 작업점 = 첫 미처리
@@ -195,6 +196,30 @@ def test_reapply_slot_survives_source_roundtrip(tmp_path):
     snap = pushes[-1][1]
     assert snap["filter"]["search"] == "전산" and snap["table"]["visible_count"] == 1
     assert snap["selected_count"] == 3  # 정의(보기)만 복원 — 선택 불변(2클릭 분리)
+
+
+def test_snapshot_exposes_source_identity_key(tmp_path):
+    """``data_key`` = 소스 **정체**(정규화 경로+시트) — 표시 라벨과 달리 동명 파일을 가른다(리뷰).
+
+    표면의 세션 리셋(Shift 앵커·디바운스·존 고지)이 이 키에 겨눈다: basename 뿐인 라벨로는
+    ``folder1/명단.xlsx``→``folder2/명단.xlsx`` 전환이 같은 세션으로 보여 stale 앵커가 살아남는다.
+    """
+    ctrl, pushes = _controller(tmp_path)
+    a_dir, b_dir = tmp_path / "폴더1", tmp_path / "폴더2"
+    a_dir.mkdir()
+    b_dir.mkdir()
+    same_name = "명단.csv"
+    key_of = []
+    for d in (a_dir, b_dir):
+        p = d / same_name
+        p.write_text("공고명,추정가격\n전산장비 구매,1000\n", encoding="utf-8")
+        ctrl.load_data_path(str(p))
+        snap = pushes[-1][1]
+        assert snap["data_source_label"] == f"파일: {same_name}"  # 라벨은 동일(basename)
+        key_of.append(snap["data_key"])
+    assert key_of[0] != key_of[1], (
+        f"동명 다른 폴더의 data_key 가 같습니다 — 표면 세션 리셋이 발화하지 않습니다: {key_of!r}"
+    )
 
 
 def test_new_draft_kills_zone_but_keeps_slot(tmp_path):

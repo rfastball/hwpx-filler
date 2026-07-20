@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 
 from pathlib import Path
+from typing import Callable
 
 from ..core.dataset_pool import DatasetPoolRegistry
 from ..gui.filter_state import (
@@ -264,14 +265,17 @@ class DataZoneMixin:
         self.filter = FilterModel(columns, sniff_column_kinds(records, hints))
 
     def _zone_sections(
-        self, indices: "list[int]", rows_by_index: "dict[int, dict]"
+        self, indices: "list[int]", lead_for: "Callable[[int], dict]"
     ) -> "tuple[dict, dict, FilterView | None, list[int]]":
         """필터·테이블 스냅샷 합성 — ``(filter, table, view|None, visible)`` 반환.
 
         평가는 FilterView 1회(캐시 계약) — 컨트롤러가 반환 view/visible 로 재진술·가드를
-        추가 합성한다(이중 평가 금지, 작업 화면 리뷰 #7). ``rows_by_index`` = 전 레코드의
-        선두 열 소재(화면 주입: 작업=이름·요약, txt=큐 표지) — 가시 행과 필터 밖 선택
-        스트립(결정 3)이 같은 소재를 공유한다. 미겨눔(filter None)은 빈 골격 + view None.
+        추가 합성한다(이중 평가 금지, 작업 화면 리뷰 #7).
+
+        ``lead_for(i)`` = 그 행의 선두 열 소재 dict(화면 주입: 작업=이름·요약, txt=큐 표지).
+        **실리는 행에만** 부른다 — 가시 행 + 필터 밖 선택 스트립(결정 3)이 소비하는 행뿐이라,
+        전 레코드 dict 를 미리 지어 대부분 버리는 낭비가 없다(PR-2b 리뷰). 두 소비처가
+        같은 함수를 통과하므로 소재는 여전히 단일 출처다. 미겨눔(filter None)은 빈 골격.
         """
         if self.filter is None:
             return EMPTY_FILTER, EMPTY_TABLE, None, []
@@ -283,7 +287,7 @@ class DataZoneMixin:
         columns = fm.columns
         table_rows = [
             {
-                **rows_by_index[i],
+                **lead_for(i),
                 # 셀 텍스트 = 필터와 같은 읽기(cell_text 단일 출처) — `or ""` 류는 0·False 를
                 # 빈칸으로 붕괴시켜 "필터는 남겼는데 표면은 빈 셀"이 된다(리뷰 #8).
                 "cells": [view.segments(c, cell_text(records[i], c)) for c in columns],
@@ -308,6 +312,6 @@ class DataZoneMixin:
             "rows": table_rows,
             "visible_count": len(visible),
             # 필터 밖 선택 — 스트립이 상시 진술(결정 3). 원본 순서.
-            "hidden_selected": [rows_by_index[i] for i in indices if i not in vis_set],
+            "hidden_selected": [lead_for(i) for i in indices if i not in vis_set],
         }
         return filter_snap, table_snap, view, visible

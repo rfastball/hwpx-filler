@@ -338,8 +338,13 @@ class TestWebSelftestGate:
         assert z["rows"] == 1, f"가시 행 렌더 수가 다릅니다: {z!r}"
         assert z["mark"] == "전산", f"하이라이트 세그먼트 미렌더: {z['mark']!r}"
         assert z["head_lead"] == "큐", f"선두 열 머리가 「큐」가 아닙니다: {z['head_lead']!r}"
-        assert "▶" in z["lead"] and "대기 1" in z["lead"], (
-            f"큐 표지(작업점 ▶·대기 순번)가 렌더되지 않았습니다: {z['lead']!r}"
+        assert "▶" in z["lead"] and "작업점" in z["lead"], (
+            f"큐 표지(작업점 ▶)가 렌더되지 않았습니다: {z['lead']!r}"
+        )
+        # 순번은 이 표에 렌더하지 않는다 — 큐-꼬리 순서라 레코드 순서 표에선 비단조로
+        # 읽힌다(PR-2b 리뷰). 거처는 큐 순서로 그리는 상태 색인(PR-3).
+        assert "대기 1" not in z["lead"], (
+            f"레코드 순서 표에 큐 순번이 되살아났습니다(비단조 오독): {z['lead']!r}"
         )
         assert "「전산」" in z["chips_text"], f"칩 줄 정의 재진술 누락: {z['chips_text']!r}"
         assert z["strip_shown"] is True, "필터 밖 선택 스트립이 표시되지 않았습니다(결정 3)."
