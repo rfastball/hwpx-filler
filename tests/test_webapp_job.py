@@ -985,6 +985,26 @@ def test_reapply_gated_off_while_current_filter_is_live(tmp_path):
     assert ctrl.snapshot()["filter"]["reapply_available"] is True
 
 
+def test_reapply_hint_describes_the_dying_session_not_the_incoming_data(tmp_path):
+    """정의줄은 **죽는 세션의 데이터**로 지어야 한다(리뷰 F1) — 겨눔 경로가 레코드를 먼저
+    갈아치우므로, 스태시 시점에 새로 지으면 남의 데이터에 대고 옛 정의를 묘사하게 된다.
+
+    증상: 새 소스에 매치가 없으면 describe 가 「매치 없음」으로 떨어져, 원 소스로 돌아왔을 때
+    버튼이 "매치 없음"이라는 거짓을 업고 뜬다(그 소스에선 멀쩡히 매치되는 정의인데도).
+    """
+    ctrl, _ = _session(tmp_path)
+    csv1 = _data_csv(tmp_path)
+    ctrl.dispatch("filter_search", {"text": "전산"})
+    alive = ctrl.snapshot()["filter"]["definition"]
+    assert "전산" in alive and "매치 없음" not in alive
+    other = tmp_path / "other.csv"                       # 열도 값도 다른 소스(매치 0)
+    other.write_text("colA,colB\nx,y\n", encoding="utf-8")
+    ctrl.load_data_path(str(other))                      # 죽음 → 슬롯(레코드는 이미 교체됨)
+    ctrl.load_data_path(csv1)                            # 원 소스 복귀
+    hint = ctrl.snapshot()["filter"]["reapply_hint"]
+    assert hint == alive, f"슬롯 문안이 죽는 세션이 아니라 새 데이터로 지어졌습니다: {hint!r}"
+
+
 def test_reapply_hint_carries_definition_to_be_installed(tmp_path):
     """버튼이 설치할 정의를 업는다(#127 조치 2 — 목업 칩 문법 승계).
 
