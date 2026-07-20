@@ -300,8 +300,8 @@ def test_web_assets_present_and_wired():
         assert (WEB / rel).exists(), f"web/{rel} 없음"
     html = (WEB / "index.html").read_text(encoding="utf-8")
     assert "css/tokens.css" in html and "js/bridge.js" in html
-    # 4화면 레일 + txt 실화면 심.
-    for scr in ("home", "editor", "job", "txt"):
+    # 레일 5항목(editor 는 슬라이스 5 흡수 사망 — 편집은 「작업」 편집 모드) + txt 실화면 심.
+    for scr in ("home", "job", "txt", "tpl", "pool"):
         assert f'data-scr="{scr}"' in html, f"레일에 {scr} 없음"
     assert 'id="scr-txt"' in html
 
