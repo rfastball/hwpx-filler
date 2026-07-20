@@ -35,8 +35,10 @@
          R-info 1부는 이 화면을 부팅 랜딩으로 확정했으나, 랜딩 전환(기본 화면 교체)은 별도 후속. -->
     <button class="navbtn" data-scr="job" aria-label="작업" title="작업 — 저장된 작업을 골라 세션 패널에서 데이터를 채워 생성">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h5v12H4zM11 4h5v7h-5z"/></svg></span><span class="lbl"><span class="n">작업</span><span class="d">목록 + 세션 패널</span></span></button>
-    <button class="navbtn" data-scr="editor" aria-label="작업 에디터" title="작업 에디터 — HWPX 작업 만들기 · 4단계">
-      <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 4.5l2 2L7 15l-3 1 1-3zM12 6l2 2"/></svg></span><span class="lbl"><span class="n">작업 에디터</span><span class="d">HWPX · 4단계</span></span></button>
+    <!-- 에디터 흡수(결정 39) 과도기 — 이 버튼은 app.js 심이 「작업」 편집 모드로 돌린다.
+         레일 항목 자체의 사망(레일 축소)은 삭제 PR 소관. -->
+    <button class="navbtn" data-scr="editor" aria-label="작업 에디터" title="작업 에디터 — 「작업」 화면의 편집 모드로 열립니다 · 3단계">
+      <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 4.5l2 2L7 15l-3 1 1-3zM12 6l2 2"/></svg></span><span class="lbl"><span class="n">작업 에디터</span><span class="d">HWPX · 3단계</span></span></button>
     <button class="navbtn" data-scr="txt" aria-label="기안문 채우기 (txt)" title="기안문 채우기 (txt) — 템플릿을 실시간으로 채워 복사">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h5l3 3v11H6zM11 3v3h3M8 11h5M8 14h5"/></svg></span><span class="lbl"><span class="n">기안문 채우기 (txt)</span><span class="d">실시간 채움 → 복사</span></span></button>
     <button class="navbtn" data-scr="tpl" aria-label="템플릿 관리" title="템플릿 관리 — HWPX·TXT 라이브러리 · 상태·변환·검토">
@@ -214,21 +216,31 @@
               <div class="logbox" id="jobGenLog">작업, 데이터, 저장 폴더를 확인한 뒤 생성하세요.</div>
             </div>
           </div>
+
+          <!-- 편집 모드(정의) 호스트 — 에디터 흡수(R-flow 블록 2 개정, 결정 39~41).
+               에디터 화면의 세 컨테이너를 문안째 이관: editor.js 렌더러가 같은 id 를 그대로
+               소유한다(옮긴 것은 거처뿐). 신규=마법사 단계·편집=탭은 렌더러가 스냅샷
+               editing_origin 으로 가른다. 표시는 job.js 의 모드 상태가 소유(실행 기본). -->
+          <div class="job-edit-host" id="jobEditHost" style="display:none">
+            <div class="wsteps" id="editor-steps"></div>
+            <div class="wbody" id="editor-body" data-preserve-scroll></div>
+            <footer class="wfoot" id="editor-foot"></footer>
+          </div>
         </div>
       </div>
     </section>
 
-    <!-- ============ 작업 에디터 (HWPX 4단계 마법사, #15·#16) ============ -->
+    <!-- ============ 작업 에디터 (껍데기) — 에디터 흡수(결정 39)로 표면은 「작업」 패널
+         편집 모드에 산다. 이 섹션으로 보내는 경로는 0(레일 버튼은 app.js 심이 편집 모드로
+         돌린다). 섹션·레일 항목의 물리 제거는 삭제 PR(레일 축소) 소관 — DOM 계약
+         가드(SCREEN_ROOTS)·내비 카운트와 함께 갱신한다("삭제는 의무를 상속한다"). ============ -->
     <section class="scr" id="scr-editor">
       <header class="scr-head">
         <div>
           <h1>작업 에디터</h1>
-          <p class="sub">누름틀 템플릿과 매핑을 작업으로 저장합니다 — 「작업」 화면에서 데이터를 골라 .hwpx 문서를 만듭니다.</p>
+          <p class="sub">작업 편집은 「작업」 화면의 편집 모드로 이사했습니다.</p>
         </div>
       </header>
-      <div class="wsteps" id="editor-steps"></div>
-      <div class="wbody" id="editor-body" data-preserve-scroll></div>
-      <footer class="wfoot" id="editor-foot"></footer>
     </section>
 
     <!-- ============ TXT 기안문 채우기 (첫 실화면) ============ -->

@@ -34,7 +34,17 @@
         window.alert(String((err && err.message) || err)));
     }
   }
-  navs.forEach((b) => b.addEventListener("click", () => go(b.dataset.scr)));
+  navs.forEach((b) => b.addEventListener("click", () => {
+    // 에디터 흡수(결정 39) 과도기 심 — 레일 「작업 에디터」는 「작업」 패널의 편집 모드로
+    // 연다(별도 화면 사망, 정의 세션은 이어서 노출). 레일 항목 자체의 제거(레일 축소)는
+    // 삭제 PR 소관이라 그때 이 분기도 함께 죽는다.
+    if (b.dataset.scr === "editor") {
+      go("job");
+      if (window.JobScreen && window.JobScreen.showEditMode) window.JobScreen.showEditMode();
+      return;
+    }
+    go(b.dataset.scr);
+  }));
   // 홈(허브)이 카드/버튼에서 워크플로 화면으로 보내는 진입점(home.js 가 소비).
   window.Nav = { go };
 
