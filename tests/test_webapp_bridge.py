@@ -59,13 +59,22 @@ def test_initial_snapshot_shape(tmp_path):
     assert "샘플기안" in init["templates"]
     names = [t["name"] for t in init["tokens"]]
     assert names == ["공고명", "담당자", "추정가격"]
-    # 데이터 없음 → 전부 항목 없음(missing), 인덱스 0/0.
+    # 데이터 없음 → 전부 항목 없음(missing). 토큰·리포트는 작업점 카드에서 파생(record_index
+    # 자유 커서 사망, 결정 16) — 빈 레코드 미리보기라 전 토큰 미충족·작업점 부재.
     assert all(t["state"] == "missing" for t in init["tokens"])
-    assert init["record_index"] == 0 and init["record_count"] == 0
-    assert set(init["missing_fields"]) == {"공고명", "담당자", "추정가격"}
+    assert init["record_count"] == 0
+    card = init["card"]
+    # 미충족 리포트는 card 단일 출처(최상위 트윈 폐기) — 데이터 없음 = 전 필드 항목 없음.
+    assert set(card["missing_fields"]) == {"공고명", "담당자", "추정가격"}
+    assert card["has_current"] is False and card["index"] is None
+    assert card["selected_count"] == 0 and card["index_map"] == []
 
 
-def test_load_data_drives_vm_and_pushes(tmp_path):
+def test_load_data_drives_card_and_pushes(tmp_path):
+    """데이터 겨눔 = 작업점 카드가 첫 미처리 행(index 0)을 지나간다(결정 16).
+
+    토큰·리포트·render_text 는 자유 커서가 아니라 작업점 카드에서 파생 — 작업점=첫 행.
+    """
     ctrl, pushes = _controller(tmp_path)
     csv = tmp_path / "d.csv"
     csv.write_text("공고명,추정가격,담당자\n전산장비 구매,1000,\n비품 구매,,김담당\n", encoding="utf-8")
@@ -74,22 +83,50 @@ def test_load_data_drives_vm_and_pushes(tmp_path):
     assert pushes, "load 후 관측 푸시가 없음"
     screen, snap = pushes[-1]
     assert screen == "txt"
-    assert snap["record_count"] == 2 and snap["record_index"] == 1
+    assert snap["record_count"] == 2
+    card = snap["card"]
+    assert card["has_current"] is True and card["index"] == 0  # 작업점 = 첫 미처리
+    assert card["position"] == 1 and card["uncopied_count"] == 2 and card["copied_count"] == 0
     states = {t["name"]: t["state"] for t in snap["tokens"]}
-    # rec1: 공고명=채움, 추정가격=채움, 담당자=빈 값(열 존재·값 빔).
+    # 작업점(행 0): 공고명=채움, 추정가격=채움, 담당자=빈 값(열 존재·값 빔).
     assert states == {"공고명": "fill", "추정가격": "fill", "담당자": "blank"}
-    assert "전산장비 구매" in snap["render_text"]
+    assert "전산장비 구매" in "".join(seg["text"] for seg in card["segments"])  # 카드 평문
+    # 채움 표지 삼분 세그먼트(결정 22) — 카드 렌더의 링1 사영.
+    kinds = {seg["kind"] for seg in card["segments"]}
+    assert "fill" in kinds and "blank" in kinds and "literal" in kinds
+    # 빈칸 지도: 두 행 모두 담당자/추정가격에 빈칸 → has_gap.
+    assert [d["has_gap"] for d in card["index_map"]] == [True, True]
 
 
-def test_step_wraps_records(tmp_path):
+def test_step_moves_work_point_with_boundary_stop(tmp_path):
+    """step = 큐 작업점 이동(↓/↑, 경계 멈춤 — 순환 안 함). 자유 레코드 커서 사망(결정 16)."""
     ctrl, pushes = _controller(tmp_path)
     csv = tmp_path / "d.csv"
     csv.write_text("공고명,추정가격,담당자\nA,1,x\nB,2,y\n", encoding="utf-8")
     ctrl.load_data_path(str(csv))
+    assert pushes[-1][1]["card"]["index"] == 0        # 작업점 = 첫 미처리
     ctrl.dispatch("step", {"delta": 1})
-    assert pushes[-1][1]["record_index"] == 2
-    ctrl.dispatch("step", {"delta": 1})  # 순환
-    assert pushes[-1][1]["record_index"] == 1
+    assert pushes[-1][1]["card"]["index"] == 1
+    ctrl.dispatch("step", {"delta": 1})               # 경계 = 멈춤(순환 없음)
+    assert pushes[-1][1]["card"]["index"] == 1
+    ctrl.dispatch("step", {"delta": -1})
+    assert pushes[-1][1]["card"]["index"] == 0
+
+
+def test_set_current_and_defer_and_advance(tmp_path):
+    """상태 색인 점 클릭(set_current)·미루기(defer)·복사 후 전진(toggle_advance) 액션 결선."""
+    ctrl, pushes = _controller(tmp_path)
+    csv = tmp_path / "d.csv"
+    csv.write_text("공고명,추정가격,담당자\nA,1,x\nB,2,y\nC,3,z\n", encoding="utf-8")
+    ctrl.load_data_path(str(csv))
+    ctrl.dispatch("set_current", {"index": 2})        # 색인 점 클릭 = 작업점 직접 지정
+    assert pushes[-1][1]["card"]["index"] == 2
+    ctrl.dispatch("defer", {"index": 0})              # 행 0 을 큐 뒤로(비작업점 미루기)
+    imap = pushes[-1][1]["card"]["index_map"]
+    assert [d["index"] for d in imap] == [1, 2, 0]    # 0 이 미처리 후미로
+    assert pushes[-1][1]["card"]["index"] == 2        # 작업점 불변(조용한 이동 금지)
+    ctrl.dispatch("toggle_advance", {"value": True})
+    assert pushes[-1][1]["card"]["advance_after"] is True
 
 
 def test_set_template_text_is_session_template(tmp_path):
@@ -111,13 +148,14 @@ def test_new_draft_action_resets_session(tmp_path):
     csv = tmp_path / "d.csv"
     csv.write_text("공고명,추정가격,담당자\nA,1,x\nB,2,y\n", encoding="utf-8")
     ctrl.load_data_path(str(csv))
-    ctrl.dispatch("step", {"delta": 1})                             # 레코드 2/2 로 이동
+    ctrl.dispatch("step", {"delta": 1})                             # 작업점 카드 이동
     ctrl.dispatch("set_template_text", {"text": "붙여넣은 {{본문}}"})  # 세션 템플릿 오염
     ctrl.dispatch("new_draft", {})
     snap = pushes[-1][1]
     assert snap["template_name"] == "샘플기안"                       # 첫 템플릿 재선택(생성자 동형)
     assert "{{공고명}}" in snap["template_text"]                     # 붙여넣기 텍스트 폐기
-    assert snap["record_count"] == 0 and snap["record_index"] == 0   # 데이터 폐기
+    assert snap["record_count"] == 0                                # 데이터 폐기
+    assert snap["card"]["has_current"] is False                     # 작업점 소멸(세션 휘발)
     assert snap["data_label"] == "" and snap["data_source_label"] == ""
 
 
@@ -327,6 +365,23 @@ def test_txt_load_pool_and_nara_frozen(tmp_path):
     assert res["ok"] is True and res["label"] == "등록 데이터: 기안데이터"
     snap = ctrl.snapshot()
     assert snap["data_source_label"] == "등록 데이터: 기안데이터"
-    assert snap["record"].get("공고명") == "전산장비"     # 참조 재읽기로 실 레코드 도착
+    card_text = "".join(seg["text"] for seg in snap["card"]["segments"])
+    assert "전산장비" in card_text     # 참조 재읽기로 실 레코드가 작업점 카드에 도착
     res2 = ctrl.dispatch("load_pool", {"name": "나라쿼리"})
     assert res2["ok"] is False and "동결" in res2["error"]
+
+
+def test_copy_clipboard_blocks_empty_when_no_work_point(tmp_path, monkeypatch):
+    """브리지 copy_clipboard: 작업점 없으면 클립보드 미기록·copied=False(리뷰 F3).
+
+    작업점 없이(데이터/선택 없음) 복사하면 빈 템플릿(생 ``{{토큰}}``)이 OS 클립보드로 조용히
+    나가던 결함 — can_copy 게이트로 클립보드 자체를 건드리지 않는다.
+    """
+    from hwpxfiller.webapp import app as app_mod
+
+    fe = _frontend(tmp_path, monkeypatch)  # 기본 txt 컨트롤러 = 데이터 없음 → 작업점 없음
+    writes: list = []
+    monkeypatch.setattr(app_mod, "set_clipboard_text", lambda t: writes.append(t))
+    res = fe.copy_clipboard("txt")
+    assert res["copied"] is False
+    assert writes == [], "작업점 없는데 클립보드에 기록됐습니다(빈 템플릿 오염)."

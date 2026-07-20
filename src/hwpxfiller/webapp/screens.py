@@ -25,7 +25,7 @@ from ..core.dataset_pool import (
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
 from ..core.fill_ledger import template_path_drift  # 재연결 드리프트 재진술(#67)
 from ..core.text_registry import TextTemplateRegistry
-from ..core.text_render import RenderReport
+from ..core.text_render import RenderReport, render_record, render_segments, template_fields
 from ..gui.dataset_pool_state import DatasetPoolRow
 from ..gui.selection_state import SelectionModel
 from ..gui.txt_queue import TxtQueueModel
@@ -326,7 +326,13 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
     :class:`~hwpxfiller.webapp.data_zone.DataZoneMixin` 공유(작업 화면과 단일 출처), 큐
     상태는 링1 :class:`~hwpxfiller.gui.txt_queue.TxtQueueModel` 이 소유한다(재구현 금지) —
     선택 변경마다 :meth:`TxtQueueModel.reconcile` 로 재봉합(``copied ⊆ selected`` 자가복구).
-    작업점 카드·복사 동사·상태 색인은 PR-3, 글꼴·린트·T3 가드는 PR-4.
+
+    **작업점 카드(블록 3, 슬라이스 6 PR-3)**: 큐가 지나가는 한 장(결정 16). :meth:`snapshot`
+    의 ``card`` 섹션이 작업점 레코드를 링1 :func:`~hwpxfiller.core.text_render.render_segments`
+    (채움 표지 삼분, 결정 22)로 사영하고 상태 색인(위치·처리·빈칸 지도)을 싣는다. :meth:`render`
+    는 자유 레코드 커서가 아니라 큐 작업점을 렌더하며(복사=완료의 대상), :meth:`note_copied` 가
+    복사 후 큐를 전진시킨다(전진 opt-in=``_advance_after``, 기본 꺼짐). 건별 파일 저장은 사망
+    (결정 18) — 새 큐 표면에 재구현하지 않는다. 글꼴 선언·린트·T3 가드는 PR-4.
     """
 
     name = "txt"
@@ -350,6 +356,14 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
         self._last_filter = None
         self._data_key = ""
         self.filter = None
+        # 복사 후 전진 옵션(결정 16, 기본 꺼짐) — 컨트롤러 수명(세션 「새 기안」을 넘어 유지,
+        # 워드프로세서 토글 멘탈 모델). 넘어가기 = 사용자의 사실상 붙여넣기 서명이라 opt-in.
+        self._advance_after = False
+        # 직전 복사 확정(스냅샷 구동 완료 노트) — 복사가 세팅, 어떤 동작이든 무효화(결정 16).
+        self._last_copy: "dict | None" = None
+        # 빈칸 지도 캐시(리뷰 F6) — (records 정체, 템플릿) 키. 데이터/템플릿 불변이면 재계산 안 함.
+        self._gap_cache: "dict[int, bool]" = {}
+        self._gap_cache_key: "tuple | None" = None
         self._fresh_session()
 
     def _fresh_session(self) -> None:
@@ -381,10 +395,10 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
 
     def snapshot(self) -> dict:
         vm = self.vm
-        text, report = vm.render()
         n = vm.record_count()
+        records = self._records()
+        fields = template_fields(vm.template_text)
         # 데이터 존(블록 3·4) — 선두 「큐」 열 소재 = 큐 표지(대기·복사됨·작업점).
-        # 복사 동사·카드는 PR-3 — 표지는 링1 모델 상태의 정직한 사영이라 먼저 선다.
         # 큐 조회는 **1회 O(n) 선계산** 후 O(1) 로 본다(PR-2b 리뷰: position_of·is_copied 는
         # 각각 리스트 스캔이라 행마다 부르면 매 push 가 O(n²) — 대형 코퍼스에서 타건마다 지연).
         indices = self.selection.selected_indices()
@@ -405,16 +419,82 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
             }
 
         filter_snap, table_snap, _view, _visible = self._zone_sections(indices, lead_for)
+
+        # 작업점 카드(결정 16) — 큐가 지나가는 한 장. 렌더는 링1 render_segments(채움 표지
+        # 삼분, 결정 22)를 소비한다: 웹은 토큰 정규식을 재구현하지 않는다(파생경계 번역오류
+        # 상류 차단, PR-1 예고).
+        # 프리뷰 레코드(리뷰 F1): 작업점이 있으면 그 행, 없어도 **데이터가 있으면 행 0 을
+        # 미리 보여준다**(자유 커서 시절 거동 복원). 선택 0(전체 해제)에서 빈 레코드로 그리면
+        # `_field_state` 가 실재하는 열까지 전부 '항목 없음'(missing)으로 칠해 **거짓 경보**를
+        # 낸다(confirm-or-alarm 정면 위반). 복사 게이트는 프리뷰가 아니라 `has_current` 가 진다.
+        preview_idx = current if (current is not None and 0 <= current < n) else (0 if n else None)
+        card_rec = records[preview_idx] if preview_idx is not None else {}
+        segments, card_report = render_segments(vm.template_text, card_rec)
+
+        # 빈칸 지도(has_gap)는 레코드 값+템플릿에만 의존(선택·작업점 무관) — 네비게이션·필터
+        # 타건마다 O(행×필드)로 재계산하지 않게 (records 정체, 템플릿) 키로 캐시한다(리뷰 F6:
+        # 매 push 재구축이 PR-2b 가 세운 O(1) 을 무너뜨림). 데이터 교체·템플릿 변경 시 무효화.
+        gap_key = (id(records), vm.template_text)
+        if self._gap_cache_key != gap_key:
+            self._gap_cache = {}
+            self._gap_cache_key = gap_key
+        gap_cache = self._gap_cache
+
+        def _has_gap(i: int) -> bool:  # 미충족(항목 없음·빈 값) 카드 판정, 인덱스별 1회 상각
+            if i not in gap_cache:
+                rec = records[i]
+                gap_cache[i] = any(
+                    name not in rec or ("" if rec[name] is None else str(rec[name])).strip() == ""
+                    for name in fields
+                )
+            return gap_cache[i]
+
+        index_map = [
+            {
+                "index": i,
+                "state": "current" if i == current else ("copied" if i in copied_set else "uncopied"),
+                "has_gap": _has_gap(i) if 0 <= i < n else False,
+            }
+            for i in self.queue.display_order()
+        ]
+        # 토큰 상태 = **링1 render_segments 리포트에서 파생**(리뷰 F4) — 같은 카드를 두 번 걷지
+        # 않는다(_field_state 재유도 폐기). 카드 렌더(음영/〈빈 값〉/빨강)와 토큰 배지가 한 출처.
+        missing_set, empty_set = set(card_report.missing_fields), set(card_report.empty_fields)
+        tokens = [
+            {
+                "name": name,
+                "state": "missing" if name in missing_set else ("blank" if name in empty_set else "fill"),
+            }
+            for name in fields
+        ]
+        card = {
+            "index": current,
+            "has_current": current is not None,
+            "is_copied": current in copied_set if current is not None else False,
+            "position": self.queue.position_of(current) if current is not None else None,
+            "uncopied_count": len(self.queue.uncopied()),
+            "copied_count": self.queue.copied_count(),
+            "selected_count": self.selection.selected_count(),
+            "is_complete": self.queue.is_complete(),
+            "advance_after": self._advance_after,
+            "segments": [{"text": s.text, "kind": s.kind, "name": s.name} for s in segments],
+            "missing_fields": card_report.missing_fields,
+            "empty_fields": card_report.empty_fields,
+            "index_map": index_map,
+            # 직전 복사 확정(결정 16 복사=완료) — **스냅샷 구동**이라 announce 순서 경합이 없다:
+            # 노트가 카드와 같은 push 로 오고(어긋남 불가), 복사한 행을 명시(전진 시 카드는 다음
+            # 행이라 행 번호로 어느 카드가 복사됐는지 못박는다). 어떤 동작이든(dispatch·데이터
+            # 교체) 무효화 → 걷힌다(리뷰: 매 push 무조건 sticky 면 완료 노트가 다른 카드와 모순).
+            "last_copy": self._last_copy,
+        }
         return {
             "template_name": vm.template_name or "(붙여넣은 텍스트)",
             "template_text": vm.template_text,
-            "record": {k: ("" if v is None else str(v)) for k, v in vm.current_record().items()},
-            "tokens": [{"name": t.name, "state": t.state} for t in vm.token_states()],
-            "record_index": (vm.record_index % n) + 1 if n else 0,
+            "tokens": tokens,
             "record_count": n,
-            "render_text": text,
-            "missing_fields": report.missing_fields,
-            "empty_fields": report.empty_fields,
+            # 미충족 리포트는 **card 단일 출처**(리뷰 F9: 최상위 트윈은 조용한 desync 위험) —
+            # 상태 배지(setStatus)·카드 판독·완료 노트 모두 card.missing_fields/empty_fields 소비.
+            # render_text 이중 방출도 폐기(리뷰 F8): 카드 평문은 card.segments 로 재구성한다.
             "data_label": self.data_label,  # 서버 소유(P4) — 붙여넣기/템플릿 전환에도 실상태 반영
             # 소스 종류 병기 라벨(#26) — 저장 상태가 아니라 플래그에서 매번 합성(K8).
             "data_source_label": source_label(self.data_source, self.data_label),
@@ -428,6 +508,7 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
             "selected_count": self.selection.selected_count(),
             "filter": filter_snap,
             "table": table_snap,
+            "card": card,
         }
 
     def initial(self) -> dict:
@@ -449,6 +530,9 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
         result = handler(payload)
         self.queue.reconcile()
         if not getattr(handler, "is_query", False):
+            # 변이 동작(네비게이션·템플릿·선택)은 직전 복사 확정을 무효화한다 — 카드가 바뀌므로
+            # 완료 노트가 다른 카드와 모순되지 않게(리뷰 F1). 무변이 질의는 재렌더가 없어 불건드림.
+            self._last_copy = None
             self._push()
         return result
 
@@ -468,7 +552,22 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
         self.vm.set_template_text(p["text"])
 
     def _do_step(self, p: dict) -> None:
-        self.vm.step(int(p["delta"]))
+        """작업점을 큐 표시 순서로 이동(↓/↑, 경계 멈춤) — 자유 레코드 커서가 아니라 큐 판(결정 16)."""
+        self.queue.step(int(p["delta"]))
+
+    def _do_set_current(self, p: dict) -> None:
+        """상태 색인 점 클릭 = 작업점 직접 지정(큐 밖 인덱스는 큐 모델이 정규화로 되돌린다)."""
+        idx = p.get("index")
+        self.queue.set_current(int(idx) if idx is not None else None)
+
+    def _do_defer(self, p: dict) -> None:
+        """미루기(결정 19) — 막힌 미처리 카드를 큐 뒤로. index 없으면 작업점(막힌 카드 탈출구)."""
+        idx = p.get("index")
+        self.queue.defer(int(idx) if idx is not None else None)
+
+    def _do_toggle_advance(self, p: dict) -> None:
+        """복사 후 전진 옵션(결정 16, 기본 꺼짐) — 컨트롤러 수명(세션 넘어 유지)."""
+        self._advance_after = bool(p["value"])
 
     # 등록 데이터(풀) 겨눔(#26/#6)은 PoolTargetingMixin 공용 래퍼(K4) — txt 화면별 후처리는
     # _after_pool_load(데이터 존 리셋)가 진다.
@@ -494,9 +593,48 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
         self._data_key = self._file_key(path, sheet)  # 소스 일치 게이트(결정 28)
         self.selection = SelectionModel(len(records))  # 데이터 변경 → 전체 선택 초기화
         self.queue = TxtQueueModel(self.selection)     # 큐 = 세션 휘발 — 새 데이터 = 새 큐
+        self._last_copy = None  # 새 데이터 = 직전 복사 확정 무효(네이티브 경로라 dispatch 미경유)
         self._install_filter(records, {})  # txt 는 매핑 힌트 없음 — 값 스니핑만(결정 24)
         self._push()
 
     def render(self) -> "tuple[str, RenderReport]":
-        """현재 렌더 텍스트+리포트 — 복사/저장 완료 동작이 소비한다."""
-        return self.vm.render()
+        """작업점 카드(``queue.current``)의 렌더 텍스트+리포트 — 복사 완료가 소비한다(결정 16).
+
+        자유 레코드 커서가 아니라 큐 작업점을 렌더한다(``vm.record_index`` 비의존 — 카드가
+        진실). 작업점이 없으면 빈 레코드(전 토큰 미충족)라 표면이 복사를 게이트하지만,
+        방어적으로 시끄러운 리포트를 낸다(confirm-or-alarm: 크래시 아닌 경보).
+        """
+        cur = self.queue.current
+        records = self._records()
+        rec = records[cur] if (cur is not None and 0 <= cur < len(records)) else {}
+        return render_record(self.vm.template_text, rec)
+
+    def can_copy(self) -> bool:
+        """복사 가능 = 작업점 실재(리뷰 F3) — 브리지가 이걸로 게이트해 작업점 없을 때 빈 템플릿
+        (생 ``{{토큰}}``)이 클립보드로 조용히 나가는 것을 막는다(버튼 비활성과의 레이스·직접 호출)."""
+        return self.queue.current is not None
+
+    def note_copied(self, report: "RenderReport") -> None:
+        """복사 완료 후 큐 갱신 — 작업점을 처리 후미로(멱등), 전진 opt-in, 재봉합·푸시(결정 16).
+
+        복사=완료(결정 28)의 큐 판: 클립보드 쓰기(app.py 브리지)에 이어 상태를 전진시킨다.
+        작업점을 복사해도 작업점은 그 카드에 머문다(조용한 이동 금지) — 전진은 ``_advance_after``
+        가 켜졌을 때만 다음 미처리로. 작업점이 없으면(게이트가 막았어야) 무동작.
+
+        ``report`` = 브리지가 클립보드용으로 이미 렌더한 그 카드의 리포트(재렌더 없이 재사용) —
+        복사한 **행 번호**와 함께 ``_last_copy`` 에 담아 스냅샷 구동 완료 노트로 낸다(announce
+        순서 경합·전진 시 카드 desync 차단, 리뷰 F1·F2)."""
+        cur = self.queue.current
+        if cur is None:
+            return
+        # 복사한 카드(전진 전 작업점)를 못박아 완료 노트에 실린다 — 전진해도 어느 행인지 명시.
+        self._last_copy = {
+            "row": cur,
+            "missing_fields": list(report.missing_fields),
+            "empty_fields": list(report.empty_fields),
+        }
+        self.queue.copy(cur)
+        if self._advance_after:
+            self.queue.advance_to_next_uncopied()
+        self.queue.reconcile()  # copied ⊆ selected 불변식 유지(멱등)
+        self._push()

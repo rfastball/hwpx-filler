@@ -194,7 +194,7 @@ class TestWebSelftestGate:
             assert p.get(scr) == "ok", f"{scr} 실화면 재렌더 실패: {p.get(scr)!r}"
 
     def test_real_screen_scroll_preserved_end_to_end(self, selftest_result: dict) -> None:
-        # 실 txt 화면 프리뷰(#renderView)의 스크롤이 실 재렌더를 가로질러 유지된다(#28) —
+        # 실 txt 작업점 카드 렌더(#txtCardRender)의 스크롤이 실 재렌더를 가로질러 유지된다(#28) —
         # 합성 픽스처가 아닌 shipped render() 경로의 end-to-end 보존 검증. 보존 없으면 재구성이
         # 0 으로 리셋하므로, 설정값 150 근처(DPI 서브픽셀 스냅 허용 ±2)면 복원된 것.
         p = selftest_result["preserve_real"]
@@ -351,6 +351,28 @@ class TestWebSelftestGate:
         assert "2행" in z["strip_text"], f"스트립 재진술이 다릅니다: {z['strip_text']!r}"
         assert "선택 2/2" in z["sel_count"] and "표시 1" in z["sel_count"], (
             f"선택/표시 수치 재진술이 다릅니다: {z['sel_count']!r}"
+        )
+
+    def test_txt_work_point_card_renders_and_binds_copy(self, selftest_result: dict) -> None:
+        # 작업점 카드(블록 3, 슬라이스 6 PR-3) — 큐가 지나가는 한 장이 실 WebView2 에서
+        # 코드블록 렌더(채움 표지 삼분)·상태 색인 점·카드 결속 복사 동사를 그리는지 되읽는다.
+        z = selftest_result["txt_zone"]
+        assert z.get("error") is None, f"txt 존 프로브 예외: {z.get('error')!r}"
+        # 채움 표지 삼분: fill(음영 값)·blank(〈빈 값〉) 세그먼트가 실제로 페인트된다(링1 사영).
+        assert "전산장비 구매" in z["card_render"], f"작업점 카드 채움 렌더 누락: {z['card_render']!r}"
+        assert "〈빈 값〉" in z["card_render"], f"빈 값 표지 미렌더: {z['card_render']!r}"
+        assert z["card_fill"] is True and z["card_blank"] is True, (
+            f"채움 표지 세그먼트 클래스 미부착(fill·blank): {z!r}"
+        )
+        # 상태 색인 점(위치·빈칸 지도) — 작업점 점 + 빈칸 카드 표지가 실렌더.
+        assert z["card_dots"] == 2, f"상태 색인 점 수가 다릅니다: {z['card_dots']!r}"
+        assert z["card_current_dot"] is True, "작업점 점(.current)이 렌더되지 않았습니다."
+        assert z["card_gap_dot"] is True, "빈칸 지도 표지(.gap)가 렌더되지 않았습니다."
+        assert "작업점 1/2" in z["card_readout"], f"상태 색인 재진술이 다릅니다: {z['card_readout']!r}"
+        # 복사 동사는 카드에 결속(우상단)되고 전역 복사·저장 버튼은 사망(결정 16·18).
+        assert z["card_copy_enabled"] is True, "카드 결속 복사 버튼이 없거나 비활성입니다."
+        assert z["card_global_copy_dead"] is True, (
+            "전역 복사(btnCopy)·저장(btnSave) 버튼이 남아 있습니다 — 결정 16·18 위반."
         )
 
     def test_txt_zone_panel_hidden_and_instance_isolated(self, selftest_result: dict) -> None:

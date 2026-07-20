@@ -16,7 +16,7 @@ from hwpxfiller.gui.mapping_state import MappingModel, RowState
 from hwpxfiller.gui.run_state import RunViewModel
 from hwpxfiller.gui.selection_state import SelectionModel
 from hwpxfiller.gui.template_manager_state import TemplateManagerViewModel, TemplateRow
-from hwpxfiller.gui.txt_state import TokenState, TxtDraftViewModel
+from hwpxfiller.gui.txt_state import TxtDraftViewModel
 
 MOCKUP = Path(__file__).resolve().parents[1] / "docs" / "UI_PROTOTYPE_APPB.html"
 _NO_DIR = MOCKUP.parent / "__no_such_text_templates__"
@@ -49,7 +49,6 @@ _INSTANCES = {
     "RowState": RowState(template_field=""),
     "SelectionModel": SelectionModel(0),
     "TxtDraftViewModel": TxtDraftViewModel(TextTemplateRegistry(_NO_DIR)),
-    "TokenState": TokenState("x", "fill"),
     "TxtRow": TxtRow("x", 0),
 }
 

@@ -30,11 +30,9 @@
         파일명·"ERROR:…"·null. */
     importTemplateFile(screen) { return window.pywebview.api.import_template_file(screen); },
 
-    /** 현재 렌더를 OS 클립보드로(완료=commit). 리포트(missing/empty) 반환. */
+    /** 작업점 카드 렌더를 OS 클립보드로(복사=완료, 결정 16). 리포트(missing/empty) 반환.
+        건별 파일 저장(saveFile)은 사망(결정 18) — 기록 원본이 내부 시스템, 산출물 무소유. */
     copyClipboard(screen) { return window.pywebview.api.copy_clipboard(screen); },
-
-    /** 네이티브 저장 다이얼로그 → 원자 쓰기. 결과 dict 또는 null(취소). */
-    saveFile(screen) { return window.pywebview.api.save_file(screen); },
 
     /** 네이티브 폴더 피커(SHBrowseForFolder) → 저장 폴더 지정. 경로·"ERROR:…"·null(취소). */
     pickOutputFolder(screen) { return window.pywebview.api.pick_output_folder(screen); },
