@@ -9,6 +9,50 @@
 
   const esc = window.escHtml;  // 공유 이스케이퍼(esc.js) — " 도 escape 해 속성 컨텍스트 안전
 
+  /* ---- 데이터 존 고지(재적용 결과·전멸 필터 무동작) — 렌더 불가침 JS 소유 요소 ----
+     완료 존 로그가 없는 화면이라 log 채널을 이 고지 한 줄로 받는다. 푸시 재렌더에
+     증발하지 않고(렌더 함수 무접촉), 데이터 소스가 바뀌면 걷힌다(render 가 판정). */
+  let zoneNoteKey = null;
+  function zoneLog(msg) {
+    const el = $("txtZoneNote");
+    el.textContent = msg;
+    el.style.display = "";
+  }
+
+  /* ---- 데이터 존(전-선언 큐 선택, 블록 3) = 공용 팩토리(datazone.js) 두 번째 인스턴스 ----
+     표면 계약·리뷰 결정 주석은 팩토리가 소유한다. 여기는 화면 고유값만 주입한다: 선두
+     「큐」 열 = 큐 표지(대기 순번·작업점 ▶·복사됨 — 링1 TxtQueueModel 상태의 사영,
+     복사 동사·카드는 다음 PR) · 세션 지문 = 데이터 라벨만(작업 화면과 달리 작업 축이
+     없다) · 문안 = 기안 어휘. */
+  const dz = window.DataZone.create({
+    screen: SCREEN,
+    ids: {
+      selCount: "txtSelCount", search: "txtFilterSearch", reapply: "txtFilterReapply",
+      chips: "txtFilterChips", strip: "txtSelStrip",
+      tableHost: "txtTableHost", tableWrap: "txtTableWrap", tableEmpty: "txtTableEmpty",
+      tableHead: "txtTableHead", tableBody: "txtTableBody", colPanel: "txtColPanel",
+      selAll: "txtSelAll", selNone: "txtSelNone",
+    },
+    rowIdPrefix: "txtRow-",  // preserve.js 가 id 로 포커스 복원 — job 행과 전역 유일
+    lead: {
+      header: "큐",
+      bodyHtml(r) {
+        if (!r.selected) return `<span class="doc-off">선택하면 큐에 담깁니다</span>`;
+        if (r.copied) return `<span class="doc-sum">복사됨</span>`;  // 정직 라벨(결정 16)
+        const cur = r.current ? "▶ " : "";
+        return `<span class="doc-name">${cur}대기 ${r.qpos}</span>`;
+      },
+    },
+    copy: {
+      emptyNoData: "데이터를 선택하면 기안 대상 행이 여기에 표시됩니다.",
+      emptyFiltered: "필터와 일치하는 행이 없습니다. 위 칩의 정의를 확인하세요.",
+      emptyNoRows: "데이터에 행이 없습니다.",
+      stripLead: (n) => `필터 밖 선택 <b>${n}행</b> — 화면엔 안 보이지만 큐에 포함됩니다: `,
+    },
+    tableKey: (s) => s.data_source_label || "",
+    log: zoneLog,
+  });
+
   /* 템플릿 토큰을 레코드로 치환하되 미충족을 명시 재진술 — txt_view._build_preview_html 의 웹 이식.
      항목없음=빨강 {{토큰}}, 빈값=〈빈 값〉 마커, 채움=값 그대로. VM 로직 아님(순수 표현). */
   function buildPreview(template, record) {
@@ -51,6 +95,15 @@
       $("renderView").innerHTML = buildPreview(s.template_text, s.record);
       // 소스 종류 병기 라벨(#26 #6) — 서버가 플래그에서 합성(K8)·화면별 고유 id(#27), run 과 분리.
       $("txtDataLabel").value = s.data_source_label || "";
+      dz.render(s);  // 데이터 존(테이블·칩·스트립) — 팩토리 소유(datazone.js). 게이트 없는
+                     // 전량 렌더라 별도 dz.sync 불요(LAST 는 매 push 최신).
+      // 존 고지는 데이터 소스가 바뀌면 걷는다(다른 세션으로의 누수 방지 — 읽힐 때까지 유지).
+      const zkey = s.data_source_label || "";
+      if (zkey !== zoneNoteKey) {
+        zoneNoteKey = zkey;
+        $("txtZoneNote").style.display = "none";
+        $("txtZoneNote").textContent = "";
+      }
       setStatus(s.missing_fields, s.empty_fields);
       resetNote();
     });
@@ -84,12 +137,17 @@
 
   /* 웹→Python 이벤트 배선. */
   function wire() {
+    // 데이터 존(테이블·열 패널·칩·스트립·전체 선택/해제·문서 레벨 닫기)은 팩토리 몫 배선.
+    dz.wire();
     $("tplSel").addEventListener("change", (e) =>
       Bridge.call(SCREEN, "select_template", { name: e.target.value }));
     $("recPrev").addEventListener("click", () => Bridge.call(SCREEN, "step", { delta: -1 }));
     $("recNext").addEventListener("click", () => Bridge.call(SCREEN, "step", { delta: 1 }));
 
     $("btnPick").addEventListener("click", async () => {
+      // 데이터 재선택 = 필터 세션의 죽음 — 대기 중 검색 디바운스를 먼저 정산해 직전 필터
+      // 슬롯(결정 28)에 마지막 타이핑까지 실린다(작업 화면 flush 규율 승계).
+      await dz.flushPendingSearch();
       let r = await Bridge.pickDataFile(SCREEN);
       if (r && typeof r === "object" && r.needs_sheet) {   // 다중 시트 → 확정 게이트(#33)
         r = await SheetPicker.choose(SCREEN, r);
@@ -101,6 +159,7 @@
     });
     // 등록 데이터(풀) 겨눔(#26 #6) — 취소=중단, 실패는 모달 안에서 재진술(PoolPicker).
     $("btnTxtPoolData").addEventListener("click", async () => {
+      await dz.flushPendingSearch();  // 재겨눔 전 검색 정산(위 btnPick 과 같은 규율)
       await PoolPicker.choose(SCREEN);             // 라벨은 스냅샷(data_source_label)이 채운다
     });
 

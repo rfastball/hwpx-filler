@@ -781,6 +781,57 @@ _EDITOR_CHIP_PROBE_JS = r"""
 })()
 """
 
+# txt 데이터 존(전-선언 큐 선택 · 블록 3, 슬라이스 6 PR-2b) — 합성 스냅샷을 실 render() 에
+# 흘려 datazone.js **두 번째 인스턴스**가 txt 화면에서: 가시 행 테이블 + <mark> 하이라이트 +
+# 선두 「큐」 열 표지(작업점 ▶·대기 순번) + 칩 줄 + 필터 밖 선택 스트립 + 열 패널 기본
+# 닫힘([hidden] vs display:flex — 부록 B-9 자동 눈검증)을 실 WebView2 에서 되읽는다.
+# 작업 화면 인스턴스와의 격리(같은 클래스·다른 id)도 여기서 실증된다.
+_TXT_ZONE_PROBE_JS = r"""
+(function () {
+  var out = {};
+  try {
+    window.Nav.go('txt');
+    var snap = {
+      template_name:'샘플기안', template_text:'제목: {{공고명}}',
+      record:{'공고명':'전산장비 구매'},
+      tokens:[{name:'공고명', state:'fill'}],
+      record_index:1, record_count:2, render_text:'제목: 전산장비 구매',
+      missing_fields:[], empty_fields:[],
+      data_label:'d.csv', data_source_label:'파일: d.csv',
+      has_data:true, selected_count:2,
+      filter:{active:true, reapply_available:false, search:'전산',
+              chips:['(공고명) 포함 「전산」'], definition:'(공고명) 포함 「전산」',
+              branches:['공고명'],
+              columns:[{name:'공고명', kind:'text', active:false}]},
+      table:{columns:['공고명'],
+             rows:[{index:0, selected:true, qpos:1, copied:false, current:true,
+                    cells:[[['전산',true],['장비 구매',false]]]}],
+             visible_count:1,
+             hidden_selected:[{index:1, selected:true, qpos:2, copied:false, current:false}]}
+    };
+    window.__push('txt', snap);
+    out.rows = document.querySelectorAll('#txtTableBody tr[data-i]').length;
+    out.mark = (function(){ var m = document.querySelector('#txtTableBody mark');
+      return m ? m.textContent : ''; })();
+    // 선두 「큐」 열 — 작업점 ▶ + 대기 순번(링1 큐 모델 사영, 결정 16).
+    out.lead = (function(){ var d = document.querySelector('#txtTableBody .doc-body');
+      return d ? d.textContent : ''; })();
+    out.head_lead = (function(){ var h = document.querySelector('#txtTableHead th.doccol');
+      return h ? h.textContent : ''; })();
+    out.chips_text = document.getElementById('txtFilterChips').textContent;
+    out.strip_shown = getComputedStyle(document.getElementById('txtSelStrip')).display !== 'none';
+    out.strip_text = document.getElementById('txtSelStrip').textContent;
+    out.panel_hidden = getComputedStyle(document.getElementById('txtColPanel')).display === 'none';
+    out.sel_count = document.getElementById('txtSelCount').textContent;
+    // 두 인스턴스 격리 — txt 존 렌더가 작업 화면 데이터 존 DOM 을 만지지 않는다(id 분리).
+    out.job_body_untouched = document.getElementById('jobTableBody').children.length === 0
+      || !document.querySelector('#jobTableBody #txtRow-0');
+    out.error = null;
+  } catch (e) { out.error = String((e && e.message) || e); }
+  return out;
+})()
+"""
+
 
 # ------------------------------------------------------------------ 자가검증(Q3)
 def _finish_selftest(window: "object", result: dict) -> None:
@@ -893,6 +944,8 @@ def _selftest_drive(window: "object") -> None:
         result["job_editmode"] = window.evaluate_js(_JOB_EDITMODE_PROBE_JS)  # type: ignore[attr-defined]
         # 매핑 칩-라이브(슬라이스 5 PR-3) — 합성 매핑 스냅샷으로 실 render() 구동 후 칩·태그 되읽기.
         result["editor_chip"] = window.evaluate_js(_EDITOR_CHIP_PROBE_JS)  # type: ignore[attr-defined]
+        # txt 데이터 존(슬라이스 6 PR-2b) — datazone.js 두 번째 인스턴스 실렌더 되읽기.
+        result["txt_zone"] = window.evaluate_js(_TXT_ZONE_PROBE_JS)  # type: ignore[attr-defined]
         # 다크모드 영속·무깜빡임(콜드부트 되읽기, #74) — 부팅 시 loaded 핸들러가 저장 테마
         # (settings.json, 오리진 비의존)를 show 전에 data-theme 로 주입했는지. 저장값이 없으면
         # data_theme=null(=system). 앞선 쓰기 프로세스가 남긴 값이 여기서 보이면 Python 설정

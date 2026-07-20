@@ -32,6 +32,7 @@ WEB_INDEX = WEB / "index.html"
 DZ_JS = WEB / "js" / "datazone.js"
 POPOVER_JS = WEB / "js" / "popover.js"
 JOB_JS = WEB / "js" / "screens" / "job.js"
+TXT_JS = WEB / "js" / "screens" / "txt.js"  # 두 번째 인스턴스(txt 큐, PR-2b)
 
 # 데이터 존이 소유하는 디스패치 액션 — 전부 팩토리 단일 출처여야 한다(가드 3).
 ZONE_ACTIONS = (
@@ -58,17 +59,18 @@ def test_factory_exists_and_exposes_create():
     assert "function create(cfg)" in src, "DataZone 팩토리(create)가 없습니다."
 
 
-def test_load_order_esc_then_shared_then_job():
-    """로드 순서 — esc.js < popover.js·datazone.js < screens/job.js (미정의 시점 참조 방지)."""
+def test_load_order_esc_then_shared_then_screens():
+    """로드 순서 — esc.js < popover.js·datazone.js < 소비 화면(job·txt) (미정의 시점 참조 방지)."""
     index = WEB_INDEX.read_text(encoding="utf-8")
+    consumers = ('src="js/screens/job.js"', 'src="js/screens/txt.js"')
     for needle in ('src="js/esc.js"', 'src="js/popover.js"', 'src="js/datazone.js"',
-                   'src="js/screens/job.js"'):
+                   *consumers):
         assert needle in index, f"{needle} 가 index.html 에 없습니다."
     esc_pos = index.index('src="js/esc.js"')
-    job_pos = index.index('src="js/screens/job.js"')
+    first_consumer = min(index.index(c) for c in consumers)
     for shared in ('src="js/popover.js"', 'src="js/datazone.js"'):
-        assert esc_pos < index.index(shared) < job_pos, (
-            f"로드 순서가 esc.js → {shared} → screens/job.js 가 아닙니다."
+        assert esc_pos < index.index(shared) < first_consumer, (
+            f"로드 순서가 esc.js → {shared} → 소비 화면(job·txt)이 아닙니다."
         )
 
 
@@ -87,16 +89,34 @@ def test_job_consumes_factory_with_job_identity():
 
 
 def test_zone_dispatch_actions_single_sourced_in_factory():
-    """데이터 존 디스패치 리터럴은 팩토리에만 — job.js 재중복 재유입 금지(가드 3, #94 동형)."""
+    """데이터 존 디스패치 리터럴은 팩토리에만 — 소비 화면(job·txt) 재중복 금지(가드 3, #94 동형)."""
     dz = DZ_JS.read_text(encoding="utf-8")
-    job = JOB_JS.read_text(encoding="utf-8")
     for action in ZONE_ACTIONS:
         needle = f'"{action}"'
         assert needle in dz, f"팩토리에 {needle} 디스패치가 없습니다 — 이동이 덜 됐습니다."
-        assert needle not in job, (
-            f"job.js 에 {needle} 디스패치가 남아/되살아 있습니다 — 데이터 존 사본 재유입"
-            "(#94 중복 클래스 동형). datazone.js 단일 출처를 유지하세요."
-        )
+        for consumer in (JOB_JS, TXT_JS):
+            assert needle not in consumer.read_text(encoding="utf-8"), (
+                f"{consumer.name} 에 {needle} 디스패치가 남아/되살아 있습니다 — 데이터 존 "
+                "사본 재유입(#94 중복 클래스 동형). datazone.js 단일 출처를 유지하세요."
+            )
+
+
+def test_txt_consumes_factory_with_queue_identity():
+    """txt.js 가 두 번째 인스턴스를 소비한다(PR-2b) — 화면 고유값(행 id 접두·선두 「큐」 열).
+
+    rowIdPrefix 는 전역 id 유일성(preserve.js 복원 계약)의 화면 몫 — job 행(jobRow-)과
+    갈라져야 한다. 선두 열 「큐」는 전-선언 큐 표지(블록 3 결정 16)의 표면.
+    """
+    src = TXT_JS.read_text(encoding="utf-8")
+    assert "DataZone.create({" in src, "txt.js 가 DataZone.create 를 소비하지 않습니다."
+    assert 'rowIdPrefix: "txtRow-"' in src, (
+        "txt 행 안정 id 접두(txtRow-)가 사라졌습니다 — job 행과의 전역 유일성 파손."
+    )
+    assert 'header: "큐"' in src, "선두 열 머리 「큐」(전-선언 표지)가 config 에서 사라졌습니다."
+    assert "flushPendingSearch" in src, (
+        "데이터 재선택 전 검색 정산(flushPendingSearch)이 사라졌습니다 — 직전 필터 슬롯에 "
+        "마지막 타이핑이 실리지 않습니다(결정 28)."
+    )
 
 
 def test_factory_is_screen_agnostic():
