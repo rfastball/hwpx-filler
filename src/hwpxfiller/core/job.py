@@ -215,6 +215,10 @@ class Job:
     # **순수 메타** — 코드는 "물품"·"금액구간"이 뭔지 모르고 얇은 매핑만 든다(run-path 무영향).
     # 축·값은 이름 문자열이지 enum/bool 타입 필드 발명 금지(도메인을 코드에 안 박는다).
     tags: "dict[str, str]" = field(default_factory=dict)
+    # 좌 목록 사용자 그룹(앱 부여 1급 속성, R-info 1부 결정 5·R-flow 결정 43). ""=「그룹 없음」.
+    # tags(브라우저 렌즈용 차원-불가지 축)와 별개다 — 그룹은 목록의 구조 자체라 전용 필드.
+    # 소속이 곧 생성이고 해산은 ""(빈 그룹은 존재하지 않는다 — 퇴화 불변식).
+    group: str = ""
     # 선택적 기본 데이터셋 참조(#53-A) = 데이터셋 풀 항목 이름(""=없음, 하위호환). 실행 화면이
     # 작업 선택 시 이 참조를 실행 시점에 다시 읽어 자동 조준하는 **조준 힌트**다 — 매핑의
     # 소스 키 계약(source_keys)이 실행의 진짜 게이트이지 이 참조가 아니다(파일이 월별로
@@ -247,6 +251,7 @@ class Job:
             "mapping": self.mapping.to_dict(),
             "last_run_at": self.last_run_at,
             "tags": dict(self.tags),
+            "group": self.group,
             "default_dataset_ref": self.default_dataset_ref,
         }
 
@@ -287,6 +292,7 @@ class Job:
             # 해당 키는 미지 키로 무시된다(가산 스키마 규율의 역방향, 하위호환 무해).
             last_run_at=_str("last_run_at"),
             tags=tags,
+            group=_str("group"),
             default_dataset_ref=_str("default_dataset_ref"),
         )
 
@@ -345,8 +351,8 @@ class JobRegistry:
         """작업 복제 — '<이름> (복사본[ N])' 유일 이름으로 저장하고 새 이름을 반환(F22).
 
         매핑 재사용의 단일 동선이다: 공유 베이스 프로파일을 걷어낸 자리를 「복제 후
-        필요한 부분만 수정」이 맡는다. 템플릿·매핑·파일명 패턴·태그·기본 데이터 참조는
-        그대로 계승하되 **실행 이력(last_run_at)은 계승하지 않는다** — 복사본은 아직
+        필요한 부분만 수정」이 맡는다. 템플릿·매핑·파일명 패턴·태그·그룹·기본 데이터 참조는
+        그대로 계승하되(그룹 계승 = 복사본이 원본 옆 같은 구획에 뜬다, 결정 43 인접) **실행 이력(last_run_at)은 계승하지 않는다** — 복사본은 아직
         실행된 적 없다는 사실을 홈 카드가 그대로 말하게(조용한 이력 위조 금지).
         원본 부재·손상은 loud raise(호출측이 재진술). 자리 선점 검사는 파일 존재
         기준(:meth:`path_for`)이라 slug 충돌 자리도 건너뛴다 — 후보가 비어 있을 때만
@@ -370,6 +376,64 @@ class JobRegistry:
             job.last_run_at = ""
             self.save(job)
             return candidate
+
+    def rename(self, name: str, new_name: str) -> None:
+        """작업 이름 변경(결정 43) — 새 파일 저장 **후** 옛 파일 제거(중단 시 소실 없음, 잉여만).
+
+        자리 선점(다른 작업이 새 이름의 파일을 소유)은 loud ``ValueError`` — :meth:`save` 의
+        slug 가드는 저장 이름과 파일 소유 이름이 같으면 자기-갱신으로 통과시키므로, 동명 작업
+        위에 조용히 덮이는 구멍을 여기 명시 검사로 막는다. slug 동일(예: ``a/b``→``a_b``)이면
+        같은 파일 제자리 갱신이라 삭제가 없다. 선점 검사~저장은 clone 과 같은 잠금으로
+        직렬화한다(연속 조작의 이름 경합)."""
+        new_name = new_name.strip()
+        if not new_name:
+            raise ValueError("이름이 비어 있습니다")
+        if new_name == name:
+            return
+        with self._clone_lock:
+            job = self.load(name)
+            src, dst = self.path_for(name), self.path_for(new_name)
+            if dst != src and dst.exists():
+                raise ValueError(f"이름 '{new_name}' 은(는) 이미 사용 중입니다")
+            job.name = new_name
+            self.save(job, allow_overwrite=(dst == src))
+            if dst != src:
+                src.unlink()
+
+    def set_group(self, name: str, group: str) -> None:
+        """그룹 지정/해제(``""``=「그룹 없음」) — 소속이 곧 생성(빈 그룹은 존재하지 않는다)."""
+        job = self.load(name)
+        job.group = group.strip()
+        self.save(job, allow_overwrite=True)  # 같은 이름 재저장 = 자기 갱신
+
+    def groups(self) -> "list[str]":
+        """존재하는(=소속 작업이 있는) 그룹 이름들, 이름순 — 이동 다이얼로그의 후보 목록."""
+        return sorted({j.group for j in self.list_jobs() if j.group})
+
+    def rename_group(self, name: str, new_name: str) -> int:
+        """그룹 이름 일괄 변경 — 소속 작업 수 반환. 새 이름이 기존 그룹이면 결과는 병합이다
+        (병합의 확인 재진술은 화면 게이트 소관 — 레지스트리는 기계적 일괄 갱신만 진다)."""
+        new_name = new_name.strip()
+        if not new_name:
+            raise ValueError("그룹 이름이 비어 있습니다")
+        return self._update_group_members(name, new_name)
+
+    def disband_group(self, name: str) -> int:
+        """그룹 해산(결정 43) — 소속 작업은 「그룹 없음」(``group=""``)으로. 소속 수 반환."""
+        return self._update_group_members(name, "")
+
+    def _update_group_members(self, name: str, new_group: str) -> int:
+        if not name:
+            # ""(그룹 없음)는 그룹이 아니라 부재다 — 일괄 갱신 대상으로 받으면 무그룹 전원이
+            # 조용히 이동한다(호출 버그의 파급 상한을 loud 로 자른다).
+            raise ValueError("대상 그룹 이름이 비어 있습니다")
+        count = 0
+        for job in self.list_jobs():
+            if job.group == name:
+                job.group = new_group
+                self.save(job, allow_overwrite=True)
+                count += 1
+        return count
 
     def delete(self, name: str) -> None:
         p = self.path_for(name)

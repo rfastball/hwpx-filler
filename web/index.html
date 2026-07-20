@@ -112,13 +112,16 @@
       </header>
 
       <div class="job-layout">
-        <!-- 좌 master 목록 — 2구획(문서 작업 HWPX / 기안 작업 TXT). 구획 헤더 열 틴트 승계. -->
+        <!-- 좌 master 목록 — 2구획(문서 작업 HWPX / 기안 작업 TXT). 구획 헤더 열 틴트 승계.
+             구획 안 사용자 그룹 + 접힘 + 행/그룹 ⋮ 관리 메뉴(결정 43·A안 확정). -->
         <aside class="job-master">
           <div class="job-section">
             <div class="job-sec-head hwpx">문서 작업 · HWPX</div>
             <div id="jobListHwpx" class="job-list"></div>
             <div id="jobListHwpxEmpty" class="muted job-empty" style="display:none">저장된 작업이 없습니다.</div>
           </div>
+          <!-- 행/그룹 ⋮ 컨텍스트 메뉴 — job.js 가 대상별 항목을 채우고 fixed 좌표로 편다. -->
+          <div id="jobRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
           <div class="job-section">
             <div class="job-sec-head txt">기안 작업 · TXT</div>
             <!-- draft-as-job(블록 3·5) 착지 전까지 빈 구획 — 없는 걸 있는 척하지 않는다. -->
@@ -433,6 +436,21 @@
         <div class="modal-actions">
           <button class="btn" id="pasteCancel">취소</button>
           <button class="btn primary" id="pasteOk">적용</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 그룹 이동 다이얼로그(결정 43) — 기존 그룹 + 새 그룹 입력 동거 + 해제. 소속=생성이라
+         빈 그룹은 만들 수 없다(퇴화 불변식). 목록은 job.js 가 스냅샷의 그룹명으로 채운다. -->
+    <div id="groupMoveModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="groupMoveTitle">
+      <div class="modal-card">
+        <h3 id="groupMoveTitle">그룹으로 이동</h3>
+        <p class="modal-sub" id="groupMoveJob"></p>
+        <div id="groupMoveList" class="sheet-list"></div>
+        <p id="groupMoveErr" class="note dangerbox" style="display:none"></p>
+        <div class="modal-actions">
+          <button class="btn" id="grpMoveCancel">취소</button>
+          <button class="btn primary" id="grpMoveOk">이동</button>
         </div>
       </div>
     </div>
