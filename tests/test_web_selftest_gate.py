@@ -416,6 +416,40 @@ class TestWebSelftestGate:
         assert "필터 정의 2개 조건" in body, f"필터 정의 재진술 누락: {body!r}"
         assert "—" not in body, f"가드 본문에 em-dash 가 있습니다(R-copy 가드): {body!r}"
 
+    def test_txt_new_draft_guard_shares_predicate_with_data_swap(self, selftest_result: dict) -> None:
+        # #126 T3 면제 철회 — 「＋ 새 기안」도 같은 가드를 지난다. 앞머리(제스처)만 갈리고
+        # 잃는 것의 열거는 한 술어를 공유한다: 두 파괴 경로가 같은 상태를 다르게 말하면
+        # 어느 쪽이 참인지 사용자가 판정할 수 없다.
+        z = selftest_result["txt_zone"]
+        assert z["new_draft_guard_wired"] is True, (
+            "TxtScreen.confirmNewDraftIfArmed 배선이 사라졌습니다 — 「＋ 새 기안」 무가드 파괴 회귀."
+        )
+        nd, swap = z["guard_body_newdraft"], z["guard_body"]
+        assert nd.startswith("새 기안을 시작하면"), f"제스처 앞머리 어긋남: {nd!r}"
+        assert "복사 진행 2/5행" in nd, f"큐 진행 재진술 누락: {nd!r}"
+        assert nd.split("\n", 1)[1] == swap.split("\n", 1)[1], (
+            "두 제스처의 '사라지는 것' 열거가 갈라졌습니다(술어 단일 출처 파손): "
+            f"{nd!r} vs {swap!r}"
+        )
+
+    def test_txt_copy_blank_gate_body_enumerates_and_folds(self, selftest_result: dict) -> None:
+        # #125 빈칸 게이트(결정 16 · A-3-28) — 복사 **전** 확인 모달의 문안. 집합은 Python 이
+        # 복사와 같은 render 통로로 확정하므로 열거가 정확하다(추정 열거 금지 조항의 예외 조건).
+        z = selftest_result["txt_zone"]
+        body = z["copy_gate_body"]
+        assert "3행" in body, f"복사 대상 행 재진술 누락(0-기반 index 2 = 3행): {body!r}"
+        assert "항목 없음 1건: 납품기한" in body, f"항목 없음 열거 누락: {body!r}"
+        assert "빈 값 1건: 비고" in body, f"빈 값 열거 누락: {body!r}"
+        assert "—" not in body, f"게이트 본문에 em-dash 가 있습니다(R-copy 가드): {body!r}"
+        # 긴 목록은 접는다 — 모달이 스크롤로 번지면 정작 결론 버튼이 시야 밖으로 나간다.
+        many = z["copy_gate_body_many"]
+        assert "외 2개" in many and ", g" not in many, f"목록 접기 실패: {many!r}"
+        # 꼬리 문장은 해당 종류가 있을 때만(over-warn 도 거짓): 빈 값만인 카드엔 서지 않는다.
+        only_empty = z["copy_gate_body_empty_only"]
+        assert "{{토큰}}" not in only_empty, (
+            f"빈 값만인 카드에 '토큰 원문이 실린다'는 문장이 섰습니다: {only_empty!r}"
+        )
+
     def test_txt_zone_panel_hidden_and_instance_isolated(self, selftest_result: dict) -> None:
         # 열 패널 기본 닫힘([hidden] vs display:flex — 부록 B-9 자동 눈검증의 txt 판) +
         # 두 인스턴스 격리(txt 존 렌더가 작업 화면 데이터 존 DOM 을 만지지 않는다 — id 분리).

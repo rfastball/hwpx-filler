@@ -208,9 +208,14 @@
     window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다.");  // #99-6 동형 loud
   }
 
-  /* '＋ 새 기안'(F11) — F10 과 대칭. txt 출력은 일회성(복사/저장 즉시 완결)이라
-     버릴 durable 상태가 없어 확인 없이 초기화한다(원장 F11 확정). */
+  /* '＋ 새 기안'(F11) — F10 과 대칭. **무확인 면제 철회(#126)**: 원장 F11 의 근거였던 "txt
+     출력은 일회성이라 버릴 durable 상태가 없다"가 블록 3 전-선언 큐 신설로 거짓이 됐다.
+     확인·문안은 TxtScreen 이 소유한다(같은 T3 술어를 데이터 교체 가드와 공유) — 홈이 큐
+     사정을 따로 알아 문안을 짓기 시작하면 두 화면이 같은 상태를 다르게 말한다. */
   async function newTxt() {
+    // #99-6 동형 loud — 진입 셔틀 미로드 시 조용한 무가드 파괴가 되지 않게(가드 소실 > 무반응).
+    if (!window.TxtScreen) { window.alert("기안 화면 구성 요소(TxtScreen)가 로드되지 않았습니다."); return; }
+    if (!(await TxtScreen.confirmNewDraftIfArmed())) return;  // 머무르기 = 큐 불변
     await Bridge.call("txt", "new_draft", {});
     window.Nav.go("txt");
   }
