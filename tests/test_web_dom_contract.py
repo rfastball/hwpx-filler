@@ -541,3 +541,40 @@ def test_unhandledrejection_backstop_present_in_both_shells():
         block = m.group(0)
         assert "window.alert" in block, f"{app_js} 백스톱이 alert 로 재진술하지 않습니다."
         assert "preventDefault" in block, f"{app_js} 백스톱이 rejection 을 handled 처리하지 않습니다."
+
+
+def test_editor_surface_lives_in_job_panel():
+    """에디터 흡수(R-flow 블록 2 개정, 결정 39~41) — 정의 surface 의 거처·진입 계약.
+
+    에디터 컨테이너 3종(editor-steps/-body/-foot)은 「작업」 패널의 편집 호스트
+    (#jobEditHost) 안에 살고, scr-editor 는 껍데기다(진입 경로 0 — 물리 제거는 삭제 PR).
+    진입점은 전부 편집 모드(showEditMode)로 착지해야 한다: ``Nav.go("editor")`` 가 남으면
+    빈 껍데기로 보내는 죽은 경로(조용한 무반응 화면)라 금지한다.
+    """
+    html = WEB_INDEX.read_text(encoding="utf-8")
+    job_sec = html.split('id="scr-job"')[1].split('id="scr-editor"')[0]
+    editor_sec = html.split('id="scr-editor"')[1].split('id="scr-txt"')[0]
+    for cid in ("jobEditHost", "editor-steps", "editor-body", "editor-foot"):
+        assert cid in job_sec, f"{cid} 가 scr-job 편집 호스트에 없습니다(흡수 이사 회귀)."
+    for cid in ("editor-steps", "editor-body", "editor-foot"):
+        assert cid not in editor_sec, f"{cid} 가 scr-editor 에 남아 있습니다(이중 거처=id 중복)."
+    # 진입점 repoint — 죽은 목적지 금지 + 편집 모드 seam 배선.
+    all_js = "\n".join(
+        p.read_text(encoding="utf-8") for p in sorted(WEB_JS_DIR.rglob("*.js")))
+    assert 'Nav.go("editor")' not in all_js, (
+        'scr-editor 는 껍데기 — Nav.go("editor") 는 빈 화면으로 보내는 죽은 경로입니다'
+        "(편집 진입은 JobScreen.showEditMode 로)."
+    )
+    # 착지는 EditorEntry.land 단일 정의(리뷰: 4곳 축자 복붙=드리프트 표면 — template.js 가
+    # 가드 사각이었다). 소비처 셋 전부가 그 헬퍼를 부르는지 가드한다.
+    entry_src = (WEB_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
+    assert "function land" in entry_src, "editor_entry.js 의 착지 단일 정의(land)가 사라졌습니다."
+    for fname in ("app.js", "screens/home.js", "screens/template.js"):
+        src = (WEB_JS_DIR / fname).read_text(encoding="utf-8")
+        assert "EditorEntry.land" in src, f"{fname} 가 착지 헬퍼(EditorEntry.land)를 쓰지 않습니다."
+    editor_js = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
+    assert '$("jobEditHost")' in editor_js, "editor.js 위임 루트가 편집 호스트로 이사하지 않았습니다."
+    job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    assert "exitEditToRun" in job_js and "showEditMode" in job_js, (
+        "job.js 패널 두 모드 배선(showEditMode/exitEditToRun)이 사라졌습니다(결정 39·40)."
+    )

@@ -1,16 +1,23 @@
-/* 작업 에디터(HWPX) 화면 — 브리지로 링1 EditorController 와 왕복. 4단계 마법사.
-   목업 scr-editor 이관(#15·#16). 렌더는 Python 이 window.__push('editor', snapshot) 로 밀어 넣는다.
-   표현 계층(단계 UI·매핑표·행 색·표시형 라벨)만 여기서 만든다 — VM 로직 아님. */
+/* 작업 정의(HWPX) 렌더러 — 브리지로 링1 EditorController 와 왕복. 3분류(템플릿·매핑·저장).
+   에디터 흡수(R-flow 블록 2 개정, 결정 39~41): 표면은 「작업」 패널의 편집 모드(#jobEditHost)에
+   산다 — 신규 초안은 마법사 **단계**(전진 게이트·푸터 내비), 저장된 작업 편집은 **탭**(자유
+   이동, editing_origin 으로 가른다). 구 2단계 '데이터 선택'은 매핑 단계의 관문으로 인라인
+   (3단계 접기) — 템플릿(0) → 매핑(1, 데이터 관문 내장) → 저장(2).
+   렌더는 Python 이 window.__push('editor', snapshot) 로 밀어 넣는다.
+   표현 계층(단계/탭 UI·매핑표·행 색·표시형 라벨)만 여기서 만든다 — VM 로직 아님. */
 (function () {
   const SCREEN = "editor";
   const $ = (id) => document.getElementById(id);
   // 표시형/타입 라벨은 표현 계층 → 여기(뷰)에 둔다(Qt mapping_table 의 웹 짝).
   const TYPE_LABEL = { text: "텍스트", date: "날짜", amount: "금액", const: "고정값" };
   const INFERRED_LABEL = { text: "텍스트", date: "날짜", amount: "금액", number: "숫자", phone: "전화번호" };
-  const STEP_TITLES = ["템플릿 선택", "데이터 선택", "필드 매핑 확정", "작업 저장"];
+  const STEP_TITLES = ["템플릿 선택", "필드 매핑", "작업 저장"];
   let LAST = null;
 
   const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
+
+  // 편집(탭) vs 신규(마법사 단계) — 정보 완전 동등, 공개 방식만 상이(결정 41).
+  const isEditing = (s) => !!s.editing_origin;
 
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
@@ -19,10 +26,19 @@
       $("editor-steps").innerHTML = stepHeader(s);
       $("editor-body").innerHTML = stepBody(s);
       $("editor-foot").innerHTML = footer(s);
+      // 편집(탭)에선 저장 탭에만 푸터가 있다 — 빈 푸터의 고아 경계선 방지.
+      $("editor-foot").style.display = (isEditing(s) && s.step < 2) ? "none" : "";
     });
   }
 
+  /* 헤더: 신규=단계 표지(번호·게이트), 편집=탭(자유 이동 버튼). 같은 .wstep-tab 룩 재사용. */
   function stepHeader(s) {
+    if (isEditing(s)) {
+      return STEP_TITLES.map((t, i) => {
+        const cur = i === s.step ? ' aria-current="true"' : "";
+        return `<button class="wstep-tab as-tab" data-act="goto-tab" data-step="${i}"${cur}>${esc(t)}</button>`;
+      }).join("");
+    }
     return STEP_TITLES.map((t, i) => {
       const cur = i === s.step ? ' aria-current="true"' : "";
       const done = i < s.step ? " done" : "";
@@ -30,20 +46,24 @@
     }).join("");
   }
 
+  /* 본문 표제 — 신규는 단계 서수를 말하고, 편집(탭)은 분류 이름만 말한다. */
+  function stageTitle(s, i) {
+    return isEditing(s) ? STEP_TITLES[i] : `${i + 1}단계 — ${STEP_TITLES[i]}`;
+  }
+
   function stepBody(s) {
     // 세션 통지(#26) — 문제(warn)만 시끄럽게, 정상(ok)은 muted 한 줄(F32).
     const notice = s.notice
       ? `<p class="note ${s.notice.level === "ok" ? "quiet" : "warnbox"}" style="white-space:pre-line">${esc(s.notice.text)}</p>`
       : "";
-    if (s.step === 0) return notice + step0(s);
-    if (s.step === 1) return notice + step1(s);
-    if (s.step === 2) return notice + step2(s);
-    return notice + step3(s);
+    if (s.step === 0) return notice + templateStage(s);
+    if (s.step === 1) return notice + mappingStage(s);
+    return notice + saveStage(s);  // 2 = 저장
   }
 
-  /* ---- 1단계: 템플릿 ---- */
-  function step0(s) {
-    let out = `<div class="wtitle">1단계 — 템플릿 선택</div>
+  /* ---- 분류 0: 템플릿 ---- */
+  function templateStage(s) {
+    let out = `<div class="wtitle">${esc(stageTitle(s, 0))}</div>
       <p class="wsub">누름틀이 들어 있는 HWPX 템플릿을 선택하세요.</p>
       <div class="row"><span class="lbl">템플릿(.hwpx)</span>
         <input class="field ro" readonly value="${esc(s.template_name || "")}"
@@ -87,48 +107,61 @@
         <tbody>${rows}</tbody></table></div>`;
   }
 
-  // 2단계 데이터 미리보기: 개수만 있던 표시를 컬럼 헤더 + 샘플 행 그리드로(#16).
+  // 데이터 미리보기: 컬럼 헤더 + 샘플 행 그리드(#16). F21 열 압축(블록 2 결정 14): 미리보기
+  // 열 = 활성 헤더만(미사용 열은 뷰에서 제외, 재활성 시 복귀). 매핑표 행은 반대로 안 숨긴다
+  // (mapRow 의무 잔존, 조용한 빈칸 금지) — 여긴 데이터 감(感)을 주는 미리보기라 압축이 맞다.
   function dataPreview(s) {
     if (!s.record_count) return "";
-    const cols = s.source_fields || [];
-    const head = cols.map((c) => `<th title="${esc(c)}">${esc(c)}</th>`).join("");
+    const all = s.source_fields || [];
+    const active = new Set(s.active_source_fields || all);
+    // sample_rows 는 전체 source_fields 순서로 투영된 배열 — 원 인덱스를 물고 활성 열만 남긴다.
+    const cols = all.map((name, i) => ({ name, i })).filter((c) => active.has(c.name));
+    const head = cols.map((c) => `<th title="${esc(c.name)}">${esc(c.name)}</th>`).join("");
     const sample = s.sample_rows || [];
     const body = sample.map((row) =>
-      `<tr>${cols.map((_, i) => {
-        const v = row[i];
+      `<tr>${cols.map((c) => {
+        const v = row[c.i];
         return (v === "" || v == null)
           ? `<td><span class="pv emptyval">(빈 값)</span></td>`  // ADR-B: 빈 셀 시끄럽게
           : `<td><span class="pv">${esc(v)}</span></td>`;
       }).join("")}</tr>`).join("");
+    const hiddenCols = all.length - cols.length;
+    const colNote = hiddenCols
+      ? ` · 열 ${cols.length}/${all.length} (미사용 ${hiddenCols}열 제외)`
+      : ` · 전체 ${all.length}열`;
     const more = s.record_count > sample.length
       ? `<p class="fields-head muted">샘플 ${sample.length}행 표시 — 외 ${s.record_count - sample.length}행</p>`
       : "";
-    return `<p class="fields-head">컬럼 ${cols.length}개 · ${s.record_count}행 불러옴.</p>
+    return `<p class="fields-head">${s.record_count}행 불러옴${colNote}.</p>
       <div class="tblwrap"><table class="data-preview"><thead><tr>${head}</tr></thead>
         <tbody>${body}</tbody></table></div>${more}`;
   }
 
-  /* ---- 2단계: 데이터(선택적) ---- */
-  function step1(s) {
-    return `<div class="wtitle">2단계 — 데이터 선택 <span class="muted capnote" style="font-weight:400">(선택)</span></div>
-      <p class="wsub">행마다 문서 1건을 만들 데이터 파일. 작업엔 데이터가 저장되지 않습니다 —
-        매핑 검토용 샘플입니다. 데이터 없이 진행하면 템플릿 필드만으로 매핑합니다.</p>
-      <div class="row"><span class="lbl">데이터(.xlsx/.csv)</span>
-        <input class="field ro" readonly value="${esc(s.data_name || "")}"
-          placeholder="데이터를 선택하거나 건너뛰세요">
-        <button class="btn" data-act="pick-data">찾아보기…</button>
-        <button class="btn" data-act="skip-data">데이터 없이 진행 →</button>
-        ${PathTrack.affordances(s.data_path)}</div>
-      ${dataPreview(s)}
-      ${headerSelect(s)}`;
+  /* 데이터 관문(F18·F20) — 매핑 단계의 머리(3단계 접기). 파일 선택/바꾸기 + '데이터 없이
+     진행' 옵트아웃. 선택과 결과가 같은 지면: 파일을 고르면 매핑표가 그 자리에서 차오른다
+     (Python 이 load_data_path 에서 모델 재구성 → 다음 push). 작업엔 데이터가 저장되지 않는다. */
+  function dataGateway(s) {
+    const has = !!s.data_path;
+    const picker = has
+      ? `<span class="filechip"><b>${esc(s.data_name)}</b>${s.data_sheet ? ` <span class="sheet">시트: ${esc(s.data_sheet)}</span>` : ""}</span>
+         <button class="btn" data-act="pick-data">바꾸기…</button>`
+      : `<button class="btn primary" data-act="pick-data">파일 선택…</button>`;
+    return `<div class="row gateway">
+      <span class="lbl">이 작업의 데이터</span>
+      ${picker}
+      <button class="btn linklike" data-act="skip-data">데이터 없이 진행</button>
+      ${has ? PathTrack.affordances(s.data_path) : ""}</div>`;
   }
 
   /* 사용할 헤더 선택(#49) — 헤더가 많은 데이터에서 실제 쓸 헤더만 남긴다. 미사용 헤더는
      자동 매핑 제안·소스 드롭다운 후보에서 빠진다(원본 데이터·다른 매핑은 불변). 저장은
      하지 않는다 — 매핑이 곧 사용 헤더의 기억이라 재편집 시 저장 매핑에서 파생된다. */
   function headerSelect(s) {
+    // 헤더 선택은 데이터가 로드됐을 때만(관문 겨눔 후) 성립한다 — 편집 모드처럼 데이터 없이
+    // source_fields 가 저장 매핑 어휘에서 채워진 경우엔 '사용할 헤더'가 없다(복원 행을 헤더
+    // 토글로 언매핑하는 유령 표면 방지, 3단계 접기 리뷰 F4). mockup 상태 1(파일 겨눔 후)=칩벽 등장.
     const all = s.source_fields || [];  // 전체 헤더(스냅샷 계약 키) — 활성/미사용은 파생
-    if (!all.length) return "";
+    if (!all.length || !s.record_count) return "";
     const active = new Set(s.active_source_fields || []);
     const ignored = s.ignored_source_fields || [];
     const boxes = all.filter((f) => active.has(f)).map((f) =>
@@ -156,8 +189,8 @@
     </div>`;
   }
 
-  /* ---- 3단계: 매핑 표 ---- */
-  function step2(s) {
+  /* ---- 분류 1: 필드 매핑 (데이터 관문 내장, 3단계 접기) ---- */
+  function mappingStage(s) {
     const rows = (s.rows || []).map((r) => mapRow(r, s)).join("");
     const stepper = s.preview_count
       ? `<button class="btn sm" data-act="prev-rec">◀ 이전 행</button>
@@ -171,9 +204,12 @@
     const banner = s.schema_only
       ? `<p class="note warnbox">데이터 없이 매핑 중 — 값이 비어 보이는 건 '미매칭'이 아니라 '데이터 없음'입니다. 고정값을 넣거나 비움으로 확정하세요.</p>`
       : "";
-    return `<div class="wtitle">3단계 — 필드 매핑 확정</div>
-      <p class="wsub">자동 제안은 초안입니다. 모든 행을 검토·확정해야 다음으로 진행합니다.
-        채우지 않을 필드는 소스를 (비움)으로 두고 확정하세요.</p>
+    return `<div class="wtitle">${esc(stageTitle(s, 1))}</div>
+      <p class="wsub">데이터를 고르면 컬럼·표본이 아래 표에 그대로 차오릅니다. 자동 제안은
+        초안이니 모든 행을 검토·확정해야 저장으로 진행합니다. 채우지 않을 필드는 소스를
+        (비움)으로 두고 확정하세요. 작업엔 데이터가 저장되지 않습니다 — 매핑 검토용 샘플입니다.</p>
+      ${dataGateway(s)}
+      ${headerSelect(s)}
       ${banner}
       <div class="tblwrap"><table class="map"><thead><tr>
         <th>확정</th><th>템플릿 필드 · 추정</th><th>데이터 항목</th>
@@ -185,7 +221,8 @@
         <span class="spacer"></span>
         <button class="btn" data-act="confirm-all">모두 확정</button>
         <button class="btn" data-act="unconfirm-all">모두 해제</button>
-      </div>`;
+      </div>
+      ${dataPreview(s)}`;
   }
 
   function mapRow(r, s) {
@@ -225,9 +262,9 @@
       <td>${preview}</td></tr>`;
   }
 
-  /* ---- 4단계: 저장 ---- */
-  function step3(s) {
-    return `<div class="wtitle">4단계 — 작업 저장${s.editing_origin ? ` <span class="pill">편집: ${esc(s.editing_origin)}</span>` : ""}</div>
+  /* ---- 분류 2: 저장 ---- */
+  function saveStage(s) {
+    return `<div class="wtitle">${esc(stageTitle(s, 2))}${s.editing_origin ? ` <span class="pill">편집: ${esc(s.editing_origin)}</span>` : ""}</div>
       <p class="wsub">이 작업(템플릿·매핑·파일명)을 저장합니다. 데이터·행은 저장하지 않습니다 —
         실행할 때 고릅니다.</p>
       <div class="row"><span class="lbl lbl-fixed">작업 이름</span>
@@ -331,26 +368,47 @@
     return `<span class="pv">${esc(display)}</span>`;
   }
 
-  /* ---- 푸터 내비 ---- */
+  /* ---- 푸터 내비 — 신규=마법사(뒤로/다음/저장), 편집=탭이라 내비 없음(저장 탭에 저장만).
+     복귀 어포던스 불설치(결정 40): "저장하고 실행으로" 류 포커스 튕김 버튼은 두지 않는다 —
+     실행 복귀는 좌 목록 행 클릭이 담당하고, 저장은 제자리에서 완결된다. ---- */
   function footer(s) {
+    if (isEditing(s)) {
+      return s.step === 2
+        ? `<span class="spacer"></span><button class="btn primary" data-act="save">저장</button>`
+        : "";
+    }
     const back = s.step > 0
       ? `<button class="btn" data-act="back">◀ 뒤로</button>` : `<button class="btn" disabled>◀ 뒤로</button>`;
     let next;
-    if (s.step < 3) {
+    if (s.step < 2) {
       const can = s.reachable[s.step];
       next = `<button class="btn primary" data-act="next"${can ? "" : " disabled"}>다음 ▶</button>`;
     } else {
       next = `<button class="btn primary" data-act="save">작업 저장</button>`;
     }
-    const hint = (s.step < 3 && !s.reachable[s.step])
+    const hint = (s.step < 2 && !s.reachable[s.step])
       ? `<span class="muted capnote">${gateHint(s)}</span>` : "";
     return `${back}<span class="spacer"></span>${hint}${next}`;
   }
 
   function gateHint(s) {
     if (s.step === 0) return "템플릿을 선택하고 게이트를 통과해야 진행할 수 있습니다";
-    if (s.step === 2) return "전 행을 확정해야 진행할 수 있습니다";
+    if (s.step === 1) return "전 행을 확정해야 진행할 수 있습니다";
     return "";
+  }
+
+  /* 확정·수동 매핑 보호(PR#105 리뷰 F1) — 관문의 데이터 교체/비우기는 _ensure_model 재초안으로
+     사람 소유 행을 미확정으로 되돌린다(값은 carry_profile 로 이월). 편집 복원 확정을 '검토만'
+     하려던 1클릭이 매핑 표 바로 위 관문에서 조용히 리셋하지 않게 파괴 전 확인한다(confirm-or-
+     alarm). 수치는 **Python 이 지금** 판정한다(PR-2 리뷰 F7 — LAST 는 push 지연 창에서 stale 이라
+     방금 확정한 행이 안 보여 확인이 조용히 생략됐다). 0이면 조용히 진행(새 작업 첫 겨눔 등). */
+  async function confirmMappingResetIfConfirmed(verbPhrase) {
+    const st = await Bridge.call(SCREEN, "mapping_reset_stakes", {});
+    const n = (st && st.human) || 0;
+    if (!n) return true;
+    return Modal.confirm({ body:
+      `확정했거나 직접 편집한 매핑 ${n}개가 있습니다.\n${verbPhrase} 값은 이월되지만 ` +
+      `전부 미확정으로 돌아가 다시 확인해야 합니다.\n\n계속할까요?` });
   }
 
   /* ---- 이벤트 위임(innerHTML 재구성이라 위임이 안전) ---- */
@@ -375,6 +433,7 @@
         }
         case "ack-gate": await Bridge.call(SCREEN, "ack_gate", {}); break;
         case "pick-data": {
+          if (!(await confirmMappingResetIfConfirmed("데이터를 바꾸면"))) break;  // 확정 보호(F1)
           let r = await Bridge.pickDataFile(SCREEN);
           if (r && typeof r === "object" && r.needs_sheet) {   // 다중 시트 → 확정 게이트(#33)
             r = await SheetPicker.choose(SCREEN, r);
@@ -383,11 +442,18 @@
           if (typeof r === "string" && r.startsWith("ERROR:")) alertMsg(r.slice(6).trim());
           break;
         }
-        case "skip-data": await Bridge.call(SCREEN, "skip_data", {}); break;
+        case "skip-data": {
+          if (!(await confirmMappingResetIfConfirmed("데이터 없이 진행하면"))) break;  // 확정 보호(F1)
+          await Bridge.call(SCREEN, "skip_data", {});
+          break;
+        }
+        case "goto-tab":  // 편집(탭) 자유 이동(결정 41) — 게이트는 백엔드가 editing 기준으로 판정.
+          await Bridge.call(SCREEN, "goto_step", { step: Number(el.dataset.step) });
+          break;
         case "use-selected": {
           // 활성 체크박스 중 체크된 것만 사용 → 나머지(체크 해제 + 이미 미사용) 일괄 미사용.
           const fields = Array.from(
-            document.querySelectorAll("#scr-editor .hbx:checked")).map((b) => b.value);
+            document.querySelectorAll("#jobEditHost .hbx:checked")).map((b) => b.value);
           await Bridge.call(SCREEN, "use_only_selected", { fields });
           break;
         }
@@ -454,13 +520,15 @@
       return;
     }
     if (res.ok) {
-      let msg = `✓ 작업 '${res.saved_name}' 저장됨.`;
-      if (res.dataset_registered) msg += ` 데이터 '${res.dataset_registered}' 등록됨.`;
+      // 저장은 제자리(결정 40 — 포커스 튕김 없음). 좌 목록만 갱신해 새/개명 작업이 바로 보이게
+      // 한다(에디터 흡수로 목록과 같은 화면에 산다 — REFRESH_ON_NAV 를 기다릴 이유가 없다).
+      if (window.JobScreen && window.JobScreen.refreshList) window.JobScreen.refreshList();
+      // 성공 재진술은 Python notice(ok) 채널 — 저장 착지가 저장본 편집 세션 재로드 push 라
+      // #save-msg 는 그 재렌더에 증발한다(PR-2 리뷰 F2: push/반환 경합에 안 걸리는 채널만).
+      // 반저장(작업 저장 성공 + 데이터 등록 실패)만 여기서 loud — 성공으로 뭉개지 않는다.
       if (res.dataset_register_error) {
-        // 반저장(작업 저장 성공 + 데이터 등록 실패) — 성공으로 뭉개지 않고 경고로 재진술.
-        alertMsg(msg + " " + res.dataset_register_error);
-      } else {
-        alertMsg(msg, "ok");
+        window.alert(`작업 '${res.saved_name}' 은 저장됐지만 데이터 등록이 실패했습니다.\n`
+          + res.dataset_register_error);
       }
       return;
     }
@@ -492,7 +560,8 @@
 
   function init() {
     Bridge.onPush(SCREEN, render);
-    const root = $("scr-editor");
+    // 에디터 흡수(결정 39) — 표면 거처는 「작업」 패널의 편집 호스트. 위임 루트도 함께 이사.
+    const root = $("jobEditHost");
     root.addEventListener("click", onClick);
     root.addEventListener("change", onChange);
     Bridge.initial(SCREEN).then(render);

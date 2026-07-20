@@ -1,7 +1,8 @@
 """작업 에디터 화면 컨트롤러 계약 가드 — pywebview/Qt 불필요(헤드리스).
 
-에픽 #20 화면 #15·#16 이관의 회귀 심. 4단계 마법사 게이트(스키마·PARTIAL·매핑 확정·저장)를
-링1 VM 그대로 구동해 창 없이 확인한다. 실 HWPX 픽스처(COMPILED·PARTIAL)로 게이트 분기를 탄다.
+에픽 #20 화면 #15·#16 이관의 회귀 심. 3단계 마법사 게이트(스키마·PARTIAL·매핑 확정·저장)를
+링1 VM 그대로 구동해 창 없이 확인한다(R-flow 슬라이스 5 블록 2 — 데이터 선택이 매핑 단계
+관문으로 접힘: 템플릿 0 → 매핑 1 → 저장 2). 실 HWPX 픽스처(COMPILED·PARTIAL)로 게이트 분기를 탄다.
 """
 from __future__ import annotations
 
@@ -106,13 +107,13 @@ def test_load_data_honors_confirmed_sheet(tmp_path):
 
 
 def test_full_new_job_flow_schema_only_const(tmp_path):
-    """템플릿→(데이터 건너뜀)→매핑(상수 1행+비움 확정)→저장 end-to-end."""
+    """템플릿→매핑(관문 데이터 없이 진행, 상수 1행+비움 확정)→저장 end-to-end."""
     ctrl, pushes = _controller(tmp_path)
     ctrl.load_template_path(str(TPL_COMPILED))
-    ctrl.dispatch("goto_step", {"step": 1})
-    ctrl.dispatch("skip_data", {})
+    ctrl.dispatch("goto_step", {"step": 1})   # 매핑 진입(모델 초안 생성)
+    ctrl.dispatch("skip_data", {})            # 관문 옵트아웃 — 데이터 없이 진행
     snap = ctrl.snapshot()
-    assert snap["step"] == 2 and len(snap["rows"]) == 10 and snap["schema_only"] is True
+    assert snap["step"] == 1 and len(snap["rows"]) == 10 and snap["schema_only"] is True
 
     # 0행에 고정값 부여(내용 생성).
     ctrl.dispatch("set_type", {"index": 0, "type": "const"})
@@ -127,12 +128,71 @@ def test_full_new_job_flow_schema_only_const(tmp_path):
     assert ctrl.snapshot()["is_complete"] is True
 
     # 저장.
-    ctrl.dispatch("goto_step", {"step": 3})
+    ctrl.dispatch("goto_step", {"step": 2})
     ctrl.dispatch("set_name", {"name": "테스트작업"})
     ctrl.dispatch("set_pattern", {"pattern": "문서-{{ID}}"})
     res = ctrl.dispatch("save", {})
     assert res["ok"] is True and res["saved_name"] == "테스트작업"
     assert JobRegistry(tmp_path / "jobs").exists("테스트작업")
+
+
+def test_gateway_data_pick_rebuilds_mapping_in_place(tmp_path):
+    """3단계 접기(블록 2 결정 11·12): 매핑 진입 후 관문에서 데이터를 고르면 매핑표가 그
+    자리에서 다시 선다 — 컬럼·자동 제안 반영, 스키마온리 탈출, 전환 없음(라이브 순서 가드).
+
+    헬퍼(_complete_with_data)는 데이터를 먼저 로드하고 진입하지만, 실 UX 는 진입 후 관문에서
+    겨눔한다 — 그때 load_data_path 가 모델 존재를 보고 _ensure_model 로 재구성해야 한다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("goto_step", {"step": 1})              # 매핑 진입(데이터 전 — 스키마온리 모델)
+    snap = ctrl.snapshot()
+    assert snap["step"] == 1 and snap["schema_only"] is True
+    assert snap["source_fields"] == [] and snap["rows"]  # 템플릿 필드는 이미 표에
+
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")  # 관문에서 데이터 겨눔 → in-place 재구성
+    snap = ctrl.snapshot()
+    assert snap["step"] == 1                              # 여전히 매핑(단계 전환 없음)
+    assert snap["schema_only"] is False                  # 데이터 반영 — 스키마온리 탈출
+    assert snap["source_fields"] == ["업체명", "낙찰금액", "계약일"]
+    assert snap["active_source_fields"] == ["업체명", "낙찰금액", "계약일"]  # 소스 후보 채워짐
+
+
+def test_same_file_different_sheet_repick_demotes_confirmed(tmp_path):
+    """3단계 접기 리뷰 F1 — 정체 키에 시트 포함: 같은 workbook 의 다른 시트로 관문 재겨눔할 때
+    헤더명이 같아도 확정 매핑이 조용히 살아남지 않는다(조용한 게이트 우회 차단).
+
+    두 시트의 헤더명이 같고(업체명·금액) 데이터만 다르면, data_sheet 를 키에서 빼면
+    source_fields 불변→키 불변→_ensure_model 조기 반환→확정 유지→이전 시트 기준 저장·실행되는
+    조용한 우회가 된다(슬라이스 4 '정체 키 성분 누락' 교훈). 시트를 키 성분으로 넣어 재구성·강등.
+    """
+    from openpyxl import Workbook
+
+    xlsx = tmp_path / "twin_headers.xlsx"
+    wb = Workbook()
+    a = wb.active
+    a.title = "1월"
+    a.append(["업체명", "금액"])
+    a.append(["갑상사", "100"])
+    b = wb.create_sheet("2월")
+    b.append(["업체명", "금액"])        # 동일 헤더명, 다른 데이터
+    b.append(["을상사", "999"])
+    wb.save(xlsx)
+
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(xlsx), sheet="1월")
+    ctrl.dispatch("goto_step", {"step": 1})            # 매핑 진입(1월 데이터)
+    ctrl.dispatch("set_source", {"index": 0, "source": "금액"})
+    r = ctrl.dispatch("confirm_all", {})
+    ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
+    assert ctrl.snapshot()["is_complete"] is True
+
+    ctrl.load_data_path(str(xlsx), sheet="2월")         # 같은 파일 다른 시트로 관문 재겨눔
+    snap = ctrl.snapshot()
+    assert snap["is_complete"] is False                # 확정이 조용히 살아남지 않음(재구성)
+    assert all(row["confirmed"] is False for row in snap["rows"])
+    assert snap["notice"] and "다시 확정" in snap["notice"]["text"]
 
 
 def test_save_gate_blocks_incomplete_and_unnamed(tmp_path):
@@ -165,7 +225,10 @@ def test_overwrite_confirm_flow(tmp_path):
     ctrl.dispatch("set_pattern", {"pattern": "p-{{ID}}"})
     assert ctrl.dispatch("save", {})["ok"] is True
 
-    # 같은 이름 재저장 → 덮어쓰기 확인 요구(조용한 덮어쓰기 금지).
+    # **새 세션**에서 같은 이름 저장 → 덮어쓰기 확인 요구(조용한 덮어쓰기 금지).
+    # 저장 착지가 편집 세션이 된 뒤(PR-2 리뷰 F2)로는 같은 세션의 같은 이름 재저장은
+    # 자기-갱신(확인 불요)이 맞다 — 충돌 시나리오는 새 세션으로 재현한다.
+    ctrl.dispatch("new_session", {})
     ctrl.load_template_path(str(TPL_COMPILED))
     ctrl.dispatch("skip_data", {})
     ctrl.dispatch("set_type", {"index": 0, "type": "const"})
@@ -227,7 +290,7 @@ def _build_complete_session(ctrl, name: str) -> None:
     ctrl.dispatch("set_const", {"index": 0, "const": "v"})
     r = ctrl.dispatch("confirm_all", {})
     ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
-    ctrl.dispatch("goto_step", {"step": 3})
+    ctrl.dispatch("goto_step", {"step": 2})
     ctrl.dispatch("set_name", {"name": name})
     ctrl.dispatch("set_pattern", {"pattern": "p-{{ID}}"})
 
@@ -339,7 +402,7 @@ def test_load_job_restores_edit_session(tmp_path):
 
     ctrl.load_job("원본작업")
     snap = ctrl.snapshot()
-    assert snap["step"] == 2                             # 매핑 확정 단계로 착지
+    assert snap["step"] == 1                             # 매핑 확정 단계로 착지(3단계 접기)
     assert snap["name"] == "원본작업"
     assert snap["editing_origin"] == "원본작업"
     assert snap["is_complete"] is True                   # 1 const + 9 blank 전부 확정 복원
@@ -368,8 +431,8 @@ def test_load_job_model_survives_step_navigation(tmp_path):
     ctrl, _ = _controller26(tmp_path)
     _save_named(ctrl, "이동작업")
     ctrl.load_job("이동작업")
-    ctrl.dispatch("goto_step", {"step": 1})              # 뒤로
-    ctrl.dispatch("goto_step", {"step": 2})              # 다시 매핑 진입(_ensure_model 경유)
+    ctrl.dispatch("goto_step", {"step": 2})              # 저장 단계로
+    ctrl.dispatch("goto_step", {"step": 1})              # 다시 매핑 진입(_ensure_model 경유)
     snap = ctrl.snapshot()
     assert snap["is_complete"] is True                   # 확정 유지(재생성 아님)
     assert snap["rows"][0]["const"] == "v"
@@ -437,19 +500,20 @@ def test_ensure_model_carries_values_but_requires_reconfirm_on_data_change(tmp_p
     이전 확정을 확정 상태 그대로 되살리면 같은 이름 컬럼('금액' 등)이 의미가 다른 새
     데이터에서 사람 검토 없이 ``is_complete`` 를 통과해 저장·실행까지 흐른다 — 구
     불변식 '키 변경 시 전원 미확정 초안'을 복원하고 notice 로 재확정 필요를 재진술한다.
+
+    3단계 접기(블록 2): 데이터 교체는 매핑 단계 관문에서 일어나 **그 자리에서** 모델을
+    다시 세운다(load_data_path 가 모델 존재 시 _ensure_model 호출) — 단계 왕복 없이 in-place.
     """
     ctrl, _ = _controller26(tmp_path)
     ctrl.load_template_path(str(TPL_COMPILED))
-    ctrl.dispatch("skip_data", {})
+    ctrl.dispatch("skip_data", {})                       # 매핑 진입(데이터 없이, 모델 생성)
     ctrl.dispatch("set_type", {"index": 0, "type": "const"})
     ctrl.dispatch("set_const", {"index": 0, "const": "보존값"})
     r = ctrl.dispatch("confirm_all", {})
     ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
     assert ctrl.snapshot()["is_complete"] is True
 
-    ctrl.dispatch("goto_step", {"step": 1})              # 데이터 단계로 회귀
-    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
-    ctrl.dispatch("goto_step", {"step": 2})              # 키 변경 → 재생성 경로
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")  # 관문에서 데이터 겨눔 → in-place 재생성
     snap = ctrl.snapshot()
     assert snap["rows"][0]["const"] == "보존값"          # 값 이월(조용한 소실 없음)
     assert snap["rows"][0]["type"] == "const"
@@ -464,7 +528,7 @@ def _complete_with_data(ctrl, name: str) -> None:
     """데이터(다중시트 확정) 연결 세션을 저장 직전까지 구성."""
     ctrl.load_template_path(str(TPL_COMPILED))
     ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
-    ctrl.dispatch("goto_step", {"step": 2})
+    ctrl.dispatch("goto_step", {"step": 1})   # 매핑 진입(데이터 겨눔 상태 — 3단계 접기)
     ctrl.dispatch("set_type", {"index": 0, "type": "const"})
     ctrl.dispatch("set_const", {"index": 0, "const": "v"})
     r = ctrl.dispatch("confirm_all", {})
@@ -710,7 +774,7 @@ def test_ignoring_mapped_header_clears_row_and_restates(tmp_path):
     ctrl, _ = _controller(tmp_path)
     ctrl.load_template_path(str(TPL_COMPILED))
     ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
-    ctrl.dispatch("goto_step", {"step": 2})              # 매핑 진입 → 모델 생성
+    ctrl.dispatch("goto_step", {"step": 1})              # 매핑 진입 → 모델 생성(3단계 접기)
     ctrl.dispatch("set_source", {"index": 0, "source": "낙찰금액"})
     ctrl.dispatch("set_source", {"index": 1, "source": "업체명"})
     ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": True})
@@ -762,7 +826,7 @@ def test_empty_selection_is_loud_and_preserves_mappings(tmp_path):
     ctrl, _ = _controller(tmp_path)
     ctrl.load_template_path(str(TPL_COMPILED))
     ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
-    ctrl.dispatch("goto_step", {"step": 2})
+    ctrl.dispatch("goto_step", {"step": 1})
     ctrl.dispatch("set_source", {"index": 0, "source": "낙찰금액"})
     ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": True})
 
@@ -788,7 +852,7 @@ def test_load_job_reedit_starts_all_active(tmp_path):
     ctrl, _ = _controller26(tmp_path)
     ctrl.load_template_path(str(TPL_COMPILED))
     ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
-    ctrl.dispatch("goto_step", {"step": 2})
+    ctrl.dispatch("goto_step", {"step": 1})
     ctrl.dispatch("set_source", {"index": 0, "source": "낙찰금액"})   # 실 소스 매핑
     ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": True})
     r = ctrl.dispatch("confirm_all", {})
@@ -811,8 +875,8 @@ def test_default_dataset_linked_shown_at_save_step(tmp_path):
     _complete_with_data(ctrl, "연결표시")
     ctrl.dispatch("save", {})
     ctrl.load_job("연결표시")                              # 데이터 없이 편집 세션 복원
-    assert ctrl.snapshot()["default_dataset"] is None      # step 2 — 미계산(비용 가드)
-    ctrl.dispatch("goto_step", {"step": 3})
+    assert ctrl.snapshot()["default_dataset"] is None      # step 1(매핑) — 미계산(비용 가드)
+    ctrl.dispatch("goto_step", {"step": 2})
     d = ctrl.snapshot()["default_dataset"]
     assert d == {"name": "multi_sheet", "status": "linked", "path": str(MULTI_SHEET)}
 
@@ -830,20 +894,20 @@ def test_default_dataset_dead_corrupt_missing_are_restated(tmp_path):
     item.opts = {"path": str(tmp_path / "이동됨.xlsx"), "sheet": "낙찰현황"}
     pool.save(item, allow_overwrite=True)                  # 파일만 죽음(dead)
     ctrl.load_job("끊김표시")
-    ctrl.dispatch("goto_step", {"step": 3})
+    ctrl.dispatch("goto_step", {"step": 2})
     d = ctrl.snapshot()["default_dataset"]
     assert d["status"] == "dead" and d["path"].endswith("이동됨.xlsx")
 
     corrupted = next((tmp_path / "pool").glob("*.dataset.json"))
     corrupted.write_text("{깨진 JSON", encoding="utf-8")   # 항목 손상(corrupt)
     ctrl.load_job("끊김표시")
-    ctrl.dispatch("goto_step", {"step": 3})
+    ctrl.dispatch("goto_step", {"step": 2})
     d = ctrl.snapshot()["default_dataset"]
     assert d == {"name": "multi_sheet", "status": "corrupt", "path": ""}
 
     corrupted.unlink()                                     # 항목 자체 소멸(missing)
     ctrl.load_job("끊김표시")
-    ctrl.dispatch("goto_step", {"step": 3})
+    ctrl.dispatch("goto_step", {"step": 2})
     d = ctrl.snapshot()["default_dataset"]
     assert d == {"name": "multi_sheet", "status": "missing", "path": ""}
 
@@ -852,11 +916,158 @@ def test_default_dataset_none_when_fresh_data_or_no_ref(tmp_path):
     """이번 세션이 데이터를 골랐거나 참조가 없으면 None — 자동등록 블록과 이중 서사 금지(#67)."""
     ctrl, _ = _controller26(tmp_path)
     _complete_with_data(ctrl, "이중서사금지")
-    ctrl.dispatch("goto_step", {"step": 3})
+    ctrl.dispatch("goto_step", {"step": 2})
     assert ctrl.snapshot()["default_dataset"] is None      # data_path 有 → 자동등록 블록 몫
 
     ctrl2, _ = _controller26(tmp_path)
     _save_named(ctrl2, "무참조작업")                        # 데이터 없이 저장 = ref ""
     ctrl2.load_job("무참조작업")
-    ctrl2.dispatch("goto_step", {"step": 3})
+    ctrl2.dispatch("goto_step", {"step": 2})
     assert ctrl2.snapshot()["default_dataset"] is None
+
+
+# ------------------------------------------------ 에디터 흡수(블록 2 개정, 결정 39~41)
+def test_skip_data_requires_template_gate(tmp_path):
+    """관문 옵트아웃(skip_data)도 템플릿 게이트 선통과(PR#105 리뷰 F2).
+
+    step 0 shortcut 은 goto_step(1) 과 달리 게이트를 안 거치므로, PARTIAL(미해결 토큰
+    미확인) 템플릿을 이 액션이 매핑으로 밀어 넣어 게이트를 우회할 수 있다 — 시끄럽게 차단."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_PARTIAL))            # PARTIAL → 게이트 닫힘
+    with pytest.raises(ValueError, match="게이트"):
+        ctrl.dispatch("skip_data", {})
+    ctrl.dispatch("ack_gate", {})                        # 명시 확인 후엔 통과
+    ctrl.dispatch("skip_data", {})
+    assert ctrl.step == 1
+
+
+def test_goto_step_free_movement_when_editing(tmp_path):
+    """편집(탭) = 자유 이동(결정 41) — 매핑을 되물러도(미확정) 탭 이동이 막히지 않는다.
+
+    편집은 저장된 작업 복원이라 의존이 전부 충족된 상태 — 같은 3분류를 탭으로 자유 이동한다.
+    탭 이동은 보기 이동일 뿐이고 무결성은 저장 게이트(_do_save)가 저장점에서 계속 지킨다.
+    신규 초안(편집 원점 없음)은 대조군 — 전진 게이트가 그대로 살아 있다."""
+    ctrl, _ = _controller26(tmp_path)
+    assert _save_named(ctrl, "자유이동")["ok"] is True
+    ctrl.load_job("자유이동")
+    ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": False})  # 의존 되무름(미확정)
+    ctrl.dispatch("goto_step", {"step": 2})              # 편집: 게이트 없이 저장 탭으로
+    assert ctrl.step == 2
+    ctrl.dispatch("goto_step", {"step": 0})              # 자유 복귀
+    assert ctrl.step == 0
+    ctrl2, _ = _controller(tmp_path / "new")             # 대조군: 신규 마법사
+    ctrl2.load_template_path(str(TPL_COMPILED))
+    ctrl2.dispatch("goto_step", {"step": 1})             # 0→1 은 스키마 有로 통과
+    with pytest.raises(ValueError, match="게이트 미통과"):
+        ctrl2.dispatch("goto_step", {"step": 2})         # 매핑 미확정 → 저장 전진 차단
+
+
+# ---------------------------------------- PR-2 고효율 리뷰 반영(파괴 경로·클린 세션·판정 위치)
+def test_save_lands_in_edit_session_of_saved_job(tmp_path):
+    """저장 착지 = 방금 저장한 작업의 편집 세션(리뷰 F2 — 빈 마법사 방치·성공 표지 증발 봉합).
+
+    결정 40(저장 제자리)·41(전환점=저장: 초안은 저장으로 작업이 되고 이후 편집은 탭)의 이행.
+    성공 재진술은 push 경합에 안 걸리는 notice(ok) 채널로 온다."""
+    ctrl, _ = _controller26(tmp_path)
+    res = _save_named(ctrl, "착지작업")
+    assert res["ok"] is True
+    snap = ctrl.snapshot()
+    assert snap["editing_origin"] == "착지작업"          # 빈 마법사가 아니라 저장본 위
+    assert snap["step"] == 1 and snap["is_complete"] is True
+    assert snap["notice"] and "저장했습니다" in snap["notice"]["text"]
+    assert snap["notice"]["level"] == "ok"
+    assert ctrl.has_unsaved_work() is False              # 클린 착지 — 직후 전환 헛확인 금지
+
+
+def test_load_job_marks_session_clean_until_edited(tmp_path):
+    """편집 복원 직후는 클린(디스크 저장본과 동일) — 손대기 전 전환·새 작업이 "저장하지 않은
+    세션" 헛확인을 띄우지 않는다(리뷰). 변이 액션 하나로 다시 미저장이 된다."""
+    ctrl, _ = _controller26(tmp_path)
+    _save_named(ctrl, "클린작업")
+    ctrl.load_job("클린작업")
+    assert ctrl.has_unsaved_work() is False              # 복원 직후 = 버릴 것 없음
+    ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": False})
+    assert ctrl.has_unsaved_work() is True               # 변이 → 미저장
+
+
+def test_skip_data_is_noop_in_dataless_edit_session(tmp_path):
+    """비울 참조가 없으면 어휘·모델 보존(리뷰 F3) — 편집 복원 세션(데이터 무)에서 「데이터
+    없이 진행」 클릭이 저장-매핑 어휘를 지워 전 행을 "(데이터에 없음)" 강등하던 결함."""
+    ctrl, _ = _controller26(tmp_path)
+    _save_named(ctrl, "무데이터편집")
+    ctrl.load_job("무데이터편집")
+    before = ctrl.snapshot()
+    ctrl.dispatch("skip_data", {})
+    after = ctrl.snapshot()
+    assert after["source_fields"] == before["source_fields"]      # 어휘 보존
+    assert after["is_complete"] is True                           # 확정 복원 행 무강등
+    assert after["step"] == 1
+
+
+def test_skip_data_allowed_in_partial_edit_session(tmp_path):
+    """편집 세션(매핑에 정당히 착지)에선 PARTIAL 게이트가 skip_data 를 막지 않는다(리뷰 F6).
+
+    게이트 확인은 세션 국소라 load_job 이 미확인으로 복원한다 — step 0 shortcut 우회 차단
+    (리뷰 F2)은 step 0 에만 적용하고, 매핑 관문의 클릭은 통과한다."""
+    ctrl, _ = _controller26(tmp_path)
+    ctrl.load_template_path(str(TPL_PARTIAL))
+    ctrl.dispatch("ack_gate", {})
+    ctrl.dispatch("skip_data", {})
+    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_const", {"index": 0, "const": "v"})
+    r = ctrl.dispatch("confirm_all", {})
+    ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
+    ctrl.dispatch("set_name", {"name": "부분템플릿작업"})
+    assert ctrl.dispatch("save", {})["ok"] is True       # 저장 착지 = 편집 세션(게이트 미확인 복원)
+    assert ctrl.snapshot()["gate"]["acked"] is False
+    ctrl.dispatch("skip_data", {})                       # step 1 — 게이트 없이 통과(무예외)
+    assert ctrl.step == 1
+
+
+def test_skip_data_detach_restores_mapping_vocabulary(tmp_path):
+    """편집 세션에서 데이터 분리는 빈 어휘가 아니라 현재 매핑이 참조하는 소스 어휘로 복귀
+    (리뷰 F3 — load_job 초기 상태와 동형, "(데이터에 없음)" 오표시 금지)."""
+    ctrl, _ = _controller26(tmp_path)
+    _save_named(ctrl, "분리작업")                        # 착지 = 편집 세션
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("set_source", {"index": 0, "source": "업체명"})
+    ctrl.dispatch("skip_data", {})                       # 분리(detach)
+    snap = ctrl.snapshot()
+    assert snap["data_path"] == "" and snap["record_count"] == 0
+    assert "업체명" in snap["source_fields"]             # 매핑 참조 어휘로 복귀(빈 어휘 아님)
+    assert snap["rows"][0]["source"] == "업체명"          # 이월 + 드롭다운 정상 후보
+
+
+def test_mapping_reset_stakes_judged_by_python_now(tmp_path):
+    """관문 파괴 확인의 근거 수치는 Python 이 지금 판정(리뷰 F7 — stale LAST 우회 차단).
+
+    수치 = 이월 대상(확정 + 내용 있는 touched) — _ensure_model carry 와 같은 집합이라
+    확인 문안("값은 이월")과 실제 이월이 어긋나지 않는다(리뷰 F1)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    assert ctrl.dispatch("mapping_reset_stakes", {}) == {"human": 0}   # 모델 전
+    ctrl.dispatch("skip_data", {})
+    assert ctrl.dispatch("mapping_reset_stakes", {}) == {"human": 0}   # 미접촉 제안뿐
+    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_const", {"index": 0, "const": "v"})
+    assert ctrl.dispatch("mapping_reset_stakes", {}) == {"human": 1}   # 내용 있는 수동
+    r = ctrl.dispatch("confirm_all", {})
+    ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
+    stakes = ctrl.dispatch("mapping_reset_stakes", {})
+    assert stakes["human"] == ctrl.snapshot()["field_count"]           # 전 행 확정(비움 포함)
+
+
+def test_ensure_model_carries_touched_unconfirmed_rows(tmp_path):
+    """관문 재겨눔이 미확정 수동 편집을 이월한다(리뷰 F1 — carry_profile 실배선).
+
+    확정-전용 이월(to_profile)은 "값은 이월된다"는 확인 문안과 달리 직접 고른 상수를
+    조용히 버렸다 — 확정 0·수동 1 세션에서 데이터를 겨눠도 값이 남아야 한다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("skip_data", {})
+    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_const", {"index": 0, "const": "수동값"})        # touched·미확정
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")            # 관문 겨눔 = 재초안
+    row0 = ctrl.snapshot()["rows"][0]
+    assert row0["type"] == "const" and row0["const"] == "수동값"       # 값 이월(소실 금지)
+    assert row0["confirmed"] is False                                  # 재검토 강제는 유지

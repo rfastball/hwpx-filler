@@ -205,10 +205,11 @@
   async function newJob() {
     const busy = await Bridge.editorHasUnsavedWork();
     if (busy && !(await Modal.confirm({ body:
-      "에디터에 저장하지 않은 작업 세션이 있습니다.\n" +
+      "저장하지 않은 편집(정의) 세션이 있습니다.\n" +
       "새 작업을 시작하면 그 세션의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?" }))) return;
     await Bridge.call("editor", "new_session", {});
-    window.Nav.go("editor");
+    // 에디터 흡수(결정 39·41) — 신규 마법사도 「작업」 패널 편집 모드에 산다(별도 화면 사망).
+    EditorEntry.land();
   }
 
   /* '＋ 새 기안'(F11) — F10 과 대칭. txt 출력은 일회성(복사/저장 즉시 완결)이라
