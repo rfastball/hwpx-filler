@@ -32,6 +32,13 @@ from hwpxfiller.core.authoring import scan_tokens
 from hwpxfiller.core.schema import extract_schema
 
 
+# 작업 실행의 기본 저장 하위폴더 이름(screen_job: 템플릿/Results). 라이브러리 루트 밑에 산출물이
+# 쌓이므로 재귀 템플릿 스캔이 이 이름의 하위트리를 **템플릿으로 재수집하면 안 된다**(#136 리뷰 F2)
+# — 실행할수록 라이브러리가 완성 문서로 오염되고 모든 산출물을 상태 분석하게 된다. 스캔 제외와
+# 저장 위치가 같은 이름을 봐야 어긋나지 않아 여기 단일 출처로 둔다.
+OUTPUT_SUBDIR_NAME = "Results"
+
+
 def default_templates_dir() -> Path:
     """GUI 기본 템플릿 라이브러리 위치 — 사용자 홈(``~/.hwpxfiller/templates``).
 

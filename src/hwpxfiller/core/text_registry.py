@@ -49,11 +49,24 @@ class TextTemplateRegistry:
         self.directory = Path(directory)
 
     def list_templates(self) -> "list[TextTemplate]":
+        """루트의 ``*.txt`` 를 **재귀**로(하위폴더 포함) 나열한다(R-info 2부 결정 5).
+
+        비재귀 ``glob`` 은 탐색기로 하위폴더에 떨군 템플릿을 조용히 누락했다(confirm-or-alarm
+        위반) — ``rglob`` 으로 반드시 찾아 올린다("파일 등장은 관용, 폴더 조직은 불인정" —
+        하위폴더는 조직이 아니라 관용된 등장지라 평평하게 나열된다).
+
+        **이름 = 루트 상대경로(확장자 제외, POSIX)** — 루트 직속 파일은 곧 stem 이고 하위폴더
+        파일은 ``하위폴더/이름``. 재귀가 ``a/동명.txt``·``b/동명.txt`` 를 stem 하나로 노출하면
+        :meth:`load` 가 첫 파일만 열어 다른 항목을 골라도 조용히 첫 내용이 열린다(#136 리뷰 F1).
+        상대경로 이름은 유일하므로 목록·선택·load 계약이 두 파일을 별개로 구분한다. 이름순 정렬."""
         if not self.directory.exists():
             return []
         return [
-            TextTemplate(p.stem, p)
-            for p in sorted(self.directory.glob("*" + self.SUFFIX))
+            TextTemplate(p.relative_to(self.directory).with_suffix("").as_posix(), p)
+            for p in sorted(
+                (p for p in self.directory.rglob("*" + self.SUFFIX) if p.is_file()),
+                key=lambda p: (p.name, str(p)),
+            )
         ]
 
     def names(self) -> "list[str]":
@@ -63,4 +76,10 @@ class TextTemplateRegistry:
         return len(self.list_templates())
 
     def load(self, name: str) -> TextTemplate:
+        """이름으로 템플릿 로드 — **재귀 스캔에서 실제 경로를 찾는다**(하위폴더 파일도 올바르게
+        연다). list→load 왕복 정합: 목록이 하위폴더 파일을 올렸는데 load 가 루트 경로만 재구성하면
+        엉뚱한(없는) 파일을 겨눈다. 미발견(아직 없는 이름 등)이면 루트 경로로 구성해 하위호환."""
+        for t in self.list_templates():
+            if t.name == name:
+                return t
         return TextTemplate(name, self.directory / (name + self.SUFFIX))

@@ -87,6 +87,34 @@ def test_vm_actions_for_delegates_to_resolver(tmp_path):
     assert [a.key for a in vm.actions_for(CompileState.COMPILED)] == ["preview", "make_job"]
 
 
+def test_library_scan_is_recursive(tmp_path):
+    """R-info 2부 결정 5 — 하위폴더의 .hwpx 도 재귀로 찾는다(비재귀 glob 이던 시절 조용한 누락)."""
+    _write_raw(tmp_path / "루트.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")
+    sub = tmp_path / "탐색기묶음"
+    sub.mkdir()
+    _write_raw(sub / "하위.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")
+    vm = TemplateManagerViewModel(library_dir=tmp_path)
+    names = {r.name for r in vm.rows()}
+    assert names == {"루트.hwpx", "하위.hwpx"}  # 하위폴더 파일도 평평하게 올라온다
+
+
+def test_library_scan_excludes_results_output_subtree(tmp_path):
+    """#136 리뷰 F2 — 작업 산출물 폴더(템플릿/Results)는 템플릿으로 재수집하지 않는다.
+
+    실행 기본 저장 폴더가 라이브러리 루트 밑 ``Results`` 라, 재귀 스캔이 완성 문서를 다시
+    템플릿(FILLED 행)으로 올리면 실행할수록 라이브러리가 오염된다."""
+    _write_raw(tmp_path / "서식.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")
+    results = tmp_path / "Results"
+    results.mkdir()
+    _write_compiled(results / "생성물.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")
+    # 하위폴더의 Results 도 제외(templates/입찰/Results/*.hwpx 형태).
+    nested = tmp_path / "입찰" / "Results"
+    nested.mkdir(parents=True)
+    _write_compiled(nested / "생성물2.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")
+    vm = TemplateManagerViewModel(library_dir=tmp_path)
+    assert {r.name for r in vm.rows()} == {"서식.hwpx"}  # 산출물은 목록에 없다
+
+
 def test_rows_expose_gated_actions_matching_state(tmp_path):
     """VM 행이 실제 파일 상태에서 계산한 액션 집합을 노출한다(라이브러리 전 상태)."""
     raw = _write_raw(tmp_path / "raw.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")

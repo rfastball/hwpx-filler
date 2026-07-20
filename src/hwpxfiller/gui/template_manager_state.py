@@ -26,7 +26,12 @@ from pathlib import Path
 from ..core.authoring import TokenSite, compile_document, scan_tokens
 from ..core.fields import read_fields
 from ..core.lint import LintReport, SchemaDrift, diff_schema, lint_template
-from ..core.template_status import CompileState, TemplateStatus, compile_status
+from ..core.template_status import (
+    OUTPUT_SUBDIR_NAME,
+    CompileState,
+    TemplateStatus,
+    compile_status,
+)
 
 # 상태 → 배지 (라벨, 레벨)은 :mod:`compile_badge` 가 단일 출처 — 홈 카드 배지와
 # 같은 상태에 같은 심각도 신호를 낸다(RC-29, 이중화 금지).
@@ -208,11 +213,28 @@ class TemplateManagerViewModel:
 
     # ---------------------------------------------------------- 데이터
     def _discover(self) -> "list[Path]":
-        """라이브러리 파일 목록 — 명시 경로 우선, 아니면 디렉터리의 *.hwpx(이름순)."""
+        """라이브러리 파일 목록 — 명시 경로 우선, 아니면 디렉터리의 *.hwpx를 **재귀**로(이름순).
+
+        비재귀 ``glob`` 은 탐색기로 하위폴더에 떨군 서식을 조용히 누락했다(R-info 2부 결정 5,
+        confirm-or-alarm 위반) — ``rglob`` 으로 반드시 찾아 평평하게 올린다(하위폴더 = 조직이
+        아니라 관용된 등장지). 하위폴더 동명은 경로로 안정 타이브레이크(둘 다 별개 행). 디렉터리가
+        패턴에 걸려도(예: ``x.hwpx/``) 파일만 취해 오탐을 막는다.
+
+        **산출물 하위폴더 제외**(#136 리뷰 F2): 작업 실행 기본 저장 폴더가 ``템플릿/Results`` 라
+        라이브러리 루트 밑에 완성 문서가 쌓인다. 그 하위트리를 템플릿으로 재수집하면 실행할수록
+        라이브러리가 산출물로 오염되므로 ``Results`` 경로 성분이 있는 파일은 건너뛴다."""
         if self._explicit_paths is not None:
             return list(self._explicit_paths)
         if self.library_dir is not None and self.library_dir.is_dir():
-            return sorted(self.library_dir.glob("*.hwpx"), key=lambda p: p.name)
+            return sorted(
+                (
+                    p
+                    for p in self.library_dir.rglob("*.hwpx")
+                    if p.is_file()
+                    and OUTPUT_SUBDIR_NAME not in p.relative_to(self.library_dir).parts
+                ),
+                key=lambda p: (p.name, str(p)),
+            )
         return []
 
     def set_library_dir(self, library_dir: "str | Path") -> None:
