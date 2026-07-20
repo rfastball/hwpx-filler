@@ -567,16 +567,27 @@ def test_editor_surface_lives_in_job_panel():
         'scr-editor 는 소멸 — Nav.go("editor") 는 존재하지 않는 화면으로 보내는 죽은 경로입니다'
         "(편집 진입은 EditorEntry.land 로)."
     )
-    # 착지는 EditorEntry.land 단일 정의(리뷰: 축자 복붙=드리프트 표면). 소비처(홈·템플릿
-    # 관리)가 그 헬퍼를 부르는지 가드한다 — 레일 과도기 심(app.js)은 항목 사망과 함께 제거.
+    # 진입 흐름은 EditorEntry 단일 정의(land/newDraft/openGuarded — 축자 복붙=드리프트 표면).
+    # 소비처 전수(홈·템플릿 관리·작업 화면 — PR-5 리뷰 F5: job.js 가 가드 사각이었다)를 가드.
     entry_src = (WEB_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
-    assert "function land" in entry_src, "editor_entry.js 의 착지 단일 정의(land)가 사라졌습니다."
-    for fname in ("screens/home.js", "screens/template.js"):
+    for fn in ("function land", "function newDraft", "function openGuarded"):
+        assert fn in entry_src, f"editor_entry.js 의 단일 정의({fn})가 사라졌습니다."
+    for fname, needle in (
+        ("screens/home.js", "EditorEntry.newDraft"),
+        ("screens/home.js", "EditorEntry.openGuarded"),
+        ("screens/template.js", "EditorEntry.land"),
+        ("screens/job.js", "EditorEntry.openGuarded"),
+        ("screens/job.js", "EditorEntry.newDraft"),
+    ):
         src = (WEB_JS_DIR / fname).read_text(encoding="utf-8")
-        assert "EditorEntry.land" in src, f"{fname} 가 착지 헬퍼(EditorEntry.land)를 쓰지 않습니다."
+        assert needle in src, f"{fname} 가 진입 단일 출처({needle})를 쓰지 않습니다."
+    # 레일 항목 사망의 어포던스 승계(PR-5 리뷰 F1·F2) — 「작업」 구획 ＋ 새 작업 + T2 고지의
+    # 비파괴 복귀 버튼(다른 진입은 전부 세션 초기화/재로드라 이 둘이 승계 실체다).
+    assert 'id="jobNewBtn"' in job_sec, "「작업」 구획 ＋ 새 작업이 없습니다(결정 10·레일 승계 F2)."
+    job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    assert "return-to-edit" in job_js, "T2 고지의 비파괴 「편집으로 돌아가기」가 없습니다(F1)."
     editor_js = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
     assert '$("jobEditHost")' in editor_js, "editor.js 위임 루트가 편집 호스트로 이사하지 않았습니다."
-    job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
     assert "exitEditToRun" in job_js and "showEditMode" in job_js, (
         "job.js 패널 두 모드 배선(showEditMode/exitEditToRun)이 사라졌습니다(결정 39·40)."
     )

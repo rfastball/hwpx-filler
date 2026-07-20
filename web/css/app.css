@@ -353,7 +353,8 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .job-layout{display:flex;gap:var(--sp-16);flex:1;min-height:0}
 .job-master{flex:none;width:240px;overflow:auto;display:flex;flex-direction:column;gap:var(--sp-16);
   border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card);padding:var(--sp-10)}
-.job-sec-head{font-size:var(--fs-body);font-weight:600;padding:var(--sp-4) var(--sp-6);border-radius:var(--rad-control);
+.job-sec-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-8);
+  font-size:var(--fs-body);font-weight:600;padding:var(--sp-4) var(--sp-6);border-radius:var(--rad-control);
   border-left:3px solid var(--a-border)}
 /* 구획 열 틴트 승계(홈 트랙 색 언어) — HWPX 파랑 / TXT 초록. */
 .job-sec-head.hwpx{border-left-color:var(--a-primary)}

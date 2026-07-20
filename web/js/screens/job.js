@@ -121,6 +121,9 @@
     el.innerHTML =
       `저장하지 않은 편집이 있습니다 — 편집으로 돌아가면 그대로 있고, ` +
       `저장 전에는 실행에 반영되지 않습니다. ` +
+      // 복귀 버튼(PR-5 리뷰 F1) — 레일 심 사망 후 이 고지가 유일한 **비파괴** 복귀 경로다
+      // (다른 진입은 전부 세션 초기화/재로드). 고지가 약속한 「돌아가면 그대로」의 실행 수단.
+      `<button class="btn sm" data-act="return-to-edit">편집으로 돌아가기</button> ` +
       `<button class="btn sm" data-act="dismiss-exit-note">확인</button>`;
     el.style.display = "";
   }
@@ -867,6 +870,8 @@
      (공용 EditorEntry.openGuarded: 미저장 정의 확인 후 모드 전환 — 에디터 흡수로 화면 이동이
      아니라 제자리 모드 전환이 됐다). 확정·저장 후 좌 목록 행 클릭으로 세션 재개. */
   function fixMapping() {
+    // #99-6 동형 방어(PR-5 리뷰 F4) — 셔틀 미로드의 동기 ReferenceError 는 조용한 무반응.
+    if (!window.EditorEntry) { window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다."); return; }
     if (LAST && LAST.job_name) EditorEntry.openGuarded(LAST.job_name);
   }
 
@@ -936,11 +941,18 @@
     $("jobColPanel").addEventListener("click", onPanelClick);
     document.addEventListener("pointerdown", onDocPointerDown);
     document.addEventListener("keydown", onDocKeydown);
-    // T2 복귀 고지 — 확인 버튼으로 걷는다(읽힐 때까지 존속, 리뷰 F4).
+    // T2 복귀 고지 — 확인=걷기, 돌아가기=비파괴 편집 재진입(세션 무접촉 — 리뷰 F1/F4).
     $("jobEditExitNote").addEventListener("click", (e) => {
+      if (e.target.closest('[data-act="return-to-edit"]')) { showEditMode(); return; }
       if (e.target.closest('[data-act="dismiss-exit-note"]')) {
         $("jobEditExitNote").style.display = "none";
       }
+    });
+    // 구획 ＋ 새 작업(1부 결정 10 — 레일 항목 사망의 생성 진입 승계, 리뷰 F2). 흐름은
+    // EditorEntry.newDraft 단일 출처(홈 ＋ 와 공유 — 폐기 확인·착지 드리프트 금지).
+    $("jobNewBtn").addEventListener("click", () => {
+      if (!window.EditorEntry) { window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다."); return; }
+      EditorEntry.newDraft();
     });
     // 재렌더에도 살아남게 안정 컨테이너에 위임(#67).
     $("jobRelink").addEventListener("click", (e) => {
