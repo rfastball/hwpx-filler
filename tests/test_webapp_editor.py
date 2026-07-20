@@ -1268,6 +1268,37 @@ def test_library_picker_shares_groups_and_collapse_with_management(tmp_path):
     assert ctrl.has_unsaved_work() is False
 
 
+def test_editor_picker_reflects_shared_vm_refresh_without_stale_cache(tmp_path):
+    """#137·#138 리뷰 F8 — 관리 화면 가져오기(공유 VM refresh)가 에디터 피커에 즉시 반영된다
+    (별도 행 캐시 발산 제거 — 공유 VM rows() 직독)."""
+    import shutil
+
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    vm = TemplateManagerViewModel(library_dir=lib)  # 빈 라이브러리로 시작
+    ctrl = EditorController(
+        JobRegistry(tmp_path / "jobs"), lambda s, snap: None, template_library=vm
+    )
+    assert _lib_items(ctrl.snapshot()) == []
+    shutil.copy2(TPL_COMPILED, lib / "새서식.hwpx")  # 관리 화면 가져오기 시뮬레이션
+    vm.refresh()
+    assert "새서식.hwpx" in {it["name"] for it in _lib_items(ctrl.snapshot())}
+
+
+def test_editor_picker_does_not_reconcile_away_offscreen_group(tmp_path):
+    """#138 리뷰 F11 — 에디터 피커는 reconcile 하지 않는다. 에디터 VM 에 아직 없는 파일의
+    그룹 지정을 (부분/필터된) 목록으로 지우면 안 된다(위생은 관리 화면 소관)."""
+    groups = TemplateGroupModel("hwpx")
+    groups.set_group("아직없는.hwpx", "입찰")  # 에디터 VM 밖 파일
+    ctrl = EditorController(
+        JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
+        template_library=TemplateManagerViewModel(paths=[TPL_COMPILED]),  # 그 파일 없음
+        template_groups=groups,
+    )
+    ctrl.snapshot()  # step 0 = 피커 build_sections(reconcile 없음)
+    assert TemplateGroupModel("hwpx").group_of("아직없는.hwpx") == "입찰"  # 지정 생존
+
+
 def test_use_library_template_rejects_paths_outside_library(tmp_path):
     """라이브러리 밖 경로는 loud 거부(백엔드 화이트리스트) — 웹이 임의 경로를 실어도 생
     파일 직접 로드 경로가 부활하지 않는다(2부: 가져오기=복사가 유일한 바깥 입구)."""

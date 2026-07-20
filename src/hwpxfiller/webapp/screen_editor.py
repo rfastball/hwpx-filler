@@ -168,9 +168,7 @@ class EditorController:
         self._loaded_provenance: "dict[str, str]" = {}
         self.notice_text = ""  # 복원·프로파일 반영 등 세션 통지(loud 재진술 채널)
         self.notice_level = "muted"
-        # 라이브러리 스캔 캐시(리뷰 F5) — 템플릿 분류의 매 push 마다 전 파일 재파싱하지 않게
-        # 스캔 결과(rows)를 캐시하고, 분류 재진입·세션 리셋·가져오기 때만 무효화한다.
-        self._library_rows: "list | None" = None
+        # (별도 라이브러리 행 캐시 없음 — #138 리뷰 F8·F11: 공유 VM rows() 직독으로 발산 제거.)
         # 클린 세션 표지 — 편집 복원 직후·저장 착지 직후처럼 "디스크 저장본과 동일" 상태.
         # 사용자가 손대면(변이 액션·데이터/템플릿 로드) 꺼진다. has_unsaved_work 가 소비해
         # 미변경 세션의 헛확인(폐기 확인·T2 고지)을 억제한다(리뷰 — confirm-or-alarm 의
@@ -199,9 +197,11 @@ class EditorController:
         return self._template_groups
 
     def _refresh_library(self) -> None:
-        """라이브러리 재스캔 + 캐시 갱신 — 스캔은 여기 한 곳(이중 스캔 방지, 리뷰 F5)."""
+        """공유 라이브러리 VM 재스캔 — 외부(탐색기) 변경을 새 세션·가져오기 시점에 걷는다.
+
+        별도 행 캐시는 두지 않는다(#138 리뷰 F8·F11): ``_library_snapshot`` 이 공유 VM 의
+        ``rows()`` 를 직독하므로, 이 refresh 는 공유 VM 의 실 디스크 재스캔만 트리거하면 된다."""
         self.template_library.refresh()
-        self._library_rows = list(self.template_library.rows())
 
     def assert_library_path(self, path: str) -> None:
         """웹 유래 템플릿 경로의 라이브러리 소속 확인 — 바깥 입구 봉쇄의 공용 seam(리뷰 F4).
@@ -212,7 +212,7 @@ class EditorController:
         stale 행이 남아 같은 클릭을 반복하게 만드는 무행동 안내 금지 — 목록이 스스로 걷힌다).
         """
         self._refresh_library()
-        if all(r.path != path for r in self._library_rows or []):
+        if all(r.path != path for r in self.template_library.rows()):
             self._push()  # 갱신된 목록을 먼저 보여준다 — 거절 문구가 실행 가능해진다
             raise ValueError("라이브러리에 없는 템플릿입니다 — 목록을 새로 고쳤으니 다시 고르세요.")
 
@@ -369,13 +369,15 @@ class EditorController:
         매체는 hwpx 하나뿐(마법사=.hwpx 산출 → 매체 자동 필터). 관리 화면 HWPX 구획과 같은
         그룹 모델·같은 build_sections 로 성형해 두 표면이 한 조직을 보인다(결정 6). 여기는
         **선택 전용** — 카드 ⋮·이동·삭제·＋그룹지정 없이 상태 배지·선택 버튼만. 상태 판정·
-        배지는 링1(TemplateManagerViewModel) 소유, 오류 행도 숨기지 않고 detail 과 함께 싣는다
-        (리뷰 F8). 스캔은 캐시 경유(리뷰 F5). ``{sections, flat}`` 반환(작업/관리 목록 동형).
+        배지는 링1(TemplateManagerViewModel) 소유, 오류 행도 숨기지 않고 detail 과 함께 싣는다.
+
+        **공유 VM 직독**(#137·#138 리뷰 F8·F11): 별도 행 캐시를 두지 않고 공유 VM 의
+        ``rows()``(재스캔 없이 캐시 반환)를 그대로 읽는다 — 관리 화면의 가져오기·삭제가
+        공유 VM 을 refresh 하면 여기 피커도 즉시 반영된다(발산 캐시 제거). **reconcile 미실행**:
+        유령 지정 정리는 관리 화면의 위생 소관이고, 여기서 (부분/필터된) 목록으로 reconcile 하면
+        살아있는 그룹 지정을 영구 삭제할 수 있어 실행하지 않는다(build_sections 는 표시에서
+        고아를 이미 무시). ``{sections, flat}`` 반환(작업/관리 목록 동형).
         """
-        rows = self._library_rows
-        if rows is None:
-            self._refresh_library()
-            rows = self._library_rows or []
         root = self.template_library.library_dir
         items = [
             {
@@ -388,9 +390,8 @@ class EditorController:
                 "detail": r.detail_line(),
                 "current": bool(self.template_path) and r.path == self.template_path,
             }
-            for r in rows
+            for r in self.template_library.rows()
         ]
-        self.template_groups.reconcile([it["key"] for it in items])
         sections, flat = self.template_groups.build_sections(items, key_of=lambda it: it["key"])
         return {"sections": sections, "flat": flat}
 
@@ -573,7 +574,7 @@ class EditorController:
             self.new_job_session(str(dest))
         except Exception:
             dest.unlink(missing_ok=True)  # 반가져오기 잔재 제거(디스크 풀 등)
-            self._library_rows = None
+            self._refresh_library()  # 잔재 제거를 공유 VM 에 반영(stale 오류 행 방지)
             raise
         renamed = f" (이름 충돌로 '{dest.name}' 로 저장)" if dest.name != src.name else ""
         self._set_notice(
@@ -749,7 +750,7 @@ class EditorController:
         """
         target = int(p["step"])
         if target == 0 and self.step != 0:
-            self._library_rows = None  # 템플릿 분류 재진입 = 실 디스크 재스캔 예약(리뷰 F5)
+            self._refresh_library()  # 템플릿 분류 재진입 = 공유 VM 실 디스크 재스캔(외부 변경 반영)
         if target > self.step and not self._editing_origin:
             for s in range(self.step, target):  # 신규: 전진은 게이트 통과 필요(각 중간 단계).
                 if not self.can_advance(s):

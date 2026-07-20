@@ -1125,6 +1125,12 @@ _EDITOR_LIB_PICKER_PROBE_JS = r"""
     out.filter_notice = /HWPX 서식만/.test(host.textContent);  // 줄바꿈 무관 부분매치
     var caret = host.querySelector('.job-grp-head[aria-expanded="false"] .grp-caret');
     out.caret_collapsed = caret ? getComputedStyle(caret).visibility : 'missing';
+    // F13 — 그룹 헤더에 안정 id(재렌더 뒤 포커스 복원 근거). F14 — 파일명 칸 말줄임/축소.
+    var head0 = host.querySelector('.job-grp-head');
+    out.grp_head_has_id = !!(head0 && head0.id);
+    var fn = host.querySelector('.libselrow .fname');
+    out.fname_ellipsis = fn ? getComputedStyle(fn).textOverflow : 'missing';
+    out.fname_minwidth = fn ? getComputedStyle(fn).minWidth : 'missing';
     // 퇴화 평면(그룹 0개) — 헤더 없는 선택 행 나열.
     draft.library = {flat:true, sections:[{group:'', collapsed:false, count:1, items:[it('d.hwpx','준비됨','ok',false)]}]};
     window.__push('editor', draft);

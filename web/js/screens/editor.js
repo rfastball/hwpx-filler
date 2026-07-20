@@ -85,13 +85,16 @@
       : (t.current
         ? `<span class="muted capnote">선택됨</span>`
         : `<button class="btn sm" data-act="use-library" data-path="${esc(t.path)}">이 템플릿으로</button>`);
+    // .fname 이 남는 폭을 먹고 말줄임(F14) — 배지·동작은 고정폭이라 스페이서 불필요.
     return `<div class="libselrow${t.current ? " cur" : ""}"><span class="fname">${esc(t.name)}</span>` +
-      `${badge}<span class="spacer"></span>${pick}</div>`;
+      `${badge}${pick}</div>`;
   }
 
-  function libGroupHead(sec) {
+  function libGroupHead(sec, idx) {
     const label = sec.group || "그룹 없음";
-    return `<div class="job-grp"><button class="job-grp-head" data-act="toggle-lib-group"` +
+    // 안정 id(#138 리뷰 F13) — 재렌더 뒤 Preserve 가 같은 헤더로 키보드 포커스를 복원한다
+    // (구획 순서는 접힘 토글에 불변이라 인덱스가 안정 식별자다).
+    return `<div class="job-grp"><button class="job-grp-head" id="libgrp-${idx}" data-act="toggle-lib-group"` +
       ` data-group="${esc(sec.group)}" aria-expanded="${sec.collapsed ? "false" : "true"}">` +
       `<span class="grp-name">${esc(label)}</span><span class="grp-count">${sec.count}</span>` +
       `<span class="grp-caret">${sec.collapsed ? "▸" : "▾"}</span></button></div>`;
@@ -110,8 +113,8 @@
       body = `<div class="tpl-grp-rows flat">` +
         sections.map((sec) => sec.items.map(libRow).join("")).join("") + `</div>`;
     } else {
-      body = sections.map((sec) =>
-        libGroupHead(sec) +
+      body = sections.map((sec, i) =>
+        libGroupHead(sec, i) +
         (sec.collapsed ? "" : `<div class="tpl-grp-rows">${sec.items.map(libRow).join("")}</div>`)
       ).join("");
     }
@@ -689,5 +692,12 @@
     Bridge.initial(SCREEN).then(render);
   }
 
-  window.EditorScreen = { init };
+  /* 현 에디터 스냅샷 재당김·재렌더(#138 리뷰 F12) — 편집 모드로 복귀할 때 1단계 피커가
+     관리 화면에서 바뀐 공유 그룹 접힘을 반영하게 한다(returning-to-job 이 job 만 refresh 해
+     피커가 stale 접힘으로 남던 문제). 순수 재렌더라 세션 상태 불변(Preserve 가 포커스 보존). */
+  function rerender() {
+    if (window.pywebview && window.Bridge) Bridge.initial(SCREEN).then(render);
+  }
+
+  window.EditorScreen = { init, rerender };
 })();

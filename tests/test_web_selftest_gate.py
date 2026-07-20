@@ -540,6 +540,11 @@ class TestWebSelftestGate:
         assert e["import_btn"] is True, "「가져오기…」 어포던스가 없습니다."
         assert e["filter_notice"] is True, "매체 자동 필터 고지가 렌더되지 않았습니다(결정 6)."
         assert e["caret_collapsed"] == "visible", f"접힌 그룹 화살표가 상시 노출이 아닙니다: {e!r}"
+        # #138 리뷰 F13 — 그룹 헤더 안정 id(재렌더 뒤 Preserve 포커스 복원 근거).
+        assert e["grp_head_has_id"] is True, "그룹 헤더에 안정 id 가 없어 토글 뒤 포커스가 사라집니다."
+        # #138 리뷰 F14 — 긴 파일명이 선택 동작을 밀지 않게 이름 칸이 말줄임/축소된다.
+        assert e["fname_ellipsis"] == "ellipsis", f"파일명 칸 말줄임 미적용: {e['fname_ellipsis']!r}"
+        assert e["fname_minwidth"] == "0px", f"파일명 칸 min-width:0 미적용: {e['fname_minwidth']!r}"
         # 퇴화 불변식 — 그룹 0개면 헤더 없는 평면.
         assert e["flat_heads"] == 0 and e["flat_rows"] == 1, f"퇴화 평면 위반: {e!r}"
 
