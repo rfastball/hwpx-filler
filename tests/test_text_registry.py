@@ -38,3 +38,33 @@ def test_empty_or_missing_dir(tmp_path):
 def test_default_dir_under_home(monkeypatch, tmp_path):
     monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
     assert default_text_templates_dir() == tmp_path / "text_templates"
+
+
+def test_recursive_scan_finds_subfolder_templates(tmp_path):
+    """R-info 2부 결정 5 — 하위폴더에 떨군 템플릿도 재귀로 찾아 올린다(조용한 누락 금지)."""
+    d = _seed(tmp_path)
+    sub = d / "탐색기묶음"
+    sub.mkdir()
+    (sub / "협조전.txt").write_text("수신: {{부서}}", encoding="utf-8")
+    reg = TextTemplateRegistry(d)
+    assert reg.count() == 3
+    assert "협조전" in reg.names()  # 비재귀 glob 이던 시절엔 조용히 빠졌다
+
+
+def test_load_resolves_subfolder_path(tmp_path):
+    """list→load 왕복 정합 — 하위폴더 파일도 실제 경로로 열어야(루트 경로 재구성 금지)."""
+    d = _seed(tmp_path)
+    sub = d / "탐색기묶음"
+    sub.mkdir()
+    (sub / "협조전.txt").write_text("수신: {{부서}}", encoding="utf-8")
+    reg = TextTemplateRegistry(d)
+    t = reg.load("협조전")
+    assert t.path == sub / "협조전.txt"  # 루트가 아니라 하위폴더 실경로
+    assert t.fields() == ["부서"]
+
+
+def test_load_unknown_name_falls_back_to_root_path(tmp_path):
+    """미발견 이름은 루트 경로로 구성(하위호환) — 아직 없는 파일 겨눔 등."""
+    d = _seed(tmp_path)
+    t = TextTemplateRegistry(d).load("없는이름")
+    assert t.path == d / "없는이름.txt"

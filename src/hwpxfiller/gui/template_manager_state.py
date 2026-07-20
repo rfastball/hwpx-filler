@@ -208,11 +208,19 @@ class TemplateManagerViewModel:
 
     # ---------------------------------------------------------- 데이터
     def _discover(self) -> "list[Path]":
-        """라이브러리 파일 목록 — 명시 경로 우선, 아니면 디렉터리의 *.hwpx(이름순)."""
+        """라이브러리 파일 목록 — 명시 경로 우선, 아니면 디렉터리의 *.hwpx를 **재귀**로(이름순).
+
+        비재귀 ``glob`` 은 탐색기로 하위폴더에 떨군 서식을 조용히 누락했다(R-info 2부 결정 5,
+        confirm-or-alarm 위반) — ``rglob`` 으로 반드시 찾아 평평하게 올린다(하위폴더 = 조직이
+        아니라 관용된 등장지). 하위폴더 동명은 경로로 안정 타이브레이크(둘 다 별개 행). 디렉터리가
+        패턴에 걸려도(예: ``x.hwpx/``) 파일만 취해 오탐을 막는다."""
         if self._explicit_paths is not None:
             return list(self._explicit_paths)
         if self.library_dir is not None and self.library_dir.is_dir():
-            return sorted(self.library_dir.glob("*.hwpx"), key=lambda p: p.name)
+            return sorted(
+                (p for p in self.library_dir.rglob("*.hwpx") if p.is_file()),
+                key=lambda p: (p.name, str(p)),
+            )
         return []
 
     def set_library_dir(self, library_dir: "str | Path") -> None:

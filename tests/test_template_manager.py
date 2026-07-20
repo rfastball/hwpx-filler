@@ -87,6 +87,17 @@ def test_vm_actions_for_delegates_to_resolver(tmp_path):
     assert [a.key for a in vm.actions_for(CompileState.COMPILED)] == ["preview", "make_job"]
 
 
+def test_library_scan_is_recursive(tmp_path):
+    """R-info 2부 결정 5 — 하위폴더의 .hwpx 도 재귀로 찾는다(비재귀 glob 이던 시절 조용한 누락)."""
+    _write_raw(tmp_path / "루트.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")
+    sub = tmp_path / "탐색기묶음"
+    sub.mkdir()
+    _write_raw(sub / "하위.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")
+    vm = TemplateManagerViewModel(library_dir=tmp_path)
+    names = {r.name for r in vm.rows()}
+    assert names == {"루트.hwpx", "하위.hwpx"}  # 하위폴더 파일도 평평하게 올라온다
+
+
 def test_rows_expose_gated_actions_matching_state(tmp_path):
     """VM 행이 실제 파일 상태에서 계산한 액션 집합을 노출한다(라이브러리 전 상태)."""
     raw = _write_raw(tmp_path / "raw.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")

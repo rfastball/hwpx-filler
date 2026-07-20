@@ -209,6 +209,76 @@ def test_collapsed_groups_corrupt_value_falls_back_to_expanded(home):
     assert settings.load_job_collapsed_groups() == ["입찰"]  # 부분 손상은 항목만 걸러낸다
 
 
+# =============================================== 템플릿 그룹(R-info 2부 결정 2·8)
+def test_template_group_map_roundtrip_and_defaults(home):
+    assert settings.load_template_group_map("hwpx") == {}  # 미저장 = 전부 「그룹 없음」
+    settings.save_template_group_map("hwpx", {"a.hwpx": "입찰", "b.hwpx": ""})
+    # 빈 그룹명은 미지정과 동치라 저장 전 걷힌다(스토어 부재 = 무그룹).
+    assert settings.load_template_group_map("hwpx") == {"a.hwpx": "입찰"}
+
+
+def test_template_groups_are_media_isolated(home):
+    """같은 이름 그룹이 두 매체에 독립 존재 — 한 매체 저장이 다른 매체를 지우지 않는다(결정 3)."""
+    settings.save_template_group_map("hwpx", {"공고.hwpx": "입찰"})
+    settings.save_template_group_map("txt", {"협조전.txt": "입찰"})
+    assert settings.load_template_group_map("hwpx") == {"공고.hwpx": "입찰"}
+    assert settings.load_template_group_map("txt") == {"협조전.txt": "입찰"}
+    settings.save_template_collapsed_groups("hwpx", ["입찰"])
+    settings.save_template_collapsed_groups("txt", [])
+    assert settings.load_template_collapsed_groups("hwpx") == ["입찰"]
+    assert settings.load_template_collapsed_groups("txt") == []
+
+
+def test_template_groups_preserve_theme_and_job_groups(home):
+    """중첩 저장이 최상위 다른 키(테마·작업 접힘)를 보존한다(RMW)."""
+    settings.save_theme("dark")
+    settings.save_job_collapsed_groups(["작업그룹"])
+    settings.save_template_group_map("hwpx", {"a.hwpx": "입찰"})
+    settings.save_template_collapsed_groups("hwpx", ["입찰"])
+    assert settings.load_theme() == "dark"
+    assert settings.load_job_collapsed_groups() == ["작업그룹"]
+    assert settings.load_template_group_map("hwpx") == {"a.hwpx": "입찰"}
+
+
+def test_template_collapsed_groups_normalized_and_default(home):
+    assert settings.load_template_collapsed_groups("txt") == []
+    settings.save_template_collapsed_groups("txt", ["나", "가", "가", ""])
+    assert settings.load_template_collapsed_groups("txt") == ["", "가", "나"]  # 정렬·중복 제거
+
+
+def test_template_group_invalid_media_is_loud(home):
+    with pytest.raises(ValueError):
+        settings.load_template_group_map("pdf")
+    with pytest.raises(ValueError):
+        settings.save_template_group_map("pdf", {})
+    with pytest.raises(ValueError):
+        settings.load_template_collapsed_groups("pdf")
+
+
+def test_template_group_invalid_payload_is_loud(home):
+    with pytest.raises(ValueError):
+        settings.save_template_group_map("hwpx", ["a.hwpx"])  # type: ignore[arg-type]
+    with pytest.raises(ValueError):
+        settings.save_template_group_map("hwpx", {"a.hwpx": 3})  # type: ignore[dict-item]
+    with pytest.raises(ValueError):
+        settings.save_template_collapsed_groups("hwpx", "입찰")  # type: ignore[arg-type]
+
+
+def test_template_groups_corrupt_value_falls_back(home):
+    (home / "settings.json").write_text(
+        json.dumps({"template_groups": "손상", "template_collapsed_groups": ["x"]}),
+        encoding="utf-8",
+    )
+    assert settings.load_template_group_map("hwpx") == {}  # 비dict = 무그룹
+    assert settings.load_template_collapsed_groups("hwpx") == []  # 비dict = 전부 펼침
+    (home / "settings.json").write_text(
+        json.dumps({"template_groups": {"hwpx": {"a.hwpx": "입찰", "b.hwpx": 3, "c.hwpx": ""}}}),
+        encoding="utf-8",
+    )
+    # 부분 손상(비문자열 값·빈 그룹명)은 그 항목만 걸러낸다(전체 리셋 금지).
+    assert settings.load_template_group_map("hwpx") == {"a.hwpx": "입찰"}
+
+
 def test_proportional_font_is_single_source(home):
     """비례폭 판정은 설정 모듈 소유 — 표면·컨트롤러가 글꼴 이름으로 재판별하지 않는다(결정 17)."""
     assert settings.is_proportional_font("malgun") is True

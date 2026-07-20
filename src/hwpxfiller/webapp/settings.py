@@ -116,29 +116,49 @@ def load_theme() -> str:
     return theme if theme in VALID_THEMES else "system"
 
 
-def _save_key(key: str, value) -> None:
-    """단일 키 영속 공용 몸통 — 다른 키 보존(read-modify-write) + 원자 교체(정본 write_text_atomic).
+def _mutate(mutator) -> None:
+    """설정 dict 를 read-modify-write 로 갱신하는 공용 몸통 — 다른 키 보존 + 원자 교체.
 
-    교체 경합(방어적): 앱은 홈당 단일 인스턴스(app.py 뮤텍스 가드)라 교차-프로세스 경합은
-    구조적으로 없지만, AV 스캔 등 일시 파일 잠금이 원자 교체를 PermissionError(공유 위반 —
-    CPython 은 FILE_SHARE_DELETE 없이 연다)로 튕길 수 있다. 아무 문제 없는 일시 충돌이 사용자
-    alert 로 승격되지 않도록 유계 재시도 후에만 전파한다."""
+    ``mutator(data)`` 는 판독한 dict 를 제자리에서 수정한다(단일 키·중첩 매체 등 갱신 형태
+    불가지). 교체 경합(방어적): 앱은 홈당 단일 인스턴스(app.py 뮤텍스 가드)라 교차-프로세스
+    경합은 구조적으로 없지만, AV 스캔 등 일시 파일 잠금이 원자 교체를 PermissionError(공유
+    위반 — CPython 은 FILE_SHARE_DELETE 없이 연다)로 튕길 수 있다. 아무 문제 없는 일시 충돌이
+    사용자 alert 로 승격되지 않도록 유계 재시도 후에만 전파한다.
+
+    재판독을 try 안에 둔다 — 일시 공유 위반은 판독 쪽에서도 튈 수 있고(원자 교체 순간 타
+    프로세스의 읽기 락), 이를 재시도로 흡수하지 않으면 쓰기만 관대하고 그 직전 읽기는 spurious
+    alert 로 승격되는 비대칭이 된다(#75 리뷰4 #4). 재시도마다 재판독 = 손상·갱신된 다른 키 보존."""
     path = _settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     for attempt in range(_REPLACE_RETRIES):
         try:
-            # 재판독을 try 안에 둔다 — 일시 공유 위반은 판독 쪽에서도 튈 수 있고(원자 교체 순간
-            # 타 프로세스의 읽기 락), 이를 재시도로 흡수하지 않으면 쓰기만 관대하고 그 직전 읽기는
-            # spurious alert 로 승격되는 비대칭이 된다(#75 리뷰4 #4). 재시도마다 재판독 = 손상·
-            # 갱신된 다른 키 보존.
             data = _read_for_update(path)
-            data[key] = value
+            mutator(data)
             write_text_atomic(path, json.dumps(data, ensure_ascii=False, indent=2))
             return
         except PermissionError:
             if attempt == _REPLACE_RETRIES - 1:
                 raise
             time.sleep(0.05 * (attempt + 1))
+
+
+def _save_key(key: str, value) -> None:
+    """단일 키 영속 — RMW·원자성·재시도 계약은 :func:`_mutate` 공용 몸통이 진다."""
+    _mutate(lambda data: data.__setitem__(key, value))
+
+
+def _save_nested(top_key: str, sub_key: str, sub_value) -> None:
+    """중첩 dict(``{top_key: {sub_key: sub_value}}``) 갱신 — **같은 top_key 아래 다른 sub_key
+    를 보존**한다(매체별 그룹 상태처럼 한 top 아래 hwpx/txt 두 칸이 공존하는 경우, 한 매체
+    저장이 다른 매체를 지우면 안 된다). top_key 가 dict 가 아니면(부재·손상) 새 dict 로 새 출발."""
+    def mutate(data: dict) -> None:
+        bucket = data.get(top_key)
+        if not isinstance(bucket, dict):
+            bucket = {}
+        bucket[sub_key] = sub_value
+        data[top_key] = bucket
+
+    _mutate(mutate)
 
 
 def save_theme(mode: str) -> None:
@@ -188,3 +208,79 @@ def save_job_collapsed_groups(groups: "list[str]") -> None:
     if not isinstance(groups, list) or any(not isinstance(g, str) for g in groups):
         raise ValueError("접힌 그룹 목록은 문자열 리스트여야 합니다")
     _save_key("job_collapsed_groups", sorted(set(groups)))
+
+
+# 템플릿 라이브러리 그룹(R-info 2부 결정 2·8) — 작업 그룹과 **같은 기제**(Python 설정,
+# webview 저장소 금지 #74 전례). 단 템플릿엔 매체 축(HWPX/TXT)이 있어(작업엔 없음, 결정 3)
+# 매체별로 칸을 나눈다: 같은 이름 그룹이 두 매체에 독립 존재할 수 있고(소비 표면이 매체를
+# 가르므로) 한 매체 접힘이 다른 매체를 접지 않는다. 저장 형상:
+#   "template_groups":          {media: {식별키: 그룹명}}   — 그룹 지정(빈 그룹명은 미저장)
+#   "template_collapsed_groups": {media: [그룹명, …]}       — 접힘 영속(""=「그룹 없음」 구획)
+# 식별키 = 라이브러리 루트 상대경로(결정 8: 루트 내 파일명 — 루트 파일은 곧 파일명, 관용된
+# 하위폴더 파일은 상대경로). Explorer 개명·이동으로 키가 살아있는 파일과 안 맞으면 그 지정은
+# 고아가 되어 조용히 소멸하지 않고 「그룹 없음」으로 복귀한다(그루핑이 live 행만 묶으므로 —
+# 퇴화-코퍼스 불변식 동형). 매체 열거는 두 칸뿐이라 오타 키를 loud 로 자른다.
+VALID_TEMPLATE_MEDIA = ("hwpx", "txt")
+
+
+def _check_media(media: str) -> None:
+    if media not in VALID_TEMPLATE_MEDIA:
+        raise ValueError(f"유효하지 않은 템플릿 매체: {media!r} (허용: {VALID_TEMPLATE_MEDIA})")
+
+
+def load_template_group_map(media: str) -> "dict[str, str]":
+    """매체별 템플릿 그룹 지정(``{식별키: 그룹명}``) — 미저장·비유효는 빈 dict(전부 「그룹 없음」).
+
+    부분 손상(비문자열 키/값·빈 그룹명)은 그 항목만 걸러낸다(전체 리셋으로 승격 금지) —
+    빈 그룹명은 「그룹 없음」과 같으므로 애초에 저장되지 않아야 하고, 있어도 무시한다."""
+    _check_media(media)
+    root = _read().get("template_groups")
+    if not isinstance(root, dict):
+        return {}
+    sub = root.get(media)
+    if not isinstance(sub, dict):
+        return {}
+    return {
+        k: v
+        for k, v in sub.items()
+        if isinstance(k, str) and isinstance(v, str) and v
+    }
+
+
+def save_template_group_map(media: str, mapping: "dict[str, str]") -> None:
+    """매체별 그룹 지정 영속 — **다른 매체 칸을 보존**(:func:`_save_nested`). 빈 그룹명 항목은
+    「그룹 없음」이라 저장 전 걷어낸다(모델의 set_group 해제와 동형 — 스토어에 부재=무그룹).
+
+    비유효 인자(비dict·비문자열 키/값)는 조용히 무시하지 않고 ``ValueError`` (confirm-or-alarm)."""
+    _check_media(media)
+    if not isinstance(mapping, dict) or any(
+        not isinstance(k, str) or not isinstance(v, str) for k, v in mapping.items()
+    ):
+        raise ValueError("템플릿 그룹 지정은 {문자열: 문자열} 이어야 합니다")
+    cleaned = {k: v for k, v in mapping.items() if v}  # 빈 그룹명 = 미지정
+    _save_nested("template_groups", media, cleaned)
+
+
+def load_template_collapsed_groups(media: str) -> "list[str]":
+    """매체별 접힌 그룹 이름들(``""``=「그룹 없음」) — 미저장·비유효는 빈 리스트(전부 펼침).
+
+    작업 접힘(:func:`load_job_collapsed_groups`)과 동형: 비리스트는 전부 펼침, 리스트 안
+    비문자열 항목만 걸러낸다(부분 손상이 전체 리셋으로 승격되지 않게)."""
+    _check_media(media)
+    root = _read().get("template_collapsed_groups")
+    if not isinstance(root, dict):
+        return []
+    raw = root.get(media)
+    if not isinstance(raw, list):
+        return []
+    return [g for g in raw if isinstance(g, str)]
+
+
+def save_template_collapsed_groups(media: str, groups: "list[str]") -> None:
+    """매체별 접힌 그룹 집합 영속 — **다른 매체 칸 보존** + 정렬·중복 제거 정규화(diff 안정).
+
+    비유효 인자는 조용히 무시하지 않고 ``ValueError`` (job 접힘과 동형)."""
+    _check_media(media)
+    if not isinstance(groups, list) or any(not isinstance(g, str) for g in groups):
+        raise ValueError("접힌 그룹 목록은 문자열 리스트여야 합니다")
+    _save_nested("template_collapsed_groups", media, sorted(set(groups)))
