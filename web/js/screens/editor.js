@@ -19,16 +19,19 @@
   // 편집(탭) vs 신규(마법사 단계) — 정보 완전 동등, 공개 방식만 상이(결정 41).
   const isEditing = (s) => !!s.editing_origin;
 
-  // 미사용 <details> 의 유효 펼침 — 재렌더 관통 보존(PR-3 리뷰 F8: preserve.js 는 details
-  // open 을 스냅샷하지 않아, 수동으로 연 접힘 구역이 칩 재활성 클릭마다 도로 닫혔다).
-  let foldOpen = false;
+  // <details> 의 유효 펼침 — 재렌더 관통 보존(PR-3 리뷰 F8: preserve.js 는 details open 을
+  // 스냅샷하지 않아 수동으로 연 접힘이 매 push 에 도로 닫혔다). 접힘별 전용 변수(혼합 금지).
+  let foldOpen = false;     // 미사용 헤더 접힘(.ign-fold)
+  let tokFoldOpen = false;  // 파일명 토큰 참조 접힘(.tok-fold, F27 — PR-4 리뷰 F6)
 
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
     Preserve.around(() => {  // 마법사 폼 포커스·캐럿·본문 스크롤 보존(#28)
-      // .ign-fold 한정 — F27 토큰 참조 등 다른 접힘과 상태가 섞이지 않게(전용 클래스).
+      // 재구성 전 현 펼침을 읽어 이월(수동 개폐 존중) — 접힘별 전용 클래스로 분리 판독.
       const fold = document.querySelector("#jobEditHost details.ign-fold");
-      if (fold) foldOpen = fold.open;  // 재구성 전 현 펼침을 읽어 이월(수동 개폐 존중)
+      if (fold) foldOpen = fold.open;
+      const tokFold = document.querySelector("#jobEditHost details.tok-fold");
+      if (tokFold) tokFoldOpen = tokFold.open;
       LAST = s;
       $("editor-steps").innerHTML = stepHeader(s);
       $("editor-body").innerHTML = stepBody(s);
@@ -74,10 +77,15 @@
   function libraryPicker(s) {
     const items = s.library || [];
     const list = items.length ? items.map((t) => {
-      const badge = t.badge_label ? `<span class="tbadge">${esc(t.badge_label)}</span>` : "";
-      const pick = t.current
-        ? `<span class="muted capnote">선택됨</span>`
-        : `<button class="btn sm" data-act="use-library" data-path="${esc(t.path)}">이 템플릿으로</button>`;
+      // 상태 사유(detail)는 배지 title 로 — 오류 행은 선택 버튼 대신 사유를 보여준다(리뷰 F8:
+      // 죽은 버튼이 생 예외 alert 로 끝나는 반쪽 노출 금지 — 원인 있는 사용 불가).
+      const badge = t.badge_label
+        ? `<span class="tbadge" title="${esc(t.detail || "")}">${esc(t.badge_label)}</span>` : "";
+      const pick = t.is_error
+        ? `<span class="muted capnote" title="${esc(t.detail || "")}">사용 불가</span>`
+        : (t.current
+          ? `<span class="muted capnote">선택됨</span>`
+          : `<button class="btn sm" data-act="use-library" data-path="${esc(t.path)}">이 템플릿으로</button>`);
       return `<tr><td><span class="fname">${esc(t.name)}</span></td><td>${badge}</td><td>${pick}</td></tr>`;
     }).join("")
       : `<tr><td colspan="3" class="muted">라이브러리에 템플릿이 없습니다 — 「가져오기…」로 추가하거나 템플릿 관리에서 폴더를 확인하세요.</td></tr>`;
@@ -399,7 +407,7 @@
     const fieldsHtml = rows.length
       ? rows.map((r) => `<code>{{${esc(r.template_field)}}}</code> → ${fnPreviewText(r, s)}`).join(" &nbsp;·&nbsp; ")
       : `<span class="muted">매핑을 완료하면 파일명에 쓸 수 있는 필드가 여기 표시됩니다.</span>`;
-    return `<details class="hidden-hdrs"><summary>파일명에 넣을 수 있는 값 (펼쳐 보기)</summary>
+    return `<details class="hidden-hdrs tok-fold"${tokFoldOpen ? " open" : ""}><summary>파일명에 넣을 수 있는 값 (펼쳐 보기)</summary>
       <p class="hint" style="margin-top:var(--sp-4)">${fieldsHtml}</p>
       <p class="hint">
         날짜: <code>{{date}}</code> → 생성 날짜(YYYYMMDD) · <code>{{date:YYYY-MM-DD}}</code> → 하이픈 포함 날짜<br>
@@ -450,13 +458,24 @@
      하려던 1클릭이 매핑 표 바로 위 관문에서 조용히 리셋하지 않게 파괴 전 확인한다(confirm-or-
      alarm). 수치는 **Python 이 지금** 판정한다(PR-2 리뷰 F7 — LAST 는 push 지연 창에서 stale 이라
      방금 확정한 행이 안 보여 확인이 조용히 생략됐다). 0이면 조용히 진행(새 작업 첫 겨눔 등). */
-  /* 새 템플릿 진입 = 새 작업 세션 → 미저장 세션은 조용히 버리지 않고 확인(#25). 판정은
-     브리지 즉시 질의(has_unsaved_work) — stale LAST 판독 금지(F7 처방 일관). */
+  /* 새 템플릿 진입 = 새 작업 세션 확인 — 폐기 판정은 EditorEntry.confirmDiscard 단일 출처
+     (PR-4 리뷰 F9). 편집(탭) 맥락에선 미저장이 없어도(클린 복원) 확인한다(리뷰 F1: 「이
+     템플릿으로」가 열려 있는 작업의 편집 맥락을 조용히 닫고 새 초안으로 갈아타면 안 된다 —
+     저장본은 남지만 '이 작업을 고치는 중'이라는 맥락의 전환은 의식적이어야 한다). */
   async function confirmNewSessionIfUnsaved() {
-    if (!(await Bridge.editorHasUnsavedWork())) return true;
-    return Modal.confirm({ body:
+    const editing = LAST && LAST.editing_origin;
+    if (editing) {
+      const busy = await Bridge.editorHasUnsavedWork();
+      return Modal.confirm({ body:
+        `'${editing}' 편집을 닫고 새 작업 초안을 시작합니다.\n` +
+        (busy
+          ? "저장하지 않은 변경은 사라집니다."
+          : `저장된 '${editing}' 은 그대로 남습니다.`) +
+        "\n\n계속할까요?" });
+    }
+    return EditorEntry.confirmDiscard(
       "저장하지 않은 작업 세션이 있습니다.\n" +
-      "새 템플릿으로 시작하면 이전의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?" });
+      "새 템플릿으로 시작하면 이전의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?");
   }
 
   async function confirmMappingResetIfConfirmed(verbPhrase) {

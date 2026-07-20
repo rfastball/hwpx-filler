@@ -318,3 +318,24 @@ def test_editor_js_template_stage_is_library_first():
     assert 'data-act="use-library"' in src, "라이브러리 선택 배선이 없습니다."
     assert 'data-act="import-template"' in src, "가져오기=복사 배선이 없습니다."
     assert "pattern_preview" in src, "파일명 라이브 예시(F26) 소비가 없습니다."
+
+
+def test_editor_shares_tpl_library_vm_wiring():
+    """조립 계약(PR-4 리뷰 F2) — 에디터의 템플릿 라이브러리는 tpl 화면 VM 과 같은 인스턴스
+    (라이브러리=단일 실체: 폴더 재지정이 두 표면에 함께 반영). 배선이 떨어지면 신규 1단계
+    피커·가져오기가 관리 화면이 안 보여주는 폴더로 조용히 발산한다."""
+    src = (REPO / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(encoding="utf-8")
+    assert "template_library=tpl_ctrl.vm" in src, "에디터-tpl 라이브러리 VM 공유 배선 소실."
+
+
+def test_discard_confirm_has_single_source():
+    """정적 계약(PR-4 리뷰 F9) — 미저장 정의 폐기 확인은 EditorEntry.confirmDiscard 단일
+    출처(3중 복붙은 문구·판정 드리프트 표면). 소비처 셋 전부가 그 헬퍼를 부른다."""
+    entry = (REPO / "web" / "js" / "editor_entry.js").read_text(encoding="utf-8")
+    assert "function confirmDiscard" in entry, "confirmDiscard 단일 정의 소실."
+    for rel in ("screens/home.js", "screens/template.js", "screens/editor.js"):
+        src = (REPO / "web" / "js" / rel).read_text(encoding="utf-8")
+        assert "EditorEntry.confirmDiscard" in src, f"{rel} 가 폐기 확인 단일 출처를 쓰지 않습니다."
+    # 편집(탭) 맥락 전환 확인(리뷰 F1) — 클린 복원이어도 맥락 닫힘은 의식적이어야 한다.
+    editor = (REPO / "web" / "js" / "screens" / "editor.js").read_text(encoding="utf-8")
+    assert "편집을 닫고 새 작업 초안" in editor, "편집 맥락 전환 확인 문구가 사라졌습니다(F1)."

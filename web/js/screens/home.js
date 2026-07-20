@@ -203,10 +203,10 @@
      종전 bare nav 는 직전 세션을 그대로 복원해 '새'가 '이어서 작성'을 몰래 겸했다.
      미저장 세션은 editJob 과 대칭으로 확인 후 버린다(조용한 복원·조용한 소실 둘 다 금지). */
   async function newJob() {
-    const busy = await Bridge.editorHasUnsavedWork();
-    if (busy && !(await Modal.confirm({ body:
+    // 폐기 확인은 EditorEntry.confirmDiscard 단일 출처(PR-4 리뷰 F9 — 문구만 여기 소유).
+    if (!(await EditorEntry.confirmDiscard(
       "저장하지 않은 편집(정의) 세션이 있습니다.\n" +
-      "새 작업을 시작하면 그 세션의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?" }))) return;
+      "새 작업을 시작하면 그 세션의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?"))) return;
     await Bridge.call("editor", "new_session", {});
     // 에디터 흡수(결정 39·41) — 신규 마법사도 「작업」 패널 편집 모드에 산다(별도 화면 사망).
     EditorEntry.land();

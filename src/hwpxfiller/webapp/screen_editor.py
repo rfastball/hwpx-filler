@@ -111,13 +111,11 @@ class EditorController:
             pool_registry if pool_registry is not None else default_pool_registry()
         )
         # 템플릿 라이브러리(R-info 2부 접합 최소분) — 신규 1단계=라이브러리에서 고르기(생 파일
-        # 선택 폐기)·가져오기=복사. tpl 화면과 같은 표준 라이브러리를 겨눈다(주입 가능=테스트).
-        # 전체 개편(그룹·구획·F16)은 #108 소관 — 여기는 피커·복사 seam 만.
-        self.template_library = (
-            template_library
-            if template_library is not None
-            else TemplateManagerViewModel(default_templates_dir())
-        )
+        # 선택 폐기)·가져오기=복사. **앱 조립에선 tpl 화면의 VM 같은 인스턴스를 주입**(리뷰 F2:
+        # 라이브러리=단일 실체 — 폴더 재지정이 두 표면에 함께 반영). 미주입 시 표준 라이브러리를
+        # **지연 생성**(리뷰 F5: 생성자 즉시 스캔은 라이브러리를 안 쓰는 소비자·테스트에 실
+        # 사용자 폴더 스캔 비용·비결정성을 물린다). 전체 개편(그룹·구획·F16)은 #108 소관.
+        self._template_library = template_library
         self._reset()
 
     def _reset(self) -> None:
@@ -163,6 +161,9 @@ class EditorController:
         self._loaded_provenance: "dict[str, str]" = {}
         self.notice_text = ""  # 복원·프로파일 반영 등 세션 통지(loud 재진술 채널)
         self.notice_level = "muted"
+        # 라이브러리 스캔 캐시(리뷰 F5) — 템플릿 분류의 매 push 마다 전 파일 재파싱하지 않게
+        # 스캔 결과(rows)를 캐시하고, 분류 재진입·세션 리셋·가져오기 때만 무효화한다.
+        self._library_rows: "list | None" = None
         # 클린 세션 표지 — 편집 복원 직후·저장 착지 직후처럼 "디스크 저장본과 동일" 상태.
         # 사용자가 손대면(변이 액션·데이터/템플릿 로드) 꺼진다. has_unsaved_work 가 소비해
         # 미변경 세션의 헛확인(폐기 확인·T2 고지)을 억제한다(리뷰 — confirm-or-alarm 의
@@ -172,6 +173,31 @@ class EditorController:
     def _set_notice(self, text: str, level: str = "muted") -> None:
         self.notice_text = text
         self.notice_level = level
+
+    @property
+    def template_library(self) -> TemplateManagerViewModel:
+        """템플릿 라이브러리 VM — 미주입이면 첫 접근 때 표준 라이브러리로 지연 생성(리뷰 F5)."""
+        if self._template_library is None:
+            self._template_library = TemplateManagerViewModel(default_templates_dir())
+        return self._template_library
+
+    def _refresh_library(self) -> None:
+        """라이브러리 재스캔 + 캐시 갱신 — 스캔은 여기 한 곳(이중 스캔 방지, 리뷰 F5)."""
+        self.template_library.refresh()
+        self._library_rows = list(self.template_library.rows())
+
+    def assert_library_path(self, path: str) -> None:
+        """웹 유래 템플릿 경로의 라이브러리 소속 확인 — 바깥 입구 봉쇄의 공용 seam(리뷰 F4).
+
+        use_library_template 와 크로스스크린 load_template_into_editor 가 함께 쓴다 —
+        한 입구만 막으면 「가져오기=복사가 유일한 바깥 입구」(2부)가 문서만의 불변식이 된다.
+        불일치면 **새 스캔 결과를 먼저 push** 하고 거절한다(리뷰 F7: 방금 삭제된 파일의
+        stale 행이 남아 같은 클릭을 반복하게 만드는 무행동 안내 금지 — 목록이 스스로 걷힌다).
+        """
+        self._refresh_library()
+        if all(r.path != path for r in self._library_rows or []):
+            self._push()  # 갱신된 목록을 먼저 보여준다 — 거절 문구가 실행 가능해진다
+            raise ValueError("라이브러리에 없는 템플릿입니다 — 목록을 새로 고쳤으니 다시 고르세요.")
 
     # ------------------------------------------------------------- 관측 푸시
     def _push(self) -> None:
@@ -322,9 +348,14 @@ class EditorController:
         """템플릿 라이브러리 목록(신규 1단계 피커, R-info 2부) — 이름·상태 배지·현 선택 표지.
 
         상태 판정·배지는 tpl 화면과 같은 링1(TemplateManagerViewModel)이 소유한다 — 여기는
-        노출만. 오류 행(is_error)도 숨기지 않고 싣는다(선택은 로드 게이트가 loud 거부).
+        노출만. 오류 행(is_error)도 숨기지 않고 detail(원인)과 함께 싣는다(리뷰 F8 — 뷰가
+        선택 버튼 대신 사유를 보여준다). 스캔은 캐시 경유(리뷰 F5) — 분류 재진입·리셋·
+        가져오기·화이트리스트 확인 때만 실 재스캔한다.
         """
-        self.template_library.refresh()  # 템플릿 분류 진입 시점의 실 디스크 상태
+        rows = self._library_rows
+        if rows is None:
+            self._refresh_library()
+            rows = self._library_rows or []
         return [
             {
                 "name": r.name,
@@ -332,9 +363,10 @@ class EditorController:
                 "badge_label": r.badge_label,
                 "badge_level": r.badge_level,
                 "is_error": r.is_error,
+                "detail": r.detail_line(),
                 "current": bool(self.template_path) and r.path == self.template_path,
             }
-            for r in self.template_library.rows()
+            for r in rows
         ]
 
     def _pattern_preview(self) -> str:
@@ -470,14 +502,11 @@ class EditorController:
     def _do_use_library_template(self, p: dict) -> None:
         """라이브러리 목록에서 고른 템플릿으로 새 작업 세션(신규 1단계 정본 경로).
 
-        경로는 **현재 라이브러리 스캔 결과 안**이어야 한다(백엔드 화이트리스트 — 웹이 임의
-        경로를 실어도 라이브러리 밖 파일은 loud 거부, ``_validate_owned`` 정신). 미저장 확인은
-        호출측(웹)이 pick-template 와 같은 문구로 선판단한다.
+        경로 화이트리스트는 :meth:`assert_library_path` 공용 seam(리뷰 F4 — 크로스스크린
+        진입과 단일 정의). 미저장·편집 맥락 확인은 호출측(웹)이 선판단한다.
         """
         path = str(p["path"])
-        self.template_library.refresh()
-        if all(r.path != path for r in self.template_library.rows()):
-            raise ValueError("라이브러리에 없는 템플릿입니다 — 목록을 새로 고친 뒤 다시 고르세요.")
+        self.assert_library_path(path)
         self.new_job_session(path)
 
     def import_template(self, path: str) -> str:
@@ -486,8 +515,18 @@ class EditorController:
         고른 파일을 라이브러리 폴더로 복사하고 **그 사본**으로 새 작업 세션을 연다 — 원본의
         후속 이동·수정은 라이브러리에 불파급. 이름 충돌은 조용히 덮지 않고 ``이름 (2).hwpx``
         식 접미로 회피 + notice 재진술. 브리지(파일 다이얼로그)가 부른다.
+
+        **선검증·무잔재**(리뷰 F3): 복사 전에 원본에서 스키마를 뽑아 손상·RAW(누름틀 0)를
+        거른다 — 복사 먼저면 실패 사본이 앱 소유 라이브러리에 영구 오류 행으로 남는다(인앱
+        삭제 어포던스 없음). 복사·로드 중 실패도 사본을 걷어내고 재던진다(반가져오기 금지).
         """
         src = Path(path)
+        schema = extract_schema(str(src))  # 손상 = 여기서 loud(복사 전 — 잔재 없음)
+        if not schema.fields:
+            raise ValueError(
+                "누름틀이 없는 템플릿(RAW)입니다 — 템플릿 관리의 변환(fieldize)을 먼저 "
+                "거치거나 누름틀이 있는 파일을 가져오세요."
+            )
         lib_dir = self.template_library.library_dir
         if lib_dir is None:
             raise ValueError("템플릿 라이브러리 폴더가 지정되지 않았습니다.")
@@ -497,9 +536,14 @@ class EditorController:
         while dest.exists():
             dest = lib_dir / f"{src.stem} ({n}){src.suffix}"
             n += 1
-        shutil.copy2(src, dest)
-        self.template_library.refresh()
-        self.new_job_session(str(dest))
+        try:
+            shutil.copy2(src, dest)
+            self._refresh_library()
+            self.new_job_session(str(dest))
+        except Exception:
+            dest.unlink(missing_ok=True)  # 반가져오기 잔재 제거(디스크 풀 등)
+            self._library_rows = None
+            raise
         renamed = f" (이름 충돌로 '{dest.name}' 로 저장)" if dest.name != src.name else ""
         self._set_notice(
             f"'{src.name}' 을 라이브러리로 복사해 시작합니다{renamed} — 원본 수정은 "
@@ -671,6 +715,8 @@ class EditorController:
         지켜져 무결성은 저장점에서 담보된다.
         """
         target = int(p["step"])
+        if target == 0 and self.step != 0:
+            self._library_rows = None  # 템플릿 분류 재진입 = 실 디스크 재스캔 예약(리뷰 F5)
         if target > self.step and not self._editing_origin:
             for s in range(self.step, target):  # 신규: 전진은 게이트 통과 필요(각 중간 단계).
                 if not self.can_advance(s):
