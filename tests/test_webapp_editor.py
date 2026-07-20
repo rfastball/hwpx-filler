@@ -1067,12 +1067,15 @@ def test_mapping_reset_stakes_judged_by_python_now(tmp_path):
     ctrl.dispatch("set_const", {"index": 0, "const": "v"})
     stakes = ctrl.dispatch("mapping_reset_stakes", {})
     assert stakes["human"] == 1                                        # 내용 있는 수동
-    assert stakes["manual_unconfirmed"] == 1                           # use_none 확인 근거(R2)
+    # 소스 없는 수동 const 행은 use_none 강등 대상이 아니다 — 문안=파괴 집합(리뷰 F4).
+    assert stakes["manual_unconfirmed"] == 0
+    assert stakes["confirmed"] == 0                                    # use_none 선차단 근거(F5)
     r = ctrl.dispatch("confirm_all", {})
     ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
     stakes = ctrl.dispatch("mapping_reset_stakes", {})
     assert stakes["human"] == ctrl.snapshot()["field_count"]           # 전 행 확정(비움 포함)
     assert stakes["manual_unconfirmed"] == 0                           # 확정 = 미확정 수동 아님
+    assert stakes["confirmed"] == ctrl.snapshot()["field_count"]       # 선차단 수치(F5)
 
 
 def test_ensure_model_carries_touched_unconfirmed_rows(tmp_path):
@@ -1129,3 +1132,67 @@ def test_revert_source_resets_single_row_and_resuggests(tmp_path):
     assert snap["rows"][0]["touched"] is False                       # 시스템 소유 복귀
     assert snap["rows"][1]["source"] == "없는열"                     # 무관 행 불건드림(R4)
     assert snap["rows"][1]["touched"] is True
+
+
+def test_chip_toggle_leaves_carried_stale_rows_untouched(tmp_path):
+    """무관한 칩 조작이 이월 stale 행(현재 데이터에 없는 소스)을 강등하지 않는다(PR-3 리뷰 F1).
+
+    관문 재겨눔이 carry 로 살린 「데이터에 없음」 행은 칩과 무관 — 전집합 강등이면 칩 토글
+    한 번에 이월 값이 소실되고 통지는 끈 적 없는 헤더를 지목했다(오귀속)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("goto_step", {"step": 1})
+    ctrl.dispatch("set_source", {"index": 0, "source": "낙찰금액"})   # 수동
+    ctrl.load_data_path(str(MULTI_SHEET))                            # 첫 시트 재겨눔 — carry
+    assert ctrl.snapshot()["rows"][0]["source"] == "낙찰금액"         # stale 이월(「데이터에 없음」)
+    ctrl.dispatch("toggle_source_active", {"field": "추정가격"})      # 무관 칩 끔
+    snap = ctrl.snapshot()
+    assert snap["rows"][0]["source"] == "낙찰금액"                    # 이월 값 생존(F1)
+    assert snap["rows"][0]["touched"] is True
+    assert "낙찰금액" not in (snap["notice"]["text"] if snap["notice"] else "")  # 오귀속 통지 없음
+
+
+def test_revert_source_refuses_confirmed_rows(tmp_path):
+    """↩ 는 확정 행을 거부한다(PR-3 리뷰 F2) — 확정도 touched 라 무가드면 오클릭 한 번에
+    확정이 조용히 풀리고 다른 열로 치환된다. 확정 해제(체크박스)가 의식적 1단계."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("goto_step", {"step": 1})
+    ctrl.dispatch("set_source", {"index": 0, "source": "낙찰금액"})
+    ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": True})
+    with pytest.raises(ValueError, match="확정을 먼저 해제"):
+        ctrl.dispatch("revert_source", {"index": 0})
+    assert ctrl.snapshot()["rows"][0]["confirmed"] is True            # 무파괴
+
+
+def test_same_file_repick_after_use_none_revives_suggestions(tmp_path):
+    """use_none 뒤 같은 파일 재겨눔(키 불변) — 관문 재동기화로 제안이 되살아난다(PR-3 리뷰 F3).
+
+    load_data_path 가 칩 상태만 전원 활성으로 리셋하고 모델 키가 그대로면 재초안이 없어,
+    「후보 없음」 죽은 제안이 조용히 남았다 — 키 불변이면 apply_active_sources 재동기화."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET))                             # 공고목록: 공고명·추정가격 매치
+    ctrl.dispatch("goto_step", {"step": 1})
+    assert any(r["source"] for r in ctrl.snapshot()["rows"])          # 자동 제안 존재(전제)
+    ctrl.dispatch("use_none", {})                                     # 확정 0 — 허용
+    assert all(not r["source"] for r in ctrl.snapshot()["rows"])      # 전원 후보 없음
+    ctrl.load_data_path(str(MULTI_SHEET))                             # 같은 파일·시트 재겨눔(키 불변)
+    snap = ctrl.snapshot()
+    assert snap["active_count"] == 2
+    assert any(r["source"] for r in snap["rows"])                     # 제안 부활(죽은 표면 아님)
+
+
+def test_toggle_clears_ignored_expanded_hint(tmp_path):
+    """개별 토글은 '전체 미사용' 펼침 힌트를 걷는다(PR-3 리뷰 F7) — 몇 步 전 행동의 stale
+    상태가 이후 접힘 렌더를 계속 강제하지 않는다(수동 펼침 보존은 뷰 foldOpen 소관)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("goto_step", {"step": 1})
+    ctrl.dispatch("use_none", {})
+    assert ctrl.snapshot()["ignored_expanded"] is True
+    ctrl.dispatch("toggle_source_active", {"field": "업체명"})        # 다시 사용(개별)
+    assert ctrl.snapshot()["ignored_expanded"] is False

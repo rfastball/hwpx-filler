@@ -101,9 +101,9 @@ class RowState:
 
         소유권 해제(touched/confirmed)만으로는 부족하다(리뷰 R1 동류): 유형·상수·표시형이
         남으면 이후 재제안이 소스만 얹어 '제안 표시 ≠ 실제 출력(옛 상수 방출)' 하이브리드가
-        된다. 세 강등 경로(``revert_to_auto``·``apply_active_sources`` R4·구판
-        ``ignore_source``)가 전부 이 정의로 착지해 관문 간 상태 불일치를 막는다. 소스
-        재제안은 호출측 소관(단일 행=``resuggest_row``, 집합=다음 활성 변화)."""
+        된다. 두 강등 경로(``revert_to_auto``·``apply_active_sources`` R4)가 전부 이 정의로
+        착지해 관문 간 상태 불일치를 막는다(구판 ``ignore_source`` 는 관문 단일화로 소멸).
+        소스 재제안은 호출측 소관(단일 행=``resuggest_row``, 집합=다음 활성 변화)."""
         self.touched = False
         self.confirmed = False
         self.source = ""
@@ -306,12 +306,20 @@ class MappingModel:
         }
         self._score_row(row, drafts.get(row.template_field))
 
-    def apply_active_sources(self, active_sources: "list[str]") -> "list[str]":
+    def apply_active_sources(
+        self, active_sources: "list[str]", *, vocabulary: "list[str] | None" = None
+    ) -> "list[str]":
         """활성 소스 집합 변경을 반영한다(칩-라이브 결정 12·13 — 헤더 사용/미사용의 단일 관문).
 
         - **시스템 소유 행**(미확정·미접촉): 활성 헤더 중 최선으로 **라이브 재제안**(조용).
         - **사람 소유 행**(확정·touched)의 소스가 **비활성이 되면 시끄러운 강등**(R4):
           ``source=""`` · ``confirmed=False`` · ``touched=False`` 로 되돌리고 이름을 반환한다.
+
+        ``vocabulary``(현재 데이터의 전체 헤더)를 주면 강등은 **어휘 안 소스**로 한정된다
+        (PR-3 리뷰 F1): 어휘 밖 소스를 겨눈 사람 소유 행(이월된 stale — 뷰가 「데이터에 없음」
+        으로 이미 시끄럽게 표시)은 헤더 칩 조작과 무관하므로 건드리지 않는다 — 전집합 강등이면
+        무관한 칩 토글 한 번에 이월 값이 소실되고 통지는 끈 적 없는 헤더를 지목한다(오귀속).
+        None(기본)이면 종전 거동(활성 밖 전부 강등) — 어휘 개념이 없는 호출측 호환.
 
         **순서가 계약이다**(리뷰 R3): 재제안을 **먼저** 하고 강등을 **나중**에 한다. 그러면
         강등된 사람 소유 행은 ``source=""`` 로 **비어 남는다** — 재제안이 다른 그럴싸한 소스를
@@ -328,10 +336,16 @@ class MappingModel:
         부분 리셋일 이유가 없다).
         """
         active_set = set(active_sources)
+        vocab = set(vocabulary) if vocabulary is not None else None
         self._resuggest_system_rows(active_sources)  # 1) 항상 시스템이던 행만 재제안(강등 전)
         demoted: "list[str]" = []
         for row in self.rows:  # 2) 사람 소유 행 R4 강등 — 비운 채 남긴다(재제안 안 함)
-            if row.is_human_owned() and row.source and row.source not in active_set:
+            if (
+                row.is_human_owned()
+                and row.source
+                and row.source not in active_set
+                and (vocab is None or row.source in vocab)  # 어휘 밖 stale 은 불건드림(F1)
+            ):
                 row.reset_to_system()
                 demoted.append(row.template_field)
         return demoted

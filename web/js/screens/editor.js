@@ -19,9 +19,15 @@
   // 편집(탭) vs 신규(마법사 단계) — 정보 완전 동등, 공개 방식만 상이(결정 41).
   const isEditing = (s) => !!s.editing_origin;
 
+  // 미사용 <details> 의 유효 펼침 — 재렌더 관통 보존(PR-3 리뷰 F8: preserve.js 는 details
+  // open 을 스냅샷하지 않아, 수동으로 연 접힘 구역이 칩 재활성 클릭마다 도로 닫혔다).
+  let foldOpen = false;
+
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
     Preserve.around(() => {  // 마법사 폼 포커스·캐럿·본문 스크롤 보존(#28)
+      const fold = document.querySelector("#jobEditHost details.hidden-hdrs");
+      if (fold) foldOpen = fold.open;  // 재구성 전 현 펼침을 읽어 이월(수동 개폐 존중)
       LAST = s;
       $("editor-steps").innerHTML = stepHeader(s);
       $("editor-body").innerHTML = stepBody(s);
@@ -170,7 +176,7 @@
     ).join("") || '<span class="muted">사용 중인 헤더가 없습니다 — 아래 미사용 목록에서 골라 켜세요.</span>';
     // 미사용 = 벽 이탈 + 접힘 구역(결정 13). '전체 미사용'이 ignored_expanded 로 자동 펼침.
     const ignoredBlock = ignored.length
-      ? `<details class="hidden-hdrs"${s.ignored_expanded ? " open" : ""}><summary>미사용 ${ignored.length}개 (펼쳐 다시 사용)</summary>
+      ? `<details class="hidden-hdrs"${(s.ignored_expanded || foldOpen) ? " open" : ""}><summary>미사용 ${ignored.length}개 (펼쳐 다시 사용)</summary>
            <div class="hchips">${ignored.map((f) =>
               `<button class="hchip ign" data-act="toggle-header" data-field="${esc(f)}" title="클릭 = 다시 사용">${esc(f)}</button>`).join("")}</div>
            <p class="hint" style="margin-top:var(--sp-4)">미사용 헤더는 자동 매핑 제안·소스 후보에서 빠집니다. 클릭하면 다시 사용합니다.</p>
@@ -246,9 +252,11 @@
         ? [`<option value="${esc(r.source)}" selected title="현재 데이터에 없는 소스">${esc(r.source)} (데이터에 없음)</option>`]
         : [])
       .join("");
-    // 사람 소유(touched) 행은 전용 '↩' 버튼으로 자동 제안 복귀(리뷰 R5: 센티넬 옵션은 동명
-    // 실열과 충돌 — 별도 액션 revert-source). 데이터 있을 때만(재제안할 활성 소스가 있어야).
-    const revertBtn = r.touched && s.record_count
+    // 수동(touched·미확정) 행만 전용 '↩' 버튼으로 자동 제안 복귀(리뷰 R5: 센티넬 옵션은 동명
+    // 실열과 충돌 — 별도 액션 revert-source). 확정 행은 제외(PR-3 리뷰 F2: 확정도 touched 라
+    // 무가드면 오클릭 한 번에 확정이 풀리고 다른 열로 치환 — 확정 해제가 의식적 1단계).
+    // 데이터 있을 때만(재제안할 활성 소스가 있어야).
+    const revertBtn = r.touched && !r.confirmed && s.record_count
       ? ` <button class="btn sm" data-act="revert-source" data-index="${r.index}" title="자동 제안으로 되돌리기">↩</button>`
       : "";
     const typeOpts = (s.type_options || []).map((t) =>
@@ -469,13 +477,18 @@
           await Bridge.call(SCREEN, "toggle_source_active", { field: el.dataset.field }); break;
         case "use-all-headers": await Bridge.call(SCREEN, "use_all_headers", {}); break;
         case "use-none": {
-          // 미확정 수동 지정은 전체 미사용으로 해제된다(다시 켜도 자동 제안으로만 복원) —
-          // 파괴 전 확인(리뷰 R2). 수치는 Python 이 지금 판정(stale LAST 우회 차단 — F7 동형).
-          // 확정 존재는 백엔드가 loud 차단(결정 13).
+          // 수치는 Python 이 지금 판정(stale LAST 우회 차단 — F7 동형). 확정 존재는 확인
+          // 모달 **전에** 선차단(PR-3 리뷰 F5: 파괴를 승인시킨 뒤 오류로 거부하는 확인-후-
+          // 오류 순서 금지) — 백엔드 loud 차단은 백스톱으로 존속. 소스 겨눈 수동 미확정만
+          // 실제 강등 집합이라 그 수치로 확인한다(리뷰 F4 — 문안=파괴 집합).
           const st = await Bridge.call(SCREEN, "mapping_reset_stakes", {});
+          if (st && st.confirmed) {
+            window.alert(`확정한 매핑 ${st.confirmed}개가 있어 전체 미사용을 할 수 없습니다 — 확정을 먼저 해제하거나 칩을 하나씩 끄세요.`);
+            break;
+          }
           const man = (st && st.manual_unconfirmed) || 0;
           if (man && !(await Modal.confirm({ body:
-            `수동 지정한 매핑 ${man}개가 있습니다.\n전체 미사용하면 이 수동 지정이 해제됩니다` +
+            `직접 소스를 고른 매핑 ${man}개가 있습니다.\n전체 미사용하면 이 수동 지정이 해제됩니다` +
             `(다시 켜도 자동 제안으로만 복원됩니다).\n\n계속할까요?` }))) break;
           await Bridge.call(SCREEN, "use_none", {});
           break;

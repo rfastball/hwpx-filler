@@ -578,3 +578,20 @@ def test_real_fixture_record_keys_produce_korean_field_drafts():
     out = model.to_profile().apply(record)
     assert out["입찰공고번호"] == "R26BK01561738"
     assert out["추정가격"] == "65,454,545원"
+
+
+def test_apply_active_sources_vocabulary_scopes_demotion_to_known_headers():
+    """vocabulary 를 주면 강등은 어휘 안 소스로 한정(PR-3 리뷰 F1) — 어휘 밖 소스를 겨눈
+    이월 stale 사람 소유 행(뷰가 「데이터에 없음」으로 이미 시끄러움)은 무관한 칩 조작에
+    소실되지 않는다. 어휘 안 소스는 종전대로 R4 강등."""
+    schema = TemplateSchema(fields=[
+        FieldSpec("품명", "text", 1, False),
+        FieldSpec("규격", "text", 1, False),
+    ])
+    model = MappingModel.from_suggestions(schema, ["품명", "규격"])
+    model.set_source(0, "없는열")                           # 이월 stale(어휘 밖) 사람 소유
+    model.set_source(1, "규격")                             # 어휘 안 사람 소유
+    demoted = model.apply_active_sources(["품명"], vocabulary=["품명", "규격"])
+    assert demoted == ["규격"]                              # 실제로 끈 헤더의 행만 강등
+    assert model.rows[0].source == "없는열"                 # stale 은 불건드림(이월 값 보존)
+    assert model.rows[0].touched is True

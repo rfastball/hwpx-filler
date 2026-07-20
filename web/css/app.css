@@ -229,7 +229,7 @@ tr.r-schemaonly td{background:var(--a-card)}
 .track-affords{display:inline-flex;gap:var(--sp-4);flex-wrap:wrap;align-items:center}
 .track-btn{white-space:nowrap}
 
-/* 사용할 헤더 선택(#49) — 활성 헤더 칩(체크박스)·미사용 접힘 */
+/* 사용할 헤더(#49 + 칩-라이브 결정 13) — 즉시 토글 칩·미사용 접힘(체크박스 스테이징 소거) */
 .hchips{display:flex;flex-wrap:wrap;gap:var(--sp-6);margin-top:var(--sp-8)}
 .hchip{display:inline-flex;align-items:center;gap:var(--sp-4);font-family:inherit;font-size:var(--fs-body);
   padding:var(--sp-2) var(--sp-8);border:1px solid var(--a-border);border-radius:var(--rad-pill);
