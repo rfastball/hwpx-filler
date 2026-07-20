@@ -370,9 +370,14 @@
           <h1>빠른 기안</h1>
           <p class="sub">템플릿과 데이터를 세션 안에서만 결합해 복사합니다 — 저장 없이 한 번 쓰고 버리는 휘발 표면입니다.</p>
         </div>
-        <!-- 휘발 표지 — 이 화면은 아무것도 저장하지 않는다(결정 29). 비어있음/미채움/전량 채움
-             3상으로 산다(quickdraft.js 가 토큰 상태로 갱신). -->
-        <div class="status" id="qdStatus" data-level="idle">세션 휘발 · 저장 없음</div>
+        <!-- 헤더 우측 = 휘발 표지 + 「새 기안」. 표지는 아무것도 저장하지 않음을 말하고(결정 29)
+             비어있음/미채움/전량 채움 3상으로 산다(quickdraft.js 가 토큰 상태로 갱신). 「새 기안」은
+             세션을 비운다(결정 32 휘발도 사다리) — 버릴 노동이 있으면 quickdraft.js 가 먼저 확인
+             모달을 세운다(session_guard). 빈손이면 조용히 통과(죽은 확인 없음). -->
+        <div class="scr-head-actions">
+          <div class="status" id="qdStatus" data-level="idle">세션 휘발 · 저장 없음</div>
+          <button class="btn sm" id="qdBtnFresh" hidden>새 기안</button>
+        </div>
       </header>
 
       <!-- 슬롯 — 템플릿(라이브러리 사본·붙여넣기) + 데이터(등록 데이터·임의 파일, 결정 34).
@@ -402,6 +407,23 @@
            안을 확장한다. 정적 부트스트랩 표지 — render 가 즉시 갈아치우지만, init 이 실패하면
            빈 화면 대신 이 문구가 남고 전역 rejection 백스톱(app.js)이 시끄럽게 알린다. -->
       <div class="qd-body" id="qdBody"><div class="muted job-empty">불러오는 중…</div></div>
+
+      <!-- 출구 푸터(결정 32·33) — 템플릿이 깔렸을 때만 선다(빈손엔 없음). 복사 = 유일한 실동작
+           출구(휘발 세션을 남기는 길). 승격 2동사는 **표면만** 이 라운드 몫이라 정직하게 비활성
+           + 인라인 사유로 선다(죽은 버튼 금지 — confirm-or-alarm). 복사 리포트(사후 경보)는
+           aria-live 로 낭독기에도 닿는다(미채움 자리 수 재진술). -->
+      <footer class="qd-foot" id="qdFoot" hidden>
+        <div class="qd-foot-main">
+          <button class="btn primary" id="qdBtnCopy">복사</button>
+          <span class="qd-copynote" id="qdCopyNote" role="status" aria-live="polite"></span>
+        </div>
+        <div class="qd-foot-promote">
+          <span class="qd-promote-lbl">남기려면:</span>
+          <button class="btn sm" id="qdBtnSaveJob" disabled aria-describedby="qdPromoteNote">작업으로 저장</button>
+          <button class="btn sm" id="qdBtnSaveTpl" disabled aria-describedby="qdPromoteNote">템플릿으로 저장</button>
+          <span class="qd-promote-note" id="qdPromoteNote">저장 승격은 다음 업데이트에서 열립니다. 지금은 복사로 남기세요.</span>
+        </div>
+      </footer>
     </section>
 
     <!-- 붙여넣기 모달(빠른 기안 전용) — txt 의 #pasteModal 과 별개 id 여야 리스너 충돌이 없다

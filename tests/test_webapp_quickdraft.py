@@ -464,3 +464,136 @@ def test_registered_in_frontend(tmp_path, monkeypatch):
     assert "quickdraft" in frontend.controllers
     init = frontend.initial("quickdraft")
     assert "templates" in init and init["origin"] is None
+
+
+# --------------------------------------------------- 휘발도 가드·복사·승격 표면(PR-4)
+
+def test_session_guard_not_armed_when_empty_or_only_loaded(tmp_path):
+    """빈손·미노동 세션엔 죽은 확인을 세우지 않는다(결정 32) — 템플릿만 깐 건 재선택으로 복원됨."""
+    ctrl, _ = _controller(tmp_path)
+    assert ctrl.dispatch("session_guard", {"gesture": "fresh"})["armed"] is False
+    ctrl.dispatch("select_template", {"name": "개찰참관보고"})
+    assert ctrl.dispatch("session_guard", {"gesture": "fresh"})["armed"] is False
+
+
+def test_session_guard_fresh_arms_and_quotes_what_is_lost(tmp_path):
+    """새 기안(통째 폐기)은 저장 안 된 노동을 종류별로 인용하고 남기는 길(복사)을 일러준다."""
+    ctrl, _ = _aimed(tmp_path)  # 템플릿 + 데이터 겨눔(자동 결속)
+    ctrl.dispatch("set_source", {"name": "수요기관", "col": ""})
+    ctrl.dispatch("set_token", {"name": "수요기관", "text": "직접 입력"})  # 무결속 수기
+    g = ctrl.dispatch("session_guard", {"gesture": "fresh"})
+    assert g["armed"] is True
+    assert "낙찰현황.csv" in g["message"]  # 겨눈 데이터도 사라진다(fresh = 통째)
+    assert "수요기관" in g["message"] and "직접 입력" in g["message"]
+    assert "복사" in g["message"]
+
+
+def test_session_guard_switch_excludes_surviving_data(tmp_path):
+    """전환 가드는 fresh 와 다른 술어를 쓴다 — 같은 이름·겨눈 데이터는 새 템플릿에서 이어지므로
+    데이터 겨눔만으론 무장하지 않는다(지배 결함류: 확인 문안이 살아남는 것을 '사라진다'고 거짓말)."""
+    ctrl, _ = _aimed(tmp_path)  # 데이터 겨눔·자동 결속만(사람 값·원문 수정 없음)
+    assert ctrl.dispatch("session_guard", {"gesture": "switch"})["armed"] is False
+    # 원문 수정은 전환이 실제로 버린다 → 무장. 문안은 살아남는 것도 정직하게 말한다.
+    ctrl.dispatch("edit_source", {"text": "{{사업명}} 만"})
+    g = ctrl.dispatch("session_guard", {"gesture": "switch"})
+    assert g["armed"] is True and "이어집니다" in g["message"]
+
+
+def test_paste_only_session_is_dirty_for_both_gestures(tmp_path):
+    """붙여넣은 원문은 재선택 복원 경로가 없다 — 데이터·수기 없이도 새 기안·전환이 조용히
+    버리면 안 된다(리뷰 F1: paste 유래 원문 자체가 노동)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("paste_template", {"text": "제목: {{공고명}}"})
+    g = ctrl.dispatch("session_guard", {"gesture": "fresh"})
+    assert g["armed"] is True and "붙여넣은 템플릿 원문" in g["message"]
+    # 전환도 붙여넣은 원문을 교체하므로 무장 — 단 동명 자리·데이터는 이어짐을 병기한다.
+    s = ctrl.dispatch("session_guard", {"gesture": "switch"})
+    assert s["armed"] is True and "붙여넣은 템플릿 원문" in s["message"] and "이어집니다" in s["message"]
+
+
+def test_switch_guard_states_rule_without_enumerating_values(tmp_path):
+    """전환 가드는 사람 값을 '사라진다'고 이름까지 열거하지 않는다 — _retokenize 가 동명 토큰
+    값을 승계하므로 열거는 거짓(리뷰 F4). 규칙만 재진술한다(집합은 대상 템플릿에 달림)."""
+    ctrl, _ = _aimed(tmp_path)
+    ctrl.dispatch("set_source", {"name": "수요기관", "col": ""})
+    ctrl.dispatch("set_token", {"name": "수요기관", "text": "직접 입력"})  # 무결속 수기
+    g = ctrl.dispatch("session_guard", {"gesture": "switch"})
+    assert g["armed"] is True
+    assert "수요기관" not in g["message"], "살아남을 수 있는 값을 이름까지 찍어 사라진다고 단정합니다."
+    assert "이어집니다" in g["message"] and "남지 않습니다" in g["message"]
+
+
+def test_empty_paste_clears_template_but_keeps_aimed_data(tmp_path):
+    """빈 붙여넣기는 템플릿만 비우고 데이터 겨눔은 남긴다(리뷰 F2) — 전환 가드가 약속한
+    '데이터는 이어집니다'를 지킨다. fresh 로 겨눔까지 버리면 그 약속이 거짓이 된다."""
+    ctrl, pushes = _aimed(tmp_path)
+    ctrl.dispatch("paste_template", {"text": "   \n  "})
+    snap = pushes[-1][1]
+    assert snap["origin"] is None and snap["template_text"] == "" and snap["tokens"] == []
+    assert snap["has_data"] is True and snap["data_source_label"] == "파일: 낙찰현황.csv"
+
+
+def test_session_guard_is_query_and_does_not_push(tmp_path):
+    """가드 질의는 무변이 — 확인 창을 띄우는 사이 화면이 요동치면 안 된다(carry_notice 동형)."""
+    ctrl, pushes = _aimed(tmp_path)
+    ctrl.dispatch("set_token", {"name": "수요기관", "text": "x"})
+    n = len(pushes)
+    ctrl.dispatch("session_guard", {"gesture": "fresh"})
+    assert len(pushes) == n
+
+
+def test_fresh_empties_session(tmp_path):
+    """「새 기안」 = 세션 통째 초기화(결정 32) — 빈손으로 돌아가고 재렌더를 민다."""
+    ctrl, pushes = _aimed(tmp_path)
+    ctrl.dispatch("fresh", {})
+    snap = pushes[-1][1]
+    assert snap["origin"] is None and snap["template_text"] == ""
+    assert snap["tokens"] == [] and snap["has_data"] is False
+
+
+def test_render_is_plain_render_record_and_can_copy_gates_on_template(tmp_path):
+    """복사 계약 = 링1 render_record(평문 + 리포트). 표지는 화면 전용이라 평문엔 음영이 없다.
+
+    미채움이 있어도 복사는 막지 않는다(완화 조항 — 사후 경보): can_copy 는 '쓸 게 아예
+    없음'(빈손)만 막고, 미채움은 report 로 흘러 웹이 복사 후 시끄럽게 알린다(결정 33).
+    """
+    ctrl, _ = _controller(tmp_path)
+    assert ctrl.can_copy() is False  # 빈손 = 빈 클립보드 쓰기 차단(리뷰 F3 동형)
+    ctrl.dispatch("select_template", {"name": "개찰참관보고"})
+    ctrl.dispatch("set_token", {"name": "사업명", "text": "행정정보시스템"})
+    assert ctrl.can_copy() is True
+    text, report = ctrl.render()
+    assert text == "제목: 행정정보시스템 개찰 참관 보고\n금액: {{추정가격}}"
+    assert report.missing_fields == ["추정가격"]  # 사후 경보 재료 — 복사를 막지 않는다
+
+
+def test_copy_clipboard_bridge_writes_and_reports_unfilled(tmp_path, monkeypatch):
+    """공유 copy_clipboard 브리지 관통 — 빠른 기안이 render/can_copy 로 결선돼 실제로 복사되고
+    사후 경보 재료(미채움 수)를 돌려준다(txt 카드와 같은 진입점 — 손복사 없음)."""
+    from hwpxfiller.webapp import app as app_mod
+
+    monkeypatch.setattr(app_mod, "default_jobs_dir", lambda: tmp_path / "jobs")
+    written: list = []
+    monkeypatch.setattr(app_mod, "set_clipboard_text", lambda t: written.append(t))
+    (tmp_path / "txt").mkdir()
+    (tmp_path / "txt" / "기안.txt").write_text("{{사업명}} / {{추정가격}}", encoding="utf-8")
+    frontend = app_mod.WebFrontend(tmp_path / "txt")
+    ctrl = frontend.controllers["quickdraft"]
+    ctrl.dispatch("select_template", {"name": "기안"})
+    ctrl.dispatch("set_token", {"name": "사업명", "text": "행정정보시스템"})
+    res = frontend.copy_clipboard("quickdraft")
+    assert res["copied"] is True and written == ["행정정보시스템 / {{추정가격}}"]
+    assert res["missing_fields"] == ["추정가격"]  # 미채움이 리포트로 나간다(사후 경보)
+
+
+def test_copy_clipboard_bridge_blocks_empty_hand(tmp_path, monkeypatch):
+    """빈손(템플릿 없음)은 클립보드에 아무것도 쓰지 않는다 — 빈 쓰레기·무피드백 차단(can_copy 게이트)."""
+    from hwpxfiller.webapp import app as app_mod
+
+    monkeypatch.setattr(app_mod, "default_jobs_dir", lambda: tmp_path / "jobs")
+    written: list = []
+    monkeypatch.setattr(app_mod, "set_clipboard_text", lambda t: written.append(t))
+    (tmp_path / "txt").mkdir()
+    frontend = app_mod.WebFrontend(tmp_path / "txt")
+    res = frontend.copy_clipboard("quickdraft")
+    assert res["copied"] is False and written == []

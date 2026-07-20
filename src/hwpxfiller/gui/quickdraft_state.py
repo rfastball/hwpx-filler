@@ -409,6 +409,43 @@ class QuickDraftViewModel:
             "manual": [t.name for t in self.tokens if not t.col and t.text.strip() != ""],
         }
 
+    # ------------------------------------------------- 휘발도 가드(PR-4, 결정 32·34)
+    def clear_template(self) -> None:
+        """템플릿만 비우고 **데이터 겨눔은 유지**한다 — 빈 붙여넣기 확정의 착지.
+
+        :meth:`fresh` 와 다르다: 빈 붙여넣기를 fresh 로 처리하면 (전환 가드가 "선택한
+        데이터는 이어집니다"라 약속한) 겨눔까지 조용히 버려 confirm-or-alarm 을 어긴다(리뷰
+        F2). 데이터 슬롯은 헤더라 템플릿 없이도 서므로(빈손 카드 + 데이터 겨눔) 겨눔을 남긴
+        상태가 정합하다. 토큰이 없어지니 사람이 넣은 값은 사라진다(빈 템플릿엔 그 자리가 없다).
+        """
+        self.origin = None
+        self.template_name = None
+        self.template_text = ""
+        self.modified = False
+        self.tokens = []
+        self.frozen_cols = []
+
+    def session_loss(self) -> "dict":
+        """가드 문안 재료 + 무장 판정 성분 — 전환·새 기안이 버리는 것의 분류(**판정만**).
+
+        carry_over(값이 남는 곳)와 대비: 이건 **세션이 사라질 때** 무엇을 잃는지다. 토큰
+        순회는 **여기 한 번뿐**이고(리뷰 F6), 컨트롤러 가드는 이 dict 만으로 무장을 연역한다.
+
+        ``paste_body``: 붙여넣기 유래는 라이브러리에 없어 **재선택 복원 경로가 없다** — 빈손이
+        아닌 한 그 자체가 버려지는 노동이다(리뷰 F1). ``modified`` 는 라이브러리 유래의 원문
+        수정(재선택하면 되살아나지 않는 편집).
+        """
+        return {
+            "origin": self.origin,
+            "template_name": self.template_name,
+            "modified": self.modified,
+            # 붙여넣은 원문은 재선택 복원이 불가하므로 그 존재 자체가 버려지는 노동이다.
+            "paste_body": self.origin == "paste" and self.template_text.strip() != "",
+            "data_label": self.data_label if self.has_data() else "",
+            "manual": [t.name for t in self.tokens if not t.col and t.text.strip() != ""],
+            "edited": [t.name for t in self.tokens if t.col and t.edited],
+        }
+
     # ---------------------------------------------------------- 토큰 값(PR-2)
     def set_token_text(self, name: str, text: str) -> None:
         """토큰 값 직접 입력 — 결속 토큰이면 **사람 소유로 강등**한다(표현형 3층 최하층).

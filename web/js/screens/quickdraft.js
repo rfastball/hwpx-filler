@@ -20,6 +20,8 @@
   let LAST = null;
   let TEMPLATES = [];   // 슬롯 드롭다운용 라이브러리 이름 — initial 에서 채움
   let tab = "preview";  // 우측 판 탭(미리보기/원문 편집) = 순수 뷰 상태(클라이언트 소유)
+  let markers = true;   // 채움 표지(음영·소유권 색) 켜짐 = 순수 뷰 상태(클라이언트 소유).
+                        // 끄면 미리보기가 "복사되는 그대로"의 순수 평문이 된다(결정 33).
   let pendingNote = ""; // 다음 렌더에 실을 고지(유지되는 수기 값 등) — 가드가 채운다
   /* 렌더 세대 — 구조 변화(행 이동·데이터 교체·템플릿 전환)가 나면 올라간다. 타이핑 왕복이
      늦게 착지해 **옛 세대의 스냅샷**으로 미리보기·LAST 를 되돌리는 경합을 막는다(늦은 응답이
@@ -117,16 +119,47 @@
     return `<h4>값 채우기</h4>${rows}<p class="qd-formhint">${hint}</p>`;
   }
 
+  /* 소유권 맵(결정 33 소유권 색) — {토큰이름: 상태}. fill 세그먼트에 own-* 클래스를 입혀
+     **누가 채웠는지**를 색으로 가른다: auto=데이터 자동 결속 · hand=결속인데 직접 수정 ·
+     man=무결속 수기. blank/missing 은 삼분 표지가 이미 색으로 말하므로 뺀다. 판정은 서버
+     토큰 state 그대로(파생 판정 금지) — 폼 칩과 미리보기가 한 색 언어가 된다. */
+  function ownersOf(s) {
+    const o = {};
+    (s.tokens || []).forEach((t) => {
+      if (t.state === "auto" || t.state === "hand" || t.state === "man") o[t.name] = t.state;
+    });
+    return o;
+  }
+
+  /* 미리보기 본문 — 표지 ON 이면 공유 SegView(음영+소유권 색), OFF 면 순수 평문(복사되는
+     그대로). plain 은 세그먼트 텍스트 이어붙임 = 서버 render_record 불변식(같은 문자열). */
+  function previewInner(s) {
+    if (!markers) return esc(window.SegView.plain(s.segments));
+    return window.SegView.paint(s.segments, ownersOf(s));
+  }
+
+  /* 미리보기 안내문 — **표지 상태를 따라간다**(결정 33). 표지를 끄면 색 범례가 가리키는 색이
+     화면에 없으므로(리뷰 F5), 범례 대신 "보이는 그대로 복사됨"을 말한다. 토글 핸들러가 이
+     문안도 함께 갱신해 범례가 표지보다 오래 살지 않게 한다. */
+  function previewNoteText() {
+    return markers
+      ? "이대로 복사됩니다. 채움 표지는 화면에만 보이고 복사되지 않습니다. 데이터 값은 파랑, 직접 고친 값은 주황, 직접 입력한 값은 초록입니다."
+      : "채움 표지를 껐습니다. 지금 보이는 그대로 복사됩니다.";
+  }
+
   function rightPaneHtml(s) {
     const right = tab === "source"
       ? `<textarea class="qd-srcedit" id="qdSrc" aria-label="템플릿 원문">${esc(s.template_text)}</textarea>` +
         `<p class="qd-prevnote">여기서 고친 템플릿은 이 세션의 사본입니다. 라이브러리는 바뀌지 않습니다.</p>`
-      : `<pre class="wc-render f-malgun" id="qdRender">${window.SegView.paint(s.segments)}</pre>` +
-        `<p class="qd-prevnote">이대로 복사됩니다. 파란 음영은 채운 자리 표지로, 화면에만 보이고 복사되지 않습니다.</p>`;
+      : `<pre class="wc-render f-malgun" id="qdRender">${previewInner(s)}</pre>` +
+        `<p class="qd-prevnote" id="qdPrevNote">${previewNoteText()}</p>`;
+    // 표지 토글은 미리보기 탭에서만 뜬다(원문 편집엔 표지가 없다). aria-pressed 로 상태 낭독.
+    const toggle = tab === "source" ? "" :
+      `<button class="btn sm" id="qdMarkerToggle" aria-pressed="${markers}" title="채움 표지를 켜고 끕니다">채움 표지</button>`;
     return `<div class="qd-prevhead"><div class="qd-tabs">` +
       `<button class="btn sm" id="qdTabPrev" aria-pressed="${tab !== "source"}">미리보기</button>` +
       `<button class="btn sm" id="qdTabSrc" aria-pressed="${tab === "source"}">원문 편집</button>` +
-      `</div></div>${right}`;
+      `</div>${toggle}</div>${right}`;
   }
 
   function bodyHtml(s) {
@@ -210,12 +243,66 @@
     });
   }
 
+  /* 휘발도 가드(결정 32) — 세션을 비우는/바꾸는 제스처 전에 저장 안 된 노동을 재진술한다.
+     판정·문안은 Python(session_guard)이 지금 만든다(carryOk 와 같은 규율, 스냅샷 캐시 아님).
+     gesture: fresh=통째 폐기 · switch=템플릿 교체(같은 이름·데이터는 이어짐). armed 아니면
+     조용히 통과(빈손·미노동엔 죽은 확인 금지). true=진행, false=머무르기. */
+  async function sessionGuardOk(gesture, confirmLabel) {
+    await flushDebounce();  // 대기 타건 정산 후 물어야 판정이 지금 상태를 본다
+    const g = await Bridge.call(SCREEN, "session_guard", { gesture: gesture });
+    if (!g || !g.armed) return true;
+    return window.Modal.confirm({
+      title: gesture === "fresh" ? "지금 세션을 버릴까요?" : "템플릿 바꾸기 확인",
+      body: g.message,
+      confirmLabel: confirmLabel,
+      cancelLabel: "머무르기",
+    });
+  }
+
+  /* 복사(결정 33) — 공유 copy_clipboard 관통(txt 카드와 같은 진입점). 미채움이 있어도
+     막지 않고 복사 **후** 시끄럽게 알린다(사후 경보 승계 — 완화 조항의 "틀리면 보이는").
+     대기 타건을 먼저 정산해 화면에 보이는 값 그대로가 클립보드에 담기게 한다. */
+  async function copyDraft() {
+    await flushDebounce();
+    const note = $("qdCopyNote");
+    const r = await Bridge.copyClipboard(SCREEN);
+    if (!r || !r.copied) { note.dataset.level = "warn"; note.textContent = "복사할 내용이 없습니다."; return; }
+    const gaps = (r.missing_fields || []).length + (r.empty_fields || []).length;
+    if (gaps) {
+      note.dataset.level = "warn";
+      note.textContent = `복사했습니다. 아직 안 채운 자리 ${gaps}곳이 그대로 나갔습니다.`;
+    } else {
+      note.dataset.level = "ok";
+      note.textContent = "복사했습니다.";
+    }
+  }
+
   function setPill(s) {
     const pill = $("qdStatus");
     if (!s.template_text) { pill.dataset.level = "idle"; pill.textContent = "세션 휘발 · 저장 없음"; return; }
     const un = s.unfilled_count || 0;
     if (un) { pill.dataset.level = "warn"; pill.textContent = `미채움 ${un}`; }
     else { pill.dataset.level = "ok"; pill.textContent = "전량 채움"; }
+  }
+
+  /* 화면 크롬(헤더 「새 기안」·출구 푸터) — 템플릿이 깔렸을 때만 산다(빈손엔 복사·승격·새
+     기안 모두 무의미). 구조가 바뀔 때만(전면 render) 도니 복사 노트도 여기서 비운다 —
+     세션이 바뀌면 직전 복사 결과 문안은 낡은 사실이다(조용한 stale 방지). */
+  function syncChrome(s) {
+    const loaded = !!s.template_text;
+    $("qdBtnFresh").hidden = !loaded;
+    $("qdFoot").hidden = !loaded;
+    clearCopyNote();
+  }
+
+  /* 복사 결과 노트 비우기 — 내용이 바뀌면 직전 「복사했습니다」는 클립보드와 어긋난 거짓이
+     된다(리뷰 F3). 전면 render 는 syncChrome 이 부르고, 타이핑(_NO_PUSH: 값·원문 입력)은
+     겨냥 패치라 syncChrome 을 안 거치므로 입력 순간 직접 비운다("편집하면 다시 복사"가 규칙). */
+  function clearCopyNote() {
+    const note = $("qdCopyNote");
+    if (!note) return;
+    note.textContent = "";
+    delete note.dataset.level;
   }
 
   /* 타이핑 응답 겨냥 패치를 **현 세대에만** 적용한다 — 왕복 중에 행이 바뀌거나 데이터가
@@ -245,6 +332,7 @@
       $("qdBody").innerHTML = bodyHtml(s);
       wireBody(s);
       setPill(s);
+      syncChrome(s);
       growAll();
       // 경보(교체로 굳은 자리)가 우선이고, 없으면 직전 제스처의 고지를 한 번 싣는다.
       warnNote(s.frozen_notice || pendingNote);
@@ -266,7 +354,7 @@
   function patchRight(s) {
     LAST = s;
     const pre = $("qdRender");  // 미리보기 모드에서만 존재(원문 편집 탭이면 없음 → no-op)
-    if (pre) pre.innerHTML = window.SegView.paint(s.segments);
+    if (pre) pre.innerHTML = previewInner(s);  // 표지 ON/OFF·소유권 색 반영(전면 렌더와 한 경로)
     syncRevert(s);
     setPill(s);
   }
@@ -323,6 +411,7 @@
       const val = $("qdVal-" + i);
       if (!val) return;
       val.addEventListener("input", () => {
+        clearCopyNote();  // 값이 바뀌면 직전 복사 노트는 클립보드와 어긋난다(리뷰 F3)
         // 낙관적 표지(값 공백 여부만 — 치환 재구현 아님): 칩·빈칸·알약을 즉시 갱신하고,
         // 미리보기 갱신은 반환 스냅샷 patchRight 가 맡는다(판정은 Python, JS는 문안만).
         const emptyNow = val.value.trim() === "";
@@ -356,17 +445,33 @@
     wireFormRows(s);
     const src = $("qdSrc");
     if (src) {
-      src.addEventListener("input", () =>
-        debounce(() => Bridge.call(SCREEN, "edit_source", { text: src.value }).then(inEpoch(patchForm))));
+      src.addEventListener("input", () => {
+        clearCopyNote();  // 원문이 바뀌면 직전 복사 노트는 클립보드와 어긋난다(리뷰 F3)
+        debounce(() => Bridge.call(SCREEN, "edit_source", { text: src.value }).then(inEpoch(patchForm)));
+      });
       src.addEventListener("blur", flushDebounce);
     }
     const tp = $("qdTabPrev"), ts = $("qdTabSrc");
     // 탭 전환은 전면 재렌더 — 편집 중이었다면 DOM 값을 LAST 로 흡수한 뒤 바꿔 마지막 글자 보존.
     if (tp) tp.addEventListener("click", () => { syncEditsIntoLast(); tab = "preview"; render(LAST); });
     if (ts) ts.addEventListener("click", () => { syncEditsIntoLast(); tab = "source"; render(LAST); });
+    // 채움 표지 토글 — 순수 뷰 상태 전환이라 서버 왕복 없이 미리보기만 다시 그린다(편집 중이면
+    // DOM 값 흡수 후). 원문 탭에선 이 버튼이 없다(표지 대상이 미리보기뿐).
+    const mt = $("qdMarkerToggle");
+    if (mt) mt.addEventListener("click", () => {
+      syncEditsIntoLast(); markers = !markers;
+      const pre = $("qdRender");
+      if (pre) pre.innerHTML = previewInner(LAST);
+      const note = $("qdPrevNote");  // 범례가 표지보다 오래 살지 않게 함께 갱신(리뷰 F5)
+      if (note) note.textContent = previewNoteText();
+      mt.setAttribute("aria-pressed", String(markers));
+    });
   }
 
-  function openPaste() {
+  /* 붙여넣기 열기 = 세션 교체 제스처(결정 34) — 저장 안 된 노동이 있으면 **모달을 열기
+     전에** 확인한다(txt 데이터 피커 선례: 텍스트까지 붙인 뒤 "머무르기"는 노동을 또 버린다). */
+  async function openPaste() {
+    if (!(await sessionGuardOk("switch", "버리고 붙여넣기"))) return;
     $("qdPasteText").value = (LAST && LAST.origin === "paste") ? LAST.template_text : "";
     window.Modal.open("qdPasteModal", { initialFocus: $("qdPasteText") });
   }
@@ -374,12 +479,22 @@
   /* 화면 부팅 — 라우터(app.js)가 pywebviewready 후 호출. 슬롯·붙여넣기 모달은 여기서 1회 배선. */
   async function init() {
     Bridge.onPush(SCREEN, render);
-    $("qdTplSel").addEventListener("change", (e) => {
+    $("qdTplSel").addEventListener("change", async (e) => {
       const v = e.target.value;
       if (v === "" || v === "__pasted" || v === "__mod") return;  // 안내·의사 옵션은 무동작
+      // 다른 템플릿으로 전환은 세션 교체 — 저장 안 된 노동이 있으면 확인한다. 머무르기면
+      // 드롭다운을 실제 정체로 되돌린다(안 그러면 고른 값이 남아 표시와 세션이 어긋난다).
+      if (!(await sessionGuardOk("switch", "버리고 바꾸기"))) { if (LAST) syncSlot(LAST); return; }
       Bridge.call(SCREEN, "select_template", { name: v });
     });
     $("qdBtnPaste").addEventListener("click", openPaste);
+    // 「새 기안」(결정 32) — 세션을 통째 비운다. 버릴 노동이 있으면 먼저 확인(빈손엔 통과).
+    $("qdBtnFresh").addEventListener("click", async () => {
+      if (!(await sessionGuardOk("fresh", "버리고 새로"))) return;
+      Bridge.call(SCREEN, "fresh", {});
+    });
+    // 복사 = 유일한 실동작 출구(휘발 세션을 남기는 길). 승격 2동사는 표면만이라 비활성 상태다.
+    $("qdBtnCopy").addEventListener("click", copyDraft);
 
     // ---- 데이터 겨눔(결정 34의 데이터 소스 이원) — 두 유래가 같은 고지 가드를 지난다.
     $("qdBtnPickFile").addEventListener("click", async () => {

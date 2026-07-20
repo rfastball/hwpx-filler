@@ -896,6 +896,18 @@ _QUICKDRAFT_PROBE_JS = r"""
   var out = {};
   try {
     window.Nav.go('quickdraft');
+    // 표시 여부는 클래스 토큰이 아니라 **실제 렌더**(offsetParent)로 잰다(계측 리트머스).
+    var vis = function (id) {
+      var el = document.getElementById(id);
+      return !!(el && el.offsetParent !== null);
+    };
+    // PR-4 음성 대조 — 빈손 세션엔 「새 기안」·출구 푸터가 서 있으면 안 된다(dead 크롬 금지).
+    // "보인다" 판정에 판별력을 주려면 먼저 "안 보임"을 관측해야 한다(부재 판별력).
+    window.__push('quickdraft', {origin:null, template_name:null, template_text:'', modified:false,
+      tokens:[], segments:[], missing_fields:[], empty_fields:[], unfilled_count:0,
+      has_data:false, data_label:'', data_kind:''});
+    out.fresh_visible_before = vis('qdBtnFresh');
+    out.foot_visible_before = vis('qdFoot');
     var snap = {
       origin:'lib', template_name:'개찰참관보고',
       template_text:'제목: {{사업명}}\n금액: {{추정가격}}', modified:false,
@@ -925,12 +937,18 @@ _QUICKDRAFT_PROBE_JS = r"""
     // 껍데기 격리 — 빠른 기안 폼(qd-trow)이 작업 화면 데이터 존 DOM 으로 새지 않는다(id 분리).
     // jobTableBody 는 앞선 job 프로브가 채우므로 '빈가'가 아니라 '누출 없음'으로 판정한다.
     out.job_body_untouched = !document.querySelector('#jobTableBody .qd-trow');
-    // 양성/음성 대조(계측 리트머스) — 클래스 토큰이 아니라 **실제 표시 여부**를 잰다.
+    // PR-4 — 템플릿이 실리면 「새 기안」·출구 푸터가 선다(빈손 음성 대조와 짝). 복사 버튼 존재,
+    // 표지 토글은 미리보기 탭 기본이라 aria-pressed=true(표지 ON), 승격 2동사는 정직한 비활성.
+    out.fresh_visible = vis('qdBtnFresh');
+    out.foot_visible = vis('qdFoot');
+    out.copy_btn = !!document.getElementById('qdBtnCopy');
+    var mt = document.getElementById('qdMarkerToggle');
+    out.marker_toggle = !!mt;
+    out.marker_pressed = mt ? mt.getAttribute('aria-pressed') : null;
+    out.save_job_disabled = (document.getElementById('qdBtnSaveJob') || {}).disabled;
+    out.save_tpl_disabled = (document.getElementById('qdBtnSaveTpl') || {}).disabled;
+    out.promote_note = (document.getElementById('qdPromoteNote') || {}).textContent || '';
     // 데이터가 없는 지금은 「데이터 해제」·경보 상자가 화면에서 사라져 있어야 한다.
-    var vis = function (id) {
-      var el = document.getElementById(id);
-      return !!(el && el.offsetParent !== null);
-    };
     out.clear_visible_before = vis('qdBtnClearData');
     out.note_visible_before = vis('qdNote');
 
@@ -956,6 +974,8 @@ _QUICKDRAFT_PROBE_JS = r"""
     };
     window.__push('quickdraft', aimed);
     out.data_label_text = document.getElementById('qdDataLine').textContent;
+    // PR-4 소유권 색 — 자동 결속 값(사업명)은 own-auto 로 페인트된다(폼 칩과 한 색 언어).
+    out.own_auto = !!document.querySelector('#qdRender .seg-fill.own-auto');
     // 행 스테퍼 — 양끝이 아니면 두 버튼 다 살아 있다(경계에서만 disabled).
     var prev = document.getElementById('qdRowPrev'), next = document.getElementById('qdRowNext');
     out.stepper = !!prev && !!next && !prev.disabled && !next.disabled;
