@@ -110,7 +110,9 @@ def test_editing_a_confirmed_row_resets_confirmation():
 
 
 # ----------------------------- 구판 ignore_source(한시 존치 — 재배선 PR 에서 제거)
-# 기존 에디터 표면(_apply_active)이 아직 소비하는 구판 경로의 거동 보존 가드.
+# 기존 에디터 표면(_apply_active)이 아직 소비하는 구판 경로. 표면 거동(그 소스 행만 해제·
+# 재검토 강제)은 구판 그대로, 착지 상태는 신판 강등 정의(reset_to_system)와 동일 — 관문 간
+# 상태 불일치(사람소유-빈 좀비·상수 잔존 하이브리드)를 리뷰 반영으로 봉합했다.
 def test_ignore_source_clears_only_matching_rows_and_forces_recheck():
     """소스 헤더 미사용 전환 → 그 소스를 쓰던 행만 해제(source='', confirmed=False),
     다른 매핑·확정은 불변. 반환은 영향 필드 이름(재진술 근거)."""
@@ -143,6 +145,35 @@ def test_ignore_source_empty_string_is_noop():
     assert model.ignore_source("") == []                 # 아무 행도 안 건드림
     assert all(r.confirmed for r in model.rows)          # 전 행 확정 불변
     assert model.rows[0].const == "수의계약"             # const 보존
+
+
+def test_ignore_source_lands_row_system_owned_and_fully_reset():
+    """구판 ignore_source 의 착지 = 신판 강등과 동일(완전 리셋·시스템 소유) — 리뷰 반영.
+
+    touched 를 남기면 '사람소유-빈' 좀비(신판 관문 어느 쪽도 재제안·강등 불가 → 필드 영구
+    조용한 공백), 유형·상수를 남기면 다음 재제안에서 '제안 표시 ≠ 옛 상수 방출' 하이브리드가
+    된다 — 두 관문이 같은 사건(헤더 미사용)에 다른 상태로 착지하면 안 된다."""
+    schema = TemplateSchema(fields=[FieldSpec("품명", "text", 1, False)])
+    model = MappingModel.from_suggestions(schema, ["품명", "세부품명"])
+    model.set_source(0, "품명")                       # 사람 소유(touched)
+    model.set_type(0, "const")
+    model.set_const(0, "X")
+    assert model.ignore_source("품명") == ["품명"]
+    row = model.rows[0]
+    assert row.is_system_owned()                      # 좀비 아님 — 시스템 소유로 낙착
+    assert row.source == "" and row.const == "" and row.type != "const"
+
+
+def test_ignore_source_then_apply_active_sources_resuggests_cleared_row():
+    """구판→신판 관문 이음매 가드(존치 결정의 seam): ignore_source 로 비운 행은 시스템
+    소유라 다음 apply_active_sources 가 조용히 라이브 재제안한다(강등 목록에 안 오른다)."""
+    schema = TemplateSchema(fields=[FieldSpec("품명", "text", 1, False)])
+    model = MappingModel.from_suggestions(schema, ["품명", "세부품명"])
+    model.set_source(0, "품명")
+    model.ignore_source("품명")
+    demoted = model.apply_active_sources(["세부품명"])
+    assert demoted == []                              # 강등 아님 — 조용한 재제안
+    assert model.rows[0].source == "세부품명"
 
 
 # ----------------------------- 활성 소스 변화 = 칩-라이브 계약(결정 12·13)
@@ -179,6 +210,23 @@ def test_apply_active_sources_r4_loud_demotes_human_owned_to_empty():
     assert demoted == ["품명"]                              # R4 시끄러운 강등(이름 재진술)
     assert model.rows[0].touched is False                  # 강등 → 시스템 소유로
     assert model.rows[0].source == ""                      # **비운 채**(재제안 치환 아님, R3)
+
+
+def test_r4_demotion_fully_resets_type_and_const():
+    """R4 강등 = 완전 리셋(리뷰 반영) — 유형·상수가 남으면 강등 행이 시스템 소유가 된 뒤
+    다음 재제안이 소스를 얹어 '제안 표시 ≠ 옛 상수 방출' 하이브리드가 된다(revert_to_auto
+    R1 과 같은 근거 — 강등 경로만 부분 리셋일 이유가 없다)."""
+    model = _pum_model(["품명", "세부품명"])
+    model.set_source(0, "품명")
+    model.set_type(0, "const")                             # 소스는 남는다(set_type 은 소스 불변)
+    model.set_const(0, "X")
+    demoted = model.apply_active_sources(["세부품명"])      # '품명' 끔 → 사람 소유 강등
+    assert demoted == ["품명"]
+    row = model.rows[0]
+    assert row.source == "" and row.const == "" and row.type != "const"  # 완전 리셋
+    model.apply_active_sources(["세부품명"])                # 다음 활성 변화 — 시스템 소유 재제안
+    assert model.rows[0].source == "세부품명"
+    assert model.rows[0].to_mapping().const == ""           # 옛 상수 방출 없음(하이브리드 봉쇄)
 
 
 def test_apply_active_sources_keeps_human_owned_on_active_source():
@@ -240,7 +288,27 @@ def test_carry_profile_includes_touched_unconfirmed_rows():
     assert carried == {"품명", "수량"}
 
 
-def test_confirm_all_via_apply_active_sources_still_clears_matching(tmp_path=None):
+def test_carry_profile_skips_contentless_touched_rows():
+    """내용 없는 touched 미확정 행(비움 선언도 아님)은 이월하지 않는다(리뷰 반영).
+
+    담으면 apply_profile 이 touched 를 재날인해 그 필드가 새 데이터에서 영구히 라이브
+    재제안 제외(조용한 동결)된다 — 시스템 소유로 낙착시켜 자동 제안을 다시 받게 한다.
+    비움 **확정**(blank 선언)은 확정이라 계속 담는다(의도적 비움의 영속, L1)."""
+    schema = TemplateSchema(fields=[
+        FieldSpec("품명", "text", 1, False),
+        FieldSpec("비고", "text", 1, False),
+    ])
+    model = MappingModel.from_suggestions(schema, ["품명"])
+    model.set_source(0, "품명")
+    model.set_source(0, "")                                # 사람이 비움(미확정) — 내용 없음
+    assert model.rows[0].touched and not model.rows[0].has_content()
+    model.rows[1].confirmed = True                         # 비움 확정(blank 선언) — 담는다
+    carried = model.carry_profile().mappings
+    assert [m.template_field for m in carried] == ["비고"]  # 내용 없는 touched 는 제외
+    assert carried[0].is_blank                             # blank 선언으로 영속
+
+
+def test_confirm_all_via_apply_active_sources_still_clears_matching():
     """구 ignore_source 계약 승계 확인: 확정 행의 소스를 끄면 그 행만 해제·이름 반환, 나머지 불변."""
     model = _model()
     model.confirm_all()                                    # 전 행 확정(사람 소유)
