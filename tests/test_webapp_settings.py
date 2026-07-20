@@ -156,6 +156,28 @@ def test_save_theme_retries_transient_read_share_violation(home, monkeypatch):
     assert settings.load_theme() == "dark"
 
 
+# ------------------------------------------------ 대상 글꼴 선언 영속(R-flow 블록 3 결정 17)
+def test_draft_font_defaults_to_gulimche(home):
+    assert settings.load_draft_target_font() == "gulimche"  # 고정폭 표준 = 린트 침묵 기본
+    (home / "settings.json").write_text('{"draft_target_font": "바탕체"}', encoding="utf-8")
+    assert settings.load_draft_target_font() == "gulimche"  # 비유효 저장값도 조용한 폴백은 판독뿐
+
+
+def test_draft_font_roundtrip_and_invalid_raises(home):
+    settings.save_draft_target_font("malgun")
+    assert settings.load_draft_target_font() == "malgun"
+    with pytest.raises(ValueError):
+        settings.save_draft_target_font("굴림")  # 열거형 밖은 조용한 무시 금지
+
+
+def test_draft_font_preserves_other_keys(home):
+    settings.save_theme("dark")
+    settings.save_draft_target_font("dotumche")
+    assert settings.load_theme() == "dark"  # RMW — 서로 다른 키 보존
+    settings.save_theme("light")
+    assert settings.load_draft_target_font() == "dotumche"
+
+
 # ------------------------------------------------ 「작업」 그룹 접힘 영속(결정 43·R-info 결정 6)
 def test_collapsed_groups_default_empty_and_roundtrip(home):
     assert settings.load_job_collapsed_groups() == []  # 무상태 기본 = 전부 펼침
