@@ -307,3 +307,14 @@ def test_k10_profile_source_vocabulary_is_shared_single_source(tmp_path):
     ctrl = _controller(tmp_path)
     ctrl.load_job("어휘작업")
     assert ctrl.source_fields == ["갑", "을"]
+
+
+def test_editor_js_template_stage_is_library_first():
+    """정적 계약(R-info 2부) — 신규 1단계는 라이브러리 피커가 정본: 생 파일 직접 로드
+    (pick-template)는 소멸하고, 라이브러리 선택(use-library)과 가져오기=복사
+    (import-template)만 남는다. 토큰 참조는 접힘(F27)."""
+    src = (REPO / "web" / "js" / "screens" / "editor.js").read_text(encoding="utf-8")
+    assert 'data-act="pick-template"' not in src, "생 파일 직접 로드 버튼이 부활했습니다(2부 위반)."
+    assert 'data-act="use-library"' in src, "라이브러리 선택 배선이 없습니다."
+    assert 'data-act="import-template"' in src, "가져오기=복사 배선이 없습니다."
+    assert "pattern_preview" in src, "파일명 라이브 예시(F26) 소비가 없습니다."

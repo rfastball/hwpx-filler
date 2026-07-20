@@ -140,17 +140,21 @@ class WebFrontend:
         settings.save_theme(mode)
         return mode
 
-    def pick_template_file(self, screen: str) -> "str | None":
-        """Win32 열기 다이얼로그(HWPX) → 링1 스키마/게이트 로드. 실패는 ``ERROR:`` 접두."""
+    # pick_template_file(생 파일 직접 로드)은 R-info 2부(신규 1단계=라이브러리 정본)로
+    # 소비자가 소멸해 제거 — 바깥 파일의 유일 입구는 import_template_file(가져오기=복사).
+    def import_template_file(self, screen: str) -> "str | None":
+        """Win32 열기 다이얼로그(HWPX) → 라이브러리로 **복사** 후 사본으로 새 세션(R-info 2부).
+
+        ``pick_template_file``(생 파일 직접 로드)의 후계 — 신규 1단계는 라이브러리가 정본이라
+        바깥 파일은 가져오기=복사로만 들어온다. 실패는 ``ERROR:`` 접두.
+        """
         path = open_file_dialog(_TEMPLATE_FILTERS, owner_title=WINDOW_TITLE)
         if not path:
             return None
         try:
-            # 새 템플릿 진입 = 새 작업 세션(#25) — 이전 세션과 섞이지 않게 원자 초기화 후 로드.
-            self._controller(screen).new_job_session(path)
+            return self._controller(screen).import_template(path)
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
-        return Path(path).name
 
     def pick_data_file(self, screen: str) -> "str | dict | None":
         """Win32 파일 다이얼로그 → 링1 VM 로드. 실패는 ``ERROR:`` 접두로 시끄럽게 반환.
