@@ -389,12 +389,13 @@
           <span class="qd-dataline" id="qdDataLine"></span>
           <button class="btn sm" id="qdBtnPoolData">등록 데이터…</button>
           <button class="btn sm" id="qdBtnPickFile">파일 열기…</button>
-          <button class="btn sm hidden" id="qdBtnClearData">데이터 해제</button>
+          <button class="btn sm" id="qdBtnClearData" hidden>데이터 해제</button>
         </div>
       </div>
-      <!-- 겨눔 실패 재진술(빈 데이터·읽기 실패 등) — 조용한 무반응 금지. quickdraft.js 가
-           문구를 넣을 때만 보인다. -->
-      <p class="note warnbox hidden" id="qdNote"></p>
+      <!-- 실패·경보 재진술(빈 데이터·읽기 실패·교체로 굳은 자리) — 조용한 무반응 금지.
+           quickdraft.js 가 문구를 넣을 때만 보인다(hidden 속성 — 이 코드베이스에 일반
+           .hidden 클래스 규칙은 없다). role=alert 로 화면 낭독기에도 닿는다. -->
+      <p class="note warnbox" id="qdNote" role="alert" hidden></p>
 
       <!-- 본문 = 값 폼 + 미리보기 2판, 또는 빈손 진입 카드. quickdraft.js 가 스냅샷으로 채운다
            (안정 컨테이너, run/txt 패턴). 데이터 이원·제스처 결속(PR-3)·복사/가드(PR-4)는 이

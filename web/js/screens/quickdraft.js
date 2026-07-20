@@ -20,6 +20,11 @@
   let LAST = null;
   let TEMPLATES = [];   // 슬롯 드롭다운용 라이브러리 이름 — initial 에서 채움
   let tab = "preview";  // 우측 판 탭(미리보기/원문 편집) = 순수 뷰 상태(클라이언트 소유)
+  let pendingNote = ""; // 다음 렌더에 실을 고지(유지되는 수기 값 등) — 가드가 채운다
+  /* 렌더 세대 — 구조 변화(행 이동·데이터 교체·템플릿 전환)가 나면 올라간다. 타이핑 왕복이
+     늦게 착지해 **옛 세대의 스냅샷**으로 미리보기·LAST 를 되돌리는 경합을 막는다(늦은 응답이
+     행 1의 화면에 행 0의 본문을 그리는 결함). */
+  let EPOCH = 0;
 
   // 내용 크기 칩(결정 34) — field-sizing 지원(Chromium 123+/WebView2)이면 CSS 가 폭·높이를
   // 다 맡고, 미지원 폴백에서만 JS 로 높이를 보정한다(값이 여러 줄이어도 잘리지 않게).
@@ -37,16 +42,28 @@
 
   /* 텍스트 입력 디바운스 dispatch — 타건마다 서버 왕복은 낭비라 멈춤(≈180ms) 후 전체 값을
      보낸다(증분 아님 = 멱등). 값 유실 경합은 _NO_PUSH+겨냥 패치가 막고(포커스 입력 미재구성),
-     디바운스는 왕복 빈도만 줄인다. */
-  let debTimer = null, debFn = null;
+     디바운스는 왕복 빈도만 줄인다.
+
+     대기 중인 편집은 **정산 가능**해야 한다: 가드(carry_notice)는 Python 이 지금 판정하는데,
+     아직 안 보낸 타건이 남아 있으면 서버는 옛 상태를 보고 "고친 값 없음"이라 답해 확인이
+     통째로 침묵한다(고효율 리뷰). 그래서 flush 는 진행 중 왕복의 프로미스를 돌려주고,
+     제스처는 그걸 기다린 뒤에 판정을 묻는다. */
+  let debTimer = null, debFn = null, debPending = null;
+  function run(f) {
+    const p = Promise.resolve(f());
+    debPending = p;
+    return p.finally(() => { if (debPending === p) debPending = null; });
+  }
   function debounce(fn) {
     debFn = fn;
     if (debTimer) clearTimeout(debTimer);
-    debTimer = setTimeout(() => { debTimer = null; const f = debFn; debFn = null; if (f) f(); }, 180);
+    debTimer = setTimeout(() => { debTimer = null; const f = debFn; debFn = null; if (f) run(f); }, 180);
   }
   function flushDebounce() {
     if (debTimer) { clearTimeout(debTimer); debTimer = null; }
-    const f = debFn; debFn = null; if (f) f();
+    const f = debFn; debFn = null;
+    if (f) return run(f);
+    return debPending || Promise.resolve();  // 이미 날아간 왕복도 착지까지 기다린다
   }
 
   /* 파이프라인 2열(결정 34) — 소스(결속 열) → 표시형(프리셋). 데이터를 안 겨눴으면 소스
@@ -57,9 +74,9 @@
       `<option value="${esc(c)}"${c === t.col ? " selected" : ""}>${esc(c)}</option>`).join("");
     const fmts = ((s.fmt_options && s.fmt_options[t.fmt_kind]) || []).map((o) =>
       `<option value="${esc(o.code)}"${o.code === t.fmt_code ? " selected" : ""}>${esc(o.label)}</option>`).join("");
-    // 표시형은 결속된 값에만 뜻이 있다 — 무결속 수기 값에 서식 드롭다운을 띄우면 아무 일도
-    // 안 하는 손잡이가 된다(dead control 금지).
-    const fmtSel = t.col
+    // 표시형은 **데이터에서 오는 값**에만 뜻이 있다 — 무결속 수기 값이나 사람이 직접 고친
+    // 값(hand)에 띄우면 골라도 화면이 안 바뀌는 손잡이가 된다(dead control 금지).
+    const fmtSel = t.col && t.state !== "hand"
       ? `<select class="field sm qd-fmt" id="qdFmt-${i}" data-i="${i}" aria-label="${esc(t.name)} 표시형">${fmts}</select>`
       : "";
     const revert = t.state === "hand"
@@ -96,7 +113,7 @@
       `<p class="qd-formhint">토큰이 없는 템플릿입니다.</p>`;
     const hint = s.has_data
       ? `이름이 똑같은 열은 자동으로 붙습니다. 비슷하기만 한 열은 제안으로만 뜨니 확인하고 누르세요. 값을 직접 고치면 사람 소유가 되고 데이터가 바뀌어도 그대로 남습니다.`
-      : `값을 직접 입력하면 사람 소유가 됩니다. 데이터를 겨누면 이름이 같은 자리가 자동으로 채워집니다.`;
+      : `값을 직접 입력하면 사람 소유가 됩니다. 데이터를 고르면 이름이 같은 자리가 자동으로 채워집니다.`;
     return `<h4>값 채우기</h4>${rows}<p class="qd-formhint">${hint}</p>`;
   }
 
@@ -155,20 +172,36 @@
     } else {
       line.innerHTML = `<span class="muted">선택한 데이터 없음</span>`;  // 사용자 어휘 = 「선택」(F15)
     }
-    $("qdBtnClearData").classList.toggle("hidden", !s.has_data);
+    // 데이터가 없으면 「데이터 해제」는 아예 없다(dead 버튼 금지) — 속성 hidden 으로 숨긴다.
+    $("qdBtnClearData").hidden = !s.has_data;
+    // 양끝에서 비활성된 스테퍼에 포커스가 있으면 그대로 두면 포커스가 body 로 떨어진다
+    // (preserve.js 는 id 로 되돌리는데 disabled 버튼은 focus 를 받지 않는다) — 형제로 옮긴다.
+    const dead = document.querySelector("#qdDataLine .btn[disabled]");
+    if (dead && document.activeElement === document.body) {
+      const alive = document.querySelector("#qdDataLine .btn:not([disabled])");
+      if (alive) alive.focus();
+    }
   }
 
+  /* 경보·고지 한 줄 — 빈 문자열이면 상자째 숨는다. `hidden` **속성**으로 숨긴다: 이 코드
+     베이스에 일반 `.hidden` 클래스 규칙은 없고(모달 전용), 클래스로 숨긴 척하면 테두리만
+     남은 빈 경고 상자가 계속 서 있는다(부록 B-9 표시 상태 결함 클래스). */
   function warnNote(msg) {
     const el = $("qdNote");
     el.textContent = msg || "";
-    el.classList.toggle("hidden", !msg);
+    el.hidden = !msg;
   }
 
   /* 데이터 교체·해제·행 이동 전 고지(결정 32의 3분류) — 판정·문안은 Python 이 지금 만든다.
      결속·무수정 값은 조용히 재생성되므로 아무 말도 하지 않는다(무의미한 확인 금지). */
-  async function carryOk(title, confirmLabel) {
-    const g = await Bridge.call(SCREEN, "carry_notice", {});
-    if (!g || !g.armed) return true;
+  async function carryOk(gesture, title, confirmLabel) {
+    await flushDebounce();  // 대기 중인 타건 정산 후에 물어야 판정이 지금 상태를 본다
+    const g = await Bridge.call(SCREEN, "carry_notice", { gesture: gesture });
+    if (!g) return true;
+    // 무결속 수기 값은 유지 + **고지**(막지 않는다, 결정 32) — 매 행 이동마다 모달이 서면
+    // 그건 완화 조항이 경계하는 반복이다. 확인은 혼합이 생기는 직접 수정에만.
+    pendingNote = g.notice || "";
+    if (!g.armed) return true;
     return window.Modal.confirm({
       title: title,
       body: g.message,
@@ -185,6 +218,13 @@
     else { pill.dataset.level = "ok"; pill.textContent = "전량 채움"; }
   }
 
+  /* 타이핑 응답 겨냥 패치를 **현 세대에만** 적용한다 — 왕복 중에 행이 바뀌거나 데이터가
+     해제되면 그 응답은 옛 세계의 그림이라, 그리면 화면이 뒤로 감긴다. */
+  function inEpoch(fn) {
+    const e = EPOCH;
+    return (s) => { if (e === EPOCH) fn(s); };
+  }
+
   /* 재렌더 전에 포커스 textarea 의 현재 DOM 값을 LAST 로 흡수 — 디바운스가 아직 서버에 안
      보낸 마지막 글자가 전면 재렌더(탭 전환 등)에서 옛 스냅샷 값으로 되돌아가지 않게. */
   function syncEditsIntoLast() {
@@ -197,6 +237,7 @@
   /* 전면 재렌더 — 구조 액션(템플릿 선택·붙여넣기·탭 전환·부팅)에서만. 포커스·캐럿·스크롤
      보존(#28)으로 감싼다. 타이핑 액션은 이 경로를 타지 않는다(겨냥 패치 = patchForm/patchRight). */
   function render(s) {
+    EPOCH++;  // 새 세대 — 이전 세대의 타이핑 응답은 이제 무효다
     Preserve.around(() => {
       LAST = s;
       syncSlot(s);
@@ -205,6 +246,9 @@
       wireBody(s);
       setPill(s);
       growAll();
+      // 경보(교체로 굳은 자리)가 우선이고, 없으면 직전 제스처의 고지를 한 번 싣는다.
+      warnNote(s.frozen_notice || pendingNote);
+      pendingNote = "";
     });
   }
 
@@ -248,19 +292,31 @@
     });
   }
 
+  /* 열 결속 — 직접 입력한 값을 덮는 경우엔 Python 이 확인 문안을 돌려주고, 사람이 확인하면
+     같은 액션을 confirm 으로 다시 부른다(relink 게이트와 같은 재진술 확인 문법). */
+  async function setSource(name, col) {
+    const r = await Bridge.call(SCREEN, "set_source", { name: name, col: col });
+    if (!r || !r.confirm) return;
+    if (!(await window.Modal.confirm({
+      title: "값 덮어쓰기 확인",
+      body: r.confirm,
+      confirmLabel: "데이터 값으로 바꾸기",
+      cancelLabel: "머무르기",
+    }))) return;
+    Bridge.call(SCREEN, "set_source", { name: name, col: col, confirm: true });
+  }
+
   function wireFormRows(s) {
     (s.tokens || []).forEach((t, i) => {
       // 결속·표현형 손잡이(구조 액션) — 서버가 푸시해 전면 재렌더한다(값 입력과 달리
       // 포커스 중인 입력이 없다).
       const src = $("qdSrc-" + i);
-      if (src) src.addEventListener("change", () =>
-        Bridge.call(SCREEN, "set_source", { name: t.name, col: src.value }));
+      if (src) src.addEventListener("change", () => setSource(t.name, src.value));
       const fmt = $("qdFmt-" + i);
       if (fmt) fmt.addEventListener("change", () =>
         Bridge.call(SCREEN, "set_fmt", { name: t.name, code: fmt.value }));
       const take = $("qdTake-" + i);
-      if (take) take.addEventListener("click", () =>
-        Bridge.call(SCREEN, "set_source", { name: t.name, col: t.suggest }));
+      if (take) take.addEventListener("click", () => setSource(t.name, t.suggest));
       const rev = $("qdRevert-" + i);
       if (rev) rev.addEventListener("click", () =>
         Bridge.call(SCREEN, "revert_token", { name: t.name }));
@@ -284,7 +340,7 @@
         if (un) { pill.dataset.level = "warn"; pill.textContent = `미채움 ${un}`; }
         else { pill.dataset.level = "ok"; pill.textContent = "전량 채움"; }
         debounce(() => Bridge.call(SCREEN, "set_token", { name: t.name, text: val.value })
-          .then(patchRight));
+          .then(inEpoch(patchRight)));
       });
       val.addEventListener("blur", flushDebounce);  // 포커스 이탈 시 대기 편집 즉시 반영
     });
@@ -301,7 +357,7 @@
     const src = $("qdSrc");
     if (src) {
       src.addEventListener("input", () =>
-        debounce(() => Bridge.call(SCREEN, "edit_source", { text: src.value }).then(patchForm)));
+        debounce(() => Bridge.call(SCREEN, "edit_source", { text: src.value }).then(inEpoch(patchForm))));
       src.addEventListener("blur", flushDebounce);
     }
     const tp = $("qdTabPrev"), ts = $("qdTabSrc");
@@ -328,7 +384,7 @@
     // ---- 데이터 겨눔(결정 34의 데이터 소스 이원) — 두 유래가 같은 고지 가드를 지난다.
     $("qdBtnPickFile").addEventListener("click", async () => {
       warnNote("");
-      if (!(await carryOk("데이터 바꾸기 확인", "데이터 바꾸기"))) return;
+      if (!(await carryOk("swap", "데이터 바꾸기 확인", "데이터 바꾸기"))) return;
       let r = await Bridge.pickDataFile(SCREEN);
       if (r && typeof r === "object" && r.needs_sheet) {   // 다중 시트 → 확정 게이트(#33)
         r = await SheetPicker.choose(SCREEN, r);
@@ -340,12 +396,12 @@
     });
     $("qdBtnPoolData").addEventListener("click", async () => {
       warnNote("");
-      if (!(await carryOk("데이터 바꾸기 확인", "데이터 바꾸기"))) return;
+      if (!(await carryOk("swap", "데이터 바꾸기 확인", "데이터 바꾸기"))) return;
       await PoolPicker.choose(SCREEN);  // 실패 재진술은 피커 모달 안에서(공용 관문 문구)
     });
     $("qdBtnClearData").addEventListener("click", async () => {
       warnNote("");
-      if (!(await carryOk("데이터 해제 확인", "데이터 해제"))) return;
+      if (!(await carryOk("clear", "데이터 해제 확인", "데이터 해제"))) return;
       Bridge.call(SCREEN, "clear_data", {});
     });
     // 행 스테퍼는 매 렌더 새로 그려지므로 슬롯에 위임 배선한다(리스너 누수·유실 방지).
@@ -354,10 +410,10 @@
       const next = e.target.closest && e.target.closest("#qdRowNext");
       if (!prev && !next) return;
       if (!LAST || !LAST.has_data) return;
-      const idx = (LAST.row_idx || 0) + (next ? 1 : -1);
-      if (idx < 0 || idx >= LAST.record_count) return;
-      if (!(await carryOk("행 바꾸기 확인", "행 바꾸기"))) return;
-      Bridge.call(SCREEN, "set_row", { index: idx });
+      if (!(await carryOk("row", "행 바꾸기 확인", "행 바꾸기"))) return;
+      // 다음 행 번호는 **Python 이 지금 계산**한다 — JS 캐시(LAST)로 더하면 연타 시 두 번째
+      // 클릭이 아직 안 도착한 첫 클릭의 결과를 못 보고 같은 행을 다시 보낸다(클릭 삼킴).
+      Bridge.call(SCREEN, "step_row", { delta: next ? 1 : -1 });
     });
     $("qdPasteCancel").addEventListener("click", () => window.Modal.close("qdPasteModal"));
     $("qdPasteOk").addEventListener("click", () => {

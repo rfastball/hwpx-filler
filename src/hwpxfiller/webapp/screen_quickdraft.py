@@ -7,7 +7,7 @@ QuickDraftViewModel` 을 소유·위임하는 얇은 어댑터다 — 다른 실
 **빠른 기안 = 아무것도 저장하지 않는 작업**(결정 29): 템플릿(라이브러리 사본/붙여넣기)과
 선택적 데이터를 세션 안에서만 결합해 복사한다. 세션 전체가 휘발이라(결정 32의 휘발도 사다리)
 레일 이탈·복귀는 생존하지만 앱 종료·「새 기안」은 소멸한다. 남기려면 승격 동사(작업/템플릿
-저장)로만 동결하는데, 그 승격은 **후속 슬라이스**다(이번엔 표면·복사·휘발도 가드까지).
+저장)로만 동결하는데, 그 승격은 **후속 PR**이다.
 
 **슬라이스 착지 순서**(confirm-or-alarm — 없는 기능을 있는 척하지 않는다):
 - **PR-1(이 커밋)**: 컨트롤러 골격 + 레일/화면 신설 + 빈 세션 스냅샷. 눈에 보이는 결과는
@@ -81,6 +81,21 @@ def _names(names: "list[str]") -> str:
     return f"{', '.join(names[:_NAMES_SHOWN])} 외 {len(names) - _NAMES_SHOWN}개"
 
 
+def _frozen_notice(vm: QuickDraftViewModel) -> str:
+    """데이터 교체로 열이 사라져 평문 동결된 자리의 경보 문안(없으면 빈 문자열).
+
+    사후 사실이라 확인을 받을 수 없다 — 대신 시끄럽게 알린다(confirm-or-alarm 의 알람 갈래).
+    다시 결속된 자리는 목록에서 빠져 경보가 스스로 낫는다(낡은 경보는 그 자체로 거짓).
+    """
+    live = [n for n in vm.frozen_cols if (t := vm.token(n)) is not None and not t.col]
+    if not live:
+        return ""
+    return (
+        f"바뀐 데이터에 없는 열이라 {len(live)}개 자리({_names(live)})의 값이 "
+        "이전 값 그대로 굳었습니다. 데이터에서 오는 값이 아니니 확인하세요."
+    )
+
+
 class QuickDraftController:
     """빠른 기안 화면 — :class:`QuickDraftViewModel` 소유·위임(링1 로직 재구현 금지)."""
 
@@ -113,7 +128,8 @@ class QuickDraftController:
         미리보기는 링1 :func:`~hwpxfiller.core.text_render.render_segments`(채움 표지 삼분,
         결정 22·33)를 소비한다: 웹은 토큰 정규식을 재구현하지 않는다(파생경계 번역오류 상류
         차단). 토큰 상태 배지도 같은 값 레코드에서 파생해 카드와 한 출처가 되게 한다.
-        데이터 존(PR-3)·복사/가드(PR-4)는 아직 없다.
+        데이터 절반(겨눔 라벨·행 스테퍼·열 목록·표시형 표)은 경량 슬롯이 소비한다 —
+        필터·다중 선택 존은 N 행 표면의 문법이라 여기 없다. 복사·승격은 PR-4 다.
         """
         vm = self.vm
         record = vm.values_record()
@@ -139,8 +155,7 @@ class QuickDraftController:
             "template_name": vm.template_name,
             "template_text": vm.template_text,
             "modified": vm.modified,
-            # 파이프라인 토큰 폼(결정 34) — 이름·상태(칩)·현재 값. 소스/표시형 드롭다운은 데이터
-            # 결속과 함께 PR-3 에서 붙는다(PR-2 는 무결속 수기 값만).
+            # 파이프라인 토큰 폼(결정 34) — 이름·상태(칩)·현재 값·소스(결속 열)·표시형·제안.
             "tokens": tokens,
             # 미리보기 세그먼트(채움 표지 삼분) — literal/fill/blank/missing. 무결속 빈 토큰은
             # missing 으로 {{토큰}} 원문이 빨강으로 남는다(방향 A 미채움 = 아직 안 채운 자리).
@@ -163,6 +178,9 @@ class QuickDraftController:
             "row_idx": vm.row_idx,
             "row_label": vm.row_label(),
             "fmt_options": _FMT_OPTIONS,
+            # 교체로 열이 없어져 평문 동결된 자리의 경보(확인이 불가능한 사후 사실이라 알람
+            # 쪽). 이미 다시 결속했거나 사람이 손댄 자리는 빼서 낡은 경보가 남지 않게 한다.
+            "frozen_notice": _frozen_notice(vm),
         }
 
     def initial(self) -> dict:
@@ -240,6 +258,8 @@ class QuickDraftController:
         """활성 등록 데이터 목록 — 공용 피커(pool_picker.js)가 그대로 소비한다."""
         return pool_sources_payload(self.pool_registry)
 
+    _do_pool_sources.is_query = True  # 목록 조회는 무변이 — 피커를 여는 것만으로 재렌더 금지
+
     def _do_load_pool(self, p: dict) -> dict:
         """등록 데이터 겨눔 — 공유 관문에 위임(실패는 raise 대신 오류 dict 재진술)."""
         res = load_pool_into(self.pool_registry, p["name"], self.vm.load_pool_item)
@@ -251,13 +271,35 @@ class QuickDraftController:
         """데이터 해제 — 결속 값은 평문 동결(결정 30). 가드 고지는 웹이 먼저 받는다."""
         self.vm.clear_data()
 
-    def _do_set_row(self, p: dict) -> None:
-        """행 재겨눔 — 결속·무수정 값만 조용히 재생성된다(결정 32의 3분류)."""
-        self.vm.set_row(int(p["index"]))
+    def _do_step_row(self, p: dict) -> None:
+        """행 스테퍼 한 칸 — **다음 번호는 여기서 계산**한다(슬라이스 4 교훈).
 
-    def _do_set_source(self, p: dict) -> None:
-        """토큰 결속·해제(제안 원클릭·드롭다운 공유 액션) — 해제도 값은 평문 동결."""
-        self.vm.bind(p["name"], p.get("col") or None)
+        웹이 캐시한 번호에 더해 보내면 연타 시 두 번째 클릭이 아직 도착 안 한 첫 클릭의
+        결과를 못 보고 같은 행을 다시 보낸다(클릭이 조용히 삼켜진다). 양끝을 넘는 걸음은
+        제자리다 — 버튼이 이미 비활성인 자리라 거절이 아니라 무동작이 정직하다.
+        """
+        self.vm.step_row(int(p["delta"]))
+
+    def _do_set_source(self, p: dict) -> "dict | None":
+        """토큰 결속·해제(제안 원클릭·드롭다운 공유 액션) — 해제도 값은 평문 동결.
+
+        **수기 값 덮어쓰기 확인**: 직접 입력한 값이 있는 자리에 열을 붙이면 그 값은 되돌릴
+        수 없이 사라진다(되돌리기는 자동 값으로만 돌아간다). 그래서 첫 호출은 확인 요구를
+        돌려주고(``{"confirm": 문안}``), 웹이 사람에게 확인받아 ``confirm=True`` 로 다시
+        부른다 — 재진술 확인 후 허용(relink 게이트와 같은 문법).
+        """
+        name, col = p["name"], (p.get("col") or None)
+        if col and not p.get("confirm"):
+            old = self.vm.bind_overwrites(name)
+            if old:
+                return {
+                    "confirm": (
+                        f"{{{{{name}}}}} 에 직접 입력한 값 「{old}」은 「{col}」 열의 값으로 "
+                        "바뀌고 되돌릴 수 없습니다. 계속하시겠습니까?"
+                    )
+                }
+        self.vm.bind(name, col)
+        return None
 
     def _do_set_fmt(self, p: dict) -> None:
         """표현형 정정(2층) — 프리셋 코드만 바꾼다(유형은 열이 정한다)."""
@@ -267,26 +309,43 @@ class QuickDraftController:
         """직접 수정 → 자동 복귀 — 강등을 되돌리는 출구(막다른 강등 금지, 결정 31)."""
         self.vm.revert_token(p["name"])
 
-    def _do_carry_notice(self, p: dict) -> dict:
-        """데이터 교체·해제·행 이동 전 고지 문안 — 지금 Python 이 판정한다(스냅샷 캐시 아님).
+    #: 제스처별 "값이 남는 곳"의 사람 어휘 — 확인 문안이 실제 동작과 어긋나지 않게 한다
+    #: (한 문장을 세 동사에 돌려쓰면 해제 확인이 있지도 않은 「새 데이터」를 말한다).
+    _CARRY_WHERE = {
+        "swap": "새 데이터에서도 그대로 남아 데이터에서 오는 값과 섞입니다",
+        "row": "새 행에서도 그대로 남아 그 행의 값과 섞입니다",
+        "clear": "그대로 남습니다. 나머지 자리는 지금 보이는 값으로 굳습니다",
+    }
 
-        ``armed`` 가 참이면 웹이 확인을 받는다. 결속·무수정 값은 관계에서 재생성되므로
-        고지 대상이 아니고, **직접 수정 값(혼합)**·**무결속 수기 값(유지)**만 말한다.
+    def _do_carry_notice(self, p: dict) -> dict:
+        """데이터 교체·해제·행 이동 전 고지 — 지금 Python 이 판정한다(스냅샷 캐시 아님).
+
+        결정 32의 3분류를 그대로 옮긴다: 결속·무수정 = 조용 재생성(말하지 않는다) ·
+        **직접 수정 = 가드**(``armed`` — 확인) · **무결속 수기 = 유지 + 고지**(``notice`` —
+        막지 않는다). 수기 값 하나 때문에 행을 넘길 때마다 모달이 서면 그건 완화 조항이
+        경계하는 "반복"이라, 고지는 화면 노트로 흐르고 확인은 혼합이 생길 때만 선다.
+
+        ``gesture`` 는 swap|row|clear — 문안이 실제 동사를 말한다.
         """
         carry = self.vm.carry_over()
         edited, manual = carry["edited"], carry["manual"]
-        parts = []
-        if edited:
-            parts.append(f"직접 고친 값 {len(edited)}개({_names(edited)})")
-        if manual:
-            parts.append(f"직접 입력한 값 {len(manual)}개({_names(manual)})")
+        where = self._CARRY_WHERE.get(p.get("gesture", "swap"), self._CARRY_WHERE["swap"])
         message = ""
-        if parts:
+        if edited:
             message = (
-                f"{' 와 '.join(parts)}는 새 데이터에서도 그대로 남습니다. "
-                "데이터에서 오는 값과 섞이니 확인하고 계속하세요."
+                f"직접 고친 값 {len(edited)}개({_names(edited)})는 {where}. "
+                "확인하고 계속하세요."
             )
-        return {"armed": bool(parts), "message": message, "edited": edited, "manual": manual}
+        notice = ""
+        if manual:
+            notice = f"직접 입력한 값 {len(manual)}개({_names(manual)})는 데이터와 무관하게 그대로 남습니다."
+        return {
+            "armed": bool(edited),
+            "message": message,
+            "notice": notice,
+            "edited": edited,
+            "manual": manual,
+        }
 
     _do_carry_notice.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
 

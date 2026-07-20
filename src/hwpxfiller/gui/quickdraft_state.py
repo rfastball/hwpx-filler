@@ -48,6 +48,9 @@ class QuickToken:
     - ``edited``: 결속된 값을 사람이 직접 고쳤는가(표현형 3층의 최하층 — 사람 소유 강등).
     - ``text``: 무결속(수기) 또는 직접 수정 시의 평문 값. 결속·무수정이면 값은 데이터에서
       매번 사영하므로 여기 담지 않는다(값을 캐시하면 행 교체 시 조용한 stale).
+    - ``detached``: 사람이 결속을 **손으로 끊었는가**. 자동 결속·제안은 이 토큰을 건너뛴다 —
+      끊자마자 다음 타이핑(원문 편집 → 토큰 재구성)이 같은 열을 도로 붙이면 사람의 명시
+      제스처가 조용히 뒤집힌다(고효율 리뷰). 데이터를 갈면 다시 후보가 된다.
     """
 
     name: str
@@ -56,6 +59,7 @@ class QuickToken:
     fmt_code: str = ""
     edited: bool = False
     text: str = ""
+    detached: bool = False
 
 
 class QuickDraftViewModel:
@@ -97,6 +101,8 @@ class QuickDraftViewModel:
         # 빠른 기안엔 확정 스키마가 없으니 힌트 없는 스니핑뿐이고, 오판의 안전 방향도
         # 거기서 정해진 대로 text 다(관대 파서 승격 금지).
         self.col_kinds: "dict[str, str]" = {}
+        # 직전 데이터 교체에서 열이 없어져 평문 동결된 토큰 이름 — 표면이 경보로 재진술한다.
+        self.frozen_cols: "list[str]" = []
         # 행 식별 요약 열(#88 결정 37) — 행 스테퍼가 "지금 몇 번째 행인지"를 사람 어휘로
         # 재진술할 때 쓴다. 겨눔 시점에 1회 판정해 들고 있는다(스냅샷마다 재판정 금지).
         self.id_columns: "list[str]" = []
@@ -185,17 +191,40 @@ class QuickDraftViewModel:
         같은 세엄을 타므로(결정 34의 데이터 소스 이원) 한쪽만 리셋을 빠뜨리는 조용한
         드리프트가 구조로 막힌다.
 
-        겨눔 직후 :meth:`autobind` 가 **정확 일치만** 자동 결속한다 — 근사는 자동 금지가
-        규칙이라 제안으로만 뜬다(결정 30).
+        직후 :meth:`autobind` 가 **정확 일치만** 자동 결속한다 — 근사는 자동 금지가 규칙이라
+        제안으로만 뜬다(결정 30).
+
+        **교체 시 죽은 결속 처분(고효율 리뷰 P1)**: 새 데이터에 없어진 열을 가리키던 결속은
+        그대로 두면 값이 조용히 사라지고, 그 자리가 blank(〈빈 값〉 = 데이터의 빈칸)로 렌더돼
+        **거짓을 말한다**(열 자체가 없는데 "빈칸"이라 함). 그래서 교체 순간 그 결속들은 해제와
+        같은 규율로 **평문 동결**하고, 이름을 :attr:`frozen_cols` 에 남겨 표면이 알린다
+        (조용한 소실 금지 — 확인이 불가능한 자리이므로 경보 쪽으로 간다). 살아남은 결속은
+        열 유형을 **다시 스니핑**한다(옛 데이터의 amount 가 새 text 열에 눌어붙지 않게).
         """
+        rows = list(records)
+        columns = list(rows[0].keys()) if rows else []
+        # **동결이 먼저다** — 얼릴 값은 옛 데이터에서 사영해야 한다. 새 레코드를 먼저 깔면
+        # 없어진 열을 새 행에서 읽어 빈 문자열이 굳는다(동결이 곧 소실이 되는 순서 함정).
+        frozen: "list[str]" = []
+        for t in self.tokens:
+            if t.col and t.col not in columns:
+                self._freeze(t)
+                frozen.append(t.name)
         self.datasource = datasource
-        self.records = list(records)
-        self.columns = list(self.records[0].keys()) if self.records else []
+        self.records = rows
+        self.columns = columns
         self.col_kinds = sniff_column_kinds(self.records)
         self.id_columns = identity_summary(self.records, self.columns).columns
         self.data_label = label
         self.data_kind = kind
         self.row_idx = 0
+        self.frozen_cols = frozen
+        for t in self.tokens:
+            # 「이 열은 쓰지 않겠다」는 사람의 결정은 옛 데이터에 대한 것이므로 새 데이터에선
+            # 다시 자동 결속 후보가 된다(관계가 새로 생겼다).
+            t.detached = False
+            if t.col:  # 살아남은 결속 — 열 유형은 새 데이터로 다시 스니핑(옛 유형 눌어붙기 차단)
+                t.fmt_kind = self.col_kinds.get(t.col, "text")
         self.autobind()
 
     def clear_data(self) -> None:
@@ -217,6 +246,7 @@ class QuickDraftViewModel:
         self.data_label = ""
         self.data_kind = ""
         self.row_idx = 0
+        self.frozen_cols = []  # 교체 경보는 그 교체에 한한다(해제하면 재진술할 대상도 없다)
 
     def _freeze(self, t: QuickToken) -> None:
         """결속 해제 1건 — 현재 값을 평문 수기 값으로 동결하고 표현형 상태를 되돌린다."""
@@ -246,6 +276,16 @@ class QuickDraftViewModel:
             raise ValueError(f"행 번호가 범위를 벗어났습니다: {index + 1}")
         self.row_idx = index
 
+    def step_row(self, delta: int) -> None:
+        """행 한 칸 이동 — 양끝에서는 제자리(표면의 스테퍼 버튼이 이미 비활성인 자리).
+
+        ``delta`` 를 서버가 현재 행에 더한다: 표면이 계산해 보내면 연타가 옛 번호 위에
+        쌓여 클릭이 삼켜진다(판정은 Python 이 지금).
+        """
+        if not self.records:
+            raise ValueError("선택한 데이터가 없습니다 — 행을 옮길 수 없습니다.")
+        self.set_row(max(0, min(len(self.records) - 1, self.row_idx + delta)))
+
     def current_record(self) -> "dict":
         return self.records[self.row_idx] if self.records else {}
 
@@ -264,16 +304,28 @@ class QuickDraftViewModel:
         일치는 여기서 붙지 않고 :meth:`suggest_for` 의 제안으로 넘어간다.
         """
         for t in self.tokens:
-            if t.col or t.text.strip() != "":
+            if t.col or t.detached or t.text.strip() != "":
                 continue
             if t.name in self.columns:
                 self.bind(t.name, t.name)
+
+    def token(self, name: str) -> "QuickToken | None":
+        """이름으로 토큰 1개 — 표면·컨트롤러가 상태를 묻는 단일 접근자."""
+        for t in self.tokens:
+            if t.name == name:
+                return t
+        return None
 
     def bind(self, name: str, col: "str | None") -> None:
         """토큰 결속·해제 — 결속 시 표현형 1층(열 유형 자동 추측)을 함께 깐다.
 
         ``col=None``(또는 빈 문자열)이면 해제이며, 데이터 해제와 같은 **평문 동결**이다
-        (한 토큰만 손으로 떼어내도 값이 증발하지 않는다).
+        (한 토큰만 손으로 떼어내도 값이 증발하지 않는다). 손으로 끊은 사실은 ``detached``
+        로 남아 자동 결속·제안이 되붙이지 않는다.
+
+        결속은 그 자리에 있던 **수기 값을 덮는다** — 되돌릴 수 없는 덮어쓰기라 표면이 먼저
+        확인을 받는다(:meth:`bind_overwrites`). 여기서 조용히 막으면 사람이 고른 열이 안
+        붙는 반대쪽 침묵이 되므로, 판정만 내주고 실행은 확인 뒤에 온다.
         """
         for t in self.tokens:
             if t.name != name:
@@ -281,15 +333,22 @@ class QuickDraftViewModel:
             if not col:
                 if t.col:
                     self._freeze(t)
+                t.detached = True
                 return
             if col not in self.columns:
                 raise ValueError(f"데이터에 없는 열입니다: {col}")
             t.col = col
+            t.detached = False
             t.edited = False
             t.text = ""
             t.fmt_kind = self.col_kinds.get(col, "text")
             t.fmt_code = ""
             return
+
+    def bind_overwrites(self, name: str) -> str:
+        """결속이 덮어쓸 수기 값(없으면 빈 문자열) — 확인 문안이 **실제 사라질 값**을 인용한다."""
+        t = self.token(name)
+        return t.text if (t is not None and not t.col and t.text.strip() != "") else ""
 
     def set_fmt(self, name: str, code: str) -> None:
         """표현형 2층 — 드롭다운 정정(결정 31). 유형은 열이 정하고 코드만 사람이 고른다.
@@ -318,8 +377,8 @@ class QuickDraftViewModel:
         기본으로 하고, 자모 부분일치(블록 4 유틸 공유 — 「사업명」 ⊂ 「사업명(발주)」)를
         근사 하한으로 인정한다. 한 글자 토큰은 자모 신호를 쓰지 않는다(소음).
         """
-        if t.col or not self.columns:
-            return None
+        if t.col or t.detached or not self.columns:
+            return None  # 손으로 끊은 자리에 같은 열을 다시 권하지 않는다(제안의 반복 = 소음)
         best, score = None, 0.0
         for col in self.columns:
             s = similarity(t.name, col)
@@ -386,9 +445,12 @@ class QuickDraftViewModel:
         """
         rec: "dict[str, str]" = {}
         for t in self.tokens:
-            if t.col:  # 결속(PR-3) — 빈 값도 실어 blank 로 가른다
+            if t.col and not t.edited:  # 결속·무수정 — 빈 값도 실어 blank(데이터의 빈칸)로
                 rec[t.name] = self.token_value(t)
-            else:  # 무결속 수기 — 빈 값이면 빼서 missing({{토큰}})으로
+            else:
+                # 무결속 수기 + **사람이 비운 결속 값**: 빈 값이면 빼서 missing({{토큰}})으로.
+                # 사람이 지운 자리를 blank(「데이터가 비어 있다」)로 그리면 표지가 빈칸의
+                # 임자를 거짓으로 말한다(표지 삼분은 누가 비웠는지를 색으로 가른다).
                 v = t.text
                 if v.strip() != "":
                     rec[t.name] = v

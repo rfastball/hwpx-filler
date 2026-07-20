@@ -925,6 +925,14 @@ _QUICKDRAFT_PROBE_JS = r"""
     // 껍데기 격리 — 빠른 기안 폼(qd-trow)이 작업 화면 데이터 존 DOM 으로 새지 않는다(id 분리).
     // jobTableBody 는 앞선 job 프로브가 채우므로 '빈가'가 아니라 '누출 없음'으로 판정한다.
     out.job_body_untouched = !document.querySelector('#jobTableBody .qd-trow');
+    // 양성/음성 대조(계측 리트머스) — 클래스 토큰이 아니라 **실제 표시 여부**를 잰다.
+    // 데이터가 없는 지금은 「데이터 해제」·경보 상자가 화면에서 사라져 있어야 한다.
+    var vis = function (id) {
+      var el = document.getElementById(id);
+      return !!(el && el.offsetParent !== null);
+    };
+    out.clear_visible_before = vis('qdBtnClearData');
+    out.note_visible_before = vis('qdNote');
 
     // ---- PR-3: 데이터 선택 스냅샷 — 경량 슬롯(라벨·행 스테퍼)·파이프라인 2열·근사 제안이
     // 실 WebView2 에서 그려지는지 되읽는다(결정 30·31·34).
@@ -951,7 +959,9 @@ _QUICKDRAFT_PROBE_JS = r"""
     // 행 스테퍼 — 양끝이 아니면 두 버튼 다 살아 있다(경계에서만 disabled).
     var prev = document.getElementById('qdRowPrev'), next = document.getElementById('qdRowNext');
     out.stepper = !!prev && !!next && !prev.disabled && !next.disabled;
-    out.clear_visible = !document.getElementById('qdBtnClearData').classList.contains('hidden');
+    out.clear_visible = vis('qdBtnClearData');
+    // 교체로 굳은 자리 경보가 실제로 보이는지(문구는 Python 이 합성) — 지금 스냅샷엔 없다.
+    out.note_visible = vis('qdNote');
     // 파이프라인 2열 — 결속 토큰은 소스 select 가 그 열을 고른 채 뜨고 표시형이 함께 산다.
     var src0 = document.getElementById('qdSrc-0');
     out.src0 = src0 ? src0.value : null;
@@ -962,6 +972,12 @@ _QUICKDRAFT_PROBE_JS = r"""
     out.fmt1 = !!document.getElementById('qdFmt-1');
     out.suggest1 = !!document.getElementById('qdTake-1');
     out.suggest_text = (document.querySelector('#qdBody .qd-suggest') || {}).textContent || '';
+    // 경보 되읽기 — frozen_notice 가 실리면 상자가 뜨고 문구가 그대로 선다(알람 갈래).
+    var alarmed = JSON.parse(JSON.stringify(aimed));
+    alarmed.frozen_notice = '바뀐 데이터에 없는 열이라 1개 자리(추정가격)의 값이 이전 값 그대로 굳었습니다.';
+    window.__push('quickdraft', alarmed);
+    out.note_visible_after = vis('qdNote');
+    out.note_text = document.getElementById('qdNote').textContent;
     out.error = null;
   } catch (e) { out.error = String((e && e.message) || e); }
   return out;

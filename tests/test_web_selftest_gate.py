@@ -454,7 +454,14 @@ class TestWebSelftestGate:
         assert "파일: 낙찰현황.csv" in q["data_label_text"], f"겨눔 라벨 미렌더: {q['data_label_text']!r}"
         assert "3 / 12행" in q["data_label_text"], f"행 스테퍼 위치 재진술이 다릅니다: {q['data_label_text']!r}"
         assert q["stepper"] is True, "행 스테퍼 두 버튼이 살아 있지 않습니다(중간 행인데 비활성)."
-        assert q["clear_visible"] is True, "겨눔 중인데 「데이터 해제」가 숨어 있습니다."
+        # 표시 여부는 클래스 토큰이 아니라 **실제 렌더**로 잰다(계측 리트머스: 음성 대조 선행).
+        # 데이터가 없을 때 숨어 있음을 먼저 확인해야 "보인다"는 판정에 판별력이 생긴다.
+        assert q["clear_visible_before"] is False, (
+            "데이터가 없는데 「데이터 해제」가 화면에 서 있습니다 — dead 버튼(.hidden 클래스는 이 앱에 없다)."
+        )
+        assert q["note_visible_before"] is False, "경보 문구가 없는데 경고 상자가 떠 있습니다(빈 warnbox)."
+        assert q["clear_visible"] is True, "데이터를 골랐는데 「데이터 해제」가 숨어 있습니다."
+        assert q["note_visible"] is False, "경보가 없는 스냅샷인데 경고 상자가 떴습니다."
         # 결속 토큰 = 소스 select 가 그 열을 고른 채 뜨고 표시형이 함께 산다.
         assert q["src0"] == "사업명", f"결속 열이 소스 드롭다운에 반영되지 않았습니다: {q['src0']!r}"
         assert q["fmt0"] is True, "결속 토큰에 표시형 드롭다운이 없습니다(표현형 2층 소실)."
@@ -464,6 +471,9 @@ class TestWebSelftestGate:
         assert q["suggest1"] is True, "근사 제안 원클릭 버튼이 없습니다(결정 30 — 자동 금지·제안 필수)."
         assert "추정가격(원)" in q["suggest_text"], f"제안 문안에 열 이름이 없습니다: {q['suggest_text']!r}"
         assert "—" not in q["suggest_text"], f"제안 문안에 em-dash 가 있습니다(R-copy 가드): {q['suggest_text']!r}"
+        # 알람 갈래 — 교체로 굳은 자리는 확인이 불가능한 사후 사실이라 경보로만 말한다.
+        assert q["note_visible_after"] is True, "frozen_notice 를 실었는데 경보 상자가 뜨지 않았습니다."
+        assert "굳었습니다" in q["note_text"], f"경보 문구가 그대로 서지 않았습니다: {q['note_text']!r}"
 
     def test_job_drift_replaces_mirror_with_blocking_banner(self, selftest_result: dict) -> None:
         # danger(구조 드리프트)는 거울 표와 섞이지 않고 차단 배너 + 행동 링크로 **교체**된다
