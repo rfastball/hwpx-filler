@@ -38,7 +38,6 @@ from ..gui.txt_queue import TxtQueueModel
 from ..gui.txt_state import TxtDraftViewModel
 from .data_zone import DataZoneMixin
 from .settings import (
-    VALID_DRAFT_FONTS,
     is_proportional_font,
     load_draft_target_font,
     save_draft_target_font,
@@ -517,12 +516,15 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
             "index_map": index_map,
             # 선언-조건부 정렬 린트(결정 17) — 표면은 **판정하지 않는다**(글꼴 이름으로
             # 비례폭을 재판별하거나 정규식을 다시 걷지 않는다, 파생경계 번역오류 차단).
-            # active = 경보/확인 줄을 세울지: 비례폭 선언 ∧ (원문에 런이 있거나 이미 치환함).
+            # active = 경보/확인 줄을 세울지. **치환이 걸려 있으면 선언 글꼴과 무관하게 선다**
+            # (리뷰 F1): 고정폭으로 되돌린 뒤 줄이 사라지면 전각이 계속 클립보드로 나가는데
+            # 사용자는 통보도 되돌릴 손잡이도 잃는다 — 조용한 변환 금지. 경보(치환 전)만
+            # 선언-조건부다(고정폭에서 연속 공백은 정당한 저작이라 경보하면 소음).
             "lint": {
                 "proportional": proportional,
                 "space_run": space_run,
                 "applied": self._fullwidth,
-                "active": proportional and (space_run or self._fullwidth),
+                "active": self._fullwidth or (proportional and space_run),
             },
             # 직전 복사 확정(결정 16 복사=완료) — **스냅샷 구동**이라 announce 순서 경합이 없다:
             # 노트가 카드와 같은 push 로 오고(어긋남 불가), 복사한 행을 명시(전진 시 카드는 다음
@@ -584,6 +586,7 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
 
     def _do_select_template(self, p: dict) -> None:
         self.vm.select_template(p["name"])
+        self._fullwidth = False  # 치환은 그 원문에 대한 판단 — 원문이 바뀌면 함께 죽는다(리뷰 F2)
 
     def _do_new_draft(self, p: dict) -> None:
         """홈 「＋ 새 기안」 — 세션 원자 초기화(F11, F10 「새 작업」과 대칭 문법).
@@ -596,6 +599,7 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
 
     def _do_set_template_text(self, p: dict) -> None:
         self.vm.set_template_text(p["text"])
+        self._fullwidth = False  # 붙여넣은 새 원문에 옛 치환 결정이 승계되지 않는다(리뷰 F2)
 
     def _do_step(self, p: dict) -> None:
         """작업점을 큐 표시 순서로 이동(↓/↑, 경계 멈춤) — 자유 레코드 커서가 아니라 큐 판(결정 16)."""
@@ -618,12 +622,12 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
     def _do_set_target_font(self, p: dict) -> None:
         """대상 글꼴 선언(결정 17) — 열거형 밖 값은 조용히 무시하지 않고 시끄럽게 거부한다.
 
-        저장이 먼저다: 영속에 실패하면 화면 값만 바뀌어 "다음 부팅에 조용히 되돌아가는"
-        어긋남이 생긴다(save 가 던지면 상태 불변 + 브리지 경보).
+        검증은 :func:`~hwpxfiller.webapp.settings.save_draft_target_font` 단일 출처가 진다
+        (리뷰 F4: 여기 사본을 두면 열거형·문안이 갈라진다). **저장이 먼저**인 이유는 영속에
+        실패했는데 화면 값만 바뀌면 "다음 부팅에 조용히 되돌아가는" 어긋남이 생기기 때문이다 —
+        던지면 상태 불변 + 브리지 경보.
         """
         font = p["font"]
-        if font not in VALID_DRAFT_FONTS:
-            raise ValueError(f"유효하지 않은 대상 글꼴: {font!r} (허용: {VALID_DRAFT_FONTS})")
         save_draft_target_font(font)
         self._target_font = font
 

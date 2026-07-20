@@ -151,9 +151,9 @@ def test_align_segments_keeps_join_invariant_and_kinds():
     assert [s.name for s in aligned] == [s.name for s in segments]
     assert segments_have_space_run(aligned) is False
     joined = "".join(s.text for s in aligned)
-    assert FULLWIDTH_SPACE in joined and "  " not in joined
-    # 값 안의 런도 함께 치환된다(데이터에서 온 정렬도 목적지에선 같은 취약점).
-    assert "전산장비" + FULLWIDTH_SPACE + "구매" in joined
+    assert FULLWIDTH_SPACE in joined
+    # 값(fill)은 원본 그대로 — 복사되는 데이터는 글자 단위로 원본과 같아야 한다(리뷰 F3).
+    assert "전산장비  구매" in joined
 
 
 def test_align_segments_leaves_empty_segments_untouched():
@@ -161,3 +161,14 @@ def test_align_segments_leaves_empty_segments_untouched():
     segments, _ = render_segments("{{a}}  끝", {"a": ""})
     aligned = align_segments(segments)
     assert aligned[0].text == "" and aligned[0].kind == SEG_BLANK
+
+
+def test_lint_ignores_data_values():
+    """값 안의 연속 공백은 경보도 치환도 하지 않는다 — 데이터 충실성(리뷰 F3).
+
+    ``12  345`` 같은 규격·코드 표기는 사용자가 저작한 정렬이 아니라 데이터의 사실이다.
+    """
+    segments, _ = render_segments("규격: {{규격}}", {"규격": "12  345"})
+    assert segments_have_space_run(segments) is False  # 템플릿엔 런이 없다
+    aligned = align_segments(segments)
+    assert "".join(s.text for s in aligned) == "규격: 12  345"  # 값 원본 그대로

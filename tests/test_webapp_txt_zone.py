@@ -496,3 +496,52 @@ def test_guard_state_is_pushless_query(tmp_path):
     ctrl.dispatch("guard_state", {})
     assert len(pushes) == before
     assert pushes[-1][1]["card"]["last_copy"] is not None
+
+
+def test_lint_row_survives_switch_to_fixed_width(tmp_path, monkeypatch):
+    """치환이 걸린 채 고정폭으로 되돌려도 린트 줄은 선다(리뷰 F1) — 조용한 변환 금지.
+
+    줄이 사라지면 전각 공백이 계속 클립보드로 나가는데 사용자는 통보도, 되돌릴 손잡이도
+    잃는다(confirm-or-alarm 위반). 경보(치환 전)만 선언-조건부다.
+    """
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    ctrl, _ = _aligned_controller(tmp_path, "건    명: {{공고명}}")
+    ctrl.dispatch("select_template", {"name": "정렬기안"})
+    ctrl.dispatch("set_target_font", {"font": "malgun"})
+    ctrl.dispatch("set_fullwidth", {"value": True})
+    ctrl.dispatch("set_target_font", {"font": "gulimche"})
+    lint = ctrl.snapshot()["card"]["lint"]
+    assert lint["applied"] is True and lint["proportional"] is False
+    assert lint["active"] is True, "치환이 걸렸는데 되돌릴 줄이 사라졌습니다(리뷰 F1)."
+    assert FULLWIDTH_SPACE in ctrl.render()[0]  # 변환은 유지 — 몰래 되돌리지도 않는다
+
+
+def test_fullwidth_dies_on_template_change(tmp_path, monkeypatch):
+    """치환 결정은 그 원문 것 — 템플릿 교체·붙여넣기에 승계되지 않는다(리뷰 F2).
+
+    승계되면 새 템플릿의 의도된 정렬이 동의 없이 변환되고, 런이 없는 템플릿에선 린트가
+    「치환했습니다」를 거짓 주장한다.
+    """
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    (tmp_path / "둘째기안.txt").write_text("항  목: {{공고명}}", encoding="utf-8")
+    ctrl, _ = _aligned_controller(tmp_path, "건    명: {{공고명}}")
+    ctrl.dispatch("select_template", {"name": "정렬기안"})
+    ctrl.dispatch("set_target_font", {"font": "malgun"})
+    ctrl.dispatch("set_fullwidth", {"value": True})
+    ctrl.dispatch("select_template", {"name": "둘째기안"})
+    assert ctrl.snapshot()["card"]["lint"]["applied"] is False
+    ctrl.dispatch("set_fullwidth", {"value": True})
+    ctrl.dispatch("set_template_text", {"text": "붙여넣은  원문"})
+    assert ctrl.snapshot()["card"]["lint"]["applied"] is False
+
+
+def test_lint_ignores_runs_inside_data_values(tmp_path, monkeypatch):
+    """값 안의 연속 공백은 경보 대상이 아니다(리뷰 F3) — 복사 데이터는 원본과 글자 단위 동일."""
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path / "home"))
+    csv = tmp_path / "spec.csv"
+    csv.write_text("공고명,추정가격\n규격 12  345,1000\n", encoding="utf-8")
+    ctrl, _ = _controller(tmp_path)  # 템플릿(샘플기안)엔 정렬 런이 없다
+    ctrl.load_data_path(str(csv))
+    ctrl.dispatch("set_target_font", {"font": "malgun"})
+    assert ctrl.snapshot()["card"]["lint"]["space_run"] is False
+    assert "규격 12  345" in ctrl.render()[0]

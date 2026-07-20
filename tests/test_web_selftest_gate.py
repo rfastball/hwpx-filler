@@ -403,7 +403,8 @@ class TestWebSelftestGate:
         # 복사 진행이 첫 자리인 이유: 큐 진행은 앱 밖 기억(어디까지 붙여넣었나)이라 복구 불가.
         body = selftest_result["txt_zone"]["guard_body"]
         assert "복사 진행 2/5행" in body, f"큐 진행 재진술 누락: {body!r}"
-        assert "행 선택 5행" in body and "정의 매치 3" in body and "정의 밖 2" in body, (
+        # 선택 재진술은 「작업」 가드와 **같은 조각**(guard.js 공유 합성기, 리뷰 F6).
+        assert "직접 선택 5행" in body and "정의 매치 3" in body and "정의 밖 2" in body, (
             f"선택 재진술이 종류별로 서지 않았습니다: {body!r}"
         )
         assert "필터 정의 2개 조건" in body, f"필터 정의 재진술 누락: {body!r}"

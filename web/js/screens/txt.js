@@ -124,9 +124,9 @@
     const font = s.target_font || "gulimche";
     const fontSel = $("txtTargetFont");
     if (fontSel.value !== font) fontSel.value = font;
-    const pre = $("txtCardRender");
-    pre.classList.remove("f-gulimche", "f-dotumche", "f-malgun");
-    pre.classList.add("f-" + font);
+    // 클래스 **전체 대입**(리뷰 F5): 벗겨낼 글꼴 목록을 여기 다시 적으면 열거형의 네 번째
+    // 사본이 되고, 글꼴을 추가하면서 이 목록을 놓치면 낡은 f-* 가 남아 stale 글꼴로 렌더된다.
+    $("txtCardRender").className = "wc-render f-" + font;
     renderLint(c.lint || {});
     $("txtCardTitle").textContent = !c.has_current
       ? "이대로 복사됩니다 (미리보기 — 데이터 미선택)"
@@ -255,10 +255,10 @@
   function guardBody(g) {
     const lost = [];
     if (g.queue_partial) lost.push(`복사 진행 ${g.copied_count}/${g.sel_count}행(처리 표지)`);
+    // 선택 재진술 조각은 「작업」 가드와 **공유**(guard.js, 리뷰 F6) — 같은 가드 상태를 두
+    // 화면이 다른 문장으로 말하지 않게. 종류별 열거(무엇이 사라지는가)만 이 화면 몫.
     if (g.sel_count) {
-      lost.push(g.filter_active
-        ? `행 선택 ${g.sel_count}행(정의 매치 ${g.in_def} · 정의 밖 ${g.extra})`
-        : `행 선택 ${g.sel_count}행`);
+      lost.push(window.Guard.selectionLine(g.sel_count, g.filter_active, g.in_def, g.extra));
     }
     if (g.filter_parts > 0) lost.push(`필터 정의 ${g.filter_parts}개 조건`);
     return `다른 데이터를 겨누면 이 큐는 새로 만들어집니다.\n` +

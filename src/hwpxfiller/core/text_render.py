@@ -142,20 +142,30 @@ def align_fullwidth(text: str) -> str:
 
 
 def segments_have_space_run(segments: "list[RenderSegment]") -> bool:
-    """세그먼트 어디든 연속 공백 정렬이 있는가 — 카드 린트 술어(세그먼트 단위, 아래 주석)."""
-    return any(has_space_run(s.text) for s in segments)
+    """**템플릿 원문 조각**에 연속 공백 정렬이 있는가 — 카드 린트 술어.
+
+    literal 만 본다: 정렬 런은 사용자가 템플릿에 저작한 것이고, 값(fill) 안의 연속 공백은
+    데이터의 사실이다(규격·코드 표기 등). 값까지 술어에 넣으면 저작하지도 않은 정렬을
+    고치라고 경보하게 된다.
+    """
+    return any(s.kind == SEG_LITERAL and has_space_run(s.text) for s in segments)
 
 
 def align_segments(segments: "list[RenderSegment]") -> "list[RenderSegment]":
-    """세그먼트별 전각 치환 — 표지 삼분과 클립보드 평문의 **일치 불변식을 유지**한다.
+    """**템플릿 원문 조각만** 전각 치환 — 데이터 값은 원본 그대로 복사된다.
 
-    조각을 이어붙인 뒤가 아니라 **조각마다** 치환하는 이유: 카드 렌더(세그먼트)와 클립보드
-    (:func:`render_record` 자리의 이어붙임)가 같은 함수를 통과해야 "보이는 것이 복사되는 것"이
-    성립한다. 대가로 세그먼트 경계를 걸친 공백(리터럴 끝 1칸 + 값 앞 1칸)은 잡지 않는다 —
-    각 조각 1칸씩이라 사용자가 저작한 정렬 런이 아니므로 수용한다.
+    값(fill)을 건드리지 않는 이유: 복사되는 데이터가 원본과 글자 단위로 같아야 한다는 것이
+    이 도구의 텔로스다. 정렬은 사용자가 템플릿에 저작한 배치이므로 처방의 대상이지만, 값
+    안의 ``12  345`` 는 데이터의 사실이라 앱이 고쳐 쓸 자격이 없다.
+
+    조각을 이어붙인 뒤가 아니라 **조각마다** 치환하므로 카드 렌더(세그먼트)와 클립보드
+    (세그먼트 이어붙임)가 같은 함수를 통과한다 — "보이는 것이 복사되는 것". 대가로 세그먼트
+    경계를 걸친 공백(리터럴 끝 1칸 + 값 앞 1칸)은 잡지 않는다: 각 조각 1칸씩이라 저작된
+    정렬 런이 아니므로 수용한다.
     """
     return [
-        RenderSegment(align_fullwidth(s.text), s.kind, s.name) if s.text else s
+        RenderSegment(align_fullwidth(s.text), s.kind, s.name)
+        if (s.kind == SEG_LITERAL and s.text) else s
         for s in segments
     ]
 
