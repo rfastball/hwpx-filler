@@ -8,6 +8,7 @@
   // 상태 색인 점 상태어(한글) — aria-label/title 이 영문 토큰(current/copied/uncopied)을 누출하지 않게.
   const DOT_STATE_LABEL = { current: "작업점", copied: "복사됨", uncopied: "대기" };
   let LAST = null;
+  let lastDotsSig = null;  // 상태 색인 점 재구축 스킵 서명(리뷰 F7) — 점 지형 불변 push 에 reflow 회피
 
   const esc = window.escHtml;  // 공유 이스케이퍼(esc.js) — " 도 escape 해 속성 컨텍스트 안전
 
@@ -104,12 +105,19 @@
     }
     // 상태 색인 점 — 큐 표시 순서(단조). 클릭 = 작업점 지정. 빈칸 카드엔 빨강 표지(빈칸 지도).
     // 상태어는 한글로 번역해 aria-label 에 싣는다(리뷰: 영문 토큰 current/copied 누출 차단).
-    $("txtCardDots").innerHTML = (c.index_map || []).map((d) => {
-      const label = DOT_STATE_LABEL[d.state] || d.state;
-      return `<button class="wc-dot ${d.state}${d.has_gap ? " gap" : ""}" role="listitem"` +
-        ` data-i="${d.index}" aria-label="${d.index + 1}행 ${label}${d.has_gap ? " 빈칸있음" : ""}"` +
-        ` title="${d.index + 1}행 · ${label}${d.has_gap ? " · 빈칸 있음" : ""}"></button>`;
-    }).join("");
+    // **변할 때만 재구축**(리뷰 F7): 필터 타건 등 점 지형 불변인 push 에서 O(n) DOM write+
+    // reflow 를 피한다(서명 비교). 수백 건 큐의 점 색인 압축 문법은 후속(결정 21 유보).
+    const order = c.index_map || [];
+    const dotsSig = order.map((d) => `${d.index}${d.state[0]}${d.has_gap ? "g" : ""}`).join(",");
+    if (dotsSig !== lastDotsSig) {
+      lastDotsSig = dotsSig;
+      $("txtCardDots").innerHTML = order.map((d) => {
+        const label = DOT_STATE_LABEL[d.state] || d.state;
+        return `<button class="wc-dot ${d.state}${d.has_gap ? " gap" : ""}" role="listitem"` +
+          ` data-i="${d.index}" aria-label="${d.index + 1}행 ${label}${d.has_gap ? " 빈칸있음" : ""}"` +
+          ` title="${d.index + 1}행 · ${label}${d.has_gap ? " · 빈칸 있음" : ""}"></button>`;
+      }).join("");
+    }
     // 카드 정체 + 렌더.
     $("txtCardTitle").textContent = !c.has_current
       ? "이대로 복사됩니다 (미리보기 — 데이터 미선택)"
@@ -118,9 +126,11 @@
     // 동사 게이트 — 작업점 없으면 복사·미루기 불가, 복사분은 못 미룬다(모델 계약의 표면 반영).
     $("txtCardCopy").disabled = !c.has_current;
     $("txtCardDefer").disabled = !c.has_current || c.is_copied;
-    const single = (c.index_map || []).length <= 1;
-    $("txtCardPrev").disabled = single;
-    $("txtCardNext").disabled = single;
+    // 이전/다음 = **경계 비활성**(리뷰 F2): queue.step 은 순환 없이 클램프라, 첫/끝 카드에서
+    // 버튼을 살려 두면 클릭이 조용한 no-op 가 된다(고장난 듯). 작업점 위치로 양끝을 잠근다.
+    const ci = c.has_current ? order.findIndex((d) => d.index === c.index) : -1;
+    $("txtCardPrev").disabled = ci <= 0;
+    $("txtCardNext").disabled = ci < 0 || ci >= order.length - 1;
     $("txtAdvance").checked = !!c.advance_after;
   }
 
@@ -154,8 +164,9 @@
         $("txtZoneNote").style.display = "none";
         $("txtZoneNote").textContent = "";
       }
-      setStatus(s.missing_fields, s.empty_fields);
-      renderNote(s.card || {});  // 완료 노트 = 스냅샷 구동(card.last_copy) — announce 순서 경합 없음
+      const card = s.card || {};
+      setStatus(card.missing_fields || [], card.empty_fields || []);  // card 단일 출처(리뷰 F9)
+      renderNote(card);  // 완료 노트 = 스냅샷 구동(card.last_copy) — announce 순서 경합 없음
     });
   }
 

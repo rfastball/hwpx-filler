@@ -361,6 +361,9 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
         self._advance_after = False
         # 직전 복사 확정(스냅샷 구동 완료 노트) — 복사가 세팅, 어떤 동작이든 무효화(결정 16).
         self._last_copy: "dict | None" = None
+        # 빈칸 지도 캐시(리뷰 F6) — (records 정체, 템플릿) 키. 데이터/템플릿 불변이면 재계산 안 함.
+        self._gap_cache: "dict[int, bool]" = {}
+        self._gap_cache_key: "tuple | None" = None
         self._fresh_session()
 
     def _fresh_session(self) -> None:
@@ -419,34 +422,51 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
 
         # 작업점 카드(결정 16) — 큐가 지나가는 한 장. 렌더는 링1 render_segments(채움 표지
         # 삼분, 결정 22)를 소비한다: 웹은 토큰 정규식을 재구현하지 않는다(파생경계 번역오류
-        # 상류 차단, PR-1 예고). 작업점이 없으면(데이터/선택 없음) 빈 레코드로 템플릿을 미리
-        # 보여준다(전 토큰 미충족) — 복사는 표면이 게이트(has_current).
-        # 필드 상태 = render_segments 와 **같은 술어**(리뷰): `or ""` 는 falsy 비-None(0·False)을
-        # 빈칸으로 오판해 render_segments(None 만 "")와 어긋난다 — 값 0 인 행이 빈칸 지도엔
-        # 빨강인데 카드는 채움으로 렌더되는 모순. 미충족(항목 없음·빈 값) 판정 단일 출처.
-        def _field_state(rec: dict, name: str) -> str:
-            if name not in rec:
-                return "missing"
-            raw = rec[name]
-            value = "" if raw is None else str(raw)
-            return "blank" if value.strip() == "" else "fill"
-
-        def _gap(rec: dict) -> bool:  # 빈칸 지도: 미충족(항목 없음·빈 값) 카드 판정
-            return any(_field_state(rec, name) != "fill" for name in fields)
-
-        card_rec = records[current] if (current is not None and 0 <= current < n) else {}
+        # 상류 차단, PR-1 예고).
+        # 프리뷰 레코드(리뷰 F1): 작업점이 있으면 그 행, 없어도 **데이터가 있으면 행 0 을
+        # 미리 보여준다**(자유 커서 시절 거동 복원). 선택 0(전체 해제)에서 빈 레코드로 그리면
+        # `_field_state` 가 실재하는 열까지 전부 '항목 없음'(missing)으로 칠해 **거짓 경보**를
+        # 낸다(confirm-or-alarm 정면 위반). 복사 게이트는 프리뷰가 아니라 `has_current` 가 진다.
+        preview_idx = current if (current is not None and 0 <= current < n) else (0 if n else None)
+        card_rec = records[preview_idx] if preview_idx is not None else {}
         segments, card_report = render_segments(vm.template_text, card_rec)
+
+        # 빈칸 지도(has_gap)는 레코드 값+템플릿에만 의존(선택·작업점 무관) — 네비게이션·필터
+        # 타건마다 O(행×필드)로 재계산하지 않게 (records 정체, 템플릿) 키로 캐시한다(리뷰 F6:
+        # 매 push 재구축이 PR-2b 가 세운 O(1) 을 무너뜨림). 데이터 교체·템플릿 변경 시 무효화.
+        gap_key = (id(records), vm.template_text)
+        if self._gap_cache_key != gap_key:
+            self._gap_cache = {}
+            self._gap_cache_key = gap_key
+        gap_cache = self._gap_cache
+
+        def _has_gap(i: int) -> bool:  # 미충족(항목 없음·빈 값) 카드 판정, 인덱스별 1회 상각
+            if i not in gap_cache:
+                rec = records[i]
+                gap_cache[i] = any(
+                    name not in rec or ("" if rec[name] is None else str(rec[name])).strip() == ""
+                    for name in fields
+                )
+            return gap_cache[i]
+
         index_map = [
             {
                 "index": i,
                 "state": "current" if i == current else ("copied" if i in copied_set else "uncopied"),
-                "has_gap": _gap(records[i]) if 0 <= i < n else False,
+                "has_gap": _has_gap(i) if 0 <= i < n else False,
             }
             for i in self.queue.display_order()
         ]
-        # 토큰 상태·리포트도 작업점 카드에서 파생(자유 커서 record_index 비의존) — 카드·토큰
-        # 패널·상태 배지가 같은 한 레코드를 말한다(어긋남 구조적 제거).
-        tokens = [{"name": name, "state": _field_state(card_rec, name)} for name in fields]
+        # 토큰 상태 = **링1 render_segments 리포트에서 파생**(리뷰 F4) — 같은 카드를 두 번 걷지
+        # 않는다(_field_state 재유도 폐기). 카드 렌더(음영/〈빈 값〉/빨강)와 토큰 배지가 한 출처.
+        missing_set, empty_set = set(card_report.missing_fields), set(card_report.empty_fields)
+        tokens = [
+            {
+                "name": name,
+                "state": "missing" if name in missing_set else ("blank" if name in empty_set else "fill"),
+            }
+            for name in fields
+        ]
         card = {
             "index": current,
             "has_current": current is not None,
@@ -472,9 +492,9 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
             "template_text": vm.template_text,
             "tokens": tokens,
             "record_count": n,
-            "render_text": "".join(s.text for s in segments),  # 카드 평문(클립보드 동형)
-            "missing_fields": card_report.missing_fields,
-            "empty_fields": card_report.empty_fields,
+            # 미충족 리포트는 **card 단일 출처**(리뷰 F9: 최상위 트윈은 조용한 desync 위험) —
+            # 상태 배지(setStatus)·카드 판독·완료 노트 모두 card.missing_fields/empty_fields 소비.
+            # render_text 이중 방출도 폐기(리뷰 F8): 카드 평문은 card.segments 로 재구성한다.
             "data_label": self.data_label,  # 서버 소유(P4) — 붙여넣기/템플릿 전환에도 실상태 반영
             # 소스 종류 병기 라벨(#26) — 저장 상태가 아니라 플래그에서 매번 합성(K8).
             "data_source_label": source_label(self.data_source, self.data_label),
@@ -588,6 +608,11 @@ class TxtController(DataZoneMixin, PoolTargetingMixin):
         records = self._records()
         rec = records[cur] if (cur is not None and 0 <= cur < len(records)) else {}
         return render_record(self.vm.template_text, rec)
+
+    def can_copy(self) -> bool:
+        """복사 가능 = 작업점 실재(리뷰 F3) — 브리지가 이걸로 게이트해 작업점 없을 때 빈 템플릿
+        (생 ``{{토큰}}``)이 클립보드로 조용히 나가는 것을 막는다(버튼 비활성과의 레이스·직접 호출)."""
+        return self.queue.current is not None
 
     def note_copied(self, report: "RenderReport") -> None:
         """복사 완료 후 큐 갱신 — 작업점을 처리 후미로(멱등), 전진 opt-in, 재봉합·푸시(결정 16).

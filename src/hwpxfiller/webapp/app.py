@@ -223,11 +223,18 @@ class WebFrontend:
         """
         ctrl = self._controller(screen)
         text, report = ctrl.render()
+        # 작업점 없는 화면(txt 큐, 선택 0·레이스) — 빈 템플릿을 클립보드에 쓰지 않는다(리뷰 F3:
+        # 조용한 쓰레기·무피드백 차단). can_copy 부재 화면(다른 소비자)은 종전대로 렌더·복사.
+        can = getattr(ctrl, "can_copy", None)
+        if can is not None and not can():
+            return {"missing_fields": report.missing_fields, "empty_fields": report.empty_fields,
+                    "copied": False}
         set_clipboard_text(text)
         note = getattr(ctrl, "note_copied", None)
         if note is not None:  # txt 큐 카드 — 복사분 후미 이동·전진·재푸시(리포트 재사용, 재렌더 없음)
             note(report)
-        return {"missing_fields": report.missing_fields, "empty_fields": report.empty_fields}
+        return {"missing_fields": report.missing_fields, "empty_fields": report.empty_fields,
+                "copied": True}
 
     def pick_output_folder(self, screen: str) -> "str | None":
         """Win32 폴더 피커(SHBrowseForFolder) → 저장 폴더 지정. 「작업」 세션 패널의 네이티브 표면.
@@ -788,8 +795,7 @@ _TXT_ZONE_PROBE_JS = r"""
     var snap = {
       template_name:'샘플기안', template_text:'제목: {{공고명}}',
       tokens:[{name:'공고명', state:'fill'}],
-      record_count:2, render_text:'제목: 전산장비 구매',
-      missing_fields:[], empty_fields:[],
+      record_count:2,
       data_label:'d.csv', data_source_label:'파일: d.csv', data_key:'file:c:/d/d.csv',
       has_data:true, selected_count:2,
       filter:{active:true, reapply_available:false, search:'전산',

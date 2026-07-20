@@ -107,6 +107,33 @@ def _copy(ctrl):
     ctrl.note_copied(report)
 
 
+def test_preview_record_when_selection_empty(tmp_path):
+    """전체 해제 = 작업점 없음이지만 카드는 행 0 을 미리 보여준다(거짓 '항목 없음' 경보 차단, 리뷰 F1).
+
+    빈 레코드로 그리면 실재하는 열까지 전부 missing 으로 칠해 confirm-or-alarm 을 위반한다 —
+    프리뷰=행 0 실상태로 복원(복사 게이트는 프리뷰가 아니라 has_current 가 진다).
+    """
+    ctrl, pushes = _controller(tmp_path)  # 템플릿: 제목:{{공고명}} 금액:{{추정가격}}
+    ctrl.load_data_path(_csv(tmp_path))   # 3행(공고명·추정가격 다 채움)
+    ctrl.dispatch("set_none", {})
+    snap = pushes[-1][1]
+    card = snap["card"]
+    assert card["has_current"] is False and card["index"] is None  # 작업점 없음(복사 게이트)
+    # 하지만 프리뷰=행 0 실상태라 실재 열이 '항목 없음'으로 거짓 경보되지 않는다.
+    assert {t["name"]: t["state"] for t in snap["tokens"]} == {"공고명": "fill", "추정가격": "fill"}
+    assert card["missing_fields"] == [] and card["empty_fields"] == []
+
+
+def test_can_copy_gates_on_work_point(tmp_path):
+    """복사 가능 = 작업점 실재(리뷰 F3) — 빈 템플릿 클립보드 오염을 브리지가 이 술어로 막는다."""
+    ctrl, _ = _controller(tmp_path)
+    assert ctrl.can_copy() is False           # 데이터 없음
+    ctrl.load_data_path(_csv(tmp_path))
+    assert ctrl.can_copy() is True
+    ctrl.dispatch("set_none", {})
+    assert ctrl.can_copy() is False           # 선택 0 = 작업점 없음
+
+
 def test_copy_marks_current_and_stays(tmp_path):
     """복사(note_copied) = 작업점을 처리 후미로(멱등), **작업점은 그 카드에 머문다**(결정 16).
 
@@ -164,10 +191,11 @@ def test_gap_predicate_matches_render_segments_for_zero(tmp_path):
     ctrl.selection = SelectionModel(1)
     ctrl.queue = TxtQueueModel(ctrl.selection)
     snap = ctrl.snapshot()
-    assert snap["card"]["index_map"][0]["has_gap"] is False   # 0 = 채움, 빈칸 지도 빨강 아님
-    assert snap["missing_fields"] == [] and snap["empty_fields"] == []
+    card = snap["card"]
+    assert card["index_map"][0]["has_gap"] is False   # 0 = 채움, 빈칸 지도 빨강 아님
+    assert card["missing_fields"] == [] and card["empty_fields"] == []
     assert {t["name"]: t["state"] for t in snap["tokens"]} == {"공고명": "fill", "추정가격": "fill"}
-    assert "0" in snap["render_text"]  # 카드 렌더도 0 을 채움으로(술어 일치 실증)
+    assert "0" in "".join(seg["text"] for seg in card["segments"])  # 카드 렌더도 0 을 채움으로
 
 
 def test_copy_all_reaches_completion(tmp_path):

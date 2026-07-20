@@ -63,8 +63,9 @@ def test_initial_snapshot_shape(tmp_path):
     # 자유 커서 사망, 결정 16) — 빈 레코드 미리보기라 전 토큰 미충족·작업점 부재.
     assert all(t["state"] == "missing" for t in init["tokens"])
     assert init["record_count"] == 0
-    assert set(init["missing_fields"]) == {"공고명", "담당자", "추정가격"}
     card = init["card"]
+    # 미충족 리포트는 card 단일 출처(최상위 트윈 폐기) — 데이터 없음 = 전 필드 항목 없음.
+    assert set(card["missing_fields"]) == {"공고명", "담당자", "추정가격"}
     assert card["has_current"] is False and card["index"] is None
     assert card["selected_count"] == 0 and card["index_map"] == []
 
@@ -89,7 +90,7 @@ def test_load_data_drives_card_and_pushes(tmp_path):
     states = {t["name"]: t["state"] for t in snap["tokens"]}
     # 작업점(행 0): 공고명=채움, 추정가격=채움, 담당자=빈 값(열 존재·값 빔).
     assert states == {"공고명": "fill", "추정가격": "fill", "담당자": "blank"}
-    assert "전산장비 구매" in snap["render_text"]
+    assert "전산장비 구매" in "".join(seg["text"] for seg in card["segments"])  # 카드 평문
     # 채움 표지 삼분 세그먼트(결정 22) — 카드 렌더의 링1 사영.
     kinds = {seg["kind"] for seg in card["segments"]}
     assert "fill" in kinds and "blank" in kinds and "literal" in kinds
@@ -364,6 +365,23 @@ def test_txt_load_pool_and_nara_frozen(tmp_path):
     assert res["ok"] is True and res["label"] == "등록 데이터: 기안데이터"
     snap = ctrl.snapshot()
     assert snap["data_source_label"] == "등록 데이터: 기안데이터"
-    assert "전산장비" in snap["render_text"]     # 참조 재읽기로 실 레코드가 작업점 카드에 도착
+    card_text = "".join(seg["text"] for seg in snap["card"]["segments"])
+    assert "전산장비" in card_text     # 참조 재읽기로 실 레코드가 작업점 카드에 도착
     res2 = ctrl.dispatch("load_pool", {"name": "나라쿼리"})
     assert res2["ok"] is False and "동결" in res2["error"]
+
+
+def test_copy_clipboard_blocks_empty_when_no_work_point(tmp_path, monkeypatch):
+    """브리지 copy_clipboard: 작업점 없으면 클립보드 미기록·copied=False(리뷰 F3).
+
+    작업점 없이(데이터/선택 없음) 복사하면 빈 템플릿(생 ``{{토큰}}``)이 OS 클립보드로 조용히
+    나가던 결함 — can_copy 게이트로 클립보드 자체를 건드리지 않는다.
+    """
+    from hwpxfiller.webapp import app as app_mod
+
+    fe = _frontend(tmp_path, monkeypatch)  # 기본 txt 컨트롤러 = 데이터 없음 → 작업점 없음
+    writes: list = []
+    monkeypatch.setattr(app_mod, "set_clipboard_text", lambda t: writes.append(t))
+    res = fe.copy_clipboard("txt")
+    assert res["copied"] is False
+    assert writes == [], "작업점 없는데 클립보드에 기록됐습니다(빈 템플릿 오염)."
