@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from hwpxfiller.core.job import JobRegistry
+from hwpxfiller.gui.template_manager_state import TemplateManagerViewModel
 from hwpxfiller.webapp.screen_editor import EditorController
 
 REPO = Path(__file__).resolve().parents[1]
@@ -22,7 +23,12 @@ MULTI_SHEET = REPO / "tests" / "fixtures" / "multi_sheet.xlsx"
 def _controller(tmp_path: Path) -> "tuple[EditorController, list]":
     pushes: list = []
     reg = JobRegistry(tmp_path / "jobs")
-    ctrl = EditorController(reg, lambda s, snap: pushes.append((s, snap)))
+    # 빈 라이브러리 VM 주입 — 기본(표준 라이브러리 지연 생성)이 실 사용자 폴더를 스캔하면
+    # 테스트가 개발 머신 상태에 좌우된다(PR-4 리뷰 F5: 격리·결정성).
+    ctrl = EditorController(
+        reg, lambda s, snap: pushes.append((s, snap)),
+        template_library=TemplateManagerViewModel(paths=[]),
+    )
     return ctrl, pushes
 
 
@@ -390,6 +396,7 @@ def _controller26(tmp_path: Path):
         JobRegistry(tmp_path / "jobs"),
         lambda s, snap: pushes.append((s, snap)),
         pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
+        template_library=TemplateManagerViewModel(paths=[]),
     )
     return ctrl, pushes
 
@@ -1196,3 +1203,103 @@ def test_toggle_clears_ignored_expanded_hint(tmp_path):
     assert ctrl.snapshot()["ignored_expanded"] is True
     ctrl.dispatch("toggle_source_active", {"field": "업체명"})        # 다시 사용(개별)
     assert ctrl.snapshot()["ignored_expanded"] is False
+
+
+# ---------------------------------- 신규 1단계 = 템플릿 라이브러리(R-info 2부 접합, PR-4)
+def _controller_lib(tmp_path, paths=None, lib_dir=None):
+    pushes: list = []
+    vm = (TemplateManagerViewModel(lib_dir) if lib_dir is not None
+          else TemplateManagerViewModel(paths=paths or []))
+    ctrl = EditorController(
+        JobRegistry(tmp_path / "jobs"),
+        lambda s, snap: pushes.append((s, snap)),
+        template_library=vm,
+    )
+    return ctrl, pushes
+
+
+def test_snapshot_exposes_library_on_template_stage(tmp_path):
+    """템플릿 분류(0)의 스냅샷은 라이브러리 목록(이름·상태 배지·현 선택)을 싣는다 — 신규
+    1단계=라이브러리에서 고르기(R-info 2부, 생 파일 선택 폐기). 다른 단계는 빈 배열(스캔
+    비용을 매핑 편집 push 에 지불하지 않는다)."""
+    ctrl, _ = _controller_lib(tmp_path, paths=[TPL_COMPILED, TPL_PARTIAL])
+    snap = ctrl.snapshot()
+    names = [t["name"] for t in snap["library"]]
+    assert TPL_COMPILED.name in names and TPL_PARTIAL.name in names
+    assert all(set(t) >= {"name", "path", "badge_label", "badge_level", "current", "detail"}
+               for t in snap["library"])
+    ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})
+    snap = ctrl.snapshot()
+    assert snap["template_name"] == TPL_COMPILED.name                  # 선택 = 새 세션 로드
+    assert [t["current"] for t in snap["library"]] == [True, False]    # 현 선택 표지
+    ctrl.dispatch("goto_step", {"step": 1})
+    assert ctrl.snapshot()["library"] == []                            # 매핑 단계는 빈 배열
+
+
+def test_use_library_template_rejects_paths_outside_library(tmp_path):
+    """라이브러리 밖 경로는 loud 거부(백엔드 화이트리스트) — 웹이 임의 경로를 실어도 생
+    파일 직접 로드 경로가 부활하지 않는다(2부: 가져오기=복사가 유일한 바깥 입구)."""
+    ctrl, _ = _controller_lib(tmp_path, paths=[TPL_PARTIAL])
+    with pytest.raises(ValueError, match="라이브러리에 없는"):
+        ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})
+
+
+def test_import_template_copies_into_library_and_starts_session(tmp_path):
+    """가져오기 = 복사(2부: 앱 소유 루트) — 사본으로 세션이 서고, 이름 충돌은 조용히 덮지
+    않고 접미로 회피 + notice 재진술한다."""
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    ctrl, _ = _controller_lib(tmp_path, lib_dir=lib)
+    name = ctrl.import_template(str(TPL_COMPILED))
+    assert name == TPL_COMPILED.name and (lib / name).exists()         # 복사본 생성
+    assert ctrl.template_path == str(lib / name)                       # 세션 = 사본(원본 아님)
+    name2 = ctrl.import_template(str(TPL_COMPILED))                    # 같은 이름 재가져오기
+    assert name2 != name and (lib / name2).exists()                    # 접미 회피(조용한 덮기 금지)
+    assert "충돌" in ctrl.snapshot()["notice"]["text"]
+
+
+def test_pattern_preview_uses_real_renderer_on_save_stage(tmp_path):
+    """F26 — 저장 분류의 파일명 라이브 예시는 실제 생성기(make_output_filename)와 같은
+    함수로 만든 표본 1행(seq=1) 렌더다(예시 ≠ 산출물의 조용한 어긋남 금지)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("skip_data", {})
+    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_const", {"index": 0, "const": "수기값"})
+    field = ctrl.snapshot()["rows"][0]["template_field"]
+    r = ctrl.dispatch("confirm_all", {})
+    ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
+    ctrl.dispatch("goto_step", {"step": 2})
+    ctrl.dispatch("set_pattern", {"pattern": f"x-{{{{{field}}}}}-{{{{seq:001}}}}"})
+    assert ctrl.snapshot()["pattern_preview"] == "x-수기값-001.hwpx"
+    ctrl.dispatch("goto_step", {"step": 1})
+    assert ctrl.snapshot()["pattern_preview"] == ""                    # 저장 분류 밖은 미계산
+
+
+def test_import_template_rejects_broken_file_without_residue(tmp_path):
+    """가져오기 선검증·무잔재(PR-4 리뷰 F3) — 손상 파일은 복사 전에 loud 거부되고, 앱 소유
+    라이브러리에 오류 사본이 영구히 남지 않는다(인앱 삭제 어포던스가 없는 잔재 금지)."""
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    junk = tmp_path / "junk.hwpx"
+    junk.write_bytes(b"this is not a hwpx zip")
+    ctrl, _ = _controller_lib(tmp_path, lib_dir=lib)
+    import zipfile
+    with pytest.raises((ValueError, OSError, zipfile.BadZipFile)):     # 손상 = 복사 전 loud
+        ctrl.import_template(str(junk))
+    assert list(lib.iterdir()) == []                                   # 무잔재
+
+
+def test_use_library_rejection_refreshes_stale_list(tmp_path):
+    """화이트리스트 거절은 갱신된 목록을 먼저 push 한다(PR-4 리뷰 F7) — 외부 삭제된 파일의
+    stale 행이 화면에 남아 같은 클릭을 반복하게 만드는 무행동 안내 금지."""
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    ghost = lib / "유령.hwpx"
+    ghost.write_bytes(TPL_COMPILED.read_bytes())
+    ctrl, pushes = _controller_lib(tmp_path, lib_dir=lib)
+    assert [t["name"] for t in ctrl.snapshot()["library"]] == ["유령.hwpx"]
+    ghost.unlink()                                                     # 외부 삭제
+    with pytest.raises(ValueError, match="라이브러리에 없는"):
+        ctrl.dispatch("use_library_template", {"path": str(ghost)})
+    assert pushes[-1][1]["library"] == []                              # 거절 전 push 로 걷힘
