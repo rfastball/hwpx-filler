@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import threading
 from pathlib import Path
 
 from hwpxcore.atomic import write_text_atomic
@@ -77,6 +78,10 @@ class TemplateController:
         # 매체별 그룹+접힘 모델(결정 2·3) — 설정 영속의 단일 소유자. 주입은 테스트 편의.
         self.hwpx_groups = hwpx_groups if hwpx_groups is not None else TemplateGroupModel("hwpx")
         self.txt_groups = txt_groups if txt_groups is not None else TemplateGroupModel("txt")
+        # 가져오기 직렬화 잠금(#137 리뷰 F9) — pywebview 네이티브 호출은 별도 스레드라 같은
+        # basename 동시 가져오기가 이름 선점~복사 사이 무경계로 겹쳐 두 호출이 같은 목적지를
+        # 골라 내용 하나만 남는다. 후보 선택~복사를 이 잠금으로 직렬화한다(JobRegistry.clone 동형).
+        self._import_lock = threading.Lock()
         # 마지막 결과 문구(컴파일·검토·가져오기·TXT 변경) — 성과별 심각도 채널(UD-07).
         self.result_text = ""
         self.result_level = "muted"
@@ -161,13 +166,24 @@ class TemplateController:
         hwpx = self._media_snapshot("hwpx", hwpx_rows, self.hwpx_groups)
         txt = self._media_snapshot("txt", txt_rows, self.txt_groups)
         hwpx["dir"] = str(self.vm.library_dir) if self.vm.library_dir is not None else ""
-        hwpx["empty_hint"] = self.vm.empty_hint()
+        hwpx["empty_hint"] = self._hwpx_empty_hint()
         txt["dir"] = str(self.text_registry.directory)
         return {
             "hwpx": hwpx,
             "txt": txt,
             "result": {"text": self.result_text, "level": self.result_level},
         }
+
+    def _hwpx_empty_hint(self) -> str:
+        """빈 HWPX 구획 안내 — **고정 루트**라 폴더 재지정이 없다(#137 리뷰 F7). VM 의
+        empty_hint 는 폐기된 「폴더 선택」을 누르라 안내해 복구 불가 문구가 되므로, 여기서
+        「가져오기…」 로 복구를 겨눈다. 폴더 없음(첫 실행)과 빈 폴더를 구분해 재진술한다."""
+        d = self.vm.library_dir
+        if d is None:
+            return "표시할 템플릿이 없습니다."
+        if not d.is_dir():
+            return f"아직 HWPX 서식이 없습니다 — 「가져오기…」로 .hwpx 서식을 넣으세요.\n{d}"
+        return f"이 폴더에 .hwpx 서식이 없습니다 — 「가져오기…」로 추가하세요.\n{d}"
 
     def initial(self) -> dict:
         return self.snapshot()
@@ -179,7 +195,11 @@ class TemplateController:
         원본의 후속 이동·수정은 라이브러리 사본에 불파급. 이름 충돌은 조용히 덮지 않고
         ``이름 (2).ext`` 접미로 회피 + 결과 재진술. 관리 화면은 RAW(누름틀 0)도 받는다(그
         자리에서 변환하는 게 요점 — 에디터 가져오기의 RAW 거부와 다르다). 브리지가 부른다.
-        """
+
+        **직렬화**(F9): 후보 선택~복사를 인스턴스 잠금으로 묶어 동시 동명 가져오기가 같은
+        목적지를 골라 내용 하나만 남는 경합을 막는다. **무잔재**(F6): 복사 중 실패하면(디스크
+        풀·원본 판독 불가) 부분 파일을 걷어내고 재던진다 — 다음 새로고침이 잘린 TXT/손상 HWPX
+        를 목록에 노출하고 충돌 접미가 재시도를 막는 것을 방지(에디터 import_template 동형)."""
         src = Path(path)
         suffix = src.suffix.lower()
         if suffix == ".hwpx":
@@ -191,12 +211,17 @@ class TemplateController:
         if root is None:
             raise ValueError("라이브러리 폴더가 지정되지 않았습니다.")
         root.mkdir(parents=True, exist_ok=True)
-        dest = root / src.name
-        n = 2
-        while dest.exists():
-            dest = root / f"{src.stem} ({n}){src.suffix}"
-            n += 1
-        shutil.copy2(src, dest)
+        with self._import_lock:
+            dest = root / src.name
+            n = 2
+            while dest.exists():
+                dest = root / f"{src.stem} ({n}){src.suffix}"
+                n += 1
+            try:
+                shutil.copy2(src, dest)
+            except Exception:
+                dest.unlink(missing_ok=True)  # 반가져오기 잔재 제거
+                raise
         if suffix == ".hwpx":
             self.vm.refresh()  # TXT 는 snapshot 의 list_templates 가 매번 재스캔
         renamed = f" (이름 충돌로 '{dest.name}')" if dest.name != src.name else ""
@@ -302,11 +327,32 @@ class TemplateController:
         root = self.text_registry.directory
         return [_rel_key(t.path, root) for t in self.text_registry.list_templates()]
 
+    @staticmethod
+    def _norm(path: "str | Path") -> str:
+        """경로 정규화(대소문자·구분자·심볼릭 해소) — 라이브 집합 대조용 단일 형식."""
+        try:
+            return str(Path(path).resolve())
+        except OSError:
+            return str(Path(path))
+
+    def _live_paths(self, media: str) -> "set[str]":
+        """이 매체 라이브러리의 현재 목록에 실재하는 파일 경로 집합(정규화) — 삭제 대상 검증용."""
+        if media == "hwpx":
+            return {self._norm(r.path) for r in self.vm.rows()}
+        return {self._norm(t.path) for t in self.text_registry.list_templates()}
+
     # ---- 삭제(HWPX·TXT 공통 · 파괴이므로 확인 라운드트립)
     def _do_delete(self, p: dict) -> dict:
-        """템플릿 삭제 — 1차=재진술(매체별 파급 명시), 2차=삭제. 그룹 지정은 reconcile 이 정리."""
+        """템플릿 삭제 — 1차=재진술(매체별 파급 명시), 2차=삭제. 그룹 지정은 reconcile 이 정리.
+
+        **경로 검증**(#137 리뷰 F10): 렌더러 페이로드의 ``media``·``path`` 를 그대로 unlink 하면
+        라이브러리 밖 임의 파일도 지워진다. 매체를 열거 검증하고(``_model``), 경로가 그 매체
+        라이브러리의 **현재 목록**에 속하는지 정규화 후 대조해 임의 파일 삭제 권한 승격을 막는다."""
         media = p["media"]
+        self._model(media)  # 매체 열거 검증(오타·미지 매체 loud)
         path = Path(p["path"])
+        if self._norm(path) not in self._live_paths(media):
+            raise ValueError("현재 라이브러리 목록에 없는 경로는 삭제할 수 없습니다.")
         if not p.get("confirm"):
             if media == "txt":
                 body = f"삭제하면 기안문 채우기·빠른 기안 목록에서도 사라집니다:\n{path}"

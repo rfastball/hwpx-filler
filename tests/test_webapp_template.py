@@ -281,6 +281,55 @@ def test_delete_hwpx_confirm_roundtrip(tmp_path, monkeypatch):
     assert "raw.hwpx" not in _names(ctrl.snapshot()["hwpx"])
 
 
+def test_import_cleans_partial_file_on_copy_failure(tmp_path, monkeypatch):
+    """#137 리뷰 F6 — 복사 중 실패하면 부분 파일을 걷어내고 재던진다(잘린 사본이 목록에
+    남아 충돌 접미가 재시도를 막는 것을 방지)."""
+    import hwpxfiller.webapp.screen_template as st
+
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    ext = tp / "ext"
+    ext.mkdir()
+    (ext / "협조전.txt").write_text("원본", encoding="utf-8")
+
+    def boom(src, dst):
+        Path(dst).write_text("부분", encoding="utf-8")  # 목적지 부분 생성 후 실패
+        raise OSError("disk full")
+
+    monkeypatch.setattr(st.shutil, "copy2", boom)
+    with pytest.raises(OSError):
+        ctrl.import_into_library(str(ext / "협조전.txt"))
+    assert not (tp / "txt" / "협조전.txt").exists()  # 반가져오기 잔재 없음
+
+
+def test_empty_hint_points_to_import_not_removed_folder_picker(tmp_path, monkeypatch):
+    """#137 리뷰 F7 — 첫 실행(고정 루트 부재)에 폐기된 「폴더 선택」이 아니라 「가져오기」로 안내."""
+    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
+    txt_dir = tmp_path / "txt"
+    txt_dir.mkdir()
+    ctrl = TemplateController(
+        TextTemplateRegistry(txt_dir), lambda s, x: None, library_dir=tmp_path / "nolib"
+    )
+    hint = ctrl.snapshot()["hwpx"]["empty_hint"]
+    assert "가져오기" in hint and "폴더 선택" not in hint
+
+
+def test_delete_rejects_path_outside_library(tmp_path, monkeypatch):
+    """#137 리뷰 F10 — 렌더러가 임의 경로를 실어도 라이브러리 밖 파일은 삭제 거부."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    outside = tp / "외부.txt"
+    outside.write_text("건드리지마", encoding="utf-8")
+    with pytest.raises(ValueError, match="목록에 없는 경로"):
+        ctrl.dispatch("delete", {"media": "txt", "path": str(outside), "confirm": True})
+    assert outside.exists()  # 삭제되지 않음
+
+
+def test_delete_rejects_unknown_media(tmp_path, monkeypatch):
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    with pytest.raises(ValueError, match="알 수 없는 매체"):
+        ctrl.dispatch("delete", {"media": "pdf", "path": str(tp / "lib" / "raw.hwpx"), "confirm": True})
+    assert (tp / "lib" / "raw.hwpx").exists()
+
+
 def test_unknown_tpl_action_is_loud(tmp_path, monkeypatch):
     ctrl, _, _ = _controller(tmp_path, monkeypatch)
     with pytest.raises(ValueError, match="알 수 없는 tpl 액션"):
