@@ -333,9 +333,14 @@ def test_discard_confirm_has_single_source():
     출처(3중 복붙은 문구·판정 드리프트 표면). 소비처 셋 전부가 그 헬퍼를 부른다."""
     entry = (REPO / "web" / "js" / "editor_entry.js").read_text(encoding="utf-8")
     assert "function confirmDiscard" in entry, "confirmDiscard 단일 정의 소실."
-    for rel in ("screens/home.js", "screens/template.js", "screens/editor.js"):
+    # 홈 ＋ 는 newDraft(내부가 confirmDiscard)로 한 층 더 수렴했다(PR-5 리뷰 F2).
+    for rel, needle in (
+        ("screens/home.js", "EditorEntry.newDraft"),
+        ("screens/template.js", "EditorEntry.confirmDiscard"),
+        ("screens/editor.js", "EditorEntry.confirmDiscard"),
+    ):
         src = (REPO / "web" / "js" / rel).read_text(encoding="utf-8")
-        assert "EditorEntry.confirmDiscard" in src, f"{rel} 가 폐기 확인 단일 출처를 쓰지 않습니다."
+        assert needle in src, f"{rel} 가 폐기 확인 단일 출처({needle})를 쓰지 않습니다."
     # 편집(탭) 맥락 전환 확인(리뷰 F1) — 클린 복원이어도 맥락 닫힘은 의식적이어야 한다.
     editor = (REPO / "web" / "js" / "screens" / "editor.js").read_text(encoding="utf-8")
     assert "편집을 닫고 새 작업 초안" in editor, "편집 맥락 전환 확인 문구가 사라졌습니다(F1)."

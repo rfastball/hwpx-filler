@@ -300,8 +300,10 @@ def test_web_assets_present_and_wired():
         assert (WEB / rel).exists(), f"web/{rel} 없음"
     html = (WEB / "index.html").read_text(encoding="utf-8")
     assert "css/tokens.css" in html and "js/bridge.js" in html
-    # 4화면 레일 + txt 실화면 심.
-    for scr in ("home", "editor", "job", "txt"):
+    # 레일 계약은 NAV_SCREENS 단일 출처(PR-5 리뷰 F7 — 3곳 하드코딩은 후속 레일 변경
+    # [빠른 기안·랜딩 전환]마다 어긋난 채 초록이 된다) + txt 실화면 심.
+    from test_web_dom_contract import NAV_SCREENS
+    for scr in NAV_SCREENS:
         assert f'data-scr="{scr}"' in html, f"레일에 {scr} 없음"
     assert 'id="scr-txt"' in html
 
