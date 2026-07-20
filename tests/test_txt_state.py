@@ -1,6 +1,8 @@
-"""txt 즉시 기안 ViewModel — Qt 불필요(헤드리스). 렌더·토큰 상태·레코드 스텝.
+"""txt 즉시 기안 ViewModel — Qt 불필요(헤드리스). 템플릿 선택·데이터 소스 겨눔.
 
-미입력 토큰은 {{}} 유지(누락 시끄럽게), 값은 치환 — render_record 미러 계약을 못박는다.
+렌더·토큰 상태·레코드 커서는 컨트롤러의 전-선언 큐(작업점 카드, R-flow 블록 3)가 대체했으므로
+이 VM 에서 사라졌다(고아 커서 API 삭제) — 렌더/토큰 회귀는 ``test_webapp_txt_zone``(카드 스냅샷)·
+``test_text_render``(render_segments) 소관. 여기는 템플릿·데이터 겨눔 계약만 본다.
 """
 from __future__ import annotations
 
@@ -24,50 +26,10 @@ def _vm(tmp_path):
     return vm
 
 
-class _Src:
-    # 담당자는 데이터에 없음(→ missing), 비고는 빈 값(→ blank).
-    def records(self):
-        return [
-            {"공고명": "전산장비 구매", "추정가격": "85,000,000원", "비고": ""},
-            {"공고명": "사무가구", "추정가격": "1,200,000원", "비고": "긴급"},
-        ]
-
-    def fields(self):
-        return ["공고명", "추정가격", "비고"]
-
-
 def test_template_selection_and_names(tmp_path):
     vm = _vm(tmp_path)
     assert vm.template_names() == ["기안"]
     assert "{{공고명}}" in vm.template_text
-
-
-def test_render_substitutes_and_keeps_missing_tokens(tmp_path):
-    vm = _vm(tmp_path)
-    vm.records = _Src().records()
-    text, report = vm.render()
-    assert "제목: 전산장비 구매" in text          # 채움 → 값 치환
-    assert "가격: 85,000,000원" in text
-    assert "{{담당자}}" in text                    # 미입력 → 토큰 그대로(시끄럽게)
-    assert report.missing_fields == ["담당자"]     # 데이터에 없는 필드
-    assert report.empty_fields == ["비고"]         # 있으나 빈 값
-
-
-def test_token_states(tmp_path):
-    vm = _vm(tmp_path)
-    vm.records = _Src().records()
-    states = {t.name: t.state for t in vm.token_states()}
-    assert states == {"공고명": "fill", "추정가격": "fill", "담당자": "missing", "비고": "blank"}
-
-
-def test_record_stepper_wraps(tmp_path):
-    vm = _vm(tmp_path)
-    vm.records = _Src().records()
-    assert vm.current_record()["공고명"] == "전산장비 구매"
-    vm.step(1)
-    assert vm.current_record()["공고명"] == "사무가구"
-    vm.step(1)  # 2건 → 랩어라운드
-    assert vm.current_record()["공고명"] == "전산장비 구매"
 
 
 def test_paste_text_clears_name(tmp_path):
@@ -98,7 +60,7 @@ def test_load_pool_item_restores_and_targets_records(tmp_path):
     records = vm.load_pool_item(_ExcelPoolItem(str(csv)))
     assert records == [{"공고명": "전산장비", "추정가격": "1000"}]
     assert vm.record_count() == 1
-    assert vm.current_record()["공고명"] == "전산장비"
+    assert vm.records[0]["공고명"] == "전산장비"
 
 
 def test_load_data_targets_confirmed_sheet(tmp_path):
@@ -124,13 +86,11 @@ def test_load_pool_item_with_sheet_restores_that_sheet(tmp_path):
     assert vm.record_count() == 3
 
 
-def test_set_acquired_targets_and_resets_index(tmp_path):
-    """수기·애드혹 직접 겨눔 — datasource/records 원자 대입 + 인덱스 리셋(스텝 잔존 방지)."""
+def test_set_acquired_targets_records(tmp_path):
+    """수기·애드혹 직접 겨눔 — datasource/records 원자 대입(부분 대입 방지)."""
     vm = _vm(tmp_path)
-    vm.records = _Src().records()
-    vm.step(1)  # index -> 1
     marker = object()
     vm.set_acquired(marker, [{"공고명": "수기건"}])
     assert vm.datasource is marker
-    assert vm.record_index == 0
-    assert vm.current_record() == {"공고명": "수기건"}
+    assert vm.records == [{"공고명": "수기건"}]
+    assert vm.record_count() == 1

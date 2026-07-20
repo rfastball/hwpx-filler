@@ -701,8 +701,11 @@
                   <span class="mono" style="font-size:12px">입찰공고_2026Q3.xlsx</span>
                   <button class="btn sm" data-vm="TxtDraftViewModel.load_data">데이터 선택…</button>
                   <span style="flex:1"></span>
+                  <!-- 레코드 커서·토큰 상태·실시간 렌더는 R-flow 블록 3에서 전-선언 큐(작업점
+                       카드)로 재설계돼 TxtController/스냅샷이 소유한다 — VM 은 더는 이 셋을 들지
+                       않으므로 data-vm 주석을 뗀다(이 프로토타입 패널은 구 자유-커서 설계의 박제). -->
                   <span class="lbl">레코드</span>
-                  <div class="stepper" data-vm="TxtDraftViewModel.step">
+                  <div class="stepper">
                     <button class="btn sm" id="recPrev">◀</button>
                     <span class="mono" id="recIdx" style="font-size:12px">1 / 25</span>
                     <button class="btn sm" id="recNext">▶</button>
@@ -711,14 +714,14 @@
                 <div class="panes">
                   <div class="pane">
                     <h4>필드 상태 (토큰)</h4>
-                    <div id="tokPanel" data-vm="TxtDraftViewModel.token_states"></div>
+                    <div id="tokPanel"></div>
                     <p class="muted" style="font-size:11.5px;margin:10px 0 0">
                       값은 데이터에서 채움(순수 토큰 치환).
                       <span class="danger">미입력</span>은 <span class="mono">{{토큰}}</span> 그대로 남김.</p>
                   </div>
                   <div class="pane">
                     <h4>실시간 렌더 · 이 view가 진실</h4>
-                    <div class="render" id="renderView" data-vm="TxtDraftViewModel.render"></div>
+                    <div class="render" id="renderView"></div>
                   </div>
                 </div>
                 <div class="txt-foot">
