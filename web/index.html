@@ -361,9 +361,9 @@
     <!-- ============ 빠른 기안 (작업의 휘발 쌍둥이 · R-flow 블록 5 · #90 슬라이스 7) ============ -->
     <!-- 안정 DOM(id) + quickdraft.js 가 window.__push('quickdraft', snapshot) 로 값만 채운다
          (txt/job 패턴). 링1 QuickDraftViewModel 에 브리지로 배선 — VM 로직 재구현 없음.
-         PR-1(골격): 도달 가능한 빈손 화면. 템플릿 소스·파이프라인 토큰 폼·미리보기(PR-2),
-         데이터 이원·제스처 결속·표현형 3층(PR-3), 휘발도 가드·복사·표지(PR-4)는 뒤 PR 이
-         이 껍데기 안(#qdBody)을 채운다 — 없는 기능을 있는 척하지 않는다(confirm-or-alarm). -->
+         PR-1(골격) → PR-2(템플릿 소스·토큰 폼·미리보기) → PR-3(데이터 이원·제스처 결속·
+         표현형 3층)까지 착지. 휘발도 가드·복사·표지 토글(PR-4)은 뒤 PR 이 이 껍데기 안
+         (#qdBody)을 확장한다 — 없는 기능을 있는 척하지 않는다(confirm-or-alarm). -->
     <section class="scr" id="scr-quickdraft">
       <header class="scr-head">
         <div>
@@ -375,15 +375,26 @@
         <div class="status" id="qdStatus" data-level="idle">세션 휘발 · 저장 없음</div>
       </header>
 
-      <!-- 슬롯 — 템플릿 선택 + 붙여넣기. 데이터 버튼(등록/파일)은 PR-3(데이터 이원)에서
-           붙는다(지금 넣으면 dead 버튼 — 없는 걸 있는 척하지 않는다). -->
+      <!-- 슬롯 — 템플릿(라이브러리 사본·붙여넣기) + 데이터(등록 데이터·임의 파일, 결정 34).
+           데이터 슬롯 안쪽(라벨·행 스테퍼·해제)은 겨눔 상태라 quickdraft.js 가 채운다 —
+           미겨눔이면 두 겨눔 버튼만 산다(dead 버튼 없음). -->
       <div class="qd-slots">
         <div class="qd-slot">
           <span class="lbl">템플릿</span>
           <select class="field sm" id="qdTplSel" aria-label="템플릿 선택"></select>
           <button class="btn sm" id="qdBtnPaste">붙여넣기…</button>
         </div>
+        <div class="qd-slot">
+          <span class="lbl">데이터</span>
+          <span class="qd-dataline" id="qdDataLine"></span>
+          <button class="btn sm" id="qdBtnPoolData">등록 데이터…</button>
+          <button class="btn sm" id="qdBtnPickFile">파일 열기…</button>
+          <button class="btn sm hidden" id="qdBtnClearData">데이터 해제</button>
+        </div>
       </div>
+      <!-- 겨눔 실패 재진술(빈 데이터·읽기 실패 등) — 조용한 무반응 금지. quickdraft.js 가
+           문구를 넣을 때만 보인다. -->
+      <p class="note warnbox hidden" id="qdNote"></p>
 
       <!-- 본문 = 값 폼 + 미리보기 2판, 또는 빈손 진입 카드. quickdraft.js 가 스냅샷으로 채운다
            (안정 컨테이너, run/txt 패턴). 데이터 이원·제스처 결속(PR-3)·복사/가드(PR-4)는 이

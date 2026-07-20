@@ -444,6 +444,27 @@ class TestWebSelftestGate:
             "빠른 기안 렌더가 작업 화면 테이블 DOM 에 흘러들었습니다 — 인스턴스 격리 파손."
         )
 
+    def test_quickdraft_data_slot_pipeline_and_suggestion(self, selftest_result: dict) -> None:
+        # 슬라이스 7 PR-3 — 데이터 겨눔 표면이 실 WebView2 에서 그려지는지 되읽는다:
+        # 경량 슬롯(라벨·행 스테퍼·해제)·파이프라인 2열(소스→표시형)·근사 제안 원클릭
+        # (결정 30·31·34). 겨눔 자체는 네이티브 다이얼로그라 프로브가 구동할 수 없어
+        # 스냅샷 푸시로 렌더 계약만 되읽고, 결속 판정은 백엔드 테스트가 가드(상보 커버리지).
+        q = selftest_result["quickdraft"]
+        assert q.get("error") is None, f"빠른 기안 프로브 예외: {q.get('error')!r}"
+        assert "파일: 낙찰현황.csv" in q["data_label_text"], f"겨눔 라벨 미렌더: {q['data_label_text']!r}"
+        assert "3 / 12행" in q["data_label_text"], f"행 스테퍼 위치 재진술이 다릅니다: {q['data_label_text']!r}"
+        assert q["stepper"] is True, "행 스테퍼 두 버튼이 살아 있지 않습니다(중간 행인데 비활성)."
+        assert q["clear_visible"] is True, "겨눔 중인데 「데이터 해제」가 숨어 있습니다."
+        # 결속 토큰 = 소스 select 가 그 열을 고른 채 뜨고 표시형이 함께 산다.
+        assert q["src0"] == "사업명", f"결속 열이 소스 드롭다운에 반영되지 않았습니다: {q['src0']!r}"
+        assert q["fmt0"] is True, "결속 토큰에 표시형 드롭다운이 없습니다(표현형 2층 소실)."
+        # 무결속 토큰 = (직접 입력) + 표시형 없음(아무 일도 안 하는 손잡이 금지) + 제안 버튼.
+        assert q["src1"] == "", f"무결속 토큰의 소스가 (직접 입력)이 아닙니다: {q['src1']!r}"
+        assert q["fmt1"] is False, "무결속 토큰에 표시형 드롭다운이 떴습니다(dead control)."
+        assert q["suggest1"] is True, "근사 제안 원클릭 버튼이 없습니다(결정 30 — 자동 금지·제안 필수)."
+        assert "추정가격(원)" in q["suggest_text"], f"제안 문안에 열 이름이 없습니다: {q['suggest_text']!r}"
+        assert "—" not in q["suggest_text"], f"제안 문안에 em-dash 가 있습니다(R-copy 가드): {q['suggest_text']!r}"
+
     def test_job_drift_replaces_mirror_with_blocking_banner(self, selftest_result: dict) -> None:
         # danger(구조 드리프트)는 거울 표와 섞이지 않고 차단 배너 + 행동 링크로 **교체**된다
         # (결정 36·S9). overlay 로 표 위에 얹히는 게 아니라 실제로 표가 사라지고 배너가 선다.
