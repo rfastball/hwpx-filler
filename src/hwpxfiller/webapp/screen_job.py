@@ -50,6 +50,7 @@ from ..core.dataset_pool import DatasetPoolRegistry
 from ..core.identity_summary import identity_summary
 from ..core.job import MISSING_MARKER, JobRegistry
 from ..core.mapping import SOURCE_CARRIER_TYPES
+from ..core.template_status import OUTPUT_SUBDIR_NAME
 from ..gui.filter_state import (
     KIND_AMOUNT,
     KIND_DATE,
@@ -568,7 +569,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.data_label = ""
         self.data_source = ""
         self.out_dir = (
-            str(Path(job.template_path).parent / "Results") if job.template_path else ""
+            str(Path(job.template_path).parent / OUTPUT_SUBDIR_NAME)
+            if job.template_path else ""
         )
         if job.default_dataset_ref:
             self._auto_aim_default(job.default_dataset_ref)

@@ -23,6 +23,37 @@ def test_invalid_media_is_loud(home):
         TemplateGroupModel("pdf")
 
 
+def test_persist_failure_leaves_model_unchanged(home, monkeypatch):
+    """#136 리뷰 F4 — 영속이 최종 실패하면 라이브 상태를 바꾸지 않는다(실패분이 group_of 로
+    새거나 다음 무관 저장에 뒤늦게 묻어 영속되지 않게)."""
+    m = TemplateGroupModel("hwpx")
+    m.set_group("a.hwpx", "입찰")
+
+    def boom(*a, **k):
+        raise PermissionError("locked")
+
+    monkeypatch.setattr(m._settings, "save_template_group_state", boom)
+    with pytest.raises(PermissionError):
+        m.set_group("a.hwpx", "수의")
+    assert m.group_of("a.hwpx") == "입찰"  # 라이브 미변경
+    monkeypatch.undo()
+    # 다음 무관 저장이 실패분(수의)을 뒤늦게 영속하지 않는다.
+    m.set_group("b.hwpx", "계약")
+    fresh = TemplateGroupModel("hwpx")
+    assert fresh.group_of("a.hwpx") == "입찰" and fresh.group_of("b.hwpx") == "계약"
+
+
+def test_group_state_saved_atomically(home):
+    """#136 리뷰 F5 — 접힌 그룹 개명 시 지정·접힘이 한 원자 저장으로 함께 반영(반쪽 상태 없음)."""
+    m = TemplateGroupModel("hwpx")
+    m.set_group("a.hwpx", "입찰")
+    m.toggle_collapse("입찰")
+    m.rename_group("입찰", "2026 입찰")
+    fresh = TemplateGroupModel("hwpx")  # 새 인스턴스 = 디스크 재판독
+    assert fresh.group_of("a.hwpx") == "2026 입찰"
+    assert fresh.is_collapsed("2026 입찰") and not fresh.is_collapsed("입찰")
+
+
 def test_set_group_and_existing_groups(home):
     m = TemplateGroupModel("hwpx")
     m.set_group("a.hwpx", " 입찰 ")  # 공백 트리밍
