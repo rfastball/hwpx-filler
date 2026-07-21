@@ -55,6 +55,16 @@
     log,
   });
 
+  /* ---- 그룹 목록 기제(부유 ⋮ 메뉴·이동 다이얼로그) = 공용 팩토리(grouplist.js) ----
+     위치잡기·다이얼로그 조립은 팩토리 소유(template.js 와 단일 출처). 여기는 화면 고유값만:
+     메뉴 내용·menuFor 정체는 open/close 가 만들고, 이동 확정은 onConfirm 으로 디스패치한다. */
+  const rowMenu = window.GroupList.createMenu({ menuId: "jobRowMenu" });
+  const moveDialog = window.GroupList.createMoveDialog({
+    modalId: "groupMoveModal", listId: "groupMoveList", errId: "groupMoveErr",
+    nameId: "groupMoveJob", radioName: "grpMove",
+    newRadioId: "grpMoveNewRadio", newNameId: "grpMoveNewName",
+  });
+
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
     if (s && s.progress) { renderProgress(s.progress); return; }  // 진행 델타(경량)
@@ -597,9 +607,7 @@
 
   function closeRowMenu() {
     menuFor = null;
-    const m = $("jobRowMenu");
-    m.style.display = "none";
-    m.innerHTML = "";
+    rowMenu.hide();
   }
 
   function toggleRowMenu(kind, name, btn) {
@@ -608,9 +616,9 @@
   }
 
   function openRowMenu(kind, name, btn) {
-    const m = $("jobRowMenu");
     menuFor = { kind, name };
-    m.innerHTML = kind === "job"
+    // 메뉴 내용은 화면 소유(작업=편집/복제/이름/이동/삭제, 그룹=이름변경/해산), 위치·표시는 팩토리.
+    const html = kind === "job"
       ? `<button data-menu="edit">편집</button>` +
         `<button data-menu="clone">복제</button>` +
         `<button data-menu="rename">이름 변경</button>` +
@@ -620,14 +628,7 @@
         `<button data-menu="delete" class="danger">삭제</button>`
       : `<button data-menu="grp-rename">그룹 이름 변경</button>` +
         `<button data-menu="grp-disband">그룹 해산</button>`;
-    m.style.display = "";
-    // position:fixed 좌표 — 트리거 rect 기준, 아래 공간이 없으면 위로 편다(overflow 클리핑 회피).
-    const r = btn.getBoundingClientRect();
-    const below = r.bottom + 4 + m.offsetHeight <= window.innerHeight;
-    m.style.top = (below ? r.bottom + 4 : Math.max(4, r.top - m.offsetHeight - 4)) + "px";
-    m.style.left = Math.max(4, Math.min(r.left, window.innerWidth - m.offsetWidth - 4)) + "px";
-    const first = m.querySelector("button");
-    if (first) first.focus();
+    rowMenu.show(html, btn);
   }
 
   async function onRowMenuClick(e) {
@@ -698,10 +699,8 @@
     if (e.target.id === "jobRenameInput" && RENAMING) commitRename(false);
   }
 
-  /* 그룹 이동 다이얼로그(결정 43) — 기존 그룹 + 새 그룹 입력 동거 + 해제. 새 그룹 라디오는
-     값 센티넬 대신 data-new 로 식별한다(사용자 그룹 이름과의 충돌 클래스 봉쇄). */
-  let groupMoveTarget = null;
-
+  /* 그룹 이동 다이얼로그(결정 43) — 조립·확정은 공용 moveDialog 팩토리, 여기는 현 그룹 조회와
+     확정 디스패치(set_group)·로그만 주입한다. 새 그룹 data-new·빈 이름 재진술은 팩토리 소유. */
   function currentGroupOf(name) {
     const sections = (LAST && LAST.job_sections) || [];
     for (const sec of sections) {
@@ -711,43 +710,15 @@
   }
 
   function openGroupMove(name) {
-    groupMoveTarget = name;
-    const cur = currentGroupOf(name);
-    const groups = (LAST && LAST.job_group_names) || [];
-    $("groupMoveJob").textContent = `작업 '${name}' 을(를) 옮길 그룹을 고르세요.`;
-    $("groupMoveList").innerHTML =
-      groups.map((g) =>
-        `<label class="grp-opt"><input type="radio" name="grpMove" value="${esc(g)}"${g === cur ? " checked" : ""}> ${esc(g)}</label>`
-      ).join("") +
-      `<label class="grp-opt"><input type="radio" name="grpMove" value=""${cur === "" ? " checked" : ""}> 그룹 없음(해제)</label>` +
-      `<label class="grp-opt"><input type="radio" name="grpMove" value="" data-new="1" id="grpMoveNewRadio"> 새 그룹:` +
-      ` <input class="field" id="grpMoveNewName" type="text" placeholder="새 그룹 이름"></label>`;
-    const err = $("groupMoveErr");
-    err.style.display = "none";
-    err.textContent = "";
-    // 새 그룹 이름을 만지면 새 그룹 라디오가 자동 선택된다(입력=의도).
-    $("grpMoveNewName").addEventListener("focus", () => { $("grpMoveNewRadio").checked = true; });
-    window.Modal.open("groupMoveModal", { onClose: () => { groupMoveTarget = null; } });
-  }
-
-  async function confirmGroupMove() {
-    if (!groupMoveTarget) return;
-    const sel = document.querySelector('input[name="grpMove"]:checked');
-    if (!sel) return;
-    let group = sel.value;
-    if (sel.dataset.new) {
-      group = $("grpMoveNewName").value.trim();
-      if (!group) {
-        const err = $("groupMoveErr");
-        err.textContent = "새 그룹 이름이 비어 있습니다. 이름을 넣거나 다른 항목을 고르세요.";
-        err.style.display = "";
-        return;  // 조용한 무동작 금지 — 열린 채 재진술
-      }
-    }
-    const name = groupMoveTarget;
-    window.Modal.close("groupMoveModal");
-    await Bridge.call(SCREEN, "set_group", { name, group });
-    log(group ? `그룹 이동: '${name}' → '${group}'` : `그룹 해제: '${name}'`);
+    moveDialog.open({
+      nameText: `작업 '${name}' 을(를) 옮길 그룹을 고르세요.`,
+      groups: (LAST && LAST.job_group_names) || [],
+      current: currentGroupOf(name),
+      onConfirm: async (group) => {
+        await Bridge.call(SCREEN, "set_group", { name, group });
+        log(group ? `그룹 이동: '${name}' → '${group}'` : `그룹 해제: '${name}'`);
+      },
+    });
   }
 
   async function deleteJob(name) {
@@ -906,8 +877,7 @@
     document.querySelector(".job-master").addEventListener("scroll", () => {
       if (menuFor !== null) closeRowMenu();
     }, true);
-    $("grpMoveOk").addEventListener("click", confirmGroupMove);
-    $("grpMoveCancel").addEventListener("click", () => window.Modal.close("groupMoveModal"));
+    moveDialog.wire("grpMoveOk", "grpMoveCancel");
     // 데이터 존(테이블·열 패널·칩·스트립·전체 선택/해제·문서 레벨 닫기)은 팩토리 몫 배선.
     dz.wire();
     // T2 복귀 고지 — 확인=걷기, 돌아가기=비파괴 편집 재진입(세션 무접촉 — 리뷰 F1/F4).
