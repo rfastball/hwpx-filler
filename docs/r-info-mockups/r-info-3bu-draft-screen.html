@@ -155,6 +155,25 @@
   .btn.primary:hover{background:var(--a-ok-h)}
   .btn.sm{padding:3px 8px;font-size:11.5px}
 
+  /* 데이터 없음 = 큐 길이 1(가상 행) — 결정 14. 큐 장치가 통째로 숨는다. */
+  .nodata{display:none;border:1px dashed var(--n-border-strong);border-radius:8px;
+    padding:14px 16px;margin-top:9px;background:var(--n-surface-alt)}
+  .nodata b{color:var(--a-ink)}
+  .src-manual{display:none}
+  body[data-rows="none"] .nodata{display:block}
+  body[data-rows="none"] .filterbar,
+  body[data-rows="none"] .fchips,
+  body[data-rows="none"] .tbwrap,
+  body[data-rows="none"] .colpanel,
+  body[data-rows="none"] .fstrip,
+  body[data-rows="none"] .selnote,
+  body[data-rows="none"] .srcline,
+  body[data-rows="none"] .dots,
+  body[data-rows="none"] .queue-only,
+  body[data-rows="none"] .src-data{display:none}
+  body[data-rows="none"] .src-manual{display:inline-flex}
+  body[data-rows="none"] .suggest{display:none}
+
   /* 블록 4 승계 — 자모 검색 · 엑셀식 열 필터 · 칩 · 관통 스트립 */
   .filterbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
   .filterbar .search{min-width:190px;background:var(--a-card)}
@@ -315,6 +334,7 @@
     <div class="switch" role="group" aria-label="세션 유래 전환">
       <button type="button" id="mSaved" aria-pressed="true"><span class="dot"></span>저장된 기안 작업</button>
       <button type="button" id="mVol" aria-pressed="false"><span class="dot"></span>붙여넣기 세션(휘발)</button>
+      <button type="button" id="mNone" aria-pressed="false"><span class="dot"></span>데이터 없이 직접 입력</button>
     </div>
     <span class="muted" id="modeNote" style="font-size:12px"></span>
   </div>
@@ -367,6 +387,16 @@
               <button class="btn" type="button">바꾸기…</button>
               <span class="muted">30행</span>
             </div>
+            <!-- 데이터 없음(결정 14) — 필수인 것처럼 말하지 않는다. 두 길을 다 말한다. -->
+            <div class="nodata">
+              <b>데이터를 물리지 않았습니다.</b> 물리면 <b>여러 건을 한 번에</b> 채웁니다 —
+              안 물려도 아래 「맞추기」에서 <b>직접 채워 복사</b>할 수 있습니다.
+              <div style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn" type="button">등록 데이터에서…</button>
+                <button class="btn" type="button">파일 고르기…</button>
+              </div>
+            </div>
+
             <!-- 블록 4 승계 — DataZoneMixin 은 작업 화면과 단일 출처다(재구현 아님). -->
             <div class="filterbar">
               <input class="field search" type="search" value="통학차ㄹ"
@@ -448,14 +478,15 @@
                     <th style="width:27%">데이터 열</th>
                     <th class="persist" style="width:13%">유형</th>
                     <th style="width:17%">표시형</th>
-                    <th>지금 행의 값</th>
+                    <th id="valHead">지금 행의 값</th>
                     <th class="persist" style="width:56px">확정</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
                     <td class="tok">계약명</td>
-                    <td><span class="sel-src"><span class="own auto"></span>계약 건명</span></td>
+                    <td><span class="sel-src src-data"><span class="own auto"></span>계약 건명</span
+                      ><span class="sel-src src-manual"><span class="own man"></span>직접 입력</span></td>
                     <td class="persist"><span class="sel-src">텍스트</span></td>
                     <td><span class="muted">—</span></td>
                     <td class="preview">특수교육대상자 통학차량 임차용역</td>
@@ -463,7 +494,8 @@
                   </tr>
                   <tr>
                     <td class="tok">계약금액</td>
-                    <td><span class="sel-src"><span class="own auto"></span>계약금액(원)</span></td>
+                    <td><span class="sel-src src-data"><span class="own auto"></span>계약금액(원)</span
+                      ><span class="sel-src src-manual"><span class="own man"></span>직접 입력</span></td>
                     <td class="persist"><span class="sel-src">금액</span></td>
                     <td><span class="sel-src">1,234,567</span></td>
                     <td class="preview">84,320,000</td>
@@ -471,7 +503,8 @@
                   </tr>
                   <tr>
                     <td class="tok">착수일</td>
-                    <td><span class="sel-src"><span class="own auto"></span>착수예정일</span></td>
+                    <td><span class="sel-src src-data"><span class="own auto"></span>착수예정일</span
+                      ><span class="sel-src src-manual"><span class="own man"></span>직접 입력</span></td>
                     <td class="persist"><span class="sel-src">날짜</span></td>
                     <td><span class="sel-src">2026-07-27</span></td>
                     <td class="preview">2026-07-27</td>
@@ -479,7 +512,8 @@
                   </tr>
                   <tr>
                     <td class="tok">수급인</td>
-                    <td><span class="sel-src empty">고르지 않음</span>
+                    <td><span class="sel-src empty src-data">고르지 않음</span
+                      ><span class="sel-src empty src-manual">직접 입력 · 아직 안 씀</span>
                       <button class="suggest" type="button">업체명? 적용</button></td>
                     <td class="persist"><span class="sel-src">텍스트</span></td>
                     <td><span class="muted">—</span></td>
@@ -521,7 +555,7 @@
                 <button type="button" id="vFilled" aria-pressed="true">채운 모습</button>
                 <button type="button" id="vSource" aria-pressed="false">원문</button>
               </div>
-              <span class="muted" id="cardPos">4번째 / 12건 · 복사 3</span>
+              <span class="muted queue-only" id="cardPos">4번째 / 12건 · 복사 3</span>
               <div class="dots" aria-label="진행 색인">
                 <span class="dot2 done">✓</span><span class="dot2 done">✓</span><span class="dot2 done">✓</span>
                 <span class="dot2 cur gap">4</span><span class="dot2"></span><span class="dot2"></span>
@@ -573,9 +607,9 @@
             <div class="zlabel"><span class="num">4</span>완료</div>
             <div class="foot">
               <button class="btn primary" type="button" id="copyBtn">📋 복사</button>
-              <button class="btn" type="button" title="이전 카드" aria-label="이전 카드">◀</button>
-              <button class="btn" type="button" title="다음 카드" aria-label="다음 카드">▶</button>
-              <label style="display:flex;align-items:center;gap:6px;font-size:12px">
+              <button class="btn queue-only" type="button" title="이전 카드" aria-label="이전 카드">◀</button>
+              <button class="btn queue-only" type="button" title="다음 카드" aria-label="다음 카드">▶</button>
+              <label class="queue-only" style="display:flex;align-items:center;gap:6px;font-size:12px">
                 <input class="ck" type="checkbox"> 복사하면 다음으로
               </label>
               <span class="gate">빈칸 1곳 — 복사 전에 확인을 받습니다</span>
@@ -638,10 +672,21 @@
         「필터 밖 선택을 숨기지 않는다」는 계약이라 조용히 떨어뜨리면 큐가 거짓말을 한다.</p>
     </div>
     <div class="note">
-      <h3><span class="k">확정</span>단건 = 큐 길이 1</h3>
+      <h3><span class="k">확정</span>단건 = 큐 길이 1 · 데이터 없음도 길이 1</h3>
       <p>선택 12행이면 카드 12장, 1행이면 1장. <b>화면은 바뀌지 않는다</b> — 같은 기안 작업이
         오늘 1건 내일 30건이어도 같은 얼굴이어야 한다.</p>
-      <p>「지금 행의 값」 열은 항상 <b>작업점 카드의 값</b>이다(결속 근거가 아니라 확인용).</p>
+      <p><b>데이터를 아예 안 물려도 같은 규칙</b>이다(결정 14) — 큐가 길이 1(가상 행)로 퇴화하고
+        큐 장치가 통째로 숨는다. 세 번째 전환 버튼이 그 상태다: <b>빠른 기안의 최단 경로</b>
+        (붙여넣고 직접 채워 복사). 데이터가 필수인 것처럼 말하지 않는 게 ①존 빈 상태의 의무다.</p>
+    </div>
+    <div class="note">
+      <h3><span class="k">확정</span>직접 입력을 저장하면 상수가 된다</h3>
+      <p>데이터 없이 만든 기안을 저장하면 매핑이 전부 수기 값이다. 그대로 굳히면
+        <b>다음에 지난 건의 값이 그대로 나온다</b> — 조용한 오류.</p>
+      <p>기존 문법으로 풀린다: 수기 값은 <b>상수</b>(<span class="mono">type="const"</span>)로
+        이관되고, 승격은 <b>전 행 미확정 착지</b>라 확정하며 「늘 같은 값」과 「이번 건 값」을 가른다.
+        <b>「매번 입력」이라는 새 유형은 없다</b> — <b>값이 빈 상수</b>가 곧 그것이고, 안 채우면
+        빈칸 게이트에 걸린다(「비워둠」은 반대로 게이트에서 빠진다).</p>
     </div>
     <div class="note">
       <h3><span class="k">확정</span>매체는 제목이 말한다</h3>
@@ -707,6 +752,7 @@
     });
 
     var bSaved = document.getElementById("mSaved"), bVol = document.getElementById("mVol");
+    var bNone = document.getElementById("mNone"), valHead = document.getElementById("valHead");
     var note = document.getElementById("modeNote");
     var rowSaved = document.getElementById("rowSaved"), rowVol = document.getElementById("rowVol");
     var saveBtn = document.getElementById("saveJobBtn");
@@ -779,14 +825,20 @@
     });
 
     function apply(mode) {
-      var saved = mode === "saved";
-      body.setAttribute("data-mode", mode);
+      var saved = mode === "saved", none = mode === "none";
+      // 데이터 없음도 휘발 세션이다 — 지속성 스위치는 같고, 큐만 길이 1로 퇴화(결정 14).
+      body.setAttribute("data-mode", saved ? "saved" : "volatile");
+      body.setAttribute("data-rows", none ? "none" : "many");
       bSaved.setAttribute("aria-pressed", String(saved));
-      bVol.setAttribute("aria-pressed", String(!saved));
+      bVol.setAttribute("aria-pressed", String(mode === "volatile"));
+      bNone.setAttribute("aria-pressed", String(none));
       rowSaved.setAttribute("aria-current", String(saved));
       rowVol.setAttribute("aria-current", String(!saved));
+      valHead.textContent = none ? "값" : "지금 행의 값";
       note.textContent = saved
         ? "목록에서 고른 기안 — 안정화된 레시피의 소비. 유형·확정을 묻고, 근사 제안은 초안으로 미리 얹는다. 원문은 읽기 전용."
+        : none
+        ? "빠른 기안의 최단 경로 — 붙여넣고 직접 채워 복사한다. 데이터가 없으니 큐는 길이 1로 퇴화하고 큐 장치가 통째로 숨는다."
         : "붙여넣기로 시작한 세션 — 편집·소비 미분화. 확정을 묻지 않고, 근사 제안은 버튼 하나로만. 원문을 그 자리에서 고친다.";
       saveBtn.textContent = saved ? "다른 이름으로 저장" : "기안으로 저장";
 
@@ -798,6 +850,7 @@
     }
     bSaved.addEventListener("click", function () { apply("saved"); });
     bVol.addEventListener("click", function () { apply("volatile"); });
+    bNone.addEventListener("click", function () { apply("none"); });
     apply("saved");
     setView("filled");
 
