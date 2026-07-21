@@ -8,10 +8,10 @@ Qt·엔진(lxml/openpyxl) 비의존 — 순수 파일 나열 + :func:`~hwpxfille
 """
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from .paths import home_dir
 from .text_render import template_fields
 
 
@@ -19,10 +19,10 @@ def default_text_templates_dir() -> Path:
     """txt 기안 템플릿 기본 루트 — ``~/.hwpxfiller/text_templates``.
 
     작업 레지스트리(``jobs/``)와 같은 홈 아래 별도 폴더. ``HWPXFILLER_HOME`` 로 재지정 가능
-    (테스트·이식성). 레지스트리 *클래스* 는 위치-불가지(생성자가 디렉터리를 받는다).
+    (테스트·이식성 — 해석은 :func:`~hwpxfiller.core.paths.home_dir`). 레지스트리 *클래스* 는
+    위치-불가지(생성자가 디렉터리를 받는다).
     """
-    root = os.environ.get("HWPXFILLER_HOME") or (Path.home() / ".hwpxfiller")
-    return Path(root) / "text_templates"
+    return home_dir() / "text_templates"
 
 
 @dataclass

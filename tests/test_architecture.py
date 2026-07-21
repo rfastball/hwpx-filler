@@ -277,3 +277,25 @@ def test_job_registry_writes_go_through_the_locked_path() -> None:
         "경로를 쓰거나, 정당하면 _ALLOWED_JOB_WRITE_SITES 에 사유와 함께 등록하라:\n"
         + "\n".join(offenders)
     )
+
+
+def test_home_dir_idiom_has_one_source() -> None:
+    """홈 해석 관용구는 ``core/paths.py`` 한 곳에만 산다(#76).
+
+    ``os.environ.get("HWPXFILLER_HOME") or ~/.hwpxfiller`` 를 다시 적는 사본이 생기면 홈
+    규약이 바뀔 때 lockstep 이 깨지고, 설정(settings.json)과 레지스트리가 **다른 디렉터리로
+    조용히 갈라진다** — 사용자에겐 작업이 사라진 것으로 보인다. 겨누는 것은 환경변수를 직접
+    읽는 자리뿐이다(docstring 언급은 무해하므로 잡지 않는다).
+    """
+    pattern = re.compile(r"""environ(?:\.get)?[\[(]\s*["']HWPXFILLER_HOME["']""")
+    single_source = ROOT / "src" / "hwpxfiller" / "core" / "paths.py"
+    offenders: list[str] = []
+    for path in sorted((ROOT / "src").rglob("*.py")):
+        if path == single_source:
+            continue
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if pattern.search(line):
+                offenders.append(f"{path.relative_to(ROOT).as_posix()}:{lineno}: {line.strip()}")
+    assert not offenders, (
+        "홈 경로 관용구 재유입 — hwpxfiller.core.paths.home_dir() 를 쓰라:\n" + "\n".join(offenders)
+    )
