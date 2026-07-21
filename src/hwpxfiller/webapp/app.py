@@ -966,8 +966,18 @@ _DRAFT_SESSION_PROBE_JS = r"""
     var snap = {
       job_flat:true, job_group_names:[], job_sections:[], job_rows:[],
       job_name:'', has_job:false,
-      template_name:'착수계', template_text:'제목: {{공고명}}',
-      tokens:[{name:'공고명', state:'fill'}, {name:'담당자', state:'blank'}],
+      template_name:'착수계', template_text:'제목: {{공고명}} 담당: {{담당자}} 비고: {{비고}}',
+      // 맞추기 표(#148 슬라이스 3b) — 결속(auto·읽기전용 값)·결속 빈값(blank)·무결속+근사 제안
+      // (원클릭 결속 버튼·값 직접 입력)·소유권 색 점.
+      tokens:[
+        {name:'공고명', state:'fill', source:'공고명', own:'auto', manual:false,
+         value:'전산장비 구매', fmt_kind:'text', fmt_code:'', suggest:'', can_revert:false},
+        {name:'담당자', state:'blank', source:'담당열', own:'auto', manual:false,
+         value:'', fmt_kind:'text', fmt_code:'', suggest:'', can_revert:false},
+        {name:'비고', state:'missing', source:'', own:'', manual:false,
+         value:'', fmt_kind:'text', fmt_code:'', suggest:'비고열', can_revert:false}
+      ],
+      columns:['공고명','담당열','비고열'], fmt_options:{text:[], amount:[], date:[]},
       record_count:2,
       data_label:'d.csv', data_source_label:'파일: d.csv', data_key:'file:c:/d/d.csv',
       has_data:true, selected_count:2, target_font:'malgun',
@@ -984,8 +994,11 @@ _DRAFT_SESSION_PROBE_JS = r"""
             advance_after:false,
             segments:[{text:'제목: ', kind:'literal', name:''},
                       {text:'전산장비 구매', kind:'fill', name:'공고명'},
-                      {text:'', kind:'blank', name:'담당자'}],
-            missing_fields:[], empty_fields:['담당자'],
+                      {text:' 담당: ', kind:'literal', name:''},
+                      {text:'', kind:'blank', name:'담당자'},
+                      {text:' 비고: ', kind:'literal', name:''},
+                      {text:'{{비고}}', kind:'missing', name:'비고'}],
+            missing_fields:['비고'], empty_fields:['담당자'],
             index_map:[{index:0, state:'current', has_gap:false},
                        {index:1, state:'uncopied', has_gap:true}],
             lint:{proportional:true, space_run:true, applied:false, active:true},
@@ -998,9 +1011,28 @@ _DRAFT_SESSION_PROBE_JS = r"""
       return m ? m.textContent : ''; })();
     out.strip_shown = getComputedStyle(document.getElementById('draftSelStrip')).display !== 'none';
     out.chips_text = document.getElementById('draftFilterChips').textContent;
-    // ② 필드 상태 — 토큰 상태 행(채움/빈 값).
-    out.tok_rows = document.querySelectorAll('#draftTokPanel .tok').length;
-    out.tok_blank = !!document.querySelector('#draftTokPanel .tok.blank');
+    // ② 맞추기 표(#148 슬라이스 3b) — 토큰 행·소유권 색 점·근사 제안 버튼·값 입력(항상 편집 가능,
+    //   결속이면 데이터 값이 차 있고 고치면 상수 강등). 판정은 서버, 여긴 렌더 되읽기.
+    out.map_rows = document.querySelectorAll('#draftTokPanel table.dmap tbody tr').length;
+    out.map_own_auto = document.querySelectorAll('#draftTokPanel .own.auto').length;  // 공고명·담당자
+    out.map_val_inputs = document.querySelectorAll('#draftTokPanel .mapval-in').length;  // 전 행 편집 가능
+    // 결속(auto) 값 입력엔 현재 행의 데이터 값이 미리 차 있다(이음매가 값 사전을 낳는다).
+    out.map_bound_value = (function(){
+      var vs = document.querySelectorAll('#draftTokPanel .mapval-in');
+      for (var k = 0; k < vs.length; k++) if (vs[k].value.indexOf('전산장비 구매') >= 0) return true;
+      return false; })();
+    out.map_suggest = !!document.querySelector('#draftTokPanel .mapsug');             // 비고 근사 제안
+    out.map_src_options = (function(){ var s = document.querySelector('#draftTokPanel .mapsrc-sel');
+      return s ? s.options.length : 0; })();  // (직접 입력)+열 3 = 4
+    // ③ 원문 뷰 전환(결정 34) — 기본 채운 모습, 「원문」 클릭 시 배타 전환 + textarea 에 원문.
+    out.view_default_filled =
+      document.getElementById('draftViewFilled').getAttribute('aria-pressed') === 'true'
+      && document.getElementById('draftSrcView').hidden === true;
+    document.getElementById('draftViewSource').click();
+    out.view_source_shown = document.getElementById('draftSrcView').hidden === false
+      && document.getElementById('draftCardRender').hidden === true;
+    out.src_has_text = (document.getElementById('draftSrcBox').value || '').indexOf('{{공고명}}') >= 0;
+    document.getElementById('draftViewFilled').click();  // 원상 복귀(뒤 되읽기 오염 방지)
     // ③ 미리보기 — 채움 표지 삼분 + 상태 색인 점 + 선언 글꼴 추종 + 정렬 린트.
     out.card_render = document.getElementById('draftCardRender').textContent;
     out.card_fill = !!document.querySelector('#draftCardRender .seg-fill');

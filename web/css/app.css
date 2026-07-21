@@ -112,6 +112,52 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .tok.blank{background:var(--fb-blank-bg);border-color:var(--fb-blank-bd)} .tok.blank .st{color:var(--a-warn)}
 .tok.missing{background:var(--fb-missing-bg);border-color:var(--fb-missing-bd)} .tok.missing .st{color:var(--a-danger)}
 
+/* ---- ② 맞추기 표(#148 슬라이스 3b) — 토큰별 결속·근사 제안·표시형·소유권 색·「지금 행의 값」.
+     표 클래스는 `.dmap`(draft map) — 에디터 위저드의 `.map`(F23 고정 레이아웃)과 열 구성·판정
+     주체가 달라 분리한다(같은 `.map` 이면 에디터 th:nth-child 폭·table-layout 이 교차 오염). ---- */
+.mapwrap{border:1px solid var(--a-border);border-radius:var(--rad-surface);overflow-x:auto}
+table.dmap{border-collapse:collapse;width:100%;font-size:var(--fs-body);min-width:420px}
+table.dmap th,table.dmap td{padding:var(--sp-6) var(--sp-10);text-align:left;
+  border-bottom:1px solid var(--a-border);vertical-align:middle}
+table.dmap th{background:var(--a-window);font-weight:600;font-size:var(--fs-caption);
+  color:var(--a-muted);white-space:nowrap}
+table.dmap tr:last-child td{border-bottom:0}
+.dmap .maptok{font-weight:600;white-space:nowrap;font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
+.dmap .maptok::before{content:"{{";color:var(--a-muted);font-weight:400}
+.dmap .maptok::after{content:"}}";color:var(--a-muted);font-weight:400}
+.mapsrc{display:flex;align-items:center;gap:var(--sp-6);flex-wrap:wrap}
+.mapsrc-sel{max-width:100%}
+/* 소유권 색 점(결정 33) — 카드 seg-fill.own-* 와 같은 색 언어(auto=파랑·man=초록). */
+.own{width:8px;height:8px;border-radius:50%;flex:none;display:inline-block}
+.own.auto{background:var(--a-primary)} .own.man{background:var(--a-ok)}
+/* 「지금 행의 값」 = **항상 편집 가능** 입력(결속 값을 고치면 상수 강등, 사용자 결정) —
+   내용 크기 칩(빠른 기안 qd-val 동형, field-sizing). 결속 값이 미리 차 있고 편집하면 man. */
+.mapval-in{field-sizing:content;width:auto;min-width:8ch;max-width:100%;resize:none;overflow-y:hidden;
+  padding:var(--sp-4) var(--sp-8);font:inherit;font-size:var(--fs-body);
+  border:1px solid var(--a-border);border-radius:var(--rad-control);background:var(--fb-fill-bg);color:var(--a-ink)}
+@supports not (field-sizing:content){.mapval-in{width:100%}}
+.mapval-in:focus-visible{outline:2px solid var(--a-primary);outline-offset:1px}
+.mapval-in.empty{background:transparent;border:1px dashed var(--a-border)}
+.mapsug{color:var(--a-ok);border-color:var(--fb-fill-bd)}
+.maplegend{display:flex;gap:var(--sp-14);flex-wrap:wrap;margin-top:var(--sp-8);
+  font-size:var(--fs-caption);color:var(--a-muted)}
+.maplegend span{display:inline-flex;align-items:center;gap:var(--sp-4)}
+.maplegend i.own{width:8px;height:8px}
+
+/* ---- ③ 원문 뷰 전환(결정 34) — 채운 모습 ↔ 원문(같은 칸의 두 모습) ---- */
+.wc-index-head{display:flex;align-items:center;gap:var(--sp-10);flex-wrap:wrap;margin-bottom:var(--sp-8)}
+.viewsw{display:flex;border:1px solid var(--a-border);border-radius:var(--rad-control);overflow:hidden;margin-left:auto}
+.viewsw button{border:0;background:var(--a-card);color:var(--a-muted);font:inherit;
+  font-size:var(--fs-caption);padding:var(--sp-4) var(--sp-10);cursor:pointer}
+.viewsw button+button{border-left:1px solid var(--a-border)}
+.viewsw button:hover{background:var(--a-window)}
+.viewsw button:focus-visible{outline:2px solid var(--a-primary);outline-offset:-2px}
+.viewsw button[aria-pressed="true"]{background:var(--fb-fill-bg);color:var(--a-primary);font-weight:600}
+.wc-srcbox{width:100%;min-height:180px;resize:vertical;padding:var(--sp-10) var(--sp-12);
+  font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var(--fs-body);line-height:1.7;
+  border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-window);color:var(--a-ink)}
+.wc-srcbox:focus-visible{outline:2px solid var(--a-primary);outline-offset:1px}
+
 /* ---- 작업점 카드(블록 3, 결정 16) — 큐가 지나가는 한 장 ---- */
 .pane.workcard{gap:0}
 /* 상태 색인: 위치·처리 재진술 + 큐 네비게이션 + 빈칸 지도(점) */

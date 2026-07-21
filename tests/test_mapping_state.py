@@ -595,3 +595,66 @@ def test_apply_active_sources_vocabulary_scopes_demotion_to_known_headers():
     assert demoted == ["규격"]                              # 실제로 끈 헤더의 행만 강등
     assert model.rows[0].source == "없는열"                 # stale 은 불건드림(이월 값 보존)
     assert model.rows[0].touched is True
+
+
+# ------------------------------------------------- #148 슬라이스 3b: 「기안」 맞추기(스키마 없이)
+def test_from_field_names_exact_autobinds_and_infers_type():
+    """정확 일치 열만 자동 결속(결정 30)하고, 결속 열은 값 스니핑 유형이 이름 추론을 이긴다(결정 5).
+
+    스키마 없이 토큰 이름 목록만으로 세운다 — txt 트랙엔 TemplateSchema 가 없다(모델은 이미
+    schema-불가지). 근사(비정확)는 붙지 않고 suggestions 로 넘어간다."""
+    m = MappingModel.from_field_names(
+        ["계약명", "계약금액", "완료일자"],
+        source_fields=["계약명", "계약금액", "착수예정일"],
+        col_kinds={"계약명": "text", "계약금액": "amount", "착수예정일": "date"},
+    )
+    by = {r.template_field: r for r in m.rows}
+    assert by["계약명"].source == "계약명" and by["계약명"].type == "text"      # 정확 결속
+    assert by["계약금액"].source == "계약금액" and by["계약금액"].type == "amount"  # 값 스니핑 우선(결정 5)
+    # 완료일자: 근사 미결속(착수예정일과 정확 불일치) → 이름 휴리스틱(「일자」→date)이 유형을 정함.
+    assert by["완료일자"].source == "" and by["완료일자"].type == "date"
+
+
+def test_from_field_names_suggestions_are_approximate_only():
+    """근사 제안 = 무결속 자리의 ≥0.6 후보(원클릭 대상, 자동 적용 안 함). 이미 쓰는 열은 제외."""
+    m = MappingModel.from_field_names(
+        ["착수일"], source_fields=["착수예정일"], col_kinds={"착수예정일": "date"}
+    )
+    assert m.suggestions() == {"착수일": "착수예정일"}   # 근사(≥0.6) 제안으로만
+
+
+def test_live_profile_applies_all_content_rows_not_just_confirmed():
+    """휘발 렌더 = 확정 게이트 무관, 내용 있는(결속·상수) 전 행. 무결속은 빠져 토큰이 missing."""
+    m = MappingModel.from_field_names(["명", "인"], source_fields=["명"])
+    m.set_manual(m.index_of("인"), "김민수")            # 상수(man)
+    prof = m.live_profile()
+    out = prof.apply({"명": "통학차량"})
+    assert out == {"명": "통학차량", "인": "김민수"}      # 결속 auto + 상수 man
+    # 무결속 자리는 프로파일에 없다 → render_segments 가 missing({{}} 빨강)으로 남긴다.
+    m2 = MappingModel.from_field_names(["명", "빈자리"], source_fields=["명"])
+    assert "빈자리" not in m2.live_profile().apply({"명": "x"})
+
+
+def test_set_manual_then_revert_binding_round_trip():
+    """결속 값 고치면 상수(man)로 강등하되 소스를 기억하고, 되돌리기로 결속(auto) 복귀(사용자 결정)."""
+    m = MappingModel.from_field_names(["명"], source_fields=["명"], col_kinds={"명": "text"})
+    i = m.index_of("명")
+    m.set_manual(i, "손으로 고침")
+    row = m.rows[i]
+    assert row.type == "const" and row.const == "손으로 고침" and row.source == "명"  # 소스 기억
+    assert m.revert_binding(i) is True
+    assert row.type == "text" and row.const == "" and row.source == "명"           # auto 복귀
+    # 소스 기억이 없으면(순수 수기) 되돌릴 게 없다.
+    m2 = MappingModel.from_field_names(["명"], source_fields=[])
+    m2.set_manual(0, "값")
+    assert m2.revert_binding(0) is False
+
+
+def test_bind_column_clears_const_and_unbind_resets():
+    """열 결속은 상수를 지워 결속 값이 다시 살고, 해제는 시스템 소유로 낙착(재제안 대기)."""
+    m = MappingModel.from_field_names(["명"], source_fields=["갑", "을"], col_kinds={"을": "amount"})
+    m.set_manual(0, "수기")
+    m.bind_column(0, "을", "amount")
+    assert m.rows[0].source == "을" and m.rows[0].type == "amount" and m.rows[0].const == ""
+    m.unbind(0)
+    assert m.rows[0].source == "" and m.rows[0].is_system_owned()   # 재제안 대기(값 동결 없음)

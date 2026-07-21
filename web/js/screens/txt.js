@@ -27,6 +27,8 @@
       lintAction: "txtLintAction", cardPrev: "txtCardPrev", cardNext: "txtCardNext",
       cardCopy: "txtCardCopy", cardDefer: "txtCardDefer", advance: "txtAdvance",
       targetFont: "txtTargetFont",
+      // 맞추기 표 범례(#148 슬라이스 3b) — 원문 뷰 전환 id 는 안 준다(붙여넣기 모달이 겸함).
+      mapLegend: "txtMapLegend",
     },
   });
 

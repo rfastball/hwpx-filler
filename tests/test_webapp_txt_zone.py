@@ -255,9 +255,10 @@ def test_gap_predicate_matches_render_segments_for_zero(tmp_path):
     ctrl.vm.set_acquired(object(), [{"공고명": "전산장비", "추정가격": 0}])
     ctrl.selection = SelectionModel(1)
     ctrl.queue = TxtQueueModel(ctrl.selection)
+    ctrl._rebuild_mapping()  # #148 슬라이스 3b — 데이터 열에 맞추기 결속(load_data_path 가 하는 일)
     snap = ctrl.snapshot()
     card = snap["card"]
-    assert card["index_map"][0]["has_gap"] is False   # 0 = 채움, 빈칸 지도 빨강 아님
+    assert card["index_map"][0]["has_gap"] is False   # 0 = 채움(0원 렌더), 빈칸 지도 빨강 아님
     assert card["missing_fields"] == [] and card["empty_fields"] == []
     assert {t["name"]: t["state"] for t in snap["tokens"]} == {"공고명": "fill", "추정가격": "fill"}
     assert "0" in "".join(seg["text"] for seg in card["segments"])  # 카드 렌더도 0 을 채움으로
@@ -607,3 +608,101 @@ def test_lint_ignores_runs_inside_data_values(tmp_path, monkeypatch):
     ctrl.dispatch("set_target_font", {"font": "malgun"})
     assert ctrl.snapshot()["card"]["lint"]["space_run"] is False
     assert "규격 12  345" in ctrl.render()[0]
+
+
+# ---------------------------------------------- #148 슬라이스 3b: 맞추기 표(결속·제안·표시형·소유권)
+def _tok(snap, name):
+    return next(t for t in snap["tokens"] if t["name"] == name)
+
+
+def test_map_exact_autobind_and_snapshot_shape(tmp_path):
+    """데이터 겨눔 = 정확 일치 열 자동 결속(auto)·값 스니핑 유형 + 결속 후보·프리셋 스냅샷.
+
+    템플릿 토큰(공고명·추정가격)이 CSV 열과 정확히 같아 자동 결속되고, 「지금 행의 값」은 큐
+    작업점(행 0)의 값을 서식해 보인다(추정가격 amount → 천단위)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))
+    snap = ctrl.snapshot()
+    assert snap["columns"] == ["공고명", "추정가격"]     # 결속 드롭다운 후보
+    assert "amount" in snap["fmt_options"] and "text" in snap["fmt_options"]
+    g, p = _tok(snap, "공고명"), _tok(snap, "추정가격")
+    assert g["own"] == "auto" and g["source"] == "공고명" and g["state"] == "fill"
+    assert g["value"] == "전산장비 구매"                 # 작업점(행 0) 값
+    assert p["own"] == "auto" and p["fmt_kind"] == "amount" and p["value"] == "1,000원"
+
+
+def test_seam_preview_follows_queue_current(tmp_path):
+    """이음매 = 레코드→매핑→값 사전 — 「지금 행의 값」이 큐 작업점을 따라 행마다 바뀐다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))
+    assert _tok(ctrl.snapshot(), "공고명")["value"] == "전산장비 구매"   # 행 0
+    ctrl.dispatch("step", {"delta": 1})
+    assert _tok(ctrl.snapshot(), "공고명")["value"] == "비품 구매"       # 행 1
+
+
+def test_set_map_value_demotes_to_manual_constant(tmp_path):
+    """값 직접 입력(set_map_value) = 상수(man) — 전 행 공통이고 결속 소스는 기억(되돌리기용)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "고정 제목"})
+    g = _tok(ctrl.snapshot(), "공고명")
+    assert g["own"] == "man" and g["value"] == "고정 제목" and g["can_revert"] is True
+    ctrl.dispatch("step", {"delta": 1})                  # 다른 행으로 이동해도
+    assert _tok(ctrl.snapshot(), "공고명")["value"] == "고정 제목"  # 상수라 그대로
+
+
+def test_revert_map_restores_binding(tmp_path):
+    """되돌리기(revert_map) = 상수 강등을 원 결속 열로 복귀(막다른 강등 금지)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "고정"})
+    ctrl.dispatch("revert_map", {"name": "공고명"})
+    g = _tok(ctrl.snapshot(), "공고명")
+    assert g["own"] == "auto" and g["source"] == "공고명" and g["value"] == "전산장비 구매"
+
+
+def test_set_source_unbind_then_rebind(tmp_path):
+    """드롭다운 (직접 입력) = 해제(무결속·missing), 열 선택 = 재결속(auto)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))
+    ctrl.dispatch("set_source", {"name": "공고명", "col": ""})       # 해제
+    g = _tok(ctrl.snapshot(), "공고명")
+    assert g["own"] == "" and g["source"] == "" and g["state"] == "missing"
+    ctrl.dispatch("set_source", {"name": "공고명", "col": "추정가격"})  # 다른 열로 재결속
+    assert _tok(ctrl.snapshot(), "공고명")["source"] == "추정가격"
+
+
+def test_set_source_overwrite_confirm_gate(tmp_path):
+    """수기 값 있는 자리에 열 결속 = 재진술 확인 게이트(값 소실 사전 확인) — 확인 후 허용."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "수기값"})
+    r = ctrl.dispatch("set_source", {"name": "공고명", "col": "공고명"})  # 덮어쓰기 확인 요구
+    assert isinstance(r, dict) and "수기값" in r.get("confirm", "")
+    assert _tok(ctrl.snapshot(), "공고명")["own"] == "man"            # 아직 안 바뀜
+    ctrl.dispatch("set_source", {"name": "공고명", "col": "공고명", "confirm": True})
+    assert _tok(ctrl.snapshot(), "공고명")["own"] == "auto"           # 확인 후 결속
+
+
+def test_edit_source_retokenizes_and_preserves_manual(tmp_path):
+    """원문 라이브 편집(edit_source) = 토큰 재구성 + 사람 소유(수기 값) 승계 + _NO_PUSH 반환.
+
+    새 토큰이 생기고, 이미 손댄 수기 값은 살아남는다(재구성이 조용히 버리지 않는다)."""
+    ctrl, pushes = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "수기"})
+    n_before = len(pushes)
+    snap = ctrl.dispatch("edit_source", {"text": "제목: {{공고명}} 신규: {{신규토큰}}"})
+    assert len(pushes) == n_before                       # _NO_PUSH — 반환으로만 온다
+    names = {t["name"] for t in snap["tokens"]}
+    assert names == {"공고명", "신규토큰"}                 # 재토큰화(추정가격 사라지고 신규토큰)
+    assert _tok(snap, "공고명")["value"] == "수기"         # 수기 값 승계
+    assert _tok(snap, "신규토큰")["state"] == "missing"    # 새 자리는 무결속
+
+
+def test_unknown_map_column_is_loud(tmp_path):
+    """데이터에 없는 열 결속은 조용히 무시하지 않고 시끄럽게 거부한다(confirm-or-alarm)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))
+    with pytest.raises(ValueError):
+        ctrl.dispatch("set_source", {"name": "공고명", "col": "없는열"})
