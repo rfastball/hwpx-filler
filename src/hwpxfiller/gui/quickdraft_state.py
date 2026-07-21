@@ -124,6 +124,18 @@ class QuickDraftViewModel:
         """붙여넣은 서식을 세션에 적용 — 이름 없는 세션 사본(라이브러리 비저장, 결정 34)."""
         self._set_template("paste", None, text)
 
+    def mark_saved_as(self, name: str) -> None:
+        """「템플릿으로 저장」 성공 후 세션 정체를 라이브러리 유래로 승격(결정 32 「승격=동결」).
+
+        **원문·토큰·값·데이터는 건드리지 않는다** — 저장된 것은 원문뿐이고 세션은 그대로
+        이어진다(:meth:`_set_template` 을 부르면 값이 재구성돼 하던 일이 끊긴다). 바뀌는
+        것은 정체뿐: 붙여넣은 이름 없는 사본이든 수정된 라이브러리 사본이든, 이제 그 이름의
+        라이브러리 원본과 내용이 같으므로 「(수정됨)」 강등이 참이 아니게 된다.
+        """
+        self.origin = "lib"
+        self.template_name = name
+        self.modified = False
+
     def edit_source(self, text: str) -> None:
         """원문 편집 탭의 라이브 편집(결정 34) — 타이핑이 토큰 폼을 즉시 재구성한다.
 
