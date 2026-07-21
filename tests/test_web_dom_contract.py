@@ -722,3 +722,15 @@ def test_draft_saved_source_has_fork_escape_hatch():
     assert re.search(
         r'id\.srcFork\)[\s\S]*?fork_to_volatile', src, re.S,
     ), "「사본으로 편집」이 fork_to_volatile 로 배선되지 않았습니다 — 눌러도 편집이 열리지 않습니다."
+
+
+def test_draft_live_edit_refreshes_source_bar():
+    """원문 라이브 편집(_NO_PUSH patchMap)도 원문바 이름·수정됨 표지를 갱신해야 한다(#148 5b, 리뷰 P2).
+
+    깨끗한 휘발 원문을 고치면 `source_dirty=true`·`template_name` 소거인데, `edit_source` 는
+    `_NO_PUSH` 라 full render 를 안 타 `patchMap` 이 원문바를 안 그리면 무관한 재렌더 전까지 옛
+    이름·수정됨 부재로 남는다(stale). `patchMap` 이 공유 `renderSourceBar` 를 부르는지 못박는다."""
+    src = (WEB_JS_DIR / "draftsession.js").read_text(encoding="utf-8")
+    assert re.search(r"function patchMap\([\s\S]*?renderSourceBar\(", src), (
+        "patchMap 이 renderSourceBar 를 부르지 않습니다 — 라이브 편집 뒤 원문바가 stale."
+    )

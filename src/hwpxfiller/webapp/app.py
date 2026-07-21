@@ -1156,6 +1156,12 @@ _DRAFT_SESSION_PROBE_JS = r"""
     out.vol_row_current_saved = (function () {
       var v = document.querySelector('#draftList .job-item.draft-vol');
       return !!v && v.getAttribute('aria-current') === 'false'; })();
+    // 저장 모드는 **원문 정의 진입점 전부 잠금**(리뷰 5a P1) — 콤보·붙여넣기도(textarea 뿐 아님).
+    // 안 잠그면 저장 레시피가 조용히 다른 원문으로 바뀐다(계약 거짓말). 데이터 컨트롤은 안 잠근다.
+    // ssnap(저장) 상태에서 먼저 읽는다 — 아래 5b 포크 블록이 fsnap(휘발)으로 밀기 전에.
+    out.saved_tpl_locked = document.getElementById('draftTplSel').disabled === true
+      && document.getElementById('draftBtnPaste').disabled === true;
+    out.saved_data_unlocked = document.getElementById('draftBtnPickData').disabled === false;
     // 원문바(#148 슬라이스 5b) — 저장 모드: 「사본으로 편집」 뜨고 수정됨 표지는 없다(깨끗한
     // 정의). 원문 뷰로 들어가 **실 display** 로 되읽는다(부록 B-9 — 숨은 조상 밖에서 봐야 참).
     document.getElementById('draftViewSource').click();
@@ -1176,6 +1182,8 @@ _DRAFT_SESSION_PROBE_JS = r"""
     window.__push('draft', snap);  // mode 미지정 = 휘발
     out.back_restores_session = shownEl(document.getElementById('draftSessionPanel'));
     out.back_persist_hidden = !shownEl(document.querySelector('#draftTokPanel .maptype-cell'));
+    out.vol_tpl_unlocked = document.getElementById('draftTplSel').disabled === false
+      && document.getElementById('draftBtnPaste').disabled === false;
     // 「기안으로 저장」 승격 버튼(#148 슬라이스 5c, #135) — 라이브러리 배접(can_save_job)만 활성.
     // 붙여넣기·수정 원문은 비활성 + 사유(dead button 금지, #133). base snap 은 can_save_job
     // 미지정 = 비활성. 라벨은 유래로 갈린다(휘발=「기안으로 저장」·저장=「다른 이름으로 저장」).

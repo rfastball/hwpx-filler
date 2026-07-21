@@ -282,6 +282,39 @@ def test_save_job_overwrite_preserves_group(tmp_path):
     assert jobs.load("월례 기안").group == "정기"
 
 
+def test_save_job_blocked_when_template_file_gone(tmp_path):
+    """캐시된 template_path 가 삭제·이동됐으면 저장을 시끄럽게 막는다(리뷰 5c P2 — 죽은 배접 Job 방지).
+
+    세션이 경로를 캐시한 뒤 템플릿 관리에서 파일이 사라질 수 있다. 빈 문자열만 보면 통과하지만
+    그러면 다시 못 여는 템플릿을 가리키는 Job 이 생긴다 — 저장 시 실 파일인지 재검증한다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "값"})
+    (tmp_path / "착수계.txt").unlink()  # 템플릿 관리에서 삭제된 상황
+    res = ctrl.dispatch("save_job", {"name": "유령 배접"})
+    assert res["ok"] is False and "템플릿 파일" in res["error"]
+    assert jobs.names() == []
+
+
+def test_save_job_resave_preserves_durable_metadata(tmp_path):
+    """자기 재저장은 이 화면이 편집하지 않는 durable 메타(tags·last_run_at·default_dataset_ref)를
+    보존한다(리뷰 5c P1) — 그룹만 남기고 나머지를 조용히 기본값으로 지우면 홈 태그·이력이 증발한다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "값1"})
+    ctrl.dispatch("save_job", {"name": "월간 기안"})   # 휘발 → 저장(force-confirm)
+
+    def _add_meta(job):
+        job.tags = {"현장": "A"}
+        job.last_run_at = "2026-01-01T00:00:00"
+        job.default_dataset_ref = "대장"
+
+    jobs.mutate("월간 기안", _add_meta)               # 다른 표면(홈 등)이 durable 메타 부착
+    ctrl.dispatch("save_job", {"name": "월간 기안"})   # 자기 재저장 — 메타 보존해야 한다
+    saved = jobs.load("월간 기안")
+    assert saved.tags == {"현장": "A"}, "재저장이 tags 를 지웠습니다(durable 메타 조용한 소거)."
+    assert saved.last_run_at == "2026-01-01T00:00:00", "재저장이 last_run_at 을 리셋했습니다."
+    assert saved.default_dataset_ref == "대장", "재저장이 default_dataset_ref 를 지웠습니다."
+
+
 # ------------------------------------------------------------------ 공유 라우터(슬라이스 3a)
 def test_router_is_shared_between_list_and_session_actions(tmp_path):
     """목록 액션과 세션 액션이 한 라우터를 탄다(MRO) — 미지 액션은 시끄럽게."""

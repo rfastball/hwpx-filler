@@ -240,6 +240,19 @@
       $(id.cardRender).hidden = src;  // 두 모습은 배타 — 원문 볼 땐 채운 모습을 숨긴다
     }
 
+    /* 원문바 메타(#148 슬라이스 5b) — 이름 + 수정됨 표지 + 「사본으로 편집」(저장 모드에서만).
+       **textarea 는 손대지 않는다** — 라이브 편집(_NO_PUSH) 응답 patchMap 도 이 메타를 갱신해야
+       하기 때문이다(리뷰 5b P2): 깨끗한 원문을 고치면 source_dirty=true·template_name 소거인데
+       full render 만 이걸 그리면 무관한 재렌더 전까지 옛 이름·수정됨 부재로 남는다. */
+    function renderSourceBar(s) {
+      const saved = (s.mode || "volatile") === "saved";
+      if (id.srcName) $(id.srcName).textContent = s.template_name || "(붙여넣은 텍스트)";
+      if (id.modBadge) $(id.modBadge).hidden = !s.source_dirty;  // 판정은 Python(source_dirty)
+      // srcFork = 저장 원문을 사본으로 가르는 유일 출구(읽기 전용의 탈출구) — 휘발에선 이미 편집
+      // 가능이라 숨는다(dead control 금지, 시안 `[data-mode]` 게이트 이식).
+      if (id.srcFork) $(id.srcFork).hidden = !saved;
+    }
+
     function renderSource(s) {
       if (!id.srcBox) return;
       const box = $(id.srcBox);
@@ -248,13 +261,7 @@
       // 편집」이 휘발로 가른다(슬라이스 5b — 원문바 srcFork). 판정은 Python(s.source_readonly).
       box.readOnly = !!s.source_readonly;
       if (box.value !== s.template_text) box.value = s.template_text || "";
-      // 원문바(#148 슬라이스 5b) — 이름 + 수정됨 표지 + 「사본으로 편집」(저장 모드에서만).
-      const saved = (s.mode || "volatile") === "saved";
-      if (id.srcName) $(id.srcName).textContent = s.template_name || "(붙여넣은 텍스트)";
-      if (id.modBadge) $(id.modBadge).hidden = !s.source_dirty;  // 판정은 Python(source_dirty)
-      // srcFork = 저장 원문을 사본으로 가르는 유일 출구(읽기 전용의 탈출구) — 휘발에선 이미 편집
-      // 가능이라 숨는다(dead control 금지, 시안 `[data-mode]` 게이트 이식).
-      if (id.srcFork) $(id.srcFork).hidden = !saved;
+      renderSourceBar(s);
     }
 
     /* 작업점 카드(결정 16) — 상태 색인(위치·처리·빈칸 지도) + 코드블록 렌더 + 동사 게이트.
@@ -366,6 +373,13 @@
         // 열기' 진입)이 콤보에 보이게. 옵션에 없는 이름(붙여넣은 텍스트)은 선택 해제로 남는다.
         const sel = $(id.tplSel);
         if (sel.value !== s.template_name) sel.value = s.template_name;
+        // 저장 모드(원문 읽기 전용)는 **원문 정의 자체를 잠근다** — textarea 뿐 아니라 템플릿 교체
+        // 진입점(콤보·붙여넣기)도(리뷰 5a P1). 안 잠그면 저장 레시피가 조용히 다른 원문으로 바뀌어
+        // 「사본으로 편집」 전이 없이 수정된 정의를 저장분처럼 보여준다(계약 거짓말). 데이터 컨트롤은
+        // 잠그지 않는다(저장 세션도 데이터는 매번 바꾼다). 손보려면 「사본으로 편집」(5b).
+        const roLock = !!s.source_readonly;
+        sel.disabled = roLock;
+        $(id.pasteBtn).disabled = roLock;
 
         renderMap(s);       // ② 맞추기 표(결속·제안·표시형·소유권 색·「지금 행의 값」)
         renderSource(s);    // ③ 원문 뷰 textarea 동기(뷰 전환 화면만)
@@ -411,6 +425,7 @@
     function patchMap(s) {
       LAST = s;
       renderMap(s);
+      renderSourceBar(s);  // 원문 라이브 편집 → 이름·수정됨 표지 갱신(리뷰 5b P2 — textarea 불건드림)
       renderCard(s);  // 원문 변화 → 미리보기(채운 모습 복귀 대비, 원문 뷰에선 숨겨져 있어도 최신)
       const card = s.card || {};
       setStatus(card.missing_fields || [], card.empty_fields || []);
