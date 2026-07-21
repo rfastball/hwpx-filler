@@ -21,7 +21,6 @@
 from __future__ import annotations
 
 import enum
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -29,6 +28,7 @@ from lxml import etree
 
 from hwpxcore.text_extract import HP_NS, _local, _text_of_t, _to_package
 from hwpxfiller.core.authoring import scan_tokens
+from hwpxfiller.core.paths import home_dir
 from hwpxfiller.core.schema import extract_schema
 
 
@@ -44,12 +44,11 @@ def default_templates_dir() -> Path:
 
     작업·베이스·txt·데이터셋 기본 루트 4종(:func:`~hwpxfiller.core.job.default_jobs_dir`
     미러)과 동일 홈 관례 — 템플릿 라이브러리만 기본 루트가 없어 관리 워크숍이 백지로
-    떴다(RC-14). ``HWPXFILLER_HOME`` 로 재지정 가능(테스트·CI·이식성). 관리 뷰모델
-    *클래스* 자체는 위치-불가지(생성자가 디렉터리를 받는다) — 이 함수는 GUI 기본값
-    해석기일 뿐이다.
+    떴다(RC-14). ``HWPXFILLER_HOME`` 로 재지정 가능(테스트·CI·이식성 — 해석은
+    :func:`~hwpxfiller.core.paths.home_dir`). 관리 뷰모델 *클래스* 자체는 위치-불가지
+    (생성자가 디렉터리를 받는다) — 이 함수는 GUI 기본값 해석기일 뿐이다.
     """
-    root = os.environ.get("HWPXFILLER_HOME") or (Path.home() / ".hwpxfiller")
-    return Path(root) / "templates"
+    return home_dir() / "templates"
 
 
 class CompileState(str, enum.Enum):

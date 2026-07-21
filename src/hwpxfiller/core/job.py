@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import threading
 from dataclasses import dataclass, field
@@ -26,6 +25,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .mapping import MappingProfile
+from .paths import home_dir
 from hwpxcore.atomic import write_text_atomic
 from hwpxcore.validate import ValidationReport, validate
 
@@ -186,11 +186,11 @@ def default_jobs_dir() -> Path:
 
     작업은 작업 디렉터리·repo 체크아웃을 가로질러 살아남아야 하는 개인 durable 자산이라
     프로젝트-로컬이 아니라 홈에 둔다(패키징된 exe 엔 쓰기 가능한 프로젝트 폴더도 없다).
-    ``HWPXFILLER_HOME`` 환경변수로 재지정 가능(테스트·CI·이식성). 레지스트리 *클래스* 자체는
-    위치-불가지(생성자가 디렉터리를 받는다) — 이 함수는 GUI 기본값 해석기일 뿐이다.
+    ``HWPXFILLER_HOME`` 환경변수로 재지정 가능(테스트·CI·이식성 — 해석은
+    :func:`~hwpxfiller.core.paths.home_dir`). 레지스트리 *클래스* 자체는 위치-불가지(생성자가
+    디렉터리를 받는다) — 이 함수는 GUI 기본값 해석기일 뿐이다.
     """
-    root = os.environ.get("HWPXFILLER_HOME") or (Path.home() / ".hwpxfiller")
-    return Path(root) / "jobs"
+    return home_dir() / "jobs"
 
 
 # ------------------------------------------------------------------ 모델
