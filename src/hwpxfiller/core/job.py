@@ -244,20 +244,27 @@ def require_hwpx_template(template_path: str) -> str:
 
 
 def require_hwpx(job: "Job") -> "Job":
-    """작업이 hwpx 매체가 아니면 :class:`MediaMismatchError`, 맞으면 그대로 반환 — 3부 결정 13 진입 가드.
+    """작업 템플릿이 **비어있지 않은데 hwpx 가 아니면** :class:`MediaMismatchError`, 아니면 그대로 반환.
 
-    실행뷰(:class:`~hwpxfiller.gui.run_state.RunViewModel`)·배치 등 hwpx 전용 소비 경로의
-    진입점에서 부른다. txt 기안 작업은 「기안」 화면이 자기 경로로 소비하므로 정상 경로에선
-    여기 오지 않는다(조회 경계). **매체 교차 relink 는 예외** — 차단이 아니라 재확인이라
-    (매핑이 무의미해지고 작업이 다른 화면으로 옮겨간다) 여기서 raise 하지 않고 화면 게이트가 받는다.
+    3부 결정 13 진입 가드. 실행뷰(:class:`~hwpxfiller.gui.run_state.RunViewModel`)·「작업」 화면
+    등 hwpx 워크플로 진입점에서 부른다. 판정은 **두 부류를 가른다**:
+
+    - **빈 ``template_path`` = 통과.** 템플릿을 아직 잇지 않은 hwpx **저작 중** 작업은 정당하게
+      여기 흐르고, 「작업」 화면이 템플릿 재연결(relink) UI 로 복구를 돕는다. RunViewModel 도
+      미링크 템플릿을 관용한다(``effective_template``/``_template_fields`` 가 빈/부재를 처리).
+    - **비어있지 않은데 매체가 hwpx 가 아니면 = 거부.** txt 기안 작업(자기 화면 「기안」이 따로
+      있음)은 물론, ``.docx`` 등 미지 접미사도 여기서 막는다 — 그대로 두면 RunViewModel 하위
+      메서드가 그 경로를 hwpx zip 으로 파싱해 조용한 오작동이 된다. 실제 파싱 경계(``.hwpx``
+      필수)는 :func:`require_hwpx_template` 가 별도로 엄격히 지킨다(배치 생성·홈 컴파일).
+
+    **매체 교차 relink 는 예외** — 차단이 아니라 재확인이라 여기서 raise 하지 않고 화면 게이트가 받는다.
     """
-    try:
-        require_hwpx_template(job.template_path)
-    except MediaMismatchError:
+    if job.template_path and job.media != "hwpx":
+        where = "「기안」 화면 소관" if job.media == "txt" else "hwpx 아닌 템플릿"
         raise MediaMismatchError(
-            f"작업 '{job.name}' 은(는) hwpx 작업이 아니라 이 경로를 쓸 수 없습니다 "
-            f"(매체={job.media or '미상'}, 템플릿={job.template_path!r})"
-        ) from None
+            f"작업 '{job.name}' 은(는) 이 hwpx 전용 경로를 쓸 수 없습니다 "
+            f"({where} · 매체={job.media or '미상'} · 템플릿={job.template_path!r})"
+        )
     return job
 
 

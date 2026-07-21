@@ -826,21 +826,33 @@ def test_require_hwpx_template_passes_hwpx_and_rejects_others():
             require_hwpx_template(bad)
 
 
-def test_require_hwpx_job_passes_hwpx_and_rejects_txt():
-    """require_hwpx(job): hwpx 작업은 그대로 반환, txt 기안 작업은 이름 문맥과 함께 loud."""
+def test_require_hwpx_job_passes_hwpx_and_authoring_rejects_nonhwpx():
+    """require_hwpx(job): hwpx·빈(저작 중 미링크)은 통과, txt·기타 비어있지 않은 비-hwpx 는 loud.
+
+    빈 경로 예외를 보존하면서(복구 대상 = relink), 비어있지 않은 미지 매체(txt·.docx)는 막는다 —
+    그대로 두면 RunViewModel 하위 메서드가 hwpx 파서로 흘려 조용한 오작동이 된다(#148 리뷰 #1·#4).
+    """
     hwpx_job = Job(name="공고", template_path="/x/t.hwpx")
     assert require_hwpx(hwpx_job) is hwpx_job
+    # 빈/미링크 = 저작 중 hwpx 작업 → 통과(파싱 경계는 require_hwpx_template 가 별도로 막는다).
+    authoring = Job(name="새 작업", template_path="")
+    assert require_hwpx(authoring) is authoring
+    # txt 기안 작업 → 자기 화면(「기안」) 소관이라 loud(이름 문맥 동반).
     txt_job = Job(name="기안메모", template_path="/x/d.txt")
     with pytest.raises(MediaMismatchError) as ei:
         require_hwpx(txt_job)
-    assert "기안메모" in str(ei.value)  # 작업 이름이 메시지에 실린다(진입 가드 문맥)
+    assert "기안메모" in str(ei.value)
+    # 비어있지 않은 미지 접미사(.docx 등)도 거부 — 조용한 hwpx 파싱 진입 차단(리뷰 #4).
+    with pytest.raises(MediaMismatchError):
+        require_hwpx(Job(name="문서", template_path="/x/report.docx"))
 
 
-def test_run_view_model_rejects_txt_job_at_construction():
-    """실행뷰(hwpx 생성 경로)는 txt 작업을 생성 시점에 loud 거부 — 조회 경계 backstop(결정 13)."""
+def test_run_view_model_rejects_txt_but_allows_hwpx_and_authoring():
+    """실행뷰: txt·비-hwpx 는 생성 시점 loud 거부(결정 13), hwpx·빈 템플릿(저작 중)은 관용."""
     from hwpxfiller.gui.run_state import RunViewModel
 
-    RunViewModel(Job(name="공고", template_path="/x/t.hwpx"))  # 통과
+    RunViewModel(Job(name="공고", template_path="/x/t.hwpx"))  # hwpx 통과
+    RunViewModel(Job(name="저작중", template_path=""))          # 빈 템플릿(저작 중) 통과
     with pytest.raises(MediaMismatchError):
         RunViewModel(Job(name="기안", template_path="/x/d.txt"))
 
