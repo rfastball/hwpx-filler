@@ -816,3 +816,60 @@ def test_confirmed_blank_clears_when_value_typed(tmp_path):
     ctrl.dispatch("set_map_value", {"name": "비고", "text": "특이사항"})  # 직접 입력 = 상수
     b = _tok(ctrl.snapshot(), "비고")
     assert b["blank_declared"] is False and b["own"] == "man" and b["value"] == "특이사항"
+
+
+def test_confirmed_blank_survives_template_edit(tmp_path):
+    """확정-비움은 무관한 템플릿 편집에 살아남는다(Codex F1) — _rebuild_mapping 이 confirmed 를
+    조용히 버리면 선언이 증발하고 토큰이 missing 으로 게이트에 재진입한다(confirm-or-alarm 위반)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))
+    ctrl.dispatch("set_template_text", {"text": "제목:{{공고명}} 비고:{{비고}}"})
+    ctrl.dispatch("set_confirmed", {"name": "비고", "value": True})
+    ctrl.dispatch("edit_source", {"text": "제목:{{공고명}} 비고:{{비고}} 신규:{{신규}}"})  # 무관한 토큰 추가
+    b = _tok(ctrl.snapshot(), "비고")
+    assert b["blank_declared"] is True and b["state"] == "blank"  # 선언 보존(증발 안 함)
+    assert "비고" not in ctrl.dispatch("copy_precheck", {})["missing_fields"]  # 게이트 재진입 안 함
+
+
+def test_confirmed_blank_survives_data_reload_and_overrides_autobind(tmp_path):
+    """확정-비움은 데이터 새로고침에 살아남고, 새 데이터의 정확 일치 자동 결속까지 덮는다(Codex F1).
+
+    사람의 「비운다」가 시스템 재제안을 이긴다(결정 12) — 비고 열이 새로 생겨도 자동 결속하지 않는다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))
+    ctrl.dispatch("set_template_text", {"text": "제목:{{공고명}} 비고:{{비고}}"})
+    ctrl.dispatch("set_confirmed", {"name": "비고", "value": True})
+    withcol = tmp_path / "w.csv"
+    withcol.write_text("공고명,비고\n전산장비,자동결속후보\n", encoding="utf-8")  # 비고 열 존재
+    ctrl.load_data_path(str(withcol))
+    b = _tok(ctrl.snapshot(), "비고")
+    assert b["blank_declared"] is True and b["source"] == ""  # 선언 보존 + 자동 결속 안 됨
+
+
+def test_dead_bound_confirmed_drops_to_gate_not_silent_blank(tmp_path):
+    """확정된 결속 행의 열이 새 데이터에서 사라지면 확정-비움으로 조용히 승격하지 않는다(결정 12).
+
+    죽은 결속과 「비운다」 선언은 다른 사실이다 — 값 복구 불가라 시스템 소유(missing)로 떨어뜨려
+    게이트가 잡게 하고 사람 재검토를 강제한다(조용한 blank 승격 금지)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))                    # 공고명 자동 결속
+    ctrl.dispatch("set_confirmed", {"name": "공고명", "value": True})  # 결속 행 확정(내용 있음)
+    other = tmp_path / "o.csv"
+    other.write_text("추정가격\n1000\n", encoding="utf-8")  # 공고명 열 사라짐
+    ctrl.load_data_path(str(other))
+    g = _tok(ctrl.snapshot(), "공고명")
+    assert g["blank_declared"] is False and g["state"] == "missing"  # 게이트에 남는다(조용한 승격 아님)
+
+
+def test_emptied_bound_const_becomes_declared_blank_when_confirmed(tmp_path):
+    """결속 값을 비우고 확정하면 확정-비움으로 인식된다(Codex F2) — 기억된 소스는 const 의
+    내용이 아니라 되돌리기용이다. 게이트가 계속 묻지 않는다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))                    # 공고명 자동 결속
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": ""})  # 결속 값 비움 → const="" (소스 기억)
+    g = _tok(ctrl.snapshot(), "공고명")
+    assert g["can_revert"] is True and g["blank_declared"] is False  # 소스 기억·아직 미확정
+    ctrl.dispatch("set_confirmed", {"name": "공고명", "value": True})
+    g2 = _tok(ctrl.snapshot(), "공고명")
+    assert g2["blank_declared"] is True                    # 확정+빈 상수 = 확정-비움
+    assert "공고명" not in ctrl.dispatch("copy_precheck", {})["empty_fields"]  # 게이트서 빠짐

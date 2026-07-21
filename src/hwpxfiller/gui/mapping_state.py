@@ -113,8 +113,16 @@ class RowState:
         self.suggestion_score = 0.0
 
     def has_content(self) -> bool:
-        """매핑 내용이 있는가 — 소스가 있거나 비어 있지 않은 상수."""
-        return bool(self.source) or (self.type == "const" and self.const != "")
+        """매핑 내용이 있는가 — **값을 방출하는가**.
+
+        ``const``(man)는 리터럴만 방출하므로(``value_for`` 는 ``source`` 를 무시하고 ``const``
+        를 낸다) 기억된 소스는 내용이 아니다 — 결속 값을 비운 자리는 되돌리기 위해 소스를
+        기억할 뿐, 출력은 빈 문자열이다(Codex F2). 그걸 내용으로 세면 값을 비우고 확정해도
+        :meth:`is_empty_confirmed` 가 거짓이라 확정-비움으로 인식되지 않아 게이트가 계속
+        묻는다. 그 외 유형은 결속 소스가 곧 내용이다."""
+        if self.type == "const":
+            return self.const != ""
+        return bool(self.source)
 
     def is_empty_confirmed(self) -> bool:
         """의도적 비움 확정 — 확정됐지만 채울 내용이 없음."""

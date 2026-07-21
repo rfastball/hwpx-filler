@@ -229,9 +229,17 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
 
         :meth:`~hwpxfiller.gui.mapping_state.MappingModel.from_field_names` 로 새 골격을
         세우고(정확 일치 자동 결속·이름 유형 추론), 옛 매핑에서 같은 토큰의 **사람 소유**
-        상태(결속·수기 값·유형·서식)를 이어 붙인다. 단 결속 열이 새 데이터에 **없으면**
+        상태(결속·수기 값·유형·서식·**확정**)를 이어 붙인다. 단 결속 열이 새 데이터에 **없으면**
         승계하지 않는다(죽은 결속 방지) — 새 골격의 자동/제안이 그 자리를 다시 채운다.
-        시스템 소유(미접촉 제안)는 승계하지 않는다: 새 데이터 기준으로 다시 제안돼야 한다.
+        시스템 소유(미접촉·미확정 제안)는 승계하지 않는다: 새 데이터 기준으로 다시 제안돼야 한다.
+
+        **확정 승계(#148 슬라이스 4, Codex F1)**: 사람 소유는 ``touched`` 만이 아니라
+        ``confirmed`` 도 포함한다(:meth:`RowState.is_system_owned`). 확정-비움(확정+무내용)은
+        ``touched=False`` 라 종전 ``touched`` 게이트가 통째로 떨어뜨려, 템플릿 편집·데이터
+        새로고침 같은 무관한 재구성에 **선언이 조용히 증발**하고 토큰이 missing 으로 게이트에
+        재진입했다(confirm-or-alarm 위반). 확정 상태를 함께 승계해 이를 막는다. 확정-비움은
+        새 골격의 자동 결속(정확 일치)까지 **덮어** 무결속으로 유지한다 — 사람의 「비운다」가
+        시스템 재제안을 이긴다(결정 12).
 
         큐·선택은 세션 휘발이라 여기서 건드리지 않는다(호출측이 데이터 교체 시 새로 세운다).
         """
@@ -250,24 +258,34 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
             prev = next(
                 (r for r in old.rows if r.template_field == row.template_field), None
             )
-            if prev is None or not prev.touched:
-                continue  # 새 토큰이거나 시스템 소유(제안) — 새 데이터 기준 자동
+            if prev is None or prev.is_system_owned():
+                continue  # 새 토큰이거나 시스템 소유(미접촉·미확정 제안) — 새 데이터 기준 자동
             if prev.type == "const":  # 수기 값(man)은 데이터 무관 — 상수째 승계
                 row.type = "const"
                 row.const = prev.const
                 row.fmt = prev.fmt
-                row.touched = True
+                row.touched = prev.touched
                 # 기억한 결속 소스는 **새 데이터에 살아 있을 때만** 승계한다(Codex F3). 사라진
                 # 열을 남기면 「자동으로 되돌리기」가 없는 열로 결속을 되살려, live_profile 이 전
                 # 레코드에 빈 값을 내면서 소유권은 auto 라 보고하는 계약 거짓말이 된다(can_revert
                 # = type==const ∧ source 라, source 를 비우면 되돌리기 자체가 사라져 정합).
                 row.source = prev.source if prev.source in cols else ""
+                row.confirmed = prev.confirmed
             elif prev.source and prev.source in cols:  # 사람이 고른 결속이 새 데이터에도 있으면
                 row.source = prev.source
                 row.type = prev.type
                 row.fmt = prev.fmt
-                row.touched = True
-            # 결속이 죽었으면(prev.source ∉ cols) 승계 안 함 → 새 골격의 자동/제안이 산다
+                row.touched = prev.touched
+                row.confirmed = prev.confirmed
+            elif not prev.source:  # 확정-비움(비운다 선언) — 결속 없이 확정. 선언 보존.
+                # from_field_names 가 정확 일치로 자동 결속했어도 무결속으로 되돌린다 — 사람의
+                # 「비운다」가 시스템 재제안을 이긴다(결정 12). 확정을 승계해 게이트 제외를 유지.
+                row.source = ""
+                row.touched = prev.touched
+                row.confirmed = prev.confirmed
+            # else: 사람이 고른 결속이 죽었다(prev.source ∉ cols·非const) — 값 복구 불가라
+            #        확정을 승계하지 않고 시스템 소유(missing)로 떨어뜨려 사람 재검토를 강제한다
+            #        (조용한 blank 승격 금지 — 확정-비움과 죽은 결속은 다른 사실이다).
 
     def _map_kind_of(self, source: str) -> str:
         """결속 대상 열의 스니핑 유형(결정 5 우선) — 없으면 빈 문자열(이름 추론 낙착)."""

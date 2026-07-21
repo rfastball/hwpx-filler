@@ -650,6 +650,23 @@ def test_live_profile_renders_confirmed_blank_as_empty_not_missing():
     assert out_after["비고"] == ""                        # 확정-비움 → 키 유지·빈 값(blank)
 
 
+def test_has_content_const_ignores_remembered_source():
+    """const(man) 행의 내용 판정은 리터럴 기준 — 기억된 소스는 되돌리기용이지 출력이 아니다(Codex F2).
+
+    결속 값을 비우면 소스를 기억한 채 빈 상수가 되는데, 소스를 내용으로 세면 값을 비우고
+    확정해도 확정-비움으로 인식되지 않아 게이트가 계속 묻는다."""
+    m = MappingModel.from_field_names(["명"], source_fields=["명"], col_kinds={"명": "text"})
+    m.set_manual(m.index_of("명"), "")                # 결속 값 비움 → const="" (소스 「명」 기억)
+    row = m.rows[m.index_of("명")]
+    assert row.type == "const" and row.source == "명" and row.const == ""
+    assert row.has_content() is False                # 빈 상수는 내용 아님(소스 기억 무관)
+    m.set_confirmed(m.index_of("명"), True)
+    assert row.is_empty_confirmed() is True           # 확정-비움으로 인식
+    # 값 있는 상수는 여전히 내용이다(회귀 방지).
+    m.set_manual(m.index_of("명"), "김민수")
+    assert row.has_content() is True
+
+
 def test_declared_blank_fields_only_confirmed_empty():
     """declared_blank_fields = 확정+무내용만 — 내용 있는 확정 행·미확정 빈 행은 빠진다."""
     m = MappingModel.from_field_names(["명", "비고", "인"], source_fields=["명"])
