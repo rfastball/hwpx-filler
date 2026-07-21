@@ -500,20 +500,41 @@ class MappingModel:
             ],
         )
 
-    # -------------------------------------------------- 휘발 렌더·결속(#148 슬라이스 3b)
+    # -------------------------------------------------- 휘발 렌더·결속(#148 슬라이스 3b·4)
     def live_profile(self, name: str = "") -> MappingProfile:
         """휘발 미리보기·복사가 소비하는 **지금** 매핑 — 확정 게이트 무관, 내용 있는 전 행.
 
-        :meth:`to_profile` 은 ``confirmed`` 행만 담는 저장 산출물용이다. 「기안」 휘발 세션엔
-        확정 개념이 없어(슬라이스 5) 결속·상수가 든 모든 행을 그대로 적용한다 —
-        :meth:`MappingProfile.apply` 가 큐 레코드마다 값 사전을 낸다(이음매 = 레코드→매핑→값
-        사전→render_segments). 무결속·무상수 행은 빠져 토큰이 ``missing``({{토큰}} 빨강)으로
-        남고, 결속 열 값이 비면 키는 있고 값이 빈 ``blank``(〈빈 값〉)이 된다. 의도적 비움
-        (``blank`` 선언)은 확정 개념이라 여기 없다 — 슬라이스 5 몫."""
-        return MappingProfile(
-            name=name,
-            mappings=[r.to_mapping() for r in self.rows if r.has_content()],
-        )
+        :meth:`to_profile` 은 ``confirmed`` 행만 담는 저장 산출물용이다. 「기안」 휘발 세션은
+        확정을 저장 게이트로 쓰지 않으므로(그건 슬라이스 5 승격) 결속·상수가 든 모든 행을
+        그대로 적용한다 — :meth:`MappingProfile.apply` 가 큐 레코드마다 값 사전을 낸다
+        (이음매 = 레코드→매핑→값 사전→render_segments). 무결속·무상수·**미확정** 행은 빠져
+        토큰이 ``missing``({{토큰}} 빨강)으로 남고, 결속 열 값이 비면 키는 있고 값이 빈
+        ``blank``(〈빈 값〉)이 된다.
+
+        **확정-비움(#148 슬라이스 4, 결정 12)**: 확정됐는데 채울 내용이 없는 행(사람이
+        「이 필드는 비운다」를 명시)은 **빈 값 방출**로 담는다 — 렌더는 데이터-빈값 ``blank`` 와
+        **같게**(〈빈 값〉·클립보드 빈 문자열) 보이되, 게이트 제외는 소비자(:mod:`draft_session`)가
+        :meth:`declared_blank_fields` 로 가른다. ``type="blank"`` 이 아니라 **빈 text 매핑**으로
+        방출하는 이유: :meth:`MappingProfile.apply` 는 ``is_blank`` 를 값 사전에서 **드롭**하므로
+        (hwpx 누름틀은 손대지 말라는 계약) blank 로 담으면 키가 사라져 ``missing`` 으로 렌더된다 —
+        txt 는 누름틀이 없고 선언된 비움은 빈 문자열이라, 키를 남겨 ``blank`` 로 표지돼야 한다."""
+        mappings: "list[FieldMapping]" = []
+        for r in self.rows:
+            if r.has_content():
+                mappings.append(r.to_mapping())
+            elif r.is_empty_confirmed():
+                # 확정-비움 → 빈 값 방출(키 유지 → render_segments 가 blank 로 표지).
+                mappings.append(FieldMapping(template_field=r.template_field, type="text"))
+        return MappingProfile(name=name, mappings=mappings)
+
+    def declared_blank_fields(self) -> "list[str]":
+        """확정-비움(확정·무내용) 필드 이름 — 렌더는 ``blank`` 지만 빈칸 게이트에서 빠진다(결정 12).
+
+        「확인한 것은 다시 묻지 않는다」(ADR-E ack 동형)의 큐 판: 사람이 「비운다」고 선언한
+        토큰은 복사 전 빈칸 게이트·완료 노트·빈칸 지도에서 제외된다. 데이터가 비어 생긴
+        ``blank`` 는 사람의 선언이 아니라 그 행의 사실이므로 여기 들지 않고 게이트에 **남는다** —
+        두 무결속 상태의 구분이 여기서 값을 한다."""
+        return [r.template_field for r in self.rows if r.is_empty_confirmed()]
 
     def index_of(self, template_field: str) -> int:
         """토큰 이름 → 행 인덱스(없으면 ValueError) — 디스패치가 이름으로 겨눈다."""

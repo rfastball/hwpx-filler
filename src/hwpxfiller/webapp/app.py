@@ -971,18 +971,25 @@ _DRAFT_SESSION_PROBE_JS = r"""
       // 맞추기 표(#148 슬라이스 3b) — 결속(auto)·결속 빈값(blank)·무결속+근사 제안(원클릭·값
       // 직접 입력)·**결속 값 고쳐 상수 강등(man, 소스 기억)**. 소유권 색 점.
       tokens:[
+        // 유형·확정 열(#148 슬라이스 4) — auto 행만 유형 셀렉트가 뜨고(공고명·담당자), 확정
+        // 체크박스는 전 행. blank_declared 는 확정-비움 표지(판정은 서버 is_empty_confirmed).
         {name:'공고명', state:'fill', source:'공고명', own:'auto', manual:false,
-         value:'전산장비 구매', fmt_kind:'text', fmt_code:'', suggest:'', can_revert:false},
+         value:'전산장비 구매', fmt_kind:'text', fmt_code:'', suggest:'', can_revert:false,
+         confirmed:true, blank_declared:false},
         {name:'담당자', state:'blank', source:'담당열', own:'auto', manual:false,
-         value:'', fmt_kind:'text', fmt_code:'', suggest:'', can_revert:false},
+         value:'', fmt_kind:'amount', fmt_code:'', suggest:'', can_revert:false,
+         confirmed:true, blank_declared:false},
         {name:'비고', state:'missing', source:'', own:'', manual:false,
-         value:'', fmt_kind:'text', fmt_code:'', suggest:'비고열', can_revert:false},
+         value:'', fmt_kind:'text', fmt_code:'', suggest:'비고열', can_revert:false,
+         confirmed:false, blank_declared:false},
         // 상수(man)인데 결속 소스를 기억 — 드롭다운은 열이 아니라 「(직접 입력)」이어야 한다
         // (Codex F1: t.source 로 selected 판정하면 옛 열이 이겨 결속된 듯 거짓 표시).
         {name:'수량', state:'fill', source:'공고명', own:'man', manual:true,
-         value:'99', fmt_kind:'text', fmt_code:'', suggest:'', can_revert:true}
+         value:'99', fmt_kind:'text', fmt_code:'', suggest:'', can_revert:true,
+         confirmed:true, blank_declared:false}
       ],
       columns:['공고명','담당열','비고열'], fmt_options:{text:[], amount:[], date:[]},
+      type_options:[{code:'text',label:'텍스트'},{code:'date',label:'날짜'},{code:'amount',label:'금액'}],
       record_count:2,
       data_label:'d.csv', data_source_label:'파일: d.csv', data_key:'file:c:/d/d.csv',
       has_data:true, selected_count:2, target_font:'malgun',
@@ -1035,6 +1042,35 @@ _DRAFT_SESSION_PROBE_JS = r"""
     // 한다(Codex F1 — 옛 열 selected 로 결속된 듯 거짓 표시 차단). 유효 선택 = 빈 값.
     out.map_man_src_value = (function(){ var s = document.getElementById('draftTokPanel-src-3');
       return s ? s.value : 'ABSENT'; })();
+    // 유형·확정 열(#148 슬라이스 4) — 유형 셀렉트는 auto 행에만(공고명·담당자=2), 확정 체크박스는
+    //   전 행(4). 유형 셀렉트의 유효 선택 = 서버 fmt_kind(담당자 amount). 확정 체크 되읽기.
+    out.map_type_selects = document.querySelectorAll('#draftTokPanel .maptype').length;  // auto 2
+    out.map_type_value = (function(){ var s = document.getElementById('draftTokPanel-type-1');
+      return s ? s.value : 'ABSENT'; })();  // 담당자(i=1) = amount
+    out.map_type_options = (function(){ var s = document.querySelector('#draftTokPanel .maptype');
+      return s ? s.options.length : 0; })();  // 텍스트·날짜·금액 = 3
+    out.map_confirmed_checks = document.querySelectorAll('#draftTokPanel .mapck').length;  // 전 행 4
+    out.map_confirmed_checked = (function(){ var c = document.getElementById('draftTokPanel-ck-0');
+      return !!c && c.checked; })();          // 공고명(i=0) = 확정
+    out.map_unconfirmed = (function(){ var c = document.getElementById('draftTokPanel-ck-2');
+      return !!c && !c.checked; })();         // 비고(i=2) = 미확정
+    // 확정-비움(#148 슬라이스 4, 결정 12) — 비고를 확정+무내용으로 밀면 값 셀이 「비워둠(선언)」
+    //   (「아직 안 씀」 아님)이고 행이 blank 로 표지된다. 게이트 제외는 Python 판정이라(pytest)
+    //   여기선 표면 되읽기만. 격리 push 후 원상 복귀(뒤 되읽기 오염 방지).
+    var bsnap = JSON.parse(JSON.stringify(snap));
+    bsnap.tokens[2].confirmed = true; bsnap.tokens[2].blank_declared = true; bsnap.tokens[2].suggest = '';
+    window.__push('draft', bsnap);
+    out.blank_declared_marker = (function(){
+      var tr = document.querySelectorAll('#draftTokPanel table.dmap tbody tr')[2];
+      var m = tr && tr.querySelector('.mapval-declared');
+      return m ? m.textContent : (tr ? '' : 'ABSENT'); })();
+    out.blank_declared_no_textarea = (function(){
+      var tr = document.querySelectorAll('#draftTokPanel table.dmap tbody tr')[2];
+      return !!tr && !tr.querySelector('.mapval-in'); })();
+    out.blank_declared_row = (function(){
+      var tr = document.querySelectorAll('#draftTokPanel table.dmap tbody tr')[2];
+      return !!tr && tr.classList.contains('row-blank-declared'); })();
+    window.__push('draft', snap);  // 원상 복귀(비확정-비움) — 뒤 되읽기 오염 방지
     // ③ 원문 뷰 전환(결정 34) — 기본 채운 모습, 「원문」 클릭 시 배타 전환 + textarea 에 원문.
     out.view_default_filled =
       document.getElementById('draftViewFilled').getAttribute('aria-pressed') === 'true'
@@ -1089,9 +1125,11 @@ _DRAFT_SESSION_PROBE_JS = r"""
     out.degen_advance_hidden = (function(){ var a = document.getElementById('draftAdvance');
       return gone(a && a.closest('.wc-advance')); })();
     out.degen_copy_enabled = !document.getElementById('draftCardCopy').disabled;
+    // 값 열 머리 — 슬라이스 4 에서 확정 열이 뒤에 붙어 값 열은 더 이상 마지막이 아니다
+    // (열: 토큰0·데이터열1·유형2·표시형3·값4·확정5). 값 열(index 4)을 명시로 읽는다.
     out.degen_val_head = (function(){
       var th = document.querySelectorAll('#draftTokPanel table.dmap thead th');
-      return th.length ? th[th.length - 1].textContent : ''; })();
+      return th.length > 4 ? th[4].textContent : ''; })();
     window.__push('draft', snap);  // 원상 복귀(비퇴화) — 뒤 되읽기 오염 방지
     out.nondegen_dots_shown =
       getComputedStyle(document.getElementById('draftCardDots')).display !== 'none';

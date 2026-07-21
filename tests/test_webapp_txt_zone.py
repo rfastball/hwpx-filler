@@ -733,3 +733,86 @@ def test_rebuild_drops_remembered_source_absent_in_new_data(tmp_path):
     g = _tok(ctrl.snapshot(), "공고명")
     assert g["own"] == "man" and g["value"] == "고정 제목"  # 상수 값은 유지(데이터 무관)
     assert g["can_revert"] is False                        # 죽은 소스 기억은 비웠다(되돌리기 사라짐)
+
+
+# ---------------------------------------------- 매핑 그릇: 유형·확정·확정-비움(#148 슬라이스 4)
+def test_snapshot_exposes_type_options_and_confirmed_flags(tmp_path):
+    """맞추기 스냅샷 = 유형 후보(값-운반 유형) + 행별 확정·확정-비움 표지(그릇 계약)."""
+    ctrl, _ = _controller(tmp_path)
+    snap = ctrl.snapshot()
+    assert [o["code"] for o in snap["type_options"]] == ["text", "date", "amount"]  # const 없음(결정 12·14)
+    for t in snap["tokens"]:
+        assert "confirmed" in t and "blank_declared" in t
+
+
+def test_set_map_type_overrides_sniffed_type(tmp_path):
+    """유형 정정(set_map_type, 결정 12) — 사람이 값 스니핑을 이긴다(표시형 리셋·값 재서식)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))                     # 추정가격 = amount 스니핑(천단위)
+    assert _tok(ctrl.snapshot(), "추정가격")["value"] == "1,000원"
+    ctrl.dispatch("set_map_type", {"name": "추정가격", "type": "text"})  # 사람이 text 로 정정
+    p = _tok(ctrl.snapshot(), "추정가격")
+    assert p["fmt_kind"] == "text" and p["value"] == "1000"  # 유형 바뀌고 값이 text 서식
+
+
+def test_set_map_type_unknown_is_loud(tmp_path):
+    """미지 유형은 조용히 무시하지 않고 시끄럽게 거부한다(열거형 검증 — confirm-or-alarm)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))
+    with pytest.raises(ValueError):
+        ctrl.dispatch("set_map_type", {"name": "공고명", "type": "없는유형"})
+
+
+def test_set_confirmed_toggles_row(tmp_path):
+    """행별 확정 토글(set_confirmed) — 스냅샷 confirmed 되읽기."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))
+    assert _tok(ctrl.snapshot(), "공고명")["confirmed"] is False
+    ctrl.dispatch("set_confirmed", {"name": "공고명", "value": True})
+    assert _tok(ctrl.snapshot(), "공고명")["confirmed"] is True
+
+
+def test_confirmed_blank_renders_blank_and_excluded_from_gate(tmp_path):
+    """확정-비움(결정 12) — 확정+무결속 토큰은 blank(〈빈 값〉)로 렌더되고 빈칸 게이트에서 빠진다.
+
+    데이터가 비어 생긴 blank(선언 아님)는 게이트에 **남아** 두 무결속 상태를 가른다."""
+    ctrl, _ = _controller(tmp_path)
+    gapped = tmp_path / "g.csv"
+    gapped.write_text("공고명,추정가격\n전산장비,\n", encoding="utf-8")  # 추정가격 빈값
+    ctrl.load_data_path(str(gapped))
+    ctrl.dispatch("set_template_text",
+                  {"text": "제목:{{공고명}} 금액:{{추정가격}} 비고:{{비고}}"})
+    pre0 = ctrl.dispatch("copy_precheck", {})
+    assert "비고" in pre0["missing_fields"] and "추정가격" in pre0["empty_fields"]  # 확정 전
+    ctrl.dispatch("set_confirmed", {"name": "비고", "value": True})               # 「비운다」 확정
+    snap = ctrl.snapshot()
+    assert _tok(snap, "비고")["blank_declared"] is True
+    assert _tok(snap, "비고")["state"] == "blank"          # missing → blank(〈빈 값〉)
+    pre1 = ctrl.dispatch("copy_precheck", {})
+    assert "비고" not in pre1["missing_fields"] and "비고" not in pre1["empty_fields"]  # 게이트서 빠짐
+    assert "추정가격" in pre1["empty_fields"]              # 데이터-빈값은 남는다(그 행의 사실)
+    assert "비고" not in snap["card"]["empty_fields"]      # 카드 게이트 집합도 뺀다(단일 판정)
+
+
+def test_confirmed_blank_excluded_from_completion_note(tmp_path):
+    """확정-비움은 완료 노트의 「빈 값」에서도 빠진다 — 선언한 비움은 경고가 아니다(게이트와 같은 판정)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))
+    ctrl.dispatch("set_template_text", {"text": "제목:{{공고명}} 비고:{{비고}}"})
+    ctrl.dispatch("set_confirmed", {"name": "비고", "value": True})
+    _copy(ctrl)
+    lc = ctrl.snapshot()["card"]["last_copy"]
+    assert lc is not None
+    assert "비고" not in lc["empty_fields"] and "비고" not in lc["missing_fields"]
+
+
+def test_confirmed_blank_clears_when_value_typed(tmp_path):
+    """확정-비움에 값을 채우면 선언이 풀린다 — 내용이 생겨 확정-비움이 아니게 되고 게이트로 복귀."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_csv(tmp_path))
+    ctrl.dispatch("set_template_text", {"text": "제목:{{공고명}} 비고:{{비고}}"})
+    ctrl.dispatch("set_confirmed", {"name": "비고", "value": True})
+    assert _tok(ctrl.snapshot(), "비고")["blank_declared"] is True
+    ctrl.dispatch("set_map_value", {"name": "비고", "text": "특이사항"})  # 직접 입력 = 상수
+    b = _tok(ctrl.snapshot(), "비고")
+    assert b["blank_declared"] is False and b["own"] == "man" and b["value"] == "특이사항"
