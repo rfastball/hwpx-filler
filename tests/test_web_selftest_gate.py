@@ -767,3 +767,31 @@ def test_theme_choice_persists_across_restart_without_flicker(tmp_path) -> None:
 # 를 통째 청소하고 고정 프로필을 새로 만들므로(단일 인스턴스 가드가 이 홈에 우리뿐임을 보장)
 # 재시작 간 공유 캐시·구판 잔재는 우리 코드 층에서 이중 차단된다 — 부팅 청소 가드는
 # test_webapp_profile.test_prepare_purges_orphans_and_legacy_layout.
+
+
+@pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
+def test_completed_boot_stamps_the_home_and_narrows_the_budget(tmp_path) -> None:
+    """부팅을 완주하면 완주 스탬프가 홈에 남는다 — 다음 부팅부터 좁은 예산(#77).
+
+    예산 판정은 순수 함수라 단위 테스트가 지지만, **loaded 가 실제로 발화하는 실 WebView2
+    부팅에서 스탬프가 실제로 찍히는가**는 여기서만 확인된다: 핸들러가 안 불리거나 저장이
+    조용히 실패하면 모든 부팅이 영구히 '첫 실행'이 되고(넓은 예산 상주), 그래도 단위
+    테스트는 계속 초록이다 — 계측 층의 조용한 오류.
+    """
+    from hwpxfiller.webapp.boot_budget import COLD_BUDGET_SECONDS, WARM_BUDGET_SECONDS, decide
+
+    home = tmp_path / "home"
+    out = tmp_path / "boot.json"
+    env = dict(os.environ, HWPXFILLER_HOME=str(home), HWPX_SELFTEST_OUT=str(out))
+    proc = subprocess.run(
+        [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"],
+        env=env, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
+    )
+    assert out.exists(), f"부팅 실패 — rc={proc.returncode}\nstderr={proc.stderr[-2000:]}"
+    saved = json.loads((home / "settings.json").read_text(encoding="utf-8"))
+    stamp = saved.get("boot_completed_runtime")
+    assert isinstance(stamp, str) and stamp, (
+        f"완주 스탬프 미기록 — 모든 부팅이 첫 실행으로 남습니다(#77): {saved!r}")
+    # 첫 부팅은 넓은 예산이었고, 이 스탬프 뒤로는 좁은 예산이다(판정의 실 왕복).
+    assert decide("", stamp)[0] == COLD_BUDGET_SECONDS
+    assert decide(stamp, stamp)[0] == WARM_BUDGET_SECONDS
