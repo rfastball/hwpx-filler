@@ -392,19 +392,34 @@
     });
   }
 
+  /* 템플릿 목록 채우기 — 선택은 **세션의 실제 템플릿**(스냅샷)이 정한다(드롭다운은 표시일 뿐). */
+  function fillTemplateSelect(state) {
+    const sel = $("tplSel");
+    const names = state.templates || [];
+    sel.innerHTML = names.map((n) => `<option value="${esc(n)}">${esc(n)}.txt</option>`).join("");
+    if (names.length) sel.value = state.template_name;
+  }
+
+  /* 라이브러리 재조회(#135 리뷰 P2) — 드롭다운은 부팅 시 1회만 채워져서, 다른 화면이
+     라이브러리에 템플릿을 더해도(빠른 기안 승격·관리 화면 「새 TXT」·가져오기) 앱을 다시
+     켜기 전엔 여기서 고를 수 없었다. 방금 저장한 것이 목록에 없는 것은 조용한 어긋남이라
+     화면 진입 때 다시 읽는다(app.js 의 EditorScreen.rerender 선례와 같은 자리). initial 은
+     무변이 질의(목록 + 현 세션 스냅샷)라 세션을 건드리지 않는다. */
+  async function refreshTemplates() {
+    if (!(window.pywebview && window.Bridge)) return;
+    fillTemplateSelect(await Bridge.initial(SCREEN));
+  }
+
   /* 화면 부팅 — 라우터(app.js)가 pywebviewready 후 호출. */
   async function init() {
     Bridge.onPush(SCREEN, render);
     wire();
     const initState = await Bridge.initial(SCREEN);
-    const sel = $("tplSel");
-    sel.innerHTML = initState.templates
-      .map((n) => `<option value="${esc(n)}">${esc(n)}.txt</option>`).join("");
-    if (initState.templates.length) sel.value = initState.template_name;
+    fillTemplateSelect(initState);
     render(initState);
   }
 
   // guardBody·copyGateBody 는 순수 합성기 — 실앱 게이트가 합성 결과(수치·문안 배치)를
   // 되읽는다(job 관례). confirmNewDraftIfArmed 는 홈의 「＋ 새 기안」이 소비(#126).
-  window.TxtScreen = { init, guardBody, copyGateBody, confirmNewDraftIfArmed };
+  window.TxtScreen = { init, refreshTemplates, guardBody, copyGateBody, confirmNewDraftIfArmed };
 })();

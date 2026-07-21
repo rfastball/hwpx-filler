@@ -472,6 +472,10 @@ class TestWebSelftestGate:
         assert z["new_draft_guard_wired"] is True, (
             "TxtScreen.confirmNewDraftIfArmed 배선이 사라졌습니다 — 「＋ 새 기안」 무가드 파괴 회귀."
         )
+        assert z["tpl_refresh_wired"] is True, (
+            "TxtScreen.refreshTemplates 배선이 사라졌습니다 — 다른 화면이 더한 템플릿을 "
+            "재시작 전엔 못 고르는 조용한 어긋남 회귀(#135 리뷰 P2)."
+        )
         nd, swap = z["guard_body_newdraft"], z["guard_body"]
         assert nd.startswith("새 기안을 시작하면"), f"제스처 앞머리 어긋남: {nd!r}"
         assert "복사 진행 2/5행" in nd, f"큐 진행 재진술 누락: {nd!r}"
@@ -581,11 +585,18 @@ class TestWebSelftestGate:
         # 채움 표지 토글 — 미리보기 기본이라 켜짐(aria-pressed=true)으로 뜬다.
         assert q["marker_toggle"] is True, "채움 표지 토글 버튼이 없습니다."
         assert q["marker_pressed"] == "true", f"표지 토글 초기 상태가 ON 이 아닙니다: {q['marker_pressed']!r}"
-        # 승격 2동사 = 표면만(정직한 비활성 + 인라인 사유 — 죽은 버튼 금지, confirm-or-alarm).
-        assert q["save_job_disabled"] is True and q["save_tpl_disabled"] is True, (
-            "승격 버튼이 활성입니다 — 이 라운드는 표면만이고 실동작은 후속입니다."
+        # 승격 2동사의 **비대칭**(#135): 「템플릿으로 저장」은 열렸고, 「작업으로 저장」은
+        # 목적지(기안 작업 TXT)가 없어 비활성 + 자기 사유로 남는다. 둘 다 단언해야 한쪽이
+        # 조용히 뒤집혀도(열려선 안 될 게 열리거나, 열린 게 다시 잠기거나) 잡힌다.
+        assert q["save_tpl_disabled"] is False, (
+            "「템플릿으로 저장」이 비활성입니다 — 승격 실동작이 착지했는데 손잡이가 잠겨 있습니다."
         )
-        assert "복사" in q["promote_note"], f"비활성 승격의 인라인 사유(복사로 남기라)가 없습니다: {q['promote_note']!r}"
+        assert q["save_job_disabled"] is True, (
+            "「작업으로 저장」이 활성입니다 — 기안 작업(TXT)이 아직 없어 열 수 없는 승격입니다."
+        )
+        assert "기안 작업" in q["promote_note"], (
+            f"비활성 승격의 인라인 사유(기안 작업 준비 중)가 없습니다: {q['promote_note']!r}"
+        )
         assert "—" not in q["promote_note"], f"승격 사유에 em-dash 가 있습니다(R-copy 가드): {q['promote_note']!r}"
         # 소유권 색 — 자동 결속 값(사업명)이 own-auto 로 페인트된다(폼 칩과 한 색 언어, 결정 33).
         assert q["own_auto"] is True, "자동 결속 값에 소유권 색(own-auto)이 붙지 않았습니다."

@@ -313,6 +313,85 @@
     }
   }
 
+  /* 「템플릿으로 저장」(승격, 결정 33·34 · #135) — 세션 원문을 라이브러리로 동결한다.
+     대기 타건을 먼저 정산해야 **화면에 보이는 원문**이 저장된다(복사와 같은 규율).
+     프리필(이름·그룹 후보·현재 그룹)은 Python 이 지금 판정한다 — JS 캐시(LAST)엔 그룹
+     지정이 없고, 있어도 관리 화면에서 방금 바뀐 지정과 갈라진다. */
+  async function openSaveTpl() {
+    await flushDebounce();
+    const info = await Bridge.call(SCREEN, "promote_info", {});
+    if (!info) return;
+    const cur = info.group || "";
+    const groups = info.groups || [];
+    $("qdSaveTplGroups").innerHTML =
+      groups.map((g) =>
+        `<label class="grp-opt"><input type="radio" name="qdSaveGrp" value="${esc(g)}"${g === cur ? " checked" : ""}> ${esc(g)}</label>`
+      ).join("") +
+      `<label class="grp-opt"><input type="radio" name="qdSaveGrp" value=""${cur === "" ? " checked" : ""}> 그룹 없음</label>` +
+      `<label class="grp-opt"><input type="radio" name="qdSaveGrp" value="" data-new="1" id="qdSaveGrpNewRadio"> 새 그룹:` +
+      ` <input class="field" id="qdSaveGrpNewName" type="text" placeholder="새 그룹 이름"></label>`;
+    $("qdSaveTplName").value = info.name || "";
+    $("qdSaveTplErr").style.display = "none";
+    window.Modal.open("qdSaveTplModal", { initialFocus: $("qdSaveTplName") });
+    const nn = $("qdSaveGrpNewName");
+    if (nn) nn.addEventListener("focus", () => { const r = $("qdSaveGrpNewRadio"); if (r) r.checked = true; });
+  }
+
+  function saveTplGroup() {
+    const sel = document.querySelector('input[name="qdSaveGrp"]:checked');
+    if (sel && sel.dataset.new) return ($("qdSaveGrpNewName").value || "").trim();
+    return sel ? sel.value : "";
+  }
+
+  function saveTplErr(msg) {
+    const err = $("qdSaveTplErr");
+    err.textContent = msg;
+    err.style.display = "";
+  }
+
+  /* 확정 — 실패는 **모달을 닫지 않고** 인라인 재진술한다(이름을 다시 칠 자리가 사라지지
+     않게). 동명은 Python 이 needs_confirm 으로 되묻고, 확인하면 confirm 을 실어 재호출한다
+     (덮어쓰기 왕복 문법 = 작업 생성·에디터 저장과 동형). */
+  async function confirmSaveTpl(confirmFlag) {
+    const name = $("qdSaveTplName").value;
+    const group = saveTplGroup();
+    const sel = document.querySelector('input[name="qdSaveGrp"]:checked');
+    if (sel && sel.dataset.new && !group) { saveTplErr("새 그룹 이름을 입력하세요."); return; }
+    const r = await Bridge.call(SCREEN, "save_template", { name, group, confirm: !!confirmFlag });
+    if (!r) return;
+    if (r.needs_confirm) {
+      const go = await window.Modal.confirm({
+        title: "덮어쓰기 확인", body: r.confirm_text,
+        confirmLabel: "덮어쓰고 저장", cancelLabel: "머무르기",
+      });
+      if (go) await confirmSaveTpl(true);
+      return;
+    }
+    if (!r.ok) { saveTplErr(r.error || "저장할 수 없습니다."); return; }
+    // 새 이름이 슬롯 드롭다운에 서야 한다(캐시는 initial 에서 한 번만 받는다).
+    TEMPLATES = r.templates || TEMPLATES;
+    window.Modal.close("qdSaveTplModal");
+    if (LAST) render(LAST);   // 승격된 정체(라이브러리 유래·(수정됨) 해제)로 슬롯 갱신
+    const note = $("qdSaveNote");
+    // 세션 처분을 정직하게 말한다(#135): 세션은 살아 있고, 저장된 것은 원문뿐이다.
+    const head = r.overwritten
+      ? `「${r.name}」 템플릿을 덮어썼습니다.`
+      : `「${r.name}」 템플릿으로 저장했습니다.`;
+    // 그룹 지정만 실패한 경우(설정 파일 쓰기 불가) — 일어난 일과 안 일어난 일을 갈라 말한다.
+    // 남은 그룹은 **백엔드가 실제로 읽어 준 값**을 그대로 말한다: 실패해도 이전 지정은 살아
+    // 있으므로(영속-후-교체) "「그룹 없음」에 있다"고 단정하면 관리 화면과 어긋난 거짓이 된다.
+    if (r.group_error) {
+      note.dataset.level = "warn";
+      const where = r.group
+        ? `기존 그룹 「${r.group}」이 그대로 유지됩니다`
+        : `이 템플릿은 그룹 없이 남습니다`;
+      note.textContent = `${head} 다만 요청한 그룹 변경은 저장되지 않았습니다(${r.group_error}) — ${where}.`;
+    } else {
+      note.dataset.level = "ok";
+      note.textContent = `${head} 이 세션은 그대로 이어집니다(값은 저장되지 않았습니다).`;
+    }
+  }
+
   function setPill(s) {
     const pill = $("qdStatus");
     // 휘발 표지(#qdVolatile)는 이 알약과 **별개로 상시** 산다(#134) — 종전엔 한 자리를
@@ -331,6 +410,7 @@
     $("qdBtnFresh").hidden = !loaded;
     $("qdFoot").hidden = !loaded;
     clearCopyNote();
+    clearSaveNote();
   }
 
   /* 복사 결과 노트 비우기 — 내용이 바뀌면 직전 「복사했습니다」는 클립보드와 어긋난 거짓이
@@ -338,6 +418,16 @@
      겨냥 패치라 syncChrome 을 안 거치므로 입력 순간 직접 비운다("편집하면 다시 복사"가 규칙). */
   function clearCopyNote() {
     const note = $("qdCopyNote");
+    if (!note) return;
+    note.textContent = "";
+    delete note.dataset.level;
+  }
+
+  /* 저장 결과 노트 비우기 — 「새 기안」·템플릿 전환 뒤에도 「…저장했습니다」가 서 있으면
+     지금 세션이 저장된 것처럼 읽힌다(복사 노트와 같은 stale 클래스). 승격 직후의 노트는
+     confirmSaveTpl 이 render 뒤에 세우므로 이 청소에 지워지지 않는다. */
+  function clearSaveNote() {
+    const note = $("qdSaveNote");
     if (!note) return;
     note.textContent = "";
     delete note.dataset.level;
@@ -538,8 +628,12 @@
       if (!(await sessionGuardOk("fresh", "버리고 새로"))) return;
       Bridge.call(SCREEN, "fresh", {});
     });
-    // 복사 = 유일한 실동작 출구(휘발 세션을 남기는 길). 승격 2동사는 표면만이라 비활성 상태다.
+    // 출구 둘: 복사(가벼운 남김) · 「템플릿으로 저장」(원문 승격 #135). 「작업으로 저장」은
+    // 목적지(기안 작업 TXT)가 아직 없어 비활성이라 배선하지 않는다 — 사유는 마크업이 말한다.
     $("qdBtnCopy").addEventListener("click", copyDraft);
+    $("qdBtnSaveTpl").addEventListener("click", openSaveTpl);
+    $("qdSaveTplCancel").addEventListener("click", () => window.Modal.close("qdSaveTplModal"));
+    $("qdSaveTplOk").addEventListener("click", () => confirmSaveTpl(false));
 
     // ---- 데이터 겨눔(결정 34의 데이터 소스 이원) — 두 유래가 같은 고지 가드를 지난다.
     $("qdBtnPickFile").addEventListener("click", async () => {

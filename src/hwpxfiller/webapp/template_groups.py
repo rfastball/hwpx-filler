@@ -18,9 +18,27 @@
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from . import settings
+
+_BAD_NAME = re.compile(r'[\\/:*?"<>|]')
+
+
+def validate_template_name(raw_name: str) -> str:
+    """새 템플릿 이름 검증 — 확장자·경로 문자를 배제한 순수 이름만. 실패는 loud raise.
+
+    저작 경로가 둘(관리 화면 「새 TXT」·빠른 기안 「템플릿으로 저장」)이라 여기 단일 출처로
+    둔다 — 규칙이 갈라지면 한쪽에서 만들 수 없는 이름이 다른 쪽에선 만들어져 라이브러리에
+    루트 밖 경로나 이중 확장자가 들어앉는다(:func:`rel_key` 를 여기 올린 것과 같은 이유).
+    """
+    name = raw_name.strip()
+    if not name:
+        raise ValueError("템플릿 이름을 입력해 주세요.")
+    if name.lower().endswith(".txt") or _BAD_NAME.search(name) or name in (".", ".."):
+        raise ValueError("확장자와 경로 문자를 제외한 이름만 입력해 주세요.")
+    return name
 
 
 def rel_key(path: "str | Path", root: "Path | None") -> str:

@@ -23,7 +23,6 @@ TXT 관리는 코어 :class:`~hwpxfiller.core.text_registry.TextTemplateRegistry
 """
 from __future__ import annotations
 
-import re
 import shutil
 import threading
 from pathlib import Path
@@ -34,10 +33,7 @@ from ..core.template_status import default_templates_dir
 from ..core.text_registry import TextTemplateRegistry
 from ..gui.template_manager_state import TemplateManagerViewModel
 from .screens import PushSink
-from .template_groups import TemplateGroupModel, rel_key
-
-# TXT 이름 검증 — Qt TemplateManagerPanel._validated_txt_name 미러(확장자·경로문자 배제).
-_BAD_NAME = re.compile(r'[\\/:*?"<>|]')
+from .template_groups import TemplateGroupModel, rel_key, validate_template_name
 
 # HWPX 미리보기 액션은 작업 위저드와 중복이라 링2에서 노출하지 않는다(#13 10F2FF98-B).
 _HIDDEN_ACTIONS = frozenset({"preview"})
@@ -358,18 +354,9 @@ class TemplateController:
         return {"ok": True}
 
     # ---- TXT 저작(HWPX와 동등 · 10F2FF98-C)
-    def _validated_txt_name(self, raw_name: str) -> str:
-        """확장자·경로문자를 배제한 순수 이름만 허용(Qt _validated_txt_name 미러). 실패는 loud raise."""
-        name = raw_name.strip()
-        if not name:
-            raise ValueError("템플릿 이름을 입력해 주세요.")
-        if name.lower().endswith(".txt") or _BAD_NAME.search(name) or name in (".", ".."):
-            raise ValueError("확장자와 경로 문자를 제외한 이름만 입력해 주세요.")
-        return name
-
     def _do_txt_new(self, p: dict) -> dict:
         """새 TXT 템플릿 생성 — 이름 검증·중복 차단 후 원자 쓰기."""
-        name = self._validated_txt_name(p.get("name", ""))
+        name = validate_template_name(p.get("name", ""))
         content = p.get("content", "")
         path = self.text_registry.directory / f"{name}.txt"
         if path.exists():  # confirm-or-alarm: 조용한 덮어쓰기 금지 — 시끄럽게 거부.
