@@ -1080,17 +1080,21 @@ _DRAFT_SESSION_PROBE_JS = r"""
     window.__push('draft', vsnap);
     out.degen_src_options = (function(){ var s = document.querySelector('#draftTokPanel .mapsrc-sel');
       return s ? s.options.length : 0; })();  // (직접 입력)만 = 1
-    out.degen_dots_hidden = document.getElementById('draftCardDots').hidden === true;
-    out.degen_prev_hidden = document.getElementById('draftCardPrev').hidden === true;
-    out.degen_next_hidden = document.getElementById('draftCardNext').hidden === true;
+    // **실제 표시(computed display)** 로 되읽는다 — `hidden` 속성만 보면 display:flex 가 UA
+    // [hidden]{display:none} 을 이겨도(부록 B-9) 속성은 true 라 거짓 초록이 난다(Codex P2 실측).
+    var gone = function(el){ return !!el && getComputedStyle(el).display === 'none'; };
+    out.degen_dots_hidden = gone(document.getElementById('draftCardDots'));
+    out.degen_prev_hidden = gone(document.getElementById('draftCardPrev'));
+    out.degen_next_hidden = gone(document.getElementById('draftCardNext'));
     out.degen_advance_hidden = (function(){ var a = document.getElementById('draftAdvance');
-      var w = a && a.closest('.wc-advance'); return !!w && w.hidden === true; })();
+      return gone(a && a.closest('.wc-advance')); })();
     out.degen_copy_enabled = !document.getElementById('draftCardCopy').disabled;
     out.degen_val_head = (function(){
       var th = document.querySelectorAll('#draftTokPanel table.dmap thead th');
       return th.length ? th[th.length - 1].textContent : ''; })();
     window.__push('draft', snap);  // 원상 복귀(비퇴화) — 뒤 되읽기 오염 방지
-    out.nondegen_dots_shown = document.getElementById('draftCardDots').hidden === false;
+    out.nondegen_dots_shown =
+      getComputedStyle(document.getElementById('draftCardDots')).display !== 'none';
     // 저장 기안을 고른 상태 → 껍데기 + **귀환 동사**(리뷰 P2). 미선택이 곧 휘발 진입구라,
     // 선택 해제 경로가 없으면 재시작이 유일한 출구가 된다 — 그 출구가 실물로 보이는지 본다.
     snap.job_name = '착수계 기안'; snap.has_job = true;
