@@ -24,7 +24,7 @@ import sys
 import threading
 from pathlib import Path
 
-from . import settings
+from . import boot_budget, settings
 from ..core.job import JobRegistry, default_jobs_dir
 from ..core.text_registry import TextTemplateRegistry, default_text_templates_dir
 from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확정 게이트 판정(#33)
@@ -1481,8 +1481,21 @@ def main() -> int:
             shown.set()  # show 성공 **후** — 먼저 세우면 show 실패가 다른 경로까지 영구 차단
             return True
 
+    # 폴백 예산(#77) — 첫 부트스트랩(또는 런타임 교체)에만 넓힌다. 판정·근거는 boot_budget.
+    runtime_version = boot_budget.detect_runtime_version()
+    budget_seconds, budget_reason = boot_budget.decide(
+        settings.load_boot_completed(), runtime_version
+    )
+
     def _apply_theme_then_show() -> None:  # loaded 콜백(0-인자로 호출됨, event.py:40)
         loaded_seen.set()
+        # 완주 스탬프(#77): loaded 가 실제로 왔다 = 이 환경에서 은닉 부팅이 끝까지 간다.
+        # 다음 부팅부터 좁은 예산으로 돌아가 매달림을 빨리 잡는다. 저장 실패로 부팅을
+        # 죽이지 않는다 — 대가는 '다음 부팅도 넓은 예산'뿐이라 안전측이다.
+        try:
+            settings.save_boot_completed(runtime_version)
+        except OSError as exc:  # noqa: BLE001 — 스탬프는 힌트다(부팅 불사)
+            settings.alert(f"부팅 완주 스탬프 저장 실패 — 다음 부팅도 넓은 예산: {exc!r}")
         err: "object | None" = None
         try:
             theme = settings.load_theme()
@@ -1520,16 +1533,20 @@ def main() -> int:
             return
         if not forced:
             return  # 그 사이 loaded 핸들러가 표시 완료 — 정상 부팅, 경보 없음
+        # 어느 예산이 얼마 만에 발화했는지 함께 남긴다 — 예산이 짧아 선발화한 것인지 진짜
+        # 매달림인지를 로그만 보고 가를 수 있어야 한다(#77 오경보 진단의 유일 단서).
+        budget_note = f" [예산 {budget_seconds:.0f}s · {budget_reason}]"
         _alarm(
-            "loaded 후 표시 매달림 — 폴백으로 창 표시(테마 미주입 가능)"
-            if loaded_seen.is_set()
-            else "loaded 미발화 — 폴백으로 창 표시(테마 미주입 가능)",
+            ("loaded 후 표시 매달림 — 폴백으로 창 표시(테마 미주입 가능)"
+             if loaded_seen.is_set()
+             else "loaded 미발화 — 폴백으로 창 표시(테마 미주입 가능)") + budget_note,
             window,
         )
 
-    # 20s: 타이머가 webview.start() 전에 걸리므로 예산이 WebView2 콜드스타트(초회 런타임 부팅·
-    # AV 스캔) 전체를 포함한다 — 짧으면 정상 부팅에서 폴백이 선발화해 무테마 창(FOUC)+거짓 경보.
-    timer = threading.Timer(20.0, _fallback_show)
+    # 타이머가 webview.start() 전에 걸리므로 예산이 WebView2 콜드스타트(초회 런타임 부팅·AV
+    # 스캔) 전체를 포함한다 — 짧으면 정상 부팅에서 폴백이 선발화해 무테마 창(FOUC)+거짓 경보.
+    # 그 콜드스타트는 설치 후 첫 실행에만 30~60s 이므로 예산도 그때만 넓힌다(#77, boot_budget).
+    timer = threading.Timer(budget_seconds, _fallback_show)
     timer.daemon = True
     timer.start()
 
