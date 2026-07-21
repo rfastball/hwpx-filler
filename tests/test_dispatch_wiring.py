@@ -35,8 +35,10 @@ CONTROLLER_FILES = [
     "screen_pool.py",
     "screen_quickdraft.py",  # 빠른 기안(R-flow 블록 5) — 호출자는 quickdraft.js
     "screen_template.py",
-    "screens.py",  # TxtController
+    "screen_draft.py",  # 「기안」(#148) — 좌 목록 액션의 호출자는 draft.js
+    "screens.py",  # 공유 풀 겨눔 래퍼(PoolTargetingMixin)
     "data_zone.py",  # 데이터 존 공유 믹스인(슬라이스 6 PR-2b) — 호출자는 datazone.js 팩토리
+    "draft_session.py",  # 기안 세션 공유 본체(#148 슬라이스 3a) — 호출자는 txt.js·draft.js
 ]
 
 _ACTION_DEF = re.compile(r"def _do_([a-zA-Z0-9_]+)\(")

@@ -17,7 +17,7 @@ from hwpxfiller.core.text_registry import TextTemplateRegistry
 from hwpxfiller.core.text_render import FULLWIDTH_SPACE
 from hwpxfiller.gui.selection_state import SelectionModel
 from hwpxfiller.gui.txt_queue import TxtQueueModel
-from hwpxfiller.webapp.screens import TxtController
+from hwpxfiller.webapp.screen_txt import TxtController
 
 
 def _controller(tmp_path: Path) -> "tuple[TxtController, list]":

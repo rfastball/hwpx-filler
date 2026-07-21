@@ -36,9 +36,9 @@
     <button class="navbtn" data-scr="job" aria-label="작업" title="작업 — 저장된 작업을 골라 세션 패널에서 데이터를 채워 생성">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h5v12H4zM11 4h5v7h-5z"/></svg></span><span class="lbl"><span class="n">작업</span><span class="d">목록 + 세션 패널</span></span></button>
     <!-- 「기안」(R-info 3부, #148) — TXT 작업-앵커 master-detail. 「작업」(HWPX)의 대칭 화면으로
-         바로 다음 순번(최종 형상 작업·기안·템플릿·데이터). 골격(슬라이스 2b)은 좌 목록 + 상세
-         껍데기이고, 세션 합병(빠른 기안 × 기안문 채우기)은 슬라이스 3에서 온다. 흡수 완료(슬라이스
-         6) 전까지 기안문 채우기·빠른 기안 항목과 잠시 공존한다. -->
+         바로 다음 순번(최종 형상 작업·기안·템플릿·데이터). 좌 목록 + 우 휘발 세션 4존(슬라이스
+         3a)까지 착지했고, 맞추기 표·원문 뷰 전환은 슬라이스 3b 에서 온다. 흡수 완료(슬라이스 6)
+         전까지 기안문 채우기·빠른 기안 항목과 잠시 공존한다. -->
     <button class="navbtn" data-scr="draft" aria-label="기안" title="기안 — 저장된 기안 작업을 골라 채워 복사 (TXT)">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h8l4 4v8H4zM12 4v4h4M7 11h6M7 14h6"/></svg></span><span class="lbl"><span class="n">기안</span><span class="d">기안 작업 목록 + 채움 (TXT)</span></span></button>
     <!-- 레일 「작업 에디터」 사망(결정 39 — 에디터 흡수 완결): 생성 진입은 「작업」 구획
@@ -250,14 +250,14 @@
          편집 모드로 흡수). 정의 surface 는 scr-job 의 #jobEditHost, 렌더러는 editor.js 존속. -->
 
     <!-- ============ 기안 (R-info 3부, #148 — TXT 작업-앵커 master-detail) ============ -->
-    <!-- 「작업」(HWPX)의 대칭 화면. 골격(슬라이스 2b): 좌 목록(TXT 작업 조회·그룹 관리, 공용
-         grouplist.js 팩토리 3번째 소비자) + 우 상세 껍데기. 세션 4존 합병은 슬라이스 3.
+    <!-- 「작업」(HWPX)의 대칭 화면: 좌 목록(TXT 작업 조회·그룹 관리, 공용 grouplist.js 팩토리
+         3번째 소비자) + 우 휘발 세션 4존(공용 draftsession.js 팩토리 2번째 소비자).
          안정 DOM + draft.js 가 window.__push('draft', snapshot) 로 값만 채운다(판정은 Python). -->
     <section class="scr" id="scr-draft">
       <header class="scr-head">
         <div>
           <h1>기안 <span class="pill muted">TXT</span></h1>
-          <p class="sub">저장된 기안 작업을 골라 채워 복사합니다.</p>
+          <p class="sub">저장된 기안을 고르거나, 그냥 템플릿을 붙여넣어 채워 복사합니다.</p>
         </div>
         <div class="status" id="draftStatus" data-level="idle">기안 선택</div>
       </header>
@@ -275,11 +275,94 @@
           <div id="draftRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
         </aside>
 
-        <!-- 우 상세 패널 — 껍데기(세션 4존 합병은 슬라이스 3). 정직한 빈 상태만(없는 걸 있는
-             척하지 않는다) — 골격에선 TXT 작업이 아직 생성되지 않아(슬라이스 5 저장 배선 전)
-             목록이 비어 있고 상세는 미선택 안내에 머문다. -->
+        <!-- 우 상세 패널 — 세션 4존(슬라이스 3a). **목록 미선택 = 휘발 세션**(결정 5: 휘발
+             진입은 별도 레일 항목이 아니라 "미선택 + 템플릿 붙여넣기"다). 저장 작업을 고른
+             상태의 상세는 아직 껍데기다(저장 세션 복원 = 슬라이스 5) — 없는 걸 있는 척하지
+             않는다. 세션 렌더는 공용 팩토리(draftsession.js)가 소유하고 여기는 id 만 고유. -->
         <div class="job-panel" id="draftPanel">
-          <div class="job-empty-panel muted" id="draftEmptyPanel">왼쪽에서 기안 작업을 선택하세요.</div>
+          <div class="job-zones" id="draftSessionPanel">
+            <!-- ① 데이터 — 템플릿(무엇으로) → 데이터(무엇을) → 행(어느 건) -->
+            <div class="zone">
+              <div class="zone-cap"><span class="znum">1</span>데이터</div>
+              <div class="run-row"><span class="lbl">템플릿</span>
+                <select class="field" id="draftTplSel"></select>
+                <button class="btn" id="draftBtnPaste" data-busy-lock>템플릿 붙여넣기…</button></div>
+              <div class="run-row"><span class="lbl">데이터(.xlsx/.csv)</span>
+                <input class="field ro" id="draftDataLabel" type="text" readonly
+                       placeholder="데이터를 선택하세요 — 없으면 토큰이 그대로 남습니다">
+                <button class="btn" id="draftBtnPoolData" data-busy-lock>등록 데이터…</button>
+                <button class="btn" id="draftBtnPickData" data-busy-lock>파일 선택…</button></div>
+
+              <div class="run-row run-recs-head">
+                <span class="lbl" style="font-weight:600">기안 대상 행</span>
+                <input class="field jobsearch" id="draftFilterSearch" type="search"
+                       placeholder="전체 열 검색" autocomplete="off" data-busy-lock>
+                <button class="btn sm" id="draftFilterReapply" style="display:none"
+                        data-busy-lock>직전 필터 재적용</button>
+                <div class="acts"><span class="muted capnote" id="draftSelCount">선택 0/0</span>
+                  <button class="btn sm" id="draftSelAll" data-busy-lock>전체 선택</button>
+                  <button class="btn sm" id="draftSelNone" data-busy-lock>전체 해제</button></div>
+              </div>
+              <div class="fchips" id="draftFilterChips" style="display:none"></div>
+              <div class="jobtb-host" id="draftTableHost">
+                <div class="tbwrap jobtbwrap" id="draftTableWrap" data-preserve-scroll>
+                  <table class="tb jobtb">
+                    <thead id="draftTableHead"></thead>
+                    <tbody id="draftTableBody"></tbody>
+                  </table>
+                </div>
+                <div class="job-empty muted" id="draftTableEmpty">데이터를 선택하면 기안 대상 행이 여기에 표시됩니다.</div>
+                <div class="colpanel" id="draftColPanel" hidden></div>
+              </div>
+              <!-- 필터 밖 선택 스트립(결정 3) — 선택은 필터를 관통하고, 밖은 여기서 상시 가시.
+                   결정 7 이 승계 의무로 못박은 계약(조용히 떨어뜨리면 큐가 거짓말을 한다). -->
+              <div class="fstrip" id="draftSelStrip" style="display:none"></div>
+              <div class="note warnbox" id="draftZoneNote" style="display:none"></div>
+            </div>
+
+            <!-- ② 필드 상태 — 작업점의 빈칸 지도(읽기 전용). 토큰 결속·근사 제안·표시형을 얹은
+                 「맞추기」 표는 슬라이스 3b 에서 이 존을 대체한다(지금은 결속 손잡이가 없다). -->
+            <div class="zone">
+              <div class="zone-cap"><span class="znum">2</span>필드 상태</div>
+              <div id="draftTokPanel" data-preserve-scroll></div>
+              <p class="muted hint">값은 데이터에서 채움. <span class="danger">항목 없음</span>은
+                <span class="mono">{{토큰}}</span> 그대로 남습니다.</p>
+            </div>
+
+            <!-- ③ 미리보기 — 큐가 지나가는 한 장(결정 16). 상태 색인 + 코드블록 렌더. -->
+            <div class="zone workcard" id="draftCard">
+              <div class="zone-cap"><span class="znum">3</span><span id="draftCardTitle">이대로 복사됩니다</span></div>
+              <div class="wc-fontbar">
+                <label class="lbl" for="draftTargetFont">대상 글꼴</label>
+                <select class="field sm" id="draftTargetFont"
+                        title="붙여넣는 곳(기안작성기)의 표준 글꼴입니다.">
+                  <option value="gulimche">굴림체</option>
+                  <option value="dotumche">돋움체</option>
+                  <option value="malgun">맑은고딕</option>
+                </select>
+                <span class="muted capnote">붙여넣는 곳의 표준 글꼴입니다. 전역 설정으로 저장됩니다.</span>
+              </div>
+              <div class="wc-index"><div class="wc-readout" id="draftCardReadout"></div></div>
+              <div class="wc-dots" id="draftCardDots" role="list" aria-label="큐 상태 색인"></div>
+              <pre class="wc-render" id="draftCardRender" aria-live="polite" data-preserve-scroll
+                   tabindex="0"></pre>
+              <div class="wc-lint" id="draftCardLint" hidden></div>
+            </div>
+
+            <!-- ④ 완료 — 복사(=완료, 결정 16) + 자유 이동(◀▶ · 위 점 클릭) + 전진 opt-in.
+                 미루기는 없다(결정 10 사망 — 자유 이동이 대체). 「기안으로 저장」 승격은 슬라이스 5. -->
+            <div class="zone">
+              <div class="zone-cap"><span class="znum">4</span>완료</div>
+              <div class="run-actions">
+                <button class="btn primary" id="draftCardCopy">📋 복사</button>
+                <button class="btn sm icon" id="draftCardPrev" title="이전 카드" aria-label="이전 카드">◀</button>
+                <button class="btn sm icon" id="draftCardNext" title="다음 카드" aria-label="다음 카드">▶</button>
+                <label class="wc-advance" title="켜면 복사 후 다음 미처리 카드로 넘어갑니다">
+                  <input type="checkbox" id="draftAdvance"> 복사 후 다음으로</label>
+              </div>
+              <p class="note" id="draftNote"></p>
+            </div>
+          </div>
           <div class="job-empty-panel muted" id="draftShellPanel" style="display:none">이 기안 작업의 채움 세션은 다음 단계에서 열립니다.</div>
         </div>
       </div>
@@ -747,6 +830,9 @@
 <script src="js/guard.js"></script>
 <script src="js/datazone.js"></script>
 <script src="js/grouplist.js"></script>
+<!-- 기안 세션 공용 팩토리(#148 슬라이스 3a) — datazone·segview·modal 위에 서고, 소비 화면
+     (txt·draft) 앞에 온다. 백엔드 draft_session.py 와 짝. -->
+<script src="js/draftsession.js"></script>
 <script src="js/editor_entry.js"></script>
 <script src="js/screens/home.js"></script>
 <script src="js/screens/txt.js"></script>

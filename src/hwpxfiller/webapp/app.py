@@ -41,10 +41,10 @@ from .screen_home import HomeController
 from .screen_job import JobController
 from .screen_pool import PoolController
 from .screen_quickdraft import QuickDraftController
+from .screen_txt import TxtController
 from .screen_template import TemplateController
 from .template_groups import TemplateGroupModel
 from .screens import (
-    TxtController,
     collect_owned_paths,
     default_pool_registry,
     validate_owned_path,
@@ -124,8 +124,10 @@ class WebFrontend:
             JobController(job_registry, self._push, pool_registry=pool_registry),
             # 「기안」 화면(R-info 3부, #148) — TXT 작업-앵커 master-detail(「작업」의 대칭).
             # 같은 job_registry 를 쓰되 media=txt 만 조회한다(조회 경계 결정 13) — 저장 기계는
-            # 하나·화면은 둘. 골격(슬라이스 2b)은 좌 목록 + 상세 껍데기, 세션 합병은 슬라이스 3.
-            DraftController(job_registry, self._push),
+            # 하나·화면은 둘. 우 상세는 휘발 세션 4존(슬라이스 3a)이고, 세션 기계는 「기안문
+            # 채우기」와 **같은 믹스인**이라 TXT 레지스트리·풀도 같은 공유 인스턴스를 쓴다
+            # (라이브러리 변경·손상 경보가 두 표면에 함께 반영).
+            DraftController(job_registry, self._push, registry, pool_registry=pool_registry),
             # 템플릿 관리(#13) — TXT 레지스트리는 즉시 기안과 공유(변경이 양쪽에 반영).
             TemplateController(registry, self._push, txt_groups=txt_groups),
             # 데이터 관리(#26 #4) — 등록 데이터 참조·수명.
@@ -242,7 +244,7 @@ class WebFrontend:
         """작업점 카드 렌더를 OS 클립보드로(복사=완료, 결정 16). 리포트를 돌려줘 웹이 재진술.
 
         복사 후 큐를 전진시킨다(작업점→처리 후미, 전진 opt-in) — 큐 상태 기제는 컨트롤러의
-        :meth:`~hwpxfiller.webapp.screens.TxtController.note_copied` 가 소유(클립보드 쓰기는
+        :meth:`~hwpxfiller.webapp.draft_session.DraftSessionMixin.note_copied` 가 소유(클립보드 쓰기는
         네이티브라 브리지 몫). 큐가 없는 화면(``note_copied`` 부재)은 렌더·복사만 한다.
         """
         ctrl = self._controller(screen)
@@ -811,15 +813,31 @@ _DRAFT_LIST_PROBE_JS = r"""
         {group:'정기', collapsed:true, count:1, rows:[{name:'준공계 기안', selected:false}]},
         {group:'', collapsed:false, count:1, rows:[{name:'회의록 기안', selected:false}]}
       ],
-      job_name:'', has_job:false, session_ready:false
+      job_name:'', has_job:false,
+      // 세션 조각(#148 슬라이스 3a) — 목록 프로브도 이제 **전체 render** 를 구동하므로
+      // 세션 키가 있어야 한다(빈 세션의 정직한 모양). 4존 되읽기는 아래 세션 프로브 몫.
+      template_name:'', template_text:'', tokens:[], record_count:0,
+      data_label:'', data_source_label:'', data_key:'', has_data:false, selected_count:0,
+      target_font:'gulimche',
+      filter:{active:false, reapply_available:false, search:'', chips:[], definition:'',
+              branches:[], columns:[]},
+      table:{columns:[], rows:[], visible_count:0, hidden_selected:[]},
+      card:{index:null, has_current:false, is_copied:false, position:null,
+            uncopied_count:0, copied_count:0, selected_count:0, is_complete:false,
+            advance_after:false, segments:[], missing_fields:[], empty_fields:[],
+            index_map:[], lint:{proportional:false, space_run:false, applied:false, active:false},
+            last_copy:null}
     };
     window.__push('draft', snap);
     out.grp_heads = document.querySelectorAll('#draftList .job-grp-head').length;   // 현장 A·정기·그룹없음
     out.rows_visible = document.querySelectorAll('#draftList .job-item').length;    // 정기 접힘 → 2+0+1
     out.grp_more = document.querySelectorAll('#draftList .grp-more').length;        // 명명 그룹만
     out.row_more = document.querySelectorAll('#draftList .job-more[data-more]').length;
-    out.empty_panel_shown =
-      getComputedStyle(document.getElementById('draftEmptyPanel')).display !== 'none';  // 미선택 안내
+    // 미선택 = **휘발 세션**(결정 5) — 옛 「왼쪽에서 고르세요」 안내는 사망하고 4존이 선다.
+    out.session_shown =
+      getComputedStyle(document.getElementById('draftSessionPanel')).display !== 'none';
+    out.shell_hidden =
+      getComputedStyle(document.getElementById('draftShellPanel')).display === 'none';
     // 행 ⋮ 메뉴 = [복제, 이름변경, 이동, 삭제] (편집 미노출 — 세션은 슬라이스 3).
     flush();
     document.querySelector('#draftList .job-more[data-more]').click();
@@ -924,6 +942,83 @@ _EDITOR_CHIP_PROBE_JS = r"""
     out.auto_revert_option = !!root.querySelector('table.map [data-act="revert-source"]');
     out.error = null;
   } catch (e) { out.error = String((e && e.message) || e); }
+  return out;
+})()
+"""
+
+# 「기안」 휘발 세션 4존(#148 슬라이스 3a) — 공용 팩토리(draftsession.js)의 **두 번째 소비
+# 인스턴스**를 draft 화면에서 실 render 구동해 되읽는다. 같은 팩토리라도 id 맵이 어긋나면
+# 이 화면에서만 조용히 죽으므로(getElementById 는 화면 은닉과 무관하게 해소된다 — poolList
+# 전례) 존별로 하나씩 확인한다: ①데이터 존 테이블·스트립 ②필드 상태 ③카드 렌더·점·글꼴·린트
+# ④복사 동사·전진. **미루기 버튼 부재**(결정 10 사망 — 새 표면에 짓지 않는다)도 함께 못박는다.
+_DRAFT_SESSION_PROBE_JS = r"""
+(function () {
+  var out = {};
+  try {
+    window.Nav.go('draft');
+    var snap = {
+      job_flat:true, job_group_names:[], job_sections:[], job_rows:[],
+      job_name:'', has_job:false,
+      template_name:'착수계', template_text:'제목: {{공고명}}',
+      tokens:[{name:'공고명', state:'fill'}, {name:'담당자', state:'blank'}],
+      record_count:2,
+      data_label:'d.csv', data_source_label:'파일: d.csv', data_key:'file:c:/d/d.csv',
+      has_data:true, selected_count:2, target_font:'malgun',
+      filter:{active:true, reapply_available:false, search:'전산',
+              chips:['(공고명) 포함 「전산」'], definition:'(공고명) 포함 「전산」',
+              branches:['공고명'], columns:[{name:'공고명', kind:'text', active:false}]},
+      table:{columns:['공고명'],
+             rows:[{index:0, selected:true, qpos:1, copied:false, current:true,
+                    cells:[[['전산',true],['장비 구매',false]]]}],
+             visible_count:1,
+             hidden_selected:[{index:1, selected:true, qpos:2, copied:false, current:false}]},
+      card:{index:0, has_current:true, is_copied:false, position:1,
+            uncopied_count:2, copied_count:0, selected_count:2, is_complete:false,
+            advance_after:false,
+            segments:[{text:'제목: ', kind:'literal', name:''},
+                      {text:'전산장비 구매', kind:'fill', name:'공고명'},
+                      {text:'', kind:'blank', name:'담당자'}],
+            missing_fields:[], empty_fields:['담당자'],
+            index_map:[{index:0, state:'current', has_gap:false},
+                       {index:1, state:'uncopied', has_gap:true}],
+            lint:{proportional:true, space_run:true, applied:false, active:true},
+            last_copy:null}
+    };
+    window.__push('draft', snap);
+    // ① 데이터 존 — 두 번째 인스턴스가 draft id 로 섰는가(가시 행·하이라이트·관통 스트립).
+    out.rows = document.querySelectorAll('#draftTableBody tr[data-i]').length;
+    out.mark = (function(){ var m = document.querySelector('#draftTableBody mark');
+      return m ? m.textContent : ''; })();
+    out.strip_shown = getComputedStyle(document.getElementById('draftSelStrip')).display !== 'none';
+    out.chips_text = document.getElementById('draftFilterChips').textContent;
+    // ② 필드 상태 — 토큰 상태 행(채움/빈 값).
+    out.tok_rows = document.querySelectorAll('#draftTokPanel .tok').length;
+    out.tok_blank = !!document.querySelector('#draftTokPanel .tok.blank');
+    // ③ 미리보기 — 채움 표지 삼분 + 상태 색인 점 + 선언 글꼴 추종 + 정렬 린트.
+    out.card_render = document.getElementById('draftCardRender').textContent;
+    out.card_fill = !!document.querySelector('#draftCardRender .seg-fill');
+    out.card_blank = !!document.querySelector('#draftCardRender .seg-blank');
+    out.card_dots = document.querySelectorAll('#draftCardDots .wc-dot').length;
+    out.card_gap_dot = !!document.querySelector('#draftCardDots .wc-dot.gap');
+    out.card_readout = document.getElementById('draftCardReadout').textContent;
+    out.font_sel = document.getElementById('draftTargetFont').value;
+    out.font_class = document.getElementById('draftCardRender').className;
+    out.lint_shown = !document.getElementById('draftCardLint').hidden;
+    out.lint_fix = (function(){ var b = document.getElementById('draftLintAction');
+      return b ? b.dataset.act : ''; })();
+    // ④ 완료 — 복사 동사 활성 + 자유 이동(◀▶) + 전진 토글. 미루기는 없다(결정 10 사망).
+    var cp = document.getElementById('draftCardCopy');
+    out.copy_enabled = !!cp && !cp.disabled;
+    out.prev_disabled = document.getElementById('draftCardPrev').disabled;  // 첫 카드 = 경계 잠금
+    out.next_enabled = !document.getElementById('draftCardNext').disabled;
+    out.defer_absent = !document.getElementById('draftCardDefer');
+    // 두 인스턴스 격리 — draft 세션 렌더가 **숨은 txt 화면 DOM 을 만지지 않는다**(id 분리).
+    // getElementById 는 화면 은닉과 무관하게 해소되므로(poolList 전례) 실물로 확인한다.
+    // 판정은 "이 프로브만의 문자열이 저쪽에 새지 않았는가" — 앞선 프로브가 남긴 상태와
+    // 무관하게 성립한다(고정 0건 기대는 프로브 실행 순서에 묶여 깨지기 쉽다).
+    out.txt_leak = (document.getElementById('txtCardRender').textContent || '').indexOf('전산장비 구매') >= 0;
+    out.error = null;
+  } catch (e) { out.error = 'throw:' + (e && e.message); }
   return out;
 })()
 """
@@ -1431,6 +1526,9 @@ def _selftest_drive(window: "object") -> None:
         result["job_list_groups"] = window.evaluate_js(_JOB_LIST_GROUP_PROBE_JS)  # type: ignore[attr-defined]
         # 「기안」 좌 목록(#148 슬라이스 2b) — 그룹 구획·⋮ 메뉴·이동 다이얼로그(grouplist.js 3번째 소비) 되읽기.
         result["draft_list"] = window.evaluate_js(_DRAFT_LIST_PROBE_JS)  # type: ignore[attr-defined]
+        # 「기안」 휘발 세션 4존(#148 슬라이스 3a) — 공용 팩토리(draftsession.js)의 두 번째
+        # 소비 인스턴스가 draft 화면 DOM 에서 실제로 서는지(데이터 존·카드·린트·완료) 되읽기.
+        result["draft_session"] = window.evaluate_js(_DRAFT_SESSION_PROBE_JS)  # type: ignore[attr-defined]
         result["job_editmode"] = window.evaluate_js(_JOB_EDITMODE_PROBE_JS)  # type: ignore[attr-defined]
         # 매핑 칩-라이브(슬라이스 5 PR-3) — 합성 매핑 스냅샷으로 실 render() 구동 후 칩·태그 되읽기.
         result["editor_chip"] = window.evaluate_js(_EDITOR_CHIP_PROBE_JS)  # type: ignore[attr-defined]

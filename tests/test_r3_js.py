@@ -21,8 +21,11 @@ WEB_JS = WEB / "js"
 # 공유 이스케이퍼를 소비하는 파일들 — 전부 esc.js 뒤에 로드돼야 한다.
 ESC_CONSUMERS = (
     "sheet_picker.js", "pool_picker.js", "datazone.js",
-    "screens/home.js", "screens/txt.js", "screens/editor.js", "screens/job.js",
-    "screens/template.js", "screens/pool.js",
+    # 기안 세션 표면은 공용 팩토리 소유(#148 슬라이스 3a) — txt.js 는 id 맵만 남아
+    # escape 소비가 없다. 계약은 소유 파일을 따라간다.
+    "draftsession.js",
+    "screens/home.js", "screens/editor.js", "screens/job.js",
+    "screens/draft.js", "screens/template.js", "screens/pool.js",
 )
 
 

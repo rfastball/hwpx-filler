@@ -172,6 +172,22 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .pane.workcard .note[data-level="warn"]{color:var(--a-warn)}
 .pane.workcard.complete .wc-readout{color:var(--a-ok)}
 
+/* ---- 「기안」 세션 4존(#148 슬라이스 3a) — 카드 표면을 .zone 문법으로 재사용 ----
+   구 화면은 좌우 .panes(고정 2열), 「기안」은 「작업」과 같은 세로 4존이다. 카드 CSS 는
+   .pane.workcard 에 매여 있던 두 규칙만 .zone 판으로 넓힌다(사본이 아니라 선택자 확장 —
+   두 표면의 카드가 갈라지지 않게). */
+.zone.workcard .wc-render{min-height:180px}
+.zone.workcard.complete .wc-readout{color:var(--a-ok)}
+/* 존 번호 표지(시안 ①②③④) — 캡션 앞 작은 원. 정보는 순서뿐이라 장식 최소. */
+.zone-cap .znum{display:inline-grid;place-items:center;width:15px;height:15px;margin-right:var(--sp-4);
+  border-radius:var(--rad-pill);background:var(--a-primary);color:var(--a-on-accent);
+  font-size:var(--fs-caption);font-weight:700;vertical-align:-2px}
+#draftTokPanel{max-height:180px;overflow:auto}
+/* 완료 노트 — 구 화면에선 .pane.workcard 자손이라 색이 붙었다. 4존에선 자기 id 로 잇는다. */
+#draftNote{margin:var(--sp-8) 0 0;color:var(--a-muted);font-size:var(--fs-body)}
+#draftNote[data-level="ok"]{color:var(--a-ok)}
+#draftNote[data-level="warn"]{color:var(--a-warn)}
+
 /* ---- 빠른 기안(작업의 휘발 쌍둥이 · R-flow 블록 5 · 슬라이스 7) ----
    미리보기는 txt 의 .wc-render(+.seg-*·f-* 글꼴)를 그대로 재사용한다 — 채움 표지 삼분이
    두 표면에서 같은 계약(결정 22·33). 여기선 슬롯·2판·파이프라인 토큰 폼·탭·빈손 카드만 둔다. */

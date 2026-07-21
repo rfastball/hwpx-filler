@@ -45,6 +45,12 @@
       window.TxtScreen.refreshTemplates().catch((err) =>
         window.alert(String((err && err.message) || err)));
     }
+    // 「기안」 휘발 세션도 같은 드롭다운을 쓴다(#148 슬라이스 3a) — 같은 규율을 적용하지
+    // 않으면 두 표면 중 하나만 새 템플릿을 본다(조용한 어긋남).
+    if (id === "draft" && window.DraftScreen && window.DraftScreen.refreshTemplates) {
+      window.DraftScreen.refreshTemplates().catch((err) =>
+        window.alert(String((err && err.message) || err)));
+    }
   }
   // 레일 「작업 에디터」 과도기 심은 항목 사망(슬라이스 5 삭제 PR)과 함께 제거 — 편집
   // 진입은 EditorEntry.land 소비처(홈·템플릿 관리·작업 ⋮)가 담당한다.

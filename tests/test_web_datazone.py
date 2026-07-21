@@ -32,7 +32,9 @@ WEB_INDEX = WEB / "index.html"
 DZ_JS = WEB / "js" / "datazone.js"
 POPOVER_JS = WEB / "js" / "popover.js"
 JOB_JS = WEB / "js" / "screens" / "job.js"
-TXT_JS = WEB / "js" / "screens" / "txt.js"  # 두 번째 인스턴스(txt 큐, PR-2b)
+TXT_JS = WEB / "js" / "screens" / "txt.js"  # 구 화면 껍데기(id 맵만 — 세션은 팩토리 소유)
+SESSION_JS = WEB / "js" / "draftsession.js"  # 기안 세션 표면(두 번째 인스턴스 생성처, #148 3a)
+DRAFT_JS = WEB / "js" / "screens" / "draft.js"  # 「기안」 화면(세 번째 인스턴스 id 맵)
 
 # 데이터 존이 소유하는 디스패치 액션 — 전부 팩토리 단일 출처여야 한다(가드 3).
 ZONE_ACTIONS = (
@@ -94,41 +96,48 @@ def test_zone_dispatch_actions_single_sourced_in_factory():
     for action in ZONE_ACTIONS:
         needle = f'"{action}"'
         assert needle in dz, f"팩토리에 {needle} 디스패치가 없습니다 — 이동이 덜 됐습니다."
-        for consumer in (JOB_JS, TXT_JS):
+        for consumer in (JOB_JS, TXT_JS, SESSION_JS, DRAFT_JS):
             assert needle not in consumer.read_text(encoding="utf-8"), (
                 f"{consumer.name} 에 {needle} 디스패치가 남아/되살아 있습니다 — 데이터 존 "
                 "사본 재유입(#94 중복 클래스 동형). datazone.js 단일 출처를 유지하세요."
             )
 
 
-def test_txt_consumes_factory_with_queue_identity():
-    """txt.js 가 두 번째 인스턴스를 소비한다(PR-2b) — 화면 고유값(행 id 접두·선두 「큐」 열).
+def test_draft_session_consumes_factory_with_queue_identity():
+    """기안 세션 표면이 데이터 존 인스턴스를 소비한다 — 큐 표지 + 화면별 행 id 접두.
 
-    rowIdPrefix 는 전역 id 유일성(preserve.js 복원 계약)의 화면 몫 — job 행(jobRow-)과
-    갈라져야 한다. 선두 열 「큐」는 전-선언 큐 표지(블록 3 결정 16)의 표면.
+    세션 표면은 공용 팩토리(draftsession.js) 소유이고, **화면 고유값은 소비 화면이 준다**:
+    rowIdPrefix 는 전역 id 유일성(preserve.js 복원 계약)의 화면 몫이라 job 행(jobRow-)과도
+    서로와도 갈라져야 한다. 선두 열 「큐」는 전-선언 큐 표지(블록 3 결정 16)의 표면.
     """
-    src = TXT_JS.read_text(encoding="utf-8")
-    assert "DataZone.create({" in src, "txt.js 가 DataZone.create 를 소비하지 않습니다."
-    assert 'rowIdPrefix: "txtRow-"' in src, (
-        "txt 행 안정 id 접두(txtRow-)가 사라졌습니다 — job 행과의 전역 유일성 파손."
-    )
+    src = SESSION_JS.read_text(encoding="utf-8")
+    assert "DataZone.create({" in src, "기안 세션 팩토리가 DataZone.create 를 소비하지 않습니다."
     assert 'header: "큐"' in src, "선두 열 머리 「큐」(전-선언 표지)가 config 에서 사라졌습니다."
     assert "flushPendingSearch" in src, (
         "데이터 재선택 전 검색 정산(flushPendingSearch)이 사라졌습니다 — 직전 필터 슬롯에 "
         "마지막 타이핑이 실리지 않습니다(결정 28)."
     )
+    prefixes = {}
+    for name, path in (("txt", TXT_JS), ("draft", DRAFT_JS)):
+        csrc = path.read_text(encoding="utf-8")
+        m = re.search(r'rowIdPrefix:\s*"([^"]+)"', csrc)
+        assert m, f"{name} 화면이 행 안정 id 접두를 주지 않습니다 — 포커스 복원 대상 충돌."
+        prefixes[name] = m.group(1)
+    assert prefixes["txt"] != prefixes["draft"], (
+        f"두 기안 표면의 행 id 접두가 같습니다({prefixes!r}) — 전역 유일성 파손(preserve.js)."
+    )
 
 
-def test_txt_session_keys_use_source_identity_not_label():
-    """txt 세션 지문·고지 키는 **정체**(data_key)여야 한다 — 표시 라벨(basename) 금지(리뷰).
+def test_draft_session_keys_use_source_identity_not_label():
+    """기안 세션 지문·고지 키는 **정체**(data_key)여야 한다 — 표시 라벨(basename) 금지(리뷰).
 
     라벨은 ``folder1/명단.xlsx``↔``folder2/명단.xlsx`` 가 같은 문자열이라, 라벨로 겨누면
     동명 다른 폴더 전환에서 세션 리셋(Shift 앵커·검색 디바운스·존 고지)이 발화하지 않고
     이전 파일의 앵커가 살아남아 새 파일에서 엉뚱한 범위가 조용히 선택된다.
     """
-    src = _strip_js_comments(TXT_JS.read_text(encoding="utf-8"))
+    src = _strip_js_comments(SESSION_JS.read_text(encoding="utf-8"))
     assert "tableKey: (s) => s.data_key" in src, (
-        "txt tableKey 가 소스 정체(data_key)를 쓰지 않습니다 — 동명 파일 전환에 stale 앵커."
+        "기안 세션 tableKey 가 소스 정체(data_key)를 쓰지 않습니다 — 동명 파일 전환에 stale 앵커."
     )
     # 존 고지 키도 같은 정체에 겨눈다(라벨이면 동명 전환에 이전 고지가 남는다). 표시 라벨
     # 자체의 소비(#txtDataLabel 채우기)는 정당하므로 **키 대입만** 본다.

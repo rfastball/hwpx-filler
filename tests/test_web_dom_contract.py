@@ -29,7 +29,10 @@ RESPONSIVE_BREAKPOINT_PX = 820
 # 전체 스냅샷 재렌더가 포커스·캐럿·스크롤을 뭉개지 않도록 render() 를 Preserve.around 로 감싸는
 # 화면들(#28). 어느 화면이 래핑을 조용히 떨구면 상호작용 유실 회귀 → 정적 가드로 차단.
 WEB_JS_DIR = Path(__file__).resolve().parents[1] / "web" / "js"
-PRESERVE_WRAPPED_SCREENS = ("txt", "editor", "job", "quickdraft")  # run 사망(슬라이스 3) → job 이 생성 표면
+# 렌더 래핑·데이터 피커 계약은 **표면을 소유한 파일**을 따라간다 — 화면 파일명과 1:1 이
+# 아니다(기안 세션은 공용 팩토리 draftsession.js 소유, txt·draft 두 화면이 소비).
+PRESERVE_WRAPPED_FILES = ("draftsession.js", "screens/editor.js", "screens/job.js",
+                          "screens/quickdraft.js")  # run 사망(슬라이스 3) → job 이 생성 표면
 
 # 살아있는 컴포넌트 갤러리(개발 전용) — 실 tokens.css+app.css 를 <link> 로 물어 드리프트 0.
 GALLERY = Path(__file__).resolve().parents[1] / "docs" / "UI_GALLERY.html"
@@ -373,7 +376,8 @@ def test_forced_colors_block_present_in_web_diff():
 
 # pickDataFile(=pick_data_file) 을 소비하는 모든 화면 — 브리지 반환 계약이 screen-불가지라
 # needs_sheet 분기를 처리해야 다중 시트가 첫 시트로 강등되지 않는다(리뷰 P1: txt 누락 회귀).
-DATA_PICK_SCREENS = ("editor", "txt", "job", "quickdraft")  # run 사망(슬라이스 3);
+DATA_PICK_FILES = ("screens/editor.js", "draftsession.js", "screens/job.js",
+                   "screens/quickdraft.js")  # run 사망(슬라이스 3);
 # job=생성 표면 · quickdraft=휘발 표면의 임의 파일 선택(슬라이스 7 PR-3)
 
 
@@ -389,10 +393,10 @@ def test_sheet_picker_loaded_and_wired_on_all_data_screens():
     index = WEB_INDEX.read_text(encoding="utf-8")
     assert 'src="js/sheet_picker.js"' in index, "sheet_picker.js 가 index.html 에 로드되지 않았습니다(#33)."
     assert 'id="sheetList"' in index and 'id="sheetCancel"' in index, "시트 선택 모달 골격이 없습니다(#33)."
-    for scr in DATA_PICK_SCREENS:
-        src = (WEB_JS_DIR / "screens" / f"{scr}.js").read_text(encoding="utf-8")
+    for rel in DATA_PICK_FILES:
+        src = (WEB_JS_DIR / rel).read_text(encoding="utf-8")
         assert "needs_sheet" in src and "SheetPicker.choose" in src, (
-            f"{scr}.js 가 다중 시트 확정 게이트(needs_sheet→SheetPicker) 배선을 잃었습니다 — "
+            f"{rel} 이 다중 시트 확정 게이트(needs_sheet→SheetPicker) 배선을 잃었습니다 — "
             "이 화면에서 다중 시트가 조용히 첫 시트로 강등됩니다(#33, 리뷰 P1)."
         )
 
@@ -406,10 +410,10 @@ def test_preserve_helper_loaded_and_wraps_screen_renders():
     """
     index = WEB_INDEX.read_text(encoding="utf-8")
     assert 'src="js/preserve.js"' in index, "preserve.js 가 index.html 에 로드되지 않았습니다(#28)."
-    for scr in PRESERVE_WRAPPED_SCREENS:
-        src = (WEB_JS_DIR / "screens" / f"{scr}.js").read_text(encoding="utf-8")
+    for rel in PRESERVE_WRAPPED_FILES:
+        src = (WEB_JS_DIR / rel).read_text(encoding="utf-8")
         assert "Preserve.around" in src, (
-            f"{scr}.js 의 render() 가 Preserve.around 래핑을 잃었습니다 — 재렌더 시 상호작용 유실(#28)."
+            f"{rel} 의 render() 가 Preserve.around 래핑을 잃었습니다 — 재렌더 시 상호작용 유실(#28)."
         )
 def test_job_overwrite_uses_shared_confirm_modal():
     """덮어쓰기 확인이 공용 Modal.confirm(수치 합성 본문)을 쓴다 — 전용 모달·window.confirm 무사용.

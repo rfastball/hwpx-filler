@@ -359,8 +359,9 @@ class TestWebSelftestGate:
         assert d["rows_visible"] == 3, f"접힌 그룹 행이 뷰에서 제외되지 않았습니다: {d!r}"
         assert d["grp_more"] == 2, "그룹 ⋮ 는 이름 그룹에만 있어야 합니다(「그룹 없음」 제외)."
         assert d["row_more"] == 3, f"행 ⋮ 수가 가시 행 수와 다릅니다: {d!r}"
-        # 상세 껍데기 — 미선택이면 안내가 보인다(세션 4존은 슬라이스 3).
-        assert d["empty_panel_shown"] is True, "미선택 상세 안내가 보이지 않습니다."
+        # 미선택 = **휘발 세션 4존**(결정 5, 슬라이스 3a) — 「왼쪽에서 고르세요」 안내는 사망.
+        assert d["session_shown"] is True, "미선택 상세에 휘발 세션 4존이 서지 않았습니다."
+        assert d["shell_hidden"] is True, "미선택인데 저장 세션 껍데기가 보입니다."
         # 행 ⋮ 메뉴 — 골격은 편집 미노출(세션 슬라이스 3): 복제·이름변경·이동·삭제만.
         assert d["menu_shown"] is True, "행 ⋮ 클릭에 메뉴가 열리지 않았습니다."
         assert d["menu_items"] == ["clone", "rename", "move", "delete"], (
@@ -373,6 +374,42 @@ class TestWebSelftestGate:
         assert d["move_closed"] is True, "취소에 이동 다이얼로그가 닫히지 않았습니다."
         # 퇴화 불변식 — 그룹 0개면 헤더 없는 평면.
         assert d["flat_heads"] == 0 and d["flat_rows"] == 1, f"퇴화 평면 위반: {d!r}"
+
+    def test_draft_session_zones_render(self, selftest_result: dict) -> None:
+        """「기안」 휘발 세션 4존(#148 슬라이스 3a) — 공용 팩토리의 두 번째 소비 인스턴스 실렌더.
+
+        같은 팩토리를 써도 **id 맵이 어긋나면 이 화면에서만 조용히 죽는다**(getElementById 는
+        화면 은닉과 무관하게 해소 — poolList 전례). 존별로 하나씩 실 WebView2 로 되읽는다.
+        """
+        d = selftest_result["draft_session"]
+        assert d.get("error") is None, f"기안 세션 프로브 예외: {d.get('error')!r}"
+        # ① 데이터 존 — 승계 계약(필터 좁힘·하이라이트·관통 스트립). 스트립을 떨어뜨리면
+        # "필터 밖 선택은 숨기지 않는다"가 거짓이 되어 큐가 거짓말을 한다(결정 7 승계 의무).
+        assert d["rows"] == 1, f"필터 적용 가시 행이 1이 아닙니다: {d!r}"
+        assert d["mark"] == "전산", f"검색어 하이라이트(<mark>)가 서지 않았습니다: {d!r}"
+        assert d["strip_shown"] is True, "필터 밖 선택 스트립이 서지 않았습니다(관통 계약 파손)."
+        assert "전산" in d["chips_text"], f"필터 칩 정의줄이 비었습니다: {d['chips_text']!r}"
+        # ② 필드 상태 — 토큰 상태 지도(빈 값 표지 포함).
+        assert d["tok_rows"] == 2, f"필드 상태 행 수가 다릅니다: {d!r}"
+        assert d["tok_blank"] is True, "빈 값 토큰 표지가 없습니다."
+        # ③ 미리보기 — 채움 표지 삼분 · 상태 색인 점(빈칸 지도) · 선언 글꼴 추종 · 정렬 린트.
+        assert "전산장비 구매" in d["card_render"], f"카드 렌더에 채움 값이 없습니다: {d!r}"
+        assert d["card_fill"] is True and d["card_blank"] is True, f"표지 삼분 파손: {d!r}"
+        assert d["card_dots"] == 2 and d["card_gap_dot"] is True, f"상태 색인 점 파손: {d!r}"
+        assert "작업점 1/2" in d["card_readout"], f"상태 재진술이 다릅니다: {d['card_readout']!r}"
+        assert d["font_sel"] == "malgun" and "f-malgun" in d["font_class"], (
+            f"대상 글꼴 선언을 렌더가 추종하지 않습니다: {d!r}"
+        )
+        assert d["lint_shown"] is True and d["lint_fix"] == "fix", f"정렬 린트 파손: {d!r}"
+        # ④ 완료 — 복사 동사 + 자유 이동(경계 잠금 포함). 미루기는 **없다**(결정 10 사망 —
+        # 죽을 것을 새 표면에 짓지 않는다. 대체 어포던스가 ◀▶·점 클릭이다).
+        assert d["copy_enabled"] is True, "작업점이 있는데 복사가 잠겨 있습니다."
+        assert d["prev_disabled"] is True and d["next_enabled"] is True, (
+            f"자유 이동 경계 잠금이 어긋납니다: {d!r}"
+        )
+        assert d["defer_absent"] is True, "「기안」에 미루기 버튼이 있습니다(결정 10 사망 위반)."
+        # 두 인스턴스 격리 — draft 렌더가 숨은 txt 화면 DOM 으로 새지 않는다.
+        assert d["txt_leak"] is False, "기안 세션 렌더가 txt 화면 카드로 샜습니다(id 격리 파손)."
 
     def test_job_edit_mode_hosts_definition_surface(self, selftest_result: dict) -> None:
         # 에디터 흡수(블록 2 개정, 결정 39~41) — 편집 모드 전환이 실 WebView2 에서 편집 호스트를

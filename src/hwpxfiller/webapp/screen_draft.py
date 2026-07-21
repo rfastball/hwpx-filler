@@ -1,4 +1,4 @@
-"""「기안」 화면 컨트롤러 — TXT 작업-앵커 master-detail(골격). R-info 3부(#148).
+"""「기안」 화면 컨트롤러 — TXT 작업-앵커 master-detail + 휘발 세션. R-info 3부(#148).
 
 「작업」(HWPX)의 대칭 화면: 저장 기계는 하나(JobRegistry)·화면은 둘이고, 매체는 선언하지
 않고 ``template_path`` 접미사에서 유도한다(결정 4). 이 화면은 **TXT 작업만 조회**한다
@@ -6,14 +6,20 @@
 (:mod:`~hwpxfiller.webapp.job_list`)를 쓰고, 그룹 CRUD 는 같은 :class:`~hwpxfiller.core.job.
 JobRegistry` 메서드에 위임한다 — 매핑 로직·판정은 재구현하지 않는다.
 
-**스코프 경계 — 미구현 명시(confirm-or-alarm: 없는 걸 있는 척하지 않는다)**. 이 골격(슬라이스
-2b)이 세우는 것은 좌 목록(TXT 작업 조회·그룹 관리)과 상세 패널 **껍데기**뿐이다. 아직 없는 것:
-- **세션 패널**(데이터·맞추기·미리보기·완료 4존 합병) — 슬라이스 3(빠른 기안 × 기안문 채우기
-  합병). 그전까지 상세는 정직한 빈 상태이고 목록 선택은 강조만 한다(``RunViewModel`` 미사용 —
-  그건 hwpx 전용, 결정 13).
-- **휘발 세션 진입**(목록 미선택 + 템플릿 붙여넣기, 결정 5)·**매핑 그릇**(슬라이스 4)·
-  **「기안으로 저장」 승격**(슬라이스 5, #135). TXT 작업은 슬라이스 5 저장 배선 전까지 실제로
-  생성되지 않으므로 이 골격에서 목록은 늘 비어 있다(빈 상태가 참이다).
+**휘발 세션(슬라이스 3a)**. 상세 패널의 4존(데이터·필드 상태·미리보기·완료)은 **목록
+미선택** 상태에서 열리는 **휘발 세션**이다(결정 5 — 휘발 진입은 별도 레일 항목이 아니라
+"목록 미선택 + 템플릿 붙여넣기"로 표현된다). 세션 본체는 「기안문 채우기」와 **같은 기계**
+(:class:`~hwpxfiller.webapp.draft_session.DraftSessionMixin`)라 두 표면이 갈라질 자리가
+없다 — 400줄 사본을 새로 짓지 않는다.
+
+**스코프 경계 — 미구현 명시(confirm-or-alarm: 없는 걸 있는 척하지 않는다)**. 아직 없는 것:
+- **맞추기 표**(토큰 결속·근사 제안·표시형·소유권 색)와 **원문 뷰 전환** — 슬라이스 3b.
+  3a 의 ②존은 구 화면에서 승계한 **「필드 상태」 읽기 전용 지도**다(결속 손잡이 없음).
+- **큐 퇴화 규칙**(단건·데이터 없음 = 길이 1)·**미루기 사망**·자유 이동 어포던스 — 슬라이스 3c.
+- **매핑 그릇**(슬라이스 4)·**「기안으로 저장」 승격**(슬라이스 5, #135). TXT 작업은 슬라이스 5
+  저장 배선 전까지 실제로 생성되지 않으므로 좌 목록은 아직 늘 비어 있다(빈 상태가 참이다).
+  따라서 **작업을 고른 상태의 상세는 여전히 껍데기**이고(``RunViewModel`` 미사용 — 그건 hwpx
+  전용, 결정 13), 지속성 스위치 5종·읽기 전용 원문도 그때 함께 온다.
 - **매체 교차 그룹 의미론(#148 리뷰 #3)**: 그룹은 **레지스트리-전역**이다 — ``Job.group`` 은
   매체-불가지 단일 필드라 같은 이름 그룹이 두 매체에 걸쳐 하나로 산다(화면은 뷰만 매체로
   가른다). 따라서 ``rename_group``/``disband_group`` 은 두 매체를 함께 옮기고, **확인 건수도
@@ -24,26 +30,38 @@ JobRegistry` 메서드에 위임한다 — 매핑 로직·판정은 재구현하
 from __future__ import annotations
 
 from ..core.job import JobRegistry
+from ..core.text_registry import TextTemplateRegistry
+from .draft_session import DraftSessionMixin
 from .job_list import build_flat_rows, build_group_sections, drift_note
-from .screens import PushSink
+from .screens import DatasetPoolRegistry, PushSink
 from .settings import load_draft_collapsed_groups, save_draft_collapsed_groups
 
 
-class DraftController:
-    """「기안」 화면 — 좌 TXT 작업 목록 + 우 상세 패널 껍데기(세션은 슬라이스 3에서)."""
+class DraftController(DraftSessionMixin):
+    """「기안」 화면 — 좌 TXT 작업 목록(master) + 우 휘발 세션 4존(detail).
+
+    두 계열의 ``_do_*`` 가 **한 라우터**를 공유한다(MRO): 목록 액션은 여기, 세션 액션은
+    :class:`~hwpxfiller.webapp.draft_session.DraftSessionMixin`. 디스패치 규약(큐 재봉합 ·
+    무변이 질의 · 확인 왕복 push 생략)도 믹스인 단일 출처다.
+    """
 
     name = "draft"
+    _action_label = "기안 화면"
 
-    def __init__(self, registry: JobRegistry, push: PushSink) -> None:
+    def __init__(
+        self,
+        registry: JobRegistry,
+        push: PushSink,
+        text_registry: TextTemplateRegistry,
+        *,
+        pool_registry: "DatasetPoolRegistry | None" = None,
+    ) -> None:
         self.registry = registry
         self._push_sink = push
-        self.job_name = ""  # 좌 목록에서 겨눈 기안 작업(골격은 강조만 — 세션 미구현)
+        self.job_name = ""  # 좌 목록에서 겨눈 기안 작업(저장 세션 복원은 슬라이스 5)
         # 좌 목록 접힌 그룹 — 「작업」과 별도 키(매체별 격리, 결정 1). Python 설정 영속(#74).
         self._collapsed: "set[str]" = set(load_draft_collapsed_groups())
-
-    # ------------------------------------------------------------- 관측 푸시
-    def _push(self) -> None:
-        self._push_sink(self.name, self.snapshot())
+        self._init_session(text_registry, pool_registry=pool_registry)
 
     def _jobs(self):
         """조회 경계(결정 13 · 1층) — TXT 매체 작업만. 매체는 template_path 에서 유도(결정 4)."""
@@ -51,7 +69,11 @@ class DraftController:
 
     # ------------------------------------------------------------- 스냅샷
     def snapshot(self) -> dict:
-        """좌 목록(그룹 구획) + 상세 패널 껍데기 상태. 세션 4존은 슬라이스 3에서 온다."""
+        """좌 목록(그룹 구획) + 우 휘발 세션 4존.
+
+        세션 키는 「기안문 채우기」와 **문자 그대로 같은 조각**이라 draft.js 가 datazone.js·
+        segview.js 를 그대로 소비한다(키 이름이 갈라지면 팩토리 재사용이 깨진다).
+        """
         jobs = self._jobs()
         sections, flat = build_group_sections(jobs, self.job_name, self._collapsed)
         return {
@@ -60,24 +82,20 @@ class DraftController:
             "job_flat": flat,
             "job_group_names": [s["group"] for s in sections if s["group"]],
             "job_name": self.job_name,
+            # 저장 작업을 고른 상태의 상세는 아직 껍데기(저장 세션 복원 = 슬라이스 5)이고,
+            # 휘발 세션(아래 키)은 **목록 미선택**일 때 열린다(결정 5) — 표면 분기는 이
+            # has_job 하나가 진다. 별도 session_ready 플래그는 두지 않는다(같은 사실을 두 번
+            # 선언하면 갈라질 자리가 생긴다 — 이 저장소 지배 결함류).
             "has_job": bool(self.job_name),
-            # 세션 패널 미구현(골격) — 상세는 정직한 빈 상태. 슬라이스 3에서 True 로 승격.
-            "session_ready": False,
+            **self._session_snapshot(),
         }
 
     def initial(self) -> dict:
-        return self.snapshot()
+        """부팅 시 웹이 1회 당겨 가는 초기 상태(휘발 세션 템플릿 목록 포함)."""
+        return {"templates": self.vm.template_names(), **self.snapshot()}
 
-    # ------------------------------------------------------------- 디스패치
-    def dispatch(self, action: str, payload: dict):
-        handler = getattr(self, f"_do_{action}", None)
-        if handler is None:  # confirm-or-alarm: 미지 액션은 시끄럽게.
-            raise ValueError(f"알 수 없는 기안 화면 액션: {action!r}")
-        result = handler(payload)
-        blocked = isinstance(result, dict) and result.get("needs_confirm")
-        if not blocked:
-            self._push()
-        return result
+    # ------------------------------------------------------------- 목록 디스패치
+    # 라우터는 DraftSessionMixin.dispatch 단일 출처(큐 재봉합·확인 왕복 규약 공유).
 
     def _do_refresh(self, p: dict) -> None:
         """레지스트리 재스캔 반영 + stale 선택 무효화(다른 화면에서 삭제·개명됐을 수 있다)."""
@@ -85,9 +103,11 @@ class DraftController:
             self.job_name = ""
 
     def _do_select_job(self, p: dict) -> None:
-        """좌 목록 클릭 = 강조(골격). 세션 재구성은 슬라이스 3 — 여기선 job_name 만 겨눈다.
+        """좌 목록 클릭 = 겨눔. 저장 세션 **복원**은 슬라이스 5 — 여기선 job_name 만 바꾼다.
 
-        RunViewModel(hwpx 전용, 결정 13)을 만들지 않는다 — 기안 세션은 별도 표면이다.
+        RunViewModel(hwpx 전용, 결정 13)을 만들지 않는다. 휘발 세션 상태는 **건드리지 않는다**:
+        목록을 눌렀다 미선택으로 돌아오면 붙여넣던 원문·데이터·큐 진행이 그대로 있어야 한다
+        (선택은 화면 전환이지 세션 파괴가 아니다 — 조용한 소실 금지).
         """
         self.job_name = p.get("name", "")
 

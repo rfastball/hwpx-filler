@@ -5,7 +5,7 @@
 ``{{토큰}}`` 을 남겨 시끄럽게 신고한다(ADR E, txt 가 그 레퍼런스 구현).
 
 이 VM 은 템플릿 선택·데이터 소스 겨눔·레코드 목록만 소유한다. 렌더·레코드 커서(자유 순회)는
-:class:`~hwpxfiller.webapp.screens.TxtController` 가 전-선언 큐(작업점 카드, R-flow 블록 3)로
+:class:`~hwpxfiller.webapp.draft_session.DraftSessionMixin` 가 전-선언 큐(작업점 카드, R-flow 블록 3)로
 대체했으므로 여기서 들고 있지 않는다 — 렌더는 컨트롤러가 :func:`~hwpxfiller.core.text_render.
 render_record`/``render_segments`` 를 작업점 레코드에 직접 적용한다.
 """
