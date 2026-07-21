@@ -84,9 +84,13 @@
     const acts = (it.actions || []).map((a) =>
       `<button class="btn sm" data-act="${esc(a.key)}" data-path="${esc(it.path)}">${esc(a.label)}</button>`
     ).join("");
+    // 채움 완화 사전 고지(#154) — 문안은 Python(describe_precheck_note)이 확정.
+    const warns = (it.fill_warns || []).map(
+      (w) => `<div class="tplcard-meta warn">${esc(w)}</div>`
+    ).join("");
     return `<div class="tplcard">
       <div class="tplcard-top"><span class="tplcard-name" title="${esc(it.path)}">${esc(it.name)}</span>${badge}${cardTail("hwpx", it)}</div>
-      <div class="tplcard-meta muted">${esc(it.detail)}</div>
+      <div class="tplcard-meta muted">${esc(it.detail)}</div>${warns}
       <div class="tplcard-acts">${acts}</div></div>`;
   }
 

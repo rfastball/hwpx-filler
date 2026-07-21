@@ -355,3 +355,28 @@ def test_format_scan_empty_result_is_inline_warn(tmp_path):
     line = vm.format_scan_empty_result(str(raw), ScanPreview(compilable=[], skipped=[]))
     assert "onlymanual.hwpx" in line and "변환 가능한 토큰이 없습니다" in line
     assert line.level == "warn"
+
+
+def test_rows_carry_fill_precheck_warns(tmp_path):
+    """행에 채움 완화 사전 고지(#154)가 실린다 — 정상 템플릿은 무고지."""
+    marker = tmp_path / "marker.hwpx"
+    _write_raw(
+        marker,
+        '<hp:run><hp:ctrl><hp:fieldBegin name="공고명"/></hp:ctrl></hp:run>'
+        "<hp:run><hp:t>V<hp:markpenBegin/></hp:t></hp:run>"
+        '<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>',
+    )
+    clean = tmp_path / "clean.hwpx"
+    _write_raw(
+        clean,
+        '<hp:run><hp:ctrl><hp:fieldBegin name="공고명"/></hp:ctrl></hp:run>'
+        "<hp:run><hp:t>값</hp:t></hp:run>"
+        '<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>',
+    )
+    vm = TemplateManagerViewModel(paths=[marker, clean])
+    vm.refresh()
+    by_name = {r.name: r for r in vm.rows()}
+    assert len(by_name["marker.hwpx"].fill_warns) == 1
+    assert "markpenBegin" in by_name["marker.hwpx"].fill_warns[0]
+    assert "제거됩니다" in by_name["marker.hwpx"].fill_warns[0]  # 사전형 문안
+    assert by_name["clean.hwpx"].fill_warns == ()  # 과경고 금지

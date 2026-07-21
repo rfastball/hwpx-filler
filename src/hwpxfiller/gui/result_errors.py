@@ -47,26 +47,54 @@ def describe_result_error(error: str) -> str:
     return error
 
 
+# FillNote kind → (사후 문안, 사전 문안) 짝 — 같은 사실을 시제만 바꿔 말한다
+# ("사전에 알고 사후에 확인"). 한 표에 짝으로 두어 새 kind 가 한쪽만 갱신되는
+# 드리프트를 구조로 막는다. {field}=필드명, {kinds}=제거 대상 열거(detail).
+# occurrence_unfillable 은 "일부" 라 말하지 않는다 — 전 자리가 불가할 수도 있고
+# 그때 실행은 unmatched 로 더 시끄럽게 끝난다(범위 미정 시 규칙만 재진술).
+_FILL_NOTE_WORDING: "dict[str, tuple[str, str]]" = {
+    "inline_stripped": (
+        "누름틀 「{field}」 값 안의 인라인 요소({kinds})를 값과 함께 "
+        "제거하고 채웠습니다 — 형광펜 등 표식이 사라졌을 수 있으니 산출물을 확인하세요.",
+        "누름틀 「{field}」 값 안에 인라인 요소({kinds})가 있습니다 — "
+        "다른 값을 채우면 값과 함께 제거됩니다.",
+    ),
+    "slot_synthesized": (
+        "빈 누름틀 「{field}」 에 값 자리를 새로 만들어 채웠습니다 — "
+        "서식은 누름틀 주변 서식을 따릅니다.",
+        "빈 누름틀 「{field}」 — 채울 때 값 자리를 새로 만듭니다.",
+    ),
+    "occurrence_unfillable": (
+        "누름틀 「{field}」 자리 중 구조상 기입할 수 없는 곳이 있어 건너뛰었습니다 — "
+        "산출물에서 해당 자리를 확인하세요.",
+        "누름틀 「{field}」 자리 중 구조상 기입할 수 없는 곳이 있습니다 — "
+        "그 자리는 채워지지 않습니다.",
+    ),
+}
+
+
+def _fill_note_text(note, *, pre: bool) -> str:
+    pair = _FILL_NOTE_WORDING.get(note.kind)
+    if pair is None:
+        return f"누름틀 「{note.field}」: {note.kind}"  # 미지 종류 원문 관통
+    return pair[1 if pre else 0].format(
+        field=note.field, kinds=", ".join(note.detail)
+    )
+
+
 def describe_fill_note(note) -> str:
-    """채움 완화 처리(:class:`~hwpxfiller.core.fields.FillNote`) → 사용자 문안(#154).
+    """채움 완화 처리(:class:`~hwpxfiller.core.fields.FillNote`) → 사후 문안(#154).
 
     코어는 사실(필드·종류·제거 요소)만 담고 문안은 여기서 성형한다 — CLI 와 webview
     컨트롤러가 같은 문장을 공유한다. 미지 종류는 원문 관통(조용한 누락 금지).
     """
-    if note.kind == "inline_stripped":
-        kinds = ", ".join(note.detail)
-        return (
-            f"누름틀 「{note.field}」 값 안의 인라인 요소({kinds})를 값과 함께 "
-            f"제거하고 채웠습니다 — 형광펜 등 표식이 사라졌을 수 있으니 산출물을 확인하세요."
-        )
-    if note.kind == "slot_synthesized":
-        return (
-            f"빈 누름틀 「{note.field}」 에 값 자리를 새로 만들어 채웠습니다 — "
-            f"서식은 누름틀 주변 서식을 따릅니다."
-        )
-    if note.kind == "occurrence_unfillable":
-        return (
-            f"누름틀 「{note.field}」 자리 중 일부는 구조상 기입할 수 없어 "
-            f"건너뛰었습니다 — 산출물에서 해당 자리가 비어 있지 않은지 확인하세요."
-        )
-    return f"누름틀 「{note.field}」: {note.kind}"
+    return _fill_note_text(note, pre=False)
+
+
+def describe_precheck_note(note) -> str:
+    """사전 판정(:func:`~hwpxfiller.core.fields.fill_precheck`) → 점검 문안(#154).
+
+    사후(:func:`describe_fill_note`)와 같은 사실의 시제 변환판 — 짝은
+    :data:`_FILL_NOTE_WORDING` 한 표가 강제한다.
+    """
+    return _fill_note_text(note, pre=True)
