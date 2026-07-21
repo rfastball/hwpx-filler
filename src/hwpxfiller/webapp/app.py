@@ -425,18 +425,24 @@ _MODAL_A11Y_PROBE_JS = r"""
   // 잠복 결함: .hidden 은 .modal.hidden 규칙으로만 숨어, .modal 없는 요소에 open 하면 토글이 무효다.
   var mErrs = [];
   var origErr = console.error;
-  console.error = function () { mErrs.push(Array.prototype.join.call(arguments, ' ')); };
   var np = document.createElement('div');
   np.id = '__nonModalProbe'; np.className = 'hidden';        // .modal 없음 — 숨김 규칙 안 먹음
   document.body.appendChild(np);
-  var e0 = mErrs.length;
-  window.Modal.open('__nonModalProbe');                      // 거절 기대: loud + 스택 미진입
-  var openRejected = (mErrs.length > e0) && np.classList.contains('hidden');  // loud + 안 열림(hidden 유지)
-  var e1 = mErrs.length;
-  window.Modal.close('__nonModalProbe');                     // 대칭 거절 기대
-  var closeRejected = mErrs.length > e1;
-  document.body.removeChild(np);
-  console.error = origErr;
+  var openRejected = false, closeRejected = false;
+  console.error = function () { mErrs.push(Array.prototype.join.call(arguments, ' ')); };
+  try {
+    var e0 = mErrs.length;
+    window.Modal.open('__nonModalProbe');                    // 거절 기대: loud + 미개방
+    // loud 는 가드 자신의 메시지로 판정한다(무관한 미래 error 로 초록 위장 차단, 리뷰 F3).
+    openRejected = mErrs.slice(e0).some(function (m) { return m.indexOf('Modal.open') >= 0; })
+      && np.classList.contains('hidden');                    // + 상태 control: 안 열림(hidden 유지)
+    var e1 = mErrs.length;
+    window.Modal.close('__nonModalProbe');                   // 대칭 거절 기대
+    closeRejected = mErrs.slice(e1).some(function (m) { return m.indexOf('Modal.close') >= 0; });
+  } finally {
+    console.error = origErr;                                 // 어떤 throw 에도 원복(리뷰 F2 — 아니면
+    document.body.removeChild(np);                           // 실앱 console.error 가 영구 삼켜진다)
+  }
   return {
     opened: opened,               // 열기 후 hidden 해제됐는가
     focus_in: focusIn,            // 초기 포커스가 모달 안(pasteText)으로 들어갔는가

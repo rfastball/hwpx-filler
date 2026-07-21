@@ -90,9 +90,12 @@
   function close(id) {
     const el = document.getElementById(id);
     if (!el) return;
-    // open 과 대칭(#132.4) — .modal 없는 대상은 `.hidden` 을 얹어도 무효라 거절한다.
-    if (!el.classList.contains("modal")) { rejectNonModal("close", id); return; }
-    el.classList.add("hidden");
+    // .modal 없는 대상엔 `.hidden` 을 얹어도 무효라 loud 고지(#132.4). 단 가드는 `.hidden` 토글만
+    // 막고 스택 정리(리스너·포커스 해제)는 **막지 않는다** — 이미 열린 항목이면 정리가 빠질 때
+    // keydown 캡처가 남아 Escape/Tab 이 앱 전역에서 갇힌다(리뷰 F1). 열린 항목은 open 가드를
+    // 통과했으니 정상적으론 .modal 을 갖지만, 열린 뒤 클래스가 벗겨지는 미래 경로에도 정리는 돈다.
+    if (el.classList.contains("modal")) el.classList.add("hidden");
+    else rejectNonModal("close", id);
     for (let i = stack.length - 1; i >= 0; i--) {
       if (stack[i].el !== el) continue;
       const entry = stack.splice(i, 1)[0]; // 먼저 스택에서 빼고 콜백 — 재차 close() 해도 재진입 안전
