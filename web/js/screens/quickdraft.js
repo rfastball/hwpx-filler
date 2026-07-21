@@ -378,9 +378,14 @@
       ? `「${r.name}」 템플릿을 덮어썼습니다.`
       : `「${r.name}」 템플릿으로 저장했습니다.`;
     // 그룹 지정만 실패한 경우(설정 파일 쓰기 불가) — 일어난 일과 안 일어난 일을 갈라 말한다.
+    // 남은 그룹은 **백엔드가 실제로 읽어 준 값**을 그대로 말한다: 실패해도 이전 지정은 살아
+    // 있으므로(영속-후-교체) "「그룹 없음」에 있다"고 단정하면 관리 화면과 어긋난 거짓이 된다.
     if (r.group_error) {
       note.dataset.level = "warn";
-      note.textContent = `${head} 다만 그룹은 남기지 못했습니다(${r.group_error}) — 템플릿은 「그룹 없음」에 있습니다.`;
+      const where = r.group
+        ? `기존 그룹 「${r.group}」이 그대로 유지됩니다`
+        : `이 템플릿은 그룹 없이 남습니다`;
+      note.textContent = `${head} 다만 요청한 그룹 변경은 저장되지 않았습니다(${r.group_error}) — ${where}.`;
     } else {
       note.dataset.level = "ok";
       note.textContent = `${head} 이 세션은 그대로 이어집니다(값은 저장되지 않았습니다).`;

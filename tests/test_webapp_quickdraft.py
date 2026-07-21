@@ -863,3 +863,46 @@ def test_group_persist_failure_reports_what_landed(tmp_path, monkeypatch):
     assert res["ok"] is True and res["group_error"] == "설정 파일 쓰기 거부"
     assert (tmp_path / "보고서.txt").exists()                       # 저장은 실제로 일어났다
     assert ctrl.snapshot()["template_name"] == "보고서"             # 정체 승격도 함께
+    assert res["group"] == ""                                       # 남은 그룹 = 사실 그대로
+
+
+def test_group_persist_failure_keeps_existing_group_in_report(tmp_path, monkeypatch):
+    """실패해도 이전 지정은 살아 있다(영속-후-교체) — 「그룹 없음」이라 단정하면 거짓(2R P2)."""
+    ctrl = _lib_session(tmp_path)
+    ctrl.dispatch("save_template", {"name": "보고서", "group": "기안문"})   # 먼저 그룹 지정
+    ctrl.dispatch("edit_source", {"text": "다시 고친 {{사업명}}"})
+
+    def _boom(*a, **k):
+        raise OSError("설정 파일 쓰기 거부")
+
+    monkeypatch.setattr(ctrl._groups, "set_group", _boom)
+    res = ctrl.dispatch("save_template", {"name": "보고서", "group": "다른그룹", "confirm": True})
+    assert res["ok"] is True and res["group_error"]
+    assert res["group"] == "기안문"                                 # 실제로 남아 있는 그룹
+
+
+def test_uppercase_suffix_keeps_registry_identity(tmp_path):
+    """실경로 접미사가 대문자여도 이름·그룹 키가 갈라지지 않는다(2R P2, Windows).
+
+    ``REPORT.TXT`` 도 레지스트리에 정상 등록되는데, 이름에 소문자 ``.txt`` 를 합성하거나
+    ``removesuffix('.txt')`` 로 벗기면 세션 이름과 레지스트리 이름이 갈라져 드롭다운 선택·
+    그룹 조회·다음 저장의 경로 재발견이 한꺼번에 어긋난다.
+    """
+    from hwpxfiller.webapp.template_groups import TemplateGroupModel
+
+    (tmp_path / "REPORT.TXT").write_text("대문자 {{사업명}}", encoding="utf-8")
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_template", {"name": "REPORT"})
+    ctrl.dispatch("edit_source", {"text": "고친 {{사업명}}"})
+
+    info = ctrl.dispatch("promote_info", {})
+    assert info["name"] == "REPORT"
+    res = ctrl.dispatch("save_template", {"name": "REPORT", "group": "보고", "confirm": True})
+    assert res["ok"] is True and res["overwritten"] is True
+    assert res["name"] == "REPORT"                                  # 레지스트리 이름과 동일
+    assert res["name"] in res["templates"]                          # 드롭다운 선택이 살아 있다
+    assert (tmp_path / "REPORT.TXT").read_text(encoding="utf-8") == "고친 {{사업명}}"
+    assert not (tmp_path / "REPORT.txt.txt").exists()
+    # 그룹 키는 관리 화면과 같은 **실경로** 기준.
+    assert TemplateGroupModel("txt").group_of("REPORT.TXT") == "보고"
+    assert ctrl.dispatch("promote_info", {})["group"] == "보고"

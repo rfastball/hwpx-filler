@@ -553,8 +553,26 @@ class QuickDraftController:
     _do_promote_info.is_query = True  # 무변이 질의 — 재렌더 유발 금지
 
     def _library_keys(self) -> "list[str]":
-        """살아있는 txt 템플릿의 그룹 식별키 — 관리 화면과 같은 규칙(루트 상대경로+확장자)."""
-        return [f"{n}{TextTemplateRegistry.SUFFIX}" for n in self.vm.template_names()]
+        """살아있는 txt 템플릿의 그룹 식별키 — 관리 화면과 같은 규칙(루트 상대경로+확장자).
+
+        키는 **실제 경로**에서 뽑는다(리뷰 2R P2): 이름에 소문자 ``.txt`` 를 합성하면 Windows
+        에서 정상 등록되는 ``REPORT.TXT`` 의 키가 관리 화면(실경로 기준)과 갈라진다.
+        """
+        root = self._registry.directory
+        return [rel_key(t.path, root) for t in self._registry.list_templates()]
+
+    def _registry_name(self, path: "Path") -> str:
+        """실제 경로 → 레지스트리 이름(루트 상대·확장자 제외, POSIX).
+
+        접미사 **대소문자에 의존하지 않는다**(리뷰 2R P2): ``removesuffix(".txt")`` 는
+        ``REPORT.TXT`` 를 못 벗겨 세션 이름(``REPORT.TXT``)과 레지스트리 이름(``REPORT``)이
+        갈라지고, 그러면 드롭다운 현재 선택·그룹 조회·다음 저장의 경로 재발견이 전부 어긋난다.
+        """
+        try:
+            rel = path.relative_to(self._registry.directory)
+        except ValueError:  # 루트 밖(방어) — rel_key 폴백과 같은 규율
+            rel = Path(path.name)
+        return rel.with_suffix("").as_posix()
 
     def _registered_path(self, name: str) -> "Path | None":
         """등록된 템플릿 이름 → **실제 경로**(없으면 None). 하위폴더 파일도 제 자리를 돌려준다."""
@@ -603,7 +621,7 @@ class QuickDraftController:
             dest = self._resolve_dest(p.get("name", ""))
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}  # 모달 인라인 재진술(창 밖 예외 금지)
-        name = rel_key(dest, root).removesuffix(TextTemplateRegistry.SUFFIX)
+        name = self._registry_name(dest)
         if dest.exists() and not p.get("confirm"):
             return {
                 "ok": False,
@@ -626,9 +644,10 @@ class QuickDraftController:
         # 난데없이 덮어쓰기 게이트를 만난다. 파일 쓰기를 되돌리는 쪽은 덮어쓰기에서 원본을
         # 복원할 수 없으니 더 나쁘다 — 그래서 **성공으로 보고하되 못 남긴 것을 정확히
         # 진술한다**(PR-1 스탬프 실패와 같은 처방: 일어난 일과 안 일어난 일을 갈라 말한다).
+        key = rel_key(dest, root)
         group_error = ""
         try:
-            self._groups.set_group(rel_key(dest, root), p.get("group", ""))
+            self._groups.set_group(key, p.get("group", ""))
         except (OSError, ValueError) as exc:
             group_error = str(exc) or exc.__class__.__name__
         self.vm.mark_saved_as(name)
@@ -637,6 +656,11 @@ class QuickDraftController:
             "name": name,
             "overwritten": overwritten,
             "group_error": group_error,
+            # 실패 뒤 **실제로 남아 있는 그룹**(리뷰 2R P2). ``_persist`` 는 저장 성공 뒤에만
+            # 인메모리를 교체하므로 실패 시 이전 지정이 그대로 산다 — 표면이 "「그룹 없음」에
+            # 있습니다"라고 단정하면 관리 화면 상태와 어긋난 거짓이 된다(over-warn 과 같은 부류:
+            # 문안이 실제 집합과 다르다). 표면은 이 값을 그대로 재진술한다.
+            "group": self._groups.group_of(key),
             # 슬롯 드롭다운은 initial() 에서 한 번 받아 캐시하므로, 새 이름이 목록에 서려면
             # 여기서 갱신본을 함께 돌려줘야 한다(방금 만든 템플릿이 목록에 없는 어긋남 방지).
             "templates": self.vm.template_names(),
