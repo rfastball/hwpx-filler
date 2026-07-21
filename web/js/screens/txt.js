@@ -43,7 +43,7 @@
   // 되읽는다(job 관례). confirmNewDraftIfArmed 는 홈의 「＋ 새 기안」이 소비(#126).
   window.TxtScreen = {
     init,
-    refreshTemplates: sess.refreshTemplates,
+    refreshOnEnter: sess.refreshOnEnter,
     guardBody: sess.guardBody,
     copyGateBody: sess.copyGateBody,
     confirmNewDraftIfArmed: sess.confirmNewDraftIfArmed,

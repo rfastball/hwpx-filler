@@ -41,6 +41,7 @@ from .screen_home import HomeController
 from .screen_job import JobController
 from .screen_pool import PoolController
 from .screen_quickdraft import QuickDraftController
+from .draft_session import TargetFontSetting
 from .screen_txt import TxtController
 from .screen_template import TemplateController
 from .template_groups import TemplateGroupModel
@@ -100,6 +101,10 @@ class WebFrontend:
         pool_registry = default_pool_registry()
         # txt 템플릿 그룹 모델 — 관리 화면과 빠른 기안 승격이 공유하는 단일 실체(#135).
         txt_groups = TemplateGroupModel("txt")
+        # 대상 글꼴 선언(결정 17)은 **앱 전역**이라 두 기안 표면이 한 실체를 본다(코덱스 P2:
+        # 컨트롤러마다 사본을 캐시하면 한쪽에서 바꾼 선언이 다른 쪽에 재부팅까지 도달하지
+        # 않는다 — 저장은 됐는데 그 화면의 콤보·미리보기·정렬 린트는 옛 값으로 판정).
+        target_font = TargetFontSetting()
         # 추적성 로케이트 화이트리스트(#53-B)용 레지스트리 참조(밑줄=js_api 반영 제외).
         self._job_registry = job_registry
         self._pool_registry = pool_registry
@@ -108,7 +113,8 @@ class WebFrontend:
             # 홈(대시보드) — 허브. TXT 레지스트리는 즉시 기안·템플릿 관리와 공유(변경이 반영).
             # pool_registry 공유 = 데이터 관리에서 생긴 손상이 홈 KPI 경보에 즉시 보인다(#45).
             HomeController(job_registry, registry, self._push, pool_registry=pool_registry),
-            TxtController(registry, self._push, pool_registry=pool_registry),
+            TxtController(registry, self._push, pool_registry=pool_registry,
+                          target_font=target_font),
             # 빠른 기안(R-flow 블록 5, #90 슬라이스 7) — 작업의 휘발 쌍둥이. TXT 레지스트리는
             # txt·템플릿 관리와 공유(라이브러리 변경이 반영), 풀도 공유 인스턴스.
             QuickDraftController(
@@ -127,7 +133,8 @@ class WebFrontend:
             # 하나·화면은 둘. 우 상세는 휘발 세션 4존(슬라이스 3a)이고, 세션 기계는 「기안문
             # 채우기」와 **같은 믹스인**이라 TXT 레지스트리·풀도 같은 공유 인스턴스를 쓴다
             # (라이브러리 변경·손상 경보가 두 표면에 함께 반영).
-            DraftController(job_registry, self._push, registry, pool_registry=pool_registry),
+            DraftController(job_registry, self._push, registry, pool_registry=pool_registry,
+                            target_font=target_font),
             # 템플릿 관리(#13) — TXT 레지스트리는 즉시 기안과 공유(변경이 양쪽에 반영).
             TemplateController(registry, self._push, txt_groups=txt_groups),
             # 데이터 관리(#26 #4) — 등록 데이터 참조·수명.
@@ -1097,7 +1104,8 @@ _TXT_ZONE_PROBE_JS = r"""
     out.new_draft_guard_wired = typeof window.TxtScreen.confirmNewDraftIfArmed === 'function';
     // 템플릿 목록 재조회 배선 핀(#135 리뷰 P2) — 드롭다운은 initial 1회로 채워지므로 이
     // 재조회가 사라지면 다른 화면이 더한 템플릿을 재시작 전엔 못 고른다(조용한 어긋남).
-    out.tpl_refresh_wired = typeof window.TxtScreen.refreshTemplates === 'function';
+    out.tpl_refresh_wired = typeof window.TxtScreen.refreshOnEnter === 'function'
+      && typeof window.DraftScreen.refreshOnEnter === 'function';
     // 빈칸 게이트 본문(#125 · 결정 16) — 복사 **전** 확인 모달의 문안 합성. 종류별 수치·열거와
     // 6개 초과 접기를 되읽는다(모달이 스크롤로 번지면 결론 버튼이 안 보인다).
     out.copy_gate_body = window.TxtScreen.copyGateBody(

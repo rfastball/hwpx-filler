@@ -535,7 +535,7 @@ class TestWebSelftestGate:
             "TxtScreen.confirmNewDraftIfArmed 배선이 사라졌습니다 — 「＋ 새 기안」 무가드 파괴 회귀."
         )
         assert z["tpl_refresh_wired"] is True, (
-            "TxtScreen.refreshTemplates 배선이 사라졌습니다 — 다른 화면이 더한 템플릿을 "
+            "진입 재동기(refreshOnEnter) 배선이 사라졌습니다 — 다른 화면이 더한 템플릿을 "
             "재시작 전엔 못 고르는 조용한 어긋남 회귀(#135 리뷰 P2)."
         )
         nd, swap = z["guard_body_newdraft"], z["guard_body"]

@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from ..core.job import JobRegistry
 from ..core.text_registry import TextTemplateRegistry
-from .draft_session import DraftSessionMixin
+from .draft_session import DraftSessionMixin, TargetFontSetting
 from .job_list import build_flat_rows, build_group_sections, drift_note
 from .screens import DatasetPoolRegistry, PushSink
 from .settings import load_draft_collapsed_groups, save_draft_collapsed_groups
@@ -55,13 +55,14 @@ class DraftController(DraftSessionMixin):
         text_registry: TextTemplateRegistry,
         *,
         pool_registry: "DatasetPoolRegistry | None" = None,
+        target_font: "TargetFontSetting | None" = None,
     ) -> None:
         self.registry = registry
         self._push_sink = push
         self.job_name = ""  # 좌 목록에서 겨눈 기안 작업(저장 세션 복원은 슬라이스 5)
         # 좌 목록 접힌 그룹 — 「작업」과 별도 키(매체별 격리, 결정 1). Python 설정 영속(#74).
         self._collapsed: "set[str]" = set(load_draft_collapsed_groups())
-        self._init_session(text_registry, pool_registry=pool_registry)
+        self._init_session(text_registry, pool_registry=pool_registry, target_font=target_font)
 
     def _jobs(self):
         """조회 경계(결정 13 · 1층) — TXT 매체 작업만. 매체는 template_path 에서 유도(결정 4)."""

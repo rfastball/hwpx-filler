@@ -390,3 +390,37 @@ def test_home_dir_idiom_has_one_source() -> None:
     assert not offenders, (
         "홈 경로 관용구 재유입 — hwpxfiller.core.paths.home_dir() 를 쓰라:\n" + "\n".join(offenders)
     )
+
+
+def test_packaging_entry_imports_resolve() -> None:
+    """패키징 엔트리(``packaging/*.py``)의 앱 심볼 임포트가 실제로 해소되어야 한다.
+
+    엔트리는 평소 테스트가 임포트하지 않고 **릴리스 빌드에서 처음 실행**되므로(``--selfcheck``),
+    앱 쪽에서 클래스를 다른 모듈로 옮기면 그 어긋남이 여기서만, 그것도 가장 늦게 터진다 —
+    실측된 회귀다(#148 슬라이스 3a 에서 ``TxtController`` 가 ``screens`` → ``screen_txt`` 로
+    옮겨가며 엔트리가 낡았고, 코덱스 리뷰가 P1 로 잡았다). 정적으로 못박아 빌드까지 미루지 않는다.
+    """
+    import importlib
+
+    pattern = re.compile(r"^\s*from\s+(hwpxfiller[\w.]*)\s+import\s+(.+)$")
+    offenders: list[str] = []
+    for path in sorted((ROOT / "packaging").glob("*.py")):
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            m = pattern.match(line)
+            if not m:
+                continue
+            module, names = m.group(1), m.group(2)
+            where = f"{path.relative_to(ROOT).as_posix()}:{lineno}"
+            try:
+                mod = importlib.import_module(module)
+            except Exception as exc:  # noqa: BLE001  (어떤 실패든 회귀로 보고)
+                offenders.append(f"{where}: 모듈 {module} 임포트 실패 — {exc}")
+                continue
+            for raw in names.split(","):
+                sym = raw.strip().split(" as ")[0].strip().strip("()")
+                if sym and not hasattr(mod, sym):
+                    offenders.append(f"{where}: {module} 에 {sym} 이 없습니다(이동·개명됨).")
+    assert not offenders, (
+        "패키징 엔트리의 임포트가 앱과 어긋납니다 — 릴리스 --selfcheck 가 ImportError 로 죽습니다:\n"
+        + "\n".join(offenders)
+    )

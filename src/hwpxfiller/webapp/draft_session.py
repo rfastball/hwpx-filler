@@ -48,6 +48,29 @@ from .settings import (
 )
 
 
+class TargetFontSetting:
+    """대상 글꼴 선언(결정 17)의 **단일 실체** — 두 기안 표면이 한 인스턴스를 공유한다.
+
+    값의 스코프가 **앱 전역 영속**이라 컨트롤러마다 사본을 캐시하면 한쪽에서 바꾼 선언이
+    다른 쪽에 도달하지 않는다(코덱스 리뷰 P2): 저장은 됐는데 그 화면의 콤보·미리보기 글꼴·
+    비례폭 정렬 린트는 앱을 다시 켤 때까지 옛 값으로 판정한다 — 선언과 실제가 갈라지는
+    이 저장소 지배 결함류. 공유 실체 하나로 그 자리를 없앤다(#108 의 `TemplateGroupModel`
+    공유와 같은 처방). 스냅샷마다 설정 파일을 다시 읽는 대안은 매 타건 I/O 라 기각.
+    """
+
+    def __init__(self) -> None:
+        self._value = load_draft_target_font()
+
+    @property
+    def value(self) -> str:
+        return self._value
+
+    def set(self, font: str) -> None:
+        """선언 변경 — **저장이 먼저**(영속 실패 시 상태 불변 + 브리지 경보)."""
+        save_draft_target_font(font)  # 검증도 여기 단일 출처(열거형·문안 사본 금지)
+        self._value = font
+
+
 class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
     """기안(txt) 휘발 세션 — :class:`TxtDraftViewModel` 소유·위임.
 
@@ -88,6 +111,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         registry: TextTemplateRegistry,
         *,
         pool_registry: "DatasetPoolRegistry | None" = None,
+        target_font: "TargetFontSetting | None" = None,
     ) -> None:
         """세션 상태 초기화 — 소비자 ``__init__`` 이 부른다(생성자 상속 대신 명시 호출).
 
@@ -109,9 +133,10 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         # 복사 후 전진 옵션(결정 16, 기본 꺼짐) — 컨트롤러 수명(세션 「새 기안」을 넘어 유지,
         # 워드프로세서 토글 멘탈 모델). 넘어가기 = 사용자의 사실상 붙여넣기 서명이라 opt-in.
         self._advance_after = False
-        # 대상 글꼴 선언(결정 17) — **전역 영속**(설정 파일)이라 컨트롤러보다 오래 산다.
-        # 배치는 큐 상단 드롭다운이지만 스코프는 앱 전역(워드프로세서 툴바 멘탈 모델).
-        self._target_font = load_draft_target_font()
+        # 대상 글꼴 선언(결정 17) — **전역 영속**(설정 파일)이라 컨트롤러보다 오래 살고,
+        # 두 기안 표면이 **같은 실체**를 본다(앱이 주입; 미주입=독립 인스턴스라 테스트·
+        # 단독 구동은 종전 그대로). 배치는 큐 상단 드롭다운이지만 스코프는 앱 전역.
+        self._font = target_font if target_font is not None else TargetFontSetting()
         # 전각 정렬 치환(결정 17 린트 처방) — **세션 렌더 옵션**. 템플릿 원본은 건드리지 않고
         # (이름 있는 템플릿이 조용히 「이름 없는 세션 템플릿」으로 강등되지 않게) 렌더 단계에서만
         # 적용한다. 카드와 클립보드가 같은 변환을 통과하므로 되읽기가 곧 검증이다.
@@ -197,7 +222,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         # 정렬 린트 술어는 **치환 전 원문** 기준(결정 17) — 치환하면 런이 사라지므로 원문
         # 기준으로 보아야 "적용됨 · 되돌리기" 상태에서도 무엇을 고쳤는지 정직하게 말한다.
         space_run = segments_have_space_run(segments)
-        proportional = is_proportional_font(self._target_font)
+        proportional = is_proportional_font(self._font.value)
         segments = self._aligned(segments)
 
         # 빈칸 지도(has_gap)는 레코드 값+템플릿에만 의존(선택·작업점 무관) — 네비게이션·필터
@@ -289,7 +314,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
             "selected_count": self.selection.selected_count(),
             # 대상 글꼴 선언(결정 17) — 카드가 아니라 최상위: 값의 스코프가 전역 영속이라
             # 카드/세션과 수명이 다르다(카드에 실으면 세션 값처럼 읽힌다).
-            "target_font": self._target_font,
+            "target_font": self._font.value,
             "filter": filter_snap,
             "table": table_snap,
             "card": card,
@@ -389,14 +414,10 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
     def _do_set_target_font(self, p: dict) -> None:
         """대상 글꼴 선언(결정 17) — 열거형 밖 값은 조용히 무시하지 않고 시끄럽게 거부한다.
 
-        검증은 :func:`~hwpxfiller.webapp.settings.save_draft_target_font` 단일 출처가 진다
-        (리뷰 F4: 여기 사본을 두면 열거형·문안이 갈라진다). **저장이 먼저**인 이유는 영속에
-        실패했는데 화면 값만 바뀌면 "다음 부팅에 조용히 되돌아가는" 어긋남이 생기기 때문이다 —
-        던지면 상태 불변 + 브리지 경보.
+        검증·저장 순서 계약은 :class:`TargetFontSetting` 단일 실체가 진다 — 값이 앱 전역이라
+        여기서 컨트롤러 사본을 갱신하면 **다른 기안 표면이 옛 선언으로 판정한다**(리뷰 P2).
         """
-        font = p["font"]
-        save_draft_target_font(font)
-        self._target_font = font
+        self._font.set(p["font"])
 
     def _do_set_fullwidth(self, p: dict) -> None:
         """전각 정렬 치환 적용/해제(결정 17 린트 처방) — 세션 렌더 옵션, 템플릿 원본 불변."""

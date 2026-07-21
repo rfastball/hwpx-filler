@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from ..core.text_registry import TextTemplateRegistry
-from .draft_session import DraftSessionMixin
+from .draft_session import DraftSessionMixin, TargetFontSetting
 from .screens import DatasetPoolRegistry, PushSink
 
 
@@ -31,9 +31,10 @@ class TxtController(DraftSessionMixin):
         push: PushSink,
         *,
         pool_registry: "DatasetPoolRegistry | None" = None,
+        target_font: "TargetFontSetting | None" = None,
     ) -> None:
         self._push_sink = push
-        self._init_session(registry, pool_registry=pool_registry)
+        self._init_session(registry, pool_registry=pool_registry, target_font=target_font)
 
     def snapshot(self) -> dict:
         return self._session_snapshot()

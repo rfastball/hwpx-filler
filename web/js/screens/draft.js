@@ -293,7 +293,7 @@
     render(initState);
   }
 
-  // 화면 진입마다 라이브러리 재조회(txt 와 같은 규율) — 다른 표면이 저장한 템플릿이
-  // 앱 재시작 없이 여기 드롭다운에 보이게 한다.
-  window.DraftScreen = { init, refreshTemplates: sess.refreshTemplates };
+  // 화면 진입마다 재동기(txt 와 같은 규율) — 다른 표면이 저장한 템플릿·바꾼 전역 글꼴 선언이
+  // 앱 재시작 없이 여기에 반영된다.
+  window.DraftScreen = { init, refreshOnEnter: sess.refreshOnEnter };
 })();

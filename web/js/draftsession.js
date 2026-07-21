@@ -7,7 +7,7 @@
    화면 고유값은 **id 맵**으로만 주입한다(grouplist.js·datazone.js 팩토리 관례). 판정은 여전히
    전부 Python 이고 여기는 문안·표현뿐이다(파생경계 번역오류 상류 차단).
 
-   반환 표면: render(s) · wire() · refreshTemplates() · guardBody/copyGateBody(순수 합성기 —
+   반환 표면: render(s) · wire() · refreshOnEnter() · guardBody/copyGateBody(순수 합성기 —
    실앱 게이트가 되읽는다) · confirmNewDraftIfArmed/confirmDataSwapIfArmed(파괴 경로 사전 확인). */
 (function () {
   const $ = (id) => document.getElementById(id);
@@ -429,17 +429,24 @@
       if (names.length) sel.value = state.template_name;
     }
 
-    /* 라이브러리 재조회(#135 리뷰 P2) — 드롭다운은 부팅 시 1회만 채워져서, 다른 화면이
-       라이브러리에 템플릿을 더해도(빠른 기안 승격·관리 화면 「새 TXT」·가져오기) 앱을 다시
-       켜기 전엔 여기서 고를 수 없었다. 방금 저장한 것이 목록에 없는 것은 조용한 어긋남이라
-       화면 진입 때 다시 읽는다. initial 은 무변이 질의라 세션을 건드리지 않는다. */
-    async function refreshTemplates() {
+    /* 화면 진입 재동기(#135 리뷰 P2 + 코덱스 P2) — 이 표면의 DOM 은 **자기 화면에 푸시가
+       올 때만** 갱신되므로, 다른 화면에 있는 동안 바뀐 것이 여기 남아 있지 않다. 둘을 함께
+       고친다:
+       ① 템플릿 드롭다운은 부팅 시 1회만 채워져서 다른 화면이 라이브러리에 더한 템플릿
+          (빠른 기안 승격·관리 화면 「새 TXT」·가져오기)이 앱 재시작 전엔 안 보였다.
+       ② **대상 글꼴 선언은 앱 전역**이라 다른 기안 표면에서 바꿀 수 있다 — 백엔드는 이제
+          한 실체를 공유하지만(TargetFontSetting), 이 화면 DOM 은 재렌더 없이는 옛 값을
+          그대로 보여 준다(콤보·미리보기 글꼴·정렬 린트 문안).
+       initial 은 무변이 질의라 세션을 건드리지 않는다 — 지금 진실을 그대로 다시 그린다. */
+    async function refreshOnEnter() {
       if (!(window.pywebview && window.Bridge)) return;
-      fillTemplateSelect(await Bridge.initial(SCREEN));
+      const state = await Bridge.initial(SCREEN);
+      fillTemplateSelect(state);
+      render(state);
     }
 
     return {
-      render, wire, fillTemplateSelect, refreshTemplates, pasteOk,
+      render, wire, fillTemplateSelect, refreshOnEnter, pasteOk,
       guardBody, copyGateBody, confirmNewDraftIfArmed, confirmDataSwapIfArmed,
       warnNote, dz,
     };
