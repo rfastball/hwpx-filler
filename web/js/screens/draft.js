@@ -102,10 +102,49 @@
   /* ---- 우 상세 = 세션 4존(공용 팩토리 sess) — 저장/휘발 **한 패널**(#148 슬라이스 5a). 저장
      기안 선택은 세션을 그 Job 에서 복원하고(유래=saved), 「이번 세션」은 붙여넣던 휘발로 되살린다.
      상태 배지·모드 게이팅은 전부 세션 렌더가 소유한다(껍데기 stub 폐기 — 선택이 실제 복원이다). */
+  /* ---- 「기안으로 저장」 승격 버튼 상태(#148 슬라이스 5c, #135) — 라이브러리 배접만 저장 가능.
+     붙여넣기·수정 원문은 비활성 + 사유(dead button 금지, #133). 판정은 Python(can_save_job). ---- */
+  function renderPromote(s) {
+    const btn = $("draftSaveJob");
+    const note = $("draftSaveJobNote");
+    const can = !!s.can_save_job;
+    btn.disabled = !can;
+    btn.textContent = s.has_job ? "다른 이름으로 저장" : "기안으로 저장";
+    note.hidden = can;
+    if (!can) {
+      note.textContent =
+        "붙여넣거나 고친 원문은 기안으로 저장할 수 없습니다 — 라이브러리 템플릿을 골라 채우거나, " +
+        "원문을 「템플릿으로 저장」한 뒤 저장하세요.";
+    }
+  }
+
   function render(s) {
     LAST = s;
     renderMaster(s);
     sess.render(s);   // 세션 4존(데이터·필드 상태·미리보기·완료) + 유래별 열 게이팅·상태 배지
+    renderPromote(s); // ④존 「기안으로 저장」 버튼 상태(승격은 컨트롤러 소유라 여기서 배선)
+  }
+
+  /* ---- 「기안으로 저장」(#135) — 이름 입력 → 저장. 동명 덮어쓰기는 확인 왕복(파괴 대상 재진술).
+     승격은 제자리(세션 그대로, 저장 모드 전이)라 하던 일이 끊기지 않는다(시안 결정). ---- */
+  async function saveJob() {
+    const s = LAST || {};
+    const name = await window.Modal.prompt({
+      title: s.has_job ? "다른 이름으로 저장" : "기안으로 저장",
+      body: "이 기안 작업의 이름을 넣으세요. 템플릿·맞추기 정의가 저장됩니다(데이터는 매번 새로 물립니다).",
+      value: s.has_job ? "" : (s.template_name || ""),
+    });
+    if (name === null) return;  // 취소
+    let r = await Bridge.call(SCREEN, "save_job", { name });
+    if (r && r.needs_confirm) {
+      const ok = await window.Modal.confirm({
+        title: "덮어쓰기 확인", body: r.confirm_text,
+        confirmLabel: "덮어쓰기", cancelLabel: "머무르기",
+      });
+      if (!ok) return;
+      r = await Bridge.call(SCREEN, "save_job", { name, confirm: true });
+    }
+    if (r && r.ok === false && r.error) window.alert(r.error);  // 게이트 실패는 시끄럽게
   }
 
   /* ---- 좌 목록 클릭 위임(⋮·그룹 토글·행 선택) ---- */
@@ -296,6 +335,7 @@
     }, true);
     // 휘발 세션 귀환은 상시 「이번 세션」 행이 진다(onMasterClick) — 껍데기 stub 의 back
     // 버튼을 승계했다(선택이 실제 복원이 되며 stub 이 사라졌다). 세션은 파괴하지 않고 겨눔만 푼다.
+    $("draftSaveJob").addEventListener("click", saveJob);  // 승격(#135) — 컨트롤러 소유(JobRegistry)
     moveDialog.wire("draftMoveOk", "draftMoveCancel");
     sess.wire();  // 세션 4존 배선(데이터 존·카드 동사·글꼴·린트·붙여넣기) — 팩토리 소유
   }

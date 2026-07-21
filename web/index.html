@@ -375,7 +375,8 @@
             </div>
 
             <!-- ④ 완료 — 복사(=완료, 결정 16) + 자유 이동(◀▶ · 위 점 클릭) + 전진 opt-in.
-                 미루기는 없다(결정 10 사망 — 자유 이동이 대체). 「기안으로 저장」 승격은 슬라이스 5. -->
+                 미루기는 없다(결정 10 사망 — 자유 이동이 대체). 「기안으로 저장」 승격(#135)은
+                 라이브러리 배접 원문만 — 붙여넣기·수정 원문은 비활성+사유(dead button 금지). -->
             <div class="zone">
               <div class="zone-cap"><span class="znum">4</span>완료</div>
               <div class="run-actions">
@@ -384,7 +385,12 @@
                 <button class="btn sm icon" id="draftCardNext" title="다음 카드" aria-label="다음 카드">▶</button>
                 <label class="wc-advance" title="켜면 복사 후 다음 미처리 카드로 넘어갑니다">
                   <input type="checkbox" id="draftAdvance"> 복사 후 다음으로</label>
+                <div class="run-promote">
+                  <span class="lbl muted">남기려면</span>
+                  <button class="btn" id="draftSaveJob" aria-describedby="draftSaveJobNote">기안으로 저장</button>
+                </div>
               </div>
+              <p class="run-promote-note muted" id="draftSaveJobNote" hidden></p>
               <p class="note" id="draftNote"></p>
             </div>
           </div>

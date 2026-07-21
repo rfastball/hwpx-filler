@@ -72,7 +72,7 @@ def test_snapshot_merges_list_and_session_keys(tmp_path):
         assert key in snap, f"목록 키 {key} 누락"
     for key in ("template_name", "template_text", "tokens", "record_count", "data_source_label",
                 "data_key", "has_data", "selected_count", "target_font", "filter", "table", "card",
-                "mode", "source_readonly", "bound_job", "source_dirty"):
+                "mode", "source_readonly", "bound_job", "source_dirty", "can_save_job"):
         assert key in snap, f"세션 키 {key} 누락 — 팩토리 계약 파손"
     # 같은 사실을 두 번 선언하지 않는다 — 표면 분기(has_job·mode·source_readonly)는 모두
     # _bound_job 한 필드에서 유도한다(session_ready 같은 별도 플래그 금지).
@@ -218,6 +218,68 @@ def test_fork_is_noop_when_already_volatile(tmp_path):
     ctrl.dispatch("fork_to_volatile", {})
     snap = ctrl.snapshot()
     assert snap["mode"] == "volatile" and snap["source_dirty"] is False
+
+
+# ------------------------------------------------------ 「기안으로 저장」 승격(슬라이스 5c, #135)
+def test_save_job_promotes_library_session_to_txt_job(tmp_path):
+    """라이브러리 배접 세션을 TXT Job 으로 저장 — 목록에 서고, 승격은 제자리(저장 모드 전이).
+
+    첫 템플릿(착수계)이 자동 선택돼 라이브러리 배접이다. 값을 직접 입력해 내용을 부여하면
+    저장 자격이 서고, 저장이 매핑을 확정본으로 굳혀 to_profile 로 직렬화한다(휘발 승격 = 저장이
+    확정한다). 저장 뒤 세션은 그대로 두고 저장 모드로 전이한다(원문 읽기 전용)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "전산장비 구매"})
+    assert ctrl.snapshot()["can_save_job"] is True
+    res = ctrl.dispatch("save_job", {"name": "착수계 기안"})
+    assert res == {"ok": True, "name": "착수계 기안"}
+    assert "착수계 기안" in [r["name"] for r in ctrl.snapshot()["job_rows"]]
+    job = jobs.load("착수계 기안")
+    assert job.media == "txt"
+    assert "공고명" in {m.template_field for m in job.mapping.mappings}
+    snap = ctrl.snapshot()
+    assert snap["has_job"] is True and snap["mode"] == "saved" and snap["source_readonly"] is True
+
+
+def test_save_job_blocked_for_pasted_session(tmp_path):
+    """붙여넣기 세션은 파일 배접이 없어 저장 불가 — 비활성 자격 + 시끄러운 거부(라이브러리 배접만)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    ctrl.dispatch("set_template_text", {"text": "붙여넣기 {{공고명}}"})
+    assert ctrl.snapshot()["can_save_job"] is False
+    res = ctrl.dispatch("save_job", {"name": "무효"})
+    assert res["ok"] is False and "라이브러리" in res["error"]
+    assert jobs.names() == []
+
+
+def test_save_job_blocked_when_no_mapping(tmp_path):
+    """맞춘 토큰이 하나도 없으면 빈 레시피라 시끄럽게 막는다(복사 게이트 동형)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    assert ctrl.snapshot()["can_save_job"] is True  # 라이브러리 배접(첫 템플릿)
+    res = ctrl.dispatch("save_job", {"name": "빈 기안"})
+    assert res["ok"] is False and "맞춰진 토큰이 없습니다" in res["error"]
+    assert jobs.names() == []
+
+
+def test_save_job_overwrite_needs_confirm_then_overwrites(tmp_path):
+    """다른 기존 기안을 덮게 되면 확인 왕복 — 파괴 대상 재진술 후 확정해야 덮는다(RC-15)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기존 기안", "existing.txt", "기존 {{공고명}}")
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "값"})
+    res = ctrl.dispatch("save_job", {"name": "기존 기안"})
+    assert res["needs_confirm"] is True and "기존 기안" in res["confirm_text"]
+    assert ctrl.snapshot()["bound_job"] == ""  # 확인 전 = 저장 안 됨
+    res2 = ctrl.dispatch("save_job", {"name": "기존 기안", "confirm": True})
+    assert res2 == {"ok": True, "name": "기존 기안"}
+    assert ctrl.snapshot()["bound_job"] == "기존 기안"
+
+
+def test_save_job_overwrite_preserves_group(tmp_path):
+    """덮어쓰기는 기존 기안의 그룹을 보존한다 — 조용한 그룹 소거 금지."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "월례 기안", "m.txt", "{{공고명}}")
+    jobs.set_group("월례 기안", "정기")
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "값"})
+    ctrl.dispatch("save_job", {"name": "월례 기안", "confirm": True})
+    assert jobs.load("월례 기안").group == "정기"
 
 
 # ------------------------------------------------------------------ 공유 라우터(슬라이스 3a)

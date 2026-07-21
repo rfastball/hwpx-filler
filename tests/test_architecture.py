@@ -236,6 +236,8 @@ def test_job_panel_imports_ring1_and_does_not_reimplement() -> None:
 _ALLOWED_JOB_WRITE_SITES = {
     ("webapp/screen_editor.py", "save"):
         "저장 임계구역(_save_locked)이 registry.write_lock() 안 — 보존값 재읽기~저장 원자",
+    ("webapp/screen_draft.py", "save"):
+        "「기안으로 저장」 승격(_do_save_job)이 registry.write_lock() 안 — 생성 스레드 스탬프와 lost-update 방지(#148 슬라이스 5c)",
 }
 
 
