@@ -28,6 +28,13 @@
 
   function top() { return stack.length ? stack[stack.length - 1] : null; }
 
+  /* .modal 없는 대상 거절의 loud 경로(#132.4) — 조용한 no-op 를 개발자 표면에 재진술한다.
+     사용자 표면(alert)은 쓰지 않는다: 이건 잘못된 요소를 넘긴 프로그래밍 오류라 콘솔이 임자다. */
+  function rejectNonModal(op, id) {
+    console.error("Modal." + op + ": 대상 #" + id + " 에 .modal 클래스가 없습니다 — 숨김 규칙은 "
+      + ".modal.hidden 전용이라 .hidden 토글이 조용한 no-op 이 됩니다. 거절합니다.");
+  }
+
   /* Tab 순환을 모달 카드 안에 가둔다(#92 리뷰 #1 트랩). 경계(첫↔끝)와 바깥 이탈에서만
      개입해 모달 내 자연 이동은 브라우저에 맡긴다. */
   function trapTab(e, el) {
@@ -60,6 +67,10 @@
   function open(id, opts) {
     const el = document.getElementById(id);
     if (!el) return;
+    // .modal 없는 대상은 시끄럽게 거절(#132.4) — 이 앱의 숨김 규칙은 `.modal.hidden` 뿐이라
+    // .modal 없는 요소에 open 하면 `.hidden` 토글이 조용한 no-op(뜨지도 숨지도 않음)이 된다.
+    // confirm-or-alarm: 조용히 삼키지 말고 거절한다. 현 소비자 9개는 전부 .modal 이라 무영향.
+    if (!el.classList.contains("modal")) { rejectNonModal("open", id); return; }
     // 같은 모달 이중 open 은 무시(idempotent) — 스택 중복 엔트리로 닫힘 의미가 꼬이는 것 방지.
     for (let i = 0; i < stack.length; i++) if (stack[i].el === el) return;
     stack.push({
@@ -79,7 +90,12 @@
   function close(id) {
     const el = document.getElementById(id);
     if (!el) return;
-    el.classList.add("hidden");
+    // .modal 없는 대상엔 `.hidden` 을 얹어도 무효라 loud 고지(#132.4). 단 가드는 `.hidden` 토글만
+    // 막고 스택 정리(리스너·포커스 해제)는 **막지 않는다** — 이미 열린 항목이면 정리가 빠질 때
+    // keydown 캡처가 남아 Escape/Tab 이 앱 전역에서 갇힌다(리뷰 F1). 열린 항목은 open 가드를
+    // 통과했으니 정상적으론 .modal 을 갖지만, 열린 뒤 클래스가 벗겨지는 미래 경로에도 정리는 돈다.
+    if (el.classList.contains("modal")) el.classList.add("hidden");
+    else rejectNonModal("close", id);
     for (let i = stack.length - 1; i >= 0; i--) {
       if (stack[i].el !== el) continue;
       const entry = stack.splice(i, 1)[0]; // 먼저 스택에서 빼고 콜백 — 재차 close() 해도 재진입 안전
@@ -112,9 +128,15 @@
         cancel: document.getElementById(spec.cancelId),
         input: spec.inputId ? document.getElementById(spec.inputId) : null,
       };
-      if (!els.root || !els.ok || !els.cancel || (spec.inputId && !els.input)) {
-        // 골격 부재 = 안전측 거절 + loud(#92 리뷰 #4) — 조용한 no-op 는 confirm-or-alarm 위반.
-        console.error("Modal: 다이얼로그 골격 부재 — " + spec.id);
+      // 골격 부재(요소 결측)에 더해 root 의 .modal 결여도 여기서 거른다(Codex P2) — open 가드는
+      // .modal 없는 root 를 조용히 early-return 하는데, 여기선 이미 pendingDialog 를 세우기 *전*이라
+      // 그 전에 걸러야 onClose 미발화로 pendingDialog 가 영영 true 로 갇히는 교착을 피한다(이후 모든
+      // confirm/prompt 가 재진입으로 거절되고 Escape 로도 못 푼다). root 가 .modal 을 잃는 건 정적
+      // 계약(index.html class="modal")상 도달 불가하나, 가드가 그 가정에 기대지 않게 명시적으로 막는다.
+      if (!els.root || !els.root.classList.contains("modal")
+          || !els.ok || !els.cancel || (spec.inputId && !els.input)) {
+        // 골격 부재/불량 = 안전측 거절 + loud(#92 리뷰 #4) — 조용한 no-op 는 confirm-or-alarm 위반.
+        console.error("Modal: 다이얼로그 골격 부재/불량 — " + spec.id);
         window.alert(spec.missingText);
         resolve(spec.refusal);
         return;
