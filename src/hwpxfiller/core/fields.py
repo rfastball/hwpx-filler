@@ -52,6 +52,11 @@ class FieldDocument:
 
     @property
     def modified(self) -> bool:
+        """실제 텍스트가 바뀌었는가 — 값이 기존과 동일한 재채움은 변형이 아니다.
+
+        스트립 게이트(#95)가 이 플래그를 소비하므로, 동일 값 재생성이 여전히 유효한
+        줄배치 캐시를 잃지 않는다.
+        """
         return self._modified
 
     # ---------------------------------------------------------- required
@@ -110,8 +115,10 @@ class FieldDocument:
 
     # ------------------------------------------------------------- inject
     def set_field(self, field_name: str, new_value: str) -> bool:
-        """``field_name`` 누름틀에 값 주입. 실제 텍스트를 바꿨으면 True.
+        """``field_name`` 누름틀에 값 주입. 누름틀을 찾아 기입했으면 True.
 
+        반환값은 매칭 보고용(값이 기존과 같아도 True — 호출측 unmatched 판정이
+        거짓말하지 않게). 실제 텍스트 변경 여부는 ``modified`` 가 따로 추적한다.
         VBA SetField 와 동일하게 ``name`` 이 ``NAME`` 또는 ``{{NAME}}`` 인 모든
         누름틀을 처리한다.
         """
@@ -130,8 +137,6 @@ class FieldDocument:
         for begin in begins:
             if self._fill_one(begin, new_value):
                 updated += 1
-        if updated:
-            self._modified = True
         return updated > 0
 
     def _fill_one(self, begin: etree._Element, new_value: str) -> bool:
@@ -157,10 +162,14 @@ class FieldDocument:
                     name = _local(inner.tag)
                     if name == "t":
                         if first_text:
-                            inner.text = new_value
+                            if (inner.text or "") != new_value:
+                                inner.text = new_value
+                                self._modified = True  # 실제 변경만 변형으로 계상
                             first_text = False
                             touched = True
                         else:
+                            if inner.text:
+                                self._modified = True
                             inner.text = ""  # 파편 텍스트 제거
                     elif name == "ctrl":
                         # fieldEnd 를 품은 ctrl 이면 종료

@@ -118,6 +118,17 @@ def test_to_bytes_preserves_lineseg_when_unmodified():
     assert b"linesegarray" in FieldDocument(_LINESEG_XML).to_bytes()
 
 
+def test_refill_with_identical_value_is_not_a_modification():
+    """동일 값 재채움(무변경 재생성)은 변형이 아니다 — 유효 캐시를 잃지 않는다(#95).
+
+    반환값은 매칭 보고용이라 여전히 True(unmatched 오보 방지).
+    """
+    doc = FieldDocument(_LINESEG_XML)
+    assert doc.set_field("계약명", "기존값") is True  # 픽스처의 현재 값 그대로
+    assert doc.modified is False
+    assert b"linesegarray" in doc.to_bytes()  # 캐시 보존
+
+
 def test_to_bytes_strips_stale_lineseg_after_set_field():
     """채움으로 변형된 문서는 섹션 전체의 stale 캐시를 스트립한다(#95)."""
     doc = FieldDocument(_LINESEG_XML)

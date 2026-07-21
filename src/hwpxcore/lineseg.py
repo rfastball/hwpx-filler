@@ -14,12 +14,12 @@ from lxml import etree
 def strip_line_layout(root: etree._Element) -> None:
     """변형된 섹션 트리에서 stale 줄배치 캐시(``<hp:linesegarray>``)를 전량 제거.
 
-    네임스페이스 불가지 — 로컬명만 매치(실템플릿의 접두사/네임스페이스 변주 대비).
-    부분 스트립은 문서 전역 일관성 검사를 여전히 건드리므로 섹션 전체를 제거한다.
-    **변형된** 섹션에만 호출할 것 — 미변경 섹션의 캐시는 유효하므로 보존한다.
+    네임스페이스 불가지(``{*}`` = 모든/무 네임스페이스) — 실템플릿의 접두사/네임스페이스
+    변주 대비, 이슈 #95 의 의도된 선택. 부분 스트립은 문서 전역 일관성 검사를 여전히
+    건드리므로 섹션 전체를 제거한다. **변형된** 섹션에만 호출할 것 — 미변경 섹션의
+    캐시는 유효하므로 보존한다.
+
+    ``with_tail=False``: 제거 요소의 tail 텍스트는 문서 본문이므로 앞 형제/부모에
+    되붙여 보존한다(``parent.remove`` 는 tail 을 함께 버려 조용한 텍스트 소실).
     """
-    for seg in list(root.iter()):
-        if isinstance(seg.tag, str) and seg.tag.rsplit("}", 1)[-1] == "linesegarray":
-            parent = seg.getparent()
-            if parent is not None:
-                parent.remove(seg)
+    etree.strip_elements(root, "{*}linesegarray", with_tail=False)

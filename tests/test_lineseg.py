@@ -33,8 +33,23 @@ def test_strips_all_lineseg_and_preserves_everything_else():
     assert "<hp:tab/>" in out
 
 
+def test_tail_text_is_preserved_not_dropped():
+    """제거 요소의 tail 은 문서 본문 — 함께 버리면 조용한 텍스트 소실(confirm-or-alarm 위반)."""
+    xml = f"""<hs:sec xmlns:hs="{HS}" xmlns:hp="{HP}">
+      <hp:p>앞텍스트<hp:linesegarray><hp:lineseg/></hp:linesegarray>tail 본문<hp:run><hp:t>뒤</hp:t></hp:run></hp:p>
+    </hs:sec>""".encode()
+    root = etree.fromstring(xml)
+    strip_line_layout(root)
+    text = "".join(root.itertext())
+    assert "tail 본문" in text  # 앞 형제/부모에 되붙어 보존
+    assert "앞텍스트" in text and "뒤" in text
+    assert b"linesegarray" not in etree.tostring(root)
+
+
 def test_namespace_agnostic_matches_local_name_only():
-    # 접두사·네임스페이스가 달라도(무네임스페이스 포함) 로컬명으로 매치한다.
+    # 접두사·네임스페이스가 달라도(무네임스페이스 포함) 로컬명으로 매치한다 —
+    # #95 의 의도된 선택(실템플릿 네임스페이스 변주 대비). 외래 네임스페이스의
+    # 동명 요소도 제거됨을 명시적으로 못박는다.
     xml = (
         '<root xmlns:x="urn:other">'
         "<x:linesegarray/><linesegarray/>"
