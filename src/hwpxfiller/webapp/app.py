@@ -421,6 +421,47 @@ _MODAL_A11Y_PROBE_JS = r"""
   var cClosed = cm.classList.contains('hidden');
   var cDisplayClosed = getComputedStyle(cm).display;         // 닫힌 뒤 'none'
   window.alert = origAlert;
+  // #132.4: Modal.open/close 가 .modal 없는 요소를 시끄럽게 거절하는가(조용한 no-op 차단).
+  // 잠복 결함: .hidden 은 .modal.hidden 규칙으로만 숨어, .modal 없는 요소에 open 하면 토글이 무효다.
+  var mErrs = [];
+  var origErr = console.error;
+  var np = document.createElement('div');
+  np.id = '__nonModalProbe'; np.className = 'hidden';        // .modal 없음 — 숨김 규칙 안 먹음
+  document.body.appendChild(np);
+  var openRejected = false, closeRejected = false;
+  console.error = function () { mErrs.push(Array.prototype.join.call(arguments, ' ')); };
+  try {
+    var e0 = mErrs.length;
+    window.Modal.open('__nonModalProbe');                    // 거절 기대: loud + 미개방
+    // loud 는 가드 자신의 메시지로 판정한다(무관한 미래 error 로 초록 위장 차단, 리뷰 F3).
+    openRejected = mErrs.slice(e0).some(function (m) { return m.indexOf('Modal.open') >= 0; })
+      && np.classList.contains('hidden');                    // + 상태 control: 안 열림(hidden 유지)
+    var e1 = mErrs.length;
+    window.Modal.close('__nonModalProbe');                   // 대칭 거절 기대
+    closeRejected = mErrs.slice(e1).some(function (m) { return m.indexOf('Modal.close') >= 0; });
+  } finally {
+    console.error = origErr;                                 // 어떤 throw 에도 원복(리뷰 F2 — 아니면
+    document.body.removeChild(np);                           // 실앱 console.error 가 영구 삼켜진다)
+  }
+  // Codex P2 회귀 잠금: confirm root 가 .modal 을 잃어도 (a) loud 거절, (b) pendingDialog 미교착
+  // (후속 정상 confirm 이 열린다). _promiseModal 이 pendingDialog 세우기 *전* .modal 을 검증하므로
+  // open 가드의 early-return 으로 플래그가 갇히지 않는다. confirmModal 을 한시 불량화 후 반드시 원복.
+  var cmR = document.getElementById('confirmModal');
+  var malfLoud = false, afterMalfOpens = false;
+  var oErr2 = console.error, oAlert2 = window.alert;
+  console.error = function () { malfLoud = true; };
+  window.alert = function () {};                            // 불량 경로의 실 alert 블로킹 차단
+  try {
+    cmR.classList.remove('modal');                          // 골격 불량 재현
+    window.Modal.confirm({ body: '불량 root' });             // pendingDialog 세우기 전에 거절돼야
+    cmR.classList.add('modal');                             // 후속 정상 확인 전 원복
+    window.Modal.confirm({ body: '후속 정상' });              // 교착이면 재진입 거절로 안 열린다
+    afterMalfOpens = !cmR.classList.contains('hidden');
+  } finally {
+    if (!cmR.classList.contains('modal')) cmR.classList.add('modal');  // 어떤 경로든 .modal 원복
+    console.error = oErr2; window.alert = oAlert2;
+  }
+  if (afterMalfOpens) document.getElementById('confirmModalCancel').click();  // 후속 닫아 상태 원복
   return {
     opened: opened,               // 열기 후 hidden 해제됐는가
     focus_in: focusIn,            // 초기 포커스가 모달 안(pasteText)으로 들어갔는가
@@ -435,7 +476,11 @@ _MODAL_A11Y_PROBE_JS = r"""
     confirm_body_after_reentry: bodyAfterReentry, // #92 #1: 첫 본문이 덮이지 않았는가
     confirm_trap_wrapped: trapWrapped,           // #92 #1: Tab 이 모달 안에서 순환했는가
     confirm_closed: cClosed,      // #86: 확인 클릭 후 다시 hidden 인가
-    confirm_display_closed: cDisplayClosed  // #86/B-9: 닫힌 뒤 display(none 기대, hidden 이 flex 를 이긴다)
+    confirm_display_closed: cDisplayClosed,  // #86/B-9: 닫힌 뒤 display(none 기대, hidden 이 flex 를 이긴다)
+    non_modal_open_rejected_loud: openRejected,   // #132.4: .modal 없는 open 이 loud 거절+미개방인가
+    non_modal_close_rejected_loud: closeRejected, // #132.4: .modal 없는 close 도 loud 거절인가
+    malformed_confirm_root_refused_loud: malfLoud, // Codex P2: 불량(.modal 없는) confirm root loud 거절
+    confirm_after_malformed_opens: afterMalfOpens  // Codex P2: 교착 없이 후속 confirm 이 열리는가
   };
 })()
 """
