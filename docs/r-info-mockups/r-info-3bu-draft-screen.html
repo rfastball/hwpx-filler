@@ -369,9 +369,9 @@
             </div>
             <!-- 블록 4 승계 — DataZoneMixin 은 작업 화면과 단일 출처다(재구현 아님). -->
             <div class="filterbar">
-              <input class="field search" type="search" value="ㅌㅎㅊㄹ"
-                     aria-label="행 거르기" placeholder="행 거르기 — 자모만 쳐도 걸립니다">
-              <span class="muted hintx">자모 부분일치 · 실시간</span>
+              <input class="field search" type="search" value="통학차ㄹ"
+                     aria-label="행 거르기" placeholder="행 거르기">
+              <span class="muted hintx">자모 부분일치 — 치는 도중에 이미 맞는다(초성 검색 아님)</span>
               <button class="btn sm" type="button">직전 필터 재적용</button>
               <span class="spacer"></span>
               <span class="muted">선택 <b>12</b>/30</span>
@@ -379,7 +379,7 @@
               <button class="btn sm" type="button">전체 해제</button>
             </div>
             <div class="fchips">
-              <span class="chip">계약 건명 <b>«ㅌㅎㅊㄹ»</b><span class="x">×</span></span>
+              <span class="chip">계약 건명 <b>«통학차ㄹ»</b><span class="x">×</span></span>
               <span class="chip">업체명 <b>3개 값</b><span class="x">×</span></span>
               <span class="chip">계약금액 <b>≥ 30,000,000</b><span class="x">×</span></span>
               <button class="btn sm" type="button">모두 지우기</button>
@@ -631,6 +631,9 @@
       <p><b>자모 부분일치 실시간 검색</b>·<b>엑셀식 열 필터 좁힘</b>·필터 칩·<b>관통 스트립</b>·
         「직전 필터 재적용」은 hwpx 트랙이 블록 4에서 세운 자산이고, txt 큐가 이미
         <b>같은 <span class="mono">DataZoneMixin</span></b> 을 쓴다(작업 화면과 단일 출처).</p>
+      <p>자모 검색은 <b>초성 검색이 아니라 부분일치</b>다 — 「반」이 「바나나」에 걸리고,
+        IME 로 조립하는 <b>중간 상태(「통학차ㄹ」)가 이미 맞는다.</b> 「ㅌㅎㅊㄹ」 같은 초성
+        나열은 연속 자모 부분열이 아니라 <b>안 걸린다</b>(<span class="mono">core/jamo.py</span> 선언 경계).</p>
       <p>합병해도 그대로 산다 — 여기서 <b>다시 만들면 안 된다.</b> 관통 스트립은 특히
         「필터 밖 선택을 숨기지 않는다」는 계약이라 조용히 떨어뜨리면 큐가 거짓말을 한다.</p>
     </div>
