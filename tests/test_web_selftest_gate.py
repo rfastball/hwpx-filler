@@ -472,6 +472,10 @@ class TestWebSelftestGate:
         assert z["new_draft_guard_wired"] is True, (
             "TxtScreen.confirmNewDraftIfArmed 배선이 사라졌습니다 — 「＋ 새 기안」 무가드 파괴 회귀."
         )
+        assert z["tpl_refresh_wired"] is True, (
+            "TxtScreen.refreshTemplates 배선이 사라졌습니다 — 다른 화면이 더한 템플릿을 "
+            "재시작 전엔 못 고르는 조용한 어긋남 회귀(#135 리뷰 P2)."
+        )
         nd, swap = z["guard_body_newdraft"], z["guard_body"]
         assert nd.startswith("새 기안을 시작하면"), f"제스처 앞머리 어긋남: {nd!r}"
         assert "복사 진행 2/5행" in nd, f"큐 진행 재진술 누락: {nd!r}"

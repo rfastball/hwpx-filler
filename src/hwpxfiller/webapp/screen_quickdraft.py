@@ -51,6 +51,8 @@ QuickDraftViewModel` 을 소유·위임하는 얇은 어댑터다 — 다른 실
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from hwpxcore.atomic import write_text_atomic
 
 from ..core.format_engine import presets as format_presets
@@ -73,7 +75,7 @@ from .screens import (
     source_label,
 )
 from .settings import is_proportional_font, load_draft_target_font
-from .template_groups import TemplateGroupModel, validate_template_name
+from .template_groups import TemplateGroupModel, rel_key, validate_template_name
 
 # 표시형 프리셋 목록(유형별) — 에디터 스냅샷과 **같은 표(format_engine)**에서 뽑는다.
 # 빠른 기안의 fmt 코드가 승격 시 매핑 행의 fmt 로 그대로 이관되려면 두 표면이 같은 어휘를
@@ -540,11 +542,12 @@ class QuickDraftController:
         """
         vm = self.vm
         name = vm.template_name if vm.origin == "lib" and vm.template_name else ""
+        dest = self._registered_path(name)
         keys = self._library_keys()
         return {
             "name": name,
             "groups": self._groups.existing_groups(keys),
-            "group": self._groups.group_of(f"{name}.txt") if name else "",
+            "group": self._groups.group_of(rel_key(dest, self._registry.directory)) if dest else "",
         }
 
     _do_promote_info.is_query = True  # 무변이 질의 — 재렌더 유발 금지
@@ -552,6 +555,34 @@ class QuickDraftController:
     def _library_keys(self) -> "list[str]":
         """살아있는 txt 템플릿의 그룹 식별키 — 관리 화면과 같은 규칙(루트 상대경로+확장자)."""
         return [f"{n}{TextTemplateRegistry.SUFFIX}" for n in self.vm.template_names()]
+
+    def _registered_path(self, name: str) -> "Path | None":
+        """등록된 템플릿 이름 → **실제 경로**(없으면 None). 하위폴더 파일도 제 자리를 돌려준다."""
+        if not name:
+            return None
+        for t in self._registry.list_templates():
+            if t.name == name:
+                return t.path
+        return None
+
+    def _resolve_dest(self, raw_name: str) -> "Path":
+        """제출된 이름 → 저장 경로. 실패는 :class:`ValueError`(인라인 재진술용).
+
+        **현 세션이 든 라이브러리 정체와 같은 이름이면 그 파일의 실제 경로**를 돌려준다
+        (Codex 리뷰 P2). 재귀 스캔이 하위폴더 파일을 ``하위폴더/이름`` 으로 노출하므로
+        프리필도 그 값인데, 그것을 새 이름처럼 검증하면 ``/`` 때문에 거부돼 **하위폴더
+        템플릿은 고쳐서 되돌려 쓰는 정상 경로가 언제나 막힌다**. 반대로 경로 구분자를
+        허용해 버리면 새 이름으로 루트 밖·임의 하위 경로를 만들 수 있으므로, 관용은
+        **이미 등록된 그 정체 하나**로만 한정한다(새 이름엔 구분자 계속 금지).
+        """
+        name = (raw_name or "").strip()
+        if name and self.vm.origin == "lib" and name == self.vm.template_name:
+            known = self._registered_path(name)
+            if known is not None:
+                return known
+        return self._registry.directory / (
+            validate_template_name(raw_name) + TextTemplateRegistry.SUFFIX
+        )
 
     def _do_save_template(self, p: dict) -> dict:
         """「템플릿으로 저장」(결정 33·34) — 세션 원문을 라이브러리로 승격. 값은 저장 대상이 아니다.
@@ -567,12 +598,12 @@ class QuickDraftController:
         """
         if not self.vm.template_text.strip():  # 빈손 승격 = 빈 템플릿 양산(복사 게이트 동형)
             return {"ok": False, "error": "저장할 템플릿 원문이 없습니다."}
+        root = self._registry.directory
         try:
-            name = validate_template_name(p.get("name", ""))
+            dest = self._resolve_dest(p.get("name", ""))
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}  # 모달 인라인 재진술(창 밖 예외 금지)
-        root = self._registry.directory
-        dest = root / f"{name}{TextTemplateRegistry.SUFFIX}"
+        name = rel_key(dest, root).removesuffix(TextTemplateRegistry.SUFFIX)
         if dest.exists() and not p.get("confirm"):
             return {
                 "ok": False,
@@ -585,16 +616,27 @@ class QuickDraftController:
                 ),
             }
         overwritten = dest.exists()
-        root.mkdir(parents=True, exist_ok=True)
+        dest.parent.mkdir(parents=True, exist_ok=True)
         write_text_atomic(str(dest), self.vm.template_text)
         # 그룹 지정은 **저장이 성공한 뒤에만** — 파일 없는 키에 지정을 남기면 고아가 된다.
         # 덮어쓰기에서 사용자가 그룹을 안 건드렸으면 프리필로 돌아온 현재 그룹이 그대로 실린다.
-        self._groups.set_group(dest.name, p.get("group", ""))
+        #
+        # 여기서 실패해도(설정 파일 읽기 전용 등) **저장 자체는 이미 일어났다**(Codex 리뷰 P2):
+        # 예외로 되던지면 "실패했다"고 말하면서 라이브러리 내용은 바뀐 상태가 되고, 재시도는
+        # 난데없이 덮어쓰기 게이트를 만난다. 파일 쓰기를 되돌리는 쪽은 덮어쓰기에서 원본을
+        # 복원할 수 없으니 더 나쁘다 — 그래서 **성공으로 보고하되 못 남긴 것을 정확히
+        # 진술한다**(PR-1 스탬프 실패와 같은 처방: 일어난 일과 안 일어난 일을 갈라 말한다).
+        group_error = ""
+        try:
+            self._groups.set_group(rel_key(dest, root), p.get("group", ""))
+        except (OSError, ValueError) as exc:
+            group_error = str(exc) or exc.__class__.__name__
         self.vm.mark_saved_as(name)
         return {
             "ok": True,
             "name": name,
             "overwritten": overwritten,
+            "group_error": group_error,
             # 슬롯 드롭다운은 initial() 에서 한 번 받아 캐시하므로, 새 이름이 목록에 서려면
             # 여기서 갱신본을 함께 돌려줘야 한다(방금 만든 템플릿이 목록에 없는 어긋남 방지).
             "templates": self.vm.template_names(),

@@ -373,11 +373,18 @@
     window.Modal.close("qdSaveTplModal");
     if (LAST) render(LAST);   // 승격된 정체(라이브러리 유래·(수정됨) 해제)로 슬롯 갱신
     const note = $("qdSaveNote");
-    note.dataset.level = "ok";
     // 세션 처분을 정직하게 말한다(#135): 세션은 살아 있고, 저장된 것은 원문뿐이다.
-    note.textContent = r.overwritten
-      ? `「${r.name}」 템플릿을 덮어썼습니다. 이 세션은 그대로 이어집니다(값은 저장되지 않았습니다).`
-      : `「${r.name}」 템플릿으로 저장했습니다. 이 세션은 그대로 이어집니다(값은 저장되지 않았습니다).`;
+    const head = r.overwritten
+      ? `「${r.name}」 템플릿을 덮어썼습니다.`
+      : `「${r.name}」 템플릿으로 저장했습니다.`;
+    // 그룹 지정만 실패한 경우(설정 파일 쓰기 불가) — 일어난 일과 안 일어난 일을 갈라 말한다.
+    if (r.group_error) {
+      note.dataset.level = "warn";
+      note.textContent = `${head} 다만 그룹은 남기지 못했습니다(${r.group_error}) — 템플릿은 「그룹 없음」에 있습니다.`;
+    } else {
+      note.dataset.level = "ok";
+      note.textContent = `${head} 이 세션은 그대로 이어집니다(값은 저장되지 않았습니다).`;
+    }
   }
 
   function setPill(s) {

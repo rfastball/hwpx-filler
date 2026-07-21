@@ -805,3 +805,61 @@ def test_save_template_group_is_not_left_on_failure(tmp_path):
     ctrl.dispatch("save_template", {"name": "개찰참관보고", "group": "기안문"})  # 확인 대기
     assert TemplateGroupModel("txt").group_of("보고서.txt") == ""
     assert TemplateGroupModel("txt").group_of("개찰참관보고.txt") == ""
+
+
+# --- 리뷰 반영(Codex P2) ---
+def test_nested_library_template_can_be_overwritten(tmp_path):
+    """하위폴더 템플릿도 고쳐서 되돌려 쓸 수 있다 — 프리필이 곧 거부되는 이름이면 안 된다.
+
+    재귀 스캔은 하위폴더 파일을 ``하위폴더/이름`` 으로 노출하고 프리필도 그 값인데, 그걸 새
+    이름처럼 검증하면 ``/`` 때문에 늘 거부돼 정상 경로가 통째로 막힌다. 관용은 **이미 등록된
+    그 정체 하나**로만 한정한다(새 이름엔 구분자 계속 금지 — 아래 짝 단언).
+    """
+    from hwpxfiller.webapp.template_groups import TemplateGroupModel
+
+    nested = tmp_path / "기안문"
+    nested.mkdir()
+    (nested / "보고.txt").write_text("원본 {{사업명}}", encoding="utf-8")
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_template", {"name": "기안문/보고"})
+    ctrl.dispatch("edit_source", {"text": "고친 {{사업명}} {{비고}}"})
+
+    info = ctrl.dispatch("promote_info", {})
+    assert info["name"] == "기안문/보고"
+    res = ctrl.dispatch("save_template", {"name": info["name"], "group": ""})
+    assert res["ok"] is False and res["needs_confirm"] is True      # 동명 = 확인 게이트
+    res = ctrl.dispatch("save_template", {"name": info["name"], "group": "기안", "confirm": True})
+    assert res["ok"] is True and res["overwritten"] is True
+    assert (nested / "보고.txt").read_text(encoding="utf-8") == "고친 {{사업명}} {{비고}}"
+    assert not (tmp_path / "기안문/보고.txt").is_symlink()          # 루트에 사본을 만들지 않았다
+    assert sorted(p.name for p in tmp_path.glob("*.txt")) == ["개찰참관보고.txt"]
+    # 그룹 키도 관리 화면과 같은 루트 상대경로다(basename 으로 갈라지지 않는다).
+    assert TemplateGroupModel("txt").group_of("기안문/보고.txt") == "기안"
+    assert ctrl.dispatch("promote_info", {})["group"] == "기안"
+
+
+def test_path_separator_still_forbidden_for_new_names(tmp_path):
+    """관용은 현 세션의 등록된 정체 하나뿐 — 새 이름의 경로 구분자는 계속 막는다."""
+    ctrl = _lib_session(tmp_path)
+    res = ctrl.dispatch("save_template", {"name": "어디/새이름", "group": ""})
+    assert res["ok"] is False and res["error"]
+    assert not (tmp_path / "어디").exists()
+
+
+def test_group_persist_failure_reports_what_landed(tmp_path, monkeypatch):
+    """그룹 영속만 실패하면 **저장은 성공으로 보고**하되 못 남긴 것을 진술한다(P2).
+
+    예외로 되던지면 "실패했다"고 말하면서 라이브러리 내용은 바뀐 상태가 되고, 재시도는
+    난데없이 덮어쓰기 게이트를 만난다. 되돌리기도 답이 아니다 — 덮어쓰기에서 원본을 복원할
+    수 없다. 그래서 일어난 일과 안 일어난 일을 갈라 말한다(PR-1 스탬프 실패와 같은 처방).
+    """
+    ctrl = _lib_session(tmp_path)
+
+    def _boom(*a, **k):
+        raise OSError("설정 파일 쓰기 거부")
+
+    monkeypatch.setattr(ctrl._groups, "set_group", _boom)
+    res = ctrl.dispatch("save_template", {"name": "보고서", "group": "기안문"})
+    assert res["ok"] is True and res["group_error"] == "설정 파일 쓰기 거부"
+    assert (tmp_path / "보고서.txt").exists()                       # 저장은 실제로 일어났다
+    assert ctrl.snapshot()["template_name"] == "보고서"             # 정체 승격도 함께

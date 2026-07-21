@@ -38,6 +38,13 @@
     if (id === "job" && window.EditorScreen && window.EditorScreen.rerender) {
       window.EditorScreen.rerender();
     }
+    // txt 템플릿 드롭다운은 스냅샷이 아니라 initial 1회로 채워지므로, 다른 화면이 라이브러리에
+    // 더한 템플릿(빠른 기안 승격 #135·관리 화면 신규/가져오기)이 진입해도 안 보인다 — 진입
+    // 시 다시 읽는다(refresh 디스패치로는 못 고친다: 목록이 스냅샷 소유가 아니다).
+    if (id === "txt" && window.TxtScreen && window.TxtScreen.refreshTemplates) {
+      window.TxtScreen.refreshTemplates().catch((err) =>
+        window.alert(String((err && err.message) || err)));
+    }
   }
   // 레일 「작업 에디터」 과도기 심은 항목 사망(슬라이스 5 삭제 PR)과 함께 제거 — 편집
   // 진입은 EditorEntry.land 소비처(홈·템플릿 관리·작업 ⋮)가 담당한다.

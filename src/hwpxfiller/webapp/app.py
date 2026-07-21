@@ -940,6 +940,9 @@ _TXT_ZONE_PROBE_JS = r"""
     out.guard_body_newdraft = window.TxtScreen.guardBody(guardState, '새 기안을 시작하면');
     // 「＋ 새 기안」 가드 배선 존재 핀(#126) — 홈이 소비하는 진입점의 삭제 회귀 표식.
     out.new_draft_guard_wired = typeof window.TxtScreen.confirmNewDraftIfArmed === 'function';
+    // 템플릿 목록 재조회 배선 핀(#135 리뷰 P2) — 드롭다운은 initial 1회로 채워지므로 이
+    // 재조회가 사라지면 다른 화면이 더한 템플릿을 재시작 전엔 못 고른다(조용한 어긋남).
+    out.tpl_refresh_wired = typeof window.TxtScreen.refreshTemplates === 'function';
     // 빈칸 게이트 본문(#125 · 결정 16) — 복사 **전** 확인 모달의 문안 합성. 종류별 수치·열거와
     // 6개 초과 접기를 되읽는다(모달이 스크롤로 번지면 결론 버튼이 안 보인다).
     out.copy_gate_body = window.TxtScreen.copyGateBody(
