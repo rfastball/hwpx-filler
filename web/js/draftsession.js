@@ -128,7 +128,12 @@
       // **유효 선택(srcSel)** 로만 판정한다(Codex F1): t.source 로 판정하면 man 이 「(직접 입력)」과
       // 옛 열을 동시에 selected 해 나중 것(열)이 이겨, 상수가 그 열에 결속된 듯 거짓 표시된다.
       const srcSel = t.own === "auto" ? t.source : "";
-      const cols = (s.columns || []).map((c) =>
+      // 복원된 결속(데이터 미연결) 정직 표시(리뷰 5a P2) — 데이터가 없어 s.columns 가 비어도
+      // 결속된 열(srcSel)을 선택지에 넣어 「(직접 입력)」으로 오표시되지 않게(저장 매핑 거짓 표시
+      // 차단). 실제 데이터 연결 시 열 존재는 백엔드 _rebuild_mapping 이 재검증한다(죽은 결속 강등).
+      const colList = (s.columns || []).slice();
+      if (srcSel && colList.indexOf(srcSel) < 0) colList.unshift(srcSel);
+      const cols = colList.map((c) =>
         `<option value="${esc(c)}"${c === srcSel ? " selected" : ""}>${esc(c)}</option>`).join("");
       const dot = t.own ? `<span class="own ${t.own}" title="${OWN_LABEL[t.own] || ""}"></span>` : "";
       const src =

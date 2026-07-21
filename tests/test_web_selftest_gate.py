@@ -476,6 +476,10 @@ class TestWebSelftestGate:
         assert d["back_restores_session"] is True, "휘발 귀환에 세션 패널이 서지 않았습니다."
         assert d["back_persist_hidden"] is True, "휘발 귀환에 유형·확정 열이 다시 숨지 않았습니다."
         assert d["vol_tpl_unlocked"] is True, "휘발 귀환에 템플릿 콤보·붙여넣기가 다시 풀리지 않았습니다."
+        # 복원 결속 정직 표시(리뷰 5a P2) — 데이터 미연결이어도 결속된 열이 드롭다운에 selected.
+        assert d["restored_bind_option"] == "selected", (
+            f"복원 결속(데이터 미연결)이 드롭다운에 정직히 표시되지 않았습니다: {d['restored_bind_option']!r}"
+        )
 
     def test_job_edit_mode_hosts_definition_surface(self, selftest_result: dict) -> None:
         # 에디터 흡수(블록 2 개정, 결정 39~41) — 편집 모드 전환이 실 WebView2 에서 편집 호스트를

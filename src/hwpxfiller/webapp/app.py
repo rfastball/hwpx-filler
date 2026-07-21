@@ -1117,8 +1117,10 @@ _DRAFT_SESSION_PROBE_JS = r"""
     vsnap.card.has_current = true;
     vsnap.card.index = null;
     window.__push('draft', vsnap);
-    out.degen_src_options = (function(){ var s = document.querySelector('#draftTokPanel .mapsrc-sel');
-      return s ? s.options.length : 0; })();  // (직접 입력)만 = 1
+    // 무결속 토큰(비고, i=2)으로 무데이터 열 누출을 본다 — (직접 입력)만 = 1. 결속 토큰(공고명)은
+    // 이제 결속 소스를 선택지에 보이므로(리뷰 5a P2) 누출 검사 대상이 아니다(첫 셀 = 공고명 결속).
+    out.degen_src_options = (function(){ var s = document.getElementById('draftTokPanel-src-2');
+      return s ? s.options.length : 0; })();  // 비고=무결속·무데이터 → (직접 입력)만 = 1(열 누출 없음)
     // **실제 표시(computed display)** 로 되읽는다 — `hidden` 속성만 보면 display:flex 가 UA
     // [hidden]{display:none} 을 이겨도(부록 B-9) 속성은 true 라 거짓 초록이 난다(Codex P2 실측).
     var gone = function(el){ return !!el && getComputedStyle(el).display === 'none'; };
@@ -1167,6 +1169,22 @@ _DRAFT_SESSION_PROBE_JS = r"""
     out.back_persist_hidden = !shownEl(document.querySelector('#draftTokPanel .maptype-cell'));
     out.vol_tpl_unlocked = document.getElementById('draftTplSel').disabled === false
       && document.getElementById('draftBtnPaste').disabled === false;
+    // 복원 결속 정직 표시(리뷰 5a P2) — 데이터 미연결(columns 빈)이어도 결속된 열이 드롭다운
+    // 선택지에 있고 selected 여야 한다(「(직접 입력)」 오표시 = 저장 매핑 거짓 표시 차단).
+    var rsnap = JSON.parse(JSON.stringify(snap));
+    rsnap.has_data = false; rsnap.columns = [];
+    rsnap.tokens = [{name:'공고명', state:'blank', source:'복원열', own:'auto', manual:false,
+      value:'', fmt_kind:'text', fmt_code:'', suggest:'', can_revert:false,
+      confirmed:true, blank_declared:false}];
+    window.__push('draft', rsnap);
+    out.restored_bind_option = (function () {
+      var s = document.querySelector('#draftTokPanel .mapsrc-sel');
+      if (!s) return 'ABSENT';
+      for (var k = 0; k < s.options.length; k++) {
+        if (s.options[k].value === '복원열') return s.value === '복원열' ? 'selected' : 'present';
+      }
+      return 'MISSING'; })();
+    window.__push('draft', snap);  // 원상 복귀
     out.error = null;
   } catch (e) { out.error = 'throw:' + (e && e.message); }
   return out;
