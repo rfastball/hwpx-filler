@@ -225,6 +225,37 @@ def test_generation_stamp_does_not_clobber_disk_edits(tmp_path):
     assert after.last_run_at != ""                              # 그리고 스탬프도 남는다
 
 
+def test_stamp_goes_to_the_job_the_run_started_on(tmp_path, monkeypatch):
+    """생성 중 작업 전환이 일어나도 역사는 **그 런의 작업**에 적힌다(Codex 리뷰 P1).
+
+    생성 중 좌 목록은 잠기지 않고(busy 잠금은 선언 요소만), 기본 전체 선택 세션은 무장이
+    아니라 전환이 확인도 안 거친다. 브리지가 별도 스레드라 배치 도중 세션이 B 로 옮겨갈 수
+    있는데, 완주 뒤 현재 상태를 읽으면 A 의 실행이 B 의 역사가 되고 A 는 이력을 잃는다.
+    """
+    import hwpxfiller.webapp.screen_job as sj
+
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _second_job(ctrl, tmp_path)                       # 전환 대상(공고서2) 등록
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+
+    real_batch = sj.generate_batch
+
+    def _switch_midflight(*a, **k):
+        result = real_batch(*a, **k)
+        ctrl.dispatch("select_job", {"name": "공고서2"})   # 배치 도는 사이 세션이 옮겨갔다
+        return result
+
+    monkeypatch.setattr(sj, "generate_batch", _switch_midflight)
+    assert ctrl.generate()["ok"] is True
+    assert ctrl.registry.load("공고서").last_run_at != ""   # 실제로 돈 작업에 역사
+    assert ctrl.registry.load("공고서2").last_run_at == ""  # 없던 실행을 지어내지 않는다
+    assert ctrl.vm is not None and ctrl.vm.job.name == "공고서2"
+    assert ctrl.vm.job.last_run_at == ""                    # 남의 VM 도 안 만진다
+
+
 def test_stamp_failure_is_loud_not_silent(tmp_path, monkeypatch):
     """기록 실패를 삼키지 않는다(confirm-or-alarm) — 문서는 남기고 사유를 완료 요약에 병기."""
     ctrl, _ = _controller(tmp_path)

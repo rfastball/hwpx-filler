@@ -781,25 +781,34 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """생성 진행 델타 — 전체 스냅샷 재계산(템플릿 재파싱) 없이 진행바만 갱신."""
         self._push_sink(self.name, {"progress": {"done": done, "total": total}})
 
-    def _stamp_last_run(self) -> str:
-        """완주 런의 시각을 작업에 영속 — 성공 시 ``""``, 실패 시 사용자 문안 사유(#129).
+    def _stamp_last_run(self, job_name: str, vm) -> str:
+        """완주 런의 시각을 **그 런이 시작될 때 겨눴던 작업**에 영속 — 성공 시 ``""``, 실패 시 사유.
 
         디스크 재읽기 후 단일 필드 뮤테이션(:meth:`JobRegistry.set_group` 선례)이다 —
-        ``self.vm.job`` 은 작업 선택 시점의 인메모리 사본이라 그것만 고쳐서는 아무 데도
-        남지 않고, 통째 저장은 세션이 들고 있던 옛 매핑으로 디스크의 최신 편집을 되돌린다.
+        ``vm.job`` 은 작업 선택 시점의 인메모리 사본이라 그것만 고쳐서는 아무 데도 남지 않고,
+        통째 저장은 세션이 들고 있던 옛 매핑으로 디스크의 최신 편집을 되돌린다.
+
+        **정체를 인자로 받는 이유**(Codex 리뷰 P1): 생성 중에도 좌 목록의 작업 행은 눌린다
+        (busy 잠금은 ``[data-busy-lock]`` 선언 요소만 잠그는데 ``.job-item`` 엔 없다). 기본
+        전체 선택 세션은 무장 상태가 아니라 전환이 확인도 거치지 않는다 — 브리지 호출이
+        별도 스레드라 배치가 도는 사이 ``self.job_name``/``self.vm`` 이 B 로 바뀔 수 있고,
+        그때 현재 상태를 읽어 스탬프하면 **A 의 완주가 B 의 역사로 기록되고 A 는 이력을
+        잃는다**(없던 실행을 지어내는 쪽이라 조용한 누락보다 나쁘다).
 
         스탬프 실패를 삼키지 않는 이유(confirm-or-alarm): 문서는 이미 만들어졌으므로 예외로
         완료 서사(요약·실패 목록)를 날리는 건 더 큰 손실이고, 조용히 넘기면 홈 이력이
         아무 말 없이 이번 실행을 잃는다 — 그래서 **사유를 완료 요약에 병기**한다.
         """
         try:
-            job = self.registry.load(self.job_name)
+            job = self.registry.load(job_name)
             job.last_run_at = datetime.now().isoformat(timespec="seconds")
             self.registry.save(job, allow_overwrite=True)
         except (OSError, ValueError) as exc:
             return str(exc) or exc.__class__.__name__
-        if self.vm is not None:  # 인메모리 사본도 같은 시각으로 — 디스크와 갈라지지 않게
-            self.vm.job.last_run_at = job.last_run_at
+        # 인메모리 사본은 **그 런의 VM 이 아직 현 세션일 때만** 동기화한다(디스크와 갈라지지
+        # 않게). 세션이 이미 다른 작업으로 옮겨갔으면 남의 VM 을 만지지 않는다.
+        if vm is not None and vm is self.vm:
+            vm.job.last_run_at = job.last_run_at
         return ""
 
     def generate(self, *, confirm_overwrite: bool = False) -> dict:
@@ -810,6 +819,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         if self.vm is None:
             return {"ok": False, "error": "먼저 작업을 선택하세요.", "level": "warn"}
+        # 이 런의 주체를 **시작 시점에 붙든다** — 생성 중 작업 전환이 가능하므로(P1 리뷰,
+        # _stamp_last_run 참조) 완주 뒤 현재 상태를 읽으면 남의 작업에 역사를 적는다.
+        run_job_name, run_vm = self.job_name, self.vm
         indices = self._indices()
         out_dir = self.out_dir
 
@@ -870,7 +882,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 완주 = 역사(결정 7·부록 A-2-23) — 완주 런만 `last_run_at` 을 찍는다. 완주 술어를
         # 위 무장 해제와 공유하는 건 의도다: "완료 이벤트"가 둘로 갈라지면 홈 이력과 가드가
         # 서로 다른 실행을 완료로 부르게 된다(#129).
-        stamp_error = self._stamp_last_run() if batch.failed == 0 else ""
+        stamp_error = self._stamp_last_run(run_job_name, run_vm) if batch.failed == 0 else ""
 
         summary = f"완료. 성공 {batch.succeeded}/{batch.total}, 실패 {batch.failed}."
         if blanks:
