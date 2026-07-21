@@ -1539,3 +1539,46 @@ def test_public_relink_during_stamp_keeps_both_changes(tmp_path, monkeypatch):
     saved = reg.load("공고서")
     assert saved.last_run_at == "2026-07-21T09:00:00"
     assert saved.template_path == str(new_template)
+
+
+def test_disband_group_restates_actual_count_when_it_drifted(tmp_path):
+    """확인 시점 건수와 실제 이동 건수가 갈라지면 조용히 넘기지 않는다(#149).
+
+    확인 문안은 잠금 밖 사전 카운트로 만들어진다 — 사용자가 모달을 읽는 사이 다른 표면이
+    작업을 옮기면 "N건" 이 실제와 어긋난다. 이동은 파괴가 아니라 재확인까지 올리지 않되,
+    결과 재진술이 **어긋남을 말해야** 확인한 내용과 실제가 갈라진 채 넘어가지 않는다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.registry.set_group("공고서", "입찰")
+    res = ctrl.dispatch("disband_group", {"name": "입찰"})
+    assert res["count"] == 1
+    ctrl.registry.save(Job(name="늦게합류", group="입찰"), allow_overwrite=True)  # 확인 왕복 사이 합류
+    res2 = ctrl.dispatch("disband_group", {"name": "입찰", "confirm": True, "seen": res["count"]})
+    assert res2["ok"] is True and res2["count"] == 2  # 실제 이동은 잠금 안에서 센 값
+    assert "확인 시점 1건" in res2["drift_note"]
+
+
+def test_disband_group_says_nothing_when_count_held(tmp_path):
+    """어긋나지 않았으면 고지는 침묵 — 매번 붙는 문구는 신호가 아니라 소음이다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.registry.set_group("공고서", "입찰")
+    res = ctrl.dispatch("disband_group", {"name": "입찰"})
+    res2 = ctrl.dispatch("disband_group", {"name": "입찰", "confirm": True, "seen": res["count"]})
+    assert res2["drift_note"] == ""
+
+
+def test_rename_group_merge_restates_actual_count_when_it_drifted(tmp_path):
+    """병합도 같은 고지를 진다(#149) — 두 표면이 같은 술어를 써야 어긋남이 한쪽만 새지 않는다."""
+    ctrl, _ = _controller(tmp_path)
+    reg = ctrl.registry
+    reg.save(Job(name="둘째"))
+    reg.set_group("공고서", "입찰")
+    reg.set_group("둘째", "수의")
+    res = ctrl.dispatch("rename_group", {"name": "수의", "new": "입찰"})
+    assert res["count"] == 1
+    reg.save(Job(name="늦게합류", group="수의"), allow_overwrite=True)
+    res2 = ctrl.dispatch(
+        "rename_group", {"name": "수의", "new": "입찰", "confirm": True, "seen": res["count"]}
+    )
+    assert res2["ok"] is True and res2["count"] == 2
+    assert "확인 시점 1건" in res2["drift_note"]

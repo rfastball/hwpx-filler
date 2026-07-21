@@ -658,8 +658,14 @@
       return;
     }
     if (res.needs_overwrite) {
+      // 본 문안을 그대로 되돌려 준다(#149) — 모달을 읽는 사이 디스크가 바뀌면 확인은 다른
+      // 상태에 대한 것이 된다. 판정은 Python 이 쓰기 잠금 안에서 다시 하고(문안 대조),
+      // 달라졌으면 새 문안으로 다시 묻는다. 여기는 무엇을 보여 줬는지만 실어 보낸다.
       if (await Modal.confirm({ body: res.overwrite_text + "\n\n계속할까요?" })) {
-        doSave(Object.assign({}, flags, { confirm_overwrite: true }));
+        doSave(Object.assign({}, flags, {
+          confirm_overwrite: true,
+          confirmed_overwrite_text: res.overwrite_text,
+        }));
       }
       return;
     }

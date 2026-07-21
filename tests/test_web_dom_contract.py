@@ -658,3 +658,32 @@ def test_editor_surface_lives_in_job_panel():
     assert "exitEditToRun" in job_js and "showEditMode" in job_js, (
         "job.js 패널 두 모드 배선(showEditMode/exitEditToRun)이 사라졌습니다(결정 39·40)."
     )
+
+
+def test_group_confirm_copy_states_the_rule_not_a_promised_count():
+    """그룹 확인 문안이 **규칙**을 말하고 수치는 관측으로 적는다(#149).
+
+    확인 왕복 사이 다른 표면이 소속을 옮기면 사전 카운트는 실제와 어긋난다 — "N개는 이동합니다"
+    는 지킬 수 없는 약속이 되고, 확인한 내용과 실제 집합이 갈라진다(이 저장소의 지배 결함류).
+    옮겨지는 집합의 규칙('전부')은 언제나 참이므로 그것을 본문으로 삼고, 수치는 '지금 기준'
+    으로 덧붙인다. 실제 건수는 실행 뒤 재진술(``drift_note``)이 진다.
+    """
+    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    assert "지금 기준" in src, "그룹 확인 수치가 관측으로 표기되지 않았습니다(#149)."
+    assert "해산 시점의 소속 작업 전부" in src, "해산 확인이 이동 집합 규칙을 말하지 않습니다(#149)."
+    assert "seen: res.count" in src and "seen: r.count" in src, (
+        "확인 때 본 수를 확정 호출에 실어 보내지 않습니다 — 어긋남 판정(Python)이 불가(#149)."
+    )
+    assert "drift_note" in src, "실제 이동 건수의 어긋남 고지를 소비하지 않습니다(#149)."
+
+
+def test_editor_overwrite_confirm_echoes_the_text_it_showed():
+    """에디터 덮어쓰기 확정이 **본 문안을 되돌려** 준다(#149).
+
+    Python 이 쓰기 잠금 안에서 문안을 다시 만들어 대조하고, 달라졌으면 새 문안으로 다시 묻는다
+    — JS 는 무엇을 보여 줬는지만 실어 보낸다(판정은 Python 이 지금, JS 는 문안만).
+    """
+    src = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
+    assert "confirmed_overwrite_text: res.overwrite_text" in src, (
+        "확정 호출이 본 문안을 되돌리지 않습니다 — 검증 불가한 확인이 됩니다(#149)."
+    )
