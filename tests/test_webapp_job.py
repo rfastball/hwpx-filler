@@ -189,6 +189,143 @@ def test_generate_writes_documents_and_marks_missing(tmp_path):
     assert any(isinstance(snap, dict) and "progress" in snap for _s, snap in pushes)
 
 
+def test_generation_stamps_last_run_at(tmp_path):
+    """완주 = 역사(#129) — 생성이 작업에 실행 시각을 영속해야 홈 이력·KPI 가 산다."""
+    ctrl, _ = _controller(tmp_path)
+    assert ctrl.registry.load("공고서").last_run_at == ""      # 선조건: 미실행
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+
+    res = ctrl.generate()
+    assert res["ok"] is True and res["level"] == "ok"
+    stamped = ctrl.registry.load("공고서").last_run_at
+    # 소비처(home_state·screen_home)가 fromisoformat 파싱 + 원시 문자열 정렬로 쓴다.
+    assert datetime.fromisoformat(stamped)
+    assert len(stamped) == len("2026-07-21T09:00:00")           # 초 단위 고정폭 = 정렬 가능
+    assert ctrl.vm.job.last_run_at == stamped                   # 인메모리 사본도 동행
+
+
+def test_generation_stamp_does_not_clobber_disk_edits(tmp_path):
+    """스탬프는 단일 필드 뮤테이션 — 세션이 든 옛 사본으로 디스크 최신 편집을 되돌리지 않는다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    # 세션이 열린 사이 다른 표면(에디터)이 같은 작업을 편집·저장했다.
+    edited = ctrl.registry.load("공고서")
+    edited.filename_pattern = "edited-{{seq:001}}"
+    ctrl.registry.save(edited, allow_overwrite=True)
+
+    assert ctrl.generate()["ok"] is True
+    after = ctrl.registry.load("공고서")
+    assert after.filename_pattern == "edited-{{seq:001}}"       # 디스크 편집 보존
+    assert after.last_run_at != ""                              # 그리고 스탬프도 남는다
+
+
+def test_stamp_goes_to_the_job_the_run_started_on(tmp_path, monkeypatch):
+    """생성 중 작업 전환이 일어나도 역사는 **그 런의 작업**에 적힌다(Codex 리뷰 P1).
+
+    생성 중 좌 목록은 잠기지 않고(busy 잠금은 선언 요소만), 기본 전체 선택 세션은 무장이
+    아니라 전환이 확인도 안 거친다. 브리지가 별도 스레드라 배치 도중 세션이 B 로 옮겨갈 수
+    있는데, 완주 뒤 현재 상태를 읽으면 A 의 실행이 B 의 역사가 되고 A 는 이력을 잃는다.
+    """
+    import hwpxfiller.webapp.screen_job as sj
+
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _second_job(ctrl, tmp_path)                       # 전환 대상(공고서2) 등록
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+
+    real_batch = sj.generate_batch
+
+    def _switch_midflight(*a, **k):
+        result = real_batch(*a, **k)
+        ctrl.dispatch("select_job", {"name": "공고서2"})   # 배치 도는 사이 세션이 옮겨갔다
+        return result
+
+    monkeypatch.setattr(sj, "generate_batch", _switch_midflight)
+    assert ctrl.generate()["ok"] is True
+    assert ctrl.registry.load("공고서").last_run_at != ""   # 실제로 돈 작업에 역사
+    assert ctrl.registry.load("공고서2").last_run_at == ""  # 없던 실행을 지어내지 않는다
+    assert ctrl.vm is not None and ctrl.vm.job.name == "공고서2"
+    assert ctrl.vm.job.last_run_at == ""                    # 남의 VM 도 안 만진다
+
+
+def test_stamp_uses_the_serialized_registry_path(tmp_path, monkeypatch):
+    """스탬프는 레지스트리의 **잠긴 경로**로만 쓴다(#129 리뷰 2R P1) — 직렬화 이탈 회귀 차단.
+
+    load→save 를 여기서 다시 손으로 엮으면 잠금 밖이라 에디터 저장과 lost update 가 난다
+    (둘 중 늦게 착지한 저장이 상대 변경을 통째로 되돌린다). 그 회귀는 결과값으로는 잘 안
+    드러나므로 경로 자체를 못박는다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+
+    calls: list = []
+    real = ctrl.registry.stamp_last_run
+
+    def spy(name, when):
+        calls.append((name, when))
+        return real(name, when)
+
+    monkeypatch.setattr(ctrl.registry, "stamp_last_run", spy)
+    assert ctrl.generate()["ok"] is True
+    assert [n for n, _ in calls] == ["공고서"]
+
+
+def test_stamp_failure_is_loud_not_silent(tmp_path, monkeypatch):
+    """기록 실패를 삼키지 않는다(confirm-or-alarm) — 문서는 남기고 사유를 완료 요약에 병기."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    out = tmp_path / "out"
+    ctrl.set_output_folder(str(out))
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+
+    def _boom(job, **kwargs):
+        raise OSError("디스크 쓰기 거부")
+
+    monkeypatch.setattr(ctrl.registry, "save", _boom)
+    res = ctrl.generate()
+    assert res["ok"] is True and res["succeeded"] == 2          # 생성 자체는 완주
+    assert sorted(p.name for p in out.glob("*.hwpx")) == ["doc-001.hwpx", "doc-002.hwpx"]
+    assert "실행 기록을 남기지 못했습니다" in res["summary"]
+    assert "디스크 쓰기 거부" in res["summary"]                  # 사유 재진술
+    assert res["level"] == "danger"                             # 조용한 초록 금지
+
+
+def test_partial_failure_does_not_stamp_last_run_at(tmp_path, monkeypatch):
+    """부분 실패는 완주가 아니다 — 무장 해제와 스탬프가 같은 술어를 공유한다(#129)."""
+    import hwpxfiller.webapp.screen_job as sj
+
+    class _FakeResult:
+        ok = False
+        output_path = "x.hwpx"
+        error = "boom"
+
+    class _FakeBatch:
+        succeeded, failed, total = 1, 1, 2
+        results = [_FakeResult()]
+
+    monkeypatch.setattr(sj, "generate_batch", lambda *a, **k: _FakeBatch())
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+
+    assert ctrl.generate()["failed"] == 1
+    assert ctrl.registry.load("공고서").last_run_at == ""       # 미완주 = 역사 없음
+
+
 def test_overwrite_confirm_flow(tmp_path):
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
@@ -1289,3 +1426,116 @@ def test_disband_group_confirm_roundtrip(tmp_path):
     # 사라진 그룹의 접힘 잔재는 걷는다 — 같은 이름 재생성 시 유령 접힘 방지.
     from hwpxfiller.webapp.settings import load_job_collapsed_groups
     assert "입찰" not in load_job_collapsed_groups()
+
+
+# ---------------- 실 공개 writer × 스탬프 동시성(#129 리뷰 3R P1) ----------------
+#
+# 리뷰 요구: "협조적인 테스트용 writer 뿐 아니라 실제 공개 delete·태그·재연결 경로와 스탬프를
+# 겹치는 회귀 테스트". 그래서 아래 세 테스트는 화면이 실제로 부르는 경로를 그대로 쓴다
+# (HomeViewModel.delete / HomeViewModel.set_tags / relink_job_template).
+def _pause_stamp(monkeypatch):
+    """스탬프 저장을 잠금 안에서 한 번 멈춰 세우는 장치 — (진입 이벤트, 해제 이벤트)."""
+    import threading
+
+    entered, release = threading.Event(), threading.Event()
+    real_save = Job.save
+    fired = {"once": False}
+
+    def slow_save(self, path):
+        if not fired["once"] and self.last_run_at:   # 스탬프 저장만 붙잡는다
+            fired["once"] = True
+            entered.set()
+            release.wait(3)
+        return real_save(self, path)
+
+    monkeypatch.setattr(Job, "save", slow_save)
+    return entered, release
+
+
+def _home_vm(registry):
+    from hwpxfiller.gui.home_state import HomeViewModel
+
+    return HomeViewModel(registry, None, None)
+
+
+def test_public_delete_during_stamp_does_not_resurrect_the_job(tmp_path, monkeypatch):
+    """삭제 도중 스탬프가 끼어도 지운 작업이 되살아나지 않는다(리뷰 3R P1).
+
+    잠금 밖 삭제라면: ①스탬프가 A 를 읽고 ②삭제가 파일을 지우고 성공을 반환하고 ③스탬프가
+    사본을 저장해 **A 가 부활**한다. "지웠다"고 말한 뒤 되살아나는 것은 조용한 소실의 거울상이다.
+    """
+    import threading
+
+    ctrl, _ = _controller(tmp_path)
+    reg = ctrl.registry
+    vm = _home_vm(reg)
+    entered, release = _pause_stamp(monkeypatch)
+
+    stamper = threading.Thread(target=lambda: reg.stamp_last_run("공고서", "2026-07-21T09:00:00"))
+    stamper.start()
+    assert entered.wait(3)
+
+    done = threading.Event()
+
+    def delete_job():
+        vm.delete("공고서")      # 홈 카드 「삭제」가 타는 실제 경로
+        done.set()
+
+    deleter = threading.Thread(target=delete_job)
+    deleter.start()
+    assert not done.wait(0.2), "삭제가 스탬프의 임계구역 안으로 끼어들었습니다."
+    release.set()
+    stamper.join(3)
+    deleter.join(3)
+    assert not reg.exists("공고서"), "지운 작업이 스탬프 저장으로 되살아났습니다."
+
+
+def test_public_set_tags_during_stamp_keeps_both_changes(tmp_path, monkeypatch):
+    """태그 편집과 스탬프가 겹쳐도 둘 다 남는다 — 늦은 저장이 상대를 되돌리지 않는다."""
+    import threading
+
+    ctrl, _ = _controller(tmp_path)
+    reg = ctrl.registry
+    vm = _home_vm(reg)
+    entered, release = _pause_stamp(monkeypatch)
+
+    stamper = threading.Thread(target=lambda: reg.stamp_last_run("공고서", "2026-07-21T09:00:00"))
+    stamper.start()
+    assert entered.wait(3)
+    tagger = threading.Thread(target=lambda: vm.set_tags("공고서", {"부서": "계약"}))
+    tagger.start()
+    release.set()
+    stamper.join(3)
+    tagger.join(3)
+
+    saved = reg.load("공고서")
+    assert saved.last_run_at == "2026-07-21T09:00:00"   # 태그 저장이 시각을 지우지 않았다
+    assert saved.tags == {"부서": "계약"}                # 스탬프가 태그를 되돌리지 않았다
+
+
+def test_public_relink_during_stamp_keeps_both_changes(tmp_path, monkeypatch):
+    """템플릿 재연결과 스탬프가 겹쳐도 둘 다 남는다(확인 왕복이 있어 창이 특히 넓은 경로)."""
+    import threading
+
+    from hwpxfiller.webapp.screens import relink_job_template
+
+    ctrl, _ = _controller(tmp_path)
+    reg = ctrl.registry
+    new_template = tmp_path / "새서식.hwpx"
+    _write_template(new_template, ["공고명", "추정가격"])
+    entered, release = _pause_stamp(monkeypatch)
+
+    stamper = threading.Thread(target=lambda: reg.stamp_last_run("공고서", "2026-07-21T09:00:00"))
+    stamper.start()
+    assert entered.wait(3)
+    linker = threading.Thread(
+        target=lambda: relink_job_template(reg, "공고서", str(new_template), confirm=True)
+    )
+    linker.start()
+    release.set()
+    stamper.join(3)
+    linker.join(3)
+
+    saved = reg.load("공고서")
+    assert saved.last_run_at == "2026-07-21T09:00:00"
+    assert saved.template_path == str(new_template)

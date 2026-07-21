@@ -256,8 +256,14 @@ def relink_job_template(job_registry, name: str, path: str, *, confirm: bool = F
             ),
         }
     old = job.template_path
-    job.template_path = path  # 단일 필드 뮤테이션 — 매핑·태그·기본 데이터 참조 보존
-    job_registry.save(job, allow_overwrite=True)
+    # 확정 커밋 — 단일 필드 뮤테이션(매핑·태그·기본 데이터 참조 보존)을 레지스트리의 **잠긴
+    # 경로**로 낸다(#129 리뷰 3R P1). 위에서 읽은 사본으로 통째 저장하면, 확인 왕복 사이에
+    # 다른 writer(생성 스탬프·에디터 저장·태그 편집)가 남긴 변경을 낡은 값으로 되돌린다 —
+    # 확인 게이트가 있어 그 창이 사람 시간만큼 길다는 점이 이 경로를 특히 위험하게 만든다.
+    def _relink(j) -> None:
+        j.template_path = path
+
+    job_registry.mutate(name, _relink)
     return {"ok": True, "relinked": True, "name": name, "old": old, "path": path}
 
 

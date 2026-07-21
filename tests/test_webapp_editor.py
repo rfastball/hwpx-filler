@@ -491,6 +491,41 @@ def test_edit_save_self_update_skips_overwrite_and_preserves_meta(tmp_path):
     assert saved.last_run_at == "2026-07-01T09:00:00"
 
 
+def test_edit_save_holds_the_registry_write_lock(tmp_path):
+    """저장의 재읽기~쓰기 구간이 **레지스트리 공유 잠금 안**에 있다(#129 리뷰 2R P1).
+
+    보존 값(태그·last_run_at)을 읽은 뒤 저장까지 사이에 생성 스레드의 스탬프가 끼면, 여기서
+    만든 Job 이 방금 찍힌 시각을 낡은 값으로 되돌린다. 저장 한 번만 원자적인 것으로는 못 막아
+    구간 전체가 잠겨야 하므로, 저장 시점에 잠금이 **다른 스레드에서 잡히지 않는지**로 되읽는다.
+    """
+    import threading
+
+    ctrl, _ = _controller26(tmp_path)
+    _save_named(ctrl, "잠금작업")
+    ctrl.load_job("잠금작업")
+    seen: "list[bool]" = []
+    real_save = ctrl.registry.save
+
+    def spy(job, **kw):
+        got = [None]
+
+        def probe():  # 다른 스레드에서 비차단 획득 시도 — 잠겨 있으면 실패해야 한다
+            lock = ctrl.registry.write_lock()
+            got[0] = lock.acquire(blocking=False)
+            if got[0]:
+                lock.release()
+
+        t = threading.Thread(target=probe)
+        t.start()
+        t.join(3)
+        seen.append(bool(got[0]))
+        return real_save(job, **kw)
+
+    ctrl.registry.save = spy  # type: ignore[method-assign]
+    assert ctrl.dispatch("save", {})["ok"] is True
+    assert seen and not any(seen), "저장 구간이 쓰기 잠금 밖입니다 — lost update 회귀."
+
+
 def test_edit_save_renamed_still_confirms_overwrite(tmp_path):
     """편집 중 이름을 다른 기존 작업으로 바꾸면 평소처럼 덮어쓰기 확인을 요구."""
     ctrl, _ = _controller26(tmp_path)

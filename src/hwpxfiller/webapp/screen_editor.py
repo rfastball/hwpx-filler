@@ -1137,6 +1137,16 @@ class EditorController:
         # 태그·마지막 실행 메타는 편집 세션 밖(홈 태그 편집 등)에서 바뀌었을 수 있어
         # load_job 시점 스냅샷이 아니라 저장 직전 디스크 상태를 다시 읽어 보존한다 — 편집
         # 세션이 열린 사이 홈에서 단 태그를 조용히 되돌리지 않는다(#26 confirm-or-alarm).
+        #
+        # 이 재읽기~저장 구간 전체가 **한 임계구역**이다(#129 리뷰 2R P1): 보존 값을 읽은 뒤
+        # 저장까지 사이에 다른 writer(생성 스레드의 last_run_at 스탬프)가 끼면, 여기서 만든
+        # Job 이 방금 찍힌 시각을 낡은 값으로 되돌린다. 잠금은 레지스트리가 소유해 모든
+        # writer 가 공유한다 — 저장 한 번만 원자적인 것으로는 lost update 가 안 막힌다.
+        with self.registry.write_lock():
+            return self._save_locked(p, verdict)
+
+    def _save_locked(self, p: dict, verdict) -> dict:
+        """저장 임계구역 몸통 — 보존 값 재읽기부터 저장까지(레지스트리 쓰기 잠금 안)."""
         preserved_tags = dict(self._preserved_tags)
         preserved_last_run = self._preserved_last_run
         if self._editing_origin:
