@@ -35,6 +35,12 @@
          R-info 1부는 이 화면을 부팅 랜딩으로 확정했으나, 랜딩 전환(기본 화면 교체)은 별도 후속. -->
     <button class="navbtn" data-scr="job" aria-label="작업" title="작업 — 저장된 작업을 골라 세션 패널에서 데이터를 채워 생성">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h5v12H4zM11 4h5v7h-5z"/></svg></span><span class="lbl"><span class="n">작업</span><span class="d">목록 + 세션 패널</span></span></button>
+    <!-- 「기안」(R-info 3부, #148) — TXT 작업-앵커 master-detail. 「작업」(HWPX)의 대칭 화면으로
+         바로 다음 순번(최종 형상 작업·기안·템플릿·데이터). 골격(슬라이스 2b)은 좌 목록 + 상세
+         껍데기이고, 세션 합병(빠른 기안 × 기안문 채우기)은 슬라이스 3에서 온다. 흡수 완료(슬라이스
+         6) 전까지 기안문 채우기·빠른 기안 항목과 잠시 공존한다. -->
+    <button class="navbtn" data-scr="draft" aria-label="기안" title="기안 — 저장된 기안 작업을 골라 채워 복사 (TXT)">
+      <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h8l4 4v8H4zM12 4v4h4M7 11h6M7 14h6"/></svg></span><span class="lbl"><span class="n">기안</span><span class="d">기안 작업 목록 + 채움 (TXT)</span></span></button>
     <!-- 레일 「작업 에디터」 사망(결정 39 — 에디터 흡수 완결): 생성 진입은 「작업」 구획
          ＋ 새 작업(#jobNewBtn — 이 삭제가 승계 신설)·홈 ＋/카드 편집·템플릿 관리 「작업
          만들기」가 담당한다(카드 ⋮ 편집 메뉴는 #110 목록 관리 소관). 레일 5→4 의 최종
@@ -120,8 +126,8 @@
       </header>
 
       <div class="job-layout">
-        <!-- 좌 master 목록 — 2구획(문서 작업 HWPX / 기안 작업 TXT). 구획 헤더 열 틴트 승계.
-             구획 안 사용자 그룹 + 접힘 + 행/그룹 ⋮ 관리 메뉴(결정 43·A안 확정). -->
+        <!-- 좌 master 목록 — HWPX 작업 전용(3부 결정 3: TXT 구획 철회 — 기안 작업은 「기안」
+             화면 소관, 조회 경계 결정 13). 사용자 그룹 + 접힘 + 행/그룹 ⋮ 관리 메뉴(결정 43). -->
         <aside class="job-master">
           <div>
             <!-- 구획 ＋(1부 결정 10 — 매체 맥락 상속): 레일 「작업 에디터」 사망(결정 39)이
@@ -133,11 +139,6 @@
           </div>
           <!-- 행/그룹 ⋮ 컨텍스트 메뉴 — job.js 가 대상별 항목을 채우고 fixed 좌표로 편다. -->
           <div id="jobRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
-          <div>
-            <div class="job-sec-head txt">기안 작업 · TXT</div>
-            <!-- draft-as-job(블록 3·5) 착지 전까지 빈 구획 — 없는 걸 있는 척하지 않는다. -->
-            <div class="muted job-empty">준비 중입니다.</div>
-          </div>
         </aside>
 
         <!-- 우 세션 패널 4존 -->
@@ -247,6 +248,42 @@
 
     <!-- 작업 에디터 별도 화면(scr-editor)은 슬라이스 5에서 사망(결정 39 — 「작업」 패널
          편집 모드로 흡수). 정의 surface 는 scr-job 의 #jobEditHost, 렌더러는 editor.js 존속. -->
+
+    <!-- ============ 기안 (R-info 3부, #148 — TXT 작업-앵커 master-detail) ============ -->
+    <!-- 「작업」(HWPX)의 대칭 화면. 골격(슬라이스 2b): 좌 목록(TXT 작업 조회·그룹 관리, 공용
+         grouplist.js 팩토리 3번째 소비자) + 우 상세 껍데기. 세션 4존 합병은 슬라이스 3.
+         안정 DOM + draft.js 가 window.__push('draft', snapshot) 로 값만 채운다(판정은 Python). -->
+    <section class="scr" id="scr-draft">
+      <header class="scr-head">
+        <div>
+          <h1>기안 <span class="pill muted">TXT</span></h1>
+          <p class="sub">저장된 기안 작업을 골라 채워 복사합니다.</p>
+        </div>
+        <div class="status" id="draftStatus" data-level="idle">기안 선택</div>
+      </header>
+
+      <div class="job-layout">
+        <!-- 좌 master 목록 — TXT 작업 전용(조회 경계 결정 13). 사용자 그룹 + 접힘 + 행/그룹 ⋮
+             관리 메뉴(공용 grouplist.js·job_list.py 와 단일 출처). 초록 헤더가 매체 힌트(결정 6). -->
+        <aside class="job-master">
+          <div>
+            <div class="job-sec-head txt">기안 작업 · TXT</div>
+            <div id="draftList" class="job-list"></div>
+            <div id="draftListEmpty" class="muted job-empty" style="display:none">저장된 기안 작업이 없습니다.</div>
+          </div>
+          <!-- 행/그룹 ⋮ 컨텍스트 메뉴 — draft.js 가 대상별 항목을 채운다(화면별 id 격리). -->
+          <div id="draftRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
+        </aside>
+
+        <!-- 우 상세 패널 — 껍데기(세션 4존 합병은 슬라이스 3). 정직한 빈 상태만(없는 걸 있는
+             척하지 않는다) — 골격에선 TXT 작업이 아직 생성되지 않아(슬라이스 5 저장 배선 전)
+             목록이 비어 있고 상세는 미선택 안내에 머문다. -->
+        <div class="job-panel" id="draftPanel">
+          <div class="job-empty-panel muted" id="draftEmptyPanel">왼쪽에서 기안 작업을 선택하세요.</div>
+          <div class="job-empty-panel muted" id="draftShellPanel" style="display:none">이 기안 작업의 채움 세션은 다음 단계에서 열립니다.</div>
+        </div>
+      </div>
+    </section>
 
     <!-- ============ TXT 기안문 채우기 (첫 실화면) ============ -->
     <section class="scr" id="scr-txt">
@@ -637,6 +674,21 @@
       </div>
     </div>
 
+    <!-- 기안 그룹 이동 다이얼로그(#148, groupMoveModal 동형·별도 요소) — 화면별 wiring 격리.
+         목록은 draft.js 가 스냅샷 그룹명으로 채운다(공용 grouplist.js moveDialog 팩토리). -->
+    <div id="draftMoveModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="draftMoveTitle">
+      <div class="modal-card">
+        <h3 id="draftMoveTitle">그룹으로 이동</h3>
+        <p class="modal-sub" id="draftMoveName"></p>
+        <div id="draftMoveList" class="sheet-list"></div>
+        <p id="draftMoveErr" class="note dangerbox" style="display:none"></p>
+        <div class="modal-actions">
+          <button class="btn" id="draftMoveCancel">취소</button>
+          <button class="btn primary" id="draftMoveOk">이동</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 템플릿 그룹 이동 다이얼로그(#108, groupMoveModal 동형·별도 요소) — 화면별 wiring 격리.
          기존 그룹 + 새 그룹 입력 동거 + 해제. 목록은 template.js 가 스냅샷 그룹명으로 채운다. -->
     <div id="tplMoveModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="tplMoveTitle">
@@ -701,6 +753,7 @@
 <script src="js/screens/quickdraft.js"></script>
 <script src="js/screens/editor.js"></script>
 <script src="js/screens/job.js"></script>
+<script src="js/screens/draft.js"></script>
 <script src="js/screens/template.js"></script>
 <script src="js/screens/pool.js"></script>
 <script src="js/app.js"></script>

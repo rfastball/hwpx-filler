@@ -60,6 +60,7 @@ from ..gui.filter_state import (
 from ..gui.result_errors import describe_fill_note, describe_result_error
 from ..gui.run_state import RunViewModel
 from ..gui.selection_state import SelectionModel
+from .job_list import build_flat_rows, build_group_sections, drift_note
 from .data_zone import (
     EMPTY_FILTER as _EMPTY_FILTER,
     EMPTY_TABLE as _EMPTY_TABLE,
@@ -148,43 +149,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
     # ------------------------------------------------------------- 좌 목록
     def _job_rows(self, jobs) -> "list[dict]":
-        """좌 master 목록의 평면 뷰 — 이름 + 선택 표지(슬라이스 1 형태 유지).
+        """좌 master 목록의 평면 뷰 — 공용 빌더(job_list.build_flat_rows) 위임.
 
-        그룹 렌더는 :meth:`_job_sections` 가 담당한다 — 이 평면 뷰는 "그룹과 무관한 전체
-        집합" 소비자(테스트·세션 판정)를 위해 남는다. 두 뷰가 어긋나지 않게 :meth:`snapshot`
-        이 ``list_jobs`` 를 1회 읽어 같은 ``jobs`` 를 둘에 넘긴다.
-        기안 작업(TXT) 구획은 draft-as-job(블록 3/5) 착지 전까지 빈 채로 둔다(없는 걸 있는
-        척하지 않는다) — job.js 가 라벨만 렌더.
+        「기안」 화면과 같은 빌더를 쓴다(백엔드 사본 방지, 3부 결정 1). 두 뷰(평면·구획)가
+        어긋나지 않게 :meth:`snapshot` 이 media 필터한 ``jobs`` 를 둘에 같이 넘긴다.
         """
-        return [{"name": j.name, "selected": j.name == self.job_name} for j in jobs]
+        return build_flat_rows(jobs, self.job_name)
 
     def _job_sections(self, jobs) -> "tuple[list[dict], bool]":
-        """그룹 구획 뷰(결정 43·A안: 매체 구획 안 사용자 그룹) — ``(sections, flat)`` 반환.
-
-        - 그룹 배열 = 이름순 안정(R-info 결정 4), 「그룹 없음」(``group==""``)은 마지막.
-        - ``flat=True`` = 그룹 0개 **퇴화 불변식**: 헤더·들여쓰기 없는 평면(현행 모습 그대로).
-          이때도 sections 는 무그룹 1구획으로 돌아가 표면이 분기 없이 그린다.
-        - ``collapsed`` 는 영속 접힘 집합(결정 6-①)의 사영 — 행은 접혀도 **집합에서 빠지지
-          않는다**(선택·세션 판정은 전체 집합 위 — 결정 6-⑤ 접어도 선택 유지).
-        """
-        grouped: "dict[str, list[dict]]" = {}
-        for j in jobs:
-            grouped.setdefault(j.group, []).append(
-                {"name": j.name, "selected": j.name == self.job_name}
-            )
-        named = sorted(g for g in grouped if g)
-        flat = not named
-        order = named + ([""] if "" in grouped else [])
-        sections = [
-            {
-                "group": g,
-                "collapsed": (not flat) and g in self._collapsed,
-                "count": len(grouped[g]),
-                "rows": grouped[g],
-            }
-            for g in order
-        ]
-        return sections, flat
+        """그룹 구획 뷰 — 공용 빌더(job_list.build_group_sections) 위임(「기안」 화면과 단일 출처)."""
+        return build_group_sections(jobs, self.job_name, self._collapsed)
 
     # ------------------------------------------------------------- 스냅샷
     def _indices(self) -> "list[int]":
@@ -396,7 +370,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         존 배치는 job.js 소관(헤더=작업 정체, 데이터=겨눔·행, 본문=배지·게이트, 완료=결과).
         """
         # 좌 목록은 레지스트리 1회 판독에서 평면·구획 두 뷰를 함께 파생한다(드리프트 봉쇄).
-        jobs = self.registry.list_jobs()
+        # 조회 경계(3부 결정 13 · 1층): 「작업」은 hwpx 워크플로 작업을 조회한다 — **txt 기안
+        # 작업만 뺀다**(「기안」 화면 소관). 빈/미상 매체(템플릿 미링크 = 저작 중)는 남긴다:
+        # 그것도 hwpx 작업이고, 여기서 빼면 막 만든 무템플릿 작업이 목록에서 사라진다.
+        jobs = [j for j in self.registry.list_jobs() if j.media != "txt"]
         sections, flat = self._job_sections(jobs)
         base = {
             "job_rows": self._job_rows(jobs),   # 좌 master 목록(평면 뷰)
@@ -699,17 +676,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.registry.set_group(p["name"], p.get("group", ""))
 
     def _drift_note(self, seen, count: int) -> str:
-        """확인 시점 건수와 실제 이동 건수가 갈라졌으면 그 사실을 말할 문구, 아니면 ``""``(#149).
-
-        그룹 일괄 갱신의 확인 문안은 **잠금 밖 사전 카운트**로 만들어진다 — 사용자가 모달을
-        읽는 사이 다른 표면이 작업을 옮기면 "N건" 이 실제와 어긋난다. 이동 자체는 파괴가 아니고
-        (소속만 바뀐다·삭제 없음) 잠금 안 일괄 갱신이 실제 건수를 돌려주므로, 재확인까지
-        올리지 않고 **결과 재진술**로 갈음한다 — 다만 어긋났으면 조용히 넘기지 않는다.
-        완화 조항의 조건("틀리면 보이는 추측")을 만족하는 자리다.
-        """
-        if not isinstance(seen, int) or seen == count:
-            return ""
-        return f" · 확인 시점 {seen}건과 다릅니다(그 사이 소속이 바뀌었습니다)"
+        """확인 시점 건수와 실제 이동 건수 어긋남 고지(#149) — 공용 job_list.drift_note 위임."""
+        return drift_note(seen, count)
 
     def _do_rename_group(self, p: dict) -> dict:
         """그룹 이름 변경 — 새 이름이 **기존 그룹**이면 병합이므로 확인 승격(무확인 반환).

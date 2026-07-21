@@ -35,6 +35,7 @@ from hwpxcore.native.clipboard import set_clipboard_text
 from hwpxcore.native.dialogs import open_file_dialog, open_folder_dialog
 from hwpxcore.native.reveal import open_path as _native_open_path
 from hwpxcore.native.reveal import reveal_in_explorer as _native_reveal
+from .screen_draft import DraftController
 from .screen_editor import EditorController
 from .screen_home import HomeController
 from .screen_job import JobController
@@ -121,6 +122,10 @@ class WebFrontend:
             # 실행 결정 계약을 소비하는 **유일 세션 표면**이다(실행 화면은 슬라이스 3에서 사망 —
             # 게이트 패리티 도달, 레일 「실행」 동시 제거, 부록 A-4-35~37·#94 중복 자연 소멸).
             JobController(job_registry, self._push, pool_registry=pool_registry),
+            # 「기안」 화면(R-info 3부, #148) — TXT 작업-앵커 master-detail(「작업」의 대칭).
+            # 같은 job_registry 를 쓰되 media=txt 만 조회한다(조회 경계 결정 13) — 저장 기계는
+            # 하나·화면은 둘. 골격(슬라이스 2b)은 좌 목록 + 상세 껍데기, 세션 합병은 슬라이스 3.
+            DraftController(job_registry, self._push),
             # 템플릿 관리(#13) — TXT 레지스트리는 즉시 기안과 공유(변경이 양쪽에 반영).
             TemplateController(registry, self._push, txt_groups=txt_groups),
             # 데이터 관리(#26 #4) — 등록 데이터 참조·수명.
@@ -787,6 +792,61 @@ _JOB_LIST_GROUP_PROBE_JS = r"""
 })()
 """
 
+# 「기안」 좌 목록(#148 슬라이스 2b) — 「작업」과 같은 그룹 구획 스캐폴드 + 공용 grouplist.js
+# 팩토리(⋮ 메뉴·이동 다이얼로그)의 **3번째 소비자**를 합성 스냅샷으로 실 render 구동해 되읽는다.
+# 골격 메뉴는 편집 미노출(복제·이름변경·이동·삭제)이고, 이동 다이얼로그는 draftMoveModal(별도
+# 요소)에 선다 — 화면별 id 격리로 job/tpl 과 리스너 충돌이 없음을 실 WebView 로 확증한다.
+_DRAFT_LIST_PROBE_JS = r"""
+(function () {
+  var out = {};
+  try {
+    window.Nav.go('draft');
+    var flush = function () { document.body.click(); };  // Popover suppress 교차 오염 청소
+    var snap = {
+      job_flat: false,
+      job_group_names: ['현장 A', '정기'],
+      job_sections: [
+        {group:'현장 A', collapsed:false, count:2,
+         rows:[{name:'착수계 기안', selected:false},{name:'검사요청 기안', selected:false}]},
+        {group:'정기', collapsed:true, count:1, rows:[{name:'준공계 기안', selected:false}]},
+        {group:'', collapsed:false, count:1, rows:[{name:'회의록 기안', selected:false}]}
+      ],
+      job_name:'', has_job:false, session_ready:false
+    };
+    window.__push('draft', snap);
+    out.grp_heads = document.querySelectorAll('#draftList .job-grp-head').length;   // 현장 A·정기·그룹없음
+    out.rows_visible = document.querySelectorAll('#draftList .job-item').length;    // 정기 접힘 → 2+0+1
+    out.grp_more = document.querySelectorAll('#draftList .grp-more').length;        // 명명 그룹만
+    out.row_more = document.querySelectorAll('#draftList .job-more[data-more]').length;
+    out.empty_panel_shown =
+      getComputedStyle(document.getElementById('draftEmptyPanel')).display !== 'none';  // 미선택 안내
+    // 행 ⋮ 메뉴 = [복제, 이름변경, 이동, 삭제] (편집 미노출 — 세션은 슬라이스 3).
+    flush();
+    document.querySelector('#draftList .job-more[data-more]').click();
+    var menu = document.getElementById('draftRowMenu');
+    out.menu_shown = getComputedStyle(menu).display !== 'none';
+    out.menu_items = Array.prototype.map.call(
+      menu.querySelectorAll('button[data-menu]'), function (b) { return b.dataset.menu; });
+    // ⋮ → 이동 → 공용 moveDialog 팩토리(3번째 소비자) 개폐 되읽기 — 라디오 목록·새 그룹 조립.
+    document.querySelector('#draftRowMenu button[data-menu="move"]').click();
+    out.move_shown = !document.getElementById('draftMoveModal').classList.contains('hidden');
+    out.move_opts = document.querySelectorAll('#draftMoveList .grp-opt').length;    // 그룹 2 + 없음 + 새 = 4
+    out.move_has_new = !!document.getElementById('draftMoveNewRadio');
+    document.getElementById('draftMoveCancel').click();
+    out.move_closed = document.getElementById('draftMoveModal').classList.contains('hidden');
+    // 퇴화 평면(그룹 0개) — 헤더 없는 나열.
+    snap.job_flat = true;
+    snap.job_group_names = [];
+    snap.job_sections = [{group:'', collapsed:false, count:1, rows:[{name:'회의록 기안', selected:false}]}];
+    window.__push('draft', snap);
+    out.flat_heads = document.querySelectorAll('#draftList .job-grp-head').length;
+    out.flat_rows = document.querySelectorAll('#draftList .job-item').length;
+    out.error = null;
+  } catch (e) { out.error = 'throw:' + (e && e.message); }
+  return out;
+})()
+"""
+
 # 「작업」 패널 두 모드(에디터 흡수, 블록 2 개정 결정 39~41) — 편집 호스트/세션 4존의 배타
 # 표시와 신규=단계(번호 표지)·편집=탭(자유 이동 버튼) 이원 표현을 실 render 로 되읽는다
 # (부록 B-9 overlay/hidden 눈검증의 자동판 — 이사한 DOM 이 실 WebView2 에서 실제로 선다).
@@ -1369,6 +1429,8 @@ def _selftest_drive(window: "object") -> None:
         result["job_mirror"] = window.evaluate_js(_JOB_MIRROR_PROBE_JS)  # type: ignore[attr-defined]
         # 「작업」 좌 목록 그룹·⋮ 관리 메뉴(결정 43) — 그룹 헤더·접힘·메뉴 개폐 실렌더 되읽기.
         result["job_list_groups"] = window.evaluate_js(_JOB_LIST_GROUP_PROBE_JS)  # type: ignore[attr-defined]
+        # 「기안」 좌 목록(#148 슬라이스 2b) — 그룹 구획·⋮ 메뉴·이동 다이얼로그(grouplist.js 3번째 소비) 되읽기.
+        result["draft_list"] = window.evaluate_js(_DRAFT_LIST_PROBE_JS)  # type: ignore[attr-defined]
         result["job_editmode"] = window.evaluate_js(_JOB_EDITMODE_PROBE_JS)  # type: ignore[attr-defined]
         # 매핑 칩-라이브(슬라이스 5 PR-3) — 합성 매핑 스냅샷으로 실 render() 구동 후 칩·태그 되읽기.
         result["editor_chip"] = window.evaluate_js(_EDITOR_CHIP_PROBE_JS)  # type: ignore[attr-defined]
