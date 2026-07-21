@@ -226,3 +226,55 @@ def test_regenerate_same_values_is_byte_stable(tmp_path):
     p2 = HwpxPackage.open(str(out2))
     for name in p1.content_xml_names():
         assert p2.entries[name] == p1.entries[name]
+
+
+# ------------------------------------------------------- 채움 완화 노트(#154)
+def _mini_template(tmp_path, region: str):
+    """단일 누름틀 섹션을 가진 최소 HWPX 템플릿을 tmp 에 저장."""
+    from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+
+    sec = (
+        '<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"'
+        ' xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p>'
+        '<hp:run><hp:ctrl><hp:fieldBegin name="계약명"/></hp:ctrl></hp:run>'
+        f"{region}"
+        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
+        "</hp:p></hs:sec>"
+    ).encode("utf-8")
+    pkg = HwpxPackage()
+    pkg.entries[MIMETYPE_NAME] = MIMETYPE_VALUE
+    pkg.stored.add(MIMETYPE_NAME)
+    pkg.entries["Contents/section0.xml"] = sec
+    path = tmp_path / "tpl.hwpx"
+    pkg.save(str(path))
+    return path
+
+
+def test_generate_surfaces_fill_notes_and_no_unmatched_for_empty_field(tmp_path):
+    """빈 누름틀 채움 = applied(오보 소멸) + notes 로 시끄럽게(#154)."""
+    from hwpxfiller.core.fields import FillNote, read_fields
+
+    tpl = _mini_template(tmp_path, "")  # 값 hp:t 없는 빈 누름틀
+    out = tmp_path / "out.hwpx"
+    res = HwpxEngine().generate(str(tpl), {"계약명": "새값"}, str(out))
+    assert res.ok
+    assert res.applied == {"계약명"}
+    assert res.unmatched == set()  # 과거: 매칭 실패 오보
+    assert res.notes == [FillNote("계약명", "slot_synthesized")]
+    assert read_fields(str(out))["계약명"] == "새값"  # 되읽기 관측으로 확정
+
+
+def test_generate_notes_inline_stripped(tmp_path):
+    """인라인 요소 제거 채움 — 결과에 종류 명명 노트가 실린다(#154)."""
+    tpl = _mini_template(
+        tmp_path, "<hp:run><hp:t>OLD<hp:markpenBegin/>X</hp:t></hp:run>"
+    )
+    out = tmp_path / "out.hwpx"
+    res = HwpxEngine().generate(str(tpl), {"계약명": "NEW"}, str(out))
+    assert res.ok
+    assert [(n.field, n.kind, n.detail) for n in res.notes] == [
+        ("계약명", "inline_stripped", ("markpenBegin",))
+    ]
+    from hwpxfiller.core.fields import read_fields
+
+    assert read_fields(str(out))["계약명"] == "NEW"

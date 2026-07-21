@@ -45,3 +45,28 @@ def describe_result_error(error: str) -> str:
         if needle in error:
             return f"{hint} (원문: {error})"
     return error
+
+
+def describe_fill_note(note) -> str:
+    """채움 완화 처리(:class:`~hwpxfiller.core.fields.FillNote`) → 사용자 문안(#154).
+
+    코어는 사실(필드·종류·제거 요소)만 담고 문안은 여기서 성형한다 — CLI 와 webview
+    컨트롤러가 같은 문장을 공유한다. 미지 종류는 원문 관통(조용한 누락 금지).
+    """
+    if note.kind == "inline_stripped":
+        kinds = ", ".join(note.detail)
+        return (
+            f"누름틀 「{note.field}」 값 안의 인라인 요소({kinds})를 값과 함께 "
+            f"제거하고 채웠습니다 — 형광펜 등 표식이 사라졌을 수 있으니 산출물을 확인하세요."
+        )
+    if note.kind == "slot_synthesized":
+        return (
+            f"빈 누름틀 「{note.field}」 에 값 자리를 새로 만들어 채웠습니다 — "
+            f"서식은 누름틀 주변 서식을 따릅니다."
+        )
+    if note.kind == "occurrence_unfillable":
+        return (
+            f"누름틀 「{note.field}」 자리 중 일부는 구조상 기입할 수 없어 "
+            f"건너뛰었습니다 — 산출물에서 해당 자리가 비어 있지 않은지 확인하세요."
+        )
+    return f"누름틀 「{note.field}」: {note.kind}"

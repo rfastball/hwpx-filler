@@ -475,6 +475,8 @@
     r.className = "run-result " + (res.level === "ok" ? "ok" : "danger");
     log(res.summary);
     (res.failures || []).forEach((f) => log("  [실패] " + f));
+    // 채움 완화 사실(#154) — 문안은 Python(describe_fill_note)이 확정, JS 는 표기만.
+    (res.fill_notes || []).forEach((n) => log("  [주의] " + n));
     log(`저장 폴더: ${res.out_dir}`);
   }
 

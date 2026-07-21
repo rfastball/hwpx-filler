@@ -57,7 +57,7 @@ from ..gui.filter_state import (
     KIND_TEXT,
     FilterModel,
 )
-from ..gui.result_errors import describe_result_error
+from ..gui.result_errors import describe_fill_note, describe_result_error
 from ..gui.run_state import RunViewModel
 from ..gui.selection_state import SelectionModel
 from .data_zone import (
@@ -919,6 +919,17 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             f"{Path(r.output_path).name}: {describe_result_error(r.error)}"
             for r in batch.results if not r.ok
         ]
+        # 채움 완화 사실(#154)은 완료 표면에 시끄럽게 — 파괴적 의미론(인라인 요소
+        # 제거·값 런 합성)이 무경고면 조용한 데이터 손실이다(confirm-or-alarm).
+        # 템플릿 구조 속성이라 레코드 수와 무관하게 한 번씩(순서 보존 dedupe).
+        fill_notes = [
+            describe_fill_note(n)
+            for n in dict.fromkeys(
+                n for r in batch.results if r.ok for n in r.notes
+            )
+        ]
+        if fill_notes:
+            summary += f" 채움 주의 {len(fill_notes)}건(아래 기록 확인)."
         return {
             "ok": True,
             "summary": summary,
@@ -928,4 +939,5 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "failed": batch.failed,
             "total": batch.total,
             "failures": failures,
+            "fill_notes": fill_notes,
         }

@@ -17,7 +17,7 @@ from typing import Iterable
 from hwpxcore.atomic import write_text_atomic
 
 from .engine import HwpxEngine
-from .fields import read_fields
+from .fields import FillNote, read_fields
 from .mapping import FieldMapping, MappingProfile
 from .source_profile import FieldProfile
 
@@ -305,6 +305,9 @@ class OutputLedger:
     rows: "tuple[LedgerRow, ...]" = ()
     error: str = ""                      # 생성 실패 사유(엔진 보고)
     verify_error: str = ""               # 되읽기 실패 사유(증거 부재는 시끄럽게)
+    # 채움 완화 사실(#154 — 인라인 요소 제거·값 런 합성 등). 원장은 증거 채널이라
+    # 완화가 여기 빠지면 "왜 표식이 사라졌나"가 사후에 복원 불가능해진다.
+    notes: "tuple[FillNote, ...]" = ()
 
     def to_dict(self) -> dict:
         return {
@@ -312,6 +315,10 @@ class OutputLedger:
             "ok": self.ok,
             "error": self.error,
             "verify_error": self.verify_error,
+            "notes": [
+                {"field": n.field, "kind": n.kind, "detail": list(n.detail)}
+                for n in self.notes
+            ],
             "rows": [r.to_dict() for r in self.rows],
         }
 
@@ -340,7 +347,12 @@ def ledger_outputs(
                 rows = verify_output(res.output_path, rows)
             except Exception as exc:  # noqa: BLE001 - 증거 부재를 조용히 넘기지 않는다
                 verify_error = f"되읽기 실패: {exc}"
-        entries.append(OutputLedger(res.output_path, res.ok, rows, res.error, verify_error))
+        entries.append(
+            OutputLedger(
+                res.output_path, res.ok, rows, res.error, verify_error,
+                notes=tuple(res.notes),
+            )
+        )
     return tuple(entries)
 
 

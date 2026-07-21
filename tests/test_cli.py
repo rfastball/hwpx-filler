@@ -602,3 +602,41 @@ def test_cli_help_uses_canonical_terms(capsys):
         main(["drift", "--help"])
     dr = capsys.readouterr().out
     assert "구판" in dr and "신판" in dr    # 판본 쌍 정준(CLI가 GUI/HTML과 일치)
+
+
+# ------------------------------------------------------- 채움 완화 노트(#154)
+def test_fill_notes_surface_on_stderr_once_per_batch(tmp_path, capsys):
+    """완화 노트는 stderr 로 시끄럽게 — 템플릿 구조 속성이라 배치 전체 1회."""
+    from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+
+    sec = (
+        '<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"'
+        ' xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p>'
+        '<hp:run><hp:ctrl><hp:fieldBegin name="계약명"/></hp:ctrl></hp:run>'
+        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
+        '<hp:run><hp:ctrl><hp:fieldBegin name="공고번호"/></hp:ctrl></hp:run>'
+        "<hp:run><hp:t>OLD<hp:markpenBegin/>X</hp:t></hp:run>"
+        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
+        "</hp:p></hs:sec>"
+    ).encode("utf-8")
+    tpl = tmp_path / "tpl.hwpx"
+    HwpxPackage(
+        entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": sec}
+    ).save(str(tpl))
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["계약명", "공고번호"])
+    ws.append(["정보시스템 구축", "2026-001"])
+    ws.append(["정보시스템 구축", "2026-002"])
+    data = tmp_path / "d.xlsx"
+    wb.save(data)
+
+    out = tmp_path / "out"
+    rc = main(["--template", str(tpl), "--data", str(data), "--out", str(out),
+               "--pattern", "doc-{{공고번호}}"])
+    assert rc == 0
+    err = capsys.readouterr().err
+    # 두 완화가 각각 정확히 1회 — 레코드 2건이어도 반복 고지하지 않는다.
+    assert err.count("빈 누름틀 「계약명」") == 1
+    assert err.count("인라인 요소(markpenBegin)") == 1
