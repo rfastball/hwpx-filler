@@ -13,6 +13,7 @@ import pytest
 
 from hwpxfiller.core.dataset_pool import DatasetPoolRegistry
 from hwpxfiller.core.job import Job, JobRegistry
+from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.core.text_registry import TextTemplateRegistry
 from hwpxfiller.webapp.draft_session import TargetFontSetting
 from hwpxfiller.webapp.screen_draft import DraftController
@@ -37,6 +38,19 @@ def _save(jobs: JobRegistry, name: str, template: str) -> None:
     jobs.save(Job(name=name, template_path=template))
 
 
+def _save_real(tmp_path: Path, jobs: JobRegistry, name: str, filename: str,
+               content: str, mappings: "tuple[FieldMapping, ...]" = ()) -> str:
+    """실 파일을 가진 TXT 저장 기안 — 복원(_restore_from_job)이 원문을 실제로 읽는다.
+
+    복원은 실패 원자적이라 fake 경로로는 세션이 서지 않는다(파일 부재 = OSError). 복원 계약을
+    확인하려면 진짜 템플릿 파일과 매핑 프로파일이 있어야 한다."""
+    path = tmp_path / filename
+    path.write_text(content, encoding="utf-8")
+    jobs.save(Job(name=name, template_path=str(path),
+                  mapping=MappingProfile(name=name, mappings=list(mappings))))
+    return str(path)
+
+
 # ------------------------------------------------------------------ 조회 경계(결정 13 · 1층)
 def test_lists_only_txt_media_jobs(tmp_path):
     """좌 목록은 TXT 작업만 본다 — 매체는 저장 필드가 아니라 경로 접미사에서 유도(결정 4)."""
@@ -57,10 +71,13 @@ def test_snapshot_merges_list_and_session_keys(tmp_path):
     for key in ("job_rows", "job_sections", "job_flat", "job_group_names", "job_name", "has_job"):
         assert key in snap, f"목록 키 {key} 누락"
     for key in ("template_name", "template_text", "tokens", "record_count", "data_source_label",
-                "data_key", "has_data", "selected_count", "target_font", "filter", "table", "card"):
+                "data_key", "has_data", "selected_count", "target_font", "filter", "table", "card",
+                "mode", "source_readonly", "bound_job"):
         assert key in snap, f"세션 키 {key} 누락 — 팩토리 계약 파손"
-    # 같은 사실을 두 번 선언하지 않는다 — 표면 분기는 has_job 하나가 진다.
+    # 같은 사실을 두 번 선언하지 않는다 — 표면 분기(has_job·mode·source_readonly)는 모두
+    # _bound_job 한 필드에서 유도한다(session_ready 같은 별도 플래그 금지).
     assert "session_ready" not in snap
+    assert snap["mode"] == "volatile" and snap["source_readonly"] is False and snap["bound_job"] == ""
 
 
 def test_initial_lists_templates(tmp_path):
@@ -68,22 +85,84 @@ def test_initial_lists_templates(tmp_path):
     assert ctrl.initial()["templates"] == ["착수계"]
 
 
-# ------------------------------------------------------------------ 목록 ↔ 세션 비간섭
-def test_select_job_does_not_destroy_volatile_session(tmp_path):
-    """목록 선택은 **화면 전환**이지 세션 파괴가 아니다 — 눌렀다 돌아오면 원문이 그대로.
+# ------------------------------------------------------------ 두 세션 병존(슬라이스 5a)
+def test_two_sessions_coexist_select_restores_and_return_preserves_volatile(tmp_path):
+    """저장 기안 선택 = 그 Job 에서 복원(저장 모드), 「이번 세션」 귀환 = 붙여넣던 휘발 그대로.
 
-    저장 세션 복원은 슬라이스 5 몫이고, 그전까지 선택은 강조만 한다. 여기서 세션을 리셋하면
-    붙여넣던 원문·데이터·큐 진행이 클릭 한 번에 조용히 사라진다(복구 불가 — 앱 밖 기억).
-    """
+    두 세션 병존(소실 0): 붙여넣다 저장 기안을 골라 저장-세션을 세워도 휘발 세션은 스태시돼
+    살아 있고, 빈 이름으로 돌아오면 붙여넣던 원문·진행이 복구된다. 저장-세션은 Job 원문을
+    싣고 읽기 전용이다(정의가 조용히 갈라지지 않게, 결정 7)."""
     ctrl, jobs, _ = _controller(tmp_path)
-    _save(jobs, "기안A", "C:/t/a.txt")
+    _save_real(tmp_path, jobs, "착수계 기안", "job_a.txt", "저장 원문 {{공고명}}")
     ctrl.dispatch("set_template_text", {"text": "붙여넣은 원문 {{공고명}}"})
-    ctrl.dispatch("select_job", {"name": "기안A"})
-    assert ctrl.snapshot()["has_job"] is True
-    ctrl.dispatch("select_job", {"name": ""})       # 미선택으로 복귀 = 휘발 세션
+    ctrl.dispatch("select_job", {"name": "착수계 기안"})
+    saved = ctrl.snapshot()
+    assert saved["has_job"] is True and saved["mode"] == "saved"
+    assert saved["source_readonly"] is True and saved["bound_job"] == "착수계 기안"
+    assert saved["template_text"] == "저장 원문 {{공고명}}"  # Job 원문으로 복원
+    ctrl.dispatch("select_job", {"name": ""})       # 「이번 세션」 = 휘발 귀환
+    vol = ctrl.snapshot()
+    assert vol["has_job"] is False and vol["mode"] == "volatile"
+    assert vol["source_readonly"] is False and vol["bound_job"] == ""
+    assert vol["template_text"] == "붙여넣은 원문 {{공고명}}"  # 붙여넣던 세션 그대로
+
+
+def test_restore_applies_profile_confirmed(tmp_path):
+    """저장 기안 복원은 매핑을 사람 소유 확정으로 되살린다(apply_profile confirm=True, 결정 12).
+
+    프로파일은 과거 사람 확정 산출물이라 확정본으로 도착한다 — 라이브 재제안이 덮지 못하고,
+    확정 열이 체크된 채 뜬다(저장 모드에서 열이 보인다)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "확정 기안", "job_c.txt", "제목: {{공고명}}",
+               mappings=(FieldMapping(template_field="공고명", source="공고명", type="text"),))
+    ctrl.dispatch("select_job", {"name": "확정 기안"})
     snap = ctrl.snapshot()
-    assert snap["has_job"] is False
-    assert snap["template_text"] == "붙여넣은 원문 {{공고명}}"
+    tok = next(t for t in snap["tokens"] if t["name"] == "공고명")
+    assert tok["confirmed"] is True, "복원한 매핑이 확정본으로 도착하지 않았습니다(결정 12)."
+    assert tok["source"] == "공고명"
+
+
+def test_switching_saved_jobs_keeps_stashed_volatile(tmp_path):
+    """저장 기안 A→B 전환은 휘발을 다시 스태시하지 않는다 — 스태시한 휘발은 계속 산다.
+
+    저장-세션은 Job 에서 결정적으로 재구성되니 잃을 게 없다(재스태시 불필요). 두 저장 기안을
+    오가도 처음 얼려 둔 붙여넣기 세션이 그대로 있어, 마침내 「이번 세션」으로 돌아오면 복구된다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "A 원문 {{공고명}}")
+    _save_real(tmp_path, jobs, "기안B", "job_b.txt", "B 원문 {{공고명}}")
+    ctrl.dispatch("set_template_text", {"text": "붙여넣기 {{공고명}}"})
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    ctrl.dispatch("select_job", {"name": "기안B"})
+    assert ctrl.snapshot()["template_text"] == "B 원문 {{공고명}}"
+    ctrl.dispatch("select_job", {"name": ""})
+    assert ctrl.snapshot()["template_text"] == "붙여넣기 {{공고명}}"
+
+
+def test_bound_job_deleted_returns_to_volatile(tmp_path):
+    """결속 중인 저장 기안이 삭제되면 휘발 세션으로 복귀한다 — 사라진 정의가 저장 모드로 뜨지 않게."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "A 원문 {{공고명}}")
+    ctrl.dispatch("set_template_text", {"text": "붙여넣기 {{공고명}}"})
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    ctrl.dispatch("delete_job", {"name": "기안A", "confirm": True})
+    snap = ctrl.snapshot()
+    assert snap["has_job"] is False and snap["mode"] == "volatile"
+    assert snap["template_text"] == "붙여넣기 {{공고명}}"  # 스태시한 휘발 복원
+
+
+def test_restore_missing_template_is_atomic_and_loud(tmp_path):
+    """템플릿 파일이 사라진 저장 기안 선택은 상태를 바꾸지 않고 시끄럽게 재진술한다(원자성).
+
+    복원은 실패 가능한 파일 읽기를 먼저 끝낸 뒤에야 세션을 교체한다 — 파일 부재면 스태시한
+    휘발 세션이 반쪽으로 오염되지 않고, 붙여넣던 원문이 그대로 남는다(confirm-or-alarm)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save(jobs, "유령 기안", "C:/없는/파일.txt")  # 실 파일 없음
+    ctrl.dispatch("set_template_text", {"text": "살아남을 원문 {{공고명}}"})
+    res = ctrl.dispatch("select_job", {"name": "유령 기안"})
+    assert res and res.get("ok") is False, "부재 템플릿 복원이 조용히 성공했습니다(confirm-or-alarm 위반)."
+    snap = ctrl.snapshot()
+    assert snap["has_job"] is False and snap["mode"] == "volatile"
+    assert snap["template_text"] == "살아남을 원문 {{공고명}}"
 
 
 # ------------------------------------------------------------------ 공유 라우터(슬라이스 3a)

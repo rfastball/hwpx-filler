@@ -17,14 +17,20 @@ JobRegistry` 메서드에 위임한다 — 매핑 로직·판정은 재구현하
 (◀▶·점 클릭)가 슬라이스 3c 에서 착지했다.
 
 **착지분(슬라이스 4)**. 맞추기 표 **그릇**이 섰다 — 유형 열(값 스니핑 오판 정정)·확정 열·
-**확정-비움**(확정+무내용 = blank 렌더·빈칸 게이트 제외, 결정 12). 그릇은 두 표면 모두 늘
-켜져 있고, 저장 세션 유래로 켜고 끄는 지속성 스위치(결정 7)는 슬라이스 5 가 얹는다.
+**확정-비움**(확정+무내용 = blank 렌더·빈칸 게이트 제외, 결정 12).
+
+**착지분(슬라이스 5a)**. 저장 기안 **복원** + **유래별 열 게이팅**. 좌 목록에서 저장 기안을
+고르면 세션이 그 Job 에서 되살아난다(원문 읽기 전용·유형/확정 열 표시·``apply_profile(
+confirm=True)`` 사람 소유 복원, 결정 12) — ``RunViewModel``(hwpx 전용, 결정 13)은 쓰지 않고
+:meth:`DraftSessionMixin._restore_from_job` 이 진다. **두 세션 병존**: 붙여넣던 휘발 세션은
+스태시돼 살아 있고 「이번 세션」으로 돌아오면 그대로다(소실 0). 맞추기 그릇의 유형·확정 열은
+이제 ``mode``(_bound_job 유도)로 켜고 끈다 — 휘발이면 숨고 저장이면 뜬다(결정 7 그릇 스위치).
 
 **스코프 경계 — 미구현 명시(confirm-or-alarm: 없는 걸 있는 척하지 않는다)**. 아직 없는 것:
-- **「기안으로 저장」 승격**(슬라이스 5, #135)·**저장 세션 복원**. TXT 작업은 슬라이스 5
-  저장 배선 전까지 실제로 생성되지 않으므로 좌 목록은 아직 늘 비어 있다(빈 상태가 참이다).
-  따라서 **작업을 고른 상태의 상세는 여전히 껍데기**이고(``RunViewModel`` 미사용 — 그건 hwpx
-  전용, 결정 13), 지속성 스위치 5종·읽기 전용 원문도 그때 함께 온다.
+- **「사본으로 편집」 포크**(슬라이스 5b) — 저장 원문은 지금 읽기 전용이되, 손보기 위해 휘발
+  사본으로 가르는 동사(값·데이터 승계)는 아직 없다.
+- **「기안으로 저장」 승격**(슬라이스 5c, #135) — 휘발 세션을 TXT ``Job`` 으로 저장하는 배선.
+  이게 서기 전까지 좌 목록에 저장 기안이 실제로 생기려면 다른 경로(직접 Job 저장)가 필요하다.
 - **매체 교차 그룹 의미론(#148 리뷰 #3)**: 그룹은 **레지스트리-전역**이다 — ``Job.group`` 은
   매체-불가지 단일 필드라 같은 이름 그룹이 두 매체에 걸쳐 하나로 산다(화면은 뷰만 매체로
   가른다). 따라서 ``rename_group``/``disband_group`` 은 두 매체를 함께 옮기고, **확인 건수도
@@ -64,9 +70,10 @@ class DraftController(DraftSessionMixin):
     ) -> None:
         self.registry = registry
         self._push_sink = push
-        self.job_name = ""  # 좌 목록에서 겨눈 기안 작업(저장 세션 복원은 슬라이스 5)
         # 좌 목록 접힌 그룹 — 「작업」과 별도 키(매체별 격리, 결정 1). Python 설정 영속(#74).
         self._collapsed: "set[str]" = set(load_draft_collapsed_groups())
+        # 좌 목록에서 겨눈 저장 기안 = 세션 유래 결속(``_bound_job``, draft_session 소유·단일
+        # 실체). _init_session 이 세운다(생성자 아래) — 목록 선택도 세션 모드도 이 한 필드에서.
         self._init_session(text_registry, pool_registry=pool_registry, target_font=target_font)
 
     def _jobs(self):
@@ -81,18 +88,20 @@ class DraftController(DraftSessionMixin):
         segview.js 를 그대로 소비한다(키 이름이 갈라지면 팩토리 재사용이 깨진다).
         """
         jobs = self._jobs()
-        sections, flat = build_group_sections(jobs, self.job_name, self._collapsed)
+        sections, flat = build_group_sections(jobs, self._bound_job, self._collapsed)
         return {
-            "job_rows": build_flat_rows(jobs, self.job_name),
+            "job_rows": build_flat_rows(jobs, self._bound_job),
             "job_sections": sections,
             "job_flat": flat,
             "job_group_names": [s["group"] for s in sections if s["group"]],
-            "job_name": self.job_name,
-            # 저장 작업을 고른 상태의 상세는 아직 껍데기(저장 세션 복원 = 슬라이스 5)이고,
-            # 휘발 세션(아래 키)은 **목록 미선택**일 때 열린다(결정 5) — 표면 분기는 이
-            # has_job 하나가 진다. 별도 session_ready 플래그는 두지 않는다(같은 사실을 두 번
-            # 선언하면 갈라질 자리가 생긴다 — 이 저장소 지배 결함류).
-            "has_job": bool(self.job_name),
+            "job_name": self._bound_job,
+            # 저장 기안 결속 여부 = 저장 모드(#148 슬라이스 5a). 세션 모드(mode·source_readonly)와
+            # 목록 선택(has_job·job_name)이 **모두 _bound_job 한 필드에서 유도**된다 — 별도
+            # session_ready 플래그는 두지 않는다(같은 사실을 두 번 선언하면 갈라질 자리가 생긴다,
+            # 이 저장소 지배 결함류). 두 세션은 병존한다: 저장 기안을 고르면 붙여넣던 휘발 세션은
+            # 스태시돼 살아 있고, 「이번 세션」 행으로 돌아오면 그대로다(선택은 화면 전환이지 세션
+            # 파괴가 아니다 — 조용한 소실 금지).
+            "has_job": bool(self._bound_job),
             **self._session_snapshot(),
         }
 
@@ -104,18 +113,42 @@ class DraftController(DraftSessionMixin):
     # 라우터는 DraftSessionMixin.dispatch 단일 출처(큐 재봉합·확인 왕복 규약 공유).
 
     def _do_refresh(self, p: dict) -> None:
-        """레지스트리 재스캔 반영 + stale 선택 무효화(다른 화면에서 삭제·개명됐을 수 있다)."""
-        if self.job_name and self.job_name not in self.registry.names():
-            self.job_name = ""
+        """레지스트리 재스캔 반영 + stale 결속 무효화(다른 화면에서 삭제·개명됐을 수 있다).
 
-    def _do_select_job(self, p: dict) -> None:
-        """좌 목록 클릭 = 겨눔. 저장 세션 **복원**은 슬라이스 5 — 여기선 job_name 만 바꾼다.
+        결속했던 저장 기안이 사라졌으면 휘발 세션으로 복귀한다 — 유래만 소거하면 사라진 기안의
+        원문·매핑이 저장 모드로 계속 떠 있어 정의와 실제가 갈라진다(confirm-or-alarm)."""
+        if self._bound_job and self._bound_job not in self.registry.names():
+            self._restore_volatile()
 
-        RunViewModel(hwpx 전용, 결정 13)을 만들지 않는다. 휘발 세션 상태는 **건드리지 않는다**:
-        목록을 눌렀다 미선택으로 돌아오면 붙여넣던 원문·데이터·큐 진행이 그대로 있어야 한다
-        (선택은 화면 전환이지 세션 파괴가 아니다 — 조용한 소실 금지).
-        """
-        self.job_name = p.get("name", "")
+    def _do_select_job(self, p: dict) -> "dict | None":
+        """좌 목록 클릭 = 저장 기안 결속(복원) · 「이번 세션」 클릭(빈 이름) = 휘발 귀환(#148 슬라이스 5a).
+
+        **두 세션 병존**: 휘발 세션에서 저장 기안을 고르면 붙여넣던 세션을 스태시하고(소실 0)
+        저장-세션을 Job 에서 세운다(:meth:`_restore_from_job` — 원문 읽기 전용·유형/확정 열·
+        ``apply_profile(confirm=True)``, 결정 12). 이미 저장 기안에 결속된 상태에서 다른 기안을
+        고르면 스태시하지 않는다(저장-세션은 Job 에서 결정적으로 재구성되니 잃을 게 없다) —
+        스태시된 휘발은 그대로 살아 있다. RunViewModel(hwpx 전용, 결정 13)은 쓰지 않는다.
+
+        stale 선택(레지스트리에서 사라진 이름·템플릿 파일 부재)은 상태를 바꾸지 않고 시끄럽게
+        재진술한다(``{"ok": False, error}``) — 스태시한 휘발 세션이 반쪽으로 오염되지 않는다."""
+        name = p.get("name", "")
+        if not name:  # 「이번 세션」 = 겨눔 해제 → 휘발 귀환
+            if self._bound_job:
+                self._restore_volatile()
+            return None
+        if name == self._bound_job:
+            return None  # 재선택 무동작
+        try:
+            job = self.registry.load(name)
+        except (FileNotFoundError, ValueError) as exc:  # 삭제 경합·손상 — refresh 가 정리
+            return {"ok": False, "error": f"저장된 기안을 열 수 없습니다: {exc}"}
+        if not self._bound_job:  # 휘발 → 저장: 붙여넣던 세션을 스태시(두 세션 병존)
+            self._stash_volatile()
+        try:
+            self._restore_from_job(job)
+        except OSError as exc:  # 템플릿 파일 부재 — 복원은 실패 원자적이라 상태 불변
+            return {"ok": False, "error": f"기안 템플릿을 열 수 없습니다: {exc}"}
+        return None
 
     def _do_toggle_group(self, p: dict) -> None:
         """그룹 접힘/펼침 토글 — 마지막 상태를 Python 설정에 영속(「작업」과 별도 키)."""
@@ -133,8 +166,8 @@ class DraftController(DraftSessionMixin):
             self.registry.rename(name, new)
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}
-        if self.job_name == name:
-            self.job_name = new.strip()
+        if self._bound_job == name:  # 결속 중인 기안을 개명 — 결속만 새 이름으로(세션 원문·매핑 불변)
+            self._bound_job = new.strip()
         return {"ok": True}
 
     def _do_clone_job(self, p: dict) -> dict:
@@ -144,14 +177,14 @@ class DraftController(DraftSessionMixin):
     def _do_delete_job(self, p: dict) -> "dict | None":
         """작업 삭제 — 무확인 호출은 재진술 자료를 돌려주고 멈춘다(RC-02 왕복 동형).
 
-        세션 껍데기라 열린 세션 파괴 수치는 없다 — durable 삭제 사실만 재진술한다.
-        """
+        결속 중인 기안을 삭제하면 휘발 세션으로 복귀한다 — 사라진 정의가 저장 모드로 계속
+        떠 있지 않게(스태시해 둔 휘발이 있으면 그대로, 없으면 새 휘발)."""
         name = p["name"]
         if not p.get("confirm"):
             return {"needs_confirm": True, "name": name, "open_session": False}
         self.registry.delete(name)
-        if name == self.job_name:
-            self.job_name = ""
+        if name == self._bound_job:
+            self._restore_volatile()
 
     def _do_set_group(self, p: dict) -> None:
         """그룹 지정/해제(이동 다이얼로그 확정) — ``group=""`` 는 「그룹 없음」으로 이동."""

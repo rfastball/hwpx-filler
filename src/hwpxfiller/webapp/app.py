@@ -837,14 +837,17 @@ _DRAFT_LIST_PROBE_JS = r"""
     };
     window.__push('draft', snap);
     out.grp_heads = document.querySelectorAll('#draftList .job-grp-head').length;   // 현장 A·정기·그룹없음
-    out.rows_visible = document.querySelectorAll('#draftList .job-item').length;    // 정기 접힘 → 2+0+1
+    // 저장 기안 행만 센다(data-job) — 상시 「이번 세션」 행(.draft-vol, 슬라이스 5a)은 뺀다.
+    out.rows_visible = document.querySelectorAll('#draftList .job-item[data-job]').length;  // 정기 접힘 → 2+0+1
     out.grp_more = document.querySelectorAll('#draftList .grp-more').length;        // 명명 그룹만
     out.row_more = document.querySelectorAll('#draftList .job-more[data-more]').length;
-    // 미선택 = **휘발 세션**(결정 5) — 옛 「왼쪽에서 고르세요」 안내는 사망하고 4존이 선다.
+    // 미선택 = **휘발 세션**(결정 5) — 4존이 선다. 저장/휘발 한 패널(슬라이스 5a, 껍데기 stub 폐기).
     out.session_shown =
       getComputedStyle(document.getElementById('draftSessionPanel')).display !== 'none';
-    out.shell_hidden =
-      getComputedStyle(document.getElementById('draftShellPanel')).display === 'none';
+    // 상시 「이번 세션」 행 = 휘발 귀환구(껍데기 back 버튼 승계). 미결속이라 aria-current.
+    out.vol_row_present = !!document.querySelector('#draftList .job-item.draft-vol');
+    out.vol_row_current =
+      document.querySelector('#draftList .job-item.draft-vol').getAttribute('aria-current') === 'true';
     // 행 ⋮ 메뉴 = [복제, 이름변경, 이동, 삭제] (편집 미노출 — 세션은 슬라이스 3).
     flush();
     document.querySelector('#draftList .job-more[data-more]').click();
@@ -865,7 +868,7 @@ _DRAFT_LIST_PROBE_JS = r"""
     snap.job_sections = [{group:'', collapsed:false, count:1, rows:[{name:'회의록 기안', selected:false}]}];
     window.__push('draft', snap);
     out.flat_heads = document.querySelectorAll('#draftList .job-grp-head').length;
-    out.flat_rows = document.querySelectorAll('#draftList .job-item').length;
+    out.flat_rows = document.querySelectorAll('#draftList .job-item[data-job]').length;  // 이번 세션 행 제외
     out.error = null;
   } catch (e) { out.error = 'throw:' + (e && e.message); }
   return out;
@@ -1133,22 +1136,30 @@ _DRAFT_SESSION_PROBE_JS = r"""
     window.__push('draft', snap);  // 원상 복귀(비퇴화) — 뒤 되읽기 오염 방지
     out.nondegen_dots_shown =
       getComputedStyle(document.getElementById('draftCardDots')).display !== 'none';
-    // 저장 기안을 고른 상태 → 껍데기 + **귀환 동사**(리뷰 P2). 미선택이 곧 휘발 진입구라,
-    // 선택 해제 경로가 없으면 재시작이 유일한 출구가 된다 — 그 출구가 실물로 보이는지 본다.
-    snap.job_name = '착수계 기안'; snap.has_job = true;
-    window.__push('draft', snap);
-    out.sel_shell_shown =
-      getComputedStyle(document.getElementById('draftShellPanel')).display !== 'none';
-    out.sel_session_hidden =
-      getComputedStyle(document.getElementById('draftSessionPanel')).display === 'none';
-    out.back_btn_visible = (function () {
-      var b = document.getElementById('draftBackToVolatile');
-      return !!b && b.offsetParent !== null;
-    })();
-    snap.job_name = ''; snap.has_job = false;
-    window.__push('draft', snap);
-    out.back_restores_session =
-      getComputedStyle(document.getElementById('draftSessionPanel')).display !== 'none';
+    // 유래별 열 게이팅(#148 슬라이스 5a, 결정 7) — 휘발 모드(base snap: mode 미지정)에선 유형·확정
+    // (.persist) 열이 숨고, 저장 모드에선 뜬다. **실 display 로 되읽는다**(부록 B-9: display:flex 가
+    //   UA [hidden]{display:none} 을 이겨 속성만 보면 거짓 초록). 판정은 CSS([data-mode]), JS 는 표지만.
+    var shownEl = function(el){ return !!el && getComputedStyle(el).display !== 'none'; };
+    out.persist_hidden_volatile = !shownEl(document.querySelector('#draftTokPanel .maptype-cell'));
+    out.volatile_note_shown = !!document.querySelector('#draftMapLegend .volatile-note');
+    // 저장 기안 선택 → 세션이 그 Job 에서 복원(저장 모드): 세션 패널은 **그대로 서고**(껍데기 없음),
+    // 유형·확정 열이 뜨고, 원문은 읽기 전용, 휘발 note 는 사라진다. 두 세션 병존이라 「이번 세션」
+    // 행은 비결속(aria-current false)으로 남는다 — 그 행 클릭이 곧 선택 해제(휘발 귀환).
+    var ssnap = JSON.parse(JSON.stringify(snap));
+    ssnap.job_name = '착수계 기안'; ssnap.has_job = true;
+    ssnap.mode = 'saved'; ssnap.source_readonly = true; ssnap.bound_job = '착수계 기안';
+    window.__push('draft', ssnap);
+    out.saved_session_shown = shownEl(document.getElementById('draftSessionPanel'));
+    out.saved_persist_shown = shownEl(document.querySelector('#draftTokPanel .maptype-cell'));
+    out.saved_src_readonly = document.getElementById('draftSrcBox').readOnly === true;
+    out.saved_note_absent = !document.querySelector('#draftMapLegend .volatile-note');
+    out.vol_row_current_saved = (function () {
+      var v = document.querySelector('#draftList .job-item.draft-vol');
+      return !!v && v.getAttribute('aria-current') === 'false'; })();
+    // 선택 해제(휘발 귀환) → 세션 패널은 계속 서고 유형·확정 열이 다시 숨는다(휘발 모드).
+    window.__push('draft', snap);  // mode 미지정 = 휘발
+    out.back_restores_session = shownEl(document.getElementById('draftSessionPanel'));
+    out.back_persist_hidden = !shownEl(document.querySelector('#draftTokPanel .maptype-cell'));
     out.error = null;
   } catch (e) { out.error = 'throw:' + (e && e.message); }
   return out;

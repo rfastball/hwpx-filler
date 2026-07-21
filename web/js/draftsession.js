@@ -187,6 +187,10 @@
     function renderMap(s) {
       const tokens = s.tokens || [];
       const host = $(id.tokPanel);
+      // 유래별 그릇 게이팅(#148 슬라이스 5a, 결정 7) — 저장 모드에서만 유형·확정(`.persist`) 열이
+      // 뜬다. 판정은 Python(s.mode), 여기는 data-mode 표지만(CSS 가 display 를 가른다). 미지정은
+      // 휘발로 낙착(구 화면은 mode 를 안 보내 유형·확정이 숨는 게 옳다).
+      host.dataset.mode = s.mode || "volatile";
       if (!tokens.length) {
         host.innerHTML = `<p class="muted hint" style="padding:10px">토큰이 없는 템플릿입니다.</p>`;
       } else {
@@ -203,10 +207,17 @@
           `</tbody></table>`;
       }
       if (id.mapLegend) {
+        // 휘발 note(#148 슬라이스 5a, 결정 7) — 휘발 모드에선 유형·확정을 묻지 않는 이유를
+        // 정직하게 말한다(열이 왜 없는지). 저장 모드에선 열이 그 자리를 대신 설명한다.
+        const volNote = (s.mode || "volatile") === "volatile"
+          ? `<span class="muted volatile-note">이 세션은 저장하지 않으므로 <b>유형·확정</b>은 ` +
+            `묻지 않습니다 — 남기려면 「기안으로 저장」.</span>`
+          : "";
         $(id.mapLegend).innerHTML =
           `<span><i class="own auto"></i>데이터에서 자동</span>` +
           `<span><i class="own man"></i>직접 입력</span>` +
-          `<span class="muted">항목 없음은 <span class="mono">{{토큰}}</span> 그대로 복사됩니다.</span>`;
+          `<span class="muted">항목 없음은 <span class="mono">{{토큰}}</span> 그대로 복사됩니다.</span>` +
+          volNote;
       }
     }
 
@@ -232,6 +243,10 @@
     function renderSource(s) {
       if (!id.srcBox) return;
       const box = $(id.srcBox);
+      // 저장 원문은 읽기 전용(#148 슬라이스 5a, 결정 7 스위치 ④) — 정의가 조용히 갈라지지 않게.
+      // readonly 면 input 이 안 나 _do_edit_source 도 안 돈다(표면 방어). 손보려면 「사본으로
+      // 편집」이 휘발로 가른다(슬라이스 5b — 원문바 srcFork). 판정은 Python(s.source_readonly).
+      box.readOnly = !!s.source_readonly;
       if (box.value !== s.template_text) box.value = s.template_text || "";
     }
 
