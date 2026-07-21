@@ -321,3 +321,58 @@ def test_inline_stripped_detail_enumerates_subtree():
     doc = FieldDocument(xml)
     assert doc.set_field("계약명", "NEW") is True
     assert doc.notes == [FillNote("계약명", "inline_stripped", ("inner", "outer"))]
+
+
+# ------------------------------------------------------- 사전 판정(#154 PR-2)
+def test_precheck_lists_mitigations_without_mutating():
+    """precheck 는 채움 완화를 사전 열거하되 문서를 일절 변형하지 않는다."""
+    xml = _field_xml("<hp:run><hp:t>OLD<hp:markpenBegin/>X</hp:t></hp:run>")
+    doc = FieldDocument(xml)
+    before = doc.to_bytes()
+    assert doc.precheck() == [
+        FillNote("계약명", "inline_stripped", ("markpenBegin",))
+    ]
+    assert doc.to_bytes() == before  # 무변형
+    assert doc.modified is False
+
+
+def test_precheck_covers_empty_and_degenerate_shapes():
+    empty = (
+        '<hp:run><hp:ctrl><hp:fieldBegin name="빈필드"/></hp:ctrl></hp:run>'
+        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
+    )
+    degenerate = (
+        '<hp:run><hp:ctrl><hp:fieldBegin name="퇴화"/><hp:fieldEnd/></hp:ctrl></hp:run>'
+    )
+    clean = (
+        '<hp:run><hp:ctrl><hp:fieldBegin name="정상"/></hp:ctrl></hp:run>'
+        "<hp:run><hp:t>값</hp:t></hp:run>"
+        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
+    )
+    xml = (
+        f"{_HDR}<hp:p>{empty}</hp:p><hp:p>{degenerate}</hp:p><hp:p>{clean}</hp:p></hs:sec>"
+    ).encode("utf-8")
+    assert FieldDocument(xml).precheck() == [
+        FillNote("빈필드", "slot_synthesized"),
+        FillNote("퇴화", "occurrence_unfillable"),
+    ]  # 정상 형상은 무고지(과경고 금지)
+
+
+def test_fill_precheck_walks_package_and_dedupes():
+    from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE
+    from hwpxfiller.core.fields import fill_precheck
+
+    pkg = HwpxPackage()
+    pkg.entries[MIMETYPE_NAME] = MIMETYPE_VALUE
+    pkg.stored.add(MIMETYPE_NAME)
+    region = (
+        '<hp:run><hp:ctrl><hp:fieldBegin name="계약명"/></hp:ctrl></hp:run>'
+        "<hp:run><hp:t>A<hp:markpenBegin/></hp:t></hp:run>"
+        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
+    )
+    sec = (f"{_HDR}<hp:p>{region}</hp:p></hs:sec>").encode("utf-8")
+    pkg.entries["Contents/section0.xml"] = sec
+    pkg.entries["Contents/section1.xml"] = sec  # 같은 사실 두 섹션 → 1회
+    assert fill_precheck(pkg) == [
+        FillNote("계약명", "inline_stripped", ("markpenBegin",))
+    ]

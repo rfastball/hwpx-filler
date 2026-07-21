@@ -62,6 +62,19 @@ def _local(tag: object) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
+def _subtree_names(child: etree._Element) -> "set[str]":
+    """제거 대상 하위트리의 노드 이름 전체 — 최상위만 대면 손실 집합 과소 고지."""
+    names: "set[str]" = set()
+    for node in child.iter():
+        if isinstance(node, etree._Comment):
+            names.add("#comment")
+        elif isinstance(node, etree._ProcessingInstruction):
+            names.add("#pi")
+        else:
+            names.add(_local(node.tag) or "#node")
+    return names
+
+
 def _clean_field_name(raw: object) -> str:
     """누름틀 이름의 공백과 선택적 ``{{..}}`` 표기를 정규화한다."""
     if not isinstance(raw, str):
@@ -173,6 +186,38 @@ class FieldDocument:
             current = current.getnext()
         return _FieldSpan(run, ctrl, ts, end_ctrl, end_run)
 
+    # ----------------------------------------------------------- precheck
+    def precheck(self) -> "list[FillNote]":
+        """채움이 완화 처리(#154)를 일으킬 자리를 **변형 없이** 사전 열거한다.
+
+        :meth:`set_field` 와 같은 걸음(:meth:`_field_span`)·같은 어휘(FillNote)로
+        판정한다 — 사전 고지와 사후 노트가 같은 사실을 가리키게(표면 문안만 시제가
+        다르다). 값 비교가 없는 사전 판정이라 ``inline_stripped`` 는 "다른 값을
+        채우면 제거된다"는 조건부 사실이다.
+        """
+        notes: "list[FillNote]" = []
+        for begin in self._tree.iterfind(f".//{{{HP_NS}}}fieldBegin"):
+            name = _clean_field_name(begin.get("name"))
+            if not name:
+                continue
+            span = self._field_span(begin)
+            if span is None:
+                continue
+            if span.ts:
+                stripped: "set[str]" = set()
+                for t in span.ts:
+                    for child in t:
+                        stripped |= _subtree_names(child)
+                if stripped:
+                    notes.append(
+                        FillNote(name, "inline_stripped", tuple(sorted(stripped)))
+                    )
+            elif span.end_ctrl is None or span.end_ctrl is span.ctrl:
+                notes.append(FillNote(name, "occurrence_unfillable"))
+            else:
+                notes.append(FillNote(name, "slot_synthesized"))
+        return list(dict.fromkeys(notes))
+
     # ------------------------------------------------------------- inject
     def set_field(self, field_name: str, new_value: str) -> bool:
         """``field_name`` 누름틀에 값 주입. 기입 가능한 자리가 하나라도 있으면 True.
@@ -264,13 +309,7 @@ class FieldDocument:
         stripped: "set[str]" = set()
         for t in ts:
             for child in list(t):
-                for node in child.iter():
-                    if isinstance(node, etree._Comment):
-                        stripped.add("#comment")
-                    elif isinstance(node, etree._ProcessingInstruction):
-                        stripped.add("#pi")
-                    else:
-                        stripped.add(_local(node.tag) or "#node")
+                stripped |= _subtree_names(child)
                 t.remove(child)
                 self._modified = True
         if stripped:
@@ -300,6 +339,19 @@ class FieldDocument:
             encoding="UTF-8",
             standalone=True,
         )
+
+
+def fill_precheck(pkg_or_path: object) -> "list[FillNote]":
+    """HWPX 패키지 전체의 채움 완화 사전 판정(#154) — 변형 없음, 중복 없이.
+
+    템플릿 점검 표면(라이브러리 등)이 "채우면 무슨 일이 생기는가"를 실행 전에
+    고지하는 데 쓴다. 사후 노트(:attr:`FieldDocument.notes`)와 같은 어휘.
+    """
+    pkg = _to_package(pkg_or_path)
+    notes: "list[FillNote]" = []
+    for xml_name in pkg.content_xml_names():
+        notes.extend(FieldDocument(pkg.entries[xml_name]).precheck())
+    return list(dict.fromkeys(notes))
 
 
 def read_fields(pkg_or_path: object) -> "dict[str, str]":

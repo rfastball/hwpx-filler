@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..core.authoring import TokenSite, compile_document, scan_tokens
-from ..core.fields import read_fields
+from ..core.fields import fill_precheck, read_fields
 from ..core.lint import LintReport, SchemaDrift, diff_schema, lint_template
 from ..core.template_status import (
     OUTPUT_SUBDIR_NAME,
@@ -37,6 +37,7 @@ from ..core.template_status import (
 # 같은 상태에 같은 심각도 신호를 낸다(RC-29, 이중화 금지).
 from .compile_badge import badge_label as _badge_label
 from .compile_badge import badge_level as _badge_level
+from .result_errors import describe_precheck_note
 
 # lint 심각도 → 사용자 대면 한국어(뷰가 영문 원시값을 노출하지 않게 링1이 성형).
 _SEVERITY_KO: "dict[str, str]" = {"warning": "경고", "info": "정보", "error": "오류"}
@@ -135,6 +136,8 @@ class TemplateRow:
     skipped_n: int
     stray_n: int
     error: str = ""
+    # 채움 완화 사전 고지(#154) — "채우면 무슨 일이 생기는가"의 점검 문안.
+    fill_warns: "tuple[str, ...]" = ()
 
     @property
     def is_error(self) -> bool:
@@ -158,7 +161,12 @@ class TemplateRow:
         return available_actions(self.state)
 
     @classmethod
-    def from_status(cls, path: Path, status: TemplateStatus) -> "TemplateRow":
+    def from_status(
+        cls,
+        path: Path,
+        status: TemplateStatus,
+        fill_warns: "tuple[str, ...]" = (),
+    ) -> "TemplateRow":
         return cls(
             name=path.name,
             path=str(path),
@@ -169,6 +177,7 @@ class TemplateRow:
             compilable_n=status.compilable_n,
             skipped_n=status.skipped_n,
             stray_n=status.stray_n,
+            fill_warns=fill_warns,
         )
 
     @classmethod
@@ -259,10 +268,14 @@ class TemplateManagerViewModel:
         for path in self._discover():
             try:
                 status = compile_status(str(path))
+                # 채움 완화 사전 판정(#154) — 점검 표면의 "사전에 알고" 쪽.
+                warns = tuple(
+                    describe_precheck_note(n) for n in fill_precheck(str(path))
+                )
             except Exception as exc:  # noqa: BLE001 — 읽기 실패는 시끄럽게 노출(감추지 않음)
                 rows.append(TemplateRow.from_error(path, str(exc)))
                 continue
-            rows.append(TemplateRow.from_status(path, status))
+            rows.append(TemplateRow.from_status(path, status, fill_warns=warns))
         self._rows = rows
         self._notify()
 

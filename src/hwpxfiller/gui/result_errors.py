@@ -70,3 +70,25 @@ def describe_fill_note(note) -> str:
             f"건너뛰었습니다 — 산출물에서 해당 자리가 비어 있지 않은지 확인하세요."
         )
     return f"누름틀 「{note.field}」: {note.kind}"
+
+
+def describe_precheck_note(note) -> str:
+    """사전 판정(:func:`~hwpxfiller.core.fields.fill_precheck`) → 점검 문안(#154).
+
+    사후(:func:`describe_fill_note`)와 같은 사실을 시제만 바꿔 말한다 —
+    "사전에 알고 사후에 확인"의 사전 쪽. 미지 종류는 원문 관통.
+    """
+    if note.kind == "inline_stripped":
+        kinds = ", ".join(note.detail)
+        return (
+            f"누름틀 「{note.field}」 값 안에 인라인 요소({kinds})가 있습니다 — "
+            f"다른 값을 채우면 값과 함께 제거됩니다."
+        )
+    if note.kind == "slot_synthesized":
+        return f"빈 누름틀 「{note.field}」 — 채울 때 값 자리를 새로 만듭니다."
+    if note.kind == "occurrence_unfillable":
+        return (
+            f"누름틀 「{note.field}」 자리 중 일부는 구조상 기입할 수 없습니다 — "
+            f"채워도 해당 자리는 빈 채 남습니다."
+        )
+    return f"누름틀 「{note.field}」: {note.kind}"

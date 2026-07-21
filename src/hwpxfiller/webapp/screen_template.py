@@ -103,6 +103,8 @@ class TemplateController:
                 "badge_level": r.badge_level,
                 "detail": r.detail_line(),
                 "is_error": r.is_error,
+                # 채움 완화 사전 고지(#154) — 문안은 링1(describe_precheck_note) 확정.
+                "fill_warns": list(r.fill_warns),
                 # 미리보기 제외(10F2FF98-B) — 링1 seam 은 보존하되 노출 액션에서 뺀다.
                 "actions": [
                     {"key": a.key, "label": a.label}
