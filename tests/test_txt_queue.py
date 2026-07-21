@@ -1,8 +1,9 @@
-"""전-선언 큐 모델 단위 가드 — ``hwpxfiller.gui.txt_queue`` (R-flow 블록 3 결정 16·18·19).
+"""전-선언 큐 모델 단위 가드 — ``hwpxfiller.gui.txt_queue`` (R-flow 블록 3 결정 16·18).
 
-큐는 선택(전-선언)에 종속한다: 미처리 순서 보존 + 처리 후미 이동(멱등 재복사·완주) +
-작업점=첫 미처리 + 미루기. 시안 데모(block3-verb-n-demo)가 매 렌더 rebuild 로 미루기를
-지웠던 결함의 교정을 특히 가드한다.
+큐는 선택(전-선언)에 종속한다: 편입(선언) 순서 보존 + 처리 후미 이동(멱등 재복사·완주) +
+작업점=첫 미처리. 미루기는 R-info 3부 결정 10 에서 사망했다(#148 슬라이스 3c) — 자유 이동
+(◀▶·점 클릭)이 대체하므로 큐 뒤로 보내는 동사가 없다. 순서 보존이 남아 담보하는 것은
+**선택 편입 순서** 하나다(``test_new_selection_preserves_reconcile_order``).
 """
 from __future__ import annotations
 
@@ -96,32 +97,15 @@ def test_set_current_ignores_out_of_queue():
     assert q.current == 1
 
 
-def test_defer_moves_uncopied_to_tail_and_persists():
-    """미루기는 미처리 큐 뒤로 보내고 그 순서가 유지된다(reconcile 이 지우지 않음)."""
-    sel, q = make(3)
-    q.defer(0)
-    assert q.uncopied() == [1, 2, 0]
-    assert q.current == 1  # 같은 자리의 다음
-    q.reconcile()  # 선택 재봉합에도 미루기 순서 보존
-    assert q.uncopied() == [1, 2, 0]
+def test_defer_verb_is_dead():
+    """미루기 사망(결정 10 · 슬라이스 3c) — 큐 뒤로 보내는 동사가 모델에 없다.
 
-
-def test_defer_non_current_leaves_work_point():
-    """비작업점 카드를 미뤄도 작업점은 튀지 않는다(건별 미루기 버튼 대비)."""
-    sel, q = make(3)
-    q.set_current(2)
-    assert q.current == 2
-    q.defer(0)  # 작업점(2) 아닌 0 을 미룸
-    assert q.uncopied() == [1, 2, 0]
-    assert q.current == 2  # 작업점 불변
-
-
-def test_defer_ignores_copied_and_out_of_queue():
-    sel, q = make(2)
-    q.copy(0)
-    order_before = q.uncopied()
-    q.defer(0)  # 처리분은 못 미룸
-    assert q.uncopied() == order_before
+    막힌 카드의 탈출구는 자유 이동(:meth:`step`·:meth:`set_current`)이라 ``defer`` 는
+    회수됐다. 되살아나면(재유입) 「미루기 순서 명시 보존」 계약도 함께 부활해야 하므로
+    부재를 못박는다.
+    """
+    _sel, q = make(3)
+    assert not hasattr(q, "defer")
 
 
 def test_deselect_drops_from_queue_including_copy_history():

@@ -994,7 +994,7 @@ _DRAFT_SESSION_PROBE_JS = r"""
                     cells:[[['전산',true],['장비 구매',false]]]}],
              visible_count:1,
              hidden_selected:[{index:1, selected:true, qpos:2, copied:false, current:false}]},
-      card:{index:0, has_current:true, is_copied:false, position:1,
+      card:{index:0, has_current:true, queue_degenerate:false, is_copied:false, position:1,
             uncopied_count:2, copied_count:0, selected_count:2, is_complete:false,
             advance_after:false,
             segments:[{text:'제목: ', kind:'literal', name:''},
@@ -1067,6 +1067,30 @@ _DRAFT_SESSION_PROBE_JS = r"""
     // 판정은 "이 프로브만의 문자열이 저쪽에 새지 않았는가" — 앞선 프로브가 남긴 상태와
     // 무관하게 성립한다(고정 0건 기대는 프로브 실행 순서에 묶여 깨지기 쉽다).
     out.txt_leak = (document.getElementById('txtCardRender').textContent || '').indexOf('전산장비 구매') >= 0;
+    // 큐 퇴화(결정 8·14) — 유효 큐 ≤ 1건(단건·무데이터 가상 1건)이면 큐 장치 3종(진행 색인·
+    // ◀▶ 다음 카드·자동 전진)이 **숨는다**. 무데이터 가상 카드는 작업점(index) None 이되
+    // 복사 가능하고, 맞추기 표 값 열 머리가 「지금 행의 값」→「값」으로 바뀐다. 실 render() 로
+    // 숨김·활성·머리글을 되읽는다(판정은 Python queue_degenerate, JS 는 표현만).
+    var vsnap = JSON.parse(JSON.stringify(snap));
+    vsnap.has_data = false;
+    vsnap.columns = [];  // 무데이터 = 결속 후보 없음 → 「데이터 열」 드롭다운은 「직접 입력」만
+    vsnap.card.queue_degenerate = true;
+    vsnap.card.has_current = true;
+    vsnap.card.index = null;
+    window.__push('draft', vsnap);
+    out.degen_src_options = (function(){ var s = document.querySelector('#draftTokPanel .mapsrc-sel');
+      return s ? s.options.length : 0; })();  // (직접 입력)만 = 1
+    out.degen_dots_hidden = document.getElementById('draftCardDots').hidden === true;
+    out.degen_prev_hidden = document.getElementById('draftCardPrev').hidden === true;
+    out.degen_next_hidden = document.getElementById('draftCardNext').hidden === true;
+    out.degen_advance_hidden = (function(){ var a = document.getElementById('draftAdvance');
+      var w = a && a.closest('.wc-advance'); return !!w && w.hidden === true; })();
+    out.degen_copy_enabled = !document.getElementById('draftCardCopy').disabled;
+    out.degen_val_head = (function(){
+      var th = document.querySelectorAll('#draftTokPanel table.dmap thead th');
+      return th.length ? th[th.length - 1].textContent : ''; })();
+    window.__push('draft', snap);  // 원상 복귀(비퇴화) — 뒤 되읽기 오염 방지
+    out.nondegen_dots_shown = document.getElementById('draftCardDots').hidden === false;
     // 저장 기안을 고른 상태 → 껍데기 + **귀환 동사**(리뷰 P2). 미선택이 곧 휘발 진입구라,
     // 선택 해제 경로가 없으면 재시작이 유일한 출구가 된다 — 그 출구가 실물로 보이는지 본다.
     snap.job_name = '착수계 기안'; snap.has_job = true;
@@ -1115,7 +1139,7 @@ _TXT_ZONE_PROBE_JS = r"""
              visible_count:1,
              hidden_selected:[{index:1, selected:true, qpos:2, copied:false, current:false}]},
       // 작업점 카드(블록 3, 결정 16) — 상태 색인·채움 표지 삼분 세그먼트·동사 게이트.
-      card:{index:0, has_current:true, is_copied:false, position:1,
+      card:{index:0, has_current:true, queue_degenerate:false, is_copied:false, position:1,
             uncopied_count:2, copied_count:0, selected_count:2, is_complete:false,
             advance_after:false,
             segments:[{text:'제목: ', kind:'literal', name:''},
@@ -1144,6 +1168,9 @@ _TXT_ZONE_PROBE_JS = r"""
     out.card_copy_enabled = !!cp && !cp.disabled;
     out.card_global_copy_dead = !document.getElementById('btnCopy')
       && !document.getElementById('btnSave');  // 전역 복사·저장 버튼 소멸(결정 16·18)
+    // 미루기 사망(결정 10 · 슬라이스 3c) — **구 화면 포함 전수**. 「기안」뿐 아니라 「기안문
+    // 채우기」에서도 큐 뒤로 보내는 버튼이 사라졌다(자유 이동 ◀▶·점 클릭이 탈출구).
+    out.defer_absent = !document.getElementById('txtCardDefer');
     out.card_readout = document.getElementById('txtCardReadout').textContent;
     // 대상 글꼴 선언(결정 17) — 콤보 동기 + 원문 렌더가 선언 글꼴 클래스를 추종한다.
     out.font_sel = document.getElementById('txtTargetFont').value;

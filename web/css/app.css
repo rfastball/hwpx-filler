@@ -176,7 +176,7 @@ table.dmap tr:last-child td{border-bottom:0}
 /* 빈칸 지도 표지 — 미충족 카드(항목 없음·빈 값)에 빨강 점 */
 .wc-dot.gap::after{content:"";position:absolute;top:-3px;right:-3px;width:6px;height:6px;
   border-radius:50%;background:var(--a-danger);border:1px solid var(--a-card)}
-/* 카드 헤더: 정체 + 복사 동사(우상단) + 미루기 + 전진 토글 */
+/* 카드 헤더: 정체 + 복사 동사(우상단) + 전진 토글(미루기는 결정 10 사망) */
 .wc-head{display:flex;align-items:center;gap:var(--sp-10);margin-bottom:var(--sp-8)}
 .wc-title{flex:1;min-width:0;font-size:var(--fs-caption);color:var(--a-muted);font-weight:700;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

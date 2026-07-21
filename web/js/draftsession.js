@@ -167,10 +167,13 @@
       if (!tokens.length) {
         host.innerHTML = `<p class="muted hint" style="padding:10px">토큰이 없는 템플릿입니다.</p>`;
       } else {
+        // 무데이터(가상 1건, 결정 14) — 「데이터 열」은 「직접 입력」만 가능하고 값 열은 행이
+        // 하나뿐이라 「지금 행의 값」이 아니라 그냥 「값」이다(가리키는 여러 행이 없다).
+        const valHead = s.has_data ? "지금 행의 값" : "값";
         host.innerHTML =
           `<table class="dmap"><thead><tr>` +
           `<th style="width:16%">토큰</th><th style="width:44%">데이터 열</th>` +
-          `<th style="width:16%">표시형</th><th>지금 행의 값</th>` +
+          `<th style="width:16%">표시형</th><th>${valHead}</th>` +
           `</tr></thead><tbody>` +
           tokens.map((t, i) => mapRowHtml(s, t, i)).join("") +
           `</tbody></table>`;
@@ -213,20 +216,27 @@
     function renderCard(s) {
       const c = s.card || {};
       const complete = !!c.is_complete;
+      // 큐 퇴화(결정 8·14) — 유효 큐 ≤ 1건(단건·무데이터 가상 1건). 판정은 Python(queue_degenerate)이
+      // 하고 여기는 큐 장치 3종(진행 색인·다음 카드·자동 전진)을 숨기는 표현만 한다: 순회할 곳도
+      // 전진할 곳도 없어 정보가 없다(장식이라 지우는 게 아니라 뜻이 없어 숨는다).
+      const degen = !!c.queue_degenerate;
       $(id.card).classList.toggle("complete", complete);
-      // 상태 색인 재진술 — 위치·처리 진척·빈칸 수.
+      // 상태 색인 재진술 — 위치·처리 진척·빈칸 수. 퇴화 시 진행/복사 색인은 무의미하니 뺀다.
       const readout = $(id.cardReadout);
+      const gaps = (c.missing_fields || []).length + (c.empty_fields || []).length;
       if (!c.has_current) {
         readout.textContent = s.has_data
           ? "선택된 카드가 없습니다 — 위 표에서 행을 선택하면 큐에 담깁니다."
-          : "데이터를 선택하면 기안 대상 행이 카드로 들어옵니다.";
+          : "템플릿을 고르거나 붙여넣으면 이대로 채워 복사할 수 있습니다.";
+      } else if (degen) {
+        // 단건·무데이터 — 큐 진척이 없다. 복사 전 확인이 필요한 빈칸만 재진술한다.
+        readout.textContent = gaps ? `빈칸 ${gaps}건 — 복사 전 확인합니다.` : "";
       } else if (complete) {
         readout.textContent = `완주 — ${c.selected_count}건 전부 복사했습니다.`;
       } else {
         const posTxt = c.position
           ? `작업점 ${c.position}/${c.uncopied_count} 미처리`
           : "복사됨 카드";
-        const gaps = (c.missing_fields || []).length + (c.empty_fields || []).length;
         readout.textContent =
           `${posTxt} · 복사 ${c.copied_count}/${c.selected_count}` + (gaps ? ` · 빈칸 ${gaps}건` : "");
       }
@@ -234,6 +244,13 @@
       // 상태어는 한글로 번역해 aria-label 에 싣는다(영문 토큰 current/copied 누출 차단).
       // **변할 때만 재구축**(리뷰 F7): 필터 타건 등 점 지형 불변인 push 에서 O(n) DOM write+
       // reflow 를 피한다(서명 비교).
+      // 큐 장치 3종을 퇴화 시 숨긴다(결정 8·14) — 진행 색인 점·◀▶ 다음 카드·자동 전진. hidden
+      // 은 disabled 와 독립이라(아래 경계 잠금은 다중 카드에서만 뜻이 있음) 표시 여부만 가른다.
+      $(id.cardDots).hidden = degen;
+      $(id.cardPrev).hidden = degen;
+      $(id.cardNext).hidden = degen;
+      const advWrap = $(id.advance).closest(".wc-advance");
+      if (advWrap) advWrap.hidden = degen;
       const order = c.index_map || [];
       const dotsSig = order.map((d) => `${d.index}${d.state[0]}${d.has_gap ? "g" : ""}`).join(",");
       if (dotsSig !== lastDotsSig) {
@@ -260,9 +277,8 @@
         : c.is_copied ? "복사됨 — 다시 복사하면 클립보드가 갱신됩니다" : "이대로 복사됩니다";
       // 소유권 색(결정 33) — fill 세그먼트가 데이터(auto)인지 직접 입력(man)인지 색으로 가른다.
       $(id.cardRender).innerHTML = paintCard(c.segments, ownersOf(s));
-      // 동사 게이트 — 작업점 없으면 복사·미루기 불가, 복사분은 못 미룬다(모델 계약의 표면 반영).
+      // 동사 게이트 — 작업점(또는 가상 카드)이 없으면 복사 불가(모델 계약의 표면 반영).
       $(id.cardCopy).disabled = !c.has_current;
-      if (id.cardDefer) $(id.cardDefer).disabled = !c.has_current || c.is_copied;
       // 이전/다음 = **경계 비활성**(리뷰 F2): queue.step 은 순환 없이 클램프라, 첫/끝 카드에서
       // 버튼을 살려 두면 클릭이 조용한 no-op 가 된다(고장난 듯). 작업점 위치로 양끝을 잠근다.
       const ci = c.has_current ? order.findIndex((d) => d.index === c.index) : -1;
@@ -387,16 +403,19 @@
     function renderNote(c) {
       const lc = c.last_copy;
       if (!lc) { resetNote(); return; }
-      const n = $(id.note), mi = lc.missing_fields || [], em = lc.empty_fields || [], row = lc.row + 1;
+      const n = $(id.note), mi = lc.missing_fields || [], em = lc.empty_fields || [];
+      // 행 접두 — 가상 카드(무데이터 직접 입력, 결정 14)는 행 번호가 없다(row=null). 그때는
+      // "N행" 대신 카드를 가리키지 않고 진술한다("복사됨").
+      const pfx = lc.row == null ? "" : `${lc.row + 1}행 `;
       if (mi.length) {
         n.dataset.level = "warn";
-        n.textContent = `⚠ ${row}행 복사됨 — 항목 없음 ${mi.length}건(${mi.join(", ")}) 포함. 빨간 토큰 확인 후 사용하세요.`;
+        n.textContent = `⚠ ${pfx}복사됨 — 항목 없음 ${mi.length}건(${mi.join(", ")}) 포함. 빨간 토큰 확인 후 사용하세요.`;
       } else if (em.length) {
         n.dataset.level = "warn";
-        n.textContent = `⚠ ${row}행 복사됨 — 빈 값 ${em.length}건(${em.join(", ")}) 포함. 확인 후 사용하세요.`;
+        n.textContent = `⚠ ${pfx}복사됨 — 빈 값 ${em.length}건(${em.join(", ")}) 포함. 확인 후 사용하세요.`;
       } else {
         n.dataset.level = "ok";
-        n.textContent = `✓ ${row}행 전량 채움 복사 완료.`;
+        n.textContent = `✓ ${pfx}전량 채움 복사 완료.`;
       }
     }
 
@@ -409,7 +428,7 @@
        실제 나가는 텍스트가 갈라지지 않는다 = 열거해도 되는 경우다. 긴 목록은 앞 6개만 적고
        나머지는 수치로 접는다(모달이 스크롤로 번지면 정작 결론 버튼이 안 보인다). */
     function copyGateBody(pre) {
-      const row = pre.row + 1, lines = [];
+      const lines = [];
       const list = (names) => {
         const head = names.slice(0, 6).join(", ");
         return names.length > 6 ? `${head} 외 ${names.length - 6}개` : head;
@@ -420,7 +439,9 @@
       // 꼬리 문장은 해당 종류가 실제로 있을 때만 — 빈 값만 있는 카드에 "{{토큰}} 원문이
       // 실린다"고 말하면 일어나지 않는 일을 경고하는 것이 된다(over-warn 도 거짓이다).
       const tail = mi.length ? "\n항목 없음은 {{토큰}} 원문 그대로 클립보드에 실립니다." : "";
-      return `${row}행을 이대로 복사하면 아래 항목이 채워지지 않은 채 나갑니다.\n` +
+      // 행 접두 — 가상 카드(무데이터, 결정 14)는 행 번호가 없다(row=null).
+      const pfx = pre.row == null ? "이대로 복사하면" : `${pre.row + 1}행을 이대로 복사하면`;
+      return `${pfx} 아래 항목이 채워지지 않은 채 나갑니다.\n` +
         lines.join("\n") + tail;
     }
 
@@ -504,7 +525,7 @@
         Bridge.call(SCREEN, "select_template", { name: e.target.value }));
 
       // 작업점 카드 동사(결정 16) — 큐 네비게이션(◀▶ 경계 멈춤·점 클릭)·복사(카드 결속·Enter)·
-      // 복사 후 전진 토글. 자유 레코드 스테퍼는 사망(커서가 아니라 큐가 카드를 지나간다).
+      // 복사 후 전진 토글. ◀▶·점 클릭이 **자유 이동**이라 미루기(결정 10 사망)를 대체한다.
       $(id.cardPrev).addEventListener("click", () => Bridge.call(SCREEN, "step", { delta: -1 }));
       $(id.cardNext).addEventListener("click", () => Bridge.call(SCREEN, "step", { delta: 1 }));
       $(id.cardDots).addEventListener("click", (e) => {
@@ -516,13 +537,8 @@
       $(id.cardRender).addEventListener("keydown", (e) => {
         if (e.key === "Enter") { e.preventDefault(); copyCard(); }
       });
-      // 미루기(결정 19)는 슬라이스 3c 에서 사망한다 — 그때까지 구 화면에만 버튼이 있고,
-      // 「기안」은 처음부터 자유 이동(◀▶·점 클릭)만 준다(없는 걸 새로 짓지 않는다).
-      if (id.cardDefer) {
-        $(id.cardDefer).addEventListener("click", () => {
-          if (!$(id.cardDefer).disabled) Bridge.call(SCREEN, "defer", {});  // index 생략=작업점
-        });
-      }
+      // 미루기(결정 19)는 슬라이스 3c 에서 **사망**했다 — 두 표면 모두 자유 이동(◀▶·점 클릭)이
+      // 막힌 카드의 탈출구다(작업점 고정 전제가 깨져 큐 뒤로 보내는 동사가 불필요해졌다).
       $(id.advance).addEventListener("change", (e) =>
         Bridge.call(SCREEN, "toggle_advance", { value: e.target.checked }));
 
