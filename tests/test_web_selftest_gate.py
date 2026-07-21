@@ -403,6 +403,23 @@ class TestWebSelftestGate:
         assert d["map_man_src_value"] == "", (
             f"man(소스 기억) 드롭다운이 「(직접 입력)」이 아니라 옛 열을 보입니다(F1): {d['map_man_src_value']!r}"
         )
+        # ② 유형·확정 열(#148 슬라이스 4, 결정 12) — 유형 셀렉트는 결속(auto) 행에만(운반 유형이
+        # 뜻 있는 자리), 확정 체크박스는 전 행. 판정은 서버 토큰(fmt_kind·confirmed)이고 여긴 되읽기.
+        assert d["map_type_selects"] == 2, f"유형 셀렉트가 auto 행에만 뜨지 않았습니다: {d!r}"
+        assert d["map_type_options"] == 3, f"유형 후보(텍스트·날짜·금액)가 3 이 아닙니다: {d!r}"
+        assert d["map_type_value"] == "amount", (
+            f"유형 셀렉트의 유효 선택이 서버 fmt_kind(amount)를 따르지 않습니다: {d['map_type_value']!r}"
+        )
+        assert d["map_confirmed_checks"] == 4, f"확정 체크박스가 전 행에 뜨지 않았습니다: {d!r}"
+        assert d["map_confirmed_checked"] is True, "확정 토큰(공고명)의 체크박스가 체크되지 않았습니다."
+        assert d["map_unconfirmed"] is True, "미확정 토큰(비고)의 체크박스가 체크돼 있습니다(표시≠상태)."
+        # 확정-비움(결정 12) — 값 셀이 「비워둠(선언)」(「아직 안 씀」 아님)이고 textarea 가 없으며
+        # 행이 blank 로 표지된다. 게이트 제외는 Python(pytest)이 잡고 여긴 표면 정직성만.
+        assert d["blank_declared_marker"] == "비워둠(선언)", (
+            f"확정-비움 값 셀이 「비워둠(선언)」이 아닙니다(문안≠집합): {d['blank_declared_marker']!r}"
+        )
+        assert d["blank_declared_no_textarea"] is True, "확정-비움 자리에 값 입력 textarea 가 남아 있습니다."
+        assert d["blank_declared_row"] is True, "확정-비움 행이 blank 로 표지되지 않았습니다."
         # ③ 원문 뷰 전환(결정 34) — 채운 모습 ↔ 원문(같은 칸의 두 모습). 원문은 휘발 세션의
         # 입력구고 배타 표시다(둘이 동시에 서면 무엇이 진실인지 모른다).
         assert d["view_default_filled"] is True, "기본 보기가 「채운 모습」이 아닙니다(원문 뷰 노출)."

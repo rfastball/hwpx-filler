@@ -14,8 +14,9 @@ R-info 3부 결정 1·5·7 의 합병은 **두 표면이 같은 세션 기계를
   세션(detail)을 얹는다. 스냅샷은 목록 키 + :meth:`DraftSessionMixin._session_snapshot`
   병합이고 디스패치는 두 계열의 ``_do_*`` 가 한 라우터를 공유한다(MRO).
 
-**스코프 경계**: 여기 있는 것은 **휘발 세션**뿐이다. 저장된 기안 작업의 복원·지속성 스위치
-5종·「기안으로 저장」 승격은 슬라이스 4·5 가 얹는다 — 없는 걸 있는 척하지 않는다.
+**스코프 경계**: 여기 있는 것은 **휘발 세션**뿐이다. 맞추기 표 그릇(유형·확정 열·확정-비움
+의미론)은 슬라이스 4 가 얹었다(늘 켜짐). 저장된 기안 작업의 복원·지속성 스위치 5종(유래로
+그릇을 켜고 끔)·「기안으로 저장」 승격은 슬라이스 5 몫이다 — 없는 걸 있는 척하지 않는다.
 """
 from __future__ import annotations
 
@@ -57,6 +58,12 @@ from .settings import (
 _FMT_OPTIONS = {
     t: [{"code": code, "label": label} for label, code in format_presets(t)] for t in TYPES
 }
+
+# 유형 열 선택지(#148 슬라이스 4, 결정 12) — **값-운반 유형**(text/date/amount)만. ``const``
+# 는 유형이 아니라 「직접 입력」의 결과(수기 값)라 목록에 두지 않는다(값이 빈 상수 = 확정-비움,
+# 결정 14). 라벨은 에디터 위저드(TYPE_LABEL)와 같은 어휘 — 두 표면이 유형을 달리 부르지 않게.
+_TYPE_LABEL = {"text": "텍스트", "date": "날짜", "amount": "금액"}
+_TYPE_OPTIONS = [{"code": t, "label": _TYPE_LABEL[t]} for t in ("text", "date", "amount")]
 
 
 def _row_own(row) -> str:
@@ -222,9 +229,17 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
 
         :meth:`~hwpxfiller.gui.mapping_state.MappingModel.from_field_names` 로 새 골격을
         세우고(정확 일치 자동 결속·이름 유형 추론), 옛 매핑에서 같은 토큰의 **사람 소유**
-        상태(결속·수기 값·유형·서식)를 이어 붙인다. 단 결속 열이 새 데이터에 **없으면**
+        상태(결속·수기 값·유형·서식·**확정**)를 이어 붙인다. 단 결속 열이 새 데이터에 **없으면**
         승계하지 않는다(죽은 결속 방지) — 새 골격의 자동/제안이 그 자리를 다시 채운다.
-        시스템 소유(미접촉 제안)는 승계하지 않는다: 새 데이터 기준으로 다시 제안돼야 한다.
+        시스템 소유(미접촉·미확정 제안)는 승계하지 않는다: 새 데이터 기준으로 다시 제안돼야 한다.
+
+        **확정 승계(#148 슬라이스 4, Codex F1)**: 사람 소유는 ``touched`` 만이 아니라
+        ``confirmed`` 도 포함한다(:meth:`RowState.is_system_owned`). 확정-비움(확정+무내용)은
+        ``touched=False`` 라 종전 ``touched`` 게이트가 통째로 떨어뜨려, 템플릿 편집·데이터
+        새로고침 같은 무관한 재구성에 **선언이 조용히 증발**하고 토큰이 missing 으로 게이트에
+        재진입했다(confirm-or-alarm 위반). 확정 상태를 함께 승계해 이를 막는다. 확정-비움은
+        새 골격의 자동 결속(정확 일치)까지 **덮어** 무결속으로 유지한다 — 사람의 「비운다」가
+        시스템 재제안을 이긴다(결정 12).
 
         큐·선택은 세션 휘발이라 여기서 건드리지 않는다(호출측이 데이터 교체 시 새로 세운다).
         """
@@ -243,24 +258,34 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
             prev = next(
                 (r for r in old.rows if r.template_field == row.template_field), None
             )
-            if prev is None or not prev.touched:
-                continue  # 새 토큰이거나 시스템 소유(제안) — 새 데이터 기준 자동
+            if prev is None or prev.is_system_owned():
+                continue  # 새 토큰이거나 시스템 소유(미접촉·미확정 제안) — 새 데이터 기준 자동
             if prev.type == "const":  # 수기 값(man)은 데이터 무관 — 상수째 승계
                 row.type = "const"
                 row.const = prev.const
                 row.fmt = prev.fmt
-                row.touched = True
+                row.touched = prev.touched
                 # 기억한 결속 소스는 **새 데이터에 살아 있을 때만** 승계한다(Codex F3). 사라진
                 # 열을 남기면 「자동으로 되돌리기」가 없는 열로 결속을 되살려, live_profile 이 전
                 # 레코드에 빈 값을 내면서 소유권은 auto 라 보고하는 계약 거짓말이 된다(can_revert
                 # = type==const ∧ source 라, source 를 비우면 되돌리기 자체가 사라져 정합).
                 row.source = prev.source if prev.source in cols else ""
+                row.confirmed = prev.confirmed
             elif prev.source and prev.source in cols:  # 사람이 고른 결속이 새 데이터에도 있으면
                 row.source = prev.source
                 row.type = prev.type
                 row.fmt = prev.fmt
-                row.touched = True
-            # 결속이 죽었으면(prev.source ∉ cols) 승계 안 함 → 새 골격의 자동/제안이 산다
+                row.touched = prev.touched
+                row.confirmed = prev.confirmed
+            elif not prev.source:  # 확정-비움(비운다 선언) — 결속 없이 확정. 선언 보존.
+                # from_field_names 가 정확 일치로 자동 결속했어도 무결속으로 되돌린다 — 사람의
+                # 「비운다」가 시스템 재제안을 이긴다(결정 12). 확정을 승계해 게이트 제외를 유지.
+                row.source = ""
+                row.touched = prev.touched
+                row.confirmed = prev.confirmed
+            # else: 사람이 고른 결속이 죽었다(prev.source ∉ cols·非const) — 값 복구 불가라
+            #        확정을 승계하지 않고 시스템 소유(missing)로 떨어뜨려 사람 재검토를 강제한다
+            #        (조용한 blank 승격 금지 — 확정-비움과 죽은 결속은 다른 사실이다).
 
     def _map_kind_of(self, source: str) -> str:
         """결속 대상 열의 스니핑 유형(결정 5 우선) — 없으면 빈 문자열(이름 추론 낙착)."""
@@ -326,18 +351,26 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         # 빈칸 지도(has_gap)는 레코드 값+템플릿+**매핑**에 의존 — 결속·표시형·상수가 바뀌면 어느
         # 카드가 빈칸인지도 바뀐다. 네비게이션·필터 타건마다 O(행×필드) 재계산하지 않게
         # (records 정체, 템플릿, 매핑 지문) 키로 캐시한다(리뷰 F6). 데이터·템플릿·매핑 변경 시 무효화.
-        map_sig = tuple((r.source, r.type, r.const, r.fmt) for r in self.mapping.rows)
+        # 지문에 confirmed 포함(#148 슬라이스 4) — 확정-비움 토글이 어느 카드가 빈칸인지 바꾸므로
+        # (declared 가 _has_gap 을 가른다) 확정 상태가 캐시 키에 없으면 stale 로 굳는다.
+        map_sig = tuple((r.source, r.type, r.const, r.fmt, r.confirmed) for r in self.mapping.rows)
         gap_key = (id(records), vm.template_text, map_sig)
         if self._gap_cache_key != gap_key:
             self._gap_cache = {}
             self._gap_cache_key = gap_key
         gap_cache = self._gap_cache
 
+        # 확정-비움(#148 슬라이스 4, 결정 12) — 렌더는 blank 지만 빈칸 게이트·완료 노트·빈칸
+        # 지도에서 빠진다(사람이 「비운다」고 선언한 것은 다시 묻지 않는다). 데이터가 비어 생긴
+        # blank 는 여기 없어 게이트에 남는다. 판정은 매핑 모델 단일 출처(declared_blank_fields).
+        declared = set(self.mapping.declared_blank_fields())
+
         def _has_gap(i: int) -> bool:  # 미충족(항목 없음·빈 값) 카드 판정 — 매핑 적용 후, 1회 상각
             if i not in gap_cache:
                 values = profile.apply(records[i])
                 gap_cache[i] = any(
-                    name not in values or str(values[name]).strip() == ""
+                    name not in declared
+                    and (name not in values or str(values[name]).strip() == "")
                     for name in fields
                 )
             return gap_cache[i]
@@ -373,6 +406,12 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
                 "suggest": suggestions.get(r.template_field, ""),  # 근사 제안(무결속·≥0.6, 원클릭)
                 # man 인데 결속 소스를 기억하고 있으면 「자동으로 되돌리기」를 띄운다(막다른 강등 금지).
                 "can_revert": r.type == "const" and bool(r.source),
+                # 확정 열(#148 슬라이스 4, 결정 12) — 행별 확정. 확정+무내용 = 확정-비움(위 blank
+                # 렌더 + 게이트 제외). 저장 세션 유래로 켜고 끄는 스위치(결정 7)는 슬라이스 5.
+                "confirmed": r.confirmed,
+                # 확정-비움 표지 — 판정은 Python(is_empty_confirmed) 단일 출처. 표면이 빈
+                # 값 셀을 「아직 안 씀」이 아니라 「비워둠(선언)」으로 정직하게 말하게(문안≠집합 차단).
+                "blank_declared": r.is_empty_confirmed(),
             }
             for r in self.mapping.rows
         ]
@@ -396,7 +435,10 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
             "advance_after": self._advance_after,
             "segments": [{"text": s.text, "kind": s.kind, "name": s.name} for s in segments],
             "missing_fields": card_report.missing_fields,
-            "empty_fields": card_report.empty_fields,
+            # 게이트·상태 배지·완료 노트가 소비하는 결손 집합 — **확정-비움은 뺀다**(결정 12).
+            # 토큰 상태 배지·카드 세그먼트는 여전히 card_report 로 blank(〈빈 값〉)를 그린다
+            # (보이는 건 같고, 「확인해야 하는가」만 다르다) — 두 소비를 여기서 가른다.
+            "empty_fields": [f for f in card_report.empty_fields if f not in declared],
             "index_map": index_map,
             # 선언-조건부 정렬 린트(결정 17) — 표면은 **판정하지 않는다**(글꼴 이름으로
             # 비례폭을 재판별하거나 정규식을 다시 걷지 않는다, 파생경계 번역오류 차단).
@@ -425,6 +467,9 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
             # 프리셋(format_engine 단일 출처 — 에디터·빠른 기안과 같은 어휘).
             "columns": self._map_source_fields(),
             "fmt_options": _FMT_OPTIONS,
+            # 유형 열 선택지(#148 슬라이스 4, 결정 12) — 값-운반 유형(text/date/amount). 결속(auto)
+            # 행에서 값 스니핑 오판을 사람이 정정한다("사람이 고른 유형은 언제나 이긴다").
+            "type_options": _TYPE_OPTIONS,
             "record_count": n,
             # 미충족 리포트는 **card 단일 출처**(리뷰 F9: 최상위 트윈은 조용한 desync 위험) —
             # 상태 배지(setStatus)·카드 판독·완료 노트 모두 card.missing_fields/empty_fields 소비.
@@ -520,7 +565,8 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
             "can_copy": True,
             "row": self.queue.current,
             "missing_fields": list(report.missing_fields),
-            "empty_fields": list(report.empty_fields),
+            # 확정-비움은 게이트에서 뺀다(결정 12) — 사람이 「비운다」고 선언한 것은 다시 묻지 않는다.
+            "empty_fields": self._gate_empty(report),
         }
 
     _do_copy_precheck.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
@@ -584,6 +630,25 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
     def _do_set_map_fmt(self, p: dict) -> None:
         """표시형(유형 내 프리셋) 정정 — 결속 열에서 오는 값에만 뜻이 있다(결정 34 2층)."""
         self.mapping.set_fmt_for(p["name"], p.get("code", ""))
+
+    def _do_set_map_type(self, p: dict) -> None:
+        """값 유형 정정(#148 슬라이스 4, 결정 12) — 값 스니핑 오판을 사람이 이긴다.
+
+        결속(auto) 값의 운반 유형(text/date/amount)을 사람이 고른다: 이름에 「금액」이 없어도
+        값이 숫자면 금액 스니핑이 맞지만, 틀렸을 때 사람 선택이 언제나 이긴다(:meth:`MappingModel.
+        set_type` 이 ``touched=True`` — 시스템 재제안 차단). 유형이 바뀌면 이전 표시형 프리셋은
+        무효라 기본으로 떨어진다(모델 계약). 미지 유형은 조용히 무시하지 않고 시끄럽게 거부한다
+        (set_type 이 열거형 검증 — confirm-or-alarm). 표면은 결속 행에만 이 컨트롤을 띄운다
+        (const/무결속엔 운반 유형이 뜻이 없어 dead control 금지)."""
+        self.mapping.set_type(self.mapping.index_of(p["name"]), p["type"])
+
+    def _do_set_confirmed(self, p: dict) -> None:
+        """행별 확정 토글(#148 슬라이스 4, 결정 12) — 확정+무내용 = 확정-비움(「비운다」 선언).
+
+        확정-비움은 렌더가 데이터-빈값 ``blank`` 와 같되(〈빈 값〉) 복사 전 빈칸 게이트에서
+        빠진다(:meth:`MappingModel.declared_blank_fields` 가 가른다). 저장 승격의 확정 게이트
+        (전 행 확정 = 「기안으로 저장」 자격)는 슬라이스 5 — 여기선 그릇만 세운다."""
+        self.mapping.set_confirmed(self.mapping.index_of(p["name"]), bool(p.get("value")))
 
     def _do_revert_map(self, p: dict) -> None:
         """man→auto 되돌리기 — 기억한 결속 소스 복귀(막다른 강등 금지, 결정 31).
@@ -706,6 +771,16 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         """전각 치환 적용(세션 옵션이 켜졌을 때만) — 카드 렌더·클립보드 공용 통로."""
         return align_segments(segments) if self._fullwidth else segments
 
+    def _gate_empty(self, report: "RenderReport") -> "list[str]":
+        """리포트의 빈 값 집합에서 **확정-비움을 뺀** 게이트/노트용 집합(#148 슬라이스 4, 결정 12).
+
+        복사 전 빈칸 게이트·완료 노트는 이걸 소비한다 — 렌더(〈빈 값〉 표지)는 확정-비움을
+        그대로 그리되, 「확인해야 하는가」에서는 사람이 선언한 비움을 뺀다. 데이터가 비어 생긴
+        빈 값은 선언이 아니라 그 행의 사실이라 남는다(:meth:`MappingModel.declared_blank_fields`
+        단일 출처 — 카드 스냅샷의 게이트 집합과 같은 판정)."""
+        declared = set(self.mapping.declared_blank_fields())
+        return [f for f in report.empty_fields if f not in declared]
+
     def can_copy(self) -> bool:
         """복사 가능 = 작업점 실재(리뷰 F3) **또는 가상 카드**(무데이터 직접 입력, 결정 14).
 
@@ -734,7 +809,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
                 self._last_copy = {
                     "row": None,
                     "missing_fields": list(report.missing_fields),
-                    "empty_fields": list(report.empty_fields),
+                    "empty_fields": self._gate_empty(report),  # 확정-비움 제외(결정 12)
                 }
                 self._push()
             return
@@ -742,7 +817,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self._last_copy = {
             "row": cur,
             "missing_fields": list(report.missing_fields),
-            "empty_fields": list(report.empty_fields),
+            "empty_fields": self._gate_empty(report),  # 확정-비움 제외(결정 12)
         }
         self.queue.copy(cur)
         if self._advance_after:
