@@ -16,7 +16,7 @@ def _selfcheck() -> int:
 
     from hwpxfiller.core.text_registry import TextTemplateRegistry
     from hwpxfiller.webapp.app import web_dir
-    from hwpxfiller.webapp.screens import TxtController
+    from hwpxfiller.webapp.screen_txt import TxtController
 
     tmp = Path(tempfile.mkdtemp())
     (tmp / "샘플.txt").write_text("제목: {{공고명}} / 담당: {{담당자}}", encoding="utf-8")

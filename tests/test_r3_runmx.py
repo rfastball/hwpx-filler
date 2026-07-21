@@ -22,7 +22,8 @@ from hwpxfiller.core.job import Job, JobRegistry
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.core.text_registry import TextTemplateRegistry
 from hwpxfiller.webapp.screen_job import JobController
-from hwpxfiller.webapp.screens import PoolTargetingMixin, TxtController, source_label
+from hwpxfiller.webapp.screen_txt import TxtController
+from hwpxfiller.webapp.screens import PoolTargetingMixin, source_label
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
 WEB_JS = Path(__file__).resolve().parents[1] / "web" / "js"
@@ -170,7 +171,8 @@ def test_js_dead_fallback_removed():
     라벨은 서버가 항상 합성해 내려보내므로(data_source_label 키 상존) 구 라벨 폴백은
     도달 불가한 죽은 분기다 — 두 화면 모두 제거 상태를 유지해야 한다.
     """
-    for rel in ("screens/job.js", "screens/txt.js"):
+    # 기안 라벨 소비는 공용 팩토리(draftsession.js)로 이관(#148 슬라이스 3a).
+    for rel in ("screens/job.js", "draftsession.js"):
         src = (WEB_JS / rel).read_text(encoding="utf-8")
         assert "data_source_label" in src, f"{rel} 이 data_source_label 을 소비하지 않습니다."
         assert "data_source_label || s.data_label" not in src, (
