@@ -708,3 +708,17 @@ def test_draft_has_return_path_to_volatile_session():
         r'data-volatile[^)]*\)[\s\S]*?select_job[^;]*name:\s*""',
         src, re.S,
     ), "「이번 세션」 행 클릭이 select_job(name:\"\") 로 배선되지 않았습니다 — 눌러도 아무 일이 없습니다."
+
+
+def test_draft_saved_source_has_fork_escape_hatch():
+    """저장 원문은 읽기 전용이므로 「사본으로 편집」이 **유일한 편집 출구**여야 한다(#148 슬라이스 5b).
+
+    읽기 전용만 걸고 사본 동사가 없으면 저장 기안의 원문은 손볼 길이 막힌다 — 원문바에 사본
+    버튼이 있고 fork_to_volatile 로 배선돼야 편집이 열린다(값·데이터·큐 진행은 승계). 백엔드도
+    저장 모드 edit_source 를 방어한다(표면 readonly 만 믿지 않는다 — 조용한 정의 분기 금지)."""
+    index = WEB_INDEX.read_text(encoding="utf-8")
+    assert 'id="draftSrcFork"' in index, "원문바에 「사본으로 편집」 버튼이 없습니다(읽기 전용 막다른 상태)."
+    src = (WEB_JS_DIR / "draftsession.js").read_text(encoding="utf-8")
+    assert re.search(
+        r'id\.srcFork\)[\s\S]*?fork_to_volatile', src, re.S,
+    ), "「사본으로 편집」이 fork_to_volatile 로 배선되지 않았습니다 — 눌러도 편집이 열리지 않습니다."

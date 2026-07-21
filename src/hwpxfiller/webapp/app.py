@@ -1156,6 +1156,22 @@ _DRAFT_SESSION_PROBE_JS = r"""
     out.vol_row_current_saved = (function () {
       var v = document.querySelector('#draftList .job-item.draft-vol');
       return !!v && v.getAttribute('aria-current') === 'false'; })();
+    // 원문바(#148 슬라이스 5b) — 저장 모드: 「사본으로 편집」 뜨고 수정됨 표지는 없다(깨끗한
+    // 정의). 원문 뷰로 들어가 **실 display** 로 되읽는다(부록 B-9 — 숨은 조상 밖에서 봐야 참).
+    document.getElementById('draftViewSource').click();
+    out.saved_fork_shown = shownEl(document.getElementById('draftSrcFork'));
+    out.saved_modbadge_hidden = !shownEl(document.getElementById('draftModBadge'));
+    out.saved_srcname = document.getElementById('draftSrcName').textContent;
+    // 사본으로 편집(포크) 표현 — 휘발+수정됨: 「사본으로 편집」 숨고(이미 편집 가능), 수정됨 표지
+    // 뜨고, 원문 textarea 편집 가능. 포크 판정은 Python(_do_fork_to_volatile), 여긴 표현 되읽기.
+    var fsnap = JSON.parse(JSON.stringify(ssnap));
+    fsnap.mode = 'volatile'; fsnap.source_readonly = false; fsnap.source_dirty = true;
+    fsnap.has_job = false; fsnap.bound_job = '';
+    window.__push('draft', fsnap);
+    out.fork_fork_hidden = !shownEl(document.getElementById('draftSrcFork'));
+    out.fork_modbadge_shown = shownEl(document.getElementById('draftModBadge'));
+    out.fork_src_editable = document.getElementById('draftSrcBox').readOnly === false;
+    document.getElementById('draftViewFilled').click();  // 원상 복귀(뒤 되읽기 오염 방지)
     // 선택 해제(휘발 귀환) → 세션 패널은 계속 서고 유형·확정 열이 다시 숨는다(휘발 모드).
     window.__push('draft', snap);  // mode 미지정 = 휘발
     out.back_restores_session = shownEl(document.getElementById('draftSessionPanel'));

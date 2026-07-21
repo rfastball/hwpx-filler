@@ -469,6 +469,14 @@ class TestWebSelftestGate:
         assert d["saved_src_readonly"] is True, "저장 모드 원문이 읽기 전용이 아닙니다(정의 조용한 분기 위험)."
         assert d["saved_note_absent"] is True, "저장 모드인데 휘발 note 가 남아 있습니다."
         assert d["vol_row_current_saved"] is True, "저장 결속 중인데 「이번 세션」 행이 결속 표시로 남았습니다."
+        # 원문바(#148 슬라이스 5b) — 저장 모드: 「사본으로 편집」이 읽기 전용의 유일 출구로 뜨고,
+        # 수정됨 표지는 없다(깨끗한 저장 정의). 포크(휘발+수정됨): 사본 버튼 숨고 표지 뜨고 편집 가능.
+        assert d["saved_fork_shown"] is True, "저장 모드에 「사본으로 편집」이 없습니다(읽기 전용 막다른 상태)."
+        assert d["saved_modbadge_hidden"] is True, "깨끗한 저장 정의인데 수정됨 표지가 떴습니다."
+        assert d["saved_srcname"] == "착수계", f"원문바 이름이 템플릿명이 아닙니다: {d['saved_srcname']!r}"
+        assert d["fork_fork_hidden"] is True, "휘발(사본)인데 「사본으로 편집」이 남아 있습니다(dead control)."
+        assert d["fork_modbadge_shown"] is True, "사본(수정됨)인데 수정됨 표지가 뜨지 않았습니다."
+        assert d["fork_src_editable"] is True, "사본인데 원문이 편집 불가입니다(포크 = 읽기 전용 해제)."
         assert d["back_restores_session"] is True, "휘발 귀환에 세션 패널이 서지 않았습니다."
         assert d["back_persist_hidden"] is True, "휘발 귀환에 유형·확정 열이 다시 숨지 않았습니다."
 

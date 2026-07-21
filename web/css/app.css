@@ -169,10 +169,21 @@ table.dmap tr:last-child td{border-bottom:0}
 .viewsw button:hover{background:var(--a-window)}
 .viewsw button:focus-visible{outline:2px solid var(--a-primary);outline-offset:-2px}
 .viewsw button[aria-pressed="true"]{background:var(--fb-fill-bg);color:var(--a-primary);font-weight:600}
+/* 원문바(#148 슬라이스 5b) — 이름 · 수정됨 표지 · 「사본으로 편집」(저장 모드에서만). */
+.wc-srcbar{display:flex;align-items:center;gap:var(--sp-8);margin-bottom:var(--sp-6)}
+.wc-srcname{flex:0 1 auto;min-width:0;font-size:var(--fs-body);font-weight:600;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wc-modbadge{flex:none;font-size:var(--fs-caption);font-weight:700;color:var(--a-warn);
+  background:var(--fb-blank-bg);border:1px solid var(--fb-blank-bd);border-radius:var(--rad-control);
+  padding:var(--sp-2) var(--sp-6)}
+.wc-modbadge[hidden]{display:none}
+.wc-srcbar .btn{margin-left:auto;flex:none}       /* 「사본으로 편집」을 오른쪽으로 */
+.wc-srcbar .btn[hidden]{display:none}
 .wc-srcbox{width:100%;min-height:180px;resize:vertical;padding:var(--sp-10) var(--sp-12);
   font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var(--fs-body);line-height:1.7;
   border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-window);color:var(--a-ink)}
 .wc-srcbox:focus-visible{outline:2px solid var(--a-primary);outline-offset:1px}
+.wc-srcbox[readonly]{background:var(--n-surface-alt);color:var(--a-muted)}
 
 /* ---- 작업점 카드(블록 3, 결정 16) — 큐가 지나가는 한 장 ---- */
 .pane.workcard{gap:0}

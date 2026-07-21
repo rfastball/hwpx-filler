@@ -248,6 +248,13 @@
       // 편집」이 휘발로 가른다(슬라이스 5b — 원문바 srcFork). 판정은 Python(s.source_readonly).
       box.readOnly = !!s.source_readonly;
       if (box.value !== s.template_text) box.value = s.template_text || "";
+      // 원문바(#148 슬라이스 5b) — 이름 + 수정됨 표지 + 「사본으로 편집」(저장 모드에서만).
+      const saved = (s.mode || "volatile") === "saved";
+      if (id.srcName) $(id.srcName).textContent = s.template_name || "(붙여넣은 텍스트)";
+      if (id.modBadge) $(id.modBadge).hidden = !s.source_dirty;  // 판정은 Python(source_dirty)
+      // srcFork = 저장 원문을 사본으로 가르는 유일 출구(읽기 전용의 탈출구) — 휘발에선 이미 편집
+      // 가능이라 숨는다(dead control 금지, 시안 `[data-mode]` 게이트 이식).
+      if (id.srcFork) $(id.srcFork).hidden = !saved;
     }
 
     /* 작업점 카드(결정 16) — 상태 색인(위치·처리·빈칸 지도) + 코드블록 렌더 + 동사 게이트.
@@ -645,6 +652,21 @@
           debounce(() => Bridge.call(SCREEN, "edit_source", { text: e.target.value })
             .then(inEpoch(patchMap))));
         $(id.srcBox).addEventListener("blur", flushDeb);
+      }
+      // 「사본으로 편집」(#148 슬라이스 5b) — 저장 원문을 휘발 사본으로 가른다(값·데이터·큐 진행
+      // 승계, 원문만 편집 가능). 진행이 있으면(복사한 카드) 1회 사실 진술: 이미 복사한 건은 이전
+      // 문안으로 남는다(결정 11 — 되돌릴 수 없어 「진행 초기화」는 거짓말). 저장 기안은 불변.
+      if (id.srcFork) {
+        $(id.srcFork).addEventListener("click", async () => {
+          const copied = (LAST && LAST.card && LAST.card.copied_count) || 0;
+          if (copied > 0 && !(await window.Modal.confirm({
+            title: "사본으로 편집",
+            body: `이미 복사한 ${copied}건은 이전 문안으로 남습니다 — 되돌릴 수 없습니다. 앞으로 ` +
+              `복사할 카드부터 새 문안이 적용됩니다. 저장된 기안은 그대로 두고 이 세션만 사본으로 가릅니다.`,
+            confirmLabel: "사본으로 편집", cancelLabel: "머무르기",
+          }))) return;
+          await Bridge.call(SCREEN, "fork_to_volatile", {});  // 푸시가 원문을 편집 가능으로 재렌더
+        });
       }
 
       $(id.pickBtn).addEventListener("click", async () => {

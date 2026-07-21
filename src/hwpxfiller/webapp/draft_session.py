@@ -184,6 +184,10 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         # DraftController 만 세운다(_do_select_job → _restore_from_job); 구 화면은 늘 휘발.
         self._bound_job = ""
         self._source_readonly = False
+        # 원문 수정 표지(#148 슬라이스 5b) — 원문이 라이브러리 정의에서 갈라졌는가(사본으로
+        # 편집·원문 라이브 편집). 깨끗한 라이브러리 픽·복원·붙여넣기는 False. modBadge(수정됨)
+        # 의 단일 출처 — 표면이 "원문≠라이브러리"를 정직하게 말한다(문안≠상태 차단).
+        self._source_dirty = False
         # 휘발 세션 스태시(두 세션 병존) — 저장 기안을 고르면 붙여넣던 세션을 여기 얼려 두고,
         # 「이번 세션」으로 돌아오면 되살린다(소실 0). 저장-세션은 Job 에서 결정적으로 재구성
         # 되므로(Job 은 데이터/행 미저장) 스태시가 필요한 건 휘발 하나뿐이다.
@@ -213,6 +217,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         # 않는다(저장 기안에서 「이번 세션」으로 돌아올 슬롯이라 새 기안과 수명이 다르다).
         self._bound_job = ""
         self._source_readonly = False
+        self._source_dirty = False  # 갓 선택한 첫 템플릿 = 깨끗한 라이브러리 정의
         names = self.vm.template_names()
         if names:
             self.vm.select_template(names[0])
@@ -224,6 +229,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
     _SESSION_ATTRS = (
         "vm", "data_label", "data_source", "_data_key", "selection", "queue",
         "filter", "mapping", "_fullwidth", "_last_copy", "_gap_cache", "_gap_cache_key",
+        "_source_dirty",  # 사본/편집 여부는 그 원문에 붙는다 — 스태시·복원과 함께 이동(슬라이스 5b)
     )
 
     def _stash_volatile(self) -> None:
@@ -278,6 +284,23 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self._gap_cache_key = None
         self._bound_job = job.name
         self._source_readonly = True
+        self._source_dirty = False  # 저장 정의 = 깨끗한 원문(읽기 전용 — 손보려면 「사본으로 편집」)
+
+    def _do_fork_to_volatile(self, p: dict) -> None:
+        """「사본으로 편집」(#148 슬라이스 5b) — 저장 원문을 휘발 사본으로 가른다(결정 7 스위치 ④).
+
+        저장된 기안의 원문은 읽기 전용이라(정의가 조용히 갈라지지 않게) 손보려면 사본이 필요하다.
+        포크는 **원문만 갈라지고 값·데이터·선택·큐 진행은 승계**한다 — 현 세션을 그대로 두고 Job
+        결속만 끊어 편집 가능하게 한다(``_bound_job`` 소거 → 휘발 모드). 저장된 기안 자체는 건드리지
+        않는다. 이미 휘발이면(포크할 저장 정의 없음) 무동작 — 버튼은 저장 모드에서만 뜬다.
+
+        스태시(붙여넣던 이전 휘발)는 건드리지 않는다: 포크한 세션이 곧 현 휘발이고, 이후 다른
+        저장 기안을 고르면 그때 이 포크가 다시 스태시된다(자연 수렴)."""
+        if not self._bound_job:
+            return
+        self._bound_job = ""
+        self._source_readonly = False
+        self._source_dirty = True  # 사본 = 저장 정의에서 갈라진 원문(수정됨 표지)
 
     def _records(self) -> list:
         return self.vm.records
@@ -573,6 +596,9 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
             "mode": "saved" if self._bound_job else "volatile",
             "source_readonly": self._source_readonly,
             "bound_job": self._bound_job,
+            # 원문 수정 표지(#148 슬라이스 5b) — modBadge(수정됨)의 단일 출처. 원문이 라이브러리
+            # 정의에서 갈라졌는가(사본으로 편집·원문 라이브 편집). 판정은 Python, JS 는 표시만.
+            "source_dirty": self._source_dirty,
         }
 
     # ------------------------------------------------------- 웹→Python 데이터 액션
@@ -611,6 +637,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
     def _do_select_template(self, p: dict) -> None:
         self.vm.select_template(p["name"])
         self._fullwidth = False  # 치환은 그 원문에 대한 판단 — 원문이 바뀌면 함께 죽는다(리뷰 F2)
+        self._source_dirty = False  # 깨끗한 라이브러리 픽 — 수정됨 표지 해제(슬라이스 5b)
         self._rebuild_mapping()  # 새 토큰 집합 → 맞추기 골격 재구성(같은 이름 결속은 승계)
 
     def _do_new_draft(self, p: dict) -> None:
@@ -656,6 +683,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
     def _do_set_template_text(self, p: dict) -> None:
         self.vm.set_template_text(p["text"])
         self._fullwidth = False  # 붙여넣은 새 원문에 옛 치환 결정이 승계되지 않는다(리뷰 F2)
+        self._source_dirty = False  # 새로 붙여넣은 원문 = 깨끗한 시작(수정됨 아님, 슬라이스 5b)
         self._rebuild_mapping()  # 붙여넣은 원문의 토큰 → 맞추기 골격
 
     def _do_edit_source(self, p: dict) -> dict:
@@ -665,8 +693,15 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         한글 IME 조합이 끊긴다(슬라이스 4 stale 경합·빠른 기안 선례). 반환 스냅샷으로 JS 가
         맞추기 표·미리보기만 겨냥 패치하고 원문 textarea 는 손대지 않는다. 전각 치환은
         **타건마다 리셋하지 않는다**(빠른 기안 `_do_edit_source` 리뷰 F3와 같은 근거: 켠 뒤 한
-        글자만 쳐도 조용히 꺼지는 것을 막는다 — 보이는 이월은 조용한 이월이 아니다)."""
+        글자만 쳐도 조용히 꺼지는 것을 막는다 — 보이는 이월은 조용한 이월이 아니다).
+
+        저장 원문은 읽기 전용이라 여기서 편집을 받지 않는다(#148 슬라이스 5a·5b) — 표면이 이미
+        textarea readonly 로 막지만 백엔드도 방어한다(무변이 스냅샷 반환 — 조용한 정의 분기 금지).
+        손보려면 「사본으로 편집」이 먼저 휘발로 가른다(:meth:`_do_fork_to_volatile`)."""
+        if self._source_readonly:
+            return self.snapshot()  # 저장 정의는 여기서 안 바뀐다(포크가 먼저)
         self.vm.set_template_text(p["text"])
+        self._source_dirty = True  # 원문 라이브 편집 = 라이브러리에서 갈라짐(수정됨 표지)
         self._rebuild_mapping()
         return self.snapshot()
 

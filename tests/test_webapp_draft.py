@@ -72,7 +72,7 @@ def test_snapshot_merges_list_and_session_keys(tmp_path):
         assert key in snap, f"목록 키 {key} 누락"
     for key in ("template_name", "template_text", "tokens", "record_count", "data_source_label",
                 "data_key", "has_data", "selected_count", "target_font", "filter", "table", "card",
-                "mode", "source_readonly", "bound_job"):
+                "mode", "source_readonly", "bound_job", "source_dirty"):
         assert key in snap, f"세션 키 {key} 누락 — 팩토리 계약 파손"
     # 같은 사실을 두 번 선언하지 않는다 — 표면 분기(has_job·mode·source_readonly)는 모두
     # _bound_job 한 필드에서 유도한다(session_ready 같은 별도 플래그 금지).
@@ -163,6 +163,61 @@ def test_restore_missing_template_is_atomic_and_loud(tmp_path):
     snap = ctrl.snapshot()
     assert snap["has_job"] is False and snap["mode"] == "volatile"
     assert snap["template_text"] == "살아남을 원문 {{공고명}}"
+
+
+# ------------------------------------------------------ 「사본으로 편집」 포크(슬라이스 5b)
+def test_fork_to_volatile_unbinds_and_makes_editable(tmp_path):
+    """「사본으로 편집」 = 저장→휘발 분기: Job 결속을 끊고 원문 편집 가능, 값·매핑은 승계.
+
+    저장된 기안은 건드리지 않고 이 세션만 사본으로 가른다 — 원문 읽기 전용이 풀리고 수정됨
+    표지가 뜨며, 결속·값은 그대로다(사본이지 새 세션이 아니다)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "저장 원문 {{공고명}}",
+               mappings=(FieldMapping(template_field="공고명", source="공고명", type="text"),))
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    assert ctrl.snapshot()["source_readonly"] is True
+    ctrl.dispatch("fork_to_volatile", {})
+    snap = ctrl.snapshot()
+    assert snap["has_job"] is False and snap["mode"] == "volatile"
+    assert snap["source_readonly"] is False and snap["source_dirty"] is True
+    assert snap["bound_job"] == ""
+    assert snap["template_text"] == "저장 원문 {{공고명}}"       # 원문 승계
+    tok = next(t for t in snap["tokens"] if t["name"] == "공고명")
+    assert tok["source"] == "공고명"                            # 결속(값) 승계
+
+
+def test_edit_source_blocked_in_saved_mode_then_allowed_after_fork(tmp_path):
+    """저장 원문은 읽기 전용 — edit_source 가 무시된다(백엔드 방어). 포크 후엔 편집이 먹는다.
+
+    표면 textarea readonly 로 이미 막지만, 백엔드도 조용한 정의 분기를 막는다(저장 정의가
+    라이브 편집으로 갈라지지 않게). 사본으로 가른 뒤에야 원문이 바뀐다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "저장 원문 {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    ctrl.dispatch("edit_source", {"text": "몰래 바꾼 원문 {{공고명}}"})   # 읽기 전용 — 무시
+    assert ctrl.snapshot()["template_text"] == "저장 원문 {{공고명}}"
+    ctrl.dispatch("fork_to_volatile", {})
+    ctrl.dispatch("edit_source", {"text": "사본에서 고친 원문 {{담당}}"})
+    snap = ctrl.snapshot()
+    assert snap["template_text"] == "사본에서 고친 원문 {{담당}}"
+    assert snap["source_dirty"] is True
+
+
+def test_source_dirty_false_for_clean_sources(tmp_path):
+    """수정됨 표지는 깨끗한 원문(첫 템플릿·새 붙여넣기)엔 뜨지 않는다 — 라이브러리에서 갈라졌을 때만."""
+    ctrl, _jobs, _ = _controller(tmp_path)
+    assert ctrl.snapshot()["source_dirty"] is False           # 첫 템플릿(라이브러리)
+    ctrl.dispatch("set_template_text", {"text": "붙여넣기 {{공고명}}"})
+    assert ctrl.snapshot()["source_dirty"] is False           # 새 붙여넣기 = 깨끗한 시작
+
+
+def test_fork_is_noop_when_already_volatile(tmp_path):
+    """휘발 세션에서 포크는 무동작 — 가를 저장 정의가 없다(수정됨으로 오염되지 않는다)."""
+    ctrl, _jobs, _ = _controller(tmp_path)
+    ctrl.dispatch("set_template_text", {"text": "붙여넣기 {{공고명}}"})
+    ctrl.dispatch("fork_to_volatile", {})
+    snap = ctrl.snapshot()
+    assert snap["mode"] == "volatile" and snap["source_dirty"] is False
 
 
 # ------------------------------------------------------------------ 공유 라우터(슬라이스 3a)
