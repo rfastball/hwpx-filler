@@ -25,7 +25,7 @@
       card: "txtCard", cardReadout: "txtCardReadout", cardDots: "txtCardDots",
       cardTitle: "txtCardTitle", cardRender: "txtCardRender", cardLint: "txtCardLint",
       lintAction: "txtLintAction", cardPrev: "txtCardPrev", cardNext: "txtCardNext",
-      cardCopy: "txtCardCopy", cardDefer: "txtCardDefer", advance: "txtAdvance",
+      cardCopy: "txtCardCopy", advance: "txtAdvance",
       targetFont: "txtTargetFont",
       // 맞추기 표 범례(#148 슬라이스 3b) — 원문 뷰 전환 id 는 안 준다(붙여넣기 모달이 겸함).
       mapLegend: "txtMapLegend",

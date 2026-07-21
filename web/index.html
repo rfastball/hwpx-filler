@@ -311,7 +311,9 @@
                     <tbody id="draftTableBody"></tbody>
                   </table>
                 </div>
-                <div class="job-empty muted" id="draftTableEmpty">데이터를 선택하면 기안 대상 행이 여기에 표시됩니다.</div>
+                <!-- ①존 빈 상태(결정 14) — 데이터가 필수인 것처럼 말하지 않는다. 두 길을 다
+                     말한다: 물리면 여러 건 일괄, 안 물려도 「맞추기」에서 직접 채워 복사. -->
+                <div class="job-empty muted" id="draftTableEmpty">데이터를 물리면 <b>여러 건을 한 번에</b> 채웁니다 — 안 물려도 아래 「맞추기」에서 <b>직접 채워 복사</b>할 수 있습니다.</div>
                 <div class="colpanel" id="draftColPanel" hidden></div>
               </div>
               <!-- 필터 밖 선택 스트립(결정 3) — 선택은 필터를 관통하고, 밖은 여기서 상시 가시.
@@ -439,7 +441,8 @@
             <tbody id="txtTableBody"></tbody>
           </table>
         </div>
-        <div class="job-empty muted" id="txtTableEmpty">데이터를 선택하면 기안 대상 행이 여기에 표시됩니다.</div>
+        <!-- ①존 빈 상태(결정 14) — 데이터 필수처럼 말하지 않는다. 두 길을 다 말한다. -->
+        <div class="job-empty muted" id="txtTableEmpty">데이터를 물리면 <b>여러 건을 한 번에</b> 채웁니다 — 안 물려도 아래 「맞추기」에서 <b>직접 채워 복사</b>할 수 있습니다.</div>
         <div class="colpanel" id="txtColPanel" hidden></div>
       </div>
       <div class="fstrip" id="txtSelStrip" style="display:none"></div>
@@ -483,13 +486,13 @@
             </div>
           </div>
           <div class="wc-dots" id="txtCardDots" role="list" aria-label="큐 상태 색인"></div>
-          <!-- 카드 헤더: 정체 + 복사 동사(우상단, 결정 16) + 미루기 + 복사 후 전진(기본 꺼짐) -->
+          <!-- 카드 헤더: 정체 + 복사 동사(우상단, 결정 16) + 복사 후 전진(기본 꺼짐). 미루기는
+               사망(결정 10 · 슬라이스 3c) — 자유 이동(◀▶·점 클릭)이 막힌 카드의 탈출구다. -->
           <div class="wc-head">
             <span class="wc-title" id="txtCardTitle">이대로 복사됩니다</span>
             <div class="wc-acts">
               <label class="wc-advance" title="켜면 복사 후 다음 미처리 카드로 넘어갑니다">
                 <input type="checkbox" id="txtAdvance"> 복사 후 다음으로</label>
-              <button class="btn sm" id="txtCardDefer" title="막힌 카드를 큐 뒤로 보냅니다">미루기</button>
               <button class="btn primary" id="txtCardCopy">📋 복사</button>
             </div>
           </div>

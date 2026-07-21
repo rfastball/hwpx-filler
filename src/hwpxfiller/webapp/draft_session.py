@@ -199,6 +199,18 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
     def _records(self) -> list:
         return self.vm.records
 
+    def _is_virtual(self) -> bool:
+        """데이터 없음 = 가상 길이-1 큐(결정 14) — 「빠른 기안」의 최단 경로.
+
+        데이터를 물리지 않았어도 붙여넣은 원문에 토큰마다 **직접 입력(상수)** 값을 채워 복사할
+        수 있어야 한다(무데이터 = 빠른 기안의 정체성). 병합 세션의 큐는 선택된 데이터 행에서
+        나오므로 무데이터면 비지만, 그 경우 큐를 **가상 1건**으로 퇴화시켜 카드·복사를 살린다:
+        작업점(``queue.current``)은 여전히 ``None`` 이되 :meth:`can_copy` 와 카드 스냅샷이
+        가상 카드를 인정한다. **템플릿이 있을 때만** 성립한다 — 원문도 데이터도 없으면 클립보드로
+        나갈 것이 없어(빈 문자열) 복사를 열면 조용한 쓰레기가 된다(confirm-or-alarm).
+        """
+        return self.vm.datasource is None and bool(self.vm.template_text.strip())
+
     # ----------------------------------------------------- 맞추기 매핑(#148 슬라이스 3b)
     def _map_source_fields(self) -> "list[str]":
         """겨눈 데이터의 열 목록(레코드 0의 키 순서 — 데이터 소스 열 순서 보존)."""
@@ -364,9 +376,17 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
             }
             for r in self.mapping.rows
         ]
+        # 가상 카드·큐 퇴화(결정 8·14) — 판정은 여기(Python)서 지금, JS 는 표현만. 유효 큐
+        # ≤ 1건이면 **큐 장치 3종**(진행 색인·다음 카드·자동 전진)이 숨는다: 단건이면 순회할
+        # 곳이 없고 무데이터(가상 1건)면 큐 자체가 퇴화한다(정보가 없어서지 장식이라서가 아니다).
+        # 가상 카드는 작업점(``current``)이 None 이되 복사 가능한 카드 하나로 선다(직접 입력값).
+        virtual = self._is_virtual()
+        effective_count = 1 if virtual else self.selection.selected_count()
         card = {
             "index": current,
-            "has_current": current is not None,
+            # 가상 카드(무데이터 직접 입력)도 실재하는 카드다 — 복사·렌더 제목이 이를 인정한다.
+            "has_current": current is not None or virtual,
+            "queue_degenerate": effective_count <= 1,
             "is_copied": current in copied_set if current is not None else False,
             "position": self.queue.position_of(current) if current is not None else None,
             "uncopied_count": len(self.queue.uncopied()),
@@ -578,14 +598,13 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self.queue.step(int(p["delta"]))
 
     def _do_set_current(self, p: dict) -> None:
-        """상태 색인 점 클릭 = 작업점 직접 지정(큐 밖 인덱스는 큐 모델이 정규화로 되돌린다)."""
+        """상태 색인 점 클릭 = 작업점 직접 지정(큐 밖 인덱스는 큐 모델이 정규화로 되돌린다).
+
+        ◀▶ :meth:`_do_step` 와 함께 **자유 이동**이 미루기(결정 10 사망)를 대체한다 —
+        막힌 카드에서 다음 점을 눌러 벗어난다(작업점 고정 전제가 깨져 미루기가 불필요해졌다).
+        """
         idx = p.get("index")
         self.queue.set_current(int(idx) if idx is not None else None)
-
-    def _do_defer(self, p: dict) -> None:
-        """미루기(결정 19) — 막힌 미처리 카드를 큐 뒤로. index 없으면 작업점(막힌 카드 탈출구)."""
-        idx = p.get("index")
-        self.queue.defer(int(idx) if idx is not None else None)
 
     def _do_toggle_advance(self, p: dict) -> None:
         """복사 후 전진 옵션(결정 16, 기본 꺼짐) — 컨트롤러 수명(세션 넘어 유지)."""
@@ -688,9 +707,13 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         return align_segments(segments) if self._fullwidth else segments
 
     def can_copy(self) -> bool:
-        """복사 가능 = 작업점 실재(리뷰 F3) — 브리지가 이걸로 게이트해 작업점 없을 때 빈 템플릿
-        (생 ``{{토큰}}``)이 클립보드로 조용히 나가는 것을 막는다(버튼 비활성과의 레이스·직접 호출)."""
-        return self.queue.current is not None
+        """복사 가능 = 작업점 실재(리뷰 F3) **또는 가상 카드**(무데이터 직접 입력, 결정 14).
+
+        브리지가 이걸로 게이트해 작업점 없을 때 빈 템플릿(생 ``{{토큰}}``)이 클립보드로 조용히
+        나가는 것을 막는다(버튼 비활성과의 레이스·직접 호출). 데이터를 안 물린 세션은 작업점이
+        없어도(:meth:`_is_virtual`) 상수 값으로 채운 카드를 복사할 수 있다 — :meth:`render` 는
+        작업점이 ``None`` 이면 빈 레코드(``{}``)를 매핑에 통과시키므로 상수만으로 채워진다."""
+        return self.queue.current is not None or self._is_virtual()
 
     def note_copied(self, report: "RenderReport") -> None:
         """복사 완료 후 큐 갱신 — 작업점을 처리 후미로(멱등), 전진 opt-in, 재봉합·푸시(결정 16).
@@ -704,6 +727,16 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         순서 경합·전진 시 카드 desync 차단, 리뷰 F1·F2)."""
         cur = self.queue.current
         if cur is None:
+            # 가상 카드(무데이터 직접 입력, 결정 14) — 큐가 없어 후미 이동·전진은 없지만 완료
+            # 노트는 남긴다(행 번호 없이 — 가상 1건이라 "N행"이 무의미하다). 그 외(작업점도
+            # 가상도 아님)는 게이트가 막았어야 할 무동작.
+            if self._is_virtual():
+                self._last_copy = {
+                    "row": None,
+                    "missing_fields": list(report.missing_fields),
+                    "empty_fields": list(report.empty_fields),
+                }
+                self._push()
             return
         # 복사한 카드(전진 전 작업점)를 못박아 완료 노트에 실린다 — 전진해도 어느 행인지 명시.
         self._last_copy = {

@@ -22,8 +22,8 @@
   });
 
   /* ---- 우 상세 = 휘발 세션 4존 = 공용 팩토리(draftsession.js, 「기안문 채우기」와 단일 출처).
-     화면 고유값은 id 맵뿐이다 — 미루기 버튼(cardDefer)은 주지 않는다(결정 10 사망: 자유 이동
-     ◀▶·점 클릭이 대체한다. 죽을 것을 새 표면에 짓지 않는다). ---- */
+     화면 고유값은 id 맵뿐이다. 미루기는 두 표면 모두 사망(결정 10 · 슬라이스 3c) — 막힌 카드의
+     탈출구는 자유 이동(◀▶·점 클릭)이다(작업점 고정 전제가 깨져 큐 뒤로 보내는 동사가 불필요). ---- */
   const sess = window.DraftSession.create({
     screen: SCREEN,
     rowIdPrefix: "draftRow-",  // preserve.js 포커스 복원 키 — txt/job 행과 전역 유일

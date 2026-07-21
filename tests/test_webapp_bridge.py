@@ -60,13 +60,18 @@ def test_initial_snapshot_shape(tmp_path):
     names = [t["name"] for t in init["tokens"]]
     assert names == ["공고명", "담당자", "추정가격"]
     # 데이터 없음 → 전부 항목 없음(missing). 토큰·리포트는 작업점 카드에서 파생(record_index
-    # 자유 커서 사망, 결정 16) — 빈 레코드 미리보기라 전 토큰 미충족·작업점 부재.
+    # 자유 커서 사망, 결정 16) — 빈 레코드 미리보기라 전 토큰 미충족.
     assert all(t["state"] == "missing" for t in init["tokens"])
     assert init["record_count"] == 0
+    assert init["has_data"] is False
     card = init["card"]
     # 미충족 리포트는 card 단일 출처(최상위 트윈 폐기) — 데이터 없음 = 전 필드 항목 없음.
     assert set(card["missing_fields"]) == {"공고명", "담당자", "추정가격"}
-    assert card["has_current"] is False and card["index"] is None
+    # 무데이터 + 템플릿 = **가상 길이-1 카드**(결정 14) — 직접 입력값으로 복사 가능(빠른 기안
+    # 최단 경로). 작업점(index)은 여전히 None 이되 카드는 실재하고, 큐가 퇴화해 장치가 숨는다.
+    assert card["has_current"] is True and card["index"] is None
+    assert card["queue_degenerate"] is True
+    assert ctrl.can_copy() is True
     assert card["selected_count"] == 0 and card["index_map"] == []
 
 
@@ -96,6 +101,46 @@ def test_load_data_drives_card_and_pushes(tmp_path):
     assert "fill" in kinds and "blank" in kinds and "literal" in kinds
     # 빈칸 지도: 두 행 모두 담당자/추정가격에 빈칸 → has_gap.
     assert [d["has_gap"] for d in card["index_map"]] == [True, True]
+    # 2건 선택 = 정상 큐(퇴화 아님) — 큐 장치 3종이 뜬다.
+    assert card["queue_degenerate"] is False
+
+
+def test_no_data_virtual_card_copies_const_value(tmp_path):
+    """무데이터 세션도 직접 입력(상수)값으로 복사 가능 — 가상 길이-1 퇴화(결정 14).
+
+    「빠른 기안」 최단 경로: 붙여넣고 토큰마다 직접 쳐서 복사. 병합 세션의 큐는 데이터 행에서
+    나오므로 무데이터면 비지만, 가상 카드가 복사·렌더를 살린다 — :meth:`render` 는 작업점이
+    ``None`` 이면 빈 레코드({})를 매핑에 통과시켜 상수만으로 채운다.
+    """
+    ctrl, _ = _controller(tmp_path)  # 샘플기안 자동 선택 → 템플릿 있음 = 가상 카드 성립
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "특수교육 통학차량"})  # man 상수
+    assert ctrl.can_copy() is True                    # 데이터 무관(결정 14)
+    text, report = ctrl.render()
+    assert "특수교육 통학차량" in text                 # 상수값이 채워져 나간다
+    assert "공고명" not in report.missing_fields       # 채운 토큰은 미충족 아님
+    card = ctrl.snapshot()["card"]
+    assert card["has_current"] is True and card["queue_degenerate"] is True
+
+
+def test_no_template_no_data_has_no_virtual_card(tmp_path):
+    """원문도 데이터도 없으면 가상 카드 없음 — 빈 문자열 복사(조용한 쓰레기) 차단."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("set_template_text", {"text": ""})  # 원문 비움
+    assert ctrl.can_copy() is False
+    assert ctrl.snapshot()["card"]["has_current"] is False
+
+
+def test_queue_degenerates_at_single_selection(tmp_path):
+    """유효 큐 1건이면 퇴화(결정 8) — 데이터가 있어도 단건이면 큐 장치가 무의미하다."""
+    ctrl, _ = _controller(tmp_path)
+    csv = tmp_path / "d.csv"
+    csv.write_text("공고명,추정가격,담당자\nA,1,x\nB,2,y\nC,3,z\n", encoding="utf-8")
+    ctrl.load_data_path(str(csv))
+    assert ctrl.snapshot()["card"]["queue_degenerate"] is False  # 3건 = 정상
+    ctrl.selection.set_none()
+    ctrl.selection.toggle(1, True)  # 한 건만
+    ctrl.queue.reconcile()
+    assert ctrl.snapshot()["card"]["queue_degenerate"] is True   # 1건 = 퇴화
 
 
 def test_step_moves_work_point_with_boundary_stop(tmp_path):
@@ -113,18 +158,20 @@ def test_step_moves_work_point_with_boundary_stop(tmp_path):
     assert pushes[-1][1]["card"]["index"] == 0
 
 
-def test_set_current_and_defer_and_advance(tmp_path):
-    """상태 색인 점 클릭(set_current)·미루기(defer)·복사 후 전진(toggle_advance) 액션 결선."""
+def test_set_current_and_advance(tmp_path):
+    """상태 색인 점 클릭(set_current)·복사 후 전진(toggle_advance) 액션 결선.
+
+    미루기(defer)는 사망(결정 10 · 슬라이스 3c) — 자유 이동(◀▶·점 클릭)이 대체한다.
+    액션이 회수돼 디스패치가 시끄럽게 거부하는지도 함께 못박는다(confirm-or-alarm).
+    """
     ctrl, pushes = _controller(tmp_path)
     csv = tmp_path / "d.csv"
     csv.write_text("공고명,추정가격,담당자\nA,1,x\nB,2,y\nC,3,z\n", encoding="utf-8")
     ctrl.load_data_path(str(csv))
     ctrl.dispatch("set_current", {"index": 2})        # 색인 점 클릭 = 작업점 직접 지정
     assert pushes[-1][1]["card"]["index"] == 2
-    ctrl.dispatch("defer", {"index": 0})              # 행 0 을 큐 뒤로(비작업점 미루기)
-    imap = pushes[-1][1]["card"]["index_map"]
-    assert [d["index"] for d in imap] == [1, 2, 0]    # 0 이 미처리 후미로
-    assert pushes[-1][1]["card"]["index"] == 2        # 작업점 불변(조용한 이동 금지)
+    with pytest.raises(ValueError):                   # 미루기 사망 — 미지 액션 loud 거부
+        ctrl.dispatch("defer", {"index": 0})
     ctrl.dispatch("toggle_advance", {"value": True})
     assert pushes[-1][1]["card"]["advance_after"] is True
 
@@ -155,7 +202,9 @@ def test_new_draft_action_resets_session(tmp_path):
     assert snap["template_name"] == "샘플기안"                       # 첫 템플릿 재선택(생성자 동형)
     assert "{{공고명}}" in snap["template_text"]                     # 붙여넣기 텍스트 폐기
     assert snap["record_count"] == 0                                # 데이터 폐기
-    assert snap["card"]["has_current"] is False                     # 작업점 소멸(세션 휘발)
+    # 데이터 큐 작업점은 소멸(세션 휘발) — 단 첫 템플릿 재선택으로 무데이터 가상 카드가 서므로
+    # (결정 14) index 는 None 이되 카드는 실재한다(퇴화). 초기화의 증거는 index·record_count.
+    assert snap["card"]["index"] is None and snap["card"]["queue_degenerate"] is True
     assert snap["data_label"] == "" and snap["data_source_label"] == ""
 
 
