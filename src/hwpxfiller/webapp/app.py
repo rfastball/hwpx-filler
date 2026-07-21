@@ -966,16 +966,21 @@ _DRAFT_SESSION_PROBE_JS = r"""
     var snap = {
       job_flat:true, job_group_names:[], job_sections:[], job_rows:[],
       job_name:'', has_job:false,
-      template_name:'착수계', template_text:'제목: {{공고명}} 담당: {{담당자}} 비고: {{비고}}',
-      // 맞추기 표(#148 슬라이스 3b) — 결속(auto·읽기전용 값)·결속 빈값(blank)·무결속+근사 제안
-      // (원클릭 결속 버튼·값 직접 입력)·소유권 색 점.
+      template_name:'착수계',
+      template_text:'제목: {{공고명}} 담당: {{담당자}} 비고: {{비고}} 수량: {{수량}}',
+      // 맞추기 표(#148 슬라이스 3b) — 결속(auto)·결속 빈값(blank)·무결속+근사 제안(원클릭·값
+      // 직접 입력)·**결속 값 고쳐 상수 강등(man, 소스 기억)**. 소유권 색 점.
       tokens:[
         {name:'공고명', state:'fill', source:'공고명', own:'auto', manual:false,
          value:'전산장비 구매', fmt_kind:'text', fmt_code:'', suggest:'', can_revert:false},
         {name:'담당자', state:'blank', source:'담당열', own:'auto', manual:false,
          value:'', fmt_kind:'text', fmt_code:'', suggest:'', can_revert:false},
         {name:'비고', state:'missing', source:'', own:'', manual:false,
-         value:'', fmt_kind:'text', fmt_code:'', suggest:'비고열', can_revert:false}
+         value:'', fmt_kind:'text', fmt_code:'', suggest:'비고열', can_revert:false},
+        // 상수(man)인데 결속 소스를 기억 — 드롭다운은 열이 아니라 「(직접 입력)」이어야 한다
+        // (Codex F1: t.source 로 selected 판정하면 옛 열이 이겨 결속된 듯 거짓 표시).
+        {name:'수량', state:'fill', source:'공고명', own:'man', manual:true,
+         value:'99', fmt_kind:'text', fmt_code:'', suggest:'', can_revert:true}
       ],
       columns:['공고명','담당열','비고열'], fmt_options:{text:[], amount:[], date:[]},
       record_count:2,
@@ -997,7 +1002,9 @@ _DRAFT_SESSION_PROBE_JS = r"""
                       {text:' 담당: ', kind:'literal', name:''},
                       {text:'', kind:'blank', name:'담당자'},
                       {text:' 비고: ', kind:'literal', name:''},
-                      {text:'{{비고}}', kind:'missing', name:'비고'}],
+                      {text:'{{비고}}', kind:'missing', name:'비고'},
+                      {text:' 수량: ', kind:'literal', name:''},
+                      {text:'99', kind:'fill', name:'수량'}],
             missing_fields:['비고'], empty_fields:['담당자'],
             index_map:[{index:0, state:'current', has_gap:false},
                        {index:1, state:'uncopied', has_gap:true}],
@@ -1024,6 +1031,10 @@ _DRAFT_SESSION_PROBE_JS = r"""
     out.map_suggest = !!document.querySelector('#draftTokPanel .mapsug');             // 비고 근사 제안
     out.map_src_options = (function(){ var s = document.querySelector('#draftTokPanel .mapsrc-sel');
       return s ? s.options.length : 0; })();  // (직접 입력)+열 3 = 4
+    // man(상수)인데 소스를 기억한 자리(수량, i=3)의 드롭다운은 열이 아니라 「(직접 입력)」이어야
+    // 한다(Codex F1 — 옛 열 selected 로 결속된 듯 거짓 표시 차단). 유효 선택 = 빈 값.
+    out.map_man_src_value = (function(){ var s = document.getElementById('draftTokPanel-src-3');
+      return s ? s.value : 'ABSENT'; })();
     // ③ 원문 뷰 전환(결정 34) — 기본 채운 모습, 「원문」 클릭 시 배타 전환 + textarea 에 원문.
     out.view_default_filled =
       document.getElementById('draftViewFilled').getAttribute('aria-pressed') === 'true'

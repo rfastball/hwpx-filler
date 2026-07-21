@@ -122,11 +122,13 @@
        열 후보·소유권(auto/man)·제안·값·상태는 서버 토큰 그대로 소비하고 재판정하지 않는다.
        휘발 세션이라 유형·확정 열(.persist)은 없다 — 저장 세션 복원과 함께 슬라이스 5가 얹는다. */
     function mapRowHtml(s, t, i) {
-      const cols = (s.columns || []).map((c) =>
-        `<option value="${esc(c)}"${c === t.source ? " selected" : ""}>${esc(c)}</option>`).join("");
       // 드롭다운 선택 = 결속 열(auto)일 때만 그 열, 아니면 「(직접 입력)」(man·무결속). man 의
-      // 기억된 소스는 드롭다운이 아니라 「되돌리기」로 되살린다(값=상수인데 열 선택으로 보이면 모순).
+      // 기억된 소스(t.source)는 드롭다운이 아니라 「되돌리기」로 되살린다 — 옵션 selected 는
+      // **유효 선택(srcSel)** 로만 판정한다(Codex F1): t.source 로 판정하면 man 이 「(직접 입력)」과
+      // 옛 열을 동시에 selected 해 나중 것(열)이 이겨, 상수가 그 열에 결속된 듯 거짓 표시된다.
       const srcSel = t.own === "auto" ? t.source : "";
+      const cols = (s.columns || []).map((c) =>
+        `<option value="${esc(c)}"${c === srcSel ? " selected" : ""}>${esc(c)}</option>`).join("");
       const dot = t.own ? `<span class="own ${t.own}" title="${OWN_LABEL[t.own] || ""}"></span>` : "";
       const src =
         `<div class="mapsrc">${dot}` +
@@ -356,13 +358,19 @@
        확인하면 같은 액션을 confirm 으로 다시 부른다(빠른 기안·relink 게이트 재진술 문법). */
     async function setSource(name, col) {
       const r = await Bridge.call(SCREEN, "set_source", { name, col });
-      if (!r || !r.confirm) return;
+      if (!r || !r.confirm) return;  // 결속됨(변이는 push→render 가 드롭다운을 실상태로 맞춘다)
       if (!(await window.Modal.confirm({
         title: "값 덮어쓰기 확인",
         body: r.confirm,
         confirmLabel: "데이터 값으로 바꾸기",
         cancelLabel: "머무르기",
-      }))) return;
+      }))) {
+        // 머무르기 = 백엔드 불변(상수 유지)인데 native select 는 이미 새 열을 보인다 — 확인
+        // 왕복은 push 를 안 하므로 아무도 되돌려 주지 않는다(Codex F2). LAST 로 재렌더해
+        // 드롭다운을 실상태(「(직접 입력)」)로 복원한다(표시 ≠ 실제 상태 봉합).
+        if (LAST) render(LAST);
+        return;
+      }
       Bridge.call(SCREEN, "set_source", { name, col, confirm: true });
     }
 

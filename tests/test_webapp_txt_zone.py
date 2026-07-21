@@ -706,3 +706,21 @@ def test_unknown_map_column_is_loud(tmp_path):
     ctrl.load_data_path(_csv(tmp_path))
     with pytest.raises(ValueError):
         ctrl.dispatch("set_source", {"name": "공고명", "col": "없는열"})
+
+
+def test_rebuild_drops_remembered_source_absent_in_new_data(tmp_path):
+    """Codex F3 — 상수(man)의 기억된 결속 소스는 새 데이터에 살아 있을 때만 승계한다.
+
+    결속 값을 고쳐 만든 상수는 데이터가 바뀌어도 값은 유지하되, 그 열이 새 데이터에 없으면
+    소스 기억을 비운다 — 안 그러면 「되돌리기」가 없는 열로 결속을 되살려 전 레코드에 빈 값을
+    내면서 소유권은 auto 라 보고하는 계약 거짓말이 된다(can_revert=type==const∧source 라 정합)."""
+    ctrl, _ = _controller(tmp_path)  # 템플릿: 제목:{{공고명}} 금액:{{추정가격}}
+    ctrl.load_data_path(_csv(tmp_path))                    # 공고명 자동 결속
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "고정 제목"})  # man(소스 기억)
+    assert _tok(ctrl.snapshot(), "공고명")["can_revert"] is True
+    other = tmp_path / "other.csv"
+    other.write_text("업체명,추정가격\n대한산업,1000\n", encoding="utf-8")  # 공고명 열 없음
+    ctrl.load_data_path(str(other))
+    g = _tok(ctrl.snapshot(), "공고명")
+    assert g["own"] == "man" and g["value"] == "고정 제목"  # 상수 값은 유지(데이터 무관)
+    assert g["can_revert"] is False                        # 죽은 소스 기억은 비웠다(되돌리기 사라짐)

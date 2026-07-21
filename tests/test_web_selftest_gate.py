@@ -392,12 +392,17 @@ class TestWebSelftestGate:
         # ② 맞추기 표(#148 슬라이스 3b) — 결속(소유권 색)·결속 빈값 미리보기·근사 제안·값 직접
         # 입력을 실 WebView2 로 되읽는다. 표를 조용히 떨어뜨리면 항등 매핑으로 되돌아가(토큰명==
         # 열명 강제) 합병의 정밀도 절반이 사라진다.
-        assert d["map_rows"] == 3, f"맞추기 표 행 수가 다릅니다: {d!r}"
+        assert d["map_rows"] == 4, f"맞추기 표 행 수가 다릅니다: {d!r}"
         assert d["map_own_auto"] == 2, f"소유권 색 점(결속=auto)이 어긋납니다: {d!r}"
-        assert d["map_val_inputs"] == 3, f"값 셀이 전 행 편집 가능(결속 값 고침→상수)이 아닙니다: {d!r}"
+        assert d["map_val_inputs"] == 4, f"값 셀이 전 행 편집 가능(결속 값 고침→상수)이 아닙니다: {d!r}"
         assert d["map_bound_value"] is True, "결속 값 입력에 현재 행의 데이터 값이 차 있지 않습니다."
         assert d["map_suggest"] is True, "무결속 자리의 근사 제안 버튼이 없습니다(결정 30)."
         assert d["map_src_options"] == 4, f"결속 드롭다운 후보((직접 입력)+열 3)가 다릅니다: {d!r}"
+        # Codex F1 — 상수(man)인데 소스를 기억한 자리의 드롭다운은 「(직접 입력)」(빈 값). 옛 열이
+        # selected 로 이겨 결속된 듯 보이면 표시 ≠ 실제 상태(지배 결함류)다.
+        assert d["map_man_src_value"] == "", (
+            f"man(소스 기억) 드롭다운이 「(직접 입력)」이 아니라 옛 열을 보입니다(F1): {d['map_man_src_value']!r}"
+        )
         # ③ 원문 뷰 전환(결정 34) — 채운 모습 ↔ 원문(같은 칸의 두 모습). 원문은 휘발 세션의
         # 입력구고 배타 표시다(둘이 동시에 서면 무엇이 진실인지 모른다).
         assert d["view_default_filled"] is True, "기본 보기가 「채운 모습」이 아닙니다(원문 뷰 노출)."

@@ -233,12 +233,16 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
             )
             if prev is None or not prev.touched:
                 continue  # 새 토큰이거나 시스템 소유(제안) — 새 데이터 기준 자동
-            if prev.type == "const":  # 수기 값(man)은 데이터 무관 — 소스 기억째 승계
+            if prev.type == "const":  # 수기 값(man)은 데이터 무관 — 상수째 승계
                 row.type = "const"
                 row.const = prev.const
-                row.source = prev.source
                 row.fmt = prev.fmt
                 row.touched = True
+                # 기억한 결속 소스는 **새 데이터에 살아 있을 때만** 승계한다(Codex F3). 사라진
+                # 열을 남기면 「자동으로 되돌리기」가 없는 열로 결속을 되살려, live_profile 이 전
+                # 레코드에 빈 값을 내면서 소유권은 auto 라 보고하는 계약 거짓말이 된다(can_revert
+                # = type==const ∧ source 라, source 를 비우면 되돌리기 자체가 사라져 정합).
+                row.source = prev.source if prev.source in cols else ""
             elif prev.source and prev.source in cols:  # 사람이 고른 결속이 새 데이터에도 있으면
                 row.source = prev.source
                 row.type = prev.type
