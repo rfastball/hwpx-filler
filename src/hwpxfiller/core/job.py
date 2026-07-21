@@ -319,9 +319,15 @@ class JobRegistry:
 
     def __init__(self, directory: "str | Path"):
         self.directory = Path(directory)
-        # 복제 원자화(F22 리뷰 P2) — pywebview 는 API 호출을 스레드별로 돌리므로 빠른
-        # 연속 클릭이 동시 진입한다. 후보 이름 선점 검사~저장을 이 잠금으로 묶는다.
-        self._clone_lock = threading.Lock()
+        # **쓰기 직렬화 잠금**(RLock) — pywebview 는 API 호출을 스레드별로 돌리므로 서로 다른
+        # 표면의 저장이 진짜로 겹친다. 이 잠금이 덮는 것은 단순 저장이 아니라 **읽기-수정-쓰기
+        # 임계구역**이다(#129 리뷰 2R P1): 생성 스레드가 A 를 읽는 사이 에디터가 A 를 저장하면
+        # 뒤늦은 저장이 상대의 변경을 통째로 되돌린다(lost update) — 스탬프가 매핑 편집을
+        # 지우거나, 에디터 저장이 방금 찍은 ``last_run_at`` 을 지운다. 그래서 잠금은
+        # 레지스트리가 소유하고(모든 writer 공유) 바깥 표면도 :meth:`write_lock` 으로 자기
+        # 임계구역을 이 잠금 안에 넣는다. 재진입 가능(RLock)이라 잠금 안에서 :meth:`save` 를
+        # 불러도 자기 교착이 없다. 복제 원자화(F22 리뷰 P2 — 후보 이름 선점~저장)도 같은 잠금.
+        self._write_lock = threading.RLock()
 
     def path_for(self, name: str) -> Path:
         return self.directory / (_slug(name) + self.SUFFIX)
@@ -333,13 +339,43 @@ class JobRegistry:
         ``allow_overwrite`` 없이는 :class:`SlugCollisionError` 를 던진다 —
         조용한 durable 소실 방지. 같은 이름 재저장(자기 갱신)은 충돌이 아니라 그대로 통과.
         """
-        self.directory.mkdir(parents=True, exist_ok=True)
-        path = self.path_for(job.name)
-        if not allow_overwrite:
-            guard_slug_collision(
-                path, job.name, lambda p: Job.load(p).name, kind="작업"
-            )
-        job.save(path)
+        with self._write_lock:
+            self.directory.mkdir(parents=True, exist_ok=True)
+            path = self.path_for(job.name)
+            if not allow_overwrite:
+                guard_slug_collision(
+                    path, job.name, lambda p: Job.load(p).name, kind="작업"
+                )
+            job.save(path)
+
+    def write_lock(self) -> "threading.RLock":
+        """읽기-수정-쓰기 임계구역을 감쌀 **공유 잠금**(컨텍스트 매니저, #129 리뷰 2R P1).
+
+        레지스트리 밖에서 "디스크를 읽고 → 그 값을 반영한 Job 을 만들어 → 저장"하는 표면
+        (에디터 저장의 태그·``last_run_at`` 보존 재읽기)은 그 구간 전체를 이 잠금 안에 넣어야
+        한다. 저장 한 번만 원자적인 것으로는 lost update 가 막히지 않는다 — 되돌리는 쪽은
+        **읽은 시점이 낡은** 저장이기 때문이다.
+        """
+        return self._write_lock
+
+    def mutate(self, name: str, change) -> Job:
+        """잠긴 단일 항목 읽기-수정-쓰기 — ``change(job)`` 이 필드를 고치고 저장까지 원자적.
+
+        ``load → 고치기 → save(allow_overwrite=True)`` 선례(그룹 지정·스탬프)의 공용 몸통.
+        갱신된 Job 을 돌려준다.
+        """
+        with self._write_lock:
+            job = self.load(name)
+            change(job)
+            self.save(job, allow_overwrite=True)  # 같은 이름 재저장 = 자기 갱신
+            return job
+
+    def stamp_last_run(self, name: str, when: str) -> Job:
+        """마지막 실행 시각 스탬프(#129) — 다른 writer 와 직렬화된 단일 필드 갱신."""
+        def _stamp(job: Job) -> None:
+            job.last_run_at = when
+
+        return self.mutate(name, _stamp)
 
     def exists(self, name: str) -> bool:
         return self.path_for(name).exists()
@@ -365,7 +401,7 @@ class JobRegistry:
         레지스트리 인스턴스를 공유하는 앱 내 호출이 대상 — 프로세스 간은 단일 인스턴스
         가드 소관).
         """
-        with self._clone_lock:
+        with self._write_lock:
             job = self.load(name)
             base = f"{name} (복사본)"
             candidate, i = base, 2
@@ -390,7 +426,7 @@ class JobRegistry:
             raise ValueError("이름이 비어 있습니다")
         if new_name == name:
             return
-        with self._clone_lock:
+        with self._write_lock:
             job = self.load(name)
             src, dst = self.path_for(name), self.path_for(new_name)
             if dst != src and dst.exists():
@@ -402,9 +438,10 @@ class JobRegistry:
 
     def set_group(self, name: str, group: str) -> None:
         """그룹 지정/해제(``""``=「그룹 없음」) — 소속이 곧 생성(빈 그룹은 존재하지 않는다)."""
-        job = self.load(name)
-        job.group = group.strip()
-        self.save(job, allow_overwrite=True)  # 같은 이름 재저장 = 자기 갱신
+        def _set(job: Job) -> None:
+            job.group = group.strip()
+
+        self.mutate(name, _set)
 
     def groups(self) -> "list[str]":
         """존재하는(=소속 작업이 있는) 그룹 이름들, 이름순 — 이동 다이얼로그의 후보 목록."""
@@ -428,11 +465,12 @@ class JobRegistry:
             # 조용히 이동한다(호출 버그의 파급 상한을 loud 로 자른다).
             raise ValueError("대상 그룹 이름이 비어 있습니다")
         count = 0
-        for job in self.list_jobs():
-            if job.group == name:
-                job.group = new_group
-                self.save(job, allow_overwrite=True)
-                count += 1
+        with self._write_lock:  # 일괄 갱신 전체가 한 임계구역(부분 반영 상태 노출 금지)
+            for job in self.list_jobs():
+                if job.group == name:
+                    job.group = new_group
+                    self.save(job, allow_overwrite=True)
+                    count += 1
         return count
 
     def delete(self, name: str) -> None:

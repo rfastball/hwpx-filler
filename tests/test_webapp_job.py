@@ -256,6 +256,31 @@ def test_stamp_goes_to_the_job_the_run_started_on(tmp_path, monkeypatch):
     assert ctrl.vm.job.last_run_at == ""                    # 남의 VM 도 안 만진다
 
 
+def test_stamp_uses_the_serialized_registry_path(tmp_path, monkeypatch):
+    """스탬프는 레지스트리의 **잠긴 경로**로만 쓴다(#129 리뷰 2R P1) — 직렬화 이탈 회귀 차단.
+
+    load→save 를 여기서 다시 손으로 엮으면 잠금 밖이라 에디터 저장과 lost update 가 난다
+    (둘 중 늦게 착지한 저장이 상대 변경을 통째로 되돌린다). 그 회귀는 결과값으로는 잘 안
+    드러나므로 경로 자체를 못박는다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+
+    calls: list = []
+    real = ctrl.registry.stamp_last_run
+
+    def spy(name, when):
+        calls.append((name, when))
+        return real(name, when)
+
+    monkeypatch.setattr(ctrl.registry, "stamp_last_run", spy)
+    assert ctrl.generate()["ok"] is True
+    assert [n for n, _ in calls] == ["공고서"]
+
+
 def test_stamp_failure_is_loud_not_silent(tmp_path, monkeypatch):
     """기록 실패를 삼키지 않는다(confirm-or-alarm) — 문서는 남기고 사유를 완료 요약에 병기."""
     ctrl, _ = _controller(tmp_path)

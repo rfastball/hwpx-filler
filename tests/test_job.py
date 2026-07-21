@@ -624,3 +624,65 @@ def test_registry_disband_group_returns_members_to_ungrouped(tmp_path):
     assert reg.load(a.name).group == "" and reg.groups() == []
     with pytest.raises(ValueError):
         reg.disband_group("")  # ""(그룹 없음)는 그룹이 아니다 — 무그룹 전원 오이동 차단
+
+
+# ---------------------------------------- 쓰기 직렬화(#129 리뷰 2R P1)
+def test_write_lock_serializes_read_modify_write(tmp_path):
+    """읽기-수정-쓰기는 서로를 배제한다 — 늦게 착지한 저장이 상대 변경을 되돌리지 않는다.
+
+    pywebview 는 API 호출을 스레드별로 돌리므로 생성 스레드의 스탬프와 에디터 저장이 진짜로
+    겹친다. 저장 **한 번**만 원자적인 것으로는 lost update 가 안 막힌다 — 되돌리는 쪽은 읽은
+    시점이 낡은 저장이기 때문이다. 그래서 잠금은 레지스트리가 소유하고 모든 writer 가 쓴다.
+    """
+    import threading
+
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="공고서", template_path="t.hwpx", filename_pattern="원래"))
+
+    held = threading.Event()      # 스탬프가 임계구역에 들어가 값을 읽었다
+    release = threading.Event()   # 그 안에서 머무는 동안
+    entered = threading.Event()   # 다른 writer 가 임계구역에 들어갔다
+
+    def stamper():
+        with reg.write_lock():
+            job = reg.load("공고서")
+            held.set()
+            release.wait(3)                       # 임계구역을 쥔 채 대기
+            job.last_run_at = "2026-07-21T09:00:00"
+            reg.save(job, allow_overwrite=True)
+
+    def editor():
+        with reg.write_lock():                    # screen_editor._do_save 와 같은 규율
+            job = reg.load("공고서")
+            job.filename_pattern = "동시 편집"
+            reg.save(job, allow_overwrite=True)
+            entered.set()
+
+    t1 = threading.Thread(target=stamper)
+    t1.start()
+    assert held.wait(3)
+    t2 = threading.Thread(target=editor)
+    t2.start()
+    # 음성 대조 — 잠금이 실제로 막지 않으면 여기서 이미 들어가 낡은 값을 읽는다.
+    assert not entered.wait(0.2), "쓰기 잠금이 다른 writer 를 막지 않습니다."
+    release.set()
+    t1.join(3)
+    t2.join(3)
+    saved = reg.load("공고서")
+    assert saved.last_run_at == "2026-07-21T09:00:00"   # 스탬프 생존
+    assert saved.filename_pattern == "동시 편집"          # 편집도 생존(둘 다 남는다)
+
+
+def test_stamp_last_run_is_a_single_field_mutation(tmp_path):
+    """스탬프는 단일 필드만 만진다 — 다른 durable(매핑·패턴·태그·그룹)은 디스크 값 그대로."""
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(
+        name="공고서", template_path="t.hwpx", mapping=_profile(),
+        filename_pattern="패턴", tags={"부서": "계약"}, group="입찰",
+    ))
+    reg.stamp_last_run("공고서", "2026-07-21T09:00:00")
+    after = reg.load("공고서")
+    assert after.last_run_at == "2026-07-21T09:00:00"
+    assert after.filename_pattern == "패턴" and after.group == "입찰"
+    assert after.tags == {"부서": "계약"}
+    assert after.mapping.cover_fields() == _profile().cover_fields()

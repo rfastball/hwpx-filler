@@ -784,9 +784,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     def _stamp_last_run(self, job_name: str, vm) -> str:
         """완주 런의 시각을 **그 런이 시작될 때 겨눴던 작업**에 영속 — 성공 시 ``""``, 실패 시 사유.
 
-        디스크 재읽기 후 단일 필드 뮤테이션(:meth:`JobRegistry.set_group` 선례)이다 —
-        ``vm.job`` 은 작업 선택 시점의 인메모리 사본이라 그것만 고쳐서는 아무 데도 남지 않고,
-        통째 저장은 세션이 들고 있던 옛 매핑으로 디스크의 최신 편집을 되돌린다.
+        디스크 재읽기 후 단일 필드 뮤테이션이다 — ``vm.job`` 은 작업 선택 시점의 인메모리
+        사본이라 그것만 고쳐서는 아무 데도 남지 않고, 통째 저장은 세션이 들고 있던 옛 매핑으로
+        디스크의 최신 편집을 되돌린다. 읽기-수정-쓰기는 레지스트리의 잠금된 경로
+        (:meth:`~hwpxfiller.core.job.JobRegistry.stamp_last_run`)가 진다(리뷰 2R P1) —
+        브리지 호출이 스레드별이라 에디터 저장과 **진짜로 겹치고**, 잠금 없이는 늦게 착지한
+        저장이 상대의 변경을 통째로 되돌린다(스탬프가 매핑 편집을 지우거나 그 반대).
 
         **정체를 인자로 받는 이유**(Codex 리뷰 P1): 생성 중에도 좌 목록의 작업 행은 눌린다
         (busy 잠금은 ``[data-busy-lock]`` 선언 요소만 잠그는데 ``.job-item`` 엔 없다). 기본
@@ -800,9 +803,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         아무 말 없이 이번 실행을 잃는다 — 그래서 **사유를 완료 요약에 병기**한다.
         """
         try:
-            job = self.registry.load(job_name)
-            job.last_run_at = datetime.now().isoformat(timespec="seconds")
-            self.registry.save(job, allow_overwrite=True)
+            job = self.registry.stamp_last_run(
+                job_name, datetime.now().isoformat(timespec="seconds")
+            )
         except (OSError, ValueError) as exc:
             return str(exc) or exc.__class__.__name__
         # 인메모리 사본은 **그 런의 VM 이 아직 현 세션일 때만** 동기화한다(디스크와 갈라지지
