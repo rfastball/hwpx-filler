@@ -594,12 +594,14 @@ def test_compile_strips_stale_lineseg_only_in_compiled_sections():
     pkg.entries["Contents/section1.xml"] = (
         f'<hs:sec xmlns:hs="{HS}" xmlns:hp="{HP}">{plain}</hs:sec>'
     ).encode("utf-8")
+    untouched_before = pkg.entries["Contents/section1.xml"]
 
     out, report = compile_document(pkg)
 
     assert report.compiled == ["계약명"]
     assert b"linesegarray" not in out.entries["Contents/section0.xml"]  # 컴파일 섹션 스트립
-    assert b"linesegarray" in out.entries["Contents/section1.xml"]      # 미변경 섹션 보존
+    # 미변경 섹션은 스트립도 재직렬화 churn 도 없이 바이트 그대로(부분문자열 잔존만으론 미핀)
+    assert out.entries["Contents/section1.xml"] == untouched_before
     # 스트립이 컴파일 결과를 훼손하지 않는다 — 스키마 인식 + 채움 라운드트립
     assert extract_schema(out).field_names() == ["계약명"]
     doc = FieldDocument(out.entries["Contents/section0.xml"])

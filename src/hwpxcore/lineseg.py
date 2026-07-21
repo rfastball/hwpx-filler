@@ -10,6 +10,10 @@ from __future__ import annotations
 
 from lxml import etree
 
+# 도메인 사실의 단일 출처 — "linesegarray 는 본문 텍스트 없는 레이아웃 캐시".
+# 추출 경로(text_extract._IGNORE_P)와 스트립 경로가 함께 참조한다.
+LINESEG_LOCAL = "linesegarray"
+
 
 def strip_line_layout(root: etree._Element) -> None:
     """변형된 섹션 트리에서 stale 줄배치 캐시(``<hp:linesegarray>``)를 전량 제거.
@@ -22,4 +26,17 @@ def strip_line_layout(root: etree._Element) -> None:
     ``with_tail=False``: 제거 요소의 tail 텍스트는 문서 본문이므로 앞 형제/부모에
     되붙여 보존한다(``parent.remove`` 는 tail 을 함께 버려 조용한 텍스트 소실).
     """
-    etree.strip_elements(root, "{*}linesegarray", with_tail=False)
+    etree.strip_elements(root, f"{{*}}{LINESEG_LOCAL}", with_tail=False)
+
+
+def serialize_modified_section(root: etree._Element) -> bytes:
+    """변형된 섹션 트리의 정본 직렬화 — 스트립과 재직렬화를 한 seam 에 묶는다.
+
+    섹션을 변형·재직렬화하는 모든 쓰기 경로(채움 ``fields.to_bytes``·토큰 컴파일
+    ``authoring.compile_document``·미래의 경로)는 이 함수를 쓴다 — 새 경로가 스트립
+    호출을 개별적으로 기억하지 않아도 되게(#95 재발 클래스 차단).
+    """
+    strip_line_layout(root)
+    return etree.tostring(
+        root, xml_declaration=True, encoding="UTF-8", standalone=True
+    )

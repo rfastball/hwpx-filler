@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from lxml import etree
 
-from hwpxcore.lineseg import strip_line_layout
+from hwpxcore.lineseg import serialize_modified_section
 from hwpxcore.text_extract import _to_package
 
 HP_NS = "http://www.hancom.co.kr/hwpml/2011/paragraph"
@@ -118,7 +118,9 @@ class FieldDocument:
         """``field_name`` 누름틀에 값 주입. 누름틀을 찾아 기입했으면 True.
 
         반환값은 매칭 보고용(값이 기존과 같아도 True — 호출측 unmatched 판정이
-        거짓말하지 않게). 실제 텍스트 변경 여부는 ``modified`` 가 따로 추적한다.
+        거짓말하지 않게). 단 begin~end 사이에 ``hp:t`` 슬롯이 전혀 없는 빈 누름틀은
+        기입 불가라 False — 호출측엔 매칭 실패로 보인다(선행 결함, #154 별건).
+        실제 텍스트 변경 여부는 ``modified`` 가 따로 추적한다.
         VBA SetField 와 동일하게 ``name`` 이 ``NAME`` 또는 ``{{NAME}}`` 인 모든
         누름틀을 처리한다.
         """
@@ -167,10 +169,12 @@ class FieldDocument:
                                 self._modified = True  # 실제 변경만 변형으로 계상
                             first_text = False
                             touched = True
-                        else:
-                            if inner.text:
-                                self._modified = True
-                            inner.text = ""  # 파편 텍스트 제거
+                        elif inner.text:
+                            # 파편 텍스트 제거 — 실제로 지울 텍스트가 있을 때만
+                            # 대입한다(무조건 "" 대입은 <hp:t/> 를 무플래그로
+                            # <hp:t></hp:t> 바이트 변이시킴)
+                            inner.text = ""
+                            self._modified = True
                     elif name == "ctrl":
                         # fieldEnd 를 품은 ctrl 이면 종료
                         if any(_local(c.tag) == "fieldEnd" for c in inner):
@@ -186,7 +190,7 @@ class FieldDocument:
         # 변형된 문서만 stale 줄배치 캐시를 스트립(#95) — 미변경 문서의 캐시는
         # 여전히 유효하므로 보존한다.
         if self._modified:
-            strip_line_layout(self._tree)
+            return serialize_modified_section(self._tree)
         return etree.tostring(
             self._tree,
             xml_declaration=True,

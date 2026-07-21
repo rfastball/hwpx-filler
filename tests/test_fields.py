@@ -106,6 +106,7 @@ _LINESEG_XML = """<?xml version="1.0" encoding="UTF-8"?>
   <hp:p>
     <hp:run><hp:ctrl><hp:fieldBegin name="계약명"/></hp:ctrl></hp:run>
     <hp:run><hp:t>기존값</hp:t></hp:run>
+    <hp:run><hp:t/></hp:run>
     <hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>
     <hp:linesegarray><hp:lineseg textpos="0"/></hp:linesegarray>
   </hp:p>
@@ -127,6 +128,8 @@ def test_refill_with_identical_value_is_not_a_modification():
     assert doc.set_field("계약명", "기존값") is True  # 픽스처의 현재 값 그대로
     assert doc.modified is False
     assert b"linesegarray" in doc.to_bytes()  # 캐시 보존
+    # 직렬화까지 무변형 — 빈 파편 <hp:t/> 에 대한 무조건 "" 대입 churn 도 없다
+    assert doc.to_bytes() == FieldDocument(_LINESEG_XML).to_bytes()
 
 
 def test_to_bytes_strips_stale_lineseg_after_set_field():
