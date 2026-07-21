@@ -22,7 +22,7 @@ from ..core.fill_ledger import (
     template_path_drift,
     template_structure_drift,
 )
-from ..core.job import Job, RunRequest
+from ..core.job import Job, RunRequest, require_hwpx
 from ..core.mapping import MappingProfile
 from ..data import source_for_path
 from ..naming import existing_outputs, pattern_field_tokens, plan_output_names
@@ -201,6 +201,10 @@ class RunViewModel:
     """작업 1건 실행 상태·결정. 데이터·대상 문서는 DataSource 이음새 뒤에 둔다."""
 
     def __init__(self, job: Job):
+        # 진입 가드(3부 결정 13 · 2층): 실행뷰는 hwpx 생성 경로다 — HwpxEngine.required_fields·
+        # template_path_drift 가 이 job 의 템플릿을 hwpx 로 파싱한다. txt 기안 작업은 「기안」
+        # 화면이 자기 경로로 소비하므로 여기 오면 조회 경계가 샌 것 → loud 거부(조용한 오파싱 금지).
+        require_hwpx(job)
         self.job = job
         self.datasource = None                 # DataSource 포트(팩토리가 생성)
         self.records: "list[dict]" = []

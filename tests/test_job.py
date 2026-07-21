@@ -781,3 +781,85 @@ def test_every_writer_holds_the_write_lock_during_file_io(tmp_path, monkeypatch)
         "파일 I/O 순간 쓰기 잠금 밖인 writer 가 있습니다(lost update·부활 회귀): "
         + ", ".join(sorted(held_outside))
     )
+
+
+# ------------------------------------------------------------------ 매체 유도·가드 (3부 결정 4·13)
+from hwpxfiller.core.job import (  # noqa: E402 — 매체 헬퍼 테스트 그룹(파일 하단 응집)
+    MediaMismatchError,
+    require_hwpx,
+    require_hwpx_template,
+    template_media,
+)
+
+
+@pytest.mark.parametrize(
+    "path,expected",
+    [
+        ("/x/template.hwpx", "hwpx"),
+        ("/x/template.HWPX", "hwpx"),      # 대소문자 무시
+        ("draft.txt", "txt"),
+        ("draft.TxT", "txt"),
+        ("", ""),                          # 빈 경로 = 미상(조용히 hwpx 아님)
+        ("/x/report.docx", ""),            # 미지 접미사 = 미상
+        ("/x/no_suffix", ""),
+        ("/x/archive.hwpx.bak", ""),       # 끝 접미사만 본다(중간의 .hwpx 는 매체 아님)
+    ],
+)
+def test_template_media_derives_from_suffix_no_io(path, expected):
+    """매체는 template_path 접미사에서만 유도 — I/O 없음, 미상은 조용히 hwpx 로 안 본다(결정 4)."""
+    assert template_media(path) == expected
+
+
+def test_job_media_is_derived_not_stored():
+    """Job.media 는 파생 프로퍼티 — 저장 필드가 아니라 to_dict 에 매체 키가 없다(선언≠실제 자리 금지)."""
+    assert Job(template_path="/x/t.hwpx").media == "hwpx"
+    assert Job(template_path="/x/d.txt").media == "txt"
+    assert Job(template_path="").media == ""
+    assert "media" not in Job(template_path="/x/t.hwpx").to_dict()  # 유도지 저장 아님
+
+
+def test_require_hwpx_template_passes_hwpx_and_rejects_others():
+    """require_hwpx_template: hwpx 는 경로 그대로 반환(체이닝), txt·미상·빈 경로는 loud."""
+    assert require_hwpx_template("/x/t.hwpx") == "/x/t.hwpx"
+    for bad in ("/x/d.txt", "/x/r.docx", ""):
+        with pytest.raises(MediaMismatchError):
+            require_hwpx_template(bad)
+
+
+def test_require_hwpx_job_passes_hwpx_and_authoring_rejects_nonhwpx():
+    """require_hwpx(job): hwpx·빈(저작 중 미링크)은 통과, txt·기타 비어있지 않은 비-hwpx 는 loud.
+
+    빈 경로 예외를 보존하면서(복구 대상 = relink), 비어있지 않은 미지 매체(txt·.docx)는 막는다 —
+    그대로 두면 RunViewModel 하위 메서드가 hwpx 파서로 흘려 조용한 오작동이 된다(#148 리뷰 #1·#4).
+    """
+    hwpx_job = Job(name="공고", template_path="/x/t.hwpx")
+    assert require_hwpx(hwpx_job) is hwpx_job
+    # 빈/미링크 = 저작 중 hwpx 작업 → 통과(파싱 경계는 require_hwpx_template 가 별도로 막는다).
+    authoring = Job(name="새 작업", template_path="")
+    assert require_hwpx(authoring) is authoring
+    # txt 기안 작업 → 자기 화면(「기안」) 소관이라 loud(이름 문맥 동반).
+    txt_job = Job(name="기안메모", template_path="/x/d.txt")
+    with pytest.raises(MediaMismatchError) as ei:
+        require_hwpx(txt_job)
+    assert "기안메모" in str(ei.value)
+    # 비어있지 않은 미지 접미사(.docx 등)도 거부 — 조용한 hwpx 파싱 진입 차단(리뷰 #4).
+    with pytest.raises(MediaMismatchError):
+        require_hwpx(Job(name="문서", template_path="/x/report.docx"))
+
+
+def test_run_view_model_rejects_txt_but_allows_hwpx_and_authoring():
+    """실행뷰: txt·비-hwpx 는 생성 시점 loud 거부(결정 13), hwpx·빈 템플릿(저작 중)은 관용."""
+    from hwpxfiller.gui.run_state import RunViewModel
+
+    RunViewModel(Job(name="공고", template_path="/x/t.hwpx"))  # hwpx 통과
+    RunViewModel(Job(name="저작중", template_path=""))          # 빈 템플릿(저작 중) 통과
+    with pytest.raises(MediaMismatchError):
+        RunViewModel(Job(name="기안", template_path="/x/d.txt"))
+
+
+def test_generate_batch_rejects_non_hwpx_template():
+    """generate_batch(산출물=hwpx 파일)는 hwpx 아닌 템플릿 경로를 첫머리에서 loud 거부(결정 9·13)."""
+    from hwpxfiller.batch import generate_batch
+
+    with pytest.raises(MediaMismatchError):
+        generate_batch("/x/d.txt", [{"a": "1"}], "/tmp/out", "n-{{seq}}")
