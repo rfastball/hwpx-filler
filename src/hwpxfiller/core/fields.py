@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from lxml import etree
 
+from hwpxcore.lineseg import strip_line_layout
 from hwpxcore.text_extract import _to_package
 
 HP_NS = "http://www.hancom.co.kr/hwpml/2011/paragraph"
@@ -173,6 +174,10 @@ class FieldDocument:
 
     # -------------------------------------------------------------- output
     def to_bytes(self) -> bytes:
+        # 변형된 문서만 stale 줄배치 캐시를 스트립(#95) — 미변경 문서의 캐시는
+        # 여전히 유효하므로 보존한다.
+        if self._modified:
+            strip_line_layout(self._tree)
         return etree.tostring(
             self._tree,
             xml_declaration=True,

@@ -97,3 +97,33 @@ def test_output_is_valid_xml_with_declaration():
     out = doc.to_bytes()
     assert out.startswith(b"<?xml")
     assert b"UTF-8" in out[:60]
+
+
+# ------------------------------------------------------- stale 줄배치 캐시(#95)
+_LINESEG_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"
+        xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
+  <hp:p>
+    <hp:run><hp:ctrl><hp:fieldBegin name="계약명"/></hp:ctrl></hp:run>
+    <hp:run><hp:t>기존값</hp:t></hp:run>
+    <hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>
+    <hp:linesegarray><hp:lineseg textpos="0"/></hp:linesegarray>
+  </hp:p>
+  <hp:p><hp:run><hp:t>무관 문단</hp:t></hp:run><hp:linesegarray/></hp:p>
+</hs:sec>""".encode()
+
+
+def test_to_bytes_preserves_lineseg_when_unmodified():
+    """미변경 문서의 줄배치 캐시는 여전히 유효 — 보존한다(#95)."""
+    assert b"linesegarray" in FieldDocument(_LINESEG_XML).to_bytes()
+
+
+def test_to_bytes_strips_stale_lineseg_after_set_field():
+    """채움으로 변형된 문서는 섹션 전체의 stale 캐시를 스트립한다(#95)."""
+    doc = FieldDocument(_LINESEG_XML)
+    assert doc.set_field("계약명", "새값") is True
+    out = doc.to_bytes()
+    assert b"linesegarray" not in out
+    # 스트립이 필드·본문을 훼손하지 않는다
+    assert FieldDocument(out).read_field("계약명") == "새값"
+    assert "무관 문단" in out.decode("utf-8")
