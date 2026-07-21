@@ -781,6 +781,27 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """생성 진행 델타 — 전체 스냅샷 재계산(템플릿 재파싱) 없이 진행바만 갱신."""
         self._push_sink(self.name, {"progress": {"done": done, "total": total}})
 
+    def _stamp_last_run(self) -> str:
+        """완주 런의 시각을 작업에 영속 — 성공 시 ``""``, 실패 시 사용자 문안 사유(#129).
+
+        디스크 재읽기 후 단일 필드 뮤테이션(:meth:`JobRegistry.set_group` 선례)이다 —
+        ``self.vm.job`` 은 작업 선택 시점의 인메모리 사본이라 그것만 고쳐서는 아무 데도
+        남지 않고, 통째 저장은 세션이 들고 있던 옛 매핑으로 디스크의 최신 편집을 되돌린다.
+
+        스탬프 실패를 삼키지 않는 이유(confirm-or-alarm): 문서는 이미 만들어졌으므로 예외로
+        완료 서사(요약·실패 목록)를 날리는 건 더 큰 손실이고, 조용히 넘기면 홈 이력이
+        아무 말 없이 이번 실행을 잃는다 — 그래서 **사유를 완료 요약에 병기**한다.
+        """
+        try:
+            job = self.registry.load(self.job_name)
+            job.last_run_at = datetime.now().isoformat(timespec="seconds")
+            self.registry.save(job, allow_overwrite=True)
+        except (OSError, ValueError) as exc:
+            return str(exc) or exc.__class__.__name__
+        if self.vm is not None:  # 인메모리 사본도 같은 시각으로 — 디스크와 갈라지지 않게
+            self.vm.job.last_run_at = job.last_run_at
+        return ""
+
     def generate(self, *, confirm_overwrite: bool = False) -> dict:
         """게이트 통과 시 동기 생성 → 결과 dict. 덮어쓰기는 웹 재진술 후 재호출(RC-02).
 
@@ -846,9 +867,19 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if batch.failed == 0:
             self._last_generated = set(indices)
 
+        # 완주 = 역사(결정 7·부록 A-2-23) — 완주 런만 `last_run_at` 을 찍는다. 완주 술어를
+        # 위 무장 해제와 공유하는 건 의도다: "완료 이벤트"가 둘로 갈라지면 홈 이력과 가드가
+        # 서로 다른 실행을 완료로 부르게 된다(#129).
+        stamp_error = self._stamp_last_run() if batch.failed == 0 else ""
+
         summary = f"완료. 성공 {batch.succeeded}/{batch.total}, 실패 {batch.failed}."
         if blanks:
             summary += f" 미입력 표시 필드 {len(blanks)}개({', '.join(blanks)})."
+        if stamp_error:
+            summary += (
+                f" 다만 실행 기록을 남기지 못했습니다({stamp_error}) —"
+                " 문서는 모두 만들어졌지만 홈의 최근 실행 이력에는 이번 실행이 빠집니다."
+            )
         failures = [
             f"{Path(r.output_path).name}: {describe_result_error(r.error)}"
             for r in batch.results if not r.ok
@@ -856,7 +887,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         return {
             "ok": True,
             "summary": summary,
-            "level": "ok" if batch.failed == 0 else "danger",
+            "level": "ok" if batch.failed == 0 and not stamp_error else "danger",
             "out_dir": plan.out_dir,
             "succeeded": batch.succeeded,
             "failed": batch.failed,

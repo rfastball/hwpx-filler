@@ -189,6 +189,87 @@ def test_generate_writes_documents_and_marks_missing(tmp_path):
     assert any(isinstance(snap, dict) and "progress" in snap for _s, snap in pushes)
 
 
+def test_generation_stamps_last_run_at(tmp_path):
+    """완주 = 역사(#129) — 생성이 작업에 실행 시각을 영속해야 홈 이력·KPI 가 산다."""
+    ctrl, _ = _controller(tmp_path)
+    assert ctrl.registry.load("공고서").last_run_at == ""      # 선조건: 미실행
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+
+    res = ctrl.generate()
+    assert res["ok"] is True and res["level"] == "ok"
+    stamped = ctrl.registry.load("공고서").last_run_at
+    # 소비처(home_state·screen_home)가 fromisoformat 파싱 + 원시 문자열 정렬로 쓴다.
+    assert datetime.fromisoformat(stamped)
+    assert len(stamped) == len("2026-07-21T09:00:00")           # 초 단위 고정폭 = 정렬 가능
+    assert ctrl.vm.job.last_run_at == stamped                   # 인메모리 사본도 동행
+
+
+def test_generation_stamp_does_not_clobber_disk_edits(tmp_path):
+    """스탬프는 단일 필드 뮤테이션 — 세션이 든 옛 사본으로 디스크 최신 편집을 되돌리지 않는다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    # 세션이 열린 사이 다른 표면(에디터)이 같은 작업을 편집·저장했다.
+    edited = ctrl.registry.load("공고서")
+    edited.filename_pattern = "edited-{{seq:001}}"
+    ctrl.registry.save(edited, allow_overwrite=True)
+
+    assert ctrl.generate()["ok"] is True
+    after = ctrl.registry.load("공고서")
+    assert after.filename_pattern == "edited-{{seq:001}}"       # 디스크 편집 보존
+    assert after.last_run_at != ""                              # 그리고 스탬프도 남는다
+
+
+def test_stamp_failure_is_loud_not_silent(tmp_path, monkeypatch):
+    """기록 실패를 삼키지 않는다(confirm-or-alarm) — 문서는 남기고 사유를 완료 요약에 병기."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    out = tmp_path / "out"
+    ctrl.set_output_folder(str(out))
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+
+    def _boom(job, **kwargs):
+        raise OSError("디스크 쓰기 거부")
+
+    monkeypatch.setattr(ctrl.registry, "save", _boom)
+    res = ctrl.generate()
+    assert res["ok"] is True and res["succeeded"] == 2          # 생성 자체는 완주
+    assert sorted(p.name for p in out.glob("*.hwpx")) == ["doc-001.hwpx", "doc-002.hwpx"]
+    assert "실행 기록을 남기지 못했습니다" in res["summary"]
+    assert "디스크 쓰기 거부" in res["summary"]                  # 사유 재진술
+    assert res["level"] == "danger"                             # 조용한 초록 금지
+
+
+def test_partial_failure_does_not_stamp_last_run_at(tmp_path, monkeypatch):
+    """부분 실패는 완주가 아니다 — 무장 해제와 스탬프가 같은 술어를 공유한다(#129)."""
+    import hwpxfiller.webapp.screen_job as sj
+
+    class _FakeResult:
+        ok = False
+        output_path = "x.hwpx"
+        error = "boom"
+
+    class _FakeBatch:
+        succeeded, failed, total = 1, 1, 2
+        results = [_FakeResult()]
+
+    monkeypatch.setattr(sj, "generate_batch", lambda *a, **k: _FakeBatch())
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+
+    assert ctrl.generate()["failed"] == 1
+    assert ctrl.registry.load("공고서").last_run_at == ""       # 미완주 = 역사 없음
+
+
 def test_overwrite_confirm_flow(tmp_path):
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
