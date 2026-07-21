@@ -21,8 +21,6 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .rail{background:var(--n-header-bg);border-right:1px solid var(--a-border);
   padding:var(--sp-12) var(--sp-10);display:flex;flex-direction:column;gap:var(--sp-2);overflow:auto}
 .rail .brand{font-weight:800;font-size:var(--fs-strong);padding:var(--sp-6) var(--sp-10) var(--sp-2);letter-spacing:-.01em}
-.rail .rl{font-size:var(--fs-caption);
-  color:var(--a-muted);padding:var(--sp-10) var(--sp-10) var(--sp-6);font-weight:700}
 /* 레일 항목: 아이콘(.ni SVG 상시) + 라벨열(.lbl=.n+.d). 부제 .d 는 기본 숨김·활성 항목에만
    인라인 노출(호버 지터 회피; 전체 설명은 title 호버 툴팁). 활성=틴트+좌측 3px 막대(조용한 표시). */
 .navbtn{width:100%;text-align:left;font:inherit;cursor:pointer;border:0;background:transparent;
@@ -47,9 +45,6 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .stage{overflow:auto;padding:var(--sp-24) var(--sp-24) var(--sp-24);display:flex;flex-direction:column;min-height:0}
 .scr{display:none;flex:1;min-height:0;flex-direction:column}
 .scr.on{display:flex}
-.placeholder{margin:auto;max-width:520px;text-align:center;background:var(--a-card);
-  border:1px dashed var(--a-border);border-radius:var(--rad-surface);padding:var(--sp-40) var(--sp-24)}
-.placeholder h2{margin:0 0 var(--sp-10)} .placeholder p{color:var(--a-muted);line-height:1.6;margin:0}
 
 /* ---- 공통 컨트롤(QSS 미러) ---- */
 .btn{font:inherit;font-size:var(--fs-body);cursor:pointer;border:1px solid var(--n-border-strong);
@@ -426,35 +421,8 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 /* 사전검증 박스 */
 .preflight{margin-top:var(--sp-12);font-size:var(--fs-body);padding:var(--sp-8) var(--sp-10);border-radius:var(--rad-surface);line-height:1.5}
 
-/* 3상태 필드 배지(목업 .fb 이식 — 색은 토큰) */
-.statebadges{display:flex;flex-wrap:wrap;gap:var(--sp-6);margin-top:var(--sp-10)}
-.fb{font-size:var(--fs-caption);padding:var(--sp-2) var(--sp-8);border-radius:var(--rad-pill);font-weight:600;
-  display:inline-flex;gap:var(--sp-6);align-items:center;border:1px solid transparent}
-.fb.fill{background:var(--fb-fill-bg);color:var(--a-ok);border-color:var(--fb-fill-bd)}
-.fb.blank{background:var(--fb-blank-bg);color:var(--a-warn);border-color:var(--fb-blank-bd)}
-.fb.missing{background:var(--fb-missing-bg);color:var(--a-danger);border-color:var(--fb-missing-bd);cursor:pointer}
-.fb.missing:focus-visible{outline:2px solid var(--a-danger);outline-offset:1px}
-.fb.missing.ack{background:var(--fb-ack-bg);color:var(--fb-ack-fg);border-color:var(--fb-ack-bd)}
-.fb.drift{background:var(--a-unmatch);color:var(--a-danger);border-style:dashed;
-  border-color:var(--fb-missing-bd);cursor:default}
-/* 생성 대상 문서 리스트 — 내부 스크롤로 페이지 세로 스크롤 강제 해소(#18/9B2AB35D-B) */
-.reclist{border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card);
-  max-height:180px;overflow:auto;margin-top:var(--sp-8)}
-.rec{display:flex;gap:var(--sp-8);align-items:center;padding:var(--sp-4) var(--sp-10);font-size:var(--fs-body);
-  border-bottom:1px solid var(--n-track)}
-.rec:last-child{border-bottom:0}
-.rec input{accent-color:var(--a-primary)}
-.rec .rf{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var(--fs-caption)}
-.rec.muted{color:var(--a-muted);font-family:inherit}
-/* 레코드 식별 2줄 구성(F33) — 위 실파일명(mono) · 아래 원본 데이터 요약(muted 1줄 말줄임). */
-.rec-no{color:var(--a-muted);font-size:var(--fs-caption);flex:none}
-.rec-body{display:flex;flex-direction:column;gap:var(--sp-2);flex:1;min-width:0}
-.rec-body .rf{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.rec-off{color:var(--a-muted);font-family:inherit}
-.rec-id{color:var(--a-muted);font-size:var(--fs-caption);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-
-/* ── 본문 존 거울 = 필드 채움 테이블(결정 36 ⓑ) — 배지=거울의 행. 색은 .fb 배지와 같은
-   토큰이라 표지 언어가 통일된다(블록 5 삼분과 동형). ── */
+/* ── 본문 존 거울 = 필드 채움 테이블(결정 36 ⓑ) — 배지=거울의 행. 색은 채움 표지 토큰
+   (--fb-*)을 그대로 써 표지 언어가 통일된다(블록 5 삼분과 동형). ── */
 .tbwrap{overflow-x:auto}
 .tb.mir{width:100%;border-collapse:collapse;margin-top:var(--sp-10);font-size:var(--fs-body)}
 .tb.mir td{padding:var(--sp-4) var(--sp-8);border-top:1px solid var(--a-border);vertical-align:top}
@@ -578,7 +546,6 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .rail-toggle:hover{background:var(--n-hover)}
 .app.rail-collapsed{grid-template-columns:48px 1fr}
 /* 접힘: 라벨열(.lbl)만 숨긴다 — 아이콘(.ni)은 상시라 시각 표지가 이어진다(#27 개정). */
-.app.rail-collapsed .rail .rl,
 .app.rail-collapsed .navbtn .lbl{display:none}
 .app.rail-collapsed .rail .brand{font-size:0}                 /* 로고 글자 접기 */
 .app.rail-collapsed .rail-toggle{font-size:var(--fs-body);transform:rotate(180deg)}
@@ -747,12 +714,11 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
    forced-colors 는 배경/전경/보더를 시스템 팔레트로 강제 재매핑한다 — 단 transparent·
    currentColor 는 그대로 남아 "틴트 하나로만 상태를 전달하던" 요소가 통째로 사라진다.
    여기선 그 사각(보더 없음/투명 베이스)만 메운다. forced-color-adjust:none 은 쓰지 않는다
-   — 사용자의 고대비 설정을 임의로 무시하지 않는다. 상태 배지(.tok/.fb/.pill)는 이미 텍스트
+   — 사용자의 고대비 설정을 임의로 무시하지 않는다. 상태 배지(.tok/.pill)는 이미 텍스트
    라벨과 실보더를 갖고 있어 자동 재매핑만으로 충분해 손대지 않는다. */
 @media (forced-colors:active){
   .navbtn:focus-visible,
-  .btn:focus-visible,
-  .fb.missing:focus-visible{outline-color:Highlight}
+  .btn:focus-visible{outline-color:Highlight}
 
   .navbtn[aria-current="true"],
   .wstep-tab[aria-current="true"],
