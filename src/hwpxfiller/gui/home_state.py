@@ -18,6 +18,10 @@ from ..core.job import Job, JobRegistry
 from ..core.template_status import CompileState, compile_status
 from .compile_badge import ERROR_BADGE_LEVEL, badge_level
 
+#: 손상 파일 조치의 화이트리스트 거절 문구 — 컨트롤러 선판정과 VM 재판정이 **같은 말**을
+#: 하도록 단일 출처로 둔다(두 곳이 다른 문구면 같은 거절이 두 얼굴로 보인다).
+CORRUPT_PATH_REJECT = "손상 작업 목록에 없는 경로입니다 — 새로고침 후 다시 시도하세요."
+
 # 카드 컴파일 상태 배지 어휘(C2 파생) — 기존 '템플릿 없음' pill 을 대체가 아니라 확장한다.
 # 이모지 접두로 한눈에 "실행 준비 vs 손봐야 함" 을 가른다.
 BADGE_MISSING = "❌ 템플릿 없음"        # 경로 있으나 파일 부재(compile_status 호출 안 함)
@@ -326,6 +330,25 @@ class HomeViewModel:
             self._selected = None
         self.refresh()
 
+    def delete_corrupt(self, path: str) -> None:
+        """손상 ``.job.json`` 삭제 — **쓰기 잠금 안**에서 화이트리스트를 재판정한 뒤 지운다.
+
+        레지스트리 API 를 우회하는 유일한 삭제라 잠금에 직접 참여한다(#129 리뷰 3R P1 의
+        유사 범위 조사 결과): 잠금 밖이면 다른 writer 의 읽기-수정-쓰기 한가운데서 파일이
+        사라져, 지운 작업이 그 writer 의 저장으로 되살아난다.
+
+        재판정이 필요한 이유는 시간 축이다 — 확인 모달을 사람이 보는 사이 rename/clone 이
+        같은 slug 자리를 재사용하면, 확인 **전** 스냅샷으로 만든 화이트리스트는 이미 남의
+        파일을 가리킨다(#137 F10 "삭제 경로검증"의 시간 축 판). 그래서 잠금 안에서 목록을
+        다시 만들고 다시 대조한다. 그 사이 이미 사라졌으면 목적은 달성이라 경보하지 않는다.
+        """
+        with self.registry.write_lock():
+            self.refresh()  # 화이트리스트를 **지금** 다시 만든다
+            if path not in {str(c.path) for c in self._corrupt_rows}:
+                raise ValueError(CORRUPT_PATH_REJECT)
+            Path(path).unlink(missing_ok=True)
+        self.refresh()
+
     def set_tags(self, name: str, raw) -> None:
         """작업의 분류 태그(축→값)를 통째로 교체·저장 — 빈 dict = 전체 해제(#26 D14).
 
@@ -344,9 +367,13 @@ class HomeViewModel:
             if k.strip() in tags:  # 공백 변형 중복 축 — 조용한 last-wins 소실 금지(loud)
                 raise ValueError(f"중복된 태그 축입니다: {k.strip()!r}")
             tags[k.strip()] = v.strip()
-        job = self.registry.load(name)  # 부재·손상 → loud raise
-        job.tags = tags
-        self.registry.save(job, allow_overwrite=True)  # 자기-갱신
+        # 읽기-수정-쓰기는 레지스트리의 잠긴 경로로(#129 리뷰 3R P1) — 손으로 load→save 를
+        # 엮으면 생성 스레드의 스탬프·에디터 저장과 겹쳐 늦게 착지한 쪽이 상대 변경을 통째로
+        # 되돌린다(태그가 방금 찍힌 실행 시각을 지우거나 그 반대). 부재·손상은 여전히 loud.
+        def _set(job) -> None:
+            job.tags = tags
+
+        self.registry.mutate(name, _set)
         self.refresh()
 
     # ------------------------------------------------- 작업 브라우저(group/facet)
