@@ -1024,6 +1024,22 @@ _DRAFT_SESSION_PROBE_JS = r"""
     // 판정은 "이 프로브만의 문자열이 저쪽에 새지 않았는가" — 앞선 프로브가 남긴 상태와
     // 무관하게 성립한다(고정 0건 기대는 프로브 실행 순서에 묶여 깨지기 쉽다).
     out.txt_leak = (document.getElementById('txtCardRender').textContent || '').indexOf('전산장비 구매') >= 0;
+    // 저장 기안을 고른 상태 → 껍데기 + **귀환 동사**(리뷰 P2). 미선택이 곧 휘발 진입구라,
+    // 선택 해제 경로가 없으면 재시작이 유일한 출구가 된다 — 그 출구가 실물로 보이는지 본다.
+    snap.job_name = '착수계 기안'; snap.has_job = true;
+    window.__push('draft', snap);
+    out.sel_shell_shown =
+      getComputedStyle(document.getElementById('draftShellPanel')).display !== 'none';
+    out.sel_session_hidden =
+      getComputedStyle(document.getElementById('draftSessionPanel')).display === 'none';
+    out.back_btn_visible = (function () {
+      var b = document.getElementById('draftBackToVolatile');
+      return !!b && b.offsetParent !== null;
+    })();
+    snap.job_name = ''; snap.has_job = false;
+    window.__push('draft', snap);
+    out.back_restores_session =
+      getComputedStyle(document.getElementById('draftSessionPanel')).display !== 'none';
     out.error = null;
   } catch (e) { out.error = 'throw:' + (e && e.message); }
   return out;

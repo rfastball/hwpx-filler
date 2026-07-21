@@ -363,7 +363,16 @@
               <p class="note" id="draftNote"></p>
             </div>
           </div>
-          <div class="job-empty-panel muted" id="draftShellPanel" style="display:none">이 기안 작업의 채움 세션은 다음 단계에서 열립니다.</div>
+          <!-- 저장 기안을 고른 상태 = 아직 껍데기(저장 세션 복원은 슬라이스 5). **돌아가는 길을
+               함께 준다** — 미선택이 곧 휘발 세션이라, 선택 해제 동사가 없으면 TXT 작업이 하나라도
+               있는 사용자는 한 번 고른 뒤 붙여넣기 화면으로 못 돌아온다(리뷰 P2: 상태 전이에
+               귀환 경로가 없으면 재시작이 유일한 출구다). 세션은 파괴하지 않는다. -->
+          <div class="job-empty-panel muted" id="draftShellPanel" style="display:none">
+            <p>이 기안 작업의 채움 세션은 다음 단계에서 열립니다.</p>
+            <button class="btn" id="draftBackToVolatile"
+                    title="선택을 해제하고, 저장 없이 붙여넣어 채우는 화면으로 돌아갑니다(작업 중이던 내용은 그대로입니다).">
+              ← 붙여넣어 채우기로</button>
+          </div>
         </div>
       </div>
     </section>

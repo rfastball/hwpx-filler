@@ -691,3 +691,20 @@ def test_editor_overwrite_confirm_echoes_the_text_it_showed():
     assert "confirmed_overwrite_text: res.overwrite_text" in src, (
         "확정 호출이 본 문안을 되돌리지 않습니다 — 검증 불가한 확인이 됩니다(#149)."
     )
+
+
+def test_draft_has_return_path_to_volatile_session():
+    """「기안」에서 저장 기안을 고른 뒤 **휘발 세션으로 돌아갈 길**이 있어야 한다(#148 리뷰 P2).
+
+    미선택이 곧 휘발 진입구(R-info 3부 결정 5)라, 선택 해제 동사가 없으면 TXT 작업이 하나라도
+    있는 사용자는 한 번 고른 뒤 붙여넣기 화면으로 못 돌아온다 — 행 재클릭은 무동작이고 빈
+    영역 클릭도 해제가 아니라서 **앱 재시작이 유일한 출구**가 된다. 상태 전이는 귀환 경로를
+    함께 지녀야 한다(백엔드가 빈 이름 디스패치를 받아 준다는 사실만으로는 표면이 없다).
+    """
+    index = WEB_INDEX.read_text(encoding="utf-8")
+    assert 'id="draftBackToVolatile"' in index, "휘발 세션 귀환 버튼이 없습니다(막다른 상태)."
+    src = (WEB_JS_DIR / "screens" / "draft.js").read_text(encoding="utf-8")
+    assert re.search(
+        r'draftBackToVolatile"\)\.addEventListener\("click"[^;]*select_job[^;]*name:\s*""',
+        src, re.S,
+    ), "귀환 버튼이 select_job(name:\"\") 로 배선되지 않았습니다 — 눌러도 아무 일이 없습니다."

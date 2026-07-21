@@ -410,6 +410,13 @@ class TestWebSelftestGate:
         assert d["defer_absent"] is True, "「기안」에 미루기 버튼이 있습니다(결정 10 사망 위반)."
         # 두 인스턴스 격리 — draft 렌더가 숨은 txt 화면 DOM 으로 새지 않는다.
         assert d["txt_leak"] is False, "기안 세션 렌더가 txt 화면 카드로 샜습니다(id 격리 파손)."
+        # 저장 기안 선택 ↔ 휘발 세션 **왕복**(리뷰 P2) — 미선택이 곧 휘발 진입구라 귀환 동사가
+        # 없으면 한 번 고른 사용자에게 재시작이 유일한 출구가 된다.
+        assert d["sel_shell_shown"] is True and d["sel_session_hidden"] is True, (
+            f"저장 기안 선택 시 껍데기 전환이 어긋납니다: {d!r}"
+        )
+        assert d["back_btn_visible"] is True, "휘발 세션 귀환 동사가 보이지 않습니다(막다른 상태)."
+        assert d["back_restores_session"] is True, "미선택 복귀에 휘발 세션이 돌아오지 않았습니다."
 
     def test_job_edit_mode_hosts_definition_surface(self, selftest_result: dict) -> None:
         # 에디터 흡수(블록 2 개정, 결정 39~41) — 편집 모드 전환이 실 WebView2 에서 편집 호스트를

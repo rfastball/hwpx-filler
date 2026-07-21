@@ -281,6 +281,12 @@
     document.querySelector("#scr-draft .job-master").addEventListener("scroll", () => {
       if (menuFor !== null) closeRowMenu();
     }, true);
+    // 휘발 세션 귀환(리뷰 P2) — 미선택이 곧 휘발 진입구(결정 5)라, **선택 해제 동사**가
+    // 없으면 저장 기안을 한 번 고른 사용자는 붙여넣기 화면으로 돌아올 길이 없다(행 재클릭은
+    // 무동작이고 빈 영역 클릭도 해제가 아니다 — 재시작이 유일한 출구가 된다). 세션은 그대로
+    // 두고 겨눔만 푼다(선택은 화면 전환이지 세션 파괴가 아니다 — 같은 규율).
+    $("draftBackToVolatile").addEventListener("click", () =>
+      Bridge.call(SCREEN, "select_job", { name: "" }));
     moveDialog.wire("draftMoveOk", "draftMoveCancel");
     sess.wire();  // 세션 4존 배선(데이터 존·카드 동사·글꼴·린트·붙여넣기) — 팩토리 소유
   }
