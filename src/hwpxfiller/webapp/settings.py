@@ -199,6 +199,26 @@ def save_draft_target_font(font: str) -> None:
     _save_key("draft_target_font", font)
 
 
+# 부팅 완주 스탬프(#77) — 값은 그때 관측한 WebView2 런타임 버전, 못 읽었으면 아래 sentinel.
+# 빈 문자열을 안 쓰는 이유: "완주한 적 없음"과 "완주했으나 버전 미검출"은 예산 판정이 갈리는
+# 서로 다른 사실이고, 둘을 같은 값으로 접으면 버전을 못 읽는 머신이 영구히 첫 실행 취급된다.
+BOOT_STAMP_UNKNOWN_VERSION = "unknown"
+
+
+def load_boot_completed() -> str:
+    """마지막으로 **부팅을 완주한** WebView2 런타임 버전 — 없으면 ``""``.
+
+    완주 = ``loaded`` 발화(창을 실제로 띄웠다). 폴백으로 강제 표시된 부팅은 완주가 아니라
+    기록하지 않는다 — 한 번도 끝까지 못 간 환경이 넓은 예산을 잃으면 안 된다."""
+    raw = _read().get("boot_completed_runtime")
+    return raw if isinstance(raw, str) else ""
+
+
+def save_boot_completed(version: str) -> None:
+    """부팅 완주 스탬프 영속 — 빈 버전은 '미검출로 완주'(sentinel)로 정규화한다."""
+    _save_key("boot_completed_runtime", version.strip() or BOOT_STAMP_UNKNOWN_VERSION)
+
+
 def load_job_collapsed_groups() -> "list[str]":
     """「작업」 좌 목록의 접힌 그룹 이름들(``""``=「그룹 없음」 구획) — 마지막 상태 영속.
 
