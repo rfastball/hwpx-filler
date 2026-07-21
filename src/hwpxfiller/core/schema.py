@@ -47,12 +47,22 @@ _CONTEXT_MAX = 120
 _TOKEN_RE = re.compile(r"\{\{([^{}]+)\}\}")
 
 
-def _infer_type(name: str) -> str:
-    """필드 이름에서 의미 타입 추정. 매칭 없으면 ``"text"``."""
+def infer_type(name: str) -> str:
+    """필드 **이름 문자열**에서 의미 타입 추정. 매칭 없으면 ``"text"``.
+
+    hwpx 누름틀과 무관한 순수 이름 휴리스틱이라 txt 토큰명에도 그대로 먹는다 — #148
+    슬라이스 3b(「기안」 맞추기)의 :meth:`MappingModel.from_field_names` 가 스키마 없이
+    유형을 유도할 때 재사용한다(공개 승격, 설계 착수전 실측 2). 값 스니핑이 가능하면
+    그쪽이 우선이다(결정 5) — 이건 데이터 없는 자리의 이름 추론 기본값.
+    """
     for type_name, keywords in _TYPE_RULES:
         if any(kw in name for kw in keywords):
             return type_name
     return "text"
+
+
+# 내부 구 이름 호환(스키마 내부 소비) — 공개 표면은 :func:`infer_type`.
+_infer_type = infer_type
 
 
 # ----------------------------------------------------------------- data model

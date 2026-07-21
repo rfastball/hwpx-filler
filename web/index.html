@@ -36,9 +36,9 @@
     <button class="navbtn" data-scr="job" aria-label="작업" title="작업 — 저장된 작업을 골라 세션 패널에서 데이터를 채워 생성">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h5v12H4zM11 4h5v7h-5z"/></svg></span><span class="lbl"><span class="n">작업</span><span class="d">목록 + 세션 패널</span></span></button>
     <!-- 「기안」(R-info 3부, #148) — TXT 작업-앵커 master-detail. 「작업」(HWPX)의 대칭 화면으로
-         바로 다음 순번(최종 형상 작업·기안·템플릿·데이터). 좌 목록 + 우 휘발 세션 4존(슬라이스
-         3a)까지 착지했고, 맞추기 표·원문 뷰 전환은 슬라이스 3b 에서 온다. 흡수 완료(슬라이스 6)
-         전까지 기안문 채우기·빠른 기안 항목과 잠시 공존한다. -->
+         바로 다음 순번(최종 형상 작업·기안·템플릿·데이터). 좌 목록 + 우 휘발 세션 4존(3a) +
+         맞추기 표·원문 뷰 전환(3b)까지 착지. 큐 퇴화·구 화면 흡수(3c·슬라이스 6) 전까지
+         기안문 채우기·빠른 기안 항목과 잠시 공존한다. -->
     <button class="navbtn" data-scr="draft" aria-label="기안" title="기안 — 저장된 기안 작업을 골라 채워 복사 (TXT)">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h8l4 4v8H4zM12 4v4h4M7 11h6M7 14h6"/></svg></span><span class="lbl"><span class="n">기안</span><span class="d">기안 작업 목록 + 채움 (TXT)</span></span></button>
     <!-- 레일 「작업 에디터」 사망(결정 39 — 에디터 흡수 완결): 생성 진입은 「작업」 구획
@@ -320,18 +320,25 @@
               <div class="note warnbox" id="draftZoneNote" style="display:none"></div>
             </div>
 
-            <!-- ② 필드 상태 — 작업점의 빈칸 지도(읽기 전용). 토큰 결속·근사 제안·표시형을 얹은
-                 「맞추기」 표는 슬라이스 3b 에서 이 존을 대체한다(지금은 결속 손잡이가 없다). -->
+            <!-- ② 맞추기(#148 슬라이스 3b) — 토큰별 결속·근사 제안·표시형·소유권 색. 표는 공용
+                 팩토리(draftsession.js)가 렌더하고, 여기는 호스트·범례만. 항등 매핑(토큰명==열명)의
+                 제약을 풀어 이름이 달라도 결속·직접 입력할 수 있다. -->
             <div class="zone">
-              <div class="zone-cap"><span class="znum">2</span>필드 상태</div>
-              <div id="draftTokPanel" data-preserve-scroll></div>
-              <p class="muted hint">값은 데이터에서 채움. <span class="danger">항목 없음</span>은
-                <span class="mono">{{토큰}}</span> 그대로 남습니다.</p>
+              <div class="zone-cap"><span class="znum">2</span>맞추기</div>
+              <div id="draftTokPanel" class="mapwrap" data-preserve-scroll></div>
+              <div class="maplegend" id="draftMapLegend"></div>
             </div>
 
-            <!-- ③ 미리보기 — 큐가 지나가는 한 장(결정 16). 상태 색인 + 코드블록 렌더. -->
+            <!-- ③ 미리보기 — 큐가 지나가는 한 장(결정 16). 「채운 모습 ↔ 원문」 뷰 전환(같은 칸의
+                 두 모습, 결정 34): 원문은 휘발 세션의 입력구고 타이핑이 ② 표를 실시간 재구성한다. -->
             <div class="zone workcard" id="draftCard">
-              <div class="zone-cap"><span class="znum">3</span><span id="draftCardTitle">이대로 복사됩니다</span></div>
+              <div class="wc-index-head">
+                <div class="zone-cap" style="margin:0"><span class="znum">3</span><span id="draftCardTitle">이대로 복사됩니다</span></div>
+                <div class="viewsw" role="group" aria-label="카드 보기 전환">
+                  <button type="button" id="draftViewFilled" aria-pressed="true">채운 모습</button>
+                  <button type="button" id="draftViewSource" aria-pressed="false">원문</button>
+                </div>
+              </div>
               <div class="wc-fontbar">
                 <label class="lbl" for="draftTargetFont">대상 글꼴</label>
                 <select class="field sm" id="draftTargetFont"
@@ -346,6 +353,14 @@
               <div class="wc-dots" id="draftCardDots" role="list" aria-label="큐 상태 색인"></div>
               <pre class="wc-render" id="draftCardRender" aria-live="polite" data-preserve-scroll
                    tabindex="0"></pre>
+              <!-- 원문 뷰 = 같은 칸의 두 번째 모습(결정 34). 휘발 세션은 편집 가능(타이핑→② 표
+                   재구성). 저장된 기안의 읽기 전용·「사본으로 편집」은 슬라이스 5. -->
+              <div class="wc-srcview" id="draftSrcView" hidden>
+                <textarea class="wc-srcbox mono" id="draftSrcBox" spellcheck="false"
+                          data-preserve-scroll aria-label="템플릿 원문"></textarea>
+                <p class="muted hint">여기서 고친 원문은 이 세션의 사본입니다 — 라이브러리는 바뀌지 않습니다.
+                  타이핑하면 위 「맞추기」 표가 실시간 재구성됩니다.</p>
+              </div>
               <div class="wc-lint" id="draftCardLint" hidden></div>
             </div>
 
@@ -437,10 +452,12 @@
            복사 동사). 자유 레코드 스테퍼·전역 복사/저장 버튼은 사망(결정 16·18). 좁으면 세로 적층. -->
       <div class="panes">
         <section class="pane tokens">
-          <h4>필드 상태 (작업점)</h4>
-          <div id="tokPanel" data-preserve-scroll></div>
-          <p class="muted hint">값은 데이터에서 채움. <span class="danger">항목 없음</span>은
-            <span class="mono">{{토큰}}</span> 그대로 남깁니다.</p>
+          <h4>맞추기</h4>
+          <!-- ② 맞추기(#148 슬라이스 3b) — 「기안」 화면과 **같은 팩토리**가 렌더한다(합병: 기안문
+               채우기가 결속·근사 제안·표시형·소유권 색을 얻는다). 원문 뷰 전환은 이 화면의
+               붙여넣기 모달이 겸하므로 두지 않는다(id 미부여 = 팩토리가 건너뜀). -->
+          <div id="tokPanel" class="mapwrap" data-preserve-scroll></div>
+          <div class="maplegend" id="txtMapLegend"></div>
         </section>
         <section class="pane workcard" id="txtCard">
           <!-- 대상 글꼴 선언(결정 17) — 붙여넣을 곳(기안작성기)의 표준 글꼴. 클립보드 평문은

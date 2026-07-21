@@ -27,7 +27,7 @@ from ..core.mapping import (
     MappingProfile,
     suggest_mappings,
 )
-from ..core.schema import FieldSpec, TemplateSchema, extract_schema
+from ..core.schema import FieldSpec, TemplateSchema, extract_schema, infer_type
 from ..core.template_status import CompileState, TemplateStatus, compile_status
 
 # inferred_type → 기본 값 유형. 명시 없는 타입은 text(그대로).
@@ -176,6 +176,49 @@ class MappingModel:
                 row.suggestion_score = similarity(
                     spec.name, aliases.get(draft.source, draft.source)
                 )
+            rows.append(row)
+        return cls(rows=rows, source_fields=source_fields, aliases=aliases)
+
+    @classmethod
+    def from_field_names(
+        cls,
+        field_names: "list[str]",
+        source_fields: "list[str] | None" = None,
+        aliases: "dict[str, str] | None" = None,
+        col_kinds: "dict[str, str] | None" = None,
+    ) -> "MappingModel":
+        """스키마 없이 **토큰 이름 목록**으로 행 모델을 세운다(#148 슬라이스 3b — 「기안」 맞추기).
+
+        txt 트랙엔 hwpx 의 :class:`TemplateSchema` 가 없다({{토큰}} 평문). 매핑 층이 실제로
+        쓰는 것은 '순서 있는 이름 + 이름별 유형'뿐이라(모델은 이미 schema-불가지, 설계
+        착수전 실측 1) 이름 목록에서 바로 세운다 — ``from_suggestions`` 는 이 위의 스키마
+        래퍼가 된다. ``spec=None`` 이며 소비 3곳이 이미 None-관용이다.
+
+        **결속 정책 = 결정 30**: 열 이름이 토큰과 **정확히 같은** 자리만 자동 결속(auto)한다.
+        근사는 붙이지 않고 :meth:`suggestions` 의 원클릭 제안으로 넘긴다 — 「근사 제안 자동
+        적용」은 저장 세션의 지속성 스위치(슬라이스 5)라 휘발 기본은 꺼져 있다.
+
+        **유형 = 결정 5 우선순위**: 자동 결속 열은 값 스니핑(``col_kinds``)이 이름 추론을
+        이긴다. 무결속·스니핑 부재는 이름 휴리스틱(:func:`~hwpxfiller.core.schema.infer_type`),
+        그마저 없으면 text. 전 행 미확정(``confirmed=False``)·미접촉으로 시작한다(초안은 초안).
+        """
+        source_fields = list(source_fields or [])
+        aliases = dict(aliases or {})
+        col_kinds = col_kinds or {}
+        cols = set(source_fields)
+        rows: "list[RowState]" = []
+        for name in field_names:
+            row = RowState(
+                template_field=name,
+                spec=None,
+                type=default_transform_for(infer_type(name)),
+            )
+            if name in cols:  # 정확 일치 = 자동 결속(결정 30) — 근사는 suggestions 로
+                row.source = name
+                row.suggestion_score = 1.0
+                kind = col_kinds.get(name, "")
+                if kind:  # 값 스니핑이 이름 추론을 이긴다(결정 5) — 없으면 이름 추론 유지
+                    row.type = default_transform_for(kind)
             rows.append(row)
         return cls(rows=rows, source_fields=source_fields, aliases=aliases)
 
@@ -456,6 +499,103 @@ class MappingModel:
                 for r in self.rows if r.confirmed
             ],
         )
+
+    # -------------------------------------------------- 휘발 렌더·결속(#148 슬라이스 3b)
+    def live_profile(self, name: str = "") -> MappingProfile:
+        """휘발 미리보기·복사가 소비하는 **지금** 매핑 — 확정 게이트 무관, 내용 있는 전 행.
+
+        :meth:`to_profile` 은 ``confirmed`` 행만 담는 저장 산출물용이다. 「기안」 휘발 세션엔
+        확정 개념이 없어(슬라이스 5) 결속·상수가 든 모든 행을 그대로 적용한다 —
+        :meth:`MappingProfile.apply` 가 큐 레코드마다 값 사전을 낸다(이음매 = 레코드→매핑→값
+        사전→render_segments). 무결속·무상수 행은 빠져 토큰이 ``missing``({{토큰}} 빨강)으로
+        남고, 결속 열 값이 비면 키는 있고 값이 빈 ``blank``(〈빈 값〉)이 된다. 의도적 비움
+        (``blank`` 선언)은 확정 개념이라 여기 없다 — 슬라이스 5 몫."""
+        return MappingProfile(
+            name=name,
+            mappings=[r.to_mapping() for r in self.rows if r.has_content()],
+        )
+
+    def index_of(self, template_field: str) -> int:
+        """토큰 이름 → 행 인덱스(없으면 ValueError) — 디스패치가 이름으로 겨눈다."""
+        for i, r in enumerate(self.rows):
+            if r.template_field == template_field:
+                return i
+        raise ValueError(f"매핑에 없는 토큰: {template_field!r}")
+
+    def suggestions(self) -> "dict[str, str]":
+        """무결속 행별 **근사 열 제안 1개**(결정 30, 임계 0.6) — 자동 적용 안 함(원클릭 대상).
+
+        정확 일치는 :meth:`from_field_names` 가 이미 자동 결속했으므로, 여기 남는 건 이름이
+        비슷하기만 한 자리다. 이미 다른 토큰이 쓰는 열은 후보에서 뺀다(1:1 계약) — 같은 열을
+        여러 자리에 미는 제안은 소음이다. 임계 미만은 후보 없음(빈 dict 항목 없음)."""
+        used = {r.source for r in self.rows if r.source}
+        out: "dict[str, str]" = {}
+        for row in self.rows:
+            if row.source:
+                continue
+            best, score = None, 0.0
+            for col in self.source_fields:
+                if col in used:
+                    continue
+                s = similarity(row.template_field, self.aliases.get(col, col))
+                if s > score:
+                    best, score = col, s
+            if best is not None and score >= 0.6:
+                out[row.template_field] = best
+        return out
+
+    def bind_column(self, index: int, source: str, kind: str = "") -> None:
+        """열 결속(auto) — 소스·유형 세팅 + 상수/서식 청소(결정 5·30). 사람 소유(touched).
+
+        빈/부재 ``kind`` 는 이름 추론으로 낙착(값 스니핑 우선, 결정 5). ``source`` 는 활성
+        열이어야 한다(호출측 검증) — 여긴 모델 갱신만. man→auto 재결속도 이 경로(상수를 지워
+        결속 값이 다시 산다)."""
+        row = self.rows[index]
+        row.source = source
+        row.type = default_transform_for(kind) if kind else default_transform_for(
+            infer_type(row.template_field)
+        )
+        row.const = ""
+        row.fmt = ""
+        row.confirmed = False
+        row.touched = True
+
+    def set_manual(self, index: int, value: str) -> None:
+        """직접 입력(man) — 상수 강등. **결속 소스는 기억**한다(되돌리기로 복귀, 사용자 결정).
+
+        결속 값(auto)을 손으로 고치면 그 값은 필연적으로 전 행 공통이라 상수가 옳다 — hand 는
+        큐에서 '어느 행의 값'인지 모호해 존치하지 않고, ``type=const`` 로 강등하되 ``source``
+        를 남겨 :meth:`revert_binding` 이 열 결속을 되살린다."""
+        row = self.rows[index]
+        row.type = "const"
+        row.const = value
+        row.confirmed = False
+        row.touched = True
+
+    def revert_binding(self, index: int, kind: str = "") -> bool:
+        """man→auto 되돌리기 — 기억한 결속 소스 복귀(상수 청소·유형 재유도). 소스 없으면 무동작.
+
+        반환 = 되돌렸는가(소스 기억이 있었나) — 표면이 「자동으로 되돌리기」를 띄울지 판정."""
+        row = self.rows[index]
+        if not row.source:
+            return False
+        row.type = default_transform_for(kind) if kind else default_transform_for(
+            infer_type(row.template_field)
+        )
+        row.const = ""
+        row.fmt = ""
+        return True
+
+    def unbind(self, index: int) -> None:
+        """열 해제 — 결속만 떼고 시스템 소유로 낙착(자동 제안에 다시 맡김). 값 동결은 없다.
+
+        휘발 큐에선 결속 값이 레코드마다 다르므로 '평문 동결'(quickdraft 단건 문법)이 성립하지
+        않는다 — 해제 = 이 자리를 비워 근사 제안·재결속을 기다리는 상태."""
+        self.rows[index].reset_to_system()
+
+    def set_fmt_for(self, template_field: str, code: str) -> None:
+        """이름으로 표시형 정정 — 디스패치 편의(:meth:`set_fmt` 의 이름 판)."""
+        self.set_fmt(self.index_of(template_field), code)
 
     def human_owned_rows(self) -> "list[RowState]":
         """사람 소유 행 — 확정됐거나 손댐(touched). 미접촉 제안(시스템 소유)은 제외."""

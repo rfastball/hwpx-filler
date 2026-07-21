@@ -21,6 +21,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..core.format_engine import presets as format_presets
+from ..core.mapping import TYPES
 from ..core.text_render import (
     RenderReport,
     align_segments,
@@ -29,6 +31,8 @@ from ..core.text_render import (
     template_fields,
 )
 from ..core.text_registry import TextTemplateRegistry
+from ..gui.filter_state import sniff_column_kinds
+from ..gui.mapping_state import MappingModel
 from ..gui.selection_state import SelectionModel
 from ..gui.txt_queue import TxtQueueModel
 from ..gui.txt_state import TxtDraftViewModel
@@ -46,6 +50,26 @@ from .settings import (
     load_draft_target_font,
     save_draft_target_font,
 )
+
+
+# 표시형 프리셋(유형별) — 에디터·빠른 기안과 **같은 표**(format_engine)에서 뽑는다. 승격 시
+# 매핑 행 fmt 로 그대로 이관되려면 세 표면이 같은 어휘를 써야 한다(결정 31 프리셋 키 = 매핑 1:1).
+_FMT_OPTIONS = {
+    t: [{"code": code, "label": label} for label, code in format_presets(t)] for t in TYPES
+}
+
+
+def _row_own(row) -> str:
+    """맞추기 행의 소유권 색(#148 슬라이스 3b) — 값이 어디서 오는지.
+
+    ``man``: 상수(직접 입력한 값 — 전 행 공통) · ``auto``: 결속 열(행마다 데이터 값) ·
+    ``""``: 무결속·무값(토큰이 {{}} 로 남는 자리). hand(결속인데 고쳐 씀)는 큐에서 존치하지
+    않는다 — 값을 고치면 상수로 강등되므로 색은 곧 man 이다(사용자 결정)."""
+    if row.type == "const":
+        return "man"
+    if row.source:
+        return "auto"
+    return ""
 
 
 class TargetFontSetting:
@@ -170,9 +194,67 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         names = self.vm.template_names()
         if names:
             self.vm.select_template(names[0])
+        self._rebuild_mapping()  # 첫 템플릿의 맞추기 골격(정확 자동 결속·이름 유형)
 
     def _records(self) -> list:
         return self.vm.records
+
+    # ----------------------------------------------------- 맞추기 매핑(#148 슬라이스 3b)
+    def _map_source_fields(self) -> "list[str]":
+        """겨눈 데이터의 열 목록(레코드 0의 키 순서 — 데이터 소스 열 순서 보존)."""
+        records = self._records()
+        return list(records[0].keys()) if records else []
+
+    def _rebuild_mapping(self) -> None:
+        """템플릿·데이터 변화를 맞추기 표에 반영 — 사람 소유는 승계, 새 자리만 재제안.
+
+        :meth:`~hwpxfiller.gui.mapping_state.MappingModel.from_field_names` 로 새 골격을
+        세우고(정확 일치 자동 결속·이름 유형 추론), 옛 매핑에서 같은 토큰의 **사람 소유**
+        상태(결속·수기 값·유형·서식)를 이어 붙인다. 단 결속 열이 새 데이터에 **없으면**
+        승계하지 않는다(죽은 결속 방지) — 새 골격의 자동/제안이 그 자리를 다시 채운다.
+        시스템 소유(미접촉 제안)는 승계하지 않는다: 새 데이터 기준으로 다시 제안돼야 한다.
+
+        큐·선택은 세션 휘발이라 여기서 건드리지 않는다(호출측이 데이터 교체 시 새로 세운다).
+        """
+        fields = template_fields(self.vm.template_text)
+        records = self._records()
+        source_fields = self._map_source_fields()
+        col_kinds = sniff_column_kinds(records) if records else {}
+        old = getattr(self, "mapping", None)
+        self.mapping = MappingModel.from_field_names(
+            fields, source_fields, col_kinds=col_kinds
+        )
+        if old is None:
+            return
+        cols = set(source_fields)
+        for row in self.mapping.rows:
+            prev = next(
+                (r for r in old.rows if r.template_field == row.template_field), None
+            )
+            if prev is None or not prev.touched:
+                continue  # 새 토큰이거나 시스템 소유(제안) — 새 데이터 기준 자동
+            if prev.type == "const":  # 수기 값(man)은 데이터 무관 — 상수째 승계
+                row.type = "const"
+                row.const = prev.const
+                row.fmt = prev.fmt
+                row.touched = True
+                # 기억한 결속 소스는 **새 데이터에 살아 있을 때만** 승계한다(Codex F3). 사라진
+                # 열을 남기면 「자동으로 되돌리기」가 없는 열로 결속을 되살려, live_profile 이 전
+                # 레코드에 빈 값을 내면서 소유권은 auto 라 보고하는 계약 거짓말이 된다(can_revert
+                # = type==const ∧ source 라, source 를 비우면 되돌리기 자체가 사라져 정합).
+                row.source = prev.source if prev.source in cols else ""
+            elif prev.source and prev.source in cols:  # 사람이 고른 결속이 새 데이터에도 있으면
+                row.source = prev.source
+                row.type = prev.type
+                row.fmt = prev.fmt
+                row.touched = True
+            # 결속이 죽었으면(prev.source ∉ cols) 승계 안 함 → 새 골격의 자동/제안이 산다
+
+    def _map_kind_of(self, source: str) -> str:
+        """결속 대상 열의 스니핑 유형(결정 5 우선) — 없으면 빈 문자열(이름 추론 낙착)."""
+        if not source:
+            return ""
+        return sniff_column_kinds(self._records()).get(source, "")
 
     # ------------------------------------------------------------- 관측 푸시
     def _push(self) -> None:
@@ -218,27 +300,32 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         # 낸다(confirm-or-alarm 정면 위반). 복사 게이트는 프리뷰가 아니라 `has_current` 가 진다.
         preview_idx = current if (current is not None and 0 <= current < n) else (0 if n else None)
         card_rec = records[preview_idx] if preview_idx is not None else {}
-        segments, card_report = render_segments(vm.template_text, card_rec)
+        # 이음매(#148 슬라이스 3b) — 레코드를 **맞추기 매핑**에 통과시켜 값 사전을 낸다(결속 열·
+        # 표시형·상수). 프로파일은 push 당 1회 빌드해 카드·빈칸 지도·값 셀이 한 출처를 본다.
+        profile = self.mapping.live_profile()
+        card_values = profile.apply(card_rec)
+        segments, card_report = render_segments(vm.template_text, card_values)
         # 정렬 린트 술어는 **치환 전 원문** 기준(결정 17) — 치환하면 런이 사라지므로 원문
         # 기준으로 보아야 "적용됨 · 되돌리기" 상태에서도 무엇을 고쳤는지 정직하게 말한다.
         space_run = segments_have_space_run(segments)
         proportional = is_proportional_font(self._font.value)
         segments = self._aligned(segments)
 
-        # 빈칸 지도(has_gap)는 레코드 값+템플릿에만 의존(선택·작업점 무관) — 네비게이션·필터
-        # 타건마다 O(행×필드)로 재계산하지 않게 (records 정체, 템플릿) 키로 캐시한다(리뷰 F6:
-        # 매 push 재구축이 PR-2b 가 세운 O(1) 을 무너뜨림). 데이터 교체·템플릿 변경 시 무효화.
-        gap_key = (id(records), vm.template_text)
+        # 빈칸 지도(has_gap)는 레코드 값+템플릿+**매핑**에 의존 — 결속·표시형·상수가 바뀌면 어느
+        # 카드가 빈칸인지도 바뀐다. 네비게이션·필터 타건마다 O(행×필드) 재계산하지 않게
+        # (records 정체, 템플릿, 매핑 지문) 키로 캐시한다(리뷰 F6). 데이터·템플릿·매핑 변경 시 무효화.
+        map_sig = tuple((r.source, r.type, r.const, r.fmt) for r in self.mapping.rows)
+        gap_key = (id(records), vm.template_text, map_sig)
         if self._gap_cache_key != gap_key:
             self._gap_cache = {}
             self._gap_cache_key = gap_key
         gap_cache = self._gap_cache
 
-        def _has_gap(i: int) -> bool:  # 미충족(항목 없음·빈 값) 카드 판정, 인덱스별 1회 상각
+        def _has_gap(i: int) -> bool:  # 미충족(항목 없음·빈 값) 카드 판정 — 매핑 적용 후, 1회 상각
             if i not in gap_cache:
-                rec = records[i]
+                values = profile.apply(records[i])
                 gap_cache[i] = any(
-                    name not in rec or ("" if rec[name] is None else str(rec[name])).strip() == ""
+                    name not in values or str(values[name]).strip() == ""
                     for name in fields
                 )
             return gap_cache[i]
@@ -251,15 +338,31 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
             }
             for i in self.queue.display_order()
         ]
-        # 토큰 상태 = **링1 render_segments 리포트에서 파생**(리뷰 F4) — 같은 카드를 두 번 걷지
-        # 않는다(_field_state 재유도 폐기). 카드 렌더(음영/〈빈 값〉/빨강)와 토큰 배지가 한 출처.
+        # 맞추기 표 행(#148 슬라이스 3b) — 토큰별 결속·소유권·표시형·제안·「지금 행의 값」.
+        # 상태는 **card_report 단일 출처**(카드 렌더와 한 출처, 리뷰 F4): missing=무결속·무값
+        # ({{토큰}} 빨강) · blank=결속인데 값 빔(〈빈 값〉) · fill=값 있음. 값 셀은 결속(auto)이면
+        # 현재 행의 값 읽기전용 미리보기, 상수(man)면 편집 가능한 입력(전 행 공통)이다.
         missing_set, empty_set = set(card_report.missing_fields), set(card_report.empty_fields)
+        suggestions = self.mapping.suggestions()
         tokens = [
             {
-                "name": name,
-                "state": "missing" if name in missing_set else ("blank" if name in empty_set else "fill"),
+                "name": r.template_field,
+                "state": ("missing" if r.template_field in missing_set
+                          else ("blank" if r.template_field in empty_set else "fill")),
+                # 결속 열("" = 무결속) · 소유권 색(auto 데이터 / man 상수 / "" 무결속·무값).
+                "source": r.source,
+                "own": _row_own(r),
+                # 값 셀 편집 가능 = 상수(man). 결속(auto)은 행마다 데이터 값이라 읽기전용 미리보기.
+                "manual": r.type == "const",
+                # 「지금 행의 값」 — man 이면 상수, auto 면 현재 행 값, 무결속이면 빈칸(missing).
+                "value": card_values.get(r.template_field, ""),
+                "fmt_kind": r.type,      # 표시형 프리셋 선택(결속 값에만 뜻 — man/const 는 프리셋 없음)
+                "fmt_code": r.fmt,
+                "suggest": suggestions.get(r.template_field, ""),  # 근사 제안(무결속·≥0.6, 원클릭)
+                # man 인데 결속 소스를 기억하고 있으면 「자동으로 되돌리기」를 띄운다(막다른 강등 금지).
+                "can_revert": r.type == "const" and bool(r.source),
             }
-            for name in fields
+            for r in self.mapping.rows
         ]
         card = {
             "index": current,
@@ -297,6 +400,11 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
             "template_name": vm.template_name or "(붙여넣은 텍스트)",
             "template_text": vm.template_text,
             "tokens": tokens,
+            # 맞추기 표가 소비하는 결속 후보·표시형 프리셋(#148 슬라이스 3b). columns = 겨눈
+            # 데이터 열(무데이터면 빈 목록 → 드롭다운은 「직접 입력」만). fmt_options 는 유형별
+            # 프리셋(format_engine 단일 출처 — 에디터·빠른 기안과 같은 어휘).
+            "columns": self._map_source_fields(),
+            "fmt_options": _FMT_OPTIONS,
             "record_count": n,
             # 미충족 리포트는 **card 단일 출처**(리뷰 F9: 최상위 트윈은 조용한 desync 위험) —
             # 상태 배지(setStatus)·카드 판독·완료 노트 모두 card.missing_fields/empty_fields 소비.
@@ -338,7 +446,14 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self.queue.reconcile()
         if getattr(handler, "is_query", False):
             return result
-        if isinstance(result, dict) and result.get("needs_confirm"):
+        # 타이핑 액션(값 입력·원문 라이브 편집)은 **푸시 대신 반환 스냅샷**으로 JS 가 겨냥
+        # 패치한다(_NO_PUSH, 빠른 기안 선례) — 서버 푸시가 포커스된 입력을 재구성하면 왕복 중
+        # 친 글자가 지워지고 IME 조합이 끊긴다. 반환은 handler 가 낸 스냅샷(창 상태 반영).
+        if getattr(handler, "is_no_push", False):
+            return result
+        # 확인 왕복(``needs_confirm``/``confirm``)은 변이가 없었으므로 push 를 생략한다 — 목록
+        # 액션(삭제·병합)의 needs_confirm, 결속 덮어쓰기의 confirm 이 같은 규약을 쓴다(RC-02).
+        if isinstance(result, dict) and (result.get("needs_confirm") or result.get("confirm")):
             return result
         # 변이 동작(네비게이션·템플릿·선택)은 직전 복사 확정을 무효화한다 — 카드가 바뀌므로
         # 완료 노트가 다른 카드와 모순되지 않게(리뷰 F1). 무변이 질의는 재렌더가 없어 불건드림.
@@ -349,6 +464,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
     def _do_select_template(self, p: dict) -> None:
         self.vm.select_template(p["name"])
         self._fullwidth = False  # 치환은 그 원문에 대한 판단 — 원문이 바뀌면 함께 죽는다(리뷰 F2)
+        self._rebuild_mapping()  # 새 토큰 집합 → 맞추기 골격 재구성(같은 이름 결속은 승계)
 
     def _do_new_draft(self, p: dict) -> None:
         """홈 「＋ 새 기안」 — 세션 원자 초기화(F11, F10 「새 작업」과 대칭 문법).
@@ -392,6 +508,70 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
     def _do_set_template_text(self, p: dict) -> None:
         self.vm.set_template_text(p["text"])
         self._fullwidth = False  # 붙여넣은 새 원문에 옛 치환 결정이 승계되지 않는다(리뷰 F2)
+        self._rebuild_mapping()  # 붙여넣은 원문의 토큰 → 맞추기 골격
+
+    def _do_edit_source(self, p: dict) -> dict:
+        """원문 뷰 라이브 편집(뷰 전환 ③, 결정 34) — 타이핑이 맞추기 표를 실시간 재구성.
+
+        _NO_PUSH: 포커스된 원문 textarea 를 서버 푸시가 재구성하면 왕복 중 친 글자가 지워지고
+        한글 IME 조합이 끊긴다(슬라이스 4 stale 경합·빠른 기안 선례). 반환 스냅샷으로 JS 가
+        맞추기 표·미리보기만 겨냥 패치하고 원문 textarea 는 손대지 않는다. 전각 치환은
+        **타건마다 리셋하지 않는다**(빠른 기안 `_do_edit_source` 리뷰 F3와 같은 근거: 켠 뒤 한
+        글자만 쳐도 조용히 꺼지는 것을 막는다 — 보이는 이월은 조용한 이월이 아니다)."""
+        self.vm.set_template_text(p["text"])
+        self._rebuild_mapping()
+        return self.snapshot()
+
+    _do_edit_source.is_no_push = True  # 포커스 원문 입력 보호 — 반환 스냅샷 겨냥 패치
+
+    # ---------------------------------------------------- 맞추기 결속·표시형(#148 슬라이스 3b)
+    def _do_set_source(self, p: dict) -> "dict | None":
+        """토큰 결속·해제(드롭다운·제안 원클릭 공유) — 결정 5·30.
+
+        ``col`` = 데이터 열이면 자동 결속(auto, 유형은 값 스니핑), 빈 값이면 해제(무결속 →
+        근사 제안·재결속 대기). **수기 값 덮어쓰기 확인**: 직접 입력한 값이 있는 자리에 열을
+        붙이면 그 값은 되돌릴 수 없이 사라지므로 첫 호출은 확인 요구(``{"confirm": 문안}``)를
+        돌려주고, 웹이 확인받아 ``confirm=True`` 로 다시 부른다(빠른 기안·relink 게이트 문법)."""
+        name, col = p["name"], (p.get("col") or "")
+        idx = self.mapping.index_of(name)
+        if col:
+            if col not in self._map_source_fields():
+                raise ValueError(f"데이터에 없는 열입니다: {col}")  # confirm-or-alarm
+            row = self.mapping.rows[idx]
+            if row.type == "const" and row.const.strip() and not p.get("confirm"):
+                return {
+                    "confirm": (
+                        f"{{{{{name}}}}} 에 직접 입력한 값 「{row.const}」은 「{col}」 열의 값으로 "
+                        "바뀌고 되돌릴 수 없습니다. 계속하시겠습니까?"
+                    )
+                }
+            self.mapping.bind_column(idx, col, self._map_kind_of(col))
+        else:
+            self.mapping.unbind(idx)  # 무결속 — 값 동결 없음(큐는 행마다 값이 달라 단건 문법 부적용)
+        return None
+
+    def _do_set_map_value(self, p: dict) -> dict:
+        """토큰 값 직접 입력(man) — 상수 강등. 결속 소스는 기억(되돌리기로 복귀, 사용자 결정).
+
+        _NO_PUSH: 포커스된 값 입력을 서버 푸시가 재구성하지 않게 반환 스냅샷으로 미리보기·
+        소유권만 겨냥 패치한다(빠른 기안 `set_token` 선례). 값은 **전 행 공통 상수**다 —
+        큐에서 '어느 행의 값'인지 모호한 hand 대신 상수로 낙착한다."""
+        self.mapping.set_manual(self.mapping.index_of(p["name"]), p.get("text", ""))
+        return self.snapshot()
+
+    _do_set_map_value.is_no_push = True
+
+    def _do_set_map_fmt(self, p: dict) -> None:
+        """표시형(유형 내 프리셋) 정정 — 결속 열에서 오는 값에만 뜻이 있다(결정 34 2층)."""
+        self.mapping.set_fmt_for(p["name"], p.get("code", ""))
+
+    def _do_revert_map(self, p: dict) -> None:
+        """man→auto 되돌리기 — 기억한 결속 소스 복귀(막다른 강등 금지, 결정 31).
+
+        직접 입력으로 상수 강등된 자리를 원 결속 열로 되살린다. 소스 기억이 없으면 무동작
+        (표면은 되돌리기를 소스 기억이 있을 때만 띄운다)."""
+        idx = self.mapping.index_of(p["name"])
+        self.mapping.revert_binding(idx, self._map_kind_of(self.mapping.rows[idx].source))
 
     def _do_step(self, p: dict) -> None:
         """작업점을 큐 표시 순서로 이동(↓/↑, 경계 멈춤) — 자유 레코드 커서가 아니라 큐 판(결정 16)."""
@@ -464,6 +644,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self.selection = SelectionModel(len(records))  # 데이터 변경 → 전체 선택 초기화
         self.queue = TxtQueueModel(self.selection)     # 큐 = 세션 휘발 — 새 데이터 = 새 큐
         self._install_filter(records, {})  # txt 는 매핑 힌트 없음 — 값 스니핑만(결정 24)
+        self._rebuild_mapping()  # 새 데이터의 열 → 자동 결속·근사 제안 재계산(사람 소유 승계)
 
     # ------------------------------------------------ 네이티브 보조(브리지가 다이얼로그 담당)
     def load_data_path(self, path: str, *, sheet: "str | None" = None) -> None:
@@ -481,6 +662,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self.queue = TxtQueueModel(self.selection)     # 큐 = 세션 휘발 — 새 데이터 = 새 큐
         self._last_copy = None  # 새 데이터 = 직전 복사 확정 무효(네이티브 경로라 dispatch 미경유)
         self._install_filter(records, {})  # txt 는 매핑 힌트 없음 — 값 스니핑만(결정 24)
+        self._rebuild_mapping()  # 새 데이터의 열 → 자동 결속·근사 제안 재계산(사람 소유 승계)
         self._push()
 
     def render(self) -> "tuple[str, RenderReport]":
@@ -493,10 +675,12 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         cur = self.queue.current
         records = self._records()
         rec = records[cur] if (cur is not None and 0 <= cur < len(records)) else {}
-        # 클립보드 텍스트 = **카드와 같은 변환의 결과**(결정 17 치환의 계약): 세그먼트를
-        # 이어붙여 만든다. render_record 를 그냥 부르면 치환이 카드에만 걸려 "보이는 것과
-        # 복사되는 것"이 갈라진다 — 세그먼트 경로 하나로 묶어 그 어긋남을 구조적으로 없앤다.
-        segments, report = render_segments(self.vm.template_text, rec)
+        # 이음매(#148 슬라이스 3b) = **레코드 → 맞추기 매핑 → 값 사전 → render_segments**. 종전
+        # 항등 매핑(레코드를 그대로 값 사전으로)에 결속·표시형·상수(수기 값)를 얹는다 — 토큰명이
+        # 열명과 정확히 같아야만 채워지던 제약이 풀린다. 클립보드 텍스트 = **카드와 같은 변환의
+        # 결과**(결정 17 치환의 계약): 세그먼트를 이어붙여 만든다(치환이 카드에만 걸려 "보이는 것
+        # ≠ 복사되는 것"으로 갈라지지 않게 세그먼트 경로 하나로 묶는다).
+        segments, report = render_segments(self.vm.template_text, self.mapping.live_profile().apply(rec))
         return "".join(s.text for s in self._aligned(segments)), report
 
     def _aligned(self, segments: list) -> list:
