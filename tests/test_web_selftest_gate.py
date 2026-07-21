@@ -349,6 +349,31 @@ class TestWebSelftestGate:
         # 퇴화 불변식(결정 5) — 그룹 0개면 헤더·들여쓰기 없는 평면.
         assert j["flat_heads"] == 0 and j["flat_rows"] == 1, f"퇴화 평면 위반: {j!r}"
 
+    def test_draft_list_groups_render_and_menu(self, selftest_result: dict) -> None:
+        # 「기안」 좌 목록(#148 슬라이스 2b) — 「작업」과 같은 그룹 구획 스캐폴드 + 공용
+        # grouplist.js 팩토리(⋮ 메뉴·이동 다이얼로그)의 3번째 소비자를 실 render 로 되읽는다.
+        # 화면별 id 격리(draftList·draftRowMenu·draftMoveModal)로 job/tpl 과 리스너 충돌 없음.
+        d = selftest_result["draft_list"]
+        assert d.get("error") is None, f"기안 목록 프로브 예외: {d.get('error')!r}"
+        assert d["grp_heads"] == 3, f"그룹 헤더 수가 다릅니다: {d!r}"
+        assert d["rows_visible"] == 3, f"접힌 그룹 행이 뷰에서 제외되지 않았습니다: {d!r}"
+        assert d["grp_more"] == 2, "그룹 ⋮ 는 이름 그룹에만 있어야 합니다(「그룹 없음」 제외)."
+        assert d["row_more"] == 3, f"행 ⋮ 수가 가시 행 수와 다릅니다: {d!r}"
+        # 상세 껍데기 — 미선택이면 안내가 보인다(세션 4존은 슬라이스 3).
+        assert d["empty_panel_shown"] is True, "미선택 상세 안내가 보이지 않습니다."
+        # 행 ⋮ 메뉴 — 골격은 편집 미노출(세션 슬라이스 3): 복제·이름변경·이동·삭제만.
+        assert d["menu_shown"] is True, "행 ⋮ 클릭에 메뉴가 열리지 않았습니다."
+        assert d["menu_items"] == ["clone", "rename", "move", "delete"], (
+            f"골격 메뉴는 편집 미노출(복제·이름변경·이동·삭제)이어야 합니다: {d['menu_items']!r}"
+        )
+        # 이동 다이얼로그(공용 moveDialog 팩토리 3번째 소비) — ⋮→이동에 열리고 라디오 조립·닫힘.
+        assert d["move_shown"] is True, "⋮→이동에 이동 다이얼로그가 열리지 않았습니다."
+        assert d["move_opts"] == 4, f"이동 옵션(그룹 2 + 없음 + 새 그룹)이 다릅니다: {d!r}"
+        assert d["move_has_new"] is True, "새 그룹 라디오(data-new)가 없습니다."
+        assert d["move_closed"] is True, "취소에 이동 다이얼로그가 닫히지 않았습니다."
+        # 퇴화 불변식 — 그룹 0개면 헤더 없는 평면.
+        assert d["flat_heads"] == 0 and d["flat_rows"] == 1, f"퇴화 평면 위반: {d!r}"
+
     def test_job_edit_mode_hosts_definition_surface(self, selftest_result: dict) -> None:
         # 에디터 흡수(블록 2 개정, 결정 39~41) — 편집 모드 전환이 실 WebView2 에서 편집 호스트를
         # 켜고 세션 4존을 숨기며(배타 표시 = B-9 overlay/hidden 눈검증의 자동판), 이사한 정의

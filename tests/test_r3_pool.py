@@ -21,6 +21,7 @@ import re
 from pathlib import Path
 
 from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
+from hwpxfiller.webapp.screen_draft import DraftController
 from hwpxfiller.webapp.screen_home import HomeController
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp.screen_pool import PoolController
@@ -225,9 +226,10 @@ def test_appjs_nav_autorefresh_whitelist_matches_backend():
     m = re.search(r"REFRESH_ON_NAV\s*=\s*\[([^\]]*)\]", src)
     assert m, "app.js 에 REFRESH_ON_NAV 화이트리스트가 없습니다 — 전환 시 스냅샷 고착 회귀(C6)."
     listed = set(re.findall(r'"(\w+)"', m.group(1)))
-    # job 포함 — 레지스트리 파생 작업 목록을 스냅샷으로 그리는 유일 생성 표면이 빠지면
-    # 에디터에서 막 저장한 작업이 좌 목록에 안 보인다(전환 시 스냅샷 고착). run 은 사망(슬라이스 3).
-    assert listed == {"home", "pool", "tpl", "job"}
+    # job 포함 — 레지스트리 파생 작업 목록을 스냅샷으로 그리는 표면이 빠지면 에디터에서 막
+    # 저장한 작업이 좌 목록에 안 보인다(전환 시 스냅샷 고착). draft(#148)도 같은 파생 목록이라
+    # 포함(TXT 작업 조회). run 은 사망(슬라이스 3).
+    assert listed == {"home", "pool", "tpl", "job", "draft"}
 
     # go() 안에서 화이트리스트 판정 후 refresh dispatch + 실패 표면화(.catch).
     seg = _segment(src, "function go(id)", "window.Nav")
@@ -237,7 +239,7 @@ def test_appjs_nav_autorefresh_whitelist_matches_backend():
 
     # 백엔드 상호 검증 — 화이트리스트 화면명 == 컨트롤러 name, 전부 _do_refresh 보유.
     ctrls = {c.name: c for c in (
-        HomeController, PoolController, TemplateController, JobController,
+        HomeController, PoolController, TemplateController, JobController, DraftController,
     )}
     assert set(ctrls) == listed
     for cls in ctrls.values():
