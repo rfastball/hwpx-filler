@@ -106,7 +106,7 @@
   }
 
   /* ---- 좌 목록 클릭 위임(⋮·그룹 토글·행 선택) ---- */
-  function onMasterClick(e) {
+  async function onMasterClick(e) {
     const more = e.target.closest(".job-more[data-more]");
     if (more) { toggleRowMenu("job", more.dataset.more, more); return; }
     const gmore = e.target.closest(".grp-more[data-grp-more]");
@@ -127,7 +127,10 @@
     const item = e.target.closest(".job-item[data-job]");
     if (!item) return;
     if (item.getAttribute("aria-current") === "true") return;  // 재클릭 무동작
-    Bridge.call(SCREEN, "select_job", { name: item.dataset.job });
+    // 복원 실패(삭제·읽기 불가 템플릿)는 시끄럽게 — 백엔드가 error 를 돌려주지만 브리지는 그걸
+    // 표시하지 않으므로(리뷰 5a P2) 여기서 받아 알린다(조용히 아무 일 없는 듯 보이는 것 차단).
+    const r = await Bridge.call(SCREEN, "select_job", { name: item.dataset.job });
+    if (r && r.ok === false && r.error) window.alert(r.error);
   }
 
   /* ---- ⋮ 메뉴(내용은 화면 소유, 위치·표시는 팩토리) ---- */

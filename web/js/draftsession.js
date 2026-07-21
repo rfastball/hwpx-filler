@@ -359,6 +359,13 @@
         // 열기' 진입)이 콤보에 보이게. 옵션에 없는 이름(붙여넣은 텍스트)은 선택 해제로 남는다.
         const sel = $(id.tplSel);
         if (sel.value !== s.template_name) sel.value = s.template_name;
+        // 저장 모드(원문 읽기 전용)는 **원문 정의 자체를 잠근다** — textarea 뿐 아니라 템플릿 교체
+        // 진입점(콤보·붙여넣기)도(리뷰 5a P1). 안 잠그면 저장 레시피가 조용히 다른 원문으로 바뀌어
+        // 「사본으로 편집」 전이 없이 수정된 정의를 저장분처럼 보여준다(계약 거짓말). 데이터 컨트롤은
+        // 잠그지 않는다(저장 세션도 데이터는 매번 바꾼다). 손보려면 「사본으로 편집」(5b).
+        const roLock = !!s.source_readonly;
+        sel.disabled = roLock;
+        $(id.pasteBtn).disabled = roLock;
 
         renderMap(s);       // ② 맞추기 표(결속·제안·표시형·소유권 색·「지금 행의 값」)
         renderSource(s);    // ③ 원문 뷰 textarea 동기(뷰 전환 화면만)
