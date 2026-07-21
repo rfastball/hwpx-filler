@@ -167,6 +167,9 @@ table.dmap tr:last-child td{border-bottom:0}
 .wc-nav{display:flex;gap:var(--sp-4);flex:none}
 .wc-dots{display:flex;flex-wrap:wrap;gap:var(--sp-4);margin-bottom:var(--sp-10);
   max-height:60px;overflow:auto}
+/* 큐 퇴화(결정 8·14) 시 진행 색인이 숨어야 한다 — display:flex 는 UA [hidden]{display:none}
+   을 특이도로 이기므로 명시 차단(부록 B-9 결함 클래스 2 — .wc-lint·.qd-foot·.colpanel 선례). */
+.wc-dots[hidden]{display:none}
 .wc-dot{width:14px;height:14px;border-radius:var(--rad-pill);border:1px solid var(--a-border);
   background:var(--a-card);cursor:pointer;padding:0;position:relative;flex:none}
 .wc-dot.uncopied{background:var(--fb-blank-bg);border-color:var(--fb-blank-bd)}
@@ -176,13 +179,15 @@ table.dmap tr:last-child td{border-bottom:0}
 /* 빈칸 지도 표지 — 미충족 카드(항목 없음·빈 값)에 빨강 점 */
 .wc-dot.gap::after{content:"";position:absolute;top:-3px;right:-3px;width:6px;height:6px;
   border-radius:50%;background:var(--a-danger);border:1px solid var(--a-card)}
-/* 카드 헤더: 정체 + 복사 동사(우상단) + 미루기 + 전진 토글 */
+/* 카드 헤더: 정체 + 복사 동사(우상단) + 전진 토글(미루기는 결정 10 사망) */
 .wc-head{display:flex;align-items:center;gap:var(--sp-10);margin-bottom:var(--sp-8)}
 .wc-title{flex:1;min-width:0;font-size:var(--fs-caption);color:var(--a-muted);font-weight:700;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .wc-acts{display:flex;align-items:center;gap:var(--sp-8);flex:none}
 .wc-advance{display:flex;align-items:center;gap:var(--sp-4);font-size:var(--fs-caption);
   color:var(--a-muted);cursor:pointer;white-space:nowrap}
+/* 퇴화 시 자동 전진 토글도 숨어야 한다(같은 B-9 함정 — display:flex 가 [hidden] 을 이긴다). */
+.wc-advance[hidden]{display:none}
 /* 대상 글꼴 선언 바(결정 17) — 큐 상단 드롭다운. 값은 전역 영속(배치 ≠ 스코프). */
 .wc-fontbar{display:flex;align-items:center;gap:var(--sp-8);margin-bottom:var(--sp-10);flex-wrap:wrap}
 .wc-fontbar .lbl{font-size:var(--fs-caption);color:var(--a-muted);font-weight:700;flex:none}

@@ -424,6 +424,20 @@ class TestWebSelftestGate:
             f"자유 이동 경계 잠금이 어긋납니다: {d!r}"
         )
         assert d["defer_absent"] is True, "「기안」에 미루기 버튼이 있습니다(결정 10 사망 위반)."
+        # 큐 퇴화(결정 8·14) — 유효 큐 ≤ 1건(단건·무데이터 가상 1건)이면 큐 장치 3종(진행 색인·
+        # ◀▶ 다음 카드·자동 전진)이 숨는다. 무데이터 가상 카드는 작업점 없이도 복사 가능하고,
+        # 맞추기 표 값 머리가 「지금 행의 값」→「값」으로 바뀐다. 비퇴화 복귀도 함께 못박는다.
+        assert d["degen_dots_hidden"] is True, "퇴화 시 진행 색인 점이 숨지 않았습니다."
+        assert d["degen_prev_hidden"] is True and d["degen_next_hidden"] is True, (
+            f"퇴화 시 ◀▶ 다음 카드가 숨지 않았습니다: {d!r}"
+        )
+        assert d["degen_advance_hidden"] is True, "퇴화 시 자동 전진 토글이 숨지 않았습니다."
+        assert d["degen_copy_enabled"] is True, "무데이터 가상 카드가 복사 불가입니다(결정 14 위반)."
+        assert d["degen_val_head"] == "값", f"무데이터 값 열 머리가 「값」이 아닙니다: {d['degen_val_head']!r}"
+        assert d["degen_src_options"] == 1, (
+            f"무데이터 결속 드롭다운이 「직접 입력」만이 아닙니다(열 후보 누출): {d['degen_src_options']!r}"
+        )
+        assert d["nondegen_dots_shown"] is True, "비퇴화(≥2건) 복귀에 진행 색인이 돌아오지 않았습니다."
         # 두 인스턴스 격리 — draft 렌더가 숨은 txt 화면 DOM 으로 새지 않는다.
         assert d["txt_leak"] is False, "기안 세션 렌더가 txt 화면 카드로 샜습니다(id 격리 파손)."
         # 저장 기안 선택 ↔ 휘발 세션 **왕복**(리뷰 P2) — 미선택이 곧 휘발 진입구라 귀환 동사가
@@ -513,6 +527,9 @@ class TestWebSelftestGate:
         assert z["card_global_copy_dead"] is True, (
             "전역 복사(btnCopy)·저장(btnSave) 버튼이 남아 있습니다 — 결정 16·18 위반."
         )
+        # 미루기 사망(결정 10 · 슬라이스 3c) — **구 화면 포함 전수**. 「기안문 채우기」에서도
+        # 큐 뒤로 보내는 버튼이 사라졌다(자유 이동 ◀▶·점 클릭이 탈출구).
+        assert z["defer_absent"] is True, "「기안문 채우기」에 미루기 버튼이 남아 있습니다(결정 10 사망 위반)."
 
     def test_txt_target_font_and_alignment_lint(self, selftest_result: dict) -> None:
         # 대상 글꼴 선언·선언-조건부 정렬 린트(블록 3, 슬라이스 6 PR-4) — 선언이 원문 렌더에

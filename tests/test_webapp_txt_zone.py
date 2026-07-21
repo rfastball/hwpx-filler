@@ -91,17 +91,19 @@ def test_queue_copied_marker_projected(tmp_path):
 # ------------------------------------------------------------------ 작업점 카드(PR-3)
 
 def test_card_preview_without_data(tmp_path):
-    """데이터 미겨눔 = 작업점 부재 + 템플릿 미리보기(전 토큰 미충족) — 없는 걸 있는 척 안 함.
+    """데이터 미겨눔 + 템플릿 = **가상 길이-1 카드**(결정 14) — 「빠른 기안」 최단 경로.
 
-    카드는 빈 레코드로 템플릿을 미리 보여준다(결정 16): 세그먼트는 literal+missing 뿐,
-    작업점 없음(복사는 표면이 게이트).
+    데이터를 안 물려도 붙여넣은 원문을 직접 입력값으로 채워 복사할 수 있어야 한다. 카드는
+    빈 레코드로 템플릿을 미리 보여주고(세그먼트 literal+missing), 작업점(index)은 None 이되
+    카드는 실재한다(has_current). 큐가 없어 색인 지도는 비고 퇴화한다(큐 장치 숨김 신호).
     """
     ctrl, _ = _controller(tmp_path)
     card = ctrl.snapshot()["card"]
-    assert card["has_current"] is False and card["index"] is None
+    assert card["has_current"] is True and card["index"] is None
+    assert card["queue_degenerate"] is True
     assert card["index_map"] == [] and card["is_complete"] is False
     kinds = {seg["kind"] for seg in card["segments"]}
-    assert kinds == {"literal", "missing"}  # 채움·빈 값 없음(데이터 없음)
+    assert kinds == {"literal", "missing"}  # 채움·빈 값 없음(아직 직접 입력 전)
 
 
 def _copy(ctrl):
@@ -128,13 +130,20 @@ def test_preview_record_when_selection_empty(tmp_path):
 
 
 def test_can_copy_gates_on_work_point(tmp_path):
-    """복사 가능 = 작업점 실재(리뷰 F3) — 빈 템플릿 클립보드 오염을 브리지가 이 술어로 막는다."""
+    """복사 가능 = 작업점 실재 **또는 가상 카드**(결정 14) — 빈 문자열 오염만 막는다.
+
+    무데이터라도 템플릿이 있으면 직접 입력값으로 복사할 수 있다(가상 카드). 브리지가 막는
+    것은 이제 **나갈 것이 없는 경우**(원문도 데이터도 없음)와, 데이터가 있는데 선택 0(작업점
+    부재)뿐이다 — 미채움 토큰이 나가는 것은 복사 전 빈칸 게이트(copy_precheck)가 잡는다.
+    """
     ctrl, _ = _controller(tmp_path)
-    assert ctrl.can_copy() is False           # 데이터 없음
+    assert ctrl.can_copy() is True            # 무데이터라도 템플릿 = 가상 카드(결정 14)
+    ctrl.dispatch("set_template_text", {"text": ""})  # 원문 비우면 나갈 것이 없다
+    assert ctrl.can_copy() is False
     ctrl.load_data_path(_csv(tmp_path))
     assert ctrl.can_copy() is True
     ctrl.dispatch("set_none", {})
-    assert ctrl.can_copy() is False           # 선택 0 = 작업점 없음
+    assert ctrl.can_copy() is False           # 데이터 있는데 선택 0 = 작업점 없음(가상 아님)
 
 
 def test_copy_precheck_reports_gaps_of_the_card_that_will_be_copied(tmp_path):
