@@ -228,3 +228,52 @@ def test_job_panel_imports_ring1_and_does_not_reimplement() -> None:
         "screen_job.py 가 링1 결정 메서드를 재구현한다(우회 이중 진실): "
         f"{sorted(reimplemented)} — RunViewModel 에 위임하라(#87)."
     )
+
+
+# 작업 durable 쓰기의 **허용 호출 지점**(#129 리뷰 3R P1). 값 = 그 자리가 정당한 이유.
+# 새 호출 지점이 생기면 여기 올리기 전까지 실패한다 — "잠금 밖 writer 가 조용히 는다"는
+# 세 라운드 연속 재발한 결함류라, 개별 결함이 아니라 **재유입 경로**를 막는다.
+_ALLOWED_JOB_WRITE_SITES = {
+    ("webapp/screen_editor.py", "save"):
+        "저장 임계구역(_save_locked)이 registry.write_lock() 안 — 보존값 재읽기~저장 원자",
+}
+
+
+def test_job_registry_writes_go_through_the_locked_path() -> None:
+    """레지스트리 밖에서 Job 을 쓰는 자리는 잠긴 경로(mutate/stamp_last_run)뿐이다.
+
+    ``registry.load(...)`` 로 읽어 고친 뒤 ``registry.save(...)`` 로 통째 저장하는 손 엮음은
+    다른 writer 와 겹칠 때 **읽은 시점이 낡은** 저장이 되어 상대 변경을 되돌린다(lost update).
+    그 패턴이 세 라운드 연속 새로 발견됐으므로(스탬프 → delete → set_tags·relink) 호출 지점
+    자체를 봉쇄한다: 남아도 되는 자리는 위 화이트리스트에 사유와 함께 적는다.
+    """
+    # 수신자까지 잡아 **별개 개념 레지스트리**(데이터 풀·txt 라이브러리)를 이름으로 가른다 —
+    # 줄 어딘가에 'pool' 이 있으면 건너뛰는 식은 판별력이 없다(주석 한 줄로 규칙이 뚫린다).
+    # 겨누는 것은 ``save``(통째 저장 = RMW 의 완결부)뿐이다. ``delete``·``clone``·``rename``
+    # 은 레지스트리 안에서 스스로 잠그는 원자 연산이라 밖에서 불러도 안전하다 — 위험한 것은
+    # **밖에서 읽어 밖에서 조립한 객체**를 덮어쓰는 자리다.
+    pattern = re.compile(r"([A-Za-z_][A-Za-z_0-9]*)\.save\(")
+    # 별개 개념 레지스트리를 소유한 모듈(데이터 풀·파이프라인·템플릿) — 같은 ``self.registry``
+    # 이름을 쓰지만 작업 레지스트리가 아니다. 수신자 이름만으로는 갈라지지 않아 모듈로 가른다.
+    other_registry_modules = ("pool", "dataset", "pipeline", "template")
+    offenders: list[str] = []
+    for sub in ("webapp", "gui", "cli"):
+        base = ROOT / "src" / "hwpxfiller" / sub
+        if not base.is_dir():
+            continue
+        for path in sorted(base.rglob("*.py")):
+            if any(word in path.name for word in other_registry_modules):
+                continue
+            rel = path.relative_to(ROOT / "src" / "hwpxfiller").as_posix()
+            for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+                for receiver in pattern.findall(line):
+                    if not receiver.endswith("registry") or "pool" in receiver.lower():
+                        continue
+                    if (rel, "save") in _ALLOWED_JOB_WRITE_SITES:
+                        continue
+                    offenders.append(f"{rel}:{lineno}: {line.strip()}")
+    assert not offenders, (
+        "잠금 밖 Job durable 쓰기 재유입 — JobRegistry.mutate()/stamp_last_run() 같은 잠긴 "
+        "경로를 쓰거나, 정당하면 _ALLOWED_JOB_WRITE_SITES 에 사유와 함께 등록하라:\n"
+        + "\n".join(offenders)
+    )
