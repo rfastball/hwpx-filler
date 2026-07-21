@@ -1,0 +1,826 @@
+<title>「기안」 화면 시안 — 합병(빠른 기안 × 기안문 채우기) · R-info 3부</title>
+<style>
+  :root{
+    --a-primary:#2f5fbf; --a-primary-h:#274fa0; --a-warn:#a05a00; --a-danger:#c0392b;
+    --a-ok:#1e8449; --a-ok-h:#186c3b; --a-muted:#656a72; --a-border:#e2e4e8; --a-card:#ffffff;
+    --a-window:#f6f7f9; --a-ink:#1c2126; --a-on-accent:#ffffff; --a-sel:#dfe6fb;
+    --a-ok-sel:#dcefe3;
+    --fb-fill-bg:#e5f2ea; --fb-fill-bd:#bfe0cb; --fb-blank-bg:#f6ecdb; --fb-blank-bd:#e6c98f;
+    --fb-missing-bg:#fbe6e3; --fb-missing-bd:#e6a49c;
+    --own-auto:#2f5fbf; --own-hand:#a05a00; --own-man:#656a72;
+    --n-header-bg:#eef1f4; --n-hover:#f0f2f5; --n-surface-alt:#f3f4f6; --n-track:#eef0f3;
+    --n-border-strong:#cbd0d6; --n-ink-control:#2b3038; --n-pressed:#e6e9ee;
+    --ovl:rgba(20,24,28,.42);
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --a-primary:#6f97e8; --a-primary-h:#8badf0; --a-warn:#e0a850; --a-danger:#ec7264;
+    --a-ok:#43b877; --a-ok-h:#5ac98a; --a-muted:#98a0ab; --a-border:#333a44; --a-card:#1c2127;
+    --a-window:#131619; --a-ink:#e7eaee; --a-on-accent:#0f1418; --a-sel:#1e2846;
+    --a-ok-sel:#16301f;
+    --fb-fill-bg:#17301f; --fb-fill-bd:#2b5738; --fb-blank-bg:#33291a; --fb-blank-bd:#5c4a26;
+    --fb-missing-bg:#3a2320; --fb-missing-bd:#5f342e;
+    --own-auto:#6f97e8; --own-hand:#e0a850; --own-man:#98a0ab;
+    --n-header-bg:#191d23; --n-hover:#232830; --n-surface-alt:#20252c; --n-track:#20252c;
+    --n-border-strong:#3d4550; --n-ink-control:#d4d9df; --n-pressed:#2c333c;
+    --ovl:rgba(0,0,0,.6);}}
+  :root[data-theme="dark"]{
+    --a-primary:#6f97e8; --a-primary-h:#8badf0; --a-warn:#e0a850; --a-danger:#ec7264;
+    --a-ok:#43b877; --a-ok-h:#5ac98a; --a-muted:#98a0ab; --a-border:#333a44; --a-card:#1c2127;
+    --a-window:#131619; --a-ink:#e7eaee; --a-on-accent:#0f1418; --a-sel:#1e2846;
+    --a-ok-sel:#16301f;
+    --fb-fill-bg:#17301f; --fb-fill-bd:#2b5738; --fb-blank-bg:#33291a; --fb-blank-bd:#5c4a26;
+    --fb-missing-bg:#3a2320; --fb-missing-bd:#5f342e;
+    --own-auto:#6f97e8; --own-hand:#e0a850; --own-man:#98a0ab;
+    --n-header-bg:#191d23; --n-hover:#232830; --n-surface-alt:#20252c; --n-track:#20252c;
+    --n-border-strong:#3d4550; --n-ink-control:#d4d9df; --n-pressed:#2c333c;
+    --ovl:rgba(0,0,0,.6);}
+  :root[data-theme="light"]{
+    --a-primary:#2f5fbf; --a-primary-h:#274fa0; --a-warn:#a05a00; --a-danger:#c0392b;
+    --a-ok:#1e8449; --a-ok-h:#186c3b; --a-muted:#656a72; --a-border:#e2e4e8; --a-card:#ffffff;
+    --a-window:#f6f7f9; --a-ink:#1c2126; --a-on-accent:#ffffff; --a-sel:#dfe6fb;
+    --a-ok-sel:#dcefe3;
+    --fb-fill-bg:#e5f2ea; --fb-fill-bd:#bfe0cb; --fb-blank-bg:#f6ecdb; --fb-blank-bd:#e6c98f;
+    --fb-missing-bg:#fbe6e3; --fb-missing-bd:#e6a49c;
+    --own-auto:#2f5fbf; --own-hand:#a05a00; --own-man:#656a72;
+    --n-header-bg:#eef1f4; --n-hover:#f0f2f5; --n-surface-alt:#f3f4f6; --n-track:#eef0f3;
+    --n-border-strong:#cbd0d6; --n-ink-control:#2b3038; --n-pressed:#e6e9ee;
+    --ovl:rgba(20,24,28,.42);}
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--a-window);color:var(--a-ink);
+    font-family:"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;
+    font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .mono{font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
+  .muted{color:var(--a-muted)}
+  .page{max-width:1240px;margin:0 auto;padding:26px 22px 64px}
+
+  .topbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+  .topbar h1{font-size:21px;margin:0;font-weight:700;letter-spacing:-.01em;text-wrap:balance}
+  .tag{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--a-ok);background:var(--a-ok-sel);padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .lede{color:var(--a-muted);margin:4px 0 14px;max-width:78ch}
+  .lede b{color:var(--a-ink);font-weight:600}
+  .spacer{flex:1}
+  .tbtn{border:1px solid var(--a-border);background:var(--a-card);color:var(--a-ink);
+    border-radius:6px;padding:6px 12px;font:inherit;cursor:pointer}
+  .tbtn:hover{background:var(--n-hover)}
+  .tbtn:focus-visible{outline:2px solid var(--a-ok);outline-offset:2px}
+
+  /* 세션 유래 전환 — 이 시안의 조작 축 */
+  .switch{display:flex;gap:0;border:1px solid var(--n-border-strong);border-radius:8px;
+    overflow:hidden;background:var(--a-card)}
+  .switch button{border:0;background:transparent;color:var(--a-ink);font:inherit;
+    padding:7px 14px;cursor:pointer;display:flex;align-items:center;gap:7px}
+  .switch button+button{border-left:1px solid var(--a-border)}
+  .switch button:hover{background:var(--n-hover)}
+  .switch button:focus-visible{outline:2px solid var(--a-ok);outline-offset:-2px}
+  .switch button[aria-pressed="true"]{background:var(--a-ok);color:var(--a-on-accent);font-weight:600}
+  .switch .dot{width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.5}
+  .switch button[aria-pressed="true"] .dot{opacity:1}
+
+  /* ── 앱 크롬 ── */
+  .app{border:1px solid var(--n-border-strong);border-radius:11px;background:var(--a-card);
+    display:grid;grid-template-columns:160px minmax(0,1fr);overflow:hidden}
+  @media(max-width:720px){.app{grid-template-columns:1fr}.rail{display:none!important}}
+  .rail{background:var(--n-header-bg);border-right:1px solid var(--a-border);
+    padding:12px 8px;display:flex;flex-direction:column;gap:2px}
+  .navbtn{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px;
+    color:var(--n-ink-control);border-left:3px solid transparent;font-size:12.5px}
+  .navbtn .ic{width:16px;text-align:center;opacity:.75}
+  .navbtn[aria-current="true"]{background:var(--a-ok-sel);color:var(--a-ok);
+    border-left-color:var(--a-ok);font-weight:600}
+  .navbtn[aria-current="true"] .ic{opacity:1}
+  .rail hr{border:0;border-top:1px solid var(--a-border);margin:7px 2px}
+
+  .screen{min-width:0;display:flex;flex-direction:column}
+  /* 매체 힌트 = 화면 제목 + 틴트(아이디어 1) */
+  .schead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+    padding:13px 16px;border-bottom:1px solid var(--a-border);
+    border-left:4px solid var(--a-ok);background:var(--n-surface-alt)}
+  .schead h2{margin:0;font-size:16px;font-weight:700;letter-spacing:-.01em}
+  .schead .medium{font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--a-ok);
+    background:var(--a-ok-sel);padding:2px 8px;border-radius:4px}
+  .schead .sub{font-size:12px;color:var(--a-muted)}
+  .pill{margin-left:auto;font-size:11.5px;border:1px solid var(--a-border);border-radius:999px;
+    padding:3px 10px;background:var(--a-card);color:var(--a-muted);white-space:nowrap}
+  .pill.ok{color:var(--a-ok);border-color:var(--fb-fill-bd);background:var(--fb-fill-bg)}
+  .pill.warn{color:var(--a-warn);border-color:var(--fb-blank-bd);background:var(--fb-blank-bg)}
+
+  .layout{display:grid;grid-template-columns:236px minmax(0,1fr);min-height:640px}
+  @media(max-width:940px){.layout{grid-template-columns:1fr}
+    .master{border-right:0;border-bottom:1px solid var(--a-border)}}
+
+  /* ── 좌 master ── */
+  .master{border-right:1px solid var(--a-border);padding:10px;display:flex;
+    flex-direction:column;gap:3px;background:var(--a-card)}
+  .msearch{border:1px solid var(--a-border);border-radius:6px;background:var(--n-surface-alt);
+    padding:6px 9px;color:var(--a-muted);font-size:12px;margin-bottom:5px}
+  .newbtn{width:100%;border:1px dashed var(--n-border-strong);background:transparent;
+    color:var(--a-ok);border-radius:7px;padding:7px;font:inherit;font-weight:600;cursor:pointer;margin-bottom:7px}
+  .newbtn:hover{background:var(--a-ok-sel)}
+  .newbtn:focus-visible{outline:2px solid var(--a-ok);outline-offset:2px}
+  .ghead{display:flex;align-items:center;gap:6px;padding:5px 6px;font-size:11.5px;
+    font-weight:700;color:var(--a-muted);letter-spacing:.02em}
+  .ghead .caret{font-size:9px;opacity:.7}
+  .ghead .n{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:500}
+  .jrow{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:6px;
+    margin-left:14px;cursor:default;font-size:12.5px}
+  .jrow:hover{background:var(--n-hover)}
+  .jrow[aria-current="true"]{background:var(--a-ok-sel);color:var(--a-ok);font-weight:600}
+  .jrow .kebab{margin-left:auto;opacity:0;color:var(--a-muted)}
+  .jrow:hover .kebab{opacity:1}
+  .jrow.session{margin-left:14px;border:1px dashed var(--n-border-strong);background:transparent;
+    color:var(--a-muted);font-style:italic}
+  .jrow.session[aria-current="true"]{border-style:solid;border-color:var(--a-ok);
+    background:var(--a-ok-sel);color:var(--a-ok);font-style:normal;font-weight:600}
+
+  /* ── 우 상세 패널: 4존 ── */
+  .panel{min-width:0;display:flex;flex-direction:column}
+  .zone{border-bottom:1px solid var(--a-border);padding:13px 16px}
+  .zone:last-child{border-bottom:0}
+  .zlabel{display:flex;align-items:center;gap:8px;font-size:10.5px;font-weight:700;
+    letter-spacing:.09em;text-transform:uppercase;color:var(--a-muted);margin-bottom:9px}
+  .zlabel .num{width:16px;height:16px;border-radius:4px;background:var(--n-surface-alt);
+    border:1px solid var(--a-border);display:grid;place-items:center;font-size:9.5px;color:var(--a-muted)}
+
+  .srcline{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .field{border:1px solid var(--a-border);border-radius:6px;background:var(--n-surface-alt);
+    padding:5px 9px;font-size:12.5px}
+  .field.ro{color:var(--a-muted)}
+  .btn{border:1px solid var(--n-border-strong);background:var(--a-card);color:var(--n-ink-control);
+    border-radius:6px;padding:5px 11px;font:inherit;font-size:12.5px;cursor:pointer}
+  .btn:hover{background:var(--n-hover)}
+  .btn:focus-visible{outline:2px solid var(--a-ok);outline-offset:2px}
+  .btn.primary{background:var(--a-ok);border-color:var(--a-ok);color:var(--a-on-accent);font-weight:600}
+  .btn.primary:hover{background:var(--a-ok-h)}
+  .btn.sm{padding:3px 8px;font-size:11.5px}
+
+  /* 블록 4 승계 — 자모 검색 · 엑셀식 열 필터 · 칩 · 관통 스트립 */
+  .filterbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .filterbar .search{min-width:190px;background:var(--a-card)}
+  .filterbar .hintx{font-size:11.5px}
+  .fchips{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:7px}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;
+    border:1px solid var(--fb-fill-bd);background:var(--fb-fill-bg);color:var(--a-ok);
+    border-radius:999px;padding:2px 5px 2px 9px}
+  .chip b{color:var(--a-ink);font-weight:600}
+  .chip .x{cursor:pointer;opacity:.65;padding:0 3px}
+  .chip .x:hover{opacity:1}
+  .fbtn{font-size:9px;opacity:.45;padding:0 2px;cursor:pointer}
+  .fbtn:hover{opacity:.9}
+  .fbtn.on{opacity:1;color:var(--a-ok)}
+  .colpanel{margin-top:9px;border:1px solid var(--n-border-strong);border-radius:8px;
+    background:var(--a-card);padding:10px 12px;max-width:320px;
+    box-shadow:0 6px 18px rgba(0,0,0,.10)}
+  .cp-head{font-size:11.5px;font-weight:700;color:var(--a-muted);margin-bottom:7px}
+  .cp-list{display:flex;flex-direction:column;gap:2px;margin:7px 0;max-height:150px;overflow-y:auto}
+  .cp-list label{display:flex;align-items:center;gap:7px;font-size:12px;padding:3px 4px;border-radius:4px}
+  .cp-list label:hover{background:var(--n-hover)}
+  .cp-list .n{margin-left:auto;font-size:11px;color:var(--a-muted);font-variant-numeric:tabular-nums}
+  .cp-acts{display:flex;align-items:center;gap:6px;border-top:1px solid var(--a-border);padding-top:8px}
+  .btn.primary.sm{background:var(--a-ok);border-color:var(--a-ok);color:var(--a-on-accent);font-weight:600}
+  .fstrip{margin-top:9px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;
+    border:1px solid var(--fb-blank-bd);background:var(--fb-blank-bg);color:var(--a-warn);
+    border-radius:7px;padding:7px 11px}
+  .fstrip b{color:var(--a-ink)}
+
+  .tbwrap{border:1px solid var(--a-border);border-radius:7px;overflow-x:auto;margin-top:9px}
+  table.rows{border-collapse:collapse;width:100%;font-size:12px;min-width:520px}
+  table.rows th,table.rows td{padding:5px 9px;text-align:left;border-bottom:1px solid var(--a-border);white-space:nowrap}
+  table.rows th{background:var(--n-header-bg);font-weight:600;font-size:11px;color:var(--a-muted)}
+  table.rows tr:last-child td{border-bottom:0}
+  table.rows tr.sel td{background:var(--a-ok-sel)}
+  table.rows td.num{font-variant-numeric:tabular-nums;text-align:right}
+  .selnote{display:flex;align-items:center;gap:9px;margin-top:8px;flex-wrap:wrap;font-size:12px}
+
+  /* 매핑 폼 — 단일 UI, 지속성 스위치로 열이 붙고 떨어진다 */
+  .mapwrap{border:1px solid var(--a-border);border-radius:7px;overflow-x:auto}
+  table.map{border-collapse:collapse;width:100%;font-size:12.5px;min-width:560px}
+  table.map th,table.map td{padding:6px 10px;text-align:left;border-bottom:1px solid var(--a-border);vertical-align:middle}
+  table.map th{background:var(--n-header-bg);font-weight:600;font-size:11px;
+    color:var(--a-muted);letter-spacing:.02em;white-space:nowrap}
+  table.map tr:last-child td{border-bottom:0}
+  .tok{font-weight:600;white-space:nowrap}
+  .tok::before{content:"{{";color:var(--a-muted);font-weight:400}
+  .tok::after{content:"}}";color:var(--a-muted);font-weight:400}
+  .sel-src{border:1px solid var(--a-border);border-radius:5px;background:var(--a-card);
+    padding:3px 7px;font-size:12px;display:inline-flex;align-items:center;gap:6px;max-width:100%}
+  .sel-src::after{content:"▾";font-size:9px;color:var(--a-muted)}
+  .sel-src.empty{color:var(--a-muted);font-style:italic;border-style:dashed}
+  .own{width:7px;height:7px;border-radius:50%;flex:none}
+  .own.auto{background:var(--own-auto)} .own.hand{background:var(--own-hand)} .own.man{background:var(--own-man)}
+  .preview{color:var(--a-muted);font-size:12px;max-width:22ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .preview.missing{color:var(--a-danger)}
+  .suggest{color:var(--a-ok);background:transparent;border:1px solid var(--fb-fill-bd);
+    border-radius:5px;padding:2px 7px;font:inherit;font-size:11.5px;cursor:pointer}
+  .suggest:hover{background:var(--fb-fill-bg)}
+  .ck{width:14px;height:14px;accent-color:var(--a-ok)}
+  .persist{display:none}
+  body[data-mode="saved"] .persist{display:table-cell}
+  body[data-mode="saved"] th.persist{display:table-cell}
+  .volatile-note{display:none}
+  body[data-mode="volatile"] .volatile-note{display:block}
+
+  .maplegend{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:11.5px;color:var(--a-muted)}
+  .maplegend span{display:inline-flex;align-items:center;gap:5px}
+
+  /* 카드 렌더 + 진행 색인 */
+  .cardhead{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:8px}
+  .dots{display:flex;gap:3px;flex-wrap:wrap;margin-left:auto}
+  .dot2{width:15px;height:15px;border-radius:4px;border:1px solid var(--a-border);
+    background:var(--n-track);font-size:8.5px;color:var(--a-muted);display:grid;place-items:center}
+  .dot2.done{background:var(--fb-fill-bg);border-color:var(--fb-fill-bd);color:var(--a-ok)}
+  .dot2.cur{background:var(--a-ok);border-color:var(--a-ok);color:var(--a-on-accent);font-weight:700}
+  .dot2.gap{border-color:var(--fb-missing-bd);background:var(--fb-missing-bg);color:var(--a-danger)}
+  .render{border:1px solid var(--a-border);border-radius:7px;background:var(--n-surface-alt);
+    padding:13px 15px;white-space:pre-wrap;font-size:12.5px;line-height:1.75;overflow-x:auto}
+  .fill{background:var(--fb-fill-bg);border-bottom:1px solid var(--fb-fill-bd);border-radius:2px;padding:0 2px}
+  .blank{background:var(--fb-blank-bg);border-bottom:1px solid var(--fb-blank-bd);border-radius:2px;padding:0 2px;color:var(--a-warn)}
+  .miss{background:var(--fb-missing-bg);border-bottom:1px solid var(--fb-missing-bd);
+    border-radius:2px;padding:0 2px;color:var(--a-danger);font-weight:600}
+
+  .foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .foot .gate{font-size:12px;color:var(--a-warn)}
+  .promote{display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap}
+  .promote .lbl{font-size:12px;color:var(--a-muted)}
+
+  /* 주석 */
+  .notes{margin-top:26px;display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(270px,1fr))}
+  .note{border:1px solid var(--a-border);border-radius:9px;background:var(--a-card);padding:13px 15px}
+  .note h3{margin:0 0 6px;font-size:13px;font-weight:700;display:flex;align-items:center;gap:7px}
+  .note h3 .k{font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+    padding:2px 7px;border-radius:4px;background:var(--a-ok-sel);color:var(--a-ok)}
+  .note h3 .k.open{background:var(--fb-blank-bg);color:var(--a-warn)}
+  .note p{margin:0 0 6px;font-size:12.5px;color:var(--a-muted)}
+  .note p:last-child{margin-bottom:0}
+  .note b{color:var(--a-ink);font-weight:600}
+  .sechead{margin:30px 0 10px;font-size:15px;font-weight:700;letter-spacing:-.01em}
+
+  /* 카드 보기 전환 — 채운 모습 ↔ 원문(같은 칸의 두 모습) */
+  .viewsw{display:flex;border:1px solid var(--a-border);border-radius:6px;overflow:hidden}
+  .viewsw button{border:0;background:var(--a-card);color:var(--a-muted);font:inherit;
+    font-size:11.5px;padding:3px 10px;cursor:pointer}
+  .viewsw button+button{border-left:1px solid var(--a-border)}
+  .viewsw button:hover{background:var(--n-hover)}
+  .viewsw button:focus-visible{outline:2px solid var(--a-ok);outline-offset:-2px}
+  .viewsw button[aria-pressed="true"]{background:var(--a-ok-sel);color:var(--a-ok);font-weight:600}
+
+  .srcview{display:none}
+  body[data-view="source"] .srcview{display:block}
+  body[data-view="source"] .render{display:none}
+  .srcbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px}
+  .srcname{font-size:12.5px;font-weight:600}
+  .modbadge{font-size:11px;font-weight:700;color:var(--a-warn);
+    background:var(--fb-blank-bg);border:1px solid var(--fb-blank-bd);border-radius:4px;padding:1px 7px}
+  .modbadge[hidden]{display:none}
+  .srcbox{width:100%;min-height:190px;resize:vertical;border:1px solid var(--n-border-strong);
+    border-radius:7px;background:var(--a-card);color:var(--a-ink);padding:12px 14px;
+    font-size:12.5px;line-height:1.75}
+  .srcbox:focus-visible{outline:2px solid var(--a-ok);outline-offset:1px}
+  .srcbox[readonly]{background:var(--n-surface-alt);color:var(--a-muted)}
+  .srchint{margin:7px 0 0;font-size:11.5px;color:var(--a-muted)}
+  body[data-mode="saved"] #srcLib{display:none}
+  body[data-mode="volatile"] #srcFork{display:none}
+
+  /* 확인 모달 */
+  .ovl{position:fixed;inset:0;background:var(--ovl);display:grid;place-items:center;padding:20px;z-index:20}
+  .ovl[hidden]{display:none}
+  .modal{background:var(--a-card);border:1px solid var(--n-border-strong);border-radius:10px;
+    padding:18px 20px;max-width:440px;width:100%;box-shadow:0 12px 34px rgba(0,0,0,.22)}
+  .modal h3{margin:0 0 8px;font-size:15px;font-weight:700}
+  .modal p{margin:0 0 14px;font-size:12.5px;color:var(--a-muted)}
+  .modal p b{color:var(--a-ink)}
+  .modal-acts{display:flex;gap:8px;justify-content:flex-end}
+
+  @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<body data-mode="saved">
+<div class="page">
+
+  <div class="topbar">
+    <h1>「기안」 화면 시안</h1>
+    <span class="tag">R-info 3부 · 미결 1</span>
+    <span class="spacer"></span>
+    <button class="tbtn" id="themeBtn" type="button">테마 전환</button>
+  </div>
+  <p class="lede">
+    「기안문 채우기」(흐름)와 「빠른 기안」(정밀도)을 <b>한 화면으로 합친</b> 모습.
+    두 표면은 원래 하나의 계보였고(R-flow 인계 4항 “구 기안문 채우기”), 블록 3·5가 서로 다른
+    표면에 착지하며 갈라졌다. 아래 전환기로 <b>세션 유래</b>를 바꿔 보면, 합병 뒤에도 비대칭이
+    지워지지 않고 <b>유래로 옮겨간다</b>는 것을 확인할 수 있다(R-flow 결정 35 독법).
+  </p>
+
+  <div class="topbar" style="margin-bottom:14px">
+    <div class="switch" role="group" aria-label="세션 유래 전환">
+      <button type="button" id="mSaved" aria-pressed="true"><span class="dot"></span>저장된 기안 작업</button>
+      <button type="button" id="mVol" aria-pressed="false"><span class="dot"></span>붙여넣기 세션(휘발)</button>
+    </div>
+    <span class="muted" id="modeNote" style="font-size:12px"></span>
+  </div>
+
+  <div class="app">
+    <nav class="rail" aria-label="화면 전환">
+      <div class="navbtn"><span class="ic">▩</span>홈</div>
+      <div class="navbtn"><span class="ic">▤</span>작업</div>
+      <div class="navbtn" aria-current="true"><span class="ic">✎</span>기안</div>
+      <hr>
+      <div class="navbtn"><span class="ic">◫</span>템플릿 관리</div>
+      <div class="navbtn"><span class="ic">▦</span>데이터 관리</div>
+    </nav>
+
+    <div class="screen">
+      <div class="schead">
+        <h2>기안</h2>
+        <span class="medium">TXT</span>
+        <span class="sub">채워서 복사합니다 · 파일로 저장하지 않습니다</span>
+        <span class="pill warn" id="statusPill">빈칸 1곳</span>
+      </div>
+
+      <div class="layout">
+        <!-- 좌 master -->
+        <aside class="master">
+          <div class="msearch">이름으로 거르기…</div>
+          <button class="newbtn" type="button">＋ 새 기안</button>
+
+          <div class="ghead"><span class="caret">▾</span>월례<span class="n">2</span></div>
+          <div class="jrow" id="rowSaved" aria-current="true">착수계 기안<span class="kebab">⋮</span></div>
+          <div class="jrow">검사요청 기안<span class="kebab">⋮</span></div>
+
+          <div class="ghead"><span class="caret">▾</span>그룹 없음<span class="n">1</span></div>
+          <div class="jrow">준공계 기안<span class="kebab">⋮</span></div>
+
+          <div style="margin-top:11px;border-top:1px dashed var(--a-border);padding-top:10px">
+            <div class="ghead" style="padding-left:0">이번 세션</div>
+            <div class="jrow session" id="rowVol">(저장하지 않은 기안)</div>
+          </div>
+        </aside>
+
+        <!-- 우 상세 패널 4존 -->
+        <div class="panel">
+
+          <!-- ① 데이터 -->
+          <section class="zone">
+            <div class="zlabel"><span class="num">1</span>데이터</div>
+            <div class="srcline">
+              <span class="field ro">2026 상반기 계약대장.xlsx · <b>계약현황</b> 시트</span>
+              <button class="btn" type="button">바꾸기…</button>
+              <span class="muted">30행</span>
+            </div>
+            <!-- 블록 4 승계 — DataZoneMixin 은 작업 화면과 단일 출처다(재구현 아님). -->
+            <div class="filterbar">
+              <input class="field search" type="search" value="ㅌㅎㅊㄹ"
+                     aria-label="행 거르기" placeholder="행 거르기 — 자모만 쳐도 걸립니다">
+              <span class="muted hintx">자모 부분일치 · 실시간</span>
+              <button class="btn sm" type="button">직전 필터 재적용</button>
+              <span class="spacer"></span>
+              <span class="muted">선택 <b>12</b>/30</span>
+              <button class="btn sm" type="button">전체 선택</button>
+              <button class="btn sm" type="button">전체 해제</button>
+            </div>
+            <div class="fchips">
+              <span class="chip">계약 건명 <b>«ㅌㅎㅊㄹ»</b><span class="x">×</span></span>
+              <span class="chip">업체명 <b>3개 값</b><span class="x">×</span></span>
+              <span class="chip">계약금액 <b>≥ 30,000,000</b><span class="x">×</span></span>
+              <button class="btn sm" type="button">모두 지우기</button>
+            </div>
+
+            <div class="tbwrap">
+              <table class="rows">
+                <thead><tr><th style="width:26px"></th>
+                  <th>계약 건명 <span class="fbtn on">▾</span></th>
+                  <th>업체명 <span class="fbtn on">▾</span></th>
+                  <th>계약금액(원) <span class="fbtn on">▾</span></th>
+                  <th>착수예정일 <span class="fbtn">▾</span></th></tr></thead>
+                <tbody>
+                  <tr class="sel"><td>✓</td><td>특수교육대상자 통학차량 임차용역</td><td>(주)한빛모빌리티</td><td class="num">84,320,000</td><td>2026-07-27</td></tr>
+                  <tr class="sel"><td>✓</td><td>청사 승강기 유지관리 용역</td><td>대한엘리베이터(주)</td><td class="num">31,900,000</td><td>2026-08-03</td></tr>
+                  <tr class="sel"><td>✓</td><td>도서관 정기간행물 구입</td><td>세종북스</td><td class="num">12,450,000</td><td>2026-08-10</td></tr>
+                  <tr class="sel"><td>✓</td><td>급식실 후드 교체공사</td><td>(주)정우설비</td><td class="num">57,800,000</td><td></td></tr>
+                  <tr><td></td><td>운동장 트랙 보수공사</td><td>한성건설</td><td class="num">96,200,000</td><td>2026-08-17</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <!-- 엑셀식 열 필터 — 열 헤더 ▾ 로 열리는 값 좁힘 선택기 -->
+            <div class="colpanel">
+              <div class="cp-head">업체명 으로 좁히기</div>
+              <input class="field sm" type="search" placeholder="값 찾기…" aria-label="값 찾기">
+              <div class="cp-list">
+                <label><input class="ck" type="checkbox" checked> (주)한빛모빌리티 <span class="n">4</span></label>
+                <label><input class="ck" type="checkbox" checked> 대한엘리베이터(주) <span class="n">3</span></label>
+                <label><input class="ck" type="checkbox" checked> 세종북스 <span class="n">2</span></label>
+                <label><input class="ck" type="checkbox"> (주)정우설비 <span class="n">1</span></label>
+                <label><input class="ck" type="checkbox"> 한성건설 <span class="n">1</span></label>
+                <label class="muted"><input class="ck" type="checkbox"> 〈빈 값〉 <span class="n">2</span></label>
+              </div>
+              <div class="cp-acts">
+                <button class="btn sm" type="button">모두</button>
+                <button class="btn sm" type="button">해제</button>
+                <span class="spacer"></span>
+                <button class="btn sm primary" type="button">적용</button>
+              </div>
+            </div>
+
+            <!-- 관통 스트립 — 필터 밖에 남은 선택을 숨기지 않는다 -->
+            <div class="fstrip">
+              지금 필터 밖에 <b>선택된 2건</b>이 있습니다 — 복사 큐에는 그대로 포함됩니다.
+              <button class="btn sm" type="button">보기</button>
+              <button class="btn sm" type="button">선택 해제</button>
+            </div>
+
+            <div class="selnote">
+              <span><b>12행</b> 선택 — 선택이 곧 복사할 큐입니다</span>
+              <span class="muted">선택 1행이면 단건, N행이면 큐 — 화면은 같습니다</span>
+            </div>
+          </section>
+
+          <!-- ② 매핑 -->
+          <section class="zone">
+            <div class="zlabel"><span class="num">2</span>맞추기
+              <span class="muted" style="font-weight:400;letter-spacing:0;text-transform:none">
+                템플릿 <b>착수계.txt</b></span>
+            </div>
+            <div class="mapwrap">
+              <table class="map">
+                <thead>
+                  <tr>
+                    <th style="width:15%">토큰</th>
+                    <th style="width:27%">데이터 열</th>
+                    <th class="persist" style="width:13%">유형</th>
+                    <th style="width:17%">표시형</th>
+                    <th>지금 행의 값</th>
+                    <th class="persist" style="width:56px">확정</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="tok">계약명</td>
+                    <td><span class="sel-src"><span class="own auto"></span>계약 건명</span></td>
+                    <td class="persist"><span class="sel-src">텍스트</span></td>
+                    <td><span class="muted">—</span></td>
+                    <td class="preview">특수교육대상자 통학차량 임차용역</td>
+                    <td class="persist"><input class="ck" type="checkbox" checked aria-label="계약명 확정"></td>
+                  </tr>
+                  <tr>
+                    <td class="tok">계약금액</td>
+                    <td><span class="sel-src"><span class="own auto"></span>계약금액(원)</span></td>
+                    <td class="persist"><span class="sel-src">금액</span></td>
+                    <td><span class="sel-src">1,234,567</span></td>
+                    <td class="preview">84,320,000</td>
+                    <td class="persist"><input class="ck" type="checkbox" checked aria-label="계약금액 확정"></td>
+                  </tr>
+                  <tr>
+                    <td class="tok">착수일</td>
+                    <td><span class="sel-src"><span class="own auto"></span>착수예정일</span></td>
+                    <td class="persist"><span class="sel-src">날짜</span></td>
+                    <td><span class="sel-src">2026-07-27</span></td>
+                    <td class="preview">2026-07-27</td>
+                    <td class="persist"><input class="ck" type="checkbox" checked aria-label="착수일 확정"></td>
+                  </tr>
+                  <tr>
+                    <td class="tok">수급인</td>
+                    <td><span class="sel-src empty">고르지 않음</span>
+                      <button class="suggest" type="button">업체명? 적용</button></td>
+                    <td class="persist"><span class="sel-src">텍스트</span></td>
+                    <td><span class="muted">—</span></td>
+                    <td class="preview missing">채워지지 않음</td>
+                    <td class="persist"><input class="ck" type="checkbox" aria-label="수급인 확정"></td>
+                  </tr>
+                  <tr>
+                    <td class="tok">담당자</td>
+                    <td><span class="sel-src"><span class="own man"></span>직접 입력 · 김민수</span></td>
+                    <td class="persist"><span class="sel-src">텍스트</span></td>
+                    <td><span class="muted">—</span></td>
+                    <td class="preview">김민수</td>
+                    <td class="persist"><input class="ck" type="checkbox" checked aria-label="담당자 확정"></td>
+                  </tr>
+                  <tr>
+                    <td class="tok">비고</td>
+                    <td><span class="sel-src empty">비워둠(선언)</span></td>
+                    <td class="persist"><span class="sel-src">텍스트</span></td>
+                    <td><span class="muted">—</span></td>
+                    <td class="preview muted">〈빈 값〉 — 확인에서 제외</td>
+                    <td class="persist"><input class="ck" type="checkbox" checked aria-label="비고 확정"></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="maplegend">
+              <span><i class="own auto"></i>자동으로 맞춤</span>
+              <span><i class="own hand"></i>고쳐 씀</span>
+              <span><i class="own man"></i>직접 입력</span>
+              <span class="volatile-note">이 세션은 저장하지 않으므로 <b>유형·확정</b>은 묻지 않습니다 — 남기려면 「기안으로 저장」.</span>
+            </div>
+          </section>
+
+          <!-- ③ 미리보기 -->
+          <section class="zone">
+            <div class="cardhead">
+              <div class="zlabel" style="margin:0"><span class="num">3</span><span id="zone3Label">이대로 복사됩니다</span></div>
+              <div class="viewsw" role="group" aria-label="카드 보기 전환">
+                <button type="button" id="vFilled" aria-pressed="true">채운 모습</button>
+                <button type="button" id="vSource" aria-pressed="false">원문</button>
+              </div>
+              <span class="muted" id="cardPos">4번째 / 12건 · 복사 3</span>
+              <div class="dots" aria-label="진행 색인">
+                <span class="dot2 done">✓</span><span class="dot2 done">✓</span><span class="dot2 done">✓</span>
+                <span class="dot2 cur gap">4</span><span class="dot2"></span><span class="dot2"></span>
+                <span class="dot2"></span><span class="dot2"></span><span class="dot2"></span>
+                <span class="dot2"></span><span class="dot2"></span><span class="dot2"></span>
+              </div>
+            </div>
+            <div class="render mono">착 수 계
+
+1. 계 약 명 : <span class="fill">특수교육대상자 통학차량 임차용역</span>
+2. 계약금액 : <span class="fill">84,320,000</span>원
+3. 착 수 일 : <span class="fill">2026-07-27</span>
+4. 수 급 인 : <span class="miss">{{수급인}}</span>
+5. 담 당 자 : <span class="fill">김민수</span>
+6. 비    고 : <span class="blank">〈빈 값〉</span>
+
+위와 같이 착수함을 통지합니다.</div>
+
+            <!-- 원문 뷰 — 같은 칸의 두 번째 모습("소스 보기"). 토큰이 그대로 보인다. -->
+            <div class="srcview">
+              <div class="srcbar">
+                <span class="srcname" id="srcName">착수계.txt</span>
+                <span class="modbadge" id="modBadge" hidden>(수정됨)</span>
+                <span class="spacer"></span>
+                <button class="btn sm" type="button" id="srcLib">라이브러리에서 가져오기…</button>
+                <button class="btn sm" type="button" id="srcFork">사본으로 편집</button>
+              </div>
+              <textarea class="srcbox mono" id="srcBox" spellcheck="false" aria-label="템플릿 원문">착 수 계
+
+1. 계 약 명 : {{계약명}}
+2. 계약금액 : {{계약금액}}원
+3. 착 수 일 : {{착수일}}
+4. 수 급 인 : {{수급인}}
+5. 담 당 자 : {{담당자}}
+
+위와 같이 착수함을 통지합니다.</textarea>
+              <p class="srchint" id="srcHint"></p>
+            </div>
+
+            <div class="selnote">
+              <span class="muted">붙여넣을 곳 글꼴</span>
+              <span class="sel-src">함초롬바탕 (비례폭)</span>
+              <span class="muted">· 연속 공백 정렬이 흐트러질 수 있어 전각으로 맞춰 보여줍니다</span>
+            </div>
+          </section>
+
+          <!-- ④ 완료 -->
+          <section class="zone">
+            <div class="zlabel"><span class="num">4</span>완료</div>
+            <div class="foot">
+              <button class="btn primary" type="button" id="copyBtn">📋 복사</button>
+              <button class="btn" type="button" title="이전 카드" aria-label="이전 카드">◀</button>
+              <button class="btn" type="button" title="다음 카드" aria-label="다음 카드">▶</button>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px">
+                <input class="ck" type="checkbox"> 복사하면 다음으로
+              </label>
+              <span class="gate">빈칸 1곳 — 복사 전에 확인을 받습니다</span>
+              <div class="promote">
+                <span class="lbl">남기려면:</span>
+                <button class="btn" type="button" id="saveJobBtn">기안으로 저장</button>
+                <button class="btn" type="button">템플릿으로 저장</button>
+              </div>
+            </div>
+          </section>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 복사 전 빈칸 게이트(#125 착지분 승계) — 알리되 넘어갈 수 있다 -->
+  <div class="ovl" id="gateModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="gateTitle">
+      <h3 id="gateTitle">빈칸이 있습니다</h3>
+      <p>이 카드에서 채워지지 않은 자리가 <b>1곳</b> 있습니다. 그대로 복사하면
+        <span class="mono miss">{{수급인}}</span> 이 적힌 채로 나갑니다.</p>
+      <div class="modal-acts">
+        <button class="btn" type="button" id="gateCancel">취소</button>
+        <button class="btn primary" type="button" id="gateGo">그대로 복사</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 진행 중 원문 편집 — 시작 시 1회, 진행이 있을 때만 -->
+  <div class="ovl" id="editModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+      <h3 id="editTitle">원문을 고칩니다</h3>
+      <p>이미 복사한 <b>3건</b>은 이전 문안으로 나간 상태로 남습니다.
+        앞으로 복사할 <b>9건</b>부터 새 문안이 적용됩니다.</p>
+      <div class="modal-acts">
+        <button class="btn" type="button" id="editCancel">취소</button>
+        <button class="btn primary" type="button" id="editGo">고치기</button>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="sechead">이 시안이 주장하는 것</h2>
+  <div class="notes">
+    <div class="note">
+      <h3><span class="k">확정</span>매핑 UI 는 하나</h3>
+      <p>두 표면은 <b>둘 다 열 이름으로 결속</b>하고 같은 제안 임계(0.6)를 쓴다 — 값으로 결속하는
+        구현은 애초에 없었다. 실제로 갈렸던 건 <b>지속성</b>뿐이라, 한 표에 스위치를 단다.</p>
+      <p>전환기를 눌러 보면 저장 모드에서만 <b>유형·확정</b> 열이 붙는다.</p>
+    </div>
+    <div class="note">
+      <h3><span class="k">확정</span>데이터 존은 승계다, 재구현이 아니다</h3>
+      <p><b>자모 부분일치 실시간 검색</b>·<b>엑셀식 열 필터 좁힘</b>·필터 칩·<b>관통 스트립</b>·
+        「직전 필터 재적용」은 hwpx 트랙이 블록 4에서 세운 자산이고, txt 큐가 이미
+        <b>같은 <span class="mono">DataZoneMixin</span></b> 을 쓴다(작업 화면과 단일 출처).</p>
+      <p>합병해도 그대로 산다 — 여기서 <b>다시 만들면 안 된다.</b> 관통 스트립은 특히
+        「필터 밖 선택을 숨기지 않는다」는 계약이라 조용히 떨어뜨리면 큐가 거짓말을 한다.</p>
+    </div>
+    <div class="note">
+      <h3><span class="k">확정</span>단건 = 큐 길이 1</h3>
+      <p>선택 12행이면 카드 12장, 1행이면 1장. <b>화면은 바뀌지 않는다</b> — 같은 기안 작업이
+        오늘 1건 내일 30건이어도 같은 얼굴이어야 한다.</p>
+      <p>「지금 행의 값」 열은 항상 <b>작업점 카드의 값</b>이다(결속 근거가 아니라 확인용).</p>
+    </div>
+    <div class="note">
+      <h3><span class="k">확정</span>매체는 제목이 말한다</h3>
+      <p>구획 헤더가 하던 일을 화면 제목이 승계 — <b>「기안」 + TXT 배지 + 초록 틴트</b>.
+        「작업」은 파랑을 그대로 쓴다.</p>
+    </div>
+    <div class="note">
+      <h3><span class="k">확정</span>승격은 제자리</h3>
+      <p>「기안으로 저장」의 목적지가 <b>같은 화면 좌 목록</b>이라, 저장해도 하던 일이 끊기지 않는다.
+        휘발 행이 그대로 위 목록으로 올라간다.</p>
+    </div>
+    <div class="note">
+      <h3><span class="k">확정</span>원문은 같은 칸의 두 번째 모습</h3>
+      <p>칸을 쪼개거나 탭을 만들지 않고, ③에서 <b>「채운 모습」 ↔ 「원문」</b>을 전환한다 —
+        산출물이 평문이라 둘은 같은 물건이다. 휘발 세션의 입력구가 여기고,
+        <b>타이핑하면 ② 표가 실시간 재구성</b>된다(결정 34).</p>
+      <p>편집 가능 여부가 <b>네 번째 지속성 스위치</b>다: 저장된 기안은 읽기 전용(정의가 조용히
+        갈라지지 않게), 손보려면 「사본으로 편집」이 휘발 세션으로 갈라 준다 — 값·데이터는 승계.</p>
+    </div>
+    <div class="note">
+      <h3><span class="k">확정</span>진행 중 원문 편집은 한 번만 묻는다</h3>
+      <p>이미 복사한 건은 <b>되돌릴 수 없다</b> — 클립보드를 거쳐 내부 시스템으로 갔다.
+        그러니 「진행 초기화」는 거짓말이고, 카드별로 어느 문안이었는지 기록하는 건 과하다.</p>
+      <p><b>편집을 시작할 때 한 번</b> 사실을 진술하고(진행이 있을 때만), 확인하면
+        진행 상태를 그대로 둔 채 <b>아무것도 추가로 기록하지 않는다.</b> 원문 뷰에서 타이핑해 보라.</p>
+    </div>
+    <div class="note">
+      <h3><span class="k">확정</span>미루기 사망 · 자유 이동이 대체</h3>
+      <p>결정 19가 미루기를 「막힌 카드의 <b>유일한</b> 탈출구」라 부른 전제는 <b>작업점 고정</b>이었다.
+        진행 색인 점 클릭과 ◀▶ 가 자유 이동을 주면 그 전제가 깨진다 — 막히면 다음 점을 누르면 된다.</p>
+      <p>진행 색인·멱등 재복사·완주 판정은 <b>세션 휘발</b>이라 그대로 산다. 복사 플래그는
+        통상대로 <b>일방향</b>(되돌리는 API 없음).</p>
+    </div>
+    <div class="note">
+      <h3><span class="k">확정</span>「비워둠」은 확인에서 빠진다</h3>
+      <p>「비고」 행을 보라 — 열을 안 겨누고 <b>비운다고 선언</b>했다. 카드에는 데이터 빈칸과
+        <b>똑같이</b> 〈빈 값〉으로 그린다(결과가 같으므로 표지를 넷으로 늘리지 않는다).</p>
+      <p>다만 <b>복사 전 확인에서는 빠진다</b> — 확인한 것을 다시 묻지 않는다. 데이터가 빈 것은
+        사람의 선언이 아니라 그 행의 사실이라 확인에 남는다.</p>
+    </div>
+    <div class="note">
+      <h3><span class="k open">유보</span>토큰이 많아지면</h3>
+      <p>「토큰 40개」는 hwpx 의 성질(누름틀)이지 txt 기안문의 실측된 성질이 아니다. 근거 없는
+        대비 설계는 짓지 않는다 — <b>재개 조건 = 실제 토큰 수 실측.</b></p>
+      <p>넘으면 「미확정만 보기」·접힘 문법을 <b>같은 표의 헤더</b>에 얹는다. 별도 UI 는 아니다.</p>
+    </div>
+  </div>
+
+  <p class="lede" style="margin-top:22px">
+    정본 <span class="mono">docs/R_INFO_JOB_HOME.md</span> 3부 · 이슈 #148.
+    이 시안은 <b>합병 설계(미결 1)</b>의 판정용이며, 데이터·문안은 예시다.
+  </p>
+</div>
+
+<script>
+  (function () {
+    var root = document.documentElement, body = document.body;
+    document.getElementById("themeBtn").addEventListener("click", function () {
+      var cur = root.getAttribute("data-theme");
+      var next = cur === "dark" ? "light" : cur === "light" ? "dark"
+        : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "light" : "dark");
+      root.setAttribute("data-theme", next);
+    });
+
+    var bSaved = document.getElementById("mSaved"), bVol = document.getElementById("mVol");
+    var note = document.getElementById("modeNote");
+    var rowSaved = document.getElementById("rowSaved"), rowVol = document.getElementById("rowVol");
+    var saveBtn = document.getElementById("saveJobBtn");
+    var srcBox = document.getElementById("srcBox"), srcHint = document.getElementById("srcHint");
+    var srcName = document.getElementById("srcName"), modBadge = document.getElementById("modBadge");
+    var vFilled = document.getElementById("vFilled"), vSource = document.getElementById("vSource");
+    var zone3Label = document.getElementById("zone3Label");
+
+    function setView(view) {
+      var filled = view === "filled";
+      body.setAttribute("data-view", view);
+      vFilled.setAttribute("aria-pressed", String(filled));
+      vSource.setAttribute("aria-pressed", String(!filled));
+      zone3Label.textContent = filled ? "이대로 복사됩니다" : "템플릿 원문";
+      if (!filled) srcBox.focus();
+    }
+    vFilled.addEventListener("click", function () { setView("filled"); });
+    vSource.addEventListener("click", function () { setView("source"); });
+
+    // 진행 중 원문 편집 = 시작 시 1회 확인(3부 결정 11). 확인 뒤엔 다시 묻지 않는다.
+    var editModal = document.getElementById("editModal");
+    var editOk = false, snapshot = srcBox.value;
+
+    function askEdit(onOk) {
+      editModal.hidden = false;
+      editModal.dataset.next = onOk;
+      document.getElementById("editGo").focus();
+    }
+    function closeEdit() { editModal.hidden = true; }
+
+    function markModified(name) {
+      modBadge.hidden = false;
+      srcName.textContent = name;
+    }
+    function doFork() {
+      apply("volatile");
+      setView("source");
+      editOk = true;
+      markModified("착수계.txt 의 사본");
+      srcHint.textContent = "사본으로 갈라졌습니다 — 데이터·선택·큐 진행·값은 그대로 이어집니다. 저장된 「착수계 기안」은 건드리지 않습니다.";
+    }
+
+    // 타이핑 = 정직 강등(결정 34). 실제 앱에서는 위 「맞추기」 표가 동시에 재구성된다.
+    srcBox.addEventListener("input", function () {
+      if (srcBox.readOnly) return;
+      if (!editOk) { askEdit("type"); return; }
+      markModified("이름 없는 원문");
+    });
+    srcBox.addEventListener("focus", function () {
+      if (!srcBox.readOnly && !editOk) snapshot = srcBox.value;
+    });
+
+    document.getElementById("editGo").addEventListener("click", function () {
+      closeEdit();
+      if (editModal.dataset.next === "fork") { doFork(); return; }
+      editOk = true;
+      markModified("이름 없는 원문");
+      srcBox.focus();
+    });
+    document.getElementById("editCancel").addEventListener("click", function () {
+      closeEdit();
+      if (editModal.dataset.next === "type") { srcBox.value = snapshot; }
+    });
+
+    document.getElementById("srcFork").addEventListener("click", function () {
+      askEdit("fork");
+    });
+    document.getElementById("srcLib").addEventListener("click", function () {
+      window.setTimeout(function () { srcBox.focus(); }, 0);
+    });
+
+    function apply(mode) {
+      var saved = mode === "saved";
+      body.setAttribute("data-mode", mode);
+      bSaved.setAttribute("aria-pressed", String(saved));
+      bVol.setAttribute("aria-pressed", String(!saved));
+      rowSaved.setAttribute("aria-current", String(saved));
+      rowVol.setAttribute("aria-current", String(!saved));
+      note.textContent = saved
+        ? "목록에서 고른 기안 — 안정화된 레시피의 소비. 유형·확정을 묻고, 근사 제안은 초안으로 미리 얹는다. 원문은 읽기 전용."
+        : "붙여넣기로 시작한 세션 — 편집·소비 미분화. 확정을 묻지 않고, 근사 제안은 버튼 하나로만. 원문을 그 자리에서 고친다.";
+      saveBtn.textContent = saved ? "다른 이름으로 저장" : "기안으로 저장";
+
+      srcBox.readOnly = saved;
+      srcHint.textContent = saved
+        ? "저장된 기안의 원문은 여기서 고치지 않습니다 — 정의가 조용히 갈라지지 않게. 이번만 손보려면 「사본으로 편집」."
+        : "붙여넣거나 라이브러리에서 가져오세요. 타이핑하면 위 「맞추기」 표가 곧바로 다시 만들어집니다.";
+      if (saved) { srcName.textContent = "착수계.txt"; modBadge.hidden = true; editOk = false; }
+    }
+    bSaved.addEventListener("click", function () { apply("saved"); });
+    bVol.addEventListener("click", function () { apply("volatile"); });
+    apply("saved");
+    setView("filled");
+
+    var ovl = document.getElementById("gateModal");
+    var lastFocus = null;
+    function openGate() {
+      lastFocus = document.activeElement;
+      ovl.hidden = false;
+      document.getElementById("gateGo").focus();
+    }
+    function closeGate() {
+      ovl.hidden = true;
+      if (lastFocus) lastFocus.focus();
+    }
+    document.getElementById("copyBtn").addEventListener("click", openGate);
+    document.getElementById("gateCancel").addEventListener("click", closeGate);
+    document.getElementById("gateGo").addEventListener("click", closeGate);
+    ovl.addEventListener("click", function (e) { if (e.target === ovl) closeGate(); });
+    document.addEventListener("keydown", function (e) {
+      if (e.key !== "Escape") return;
+      if (!ovl.hidden) { closeGate(); return; }
+      if (!editModal.hidden) {
+        closeEdit();
+        if (editModal.dataset.next === "type") srcBox.value = snapshot;
+      }
+    });
+  })();
+</script>
+</body>
