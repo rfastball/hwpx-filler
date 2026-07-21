@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 from .core.engine import GenerateResult, HwpxEngine
+from .core.job import require_hwpx_template
 from .naming import existing_outputs, plan_output_names
 
 
@@ -72,6 +73,9 @@ def generate_batch(
     중인 문서는 완결하고, 결과엔 ``cancelled=True`` 와 부분 결과가 남는다.
     ``now`` 는 날짜 토큰 기준 시각 주입(테스트 결정성).
     """
+    # 진입 가드(3부 결정 13 · 2층): 일괄 생성은 hwpx 산출물을 만든다(엔진 파싱 + ``.hwpx`` 파일명).
+    # txt 기안은 산출물을 소유하지 않으므로(결정 9) 이 경로에 오지 않는다 — 새면 loud 거부.
+    require_hwpx_template(template_path)
     if mapping is not None:
         from .core.fill_ledger import template_path_drift
 

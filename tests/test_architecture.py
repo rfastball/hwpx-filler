@@ -279,6 +279,77 @@ def test_job_registry_writes_go_through_the_locked_path() -> None:
     )
 
 
+# hwpx 전용 소비 경로의 **허용 파싱 지점**(R-info 3부 결정 13 · 3층 재유입 가드). 코어 밖에서
+# hwpx 를 파싱하는(HwpxEngine·extract_schema·compile_status·template_path_drift) 자리는 전부
+# 여기 사유와 함께 등재된다. 새 자리가 생기면 등재 전까지 실패한다 — "txt 기안 작업이 hwpx
+# 코드에 조용히 닿는다"를 개별 결함이 아니라 **재유입 경로**로 막는다(결정 4 매체 유도의 짝).
+# 사유는 셋 중 하나다: ①진입 가드(require_hwpx/require_hwpx_template) 아래 ②hwpx 전용 표면
+# (에디터·매핑·템플릿 라이브러리 — 조회 경계 1층이 매체를 보장, Job 매체 분기 아님) ③매체 교차
+# 재확인(relink, 결정 13 예외) 또는 사용자 지정 raw 경로(CLI 역할 테스터, Job 아님).
+_ALLOWED_HWPX_CONSUMERS = {
+    ("gui/home_state.py", "compile_status"):
+        "_derive_compile — from_job 이 job.media 로 선분기 후 require_hwpx_template 백스톱",
+    ("gui/run_state.py", "HwpxEngine"):
+        "RunViewModel 메서드 — __init__ 의 require_hwpx(job) 진입 가드 아래",
+    ("gui/run_state.py", "template_path_drift"):
+        "RunViewModel.structure_drift — __init__ 의 require_hwpx(job) 아래",
+    ("webapp/screens.py", "template_path_drift"):
+        "relink_job_template — 매체 교차는 차단 아닌 재확인(결정 13 예외), 화면 게이트 소관",
+    ("webapp/screen_editor.py", "extract_schema"):
+        "에디터 = hwpx 전용 소비 표면(조회 경계 1층) — Job 아닌 편집 중 hwpx 템플릿 소비",
+    ("gui/mapping_state.py", "compile_status"):
+        "매핑 에디터(hwpx 전용 표면) — 라이브러리 hwpx 템플릿 소비, Job 매체 분기 아님",
+    ("gui/mapping_state.py", "extract_schema"):
+        "매핑 에디터(hwpx 전용 표면) — 위와 동일",
+    ("gui/template_manager_state.py", "compile_status"):
+        "템플릿 관리(hwpx 라이브러리 표면) — 라이브러리가 매체를 구획 분리(2부 결정 3)",
+    ("batch.py", "HwpxEngine"):
+        "generate_batch — 첫머리 require_hwpx_template(template_path) 진입 가드 아래",
+    ("batch.py", "template_path_drift"):
+        "generate_batch — 위와 동일",
+    ("cli.py", "extract_schema"):
+        "CLI schema 덤프 — 사용자 지정 raw hwpx 경로(역할 테스터·Job 아님)",
+    ("cli.py", "HwpxEngine"):
+        "CLI fill — 사용자 지정 raw hwpx 경로",
+    ("cli.py", "template_path_drift"):
+        "CLI fill 드리프트 — 위와 동일",
+}
+
+
+def test_hwpx_consumers_are_media_guarded() -> None:
+    """코어 밖에서 hwpx 를 파싱하는 자리는 전부 매체 가드 아래이거나 화이트리스트에 등재된다.
+
+    저장 기계는 hwpx·txt 가 하나(JobRegistry)이고 매체는 ``template_path`` 에서 유도되므로
+    (3부 결정 4), txt 기안 작업이 hwpx 전용 코드(``HwpxEngine``·``extract_schema``·
+    ``compile_status``·``template_path_drift``)에 닿으면 ``.txt`` 를 hwpx zip 으로 파싱해
+    **조용한 오작동**(엉뚱한 오류 배지·거짓 드리프트)이 된다. 진입 경계는 :func:`require_hwpx`
+    /:func:`require_hwpx_template` 가 loud 로 막고(2층), 이 테스트가 **새 소비자가 그 가드
+    없이 느는 것**을 3층에서 막는다. 코어(``core/``)는 매체-내재 프리미티브라 스캔 밖 —
+    가드는 그 호출 경계에 놓인다(프리미티브 자신에 넣으면 CLI 의 raw 경로·bytes 입력과
+    고도가 어긋난다).
+    """
+    symbols = ("HwpxEngine", "extract_schema", "compile_status", "template_path_drift")
+    pattern = re.compile(r"\b(" + "|".join(symbols) + r")\(")
+    base = ROOT / "src" / "hwpxfiller"
+    scan_dirs = [base / "webapp", base / "gui"]
+    scan_files = [base / "batch.py", base / "cli.py"]
+    paths = [p for d in scan_dirs if d.is_dir() for p in d.rglob("*.py")]
+    paths += [f for f in scan_files if f.is_file()]
+    offenders: list[str] = []
+    for path in sorted(paths):
+        rel = path.relative_to(base).as_posix()
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            for symbol in pattern.findall(line):
+                if (rel, symbol) in _ALLOWED_HWPX_CONSUMERS:
+                    continue
+                offenders.append(f"{rel}:{lineno}: {line.strip()}")
+    assert not offenders, (
+        "가드 없는 hwpx 소비자 재유입 — Job 을 소비하면 진입점에 require_hwpx(job)/"
+        "require_hwpx_template(path) 를 두고, 정당하면 _ALLOWED_HWPX_CONSUMERS 에 사유와 "
+        "함께 등재하라:\n" + "\n".join(offenders)
+    )
+
+
 def test_home_dir_idiom_has_one_source() -> None:
     """홈 해석 관용구는 ``core/paths.py`` 한 곳에만 산다(#76).
 

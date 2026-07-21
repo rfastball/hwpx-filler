@@ -38,7 +38,9 @@ _INSTANCES = {
         field_count=0, filename_pattern="", last_run_display="",
         compile_state=None, compile_badge="",  # C2 파생 컴파일 배지 seam(C4)
     ),
-    "RunViewModel": RunViewModel(Job()),
+    # 실행뷰는 hwpx 생성 경로라 진입 가드가 hwpx 작업을 요구한다(3부 결정 13) — 대표
+    # 인스턴스도 hwpx 템플릿 경로를 준다(seam 표면 검사용 더미).
+    "RunViewModel": RunViewModel(Job(template_path="t.hwpx")),
     # 템플릿 관리(#13) — library_dir 미지정이면 빈 라이브러리(파일 접촉 없음).
     "TemplateManagerViewModel": TemplateManagerViewModel(library_dir=None),
     "TemplateRow": TemplateRow(

@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from ..core.job import Job, JobRegistry
+from ..core.job import Job, JobRegistry, require_hwpx_template
 from ..core.template_status import CompileState, compile_status
 from .compile_badge import ERROR_BADGE_LEVEL, badge_level
 
@@ -46,6 +46,10 @@ def _derive_compile(tpath: str, template_missing: bool) -> "tuple[CompileState |
     """
     if not tpath:
         return None, ""                       # 템플릿 경로 없음 → 배지 없음(부재 아님)
+    # backstop(3부 결정 13 · 2층): 여기 닿는 경로는 hwpx 여야 한다 — from_job 이 매체로 선분기하므로
+    # 정상 경로에선 통과가 보장된다. txt 경로가 새어 들면 compile_status 가 zip 파싱으로 엉뚱한
+    # 오류 배지를 조용히 내는 대신 시끄럽게 터진다(홈은 두 매체를 다 보는 유일 표면).
+    require_hwpx_template(tpath)
     if template_missing:
         return None, BADGE_MISSING            # 부재 경로엔 compile_status 를 부르지 않는다
     try:
@@ -92,7 +96,12 @@ class JobRow:
         tpath = job.template_path
         # 실행 화면의 템플릿 가드를 홈에서 선고지(비차단).
         template_missing = bool(tpath) and not Path(tpath).exists()
-        compile_state, compile_badge = _derive_compile(tpath, template_missing)
+        # 매체 선분기(3부 결정 13 · 1층 조회 경계): hwpx 작업만 컴파일 수명주기를 갖는다.
+        # txt 기안·미상 매체는 hwpx 배지 개념이 없어 배지 없음(txt 를 hwpx 로 파싱하지 않는다).
+        if job.media == "hwpx":
+            compile_state, compile_badge = _derive_compile(tpath, template_missing)
+        else:
+            compile_state, compile_badge = None, ""
         return cls(
             name=job.name,
             template_name=(Path(tpath).name or "—") if tpath else "—",

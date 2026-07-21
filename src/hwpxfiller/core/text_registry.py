@@ -1,8 +1,11 @@
 """텍스트 기안 템플릿 레지스트리 — 정해진 루트의 ``.txt`` 템플릿 목록/로드.
 
-HWPX 작업 레지스트리(:class:`~hwpxfiller.core.job.JobRegistry`)와 **별도**다(ADR A: txt 진입은
-Job 과 분리 설계). txt 트랙은 저장 Job 이 없다 — 경량·즉시(render→copy). 이 레지스트리는
-재사용할 평문 템플릿(``.txt``, ``{{필드}}`` 토큰)을 한 곳(루트)에 모아 고르게 한다.
+**템플릿** 레지스트리다 — 저장되는 기안 **작업**(:class:`~hwpxfiller.core.job.JobRegistry`)과는
+다른 층이다. (R-info 3부 결정 4 로 뒤집힘: 이전 주석의 "txt 트랙은 저장 Job 이 없다"는 낡았다 —
+기안 작업도 이제 ``JobRegistry``·:class:`~hwpxfiller.core.job.Job` 을 쓰고 매체는 ``template_path``
+접미사에서 유도한다[:func:`~hwpxfiller.core.job.template_media`]. 저장 기계는 hwpx 와 하나로 공유하고
+화면만 둘이다.) 이 레지스트리는 그 작업들이 **재사용할 평문 템플릿**(``.txt``, ``{{필드}}`` 토큰)을
+한 곳(루트)에 모아 고르게 한다 — hwpx 의 템플릿 라이브러리에 대응하는 txt 쪽이다.
 
 Qt·엔진(lxml/openpyxl) 비의존 — 순수 파일 나열 + :func:`~hwpxfiller.core.text_render.template_fields`.
 """

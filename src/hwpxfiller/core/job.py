@@ -193,6 +193,74 @@ def default_jobs_dir() -> Path:
     return home_dir() / "jobs"
 
 
+# ------------------------------------------------------------------ 매체 유도·가드
+# 작업의 매체(hwpx/txt)는 **저장하지 않고 template_path 접미사에서 유도한다**(R-info 3부 결정 4).
+# 선언 필드를 두면 선언과 실제가 갈라질 자리를 새로 만든다(이 저장소 지배 결함류) — 내재 속성
+# (매체)은 읽어내고, 앱 부여 속성(그룹)만 저장한다. 순수 문자열 판정(I/O 없음)이라 단일 출처로
+# 둔다: 임시변통 접미사 검사(naming·screen_template·template_groups)가 여기로 수렴할 표적이다.
+HWPX_SUFFIX = ".hwpx"
+TXT_SUFFIX = ".txt"
+
+
+def template_media(template_path: str) -> str:
+    """template_path 접미사 → 매체 코드. ``'hwpx'`` / ``'txt'`` / ``''``(미상·빈 경로). 대소문자 무시.
+
+    I/O 없음(파일 존재 여부와 무관 — 순수 문자열 판정). 미상(``''``)을 조용히 hwpx 로 간주하지
+    않는다 — :func:`require_hwpx` 가 loud 거부하도록 정직하게 빈 코드를 돌려준다.
+    """
+    low = template_path.lower()
+    if low.endswith(HWPX_SUFFIX):
+        return "hwpx"
+    if low.endswith(TXT_SUFFIX):
+        return "txt"
+    return ""
+
+
+class MediaMismatchError(Exception):
+    """hwpx 전용 소비 경로에 hwpx 아닌(txt·미상) 작업/경로가 들어오면 loud raise(3부 결정 13).
+
+    정상 경로에선 두 화면(「작업」·「기안」)이 각자 자기 매체만 조회하므로(조회 경계 = 1층)
+    여기 닿지 않는다 — 이 예외는 그 경계가 새면 **조용한 오작동**(예: ``.txt`` 를 hwpx zip 으로
+    파싱해 엉뚱한 오류 배지) 대신 시끄럽게 터지게 하는 backstop(2층)이다. 재유입 가드 테스트
+    (:mod:`tests.test_architecture`)가 새 hwpx 소비자를 이 가드 없이 추가하는 것을 3층에서 막는다.
+    """
+
+
+def require_hwpx_template(template_path: str) -> str:
+    """경로가 hwpx 매체가 아니면 :class:`MediaMismatchError`, 맞으면 그대로 반환(체이닝).
+
+    **경로만** 손에 쥔 hwpx 소비 경계(생성 배치·홈 카드 컴파일 배지)용. Job 을 쥐고 있으면
+    :func:`require_hwpx` 를 쓴다(같은 판정에 작업 이름 문맥 추가). ``bytes``/``HwpxPackage`` 를
+    받는 공유 코어 프리미티브(``extract_schema``·``compile_status``)에는 넣지 않는다 — 그것들은
+    CLI 가 생 hwpx 파일에 직접 쓰는 매체-내재 프리미티브라 가드 고도가 틀린다(경계에서만 막는다).
+    """
+    media = template_media(template_path)
+    if media != "hwpx":
+        raise MediaMismatchError(
+            f"hwpx 전용 경로에 hwpx 아닌 템플릿이 들어왔습니다: "
+            f"{template_path!r} (매체={media or '미상'})"
+        )
+    return template_path
+
+
+def require_hwpx(job: "Job") -> "Job":
+    """작업이 hwpx 매체가 아니면 :class:`MediaMismatchError`, 맞으면 그대로 반환 — 3부 결정 13 진입 가드.
+
+    실행뷰(:class:`~hwpxfiller.gui.run_state.RunViewModel`)·배치 등 hwpx 전용 소비 경로의
+    진입점에서 부른다. txt 기안 작업은 「기안」 화면이 자기 경로로 소비하므로 정상 경로에선
+    여기 오지 않는다(조회 경계). **매체 교차 relink 는 예외** — 차단이 아니라 재확인이라
+    (매핑이 무의미해지고 작업이 다른 화면으로 옮겨간다) 여기서 raise 하지 않고 화면 게이트가 받는다.
+    """
+    try:
+        require_hwpx_template(job.template_path)
+    except MediaMismatchError:
+        raise MediaMismatchError(
+            f"작업 '{job.name}' 은(는) hwpx 작업이 아니라 이 경로를 쓸 수 없습니다 "
+            f"(매체={job.media or '미상'}, 템플릿={job.template_path!r})"
+        ) from None
+    return job
+
+
 # ------------------------------------------------------------------ 모델
 @dataclass
 class Job:
@@ -224,6 +292,15 @@ class Job:
     # 소스 키 계약(source_keys)이 실행의 진짜 게이트이지 이 참조가 아니다(파일이 월별로
     # 바뀌어도 헤더가 같으면 재사용). 참조가 유일 실행 의존이 되지 않게 한다.
     default_dataset_ref: str = ""
+
+    @property
+    def media(self) -> str:
+        """이 작업의 매체 코드(``'hwpx'``/``'txt'``/``''``미상) — ``template_path`` 에서 유도(3부 결정 4).
+
+        저장 필드가 아니다: 매체는 내재 속성이라 읽어낸다(그룹 같은 앱 부여 속성만 저장).
+        분기 표면은 매체를 다 보는 「홈」 하나로 줄고, hwpx 전용 경로는 :func:`require_hwpx` 로 막는다.
+        """
+        return template_media(self.template_path)
 
     def template_fields(self) -> "list[str]":
         """이 작업이 채우는 템플릿 필드(매핑이 방출하는 집합). 실행 사전검증의 요구필드."""
