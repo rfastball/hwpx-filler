@@ -334,3 +334,20 @@ def test_unknown_tpl_action_is_loud(tmp_path, monkeypatch):
     ctrl, _, _ = _controller(tmp_path, monkeypatch)
     with pytest.raises(ValueError, match="알 수 없는 tpl 액션"):
         ctrl.dispatch("frobnicate", {})
+
+
+def test_snapshot_carries_fill_precheck_warns(tmp_path, monkeypatch):
+    """채움 완화 사전 고지(#154)가 카드 데이터로 흐른다 — 정상 카드엔 없음."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    marker = tp / "lib" / "marker.hwpx"
+    _pkg(
+        '<hp:p><hp:run><hp:ctrl><hp:fieldBegin name="공고명"/></hp:ctrl></hp:run>'
+        "<hp:run><hp:t>V<hp:markpenBegin/></hp:t></hp:run>"
+        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run></hp:p>"
+    ).save(str(marker))
+    ctrl.dispatch("refresh", {})
+
+    snap = ctrl.snapshot()
+    warns = _item(snap["hwpx"], "marker.hwpx")["fill_warns"]
+    assert len(warns) == 1 and "markpenBegin" in warns[0]
+    assert _item(snap["hwpx"], "comp.hwpx")["fill_warns"] == []
