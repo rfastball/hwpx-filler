@@ -231,7 +231,9 @@ def test_degenerate_begin_end_in_one_ctrl_stays_loud():
     doc = FieldDocument(xml)
     assert doc.set_field("계약명", "값") is False  # 매칭 실패로 시끄럽게
     assert doc.modified is False
-    assert doc.notes == []
+    # unmatched 의 "매칭 실패" 오진을 바로잡는 노트도 함께(2라운드 리뷰 F1) —
+    # 다른 섹션이 같은 이름을 채워 unmatched 가 안 뜨는 경우의 유일한 신호.
+    assert doc.notes == [FillNote("계약명", "occurrence_unfillable")]
 
 
 def test_clean_fill_emits_no_notes():
@@ -292,7 +294,7 @@ def test_unclosed_field_without_slot_stays_loud():
     doc = FieldDocument(xml)
     assert doc.set_field("계약명", "값") is False
     assert doc.modified is False
-    assert doc.notes == []
+    assert doc.notes == [FillNote("계약명", "occurrence_unfillable")]
 
 
 def test_partial_fill_emits_occurrence_note():
@@ -376,3 +378,57 @@ def test_fill_precheck_walks_package_and_dedupes():
     assert fill_precheck(pkg) == [
         FillNote("계약명", "inline_stripped", ("markpenBegin",))
     ]
+
+
+def test_whitespace_run_names_are_fillable_after_normalization():
+    """내부 연속 공백 이름 — 나열·읽기·기입이 같은 정규화를 쓴다(2라운드 리뷰 F4).
+
+    과거: required_fields 는 나열하는데 set_field XPath(normalize-space)만 접어
+    영원히 unmatched 인 이름이 존재했다.
+    """
+    xml = (
+        f"{_HDR}<hp:p>"
+        '<hp:run><hp:ctrl><hp:fieldBegin name="계약  명"/></hp:ctrl></hp:run>'
+        "<hp:run><hp:t>구값</hp:t></hp:run>"
+        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
+        "</hp:p></hs:sec>"
+    ).encode("utf-8")
+    doc = FieldDocument(xml)
+    (name,) = doc.required_fields()
+    assert name == "계약 명"  # normalize-space 와 동일 규칙
+    assert doc.set_field(name, "새값") is True  # 나열된 이름은 기입 가능해야 한다
+    assert doc.read_field(name) == "새값"
+
+
+def test_precheck_matches_post_notes_on_divergent_shapes():
+    """패리티 핀 — 사전 판정과 사후 노트가 어긋남 후보 형상 전부에서 같은 결론.
+
+    형상: 정상+퇴화 동명(부분 기입) · run 밖 begin · 빈 누름틀 · 인라인 마커.
+    """
+    normal_and_degenerate = (
+        '<hp:run><hp:ctrl><hp:fieldBegin name="계약명"/></hp:ctrl></hp:run>'
+        "<hp:run><hp:t>구값</hp:t></hp:run>"
+        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
+        '<hp:run><hp:ctrl><hp:fieldBegin name="계약명"/><hp:fieldEnd/></hp:ctrl></hp:run>'
+    )
+    outside_run = '<hp:ctrl><hp:fieldBegin name="밖"/></hp:ctrl>'
+    empty = (
+        '<hp:run><hp:ctrl><hp:fieldBegin name="빈필드"/></hp:ctrl></hp:run>'
+        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
+    )
+    marker = (
+        '<hp:run><hp:ctrl><hp:fieldBegin name="마커"/></hp:ctrl></hp:run>'
+        "<hp:run><hp:t>A<hp:markpenBegin/></hp:t></hp:run>"
+        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
+    )
+    xml = (
+        f"{_HDR}<hp:p>{normal_and_degenerate}</hp:p><hp:p>{outside_run}</hp:p>"
+        f"<hp:p>{empty}</hp:p><hp:p>{marker}</hp:p></hs:sec>"
+    ).encode("utf-8")
+
+    pre = set(FieldDocument(xml).precheck())
+
+    doc = FieldDocument(xml)
+    for name in doc.required_fields():
+        doc.set_field(name, "전부 다른 새값")
+    assert set(doc.notes) == pre  # 같은 걸음·같은 어휘 — 사전=사후

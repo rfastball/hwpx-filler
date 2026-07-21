@@ -75,13 +75,27 @@ def _subtree_names(child: etree._Element) -> "set[str]":
     return names
 
 
+def _strip_candidates(ts: "list[etree._Element]") -> "set[str]":
+    """값 슬롯들의 인라인 자식 이름 집합 — 사전 판정과 사후 제거가 같은 집계를 쓴다."""
+    names: "set[str]" = set()
+    for t in ts:
+        for child in t:
+            names |= _subtree_names(child)
+    return names
+
+
 def _clean_field_name(raw: object) -> str:
-    """누름틀 이름의 공백과 선택적 ``{{..}}`` 표기를 정규화한다."""
+    """누름틀 이름의 공백과 선택적 ``{{..}}`` 표기를 정규화한다.
+
+    내부 연속 공백(탭·개행 포함)은 한 칸으로 접는다 — :meth:`FieldDocument.set_field`
+    의 XPath 가 ``normalize-space(@name)`` 로 비교하므로, 읽기·나열·사전 판정이 다른
+    정규화를 쓰면 "나열은 되는데 기입은 안 되는" 이름이 생긴다(리뷰 F4).
+    """
     if not isinstance(raw, str):
         return ""
-    name = raw.strip()
+    name = " ".join(raw.split())
     if name.startswith("{{") and name.endswith("}}"):
-        name = name[2:-2].strip()
+        name = " ".join(name[2:-2].split())
     return name
 
 
@@ -202,12 +216,12 @@ class FieldDocument:
                 continue
             span = self._field_span(begin)
             if span is None:
+                # run 구조 밖 begin — set_field 도 기입 불가로 세는 자리.
+                # 사전이 침묵하면 사후 노트와 어긋난다(2라운드 리뷰 F2).
+                notes.append(FillNote(name, "occurrence_unfillable"))
                 continue
             if span.ts:
-                stripped: "set[str]" = set()
-                for t in span.ts:
-                    for child in t:
-                        stripped |= _subtree_names(child)
+                stripped = _strip_candidates(span.ts)
                 if stripped:
                     notes.append(
                         FillNote(name, "inline_stripped", tuple(sorted(stripped)))
@@ -236,7 +250,9 @@ class FieldDocument:
         ``modified`` 가 추적한다. VBA SetField 와 동일하게 ``name`` 이 ``NAME`` 또는
         ``{{NAME}}`` 인 모든 누름틀을 처리한다.
         """
-        clean = field_name.strip()
+        # 내부 공백까지 normalize-space 와 같은 규칙으로 접는다 — @name 쪽만 접고
+        # 리터럴 쪽을 안 접으면 공백 변주 이름이 영원히 못 맞는다(리뷰 F4).
+        clean = " ".join(field_name.split())
         # normalize-space + {{}} 대응 XPath (원본과 동일 의미)
         xpath = (
             f".//hp:fieldBegin["
@@ -255,9 +271,12 @@ class FieldDocument:
                 updated += 1
             else:
                 skipped += 1
-        if updated and skipped:
-            # 같은 이름 자리 중 일부만 기입 가능 — False 가 집계에 삼켜져 조용한
-            # 부분 기입이 되지 않게 노트로 시끄럽게(리뷰 F4).
+        if skipped:
+            # 기입 불가 자리가 하나라도 있으면 노트 — updated>0 조건을 걸면 다른
+            # 섹션이 같은 이름을 채우는 경우(엔진이 applied 로 집계) 이 문서의 빈
+            # 자리가 어디에도 안 나오는 조용한 소실이 된다(2라운드 리뷰 F1).
+            # 전 자리 불가(updated=0)면 unmatched 와 겹치지만, unmatched 의 "매칭
+            # 실패" 오진을 이 노트가 바로잡는다 — 과경고가 조용한 소실보다 낫다.
             self._note(note_name, "occurrence_unfillable")
         return updated > 0
 
@@ -306,10 +325,9 @@ class FieldDocument:
         # 제거한다(#154 확정: 읽기-쓰기 대칭이 계약. read_field 는 itertext 로 읽으므로
         # 자식 tail 이 남으면 기입값 ≠ 읽은값). detail 은 하위트리 전체를 열거한다 —
         # 최상위 이름만 대면 실제 손실 집합을 과소 고지한다(문안 정직성).
-        stripped: "set[str]" = set()
+        stripped = _strip_candidates(ts)
         for t in ts:
             for child in list(t):
-                stripped |= _subtree_names(child)
                 t.remove(child)
                 self._modified = True
         if stripped:

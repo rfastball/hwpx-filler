@@ -23,6 +23,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from hwpxcore.package import HwpxPackage
+
 from ..core.authoring import TokenSite, compile_document, scan_tokens
 from ..core.fields import fill_precheck, read_fields
 from ..core.lint import LintReport, SchemaDrift, diff_schema, lint_template
@@ -267,10 +269,14 @@ class TemplateManagerViewModel:
         rows: "list[TemplateRow]" = []
         for path in self._discover():
             try:
-                status = compile_status(str(path))
+                # 패키지를 한 번만 열어 상태·사전 판정이 같은 스냅샷을 본다 —
+                # 경로 재열기는 I/O 2배 + 두 열기 사이 파일 교체 시 멀쩡한 행이
+                # from_error 로 강등되는 TOCTOU 를 만든다(2라운드 리뷰 F5).
+                pkg = HwpxPackage.open(str(path))
+                status = compile_status(pkg)
                 # 채움 완화 사전 판정(#154) — 점검 표면의 "사전에 알고" 쪽.
                 warns = tuple(
-                    describe_precheck_note(n) for n in fill_precheck(str(path))
+                    describe_precheck_note(n) for n in fill_precheck(pkg)
                 )
             except Exception as exc:  # noqa: BLE001 — 읽기 실패는 시끄럽게 노출(감추지 않음)
                 rows.append(TemplateRow.from_error(path, str(exc)))

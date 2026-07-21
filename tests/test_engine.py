@@ -278,3 +278,40 @@ def test_generate_notes_inline_stripped(tmp_path):
     from hwpxfiller.core.fields import read_fields
 
     assert read_fields(str(out))["계약명"] == "NEW"
+
+
+def test_cross_section_unfillable_occurrence_still_warns(tmp_path):
+    """다른 섹션이 같은 이름을 채워도 기입 불가 자리는 노트로 남는다(2라운드 F1).
+
+    applied·unmatched 만으론 이 빈 자리가 어디에도 안 나온다 — 노트가 유일 신호.
+    """
+    from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+    from hwpxfiller.core.fields import FillNote
+
+    normal = (
+        '<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"'
+        ' xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p>'
+        '<hp:run><hp:ctrl><hp:fieldBegin name="계약명"/></hp:ctrl></hp:run>'
+        "<hp:run><hp:t>구값</hp:t></hp:run>"
+        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
+        "</hp:p></hs:sec>"
+    ).encode("utf-8")
+    degenerate = (
+        '<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"'
+        ' xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p>'
+        '<hp:run><hp:ctrl><hp:fieldBegin name="계약명"/><hp:fieldEnd/></hp:ctrl></hp:run>'
+        "</hp:p></hs:sec>"
+    ).encode("utf-8")
+    pkg = HwpxPackage()
+    pkg.entries[MIMETYPE_NAME] = MIMETYPE_VALUE
+    pkg.stored.add(MIMETYPE_NAME)
+    pkg.entries["Contents/section0.xml"] = normal
+    pkg.entries["Contents/section1.xml"] = degenerate
+    tpl = tmp_path / "tpl.hwpx"
+    pkg.save(str(tpl))
+
+    res = HwpxEngine().generate(str(tpl), {"계약명": "새값"}, str(tmp_path / "o.hwpx"))
+    assert res.ok
+    assert res.applied == {"계약명"}   # 섹션0 이 채움
+    assert res.unmatched == set()      # 그래서 unmatched 는 침묵
+    assert FillNote("계약명", "occurrence_unfillable") in res.notes  # 노트가 신호
