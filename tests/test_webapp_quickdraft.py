@@ -702,3 +702,106 @@ def test_live_source_edit_keeps_the_visible_fullwidth_decision(tmp_path, monkeyp
     assert snap["lint"]["applied"] is True          # 이월
     assert snap["lint"]["active"] is True           # 그리고 화면에 계속 진술된다
     assert "　" in "".join(s["text"] for s in snap["segments"])
+
+
+# ------------------------------------------------ 승격 「템플릿으로 저장」(#135, 결정 33·34)
+def _lib_session(tmp_path):
+    """라이브러리 유래 세션 + 원문 수정((수정됨) 강등) — 승격의 정규 출발점."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_template", {"name": "개찰참관보고"})
+    ctrl.dispatch("edit_source", {"text": "제목: {{사업명}} 개찰 참관 보고\n금액: {{추정가격}}\n비고: {{비고}}"})
+    return ctrl
+
+
+def test_promote_info_prefills_name_and_groups(tmp_path):
+    """저장 모달 프리필 — 라이브러리 유래는 그 이름, 붙여넣기는 빈칸(사람이 짓는다)."""
+    ctrl = _lib_session(tmp_path)
+    info = ctrl.dispatch("promote_info", {})
+    assert info["name"] == "개찰참관보고"
+    assert info["group"] == ""          # 아직 무그룹
+    assert info["groups"] == []         # 후보 없음
+
+    ctrl.dispatch("paste_template", {"text": "붙여넣은 {{토큰}}"})
+    assert ctrl.dispatch("promote_info", {})["name"] == ""
+
+
+def test_promote_info_does_not_push(tmp_path):
+    """무변이 질의 — 모달 여는 것이 화면을 재렌더하지 않는다(carry_notice 동형)."""
+    ctrl, pushes = _controller(tmp_path)
+    ctrl.dispatch("select_template", {"name": "개찰참관보고"})
+    before = len(pushes)
+    ctrl.dispatch("promote_info", {})
+    assert len(pushes) == before
+
+
+def test_save_template_writes_source_and_promotes_identity(tmp_path):
+    """승격 = 원문 저장 + 정체 동결(결정 32) — 세션은 죽지 않고 값·데이터가 그대로 이어진다."""
+    ctrl = _lib_session(tmp_path)
+    ctrl.dispatch("set_token", {"name": "비고", "text": "손으로 친 값"})
+
+    res = ctrl.dispatch("save_template", {"name": "개찰참관보고 v2", "group": "기안문"})
+    assert res["ok"] is True and res["overwritten"] is False
+    saved = tmp_path / "개찰참관보고 v2.txt"
+    assert "{{비고}}" in saved.read_text(encoding="utf-8")   # 저장된 것은 원문
+    assert "손으로 친 값" not in saved.read_text(encoding="utf-8")  # 값은 저장 대상이 아니다
+
+    snap = ctrl.snapshot()
+    assert snap["origin"] == "lib" and snap["template_name"] == "개찰참관보고 v2"
+    assert snap["modified"] is False                          # 이제 라이브러리 원본과 같다
+    assert snap["tokens"][2]["value"] == "손으로 친 값"        # 하던 일은 그대로 이어진다
+    # 새 이름이 슬롯 드롭다운에 서야 한다(캐시 갱신본 동반).
+    assert "개찰참관보고 v2" in res["templates"]
+
+
+def test_save_template_assigns_group_visible_to_manager(tmp_path):
+    """그룹 지정은 관리 화면과 **같은 모델·같은 키**(루트 상대경로+확장자)로 남는다."""
+    from hwpxfiller.webapp.template_groups import TemplateGroupModel
+
+    ctrl = _lib_session(tmp_path)
+    ctrl.dispatch("save_template", {"name": "보고서", "group": "기안문"})
+    assert TemplateGroupModel("txt").group_of("보고서.txt") == "기안문"
+    # 그리고 다음 저장 모달의 그룹 후보·현재 그룹으로 되돌아온다.
+    info = ctrl.dispatch("promote_info", {})
+    assert info["groups"] == ["기안문"] and info["group"] == "기안문"
+
+
+def test_save_template_same_name_needs_confirm_then_overwrites(tmp_path):
+    """동명은 조용히 덮지 않는다(결정 34) — 확인 왕복 뒤에만 파괴한다."""
+    ctrl = _lib_session(tmp_path)
+    res = ctrl.dispatch("save_template", {"name": "개찰참관보고", "group": ""})
+    assert res["ok"] is False and res["needs_confirm"] is True
+    assert "개찰참관보고" in res["confirm_text"]
+    # 확인 전에는 파일이 그대로다(무변이).
+    assert "{{비고}}" not in (tmp_path / "개찰참관보고.txt").read_text(encoding="utf-8")
+
+    res = ctrl.dispatch("save_template", {"name": "개찰참관보고", "group": "", "confirm": True})
+    assert res["ok"] is True and res["overwritten"] is True
+    assert "{{비고}}" in (tmp_path / "개찰참관보고.txt").read_text(encoding="utf-8")
+
+
+def test_save_template_rejects_bad_name_inline(tmp_path):
+    """이름 검증 실패는 창 밖 예외가 아니라 모달 인라인 재진술로 돌아온다(다시 칠 자리 보존)."""
+    ctrl = _lib_session(tmp_path)
+    for bad in ("", "  ", "보고서.txt", "하위/보고서"):
+        res = ctrl.dispatch("save_template", {"name": bad, "group": ""})
+        assert res["ok"] is False and res.get("needs_confirm") is None
+        assert res["error"]
+    assert sorted(p.name for p in tmp_path.glob("*.txt")) == ["개찰참관보고.txt"]  # 아무것도 안 만들었다
+
+
+def test_save_template_refuses_empty_session(tmp_path):
+    """빈손 승격 = 빈 템플릿 양산 — 복사 게이트(can_copy)와 같은 술어로 막는다."""
+    ctrl, _ = _controller(tmp_path)
+    res = ctrl.dispatch("save_template", {"name": "빈것", "group": ""})
+    assert res["ok"] is False and not (tmp_path / "빈것.txt").exists()
+
+
+def test_save_template_group_is_not_left_on_failure(tmp_path):
+    """실패 경로는 그룹 지정을 남기지 않는다 — 파일 없는 키 = 고아 지정."""
+    from hwpxfiller.webapp.template_groups import TemplateGroupModel
+
+    ctrl = _lib_session(tmp_path)
+    ctrl.dispatch("save_template", {"name": "보고서.txt", "group": "기안문"})   # 이름 거부
+    ctrl.dispatch("save_template", {"name": "개찰참관보고", "group": "기안문"})  # 확인 대기
+    assert TemplateGroupModel("txt").group_of("보고서.txt") == ""
+    assert TemplateGroupModel("txt").group_of("개찰참관보고.txt") == ""

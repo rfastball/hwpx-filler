@@ -41,6 +41,7 @@ from .screen_job import JobController
 from .screen_pool import PoolController
 from .screen_quickdraft import QuickDraftController
 from .screen_template import TemplateController
+from .template_groups import TemplateGroupModel
 from .screens import (
     TxtController,
     collect_owned_paths,
@@ -96,6 +97,8 @@ class WebFrontend:
         # 데이터셋 풀(#26) — 단일 인스턴스를 화면들이 공유: 에디터 자동등록(#3)·실행 겨눔(#6)·
         # 관리 화면(#4)의 변경이 서로 즉시 보인다(레지스트리는 무상태 디렉터리 어댑터).
         pool_registry = default_pool_registry()
+        # txt 템플릿 그룹 모델 — 관리 화면과 빠른 기안 승격이 공유하는 단일 실체(#135).
+        txt_groups = TemplateGroupModel("txt")
         # 추적성 로케이트 화이트리스트(#53-B)용 레지스트리 참조(밑줄=js_api 반영 제외).
         self._job_registry = job_registry
         self._pool_registry = pool_registry
@@ -107,13 +110,19 @@ class WebFrontend:
             TxtController(registry, self._push, pool_registry=pool_registry),
             # 빠른 기안(R-flow 블록 5, #90 슬라이스 7) — 작업의 휘발 쌍둥이. TXT 레지스트리는
             # txt·템플릿 관리와 공유(라이브러리 변경이 반영), 풀도 공유 인스턴스.
-            QuickDraftController(registry, self._push, pool_registry=pool_registry),
+            QuickDraftController(
+                registry, self._push, pool_registry=pool_registry,
+                # 「템플릿으로 저장」(#135)이 그룹을 지정하므로 관리 화면과 **같은 txt 그룹
+                # 모델**을 쓴다(에디터 1단계 피커의 hwpx 공유와 동형) — 별도 인스턴스면
+                # 승격이 넣은 그룹이 관리 화면 인메모리 캐시에 안 보인다.
+                txt_groups=txt_groups,
+            ),
             # 「작업」 화면(R-flow, #90) — 좌 목록 + 우 세션 패널 4존. 링1 VM 을 직접 소유해
             # 실행 결정 계약을 소비하는 **유일 세션 표면**이다(실행 화면은 슬라이스 3에서 사망 —
             # 게이트 패리티 도달, 레일 「실행」 동시 제거, 부록 A-4-35~37·#94 중복 자연 소멸).
             JobController(job_registry, self._push, pool_registry=pool_registry),
             # 템플릿 관리(#13) — TXT 레지스트리는 즉시 기안과 공유(변경이 양쪽에 반영).
-            TemplateController(registry, self._push),
+            TemplateController(registry, self._push, txt_groups=txt_groups),
             # 데이터 관리(#26 #4) — 등록 데이터 참조·수명.
             PoolController(pool_registry, self._push),
         ]

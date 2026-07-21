@@ -6,8 +6,8 @@ QuickDraftViewModel` 을 소유·위임하는 얇은 어댑터다 — 다른 실
 
 **빠른 기안 = 아무것도 저장하지 않는 작업**(결정 29): 템플릿(라이브러리 사본/붙여넣기)과
 선택적 데이터를 세션 안에서만 결합해 복사한다. 세션 전체가 휘발이라(결정 32의 휘발도 사다리)
-레일 이탈·복귀는 생존하지만 앱 종료·「새 기안」은 소멸한다. 남기려면 승격 동사(작업/템플릿
-저장)로만 동결하는데, 그 승격은 **후속 PR**이다.
+레일 이탈·복귀는 생존하지만 앱 종료·「새 기안」은 소멸한다. 남기려면 복사하거나 승격 동사로
+동결한다 — 「템플릿으로 저장」은 착지했고(#135), 「작업으로 저장」은 목적지가 아직 없다(아래).
 
 **슬라이스 착지 순서**(confirm-or-alarm — 없는 기능을 있는 척하지 않는다):
 - **PR-1(이 커밋)**: 컨트롤러 골격 + 레일/화면 신설 + 빈 세션 스냅샷. 눈에 보이는 결과는
@@ -36,13 +36,22 @@ QuickDraftViewModel` 을 소유·위임하는 얇은 어댑터다 — 다른 실
   오추론 금지) — 별도 라운드 몫이라 여기서 있는 척하지 않는다.
 - (g) 대상 글꼴 선언·정렬 린트 합류: **착지**(이 파일 ``target_font``·``lint``·``_aligned``).
 
-**스코프 경계 — 미구현 명시**: 승격 2동사(「작업으로 저장」·「템플릿으로 저장」, 결정 33)는
-이 라운드에서 **표면만** 짓고(정직한 비활성 + 인라인 사유 — 죽은 버튼 금지, confirm-or-alarm)
-승격 실동작 자체는 후속으로 분리한다. 승격이 매핑 초안을 미확정 착지시켜 에디터 확정
-워크플로가 엄격성을 재부과하는 국경(결정 31)은 그 후속의 계약이다. 남기려면 복사가 유일한
-출구다 — 그래서 복사(PR-4)와 승격 표면은 한 라운드에서 함께 선다.
+**승격 2동사의 비대칭**(#135, 마일스톤 C — 슬라이스 7의 "표면만" 스코프 경계 해소):
+
+- **「템플릿으로 저장」 = 착지**(``_do_save_template``). 세션 원문을 라이브러리로 승격하고
+  그룹까지 지정한다. 동명은 확인 게이트(결정 34) — 관리 화면의 접미 회피·loud 거부와 다른
+  계약인 이유는 그 메서드 독스트링에 있다. 저장 뒤 세션은 죽지 않고 정체만 승격한다.
+- **「작업으로 저장」 = 미구현(목적지 부재)**. 표면은 비활성 + 인라인 사유로 남는다(죽은 버튼
+  금지). 빠른 기안의 템플릿은 txt 인데 :class:`~hwpxfiller.core.job.Job` 은 hwpx 전용이고
+  (``template_path``→hwpx·매핑=TemplateSchema 필드·생성=hwpx 엔진), 작업 목록의 TXT 구획은
+  ``screen_job.py`` 의 말대로 "draft-as-job 착지 전까지 빈 채로" 있다. 지금 승격시키면 목록에
+  뜨지도 열리지도 실행되지도 않는 Job 이 생긴다 — 죽은 산출물은 조용한 소실과 같은 부류다.
+  결정 31의 국경(매핑 초안을 전 행 미확정으로 착지시키고 에디터 확정 워크플로가 엄격성을
+  재부과)은 그 draft-as-job 라운드의 계약이다.
 """
 from __future__ import annotations
+
+from hwpxcore.atomic import write_text_atomic
 
 from ..core.format_engine import presets as format_presets
 from ..core.mapping import TYPES
@@ -64,6 +73,7 @@ from .screens import (
     source_label,
 )
 from .settings import is_proportional_font, load_draft_target_font
+from .template_groups import TemplateGroupModel, validate_template_name
 
 # 표시형 프리셋 목록(유형별) — 에디터 스냅샷과 **같은 표(format_engine)**에서 뽑는다.
 # 빠른 기안의 fmt 코드가 승격 시 매핑 행의 fmt 로 그대로 이관되려면 두 표면이 같은 어휘를
@@ -132,9 +142,15 @@ class QuickDraftController:
         push: PushSink,
         *,
         pool_registry: "DatasetPoolRegistry | None" = None,
+        txt_groups: "TemplateGroupModel | None" = None,
     ) -> None:
         self._registry = registry
         self._push_sink = push
+        # txt 그룹 모델(#108 결정 2·3) — 「템플릿으로 저장」이 그룹까지 지정하므로 필요하다.
+        # 관리 화면과 **같은 인스턴스**여야 한다(app.py 가 주입): 별도 인스턴스면 지정·접힘
+        # 인메모리 캐시가 갈라져 여기서 넣은 그룹이 관리 화면 목록에 안 보인다(에디터 1단계
+        # 피커에 hwpx 모델을 공유한 것과 같은 이유).
+        self._groups = txt_groups if txt_groups is not None else TemplateGroupModel("txt")
         # 등록 데이터(풀) 겨눔(결정 34의 데이터 판) — 기본은 홈 레지스트리, 테스트는 주입.
         # 다른 실행 표면과 **같은 인스턴스**를 공유해야 데이터 관리 화면의 변경이 즉시 보인다.
         self.pool_registry = (
@@ -509,6 +525,80 @@ class QuickDraftController:
         """「새 기안」 — 세션을 빈손으로 되돌린다(결정 32). 가드는 웹이 먼저 묻는다(위)."""
         self.vm.fresh()
         self._fullwidth = False  # 세션 렌더 옵션은 세션과 함께 죽는다
+
+    # ------------------------------------------------ 승격(결정 33·34, #135)
+    #
+    # 승격 2동사 중 **「템플릿으로 저장」만** 여기 산다. 「작업으로 저장」은 목적지(기안 작업 =
+    # txt 작업)가 아직 실체가 아니라 — 작업 목록의 TXT 구획이 "준비 중"으로 비어 있다 —
+    # 승격시켜도 열 수도 실행할 수도 없는 Job 이 생긴다. 그래서 표면은 비활성으로 두고 사유를
+    # 정직하게 말한다(죽은 버튼 금지). draft-as-job 라운드가 잇는다.
+    def _do_promote_info(self, p: dict) -> dict:
+        """저장 모달이 열릴 때의 프리필 — 이름 후보·그룹 후보·현재 그룹(무변이 질의).
+
+        이름 후보는 라이브러리 유래일 때만 그 이름이다(붙여넣기는 이름이 없으니 빈칸에서
+        사람이 짓는다). 그룹 후보는 **살아있는 지정만** 센다(고아 그룹 부활 금지 — 결정 8).
+        """
+        vm = self.vm
+        name = vm.template_name if vm.origin == "lib" and vm.template_name else ""
+        keys = self._library_keys()
+        return {
+            "name": name,
+            "groups": self._groups.existing_groups(keys),
+            "group": self._groups.group_of(f"{name}.txt") if name else "",
+        }
+
+    _do_promote_info.is_query = True  # 무변이 질의 — 재렌더 유발 금지
+
+    def _library_keys(self) -> "list[str]":
+        """살아있는 txt 템플릿의 그룹 식별키 — 관리 화면과 같은 규칙(루트 상대경로+확장자)."""
+        return [f"{n}{TextTemplateRegistry.SUFFIX}" for n in self.vm.template_names()]
+
+    def _do_save_template(self, p: dict) -> dict:
+        """「템플릿으로 저장」(결정 33·34) — 세션 원문을 라이브러리로 승격. 값은 저장 대상이 아니다.
+
+        동명은 **확인 게이트**를 거친다(결정 34 "역반영 자동 없음 = 명시 승격만, 동명 덮어쓰기
+        확인 게이트"). 관리 화면의 두 기존 경로와 다른 계약인 것은 의도다: 「가져오기」는
+        ``이름 (2).txt`` 접미로 회피하고 「새 TXT」는 loud 거부하는데, 여기선 **되돌려 쓰기가
+        본래 목적**(라이브러리 사본을 고쳐 왔으니 같은 이름으로 되돌아가는 게 정상 경로)이라
+        회피도 거부도 사용자가 원한 일을 막는다. 대신 파괴를 확인받는다.
+
+        저장 뒤 세션은 죽지 않고 **정체만 승격**한다(:meth:`~hwpxfiller.gui.quickdraft_state.
+        QuickDraftViewModel.mark_saved_as`) — 채우던 값·데이터 겨눔은 그대로라 하던 일을 잇는다.
+        """
+        if not self.vm.template_text.strip():  # 빈손 승격 = 빈 템플릿 양산(복사 게이트 동형)
+            return {"ok": False, "error": "저장할 템플릿 원문이 없습니다."}
+        try:
+            name = validate_template_name(p.get("name", ""))
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}  # 모달 인라인 재진술(창 밖 예외 금지)
+        root = self._registry.directory
+        dest = root / f"{name}{TextTemplateRegistry.SUFFIX}"
+        if dest.exists() and not p.get("confirm"):
+            return {
+                "ok": False,
+                "needs_confirm": True,
+                "name": name,
+                "confirm_text": (
+                    f"라이브러리에 이미 「{name}」 템플릿이 있습니다. "
+                    "지금 원문으로 덮어쓰면 기존 내용은 되돌릴 수 없습니다. "
+                    "채운 값은 저장되지 않고 원문만 저장됩니다."
+                ),
+            }
+        overwritten = dest.exists()
+        root.mkdir(parents=True, exist_ok=True)
+        write_text_atomic(str(dest), self.vm.template_text)
+        # 그룹 지정은 **저장이 성공한 뒤에만** — 파일 없는 키에 지정을 남기면 고아가 된다.
+        # 덮어쓰기에서 사용자가 그룹을 안 건드렸으면 프리필로 돌아온 현재 그룹이 그대로 실린다.
+        self._groups.set_group(dest.name, p.get("group", ""))
+        self.vm.mark_saved_as(name)
+        return {
+            "ok": True,
+            "name": name,
+            "overwritten": overwritten,
+            # 슬롯 드롭다운은 initial() 에서 한 번 받아 캐시하므로, 새 이름이 목록에 서려면
+            # 여기서 갱신본을 함께 돌려줘야 한다(방금 만든 템플릿이 목록에 없는 어긋남 방지).
+            "templates": self.vm.template_names(),
+        }
 
     def _do_set_fullwidth(self, p: dict) -> None:
         """전각 정렬 치환 적용/해제(결정 17 린트 처방, #134 (g)) — 세션 렌더 옵션.
