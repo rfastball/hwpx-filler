@@ -2,8 +2,9 @@
    「작업」(job.js)의 대칭 표면: 좌 목록의 그룹 구획·⋮ 메뉴·이동 다이얼로그는 공용 grouplist.js
    팩토리(3번째 소비자)를 쓰고, 백엔드 판정·목록은 DraftController(screen_draft.py)가 소유한다.
    좌 목록 그룹 스캐폴드(renderMaster/rowHtml)는 job.js 동형이다(순수 템플릿 — 팩토리는 위치잡기·
-   다이얼로그만 걷었다). 세션 4존 합병(빠른 기안 × 기안문 채우기)은 슬라이스 3에서 이 껍데기에
-   착지한다 — 골격에선 상세가 정직한 빈 상태이고 목록 선택은 강조만 한다(세션 미구현). */
+   다이얼로그만 걷었다). 우 상세는 **휘발 세션 4존**(슬라이스 3a)이고, 그 표면 전부는 공용
+   팩토리(draftsession.js — 「기안문 채우기」와 단일 출처)가 소유한다: 이 파일이 주는 것은 화면
+   고유 id 맵뿐이다. 저장 작업을 고른 상태의 상세는 아직 껍데기다(저장 세션 복원 = 슬라이스 5). */
 (function () {
   const SCREEN = "draft";
   const $ = (id) => document.getElementById(id);
@@ -18,6 +19,28 @@
     modalId: "draftMoveModal", listId: "draftMoveList", errId: "draftMoveErr",
     nameId: "draftMoveName", radioName: "draftMove",
     newRadioId: "draftMoveNewRadio", newNameId: "draftMoveNewName",
+  });
+
+  /* ---- 우 상세 = 휘발 세션 4존 = 공용 팩토리(draftsession.js, 「기안문 채우기」와 단일 출처).
+     화면 고유값은 id 맵뿐이다 — 미루기 버튼(cardDefer)은 주지 않는다(결정 10 사망: 자유 이동
+     ◀▶·점 클릭이 대체한다. 죽을 것을 새 표면에 짓지 않는다). ---- */
+  const sess = window.DraftSession.create({
+    screen: SCREEN,
+    rowIdPrefix: "draftRow-",  // preserve.js 포커스 복원 키 — txt/job 행과 전역 유일
+    ids: {
+      status: "draftStatus", tplSel: "draftTplSel", dataLabel: "draftDataLabel",
+      pickBtn: "draftBtnPickData", poolBtn: "draftBtnPoolData", pasteBtn: "draftBtnPaste",
+      zoneNote: "draftZoneNote", note: "draftNote", tokPanel: "draftTokPanel",
+      selCount: "draftSelCount", search: "draftFilterSearch", reapply: "draftFilterReapply",
+      chips: "draftFilterChips", strip: "draftSelStrip",
+      tableHost: "draftTableHost", tableWrap: "draftTableWrap", tableEmpty: "draftTableEmpty",
+      tableHead: "draftTableHead", tableBody: "draftTableBody", colPanel: "draftColPanel",
+      selAll: "draftSelAll", selNone: "draftSelNone",
+      card: "draftCard", cardReadout: "draftCardReadout", cardDots: "draftCardDots",
+      cardTitle: "draftCardTitle", cardRender: "draftCardRender", cardLint: "draftCardLint",
+      lintAction: "draftLintAction", cardPrev: "draftCardPrev", cardNext: "draftCardNext",
+      cardCopy: "draftCardCopy", advance: "draftAdvance", targetFont: "draftTargetFont",
+    },
   });
 
   /* ---- 좌 목록 렌더(job.js 동형 그룹 구획 — 행 = 이름 버튼 + ⋮) ---- */
@@ -58,19 +81,25 @@
     }).join("");
   }
 
-  /* ---- 우 상세 패널(껍데기) — 세션 4존은 슬라이스 3. 미선택=안내, 선택=세션 준비 고지. ---- */
+  /* ---- 우 상세 패널 — **미선택 = 휘발 세션 4존**(결정 5), 선택 = 껍데기(슬라이스 5). ----
+     세션 렌더는 공용 팩토리(sess)가 전부 소유한다. 여기서 하는 일은 어느 쪽을 보일지 정하는
+     것뿐이고, 세션 렌더는 **숨겨져 있어도 돌린다** — 되돌아왔을 때 이미 최신이라 깜빡임이 없고,
+     상태 배지도 세션 진실을 따른다(선택 = 화면 전환이지 세션 파괴가 아니다). */
   function renderPanel(s) {
-    $("draftEmptyPanel").style.display = s.has_job ? "none" : "";
+    $("draftSessionPanel").style.display = s.has_job ? "none" : "";
     $("draftShellPanel").style.display = s.has_job ? "" : "none";
-    const st = $("draftStatus");
-    st.textContent = s.has_job ? "기안 선택됨" : "기안 선택";
-    st.dataset.level = s.has_job ? "active" : "idle";
+    if (s.has_job) {
+      const st = $("draftStatus");
+      st.textContent = "기안 선택됨";
+      st.dataset.level = "active";
+    }
   }
 
   function render(s) {
     LAST = s;
     renderMaster(s);
-    renderPanel(s);
+    sess.render(s);   // 세션 4존(데이터·필드 상태·미리보기·완료) — 상태 배지도 여기서
+    renderPanel(s);   // 배지 덮어쓰기는 선택 상태에서만(세션 진실이 기본)
   }
 
   /* ---- 좌 목록 클릭 위임(⋮·그룹 토글·행 선택) ---- */
@@ -101,8 +130,8 @@
 
   function openRowMenu(kind, name, btn) {
     menuFor = { kind, name };
-    // 골격 메뉴: 복제·이름변경·이동·삭제. 「편집」(세션/편집 모드 진입)은 슬라이스 3에서 오므로
-    // 아직 노출하지 않는다(없는 걸 있는 척하지 않는다 — confirm-or-alarm).
+    // 복제·이름변경·이동·삭제. 「편집」(저장 기안의 편집 모드 진입)은 저장 세션 복원과 함께
+    // 슬라이스 5에서 온다 — 아직 노출하지 않는다(없는 걸 있는 척하지 않는다).
     const html = kind === "job"
       ? `<button data-menu="clone">복제</button>` +
         `<button data-menu="rename">이름 변경</button>` +
@@ -252,14 +281,25 @@
     document.querySelector("#scr-draft .job-master").addEventListener("scroll", () => {
       if (menuFor !== null) closeRowMenu();
     }, true);
+    // 휘발 세션 귀환(리뷰 P2) — 미선택이 곧 휘발 진입구(결정 5)라, **선택 해제 동사**가
+    // 없으면 저장 기안을 한 번 고른 사용자는 붙여넣기 화면으로 돌아올 길이 없다(행 재클릭은
+    // 무동작이고 빈 영역 클릭도 해제가 아니다 — 재시작이 유일한 출구가 된다). 세션은 그대로
+    // 두고 겨눔만 푼다(선택은 화면 전환이지 세션 파괴가 아니다 — 같은 규율).
+    $("draftBackToVolatile").addEventListener("click", () =>
+      Bridge.call(SCREEN, "select_job", { name: "" }));
     moveDialog.wire("draftMoveOk", "draftMoveCancel");
+    sess.wire();  // 세션 4존 배선(데이터 존·카드 동사·글꼴·린트·붙여넣기) — 팩토리 소유
   }
 
   async function init() {
     Bridge.onPush(SCREEN, render);
     wire();
-    render(await Bridge.initial(SCREEN));
+    const initState = await Bridge.initial(SCREEN);
+    sess.fillTemplateSelect(initState);  // 템플릿 콤보(부팅 1회) — 재조회는 화면 진입 때
+    render(initState);
   }
 
-  window.DraftScreen = { init };
+  // 화면 진입마다 재동기(txt 와 같은 규율) — 다른 표면이 저장한 템플릿·바꾼 전역 글꼴 선언이
+  // 앱 재시작 없이 여기에 반영된다.
+  window.DraftScreen = { init, refreshOnEnter: sess.refreshOnEnter };
 })();

@@ -98,8 +98,11 @@ def test_txt_note_single_source_in_copy_js():
     assert 'src="js/copy.js"' in index, "copy.js 가 index.html 에 로드되지 않았습니다."
     copy_js = (WEB / "js" / "copy.js").read_text(encoding="utf-8")
     assert "TXT_NOTE" in copy_js, "copy.js 에 TXT_NOTE 가 없습니다."
-    txt_js = (WEB / "js" / "screens" / "txt.js").read_text(encoding="utf-8")
-    assert "Copy.TXT_NOTE" in txt_js, "txt.js 가 Copy.TXT_NOTE 를 쓰지 않습니다(중복 재도입 위험)."
+    # 안내문을 채우는 주체는 공용 기안 세션 팩토리(#148 슬라이스 3a) — 두 화면 한 출처.
+    sess_js = (WEB / "js" / "draftsession.js").read_text(encoding="utf-8")
+    assert "Copy.TXT_NOTE" in sess_js, (
+        "draftsession.js 가 Copy.TXT_NOTE 를 쓰지 않습니다(중복 재도입 위험)."
+    )
 
 
 # Python 문자열용 금지어 — 한국어 사용자 어휘만(영문 형태는 코드 식별자와 충돌 위험).
