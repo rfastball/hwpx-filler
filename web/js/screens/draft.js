@@ -136,13 +136,18 @@
     });
     if (name === null) return;  // 취소
     let r = await Bridge.call(SCREEN, "save_job", { name });
-    if (r && r.needs_confirm) {
+    // 확인 문안을 **되돌려 보낸다**(confirmed_text) — 백엔드가 잠금 안에서 지금 문안과 대조해,
+    // 모달이 열린 사이 대상이 바뀌었으면(TOCTOU) 새 문안으로 다시 묻는다(리뷰 5c P1). while 로
+    // 재확인을 받는다(무확인 파괴 금지 — 바뀐 대상은 다시 확인).
+    while (r && r.needs_confirm) {
+      const confirmedText = r.confirm_text;
       const ok = await window.Modal.confirm({
-        title: "덮어쓰기 확인", body: r.confirm_text,
+        title: "덮어쓰기 확인", body: confirmedText,
         confirmLabel: "덮어쓰기", cancelLabel: "머무르기",
       });
       if (!ok) return;
-      r = await Bridge.call(SCREEN, "save_job", { name, confirm: true });
+      r = await Bridge.call(SCREEN, "save_job",
+        { name, confirm: true, confirmed_text: confirmedText });
     }
     if (r && r.ok === false && r.error) window.alert(r.error);  // 게이트 실패는 시끄럽게
   }

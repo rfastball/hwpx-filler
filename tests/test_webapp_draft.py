@@ -260,14 +260,15 @@ def test_save_job_blocked_when_no_mapping(tmp_path):
 
 
 def test_save_job_overwrite_needs_confirm_then_overwrites(tmp_path):
-    """다른 기존 기안을 덮게 되면 확인 왕복 — 파괴 대상 재진술 후 확정해야 덮는다(RC-15)."""
+    """다른 기존 기안을 덮게 되면 확인 왕복 — 확인 문안을 되돌려 보내야 덮는다(RC-15, 리뷰 5c P1)."""
     ctrl, jobs, _ = _controller(tmp_path)
     _save_real(tmp_path, jobs, "기존 기안", "existing.txt", "기존 {{공고명}}")
     ctrl.dispatch("set_map_value", {"name": "공고명", "text": "값"})
     res = ctrl.dispatch("save_job", {"name": "기존 기안"})
     assert res["needs_confirm"] is True and "기존 기안" in res["confirm_text"]
     assert ctrl.snapshot()["bound_job"] == ""  # 확인 전 = 저장 안 됨
-    res2 = ctrl.dispatch("save_job", {"name": "기존 기안", "confirm": True})
+    res2 = ctrl.dispatch("save_job",
+                         {"name": "기존 기안", "confirm": True, "confirmed_text": res["confirm_text"]})
     assert res2 == {"ok": True, "name": "기존 기안"}
     assert ctrl.snapshot()["bound_job"] == "기존 기안"
 
@@ -278,8 +279,32 @@ def test_save_job_overwrite_preserves_group(tmp_path):
     _save_real(tmp_path, jobs, "월례 기안", "m.txt", "{{공고명}}")
     jobs.set_group("월례 기안", "정기")
     ctrl.dispatch("set_map_value", {"name": "공고명", "text": "값"})
-    ctrl.dispatch("save_job", {"name": "월례 기안", "confirm": True})
+    r1 = ctrl.dispatch("save_job", {"name": "월례 기안"})
+    ctrl.dispatch("save_job",
+                  {"name": "월례 기안", "confirm": True, "confirmed_text": r1["confirm_text"]})
     assert jobs.load("월례 기안").group == "정기"
+
+
+def test_save_job_overwrite_reprompts_when_victim_changes_between_calls(tmp_path):
+    """모달이 열린 사이 그 이름 자리가 다른 Job 으로 교체되면(TOCTOU) 확인 문안을 되돌려 보내도
+    **재확인**한다(리뷰 5c P1 후속) — 확인한 것과 다른 작업을 무확인 덮어쓰지 않는다.
+
+    덮어쓰기 판정을 잠금 밖에서 내리거나 confirm 플래그만 보면, 두 번째 호출이 새 victim 을
+    무확인 파괴한다. 잠금 안에서 지금 문안을 재성형해 확인 문안과 대조하는지 못박는다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "대상 기안", "t.txt", "{{공고명}}")
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "값"})
+    r1 = ctrl.dispatch("save_job", {"name": "대상 기안"})
+    assert r1["needs_confirm"] is True
+    # 모달이 열린 사이, 그 slug 자리가 **다른 이름**의 Job 으로 교체된다(외부 writer 모사).
+    Job(name="침입자 기안", template_path=str(tmp_path / "t.txt"),
+        mapping=MappingProfile(name="침입자 기안", mappings=[])).save(jobs.path_for("대상 기안"))
+    # 확인 문안을 되돌려 보내도 지금 victim(침입자)이 달라 재확인해야 한다(무확인 파괴 금지).
+    r2 = ctrl.dispatch("save_job",
+                       {"name": "대상 기안", "confirm": True, "confirmed_text": r1["confirm_text"]})
+    assert r2["needs_confirm"] is True, "victim 이 바뀌었는데 재확인 없이 덮었습니다(TOCTOU)."
+    assert r2["confirm_text"] != r1["confirm_text"] and "침입자 기안" in r2["confirm_text"]
+    assert jobs.load("대상 기안").name == "침입자 기안"  # 아직 안 덮였다(침입자 그대로)
 
 
 def test_save_job_blocked_when_template_file_gone(tmp_path):

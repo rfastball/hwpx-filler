@@ -192,13 +192,20 @@ class DraftController(DraftSessionMixin):
         # 작업을 무확인 덮어쓴다**(TOCTOU). 잠금 안에서 지금 상태로 판정·저장한다.
         with self.registry.write_lock():
             exists = self.registry.exists(name)
-            if name != self._bound_job and exists and not p.get("confirm"):
+            # 덮어쓰기 문안을 **잠금 안에서 지금** 성형하고 사용자가 확인한 문안과 대조한다(리뷰
+            # 5c P1 후속, 에디터 _save_locked 동형). 모달이 열린 사이 이 slug 자리가 다른 Job 으로
+            # 교체되면 victim 이 바뀌어 문안이 달라진다 — 그러면 confirm:true 라도 **새 문안으로
+            # 다시 묻는다**. 확인한 것과 다른 작업을 무확인 덮어쓰지 않는다(덮어쓰기는 되돌릴 수
+            # 없어 결과 재진술로 갈음 못 한다). 문안이 같으면 통과(같은 사실을 확인한 것).
+            gate_text = ""
+            if name != self._bound_job and exists:
                 try:
                     victim = self.registry.load(name).name
                 except (FileNotFoundError, ValueError):
                     victim = ""  # 손상 — 추측 금지(그대로 고지)
-                return {"ok": False, "needs_confirm": True, "name": name,
-                        "confirm_text": overwrite_confirm_text(name, victim)}
+                gate_text = overwrite_confirm_text(name, victim)
+            if gate_text and (not p.get("confirm") or p.get("confirmed_text", "") != gate_text):
+                return {"ok": False, "needs_confirm": True, "name": name, "confirm_text": gate_text}
             # 기존 메타 보존(리뷰 5c P1) — 재저장/덮어쓰기가 그룹만 남기고 tags·last_run_at·
             # default_dataset_ref·version·filename_pattern 을 조용히 기본값으로 지우지 않게. 이
             # 화면이 편집하지 않는 필드는 전부 승계하고 template_path·mapping 만 갈아 끼운다.
