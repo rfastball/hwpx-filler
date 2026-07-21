@@ -128,9 +128,15 @@
         cancel: document.getElementById(spec.cancelId),
         input: spec.inputId ? document.getElementById(spec.inputId) : null,
       };
-      if (!els.root || !els.ok || !els.cancel || (spec.inputId && !els.input)) {
-        // 골격 부재 = 안전측 거절 + loud(#92 리뷰 #4) — 조용한 no-op 는 confirm-or-alarm 위반.
-        console.error("Modal: 다이얼로그 골격 부재 — " + spec.id);
+      // 골격 부재(요소 결측)에 더해 root 의 .modal 결여도 여기서 거른다(Codex P2) — open 가드는
+      // .modal 없는 root 를 조용히 early-return 하는데, 여기선 이미 pendingDialog 를 세우기 *전*이라
+      // 그 전에 걸러야 onClose 미발화로 pendingDialog 가 영영 true 로 갇히는 교착을 피한다(이후 모든
+      // confirm/prompt 가 재진입으로 거절되고 Escape 로도 못 푼다). root 가 .modal 을 잃는 건 정적
+      // 계약(index.html class="modal")상 도달 불가하나, 가드가 그 가정에 기대지 않게 명시적으로 막는다.
+      if (!els.root || !els.root.classList.contains("modal")
+          || !els.ok || !els.cancel || (spec.inputId && !els.input)) {
+        // 골격 부재/불량 = 안전측 거절 + loud(#92 리뷰 #4) — 조용한 no-op 는 confirm-or-alarm 위반.
+        console.error("Modal: 다이얼로그 골격 부재/불량 — " + spec.id);
         window.alert(spec.missingText);
         resolve(spec.refusal);
         return;

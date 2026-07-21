@@ -138,6 +138,19 @@ class TestWebSelftestGate:
             "Modal.close 가 .modal 없는 요소를 조용히 삼켰습니다 — loud 거절(console.error) 기대."
         )
 
+    def test_malformed_confirm_root_refused_without_deadlock(self, selftest_result: dict) -> None:
+        # Codex P2: confirm/prompt root 가 .modal 을 잃으면 open 가드가 조용히 early-return 해
+        # pendingDialog 가 영영 갇히던(이후 모든 다이얼로그 재진입 거절 + Escape 불가) 교착을,
+        # _promiseModal 이 pendingDialog 세우기 *전* .modal 을 검증해 막는다. 정적 계약상 도달
+        # 불가하나(class="modal" 가드) 그 방어가 실제로 도는지 실앱에서 되읽는다.
+        m = selftest_result["modal_a11y"]
+        assert m["malformed_confirm_root_refused_loud"] is True, (
+            "불량(.modal 없는) confirm root 가 loud 거절되지 않았습니다."
+        )
+        assert m["confirm_after_malformed_opens"] is True, (
+            "불량 root 이후 정상 confirm 이 열리지 않았습니다 — pendingDialog 교착(Codex P2 회귀)."
+        )
+
     def test_confirm_modal_serializes_single_inflight(self, selftest_result: dict) -> None:
         # PR #92 리뷰 #1: promise 다이얼로그는 동시 1건 — 미결 confirm 위에 두 번째 confirm 을
         # 요청하면 즉시 안전측 거절(false) + loud(alert) 이어야 하고, 첫 다이얼로그의 본문·리스너가
