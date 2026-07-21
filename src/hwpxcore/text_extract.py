@@ -37,6 +37,7 @@ from pathlib import Path
 
 from lxml import etree
 
+from .lineseg import LINESEG_LOCAL
 from .package import HwpxPackage
 
 HP_NS = "http://www.hancom.co.kr/hwpml/2011/paragraph"
@@ -109,7 +110,7 @@ _IGNORE_CONTAINER: "frozenset[str]" = frozenset()
 
 # hp:p 직속 자식.
 _HANDLED_P = frozenset({"run"})
-_IGNORE_P = frozenset({"linesegarray"})  # 줄 배치 레이아웃 정보, 본문 텍스트 없음
+_IGNORE_P = frozenset({LINESEG_LOCAL})  # 줄 배치 레이아웃 정보, 본문 텍스트 없음
 
 # hp:run 직속 자식.
 _HANDLED_RUN = frozenset({"t", "ctrl", "tbl", "lineBreak", "tab"})

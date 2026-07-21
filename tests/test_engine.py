@@ -173,3 +173,56 @@ def test_batch_progress_callback(tmp_path):
         progress=lambda d, t: seen.append((d, t)),
     )
     assert seen == [(1, 3), (2, 3), (3, 3)]
+
+
+# ------------------------------------------------------- stale 줄배치 캐시(#95)
+CORPUS_NOTICE = Path(__file__).parent / "corpus" / "real" / "bid_notice_limited_under100m.hwpx"
+
+
+def test_generate_strips_stale_lineseg_from_modified_sections(tmp_path):
+    """#95 실코퍼스 회귀 — 캐시를 무겁게 지닌 실제 공고서 템플릿을 채우면
+    변경된 XML 의 stale 줄배치 캐시가 전량 제거되고, 미변경 XML 은 바이트 그대로다."""
+    from hwpxcore.package import HwpxPackage
+
+    engine = HwpxEngine()
+    fields = engine.required_fields(str(CORPUS_NOTICE))
+    assert fields  # 템플릿에 누름틀 실재(양성 대조 1)
+
+    out = tmp_path / "filled.hwpx"
+    res = engine.generate(str(CORPUS_NOTICE), {f: "값" for f in fields}, str(out))
+    assert res.ok
+
+    src = HwpxPackage.open(str(CORPUS_NOTICE))
+    dst = HwpxPackage.open(str(out))
+    changed = [
+        n for n in dst.content_xml_names() if dst.entries[n] != src.entries[n]
+    ]
+    assert changed  # 채움이 실제로 일어났다
+    # 변경 전 XML 에 stale 후보 캐시가 실재했다(양성 대조 2 — 스트립 무의미 방지)
+    assert sum(src.entries[n].count(b"linesegarray") for n in changed) > 0
+    # 변경된 XML 은 캐시 0 — 미변경 XML 은 changed 판정상 바이트 동일 = 보존 자동 성립
+    for name in changed:
+        assert dst.entries[name].count(b"linesegarray") == 0
+
+
+def test_regenerate_same_values_is_byte_stable(tmp_path):
+    """동일 값 재생성(무변경 재실행) — 재작성도 캐시 상실도 없이 콘텐츠 XML 바이트 그대로(#95).
+
+    엔진 쓰기 게이트가 매칭이 아닌 실변경(doc.modified)을 소비함을 핀한다:
+    "재작성된 XML + 캐시 잔존" 조합은 불가능해야 한다(재작성 ⇔ modified ⇔ 스트립).
+    """
+    from hwpxcore.package import HwpxPackage
+
+    engine = HwpxEngine()
+    data = {f: "값" for f in engine.required_fields(str(CORPUS_NOTICE))}
+    out1 = tmp_path / "a.hwpx"
+    out2 = tmp_path / "b.hwpx"
+    assert engine.generate(str(CORPUS_NOTICE), data, str(out1)).ok
+    res2 = engine.generate(str(out1), data, str(out2))  # 같은 데이터로 재생성
+    assert res2.ok
+    assert res2.unmatched == set()  # 동일 값 재채움도 매칭 보고는 정직
+
+    p1 = HwpxPackage.open(str(out1))
+    p2 = HwpxPackage.open(str(out2))
+    for name in p1.content_xml_names():
+        assert p2.entries[name] == p1.entries[name]

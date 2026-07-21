@@ -37,6 +37,7 @@ from pathlib import Path
 
 from lxml import etree
 
+from hwpxcore.lineseg import serialize_modified_section
 from hwpxcore.text_extract import HP_NS, _local, _to_package
 
 _TOKEN_RE = re.compile(r"\{\{\s*([^{}]+?)\s*\}\}")
@@ -754,9 +755,9 @@ def compile_document(pkg_or_path: object) -> "tuple[object, CompileReport]":
         for p in _iter_paragraphs(root):
             _process_paragraph(p, alloc=alloc, apply=True, report=report)
         if len(report.compiled) > before:
-            pkg.entries[name] = etree.tostring(
-                root, xml_declaration=True, encoding="UTF-8", standalone=True
-            )
+            # 런 재편으로 stale 이 된 줄배치 캐시를 재직렬화 직전 스트립(#95).
+            # 미변경 섹션(compiled 증가 없음)은 재직렬화 자체를 안 하므로 보존.
+            pkg.entries[name] = serialize_modified_section(root)
     report.modified = bool(report.compiled)
     return pkg, report
 

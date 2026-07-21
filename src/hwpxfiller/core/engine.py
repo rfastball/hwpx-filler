@@ -44,12 +44,13 @@ class HwpxEngine:
         try:
             for name in pkg.content_xml_names():
                 doc = FieldDocument(pkg.entries[name])
-                changed = False
                 for key, val in active.items():
                     if doc.set_field(key, val):
                         applied.add(key)
-                        changed = True
-                if changed:
+                # 실제 텍스트가 바뀐 문서만 재직렬화(#95) — 매칭만 되고 값이 기존과
+                # 같은 재채움은 원본 바이트(유효 캐시 포함)를 그대로 둔다. 이로써
+                # "재작성된 XML + 캐시 잔존" 조합은 불가능: 재작성 ⇔ modified ⇔ 스트립.
+                if doc.modified:
                     pkg.entries[name] = doc.to_bytes()
         except Exception as exc:  # noqa: BLE001
             return GenerateResult(False, output_path, error=f"XML 처리 실패: {exc}")
