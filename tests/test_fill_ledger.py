@@ -187,3 +187,30 @@ def test_ledger_sidecar_path_same_second_accumulates(tmp_path):
     second = ledger_sidecar_path(tmp_path, "2026-07-12T14:05:03")
     assert second == tmp_path / "fill-ledger-20260712-140503-1.json"
     assert second != first and first.exists()
+
+
+def test_ledger_records_fill_notes_as_evidence(tmp_path):
+    """완화 사실(#154)은 원장 사이드카에 남는다 — "왜 표식이 사라졌나"의 사후 복원."""
+    from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
+
+    sec = (
+        '<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"'
+        ' xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p>'
+        '<hp:run><hp:ctrl><hp:fieldBegin name="공고명"/></hp:ctrl></hp:run>'
+        "<hp:run><hp:t>OLD<hp:markpenBegin/>X</hp:t></hp:run>"
+        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
+        "</hp:p></hs:sec>"
+    ).encode("utf-8")
+    template = tmp_path / "t.hwpx"
+    HwpxPackage(
+        entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": sec}
+    ).save(str(template))
+    out = tmp_path / "doc.hwpx"
+    res = HwpxEngine().generate(str(template), {"공고명": "가"}, str(out))
+    assert res.notes  # 선조건: 완화가 실제 발생
+
+    (entry,) = ledger_outputs([res], [{"공고명": "가"}], _mapping(), ["공고명"])
+    payload = entry.to_dict()
+    assert payload["notes"] == [
+        {"field": "공고명", "kind": "inline_stripped", "detail": ["markpenBegin"]}
+    ]

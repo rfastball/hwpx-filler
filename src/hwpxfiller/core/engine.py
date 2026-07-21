@@ -50,9 +50,7 @@ class HwpxEngine:
                 for key, val in active.items():
                     if doc.set_field(key, val):
                         applied.add(key)
-                for note in doc.notes:
-                    if note not in notes:
-                        notes.append(note)
+                notes.extend(doc.notes)
                 # 실제 텍스트가 바뀐 문서만 재직렬화(#95) — 매칭만 되고 값이 기존과
                 # 같은 재채움은 원본 바이트(유효 캐시 포함)를 그대로 둔다. 이로써
                 # "재작성된 XML + 캐시 잔존" 조합은 불가능: 재작성 ⇔ modified ⇔ 스트립.
@@ -68,7 +66,12 @@ class HwpxEngine:
 
         unmatched = set(active) - applied
         return GenerateResult(
-            True, output_path, applied=applied, unmatched=unmatched, notes=notes
+            True,
+            output_path,
+            applied=applied,
+            unmatched=unmatched,
+            # 노트는 템플릿 구조 사실 — XML 여러 개에 걸쳐도 한 번씩(순서 보존 dedupe)
+            notes=list(dict.fromkeys(notes)),
         )
 
     def required_fields(self, template_path: str) -> "list[str]":

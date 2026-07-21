@@ -64,4 +64,9 @@ def describe_fill_note(note) -> str:
             f"빈 누름틀 「{note.field}」 에 값 자리를 새로 만들어 채웠습니다 — "
             f"서식은 누름틀 주변 서식을 따릅니다."
         )
+    if note.kind == "occurrence_unfillable":
+        return (
+            f"누름틀 「{note.field}」 자리 중 일부는 구조상 기입할 수 없어 "
+            f"건너뛰었습니다 — 산출물에서 해당 자리가 비어 있지 않은지 확인하세요."
+        )
     return f"누름틀 「{note.field}」: {note.kind}"

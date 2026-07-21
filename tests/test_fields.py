@@ -252,3 +252,72 @@ def test_notes_dedupe_across_same_name_fields():
     doc = FieldDocument(xml)
     assert doc.set_field("계약명", "값") is True
     assert doc.notes == [FillNote("계약명", "inline_stripped", ("markpenBegin",))]
+
+
+def test_same_value_refill_with_harmless_child_is_noop():
+    """이미 read_field == V 면 무연산(#95 바이트 안정) — 무해한 자식은 보존된다."""
+    xml = _field_xml('<hp:run><hp:t>계약A<hp:markpenBegin/></hp:t></hp:run>')
+    doc = FieldDocument(xml)
+    assert doc.read_field("계약명") == "계약A"
+    assert doc.set_field("계약명", "계약A") is True  # 목표 상태 선판정
+    assert doc.modified is False
+    assert doc.notes == []
+    assert doc.to_bytes() == FieldDocument(xml).to_bytes()  # 마커·바이트 불변
+
+
+def test_fragmented_equal_value_is_noop():
+    """파편에 갈라져 있어도 합이 목표값이면 무연산 — 통합 재작성으로 흔들지 않는다."""
+    xml = _field_xml(
+        "<hp:run><hp:t>정보</hp:t></hp:run><hp:run><hp:t>시스템</hp:t></hp:run>"
+    )
+    doc = FieldDocument(xml)
+    assert doc.set_field("계약명", "정보시스템") is True
+    assert doc.modified is False
+    assert doc.to_bytes() == FieldDocument(xml).to_bytes()
+
+
+def test_unclosed_field_without_slot_stays_loud():
+    """짝(fieldEnd) 미확인 + 슬롯 부재면 합성하지 않는다 — 걸음 밖 구값과 중복 방지.
+
+    (문단 경계를 걸친 필드 등) 조용한 성공 대신 기입 불가 → 호출측 unmatched.
+    """
+    xml = (
+        f"{_HDR}<hp:p>"
+        '<hp:run><hp:ctrl><hp:fieldBegin name="계약명"/></hp:ctrl></hp:run>'
+        "</hp:p><hp:p>"
+        "<hp:run><hp:t>다음 문단의 구값</hp:t></hp:run>"
+        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
+        "</hp:p></hs:sec>"
+    ).encode("utf-8")
+    doc = FieldDocument(xml)
+    assert doc.set_field("계약명", "값") is False
+    assert doc.modified is False
+    assert doc.notes == []
+
+
+def test_partial_fill_emits_occurrence_note():
+    """같은 이름 자리 일부만 기입 가능하면 True + occurrence_unfillable 노트 —
+    False 가 집계에 삼켜져 조용한 부분 기입이 되지 않는다."""
+    normal = (
+        '<hp:run><hp:ctrl><hp:fieldBegin name="계약명"/></hp:ctrl></hp:run>'
+        "<hp:run><hp:t>구값</hp:t></hp:run>"
+        "<hp:run><hp:ctrl><hp:fieldEnd/></hp:ctrl></hp:run>"
+    )
+    degenerate = (
+        '<hp:run><hp:ctrl><hp:fieldBegin name="계약명"/><hp:fieldEnd/></hp:ctrl></hp:run>'
+    )
+    xml = (f"{_HDR}<hp:p>{normal}</hp:p><hp:p>{degenerate}</hp:p></hs:sec>").encode("utf-8")
+    doc = FieldDocument(xml)
+    assert doc.set_field("계약명", "새값") is True
+    assert FillNote("계약명", "occurrence_unfillable") in doc.notes
+    assert doc.read_field("계약명") == "새값"
+
+
+def test_inline_stripped_detail_enumerates_subtree():
+    """detail 은 제거 하위트리 전체를 열거한다 — 최상위만 대면 손실 집합 과소 고지."""
+    xml = _field_xml(
+        "<hp:run><hp:t>OLD<hp:outer><hp:inner/></hp:outer></hp:t></hp:run>"
+    )
+    doc = FieldDocument(xml)
+    assert doc.set_field("계약명", "NEW") is True
+    assert doc.notes == [FillNote("계약명", "inline_stripped", ("inner", "outer"))]
