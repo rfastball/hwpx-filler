@@ -186,7 +186,9 @@ def test_c10_self_update_confirms_when_disk_changed_externally(tmp_path):
     assert res["ok"] is False and res.get("needs_overwrite") is True
     assert "외부" in res["overwrite_text"]           # '편집 중 외부 변경' 문구
     # 재진술 확인 후에만 덮어쓴다.
-    assert ctrl.dispatch("save", {"confirm_overwrite": True})["ok"] is True
+    assert ctrl.dispatch(
+        "save", {"confirm_overwrite": True, "confirmed_overwrite_text": res["overwrite_text"]}
+    )["ok"] is True
 
 
 def test_c10_unchanged_self_update_saves_without_confirm(tmp_path):
@@ -216,7 +218,9 @@ def test_c10_self_update_confirms_when_origin_corrupted(tmp_path):
     res = ctrl.dispatch("save", {})
     assert res["ok"] is False and res.get("needs_overwrite") is True
     assert "손상" in res["overwrite_text"]
-    assert ctrl.dispatch("save", {"confirm_overwrite": True})["ok"] is True
+    assert ctrl.dispatch(
+        "save", {"confirm_overwrite": True, "confirmed_overwrite_text": res["overwrite_text"]}
+    )["ok"] is True
 
 
 def test_c10_self_update_after_external_delete_recreates_without_confirm(tmp_path):

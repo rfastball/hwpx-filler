@@ -1094,46 +1094,46 @@ class EditorController:
             )
         return ""
 
+    def _overwrite_gate(self) -> str:
+        """덮어쓰기 확인이 필요하면 그 재진술 문구, 아니면 ``""`` — **쓰기 잠금 안** 판정(#149).
+
+        두 갈래를 한 판정으로 모은다: 자기-갱신의 '편집 중 외부 변경'(지문 불일치)과, 이름을
+        바꿔 남의 자리를 덮는 경우의 victim 재진술. 둘 다 디스크를 읽어 판정하므로 잠금 밖에서
+        내리면 **읽은 상태와 실제로 덮는 상태가 갈라질 수 있다** — 사용자가 읽고 확정한 문안이
+        실제로 일어난 일과 다른 것은 이 저장소의 지배 결함류다. 호출자(:meth:`_save_locked`)가
+        잠금 안에서 부르고, 확인된 문안과 대조까지 한다.
+        """
+        self_update = bool(self._editing_origin) and self.job_name == self._editing_origin
+        if self_update:
+            return self._editing_drift_text()
+        if not needs_overwrite_confirm(self.job_name, None, self.registry.exists(self.job_name)):
+            return ""
+        try:
+            victim = self.registry.load(self.job_name).name
+        except Exception:  # noqa: BLE001  손상 파일 → 이름 불명(추측 금지)
+            victim = ""
+        return overwrite_confirm_text(self.job_name, victim)
+
     def _do_save(self, p: dict) -> dict:
         """저장 게이트 → 덮어쓰기 확인 → 자동등록 게이트 → 저장·등록. 결과 dict 로 재진술.
 
         웹은 ``needs_overwrite`` / ``needs_dataset_confirm`` 이면 재진술 확인 후 해당
-        플래그(``confirm_overwrite``/``confirm_dataset``)를 실어 재호출한다.
+        플래그(``confirm_overwrite``/``confirm_dataset``)를 실어 재호출한다. 덮어쓰기 확인은
+        **본 문안을 그대로 되돌려 준다**(``confirmed_overwrite_text``) — 아래 참조.
 
         편집 모드(#26): 원점 이름 그대로의 재저장은 자기-갱신이라 **디스크가 로드 시점
         그대로일 때만** 덮어쓰기 확인을 묻지 않는다(레지스트리 가드의 '같은 이름 재저장
         통과' 철학 미러). 편집 사이 외부에서 같은 이름 작업이 교체됐으면 '편집 중 외부
         변경' 확인을 승격한다(무확인 파괴 금지). 이름을 바꿔 다른 작업을 덮으려는 경우는
         평소처럼 확인을 요구한다. 태그·마지막 실행 메타는 보존.
+
+        게이트 판정은 **쓰기 잠금 안**에서 내린다(#149). 잠금 밖 선판정은 판정과 실행 사이에
+        디스크가 바뀔 수 있어 ①확인 없이 외부 변경을 덮거나 ②읽은 문안과 다른 자리를 덮는다.
+        검증(``validate_save``)은 순수 메모리 판정이라 잠금 밖에 남는다.
         """
         verdict = validate_save(self.model, self.job_name, self.pattern, schema=self.schema)
         if not verdict.ok:
             return {"ok": False, "block_reason": verdict.block_reason}
-        exists = self.registry.exists(self.job_name)
-        self_update = bool(self._editing_origin) and self.job_name == self._editing_origin
-        if self_update and not p.get("confirm_overwrite"):
-            drift = self._editing_drift_text()
-            if drift:
-                return {"ok": False, "needs_overwrite": True, "overwrite_text": drift}
-        if (
-            not self_update
-            and needs_overwrite_confirm(self.job_name, None, exists)
-            and not p.get("confirm_overwrite")
-        ):
-            victim = ""
-            try:
-                victim = self.registry.load(self.job_name).name
-            except Exception:  # noqa: BLE001  손상 파일 → 이름 불명(추측 금지)
-                victim = ""
-            return {
-                "ok": False,
-                "needs_overwrite": True,
-                "overwrite_text": overwrite_confirm_text(self.job_name, victim),
-            }
-        if self.data_path:  # 선언 데이터 자동등록 게이트 — 저장 전 선차단(#26)
-            blocked = self._dataset_gate(p)
-            if blocked is not None:
-                return blocked
         # 태그·마지막 실행 메타는 편집 세션 밖(홈 태그 편집 등)에서 바뀌었을 수 있어
         # load_job 시점 스냅샷이 아니라 저장 직전 디스크 상태를 다시 읽어 보존한다 — 편집
         # 세션이 열린 사이 홈에서 단 태그를 조용히 되돌리지 않는다(#26 confirm-or-alarm).
@@ -1146,7 +1146,24 @@ class EditorController:
             return self._save_locked(p, verdict)
 
     def _save_locked(self, p: dict, verdict) -> dict:
-        """저장 임계구역 몸통 — 보존 값 재읽기부터 저장까지(레지스트리 쓰기 잠금 안)."""
+        """저장 임계구역 몸통 — 게이트 판정부터 저장까지(레지스트리 쓰기 잠금 안).
+
+        덮어쓰기 게이트는 **확인한 문안과 지금 문안을 대조**한다(#149). 사용자가 모달을 읽는
+        사이 디스크가 바뀌면 확인은 다른 상태에 대한 것이 되므로, 문안이 달라졌으면 새 문안으로
+        **다시 묻는다** — 덮어쓰기는 되돌릴 수 없어 결과 재진술로 갈음하지 않는다. 문안이
+        같으면 통과(같은 사실을 확인한 것). 게이트가 사라졌으면(외부 변경이 되돌려짐 등) 덮을
+        것이 없으므로 그냥 통과한다.
+        """
+        gate_text = self._overwrite_gate()
+        if gate_text and (
+            not p.get("confirm_overwrite")
+            or p.get("confirmed_overwrite_text", "") != gate_text
+        ):
+            return {"ok": False, "needs_overwrite": True, "overwrite_text": gate_text}
+        if self.data_path:  # 선언 데이터 자동등록 게이트 — 저장 전 선차단(#26)
+            blocked = self._dataset_gate(p)
+            if blocked is not None:
+                return blocked
         preserved_tags = dict(self._preserved_tags)
         preserved_last_run = self._preserved_last_run
         if self._editing_origin:

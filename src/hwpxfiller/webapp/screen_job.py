@@ -698,17 +698,34 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         self.registry.set_group(p["name"], p.get("group", ""))
 
+    def _drift_note(self, seen, count: int) -> str:
+        """확인 시점 건수와 실제 이동 건수가 갈라졌으면 그 사실을 말할 문구, 아니면 ``""``(#149).
+
+        그룹 일괄 갱신의 확인 문안은 **잠금 밖 사전 카운트**로 만들어진다 — 사용자가 모달을
+        읽는 사이 다른 표면이 작업을 옮기면 "N건" 이 실제와 어긋난다. 이동 자체는 파괴가 아니고
+        (소속만 바뀐다·삭제 없음) 잠금 안 일괄 갱신이 실제 건수를 돌려주므로, 재확인까지
+        올리지 않고 **결과 재진술**로 갈음한다 — 다만 어긋났으면 조용히 넘기지 않는다.
+        완화 조항의 조건("틀리면 보이는 추측")을 만족하는 자리다.
+        """
+        if not isinstance(seen, int) or seen == count:
+            return ""
+        return f" · 확인 시점 {seen}건과 다릅니다(그 사이 소속이 바뀌었습니다)"
+
     def _do_rename_group(self, p: dict) -> dict:
         """그룹 이름 변경 — 새 이름이 **기존 그룹**이면 병합이므로 확인 승격(무확인 반환).
 
         순수 개명이면 접힘 상태를 새 이름으로 승계한다(이름만 바뀐 같은 그룹). 병합이면
         대상 그룹의 접힘 상태를 존중하고 옛 이름만 접힘 집합에서 걷는다.
+
+        확인 문안의 건수는 **약속이 아니라 그 시점의 관측**이다(#149) — 실제 이동 건수는 잠금
+        안 일괄 갱신이 세어 ``count`` 로 돌려주고, 확인 때 본 수(``seen``)와 다르면
+        ``drift_note`` 로 함께 말한다.
         """
         old, new = p["name"], p.get("new", "").strip()
         if not new:
             return {"ok": False, "error": "그룹 이름이 비어 있습니다."}
         if new == old:
-            return {"ok": True, "count": 0}
+            return {"ok": True, "count": 0, "drift_note": ""}
         target_members = sum(1 for j in self.registry.list_jobs() if j.group == new)
         if target_members and not p.get("confirm"):
             count = sum(1 for j in self.registry.list_jobs() if j.group == old)
@@ -720,10 +737,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             if not target_members:
                 self._collapsed.add(new)
             save_job_collapsed_groups(sorted(self._collapsed))
-        return {"ok": True, "count": count}
+        return {"ok": True, "count": count, "drift_note": self._drift_note(p.get("seen"), count)}
 
     def _do_disband_group(self, p: dict) -> dict:
-        """그룹 해산(결정 43) — 무확인 호출은 소속 수 재진술로 멈춘다. 소속은 「그룹 없음」으로."""
+        """그룹 해산(결정 43) — 무확인 호출은 소속 수 재진술로 멈춘다. 소속은 「그룹 없음」으로.
+
+        재진술한 수는 그 시점의 관측이다 — 실제 이동 건수·어긋남 고지는 ``_drift_note``(#149).
+        """
         name = p["name"]
         if not p.get("confirm"):
             count = sum(1 for j in self.registry.list_jobs() if j.group == name)
@@ -732,7 +752,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if name in self._collapsed:
             self._collapsed.discard(name)
             save_job_collapsed_groups(sorted(self._collapsed))
-        return {"ok": True, "count": count}
+        return {"ok": True, "count": count, "drift_note": self._drift_note(p.get("seen"), count)}
 
     # (행 선택 4액션·필터 12액션·직전 필터 슬롯·소스 키는 DataZoneMixin 으로 이동 —
     #  슬라이스 6 PR-2b: txt 큐가 같은 존을 재사용한다. data_zone.py 가 정본.)
