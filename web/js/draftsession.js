@@ -11,9 +11,10 @@
    실앱 게이트가 되읽는다) · confirmNewDraftIfArmed/confirmDataSwapIfArmed(파괴 경로 사전 확인). */
 (function () {
   const $ = (id) => document.getElementById(id);
-  const STATE_LABEL = { fill: "✓ 채움", blank: "◦ 빈 값", missing: "● 항목 없음" };
   // 상태 색인 점 상태어(한글) — aria-label/title 이 영문 토큰(current/copied/uncopied)을 누출하지 않게.
   const DOT_STATE_LABEL = { current: "작업점", copied: "복사됨", uncopied: "대기" };
+  // 소유권 색 범례(결정 33) — 판정은 서버(토큰 own)라 여긴 문안·색만(파생 판정 금지).
+  const OWN_LABEL = { auto: "데이터에서 자동", man: "직접 입력" };
   const esc = window.escHtml;  // 공유 이스케이퍼(esc.js) — " 도 escape 해 속성 컨텍스트 안전
 
   /* 데이터 존 문안 — 두 화면 공통 기본값(화면별로 갈라야 할 실증이 나오면 cfg 로 연다). */
@@ -44,6 +45,26 @@
     let LAST = null;
     let lastDotsSig = null;  // 상태 색인 점 재구축 스킵 서명(리뷰 F7) — 점 지형 불변 push 에 reflow 회피
     let zoneNoteKey = null;
+    // 카드 보기 = 채운 모습/원문(순수 뷰 상태, 클라이언트 소유 — 서버 왕복 없음). 「기안문
+    // 채우기」는 뷰 전환 손잡이가 없어(id 미부여) 항상 채운 모습이다.
+    let view = "filled";
+
+    /* 타이핑 구동(값 입력·원문 라이브 편집)은 서버 왕복을 디바운스한다(빠른 기안 선례) — 타건
+       마다 왕복은 낭비고, 값 유실 경합은 _NO_PUSH+겨냥 패치가 막는다(포커스 입력 미재구성). */
+    let debTimer = null, debFn = null;
+    function debounce(fn) {
+      debFn = fn;
+      if (debTimer) clearTimeout(debTimer);
+      debTimer = setTimeout(() => { debTimer = null; const f = debFn; debFn = null; if (f) f(); }, 180);
+    }
+    function flushDeb() {
+      if (debTimer) { clearTimeout(debTimer); debTimer = null; }
+      const f = debFn; debFn = null; if (f) f();
+    }
+    /* 렌더 세대 — 구조 변화(전면 render)가 나면 올라가, 늦게 착지한 타이핑 응답이 옛 세대의
+       스냅샷으로 미리보기를 되돌리는 경합을 막는다(빠른 기안 EPOCH 선례). */
+    let EPOCH = 0;
+    function inEpoch(fn) { const e = EPOCH; return (s) => { if (e === EPOCH) fn(s); }; }
 
     /* ---- 데이터 존 고지(재적용 결과·전멸 필터 무동작) — 렌더 불가침 JS 소유 요소 ----
        완료 존 로그가 없는 화면이라 log 채널을 이 고지 한 줄로 받는다. 푸시 재렌더에
@@ -96,6 +117,97 @@
        같다(불변식). literal=원문, fill=값(음영), blank=〈빈 값〉 표지, missing={{토큰}}(빨강). */
     const paintCard = window.SegView.paint;  // 공유 세그먼트 페인터(segview.js)
 
+    /* ---- ② 맞추기 표(#148 슬라이스 3b) — 토큰별 결속·근사 제안·표시형·소유권 색·「지금 행의 값」.
+       판정은 전부 Python(mapping_state)이고 여기는 문안·표현뿐이다(파생경계 번역오류 상류 차단):
+       열 후보·소유권(auto/man)·제안·값·상태는 서버 토큰 그대로 소비하고 재판정하지 않는다.
+       휘발 세션이라 유형·확정 열(.persist)은 없다 — 저장 세션 복원과 함께 슬라이스 5가 얹는다. */
+    function mapRowHtml(s, t, i) {
+      // 드롭다운 선택 = 결속 열(auto)일 때만 그 열, 아니면 「(직접 입력)」(man·무결속). man 의
+      // 기억된 소스(t.source)는 드롭다운이 아니라 「되돌리기」로 되살린다 — 옵션 selected 는
+      // **유효 선택(srcSel)** 로만 판정한다(Codex F1): t.source 로 판정하면 man 이 「(직접 입력)」과
+      // 옛 열을 동시에 selected 해 나중 것(열)이 이겨, 상수가 그 열에 결속된 듯 거짓 표시된다.
+      const srcSel = t.own === "auto" ? t.source : "";
+      const cols = (s.columns || []).map((c) =>
+        `<option value="${esc(c)}"${c === srcSel ? " selected" : ""}>${esc(c)}</option>`).join("");
+      const dot = t.own ? `<span class="own ${t.own}" title="${OWN_LABEL[t.own] || ""}"></span>` : "";
+      const src =
+        `<div class="mapsrc">${dot}` +
+        `<select class="field sm mapsrc-sel" id="${id.tokPanel}-src-${i}" data-i="${i}"` +
+        ` aria-label="${esc(t.name)} 데이터 열">` +
+        `<option value=""${srcSel === "" ? " selected" : ""}>(직접 입력)</option>${cols}</select>` +
+        // 근사 제안(결정 30) — 무결속·비auto 에서만, 자동 적용 없이 원클릭.
+        (t.suggest && t.own !== "auto"
+          ? `<button class="btn sm mapsug" id="${id.tokPanel}-sug-${i}" data-i="${i}"` +
+            ` title="이름이 비슷한 열입니다">「${esc(t.suggest)}」 적용</button>` : "") +
+        // 「자동으로 되돌리기」 — 결속 값을 고쳐 상수로 강등된 자리를 원 열로(막다른 강등 금지).
+        (t.can_revert
+          ? `<button class="btn sm maprev" id="${id.tokPanel}-rev-${i}" data-i="${i}">자동으로 되돌리기</button>` : "") +
+        `</div>`;
+      // 표시형(결정 34 2층) — 데이터에서 오는 값(auto)에만 뜻이 있다(man/무결속엔 dead control 금지).
+      const fmts = ((s.fmt_options && s.fmt_options[t.fmt_kind]) || []).map((o) =>
+        `<option value="${esc(o.code)}"${o.code === t.fmt_code ? " selected" : ""}>${esc(o.label)}</option>`).join("");
+      const fmtCell = (t.own === "auto" && fmts)
+        ? `<select class="field sm mapfmt" id="${id.tokPanel}-fmt-${i}" data-i="${i}"` +
+          ` aria-label="${esc(t.name)} 표시형">${fmts}</select>`
+        : `<span class="muted">—</span>`;
+      // 「지금 행의 값」 — **항상 편집 가능**(사용자 결정). 결속(auto)이면 현재 행의 데이터 값이
+      // 미리 차 있고, 여기 타이핑하면 상수(man)로 강등된다(전 행 공통) — 되돌리기(maprev)가
+      // 원 결속 열을 되살린다. 무결속·상수는 빈 칸에서 직접 입력한다(빠른 기안 qd-val 동형).
+      const valCell =
+        `<textarea class="mapval-in${(t.value || "").trim() === "" ? " empty" : ""}"` +
+        ` rows="1" id="${id.tokPanel}-val-${i}" data-i="${i}" placeholder="직접 입력"` +
+        ` aria-label="${esc(t.name)} 값">${esc(t.value || "")}</textarea>`;
+      return `<tr data-i="${i}"><td class="maptok" title="{{${esc(t.name)}}}">${esc(t.name)}</td>` +
+        `<td>${src}</td><td class="mapfmt-cell">${fmtCell}</td><td class="mapval-cell">${valCell}</td></tr>`;
+    }
+
+    function renderMap(s) {
+      const tokens = s.tokens || [];
+      const host = $(id.tokPanel);
+      if (!tokens.length) {
+        host.innerHTML = `<p class="muted hint" style="padding:10px">토큰이 없는 템플릿입니다.</p>`;
+      } else {
+        host.innerHTML =
+          `<table class="dmap"><thead><tr>` +
+          `<th style="width:16%">토큰</th><th style="width:44%">데이터 열</th>` +
+          `<th style="width:16%">표시형</th><th>지금 행의 값</th>` +
+          `</tr></thead><tbody>` +
+          tokens.map((t, i) => mapRowHtml(s, t, i)).join("") +
+          `</tbody></table>`;
+      }
+      if (id.mapLegend) {
+        $(id.mapLegend).innerHTML =
+          `<span><i class="own auto"></i>데이터에서 자동</span>` +
+          `<span><i class="own man"></i>직접 입력</span>` +
+          `<span class="muted">항목 없음은 <span class="mono">{{토큰}}</span> 그대로 복사됩니다.</span>`;
+      }
+    }
+
+    /* 소유권 맵(결정 33) — {토큰이름: own}. 카드 fill 세그먼트에 own-* 클래스를 입혀 값이
+       데이터에서 왔는지(auto) 직접 입력인지(man) 색으로 가른다. 판정은 서버 토큰 그대로. */
+    function ownersOf(s) {
+      const o = {};
+      (s.tokens || []).forEach((t) => { if (t.own === "auto" || t.own === "man") o[t.name] = t.own; });
+      return o;
+    }
+
+    /* ---- ③ 원문 뷰 전환(결정 34) — 채운 모습 ↔ 원문(같은 칸의 두 모습). 뷰 전환 손잡이가
+       있는 화면(「기안」)만 원문 textarea 를 보이고, 타이핑이 ② 표를 실시간 재구성한다. */
+    function applyView() {
+      if (!id.viewFilled) return;  // 뷰 전환 없는 화면(「기안문 채우기」) — 항상 채운 모습
+      const src = view === "source";
+      $(id.viewFilled).setAttribute("aria-pressed", String(!src));
+      $(id.viewSource).setAttribute("aria-pressed", String(src));
+      $(id.srcView).hidden = !src;
+      $(id.cardRender).hidden = src;  // 두 모습은 배타 — 원문 볼 땐 채운 모습을 숨긴다
+    }
+
+    function renderSource(s) {
+      if (!id.srcBox) return;
+      const box = $(id.srcBox);
+      if (box.value !== s.template_text) box.value = s.template_text || "";
+    }
+
     /* 작업점 카드(결정 16) — 상태 색인(위치·처리·빈칸 지도) + 코드블록 렌더 + 동사 게이트.
        커서가 목록을 걷지 않고 큐가 이 한 장을 지나간다: 작업점=첫 미처리, 복사분은 후미로. */
     function renderCard(s) {
@@ -146,7 +258,8 @@
       $(id.cardTitle).textContent = !c.has_current
         ? "이대로 복사됩니다 (미리보기 — 데이터 미선택)"
         : c.is_copied ? "복사됨 — 다시 복사하면 클립보드가 갱신됩니다" : "이대로 복사됩니다";
-      $(id.cardRender).innerHTML = paintCard(c.segments);
+      // 소유권 색(결정 33) — fill 세그먼트가 데이터(auto)인지 직접 입력(man)인지 색으로 가른다.
+      $(id.cardRender).innerHTML = paintCard(c.segments, ownersOf(s));
       // 동사 게이트 — 작업점 없으면 복사·미루기 불가, 복사분은 못 미룬다(모델 계약의 표면 반영).
       $(id.cardCopy).disabled = !c.has_current;
       if (id.cardDefer) $(id.cardDefer).disabled = !c.has_current || c.is_copied;
@@ -180,8 +293,11 @@
         `${applied ? "되돌리기" : "전각 공백으로 치환"}</button>`;
     }
 
-    /* Python→웹 푸시 렌더. Bridge.onPush 로 등록된다(소비자가 등록). */
+    /* Python→웹 푸시 렌더. Bridge.onPush 로 등록된다(소비자가 등록). 전면 재렌더는 구조
+       변화(선택·템플릿·결속·데이터)에서 돈다 — 타이핑 액션(값 입력·원문 라이브 편집)은
+       _NO_PUSH 라 이 경로를 타지 않고 겨냥 패치(patchMap/patchPreview)로 온다. */
     function render(s) {
+      EPOCH++;  // 새 세대 — 이전 세대의 타이핑 응답은 이제 무효(늦은 착지 되감기 차단)
       Preserve.around(() => {  // 재구성 가로질러 포커스·캐럿·카드/토큰 스크롤 보존(#28)
         LAST = s;
         // 템플릿 콤보를 스냅샷에 동기(F11) — 서버측 선택 변경(새 기안 초기화·홈 '기안
@@ -189,13 +305,9 @@
         const sel = $(id.tplSel);
         if (sel.value !== s.template_name) sel.value = s.template_name;
 
-        const rows = (s.tokens || []).map((t) =>
-          `<div class="tok ${t.state}">` +
-          `<span class="tname" title="{{${esc(t.name)}}}">{{${esc(t.name)}}}</span>` +
-          `<span class="st">${STATE_LABEL[t.state]}</span></div>`
-        ).join("");
-        $(id.tokPanel).innerHTML = rows || `<p class="muted">토큰이 없는 템플릿입니다.</p>`;
-
+        renderMap(s);       // ② 맞추기 표(결속·제안·표시형·소유권 색·「지금 행의 값」)
+        renderSource(s);    // ③ 원문 뷰 textarea 동기(뷰 전환 화면만)
+        applyView();        // ③ 채운 모습/원문 배타 표시
         renderCard(s);  // 작업점 카드(상태 색인·코드블록 렌더·동사 게이트) — 큐 판(결정 16)
         // 소스 종류 병기 라벨(#26 #6) — 서버가 플래그에서 합성(K8)·화면별 고유 id(#27).
         $(id.dataLabel).value = s.data_source_label || "";
@@ -220,6 +332,46 @@
       if (missing.length) { pill.dataset.level = "warn"; pill.textContent = `항목 없음 ${missing.length}`; }
       else if (empty.length) { pill.dataset.level = "warn"; pill.textContent = `빈 값 ${empty.length}`; }
       else { pill.dataset.level = "ok"; pill.textContent = "전량 채움"; }
+    }
+
+    /* 겨냥 패치 — 값 입력(set_map_value, _NO_PUSH): 미리보기·상태만 갱신하고 **맞추기 표는
+       재구성하지 않는다**(포커스된 값 입력이 살아 있게). 판정은 Python 반환 스냅샷. */
+    function patchPreview(s) {
+      LAST = s;
+      renderCard(s);  // 값이 바뀌면 카드 렌더·상태 색인·소유권 색이 바뀐다
+      const card = s.card || {};
+      setStatus(card.missing_fields || [], card.empty_fields || []);
+    }
+
+    /* 겨냥 패치 — 원문 라이브 편집(edit_source, _NO_PUSH): 토큰 셋이 바뀌므로 맞추기 표를
+       재구성하고 미리보기도 갱신하되 **포커스된 원문 textarea 는 손대지 않는다**(zone ③).
+       맞추기 표 이벤트는 위임 배선이라(wire) 재구성 후 재배선이 불필요하다. */
+    function patchMap(s) {
+      LAST = s;
+      renderMap(s);
+      renderCard(s);  // 원문 변화 → 미리보기(채운 모습 복귀 대비, 원문 뷰에선 숨겨져 있어도 최신)
+      const card = s.card || {};
+      setStatus(card.missing_fields || [], card.empty_fields || []);
+    }
+
+    /* 열 결속 — 직접 입력한 값을 덮는 경우엔 Python 이 확인 문안을 돌려주고(변이 없음), 사람이
+       확인하면 같은 액션을 confirm 으로 다시 부른다(빠른 기안·relink 게이트 재진술 문법). */
+    async function setSource(name, col) {
+      const r = await Bridge.call(SCREEN, "set_source", { name, col });
+      if (!r || !r.confirm) return;  // 결속됨(변이는 push→render 가 드롭다운을 실상태로 맞춘다)
+      if (!(await window.Modal.confirm({
+        title: "값 덮어쓰기 확인",
+        body: r.confirm,
+        confirmLabel: "데이터 값으로 바꾸기",
+        cancelLabel: "머무르기",
+      }))) {
+        // 머무르기 = 백엔드 불변(상수 유지)인데 native select 는 이미 새 열을 보인다 — 확인
+        // 왕복은 push 를 안 하므로 아무도 되돌려 주지 않는다(Codex F2). LAST 로 재렌더해
+        // 드롭다운을 실상태(「(직접 입력)」)로 복원한다(표시 ≠ 실제 상태 봉합).
+        if (LAST) render(LAST);
+        return;
+      }
+      Bridge.call(SCREEN, "set_source", { name, col, confirm: true });
     }
 
     function resetNote() {
@@ -382,6 +534,58 @@
         const act = e.target.closest("#" + id.lintAction);
         if (act) Bridge.call(SCREEN, "set_fullwidth", { value: act.dataset.act === "fix" });
       });
+
+      // ---- ② 맞추기 표 — 표는 매 렌더 재생성이라 **위임 배선**(호스트 1회)한다. 행의 토큰은
+      //      data-i 로 LAST.tokens 를 찾는다. 결속·표시형·제안·되돌리기는 구조 액션(전면 push),
+      //      값 입력은 타이핑(_NO_PUSH → patchPreview)이다.
+      const mapTokenOf = (el) => {
+        const row = el.closest("tr[data-i]");
+        return row && LAST && LAST.tokens ? LAST.tokens[Number(row.dataset.i)] : null;
+      };
+      $(id.tokPanel).addEventListener("change", (e) => {
+        const t = mapTokenOf(e.target);
+        if (!t) return;
+        if (e.target.classList.contains("mapsrc-sel")) setSource(t.name, e.target.value);
+        else if (e.target.classList.contains("mapfmt"))
+          Bridge.call(SCREEN, "set_map_fmt", { name: t.name, code: e.target.value });
+      });
+      $(id.tokPanel).addEventListener("click", (e) => {
+        const sug = e.target.closest(".mapsug"), rev = e.target.closest(".maprev");
+        if (!sug && !rev) return;
+        const t = mapTokenOf(e.target);
+        if (!t) return;
+        if (sug) setSource(t.name, t.suggest);        // 근사 제안 원클릭 결속(결정 30)
+        else Bridge.call(SCREEN, "revert_map", { name: t.name });  // man→auto 되돌리기
+      });
+      $(id.tokPanel).addEventListener("input", (e) => {
+        if (!e.target.classList.contains("mapval-in")) return;
+        const t = mapTokenOf(e.target);
+        if (!t) return;
+        // 낙관적 표지 — 판정은 Python, 미리보기는 반환 스냅샷 patchPreview 가 갱신한다:
+        // ①빈칸(값 공백 여부) ②소유권 색. 결속 값을 고치면 즉시 man(상수)로 강등되는데, 이
+        // 타이핑 경로는 표를 재구성하지 않으므로(포커스 보호) 점을 안 바꾸면 색이 "데이터"라고
+        // 거짓말한다(값은 이미 사람 소유인데) — 지배 결함류(문안/표지 ≠ 실제 집합)라 즉시 뒤집는다.
+        e.target.classList.toggle("empty", e.target.value.trim() === "");
+        const dot = e.target.closest("tr").querySelector(".own");
+        if (dot) dot.className = "own man";
+        debounce(() => Bridge.call(SCREEN, "set_map_value", { name: t.name, text: e.target.value })
+          .then(inEpoch(patchPreview)));
+      });
+      // 포커스 이탈 시 대기 편집 즉시 반영(blur 는 버블 안 해 캡처로 받는다).
+      $(id.tokPanel).addEventListener("blur", flushDeb, true);
+
+      // ---- ③ 원문 뷰 전환(결정 34) — 뷰 전환 손잡이가 있는 화면만. 순수 뷰 상태라 서버 왕복
+      //      없이 배타 표시만 바꾼다. 원문 라이브 편집은 타이핑(_NO_PUSH → patchMap)이다.
+      if (id.viewFilled) {
+        $(id.viewFilled).addEventListener("click", () => { view = "filled"; applyView(); });
+        $(id.viewSource).addEventListener("click", () => { view = "source"; applyView(); });
+      }
+      if (id.srcBox) {
+        $(id.srcBox).addEventListener("input", (e) =>
+          debounce(() => Bridge.call(SCREEN, "edit_source", { text: e.target.value })
+            .then(inEpoch(patchMap))));
+        $(id.srcBox).addEventListener("blur", flushDeb);
+      }
 
       $(id.pickBtn).addEventListener("click", async () => {
         // 데이터 재선택 = 필터 세션의 죽음 — 대기 중 검색 디바운스를 먼저 정산해 직전 필터
