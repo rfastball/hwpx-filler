@@ -18,11 +18,11 @@ core.job.JobRegistry` 를 미러(위치-불가지 생성자 + slug 파일명). Q
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .job import _slug, guard_slug_collision, load_isolated
+from .paths import home_dir
 from hwpxcore.atomic import write_text_atomic
 
 # 항목 상태(2상태, #5) — active(실행 대상) / archived(지난 것: 실행 후보 제외, 참조 보존·복구 가능).
@@ -46,11 +46,11 @@ def default_dataset_pool_dir() -> Path:
     """GUI 기본 데이터셋 풀 레지스트리 위치 — 사용자 홈(``~/.hwpxfiller/datasets``).
 
     작업·txt 템플릿과 동일 홈 관례(:func:`~hwpxfiller.core.job.default_jobs_dir` 미러).
-    ``HWPXFILLER_HOME`` 로 재지정 가능. 레지스트리 *클래스* 는 위치-불가지(생성자가 디렉터리
-    를 받는다) — 이 함수는 GUI 기본값 해석기일 뿐이다.
+    ``HWPXFILLER_HOME`` 로 재지정 가능(해석은 :func:`~hwpxfiller.core.paths.home_dir`).
+    레지스트리 *클래스* 는 위치-불가지(생성자가 디렉터리를 받는다) — 이 함수는 GUI 기본값
+    해석기일 뿐이다.
     """
-    root = os.environ.get("HWPXFILLER_HOME") or (Path.home() / ".hwpxfiller")
-    return Path(root) / "datasets"
+    return home_dir() / "datasets"
 
 
 # ------------------------------------------------------------------ 모델
