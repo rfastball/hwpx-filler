@@ -49,7 +49,7 @@ SCREEN_ROOTS = (
 SCOPED_DATA_LABELS = ("txtDataLabel", "jobDataLabel")
 
 # 접힘 상태에서 라벨이 사라지는 내비 버튼(회귀 시 접근 이름·툴팁 소실 → #27).
-NAV_SCREENS = ("home", "job", "txt", "quickdraft", "tpl", "pool")  # run=슬라이스 3·editor=슬라이스 5 사망(흡수); quickdraft=슬라이스 7 신설(레일 6 임시)
+NAV_SCREENS = ("home", "job", "draft", "txt", "quickdraft", "tpl", "pool")  # run=슬라이스 3·editor=슬라이스 5 사망(흡수); draft=#148 슬라이스 2b 신설(txt·quickdraft 는 #148 슬라이스 6 흡수까지 임시 공존, 레일 7)
 
 # 커스텀 모달 → aria-labelledby 가 가리켜야 할 제목 id(다이얼로그 시맨틱, #27/#28).
 # sheetModal 은 다중 시트 확정 게이트(#33) — 같은 Modal 헬퍼·다이얼로그 계약을 공유한다.

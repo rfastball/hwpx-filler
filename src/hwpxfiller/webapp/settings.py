@@ -241,6 +241,25 @@ def save_job_collapsed_groups(groups: "list[str]") -> None:
     _save_key("job_collapsed_groups", sorted(set(groups)))
 
 
+def load_draft_collapsed_groups() -> "list[str]":
+    """「기안」 좌 목록의 접힌 그룹 이름들 — 「작업」 접힘과 **별도 키**(R-info 3부 결정 1·13).
+
+    저장 기계는 하나지만 화면은 둘이고, 같은 그룹 이름이 두 매체에 독립 존재할 수 있어
+    한 화면의 접힘이 다른 화면을 접지 않는다(템플릿 라이브러리의 매체별 접힘 칸과 동형).
+    미저장·비유효 값은 빈 리스트 = 전부 펼침(무상태 기본)."""
+    raw = _read().get("draft_collapsed_groups")
+    if not isinstance(raw, list):
+        return []
+    return [g for g in raw if isinstance(g, str)]
+
+
+def save_draft_collapsed_groups(groups: "list[str]") -> None:
+    """기안 접힌 그룹 집합 영속 — Python 설정(#74 전례). 비유효 인자는 loud(confirm-or-alarm)."""
+    if not isinstance(groups, list) or any(not isinstance(g, str) for g in groups):
+        raise ValueError("접힌 그룹 목록은 문자열 리스트여야 합니다")
+    _save_key("draft_collapsed_groups", sorted(set(groups)))
+
+
 # 템플릿 라이브러리 그룹(R-info 2부 결정 2·8) — 작업 그룹과 **같은 기제**(Python 설정,
 # webview 저장소 금지 #74 전례). 단 템플릿엔 매체 축(HWPX/TXT)이 있어(작업엔 없음, 결정 3)
 # 매체별로 칸을 나눈다: 같은 이름 그룹이 두 매체에 독립 존재할 수 있고(소비 표면이 매체를
