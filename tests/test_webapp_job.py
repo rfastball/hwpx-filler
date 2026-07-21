@@ -1582,3 +1582,22 @@ def test_rename_group_merge_restates_actual_count_when_it_drifted(tmp_path):
     )
     assert res2["ok"] is True and res2["count"] == 2
     assert "확인 시점 1건" in res2["drift_note"]
+
+
+def test_describe_fill_note_names_field_and_kinds():
+    """완화 노트 문안(#154) — 필드·제거 종류를 명명하고 미지 종류는 원문 관통."""
+    from hwpxfiller.core.fields import FillNote
+    from hwpxfiller.gui.result_errors import describe_fill_note
+
+    stripped = describe_fill_note(
+        FillNote("계약명", "inline_stripped", ("markpenBegin", "markpenEnd"))
+    )
+    assert "계약명" in stripped
+    assert "markpenBegin, markpenEnd" in stripped
+    assert "제거" in stripped
+
+    synth = describe_fill_note(FillNote("공고번호", "slot_synthesized"))
+    assert "공고번호" in synth and "빈 누름틀" in synth
+
+    unknown = describe_fill_note(FillNote("X", "future_kind"))
+    assert "future_kind" in unknown  # 조용한 누락 금지

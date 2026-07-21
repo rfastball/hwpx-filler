@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from lxml import etree
 
 from hwpxcore.lineseg import serialize_modified_section
@@ -22,6 +24,24 @@ from hwpxcore.text_extract import _to_package
 
 HP_NS = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 _NSMAP = {"hp": HP_NS}
+
+
+@dataclass(frozen=True)
+class FillNote:
+    """채움이 "경고 후 진행"으로 처리한 사실의 기록(#154, confirm-or-alarm 완화).
+
+    문안은 표면(CLI·웹) 소관 — 코어는 사실만 담는다.
+
+    - ``kind="inline_stripped"``: 값 런의 인라인 자식 요소(형광펜 마커 등)를 제거하고
+      기입했다. ``detail`` = 제거된 요소 로컬명(정렬·중복 제거). 짝 요소가 필드 경계를
+      걸치면 한쪽만 제거될 수 있다 — 종류 명명이 그 검토 신호다.
+    - ``kind="slot_synthesized"``: 값 ``hp:t`` 가 전혀 없는 빈 누름틀에 값 런을
+      합성해 기입했다(과거엔 조용히 기입 불가 → unmatched 오보).
+    """
+
+    field: str
+    kind: str
+    detail: "tuple[str, ...]" = ()
 
 
 def _local(tag: object) -> str:
@@ -49,6 +69,7 @@ class FieldDocument:
         parser = etree.XMLParser(remove_blank_text=False, resolve_entities=False)
         self._tree = etree.fromstring(xml_bytes, parser=parser)
         self._modified = False
+        self._notes: "list[FillNote]" = []
 
     @property
     def modified(self) -> bool:
@@ -58,6 +79,16 @@ class FieldDocument:
         줄배치 캐시를 잃지 않는다.
         """
         return self._modified
+
+    @property
+    def notes(self) -> "list[FillNote]":
+        """채움이 "경고 후 진행"으로 처리한 사실들(#154). 호출측이 표면화할 것."""
+        return list(self._notes)
+
+    def _note(self, field: str, kind: str, detail: "tuple[str, ...]" = ()) -> None:
+        note = FillNote(field, kind, detail)
+        if note not in self._notes:
+            self._notes.append(note)
 
     # ---------------------------------------------------------- required
     def required_fields(self) -> "list[str]":
@@ -118,9 +149,12 @@ class FieldDocument:
         """``field_name`` 누름틀에 값 주입. 누름틀을 찾아 기입했으면 True.
 
         반환값은 매칭 보고용(값이 기존과 같아도 True — 호출측 unmatched 판정이
-        거짓말하지 않게). 단 begin~end 사이에 ``hp:t`` 슬롯이 전혀 없는 빈 누름틀은
-        기입 불가라 False — 호출측엔 매칭 실패로 보인다(선행 결함, #154 별건).
-        실제 텍스트 변경 여부는 ``modified`` 가 따로 추적한다.
+        거짓말하지 않게). 빈 누름틀(값 ``hp:t`` 부재)은 값 런을 합성해 기입한다
+        (#154 — 과거의 unmatched 오보 소멸). False 는 begin 이 run 구조 밖일 때뿐.
+
+        **읽기-쓰기 대칭 계약**: 성공한 ``set_field(f, V)`` 뒤 ``read_field(f) == V``.
+        값 런의 인라인 자식 요소는 구값 소속이라 값과 함께 제거된다(#154 확정 —
+        제거 사실은 ``notes`` 로 시끄럽게). 실제 변경 여부는 ``modified`` 가 추적한다.
         VBA SetField 와 동일하게 ``name`` 이 ``NAME`` 또는 ``{{NAME}}`` 인 모든
         누름틀을 처리한다.
         """
@@ -135,24 +169,31 @@ class FieldDocument:
         if not begins:
             return False
 
+        note_name = _clean_field_name(field_name)
         updated = 0
         for begin in begins:
-            if self._fill_one(begin, new_value):
+            if self._fill_one(begin, new_value, note_name):
                 updated += 1
         return updated > 0
 
-    def _fill_one(self, begin: etree._Element, new_value: str) -> bool:
-        """단일 fieldBegin 에 대해 fieldEnd 까지 텍스트를 채운다."""
+    def _fill_one(self, begin: etree._Element, new_value: str, note_name: str) -> bool:
+        """단일 fieldBegin 에 대해 fieldEnd 까지 텍스트를 채운다.
+
+        1) begin~end 구간의 ``hp:t`` 슬롯을 수집하고, 2) 슬롯이 없으면 값 런을
+        합성하며(#154), 3) 슬롯들의 인라인 자식을 제거한 뒤 첫 슬롯에 값을 기입,
+        파편 슬롯은 비운다. 완화 처리(합성·자식 제거)는 ``_note`` 로 기록한다.
+        """
         ctrl = begin.getparent()  # hp:ctrl
         run = ctrl.getparent() if ctrl is not None and _local(ctrl.tag) == "ctrl" else ctrl
         if run is None or _local(run.tag) != "run":
             return False
 
-        touched = False
-        first_text = True
+        # ---- 1) 수집: begin~end 구간의 hp:t 와 종료 지점
+        ts: "list[etree._Element]" = []
+        end_ctrl: "etree._Element | None" = None
+        end_run: "etree._Element | None" = None
         found_begin = False
         current = run
-
         while current is not None and _local(current.tag) == "run":
             stop = False
             for inner in current:
@@ -160,30 +201,69 @@ class FieldDocument:
                     # fieldBegin(또는 그 부모 ctrl)을 지나야 이후 hp:t 가 대상
                     if inner is ctrl or inner is begin:
                         found_begin = True
-                if found_begin:
-                    name = _local(inner.tag)
-                    if name == "t":
-                        if first_text:
-                            if (inner.text or "") != new_value:
-                                inner.text = new_value
-                                self._modified = True  # 실제 변경만 변형으로 계상
-                            first_text = False
-                            touched = True
-                        elif inner.text:
-                            # 파편 텍스트 제거 — 실제로 지울 텍스트가 있을 때만
-                            # 대입한다(무조건 "" 대입은 <hp:t/> 를 무플래그로
-                            # <hp:t></hp:t> 바이트 변이시킴)
-                            inner.text = ""
-                            self._modified = True
-                    elif name == "ctrl":
-                        # fieldEnd 를 품은 ctrl 이면 종료
-                        if any(_local(c.tag) == "fieldEnd" for c in inner):
-                            stop = True
-                            break
+                if not found_begin:
+                    continue
+                name = _local(inner.tag)
+                if name == "t":
+                    ts.append(inner)
+                elif name == "ctrl" and any(
+                    _local(c.tag) == "fieldEnd" for c in inner
+                ):
+                    end_ctrl = inner
+                    end_run = current
+                    stop = True
+                    break
             if stop:
                 break
             current = current.getnext()
-        return touched
+
+        # ---- 2) 빈 누름틀: 값 런 합성(#154 — 기입 불가 대신 경고 후 진행)
+        if not ts:
+            if end_ctrl is ctrl:
+                # 퇴화 형상: begin 과 end 가 한 ctrl 안 — 값 슬롯이 놓일 자리가
+                # 구조적으로 없다. 조용한 오배치 대신 기입 불가로 시끄럽게.
+                return False
+            slot = etree.Element(f"{{{HP_NS}}}t")
+            if end_ctrl is not None and end_run is run:
+                # begin 과 end 가 같은 런 — end ctrl 바로 앞에 슬롯 삽입
+                run.insert(run.index(end_ctrl), slot)
+            else:
+                # begin 런의 속성(charPrIDRef 등)을 통째로 승계 — authoring 의
+                # 런 팩토리 관례(dict(run.attrib) 승계)와 동일.
+                new_run = etree.Element(f"{{{HP_NS}}}run", dict(run.attrib))
+                new_run.append(slot)
+                if end_run is not None:
+                    end_run.addprevious(new_run)
+                else:
+                    run.addnext(new_run)
+            ts = [slot]
+            self._modified = True  # 요소 삽입 자체가 변형
+            self._note(note_name, "slot_synthesized")
+
+        # ---- 3) 인라인 자식 제거 + 기입
+        # 자식 요소(형광펜 마커 등)와 그 tail 텍스트는 구값 소속 — 값 교체와 함께
+        # 제거한다(#154 확정: 읽기-쓰기 대칭이 계약. read_field 는 itertext 로 읽으므로
+        # 자식 tail 이 남으면 기입값 ≠ 읽은값).
+        stripped: "set[str]" = set()
+        for t in ts:
+            for child in list(t):
+                stripped.add(_local(child.tag) or "#comment")
+                t.remove(child)
+                self._modified = True
+        if stripped:
+            self._note(note_name, "inline_stripped", tuple(sorted(stripped)))
+
+        first = ts[0]
+        if (first.text or "") != new_value:
+            first.text = new_value
+            self._modified = True  # 실제 변경만 변형으로 계상
+        for frag in ts[1:]:
+            if frag.text:
+                # 파편 텍스트 제거 — 실제로 지울 텍스트가 있을 때만 대입한다
+                # (무조건 "" 대입은 <hp:t/> 를 무플래그로 바이트 변이시킴)
+                frag.text = ""
+                self._modified = True
+        return True
 
     # -------------------------------------------------------------- output
     def to_bytes(self) -> bytes:

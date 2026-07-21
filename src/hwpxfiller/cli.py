@@ -30,6 +30,7 @@ from .core.engine import HwpxEngine
 from hwpxcore.atomic import write_text_atomic
 from .core.job import DEFAULT_FILENAME_PATTERN
 from .data.nara import NaraFetchError
+from .gui.result_errors import describe_fill_note
 from .naming import pattern_field_tokens
 from hwpxcore.validate import validate
 from .data.excel import ExcelDataSource, ambiguous_sheets
@@ -514,13 +515,22 @@ def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
         print(f"[오류] {exc}", file=sys.stderr)
         return 1
     print(f"완료: {batch.succeeded}/{batch.total} 성공 -> {args.out}")
+    seen_notes = set()
     for res in batch.results:
         if not res.ok:
             print(f"  [실패] {res.output_path}: {res.error}", file=sys.stderr)
-        elif res.unmatched:
+            continue
+        if res.unmatched:
             # 매칭 안 된 필드는 어느 채널에도 안 나오면 파이프라인 관점 완전 무음(RC-03).
             print(f"  [주의] 매칭 안 된 필드({res.output_path}): "
                   f"{', '.join(res.unmatched)}", file=sys.stderr)
+        for note in res.notes:
+            # 완화 처리(경고 후 진행, #154)도 무음이면 조용한 데이터 손실 — RC-03 동형.
+            # 노트는 템플릿 구조 속성이라 배치 전체에서 한 번만 알린다.
+            if note in seen_notes:
+                continue
+            seen_notes.add(note)
+            print(f"  [주의] {describe_fill_note(note)}", file=sys.stderr)
 
     if args.ledger:
         try:

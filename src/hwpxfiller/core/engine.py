@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .fields import FieldDocument
+from .fields import FieldDocument, FillNote
 from hwpxcore.package import HwpxPackage
 
 
@@ -20,6 +20,8 @@ class GenerateResult:
     applied: "set[str]" = field(default_factory=set)
     # 데이터에 있었으나 템플릿에서 매칭 실패한 필드명들
     unmatched: "set[str]" = field(default_factory=set)
+    # 채움이 "경고 후 진행"으로 처리한 사실들(#154) — 호출측이 표면화할 의무
+    notes: "list[FillNote]" = field(default_factory=list)
     error: str = ""
 
 
@@ -38,6 +40,7 @@ class HwpxEngine:
             return GenerateResult(False, output_path, error=f"템플릿 열기 실패: {exc}")
 
         applied: set[str] = set()
+        notes: "list[FillNote]" = []
         # 값이 있는 필드만 주입(원본과 동일: 빈 값은 건너뜀)
         active = {k: str(v) for k, v in data.items() if str(v).strip() != ""}
 
@@ -47,6 +50,9 @@ class HwpxEngine:
                 for key, val in active.items():
                     if doc.set_field(key, val):
                         applied.add(key)
+                for note in doc.notes:
+                    if note not in notes:
+                        notes.append(note)
                 # 실제 텍스트가 바뀐 문서만 재직렬화(#95) — 매칭만 되고 값이 기존과
                 # 같은 재채움은 원본 바이트(유효 캐시 포함)를 그대로 둔다. 이로써
                 # "재작성된 XML + 캐시 잔존" 조합은 불가능: 재작성 ⇔ modified ⇔ 스트립.
@@ -61,7 +67,9 @@ class HwpxEngine:
             return GenerateResult(False, output_path, error=f"저장 실패: {exc}")
 
         unmatched = set(active) - applied
-        return GenerateResult(True, output_path, applied=applied, unmatched=unmatched)
+        return GenerateResult(
+            True, output_path, applied=applied, unmatched=unmatched, notes=notes
+        )
 
     def required_fields(self, template_path: str) -> "list[str]":
         """템플릿이 요구하는 누름틀 이름 전체(사전검증용)."""
