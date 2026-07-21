@@ -421,8 +421,8 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 /* 사전검증 박스 */
 .preflight{margin-top:var(--sp-12);font-size:var(--fs-body);padding:var(--sp-8) var(--sp-10);border-radius:var(--rad-surface);line-height:1.5}
 
-/* ── 본문 존 거울 = 필드 채움 테이블(결정 36 ⓑ) — 배지=거울의 행. 색은 .fb 배지와 같은
-   토큰이라 표지 언어가 통일된다(블록 5 삼분과 동형). ── */
+/* ── 본문 존 거울 = 필드 채움 테이블(결정 36 ⓑ) — 배지=거울의 행. 색은 채움 표지 토큰
+   (--fb-*)을 그대로 써 표지 언어가 통일된다(블록 5 삼분과 동형). ── */
 .tbwrap{overflow-x:auto}
 .tb.mir{width:100%;border-collapse:collapse;margin-top:var(--sp-10);font-size:var(--fs-body)}
 .tb.mir td{padding:var(--sp-4) var(--sp-8);border-top:1px solid var(--a-border);vertical-align:top}
@@ -714,12 +714,11 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
    forced-colors 는 배경/전경/보더를 시스템 팔레트로 강제 재매핑한다 — 단 transparent·
    currentColor 는 그대로 남아 "틴트 하나로만 상태를 전달하던" 요소가 통째로 사라진다.
    여기선 그 사각(보더 없음/투명 베이스)만 메운다. forced-color-adjust:none 은 쓰지 않는다
-   — 사용자의 고대비 설정을 임의로 무시하지 않는다. 상태 배지(.tok/.fb/.pill)는 이미 텍스트
+   — 사용자의 고대비 설정을 임의로 무시하지 않는다. 상태 배지(.tok/.pill)는 이미 텍스트
    라벨과 실보더를 갖고 있어 자동 재매핑만으로 충분해 손대지 않는다. */
 @media (forced-colors:active){
   .navbtn:focus-visible,
-  .btn:focus-visible,
-  .fb.missing:focus-visible{outline-color:Highlight}
+  .btn:focus-visible{outline-color:Highlight}
 
   .navbtn[aria-current="true"],
   .wstep-tab[aria-current="true"],
