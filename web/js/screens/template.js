@@ -12,7 +12,15 @@
   let LAST = { hwpx: {}, txt: {} };   // 스냅샷 캐시 — 그룹명·현 그룹·행 조회(메뉴/다이얼로그).
   let editMode = "new", editPath = "";
   let menuFor = null;                 // 열린 ⋮ 메뉴: {media, kind:"row"|"group", key?, group?, item?}
-  let moveTarget = null;              // 이동 다이얼로그 대상: {media, key}
+
+  /* 그룹 목록 기제(부유 ⋮ 메뉴·이동 다이얼로그) = 공용 팩토리(grouplist.js, job.js 와 단일 출처).
+     위치잡기·다이얼로그 조립은 팩토리 소유. 여기는 매체 축·메뉴 내용·확정 디스패치만 주입한다. */
+  const rowMenu = window.GroupList.createMenu({ menuId: "tplRowMenu" });
+  const moveDialog = window.GroupList.createMoveDialog({
+    modalId: "tplMoveModal", listId: "tplMoveList", errId: "tplMoveErr",
+    nameId: "tplMoveName", radioName: "tplMove",
+    newRadioId: "tplMoveNewRadio", newNameId: "tplMoveNewName",
+  });
 
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
@@ -128,27 +136,25 @@
   /* ---- 공유 ⋮ 컨텍스트 메뉴(job.js 동형 — 단일 부유 요소) ---- */
   function closeRowMenu() {
     menuFor = null;
-    const menu = $("tplRowMenu");
-    menu.style.display = "none";
-    menu.innerHTML = "";
+    rowMenu.hide();
   }
 
   function openRowMenu(media, kind, id, btn) {
-    const menu = $("tplRowMenu");
+    let html;
     if (kind === "group") {
-      menu.innerHTML =
+      html =
         `<button data-menu="grp-rename">그룹 이름 변경</button>` +
         `<button data-menu="grp-disband">그룹 해산</button>`;
       menuFor = { media, kind, group: id };
     } else {
       const it = findItem(media, id);
       // 그룹에 속한 카드만 「그룹으로 이동」(무그룹은 ＋그룹지정 칩이 담당, 결정 2) — 늘 삭제.
-      menu.innerHTML =
+      html =
         (it && it.group ? `<button data-menu="move">그룹으로 이동…</button><div class="sep"></div>` : "") +
         `<button data-menu="delete" class="danger">삭제</button>`;
       menuFor = { media, kind, key: id, item: it };
     }
-    positionMenu(menu, btn);
+    rowMenu.show(html, btn);  // 위치잡기·표시는 팩토리 소유(job.js 와 단일 출처)
   }
 
   function toggleRowMenu(media, kind, id, btn) {
@@ -156,19 +162,6 @@
       (kind === "group" ? menuFor.group === id : menuFor.key === id);
     if (same) { closeRowMenu(); return; }
     openRowMenu(media, kind, id, btn);
-  }
-
-  function positionMenu(menu, btn) {
-    menu.style.display = "block";
-    const r = btn.getBoundingClientRect();
-    const mh = menu.offsetHeight, mw = menu.offsetWidth;
-    let top = r.bottom + 2;
-    if (top + mh > window.innerHeight) top = Math.max(4, r.top - mh - 2);  // 아래 공간 없으면 위로
-    let left = Math.min(r.left, window.innerWidth - mw - 4);
-    menu.style.top = `${Math.max(4, top)}px`;
-    menu.style.left = `${Math.max(4, left)}px`;
-    const first = menu.querySelector("button");
-    if (first) first.focus();
   }
 
   async function onRowMenuClick(e) {
@@ -182,43 +175,15 @@
     else if (act === "grp-disband") disbandGroup(m.media, m.group);
   }
 
-  /* ---- 그룹 이동 다이얼로그(job.js 동형) ---- */
+  /* ---- 그룹 이동 다이얼로그(job.js 와 공용 moveDialog 팩토리) ---- */
   function openMoveDialog(media, item) {
     if (!item) return;
-    moveTarget = { media, key: item.key };
-    const groups = (LAST[media] && LAST[media].group_names) || [];
-    const cur = item.group || "";
-    $("tplMoveList").innerHTML =
-      groups.map((g) =>
-        `<label class="grp-opt"><input type="radio" name="tplMove" value="${esc(g)}"${g === cur ? " checked" : ""}> ${esc(g)}</label>`
-      ).join("") +
-      `<label class="grp-opt"><input type="radio" name="tplMove" value=""${cur === "" ? " checked" : ""}> 그룹 없음(해제)</label>` +
-      `<label class="grp-opt"><input type="radio" name="tplMove" value="" data-new="1" id="tplMoveNewRadio"> 새 그룹:` +
-      ` <input class="field" id="tplMoveNewName" type="text" placeholder="새 그룹 이름"></label>`;
-    $("tplMoveName").textContent = item.name;
-    $("tplMoveErr").style.display = "none";
-    window.Modal.open("tplMoveModal", { onClose: () => { moveTarget = null; } });
-    // 새 그룹 입력에 포커스하면 그 라디오를 고른다(값 센티넬 충돌은 data-new 로 구분).
-    const nn = $("tplMoveNewName");
-    if (nn) nn.addEventListener("focus", () => { const r = $("tplMoveNewRadio"); if (r) r.checked = true; });
-  }
-
-  async function confirmMove() {
-    if (!moveTarget) return;
-    const sel = document.querySelector('input[name="tplMove"]:checked');
-    let group = sel ? sel.value : "";
-    if (sel && sel.dataset.new) {
-      group = ($("tplMoveNewName").value || "").trim();
-      if (!group) {  // 빈 새 이름은 조용히 넘기지 않고 인라인 재진술(모달 유지).
-        const err = $("tplMoveErr");
-        err.textContent = "새 그룹 이름을 입력하세요.";
-        err.style.display = "";
-        return;
-      }
-    }
-    const t = moveTarget;
-    window.Modal.close("tplMoveModal");
-    await Bridge.call(SCREEN, "set_group", { media: t.media, key: t.key, group });
+    moveDialog.open({
+      nameText: item.name,
+      groups: (LAST[media] && LAST[media].group_names) || [],
+      current: item.group || "",
+      onConfirm: (group) => Bridge.call(SCREEN, "set_group", { media, key: item.key, group }),
+    });
   }
 
   /* ---- 그룹 헤더 ⋮ 동작(개명 병합 확인 · 해산 확인) ---- */
@@ -342,8 +307,7 @@
     $("btnTplNewTxt").addEventListener("click", () => openEditModal("new", "", "", ""));
     $("txtEditCancel").addEventListener("click", () => window.Modal.close("txtEditModal"));
     $("txtEditOk").addEventListener("click", submitEditModal);
-    $("tplMoveCancel").addEventListener("click", () => window.Modal.close("tplMoveModal"));
-    $("tplMoveOk").addEventListener("click", confirmMove);
+    moveDialog.wire("tplMoveOk", "tplMoveCancel");
     $("btnTplImport").addEventListener("click", async () => {
       const r = await Bridge.importLibraryTemplate();
       if (typeof r === "string" && r.startsWith("ERROR:")) window.alert(r);
