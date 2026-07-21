@@ -635,6 +635,50 @@ def test_live_profile_applies_all_content_rows_not_just_confirmed():
     assert "빈자리" not in m2.live_profile().apply({"명": "x"})
 
 
+def test_live_profile_renders_confirmed_blank_as_empty_not_missing():
+    """확정-비움(#148 슬라이스 4, 결정 12) — 확정+무내용은 blank 방출(키 유지 → 〈빈 값〉).
+
+    미확정 무내용은 프로파일에서 빠져 missing({{}} 빨강)으로 남지만, 사람이 「비운다」고
+    확정한 자리는 빈 값으로 **담겨** render_segments 가 blank(empty)로 표지한다 — 렌더는
+    데이터-빈값과 같고 게이트 제외만 declared_blank_fields 가 가른다. type='blank' 이 아니라
+    빈 text 로 담아야 MappingProfile.apply 의 is_blank 드롭에 키가 사라지지 않는다."""
+    m = MappingModel.from_field_names(["명", "비고"], source_fields=["명"])
+    out_before = m.live_profile().apply({"명": "값"})
+    assert "비고" not in out_before                      # 미확정 무내용 → 빠짐(missing)
+    m.set_confirmed(m.index_of("비고"), True)             # 「비운다」 확정
+    out_after = m.live_profile().apply({"명": "값"})
+    assert out_after["비고"] == ""                        # 확정-비움 → 키 유지·빈 값(blank)
+
+
+def test_has_content_const_ignores_remembered_source():
+    """const(man) 행의 내용 판정은 리터럴 기준 — 기억된 소스는 되돌리기용이지 출력이 아니다(Codex F2).
+
+    결속 값을 비우면 소스를 기억한 채 빈 상수가 되는데, 소스를 내용으로 세면 값을 비우고
+    확정해도 확정-비움으로 인식되지 않아 게이트가 계속 묻는다."""
+    m = MappingModel.from_field_names(["명"], source_fields=["명"], col_kinds={"명": "text"})
+    m.set_manual(m.index_of("명"), "")                # 결속 값 비움 → const="" (소스 「명」 기억)
+    row = m.rows[m.index_of("명")]
+    assert row.type == "const" and row.source == "명" and row.const == ""
+    assert row.has_content() is False                # 빈 상수는 내용 아님(소스 기억 무관)
+    m.set_confirmed(m.index_of("명"), True)
+    assert row.is_empty_confirmed() is True           # 확정-비움으로 인식
+    # 값 있는 상수는 여전히 내용이다(회귀 방지).
+    m.set_manual(m.index_of("명"), "김민수")
+    assert row.has_content() is True
+
+
+def test_declared_blank_fields_only_confirmed_empty():
+    """declared_blank_fields = 확정+무내용만 — 내용 있는 확정 행·미확정 빈 행은 빠진다."""
+    m = MappingModel.from_field_names(["명", "비고", "인"], source_fields=["명"])
+    m.set_confirmed(m.index_of("명"), True)               # 결속 내용 있음 → 확정-비움 아님
+    m.set_confirmed(m.index_of("비고"), True)             # 무내용 확정 → 확정-비움
+    # 인: 미확정 무내용 → 확정-비움 아님(그 행의 사실이지 선언 아님)
+    assert m.declared_blank_fields() == ["비고"]
+    # 확정-비움에 값을 채우면(내용 생김) 선언이 풀린다 — set_manual 이 confirmed 도 해제.
+    m.set_manual(m.index_of("비고"), "값")
+    assert m.declared_blank_fields() == []
+
+
 def test_set_manual_then_revert_binding_round_trip():
     """결속 값 고치면 상수(man)로 강등하되 소스를 기억하고, 되돌리기로 결속(auto) 복귀(사용자 결정)."""
     m = MappingModel.from_field_names(["명"], source_fields=["명"], col_kinds={"명": "text"})

@@ -117,10 +117,11 @@
        같다(불변식). literal=원문, fill=값(음영), blank=〈빈 값〉 표지, missing={{토큰}}(빨강). */
     const paintCard = window.SegView.paint;  // 공유 세그먼트 페인터(segview.js)
 
-    /* ---- ② 맞추기 표(#148 슬라이스 3b) — 토큰별 결속·근사 제안·표시형·소유권 색·「지금 행의 값」.
+    /* ---- ② 맞추기 표(#148 슬라이스 3b·4) — 토큰별 결속·근사 제안·유형·표시형·확정·소유권 색·값.
        판정은 전부 Python(mapping_state)이고 여기는 문안·표현뿐이다(파생경계 번역오류 상류 차단):
-       열 후보·소유권(auto/man)·제안·값·상태는 서버 토큰 그대로 소비하고 재판정하지 않는다.
-       휘발 세션이라 유형·확정 열(.persist)은 없다 — 저장 세션 복원과 함께 슬라이스 5가 얹는다. */
+       열 후보·소유권(auto/man)·제안·유형·값·확정·상태는 서버 토큰 그대로 소비하고 재판정하지 않는다.
+       유형·확정 열은 `.persist` 로 표시한다 — 슬라이스 4 는 그릇을 늘 보이게 세우고, 저장 세션
+       유래로 켜고 끄는 지속성 스위치(결정 7)는 슬라이스 5 가 이 클래스에 숨김 규칙을 얹는다. */
     function mapRowHtml(s, t, i) {
       // 드롭다운 선택 = 결속 열(auto)일 때만 그 열, 아니면 「(직접 입력)」(man·무결속). man 의
       // 기억된 소스(t.source)는 드롭다운이 아니라 「되돌리기」로 되살린다 — 옵션 selected 는
@@ -143,6 +144,16 @@
         (t.can_revert
           ? `<button class="btn sm maprev" id="${id.tokPanel}-rev-${i}" data-i="${i}">자동으로 되돌리기</button>` : "") +
         `</div>`;
+      // 유형(#148 슬라이스 4, 결정 12) — 값-운반 유형(텍스트/날짜/금액)을 사람이 이긴다. 결속
+      // (auto) 값에만 뜻이 있어(운반할 값이 있는 자리) 표시형과 같은 게이트로 auto 행에만 띄운다:
+      // const(man)·무결속엔 운반 유형이 없어 dead control 이 된다. 유형이 바뀌면 표시형은
+      // 기본으로 떨어지고(모델 계약) 표시형 드롭다운 후보가 다시 뜬다.
+      const typeOpts = ((s.type_options) || []).map((o) =>
+        `<option value="${esc(o.code)}"${o.code === t.fmt_kind ? " selected" : ""}>${esc(o.label)}</option>`).join("");
+      const typeCell = t.own === "auto"
+        ? `<select class="field sm maptype persist" id="${id.tokPanel}-type-${i}" data-i="${i}"` +
+          ` aria-label="${esc(t.name)} 유형">${typeOpts}</select>`
+        : `<span class="muted">—</span>`;
       // 표시형(결정 34 2층) — 데이터에서 오는 값(auto)에만 뜻이 있다(man/무결속엔 dead control 금지).
       const fmts = ((s.fmt_options && s.fmt_options[t.fmt_kind]) || []).map((o) =>
         `<option value="${esc(o.code)}"${o.code === t.fmt_code ? " selected" : ""}>${esc(o.label)}</option>`).join("");
@@ -153,12 +164,24 @@
       // 「지금 행의 값」 — **항상 편집 가능**(사용자 결정). 결속(auto)이면 현재 행의 데이터 값이
       // 미리 차 있고, 여기 타이핑하면 상수(man)로 강등된다(전 행 공통) — 되돌리기(maprev)가
       // 원 결속 열을 되살린다. 무결속·상수는 빈 칸에서 직접 입력한다(빠른 기안 qd-val 동형).
-      const valCell =
-        `<textarea class="mapval-in${(t.value || "").trim() === "" ? " empty" : ""}"` +
-        ` rows="1" id="${id.tokPanel}-val-${i}" data-i="${i}" placeholder="직접 입력"` +
-        ` aria-label="${esc(t.name)} 값">${esc(t.value || "")}</textarea>`;
-      return `<tr data-i="${i}"><td class="maptok" title="{{${esc(t.name)}}}">${esc(t.name)}</td>` +
-        `<td>${src}</td><td class="mapfmt-cell">${fmtCell}</td><td class="mapval-cell">${valCell}</td></tr>`;
+      // 확정-비움(결정 12)이면 「아직 안 씀」이 아니라 「비워둠(선언)」이라 정직하게 말한다(판정은
+      // 서버 blank_declared) — 타이핑하면 값이 생겨 상수로 강등되며 선언이 풀린다.
+      const declared = !!t.blank_declared;
+      const valCell = declared
+        ? `<span class="mapval-declared muted" title="확정-비움 — 복사 확인에서 제외">비워둠(선언)</span>`
+        : `<textarea class="mapval-in${(t.value || "").trim() === "" ? " empty" : ""}"` +
+          ` rows="1" id="${id.tokPanel}-val-${i}" data-i="${i}" placeholder="직접 입력"` +
+          ` aria-label="${esc(t.name)} 값">${esc(t.value || "")}</textarea>`;
+      // 확정 열(#148 슬라이스 4, 결정 12) — 행별 확정. 확정+무내용 = 확정-비움. 판정은 서버
+      // (t.confirmed), 여긴 체크 상태만 되읽는다. .persist 는 슬라이스 5 유래 스위치의 훅.
+      const ckCell =
+        `<input class="ck mapck persist" type="checkbox" id="${id.tokPanel}-ck-${i}" data-i="${i}"` +
+        `${t.confirmed ? " checked" : ""} aria-label="${esc(t.name)} 확정">`;
+      return `<tr data-i="${i}"${declared ? ' class="row-blank-declared"' : ""}>` +
+        `<td class="maptok" title="{{${esc(t.name)}}}">${esc(t.name)}</td>` +
+        `<td>${src}</td><td class="maptype-cell persist">${typeCell}</td>` +
+        `<td class="mapfmt-cell">${fmtCell}</td><td class="mapval-cell">${valCell}</td>` +
+        `<td class="mapck-cell persist">${ckCell}</td></tr>`;
     }
 
     function renderMap(s) {
@@ -172,8 +195,9 @@
         const valHead = s.has_data ? "지금 행의 값" : "값";
         host.innerHTML =
           `<table class="dmap"><thead><tr>` +
-          `<th style="width:16%">토큰</th><th style="width:44%">데이터 열</th>` +
-          `<th style="width:16%">표시형</th><th>${valHead}</th>` +
+          `<th style="width:15%">토큰</th><th style="width:29%">데이터 열</th>` +
+          `<th class="persist" style="width:13%">유형</th><th style="width:15%">표시형</th>` +
+          `<th>${valHead}</th><th class="persist" style="width:52px">확정</th>` +
           `</tr></thead><tbody>` +
           tokens.map((t, i) => mapRowHtml(s, t, i)).join("") +
           `</tbody></table>`;
@@ -561,9 +585,14 @@
       $(id.tokPanel).addEventListener("change", (e) => {
         const t = mapTokenOf(e.target);
         if (!t) return;
-        if (e.target.classList.contains("mapsrc-sel")) setSource(t.name, e.target.value);
-        else if (e.target.classList.contains("mapfmt"))
+        const cl = e.target.classList;
+        if (cl.contains("mapsrc-sel")) setSource(t.name, e.target.value);
+        else if (cl.contains("maptype"))  // 유형 정정(결정 12) — 사람이 값 스니핑을 이긴다
+          Bridge.call(SCREEN, "set_map_type", { name: t.name, type: e.target.value });
+        else if (cl.contains("mapfmt"))
           Bridge.call(SCREEN, "set_map_fmt", { name: t.name, code: e.target.value });
+        else if (cl.contains("mapck"))  // 행별 확정(결정 12) — 확정+무내용 = 확정-비움
+          Bridge.call(SCREEN, "set_confirmed", { name: t.name, value: e.target.checked });
       });
       $(id.tokPanel).addEventListener("click", (e) => {
         const sug = e.target.closest(".mapsug"), rev = e.target.closest(".maprev");

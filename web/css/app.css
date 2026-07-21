@@ -139,6 +139,15 @@ table.dmap tr:last-child td{border-bottom:0}
 .mapval-in:focus-visible{outline:2px solid var(--a-primary);outline-offset:1px}
 .mapval-in.empty{background:transparent;border:1px dashed var(--a-border)}
 .mapsug{color:var(--a-ok);border-color:var(--fb-fill-bd)}
+/* 유형·확정 열(#148 슬라이스 4, 결정 12) — `.persist` 는 슬라이스 5 유래 스위치의 훅(지금은
+   숨김 규칙 없음: 그릇을 늘 보인다). 확정 체크박스·유형 셀렉트는 셀 안에서 가운데 정렬. */
+.dmap .maptype-cell .field.sm{max-width:100%}
+.dmap .mapck-cell{text-align:center}
+.dmap .mapck{width:16px;height:16px;margin:0;accent-color:var(--a-primary);cursor:pointer}
+/* 확정-비움(확정+무내용) — 값 셀이 「아직 안 씀」이 아니라 「비워둠(선언)」이라 말한다(문안≠집합
+   차단). 행은 데이터-빈값 blank 와 같은 색 언어(fb-blank)로 옅게 표지 — 복사 확인에서 빠짐. */
+.dmap .mapval-declared{font-size:var(--fs-caption);font-style:italic}
+.dmap tr.row-blank-declared{background:var(--fb-blank-bg)}
 .maplegend{display:flex;gap:var(--sp-14);flex-wrap:wrap;margin-top:var(--sp-8);
   font-size:var(--fs-caption);color:var(--a-muted)}
 .maplegend span{display:inline-flex;align-items:center;gap:var(--sp-4)}
