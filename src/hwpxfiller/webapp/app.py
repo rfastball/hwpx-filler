@@ -421,6 +421,22 @@ _MODAL_A11Y_PROBE_JS = r"""
   var cClosed = cm.classList.contains('hidden');
   var cDisplayClosed = getComputedStyle(cm).display;         // 닫힌 뒤 'none'
   window.alert = origAlert;
+  // #132.4: Modal.open/close 가 .modal 없는 요소를 시끄럽게 거절하는가(조용한 no-op 차단).
+  // 잠복 결함: .hidden 은 .modal.hidden 규칙으로만 숨어, .modal 없는 요소에 open 하면 토글이 무효다.
+  var mErrs = [];
+  var origErr = console.error;
+  console.error = function () { mErrs.push(Array.prototype.join.call(arguments, ' ')); };
+  var np = document.createElement('div');
+  np.id = '__nonModalProbe'; np.className = 'hidden';        // .modal 없음 — 숨김 규칙 안 먹음
+  document.body.appendChild(np);
+  var e0 = mErrs.length;
+  window.Modal.open('__nonModalProbe');                      // 거절 기대: loud + 스택 미진입
+  var openRejected = (mErrs.length > e0) && np.classList.contains('hidden');  // loud + 안 열림(hidden 유지)
+  var e1 = mErrs.length;
+  window.Modal.close('__nonModalProbe');                     // 대칭 거절 기대
+  var closeRejected = mErrs.length > e1;
+  document.body.removeChild(np);
+  console.error = origErr;
   return {
     opened: opened,               // 열기 후 hidden 해제됐는가
     focus_in: focusIn,            // 초기 포커스가 모달 안(pasteText)으로 들어갔는가
@@ -435,7 +451,9 @@ _MODAL_A11Y_PROBE_JS = r"""
     confirm_body_after_reentry: bodyAfterReentry, // #92 #1: 첫 본문이 덮이지 않았는가
     confirm_trap_wrapped: trapWrapped,           // #92 #1: Tab 이 모달 안에서 순환했는가
     confirm_closed: cClosed,      // #86: 확인 클릭 후 다시 hidden 인가
-    confirm_display_closed: cDisplayClosed  // #86/B-9: 닫힌 뒤 display(none 기대, hidden 이 flex 를 이긴다)
+    confirm_display_closed: cDisplayClosed,  // #86/B-9: 닫힌 뒤 display(none 기대, hidden 이 flex 를 이긴다)
+    non_modal_open_rejected_loud: openRejected,   // #132.4: .modal 없는 open 이 loud 거절+미개방인가
+    non_modal_close_rejected_loud: closeRejected  // #132.4: .modal 없는 close 도 loud 거절인가
   };
 })()
 """

@@ -28,6 +28,13 @@
 
   function top() { return stack.length ? stack[stack.length - 1] : null; }
 
+  /* .modal 없는 대상 거절의 loud 경로(#132.4) — 조용한 no-op 를 개발자 표면에 재진술한다.
+     사용자 표면(alert)은 쓰지 않는다: 이건 잘못된 요소를 넘긴 프로그래밍 오류라 콘솔이 임자다. */
+  function rejectNonModal(op, id) {
+    console.error("Modal." + op + ": 대상 #" + id + " 에 .modal 클래스가 없습니다 — 숨김 규칙은 "
+      + ".modal.hidden 전용이라 .hidden 토글이 조용한 no-op 이 됩니다. 거절합니다.");
+  }
+
   /* Tab 순환을 모달 카드 안에 가둔다(#92 리뷰 #1 트랩). 경계(첫↔끝)와 바깥 이탈에서만
      개입해 모달 내 자연 이동은 브라우저에 맡긴다. */
   function trapTab(e, el) {
@@ -60,6 +67,10 @@
   function open(id, opts) {
     const el = document.getElementById(id);
     if (!el) return;
+    // .modal 없는 대상은 시끄럽게 거절(#132.4) — 이 앱의 숨김 규칙은 `.modal.hidden` 뿐이라
+    // .modal 없는 요소에 open 하면 `.hidden` 토글이 조용한 no-op(뜨지도 숨지도 않음)이 된다.
+    // confirm-or-alarm: 조용히 삼키지 말고 거절한다. 현 소비자 9개는 전부 .modal 이라 무영향.
+    if (!el.classList.contains("modal")) { rejectNonModal("open", id); return; }
     // 같은 모달 이중 open 은 무시(idempotent) — 스택 중복 엔트리로 닫힘 의미가 꼬이는 것 방지.
     for (let i = 0; i < stack.length; i++) if (stack[i].el === el) return;
     stack.push({
@@ -79,6 +90,8 @@
   function close(id) {
     const el = document.getElementById(id);
     if (!el) return;
+    // open 과 대칭(#132.4) — .modal 없는 대상은 `.hidden` 을 얹어도 무효라 거절한다.
+    if (!el.classList.contains("modal")) { rejectNonModal("close", id); return; }
     el.classList.add("hidden");
     for (let i = stack.length - 1; i >= 0; i--) {
       if (stack[i].el !== el) continue;
