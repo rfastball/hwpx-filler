@@ -248,7 +248,9 @@ def test_overwrite_confirm_flow(tmp_path):
     assert res["ok"] is False and res.get("needs_overwrite") is True
     assert "덮어" in res["overwrite_text"]
     # 확인 후 재호출 → 저장.
-    assert ctrl.dispatch("save", {"confirm_overwrite": True})["ok"] is True
+    assert ctrl.dispatch(
+        "save", {"confirm_overwrite": True, "confirmed_overwrite_text": res["overwrite_text"]}
+    )["ok"] is True
 
 
 def _save_named(ctrl: EditorController, name: str) -> dict:
@@ -278,7 +280,9 @@ def test_slug_collision_different_name_restates_victim_then_saves(tmp_path):
     # 입력 이름·victim 이름이 모두 재진술된다(거짓 확인 방지).
     assert "예산_2026" in res["overwrite_text"] and "예산/2026" in res["overwrite_text"]
     # 확정 → allow_overwrite 로 core 가드 통과, 저장 성공(크래시 없음).
-    assert ctrl.dispatch("save", {"confirm_overwrite": True})["ok"] is True
+    assert ctrl.dispatch(
+        "save", {"confirm_overwrite": True, "confirmed_overwrite_text": res["overwrite_text"]}
+    )["ok"] is True
     assert JobRegistry(tmp_path / "jobs").exists("예산_2026")
 
 
@@ -1401,3 +1405,90 @@ def test_use_library_rejection_refreshes_stale_list(tmp_path):
     with pytest.raises(ValueError, match="라이브러리에 없는"):
         ctrl.dispatch("use_library_template", {"path": str(ghost)})
     assert _lib_items(pushes[-1][1]) == []                             # 거절 전 push 로 걷힘
+
+
+# ------------------------------------------------- 덮어쓰기 확인의 잠금·문안 대조(#149)
+def test_overwrite_confirm_requires_the_text_the_user_actually_read(tmp_path):
+    """확인 플래그만으로는 덮지 않는다 — **본 문안**을 함께 되돌려야 통과한다(#149).
+
+    무엇을 보고 확정했는지 모르면 그 확인이 지금 상태에 대한 것인지 알 수 없다. 덮어쓰기는
+    되돌릴 수 없으므로, 검증할 수 없는 확인은 통과가 아니라 재확인(fail-closed)이다.
+    """
+    ctrl, _ = _controller26(tmp_path)
+    _save_named(ctrl, "작업일")
+    _save_named(ctrl, "작업이")
+    ctrl.load_job("작업일")
+    ctrl.dispatch("set_name", {"name": "작업이"})
+    res = ctrl.dispatch("save", {})
+    assert res["needs_overwrite"] is True
+    again = ctrl.dispatch("save", {"confirm_overwrite": True})       # 문안 없이 확정
+    assert again["ok"] is False and again["needs_overwrite"] is True
+    ok = ctrl.dispatch(
+        "save",
+        {"confirm_overwrite": True, "confirmed_overwrite_text": res["overwrite_text"]},
+    )
+    assert ok["ok"] is True
+
+
+def test_overwrite_confirm_reasks_when_the_situation_changed_under_the_modal(tmp_path):
+    """모달을 읽는 사이 상태가 바뀌면 새 문안으로 **다시 묻는다**(#149).
+
+    사용자는 '작업이를 덮는다'를 확정했는데 그 사이 원본이 바뀌면, 확정은 더 이상 지금
+    일어날 일에 대한 확인이 아니다 — 확인한 내용과 실제 집합이 갈라지는 자리.
+    """
+    ctrl, _ = _controller26(tmp_path)
+    _save_named(ctrl, "원본작업")
+    ctrl.load_job("원본작업")
+    ctrl.dispatch("set_pattern", {"pattern": "새-{{ID}}"})
+    assert ctrl.dispatch("save", {})["ok"] is True                   # 무드리프트 자기-갱신
+
+    ctrl.load_job("원본작업")
+    reg = JobRegistry(tmp_path / "jobs")
+    job = reg.load("원본작업")
+    job.filename_pattern = "외부-{{ID}}"                              # 편집 사이 외부 변경
+    reg.save(job, allow_overwrite=True)
+    res = ctrl.dispatch("save", {})
+    assert res["needs_overwrite"] is True and "외부" in res["overwrite_text"]
+
+    # 확정 왕복 중 원본이 통째로 사라진다 → 덮을 것이 없으니 그냥 저장(묻지 않는다).
+    reg.path_for("원본작업").unlink()
+    ok = ctrl.dispatch(
+        "save",
+        {"confirm_overwrite": True, "confirmed_overwrite_text": res["overwrite_text"]},
+    )
+    assert ok["ok"] is True
+
+
+def test_overwrite_gate_is_judged_inside_the_write_lock(tmp_path):
+    """게이트 판정이 **쓰기 잠금 안**이다(#149) — 판정과 실행 사이 창을 없앤다.
+
+    잠금 밖 선판정은 판정 후 저장까지 사이에 디스크가 바뀔 수 있어, 확인 없이 외부 변경을
+    덮거나 읽은 문안과 다른 자리를 덮는다. 판정 시점에 잠금이 다른 스레드에서 잡히지
+    않는지로 되읽는다(저장 구간 잠금 테스트와 동형).
+    """
+    import threading
+
+    ctrl, _ = _controller26(tmp_path)
+    _save_named(ctrl, "게이트작업")
+    ctrl.load_job("게이트작업")
+    held: "list[bool]" = []
+    real_gate = ctrl._overwrite_gate
+
+    def spy() -> str:
+        got = [None]
+
+        def probe() -> None:
+            lock = ctrl.registry.write_lock()
+            got[0] = lock.acquire(blocking=False)
+            if got[0]:
+                lock.release()
+
+        t = threading.Thread(target=probe)
+        t.start()
+        t.join(3)
+        held.append(not got[0])
+        return real_gate()
+
+    ctrl._overwrite_gate = spy  # type: ignore[method-assign]
+    assert ctrl.dispatch("save", {})["ok"] is True
+    assert held and all(held), "덮어쓰기 게이트가 쓰기 잠금 밖입니다 — 판정·실행 창 회귀."

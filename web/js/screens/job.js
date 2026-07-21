@@ -775,16 +775,22 @@
     if (val === null) return;
     const r = await Bridge.call(SCREEN, "rename_group", { name: old, new: val });
     if (r && r.needs_confirm) {
-      // 기존 그룹으로의 개명 = 병합 — 수치 재진술 후 확정(조용한 병합 금지).
+      // 기존 그룹으로의 개명 = 병합 — 수치 재진술 후 확정(조용한 병합 금지). 수치는 '지금
+      // 기준' 관측으로 적는다(#149): 확인 왕복 사이 다른 표면이 소속을 옮길 수 있어 약속으로
+      // 읽히면 안 되고, 옮겨지는 집합의 규칙('전부')이 실제로 참인 진술이다.
       const ok = await window.Modal.confirm({
         title: "그룹 병합 확인",
-        body: `'${r.new}' 그룹이 이미 있습니다. '${old}' 의 작업 ${r.count}개를 ` +
-          `'${r.new}'(현재 ${r.target_count}개)에 합칩니다. 그룹은 하나가 됩니다.`,
+        body: `'${r.new}' 그룹이 이미 있습니다. '${old}' 의 작업 전부를 ` +
+          `'${r.new}' 에 합칩니다(지금 기준 ${r.count}개 → 현재 ${r.target_count}개인 그룹). ` +
+          `그룹은 하나가 됩니다.`,
         confirmLabel: "합치기", cancelLabel: "머무르기",
       });
       if (!ok) return;
-      const r2 = await Bridge.call(SCREEN, "rename_group", { name: old, new: val, confirm: true });
-      if (r2 && r2.ok) log(`그룹 병합: '${old}' → '${val.trim()}' (작업 ${r2.count}개 이동)`);
+      const r2 = await Bridge.call(SCREEN, "rename_group",
+        { name: old, new: val, confirm: true, seen: r.count });
+      if (r2 && r2.ok) {
+        log(`그룹 병합: '${old}' → '${val.trim()}' (작업 ${r2.count}개 이동)${r2.drift_note || ""}`);
+      }
       return;
     }
     if (r && r.ok) {
@@ -797,15 +803,17 @@
   async function disbandGroup(name) {
     const res = await Bridge.call(SCREEN, "disband_group", { name });
     if (!(res && res.needs_confirm)) return;
+    // 이동 집합은 '해산 시점의 소속 전부' 라는 규칙으로 적고, 수치는 지금 기준 관측으로
+    // 덧붙인다(#149) — 확인 왕복 사이 소속이 바뀌어도 규칙 쪽은 언제나 참이다.
     const ok = await window.Modal.confirm({
       title: "그룹 해산 확인",
-      body: `그룹 '${name}' 을(를) 해산합니다. 소속 작업 ${res.count}개는 「그룹 없음」으로 ` +
-        `이동합니다. 작업 자체는 삭제되지 않습니다.`,
+      body: `그룹 '${name}' 을(를) 해산합니다. 해산 시점의 소속 작업 전부가 「그룹 없음」으로 ` +
+        `이동합니다(지금 기준 ${res.count}개). 작업 자체는 삭제되지 않습니다.`,
       confirmLabel: "해산", cancelLabel: "머무르기",
     });
     if (!ok) return;
-    const r = await Bridge.call(SCREEN, "disband_group", { name, confirm: true });
-    if (r && r.ok) log(`그룹 해산: '${name}' (작업 ${r.count}개 이동)`);
+    const r = await Bridge.call(SCREEN, "disband_group", { name, confirm: true, seen: res.count });
+    if (r && r.ok) log(`그룹 해산: '${name}' (작업 ${r.count}개 이동)${r.drift_note || ""}`);
   }
 
   /* 허브(홈)에서 이 작업을 열기 — 좌 목록 재클릭 무동작 가드(onMasterClick)와 동형.
