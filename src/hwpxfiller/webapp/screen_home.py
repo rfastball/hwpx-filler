@@ -39,7 +39,7 @@ from ..core.dataset_pool import DatasetPoolRegistry
 from ..core.job import JobRegistry
 from ..core.text_registry import TextTemplateRegistry
 from ..gui.compile_badge import badge_level
-from ..gui.home_state import HomeViewModel, JobRow
+from ..gui.home_state import CORRUPT_PATH_REJECT, HomeViewModel, JobRow
 from .screens import PushSink, default_pool_registry, relink_job_template
 
 # 이어서 실행(continue-runs) 목록 상한 — 최근 실행순 상위 N. 대시보드 요약이라 짧게 유지.
@@ -226,7 +226,7 @@ class HomeController:
         """
         candidates = {str(c.path) for c in self.vm.corrupt_rows()}
         if raw not in candidates:
-            raise ValueError("손상 작업 목록에 없는 경로입니다 — 새로고침 후 다시 시도하세요.")
+            raise ValueError(CORRUPT_PATH_REJECT)
         return Path(raw)
 
     def _do_delete_corrupt(self, p: dict) -> dict:
@@ -240,6 +240,8 @@ class HomeController:
                     "내용을 확인하려면 먼저 '폴더 열기'로 살펴보세요."
                 ),
             }
-        path.unlink()
-        self.vm.refresh()
+        # 실제 삭제는 VM 위임(#44 seam) — 잠금 참여·화이트리스트 재판정·refresh 를 그쪽이
+        # 소유한다. 위 선판정은 확인 왕복 **전** 스냅샷이라 사람이 모달을 보는 사이 낡을 수
+        # 있어, 파괴 직전 판정은 잠금 안에서 다시 이뤄져야 한다(#129 리뷰 3R P1 유사 범위).
+        self.vm.delete_corrupt(str(path))
         return {"ok": True}

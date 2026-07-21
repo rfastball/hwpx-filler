@@ -1426,3 +1426,116 @@ def test_disband_group_confirm_roundtrip(tmp_path):
     # 사라진 그룹의 접힘 잔재는 걷는다 — 같은 이름 재생성 시 유령 접힘 방지.
     from hwpxfiller.webapp.settings import load_job_collapsed_groups
     assert "입찰" not in load_job_collapsed_groups()
+
+
+# ---------------- 실 공개 writer × 스탬프 동시성(#129 리뷰 3R P1) ----------------
+#
+# 리뷰 요구: "협조적인 테스트용 writer 뿐 아니라 실제 공개 delete·태그·재연결 경로와 스탬프를
+# 겹치는 회귀 테스트". 그래서 아래 세 테스트는 화면이 실제로 부르는 경로를 그대로 쓴다
+# (HomeViewModel.delete / HomeViewModel.set_tags / relink_job_template).
+def _pause_stamp(monkeypatch):
+    """스탬프 저장을 잠금 안에서 한 번 멈춰 세우는 장치 — (진입 이벤트, 해제 이벤트)."""
+    import threading
+
+    entered, release = threading.Event(), threading.Event()
+    real_save = Job.save
+    fired = {"once": False}
+
+    def slow_save(self, path):
+        if not fired["once"] and self.last_run_at:   # 스탬프 저장만 붙잡는다
+            fired["once"] = True
+            entered.set()
+            release.wait(3)
+        return real_save(self, path)
+
+    monkeypatch.setattr(Job, "save", slow_save)
+    return entered, release
+
+
+def _home_vm(registry):
+    from hwpxfiller.gui.home_state import HomeViewModel
+
+    return HomeViewModel(registry, None, None)
+
+
+def test_public_delete_during_stamp_does_not_resurrect_the_job(tmp_path, monkeypatch):
+    """삭제 도중 스탬프가 끼어도 지운 작업이 되살아나지 않는다(리뷰 3R P1).
+
+    잠금 밖 삭제라면: ①스탬프가 A 를 읽고 ②삭제가 파일을 지우고 성공을 반환하고 ③스탬프가
+    사본을 저장해 **A 가 부활**한다. "지웠다"고 말한 뒤 되살아나는 것은 조용한 소실의 거울상이다.
+    """
+    import threading
+
+    ctrl, _ = _controller(tmp_path)
+    reg = ctrl.registry
+    vm = _home_vm(reg)
+    entered, release = _pause_stamp(monkeypatch)
+
+    stamper = threading.Thread(target=lambda: reg.stamp_last_run("공고서", "2026-07-21T09:00:00"))
+    stamper.start()
+    assert entered.wait(3)
+
+    done = threading.Event()
+
+    def delete_job():
+        vm.delete("공고서")      # 홈 카드 「삭제」가 타는 실제 경로
+        done.set()
+
+    deleter = threading.Thread(target=delete_job)
+    deleter.start()
+    assert not done.wait(0.2), "삭제가 스탬프의 임계구역 안으로 끼어들었습니다."
+    release.set()
+    stamper.join(3)
+    deleter.join(3)
+    assert not reg.exists("공고서"), "지운 작업이 스탬프 저장으로 되살아났습니다."
+
+
+def test_public_set_tags_during_stamp_keeps_both_changes(tmp_path, monkeypatch):
+    """태그 편집과 스탬프가 겹쳐도 둘 다 남는다 — 늦은 저장이 상대를 되돌리지 않는다."""
+    import threading
+
+    ctrl, _ = _controller(tmp_path)
+    reg = ctrl.registry
+    vm = _home_vm(reg)
+    entered, release = _pause_stamp(monkeypatch)
+
+    stamper = threading.Thread(target=lambda: reg.stamp_last_run("공고서", "2026-07-21T09:00:00"))
+    stamper.start()
+    assert entered.wait(3)
+    tagger = threading.Thread(target=lambda: vm.set_tags("공고서", {"부서": "계약"}))
+    tagger.start()
+    release.set()
+    stamper.join(3)
+    tagger.join(3)
+
+    saved = reg.load("공고서")
+    assert saved.last_run_at == "2026-07-21T09:00:00"   # 태그 저장이 시각을 지우지 않았다
+    assert saved.tags == {"부서": "계약"}                # 스탬프가 태그를 되돌리지 않았다
+
+
+def test_public_relink_during_stamp_keeps_both_changes(tmp_path, monkeypatch):
+    """템플릿 재연결과 스탬프가 겹쳐도 둘 다 남는다(확인 왕복이 있어 창이 특히 넓은 경로)."""
+    import threading
+
+    from hwpxfiller.webapp.screens import relink_job_template
+
+    ctrl, _ = _controller(tmp_path)
+    reg = ctrl.registry
+    new_template = tmp_path / "새서식.hwpx"
+    _write_template(new_template, ["공고명", "추정가격"])
+    entered, release = _pause_stamp(monkeypatch)
+
+    stamper = threading.Thread(target=lambda: reg.stamp_last_run("공고서", "2026-07-21T09:00:00"))
+    stamper.start()
+    assert entered.wait(3)
+    linker = threading.Thread(
+        target=lambda: relink_job_template(reg, "공고서", str(new_template), confirm=True)
+    )
+    linker.start()
+    release.set()
+    stamper.join(3)
+    linker.join(3)
+
+    saved = reg.load("공고서")
+    assert saved.last_run_at == "2026-07-21T09:00:00"
+    assert saved.template_path == str(new_template)

@@ -686,3 +686,98 @@ def test_stamp_last_run_is_a_single_field_mutation(tmp_path):
     assert after.filename_pattern == "패턴" and after.group == "입찰"
     assert after.tags == {"부서": "계약"}
     assert after.mapping.cover_fields() == _profile().cover_fields()
+
+
+# ---- 쓰기 표면 전수 분류 가드(#129 리뷰 3R P1 — 4차 재발 차단) ----
+#
+# 같은 결함류가 세 라운드 연속 재발했다: ①스탬프가 남의 작업에 ②스탬프가 잠금 밖 ③delete·
+# set_tags·relink 가 잠금 밖. 공통 원인은 "새 writer 가 조용히 늘어난다"이므로, 개별 결함이
+# 아니라 **표면 전체를 분류하게** 만든다 — 새 공개 메서드가 생기면 아래 둘 중 하나에 이름을
+# 올리기 전까지 테스트가 실패한다(미분류 = 실패).
+_READERS = {
+    "exists", "load", "list_jobs", "names", "groups", "path_for", "write_lock",
+}
+_WRITERS = {
+    "save", "delete", "rename", "clone", "mutate", "stamp_last_run",
+    "set_group", "rename_group", "disband_group",
+}
+
+
+def _public_registry_api() -> set:
+    return {n for n in dir(JobRegistry) if not n.startswith("_") and callable(getattr(JobRegistry, n))}
+
+
+def test_every_registry_surface_is_classified_reader_or_writer():
+    """레지스트리 공개 표면은 전부 읽기/쓰기로 분류돼 있다 — 미분류 writer 잠입 차단."""
+    api = _public_registry_api()
+    unclassified = api - _READERS - _WRITERS
+    assert not unclassified, (
+        "분류되지 않은 JobRegistry 공개 메서드입니다 — 읽기면 _READERS, 쓰기면 _WRITERS 에 "
+        f"올리고 쓰기라면 잠금 참여를 확인하세요: {sorted(unclassified)}"
+    )
+    assert not (_READERS | _WRITERS) - api, "사라진 메서드가 분류 목록에 남아 있습니다."
+
+
+def test_every_writer_holds_the_write_lock_during_file_io(tmp_path, monkeypatch):
+    """분류된 모든 writer 는 **파일 I/O 순간** 쓰기 잠금을 쥐고 있다.
+
+    판정은 다른 스레드에서 비차단 획득을 시도해 실패하는지로 한다(RLock 은 같은 스레드에선
+    재획득되므로 자기 스레드 검사는 판별력이 없다 — 계측 리트머스의 부재 판별력).
+    """
+    import threading
+    from pathlib import Path
+
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="A", template_path="t.hwpx", group="G"))
+    reg.save(Job(name="B", template_path="t.hwpx", group="G"))
+
+    held_outside: "list[str]" = []
+
+    def _probe(tag: str) -> None:
+        got = [False]
+
+        def attempt():
+            lock = reg.write_lock()
+            got[0] = lock.acquire(blocking=False)
+            if got[0]:
+                lock.release()
+
+        t = threading.Thread(target=attempt)
+        t.start()
+        t.join(3)
+        if got[0]:
+            held_outside.append(tag)
+
+    real_write = Job.save
+    real_unlink = Path.unlink
+
+    def spy_write(self, path):
+        _probe(f"save:{self.name}")
+        return real_write(self, path)
+
+    def spy_unlink(self, *a, **kw):
+        if str(self).endswith(JobRegistry.SUFFIX):
+            _probe(f"unlink:{self.name}")
+        return real_unlink(self, *a, **kw)
+
+    monkeypatch.setattr(Job, "save", spy_write)
+    monkeypatch.setattr(Path, "unlink", spy_unlink)
+
+    exercised = {
+        "save": lambda: reg.save(Job(name="C", template_path="t.hwpx"), allow_overwrite=True),
+        "mutate": lambda: reg.mutate("A", lambda j: setattr(j, "filename_pattern", "p")),
+        "stamp_last_run": lambda: reg.stamp_last_run("A", "2026-07-21T09:00:00"),
+        "set_group": lambda: reg.set_group("A", "G2"),
+        "rename_group": lambda: reg.rename_group("G", "G3"),
+        "disband_group": lambda: reg.disband_group("G3"),
+        "clone": lambda: reg.clone("A"),
+        "rename": lambda: reg.rename("B", "B2"),
+        "delete": lambda: reg.delete("B2"),
+    }
+    assert set(exercised) == _WRITERS, "writer 목록과 실행 목록이 어긋납니다(새 writer 미실행)."
+    for run in exercised.values():
+        run()
+    assert not held_outside, (
+        "파일 I/O 순간 쓰기 잠금 밖인 writer 가 있습니다(lost update·부활 회귀): "
+        + ", ".join(sorted(held_outside))
+    )

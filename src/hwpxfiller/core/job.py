@@ -474,9 +474,16 @@ class JobRegistry:
         return count
 
     def delete(self, name: str) -> None:
-        p = self.path_for(name)
-        if p.exists():
-            p.unlink()
+        """작업 삭제 — **쓰기 잠금 안**에서(리뷰 3R P1: 삭제도 writer 다).
+
+        잠금 밖이면 다음 순서가 성립한다: ①스탬프가 잠금 안에서 A 를 읽고 ②삭제가 A 파일을
+        지운 뒤 성공을 반환하고 ③스탬프가 그 사본을 저장해 **지운 작업이 되살아난다**.
+        "삭제했다"고 말한 뒤 되살아나는 것은 조용한 소실의 거울상이라 같은 등급의 결함이다.
+        """
+        with self._write_lock:
+            p = self.path_for(name)
+            if p.exists():
+                p.unlink()
 
     def _files(self) -> "list[Path]":
         if not self.directory.exists():
