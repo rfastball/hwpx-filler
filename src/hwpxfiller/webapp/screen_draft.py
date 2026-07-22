@@ -112,13 +112,36 @@ class DraftController(DraftSessionMixin):
     # ------------------------------------------------------------- 목록 디스패치
     # 라우터는 DraftSessionMixin.dispatch 단일 출처(큐 재봉합·확인 왕복 규약 공유).
 
-    def _do_refresh(self, p: dict) -> None:
+    def _do_refresh(self, p: dict) -> "dict | None":
         """레지스트리 재스캔 반영 + stale 결속 무효화(다른 화면에서 삭제·개명됐을 수 있다).
 
         결속했던 저장 기안이 사라졌으면 휘발 세션으로 복귀한다 — 유래만 소거하면 사라진 기안의
-        원문·매핑이 저장 모드로 계속 떠 있어 정의와 실제가 갈라진다(confirm-or-alarm)."""
+        원문·매핑이 저장 모드로 계속 떠 있어 정의와 실제가 갈라진다(confirm-or-alarm).
+
+        **결속 세션 소실 시 시끄러운 사후 고지(리뷰 5a 3R P1 / 121)**: 다른 화면(홈 등)에서
+        결속 기안을 삭제하면 그 확인창은 정의 삭제만 알렸을 뿐, 이 화면의 진행 중 세션(데이터·
+        선택·큐·미저장 편집)은 언급하지 못한다 — 삭제 화면은 draft 세션을 모른다. 삭제는 이미
+        일어나 사전 확인이 불가하므로, 무장(:meth:`_leave_guard`) 세션을 조용히 버리지 않고
+        소실 사실을 실어 표면이 alert 로 사후 고지한다(confirm-or-alarm 의 "시끄럽게 알려라"
+        갈래 — 묻지 못하면 알린다). 무장 아니면 잃을 게 없어 조용히 복귀한다."""
         if self._bound_job and self._bound_job not in self.registry.names():
+            name = self._bound_job
+            g = self._leave_guard()
             self._restore_volatile()
+            if g["armed"]:
+                bits = []
+                if g["sel_count"]:
+                    bits.append(f"선택 {g['sel_count']}행")
+                if g["copied_count"]:
+                    bits.append(f"복사 {g['copied_count']}건")
+                if g["map_dirty"]:
+                    bits.append("미저장 매핑 편집")
+                detail = f"(진행: {' · '.join(bits)}) " if bits else ""
+                return {"notice": (
+                    f"결속했던 기안 '{name}' 이(가) 다른 화면에서 삭제되어, 진행 중이던 세션이 "
+                    f"닫혔습니다 {detail}— 이 진행은 저장된 기안에 보관되지 않아 복구할 수 없습니다."
+                )}
+        return None
 
     def _do_select_job(self, p: dict) -> "dict | None":
         """좌 목록 클릭 = 저장 기안 결속(복원) · 「이번 세션」 클릭(빈 이름) = 휘발 귀환(#148 슬라이스 5a).
@@ -140,9 +163,11 @@ class DraftController(DraftSessionMixin):
         name = p.get("name", "")
         if name and name == self._bound_job:
             return None  # 재선택 무동작(진행 불변)
-        # 저장 세션을 떠나면 그 데이터·큐 진행이 사라진다 — 무장이면 확인 왕복(위 docstring).
+        # 저장 세션을 떠나면 그 데이터·큐·미저장 편집이 사라진다 — 무장이면 확인 왕복(위 docstring).
+        # _leave_guard = 선택·큐(T3) ∨ 미저장 레시피 편집(147) — 데이터 미로드라도 상수·확정
+        # 편집만으로 무장한다(데이터 교체 T3와 달리 세션 교체는 매핑도 폐기하므로).
         if self._bound_job and not p.get("confirm"):
-            g = self._guard_state()
+            g = self._leave_guard()
             if g["armed"]:
                 return {"needs_confirm": True, "kind": "leave_saved", "target": name, **g}
         if not name:  # 「이번 세션」 = 겨눔 해제 → 휘발 귀환
@@ -201,7 +226,7 @@ class DraftController(DraftSessionMixin):
             out = {"needs_confirm": True, "name": name,
                    "open_session": name == self._bound_job}
             if name == self._bound_job:
-                out.update(self._guard_state())
+                out.update(self._leave_guard())  # 선택·큐 ∨ 미저장 레시피 편집(147)
             return out
         self.registry.delete(name)
         if name == self._bound_job:

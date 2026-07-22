@@ -30,8 +30,11 @@
     // pywebview 미준비(브라우저 단독 미리보기·부팅 직전)면 새로고칠 백엔드 자체가 없다.
     if (REFRESH_ON_NAV.includes(id) && window.pywebview && window.Bridge) {
       // 실패는 조용히 삼키지 않는다(confirm-or-alarm) — 화면은 이미 전환됐고 스냅샷만 낡음.
-      Bridge.call(id, "refresh", {}).catch((err) =>
-        window.alert(String((err && err.message) || err)));
+      // refresh 가 사후 고지(notice)를 돌려주면 alert 로 시끄럽게 알린다 — 결속 기안이 다른
+      // 화면에서 삭제돼 진행 세션이 닫힌 경우(draft 121). notice 없는 화면엔 무해(무반응).
+      Bridge.call(id, "refresh", {})
+        .then((r) => { if (r && r.notice) window.alert(r.notice); })
+        .catch((err) => window.alert(String((err && err.message) || err)));
     }
     // 「작업」 복귀 시 편집 호스트의 에디터도 재렌더(#138 리뷰 F12) — job refresh 는 좌 목록만
     // 갱신하고 편집 모드 1단계 피커는 놔둬, 관리 화면에서 바뀐 공유 그룹 접힘이 stale 로 남는다.

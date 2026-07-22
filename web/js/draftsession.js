@@ -678,10 +678,14 @@
       // 문안으로 남는다(결정 11 — 되돌릴 수 없어 「진행 초기화」는 거짓말). 저장 기안은 불변.
       if (id.srcFork) {
         $(id.srcFork).addEventListener("click", async () => {
-          const copied = (LAST && LAST.card && LAST.card.copied_count) || 0;
-          if (copied > 0 && !(await window.Modal.confirm({
+          // 복사 이력 판정은 copied_ever(내구)로 — 무데이터 가상 1건 복사는 copied_count 에
+          // 안 잡힌다(큐 미기록, 리뷰 5b 3R P2 / 682). 건수는 실 카드면 copied_count, 가상이면 1.
+          const card = (LAST && LAST.card) || {};
+          const cc = card.copied_count || 0;
+          const nCopied = cc > 0 ? cc : (card.copied_ever ? 1 : 0);
+          if (card.copied_ever && !(await window.Modal.confirm({
             title: "사본으로 편집",
-            body: `이미 복사한 ${copied}건은 이전 문안으로 남습니다 — 되돌릴 수 없습니다. 앞으로 ` +
+            body: `이미 복사한 ${nCopied}건은 이전 문안으로 남습니다 — 되돌릴 수 없습니다. 앞으로 ` +
               `복사할 카드부터 새 문안이 적용됩니다. 저장된 기안은 그대로 두고 이 세션만 사본으로 가릅니다.`,
             confirmLabel: "사본으로 편집", cancelLabel: "머무르기",
           }))) return;

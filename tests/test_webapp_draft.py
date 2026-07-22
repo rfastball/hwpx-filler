@@ -195,6 +195,85 @@ def test_deleting_unbound_job_reports_no_session_loss(tmp_path):
     assert "armed" not in res, "결속 아닌 삭제가 무관한 세션 무장 수치를 실었습니다(거짓 경고)."
 
 
+# ------------------------------------------ 미저장 레시피 편집 가드(리뷰 5a 3R P1 / 147)
+def test_leaving_saved_with_unsaved_mapping_edit_needs_confirm(tmp_path):
+    """데이터 미로드 저장 세션에서 상수·확정 편집만 해도 전환 시 확인한다(147).
+
+    선택·복사가 0이라 T3(_guard_state)는 무장 안 하지만, 미저장 레시피 편집은 세션 교체로
+    사라진다 — _leave_guard 가 map_dirty 를 무장으로 친다(데이터 교체와 다른 문턱)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "제목: {{공고명}}")
+    _save_real(tmp_path, jobs, "기안B", "job_b.txt", "제목: {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "직접 입력한 상수"})  # 미저장 편집
+    res = ctrl.dispatch("select_job", {"name": "기안B"})
+    assert res and res["needs_confirm"] is True and res["map_dirty"] is True
+    assert ctrl.snapshot()["bound_job"] == "기안A"      # 확인 전 = 안 떠남
+
+
+def test_restored_saved_session_is_clean_and_leaves_without_warning(tmp_path):
+    """복원 직후(편집 전) 전환은 확인 없이 넘어간다 — 복원 baseline 의 map_dirty 는 깨끗하다.
+
+    복원은 프로파일 행을 touched(사람 소유)로 되살리지만(결정 12), 그건 저장분과 일치하는
+    baseline 이라 '미저장 편집'이 아니다. map_dirty 를 touched 로 착각하면 매번 over-warn 한다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "제목: {{공고명}}",
+               mappings=(FieldMapping(template_field="공고명", source="공고명", type="text"),))
+    _save_real(tmp_path, jobs, "기안B", "job_b.txt", "제목: {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})       # 복원 = touched rows, map_dirty=False
+    res = ctrl.dispatch("select_job", {"name": "기안B"})
+    assert res is None                                   # 편집 안 했으니 무장 아님
+
+
+def test_data_swap_guard_ignores_unsaved_mapping_edit(tmp_path):
+    """데이터 교체 가드(_guard_state)는 미저장 매핑 편집으로 무장하지 않는다(147 스코프 경계).
+
+    데이터 스왑은 매핑·상수를 유지하므로 편집은 잃을 게 없다 — 여기 map_dirty 를 실으면
+    over-warn(confirm-or-alarm 역방향 위반). 세션 교체(_leave_guard)에서만 무장으로 친다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "제목: {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "상수"})
+    g = ctrl.dispatch("guard_state", {})
+    assert g["map_dirty"] is True and g["armed"] is False
+
+
+def test_deleting_bound_with_unsaved_mapping_edit_restates_loss(tmp_path):
+    """확정 편집만 한 결속 세션을 삭제해도 소실을 재진술한다(147 + screen_job 동형 삭제 가드)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "제목: {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    ctrl.dispatch("set_confirmed", {"name": "공고명", "value": True})  # 미저장 편집
+    res = ctrl.dispatch("delete_job", {"name": "기안A"})
+    assert res["open_session"] is True and res["armed"] is True and res["map_dirty"] is True
+
+
+# ------------------------------------ 외부 삭제로 고아 된 결속 세션 사후 고지(리뷰 5a 3R P1 / 121)
+def test_refresh_orphaned_armed_session_gives_loud_notice(tmp_path):
+    """다른 화면에서 결속 기안이 삭제된 뒤 복귀(refresh) 시 무장 세션 소실을 시끄럽게 사후 고지한다.
+
+    삭제는 이미 일어나 사전 확인 불가 — 조용히 버리지 않고 notice 를 돌려 표면이 alert 한다
+    (confirm-or-alarm 의 "알려라" 갈래). 삭제 화면(홈)의 확인창은 draft 세션을 모른다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "제목: {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    _arm_queue(ctrl, selected=2, copied=1)
+    jobs.delete("기안A")                                  # 다른 화면에서 삭제된 상황
+    res = ctrl.dispatch("refresh", {})
+    assert res and "notice" in res and "기안A" in res["notice"]
+    assert ctrl.snapshot()["mode"] == "volatile"
+
+
+def test_refresh_orphaned_unarmed_session_is_silent(tmp_path):
+    """무장 아닌 결속 세션이 외부 삭제로 사라지면 조용히 복귀한다 — 잃을 게 없다(과경보 금지)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "제목: {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    jobs.delete("기안A")
+    res = ctrl.dispatch("refresh", {})
+    assert res is None and ctrl.snapshot()["mode"] == "volatile"
+
+
 def test_leaving_saved_session_with_progress_needs_confirm(tmp_path):
     """저장 세션(진행 있음)에서 다른 기안으로 전환 = 확인 왕복(리뷰 5a P1) — 진행은 Job 에 없어 사라진다.
 
@@ -303,6 +382,48 @@ def test_fork_displacing_armed_stash_needs_confirm(tmp_path):
     assert ctrl.snapshot()["mode"] == "saved"           # 확인 전 = 포크 안 됨
     ctrl.dispatch("fork_to_volatile", {"confirm": True})
     assert ctrl.snapshot()["mode"] == "volatile"
+
+
+def test_fork_displacing_stash_with_unsaved_edit_needs_confirm(tmp_path):
+    """포크가 밀어내는 이전 휘발 세션이 미저장 매핑 편집만 있어도 확인 왕복한다(147 × 5b 포크).
+
+    선택·복사가 0이라도 붙여넣던 세션의 상수·확정 편집은 포크 대체로 사라진다 — _stash_guard 가
+    _guard_state(선택·큐)가 아니라 _leave_guard(map_dirty 포함)로 판정하므로 무장으로 친다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "저장 원문 {{공고명}}")
+    ctrl.dispatch("set_template_text", {"text": "붙여넣던 {{공고명}}"})
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "붙여넣던 세션의 상수"})  # 미저장 편집
+    ctrl.dispatch("select_job", {"name": "기안A"})       # map_dirty 휘발이 스태시됨
+    res = ctrl.dispatch("fork_to_volatile", {})
+    assert res and res["needs_confirm"] is True and res["kind"] == "fork_displaces_stash"
+    assert res["map_dirty"] is True
+
+
+def test_virtual_card_copy_marks_copied_ever(tmp_path):
+    """무데이터 가상 1건 복사는 copied_count 엔 안 잡혀도 copied_ever 를 세운다(리뷰 5b 3R P2 / 682).
+
+    「사본으로 편집」의 "이미 복사한 건은 이전 문안" 경고는 이 내구 표지로 판정한다 — 가상 복사를
+    copied_count(큐 기록)로만 보면 0이라 경고가 스킵돼 이미 붙여넣은 옛 문안을 못 알린다."""
+    ctrl, _jobs, _ = _controller(tmp_path)
+    ctrl.dispatch("set_template_text", {"text": "본문 {{공고명}}"})
+    assert ctrl.snapshot()["card"]["copied_ever"] is False
+    _text, report = ctrl.render()
+    ctrl.note_copied(report)                            # 가상 카드 복사
+    card = ctrl.snapshot()["card"]
+    assert card["copied_count"] == 0                    # 큐엔 안 잡힘(가상)
+    assert card["copied_ever"] is True                  # 내구 표지엔 잡힘
+
+
+def test_copied_ever_resets_on_new_session_and_restore(tmp_path):
+    """copied_ever 는 세션 baseline(새 기안·복원)에서 리셋된다 — 옛 복사 이력이 새 세션에 새지 않게."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "본문 {{공고명}}")
+    ctrl.dispatch("set_template_text", {"text": "본문 {{공고명}}"})
+    _text, report = ctrl.render()
+    ctrl.note_copied(report)
+    assert ctrl.snapshot()["card"]["copied_ever"] is True
+    ctrl.dispatch("select_job", {"name": "기안A"})       # 복원 baseline
+    assert ctrl.snapshot()["card"]["copied_ever"] is False
 
 
 def test_fork_clears_stash_so_next_select_does_not_orphan_copy(tmp_path):
