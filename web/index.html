@@ -212,11 +212,7 @@
 
               <!-- 게이트 · 재진술 블록(상시 — 이미 보이는 것 재검증 안 함, 결정 36 D1-B). -->
               <div class="defblk" id="jobRestate" style="display:none"></div>
-
-              <div class="run-actions">
-                <button class="btn primary" id="jobGenBtn" disabled>이 작업으로 문서 생성</button>
-                <span class="muted capnote" id="jobGate"></span>
-              </div>
+              <!-- 생성 버튼은 하단 sticky 액션바로 이관(#179 슬라이스 5b) — 스크롤 무관 상시 도달. -->
             </div>
 
             <!-- 완료 존 — 세션 스코프(진행·결과·로그) -->
@@ -236,6 +232,14 @@
             <div class="wsteps" id="editor-steps"></div>
             <div class="wbody" id="editor-body" data-preserve-scroll></div>
             <footer class="wfoot" id="editor-foot"></footer>
+          </div>
+
+          <!-- 하단 sticky 액션바(#179 슬라이스 5b) — 생성은 세션의 최종 행동이라 스크롤과 무관하게
+               항상 도달 가능해야 한다. 실행 모드(세션 4존)에서만 노출(job.js syncModeDisplay 가
+               jobZones 와 함께 토글) — 편집 모드·미선택에선 숨는다. -->
+          <div class="session-actionbar" id="jobActionBar" style="display:none">
+            <button class="btn primary" id="jobGenBtn" disabled>이 작업으로 문서 생성</button>
+            <span class="muted capnote" id="jobGate"></span>
           </div>
         </div>
       </div>
@@ -376,28 +380,33 @@
             <!-- ④ 완료 — 복사(=완료, 결정 16) + 자유 이동(◀▶ · 위 점 클릭) + 전진 opt-in.
                  미루기는 없다(결정 10 사망 — 자유 이동이 대체). 「기안으로 저장」 승격(#135)은
                  라이브러리 배접 원문만 — 붙여넣기·수정 원문은 비활성+사유(dead button 금지). -->
+            <!-- ④ 완료 존 = 「남기려면」(승격) — 복사(=완료)와 큐 이동은 하단 sticky 액션바로 이관
+                 (#179 슬라이스 5b). 승격은 부차 행동이라 존에 잔류한다. -->
             <div class="zone">
-              <div class="zone-cap"><span class="znum">4</span>완료</div>
-              <div class="run-actions">
-                <button class="btn primary" id="draftCardCopy">📋 복사</button>
-                <button class="btn sm icon" id="draftCardPrev" title="이전 카드" aria-label="이전 카드">◀</button>
-                <button class="btn sm icon" id="draftCardNext" title="다음 카드" aria-label="다음 카드">▶</button>
-                <label class="wc-advance" title="켜면 복사 후 다음 미처리 카드로 넘어갑니다">
-                  <input type="checkbox" id="draftAdvance"> 복사 후 다음으로</label>
-                <div class="run-promote">
-                  <span class="lbl muted">남기려면</span>
-                  <button class="btn" id="draftSaveJob" aria-describedby="draftSaveJobNote">기안으로 저장</button>
-                  <!-- 「템플릿으로 저장」(#148 슬라이스 6, #135) — 세션 원문을 TXT 라이브러리로 승격
-                       (구 「빠른 기안」에서 흡수). 휘발 세션에서만 뜬다(저장 기안 결속·빈손은 hidden —
-                       draft.js can_save_template). 붙여넣기 세션에선 위 「기안으로 저장」 비활성 사유가
-                       이 버튼을 가리키므로 나란히 살아야 안내가 죽은 지시가 되지 않는다. -->
-                  <button class="btn" id="draftSaveTpl" hidden>템플릿으로 저장</button>
-                </div>
+              <div class="zone-cap"><span class="znum">4</span>완료 · 남기려면</div>
+              <div class="run-promote">
+                <span class="lbl muted">남기려면</span>
+                <button class="btn" id="draftSaveJob" aria-describedby="draftSaveJobNote">기안으로 저장</button>
+                <!-- 「템플릿으로 저장」(#148 슬라이스 6, #135) — 세션 원문을 TXT 라이브러리로 승격
+                     (구 「빠른 기안」에서 흡수). 휘발 세션에서만 뜬다(저장 기안 결속·빈손은 hidden —
+                     draft.js can_save_template). 붙여넣기 세션에선 위 「기안으로 저장」 비활성 사유가
+                     이 버튼을 가리키므로 나란히 살아야 안내가 죽은 지시가 되지 않는다. -->
+                <button class="btn" id="draftSaveTpl" hidden>템플릿으로 저장</button>
               </div>
               <p class="run-promote-note muted" id="draftSaveJobNote" hidden></p>
               <p class="run-promote-note" id="draftSaveTplNote" role="status" aria-live="polite"></p>
               <p class="note" id="draftNote"></p>
             </div>
+          </div>
+
+          <!-- 하단 sticky 액션바(#179 슬라이스 5b) — 복사(=완료, 결정 16)와 큐 이동(◀▶·전진)을
+               스크롤과 무관하게 항상 도달 가능하게. draft 는 편집 모드가 없어 세션 상시 노출. -->
+          <div class="session-actionbar" id="draftActionBar">
+            <button class="btn primary" id="draftCardCopy">📋 복사</button>
+            <button class="btn sm icon" id="draftCardPrev" title="이전 카드" aria-label="이전 카드">◀</button>
+            <button class="btn sm icon" id="draftCardNext" title="다음 카드" aria-label="다음 카드">▶</button>
+            <label class="wc-advance" title="켜면 복사 후 다음 미처리 카드로 넘어갑니다">
+              <input type="checkbox" id="draftAdvance"> 복사 후 다음으로</label>
           </div>
         </div>
       </div>
