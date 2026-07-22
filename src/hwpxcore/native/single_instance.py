@@ -78,6 +78,12 @@ def focus_existing(window_title: str) -> bool:
     user32 = ctypes.windll.user32
     user32.FindWindowW.restype = wintypes.HWND
     user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+    user32.IsWindowVisible.restype = wintypes.BOOL
+    user32.IsWindowVisible.argtypes = [wintypes.HWND]
+    user32.ShowWindow.restype = wintypes.BOOL
+    user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+    user32.SetForegroundWindow.restype = wintypes.BOOL
+    user32.SetForegroundWindow.argtypes = [wintypes.HWND]
     hwnd = user32.FindWindowW(None, window_title)
     if not hwnd:
         return False
