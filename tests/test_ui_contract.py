@@ -1,8 +1,8 @@
-"""목업↔ViewModel 계약 가드 — Qt/QApplication 불필요(ViewModel 은 링1, Qt-free).
+"""동결 목업↔생존 ViewModel 정합성 가드 — Qt/QApplication 불필요(링1은 Qt-free).
 
-목업(docs/UI_PROTOTYPE_APPB.html)의 모든 ``data-vm="클래스.속성"`` 주석이 실제 ViewModel
-표면에 존재하는지 검사한다. 목업이 겨누는 seam(ViewModel 공개 API)이 이름 변경으로 어긋나면
-CI 가 실패한다 — 디자인 스펙과 구현이 조용히 갈라지지 않게(confirm-or-alarm 의 구조적 적용).
+동결 시안(docs/UI_PROTOTYPE_APPB.html)의 모든 ``data-vm="클래스.속성"`` 주석이 아직 살아
+있는 ViewModel 표면에 존재하는지 검사한다. Qt 시대 seam의 역사적 정합성을 보존하는 테스트이며,
+실제 배포 DOM·현재 라우팅의 계약은 ``test_web_dom_contract.py``가 소유한다.
 """
 from __future__ import annotations
 
