@@ -58,6 +58,11 @@
   --fs-strong:15px;
   --fs-section:19px;
   --fs-kpi:23px;
+  --dur-press:140ms;
+  --dur-pop:150ms;
+  --dur-modal:200ms;
+  --ease-out:cubic-bezier(.23,1,.32,1);
+  --ease-in-out:cubic-bezier(.77,0,.175,1);
   color-scheme:light;
 }
 @media (prefers-color-scheme:dark){

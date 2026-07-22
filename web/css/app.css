@@ -57,6 +57,35 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .scr{display:none;flex:1;min-height:0;flex-direction:column}
 .scr.on{display:flex}
 
+/* ---- 조작 피드백 · 오버레이 모션(#179 슬라이스 4, emil-design-eng) ----
+   pressable 에 짧은 transform 눌림 — 정확한 속성만 지정(transition:all 금지), :disabled 제외.
+   메뉴·모달은 등장 시 opacity+scale(@starting-style — 미지원 엔진은 즉시 표시로 무해 강등).
+   화면 전환·hover 배경은 무애니메이션 유지(hover 는 transform 을 안 걸어 touch 지터 무관).
+   이동(scale)은 prefers-reduced-motion 에서 제거하고 페이드(opacity)만 남긴다. 전부 <300ms. */
+.btn,.navbtn,.ctx-menu button,.job-more,.grp-more,.tpl-assign,button.pill{
+  transition:transform var(--dur-press) var(--ease-out)}
+.btn:active:not(:disabled),.navbtn:active,.ctx-menu button:active,.job-more:active,
+.grp-more:active,.tpl-assign:active,button.pill:active:not(:disabled){transform:scale(.97)}
+
+/* 부유 메뉴·열 필터 = 트리거 쪽(좌상단 origin) opacity+scale(.98) 팝(scale(0) 금지). */
+.ctx-menu,.colpanel{transform-origin:top left;
+  transition:opacity var(--dur-pop) var(--ease-out),transform var(--dur-pop) var(--ease-out)}
+@starting-style{
+  .ctx-menu{opacity:0;transform:scale(.98)}
+  .colpanel:not([hidden]){opacity:0;transform:scale(.98)}
+}
+/* 모달 = 뷰포트 중앙 기준(scale .95) — 트리거 비의존이라 origin center 유지(emil). */
+.modal-card{transition:opacity var(--dur-modal) var(--ease-out),transform var(--dur-modal) var(--ease-out)}
+@starting-style{.modal:not(.hidden) .modal-card{opacity:0;transform:scale(.95)}}
+
+@media (prefers-reduced-motion:reduce){
+  .btn,.navbtn,.ctx-menu button,.job-more,.grp-more,.tpl-assign,button.pill{transition:none}
+  .btn:active:not(:disabled),.navbtn:active,.ctx-menu button:active,.job-more:active,
+  .grp-more:active,.tpl-assign:active,button.pill:active:not(:disabled){transform:none}
+  /* 페이드만 유지, 이동 제거 — @starting-style 의 scale 은 transition 대상 밖이라 즉시 스냅. */
+  .ctx-menu,.colpanel,.modal-card{transition-property:opacity}
+}
+
 /* ---- 공통 컨트롤(QSS 미러) ---- */
 .btn{font:inherit;font-size:var(--fs-body);cursor:pointer;border:1px solid var(--n-border-strong);
   background:var(--a-card);color:var(--n-ink-control);padding:var(--sp-6) var(--sp-12);border-radius:var(--rad-control)}

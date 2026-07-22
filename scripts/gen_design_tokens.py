@@ -92,6 +92,15 @@ _SCALE_MAP = [
     ("--fs-strong", "type.strong"), ("--fs-section", "type.section"), ("--fs-kpi", "type.kpi"),
 ]
 
+# 모션 변수(#179 슬라이스 4) — 스케일과 같은 **테마 불변**이라 라이트 :root 만 방출한다.
+# 스케일(_SCALE_MAP)과 달리 단위가 갈린다: dur_*=정수 → ms 부착, ease_*=cubic-bezier 문자열은
+# 그대로(단위 없음). unit 열이 그 차이를 담는다("ms" 또는 "").
+_MOTION_MAP = [
+    ("--dur-press", "motion.dur_press", "ms"), ("--dur-pop", "motion.dur_pop", "ms"),
+    ("--dur-modal", "motion.dur_modal", "ms"),
+    ("--ease-out", "motion.ease_out", ""), ("--ease-in-out", "motion.ease_in_out", ""),
+]
+
 OPEN_CSS, CLOSE_CSS = "/* <gen:tokens> */", "/* </gen:tokens> */"
 _MOCKUP_INDENT = "    "
 _WEB_INDENT = "  "
@@ -124,6 +133,11 @@ def _scale_vars(tokens: dict, indent: str) -> "list[str]":
     return [f"{indent}{name}:{_dig(tokens, path)}px;" for name, path in _SCALE_MAP]
 
 
+def _motion_vars(tokens: dict, indent: str) -> "list[str]":
+    """``_MOTION_MAP`` 을 판 모션 CSS 변수 선언들(dur=``ms`` 부착, ease=문자열 그대로)."""
+    return [f"{indent}{name}:{_dig(tokens, path)}{unit};" for name, path, unit in _MOTION_MAP]
+
+
 def render_web_region(tokens: dict) -> str:
     """웹 ``web/css/tokens.css`` 의 ``<gen:tokens>`` 영역 전문(:root 래퍼까지 생성물).
 
@@ -134,11 +148,12 @@ def render_web_region(tokens: dict) -> str:
     다크 선언은 미디어쿼리·명시 셀렉터에 두 번 실린다(CSS 변수는 재사용 include 가 없어 반복이 정답).
     color-scheme 로 WebView2 네이티브 크롬(스크롤바·<select>·체크박스)도 테마를 추종한다.
     마커(<gen:tokens>)는 이제 :root 를 포함한 전체 영역을 감싼다 — tokens.css 의 :root 수기 래퍼는 제거됨.
-    스케일 변수(--sp-*·--rad-*·--fs-*)는 테마 불변이라 이 라이트 :root 블록에만 실린다(다크 두 블록 미중복)."""
+    스케일·모션 변수(--sp-*·--rad-*·--fs-*·--dur-*·--ease-*)는 테마 불변이라 이 라이트 :root 블록에만 실린다(다크 두 블록 미중복)."""
     dark = tokens["dark"]
     lines = [OPEN_CSS, ":root{"]
     lines += _web_vars(tokens, "  ")
     lines += _scale_vars(tokens, "  ")
+    lines += _motion_vars(tokens, "  ")
     lines += ["  color-scheme:light;", "}",
               "@media (prefers-color-scheme:dark){",
               '  :root:not([data-theme="light"]){']
