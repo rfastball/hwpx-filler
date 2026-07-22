@@ -22,6 +22,15 @@ body{
   color:var(--a-ink); background:var(--a-window); font-size:var(--fs-body); line-height:1.5;
   -webkit-font-smoothing:antialiased;
 }
+/* WebView2 전역 스크롤바(H-08) — H-07이 허용한 스크롤포트의 외형만 한 벌로 맞춘다.
+   thumb는 라이트·다크 값이 모두 있는 중립 토큰을 소비하고, 투명 border로 8px 레일 안에서
+   가벼운 시각 폭을 만든다. 스크롤포트·gutter·overscroll 동작은 이 규칙이 바꾸지 않는다. */
+*::-webkit-scrollbar{width:8px;height:8px}
+*::-webkit-scrollbar-track,*::-webkit-scrollbar-corner{background:transparent}
+*::-webkit-scrollbar-thumb{background-color:var(--n-border-strong);background-clip:padding-box;
+  border:2px solid transparent;border-radius:var(--rad-pill)}
+*::-webkit-scrollbar-thumb:hover{background-color:var(--n-ink-soft)}
+*::-webkit-scrollbar-button{display:none;width:0;height:0}
 .mono{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var(--fs-body)}
 .muted{color:var(--a-muted)} .danger{color:var(--a-danger)} .ok{color:var(--a-ok)} .warn{color:var(--a-warn)}
 code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var(--fs-body);
