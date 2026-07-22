@@ -837,7 +837,10 @@ def test_filter_search_shapes_table_and_chips(tmp_path):
     ctrl.dispatch("filter_search", {"text": "전산"})
     snap = ctrl.snapshot()
     t = snap["table"]
-    assert t["columns"] == ["bidNtceNm", "presmptPrce"]
+    assert t["columns"] == [
+        {"name": "bidNtceNm", "kind": "text"},
+        {"name": "presmptPrce", "kind": "text"},
+    ]
     assert t["visible_count"] == 1 and [r["index"] for r in t["rows"]] == [0]
     assert snap["filter"]["branches"] == ["bidNtceNm"]
     assert any("전산" in c for c in snap["filter"]["chips"])

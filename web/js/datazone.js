@@ -9,7 +9,7 @@
    디스패치할 뿐이다(링2 표현 계층, #87 경계 동일).
 
    스냅샷 계약(소비 키): has_data · selected_count · record_count ·
-     table{columns, rows[{index, selected, cells[[세그먼트]], …선두열 필드}], visible_count,
+     table{columns[{name, kind}], rows[{index, selected, cells[[세그먼트]], …선두열 필드}], visible_count,
            hidden_selected[{index, name, summary}]} ·
      filter{active, search, chips, branches, columns[{active}], reapply_available}
    디스패치 계약(액션): filter_panel · filter_col_text · filter_col_values · filter_clear_col ·
@@ -216,6 +216,14 @@
       return segs.map(([t, hit]) => (hit ? `<mark>${esc(t)}</mark>` : esc(t))).join("");
     }
 
+    // production 스냅샷은 {name, kind}. 구 selftest fixture의 문자열 열도 text로 무해하게
+    // 받는다. 유형은 Python FilterModel의 기존 판정만 소비하며 웹에서 재판정하지 않는다.
+    function columnMeta(column) {
+      return typeof column === "string"
+        ? { name: column, kind: "text" }
+        : { name: column.name, kind: column.kind || "text" };
+    }
+
     function renderTable(s) {
       const tkey = cfg.tableKey(s);
       if (tkey !== lastTableKey) {
@@ -261,20 +269,26 @@
         empty.style.display = "none";
       }
       $(ids.tableHead).innerHTML =
-        `<tr><th class="doccol">${esc(cfg.lead.header)}</th>` +
-        t.columns.map((c, ci) => {
+        `<tr><th class="doccol">${esc(cfg.lead.header)}` +
+        (cfg.lead.hint ? `<span class="col-hint">${esc(cfg.lead.hint)}</span>` : "") + `</th>` +
+        t.columns.map((column, ci) => {
+          const c = columnMeta(column);
           const meta = f.columns[ci] || { active: false };
-          return `<th><span>${esc(c)}</span> ` +
-            `<button class="fico${meta.active ? " on" : ""}" data-col="${esc(c)}" ` +
-            `aria-label="${esc(c)} 열 필터" aria-expanded="${panelCol === c}" ` +
+          return `<th class="col-${c.kind}"><span>${esc(c.name)}</span> ` +
+            `<button class="fico${meta.active ? " on" : ""}" data-col="${esc(c.name)}" ` +
+            `aria-label="${esc(c.name)} 열 필터" aria-expanded="${panelCol === c.name}" ` +
             `data-busy-lock>▾</button></th>`;
         }).join("") + `</tr>`;
       $(ids.tableBody).innerHTML = t.rows.map((r) => {
         return `<tr data-i="${r.index}" id="${cfg.rowIdPrefix}${r.index}" class="${r.selected ? "on" : ""}" ` +
-          `role="checkbox" aria-checked="${r.selected ? "true" : "false"}" tabindex="0">` +
-          `<td class="doccol"><input type="checkbox" tabindex="-1"${r.selected ? " checked" : ""}>` +
-          `<span class="doc-body">${cfg.lead.bodyHtml(r)}</span></td>` +
-          r.cells.map((segs) => `<td>${segsHtml(segs)}</td>`).join("") + `</tr>`;
+          `aria-selected="${r.selected ? "true" : "false"}" tabindex="0">` +
+          `<td class="doccol"><div class="doccell"><input type="checkbox" tabindex="-1" ` +
+          `aria-label="${r.index + 1}행 선택"${r.selected ? " checked" : ""}>` +
+          `<span class="doc-body">${cfg.lead.bodyHtml(r)}</span></div></td>` +
+          r.cells.map((segs, ci) => {
+            const c = columnMeta(t.columns[ci]);
+            return `<td class="col-${c.kind}">${segsHtml(segs)}</td>`;
+          }).join("") + `</tr>`;
       }).join("");
     }
 

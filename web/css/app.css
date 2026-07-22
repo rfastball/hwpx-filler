@@ -939,21 +939,23 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .jobtb th{position:sticky;top:0;z-index:1;background:var(--a-card);text-align:left;
   color:var(--a-muted);font-weight:600;padding:var(--sp-4) var(--sp-8);
   border-bottom:1px solid var(--a-border);white-space:nowrap}
+.jobtb th .col-hint{font-weight:400;margin-left:var(--sp-6)}
 .jobtb td{padding:var(--sp-4) var(--sp-8);border-bottom:1px solid var(--a-border);
   white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis;vertical-align:top}
 .jobtb tbody tr:last-child td{border-bottom:0}
 .jobtb tbody tr{cursor:pointer}
-.jobtb tbody tr:hover td{background:color-mix(in srgb, var(--a-sel) 40%, transparent)}
-.jobtb tbody tr.on td{background:var(--a-sel)}
+.jobtb tbody tr:hover{background:color-mix(in srgb, var(--a-sel) 40%, transparent)}
+.jobtb tbody tr.on{background:var(--a-sel)}
 .jobtb mark{background:transparent;color:var(--a-primary);font-weight:700}
 .jobtb .doccol{min-width:180px}
-.jobtb td.doccol{display:flex;gap:var(--sp-6);align-items:flex-start}
+.jobtb .doccell{display:flex;gap:var(--sp-6);align-items:flex-start}
 /* 체크박스는 시각 표지 전용(결정 26 체크박스 문법) — 동사는 행 클릭이 소유한다(이중 토글 방지). */
 .jobtb td.doccol input{accent-color:var(--a-primary);margin-top:2px;flex:none;pointer-events:none}
 .jobtb .doc-name{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;
-  overflow:hidden;text-overflow:ellipsis}
-.jobtb .doc-off,.jobtb .doc-sum{color:var(--a-muted)}
+  font-size:var(--fs-dense);font-weight:600;overflow:hidden;text-overflow:ellipsis}
+.jobtb .doc-off,.jobtb .doc-sum{color:var(--a-muted);font-size:var(--fs-caption)}
 .jobtb .doc-body{display:flex;flex-direction:column;gap:var(--sp-2);min-width:0}
+.jobtb .col-amount,.jobtb .col-date{text-align:right;font-variant-numeric:tabular-nums}
 
 /* 열 머리 필터 아이콘 — 조건 활성 열은 액센트로 상시 표지(발견성 보완 = 칩 줄과 이중). */
 .fico{border:1px solid transparent;background:transparent;color:var(--a-muted);cursor:pointer;

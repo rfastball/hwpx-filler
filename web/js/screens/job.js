@@ -37,10 +37,11 @@
     rowIdPrefix: "jobRow-",  // preserve.js 가 id 로 포커스 복원 — 접두 변경은 보존 계약 파손
     lead: {
       header: "문서",
+      hint: "선택하면 파일명이 정해집니다",
       bodyHtml(r) {
         const doc = r.name
           ? `<span class="doc-name">${esc(r.name)}</span>`
-          : `<span class="doc-name doc-off">선택하면 파일명이 정해집니다</span>`;
+          : `<span class="doc-off" aria-hidden="true">—</span>`;
         const sum = r.summary ? `<span class="doc-sum">${esc(r.summary)}</span>` : "";
         return doc + sum;
       },
