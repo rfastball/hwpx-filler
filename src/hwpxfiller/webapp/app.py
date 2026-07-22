@@ -663,8 +663,8 @@ _JOB_MIRROR_PROBE_JS = r"""
       mirror:[
         {name:'공고명', state:'filled', acknowledged:false, value:'전산장비 (표본 · 외 1개 값)', formatted:false},
         {name:'금액', state:'filled', acknowledged:false, value:'2,000,000원', formatted:true},
-        {name:'낙찰율', state:'missing', acknowledged:false, value:'(미입력) 선택 2행 중 1행에서 값이 비어 있습니다.', formatted:false},
-        {name:'비고', state:'blank', acknowledged:false, value:'(의도적 빈칸)', formatted:false}
+        {name:'낙찰율', state:'missing', acknowledged:false, value:'(빈 값) 선택 2행 중 1행에서 값이 비어 있습니다.', formatted:false},
+        {name:'비고', state:'blank', acknowledged:false, value:'(비움 확정)', formatted:false}
       ],
       drift:[], gate:{enabled:true, level:'', text:'생성 준비'}
     };
@@ -1605,7 +1605,7 @@ def main() -> int:
         try:
             settings.save_boot_completed(runtime_version)
         except OSError as exc:  # noqa: BLE001 — 스탬프는 힌트다(부팅 불사)
-            settings.alert(f"부팅 완주 스탬프 저장 실패 — 다음 부팅도 넓은 예산: {exc!r}")
+            settings.alert(f"부팅 완료 기록 저장 실패 — 다음 부팅도 넓은 예산: {exc!r}")
         err: "object | None" = None
         try:
             theme = settings.load_theme()

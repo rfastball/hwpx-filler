@@ -1,4 +1,4 @@
-"""실앱 WebView2 게이트 — ``--selftest`` 로 실 창을 띄워 렌더/브리지 DOM 을 되읽어 단언(#30 접근 A).
+﻿"""실앱 WebView2 게이트 — ``--selftest`` 로 실 창을 띄워 렌더/브리지 DOM 을 되읽어 단언(#30 접근 A).
 
 파이썬 ``html.parser`` 계약(:mod:`test_web_dom_contract`)은 배포 ``web/index.html`` 의 *정적*
 구조(전역 id 유일성·화면 루트)만 본다 — 렌더 로직은 안 돈다. 이 모듈은 그 위층을 메운다:
@@ -246,8 +246,8 @@ class TestWebSelftestGate:
         assert j["miss_clickable"] is True, "미입력 거울 행이 클릭형(role=button)이 아닙니다(ADR-E)."
         chips = j["chips"]
         assert any("채움 · 표시형" in c for c in chips), f"표시형 칩 미렌더: {chips!r}"
-        assert any("미입력 · 클릭=확인" in c for c in chips), f"미입력 칩 미렌더: {chips!r}"
-        assert any("빈칸 선언" in c for c in chips), f"의도적 빈칸 칩 미렌더: {chips!r}"
+        assert any("빈 값 · 클릭=확인" in c for c in chips), f"미입력 칩 미렌더: {chips!r}"
+        assert any("비움 확정" in c for c in chips), f"의도적 빈칸 칩 미렌더: {chips!r}"
 
     def test_job_restate_block_lists_selected_names(self, selftest_result: dict) -> None:
         # 재진술 블록(블록 6 D1-B, 슬라이스 2) — 선택 2행의 이름 목록이 상시 블록으로 실렌더된다.
@@ -425,8 +425,8 @@ class TestWebSelftestGate:
         assert d["map_unconfirmed"] is True, "미확정 토큰(비고)의 체크박스가 체크돼 있습니다(표시≠상태)."
         # 확정-비움(결정 12) — 값 셀이 「비워둠(선언)」(「아직 안 씀」 아님)이고 textarea 가 없으며
         # 행이 blank 로 표지된다. 게이트 제외는 Python(pytest)이 잡고 여긴 표면 정직성만.
-        assert d["blank_declared_marker"] == "비워둠(선언)", (
-            f"확정-비움 값 셀이 「비워둠(선언)」이 아닙니다(문안≠집합): {d['blank_declared_marker']!r}"
+        assert d["blank_declared_marker"] == "비움 확정", (
+            f"확정-비움 값 셀이 「비움 확정」이 아닙니다(문안≠집합): {d['blank_declared_marker']!r}"
         )
         assert d["blank_declared_no_textarea"] is True, "확정-비움 자리에 값 입력 textarea 가 남아 있습니다."
         assert d["blank_declared_row"] is True, "확정-비움 행이 blank 로 표지되지 않았습니다."

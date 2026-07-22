@@ -82,7 +82,7 @@ def generate_batch(
         drift = template_path_drift(template_path, mapping)
         if drift.has_drift:
             raise ValueError(
-                "템플릿 구조 드리프트로 생성을 차단했습니다 — " + drift.describe(sep="; ")
+                "템플릿 구조가 확정 매핑과 달라 생성을 차단했습니다 — " + drift.describe(sep="; ")
             )
     engine = engine or HwpxEngine()
     out = Path(out_dir)

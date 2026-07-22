@@ -196,7 +196,7 @@
       // 서버 blank_declared) — 타이핑하면 값이 생겨 상수로 강등되며 선언이 풀린다.
       const declared = !!t.blank_declared;
       const valCell = declared
-        ? `<span class="mapval-declared muted" title="확정-비움: 복사 확인에서 제외">비워둠(선언)</span>`
+        ? `<span class="mapval-declared muted" title="비우기로 확정한 값입니다. 복사 전 확인에서 제외됩니다.">비움 확정</span>`
         : `<textarea class="mapval-in${(t.value || "").trim() === "" ? " empty" : ""}"` +
           ` rows="1" id="${id.tokPanel}-val-${i}" data-i="${i}" placeholder="직접 입력"` +
           ` aria-label="${esc(t.name)} 값">${esc(t.value || "")}</textarea>`;

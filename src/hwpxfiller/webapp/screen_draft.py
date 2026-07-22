@@ -245,11 +245,11 @@ class DraftController(DraftSessionMixin):
         # 빈 레시피로 덮어쓴다 — 저장 모드는 emits_any_value(확정+내용)로 본다.
         if self._bound_job:  # 저장 모드 = 사람 확정 존중 → 실제 영속될 프로파일(확정+내용)로 판정
             would_emit = self.mapping.emits_any_value()
-            empty_msg = ("저장할 확정된 값이 없습니다. 토큰에 데이터 열을 결속하거나 값을 직접"
+            empty_msg = ("저장할 확정된 값이 없습니다. 토큰에 데이터 열을 연결하거나 값을 직접"
                          " 입력해 확정한 뒤 저장하세요.")
         else:  # 휘발 승격 = 내용 행을 강제 확정하므로 has_content 로 충분
             would_emit = any(r.has_content() for r in self.mapping.rows)
-            empty_msg = "맞춰진 토큰이 없습니다. 데이터 열을 결속하거나 값을 직접 입력한 뒤 저장하세요."
+            empty_msg = "맞춰진 토큰이 없습니다. 데이터 열을 연결하거나 값을 직접 입력한 뒤 저장하세요."
         if not would_emit:
             return {"ok": False, "error": empty_msg}
         name = p.get("name", "").strip()

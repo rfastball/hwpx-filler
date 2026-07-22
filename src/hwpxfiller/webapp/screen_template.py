@@ -85,7 +85,7 @@ class TemplateController:
             return self.hwpx_groups
         if media == "txt":
             return self.txt_groups
-        raise ValueError(f"알 수 없는 매체: {media!r}")
+        raise ValueError(f"알 수 없는 형식: {media!r}")
 
     # ------------------------------------------------------------- 스캔·행
     def _hwpx_rows(self) -> "list[dict]":

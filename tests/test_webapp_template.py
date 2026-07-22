@@ -325,7 +325,7 @@ def test_delete_rejects_path_outside_library(tmp_path, monkeypatch):
 
 def test_delete_rejects_unknown_media(tmp_path, monkeypatch):
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
-    with pytest.raises(ValueError, match="알 수 없는 매체"):
+    with pytest.raises(ValueError, match="알 수 없는 형식"):
         ctrl.dispatch("delete", {"media": "pdf", "path": str(tp / "lib" / "raw.hwpx"), "confirm": True})
     assert (tp / "lib" / "raw.hwpx").exists()
 

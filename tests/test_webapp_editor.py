@@ -1,4 +1,4 @@
-"""작업 에디터 화면 컨트롤러 계약 가드 — pywebview/Qt 불필요(헤드리스).
+﻿"""작업 에디터 화면 컨트롤러 계약 가드 — pywebview/Qt 불필요(헤드리스).
 
 에픽 #20 화면 #15·#16 이관의 회귀 심. 3단계 마법사 게이트(스키마·PARTIAL·매핑 확정·저장)를
 링1 VM 그대로 구동해 창 없이 확인한다(R-flow 슬라이스 5 블록 2 — 데이터 선택이 매핑 단계
@@ -88,7 +88,7 @@ def test_partial_template_blocks_until_acked(tmp_path):
     gate = ctrl.snapshot()["gate"]
     assert gate and gate["unmet"] and not gate["acked"]
     # 게이트 미통과 상태에서 전진 요청은 시끄럽게 거부(confirm-or-alarm).
-    with pytest.raises(ValueError, match="게이트 미통과"):
+    with pytest.raises(ValueError, match="조건을 아직 채우지 못해"):
         ctrl.dispatch("goto_step", {"step": 1})
     ctrl.dispatch("ack_gate", {})
     assert ctrl.can_advance(0) is True
@@ -813,7 +813,7 @@ def test_header_selection_defaults_all_active_then_narrows(tmp_path):
     assert snap["active_source_fields"] == ["업체명"]                    # 활성만 후보(원 순서)
     assert snap["ignored_source_fields"] == ["낙찰금액", "계약일"]
     assert snap["active_count"] == 1 and snap["ignored_count"] == 2
-    assert snap["notice"] and "사용 헤더 1개 · 미사용 2개" in snap["notice"]["text"]
+    assert snap["notice"] and "사용 데이터 열 1개 · 미사용 2개" in snap["notice"]["text"]
 
 
 def test_ignoring_mapped_header_r4_demotes_human_owned_and_restates(tmp_path):
@@ -996,7 +996,7 @@ def test_skip_data_requires_template_gate(tmp_path):
     미확인) 템플릿을 이 액션이 매핑으로 밀어 넣어 게이트를 우회할 수 있다 — 시끄럽게 차단."""
     ctrl, _ = _controller(tmp_path)
     ctrl.load_template_path(str(TPL_PARTIAL))            # PARTIAL → 게이트 닫힘
-    with pytest.raises(ValueError, match="게이트"):
+    with pytest.raises(ValueError, match="미해결 토큰"):
         ctrl.dispatch("skip_data", {})
     ctrl.dispatch("ack_gate", {})                        # 명시 확인 후엔 통과
     ctrl.dispatch("skip_data", {})
@@ -1020,7 +1020,7 @@ def test_goto_step_free_movement_when_editing(tmp_path):
     ctrl2, _ = _controller(tmp_path / "new")             # 대조군: 신규 마법사
     ctrl2.load_template_path(str(TPL_COMPILED))
     ctrl2.dispatch("goto_step", {"step": 1})             # 0→1 은 스키마 有로 통과
-    with pytest.raises(ValueError, match="게이트 미통과"):
+    with pytest.raises(ValueError, match="조건을 아직 채우지 못해"):
         ctrl2.dispatch("goto_step", {"step": 2})         # 매핑 미확정 → 저장 전진 차단
 
 

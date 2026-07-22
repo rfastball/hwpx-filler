@@ -275,7 +275,7 @@ VALID_TEMPLATE_MEDIA = ("hwpx", "txt")
 
 def _check_media(media: str) -> None:
     if media not in VALID_TEMPLATE_MEDIA:
-        raise ValueError(f"유효하지 않은 템플릿 매체: {media!r} (허용: {VALID_TEMPLATE_MEDIA})")
+        raise ValueError(f"유효하지 않은 템플릿 형식: {media!r} (허용: {VALID_TEMPLATE_MEDIA})")
 
 
 def load_template_group_map(media: str) -> "dict[str, str]":

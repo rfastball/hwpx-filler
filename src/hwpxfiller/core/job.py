@@ -237,7 +237,7 @@ def require_hwpx_template(template_path: str) -> str:
     if media != "hwpx":
         raise MediaMismatchError(
             f"hwpx 전용 경로에 hwpx 아닌 템플릿이 들어왔습니다: "
-            f"{template_path!r} (매체={media or '미상'})"
+            f"{template_path!r} (형식={media or '미상'})"
         )
     return template_path
 
@@ -262,7 +262,7 @@ def require_hwpx(job: "Job") -> "Job":
         where = "'기안' 화면 소관" if job.media == "txt" else "hwpx 아닌 템플릿"
         raise MediaMismatchError(
             f"작업 '{job.name}' 은(는) 이 hwpx 전용 경로를 쓸 수 없습니다 "
-            f"({where} · 매체={job.media or '미상'} · 템플릿={job.template_path!r})"
+            f"({where} · 형식={job.media or '미상'} · 템플릿={job.template_path!r})"
         )
     return job
 

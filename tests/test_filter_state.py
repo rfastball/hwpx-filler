@@ -281,7 +281,7 @@ def test_range_bad_op_or_joiner_is_loud() -> None:
     m = model()
     with pytest.raises(ValueError, match="비교 연산자"):
         m.set_range("금액", RangeCondition(RangeClause("like", "1")))
-    with pytest.raises(ValueError, match="결합자"):
+    with pytest.raises(ValueError, match="조건 연결 방식"):
         m.set_range("금액", RangeCondition(
             RangeClause("ge", "1"), RangeClause("le", "2"), joiner="xor"))
 

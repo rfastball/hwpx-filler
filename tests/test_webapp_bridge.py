@@ -428,7 +428,7 @@ def test_draft_load_pool_and_nara_frozen(tmp_path):
     card_text = "".join(seg["text"] for seg in snap["card"]["segments"])
     assert "전산장비" in card_text     # 참조 재읽기로 실 레코드가 작업점 카드에 도착
     res2 = ctrl.dispatch("load_pool", {"name": "나라쿼리"})
-    assert res2["ok"] is False and "동결" in res2["error"]
+    assert res2["ok"] is False and "지원되지 않습니다" in res2["error"]
 
 
 def test_copy_clipboard_blocks_empty_when_no_work_point(tmp_path, monkeypatch):

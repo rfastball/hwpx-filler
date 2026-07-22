@@ -253,12 +253,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
           그냥 값(허위 '행마다 다름' 금지 — confirm-or-alarm 정직).
         """
         if state == "blank":
-            return "(의도적 빈칸)"
+            return "(비움 확정)"
         n = len(mapped)
         vals = [str(r.get(name, "")) for r in mapped]
         if state == "missing":
             blank_n = sum(1 for v in vals if not v.strip())
-            return f"(미입력) 선택 {n}행 중 {blank_n}행에서 값이 비어 있습니다."
+            return f"(빈 값) 선택 {n}행 중 {blank_n}행에서 값이 비어 있습니다."
         distinct = list(dict.fromkeys(vals))
         if len(distinct) <= 1:
             return distinct[0] if distinct else ""
@@ -824,7 +824,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if unmet:
             return {
                 "ok": False, "level": "warn",
-                "error": "미입력 필드를 먼저 확인하세요: " + ", ".join(unmet),
+                "error": "빈 값 필드를 먼저 확인하세요: " + ", ".join(unmet),
             }
 
         # 3) 미입력 표식(확인된 빈칸) — 완료 요약이 병기한다(낙관 서사 해소).
@@ -875,7 +875,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
         summary = f"완료. 성공 {batch.succeeded}/{batch.total}, 실패 {batch.failed}."
         if blanks:
-            summary += f" 미입력 표시 필드 {len(blanks)}개({', '.join(blanks)})."
+            summary += f" 빈 값 표시 필드 {len(blanks)}개({', '.join(blanks)})."
         if stamp_error:
             summary += (
                 f" 문서는 모두 만들어졌지만 실행 기록 저장에 실패했습니다({stamp_error})."

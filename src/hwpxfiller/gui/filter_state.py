@@ -345,7 +345,7 @@ class FilterModel:
                     f"숫자 형태로 입력하세요({ex})."
                 )
         if cond.joiner not in _JOINER_LABELS:
-            raise ValueError(f"알 수 없는 결합자: {cond.joiner!r}")
+            raise ValueError(f"조건 연결 방식을 알 수 없습니다: {cond.joiner!r}")
         self._cols[column].range_ = cond
 
     def set_search(self, text: str) -> None:
@@ -461,14 +461,14 @@ class FilterModel:
                 return False
             op_n = parse_number(clause.operand)
             if op_n is None:
-                raise ValueError(f"범위 피연산자를 해석할 수 없습니다: {clause.operand!r}")
+                raise ValueError(f"범위 값 {clause.operand!r} 을(를) 해석할 수 없습니다")
             return op(cell_n, op_n)
         cell_d = parse_dt(cell)
         if cell_d is None:
             return False
         op_d = parse_dt(clause.operand)
         if op_d is None:
-            raise ValueError(f"범위 피연산자를 해석할 수 없습니다: {clause.operand!r}")
+            raise ValueError(f"범위 값 {clause.operand!r} 을(를) 해석할 수 없습니다")
         if not _TIME_RE.search(clause.operand):
             return op(cell_d.date(), op_d.date())
         return op(cell_d, op_d)
