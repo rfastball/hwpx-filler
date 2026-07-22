@@ -4,9 +4,11 @@
 
     https://apis.data.go.kr/1230000/ao/PubDataOpnStdService/getDataSetOpnStdBidPblancInfo
 
-표준 서비스라 카테고리(물품/용역/공사) 무관 **플랫 레코드 1콜**. envelope 는
-``response.body.items[]`` 이며 각 item 이 평면 dict(레코드 1건). ``DataSource`` 프로토콜
-(``records()``+``fields()``)을 구현해 엔진/배치/매핑에 그대로 붙는다.
+표준 서비스라 카테고리(물품/용역/공사) 무관 플랫 레코드를 돌려준다. ``records()`` 는
+``totalCount``/``numOfRows`` 를 기준으로 시작 ``page_no``부터 마지막 페이지까지 취득한다.
+envelope 는 ``response.body.items[]`` 와 실제 게이트웨이 변형 ``items.item`` 을 모두 받으며
+각 item 은 평면 dict(레코드 1건)다. ``DataSource`` 프로토콜(``records()``+``fields()``)을
+구현해 엔진/배치/매핑에 그대로 붙는다.
 
 설계 원칙:
 - **의존성 0 추가** — stdlib ``urllib`` 만 사용(core 의 lxml+openpyxl 최소 의존 유지).
@@ -160,11 +162,11 @@ class NaraStdDataSource:
         self._fetcher = fetcher  # 테스트 주입: (url:str) -> bytes
 
     # --------------------------------------------------------------- request
-    def url(self) -> str:
+    def url(self, page_no: "int | None" = None) -> str:
         query = urllib.parse.urlencode(
             {
                 "ServiceKey": self.service_key,
-                "pageNo": self.page_no,
+                "pageNo": self.page_no if page_no is None else page_no,
                 "numOfRows": self.num_rows,
                 "type": "json",
                 "bidNtceBgnDt": self.bgn_dt,
@@ -177,17 +179,28 @@ class NaraStdDataSource:
         """진단·로그용 URL — ServiceKey 가 마스킹된 형태(실취득엔 :meth:`url` 을 쓴다)."""
         return redact(self.url(), self.service_key)
 
-    def _fetch(self) -> bytes:
-        # urlopen/주입 fetcher 가 던지는 예외는 URL(키 포함)을 품을 수 있다 → 마스킹 후 재발생.
+    def _request(self, url: str) -> bytes:
+        """한 URL을 취득한다. 예외 종류와 무관하게 키를 지운 새 경계 오류만 남긴다."""
+
         try:
             if self._fetcher is not None:
-                return self._fetcher(self.url())
-            with urllib.request.urlopen(self.url(), timeout=self.timeout) as resp:
+                return self._fetcher(url)
+            with urllib.request.urlopen(url, timeout=self.timeout) as resp:
                 return resp.read()
-        except NaraFetchError:
-            raise
         except Exception as exc:
             raise NaraFetchError(redact(str(exc), self.service_key)) from None
+
+    def _fetch(self) -> bytes:
+        """첫(설정) 페이지 취득 이음새 — 기존 테스트/호출측 monkeypatch 계약을 보존한다."""
+
+        return self._request(self.url())
+
+    def _fetch_page(self, page_no: int) -> bytes:
+        # 설정 시작 페이지는 오랜 테스트 이음새(_fetch monkeypatch)를 반드시 지난다. 이후 페이지만
+        # 명시 URL로 취득한다. 실 fetcher 경로에서는 양쪽 모두 같은 _request 마스킹 경계다.
+        if page_no == self.page_no:
+            return self._fetch()
+        return self._request(self.url(page_no))
 
     # ------------------------------------------------------ DataSource protocol
     def records(self) -> "list[dict[str, str]]":
@@ -204,21 +217,115 @@ class NaraStdDataSource:
         rng_err = validate_range(self.bgn_dt, self.end_dt)
         if rng_err:
             raise NaraFetchError(f"조회 조건 오류: {rng_err}")
-        raw = self._fetch()
-        # 파싱 오류(빈/불량 응답)도 마스킹 경계 안에서 시끄럽게 실패시킨다.
         try:
-            code, msg = self.result(raw)
-            if code != OK_RESULT_CODE:
-                raise NaraFetchError(
-                    f"API 오류 [{code or '코드 없음'}] {msg or '메시지 없음'}"
-                )
-            return self.parse(raw)
-        except NaraFetchError:
-            raise
+            if not isinstance(self.num_rows, int) or self.num_rows <= 0:
+                raise NaraFetchError("조회 조건 오류: num_rows는 1 이상 정수여야 합니다.")
+            if not isinstance(self.page_no, int) or self.page_no <= 0:
+                raise NaraFetchError("조회 조건 오류: page_no는 1 이상 정수여야 합니다.")
+            return self._records_paginated()
+        except NaraFetchError as exc:
+            # 우리가 만든 API 오류 메시지도 resultMsg가 키/URL을 되비출 수 있다. 기존에 안전한
+            # NaraFetchError까지 포함해 경계 바깥으로 나가는 모든 문자열을 다시 마스킹하고,
+            # 원예외 context/chain은 끊는다.
+            raise NaraFetchError(redact(str(exc), self.service_key)) from None
         except Exception as exc:
-            # 인증 실패 XML 이면 파서 원문 대신 실원인(returnAuthMsg)을 표면화.
-            detail = _auth_failure_detail(raw) or str(exc)
+            detail = str(exc)
             raise NaraFetchError(redact(detail, self.service_key)) from None
+
+    def _records_paginated(self) -> "list[dict[str, str]]":
+        """``totalCount`` 기준 다중 페이지 취득. 이상 징후는 부분 반환 없이 전체 실패."""
+
+        start_page = self.page_no
+        page_no = start_page
+        expected_total: "int | None" = None
+        response_page_size: "int | None" = None
+        expected_remaining: "int | None" = None
+        last_page: "int | None" = None
+        records: "list[dict[str, str]]" = []
+        seen: "set[tuple[str, ...]]" = set()
+
+        while True:
+            raw = self._fetch_page(page_no)
+            try:
+                code, msg = self.result(raw)
+                if code != OK_RESULT_CODE:
+                    raise NaraFetchError(
+                        f"API 오류 [{code or '코드 없음'}] {msg or '메시지 없음'}"
+                    )
+                page_records = self.parse(raw)
+                actual_page, page_size, total = self._page_meta(raw)
+            except NaraFetchError:
+                raise
+            except Exception as exc:
+                # 인증 실패 XML이면 JSON 오류 문구 대신 게이트웨이 실원인을 보존한다.
+                detail = _auth_failure_detail(raw) or str(exc)
+                raise NaraFetchError(detail) from None
+
+            if actual_page != page_no:
+                raise NaraFetchError(
+                    f"페이지 응답 불일치: 요청 {page_no}, 응답 {actual_page}."
+                )
+            if expected_total is None:
+                expected_total = total
+                response_page_size = page_size
+                skipped = (start_page - 1) * page_size
+                expected_remaining = max(total - skipped, 0)
+                last_page = (total + page_size - 1) // page_size
+            else:
+                if total != expected_total:
+                    raise NaraFetchError(
+                        f"페이지 취득 중 totalCount 변경: {expected_total} → {total}."
+                    )
+                if page_size != response_page_size:
+                    raise NaraFetchError(
+                        f"페이지 취득 중 numOfRows 변경: {response_page_size} → {page_size}."
+                    )
+
+            assert response_page_size is not None
+            assert expected_remaining is not None
+            assert last_page is not None
+            if len(page_records) > response_page_size:
+                raise NaraFetchError(
+                    f"페이지 {page_no} 레코드 수가 numOfRows를 초과했습니다: "
+                    f"{len(page_records)} > {response_page_size}."
+                )
+
+            for record in page_records:
+                identity = self._record_identity(record)
+                if identity in seen:
+                    raise NaraFetchError(
+                        f"페이지 {page_no}에 이전 페이지와 중복·겹침 레코드가 있습니다."
+                    )
+                seen.add(identity)
+                records.append(record)
+
+            # 시작 페이지가 이미 totalCount 범위 밖이면 그 한 페이지가 비어 있을 때만 정상 빈 결과.
+            if start_page > last_page:
+                if page_records:
+                    raise NaraFetchError("totalCount 범위 밖 페이지가 레코드를 반환했습니다.")
+                return []
+
+            if page_no >= last_page:
+                if len(records) != expected_remaining:
+                    raise NaraFetchError(
+                        "totalCount와 실제 취득 건수가 일치하지 않습니다: "
+                        f"예상 {expected_remaining}, 실제 {len(records)}."
+                    )
+                return records
+            if not page_records:
+                raise NaraFetchError(
+                    f"totalCount 도달 전 중간 페이지 {page_no}가 비어 있습니다."
+                )
+            page_no += 1
+
+    @staticmethod
+    def _record_identity(record: "dict[str, str]") -> "tuple[str, ...]":
+        """페이지 겹침 판별 키. 공고 식별자가 없으면 정규화한 레코드 전체를 쓴다."""
+
+        notice = record.get("bidNtceNo", "")
+        if notice:
+            return ("notice", notice, record.get("bidNtceOrd", ""))
+        return ("record", json.dumps(record, ensure_ascii=False, sort_keys=True))
 
     @staticmethod
     def field_labels() -> "dict[str, str]":
@@ -244,21 +351,64 @@ class NaraStdDataSource:
     # -------------------------------------------------------------- parsing
     @staticmethod
     def parse(raw: "bytes | str") -> "list[dict[str, str]]":
-        """API 응답(bytes/str)에서 ``response.body.items[]`` 를 평면 레코드 목록으로.
+        """API 응답의 ``items[]``/``items.item`` 을 평면 레코드 목록으로.
 
-        item 이 단건이면 dict 로 오는 경우가 있어 리스트로 정규화한다. 모든 값은
-        문자열로(누락은 빈 문자열). 매핑/엔진이 str 값을 기대한다.
+        list·단건 dict·빈 봉투를 정규화한다. 그 밖의 shape는 레코드 일부를 조용히 버리지
+        않고 실패한다. 모든 값은 문자열로(누락은 빈 문자열).
         """
         data = json.loads(raw)
-        body = (data.get("response") or {}).get("body") or {}
-        items = body.get("items") or []
+        if not isinstance(data, dict):
+            raise ValueError("응답 루트가 객체가 아닙니다.")
+        response = data.get("response") or {}
+        if not isinstance(response, dict):
+            raise ValueError("response가 객체가 아닙니다.")
+        body = response.get("body") or {}
+        if not isinstance(body, dict):
+            raise ValueError("response.body가 객체가 아닙니다.")
+        items = body.get("items")
+        if items in (None, "", [], {}):
+            return []
+        if isinstance(items, dict) and "item" in items:
+            if set(items) != {"item"}:
+                raise ValueError("items.item 봉투에 미등록 형제 키가 있습니다.")
+            items = items["item"]
+            if items in (None, "", [], {}):
+                return []
         if isinstance(items, dict):
             items = [items]
+        if not isinstance(items, list):
+            raise ValueError("response.body.items.item은 레코드 객체 또는 목록이어야 합니다.")
         out: "list[dict[str, str]]" = []
         for it in items:
-            if isinstance(it, dict):
-                out.append({k: ("" if v is None else str(v)) for k, v in it.items()})
+            if not isinstance(it, dict):
+                raise ValueError("items 목록에 레코드 객체가 아닌 값이 있습니다.")
+            out.append({k: ("" if v is None else str(v)) for k, v in it.items()})
         return out
+
+    @staticmethod
+    def _page_meta(raw: "bytes | str") -> "tuple[int, int, int]":
+        """응답 body의 ``pageNo``, ``numOfRows``, ``totalCount``를 엄격 정수화한다."""
+
+        data = json.loads(raw)
+        body = (data.get("response") or {}).get("body") or {}
+
+        def integer(name: str, *, positive: bool) -> int:
+            value = body.get(name)
+            if isinstance(value, bool):
+                raise ValueError(f"{name}이 정수가 아닙니다.")
+            try:
+                number = int(value)
+            except (TypeError, ValueError):
+                raise ValueError(f"{name}이 정수가 아닙니다: {value!r}") from None
+            if (positive and number <= 0) or (not positive and number < 0):
+                raise ValueError(f"{name} 범위가 올바르지 않습니다: {number}.")
+            return number
+
+        return (
+            integer("pageNo", positive=True),
+            integer("numOfRows", positive=True),
+            integer("totalCount", positive=False),
+        )
 
     @staticmethod
     def result(raw: "bytes | str") -> "tuple[str, str]":

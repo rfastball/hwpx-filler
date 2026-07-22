@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import json
+import urllib.parse
 from pathlib import Path
 
 import pytest
@@ -20,6 +22,20 @@ _LIVE_KEY = "aB3+xY/z9Q==pLm4Kn7"
 
 def _fixture_bytes() -> bytes:
     return (FIXTURES / "nara_std_response.json").read_bytes()
+
+
+def _page(page_no: int, total: int, rows: list[dict], *, num_rows: int = 2) -> bytes:
+    return json.dumps({
+        "response": {
+            "header": {"resultCode": "00", "resultMsg": "정상"},
+            "body": {
+                "pageNo": page_no,
+                "numOfRows": num_rows,
+                "totalCount": total,
+                "items": {"item": rows},
+            },
+        },
+    }, ensure_ascii=False).encode()
 
 
 def _src(**kw) -> NaraStdDataSource:
@@ -48,6 +64,28 @@ def test_parse_normalizes_single_item_dict():
     assert recs == [{"bidNtceNo": "X1", "bidNtceNm": "단건"}]
 
 
+def test_parse_normalizes_real_items_item_envelope_fixture():
+    raw = (FIXTURES / "nara_items_item_response.json").read_bytes()
+    assert NaraStdDataSource.parse(raw) == [
+        {"bidNtceNo": "R26BK09990001", "bidNtceOrd": "000", "bidNtceNm": "봉투 단건"}
+    ]
+
+
+@pytest.mark.parametrize(
+    "items",
+    [[], {}, None, "", {"item": []}, {"item": None}],
+)
+def test_parse_normalizes_supported_empty_envelopes(items):
+    raw = json.dumps({"response": {"body": {"items": items}}})
+    assert NaraStdDataSource.parse(raw) == []
+
+
+def test_parse_rejects_unknown_items_shape_loudly():
+    raw = '{"response":{"body":{"items":{"item":"not-a-list-or-record"}}}}'
+    with pytest.raises(ValueError, match="items.item"):
+        NaraStdDataSource.parse(raw)
+
+
 def test_result_code_parsed():
     code, msg = NaraStdDataSource.result(_fixture_bytes())
     assert code == "00"
@@ -62,6 +100,125 @@ def test_records_and_fields_via_injected_fetcher():
     assert "bidNtceNo" in fields and "presmptPrce" in fields
     # 등장 순서 보존(첫 필드는 bidNtceNo).
     assert fields[0] == "bidNtceNo"
+
+
+def test_records_fetches_all_pages_until_total_count():
+    pages = {
+        1: _page(1, 5, [
+            {"bidNtceNo": "N1", "bidNtceOrd": "000"},
+            {"bidNtceNo": "N2", "bidNtceOrd": "000"},
+        ]),
+        2: _page(2, 5, [
+            {"bidNtceNo": "N3", "bidNtceOrd": "000"},
+            {"bidNtceNo": "N4", "bidNtceOrd": "000"},
+        ]),
+        3: _page(3, 5, [{"bidNtceNo": "N5", "bidNtceOrd": "000"}]),
+    }
+    calls: list[int] = []
+
+    def fetch(url: str) -> bytes:
+        page = int(urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["pageNo"][0])
+        calls.append(page)
+        return pages[page]
+
+    src = NaraStdDataSource(
+        "DUMMY", "202606010000", "202606302359", num_rows=2, fetcher=fetch,
+    )
+    assert [r["bidNtceNo"] for r in src.records()] == ["N1", "N2", "N3", "N4", "N5"]
+    assert calls == [1, 2, 3]  # totalCount=5, numOfRows=2: 다음 빈 페이지 요청 없음.
+
+
+def test_records_honors_start_page_and_remaining_total_count():
+    calls: list[int] = []
+
+    def fetch(url: str) -> bytes:
+        page = int(urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["pageNo"][0])
+        calls.append(page)
+        return _page(page, 5, [
+            {"bidNtceNo": f"N{2 * page - 1}", "bidNtceOrd": "000"}
+        ] if page == 3 else [
+            {"bidNtceNo": "N3", "bidNtceOrd": "000"},
+            {"bidNtceNo": "N4", "bidNtceOrd": "000"},
+        ])
+
+    src = NaraStdDataSource(
+        "DUMMY", "202606010000", "202606302359",
+        num_rows=2, page_no=2, fetcher=fetch,
+    )
+    assert [r["bidNtceNo"] for r in src.records()] == ["N3", "N4", "N5"]
+    assert calls == [2, 3]
+
+
+def test_duplicate_or_overlapping_page_fails_closed():
+    pages = {
+        1: _page(1, 3, [
+            {"bidNtceNo": "N1", "bidNtceOrd": "000"},
+            {"bidNtceNo": "N2", "bidNtceOrd": "000"},
+        ]),
+        2: _page(2, 3, [{"bidNtceNo": "N2", "bidNtceOrd": "000"}]),
+    }
+
+    def fetch(url: str) -> bytes:
+        page = int(urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["pageNo"][0])
+        return pages[page]
+
+    src = NaraStdDataSource(
+        "DUMMY", "202606010000", "202606302359", num_rows=2, fetcher=fetch,
+    )
+    with pytest.raises(NaraFetchError, match="중복|겹침"):
+        src.records()
+
+
+def test_empty_intermediate_page_fails_closed():
+    pages = {1: _page(1, 3, [{"bidNtceNo": "N1"}, {"bidNtceNo": "N2"}]),
+             2: _page(2, 3, [])}
+
+    def fetch(url: str) -> bytes:
+        page = int(urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["pageNo"][0])
+        return pages[page]
+
+    src = NaraStdDataSource(
+        "DUMMY", "202606010000", "202606302359", num_rows=2, fetcher=fetch,
+    )
+    with pytest.raises(NaraFetchError, match="중간 페이지|totalCount"):
+        src.records()
+
+
+def test_intermediate_fetch_failure_returns_no_partial_and_redacts_key():
+    calls: list[int] = []
+
+    def fetch(url: str) -> bytes:
+        page = int(urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["pageNo"][0])
+        calls.append(page)
+        if page == 2:
+            raise TimeoutError(f"failed page url={url} key={_LIVE_KEY}")
+        return _page(1, 3, [{"bidNtceNo": "N1"}, {"bidNtceNo": "N2"}])
+
+    src = NaraStdDataSource(
+        _LIVE_KEY, "202606010000", "202606302359", num_rows=2, fetcher=fetch,
+    )
+    with pytest.raises(NaraFetchError) as ei:
+        src.records()
+    message = str(ei.value)
+    assert calls == [1, 2]
+    assert _LIVE_KEY not in message
+    assert urllib.parse.quote_plus(_LIVE_KEY) not in message
+    assert "[REDACTED]" in message
+    assert ei.value.__cause__ is None
+
+
+def test_total_count_change_between_pages_fails_closed():
+    def fetch(url: str) -> bytes:
+        page = int(urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["pageNo"][0])
+        if page == 1:
+            return _page(1, 3, [{"bidNtceNo": "N1"}, {"bidNtceNo": "N2"}])
+        return _page(2, 4, [{"bidNtceNo": "N3"}, {"bidNtceNo": "N4"}])
+
+    src = NaraStdDataSource(
+        "DUMMY", "202606010000", "202606302359", num_rows=2, fetcher=fetch,
+    )
+    with pytest.raises(NaraFetchError, match="totalCount.*변경"):
+        src.records()
 
 
 def test_satisfies_datasource_protocol():
@@ -198,6 +355,27 @@ def test_auth_failure_with_items_still_raises():
     src = _live_src(lambda url: poisoned)
     with pytest.raises(NaraFetchError, match="API 오류"):
         src.records()
+
+
+def test_api_result_message_echoing_service_key_is_redacted():
+    """게이트웨이 resultMsg가 요청 키를 되비춰도 생성한 NaraFetchError를 재마스킹한다."""
+
+    poisoned = json.dumps({
+        "response": {
+            "header": {
+                "resultCode": "07",
+                "resultMsg": f"rejected ServiceKey={_LIVE_KEY}",
+            },
+            "body": {},
+        },
+    }).encode()
+    src = _live_src(lambda url: poisoned)
+    with pytest.raises(NaraFetchError) as ei:
+        src.records()
+    message = str(ei.value)
+    assert _LIVE_KEY not in message
+    assert "ServiceKey=[REDACTED]" in message
+    assert ei.value.__cause__ is None
 
 
 def test_missing_result_code_fails_closed():
