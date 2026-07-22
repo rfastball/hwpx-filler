@@ -1,15 +1,50 @@
-"""Excel 데이터 소스 (openpyxl).
+"""Excel/CSV 데이터 소스와 공유 행 성형 계약.
 
-가정: 첫 시트(또는 지정 시트)의 1행이 헤더(필드명), 이후 각 행이 문서 1건.
-빈 행(모든 셀 공백)은 건너뛴다. CSV 도 동일 규약으로 지원.
+첫 시트(또는 지정 시트)의 ``header_row``가 필드명이고 이후 각 행이 문서 1건이다.
+빈 행은 건너뛰고 짧은 행은 빈 값으로 채운다. 빈/중복 헤더와 헤더보다 긴 비어 있지
+않은 행은 조용한 데이터 소실을 막기 위해 거절한다. XLSX 수식은 계산하지 않고 저장된
+cache만 읽으며 cache가 없으면 시끄럽게 실패한다.
 """
 
 from __future__ import annotations
 
 import csv
+from collections.abc import Iterable
+from datetime import date, datetime, time
 from pathlib import Path
 
 from openpyxl import load_workbook
+
+
+def _cell_text(value: object) -> str:
+    """CSV와 Excel이 공유하는 결정론적 scalar→text 정책."""
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    if isinstance(value, datetime):
+        return value.isoformat(sep=" ")
+    if isinstance(value, (date, time)):
+        return value.isoformat()
+    if isinstance(value, float):
+        return format(value, ".15g")
+    return str(value)
+
+
+def _normalize_headers(raw: "Iterable[object] | None") -> "list[str]":
+    headers = [_cell_text(value).strip() for value in (raw or ())]
+    blank = [str(index + 1) for index, header in enumerate(headers) if not header]
+    if blank:
+        raise ValueError(f"빈 헤더 열은 사용할 수 없습니다: {', '.join(blank)}")
+    seen: set[str] = set()
+    duplicate: list[str] = []
+    for header in headers:
+        if header in seen and header not in duplicate:
+            duplicate.append(header)
+        seen.add(header)
+    if duplicate:
+        raise ValueError(f"중복 헤더는 사용할 수 없습니다: {', '.join(duplicate)}")
+    return headers
 
 
 def sheet_overview(path: "str | Path") -> "list[tuple[str, int, int]]":
@@ -74,6 +109,8 @@ def ambiguous_sheet_error(path: "str | Path", *, prefix: str = "") -> "str | Non
 
 class ExcelDataSource:
     def __init__(self, path: str, sheet: "str | None" = None, header_row: int = 1):
+        if isinstance(header_row, bool) or not isinstance(header_row, int) or header_row < 1:
+            raise ValueError("header_row는 1 이상의 정수여야 합니다.")
         self.path = path
         self.sheet = sheet
         self.header_row = header_row
@@ -92,39 +129,67 @@ class ExcelDataSource:
         self._loaded = True
 
     def _load_xlsx(self) -> None:
-        wb = load_workbook(self.path, data_only=True, read_only=True)
+        values_wb = load_workbook(self.path, data_only=True, read_only=True)
+        formulas_wb = load_workbook(self.path, data_only=False, read_only=True)
         try:
-            ws = wb[self.sheet] if self.sheet else wb[wb.sheetnames[0]]
-            rows = list(ws.iter_rows(values_only=True))
+            values_ws = (
+                values_wb[self.sheet] if self.sheet else values_wb[values_wb.sheetnames[0]]
+            )
+            formulas_ws = (
+                formulas_wb[self.sheet]
+                if self.sheet
+                else formulas_wb[formulas_wb.sheetnames[0]]
+            )
+            value_rows = list(values_ws.iter_rows(values_only=True))
+            formula_rows = list(formulas_ws.iter_rows(values_only=True))
         finally:
-            wb.close()
-        if len(rows) < self.header_row:
+            values_wb.close()
+            formulas_wb.close()
+        if len(value_rows) < self.header_row:
             return
-        header = rows[self.header_row - 1]
-        self._headers = [str(h).strip() if h is not None else "" for h in header]
-        for raw in rows[self.header_row:]:
-            self._append_record(raw)
+        header_formulas = formula_rows[self.header_row - 1]
+        if any(isinstance(value, str) and value.startswith("=") for value in header_formulas):
+            raise ValueError("헤더에는 Excel 수식을 사용할 수 없습니다.")
+        self._headers = _normalize_headers(value_rows[self.header_row - 1])
+        for offset, raw in enumerate(value_rows[self.header_row:], start=self.header_row + 1):
+            formulas = formula_rows[offset - 1] if offset - 1 < len(formula_rows) else ()
+            resolved: list[object] = []
+            width = max(len(raw), len(formulas))
+            for column in range(width):
+                value = raw[column] if column < len(raw) else None
+                formula = formulas[column] if column < len(formulas) else None
+                if isinstance(formula, str) and formula.startswith("=") and value is None:
+                    raise ValueError(
+                        f"Excel 수식 cache가 없습니다: 행 {offset}, 열 {column + 1}"
+                    )
+                resolved.append(value)
+            self._append_record(resolved, row_number=offset)
 
     def _load_csv(self) -> None:
         with open(self.path, "r", encoding="utf-8-sig", newline="") as fh:
             rows = list(csv.reader(fh))
         if len(rows) < self.header_row:
             return
-        self._headers = [h.strip() for h in rows[self.header_row - 1]]
-        for raw in rows[self.header_row:]:
-            self._append_record(raw)
+        self._headers = _normalize_headers(rows[self.header_row - 1])
+        for offset, raw in enumerate(rows[self.header_row:], start=self.header_row + 1):
+            self._append_record(raw, row_number=offset)
 
-    def _append_record(self, raw) -> None:
+    def _append_record(self, raw, *, row_number: int) -> None:
         if raw is None:
             return
-        cells = ["" if c is None else str(c) for c in raw]
+        cells = [_cell_text(value) for value in raw]
         if all(c.strip() == "" for c in cells):
             return  # 빈 행 스킵
-        rec: dict[str, str] = {}
-        for i, head in enumerate(self._headers):
-            if not head:
-                continue
-            rec[head] = cells[i] if i < len(cells) else ""
+        overflow = cells[len(self._headers):]
+        if any(value.strip() for value in overflow):
+            raise ValueError(
+                f"헤더보다 값이 많은 행입니다: 행 {row_number}, "
+                f"헤더 {len(self._headers)}열"
+            )
+        rec = {
+            header: cells[index] if index < len(cells) else ""
+            for index, header in enumerate(self._headers)
+        }
         self._records.append(rec)
 
     # ---------------------------------------------------------- DataSource
