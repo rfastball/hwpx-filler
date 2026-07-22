@@ -144,8 +144,8 @@ class EditorController:
         # 로드 시점 작업 내용 지문(태그·마지막 실행 제외) — 자기-갱신 저장이 편집 중
         # 외부 변경을 무확인으로 덮지 않게 하는 근거(_do_save 확인 게이트).
         self._editing_fingerprint = ""
-        # _dataset_gate 가 로드한 동명 기존 풀 항목 stash — _do_save 말미 등록이 같은
-        # .dataset.json 을 재로드·재판정하지 않게 한다(게이트/저장 판정 표류 방지).
+        # _dataset_gate 가 로드한 동명 기존 풀 항목 stash — 확인 분기와 이름의 근거만 보존한다.
+        # 실제 갱신은 mutate가 잠금 안에서 최신 .dataset.json을 다시 읽는다(#182).
         self._dataset_existing: "DatasetPoolItem | None" = None
         # 편집 모드에서 복원한 작성 출처 메타(#53-C) — 표시용 + 재저장 시 최초 작성시각 보존.
         self._loaded_provenance: "dict[str, str]" = {}
@@ -1004,15 +1004,24 @@ class EditorController:
         - 같은 이름 기존 항목: guard 는 자기-갱신으로 통과시켜 **조용한 opts 덮어쓰기**가
           되므로 여기서 확인을 승격한다(기존 참조 요약 재진술 → ``confirm_dataset``).
         - 다른 이름·같은 slug(또는 손상): 덮어쓰기 경로를 열지 않고 이름 변경만 안내.
-        통과(None 반환) 후의 실제 등록은 ``_do_save`` 말미가 수행한다 — 게이트가 로드한
-        동명 기존 항목은 ``self._dataset_existing`` 에 stash 해 등록이 같은 파일을
-        재로드·재판정하지 않는다(중복 파싱 + 게이트/저장 사이 판정 표류 제거).
+        통과(None 반환) 후의 실제 등록은 ``_do_save`` 말미가 수행한다. 게이트가 로드한
+        동명 기존 항목은 ``self._dataset_existing`` 에 이름·분기 근거로 stash 하되, 실제 갱신은
+        registry ``mutate`` 가 잠금 안에서 최신 항목을 다시 읽는다(#182). 확인 뒤 삭제된 항목을
+        되살리거나, 동시 상태 전이를 오래된 객체로 되돌리지 않는다.
         """
         ds_name = (self.dataset_name or "").strip() or Path(self.data_path).stem
         self.dataset_name = ds_name
         kind, existing = classify_existing(self.pool_registry, ds_name)
         self._dataset_existing = existing if kind == "same" else None
         if kind == "absent":
+            if p.get("confirm_dataset"):
+                return {
+                    "ok": False,
+                    "dataset_error": (
+                        f"등록 데이터 '{ds_name}' 이 확인하는 동안 삭제됐습니다. "
+                        "현재 상태를 다시 확인한 뒤 저장하세요."
+                    ),
+                }
             return None
         if kind == "corrupt":
             return {
@@ -1177,7 +1186,7 @@ class EditorController:
             opts: "dict[str, object]" = {"path": self.data_path}
             if self.data_sheet:
                 opts["sheet"] = self.data_sheet
-            # 기존 동명 항목(_dataset_gate 가 이번 호출에서 분류·stash — 재로드·재판정 없음)
+            # 기존 동명 항목(_dataset_gate 가 이번 호출에서 분류·stash — 이름·분기 근거)
             # 이 있으면 상태(보관)·메모·생성시각을 보존하고 참조(opts)만 갱신한다 —
             # 새 항목으로 통째 갈아치우면 보관해 둔 데이터셋이 조용히 재활성화되고 메모가
             # 지워진다(durable 수명 상태 소실). 확인 문구가 참조 덮어쓰기만 재진술하므로
@@ -1190,9 +1199,11 @@ class EditorController:
                     # kind 도 excel 로 정규화(r4) — opts 만 갈아끼우면 동명 nara/pipeline
                     # 항목이 kind=nara + opts={path} 하이브리드로 손상돼 겨눔 시 동결
                     # 거절·요약 "기간 ?~?" 가 된다(update_excel_reference 미러).
-                    existing.kind = "excel"
-                    existing.opts = opts
-                    self.pool_registry.save(existing, allow_overwrite=True)
+                    def update(current: DatasetPoolItem) -> None:
+                        current.kind = "excel"
+                        current.opts = opts
+
+                    self.pool_registry.mutate(existing.name, update)
                 else:
                     self.pool_registry.save(
                         DatasetPoolItem(name=self.dataset_name, kind="excel", opts=opts),
@@ -1218,4 +1229,3 @@ class EditorController:
         if register_error:
             result["dataset_register_error"] = register_error
         return result
-

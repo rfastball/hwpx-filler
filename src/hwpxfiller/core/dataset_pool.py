@@ -18,6 +18,8 @@ core.job.JobRegistry` 를 미러(위치-불가지 생성자 + slug 파일명). Q
 from __future__ import annotations
 
 import json
+import os
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -40,6 +42,20 @@ _STATUSES = (STATUS_ACTIVE, STATUS_ARCHIVED)
 # 실행 후보 여부가 동일해 사용자 결정·데이터 소실 없음). 새로 이 값을 저장하지는 않는다.
 STATUS_RETIRED = "retired"
 _LEGACY_STATUS_ALIASES = {STATUS_RETIRED: STATUS_ARCHIVED}
+
+
+# 같은 데이터셋 디렉터리를 보는 컨트롤러·레지스트리 인스턴스는 하나의 쓰기 경계를 공유한다.
+# pywebview 는 호출마다 다른 스레드로 진입하고 화면마다 레지스트리를 새로 만들 수 있으므로
+# instance-local RLock 은 load→수정→save 사이의 lost update 를 막지 못한다. #182 범위는
+# single-process 직렬화이며 cross-process lock 은 명시적 비목표다.
+_WRITE_LOCKS: "dict[str, threading.RLock]" = {}
+_WRITE_LOCKS_GUARD = threading.Lock()
+
+
+def _shared_write_lock(directory: Path) -> "threading.RLock":
+    key = os.path.normcase(os.path.abspath(os.fspath(directory)))
+    with _WRITE_LOCKS_GUARD:
+        return _WRITE_LOCKS.setdefault(key, threading.RLock())
 
 
 def default_dataset_pool_dir() -> Path:
@@ -142,6 +158,7 @@ class DatasetPoolRegistry:
 
     def __init__(self, directory: "str | Path"):
         self.directory = Path(directory)
+        self._write_lock = _shared_write_lock(self.directory)
 
     def path_for(self, name: str) -> Path:
         return self.directory / (_slug(name) + self.SUFFIX)
@@ -153,13 +170,35 @@ class DatasetPoolRegistry:
         ``allow_overwrite`` 없이는 :class:`~hwpxfiller.core.job.SlugCollisionError` 를 던진다
         (조용한 durable 참조 소실 방지). 같은 이름 재저장(상태 전이 등)은 충돌이 아니라 통과.
         """
-        self.directory.mkdir(parents=True, exist_ok=True)
-        path = self.path_for(item.name)
-        if not allow_overwrite:
-            guard_slug_collision(
-                path, item.name, lambda p: DatasetPoolItem.load(p).name, kind="데이터셋"
-            )
-        item.save(path)
+        with self._write_lock:
+            self.directory.mkdir(parents=True, exist_ok=True)
+            path = self.path_for(item.name)
+            if not allow_overwrite:
+                guard_slug_collision(
+                    path, item.name, lambda p: DatasetPoolItem.load(p).name, kind="데이터셋"
+                )
+            item.save(path)
+
+    def write_lock(self) -> "threading.RLock":
+        """이 디렉터리의 모든 레지스트리 인스턴스가 공유하는 쓰기 잠금.
+
+        레지스트리 밖에서 디스크 값을 바탕으로 갱신해야 하는 코드는 저장 한 번만 잠그지 말고
+        :meth:`mutate` 를 사용한다. 이 accessor 는 writer 완결성 계약을 검증하는 테스트와 여러
+        항목을 묶는 상위 트랜잭션을 위한 탈출구다.
+        """
+        return self._write_lock
+
+    def mutate(self, name: str, change) -> DatasetPoolItem:
+        """기존 항목을 잠금 안에서 다시 읽고 ``change(item)`` 적용 후 원자 저장한다.
+
+        항목이 잠금 획득 전에 삭제됐으면 :meth:`load` 가 ``FileNotFoundError`` 를 내고 저장은
+        수행되지 않는다. 오래된 화면 스냅샷이 삭제된 항목을 되살리는 것을 막는 핵심 경계다.
+        """
+        with self._write_lock:
+            item = self.load(name)
+            change(item)
+            self.save(item, allow_overwrite=True)
+            return item
 
     def exists(self, name: str) -> bool:
         return self.path_for(name).exists()
@@ -168,9 +207,10 @@ class DatasetPoolRegistry:
         return DatasetPoolItem.load(self.path_for(name))
 
     def delete(self, name: str) -> None:
-        p = self.path_for(name)
-        if p.exists():
-            p.unlink()
+        with self._write_lock:
+            p = self.path_for(name)
+            if p.exists():
+                p.unlink()
 
     def _files(self) -> "list[Path]":
         if not self.directory.exists():

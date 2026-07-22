@@ -182,8 +182,10 @@ class PoolController:
         # 1차 호출에선 기존 참조 요약을 재진술하고 확인을 요구한다. 분류(동명/충돌/손상)는
         # classify_existing 단일 출처 — 진짜 동명("same")만 확인 분기로 보내고, 충돌·손상은
         # 아래 slug 가드가 SlugCollisionError 로 loud 판정하게 통과시킨다.
+        kind, existing = (
+            classify_existing(self.vm.registry, name) if name else ("absent", None)
+        )
         if name and not p.get("confirm"):
-            kind, existing = classify_existing(self.vm.registry, name)
             if kind == "same":
                 # 재등록은 참조 교체만 한다 — 보관 상태·메모·생성시각은 보존되므로
                 # (아래 확정 경로) 문구도 그 계약을 재진술한다(C3). 재활성화를 여기서 함께
@@ -207,12 +209,13 @@ class PoolController:
                     ),
                 }
         try:
+            # 확인 모달은 "기존 항목 교체"에 대한 승인이다. 모달을 읽는 사이 다른 화면이
+            # 항목을 삭제했다면 이를 신규 등록 승인으로 바꾸지 않는다(삭제 부활 방지).
+            if p.get("confirm") and kind == "absent":
+                return self._stale_item_result(name)
             # 동명 확정 재등록은 항목 통째 교체가 아니라 참조(opts)만 갱신한다(C3) —
             # 통째 교체는 보관이 조용히 active 로 복귀(실행 후보 재등장)하고
             # note·created_at 이 소실되는 durable 수명 파괴였다(에디터 _do_save 미러).
-            kind, existing = (
-                classify_existing(self.vm.registry, name) if name else ("absent", None)
-            )
             if kind == "same":
                 item = self.vm.update_excel_reference(existing, path, sheet=sheet, note=note)
             else:
@@ -220,6 +223,9 @@ class PoolController:
         except SlugCollisionError as exc:
             self._set_result(str(exc), "danger")
             return {"ok": False, "error": str(exc)}
+        except FileNotFoundError:
+            # 분류 직후~mutate 잠금 획득 사이 삭제된 경우도 신규 등록으로 부활시키지 않는다.
+            return self._stale_item_result(name)
         except ValueError as exc:
             self._set_result(str(exc), "danger")
             return {"ok": False, "error": str(exc)}

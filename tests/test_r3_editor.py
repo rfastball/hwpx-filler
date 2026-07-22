@@ -235,7 +235,7 @@ def test_c10_self_update_after_external_delete_recreates_without_confirm(tmp_pat
 
 
 # ================================================================ K9
-# 저장 1회 = 같은 .dataset.json 로드 1회(게이트 stash 재사용, 판정 표류 제거).
+# 게이트 판정 뒤 저장은 같은 .dataset.json을 mutate 잠금 안에서 다시 읽는다(#182).
 class _CountingPool(DatasetPoolRegistry):
     def __init__(self, directory):
         super().__init__(directory)
@@ -246,7 +246,7 @@ class _CountingPool(DatasetPoolRegistry):
         return super().load(name)
 
 
-def test_k9_save_loads_existing_dataset_once_and_preserves_lifecycle(tmp_path):
+def test_k9_save_rereads_existing_dataset_under_lock_and_preserves_lifecycle(tmp_path):
     pool = _CountingPool(tmp_path / "pool")
     prior = DatasetPoolItem(
         name="multi_sheet", kind="excel", opts={"path": "old.xlsx"}, note="보존메모")
@@ -258,7 +258,9 @@ def test_k9_save_loads_existing_dataset_once_and_preserves_lifecycle(tmp_path):
     pool.load_calls = 0
     res = ctrl.dispatch("save", {"confirm_dataset": True})
     assert res["ok"] is True and res["dataset_registered"] == "multi_sheet"
-    assert pool.load_calls == 1                      # 게이트 1회 로드 → 등록은 stash 재사용
+    # 게이트 판정 1회 + mutate 잠금 안 최신값 재확인 1회. 확인 전 stash를 그대로 저장하면
+    # 동시 보관/삭제를 되돌리므로 #182부터 두 번째 읽기가 내구성 계약이다.
+    assert pool.load_calls == 2
     item = pool.load("multi_sheet")
     assert item.status == "archived" and item.note == "보존메모"  # 수명·메모 보존 유지
     assert item.opts["path"] == str(MULTI_SHEET) and item.opts["sheet"] == "낙찰현황"
@@ -268,7 +270,7 @@ def test_k9_save_loads_existing_dataset_once_and_preserves_lifecycle(tmp_path):
 def test_r4_cross_kind_dataset_confirm_restates_and_normalizes_kind(tmp_path):
     """동명 비-excel 항목 자동등록 확정 = 확인 문구에 종류 전이 재진술 + kind 정규화.
 
-    _do_save 의 보존 갱신(stash 재사용)이 opts 만 갈아끼우면 kind=nara + opts={path}
+    _do_save 의 보존 갱신이 opts 만 갈아끼우면 kind=nara + opts={path}
     하이브리드 손상 항목이 생긴다 — 풀 피커 겨눔 시 나라 동결 문구로 거절되고 요약이
     "기간 ?~?" 가 된다(pool 화면 update_excel_reference 미러, confirm-or-alarm).
     """
