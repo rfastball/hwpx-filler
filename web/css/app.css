@@ -558,6 +558,11 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 
 /* 액션 · 진행 · 결과 · 로그 */
 .run-actions{display:flex;align-items:center;gap:var(--sp-12);margin-top:var(--sp-16);flex-wrap:wrap}
+/* 「기안으로 저장」 승격(#148 슬라이스 5c) — 오른쪽으로 밀고, 비활성 사유는 아래 한 줄로. */
+.run-promote{display:flex;align-items:center;gap:var(--sp-8);margin-left:auto}
+.run-promote .lbl{font-size:var(--fs-caption)}
+.run-promote-note{font-size:var(--fs-caption);margin-top:var(--sp-6)}
+.run-promote-note[hidden]{display:none}
 .bar{height:8px;background:var(--n-track);border-radius:var(--rad-pill);overflow:hidden;margin-top:var(--sp-12)}
 .bar>i{display:block;height:100%;width:0;background:var(--a-primary);transition:width .25s ease}
 .run-result{font-size:var(--fs-body);margin-top:var(--sp-8);font-weight:600;min-height:1.2em}

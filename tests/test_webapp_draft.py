@@ -85,7 +85,7 @@ def test_snapshot_merges_list_and_session_keys(tmp_path):
         assert key in snap, f"목록 키 {key} 누락"
     for key in ("template_name", "template_text", "tokens", "record_count", "data_source_label",
                 "data_key", "has_data", "selected_count", "target_font", "filter", "table", "card",
-                "mode", "source_readonly", "bound_job", "source_dirty"):
+                "mode", "source_readonly", "bound_job", "source_dirty", "can_save_job"):
         assert key in snap, f"세션 키 {key} 누락 — 팩토리 계약 파손"
     # 같은 사실을 두 번 선언하지 않는다 — 표면 분기(has_job·mode·source_readonly)는 모두
     # _bound_job 한 필드에서 유도한다(session_ready 같은 별도 플래그 금지).
@@ -502,6 +502,303 @@ def test_fork_is_noop_when_already_volatile(tmp_path):
     ctrl.dispatch("fork_to_volatile", {})
     snap = ctrl.snapshot()
     assert snap["mode"] == "volatile" and snap["source_dirty"] is False
+
+
+# ------------------------------------------------------ 「기안으로 저장」 승격(슬라이스 5c, #135)
+def test_save_job_promotes_library_session_to_txt_job(tmp_path):
+    """라이브러리 배접 세션을 TXT Job 으로 저장 — 목록에 서고, 승격은 제자리(저장 모드 전이).
+
+    첫 템플릿(착수계)이 자동 선택돼 라이브러리 배접이다. 값을 직접 입력해 내용을 부여하면
+    저장 자격이 서고, 저장이 매핑을 확정본으로 굳혀 to_profile 로 직렬화한다(휘발 승격 = 저장이
+    확정한다). 저장 뒤 세션은 그대로 두고 저장 모드로 전이한다(원문 읽기 전용)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "전산장비 구매"})
+    assert ctrl.snapshot()["can_save_job"] is True
+    res = ctrl.dispatch("save_job", {"name": "착수계 기안"})
+    assert res == {"ok": True, "name": "착수계 기안"}
+    assert "착수계 기안" in [r["name"] for r in ctrl.snapshot()["job_rows"]]
+    job = jobs.load("착수계 기안")
+    assert job.media == "txt"
+    assert "공고명" in {m.template_field for m in job.mapping.mappings}
+    snap = ctrl.snapshot()
+    assert snap["has_job"] is True and snap["mode"] == "saved" and snap["source_readonly"] is True
+
+
+def test_save_job_blocked_for_pasted_session(tmp_path):
+    """붙여넣기 세션은 파일 배접이 없어 저장 불가 — 비활성 자격 + 시끄러운 거부(라이브러리 배접만)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    ctrl.dispatch("set_template_text", {"text": "붙여넣기 {{공고명}}"})
+    assert ctrl.snapshot()["can_save_job"] is False
+    res = ctrl.dispatch("save_job", {"name": "무효"})
+    assert res["ok"] is False and "라이브러리" in res["error"]
+    assert jobs.names() == []
+
+
+def test_save_job_blocked_when_no_mapping(tmp_path):
+    """맞춘 토큰이 하나도 없으면 빈 레시피라 시끄럽게 막는다(복사 게이트 동형)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    assert ctrl.snapshot()["can_save_job"] is True  # 라이브러리 배접(첫 템플릿)
+    res = ctrl.dispatch("save_job", {"name": "빈 기안"})
+    assert res["ok"] is False and "맞춰진 토큰이 없습니다" in res["error"]
+    assert jobs.names() == []
+
+
+def test_save_job_overwrite_needs_confirm_then_overwrites(tmp_path):
+    """다른 기존 기안을 덮게 되면 확인 왕복 — 확인 문안을 되돌려 보내야 덮는다(RC-15, 리뷰 5c P1)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기존 기안", "existing.txt", "기존 {{공고명}}")
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "값"})
+    res = ctrl.dispatch("save_job", {"name": "기존 기안"})
+    assert res["needs_confirm"] is True and "기존 기안" in res["confirm_text"]
+    assert ctrl.snapshot()["bound_job"] == ""  # 확인 전 = 저장 안 됨
+    res2 = ctrl.dispatch("save_job",
+                         {"name": "기존 기안", "confirm": True, "confirmed_text": res["confirm_text"]})
+    assert res2 == {"ok": True, "name": "기존 기안"}
+    assert ctrl.snapshot()["bound_job"] == "기존 기안"
+
+
+def test_save_job_overwrite_preserves_group(tmp_path):
+    """덮어쓰기는 기존 기안의 그룹을 보존한다 — 조용한 그룹 소거 금지."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "월례 기안", "m.txt", "{{공고명}}")
+    jobs.set_group("월례 기안", "정기")
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "값"})
+    r1 = ctrl.dispatch("save_job", {"name": "월례 기안"})
+    ctrl.dispatch("save_job",
+                  {"name": "월례 기안", "confirm": True, "confirmed_text": r1["confirm_text"]})
+    assert jobs.load("월례 기안").group == "정기"
+
+
+def test_save_job_overwrite_reprompts_when_victim_changes_between_calls(tmp_path):
+    """모달이 열린 사이 그 이름 자리가 다른 Job 으로 교체되면(TOCTOU) 확인 문안을 되돌려 보내도
+    **재확인**한다(리뷰 5c P1 후속) — 확인한 것과 다른 작업을 무확인 덮어쓰지 않는다.
+
+    덮어쓰기 판정을 잠금 밖에서 내리거나 confirm 플래그만 보면, 두 번째 호출이 새 victim 을
+    무확인 파괴한다. 잠금 안에서 지금 문안을 재성형해 확인 문안과 대조하는지 못박는다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "대상 기안", "t.txt", "{{공고명}}")
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "값"})
+    r1 = ctrl.dispatch("save_job", {"name": "대상 기안"})
+    assert r1["needs_confirm"] is True
+    # 모달이 열린 사이, 그 slug 자리가 **다른 이름**의 Job 으로 교체된다(외부 writer 모사).
+    Job(name="침입자 기안", template_path=str(tmp_path / "t.txt"),
+        mapping=MappingProfile(name="침입자 기안", mappings=[])).save(jobs.path_for("대상 기안"))
+    # 확인 문안을 되돌려 보내도 지금 victim(침입자)이 달라 재확인해야 한다(무확인 파괴 금지).
+    r2 = ctrl.dispatch("save_job",
+                       {"name": "대상 기안", "confirm": True, "confirmed_text": r1["confirm_text"]})
+    assert r2["needs_confirm"] is True, "victim 이 바뀌었는데 재확인 없이 덮었습니다(TOCTOU)."
+    assert r2["confirm_text"] != r1["confirm_text"] and "침입자 기안" in r2["confirm_text"]
+    assert jobs.load("대상 기안").name == "침입자 기안"  # 아직 안 덮였다(침입자 그대로)
+
+
+def test_save_job_blocked_when_template_file_gone(tmp_path):
+    """캐시된 template_path 가 삭제·이동됐으면 저장을 시끄럽게 막는다(리뷰 5c P2 — 죽은 배접 Job 방지).
+
+    세션이 경로를 캐시한 뒤 템플릿 관리에서 파일이 사라질 수 있다. 빈 문자열만 보면 통과하지만
+    그러면 다시 못 여는 템플릿을 가리키는 Job 이 생긴다 — 저장 시 실 파일인지 재검증한다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "값"})
+    (tmp_path / "착수계.txt").unlink()  # 템플릿 관리에서 삭제된 상황
+    res = ctrl.dispatch("save_job", {"name": "유령 배접"})
+    assert res["ok"] is False and "템플릿 파일" in res["error"]
+    assert jobs.names() == []
+
+
+def test_save_job_resave_preserves_durable_metadata(tmp_path):
+    """자기 재저장은 이 화면이 편집하지 않는 durable 메타(tags·last_run_at·default_dataset_ref)를
+    보존한다(리뷰 5c P1) — 그룹만 남기고 나머지를 조용히 기본값으로 지우면 홈 태그·이력이 증발한다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "값1"})
+    ctrl.dispatch("save_job", {"name": "월간 기안"})   # 휘발 → 저장(force-confirm)
+
+    def _add_meta(job):
+        job.tags = {"현장": "A"}
+        job.last_run_at = "2026-01-01T00:00:00"
+        job.default_dataset_ref = "대장"
+
+    jobs.mutate("월간 기안", _add_meta)               # 다른 표면(홈 등)이 durable 메타 부착
+    # 이 셋(tags·last_run_at·default_dataset_ref)은 draft 저장이 **보존**하는 필드라 드리프트
+    # 지문(_baseline_fingerprint = name·template·mapping)에서 빠진다(리뷰 5c 5R P2 / 270) —
+    # 외부 변경이 있어도 자기 재저장이 조용히 지나고 그 값을 그대로 승계한다(거짓 확인 없음).
+    r = ctrl.dispatch("save_job", {"name": "월간 기안"})
+    assert r["ok"] is True, f"보존 필드의 외부 변경이 거짓 드리프트를 냈습니다: {r}"
+    saved = jobs.load("월간 기안")
+    assert saved.tags == {"현장": "A"}, "재저장이 tags 를 지웠습니다(durable 메타 조용한 소거)."
+    assert saved.last_run_at == "2026-01-01T00:00:00", "재저장이 last_run_at 을 리셋했습니다."
+    assert saved.default_dataset_ref == "대장", "재저장이 default_dataset_ref 를 지웠습니다."
+
+
+def test_saved_resave_with_all_unchecked_is_blocked_not_empty(tmp_path):
+    """저장 모드에서 확정을 전부 해제하고 재저장하면 빈 레시피라 막는다(리뷰 5c 3R P1 / 196).
+
+    저장 모드는 사람 확정을 존중해 force-confirm 안 하므로 to_profile 이 빈 프로파일이 된다.
+    has_content(확정 무시)만 보던 게이트는 통과해 저장분을 조용히 빈 레시피로 덮었다 —
+    emits_any_value(확정+내용)로 실제 영속될 프로파일을 본다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "제목: {{공고명}}",
+               mappings=(FieldMapping(template_field="공고명", source="공고명", type="text"),))
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    ctrl.dispatch("set_confirmed", {"name": "공고명", "value": False})  # 확정 전부 해제
+    res = ctrl.dispatch("save_job", {"name": "기안A"})
+    assert res["ok"] is False and "확정된 값이 없습니다" in res["error"]
+    assert {m.template_field for m in jobs.load("기안A").mapping.mappings} == {"공고명"}  # 안 덮임
+
+
+def test_saved_resave_detects_external_content_drift(tmp_path):
+    """자기 재저장 전 로드 이후 디스크 내용이 바뀌었으면(외부 변경) 확인 왕복한다(리뷰 5c 3R P1 / 212).
+
+    저장 모드 재저장은 name==bound 라 victim 게이트를 안 탄다 — 그 사이 다른 표면이 이 작업의
+    매핑·템플릿을 바꿨으면 무확인 덮어쓰기가 그 변경을 stale 상태로 파괴한다(에디터 지문 동형)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "제목: {{공고명}}",
+               mappings=(FieldMapping(template_field="공고명", source="공고명", type="text"),))
+    ctrl.dispatch("select_job", {"name": "기안A"})       # 로드 시점 지문 캐시
+    jobs.save(Job(name="기안A", template_path=str(tmp_path / "job_a.txt"),  # 외부 변경
+                  mapping=MappingProfile(name="기안A", mappings=[
+                      FieldMapping(template_field="공고명", source="다른열", type="text")])))
+    res = ctrl.dispatch("save_job", {"name": "기안A"})
+    assert res["needs_confirm"] is True and "다른 곳에서 바뀌었습니다" in res["confirm_text"]
+    res2 = ctrl.dispatch("save_job",
+                        {"name": "기안A", "confirm": True, "confirmed_text": res["confirm_text"]})
+    assert res2["ok"] is True
+
+
+def test_drift_confirmation_rebinds_when_version_changes_again(tmp_path):
+    """드리프트 확인 문안은 관측한 **버전**에 묶인다(리뷰 5c 6R P1 / 273) — 모달이 열린 사이 또
+    다른 외부 버전으로 바뀌면 재확인한다(victim TOCTOU와 동형, 자기 재저장은 이름 불변이라 내용
+    다이제스트로 못박는다). 안 묶으면 v2 확인 문안이 v3 에도 맞아 무확인 덮는다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "제목: {{공고명}}",
+               mappings=(FieldMapping(template_field="공고명", source="공고명", type="text"),))
+    ctrl.dispatch("select_job", {"name": "기안A"})       # v1 지문 캐시
+
+    def _external(col):  # 다른 표면이 이 작업의 매핑을 바꾼다
+        jobs.save(Job(name="기안A", template_path=str(tmp_path / "job_a.txt"),
+                      mapping=MappingProfile(name="기안A", mappings=[
+                          FieldMapping(template_field="공고명", source=col, type="text")])))
+
+    _external("v2열")
+    r1 = ctrl.dispatch("save_job", {"name": "기안A"})    # v2 드리프트 확인 문안
+    assert r1["needs_confirm"] is True
+    _external("v3열")                                    # 모달 열린 사이 v3 로 또 바뀜
+    r2 = ctrl.dispatch("save_job",
+                       {"name": "기안A", "confirm": True, "confirmed_text": r1["confirm_text"]})
+    assert r2["needs_confirm"] is True, "버전이 또 바뀌었는데 v2 확인으로 v3 를 무확인 덮었습니다(273)."
+    assert r2["confirm_text"] != r1["confirm_text"]      # 새 버전 = 새 다이제스트 문안
+
+
+def test_overwrite_slug_collision_uses_requested_name(tmp_path):
+    """slug 만 같고 표기가 다른 victim 을 덮으면 저장분 이름이 **요청 이름**이 된다(리뷰 5c 3R P2 / 235).
+
+    preserved.name 을 그대로 두면 파일이 victim 이름을 유지해 목록·결속(_bound_job)과 어긋난다
+    ('예산/2026' vs '예산_2026' 은 같은 slug 파일). 요청 이름을 명시해 갈아 끼운다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "예산_2026", "b.txt", "제목: {{공고명}}")   # victim(다른 표기)
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "값"})        # 휘발 세션(저장 자격)
+    r1 = ctrl.dispatch("save_job", {"name": "예산/2026"})                  # slug 충돌 = victim 덮기
+    assert r1["needs_confirm"] is True
+    r2 = ctrl.dispatch("save_job",
+                      {"name": "예산/2026", "confirm": True, "confirmed_text": r1["confirm_text"]})
+    assert r2 == {"ok": True, "name": "예산/2026"}
+    saved = jobs.load("예산/2026")
+    assert saved.name == "예산/2026", "저장분이 victim 이름을 유지했습니다(결속과 어긋남)."
+    assert ctrl.snapshot()["bound_job"] == "예산/2026"
+
+
+def test_save_as_new_name_carries_source_group(tmp_path):
+    """그룹 있는 저장 기안을 「다른 이름으로 저장」하면 사본이 그 그룹을 승계한다(리뷰 5c 3R P2 / 237).
+
+    빈 자리(새 이름)엔 preserved 가 없어 기본 무그룹 Job 을 짓는데, 결속 원본의 그룹을 안 실으면
+    사본이 조용히 「그룹 없음」으로 튄다 — 결속 원본을 읽어 그룹을 승계한다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "원본 기안", "o.txt", "제목: {{공고명}}",
+               mappings=(FieldMapping(template_field="공고명", source="공고명", type="text"),))
+    jobs.set_group("원본 기안", "정기")
+    ctrl.dispatch("select_job", {"name": "원본 기안"})
+    res = ctrl.dispatch("save_job", {"name": "사본 기안"})   # 새 이름(빈 자리) = 다른 이름으로 저장
+    assert res == {"ok": True, "name": "사본 기안"}
+    assert jobs.load("사본 기안").group == "정기", "사본이 원본 그룹을 잃고 「그룹 없음」으로 튀었습니다."
+
+
+def test_resave_clears_map_dirty_so_next_leave_is_silent(tmp_path):
+    """저장 성공 후 _map_dirty 를 내린다(리뷰 5c 4R P2 / 301) — 방금 저장한 세션을 떠날 때 거짓
+    "미저장 매핑 편집" 확인이 뜨지 않게(저장 = 새 baseline, restore/fresh 와 동형)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "제목: {{공고명}}",
+               mappings=(FieldMapping(template_field="공고명", source="공고명", type="text"),))
+    _save_real(tmp_path, jobs, "기안B", "job_b.txt", "제목: {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "값"})  # 편집 = map_dirty(확정 해제)
+    ctrl.dispatch("set_confirmed", {"name": "공고명", "value": True})  # 재확정 → 저장 자격 유지
+    r = ctrl.dispatch("save_job", {"name": "기안A"})                 # 자기 재저장(드리프트 없음)
+    assert r == {"ok": True, "name": "기안A"}, f"재저장 실패: {r}"
+    res = ctrl.dispatch("select_job", {"name": "기안B"})            # 저장 직후 전환 = 무확인
+    assert res is None, "저장 후 map_dirty 가 남아 거짓 '미저장 편집' 확인이 떴습니다."
+
+
+def test_rename_bound_job_refreshes_fingerprint_no_false_drift(tmp_path):
+    """결속 기안 개명 후 자기 재저장이 거짓 드리프트를 주장하지 않는다(리뷰 5c 4R P2 / 260).
+
+    content_fingerprint 는 name 을 포함하므로, 개명 후 지문을 새 이름으로 안 갱신하면 다음
+    자기 재저장이 늘 외부 변경 게이트에 걸린다(개명은 내용 불변인데 지문만 옛 이름으로 남아서)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "옛 이름", "job_a.txt", "제목: {{공고명}}",
+               mappings=(FieldMapping(template_field="공고명", source="공고명", type="text"),))
+    ctrl.dispatch("select_job", {"name": "옛 이름"})
+    ctrl.dispatch("rename_job", {"name": "옛 이름", "new": "새 이름"})   # 결속 기안 개명
+    assert ctrl.snapshot()["bound_job"] == "새 이름"
+    r = ctrl.dispatch("save_job", {"name": "새 이름"})                  # 개명은 내용 불변 → 드리프트 없어야
+    assert r == {"ok": True, "name": "새 이름"}, f"개명 후 재저장이 거짓 드리프트/실패: {r}"
+
+
+def test_save_blocked_when_template_file_content_changed(tmp_path):
+    """세션 열린 채 템플릿 파일 **내용**이 바뀌면 저장을 막는다(리뷰 5c 4R P1 / 216).
+
+    세션은 옛 원문으로 매핑을 세웠는데 Job 은 새 원문 파일을 가리킨다 — 저장하면 옛 매핑이 새
+    토큰과 어긋난다(옛 매핑 조용한 소실·새 토큰 미해소). 존재만 보던 게이트는 이를 통과시켰다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "제목: {{공고명}}",
+               mappings=(FieldMapping(template_field="공고명", source="공고명", type="text"),))
+    ctrl.dispatch("select_job", {"name": "기안A"})       # vm.template_text = 옛 원문
+    (tmp_path / "job_a.txt").write_text("완전히 바뀐 원문 {{담당}}", encoding="utf-8")  # 외부 편집
+    res = ctrl.dispatch("save_job", {"name": "기안A"})
+    assert res["ok"] is False and "템플릿이 템플릿 관리에서 바뀌었습니다" in res["error"]
+
+
+def test_group_move_does_not_trigger_false_drift(tmp_path):
+    """결속 기안을 그룹 이동한 뒤 자기 재저장이 거짓 드리프트를 내지 않는다(리뷰 5c 5R P2 / 270).
+
+    _do_set_group 은 디스크 job.group 을 바꾸지만 draft 저장은 group 을 **보존**한다 — 드리프트
+    지문(name·template·mapping)에서 group 을 빼, 그룹 이동·외부 filename_pattern·default_dataset_ref
+    변경이 다음 재저장에 거짓 '외부 변경' 확인을 띄우지 않게."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "제목: {{공고명}}",
+               mappings=(FieldMapping(template_field="공고명", source="공고명", type="text"),))
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    ctrl.dispatch("set_group", {"name": "기안A", "group": "정기"})   # 결속 기안 그룹 이동
+    r = ctrl.dispatch("save_job", {"name": "기안A"})               # 재저장 = 드리프트 없어야
+    assert r == {"ok": True, "name": "기안A"}, f"그룹 이동이 거짓 드리프트를 냈습니다: {r}"
+    assert jobs.load("기안A").group == "정기"                       # 저장이 그룹 보존
+
+
+def test_promoting_restored_volatile_clears_stash(tmp_path):
+    """미결속(휘발) 세션을 승격 저장하면 스태시를 비운다(리뷰 5c 5R P2 / 310) — alias 부활 방지.
+
+    붙여넣기 V → 저장 기안 B 선택(V 스태시) → 「이번 세션」(V 복원, 스태시 alias 잔존) → V 를
+    「기안으로 저장」. 스태시가 방금 저장한 세션의 vm·mapping 을 계속 가리키면, 「이번 세션」이
+    저장분을 '미저장'인 척 되살린다. 승격 후 스태시를 비워 그 부활을 막는다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안B", "job_b.txt", "제목: {{공고명}}")
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "붙여넣던 값"})  # 휘발 V
+    ctrl.dispatch("select_job", {"name": "기안B"})       # V 스태시
+    ctrl.dispatch("select_job", {"name": ""})           # 「이번 세션」 = V 복원(스태시 alias 잔존)
+    r = ctrl.dispatch("save_job", {"name": "승격 기안"})  # V 를 승격 저장(미결속에서 시작)
+    assert r == {"ok": True, "name": "승격 기안"}
+    assert ctrl.snapshot()["bound_job"] == "승격 기안"
+    assert ctrl._volatile_stash is None, "미결속 승격이 스태시를 안 비워 저장분이 alias 로 남았습니다."
+    ctrl.dispatch("select_job", {"name": ""})           # 「이번 세션」 = 새 휘발(부활 아님)
+    snap = ctrl.snapshot()
+    assert snap["bound_job"] == "" and snap["mode"] == "volatile"
 
 
 # ------------------------------------------------------------------ 공유 라우터(슬라이스 3a)

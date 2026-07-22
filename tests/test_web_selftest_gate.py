@@ -488,6 +488,14 @@ class TestWebSelftestGate:
         assert d["restored_bind_option"] == "selected", (
             f"복원 결속(데이터 미연결)이 드롭다운에 정직히 표시되지 않았습니다: {d['restored_bind_option']!r}"
         )
+        # 「기안으로 저장」 승격 버튼(#148 슬라이스 5c, #135) — 라이브러리 배접만 활성, 아니면
+        # 비활성 + 사유(dead button 금지). 라벨은 유래로 갈린다(휘발/저장).
+        assert d["save_disabled_unbacked"] is True, "미배접(붙여넣기)인데 「기안으로 저장」이 활성입니다(dead button)."
+        assert d["save_note_shown"] is True, "저장 비활성인데 사유가 없습니다(#133 위반)."
+        assert d["save_enabled_backed"] is True, "라이브러리 배접인데 「기안으로 저장」이 비활성입니다."
+        assert d["save_note_hidden"] is True, "저장 활성인데 비활성 사유가 남아 있습니다."
+        assert d["save_label_volatile"] == "기안으로 저장", f"휘발 라벨이 다릅니다: {d['save_label_volatile']!r}"
+        assert d["save_label_saved"] == "다른 이름으로 저장", f"저장 라벨이 다릅니다: {d['save_label_saved']!r}"
 
     def test_job_edit_mode_hosts_definition_surface(self, selftest_result: dict) -> None:
         # 에디터 흡수(블록 2 개정, 결정 39~41) — 편집 모드 전환이 실 WebView2 에서 편집 호스트를
