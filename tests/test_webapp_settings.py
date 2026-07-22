@@ -178,6 +178,52 @@ def test_draft_font_preserves_other_keys(home):
     assert settings.load_draft_target_font() == "dotumche"
 
 
+# ------------------------------------------------ 마일스톤 I 셸 개인화 영속(#221)
+def test_personalization_defaults_roundtrip_and_preserves_other_keys(home):
+    assert settings.load_font_scale() == "normal"
+    assert settings.load_rail_collapsed() is False
+    assert settings.load_master_width() == 240
+
+    settings.save_theme("dark")
+    settings.save_font_scale("larger")
+    settings.save_rail_collapsed(True)
+    settings.save_master_width(333)
+    assert settings.load_theme() == "dark"
+    assert settings.load_font_scale() == "larger"
+    assert settings.load_rail_collapsed() is True
+    assert settings.load_master_width() == 333
+
+
+@pytest.mark.parametrize("value", ["huge", "", None, 150])
+def test_invalid_font_scale_is_loud(home, value):
+    with pytest.raises(ValueError):
+        settings.save_font_scale(value)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("value", [179, 421, 240.5, True])
+def test_invalid_master_width_is_loud(home, value):
+    with pytest.raises(ValueError):
+        settings.save_master_width(value)  # type: ignore[arg-type]
+
+
+def test_window_geometry_roundtrip_and_corrupt_fallback(home):
+    assert settings.load_window_geometry() is None
+    settings.save_window_geometry(x=-900, y=40, width=1180, height=820, maximized=True)
+    assert settings.load_window_geometry() == {
+        "x": -900, "y": 40, "width": 1180, "height": 820, "maximized": True,
+    }
+    (home / "settings.json").write_text(
+        json.dumps({"window_geometry": {"x": "left", "y": 0, "width": 400, "height": 300}}),
+        encoding="utf-8",
+    )
+    assert settings.load_window_geometry() is None
+
+
+def test_invalid_window_geometry_is_loud(home):
+    with pytest.raises(ValueError):
+        settings.save_window_geometry(x=0, y=0, width=759, height=600, maximized=False)
+
+
 # ------------------------------------------------ 「작업」 그룹 접힘 영속(결정 43·R-info 결정 6)
 def test_collapsed_groups_default_empty_and_roundtrip(home):
     assert settings.load_job_collapsed_groups() == []  # 무상태 기본 = 전부 펼침
