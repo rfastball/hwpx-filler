@@ -12,7 +12,9 @@
     "window_bg": "#f6f7f9",
     "ink": "#1c2126",
     "on_accent": "#ffffff",
-    "shadow": "rgba(0,0,0,.2)"
+    "shadow": "rgba(0,0,0,.2)",
+    "scrim": "rgba(13,18,26,.42)",
+    "scrim_reduced": "rgba(13,18,26,.78)"
   },
   "state": {
     "unconfirmed_bg": "#fff3bf",
@@ -62,7 +64,9 @@
       "window_bg": "#131619",
       "ink": "#e7eaee",
       "on_accent": "#0f1418",
-      "shadow": "rgba(0,0,0,.5)"
+      "shadow": "rgba(0,0,0,.5)",
+      "scrim": "rgba(0,0,0,.62)",
+      "scrim_reduced": "rgba(0,0,0,.84)"
     },
     "state": {
       "unconfirmed_bg": "#3a3320",
@@ -101,10 +105,11 @@
   },
   "space": { "2": 2, "4": 4, "6": 6, "8": 8, "10": 10, "12": 12, "16": 16, "24": 24, "40": 40 },
   "radius": { "control": 6, "surface": 9, "overlay": 12, "pill": 999 },
+  "layer": { "overlay_root": 90, "popover": 100, "modal": 200 },
   "type": { "caption": 12, "body": 14, "dense": 13, "strong": 15, "section": 19, "kpi": 23 },
   "motion": {
     "_note": "조작 피드백 모션(#179 슬라이스 4, emil-design-eng). 테마 불변 — space/radius/type 처럼 라이트 :root 만. dur_*=ms(무단위 정수 → gen 이 ms 부착), ease_*=cubic-bezier 문자열(그대로). press=버튼 눌림(100~160), pop=메뉴/팝오버(125~250), modal=모달 등장(180~220). 전부 <300ms.",
-    "dur_press": 140, "dur_pop": 150, "dur_modal": 200,
+    "dur_press": 140, "dur_pop": 150, "dur_modal": 160,
     "ease_out": "cubic-bezier(.23,1,.32,1)",
     "ease_in_out": "cubic-bezier(.77,0,.175,1)"
   }

@@ -64,7 +64,8 @@ def test_rendered_size_drives_clamp_flip_and_origin():
     assert "window.innerHeight - margin - height" in pop
     assert "el.style.transformOrigin" in pop
     assert "window.Popover.place(m, btn)" in group
-    assert "window.Popover.place(p, anchor, { offsetParent: $(ids.tableHost) })" in data
+    assert "window.Popover.place(p, anchor)" in data
+    assert "offsetParent: $(ids.tableHost)" not in data
     assert "host.width - 260" not in data
 
 

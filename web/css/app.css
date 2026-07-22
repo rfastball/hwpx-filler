@@ -83,9 +83,17 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
   .ctx-menu{opacity:0;transform:scale(.98)}
   .colpanel:not([hidden]){opacity:0;transform:scale(.98)}
 }
-/* 모달 = 뷰포트 중앙 기준(scale .95) — 트리거 비의존이라 origin center 유지(emil). */
-.modal-card{transition:opacity var(--dur-modal) var(--ease-out),transform var(--dur-modal) var(--ease-out)}
-@starting-style{.modal:not(.hidden) .modal-card{opacity:0;transform:scale(.95)}}
+/* 모달 = 뷰포트 중앙 기준(scale .95). backdrop/card가 같은 160ms 경로로 들어오고 나간다(H-16). */
+.modal{transition:background-color var(--dur-modal) var(--ease-in-out),
+  backdrop-filter var(--dur-modal) var(--ease-in-out)}
+.modal-card{transition:opacity var(--dur-modal) var(--ease-in-out),
+  transform var(--dur-modal) var(--ease-in-out)}
+@starting-style{
+  .modal:not(.hidden){background-color:transparent;backdrop-filter:blur(0)}
+  .modal:not(.hidden) .modal-card{opacity:0;transform:scale(.95)}
+}
+.modal.is-closing{background-color:transparent;backdrop-filter:blur(0);pointer-events:auto}
+.modal.is-closing .modal-card{opacity:0;transform:scale(.95);pointer-events:none}
 
 @media (prefers-reduced-motion:reduce){
   .btn,.navbtn,.ctx-menu button,.job-more,.grp-more,.tpl-assign,button.pill{transition:none}
@@ -93,6 +101,8 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
   .grp-more:active,.tpl-assign:active,button.pill:active:not(:disabled){transform:none}
   /* 페이드만 유지, 이동 제거 — @starting-style 의 scale 은 transition 대상 밖이라 즉시 스냅. */
   .ctx-menu,.colpanel,.modal-card{transition-property:opacity}
+  .modal{transition-property:background-color}
+  .modal:not(.hidden) .modal-card{transform:none}
 }
 
 /* ---- 공통 컨트롤(QSS 미러) ---- */
@@ -698,7 +708,8 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .job-grp-head[aria-expanded="false"] .grp-caret{visibility:visible}
 .job-grp-rows{display:flex;flex-direction:column;padding-left:26px} /* 위계 들여쓰기(결정 5) */
 .job-rename{width:100%;font-size:var(--fs-body)}
-.ctx-menu{position:fixed;z-index:60;background:var(--a-card);border:1px solid var(--n-border-strong);
+.ctx-menu{position:fixed;z-index:var(--z-popover);pointer-events:auto;
+  background:var(--a-card);border:1px solid var(--n-border-strong);
   border-radius:var(--rad-overlay);box-shadow:0 8px 24px var(--a-shadow);
   padding:var(--sp-4);min-width:150px}
 .ctx-menu button{display:block;width:100%;text-align:left;border:0;background:none;font:inherit;
@@ -760,10 +771,14 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .app.rail-collapsed .rail-theme .ti{display:block;text-align:center}
 
 /* ---- 모달 ---- */
-.modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;
-  justify-content:center;z-index:10}
+#overlayRoot{position:fixed;inset:0;z-index:var(--z-overlay-root);pointer-events:none}
+.modal{position:absolute;inset:0;box-sizing:border-box;padding:var(--sp-16);
+  background:var(--a-scrim);backdrop-filter:blur(6px);display:flex;align-items:center;
+  justify-content:center;z-index:calc(var(--z-modal) + var(--modal-depth,0));pointer-events:auto}
 .modal.hidden{display:none}
 .modal-card{background:var(--a-card);border-radius:var(--rad-overlay);padding:var(--sp-24);width:min(560px,92vw);
+  max-height:calc(100vh - 2 * var(--sp-16));max-height:calc(100dvh - 2 * var(--sp-16));
+  box-sizing:border-box;overflow:auto;overscroll-behavior:contain;
   box-shadow:0 12px 40px var(--a-shadow)}
 .modal-card h3{margin:0 0 var(--sp-6)}
 .modal-body{white-space:pre-wrap;margin:var(--sp-4) 0 var(--sp-8);color:var(--a-ink);font-size:var(--fs-body)}
@@ -772,6 +787,10 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .modal-actions{display:flex;justify-content:flex-end;gap:var(--sp-8);margin-top:var(--sp-12)}
 .modal-card .ctl{display:flex;flex-direction:column;gap:var(--sp-4);margin-top:var(--sp-4)}
 .modal-card .ctl .field{width:100%}
+@media (prefers-reduced-transparency:reduce){
+  .modal{background:var(--a-scrim-reduced);backdrop-filter:none}
+  .modal.is-closing{background:transparent}
+}
 /* 시트 선택 목록(#33) — 각 시트가 왼쪽 정렬 전폭 버튼. 이름·치수를 한 줄에. */
 .sheet-list{display:flex;flex-direction:column;gap:var(--sp-6);max-height:min(50vh,320px);overflow:auto}
 .sheet-opt{display:flex;align-items:baseline;gap:var(--sp-10);justify-content:flex-start;text-align:left;width:100%}
@@ -994,7 +1013,7 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .fstrip b{color:var(--a-ink)}
 
 /* 열 필터 패널(엑셀식 아이콘 펼침, 결정 25) — 데이터 존 내 부유 패널. */
-.colpanel{position:absolute;z-index:30;top:34px;left:0;min-width:240px;max-width:340px;
+.colpanel{position:fixed;z-index:var(--z-popover);pointer-events:auto;min-width:240px;max-width:340px;
   background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-overlay);
   box-shadow:0 8px 24px var(--a-shadow);padding:var(--sp-10);display:flex;flex-direction:column;gap:var(--sp-8)}
 .colpanel[hidden]{display:none}

@@ -150,7 +150,7 @@
       html =
         `<button data-menu="grp-rename">그룹 이름 변경</button>` +
         `<button data-menu="grp-disband">그룹 해산</button>`;
-      menuFor = { media, kind, group: id };
+      menuFor = { media, kind, group: id, trigger: btn };
     } else {
       const it = findItem(media, id);
       // 소비 CTA가 첫 항목, 관리 동사는 구분선 아래(#236). 무그룹 이동은 ＋그룹지정 칩이 담당.
@@ -160,7 +160,7 @@
         (media === "txt" && it && !it.error ? `<button data-menu="edit">내용 편집</button>` : "") +
         (it && it.group ? `<button data-menu="move">그룹으로 이동…</button>` : "") +
         `<button data-menu="delete" class="danger">삭제</button>`;
-      menuFor = { media, kind, key: id, item: it };
+      menuFor = { media, kind, key: id, item: it, trigger: btn };
     }
     rowMenu.show(html, btn);  // 위치잡기·표시는 팩토리 소유(job.js 와 단일 출처)
   }
@@ -177,36 +177,40 @@
     if (!btn || !menuFor) return;
     const m = menuFor, act = btn.dataset.menu;
     closeRowMenu();
-    if (act === "use" && m.media === "hwpx") makeJob(m.item.path);
-    else if (act === "use") openDraftTemplate(m.item.name);
+    if (act === "use" && m.media === "hwpx") makeJob(m.item.path, m.trigger);
+    else if (act === "use") openDraftTemplate(m.item.name, m.trigger);
     else if (act === "edit") {
       Bridge.call(SCREEN, "txt_content", { path: m.item.path }).then((res) =>
-        openEditModal("edit", m.item.path, m.item.name, (res && res.content) || ""));
-    } else if (act === "move") openMoveDialog(m.media, m.item);
-    else if (act === "delete") deleteTemplate(m.media, m.item);
-    else if (act === "grp-rename") renameGroup(m.media, m.group);
-    else if (act === "grp-disband") disbandGroup(m.media, m.group);
+        openEditModal("edit", m.item.path, m.item.name, (res && res.content) || "", m.trigger));
+    } else if (act === "move") openMoveDialog(m.media, m.item, m.trigger);
+    else if (act === "delete") deleteTemplate(m.media, m.item, m.trigger);
+    else if (act === "grp-rename") renameGroup(m.media, m.group, m.trigger);
+    else if (act === "grp-disband") disbandGroup(m.media, m.group, m.trigger);
   }
 
   /* ---- 그룹 이동 다이얼로그(job.js 와 공용 moveDialog 팩토리) ---- */
-  function openMoveDialog(media, item) {
+  function openMoveDialog(media, item, returnFocus) {
     if (!item) return;
     moveDialog.open({
       nameText: item.name,
       groups: (LAST[media] && LAST[media].group_names) || [],
       current: item.group || "",
+      returnFocus,
       onConfirm: (group) => Bridge.call(SCREEN, "set_group", { media, key: item.key, group }),
     });
   }
 
   /* ---- 그룹 헤더 ⋮ 동작(개명 병합 확인 · 해산 확인) ---- */
-  async function renameGroup(media, old) {
-    const val = await window.Modal.prompt({ title: "그룹 이름 변경", body: `'${old}' 의 새 이름`, value: old });
+  async function renameGroup(media, old, returnFocus) {
+    const val = await window.Modal.prompt({
+      title: "그룹 이름 변경", body: `'${old}' 의 새 이름`, value: old, returnFocus,
+    });
     if (val === null) return;
     const r = await Bridge.call(SCREEN, "rename_group", { media, group: old, new: val });
     if (r && r.needs_confirm) {
       if (await window.Modal.confirm({
         body: `'${r.new}' 그룹이 이미 있습니다. '${old}' 의 ${r.count}개를 '${r.new}'(${r.target}개)에 합칠까요?`,
+        returnFocus,
       })) {
         await Bridge.call(SCREEN, "rename_group", { media, group: old, new: val, confirm: true });
       }
@@ -215,20 +219,22 @@
     }
   }
 
-  async function disbandGroup(media, name) {
+  async function disbandGroup(media, name, returnFocus) {
     const r = await Bridge.call(SCREEN, "disband_group", { media, group: name });
     if (r && r.needs_confirm && (await window.Modal.confirm({
-      body: `'${name}' 그룹을 해산하면 ${r.count}개가 '그룹 없음'으로 이동합니다. 해산할까요?`,
+      body: `'${name}' 그룹을 해산하면 ${r.count}개가 '그룹 없음'으로 이동합니다. 해산할까요?`, returnFocus,
     }))) {
       await Bridge.call(SCREEN, "disband_group", { media, group: name, confirm: true });
     }
   }
 
   /* ---- 삭제(HWPX·TXT 공통 · 확인 라운드트립) ---- */
-  async function deleteTemplate(media, item) {
+  async function deleteTemplate(media, item, returnFocus) {
     if (!item) return;
     const r = await Bridge.call(SCREEN, "delete", { media, path: item.path });
-    if (r && r.needs_confirm && (await window.Modal.confirm({ body: r.confirm_text + "\n\n삭제할까요?" }))) {
+    if (r && r.needs_confirm && (await window.Modal.confirm({
+      body: r.confirm_text + "\n\n삭제할까요?", returnFocus,
+    }))) {
       await Bridge.call(SCREEN, "delete", { media, path: item.path, confirm: true });
     }
   }
@@ -243,11 +249,11 @@
     }
   }
 
-  async function makeJob(path) {
+  async function makeJob(path, returnFocus) {
     // 새 템플릿 진입 = 새 작업 세션 → 폐기 확인은 EditorEntry.confirmDiscard 단일 출처(F9).
     if (!(await EditorEntry.confirmDiscard(
       "새 템플릿으로 시작하면 저장하지 않은 편집 세션이 사라집니다.\n" +
-      "사라지는 것: 이름 · 데이터 · 매핑\n\n계속할까요?"))) return;
+      "사라지는 것: 이름 · 데이터 · 매핑\n\n계속할까요?", returnFocus))) return;
     const r = await Bridge.loadTemplateIntoEditor(path);
     if (typeof r === "string" && r.startsWith("ERROR:")) { window.alert(r); return; }
     EditorEntry.land();  // 에디터 흡수(결정 39·41) — 「작업」 패널 편집 모드 단일 착지.
@@ -265,7 +271,7 @@
     // 빈 상태 CTA(#179 슬라이스 6) — 툴바 버튼과 같은 흐름으로 합류.
     const emptyCta = e.target.closest("button[data-empty]");
     if (emptyCta) {
-      if (emptyCta.dataset.empty === "new") openEditModal("new", "", "", "");
+      if (emptyCta.dataset.empty === "new") openEditModal("new", "", "", "", emptyCta);
       else if (emptyCta.dataset.empty === "import") importTemplate();
       return;
     }
@@ -276,7 +282,7 @@
     const rowMore = e.target.closest(".tplcard-more[data-tpl-more]");
     if (rowMore) { toggleRowMenu(media, "row", rowMore.getAttribute("data-tpl-more"), rowMore); return; }
     const assign = e.target.closest(".tpl-assign[data-assign]");
-    if (assign) { openMoveDialog(media, findItem(media, assign.getAttribute("data-assign"))); return; }
+    if (assign) { openMoveDialog(media, findItem(media, assign.getAttribute("data-assign")), assign); return; }
     if (media === "hwpx") {
       const act = e.target.closest("button[data-act]");
       if (!act) return;
@@ -290,13 +296,13 @@
   /* 라이브러리 템플릿을 「기안」 화면에서 연다(#148 슬라이스 6 — 구 txt 흡수). 저장 기안 결속
      세션이 진행 중이면 백엔드가 needs_confirm 을 돌려준다(리뷰 F3 — 홈 openDraft 와 같은 규약):
      세션 교체는 저장되지 않은 진행을 폐기하므로 조용히 버리지 않는다. 취소=현 세션 그대로. */
-  async function openDraftTemplate(name) {
+  async function openDraftTemplate(name, returnFocus) {
     let r = await Bridge.call("draft", "select_template", { name });
     if (r && r.needs_confirm) {
       const ok = await window.Modal.confirm({
         title: "진행 중인 기안을 떠납니다",
         body: window.DraftScreen.leaveForTemplateBody(r),  // 두 세션 무장 반영(단일 출처, 리뷰 C)
-        confirmLabel: "열기", cancelLabel: "취소",
+        confirmLabel: "열기", cancelLabel: "취소", returnFocus,
       });
       if (!ok) return;
       r = await Bridge.call("draft", "select_template", { name, confirm: true });
@@ -305,7 +311,7 @@
   }
 
   /* ---- 편집/생성 모달(네이티브 입력 대체) ---- */
-  function openEditModal(mode, path, name, content) {
+  function openEditModal(mode, path, name, content, returnFocus) {
     editMode = mode;
     editPath = path || "";
     $("txtEditTitle").textContent = mode === "new" ? "새 TXT 템플릿" : `TXT 템플릿 편집: ${name}`;
@@ -313,7 +319,7 @@
     $("txtEditName").value = "";
     $("txtEditContent").value = content || "";
     const focusTo = mode === "new" ? $("txtEditName") : $("txtEditContent");
-    window.Modal.open("txtEditModal", { initialFocus: focusTo });
+    window.Modal.open("txtEditModal", { initialFocus: focusTo, returnFocus });
   }
 
   async function submitEditModal() {
@@ -338,7 +344,7 @@
     $("tplHwpxGroups").addEventListener("click", (e) => onBandClick("hwpx", e));
     $("tplTxtGroups").addEventListener("click", (e) => onBandClick("txt", e));
     $("tplRowMenu").addEventListener("click", onRowMenuClick);
-    $("btnTplNewTxt").addEventListener("click", () => openEditModal("new", "", "", ""));
+    $("btnTplNewTxt").addEventListener("click", (e) => openEditModal("new", "", "", "", e.currentTarget));
     $("txtEditCancel").addEventListener("click", () => window.Modal.close("txtEditModal"));
     $("txtEditOk").addEventListener("click", submitEditModal);
     moveDialog.wire("tplMoveOk", "tplMoveCancel");

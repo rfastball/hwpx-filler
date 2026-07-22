@@ -76,8 +76,8 @@
     function positionColPanel(anchor) {
       const p = $(ids.colPanel);
       // 패널은 renderColPanel 뒤라 실측 가능하다. 공용 배치기가 실제 폭·높이로 viewport를
-      // clamp하고 위/아래를 flip하며, absolute 좌표는 host 기준으로 환산한다.
-      window.Popover.place(p, anchor, { offsetParent: $(ids.tableHost) });
+      // clamp하고 위/아래를 flip한다. H-16 overlayRoot 직속 fixed 표면이라 viewport 좌표를 쓴다.
+      window.Popover.place(p, anchor);
     }
 
     function rangeRow(slot, clause) {

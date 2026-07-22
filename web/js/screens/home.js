@@ -9,7 +9,7 @@
   const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
 
   let LAST = null;  // 마지막 스냅샷 — 태그 편집 프리필 등 이벤트 핸들러가 참조(#26)
-  let menuFor = null;  // 열린 카드 ⋮ 메뉴의 작업 이름(#179 행동 계층) — null=닫힘
+  let menuFor = null;  // 열린 카드 ⋮ 메뉴의 {name, trigger}(#179/H-16) — null=닫힘
 
   /* 카드 ⋮ 부유 메뉴(복제·태그·삭제) = 공용 팩토리(grouplist.js, job/tpl 과 단일 출처).
      위치잡기·표시만 팩토리 소유; 내용·정체(작업 이름)·바깥닫기 배선은 홈이 주입한다. */
@@ -159,7 +159,7 @@
     rowMenu.hide();
   }
   function openRowMenu(name, btn) {
-    menuFor = name;
+    menuFor = { name, trigger: btn };
     rowMenu.show(
       `<button data-menu="clone">복제</button>` +
       `<button data-menu="tags">태그…</button>` +
@@ -167,17 +167,17 @@
       `<button data-menu="delete" class="danger">삭제</button>`, btn);
   }
   function toggleRowMenu(name, btn) {
-    if (menuFor === name) { closeRowMenu(); return; }
+    if (menuFor && menuFor.name === name) { closeRowMenu(); return; }
     openRowMenu(name, btn);
   }
   function onRowMenuClick(e) {
     const btn = e.target.closest("button[data-menu]");
     if (!btn || menuFor === null) return;
-    const name = menuFor, act = btn.dataset.menu;
+    const { name, trigger } = menuFor, act = btn.dataset.menu;
     closeRowMenu();
     if (act === "clone") cloneJob(name);
-    else if (act === "tags") editTags(name);
-    else if (act === "delete") deleteJob(name);
+    else if (act === "tags") editTags(name, trigger);
+    else if (act === "delete") deleteJob(name, trigger);
   }
 
   /* txt 트랙 — 즉시 기안 템플릿 목록(정해진 루트). */
@@ -284,7 +284,7 @@
 
   /* 태그 편집(#26 #2·D14) — 현재 태그를 '축=값' 쌍으로 재진술·프리필하고 통째 교체 저장.
      비우면 전체 해제(사용자가 명시적으로 지운 것 — 추측 아님). 형식 오류는 loud. */
-  async function editTags(name) {
+  async function editTags(name, returnFocus) {
     let cur = {};
     (LAST && LAST.grouped_rows || []).forEach((sec) =>
       (sec.rows || []).forEach((r) => { if (r.name === name) cur = r.tags || {}; }));
@@ -305,6 +305,7 @@
         `'${name}' 의 태그를 '축=값' 쌍, 쉼표 구분으로 입력하세요. ` +
         `(예: 물품=의약품, 금액구간=소액)\n비우면 전부 해제합니다.`,
       value: ser,
+      returnFocus,
     });
     if (input === null) return;
     const parsed = parseTags(input);
@@ -331,8 +332,10 @@
   /* 작업 삭제 — 조용한 삭제 금지, 재진술 후 확인 시에만(confirm-or-alarm). onJobsClick 이
      동기라 여기로 뽑아 await 를 쓴다(Modal.confirm 은 Promise 기반). 삭제 호출은 원래처럼
      fire-and-forget — rejection 은 셸 unhandledrejection 백스톱이 loud 재진술한다(#45). */
-  async function deleteJob(name) {
-    if (await Modal.confirm({ body: `작업 '${name}' 을(를) 삭제할까요? 되돌릴 수 없습니다.` })) {
+  async function deleteJob(name, returnFocus) {
+    if (await Modal.confirm({
+      body: `작업 '${name}' 을(를) 삭제할까요? 되돌릴 수 없습니다.`, returnFocus,
+    })) {
       Bridge.call(SCREEN, "delete_job", { name });
     }
   }

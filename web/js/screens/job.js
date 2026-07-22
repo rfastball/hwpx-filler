@@ -614,7 +614,7 @@
   /* ---- 좌 목록 관리(결정 43) — ⋮ 메뉴·인라인 이름 변경·그룹 이동/관리 ----
      파괴·병합 판정과 수치는 Python(_do_delete_job 등 needs_confirm 왕복)이 내리고,
      여기는 문안을 입혀 modal.js 로 재진술한다(네이티브 다이얼로그 금지 #86). */
-  let menuFor = null;  // {kind:"job"|"group", name} — 열린 ⋮ 메뉴의 대상
+  let menuFor = null;  // {kind:"job"|"group", name, trigger} — 열린 ⋮ 메뉴의 대상과 복귀점
 
   function closeRowMenu() {
     menuFor = null;
@@ -627,7 +627,7 @@
   }
 
   function openRowMenu(kind, name, btn) {
-    menuFor = { kind, name };
+    menuFor = { kind, name, trigger: btn };
     // 메뉴 내용은 화면 소유(작업=편집/복제/이름/이동/삭제, 그룹=이름변경/해산), 위치·표시는 팩토리.
     const html = kind === "job"
       ? `<button data-menu="edit">편집</button>` +
@@ -646,7 +646,7 @@
     const b = e.target.closest("button[data-menu]");
     if (!b || !menuFor) return;
     const act = b.dataset.menu;
-    const { kind, name } = menuFor;
+    const { kind, name, trigger } = menuFor;
     closeRowMenu();
     if (kind === "job") {
       if (act === "edit") { EditorEntry.openGuarded(name); return; }  // PR-5 에서 패널 편집 모드로 repoint
@@ -656,11 +656,11 @@
         return;
       }
       if (act === "rename") { startRename(name); return; }
-      if (act === "move") { openGroupMove(name); return; }
-      if (act === "delete") { deleteJob(name); return; }
+      if (act === "move") { openGroupMove(name, trigger); return; }
+      if (act === "delete") { deleteJob(name, trigger); return; }
     }
-    if (act === "grp-rename") { renameGroup(name); return; }
-    if (act === "grp-disband") { disbandGroup(name); }
+    if (act === "grp-rename") { renameGroup(name, trigger); return; }
+    if (act === "grp-disband") { disbandGroup(name, trigger); }
   }
 
   /* 인라인 이름 변경 — 행이 입력칸으로 바뀐다(결정 43). Enter=확정·Escape=취소·포커스
@@ -720,11 +720,12 @@
     return "";
   }
 
-  function openGroupMove(name) {
+  function openGroupMove(name, returnFocus) {
     moveDialog.open({
       nameText: `작업 '${name}' 을(를) 옮길 그룹을 고르세요.`,
       groups: (LAST && LAST.job_group_names) || [],
       current: currentGroupOf(name),
+      returnFocus,
       onConfirm: async (group) => {
         await Bridge.call(SCREEN, "set_group", { name, group });
         log(group ? `그룹 이동: '${name}' → '${group}'` : `그룹 해제: '${name}'`);
@@ -732,7 +733,7 @@
     });
   }
 
-  async function deleteJob(name) {
+  async function deleteJob(name, returnFocus) {
     const res = await Bridge.call(SCREEN, "delete_job", { name });
     if (!(res && res.needs_confirm)) return;
     let body = `작업 '${name}' 을(를) 삭제합니다. 템플릿 연결과 매핑 정의가 함께 사라집니다.`;
@@ -746,15 +747,17 @@
     const ok = await window.Modal.confirm({
       title: "작업 삭제 확인", body,
       confirmLabel: "삭제", cancelLabel: "취소",
+      returnFocus,
     });
     if (!ok) return;
     await Bridge.call(SCREEN, "delete_job", { name, confirm: true });
     log(`작업 삭제: '${name}'`);
   }
 
-  async function renameGroup(old) {
+  async function renameGroup(old, returnFocus) {
     const val = await window.Modal.prompt({
       title: "그룹 이름 변경", body: `그룹 '${old}' 의 새 이름을 넣으세요.`, value: old,
+      returnFocus,
     });
     if (val === null) return;
     const r = await Bridge.call(SCREEN, "rename_group", { name: old, new: val });
@@ -767,6 +770,7 @@
         body: `'${r.new}' 그룹이 이미 있습니다. '${old}' 의 작업 전부(지금 기준 ${r.count}개)를 ` +
           `'${r.new}'(현재 ${r.target_count}개)에 합칩니다.`,
         confirmLabel: "합치기", cancelLabel: "취소",
+        returnFocus,
       });
       if (!ok) return;
       const r2 = await Bridge.call(SCREEN, "rename_group",
@@ -783,7 +787,7 @@
     }
   }
 
-  async function disbandGroup(name) {
+  async function disbandGroup(name, returnFocus) {
     const res = await Bridge.call(SCREEN, "disband_group", { name });
     if (!(res && res.needs_confirm)) return;
     // 이동 집합은 '해산 시점의 소속 전부' 라는 규칙으로 적고, 수치는 지금 기준 관측으로
@@ -793,6 +797,7 @@
       body: `그룹 '${name}' 을(를) 해산합니다. 해산 시점의 소속 작업 전부(지금 기준 ${res.count}개)가 ` +
         `'그룹 없음'으로 이동합니다.`,
       confirmLabel: "해산", cancelLabel: "취소",
+      returnFocus,
     });
     if (!ok) return;
     const r = await Bridge.call(SCREEN, "disband_group", { name, confirm: true, seen: res.count });

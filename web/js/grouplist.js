@@ -40,9 +40,13 @@
      (모달 유지). 대상 이름 문안·확정 디스패치는 화면이 open() 인자로 주입한다. */
   function createMoveDialog(cfg) {
     let onConfirm = null;  // open 시 주입되는 확정 콜백(group) — 닫히면 걷는다.
+    let confirmed = false;
+    let confirmedGroup = "";
 
     function open(opts) {
       onConfirm = opts.onConfirm;
+      confirmed = false;
+      confirmedGroup = "";
       const groups = opts.groups || [];
       const cur = opts.current || "";
       $(cfg.listId).innerHTML =
@@ -59,7 +63,16 @@
       // 새 그룹 이름을 만지면 새 그룹 라디오가 자동 선택된다(입력=의도).
       const nn = $(cfg.newNameId);
       if (nn) nn.addEventListener("focus", () => { const rr = $(cfg.newRadioId); if (rr) rr.checked = true; });
-      window.Modal.open(cfg.modalId, { onClose: () => { onConfirm = null; } });
+      window.Modal.open(cfg.modalId, {
+        returnFocus: opts.returnFocus,
+        onClose: () => {
+          const cb = onConfirm;
+          onConfirm = null;
+          // Modal이 원 트리거로 포커스를 돌린 뒤에만 mutation을 보낸다. 먼저 보내면 push
+          // 재렌더가 트리거를 파괴해 메뉴발 「확인」 복귀가 body로 추락한다(H-16).
+          if (confirmed && cb) cb(confirmedGroup);
+        },
+      });
     }
 
     function confirm() {
@@ -76,9 +89,9 @@
           return;  // 조용한 무동작 금지 — 열린 채 재진술
         }
       }
-      const cb = onConfirm;
+      confirmed = true;
+      confirmedGroup = group;
       window.Modal.close(cfg.modalId);
-      cb(group);
     }
 
     function wire(okId, cancelId) {

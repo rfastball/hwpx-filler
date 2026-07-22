@@ -12,7 +12,7 @@
   const esc = window.escHtml;
   let LAST = null;
   let RENAMING = null;  // 인라인 이름 변경 중(재렌더 생존용 지역 상태)
-  let menuFor = null;   // 열린 ⋮ 메뉴의 대상 {kind:"job"|"group", name}
+  let menuFor = null;   // 열린 ⋮ 메뉴의 대상 {kind:"job"|"group", name, trigger}
 
   /* ---- 그룹 목록 기제 = 공용 팩토리(grouplist.js, 「작업」·「템플릿 관리」와 단일 출처) ---- */
   const rowMenu = window.GroupList.createMenu({ menuId: "draftRowMenu" });
@@ -315,7 +315,7 @@
   }
 
   function openRowMenu(kind, name, btn) {
-    menuFor = { kind, name };
+    menuFor = { kind, name, trigger: btn };
     // 복제·이름변경·이동·삭제. 「편집」(저장 기안의 편집 모드 진입)은 저장 세션 복원과 함께
     // 슬라이스 5에서 온다 — 아직 노출하지 않는다(없는 걸 있는 척하지 않는다).
     const html = kind === "job"
@@ -334,16 +334,16 @@
     const b = e.target.closest("button[data-menu]");
     if (!b || !menuFor) return;
     const act = b.dataset.menu;
-    const { kind, name } = menuFor;
+    const { kind, name, trigger } = menuFor;
     closeRowMenu();
     if (kind === "job") {
       if (act === "clone") { await Bridge.call(SCREEN, "clone_job", { name }); return; }
       if (act === "rename") { startRename(name); return; }
-      if (act === "move") { openGroupMove(name); return; }
-      if (act === "delete") { deleteJob(name); return; }
+      if (act === "move") { openGroupMove(name, trigger); return; }
+      if (act === "delete") { deleteJob(name, trigger); return; }
     }
-    if (act === "grp-rename") { renameGroup(name); return; }
-    if (act === "grp-disband") { disbandGroup(name); }
+    if (act === "grp-rename") { renameGroup(name, trigger); return; }
+    if (act === "grp-disband") { disbandGroup(name, trigger); }
   }
 
   /* ---- 인라인 이름 변경(job.js 동형) — Enter=확정·Escape=취소·이탈=확정 시도 ---- */
@@ -396,17 +396,18 @@
     return "";
   }
 
-  function openGroupMove(name) {
+  function openGroupMove(name, returnFocus) {
     moveDialog.open({
       nameText: `기안 작업 '${name}' 을(를) 옮길 그룹을 고르세요.`,
       groups: (LAST && LAST.job_group_names) || [],
       current: currentGroupOf(name),
+      returnFocus,
       onConfirm: (group) => Bridge.call(SCREEN, "set_group", { name, group }),
     });
   }
 
   /* ---- 삭제·그룹 관리(확인 라운드트립 — modal.js, 네이티브 금지) ---- */
-  async function deleteJob(name) {
+  async function deleteJob(name, returnFocus) {
     const res = await Bridge.call(SCREEN, "delete_job", { name });
     if (!(res && res.needs_confirm)) return;
     // 결속 중인 기안을 지우면 그 세션 진행도 사라진다(open_session) — 파괴 전모를 한 모달로
@@ -421,14 +422,16 @@
     const ok = await window.Modal.confirm({
       title: "기안 작업 삭제 확인", body,
       confirmLabel: "삭제", cancelLabel: "취소",
+      returnFocus,
     });
     if (!ok) return;
     await Bridge.call(SCREEN, "delete_job", { name, confirm: true });
   }
 
-  async function renameGroup(old) {
+  async function renameGroup(old, returnFocus) {
     const val = await window.Modal.prompt({
       title: "그룹 이름 변경", body: `그룹 '${old}' 의 새 이름을 넣으세요.`, value: old,
+      returnFocus,
     });
     if (val === null) return;
     const r = await Bridge.call(SCREEN, "rename_group", { name: old, new: val });
@@ -439,6 +442,7 @@
         body: `'${r.new}' 그룹이 이미 있습니다. '${old}' 의 작업 전부(지금 기준 ${r.count}개)를 ` +
           `'${r.new}'(현재 ${r.target_count}개)에 합칩니다.`,
         confirmLabel: "합치기", cancelLabel: "취소",
+        returnFocus,
       });
       if (!ok) return;
       await Bridge.call(SCREEN, "rename_group", { name: old, new: val, confirm: true, seen: r.count });
@@ -447,7 +451,7 @@
     }
   }
 
-  async function disbandGroup(name) {
+  async function disbandGroup(name, returnFocus) {
     const res = await Bridge.call(SCREEN, "disband_group", { name });
     if (!(res && res.needs_confirm)) return;
     const ok = await window.Modal.confirm({
@@ -455,6 +459,7 @@
       body: `그룹 '${name}' 을(를) 해산합니다. 해산 시점의 소속 작업 전부(지금 기준 ${res.count}개)가 ` +
         `'그룹 없음'으로 이동합니다.`,
       confirmLabel: "해산", cancelLabel: "취소",
+      returnFocus,
     });
     if (!ok) return;
     await Bridge.call(SCREEN, "disband_group", { name, confirm: true, seen: res.count });

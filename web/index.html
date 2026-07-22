@@ -102,7 +102,6 @@
         </div>
       </div>
       <!-- 작업 카드 ⋮ 메뉴(복제·태그·삭제, #179 행동 계층) — 부유 단일 요소(job/tpl 동형). -->
-      <div id="homeRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
     </section>
 
     <!-- ============ 「작업」 화면 (R-flow 슬라이스 1 — master-detail 세션 패널 4존, #90) ============ -->
@@ -133,8 +132,6 @@
               <button class="btn primary sm" id="jobEmptyNewBtn">＋ 첫 작업 만들기</button>
             </div>
           </div>
-          <!-- 행/그룹 ⋮ 컨텍스트 메뉴 — job.js 가 대상별 항목을 채우고 fixed 좌표로 편다. -->
-          <div id="jobRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
         </aside>
 
         <!-- 우 세션 패널 4존 -->
@@ -190,8 +187,6 @@
                   </table>
                 </div>
                 <div class="job-empty muted" id="jobTableEmpty">데이터를 선택하면 생성 대상 문서가 여기에 표시됩니다.</div>
-                <!-- 열 필터 패널 — 열별 부분일치 검색 + 값 체크리스트(같은 열 OR) + 범위(일자·금액) 동거. -->
-                <div class="colpanel" id="jobColPanel" hidden></div>
               </div>
               <!-- 필터 밖 선택 스트립(결정 3) — 선택은 필터를 관통하고, 밖은 여기서 상시 가시. -->
               <div class="fstrip" id="jobSelStrip" style="display:none"></div>
@@ -271,8 +266,6 @@
             <div id="draftList" class="job-list"></div>
             <div id="draftListEmpty" class="muted job-empty" style="display:none">저장된 기안 작업이 없습니다.</div>
           </div>
-          <!-- 행/그룹 ⋮ 컨텍스트 메뉴 — draft.js 가 대상별 항목을 채운다(화면별 id 격리). -->
-          <div id="draftRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
         </aside>
 
         <!-- 우 상세 패널 — 세션 4존(슬라이스 3a). **저장/휘발 한 패널**(슬라이스 5a): 목록 미선택
@@ -318,7 +311,6 @@
                 <!-- ①존 빈 상태(결정 14) — 데이터가 필수인 것처럼 말하지 않는다. 두 길을 다
                      말한다: 물리면 여러 건 일괄, 안 물려도 「맞추기」에서 직접 채워 복사. -->
                 <div class="job-empty muted" id="draftTableEmpty">데이터를 연결하면 <b>여러 건을 한 번에</b> 채웁니다. 없이도 '맞추기'에서 <b>직접 채울</b> 수 있습니다.</div>
-                <div class="colpanel" id="draftColPanel" hidden></div>
               </div>
               <!-- 필터 밖 선택 스트립(결정 3) — 선택은 필터를 관통하고, 밖은 여기서 상시 가시.
                    결정 7 이 승계 의무로 못박은 계약(조용히 떨어뜨리면 큐가 거짓말을 한다). -->
@@ -458,9 +450,6 @@
         <div class="tpl-groups" id="tplTxtGroups"></div>
       </section>
 
-      <!-- 공유 행/그룹 ⋮ 컨텍스트 메뉴 — template.js 가 대상별 항목을 채우고 fixed 좌표로 편다. -->
-      <div id="tplRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
-
       <div id="tplResult" class="run-result"></div>
     </section>
 
@@ -493,6 +482,20 @@
       </div>
       <div id="poolResult" class="run-result"></div>
     </section>
+
+  </main>
+</div>
+
+<!-- H-16: 모달·팝오버의 유일한 포털. 앱 그리드/스크롤 stacking context 밖 body 직속에 둔다. -->
+<div id="overlayRoot">
+
+    <!-- H-15/H-16 경량층도 같은 body 직속 포털을 쓴다. 좌표는 viewport 기준 Popover.place가 소유. -->
+    <div id="homeRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
+    <div id="jobRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
+    <div id="draftRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
+    <div id="tplRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
+    <div class="colpanel" id="jobColPanel" hidden></div>
+    <div class="colpanel" id="draftColPanel" hidden></div>
 
     <!-- 데이터 등록 모달(#26 #4) — 참조만(경로 포인터). 동명 재등록은 확인 승격. -->
     <div id="poolRegModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="poolRegTitle">
@@ -665,7 +668,6 @@
         </div>
       </div>
     </div>
-  </main>
 </div>
 
 <script src="js/bridge.js"></script>
