@@ -13,7 +13,7 @@
       let res = await Bridge.call(screen, "relink_template", { name, path });
       if (res && res.needs_confirm) {
         if (!(await Modal.confirm({ body: res.confirm_text + "\n\n계속할까요?" }))) {
-          say("다시 연결 취소 — 템플릿 연결을 바꾸지 않았습니다.", "cancel");
+          say("다시 연결을 취소했습니다.", "cancel");
           return;
         }
         res = await Bridge.call(screen, "relink_template", { name, path, confirm: true });

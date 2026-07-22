@@ -341,7 +341,7 @@ class FilterModel:
                     else ("날짜", "예: 2026-07-15")
                 )
                 raise ValueError(
-                    f"「{clause.operand}」 을(를) {noun}(으)로 읽을 수 없습니다. "
+                    f"'{clause.operand}' 을(를) {noun}(으)로 읽을 수 없습니다. "
                     f"숫자 형태로 입력하세요({ex})."
                 )
         if cond.joiner not in _JOINER_LABELS:
@@ -615,14 +615,14 @@ class FilterView:
                 inner = ", ".join(self._value_label(v) for v in vals)
                 parts.append(f"{column} ∈ {{{inner}}}")
         if cond.text:
-            parts.append(f"{column} 포함 「{cond.text}」")
+            parts.append(f"{column} 포함 '{cond.text}'")
         if cond.range_ is not None:
             r = cond.range_
-            head = f"{column} {RANGE_OP_LABELS[r.first.op]} 「{r.first.operand}」"
+            head = f"{column} {RANGE_OP_LABELS[r.first.op]} '{r.first.operand}'"
             if r.second is not None:
                 head += (
                     f" {_JOINER_LABELS[r.joiner]} "
-                    f"{RANGE_OP_LABELS[r.second.op]} 「{r.second.operand}」"
+                    f"{RANGE_OP_LABELS[r.second.op]} '{r.second.operand}'"
                 )
             parts.append(head)
         return parts
@@ -634,10 +634,10 @@ class FilterView:
             parts.extend(self._describe_column(col))
         if self._m._search:
             if self.branches:
-                parts.append(f"({' ∨ '.join(self.branches)}) 포함 「{self._m._search}」")
+                parts.append(f"({' ∨ '.join(self.branches)}) 포함 '{self._m._search}'")
             else:
                 # 선언된 문안 편차 — 시안은 생략하지만 빈 화면의 이유는 재진술해야 한다.
-                parts.append(f"검색 「{self._m._search}」 — 매치 없음")
+                parts.append(f"검색 '{self._m._search}' (매치 없음)")
         return parts
 
     def describe(self) -> str:

@@ -119,7 +119,7 @@ class PoolController:
         누르면 FileNotFoundError 가 웹으로 새어 버튼이 무반응이 된다. 조용한 무반응 대신
         loud 재진술 + 재스캔으로 화면을 실상에 맞춘다(confirm-or-alarm)."""
         self.vm.refresh()
-        msg = f"등록 데이터를 찾을 수 없습니다(이미 삭제된 항목): {name} — 목록을 새로 읽었습니다."
+        msg = f"등록 데이터를 찾을 수 없습니다(이미 삭제된 항목): {name}. 목록을 새로 읽었습니다."
         self._set_result(msg, "danger")
         return {"ok": False, "error": msg}
 
@@ -151,7 +151,7 @@ class PoolController:
                 "ok": True, "needs_confirm": True, "name": name,
                 "confirm_text": (
                     f"등록 데이터 참조를 삭제합니다(원본 파일은 지우지 않습니다):\n"
-                    f"{name} — {reference_summary(item)}"
+                    f"{name} ({reference_summary(item)})"
                 ),
             }
         self.vm.delete(name)
@@ -191,14 +191,14 @@ class PoolController:
                 # 어느 쪽을 승인했는지 모호해진다 — 활성화는 카드의 [활성화] 버튼이 이미
                 # 명시적 단독 경로다(confirm-or-alarm: 결정 1확인 1).
                 keep = (
-                    "\n(보관 상태는 유지됩니다 — 실행 후보로 되돌리려면 [활성화])"
+                    "\n(보관 상태는 유지됩니다. 실행 후보로 되돌리려면 [활성화])"
                     if existing.status != STATUS_ACTIVE else ""
                 )
                 return {
                     "ok": True, "needs_confirm": True, "name": name,
                     "confirm_text": (
                         f"같은 이름의 등록 데이터가 이미 있습니다:\n"
-                        f"{name} — {reference_summary(existing)}\n\n"
+                        f"{name} ({reference_summary(existing)})\n\n"
                         # cross-kind(나라/파이프라인→엑셀) 전이는 확정 경로가 kind 를
                         # excel 로 정규화하므로 여기서 함께 재진술한다(r4 — 확인 문구와
                         # 실제 전이 불일치 금지). 같은 kind 면 빈 문자열(소음 금지).
@@ -231,5 +231,5 @@ class PoolController:
             return {"ok": False, "error": msg}
         # 동명 갱신은 참조(opts) 교체지 새 항목 추가가 아니다 — 실제 일어난 일을 재진술(#45).
         verb = "갱신" if kind == "same" else "추가"
-        self._set_result(f"등록 데이터를 {verb}했습니다: {item.name} — {reference_summary(item)}")
+        self._set_result(f"등록 데이터를 {verb}했습니다: {item.name} ({reference_summary(item)})")
         return {"ok": True, "name": item.name}

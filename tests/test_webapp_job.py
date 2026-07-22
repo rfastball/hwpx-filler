@@ -297,7 +297,7 @@ def test_stamp_failure_is_loud_not_silent(tmp_path, monkeypatch):
     res = ctrl.generate()
     assert res["ok"] is True and res["succeeded"] == 2          # 생성 자체는 완주
     assert sorted(p.name for p in out.glob("*.hwpx")) == ["doc-001.hwpx", "doc-002.hwpx"]
-    assert "실행 기록을 남기지 못했습니다" in res["summary"]
+    assert "실행 기록 저장에 실패했습니다" in res["summary"]
     assert "디스크 쓰기 거부" in res["summary"]                  # 사유 재진술
     assert res["level"] == "danger"                             # 조용한 초록 금지
 
@@ -703,7 +703,7 @@ def test_relink_template_unreadable_is_blocked(tmp_path):
     res = ctrl.dispatch(
         "relink_template",
         {"name": "공고서", "path": str(tmp_path / "없는파일.hwpx"), "confirm": True})
-    assert res["ok"] is False and "연결을 바꾸지 않았습니다" in res["error"]
+    assert res["ok"] is False and "새 템플릿을 읽을 수 없습니다" in res["error"]
     assert ctrl.registry.load("공고서").template_path.endswith("t.hwpx")
 
 

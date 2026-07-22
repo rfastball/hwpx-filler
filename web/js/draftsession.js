@@ -22,7 +22,7 @@
     emptyNoData: "데이터를 선택하면 기안 대상 행이 여기에 표시됩니다.",
     emptyFiltered: "필터와 일치하는 행이 없습니다. 위 칩의 정의를 확인하세요.",
     emptyNoRows: "데이터에 행이 없습니다.",
-    stripLead: (n) => `필터 밖 선택 <b>${n}행</b> — 화면엔 안 보이지만 큐에 포함됩니다: `,
+    stripLead: (n) => `필터 밖 선택 <b>${n}행</b>. 화면엔 안 보이지만 큐에 포함됩니다: `,
   };
 
   /* 붙여넣기 모달은 두 화면이 **한 벌 DOM** 을 공유한다 — 확정 버튼 배선은 모듈 1회,
@@ -167,7 +167,7 @@
         // 근사 제안(결정 30) — 무결속·비auto 에서만, 자동 적용 없이 원클릭.
         (t.suggest && t.own !== "auto"
           ? `<button class="btn sm mapsug" id="${id.tokPanel}-sug-${i}" data-i="${i}"` +
-            ` title="이름이 비슷한 열입니다">「${esc(t.suggest)}」 적용</button>` : "") +
+            ` title="이름이 비슷한 열입니다">'${esc(t.suggest)}' 적용</button>` : "") +
         // 「자동으로 되돌리기」 — 결속 값을 고쳐 상수로 강등된 자리를 원 열로(막다른 강등 금지).
         (t.can_revert
           ? `<button class="btn sm maprev" id="${id.tokPanel}-rev-${i}" data-i="${i}">자동으로 되돌리기</button>` : "") +
@@ -196,7 +196,7 @@
       // 서버 blank_declared) — 타이핑하면 값이 생겨 상수로 강등되며 선언이 풀린다.
       const declared = !!t.blank_declared;
       const valCell = declared
-        ? `<span class="mapval-declared muted" title="확정-비움 — 복사 확인에서 제외">비워둠(선언)</span>`
+        ? `<span class="mapval-declared muted" title="확정-비움: 복사 확인에서 제외">비워둠(선언)</span>`
         : `<textarea class="mapval-in${(t.value || "").trim() === "" ? " empty" : ""}"` +
           ` rows="1" id="${id.tokPanel}-val-${i}" data-i="${i}" placeholder="직접 입력"` +
           ` aria-label="${esc(t.name)} 값">${esc(t.value || "")}</textarea>`;
@@ -239,7 +239,7 @@
         // 정직하게 말한다(열이 왜 없는지). 저장 모드에선 열이 그 자리를 대신 설명한다.
         const volNote = (s.mode || "volatile") === "volatile"
           ? `<span class="muted volatile-note">이 세션은 저장하지 않으므로 <b>유형·확정</b>은 ` +
-            `묻지 않습니다 — 남기려면 「기안으로 저장」.</span>`
+            `묻지 않습니다. 남기려면 '기안으로 저장'.</span>`
           : "";
         $(id.mapLegend).innerHTML =
           `<span><i class="own auto"></i>데이터에서 자동</span>` +
@@ -307,13 +307,13 @@
       const gaps = (c.missing_fields || []).length + (c.empty_fields || []).length;
       if (!c.has_current) {
         readout.textContent = s.has_data
-          ? "선택된 카드가 없습니다 — 위 표에서 행을 선택하면 큐에 담깁니다."
+          ? "선택된 카드가 없습니다. 위 표에서 행을 선택하면 큐에 담깁니다."
           : "템플릿을 고르거나 붙여넣으면 이대로 채워 복사할 수 있습니다.";
       } else if (degen) {
         // 단건·무데이터 — 큐 진척이 없다. 복사 전 확인이 필요한 빈칸만 재진술한다.
-        readout.textContent = gaps ? `빈칸 ${gaps}건 — 복사 전 확인합니다.` : "";
+        readout.textContent = gaps ? `빈칸 ${gaps}건. 복사 전 확인합니다.` : "";
       } else if (complete) {
-        readout.textContent = `완주 — ${c.selected_count}건 전부 복사했습니다.`;
+        readout.textContent = `${c.selected_count}건 모두 복사했습니다.`;
       } else {
         const posTxt = c.position
           ? `작업점 ${c.position}/${c.uncopied_count} 미처리`
@@ -354,8 +354,8 @@
       $(id.cardRender).className = "wc-render f-" + font;
       renderLint(c.lint || {});
       $(id.cardTitle).textContent = !c.has_current
-        ? "이대로 복사됩니다 (미리보기 — 데이터 미선택)"
-        : c.is_copied ? "복사됨 — 다시 복사하면 클립보드가 갱신됩니다" : "이대로 복사됩니다";
+        ? "이대로 복사됩니다 (미리보기 · 데이터 미선택)"
+        : c.is_copied ? "복사됨. 다시 복사하면 클립보드가 갱신됩니다" : "이대로 복사됩니다";
       // 소유권 색(결정 33) — fill 세그먼트가 데이터(auto)인지 직접 입력(man)인지 색으로 가른다.
       $(id.cardRender).innerHTML = paintCard(c.segments, ownersOf(s));
       // 동사 게이트 — 작업점(또는 가상 카드)이 없으면 복사 불가(모델 계약의 표면 반영).
@@ -470,7 +470,7 @@
         title: "값 덮어쓰기 확인",
         body: r.confirm,
         confirmLabel: "데이터 값으로 바꾸기",
-        cancelLabel: "머무르기",
+        cancelLabel: "취소",
       }))) {
         // 머무르기 = 백엔드 불변(상수 유지)인데 native select 는 이미 새 열을 보인다 — 확인
         // 왕복은 push 를 안 하므로 아무도 되돌려 주지 않는다(Codex F2). LAST 로 재렌더해
@@ -500,10 +500,10 @@
       const pfx = lc.row == null ? "" : `${lc.row + 1}행 `;
       if (mi.length) {
         n.dataset.level = "warn";
-        n.textContent = `⚠ ${pfx}복사됨 — 항목 없음 ${mi.length}건(${mi.join(", ")}) 포함. 빨간 토큰 확인 후 사용하세요.`;
+        n.textContent = `⚠ ${pfx}복사됨. 항목 없음 ${mi.length}건(${mi.join(", ")}) 포함. 빨간 토큰 확인 후 사용하세요.`;
       } else if (em.length) {
         n.dataset.level = "warn";
-        n.textContent = `⚠ ${pfx}복사됨 — 빈 값 ${em.length}건(${em.join(", ")}) 포함. 확인 후 사용하세요.`;
+        n.textContent = `⚠ ${pfx}복사됨. 빈 값 ${em.length}건(${em.join(", ")}) 포함. 확인 후 사용하세요.`;
       } else {
         n.dataset.level = "ok";
         n.textContent = `✓ ${pfx}전량 채움 복사 완료.`;
@@ -608,7 +608,7 @@
         title: "데이터 변경 확인",
         body: guardBody(g, "다른 데이터를 겨누면"),
         confirmLabel: "데이터 바꾸고 버리기",
-        cancelLabel: "머무르기",
+        cancelLabel: "취소",
       });
     }
 
@@ -626,7 +626,7 @@
         // 세션 교체라 미저장 매핑·원문 편집도 열거한다(includeRecipe, 리뷰 F6).
         body: guardBody(g, "새 기안을 시작하면", true),
         confirmLabel: "새로 시작하고 버리기",
-        cancelLabel: "머무르기",
+        cancelLabel: "취소",
       });
     }
 
@@ -643,7 +643,7 @@
         if (r && r.needs_confirm) {
           const ok = await window.Modal.confirm({
             title: "진행 중인 기안을 떠납니다",
-            body: leaveForTemplateBody(r), confirmLabel: "바꾸기", cancelLabel: "머무르기",
+            body: leaveForTemplateBody(r), confirmLabel: "바꾸기", cancelLabel: "취소",
           });
           if (!ok) { if (LAST) e.target.value = LAST.template_name || ""; return; }  // 취소 = 콤보 되돌림
           r = await Bridge.call(SCREEN, "select_template", { name, confirm: true });
@@ -745,9 +745,9 @@
           const nCopied = card.copied_total || 0;
           if (nCopied > 0 && !(await window.Modal.confirm({
             title: "사본으로 편집",
-            body: `이미 복사한 ${nCopied}건은 이전 문안으로 남습니다 — 되돌릴 수 없습니다. 앞으로 ` +
+            body: `이미 복사한 ${nCopied}건은 이전 문안으로 남습니다. 되돌릴 수 없습니다. 앞으로 ` +
               `복사할 카드부터 새 문안이 적용됩니다. 저장된 기안은 그대로 두고 이 세션만 사본으로 가릅니다.`,
-            confirmLabel: "사본으로 편집", cancelLabel: "머무르기",
+            confirmLabel: "사본으로 편집", cancelLabel: "취소",
           }))) return;
           // 사본이 유일 휘발("이번 세션")이 되어 직전에 붙여넣던 세션을 밀어낸다(단일 슬롯). 그
           // 세션에 복구 불가 진행이 있으면 백엔드가 needs_confirm 으로 되묻는다(리뷰 5b 2R P1).
@@ -756,10 +756,9 @@
             const prev = r.copied_count || 0;
             if (!(await window.Modal.confirm({
               title: "붙여넣던 세션이 사라집니다",
-              body: (prev > 0 ? `직전에 붙여넣던 세션에서 이미 ${prev}건을 복사했습니다 — 되돌릴 수 없습니다. ` : "") +
-                `이 사본이 「이번 세션」 자리를 대신합니다. 붙여넣던 세션의 원문 편집·데이터·선택·복사 ` +
-                `진행은 저장된 기안에 보관되지 않아, 사본으로 가르면 함께 사라집니다.`,
-              confirmLabel: "사본으로 편집", cancelLabel: "머무르기",
+              body: `사본으로 편집하면 붙여넣던 세션이 사라집니다.\n사라지는 것: 원문 편집 · 데이터 연결 · 선택` +
+                (prev > 0 ? ` · 복사 진행 ${prev}건(복사한 결과는 남음)` : ""),
+              confirmLabel: "사본으로 편집", cancelLabel: "취소",
             }))) return;
             await Bridge.call(SCREEN, "fork_to_volatile", { confirm: true });
           }
@@ -810,7 +809,7 @@
         if (g && g.armed) {
           const ok = await window.Modal.confirm({
             title: "진행 중인 기안을 떠납니다",
-            body: leaveForTemplateBody(g), confirmLabel: "붙여넣기", cancelLabel: "머무르기",
+            body: leaveForTemplateBody(g), confirmLabel: "붙여넣기", cancelLabel: "취소",
           });
           if (!ok) return;  // 머무르기 = 현 세션 보존(모달 안 엶)
         }

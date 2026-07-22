@@ -238,10 +238,10 @@ class RunViewModel:
         ours = set(self.job.template_fields())
         inter = doc_fields & ours
         if not inter:
-            return PrevNote("이 작업의 필드가 이 문서에 하나도 없습니다 — 파일을 확인하세요.", "danger")
+            return PrevNote("이 작업의 필드가 이 문서에 하나도 없습니다. 파일을 확인하세요.", "danger")
         return PrevNote(
             f"이 작업의 필드 {len(ours)}개 중 {len(inter)}개가 문서에 있습니다. "
-            "이미 값이 있는 겹침 필드는 덮어씁니다 — 단계별 필드는 서로소로 설계하세요.",
+            "이미 값이 있는 겹침 필드는 덮어씁니다. 단계별 필드는 서로소로 설계하세요.",
             "warn" if len(inter) < len(ours) else "",
         )
 
@@ -360,7 +360,7 @@ class RunViewModel:
         return GateState(
             False, "danger",
             f"파일명 패턴의 토큰이 이 작업이 채우는 값에 없어 파일명에 그대로 남습니다: "
-            f"{toks} — 편집에서 파일명 패턴을 고쳐야 생성할 수 있습니다.",
+            f"{toks}. 편집에서 파일명 패턴을 고쳐야 생성할 수 있습니다.",
             reason="name_tokens",
         )
 
@@ -456,7 +456,7 @@ class RunViewModel:
             names = list(drift.template_only) + list(drift.mapping_only) + list(drift.conflicting)
             return GateState(
                 False, "danger",
-                "템플릿 구조가 확정 매핑과 달라졌습니다 — 매핑을 다시 확정해야 생성할 "
+                "템플릿 구조가 확정 매핑과 달라졌습니다. 매핑을 다시 확정해야 생성할 "
                 "수 있습니다: " + ", ".join(names),
                 reason="drift",
             )
@@ -476,7 +476,7 @@ class RunViewModel:
         if self.template_override and len(indices) != 1:
             return GateState(
                 False, "warn",
-                "기존 문서 이어채우기는 1건만 지원합니다 — 생성 대상을 1건만 선택하세요.",
+                "기존 문서 이어채우기는 1건만 지원합니다. 생성 대상을 1건만 선택하세요.",
             )
         return GateState(True, "", "")
 
@@ -490,11 +490,11 @@ class RunViewModel:
             )
         if drift.has_drift:
             # 게이트가 상세 사유를 렌더한다 — 여기선 '통과' 녹색이 남지 않게만 알린다.
-            parts.append("[치명] 템플릿 구조가 확정 매핑과 다릅니다 — 아래 차단 사유를 확인하세요.")
+            parts.append("[치명] 템플릿 구조가 확정 매핑과 다릅니다. 아래 차단 사유를 확인하세요.")
         if name_unresolved:
             # 상세(토큰 목록·복구 동선)는 게이트가 렌더한다(F34) — 여기선 '통과' 녹색이
             # 미해소 파일명과 공존하는 모순 신호만 차단한다(RC-23 동형).
-            parts.append("[치명] 파일명 패턴에 해소되지 않는 토큰이 있습니다 — 아래 차단 사유를 확인하세요.")
+            parts.append("[치명] 파일명 패턴에 해소되지 않는 토큰이 있습니다. 아래 차단 사유를 확인하세요.")
         if out.empty_valued:
             # 상태 어휘 경계(UD-20): 사전검증 경고도 배지·게이트와 같은 '미입력'으로 통일
             # (같은 상태 2이름 해소) — '미입력'=출력값 빔(ack 대상).
@@ -508,7 +508,7 @@ class RunViewModel:
         return PreflightResult(
             list(src.missing_columns), list(out.empty_valued), level,
             "\n".join(parts) if parts
-            else "사전검증 통과 — 치명 누락 없음. 아래 빈 값 표면화를 확인하세요.",
+            else "사전검증 통과(치명 누락 없음). 아래 빈 값 표면화를 확인하세요.",
         )
 
     def acknowledge(self, field: str) -> None:
@@ -565,7 +565,7 @@ class RunViewModel:
         if self.template_override and len(indices) != 1:
             # 누적 v1 = 단건. 배치 누적(이전출력↔레코드 파일키 매칭)은 별개 설계 — 파킹.
             return [GateError(
-                "기존 문서 이어채우기는 1건만 지원합니다 — 문서 1개에 데이터 여러 "
+                "기존 문서 이어채우기는 1건만 지원합니다. 문서 1개에 데이터 여러 "
                 "행을 겹쳐 쓸 수 없습니다. 생성 대상을 1건만 선택하세요.", "warn")]
         return []
 

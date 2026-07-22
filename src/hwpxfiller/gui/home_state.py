@@ -20,7 +20,7 @@ from .compile_badge import ERROR_BADGE_LEVEL, badge_level
 
 #: 손상 파일 조치의 화이트리스트 거절 문구 — 컨트롤러 선판정과 VM 재판정이 **같은 말**을
 #: 하도록 단일 출처로 둔다(두 곳이 다른 문구면 같은 거절이 두 얼굴로 보인다).
-CORRUPT_PATH_REJECT = "손상 작업 목록에 없는 경로입니다 — 새로고침 후 다시 시도하세요."
+CORRUPT_PATH_REJECT = "손상 작업 목록에 없는 경로입니다. 새로고침 후 다시 시도하세요."
 
 # 카드 컴파일 상태 배지 어휘(C2 파생) — 기존 '템플릿 없음' pill 을 대체가 아니라 확장한다.
 # 이모지 접두로 한눈에 "실행 준비 vs 손봐야 함" 을 가른다.
@@ -148,7 +148,7 @@ class CorruptJobRow:
     error: str
 
     def detail_line(self) -> str:
-        return f"작업 파일을 읽을 수 없습니다 — {self.error}"
+        return f"작업 파일을 읽을 수 없습니다: {self.error}"
 
 
 @dataclass

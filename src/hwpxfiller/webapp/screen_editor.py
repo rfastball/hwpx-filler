@@ -197,7 +197,7 @@ class EditorController:
         self._refresh_library()
         if all(r.path != path for r in self.template_library.rows()):
             self._push()  # 갱신된 목록을 먼저 보여준다 — 거절 문구가 실행 가능해진다
-            raise ValueError("라이브러리에 없는 템플릿입니다 — 목록을 새로 고쳤으니 다시 고르세요.")
+            raise ValueError("라이브러리에 없는 템플릿입니다. 목록을 새로 고쳤으니 다시 고르세요.")
 
     # ------------------------------------------------------------- 관측 푸시
     def _push(self) -> None:
@@ -539,7 +539,7 @@ class EditorController:
         schema = extract_schema(str(src))  # 손상 = 여기서 loud(복사 전 — 잔재 없음)
         if not schema.fields:
             raise ValueError(
-                "누름틀이 없는 템플릿(RAW)입니다 — 템플릿 관리의 변환(fieldize)을 먼저 "
+                "누름틀이 없는 템플릿(RAW)입니다. 템플릿 관리의 변환(fieldize)을 먼저 "
                 "거치거나 누름틀이 있는 파일을 가져오세요."
             )
         lib_dir = self.template_library.library_dir
@@ -561,8 +561,7 @@ class EditorController:
             raise
         renamed = f" (이름 충돌로 '{dest.name}' 로 저장)" if dest.name != src.name else ""
         self._set_notice(
-            f"'{src.name}' 을 라이브러리로 복사해 시작합니다{renamed} — 원본 수정은 "
-            "라이브러리 사본에 반영되지 않습니다.",
+            f"'{src.name}' 을 라이브러리로 복사해 시작합니다{renamed}.",
             "ok",
         )
         self._push()
@@ -650,7 +649,7 @@ class EditorController:
         if self.schema is None:  # RAW — 채울 필드가 없어 매핑 편집이 성립하지 않는다.
             raise ValueError(RAW_BLOCK_MESSAGE)
         if self.gate_error:
-            raise ValueError("템플릿 상태를 확인할 수 없습니다 — 편집을 열 수 없습니다.")
+            raise ValueError("템플릿 상태를 확인할 수 없어 편집을 열 수 없습니다.")
         self.job_name = job.name
         self.pattern = job.filename_pattern
         self._editing_origin = job.name
@@ -676,7 +675,7 @@ class EditorController:
         ]
         fresh = [r.template_field for r in self.model.rows if not r.confirmed]
         # 사용자 어휘 재진술(F17) — "매핑 N행 복원" 같은 로그 어휘를 UI 로 내보내지 않는다.
-        notice = f"'{job.name}' 을(를) 편집합니다 — 저장된 매핑 {applied}행을 불러왔습니다."
+        notice = f"'{job.name}' 을(를) 편집합니다. 저장된 매핑 {applied}행을 불러왔습니다."
         if dropped:
             notice += (
                 f"\n템플릿에 더는 없는 저장 필드 {len(dropped)}개는 제외했습니다: "
@@ -737,7 +736,7 @@ class EditorController:
         if target > self.step and not self._editing_origin:
             for s in range(self.step, target):  # 신규: 전진은 게이트 통과 필요(각 중간 단계).
                 if not self.can_advance(s):
-                    raise ValueError(f"{s}단계 게이트 미통과 — 진행할 수 없습니다.")
+                    raise ValueError(f"{s}단계 게이트 미통과. 진행할 수 없습니다.")
         if target == 1:  # 매핑 진입(3단계 접기) — 데이터 유무 불문 모델 초안 생성.
             self._ensure_model()
         self.step = max(0, min(2, target))
@@ -769,7 +768,7 @@ class EditorController:
         """
         if self.step == 0 and not self.can_advance(0):
             raise ValueError(
-                "템플릿 게이트를 통과해야 매핑으로 진행할 수 있습니다 — "
+                "템플릿 게이트를 통과해야 매핑으로 진행할 수 있습니다. "
                 "미해결 토큰을 확인하거나 템플릿을 정리하세요."
             )
         had_data = bool(self.data_path)
@@ -810,7 +809,7 @@ class EditorController:
         """
         if self.model is not None and self.model.confirmed_count():
             raise ValueError(
-                "확정한 매핑이 있어 전체 미사용을 할 수 없습니다 — 확정을 먼저 해제하거나 "
+                "확정한 매핑이 있어 전체 미사용을 할 수 없습니다. 확정을 먼저 해제하거나 "
                 "칩을 하나씩 끄세요."
             )
         self._ignored_expanded = True  # 고르는 흐름의 시작점 — 미사용 구역 펼침(결정 13)
@@ -837,7 +836,7 @@ class EditorController:
         active = {f for f in active if f in self.source_fields}
         if self.source_fields and not active and not allow_empty:
             raise ValueError(
-                "사용할 헤더를 하나 이상 남겨 두세요 — 하나씩 끄되 마지막 하나는 남기거나, "
+                "사용할 헤더를 하나 이상 남겨 두세요. 하나씩 끄되 마지막 하나는 남기거나, "
                 "'전체 미사용'으로 다시 골라 켜세요."
             )
         self._ignored_sources = {f for f in self.source_fields if f not in active}
@@ -905,9 +904,9 @@ class EditorController:
         if prior is not None:
             carried = self.model.apply_profile(prior, confirm=False)
             self._set_notice(
-                f"템플릿/데이터가 바뀌어 매핑 초안을 다시 만들었습니다 — 확정했거나 직접 "
+                f"템플릿/데이터가 바뀌어 매핑 초안을 다시 만들었습니다. 확정했거나 직접 "
                 f"편집한 {carried}개 행의 소스·유형·서식은 이월했지만 전 행이 미확정입니다.\n"
-                "같은 이름 컬럼이라도 새 데이터에서는 의미가 다를 수 있습니다 — "
+                "같은 이름 컬럼이라도 새 데이터에서는 의미가 다를 수 있습니다. "
                 "저장하려면 전 행을 다시 확정하세요.",
                 "warn",
             )
@@ -957,7 +956,7 @@ class EditorController:
         # 확정 행 방어(PR-3 리뷰 F2): 확정도 touched 라 ↩ 가 서면 오클릭 한 번에 확정이
         # 조용히 풀리고 다른 열로 치환될 수 있다 — 확정 해제(체크박스)가 의식적 1단계.
         if self.model.rows[index].confirmed:
-            raise ValueError("확정한 행은 되돌릴 수 없습니다 — 확정을 먼저 해제하세요.")
+            raise ValueError("확정한 행은 되돌릴 수 없습니다. 확정을 먼저 해제하세요.")
         self.model.revert_to_auto(index)
         self.model.resuggest_row(index, self._active_sources())
 
@@ -1024,7 +1023,7 @@ class EditorController:
                 "ok": False,
                 "dataset_error": (
                     f"등록 데이터 '{ds_name}' 자리의 기존 파일이 손상돼 확인할 수 "
-                    "없습니다 — 다른 이름을 지정하세요."
+                    "없습니다. 다른 이름을 지정하세요."
                 ),
             }
         if kind == "collision":  # slug 충돌(다른 이름·같은 파일) — 이름 변경만
@@ -1032,7 +1031,7 @@ class EditorController:
                 "ok": False,
                 "dataset_error": (
                     f"'{ds_name}' 은 기존 등록 데이터 '{existing.name}' 과 같은 파일로 "
-                    f"저장됩니다 — 다른 이름을 지정하세요."
+                    f"저장됩니다. 다른 이름을 지정하세요."
                 ),
             }
         if not p.get("confirm_dataset"):  # kind == "same" — 확인 승격
@@ -1046,7 +1045,7 @@ class EditorController:
                     f"등록 데이터 '{ds_name}' 이 이미 있습니다"
                     f"({reference_summary(existing)}).\n"
                     "이 작업의 데이터 참조로 덮어씁니다"
-                    f"{kind_transition_clause(existing)} — 계속할까요?"
+                    f"{kind_transition_clause(existing)}. 계속할까요?"
                 ),
             }
         return None
@@ -1207,7 +1206,7 @@ class EditorController:
             except Exception as exc:  # noqa: BLE001 — 반저장을 조용히 삼키지 않는다
                 register_error = (
                     f"작업 '{self.job_name}' 은 저장됐지만 등록 데이터 "
-                    f"'{self.dataset_name}' 등록에 실패했습니다: {exc} — "
+                    f"'{self.dataset_name}' 등록에 실패했습니다: {exc}\n"
                     f"이 작업은 '{self.dataset_name}' 을 기본 데이터로 연결해 뒀으니, "
                     "데이터 관리 화면에서 같은 이름으로 등록하면 연결이 완성됩니다(#53-A)."
                 )

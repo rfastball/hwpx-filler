@@ -193,7 +193,7 @@ LEDGER_SIDECAR_NAME = "fill-ledger.json"
 
 #: 사이드카에 박제하는 고지 — 값 미리보기는 HWPX 렌더가 아니다(ADR C 불변).
 LEDGER_PREVIEW_NOTE = (
-    "preview_text/read_back 은 주입될·주입된 텍스트 값이다 — "
+    "preview_text/read_back 은 주입될·주입된 텍스트 값이다. "
     "HWPX 렌더(서식·레이아웃)가 아니다."
 )
 

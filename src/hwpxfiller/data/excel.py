@@ -67,8 +67,8 @@ def ambiguous_sheet_error(path: "str | Path", *, prefix: str = "") -> "str | Non
         return None
     names = ", ".join(n for n, _r, _c in overview)
     return (
-        f"{prefix}워크북에 시트가 여러 개입니다({names}) — "
-        "데이터 관리에서 시트를 지정해 등록하세요(첫 시트 자동 선택은 조용한 오독 위험)."
+        f"{prefix}워크북에 시트가 여러 개입니다({names}). "
+        "데이터 관리에서 시트를 지정해 등록하세요."
     )
 
 

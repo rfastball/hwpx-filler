@@ -346,7 +346,7 @@ class TemplateManagerViewModel:
     def format_compile_result(self, path: str, report) -> ResultLine:
         """apply_fieldize 리포트 → 결과 문구(대상 템플릿명 포함) — 성공은 ok(UD-07)."""
         return ResultLine(
-            f"누름틀 변환 완료 — {Path(path).name}: 필드 {len(report.compiled)}개 추가", "ok"
+            f"누름틀 변환 완료 {Path(path).name}: 필드 {len(report.compiled)}개 추가", "ok"
         )
 
     def format_scan_empty_result(self, path: str, preview: "ScanPreview") -> ResultLine:
@@ -356,7 +356,7 @@ class TemplateManagerViewModel:
         ADR-E: 모달은 파괴 확정에만). 진행 불가 통지이므로 warn 레벨.
         """
         name = Path(path).name
-        text = f"누름틀 변환 — {name}: 변환 가능한 토큰이 없습니다"
+        text = f"누름틀 변환 {name}: 변환 가능한 토큰이 없습니다"
         if preview.skipped:
             names = ", ".join(s.name for s in preview.skipped)
             text += f" (건너뜀 {len(preview.skipped)}개: {names})"
@@ -370,10 +370,10 @@ class TemplateManagerViewModel:
         """
         name = Path(path).name
         if not report.findings:
-            return ResultLine(f"검토 — {name}: 이슈 없음.", "ok")
+            return ResultLine(f"검토 {name}: 이슈 없음.", "ok")
         severities = {f.severity for f in report.findings}
         level = "danger" if "error" in severities else "warn"
-        lines = [f"검토 결과 — {name}:"]
+        lines = [f"검토 결과 {name}:"]
         lines.extend(
             f"[{_SEVERITY_KO.get(f.severity, f.severity)}] {f.message}"
             for f in report.findings
@@ -388,9 +388,9 @@ class TemplateManagerViewModel:
         """
         name = Path(path).name
         if not values:
-            return ResultLine(f"미리보기 — {name}: 누름틀 값이 없습니다.", "muted")
+            return ResultLine(f"미리보기 {name}: 누름틀 값이 없습니다.", "muted")
         return ResultLine(
-            f"미리보기 — {name}:\n"
+            f"미리보기 {name}:\n"
             + "\n".join(f"{k} = {v if str(v).strip() else '(비움)'}" for k, v in values.items()),
             "muted",
         )
@@ -401,8 +401,8 @@ class TemplateManagerViewModel:
         """드리프트 결과 → 결과 문구(비교 판본 쌍 명시) — 변화 있으면 warn, 없으면 ok."""
         pair = f"{Path(old_path).name} → {Path(new_path).name}"
         if not drift.has_changes:
-            return ResultLine(f"드리프트 — {pair}: 필드셋 변화 없음.", "ok")
-        parts = [f"드리프트 — {pair}:"]
+            return ResultLine(f"드리프트 {pair}: 필드셋 변화 없음.", "ok")
+        parts = [f"드리프트 {pair}:"]
         for n in drift.added:
             parts.append(f"+ 추가: {n}")
         for n in drift.removed:

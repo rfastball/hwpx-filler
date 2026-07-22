@@ -17,7 +17,7 @@
         return `<span class="${cls}">${esc(s.text)}</span>`;
       }
       if (s.kind === "blank")
-        return `<span class="seg-blank" title="{{${esc(s.name)}}} — 빈 값">〈빈 값〉</span>`;
+        return `<span class="seg-blank" title="{{${esc(s.name)}}}: 빈 값">〈빈 값〉</span>`;
       if (s.kind === "missing") return `<span class="seg-missing">${esc(s.text)}</span>`;
       return esc(s.text);  // literal — 원문 그대로
     }).join("");
