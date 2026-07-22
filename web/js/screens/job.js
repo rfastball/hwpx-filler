@@ -883,10 +883,6 @@
       contains: (t) => !!(t.closest("#jobRowMenu") || t.closest(".job-more")),
       close: closeRowMenu,
     });
-    // 목록 스크롤 시 fixed 메뉴가 트리거와 어긋난다 — 어긋난 채 남기지 말고 닫는다.
-    document.querySelector(".job-master").addEventListener("scroll", () => {
-      if (menuFor !== null) closeRowMenu();
-    }, true);
     moveDialog.wire("grpMoveOk", "grpMoveCancel");
     // 데이터 존(테이블·열 패널·칩·스트립·전체 선택/해제·문서 레벨 닫기)은 팩토리 몫 배선.
     dz.wire();

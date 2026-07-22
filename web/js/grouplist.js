@@ -4,7 +4,7 @@
    표면별로 정당하게 다른 것(행/카드 본문·메뉴 내용·인라인 이름변경·확인 문안·디스패치
    페이로드·menuFor 정체)은 화면이 소유하고 주입한다. 여기가 걷는 건 손수 2벌일 때 좌표·
    소구획이 조용히 갈라지던 기제뿐이다:
-   - 메뉴: 위치 계산(아래 공간 없으면 위로·화면 안 클램프·첫 항목 포커스) + 표시/숨김.
+   - 메뉴: 렌더 후 실측 위치 계산(Popover.place: flip·viewport clamp·transform-origin) + 표시/숨김.
    - 이동 다이얼로그: 라디오 목록 조립(기존 그룹 + 「그룹 없음」 + 「새 그룹」 data-new) +
      포커스=새 그룹 자동선택 + 빈 새 이름 인라인 재진술(모달 유지).
    바깥닫기(Popover.wireDismiss)는 화면이 자기 술어로 직접 배선한다 — menuFor 정체가 화면
@@ -21,11 +21,9 @@
       // .ctx-menu 는 display 미지정 div — block 로 노출(job 은 "", tpl 은 "block" 를 쓰던 걸
       // 통일; 둘 다 CSS 기본이 block 라 결과 동형). 측정 전에 보여야 offsetHeight 가 잡힌다.
       m.style.display = "block";
-      // position:fixed 좌표 — 트리거 rect 기준, 아래 공간이 없으면 위로 편다(overflow 클리핑 회피).
-      const r = btn.getBoundingClientRect();
-      const below = r.bottom + 4 + m.offsetHeight <= window.innerHeight;
-      m.style.top = (below ? r.bottom + 4 : Math.max(4, r.top - m.offsetHeight - 4)) + "px";
-      m.style.left = Math.max(4, Math.min(r.left, window.innerWidth - m.offsetWidth - 4)) + "px";
+      // 표시 뒤 getBoundingClientRect 실폭·실높이로 clamp/flip한다. width 상수나 렌더 전
+      // offset 추정은 긴 지역화 문안에서 우측 돌출을 만들므로 공용 팝오버 배치기에 맡긴다.
+      window.Popover.place(m, btn);
       const first = m.querySelector("button");
       if (first) first.focus();
     }

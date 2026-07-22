@@ -684,7 +684,8 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .job-grp-rows{display:flex;flex-direction:column;padding-left:26px} /* 위계 들여쓰기(결정 5) */
 .job-rename{width:100%;font-size:var(--fs-body)}
 .ctx-menu{position:fixed;z-index:60;background:var(--a-card);border:1px solid var(--n-border-strong);
-  border-radius:var(--rad-surface);box-shadow:var(--a-shadow);padding:var(--sp-4);min-width:150px}
+  border-radius:var(--rad-overlay);box-shadow:0 8px 24px var(--a-shadow);
+  padding:var(--sp-4);min-width:150px}
 .ctx-menu button{display:block;width:100%;text-align:left;border:0;background:none;font:inherit;
   font-size:var(--fs-body);color:var(--a-ink);padding:var(--sp-6) var(--sp-10);
   border-radius:var(--rad-control);cursor:pointer}
@@ -996,7 +997,7 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 /* 열 필터 패널(엑셀식 아이콘 펼침, 결정 25) — 데이터 존 내 부유 패널. */
 .colpanel{position:absolute;z-index:30;top:34px;left:0;min-width:240px;max-width:340px;
   background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-overlay);
-  box-shadow:var(--a-shadow);padding:var(--sp-10);display:flex;flex-direction:column;gap:var(--sp-8)}
+  box-shadow:0 8px 24px var(--a-shadow);padding:var(--sp-10);display:flex;flex-direction:column;gap:var(--sp-8)}
 .colpanel[hidden]{display:none}
 .colpanel .cp-head{display:flex;justify-content:space-between;align-items:center;
   font-weight:600;font-size:var(--fs-body)}

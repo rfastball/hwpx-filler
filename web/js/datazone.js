@@ -70,15 +70,14 @@
       // 재렌더됐을 수 있으니 현 DOM 의 같은 열 버튼을 재조회하고, 없으면 캡처 좌표로.
       // 자기 head 스코프로만 찾는다 — 두 인스턴스(작업·txt)의 .fico 혼선 차단.
       const btnNow = $(ids.tableHead).querySelector(`.fico[data-col="${CSS.escape(col)}"]`);
-      positionColPanel(btnNow ? btnNow.getBoundingClientRect() : rectBefore);
+      positionColPanel(btnNow || rectBefore);
     }
 
-    function positionColPanel(rect) {
+    function positionColPanel(anchor) {
       const p = $(ids.colPanel);
-      const host = $(ids.tableHost).getBoundingClientRect();
-      const left = Math.max(0, Math.min(rect.left - host.left, host.width - 260));
-      p.style.left = `${left}px`;
-      p.style.top = `${rect.bottom - host.top + 4}px`;
+      // 패널은 renderColPanel 뒤라 실측 가능하다. 공용 배치기가 실제 폭·높이로 viewport를
+      // clamp하고 위/아래를 flip하며, absolute 좌표는 host 기준으로 환산한다.
+      window.Popover.place(p, anchor, { offsetParent: $(ids.tableHost) });
     }
 
     function rangeRow(slot, clause) {
@@ -390,8 +389,8 @@
     }
 
     function wire() {
-      // 패널 바깥닫기·Escape·닫기 클릭 소비 — 기제는 공용 Popover.wireDismiss(단일 출처),
-      // 여기는 자기 술어만 주입한다. .fico 는 자기 head 스코프만 예외(2-인스턴스 혼선 차단).
+      // 패널 등록/해제·focusout·capture scroll·Escape·닫기 click 소비는 공용 Popover가
+      // 소유한다. 여기는 자기 술어만 등록한다. .fico는 자기 head 스코프만 예외다.
       Popover.wireDismiss({
         isOpen: () => panelCol !== null,
         contains: (t) => {

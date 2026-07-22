@@ -471,10 +471,6 @@
       contains: (t) => !!(t.closest("#draftRowMenu") || t.closest(".job-more")),
       close: closeRowMenu,
     });
-    // 목록 스크롤 시 fixed 메뉴가 트리거와 어긋난다 — 어긋난 채 남기지 말고 닫는다.
-    document.querySelector("#scr-draft .job-master").addEventListener("scroll", () => {
-      if (menuFor !== null) closeRowMenu();
-    }, true);
     // 휘발 세션 귀환은 상시 「이번 세션」 행이 진다(onMasterClick) — 껍데기 stub 의 back
     // 버튼을 승계했다(선택이 실제 복원이 되며 stub 이 사라졌다). 세션은 파괴하지 않고 겨눔만 푼다.
     $("draftSaveJob").addEventListener("click", saveJob);  // 승격(#135) — 컨트롤러 소유(JobRegistry)
