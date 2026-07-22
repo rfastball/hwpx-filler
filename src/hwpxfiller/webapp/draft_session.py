@@ -941,6 +941,39 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         """전각 정렬 치환 적용/해제(결정 17 린트 처방) — 세션 렌더 옵션, 템플릿 원본 불변."""
         self._fullwidth = bool(p["value"])
 
+    def _do_clear_data(self, p: dict) -> None:
+        """데이터 해제 — 결속 값을 현재 작업점 값으로 **상수 동결** 후 데이터를 뗀다(R-flow 결정 30).
+
+        구 「빠른 기안」의 "데이터 해제 = 결속 값 평문 동결"을 승계한다(리뷰 F — 삭제는 의무를
+        상속한다). 단건 :meth:`~hwpxfiller.gui.mapping_state.MappingModel.unbind` 와 다르다: N행
+        큐에선 결속 값이 행마다 달라 동결이 성립 안 하지만, **데이터를 통째** 떼면 무데이터 가상
+        1행(결정 14, 직접 입력)으로 퇴화하므로 작업점(없으면 행 0)의 값을 상수로 굳혀 화면에 보이던
+        값이 조용히 사라지지 않게 한다(표지 「직접 입력」). 되돌릴 열이 사라졌으니 소스 기억은
+        남기지 않는다(``freeze_to_const`` — dead revert 금지). 데이터 교체와 같은 파괴라 표면이
+        T3 가드로 먼저 확인하고 부른다(``confirmDataSwapIfArmed`` — 큐 진행 소실).
+        """
+        if self.vm.datasource is None:
+            return  # 이미 무데이터 — 무동작(dead 확인 금지)
+        records = self._records()
+        cur = self.queue.current
+        idx = cur if (cur is not None and 0 <= cur < len(records)) else (0 if records else None)
+        values = self.mapping.live_profile().apply(records[idx] if idx is not None else {})
+        for i, row in enumerate(self.mapping.rows):
+            if row.source:  # 결속 자리 → 현재 값 상수 동결(소스 없이 — R-flow 결정 30)
+                self.mapping.freeze_to_const(i, str(values.get(row.template_field, "")))
+        # 데이터 detach — vm 단일 seam(set_acquired 의 역). 큐·선택·필터는 세션 휘발이라 새로.
+        self._stash_filter()  # 죽는 세션의 필터 정의 → 직전 슬롯(결정 28, 데이터 교체와 동형)
+        self.vm.datasource = None
+        self.vm.records = []
+        self.data_label = ""
+        self.data_source = ""
+        self._data_key = ""
+        self.selection = SelectionModel(0)  # 무데이터 = 가상 1행 큐로 퇴화(결정 14)
+        self.queue = TxtQueueModel(self.selection)
+        self.filter = None
+        self._last_copy = None
+        self._map_dirty = True  # 결속→상수 = 미저장 매핑 편집
+
     # ------------------------------------------------- 세션 가드(T3, 블록 4 결정 26·27)
     def _guard_state(self) -> dict:
         """무장 판정 = 선택 성분(공유 술어) ∨ **큐 부분 진행**(T3) — 데이터 교체가 소비한다.

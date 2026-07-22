@@ -1022,6 +1022,9 @@ _DRAFT_SESSION_PROBE_JS = r"""
       return m ? m.textContent : ''; })();
     out.strip_shown = getComputedStyle(document.getElementById('draftSelStrip')).display !== 'none';
     out.chips_text = document.getElementById('draftFilterChips').textContent;
+    // 데이터 해제 버튼(R-flow 결정 30, 리뷰 F — 구 「빠른 기안」 승계) — 데이터가 물렸을 때만 뜬다
+    // (has_data:true 인 이 스냅샷 = 노출). 무데이터 숨김은 아래 퇴화 섹션(clear_hidden)이 못박는다.
+    out.clear_shown = document.getElementById('draftBtnClearData').hidden === false;
     // ② 맞추기 표(#148 슬라이스 3b) — 토큰 행·소유권 색 점·근사 제안 버튼·값 입력(항상 편집 가능,
     //   결속이면 데이터 값이 차 있고 고치면 상수 강등). 판정은 서버, 여긴 렌더 되읽기.
     out.map_rows = document.querySelectorAll('#draftTokPanel table.dmap tbody tr').length;
@@ -1120,6 +1123,8 @@ _DRAFT_SESSION_PROBE_JS = r"""
     vsnap.card.has_current = true;
     vsnap.card.index = null;
     window.__push('draft', vsnap);
+    // 데이터 해제 버튼은 무데이터(has_data:false)에선 숨는다(dead control 금지, 리뷰 F).
+    out.clear_hidden = document.getElementById('draftBtnClearData').hidden === true;
     // 무결속 토큰(비고, i=2)으로 무데이터 열 누출을 본다 — (직접 입력)만 = 1. 결속 토큰(공고명)은
     // 이제 결속 소스를 선택지에 보이므로(리뷰 5a P2) 누출 검사 대상이 아니다(첫 셀 = 공고명 결속).
     out.degen_src_options = (function(){ var s = document.getElementById('draftTokPanel-src-2');

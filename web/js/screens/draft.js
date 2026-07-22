@@ -31,6 +31,7 @@
     ids: {
       status: "draftStatus", tplSel: "draftTplSel", dataLabel: "draftDataLabel",
       pickBtn: "draftBtnPickData", poolBtn: "draftBtnPoolData", pasteBtn: "draftBtnPaste",
+      clearBtn: "draftBtnClearData",  // 데이터 해제(R-flow 결정 30 — 구 「빠른 기안」 승계, 리뷰 F)
       zoneNote: "draftZoneNote", note: "draftNote", tokPanel: "draftTokPanel",
       selCount: "draftSelCount", search: "draftFilterSearch", reapply: "draftFilterReapply",
       chips: "draftFilterChips", strip: "draftSelStrip",

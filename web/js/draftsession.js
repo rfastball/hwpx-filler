@@ -415,6 +415,8 @@
         renderCard(s);  // 작업점 카드(상태 색인·코드블록 렌더·동사 게이트) — 큐 판(결정 16)
         // 소스 종류 병기 라벨(#26 #6) — 서버가 플래그에서 합성(K8)·화면별 고유 id(#27).
         $(id.dataLabel).value = s.data_source_label || "";
+        // 데이터 해제 버튼은 데이터가 물렸을 때만(무데이터엔 해제할 게 없어 dead control, 리뷰 F).
+        if (id.clearBtn && $(id.clearBtn)) $(id.clearBtn).hidden = !s.has_data;
         dz.render(s);  // 데이터 존(테이블·칩·스트립) — 팩토리 소유(datazone.js)
         // 존 고지는 데이터 소스가 바뀌면 걷는다(다른 세션으로의 누수 방지 — 읽힐 때까지 유지).
         // 키는 표시 라벨이 아니라 정체(data_key) — 동명 다른 폴더 전환에서 이전 소스의 고지가
@@ -758,6 +760,16 @@
         if (!(await confirmDataSwapIfArmed())) return;  // T3 가드 — 파일 경로와 같은 규율
         await PoolPicker.choose(SCREEN);             // 라벨은 스냅샷(data_source_label)이 채운다
       });
+      // 데이터 해제(R-flow 결정 30, 리뷰 F — 구 「빠른 기안」 승계) — 결속 값을 지금 값으로 상수
+      // 동결하고 무데이터 직접 입력으로 되돌린다. 데이터 교체와 같은 파괴라 T3 확인을 지난다.
+      // id 미부여 화면(구 「기안문 채우기」는 이 버튼 없음)은 팩토리가 유무로 가드(dead control 없음).
+      if (id.clearBtn && $(id.clearBtn)) {
+        $(id.clearBtn).addEventListener("click", async () => {
+          await dz.flushPendingSearch();
+          if (!(await confirmDataSwapIfArmed())) return;  // T3 가드 — 데이터 교체와 같은 규율
+          Bridge.call(SCREEN, "clear_data", {});
+        });
+      }
 
       // 붙여넣기 모달(세션 템플릿) — 개폐·초기포커스·복귀·Escape 는 Modal 헬퍼가 소유(#27/#28).
       // 모달 DOM 은 **두 화면 공유 한 벌**이라 확정 버튼도 한 번만 배선하고, 어느 화면이

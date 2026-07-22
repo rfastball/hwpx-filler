@@ -601,6 +601,20 @@ class MappingModel:
         row.confirmed = False
         row.touched = True
 
+    def freeze_to_const(self, index: int, value: str) -> None:
+        """데이터 해제 시 결속 값 **평문 동결**(R-flow 결정 30) — 소스도 뗀다(``set_manual`` 과 차이).
+
+        데이터를 통째 떼면 결속 열이 사라져 되돌릴 대상이 없으므로, 값을 상수로 굳히되 소스
+        기억은 남기지 않는다(:meth:`set_manual` 은 revert 용으로 소스를 남긴다 — 여기선 되살릴
+        데이터가 없어 「자동으로 되돌리기」가 죽은 손잡이가 된다). 표지는 「직접 입력」."""
+        row = self.rows[index]
+        row.type = "const"
+        row.const = value
+        row.source = ""
+        row.fmt = ""
+        row.confirmed = False
+        row.touched = True
+
     def revert_binding(self, index: int, kind: str = "") -> bool:
         """man→auto 되돌리기 — 기억한 결속 소스 복귀(상수 청소·유형 재유도). 소스 없으면 무동작.
 

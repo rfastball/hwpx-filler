@@ -395,6 +395,10 @@ class TestWebSelftestGate:
         assert d["mark"] == "전산", f"검색어 하이라이트(<mark>)가 서지 않았습니다: {d!r}"
         assert d["strip_shown"] is True, "필터 밖 선택 스트립이 서지 않았습니다(관통 계약 파손)."
         assert "전산" in d["chips_text"], f"필터 칩 정의줄이 비었습니다: {d['chips_text']!r}"
+        # 데이터 해제 버튼(R-flow 결정 30, 리뷰 F — 구 「빠른 기안」 승계) — 데이터 있으면 뜨고,
+        # 무데이터(퇴화)면 숨는다. 삭제는 의무를 상속한다: 이 어포던스가 조용히 사라지지 않았음을 못박음.
+        assert d["clear_shown"] is True, "데이터가 물렸는데 「데이터 해제」 버튼이 없습니다(어포던스 소실)."
+        assert d["clear_hidden"] is True, "무데이터인데 「데이터 해제」 버튼이 남아 있습니다(dead control)."
         # ② 맞추기 표(#148 슬라이스 3b) — 결속(소유권 색)·결속 빈값 미리보기·근사 제안·값 직접
         # 입력을 실 WebView2 로 되읽는다. 표를 조용히 떨어뜨리면 항등 매핑으로 되돌아가(토큰명==
         # 열명 강제) 합병의 정밀도 절반이 사라진다.

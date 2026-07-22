@@ -284,7 +284,11 @@
                 <input class="field ro" id="draftDataLabel" type="text" readonly
                        placeholder="데이터를 선택하세요 — 없으면 토큰이 그대로 남습니다">
                 <button class="btn" id="draftBtnPoolData" data-busy-lock>등록 데이터…</button>
-                <button class="btn" id="draftBtnPickData" data-busy-lock>파일 선택…</button></div>
+                <button class="btn" id="draftBtnPickData" data-busy-lock>파일 선택…</button>
+                <!-- 데이터 해제(R-flow 결정 30, #148 슬라이스 6 — 구 「빠른 기안」에서 승계) — 결속
+                     값을 지금 값으로 상수 동결하고 무데이터 직접 입력으로 되돌린다. 데이터가 있을
+                     때만 뜬다(draftsession.js has_data). 데이터 교체와 같은 파괴라 T3 확인을 지난다. -->
+                <button class="btn" id="draftBtnClearData" data-busy-lock hidden>데이터 해제</button></div>
 
               <div class="run-row run-recs-head">
                 <span class="lbl" style="font-weight:600">기안 대상 행</span>

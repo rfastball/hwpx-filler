@@ -313,6 +313,36 @@ def test_open_template_guards_stashed_volatile_loss(tmp_path):
     assert snap["card"]["copied_count"] == 0 and snap["selected_count"] == 0  # 큐·선택 리셋
 
 
+def test_clear_data_freezes_bound_values_and_detaches(tmp_path):
+    """데이터 해제 = 결속 값을 지금 값으로 상수 동결 후 데이터 detach(R-flow 결정 30, 리뷰 F).
+
+    구 「빠른 기안」 clear_data 승계(삭제는 의무를 상속한다) — 결속 열이 사라져도 화면에 보이던
+    값이 조용히 사라지지 않게 상수로 굳히고(표지 「직접 입력」·소스 없음=dead revert 금지), 무데이터
+    가상 1행(결정 14)으로 퇴화한다."""
+    ctrl, _jobs, _ = _controller(tmp_path)  # 착수계.txt = "제목: {{공고명}}"
+    csv = tmp_path / "d.csv"
+    csv.write_text("공고명\n전산장비 구매\n비품 구매\n", encoding="utf-8")
+    ctrl.load_data_path(str(csv))
+    snap = ctrl.snapshot()
+    tok = _tok(snap, "공고명")
+    assert tok["own"] == "auto" and tok["value"] == "전산장비 구매" and snap["has_data"] is True
+    ctrl.dispatch("clear_data", {})
+    snap2 = ctrl.snapshot()
+    assert snap2["has_data"] is False
+    tok2 = _tok(snap2, "공고명")
+    assert tok2["own"] == "man" and tok2["value"] == "전산장비 구매"  # 지금 값 상수 동결
+    assert tok2["can_revert"] is False  # 소스 없음 — dead revert 금지(freeze_to_const)
+    assert snap2["card"]["queue_degenerate"] is True  # 무데이터 = 가상 1행 퇴화
+
+
+def test_clear_data_on_no_data_is_noop(tmp_path):
+    """이미 무데이터면 해제는 상태를 바꾸지 않는다(예외 없음) — 버튼도 has_data 로 숨는다(표면)."""
+    ctrl, _jobs, _ = _controller(tmp_path)
+    assert ctrl.snapshot()["has_data"] is False
+    ctrl.dispatch("clear_data", {})  # datasource None → 무동작
+    assert ctrl.snapshot()["has_data"] is False
+
+
 def test_deleting_bound_with_unsaved_mapping_edit_restates_loss(tmp_path):
     """확정 편집만 한 결속 세션을 삭제해도 소실을 재진술한다(147 + screen_job 동형 삭제 가드)."""
     ctrl, jobs, _ = _controller(tmp_path)
