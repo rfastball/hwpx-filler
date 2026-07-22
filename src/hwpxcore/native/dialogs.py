@@ -33,6 +33,27 @@ OFN_NOCHANGEDIR = 0x00000008
 _MAX = 4096
 
 
+def _common_dialog_result(ok: int, selected: str, error_code: int) -> "str | None":
+    """공용 파일 다이얼로그의 선택·취소·실패를 서로 다른 계약으로 번역한다.
+
+    ``Get*FileNameW`` 의 ``False``는 취소와 실패를 함께 뜻한다. 바로 이어
+    ``CommDlgExtendedError``를 읽어 0이면 사용자 취소, 비영이면 네이티브 실패로 처리한다.
+    별도 shim/probe가 실제 대화상자를 자동 조작하지 않고 세 경계를 검증할 수 있다.
+    """
+    if ok:
+        return selected
+    if error_code == 0:
+        return None
+    raise OSError(error_code, f"공용 파일 다이얼로그 실패 (0x{error_code:04X})")
+
+
+def _extended_dialog_error(comdlg32) -> int:
+    fn = comdlg32.CommDlgExtendedError
+    fn.argtypes = []
+    fn.restype = wintypes.DWORD
+    return int(fn())
+
+
 class _OPENFILENAMEW(ctypes.Structure):
     _fields_ = [
         ("lStructSize", wintypes.DWORD),
@@ -143,13 +164,15 @@ def open_file_dialog(
             OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST
             | OFN_HIDEREADONLY | OFN_NOCHANGEDIR
         )
-        fn = ctypes.windll.comdlg32.GetOpenFileNameW  # type: ignore[attr-defined]
+        comdlg32 = ctypes.windll.comdlg32  # type: ignore[attr-defined]
+        fn = comdlg32.GetOpenFileNameW
         fn.argtypes = [ctypes.POINTER(_OPENFILENAMEW)]
         fn.restype = wintypes.BOOL
         log("open: before GetOpenFileNameW")
         ok = fn(ctypes.byref(ofn))
         log(f"open: after GetOpenFileNameW ok={ok}")
-        return buf.value if ok else None
+        error_code = 0 if ok else _extended_dialog_error(comdlg32)
+        return _common_dialog_result(ok, buf.value, error_code)
 
     log("open_file_dialog: enter")
     return _in_sta_thread(call)  # type: ignore[return-value]
@@ -179,10 +202,13 @@ def save_file_dialog(
             OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST
             | OFN_HIDEREADONLY | OFN_NOCHANGEDIR
         )
-        fn = ctypes.windll.comdlg32.GetSaveFileNameW  # type: ignore[attr-defined]
+        comdlg32 = ctypes.windll.comdlg32  # type: ignore[attr-defined]
+        fn = comdlg32.GetSaveFileNameW
         fn.argtypes = [ctypes.POINTER(_OPENFILENAMEW)]
         fn.restype = wintypes.BOOL
-        return buf.value if fn(ctypes.byref(ofn)) else None
+        ok = fn(ctypes.byref(ofn))
+        error_code = 0 if ok else _extended_dialog_error(comdlg32)
+        return _common_dialog_result(ok, buf.value, error_code)
 
     return _in_sta_thread(call)  # type: ignore[return-value]
 
