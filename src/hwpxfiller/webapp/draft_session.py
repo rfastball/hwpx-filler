@@ -20,6 +20,7 @@ R-info 3부 결정 1·5·7 의 합병은 **두 표면이 같은 세션 기계를
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from ..core.format_engine import presets as format_presets
@@ -195,6 +196,11 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         # 편집·원문 라이브 편집). 깨끗한 라이브러리 픽·복원·붙여넣기는 False. modBadge(수정됨)
         # 의 단일 출처 — 표면이 "원문≠라이브러리"를 정직하게 말한다(문안≠상태 차단).
         self._source_dirty = False
+        # 현 원문의 라이브러리/Job 파일 경로(#148 슬라이스 5c) — 「기안으로 저장」이 Job.template_path
+        # 로 쓴다. 라이브러리 픽·복원은 실경로, 붙여넣기는 "". 매 스냅샷 재해석(I/O)을 피해 필드로
+        # 든다(TargetFontSetting 과 같은 규율 — 타건마다 파일 스캔 금지). 수정된 원문(_source_dirty)
+        # 은 파일과 어긋나므로 저장 자격이 없다(먼저 「템플릿으로 저장」, 결정 = 라이브러리 배접만).
+        self._template_path = ""
         # 휘발 세션 스태시(두 세션 병존) — 저장 기안을 고르면 붙여넣던 세션을 여기 얼려 두고,
         # 「이번 세션」으로 돌아오면 되살린다(소실 0). 저장-세션은 Job 에서 결정적으로 재구성
         # 되므로(Job 은 데이터/행 미저장) 스태시가 필요한 건 휘발 하나뿐이다.
@@ -231,10 +237,19 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         # 시스템 소유라 이 표지를 올리지 않는다(그 경로는 _do_* 핸들러를 안 탄다).
         self._map_dirty = False
         self._copied_total = 0  # 새 세션 = 복사 이력 없음(682·685)
+        self._editing_fingerprint = ""  # 휘발 = 결속 작업 없음 → 드리프트 판정 대상 아님(212)
         names = self.vm.template_names()
         if names:
             self.vm.select_template(names[0])
+            self._template_path = self._resolve_template_path(names[0])
+        else:
+            self._template_path = ""  # 라이브러리 비었음 = 저장할 배접 없음
         self._rebuild_mapping()  # 첫 템플릿의 맞추기 골격(정확 자동 결속·이름 유형)
+
+    def _resolve_template_path(self, name: str) -> str:
+        """라이브러리 템플릿 이름 → 실경로 문자열(없으면 "") — 저장 자격의 template_path 원천."""
+        t = self._registry.load(name)
+        return str(t.path) if t.path.exists() else ""
 
     # ------------------------------------------------ 세션 유래 전이(#148 슬라이스 5a)
     # 휘발 세션과 함께 스태시/복원되는 세션-스코프 속성. 컨트롤러 수명(_advance_after·_font·
@@ -242,9 +257,11 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
     _SESSION_ATTRS = (
         "vm", "data_label", "data_source", "_data_key", "selection", "queue",
         "filter", "mapping", "_fullwidth", "_last_copy", "_gap_cache", "_gap_cache_key",
-        "_source_dirty",  # 사본/편집 여부는 그 원문에 붙는다 — 스태시·복원과 함께 이동(슬라이스 5b)
-        "_map_dirty",  # 미저장 레시피 편집 표지는 그 세션에 붙는다 — 스태시·복원과 함께 이동(147)
-        "_copied_total",  # 복사 이력 카운터도 그 세션에 붙는다 — 스태시·복원과 함께 이동(682·685)
+        "_source_dirty",   # 사본/편집 여부는 그 원문에 붙는다 — 스태시·복원과 함께 이동(슬라이스 5b)
+        "_template_path",  # 원문의 파일 경로도 그 세션에 붙는다(슬라이스 5c 저장 자격)
+        "_map_dirty",      # 미저장 레시피 편집 표지도 그 세션에 붙는다 — 스태시·복원과 함께 이동(147)
+        "_copied_total",   # 복사 이력 카운터도 그 세션에 붙는다 — 스태시·복원과 함께 이동(682·685)
+        "_editing_fingerprint",  # 로드 시점 내용 지문도 그 세션에 붙는다(212 드리프트 판정)
     )
 
     def _stash_volatile(self) -> None:
@@ -321,8 +338,27 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self._bound_job = job.name
         self._source_readonly = True
         self._source_dirty = False  # 저장 정의 = 깨끗한 원문(읽기 전용 — 손보려면 「사본으로 편집」)
+        self._template_path = job.template_path  # 재저장(save-as) 시 이 경로를 재사용
         self._map_dirty = False  # 복원한 레시피 = 저장분과 일치하는 깨끗한 baseline(147)
         self._copied_total = 0  # 복원 = 아직 이 세션에서 복사 안 함(682·685)
+        # 로드 시점 지문(리뷰 5c 2R P1 / 212) — 자기 재저장 전에 디스크가 이 지문과 달라졌으면
+        # (다른 표면이 이 작업의 템플릿·매핑을 바꿈) 무확인 덮어쓰기가 파괴다.
+        self._editing_fingerprint = self._baseline_fingerprint(job)
+
+    @staticmethod
+    def _baseline_fingerprint(job) -> str:
+        """draft 저장이 실제로 **덮는** 필드만의 지문 — 자기 재저장 드리프트 판정 baseline(212·270).
+
+        draft 저장은 {name(요청값)·template_path·mapping} 만 갈아 끼우고 group·tags·last_run_at·
+        filename_pattern·default_dataset_ref·version 은 ``replace`` 로 **보존**한다(재저장이 이
+        화면이 편집하지 않는 필드를 승계). 따라서 드리프트 판정은 실제로 덮는 세 필드만 본다 —
+        전 필드 지문(:func:`~hwpxfiller.core.job.content_fingerprint`, 에디터용)을 쓰면 무관한
+        메타 변경(그룹 이동·외부 참조·파일명 패턴)마다 거짓 드리프트가 뜬다(리뷰 5c 5R P2 / 270).
+        보존되는 필드의 외부 변경은 이 저장에 파괴가 아니므로(그대로 승계) 비교에서 뺀다."""
+        return json.dumps(
+            {"name": job.name, "template_path": job.template_path, "mapping": job.mapping.to_dict()},
+            ensure_ascii=False, sort_keys=True,
+        )
 
     def _do_fork_to_volatile(self, p: dict) -> "dict | None":
         """「사본으로 편집」(#148 슬라이스 5b) — 저장 원문을 휘발 사본으로 가른다(결정 7 스위치 ④).
@@ -651,6 +687,10 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
             # 원문 수정 표지(#148 슬라이스 5b) — modBadge(수정됨)의 단일 출처. 원문이 라이브러리
             # 정의에서 갈라졌는가(사본으로 편집·원문 라이브 편집). 판정은 Python, JS 는 표시만.
             "source_dirty": self._source_dirty,
+            # 「기안으로 저장」 자격(#148 슬라이스 5c) — 라이브러리 배접(파일 경로 있음)이고 수정되지
+            # 않은 원문만 저장할 수 있다(결정 = 라이브러리 배접만). 붙여넣기·수정 원문은 먼저
+            # 「템플릿으로 저장」이 필요하다(비활성 + 사유, dead button 금지). 판정은 Python 단일.
+            "can_save_job": (not self._source_dirty) and bool(self._template_path),
         }
 
     # ------------------------------------------------------- 웹→Python 데이터 액션
@@ -690,6 +730,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self.vm.select_template(p["name"])
         self._fullwidth = False  # 치환은 그 원문에 대한 판단 — 원문이 바뀌면 함께 죽는다(리뷰 F2)
         self._source_dirty = False  # 깨끗한 라이브러리 픽 — 수정됨 표지 해제(슬라이스 5b)
+        self._template_path = self._resolve_template_path(p["name"])  # 저장 배접(슬라이스 5c)
         self._rebuild_mapping()  # 새 토큰 집합 → 맞추기 골격 재구성(같은 이름 결속은 승계)
 
     def _do_new_draft(self, p: dict) -> None:
@@ -736,6 +777,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self.vm.set_template_text(p["text"])
         self._fullwidth = False  # 붙여넣은 새 원문에 옛 치환 결정이 승계되지 않는다(리뷰 F2)
         self._source_dirty = False  # 새로 붙여넣은 원문 = 깨끗한 시작(수정됨 아님, 슬라이스 5b)
+        self._template_path = ""  # 붙여넣기 = 파일 배접 없음 → 저장 불가(먼저 「템플릿으로 저장」)
         self._rebuild_mapping()  # 붙여넣은 원문의 토큰 → 맞추기 골격
 
     def _do_edit_source(self, p: dict) -> dict:

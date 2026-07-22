@@ -1202,6 +1202,21 @@ _DRAFT_SESSION_PROBE_JS = r"""
       }
       return 'MISSING'; })();
     window.__push('draft', snap);  // 원상 복귀
+    // 「기안으로 저장」 승격 버튼(#148 슬라이스 5c, #135) — 라이브러리 배접(can_save_job)만 활성.
+    // 붙여넣기·수정 원문은 비활성 + 사유(dead button 금지, #133). base snap 은 can_save_job
+    // 미지정 = 비활성. 라벨은 유래로 갈린다(휘발=「기안으로 저장」·저장=「다른 이름으로 저장」).
+    out.save_disabled_unbacked = document.getElementById('draftSaveJob').disabled === true;
+    out.save_note_shown = !document.getElementById('draftSaveJobNote').hidden;
+    var svsnap = JSON.parse(JSON.stringify(snap));
+    svsnap.can_save_job = true;
+    window.__push('draft', svsnap);
+    out.save_enabled_backed = document.getElementById('draftSaveJob').disabled === false;
+    out.save_note_hidden = document.getElementById('draftSaveJobNote').hidden === true;
+    out.save_label_volatile = document.getElementById('draftSaveJob').textContent;
+    svsnap.has_job = true; svsnap.mode = 'saved'; svsnap.bound_job = '착수계 기안';
+    window.__push('draft', svsnap);
+    out.save_label_saved = document.getElementById('draftSaveJob').textContent;
+    window.__push('draft', snap);  // 원상 복귀(휘발) — 뒤 되읽기 오염 방지
     out.error = null;
   } catch (e) { out.error = 'throw:' + (e && e.message); }
   return out;
