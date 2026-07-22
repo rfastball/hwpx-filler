@@ -75,7 +75,10 @@ def test_load_defaults_to_all_selected_queue(tmp_path):
     assert [r["qpos"] for r in rows] == [1, 2, 3]
     assert [r["copied"] for r in rows] == [False, False, False]
     assert [r["current"] for r in rows] == [True, False, False]  # 작업점 = 첫 미처리
-    assert snap["table"]["columns"] == ["공고명", "추정가격"]
+    assert snap["table"]["columns"] == [
+        {"name": "공고명", "kind": "text"},
+        {"name": "추정가격", "kind": "amount"},
+    ]
 
 
 def test_queue_copied_marker_projected(tmp_path):

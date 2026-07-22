@@ -29,9 +29,9 @@
 
   /* 미저장 정의 세션 폐기 확인의 **단일 출처**(PR-4 리뷰 F9 — 3중 복붙 수렴): 판정은 브리지
      즉시 질의(stale LAST 금지), 문구만 호출측이 준다. 미저장 없으면 조용히 통과. */
-  async function confirmDiscard(body) {
+  async function confirmDiscard(body, returnFocus) {
     if (!(await Bridge.editorHasUnsavedWork())) return true;
-    return window.Modal.confirm({ body });
+    return window.Modal.confirm({ body, returnFocus });
   }
 
   /* openGuarded(name) — 미저장 정의 확인 → 작업 로드 → 「작업」 편집 모드. 취소·손상 시 무이동.

@@ -67,6 +67,14 @@ def test_dark_muted_and_indicator_meet_aa():
     assert b >= 3.0, f"dark indicator border on card = {b:.2f}:1 < 3:1"
 
 
+def test_disabled_primary_text_meets_aa_on_neutral_track_in_both_themes():
+    """H-11: disabled primary의 muted 글자/track 면 조합은 라이트·다크 모두 4.5:1."""
+    t = gen.load_tokens()
+    for label, palette in (("light", t), ("dark", t["dark"])):
+        ratio = contrast(palette["color"]["muted"], palette["neutral"]["track"])
+        assert ratio >= 4.5, f"{label} disabled primary = {ratio:.2f}:1 < 4.5:1"
+
+
 def test_dark_semantic_text_on_card_meets_aa():
     """다크에서 의미 색(primary/warn/danger/ok/empty)이 카드 위 텍스트로 4.5:1 이상.
 

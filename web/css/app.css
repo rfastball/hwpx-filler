@@ -22,6 +22,15 @@ body{
   color:var(--a-ink); background:var(--a-window); font-size:var(--fs-body); line-height:1.5;
   -webkit-font-smoothing:antialiased;
 }
+/* WebView2 전역 스크롤바(H-08) — H-07이 허용한 스크롤포트의 외형만 한 벌로 맞춘다.
+   thumb는 라이트·다크 값이 모두 있는 중립 토큰을 소비하고, 투명 border로 8px 레일 안에서
+   가벼운 시각 폭을 만든다. 스크롤포트·gutter·overscroll 동작은 이 규칙이 바꾸지 않는다. */
+*::-webkit-scrollbar{width:8px;height:8px}
+*::-webkit-scrollbar-track,*::-webkit-scrollbar-corner{background:transparent}
+*::-webkit-scrollbar-thumb{background-color:var(--n-border-strong);background-clip:padding-box;
+  border:2px solid transparent;border-radius:var(--rad-pill)}
+*::-webkit-scrollbar-thumb:hover{background-color:var(--n-ink-soft)}
+*::-webkit-scrollbar-button{display:none;width:0;height:0}
 .mono{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var(--fs-body)}
 .muted{color:var(--a-muted)} .danger{color:var(--a-danger)} .ok{color:var(--a-ok)} .warn{color:var(--a-warn)}
 code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var(--fs-body);
@@ -74,9 +83,17 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
   .ctx-menu{opacity:0;transform:scale(.98)}
   .colpanel:not([hidden]){opacity:0;transform:scale(.98)}
 }
-/* 모달 = 뷰포트 중앙 기준(scale .95) — 트리거 비의존이라 origin center 유지(emil). */
-.modal-card{transition:opacity var(--dur-modal) var(--ease-out),transform var(--dur-modal) var(--ease-out)}
-@starting-style{.modal:not(.hidden) .modal-card{opacity:0;transform:scale(.95)}}
+/* 모달 = 뷰포트 중앙 기준(scale .95). backdrop/card가 같은 160ms 경로로 들어오고 나간다(H-16). */
+.modal{transition:background-color var(--dur-modal) var(--ease-in-out),
+  backdrop-filter var(--dur-modal) var(--ease-in-out)}
+.modal-card{transition:opacity var(--dur-modal) var(--ease-in-out),
+  transform var(--dur-modal) var(--ease-in-out)}
+@starting-style{
+  .modal:not(.hidden){background-color:transparent;backdrop-filter:blur(0)}
+  .modal:not(.hidden) .modal-card{opacity:0;transform:scale(.95)}
+}
+.modal.is-closing{background-color:transparent;backdrop-filter:blur(0);pointer-events:auto}
+.modal.is-closing .modal-card{opacity:0;transform:scale(.95);pointer-events:none}
 
 @media (prefers-reduced-motion:reduce){
   .btn,.navbtn,.ctx-menu button,.job-more,.grp-more,.tpl-assign,button.pill{transition:none}
@@ -84,6 +101,8 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
   .grp-more:active,.tpl-assign:active,button.pill:active:not(:disabled){transform:none}
   /* 페이드만 유지, 이동 제거 — @starting-style 의 scale 은 transition 대상 밖이라 즉시 스냅. */
   .ctx-menu,.colpanel,.modal-card{transition-property:opacity}
+  .modal{transition-property:background-color}
+  .modal:not(.hidden) .modal-card{transform:none}
 }
 
 /* ---- 공통 컨트롤(QSS 미러) ---- */
@@ -95,8 +114,16 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .btn.icon{padding:var(--sp-4) var(--sp-8)}
 .btn.primary{background:var(--a-primary);color:var(--a-on-accent);border-color:var(--a-primary);font-weight:600;padding:var(--sp-6) var(--sp-16)}
 .btn.primary:hover{background:var(--a-primary-h);border-color:var(--a-primary-h)}
-.btn.primary:disabled{background:var(--a-muted);border-color:var(--a-muted)}
+/* 비활성 주동사(H-11) — 솔리드 accent/muted 필을 쓰지 않고 옅은 중립 면으로 물러난다.
+   사유 문안은 인접 게이트 캡션이 소유하므로 버튼에는 상태 표현만 남긴다. */
+.btn.primary:disabled{background:var(--n-track);color:var(--a-muted);border-color:var(--a-border);opacity:1}
 .btn:focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
+/* PathTrack 보조 로케이트(H-12) — 찾아보기/지정 같은 텍스트 주동사보다 한 급 낮은 아이콘 버튼. */
+.track-affords{display:inline-flex;align-items:center;gap:var(--sp-4);vertical-align:middle}
+.track-btn{width:28px;height:28px;padding:0;color:var(--a-muted);display:inline-grid;place-items:center}
+.track-btn:hover{color:var(--n-ink-control)}
+.track-btn svg{width:16px;height:16px;display:block;fill:none;stroke:currentColor;stroke-width:1.5;
+  stroke-linecap:round;stroke-linejoin:round}
 .field{background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-control);
   padding:var(--sp-6) var(--sp-8);color:var(--a-ink);font:inherit;font-size:var(--fs-body);width:100%}
 .field.ro{background:var(--n-surface-alt);color:var(--n-ink-soft)}
@@ -112,9 +139,17 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 /* 모달 보조 설명문 — 제목 아래 한 줄(인라인 font-size 리터럴 대체) */
 .modal-sub{font-size:var(--fs-caption);color:var(--a-muted);margin:var(--sp-4) 0 var(--sp-8)}
 
+/* ---- 제목 타이포 역할 계약(H-01) ----
+   크기·굵기는 아래 세 역할에서만 정한다. 개별 컴포넌트 규칙은 배치·색만 소유한다. */
+.scr-head h1{font-size:var(--fs-section);font-weight:700}
+.track .tt,.job-sec-head,.tpl-band .tb-t,.modal-card h3{
+  font-size:var(--fs-strong);font-weight:700}
+.zone-cap,.pane h4,.qd-formpane h4,.qd-prevpane h4{
+  font-size:var(--fs-dense);font-weight:700}
+
 /* ---- txt 화면 머리말 + 상태 pill ---- */
 .scr-head{display:flex;align-items:flex-end;gap:var(--sp-16);margin-bottom:var(--sp-12)}
-.scr-head h1{font-size:var(--fs-section);margin:0}
+.scr-head h1{margin:0}
 .scr-head .sub{margin:var(--sp-2) 0 0;color:var(--a-muted);font-size:var(--fs-body)}
 .scr-head>div:first-child{flex:1;min-width:0}
 .status{padding:var(--sp-4) var(--sp-12);border-radius:var(--rad-pill);font-size:var(--fs-body);background:var(--n-track);
@@ -136,8 +171,7 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .panes{display:grid;grid-template-columns:290px 1fr;gap:var(--sp-16);flex:1;min-height:0}
 .pane{background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface);
   padding:var(--sp-12);display:flex;flex-direction:column;min-height:0}
-.pane h4{margin:0 0 var(--sp-10);font-size:var(--fs-caption);color:var(--a-muted);
-  font-weight:700}
+.pane h4{margin:0 0 var(--sp-10);color:var(--a-muted)}
 .pane.tokens{min-width:0}
 #tokPanel{overflow:auto;flex:0 1 auto}
 .hint{font-size:var(--fs-caption);margin:var(--sp-10) 0 0}
@@ -155,12 +189,12 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 /* ---- ② 맞추기 표(#148 슬라이스 3b) — 토큰별 결속·근사 제안·표시형·소유권 색·「지금 행의 값」.
      표 클래스는 `.dmap`(draft map) — 에디터 위저드의 `.map`(F23 고정 레이아웃)과 열 구성·판정
      주체가 달라 분리한다(같은 `.map` 이면 에디터 th:nth-child 폭·table-layout 이 교차 오염). ---- */
-.mapwrap{border:1px solid var(--a-border);border-radius:var(--rad-surface);overflow-x:auto}
+.mapwrap{border:1px solid var(--a-border);border-radius:var(--rad-surface);overflow:auto}
 table.dmap{border-collapse:collapse;width:100%;font-size:var(--fs-dense);min-width:420px}
 table.dmap th,table.dmap td{padding:var(--sp-6) var(--sp-10);text-align:left;
   border-bottom:1px solid var(--a-border);vertical-align:middle}
 table.dmap th{background:var(--a-window);font-weight:600;font-size:var(--fs-caption);
-  color:var(--a-muted);white-space:nowrap}
+  color:var(--a-muted);white-space:nowrap;position:sticky;top:0;z-index:1}
 table.dmap tr:last-child td{border-bottom:0}
 .dmap .maptok{font-weight:600;white-space:nowrap;font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
 .dmap .maptok::before{content:"{{";color:var(--a-muted);font-weight:400}
@@ -232,19 +266,23 @@ table.dmap tr:last-child td{border-bottom:0}
 .wc-readout{flex:1;min-width:0;font-size:var(--fs-caption);color:var(--a-muted);font-weight:600;
   font-variant-numeric:tabular-nums}
 .wc-nav{display:flex;gap:var(--sp-4);flex:none}
-.wc-dots{display:flex;flex-wrap:wrap;gap:var(--sp-4);margin-bottom:var(--sp-10);
-  max-height:60px;overflow:auto}
+.wc-dots{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin-bottom:var(--sp-10);overflow:visible}
 /* 큐 퇴화(결정 8·14) 시 진행 색인이 숨어야 한다 — display:flex 는 UA [hidden]{display:none}
    을 특이도로 이기므로 명시 차단(부록 B-9 결함 클래스 2 — .wc-lint·.qd-foot·.colpanel 선례). */
 .wc-dots[hidden]{display:none}
-.wc-dot{width:14px;height:14px;border-radius:var(--rad-pill);border:1px solid var(--a-border);
-  background:var(--a-card);cursor:pointer;padding:0;position:relative;flex:none}
-.wc-dot.uncopied{background:var(--fb-blank-bg);border-color:var(--fb-blank-bd)}
-.wc-dot.copied{background:var(--fb-fill-bg);border-color:var(--fb-fill-bd)}
-.wc-dot.current{outline:2px solid var(--a-primary);outline-offset:1px;
+.wc-dot{width:24px;height:24px;border:0;background:transparent;cursor:pointer;padding:0;
+  position:relative;flex:none;border-radius:var(--rad-pill)}
+/* 시각 점은 14px을 유지하되 버튼은 24px hit target — 조밀한 큐에서도 클릭/터치 겨눔을 보장한다. */
+.wc-dot::before{content:"";position:absolute;top:5px;left:5px;width:14px;height:14px;
+  border-radius:var(--rad-pill);
+  border:1px solid var(--a-border);background:var(--a-card)}
+.wc-dot.uncopied::before{background:var(--fb-blank-bg);border-color:var(--fb-blank-bd)}
+.wc-dot.copied::before{background:var(--fb-fill-bg);border-color:var(--fb-fill-bd)}
+.wc-dot.current::before{outline:2px solid var(--a-primary);outline-offset:1px;
   background:var(--a-primary);border-color:var(--a-primary)}
+.wc-dot:focus-visible{outline:2px solid var(--a-primary);outline-offset:0}
 /* 빈칸 지도 표지 — 미충족 카드(항목 없음·빈 값)에 빨강 점 */
-.wc-dot.gap::after{content:"";position:absolute;top:-3px;right:-3px;width:6px;height:6px;
+.wc-dot.gap::after{content:"";position:absolute;top:2px;right:2px;width:6px;height:6px;
   border-radius:50%;background:var(--a-danger);border:1px solid var(--a-card)}
 /* 카드 헤더: 정체 + 복사 동사(우상단) + 전진 토글(미루기는 결정 10 사망) */
 .wc-head{display:flex;align-items:center;gap:var(--sp-10);margin-bottom:var(--sp-8)}
@@ -276,8 +314,8 @@ table.dmap tr:last-child td{border-bottom:0}
 .wc-render.f-dotumche{font-family:"DotumChe","돋움체","Dotum",ui-monospace,monospace}
 .wc-render.f-malgun{font-family:"Malgun Gothic","맑은 고딕",system-ui,sans-serif}
 .wc-render{background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface);
-  padding:var(--sp-16) var(--sp-24);flex:1;overflow:auto;font-size:var(--fs-body);line-height:1.85;
-  white-space:pre-wrap;color:var(--a-ink);margin:0;box-shadow:inset 0 1px 3px rgba(0,0,0,.03);
+  padding:var(--sp-16) var(--sp-24);overflow:auto;font-size:var(--fs-body);line-height:1.85;
+  white-space:pre-wrap;color:var(--a-ink);margin:0;
   font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
 .wc-render:focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
 .wc-render .seg-fill{background:var(--fb-fill-bg);border-radius:var(--rad-control);padding:0 2px}
@@ -294,7 +332,8 @@ table.dmap tr:last-child td{border-bottom:0}
    구 화면은 좌우 .panes(고정 2열), 「기안」은 「작업」과 같은 세로 4존이다. 카드 CSS 는
    .pane.workcard 에 매여 있던 두 규칙만 .zone 판으로 넓힌다(사본이 아니라 선택자 확장 —
    두 표면의 카드가 갈라지지 않게). */
-.zone.workcard .wc-render{min-height:180px}
+.zone.workcard .wc-render{min-height:180px;max-height:360px;overflow:auto;
+  scrollbar-gutter:stable;overscroll-behavior:contain}
 .zone.workcard.complete .wc-readout{color:var(--a-ok)}
 /* 존 번호 표지(시안 ①②③④) — 캡션 앞 작은 원. 정보는 순서뿐이라 장식 최소. */
 .zone-cap .znum{display:inline-grid;place-items:center;width:15px;height:15px;margin-right:var(--sp-4);
@@ -322,8 +361,7 @@ table.dmap tr:last-child td{border-bottom:0}
 .qd-formpane,.qd-prevpane{background:var(--a-card);border:1px solid var(--a-border);
   border-radius:var(--rad-surface);padding:var(--sp-12);display:flex;flex-direction:column;min-height:0}
 .qd-formpane{overflow:auto}
-.qd-formpane h4,.qd-prevpane h4{margin:0 0 var(--sp-10);font-size:var(--fs-caption);
-  color:var(--a-muted);font-weight:700}
+.qd-formpane h4,.qd-prevpane h4{margin:0 0 var(--sp-10);color:var(--a-muted)}
 /* 파이프라인 토큰 행(결정 34) — 윗줄=이름·칩, 아랫줄=↳ 출력(들여쓰기+음영 = "결과"임을 형태가 말함) */
 .qd-trow{display:flex;flex-direction:column;gap:var(--sp-6);padding:var(--sp-8) 0;
   border-bottom:1px dashed var(--a-border)}
@@ -473,7 +511,7 @@ table.data-preview td{white-space:nowrap}
    튀던 것을 고정 열폭으로 봉쇄. 열폭은 th(첫 행)에 지정, 넘치는 값은 셀 안에서 말줄임.
    min-width 는 고정 열 합(674px) + 유연 2열(템플릿 필드)의 실용 최소폭 — 좁은 창에서
    가로 스크롤로 밀리더라도 핵심 식별자 열이 짜부라지지 않는다(PR #84 리뷰). */
-.tblwrap{overflow-x:auto;border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card);margin-top:var(--sp-10)}
+.tblwrap{max-height:min(42vh,360px);overflow:auto;border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card);margin-top:var(--sp-10)}
 table.map{border-collapse:collapse;width:100%;font-size:var(--fs-dense);min-width:940px;table-layout:fixed}
 table.map th{background:var(--n-header-bg);color:var(--n-header-ink);font-weight:600;text-align:left;
   padding:var(--sp-6) var(--sp-8);border-bottom:1px solid var(--a-border);position:sticky;top:0}
@@ -604,13 +642,13 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .run-promote-note{font-size:var(--fs-caption);margin-top:var(--sp-6)}
 .run-promote-note[hidden]{display:none}
 /* 하단 sticky 액션바(#179 슬라이스 5b) — 최종 생성/복사를 스크롤과 무관하게 항상 도달 가능하게.
-   세션 패널(.job-panel, overflow:auto)의 마지막 자식이라 bottom:0 로 패널 뷰포트 하단에 고정,
-   불투명 카드 배경 + 상단 승강 그림자로 위 스크롤 내용과 시각 분리. job=생성+게이트·draft=복사+큐이동. */
+   세션 패널(.job-panel, overflow:auto)의 마지막 자식이라 bottom:0 로 패널 뷰포트 하단에 고정.
+   sticky 표 머리와 같은 단일 크롬 재질(#244)을 소비해 밑의 내용이 잘린 대신 흐르는 층으로 읽힌다. */
 .session-actionbar{position:sticky;bottom:0;z-index:5;
   display:flex;align-items:center;gap:var(--sp-12);flex-wrap:wrap;
   margin-top:var(--sp-12);padding:var(--sp-12) var(--sp-16);
-  background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface);
-  box-shadow:0 -2px 8px var(--a-shadow)}
+  border:1px solid color-mix(in srgb,var(--a-border) 62%,transparent);border-radius:var(--rad-surface);
+  box-shadow:0 -8px 18px -14px var(--a-shadow)}
 .bar{height:8px;background:var(--n-track);border-radius:var(--rad-pill);overflow:hidden;margin-top:var(--sp-12)}
 .bar>i{display:block;height:100%;width:0;background:var(--a-primary);transition:width .25s ease}
 .run-result{font-size:var(--fs-body);margin-top:var(--sp-8);font-weight:600;min-height:1.2em}
@@ -630,7 +668,7 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .job-master{flex:none;width:240px;overflow:auto;display:flex;flex-direction:column;gap:var(--sp-16);
   border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card);padding:var(--sp-10)}
 .job-sec-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-8);
-  font-size:var(--fs-body);font-weight:600;padding:var(--sp-4) var(--sp-6);border-radius:var(--rad-control);
+  padding:var(--sp-4) var(--sp-6);border-radius:var(--rad-control);
   border-left:3px solid var(--a-border)}
 /* 구획 열 틴트 승계(홈 트랙 색 언어) — HWPX 파랑 / TXT 초록. */
 .job-sec-head.hwpx{border-left-color:var(--a-primary)}
@@ -642,6 +680,7 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .job-item:hover{background:var(--n-hover)}
 .job-item[aria-current="true"]{background:var(--a-primary);color:var(--a-on-accent);font-weight:600}
 .job-empty{font-size:var(--fs-body);padding:var(--sp-6)}
+.job-empty .btn{margin-top:var(--sp-8)}
 /* 상시 「이번 세션」 행(#148 슬라이스 5a) — 붙여넣기 휘발 세션의 목록 표현. 저장 기안과 구분되게
    점선 상단 구획 + 점선 테두리(시안 `.jrow.session`) — 결속(aria-current) 시 실선 강조로 승격. */
 .draft-vol-sep{border-top:1px dashed var(--a-border);margin-top:var(--sp-8);padding-top:var(--sp-6)}
@@ -669,8 +708,10 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .job-grp-head[aria-expanded="false"] .grp-caret{visibility:visible}
 .job-grp-rows{display:flex;flex-direction:column;padding-left:26px} /* 위계 들여쓰기(결정 5) */
 .job-rename{width:100%;font-size:var(--fs-body)}
-.ctx-menu{position:fixed;z-index:60;background:var(--a-card);border:1px solid var(--n-border-strong);
-  border-radius:var(--rad-surface);box-shadow:var(--a-shadow);padding:var(--sp-4);min-width:150px}
+.ctx-menu{position:fixed;z-index:var(--z-popover);pointer-events:auto;
+  background:var(--a-card);border:1px solid var(--n-border-strong);
+  border-radius:var(--rad-overlay);box-shadow:0 8px 24px var(--a-shadow);
+  padding:var(--sp-4);min-width:150px}
 .ctx-menu button{display:block;width:100%;text-align:left;border:0;background:none;font:inherit;
   font-size:var(--fs-body);color:var(--a-ink);padding:var(--sp-6) var(--sp-10);
   border-radius:var(--rad-control);cursor:pointer}
@@ -693,7 +734,7 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .zone{padding:var(--sp-16) var(--sp-16) var(--sp-12);position:relative}
 .zone + .zone{border-top:1px solid var(--a-border)}
 .zone-cap{display:block;margin-bottom:var(--sp-10);
-  font-size:var(--fs-caption);font-weight:600;color:var(--n-header-ink)}
+  color:var(--n-header-ink)}
 .job-head-title{font-size:var(--fs-body);font-weight:600}
 .job-head-tpl{font-size:var(--fs-body);margin-top:var(--sp-2)}
 /* 좁은 창(반응형): 좌 목록을 위로 접어 세로 적층 — 셀프테스트 그리드 경계와 별개 국소 규칙. */
@@ -730,10 +771,14 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .app.rail-collapsed .rail-theme .ti{display:block;text-align:center}
 
 /* ---- 모달 ---- */
-.modal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;
-  justify-content:center;z-index:10}
+#overlayRoot{position:fixed;inset:0;z-index:var(--z-overlay-root);pointer-events:none}
+.modal{position:absolute;inset:0;box-sizing:border-box;padding:var(--sp-16);
+  background:var(--a-scrim);backdrop-filter:blur(6px);display:flex;align-items:center;
+  justify-content:center;z-index:calc(var(--z-modal) + var(--modal-depth,0));pointer-events:auto}
 .modal.hidden{display:none}
 .modal-card{background:var(--a-card);border-radius:var(--rad-overlay);padding:var(--sp-24);width:min(560px,92vw);
+  max-height:calc(100vh - 2 * var(--sp-16));max-height:calc(100dvh - 2 * var(--sp-16));
+  box-sizing:border-box;overflow:auto;overscroll-behavior:contain;
   box-shadow:0 12px 40px var(--a-shadow)}
 .modal-card h3{margin:0 0 var(--sp-6)}
 .modal-body{white-space:pre-wrap;margin:var(--sp-4) 0 var(--sp-8);color:var(--a-ink);font-size:var(--fs-body)}
@@ -742,6 +787,10 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .modal-actions{display:flex;justify-content:flex-end;gap:var(--sp-8);margin-top:var(--sp-12)}
 .modal-card .ctl{display:flex;flex-direction:column;gap:var(--sp-4);margin-top:var(--sp-4)}
 .modal-card .ctl .field{width:100%}
+@media (prefers-reduced-transparency:reduce){
+  .modal{background:var(--a-scrim-reduced);backdrop-filter:none}
+  .modal.is-closing{background:transparent}
+}
 /* 시트 선택 목록(#33) — 각 시트가 왼쪽 정렬 전폭 버튼. 이름·치수를 한 줄에. */
 .sheet-list{display:flex;flex-direction:column;gap:var(--sp-6);max-height:min(50vh,320px);overflow:auto}
 .sheet-opt{display:flex;align-items:baseline;gap:var(--sp-10);justify-content:flex-start;text-align:left;width:100%}
@@ -770,14 +819,18 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 
 /* R-info 2부(#108) — 라이브러리 바 + 매체 구획(밴드) + 그 안 그룹 구획(작업 목록 job-grp 재사용). */
 .tpl-libbar{display:flex;align-items:center;gap:var(--sp-8);margin-top:var(--sp-12);flex-wrap:wrap}
+/* 매체 표면 = 카드보다 한 층 내려간(sunken) HWPX/TXT 구획. n-surface-alt 와
+   n-border-strong 은 라이트·다크 짝 토큰이라 어두운 테마에서도 내부 카드 경계가 남는다. */
+.tpl-medium{margin-top:var(--sp-16);padding:var(--sp-8) var(--sp-10) var(--sp-10);
+  background:var(--n-surface-alt);border:1px solid var(--a-border);border-radius:var(--rad-surface)}
+.tpl-medium .tplcard{border-color:var(--n-border-strong)}
 /* 매체 밴드 = 내재 경성 축(HWPX/TXT) 구획 헤더. 열 틴트 승계(홈 트랙 색): HWPX 파랑 / TXT 초록. */
-.tpl-band{display:flex;align-items:center;gap:var(--sp-8);margin-top:var(--sp-16);
+.tpl-band{display:flex;align-items:center;gap:var(--sp-8);
   padding:var(--sp-4) var(--sp-8);border-left:3px solid var(--a-border)}
 .tpl-band.hwpx{border-left-color:var(--a-primary)}
 .tpl-band.txt{border-left-color:var(--a-ok)}
 .tpl-band .tb-k{font-size:var(--fs-caption);font-weight:700;letter-spacing:.04em;
   padding:1px var(--sp-6);border-radius:var(--rad-control);background:var(--a-ink);color:var(--a-card)}
-.tpl-band .tb-t{font-weight:700;font-size:var(--fs-body)}
 .tpl-band .tb-sub{color:var(--a-muted);font-size:var(--fs-caption)}
 .tpl-band .capnote{font-variant-numeric:tabular-nums}
 .tpl-banddir{margin-top:var(--sp-2)}
@@ -803,7 +856,7 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 /* [B] 61C7ADF8: 불투명 배경 카드 — 뒤에 비칠 숨김 텍스트 레이어가 없어 겹침 렌더 버그가
    구성상 소멸(Qt QListWidget 반투명 하이라이트의 웹 대체). */
 .tplcard{background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface);
-  padding:var(--sp-8) var(--sp-10);display:flex;flex-direction:column;gap:var(--sp-4)}
+  border-left:3px solid transparent;padding:var(--sp-8) var(--sp-10);display:flex;flex-direction:column;gap:var(--sp-4)}
 .tplcard.muted{color:var(--a-muted);font-size:var(--fs-body)}
 .tplcard-top{display:flex;align-items:center;gap:var(--sp-8)}
 .tplcard-name{font-weight:600;font-size:var(--fs-body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -813,23 +866,7 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .tplcard-meta{font-size:var(--fs-caption)}
 .tplcard-acts{display:flex;justify-content:flex-end;gap:var(--sp-6);flex-wrap:wrap;margin-top:var(--sp-2)}
 
-/* ---- 홈(대시보드) 허브 (#20) ---- */
-/* KPI — 전부 실재 데이터(가짜 지표·차트 없음). 목업 3타일. */
-.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--sp-12);margin-bottom:var(--sp-12)}
-@media(max-width:720px){.kpis{grid-template-columns:repeat(2,1fr)}}
-.kpi{background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface);padding:var(--sp-12) var(--sp-12)}
-.kpi .v{font-size:var(--fs-kpi);font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:var(--a-ink)}
-.kpi .l{font-size:var(--fs-caption);color:var(--a-muted);margin-top:var(--sp-2)}
-.kpi.warn .v{color:var(--a-warn)}
-.kpi.danger .v{color:var(--a-danger)}
-
-/* 이어서 실행 */
-.continue-runs{background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface);
-  padding:var(--sp-10) var(--sp-12);margin-bottom:var(--sp-16)}
-.continue-runs .cr-head{font-weight:700;margin-bottom:var(--sp-4)}
-.continue-run{display:flex;align-items:center;gap:var(--sp-10);padding:var(--sp-4) 0;border-top:1px solid var(--a-border)}
-.continue-run .name{font-weight:650;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.continue-run .when{font-size:var(--fs-caption);color:var(--a-muted)}
+/* ---- 홈 경보·상태 허브 (#20/#239) ---- */
 
 /* 두 트랙 */
 .tracks{display:grid;grid-template-columns:1.3fr 1fr;gap:var(--sp-16)}
@@ -838,7 +875,6 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .track.hwpx{border-top:3px solid var(--a-primary)}
 .track.txt{border-top:3px solid var(--a-ok)}
 .track .th{display:flex;justify-content:space-between;align-items:center;gap:var(--sp-10);margin-bottom:var(--sp-2);flex-wrap:wrap}
-.track .tt{font-size:var(--fs-strong);font-weight:800}
 .track .tsub{font-size:var(--fs-body);color:var(--a-muted);margin:0 0 var(--sp-12)}
 
 /* 작업 브라우저 바(group-by 렌즈 + facet 칩) */
@@ -853,8 +889,6 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .groupsec{font-weight:700;margin:var(--sp-8) 0 var(--sp-4);color:var(--a-ink)}
 .jcard{border:1px solid var(--a-border);border-radius:var(--rad-surface);padding:var(--sp-10) var(--sp-12);margin-bottom:var(--sp-8);
   border-left:3px solid transparent}
-.jcard:hover{background:var(--n-hover);border-left-color:var(--a-primary)}
-.jcard.corrupt{border-left-color:var(--a-danger)}
 .jcard .jn{font-weight:700;display:flex;gap:var(--sp-8);align-items:center;flex-wrap:wrap}
 .jcard .jm{font-size:var(--fs-body);color:var(--a-muted);margin-top:var(--sp-2)}
 .jcard .jfoot{display:flex;justify-content:space-between;align-items:center;margin-top:var(--sp-8);gap:var(--sp-8);flex-wrap:wrap}
@@ -871,12 +905,20 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 
 /* txt 트랙 목록 */
 .tlist .titem{display:flex;justify-content:space-between;align-items:center;gap:var(--sp-8);
-  border:1px solid var(--a-border);border-radius:var(--rad-surface);padding:var(--sp-8) var(--sp-12);margin-bottom:var(--sp-8)}
-.tlist .titem:hover{background:var(--n-hover);border-color:var(--a-primary)}
+  border:1px solid var(--a-border);border-left:3px solid transparent;border-radius:var(--rad-surface);
+  padding:var(--sp-8) var(--sp-12);margin-bottom:var(--sp-8)}
 .tlist .tn{font-weight:600}
 .tlist .tm{font-size:var(--fs-caption);color:var(--a-muted);margin-top:1px}
 .route{font-size:var(--fs-caption);color:var(--a-muted);margin:var(--sp-10) 0 0;
   font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
+
+/* 카드 상호작용 어휘(H-14) — hover는 배경 틴트 하나, 좌 막대는 지속 상태만 쓴다. */
+.jcard:hover,.tlist .titem:hover,.tplcard:hover{background:var(--n-hover)}
+.jcard[aria-current="true"],.tlist .titem[aria-current="true"],.tplcard[aria-current="true"]{
+  background:var(--a-sel);border-left-color:var(--a-primary)}
+.jcard.corrupt{border-left-color:var(--a-danger)}
+.jcard:focus-visible,.tlist .titem:focus-visible,.tplcard:focus-visible{
+  outline:2px solid var(--a-primary);outline-offset:2px}
 
 /* ---- 강제 색상 모드(Windows 고대비) 대응 — WCAG 1.4.3 (#3) ----
    forced-colors 는 배경/전경/보더를 시스템 팔레트로 강제 재매핑한다 — 단 transparent·
@@ -892,7 +934,9 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
   .wstep-tab[aria-current="true"],
   .btn.primary:not(:disabled){background:Highlight;color:HighlightText;border-color:Highlight}
 
-  .jcard:hover{border-left-color:Highlight}
+  .jcard[aria-current="true"],.tlist .titem[aria-current="true"],.tplcard[aria-current="true"]{
+    border-left-color:Highlight}
+  .jcard.corrupt{border-left-color:Mark}
 
   tr.r-unconfirmed td{border-left:3px solid Mark}
   tr.r-unmatched td{border-left:3px dashed CanvasText}
@@ -911,24 +955,34 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .jobtbwrap{max-height:280px;overflow:auto;border:1px solid var(--a-border);
   border-radius:var(--rad-surface);background:var(--a-card)}
 .jobtb{width:100%;border-collapse:collapse;font-size:var(--fs-caption)}
-.jobtb th{position:sticky;top:0;z-index:1;background:var(--a-card);text-align:left;
+.jobtb th{position:sticky;top:0;z-index:1;text-align:left;
   color:var(--a-muted);font-weight:600;padding:var(--sp-4) var(--sp-8);
-  border-bottom:1px solid var(--a-border);white-space:nowrap}
+  border-bottom:1px solid color-mix(in srgb,var(--a-border) 62%,transparent);white-space:nowrap}
+.session-actionbar,.jobtb th{
+  background:color-mix(in srgb,var(--a-card) 82%,transparent);
+  -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
+@media (prefers-reduced-transparency:reduce){
+  .session-actionbar,.jobtb th{
+    background:var(--a-card);border-color:var(--a-border);
+    -webkit-backdrop-filter:none;backdrop-filter:none}
+}
+.jobtb th .col-hint{font-weight:400;margin-left:var(--sp-6)}
 .jobtb td{padding:var(--sp-4) var(--sp-8);border-bottom:1px solid var(--a-border);
   white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis;vertical-align:top}
 .jobtb tbody tr:last-child td{border-bottom:0}
 .jobtb tbody tr{cursor:pointer}
-.jobtb tbody tr:hover td{background:color-mix(in srgb, var(--a-sel) 40%, transparent)}
-.jobtb tbody tr.on td{background:var(--a-sel)}
+.jobtb tbody tr:hover{background:color-mix(in srgb, var(--a-sel) 40%, transparent)}
+.jobtb tbody tr.on{background:var(--a-sel)}
 .jobtb mark{background:transparent;color:var(--a-primary);font-weight:700}
 .jobtb .doccol{min-width:180px}
-.jobtb td.doccol{display:flex;gap:var(--sp-6);align-items:flex-start}
+.jobtb .doccell{display:flex;gap:var(--sp-6);align-items:flex-start}
 /* 체크박스는 시각 표지 전용(결정 26 체크박스 문법) — 동사는 행 클릭이 소유한다(이중 토글 방지). */
 .jobtb td.doccol input{accent-color:var(--a-primary);margin-top:2px;flex:none;pointer-events:none}
 .jobtb .doc-name{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;
-  overflow:hidden;text-overflow:ellipsis}
-.jobtb .doc-off,.jobtb .doc-sum{color:var(--a-muted)}
+  font-size:var(--fs-dense);font-weight:600;overflow:hidden;text-overflow:ellipsis}
+.jobtb .doc-off,.jobtb .doc-sum{color:var(--a-muted);font-size:var(--fs-caption)}
 .jobtb .doc-body{display:flex;flex-direction:column;gap:var(--sp-2);min-width:0}
+.jobtb .col-amount,.jobtb .col-date{text-align:right;font-variant-numeric:tabular-nums}
 
 /* 열 머리 필터 아이콘 — 조건 활성 열은 액센트로 상시 표지(발견성 보완 = 칩 줄과 이중). */
 .fico{border:1px solid transparent;background:transparent;color:var(--a-muted);cursor:pointer;
@@ -941,21 +995,27 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .fchip{display:inline-flex;gap:var(--sp-4);align-items:center;border:1px solid var(--a-border);
   border-radius:var(--rad-pill);background:var(--a-card);padding:var(--sp-2) var(--sp-8);
   font-size:var(--fs-caption);color:var(--a-ink)}
-.fchip.branch{border-style:dashed;color:var(--a-muted)}
+.fchip.definition{border-color:color-mix(in srgb,var(--a-primary) 35%,var(--a-border));
+  background:color-mix(in srgb,var(--a-primary) 10%,var(--a-card))}
+.fchip.branch{background:var(--n-surface-alt);color:var(--n-ink-soft)}
+.fchip.selection{border-color:var(--n-border-strong);background:var(--a-card)}
+.fchip .chip-role{font-weight:700;color:var(--a-primary)}
+.fchip.branch .chip-role,.fchip.selection .chip-role{color:var(--a-muted)}
 .fchip button{border:0;background:transparent;color:var(--a-muted);cursor:pointer;
   font-size:var(--fs-caption);padding:0}
 .fchip button:hover{color:var(--a-danger)}
+.filter-reapply{color:var(--a-primary);border-color:color-mix(in srgb,var(--a-primary) 30%,var(--a-border))}
 
 /* 필터 밖 선택 스트립(결정 3) — 관통 가시성. */
-.fstrip{border:1px dashed var(--a-border);border-radius:var(--rad-surface);
-  background:var(--a-card);padding:var(--sp-4) var(--sp-10);margin-top:var(--sp-6);
+.fstrip{border:1px solid var(--a-border);border-radius:var(--rad-surface);
+  background:var(--n-surface-alt);padding:var(--sp-4) var(--sp-10);margin-top:var(--sp-6);
   font-size:var(--fs-caption);color:var(--a-muted)}
 .fstrip b{color:var(--a-ink)}
 
 /* 열 필터 패널(엑셀식 아이콘 펼침, 결정 25) — 데이터 존 내 부유 패널. */
-.colpanel{position:absolute;z-index:30;top:34px;left:0;min-width:240px;max-width:340px;
+.colpanel{position:fixed;z-index:var(--z-popover);pointer-events:auto;min-width:240px;max-width:340px;
   background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-overlay);
-  box-shadow:var(--a-shadow);padding:var(--sp-10);display:flex;flex-direction:column;gap:var(--sp-8)}
+  box-shadow:0 8px 24px var(--a-shadow);padding:var(--sp-10);display:flex;flex-direction:column;gap:var(--sp-8)}
 .colpanel[hidden]{display:none}
 .colpanel .cp-head{display:flex;justify-content:space-between;align-items:center;
   font-weight:600;font-size:var(--fs-body)}
@@ -973,3 +1033,11 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .colpanel .cp-range-row input{flex:1;min-width:0}
 .colpanel .cp-err{color:var(--a-danger);font-size:var(--fs-caption);white-space:pre-line}
 .colpanel .cp-acts{display:flex;gap:var(--sp-6);justify-content:flex-end}
+
+/* ---- 내부 스크롤포트 인벤토리(H-07) ----
+   캡+헤더 지속 표: .tblwrap(위저드 3벌), .mapwrap(#draftTokPanel), .jobtbwrap.
+   캡 목록: .tpllist, .sheet-list, .colpanel .cp-vals. 이 여섯 종류만 이 계약의 내부
+   스크롤을 소유한다. stable gutter 로 행 수 변화의 폭 점프를 막고, 경계에서 바깥
+   .wbody/.job-panel/.stage 로 휠·터치 스크롤이 연쇄되지 않게 contain 한다. */
+.tblwrap,.mapwrap,.jobtbwrap,.tpllist,.sheet-list,.colpanel .cp-vals{
+  scrollbar-gutter:stable;overscroll-behavior:contain}

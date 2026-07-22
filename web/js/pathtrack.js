@@ -4,10 +4,16 @@
    경로 검증은 백엔드 화이트리스트(app.py _validate_owned)가 소유 — 프론트는 표현만. */
 (function () {
   const esc = window.escHtml;
+  const ICONS = {
+    open: '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M11 3h6v6M17 3l-8 8"/><path d="M15 11v5H4V5h5"/></svg>',
+    reveal: '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M2.5 6.5h6l1.5 2h7.5v7.5h-15z"/><path d="M2.5 6.5v-2h5l1.5 2"/></svg>',
+    copy: '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="7" y="7" width="9" height="9" rx="1"/><path d="M5 13H4V4h9v1"/></svg>',
+    done: '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M4 10l4 4 8-9"/></svg>',
+  };
   const ACTS = {
-    open:   { label: "열기",        fn: (p) => Bridge.openPath(p) },
-    reveal: { label: "폴더에서 보기", fn: (p) => Bridge.revealPath(p) },
-    copy:   { label: "경로 복사",     fn: (p) => Bridge.copyPath(p) },
+    open:   { label: "열기", icon: ICONS.open, fn: (p) => Bridge.openPath(p) },
+    reveal: { label: "폴더에서 보기", icon: ICONS.reveal, fn: (p) => Bridge.revealPath(p) },
+    copy:   { label: "경로 복사", icon: ICONS.copy, fn: (p) => Bridge.copyPath(p) },
   };
 
   /* path 를 로케이트 버튼 묶음 HTML 로. 전체경로는 title 툴팁. path 없으면 "".
@@ -17,10 +23,11 @@
   function affordances(path, opts) {
     if (!path) return "";
     const which = (opts && opts.only) || ["open", "reveal"];
-    const btns = which.map((k) =>
-      `<button type="button" class="btn sm track-btn" data-track-act="${k}"` +
-      ` data-path="${esc(path)}" title="${esc(path)}">${ACTS[k].label}</button>`
-    ).join("");
+    const btns = which.map((k) => {
+      const spec = ACTS[k];
+      return `<button type="button" class="btn sm icon track-btn" data-track-act="${k}"` +
+        ` data-path="${esc(path)}" title="${spec.label}" aria-label="${spec.label}">${spec.icon}</button>`;
+    }).join("");
     return `<span class="track-affords" title="${esc(path)}">${btns}</span>`;
   }
 
@@ -35,9 +42,15 @@
       if (typeof r === "string" && r.startsWith("ERROR:")) {
         window.alert(r.slice(6).trim());   // 소유 밖·죽은 참조 등 시끄럽게
       } else if (el.dataset.trackAct === "copy") {
-        const old = el.textContent;        // 복사 성공 잠깐 표시(비파괴)
-        el.textContent = "복사됨 ✓";
-        setTimeout(() => { el.textContent = old; }, 1200);
+        const old = el.innerHTML;          // 아이콘 급을 유지한 채 복사 성공을 잠깐 재진술
+        el.innerHTML = ICONS.done;
+        el.setAttribute("aria-label", "복사됨");
+        el.setAttribute("title", "복사됨");
+        setTimeout(() => {
+          el.innerHTML = old;
+          el.setAttribute("aria-label", spec.label);
+          el.setAttribute("title", spec.label);
+        }, 1200);
       }
     } catch (err) {
       window.alert(String((err && err.message) || err));

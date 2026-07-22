@@ -114,13 +114,14 @@
       rowIdPrefix: cfg.rowIdPrefix,  // preserve.js 가 id 로 포커스 복원 — 화면 간 전역 유일
       lead: {
         header: "큐",
+        hint: "선택하면 큐에 담깁니다",
         /* 큐 표지 — **순번(qpos)은 여기 렌더하지 않는다**(리뷰): 이 표는 레코드 순서인데
            순번은 큐-꼬리 순서라, 해제 후 재선택한 행이 꼬리로 가면 위→아래로 1,2,5,3,4 처럼
            비단조로 읽힌다(의도된 큐 의미론이지만 화면에선 렌더 버그로 보인다). 순번의 거처는
            **큐 순서로 그리는 상태 색인·작업점 카드**다 — 거기선 단조롭다. 여기선
            상태(작업점·대기·복사됨)만 정직하게 말한다. */
         bodyHtml(r) {
-          if (!r.selected) return `<span class="doc-off">선택하면 큐에 담깁니다</span>`;
+          if (!r.selected) return `<span class="doc-off" aria-hidden="true">—</span>`;
           if (r.copied) return `<span class="doc-sum">복사됨</span>`;  // 정직 라벨(결정 16)
           if (r.current) return `<span class="doc-name">▶ 작업점</span>`;
           return `<span class="doc-name">대기</span>`;

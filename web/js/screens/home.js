@@ -1,6 +1,6 @@
-/* 홈(대시보드) 화면 — 브리지로 링1 HomeViewModel 과 왕복. 목업 scr-home 이관(#20, 마지막).
+/* 홈(경보·상태 허브) 화면 — 브리지로 링1 HomeViewModel 과 왕복. 목업 scr-home 이관(#20, 마지막).
    안정 DOM(index.html) + Python 이 window.__push('home', snapshot) 로 값만 채운다(run 패턴).
-   표현 계층(KPI 타일·작업 카드·group-by/facet 칩바)만 여기서 만든다 — VM 로직 아님(링2 대체).
+   표현 계층(조건부 경보·작업 카드·group-by/facet 칩바)만 여기서 만든다 — VM 로직 아님(링2 대체).
    허브 이동은 window.Nav(셸 라우터)로만; 대상 화면의 자체 dispatch 로 미리 겨눈 뒤 전환한다. */
 (function () {
   const SCREEN = "home";
@@ -9,7 +9,7 @@
   const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
 
   let LAST = null;  // 마지막 스냅샷 — 태그 편집 프리필 등 이벤트 핸들러가 참조(#26)
-  let menuFor = null;  // 열린 카드 ⋮ 메뉴의 작업 이름(#179 행동 계층) — null=닫힘
+  let menuFor = null;  // 열린 카드 ⋮ 메뉴의 {name, trigger}(#179/H-16) — null=닫힘
 
   /* 카드 ⋮ 부유 메뉴(복제·태그·삭제) = 공용 팩토리(grouplist.js, job/tpl 과 단일 출처).
      위치잡기·표시만 팩토리 소유; 내용·정체(작업 이름)·바깥닫기 배선은 홈이 주입한다. */
@@ -18,46 +18,24 @@
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
     LAST = s;
-    renderKpis(s.kpi);
-    renderContinue(s.continue_runs);
+    renderAlerts(s.kpi);
     renderCorrupt(s.corrupt_rows);
     renderBrowser(s.axes, s.group_by, s.facets);
     renderJobs(s.grouped_rows, s.group_by, s.is_empty);
     renderTxt(s.txt_rows);
   }
 
-  /* KPI — 목업 3타일(저장된 작업·템플릿 없는 작업·기안 템플릿). 전부 실재 데이터.
-     손상된 등록 데이터(pool_corrupted)는 KPI 가 아니라 경보라 >0 일 때만 danger 타일로
-     끼어든다(#45) — 0 은 정상이라 상시 타일은 소음, 손상은 조용히 감추지 않는다. */
-  function renderKpis(k) {
-    k = k || { job_count: 0, missing_template_count: 0, txt_template_count: 0, pool_corrupted: 0 };
-    const warn = k.missing_template_count > 0 ? " warn" : "";
-    $("homeKpis").innerHTML =
-      tile(k.job_count, "저장된 작업 · HWPX") +
-      tile(k.missing_template_count, "템플릿 없는 작업", warn) +
-      tile(k.txt_template_count, "기안 템플릿 · txt") +
-      (k.pool_corrupted > 0
-        ? tile(k.pool_corrupted, "손상된 등록 데이터: 데이터 관리에서 확인", " danger")
-        : "");
-  }
-  function tile(v, label, cls) {
-    return `<div class="kpi${cls || ""}"><div class="v">${v}</div><div class="l">${esc(label)}</div></div>`;
-  }
-
-  /* 이어서 실행 — 실행 이력 있는 작업 최근순(있을 때만 노출). 버튼 라벨은 섹션 제목과
-     겹치지 않게 "실행"(F14) — 작업 카드의 실행 버튼과 같은 동작·같은 어휘. */
-  function renderContinue(rows) {
-    const box = $("homeContinue");
-    rows = rows || [];
-    if (!rows.length) { box.style.display = "none"; box.innerHTML = ""; return; }
-    box.style.display = "";
-    box.innerHTML =
-      `<div class="cr-head">이어서 실행</div>` +
-      rows.map((r) =>
-        `<div class="continue-run"><span class="name">${esc(r.name)}</span>` +
-        `<span class="when">${esc(r.last_run_display)}</span>` +
-        `<button class="btn sm" data-run="${esc(r.name)}"${r.runnable ? "" : " disabled"}>실행</button></div>`
-      ).join("");
+  /* 정보 위생(#239 결정 8): 개수 타일은 렌더하지 않고 조치가 필요한 조건만 경보로 승계한다. */
+  function renderAlerts(k) {
+    k = k || { missing_template_count: 0, pool_corrupted: 0 };
+    const alerts = [];
+    if (k.missing_template_count > 0) {
+      alerts.push(`<div class="note warnbox">템플릿이 연결되지 않은 작업 ${k.missing_template_count}건이 있습니다. 작업에서 다시 연결하세요.</div>`);
+    }
+    if (k.pool_corrupted > 0) {
+      alerts.push(`<div class="note dangerbox">손상된 등록 데이터 ${k.pool_corrupted}건이 있습니다. 데이터 관리에서 확인하세요.</div>`);
+    }
+    $("homeAlerts").innerHTML = alerts.join("");
   }
 
   /* 손상 작업 — 숨기지 않고 시끄러운 위험 카드로(RC-05) + 해소 동선(#26 #8·UD-44):
@@ -181,7 +159,7 @@
     rowMenu.hide();
   }
   function openRowMenu(name, btn) {
-    menuFor = name;
+    menuFor = { name, trigger: btn };
     rowMenu.show(
       `<button data-menu="clone">복제</button>` +
       `<button data-menu="tags">태그…</button>` +
@@ -189,17 +167,17 @@
       `<button data-menu="delete" class="danger">삭제</button>`, btn);
   }
   function toggleRowMenu(name, btn) {
-    if (menuFor === name) { closeRowMenu(); return; }
+    if (menuFor && menuFor.name === name) { closeRowMenu(); return; }
     openRowMenu(name, btn);
   }
   function onRowMenuClick(e) {
     const btn = e.target.closest("button[data-menu]");
     if (!btn || menuFor === null) return;
-    const name = menuFor, act = btn.dataset.menu;
+    const { name, trigger } = menuFor, act = btn.dataset.menu;
     closeRowMenu();
     if (act === "clone") cloneJob(name);
-    else if (act === "tags") editTags(name);
-    else if (act === "delete") deleteJob(name);
+    else if (act === "tags") editTags(name, trigger);
+    else if (act === "delete") deleteJob(name, trigger);
   }
 
   /* txt 트랙 — 즉시 기안 템플릿 목록(정해진 루트). */
@@ -306,7 +284,7 @@
 
   /* 태그 편집(#26 #2·D14) — 현재 태그를 '축=값' 쌍으로 재진술·프리필하고 통째 교체 저장.
      비우면 전체 해제(사용자가 명시적으로 지운 것 — 추측 아님). 형식 오류는 loud. */
-  async function editTags(name) {
+  async function editTags(name, returnFocus) {
     let cur = {};
     (LAST && LAST.grouped_rows || []).forEach((sec) =>
       (sec.rows || []).forEach((r) => { if (r.name === name) cur = r.tags || {}; }));
@@ -327,6 +305,7 @@
         `'${name}' 의 태그를 '축=값' 쌍, 쉼표 구분으로 입력하세요. ` +
         `(예: 물품=의약품, 금액구간=소액)\n비우면 전부 해제합니다.`,
       value: ser,
+      returnFocus,
     });
     if (input === null) return;
     const parsed = parseTags(input);
@@ -353,8 +332,10 @@
   /* 작업 삭제 — 조용한 삭제 금지, 재진술 후 확인 시에만(confirm-or-alarm). onJobsClick 이
      동기라 여기로 뽑아 await 를 쓴다(Modal.confirm 은 Promise 기반). 삭제 호출은 원래처럼
      fire-and-forget — rejection 은 셸 unhandledrejection 백스톱이 loud 재진술한다(#45). */
-  async function deleteJob(name) {
-    if (await Modal.confirm({ body: `작업 '${name}' 을(를) 삭제할까요? 되돌릴 수 없습니다.` })) {
+  async function deleteJob(name, returnFocus) {
+    if (await Modal.confirm({
+      body: `작업 '${name}' 을(를) 삭제할까요? 되돌릴 수 없습니다.`, returnFocus,
+    })) {
       Bridge.call(SCREEN, "delete_job", { name });
     }
   }
@@ -394,7 +375,6 @@
     $("homeNewTxt").addEventListener("click", newDraft);
     $("homeJobs").addEventListener("click", onJobsClick);
     $("homeEmpty").addEventListener("click", onJobsClick);
-    $("homeContinue").addEventListener("click", onJobsClick);
     $("homeCorrupt").addEventListener("click", onCorruptClick);  // 손상 조치(#26 #8)
     $("homeRowMenu").addEventListener("click", onRowMenuClick);   // 카드 ⋮ 메뉴 항목(#179)
     // ⋮ 메뉴 바깥 닫기(job/tpl 동형) — 캡처 클릭 억제 + 바깥 pointerdown + Escape.

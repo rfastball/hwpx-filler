@@ -9,7 +9,7 @@
    디스패치할 뿐이다(링2 표현 계층, #87 경계 동일).
 
    스냅샷 계약(소비 키): has_data · selected_count · record_count ·
-     table{columns, rows[{index, selected, cells[[세그먼트]], …선두열 필드}], visible_count,
+     table{columns[{name, kind}], rows[{index, selected, cells[[세그먼트]], …선두열 필드}], visible_count,
            hidden_selected[{index, name, summary}]} ·
      filter{active, search, chips, branches, columns[{active}], reapply_available}
    디스패치 계약(액션): filter_panel · filter_col_text · filter_col_values · filter_clear_col ·
@@ -70,15 +70,14 @@
       // 재렌더됐을 수 있으니 현 DOM 의 같은 열 버튼을 재조회하고, 없으면 캡처 좌표로.
       // 자기 head 스코프로만 찾는다 — 두 인스턴스(작업·txt)의 .fico 혼선 차단.
       const btnNow = $(ids.tableHead).querySelector(`.fico[data-col="${CSS.escape(col)}"]`);
-      positionColPanel(btnNow ? btnNow.getBoundingClientRect() : rectBefore);
+      positionColPanel(btnNow || rectBefore);
     }
 
-    function positionColPanel(rect) {
+    function positionColPanel(anchor) {
       const p = $(ids.colPanel);
-      const host = $(ids.tableHost).getBoundingClientRect();
-      const left = Math.max(0, Math.min(rect.left - host.left, host.width - 260));
-      p.style.left = `${left}px`;
-      p.style.top = `${rect.bottom - host.top + 4}px`;
+      // 패널은 renderColPanel 뒤라 실측 가능하다. 공용 배치기가 실제 폭·높이로 viewport를
+      // clamp하고 위/아래를 flip한다. H-16 overlayRoot 직속 fixed 표면이라 viewport 좌표를 쓴다.
+      window.Popover.place(p, anchor);
     }
 
     function rangeRow(slot, clause) {
@@ -216,6 +215,14 @@
       return segs.map(([t, hit]) => (hit ? `<mark>${esc(t)}</mark>` : esc(t))).join("");
     }
 
+    // production 스냅샷은 {name, kind}. 구 selftest fixture의 문자열 열도 text로 무해하게
+    // 받는다. 유형은 Python FilterModel의 기존 판정만 소비하며 웹에서 재판정하지 않는다.
+    function columnMeta(column) {
+      return typeof column === "string"
+        ? { name: column, kind: "text" }
+        : { name: column.name, kind: column.kind || "text" };
+    }
+
     function renderTable(s) {
       const tkey = cfg.tableKey(s);
       if (tkey !== lastTableKey) {
@@ -261,20 +268,26 @@
         empty.style.display = "none";
       }
       $(ids.tableHead).innerHTML =
-        `<tr><th class="doccol">${esc(cfg.lead.header)}</th>` +
-        t.columns.map((c, ci) => {
+        `<tr><th class="doccol">${esc(cfg.lead.header)}` +
+        (cfg.lead.hint ? `<span class="col-hint">${esc(cfg.lead.hint)}</span>` : "") + `</th>` +
+        t.columns.map((column, ci) => {
+          const c = columnMeta(column);
           const meta = f.columns[ci] || { active: false };
-          return `<th><span>${esc(c)}</span> ` +
-            `<button class="fico${meta.active ? " on" : ""}" data-col="${esc(c)}" ` +
-            `aria-label="${esc(c)} 열 필터" aria-expanded="${panelCol === c}" ` +
+          return `<th class="col-${c.kind}"><span>${esc(c.name)}</span> ` +
+            `<button class="fico${meta.active ? " on" : ""}" data-col="${esc(c.name)}" ` +
+            `aria-label="${esc(c.name)} 열 필터" aria-expanded="${panelCol === c.name}" ` +
             `data-busy-lock>▾</button></th>`;
         }).join("") + `</tr>`;
       $(ids.tableBody).innerHTML = t.rows.map((r) => {
         return `<tr data-i="${r.index}" id="${cfg.rowIdPrefix}${r.index}" class="${r.selected ? "on" : ""}" ` +
-          `role="checkbox" aria-checked="${r.selected ? "true" : "false"}" tabindex="0">` +
-          `<td class="doccol"><input type="checkbox" tabindex="-1"${r.selected ? " checked" : ""}>` +
-          `<span class="doc-body">${cfg.lead.bodyHtml(r)}</span></td>` +
-          r.cells.map((segs) => `<td>${segsHtml(segs)}</td>`).join("") + `</tr>`;
+          `aria-selected="${r.selected ? "true" : "false"}" tabindex="0">` +
+          `<td class="doccol"><div class="doccell"><input type="checkbox" tabindex="-1" ` +
+          `aria-label="${r.index + 1}행 선택"${r.selected ? " checked" : ""}>` +
+          `<span class="doc-body">${cfg.lead.bodyHtml(r)}</span></div></td>` +
+          r.cells.map((segs, ci) => {
+            const c = columnMeta(t.columns[ci]);
+            return `<td class="col-${c.kind}">${segsHtml(segs)}</td>`;
+          }).join("") + `</tr>`;
       }).join("");
     }
 
@@ -321,9 +334,11 @@
       if (!s.has_data || !f.active) { box.style.display = "none"; box.innerHTML = ""; return; }
       box.style.display = "";
       box.innerHTML =
-        (f.chips || []).map((c) => `<span class="fchip">${esc(c)}</span>`).join("") +
+        (f.chips || []).map((c) =>
+          `<span class="fchip definition"><span class="chip-role">필터</span>${esc(c)}</span>`
+        ).join("") +
         (f.branches || []).map((b) =>
-          `<span class="fchip branch">${esc(b)}` +
+          `<span class="fchip branch"><span class="chip-role">가지</span>${esc(b)}` +
           `<button data-prune="${esc(b)}" aria-label="${esc(b)} 가지 제거" data-busy-lock>×</button></span>`
         ).join("") +
         `<button class="btn sm" data-act="filter-clear" data-busy-lock>필터 지우기</button>`;
@@ -338,7 +353,8 @@
       // 항목별 × = 개별 해제 어포던스(리뷰 #6 — 구 목록의 행별 체크박스가 지던 의무 승계:
       // 필터를 허물거나 전체 해제하지 않고도 필터 밖 선택 하나만 뺄 수 있어야 한다).
       const chips = hs.map((r) =>
-        `<span class="fchip">${esc(r.name || r.summary || `${r.index + 1}행`)}` +
+        `<span class="fchip selection"><span class="chip-role">선택</span>` +
+        `${esc(r.name || r.summary || `${r.index + 1}행`)}` +
         `<button data-unsel="${r.index}" aria-label="${r.index + 1}행 선택 해제" data-busy-lock>×</button></span>`
       ).join("");
       box.innerHTML = cfg.copy.stripLead(hs.length) + chips;
@@ -373,8 +389,8 @@
     }
 
     function wire() {
-      // 패널 바깥닫기·Escape·닫기 클릭 소비 — 기제는 공용 Popover.wireDismiss(단일 출처),
-      // 여기는 자기 술어만 주입한다. .fico 는 자기 head 스코프만 예외(2-인스턴스 혼선 차단).
+      // 패널 등록/해제·focusout·capture scroll·Escape·닫기 click 소비는 공용 Popover가
+      // 소유한다. 여기는 자기 술어만 등록한다. .fico는 자기 head 스코프만 예외다.
       Popover.wireDismiss({
         isOpen: () => panelCol !== null,
         contains: (t) => {

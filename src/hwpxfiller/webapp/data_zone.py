@@ -399,7 +399,9 @@ class DataZoneMixin:
             ],
         }
         table_snap = {
-            "columns": columns,
+            # 표 렌더러도 필터 모델이 이미 판정한 열 유형을 그대로 소비한다. 별도 판정기를
+            # 두지 않는다 — 패널과 표 조판이 같은 ``FilterModel.kind`` 진실을 공유한다.
+            "columns": [{"name": c, "kind": fm.kind(c)} for c in columns],
             "rows": table_rows,
             "visible_count": len(visible),
             # 필터 밖 선택 — 스트립이 상시 진술(결정 3). 원본 순서.

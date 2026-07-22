@@ -54,6 +54,7 @@ _WEB_MAP = [
     # on_accent = 컬러 accent(primary/ok) 필 위 글씨. 라이트=흰색, 다크=어두운 잉크(accent 를
     # 밝혀 텍스트로도 읽히게 하므로 흰글씨가 대비 미달 → 잉크로 뒤집는다). shadow = 모달 승강 그림자.
     ("--a-on-accent", "color.on_accent"), ("--a-shadow", "color.shadow"),
+    ("--a-scrim", "color.scrim"), ("--a-scrim-reduced", "color.scrim_reduced"),
     ("--a-unconf", "state.unconfirmed_bg"), ("--a-unmatch", "state.unmatched_bg"),
     ("--a-empty", "state.data_empty_fg"), ("--a-sel", "state.select_bg"),
     ("--fb-fill-bg", "badge.fill_bg"), ("--fb-fill-bd", "badge.fill_border"),
@@ -101,6 +102,14 @@ _MOTION_MAP = [
     ("--ease-out", "motion.ease_out", ""), ("--ease-in-out", "motion.ease_in_out", ""),
 ]
 
+# 오버레이 층 순서(H-16) — 테마 불변 unitless 정수. body 직속 overlay root 안에서
+# popover < modal 순서를 토큰 이름으로 고정해 컴포넌트별 z-index 리터럴 경쟁을 막는다.
+_LAYER_MAP = [
+    ("--z-overlay-root", "layer.overlay_root"),
+    ("--z-popover", "layer.popover"),
+    ("--z-modal", "layer.modal"),
+]
+
 OPEN_CSS, CLOSE_CSS = "/* <gen:tokens> */", "/* </gen:tokens> */"
 _MOCKUP_INDENT = "    "
 _WEB_INDENT = "  "
@@ -138,6 +147,11 @@ def _motion_vars(tokens: dict, indent: str) -> "list[str]":
     return [f"{indent}{name}:{_dig(tokens, path)}{unit};" for name, path, unit in _MOTION_MAP]
 
 
+def _layer_vars(tokens: dict, indent: str) -> "list[str]":
+    """오버레이 z-index 층 토큰(unitless, 테마 불변)."""
+    return [f"{indent}{name}:{_dig(tokens, path)};" for name, path in _LAYER_MAP]
+
+
 def render_web_region(tokens: dict) -> str:
     """웹 ``web/css/tokens.css`` 의 ``<gen:tokens>`` 영역 전문(:root 래퍼까지 생성물).
 
@@ -154,6 +168,7 @@ def render_web_region(tokens: dict) -> str:
     lines += _web_vars(tokens, "  ")
     lines += _scale_vars(tokens, "  ")
     lines += _motion_vars(tokens, "  ")
+    lines += _layer_vars(tokens, "  ")
     lines += ["  color-scheme:light;", "}",
               "@media (prefers-color-scheme:dark){",
               '  :root:not([data-theme="light"]){']

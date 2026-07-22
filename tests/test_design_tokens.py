@@ -119,7 +119,7 @@ def test_scale_tokens_theme_invariant():
     light_block = region.split("@media", 1)[0]
     dark_region = region.split("@media", 1)[1]  # @media + [data-theme=dark] 두 다크 블록 전부
     # 스케일(--sp-·--rad-·--fs-)에 더해 모션(--dur-·--ease-, #179 슬라이스 4)도 테마 불변.
-    for prefix in ("--sp-", "--rad-", "--fs-", "--dur-", "--ease-"):
+    for prefix in ("--sp-", "--rad-", "--fs-", "--dur-", "--ease-", "--z-"):
         assert prefix in light_block, f"라이트 :root 에 {prefix} 스케일/모션 누락"
         assert prefix not in dark_region, f"다크 블록에 {prefix} 가 새어듦(테마 불변 위반)"
 
@@ -128,12 +128,27 @@ def test_web_region_emits_motion_tokens():
     """웹 CSS 영역이 모션 변수를 방출한다(dur=ms 부착·ease=cubic-bezier 문자열, #179 슬라이스 4)."""
     region = gen.render_web_region(gen.load_tokens())
     assert "--dur-press:140ms;" in region      # 버튼 눌림(100~160)
-    assert "--dur-modal:200ms;" in region       # 모달 등장(180~220)
+    assert "--dur-modal:160ms;" in region       # 모달 등장·퇴장(H-16, 150ms급 대칭)
     assert "--ease-out:cubic-bezier(.23,1,.32,1);" in region  # 강한 ease-out(문자열 그대로)
     # 완료 조건: 모든 지속시간 <300ms.
     import re
     for ms in re.findall(r"--dur-[\w-]+:(\d+)ms;", region):
         assert int(ms) < 300, f"모션 지속시간 {ms}ms 가 300ms 이상입니다(#179 완료 조건)."
+
+
+def test_overlay_tokens_define_scrim_and_strict_layer_order():
+    """H-16: scrim은 테마 색 토큰, overlay/popover/modal은 unitless 단조 층 토큰이다."""
+    t = gen.load_tokens()
+    region = gen.render_web_region(t)
+    assert "--a-scrim:rgba(13,18,26,.42);" in region
+    assert "--a-scrim-reduced:rgba(13,18,26,.78);" in region
+    assert "--a-scrim:rgba(0,0,0,.62);" in region
+    assert "--a-scrim-reduced:rgba(0,0,0,.84);" in region
+    layers = t["layer"]
+    assert layers["overlay_root"] < layers["popover"] < layers["modal"]
+    assert "--z-overlay-root:90;" in region
+    assert "--z-popover:100;" in region
+    assert "--z-modal:200;" in region
 
 
 def test_app_css_free_of_metric_literals():
