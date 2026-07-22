@@ -580,6 +580,7 @@
       // 불러 이 둘을 뺀다(스왑은 유지하므로 열거하면 over-warn).
       if (includeRecipe && g.map_dirty) lost.push("미저장 매핑 편집");
       if (includeRecipe && g.source_dirty) lost.push("미저장 원문 편집");
+      if (includeRecipe && g.pasted_unbacked) lost.push("파일로 저장하지 않은 붙여넣기 원문");
       // 앞머리만 제스처별로 갈린다(데이터 교체 / 새 기안) — 잃는 것의 열거는 같은 술어를 공유한다.
       return `${lead || "데이터를 바꾸면"} 이 큐는 새로 만들어집니다.\n` +
         `사라지는 것: ${lost.join(" · ")}.`;

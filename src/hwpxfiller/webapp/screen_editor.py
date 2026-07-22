@@ -719,6 +719,12 @@ class EditorController:
         """
         self._reset()
 
+    def _do_discard_session(self, p: dict) -> None:
+        """신규 마법사 취소 — 확인을 마친 호출측이 휘발 초안을 실제로 폐기한다(#218 G5)."""
+        if self._editing_origin:
+            raise ValueError("저장된 작업 편집은 신규 마법사 취소로 닫을 수 없습니다.")
+        self._reset()
+
     # ---- 마법사/탭 이동
     def _do_goto_step(self, p: dict) -> None:
         """단계 이동 — 신규(마법사)는 전진 게이트, 편집(탭)은 자유 이동(결정 41).

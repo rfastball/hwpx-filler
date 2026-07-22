@@ -141,6 +141,7 @@
     syncModeDisplay(!!(LAST && LAST.has_job));
     setEditStatus();
     $("jobEditExitNote").style.display = "none";  // 편집 재진입 = 복귀 고지 소임 종료
+    $("jobEditResume").style.display = "none";
   }
 
   /* 실행 복귀(T2 재정의, 블록 2 개정 결정 45) — 가드 대상이 화면 인계에서 "편집 중 행 클릭"
@@ -162,6 +163,15 @@
     return busy;
   }
 
+  /* 신규 마법사 취소 착지 — 백엔드 discard_session 뒤 실행/미선택 패널로 돌아간다. */
+  function showRunMode() {
+    MODE = "run";
+    syncModeDisplay(!!(LAST && LAST.has_job));
+    if (LAST) renderStatus(LAST);
+    $("jobEditExitNote").style.display = "none";
+    $("jobEditResume").style.display = "none";
+  }
+
   /* T2 고지 표면(PR-2 리뷰 F4) — 완료 존 log() 는 세션 전환 리셋(resetGenResult)·존 은닉에
      증발했다. 이 요소는 어떤 렌더 함수도 쓰지 않는 JS 소유라 push·세션 리셋을 관통해
      살아남고, 사용자가 확인 버튼으로 걷거나 편집 재진입 때 걷힌다(고지=읽힐 때까지). */
@@ -174,6 +184,8 @@
       `<button class="btn sm" data-act="return-to-edit">편집으로 돌아가기</button> ` +
       `<button class="btn sm" data-act="dismiss-exit-note">확인</button>`;
     el.style.display = "";
+    // 고지를 확인해 걷어도 미저장 편집 세션의 비파괴 복귀 경로는 헤더에 남는다(#218 G4).
+    $("jobEditResume").style.display = "";
   }
 
   /* 좌 목록 갱신 — 편집 저장 직후 새/개명 작업이 바로 보이게(editor.js doSave 가 호출).
@@ -939,6 +951,7 @@
         $("jobEditExitNote").style.display = "none";
       }
     });
+    $("jobEditResume").addEventListener("click", showEditMode);
     // 구획 ＋ 새 작업(1부 결정 10 — 레일 항목 사망의 생성 진입 승계, 리뷰 F2). 흐름은
     // EditorEntry.newDraft 단일 출처(홈 ＋ 와 공유 — 폐기 확인·착지 드리프트 금지).
     $("jobNewBtn").addEventListener("click", startNewJob);
@@ -1001,6 +1014,6 @@
   // showEditMode/refreshList 는 편집 모드 seam(EditorEntry·editor.js doSave 가 소비).
   window.JobScreen = {
     init, overwriteBody, guardBody, confirmDataSwapIfArmed, openJob,
-    showEditMode, refreshList,
+    showEditMode, showRunMode, refreshList,
   };
 })();

@@ -331,6 +331,21 @@ def test_volatile_template_switch_guards_unsaved_edits(tmp_path):
     assert snap["template_name"] == "다른" and snap["source_dirty"] is False  # 전환·미저장 원문 폐기
 
 
+def test_pasted_original_arms_leave_guard_before_any_edit(tmp_path):
+    """파일 정본 없는 붙여넣기 자체가 미저장 작업 — 즉시 새 기안/템플릿 전환 가드 대상(#218)."""
+    ctrl, _jobs, _ = _controller(tmp_path)
+    ctrl.dispatch("set_template_text", {"text": "붙여넣은 {{공고명}} 원문"})
+    snap = ctrl.snapshot()
+    assert snap["template_name"] == "(붙여넣은 텍스트)"
+    assert snap["source_dirty"] is False  # 수정됨 표지와 파일-무배접 가드는 별도 의미
+    guard = ctrl.dispatch("leave_guard", {})
+    assert guard["armed"] is True and guard["pasted_unbacked"] is True
+
+    r = ctrl.dispatch("select_template", {"name": "착수계"})
+    assert r and r["needs_confirm"] is True
+    assert ctrl.snapshot()["template_name"] == "(붙여넣은 텍스트)"  # 확인 전 불변
+
+
 def test_leave_for_template_guard_query_is_nonmutating(tmp_path):
     """붙여넣기 사전 확인 질의 — 현 세션·스태시 무장을 합산 보고하되 상태·push 불변(무변이)."""
     ctrl, _jobs, pushes = _controller(tmp_path)
@@ -585,24 +600,26 @@ def test_fork_clears_stash_so_next_select_does_not_orphan_copy(tmp_path):
     _save_real(tmp_path, jobs, "기안B", "job_b.txt", "B 저장 원문 {{공고명}}")
     ctrl.dispatch("set_template_text", {"text": "밀려날 붙여넣기 {{공고명}}"})
     ctrl.dispatch("select_job", {"name": "기안A"})       # 붙여넣기 세션 스태시
-    ctrl.dispatch("fork_to_volatile", {})               # 미무장 스태시 → 확인 없이 포크(스태시 비움)
+    gate = ctrl.dispatch("fork_to_volatile", {})        # 붙여넣기 원문 스태시도 복구 불가라 확인
+    assert gate and gate["needs_confirm"] is True and gate["pasted_unbacked"] is True
+    ctrl.dispatch("fork_to_volatile", {"confirm": True})  # 확인 뒤 포크(스태시 비움)
     ctrl.dispatch("edit_source", {"text": "사본에서 고친 원문 {{공고명}}"})
     ctrl.dispatch("select_job", {"name": "기안B"})       # 사본이 새로 스태시
     ctrl.dispatch("select_job", {"name": ""})           # 「이번 세션」 = 사본 복구(옛 세션 아님)
     assert ctrl.snapshot()["template_text"] == "사본에서 고친 원문 {{공고명}}"
 
 
-def test_fork_displacing_unarmed_stash_is_silent(tmp_path):
-    """미무장 이전 휘발(**붙여넣기만** 한 clean 원문)은 확인 없이 포크한다 — 과경보 금지.
-
-    붙여넣기(set_template_text)는 source_dirty=False(깨끗한 시작)라 재입력이 재현을 담보한다 —
-    새 기안 가드와 같은 문턱. **편집된**(source_dirty) 원문은 다르다(다음 테스트)."""
+def test_fork_displacing_pasted_stash_requires_confirmation(tmp_path):
+    """붙여넣기만 한 원문도 파일 정본이 없으므로 스태시를 밀어낼 때 확인한다(#218 G2)."""
     ctrl, jobs, _ = _controller(tmp_path)
     _save_real(tmp_path, jobs, "기안A", "job_a.txt", "저장 원문 {{공고명}}")
-    ctrl.dispatch("set_template_text", {"text": "붙여넣기만 {{공고명}}"})  # source_dirty=False → 무장 아님
+    ctrl.dispatch("set_template_text", {"text": "붙여넣기만 {{공고명}}"})
     ctrl.dispatch("select_job", {"name": "기안A"})
     res = ctrl.dispatch("fork_to_volatile", {})
-    assert res is None and ctrl.snapshot()["mode"] == "volatile"
+    assert res and res["needs_confirm"] is True and res["pasted_unbacked"] is True
+    assert ctrl.snapshot()["mode"] == "saved"
+    ctrl.dispatch("fork_to_volatile", {"confirm": True})
+    assert ctrl.snapshot()["mode"] == "volatile"
 
 
 def test_fork_displacing_edited_source_stash_needs_confirm(tmp_path):

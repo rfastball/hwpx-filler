@@ -89,6 +89,10 @@ class WebFrontend:
         # 무한 재귀(recursion depth 초과)하며 WebView2 COM 을 주입 스레드에서 건드려 부팅을
         # 불안정하게 만든다. 밑줄 접두면 반영이 건너뛴다 — 이 참조는 내부 배선일 뿐 JS API 아님.
         self._window: "object | None" = None  # webview.Window (지연 배선)
+        # 네이티브 X 닫기 가드(#218 G1) — 확인 뒤 destroy()가 다시 closing 이벤트를
+        # 통과하므로 1회 통과 표지와 중복 모달 억제 표지를 브리지가 소유한다.
+        self._close_confirmed = False
+        self._close_prompt_open = False
         registry = TextTemplateRegistry(text_templates_dir)
         job_registry = JobRegistry(default_jobs_dir())
         # 데이터셋 풀(#26) — 단일 인스턴스를 화면들이 공유: 에디터 자동등록(#3)·실행 겨눔(#6)·
@@ -288,6 +292,58 @@ class WebFrontend:
     def editor_has_unsaved_work(self) -> bool:
         """에디터에 진행 중인(미저장) 작업 세션이 있는가 — 크로스스크린 진입 전 폐기 확인용(#25)."""
         return self._controller("editor").has_unsaved_work()
+
+    def close_guard_state(self) -> dict:
+        """창 종료로 사라질 세션 상태를 한 시점에 판정한다(#218 G1)."""
+        reasons: list[str] = []
+        if self._controller("editor").has_unsaved_work():
+            reasons.append("저장하지 않은 작업 편집")
+        if self._controller("job")._guard_state()["armed"]:
+            reasons.append("작업 화면의 완료하지 않은 선택")
+        if self._controller("draft")._leave_guard()["armed"]:
+            reasons.append("기안 화면의 미저장 원문·매핑 또는 큐 진행")
+        return {"armed": bool(reasons), "reasons": reasons}
+
+    def _show_close_prompt(self, state: dict) -> None:
+        """closing 콜백 바깥 스레드에서 웹 확인창을 연다(WinForms UI 재진입 회피)."""
+        if self._window is None:
+            self._close_prompt_open = False
+            return
+        try:
+            payload = json.dumps(state, ensure_ascii=False)
+            self._window.evaluate_js(  # type: ignore[attr-defined]
+                f"window.AppCloseGuard && window.AppCloseGuard.prompt({payload})"
+            )
+        except Exception as exc:  # noqa: BLE001 — 실패 시 안전측(창 유지)+loud
+            self._close_prompt_open = False
+            _alarm(f"종료 확인창 표시 실패: {exc!r}", self._window)
+
+    def _handle_window_closing(self) -> "bool | None":
+        """pywebview ``closing`` 이벤트 — False면 닫기를 취소한다."""
+        if self._close_confirmed:
+            return None
+        state = self.close_guard_state()
+        if not state["armed"]:
+            return None
+        if not self._close_prompt_open:
+            self._close_prompt_open = True
+            timer = threading.Timer(0, self._show_close_prompt, args=(state,))
+            timer.daemon = True
+            timer.start()
+        return False
+
+    def confirm_window_close(self) -> bool:
+        """웹 종료 확인의 확정 착지 — 다음 closing 1회를 통과시켜 실제로 닫는다."""
+        self._close_confirmed = True
+        self._close_prompt_open = False
+        if self._window is not None:
+            self._window.destroy()  # type: ignore[attr-defined]
+        return True
+
+    def cancel_window_close(self) -> bool:
+        """웹 종료 확인 취소 — 다음 X 입력에서 현재 상태를 다시 판정할 수 있게 한다."""
+        self._close_prompt_open = False
+        return True
 
     def pick_pool_data_file(self) -> "str | None":
         """데이터 관리 등록 모달 '찾아보기' → **경로만** 반환(#26 #4).
@@ -2024,6 +2080,7 @@ def main() -> int:
         hidden=True,  # 테마 주입 후 show — FOUC 은닉(#74, 아래 _apply_theme_then_show)
     )
     frontend._window = window
+    window.events.closing += frontend._handle_window_closing
     # 소이슈 ②: Windows 는 EdgeChromium(WebView2) 백엔드 명시 핀.
     gui = "edgechromium" if sys.platform == "win32" else None
 

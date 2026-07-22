@@ -88,6 +88,7 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "use_library_template": _schema("path"),
         "toggle_library_group": _schema("group"),
         "new_session": _schema(),
+        "discard_session": _schema(),
         "goto_step": _schema("step"),
         "ack_gate": _schema(),
         "skip_data": _schema(),

@@ -359,6 +359,23 @@ def test_new_session_action_resets_prior_session(tmp_path):
     assert snap["pattern"] == DEFAULT_FILENAME_PATTERN   # 패턴도 기본으로 복원
 
 
+def test_discard_session_cancels_new_wizard_but_rejects_saved_edit(tmp_path):
+    """신규 마법사 취소는 휘발 상태를 실제 폐기하고, 저장 작업 편집에는 오용되지 않는다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("goto_step", {"step": 1})
+    assert ctrl.has_unsaved_work() is True
+    ctrl.dispatch("discard_session", {})
+    snap = ctrl.snapshot()
+    assert snap["step"] == 0 and ctrl.template_path == "" and ctrl.model is None
+    assert ctrl.has_unsaved_work() is False
+
+    # 편집 모드는 별도 비파괴 복귀 계약(T2)을 쓰며 신규 취소 액션으로 닫을 수 없다.
+    ctrl._editing_origin = "저장작업"
+    with pytest.raises(ValueError, match="저장된 작업 편집"):
+        ctrl.dispatch("discard_session", {})
+
+
 # --------------------------------------------------- #16 1·2단계 구조화 렌더 가드
 _EDITOR_JS = REPO / "web" / "js" / "screens" / "editor.js"
 

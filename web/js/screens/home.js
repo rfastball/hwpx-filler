@@ -334,7 +334,8 @@
      fire-and-forget — rejection 은 셸 unhandledrejection 백스톱이 loud 재진술한다(#45). */
   async function deleteJob(name, returnFocus) {
     if (await Modal.confirm({
-      body: `작업 '${name}' 을(를) 삭제할까요? 되돌릴 수 없습니다.`, returnFocus,
+      body: `작업 '${name}' 을(를) 삭제할까요? 되돌릴 수 없습니다.\n` +
+        "작업 화면에서 이 작업을 열어 둔 실행 세션도 다음에 돌아갈 때 닫힙니다.", returnFocus,
     })) {
       Bridge.call(SCREEN, "delete_job", { name });
     }

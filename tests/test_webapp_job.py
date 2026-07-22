@@ -515,7 +515,10 @@ def test_refresh_invalidates_session_when_job_deleted(tmp_path):
     assert ctrl.snapshot()["has_job"] is True
 
     reg.delete("공고서")  # 다른 화면이 삭제(그 화면으로 가려면 작업 화면 이탈 → 복귀 시 refresh)
-    ctrl.dispatch("refresh", {})
+    result = ctrl.dispatch("refresh", {})
+    assert result == {
+        "notice": "'공고서' 작업이 다른 화면에서 삭제되어 열어 둔 실행 세션을 닫았습니다."
+    }
     snap = ctrl.snapshot()
     assert snap["has_job"] is False and snap["job_name"] == ""
     assert snap["job_rows"] == []  # 좌 목록에서도 사라져 상실이 보인다
@@ -529,7 +532,7 @@ def test_refresh_keeps_session_when_job_still_present(tmp_path):
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     ctrl.load_data_path(_data_csv(tmp_path))
-    ctrl.dispatch("refresh", {})
+    assert ctrl.dispatch("refresh", {}) is None
     snap = ctrl.snapshot()
     assert snap["has_job"] is True and snap["job_name"] == "공고서"
     assert snap["record_count"] == 2  # 데이터 겨눔도 보존

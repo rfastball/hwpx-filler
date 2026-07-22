@@ -449,7 +449,7 @@
     return `<span class="pv">${esc(display)}</span>`;
   }
 
-  /* ---- 푸터 내비 — 신규=마법사(뒤로/다음/저장), 편집=탭이라 내비 없음(저장 탭에 저장만).
+  /* ---- 푸터 내비 — 신규=마법사(취소/뒤로/다음/저장), 편집=탭이라 내비 없음(저장 탭에 저장만).
      복귀 어포던스 불설치(결정 40): "저장하고 실행으로" 류 포커스 튕김 버튼은 두지 않는다 —
      실행 복귀는 좌 목록 행 클릭이 담당하고, 저장은 제자리에서 완결된다. ---- */
   function footer(s) {
@@ -469,7 +469,8 @@
     }
     const hint = (s.step < 2 && !s.reachable[s.step])
       ? `<span class="muted capnote">${gateHint(s)}</span>` : "";
-    return `${back}<span class="spacer"></span>${hint}${next}`;
+    return `<button class="btn" data-act="cancel-new">취소</button>${back}` +
+      `<span class="spacer"></span>${hint}${next}`;
   }
 
   function gateHint(s) {
@@ -583,6 +584,15 @@
         case "unconfirm-all": await Bridge.call(SCREEN, "unconfirm_all", {}); break;
         case "confirm-all": await confirmAll(); break;
         case "row-confirm": await Bridge.call(SCREEN, "set_confirmed", { index: idx, confirmed: el.checked }); break;
+        case "cancel-new": {
+          if (!(await EditorEntry.confirmDiscard(
+            "새 작업 만들기를 취소하면 입력한 이름 · 데이터 · 매핑이 사라집니다.\n\n계속할까요?",
+            el))) break;
+          await Bridge.call(SCREEN, "discard_session", {});
+          if (window.JobScreen && window.JobScreen.showRunMode) window.JobScreen.showRunMode();
+          else window.alert("실행 모드로 돌아갈 수 없습니다. 화면 구성 요소(JobScreen)가 로드되지 않았습니다.");
+          break;
+        }
         case "back": await Bridge.call(SCREEN, "goto_step", { step: LAST.step - 1 }); break;
         case "next": await Bridge.call(SCREEN, "goto_step", { step: LAST.step + 1 }); break;
         case "save": await doSave({}); break;

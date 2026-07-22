@@ -1,6 +1,33 @@
 /* 라우터 + 부팅 — 레일 나비로 화면 전환, pywebview 준비 시 실화면 초기화.
    화면별 로직은 js/screens/*.js 가 소유(DraftScreen.init 등). 여기선 배선만. */
 (function () {
+  /* 네이티브 X 닫기 확인 착지(#218 G1). Python closing 이벤트가 현재 세션 술어를 판정해
+     호출하며, 취소/Escape는 창을 유지하고 다음 X에서 새 상태를 다시 판정한다. */
+  let closePromptPending = false;
+  window.AppCloseGuard = {
+    async prompt(state) {
+      if (closePromptPending) return;
+      closePromptPending = true;
+      const reasons = (state && state.reasons) || [];
+      try {
+        const ok = await Modal.confirm({
+          title: "앱 종료 확인",
+          body: "앱을 닫으면 다음 진행 상태가 사라집니다:\n\n• " + reasons.join("\n• ") +
+            "\n\n그래도 종료할까요?",
+          confirmLabel: "종료",
+          cancelLabel: "계속 작업",
+        });
+        if (ok) await window.pywebview.api.confirm_window_close();
+        else await window.pywebview.api.cancel_window_close();
+      } catch (err) {
+        await window.pywebview.api.cancel_window_close();
+        window.alert("종료 확인을 처리하지 못해 창을 유지합니다: " +
+          String((err && err.message) || err));
+      } finally {
+        closePromptPending = false;
+      }
+    },
+  };
   /* 비동기 실패 최종 백스톱 — 지역 가드(디스패처 try/catch·.catch)를 빠뜨린 브리지
      rejection 이 조용한 무반응으로 증발하는 결함류(F8·F9·#45 profile_*·P2 onClick)가
      파일마다 반복 재발했다. 사이트별 규율 대신 셸에서 구조적으로 받는다: 여기 도달한

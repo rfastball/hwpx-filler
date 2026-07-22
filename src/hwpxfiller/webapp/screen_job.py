@@ -508,7 +508,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self._push()
         return result
 
-    def _do_refresh(self, p: dict) -> None:
+    def _do_refresh(self, p: dict) -> "dict | None":
         """레지스트리 재스캔 반영(C6) + stale 세션 무효화(master-detail 불변식).
 
         좌 목록(``registry.names()``)과 우 패널(``self.vm``)이 갈라지지 않게 조정한다: 선택된
@@ -520,9 +520,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         삭제(그 화면으로 가려면 반드시 작업 화면을 이탈)가 복귀 시점에 잡힌다.
         """
         if self.job_name and self.job_name not in self.registry.names():
+            lost = self.job_name
             # 세션 무효화(vm·job_name·데이터·폴더 clear). confirm=True — 작업이 이미
             # 레지스트리에서 사라져 가드로 잡아둘 대상이 없다(잡으면 유령 세션 좌초).
             self._do_select_job({"name": "", "confirm": True})
+            return {
+                "notice": f"'{lost}' 작업이 다른 화면에서 삭제되어 열어 둔 실행 세션을 닫았습니다."
+            }
+        return None
 
     def _do_select_job(self, p: dict) -> "dict | None":
         """좌 목록 클릭 → RunViewModel 재구성(패널 세션 진입). 저장 폴더 기본 = 템플릿/Results.

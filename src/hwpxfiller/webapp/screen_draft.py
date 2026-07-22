@@ -329,6 +329,7 @@ class DraftController(DraftSessionMixin):
         self._bound_job = name
         self._source_readonly = True
         self._source_dirty = False
+        self._pasted_unbacked = False
         # 방금 이 매핑을 영속했으니 미저장 편집은 없다 — 표지를 내린다(리뷰 5c 3R P2 / 301).
         # 안 내리면 저장 직후 다른 기안으로 떠날 때 _leave_guard 가 있지도 않은 "미저장 매핑
         # 편집"으로 거짓 파괴 확인을 띄운다(저장 = 새 baseline, restore/fresh 와 동형).
@@ -505,6 +506,7 @@ class DraftController(DraftSessionMixin):
         self.vm.template_name = name
         self._template_path = str(dest)
         self._source_dirty = False
+        self._pasted_unbacked = False
         return {
             "ok": True,
             "name": name,

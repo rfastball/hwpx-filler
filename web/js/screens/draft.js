@@ -291,6 +291,7 @@
     if (copied > 0) parts.push(`복사 ${copied}건(되돌릴 수 없음)`);
     if (r.map_dirty) parts.push("미저장 매핑 편집");
     if (r.source_dirty) parts.push("미저장 원문 편집");
+    if (r.pasted_unbacked) parts.push("파일로 저장하지 않은 붙여넣기 원문");
     return parts.length
       ? `지금 연결한 데이터와 진행(${parts.join(" · ")})은`
       : "지금 진행 중인 세션은";

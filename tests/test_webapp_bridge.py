@@ -44,6 +44,46 @@ def _controller(tmp_path: Path) -> "tuple[DraftController, list]":
     return ctrl, pushes
 
 
+def test_native_close_guard_allows_clean_and_blocks_pasted_draft(tmp_path, monkeypatch):
+    """네이티브 X는 클린 상태 즉시 통과, 붙여넣기 원문 상태는 웹 확인 전 닫기를 취소한다."""
+    frontend = _frontend(tmp_path, monkeypatch)
+    assert frontend.close_guard_state() == {"armed": False, "reasons": []}
+    assert frontend._handle_window_closing() is None
+
+    frontend.dispatch("draft", "set_template_text", {"text": "붙여넣은 {{본문}}"})
+    state = frontend.close_guard_state()
+    assert state["armed"] is True
+    assert any("기안 화면" in reason for reason in state["reasons"])
+
+    calls: list[str] = []
+
+    class FakeWindow:
+        def evaluate_js(self, script):
+            calls.append(script)
+
+        def destroy(self):
+            calls.append("destroy")
+
+    class ImmediateTimer:
+        daemon = False
+
+        def __init__(self, _delay, fn, args=()):
+            self.fn, self.args = fn, args
+
+        def start(self):
+            self.fn(*self.args)
+
+    frontend._window = FakeWindow()
+    monkeypatch.setattr("hwpxfiller.webapp.app.threading.Timer", ImmediateTimer)
+    assert frontend._handle_window_closing() is False
+    assert calls and "AppCloseGuard.prompt" in calls[-1]
+    assert frontend.cancel_window_close() is True
+    assert frontend._close_prompt_open is False
+    assert frontend.confirm_window_close() is True
+    assert calls[-1] == "destroy"
+    assert frontend._handle_window_closing() is None
+
+
 def test_importing_webapp_screens_loads_no_qt():
     """링1 을 임포트하는 컨트롤러 모듈이 PySide6/PyQt 를 한 줄도 끌어오지 않는다(스파이크 Q1).
 
