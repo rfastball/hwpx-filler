@@ -286,6 +286,55 @@ def test_edit_source_blocked_in_saved_mode_then_allowed_after_fork(tmp_path):
     assert snap["source_dirty"] is True
 
 
+def test_fork_displacing_armed_stash_needs_confirm(tmp_path):
+    """포크가 무장한 이전 휘발 세션을 밀어내면 확인 왕복한다(리뷰 5b 2R P1 — 조용한 소실 금지).
+
+    붙여넣던 휘발 세션에 선택·큐 진행을 심고(무장), 저장 기안을 골라 스태시한 뒤 포크하면 —
+    사본이 유일 휘발이 되어 스태시를 대체한다(단일 슬롯). 그 진행은 Job 에 없어 복구 불가라
+    포크는 needs_confirm 으로 되묻고, 확인 전에는 아직 저장 모드(포크 미완)다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "저장 원문 {{공고명}}")
+    ctrl.dispatch("set_template_text", {"text": "붙여넣던 원문 {{공고명}}"})
+    _arm_queue(ctrl, selected=2, copied=1)             # 붙여넣던 휘발에 복구 불가 진행
+    ctrl.dispatch("select_job", {"name": "기안A"})       # 무장 휘발이 스태시됨
+    res = ctrl.dispatch("fork_to_volatile", {})
+    assert res and res["needs_confirm"] is True and res["kind"] == "fork_displaces_stash"
+    assert res["copied_count"] == 1
+    assert ctrl.snapshot()["mode"] == "saved"           # 확인 전 = 포크 안 됨
+    ctrl.dispatch("fork_to_volatile", {"confirm": True})
+    assert ctrl.snapshot()["mode"] == "volatile"
+
+
+def test_fork_clears_stash_so_next_select_does_not_orphan_copy(tmp_path):
+    """포크는 스태시를 비워, 뒤이은 저장 선택이 사본을 밀려난 세션 위로 덮어 지우지 않게 한다.
+
+    포크 후엔 사본이 유일 휘발이다 — 다른 저장 기안을 골랐다 「이번 세션」으로 돌아오면 (밀려난
+    옛 세션이 아니라) 이 사본이 복구돼야 한다(스태시 슬롯이 사본으로 새로 채워짐)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "A 저장 원문 {{공고명}}")
+    _save_real(tmp_path, jobs, "기안B", "job_b.txt", "B 저장 원문 {{공고명}}")
+    ctrl.dispatch("set_template_text", {"text": "밀려날 붙여넣기 {{공고명}}"})
+    ctrl.dispatch("select_job", {"name": "기안A"})       # 붙여넣기 세션 스태시
+    ctrl.dispatch("fork_to_volatile", {})               # 미무장 스태시 → 확인 없이 포크(스태시 비움)
+    ctrl.dispatch("edit_source", {"text": "사본에서 고친 원문 {{공고명}}"})
+    ctrl.dispatch("select_job", {"name": "기안B"})       # 사본이 새로 스태시
+    ctrl.dispatch("select_job", {"name": ""})           # 「이번 세션」 = 사본 복구(옛 세션 아님)
+    assert ctrl.snapshot()["template_text"] == "사본에서 고친 원문 {{공고명}}"
+
+
+def test_fork_displacing_unarmed_stash_is_silent(tmp_path):
+    """미무장 이전 휘발(붙여넣기 텍스트만)은 확인 없이 포크한다 — 텍스트는 복구 가능(과경보 금지).
+
+    새 기안 가드와 같은 문턱: 복구 불가 진행(선택·큐)만 되묻고, 재입력 가능한 원문 텍스트
+    손실로는 사용자를 막지 않는다(over-warn 도 confirm-or-alarm 위반)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "저장 원문 {{공고명}}")
+    ctrl.dispatch("set_template_text", {"text": "붙여넣기만 {{공고명}}"})  # 무장 아님
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    res = ctrl.dispatch("fork_to_volatile", {})
+    assert res is None and ctrl.snapshot()["mode"] == "volatile"
+
+
 def test_source_dirty_false_for_clean_sources(tmp_path):
     """수정됨 표지는 깨끗한 원문(첫 템플릿·새 붙여넣기)엔 뜨지 않는다 — 라이브러리에서 갈라졌을 때만."""
     ctrl, _jobs, _ = _controller(tmp_path)

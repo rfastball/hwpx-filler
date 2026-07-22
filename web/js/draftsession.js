@@ -685,7 +685,20 @@
               `복사할 카드부터 새 문안이 적용됩니다. 저장된 기안은 그대로 두고 이 세션만 사본으로 가릅니다.`,
             confirmLabel: "사본으로 편집", cancelLabel: "머무르기",
           }))) return;
-          await Bridge.call(SCREEN, "fork_to_volatile", {});  // 푸시가 원문을 편집 가능으로 재렌더
+          // 사본이 유일 휘발("이번 세션")이 되어 직전에 붙여넣던 세션을 밀어낸다(단일 슬롯). 그
+          // 세션에 복구 불가 진행이 있으면 백엔드가 needs_confirm 으로 되묻는다(리뷰 5b 2R P1).
+          let r = await Bridge.call(SCREEN, "fork_to_volatile", {});  // 푸시가 원문을 편집 가능으로 재렌더
+          if (r && r.needs_confirm) {
+            const prev = r.copied_count || 0;
+            if (!(await window.Modal.confirm({
+              title: "붙여넣던 세션이 사라집니다",
+              body: (prev > 0 ? `직전에 붙여넣던 세션에서 이미 ${prev}건을 복사했습니다 — 되돌릴 수 없습니다. ` : "") +
+                `이 사본이 「이번 세션」 자리를 대신합니다. 붙여넣던 데이터와 선택·복사 진행은 ` +
+                `저장된 기안에 보관되지 않아, 사본으로 가르면 함께 사라집니다.`,
+              confirmLabel: "사본으로 편집", cancelLabel: "머무르기",
+            }))) return;
+            await Bridge.call(SCREEN, "fork_to_volatile", { confirm: true });
+          }
         });
       }
 

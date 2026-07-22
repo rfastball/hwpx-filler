@@ -241,6 +241,27 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         정확히 보존된다."""
         self._volatile_stash = {a: getattr(self, a) for a in self._SESSION_ATTRS}
 
+    def _stash_guard(self) -> "dict | None":
+        """얼려 둔 휘발 세션의 무장 상태 — 포크가 그것을 밀어내기 전에 소실을 판정한다(리뷰 5b 2R P1).
+
+        단일 슬롯 모델: 포크(:meth:`_do_fork_to_volatile`)는 현 저장 세션을 유일 휘발로 만들어
+        스태시해 둔 붙여넣기 세션을 대체한다. 그 세션에 복구 불가 진행(T3: 선택·큐 부분 복사)이
+        있으면 조용히 버리지 않고 재진술한다. 스태시 객체를 잠시 결속해 공용 :meth:`_guard_state`
+        로 **같은 술어**를 재평가한다(컨트롤러 상태를 복붙 판정하지 않아 드리프트 0). 스태시가
+        없거나(포크 대상 저장 세션 전 휘발 미스태시) 무장 아니면(재현 가능 — 붙여넣기 텍스트만은
+        복구 가능이라 새 기안 가드와 같은 문턱) ``None``."""
+        if self._volatile_stash is None:
+            return None
+        live = {a: getattr(self, a) for a in self._SESSION_ATTRS}
+        try:
+            for attr, val in self._volatile_stash.items():
+                setattr(self, attr, val)
+            g = self._guard_state()
+        finally:  # 판정은 순수 읽기 — 무슨 일이 있어도 현 세션 객체를 되돌린다.
+            for attr, val in live.items():
+                setattr(self, attr, val)
+        return g if g["armed"] else None
+
     def _restore_volatile(self) -> None:
         """「이번 세션」 귀환 — 얼려 둔 휘발 세션 복원 + 유래 소거. 스태시가 없으면(승격 직후
         등) 새 휘발 세션으로 낙착한다(빈 슬롯 = 갓 시작하는 휘발이 참이다)."""
@@ -286,7 +307,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self._source_readonly = True
         self._source_dirty = False  # 저장 정의 = 깨끗한 원문(읽기 전용 — 손보려면 「사본으로 편집」)
 
-    def _do_fork_to_volatile(self, p: dict) -> None:
+    def _do_fork_to_volatile(self, p: dict) -> "dict | None":
         """「사본으로 편집」(#148 슬라이스 5b) — 저장 원문을 휘발 사본으로 가른다(결정 7 스위치 ④).
 
         저장된 기안의 원문은 읽기 전용이라(정의가 조용히 갈라지지 않게) 손보려면 사본이 필요하다.
@@ -294,13 +315,23 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         결속만 끊어 편집 가능하게 한다(``_bound_job`` 소거 → 휘발 모드). 저장된 기안 자체는 건드리지
         않는다. 이미 휘발이면(포크할 저장 정의 없음) 무동작 — 버튼은 저장 모드에서만 뜬다.
 
-        스태시(붙여넣던 이전 휘발)는 건드리지 않는다: 포크한 세션이 곧 현 휘발이고, 이후 다른
-        저장 기안을 고르면 그때 이 포크가 다시 스태시된다(자연 수렴)."""
+        **밀려나는 이전 휘발 재진술(리뷰 5b 2R P1)**: 저장 기안 결속 전에 붙여넣던 휘발 세션은
+        스태시에 얼어 있다(두 세션 병존). 포크한 사본이 곧 유일 휘발("이번 세션")이 되어 그 스태시를
+        대체하므로 — 단일 슬롯 — 얼려 둔 세션은 도달 불가가 된다. 거기 복구 불가 진행이 있으면
+        조용히 버리지 않고 확인 왕복한다(:meth:`_stash_guard`, RC-02). 확인(또는 무장 아님)이면
+        스태시를 비운다: 포크가 유일 휘발이라 뒤이은 저장 선택이 이 사본을 밀려난 세션 위로 덮어
+        조용히 지우지 않게 한다(사본은 그때 새로 스태시된다)."""
         if not self._bound_job:
-            return
+            return None
+        if not p.get("confirm"):
+            g = self._stash_guard()
+            if g is not None:
+                return {"needs_confirm": True, "kind": "fork_displaces_stash", **g}
         self._bound_job = ""
         self._source_readonly = False
         self._source_dirty = True  # 사본 = 저장 정의에서 갈라진 원문(수정됨 표지)
+        self._volatile_stash = None  # 포크 = 유일 휘발 — 밀려난 스태시를 조용히 덮지 않게 비운다
+        return None
 
     def _records(self) -> list:
         return self.vm.records
