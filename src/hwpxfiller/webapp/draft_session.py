@@ -1,16 +1,15 @@
-"""기안 세션(txt) 공용 본체 — 「기안문 채우기」와 「기안」 화면의 단일 출처. #148 슬라이스 3a.
+"""기안 세션(txt) 공용 본체 — 「기안」 화면의 세션 기계. #148 슬라이스 3a.
 
-R-info 3부 결정 1·5·7 의 합병은 **두 표면이 같은 세션 기계를 쓴다**는 뜻이다. 이 모듈은
-:class:`~hwpxfiller.webapp.screens.TxtController` 가 혼자 갖고 있던 세션 본체(템플릿 원문 ·
+R-info 3부 결정 1·5·7 의 합병은 **하나의 세션 기계**라는 뜻이다. 이 모듈은 구 「기안문 채우기」
+(``screen_txt.TxtController``, #148 슬라이스 6 삭제)가 혼자 갖고 있던 세션 본체(템플릿 원문 ·
 데이터 존 · 큐 · 작업점 카드 · 대상 글꼴 · 정렬 린트 · T3 가드 · 클립보드 렌더)를 **무변화로**
 끌어올린 것이다 — 「기안」 화면이 400줄 사본을 새로 짓지 않게(#94 가 남긴 교훈: 한시적
-중복은 한시적이지 않다).
+중복은 한시적이지 않다). 슬라이스 3a~5 에선 신·구 두 표면이 잠시 공존하며 같은 이 믹스인을
+봐 드리프트가 생길 자리가 없었고, 슬라이스 6 에서 구 화면이 흡수·삭제돼 소비자는 하나가 됐다.
 
-소비자는 둘:
+소비자:
 
-- :class:`~hwpxfiller.webapp.screens.TxtController` — 구 화면. 세션이 화면의 전부라
-  스냅샷·디스패치를 그대로 물려받는다(슬라이스 6에서 사망).
-- :class:`~hwpxfiller.webapp.screen_draft.DraftController` — 신 화면. 좌 목록(master)에
+- :class:`~hwpxfiller.webapp.screen_draft.DraftController` — 「기안」 화면. 좌 목록(master)에
   세션(detail)을 얹는다. 스냅샷은 목록 키 + :meth:`DraftSessionMixin._session_snapshot`
   병합이고 디스패치는 두 계열의 ``_do_*`` 가 한 라우터를 공유한다(MRO).
 
@@ -107,7 +106,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
     """기안(txt) 휘발 세션 — :class:`TxtDraftViewModel` 소유·위임.
 
     스파이크가 끝까지 검증한 첫 실화면(SPIKE_FINDINGS.md). 표현 재진술(빨강 미입력
-    ``{{토큰}}`` · 〈빈 값〉)은 링2 대체라 웹(js/screens/txt.js · draft.js)에서 만든다 — VM
+    ``{{토큰}}`` · 〈빈 값〉)은 링2 대체라 웹(js/screens/draft.js)에서 만든다 — VM
     로직 재구현이 아니다.
 
     **데이터 존(블록 3·4, 슬라이스 6 PR-2b)**: 행 선택 = 복사용 렌더링 큐의 **전-선언**
@@ -731,12 +730,67 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self._push()
         return result
 
-    def _do_select_template(self, p: dict) -> None:
+    def _template_switch_guard(self) -> dict:
+        """템플릿 교체(콤보·홈/관리 「열기」·붙여넣기) 앞 무장 — **저장이든 휘발이든** 미저장 손실.
+
+        단일 술어(RC2 근본 조치, 리뷰 F3·C·I): 세션 교체로 사라지는 것을 한 곳에서 판정한다.
+        ①현 세션 손실 = :meth:`_leave_guard`(큐·선택 ∨ 미저장 매핑·원문 편집 — 저장·휘발 공통)
+        ②스태시 손실 = :meth:`_stash_guard`(**저장 모드에서만** — 휘발엔 스태시가 없다, 리뷰 C).
+        어느 쪽이든 무장이면 armed. 종전엔 이 판정이 ``_bound_job``(저장 모드)에서만 발동해,
+        **휘발 세션에 미저장 원문/매핑 편집이 있을 때 콤보로 템플릿을 바꾸면 무가드 소실**했다
+        (리뷰 I — 구 「빠른 기안」 session_guard("switch") 승계 실패). 모드 무관 단일 초크로 닫는다.
+        """
+        g = self._leave_guard()
+        g["session_armed"] = g["armed"]  # 현 세션 **자체**의 무장(스태시 제외) — 문안 정확성용
+        stash_armed = bool(self._bound_job) and self._stash_guard() is not None
+        g["stash_armed"] = stash_armed
+        g["armed"] = g["armed"] or stash_armed  # 진입 게이트용 합산(어느 쪽이든 확인)
+        return g
+
+    def _do_leave_for_template_guard(self, p: dict) -> dict:
+        """붙여넣기 진입 사전 확인용 무장 질의(무변이) — 붙여넣기 전에 미저장 손실을 먼저 묻는다.
+
+        콤보 전환은 ``select_template`` 의 needs_confirm 왕복을 쓰지만, 붙여넣기는 모달을 **열기
+        전에** 물어야(텍스트를 다 붙인 뒤 "버릴까요"는 그 노동을 또 버리게 한다 — 구 「빠른 기안」
+        도 모달 진입 시 확인) 같은 단일 술어(:meth:`_template_switch_guard`)를 질의로 노출한다.
+        """
+        return self._template_switch_guard()
+
+    _do_leave_for_template_guard.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
+
+    def _do_select_template(self, p: dict) -> "dict | None":
+        """라이브러리 템플릿 선택 — 콤보·홈/템플릿 관리 라우팅 공용 진입(#148 슬라이스 6).
+
+        **세션 교체 가드(모드 무관 단일 초크, 리뷰 F3·C·I)**: 저장 결속에서 진입하면 ``_bound_job``·
+        ``_source_readonly`` 잔류로 저장 정의가 딴 템플릿을 가리키는 계약 위반이었고(F3), 되살린
+        스태시 편집이 무가드 폐기됐으며(C), **휘발 세션의 미저장 편집도 콤보 전환에 무가드 소실**
+        했다(I). 무장 판정을 :meth:`_template_switch_guard`(현 세션 ∨ 스태시, 저장·휘발 공통)로
+        합쳐 어느 경우든 재진술한다. 확인(또는 미무장)이면 전이한다:
+        - **저장 모드**: 휘발로 귀환(:meth:`_restore_volatile`) + 복사 진행·선택 리셋(스태시/직전 큐
+          표지가 새 템플릿에 붙지 않게, C).
+        - **휘발 모드**(콤보): 데이터·큐는 유지(같은 데이터에 새 템플릿을 얹는 정상 전환)하되 미저장
+          원문·매핑 편집은 새 템플릿 로드로 폐기(위에서 확인) — 표지만 리셋.
+        읽기전용 저장 모드에선 콤보 자체가 잠겨(source_readonly) 콤보 경로로는 못 오고, 홈/관리
+        「열기」가 이 가드를 지난다.
+        """
+        if not p.get("confirm"):
+            g = self._template_switch_guard()
+            if g["armed"]:
+                return {"needs_confirm": True, "kind": "leave_for_template",
+                        "target": p.get("name", ""), **g}
+        if self._bound_job:
+            self._restore_volatile()  # 저장 결속 해제 → 휘발(스태시 복원 or 새 휘발)
+            # 복사 진행·선택 리셋(리뷰 C) — 복원한 스태시/직전 큐 표지가 새 템플릿에 붙지 않게.
+            # 데이터는 유지(스태시 승계)하되 큐는 새로: 새 템플릿을 여는 것은 새 채움의 시작이다.
+            self.selection = SelectionModel(len(self.vm.records))
+            self.queue = TxtQueueModel(self.selection)
         self.vm.select_template(p["name"])
         self._fullwidth = False  # 치환은 그 원문에 대한 판단 — 원문이 바뀌면 함께 죽는다(리뷰 F2)
         self._source_dirty = False  # 깨끗한 라이브러리 픽 — 수정됨 표지 해제(슬라이스 5b)
         self._template_path = self._resolve_template_path(p["name"])  # 저장 배접(슬라이스 5c)
+        self._map_dirty = False  # 확인된 전환 = 새 baseline(휘발 콤보 전환도 미저장 표지 리셋)
         self._rebuild_mapping()  # 새 토큰 집합 → 맞추기 골격 재구성(같은 이름 결속은 승계)
+        return None
 
     def _do_new_draft(self, p: dict) -> None:
         """홈 「＋ 새 기안」 — 세션 원자 초기화(F11, F10 「새 작업」과 대칭 문법).
@@ -747,9 +801,11 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         **면제 철회(#126)**: 원장 F11 의 무확인 근거는 "txt 출력은 일회성이라 버릴 durable
         상태가 없다"였는데, 블록 3 전-선언 큐가 신설되면서 거짓이 됐다. 큐의 복사 진행은
         durable 은 아니어도 **복구 불가**다 — 어디까지 붙여넣었는지는 앱 밖 기억이다. 이제
-        이 전이도 T3 술어(:meth:`_guard_state`)를 지나며, 확인은 제스처를 소유한 표면
-        (``TxtScreen.confirmNewDraftIfArmed``)이 큐 진행을 재진술해 받는다. 결정 32 가 빠른
-        기안에서 같은 F11 전제를 이미 부분 개정했다(수기 폼 신설로 버릴 상태가 생김).
+        이 전이도 가드를 지나며, 확인은 제스처를 소유한 표면(``DraftScreen.confirmNewDraftIfArmed``,
+        홈 「＋ 새 기안」도 이를 소비 — #148 슬라이스 6)이 진행을 재진술해 받는다. **세션 교체이므로
+        :meth:`_do_leave_guard`(미저장 매핑·원문 편집 포함) 술어를 쓴다**(리뷰 F4 — 데이터 스왑
+        전용 ``_guard_state`` 는 map_dirty 를 놓쳐 저장 기안의 미저장 편집을 조용히 버렸다). 결정
+        32 가 같은 F11 전제를 이미 부분 개정했다(수기 폼 신설로 버릴 상태가 생김).
         """
         self._fresh_session()
 
@@ -909,6 +965,39 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         """전각 정렬 치환 적용/해제(결정 17 린트 처방) — 세션 렌더 옵션, 템플릿 원본 불변."""
         self._fullwidth = bool(p["value"])
 
+    def _do_clear_data(self, p: dict) -> None:
+        """데이터 해제 — 결속 값을 현재 작업점 값으로 **상수 동결** 후 데이터를 뗀다(R-flow 결정 30).
+
+        구 「빠른 기안」의 "데이터 해제 = 결속 값 평문 동결"을 승계한다(리뷰 F — 삭제는 의무를
+        상속한다). 단건 :meth:`~hwpxfiller.gui.mapping_state.MappingModel.unbind` 와 다르다: N행
+        큐에선 결속 값이 행마다 달라 동결이 성립 안 하지만, **데이터를 통째** 떼면 무데이터 가상
+        1행(결정 14, 직접 입력)으로 퇴화하므로 작업점(없으면 행 0)의 값을 상수로 굳혀 화면에 보이던
+        값이 조용히 사라지지 않게 한다(표지 「직접 입력」). 되돌릴 열이 사라졌으니 소스 기억은
+        남기지 않는다(``freeze_to_const`` — dead revert 금지). 데이터 교체와 같은 파괴라 표면이
+        T3 가드로 먼저 확인하고 부른다(``confirmDataSwapIfArmed`` — 큐 진행 소실).
+        """
+        if self.vm.datasource is None:
+            return  # 이미 무데이터 — 무동작(dead 확인 금지)
+        records = self._records()
+        cur = self.queue.current
+        idx = cur if (cur is not None and 0 <= cur < len(records)) else (0 if records else None)
+        values = self.mapping.live_profile().apply(records[idx] if idx is not None else {})
+        for i, row in enumerate(self.mapping.rows):
+            if row.source:  # 결속 자리 → 현재 값 상수 동결(소스 없이 — R-flow 결정 30)
+                self.mapping.freeze_to_const(i, str(values.get(row.template_field, "")))
+        # 데이터 detach — vm 단일 seam(set_acquired 의 역). 큐·선택·필터는 세션 휘발이라 새로.
+        self._stash_filter()  # 죽는 세션의 필터 정의 → 직전 슬롯(결정 28, 데이터 교체와 동형)
+        self.vm.datasource = None
+        self.vm.records = []
+        self.data_label = ""
+        self.data_source = ""
+        self._data_key = ""
+        self.selection = SelectionModel(0)  # 무데이터 = 가상 1행 큐로 퇴화(결정 14)
+        self.queue = TxtQueueModel(self.selection)
+        self.filter = None
+        self._last_copy = None
+        self._map_dirty = True  # 결속→상수 = 미저장 매핑 편집
+
     # ------------------------------------------------- 세션 가드(T3, 블록 4 결정 26·27)
     def _guard_state(self) -> dict:
         """무장 판정 = 선택 성분(공유 술어) ∨ **큐 부분 진행**(T3) — 데이터 교체가 소비한다.
@@ -950,13 +1039,29 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         return g
 
     def _do_guard_state(self, p: dict) -> dict:
-        """무장 상태 실시간 질의 — 표면의 데이터 재겨눔 사전 확인이 소비(작업 화면과 동형).
+        """무장 상태 실시간 질의 — 표면의 **데이터 재겨눔** 사전 확인이 소비(작업 화면과 동형).
 
         스냅샷 캐시가 아니라 지금 Python 이 판정한다(왕복 지연·무푸시 경로의 stale 오판 차단).
+        **데이터 스왑 전용**이라 :meth:`_guard_state`(T3, map_dirty 제외 — 스왑은 매핑 유지)를 쓴다.
+        세션 **교체**(「새 기안」 등)는 매핑도 폐기하므로 :meth:`_do_leave_guard` 를 써야 한다.
         """
         return self._guard_state()
 
     _do_guard_state.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
+
+    def _do_leave_guard(self, p: dict) -> dict:
+        """세션 **교체** 앞 무장 질의 — 「새 기안」(F11)이 소비(리뷰 F4).
+
+        「새 기안」은 세션 전체(매핑·상수·확정·유형·원문 편집 포함)를 폐기하는 교체라, 데이터
+        스왑 전용 :meth:`_guard_state`(map_dirty 를 armed 에 넣지 않는다 — 스왑은 매핑 유지)가
+        아니라 :meth:`_leave_guard`(미저장 매핑·원문 편집을 armed 로 친다) 술어를 써야 한다.
+        종전엔 ``confirmNewDraftIfArmed`` 가 ``guard_state`` 를 질의해, 저장 기안의 미저장 매핑
+        편집을 데이터 없이 한 세션에서 「새 기안」이 **조용히 버렸다**(armed=False → 확인 생략).
+        전환·귀환·삭제·포크가 이미 :meth:`_leave_guard` 를 쓰는 것과 정합.
+        """
+        return self._leave_guard()
+
+    _do_leave_guard.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
 
     # 등록 데이터(풀) 겨눔(#26/#6)은 PoolTargetingMixin 공용 래퍼(K4) — 화면별 후처리는
     # _after_pool_load(데이터 존 리셋)가 진다.

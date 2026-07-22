@@ -400,7 +400,8 @@ def test_packaging_entry_imports_resolve() -> None:
     엔트리는 평소 테스트가 임포트하지 않고 **릴리스 빌드에서 처음 실행**되므로(``--selfcheck``),
     앱 쪽에서 클래스를 다른 모듈로 옮기면 그 어긋남이 여기서만, 그것도 가장 늦게 터진다 —
     실측된 회귀다(#148 슬라이스 3a 에서 ``TxtController`` 가 ``screens`` → ``screen_txt`` 로
-    옮겨가며 엔트리가 낡았고, 코덱스 리뷰가 P1 로 잡았다). 정적으로 못박아 빌드까지 미루지 않는다.
+    옮겨가며 엔트리가 낡았고, 코덱스 리뷰가 P1 로 잡았다 — 이후 슬라이스 6 에서 ``screen_txt``
+    삭제·엔트리를 ``DraftController`` 로 재겨눔). 정적으로 못박아 빌드까지 미루지 않는다.
     """
     import importlib
 

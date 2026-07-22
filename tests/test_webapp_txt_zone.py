@@ -1,11 +1,12 @@
-"""txt 데이터 존(전-선언 큐 선택) 컨트롤러 가드 — 블록 3·4, 슬라이스 6 PR-2b(헤드리스).
+"""기안 데이터 존(전-선언 큐 선택) 컨트롤러 가드 — 블록 3·4(헤드리스).
 
-TxtController 가 :class:`~hwpxfiller.webapp.data_zone.DataZoneMixin`(작업 화면과 공유)을
-소비해 행 선택·필터 디스패치와 스냅샷(``filter``/``table``)을 얻고, 큐 상태는 링1
-:class:`~hwpxfiller.gui.txt_queue.TxtQueueModel` 이 소유하는지(재구현 금지)를 창 없이
-확인한다. 큐 자체 회귀는 ``test_txt_queue``, 필터 판정은 ``test_filter_state`` 소관 —
-여기는 **결선**(리셋 경로·reconcile·스냅샷 계약·직전 필터 슬롯 수명)만 본다.
-표면 렌더 되읽기는 실앱 게이트(``test_web_selftest_gate``)의 txt 존 프로브 몫.
+「기안」 화면(DraftController)이 :class:`~hwpxfiller.webapp.data_zone.DataZoneMixin`(작업 화면과
+공유)을 소비해 행 선택·필터 디스패치와 스냅샷(``filter``/``table``)을 얻고, 큐 상태는 링1
+:class:`~hwpxfiller.gui.txt_queue.TxtQueueModel` 이 소유하는지(재구현 금지)를 창 없이 확인한다.
+큐 자체 회귀는 ``test_txt_queue``, 필터 판정은 ``test_filter_state`` 소관 — 여기는 **결선**
+(리셋 경로·reconcile·스냅샷 계약·직전 필터 슬롯 수명)만 본다. (구 TxtController 는 #148 슬라이스 6
+에서 삭제 — 같은 세션 믹스인을 쓰는 DraftController 로 재겨눔해 이 결선 커버리지를 승계한다.)
+표면 렌더 되읽기는 실앱 게이트(``test_web_selftest_gate``)의 draft_session 프로브 몫.
 """
 from __future__ import annotations
 
@@ -13,19 +14,24 @@ from pathlib import Path
 
 import pytest
 
+from hwpxfiller.core.job import JobRegistry
 from hwpxfiller.core.text_registry import TextTemplateRegistry
 from hwpxfiller.core.text_render import FULLWIDTH_SPACE
 from hwpxfiller.gui.selection_state import SelectionModel
 from hwpxfiller.gui.txt_queue import TxtQueueModel
-from hwpxfiller.webapp.screen_txt import TxtController
+from hwpxfiller.webapp.screen_draft import DraftController
 
 
-def _controller(tmp_path: Path) -> "tuple[TxtController, list]":
+def _controller(tmp_path: Path) -> "tuple[DraftController, list]":
     (tmp_path / "샘플기안.txt").write_text(
         "제목: {{공고명}}\n금액: {{추정가격}}", encoding="utf-8"
     )
     pushes: list = []
-    ctrl = TxtController(TextTemplateRegistry(tmp_path), lambda s, snap: pushes.append((s, snap)))
+    ctrl = DraftController(
+        JobRegistry(tmp_path / "jobs"),
+        lambda s, snap: pushes.append((s, snap)),
+        TextTemplateRegistry(tmp_path),
+    )
     return ctrl, pushes
 
 
@@ -442,11 +448,15 @@ def test_new_draft_kills_zone_but_keeps_slot(tmp_path):
 
 # ------------------------- 대상 글꼴 선언·정렬 린트·T3 가드(블록 3 결정 17 · 블록 4 결정 26·27)
 
-def _aligned_controller(tmp_path: Path, template: str) -> "tuple[TxtController, list]":
+def _aligned_controller(tmp_path: Path, template: str) -> "tuple[DraftController, list]":
     """정렬 런이 있는 템플릿 + 격리된 설정 홈 — 글꼴/린트 회귀의 공용 지그."""
     (tmp_path / "정렬기안.txt").write_text(template, encoding="utf-8")
     pushes: list = []
-    ctrl = TxtController(TextTemplateRegistry(tmp_path), lambda s, snap: pushes.append((s, snap)))
+    ctrl = DraftController(
+        JobRegistry(tmp_path / "jobs"),
+        lambda s, snap: pushes.append((s, snap)),
+        TextTemplateRegistry(tmp_path),
+    )
     return ctrl, pushes
 
 

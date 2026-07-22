@@ -30,38 +30,36 @@ RESPONSIVE_BREAKPOINT_PX = 820
 # 화면들(#28). 어느 화면이 래핑을 조용히 떨구면 상호작용 유실 회귀 → 정적 가드로 차단.
 WEB_JS_DIR = Path(__file__).resolve().parents[1] / "web" / "js"
 # 렌더 래핑·데이터 피커 계약은 **표면을 소유한 파일**을 따라간다 — 화면 파일명과 1:1 이
-# 아니다(기안 세션은 공용 팩토리 draftsession.js 소유, txt·draft 두 화면이 소비).
-PRESERVE_WRAPPED_FILES = ("draftsession.js", "screens/editor.js", "screens/job.js",
-                          "screens/quickdraft.js")  # run 사망(슬라이스 3) → job 이 생성 표면
+# 아니다(기안 세션은 공용 팩토리 draftsession.js 소유, 「기안」 화면이 소비).
+PRESERVE_WRAPPED_FILES = ("draftsession.js", "screens/editor.js", "screens/job.js")
 
 # 살아있는 컴포넌트 갤러리(개발 전용) — 실 tokens.css+app.css 를 <link> 로 물어 드리프트 0.
 GALLERY = Path(__file__).resolve().parents[1] / "docs" / "UI_GALLERY.html"
 
 # 화면 루트 — 셸 라우터가 표시/숨김으로 전환하는 최상위 컨테이너(회귀 시 화면 소실).
 SCREEN_ROOTS = (
-    "scr-home", "scr-txt", "scr-tpl",
+    "scr-home", "scr-tpl",
     "scr-pool",  # 데이터 관리(#26 #4)
     # 「작업」(R-flow · #90) — 유일 생성 표면(실행 화면=슬라이스 3 사망) + 편집 모드(작업
     # 에디터 별도 화면=슬라이스 5 사망, 결정 39 흡수 — 정의 surface 는 scr-job 내부).
     "scr-job",
-    # 빠른 기안(R-flow 블록 5 · #90 슬라이스 7) — 작업의 휘발 쌍둥이(신설·공존, 레일 6 임시).
-    "scr-quickdraft",
+    # 「기안」(R-info 3부 · #148) — TXT 작업-앵커. 구 「기안문 채우기」·「빠른 기안」을 흡수·삭제
+    # (#148 슬라이스 6 — 레일 6→5).
+    "scr-draft",
 )
 
 # 화면별 데이터 라벨은 반드시 고유 id 여야 한다(#27 dup-id 회귀 가드).
-SCOPED_DATA_LABELS = ("txtDataLabel", "jobDataLabel")
+SCOPED_DATA_LABELS = ("draftDataLabel", "jobDataLabel")
 
 # 접힘 상태에서 라벨이 사라지는 내비 버튼(회귀 시 접근 이름·툴팁 소실 → #27).
-NAV_SCREENS = ("home", "job", "draft", "txt", "quickdraft", "tpl", "pool")  # run=슬라이스 3·editor=슬라이스 5 사망(흡수); draft=#148 슬라이스 2b 신설(txt·quickdraft 는 #148 슬라이스 6 흡수까지 임시 공존, 레일 7)
+NAV_SCREENS = ("home", "job", "draft", "tpl", "pool")  # run=슬라이스 3·editor=슬라이스 5 사망(흡수); 「기안」이 구 txt·quickdraft 를 흡수·삭제(#148 슬라이스 6, 레일 6→5)
 
 # 커스텀 모달 → aria-labelledby 가 가리켜야 할 제목 id(다이얼로그 시맨틱, #27/#28).
 # sheetModal 은 다중 시트 확정 게이트(#33) — 같은 Modal 헬퍼·다이얼로그 계약을 공유한다.
 MODAL_LABELLEDBY = {
-    "txtEditModal": "txtEditTitle",
-    "pasteModal": "pasteTitle",
-    "qdPasteModal": "qdPasteTitle",  # 빠른 기안 붙여넣기(#90 슬라이스 7) — txt 와 별개 id
-    "qdSaveTplModal": "qdSaveTplTitle",  # 빠른 기안 「템플릿으로 저장」 승격(#135)
-    "draftSaveTplModal": "draftSaveTplTitle",  # 「기안」 「템플릿으로 저장」 승격(#148 슬라이스 6)
+    "txtEditModal": "txtEditTitle",  # 템플릿 관리의 「새 TXT」·편집(template.js) — 화면 아닌 관리 모달(생존)
+    "pasteModal": "pasteTitle",  # 「기안」 붙여넣기(draftsession.js 공용 팩토리가 소비)
+    "draftSaveTplModal": "draftSaveTplTitle",  # 「기안」 「템플릿으로 저장」 승격(#148 슬라이스 6, #135)
     "sheetModal": "sheetTitle",
     "poolRegModal": "poolRegTitle",  # 데이터 등록(#26 #4)
     "poolModal": "poolTitle",  # 등록 데이터 선택(#26 #6) — 정적 골격 이관(r3 K12)
@@ -377,9 +375,9 @@ def test_forced_colors_block_present_in_web_diff():
 
 # pickDataFile(=pick_data_file) 을 소비하는 모든 화면 — 브리지 반환 계약이 screen-불가지라
 # needs_sheet 분기를 처리해야 다중 시트가 첫 시트로 강등되지 않는다(리뷰 P1: txt 누락 회귀).
-DATA_PICK_FILES = ("screens/editor.js", "draftsession.js", "screens/job.js",
-                   "screens/quickdraft.js")  # run 사망(슬라이스 3);
-# job=생성 표면 · quickdraft=휘발 표면의 임의 파일 선택(슬라이스 7 PR-3)
+DATA_PICK_FILES = ("screens/editor.js", "draftsession.js", "screens/job.js")
+# 「기안」 세션(draftsession.js 공용 팩토리)이 임의 파일 선택을 소비 — 구 txt·quickdraft 는
+# 같은 팩토리를 쓰던 소비 화면이라 삭제(#148 슬라이스 6)돼도 계약은 팩토리에 남는다.
 
 
 def test_sheet_picker_loaded_and_wired_on_all_data_screens():
@@ -626,7 +624,8 @@ def test_editor_surface_lives_in_job_panel():
     존재하지 않는 화면으로 보내는 죽은 경로라 금지한다.
     """
     html = WEB_INDEX.read_text(encoding="utf-8")
-    job_sec = html.split('id="scr-job"')[1].split('id="scr-txt"')[0]
+    # scr-job 다음 섹션은 이제 scr-draft(구 scr-txt 는 #148 슬라이스 6 삭제) — 그 경계까지가 「작업」 패널.
+    job_sec = html.split('id="scr-job"')[1].split('id="scr-draft"')[0]
     for cid in ("jobEditHost", "editor-steps", "editor-body", "editor-foot"):
         assert cid in job_sec, f"{cid} 가 scr-job 편집 호스트에 없습니다(흡수 이사 회귀)."
     # 별도 화면·레일 항목 재유입 가드(삭제는 의무를 상속한다 — 조용한 부활 금지).

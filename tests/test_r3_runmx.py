@@ -22,7 +22,7 @@ from hwpxfiller.core.job import Job, JobRegistry
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.core.text_registry import TextTemplateRegistry
 from hwpxfiller.webapp.screen_job import JobController
-from hwpxfiller.webapp.screen_txt import TxtController
+from hwpxfiller.webapp.screen_draft import DraftController
 from hwpxfiller.webapp.screens import PoolTargetingMixin, source_label
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
@@ -81,7 +81,7 @@ def _sink() -> "tuple[list, callable]":
 # ============================================================ K4 — 풀 래퍼 공용화(믹스인)
 def test_pool_wrappers_are_shared_not_copied():
     """컨트롤러들의 풀 래퍼가 믹스인 단일 구현이어야 한다 — 복붙 재유입 가드(K4)."""
-    for ctrl_cls in (JobController, TxtController):
+    for ctrl_cls in (JobController, DraftController):
         assert issubclass(ctrl_cls, PoolTargetingMixin), (
             f"{ctrl_cls.__name__} 이 PoolTargetingMixin 을 상속하지 않습니다(K4)."
         )
@@ -111,11 +111,12 @@ def test_job_pool_load_resets_selection_via_hook(tmp_path):
     assert snap["record_count"] == 2 and snap["selected_count"] == 2  # 새 데이터 = 전체 선택
 
 
-def test_txt_pool_load_uses_default_hooks(tmp_path):
-    """txt: 훅 기본값(전제·후처리 없음) 그대로 공용 래퍼가 겨눔을 완주한다(K4)."""
+def test_draft_pool_load_uses_default_hooks(tmp_path):
+    """기안: 훅 기본값(전제·후처리 없음) 그대로 공용 래퍼가 겨눔을 완주한다(K4)."""
     (tmp_path / "샘플기안.txt").write_text("제목: {{bidNtceNm}}", encoding="utf-8")
     pushes, sink = _sink()
-    ctrl = TxtController(TextTemplateRegistry(tmp_path), sink, pool_registry=_pool(tmp_path))
+    ctrl = DraftController(_registry(tmp_path), sink, TextTemplateRegistry(tmp_path),
+                           pool_registry=_pool(tmp_path))
     res = ctrl.dispatch("load_pool", {"name": "7월공고"})
     assert res["ok"] is True and res["label"] == "등록 데이터: 7월공고"
     assert ctrl.snapshot()["data_source_label"] == "등록 데이터: 7월공고"
@@ -136,7 +137,8 @@ def test_no_stored_data_source_label_attribute(tmp_path):
     pushes, sink = _sink()
     controllers = [
         JobController(_registry(tmp_path), sink, pool_registry=_pool(tmp_path)),
-        TxtController(TextTemplateRegistry(tmp_path), sink, pool_registry=_pool(tmp_path)),
+        DraftController(_registry(tmp_path), sink, TextTemplateRegistry(tmp_path),
+                        pool_registry=_pool(tmp_path)),
     ]
     for ctrl in controllers:
         assert not hasattr(ctrl, "data_source_label"), (

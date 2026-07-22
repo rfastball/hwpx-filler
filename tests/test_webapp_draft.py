@@ -19,7 +19,6 @@ from hwpxfiller.gui.selection_state import SelectionModel
 from hwpxfiller.gui.txt_queue import TxtQueueModel
 from hwpxfiller.webapp.draft_session import TargetFontSetting
 from hwpxfiller.webapp.screen_draft import DraftController
-from hwpxfiller.webapp.screen_txt import TxtController
 
 
 def _arm_queue(ctrl, selected: int = 2, copied: int = 1) -> None:
@@ -236,6 +235,140 @@ def test_data_swap_guard_ignores_unsaved_mapping_edit(tmp_path):
     ctrl.dispatch("set_map_value", {"name": "공고명", "text": "상수"})
     g = ctrl.dispatch("guard_state", {})
     assert g["map_dirty"] is True and g["armed"] is False
+
+
+def test_leave_guard_arms_on_map_dirty_unlike_data_swap_guard(tmp_path):
+    """세션 교체 가드(leave_guard)는 미저장 매핑 편집을 무장으로 친다 — 데이터 스왑 가드와 갈린다(리뷰 F4).
+
+    데이터 없이 저장 기안의 매핑만 편집한 상태에서 guard_state(데이터 스왑 전용)는 armed=False
+    지만 leave_guard(세션 교체)는 armed=True. 「새 기안」(confirmNewDraftIfArmed)이 leave_guard 를
+    써야 이 미저장 편집이 조용히 안 버려진다(종전엔 guard_state 를 질의해 조용히 폐기)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "제목: {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    ctrl.dispatch("set_confirmed", {"name": "공고명", "value": False})  # 미저장 매핑 편집(데이터·큐 0)
+    ds = ctrl.dispatch("guard_state", {})
+    lg = ctrl.dispatch("leave_guard", {})
+    assert ds["map_dirty"] is True and ds["armed"] is False  # 데이터 스왑: 매핑 유지라 무장 아님
+    assert lg["map_dirty"] is True and lg["armed"] is True    # 세션 교체: 편집도 잃으므로 무장
+
+
+def test_open_template_in_saved_mode_guards_then_clears_binding(tmp_path):
+    """저장 결속 세션에 라이브러리 템플릿을 열면(홈·템플릿 관리 라우팅) = 세션 교체 가드 + 결속 해제(리뷰 F3).
+
+    종전엔 select_template 이 _bound_job·source_readonly 를 그대로 둬, 저장 정의가 **다른 템플릿을
+    가리키는 저장 모드**로 남았다(읽기전용 잠금 우회 + 재저장이 엉뚱한 템플릿 결속 = 계약 위반).
+    무장이면 needs_confirm, 확인하면 휘발로 전이(결속·읽기전용 해제)한 뒤 선택한다."""
+    ctrl, jobs, _ = _controller(tmp_path)  # 착수계.txt 존재
+    _save_real(tmp_path, jobs, "저장기안", "저장기안.txt", "굳은 {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "저장기안"})
+    ctrl.dispatch("set_confirmed", {"name": "공고명", "value": True})  # 미저장 매핑 편집 = 무장
+    assert ctrl.snapshot()["mode"] == "saved"
+    # 무장 → needs_confirm(조용한 소실 금지). 확인 전엔 저장 모드 불변.
+    r = ctrl.dispatch("select_template", {"name": "착수계"})
+    assert r and r["needs_confirm"] is True and r["kind"] == "leave_for_template"
+    assert ctrl.snapshot()["mode"] == "saved" and ctrl.snapshot()["bound_job"] == "저장기안"
+    # 확인 → 휘발로 전이 + 템플릿 선택(결속·읽기전용 해제 — 계약 위반 봉합).
+    ctrl.dispatch("select_template", {"name": "착수계", "confirm": True})
+    snap = ctrl.snapshot()
+    assert snap["mode"] == "volatile" and snap["source_readonly"] is False
+    assert snap["bound_job"] == "" and snap["template_name"] == "착수계"
+
+
+def test_open_template_from_unbound_volatile_is_not_guarded(tmp_path):
+    """휘발 세션에서의 콤보 템플릿 선택은 가드 없이 즉시 반영된다(저장 결속이 없어 잃을 게 없다)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    (tmp_path / "다른템플릿.txt").write_text("제목: {{사업명}}", encoding="utf-8")
+    r = ctrl.dispatch("select_template", {"name": "다른템플릿"})
+    assert r is None  # needs_confirm 없음
+    assert ctrl.snapshot()["template_name"] == "다른템플릿"
+
+
+def test_open_template_guards_stashed_volatile_loss(tmp_path):
+    """저장 세션이 미무장이어도 **스태시된 휘발**의 미저장 편집이 있으면 템플릿 열기는 확인을 요구한다(리뷰 C).
+
+    휘발에서 원문을 고치고(스태시될 미저장 편집) → 저장 기안 결속(그 휘발 스태시)→ 저장 세션은
+    미무장. 이때 라이브러리 템플릿을 열면 restore_volatile 이 스태시를 되살렸다 곧 갈아 그 편집을
+    조용히 버린다 — stash_armed 로 무장 판정해 재진술하고, 확인 시 큐·선택도 리셋해 스태시 큐
+    표지가 새 템플릿에 붙지 않게 한다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "저장기안", "저장기안.txt", "굳은 {{공고명}}")
+    # 휘발에서 붙여넣기 + 원문 라이브 편집(스태시될 미저장 편집) — source_dirty
+    ctrl.dispatch("set_template_text", {"text": "붙여넣은 {{토큰}}"})
+    ctrl.dispatch("edit_source", {"text": "고친 {{토큰}} {{추가}}"})
+    assert ctrl.snapshot()["source_dirty"] is True
+    # 저장 기안 결속 → 위 휘발이 스태시(편집 포함). 저장 세션은 방금 복원돼 미무장.
+    ctrl.dispatch("select_job", {"name": "저장기안"})
+    assert ctrl.snapshot()["mode"] == "saved"
+    assert ctrl.dispatch("leave_guard", {})["armed"] is False  # 저장 세션 자체는 미무장
+    # 템플릿 열기 → 저장 세션 미무장이어도 **스태시 무장**으로 needs_confirm(조용한 소실 금지).
+    r = ctrl.dispatch("select_template", {"name": "착수계"})
+    assert r and r["needs_confirm"] is True and r["stash_armed"] is True
+    assert ctrl.snapshot()["mode"] == "saved"  # 확인 전 불변
+    # 확인 → 스태시 폐기·휘발 전이·템플릿 선택. 큐 리셋(스태시/직전 큐 표지 오염 없음).
+    ctrl.dispatch("select_template", {"name": "착수계", "confirm": True})
+    snap = ctrl.snapshot()
+    assert snap["mode"] == "volatile" and snap["template_name"] == "착수계"
+    assert snap["source_dirty"] is False  # 깨끗한 라이브러리 픽(스태시 편집 폐기)
+    assert snap["card"]["copied_count"] == 0 and snap["selected_count"] == 0  # 큐·선택 리셋
+
+
+def test_volatile_template_switch_guards_unsaved_edits(tmp_path):
+    """휘발 세션에 미저장 편집이 있으면 콤보 템플릿 전환도 확인을 요구한다(리뷰 I·GAP1).
+
+    구 「빠른 기안」 session_guard("switch") 승계 — 종전엔 저장 모드에서만 가드해 휘발 세션의
+    미저장 원문·매핑 편집이 콤보 전환에 무가드 소실했다. session_armed 로 문안 정확성 유지."""
+    ctrl, _jobs, _ = _controller(tmp_path)  # 착수계 자동 선택(휘발)
+    (tmp_path / "다른.txt").write_text("제목: {{사업명}}", encoding="utf-8")
+    ctrl.dispatch("edit_source", {"text": "고친 {{공고명}} {{추가}}"})  # 미저장 원문 편집
+    assert ctrl.snapshot()["source_dirty"] is True and ctrl.snapshot()["mode"] == "volatile"
+    r = ctrl.dispatch("select_template", {"name": "다른"})
+    assert r and r["needs_confirm"] is True
+    assert r["session_armed"] is True and r["stash_armed"] is False  # 문안 정확성(세션만 무장)
+    assert ctrl.snapshot()["template_name"] != "다른"  # 확인 전 불변(전환 안 함)
+    ctrl.dispatch("select_template", {"name": "다른", "confirm": True})
+    snap = ctrl.snapshot()
+    assert snap["template_name"] == "다른" and snap["source_dirty"] is False  # 전환·미저장 원문 폐기
+
+
+def test_leave_for_template_guard_query_is_nonmutating(tmp_path):
+    """붙여넣기 사전 확인 질의 — 현 세션·스태시 무장을 합산 보고하되 상태·push 불변(무변이)."""
+    ctrl, _jobs, pushes = _controller(tmp_path)
+    ctrl.dispatch("edit_source", {"text": "고친 {{x}}"})  # source_dirty
+    before = len(pushes)
+    g = ctrl.dispatch("leave_for_template_guard", {})
+    assert g["armed"] is True and g["session_armed"] is True and g["stash_armed"] is False
+    assert len(pushes) == before  # 무변이 질의 — 재렌더 push 없음
+
+
+def test_clear_data_freezes_bound_values_and_detaches(tmp_path):
+    """데이터 해제 = 결속 값을 지금 값으로 상수 동결 후 데이터 detach(R-flow 결정 30, 리뷰 F).
+
+    구 「빠른 기안」 clear_data 승계(삭제는 의무를 상속한다) — 결속 열이 사라져도 화면에 보이던
+    값이 조용히 사라지지 않게 상수로 굳히고(표지 「직접 입력」·소스 없음=dead revert 금지), 무데이터
+    가상 1행(결정 14)으로 퇴화한다."""
+    ctrl, _jobs, _ = _controller(tmp_path)  # 착수계.txt = "제목: {{공고명}}"
+    csv = tmp_path / "d.csv"
+    csv.write_text("공고명\n전산장비 구매\n비품 구매\n", encoding="utf-8")
+    ctrl.load_data_path(str(csv))
+    snap = ctrl.snapshot()
+    tok = _tok(snap, "공고명")
+    assert tok["own"] == "auto" and tok["value"] == "전산장비 구매" and snap["has_data"] is True
+    ctrl.dispatch("clear_data", {})
+    snap2 = ctrl.snapshot()
+    assert snap2["has_data"] is False
+    tok2 = _tok(snap2, "공고명")
+    assert tok2["own"] == "man" and tok2["value"] == "전산장비 구매"  # 지금 값 상수 동결
+    assert tok2["can_revert"] is False  # 소스 없음 — dead revert 금지(freeze_to_const)
+    assert snap2["card"]["queue_degenerate"] is True  # 무데이터 = 가상 1행 퇴화
+
+
+def test_clear_data_on_no_data_is_noop(tmp_path):
+    """이미 무데이터면 해제는 상태를 바꾸지 않는다(예외 없음) — 버튼도 has_data 로 숨는다(표면)."""
+    ctrl, _jobs, _ = _controller(tmp_path)
+    assert ctrl.snapshot()["has_data"] is False
+    ctrl.dispatch("clear_data", {})  # datasource None → 무동작
+    assert ctrl.snapshot()["has_data"] is False
 
 
 def test_deleting_bound_with_unsaved_mapping_edit_restates_loss(tmp_path):
@@ -836,19 +969,19 @@ def test_unknown_action_is_loud(tmp_path):
 
 # ------------------------------------------------------------------ 전역 글꼴 선언(코덱스 P2)
 def test_target_font_setting_is_shared_across_surfaces(tmp_path):
-    """대상 글꼴 선언은 **앱 전역**이라 두 기안 표면이 한 실체를 본다.
+    """대상 글꼴 선언은 **앱 전역**이라 한 실체를 공유하는 표면들이 서로의 변경을 본다.
 
     회귀 원본(코덱스 리뷰 P2): 컨트롤러마다 사본을 캐시하면 한쪽에서 바꾼 선언이 다른 쪽에
     **재부팅까지 도달하지 않는다** — 저장은 됐는데 그 화면의 콤보·미리보기 글꼴·비례폭 정렬
-    린트는 옛 값으로 판정한다(선언과 실제가 갈라지는 지배 결함류).
+    린트는 옛 값으로 판정한다(선언과 실제가 갈라지는 지배 결함류). 슬라이스 6 에서 구 「기안문
+    채우기」가 흡수돼 실제 소비 표면은 하나지만, 공유 실체 기제는 그대로라 두 컨트롤러 인스턴스로
+    기제를 가드한다(주입한 하나를 둘이 보면 한쪽 변경이 다른 쪽에 즉시 도달).
     """
     shared = TargetFontSetting()
     ctrl, _jobs, _ = _controller(tmp_path, target_font=shared)
-    txt = TxtController(TextTemplateRegistry(tmp_path), lambda s, snap: None,
-                        pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
-                        target_font=shared)
-    assert ctrl.snapshot()["target_font"] == txt.snapshot()["target_font"] == "gulimche"
-    txt.dispatch("set_target_font", {"font": "malgun"})   # 구 화면에서 선언 변경
+    other, _jobs2, _ = _controller(tmp_path, target_font=shared)
+    assert ctrl.snapshot()["target_font"] == other.snapshot()["target_font"] == "gulimche"
+    other.dispatch("set_target_font", {"font": "malgun"})   # 한 표면에서 선언 변경
     assert ctrl.snapshot()["target_font"] == "malgun", "다른 기안 표면에 선언이 도달하지 않았습니다."
     # 비례폭 판정(정렬 린트의 근거)도 같은 값을 따라간다 — 문안만 갈라지는 일이 없게.
     assert ctrl.snapshot()["card"]["lint"]["proportional"] is True

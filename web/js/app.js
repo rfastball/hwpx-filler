@@ -1,5 +1,5 @@
 /* 라우터 + 부팅 — 레일 나비로 화면 전환, pywebview 준비 시 실화면 초기화.
-   화면별 로직은 js/screens/*.js 가 소유(TxtScreen.init 등). 여기선 배선만. */
+   화면별 로직은 js/screens/*.js 가 소유(DraftScreen.init 등). 여기선 배선만. */
 (function () {
   /* 비동기 실패 최종 백스톱 — 지역 가드(디스패처 try/catch·.catch)를 빠뜨린 브리지
      rejection 이 조용한 무반응으로 증발하는 결함류(F8·F9·#45 profile_*·P2 onClick)가
@@ -41,17 +41,14 @@
     if (id === "job" && window.EditorScreen && window.EditorScreen.rerender) {
       window.EditorScreen.rerender();
     }
-    // 기안 두 표면(txt·draft)은 진입 시 재동기가 필요하다 — 이 화면 DOM 은 자기 화면에 푸시가
-    // 올 때만 갱신되는데, 그 사이 저쪽에서 바뀔 수 있는 것이 둘 있다: ①템플릿 드롭다운은
-    // 스냅샷이 아니라 initial 1회로 채워지고(#135 — 다른 화면이 더한 템플릿이 안 보인다)
-    // ②**대상 글꼴 선언은 앱 전역**이라 저쪽 기안 표면에서 바꿀 수 있다(코덱스 리뷰 P2).
-    // 둘 다 refresh 디스패치로는 못 고친다(하나는 스냅샷 소유가 아니고, 하나는 재렌더가 필요).
-    [["txt", window.TxtScreen], ["draft", window.DraftScreen]].forEach(function (pair) {
-      const api = pair[1];
-      if (id === pair[0] && api && api.refreshOnEnter) {
-        api.refreshOnEnter().catch((err) => window.alert(String((err && err.message) || err)));
-      }
-    });
+    // 「기안」 표면은 진입 시 재동기가 필요하다 — 이 화면 DOM 은 자기 화면에 푸시가 올 때만
+    // 갱신되는데, 그 사이 저쪽에서 바뀔 수 있는 것이 둘 있다: ①템플릿 드롭다운은 스냅샷이
+    // 아니라 initial 1회로 채워지고(#135 — 다른 화면이 더한 템플릿이 안 보인다) ②**대상 글꼴
+    // 선언은 앱 전역**이라 저쪽 기안 표면에서 바꿀 수 있다(코덱스 리뷰 P2). 둘 다 refresh
+    // 디스패치로는 못 고친다(하나는 스냅샷 소유가 아니고, 하나는 재렌더가 필요).
+    if (id === "draft" && window.DraftScreen && window.DraftScreen.refreshOnEnter) {
+      window.DraftScreen.refreshOnEnter().catch((err) => window.alert(String((err && err.message) || err)));
+    }
   }
   // 레일 「작업 에디터」 과도기 심은 항목 사망(슬라이스 5 삭제 PR)과 함께 제거 — 편집
   // 진입은 EditorEntry.land 소비처(홈·템플릿 관리·작업 ⋮)가 담당한다.
@@ -86,8 +83,6 @@
   // pywebview.api 준비 후 실화면 초기화(브라우저 단독 미리보기에선 안 뜸 — 정상).
   window.addEventListener("pywebviewready", () => {
     if (window.HomeScreen) window.HomeScreen.init();
-    if (window.TxtScreen) window.TxtScreen.init();
-    if (window.QuickDraftScreen) window.QuickDraftScreen.init();  // 빠른 기안(#90 슬라이스 7)
     if (window.EditorScreen) window.EditorScreen.init();
     if (window.JobScreen) window.JobScreen.init();  // 「작업」 화면(#90) — 유일 생성 표면
     if (window.DraftScreen) window.DraftScreen.init();  // 「기안」 화면(#148 슬라이스 2b) — TXT 작업-앵커

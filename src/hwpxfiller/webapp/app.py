@@ -40,9 +40,7 @@ from .screen_editor import EditorController
 from .screen_home import HomeController
 from .screen_job import JobController
 from .screen_pool import PoolController
-from .screen_quickdraft import QuickDraftController
 from .draft_session import TargetFontSetting
-from .screen_txt import TxtController
 from .screen_template import TemplateController
 from .template_groups import TemplateGroupModel
 from .screens import (
@@ -113,17 +111,6 @@ class WebFrontend:
             # 홈(대시보드) — 허브. TXT 레지스트리는 즉시 기안·템플릿 관리와 공유(변경이 반영).
             # pool_registry 공유 = 데이터 관리에서 생긴 손상이 홈 KPI 경보에 즉시 보인다(#45).
             HomeController(job_registry, registry, self._push, pool_registry=pool_registry),
-            TxtController(registry, self._push, pool_registry=pool_registry,
-                          target_font=target_font),
-            # 빠른 기안(R-flow 블록 5, #90 슬라이스 7) — 작업의 휘발 쌍둥이. TXT 레지스트리는
-            # txt·템플릿 관리와 공유(라이브러리 변경이 반영), 풀도 공유 인스턴스.
-            QuickDraftController(
-                registry, self._push, pool_registry=pool_registry,
-                # 「템플릿으로 저장」(#135)이 그룹을 지정하므로 관리 화면과 **같은 txt 그룹
-                # 모델**을 쓴다(에디터 1단계 피커의 hwpx 공유와 동형) — 별도 인스턴스면
-                # 승격이 넣은 그룹이 관리 화면 인메모리 캐시에 안 보인다.
-                txt_groups=txt_groups,
-            ),
             # 「작업」 화면(R-flow, #90) — 좌 목록 + 우 세션 패널 4존. 링1 VM 을 직접 소유해
             # 실행 결정 계약을 소비하는 **유일 세션 표면**이다(실행 화면은 슬라이스 3에서 사망 —
             # 게이트 패리티 도달, 레일 「실행」 동시 제거, 부록 A-4-35~37·#94 중복 자연 소멸).
@@ -405,18 +392,19 @@ class WebFrontend:
 
 
 # 모달 접근성 동적 프로브(#27/#28) — 실 브라우저에서 Modal 헬퍼의 초기포커스·Escape·복귀를
-# 되읽는다. 알려진 트리거(첫 내비 버튼)에 포커스 → pasteModal 열기 → Escape → 복귀 확인.
-# IIFE 가 JSON 직렬화 가능한 객체를 반환하고, 게이트 테스트가 각 필드를 단언한다.
+# 되읽는다. 알려진 트리거(첫 내비 버튼)에 포커스 → draftSaveTplModal 열기 → Escape → 복귀 확인.
+# (구 pasteModal 은 #148 슬라이스 6 에서 scr-txt 와 함께 삭제 — 같은 Modal 헬퍼를 쓰는 생존
+# 모달로 재겨눔.) IIFE 가 JSON 직렬화 가능한 객체를 반환하고, 게이트 테스트가 각 필드를 단언한다.
 _MODAL_A11Y_PROBE_JS = r"""
 (function () {
   var trigger = document.querySelector('.navbtn');
   trigger.focus();
   var before = document.activeElement.getAttribute('data-scr');
-  window.Modal.open('pasteModal', { initialFocus: document.getElementById('pasteText') });
-  var opened = !document.getElementById('pasteModal').classList.contains('hidden');
+  window.Modal.open('draftSaveTplModal', { initialFocus: document.getElementById('draftSaveTplName') });
+  var opened = !document.getElementById('draftSaveTplModal').classList.contains('hidden');
   var focusIn = document.activeElement.id;
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  var closed = document.getElementById('pasteModal').classList.contains('hidden');
+  var closed = document.getElementById('draftSaveTplModal').classList.contains('hidden');
   var restored = document.activeElement.getAttribute('data-scr');
   // #86/B-9: 네이티브 confirm 대체 모달의 실 개폐 — .modal{display:flex} 가 hidden 을 덮지
   // 않는지 계산 스타일로 확인한다(부록 B-9 결함 클래스). 기본 포커스=취소(머무르기, 결정 27/36/38).
@@ -595,39 +583,45 @@ _PRESERVE_PROBE_JS = r"""
 _PRESERVE_REAL_SETUP_JS = r"""
 (function () {
   window.__snaps = {};
-  ['txt', 'editor', 'job'].forEach(function (scr) {
+  ['draft', 'editor', 'job'].forEach(function (scr) {
     window.pywebview.api.initial(scr).then(function (s) { window.__snaps[scr] = s; });
   });
-  window.Nav.go('txt');  // 스크롤은 가시 화면에서만 유효 → txt 가시화
+  window.Nav.go('draft');  // 스크롤은 가시 화면에서만 유효 → 기안 가시화(구 txt 흡수, 슬라이스 6)
 })()
 """
 
 _PRESERVE_REAL_PROBE_JS = r"""
 (function () {
   var out = {}, snaps = window.__snaps || {};
-  ['txt', 'editor', 'job'].forEach(function (scr) {
+  ['draft', 'editor', 'job'].forEach(function (scr) {
     try {
       if (!snaps[scr]) { out[scr] = 'no-snap'; return; }
       window.__push(scr, snaps[scr]);   // 실 render() (Preserve.around 래핑)
       out[scr] = 'ok';
     } catch (e) { out[scr] = 'throw:' + (e && e.message); }
   });
-  // txt 스크롤 보존 end-to-end: 작업점 카드 렌더를 강제로 길게 → 오버플로 → 스크롤 → 재렌더 →
-  // 유지? 카드 렌더는 링1 render_segments(card.segments)를 페인트하므로(웹 정규식 사망, PR-3),
-  // template_text 가 아니라 card.segments 를 200줄로 덮어 오버플로를 만든다.
+  // 기안 스크롤 보존 end-to-end: **맞추기 표 패널**(#draftTokPanel, max-height 180px·overflow
+  // auto)을 강제로 길게 → 오버플로 → 스크롤 → 재렌더 → 유지? 작업점 카드(#draftCardRender)는
+  // master-detail 우측 패널(.job-panel{overflow:auto})이 통째로 스크롤하는 설계라 자라기만 하고
+  // 내부 스크롤이 없다(구 txt 전체화면과 다르다) — 실제 내부 스크롤 요소인 토큰 패널로 겨눈다.
+  // renderMap 은 snap.tokens 를 그대로 그리므로 토큰 15개를 주입해 180px 를 넘긴다(패널 자체가
+  // Preserve.around 안에서 재구성되므로 재렌더 가로지른 스크롤 복원을 실 render() 경로로 본다).
   try {
-    var snap = snaps['txt'];
-    if (!snap) { out.txt_scroll_top = 'no-snap'; return out; }
-    var segs = [];
-    for (var i = 0; i < 200; i++) { segs.push({ text: '라인 ' + i + '\n', kind: 'literal', name: '' }); }
-    snap.card = snap.card || {};
-    snap.card.segments = segs;
-    window.__push('txt', snap);
-    var box = document.getElementById('txtCardRender');
-    box.scrollTop = 150;
-    window.__push('txt', snap);         // 실 재렌더 — Preserve 가 스크롤 복원해야
-    out.txt_scroll_top = document.getElementById('txtCardRender').scrollTop;
-  } catch (e) { out.txt_scroll_top = 'throw:' + (e && e.message); }
+    var snap = snaps['draft'];
+    if (!snap) { out.draft_scroll_top = 'no-snap'; return out; }
+    var toks = [];
+    for (var i = 0; i < 15; i++) {
+      toks.push({ name: '토큰' + i, state: 'missing', source: '', own: '', manual: false,
+        value: '', fmt_kind: 'text', fmt_code: '', suggest: '', can_revert: false,
+        confirmed: false, blank_declared: false });
+    }
+    snap.tokens = toks;
+    window.__push('draft', snap);
+    var box = document.getElementById('draftTokPanel');
+    box.scrollTop = 60;                 // 180px 패널의 오버플로 안 — 클램프 없이 남을 값
+    window.__push('draft', snap);       // 실 재렌더 — Preserve 가 스크롤 복원해야
+    out.draft_scroll_top = document.getElementById('draftTokPanel').scrollTop;
+  } catch (e) { out.draft_scroll_top = 'throw:' + (e && e.message); }
   return out;
 })()
 """
@@ -1028,6 +1022,9 @@ _DRAFT_SESSION_PROBE_JS = r"""
       return m ? m.textContent : ''; })();
     out.strip_shown = getComputedStyle(document.getElementById('draftSelStrip')).display !== 'none';
     out.chips_text = document.getElementById('draftFilterChips').textContent;
+    // 데이터 해제 버튼(R-flow 결정 30, 리뷰 F — 구 「빠른 기안」 승계) — 데이터가 물렸을 때만 뜬다
+    // (has_data:true 인 이 스냅샷 = 노출). 무데이터 숨김은 아래 퇴화 섹션(clear_hidden)이 못박는다.
+    out.clear_shown = document.getElementById('draftBtnClearData').hidden === false;
     // ② 맞추기 표(#148 슬라이스 3b) — 토큰 행·소유권 색 점·근사 제안 버튼·값 입력(항상 편집 가능,
     //   결속이면 데이터 값이 차 있고 고치면 상수 강등). 판정은 서버, 여긴 렌더 되읽기.
     out.map_rows = document.querySelectorAll('#draftTokPanel table.dmap tbody tr').length;
@@ -1113,11 +1110,8 @@ _DRAFT_SESSION_PROBE_JS = r"""
     window.__push('draft', tsnap);
     out.savetpl_hidden = document.getElementById('draftSaveTpl').hidden === true;
     window.__push('draft', snap);  // 원상 복귀
-    // 두 인스턴스 격리 — draft 세션 렌더가 **숨은 txt 화면 DOM 을 만지지 않는다**(id 분리).
-    // getElementById 는 화면 은닉과 무관하게 해소되므로(poolList 전례) 실물로 확인한다.
-    // 판정은 "이 프로브만의 문자열이 저쪽에 새지 않았는가" — 앞선 프로브가 남긴 상태와
-    // 무관하게 성립한다(고정 0건 기대는 프로브 실행 순서에 묶여 깨지기 쉽다).
-    out.txt_leak = (document.getElementById('txtCardRender').textContent || '').indexOf('전산장비 구매') >= 0;
+    // (구 txt 화면 DOM 누출 검사는 슬라이스 6 에서 소멸 — 두 번째 인스턴스였던 txt 화면이
+    // 삭제돼 #txtCardRender 자체가 없다. datazone 팩토리 격리는 test_web_datazone 정적 가드.)
     // 큐 퇴화(결정 8·14) — 유효 큐 ≤ 1건(단건·무데이터 가상 1건)이면 큐 장치 3종(진행 색인·
     // ◀▶ 다음 카드·자동 전진)이 **숨는다**. 무데이터 가상 카드는 작업점(index) None 이되
     // 복사 가능하고, 맞추기 표 값 열 머리가 「지금 행의 값」→「값」으로 바뀐다. 실 render() 로
@@ -1129,6 +1123,8 @@ _DRAFT_SESSION_PROBE_JS = r"""
     vsnap.card.has_current = true;
     vsnap.card.index = null;
     window.__push('draft', vsnap);
+    // 데이터 해제 버튼은 무데이터(has_data:false)에선 숨는다(dead control 금지, 리뷰 F).
+    out.clear_hidden = document.getElementById('draftBtnClearData').hidden === true;
     // 무결속 토큰(비고, i=2)으로 무데이터 열 누출을 본다 — (직접 입력)만 = 1. 결속 토큰(공고명)은
     // 이제 결속 소스를 선택지에 보이므로(리뷰 5a P2) 누출 검사 대상이 아니다(첫 셀 = 공고명 결속).
     out.degen_src_options = (function(){ var s = document.getElementById('draftTokPanel-src-2');
@@ -1229,276 +1225,15 @@ _DRAFT_SESSION_PROBE_JS = r"""
     window.__push('draft', svsnap);
     out.save_label_saved = document.getElementById('draftSaveJob').textContent;
     window.__push('draft', snap);  // 원상 복귀(휘발) — 뒤 되읽기 오염 방지
+    // 세션 교체 가드 문안(리뷰 F6) — leave_guard 가 **미저장 매핑 편집만**으로 무장한 경우(데이터·
+    // 큐 0), 새 기안 가드는 그 편집을 열거해야 "사라지는 것: ."(빈 목록)이 되지 않는다. 같은 guardBody
+    // 를 데이터 스왑(includeRecipe=false)으로 부르면 매핑 편집은 빠져야 한다(스왑은 유지 — over-warn
+    // 차단). 순수 합성기라 DOM 무관, 두 갈래를 되읽어 문안≠집합 결함류를 못박는다.
+    var gbG = {map_dirty:true, source_dirty:false, sel_count:0, queue_partial:false, filter_parts:0};
+    out.guard_body_new_draft = window.DraftScreen.guardBody(gbG, '새 기안을 시작하면', true);
+    out.guard_body_data_swap = window.DraftScreen.guardBody(gbG, '다른 데이터를 겨누면', false);
     out.error = null;
   } catch (e) { out.error = 'throw:' + (e && e.message); }
-  return out;
-})()
-"""
-
-# txt 데이터 존(전-선언 큐 선택 · 블록 3, 슬라이스 6 PR-2b) — 합성 스냅샷을 실 render() 에
-# 흘려 datazone.js **두 번째 인스턴스**가 txt 화면에서: 가시 행 테이블 + <mark> 하이라이트 +
-# 선두 「큐」 열 표지(작업점 ▶·대기 순번) + 칩 줄 + 필터 밖 선택 스트립 + 열 패널 기본
-# 닫힘([hidden] vs display:flex — 부록 B-9 자동 눈검증)을 실 WebView2 에서 되읽는다.
-# 작업 화면 인스턴스와의 격리(같은 클래스·다른 id)도 여기서 실증된다.
-_TXT_ZONE_PROBE_JS = r"""
-(function () {
-  var out = {};
-  try {
-    window.Nav.go('txt');
-    var snap = {
-      template_name:'샘플기안', template_text:'제목: {{공고명}}',
-      tokens:[{name:'공고명', state:'fill'}],
-      record_count:2,
-      data_label:'d.csv', data_source_label:'파일: d.csv', data_key:'file:c:/d/d.csv',
-      has_data:true, selected_count:2,
-      filter:{active:true, reapply_available:false, search:'전산',
-              chips:['(공고명) 포함 「전산」'], definition:'(공고명) 포함 「전산」',
-              branches:['공고명'],
-              columns:[{name:'공고명', kind:'text', active:false}]},
-      table:{columns:['공고명'],
-             rows:[{index:0, selected:true, qpos:1, copied:false, current:true,
-                    cells:[[['전산',true],['장비 구매',false]]]}],
-             visible_count:1,
-             hidden_selected:[{index:1, selected:true, qpos:2, copied:false, current:false}]},
-      // 작업점 카드(블록 3, 결정 16) — 상태 색인·채움 표지 삼분 세그먼트·동사 게이트.
-      card:{index:0, has_current:true, queue_degenerate:false, is_copied:false, position:1,
-            uncopied_count:2, copied_count:0, selected_count:2, is_complete:false,
-            advance_after:false,
-            segments:[{text:'제목: ', kind:'literal', name:''},
-                      {text:'전산장비 구매', kind:'fill', name:'공고명'},
-                      {text:'', kind:'blank', name:'담당자'}],
-            missing_fields:[], empty_fields:['담당자'],
-            index_map:[{index:0, state:'current', has_gap:false},
-                       {index:1, state:'uncopied', has_gap:true}],
-            // 선언-조건부 정렬 린트(결정 17) — 비례폭 선언 + 원문에 정렬 런 = 경보 상태.
-            lint:{proportional:true, space_run:true, applied:false, active:true}},
-      target_font:'malgun'
-    };
-    window.__push('txt', snap);
-    out.rows = document.querySelectorAll('#txtTableBody tr[data-i]').length;
-    out.mark = (function(){ var m = document.querySelector('#txtTableBody mark');
-      return m ? m.textContent : ''; })();
-    // 작업점 카드 되읽기 — 코드블록 렌더(채움 표지 삼분)·상태 색인 점·복사 동사(우상단).
-    out.card_render = document.getElementById('txtCardRender').textContent;
-    out.card_fill = !!document.querySelector('#txtCardRender .seg-fill');
-    out.card_blank = !!document.querySelector('#txtCardRender .seg-blank');
-    out.card_dots = document.querySelectorAll('#txtCardDots .wc-dot').length;
-    out.card_current_dot = !!document.querySelector('#txtCardDots .wc-dot.current');
-    out.card_gap_dot = !!document.querySelector('#txtCardDots .wc-dot.gap');
-    // 복사 동사는 카드에 결속되고(전역 버튼 사망), 작업점이 있으면 활성.
-    var cp = document.getElementById('txtCardCopy');
-    out.card_copy_enabled = !!cp && !cp.disabled;
-    out.card_global_copy_dead = !document.getElementById('btnCopy')
-      && !document.getElementById('btnSave');  // 전역 복사·저장 버튼 소멸(결정 16·18)
-    // 미루기 사망(결정 10 · 슬라이스 3c) — **구 화면 포함 전수**. 「기안」뿐 아니라 「기안문
-    // 채우기」에서도 큐 뒤로 보내는 버튼이 사라졌다(자유 이동 ◀▶·점 클릭이 탈출구).
-    out.defer_absent = !document.getElementById('txtCardDefer');
-    out.card_readout = document.getElementById('txtCardReadout').textContent;
-    // 대상 글꼴 선언(결정 17) — 콤보 동기 + 원문 렌더가 선언 글꼴 클래스를 추종한다.
-    out.font_sel = document.getElementById('txtTargetFont').value;
-    out.font_class = document.getElementById('txtCardRender').className;
-    // 정렬 린트 — 경보 줄이 실제로 서고 처방 버튼이 있는가(선언-조건부 발화의 렌더 되읽음).
-    out.lint_shown = !document.getElementById('txtCardLint').hidden;
-    out.lint_text = document.getElementById('txtCardLint').textContent;
-    out.lint_fix = (function(){ var b = document.getElementById('txtLintAction');
-      return b ? b.dataset.act : ''; })();
-    // T3 가드 본문 합성기(순수) — 수치 재진술이 종류별로 서는지(결정 27). 앞머리는 제스처별로
-    // 갈리고(데이터 교체 / 새 기안, #126) 잃는 것의 열거는 같은 술어를 공유한다.
-    var guardState = {armed:true, sel_count:5, in_def:3, extra:2, filter_active:true,
-                      filter_parts:2, copied_count:2, queue_partial:true};
-    out.guard_body = window.TxtScreen.guardBody(guardState, '다른 데이터를 겨누면');
-    out.guard_body_newdraft = window.TxtScreen.guardBody(guardState, '새 기안을 시작하면');
-    // 「＋ 새 기안」 가드 배선 존재 핀(#126) — 홈이 소비하는 진입점의 삭제 회귀 표식.
-    out.new_draft_guard_wired = typeof window.TxtScreen.confirmNewDraftIfArmed === 'function';
-    // 템플릿 목록 재조회 배선 핀(#135 리뷰 P2) — 드롭다운은 initial 1회로 채워지므로 이
-    // 재조회가 사라지면 다른 화면이 더한 템플릿을 재시작 전엔 못 고른다(조용한 어긋남).
-    out.tpl_refresh_wired = typeof window.TxtScreen.refreshOnEnter === 'function'
-      && typeof window.DraftScreen.refreshOnEnter === 'function';
-    // 빈칸 게이트 본문(#125 · 결정 16) — 복사 **전** 확인 모달의 문안 합성. 종류별 수치·열거와
-    // 6개 초과 접기를 되읽는다(모달이 스크롤로 번지면 결론 버튼이 안 보인다).
-    out.copy_gate_body = window.TxtScreen.copyGateBody(
-      {row:2, missing_fields:['납품기한'], empty_fields:['비고']});
-    out.copy_gate_body_many = window.TxtScreen.copyGateBody(
-      {row:0, missing_fields:['a','b','c','d','e','f','g','h'], empty_fields:[]});
-    out.copy_gate_body_empty_only = window.TxtScreen.copyGateBody(
-      {row:0, missing_fields:[], empty_fields:['비고']});
-    // 선두 「큐」 열 — 작업점 ▶ 표지(링1 큐 모델 사영, 결정 16). 순번은 큐 순서로 그리는
-    // 상태 색인(PR-3) 몫이라 이 표엔 렌더하지 않는다(비단조 오독 차단, PR-2b 리뷰).
-    out.lead = (function(){ var d = document.querySelector('#txtTableBody .doc-body');
-      return d ? d.textContent : ''; })();
-    out.head_lead = (function(){ var h = document.querySelector('#txtTableHead th.doccol');
-      return h ? h.textContent : ''; })();
-    out.chips_text = document.getElementById('txtFilterChips').textContent;
-    out.strip_shown = getComputedStyle(document.getElementById('txtSelStrip')).display !== 'none';
-    out.strip_text = document.getElementById('txtSelStrip').textContent;
-    out.panel_hidden = getComputedStyle(document.getElementById('txtColPanel')).display === 'none';
-    out.sel_count = document.getElementById('txtSelCount').textContent;
-    // 린트 침묵 상태의 **계산된 표시**(부록 B-9 결함 클래스 2): hidden 프로퍼티만 보면
-    // display:flex 가 UA [hidden] 을 이겨 빈 상자가 남는 함정을 못 잡는다. 고정폭 선언으로
-    // 되밀어 실제로 사라지는지 본다(이 재푸시는 위 되읽기가 모두 끝난 뒤라 무해).
-    snap.target_font = 'gulimche';
-    snap.card.lint = {proportional:false, space_run:true, applied:false, active:false};
-    window.__push('txt', snap);
-    out.lint_silent_display =
-      getComputedStyle(document.getElementById('txtCardLint')).display;
-    out.font_class_fixed = document.getElementById('txtCardRender').className;
-    // 두 인스턴스 격리 — txt 존 렌더가 작업 화면 데이터 존 DOM 을 만지지 않는다(id 분리).
-    out.job_body_untouched = document.getElementById('jobTableBody').children.length === 0
-      || !document.querySelector('#jobTableBody #txtRow-0');
-    out.error = null;
-  } catch (e) { out.error = String((e && e.message) || e); }
-  return out;
-})()
-"""
-
-
-# 빠른 기안(R-flow 블록 5, 슬라이스 7 PR-2) — 파이프라인 토큰 폼 + 미리보기 채움 표지가 실
-# WebView2 에서 그려지는지 되읽는다(txt 존 프로브 동형: 합성 스냅샷 push → DOM 되읽기).
-# 미리보기·폼은 push 구동 렌더라 동기로 잡힌다. **탭 전환(원문 편집)은 여기서 되읽지 않는다**:
-# 이 엔진의 evaluate_js 에서 dispatchEvent 로 만든 합성 클릭이 innerHTML 로 파싱된 노드의
-# 리스너에 닿지 않아(순수 createElement 노드는 발화되나 파싱 노드는 불발 — 실측) 실 사용자
-# 클릭과 달리 프로브로 구동 불가하다. 탭 버튼 존재는 DOM 계약이, 라이브 재구성·(수정됨) 강등
-# 거동은 백엔드 test_edit_source_live_retokenizes_and_demotes 가 가드한다.
-_QUICKDRAFT_PROBE_JS = r"""
-(function () {
-  var out = {};
-  try {
-    window.Nav.go('quickdraft');
-    // 표시 여부는 클래스 토큰이 아니라 **실제 렌더**(offsetParent)로 잰다(계측 리트머스).
-    var vis = function (id) {
-      var el = document.getElementById(id);
-      return !!(el && el.offsetParent !== null);
-    };
-    // PR-4 음성 대조 — 빈손 세션엔 「새 기안」·출구 푸터가 서 있으면 안 된다(dead 크롬 금지).
-    // "보인다" 판정에 판별력을 주려면 먼저 "안 보임"을 관측해야 한다(부재 판별력).
-    window.__push('quickdraft', {origin:null, template_name:null, template_text:'', modified:false,
-      tokens:[], segments:[], missing_fields:[], empty_fields:[], unfilled_count:0,
-      has_data:false, data_label:'', data_kind:''});
-    out.fresh_visible_before = vis('qdBtnFresh');
-    out.foot_visible_before = vis('qdFoot');
-    // 휘발 표지는 **빈손에서도** 서 있다(#134) — 알약과 별개 요소라 내용이 생겨도 안 꺼진다.
-    out.volatile_visible_before = vis('qdVolatile');
-    out.pill_before = document.getElementById('qdStatus').textContent;
-    var snap = {
-      origin:'lib', template_name:'개찰참관보고',
-      template_text:'제목: {{사업명}}\n금액: {{추정가격}}', modified:false,
-      tokens:[{name:'사업명', state:'man', value:'행정정보시스템'},
-              {name:'추정가격', state:'blank', value:''}],
-      segments:[{text:'제목: ', kind:'literal', name:''},
-                {text:'행정정보시스템', kind:'fill', name:'사업명'},
-                {text:'\n금액: ', kind:'literal', name:''},
-                {text:'{{추정가격}}', kind:'missing', name:'추정가격'}],
-      missing_fields:['추정가격'], empty_fields:[], unfilled_count:1,
-      has_data:false, data_label:'', data_kind:'',
-      // 대상 글꼴 선언·정렬 린트 합류(#134 (g)) — 미리보기가 선언을 추종하고, 린트가
-      // 선언-조건부로 서며 처방 버튼을 다는지 되읽는다.
-      target_font:'malgun',
-      lint:{proportional:true, space_run:true, applied:false, active:true}
-    };
-    window.__push('quickdraft', snap);
-    // 내용이 실려도 휘발 표지는 살아 있다 — 잃을 것이 생긴 시점에 경고가 꺼지지 않는다.
-    out.volatile_visible = vis('qdVolatile');
-    out.render_font_class = (document.getElementById('qdRender') || {}).className || '';
-    out.lint_text = (document.querySelector('#qdBody .qd-lint .txt') || {}).textContent || '';
-    out.lint_action = (document.getElementById('qdLintAction') || {}).dataset
-      ? document.getElementById('qdLintAction').dataset.act : '';
-    // man 칩(사람이 친 값)의 **중립 티어** — 채움 계열 초록(--a-ok)을 쓰면 "검증된 값"으로
-    // 읽힌다. 색 이름이 아니라 실제 계산색을 토큰 값과 대조한다(테마 무관 판정).
-    out.chip_man_color = (function () {
-      var c = document.querySelector('#qdBody .qd-chip.man');
-      return c ? getComputedStyle(c).color : '';
-    })();
-    out.ok_color = (function () {
-      var probe = document.createElement('span');
-      probe.style.color = 'var(--a-ok)';
-      document.body.appendChild(probe);
-      var v = getComputedStyle(probe).color;
-      probe.remove();
-      return v;
-    })();
-    // 파이프라인 토큰 폼 — 행 수·값 textarea·칩 상태(무결속 수기 = man, 빈칸 = blank).
-    out.rows = document.querySelectorAll('#qdBody .qd-trow').length;
-    out.val0 = (document.getElementById('qdVal-0') || {}).value;
-    out.chip1 = (document.getElementById('qdChip-1') || {}).textContent;
-    // 미리보기 채움 표지 삼분 — fill(음영 값)·missing({{토큰}} 빨강)이 실제로 페인트된다.
-    var render = document.getElementById('qdRender');
-    out.render_text = render ? render.textContent : '';
-    out.seg_fill = !!document.querySelector('#qdRender .seg-fill');
-    out.seg_missing = !!document.querySelector('#qdRender .seg-missing');
-    // 미채움 알약(휘발 표지 3상) — missing 1건이면 「미채움 1」.
-    out.pill = document.getElementById('qdStatus').textContent;
-    // 두 탭 버튼 존재(원문 편집 탭 진입점) — 전환 거동은 위 주석대로 백엔드/DOM 계약이 가드.
-    out.tabs = document.querySelectorAll('#qdBody .qd-tabs .btn').length;
-    // 껍데기 격리 — 빠른 기안 폼(qd-trow)이 작업 화면 데이터 존 DOM 으로 새지 않는다(id 분리).
-    // jobTableBody 는 앞선 job 프로브가 채우므로 '빈가'가 아니라 '누출 없음'으로 판정한다.
-    out.job_body_untouched = !document.querySelector('#jobTableBody .qd-trow');
-    // PR-4 — 템플릿이 실리면 「새 기안」·출구 푸터가 선다(빈손 음성 대조와 짝). 복사 버튼 존재,
-    // 표지 토글은 미리보기 탭 기본이라 aria-pressed=true(표지 ON), 승격 2동사는 정직한 비활성.
-    out.fresh_visible = vis('qdBtnFresh');
-    out.foot_visible = vis('qdFoot');
-    out.copy_btn = !!document.getElementById('qdBtnCopy');
-    var mt = document.getElementById('qdMarkerToggle');
-    out.marker_toggle = !!mt;
-    out.marker_pressed = mt ? mt.getAttribute('aria-pressed') : null;
-    out.save_job_disabled = (document.getElementById('qdBtnSaveJob') || {}).disabled;
-    out.save_tpl_disabled = (document.getElementById('qdBtnSaveTpl') || {}).disabled;
-    out.promote_note = (document.getElementById('qdPromoteNote') || {}).textContent || '';
-    // 데이터가 없는 지금은 「데이터 해제」·경보 상자가 화면에서 사라져 있어야 한다.
-    out.clear_visible_before = vis('qdBtnClearData');
-    out.note_visible_before = vis('qdNote');
-
-    // ---- PR-3: 데이터 선택 스냅샷 — 경량 슬롯(라벨·행 스테퍼)·파이프라인 2열·근사 제안이
-    // 실 WebView2 에서 그려지는지 되읽는다(결정 30·31·34).
-    var aimed = {
-      origin:'lib', template_name:'개찰참관보고',
-      template_text:'제목: {{사업명}}\n금액: {{추정가격}}', modified:false,
-      tokens:[{name:'사업명', state:'auto', value:'행정정보시스템', col:'사업명',
-               fmt_kind:'text', fmt_code:'', suggest:''},
-              {name:'추정가격', state:'blank', value:'', col:'',
-               fmt_kind:'text', fmt_code:'', suggest:'추정가격(원)'}],
-      segments:[{text:'제목: ', kind:'literal', name:''},
-                {text:'행정정보시스템', kind:'fill', name:'사업명'},
-                {text:'\n금액: ', kind:'literal', name:''},
-                {text:'{{추정가격}}', kind:'missing', name:'추정가격'}],
-      missing_fields:['추정가격'], empty_fields:[], unfilled_count:1,
-      has_data:true, data_label:'낙찰현황.csv', data_kind:'file',
-      data_source_label:'파일: 낙찰현황.csv',
-      columns:['사업명','추정가격(원)'], record_count:12, row_idx:2,
-      row_label:'행정정보시스템 유지보수',
-      fmt_options:{text:[{code:'', label:'그대로'}], date:[], amount:[], const:[]}
-    };
-    window.__push('quickdraft', aimed);
-    out.data_label_text = document.getElementById('qdDataLine').textContent;
-    // PR-4 소유권 색 — 자동 결속 값(사업명)은 own-auto 로 페인트된다(폼 칩과 한 색 언어).
-    out.own_auto = !!document.querySelector('#qdRender .seg-fill.own-auto');
-    // 행 스테퍼 — 양끝이 아니면 두 버튼 다 살아 있다(경계에서만 disabled).
-    var prev = document.getElementById('qdRowPrev'), next = document.getElementById('qdRowNext');
-    out.stepper = !!prev && !!next && !prev.disabled && !next.disabled;
-    out.clear_visible = vis('qdBtnClearData');
-    // 교체로 굳은 자리 경보가 실제로 보이는지(문구는 Python 이 합성) — 지금 스냅샷엔 없다.
-    out.note_visible = vis('qdNote');
-    // 파이프라인 2열 — 결속 토큰은 소스 select 가 그 열을 고른 채 뜨고 표시형이 함께 산다.
-    var src0 = document.getElementById('qdSrc-0');
-    out.src0 = src0 ? src0.value : null;
-    out.fmt0 = !!document.getElementById('qdFmt-0');
-    // 무결속 토큰: 소스는 (직접 입력), 표시형 없음(dead control 금지), 근사 제안 버튼 존재.
-    var src1 = document.getElementById('qdSrc-1');
-    out.src1 = src1 ? src1.value : null;
-    out.fmt1 = !!document.getElementById('qdFmt-1');
-    // 파이프라인 방향 화살표(결정 34 `소스→표시형`, #134) — 표시형이 실제로 뜨는 행에만
-    // 선다(없는 단계를 암시하지 않는다). 결속 행(0)엔 있고 무결속 행(1)엔 없다.
-    out.pipe_arrow0 = !!document.querySelector('.qd-trow[data-i="0"] .qd-pipe .qd-arrow');
-    out.pipe_arrow1 = !!document.querySelector('.qd-trow[data-i="1"] .qd-pipe .qd-arrow');
-    out.suggest1 = !!document.getElementById('qdTake-1');
-    out.suggest_text = (document.querySelector('#qdBody .qd-suggest') || {}).textContent || '';
-    // 경보 되읽기 — frozen_notice 가 실리면 상자가 뜨고 문구가 그대로 선다(알람 갈래).
-    var alarmed = JSON.parse(JSON.stringify(aimed));
-    alarmed.frozen_notice = '바뀐 데이터에 없는 열이라 1개 자리(추정가격)의 값이 이전 값 그대로 굳었습니다.';
-    window.__push('quickdraft', alarmed);
-    out.note_visible_after = vis('qdNote');
-    out.note_text = document.getElementById('qdNote').textContent;
-    out.error = null;
-  } catch (e) { out.error = String((e && e.message) || e); }
   return out;
 })()
 """
@@ -1702,9 +1437,10 @@ def _selftest_drive(window: "object") -> None:
         # 데이터 관리 화면(#26 #4) — 7번째 화면이 실제 init·렌더됐는지(빈 상태 문구도 렌더).
         result["pool_rendered"] = window.evaluate_js(  # type: ignore[attr-defined]
             "(document.getElementById('poolList')||{innerHTML:''}).innerHTML.length > 0")
-        # 2소스 진입점(#26 #6) — 두 생성 표면(작업·txt)의 '등록 데이터…' 버튼 실재.
+        # 2소스 진입점(#26 #6) — 두 세션 표면(작업·기안)의 '등록 데이터…' 버튼 실재.
+        # (구 txt 의 btnTxtPoolData 는 슬라이스 6 에서 삭제 — 「기안」의 draftBtnPoolData 로 재겨눔.)
         result["pool_buttons"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "['jobBtnPoolData','btnTxtPoolData']"
+            "['jobBtnPoolData','draftBtnPoolData']"
             ".every(function(i){return !!document.getElementById(i)})")
         # 커스텀 모달 접근성 동적 거동(#27/#28) — 정적 계약(role/aria)은 test_web_dom_contract 가
         # 보고, 여기선 실 브라우저에서 Modal 헬퍼가 초기포커스·Escape 닫기·트리거 복귀를 실제로
@@ -1748,10 +1484,8 @@ def _selftest_drive(window: "object") -> None:
         result["job_editmode"] = window.evaluate_js(_JOB_EDITMODE_PROBE_JS)  # type: ignore[attr-defined]
         # 매핑 칩-라이브(슬라이스 5 PR-3) — 합성 매핑 스냅샷으로 실 render() 구동 후 칩·태그 되읽기.
         result["editor_chip"] = window.evaluate_js(_EDITOR_CHIP_PROBE_JS)  # type: ignore[attr-defined]
-        # txt 데이터 존(슬라이스 6 PR-2b) — datazone.js 두 번째 인스턴스 실렌더 되읽기.
-        result["txt_zone"] = window.evaluate_js(_TXT_ZONE_PROBE_JS)  # type: ignore[attr-defined]
-        # 빠른 기안(슬라이스 7 PR-2) — 파이프라인 토큰 폼·미리보기 채움 표지 실렌더 되읽기.
-        result["quickdraft"] = window.evaluate_js(_QUICKDRAFT_PROBE_JS)  # type: ignore[attr-defined]
+        # (구 txt_zone·quickdraft 프로브는 #148 슬라이스 6 에서 두 화면과 함께 삭제 — 두 화면이
+        # 쓰던 공용 팩토리(datazone.js·draftsession.js) 커버리지는 draft_session 프로브가 승계한다.)
         # 템플릿 관리(#108) — 매체 구획+그룹·⋮ 메뉴·＋그룹지정 칩·이동 다이얼로그 실렌더 되읽기.
         result["tpl_groups"] = window.evaluate_js(_TPL_LIST_GROUP_PROBE_JS)  # type: ignore[attr-defined]
         # 에디터 1단계 피커(#108 슬라이스 3) — 라이브러리 그룹 구획(선택 전용) 실렌더 되읽기.
