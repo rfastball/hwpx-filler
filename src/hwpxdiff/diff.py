@@ -279,6 +279,20 @@ def _cell_text(cell) -> str:
     return "\n".join(p for p in parts if p != "").strip()
 
 
+def _direct_cell_text(cell) -> str:
+    """셀의 직접 문단만 결합한다(중첩 표는 별도 비교 단위)."""
+    return "\n".join(
+        block.text
+        for block in cell.blocks
+        if isinstance(block, Paragraph) and block.text != ""
+    ).strip()
+
+
+def _nested_tables(cell) -> "list[Table]":
+    """셀에 직접 포함된 중첩 표를 문서 순서로 반환한다."""
+    return [block for block in cell.blocks if isinstance(block, Table)]
+
+
 def _cell_key(cell, row_i: int, col_i: int) -> tuple:
     """셀 정렬 키. addr(rowAddr,colAddr) 우선, 없으면 위치 폴백."""
     ra = cell.addr.get("rowAddr")
@@ -493,7 +507,9 @@ class _Differ:
             base = {"region": region, "region_index": region_idx,
                     "table_index": t_ord}
             if o is not None and n is not None:
-                self._diff_table_cells(region, region_idx, t_ord, o[1], n[1])
+                self._diff_table_cells(
+                    region, region_idx, (t_ord,), (), o[1], n[1]
+                )
             elif o is not None:
                 txt = _table_flat_text(o[1])
                 if txt:
@@ -509,21 +525,33 @@ class _Differ:
                                f"{region} {region_idx + 1} · 표 {t_ord + 1}",
                                new_text=txt)
 
-    def _diff_table_cells(self, region: str, region_idx: int, t_ord: int,
-                          old_t: Table, new_t: Table) -> None:
+    def _diff_table_cells(
+        self,
+        region: str,
+        region_idx: int,
+        table_path: "tuple[int, ...]",
+        parent_cells: "tuple[dict, ...]",
+        old_t: Table,
+        new_t: Table,
+    ) -> None:
         old_cells = _index_cells(old_t)
         new_cells = _index_cells(new_t)
         for key in sorted(set(old_cells) | set(new_cells), key=_key_sort):
             oc = old_cells.get(key)
             nc = new_cells.get(key)
-            loc = {"region": region, "region_index": region_idx, "unit": "cell",
-                   "table_index": t_ord}
             addr = _addr_of(key)
+            loc = _table_location(
+                region, region_idx, table_path, parent_cells, "cell"
+            )
             loc.update(addr)
-            label = (f"{region} {region_idx + 1} · 표 {t_ord + 1} · "
-                     f"셀({addr.get('rowAddr', '?')},{addr.get('colAddr', '?')})")
-            o_txt = oc[1] if oc else ""
-            n_txt = nc[1] if nc else ""
+            label = (
+                f"{_table_label(region, region_idx, table_path, parent_cells)} · "
+                f"셀({_addr_label(addr)})"
+            )
+            # 통째로 추가/삭제된 셀은 중첩 표까지 한 건으로 요약한다. 양쪽 셀이
+            # 존재하면 직접 문단과 중첩 표를 분리해 부모 셀 오귀속을 막는다.
+            o_txt = _cell_text(oc) if oc else ""
+            n_txt = _cell_text(nc) if nc else ""
             if o_txt == n_txt:
                 self._note_equal("cell", label, n_txt)
                 continue
@@ -534,11 +562,60 @@ class _Differ:
                 if not _is_blank(n_txt):
                     self._emit("added", "cell", loc, label, new_text=n_txt)
             else:
-                if _is_blank(o_txt) and _is_blank(n_txt):
-                    continue
-                self._emit("changed", "cell", loc, label,
-                           old_text=o_txt, new_text=n_txt,
-                           word_ops=_word_ops(o_txt, n_txt))
+                direct_old = _direct_cell_text(oc)
+                direct_new = _direct_cell_text(nc)
+                if direct_old == direct_new:
+                    self._note_equal("cell", label, direct_new)
+                elif not (_is_blank(direct_old) and _is_blank(direct_new)):
+                    self._emit(
+                        "changed",
+                        "cell",
+                        loc,
+                        label,
+                        old_text=direct_old,
+                        new_text=direct_new,
+                        word_ops=_word_ops(direct_old, direct_new),
+                    )
+                self._diff_nested_tables(
+                    region,
+                    region_idx,
+                    table_path,
+                    parent_cells + (addr,),
+                    _nested_tables(oc),
+                    _nested_tables(nc),
+                )
+
+    def _diff_nested_tables(
+        self,
+        region: str,
+        region_idx: int,
+        table_path: "tuple[int, ...]",
+        parent_cells: "tuple[dict, ...]",
+        olds: "list[Table]",
+        news: "list[Table]",
+    ) -> None:
+        for table_index in range(max(len(olds), len(news))):
+            old = olds[table_index] if table_index < len(olds) else None
+            new = news[table_index] if table_index < len(news) else None
+            nested_path = table_path + (table_index,)
+            if old is not None and new is not None:
+                self._diff_table_cells(
+                    region, region_idx, nested_path, parent_cells, old, new
+                )
+                continue
+            table = old if old is not None else new
+            assert table is not None
+            text = _table_flat_text(table)
+            if not text:
+                continue
+            loc = _table_location(
+                region, region_idx, nested_path, parent_cells, "table"
+            )
+            label = _table_label(region, region_idx, nested_path, parent_cells)
+            if old is not None:
+                self._emit("removed", "table", loc, label, old_text=text)
+            else:
+                self._emit("added", "table", loc, label, new_text=text)
 
     # ---------------------------------------------------------- 영역 순회
     def run(self, old: Document, new: Document) -> None:
@@ -568,12 +645,58 @@ def _addr_of(key: tuple) -> dict:
     return {"row": key[1], "col": key[2]}
 
 
-def _index_cells(tbl: Table) -> "dict[tuple, tuple[object, str]]":
-    """표 셀을 정렬 키->(cell, 텍스트) 로 색인."""
-    out: "dict[tuple, tuple[object, str]]" = {}
+def _addr_label(addr: dict) -> str:
+    """주소 메타를 사람이 읽는 ``행,열`` 표기로 변환한다."""
+    return (
+        f"{addr.get('rowAddr', addr.get('row', '?'))},"
+        f"{addr.get('colAddr', addr.get('col', '?'))}"
+    )
+
+
+def _table_location(
+    region: str,
+    region_idx: int,
+    table_path: "tuple[int, ...]",
+    parent_cells: "tuple[dict, ...]",
+    unit: str,
+) -> dict:
+    """표 비교 단위 위치. 최상위 계약은 그대로, 중첩 경로만 확장한다."""
+    location = {
+        "region": region,
+        "region_index": region_idx,
+        "unit": unit,
+        "table_index": table_path[0],
+    }
+    if len(table_path) > 1:
+        location["table_path"] = list(table_path)
+        location["parent_cells"] = [dict(addr) for addr in parent_cells]
+    return location
+
+
+def _table_label(
+    region: str,
+    region_idx: int,
+    table_path: "tuple[int, ...]",
+    parent_cells: "tuple[dict, ...]",
+) -> str:
+    """최상위 표부터 중첩 표까지 결정적인 사람이 읽는 위치 라벨."""
+    label = f"{region} {region_idx + 1} · 표 {table_path[0] + 1}"
+    for parent_addr, nested_index in zip(
+        parent_cells, table_path[1:], strict=True
+    ):
+        label += (
+            f" · 셀({_addr_label(parent_addr)})"
+            f" · 중첩 표 {nested_index + 1}"
+        )
+    return label
+
+
+def _index_cells(tbl: Table) -> "dict[tuple, object]":
+    """표 셀을 정렬 키로 색인."""
+    out: "dict[tuple, object]" = {}
     for ri, row in enumerate(tbl.rows):
         for ci, cell in enumerate(row):
-            out[_cell_key(cell, ri, ci)] = (cell, _cell_text(cell))
+            out[_cell_key(cell, ri, ci)] = cell
     return out
 
 
