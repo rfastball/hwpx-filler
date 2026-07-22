@@ -99,6 +99,12 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
    사유 문안은 인접 게이트 캡션이 소유하므로 버튼에는 상태 표현만 남긴다. */
 .btn.primary:disabled{background:var(--n-track);color:var(--a-muted);border-color:var(--a-border);opacity:1}
 .btn:focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
+/* PathTrack 보조 로케이트(H-12) — 찾아보기/지정 같은 텍스트 주동사보다 한 급 낮은 아이콘 버튼. */
+.track-affords{display:inline-flex;align-items:center;gap:var(--sp-4);vertical-align:middle}
+.track-btn{width:28px;height:28px;padding:0;color:var(--a-muted);display:inline-grid;place-items:center}
+.track-btn:hover{color:var(--n-ink-control)}
+.track-btn svg{width:16px;height:16px;display:block;fill:none;stroke:currentColor;stroke-width:1.5;
+  stroke-linecap:round;stroke-linejoin:round}
 .field{background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-control);
   padding:var(--sp-6) var(--sp-8);color:var(--a-ink);font:inherit;font-size:var(--fs-body);width:100%}
 .field.ro{background:var(--n-surface-alt);color:var(--n-ink-soft)}

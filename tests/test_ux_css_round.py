@@ -96,6 +96,30 @@ def test_pathtrack_default_affordances_are_open_and_reveal():
     )
 
 
+def test_pathtrack_secondary_actions_are_accessible_icon_buttons():
+    """H-12: 열기·폴더보기·경로복사는 같은 아이콘 급이며 접근 이름·툴팁을 보존한다."""
+    src = PATHTRACK_JS.read_text(encoding="utf-8")
+    for action, label in (("open", "열기"), ("reveal", "폴더에서 보기"), ("copy", "경로 복사")):
+        assert f"{action}: '<svg" in src
+        assert f'label: "{label}", icon: ICONS.{action}' in src
+    assert 'class="btn sm icon track-btn"' in src
+    assert 'title="${spec.label}" aria-label="${spec.label}"' in src
+    assert '${spec.icon}</button>' in src
+
+
+def test_pathtrack_icon_style_is_visually_secondary_and_focusable():
+    css = _css()
+    assert ".track-affords{" in css and ".track-btn{" in css and ".track-btnsvg{" in css
+    assert ".track-btn{width:28px;height:28px;padding:0;color:var(--a-muted)" in css
+    assert ".btn:focus-visible{outline:2pxsolidvar(--a-primary)" in css
+
+
+def test_pathtrack_keeps_text_primary_folder_picker():
+    """보조 아이콘화가 찾아보기/지정 주동사를 삼키지 않는다."""
+    index = (WEB / "index.html").read_text(encoding="utf-8")
+    assert re.search(r'id="jobBtnPickFolder"[^>]*>찾아보기…</button>', index)
+
+
 # ------------------------------------------------------------------ F30: 복구 동선 조건부
 
 def test_job_relink_button_gated_by_template_missing():
