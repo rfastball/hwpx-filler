@@ -1,9 +1,8 @@
-"""「작업」 화면 컨트롤러 계약 가드 — pywebview/Qt 불필요(헤드리스, R-flow 슬라이스 1 #90).
+"""「작업」 화면 컨트롤러 계약 가드 — pywebview/Qt 불필요(헤드리스).
 
 패널 4존이 소비하는 링1 배선(부록 A-1)을 창 없이 되읽는다: 좌 목록 → 작업 선택 → 데이터 겨눔
-→ 미입력 강제 확인 게이트(ADR-E) → 덮어쓰기 재진술(RC-02) → 생성 end-to-end. JobController 는
-실행 화면(screen_run)을 재사용하지 않는 별개 링2 표면이되 **같은 링1 계약**을 소비하므로,
-실행 화면 회귀 심(test_webapp_run)과 평행한 단언으로 배선 동등을 못박는다.
+→ 미입력 강제 확인 게이트(ADR-E) → 덮어쓰기 재진술(RC-02) → 생성 end-to-end.
+JobController가 링1 계약을 위임해 소비하는지 못박는다.
 """
 from __future__ import annotations
 
@@ -101,13 +100,9 @@ def test_select_job_then_data_populates_records_and_badges(tmp_path):
     assert states["추정가격"] == "missing"  # rec0 빈값 → 미입력
 
 
-# ------------------------------------------------------ 식별 요약 링1 소비(A-1-15, PR-1)
+# ------------------------------------------------------ 식별 요약 링1 소비
 def test_record_summary_consumes_ring1_identity_not_keyed_temp(tmp_path):
-    """식별 요약은 링1 ``identity_summary`` 소비 — 원본 값만 병기(임시 'key: value' 판 폐기).
-
-    슬라이스 1의 임시 요약은 ``bidNtceNm: 전산장비`` 처럼 키를 접두했다. 링1 판은 사용자가
-    데이터에서 본 값만 ``' · '`` 로 병기한다(A-1-15) — 키 접두가 사라졌음을 못박는다.
-    """
+    """식별 요약은 링1 ``identity_summary``를 소비하고 원본 값만 병기한다."""
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     ctrl.load_data_path(_data_csv(tmp_path))
@@ -226,7 +221,7 @@ def test_generation_stamp_does_not_clobber_disk_edits(tmp_path):
 
 
 def test_stamp_goes_to_the_job_the_run_started_on(tmp_path, monkeypatch):
-    """생성 중 작업 전환이 일어나도 역사는 **그 런의 작업**에 적힌다(Codex 리뷰 P1).
+    """생성 중 작업 전환이 일어나도 역사는 **그 런의 작업**에 적힌다.
 
     생성 중 좌 목록은 잠기지 않고(busy 잠금은 선언 요소만), 기본 전체 선택 세션은 무장이
     아니라 전환이 확인도 안 거친다. 브리지가 별도 스레드라 배치 도중 세션이 B 로 옮겨갈 수
@@ -257,7 +252,7 @@ def test_stamp_goes_to_the_job_the_run_started_on(tmp_path, monkeypatch):
 
 
 def test_stamp_uses_the_serialized_registry_path(tmp_path, monkeypatch):
-    """스탬프는 레지스트리의 **잠긴 경로**로만 쓴다(#129 리뷰 2R P1) — 직렬화 이탈 회귀 차단.
+    """스탬프는 레지스트리의 잠긴 경로로만 써서 직렬화 이탈을 막는다(#129).
 
     load→save 를 여기서 다시 손으로 엮으면 잠금 밖이라 에디터 저장과 lost update 가 난다
     (둘 중 늦게 착지한 저장이 상대 변경을 통째로 되돌린다). 그 회귀는 결과값으로는 잘 안
@@ -343,7 +338,7 @@ def test_overwrite_confirm_flow(tmp_path):
     assert ctrl.generate(confirm_overwrite=True)["ok"] is True
 
 
-# ---------------------------------------------- 본문 존 거울(블록 6 D2 ⓑ, PR-2)
+# ---------------------------------------------- 본문 존 거울
 def _mirror_job(tmp_path) -> JobRegistry:
     """거울 케이스용 작업 — 채움(text)·미입력(amount, rec0 빈값)·의도적 빈칸 3필드."""
     template = tmp_path / "t.hwpx"
@@ -510,7 +505,7 @@ def test_deselect_job_returns_to_empty_panel(tmp_path):
 
 
 def test_refresh_invalidates_session_when_job_deleted(tmp_path):
-    """master-detail 불변식(리뷰 #2): 선택된 작업이 다른 화면에서 삭제돼 레지스트리에서 사라지면
+    """master-detail 불변식: 선택된 작업이 다른 화면에서 삭제돼 레지스트리에서 사라지면
     refresh 가 세션을 무효화한다 — 존재하지 않는 작업의 라이브 세션이 활성 생성 버튼과 함께
     남아 유령 작업에서 생성되는 것을 막는다."""
     reg = _registry(tmp_path)
@@ -599,9 +594,8 @@ def test_load_pool_without_job_is_loud(tmp_path):
     assert res["ok"] is False and "작업" in res["error"]
 
 
-# --------------------------------------- 기본 데이터셋 자동 조준(#53-A, A-1-11) — 리뷰 F4
-# 실행 화면 사망(슬라이스 3)으로 test_webapp_run 의 자동 조준 회귀 심이 사라졌다 — JobController
-# 의 '조용한 폴백 금지'(성공=ok 재진술 / 실패=warn 미겨눔) 계약을 여기서 이어 가드한다.
+# --------------------------------------- 기본 데이터셋 자동 조준(#53-A, A-1-11)
+# 성공은 ok로 재진술하고 실패는 warn과 미겨눔으로 남기는 조용한 폴백 금지 계약을 가드한다.
 def _job_with_default(ctrl, pool, tmp_path, ref, *, register=True):
     """'공고서' 작업에 기본 데이터셋 참조를 붙여 재저장. register=True 면 동명 CSV 풀 항목 등록."""
     job = ctrl.registry.load("공고서")
@@ -671,9 +665,8 @@ def test_manual_data_clears_auto_aim_notice(tmp_path):
     assert ctrl.registry.load("공고서").default_dataset_ref == "7월공고"  # 임시 override, 기본 불변
 
 
-# --------------------------------------------- 템플릿 다시 연결(#67, A-1-2 계열) — 리뷰 F5
-# 실행 화면 사망으로 test_webapp_run 의 relink 회귀 심(x6)이 사라졌다 — 패널의 재연결 흐름
-# (경로 재진술·드리프트 병기·읽기불가 하드차단·선택 작업 stale VM 재적재)을 여기서 잇는다.
+# --------------------------------------------- 템플릿 다시 연결(#67, A-1-2 계열)
+# 경로 재진술·드리프트 병기·읽기불가 하드차단·선택 작업 stale VM 재적재를 가드한다.
 def test_relink_template_needs_confirm_restates_paths(tmp_path):
     """1차 호출 = 기존→새 경로 재진술 확인 요구. 구조 동일이면 드리프트 문구 없음(#67)."""
     ctrl, _ = _controller(tmp_path)
@@ -721,10 +714,9 @@ def test_relink_selected_job_reloads_vm_and_restates(tmp_path):
     assert ctrl.vm.job.template_path == str(new_tpl)       # VM 재구성
 
 
-# ---- 실행 화면 사망(슬라이스 3)으로 test_webapp_run 에서 유실된 confirm-or-alarm 회귀 심 승계
-# ---- (별도세션 리뷰 #99-1~5, CONFIRMED). JobController 동작은 살아 있으나 무테스트였다.
+# ------------------------------------------------ confirm-or-alarm 생성 계약
 def test_load_data_honors_confirmed_sheet(tmp_path):
-    """다중 시트 확정 게이트(#33, 리뷰 #99-1) — load_data_path(sheet=) 가 확정 시트를 관통.
+    """다중 시트 확정 게이트(#33) — load_data_path(sheet=) 가 확정 시트를 관통.
 
     작업 선택 후 낙찰현황(3건)을 확정하면 첫 시트(공고목록 2건)가 아니라 그 시트가 실린다 —
     조용한 첫 시트 강등이 아니라 확정값 반영(test_webapp_bridge 의 job 컨트롤러측 대응물).
@@ -738,7 +730,7 @@ def test_load_data_honors_confirmed_sheet(tmp_path):
 
 
 def test_record_names_follow_selection_not_invented(tmp_path):
-    """미선택 행 이름은 지어내지 않는다(F33, 리뷰 #99-2) — {{seq}}·충돌 접미사는 선택 집합에
+    """미선택 행 이름은 지어내지 않는다(F33) — {{seq}}·충돌 접미사는 선택 집합에
     따라 달라지므로 선택 변경 시 남은 행 이름이 생성 결과대로 재계산된다."""
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
@@ -751,7 +743,7 @@ def test_record_names_follow_selection_not_invented(tmp_path):
 
 
 def test_generate_uses_previewed_name_timestamp(tmp_path):
-    """미리보기가 보여준 시각 = 생성 파일명 시각(RC-02 표시=확인=생성, 리뷰 #99-3).
+    """미리보기가 보여준 시각 = 생성 파일명 시각(RC-02 표시=확인=생성).
 
     시·분·초 date 토큰 패턴에서 미리보기 스냅샷과 생성 클릭 사이 시계가 흘러도, generate 는
     마지막 미리보기(``_names_now``)의 시각을 재사용해 화면이 보여준 실파일명 그대로 생성한다.
@@ -776,7 +768,7 @@ def test_generate_uses_previewed_name_timestamp(tmp_path):
 
 
 def test_snapshot_reports_template_missing_only_when_file_gone(tmp_path):
-    """template_missing 은 파일이 실제로 없을 때만 True(F30, 리뷰 #99-4) — 웹이 이 플래그로
+    """template_missing 은 파일이 실제로 없을 때만 True(F30) — 웹이 이 플래그로
     「템플릿 다시 연결」 복구 동선을 조건부 노출한다(Python 층 실행 — JS 렌더 가드와 별개)."""
     ctrl, _ = _controller(tmp_path)
     snap = ctrl.initial()
@@ -789,7 +781,7 @@ def test_snapshot_reports_template_missing_only_when_file_gone(tmp_path):
 
 
 def test_unresolved_pattern_gate_surfaces_in_snapshot(tmp_path):
-    """미해소 파일명 토큰 작업 = 스냅샷 게이트 danger 차단 + 생성 백스톱(F34, 리뷰 #99-5)."""
+    """미해소 파일명 토큰 작업 = 스냅샷 게이트 danger 차단 + 생성 백스톱(F34)."""
     ctrl, _ = _controller(tmp_path)
     job = ctrl.registry.load("공고서")
     job.filename_pattern = "공고서-{{ID}}"                 # 101 워크스루 실증 지뢰(데이터에 ID 없음)
@@ -804,7 +796,7 @@ def test_unresolved_pattern_gate_surfaces_in_snapshot(tmp_path):
     assert res["ok"] is False and "{{ID}}" in res["error"]  # 생성 백스톱도 리터럴 방지
 
 
-# ------------------------------------------------- 필터 배선(블록 4, 슬라이스 4 PR-2b)
+# ------------------------------------------------- 필터 배선
 def _session(tmp_path):
     """작업 선택 + 데이터 겨눔까지 마친 컨트롤러 — 필터 계약 테스트 공용."""
     ctrl, pushes = _controller(tmp_path)
@@ -956,7 +948,7 @@ def test_table_cell_preserves_falsy_values(tmp_path):
     assert row1["cells"][1] == [("0", False)]                # 필터가 보는 그대로 표면도
 
 
-# ------------------------------------------------- 세션 가드(블록 4, 결정 26·27, PR-3)
+# ------------------------------------------------- 세션 가드(결정 26·27)
 def _data_csv3(tmp_path) -> str:
     """3행 코퍼스 — 2행 판에선 '정의 밖 가산'이 곧 전체 선택(비무장)이 되어 무장 케이스를
     못 가른다(가드 술어의 전체=1클릭 재현 절과 겹침)."""
@@ -1096,7 +1088,7 @@ def test_partial_failure_keeps_guard_armed(tmp_path, monkeypatch):
     assert ctrl.dispatch("guard_state", {})["armed"] is True     # 무장 유지(재시도 보호)
 
 
-# ------------------------------------------- 건 연속성(직전 필터 재적용, 결정 28, PR-4)
+# ------------------------------------------- 건 연속성(직전 필터 재적용, 결정 28)
 def test_reapply_slot_written_on_session_death_and_source_gated(tmp_path):
     """슬롯 = 정의 가진 세션이 죽을 때 덮어씀 · 소스 일치 게이트(다른 소스엔 미제공)."""
     ctrl, _ = _session(tmp_path)
@@ -1428,11 +1420,8 @@ def test_disband_group_confirm_roundtrip(tmp_path):
     assert "입찰" not in load_job_collapsed_groups()
 
 
-# ---------------- 실 공개 writer × 스탬프 동시성(#129 리뷰 3R P1) ----------------
-#
-# 리뷰 요구: "협조적인 테스트용 writer 뿐 아니라 실제 공개 delete·태그·재연결 경로와 스탬프를
-# 겹치는 회귀 테스트". 그래서 아래 세 테스트는 화면이 실제로 부르는 경로를 그대로 쓴다
-# (HomeViewModel.delete / HomeViewModel.set_tags / relink_job_template).
+# ---------------- 실 공개 writer × 스탬프 동시성(#129) ----------------
+# 아래 세 테스트는 화면이 실제로 부르는 공개 writer 경로를 그대로 쓴다.
 def _pause_stamp(monkeypatch):
     """스탬프 저장을 잠금 안에서 한 번 멈춰 세우는 장치 — (진입 이벤트, 해제 이벤트)."""
     import threading
