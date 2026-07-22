@@ -17,9 +17,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import re
+import sys
+import tempfile
 import threading
+import weakref
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -402,6 +407,142 @@ def content_fingerprint(job: "Job") -> str:
     return json.dumps(d, ensure_ascii=False, sort_keys=True)
 
 
+class JobRegistryOwnershipError(RuntimeError):
+    """다른 프로세스가 같은 작업 디렉터리의 writer 소유권을 가진 경우."""
+
+
+class _RegistryWriteState:
+    """한 프로세스 안에서 디렉터리별로 공유하는 스레드·프로세스 쓰기 상태."""
+
+    def __init__(self, key: str):
+        self.key = key
+        self.lock = threading.RLock()
+        self._owner: object | None = None
+
+    def claim_process_ownership(self) -> None:
+        if self._owner is not None:
+            return
+        if sys.platform == "win32":
+            self._claim_windows_mutex()
+        else:
+            self._claim_posix_lock()
+
+    def _claim_windows_mutex(self) -> None:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateMutexW.restype = wintypes.HANDLE
+        kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        digest = hashlib.sha1(self.key.encode("utf-8")).hexdigest()[:24]
+        handle = kernel32.CreateMutexW(None, False, f"hwpx-job-registry-writer-{digest}")
+        error = ctypes.get_last_error()
+        if not handle:
+            raise JobRegistryOwnershipError(
+                f"작업 저장소 writer 소유권을 확인할 수 없습니다 (WinError {error})."
+            )
+        if error == 183:  # ERROR_ALREADY_EXISTS — 다른 프로세스의 writer가 생존 중.
+            kernel32.CloseHandle(handle)
+            raise JobRegistryOwnershipError(
+                "이 작업 저장소는 이미 다른 HWPX Filler 프로세스가 쓰고 있습니다. "
+                "기존 앱을 닫은 뒤 다시 시도하세요."
+            )
+        self._owner = handle
+
+    def _claim_posix_lock(self) -> None:
+        import fcntl
+
+        lock_root = Path(tempfile.gettempdir()) / "hwpx-tools-job-locks"
+        lock_root.mkdir(parents=True, exist_ok=True)
+        digest = hashlib.sha1(self.key.encode("utf-8")).hexdigest()[:24]
+        stream = (lock_root / f"{digest}.lock").open("a+b")
+        try:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            stream.close()
+            raise JobRegistryOwnershipError(
+                "이 작업 저장소는 이미 다른 HWPX Filler 프로세스가 쓰고 있습니다. "
+                "기존 앱을 닫은 뒤 다시 시도하세요."
+            ) from exc
+        self._owner = stream
+
+    def __del__(self) -> None:
+        owner = self._owner
+        if owner is None:
+            return
+        try:
+            if sys.platform == "win32":
+                import ctypes
+                from ctypes import wintypes
+
+                close = ctypes.WinDLL("kernel32").CloseHandle
+                close.argtypes = [wintypes.HANDLE]
+                close.restype = wintypes.BOOL
+                close(owner)
+            else:
+                owner.close()  # type: ignore[union-attr]
+        except (AttributeError, OSError):
+            pass
+
+
+class _OwnedWriteLock:
+    """RLock 호환 표면 + 첫 writer의 프로세스 소유권 확인."""
+
+    def __init__(self, state: _RegistryWriteState):
+        self._state = state
+
+    def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
+        acquired = (
+            self._state.lock.acquire(blocking)
+            if timeout == -1
+            else self._state.lock.acquire(blocking, timeout)
+        )
+        if not acquired:
+            return False
+        try:
+            self._state.claim_process_ownership()
+        except Exception:
+            self._state.lock.release()
+            raise
+        return True
+
+    def release(self) -> None:
+        self._state.lock.release()
+
+    def __enter__(self) -> "_OwnedWriteLock":
+        self.acquire()
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.release()
+
+
+_JOB_WRITE_STATES: "weakref.WeakValueDictionary[str, _RegistryWriteState]" = (
+    weakref.WeakValueDictionary()
+)
+_JOB_WRITE_STATES_GUARD = threading.Lock()
+
+
+def _directory_key(directory: Path) -> str:
+    try:
+        directory = directory.resolve()
+    except OSError:
+        pass
+    return os.path.normcase(os.path.abspath(os.fspath(directory)))
+
+
+def _shared_write_state(directory: Path) -> _RegistryWriteState:
+    key = _directory_key(directory)
+    with _JOB_WRITE_STATES_GUARD:
+        state = _JOB_WRITE_STATES.get(key)
+        if state is None:
+            state = _RegistryWriteState(key)
+            _JOB_WRITE_STATES[key] = state
+        return state
+
+
 class JobRegistry:
     """작업 레지스트리 — 디렉터리에 작업당 JSON 1개. 홈 화면의 데이터 원천.
 
@@ -421,10 +562,12 @@ class JobRegistry:
         # 임계구역**이다(#129 리뷰 2R P1): 생성 스레드가 A 를 읽는 사이 에디터가 A 를 저장하면
         # 뒤늦은 저장이 상대의 변경을 통째로 되돌린다(lost update) — 스탬프가 매핑 편집을
         # 지우거나, 에디터 저장이 방금 찍은 ``last_run_at`` 을 지운다. 그래서 잠금은
-        # 레지스트리가 소유하고(모든 writer 공유) 바깥 표면도 :meth:`write_lock` 으로 자기
-        # 임계구역을 이 잠금 안에 넣는다. 재진입 가능(RLock)이라 잠금 안에서 :meth:`save` 를
-        # 불러도 자기 교착이 없다. 복제 원자화(F22 리뷰 P2 — 후보 이름 선점~저장)도 같은 잠금.
-        self._write_lock = threading.RLock()
+        # 디렉터리 경로가 소유하고(같은 프로세스의 모든 registry instance 공유) 바깥 표면도
+        # :meth:`write_lock` 으로 자기 임계구역을 이 잠금 안에 넣는다. 재진입 가능(RLock)이라
+        # 잠금 안에서 :meth:`save` 를 불러도 자기 교착이 없다. 첫 writer 는 프로세스 소유권도
+        # 함께 잡아 지원하지 않는 두 번째 프로세스의 쓰기를 파일 변경 전에 loud 거절한다(#192).
+        self._write_state = _shared_write_state(self.directory)
+        self._write_lock = _OwnedWriteLock(self._write_state)
 
     def path_for(self, name: str) -> Path:
         return self.directory / (_slug(name) + self.SUFFIX)
@@ -445,13 +588,16 @@ class JobRegistry:
                 )
             job.save(path)
 
-    def write_lock(self) -> "threading.RLock":
-        """읽기-수정-쓰기 임계구역을 감쌀 **공유 잠금**(컨텍스트 매니저, #129 리뷰 2R P1).
+    def write_lock(self) -> "_OwnedWriteLock":
+        """읽기-수정-쓰기 임계구역을 감쌀 디렉터리 공유 잠금.
 
         레지스트리 밖에서 "디스크를 읽고 → 그 값을 반영한 Job 을 만들어 → 저장"하는 표면
         (에디터 저장의 태그·``last_run_at`` 보존 재읽기)은 그 구간 전체를 이 잠금 안에 넣어야
         한다. 저장 한 번만 원자적인 것으로는 lost update 가 막히지 않는다 — 되돌리는 쪽은
-        **읽은 시점이 낡은** 저장이기 때문이다.
+        **읽은 시점이 낡은** 저장이기 때문이다. 같은 디렉터리를 보는 여러
+        :class:`JobRegistry` 인스턴스도 이 잠금을 공유한다. 첫 writer는 프로세스 소유권까지
+        얻으며, 다른 프로세스가 이미 소유 중이면 파일을 만지기 전에
+        :class:`JobRegistryOwnershipError`로 거절한다(#192).
         """
         return self._write_lock
 
@@ -494,9 +640,8 @@ class JobRegistry:
         **원자화(리뷰 P2)**: pywebview 는 호출마다 별도 스레드라 빠른 연속 클릭이 동시
         진입한다 — 후보 선택과 저장 사이 무잠금이면 여러 호출이 같은 '(복사본)' 을
         고르고(파일 1개만 남고 일부는 원자 쓰기 교체 경합으로 PermissionError) 이름이
-        조용히 중복 반환된다. 선점 검사~저장을 인스턴스 잠금으로 직렬화한다(같은
-        레지스트리 인스턴스를 공유하는 앱 내 호출이 대상 — 프로세스 간은 단일 인스턴스
-        가드 소관).
+        조용히 중복 반환된다. 선점 검사~저장을 디렉터리 공유 잠금으로 직렬화하고, 다른
+        프로세스의 writer는 같은 경계에서 소유권 오류로 거절한다.
         """
         with self._write_lock:
             job = self.load(name)
