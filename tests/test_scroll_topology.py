@@ -56,7 +56,7 @@ def test_draft_map_header_sticks_inside_its_capped_host() -> None:
 
 
 def test_capped_scrollport_inventory_matches_dom_and_behavior_contract() -> None:
-    """허용된 캡 스크롤러 6종은 DOM에 있고 gutter/overscroll 계약을 공유한다."""
+    """허용된 캡 스크롤러 7종은 DOM에 있고 gutter/overscroll 계약을 공유한다."""
     inventory = {
         ".tblwrap": EDITOR,
         ".mapwrap": INDEX,
@@ -64,6 +64,7 @@ def test_capped_scrollport_inventory_matches_dom_and_behavior_contract() -> None
         ".tpllist": INDEX,
         ".sheet-list": INDEX,
         ".colpanel .cp-vals": DATAZONE,
+        ".zone.workcard .wc-render": INDEX,
     }
     dom_needles = {
         ".tblwrap": 'class="tblwrap"',
@@ -72,6 +73,7 @@ def test_capped_scrollport_inventory_matches_dom_and_behavior_contract() -> None
         ".tpllist": "tpllist",
         ".sheet-list": "sheet-list",
         ".colpanel .cp-vals": "cp-vals",
+        ".zone.workcard .wc-render": 'class="wc-render"',
     }
 
     for selector, source in inventory.items():

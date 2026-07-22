@@ -256,19 +256,23 @@ table.dmap tr:last-child td{border-bottom:0}
 .wc-readout{flex:1;min-width:0;font-size:var(--fs-caption);color:var(--a-muted);font-weight:600;
   font-variant-numeric:tabular-nums}
 .wc-nav{display:flex;gap:var(--sp-4);flex:none}
-.wc-dots{display:flex;flex-wrap:wrap;gap:var(--sp-4);margin-bottom:var(--sp-10);
-  max-height:60px;overflow:auto}
+.wc-dots{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin-bottom:var(--sp-10);overflow:visible}
 /* 큐 퇴화(결정 8·14) 시 진행 색인이 숨어야 한다 — display:flex 는 UA [hidden]{display:none}
    을 특이도로 이기므로 명시 차단(부록 B-9 결함 클래스 2 — .wc-lint·.qd-foot·.colpanel 선례). */
 .wc-dots[hidden]{display:none}
-.wc-dot{width:14px;height:14px;border-radius:var(--rad-pill);border:1px solid var(--a-border);
-  background:var(--a-card);cursor:pointer;padding:0;position:relative;flex:none}
-.wc-dot.uncopied{background:var(--fb-blank-bg);border-color:var(--fb-blank-bd)}
-.wc-dot.copied{background:var(--fb-fill-bg);border-color:var(--fb-fill-bd)}
-.wc-dot.current{outline:2px solid var(--a-primary);outline-offset:1px;
+.wc-dot{width:24px;height:24px;border:0;background:transparent;cursor:pointer;padding:0;
+  position:relative;flex:none;border-radius:var(--rad-pill)}
+/* 시각 점은 14px을 유지하되 버튼은 24px hit target — 조밀한 큐에서도 클릭/터치 겨눔을 보장한다. */
+.wc-dot::before{content:"";position:absolute;top:5px;left:5px;width:14px;height:14px;
+  border-radius:var(--rad-pill);
+  border:1px solid var(--a-border);background:var(--a-card)}
+.wc-dot.uncopied::before{background:var(--fb-blank-bg);border-color:var(--fb-blank-bd)}
+.wc-dot.copied::before{background:var(--fb-fill-bg);border-color:var(--fb-fill-bd)}
+.wc-dot.current::before{outline:2px solid var(--a-primary);outline-offset:1px;
   background:var(--a-primary);border-color:var(--a-primary)}
+.wc-dot:focus-visible{outline:2px solid var(--a-primary);outline-offset:0}
 /* 빈칸 지도 표지 — 미충족 카드(항목 없음·빈 값)에 빨강 점 */
-.wc-dot.gap::after{content:"";position:absolute;top:-3px;right:-3px;width:6px;height:6px;
+.wc-dot.gap::after{content:"";position:absolute;top:2px;right:2px;width:6px;height:6px;
   border-radius:50%;background:var(--a-danger);border:1px solid var(--a-card)}
 /* 카드 헤더: 정체 + 복사 동사(우상단) + 전진 토글(미루기는 결정 10 사망) */
 .wc-head{display:flex;align-items:center;gap:var(--sp-10);margin-bottom:var(--sp-8)}
@@ -300,8 +304,8 @@ table.dmap tr:last-child td{border-bottom:0}
 .wc-render.f-dotumche{font-family:"DotumChe","돋움체","Dotum",ui-monospace,monospace}
 .wc-render.f-malgun{font-family:"Malgun Gothic","맑은 고딕",system-ui,sans-serif}
 .wc-render{background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface);
-  padding:var(--sp-16) var(--sp-24);flex:1;overflow:auto;font-size:var(--fs-body);line-height:1.85;
-  white-space:pre-wrap;color:var(--a-ink);margin:0;box-shadow:inset 0 1px 3px rgba(0,0,0,.03);
+  padding:var(--sp-16) var(--sp-24);overflow:auto;font-size:var(--fs-body);line-height:1.85;
+  white-space:pre-wrap;color:var(--a-ink);margin:0;
   font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
 .wc-render:focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
 .wc-render .seg-fill{background:var(--fb-fill-bg);border-radius:var(--rad-control);padding:0 2px}
@@ -318,7 +322,8 @@ table.dmap tr:last-child td{border-bottom:0}
    구 화면은 좌우 .panes(고정 2열), 「기안」은 「작업」과 같은 세로 4존이다. 카드 CSS 는
    .pane.workcard 에 매여 있던 두 규칙만 .zone 판으로 넓힌다(사본이 아니라 선택자 확장 —
    두 표면의 카드가 갈라지지 않게). */
-.zone.workcard .wc-render{min-height:180px}
+.zone.workcard .wc-render{min-height:180px;max-height:360px;overflow:auto;
+  scrollbar-gutter:stable;overscroll-behavior:contain}
 .zone.workcard.complete .wc-readout{color:var(--a-ok)}
 /* 존 번호 표지(시안 ①②③④) — 캡션 앞 작은 원. 정보는 순서뿐이라 장식 최소. */
 .zone-cap .znum{display:inline-grid;place-items:center;width:15px;height:15px;margin-right:var(--sp-4);
