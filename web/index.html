@@ -238,6 +238,7 @@
                jobZones 와 함께 토글) — 편집 모드·미선택에선 숨는다. -->
           <div class="session-actionbar" id="jobActionBar" style="display:none">
             <button class="btn primary" id="jobGenBtn" disabled>이 작업으로 문서 생성</button>
+            <button class="btn" id="jobGenCancel" style="display:none">다음 건부터 중단</button>
             <span class="muted capnote" id="jobGate"></span>
           </div>
         </div>
@@ -492,6 +493,11 @@
 <!-- H-16: 모달·팝오버의 유일한 포털. 앱 그리드/스크롤 stacking context 밖 body 직속에 둔다. -->
 <div id="overlayRoot">
 
+    <div id="undoToast" class="undo-toast" role="status" aria-live="polite" hidden>
+      <span id="undoToastText"></span>
+      <button class="btn sm" id="undoToastBtn">되돌리기</button>
+    </div>
+
     <!-- H-15/H-16 경량층도 같은 body 직속 포털을 쓴다. 좌표는 viewport 기준 Popover.place가 소유. -->
     <div id="homeRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
     <div id="jobRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
@@ -530,6 +536,7 @@
           <input class="field" id="txtEditName" type="text" placeholder="예: 회의결과보고"></label>
         <p class="modal-sub">{{필드}} 토큰을 포함한 템플릿 내용</p>
         <textarea id="txtEditContent" rows="10" placeholder="제목: {{공고명}} ..."></textarea>
+        <p id="txtEditError" class="note dangerbox" role="alert" style="display:none"></p>
         <div class="modal-actions">
           <button class="btn" id="txtEditCancel">취소</button>
           <button class="btn primary" id="txtEditOk">저장</button>
@@ -665,6 +672,7 @@
         <h3 id="promptModalTitle">입력</h3>
         <p class="modal-body" id="promptModalBody"></p>
         <input class="field" id="promptModalInput" type="text">
+        <p id="promptModalError" class="note dangerbox" role="alert" style="display:none"></p>
         <div class="modal-actions">
           <button class="btn" id="promptModalCancel">취소</button>
           <button class="btn primary" id="promptModalOk">확인</button>
@@ -680,6 +688,7 @@
 <script src="js/segview.js"></script>
 <script src="js/preserve.js"></script>
 <script src="js/modal.js"></script>
+<script src="js/undo_toast.js"></script>
 <script src="js/sheet_picker.js"></script>
 <script src="js/pool_picker.js"></script>
 <script src="js/pathtrack.js"></script>

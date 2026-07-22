@@ -24,6 +24,8 @@ import re
 import sys
 import tempfile
 import threading
+import time
+import uuid
 import weakref
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -554,6 +556,7 @@ class JobRegistry:
     """
 
     SUFFIX = ".job.json"
+    TRASH_RETENTION_DAYS = 30
 
     def __init__(self, directory: "str | Path"):
         self.directory = Path(directory)
@@ -726,6 +729,46 @@ class JobRegistry:
             p = self.path_for(name)
             if p.exists():
                 p.unlink()
+
+    def soft_delete(self, name: str) -> "tuple[Path, Path]":
+        """작업 파일을 30일 보존 휴지통으로 옮기고 복원 슬롯을 반환한다.
+
+        삭제와 복원은 기존 writer 경계 안에서 수행한다. 휴지통은 레지스트리 루트의
+        ``.trash``라 일반 목록 glob에 섞이지 않는다. 슬롯은 프로세스 메모리에만 노출되고,
+        실제 파일은 비정상 종료 뒤에도 보존 기간 동안 남는다.
+        """
+        with self._write_lock:
+            src = self.path_for(name)
+            if not src.exists():
+                raise ValueError(f"작업을 찾을 수 없습니다: {name}")
+            trash = self.directory / ".trash"
+            trash.mkdir(parents=True, exist_ok=True)
+            self._purge_trash(trash)
+            dst = trash / f"{int(time.time())}-{uuid.uuid4().hex}-{src.name}"
+            src.replace(dst)
+            return src, dst
+
+    def restore_soft_deleted(self, slot: "tuple[Path, Path]") -> str:
+        """최근 소프트 삭제 슬롯을 원래 위치로 복원하고 작업 이름을 반환한다."""
+        src, trashed = slot
+        with self._write_lock:
+            if not trashed.exists():
+                raise ValueError("복원할 작업이 휴지통에 없습니다.")
+            if src.exists():
+                raise ValueError("같은 이름의 작업이 이미 있어 복원할 수 없습니다.")
+            self.directory.mkdir(parents=True, exist_ok=True)
+            trashed.replace(src)
+            return Job.load(src).name
+
+    def _purge_trash(self, trash: Path) -> None:
+        cutoff = time.time() - self.TRASH_RETENTION_DAYS * 24 * 60 * 60
+        for path in trash.glob("*" + self.SUFFIX):
+            try:
+                if path.stat().st_mtime < cutoff:
+                    path.unlink()
+            except OSError:
+                # 오래된 한 파일의 정리 실패가 지금 삭제를 막아서는 안 된다.
+                continue
 
     def _files(self) -> "list[Path]":
         if not self.directory.exists():

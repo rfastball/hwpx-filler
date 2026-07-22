@@ -12,6 +12,8 @@
   let LAST = { hwpx: {}, txt: {} };   // 스냅샷 캐시 — 그룹명·현 그룹·행 조회(메뉴/다이얼로그).
   let editMode = "new", editPath = "";
   let menuFor = null;                 // 열린 ⋮ 메뉴: {media, kind:"row"|"group", key?, group?, item?}
+  let editBaseline = { name: "", content: "" };
+  let editAllowClose = false;
 
   /* 그룹 목록 기제(부유 ⋮ 메뉴·이동 다이얼로그) = 공용 팩토리(grouplist.js, job.js 와 단일 출처).
      위치잡기·다이얼로그 조립은 팩토리 소유. 여기는 매체 축·메뉴 내용·확정 디스패치만 주입한다. */
@@ -230,16 +232,14 @@
     }
   }
 
-  /* ---- 삭제(HWPX·TXT 공통 · 확인 라운드트립) ---- */
+  /* ---- 삭제(HWPX·TXT 공통 · 30일 휴지통 + 최근 1건 복원) ---- */
   async function deleteTemplate(media, item, returnFocus) {
     if (!item) return;
     const r = await Bridge.call(SCREEN, "delete", { media, path: item.path });
-    if (r && r.needs_confirm && (await window.Modal.confirm({
-      body: r.confirm_text + "\n\n삭제할까요?", returnFocus,
-      confirmLabel: "삭제", cancelLabel: "취소", danger: true,
-    }))) {
-      await Bridge.call(SCREEN, "delete", { media, path: item.path, confirm: true });
-    }
+    if (r && r.undo) window.UndoToast.show(`템플릿 '${item.name}' 을(를) 휴지통으로 옮겼습니다.`, async () => {
+      const restored = await Bridge.call(SCREEN, "undo_delete", {});
+      if (restored && restored.ok === false) throw new Error(restored.error);
+    });
   }
 
   /* ---- HWPX 상태 게이트 액션 ---- */
@@ -333,8 +333,40 @@
     $("txtNameRow").style.display = mode === "new" ? "" : "none";
     $("txtEditName").value = "";
     $("txtEditContent").value = content || "";
+    editBaseline = { name: "", content: content || "" };
+    editAllowClose = false;
+    $("txtEditError").style.display = "none";
     const focusTo = mode === "new" ? $("txtEditName") : $("txtEditContent");
-    window.Modal.open("txtEditModal", { initialFocus: focusTo, returnFocus });
+      window.Modal.open("txtEditModal", {
+      initialFocus: focusTo, returnFocus,
+      beforeClose: () => {
+        if (editAllowClose || !editModalDirty()) return true;
+        confirmDiscardEdit();
+        return false;
+      },
+    });
+  }
+
+  function editModalDirty() {
+    return $("txtEditName").value !== editBaseline.name ||
+      $("txtEditContent").value !== editBaseline.content;
+  }
+
+  async function confirmDiscardEdit() {
+    if (!editModalDirty()) {
+      editAllowClose = true;
+      window.Modal.close("txtEditModal");
+      return;
+    }
+    const ok = await window.Modal.confirm({
+      title: "편집 내용 버리기",
+      body: "저장하지 않은 템플릿 내용이 사라집니다.",
+      confirmLabel: "편집 내용 버리기", cancelLabel: "계속 편집",
+    });
+    if (ok) {
+      editAllowClose = true;
+      window.Modal.close("txtEditModal");
+    }
   }
 
   async function submitEditModal() {
@@ -345,9 +377,12 @@
       } else {
         await Bridge.call(SCREEN, "txt_edit", { path: editPath, content });
       }
+      editAllowClose = true;
       window.Modal.close("txtEditModal");
     } catch (err) {
-      window.alert(String((err && err.message) || err));  // confirm-or-alarm: 검증 실패 시끄럽게.
+      const note = $("txtEditError");
+      note.textContent = String((err && err.message) || err);
+      note.style.display = "block";
     }
   }
 
@@ -360,7 +395,7 @@
     $("tplTxtGroups").addEventListener("click", (e) => onBandClick("txt", e));
     $("tplRowMenu").addEventListener("click", onRowMenuClick);
     $("btnTplNewTxt").addEventListener("click", (e) => openEditModal("new", "", "", "", e.currentTarget));
-    $("txtEditCancel").addEventListener("click", () => window.Modal.close("txtEditModal"));
+    $("txtEditCancel").addEventListener("click", confirmDiscardEdit);
     $("txtEditOk").addEventListener("click", submitEditModal);
     moveDialog.wire("tplMoveOk", "tplMoveCancel");
     $("btnTplImport").addEventListener("click", importTemplate);

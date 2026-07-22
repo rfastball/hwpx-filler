@@ -184,6 +184,43 @@ def test_generate_writes_documents_and_marks_missing(tmp_path):
     assert any(isinstance(snap, dict) and "progress" in snap for _s, snap in pushes)
 
 
+def test_generate_cancel_keeps_completed_and_restates_unstarted(tmp_path, monkeypatch):
+    import hwpxfiller.webapp.screen_job as sj
+
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+
+    class _Done:
+        ok = True
+        output_path = "doc-001.hwpx"
+        error = ""
+        notes = []
+
+    class _Cancelled:
+        total = 2
+        succeeded = 1
+        failed = 1
+        results = [_Done()]
+        cancelled = True
+        attempted = 1
+
+    def fake_batch(*args, **kwargs):
+        ctrl.dispatch("cancel_generation", {})
+        assert kwargs["cancelled"]() is True
+        return _Cancelled()
+
+    monkeypatch.setattr(sj, "generate_batch", fake_batch)
+    result = ctrl.generate()
+    assert result["cancelled"] is True
+    assert result["attempted"] == 1 and result["unstarted"] == 1
+    assert result["failed"] == 0
+    assert "완료된 문서는 그대로 유지" in result["summary"]
+    assert ctrl.registry.load("공고서").last_run_at == ""
+
+
 def test_generation_stamps_last_run_at(tmp_path):
     """완주 = 역사(#129) — 생성이 작업에 실행 시각을 영속해야 홈 이력·KPI 가 산다."""
     ctrl, _ = _controller(tmp_path)
@@ -1359,14 +1396,13 @@ def test_delete_open_session_job_confirm_roundtrip_closes_panel(tmp_path):
     assert snap["has_job"] is False and snap["job_rows"] == []
 
 
-def test_delete_other_job_restates_without_session_fields(tmp_path):
+def test_delete_other_job_soft_deletes_without_session_prompt(tmp_path):
     ctrl, _ = _controller(tmp_path)
     ctrl.registry.save(Job(name="둘째"))
     ctrl.dispatch("select_job", {"name": "공고서"})
     res = ctrl.dispatch("delete_job", {"name": "둘째"})
-    assert res["needs_confirm"] is True and res["open_session"] is False
-    assert "armed" not in res  # 열린 세션이 아니면 세션 수치를 싣지 않는다(오귀속 방지)
-    ctrl.dispatch("delete_job", {"name": "둘째", "confirm": True})
+    assert res["undo"] is True
+    assert not ctrl.registry.exists("둘째")
     assert ctrl.snapshot()["job_name"] == "공고서"  # 무관 세션 무영향
 
 

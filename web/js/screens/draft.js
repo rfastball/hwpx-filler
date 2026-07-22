@@ -56,7 +56,9 @@
   function rowHtml(r) {
     if (RENAMING && RENAMING.name === r.name) {
       return `<div class="job-row"><input class="field job-rename" id="draftRenameInput"` +
-        ` data-orig="${esc(r.name)}" value="${esc(RENAMING.value)}" aria-label="새 이름"></div>`;
+        ` data-orig="${esc(r.name)}" value="${esc(RENAMING.value)}" aria-label="새 이름">` +
+        (RENAMING.error ? `<span class="note dangerbox" role="alert">${esc(RENAMING.error)}</span>` : "") +
+        `</div>`;
     }
     return `<div class="job-row">` +
       `<button class="job-item" data-job="${esc(r.name)}" aria-current="${r.selected ? "true" : "false"}">${esc(r.name)}</button>` +
@@ -147,6 +149,10 @@
       title: s.has_job ? "다른 이름으로 저장" : "기안으로 저장",
       body: "이 기안 작업의 이름을 넣으세요. 템플릿과 맞추기 정의만 저장됩니다.",
       value: s.has_job ? "" : (s.template_name || ""),
+      validate: async (value) => {
+        const r = await Bridge.call(SCREEN, "validate_save_name", { name: value });
+        return r && r.error ? r.error : "";
+      },
     });
     if (name === null) return;  // 취소
     let r = await Bridge.call(SCREEN, "save_job", { name });
@@ -368,14 +374,12 @@
     if (typed.trim() === orig) { if (LAST) renderMaster(LAST); return; }  // 무변경 = 조용히 복귀
     const r = await Bridge.call(SCREEN, "rename_job", { name: orig, new: typed });
     if (r && r.ok) return;
-    window.alert("이름 변경 실패: " + ((r && r.error) || "알 수 없는 오류"));  // 실패는 시끄럽게
+    const error = (r && r.error) || "알 수 없는 오류";
+    RENAMING = { name: orig, value: typed, error };
+    if (LAST) renderMaster(LAST);
     if (restoreOnError) {
-      RENAMING = { name: orig, value: typed };
-      if (LAST) renderMaster(LAST);
       const again = $("draftRenameInput");
       if (again) { again.focus(); again.select(); }
-    } else if (LAST) {
-      renderMaster(LAST);
     }
   }
 
@@ -414,6 +418,10 @@
   /* ---- 삭제·그룹 관리(확인 라운드트립 — modal.js, 네이티브 금지) ---- */
   async function deleteJob(name, returnFocus) {
     const res = await Bridge.call(SCREEN, "delete_job", { name });
+    if (res && res.undo) {
+      showDeleteUndo(name, res);
+      return;
+    }
     if (!(res && res.needs_confirm)) return;
     // 결속 중인 기안을 지우면 그 세션 진행도 사라진다(open_session) — 파괴 전모를 한 모달로
     // 재진술(리뷰 5a 2R P1, job.js 삭제와 동형). 술어·수치는 Python(_guard_state) 판정.
@@ -426,11 +434,19 @@
     }
     const ok = await window.Modal.confirm({
       title: "기안 작업 삭제 확인", body,
-      confirmLabel: "삭제", cancelLabel: "취소", danger: true,
+      confirmLabel: "휴지통으로 이동", cancelLabel: "취소",
       returnFocus,
     });
     if (!ok) return;
-    await Bridge.call(SCREEN, "delete_job", { name, confirm: true });
+    const deleted = await Bridge.call(SCREEN, "delete_job", { name, confirm: true });
+    showDeleteUndo(name, deleted);
+  }
+
+  function showDeleteUndo(name, deleted) {
+    if (deleted && deleted.undo) window.UndoToast.show(`기안 작업 '${name}' 을(를) 휴지통으로 옮겼습니다.`, async () => {
+      const restored = await Bridge.call(SCREEN, "undo_delete_job", {});
+      if (restored && restored.ok === false) throw new Error(restored.error);
+    });
   }
 
   async function renameGroup(old, returnFocus) {

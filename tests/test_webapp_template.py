@@ -138,11 +138,13 @@ def test_txt_new_edit_delete_roundtrip(tmp_path, monkeypatch):
     assert (tp / "txt" / "회의결과.txt").read_text(encoding="utf-8") == "{{안건}}"
     ctrl.dispatch("txt_edit", {"path": str(tp / "txt" / "회의결과.txt"), "content": "{{안건}} {{일시}}"})
     assert (tp / "txt" / "회의결과.txt").read_text(encoding="utf-8") == "{{안건}} {{일시}}"
-    # 삭제 = 공통 delete 액션(매체 명시) · 확인 라운드트립.
+    # 삭제 = 30일 휴지통 이동 + 최근 1건 복원.
     res1 = ctrl.dispatch("delete", {"media": "txt", "path": str(tp / "txt" / "회의결과.txt")})
-    assert res1["needs_confirm"] is True and (tp / "txt" / "회의결과.txt").exists()
-    assert "기안 서식 목록" in res1["confirm_text"]
-    ctrl.dispatch("delete", {"media": "txt", "path": str(tp / "txt" / "회의결과.txt"), "confirm": True})
+    assert res1["undo"] is True and not (tp / "txt" / "회의결과.txt").exists()
+    restored = ctrl.dispatch("undo_delete", {})
+    assert restored == {"ok": True, "name": "회의결과"}
+    assert (tp / "txt" / "회의결과.txt").exists()
+    ctrl.dispatch("delete", {"media": "txt", "path": str(tp / "txt" / "회의결과.txt")})
     assert not (tp / "txt" / "회의결과.txt").exists()
 
 
@@ -270,15 +272,15 @@ def test_import_bad_extension_is_loud(tmp_path, monkeypatch):
         ctrl.import_into_library(str(ext / "x.pdf"))
 
 
-def test_delete_hwpx_confirm_roundtrip(tmp_path, monkeypatch):
+def test_delete_hwpx_soft_delete_and_undo(tmp_path, monkeypatch):
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
     raw = str(tp / "lib" / "raw.hwpx")
     r1 = ctrl.dispatch("delete", {"media": "hwpx", "path": raw})
-    assert r1["needs_confirm"] is True and "다시 연결" in r1["confirm_text"]
-    assert (tp / "lib" / "raw.hwpx").exists()
-    ctrl.dispatch("delete", {"media": "hwpx", "path": raw, "confirm": True})
+    assert r1["undo"] is True
     assert not (tp / "lib" / "raw.hwpx").exists()
     assert "raw.hwpx" not in _names(ctrl.snapshot()["hwpx"])
+    ctrl.dispatch("undo_delete", {})
+    assert (tp / "lib" / "raw.hwpx").exists()
 
 
 def test_import_cleans_partial_file_on_copy_failure(tmp_path, monkeypatch):

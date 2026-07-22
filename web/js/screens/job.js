@@ -208,7 +208,9 @@
   function rowHtml(r) {
     if (RENAMING && RENAMING.name === r.name) {
       return `<div class="job-row"><input class="field job-rename" id="jobRenameInput"` +
-        ` data-orig="${esc(r.name)}" value="${esc(RENAMING.value)}" aria-label="새 이름"></div>`;
+        ` data-orig="${esc(r.name)}" value="${esc(RENAMING.value)}" aria-label="새 이름">` +
+        (RENAMING.error ? `<span class="note dangerbox" role="alert">${esc(RENAMING.error)}</span>` : "") +
+        `</div>`;
     }
     return `<div class="job-row">` +
       `<button class="job-item" data-job="${esc(r.name)}" aria-current="${r.selected ? "true" : "false"}">${esc(r.name)}</button>` +
@@ -464,6 +466,8 @@
     $("scr-job").querySelectorAll("[data-busy-lock]").forEach((el) => { el.disabled = busy; });
     $("jobGenBtn").disabled = busy || !(LAST && LAST.gate && LAST.gate.enabled);
     $("jobGenBtn").textContent = busy ? "생성 중…" : "이 작업으로 문서 생성";
+    $("jobGenCancel").style.display = busy ? "" : "none";
+    if (!busy) { $("jobGenCancel").disabled = false; $("jobGenCancel").textContent = "다음 건부터 중단"; }
   }
 
   /* ---- 덮어쓰기 확인 본문 = 수치 합성(A-2-22, 결정 36) — 총량·파괴분·신규분을 종류별로
@@ -727,14 +731,13 @@
     if (typed.trim() === orig) { if (LAST) renderMaster(LAST); return; }  // 무변경 = 조용히 복귀
     const r = await Bridge.call(SCREEN, "rename_job", { name: orig, new: typed });
     if (r && r.ok) { log(`이름 변경: '${orig}' → '${typed.trim()}'`); return; }
-    log("이름 변경 실패: " + ((r && r.error) || "알 수 없는 오류"));
+    const error = (r && r.error) || "알 수 없는 오류";
+    log("이름 변경 실패: " + error);
+    RENAMING = { name: orig, value: typed, error };
+    if (LAST) renderMaster(LAST);
     if (restoreOnError) {
-      RENAMING = { name: orig, value: typed };
-      if (LAST) renderMaster(LAST);
       const again = $("jobRenameInput");
       if (again) { again.focus(); again.select(); }
-    } else if (LAST) {
-      renderMaster(LAST);
     }
   }
 
@@ -780,6 +783,10 @@
 
   async function deleteJob(name, returnFocus) {
     const res = await Bridge.call(SCREEN, "delete_job", { name });
+    if (res && res.undo) {
+      showDeleteUndo(name, res);
+      return;
+    }
     if (!(res && res.needs_confirm)) return;
     let body = `작업 '${name}' 을(를) 삭제합니다. 템플릿 연결과 매핑 정의가 함께 사라집니다.`;
     if (res.open_session) {
@@ -791,12 +798,20 @@
     }
     const ok = await window.Modal.confirm({
       title: "작업 삭제 확인", body,
-      confirmLabel: "삭제", cancelLabel: "취소", danger: true,
+      confirmLabel: "휴지통으로 이동", cancelLabel: "취소",
       returnFocus,
     });
     if (!ok) return;
-    await Bridge.call(SCREEN, "delete_job", { name, confirm: true });
-    log(`작업 삭제: '${name}'`);
+    const deleted = await Bridge.call(SCREEN, "delete_job", { name, confirm: true });
+    log(`작업을 휴지통으로 이동: '${name}'`);
+    showDeleteUndo(name, deleted);
+  }
+
+  function showDeleteUndo(name, deleted) {
+    if (deleted && deleted.undo) window.UndoToast.show(`작업 '${name}' 을(를) 휴지통으로 옮겼습니다.`, async () => {
+      const restored = await Bridge.call(SCREEN, "undo_delete_job", {});
+      if (restored && restored.ok === false) throw new Error(restored.error);
+    });
   }
 
   async function renameGroup(old, returnFocus) {
@@ -973,6 +988,13 @@
       }
     });
     $("jobGenBtn").addEventListener("click", () => doGenerate(false));
+    $("jobGenCancel").addEventListener("click", async () => {
+      const btn = $("jobGenCancel");
+      btn.disabled = true;
+      btn.textContent = "중단 요청됨…";
+      await Bridge.call(SCREEN, "cancel_generation", {});
+      log("중단 요청: 진행 중인 문서를 마친 뒤 미착수 건을 중단합니다.");
+    });
 
     $("jobBtnPickData").addEventListener("click", async () => {
       if (!(await confirmDataSwapIfArmed())) return;  // 데이터 재겨눔 = T1 동류 파괴 전이

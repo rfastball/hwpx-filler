@@ -391,6 +391,17 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self._volatile_stash = None  # 포크 = 유일 휘발 — 밀려난 스태시를 조용히 덮지 않게 비운다
         return None
 
+    def _do_fork_guard(self, p: dict) -> dict:
+        """사본 분기 전 한 모달에 합성할 현재/스태시 손실 정보를 무변이로 반환한다."""
+        g = self._stash_guard()
+        return {
+            "copied_total": self._copied_total,
+            "stash_armed": g is not None,
+            "stash": g or {},
+        }
+
+    _do_fork_guard.is_query = True
+
     def _records(self) -> list:
         return self.vm.records
 

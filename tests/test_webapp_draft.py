@@ -179,7 +179,7 @@ def test_deleting_bound_session_with_progress_restates_loss(tmp_path):
     assert ctrl.snapshot()["bound_job"] == "기안A"      # 확인 전 = 안 지움
 
 
-def test_deleting_unbound_job_reports_no_session_loss(tmp_path):
+def test_deleting_unbound_job_needs_no_session_prompt(tmp_path):
     """결속 아닌 기안 삭제는 세션 무영향 — 정의 삭제만 재진술하고 진행 수치를 부풀리지 않는다.
 
     현 세션은 다른 기안(또는 휘발)에 물려 있는데도 open_session/armed 를 실으면 지우지도 않을
@@ -190,8 +190,9 @@ def test_deleting_unbound_job_reports_no_session_loss(tmp_path):
     ctrl.dispatch("select_job", {"name": "기안A"})
     _arm_queue(ctrl, selected=2, copied=1)             # 기안A 세션에 진행이 있어도
     res = ctrl.dispatch("delete_job", {"name": "기안B"})  # 결속 아닌 기안B 삭제는 무영향
-    assert res["needs_confirm"] is True and res["open_session"] is False
-    assert "armed" not in res, "결속 아닌 삭제가 무관한 세션 무장 수치를 실었습니다(거짓 경고)."
+    assert res["undo"] is True
+    assert not jobs.exists("기안B")
+    assert ctrl.snapshot()["bound_job"] == "기안A"
 
 
 # ------------------------------------------ 미저장 레시피 편집 가드(리뷰 5a 3R P1 / 147)
@@ -964,7 +965,10 @@ def test_router_is_shared_between_list_and_session_actions(tmp_path):
 def test_confirm_roundtrip_skips_push(tmp_path):
     """확인 왕복(needs_confirm)은 변이가 없으므로 재렌더도 없다 — RC-02 동형."""
     ctrl, jobs, pushes = _controller(tmp_path)
-    _save(jobs, "기안A", "C:/t/a.txt")
+    _save_real(tmp_path, jobs, "기안A", "guard.txt", "{{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    _arm_queue(ctrl, selected=2, copied=1)
+    pushes.clear()
     res = ctrl.dispatch("delete_job", {"name": "기안A"})
     assert res["needs_confirm"] is True and pushes == []
     ctrl.dispatch("delete_job", {"name": "기안A", "confirm": True})

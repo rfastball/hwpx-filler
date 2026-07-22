@@ -1053,6 +1053,13 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .colpanel .cp-err{color:var(--a-danger);font-size:var(--fs-caption);white-space:pre-line}
 .colpanel .cp-acts{display:flex;gap:var(--sp-6);justify-content:flex-end}
 
+.undo-toast{position:fixed;z-index:var(--z-modal);left:50%;bottom:var(--sp-16);
+  transform:translateX(-50%);display:flex;align-items:center;gap:var(--sp-12);
+  max-width:min(560px,calc(100vw - 32px));padding:var(--sp-8) var(--sp-12);
+  color:var(--a-ink);background:var(--a-card);border:1px solid var(--a-border);
+  border-radius:var(--rad-overlay);box-shadow:0 8px 24px var(--a-shadow)}
+.undo-toast[hidden]{display:none}
+
 /* ---- 내부 스크롤포트 인벤토리(H-07) ----
    캡+헤더 지속 표: .tblwrap(위저드 3벌), .mapwrap(#draftTokPanel), .jobtbwrap.
    캡 목록: .tpllist, .sheet-list, .colpanel .cp-vals. 이 여섯 종류만 이 계약의 내부

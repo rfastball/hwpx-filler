@@ -143,6 +143,23 @@ def test_full_new_job_flow_schema_only_const(tmp_path):
     assert JobRegistry(tmp_path / "jobs").exists("테스트작업")
 
 
+def test_unconfirm_all_restores_exact_previous_confirmed_set(tmp_path):
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("goto_step", {"step": 1})
+    ctrl.dispatch("skip_data", {})
+    ctrl.dispatch("set_confirmed", {"index": 1, "confirmed": True})
+    ctrl.dispatch("set_confirmed", {"index": 4, "confirmed": True})
+    result = ctrl.dispatch("unconfirm_all", {})
+    assert result == {"undo_count": 2}
+    assert ctrl.snapshot()["unconfirm_undo_count"] == 2
+    restored = ctrl.dispatch("restore_confirmed", {})
+    assert restored == {"restored": 2}
+    rows = ctrl.snapshot()["rows"]
+    assert [i for i, row in enumerate(rows) if row["confirmed"]] == [1, 4]
+    assert ctrl.snapshot()["unconfirm_undo_count"] == 0
+
+
 def test_gateway_data_pick_rebuilds_mapping_in_place(tmp_path):
     """3단계 접기(블록 2 결정 11·12): 매핑 진입 후 관문에서 데이터를 고르면 매핑표가 그
     자리에서 다시 선다 — 컬럼·자동 제안 반영, 스키마온리 탈출, 전환 없음(라이브 순서 가드).
