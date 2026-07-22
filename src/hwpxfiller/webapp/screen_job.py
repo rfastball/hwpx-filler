@@ -581,9 +581,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self.data_label = ref
             self.data_source = "pool"
             self._after_pool_load(res["records"])
-            self.data_notice_text = (
-                f"기본 데이터 '{ref}' 를 자동으로 연결했습니다. 실행 시점에 다시 읽었습니다."
-            )
+            self.data_notice_text = f"기본 데이터 '{ref}' 를 자동으로 연결했습니다."
             self.data_notice_level = "ok"
         else:
             self.data_notice_text = (

@@ -73,10 +73,7 @@ def validate_owned_path(path: str, owned: "set[str]") -> str:
     if not path:
         raise ValueError("경로가 비어 있습니다.")
     if norm_path(path) not in owned:
-        raise ValueError(
-            "이 경로는 앱이 추적하는 참조(작업 템플릿·등록 데이터·현재 세션)가 "
-            "아니라 열 수 없습니다."
-        )
+        raise ValueError("이 경로는 앱이 추적하는 참조가 아니라 열 수 없습니다.")
     return path
 
 
@@ -226,7 +223,7 @@ def relink_job_template(job_registry, name: str, path: str, *, confirm: bool = F
             (
                 "\n\n⚠ 새 파일의 구조가 이 작업의 확정 매핑과 다릅니다:\n"
                 f"{drift.describe()}\n"
-                "저장해도 에디터에서 매핑을 재확정하기 전에는 생성이 차단됩니다."
+                "매핑을 다시 확정하기 전에는 생성이 차단됩니다."
             )
             if drift.has_drift else ""
         )

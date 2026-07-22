@@ -241,7 +241,7 @@ class RunViewModel:
             return PrevNote("이 작업의 필드가 이 문서에 하나도 없습니다. 파일을 확인하세요.", "danger")
         return PrevNote(
             f"이 작업의 필드 {len(ours)}개 중 {len(inter)}개가 문서에 있습니다. "
-            "이미 값이 있는 겹침 필드는 덮어씁니다. 단계별 필드는 서로소로 설계하세요.",
+            "이미 값이 있는 겹침 필드는 덮어씁니다.",
             "warn" if len(inter) < len(ours) else "",
         )
 
@@ -359,7 +359,7 @@ class RunViewModel:
         # 같은 목적지를 다르게 부르면, 둘 중 하나는 반드시 존재하지 않는 곳을 가리킨다.
         return GateState(
             False, "danger",
-            f"파일명 패턴의 토큰이 이 작업이 채우는 값에 없어 파일명에 그대로 남습니다: "
+            f"파일명 패턴의 토큰이 채워지지 않아 파일명에 그대로 남습니다: "
             f"{toks}. 편집에서 파일명 패턴을 고쳐야 생성할 수 있습니다.",
             reason="name_tokens",
         )
@@ -549,8 +549,8 @@ class RunViewModel:
         if drift.has_drift:
             # 상세 문구는 describe() 단일화(RC-03) — CLI/생성 경계와 같은 문장.
             return [GateError(
-                "템플릿 구조가 확정 매핑과 다릅니다. 매핑을 다시 확정해 전건 커버를 "
-                "회복해야 생성할 수 있습니다.\n" + drift.describe(),
+                "템플릿 구조가 확정 매핑과 다릅니다. 매핑을 다시 확정해야 생성할 수 "
+                "있습니다.\n" + drift.describe(),
                 "danger",
             )]
         name_gate = self._name_token_gate()
@@ -565,8 +565,8 @@ class RunViewModel:
         if self.template_override and len(indices) != 1:
             # 누적 v1 = 단건. 배치 누적(이전출력↔레코드 파일키 매칭)은 별개 설계 — 파킹.
             return [GateError(
-                "기존 문서 이어채우기는 1건만 지원합니다. 문서 1개에 데이터 여러 "
-                "행을 겹쳐 쓸 수 없습니다. 생성 대상을 1건만 선택하세요.", "warn")]
+                "기존 문서 이어채우기는 1건만 지원합니다. 생성 대상을 1건만 선택하세요.",
+                "warn")]
         return []
 
     def mapped_records(self, indices: "list[int]", mark_missing: str = "") -> "list[dict]":

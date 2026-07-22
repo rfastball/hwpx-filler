@@ -199,8 +199,8 @@
             <!-- 본문 존 — 라이브 거울(필드 채움 테이블) + 재진술 블록 + 생성 의식 1회 -->
             <div class="zone">
               <div class="zone-cap">본문 · 거울</div>
-              <p class="muted hint">이 문서에 들어갈 값입니다. <span class="danger">미입력</span>
-                필드 행은 반사적 확인 취소를 막기 위해 <b>직접 눌러 확인</b>해야 생성이 열립니다.</p>
+              <p class="muted hint">이 문서에 들어갈 값입니다. <span class="danger">빈 값</span>
+                행은 <b>눌러서 확인</b>해야 생성할 수 있습니다.</p>
               <!-- 거울 = 필드 채움 테이블(결정 36 ⓑ). danger(드리프트·토큰)는 차단 배너로 분리. -->
               <div id="jobMirror"></div>
 
@@ -352,7 +352,7 @@
                   <option value="dotumche">돋움체</option>
                   <option value="malgun">맑은고딕</option>
                 </select>
-                <span class="muted capnote">붙여넣는 곳의 표준 글꼴입니다. 전역 설정으로 저장됩니다.</span>
+                <span class="muted capnote">붙여넣는 곳의 표준 글꼴입니다(전역 설정으로 저장).</span>
               </div>
               <div class="wc-index"><div class="wc-readout" id="draftCardReadout"></div></div>
               <div class="wc-dots" id="draftCardDots" role="list" aria-label="큐 상태 색인"></div>
@@ -367,12 +367,11 @@
                   <span class="wc-srcname" id="draftSrcName"></span>
                   <span class="wc-modbadge" id="draftModBadge" hidden>수정됨</span>
                   <button class="btn sm" id="draftSrcFork" hidden
-                          title="저장된 기안은 그대로 두고, 이 세션만 사본으로 갈라 원문을 고칩니다(값·데이터·진행은 승계).">사본으로 편집</button>
+                          title="저장된 기안은 그대로 두고, 이 세션을 사본으로 만들어 고칩니다(값·데이터·진행 유지).">사본으로 편집</button>
                 </div>
                 <textarea class="wc-srcbox mono" id="draftSrcBox" spellcheck="false"
                           data-preserve-scroll aria-label="템플릿 원문"></textarea>
-                <p class="muted hint">여기서 고친 원문은 이 세션의 사본입니다.
-                  타이핑하면 위 '맞추기' 표가 실시간 재구성됩니다.</p>
+                <p class="muted hint">여기서 고친 원문은 이 세션의 사본이고, 타이핑하면 위 '맞추기' 표에 바로 반영됩니다.</p>
               </div>
               <div class="wc-lint" id="draftCardLint" hidden></div>
             </div>
@@ -422,8 +421,7 @@
       <header class="scr-head">
         <div>
           <h1>템플릿 관리</h1>
-          <p class="sub">문서를 만들 원본 서식을 한곳에서 관리합니다. 매체(HWPX·TXT)로 나뉘고, 그 안에서
-            작업 목록과 같은 그룹으로 정리합니다. 판본 비교(diff)는 별도 제품(hwpxdiff)이 담당합니다.</p>
+          <p class="sub">문서를 만들 원본 서식을 형식(HWPX·TXT)과 그룹으로 나눠 관리합니다.</p>
         </div>
       </header>
 
@@ -470,8 +468,7 @@
       <header class="scr-head">
         <div>
           <h1>데이터 관리</h1>
-          <p class="sub">등록 데이터는 참조(경로·시트)만 저장합니다. 실행할 때 원본을 다시 읽습니다.
-            계약 사이클이 끝나면 보관으로 정리하세요.</p>
+          <p class="sub">등록 데이터는 위치(경로·시트)만 기억하고, 실행할 때 원본을 읽습니다.</p>
         </div>
       </header>
       <div class="tpl-catalogs">
@@ -551,8 +548,7 @@
     <div id="poolModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="poolTitle">
       <div class="modal-card">
         <h3 id="poolTitle">등록 데이터 선택</h3>
-        <p class="modal-sub">활성 상태의 등록 데이터(참조)만
-          실행 후보입니다. 선택하면 지금 시점의 원본을 다시 읽어 옵니다.</p>
+        <p class="modal-sub">활성 등록 데이터만 고를 수 있습니다. 선택하면 원본을 다시 읽습니다.</p>
         <div id="poolPickList" class="sheet-list"></div>
         <p id="poolNote" class="note dangerbox" style="display:none;white-space:pre-line"></p>
         <div class="modal-actions">
@@ -565,7 +561,7 @@
     <div id="pasteModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="pasteTitle">
       <div class="modal-card">
         <h3 id="pasteTitle">템플릿 붙여넣기</h3>
-        <p class="muted">{{필드}} 토큰이 든 평문을 붙여넣으세요. 루트 밖 세션 템플릿으로 씁니다.</p>
+        <p class="muted">{{필드}} 토큰이 든 평문을 붙여넣으세요. 이 세션에서만 쓰는 템플릿입니다.</p>
         <textarea id="pasteText" rows="10" placeholder="제목: {{공고명}} ..."></textarea>
         <div class="modal-actions">
           <button class="btn" id="pasteCancel">취소</button>
@@ -612,7 +608,7 @@
     <div id="draftSaveTplModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="draftSaveTplTitle">
       <div class="modal-card">
         <h3 id="draftSaveTplTitle">템플릿으로 저장</h3>
-        <p class="muted">지금 원문을 라이브러리에 저장합니다. 채운 값은 저장되지 않습니다.</p>
+        <p class="muted">지금 원문만 라이브러리에 저장합니다(채운 값 제외).</p>
         <label class="modal-sub" for="draftSaveTplName">이름</label>
         <input class="field" id="draftSaveTplName" type="text" placeholder="예: 개찰 참관 보고">
         <div id="draftSaveTplGroups" class="sheet-list"></div>

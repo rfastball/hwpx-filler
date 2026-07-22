@@ -31,7 +31,7 @@
   // 로드 중 취소 시도에 대한 시끄러운 표기(C8) — 조용한 무시 금지.
   function noteLoadingBlock() {
     const note = $("poolNote");
-    note.textContent = "⚠ 불러오는 중입니다. 완료(성공 또는 실패 표시)까지 취소할 수 없습니다.";
+    note.textContent = "⚠ 불러오는 중입니다. 끝날 때까지 취소할 수 없습니다.";
     note.style.display = "block";
   }
 
@@ -50,8 +50,7 @@
       el.innerHTML =
         `<div class="modal-card">
           <h3 id="poolTitle">등록 데이터 선택</h3>
-          <p class="modal-sub">활성 상태의 등록 데이터(참조)만
-            실행 후보입니다. 선택하면 지금 시점의 원본을 다시 읽어 옵니다.</p>
+          <p class="modal-sub">활성 등록 데이터만 고를 수 있습니다. 선택하면 원본을 다시 읽습니다.</p>
           <div id="poolPickList" class="sheet-list"></div>
           <p id="poolNote" class="note dangerbox" style="display:none;white-space:pre-line"></p>
           <div class="modal-actions">
@@ -105,8 +104,8 @@
             `<span class="mono sheet-name">${escHtml(it.name)}</span>` +
             `<span class="muted sheet-dim">${escHtml(it.kind_label)} · ${escHtml(it.reference)}</span></button>`
           ).join("")
-        : `<p class="muted capnote">활성 등록 데이터가 없습니다. 작업 저장 때
-           함께 등록한 데이터가 여기 나타나거나, 데이터 관리 화면에서 추가할 수 있습니다.</p>`)
+        : `<p class="muted capnote">활성 등록 데이터가 없습니다. 데이터 관리 화면에서
+           등록하세요.</p>`)
         + (corrupted
             ? `<p class="note dangerbox" style="margin:var(--sp-8) 0 0">⚠ ${escHtml(corrupted)}</p>`
             : "");

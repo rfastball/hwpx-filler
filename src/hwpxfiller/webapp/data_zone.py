@@ -231,10 +231,7 @@ class DataZoneMixin:
         # 아래 두 거부는 표면 오배선에서만 닿는다(정상 경로는 버튼 미노출). 사유를 가르는
         # 이유(#127): "슬롯 없음"으로 뭉뚱그리면 현 정의를 지킨 거부가 없는 슬롯처럼 읽힌다.
         if not self._current_filter_empty():
-            raise ValueError(
-                "현재 필터가 설정돼 있어 직전 필터를 재적용하지 않았습니다. "
-                "재적용은 필터를 지운 뒤에만 할 수 있습니다."
-            )
+            raise ValueError("필터를 지운 뒤에 재적용할 수 있습니다.")
         if slot is None or not self._reapply_available():
             raise ValueError("재적용할 직전 필터가 없습니다.")
         state = slot["state"]
@@ -244,8 +241,8 @@ class DataZoneMixin:
         if not probe.is_active():
             return {
                 "ok": False,
-                "error": "직전 필터의 조건이 현재 데이터 열에 하나도 남지 않아 적용하지 "
-                         "않았습니다: " + ", ".join(dropped),
+                "error": "직전 필터의 조건이 현재 데이터 열에 하나도 남지 않아 재적용하지 "
+                         "못했습니다: " + ", ".join(dropped),
             }
         records = self._records()
         if probe.search_text and not probe.view(records).branches:
@@ -253,7 +250,7 @@ class DataZoneMixin:
             unpruned.apply_state(dict(state, pruned=[]))
             if unpruned.view(records).branches:  # 프루닝만 걷으면 가지가 산다 = 소실 유래
                 probe = unpruned
-                dropped = dropped + ["(프루닝: 가지 소실로 복원하지 않음)"]
+                dropped = dropped + ["(검색 일부 조건은 열이 사라져 복원하지 못했습니다)"]
         self.filter = probe  # 원자 교체 — 검증된 초안이 그대로 정의가 된다
         return {"ok": True, "installed": installed, "dropped": dropped}
 

@@ -49,7 +49,7 @@
       // 전용 빈 상태(#179 슬라이스 6) — 설명 + 단일 CTA(문안 속 대괄호 지시 대신 실 버튼).
       host.innerHTML =
         `<div class="empty"><div class="heading">등록된 데이터가 없습니다</div>` +
-        `<p>엑셀·CSV를 등록하면 참조(경로·시트)만 저장돼, 실행할 때 원본을 다시 읽습니다.\n작업을 저장할 때 함께 등록한 데이터도 여기 모입니다.</p>` +
+        `<p>엑셀·CSV 파일 위치만 기억하고, 실행할 때 원본을 읽습니다.</p>` +
         `<button class="btn primary" data-empty="register">＋ 데이터 등록…</button></div>`;
       return;
     }
