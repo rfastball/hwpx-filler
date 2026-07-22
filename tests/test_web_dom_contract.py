@@ -1,9 +1,9 @@
-"""실제 웹 프론트엔드 DOM 계약 가드 — 배포되는 ``web/index.html`` 자체를 검사한다.
+"""현재 배포 웹 프론트엔드의 정적 DOM 계약 — ``web/index.html`` 자체를 검사한다.
 
 ``test_ui_contract.py`` 는 목업(``docs/UI_PROTOTYPE_APPB.html``)의 ``data-vm`` 주석이
-ViewModel 표면과 정합한지만 본다 — 실제 배포 DOM 은 전혀 읽지 않아 중복 ``id`` 같은
-결함을 통과시켰다(#27). 이 모듈은 그 사각을 메운다: 실제 ``web/index.html`` 을 파싱해
-**전역 id 유일성**과 화면 구조를 단언한다.
+생존 ViewModel 표면과 정합한지만 보는 역사 가드다. 이 모듈이 현재 정본인 실제
+``web/index.html``과 JavaScript/CSS 배선을 읽어 **전역 id 유일성**, 화면 구조와 정적 seam을
+단언한다. 실제 렌더·클릭·브리지 왕복은 ``test_web_selftest_gate.py``의 WebView2 게이트가 맡는다.
 
 배경(#27): ``id="dataLabel"`` 이 실행(run)·즉시기안(txt) 두 화면에 중복돼, 전역
 ``getElementById`` 가 항상 첫 화면 요소만 반환 → txt 갱신이 run 입력을 건드리는 크로스-스크린

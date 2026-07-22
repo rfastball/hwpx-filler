@@ -1,0 +1,43 @@
+# Exact-package floors established by the #168 test portfolio audit.
+# Paths are non-recursive by design: native/runtime/distribution surfaces use
+# their own gates and must not be hidden inside a low aggregate Python floor.
+
+[packages.hwpxcore]
+path = "src/hwpxcore"
+line = 95
+branch = 87
+
+[packages.hwpxdiff]
+path = "src/hwpxdiff"
+line = 95
+branch = 88
+
+[packages."hwpxdiff.webapp"]
+path = "src/hwpxdiff/webapp"
+line = 60
+branch = 40
+
+[packages.hwpxfiller]
+path = "src/hwpxfiller"
+line = 77
+branch = 67
+
+[packages."hwpxfiller.core"]
+path = "src/hwpxfiller/core"
+line = 96
+branch = 92
+
+[packages."hwpxfiller.data"]
+path = "src/hwpxfiller/data"
+line = 93
+branch = 85
+
+[packages."hwpxfiller.gui"]
+path = "src/hwpxfiller/gui"
+line = 96
+branch = 89
+
+[packages."hwpxfiller.webapp"]
+path = "src/hwpxfiller/webapp"
+line = 86
+branch = 82

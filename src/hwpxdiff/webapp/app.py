@@ -14,6 +14,7 @@ backend 핀·``--selftest`` DOM 자가검증도 filler 소이슈 ①②③ 처�
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -106,27 +107,84 @@ class WebFrontend:
 
 
 # ------------------------------------------------------------------ 자가검증
-def _selftest_drive(window: "object") -> None:
-    """동결 exe 부팅 자가검증 — 창이 뜨고 비교/렌더/브리지가 도는지 되읽어 파일로 확정 후 종료.
+def _selftest_drive(window: "object", *, frontend: WebFrontend) -> None:
+    """실창 비교 자가검증 — 실제 corpus를 click→bridge→DOM으로 되읽고 종료.
 
-    filler ``_selftest_drive`` 미러: ``os._exit`` 대신 ``window.destroy()`` 정식 종료.
+    ``HWPX_DIFF_SELFTEST_OLD/NEW``로 받은 실제 HWPX를 Python→JS snapshot으로 먼저
+    겨눈 뒤, DOM의 비교 버튼을 실제 click한다. 완료 결과가 다시 push되어 KPI·변경 목록·
+    전문 표에 그려지는 전체 왕복을 하나의 창 실행으로 확정한다.
     """
     import time
 
-    time.sleep(4.5)
     result: dict = {}
     try:
+        old = os.environ.get("HWPX_DIFF_SELFTEST_OLD", "")
+        new = os.environ.get("HWPX_DIFF_SELFTEST_NEW", "")
+        if not old or not new:
+            raise RuntimeError("HWPX_DIFF_SELFTEST_OLD/NEW가 필요합니다.")
+
+        ready_deadline = time.monotonic() + 20
+        while time.monotonic() < ready_deadline:
+            try:
+                ready = window.evaluate_js(  # type: ignore[attr-defined]
+                    "document.readyState === 'complete' && "
+                    "typeof window.__push === 'function' && "
+                    "typeof window.DiffScreen === 'object'"
+                )
+            except Exception:  # noqa: BLE001 — WebView2 cold-start 동안 재시도
+                ready = False
+            if ready:
+                break
+            time.sleep(0.1)
+        else:
+            raise TimeoutError("diff WebView2 화면이 준비되지 않았습니다.")
+
+        controller = frontend._controller("diff")
+        controller.load_old_path(old)  # Python→JS idle snapshot push
+        controller.load_new_path(new)
+        result["compare_clicked"] = bool(window.evaluate_js(  # type: ignore[attr-defined]
+            "(() => { const b = document.getElementById('compareBtn'); "
+            "if (!b || b.disabled) return false; b.click(); return true; })()"
+        ))
+        if not result["compare_clicked"]:
+            raise RuntimeError("실 비교 버튼이 활성화되지 않았습니다.")
+
+        done_deadline = time.monotonic() + 30
+        while time.monotonic() < done_deadline:
+            probe = window.evaluate_js(  # type: ignore[attr-defined]
+                "(() => ({ status: document.getElementById('diffStatus')?.textContent || '', "
+                "changes: document.querySelectorAll('#changeList .chg').length, "
+                "summary: document.getElementById('diffSummary')?.textContent || '' }))()"
+            )
+            if probe.get("changes", 0) > 0 or probe.get("summary") or probe.get("status") == "오류":
+                break
+            time.sleep(0.1)
+        else:
+            raise TimeoutError("실 비교 결과가 DOM에 렌더되지 않았습니다.")
+
         result["url"] = window.get_current_url()  # type: ignore[attr-defined]
         result["title_dom"] = window.evaluate_js("document.title")  # type: ignore[attr-defined]
-        result["has_pickers"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "!!document.getElementById('pickOld') && !!document.getElementById('pickNew')")
-        result["kpi_slots"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "document.querySelectorAll('#diffKpis .kpi').length")
-        result["compare_btn"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "!!document.getElementById('compareBtn')")
+        result.update(window.evaluate_js(  # type: ignore[attr-defined]
+            "(() => ({ "
+            "old_label: document.getElementById('oldLabel')?.value || '', "
+            "new_label: document.getElementById('newLabel')?.value || '', "
+            "status_text: document.getElementById('diffStatus')?.textContent || '', "
+            "status_level: document.getElementById('diffStatus')?.dataset.level || '', "
+            "kpi_slots: document.querySelectorAll('#diffKpis .kpi').length, "
+            "kpi_values: Array.from(document.querySelectorAll('#diffKpis .kpi .v')).map(x => x.textContent), "
+            "change_rows: document.querySelectorAll('#changeList .chg').length, "
+            "document_rows: document.querySelectorAll('#docView .doctable tbody tr').length, "
+            "result_visible: getComputedStyle(document.getElementById('diffSplit')).display !== 'none' "
+            "}))()"
+        ))
     except Exception as exc:  # noqa: BLE001
         result["error"] = repr(exc)
-    out = Path(sys.executable).resolve().parent / "selftest_result.json"
+    out_override = os.environ.get("HWPX_DIFF_SELFTEST_OUT")
+    out = (
+        Path(out_override)
+        if out_override
+        else Path(sys.executable).resolve().parent / "selftest_result.json"
+    )
     out.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     window.destroy()  # type: ignore[attr-defined]  # 정식 종료(os._exit 대체)
 
@@ -148,7 +206,9 @@ def main() -> int:
     # Windows 는 EdgeChromium(WebView2) 백엔드 명시 핀(filler 소이슈 ②).
     gui = "edgechromium" if sys.platform == "win32" else None
     if "--selftest" in sys.argv:
-        webview.start(_selftest_drive, window, gui=gui)
+        from functools import partial
+
+        webview.start(partial(_selftest_drive, frontend=frontend), window, gui=gui)
     else:
         webview.start(gui=gui)  # 정상 닫기 = 여기서 반환 → 클린 종료(소이슈 ①)
     return 0

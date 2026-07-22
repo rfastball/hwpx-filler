@@ -1,8 +1,8 @@
 """파이프라인 빌더 ViewModel — Qt 비의존(링1). 조립 파이프라인 저작·미리보기면.
 
-위젯(:class:`~hwpxfiller.gui.pipeline_builder.PipelineBuilderDialog`)은 이 뷰모델을 들고
-소스 추가·스텝 편집·미리보기·저장을 **렌더·오케스트레이션만** 한다(dataset_pool_state 분리
-미러). PySide6 임포트 없이 헤드리스로 테스트된다.
+현재 배포 웹 화면에는 직접 연결되지 않은 파킹된 링1 계약이다. 재착지할 표현 계층은
+소스 추가·스텝 편집·미리보기·저장을 **렌더·오케스트레이션만** 한다.
+PySide6 임포트 없이 창 없이 테스트된다.
 
 **divergence 0 (UnivContractor #3).** 미리보기는 별도 경로를 만들지 않는다 — 저장될 드래프트
 항목(``{kind:"pipeline", opts:{sources, steps}}``)을 **실행과 동일한**
@@ -43,7 +43,7 @@ class SourceSlot:
 class PreviewResult:
     """미리보기 결과 — 성공(fields·rows) 또는 시끄러운 실패(error 문구).
 
-    조립 실패는 조용히 빈 표로 두지 않는다 — ``error`` 가 차 있으면 위젯이 경고로
+    조립 실패는 조용히 빈 표로 두지 않는다 — ``error`` 가 차 있으면 표현 계층이 경고로
     표면화한다(confirm-or-alarm; KA AssemblyError 의 GUI 착지).
     """
 
@@ -58,7 +58,7 @@ class PreviewResult:
 
 
 class PipelineBuilderViewModel:
-    """조립 파이프라인 드래프트 상태 + 저작 오케스트레이션(Qt 비의존).
+    """조립 파이프라인 드래프트 상태 + 저작 오케스트레이션(표현 계층 비의존).
 
     ``registry`` 주입 가능(테스트는 ``DatasetPoolRegistry(tmp_path)``).
     ``secret_store``/``fetcher`` 는 나라 서브소스 복원에 전파된다(N1 키 주입 경로 상속;

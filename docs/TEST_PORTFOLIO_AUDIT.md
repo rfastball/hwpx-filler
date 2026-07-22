@@ -1,5 +1,10 @@
 # 테스트 포트폴리오 전수조사 — #168
 
+> **문서 상태:** 역사 기록
+> **권위 범위:** #168 기준점의 테스트 포트폴리오 조사 방법·판정
+> **후속 정본:** 현재 수치와 하한은 생성 매트릭스·coverage 원장·`package_coverage_floors.toml`
+> **편집 정책:** 동결
+
 > 기준: `8cace7a2648e602cd3e770902a74af1b2f288fe6` (`origin/master`, 2026-07-22).
 > 기계 판독 원장은 [`test_portfolio_inventory.csv`](test_portfolio_inventory.csv), 생성 집계는
 > [`TEST_PORTFOLIO_MATRIX.md`](TEST_PORTFOLIO_MATRIX.md)에 있다.
@@ -14,7 +19,8 @@
   설치·서명은 이 백분율 밖이다. 단일 `fail_under`는 위험 지도를 왜곡한다.
 - filler WebView2 게이트는 **41 pytest 사례 / 3 시나리오 / 실제 창 4회**다. 그중 클래스
   39개는 하나의 module-scope 프로브 결과를 공유하므로 39개의 독립 E2E가 아니다.
-- diff는 headless frozen self-check는 있으나 **실제 WebView2 창 실행이 0회**다.
+- diff는 실제 구판/신판 corpus를 사용하는 **5 pytest 계약 / 실창 실행 단위 1회** 게이트를
+  Windows quality·release에서 실행한다. 명시 opt-out 외 runtime 부재 자동 skip은 없다.
 - pytest 안에는 `distribution` 계층 사례가 없다. 배포 계약은 외부 스크립트와 release workflow가
   소유한다. portable GUI 2종 빌드·self-check는 **22.99초**, 별도 CLI 번들은 **9.09초**로 통과했다.
 - 정적 유사성만으로 삭제할 테스트는 확정하지 않았다. 동일 코퍼스 양성대조 한 쌍만
@@ -53,7 +59,7 @@ Python production line을 직접 통과하지 않는 계약이다. 이를 미실
 | 내구 레지스트리 | `test_job.py` 직렬화·lock, `test_dataset_pool.py`, `test_template_groups.py` | DatasetPool 원자성·경합 [#182](https://github.com/rfastball/hwpx-filler/issues/182), Job process 경계 [#192](https://github.com/rfastball/hwpx-filler/issues/192) |
 | 데이터 경계 | `test_data_factory.py`, `test_nara.py`, `test_pipeline.py`, `test_scenario_e2e.py` | Excel 행 성형 [#183](https://github.com/rfastball/hwpx-filler/issues/183), Nara pagination/schema [#193](https://github.com/rfastball/hwpx-filler/issues/193) |
 | 앱 상태·컨트롤러 | ring-1 state suites와 `test_webapp_{editor,job,draft,pool}.py` | 정적 action literal scan의 false-pass [#189](https://github.com/rfastball/hwpx-filler/issues/189) |
-| Web runtime·bridge | `test_web_dom_contract.py`, `test_webapp_bridge.py`, filler `test_web_selftest_gate.py` | diff 실창 [#188](https://github.com/rfastball/hwpx-filler/issues/188), click→dispatch runtime [#189](https://github.com/rfastball/hwpx-filler/issues/189) |
+| Web runtime·bridge | filler `test_web_selftest_gate.py`, diff `test_diff_web_selftest_gate.py`, `test_webapp_bridge.py` | 두 제품의 실창 실행 단위와 개별 계약 수를 분리 보고하고 명시 opt-out 여부를 확인 |
 | Native·배포 | `test_single_instance.py`, `test_motw.py`, `verify_specs.py`, frozen self-check, release install/uninstall | native 양성 경로 [#190](https://github.com/rfastball/hwpx-filler/issues/190), PR distribution gate [#191](https://github.com/rfastball/hwpx-filler/issues/191) |
 | 아키텍처·디자인 | `test_architecture.py`, `test_design_tokens.py`, WCAG·UX·DOM 정적 계약 | 동일 JS source를 읽는 43개 사례를 `web-static-source` 상관 그룹으로 관리 |
 
@@ -77,17 +83,18 @@ Python production line을 직접 통과하지 않는 계약이다. 이를 미실
 | portable GUI build | spec→metadata→PyInstaller→bundle boundary→frozen self-check | filler+diff 통과, 22.99초 |
 | portable CLI build | PyInstaller→schema/fieldize/lint/drift commands | 통과, 9.09초 |
 | release workflow | optional signing, Inno build, install→self-check→uninstall, ZIP/checksum | 정의는 확인; 이번 조사에서는 인증서·release tag·Inno 조건 때문에 미실행 |
-| diff WebView2 | 실제 창·브리지·결과 렌더 | 호출자 없음, 0회 — #188 |
+| diff WebView2 | 실제 corpus·사용자 click·Python push·결과 DOM | 5 cases, 1 window launch — #188 |
 
 ## Coverage와 CI 권고
 
-즉시 전체 `fail_under=90`을 넣지 않는다. 현재 수치를 내림한 package별 초기 floor를 #191에서
-XML 판정기로 도입한다. line/branch 제안은 `hwpxcore` 95/87, `hwpxdiff` 96/90,
-`hwpxdiff.webapp` 67/56, `hwpxfiller` 77/67, `hwpxfiller.core` 97/93,
-`hwpxfiller.data` 96/88, `hwpxfiller.gui` 96/89, `hwpxfiller.webapp` 86/82다.
+즉시 전체 `fail_under=90`을 넣지 않는다. 현재 수치를 내림한 package별 초기 floor를 #191의
+XML 판정기와 `package_coverage_floors.toml`로 적용한다. 마일스톤 G 최종 통합 코드에서 다시 측정해
+내림한 line/branch 기준은 `hwpxcore` 95/87, `hwpxdiff` 95/88,
+`hwpxdiff.webapp` 60/40, `hwpxfiller` 77/67, `hwpxfiller.core` 96/92,
+`hwpxfiller.data` 93/85, `hwpxfiller.gui` 96/89, `hwpxfiller.webapp` 86/82다.
 
 `hwpxcore.native`의 40/32를 낮은 floor로 정당화하지 않는다. #190의 Windows 양성 시나리오를
-먼저 만들고 별도 필수 상태로 보고한다. JS/CSS 33개 자산, WebView2 subprocess, frozen bundle,
+별도 필수 단계로 보고한다. JS/CSS 33개 자산, WebView2 subprocess, frozen bundle,
 installer/signing은 Python coverage 분모에 넣지 않는다. PR/push에는 package coverage와 portable
 3타깃 self-check를 별도 job으로 추가하고, installer/signing은 release 또는 required pre-release에 둔다.
 
