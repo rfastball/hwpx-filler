@@ -270,10 +270,20 @@ class DraftController(DraftSessionMixin):
         """작업 삭제 — 무확인 호출은 재진술 자료를 돌려주고 멈춘다(RC-02 왕복 동형).
 
         결속 중인 기안을 삭제하면 휘발 세션으로 복귀한다 — 사라진 정의가 저장 모드로 계속
-        떠 있지 않게(스태시해 둔 휘발이 있으면 그대로, 없으면 새 휘발)."""
+        떠 있지 않게(스태시해 둔 휘발이 있으면 그대로, 없으면 새 휘발).
+
+        **결속 세션 소실 재진술(리뷰 5a 2R P1, `screen_job._do_delete_job` 동형)**: 지금 결속한
+        저장 기안을 삭제하면 그 세션의 데이터·선택·큐 진행이 함께 사라진다(Job 계약 = 데이터/행
+        미저장 → 복원 불가). ``open_session`` 과 무장 수치(:meth:`_guard_state`)를 동봉해 표면이
+        파괴 전모(정의 삭제 + 세션 진행 소실)를 한 모달로 말하게 한다(confirm-or-alarm). 결속
+        아닌 기안 삭제는 세션 무영향이라 정의 삭제만 재진술한다."""
         name = p["name"]
         if not p.get("confirm"):
-            return {"needs_confirm": True, "name": name, "open_session": False}
+            out = {"needs_confirm": True, "name": name,
+                   "open_session": name == self._bound_job}
+            if name == self._bound_job:
+                out.update(self._guard_state())
+            return out
         self.registry.delete(name)
         if name == self._bound_job:
             self._restore_volatile()

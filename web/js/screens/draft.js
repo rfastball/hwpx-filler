@@ -300,9 +300,19 @@
   async function deleteJob(name) {
     const res = await Bridge.call(SCREEN, "delete_job", { name });
     if (!(res && res.needs_confirm)) return;
+    // 결속 중인 기안을 지우면 그 세션 진행도 사라진다(open_session) — 파괴 전모를 한 모달로
+    // 재진술(리뷰 5a 2R P1, job.js 삭제와 동형). 술어·수치는 Python(_guard_state) 판정.
+    let body = `기안 작업 '${name}' 을(를) 삭제합니다. 템플릿 연결과 매핑 정의가 함께 사라집니다.`;
+    if (res.open_session) {
+      body += `\n지금 결속한 세션도 닫힙니다.`;
+      if (res.armed) {
+        const copied = res.copied_count || 0;
+        body += (copied > 0 ? ` 이미 ${copied}건을 복사했습니다 — 되돌릴 수 없습니다.` : "") +
+          ` 물린 데이터와 선택·복사 진행은 저장된 기안에 보관되지 않아 함께 사라집니다.`;
+      }
+    }
     const ok = await window.Modal.confirm({
-      title: "기안 작업 삭제 확인",
-      body: `기안 작업 '${name}' 을(를) 삭제합니다. 템플릿 연결과 매핑 정의가 함께 사라집니다.`,
+      title: "기안 작업 삭제 확인", body,
       confirmLabel: "삭제", cancelLabel: "머무르기",
     });
     if (!ok) return;
