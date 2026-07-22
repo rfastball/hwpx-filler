@@ -313,6 +313,34 @@ def test_open_template_guards_stashed_volatile_loss(tmp_path):
     assert snap["card"]["copied_count"] == 0 and snap["selected_count"] == 0  # 큐·선택 리셋
 
 
+def test_volatile_template_switch_guards_unsaved_edits(tmp_path):
+    """휘발 세션에 미저장 편집이 있으면 콤보 템플릿 전환도 확인을 요구한다(리뷰 I·GAP1).
+
+    구 「빠른 기안」 session_guard("switch") 승계 — 종전엔 저장 모드에서만 가드해 휘발 세션의
+    미저장 원문·매핑 편집이 콤보 전환에 무가드 소실했다. session_armed 로 문안 정확성 유지."""
+    ctrl, _jobs, _ = _controller(tmp_path)  # 착수계 자동 선택(휘발)
+    (tmp_path / "다른.txt").write_text("제목: {{사업명}}", encoding="utf-8")
+    ctrl.dispatch("edit_source", {"text": "고친 {{공고명}} {{추가}}"})  # 미저장 원문 편집
+    assert ctrl.snapshot()["source_dirty"] is True and ctrl.snapshot()["mode"] == "volatile"
+    r = ctrl.dispatch("select_template", {"name": "다른"})
+    assert r and r["needs_confirm"] is True
+    assert r["session_armed"] is True and r["stash_armed"] is False  # 문안 정확성(세션만 무장)
+    assert ctrl.snapshot()["template_name"] != "다른"  # 확인 전 불변(전환 안 함)
+    ctrl.dispatch("select_template", {"name": "다른", "confirm": True})
+    snap = ctrl.snapshot()
+    assert snap["template_name"] == "다른" and snap["source_dirty"] is False  # 전환·미저장 원문 폐기
+
+
+def test_leave_for_template_guard_query_is_nonmutating(tmp_path):
+    """붙여넣기 사전 확인 질의 — 현 세션·스태시 무장을 합산 보고하되 상태·push 불변(무변이)."""
+    ctrl, _jobs, pushes = _controller(tmp_path)
+    ctrl.dispatch("edit_source", {"text": "고친 {{x}}"})  # source_dirty
+    before = len(pushes)
+    g = ctrl.dispatch("leave_for_template_guard", {})
+    assert g["armed"] is True and g["session_armed"] is True and g["stash_armed"] is False
+    assert len(pushes) == before  # 무변이 질의 — 재렌더 push 없음
+
+
 def test_clear_data_freezes_bound_values_and_detaches(tmp_path):
     """데이터 해제 = 결속 값을 지금 값으로 상수 동결 후 데이터 detach(R-flow 결정 30, 리뷰 F).
 

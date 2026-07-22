@@ -293,19 +293,6 @@
       : "지금 진행 중인 세션은";
   }
 
-  /* 라이브러리 템플릿 열기(홈·템플릿 관리)의 세션 교체 확인 문안 — **저장 세션과 스태시된 이전
-     세션 둘 중 무장한 것만** 주어로 든다(리뷰 C — 스태시도 이 전이로 폐기된다). 정확성: 저장
-     세션이 미무장이고 스태시만 무장한 경우 "지금 진행 중인 기안"을 빼야 문안≠집합이 안 된다.
-     home.js·template.js 공용(단일 출처 — 두 진입이 같은 문장을 쓰게). */
-  function leaveForTemplateBody(r) {
-    const who = [];
-    if (r.armed) who.push("지금 진행 중인 기안");
-    if (r.stash_armed) who.push("이전 붙여넣기 세션");
-    const subj = who.join("과 ") || "지금 세션";
-    return `${subj}의 저장되지 않은 작업은 저장된 기안에 보관되지 않아, 다른 템플릿을 열면 ` +
-      `사라집니다. 계속하시겠습니까?`;
-  }
-
   async function selectJob(name) {
     let r = await Bridge.call(SCREEN, "select_job", { name });
     if (r && r.needs_confirm) {
@@ -517,6 +504,6 @@
     refreshOnEnter: sess.refreshOnEnter,
     confirmNewDraftIfArmed: sess.confirmNewDraftIfArmed,
     guardBody: sess.guardBody,  // 실앱 게이트가 세션 교체 가드 문안(F6 레시피 편집 열거)을 되읽음
-    leaveForTemplateBody,       // 홈·템플릿 관리 「열기」의 세션 교체 확인 문안(단일 출처, 리뷰 C)
+    leaveForTemplateBody: sess.leaveForTemplateBody,  // 세션 교체 확인 문안(팩토리 단일 출처, 리뷰 C·I)
   };
 })();

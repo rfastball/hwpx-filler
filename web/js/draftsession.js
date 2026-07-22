@@ -585,6 +585,19 @@
         `사라지는 것: ${lost.join(" · ")}.`;
     }
 
+    /* 템플릿 교체(콤보·홈/관리 「열기」·붙여넣기)의 세션 교체 확인 문안 — **현 세션과 스태시된
+       이전 세션 중 무장한 것만** 주어로 든다(리뷰 C·I). 정확성: ``session_armed``(현 세션 자체)와
+       ``stash_armed`` 를 따로 봐, 세션 미무장·스태시만 무장이면 "지금 진행 중인 기안"을 빼야
+       문안≠집합이 안 된다(``armed`` 는 둘의 합이라 여기 못 쓴다). 콤보·붙여넣기·홈·관리 단일 출처. */
+    function leaveForTemplateBody(g) {
+      const who = [];
+      if (g.session_armed) who.push("지금 진행 중인 기안");
+      if (g.stash_armed) who.push("이전 붙여넣기 세션");
+      const subj = who.join("과 ") || "지금 세션";
+      return `${subj}의 저장되지 않은 작업은 저장된 기안에 보관되지 않아, 다른 템플릿을 열면 ` +
+        `사라집니다. 계속하시겠습니까?`;
+    }
+
     /* 데이터 교체 사전 확인 — 피커를 열기 **전에** 묻는다(파일까지 고른 뒤 "머무르기"는 고른
        노동을 또 버리게 한다). 무장 판정은 실시간 질의(스냅샷 캐시는 왕복 지연에서 stale).
        true=진행, false=머무르기. */
@@ -621,8 +634,21 @@
     function wire() {
       // 데이터 존(테이블·열 패널·칩·스트립·전체 선택/해제·문서 레벨 닫기)은 팩토리 몫 배선.
       dz.wire();
-      $(id.tplSel).addEventListener("change", (e) =>
-        Bridge.call(SCREEN, "select_template", { name: e.target.value }));
+      // 콤보 템플릿 전환 — **세션 교체 가드**(리뷰 I). 휘발 세션에 미저장 원문·매핑 편집이 있으면
+      // 백엔드가 needs_confirm 을 돌려준다(select_template 단일 초크). 취소=콤보를 현 템플릿으로
+      // 되돌려(전환 안 함) render 의 sel.value=template_name 복원과 정합.
+      $(id.tplSel).addEventListener("change", async (e) => {
+        const name = e.target.value;
+        let r = await Bridge.call(SCREEN, "select_template", { name });
+        if (r && r.needs_confirm) {
+          const ok = await window.Modal.confirm({
+            title: "진행 중인 기안을 떠납니다",
+            body: leaveForTemplateBody(r), confirmLabel: "바꾸기", cancelLabel: "머무르기",
+          });
+          if (!ok) { if (LAST) e.target.value = LAST.template_name || ""; return; }  // 취소 = 콤보 되돌림
+          r = await Bridge.call(SCREEN, "select_template", { name, confirm: true });
+        }
+      });
 
       // 작업점 카드 동사(결정 16) — 큐 네비게이션(◀▶ 경계 멈춤·점 클릭)·복사(카드 결속·Enter)·
       // 복사 후 전진 토글. ◀▶·점 클릭이 **자유 이동**이라 미루기(결정 10 사망)를 대체한다.
@@ -776,7 +802,18 @@
       // 열었는지는 소유권 슬롯이 기억한다(두 인스턴스가 각자 리스너를 달면 한 번 누를 때
       // 두 화면이 다 바뀐다 — 조용한 교차 오염).
       wirePasteModal();
-      $(id.pasteBtn).addEventListener("click", () => {
+      $(id.pasteBtn).addEventListener("click", async () => {
+        // **세션 교체 가드**(리뷰 I·GAP1) — 붙여넣기도 현 원문/편집을 갈아치운다. 모달을 **열기
+        // 전에** 묻는다(텍스트를 다 붙인 뒤 "버릴까요"는 그 노동을 또 버리게 한다 — 구 「빠른
+        // 기안」도 진입 시 확인). 콤보와 같은 단일 술어(leave_for_template_guard 무변이 질의).
+        const g = await Bridge.call(SCREEN, "leave_for_template_guard", {});
+        if (g && g.armed) {
+          const ok = await window.Modal.confirm({
+            title: "진행 중인 기안을 떠납니다",
+            body: leaveForTemplateBody(g), confirmLabel: "붙여넣기", cancelLabel: "머무르기",
+          });
+          if (!ok) return;  // 머무르기 = 현 세션 보존(모달 안 엶)
+        }
         pasteOwner = pasteOk;
         $("pasteText").value = LAST ? LAST.template_text : "";
         window.Modal.open("pasteModal", { initialFocus: $("pasteText") });
@@ -824,6 +861,8 @@
       render, wire, fillTemplateSelect, refreshOnEnter, pasteOk,
       guardBody, copyGateBody, confirmNewDraftIfArmed, confirmDataSwapIfArmed,
       warnNote, dz,
+      // 세션 교체 확인 문안(콤보·붙여넣기·홈·관리 단일 출처, 리뷰 C·I) — 순수 합성기.
+      leaveForTemplateBody,
       // 대기·미착지 타이핑 편집 정산(승격이 화면에 보이는 원문/값을 저장하게) — 「템플릿으로
       // 저장」이 promote_info/save_template 전에 await 한다(빠른 기안 flushDebounce 선례).
       flush: flushDeb,

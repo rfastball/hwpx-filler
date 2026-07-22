@@ -730,41 +730,65 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self._push()
         return result
 
-    def _do_select_template(self, p: dict) -> "dict | None":
-        """라이브러리 템플릿 선택 — 콤보(휘발 모드)·홈/템플릿 관리 라우팅 공용 진입(#148 슬라이스 6).
+    def _template_switch_guard(self) -> dict:
+        """템플릿 교체(콤보·홈/관리 「열기」·붙여넣기) 앞 무장 — **저장이든 휘발이든** 미저장 손실.
 
-        **저장 결속에서의 진입 = 세션 교체 가드**(리뷰 F3): 홈 「기안 열기」·템플릿 관리 「열기」가
-        저장 기안 결속 상태에서 이 액션을 직접 부르면, 종전엔 ``_bound_job``·``_source_readonly`` 를
-        그대로 둔 채 원문·매핑만 갈아, 저장 정의가 **다른 템플릿을 가리키는 저장 모드**로 남았다
-        (읽기전용 잠금 우회 + 이후 재저장이 그 작업에 엉뚱한 템플릿/매핑을 결속 — 계약 위반).
-
-        **가드는 두 세션을 함께 본다**(리뷰 C): 이 전이는 현 저장 세션을 떠나 **스태시된 붙여넣기
-        휘발**(:meth:`_stash_guard`)을 되살리는데, 그 스태시에 미저장 원문·매핑 편집이 있으면
-        되살리자마자 template 교체로 조용히 사라지고 복사 큐 표지가 새 템플릿에 붙는다. 그래서
-        무장 판정을 저장 세션 손실(``_leave_guard``) **∨** 스태시 손실(``_stash_guard``) 로 합치고,
-        어느 쪽이든 무장이면 재진술한다(``stash_armed`` 로 표면이 문안에 반영). 확인(또는 둘 다
-        미무장)이면 휘발로 전이한 뒤, **복사 진행·선택을 리셋**해 스태시/직전 큐 표지가 새 템플릿에
-        조용히 붙는 오염을 막는다(새 템플릿 = 새 채움의 시작). 콤보는 휘발 모드(``_bound_job==""``)
-        라 이 가드·리셋을 안 타고 종전 그대로 동작한다(읽기전용 저장 모드에선 콤보 자체가 잠겨
-        이 경로로 못 온다).
+        단일 술어(RC2 근본 조치, 리뷰 F3·C·I): 세션 교체로 사라지는 것을 한 곳에서 판정한다.
+        ①현 세션 손실 = :meth:`_leave_guard`(큐·선택 ∨ 미저장 매핑·원문 편집 — 저장·휘발 공통)
+        ②스태시 손실 = :meth:`_stash_guard`(**저장 모드에서만** — 휘발엔 스태시가 없다, 리뷰 C).
+        어느 쪽이든 무장이면 armed. 종전엔 이 판정이 ``_bound_job``(저장 모드)에서만 발동해,
+        **휘발 세션에 미저장 원문/매핑 편집이 있을 때 콤보로 템플릿을 바꾸면 무가드 소실**했다
+        (리뷰 I — 구 「빠른 기안」 session_guard("switch") 승계 실패). 모드 무관 단일 초크로 닫는다.
         """
-        if self._bound_job and not p.get("confirm"):
-            g = self._leave_guard()
-            stash_armed = self._stash_guard() is not None  # 스태시 휘발의 미저장 손실(리뷰 C)
-            if g["armed"] or stash_armed:
+        g = self._leave_guard()
+        g["session_armed"] = g["armed"]  # 현 세션 **자체**의 무장(스태시 제외) — 문안 정확성용
+        stash_armed = bool(self._bound_job) and self._stash_guard() is not None
+        g["stash_armed"] = stash_armed
+        g["armed"] = g["armed"] or stash_armed  # 진입 게이트용 합산(어느 쪽이든 확인)
+        return g
+
+    def _do_leave_for_template_guard(self, p: dict) -> dict:
+        """붙여넣기 진입 사전 확인용 무장 질의(무변이) — 붙여넣기 전에 미저장 손실을 먼저 묻는다.
+
+        콤보 전환은 ``select_template`` 의 needs_confirm 왕복을 쓰지만, 붙여넣기는 모달을 **열기
+        전에** 물어야(텍스트를 다 붙인 뒤 "버릴까요"는 그 노동을 또 버리게 한다 — 구 「빠른 기안」
+        도 모달 진입 시 확인) 같은 단일 술어(:meth:`_template_switch_guard`)를 질의로 노출한다.
+        """
+        return self._template_switch_guard()
+
+    _do_leave_for_template_guard.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
+
+    def _do_select_template(self, p: dict) -> "dict | None":
+        """라이브러리 템플릿 선택 — 콤보·홈/템플릿 관리 라우팅 공용 진입(#148 슬라이스 6).
+
+        **세션 교체 가드(모드 무관 단일 초크, 리뷰 F3·C·I)**: 저장 결속에서 진입하면 ``_bound_job``·
+        ``_source_readonly`` 잔류로 저장 정의가 딴 템플릿을 가리키는 계약 위반이었고(F3), 되살린
+        스태시 편집이 무가드 폐기됐으며(C), **휘발 세션의 미저장 편집도 콤보 전환에 무가드 소실**
+        했다(I). 무장 판정을 :meth:`_template_switch_guard`(현 세션 ∨ 스태시, 저장·휘발 공통)로
+        합쳐 어느 경우든 재진술한다. 확인(또는 미무장)이면 전이한다:
+        - **저장 모드**: 휘발로 귀환(:meth:`_restore_volatile`) + 복사 진행·선택 리셋(스태시/직전 큐
+          표지가 새 템플릿에 붙지 않게, C).
+        - **휘발 모드**(콤보): 데이터·큐는 유지(같은 데이터에 새 템플릿을 얹는 정상 전환)하되 미저장
+          원문·매핑 편집은 새 템플릿 로드로 폐기(위에서 확인) — 표지만 리셋.
+        읽기전용 저장 모드에선 콤보 자체가 잠겨(source_readonly) 콤보 경로로는 못 오고, 홈/관리
+        「열기」가 이 가드를 지난다.
+        """
+        if not p.get("confirm"):
+            g = self._template_switch_guard()
+            if g["armed"]:
                 return {"needs_confirm": True, "kind": "leave_for_template",
-                        "target": p.get("name", ""), "stash_armed": stash_armed, **g}
+                        "target": p.get("name", ""), **g}
         if self._bound_job:
             self._restore_volatile()  # 저장 결속 해제 → 휘발(스태시 복원 or 새 휘발)
             # 복사 진행·선택 리셋(리뷰 C) — 복원한 스태시/직전 큐 표지가 새 템플릿에 붙지 않게.
             # 데이터는 유지(스태시 승계)하되 큐는 새로: 새 템플릿을 여는 것은 새 채움의 시작이다.
             self.selection = SelectionModel(len(self.vm.records))
             self.queue = TxtQueueModel(self.selection)
-            self._map_dirty = False  # 전이로 미저장 편집은 폐기됨(위에서 확인) — 표지 리셋
         self.vm.select_template(p["name"])
         self._fullwidth = False  # 치환은 그 원문에 대한 판단 — 원문이 바뀌면 함께 죽는다(리뷰 F2)
         self._source_dirty = False  # 깨끗한 라이브러리 픽 — 수정됨 표지 해제(슬라이스 5b)
         self._template_path = self._resolve_template_path(p["name"])  # 저장 배접(슬라이스 5c)
+        self._map_dirty = False  # 확인된 전환 = 새 baseline(휘발 콤보 전환도 미저장 표지 리셋)
         self._rebuild_mapping()  # 새 토큰 집합 → 맞추기 골격 재구성(같은 이름 결속은 승계)
         return None
 
