@@ -77,6 +77,10 @@ def test_native_close_guard_allows_clean_and_blocks_pasted_draft(tmp_path, monke
     monkeypatch.setattr("hwpxfiller.webapp.app.threading.Timer", ImmediateTimer)
     assert frontend._handle_window_closing() is False
     assert calls and "AppCloseGuard.prompt" in calls[-1]
+    # closing 이벤트가 확인 모달이 열린 동안 다시 와도 모달을 중복 생성하지 않는다.
+    prompt_calls = len(calls)
+    assert frontend._handle_window_closing() is False
+    assert len(calls) == prompt_calls
     assert frontend.cancel_window_close() is True
     assert frontend._close_prompt_open is False
     assert frontend.confirm_window_close() is True
