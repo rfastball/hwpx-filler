@@ -389,6 +389,20 @@ class Job:
         return cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
 
 
+def content_fingerprint(job: "Job") -> str:
+    """저장 세션이 덮어쓰는 작업 **내용**의 지문 — 외부 변경 감지(자기-갱신 확인 게이트).
+
+    태그·마지막 실행은 제외한다: 저장이 어차피 직전 디스크 값을 재읽어 보존하므로(홈 태그
+    편집과의 공존) 그 둘의 변경은 파괴가 아니다. 나머지(템플릿·매핑·파일명 패턴·계보·기본
+    데이터셋 참조)는 세션 상태로 덮어써지므로, 로드 시점과 달라져 있으면 '열어 둔 사이 외부
+    변경'으로 확인을 요구해야 한다(무확인 파괴 금지). 에디터·「기안」 저장 두 표면이 같은
+    지문을 쓰도록 코어에 둔다(복붙하면 한쪽만 고쳐지는 드리프트가 곧 조용한 파괴다)."""
+    d = job.to_dict()
+    d.pop("tags", None)
+    d.pop("last_run_at", None)
+    return json.dumps(d, ensure_ascii=False, sort_keys=True)
+
+
 class JobRegistry:
     """작업 레지스트리 — 디렉터리에 작업당 JSON 1개. 홈 화면의 데이터 원천.
 

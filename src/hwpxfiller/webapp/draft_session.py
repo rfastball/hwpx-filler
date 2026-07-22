@@ -23,6 +23,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..core.format_engine import presets as format_presets
+from ..core.job import content_fingerprint
 from ..core.mapping import TYPES
 from ..core.text_render import (
     RenderReport,
@@ -174,6 +175,11 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self._fullwidth = False
         # 직전 복사 확정(스냅샷 구동 완료 노트) — 복사가 세팅, 어떤 동작이든 무효화(결정 16).
         self._last_copy: "dict | None" = None
+        # 이 세션에서 복사가 한 번이라도 있었나(내구, 리뷰 5b 3R P2 / 682) — 무데이터 가상 1건
+        # 복사는 큐(copied_count)에 안 잡혀(note_copied 가 큐를 안 늘림) _last_copy 만 남기는데,
+        # 그건 다음 동작이 지운다. 「사본으로 편집」의 "이미 복사한 건은 이전 문안" 경고가 가상
+        # 복사도 인정하도록 세션 baseline(새 세션·복원)에서만 리셋되는 표지를 둔다.
+        self._copied_ever: bool = False
         # 빈칸 지도 캐시(리뷰 F6) — (records 정체, 템플릿) 키. 데이터/템플릿 불변이면 재계산 안 함.
         self._gap_cache: "dict[int, bool]" = {}
         self._gap_cache_key: "tuple | None" = None
@@ -223,6 +229,13 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self._bound_job = ""
         self._source_readonly = False
         self._source_dirty = False  # 갓 선택한 첫 템플릿 = 깨끗한 라이브러리 정의
+        # 미저장 레시피 편집 표지(리뷰 5a 3R P1 / 147) — 사람이 소스·상수·확정·유형을 손대면
+        # True. 세션-교체(전환·귀환·삭제·포크) 앞 가드가 이걸 무장으로 친다(:meth:`_leave_guard`).
+        # 갓 세운 세션·복원 직후는 사람 편집 전이라 깨끗하다(리셋). 자동 골격(_rebuild_mapping)은
+        # 시스템 소유라 이 표지를 올리지 않는다(그 경로는 _do_* 핸들러를 안 탄다).
+        self._map_dirty = False
+        self._copied_ever = False  # 새 세션 = 복사 이력 없음(682)
+        self._editing_fingerprint = ""  # 휘발 = 결속 작업 없음 → 드리프트 판정 대상 아님(212)
         names = self.vm.template_names()
         if names:
             self.vm.select_template(names[0])
@@ -244,6 +257,9 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         "filter", "mapping", "_fullwidth", "_last_copy", "_gap_cache", "_gap_cache_key",
         "_source_dirty",   # 사본/편집 여부는 그 원문에 붙는다 — 스태시·복원과 함께 이동(슬라이스 5b)
         "_template_path",  # 원문의 파일 경로도 그 세션에 붙는다(슬라이스 5c 저장 자격)
+        "_map_dirty",      # 미저장 레시피 편집 표지도 그 세션에 붙는다 — 스태시·복원과 함께 이동(147)
+        "_copied_ever",    # 복사 이력 표지도 그 세션에 붙는다 — 스태시·복원과 함께 이동(682)
+        "_editing_fingerprint",  # 로드 시점 내용 지문도 그 세션에 붙는다(212 드리프트 판정)
     )
 
     def _stash_volatile(self) -> None:
@@ -260,17 +276,17 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
 
         단일 슬롯 모델: 포크(:meth:`_do_fork_to_volatile`)는 현 저장 세션을 유일 휘발로 만들어
         스태시해 둔 붙여넣기 세션을 대체한다. 그 세션에 복구 불가 진행(T3: 선택·큐 부분 복사)이
-        있으면 조용히 버리지 않고 재진술한다. 스태시 객체를 잠시 결속해 공용 :meth:`_guard_state`
-        로 **같은 술어**를 재평가한다(컨트롤러 상태를 복붙 판정하지 않아 드리프트 0). 스태시가
-        없거나(포크 대상 저장 세션 전 휘발 미스태시) 무장 아니면(재현 가능 — 붙여넣기 텍스트만은
-        복구 가능이라 새 기안 가드와 같은 문턱) ``None``."""
+        있으면 조용히 버리지 않고 재진술한다. 스태시 객체를 잠시 결속해 공용 :meth:`_leave_guard`
+        로 **같은 술어**를 재평가한다(선택·큐 ∨ 미저장 레시피 편집 — 세션 교체와 같은 문턱, 147;
+        컨트롤러 상태를 복붙 판정하지 않아 드리프트 0). 스태시가 없거나(포크 대상 저장 세션 전
+        휘발 미스태시) 무장 아니면(재현 가능 — 붙여넣기 텍스트만은 복구 가능) ``None``."""
         if self._volatile_stash is None:
             return None
         live = {a: getattr(self, a) for a in self._SESSION_ATTRS}
         try:
             for attr, val in self._volatile_stash.items():
                 setattr(self, attr, val)
-            g = self._guard_state()
+            g = self._leave_guard()  # 선택·큐 ∨ 미저장 레시피 편집(147) — 세션 교체 문턱
         finally:  # 판정은 순수 읽기 — 무슨 일이 있어도 현 세션 객체를 되돌린다.
             for attr, val in live.items():
                 setattr(self, attr, val)
@@ -321,6 +337,11 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self._source_readonly = True
         self._source_dirty = False  # 저장 정의 = 깨끗한 원문(읽기 전용 — 손보려면 「사본으로 편집」)
         self._template_path = job.template_path  # 재저장(save-as) 시 이 경로를 재사용
+        self._map_dirty = False  # 복원한 레시피 = 저장분과 일치하는 깨끗한 baseline(147)
+        self._copied_ever = False  # 복원 = 아직 이 세션에서 복사 안 함(682)
+        # 로드 시점 내용 지문(리뷰 5c 2R P1 / 212) — 자기 재저장 전에 디스크가 이 지문과
+        # 달라졌으면(다른 표면이 이 작업의 템플릿·매핑을 바꿈) 무확인 덮어쓰기가 파괴다.
+        self._editing_fingerprint = content_fingerprint(job)
 
     def _do_fork_to_volatile(self, p: dict) -> "dict | None":
         """「사본으로 편집」(#148 슬라이스 5b) — 저장 원문을 휘발 사본으로 가른다(결정 7 스위치 ④).
@@ -602,6 +623,9 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
             # 행이라 행 번호로 어느 카드가 복사됐는지 못박는다). 어떤 동작이든(dispatch·데이터
             # 교체) 무효화 → 걷힌다(리뷰: 매 push 무조건 sticky 면 완료 노트가 다른 카드와 모순).
             "last_copy": self._last_copy,
+            # 복사 이력(내구, 682) — 「사본으로 편집」 경고가 무데이터 가상 복사도 인정하도록.
+            # copied_count 는 가상 복사를 못 잡으니(큐 미기록) 이 표지가 단일 판정이다.
+            "copied_ever": self._copied_ever,
         }
         return {
             "template_name": vm.template_name or "(붙여넣은 텍스트)",
@@ -783,6 +807,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
             self.mapping.bind_column(idx, col, self._map_kind_of(col))
         else:
             self.mapping.unbind(idx)  # 무결속 — 값 동결 없음(큐는 행마다 값이 달라 단건 문법 부적용)
+        self._map_dirty = True  # 사람이 결속/해제 — 미저장 레시피 편집(147)
         return None
 
     def _do_set_map_value(self, p: dict) -> dict:
@@ -792,6 +817,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         소유권만 겨냥 패치한다(빠른 기안 `set_token` 선례). 값은 **전 행 공통 상수**다 —
         큐에서 '어느 행의 값'인지 모호한 hand 대신 상수로 낙착한다."""
         self.mapping.set_manual(self.mapping.index_of(p["name"]), p.get("text", ""))
+        self._map_dirty = True  # 직접 입력 = 미저장 레시피 편집(147)
         return self.snapshot()
 
     _do_set_map_value.is_no_push = True
@@ -799,6 +825,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
     def _do_set_map_fmt(self, p: dict) -> None:
         """표시형(유형 내 프리셋) 정정 — 결속 열에서 오는 값에만 뜻이 있다(결정 34 2층)."""
         self.mapping.set_fmt_for(p["name"], p.get("code", ""))
+        self._map_dirty = True  # 표시형 정정 = 미저장 레시피 편집(147)
 
     def _do_set_map_type(self, p: dict) -> None:
         """값 유형 정정(#148 슬라이스 4, 결정 12) — 값 스니핑 오판을 사람이 이긴다.
@@ -810,6 +837,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         (set_type 이 열거형 검증 — confirm-or-alarm). 표면은 결속 행에만 이 컨트롤을 띄운다
         (const/무결속엔 운반 유형이 뜻이 없어 dead control 금지)."""
         self.mapping.set_type(self.mapping.index_of(p["name"]), p["type"])
+        self._map_dirty = True  # 유형 정정 = 미저장 레시피 편집(147)
 
     def _do_set_confirmed(self, p: dict) -> None:
         """행별 확정 토글(#148 슬라이스 4, 결정 12) — 확정+무내용 = 확정-비움(「비운다」 선언).
@@ -818,6 +846,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         빠진다(:meth:`MappingModel.declared_blank_fields` 가 가른다). 저장 승격의 확정 게이트
         (전 행 확정 = 「기안으로 저장」 자격)는 슬라이스 5 — 여기선 그릇만 세운다."""
         self.mapping.set_confirmed(self.mapping.index_of(p["name"]), bool(p.get("value")))
+        self._map_dirty = True  # 확정 토글 = 미저장 레시피 편집(147)
 
     def _do_revert_map(self, p: dict) -> None:
         """man→auto 되돌리기 — 기억한 결속 소스 복귀(막다른 강등 금지, 결정 31).
@@ -825,7 +854,8 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         직접 입력으로 상수 강등된 자리를 원 결속 열로 되살린다. 소스 기억이 없으면 무동작
         (표면은 되돌리기를 소스 기억이 있을 때만 띄운다)."""
         idx = self.mapping.index_of(p["name"])
-        self.mapping.revert_binding(idx, self._map_kind_of(self.mapping.rows[idx].source))
+        if self.mapping.revert_binding(idx, self._map_kind_of(self.mapping.rows[idx].source)):
+            self._map_dirty = True  # 실제 되돌림 발생 = 미저장 레시피 편집(무동작이면 불변, 147)
 
     def _do_step(self, p: dict) -> None:
         """작업점을 큐 표시 순서로 이동(↓/↑, 경계 멈춤) — 자유 레코드 커서가 아니라 큐 판(결정 16)."""
@@ -876,7 +906,21 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         queue_partial = 0 < copied < selected
         g["copied_count"] = copied
         g["queue_partial"] = queue_partial
+        g["map_dirty"] = self._map_dirty
         g["armed"] = g["armed"] or queue_partial
+        return g
+
+    def _leave_guard(self) -> dict:
+        """세션 **교체** 앞 가드 — 선택·큐(:meth:`_guard_state`)에 **미저장 레시피 편집**을 더한다.
+
+        데이터 교체(T3, :meth:`_guard_state`)와 갈린다: 데이터 스왑은 매핑·상수를 **유지**하므로
+        레시피 편집은 잃을 게 없다(거기 실으면 over-warn — confirm-or-alarm 역방향 위반). 반면
+        다른 기안 전환·「이번 세션」 귀환·삭제·포크는 세션 전체(매핑 포함)를 재구성/폐기하므로
+        미저장 상수·확정·유형 편집도 사라진다(리뷰 5a 3R P1 / 147). 데이터 미로드라 선택·큐가
+        0이어도 이 성분이 무장을 세운다. 소비처: :meth:`~...DraftController._do_select_job`(전환·
+        귀환)·``_do_delete_job``(결속 삭제)·:meth:`_stash_guard`(포크 대체)."""
+        g = self._guard_state()
+        g["armed"] = g["armed"] or self._map_dirty
         return g
 
     def _do_guard_state(self, p: dict) -> dict:
@@ -980,6 +1024,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
                     "missing_fields": list(report.missing_fields),
                     "empty_fields": self._gate_empty(report),  # 확정-비움 제외(결정 12)
                 }
+                self._copied_ever = True  # 가상 복사 = 큐 미기록이라 내구 표지로 남긴다(682)
                 self._push()
             return
         # 복사한 카드(전진 전 작업점)를 못박아 완료 노트에 실린다 — 전진해도 어느 행인지 명시.
@@ -988,6 +1033,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
             "missing_fields": list(report.missing_fields),
             "empty_fields": self._gate_empty(report),  # 확정-비움 제외(결정 12)
         }
+        self._copied_ever = True  # 복사 이력(682) — 실 카드는 copied_count 로도 알지만 표지 통일
         self.queue.copy(cur)
         if self._advance_after:
             self.queue.advance_to_next_uncopied()

@@ -43,7 +43,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
-from ..core.job import Job, JobRegistry
+from ..core.job import Job, JobRegistry, content_fingerprint
 from ..core.text_registry import TextTemplateRegistry
 from ..gui.job_editor_state import overwrite_confirm_text
 from .draft_session import DraftSessionMixin, TargetFontSetting
@@ -116,13 +116,36 @@ class DraftController(DraftSessionMixin):
     # ------------------------------------------------------------- 목록 디스패치
     # 라우터는 DraftSessionMixin.dispatch 단일 출처(큐 재봉합·확인 왕복 규약 공유).
 
-    def _do_refresh(self, p: dict) -> None:
+    def _do_refresh(self, p: dict) -> "dict | None":
         """레지스트리 재스캔 반영 + stale 결속 무효화(다른 화면에서 삭제·개명됐을 수 있다).
 
         결속했던 저장 기안이 사라졌으면 휘발 세션으로 복귀한다 — 유래만 소거하면 사라진 기안의
-        원문·매핑이 저장 모드로 계속 떠 있어 정의와 실제가 갈라진다(confirm-or-alarm)."""
+        원문·매핑이 저장 모드로 계속 떠 있어 정의와 실제가 갈라진다(confirm-or-alarm).
+
+        **결속 세션 소실 시 시끄러운 사후 고지(리뷰 5a 3R P1 / 121)**: 다른 화면(홈 등)에서
+        결속 기안을 삭제하면 그 확인창은 정의 삭제만 알렸을 뿐, 이 화면의 진행 중 세션(데이터·
+        선택·큐·미저장 편집)은 언급하지 못한다 — 삭제 화면은 draft 세션을 모른다. 삭제는 이미
+        일어나 사전 확인이 불가하므로, 무장(:meth:`_leave_guard`) 세션을 조용히 버리지 않고
+        소실 사실을 실어 표면이 alert 로 사후 고지한다(confirm-or-alarm 의 "시끄럽게 알려라"
+        갈래 — 묻지 못하면 알린다). 무장 아니면 잃을 게 없어 조용히 복귀한다."""
         if self._bound_job and self._bound_job not in self.registry.names():
+            name = self._bound_job
+            g = self._leave_guard()
             self._restore_volatile()
+            if g["armed"]:
+                bits = []
+                if g["sel_count"]:
+                    bits.append(f"선택 {g['sel_count']}행")
+                if g["copied_count"]:
+                    bits.append(f"복사 {g['copied_count']}건")
+                if g["map_dirty"]:
+                    bits.append("미저장 매핑 편집")
+                detail = f"(진행: {' · '.join(bits)}) " if bits else ""
+                return {"notice": (
+                    f"결속했던 기안 '{name}' 이(가) 다른 화면에서 삭제되어, 진행 중이던 세션이 "
+                    f"닫혔습니다 {detail}— 이 진행은 저장된 기안에 보관되지 않아 복구할 수 없습니다."
+                )}
+        return None
 
     def _do_select_job(self, p: dict) -> "dict | None":
         """좌 목록 클릭 = 저장 기안 결속(복원) · 「이번 세션」 클릭(빈 이름) = 휘발 귀환(#148 슬라이스 5a).
@@ -144,9 +167,11 @@ class DraftController(DraftSessionMixin):
         name = p.get("name", "")
         if name and name == self._bound_job:
             return None  # 재선택 무동작(진행 불변)
-        # 저장 세션을 떠나면 그 데이터·큐 진행이 사라진다 — 무장이면 확인 왕복(위 docstring).
+        # 저장 세션을 떠나면 그 데이터·큐·미저장 편집이 사라진다 — 무장이면 확인 왕복(위 docstring).
+        # _leave_guard = 선택·큐(T3) ∨ 미저장 레시피 편집(147) — 데이터 미로드라도 상수·확정
+        # 편집만으로 무장한다(데이터 교체 T3와 달리 세션 교체는 매핑도 폐기하므로).
         if self._bound_job and not p.get("confirm"):
-            g = self._guard_state()
+            g = self._leave_guard()
             if g["armed"]:
                 return {"needs_confirm": True, "kind": "leave_saved", "target": name, **g}
         if not name:  # 「이번 세션」 = 겨눔 해제 → 휘발 귀환
@@ -191,9 +216,20 @@ class DraftController(DraftSessionMixin):
         if not Path(self._template_path).is_file():
             return {"ok": False, "error": (
                 "이 기안의 템플릿 파일이 사라졌거나 이동했습니다 — 템플릿을 다시 고른 뒤 저장하세요.")}
-        if not any(r.has_content() for r in self.mapping.rows):
-            return {"ok": False, "error": (
-                "맞춰진 토큰이 없습니다 — 데이터 열을 결속하거나 값을 직접 입력한 뒤 저장하세요.")}
+        # 빈 레시피 가드(리뷰 5c 2R P1 / 196) — **실제 영속될 프로파일**을 기준으로 판정한다.
+        # 휘발 승격은 내용 행을 강제 확정하니 has_content 로 충분하지만, 저장 모드(재저장)는
+        # 사람의 확정을 존중하므로(force-confirm 안 함) 확정을 전부 해제하면 to_profile 이 빈
+        # 프로파일이 된다. has_content(확정 무시)만 보면 그 게이트를 통과해 저장분을 조용히
+        # 빈 레시피로 덮어쓴다 — 저장 모드는 emits_any_value(확정+내용)로 본다.
+        if self._bound_job:  # 저장 모드 = 사람 확정 존중 → 실제 영속될 프로파일(확정+내용)로 판정
+            would_emit = self.mapping.emits_any_value()
+            empty_msg = ("저장할 확정된 값이 없습니다 — 토큰에 데이터 열을 결속하거나 값을 직접"
+                         " 입력해 확정한 뒤 저장하세요.")
+        else:  # 휘발 승격 = 내용 행을 강제 확정하므로 has_content 로 충분
+            would_emit = any(r.has_content() for r in self.mapping.rows)
+            empty_msg = "맞춰진 토큰이 없습니다 — 데이터 열을 결속하거나 값을 직접 입력한 뒤 저장하세요."
+        if not would_emit:
+            return {"ok": False, "error": empty_msg}
         name = p.get("name", "").strip()
         if not name:
             return {"ok": False, "error": "기안 이름을 입력하세요."}
@@ -203,39 +239,62 @@ class DraftController(DraftSessionMixin):
         # 작업을 무확인 덮어쓴다**(TOCTOU). 잠금 안에서 지금 상태로 판정·저장한다.
         with self.registry.write_lock():
             exists = self.registry.exists(name)
-            # 덮어쓰기 문안을 **잠금 안에서 지금** 성형하고 사용자가 확인한 문안과 대조한다(리뷰
-            # 5c P1 후속, 에디터 _save_locked 동형). 모달이 열린 사이 이 slug 자리가 다른 Job 으로
-            # 교체되면 victim 이 바뀌어 문안이 달라진다 — 그러면 confirm:true 라도 **새 문안으로
-            # 다시 묻는다**. 확인한 것과 다른 작업을 무확인 덮어쓰지 않는다(덮어쓰기는 되돌릴 수
-            # 없어 결과 재진술로 갈음 못 한다). 문안이 같으면 통과(같은 사실을 확인한 것).
-            gate_text = ""
-            if name != self._bound_job and exists:
+            # 이 slug 자리의 현재 Job 을 잠금 안에서 **한 번** 읽어 게이트(덮어쓰기/드리프트)와
+            # 메타 보존에 함께 쓴다(두 번 읽으면 그 사이 또 갈릴 수 있다).
+            existing = None
+            if exists:
                 try:
-                    victim = self.registry.load(name).name
+                    existing = self.registry.load(name)
                 except (FileNotFoundError, ValueError):
-                    victim = ""  # 손상 — 추측 금지(그대로 고지)
+                    existing = None  # 손상 — 추측 금지(victim 이름 불명·메타 승계 포기)
+            # 확인 문안을 **잠금 안에서 지금** 성형하고 사용자가 확인한 문안과 대조한다(에디터
+            # _overwrite_gate 동형). 두 갈래를 한 판정으로 모은다:
+            #   ① 자기 재저장(name==bound): 로드 이후 디스크가 바뀌었으면(내용 지문 불일치) '열어
+            #      둔 사이 외부 변경'을 확인한다(리뷰 5c 2R P1 / 212 — 무확인 stale 덮어쓰기 금지).
+            #   ② 다른 이름 덮어쓰기(name!=bound): victim 재진술.
+            # 모달이 열린 사이 대상이 바뀌면 문안이 달라져 confirm:true 라도 **새 문안으로 다시
+            # 묻는다**(확인한 것과 다른 것을 무확인 덮어쓰지 않는다).
+            gate_text = ""
+            if name == self._bound_job:
+                if existing is not None and content_fingerprint(existing) != self._editing_fingerprint:
+                    gate_text = (
+                        f"열어 둔 사이 기안 작업 '{name}' 이(가) 다른 곳에서 바뀌었습니다.\n"
+                        "지금 저장하면 그 변경을 이 세션의 상태로 덮어씁니다.")
+                elif exists and existing is None:  # 손상 — 내용 불명, 조용히 덮지 않는다
+                    gate_text = (
+                        f"기안 작업 '{name}' 파일이 손상돼 현재 내용을 확인할 수 없습니다.\n"
+                        "지금 저장하면 그 자리를 이 세션의 상태로 덮어씁니다.")
+            elif exists:
+                victim = existing.name if existing is not None else ""  # 손상 = 이름 불명
                 gate_text = overwrite_confirm_text(name, victim)
             if gate_text and (not p.get("confirm") or p.get("confirmed_text", "") != gate_text):
                 return {"ok": False, "needs_confirm": True, "name": name, "confirm_text": gate_text}
-            # 기존 메타 보존(리뷰 5c P1) — 재저장/덮어쓰기가 그룹만 남기고 tags·last_run_at·
-            # default_dataset_ref·version·filename_pattern 을 조용히 기본값으로 지우지 않게. 이
-            # 화면이 편집하지 않는 필드는 전부 승계하고 template_path·mapping 만 갈아 끼운다.
-            preserved = None
-            if exists:
-                try:
-                    preserved = self.registry.load(name)
-                except (FileNotFoundError, ValueError):
-                    preserved = None  # 손상 — 새로 쓴다(덮어쓰기 확인은 이미 통과)
             if not self._bound_job:  # 휘발 승격 — 확정 열이 숨어 있었으니 저장이 확정(내용 있는 행)
                 for i, r in enumerate(self.mapping.rows):
                     if r.has_content():
                         self.mapping.set_confirmed(i, True)
             profile = self.mapping.to_profile(name)
-            if preserved is not None:  # 승계 초집합(name·group·tags·last_run_at·default_dataset_ref·version·pattern)
-                job = replace(preserved, template_path=self._template_path, mapping=profile)
+            if existing is not None:
+                # 기존 메타 보존(리뷰 5c P1) — 이 화면이 편집하지 않는 필드(tags·last_run_at·
+                # default_dataset_ref·version·filename_pattern·group)를 전부 승계하고 template_path·
+                # mapping·**name** 만 갈아 끼운다. name 명시(리뷰 5c 2R P2 / 235): slug 만 같고
+                # 표기가 다른 victim(예 '예산/2026' vs '예산_2026')을 덮으면 preserved.name 을
+                # 그대로 두어 파일이 victim 이름을 유지하고 결속(_bound_job)과 어긋난다.
+                job = replace(existing, name=name, template_path=self._template_path, mapping=profile)
             else:
-                job = Job(name=name, template_path=self._template_path, mapping=profile)
+                # 새 이름(빈 자리) — 결속 원본이 있으면 그 그룹을 승계한다(리뷰 5c 2R P2 / 237):
+                # 그룹 있는 저장 기안을 「다른 이름으로 저장」하면 사본이 조용히 「그룹 없음」으로
+                # 튀지 않게. 결속 원본이 손상·부재면 무그룹(추측 금지).
+                group = ""
+                if self._bound_job:
+                    try:
+                        group = self.registry.load(self._bound_job).group
+                    except (FileNotFoundError, ValueError):
+                        group = ""
+                job = Job(name=name, template_path=self._template_path,
+                          mapping=profile, group=group)
             self.registry.save(job, allow_overwrite=True)
+            self._editing_fingerprint = content_fingerprint(job)  # 저장분 = 새 baseline(재드리프트 방지)
         # 제자리 결속 — 세션 그대로, 저장 모드 전이(원문 읽기 전용). 목록에 새 행이 선다.
         self._bound_job = name
         self._source_readonly = True
@@ -282,7 +341,7 @@ class DraftController(DraftSessionMixin):
             out = {"needs_confirm": True, "name": name,
                    "open_session": name == self._bound_job}
             if name == self._bound_job:
-                out.update(self._guard_state())
+                out.update(self._leave_guard())  # 선택·큐 ∨ 미저장 레시피 편집(147)
             return out
         self.registry.delete(name)
         if name == self._bound_job:

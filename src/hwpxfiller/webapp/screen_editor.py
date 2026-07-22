@@ -43,6 +43,7 @@ from ..core.job import (
     Job,
     JobRegistry,
     classify_existing,
+    content_fingerprint,
 )
 from ..core.mapping import TYPES
 from ..core.schema import extract_schema
@@ -72,24 +73,6 @@ _FMT_OPTIONS = {t: [{"code": code, "label": label} for label, code in format_pre
 # 2단계 데이터 미리보기에 싣는 샘플 행 수(#16 98DDFE96) — 전체 적재는 이미 self.records
 # 에 있으나 스냅샷엔 매핑 감(感)만 주는 소량만 노출한다(record_count 로 "외 M건" 표기).
 _SAMPLE_ROWS = 3
-
-
-def _job_content_fingerprint(job: Job) -> str:
-    """편집 세션이 덮어쓰는 작업 **내용**의 지문 — 외부 변경 감지(자기-갱신 확인 게이트).
-
-    태그·마지막 실행은 제외한다: 편집 저장이 어차피 저장 직전 디스크 값을 재읽어 보존하므로
-    (홈 태그 편집과의 공존, ``_do_save``) 그 둘의 변경은 파괴가 아니다. 나머지(템플릿·매핑·
-    파일명 패턴·계보·**기본 데이터셋 참조**)는 편집 세션 상태로 덮어써지므로, 로드 시점과
-    달라져 있으면 '편집 중 외부 변경'으로 확인을 요구해야 한다(무확인 파괴 금지).
-
-    기본 데이터셋 참조(#53-A)는 ``to_dict()`` 에 들어가 여기 지문에 **자동 포함**된다 —
-    #53-B 가 재연결 동선을 추가해 외부에서 참조가 바뀌어도 편집 저장이 조용히 되돌리지
-    않고 확인을 띄운다(의도된 설계).
-    """
-    d = job.to_dict()
-    d.pop("tags", None)
-    d.pop("last_run_at", None)
-    return json.dumps(d, ensure_ascii=False, sort_keys=True)
 
 
 class EditorController:
@@ -675,7 +658,7 @@ class EditorController:
         self._preserved_last_run = job.last_run_at
         # 로드 시점 내용 지문 — 자기-갱신 저장 시 편집 중 외부 변경(같은 이름 작업 교체)을
         # 무확인으로 덮지 않기 위한 대조 기준(_do_save).
-        self._editing_fingerprint = _job_content_fingerprint(job)
+        self._editing_fingerprint = content_fingerprint(job)
         self._loaded_provenance = dict(job.mapping.provenance)  # 작성 출처 표시(#53-C)
         self.default_dataset_ref = job.default_dataset_ref  # 편집 저장 시 보존(#53-A)
         # 소스 어휘 = 저장 매핑이 참조하는 키 합집합(profile_source_vocabulary 단일 출처,
@@ -1086,7 +1069,7 @@ class EditorController:
                 "내용을 확인할 수 없습니다.\n지금 저장하면 그 자리를 이 편집 세션의 "
                 "상태로 덮어씁니다."
             )
-        if _job_content_fingerprint(current) != self._editing_fingerprint:
+        if content_fingerprint(current) != self._editing_fingerprint:
             return (
                 f"편집 중 외부 변경: 작업 '{self._editing_origin}' 이 이 편집 세션을 "
                 "여는 사이 다른 곳에서 바뀌었습니다.\n지금 저장하면 그 변경 내용을 "

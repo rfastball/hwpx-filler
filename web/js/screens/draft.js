@@ -181,14 +181,26 @@
      저장 세션의 데이터·큐 진행은 Job 에 저장되지 않아 전환·귀환 시 사라진다 — 무장이면 백엔드가
      needs_confirm 을 돌려주고, 파괴를 재진술한 뒤 confirm 으로 재호출한다(T3 왕복). 복원 실패는
      시끄럽게(브리지가 error 를 표시하지 않으므로 여기서 alert). */
+  /* 세션 교체(전환·귀환·삭제)로 사라지는 것 재진술 — 술어·수치는 Python(_leave_guard)이 내고
+     여기는 문안만 입힌다(guardBody 규율). 데이터/선택·복사 진행에 더해 미저장 매핑 편집도
+     함께 말한다(리뷰 5a 3R P1 / 147) — 데이터 미로드라 선택·복사가 0이어도 편집은 사라진다. */
+  function leaveLossBody(r) {
+    const copied = r.copied_count || 0;
+    const parts = [];
+    if (r.sel_count) parts.push(`선택 ${r.sel_count}행`);
+    if (copied > 0) parts.push(`복사 ${copied}건(되돌릴 수 없음)`);
+    if (r.map_dirty) parts.push("미저장 매핑 편집");
+    return parts.length
+      ? `지금 물린 데이터와 진행(${parts.join(" · ")})은`
+      : "지금 진행 중인 세션은";
+  }
+
   async function selectJob(name) {
     let r = await Bridge.call(SCREEN, "select_job", { name });
     if (r && r.needs_confirm) {
-      const copied = r.copied_count || 0;
       const ok = await window.Modal.confirm({
         title: "진행 중인 기안을 떠납니다",
-        body: (copied > 0 ? `이미 ${copied}건을 복사했습니다 — 되돌릴 수 없습니다. ` : "") +
-          "지금 물린 데이터와 선택·복사 진행은 저장된 기안에 보관되지 않아, 넘어가면 사라집니다.",
+        body: leaveLossBody(r) + " 저장된 기안에 보관되지 않아, 넘어가면 사라집니다.",
         confirmLabel: "넘어가기", cancelLabel: "머무르기",
       });
       if (!ok) return;
@@ -306,9 +318,7 @@
     if (res.open_session) {
       body += `\n지금 결속한 세션도 닫힙니다.`;
       if (res.armed) {
-        const copied = res.copied_count || 0;
-        body += (copied > 0 ? ` 이미 ${copied}건을 복사했습니다 — 되돌릴 수 없습니다.` : "") +
-          ` 물린 데이터와 선택·복사 진행은 저장된 기안에 보관되지 않아 함께 사라집니다.`;
+        body += ` ${leaveLossBody(res)} 저장된 기안에 보관되지 않아 함께 사라집니다.`;
       }
     }
     const ok = await window.Modal.confirm({
