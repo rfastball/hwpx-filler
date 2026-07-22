@@ -156,7 +156,7 @@ class TemplateRow:
         if self.skipped_n:
             parts.append(f"수동 {self.skipped_n}개")
         if self.stray_n:
-            parts.append(f"잔존 {self.stray_n}개")
+            parts.append(f"남은 토큰 {self.stray_n}개")
         return " · ".join(parts)
 
     def actions(self) -> "list[TemplateAction]":
@@ -401,8 +401,8 @@ class TemplateManagerViewModel:
         """드리프트 결과 → 결과 문구(비교 판본 쌍 명시) — 변화 있으면 warn, 없으면 ok."""
         pair = f"{Path(old_path).name} → {Path(new_path).name}"
         if not drift.has_changes:
-            return ResultLine(f"드리프트 {pair}: 필드셋 변화 없음.", "ok")
-        parts = [f"드리프트 {pair}:"]
+            return ResultLine(f"템플릿 변경 {pair}: 필드셋 변화 없음.", "ok")
+        parts = [f"템플릿 변경 {pair}:"]
         for n in drift.added:
             parts.append(f"+ 추가: {n}")
         for n in drift.removed:

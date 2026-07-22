@@ -411,7 +411,7 @@ def test_gate_state_single_decision_drift_unmet_open(tmp_path):
     # 미확인 미입력 → warn 차단.
     gate = vm.gate_state([0, 1])
     assert gate.enabled is False and gate.level == "warn"
-    assert "미입력" in gate.text and "추정가격" in gate.text
+    assert "빈 값" in gate.text and "추정가격" in gate.text
 
     # 확인(ack) + 전제조건 충족(저장 폴더) → 열림(문구 없음).
     vm.acknowledge("추정가격")
