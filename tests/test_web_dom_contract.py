@@ -509,6 +509,34 @@ def test_component_gallery_links_real_stylesheets_drift_free():
     )
 
 
+def test_heading_typography_uses_three_shared_roles():
+    """H-01: 화면·구획·존 제목은 세 역할 규칙만 소비한다."""
+    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    assert ".scr-headh1{font-size:var(--fs-section);font-weight:700}" in css
+    assert (
+        ".track.tt,.job-sec-head,.tpl-band.tb-t,.modal-cardh3{"
+        "font-size:var(--fs-strong);font-weight:700}"
+    ) in css
+    assert (
+        ".zone-cap,.paneh4,.qd-formpaneh4,.qd-prevpaneh4{"
+        "font-size:var(--fs-dense);font-weight:700}"
+    ) in css
+    # 옛 컴포넌트별 값이 돌아오면 역할 규칙보다 뒤에서 덮어쓸 수 있다.
+    for stale in (
+        ".job-sec-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-8);font-size:",
+        ".zone-cap{display:block;margin-bottom:var(--sp-10);font-size:",
+        ".tpl-band.tb-t{font-weight:",
+        ".track.tt{font-size:",
+    ):
+        assert stale not in css, f"개별 제목 타이포 재정의가 돌아왔습니다: {stale}"
+
+
+def test_gallery_exposes_heading_role_specimens():
+    html = GALLERY.read_text(encoding="utf-8")
+    for label in ("화면 제목", "구획 제목", "존·소제목"):
+        assert label in html, f"갤러리에 제목 역할 표본이 없습니다: {label}"
+
+
 def test_web_diff_pinned_to_light_until_tints_themed():
     """web-diff 는 다크 셀 틴트가 준비될 때까지 라이트로 고정돼야 한다(<html data-theme="light">).
 

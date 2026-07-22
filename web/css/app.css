@@ -112,9 +112,17 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 /* 모달 보조 설명문 — 제목 아래 한 줄(인라인 font-size 리터럴 대체) */
 .modal-sub{font-size:var(--fs-caption);color:var(--a-muted);margin:var(--sp-4) 0 var(--sp-8)}
 
+/* ---- 제목 타이포 역할 계약(H-01) ----
+   크기·굵기는 아래 세 역할에서만 정한다. 개별 컴포넌트 규칙은 배치·색만 소유한다. */
+.scr-head h1{font-size:var(--fs-section);font-weight:700}
+.track .tt,.job-sec-head,.tpl-band .tb-t,.modal-card h3{
+  font-size:var(--fs-strong);font-weight:700}
+.zone-cap,.pane h4,.qd-formpane h4,.qd-prevpane h4{
+  font-size:var(--fs-dense);font-weight:700}
+
 /* ---- txt 화면 머리말 + 상태 pill ---- */
 .scr-head{display:flex;align-items:flex-end;gap:var(--sp-16);margin-bottom:var(--sp-12)}
-.scr-head h1{font-size:var(--fs-section);margin:0}
+.scr-head h1{margin:0}
 .scr-head .sub{margin:var(--sp-2) 0 0;color:var(--a-muted);font-size:var(--fs-body)}
 .scr-head>div:first-child{flex:1;min-width:0}
 .status{padding:var(--sp-4) var(--sp-12);border-radius:var(--rad-pill);font-size:var(--fs-body);background:var(--n-track);
@@ -136,8 +144,7 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .panes{display:grid;grid-template-columns:290px 1fr;gap:var(--sp-16);flex:1;min-height:0}
 .pane{background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface);
   padding:var(--sp-12);display:flex;flex-direction:column;min-height:0}
-.pane h4{margin:0 0 var(--sp-10);font-size:var(--fs-caption);color:var(--a-muted);
-  font-weight:700}
+.pane h4{margin:0 0 var(--sp-10);color:var(--a-muted)}
 .pane.tokens{min-width:0}
 #tokPanel{overflow:auto;flex:0 1 auto}
 .hint{font-size:var(--fs-caption);margin:var(--sp-10) 0 0}
@@ -322,8 +329,7 @@ table.dmap tr:last-child td{border-bottom:0}
 .qd-formpane,.qd-prevpane{background:var(--a-card);border:1px solid var(--a-border);
   border-radius:var(--rad-surface);padding:var(--sp-12);display:flex;flex-direction:column;min-height:0}
 .qd-formpane{overflow:auto}
-.qd-formpane h4,.qd-prevpane h4{margin:0 0 var(--sp-10);font-size:var(--fs-caption);
-  color:var(--a-muted);font-weight:700}
+.qd-formpane h4,.qd-prevpane h4{margin:0 0 var(--sp-10);color:var(--a-muted)}
 /* 파이프라인 토큰 행(결정 34) — 윗줄=이름·칩, 아랫줄=↳ 출력(들여쓰기+음영 = "결과"임을 형태가 말함) */
 .qd-trow{display:flex;flex-direction:column;gap:var(--sp-6);padding:var(--sp-8) 0;
   border-bottom:1px dashed var(--a-border)}
@@ -630,7 +636,7 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .job-master{flex:none;width:240px;overflow:auto;display:flex;flex-direction:column;gap:var(--sp-16);
   border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card);padding:var(--sp-10)}
 .job-sec-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-8);
-  font-size:var(--fs-body);font-weight:600;padding:var(--sp-4) var(--sp-6);border-radius:var(--rad-control);
+  padding:var(--sp-4) var(--sp-6);border-radius:var(--rad-control);
   border-left:3px solid var(--a-border)}
 /* 구획 열 틴트 승계(홈 트랙 색 언어) — HWPX 파랑 / TXT 초록. */
 .job-sec-head.hwpx{border-left-color:var(--a-primary)}
@@ -693,7 +699,7 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .zone{padding:var(--sp-16) var(--sp-16) var(--sp-12);position:relative}
 .zone + .zone{border-top:1px solid var(--a-border)}
 .zone-cap{display:block;margin-bottom:var(--sp-10);
-  font-size:var(--fs-caption);font-weight:600;color:var(--n-header-ink)}
+  color:var(--n-header-ink)}
 .job-head-title{font-size:var(--fs-body);font-weight:600}
 .job-head-tpl{font-size:var(--fs-body);margin-top:var(--sp-2)}
 /* 좁은 창(반응형): 좌 목록을 위로 접어 세로 적층 — 셀프테스트 그리드 경계와 별개 국소 규칙. */
@@ -777,7 +783,6 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .tpl-band.txt{border-left-color:var(--a-ok)}
 .tpl-band .tb-k{font-size:var(--fs-caption);font-weight:700;letter-spacing:.04em;
   padding:1px var(--sp-6);border-radius:var(--rad-control);background:var(--a-ink);color:var(--a-card)}
-.tpl-band .tb-t{font-weight:700;font-size:var(--fs-body)}
 .tpl-band .tb-sub{color:var(--a-muted);font-size:var(--fs-caption)}
 .tpl-band .capnote{font-variant-numeric:tabular-nums}
 .tpl-banddir{margin-top:var(--sp-2)}
@@ -838,7 +843,6 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .track.hwpx{border-top:3px solid var(--a-primary)}
 .track.txt{border-top:3px solid var(--a-ok)}
 .track .th{display:flex;justify-content:space-between;align-items:center;gap:var(--sp-10);margin-bottom:var(--sp-2);flex-wrap:wrap}
-.track .tt{font-size:var(--fs-strong);font-weight:800}
 .track .tsub{font-size:var(--fs-body);color:var(--a-muted);margin:0 0 var(--sp-12)}
 
 /* 작업 브라우저 바(group-by 렌즈 + facet 칩) */
