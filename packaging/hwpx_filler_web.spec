@@ -32,6 +32,7 @@ a = Analysis(
     ],
     # 지연·간접 임포트 보증(브리지→화면→링1 VM→데이터 팩토리).
     hiddenimports=[
+        "hwpxcore.motw",   # 엔트리 self-unblock(포터블 MOTW) — 조건부 임포트 보증
         "hwpxfiller.webapp",
         "hwpxfiller.webapp.app",
         "hwpxfiller.webapp.screens",

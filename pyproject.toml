@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hwpx-tools"
-version = "0.1.0"
+version = "0.1.1"
 description = "HWPX 도구 모음 — 공통 파서(hwpxcore) 위의 두 제품: 개정 비교(hwpxdiff)·누름틀 주입(hwpxfiller)"
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
