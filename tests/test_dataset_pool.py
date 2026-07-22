@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import pytest
@@ -150,6 +151,155 @@ def test_registry_save_corrupt_target_is_loud(tmp_path):
         allow_overwrite=True,
     )
     assert reg.load("공고").opts["path"] == "/a.xlsx"
+
+
+def test_registry_save_failure_preserves_json_and_cleans_temp(tmp_path, monkeypatch):
+    """원자 교체 실패는 기존 JSON과 디렉터리 청결을 함께 보존한다(#182)."""
+    reg = DatasetPoolRegistry(tmp_path)
+    reg.save(DatasetPoolItem(name="공고", kind="excel", opts={"path": "/old.xlsx"}))
+    path = reg.path_for("공고")
+    before = path.read_bytes()
+
+    def fail_replace(src, dst):
+        raise OSError("replace failed")
+
+    monkeypatch.setattr("hwpxcore.atomic.os.replace", fail_replace)
+    with pytest.raises(OSError, match="replace failed"):
+        reg.save(
+            DatasetPoolItem(name="공고", kind="excel", opts={"path": "/new.xlsx"}),
+            allow_overwrite=True,
+        )
+
+    assert path.read_bytes() == before
+    assert list(tmp_path.glob(path.name + ".*.tmp")) == []
+
+
+def test_shared_path_lock_merges_reference_update_and_transition(tmp_path):
+    """서로 다른 registry instance의 참조 갱신과 상태 전이가 lost update 없이 합쳐진다."""
+    directory = tmp_path / "datasets"
+    updater = DatasetPoolRegistry(directory)
+    transitioner = DatasetPoolRegistry(directory)
+    updater.save(DatasetPoolItem(name="공고", kind="excel", opts={"path": "/old.xlsx"}))
+
+    update_entered = threading.Event()
+    release_update = threading.Event()
+    transition_started = threading.Event()
+    transition_finished = threading.Event()
+
+    def update_reference() -> None:
+        def change(item: DatasetPoolItem) -> None:
+            update_entered.set()
+            assert release_update.wait(2)
+            item.opts = {"path": "/new.xlsx"}
+
+        updater.mutate("공고", change)
+
+    def archive() -> None:
+        assert update_entered.wait(2)
+        transition_started.set()
+        transitioner.mutate("공고", lambda item: item.archive())
+        transition_finished.set()
+
+    first = threading.Thread(target=update_reference)
+    second = threading.Thread(target=archive)
+    first.start()
+    assert update_entered.wait(2)
+    second.start()
+    assert transition_started.wait(2)
+    assert not transition_finished.wait(0.05)  # 같은 path lock에서 대기 중
+    release_update.set()
+    first.join(2)
+    second.join(2)
+
+    assert not first.is_alive() and not second.is_alive()
+    saved = updater.load("공고")
+    assert saved.opts["path"] == "/new.xlsx"
+    assert saved.status == STATUS_ARCHIVED
+
+
+def test_transition_delete_race_cannot_resurrect_deleted_item(tmp_path):
+    """전이와 삭제가 경합해도 delete 뒤의 stale save가 항목을 되살리지 않는다."""
+    directory = tmp_path / "datasets"
+    transitioner = DatasetPoolRegistry(directory)
+    deleter = DatasetPoolRegistry(directory)
+    transitioner.save(DatasetPoolItem(name="공고", kind="excel", opts={"path": "/a.xlsx"}))
+
+    transition_entered = threading.Event()
+    release_transition = threading.Event()
+    delete_started = threading.Event()
+    delete_finished = threading.Event()
+
+    def archive() -> None:
+        def change(item: DatasetPoolItem) -> None:
+            transition_entered.set()
+            assert release_transition.wait(2)
+            item.archive()
+
+        transitioner.mutate("공고", change)
+
+    def delete() -> None:
+        assert transition_entered.wait(2)
+        delete_started.set()
+        deleter.delete("공고")
+        delete_finished.set()
+
+    first = threading.Thread(target=archive)
+    second = threading.Thread(target=delete)
+    first.start()
+    assert transition_entered.wait(2)
+    second.start()
+    assert delete_started.wait(2)
+    assert not delete_finished.wait(0.05)  # 전이 전체가 끝날 때까지 삭제도 같은 lock에서 대기
+    release_transition.set()
+    first.join(2)
+    second.join(2)
+
+    assert not first.is_alive() and not second.is_alive()
+    assert not transitioner.exists("공고")
+
+
+def test_every_registry_writer_uses_shared_path_lock(tmp_path, monkeypatch):
+    """save/mutate/delete의 실제 파일 I/O가 모두 동일한 path-scoped lock 안에서 일어난다."""
+    directory = tmp_path / "datasets"
+    reg = DatasetPoolRegistry(directory)
+    peer = DatasetPoolRegistry(directory)
+    reg.save(DatasetPoolItem(name="A", kind="excel", opts={"path": "/a.xlsx"}))
+    probes: "list[bool]" = []
+
+    def probe_lock() -> None:
+        acquired: "list[bool]" = []
+
+        def try_acquire() -> None:
+            lock = peer.write_lock()
+            got = lock.acquire(blocking=False)
+            acquired.append(got)
+            if got:
+                lock.release()
+
+        thread = threading.Thread(target=try_acquire)
+        thread.start()
+        thread.join(2)
+        assert not thread.is_alive()
+        probes.append(acquired == [False])
+
+    real_save = DatasetPoolItem.save
+    real_unlink = Path.unlink
+
+    def spy_save(item, path):
+        probe_lock()
+        return real_save(item, path)
+
+    def spy_unlink(path, *args, **kwargs):
+        probe_lock()
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(DatasetPoolItem, "save", spy_save)
+    monkeypatch.setattr(Path, "unlink", spy_unlink)
+    reg.save(DatasetPoolItem(name="B", kind="excel", opts={"path": "/b.xlsx"}))
+    reg.mutate("A", lambda item: item.archive())
+    reg.delete("B")
+
+    assert probes and all(probes)
 
 
 def test_default_pool_dir_uses_home_env(monkeypatch, tmp_path):

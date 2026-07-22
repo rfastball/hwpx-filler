@@ -133,6 +133,22 @@ def test_delete_two_phase_confirm_roundtrip(tmp_path):
     assert ctrl.snapshot()["empty"] is True
 
 
+def test_confirmed_reregister_does_not_resurrect_concurrently_deleted_item(tmp_path):
+    """기존 참조 교체 확인은, 확인 중 삭제된 항목의 신규 생성 승인으로 변하지 않는다."""
+    ctrl, reg, _ = _controller(tmp_path)
+    ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/data/a.xlsx"})
+    first = ctrl.dispatch("register_excel", {"name": "발주", "path": "C:/data/b.xlsx"})
+    assert first["needs_confirm"] is True
+
+    DatasetPoolRegistry(reg.directory).delete("발주")
+    second = ctrl.dispatch(
+        "register_excel", {"name": "발주", "path": "C:/data/b.xlsx", "confirm": True}
+    )
+
+    assert second["ok"] is False and "삭제" in second["error"]
+    assert not reg.exists("발주")
+
+
 def test_unknown_action_is_loud(tmp_path):
     ctrl, _, _ = _controller(tmp_path)
     with pytest.raises(ValueError, match="알 수 없는 pool 액션"):

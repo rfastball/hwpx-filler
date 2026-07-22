@@ -92,6 +92,20 @@ def test_status_transitions(tmp_path):
     assert vm.is_empty()
 
 
+def test_stale_reference_update_does_not_resurrect_deleted_item(tmp_path):
+    """확인 전에 읽은 항목이 삭제되면 갱신은 loud 실패하고 신규 항목으로 부활하지 않는다."""
+    directory = tmp_path / "datasets"
+    reg = DatasetPoolRegistry(directory)
+    vm = DatasetPoolViewModel(reg)
+    vm.register_excel("D", "/old.xlsx")
+    stale = reg.load("D")
+    DatasetPoolRegistry(directory).delete("D")
+
+    with pytest.raises(FileNotFoundError):
+        vm.update_excel_reference(stale, "/new.xlsx")
+    assert not reg.exists("D")
+
+
 def test_available_actions_per_status():
     assert [a.key for a in available_actions(STATUS_ACTIVE)] == ["archive", "delete"]
     assert [a.key for a in available_actions(STATUS_ARCHIVED)] == ["activate", "delete"]
