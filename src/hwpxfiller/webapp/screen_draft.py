@@ -212,10 +212,21 @@ class DraftController(DraftSessionMixin):
                 "골라 채우거나, 원문을 「템플릿으로 저장」한 뒤 저장하세요.")}
         # 캐시된 template_path 재검증(리뷰 5c P2) — 이 세션이 경로를 캐시한 뒤 템플릿 관리에서
         # 삭제·이동됐을 수 있다. 빈 문자열만 보던 위 게이트는 통과하지만, 그러면 다시 못 여는
-        # 템플릿을 가리키는 Job 이 생긴다. 지금 실 파일인지 확인한다(confirm-or-alarm).
-        if not Path(self._template_path).is_file():
+        # 템플릿을 가리키는 Job 이 생긴다. 지금 실 파일인지 읽어 확인한다(confirm-or-alarm).
+        try:
+            disk_text = Path(self._template_path).read_text(encoding="utf-8")
+        except OSError:
             return {"ok": False, "error": (
                 "이 기안의 템플릿 파일이 사라졌거나 이동했습니다 — 템플릿을 다시 고른 뒤 저장하세요.")}
+        # 템플릿 파일 **내용** 드리프트(리뷰 5c 3R P1 / 216) — 세션이 배접 원문을 읽은 뒤 템플릿
+        # 관리에서 그 파일이 편집되면, 맞춰 둔 매핑은 옛 원문 기준인데 Job 은 새 원문을 가리켜
+        # 토큰이 어긋난다(옛 매핑 조용한 소실·새 토큰 미해소). 파일 내용이 세션 baseline(vm.
+        # template_text — 같은 read_text 로 실린 값)과 다르면 막고 재선택을 요구한다(재선택이 새
+        # 원문으로 매핑을 다시 세운다). 존재만 보던 위 게이트는 이 불일치를 통과시켰다.
+        if disk_text != self.vm.template_text:
+            return {"ok": False, "error": (
+                "이 기안의 템플릿이 템플릿 관리에서 바뀌었습니다 — 맞춰 둔 정의가 옛 원문 기준이라,"
+                " 템플릿을 다시 고른 뒤 저장하세요.")}
         # 빈 레시피 가드(리뷰 5c 2R P1 / 196) — **실제 영속될 프로파일**을 기준으로 판정한다.
         # 휘발 승격은 내용 행을 강제 확정하니 has_content 로 충분하지만, 저장 모드(재저장)는
         # 사람의 확정을 존중하므로(force-confirm 안 함) 확정을 전부 해제하면 to_profile 이 빈
@@ -299,6 +310,10 @@ class DraftController(DraftSessionMixin):
         self._bound_job = name
         self._source_readonly = True
         self._source_dirty = False
+        # 방금 이 매핑을 영속했으니 미저장 편집은 없다 — 표지를 내린다(리뷰 5c 3R P2 / 301).
+        # 안 내리면 저장 직후 다른 기안으로 떠날 때 _leave_guard 가 있지도 않은 "미저장 매핑
+        # 편집"으로 거짓 파괴 확인을 띄운다(저장 = 새 baseline, restore/fresh 와 동형).
+        self._map_dirty = False
         return {"ok": True, "name": name}
 
     def _do_toggle_group(self, p: dict) -> None:
@@ -319,6 +334,14 @@ class DraftController(DraftSessionMixin):
             return {"ok": False, "error": str(exc)}
         if self._bound_job == name:  # 결속 중인 기안을 개명 — 결속만 새 이름으로(세션 원문·매핑 불변)
             self._bound_job = new.strip()
+            # 로드 시점 지문(212)도 새 이름으로 갱신한다(리뷰 5c 3R P2 / 260) — content_fingerprint
+            # 는 name 을 포함하므로, 안 갱신하면 다음 자기 재저장이 늘 드리프트 게이트에 걸려
+            # 거짓 외부 변경을 주장한다(개명은 내용 불변인데 지문만 옛 이름으로 남아서).
+            try:
+                self._editing_fingerprint = content_fingerprint(
+                    self.registry.load(self._bound_job))
+            except (FileNotFoundError, ValueError):
+                pass  # 손상·경합 — 다음 refresh/재선택이 정리(무리한 추측 금지)
         return {"ok": True}
 
     def _do_clone_job(self, p: dict) -> dict:
