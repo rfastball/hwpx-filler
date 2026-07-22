@@ -288,7 +288,11 @@ class TestWebSelftestGate:
         assert j["ficos"] == 2, f"열 머리 필터 아이콘 수가 다릅니다: {j['ficos']!r}"
         assert "「전산」" in j["chips_text"], f"칩 줄 정의 재진술 누락: {j['chips_text']!r}"
         assert j["branch_prune"] is True, "가지 칩 × 프루닝 어포던스가 없습니다."
+        assert {"필터", "가지", "선택"} <= set(j["filter_role_labels"])
+        assert j["definition_bg"] != j["branch_bg"]
+        assert j["branch_border_style"] == "solid", "가지 칩 점선 방언이 남았습니다."
         assert j["strip_shown"] is True, "필터 밖 선택 스트립이 표시되지 않았습니다(결정 3)."
+        assert j["strip_bg"] == j["branch_bg"], "가지·관통 스트립의 낮은 표면 위계가 어긋났습니다."
         assert "1행" in j["strip_text"] and "doc-002.hwpx" in j["strip_text"], (
             f"스트립이 필터 밖 선택을 재진술하지 않습니다: {j['strip_text']!r}"
         )
@@ -298,6 +302,18 @@ class TestWebSelftestGate:
         assert "정의 매치 1" in j["sel_line"] and "정의 밖 1" in j["sel_line"], (
             f"선택 유래 수치 병기(S4) 누락: {j['sel_line']!r}"
         )
+
+    def test_job_datazone_keeps_row_semantics_and_column_kinds(self, selftest_result: dict) -> None:
+        """H-06: native 행/셀 의미와 Python 열 kind가 실 표 조판까지 도달한다."""
+        j = selftest_result["job_mirror"]
+        assert j["row_role"] is None, "tr에 checkbox role이 남아 native row 의미를 덮었습니다."
+        assert j["row_selected"] == "true"
+        assert j["row_checkbox"] is True
+        assert j["row_doccell_display"] == "flex", "table-cell 대신 내부 래퍼가 flex를 소유해야 합니다."
+        assert j["lead_hint"] == "선택하면 파일명이 정해집니다"
+        assert j["repeated_placeholder"] == 0
+        assert j["amount_align"] == "right"
+        assert "tabular-nums" in j["amount_nums"]
 
     def test_job_filename_token_danger_blocks_with_an_exit(self, selftest_result: dict) -> None:
         # #128 — 파일명 토큰 danger 는 드리프트와 **같은 자격**이라 같은 자리에서 차단 배너 +
@@ -606,6 +622,48 @@ class TestWebSelftestGate:
         assert t["move_shown_after_chip"] is True, "＋그룹지정 칩이 이동 다이얼로그를 열지 않았습니다."
         # 퇴화 불변식(결정 5) — 그룹 0개면 헤더 없는 평면.
         assert t["flat_heads"] == 0 and t["flat_cards"] == 1, f"퇴화 평면 위반: {t!r}"
+
+    def test_milestone_h_heading_roles_and_job_steps_render(self, selftest_result: dict) -> None:
+        """H-01/H-03: 계산 스타일 3단 역할과 작업 ①~④ 표지가 실 DOM에 선다."""
+        h = selftest_result["milestone_h_wave1"]
+        assert h["headings"]["screen"]["font_size"] == "19px"
+        assert h["headings"]["screen"]["font_weight"] == "700"
+        assert h["headings"]["section"]["font_size"] == "15px"
+        assert h["headings"]["section"]["font_weight"] == "700"
+        assert h["headings"]["zone"]["font_size"] == "13px"
+        assert h["headings"]["zone"]["font_weight"] == "700"
+        assert h["job_step_badges"] == 4
+        assert h["job_steps"] == [
+            "1템플릿·헤더 확인", "2데이터 연결", "3본문 확인·거울", "4생성",
+        ]
+
+    def test_milestone_h_template_and_card_surfaces_render(self, selftest_result: dict) -> None:
+        """H-04/H-14: 매체 sunken 층과 지속 선택 막대가 계산 스타일에 반영된다."""
+        h = selftest_result["milestone_h_wave1"]
+        assert h["template_media_count"] == 2
+        assert h["template_media"]["background"] != h["template_card"]["background"]
+        assert h["selected_card"] is not None
+        assert h["selected_card"]["border_left"] != "rgba(0, 0, 0, 0)"
+
+    def test_milestone_h_disabled_primary_and_pathtrack_hierarchy(self, selftest_result: dict) -> None:
+        """H-11/H-12: disabled primary가 물러나고 로케이트 동사는 아이콘 접근 이름을 갖는다."""
+        h = selftest_result["milestone_h_wave1"]
+        assert h["disabled_primary"]["background"] != h["enabled_primary"]["background"]
+        assert h["disabled_primary"]["opacity"] == "1"
+        assert h["pathtrack"]["count"] >= 2
+        assert h["pathtrack"]["titled"] is True
+        assert h["pathtrack"]["svg"] is True
+        assert set(h["pathtrack"]["names"]) <= {"열기", "폴더에서 보기", "경로 복사"}
+
+    def test_milestone_h_scrollport_holds_sticky_header(self, selftest_result: dict) -> None:
+        """H-07: 실제 세로 스크롤포트가 gutter/contain을 쓰고 sticky 머리를 유지한다."""
+        s = selftest_result["milestone_h_wave1"]["scroll"]
+        assert s["overflow_y"] == "auto"
+        assert "stable" in s["gutter"]
+        assert "contain" in s["overscroll"]
+        assert s["sticky_position"] == "sticky"
+        assert s["scroll_top"] > 0
+        assert s["sticky_holds"] is True
 
     def test_editor_library_picker_renders_grouped_select(self, selftest_result: dict) -> None:
         # 에디터 1단계 피커(#108 슬라이스 3) — 라이브러리가 관리 화면과 같은 그룹 구획(선택 전용)

@@ -655,7 +655,7 @@ _JOB_MIRROR_PROBE_JS = r"""
               definition:'(공고명) 포함 「전산」', branches:['공고명'],
               columns:[{name:'공고명', kind:'text', active:false},
                        {name:'금액', kind:'amount', active:false}]},
-      table:{columns:['공고명','금액'],
+      table:{columns:[{name:'공고명', kind:'text'}, {name:'금액', kind:'amount'}],
              rows:[{index:0, selected:true, name:'doc-001.hwpx', summary:'전산장비',
                     cells:[[['전산',true],['장비',false]], [['1,000,000원',false]]]}],
              visible_count:1,
@@ -679,13 +679,31 @@ _JOB_MIRROR_PROBE_JS = r"""
     out.restate_names = document.querySelectorAll('#jobRestate .namelist .nm').length;
     // 필터 표면 되읽기(블록 4) — 가시 행·하이라이트·칩·가지 ×·스트립·유래 수치·아이콘.
     out.tbl_rows = document.querySelectorAll('#jobTableBody tr[data-i]').length;
+    var renderedRow = document.querySelector('#jobTableBody tr[data-i]');
+    var renderedAmount = document.querySelector('#jobTableBody td.col-amount');
+    out.row_role = renderedRow && renderedRow.getAttribute('role');
+    out.row_selected = renderedRow && renderedRow.getAttribute('aria-selected');
+    out.row_checkbox = !!document.querySelector('#jobTableBody td.doccol input[type="checkbox"]');
+    out.row_doccell_display = getComputedStyle(document.querySelector('#jobTableBody .doccell')).display;
+    out.lead_hint = document.querySelector('#jobTableHead .col-hint').textContent;
+    out.repeated_placeholder = document.querySelectorAll('#jobTableBody .doc-off:not([aria-hidden="true"])').length;
+    out.amount_align = getComputedStyle(renderedAmount).textAlign;
+    out.amount_nums = getComputedStyle(renderedAmount).fontVariantNumeric;
     out.tbl_mark = (function(){ var m = document.querySelector('#jobTableBody mark');
       return m ? m.textContent : ''; })();
     out.ficos = document.querySelectorAll('#jobTableHead .fico[data-col]').length;
     out.chips_text = document.getElementById('jobFilterChips').textContent;
     out.branch_prune = !!document.querySelector('#jobFilterChips [data-prune="공고명"]');
+    var definitionChip = document.querySelector('#jobFilterChips .fchip.definition');
+    var branchChip = document.querySelector('#jobFilterChips .fchip.branch');
+    out.filter_role_labels = Array.from(document.querySelectorAll('.fchip .chip-role')).map(
+      function (e) { return e.textContent; });
+    out.definition_bg = getComputedStyle(definitionChip).backgroundColor;
+    out.branch_bg = getComputedStyle(branchChip).backgroundColor;
+    out.branch_border_style = getComputedStyle(branchChip).borderStyle;
     out.strip_shown = getComputedStyle(document.getElementById('jobSelStrip')).display !== 'none';
     out.strip_text = document.getElementById('jobSelStrip').textContent;
+    out.strip_bg = getComputedStyle(document.getElementById('jobSelStrip')).backgroundColor;
     // 스트립 항목별 × 해제 어포던스(리뷰 #6 — 진술만 하고 행동을 못 주면 반쪽).
     out.strip_unsel = !!document.querySelector('#jobSelStrip [data-unsel="1"]');
     out.sel_line = document.getElementById('jobRestate').textContent;
@@ -1414,6 +1432,94 @@ _ACTION_ROUNDTRIP_PROBE_SETUP_JS = r"""
 
 
 # ------------------------------------------------------------------ 자가검증(Q3)
+_MILESTONE_H_WAVE1_PROBE_JS = r"""
+(function () {
+  function styleOf(el) {
+    if (!el) return null;
+    var s = getComputedStyle(el);
+    return {
+      font_size: s.fontSize, font_weight: s.fontWeight,
+      background: s.backgroundColor, color: s.color,
+      border_left: s.borderLeftColor, opacity: s.opacity
+    };
+  }
+  function style(selector) { return styleOf(document.querySelector(selector)); }
+
+  var gen = document.getElementById('jobGenBtn');
+  var wasDisabled = gen.disabled;
+  gen.disabled = true;
+  var disabledPrimary = style('#jobGenBtn');
+  gen.disabled = false;
+  var enabledPrimary = style('#jobGenBtn');
+  gen.disabled = wasDisabled;
+
+  var card = document.querySelector('#tplHwpxGroups .tplcard, #tplTxtGroups .tplcard');
+  if (!card) {
+    card = document.createElement('div');
+    card.className = 'tplcard';
+    card.setAttribute('data-selftest-probe', 'card');
+    document.querySelector('#scr-tpl .tpl-medium').appendChild(card);
+  }
+  var selectedCard = null;
+  if (card) {
+    var oldCurrent = card.getAttribute('aria-current');
+    card.setAttribute('aria-current', 'true');
+    selectedCard = styleOf(card);
+    if (oldCurrent === null) card.removeAttribute('aria-current');
+    else card.setAttribute('aria-current', oldCurrent);
+  }
+
+  var pathButtons = Array.from(document.querySelectorAll('.track-btn'));
+  var scrollHost = document.createElement('div');
+  scrollHost.className = 'tblwrap';
+  scrollHost.style.height = '48px';
+  scrollHost.innerHTML = '<table class="map"><thead><tr><th>머리</th></tr></thead><tbody>' +
+    Array.from({length: 12}, function (_, i) { return '<tr><td>행 ' + i + '</td></tr>'; }).join('') +
+    '</tbody></table>';
+  document.body.appendChild(scrollHost);
+  var scrollStyle = getComputedStyle(scrollHost);
+  var stickyHead = scrollHost.querySelector('th');
+  var stickyStyle = getComputedStyle(stickyHead);
+  var stickyBefore = stickyHead.getBoundingClientRect().top;
+  scrollHost.scrollTop = 40;
+  var stickyAfter = stickyHead.getBoundingClientRect().top;
+  var scrollContract = {
+    overflow_y: scrollStyle.overflowY,
+    gutter: scrollStyle.scrollbarGutter,
+    overscroll: scrollStyle.overscrollBehavior,
+    sticky_position: stickyStyle.position,
+    sticky_holds: Math.abs(stickyAfter - stickyBefore) < 1,
+    scroll_top: scrollHost.scrollTop
+  };
+  scrollHost.remove();
+  return {
+    headings: {
+      screen: style('.scr-head h1'),
+      section: style('.job-sec-head'),
+      zone: style('#scr-job .zone-cap')
+    },
+    job_steps: Array.from(document.querySelectorAll('#scr-job .zone-cap')).map(function (e) {
+      return e.textContent.trim();
+    }),
+    job_step_badges: document.querySelectorAll('#scr-job .zone-cap .znum').length,
+    template_media_count: document.querySelectorAll('#scr-tpl .tpl-medium').length,
+    template_media: style('#scr-tpl .tpl-medium'),
+    template_card: styleOf(card),
+    selected_card: selectedCard,
+    disabled_primary: disabledPrimary,
+    enabled_primary: enabledPrimary,
+    pathtrack: {
+      count: pathButtons.length,
+      names: pathButtons.map(function (e) { return e.getAttribute('aria-label'); }),
+      titled: pathButtons.every(function (e) { return !!e.getAttribute('title'); }),
+      svg: pathButtons.every(function (e) { return !!e.querySelector('svg'); })
+    },
+    scroll: scrollContract
+  };
+})()
+"""
+
+
 def _finish_selftest(window: "object", result: dict) -> None:
     """되읽기 결과를 결정적 위치에 쓰고 정식 종료한다(쓰기·읽기 단계 공용).
 
@@ -1546,6 +1652,11 @@ def _selftest_drive(window: "object") -> None:
         # 쓰던 공용 팩토리(datazone.js·draftsession.js) 커버리지는 draft_session 프로브가 승계한다.)
         # 템플릿 관리(#108) — 매체 구획+그룹·⋮ 메뉴·＋그룹지정 칩·이동 다이얼로그 실렌더 되읽기.
         result["tpl_groups"] = window.evaluate_js(_TPL_LIST_GROUP_PROBE_JS)  # type: ignore[attr-defined]
+        # 마일스톤 H 웨이브 1 — 실제 계산 타이포·표면·버튼 위계와 PathTrack 접근 이름을
+        # 합성 작업/템플릿 렌더 뒤 실 WebView2에서 되읽는다.
+        result["milestone_h_wave1"] = window.evaluate_js(  # type: ignore[attr-defined]
+            _MILESTONE_H_WAVE1_PROBE_JS
+        )
         # 에디터 1단계 피커(#108 슬라이스 3) — 라이브러리 그룹 구획(선택 전용) 실렌더 되읽기.
         result["editor_lib"] = window.evaluate_js(_EDITOR_LIB_PICKER_PROBE_JS)  # type: ignore[attr-defined]
         # 다크모드 영속·무깜빡임(콜드부트 되읽기, #74) — 부팅 시 loaded 핸들러가 저장 테마
