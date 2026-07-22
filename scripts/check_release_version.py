@@ -12,10 +12,18 @@ ROOT = Path(__file__).resolve().parents[1]
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("tag", help="release tag, for example v0.1.0")
+    parser.add_argument(
+        "--prefix",
+        default="",
+        help=(
+            "product tag prefix before the version, for example 'diff-' so the "
+            "expected tag becomes 'diff-v0.1.0'. Default: empty (combined release)."
+        ),
+    )
     args = parser.parse_args()
     with (ROOT / "pyproject.toml").open("rb") as stream:
         version = tomllib.load(stream)["project"]["version"]
-    expected = f"v{version}"
+    expected = f"{args.prefix}v{version}"
     if args.tag != expected:
         parser.error(f"tag {args.tag!r} does not match project version {expected!r}")
     print(f"release version: {version}")

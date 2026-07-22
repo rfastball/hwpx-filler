@@ -154,6 +154,20 @@ git push origin v0.2.0
 검사, 두 portable EXE 빌드, self-check, 제품별 설치본 빌드, 설치·제거 스모크,
 SHA-256 생성을 거쳐 GitHub Release에 게시한다.
 
+#### hwpx-diff 단독 릴리스
+
+`hwpxfiller`가 아직 개발 중이라 `hwpx-diff`만 배포하려면 `diff-v` 접두 태그를 push한다.
+`pyproject.toml` 버전이 `0.1.0`이면 허용 태그는 `diff-v0.1.0`이다.
+
+```powershell
+git tag diff-v0.1.0
+git push origin diff-v0.1.0
+```
+
+`.github/workflows/release-diff.yml`은 `hwpx-diff` 산출물(설치본·portable zip)만 빌드·
+서명·게시한다. 트리거 태그 네임스페이스가 결합 릴리스(`v*`)와 다르므로 서로 충돌하지
+않는다. 서명 secrets 규약은 결합 릴리스와 동일하다.
+
 ### 선택형 Windows 코드 서명
 
 저장소에 다음 GitHub Actions secrets를 모두 설정하면 portable EXE와 설치본을
