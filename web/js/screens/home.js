@@ -72,7 +72,9 @@
       // try/catch 없이는 rejection 이 삼켜져 클릭이 무반응이 된다 — 시끄럽게 재진술한다(editTags 미러).
       try {
         const res = await Bridge.call(SCREEN, "delete_corrupt", { path });
-        if (res && res.needs_confirm && (await Modal.confirm({ body: res.confirm_text }))) {
+        if (res && res.needs_confirm && (await Modal.confirm({
+          body: res.confirm_text, confirmLabel: "삭제", cancelLabel: "취소", danger: true,
+        }))) {
           await Bridge.call(SCREEN, "delete_corrupt", { path, confirm: true });
         }
       } catch (err) {
@@ -336,6 +338,7 @@
     if (await Modal.confirm({
       body: `작업 '${name}' 을(를) 삭제할까요? 되돌릴 수 없습니다.\n` +
         "작업 화면에서 이 작업을 열어 둔 실행 세션도 다음에 돌아갈 때 닫힙니다.", returnFocus,
+      confirmLabel: "삭제", cancelLabel: "취소", danger: true,
     })) {
       Bridge.call(SCREEN, "delete_job", { name });
     }

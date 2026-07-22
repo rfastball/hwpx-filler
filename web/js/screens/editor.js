@@ -495,7 +495,7 @@
       return Modal.confirm({ body:
         `'${editing}' 편집을 닫고 새 작업 초안을 시작합니다.` +
         (busy ? "\n저장하지 않은 변경은 사라집니다." : "") +
-        "\n\n계속할까요?" });
+        "\n\n계속할까요?", confirmLabel: "새 작업 시작", cancelLabel: "취소" });
     }
     return EditorEntry.confirmDiscard(
       "새 템플릿으로 시작하면 저장하지 않은 작업 세션이 사라집니다.\n" +
@@ -508,7 +508,7 @@
     if (!n) return true;
     return Modal.confirm({ body:
       `${verbPhrase} 확정했거나 직접 편집한 매핑 ${n}개가 전부 미확정으로 돌아갑니다` +
-      `(값은 이월).\n\n계속할까요?` });
+      `(값은 이월).\n\n계속할까요?`, confirmLabel: "미확정으로 되돌리기", cancelLabel: "취소" });
   }
 
   /* ---- 이벤트 위임(innerHTML 재구성이라 위임이 안전) ---- */
@@ -573,7 +573,8 @@
           const man = (st && st.manual_unconfirmed) || 0;
           if (man && !(await Modal.confirm({ body:
             `전체 미사용하면 직접 소스를 고른 매핑 ${man}개의 수동 지정이 해제됩니다` +
-            `(자동 제안으로만 복원).\n\n계속할까요?` }))) break;
+            `(자동 제안으로만 복원).\n\n계속할까요?`,
+            confirmLabel: "전체 미사용", cancelLabel: "취소" }))) break;
           await Bridge.call(SCREEN, "use_none", {});
           break;
         }
@@ -625,7 +626,8 @@
     const blanks = (res && res.blanks) || [];
     if (!blanks.length) return;
     const ok = await Modal.confirm({ body:
-      `아래 ${blanks.length}개 필드는 채우지 않고 '비움'으로 확정합니다:\n\n${blanks.join(", ")}\n\n계속할까요?`
+      `아래 ${blanks.length}개 필드는 채우지 않고 '비움'으로 확정합니다:\n\n${blanks.join(", ")}\n\n계속할까요?`,
+      confirmLabel: "비움으로 확정", cancelLabel: "취소",
     });
     // await 로 던진다 — fire-and-forget 이면 rejection 이 디스패처 가드 밖으로 샌다(#45).
     if (ok) await Bridge.call(SCREEN, "confirm_blanks", { fields: blanks });
@@ -664,7 +666,10 @@
       // 본 문안을 그대로 되돌려 준다(#149) — 모달을 읽는 사이 디스크가 바뀌면 확인은 다른
       // 상태에 대한 것이 된다. 판정은 Python 이 쓰기 잠금 안에서 다시 하고(문안 대조),
       // 달라졌으면 새 문안으로 다시 묻는다. 여기는 무엇을 보여 줬는지만 실어 보낸다.
-      if (await Modal.confirm({ body: res.overwrite_text + "\n\n계속할까요?" })) {
+      if (await Modal.confirm({
+        body: res.overwrite_text + "\n\n계속할까요?",
+        confirmLabel: "덮어쓰기", cancelLabel: "취소", danger: true,
+      })) {
         doSave(Object.assign({}, flags, {
           confirm_overwrite: true,
           confirmed_overwrite_text: res.overwrite_text,
@@ -673,7 +678,9 @@
       return;
     }
     if (res.needs_dataset_confirm) {
-      if (await Modal.confirm({ body: res.dataset_text })) {
+      if (await Modal.confirm({
+        body: res.dataset_text, confirmLabel: "덮어쓰기", cancelLabel: "취소", danger: true,
+      })) {
         doSave(Object.assign({}, flags, { confirm_dataset: true }));
       }
       return;

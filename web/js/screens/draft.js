@@ -157,7 +157,7 @@
       const confirmedText = r.confirm_text;
       const ok = await window.Modal.confirm({
         title: "덮어쓰기 확인", body: confirmedText,
-        confirmLabel: "덮어쓰기", cancelLabel: "취소",
+        confirmLabel: "덮어쓰기", cancelLabel: "취소", danger: true,
       });
       if (!ok) return;
       r = await Bridge.call(SCREEN, "save_job",
@@ -219,7 +219,7 @@
     if (r.needs_confirm) {
       const go = await window.Modal.confirm({
         title: "덮어쓰기 확인", body: r.confirm_text,
-        confirmLabel: "덮어쓰고 저장", cancelLabel: "취소",
+        confirmLabel: "덮어쓰고 저장", cancelLabel: "취소", danger: true,
       });
       if (go) await confirmSaveTpl(true, r.confirm_text);  // 관측한 문안 되돌려 보냄(재검증)
       return;
@@ -426,7 +426,7 @@
     }
     const ok = await window.Modal.confirm({
       title: "기안 작업 삭제 확인", body,
-      confirmLabel: "삭제", cancelLabel: "취소",
+      confirmLabel: "삭제", cancelLabel: "취소", danger: true,
       returnFocus,
     });
     if (!ok) return;

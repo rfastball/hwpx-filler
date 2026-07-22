@@ -494,6 +494,17 @@ _MODAL_A11Y_PROBE_JS = r"""
   finishModal('confirmModal');
   var cClosed = cm.classList.contains('hidden');
   var cDisplayClosed = getComputedStyle(cm).display;         // 닫힌 뒤 'none'
+  // #219 danger 변형 — 같은 안정 버튼이 danger↔neutral 양방향으로 클래스·계산색을 바꾸는가.
+  window.Modal.confirm({ body: '영구 삭제', confirmLabel: '삭제', danger: true });
+  var dangerOk = document.getElementById('confirmModalOk');
+  var dangerClass = dangerOk.classList.contains('danger') && !dangerOk.classList.contains('primary');
+  var dangerBg = getComputedStyle(dangerOk).backgroundColor;
+  document.getElementById('confirmModalCancel').click();
+  finishModal('confirmModal');
+  window.Modal.confirm({ body: '중립 전환', confirmLabel: '계속' });
+  var neutralReset = !dangerOk.classList.contains('danger') && dangerOk.classList.contains('primary');
+  document.getElementById('confirmModalCancel').click();
+  finishModal('confirmModal');
   window.alert = origAlert;
   // #132.4: Modal.open/close 가 .modal 없는 요소를 시끄럽게 거절하는가(조용한 no-op 차단).
   // 잠복 결함: .hidden 은 .modal.hidden 규칙으로만 숨어, .modal 없는 요소에 open 하면 토글이 무효다.
@@ -556,6 +567,9 @@ _MODAL_A11Y_PROBE_JS = r"""
     confirm_closed: cClosed,      // #86: 확인 클릭 후 다시 hidden 인가
     confirm_entered_closing: confirmClosing, // H-16: 확인도 대칭 퇴장 상태를 실제 거쳤는가
     confirm_display_closed: cDisplayClosed,  // #86/B-9: 닫힌 뒤 display(none 기대, hidden 이 flex 를 이긴다)
+    danger_class: dangerClass,      // #219: danger=true가 primary를 적색 변형으로 교체
+    danger_background: dangerBg,    // #219: 실 계산 배경색(transparent 금지)
+    danger_resets_to_neutral: neutralReset, // #219: 다음 중립 confirm에 danger 클래스 누수 없음
     non_modal_open_rejected_loud: openRejected,   // #132.4: .modal 없는 open 이 loud 거절+미개방인가
     non_modal_close_rejected_loud: closeRejected, // #132.4: .modal 없는 close 도 loud 거절인가
     malformed_confirm_root_refused_loud: malfLoud, // Codex P2: 불량(.modal 없는) confirm root loud 거절

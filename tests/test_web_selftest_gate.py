@@ -155,6 +155,13 @@ class TestWebSelftestGate:
             "Modal.open 이 .modal 없는 요소를 조용히 삼켰습니다 — loud 거절(console.error)+미개방 기대."
         )
 
+    def test_danger_confirm_toggles_visual_variant_without_leaking(self, selftest_result: dict) -> None:
+        """#219: 실 WebView2에서 danger 버튼이 솔리드 배경으로 서고 다음 중립 확인엔 남지 않는다."""
+        m = selftest_result["modal_a11y"]
+        assert m["danger_class"] is True
+        assert m["danger_background"] not in ("transparent", "rgba(0, 0, 0, 0)")
+        assert m["danger_resets_to_neutral"] is True
+
     def test_modal_close_rejects_non_modal_target_loudly(self, selftest_result: dict) -> None:
         # 동일 잠복(#132.4) — close 도 .modal 없는 대상을 loud 거절한다(open 과 대칭).
         m = selftest_result["modal_a11y"]

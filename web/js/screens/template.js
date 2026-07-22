@@ -211,7 +211,7 @@
     if (r && r.needs_confirm) {
       if (await window.Modal.confirm({
         body: `'${r.new}' 그룹이 이미 있습니다. '${old}' 의 ${r.count}개를 '${r.new}'(${r.target}개)에 합칠까요?`,
-        returnFocus,
+        confirmLabel: "합치기", cancelLabel: "취소", returnFocus,
       })) {
         await Bridge.call(SCREEN, "rename_group", { media, group: old, new: val, confirm: true });
       }
@@ -224,6 +224,7 @@
     const r = await Bridge.call(SCREEN, "disband_group", { media, group: name });
     if (r && r.needs_confirm && (await window.Modal.confirm({
       body: `'${name}' 그룹을 해산하면 ${r.count}개가 '그룹 없음'으로 이동합니다. 해산할까요?`, returnFocus,
+      confirmLabel: "해산", cancelLabel: "취소",
     }))) {
       await Bridge.call(SCREEN, "disband_group", { media, group: name, confirm: true });
     }
@@ -235,6 +236,7 @@
     const r = await Bridge.call(SCREEN, "delete", { media, path: item.path });
     if (r && r.needs_confirm && (await window.Modal.confirm({
       body: r.confirm_text + "\n\n삭제할까요?", returnFocus,
+      confirmLabel: "삭제", cancelLabel: "취소", danger: true,
     }))) {
       await Bridge.call(SCREEN, "delete", { media, path: item.path, confirm: true });
     }
@@ -244,7 +246,10 @@
   async function doCompile(path) {
     const res = await Bridge.call(SCREEN, "compile", { path });
     if (res && res.needs_confirm) {
-      if (await window.Modal.confirm({ body: res.confirm_text + "\n\n지금 변환할까요?" })) {
+      if (await window.Modal.confirm({
+        body: res.confirm_text + "\n\n지금 변환할까요?",
+        confirmLabel: "제자리 변환", cancelLabel: "취소", danger: true,
+      })) {
         await Bridge.call(SCREEN, "compile", { path, confirm: true });
       }
     }

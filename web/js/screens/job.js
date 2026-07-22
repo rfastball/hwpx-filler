@@ -2,7 +2,7 @@
    실행 모드(기본)=세션 패널 4존, 편집 모드=정의 호스트(#jobEditHost — editor.js 가 렌더).
    안정 DOM(index.html) + Python 이 window.__push('job', snapshot) 로 값만 채운다(run/txt 패턴).
    표현 계층(거울 테이블·재진술 블록·게이트·진행/로그)만 여기서 만든다 — VM 로직 아님(링2 대체, #87).
-   덮어쓰기 확인은 공용 Modal.confirm(수치 합성 본문)으로 — 네이티브 다이얼로그 무사용이라 #86
+   덮어쓰기 확인은 공용 Modal.confirm의 수치 합성 본문으로 — 네이티브 다이얼로그 무사용이라 #86
    재유입 가드에 처음부터 부합한다. 존 배치(헤더·데이터·본문·완료)는 여기서 안정 DOM 에 값을 채운다. */
 (function () {
   const SCREEN = "job";
@@ -468,7 +468,7 @@
 
   /* ---- 덮어쓰기 확인 본문 = 수치 합성(A-2-22, 결정 36) — 총량·파괴분·신규분을 종류별로
      재진술한다(블록 4 가드 형식 승계). 별도 재진술 모달을 만들지 않고, 어차피 떠야 하는 RC-02
-     덮어쓰기 모달이 수치를 나른다. 공용 modal.js Modal.confirm(기본 포커스=머무르기·Escape=
+     덮어쓰기 모달이 수치를 나른다. 공용 modal.js Modal.confirm의 기본 포커스=머무르기·Escape=
      머무르기)이 담당한다 — 새 표면은 처음부터 #86 재유입 가드에 부합(window.confirm 무사용). */
   function overwriteBody(res) {
     const names = res.conflict_names || [];
@@ -491,7 +491,7 @@
         // 조용한 덮어쓰기 금지 — 수치 재진술 후 확인 시에만 재호출(RC-02). 모달 대기 동안 busy 유지.
         const ok = await window.Modal.confirm({
           title: "덮어쓰기 확인", body: overwriteBody(res),
-          confirmLabel: "덮어쓰고 생성", cancelLabel: "취소",
+          confirmLabel: "덮어쓰고 생성", cancelLabel: "취소", danger: true,
         });
         if (ok) { await doGenerate(true); }
         else { log("생성을 취소했습니다."); }
@@ -791,7 +791,7 @@
     }
     const ok = await window.Modal.confirm({
       title: "작업 삭제 확인", body,
-      confirmLabel: "삭제", cancelLabel: "취소",
+      confirmLabel: "삭제", cancelLabel: "취소", danger: true,
       returnFocus,
     });
     if (!ok) return;

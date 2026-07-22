@@ -125,6 +125,12 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .btn.icon{padding:var(--sp-4) var(--sp-8)}
 .btn.primary{background:var(--a-primary);color:var(--a-on-accent);border-color:var(--a-primary);font-weight:600;padding:var(--sp-6) var(--sp-16)}
 .btn.primary:hover{background:var(--a-primary-h);border-color:var(--a-primary-h)}
+/* 내구 파괴 확정(#219) — 삭제·덮어쓰기 전용. 텍스트 danger와 달리 솔리드 행동 버튼이며,
+   라이트/다크는 --a-danger 쌍을 그대로 소비한다. */
+.btn.danger{background:var(--a-danger);color:var(--a-on-accent);border-color:var(--a-danger);
+  font-weight:600;padding:var(--sp-6) var(--sp-16)}
+.btn.danger:hover{background:color-mix(in srgb,var(--a-danger) 82%,var(--a-ink));
+  border-color:color-mix(in srgb,var(--a-danger) 82%,var(--a-ink))}
 /* 비활성 주동사(H-11) — 솔리드 accent/muted 필을 쓰지 않고 옅은 중립 면으로 물러난다.
    사유 문안은 인접 게이트 캡션이 소유하므로 버튼에는 상태 표현만 남긴다. */
 .btn.primary:disabled{background:var(--n-track);color:var(--a-muted);border-color:var(--a-border);opacity:1}
@@ -945,6 +951,7 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
   .navbtn[aria-current="true"],
   .wstep-tab[aria-current="true"],
   .btn.primary:not(:disabled){background:Highlight;color:HighlightText;border-color:Highlight}
+  .btn.danger:not(:disabled){background:Mark;color:MarkText;border-color:Mark}
 
   .jcard[aria-current="true"],.tlist .titem[aria-current="true"],.tplcard[aria-current="true"]{
     border-left-color:Highlight}

@@ -16,6 +16,7 @@
             "\n\n그래도 종료할까요?",
           confirmLabel: "종료",
           cancelLabel: "계속 작업",
+          danger: true,
         });
         if (ok) await window.pywebview.api.confirm_window_close();
         else await window.pywebview.api.cancel_window_close();

@@ -254,7 +254,8 @@
   }
 
   /* 네이티브 window.confirm 대체(#86) — Promise<boolean>. 기본 포커스=취소(머무르기),
-     Escape·복귀=머무르기(false). opts: { body, title?, confirmLabel?, cancelLabel? }. */
+     Escape·복귀=머무르기(false). opts: { body, title?, confirmLabel?, cancelLabel?, danger? }.
+     danger 는 영구 파일/정의 삭제·덮어쓰기처럼 내구 파괴인 확정에만 쓴다(#219). */
   function confirm(opts) {
     opts = opts || {};
     return _promiseModal({
@@ -268,6 +269,10 @@
         _setText("confirmModalBody", opts.body || "");
         els.ok.textContent = opts.confirmLabel || "확인";
         els.cancel.textContent = opts.cancelLabel || "취소";
+        // 같은 안정 버튼을 재사용하므로 양방향 토글한다 — danger 뒤 중립 confirm 이 빨갛게
+        // 남거나 primary 뒤 danger 가 파란색으로 남는 상태 누수 차단.
+        els.ok.classList.toggle("danger", !!opts.danger);
+        els.ok.classList.toggle("primary", !opts.danger);
       },
       initialFocus: function (els) { return els.cancel; }, // 기본=머무르기, Enter-반사 파괴 차단(F7)
       okValue: function () { return true; },
