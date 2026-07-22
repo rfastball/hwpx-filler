@@ -20,10 +20,10 @@ R-info 3부 결정 1·5·7 의 합병은 **두 표면이 같은 세션 기계를
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from ..core.format_engine import presets as format_presets
-from ..core.job import content_fingerprint
 from ..core.mapping import TYPES
 from ..core.text_render import (
     RenderReport,
@@ -341,9 +341,24 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self._template_path = job.template_path  # 재저장(save-as) 시 이 경로를 재사용
         self._map_dirty = False  # 복원한 레시피 = 저장분과 일치하는 깨끗한 baseline(147)
         self._copied_total = 0  # 복원 = 아직 이 세션에서 복사 안 함(682·685)
-        # 로드 시점 내용 지문(리뷰 5c 2R P1 / 212) — 자기 재저장 전에 디스크가 이 지문과
-        # 달라졌으면(다른 표면이 이 작업의 템플릿·매핑을 바꿈) 무확인 덮어쓰기가 파괴다.
-        self._editing_fingerprint = content_fingerprint(job)
+        # 로드 시점 지문(리뷰 5c 2R P1 / 212) — 자기 재저장 전에 디스크가 이 지문과 달라졌으면
+        # (다른 표면이 이 작업의 템플릿·매핑을 바꿈) 무확인 덮어쓰기가 파괴다.
+        self._editing_fingerprint = self._baseline_fingerprint(job)
+
+    @staticmethod
+    def _baseline_fingerprint(job) -> str:
+        """draft 저장이 실제로 **덮는** 필드만의 지문 — 자기 재저장 드리프트 판정 baseline(212·270).
+
+        draft 저장은 {name(요청값)·template_path·mapping} 만 갈아 끼우고 group·tags·last_run_at·
+        filename_pattern·default_dataset_ref·version 은 ``replace`` 로 **보존**한다(재저장이 이
+        화면이 편집하지 않는 필드를 승계). 따라서 드리프트 판정은 실제로 덮는 세 필드만 본다 —
+        전 필드 지문(:func:`~hwpxfiller.core.job.content_fingerprint`, 에디터용)을 쓰면 무관한
+        메타 변경(그룹 이동·외부 참조·파일명 패턴)마다 거짓 드리프트가 뜬다(리뷰 5c 5R P2 / 270).
+        보존되는 필드의 외부 변경은 이 저장에 파괴가 아니므로(그대로 승계) 비교에서 뺀다."""
+        return json.dumps(
+            {"name": job.name, "template_path": job.template_path, "mapping": job.mapping.to_dict()},
+            ensure_ascii=False, sort_keys=True,
+        )
 
     def _do_fork_to_volatile(self, p: dict) -> "dict | None":
         """「사본으로 편집」(#148 슬라이스 5b) — 저장 원문을 휘발 사본으로 가른다(결정 7 스위치 ④).

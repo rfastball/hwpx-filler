@@ -43,7 +43,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
-from ..core.job import Job, JobRegistry, content_fingerprint
+from ..core.job import Job, JobRegistry
 from ..core.text_registry import TextTemplateRegistry
 from ..gui.job_editor_state import overwrite_confirm_text
 from .draft_session import DraftSessionMixin, TargetFontSetting
@@ -267,7 +267,7 @@ class DraftController(DraftSessionMixin):
             # 묻는다**(확인한 것과 다른 것을 무확인 덮어쓰지 않는다).
             gate_text = ""
             if name == self._bound_job:
-                if existing is not None and content_fingerprint(existing) != self._editing_fingerprint:
+                if existing is not None and self._baseline_fingerprint(existing) != self._editing_fingerprint:
                     gate_text = (
                         f"열어 둔 사이 기안 작업 '{name}' 이(가) 다른 곳에서 바뀌었습니다.\n"
                         "지금 저장하면 그 변경을 이 세션의 상태로 덮어씁니다.")
@@ -305,7 +305,9 @@ class DraftController(DraftSessionMixin):
                 job = Job(name=name, template_path=self._template_path,
                           mapping=profile, group=group)
             self.registry.save(job, allow_overwrite=True)
-            self._editing_fingerprint = content_fingerprint(job)  # 저장분 = 새 baseline(재드리프트 방지)
+            self._editing_fingerprint = self._baseline_fingerprint(job)  # 저장분 = 새 baseline
+        # 미결속(휘발) 승격이었나 — 결속 세우기 **전에** 관측한다(아래서 _bound_job 을 덮으므로).
+        was_unbound = not self._bound_job
         # 제자리 결속 — 세션 그대로, 저장 모드 전이(원문 읽기 전용). 목록에 새 행이 선다.
         self._bound_job = name
         self._source_readonly = True
@@ -314,6 +316,13 @@ class DraftController(DraftSessionMixin):
         # 안 내리면 저장 직후 다른 기안으로 떠날 때 _leave_guard 가 있지도 않은 "미저장 매핑
         # 편집"으로 거짓 파괴 확인을 띄운다(저장 = 새 baseline, restore/fresh 와 동형).
         self._map_dirty = False
+        # 미결속 승격이면 스태시를 비운다(리뷰 5c 5R P2 / 310). 승격한 세션이 곧 이 저장 기안
+        # 이라 되돌아갈 별도 휘발이 없는데, 스태시가 그 세션의 vm·mapping 객체를 계속 alias
+        # 하면 「이번 세션」 클릭이 방금 저장한 초안을 '미저장'인 척 되살리고 저장-모드 편집이
+        # 그 alias 로 샌다. 「다른 이름으로 저장」(결속 상태에서 시작)은 붙여넣던 별도 휘발이
+        # 스태시에 살아 있어야 하므로 건드리지 않는다.
+        if was_unbound:
+            self._volatile_stash = None
         return {"ok": True, "name": name}
 
     def _do_toggle_group(self, p: dict) -> None:
@@ -334,11 +343,11 @@ class DraftController(DraftSessionMixin):
             return {"ok": False, "error": str(exc)}
         if self._bound_job == name:  # 결속 중인 기안을 개명 — 결속만 새 이름으로(세션 원문·매핑 불변)
             self._bound_job = new.strip()
-            # 로드 시점 지문(212)도 새 이름으로 갱신한다(리뷰 5c 3R P2 / 260) — content_fingerprint
-            # 는 name 을 포함하므로, 안 갱신하면 다음 자기 재저장이 늘 드리프트 게이트에 걸려
-            # 거짓 외부 변경을 주장한다(개명은 내용 불변인데 지문만 옛 이름으로 남아서).
+            # 로드 시점 지문(212)도 새 이름으로 갱신한다(리뷰 5c 3R P2 / 260) — 드리프트 지문이
+            # name 을 포함하므로, 안 갱신하면 다음 자기 재저장이 늘 드리프트 게이트에 걸려 거짓
+            # 외부 변경을 주장한다(개명은 내용 불변인데 지문만 옛 이름으로 남아서).
             try:
-                self._editing_fingerprint = content_fingerprint(
+                self._editing_fingerprint = self._baseline_fingerprint(
                     self.registry.load(self._bound_job))
             except (FileNotFoundError, ValueError):
                 pass  # 손상·경합 — 다음 refresh/재선택이 정리(무리한 추측 금지)

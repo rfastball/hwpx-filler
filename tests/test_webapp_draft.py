@@ -617,13 +617,11 @@ def test_save_job_resave_preserves_durable_metadata(tmp_path):
         job.default_dataset_ref = "대장"
 
     jobs.mutate("월간 기안", _add_meta)               # 다른 표면(홈 등)이 durable 메타 부착
-    # default_dataset_ref 는 내용 지문에 포함(에디터 동형) → 외부 변경으로 드리프트 확인(212).
-    # tags·last_run_at 은 지문 제외라 이것만이면 조용히 지났을 것이다. 확인 후 저장이 메타 보존.
+    # 이 셋(tags·last_run_at·default_dataset_ref)은 draft 저장이 **보존**하는 필드라 드리프트
+    # 지문(_baseline_fingerprint = name·template·mapping)에서 빠진다(리뷰 5c 5R P2 / 270) —
+    # 외부 변경이 있어도 자기 재저장이 조용히 지나고 그 값을 그대로 승계한다(거짓 확인 없음).
     r = ctrl.dispatch("save_job", {"name": "월간 기안"})
-    if r and r.get("needs_confirm"):
-        r = ctrl.dispatch("save_job",
-                          {"name": "월간 기안", "confirm": True, "confirmed_text": r["confirm_text"]})
-    assert r["ok"] is True
+    assert r["ok"] is True, f"보존 필드의 외부 변경이 거짓 드리프트를 냈습니다: {r}"
     saved = jobs.load("월간 기안")
     assert saved.tags == {"현장": "A"}, "재저장이 tags 를 지웠습니다(durable 메타 조용한 소거)."
     assert saved.last_run_at == "2026-01-01T00:00:00", "재저장이 last_run_at 을 리셋했습니다."
@@ -741,6 +739,42 @@ def test_save_blocked_when_template_file_content_changed(tmp_path):
     (tmp_path / "job_a.txt").write_text("완전히 바뀐 원문 {{담당}}", encoding="utf-8")  # 외부 편집
     res = ctrl.dispatch("save_job", {"name": "기안A"})
     assert res["ok"] is False and "템플릿이 템플릿 관리에서 바뀌었습니다" in res["error"]
+
+
+def test_group_move_does_not_trigger_false_drift(tmp_path):
+    """결속 기안을 그룹 이동한 뒤 자기 재저장이 거짓 드리프트를 내지 않는다(리뷰 5c 5R P2 / 270).
+
+    _do_set_group 은 디스크 job.group 을 바꾸지만 draft 저장은 group 을 **보존**한다 — 드리프트
+    지문(name·template·mapping)에서 group 을 빼, 그룹 이동·외부 filename_pattern·default_dataset_ref
+    변경이 다음 재저장에 거짓 '외부 변경' 확인을 띄우지 않게."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "제목: {{공고명}}",
+               mappings=(FieldMapping(template_field="공고명", source="공고명", type="text"),))
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    ctrl.dispatch("set_group", {"name": "기안A", "group": "정기"})   # 결속 기안 그룹 이동
+    r = ctrl.dispatch("save_job", {"name": "기안A"})               # 재저장 = 드리프트 없어야
+    assert r == {"ok": True, "name": "기안A"}, f"그룹 이동이 거짓 드리프트를 냈습니다: {r}"
+    assert jobs.load("기안A").group == "정기"                       # 저장이 그룹 보존
+
+
+def test_promoting_restored_volatile_clears_stash(tmp_path):
+    """미결속(휘발) 세션을 승격 저장하면 스태시를 비운다(리뷰 5c 5R P2 / 310) — alias 부활 방지.
+
+    붙여넣기 V → 저장 기안 B 선택(V 스태시) → 「이번 세션」(V 복원, 스태시 alias 잔존) → V 를
+    「기안으로 저장」. 스태시가 방금 저장한 세션의 vm·mapping 을 계속 가리키면, 「이번 세션」이
+    저장분을 '미저장'인 척 되살린다. 승격 후 스태시를 비워 그 부활을 막는다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안B", "job_b.txt", "제목: {{공고명}}")
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "붙여넣던 값"})  # 휘발 V
+    ctrl.dispatch("select_job", {"name": "기안B"})       # V 스태시
+    ctrl.dispatch("select_job", {"name": ""})           # 「이번 세션」 = V 복원(스태시 alias 잔존)
+    r = ctrl.dispatch("save_job", {"name": "승격 기안"})  # V 를 승격 저장(미결속에서 시작)
+    assert r == {"ok": True, "name": "승격 기안"}
+    assert ctrl.snapshot()["bound_job"] == "승격 기안"
+    assert ctrl._volatile_stash is None, "미결속 승격이 스태시를 안 비워 저장분이 alias 로 남았습니다."
+    ctrl.dispatch("select_job", {"name": ""})           # 「이번 세션」 = 새 휘발(부활 아님)
+    snap = ctrl.snapshot()
+    assert snap["bound_job"] == "" and snap["mode"] == "volatile"
 
 
 # ------------------------------------------------------------------ 공유 라우터(슬라이스 3a)
