@@ -153,13 +153,17 @@ def test_switching_saved_jobs_keeps_stashed_volatile(tmp_path):
 def test_bound_job_deleted_returns_to_volatile(tmp_path):
     """결속 중인 저장 기안이 삭제되면 휘발 세션으로 복귀한다 — 사라진 정의가 저장 모드로 뜨지 않게."""
     ctrl, jobs, _ = _controller(tmp_path)
+    assert ctrl.dispatch("undo_delete_job", {})["ok"] is False
     _save_real(tmp_path, jobs, "기안A", "job_a.txt", "A 원문 {{공고명}}")
     ctrl.dispatch("set_template_text", {"text": "붙여넣기 {{공고명}}"})
     ctrl.dispatch("select_job", {"name": "기안A"})
-    ctrl.dispatch("delete_job", {"name": "기안A", "confirm": True})
+    deleted = ctrl.dispatch("delete_job", {"name": "기안A"})
+    assert deleted == {"ok": True, "undo": True, "name": "기안A"}
     snap = ctrl.snapshot()
     assert snap["has_job"] is False and snap["mode"] == "volatile"
     assert snap["template_text"] == "붙여넣기 {{공고명}}"  # 스태시한 휘발 복원
+    assert ctrl.dispatch("undo_delete_job", {}) == {"ok": True, "name": "기안A"}
+    assert jobs.exists("기안A")
 
 
 def test_deleting_bound_session_with_progress_restates_loss(tmp_path):
@@ -979,6 +983,12 @@ def test_query_actions_skip_push(tmp_path):
     """무변이 질의(guard_state)는 push 를 생략한다 — 세션 믹스인 규약 승계."""
     ctrl, _jobs, pushes = _controller(tmp_path)
     assert ctrl.dispatch("guard_state", {})["armed"] is False
+    assert ctrl.dispatch("validate_save_name", {"name": "  "}) == {
+        "ok": False, "error": "기안 이름을 입력하세요."
+    }
+    assert ctrl.dispatch("validate_save_name", {"name": "새 기안"}) == {
+        "ok": True, "error": ""
+    }
     assert pushes == []
 
 
