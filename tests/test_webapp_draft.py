@@ -284,6 +284,35 @@ def test_open_template_from_unbound_volatile_is_not_guarded(tmp_path):
     assert ctrl.snapshot()["template_name"] == "다른템플릿"
 
 
+def test_open_template_guards_stashed_volatile_loss(tmp_path):
+    """저장 세션이 미무장이어도 **스태시된 휘발**의 미저장 편집이 있으면 템플릿 열기는 확인을 요구한다(리뷰 C).
+
+    휘발에서 원문을 고치고(스태시될 미저장 편집) → 저장 기안 결속(그 휘발 스태시)→ 저장 세션은
+    미무장. 이때 라이브러리 템플릿을 열면 restore_volatile 이 스태시를 되살렸다 곧 갈아 그 편집을
+    조용히 버린다 — stash_armed 로 무장 판정해 재진술하고, 확인 시 큐·선택도 리셋해 스태시 큐
+    표지가 새 템플릿에 붙지 않게 한다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "저장기안", "저장기안.txt", "굳은 {{공고명}}")
+    # 휘발에서 붙여넣기 + 원문 라이브 편집(스태시될 미저장 편집) — source_dirty
+    ctrl.dispatch("set_template_text", {"text": "붙여넣은 {{토큰}}"})
+    ctrl.dispatch("edit_source", {"text": "고친 {{토큰}} {{추가}}"})
+    assert ctrl.snapshot()["source_dirty"] is True
+    # 저장 기안 결속 → 위 휘발이 스태시(편집 포함). 저장 세션은 방금 복원돼 미무장.
+    ctrl.dispatch("select_job", {"name": "저장기안"})
+    assert ctrl.snapshot()["mode"] == "saved"
+    assert ctrl.dispatch("leave_guard", {})["armed"] is False  # 저장 세션 자체는 미무장
+    # 템플릿 열기 → 저장 세션 미무장이어도 **스태시 무장**으로 needs_confirm(조용한 소실 금지).
+    r = ctrl.dispatch("select_template", {"name": "착수계"})
+    assert r and r["needs_confirm"] is True and r["stash_armed"] is True
+    assert ctrl.snapshot()["mode"] == "saved"  # 확인 전 불변
+    # 확인 → 스태시 폐기·휘발 전이·템플릿 선택. 큐 리셋(스태시/직전 큐 표지 오염 없음).
+    ctrl.dispatch("select_template", {"name": "착수계", "confirm": True})
+    snap = ctrl.snapshot()
+    assert snap["mode"] == "volatile" and snap["template_name"] == "착수계"
+    assert snap["source_dirty"] is False  # 깨끗한 라이브러리 픽(스태시 편집 폐기)
+    assert snap["card"]["copied_count"] == 0 and snap["selected_count"] == 0  # 큐·선택 리셋
+
+
 def test_deleting_bound_with_unsaved_mapping_edit_restates_loss(tmp_path):
     """확정 편집만 한 결속 세션을 삭제해도 소실을 재진술한다(147 + screen_job 동형 삭제 가드)."""
     ctrl, jobs, _ = _controller(tmp_path)

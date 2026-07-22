@@ -202,8 +202,7 @@
     if (r && r.needs_confirm) {
       const ok = await window.Modal.confirm({
         title: "진행 중인 기안을 떠납니다",
-        body: "지금 결속한 저장 기안의 진행(데이터·선택·미저장 편집)은 저장된 기안에 보관되지 " +
-          "않아, 다른 템플릿을 열면 사라집니다. 계속하시겠습니까?",
+        body: window.DraftScreen.leaveForTemplateBody(r),  // 두 세션(저장·이전) 무장 반영(F3·리뷰 C)
         confirmLabel: "열기", cancelLabel: "머무르기",
       });
       if (!ok) return;  // 머무르기 = 현 세션 보존(홈에 남는다)

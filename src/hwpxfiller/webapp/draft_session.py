@@ -737,19 +737,30 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         저장 기안 결속 상태에서 이 액션을 직접 부르면, 종전엔 ``_bound_job``·``_source_readonly`` 를
         그대로 둔 채 원문·매핑만 갈아, 저장 정의가 **다른 템플릿을 가리키는 저장 모드**로 남았다
         (읽기전용 잠금 우회 + 이후 재저장이 그 작업에 엉뚱한 템플릿/매핑을 결속 — 계약 위반).
-        무장(진행)이면 파괴를 먼저 재진술하고(``needs_confirm``, :meth:`~...DraftController._do_
-        select_job` 동형), 확인(또는 미결속)이면 **휘발로 전이**(``_restore_volatile`` — 저장 결속·
-        읽기전용 해제, 스태시된 붙여넣기 세션 복원)한 뒤 템플릿을 선택한다. 콤보는 휘발 모드
-        (``_bound_job==""``)라 이 가드를 안 타고 종전 그대로 동작한다(읽기전용 저장 모드에선 콤보
-        자체가 잠겨 이 경로로 못 온다).
+
+        **가드는 두 세션을 함께 본다**(리뷰 C): 이 전이는 현 저장 세션을 떠나 **스태시된 붙여넣기
+        휘발**(:meth:`_stash_guard`)을 되살리는데, 그 스태시에 미저장 원문·매핑 편집이 있으면
+        되살리자마자 template 교체로 조용히 사라지고 복사 큐 표지가 새 템플릿에 붙는다. 그래서
+        무장 판정을 저장 세션 손실(``_leave_guard``) **∨** 스태시 손실(``_stash_guard``) 로 합치고,
+        어느 쪽이든 무장이면 재진술한다(``stash_armed`` 로 표면이 문안에 반영). 확인(또는 둘 다
+        미무장)이면 휘발로 전이한 뒤, **복사 진행·선택을 리셋**해 스태시/직전 큐 표지가 새 템플릿에
+        조용히 붙는 오염을 막는다(새 템플릿 = 새 채움의 시작). 콤보는 휘발 모드(``_bound_job==""``)
+        라 이 가드·리셋을 안 타고 종전 그대로 동작한다(읽기전용 저장 모드에선 콤보 자체가 잠겨
+        이 경로로 못 온다).
         """
         if self._bound_job and not p.get("confirm"):
             g = self._leave_guard()
-            if g["armed"]:
+            stash_armed = self._stash_guard() is not None  # 스태시 휘발의 미저장 손실(리뷰 C)
+            if g["armed"] or stash_armed:
                 return {"needs_confirm": True, "kind": "leave_for_template",
-                        "target": p.get("name", ""), **g}
+                        "target": p.get("name", ""), "stash_armed": stash_armed, **g}
         if self._bound_job:
             self._restore_volatile()  # 저장 결속 해제 → 휘발(스태시 복원 or 새 휘발)
+            # 복사 진행·선택 리셋(리뷰 C) — 복원한 스태시/직전 큐 표지가 새 템플릿에 붙지 않게.
+            # 데이터는 유지(스태시 승계)하되 큐는 새로: 새 템플릿을 여는 것은 새 채움의 시작이다.
+            self.selection = SelectionModel(len(self.vm.records))
+            self.queue = TxtQueueModel(self.selection)
+            self._map_dirty = False  # 전이로 미저장 편집은 폐기됨(위에서 확인) — 표지 리셋
         self.vm.select_template(p["name"])
         self._fullwidth = False  # 치환은 그 원문에 대한 판단 — 원문이 바뀌면 함께 죽는다(리뷰 F2)
         self._source_dirty = False  # 깨끗한 라이브러리 픽 — 수정됨 표지 해제(슬라이스 5b)
