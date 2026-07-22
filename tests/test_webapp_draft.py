@@ -1074,6 +1074,23 @@ def test_path_separator_still_forbidden_for_new_names(tmp_path):
     assert not (tmp_path / "어디").exists()
 
 
+def test_reuse_requires_list_templates_membership_not_just_root(tmp_path):
+    """되돌려-쓰기 관용은 **실제 등록 템플릿**에만 열린다(리뷰 G) — 루트 안·존재만으론 부족.
+
+    Windows(대소문자 무구분)에선 대문자 .TXT 도 스캔돼 도달 불가한 방어지만, 멤버십 술어를
+    직접 가드한다: 등록 경로→이름 / 미존재·루트 밖→None(그 경로는 재사용 관용에 못 든다)."""
+    (tmp_path / "등록됨.txt").write_text("x", encoding="utf-8")
+    ctrl, _jobs, _ = _controller(tmp_path)
+    assert ctrl._registered_name_of_path(str(tmp_path / "등록됨.txt")) == "등록됨"  # 멤버 → 이름
+    assert ctrl._registered_name_of_path(str(tmp_path / "없음.txt")) is None       # 미존재 → None
+    outside = tmp_path.parent / ("밖_" + tmp_path.name + ".txt")
+    outside.write_text("y", encoding="utf-8")
+    try:
+        assert ctrl._registered_name_of_path(str(outside)) is None                # 루트 밖 → 미등록
+    finally:
+        outside.unlink()
+
+
 def test_group_persist_failure_reports_what_landed(tmp_path, monkeypatch):
     """그룹 영속만 실패하면 **저장은 성공으로 보고**하되 못 남긴 것을 진술한다(P2)."""
     ctrl, _jobs, _ = _lib_session(tmp_path)

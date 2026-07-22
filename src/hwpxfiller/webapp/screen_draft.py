@@ -360,19 +360,21 @@ class DraftController(DraftSessionMixin):
         유지한다(수정됨 표지 = ``_source_dirty``, 경로 = ``_template_path``). 그래서 편집한
         라이브러리 템플릿도 원 이름으로 프리필해 **되돌려 쓰기**(같은 파일 덮어쓰기)가 정상 경로가
         된다(구 「빠른 기안」은 origin=='lib' 이 편집에도 살아 같은 효과). 붙여넣기(경로 없음)와
-        **루트 밖 배접**(손상 Job 등, 리뷰 F1)은 빈칸에서 사람이 짓는다 — 루트 밖 경로의 stem 을
-        라이브러리 이름처럼 프리필하면 그 외부 정체를 되돌려-쓰는 것처럼 오도한다(실제 저장은
-        루트 안 새 항목으로 낙착, `_resolve_dest` 참조). 그룹 후보는 **살아있는 지정만** 센다(고아
-        그룹 부활 금지 — #108 결정 8). 판정은 여기 Python 단일 출처다.
+        **미등록 배접**(루트 밖 손상 Job·대소문자 구분 FS 의 미스캔 ``.TXT``, 리뷰 F1·G)은 빈칸에서
+        사람이 짓는다 — 미등록 경로의 stem 을 라이브러리 이름처럼 프리필하면 그 정체를 되돌려-쓰는
+        것처럼 오도한다(실제 저장은 루트 안 새 항목으로 낙착, `_resolve_dest` 참조). 프리필은 실제
+        ``list_templates`` 멤버십(`_registered_name_of_path`)으로만 연다. 그룹 후보는 **살아있는
+        지정만** 센다(고아 그룹 부활 금지 — #108 결정 8). 판정은 여기 Python 단일 출처다.
         """
-        dest = Path(self._template_path) if self._template_path else None
-        in_root = dest is not None and self._under_registry_root(dest)
-        name = self._registry_name(dest) if in_root else ""
+        reg_name = self._registered_name_of_path(self._template_path) if self._template_path else None
         keys = self._library_keys()
+        group = ""
+        if reg_name is not None:
+            group = self._groups.group_of(rel_key(Path(self._template_path), self._registry.directory))
         return {
-            "name": name,
+            "name": reg_name or "",
             "groups": self._groups.existing_groups(keys),
-            "group": self._groups.group_of(rel_key(dest, self._registry.directory)) if in_root else "",
+            "group": group,
         }
 
     _do_promote_info.is_query = True  # 무변이 질의 — 재렌더 유발 금지
@@ -399,19 +401,27 @@ class DraftController(DraftSessionMixin):
             rel = Path(path.name)
         return rel.with_suffix("").as_posix()
 
-    def _under_registry_root(self, path: "Path") -> bool:
-        """경로가 라이브러리 루트 **안**인가 — 루트 밖 ``_template_path`` 재사용 차단(리뷰 F1).
+    def _registered_name_of_path(self, path: "Path | str") -> "str | None":
+        """이 경로가 **등록된** 라이브러리 템플릿이면 그 레지스트리 이름, 아니면 None(리뷰 F1·G).
 
-        저장 기안이 라이브러리 밖 파일을 가리키면(손상 Job·외부에서 만든 txt Job), 그 정체로
-        「템플릿으로 저장」이 되돌려-쓰기 관용을 타고 **그 외부 파일을 덮어쓰며** "라이브러리 템플릿"
-        이라는 문안이 거짓이 된다(라이브러리 항목은 생기지도 않는다 — 계약 거짓말). 관용은 루트 안
-        등록분으로만 한정한다. ``resolve()`` 로 ``..``·심볼릭 우회까지 정규화해 판정한다.
+        "루트 안 + 존재"만으론 부족하다(리뷰 G): 대소문자 구분 FS 에서 대문자 ``.TXT`` 는
+        ``template_media`` 로는 TXT 로 분류되지만 ``list_templates``(``*.txt`` 스캔)엔 안 잡혀
+        **선택 가능한 라이브러리 항목이 아니다**. 그런 경로를 되돌려-쓰기 관용으로 재사용하면 그
+        외부/미등록 파일을 덮으며 라이브러리 항목은 안 생긴다(계약 거짓말). 재사용·프리필 관용은
+        실제 ``list_templates`` **멤버십**(실경로 일치)으로만 연다 — save_job 의 JobRegistry 멤버십
+        판정과 동형. 등록이면 루트 안이 함의되므로 별도 루트 검사는 이 하나로 대체한다.
         """
         try:
-            path.resolve().relative_to(self._registry.directory.resolve())
-            return True
-        except (OSError, ValueError):
-            return False
+            rp = Path(path).resolve()
+        except OSError:
+            return None
+        for t in self._registry.list_templates():
+            try:
+                if t.path.resolve() == rp:
+                    return t.name
+            except OSError:
+                continue
+        return None
 
     def _resolve_dest(self, raw_name: str) -> "Path":
         """제출된 이름 → 저장 경로. 실패는 :class:`ValueError`(인라인 재진술용).
@@ -421,16 +431,14 @@ class DraftController(DraftSessionMixin):
         위 promote_info 참조). 재귀 스캔이 하위폴더 파일을 ``하위폴더/이름`` 으로 노출하므로 프리필도
         그 값인데, 그걸 새 이름처럼 검증하면 ``/`` 때문에 거부돼 **하위폴더 템플릿은 고쳐서 되돌려
         쓰는 정상 경로가 언제나 막힌다**. 반대로 경로 구분자를 허용하면 새 이름으로 루트 밖·임의
-        하위 경로를 만들 수 있으므로, 관용은 **현 세션의 그 배접 파일 하나**로만 한정한다(붙여넣기는
-        ``_template_path=="" `` 라 이 관용에 못 든다). **루트 밖 배접도 제외**한다(리뷰 F1 — 외부
-        파일 덮어쓰기 차단): 그 경우 관용을 안 타고 ``<루트>/<검증된 이름>.txt`` 새 항목으로 낙착해
-        라이브러리 안에 사본이 생긴다(새 이름엔 구분자 계속 금지).
+        하위 경로를 만들 수 있으므로, 관용은 **현 세션의 배접 파일이 실제 등록된 그 템플릿일 때만**
+        연다(리뷰 F1·G — ``_registered_name_of_path``: 루트 밖·미등록 ``.TXT`` 배접은 제외). 그 외엔
+        ``<루트>/<검증된 이름>.txt`` 새 항목으로 낙착해 라이브러리 안에 사본이 생긴다(붙여넣기는
+        ``_template_path=="" `` 라, 새 이름엔 구분자 계속 금지라 이 관용에 못 든다).
         """
         name = (raw_name or "").strip()
-        if name and self._template_path:
-            dest = Path(self._template_path)
-            if self._under_registry_root(dest) and dest.exists() and self._registry_name(dest) == name:
-                return dest
+        if name and self._template_path and self._registered_name_of_path(self._template_path) == name:
+            return Path(self._template_path)
         return self._registry.directory / (
             validate_template_name(raw_name) + TextTemplateRegistry.SUFFIX
         )

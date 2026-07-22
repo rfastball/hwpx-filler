@@ -51,35 +51,38 @@
 
     /* 타이핑 구동(값 입력·원문 라이브 편집)은 서버 왕복을 디바운스한다(빠른 기안 선례) — 타건
        마다 왕복은 낭비고, 값 유실 경합은 _NO_PUSH+겨냥 패치가 막는다(포커스 입력 미재구성). */
-    let debTimer = null, debFn = null;
-    // 편집 왕복을 **직렬 체인**으로 잇는다(리뷰 A) — 타이핑 편집이 dispatch 순서대로 착지하고,
-    // flush 가 최신뿐 아니라 **미착지 편집 전부**를 기다리게 한다. 종전(단일 debPending)은 최신
-    // promise 만 추적해, 왕복이 180ms 를 넘어 겹치면 flush 가 이전 편집을 안 기다리고 그 편집이
-    // 뒤늦게/역순으로 착지해 컨트롤러에 stale 원문을 복원할 수 있었다(승격이 화면과 다른 원문 저장).
-    // 체인이면 다음 편집이 직전 착지 후에 발사돼 순서가 보장되고, flush 는 체인 tail 을 기다린다.
-    // 두 실체로 가른다(리뷰 E): ①``editChain`` = 연속용(실패를 흡수해 다음 편집이 계속 발사되게)
-    // ②``editTail`` = **flush 가 기다리는** 최신 편집의 promise(실패를 **전파**). 종전엔 flush 가
-    // 대기분 없을 때 ``editChain``(흡수판)을 돌려줘, blur 가 먼저 flush 해 편집이 실패해도 다음
-    // ``sess.flush()`` 가 resolve → stale 원문으로 승격했다(confirm-or-alarm 위반). 최신 편집이
-    // 실패하면 컨트롤러가 화면과 어긋난 상태이므로, 그때만 flush 가 reject 해 승격을 시끄럽게 막는다
-    // (이전 실패는 최신 성공이 덮으므로 무관 — 최신의 성패가 곧 컨트롤러 최신성).
-    let editChain = Promise.resolve(), editTail = Promise.resolve();
-    function runDeb(f) {
+    let debTimer = null, debFn = null, debKey = null;
+    // 편집 왕복을 **직렬 체인 + 대상별 실패 추적**으로 관리한다(리뷰 A·E·H).
+    // ① ``editChain`` = 직렬 체인 — 편집이 dispatch 순서대로 착지하고(역순 stale 복원 차단, A),
+    //    실패를 흡수해 다음 편집이 끊기지 않게 한다(연속용).
+    // ② ``editTargets[key]`` = **대상별**(원문=source / 값=value:<토큰>) 최신 편집 promise —
+    //    flush 가 기다리며 실패를 **전파**한다. 대상을 가르는 이유(H): 원문 편집이 실패한 뒤 무관한
+    //    값 편집이 성공하면, 최신 하나만 보던 종전 방식(E)은 그 값 성공이 원문 실패를 삼켜 flush 가
+    //    resolve→stale 원문 승격했다. 대상별이면 **같은 대상의 성공만** 그 대상의 실패를 대체하고,
+    //    다른 대상 성공은 안 삼킨다. flush 는 모든 대상의 미착지 편집을 기다린다(복사=전 대상 최신성).
+    let editChain = Promise.resolve();
+    const editTargets = {};
+    function runDeb(f, key) {
       const next = editChain.then(() => f());
-      editChain = next.catch(() => {});  // 연속: 실패 흡수(다음 편집 계속)
-      editTail = next;                   // flush 대상: 실패 전파(최신 편집 결과 = 컨트롤러 최신성)
+      editChain = next.catch(() => {});   // 순서·연속(실패 흡수)
+      if (key) editTargets[key] = next;   // 대상별 실패 보존(같은 대상 성공이 대체할 때까지 유지)
       return next;
     }
-    function debounce(fn) {
-      debFn = fn;
+    function debounce(fn, key) {
+      debFn = fn; debKey = key;
       if (debTimer) clearTimeout(debTimer);
-      debTimer = setTimeout(() => { debTimer = null; const f = debFn; debFn = null; if (f) runDeb(f); }, 180);
+      debTimer = setTimeout(() => {
+        debTimer = null; const f = debFn, k = debKey; debFn = null; debKey = null;
+        if (f) runDeb(f, k);
+      }, 180);
     }
     function flushDeb() {
       if (debTimer) { clearTimeout(debTimer); debTimer = null; }
-      const f = debFn; debFn = null;
-      if (f) return runDeb(f);   // 방금 스케줄분(= 최신 편집)을 기다림 — 실패 전파
-      return editTail;           // 대기분 없어도 미착지 최신 편집을 기다림(실패 전파, 흡수판 아님)
+      const f = debFn, k = debKey; debFn = null; debKey = null;
+      if (f) runDeb(f, k);  // 방금 스케줄분을 발사(그 대상 tail 로 편입)
+      // 모든 대상의 미착지 편집을 기다린다 — 각 대상은 자기 최신 결과로 실패 전파(리뷰 H).
+      const tails = Object.keys(editTargets).map((kk) => editTargets[kk]);
+      return tails.length ? Promise.all(tails) : Promise.resolve();
     }
     /* 렌더 세대 — 구조 변화(전면 render)가 나면 올라가, 늦게 착지한 타이핑 응답이 옛 세대의
        스냅샷으로 미리보기를 되돌리는 경합을 막는다(빠른 기안 EPOCH 선례). */
@@ -676,7 +679,7 @@
         const dot = e.target.closest("tr").querySelector(".own");
         if (dot) dot.className = "own man";
         debounce(() => Bridge.call(SCREEN, "set_map_value", { name: t.name, text: e.target.value })
-          .then(inEpoch(patchPreview)));
+          .then(inEpoch(patchPreview)), "value:" + t.name);  // 대상 = 이 토큰 값(리뷰 H)
       });
       // 포커스 이탈 시 대기 편집 즉시 반영(blur 는 버블 안 해 캡처로 받는다).
       $(id.tokPanel).addEventListener("blur", flushDeb, true);
@@ -690,7 +693,7 @@
       if (id.srcBox) {
         $(id.srcBox).addEventListener("input", (e) =>
           debounce(() => Bridge.call(SCREEN, "edit_source", { text: e.target.value })
-            .then(inEpoch(patchMap))));
+            .then(inEpoch(patchMap)), "source"));  // 대상 = 원문(리뷰 H — 값 편집 성공에 안 삼켜짐)
         $(id.srcBox).addEventListener("blur", flushDeb);
       }
       // 「사본으로 편집」(#148 슬라이스 5b) — 저장 원문을 휘발 사본으로 가른다(값·데이터·큐 진행
@@ -767,7 +770,9 @@
        runDeb 로 체인에 넣으면 openSaveTpl 의 ``sess.flush()`` 가 이 붙여넣기 착지까지 기다린 뒤에야
        promote_info 를 읽는다(타이핑 편집과 같은 정산 통로). */
     function pasteOk() {
-      runDeb(() => Bridge.call(SCREEN, "set_template_text", { text: $("pasteText").value }));
+      // 붙여넣기 = **원문** 교체라 "source" 대상으로 편입(리뷰 D·H) — 직전 원문 편집 실패를 대체하고,
+      // openSaveTpl 의 flush 가 이 착지까지 기다린다.
+      runDeb(() => Bridge.call(SCREEN, "set_template_text", { text: $("pasteText").value }), "source");
     }
 
     /* 템플릿 목록 채우기 — 선택은 **세션의 실제 템플릿**(스냅샷)이 정한다(드롭다운은 표시일 뿐). */
