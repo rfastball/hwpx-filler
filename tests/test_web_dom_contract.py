@@ -61,6 +61,7 @@ MODAL_LABELLEDBY = {
     "pasteModal": "pasteTitle",
     "qdPasteModal": "qdPasteTitle",  # 빠른 기안 붙여넣기(#90 슬라이스 7) — txt 와 별개 id
     "qdSaveTplModal": "qdSaveTplTitle",  # 빠른 기안 「템플릿으로 저장」 승격(#135)
+    "draftSaveTplModal": "draftSaveTplTitle",  # 「기안」 「템플릿으로 저장」 승격(#148 슬라이스 6)
     "sheetModal": "sheetTitle",
     "poolRegModal": "poolRegTitle",  # 데이터 등록(#26 #4)
     "poolModal": "poolTitle",  # 등록 데이터 선택(#26 #6) — 정적 골격 이관(r3 K12)

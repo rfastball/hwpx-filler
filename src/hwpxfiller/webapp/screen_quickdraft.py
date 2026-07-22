@@ -633,9 +633,14 @@ class QuickDraftController:
                     "채운 값은 저장되지 않고 원문만 저장됩니다."
                 ),
             }
-        overwritten = dest.exists()
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        write_text_atomic(str(dest), self.vm.template_text)
+        # 쓰기를 공유 레지스트리 락으로 감싼다(리뷰 B) — 이 구 화면은 슬라이스 6 에서 삭제되지만,
+        # 그때까지 draft 의 「템플릿으로 저장」·관리 화면 「새 TXT」·편집과 **같은 TextTemplateRegistry**
+        # 를 공유하므로(app.py 주입), 그 writer 들이 잡는 write_lock 을 여기서도 잡아야 draft 의
+        # 재검증~교체 임계구역 사이로 이 쓰기가 끼어들지 않는다(락은 모든 writer 가 공유해야 실효).
+        with self._registry.write_lock():
+            overwritten = dest.exists()
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            write_text_atomic(str(dest), self.vm.template_text)
         # 그룹 지정은 **저장이 성공한 뒤에만** — 파일 없는 키에 지정을 남기면 고아가 된다.
         # 덮어쓰기에서 사용자가 그룹을 안 건드렸으면 프리필로 돌아온 현재 그룹이 그대로 실린다.
         #
