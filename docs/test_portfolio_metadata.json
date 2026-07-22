@@ -1,0 +1,16 @@
+{
+  "baseline_sha": "8cace7a2648e602cd3e770902a74af1b2f288fe6",
+  "baseline_branch": "origin/master",
+  "verified_head": "8cace7a2648e602cd3e770902a74af1b2f288fe6",
+  "baseline_timestamp": "2026-07-22T21:47:00+09:00",
+  "python": "3.13.14",
+  "platform": "Windows win32",
+  "webview_opt_out": false,
+  "baseline_result": "1590 product test cases collected on latest master",
+  "final_result": "1595 passed in 63.59s (includes five audit-tool self-tests)",
+  "latest_master_verification": "1595 passed on the audit branch based on latest master",
+  "coverage_line_branch_total": "90%",
+  "coverage_exact": "line 90.58%, branch 86.06%",
+  "distribution_measurement": "GUI portable bundles 22.99s; CLI portable bundle 9.09s; all self-checks passed",
+  "notes": "Baseline collected before adding five audit-tool self-tests; final inventory includes them."
+}
