@@ -359,9 +359,11 @@ class TestWebSelftestGate:
         assert d["rows_visible"] == 3, f"접힌 그룹 행이 뷰에서 제외되지 않았습니다: {d!r}"
         assert d["grp_more"] == 2, "그룹 ⋮ 는 이름 그룹에만 있어야 합니다(「그룹 없음」 제외)."
         assert d["row_more"] == 3, f"행 ⋮ 수가 가시 행 수와 다릅니다: {d!r}"
-        # 미선택 = **휘발 세션 4존**(결정 5, 슬라이스 3a) — 「왼쪽에서 고르세요」 안내는 사망.
+        # 미선택 = **휘발 세션 4존**(결정 5, 슬라이스 3a). 저장/휘발 한 패널(슬라이스 5a — 껍데기
+        # stub 폐기, 선택이 실제 복원이 되며 사라졌다). 상시 「이번 세션」 행이 휘발 귀환구.
         assert d["session_shown"] is True, "미선택 상세에 휘발 세션 4존이 서지 않았습니다."
-        assert d["shell_hidden"] is True, "미선택인데 저장 세션 껍데기가 보입니다."
+        assert d["vol_row_present"] is True, "상시 「이번 세션」 행(휘발 귀환구)이 없습니다."
+        assert d["vol_row_current"] is True, "미결속인데 「이번 세션」 행이 결속 표시(aria-current)가 아닙니다."
         # 행 ⋮ 메뉴 — 골격은 편집 미노출(세션 슬라이스 3): 복제·이름변경·이동·삭제만.
         assert d["menu_shown"] is True, "행 ⋮ 클릭에 메뉴가 열리지 않았습니다."
         assert d["menu_items"] == ["clone", "rename", "move", "delete"], (
@@ -457,13 +459,27 @@ class TestWebSelftestGate:
         assert d["nondegen_dots_shown"] is True, "비퇴화(≥2건) 복귀에 진행 색인이 돌아오지 않았습니다."
         # 두 인스턴스 격리 — draft 렌더가 숨은 txt 화면 DOM 으로 새지 않는다.
         assert d["txt_leak"] is False, "기안 세션 렌더가 txt 화면 카드로 샜습니다(id 격리 파손)."
-        # 저장 기안 선택 ↔ 휘발 세션 **왕복**(리뷰 P2) — 미선택이 곧 휘발 진입구라 귀환 동사가
-        # 없으면 한 번 고른 사용자에게 재시작이 유일한 출구가 된다.
-        assert d["sel_shell_shown"] is True and d["sel_session_hidden"] is True, (
-            f"저장 기안 선택 시 껍데기 전환이 어긋납니다: {d!r}"
+        # 유래별 열 게이팅(#148 슬라이스 5a, 결정 7) — 휘발 모드에선 유형·확정(.persist) 열이 숨고
+        # 휘발 note 가 뜬다. 저장 기안 선택 → 세션 패널은 그대로 서고(껍데기 없음) 열이 뜨며 원문은
+        # 읽기 전용, note 는 사라진다. 겨눔 해제(휘발 귀환) → 패널 유지·열 재숨김(두 세션 병존).
+        assert d["persist_hidden_volatile"] is True, "휘발 모드인데 유형·확정 열이 숨지 않았습니다."
+        assert d["volatile_note_shown"] is True, "휘발 모드에 「유형·확정은 묻지 않습니다」 note 가 없습니다."
+        assert d["saved_session_shown"] is True, "저장 기안 선택에 세션 패널이 사라졌습니다(껍데기 회귀)."
+        assert d["saved_persist_shown"] is True, "저장 모드인데 유형·확정 열이 뜨지 않았습니다."
+        assert d["saved_src_readonly"] is True, "저장 모드 원문이 읽기 전용이 아닙니다(정의 조용한 분기 위험)."
+        assert d["saved_note_absent"] is True, "저장 모드인데 휘발 note 가 남아 있습니다."
+        assert d["vol_row_current_saved"] is True, "저장 결속 중인데 「이번 세션」 행이 결속 표시로 남았습니다."
+        # 저장 모드 원문 정의 잠금(리뷰 5a P1) — 콤보·붙여넣기까지(textarea 만이 아니라). 데이터
+        # 컨트롤은 안 잠근다. 휘발 귀환 시 다시 풀린다(조용한 정의 교체 차단 = 계약 거짓말 봉합).
+        assert d["saved_tpl_locked"] is True, "저장 모드인데 템플릿 콤보·붙여넣기가 잠기지 않았습니다(원문 조용한 교체)."
+        assert d["saved_data_unlocked"] is True, "저장 모드인데 데이터 컨트롤까지 잠겼습니다(과잉 잠금)."
+        assert d["back_restores_session"] is True, "휘발 귀환에 세션 패널이 서지 않았습니다."
+        assert d["back_persist_hidden"] is True, "휘발 귀환에 유형·확정 열이 다시 숨지 않았습니다."
+        assert d["vol_tpl_unlocked"] is True, "휘발 귀환에 템플릿 콤보·붙여넣기가 다시 풀리지 않았습니다."
+        # 복원 결속 정직 표시(리뷰 5a P2) — 데이터 미연결이어도 결속된 열이 드롭다운에 selected.
+        assert d["restored_bind_option"] == "selected", (
+            f"복원 결속(데이터 미연결)이 드롭다운에 정직히 표시되지 않았습니다: {d['restored_bind_option']!r}"
         )
-        assert d["back_btn_visible"] is True, "휘발 세션 귀환 동사가 보이지 않습니다(막다른 상태)."
-        assert d["back_restores_session"] is True, "미선택 복귀에 휘발 세션이 돌아오지 않았습니다."
 
     def test_job_edit_mode_hosts_definition_surface(self, selftest_result: dict) -> None:
         # 에디터 흡수(블록 2 개정, 결정 39~41) — 편집 모드 전환이 실 WebView2 에서 편집 호스트를

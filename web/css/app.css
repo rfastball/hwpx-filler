@@ -139,8 +139,13 @@ table.dmap tr:last-child td{border-bottom:0}
 .mapval-in:focus-visible{outline:2px solid var(--a-primary);outline-offset:1px}
 .mapval-in.empty{background:transparent;border:1px dashed var(--a-border)}
 .mapsug{color:var(--a-ok);border-color:var(--fb-fill-bd)}
-/* 유형·확정 열(#148 슬라이스 4, 결정 12) — `.persist` 는 슬라이스 5 유래 스위치의 훅(지금은
-   숨김 규칙 없음: 그릇을 늘 보인다). 확정 체크박스·유형 셀렉트는 셀 안에서 가운데 정렬. */
+/* 유형·확정 열(#148 슬라이스 4·5a, 결정 7·12) — `.persist` 는 **유래 스위치의 훅**: 저장 모드
+   에서만 뜨고 휘발 모드에선 숨는다("저장하지 않으므로 유형·확정은 묻지 않는다"). data-mode 는
+   맞추기 표 host(.mapwrap#…TokPanel)에 draftsession.js 가 얹고(판정은 Python s.mode), CSS 가
+   display 를 가른다. 시안의 `.persist{display:none}`↔`[data-mode="saved"] display:table-cell` 이식.
+   구 화면은 저장 결속이 없어 늘 휘발이라 유형·확정이 숨는 게 옳다(무해). */
+.dmap .persist{display:none}
+[data-mode="saved"] .dmap .persist{display:table-cell}
 .dmap .maptype-cell .field.sm{max-width:100%}
 .dmap .mapck-cell{text-align:center}
 .dmap .mapck{width:16px;height:16px;margin:0;accent-color:var(--a-primary);cursor:pointer}
@@ -151,6 +156,8 @@ table.dmap tr:last-child td{border-bottom:0}
 .maplegend{display:flex;gap:var(--sp-14);flex-wrap:wrap;margin-top:var(--sp-8);
   font-size:var(--fs-caption);color:var(--a-muted)}
 .maplegend span{display:inline-flex;align-items:center;gap:var(--sp-4)}
+/* 휘발 note(#148 슬라이스 5a) — 유형·확정을 왜 묻지 않는지. 범례와 한 줄에 섞이지 않게 개행. */
+.maplegend .volatile-note{flex-basis:100%}
 .maplegend i.own{width:8px;height:8px}
 
 /* ---- ③ 원문 뷰 전환(결정 34) — 채운 모습 ↔ 원문(같은 칸의 두 모습) ---- */
@@ -571,6 +578,12 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .job-item:hover{background:var(--n-hover)}
 .job-item[aria-current="true"]{background:var(--a-primary);color:var(--a-on-accent);font-weight:600}
 .job-empty{font-size:var(--fs-body);padding:var(--sp-6)}
+/* 상시 「이번 세션」 행(#148 슬라이스 5a) — 붙여넣기 휘발 세션의 목록 표현. 저장 기안과 구분되게
+   점선 상단 구획 + 점선 테두리(시안 `.jrow.session`) — 결속(aria-current) 시 실선 강조로 승격. */
+.draft-vol-sep{border-top:1px dashed var(--a-border);margin-top:var(--sp-8);padding-top:var(--sp-6)}
+.job-item.draft-vol{border:1px dashed var(--n-border-strong);border-radius:var(--rad-control)}
+.job-item.draft-vol[aria-current="true"]{border-style:solid;border-color:var(--a-primary)}
+.job-item.draft-vol[aria-current="true"] .muted{color:var(--a-on-accent)}
 /* ---- 좌 목록 관리(결정 43) — 행 ⋮·그룹 헤더·접힘·인라인 이름 변경 ---- */
 .job-row{display:flex;align-items:center;min-width:0}
 .job-row .job-item{flex:1;min-width:0}
