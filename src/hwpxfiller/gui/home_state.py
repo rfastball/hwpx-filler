@@ -1,9 +1,9 @@
 """홈 화면 ViewModel — Qt 비의존 프레젠테이션 상태(작업 목록·메타 성형·선택).
 
-위젯(:class:`~hwpxfiller.gui.home.JobListHome`)은 이 뷰모델을 들고 ``rows()``·``is_empty()``·
-``count_label()`` 로 **렌더만** 한다. 레지스트리 접근, 카드 메타 문자열, 최근실행 포맷, 선택
-상태가 여기 산다 — 변경 통지는 Qt 시그널이 아니라 순수 옵저버 콜백(``subscribe``)이라
-QApplication 없이 헤드리스로 테스트된다(링1 규율: PySide6 임포트 금지).
+웹 홈 컨트롤러(:class:`~hwpxfiller.webapp.screen_home.HomeController`)는 이 뷰모델의
+``rows()``·``is_empty()``·``count_label()`` 결과를 렌더한다. 레지스트리 접근, 카드 메타
+문자열, 최근실행 포맷, 선택 상태가 여기 산다 — 변경 통지는 순수 옵저버 콜백
+(``subscribe``)이라 창 없이 테스트된다(링1 규율: PySide6 임포트 금지).
 
 이 뷰모델의 공개 표면(``JobRow`` 필드 + 메서드)이 목업(``docs/UI_PROTOTYPE_APPB.html`` 홈)이
 겨누는 seam 계약이다.
@@ -75,7 +75,7 @@ def _fmt_iso(ts: str) -> str:
 
 @dataclass
 class JobRow:
-    """카드 1건이 렌더할 성형된 데이터 — 위젯은 이 필드만 읽는다(Job 을 직접 안 만진다)."""
+    """카드 1건이 렌더할 성형된 데이터 — 표현 계층은 이 필드만 읽는다."""
 
     name: str
     template_name: str
@@ -88,7 +88,7 @@ class JobRow:
     compile_state: "CompileState | None" = None
     compile_badge: str = ""
     # 브라우징용 분류 태그 {축→값}(JOB_BROWSER_DESIGN D1·D2) — group-by/facet 의 소스.
-    # 위젯은 카드에 직접 렌더하지 않는다(D8 카드 스펙 불변); 섹션·칩만 이 값을 소비한다.
+    # 카드에 직접 렌더하지 않는다(D8 카드 스펙 불변); 섹션·칩만 이 값을 소비한다.
     tags: "dict[str, str]" = field(default_factory=dict)
 
     @classmethod
@@ -129,7 +129,7 @@ class JobRow:
         판정을 badge_level(RC-29 단일 어휘)에 연결한다: ``danger``(템플릿 부재·손상·컴파일
         오류·미설정 = compile_state None)면 실행 불가, 그 외(RAW·PARTIAL·COMPILED·FILLED)는
         진입 가능하다. RAW/PARTIAL 은 아직 실행 준비 전이지만 진입 자체는 허용하고
-        위젯이 CTA 강조를 강등해 고지한다. 카드 [실행] 버튼 활성화와 더블클릭 게이트가
+        표현 계층이 CTA 강조를 강등해 고지한다. 카드 [실행] 액션과 진입 게이트가
         이 한 술어를 공유해 같은 액션의 두 경로가 다른 판정을 내지 않는다(자기 모순 해소).
         """
         return badge_level(self.compile_state) != ERROR_BADGE_LEVEL
@@ -185,10 +185,10 @@ class GroupSection:
     """group-by 축의 한 구간 — 값 라벨·건수·그 구간에 속한 카드 행들.
 
     ``value`` = 태그 값(명명 그룹), :data:`NO_VALUE_LABEL`(미태깅 그룹), 또는 ""(flat 단일
-    버킷 — group-by 미적용). 위젯은 섹션이 ≤1개이고 활성 facet 이 없으면 헤더를 억제하고
+    버킷 — group-by 미적용). 표현 계층은 섹션이 ≤1개이고 활성 facet 이 없으면 헤더를 억제하고
     오늘과 동일한 평면 리스트를 그린다(퇴화-코퍼스 불변식).
 
-    ``is_untagged`` = 이 섹션이 (그 축 값이 없는) 미태깅 그룹인가. 위젯이 섹션 정체성을
+    ``is_untagged`` = 이 섹션이 (그 축 값이 없는) 미태깅 그룹인가. 표현 계층이 섹션 정체성을
     ``value`` 문자열로만 키잉하면, 사용자가 :data:`NO_VALUE_LABEL` 문자열('(값 없음)')을
     실제 태그 값으로 입력했을 때 명명 섹션과 미태깅 섹션의 정체성이 충돌한다 — 이 플래그로
     둘을 분리해 표시 라벨은 같아도 접기 등 인-플레이스 전이가 서로를 침범하지 않게 한다.
@@ -218,7 +218,7 @@ class FacetAxis:
 
 
 class HomeViewModel:
-    """작업 목록 상태 + 레지스트리 어댑터. 위젯은 구독해서 렌더한다."""
+    """작업 목록 상태 + 레지스트리 어댑터. 표현 계층은 구독해서 렌더한다."""
 
     def __init__(self, registry: JobRegistry, text_registry=None, pool_registry=None):
         self.registry = registry
@@ -229,7 +229,7 @@ class HomeViewModel:
         self._selected: "str | None" = None
         self._subs: "list" = []
         # 사용자 소유 group-by 렌즈(D4) — 축 키 하나(""=flat). 씨앗으로 초기화하되(D5)
-        # 위젯이 INI 지속 렌즈로 덮어쓸 수 있다(링1 VM 은 값만 보유, 지속 IO 는 위젯 몫).
+        # 호출자가 지속값으로 덮어쓸 수 있다(링1 VM 은 값만 보유, 지속 IO 는 바깥 몫).
         self.active_group_by: str = SEED_GROUP_BY_AXIS
         # facet 선택(D10 — facet 내 OR / facet 간 AND). {축 → 선택된 값 집합}, 빈 축은 제거.
         self.active_facets: "dict[str, set[str]]" = {}
@@ -237,7 +237,7 @@ class HomeViewModel:
 
     # ---------------------------------------------------------- 변경 통지
     def subscribe(self, cb) -> None:
-        """상태 변경 시 호출될 콜백 등록(위젯의 렌더 메서드)."""
+        """상태 변경 시 호출될 표현 계층 콜백을 등록한다."""
         self._subs.append(cb)
 
     def _notify(self) -> None:
@@ -326,14 +326,14 @@ class HomeViewModel:
         return self._selected
 
     def select(self, name: "str | None") -> None:
-        """선택 갱신 — 값싸므로 재렌더 통지는 하지 않는다(위젯이 버튼만 동기화)."""
+        """선택 갱신 — 값싸므로 재렌더 통지는 하지 않는다(표현 계층이 액션만 동기화)."""
         self._selected = name if name in {r.name for r in self._rows} else None
 
     def has_selection(self) -> bool:
         return self._selected is not None
 
     def delete(self, name: str) -> None:
-        """작업 삭제 후 목록 갱신(확인 UI 는 위젯/컨트롤러 몫)."""
+        """작업 삭제 후 목록 갱신(확인 UI 는 컨트롤러 몫)."""
         self.registry.delete(name)
         if self._selected == name:
             self._selected = None
@@ -422,7 +422,7 @@ class HomeViewModel:
         """활성 facet 으로 좁힌 뒤 effective group-by 축으로 분할한 섹션들.
 
         미태깅(그 축 값 없음) 작업은 :data:`NO_VALUE_LABEL` 섹션에 1급으로 선다(D12).
-        flat(축 미유효)이면 단일 버킷 하나만 돌려주고, 위젯이 헤더를 억제한다.
+        flat(축 미유효)이면 단일 버킷 하나만 돌려주고, 표현 계층이 헤더를 억제한다.
         """
         eff = self.effective_group_by()
         rows = [r for r in self._rows if self._passes_facets(r, exclude_axis=eff)]
@@ -442,7 +442,7 @@ class HomeViewModel:
         ]
         if untagged:  # 미태깅 그룹은 명명 그룹 뒤 1급 섹션(D12)
             # is_untagged=True 로 정체성을 분리한다 — 누군가 '(값 없음)' 을 실제 값으로
-            # 태깅해 명명 섹션이 같은 라벨을 써도 위젯이 둘을 별개 섹션으로 다룬다.
+            # 태깅해 명명 섹션이 같은 라벨을 써도 표현 계층이 둘을 별개 섹션으로 다룬다.
             sections.append(
                 GroupSection(
                     value=NO_VALUE_LABEL, count=len(untagged), rows=untagged,
@@ -455,7 +455,7 @@ class HomeViewModel:
         """group-by 로 쓰이지 않는 축들 = facet. 각 값에 건수·활성 여부(D10).
 
         건수는 **자기 축을 제외한** 다른 facet 제약 하의 행 수 — 표준 패싯 의미론. 0건 값도
-        돌려주고(위젯이 회색/억제), 값 순서는 알파벳(D11 보류).
+        돌려주고(표현 계층이 회색/억제), 값 순서는 알파벳(D11 보류).
 
         고아(orphaned) 활성 facet 표면화(confirm-or-alarm): 지금 어떤 행도 지니지 않는
         축/값이 :attr:`active_facets` 에 남아 있으면(그 유일 작업이 삭제·재태깅된 뒤 렌즈가

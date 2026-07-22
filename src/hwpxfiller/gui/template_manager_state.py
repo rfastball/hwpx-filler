@@ -1,10 +1,10 @@
 """템플릿 관리 워크숍 ViewModel — Qt 비의존(링1). 특정 Job 밖의 템플릿 라이브러리 관리면.
 
-위젯(:class:`~hwpxfiller.gui.template_manager.TemplateManagerPanel`)은 이 뷰모델을 들고
+웹 템플릿·에디터 컨트롤러가 이 뷰모델을 들고
 ``rows()``·``actions_for(state)``·``scan_preview(path)``·``apply_fieldize(path)``·
 ``lint(path, vocabulary=None)``·``drift(old,new)`` 로 **렌더·오케스트레이션만** 한다. 상태 판정(compile_status)·상태별
 게이트 액션·2단계 fieldize(스캔 미리보기→적용)·lint/drift 는 전부 여기 산다 — PySide6 임포트
-없이 헤드리스로 테스트된다(홈의 home_state↔home 분리를 그대로 미러링).
+없이 창 없이 테스트된다.
 
 **새 코어 없음.** 전부 기존 코어 재사용:
 - ``core.template_status.compile_status`` — RAW/PARTIAL/COMPILED/FILLED 4-상태(호출마다 재산출).
@@ -50,7 +50,7 @@ class ResultLine(str):
 
     lint 경고·실패 잔존 문구가 화면 최저 위계의 muted 회색으로 고정 렌더되던 결함을
     푼다. ``str`` 하위형이라 기존 문자열 계약(``"파일명" in result`` 포함검사·
-    ``setText(result)``)을 그대로 지키면서, 위젯이 ``.level`` 을 style.mark 레벨
+    ``setText(result)``)을 그대로 지키면서, 표현 계층이 ``.level`` 을 시각 레벨
     (``"warn"``/``"danger"``/``"ok"``/``"muted"``)로 마킹한다 — 심각도 판정은 링1 소유.
     """
 
@@ -105,7 +105,7 @@ class ScanPreview:
     """fieldize dry-run 결과 — 무엇을 바꿀지 먼저 보여준다(파일 무변형).
 
     ``compilable`` 은 누름틀로 바꿀 수 있는 토큰 사이트, ``skipped`` 는 못 바꾸는 토큰
-    (파편·복합 런)과 그 ``reason``. 위젯은 이걸 먼저 렌더하고, 사용자가 명시적으로
+    (파편·복합 런)과 그 ``reason``. 표현 계층은 이걸 먼저 렌더하고, 사용자가 명시적으로
     적용을 누를 때만 :meth:`TemplateManagerViewModel.apply_fieldize` 가 실제 변환한다.
     """
 
@@ -122,7 +122,7 @@ class ScanPreview:
 
 @dataclass
 class TemplateRow:
-    """라이브러리 템플릿 1건이 렌더할 성형 데이터 — 위젯은 이 필드만 읽는다.
+    """라이브러리 템플릿 1건이 렌더할 성형 데이터 — 표현 계층은 이 필드만 읽는다.
 
     ``error`` 가 비어있지 않으면 읽기 실패 행(상태 없음·액션 없음) — 조용히 감추지 않고
     시끄럽게 노출한다.
@@ -199,7 +199,7 @@ class TemplateRow:
 
 
 class TemplateManagerViewModel:
-    """템플릿 라이브러리 상태 + 오케스트레이션. 위젯은 구독해 렌더한다(Qt 비의존).
+    """템플릿 라이브러리 상태 + 오케스트레이션. 웹 컨트롤러는 결과를 읽어 렌더한다(Qt 비의존).
 
     ``library_dir`` 하위 ``*.hwpx`` 를 라이브러리로 삼는다(또는 ``paths`` 로 명시 주입).
     행·배지·상태별 액션은 계산값(compile_status)이고, fieldize 는 2단계
@@ -215,7 +215,7 @@ class TemplateManagerViewModel:
 
     # ---------------------------------------------------------- 변경 통지
     def subscribe(self, cb) -> None:
-        """상태 변경 시 호출될 콜백 등록(위젯의 렌더 메서드)."""
+        """상태 변경 시 호출될 표현 계층 콜백을 등록한다."""
         self._subs.append(cb)
 
     def _notify(self) -> None:
@@ -341,7 +341,7 @@ class TemplateManagerViewModel:
 
     # ------------------------------------------------------ 결과 문구 성형(링1)
     # 단일 결과 라벨이 lint/미리보기/드리프트/컴파일을 무맥락으로 덮어쓰던 것을(RC-14)
-    # 대상 템플릿명을 포함한 성형으로 고정한다 — 뷰(위젯)가 아니라 여기 살아야
+    # 대상 템플릿명을 포함한 성형으로 고정한다 — 표현 계층이 아니라 여기 살아야
     # 헤드리스로 테스트되고 '얇은 렌더러' 계약이 지켜진다.
     def format_compile_result(self, path: str, report) -> ResultLine:
         """apply_fieldize 리포트 → 결과 문구(대상 템플릿명 포함) — 성공은 ok(UD-07)."""
