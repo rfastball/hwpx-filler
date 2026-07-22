@@ -5,6 +5,9 @@ HWPX 는 EPUB/ODF 계열 OCF 패키지다. 규칙:
   - 나머지 엔트리는 DEFLATE 로 압축한다.
   - 이미 압축된 바이너리(png 등)는 원본 압축 방식을 유지하는 편이 안전하다.
 
+읽기에서는 실제 한컴 산출물과의 호환성을 위해 첫 `mimetype`의 DEFLATED만 허용하되,
+다시 저장할 때는 반드시 STORED로 정규화한다. 값과 순서는 완화하지 않는다.
+
 기존 VBA 구현은 PowerShell 경유 .NET ``ZipFile.CreateFromDirectory`` 를 써서 이
 순서·무압축 규칙을 보장하지 못했다(한컴 뷰어가 관대해 통과했을 뿐). 여기서는
 바이트 단위로 정확히 재구성한다.
@@ -36,12 +39,22 @@ class HwpxPackage:
     # ------------------------------------------------------------------ load
     @classmethod
     def open(cls, path: str) -> "HwpxPackage":
-        pkg = cls()
         with zipfile.ZipFile(path, "r") as zf:
-            for info in zf.infolist():
-                pkg.entries[info.filename] = zf.read(info.filename)
+            infos = zf.infolist()
+            cls._validate_archive_infos(infos)
+
+            # ``mimetype`` 값도 나머지 payload를 읽기 전에 확인한다. 구조 검증을
+            # 마친 ZipInfo 자체로 읽어 duplicate-name lookup의 모호성을 피한다.
+            if zf.read(infos[0]) != MIMETYPE_VALUE:
+                raise ValueError("유효한 HWPX 가 아닙니다: 잘못된 mimetype 값")
+
+            entries: "dict[str, bytes]" = {}
+            stored: "set[str]" = set()
+            for info in infos:
+                entries[info.filename] = zf.read(info)
                 if info.compress_type == zipfile.ZIP_STORED:
-                    pkg.stored.add(info.filename)
+                    stored.add(info.filename)
+        pkg = cls(entries=entries, stored=stored)
         pkg._validate()
         return pkg
 
@@ -49,9 +62,43 @@ class HwpxPackage:
     def from_bytes(cls, blob: bytes) -> "HwpxPackage":
         return cls.open(io.BytesIO(blob))  # type: ignore[arg-type]
 
+    @classmethod
+    def _validate_archive_infos(cls, infos: "list[zipfile.ZipInfo]") -> None:
+        """ZIP central directory를 payload 처리 전에 fail-closed 검증한다."""
+        names = [info.filename for info in infos]
+        if MIMETYPE_NAME not in names:
+            raise ValueError("유효한 HWPX 가 아닙니다: mimetype 엔트리 없음")
+        if names[0] != MIMETYPE_NAME:
+            raise ValueError("유효한 HWPX 가 아닙니다: mimetype 엔트리가 첫 항목이 아님")
+
+        seen: "set[str]" = set()
+        for info in infos:
+            name = info.filename
+            if name in seen:
+                raise ValueError(f"유효한 HWPX 가 아닙니다: 중복 ZIP 엔트리 {name!r}")
+            seen.add(name)
+            cls._validate_entry_name(name)
+
+    @staticmethod
+    def _validate_entry_name(name: str) -> None:
+        """추출 여부와 무관하게 위험한 ZIP member 이름을 입력 경계에서 거절한다."""
+        if not name:
+            raise ValueError("유효한 HWPX 가 아닙니다: 빈 ZIP 엔트리 이름")
+        if "\\" in name:
+            raise ValueError(f"유효한 HWPX 가 아닙니다: 역슬래시 ZIP 경로 {name!r}")
+        windows_drive_path = len(name) >= 2 and name[0].isalpha() and name[1] == ":"
+        if name.startswith("/") or windows_drive_path:
+            raise ValueError(f"유효한 HWPX 가 아닙니다: 절대 ZIP 경로 {name!r}")
+        if ".." in name.split("/"):
+            raise ValueError(f"유효한 HWPX 가 아닙니다: 상위 경로 ZIP 엔트리 {name!r}")
+
     def _validate(self) -> None:
         if MIMETYPE_NAME not in self.entries:
             raise ValueError("유효한 HWPX 가 아닙니다: mimetype 엔트리 없음")
+        if self.entries[MIMETYPE_NAME] != MIMETYPE_VALUE:
+            raise ValueError("유효한 HWPX 가 아닙니다: 잘못된 mimetype 값")
+        for name in self.entries:
+            self._validate_entry_name(name)
 
     # -------------------------------------------------------------- accessors
     def content_xml_names(self) -> "list[str]":
@@ -75,6 +122,7 @@ class HwpxPackage:
         write_bytes_atomic(path, self.to_bytes())
 
     def to_bytes(self) -> bytes:
+        self._validate()
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as zf:
             # 1) mimetype 을 항상 첫 항목 + STORED 로.
