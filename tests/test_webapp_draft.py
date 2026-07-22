@@ -13,10 +13,24 @@ import pytest
 
 from hwpxfiller.core.dataset_pool import DatasetPoolRegistry
 from hwpxfiller.core.job import Job, JobRegistry
+from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.core.text_registry import TextTemplateRegistry
+from hwpxfiller.gui.selection_state import SelectionModel
+from hwpxfiller.gui.txt_queue import TxtQueueModel
 from hwpxfiller.webapp.draft_session import TargetFontSetting
 from hwpxfiller.webapp.screen_draft import DraftController
 from hwpxfiller.webapp.screen_txt import TxtController
+
+
+def _arm_queue(ctrl, selected: int = 2, copied: int = 1) -> None:
+    """저장 세션에 데이터·큐 진행을 심어 무장 상태를 만든다(0<copied<selected = queue_partial).
+
+    실 데이터 파일 없이 링1 모델을 직접 세워 T3 무장을 재현한다 — 저장 세션의 진행이 전환·귀환에
+    사라지는지(리뷰 5a P1) 확인하는 데 필요한 최소 상태."""
+    ctrl.selection = SelectionModel(selected)
+    ctrl.queue = TxtQueueModel(ctrl.selection)
+    for i in range(copied):
+        ctrl.queue.copy(i)
 
 
 def _controller(tmp_path: Path, **kw) -> "tuple[DraftController, JobRegistry, list]":
@@ -35,6 +49,19 @@ def _controller(tmp_path: Path, **kw) -> "tuple[DraftController, JobRegistry, li
 
 def _save(jobs: JobRegistry, name: str, template: str) -> None:
     jobs.save(Job(name=name, template_path=template))
+
+
+def _save_real(tmp_path: Path, jobs: JobRegistry, name: str, filename: str,
+               content: str, mappings: "tuple[FieldMapping, ...]" = ()) -> str:
+    """실 파일을 가진 TXT 저장 기안 — 복원(_restore_from_job)이 원문을 실제로 읽는다.
+
+    복원은 실패 원자적이라 fake 경로로는 세션이 서지 않는다(파일 부재 = OSError). 복원 계약을
+    확인하려면 진짜 템플릿 파일과 매핑 프로파일이 있어야 한다."""
+    path = tmp_path / filename
+    path.write_text(content, encoding="utf-8")
+    jobs.save(Job(name=name, template_path=str(path),
+                  mapping=MappingProfile(name=name, mappings=list(mappings))))
+    return str(path)
 
 
 # ------------------------------------------------------------------ 조회 경계(결정 13 · 1층)
@@ -57,10 +84,13 @@ def test_snapshot_merges_list_and_session_keys(tmp_path):
     for key in ("job_rows", "job_sections", "job_flat", "job_group_names", "job_name", "has_job"):
         assert key in snap, f"목록 키 {key} 누락"
     for key in ("template_name", "template_text", "tokens", "record_count", "data_source_label",
-                "data_key", "has_data", "selected_count", "target_font", "filter", "table", "card"):
+                "data_key", "has_data", "selected_count", "target_font", "filter", "table", "card",
+                "mode", "source_readonly", "bound_job"):
         assert key in snap, f"세션 키 {key} 누락 — 팩토리 계약 파손"
-    # 같은 사실을 두 번 선언하지 않는다 — 표면 분기는 has_job 하나가 진다.
+    # 같은 사실을 두 번 선언하지 않는다 — 표면 분기(has_job·mode·source_readonly)는 모두
+    # _bound_job 한 필드에서 유도한다(session_ready 같은 별도 플래그 금지).
     assert "session_ready" not in snap
+    assert snap["mode"] == "volatile" and snap["source_readonly"] is False and snap["bound_job"] == ""
 
 
 def test_initial_lists_templates(tmp_path):
@@ -68,22 +98,233 @@ def test_initial_lists_templates(tmp_path):
     assert ctrl.initial()["templates"] == ["착수계"]
 
 
-# ------------------------------------------------------------------ 목록 ↔ 세션 비간섭
-def test_select_job_does_not_destroy_volatile_session(tmp_path):
-    """목록 선택은 **화면 전환**이지 세션 파괴가 아니다 — 눌렀다 돌아오면 원문이 그대로.
+# ------------------------------------------------------------ 두 세션 병존(슬라이스 5a)
+def test_two_sessions_coexist_select_restores_and_return_preserves_volatile(tmp_path):
+    """저장 기안 선택 = 그 Job 에서 복원(저장 모드), 「이번 세션」 귀환 = 붙여넣던 휘발 그대로.
 
-    저장 세션 복원은 슬라이스 5 몫이고, 그전까지 선택은 강조만 한다. 여기서 세션을 리셋하면
-    붙여넣던 원문·데이터·큐 진행이 클릭 한 번에 조용히 사라진다(복구 불가 — 앱 밖 기억).
-    """
+    두 세션 병존(소실 0): 붙여넣다 저장 기안을 골라 저장-세션을 세워도 휘발 세션은 스태시돼
+    살아 있고, 빈 이름으로 돌아오면 붙여넣던 원문·진행이 복구된다. 저장-세션은 Job 원문을
+    싣고 읽기 전용이다(정의가 조용히 갈라지지 않게, 결정 7)."""
     ctrl, jobs, _ = _controller(tmp_path)
-    _save(jobs, "기안A", "C:/t/a.txt")
+    _save_real(tmp_path, jobs, "착수계 기안", "job_a.txt", "저장 원문 {{공고명}}")
     ctrl.dispatch("set_template_text", {"text": "붙여넣은 원문 {{공고명}}"})
-    ctrl.dispatch("select_job", {"name": "기안A"})
-    assert ctrl.snapshot()["has_job"] is True
-    ctrl.dispatch("select_job", {"name": ""})       # 미선택으로 복귀 = 휘발 세션
+    ctrl.dispatch("select_job", {"name": "착수계 기안"})
+    saved = ctrl.snapshot()
+    assert saved["has_job"] is True and saved["mode"] == "saved"
+    assert saved["source_readonly"] is True and saved["bound_job"] == "착수계 기안"
+    assert saved["template_text"] == "저장 원문 {{공고명}}"  # Job 원문으로 복원
+    ctrl.dispatch("select_job", {"name": ""})       # 「이번 세션」 = 휘발 귀환
+    vol = ctrl.snapshot()
+    assert vol["has_job"] is False and vol["mode"] == "volatile"
+    assert vol["source_readonly"] is False and vol["bound_job"] == ""
+    assert vol["template_text"] == "붙여넣은 원문 {{공고명}}"  # 붙여넣던 세션 그대로
+
+
+def test_restore_applies_profile_confirmed(tmp_path):
+    """저장 기안 복원은 매핑을 사람 소유 확정으로 되살린다(apply_profile confirm=True, 결정 12).
+
+    프로파일은 과거 사람 확정 산출물이라 확정본으로 도착한다 — 라이브 재제안이 덮지 못하고,
+    확정 열이 체크된 채 뜬다(저장 모드에서 열이 보인다)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "확정 기안", "job_c.txt", "제목: {{공고명}}",
+               mappings=(FieldMapping(template_field="공고명", source="공고명", type="text"),))
+    ctrl.dispatch("select_job", {"name": "확정 기안"})
     snap = ctrl.snapshot()
-    assert snap["has_job"] is False
-    assert snap["template_text"] == "붙여넣은 원문 {{공고명}}"
+    tok = next(t for t in snap["tokens"] if t["name"] == "공고명")
+    assert tok["confirmed"] is True, "복원한 매핑이 확정본으로 도착하지 않았습니다(결정 12)."
+    assert tok["source"] == "공고명"
+
+
+def test_switching_saved_jobs_keeps_stashed_volatile(tmp_path):
+    """저장 기안 A→B 전환은 휘발을 다시 스태시하지 않는다 — 스태시한 휘발은 계속 산다.
+
+    저장-세션은 Job 에서 결정적으로 재구성되니 잃을 게 없다(재스태시 불필요). 두 저장 기안을
+    오가도 처음 얼려 둔 붙여넣기 세션이 그대로 있어, 마침내 「이번 세션」으로 돌아오면 복구된다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "A 원문 {{공고명}}")
+    _save_real(tmp_path, jobs, "기안B", "job_b.txt", "B 원문 {{공고명}}")
+    ctrl.dispatch("set_template_text", {"text": "붙여넣기 {{공고명}}"})
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    ctrl.dispatch("select_job", {"name": "기안B"})
+    assert ctrl.snapshot()["template_text"] == "B 원문 {{공고명}}"
+    ctrl.dispatch("select_job", {"name": ""})
+    assert ctrl.snapshot()["template_text"] == "붙여넣기 {{공고명}}"
+
+
+def test_bound_job_deleted_returns_to_volatile(tmp_path):
+    """결속 중인 저장 기안이 삭제되면 휘발 세션으로 복귀한다 — 사라진 정의가 저장 모드로 뜨지 않게."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "A 원문 {{공고명}}")
+    ctrl.dispatch("set_template_text", {"text": "붙여넣기 {{공고명}}"})
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    ctrl.dispatch("delete_job", {"name": "기안A", "confirm": True})
+    snap = ctrl.snapshot()
+    assert snap["has_job"] is False and snap["mode"] == "volatile"
+    assert snap["template_text"] == "붙여넣기 {{공고명}}"  # 스태시한 휘발 복원
+
+
+def test_deleting_bound_session_with_progress_restates_loss(tmp_path):
+    """결속 중인 저장 기안을 삭제하면 세션 진행 소실도 재진술한다(리뷰 5a 2R P1, screen_job 동형).
+
+    삭제는 정의(템플릿 연결·매핑)만 아니라 결속 세션의 데이터·선택·큐 진행도 없앤다 — Job 에
+    저장되지 않아 복원 불가다. 무확인 응답에 ``open_session`` 과 무장 수치(_guard_state)를 실어
+    표면이 파괴 전모를 한 모달로 말하게 한다(confirm-or-alarm)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "A {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    _arm_queue(ctrl, selected=2, copied=1)             # 1/2 복사 = queue_partial → armed
+    res = ctrl.dispatch("delete_job", {"name": "기안A"})
+    assert res["needs_confirm"] is True
+    assert res["open_session"] is True, "결속 세션 삭제가 open_session 을 빠뜨렸습니다(조용한 소실)."
+    assert res["armed"] is True and res["copied_count"] == 1
+    assert ctrl.snapshot()["bound_job"] == "기안A"      # 확인 전 = 안 지움
+
+
+def test_deleting_unbound_job_reports_no_session_loss(tmp_path):
+    """결속 아닌 기안 삭제는 세션 무영향 — 정의 삭제만 재진술하고 진행 수치를 부풀리지 않는다.
+
+    현 세션은 다른 기안(또는 휘발)에 물려 있는데도 open_session/armed 를 실으면 지우지도 않을
+    진행을 잃는다고 거짓 경고한다(over-warn 도 confirm-or-alarm 위반)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "A {{공고명}}")
+    _save_real(tmp_path, jobs, "기안B", "job_b.txt", "B {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    _arm_queue(ctrl, selected=2, copied=1)             # 기안A 세션에 진행이 있어도
+    res = ctrl.dispatch("delete_job", {"name": "기안B"})  # 결속 아닌 기안B 삭제는 무영향
+    assert res["needs_confirm"] is True and res["open_session"] is False
+    assert "armed" not in res, "결속 아닌 삭제가 무관한 세션 무장 수치를 실었습니다(거짓 경고)."
+
+
+# ------------------------------------------ 미저장 레시피 편집 가드(리뷰 5a 3R P1 / 147)
+def test_leaving_saved_with_unsaved_mapping_edit_needs_confirm(tmp_path):
+    """데이터 미로드 저장 세션에서 상수·확정 편집만 해도 전환 시 확인한다(147).
+
+    선택·복사가 0이라 T3(_guard_state)는 무장 안 하지만, 미저장 레시피 편집은 세션 교체로
+    사라진다 — _leave_guard 가 map_dirty 를 무장으로 친다(데이터 교체와 다른 문턱)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "제목: {{공고명}}")
+    _save_real(tmp_path, jobs, "기안B", "job_b.txt", "제목: {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "직접 입력한 상수"})  # 미저장 편집
+    res = ctrl.dispatch("select_job", {"name": "기안B"})
+    assert res and res["needs_confirm"] is True and res["map_dirty"] is True
+    assert ctrl.snapshot()["bound_job"] == "기안A"      # 확인 전 = 안 떠남
+
+
+def test_restored_saved_session_is_clean_and_leaves_without_warning(tmp_path):
+    """복원 직후(편집 전) 전환은 확인 없이 넘어간다 — 복원 baseline 의 map_dirty 는 깨끗하다.
+
+    복원은 프로파일 행을 touched(사람 소유)로 되살리지만(결정 12), 그건 저장분과 일치하는
+    baseline 이라 '미저장 편집'이 아니다. map_dirty 를 touched 로 착각하면 매번 over-warn 한다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "제목: {{공고명}}",
+               mappings=(FieldMapping(template_field="공고명", source="공고명", type="text"),))
+    _save_real(tmp_path, jobs, "기안B", "job_b.txt", "제목: {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})       # 복원 = touched rows, map_dirty=False
+    res = ctrl.dispatch("select_job", {"name": "기안B"})
+    assert res is None                                   # 편집 안 했으니 무장 아님
+
+
+def test_data_swap_guard_ignores_unsaved_mapping_edit(tmp_path):
+    """데이터 교체 가드(_guard_state)는 미저장 매핑 편집으로 무장하지 않는다(147 스코프 경계).
+
+    데이터 스왑은 매핑·상수를 유지하므로 편집은 잃을 게 없다 — 여기 map_dirty 를 실으면
+    over-warn(confirm-or-alarm 역방향 위반). 세션 교체(_leave_guard)에서만 무장으로 친다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "제목: {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "상수"})
+    g = ctrl.dispatch("guard_state", {})
+    assert g["map_dirty"] is True and g["armed"] is False
+
+
+def test_deleting_bound_with_unsaved_mapping_edit_restates_loss(tmp_path):
+    """확정 편집만 한 결속 세션을 삭제해도 소실을 재진술한다(147 + screen_job 동형 삭제 가드)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "제목: {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    ctrl.dispatch("set_confirmed", {"name": "공고명", "value": True})  # 미저장 편집
+    res = ctrl.dispatch("delete_job", {"name": "기안A"})
+    assert res["open_session"] is True and res["armed"] is True and res["map_dirty"] is True
+
+
+# ------------------------------------ 외부 삭제로 고아 된 결속 세션 사후 고지(리뷰 5a 3R P1 / 121)
+def test_refresh_orphaned_armed_session_gives_loud_notice(tmp_path):
+    """다른 화면에서 결속 기안이 삭제된 뒤 복귀(refresh) 시 무장 세션 소실을 시끄럽게 사후 고지한다.
+
+    삭제는 이미 일어나 사전 확인 불가 — 조용히 버리지 않고 notice 를 돌려 표면이 alert 한다
+    (confirm-or-alarm 의 "알려라" 갈래). 삭제 화면(홈)의 확인창은 draft 세션을 모른다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "제목: {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    _arm_queue(ctrl, selected=2, copied=1)
+    jobs.delete("기안A")                                  # 다른 화면에서 삭제된 상황
+    res = ctrl.dispatch("refresh", {})
+    assert res and "notice" in res and "기안A" in res["notice"]
+    assert ctrl.snapshot()["mode"] == "volatile"
+
+
+def test_refresh_orphaned_unarmed_session_is_silent(tmp_path):
+    """무장 아닌 결속 세션이 외부 삭제로 사라지면 조용히 복귀한다 — 잃을 게 없다(과경보 금지)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "제목: {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    jobs.delete("기안A")
+    res = ctrl.dispatch("refresh", {})
+    assert res is None and ctrl.snapshot()["mode"] == "volatile"
+
+
+def test_leaving_saved_session_with_progress_needs_confirm(tmp_path):
+    """저장 세션(진행 있음)에서 다른 기안으로 전환 = 확인 왕복(리뷰 5a P1) — 진행은 Job 에 없어 사라진다.
+
+    저장 세션의 데이터·큐 진행은 Job 에 저장되지 않아 전환 시 재구성으로 소실된다(휘발과 달리
+    스태시 보존 대상 아님). 무장이면 파괴를 재진술하고, 확인해야 넘어간다(T3 동형)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "A {{공고명}}")
+    _save_real(tmp_path, jobs, "기안B", "job_b.txt", "B {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    _arm_queue(ctrl, selected=2, copied=1)             # 1/2 복사 = queue_partial → armed
+    res = ctrl.dispatch("select_job", {"name": "기안B"})
+    assert res["needs_confirm"] is True and res["copied_count"] == 1
+    assert ctrl.snapshot()["bound_job"] == "기안A"      # 확인 전 = 안 떠남
+    ctrl.dispatch("select_job", {"name": "기안B", "confirm": True})
+    assert ctrl.snapshot()["bound_job"] == "기안B"
+
+
+def test_leaving_saved_session_to_volatile_also_guarded(tmp_path):
+    """「이번 세션」 귀환도 같은 손실 경로다 — 저장 세션 진행이 있으면 확인한다(리뷰 5a P1)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "A {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    _arm_queue(ctrl, selected=2, copied=1)
+    res = ctrl.dispatch("select_job", {"name": ""})
+    assert res["needs_confirm"] is True
+    assert ctrl.snapshot()["has_job"] is True           # 확인 전 = 안 떠남
+
+
+def test_leaving_volatile_session_is_not_guarded(tmp_path):
+    """휘발 세션 전환은 가드하지 않는다 — 스태시로 보존되니 잃을 게 없다(가드는 저장 세션 전용)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "A {{공고명}}")
+    ctrl.dispatch("set_template_text", {"text": "붙여넣기 {{공고명}}"})
+    _arm_queue(ctrl, selected=2, copied=1)              # 휘발에도 진행이 있지만
+    res = ctrl.dispatch("select_job", {"name": "기안A"})  # 곧바로 복원(확인 없음 — 스태시 보존)
+    assert res is None and ctrl.snapshot()["bound_job"] == "기안A"
+
+
+def test_restore_missing_template_is_atomic_and_loud(tmp_path):
+    """템플릿 파일이 사라진 저장 기안 선택은 상태를 바꾸지 않고 시끄럽게 재진술한다(원자성).
+
+    복원은 실패 가능한 파일 읽기를 먼저 끝낸 뒤에야 세션을 교체한다 — 파일 부재면 스태시한
+    휘발 세션이 반쪽으로 오염되지 않고, 붙여넣던 원문이 그대로 남는다(confirm-or-alarm)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save(jobs, "유령 기안", "C:/없는/파일.txt")  # 실 파일 없음
+    ctrl.dispatch("set_template_text", {"text": "살아남을 원문 {{공고명}}"})
+    res = ctrl.dispatch("select_job", {"name": "유령 기안"})
+    assert res and res.get("ok") is False, "부재 템플릿 복원이 조용히 성공했습니다(confirm-or-alarm 위반)."
+    snap = ctrl.snapshot()
+    assert snap["has_job"] is False and snap["mode"] == "volatile"
+    assert snap["template_text"] == "살아남을 원문 {{공고명}}"
 
 
 # ------------------------------------------------------------------ 공유 라우터(슬라이스 3a)
