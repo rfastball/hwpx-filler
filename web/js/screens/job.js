@@ -312,7 +312,7 @@
     }
     const rows = s.mirror || [];
     if (!rows.length) {  // 선택 0(또는 데이터 미겨눔) = 생성될 문서 없음
-      host.innerHTML = `<p class="mirempty muted capnote">행을 선택하면 이 문서에 들어갈 값이 여기 비칩니다.</p>`;
+      host.innerHTML = `<p class="mirempty muted capnote">행을 선택하면 이 문서에 들어갈 값이 여기 표시됩니다.</p>`;
       return;
     }
     host.innerHTML =
@@ -332,12 +332,12 @@
     }
     if (r.state === "blank") {
       return `<tr class="mir-row blankd" id="${id}"><td class="mir-f">${nm}</td><td class="mir-v">${val}</td>` +
-        `<td class="mir-s"><span class="st blankd">빈칸 선언</span></td></tr>`;
+        `<td class="mir-s"><span class="st blankd">비움 확정</span></td></tr>`;
     }
     // missing — 클릭형 행(확인/철회 토글). ack 여부로 색·칩 전환.
     const ack = r.acknowledged;
     const chip = ack ? `<span class="st ackd">확인됨 · 클릭=철회</span>`
-                     : `<span class="st miss">미입력 · 클릭=확인</span>`;
+                     : `<span class="st miss">빈 값 · 클릭=확인</span>`;
     return `<tr class="mir-row miss${ack ? " ackd" : ""}" id="${id}" role="button" tabindex="0" ` +
       `data-f="${nm}" aria-pressed="${ack ? "true" : "false"}">` +
       `<td class="mir-f">${nm}</td><td class="mir-v">${val}</td><td class="mir-s">${chip}</td></tr>`;

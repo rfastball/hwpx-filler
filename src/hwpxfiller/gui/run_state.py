@@ -466,7 +466,7 @@ class RunViewModel:
         if unmet:
             return GateState(
                 False, "warn",
-                f"미입력 필드 {len(unmet)}개의 배지를 눌러 확인해야 문서 생성이 가능합니다: "
+                f"빈 값 필드 {len(unmet)}개의 배지를 눌러 확인해야 문서 생성이 가능합니다: "
                 f"{', '.join(unmet)}",
             )
         if not out_dir:
@@ -498,7 +498,7 @@ class RunViewModel:
         if out.empty_valued:
             # 상태 어휘 경계(UD-20): 사전검증 경고도 배지·게이트와 같은 '미입력'으로 통일
             # (같은 상태 2이름 해소) — '미입력'=출력값 빔(ack 대상).
-            parts.append("[경고] 미입력 필드: " + ", ".join(out.empty_valued))
+            parts.append("[경고] 빈 값 필드: " + ", ".join(out.empty_valued))
         if src.missing_columns or drift.has_drift or name_unresolved:
             level = "danger"
         elif out.empty_valued:
@@ -508,7 +508,7 @@ class RunViewModel:
         return PreflightResult(
             list(src.missing_columns), list(out.empty_valued), level,
             "\n".join(parts) if parts
-            else "사전검증 통과(치명 누락 없음). 아래 빈 값 표면화를 확인하세요.",
+            else "사전검증 통과(치명 누락 없음). 아래 빈 값 목록을 확인하세요.",
         )
 
     def acknowledge(self, field: str) -> None:

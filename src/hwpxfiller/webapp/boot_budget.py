@@ -77,7 +77,7 @@ def decide(seen: str, current: str) -> "tuple[float, str]":
       완주했던 환경이다).
     """
     if not seen:
-        return COLD_BUDGET_SECONDS, "완주 이력 없음(첫 실행)"
+        return COLD_BUDGET_SECONDS, "첫 실행"
     if current and current != seen:
         return COLD_BUDGET_SECONDS, f"런타임 교체({seen} → {current})"
-    return WARM_BUDGET_SECONDS, "완주 이력 있음"
+    return WARM_BUDGET_SECONDS, "정상 부팅 이력 있음"

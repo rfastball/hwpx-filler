@@ -233,17 +233,17 @@
     const ignored = s.ignored_source_fields || [];
     const activeChips = all.filter((f) => active.has(f)).map((f) =>
       `<button class="hchip on" data-act="toggle-header" data-field="${esc(f)}" title="클릭 = 미사용으로">${esc(f)}</button>`
-    ).join("") || '<span class="muted">사용 중인 헤더가 없습니다. 아래 미사용 목록에서 골라 켜세요.</span>';
+    ).join("") || '<span class="muted">사용 중인 데이터 열이 없습니다. 아래 미사용 목록에서 골라 켜세요.</span>';
     // 미사용 = 벽 이탈 + 접힘 구역(결정 13). '전체 미사용'이 ignored_expanded 로 자동 펼침.
     const ignoredBlock = ignored.length
       ? `<details class="hidden-hdrs ign-fold"${(s.ignored_expanded || foldOpen) ? " open" : ""}><summary>미사용 ${ignored.length}개 (펼쳐 다시 사용)</summary>
            <div class="hchips">${ignored.map((f) =>
               `<button class="hchip ign" data-act="toggle-header" data-field="${esc(f)}" title="클릭 = 다시 사용">${esc(f)}</button>`).join("")}</div>
-           <p class="hint" style="margin-top:var(--sp-4)">미사용 헤더는 자동 매핑 제안·소스 후보에서 빠집니다.</p>
+           <p class="hint" style="margin-top:var(--sp-4)">미사용 데이터 열은 자동 매핑 제안·소스 후보에서 빠집니다.</p>
          </details>`
       : "";
     return `<div class="grp">
-      <div class="row" style="margin-bottom:var(--sp-4)"><span class="cap">사용할 헤더</span>
+      <div class="row" style="margin-bottom:var(--sp-4)"><span class="cap">사용할 데이터 열</span>
         <span class="muted" style="margin-left:var(--sp-8)">${all.length}개 중 ${s.active_count}개 사용</span>
         <span class="spacer"></span>
         ${s.ignored_count ? `<button class="btn sm" data-act="use-all-headers">전체 사용</button>` : ""}
@@ -275,7 +275,7 @@
       ${headerSelect(s)}
       ${banner}
       <div class="tblwrap"><table class="map"><thead><tr>
-        <th>확정</th><th>템플릿 필드 · 추정</th><th>데이터 항목</th>
+        <th>확정</th><th>템플릿 필드 · 추정</th><th>데이터 열</th>
         <th>타입 / 고정값</th><th>표시형</th><th>미리보기</th><th>상태</th></tr></thead>
         <tbody>${rows}</tbody></table></div>
       <div class="stepper">${stepper}<span class="spacer"></span>${counts}</div>
@@ -379,7 +379,7 @@
       ${line("템플릿", p.template)}
       ${line("데이터", p.dataset)}
       ${line("템플릿 필드", p.template_fields)}
-      ${line("데이터 항목", p.source_keys)}
+      ${line("데이터 열", p.source_keys)}
       ${when ? `<div class="hint muted" style="margin-top:0">${when}</div>` : ""}
       ${drift}
     </div>`;
@@ -473,7 +473,7 @@
   }
 
   function gateHint(s) {
-    if (s.step === 0) return "템플릿을 선택하고 게이트를 통과해야 진행할 수 있습니다";
+    if (s.step === 0) return "템플릿을 선택하고 미해결 토큰을 확인해야 진행할 수 있습니다";
     if (s.step === 1) return "전 행을 확정해야 진행할 수 있습니다";
     return "";
   }

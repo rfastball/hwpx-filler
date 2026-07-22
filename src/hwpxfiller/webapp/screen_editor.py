@@ -735,7 +735,7 @@ class EditorController:
         if target > self.step and not self._editing_origin:
             for s in range(self.step, target):  # 신규: 전진은 게이트 통과 필요(각 중간 단계).
                 if not self.can_advance(s):
-                    raise ValueError(f"{s}단계 게이트 미통과. 진행할 수 없습니다.")
+                    raise ValueError(f"{s}단계 조건을 아직 채우지 못해 진행할 수 없습니다.")
         if target == 1:  # 매핑 진입(3단계 접기) — 데이터 유무 불문 모델 초안 생성.
             self._ensure_model()
         self.step = max(0, min(2, target))
@@ -743,7 +743,7 @@ class EditorController:
     def _do_ack_gate(self, p: dict) -> None:
         """PARTIAL 게이트 명시 확인 — 재진술된 미해결 토큰 전체를 확인(ADR-E)."""
         if self.gate is None:
-            raise ValueError("확인할 게이트가 없습니다.")
+            raise ValueError("확인할 항목이 없습니다.")
         self.gate.acknowledge(self.gate.unmet_tokens)
 
     def _do_skip_data(self, p: dict) -> None:
@@ -767,8 +767,7 @@ class EditorController:
         """
         if self.step == 0 and not self.can_advance(0):
             raise ValueError(
-                "템플릿 게이트를 통과해야 매핑으로 진행할 수 있습니다. "
-                "미해결 토큰을 확인하거나 템플릿을 정리하세요."
+                "미해결 토큰을 확인하거나 템플릿을 정리해야 매핑으로 진행할 수 있습니다."
             )
         had_data = bool(self.data_path)
         self.data_path = ""
@@ -835,7 +834,7 @@ class EditorController:
         active = {f for f in active if f in self.source_fields}
         if self.source_fields and not active and not allow_empty:
             raise ValueError(
-                "사용할 헤더를 하나 이상 남겨 두세요. 전부 끄려면 '전체 미사용'을 쓰세요."
+                "사용할 데이터 열을 하나 이상 남겨 두세요. 전부 끄려면 '전체 미사용'을 쓰세요."
             )
         self._ignored_sources = {f for f in self.source_fields if f not in active}
         demoted: "list[str]" = []
@@ -848,7 +847,7 @@ class EditorController:
             )
         n_active = len(self._active_sources())
         n_ignored = len(self._ignored_sources)
-        msg = f"사용 헤더 {n_active}개 · 미사용 {n_ignored}개."
+        msg = f"사용 데이터 열 {n_active}개 · 미사용 {n_ignored}개."
         if demoted:
             self._set_notice(
                 msg + f"\n미사용으로 바꾸며 확정·수동 매핑을 해제한 필드 {len(demoted)}개"

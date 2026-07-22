@@ -1,4 +1,4 @@
-"""생성 경계 게이트(RC-03) + 협조적 취소(RC-06) — generate_batch 헤드리스.
+﻿"""생성 경계 게이트(RC-03) + 협조적 취소(RC-06) — generate_batch 헤드리스.
 
 검증이 호출자(GUI validate·CLI --profile 분기)에만 있으면 validate 이후 템플릿 교체
 (TOCTOU)나 새 호출측(파이프라인·API)이 자동으로 게이트 밖이 된다 — 경계 자체가 막는지,
@@ -69,7 +69,7 @@ def test_generate_batch_blocks_drifted_template_before_any_write(tmp_path):
     _write_template(template, ["공고명", "신규필드"])  # 매핑이 못 덮는 필드 유입
     out = tmp_path / "out"
 
-    with pytest.raises(ValueError, match="구조 드리프트"):
+    with pytest.raises(ValueError, match="확정 매핑과 달라"):
         generate_batch(
             str(template), [{"공고명": "A"}], str(out), "d-{{공고명}}",
             engine=_FakeEngine(), mapping=_mapping("공고명"),
@@ -96,7 +96,7 @@ def test_generate_batch_between_batches_template_swap_is_blocked(tmp_path):
     assert res.succeeded == 1
 
     _write_template(template, ["품명"])  # 다른 문서종으로 교체(구매요청서 모사)
-    with pytest.raises(ValueError, match="구조 드리프트"):
+    with pytest.raises(ValueError, match="확정 매핑과 달라"):
         generate_batch(
             str(template), [{"공고명": "B"}], str(out), "d2-{{공고명}}",
             engine=_FakeEngine(), mapping=mapping,
@@ -123,7 +123,7 @@ def test_drift_describe_is_single_source_of_message():
     assert "템플릿 구조를 읽을 수 없음: 깨짐" in text
     assert "새로 유입된 미매핑 필드: 신규" in text
     assert "템플릿에서 소멸한 매핑 필드: 소멸" in text
-    assert "값 매핑과 비움 선언이 충돌하는 필드: 충돌" in text
+    assert "값 매핑과 비움 확정이 충돌하는 필드: 충돌" in text
     assert TemplateStructureDrift().describe() == ""  # 무드리프트 = 빈 문자열
 
 

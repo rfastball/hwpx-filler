@@ -160,11 +160,11 @@ def test_missing_gate_blocks_generate_until_acked(tmp_path):
     ctrl.set_output_folder(str(tmp_path / "out"))
 
     snap = ctrl.snapshot()
-    assert snap["gate"]["enabled"] is False and "미입력" in snap["gate"]["text"]
+    assert snap["gate"]["enabled"] is False and "빈 값" in snap["gate"]["text"]
 
     # 생성 시도도 방어적으로 차단(worker/API 우회 방지).
     res = ctrl.generate()
-    assert res["ok"] is False and "미입력" in res["error"]
+    assert res["ok"] is False and "빈 값" in res["error"]
 
     # 배지 클릭 = 직접 확인 → 게이트 열림.
     ctrl.dispatch("ack_field", {"field": "추정가격"})
@@ -182,7 +182,7 @@ def test_generate_writes_documents_and_marks_missing(tmp_path):
     res = ctrl.generate()
     assert res["ok"] is True
     assert res["succeeded"] == 2 and res["failed"] == 0
-    assert "미입력 표시 필드" in res["summary"]  # 낙관 서사 해소
+    assert "빈 값 표시 필드" in res["summary"]  # 낙관 서사 해소
     made = sorted(p.name for p in out.glob("*.hwpx"))
     assert made == ["doc-001.hwpx", "doc-002.hwpx"]
     # 진행 델타가 최소 1회 푸시됐다(진행바 갱신 계약).
@@ -376,7 +376,7 @@ def test_mirror_value_display_filled_sample_missing_blank(tmp_path):
     assert "선택 2행 중 1행" in m["추정가격"]["value"]
     assert m["추정가격"]["formatted"] is True
     # 비고: 의도적 빈칸 표지.
-    assert m["비고"]["state"] == "blank" and m["비고"]["value"] == "(의도적 빈칸)"
+    assert m["비고"]["state"] == "blank" and m["비고"]["value"] == "(비움 확정)"
 
 
 def test_mirror_filled_same_value_is_not_labeled_sample(tmp_path):
@@ -644,7 +644,7 @@ def test_auto_aim_nara_ref_is_frozen_warn(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     snap = ctrl.snapshot()
     assert snap["has_data"] is False and snap["data_notice"]["level"] == "warn"
-    assert "동결" in snap["data_notice"]["text"]
+    assert "지원되지 않습니다" in snap["data_notice"]["text"]
 
 
 def test_auto_aim_ambiguous_sheet_ref_is_warn(tmp_path):
