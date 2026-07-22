@@ -45,6 +45,9 @@
       // (「기안문 채우기」는 붙여넣기 모달이 겸함 → 팩토리가 id 유무로 가드).
       mapLegend: "draftMapLegend", viewFilled: "draftViewFilled",
       viewSource: "draftViewSource", srcView: "draftSrcView", srcBox: "draftSrcBox",
+      // 원문바(#148 슬라이스 5b) — 이름·수정됨 표지·「사본으로 편집」. 「기안문 채우기」는 원문
+      // 뷰가 없어 이 id 들을 안 주고 팩토리가 유무로 가드한다(dead control 없음).
+      srcName: "draftSrcName", modBadge: "draftModBadge", srcFork: "draftSrcFork",
     },
   });
 
@@ -143,6 +146,7 @@
     if (r.sel_count) parts.push(`선택 ${r.sel_count}행`);
     if (copied > 0) parts.push(`복사 ${copied}건(되돌릴 수 없음)`);
     if (r.map_dirty) parts.push("미저장 매핑 편집");
+    if (r.source_dirty) parts.push("미저장 원문 편집");
     return parts.length
       ? `지금 물린 데이터와 진행(${parts.join(" · ")})은`
       : "지금 진행 중인 세션은";
