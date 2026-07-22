@@ -51,15 +51,38 @@
 
     /* 타이핑 구동(값 입력·원문 라이브 편집)은 서버 왕복을 디바운스한다(빠른 기안 선례) — 타건
        마다 왕복은 낭비고, 값 유실 경합은 _NO_PUSH+겨냥 패치가 막는다(포커스 입력 미재구성). */
-    let debTimer = null, debFn = null;
-    function debounce(fn) {
-      debFn = fn;
+    let debTimer = null, debFn = null, debKey = null;
+    // 편집 왕복을 **직렬 체인 + 대상별 실패 추적**으로 관리한다(리뷰 A·E·H).
+    // ① ``editChain`` = 직렬 체인 — 편집이 dispatch 순서대로 착지하고(역순 stale 복원 차단, A),
+    //    실패를 흡수해 다음 편집이 끊기지 않게 한다(연속용).
+    // ② ``editTargets[key]`` = **대상별**(원문=source / 값=value:<토큰>) 최신 편집 promise —
+    //    flush 가 기다리며 실패를 **전파**한다. 대상을 가르는 이유(H): 원문 편집이 실패한 뒤 무관한
+    //    값 편집이 성공하면, 최신 하나만 보던 종전 방식(E)은 그 값 성공이 원문 실패를 삼켜 flush 가
+    //    resolve→stale 원문 승격했다. 대상별이면 **같은 대상의 성공만** 그 대상의 실패를 대체하고,
+    //    다른 대상 성공은 안 삼킨다. flush 는 모든 대상의 미착지 편집을 기다린다(복사=전 대상 최신성).
+    let editChain = Promise.resolve();
+    const editTargets = {};
+    function runDeb(f, key) {
+      const next = editChain.then(() => f());
+      editChain = next.catch(() => {});   // 순서·연속(실패 흡수)
+      if (key) editTargets[key] = next;   // 대상별 실패 보존(같은 대상 성공이 대체할 때까지 유지)
+      return next;
+    }
+    function debounce(fn, key) {
+      debFn = fn; debKey = key;
       if (debTimer) clearTimeout(debTimer);
-      debTimer = setTimeout(() => { debTimer = null; const f = debFn; debFn = null; if (f) f(); }, 180);
+      debTimer = setTimeout(() => {
+        debTimer = null; const f = debFn, k = debKey; debFn = null; debKey = null;
+        if (f) runDeb(f, k);
+      }, 180);
     }
     function flushDeb() {
       if (debTimer) { clearTimeout(debTimer); debTimer = null; }
-      const f = debFn; debFn = null; if (f) f();
+      const f = debFn, k = debKey; debFn = null; debKey = null;
+      if (f) runDeb(f, k);  // 방금 스케줄분을 발사(그 대상 tail 로 편입)
+      // 모든 대상의 미착지 편집을 기다린다 — 각 대상은 자기 최신 결과로 실패 전파(리뷰 H).
+      const tails = Object.keys(editTargets).map((kk) => editTargets[kk]);
+      return tails.length ? Promise.all(tails) : Promise.resolve();
     }
     /* 렌더 세대 — 구조 변화(전면 render)가 나면 올라가, 늦게 착지한 타이핑 응답이 옛 세대의
        스냅샷으로 미리보기를 되돌리는 경합을 막는다(빠른 기안 EPOCH 선례). */
@@ -656,7 +679,7 @@
         const dot = e.target.closest("tr").querySelector(".own");
         if (dot) dot.className = "own man";
         debounce(() => Bridge.call(SCREEN, "set_map_value", { name: t.name, text: e.target.value })
-          .then(inEpoch(patchPreview)));
+          .then(inEpoch(patchPreview)), "value:" + t.name);  // 대상 = 이 토큰 값(리뷰 H)
       });
       // 포커스 이탈 시 대기 편집 즉시 반영(blur 는 버블 안 해 캡처로 받는다).
       $(id.tokPanel).addEventListener("blur", flushDeb, true);
@@ -670,7 +693,7 @@
       if (id.srcBox) {
         $(id.srcBox).addEventListener("input", (e) =>
           debounce(() => Bridge.call(SCREEN, "edit_source", { text: e.target.value })
-            .then(inEpoch(patchMap))));
+            .then(inEpoch(patchMap)), "source"));  // 대상 = 원문(리뷰 H — 값 편집 성공에 안 삼켜짐)
         $(id.srcBox).addEventListener("blur", flushDeb);
       }
       // 「사본으로 편집」(#148 슬라이스 5b) — 저장 원문을 휘발 사본으로 가른다(값·데이터·큐 진행
@@ -739,9 +762,17 @@
       });
     }
 
-    /* 붙여넣기 확정 — 템플릿만 바꾼다(겨눈 데이터는 유지, VM datasource 불변). */
+    /* 붙여넣기 확정 — 템플릿만 바꾼다(겨눈 데이터는 유지, VM datasource 불변).
+
+       **편집 체인에 태운다**(리뷰 D): 종전엔 미착지 Bridge 호출을 그냥 쏴, 붙여넣고 즉시
+       「템플릿으로 저장」하면 그 호출이 아직 나는 사이 promote_info 가 **옛 라이브러리 정체**로
+       이름·그룹을 프리필하고, 붙여넣은 원문이 모달 열린 채 착지해 **이전 템플릿을 덮어쓸** 뻔했다.
+       runDeb 로 체인에 넣으면 openSaveTpl 의 ``sess.flush()`` 가 이 붙여넣기 착지까지 기다린 뒤에야
+       promote_info 를 읽는다(타이핑 편집과 같은 정산 통로). */
     function pasteOk() {
-      Bridge.call(SCREEN, "set_template_text", { text: $("pasteText").value });
+      // 붙여넣기 = **원문** 교체라 "source" 대상으로 편입(리뷰 D·H) — 직전 원문 편집 실패를 대체하고,
+      // openSaveTpl 의 flush 가 이 착지까지 기다린다.
+      runDeb(() => Bridge.call(SCREEN, "set_template_text", { text: $("pasteText").value }), "source");
     }
 
     /* 템플릿 목록 채우기 — 선택은 **세션의 실제 템플릿**(스냅샷)이 정한다(드롭다운은 표시일 뿐). */
@@ -772,6 +803,9 @@
       render, wire, fillTemplateSelect, refreshOnEnter, pasteOk,
       guardBody, copyGateBody, confirmNewDraftIfArmed, confirmDataSwapIfArmed,
       warnNote, dz,
+      // 대기·미착지 타이핑 편집 정산(승격이 화면에 보이는 원문/값을 저장하게) — 「템플릿으로
+      // 저장」이 promote_info/save_template 전에 await 한다(빠른 기안 flushDebounce 선례).
+      flush: flushDeb,
     };
   }
 

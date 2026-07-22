@@ -116,6 +116,20 @@
         "붙여넣거나 고친 원문은 기안으로 저장할 수 없습니다 — 라이브러리 템플릿을 골라 채우거나, " +
         "원문을 「템플릿으로 저장」한 뒤 저장하세요.";
     }
+    // 「템플릿으로 저장」(#148 슬라이스 6, #135) — 세션 원문을 TXT 라이브러리로 승격하는 두 번째
+    // 동사(구 「빠른 기안」에서 흡수). **휘발 세션 전용**(사용자 결정 · Python can_save_template):
+    // 저장 기안 결속(saved) 모드·빈손은 숨긴다(dead button 금지 — hidden 으로 가른다). 위 사유
+    // 문구가 이 버튼을 가리키므로, 붙여넣기 세션에서 나란히 살아 안내가 죽은 지시가 되지 않는다.
+    const tbtn = $("draftSaveTpl");
+    tbtn.hidden = !s.can_save_template;
+    if (tbtn.hidden) clearSaveTplNote();
+  }
+
+  function clearSaveTplNote() {
+    const note = $("draftSaveTplNote");
+    if (!note) return;
+    note.textContent = "";
+    delete note.dataset.level;
   }
 
   function render(s) {
@@ -150,6 +164,88 @@
         { name, confirm: true, confirmed_text: confirmedText });
     }
     if (r && r.ok === false && r.error) window.alert(r.error);  // 게이트 실패는 시끄럽게
+  }
+
+  /* ---- 「템플릿으로 저장」(승격, 결정 33·34 · #135 · #148 슬라이스 6) — 세션 원문을 TXT
+     라이브러리로 동결한다(구 「빠른 기안」 openSaveTpl 흡수). 대기·미착지 타건을 먼저 정산해야
+     **화면에 보이는 원문**이 저장된다(복사와 같은 규율). 프리필(이름·그룹 후보·현재 그룹)은
+     Python 이 지금 판정한다 — JS 캐시(LAST)엔 그룹 지정이 없고, 있어도 관리 화면에서 방금 바뀐
+     지정과 갈라진다. 모달 문법은 tplMoveModal 동형(기존 그룹·그룹 없음·새 그룹 동거). ---- */
+  async function openSaveTpl() {
+    await sess.flush();
+    const info = await Bridge.call(SCREEN, "promote_info", {});
+    if (!info) return;
+    const cur = info.group || "";
+    const groups = info.groups || [];
+    $("draftSaveTplGroups").innerHTML =
+      groups.map((g) =>
+        `<label class="grp-opt"><input type="radio" name="draftSaveGrp" value="${esc(g)}"${g === cur ? " checked" : ""}> ${esc(g)}</label>`
+      ).join("") +
+      `<label class="grp-opt"><input type="radio" name="draftSaveGrp" value=""${cur === "" ? " checked" : ""}> 그룹 없음</label>` +
+      `<label class="grp-opt"><input type="radio" name="draftSaveGrp" value="" data-new="1" id="draftSaveGrpNewRadio"> 새 그룹:` +
+      ` <input class="field" id="draftSaveGrpNewName" type="text" placeholder="새 그룹 이름"></label>`;
+    $("draftSaveTplName").value = info.name || "";
+    $("draftSaveTplErr").style.display = "none";
+    window.Modal.open("draftSaveTplModal", { initialFocus: $("draftSaveTplName") });
+    const nn = $("draftSaveGrpNewName");
+    if (nn) nn.addEventListener("focus", () => { const r = $("draftSaveGrpNewRadio"); if (r) r.checked = true; });
+  }
+
+  function saveTplGroup() {
+    const sel = document.querySelector('input[name="draftSaveGrp"]:checked');
+    if (sel && sel.dataset.new) return ($("draftSaveGrpNewName").value || "").trim();
+    return sel ? sel.value : "";
+  }
+
+  function saveTplErr(msg) {
+    const err = $("draftSaveTplErr");
+    err.textContent = msg;
+    err.style.display = "";
+  }
+
+  /* 확정 — 실패는 **모달을 닫지 않고** 인라인 재진술한다(이름을 다시 칠 자리가 사라지지 않게).
+     동명은 Python 이 needs_confirm 으로 되묻고, 확인하면 confirm 을 실어 재호출한다(덮어쓰기
+     왕복 = 「기안으로 저장」·에디터 저장과 동형). **관측한 확인 문안을 되돌려 보낸다**(confirmed_text,
+     리뷰 F2) — 백엔드가 지금 문안(디스크 내용 지문 포함)과 대조해, 모달이 열린 사이 대상이
+     바뀌었으면(TOCTOU) 새 문안으로 다시 묻는다(확인한 것과 다른 내용을 무확인 덮어쓰지 않는다). */
+  async function confirmSaveTpl(confirmFlag, confirmedText) {
+    const name = $("draftSaveTplName").value;
+    const group = saveTplGroup();
+    const sel = document.querySelector('input[name="draftSaveGrp"]:checked');
+    if (sel && sel.dataset.new && !group) { saveTplErr("새 그룹 이름을 입력하세요."); return; }
+    const r = await Bridge.call(SCREEN, "save_template",
+      { name, group, confirm: !!confirmFlag, confirmed_text: confirmedText || "" });
+    if (!r) return;
+    if (r.needs_confirm) {
+      const go = await window.Modal.confirm({
+        title: "덮어쓰기 확인", body: r.confirm_text,
+        confirmLabel: "덮어쓰고 저장", cancelLabel: "머무르기",
+      });
+      if (go) await confirmSaveTpl(true, r.confirm_text);  // 관측한 문안 되돌려 보냄(재검증)
+      return;
+    }
+    if (!r.ok) { saveTplErr(r.error || "저장할 수 없습니다."); return; }
+    // 새 이름이 콤보에 서야 한다(콤보는 initial 에서 한 번만 채워진다) — 갱신본으로 옵션을 다시
+    // 그리고 승격된 정체를 선택한다(뒤이은 push 의 sel.value=template_name 이 맞물린다).
+    sess.fillTemplateSelect({ templates: r.templates, template_name: r.name });
+    window.Modal.close("draftSaveTplModal");
+    const note = $("draftSaveTplNote");
+    // 세션 처분을 정직하게 말한다(#135): 세션은 살아 있고, 저장된 것은 원문뿐이다.
+    const head = r.overwritten
+      ? `「${r.name}」 템플릿을 덮어썼습니다.`
+      : `「${r.name}」 템플릿으로 저장했습니다.`;
+    // 그룹 지정만 실패한 경우(설정 파일 쓰기 불가) — 일어난 일과 안 일어난 일을 갈라 말한다.
+    // 남은 그룹은 **백엔드가 실제로 읽어 준 값**(영속-후-교체라 실패해도 이전 지정이 산다).
+    if (r.group_error) {
+      note.dataset.level = "warn";
+      const where = r.group
+        ? `기존 그룹 「${r.group}」이 그대로 유지됩니다`
+        : `이 템플릿은 그룹 없이 남습니다`;
+      note.textContent = `${head} 다만 요청한 그룹 변경은 저장되지 않았습니다(${r.group_error}) — ${where}.`;
+    } else {
+      note.dataset.level = "ok";
+      note.textContent = `${head} 이 세션은 그대로 이어집니다(값은 저장되지 않았습니다).`;
+    }
   }
 
   /* ---- 좌 목록 클릭 위임(⋮·그룹 토글·행 선택) ---- */
@@ -382,6 +478,10 @@
     // 휘발 세션 귀환은 상시 「이번 세션」 행이 진다(onMasterClick) — 껍데기 stub 의 back
     // 버튼을 승계했다(선택이 실제 복원이 되며 stub 이 사라졌다). 세션은 파괴하지 않고 겨눔만 푼다.
     $("draftSaveJob").addEventListener("click", saveJob);  // 승격(#135) — 컨트롤러 소유(JobRegistry)
+    // 「템플릿으로 저장」 승격(#148 슬라이스 6) — 세션 원문을 TXT 라이브러리로(구 「빠른 기안」 흡수).
+    $("draftSaveTpl").addEventListener("click", openSaveTpl);
+    $("draftSaveTplCancel").addEventListener("click", () => window.Modal.close("draftSaveTplModal"));
+    $("draftSaveTplOk").addEventListener("click", () => confirmSaveTpl(false));
     moveDialog.wire("draftMoveOk", "draftMoveCancel");
     sess.wire();  // 세션 4존 배선(데이터 존·카드 동사·글꼴·린트·붙여넣기) — 팩토리 소유
   }
