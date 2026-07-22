@@ -1220,6 +1220,13 @@ _DRAFT_SESSION_PROBE_JS = r"""
     window.__push('draft', svsnap);
     out.save_label_saved = document.getElementById('draftSaveJob').textContent;
     window.__push('draft', snap);  // 원상 복귀(휘발) — 뒤 되읽기 오염 방지
+    // 세션 교체 가드 문안(리뷰 F6) — leave_guard 가 **미저장 매핑 편집만**으로 무장한 경우(데이터·
+    // 큐 0), 새 기안 가드는 그 편집을 열거해야 "사라지는 것: ."(빈 목록)이 되지 않는다. 같은 guardBody
+    // 를 데이터 스왑(includeRecipe=false)으로 부르면 매핑 편집은 빠져야 한다(스왑은 유지 — over-warn
+    // 차단). 순수 합성기라 DOM 무관, 두 갈래를 되읽어 문안≠집합 결함류를 못박는다.
+    var gbG = {map_dirty:true, source_dirty:false, sel_count:0, queue_partial:false, filter_parts:0};
+    out.guard_body_new_draft = window.DraftScreen.guardBody(gbG, '새 기안을 시작하면', true);
+    out.guard_body_data_swap = window.DraftScreen.guardBody(gbG, '다른 데이터를 겨누면', false);
     out.error = null;
   } catch (e) { out.error = 'throw:' + (e && e.message); }
   return out;

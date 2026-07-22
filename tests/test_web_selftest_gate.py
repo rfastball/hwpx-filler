@@ -505,6 +505,18 @@ class TestWebSelftestGate:
         assert d["save_note_hidden"] is True, "저장 활성인데 비활성 사유가 남아 있습니다."
         assert d["save_label_volatile"] == "기안으로 저장", f"휘발 라벨이 다릅니다: {d['save_label_volatile']!r}"
         assert d["save_label_saved"] == "다른 이름으로 저장", f"저장 라벨이 다릅니다: {d['save_label_saved']!r}"
+        # 세션 교체 가드 문안(리뷰 F6) — 「새 기안」은 세션을 교체하므로 미저장 매핑 편집만으로
+        # 무장해도 그 편집을 열거해야 "사라지는 것: ."(빈 목록)이 되지 않는다. 데이터 스왑은 매핑을
+        # 유지하므로 같은 상태에서 매핑 편집을 열거하면 over-warn(문안≠집합 결함류 양방향).
+        assert "미저장 매핑 편집" in d["guard_body_new_draft"], (
+            f"새 기안 가드가 미저장 매핑 편집을 열거하지 않습니다(F6 빈 목록): {d['guard_body_new_draft']!r}"
+        )
+        assert "사라지는 것: ." not in d["guard_body_new_draft"], (
+            f"새 기안 가드 소실 목록이 비었습니다(F6): {d['guard_body_new_draft']!r}"
+        )
+        assert "미저장 매핑 편집" not in d["guard_body_data_swap"], (
+            f"데이터 스왑 가드가 매핑 편집을 열거합니다(over-warn — 스왑은 유지): {d['guard_body_data_swap']!r}"
+        )
 
     def test_job_edit_mode_hosts_definition_surface(self, selftest_result: dict) -> None:
         # 에디터 흡수(블록 2 개정, 결정 39~41) — 편집 모드 전환이 실 WebView2 에서 편집 호스트를

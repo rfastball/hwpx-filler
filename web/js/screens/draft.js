@@ -502,5 +502,6 @@
     init,
     refreshOnEnter: sess.refreshOnEnter,
     confirmNewDraftIfArmed: sess.confirmNewDraftIfArmed,
+    guardBody: sess.guardBody,  // 실앱 게이트가 세션 교체 가드 문안(F6 레시피 편집 열거)을 되읽음
   };
 })();

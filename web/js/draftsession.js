@@ -563,7 +563,7 @@
        술어·수치는 Python(_guard_state)이 판정하고 여기는 문안만 입힌다(작업 화면과 같은 규율).
        T3 성분(큐 부분 진행)이 기안 고유다: 어디까지 붙여넣었는지는 앱 밖 기억이라, 처리
        표지가 증발하면 복구할 방법이 없다. 잃는 것을 종류별로 명시한다(결정 27 수치 재진술). */
-    function guardBody(g, lead) {
+    function guardBody(g, lead, includeRecipe) {
       const lost = [];
       if (g.queue_partial) lost.push(`복사 진행 ${g.copied_count}/${g.sel_count}행(처리 표지)`);
       // 선택 재진술 조각은 「작업」 가드와 **공유**(guard.js, 리뷰 F6) — 같은 가드 상태를 두
@@ -572,6 +572,12 @@
         lost.push(window.Guard.selectionLine(g.sel_count, g.filter_active, g.in_def, g.extra));
       }
       if (g.filter_parts > 0) lost.push(`필터 정의 ${g.filter_parts}개 조건`);
+      // 세션 **교체**(새 기안)는 미저장 매핑·원문 편집도 폐기한다 — 데이터 스왑(매핑·원문 유지)과
+      // 달리 열거해야 "사라지는 것: ."(빈 목록)이 되지 않는다(리뷰 F6 — leave_guard 가 이 둘만으로
+      // 무장할 수 있다). 어휘는 leaveLossBody(draft.js)와 같게. 데이터 스왑은 includeRecipe 없이
+      // 불러 이 둘을 뺀다(스왑은 유지하므로 열거하면 over-warn).
+      if (includeRecipe && g.map_dirty) lost.push("미저장 매핑 편집");
+      if (includeRecipe && g.source_dirty) lost.push("미저장 원문 편집");
       // 앞머리만 제스처별로 갈린다(데이터 교체 / 새 기안) — 잃는 것의 열거는 같은 술어를 공유한다.
       return `${lead || "다른 데이터를 겨누면"} 이 큐는 새로 만들어집니다.\n` +
         `사라지는 것: ${lost.join(" · ")}.`;
@@ -602,7 +608,8 @@
       if (!g || !g.armed) return true;
       return window.Modal.confirm({
         title: "새 기안 확인",
-        body: guardBody(g, "새 기안을 시작하면"),
+        // 세션 교체라 미저장 매핑·원문 편집도 열거한다(includeRecipe, 리뷰 F6).
+        body: guardBody(g, "새 기안을 시작하면", true),
         confirmLabel: "새로 시작하고 버리기",
         cancelLabel: "머무르기",
       });
