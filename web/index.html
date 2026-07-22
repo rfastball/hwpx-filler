@@ -356,8 +356,16 @@
               <pre class="wc-render" id="draftCardRender" aria-live="polite" data-preserve-scroll
                    tabindex="0"></pre>
               <!-- 원문 뷰 = 같은 칸의 두 번째 모습(결정 34). 휘발 세션은 편집 가능(타이핑→② 표
-                   재구성). 저장된 기안의 읽기 전용·「사본으로 편집」은 슬라이스 5. -->
+                   재구성). 저장된 기안은 읽기 전용이고, 원문바의 「사본으로 편집」이 휘발 사본으로
+                   가른다(값·데이터·큐 진행 승계). 수정됨 표지는 원문이 라이브러리에서 갈라졌음을
+                   정직하게 말한다(슬라이스 5a·5b). -->
               <div class="wc-srcview" id="draftSrcView" hidden>
+                <div class="wc-srcbar">
+                  <span class="wc-srcname" id="draftSrcName"></span>
+                  <span class="wc-modbadge" id="draftModBadge" hidden>수정됨</span>
+                  <button class="btn sm" id="draftSrcFork" hidden
+                          title="저장된 기안은 그대로 두고, 이 세션만 사본으로 갈라 원문을 고칩니다(값·데이터·진행은 승계).">사본으로 편집</button>
+                </div>
                 <textarea class="wc-srcbox mono" id="draftSrcBox" spellcheck="false"
                           data-preserve-scroll aria-label="템플릿 원문"></textarea>
                 <p class="muted hint">여기서 고친 원문은 이 세션의 사본입니다 — 라이브러리는 바뀌지 않습니다.

@@ -712,3 +712,29 @@ def test_draft_has_return_path_to_volatile_session():
     assert re.search(r'function selectJob\([\s\S]*?select_job', src, re.S), (
         "selectJob 이 select_job 으로 배선되지 않았습니다."
     )
+
+
+def test_draft_saved_source_has_fork_escape_hatch():
+    """저장 원문은 읽기 전용이므로 「사본으로 편집」이 **유일한 편집 출구**여야 한다(#148 슬라이스 5b).
+
+    읽기 전용만 걸고 사본 동사가 없으면 저장 기안의 원문은 손볼 길이 막힌다 — 원문바에 사본
+    버튼이 있고 fork_to_volatile 로 배선돼야 편집이 열린다(값·데이터·큐 진행은 승계). 백엔드도
+    저장 모드 edit_source 를 방어한다(표면 readonly 만 믿지 않는다 — 조용한 정의 분기 금지)."""
+    index = WEB_INDEX.read_text(encoding="utf-8")
+    assert 'id="draftSrcFork"' in index, "원문바에 「사본으로 편집」 버튼이 없습니다(읽기 전용 막다른 상태)."
+    src = (WEB_JS_DIR / "draftsession.js").read_text(encoding="utf-8")
+    assert re.search(
+        r'id\.srcFork\)[\s\S]*?fork_to_volatile', src, re.S,
+    ), "「사본으로 편집」이 fork_to_volatile 로 배선되지 않았습니다 — 눌러도 편집이 열리지 않습니다."
+
+
+def test_draft_live_edit_refreshes_source_bar():
+    """원문 라이브 편집(_NO_PUSH patchMap)도 원문바 이름·수정됨 표지를 갱신해야 한다(#148 5b, 리뷰 P2).
+
+    깨끗한 휘발 원문을 고치면 `source_dirty=true`·`template_name` 소거인데, `edit_source` 는
+    `_NO_PUSH` 라 full render 를 안 타 `patchMap` 이 원문바를 안 그리면 무관한 재렌더 전까지 옛
+    이름·수정됨 부재로 남는다(stale). `patchMap` 이 공유 `renderSourceBar` 를 부르는지 못박는다."""
+    src = (WEB_JS_DIR / "draftsession.js").read_text(encoding="utf-8")
+    assert re.search(r"function patchMap\([\s\S]*?renderSourceBar\(", src), (
+        "patchMap 이 renderSourceBar 를 부르지 않습니다 — 라이브 편집 뒤 원문바가 stale."
+    )
