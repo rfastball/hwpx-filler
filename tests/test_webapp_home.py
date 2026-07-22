@@ -125,6 +125,9 @@ def test_delete_job_updates_snapshot(tmp_path):
 
 def test_delete_job_can_restore_last_slot(tmp_path):
     ctrl, _ = _controller(tmp_path)
+    assert ctrl.dispatch("undo_delete_job", {}) == {
+        "ok": False, "error": "복원할 최근 작업이 없습니다."
+    }
     result = ctrl.dispatch("delete_job", {"name": "낙찰"})
     assert result == {"ok": True, "undo": True, "name": "낙찰"}
     assert not ctrl._job_registry.exists("낙찰")

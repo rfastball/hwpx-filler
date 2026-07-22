@@ -283,6 +283,29 @@ def test_delete_hwpx_soft_delete_and_undo(tmp_path, monkeypatch):
     assert (tp / "lib" / "raw.hwpx").exists()
 
 
+def test_undo_delete_reports_missing_and_conflicting_slots(tmp_path, monkeypatch):
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    assert ctrl.dispatch("undo_delete", {}) == {
+        "ok": False, "error": "복원할 최근 템플릿이 없습니다."
+    }
+
+    original = tp / "txt" / "온나라_기안.txt"
+    ctrl.dispatch("delete", {"media": "txt", "path": str(original)})
+    _media, _path, trashed = ctrl._deleted_template_slot
+    trashed.unlink()
+    assert ctrl.dispatch("undo_delete", {}) == {
+        "ok": False, "error": "복원할 템플릿이 휴지통에 없습니다."
+    }
+
+    ctrl.dispatch("txt_new", {"name": "충돌", "content": "원본"})
+    conflict = tp / "txt" / "충돌.txt"
+    ctrl.dispatch("delete", {"media": "txt", "path": str(conflict)})
+    conflict.write_text("새 파일", encoding="utf-8")
+    assert ctrl.dispatch("undo_delete", {}) == {
+        "ok": False, "error": "같은 이름의 템플릿이 이미 있어 복원할 수 없습니다."
+    }
+
+
 def test_import_cleans_partial_file_on_copy_failure(tmp_path, monkeypatch):
     """#137 리뷰 F6 — 복사 중 실패하면 부분 파일을 걷어내고 재던진다(잘린 사본이 목록에
     남아 충돌 접미가 재시도를 막는 것을 방지)."""
