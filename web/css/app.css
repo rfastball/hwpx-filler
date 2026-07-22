@@ -674,10 +674,17 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .grp-opt .field{flex:1}
 .job-panel{flex:1;min-width:0;overflow:auto;display:flex;flex-direction:column}
 .job-empty-panel{padding:var(--sp-16);font-size:var(--fs-body)}
-.job-zones{display:flex;flex-direction:column;gap:var(--sp-12)}
-.zone{border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card);
-  padding:var(--sp-16) var(--sp-12) var(--sp-12);position:relative}
-.zone-cap{position:absolute;top:-9px;left:12px;background:var(--a-window);padding:0 var(--sp-6);
+/* 세션 표면(#179 슬라이스 5a) — 4존을 상자 4개(중첩 경계)에서 **하나의 연속 표면 + 내부
+   구분선**으로. 종전엔 존마다 border+radius 카드에 legend(zone-cap 이 border 를 타넘던 절대배치)
+   라 패널 안에 상자가 겹쳐 보였다. 이제 job-zones 가 단일 카드, 존은 그 안의 구획(인접 존 사이
+   상단 구분선), zone-cap 은 절대 legend 대신 인라인 섹션 헤더. job·draft 공통(둘 다 .zone). */
+/* overflow 는 visible 유지 — 존 안 열 필터 팝오버(.colpanel, position:absolute)가 표면 밖으로
+   펼쳐질 때 잘리면 안 된다(구분선은 표면 중앙이라 둥근 모서리와 무관, 클리핑 불필요). */
+.job-zones{display:flex;flex-direction:column;
+  border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card)}
+.zone{padding:var(--sp-16) var(--sp-16) var(--sp-12);position:relative}
+.zone + .zone{border-top:1px solid var(--a-border)}
+.zone-cap{display:block;margin-bottom:var(--sp-10);
   font-size:var(--fs-caption);font-weight:600;color:var(--n-header-ink)}
 .job-head-title{font-size:var(--fs-body);font-weight:600}
 .job-head-tpl{font-size:var(--fs-body);margin-top:var(--sp-2)}
