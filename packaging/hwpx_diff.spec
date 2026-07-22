@@ -33,6 +33,7 @@ a = Analysis(
     ],
     # 지연·간접 임포트 보증(브리지→화면 컨트롤러→비교 엔진→네이티브 다이얼로그).
     hiddenimports=[
+        "hwpxcore.motw",   # 엔트리 self-unblock(포터블 MOTW) — 조건부 임포트 보증
         "hwpxdiff.webapp",
         "hwpxdiff.webapp.app",
         "hwpxdiff.webapp.screen_diff",

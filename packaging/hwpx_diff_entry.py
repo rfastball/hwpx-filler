@@ -39,6 +39,11 @@ def _selfcheck(old: str, new: str) -> int:
 
 
 if __name__ == "__main__":
+    # 포터블 zip self-unblock — webview(pythonnet/.NET) 임포트 전에 번들 MOTW 를 지운다.
+    from hwpxcore.motw import unblock_bundle
+
+    unblock_bundle()
+
     if len(sys.argv) == 4 and sys.argv[1] == "--selfcheck":
         raise SystemExit(_selfcheck(sys.argv[2], sys.argv[3]))
     from hwpxdiff.webapp.app import main
