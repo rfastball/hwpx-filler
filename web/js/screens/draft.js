@@ -146,6 +146,7 @@
     if (r.sel_count) parts.push(`선택 ${r.sel_count}행`);
     if (copied > 0) parts.push(`복사 ${copied}건(되돌릴 수 없음)`);
     if (r.map_dirty) parts.push("미저장 매핑 편집");
+    if (r.source_dirty) parts.push("미저장 원문 편집");
     return parts.length
       ? `지금 물린 데이터와 진행(${parts.join(" · ")})은`
       : "지금 진행 중인 세션은";

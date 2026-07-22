@@ -678,12 +678,12 @@
       // 문안으로 남는다(결정 11 — 되돌릴 수 없어 「진행 초기화」는 거짓말). 저장 기안은 불변.
       if (id.srcFork) {
         $(id.srcFork).addEventListener("click", async () => {
-          // 복사 이력 판정은 copied_ever(내구)로 — 무데이터 가상 1건 복사는 copied_count 에
-          // 안 잡힌다(큐 미기록, 리뷰 5b 3R P2 / 682). 건수는 실 카드면 copied_count, 가상이면 1.
+          // 복사 이력·건수 판정은 copied_total(내구 단조)로 — 무데이터 가상 복사는 copied_count
+          // 에 안 잡히고(큐 미기록, 682), copied_count 는 선택 해제·데이터 교체로 줄어(reconcile)
+          // 이미 붙여넣은 문서 수를 못 센다(685). 이 카운터는 복사 조작마다 +1 되어 유지된다.
           const card = (LAST && LAST.card) || {};
-          const cc = card.copied_count || 0;
-          const nCopied = cc > 0 ? cc : (card.copied_ever ? 1 : 0);
-          if (card.copied_ever && !(await window.Modal.confirm({
+          const nCopied = card.copied_total || 0;
+          if (nCopied > 0 && !(await window.Modal.confirm({
             title: "사본으로 편집",
             body: `이미 복사한 ${nCopied}건은 이전 문안으로 남습니다 — 되돌릴 수 없습니다. 앞으로 ` +
               `복사할 카드부터 새 문안이 적용됩니다. 저장된 기안은 그대로 두고 이 세션만 사본으로 가릅니다.`,
@@ -697,8 +697,8 @@
             if (!(await window.Modal.confirm({
               title: "붙여넣던 세션이 사라집니다",
               body: (prev > 0 ? `직전에 붙여넣던 세션에서 이미 ${prev}건을 복사했습니다 — 되돌릴 수 없습니다. ` : "") +
-                `이 사본이 「이번 세션」 자리를 대신합니다. 붙여넣던 데이터와 선택·복사 진행은 ` +
-                `저장된 기안에 보관되지 않아, 사본으로 가르면 함께 사라집니다.`,
+                `이 사본이 「이번 세션」 자리를 대신합니다. 붙여넣던 세션의 원문 편집·데이터·선택·복사 ` +
+                `진행은 저장된 기안에 보관되지 않아, 사본으로 가르면 함께 사라집니다.`,
               confirmLabel: "사본으로 편집", cancelLabel: "머무르기",
             }))) return;
             await Bridge.call(SCREEN, "fork_to_volatile", { confirm: true });

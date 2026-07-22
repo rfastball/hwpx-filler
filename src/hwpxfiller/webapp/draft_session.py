@@ -176,9 +176,11 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self._last_copy: "dict | None" = None
         # 이 세션에서 복사가 한 번이라도 있었나(내구, 리뷰 5b 3R P2 / 682) — 무데이터 가상 1건
         # 복사는 큐(copied_count)에 안 잡혀(note_copied 가 큐를 안 늘림) _last_copy 만 남기는데,
-        # 그건 다음 동작이 지운다. 「사본으로 편집」의 "이미 복사한 건은 이전 문안" 경고가 가상
-        # 복사도 인정하도록 세션 baseline(새 세션·복원)에서만 리셋되는 표지를 둔다.
-        self._copied_ever: bool = False
+        # 그건 다음 동작이 지운다. 「사본으로 편집」의 "이미 복사한 N건은 이전 문안" 경고가 가상
+        # 복사도 인정하고 **정확한 건수**를 말하도록, 복사 조작마다 +1 되는 **내구 단조 카운터**를
+        # 둔다(리뷰 5b 4R P2 / 685): copied_count(큐)는 선택 해제·데이터 교체 시 reconcile 로
+        # 줄어들어 이미 붙여넣은 문서 수를 못 센다. 세션 baseline(새 세션·복원)에서만 0으로 리셋.
+        self._copied_total: int = 0
         # 빈칸 지도 캐시(리뷰 F6) — (records 정체, 템플릿) 키. 데이터/템플릿 불변이면 재계산 안 함.
         self._gap_cache: "dict[int, bool]" = {}
         self._gap_cache_key: "tuple | None" = None
@@ -228,7 +230,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         # 갓 세운 세션·복원 직후는 사람 편집 전이라 깨끗하다(리셋). 자동 골격(_rebuild_mapping)은
         # 시스템 소유라 이 표지를 올리지 않는다(그 경로는 _do_* 핸들러를 안 탄다).
         self._map_dirty = False
-        self._copied_ever = False  # 새 세션 = 복사 이력 없음(682)
+        self._copied_total = 0  # 새 세션 = 복사 이력 없음(682·685)
         names = self.vm.template_names()
         if names:
             self.vm.select_template(names[0])
@@ -242,7 +244,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         "filter", "mapping", "_fullwidth", "_last_copy", "_gap_cache", "_gap_cache_key",
         "_source_dirty",  # 사본/편집 여부는 그 원문에 붙는다 — 스태시·복원과 함께 이동(슬라이스 5b)
         "_map_dirty",  # 미저장 레시피 편집 표지는 그 세션에 붙는다 — 스태시·복원과 함께 이동(147)
-        "_copied_ever",  # 복사 이력 표지도 그 세션에 붙는다 — 스태시·복원과 함께 이동(682)
+        "_copied_total",  # 복사 이력 카운터도 그 세션에 붙는다 — 스태시·복원과 함께 이동(682·685)
     )
 
     def _stash_volatile(self) -> None:
@@ -320,7 +322,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self._source_readonly = True
         self._source_dirty = False  # 저장 정의 = 깨끗한 원문(읽기 전용 — 손보려면 「사본으로 편집」)
         self._map_dirty = False  # 복원한 레시피 = 저장분과 일치하는 깨끗한 baseline(147)
-        self._copied_ever = False  # 복원 = 아직 이 세션에서 복사 안 함(682)
+        self._copied_total = 0  # 복원 = 아직 이 세션에서 복사 안 함(682·685)
 
     def _do_fork_to_volatile(self, p: dict) -> "dict | None":
         """「사본으로 편집」(#148 슬라이스 5b) — 저장 원문을 휘발 사본으로 가른다(결정 7 스위치 ④).
@@ -602,9 +604,10 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
             # 행이라 행 번호로 어느 카드가 복사됐는지 못박는다). 어떤 동작이든(dispatch·데이터
             # 교체) 무효화 → 걷힌다(리뷰: 매 push 무조건 sticky 면 완료 노트가 다른 카드와 모순).
             "last_copy": self._last_copy,
-            # 복사 이력(내구, 682) — 「사본으로 편집」 경고가 무데이터 가상 복사도 인정하도록.
-            # copied_count 는 가상 복사를 못 잡으니(큐 미기록) 이 표지가 단일 판정이다.
-            "copied_ever": self._copied_ever,
+            # 복사 이력 건수(내구 단조, 682·685) — 「사본으로 편집」 경고가 무데이터 가상 복사도
+            # 세고 정확한 건수를 말하도록. copied_count(큐)는 선택 해제·데이터 교체로 줄지만 이건
+            # 붙여넣은 문서 수를 유지한다(0 = 이력 없음).
+            "copied_total": self._copied_total,
         }
         return {
             "template_name": vm.template_name or "(붙여넣은 텍스트)",
@@ -880,20 +883,23 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         g["copied_count"] = copied
         g["queue_partial"] = queue_partial
         g["map_dirty"] = self._map_dirty
+        g["source_dirty"] = self._source_dirty  # 원문 편집 성분(342) — 문안이 정직하게 짚도록
         g["armed"] = g["armed"] or queue_partial
         return g
 
     def _leave_guard(self) -> dict:
         """세션 **교체** 앞 가드 — 선택·큐(:meth:`_guard_state`)에 **미저장 레시피 편집**을 더한다.
 
-        데이터 교체(T3, :meth:`_guard_state`)와 갈린다: 데이터 스왑은 매핑·상수를 **유지**하므로
-        레시피 편집은 잃을 게 없다(거기 실으면 over-warn — confirm-or-alarm 역방향 위반). 반면
-        다른 기안 전환·「이번 세션」 귀환·삭제·포크는 세션 전체(매핑 포함)를 재구성/폐기하므로
-        미저장 상수·확정·유형 편집도 사라진다(리뷰 5a 3R P1 / 147). 데이터 미로드라 선택·큐가
-        0이어도 이 성분이 무장을 세운다. 소비처: :meth:`~...DraftController._do_select_job`(전환·
-        귀환)·``_do_delete_job``(결속 삭제)·:meth:`_stash_guard`(포크 대체)."""
+        데이터 교체(T3, :meth:`_guard_state`)와 갈린다: 데이터 스왑은 매핑·상수·원문을 **유지**
+        하므로 편집은 잃을 게 없다(거기 실으면 over-warn — confirm-or-alarm 역방향 위반). 반면
+        다른 기안 전환·「이번 세션」 귀환·삭제·포크는 세션 전체(매핑·원문 포함)를 재구성/폐기하므로
+        미저장 상수·확정·유형 편집(``_map_dirty``, 147)과 **미저장 원문 편집**(``_source_dirty``,
+        리뷰 5b 4R P1 / 342)도 사라진다. 원문 편집은 붙여넣기와 달리 재타이핑이 재현을 담보하지
+        못하는 손댄 작업이라(재현성 기준) 무장으로 친다. 데이터 미로드·선택·큐 0이어도 이 두
+        성분이 무장을 세운다. 소비처: :meth:`~...DraftController._do_select_job`(전환·귀환)·
+        ``_do_delete_job``(결속 삭제)·:meth:`_stash_guard`(포크 대체)."""
         g = self._guard_state()
-        g["armed"] = g["armed"] or self._map_dirty
+        g["armed"] = g["armed"] or self._map_dirty or self._source_dirty
         return g
 
     def _do_guard_state(self, p: dict) -> dict:
@@ -997,7 +1003,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
                     "missing_fields": list(report.missing_fields),
                     "empty_fields": self._gate_empty(report),  # 확정-비움 제외(결정 12)
                 }
-                self._copied_ever = True  # 가상 복사 = 큐 미기록이라 내구 표지로 남긴다(682)
+                self._copied_total += 1  # 가상 복사 = 큐 미기록이라 내구 카운터로 센다(682·685)
                 self._push()
             return
         # 복사한 카드(전진 전 작업점)를 못박아 완료 노트에 실린다 — 전진해도 어느 행인지 명시.
@@ -1006,7 +1012,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
             "missing_fields": list(report.missing_fields),
             "empty_fields": self._gate_empty(report),  # 확정-비움 제외(결정 12)
         }
-        self._copied_ever = True  # 복사 이력(682) — 실 카드는 copied_count 로도 알지만 표지 통일
+        self._copied_total += 1  # 복사 이력(682·685) — 선택 해제로 줄지 않는 내구 건수
         self.queue.copy(cur)
         if self._advance_after:
             self.queue.advance_to_next_uncopied()

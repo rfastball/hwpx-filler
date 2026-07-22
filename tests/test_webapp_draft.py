@@ -399,31 +399,47 @@ def test_fork_displacing_stash_with_unsaved_edit_needs_confirm(tmp_path):
     assert res["map_dirty"] is True
 
 
-def test_virtual_card_copy_marks_copied_ever(tmp_path):
-    """무데이터 가상 1건 복사는 copied_count 엔 안 잡혀도 copied_ever 를 세운다(리뷰 5b 3R P2 / 682).
+def test_virtual_card_copy_counts_in_copied_total(tmp_path):
+    """무데이터 가상 1건 복사는 copied_count 엔 안 잡혀도 copied_total 을 센다(리뷰 5b 3R·4R / 682·685).
 
-    「사본으로 편집」의 "이미 복사한 건은 이전 문안" 경고는 이 내구 표지로 판정한다 — 가상 복사를
-    copied_count(큐 기록)로만 보면 0이라 경고가 스킵돼 이미 붙여넣은 옛 문안을 못 알린다."""
+    「사본으로 편집」의 "이미 복사한 N건은 이전 문안" 경고는 이 내구 카운터로 판정·건수를 낸다 —
+    가상 복사를 copied_count(큐 기록)로만 보면 0이라 경고가 스킵돼 이미 붙여넣은 옛 문안을 못 알린다."""
     ctrl, _jobs, _ = _controller(tmp_path)
     ctrl.dispatch("set_template_text", {"text": "본문 {{공고명}}"})
-    assert ctrl.snapshot()["card"]["copied_ever"] is False
+    assert ctrl.snapshot()["card"]["copied_total"] == 0
     _text, report = ctrl.render()
     ctrl.note_copied(report)                            # 가상 카드 복사
     card = ctrl.snapshot()["card"]
     assert card["copied_count"] == 0                    # 큐엔 안 잡힘(가상)
-    assert card["copied_ever"] is True                  # 내구 표지엔 잡힘
+    assert card["copied_total"] == 1                    # 내구 카운터엔 잡힘
 
 
-def test_copied_ever_resets_on_new_session_and_restore(tmp_path):
-    """copied_ever 는 세션 baseline(새 기안·복원)에서 리셋된다 — 옛 복사 이력이 새 세션에 새지 않게."""
+def test_copied_total_accumulates_independent_of_queue(tmp_path):
+    """copied_total 은 복사 조작마다 +1 되는 내구 단조 카운터 — copied_count(큐)와 독립(리뷰 5b 4R P2 / 685).
+
+    큐 copied_count 는 선택 해제·데이터 교체 reconcile 로 줄어 이미 붙여넣은 문서 수를 못 센다.
+    가상 복사(큐 미기록)로 두 번 복사해도 copied_total 이 2로 누적되는지 확인한다 — 포크 경고가
+    옛 문안으로 나간 문서 수를 과소 진술(스킵·"1건")하지 않게."""
+    ctrl, _jobs, _ = _controller(tmp_path)
+    ctrl.dispatch("set_template_text", {"text": "본문 {{공고명}}"})
+    for _ in range(2):                                   # 가상 카드 두 번 복사(두 번의 붙여넣기)
+        _text, report = ctrl.render()
+        ctrl.note_copied(report)
+    snap = ctrl.snapshot()
+    assert snap["card"]["copied_count"] == 0             # 큐엔 안 잡힘(가상)
+    assert snap["card"]["copied_total"] == 2             # 내구 카운터는 누적
+
+
+def test_copied_total_resets_on_new_session_and_restore(tmp_path):
+    """copied_total 은 세션 baseline(새 기안·복원)에서 0으로 리셋된다 — 옛 이력이 새 세션에 안 샌다."""
     ctrl, jobs, _ = _controller(tmp_path)
     _save_real(tmp_path, jobs, "기안A", "job_a.txt", "본문 {{공고명}}")
     ctrl.dispatch("set_template_text", {"text": "본문 {{공고명}}"})
     _text, report = ctrl.render()
     ctrl.note_copied(report)
-    assert ctrl.snapshot()["card"]["copied_ever"] is True
+    assert ctrl.snapshot()["card"]["copied_total"] == 1
     ctrl.dispatch("select_job", {"name": "기안A"})       # 복원 baseline
-    assert ctrl.snapshot()["card"]["copied_ever"] is False
+    assert ctrl.snapshot()["card"]["copied_total"] == 0
 
 
 def test_fork_clears_stash_so_next_select_does_not_orphan_copy(tmp_path):
@@ -444,16 +460,31 @@ def test_fork_clears_stash_so_next_select_does_not_orphan_copy(tmp_path):
 
 
 def test_fork_displacing_unarmed_stash_is_silent(tmp_path):
-    """미무장 이전 휘발(붙여넣기 텍스트만)은 확인 없이 포크한다 — 텍스트는 복구 가능(과경보 금지).
+    """미무장 이전 휘발(**붙여넣기만** 한 clean 원문)은 확인 없이 포크한다 — 과경보 금지.
 
-    새 기안 가드와 같은 문턱: 복구 불가 진행(선택·큐)만 되묻고, 재입력 가능한 원문 텍스트
-    손실로는 사용자를 막지 않는다(over-warn 도 confirm-or-alarm 위반)."""
+    붙여넣기(set_template_text)는 source_dirty=False(깨끗한 시작)라 재입력이 재현을 담보한다 —
+    새 기안 가드와 같은 문턱. **편집된**(source_dirty) 원문은 다르다(다음 테스트)."""
     ctrl, jobs, _ = _controller(tmp_path)
     _save_real(tmp_path, jobs, "기안A", "job_a.txt", "저장 원문 {{공고명}}")
-    ctrl.dispatch("set_template_text", {"text": "붙여넣기만 {{공고명}}"})  # 무장 아님
+    ctrl.dispatch("set_template_text", {"text": "붙여넣기만 {{공고명}}"})  # source_dirty=False → 무장 아님
     ctrl.dispatch("select_job", {"name": "기안A"})
     res = ctrl.dispatch("fork_to_volatile", {})
     assert res is None and ctrl.snapshot()["mode"] == "volatile"
+
+
+def test_fork_displacing_edited_source_stash_needs_confirm(tmp_path):
+    """포크가 밀어내는 이전 휘발 세션이 **편집된 원문**(source_dirty)만 있어도 확인 왕복한다(리뷰 5b 4R P1 / 342).
+
+    붙여넣기와 달리 라이브 편집(edit_source)한 원문은 손댄 작업이라 재타이핑이 재현을 담보하지
+    못한다(재현성 기준) — _leave_guard 가 source_dirty 를 무장으로 쳐 조용한 소실을 막는다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "저장 원문 {{공고명}}")
+    ctrl.dispatch("set_template_text", {"text": "붙여넣기 {{공고명}}"})
+    ctrl.dispatch("edit_source", {"text": "손대서 고친 원문 {{공고명}}"})  # source_dirty=True(라이브 편집)
+    ctrl.dispatch("select_job", {"name": "기안A"})       # 편집 원문 휘발이 스태시됨
+    res = ctrl.dispatch("fork_to_volatile", {})
+    assert res and res["needs_confirm"] is True and res["kind"] == "fork_displaces_stash"
+    assert res["source_dirty"] is True
 
 
 def test_source_dirty_false_for_clean_sources(tmp_path):
