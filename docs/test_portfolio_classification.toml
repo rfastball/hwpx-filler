@@ -1,0 +1,468 @@
+[defaults]
+layer = "unit"
+platform = "cross-platform"
+fixture_kind = "synthetic"
+verification_method = "behavioral"
+disposition = "keep-supporting"
+
+[files."tests/test_architecture.py"]
+risk_surfaces = ["architecture-design-system"]
+layer = "contract"
+verification_method = "static-source"
+
+[files."tests/test_atomic.py"]
+risk_surfaces = ["document-package-integrity"]
+layer = "integration"
+
+[files."tests/test_audit_test_portfolio.py"]
+risk_surfaces = ["architecture-design-system"]
+layer = "contract"
+verification_method = "static-source"
+
+[files."tests/test_authoring.py"]
+risk_surfaces = ["extract-fill-transform", "document-package-integrity"]
+layer = "integration"
+fixture_kind = "mixed"
+
+[files."tests/test_batch_gate.py"]
+risk_surfaces = ["mapping-validation-drift", "application-workflows"]
+layer = "integration"
+
+[files."tests/test_boot_budget.py"]
+risk_surfaces = ["web-runtime-bridge", "application-workflows"]
+layer = "contract"
+
+[files."tests/test_cli.py"]
+risk_surfaces = ["data-ingestion-boundaries", "mapping-validation-drift", "extract-fill-transform"]
+layer = "integration"
+fixture_kind = "mixed"
+
+[files."tests/test_compile_badge.py"]
+risk_surfaces = ["mapping-validation-drift", "architecture-design-system"]
+layer = "contract"
+
+[files."tests/test_contrast_wcag.py"]
+risk_surfaces = ["architecture-design-system"]
+layer = "contract"
+fixture_kind = "none"
+verification_method = "static-source"
+
+[files."tests/test_core_paths.py"]
+risk_surfaces = ["durable-registry-persistence", "application-workflows"]
+layer = "contract"
+
+[files."tests/test_corpus_golden.py"]
+risk_surfaces = ["extract-fill-transform"]
+layer = "contract"
+fixture_kind = "real-corpus"
+verification_method = "snapshot-golden"
+correlation_group = "real-hwpx-corpus"
+
+[files."tests/test_data_factory.py"]
+risk_surfaces = ["data-ingestion-boundaries"]
+layer = "integration"
+fixture_kind = "mixed"
+
+[files."tests/test_dataset_pool.py"]
+risk_surfaces = ["data-ingestion-boundaries", "durable-registry-persistence"]
+layer = "integration"
+
+[files."tests/test_dataset_pool_state.py"]
+risk_surfaces = ["data-ingestion-boundaries", "application-workflows"]
+layer = "contract"
+
+[files."tests/test_design_tokens.py"]
+risk_surfaces = ["architecture-design-system"]
+layer = "contract"
+verification_method = "static-source"
+
+[files."tests/test_diff_cli.py"]
+risk_surfaces = ["diff-correctness", "document-package-integrity"]
+layer = "integration"
+
+[files."tests/test_diff_controller.py"]
+risk_surfaces = ["diff-correctness", "application-workflows"]
+layer = "contract"
+
+[files."tests/test_diff_empty_gate.py"]
+risk_surfaces = ["diff-correctness"]
+layer = "contract"
+
+[files."tests/test_diff_golden.py"]
+risk_surfaces = ["diff-correctness"]
+layer = "contract"
+fixture_kind = "real-corpus"
+verification_method = "snapshot-golden"
+correlation_group = "real-hwpx-corpus"
+
+[files."tests/test_diff_invariants.py"]
+risk_surfaces = ["diff-correctness", "extract-fill-transform"]
+layer = "contract"
+fixture_kind = "real-corpus"
+correlation_group = "real-hwpx-corpus"
+
+[files."tests/test_diff_render.py"]
+risk_surfaces = ["diff-correctness"]
+
+[files."tests/test_diff_renumber.py"]
+risk_surfaces = ["diff-correctness"]
+layer = "contract"
+fixture_kind = "real-corpus"
+execution_unit = "diff:renumber-2025-2026"
+correlation_group = "diff-renumber-real-pair"
+
+[files."tests/test_diff_rows.py"]
+risk_surfaces = ["diff-correctness"]
+
+[files."tests/test_diff_synthetic.py"]
+risk_surfaces = ["diff-correctness"]
+
+[files."tests/test_dispatch_wiring.py"]
+risk_surfaces = ["architecture-design-system", "application-workflows"]
+layer = "contract"
+verification_method = "static-source"
+
+[files."tests/test_engine.py"]
+risk_surfaces = ["extract-fill-transform", "mapping-validation-drift", "document-package-integrity"]
+layer = "integration"
+
+[files."tests/test_extract_invariants.py"]
+risk_surfaces = ["extract-fill-transform", "document-package-integrity"]
+layer = "contract"
+fixture_kind = "real-corpus"
+correlation_group = "real-hwpx-corpus"
+
+[files."tests/test_extract_synthetic.py"]
+risk_surfaces = ["extract-fill-transform"]
+
+[files."tests/test_fields.py"]
+risk_surfaces = ["extract-fill-transform"]
+
+[files."tests/test_file_filters.py"]
+risk_surfaces = ["data-ingestion-boundaries", "architecture-design-system"]
+layer = "contract"
+verification_method = "static-source"
+
+[files."tests/test_fill_ledger.py"]
+risk_surfaces = ["mapping-validation-drift", "extract-fill-transform"]
+layer = "integration"
+
+[files."tests/test_filter_state.py"]
+risk_surfaces = ["application-workflows"]
+
+[files."tests/test_format_engine.py"]
+risk_surfaces = ["extract-fill-transform"]
+
+[files."tests/test_home_state.py"]
+risk_surfaces = ["application-workflows", "durable-registry-persistence"]
+layer = "contract"
+
+[files."tests/test_identity_summary.py"]
+risk_surfaces = ["application-workflows"]
+
+[files."tests/test_jamo.py"]
+risk_surfaces = ["extract-fill-transform"]
+
+[files."tests/test_job.py"]
+risk_surfaces = ["durable-registry-persistence", "mapping-validation-drift", "application-workflows", "extract-fill-transform"]
+layer = "integration"
+
+[files."tests/test_job_editor_state.py"]
+risk_surfaces = ["application-workflows", "mapping-validation-drift"]
+layer = "contract"
+
+[files."tests/test_lineseg.py"]
+risk_surfaces = ["extract-fill-transform"]
+
+[files."tests/test_lint.py"]
+risk_surfaces = ["mapping-validation-drift"]
+layer = "contract"
+
+[files."tests/test_mapping.py"]
+risk_surfaces = ["mapping-validation-drift"]
+
+[files."tests/test_mapping_state.py"]
+risk_surfaces = ["mapping-validation-drift", "application-workflows"]
+layer = "contract"
+
+[files."tests/test_motw.py"]
+risk_surfaces = ["native-packaging-release"]
+layer = "integration"
+platform = "windows"
+
+[files."tests/test_naming.py"]
+risk_surfaces = ["application-workflows"]
+
+[files."tests/test_nara.py"]
+risk_surfaces = ["data-ingestion-boundaries"]
+layer = "integration"
+fixture_kind = "recorded-external"
+
+[files."tests/test_nara_mulpum.py"]
+risk_surfaces = ["data-ingestion-boundaries", "extract-fill-transform"]
+layer = "integration"
+fixture_kind = "recorded-external"
+
+[files."tests/test_nara_state.py"]
+risk_surfaces = ["data-ingestion-boundaries", "application-workflows"]
+layer = "contract"
+
+[files."tests/test_package.py"]
+risk_surfaces = ["document-package-integrity"]
+layer = "contract"
+
+[files."tests/test_partial_gate.py"]
+risk_surfaces = ["mapping-validation-drift"]
+
+[files."tests/test_pipeline.py"]
+risk_surfaces = ["data-ingestion-boundaries"]
+
+[files."tests/test_pipeline_builder_state.py"]
+risk_surfaces = ["data-ingestion-boundaries", "application-workflows"]
+layer = "contract"
+
+[files."tests/test_r3_editor.py"]
+risk_surfaces = ["application-workflows", "mapping-validation-drift"]
+layer = "contract"
+
+[files."tests/test_r3_home.py"]
+risk_surfaces = ["application-workflows"]
+layer = "contract"
+
+[files."tests/test_r3_js.py"]
+risk_surfaces = ["web-runtime-bridge", "architecture-design-system"]
+layer = "contract"
+verification_method = "static-source"
+correlation_group = "web-static-source"
+
+[files."tests/test_r3_picker.py"]
+risk_surfaces = ["application-workflows"]
+layer = "contract"
+
+[files."tests/test_r3_pool.py"]
+risk_surfaces = ["data-ingestion-boundaries", "application-workflows"]
+layer = "contract"
+
+[files."tests/test_r3_py_core.py"]
+risk_surfaces = ["architecture-design-system", "application-workflows", "data-ingestion-boundaries"]
+layer = "contract"
+
+[files."tests/test_r3_runmx.py"]
+risk_surfaces = ["application-workflows"]
+layer = "contract"
+
+[files."tests/test_run_state.py"]
+risk_surfaces = ["mapping-validation-drift", "application-workflows"]
+layer = "contract"
+
+[files."tests/test_scenario_e2e.py"]
+risk_surfaces = ["extract-fill-transform", "mapping-validation-drift", "data-ingestion-boundaries"]
+layer = "integration"
+fixture_kind = "recorded-external"
+
+[files."tests/test_schema.py"]
+risk_surfaces = ["mapping-validation-drift"]
+
+[files."tests/test_secret_store.py"]
+risk_surfaces = ["data-ingestion-boundaries", "durable-registry-persistence"]
+layer = "integration"
+
+[files."tests/test_selection_state.py"]
+risk_surfaces = ["application-workflows"]
+
+[files."tests/test_single_instance.py"]
+risk_surfaces = ["native-packaging-release", "application-workflows"]
+layer = "integration"
+platform = "windows"
+
+[files."tests/test_source_profile.py"]
+risk_surfaces = ["data-ingestion-boundaries"]
+
+[files."tests/test_template_groups.py"]
+risk_surfaces = ["durable-registry-persistence", "application-workflows"]
+layer = "integration"
+
+[files."tests/test_template_manager.py"]
+risk_surfaces = ["mapping-validation-drift", "application-workflows"]
+layer = "contract"
+
+[files."tests/test_template_status.py"]
+risk_surfaces = ["mapping-validation-drift"]
+
+[files."tests/test_text_registry.py"]
+risk_surfaces = ["durable-registry-persistence", "application-workflows"]
+layer = "integration"
+
+[files."tests/test_text_render.py"]
+risk_surfaces = ["extract-fill-transform"]
+
+[files."tests/test_tracking_locate.py"]
+risk_surfaces = ["durable-registry-persistence", "data-ingestion-boundaries"]
+layer = "integration"
+
+[files."tests/test_txt_queue.py"]
+risk_surfaces = ["application-workflows"]
+
+[files."tests/test_txt_state.py"]
+risk_surfaces = ["application-workflows"]
+layer = "contract"
+
+[files."tests/test_ui_contract.py"]
+risk_surfaces = ["architecture-design-system", "web-runtime-bridge"]
+layer = "contract"
+verification_method = "static-source"
+
+[files."tests/test_ux_copy_round.py"]
+risk_surfaces = ["architecture-design-system"]
+layer = "contract"
+verification_method = "static-source"
+
+[files."tests/test_ux_css_round.py"]
+risk_surfaces = ["architecture-design-system"]
+layer = "contract"
+verification_method = "static-source"
+
+[files."tests/test_web_datazone.py"]
+risk_surfaces = ["web-runtime-bridge", "application-workflows"]
+layer = "contract"
+correlation_group = "web-static-source"
+
+[files."tests/test_web_dom_contract.py"]
+risk_surfaces = ["web-runtime-bridge", "architecture-design-system"]
+layer = "contract"
+verification_method = "static-source"
+correlation_group = "web-static-source"
+
+[files."tests/test_web_native_dialog_guard.py"]
+risk_surfaces = ["native-packaging-release", "web-runtime-bridge"]
+layer = "contract"
+platform = "windows"
+verification_method = "static-source"
+
+[files."tests/test_web_selftest_gate.py"]
+risk_surfaces = ["web-runtime-bridge", "application-workflows"]
+layer = "ui-runtime"
+platform = "windows-desktop-webview2"
+verification_method = "real-runtime"
+correlation_group = "webview-selftest"
+
+[files."tests/test_webapp_bridge.py"]
+risk_surfaces = ["web-runtime-bridge", "application-workflows", "data-ingestion-boundaries"]
+layer = "contract"
+
+[files."tests/test_webapp_draft.py"]
+risk_surfaces = ["application-workflows", "durable-registry-persistence", "mapping-validation-drift"]
+layer = "contract"
+
+[files."tests/test_webapp_editor.py"]
+risk_surfaces = ["application-workflows", "mapping-validation-drift", "data-ingestion-boundaries"]
+layer = "contract"
+
+[files."tests/test_webapp_home.py"]
+risk_surfaces = ["application-workflows", "durable-registry-persistence"]
+layer = "contract"
+
+[files."tests/test_webapp_job.py"]
+risk_surfaces = ["application-workflows", "durable-registry-persistence", "mapping-validation-drift", "data-ingestion-boundaries"]
+layer = "contract"
+
+[files."tests/test_webapp_pool.py"]
+risk_surfaces = ["application-workflows", "data-ingestion-boundaries", "durable-registry-persistence"]
+layer = "contract"
+
+[files."tests/test_webapp_profile.py"]
+risk_surfaces = ["web-runtime-bridge", "application-workflows"]
+layer = "contract"
+
+[files."tests/test_webapp_settings.py"]
+risk_surfaces = ["application-workflows", "durable-registry-persistence", "web-runtime-bridge"]
+layer = "contract"
+
+[files."tests/test_webapp_template.py"]
+risk_surfaces = ["application-workflows", "mapping-validation-drift", "durable-registry-persistence"]
+layer = "contract"
+
+[files."tests/test_webapp_txt_zone.py"]
+risk_surfaces = ["application-workflows", "extract-fill-transform", "mapping-validation-drift"]
+layer = "contract"
+
+[classes."tests/test_web_selftest_gate.py::TestWebSelftestGate"]
+execution_unit = "webview:selftest-main"
+correlation_group = "webview:selftest-main"
+disposition = "keep-owner"
+
+[tests."tests/test_atomic.py::test_failed_write_preserves_existing_and_cleans_tmp"]
+disposition = "keep-owner"
+
+[tests."tests/test_corpus_golden.py::test_golden_matches"]
+disposition = "keep-owner"
+
+[tests."tests/test_extract_invariants.py::test_paragraph_order_matches_document_order"]
+disposition = "keep-owner"
+
+[tests."tests/test_mapping.py::test_explicit_blank_is_covered_but_not_emitted_and_roundtrips"]
+disposition = "keep-owner"
+
+[tests."tests/test_job.py::test_write_lock_serializes_read_modify_write"]
+disposition = "keep-owner"
+correlation_group = "job-write-lock"
+
+[tests."tests/test_scenario_e2e.py::test_direct_match_batch_fills_bid_notice"]
+disposition = "keep-owner"
+
+[tests."tests/test_extract_invariants.py::test_corpus_not_empty"]
+disposition = "keep-owner"
+
+[tests."tests/test_diff_invariants.py::test_corpus_not_empty"]
+disposition = "merge-candidate"
+duplicate_of = "tests/test_extract_invariants.py::test_corpus_not_empty"
+
+[tests."tests/test_secret_store.py::test_windows_credential_store_real_round_trip"]
+platform = "windows"
+
+[tests."tests/test_webapp_bridge.py::test_win32_filter_block_derives_from_exts_and_is_double_null_terminated"]
+platform = "windows"
+
+[tests."tests/test_mapping_state.py::test_preview_amount_and_date_match_apply_transform"]
+correlation_group = "mapping-format"
+disposition = "keep-supporting"
+
+[tests."tests/test_mapping.py::test_transform_amount_formats_number"]
+correlation_group = "mapping-format"
+disposition = "keep-owner"
+
+[tests."tests/test_webapp_pool.py::test_same_name_reregister_needs_confirm_then_overwrites"]
+correlation_group = "pool-reregister"
+
+[tests."tests/test_r3_pool.py::test_confirmed_reregister_preserves_status_note_created_at"]
+correlation_group = "pool-reregister"
+disposition = "keep-owner"
+
+[tests."tests/test_nara.py::test_auth_failure_result_code_raises_loudly_no_leak"]
+correlation_group = "nara-auth"
+disposition = "keep-owner"
+
+[tests."tests/test_nara_state.py::test_acquire_auth_failure_distinguished_from_empty"]
+correlation_group = "nara-auth"
+
+[tests."tests/test_cli.py::test_nara_auth_failure_is_loud_exit_1"]
+correlation_group = "nara-auth"
+
+[tests."tests/test_data_factory.py::test_ambiguous_sheets_returns_overview_for_multi_sheet"]
+correlation_group = "multisheet-gate"
+disposition = "keep-owner"
+
+[tests."tests/test_cli.py::test_cli_fill_multisheet_without_sheet_errors"]
+correlation_group = "multisheet-gate"
+
+[tests."tests/test_webapp_bridge.py::test_pick_data_file_multi_sheet_defers_and_asks"]
+correlation_group = "multisheet-gate"
+
+[tests."tests/test_r3_py_core.py::test_multisheet_gate_sites_share_wording"]
+correlation_group = "multisheet-gate"
+
+[tests."tests/test_webapp_editor.py::test_edit_save_holds_the_registry_write_lock"]
+correlation_group = "job-write-lock"
+
+[tests."tests/test_webapp_job.py::test_public_delete_during_stamp_does_not_resurrect_the_job"]
+correlation_group = "job-write-lock"
