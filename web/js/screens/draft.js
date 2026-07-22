@@ -168,15 +168,32 @@
     if (vol) {
       // 「이번 세션」 = 겨눔 해제 → 휘발 세션 귀환(스태시 복원). 이미 휘발이면 무동작.
       if (vol.getAttribute("aria-current") === "true") return;
-      Bridge.call(SCREEN, "select_job", { name: "" });
+      selectJob("");
       return;
     }
     const item = e.target.closest(".job-item[data-job]");
     if (!item) return;
     if (item.getAttribute("aria-current") === "true") return;  // 재클릭 무동작
-    // 복원 실패(삭제·읽기 불가 템플릿)는 시끄럽게 — 백엔드가 error 를 돌려주지만 브리지는 그걸
-    // 표시하지 않으므로(리뷰 5a P2) 여기서 받아 알린다(조용히 아무 일 없는 듯 보이는 것 차단).
-    const r = await Bridge.call(SCREEN, "select_job", { name: item.dataset.job });
+    selectJob(item.dataset.job);
+  }
+
+  /* ---- 저장 기안 선택/해제 — 진행 보존 가드(리뷰 5a P1) + 복원 실패 가시화(리뷰 5a P2). ----
+     저장 세션의 데이터·큐 진행은 Job 에 저장되지 않아 전환·귀환 시 사라진다 — 무장이면 백엔드가
+     needs_confirm 을 돌려주고, 파괴를 재진술한 뒤 confirm 으로 재호출한다(T3 왕복). 복원 실패는
+     시끄럽게(브리지가 error 를 표시하지 않으므로 여기서 alert). */
+  async function selectJob(name) {
+    let r = await Bridge.call(SCREEN, "select_job", { name });
+    if (r && r.needs_confirm) {
+      const copied = r.copied_count || 0;
+      const ok = await window.Modal.confirm({
+        title: "진행 중인 기안을 떠납니다",
+        body: (copied > 0 ? `이미 ${copied}건을 복사했습니다 — 되돌릴 수 없습니다. ` : "") +
+          "지금 물린 데이터와 선택·복사 진행은 저장된 기안에 보관되지 않아, 넘어가면 사라집니다.",
+        confirmLabel: "넘어가기", cancelLabel: "머무르기",
+      });
+      if (!ok) return;
+      r = await Bridge.call(SCREEN, "select_job", { name, confirm: true });
+    }
     if (r && r.ok === false && r.error) window.alert(r.error);
   }
 

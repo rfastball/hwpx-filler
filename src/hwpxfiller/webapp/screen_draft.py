@@ -133,15 +133,26 @@ class DraftController(DraftSessionMixin):
         고르면 스태시하지 않는다(저장-세션은 Job 에서 결정적으로 재구성되니 잃을 게 없다) —
         스태시된 휘발은 그대로 살아 있다. RunViewModel(hwpx 전용, 결정 13)은 쓰지 않는다.
 
+        **저장 세션 진행 보존 가드(리뷰 5a P1, T3 동형)**: 저장 세션의 데이터·큐 진행은 Job 에
+        저장되지 않아(Job 계약 = 데이터/행 미저장) 다른 기안 전환·「이번 세션」 귀환 시 재구성으로
+        사라진다 — 휘발은 스태시로 보존되지만 저장은 잃는다. 무장(진행)이면 파괴를 먼저 재진술한다
+        (``needs_confirm`` 왕복, RC-02). 휘발에서의 전환은 스태시로 보존되니 가드 대상이 아니다
+        (``_bound_job`` 일 때만 잃는다). 확인(confirm)은 내부 경로로 승계한다.
+
         stale 선택(레지스트리에서 사라진 이름·템플릿 파일 부재)은 상태를 바꾸지 않고 시끄럽게
         재진술한다(``{"ok": False, error}``) — 스태시한 휘발 세션이 반쪽으로 오염되지 않는다."""
         name = p.get("name", "")
+        if name and name == self._bound_job:
+            return None  # 재선택 무동작(진행 불변)
+        # 저장 세션을 떠나면 그 데이터·큐 진행이 사라진다 — 무장이면 확인 왕복(위 docstring).
+        if self._bound_job and not p.get("confirm"):
+            g = self._guard_state()
+            if g["armed"]:
+                return {"needs_confirm": True, "kind": "leave_saved", "target": name, **g}
         if not name:  # 「이번 세션」 = 겨눔 해제 → 휘발 귀환
             if self._bound_job:
                 self._restore_volatile()
             return None
-        if name == self._bound_job:
-            return None  # 재선택 무동작
         try:
             job = self.registry.load(name)
         except (FileNotFoundError, ValueError) as exc:  # 삭제 경합·손상 — refresh 가 정리

@@ -484,6 +484,10 @@ class TestWebSelftestGate:
         assert d["back_restores_session"] is True, "휘발 귀환에 세션 패널이 서지 않았습니다."
         assert d["back_persist_hidden"] is True, "휘발 귀환에 유형·확정 열이 다시 숨지 않았습니다."
         assert d["vol_tpl_unlocked"] is True, "휘발 귀환에 템플릿 콤보·붙여넣기가 다시 풀리지 않았습니다."
+        # 복원 결속 정직 표시(리뷰 5a P2) — 데이터 미연결이어도 결속된 열이 드롭다운에 selected.
+        assert d["restored_bind_option"] == "selected", (
+            f"복원 결속(데이터 미연결)이 드롭다운에 정직히 표시되지 않았습니다: {d['restored_bind_option']!r}"
+        )
         # 「기안으로 저장」 승격 버튼(#148 슬라이스 5c, #135) — 라이브러리 배접만 활성, 아니면
         # 비활성 + 사유(dead button 금지). 라벨은 유래로 갈린다(휘발/저장).
         assert d["save_disabled_unbacked"] is True, "미배접(붙여넣기)인데 「기안으로 저장」이 활성입니다(dead button)."

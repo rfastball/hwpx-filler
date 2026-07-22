@@ -15,9 +15,22 @@ from hwpxfiller.core.dataset_pool import DatasetPoolRegistry
 from hwpxfiller.core.job import Job, JobRegistry
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.core.text_registry import TextTemplateRegistry
+from hwpxfiller.gui.selection_state import SelectionModel
+from hwpxfiller.gui.txt_queue import TxtQueueModel
 from hwpxfiller.webapp.draft_session import TargetFontSetting
 from hwpxfiller.webapp.screen_draft import DraftController
 from hwpxfiller.webapp.screen_txt import TxtController
+
+
+def _arm_queue(ctrl, selected: int = 2, copied: int = 1) -> None:
+    """저장 세션에 데이터·큐 진행을 심어 무장 상태를 만든다(0<copied<selected = queue_partial).
+
+    실 데이터 파일 없이 링1 모델을 직접 세워 T3 무장을 재현한다 — 저장 세션의 진행이 전환·귀환에
+    사라지는지(리뷰 5a P1) 확인하는 데 필요한 최소 상태."""
+    ctrl.selection = SelectionModel(selected)
+    ctrl.queue = TxtQueueModel(ctrl.selection)
+    for i in range(copied):
+        ctrl.queue.copy(i)
 
 
 def _controller(tmp_path: Path, **kw) -> "tuple[DraftController, JobRegistry, list]":
@@ -148,6 +161,44 @@ def test_bound_job_deleted_returns_to_volatile(tmp_path):
     snap = ctrl.snapshot()
     assert snap["has_job"] is False and snap["mode"] == "volatile"
     assert snap["template_text"] == "붙여넣기 {{공고명}}"  # 스태시한 휘발 복원
+
+
+def test_leaving_saved_session_with_progress_needs_confirm(tmp_path):
+    """저장 세션(진행 있음)에서 다른 기안으로 전환 = 확인 왕복(리뷰 5a P1) — 진행은 Job 에 없어 사라진다.
+
+    저장 세션의 데이터·큐 진행은 Job 에 저장되지 않아 전환 시 재구성으로 소실된다(휘발과 달리
+    스태시 보존 대상 아님). 무장이면 파괴를 재진술하고, 확인해야 넘어간다(T3 동형)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "A {{공고명}}")
+    _save_real(tmp_path, jobs, "기안B", "job_b.txt", "B {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    _arm_queue(ctrl, selected=2, copied=1)             # 1/2 복사 = queue_partial → armed
+    res = ctrl.dispatch("select_job", {"name": "기안B"})
+    assert res["needs_confirm"] is True and res["copied_count"] == 1
+    assert ctrl.snapshot()["bound_job"] == "기안A"      # 확인 전 = 안 떠남
+    ctrl.dispatch("select_job", {"name": "기안B", "confirm": True})
+    assert ctrl.snapshot()["bound_job"] == "기안B"
+
+
+def test_leaving_saved_session_to_volatile_also_guarded(tmp_path):
+    """「이번 세션」 귀환도 같은 손실 경로다 — 저장 세션 진행이 있으면 확인한다(리뷰 5a P1)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "A {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    _arm_queue(ctrl, selected=2, copied=1)
+    res = ctrl.dispatch("select_job", {"name": ""})
+    assert res["needs_confirm"] is True
+    assert ctrl.snapshot()["has_job"] is True           # 확인 전 = 안 떠남
+
+
+def test_leaving_volatile_session_is_not_guarded(tmp_path):
+    """휘발 세션 전환은 가드하지 않는다 — 스태시로 보존되니 잃을 게 없다(가드는 저장 세션 전용)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "A {{공고명}}")
+    ctrl.dispatch("set_template_text", {"text": "붙여넣기 {{공고명}}"})
+    _arm_queue(ctrl, selected=2, copied=1)              # 휘발에도 진행이 있지만
+    res = ctrl.dispatch("select_job", {"name": "기안A"})  # 곧바로 복원(확인 없음 — 스태시 보존)
+    assert res is None and ctrl.snapshot()["bound_job"] == "기안A"
 
 
 def test_restore_missing_template_is_atomic_and_loud(tmp_path):

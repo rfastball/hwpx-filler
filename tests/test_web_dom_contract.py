@@ -704,10 +704,14 @@ def test_draft_has_return_path_to_volatile_session():
     """
     src = (WEB_JS_DIR / "screens" / "draft.js").read_text(encoding="utf-8")
     assert "data-volatile" in src, "상시 「이번 세션」 행(휘발 귀환구)이 목록에 없습니다(막다른 상태)."
-    assert re.search(
-        r'data-volatile[^)]*\)[\s\S]*?select_job[^;]*name:\s*""',
-        src, re.S,
-    ), "「이번 세션」 행 클릭이 select_job(name:\"\") 로 배선되지 않았습니다 — 눌러도 아무 일이 없습니다."
+    # 「이번 세션」 행 클릭 → selectJob("") (진행 보존 가드 왕복을 겸하는 공용 경로, 리뷰 5a P1).
+    assert re.search(r'data-volatile[\s\S]*?selectJob\(""\)', src, re.S), (
+        "「이번 세션」 행 클릭이 selectJob(\"\") 로 배선되지 않았습니다 — 눌러도 아무 일이 없습니다."
+    )
+    # selectJob 은 select_job(빈 이름) 으로 겨눔을 푼다(무장이면 needs_confirm 왕복 후 confirm).
+    assert re.search(r'function selectJob\([\s\S]*?select_job', src, re.S), (
+        "selectJob 이 select_job 으로 배선되지 않았습니다."
+    )
 
 
 def test_draft_saved_source_has_fork_escape_hatch():
