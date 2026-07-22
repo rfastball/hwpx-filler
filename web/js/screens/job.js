@@ -120,6 +120,9 @@
   function syncModeDisplay(hasJob) {
     const edit = MODE === "edit";
     $("jobZones").style.display = (!edit && hasJob) ? "" : "none";
+    // 하단 sticky 생성 액션바(#179 슬라이스 5b) — 세션 4존과 같이 실행 모드·작업 선택 시에만.
+    // 편집 모드(정의 호스트)·미선택에선 숨어 고아 버튼이 되지 않는다.
+    $("jobActionBar").style.display = (!edit && hasJob) ? "" : "none";
     $("jobEmptyPanel").style.display = (edit || hasJob) ? "none" : "";
     $("jobEditHost").style.display = edit ? "" : "none";
   }
