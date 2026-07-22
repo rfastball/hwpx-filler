@@ -1058,6 +1058,21 @@ def test_save_lands_in_edit_session_of_saved_job(tmp_path):
     assert ctrl.has_unsaved_work() is False              # 클린 착지 — 직후 전환 헛확인 금지
 
 
+def test_edit_save_preserves_current_tab(tmp_path):
+    """편집 저장은 현재 탭을 유지하고 최종 상태만 한 번 렌더한다."""
+    ctrl, pushes = _controller26(tmp_path)
+    assert _save_named(ctrl, "탭유지작업")["ok"] is True
+    ctrl.dispatch("goto_step", {"step": 2})             # 작업 저장 탭에서 저장
+    before = len(pushes)
+
+    assert ctrl.dispatch("save", {})["ok"] is True
+
+    snap = ctrl.snapshot()
+    assert snap["step"] == 2
+    assert pushes[-1][1]["step"] == 2                   # 웹에 전달된 최종 활성 탭도 동일
+    assert len(pushes) == before + 1                     # 중간 재로드 렌더 없이 최종 push 1회
+
+
 def test_load_job_marks_session_clean_until_edited(tmp_path):
     """편집 복원 직후는 클린(디스크 저장본과 동일) — 손대기 전 전환·새 작업이 "저장하지 않은
     세션" 헛확인을 띄우지 않는다(리뷰). 변이 액션 하나로 다시 미저장이 된다."""

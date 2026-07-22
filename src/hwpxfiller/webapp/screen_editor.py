@@ -568,7 +568,7 @@ class EditorController:
         return dest.name
 
     # ------------------------------------------- 네이티브 보조(브리지가 다이얼로그 담당)
-    def load_template_path(self, path: str) -> None:
+    def load_template_path(self, path: str, *, emit_push: bool = True) -> None:
         """선택된 .hwpx 를 로드 — 스키마 추출 + PARTIAL 게이트 계산(Qt 위저드 _load_template 미러)."""
         self._session_clean = False  # 브리지 직행 변이(디스패치 밖) — 클린 표지 해제
         self.template_path = path
@@ -579,13 +579,15 @@ class EditorController:
         if not self.schema.fields:  # RAW: 채울 대상 없음 — 시끄럽게 차단.
             self.raw_block = RAW_BLOCK_MESSAGE
             self.schema = None
-            self._push()
+            if emit_push:
+                self._push()
             return
         try:
             self.gate = gate_for_template(path)
         except Exception:  # noqa: BLE001  fail-closed(진행 차단)
             self.gate_error = True
-        self._push()
+        if emit_push:
+            self._push()
 
     def load_data_path(self, path: str, *, sheet: "str | None" = None) -> None:
         """선택된 데이터 파일 로드. ``sheet`` = 웹에서 확정한 시트명(다중 시트 게이트 #33,
@@ -623,7 +625,9 @@ class EditorController:
         self._push()
 
     # ------------------------------------------------------- 편집 모드(#26 #1)
-    def load_job(self, name: str) -> None:
+    def load_job(
+        self, name: str, *, landing_step: int = 1, emit_push: bool = True
+    ) -> None:
         """저장된 작업을 편집 세션으로 복원 — 3단계 상태 재구성(단순 배선 아님).
 
         복원 경로: ``load_template_path``(스키마·게이트) → ``from_suggestions`` 초안 →
@@ -644,7 +648,9 @@ class EditorController:
                 "파일을 되돌리거나, 홈/작업 화면의 [템플릿 다시 연결…]로 경로를 바꾸세요."
             )
         self._reset()
-        self.load_template_path(job.template_path)
+        # 작업 복원은 하나의 화면 전환이다. 템플릿만 로드된 중간 상태를 먼저 내보내면
+        # 최종 편집 상태 직전에 DOM 전체가 한 번 더 재구성돼 화면이 깜빡인다.
+        self.load_template_path(job.template_path, emit_push=False)
         if self.schema is None:  # RAW — 채울 필드가 없어 매핑 편집이 성립하지 않는다.
             raise ValueError(RAW_BLOCK_MESSAGE)
         if self.gate_error:
@@ -666,7 +672,9 @@ class EditorController:
         self.model = MappingModel.from_suggestions(self.schema, self.source_fields)
         applied = self.model.apply_profile(job.mapping)
         self._model_key = (self.template_path, self.data_path, self.data_sheet, tuple(self.source_fields))
-        self.step = 1  # 매핑 확정 단계로 — 저장까지 사람 재검토를 거친다(3단계 접기).
+        # 일반 진입은 매핑 탭(기본값)으로 시작한다. 저장 직후 재로드는 호출자가 사용자가
+        # 머물던 편집 탭을 넘겨 같은 자리로 착지시킨다(저장할 때마다 매핑 탭으로 튕김 방지).
+        self.step = max(0, min(2, int(landing_step)))
         row_fields = {r.template_field for r in self.model.rows}
         dropped = [
             m.template_field for m in job.mapping.mappings
@@ -690,7 +698,8 @@ class EditorController:
         # 세션" 헛확인을 띄우지 않는다(리뷰). 내부의 load_template_path 가 표지를 껐으므로
         # 마지막에 켠다. 드리프트 경고(warn)가 있어도 내용 동일성은 참이다.
         self._session_clean = True
-        self._push()
+        if emit_push:
+            self._push()
 
     # 세션 내용을 바꾸지 않는 액션 — 클린 표지를 끄지 않는다(보기 이동·미리보기·질의).
     _NONMUTATING_ACTIONS = frozenset(
@@ -1218,12 +1227,17 @@ class EditorController:
                     "데이터 관리 화면에서 같은 이름으로 등록하면 연결이 완성됩니다."
                 )
         saved = self.job_name
+        # 신규 마법사는 저장 뒤 매핑 탭에 착지하는 기존 전환점을 유지한다. 이미 저장된 작업의
+        # 편집 세션만 현재 탭을 기억해, 아래 디스크 기준 재로드가 탭 선택까지 초기화하지 않게 한다.
+        landing_step = self.step if self._editing_origin else 1
         # 저장 착지 = 방금 저장한 작업의 **편집 세션**(결정 40 저장 제자리 · 결정 41 전환점=저장:
         # 초안은 저장으로 작업이 되고 이후 편집은 탭). 구판 ``_reset()`` 은 사용자를 빈 0단계
         # 마법사에 방치하고, 그 리셋 push 가 성공 표지(#save-msg)를 지워 완결 신호가 증발했다
         # (리뷰 F2 — 슬라이스 4 push/반환 경합류). 재로드는 디스크 저장본 기준이라 지문·원점이
         # 새로 서고, 클린 착지(_session_clean)라 직후 전환·새 작업이 헛확인을 띄우지 않는다.
-        self.load_job(saved)
+        # dispatch 가 notice 설정 뒤 최종 스냅샷을 한 번 push 한다. 재로드 중간 push 를 막아
+        # 저장 한 번에 화면 전체가 여러 번 재구성되는 깜빡임을 없앤다.
+        self.load_job(saved, landing_step=landing_step, emit_push=False)
         self._set_notice(f"작업 '{saved}' 을(를) 저장했습니다.", "ok")
         result = {"ok": True, "saved_name": saved, "dataset_registered": registered}
         if register_error:
