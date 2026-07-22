@@ -357,21 +357,28 @@ class TemplateController:
 
     # ---- TXT 저작(HWPX와 동등 · 10F2FF98-C)
     def _do_txt_new(self, p: dict) -> dict:
-        """새 TXT 템플릿 생성 — 이름 검증·중복 차단 후 원자 쓰기."""
+        """새 TXT 템플릿 생성 — 이름 검증·중복 차단 후 원자 쓰기.
+
+        존재 검사~쓰기는 공유 :meth:`~hwpxfiller.core.text_registry.TextTemplateRegistry.write_lock`
+        임계구역 안에서 한다(리뷰 F5) — 「템플릿으로 저장」의 덮어쓰기 재검증과 같은 락을 잡아,
+        두 writer 가 같은 대상을 두고 check/write 를 교차하지 못하게 한다.
+        """
         name = validate_template_name(p.get("name", ""))
         content = p.get("content", "")
         path = self.text_registry.directory / f"{name}.txt"
-        if path.exists():  # confirm-or-alarm: 조용한 덮어쓰기 금지 — 시끄럽게 거부.
-            raise ValueError(f"이미 같은 이름의 템플릿이 있습니다: {name}")
-        self.text_registry.directory.mkdir(parents=True, exist_ok=True)
-        write_text_atomic(str(path), content)
+        with self.text_registry.write_lock():
+            if path.exists():  # confirm-or-alarm: 조용한 덮어쓰기 금지 — 시끄럽게 거부.
+                raise ValueError(f"이미 같은 이름의 템플릿이 있습니다: {name}")
+            self.text_registry.directory.mkdir(parents=True, exist_ok=True)
+            write_text_atomic(str(path), content)
         self._set_result(_ok(f"TXT 템플릿을 만들었습니다: {name}"))
         return {"ok": True, "name": name}
 
     def _do_txt_edit(self, p: dict) -> dict:
-        """기존 TXT 템플릿 내용 저장 — 원자 쓰기."""
+        """기존 TXT 템플릿 내용 저장 — 원자 쓰기(공유 write_lock, 리뷰 F5)."""
         path = Path(p["path"])
-        write_text_atomic(str(path), p.get("content", ""))
+        with self.text_registry.write_lock():
+            write_text_atomic(str(path), p.get("content", ""))
         self._set_result(_ok(f"TXT 템플릿을 저장했습니다: {path.stem}"))
         return {"ok": True}
 

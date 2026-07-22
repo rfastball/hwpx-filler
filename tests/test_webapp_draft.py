@@ -977,6 +977,20 @@ def test_save_template_overwrite_rebinds_to_observed_version(tmp_path):
     assert r3["ok"] is True and r3["overwritten"] is True
 
 
+def test_template_write_lock_is_shared_and_reentrant(tmp_path):
+    """템플릿 writer 들이 **한 락을 공유**하고 재진입 가능해야 F5 임계구역이 성립한다(리뷰 F5).
+
+    save_template 의 덮어쓰기 재검증~교체와 관리 화면 「새 TXT」·편집이 같은 락을 잡아야 두 writer
+    가 같은 대상의 check/write 를 교차하지 못한다 — write_lock() 이 매번 새 락을 주면(회귀) 상호
+    배제가 깨진다. RLock 이라 같은 스레드 재진입은 데드락 없이 통과한다."""
+    reg = TextTemplateRegistry(tmp_path)
+    assert reg.write_lock() is reg.write_lock()   # 매 호출 같은 인스턴스(모든 writer 공유)
+    lock = reg.write_lock()
+    with lock:                                     # 재진입(RLock) — 같은 스레드 두 번 잡아도 OK
+        assert lock.acquire(blocking=False) is True
+        lock.release()
+
+
 def test_save_template_out_of_root_backing_writes_library_copy_not_external(tmp_path):
     """루트 밖 배접(손상 Job 등)은 되돌려-쓰기 관용에서 제외 — 외부 파일을 덮지 않는다(리뷰 F1).
 

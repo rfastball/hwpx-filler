@@ -11,6 +11,7 @@ Qt·엔진(lxml/openpyxl) 비의존 — 순수 파일 나열 + :func:`~hwpxfille
 """
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -50,6 +51,16 @@ class TextTemplateRegistry:
 
     def __init__(self, directory: "str | Path"):
         self.directory = Path(directory)
+        # 템플릿 파일 쓰기 직렬화 락(JobRegistry.write_lock 동형) — 「템플릿으로 저장」의 덮어쓰기
+        # 재검증(내용 지문 재-읽기)과 실제 교체(write_text_atomic) 사이에 다른 스레드가 대상 파일을
+        # 바꾸지 못하게 한 임계구역으로 묶는다(리뷰 F5). 효력은 **모든 템플릿 writer 가 함께
+        # 잡아야** 성립한다 — 관리 화면 「새 TXT」·내용 편집(screen_template)과 「템플릿으로 저장」
+        # (screen_draft)이 이 한 락을 공유한다. RLock(같은 스레드 재진입 허용).
+        self._write_lock = threading.RLock()
+
+    def write_lock(self) -> "threading.RLock":
+        """템플릿 쓰기 임계구역 락(공유) — 덮어쓰기 재검증~교체를 한 임계구역으로 묶는다(F5)."""
+        return self._write_lock
 
     def list_templates(self) -> "list[TextTemplate]":
         """루트의 ``*.txt`` 를 **재귀**로(하위폴더 포함) 나열한다(R-info 2부 결정 5).

@@ -456,27 +456,33 @@ class DraftController(DraftSessionMixin):
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}  # 모달 인라인 재진술(창 밖 예외 금지)
         name = self._registry_name(dest)
-        overwritten = dest.exists()
-        # 덮어쓰기 확인을 관측한 **버전**(내용 지문)에 못박는다(리뷰 F2 — save_job `_do_save_job`
-        # 동형 TOCTOU 방어). 종전 게이트는 `confirm` 플래그만 봐, 확인창이 열린 사이 다른
-        # writer(다른 앱 인스턴스·외부 편집기)가 dest 를 바꿔도 재시도가 무검증 통과해 **사용자가
-        # 검토한 적 없는 내용을 파괴**했다(구 quickdraft 에서 이식된 단순 게이트가 5c 가 세운 안전
-        # 장치를 상속 못 함). 지금 디스크 내용의 지문을 문안에 실어, 재시도의 confirmed_text 가
-        # 지금 문안과 어긋나면(그 사이 또 바뀜) confirm:true 라도 새 문안으로 다시 묻는다.
-        if overwritten:
-            try:
-                digest = hashlib.sha256(dest.read_bytes()).hexdigest()[:8]
-            except OSError:
-                digest = "????????"  # 읽기 실패 — 내용 불명, 조용히 덮지 않게 그래도 게이트
-            gate_text = (
-                f"라이브러리에 이미 「{name}」 템플릿이 있습니다 (현재 내용 #{digest}). "
-                "지금 원문으로 덮어쓰면 기존 내용은 되돌릴 수 없습니다. "
-                "채운 값은 저장되지 않고 원문만 저장됩니다."
-            )
-            if not p.get("confirm") or p.get("confirmed_text", "") != gate_text:
-                return {"ok": False, "needs_confirm": True, "name": name, "confirm_text": gate_text}
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        write_text_atomic(str(dest), self.vm.template_text)
+        # 덮어쓰기 재검증~교체를 **한 임계구역**으로 묶는다(리뷰 F5 — save_job `write_lock` 동형).
+        # 종전 F2 지문 게이트는 지문 재-읽기와 write_text_atomic(os.replace) 사이에 락이 없어,
+        # 그 미세 창에서 다른 스레드(관리 화면 「새 TXT」·편집)가 대상을 바꾸면 confirmed_text 가
+        # 여전히 맞아 **검토한 적 없는 내용을 덮었다**. 락 안에서 지금 디스크 내용의 지문을 다시
+        # 읽어 문안을 성형하고, 재시도의 confirmed_text 와 대조한다: 락을 잡은 채 대조→교체하므로
+        # 그 사이 다른 writer 가 끼어들 수 없다(모든 템플릿 writer 가 같은 락을 공유). 지문이
+        # 어긋나면(락 밖에서 그새 바뀜) confirm:true 라도 새 문안으로 다시 묻는다. (락은 스레드
+        # 직렬화다 — 단일 인스턴스 뮤텍스가 다른 프로세스를, 원자 교체가 부분 쓰기를 이미 막는다;
+        # 외부 편집기의 락 밖 변경은 재-읽기 지문이 최소화한다.)
+        with self._registry.write_lock():
+            if dest.exists():
+                try:
+                    digest = hashlib.sha256(dest.read_bytes()).hexdigest()[:8]
+                except OSError:
+                    digest = "????????"  # 읽기 실패 — 내용 불명, 조용히 덮지 않게 그래도 게이트
+                gate_text = (
+                    f"라이브러리에 이미 「{name}」 템플릿이 있습니다 (현재 내용 #{digest}). "
+                    "지금 원문으로 덮어쓰면 기존 내용은 되돌릴 수 없습니다. "
+                    "채운 값은 저장되지 않고 원문만 저장됩니다."
+                )
+                if not p.get("confirm") or p.get("confirmed_text", "") != gate_text:
+                    return {"ok": False, "needs_confirm": True, "name": name, "confirm_text": gate_text}
+                overwritten = True
+            else:
+                overwritten = False
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            write_text_atomic(str(dest), self.vm.template_text)
         # 그룹 지정은 **저장 성공 뒤에만** — 파일 없는 키에 지정을 남기면 고아가 된다. 여기서
         # 실패해도(설정 파일 읽기 전용 등) **저장 자체는 이미 일어났다**(구 화면 Codex 리뷰 P2):
         # 예외로 되던지면 "실패"라 말하면서 라이브러리 내용은 바뀐 상태가 되고 재시도는 난데없이
