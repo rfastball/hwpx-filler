@@ -51,7 +51,7 @@ def validate_save(model, name: str, pattern: str, *, schema=None) -> SaveVerdict
         f.name for f in schema.fields
     }:
         return SaveVerdict(
-            "매핑이 현재 템플릿 스키마와 일치하지 않습니다 — 템플릿을 다시 로드한 뒤 저장하세요."
+            "매핑이 현재 템플릿 스키마와 일치하지 않습니다. 템플릿을 다시 로드한 뒤 저장하세요."
         )
     if not name:
         return SaveVerdict("작업 이름을 입력하세요.")

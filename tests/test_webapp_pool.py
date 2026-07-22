@@ -83,7 +83,7 @@ def test_slug_collision_is_worded_not_raised(tmp_path):
     ctrl.dispatch("register_excel", {"name": "예산/2026", "path": "C:/d/a.xlsx"})
 
     res = ctrl.dispatch("register_excel", {"name": "예산_2026", "path": "C:/d/b.xlsx"})
-    assert res["ok"] is False and "조용히" in res["error"]
+    assert res["ok"] is False and "소실됩니다" in res["error"]
     assert ctrl.snapshot()["result"]["level"] == "danger"
     assert reg.load("예산/2026").opts["path"] == "C:/d/a.xlsx"  # 기존 항목 무변형
 

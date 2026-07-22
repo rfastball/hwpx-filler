@@ -49,7 +49,7 @@
       emptyNoData: "데이터를 선택하면 생성 대상 문서가 여기에 표시됩니다.",
       emptyFiltered: "필터와 일치하는 행이 없습니다. 위 칩의 정의를 확인하세요.",
       emptyNoRows: "데이터에 행이 없습니다.",
-      stripLead: (n) => `필터 밖 선택 <b>${n}행</b> — 화면엔 안 보이지만 생성에 포함됩니다: `,
+      stripLead: (n) => `필터 밖 선택 <b>${n}행</b>. 화면엔 안 보이지만 생성에 포함됩니다: `,
     },
     tableKey: (s) => (s.job_name || "") + "|" + (s.data_source_label || ""),
     log,
@@ -167,7 +167,7 @@
   function showExitNote() {
     const el = $("jobEditExitNote");
     el.innerHTML =
-      `저장하지 않은 편집이 있습니다 — 편집으로 돌아가면 그대로 있고, ` +
+      `저장하지 않은 편집이 있습니다. 편집으로 돌아가면 그대로 있고, ` +
       `저장 전에는 실행에 반영되지 않습니다. ` +
       // 복귀 버튼(PR-5 리뷰 F1) — 레일 심 사망 후 이 고지가 유일한 **비파괴** 복귀 경로다
       // (다른 진입은 전부 세션 초기화/재로드). 고지가 약속한 「돌아가면 그대로」의 실행 수단.
@@ -386,7 +386,7 @@
     // 선택 유래 문안(결정 4·S4) — 정의-유래 = 정의줄 재진술이 「전체 선택」의 담보.
     // 직접 선택 문안은 가드 모달과 공유 합성기(selectionLine, 리뷰 #9)로 단일 출처.
     const selLine = (rs.origin === "definition")
-      ? `정의 매치 전체 ${sel.length}행 — ${esc((s.filter && s.filter.definition) || "")}`
+      ? `정의 매치 전체 ${sel.length}행: ${esc((s.filter && s.filter.definition) || "")}`
       : esc(selectionLine(sel.length, rs.filter_active, rs.in_def, rs.extra));
     box.innerHTML =
       `<span class="dl">선택</span><span>${selLine}</span>` +
@@ -469,7 +469,7 @@
         // 조용한 덮어쓰기 금지 — 수치 재진술 후 확인 시에만 재호출(RC-02). 모달 대기 동안 busy 유지.
         const ok = await window.Modal.confirm({
           title: "덮어쓰기 확인", body: overwriteBody(res),
-          confirmLabel: "덮어쓰고 생성", cancelLabel: "머무르기",
+          confirmLabel: "덮어쓰고 생성", cancelLabel: "취소",
         });
         if (ok) { await doGenerate(true); }
         else { log("생성 취소. 기존 파일 덮어쓰기를 확정하지 않았습니다."); }
@@ -530,7 +530,7 @@
     if (!g || !g.armed) return true;
     return window.Modal.confirm({
       title, body: guardBody(g, verbPhrase),
-      confirmLabel, cancelLabel: "머무르기",
+      confirmLabel, cancelLabel: "취소",
     });
   }
 
@@ -555,7 +555,7 @@
         const ok = await window.Modal.confirm({
           title: "작업 전환 확인",
           body: guardBody(res, "작업을 전환하면"),
-          confirmLabel: "전환하고 버리기", cancelLabel: "머무르기",
+          confirmLabel: "전환하고 버리기", cancelLabel: "취소",
         });
         if (!ok) return false;
         await Bridge.call(SCREEN, "select_job", { name, confirm: true });
@@ -737,7 +737,7 @@
     }
     const ok = await window.Modal.confirm({
       title: "작업 삭제 확인", body,
-      confirmLabel: "삭제", cancelLabel: "머무르기",
+      confirmLabel: "삭제", cancelLabel: "취소",
     });
     if (!ok) return;
     await Bridge.call(SCREEN, "delete_job", { name, confirm: true });
@@ -759,7 +759,7 @@
         body: `'${r.new}' 그룹이 이미 있습니다. '${old}' 의 작업 전부를 ` +
           `'${r.new}' 에 합칩니다(지금 기준 ${r.count}개 → 현재 ${r.target_count}개인 그룹). ` +
           `그룹은 하나가 됩니다.`,
-        confirmLabel: "합치기", cancelLabel: "머무르기",
+        confirmLabel: "합치기", cancelLabel: "취소",
       });
       if (!ok) return;
       const r2 = await Bridge.call(SCREEN, "rename_group",
@@ -783,9 +783,9 @@
     // 덧붙인다(#149) — 확인 왕복 사이 소속이 바뀌어도 규칙 쪽은 언제나 참이다.
     const ok = await window.Modal.confirm({
       title: "그룹 해산 확인",
-      body: `그룹 '${name}' 을(를) 해산합니다. 해산 시점의 소속 작업 전부가 「그룹 없음」으로 ` +
+      body: `그룹 '${name}' 을(를) 해산합니다. 해산 시점의 소속 작업 전부가 '그룹 없음'으로 ` +
         `이동합니다(지금 기준 ${res.count}개). 작업 자체는 삭제되지 않습니다.`,
-      confirmLabel: "해산", cancelLabel: "머무르기",
+      confirmLabel: "해산", cancelLabel: "취소",
     });
     if (!ok) return;
     const r = await Bridge.call(SCREEN, "disband_group", { name, confirm: true, seen: res.count });

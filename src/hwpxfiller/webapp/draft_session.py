@@ -879,7 +879,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
             if row.type == "const" and row.const.strip() and not p.get("confirm"):
                 return {
                     "confirm": (
-                        f"{{{{{name}}}}} 에 직접 입력한 값 「{row.const}」은 「{col}」 열의 값으로 "
+                        f"{{{{{name}}}}} 에 직접 입력한 값 '{row.const}'은 '{col}' 열의 값으로 "
                         "바뀌고 되돌릴 수 없습니다. 계속하시겠습니까?"
                     )
                 }

@@ -232,7 +232,7 @@ class DataZoneMixin:
         # 이유(#127): "슬롯 없음"으로 뭉뚱그리면 현 정의를 지킨 거부가 없는 슬롯처럼 읽힌다.
         if not self._current_filter_empty():
             raise ValueError(
-                "현재 필터가 설정돼 있어 직전 필터를 재적용하지 않았습니다 — "
+                "현재 필터가 설정돼 있어 직전 필터를 재적용하지 않았습니다. "
                 "재적용은 필터를 지운 뒤에만 할 수 있습니다."
             )
         if slot is None or not self._reapply_available():
@@ -253,7 +253,7 @@ class DataZoneMixin:
             unpruned.apply_state(dict(state, pruned=[]))
             if unpruned.view(records).branches:  # 프루닝만 걷으면 가지가 산다 = 소실 유래
                 probe = unpruned
-                dropped = dropped + ["(프루닝 — 가지 소실로 복원하지 않음)"]
+                dropped = dropped + ["(프루닝: 가지 소실로 복원하지 않음)"]
         self.filter = probe  # 원자 교체 — 검증된 초안이 그대로 정의가 된다
         return {"ok": True, "installed": installed, "dropped": dropped}
 

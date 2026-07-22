@@ -112,13 +112,12 @@ def guard_slug_collision(path: Path, name: str, load_name, *, kind: str) -> None
     except Exception:  # noqa: BLE001 — 손상 파일: 이름 불명 → 덮어쓰기 판단 불가, loud
         raise SlugCollisionError(
             f"{kind} '{name}' 저장 대상 파일 {path.name} 이 이미 있으나 손상돼 "
-            f"소유 {kind}을(를) 확인할 수 없습니다 — 조용히 덮지 않습니다"
+            f"소유 {kind}을(를) 확인할 수 없습니다."
         ) from None
     if existing_name != name:
         raise SlugCollisionError(
             f"{kind} '{name}' 과 기존 {kind} '{existing_name}' 이 같은 파일"
-            f"({path.name})로 매핑됩니다 — 저장하면 '{existing_name}' 이 소실됩니다. "
-            f"조용히 덮지 않습니다"
+            f"({path.name})로 매핑됩니다. 저장하면 '{existing_name}' 이 소실됩니다."
         )
 
 
@@ -260,7 +259,7 @@ def require_hwpx(job: "Job") -> "Job":
     **매체 교차 relink 는 예외** — 차단이 아니라 재확인이라 여기서 raise 하지 않고 화면 게이트가 받는다.
     """
     if job.template_path and job.media != "hwpx":
-        where = "「기안」 화면 소관" if job.media == "txt" else "hwpx 아닌 템플릿"
+        where = "'기안' 화면 소관" if job.media == "txt" else "hwpx 아닌 템플릿"
         raise MediaMismatchError(
             f"작업 '{job.name}' 은(는) 이 hwpx 전용 경로를 쓸 수 없습니다 "
             f"({where} · 매체={job.media or '미상'} · 템플릿={job.template_path!r})"

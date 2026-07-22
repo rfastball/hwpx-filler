@@ -154,7 +154,7 @@ class DraftController(DraftSessionMixin):
                 detail = f"(진행: {' · '.join(bits)}) " if bits else ""
                 return {"notice": (
                     f"결속했던 기안 '{name}' 이(가) 다른 화면에서 삭제되어, 진행 중이던 세션이 "
-                    f"닫혔습니다 {detail}— 이 진행은 저장된 기안에 보관되지 않아 복구할 수 없습니다."
+                    f"닫혔습니다. {detail}이 진행은 저장된 기안에 보관되지 않아 복구할 수 없습니다."
                 )}
         return None
 
@@ -219,8 +219,8 @@ class DraftController(DraftSessionMixin):
         전이(원문 읽기 전용). 스태시(붙여넣던 이전 휘발)는 건드리지 않는다."""
         if self._source_dirty or not self._template_path:
             return {"ok": False, "error": (
-                "붙여넣거나 고친 원문은 아직 기안으로 저장할 수 없습니다 — 라이브러리 템플릿을 "
-                "골라 채우거나, 원문을 「템플릿으로 저장」한 뒤 저장하세요.")}
+                "붙여넣거나 고친 원문은 아직 기안으로 저장할 수 없습니다. 라이브러리 템플릿을 "
+                "골라 채우거나, 원문을 '템플릿으로 저장'한 뒤 저장하세요.")}
         # 캐시된 template_path 재검증(리뷰 5c P2) — 이 세션이 경로를 캐시한 뒤 템플릿 관리에서
         # 삭제·이동됐을 수 있다. 빈 문자열만 보던 위 게이트는 통과하지만, 그러면 다시 못 여는
         # 템플릿을 가리키는 Job 이 생긴다. 지금 실 파일인지 읽어 확인한다(confirm-or-alarm).
@@ -228,7 +228,7 @@ class DraftController(DraftSessionMixin):
             disk_text = Path(self._template_path).read_text(encoding="utf-8")
         except OSError:
             return {"ok": False, "error": (
-                "이 기안의 템플릿 파일이 사라졌거나 이동했습니다 — 템플릿을 다시 고른 뒤 저장하세요.")}
+                "이 기안의 템플릿 파일이 사라졌거나 이동했습니다. 템플릿을 다시 고른 뒤 저장하세요.")}
         # 템플릿 파일 **내용** 드리프트(리뷰 5c 3R P1 / 216) — 세션이 배접 원문을 읽은 뒤 템플릿
         # 관리에서 그 파일이 편집되면, 맞춰 둔 매핑은 옛 원문 기준인데 Job 은 새 원문을 가리켜
         # 토큰이 어긋난다(옛 매핑 조용한 소실·새 토큰 미해소). 파일 내용이 세션 baseline(vm.
@@ -236,7 +236,7 @@ class DraftController(DraftSessionMixin):
         # 원문으로 매핑을 다시 세운다). 존재만 보던 위 게이트는 이 불일치를 통과시켰다.
         if disk_text != self.vm.template_text:
             return {"ok": False, "error": (
-                "이 기안의 템플릿이 템플릿 관리에서 바뀌었습니다 — 맞춰 둔 정의가 옛 원문 기준이라,"
+                "이 기안의 템플릿이 템플릿 관리에서 바뀌었습니다. 맞춰 둔 정의가 옛 원문 기준이라,"
                 " 템플릿을 다시 고른 뒤 저장하세요.")}
         # 빈 레시피 가드(리뷰 5c 2R P1 / 196) — **실제 영속될 프로파일**을 기준으로 판정한다.
         # 휘발 승격은 내용 행을 강제 확정하니 has_content 로 충분하지만, 저장 모드(재저장)는
@@ -245,11 +245,11 @@ class DraftController(DraftSessionMixin):
         # 빈 레시피로 덮어쓴다 — 저장 모드는 emits_any_value(확정+내용)로 본다.
         if self._bound_job:  # 저장 모드 = 사람 확정 존중 → 실제 영속될 프로파일(확정+내용)로 판정
             would_emit = self.mapping.emits_any_value()
-            empty_msg = ("저장할 확정된 값이 없습니다 — 토큰에 데이터 열을 결속하거나 값을 직접"
+            empty_msg = ("저장할 확정된 값이 없습니다. 토큰에 데이터 열을 결속하거나 값을 직접"
                          " 입력해 확정한 뒤 저장하세요.")
         else:  # 휘발 승격 = 내용 행을 강제 확정하므로 has_content 로 충분
             would_emit = any(r.has_content() for r in self.mapping.rows)
-            empty_msg = "맞춰진 토큰이 없습니다 — 데이터 열을 결속하거나 값을 직접 입력한 뒤 저장하세요."
+            empty_msg = "맞춰진 토큰이 없습니다. 데이터 열을 결속하거나 값을 직접 입력한 뒤 저장하세요."
         if not would_emit:
             return {"ok": False, "error": empty_msg}
         name = p.get("name", "").strip()
@@ -480,7 +480,7 @@ class DraftController(DraftSessionMixin):
                 except OSError:
                     digest = "????????"  # 읽기 실패 — 내용 불명, 조용히 덮지 않게 그래도 게이트
                 gate_text = (
-                    f"라이브러리에 이미 「{name}」 템플릿이 있습니다 (현재 내용 #{digest}). "
+                    f"라이브러리에 이미 '{name}' 템플릿이 있습니다 (현재 내용 #{digest}). "
                     "지금 원문으로 덮어쓰면 기존 내용은 되돌릴 수 없습니다. "
                     "채운 값은 저장되지 않고 원문만 저장됩니다."
                 )

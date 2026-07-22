@@ -28,26 +28,26 @@
     <!-- #27(개정): .ni 는 이제 SVG 상시 아이콘 표지 — 접힘/펼침 모두 노출. 접힘 시 라벨(.lbl=.n+.d)만
          숨어 아이콘이 표지를 잇는다(옛 '펼침 숨김' 계약 폐기 — 아이콘+라벨 공존은 스캔 보조). 접근
          이름=aria-label, 호버 툴팁=title("이름 — 설명"). 부제 .d 는 활성 항목에만 인라인 노출. -->
-    <button class="navbtn" data-scr="home" aria-current="true" aria-label="대시보드" title="대시보드 — 저장된 작업과 기안 템플릿 요약">
+    <button class="navbtn" data-scr="home" aria-current="true" aria-label="대시보드" title="대시보드: 저장된 작업과 기안 템플릿 요약">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l7-6 7 6M5 9v7h4v-4h2v4h4V9"/></svg></span><span class="lbl"><span class="n">대시보드</span><span class="d">작업·기안 요약</span></span></button>
     <!-- 「작업」(R-flow, #90) — 좌 목록 + 우 세션 패널. 데이터를 채워 문서를 생성하는 유일
          표면이다(실행 화면은 슬라이스 3에서 사망, 레일 「실행」 동시 제거 · 부록 A-4-36).
          R-info 1부는 이 화면을 부팅 랜딩으로 확정했으나, 랜딩 전환(기본 화면 교체)은 별도 후속. -->
-    <button class="navbtn" data-scr="job" aria-label="작업" title="작업 — 저장된 작업을 골라 세션 패널에서 데이터를 채워 생성">
+    <button class="navbtn" data-scr="job" aria-label="작업" title="작업: 저장된 작업을 골라 세션 패널에서 데이터를 채워 생성">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h5v12H4zM11 4h5v7h-5z"/></svg></span><span class="lbl"><span class="n">작업</span><span class="d">목록 + 세션 패널</span></span></button>
     <!-- 「기안」(R-info 3부, #148) — TXT 작업-앵커 master-detail. 「작업」(HWPX)의 대칭 화면으로
          바로 다음 순번(최종 형상 작업·기안·템플릿·데이터). 좌 목록 + 우 휘발 세션 4존(3a) +
          맞추기 표·원문 뷰 전환(3b)·큐 퇴화(3c)·유래/복원/승격(5)·「템플릿으로 저장」 흡수
          (6a)까지 착지. 슬라이스 6b 에서 구 「기안문 채우기」·「빠른 기안」을 흡수·삭제하며
          **레일 6→5**(홈·작업·기안·템플릿·데이터)가 됐다(결정 5·34). -->
-    <button class="navbtn" data-scr="draft" aria-label="기안" title="기안 — 저장된 기안 작업을 골라 채워 복사 (TXT)">
+    <button class="navbtn" data-scr="draft" aria-label="기안" title="기안: 저장된 기안 작업을 골라 채워 복사 (TXT)">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h8l4 4v8H4zM12 4v4h4M7 11h6M7 14h6"/></svg></span><span class="lbl"><span class="n">기안</span><span class="d">기안 작업 목록 + 채움 (TXT)</span></span></button>
     <!-- 레일 「작업 에디터」 사망(결정 39 — 에디터 흡수 완결): 생성 진입은 「작업」 구획
          ＋ 새 작업(#jobNewBtn — 이 삭제가 승계 신설)·홈 ＋/카드 편집·템플릿 관리 「작업
          만들기」가 담당한다(카드 ⋮ 편집 메뉴는 #110 목록 관리 소관). -->
-    <button class="navbtn" data-scr="tpl" aria-label="템플릿 관리" title="템플릿 관리 — HWPX·TXT 라이브러리 · 상태·변환·검토">
+    <button class="navbtn" data-scr="tpl" aria-label="템플릿 관리" title="템플릿 관리: HWPX·TXT 라이브러리 · 상태·변환·검토">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3l7 4-7 4-7-4zM3 11l7 4 7-4"/></svg></span><span class="lbl"><span class="n">템플릿 관리</span><span class="d">HWPX·TXT 라이브러리 · 상태·변환·검토</span></span></button>
-    <button class="navbtn" data-scr="pool" aria-label="데이터 관리" title="데이터 관리 — 등록 데이터(참조) · 수명 관리">
+    <button class="navbtn" data-scr="pool" aria-label="데이터 관리" title="데이터 관리: 등록 데이터(참조) · 수명 관리">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3c3.3 0 6 1 6 2.3S13.3 7.7 10 7.7 4 6.7 4 5.3 6.7 3 10 3M4 5.3v9.4C4 16 6.7 17 10 17s6-1 6-2.3V5.3"/></svg></span><span class="lbl"><span class="n">데이터 관리</span><span class="d">등록 데이터(참조) · 수명 관리</span></span></button>
     <!-- 테마 전환(레일 하단, margin-top:auto) — navbtn 이 아니라 라우팅되지 않는다. 접힘 표지는
          .ti(≠.ni)라 #27 시각표지 카운트와 무관. 라벨은 app.js 가 현재 모드로 갱신(themeLabel). -->
@@ -99,7 +99,7 @@
         <div class="track txt">
           <div class="th"><span class="tt">기안 · txt</span>
             <button class="btn primary sm" id="homeNewTxt">＋ 새 기안</button></div>
-          <p class="tsub">평문 {{필드}} 템플릿을 실시간으로 채워 복사합니다 — 온나라 기안 등에 바로 붙여넣기.</p>
+          <p class="tsub">평문 {{필드}} 템플릿을 실시간으로 채워 복사합니다. 온나라 기안 등에 바로 붙여넣을 수 있습니다.</p>
           <div class="tlist" id="homeTxt"></div>
         </div>
       </div>
@@ -128,7 +128,7 @@
             <!-- 구획 ＋(1부 결정 10 — 매체 맥락 상속): 레일 「작업 에디터」 사망(결정 39)이
                  남긴 생성 진입 의무를 이 화면 자신이 승계한다(PR-5 리뷰 F2). -->
             <div class="job-sec-head hwpx">문서 작업 · HWPX
-              <button class="btn sm" id="jobNewBtn" title="새 작업 — 편집 모드에서 초안을 만듭니다">＋ 새 작업</button></div>
+              <button class="btn sm" id="jobNewBtn" title="새 작업: 편집 모드에서 초안을 만듭니다">＋ 새 작업</button></div>
             <div id="jobListHwpx" class="job-list"></div>
             <div id="jobListHwpxEmpty" class="muted job-empty" style="display:none">저장된 작업이 없습니다.</div>
           </div>
@@ -288,7 +288,7 @@
                 <button class="btn" id="draftBtnPaste" data-busy-lock>템플릿 붙여넣기…</button></div>
               <div class="run-row"><span class="lbl">데이터(.xlsx/.csv)</span>
                 <input class="field ro" id="draftDataLabel" type="text" readonly
-                       placeholder="데이터를 선택하세요 — 없으면 토큰이 그대로 남습니다">
+                       placeholder="데이터를 선택하세요(없으면 토큰이 그대로 남습니다)">
                 <button class="btn" id="draftBtnPoolData" data-busy-lock>등록 데이터…</button>
                 <button class="btn" id="draftBtnPickData" data-busy-lock>파일 선택…</button>
                 <!-- 데이터 해제(R-flow 결정 30, #148 슬라이스 6 — 구 「빠른 기안」에서 승계) — 결속
@@ -316,7 +316,7 @@
                 </div>
                 <!-- ①존 빈 상태(결정 14) — 데이터가 필수인 것처럼 말하지 않는다. 두 길을 다
                      말한다: 물리면 여러 건 일괄, 안 물려도 「맞추기」에서 직접 채워 복사. -->
-                <div class="job-empty muted" id="draftTableEmpty">데이터를 물리면 <b>여러 건을 한 번에</b> 채웁니다 — 안 물려도 아래 「맞추기」에서 <b>직접 채워 복사</b>할 수 있습니다.</div>
+                <div class="job-empty muted" id="draftTableEmpty">데이터를 연결하면 <b>여러 건을 한 번에</b> 채웁니다. 없이도 '맞추기'에서 <b>직접 채울</b> 수 있습니다.</div>
                 <div class="colpanel" id="draftColPanel" hidden></div>
               </div>
               <!-- 필터 밖 선택 스트립(결정 3) — 선택은 필터를 관통하고, 밖은 여기서 상시 가시.
@@ -371,8 +371,8 @@
                 </div>
                 <textarea class="wc-srcbox mono" id="draftSrcBox" spellcheck="false"
                           data-preserve-scroll aria-label="템플릿 원문"></textarea>
-                <p class="muted hint">여기서 고친 원문은 이 세션의 사본입니다 — 라이브러리는 바뀌지 않습니다.
-                  타이핑하면 위 「맞추기」 표가 실시간 재구성됩니다.</p>
+                <p class="muted hint">여기서 고친 원문은 이 세션의 사본입니다.
+                  타이핑하면 위 '맞추기' 표가 실시간 재구성됩니다.</p>
               </div>
               <div class="wc-lint" id="draftCardLint" hidden></div>
             </div>
@@ -422,7 +422,7 @@
       <header class="scr-head">
         <div>
           <h1>템플릿 관리</h1>
-          <p class="sub">문서를 만들 원본 서식을 한곳에서 관리합니다 — 매체(HWPX·TXT)로 나뉘고, 그 안에서
+          <p class="sub">문서를 만들 원본 서식을 한곳에서 관리합니다. 매체(HWPX·TXT)로 나뉘고, 그 안에서
             작업 목록과 같은 그룹으로 정리합니다. 판본 비교(diff)는 별도 제품(hwpxdiff)이 담당합니다.</p>
         </div>
       </header>
@@ -470,7 +470,7 @@
       <header class="scr-head">
         <div>
           <h1>데이터 관리</h1>
-          <p class="sub">등록 데이터는 참조(경로·시트)만 저장합니다 — 실행할 때 원본을 다시 읽습니다.
+          <p class="sub">등록 데이터는 참조(경로·시트)만 저장합니다. 실행할 때 원본을 다시 읽습니다.
             계약 사이클이 끝나면 보관으로 정리하세요.</p>
         </div>
       </header>
@@ -496,8 +496,7 @@
     <div id="poolRegModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="poolRegTitle">
       <div class="modal-card">
         <h3 id="poolRegTitle">데이터 등록</h3>
-        <p class="modal-sub">경로 참조만 저장합니다 —
-          행·내용은 저장하지 않고 실행할 때 다시 읽습니다.</p>
+        <p class="modal-sub">파일 위치만 기억하고, 실행할 때 원본을 읽습니다.</p>
         <label class="ctl"><span class="lbl">이름</span>
           <input class="field" id="poolRegName" type="text" placeholder="예: 7월 공고목록"></label>
         <label class="ctl"><span class="lbl">파일 경로(.xlsx/.csv)</span>
@@ -535,7 +534,7 @@
     <div id="sheetModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
       <div class="modal-card">
         <h3 id="sheetTitle">시트 선택</h3>
-        <p class="modal-sub"><span class="mono" id="sheetModalFile"></span> 에 시트가 여러 개입니다 — 어느 시트로 채울지 확정하세요. 조용히 첫 시트를 쓰지 않습니다.</p>
+        <p class="modal-sub"><span class="mono" id="sheetModalFile"></span> 에 시트가 여러 개입니다. 채울 시트를 선택하세요.</p>
         <div id="sheetList" class="sheet-list"></div>
         <div class="modal-actions">
           <button class="btn" id="sheetCancel">취소</button>
@@ -553,7 +552,7 @@
       <div class="modal-card">
         <h3 id="poolTitle">등록 데이터 선택</h3>
         <p class="modal-sub">활성 상태의 등록 데이터(참조)만
-          실행 후보입니다 — 선택하면 지금 시점의 원본을 다시 읽어 옵니다.</p>
+          실행 후보입니다. 선택하면 지금 시점의 원본을 다시 읽어 옵니다.</p>
         <div id="poolPickList" class="sheet-list"></div>
         <p id="poolNote" class="note dangerbox" style="display:none;white-space:pre-line"></p>
         <div class="modal-actions">

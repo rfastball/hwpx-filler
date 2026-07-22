@@ -78,7 +78,7 @@ from .screens import (
 from .settings import load_job_collapsed_groups, save_job_collapsed_groups
 
 # 사전검증 성공 문구는 링2 사용자 어휘로 순화한다(실행 화면 _PREFLIGHT_OK_TEXT 동형).
-_PREFLIGHT_OK_TEXT = "검증 완료 — 문서를 생성할 준비가 됐습니다."
+_PREFLIGHT_OK_TEXT = "검증 완료. 생성할 수 있습니다."
 
 # 데이터 미겨눔 상태의 재진술 빈 골격 — 필터/테이블 골격은 데이터 존 공유 믹스인
 # (data_zone.EMPTY_*)이 소유한다(PR-2b).
@@ -880,8 +880,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             summary += f" 미입력 표시 필드 {len(blanks)}개({', '.join(blanks)})."
         if stamp_error:
             summary += (
-                f" 다만 실행 기록을 남기지 못했습니다({stamp_error}) —"
-                " 문서는 모두 만들어졌지만 홈의 최근 실행 이력에는 이번 실행이 빠집니다."
+                f" 문서는 모두 만들어졌지만 실행 기록 저장에 실패했습니다({stamp_error})."
             )
         failures = [
             f"{Path(r.output_path).name}: {describe_result_error(r.error)}"

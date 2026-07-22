@@ -58,7 +58,7 @@
 
   /* 본문 표제 — 신규는 단계 서수를 말하고, 편집(탭)은 분류 이름만 말한다. */
   function stageTitle(s, i) {
-    return isEditing(s) ? STEP_TITLES[i] : `${i + 1}단계 — ${STEP_TITLES[i]}`;
+    return isEditing(s) ? STEP_TITLES[i] : `${i + 1}단계: ${STEP_TITLES[i]}`;
   }
 
   function stepBody(s) {
@@ -106,8 +106,8 @@
     const total = sections.reduce((n, sec) => n + (sec.items ? sec.items.length : 0), 0);
     let body;
     if (!total) {
-      body = `<div class="muted" style="padding:var(--sp-8)">라이브러리에 템플릿이 없습니다 —` +
-        ` 「가져오기…」로 추가하거나 템플릿 관리에서 확인하세요.</div>`;
+      body = `<div class="muted" style="padding:var(--sp-8)">라이브러리에 템플릿이 없습니다.` +
+        ` '가져오기…'로 추가하거나 템플릿 관리에서 확인하세요.</div>`;
     } else if (lib.flat) {
       // 퇴화 불변식(그룹 0개) — 헤더 없는 평면 나열.
       body = `<div class="tpl-grp-rows flat">` +
@@ -123,14 +123,14 @@
         <span class="spacer"></span>
         <button class="btn sm" data-act="import-template">가져오기…</button></div>
       <p class="note quiet" style="margin-top:0">이 마법사는 .hwpx 문서를 만들므로 HWPX 서식만
-        보입니다 — 그룹은 관리 화면과 같습니다.</p>
+        보입니다. 그룹은 관리 화면과 같습니다.</p>
       ${body}
     </div>`;
   }
 
   function templateStage(s) {
     let out = `<div class="wtitle">${esc(stageTitle(s, 0))}</div>
-      <p class="wsub">라이브러리에서 누름틀 템플릿을 고르세요. 다른 파일은 「가져오기…」로
+      <p class="wsub">라이브러리에서 누름틀 템플릿을 고르세요. 다른 파일은 '가져오기…'로
         라이브러리에 복사해 시작합니다.</p>
       ${libraryPicker(s)}`;
     if (s.template_name) {
@@ -141,7 +141,7 @@
     if (s.raw_block) {
       out += `<p class="note dangerbox" style="white-space:pre-line">${esc(s.raw_block)}</p>`;
     } else if (s.gate_error) {
-      out += `<p class="note dangerbox">템플릿 상태를 확인할 수 없습니다 — 진행할 수 없습니다.</p>`;
+      out += `<p class="note dangerbox">템플릿 상태를 확인할 수 없습니다. 진행할 수 없습니다.</p>`;
     } else if (s.field_count) {
       out += schemaTable(s);
       if (s.gate) {
@@ -198,7 +198,7 @@
       ? ` · 열 ${cols.length}/${all.length} (미사용 ${hiddenCols}열 제외)`
       : ` · 전체 ${all.length}열`;
     const more = s.record_count > sample.length
-      ? `<p class="fields-head muted">샘플 ${sample.length}행 표시 — 외 ${s.record_count - sample.length}행</p>`
+      ? `<p class="fields-head muted">샘플 ${sample.length}행 표시(외 ${s.record_count - sample.length}행)</p>`
       : "";
     return `<p class="fields-head">${s.record_count}행 불러옴${colNote}.</p>
       <div class="tblwrap"><table class="data-preview"><thead><tr>${head}</tr></thead>
@@ -235,7 +235,7 @@
     const ignored = s.ignored_source_fields || [];
     const activeChips = all.filter((f) => active.has(f)).map((f) =>
       `<button class="hchip on" data-act="toggle-header" data-field="${esc(f)}" title="클릭 = 미사용으로">${esc(f)}</button>`
-    ).join("") || '<span class="muted">사용 중인 헤더가 없습니다 — 아래 미사용 목록에서 골라 켜세요.</span>';
+    ).join("") || '<span class="muted">사용 중인 헤더가 없습니다. 아래 미사용 목록에서 골라 켜세요.</span>';
     // 미사용 = 벽 이탈 + 접힘 구역(결정 13). '전체 미사용'이 ignored_expanded 로 자동 펼침.
     const ignoredBlock = ignored.length
       ? `<details class="hidden-hdrs ign-fold"${(s.ignored_expanded || foldOpen) ? " open" : ""}><summary>미사용 ${ignored.length}개 (펼쳐 다시 사용)</summary>
@@ -263,18 +263,16 @@
       ? `<button class="btn sm" data-act="prev-rec">◀ 이전 행</button>
          <span class="mono">행 ${s.preview_index}/${s.preview_count}</span>
          <button class="btn sm" data-act="next-rec">다음 행 ▶</button>`
-      : `<span class="muted">행 0/0 — 데이터 없음(템플릿 필드만)</span>`;
+      : `<span class="muted">행 0/0 · 데이터 없음(템플릿 필드만)</span>`;
     const counts = s.counts
       ? `<span class="muted">채움 ${s.counts.filled} · 빈 값 ${s.counts.empty} · 미매핑 ${s.counts.unmapped}` +
-        `${s.preview_empties && s.preview_empties.length ? " — " + esc(s.preview_empties.join(", ")) : ""}</span>`
+        `${s.preview_empties && s.preview_empties.length ? " (" + esc(s.preview_empties.join(", ")) + ")" : ""}</span>`
       : "";
     const banner = s.schema_only
-      ? `<p class="note warnbox">데이터 없이 매핑 중 — 값이 비어 보이는 건 '미매칭'이 아니라 '데이터 없음'입니다. 고정값을 넣거나 비움으로 확정하세요.</p>`
+      ? `<p class="note warnbox">데이터 없이 매핑 중입니다. 값이 비어 보이는 건 '미매칭'이 아니라 '데이터 없음'입니다. 고정값을 넣거나 비움으로 확정하세요.</p>`
       : "";
     return `<div class="wtitle">${esc(stageTitle(s, 1))}</div>
-      <p class="wsub">데이터를 고르면 컬럼·표본이 아래 표에 그대로 차오릅니다. 자동 제안은
-        초안이니 모든 행을 검토·확정해야 저장으로 진행합니다. 채우지 않을 필드는 소스를
-        (비움)으로 두고 확정하세요. 작업엔 데이터가 저장되지 않습니다 — 매핑 검토용 샘플입니다.</p>
+      <p class="wsub">필드마다 데이터 열을 지정하고 전 행을 확정하세요.</p>
       ${dataGateway(s)}
       ${headerSelect(s)}
       ${banner}
@@ -349,13 +347,13 @@
   /* ---- 분류 2: 저장 ---- */
   function saveStage(s) {
     return `<div class="wtitle">${esc(stageTitle(s, 2))}${s.editing_origin ? ` <span class="pill">편집: ${esc(s.editing_origin)}</span>` : ""}</div>
-      <p class="wsub">이 작업(템플릿·매핑·파일명)을 저장합니다. 데이터·행은 저장하지 않습니다 —
+      <p class="wsub">이 작업(템플릿·매핑·파일명)을 저장합니다. 데이터·행은 저장하지 않습니다.
         실행할 때 고릅니다.</p>
       <div class="row"><span class="lbl lbl-fixed">작업 이름</span>
         <input class="field" data-act="name" value="${esc(s.name)}" placeholder="예: 공고서 자동생성"></div>
       <div class="row"><span class="lbl lbl-fixed">파일명 패턴</span>
         <input class="field mono" data-act="pattern" value="${esc(s.pattern)}"></div>
-      ${s.pattern_preview ? `<p class="hint mono" style="margin-top:0">예: ${esc(s.pattern_preview)}${s.record_count ? " — 표본 1행 기준" : ""}</p>` : ""}
+      ${s.pattern_preview ? `<p class="hint mono" style="margin-top:0">예: ${esc(s.pattern_preview)}${s.record_count ? " (표본 1행 기준)" : ""}</p>` : ""}
       ${provenanceBlock(s)}
       ${datasetBlock(s)}
       ${defaultDatasetBlock(s)}
@@ -377,7 +375,7 @@
       val ? `<div class="hint" style="margin-top:0"><b>${label}</b> ${esc(val)}</div>` : "";
     const drift = (p.template_fields && s.fields && s.fields.length
         && p.template_fields !== s.fields.map((f) => f.name).join(" · "))
-      ? `<div class="hint danger" style="margin-top:var(--sp-4)">⚠ 작성 당시와 템플릿 필드 구성이 다릅니다 — 매핑 재검토가 필요할 수 있습니다.</div>`
+      ? `<div class="hint danger" style="margin-top:var(--sp-4)">⚠ 작성 당시와 템플릿 필드 구성이 다릅니다. 매핑 재검토가 필요할 수 있습니다.</div>`
       : "";
     return `<div class="grp">
       <span class="cap">작성 출처</span>
@@ -397,8 +395,8 @@
     return `<div class="grp">
       <span class="cap">데이터 함께 등록</span>
       <p class="hint" style="margin-top:0">저장하면 이 작업이 쓴 데이터(${esc(s.data_name)})를
-        등록 데이터에 올리고 <b>이 작업의 기본 데이터로 연결</b>합니다 — 경로 참조만
-        저장(행·내용 없음), 「작업」 화면에서 작업을 고르면 자동으로 연결해 그때 다시 읽습니다.</p>
+        등록 데이터에 올리고 <b>이 작업의 기본 데이터로 연결</b>합니다. 경로 참조만
+        저장(행·내용 없음)하고, '작업' 화면에서 작업을 고르면 자동으로 연결해 그때 다시 읽습니다.</p>
       <div class="row"><span class="lbl lbl-fixed">등록 이름</span>
         <input class="field" data-act="dataset-name" value="${esc(s.dataset_name)}"></div>
     </div>`;
@@ -414,13 +412,13 @@
       line = `<p class="hint" style="margin-top:0">기본 데이터: <b>${esc(d.name)}</b> (연결됨)
         ${PathTrack.affordances(d.path)}</p>`;
     } else if (d.status === "dead") {
-      line = `<p class="hint danger" style="margin-top:0">⚠ 기본 데이터: <b>${esc(d.name)}</b> —
+      line = `<p class="hint danger" style="margin-top:0">⚠ 기본 데이터: <b>${esc(d.name)}</b>.
         참조 파일이 없습니다(${esc(d.path)}). 데이터 관리에서 [다시 연결…]하세요.</p>`;
     } else if (d.status === "corrupt") {  // 항목 JSON 손상 — 삭제와 다른 조치(데이터 관리 격리 표시와 정합)
-      line = `<p class="hint danger" style="margin-top:0">⚠ 기본 데이터: <b>${esc(d.name)}</b> —
+      line = `<p class="hint danger" style="margin-top:0">⚠ 기본 데이터: <b>${esc(d.name)}</b>.
         등록 데이터를 읽을 수 없습니다(손상). 데이터 관리에서 확인하세요.</p>`;
     } else {  // missing — 풀 항목 자체가 사라짐
-      line = `<p class="hint danger" style="margin-top:0">⚠ 기본 데이터: <b>${esc(d.name)}</b> —
+      line = `<p class="hint danger" style="margin-top:0">⚠ 기본 데이터: <b>${esc(d.name)}</b>.
         등록 데이터에 없습니다(삭제됨). 데이터 관리에서 등록하거나 데이터를 다시 선택하세요.</p>`;
     }
     return `<div class="grp">
@@ -573,7 +571,7 @@
           // 실제 강등 집합이라 그 수치로 확인한다(리뷰 F4 — 문안=파괴 집합).
           const st = await Bridge.call(SCREEN, "mapping_reset_stakes", {});
           if (st && st.confirmed) {
-            window.alert(`확정한 매핑 ${st.confirmed}개가 있어 전체 미사용을 할 수 없습니다 — 확정을 먼저 해제하거나 칩을 하나씩 끄세요.`);
+            window.alert(`확정한 매핑 ${st.confirmed}개가 있어 전체 미사용을 할 수 없습니다. 확정을 먼저 해제하거나 칩을 하나씩 끄세요.`);
             break;
           }
           const man = (st && st.manual_unconfirmed) || 0;
@@ -637,11 +635,11 @@
     try {
       res = await Bridge.call(SCREEN, "save", flags || {});
     } catch (err) {
-      window.alert("저장 처리 중 오류가 발생했습니다 — 작업이 저장됐는지 홈에서 확인하세요.\n" + err);
+      window.alert("저장 처리 중 오류가 발생했습니다. 작업이 저장됐는지 홈에서 확인하세요.\n" + err);
       return;
     }
     if (!res || typeof res !== "object") {
-      alertMsg("저장 결과를 확인할 수 없습니다 — 작업이 저장됐는지 홈에서 확인하세요.");
+      alertMsg("저장 결과를 확인할 수 없습니다. 작업이 저장됐는지 홈에서 확인하세요.");
       return;
     }
     if (res.ok) {

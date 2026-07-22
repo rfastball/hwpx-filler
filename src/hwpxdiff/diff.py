@@ -780,7 +780,7 @@ KIND_TINTS = {"added": "#e5f2ea", "removed": "#fdecec"}
 _KIND_LABEL = KIND_LABELS  # 하위호환 별칭
 
 # 변경 0건의 빈 상태 카피 — 세 표면(GUI 요약 라벨·CLI 텍스트 요약·HTML 리포트) 공유.
-NO_CHANGES_MESSAGE = "변경 없음 — 두 판본이 동일합니다."
+NO_CHANGES_MESSAGE = "변경 없음."
 
 # 변경항목 범주의 표시 어휘·배지색 — 단일 출처(공개). HTML 리포트의 `.b-{category}` 와
 # GUI(diff_app) 리스트 배지가 모두 여기서 당겨 쓴다(사본을 두면 범주 추가가 조용히 어긋난다).

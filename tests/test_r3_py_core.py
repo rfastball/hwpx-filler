@@ -86,7 +86,7 @@ def test_pool_sources_payload_surfaces_corruption_note(tmp_path):
     reg = _pool_with_corruption(tmp_path)
     payload = pool_sources_payload(reg)
     assert [i["name"] for i in payload["items"]] == ["살아있음"]
-    assert payload["corrupted_note"] == "손상 1건 — 데이터 관리에서 확인"
+    assert payload["corrupted_note"] == "손상 1건(데이터 관리에서 확인)"
     # 손상이 없으면 노트는 빈 문자열(거짓 경보 없음).
     clean = DatasetPoolRegistry(tmp_path / "clean")
     clean.save(DatasetPoolItem(name="정상", kind="excel", opts={"path": "C:/b.xlsx"}))
@@ -198,6 +198,6 @@ def test_multisheet_gate_sites_share_wording(tmp_path):
         load_pool_item_checked(reg, "모호참조")
     assert str(exc.value) == ambiguous_sheet_error(
         str(MULTI_SHEET),
-        prefix="등록 데이터 '모호참조' 에 시트가 지정되지 않았습니다 — ",
+        prefix="등록 데이터 '모호참조' 에 시트가 지정되지 않았습니다. ",
     )
     assert str(exc.value).endswith(shared)  # 몸통 공유(표류 봉인)

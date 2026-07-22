@@ -228,7 +228,7 @@ class WebFrontend:
         try:
             names = [n for n, _r, _c in sheet_overview(path)]
             if sheet not in names:
-                return f"ERROR: '{sheet}' 시트를 찾을 수 없습니다 — 시트를 다시 선택하세요."
+                return f"ERROR: '{sheet}' 시트를 찾을 수 없습니다. 시트를 다시 선택하세요."
             self._controller(screen).load_data_path(path, sheet=sheet)
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
@@ -1647,9 +1647,9 @@ def main() -> int:
         # 매달림인지를 로그만 보고 가를 수 있어야 한다(#77 오경보 진단의 유일 단서).
         budget_note = f" [예산 {budget_seconds:.0f}s · {budget_reason}]"
         _alarm(
-            ("loaded 후 표시 매달림 — 폴백으로 창 표시(테마 미주입 가능)"
+            ("loaded 후 표시 매달림. 폴백으로 창 표시(테마 미주입 가능)"
              if loaded_seen.is_set()
-             else "loaded 미발화 — 폴백으로 창 표시(테마 미주입 가능)") + budget_note,
+             else "loaded 미발화. 폴백으로 창 표시(테마 미주입 가능)") + budget_note,
             window,
         )
 
