@@ -35,10 +35,15 @@
     countEl.textContent = band.count ? `${band.count}개` : "";
     if (dirEl) { dirEl.textContent = band.dir || ""; dirEl.title = band.dir || ""; }
     if (!band.count) {
-      const hint = media === "hwpx"
-        ? (band.empty_hint || "표시할 템플릿이 없습니다.")
-        : "표시할 TXT 템플릿이 없습니다 — [새 TXT 템플릿]으로 만들거나 [가져오기]로 넣으세요.";
-      host.innerHTML = `<div class="tplcard muted">${esc(hint)}</div>`;
+      // 전용 빈 상태(#179 슬라이스 6) — 설명 + 단일 CTA(문안 속 대괄호 지시 대신 실 버튼).
+      // 홈 빈 상태와 같은 .empty 컴포넌트. hwpx=가져오기(자작 불가)·txt=새 TXT 저작.
+      host.innerHTML = media === "hwpx"
+        ? `<div class="empty"><div class="heading">HWPX 템플릿이 없습니다</div>` +
+          `<p>${esc(band.empty_hint || "누름틀 서식(.hwpx)을 가져와 문서 작업의 원본으로 삼으세요.")}</p>` +
+          `<button class="btn primary" data-empty="import">가져오기…</button></div>`
+        : `<div class="empty"><div class="heading">TXT 템플릿이 없습니다</div>` +
+          `<p>평문 {{필드}} 템플릿을 만들어 온나라 기안 등에 바로 채워 붙여넣으세요.</p>` +
+          `<button class="btn primary" data-empty="new">새 TXT 템플릿…</button></div>`;
       return;
     }
     const sections = band.sections || [];
@@ -240,8 +245,22 @@
     EditorEntry.land();  // 에디터 흡수(결정 39·41) — 「작업」 패널 편집 모드 단일 착지.
   }
 
+  /* 「가져오기」 = 라이브러리 복사(네이티브 다이얼로그). 툴바 버튼과 빈 상태 CTA 공용 단일 출처. */
+  async function importTemplate() {
+    const r = await Bridge.importLibraryTemplate();
+    if (typeof r === "string" && r.startsWith("ERROR:")) window.alert(r);
+    // 성공/취소는 푸시 스냅샷이 목록을 갱신한다(취소는 무변).
+  }
+
   /* ---- 밴드 클릭 위임(토글·메뉴 트리거·칩·카드 액션) ---- */
   function onBandClick(media, e) {
+    // 빈 상태 CTA(#179 슬라이스 6) — 툴바 버튼과 같은 흐름으로 합류.
+    const emptyCta = e.target.closest("button[data-empty]");
+    if (emptyCta) {
+      if (emptyCta.dataset.empty === "new") openEditModal("new", "", "", "");
+      else if (emptyCta.dataset.empty === "import") importTemplate();
+      return;
+    }
     const toggle = e.target.closest(".job-grp-head[data-grp-toggle]");
     if (toggle) { Bridge.call(SCREEN, "toggle_group", { media, group: toggle.getAttribute("data-grp-toggle") }); return; }
     const grpMore = e.target.closest(".grp-more[data-grp-more]");
@@ -324,11 +343,7 @@
     $("txtEditCancel").addEventListener("click", () => window.Modal.close("txtEditModal"));
     $("txtEditOk").addEventListener("click", submitEditModal);
     moveDialog.wire("tplMoveOk", "tplMoveCancel");
-    $("btnTplImport").addEventListener("click", async () => {
-      const r = await Bridge.importLibraryTemplate();
-      if (typeof r === "string" && r.startsWith("ERROR:")) window.alert(r);
-      // 성공/취소는 푸시 스냅샷이 목록을 갱신한다(취소는 무변).
-    });
+    $("btnTplImport").addEventListener("click", importTemplate);
     // ⋮ 메뉴 바깥 닫기(job.js 동형) — 캡처 클릭 억제 + 바깥 pointerdown + Escape.
     window.Popover.wireDismiss({
       isOpen: () => menuFor !== null,

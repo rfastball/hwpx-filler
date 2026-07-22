@@ -46,8 +46,11 @@
     const host = $("poolList");
     const rows = s.rows || [];
     if (!rows.length) {
+      // 전용 빈 상태(#179 슬라이스 6) — 설명 + 단일 CTA(문안 속 대괄호 지시 대신 실 버튼).
       host.innerHTML =
-        `<div class="tplcard muted">등록된 데이터가 없습니다 — [데이터 등록]으로 추가하거나, 작업 저장 때 함께 등록한 데이터가 여기 모입니다.</div>`;
+        `<div class="empty"><div class="heading">등록된 데이터가 없습니다</div>` +
+        `<p>엑셀·CSV를 등록하면 참조(경로·시트)만 저장돼, 실행할 때 원본을 다시 읽습니다.\n작업을 저장할 때 함께 등록한 데이터도 여기 모입니다.</p>` +
+        `<button class="btn primary" data-empty="register">＋ 데이터 등록…</button></div>`;
       return;
     }
     host.innerHTML = rows.map((r) => {
@@ -84,6 +87,8 @@
   /* try/catch 없이는 브리지 rejection(stale 카드의 FileNotFoundError 류)이 삼켜져 버튼이
      무반응이 된다 — 시끄럽게 재진술한다(home.js onCorruptClick 미러, confirm-or-alarm). */
   async function onListClick(e) {
+    // 빈 상태 CTA(#179 슬라이스 6) — 툴바 「데이터 등록」과 같은 모달로 합류.
+    if (e.target.closest('button[data-empty="register"]')) { openRegModal(); return; }
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
     const act = btn.dataset.act;
