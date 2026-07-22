@@ -223,3 +223,51 @@ def test_moved_surfaces_not_redefined_in_job():
         assert symbol not in job, (
             f"job.js 에 {symbol} 이 재정의됐습니다 — datazone.js 팩토리 단일 출처 위반."
         )
+
+
+def test_table_rows_keep_native_semantics_and_checkbox_in_lead_cell():
+    """행은 row/aria-selected, 선택 의미는 선두 셀의 native checkbox가 소유한다."""
+    src = DZ_JS.read_text(encoding="utf-8")
+    css = (WEB / "css" / "app.css").read_text(encoding="utf-8")
+    assert 'aria-selected="${r.selected ? "true" : "false"}"' in src
+    assert 'role="checkbox"' not in src
+    assert '<td class="doccol"><div class="doccell"><input type="checkbox"' in src
+    assert ".jobtb td.doccol{display:flex" not in css
+    assert ".jobtb .doccell{display:flex" in css
+    assert ".jobtb tbody tr.on{background:var(--a-sel)}" in css
+
+
+def test_table_consumes_snapshot_column_kind_without_web_inference():
+    """금액·날짜 조판은 Python의 column.kind만 소비하고 웹 판정기를 만들지 않는다."""
+    src = DZ_JS.read_text(encoding="utf-8")
+    css = (WEB / "css" / "app.css").read_text(encoding="utf-8")
+    assert 'class="col-${c.kind}"' in src
+    assert "column.kind || \"text\"" in src
+    assert ".jobtb .col-amount,.jobtb .col-date" in css
+    assert "font-variant-numeric:tabular-nums" in css
+
+
+def test_unselected_lead_guidance_is_single_sourced_in_headers():
+    """비선택 placeholder는 행마다 반복하지 않고 각 공용 표 머리에서 한 번만 안내한다."""
+    job = _strip_js_comments(JOB_JS.read_text(encoding="utf-8"))
+    draft = _strip_js_comments(SESSION_JS.read_text(encoding="utf-8"))
+    assert 'hint: "선택하면 파일명이 정해집니다"' in job
+    assert 'hint: "선택하면 큐에 담깁니다"' in draft
+    assert 'doc-off">선택하면 파일명이 정해집니다' not in job
+    assert 'doc-off">선택하면 큐에 담깁니다' not in draft
+    assert 'aria-hidden="true">—</span>' in job
+    assert 'aria-hidden="true">—</span>' in draft
+
+
+def test_filter_roles_have_distinct_labels_and_surface_hierarchy():
+    """정의·가지·관통 선택은 공용 렌더의 텍스트 라벨과 서로 다른 면을 함께 쓴다."""
+    src = DZ_JS.read_text(encoding="utf-8")
+    css = (WEB / "css" / "app.css").read_text(encoding="utf-8")
+    assert 'class="fchip definition"><span class="chip-role">필터</span>' in src
+    assert 'class="fchip branch"><span class="chip-role">가지</span>' in src
+    assert 'class="fchip selection"><span class="chip-role">선택</span>' in src
+    assert ".fchip.definition{" in css and "var(--a-primary) 10%" in css
+    assert ".fchip.branch{background:var(--n-surface-alt)" in css
+    assert ".fchip.branch{border-style:dashed" not in css
+    assert ".fstrip{border:1px solid var(--a-border)" in css
+    assert ".filter-reapply{" in css

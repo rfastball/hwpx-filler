@@ -509,6 +509,117 @@ def test_component_gallery_links_real_stylesheets_drift_free():
     )
 
 
+def test_heading_typography_uses_three_shared_roles():
+    """H-01: 화면·구획·존 제목은 세 역할 규칙만 소비한다."""
+    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    assert ".scr-headh1{font-size:var(--fs-section);font-weight:700}" in css
+    assert (
+        ".track.tt,.job-sec-head,.tpl-band.tb-t,.modal-cardh3{"
+        "font-size:var(--fs-strong);font-weight:700}"
+    ) in css
+    assert (
+        ".zone-cap,.paneh4,.qd-formpaneh4,.qd-prevpaneh4{"
+        "font-size:var(--fs-dense);font-weight:700}"
+    ) in css
+    # 옛 컴포넌트별 값이 돌아오면 역할 규칙보다 뒤에서 덮어쓸 수 있다.
+    for stale in (
+        ".job-sec-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-8);font-size:",
+        ".zone-cap{display:block;margin-bottom:var(--sp-10);font-size:",
+        ".tpl-band.tb-t{font-weight:",
+        ".track.tt{font-size:",
+    ):
+        assert stale not in css, f"개별 제목 타이포 재정의가 돌아왔습니다: {stale}"
+
+
+def test_gallery_exposes_heading_role_specimens():
+    html = GALLERY.read_text(encoding="utf-8")
+    for label in ("화면 제목", "구획 제목", "존·소제목"):
+        assert label in html, f"갤러리에 제목 역할 표본이 없습니다: {label}"
+
+
+def test_job_zones_reuse_number_badges_and_action_labels():
+    """H-03: 작업 4존은 기안과 같은 znum 문법으로 순서와 다음 행동을 말한다."""
+    html = " ".join(WEB_INDEX.read_text(encoding="utf-8").split())
+    labels = (
+        ("1", "템플릿·헤더 확인"),
+        ("2", "데이터 연결"),
+        ("3", "본문 확인·거울"),
+        ("4", "생성"),
+    )
+    for ordinal, label in labels:
+        needle = f'<div class="zone-cap"><span class="znum">{ordinal}</span>{label}</div>'
+        assert needle in html, f"작업 존 단계 표지가 없습니다: {ordinal} {label}"
+
+
+def test_job_gate_adds_blocked_step_only_in_display_layer():
+    """H-03: gate.level 판정은 건드리지 않고 표시층에서 막힌 단계 서수만 결합한다."""
+    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    assert "function gateStep(s, g)" in src
+    assert 'g.level === "danger") return "① "' in src
+    assert '!s.has_data || !(s.selected_count > 0)) return "② "' in src
+    assert 'return "③ ";' in src
+    assert 'gateStep(s, g) + g.text' in src
+    assert not re.search(r"\bg\.level\s*=(?!=)", src), (
+        "표시층이 gate.level 판정을 변조하면 안 됩니다."
+    )
+
+
+def test_template_media_sections_use_sunken_surface_without_shared_catalog_drift():
+    """H-04: HWPX/TXT만 sunken 표면을 쓰고 공유 tpl-catalogs는 독립적으로 남는다."""
+    html = WEB_INDEX.read_text(encoding="utf-8")
+    assert html.count('class="tpl-medium"') == 2
+    for medium, groups_id in (("hwpx", "tplHwpxGroups"), ("txt", "tplTxtGroups")):
+        assert f'data-medium="{medium}"' in html
+        assert f'id="{groups_id}"' in html
+
+    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    assert (
+        ".tpl-medium{margin-top:var(--sp-16);padding:var(--sp-8)var(--sp-10)var(--sp-10);"
+        "background:var(--n-surface-alt);border:1pxsolidvar(--a-border);"
+        "border-radius:var(--rad-surface)}"
+    ) in css
+    assert ".tpl-medium.tplcard{border-color:var(--n-border-strong)}" in css
+    assert ".tpl-catalogs{display:grid" in css
+
+
+def test_gallery_exposes_template_media_surface():
+    html = GALLERY.read_text(encoding="utf-8")
+    assert ".tpl-medium — 매체 sunken 구획 / 카드 층" in html
+
+
+def test_card_families_share_hover_and_keep_persistent_state_separate():
+    """H-14: jcard·titem·tplcard hover는 틴트뿐이고 막대는 선택·오류에만 남는다."""
+    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    assert ".jcard:hover,.tlist.titem:hover,.tplcard:hover{background:var(--n-hover)}" in css
+    assert (
+        '.jcard[aria-current="true"],.tlist.titem[aria-current="true"],'
+        '.tplcard[aria-current="true"]{background:var(--a-sel);'
+        "border-left-color:var(--a-primary)}"
+    ) in css
+    assert ".jcard.corrupt{border-left-color:var(--a-danger)}" in css
+    for selector in (".jcard:hover", ".tlist.titem:hover", ".tplcard:hover"):
+        body = re.search(re.escape(selector) + r"(?:,[^{]+)?\{([^}]*)\}", css)
+        assert body and "border" not in body.group(1), f"hover가 상태 보더를 사용합니다: {selector}"
+
+
+def test_card_families_keep_keyboard_focus_outline():
+    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    assert (
+        ".jcard:focus-visible,.tlist.titem:focus-visible,.tplcard:focus-visible{"
+        "outline:2pxsolidvar(--a-primary);outline-offset:2px}"
+    ) in css
+
+
+def test_disabled_primary_uses_light_neutral_surface_globally():
+    """H-11: 비활성 primary는 무거운 솔리드 색 대신 전역 중립 상태 한 벌을 쓴다."""
+    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    assert (
+        ".btn.primary:disabled{background:var(--n-track);color:var(--a-muted);"
+        "border-color:var(--a-border);opacity:1}"
+    ) in css
+    assert ".btn.primary:disabled{background:var(--a-muted)" not in css
+
+
 def test_web_diff_pinned_to_light_until_tints_themed():
     """web-diff 는 다크 셀 틴트가 준비될 때까지 라이트로 고정돼야 한다(<html data-theme="light">).
 

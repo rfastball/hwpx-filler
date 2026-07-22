@@ -141,7 +141,7 @@ def test_txt_new_edit_delete_roundtrip(tmp_path, monkeypatch):
     # 삭제 = 공통 delete 액션(매체 명시) · 확인 라운드트립.
     res1 = ctrl.dispatch("delete", {"media": "txt", "path": str(tp / "txt" / "회의결과.txt")})
     assert res1["needs_confirm"] is True and (tp / "txt" / "회의결과.txt").exists()
-    assert "빠른 기안" in res1["confirm_text"]
+    assert "기안 서식 목록" in res1["confirm_text"]
     ctrl.dispatch("delete", {"media": "txt", "path": str(tp / "txt" / "회의결과.txt"), "confirm": True})
     assert not (tp / "txt" / "회의결과.txt").exists()
 

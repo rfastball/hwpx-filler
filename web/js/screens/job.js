@@ -37,10 +37,11 @@
     rowIdPrefix: "jobRow-",  // preserve.js 가 id 로 포커스 복원 — 접두 변경은 보존 계약 파손
     lead: {
       header: "문서",
+      hint: "선택하면 파일명이 정해집니다",
       bodyHtml(r) {
         const doc = r.name
           ? `<span class="doc-name">${esc(r.name)}</span>`
-          : `<span class="doc-name doc-off">선택하면 파일명이 정해집니다</span>`;
+          : `<span class="doc-off" aria-hidden="true">—</span>`;
         const sum = r.summary ? `<span class="doc-sum">${esc(r.summary)}</span>` : "";
         return doc + sum;
       },
@@ -394,6 +395,16 @@
   }
 
   /* ---- 본문 존: 게이트·저장 폴더·생성 버튼 ---- */
+  function gateStep(s, g) {
+    // 게이트의 판정(level/enabled/text)은 Python 단일 출처 그대로 두고, 현재 막힌 존의
+    // 서수만 표시층에서 결합한다(H-03). danger는 템플릿·매핑 정의, 선택 0은 데이터 존,
+    // 나머지 미입력·저장 폴더 사유는 본문 확인 존에서 해소한다.
+    if (!g || g.enabled || !g.text) return "";
+    if (!s.has_job || s.template_missing || g.level === "danger") return "① ";
+    if (!s.has_data || !(s.selected_count > 0)) return "② ";
+    return "③ ";
+  }
+
   function renderGateAndFolder(s) {
     $("jobOutDir").value = s.out_dir || "";
     // 저장 폴더 열기/경로 복사 어포던스(#53-B) — 실행 화면에서 승계(리뷰 F3). 생성 후 앱에서
@@ -403,7 +414,7 @@
     const g = s.gate || { enabled: false, level: "", text: "" };
     $("jobGenBtn").disabled = !g.enabled || generating;
     const gate = $("jobGate");
-    gate.textContent = generating ? "" : g.text;
+    gate.textContent = generating ? "" : gateStep(s, g) + g.text;
     gate.className = "muted";
     gate.style.color = g.level === "danger" ? "var(--a-danger)"
       : g.level === "warn" ? "var(--a-warn)" : "";
@@ -603,7 +614,7 @@
   /* ---- 좌 목록 관리(결정 43) — ⋮ 메뉴·인라인 이름 변경·그룹 이동/관리 ----
      파괴·병합 판정과 수치는 Python(_do_delete_job 등 needs_confirm 왕복)이 내리고,
      여기는 문안을 입혀 modal.js 로 재진술한다(네이티브 다이얼로그 금지 #86). */
-  let menuFor = null;  // {kind:"job"|"group", name} — 열린 ⋮ 메뉴의 대상
+  let menuFor = null;  // {kind:"job"|"group", name, trigger} — 열린 ⋮ 메뉴의 대상과 복귀점
 
   function closeRowMenu() {
     menuFor = null;
@@ -616,7 +627,7 @@
   }
 
   function openRowMenu(kind, name, btn) {
-    menuFor = { kind, name };
+    menuFor = { kind, name, trigger: btn };
     // 메뉴 내용은 화면 소유(작업=편집/복제/이름/이동/삭제, 그룹=이름변경/해산), 위치·표시는 팩토리.
     const html = kind === "job"
       ? `<button data-menu="edit">편집</button>` +
@@ -635,7 +646,7 @@
     const b = e.target.closest("button[data-menu]");
     if (!b || !menuFor) return;
     const act = b.dataset.menu;
-    const { kind, name } = menuFor;
+    const { kind, name, trigger } = menuFor;
     closeRowMenu();
     if (kind === "job") {
       if (act === "edit") { EditorEntry.openGuarded(name); return; }  // PR-5 에서 패널 편집 모드로 repoint
@@ -645,11 +656,11 @@
         return;
       }
       if (act === "rename") { startRename(name); return; }
-      if (act === "move") { openGroupMove(name); return; }
-      if (act === "delete") { deleteJob(name); return; }
+      if (act === "move") { openGroupMove(name, trigger); return; }
+      if (act === "delete") { deleteJob(name, trigger); return; }
     }
-    if (act === "grp-rename") { renameGroup(name); return; }
-    if (act === "grp-disband") { disbandGroup(name); }
+    if (act === "grp-rename") { renameGroup(name, trigger); return; }
+    if (act === "grp-disband") { disbandGroup(name, trigger); }
   }
 
   /* 인라인 이름 변경 — 행이 입력칸으로 바뀐다(결정 43). Enter=확정·Escape=취소·포커스
@@ -709,11 +720,12 @@
     return "";
   }
 
-  function openGroupMove(name) {
+  function openGroupMove(name, returnFocus) {
     moveDialog.open({
       nameText: `작업 '${name}' 을(를) 옮길 그룹을 고르세요.`,
       groups: (LAST && LAST.job_group_names) || [],
       current: currentGroupOf(name),
+      returnFocus,
       onConfirm: async (group) => {
         await Bridge.call(SCREEN, "set_group", { name, group });
         log(group ? `그룹 이동: '${name}' → '${group}'` : `그룹 해제: '${name}'`);
@@ -721,7 +733,7 @@
     });
   }
 
-  async function deleteJob(name) {
+  async function deleteJob(name, returnFocus) {
     const res = await Bridge.call(SCREEN, "delete_job", { name });
     if (!(res && res.needs_confirm)) return;
     let body = `작업 '${name}' 을(를) 삭제합니다. 템플릿 연결과 매핑 정의가 함께 사라집니다.`;
@@ -735,15 +747,17 @@
     const ok = await window.Modal.confirm({
       title: "작업 삭제 확인", body,
       confirmLabel: "삭제", cancelLabel: "취소",
+      returnFocus,
     });
     if (!ok) return;
     await Bridge.call(SCREEN, "delete_job", { name, confirm: true });
     log(`작업 삭제: '${name}'`);
   }
 
-  async function renameGroup(old) {
+  async function renameGroup(old, returnFocus) {
     const val = await window.Modal.prompt({
       title: "그룹 이름 변경", body: `그룹 '${old}' 의 새 이름을 넣으세요.`, value: old,
+      returnFocus,
     });
     if (val === null) return;
     const r = await Bridge.call(SCREEN, "rename_group", { name: old, new: val });
@@ -756,6 +770,7 @@
         body: `'${r.new}' 그룹이 이미 있습니다. '${old}' 의 작업 전부(지금 기준 ${r.count}개)를 ` +
           `'${r.new}'(현재 ${r.target_count}개)에 합칩니다.`,
         confirmLabel: "합치기", cancelLabel: "취소",
+        returnFocus,
       });
       if (!ok) return;
       const r2 = await Bridge.call(SCREEN, "rename_group",
@@ -772,7 +787,7 @@
     }
   }
 
-  async function disbandGroup(name) {
+  async function disbandGroup(name, returnFocus) {
     const res = await Bridge.call(SCREEN, "disband_group", { name });
     if (!(res && res.needs_confirm)) return;
     // 이동 집합은 '해산 시점의 소속 전부' 라는 규칙으로 적고, 수치는 지금 기준 관측으로
@@ -782,6 +797,7 @@
       body: `그룹 '${name}' 을(를) 해산합니다. 해산 시점의 소속 작업 전부(지금 기준 ${res.count}개)가 ` +
         `'그룹 없음'으로 이동합니다.`,
       confirmLabel: "해산", cancelLabel: "취소",
+      returnFocus,
     });
     if (!ok) return;
     const r = await Bridge.call(SCREEN, "disband_group", { name, confirm: true, seen: res.count });
@@ -860,6 +876,14 @@
     Relink.relinkTemplate(SCREEN, LAST.job_name, (msg) => log(msg));
   }
 
+  function startNewJob() {
+    if (!window.EditorEntry) {
+      window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다.");
+      return;
+    }
+    EditorEntry.newDraft();
+  }
+
   function wire() {
     $("jobListHwpx").addEventListener("click", onMasterClick);
     $("jobListHwpx").addEventListener("keydown", onMasterKeydown);
@@ -872,10 +896,6 @@
       contains: (t) => !!(t.closest("#jobRowMenu") || t.closest(".job-more")),
       close: closeRowMenu,
     });
-    // 목록 스크롤 시 fixed 메뉴가 트리거와 어긋난다 — 어긋난 채 남기지 말고 닫는다.
-    document.querySelector(".job-master").addEventListener("scroll", () => {
-      if (menuFor !== null) closeRowMenu();
-    }, true);
     moveDialog.wire("grpMoveOk", "grpMoveCancel");
     // 데이터 존(테이블·열 패널·칩·스트립·전체 선택/해제·문서 레벨 닫기)은 팩토리 몫 배선.
     dz.wire();
@@ -888,10 +908,8 @@
     });
     // 구획 ＋ 새 작업(1부 결정 10 — 레일 항목 사망의 생성 진입 승계, 리뷰 F2). 흐름은
     // EditorEntry.newDraft 단일 출처(홈 ＋ 와 공유 — 폐기 확인·착지 드리프트 금지).
-    $("jobNewBtn").addEventListener("click", () => {
-      if (!window.EditorEntry) { window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다."); return; }
-      EditorEntry.newDraft();
-    });
+    $("jobNewBtn").addEventListener("click", startNewJob);
+    $("jobEmptyNewBtn").addEventListener("click", startNewJob);
     // 재렌더에도 살아남게 안정 컨테이너에 위임(#67).
     $("jobRelink").addEventListener("click", (e) => {
       if (e.target.closest('[data-act="relink-template"]')) doRelinkTemplate();

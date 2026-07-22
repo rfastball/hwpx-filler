@@ -102,6 +102,27 @@ body{padding:0}
     <div class="row"><span class="pill ok">컴파일됨</span><span class="pill warn">필드화 필요</span><span class="pill danger">오류</span><span class="pill muted">미확인</span></div>
   </div>
 
+  <div class="spec">
+    <div class="spec-h">제목 타이포 역할 — 화면 / 구획 / 존·소제목</div>
+    <div class="stack">
+      <header class="scr-head" style="margin:0"><div><h1>화면 제목</h1></div></header>
+      <div class="track" style="padding:0;border:0"><span class="tt">구획 제목</span></div>
+      <div class="zone" style="padding:0"><span class="zone-cap" style="margin:0">존·소제목</span></div>
+    </div>
+  </div>
+
+  <div class="spec">
+    <div class="spec-h">.tpl-medium — 매체 sunken 구획 / 카드 층</div>
+    <section class="tpl-medium" data-medium="hwpx" style="margin:0">
+      <div class="tpl-band hwpx"><span class="tb-k">HWPX</span><span class="tb-t">서식</span>
+        <span class="tb-sub">작업 에디터로 문서를 만듭니다</span></div>
+      <div class="tpl-groups"><div class="tpl-grp-rows flat">
+        <div class="tplcard"><div class="tplcard-top"><span class="tplcard-name">구매 계약서.hwpx</span></div>
+          <div class="tplcard-meta muted">8 필드</div></div>
+      </div></div>
+    </section>
+  </div>
+
   <div class="grid2">
     <div class="spec"><div class="spec-h">.tok — 토큰 상태 칩 (txt)</div>
       <div class="stack" style="gap:0">
@@ -110,9 +131,10 @@ body{padding:0}
         <div class="tok missing"><span class="tname">{{계약금액}}</span><span class="st">미입력</span></div>
       </div>
     </div>
-    <div class="spec"><div class="spec-h">.jcard — 작업 카드 (정상/손상)</div>
+    <div class="spec"><div class="spec-h">카드 어휘 — 정상 / 선택 / 손상</div>
       <div class="stack">
         <div class="jcard"><div class="jn">용역 계약서 <span class="pill ok">컴파일됨</span></div><div class="jm">yongyeok.hwpx · 8 필드</div><div class="jfoot"><span class="jr">방금</span><button class="btn sm">실행</button></div></div>
+        <div class="tlist"><div class="titem" aria-current="true"><div><div class="tn">회의 안내문</div><div class="tm">필드 6개</div></div><button class="btn sm">열기</button></div></div>
         <div class="jcard corrupt"><div class="jn">낡은 서식 <span class="pill danger">손상</span></div><div class="jm">열 수 없음</div></div>
       </div>
     </div>

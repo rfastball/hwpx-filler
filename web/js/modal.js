@@ -23,7 +23,8 @@
       Escape·포커스 복귀·트랩 소유권이 최상위에서 아래로 정확히 승계된다.
    리스너는 열 때 부착·정착(settle) 시 해제라 재진입 가드와 함께 이중 바인딩이 불가능하다. */
 (function () {
-  const stack = []; // 열린 모달 스택 — {el, returnFocus, onCloseCb}. 최상위가 Escape/트랩 소유.
+  const stack = []; // 열린 모달 스택 — {el, returnFocus, onCloseCb, closing}. 최상위가 Escape/트랩 소유.
+  const CLOSE_FALLBACK_MS = 220; // CSS 160ms 전이가 없거나 transitionend가 누락될 때만 쓰는 안전망.
   let pendingDialog = false; // 진행 중 promise 다이얼로그(confirm/prompt) — 단일 실행 직렬화(#92 리뷰 #1)
 
   function top() { return stack.length ? stack[stack.length - 1] : null; }
@@ -55,9 +56,17 @@
   function onKeydown(e) {
     const t = top();
     if (!t) return;
+    // IME 조합 중 Escape는 조합 취소가 먼저다. keyCode 229는 구 WebView/IME 호환 경로.
+    if (e.isComposing || e.keyCode === 229) return;
+    if (t.closing && (e.key === "Escape" || e.key === "Tab")) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return;
+    }
     // Escape → 최상위 모달 닫기. 캡처 단계로 걸어 배경 핸들러보다 먼저 받는다.
     if (e.key === "Escape") {
       e.preventDefault();
+      e.stopImmediatePropagation(); // 같은 document의 전역 Escape가 아래 층까지 걷지 않게 한 겹 소비.
       close(t.el.id);
       return;
     }
@@ -67,24 +76,55 @@
   function open(id, opts) {
     const el = document.getElementById(id);
     if (!el) return;
+    opts = opts || {};
     // .modal 없는 대상은 시끄럽게 거절(#132.4) — 이 앱의 숨김 규칙은 `.modal.hidden` 뿐이라
     // .modal 없는 요소에 open 하면 `.hidden` 토글이 조용한 no-op(뜨지도 숨지도 않음)이 된다.
     // confirm-or-alarm: 조용히 삼키지 말고 거절한다. 현 소비자 9개는 전부 .modal 이라 무영향.
     if (!el.classList.contains("modal")) { rejectNonModal("open", id); return; }
     // 같은 모달 이중 open 은 무시(idempotent) — 스택 중복 엔트리로 닫힘 의미가 꼬이는 것 방지.
     for (let i = 0; i < stack.length; i++) if (stack[i].el === el) return;
+
+    // H-16 개방 순서(바꾸지 말 것): 복귀점을 먼저 붙잡고 → 경량층을 모두 닫고 → 스택 등록 → 초점.
+    // 메뉴 항목 자신은 closeAll()에서 사라질 수 있으므로 호출부가 넘긴 원 트리거가 최우선이다.
+    const returnFocus = opts.returnFocus || document.activeElement;
+    window.Popover.closeAll();
     stack.push({
       el: el,
-      returnFocus: document.activeElement, // 닫을 때 여기로 복귀(#28)
-      onCloseCb: (opts && opts.onClose) || null, // Escape·취소 등 어떤 경로로 닫혀도 통지
+      returnFocus: returnFocus, // 닫을 때 여기로 복귀(#28/H-16 메뉴 seam)
+      onCloseCb: opts.onClose || null, // Escape·취소 등 어떤 경로로 닫혀도 통지
+      closing: false,
     });
+    el.style.setProperty("--modal-depth", String(stack.length - 1));
+    el.classList.remove("is-closing");
     el.classList.remove("hidden");
     if (stack.length === 1) document.addEventListener("keydown", onKeydown, true);
     // 초기 포커스: 호출부가 지정한 요소 우선, 없으면 첫 포커스 가능 요소.
     const focusTo =
-      (opts && opts.initialFocus) ||
+      opts.initialFocus ||
       el.querySelector("input, textarea, select, button, [tabindex]");
     if (focusTo && focusTo.focus) focusTo.focus();
+  }
+
+  function finishClose(entry) {
+    if (!entry || !entry.closing) return;
+    entry.closing = false;
+    if (entry.closeTimer) clearTimeout(entry.closeTimer);
+    if (entry.card && entry.onTransitionEnd) {
+      entry.card.removeEventListener("transitionend", entry.onTransitionEnd);
+    }
+    entry.el.classList.add("hidden");
+    entry.el.classList.remove("is-closing");
+    entry.el.style.removeProperty("--modal-depth");
+    const wasTop = top() === entry;
+    const i = stack.indexOf(entry);
+    if (i !== -1) stack.splice(i, 1);
+    if (!stack.length) document.removeEventListener("keydown", onKeydown, true);
+    // 제거/재렌더된 트리거는 focus()해도 복귀가 되지 않는다. 연결된 원 트리거만 되돌린다.
+    // 하위 모달을 프로그램적으로 닫는 동안 새 최상위가 열린 경우에는 그 초점을 빼앗지 않는다.
+    if (wasTop && entry.returnFocus && entry.returnFocus.focus && entry.returnFocus.isConnected !== false) {
+      entry.returnFocus.focus();
+    }
+    if (entry.onCloseCb) entry.onCloseCb();
   }
 
   function close(id) {
@@ -94,16 +134,33 @@
     // 막고 스택 정리(리스너·포커스 해제)는 **막지 않는다** — 이미 열린 항목이면 정리가 빠질 때
     // keydown 캡처가 남아 Escape/Tab 이 앱 전역에서 갇힌다(리뷰 F1). 열린 항목은 open 가드를
     // 통과했으니 정상적으론 .modal 을 갖지만, 열린 뒤 클래스가 벗겨지는 미래 경로에도 정리는 돈다.
-    if (el.classList.contains("modal")) el.classList.add("hidden");
-    else rejectNonModal("close", id);
+    let found = false;
     for (let i = stack.length - 1; i >= 0; i--) {
       if (stack[i].el !== el) continue;
-      const entry = stack.splice(i, 1)[0]; // 먼저 스택에서 빼고 콜백 — 재차 close() 해도 재진입 안전
-      if (!stack.length) document.removeEventListener("keydown", onKeydown, true);
-      if (entry.returnFocus && entry.returnFocus.focus) entry.returnFocus.focus(); // 트리거로 복귀(#28)
-      if (entry.onCloseCb) entry.onCloseCb();
+      found = true;
+      const entry = stack[i];
+      if (entry.closing) return; // 퇴장 중 버튼/Escape 재입력은 한 번만 정착.
+      if (!el.classList.contains("modal")) {
+        rejectNonModal("close", id);
+        entry.closing = true;
+        finishClose(entry); // 클래스가 훼손돼도 스택/리스너/Promise는 반드시 정리.
+        return;
+      }
+      // display:none을 즉시 적용하지 않는다. 전이 동안 전면 레이어가 pointer를 계속 막고,
+      // 카드 자체만 비활성화되어 이중 확정이 불가능하다.
+      entry.closing = true;
+      el.classList.add("is-closing");
+      entry.card = el.querySelector(".modal-card");
+      entry.onTransitionEnd = function (e) {
+        if (e.target === entry.card && (e.propertyName === "opacity" || e.propertyName === "transform")) {
+          finishClose(entry);
+        }
+      };
+      if (entry.card) entry.card.addEventListener("transitionend", entry.onTransitionEnd);
+      entry.closeTimer = setTimeout(function () { finishClose(entry); }, CLOSE_FALLBACK_MS);
       break;
     }
+    if (!found && !el.classList.contains("modal")) rejectNonModal("close", id);
   }
 
   function _setText(id, text) {
@@ -152,15 +209,25 @@
       pendingDialog = true;
       spec.prepare(els);
       let settled = false;
-      function finish(val) {
-        if (settled) return; // 정착 단일화 — close 콜백과 버튼 클릭이 겹쳐도 1회만 해소
-        settled = true;
-        pendingDialog = false;
+      let closing = false;
+      let closeValue = spec.refusal;
+      function cleanup() {
         els.ok.removeEventListener("click", onOk);
         els.cancel.removeEventListener("click", onCancel);
         if (els.input) els.input.removeEventListener("keydown", onInputKey);
-        close(spec.id);
+      }
+      function settle(val) {
+        if (settled) return; // 정착 단일화 — close 콜백과 버튼 클릭이 겹쳐도 1회만 해소
+        settled = true;
+        pendingDialog = false;
         resolve(val);
+      }
+      function finish(val) {
+        if (settled || closing) return;
+        closing = true;
+        closeValue = val;
+        cleanup();
+        close(spec.id);
       }
       function onOk() { finish(spec.okValue(els)); }
       function onCancel() { finish(spec.refusal); }
@@ -173,8 +240,16 @@
       els.ok.addEventListener("click", onOk);
       els.cancel.addEventListener("click", onCancel);
       if (els.input) els.input.addEventListener("keydown", onInputKey);
-      // Escape·프로그램적 close 등 어떤 닫힘 경로도 안전측 거절로 정착.
-      open(spec.id, { initialFocus: spec.initialFocus(els), onClose: function () { finish(spec.refusal); } });
+      // Escape·프로그램적 close는 안전측 거절, 버튼은 선택값. Promise는 160ms 퇴장 정착 뒤 해소해
+      // 같은 공유 골격이 퇴장 중 재개방되는 경합을 막는다.
+      open(spec.id, {
+        initialFocus: spec.initialFocus(els),
+        returnFocus: spec.returnFocus,
+        onClose: function () {
+          if (!closing) { closing = true; closeValue = spec.refusal; cleanup(); }
+          settle(closeValue);
+        },
+      });
     });
   }
 
@@ -196,6 +271,7 @@
       },
       initialFocus: function (els) { return els.cancel; }, // 기본=머무르기, Enter-반사 파괴 차단(F7)
       okValue: function () { return true; },
+      returnFocus: opts.returnFocus,
     });
   }
 
@@ -218,6 +294,7 @@
       },
       initialFocus: function (els) { return els.input; },
       okValue: function (els) { return els.input.value; },
+      returnFocus: opts.returnFocus,
     });
   }
 
