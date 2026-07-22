@@ -101,5 +101,5 @@
   },
   "space": { "2": 2, "4": 4, "6": 6, "8": 8, "10": 10, "12": 12, "16": 16, "24": 24, "40": 40 },
   "radius": { "control": 6, "surface": 9, "overlay": 12, "pill": 999 },
-  "type": { "caption": 11, "body": 13, "strong": 15, "section": 19, "kpi": 23 }
+  "type": { "caption": 12, "body": 14, "dense": 13, "strong": 15, "section": 19, "kpi": 23 }
 }

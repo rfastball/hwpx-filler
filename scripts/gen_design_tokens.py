@@ -84,11 +84,12 @@ _SCALE_MAP = [
     # 콜아웃·placeholder, overlay=모달·메뉴, pill=완전 둥금.
     ("--rad-control", "radius.control"), ("--rad-surface", "radius.surface"),
     ("--rad-overlay", "radius.overlay"), ("--rad-pill", "radius.pill"),
-    # 타이포는 크기 4단(11/13/15/19)+kpi 역할 사다리 — 1px 밀집을 없애고 층위는 크기, 역할은
-    # 색(--a-muted)·굵기(600)로 진다(#58). caption=muted 라벨·배지·캡션, body=주 읽기+밀집
-    # 2차(muted 색으로 구분), strong=헤딩·강조, section=화면/섹션 제목, kpi=대시보드 수치.
-    ("--fs-caption", "type.caption"), ("--fs-body", "type.body"), ("--fs-strong", "type.strong"),
-    ("--fs-section", "type.section"), ("--fs-kpi", "type.kpi"),
+    # 타이포는 크기 사다리(12/14/15/19)+kpi 역할 — 층위는 크기, 역할은 색(--a-muted)·굵기(600)로
+    # 진다(#58). caption=muted 라벨·배지·캡션, body=주 읽기 본문·버튼·입력(#179 가독성 14px),
+    # dense=고밀도 데이터 그리드 전용(본문 14px 승격 시 표가 너무 커지지 않게 13px 유지, #179),
+    # strong=헤딩·강조, section=화면/섹션 제목, kpi=대시보드 수치.
+    ("--fs-caption", "type.caption"), ("--fs-body", "type.body"), ("--fs-dense", "type.dense"),
+    ("--fs-strong", "type.strong"), ("--fs-section", "type.section"), ("--fs-kpi", "type.kpi"),
 ]
 
 OPEN_CSS, CLOSE_CSS = "/* <gen:tokens> */", "/* </gen:tokens> */"
