@@ -140,6 +140,40 @@ def test_normal_state_restatements_are_quiet_not_green_boxes():
 
 # ------------------------------------------------------------------ 타입 스케일 마크업 사각
 
+# ------------------------------------------------------------------ #179: 조작 피드백 모션 규율
+
+def test_motion_discipline_press_feedback_and_no_transition_all():
+    """#179 슬라이스 4 — 조작 피드백 모션 규율(emil-design-eng)의 정적 가드.
+
+    완료 조건 4항: press/overlay 모션은 모두 <300ms 이며 `transition: all` 을 쓰지 않는다.
+    또 pressable 눌림(:active scale)과 reduced-motion 이동 제거가 실재해야 회귀를 잡는다.
+    (구체 지속시간 값·테마 불변은 test_design_tokens 가, 실 개폐는 selftest 게이트가 본다.)
+    """
+    raw = APP_CSS.read_text(encoding="utf-8")
+    nocomment = re.sub(r"/\*.*?\*/", "", raw, flags=re.S)  # 주석 제거(공백 유지 — 단위 경계 보존)
+    css = _css()  # 주석·공백 제거본
+    # `transition: all` 금지 — 정확한 속성만 지정(불필요 리페인트·의도치 않은 전이 차단).
+    assert "transition:all" not in css, (
+        "app.css 에 `transition: all` 이 있습니다 — 정확한 속성만 지정하세요(#179 완료 조건)."
+    )
+    # 눌림 피드백 — :active 에 transform:scale 이 있고 :disabled 는 제외한다.
+    assert ":active:not(:disabled){transform:scale(" in css, (
+        "pressable :active 눌림(transform:scale, :disabled 제외)이 사라졌습니다(#179)."
+    )
+    # 이동은 reduced-motion 에서 제거(멀미 유발 위치·크기 애니메이션 차단).
+    assert "@media(prefers-reduced-motion:reduce)" in css, (
+        "prefers-reduced-motion 블록이 없습니다 — 이동 제거 계약 누락(#179)."
+    )
+    # 지속시간은 리터럴이 아니라 모션 토큰(var(--dur-*))으로만 — 드리프트 차단.
+    assert "var(--dur-press)" in css and "var(--ease-out)" in css, (
+        "모션 지속/이징이 토큰(var(--dur-*)/var(--ease-*))을 참조하지 않습니다(#179)."
+    )
+    # 주석 제거본에서 300ms 이상 하드코딩 지속시간이 없는지(진행바 .25s 같은 선행-점 소수 포함).
+    for val, unit in re.findall(r"transition[^;{}]*?(\d*\.?\d+)\s*(ms|s)\b", nocomment):
+        ms = float(val) * (1000 if unit == "s" else 1)
+        assert ms < 300, f"app.css transition 에 {val}{unit}(={ms}ms) — 300ms 이상 모션 금지(#179)."
+
+
 def test_web_markup_free_of_inline_font_size_literals():
     """인라인 font-size px 리터럴 금지 — app.css 가드(test_design_tokens)의 마크업/JS 확장.
 
