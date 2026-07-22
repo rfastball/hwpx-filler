@@ -89,6 +89,28 @@ class TestWebSelftestGate:
         # 2소스 진입점(#26 #6) — 작업·기안(구 txt 흡수, 슬라이스 6)의 '등록 데이터…' 버튼이 실 DOM 에 있다.
         assert selftest_result["pool_buttons"] is True
 
+    def test_each_action_family_click_dispatches_and_returns_snapshot(
+        self, selftest_result: dict,
+    ) -> None:
+        """다섯 화면군이 실 click→JS bridge→Python registry→snapshot을 한 부팅에서 왕복한다."""
+
+        probe = selftest_result["action_roundtrip"]
+        assert probe["pending"] is False, probe
+        expected = {
+            "editor": ("editor", "new_session"),
+            "job": ("job", "refresh"),
+            "draft": ("draft", "refresh"),
+            "pool": ("pool", "refresh"),
+            "template": ("tpl", "refresh"),
+        }
+        assert set(probe["families"]) == set(expected), probe
+        for family, (screen, action) in expected.items():
+            got = probe["families"][family]
+            assert "error" not in got, f"{family}: {got}"
+            assert (got["screen"], got["action"]) == (screen, action)
+            assert got["snapshot"] is True, f"{family}: {got}"
+            assert got["snapshot_keys"], f"{family}: 빈 snapshot: {got}"
+
     def test_home_kpis_actually_rendered(self, selftest_result: dict) -> None:
         # home.js 가 push 스냅샷으로 KPI 타일을 실제 렌더 = Python→웹 관측 푸시 왕복 확인.
         assert selftest_result["home_kpi_count"] >= 1
