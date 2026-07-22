@@ -193,6 +193,12 @@ def test_personalization_defaults_roundtrip_and_preserves_other_keys(home):
     assert settings.load_rail_collapsed() is True
     assert settings.load_master_width() == 333
 
+    (home / "settings.json").write_text(
+        json.dumps({"rail_collapsed": "yes", "master_width": True}), encoding="utf-8"
+    )
+    assert settings.load_rail_collapsed() is False
+    assert settings.load_master_width() == settings.DEFAULT_MASTER_WIDTH
+
 
 @pytest.mark.parametrize("value", ["huge", "", None, 150])
 def test_invalid_font_scale_is_loud(home, value):
@@ -204,6 +210,11 @@ def test_invalid_font_scale_is_loud(home, value):
 def test_invalid_master_width_is_loud(home, value):
     with pytest.raises(ValueError):
         settings.save_master_width(value)  # type: ignore[arg-type]
+
+
+def test_invalid_rail_collapsed_is_loud(home):
+    with pytest.raises(ValueError, match="bool"):
+        settings.save_rail_collapsed(1)  # type: ignore[arg-type]
 
 
 def test_window_geometry_roundtrip_and_corrupt_fallback(home):
@@ -219,9 +230,31 @@ def test_window_geometry_roundtrip_and_corrupt_fallback(home):
     assert settings.load_window_geometry() is None
 
 
+@pytest.mark.parametrize(
+    "geometry",
+    [
+        {"x": True, "y": 0, "width": 1180, "height": 820, "maximized": False},
+        {"x": 0, "y": 0, "width": 1180, "height": 820, "maximized": 1},
+        {"x": 0, "y": 0, "width": 759, "height": 820, "maximized": False},
+        {"x": 0, "y": 0, "width": 1180, "height": 599, "maximized": False},
+    ],
+)
+def test_window_geometry_corrupt_variants_fall_back(home, geometry):
+    (home / "settings.json").write_text(
+        json.dumps({"window_geometry": geometry}), encoding="utf-8"
+    )
+    assert settings.load_window_geometry() is None
+
+
 def test_invalid_window_geometry_is_loud(home):
     with pytest.raises(ValueError):
         settings.save_window_geometry(x=0, y=0, width=759, height=600, maximized=False)
+    with pytest.raises(ValueError):
+        settings.save_window_geometry(x=True, y=0, width=760, height=600, maximized=False)
+    with pytest.raises(ValueError):
+        settings.save_window_geometry(x=0, y=0, width=760, height=599, maximized=False)
+    with pytest.raises(ValueError):
+        settings.save_window_geometry(x=0, y=0, width=760, height=600, maximized=1)  # type: ignore[arg-type]
 
 
 # ------------------------------------------------ 「작업」 그룹 접힘 영속(결정 43·R-info 결정 6)

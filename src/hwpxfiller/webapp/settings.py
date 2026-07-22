@@ -234,15 +234,20 @@ def load_window_geometry() -> "dict[str, int | bool] | None":
     raw = _read().get("window_geometry")
     if not isinstance(raw, dict):
         return None
-    values = {key: raw.get(key) for key in ("x", "y", "width", "height", "maximized")}
-    if (
-        any(not isinstance(values[key], int) or isinstance(values[key], bool) for key in ("x", "y", "width", "height"))
-        or not isinstance(values["maximized"], bool)
-        or values["width"] < 760
-        or values["height"] < 600
+    x, y = raw.get("x"), raw.get("y")
+    width, height = raw.get("width"), raw.get("height")
+    maximized = raw.get("maximized")
+    if not (
+        isinstance(x, int) and not isinstance(x, bool)
+        and isinstance(y, int) and not isinstance(y, bool)
+        and isinstance(width, int) and not isinstance(width, bool)
+        and isinstance(height, int) and not isinstance(height, bool)
+        and isinstance(maximized, bool)
     ):
         return None
-    return values  # type: ignore[return-value]
+    if width < 760 or height < 600:
+        return None
+    return {"x": x, "y": y, "width": width, "height": height, "maximized": maximized}
 
 
 def save_window_geometry(*, x: int, y: int, width: int, height: int, maximized: bool) -> None:
