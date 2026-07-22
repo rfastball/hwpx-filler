@@ -94,7 +94,8 @@
     const badge = it.is_error
       ? `<span class="pill danger">${esc(it.badge_label)}</span>`
       : `<span class="pill ${esc(it.badge_level)}">${esc(it.badge_label)}</span>`;
-    const acts = (it.actions || []).map((a) =>
+    // 소비 CTA(make_job)는 공용 ⋮ 메뉴 첫 항목이 소유한다(#236). 카드 표면에는 상태 수선만 둔다.
+    const acts = (it.actions || []).filter((a) => a.key !== "make_job").map((a) =>
       `<button class="btn sm" data-act="${esc(a.key)}" data-path="${esc(it.path)}">${esc(a.label)}</button>`
     ).join("");
     // 채움 완화 사전 고지(#154) — 문안은 Python(describe_precheck_note)이 확정.
@@ -113,9 +114,8 @@
       ? `<span class="pill danger">읽기 실패</span>`
       : `<span class="pill muted">TXT</span>`;
     const meta = err ? `파일을 읽을 수 없습니다: ${esc(it.error)}` : `토큰 ${it.field_count}개`;
-    const acts = err ? "" :
-      `<button class="btn sm" data-txt="edit" data-path="${esc(it.path)}" data-name="${esc(it.name)}">내용 편집</button>` +
-      `<button class="btn sm" data-txt="open" data-name="${esc(it.name)}">기안문 채우기에서 열기</button>`;
+    // 사용·편집 동사는 ⋮ 메뉴에서 CTA → 구분선 → 관리 순서로 제공한다(#236).
+    const acts = "";
     return `<div class="tplcard">
       <div class="tplcard-top"><span class="tplcard-name" title="${esc(it.path)}">${esc(it.name)}</span>${badge}${cardTail("txt", it)}</div>
       <div class="tplcard-meta muted">${meta}</div>
@@ -153,9 +153,12 @@
       menuFor = { media, kind, group: id };
     } else {
       const it = findItem(media, id);
-      // 그룹에 속한 카드만 「그룹으로 이동」(무그룹은 ＋그룹지정 칩이 담당, 결정 2) — 늘 삭제.
-      html =
-        (it && it.group ? `<button data-menu="move">그룹으로 이동…</button><div class="sep"></div>` : "") +
+      // 소비 CTA가 첫 항목, 관리 동사는 구분선 아래(#236). 무그룹 이동은 ＋그룹지정 칩이 담당.
+      const useLabel = media === "hwpx" ? "이 서식으로 새 작업" : "이 서식으로 기안 시작";
+      html = `<button data-menu="use"${it && !it.is_error && !it.error ? "" : " disabled"}>${useLabel}</button>` +
+        `<div class="sep"></div>` +
+        (media === "txt" && it && !it.error ? `<button data-menu="edit">내용 편집</button>` : "") +
+        (it && it.group ? `<button data-menu="move">그룹으로 이동…</button>` : "") +
         `<button data-menu="delete" class="danger">삭제</button>`;
       menuFor = { media, kind, key: id, item: it };
     }
@@ -174,7 +177,12 @@
     if (!btn || !menuFor) return;
     const m = menuFor, act = btn.dataset.menu;
     closeRowMenu();
-    if (act === "move") openMoveDialog(m.media, m.item);
+    if (act === "use" && m.media === "hwpx") makeJob(m.item.path);
+    else if (act === "use") openDraftTemplate(m.item.name);
+    else if (act === "edit") {
+      Bridge.call(SCREEN, "txt_content", { path: m.item.path }).then((res) =>
+        openEditModal("edit", m.item.path, m.item.name, (res && res.content) || ""));
+    } else if (act === "move") openMoveDialog(m.media, m.item);
     else if (act === "delete") deleteTemplate(m.media, m.item);
     else if (act === "grp-rename") renameGroup(m.media, m.group);
     else if (act === "grp-disband") disbandGroup(m.media, m.group);
@@ -276,15 +284,6 @@
       if (key === "compile") doCompile(path);
       else if (key === "review") Bridge.call(SCREEN, "review", { path });
       else if (key === "make_job") makeJob(path);
-    } else {
-      const btn = e.target.closest("button[data-txt]");
-      if (!btn) return;
-      if (btn.dataset.txt === "open") {
-        openDraftTemplate(btn.dataset.name);  // 「기안」 라우팅(#148 슬라이스 6) — 세션 교체 가드 동반
-      } else if (btn.dataset.txt === "edit") {
-        Bridge.call(SCREEN, "txt_content", { path: btn.dataset.path }).then((res) =>
-          openEditModal("edit", btn.dataset.path, btn.dataset.name, (res && res.content) || ""));
-      }
     }
   }
 

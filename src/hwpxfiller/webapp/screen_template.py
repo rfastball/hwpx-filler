@@ -341,7 +341,7 @@ class TemplateController:
             raise ValueError("현재 라이브러리 목록에 없는 경로는 삭제할 수 없습니다.")
         if not p.get("confirm"):
             if media == "txt":
-                body = f"삭제하면 기안문 채우기·빠른 기안 목록에서도 사라집니다:\n{path}"
+                body = f"삭제하면 기안 서식 목록에서도 사라집니다:\n{path}"
             else:
                 body = (
                     "이 서식으로 새 작업을 만들 수 없게 되고, 이 서식을 쓰는 작업은 템플릿을 "
