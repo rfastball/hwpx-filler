@@ -194,9 +194,21 @@
     if (window.JobScreen) { window.JobScreen.openJob(name); return; }
     window.Nav.go("job");
   }
-  function openDraft(name) {
+  async function openDraft(name) {
     // 「기안」 화면으로 라우팅(#148 슬라이스 6 — 구 txt 흡수). 템플릿을 휘발 세션에 물려 채우게.
-    Bridge.call("draft", "select_template", { name });
+    // 저장 기안 결속 세션이 진행 중이면 백엔드가 needs_confirm 을 돌려준다(리뷰 F3 — 세션 교체는
+    // 저장되지 않은 진행을 폐기하므로 조용히 버리지 않는다). 취소=현 세션 그대로(라우팅 중단).
+    let r = await Bridge.call("draft", "select_template", { name });
+    if (r && r.needs_confirm) {
+      const ok = await window.Modal.confirm({
+        title: "진행 중인 기안을 떠납니다",
+        body: "지금 결속한 저장 기안의 진행(데이터·선택·미저장 편집)은 저장된 기안에 보관되지 " +
+          "않아, 다른 템플릿을 열면 사라집니다. 계속하시겠습니까?",
+        confirmLabel: "열기", cancelLabel: "머무르기",
+      });
+      if (!ok) return;  // 머무르기 = 현 세션 보존(홈에 남는다)
+      r = await Bridge.call("draft", "select_template", { name, confirm: true });
+    }
     window.Nav.go("draft");
   }
 

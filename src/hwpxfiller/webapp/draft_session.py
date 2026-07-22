@@ -730,12 +730,32 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self._push()
         return result
 
-    def _do_select_template(self, p: dict) -> None:
+    def _do_select_template(self, p: dict) -> "dict | None":
+        """라이브러리 템플릿 선택 — 콤보(휘발 모드)·홈/템플릿 관리 라우팅 공용 진입(#148 슬라이스 6).
+
+        **저장 결속에서의 진입 = 세션 교체 가드**(리뷰 F3): 홈 「기안 열기」·템플릿 관리 「열기」가
+        저장 기안 결속 상태에서 이 액션을 직접 부르면, 종전엔 ``_bound_job``·``_source_readonly`` 를
+        그대로 둔 채 원문·매핑만 갈아, 저장 정의가 **다른 템플릿을 가리키는 저장 모드**로 남았다
+        (읽기전용 잠금 우회 + 이후 재저장이 그 작업에 엉뚱한 템플릿/매핑을 결속 — 계약 위반).
+        무장(진행)이면 파괴를 먼저 재진술하고(``needs_confirm``, :meth:`~...DraftController._do_
+        select_job` 동형), 확인(또는 미결속)이면 **휘발로 전이**(``_restore_volatile`` — 저장 결속·
+        읽기전용 해제, 스태시된 붙여넣기 세션 복원)한 뒤 템플릿을 선택한다. 콤보는 휘발 모드
+        (``_bound_job==""``)라 이 가드를 안 타고 종전 그대로 동작한다(읽기전용 저장 모드에선 콤보
+        자체가 잠겨 이 경로로 못 온다).
+        """
+        if self._bound_job and not p.get("confirm"):
+            g = self._leave_guard()
+            if g["armed"]:
+                return {"needs_confirm": True, "kind": "leave_for_template",
+                        "target": p.get("name", ""), **g}
+        if self._bound_job:
+            self._restore_volatile()  # 저장 결속 해제 → 휘발(스태시 복원 or 새 휘발)
         self.vm.select_template(p["name"])
         self._fullwidth = False  # 치환은 그 원문에 대한 판단 — 원문이 바뀌면 함께 죽는다(리뷰 F2)
         self._source_dirty = False  # 깨끗한 라이브러리 픽 — 수정됨 표지 해제(슬라이스 5b)
         self._template_path = self._resolve_template_path(p["name"])  # 저장 배접(슬라이스 5c)
         self._rebuild_mapping()  # 새 토큰 집합 → 맞추기 골격 재구성(같은 이름 결속은 승계)
+        return None
 
     def _do_new_draft(self, p: dict) -> None:
         """홈 「＋ 새 기안」 — 세션 원자 초기화(F11, F10 「새 작업」과 대칭 문법).
@@ -746,10 +766,11 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         **면제 철회(#126)**: 원장 F11 의 무확인 근거는 "txt 출력은 일회성이라 버릴 durable
         상태가 없다"였는데, 블록 3 전-선언 큐가 신설되면서 거짓이 됐다. 큐의 복사 진행은
         durable 은 아니어도 **복구 불가**다 — 어디까지 붙여넣었는지는 앱 밖 기억이다. 이제
-        이 전이도 T3 술어(:meth:`_guard_state`)를 지나며, 확인은 제스처를 소유한 표면
-        (``DraftScreen.confirmNewDraftIfArmed``, 홈 「＋ 새 기안」도 이를 소비 — #148 슬라이스 6)이
-        큐 진행을 재진술해 받는다. 결정 32 가 같은 F11 전제를 이미 부분 개정했다(수기 폼 신설로
-        버릴 상태가 생김).
+        이 전이도 가드를 지나며, 확인은 제스처를 소유한 표면(``DraftScreen.confirmNewDraftIfArmed``,
+        홈 「＋ 새 기안」도 이를 소비 — #148 슬라이스 6)이 진행을 재진술해 받는다. **세션 교체이므로
+        :meth:`_do_leave_guard`(미저장 매핑·원문 편집 포함) 술어를 쓴다**(리뷰 F4 — 데이터 스왑
+        전용 ``_guard_state`` 는 map_dirty 를 놓쳐 저장 기안의 미저장 편집을 조용히 버렸다). 결정
+        32 가 같은 F11 전제를 이미 부분 개정했다(수기 폼 신설로 버릴 상태가 생김).
         """
         self._fresh_session()
 
@@ -950,13 +971,29 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         return g
 
     def _do_guard_state(self, p: dict) -> dict:
-        """무장 상태 실시간 질의 — 표면의 데이터 재겨눔 사전 확인이 소비(작업 화면과 동형).
+        """무장 상태 실시간 질의 — 표면의 **데이터 재겨눔** 사전 확인이 소비(작업 화면과 동형).
 
         스냅샷 캐시가 아니라 지금 Python 이 판정한다(왕복 지연·무푸시 경로의 stale 오판 차단).
+        **데이터 스왑 전용**이라 :meth:`_guard_state`(T3, map_dirty 제외 — 스왑은 매핑 유지)를 쓴다.
+        세션 **교체**(「새 기안」 등)는 매핑도 폐기하므로 :meth:`_do_leave_guard` 를 써야 한다.
         """
         return self._guard_state()
 
     _do_guard_state.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
+
+    def _do_leave_guard(self, p: dict) -> dict:
+        """세션 **교체** 앞 무장 질의 — 「새 기안」(F11)이 소비(리뷰 F4).
+
+        「새 기안」은 세션 전체(매핑·상수·확정·유형·원문 편집 포함)를 폐기하는 교체라, 데이터
+        스왑 전용 :meth:`_guard_state`(map_dirty 를 armed 에 넣지 않는다 — 스왑은 매핑 유지)가
+        아니라 :meth:`_leave_guard`(미저장 매핑·원문 편집을 armed 로 친다) 술어를 써야 한다.
+        종전엔 ``confirmNewDraftIfArmed`` 가 ``guard_state`` 를 질의해, 저장 기안의 미저장 매핑
+        편집을 데이터 없이 한 세션에서 「새 기안」이 **조용히 버렸다**(armed=False → 확인 생략).
+        전환·귀환·삭제·포크가 이미 :meth:`_leave_guard` 를 쓰는 것과 정합.
+        """
+        return self._leave_guard()
+
+    _do_leave_guard.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
 
     # 등록 데이터(풀) 겨눔(#26/#6)은 PoolTargetingMixin 공용 래퍼(K4) — 화면별 후처리는
     # _after_pool_load(데이터 존 리셋)가 진다.

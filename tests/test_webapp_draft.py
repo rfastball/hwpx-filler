@@ -237,6 +237,53 @@ def test_data_swap_guard_ignores_unsaved_mapping_edit(tmp_path):
     assert g["map_dirty"] is True and g["armed"] is False
 
 
+def test_leave_guard_arms_on_map_dirty_unlike_data_swap_guard(tmp_path):
+    """세션 교체 가드(leave_guard)는 미저장 매핑 편집을 무장으로 친다 — 데이터 스왑 가드와 갈린다(리뷰 F4).
+
+    데이터 없이 저장 기안의 매핑만 편집한 상태에서 guard_state(데이터 스왑 전용)는 armed=False
+    지만 leave_guard(세션 교체)는 armed=True. 「새 기안」(confirmNewDraftIfArmed)이 leave_guard 를
+    써야 이 미저장 편집이 조용히 안 버려진다(종전엔 guard_state 를 질의해 조용히 폐기)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "제목: {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    ctrl.dispatch("set_confirmed", {"name": "공고명", "value": False})  # 미저장 매핑 편집(데이터·큐 0)
+    ds = ctrl.dispatch("guard_state", {})
+    lg = ctrl.dispatch("leave_guard", {})
+    assert ds["map_dirty"] is True and ds["armed"] is False  # 데이터 스왑: 매핑 유지라 무장 아님
+    assert lg["map_dirty"] is True and lg["armed"] is True    # 세션 교체: 편집도 잃으므로 무장
+
+
+def test_open_template_in_saved_mode_guards_then_clears_binding(tmp_path):
+    """저장 결속 세션에 라이브러리 템플릿을 열면(홈·템플릿 관리 라우팅) = 세션 교체 가드 + 결속 해제(리뷰 F3).
+
+    종전엔 select_template 이 _bound_job·source_readonly 를 그대로 둬, 저장 정의가 **다른 템플릿을
+    가리키는 저장 모드**로 남았다(읽기전용 잠금 우회 + 재저장이 엉뚱한 템플릿 결속 = 계약 위반).
+    무장이면 needs_confirm, 확인하면 휘발로 전이(결속·읽기전용 해제)한 뒤 선택한다."""
+    ctrl, jobs, _ = _controller(tmp_path)  # 착수계.txt 존재
+    _save_real(tmp_path, jobs, "저장기안", "저장기안.txt", "굳은 {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "저장기안"})
+    ctrl.dispatch("set_confirmed", {"name": "공고명", "value": True})  # 미저장 매핑 편집 = 무장
+    assert ctrl.snapshot()["mode"] == "saved"
+    # 무장 → needs_confirm(조용한 소실 금지). 확인 전엔 저장 모드 불변.
+    r = ctrl.dispatch("select_template", {"name": "착수계"})
+    assert r and r["needs_confirm"] is True and r["kind"] == "leave_for_template"
+    assert ctrl.snapshot()["mode"] == "saved" and ctrl.snapshot()["bound_job"] == "저장기안"
+    # 확인 → 휘발로 전이 + 템플릿 선택(결속·읽기전용 해제 — 계약 위반 봉합).
+    ctrl.dispatch("select_template", {"name": "착수계", "confirm": True})
+    snap = ctrl.snapshot()
+    assert snap["mode"] == "volatile" and snap["source_readonly"] is False
+    assert snap["bound_job"] == "" and snap["template_name"] == "착수계"
+
+
+def test_open_template_from_unbound_volatile_is_not_guarded(tmp_path):
+    """휘발 세션에서의 콤보 템플릿 선택은 가드 없이 즉시 반영된다(저장 결속이 없어 잃을 게 없다)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    (tmp_path / "다른템플릿.txt").write_text("제목: {{사업명}}", encoding="utf-8")
+    r = ctrl.dispatch("select_template", {"name": "다른템플릿"})
+    assert r is None  # needs_confirm 없음
+    assert ctrl.snapshot()["template_name"] == "다른템플릿"
+
+
 def test_deleting_bound_with_unsaved_mapping_edit_restates_loss(tmp_path):
     """확정 편집만 한 결속 세션을 삭제해도 소실을 재진술한다(147 + screen_job 동형 삭제 가드)."""
     ctrl, jobs, _ = _controller(tmp_path)

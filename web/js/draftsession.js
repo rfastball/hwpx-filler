@@ -593,10 +593,12 @@
 
     /* 「＋ 새 기안」 사전 확인(#126 — T3 면제 철회). 원장 F11 의 면제 근거("txt 출력은 일회성이라
        버릴 durable 상태가 없다")는 블록 3 전-선언 큐 신설로 거짓이 됐다: 20건 중 12건까지 붙여넣은
-       큐가 클릭 한 번에 사라지고, 어디까지 처리했는지는 앱 밖 기억이라 복원 수단이 없다. 술어·수치는
-       데이터 교체 가드와 **같은 _guard_state** 를 쓴다(두 파괴 경로가 한 술어를 공유). true=진행. */
+       큐가 클릭 한 번에 사라지고, 어디까지 처리했는지는 앱 밖 기억이라 복원 수단이 없다. 「새 기안」은
+       세션 **교체**(매핑·원문 편집까지 폐기)라 데이터 스왑 전용 guard_state 가 아니라 **leave_guard**
+       를 질의한다(리뷰 F4 — guard_state 는 map_dirty 를 armed 에 안 넣어 저장 기안의 미저장 매핑
+       편집을 데이터 없이 조용히 버렸다). true=진행. */
     async function confirmNewDraftIfArmed() {
-      const g = await Bridge.call(SCREEN, "guard_state", {});
+      const g = await Bridge.call(SCREEN, "leave_guard", {});
       if (!g || !g.armed) return true;
       return window.Modal.confirm({
         title: "새 기안 확인",
