@@ -221,6 +221,22 @@ def test_generate_cancel_keeps_completed_and_restates_unstarted(tmp_path, monkey
     assert ctrl.registry.load("공고서").last_run_at == ""
 
 
+def test_generate_rejects_concurrent_entry(tmp_path):
+    """생성 잠금이 잡힌 동안 두 번째 실행은 파일 작업 전에 시끄럽게 거부한다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    assert ctrl._generation_lock.acquire(blocking=False)
+    try:
+        result = ctrl.generate()
+    finally:
+        ctrl._generation_lock.release()
+    assert result == {
+        "ok": False,
+        "error": "이미 문서를 생성하고 있습니다.",
+        "level": "warn",
+    }
+
+
 def test_generation_stamps_last_run_at(tmp_path):
     """완주 = 역사(#129) — 생성이 작업에 실행 시각을 영속해야 홈 이력·KPI 가 산다."""
     ctrl, _ = _controller(tmp_path)
@@ -1398,12 +1414,17 @@ def test_delete_open_session_job_confirm_roundtrip_closes_panel(tmp_path):
 
 def test_delete_other_job_soft_deletes_without_session_prompt(tmp_path):
     ctrl, _ = _controller(tmp_path)
+    assert ctrl.dispatch("undo_delete_job", {}) == {
+        "ok": False, "error": "복원할 최근 작업이 없습니다."
+    }
     ctrl.registry.save(Job(name="둘째"))
     ctrl.dispatch("select_job", {"name": "공고서"})
     res = ctrl.dispatch("delete_job", {"name": "둘째"})
     assert res["undo"] is True
     assert not ctrl.registry.exists("둘째")
     assert ctrl.snapshot()["job_name"] == "공고서"  # 무관 세션 무영향
+    assert ctrl.dispatch("undo_delete_job", {}) == {"ok": True, "name": "둘째"}
+    assert ctrl.registry.exists("둘째")
 
 
 def test_clone_job_returns_unique_name_and_inherits_group(tmp_path):
