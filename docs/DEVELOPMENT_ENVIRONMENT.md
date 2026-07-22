@@ -11,7 +11,7 @@
 | 운영체제 | Windows 11, GitHub Actions `windows-latest` |
 | Python | CPython 3.13 계열 (`.python-version`) |
 | 환경·의존성 관리 | uv 0.11.28, `uv.lock` |
-| GUI | PySide6 |
+| GUI | pywebview 6.x + Windows EdgeChromium(WebView2) |
 | 테스트 | pytest, pytest-cov |
 | 정적 검사 | Ruff, Pyright basic |
 | portable 패키징 | PyInstaller onedir |
@@ -44,7 +44,7 @@ uv sync --locked --all-extras --group dev --group build
 이 명령은 프로젝트의 `.venv`를 만들고 다음 환경을 함께 설치한다.
 
 - 런타임: lxml, openpyxl
-- GUI: PySide6
+- GUI: pywebview
 - 개발: pytest, coverage, Ruff, Pyright, pre-commit
 - 빌드: PyInstaller
 
@@ -87,10 +87,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1
 ### 품질 정책
 
 - Ruff는 문법 오류, 미정의 이름과 버그 가능성이 높은 규칙을 CI에서 차단한다.
-- Pyright는 basic 모드다. 기존 PySide6 동적 속성 패턴에 대한 일부 진단은 점진 도입을
+- Pyright는 basic 모드다. 웹 브리지와 동적 payload 경계의 일부 진단은 점진 도입을
   위해 완화되어 있다.
 - 전체 포맷 마이그레이션은 기존 UI 작업과 충돌하지 않도록 별도 작업으로 분리한다.
-- coverage는 XML과 터미널 보고서를 만들며 현재 최소 비율로 빌드를 차단하지 않는다.
+- coverage는 XML과 터미널 보고서를 만들고 `docs/package_coverage_floors.toml`의
+  패키지별 line/branch 하한을 차단 조건으로 적용한다. 각 경로의 직접 소속 Python 파일만
+  집계하므로 하위 runtime 패키지의 낮은 수치가 상위 평균에 숨지 않는다.
+- `hwpxcore.native`는 낮은 coverage 하한을 두지 않고 `tests/test_native_positive.py`의
+  Windows 양성 시나리오를 별도 CI 단계로 필수 실행한다. JS/CSS, 별도 WebView2 프로세스,
+  frozen 번들, installer/signing은 Python coverage 수치에 포함하지 않는다.
 - `tests/test_architecture.py`는 두 제품이 서로 직접 import하지 않는지 확인한다.
 
 pre-commit을 사용할 개발자는 한 번만 다음을 실행한다.
@@ -116,9 +121,10 @@ PyInstaller를 실행한다.
 - Inno Setup용 `version.iss`
 - 버전, Git 커밋, Python, PyInstaller가 기록된 `build-metadata.json`
 
-산출물은 `dist\hwpx-filler\hwpx-filler.exe`, `dist\hwpx-diff\hwpx-diff.exe`(onedir 폴더)이며
-빌드 스크립트가 각각의 `--selfcheck`까지 실행한다. 루트 `build.ps1`은 canonical인
-`packaging/build.ps1`로 위임하는 얇은 러너다.
+산출물은 `dist\hwpx-filler-web\hwpx-filler-web.exe`,
+`dist\hwpx-diff\hwpx-diff.exe`, `dist\hwpx-cli\hwpx-cli.exe`(onedir 폴더)이며
+canonical `packaging/build.ps1 -Target all`이 세 번들과 각각의 selfcheck를 검증한다.
+루트 `build.ps1`은 GUI 두 제품을 canonical 스크립트로 위임하는 호환 러너다.
 
 ### 제품별 설치파일
 
@@ -136,12 +142,16 @@ PyInstaller를 실행한다.
 
 ## 5. CI와 공식 릴리스
 
-`.github/workflows/quality.yml`은 PR과 `master`/`main` push에서 다음을 실행한다.
+`.github/workflows/quality.yml`은 PR과 `master`/`main` push에서 서로 의존하지 않는 세 작업을
+병렬 실행한다. 브랜치 보호의 필수 상태도 이 세 이름으로 설정한다.
 
-1. uv 0.11.28과 잠금 환경 복원
-2. Ruff와 Pyright
-3. 전체 pytest와 GUI offscreen 테스트
-4. JUnit 및 coverage XML 업로드
+1. `static`: Ruff와 Pyright
+2. `pytest + package coverage floor`: Windows native 양성 시나리오, 전체 pytest, 패키지별
+   line/branch floor와 누락 위치 보고
+3. `distribution (filler + diff + CLI)`: 세 portable onedir 빌드와 selfcheck
+
+Inno Setup installer 생성·설치/제거 스모크·Authenticode 서명은 느리고 비밀값을 사용하는
+release-only 정책이다. PR quality workflow에서는 실행하지 않는다.
 
 공식 릴리스는 먼저 `pyproject.toml`의 버전을 변경하고 같은 버전의 태그를 push한다.
 
@@ -151,7 +161,7 @@ git push origin v0.2.0
 ```
 
 `.github/workflows/release.yml`은 태그와 프로젝트 버전이 다르면 중단한다. 일치하면 전체
-검사, 두 portable EXE 빌드, self-check, 제품별 설치본 빌드, 설치·제거 스모크,
+검사, 두 GUI portable EXE 빌드, self-check, 제품별 설치본 빌드, 설치·제거 스모크,
 SHA-256 생성을 거쳐 GitHub Release에 게시한다.
 
 ### 선택형 Windows 코드 서명
@@ -195,10 +205,11 @@ PFX를 Base64로 변환하는 예시는 다음과 같다. 결과를 파일이나
 
 `uv venv --clear --python 3.13` 후 잠금 환경을 다시 동기화한다.
 
-### PySide6 GUI 테스트가 화면 환경 때문에 실패
+### WebView2 실창 테스트가 화면 환경 때문에 실패
 
-`test.ps1`과 CI는 `QT_QPA_PLATFORM=offscreen`을 기본 설정한다. 외부 테스트 러너에서는
-같은 환경 변수를 직접 설정한다.
+Windows 데스크톱 세션과 WebView2 Runtime 설치 여부를 확인한다. 일반 Python coverage와
+분리된 subprocess 실창 게이트이며, 의도적으로 건너뛸 때만 해당 테스트가 문서화한 skip
+환경 변수를 명시한다. CI 필수 상태에서는 native 양성 시나리오를 skip하지 않는다.
 
 ### 빌드는 성공했지만 설치파일을 만들지 못함
 
