@@ -10,12 +10,13 @@ edgechromium(WinForms) 접근성 재귀 크래시를 우회해 Win32 공용 API 
 """
 from __future__ import annotations
 
-from .clipboard import set_clipboard_text
+from .clipboard import get_clipboard_text, set_clipboard_text
 from .dialogs import open_file_dialog, open_folder_dialog, save_file_dialog
 from .reveal import open_path, reveal_in_explorer
 
 __all__ = [
     "set_clipboard_text",
+    "get_clipboard_text",
     "open_file_dialog",
     "open_folder_dialog",
     "save_file_dialog",
