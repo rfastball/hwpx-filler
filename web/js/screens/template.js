@@ -72,8 +72,9 @@
             ` aria-haspopup="true" aria-label="그룹 관리">⋮</button>`
           : "") +
       `</div>`;
-    const body = sec.collapsed ? "" :
-      `<div class="tpl-grp-rows">${sec.items.map((it) => cardHtml(media, it)).join("")}</div>`;
+    const body =
+      `<div class="tpl-grp-rows"${sec.collapsed ? " hidden" : ""}>` +
+      `${sec.items.map((it) => cardHtml(media, it)).join("")}</div>`;
     return head + body;
   }
 
@@ -276,7 +277,16 @@
       return;
     }
     const toggle = e.target.closest(".job-grp-head[data-grp-toggle]");
-    if (toggle) { Bridge.call(SCREEN, "toggle_group", { media, group: toggle.getAttribute("data-grp-toggle") }); return; }
+    if (toggle) {
+      GroupList.toggleGroup(
+        toggle,
+        () => Bridge.call(SCREEN, "toggle_group", {
+          media, group: toggle.getAttribute("data-grp-toggle"),
+        }),
+        "템플릿 그룹 접힘 상태를 저장하지 못했습니다."
+      );
+      return;
+    }
     const grpMore = e.target.closest(".grp-more[data-grp-more]");
     if (grpMore) { toggleRowMenu(media, "group", grpMore.getAttribute("data-grp-more"), grpMore); return; }
     const rowMore = e.target.closest(".tplcard-more[data-tpl-more]");

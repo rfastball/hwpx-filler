@@ -94,7 +94,7 @@
             ? `<button class="job-more grp-more" data-grp-more="${esc(sec.group)}" aria-haspopup="true" aria-label="그룹 관리">⋮</button>`
             : "") +
           `</div>` +
-          (sec.collapsed ? "" : `<div class="job-grp-rows">${sec.rows.map(rowHtml).join("")}</div>`);
+          `<div class="job-grp-rows"${sec.collapsed ? " hidden" : ""}>${sec.rows.map(rowHtml).join("")}</div>`;
       }).join("");
     }
     host.innerHTML = html + volatileRowHtml(s);
@@ -257,7 +257,11 @@
     const grp = e.target.closest(".job-grp-head[data-grp-toggle]");
     if (grp) {
       // 접힘 토글은 보기만 바꾼다 — 선택 무영향. ""=「그룹 없음」.
-      Bridge.call(SCREEN, "toggle_group", { group: grp.getAttribute("data-grp-toggle") });
+      GroupList.toggleGroup(
+        grp,
+        () => Bridge.call(SCREEN, "toggle_group", { group: grp.getAttribute("data-grp-toggle") }),
+        "기안 그룹 접힘 상태를 저장하지 못했습니다."
+      );
       return;
     }
     const vol = e.target.closest(".job-item[data-volatile]");

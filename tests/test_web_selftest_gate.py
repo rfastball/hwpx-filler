@@ -315,6 +315,19 @@ class TestWebSelftestGate:
         assert j["amount_align"] == "right"
         assert "tabular-nums" in j["amount_nums"]
 
+    def test_job_row_toggle_is_optimistic_and_uses_live_state(self, selftest_result: dict) -> None:
+        """I-217 R2: push를 미결로 둬도 표지가 즉시 뒤집히고 재클릭은 현 DOM 상태를 쓴다."""
+        j = selftest_result["job_mirror"]
+        assert j["row_optimistic_off"] is True, f"첫 행 토글이 즉시 해제 표지를 못 냈습니다: {j!r}"
+        assert j["row_optimistic_on"] is True, f"push 전 재클릭이 즉시 재선택되지 않았습니다: {j!r}"
+        assert j["row_toggle_values"] == [False, True], (
+            f"재클릭 값이 화면의 현재 상태를 따르지 않습니다: {j['row_toggle_values']!r}"
+        )
+
+    def test_filter_panel_shell_appears_before_backend_response(self, selftest_result: dict) -> None:
+        """I-217 R4: filter_panel 응답이 미결이어도 제목+로딩 껍데기는 클릭 프레임에 선다."""
+        assert selftest_result["job_mirror"]["panel_shell_immediate"] is True
+
     def test_job_filename_token_danger_blocks_with_an_exit(self, selftest_result: dict) -> None:
         # #128 — 파일명 토큰 danger 는 드리프트와 **같은 자격**이라 같은 자리에서 차단 배너 +
         # 행동 링크로 선다. 종전엔 거울이 「채움」 표를 그려 문서가 건강해 보이고, 재진술은
@@ -379,6 +392,8 @@ class TestWebSelftestGate:
         # 접힘 화살표: 접힌 그룹=상시 노출, 펼친 그룹=호버 전 은닉(결정 5 — visibility 자동 눈검증).
         assert j["caret_collapsed"] == "visible", f"접힌 그룹 화살표가 상시 노출이 아닙니다: {j!r}"
         assert j["caret_expanded"] == "hidden", f"펼친 그룹 화살표가 호버 전에 보입니다: {j!r}"
+        assert j["collapse_local_flip"] is True, f"그룹 접힘이 왕복 전에 즉시 풀리지 않습니다: {j!r}"
+        assert j["opening_marker_immediate"] is True, f"작업 열기 표지가 클릭 즉시 서지 않습니다: {j!r}"
         # 행 ⋮ 메뉴 — 실개방(항목 구성 포함) + 바깥 pointerdown 닫기.
         assert j["menu_shown"] is True, "행 ⋮ 클릭에 메뉴가 열리지 않았습니다."
         assert j["menu_items"] == ["edit", "clone", "rename", "move", "delete"], (
@@ -399,6 +414,7 @@ class TestWebSelftestGate:
         assert d["rows_visible"] == 3, f"접힌 그룹 행이 뷰에서 제외되지 않았습니다: {d!r}"
         assert d["grp_more"] == 2, "그룹 ⋮ 는 이름 그룹에만 있어야 합니다(「그룹 없음」 제외)."
         assert d["row_more"] == 3, f"행 ⋮ 수가 가시 행 수와 다릅니다: {d!r}"
+        assert d["collapse_local_flip"] is True, f"기안 그룹 접힘이 왕복 전에 풀리지 않습니다: {d!r}"
         # 미선택 = **휘발 세션 4존**(결정 5, 슬라이스 3a). 저장/휘발 한 패널(슬라이스 5a — 껍데기
         # stub 폐기, 선택이 실제 복원이 되며 사라졌다). 상시 「이번 세션」 행이 휘발 귀환구.
         assert d["session_shown"] is True, "미선택 상세에 휘발 세션 4존이 서지 않았습니다."
@@ -606,6 +622,7 @@ class TestWebSelftestGate:
         # 접힘 화살표: 접힌 그룹=상시 노출, 펼친 그룹=호버 전 은닉(결정 5, job 목록 동형).
         assert t["caret_collapsed"] == "visible", f"접힌 그룹 화살표가 상시 노출이 아닙니다: {t!r}"
         assert t["caret_expanded"] == "hidden", f"펼친 그룹 화살표가 호버 전에 보입니다: {t!r}"
+        assert t["collapse_local_flip"] is True, f"템플릿 그룹 접힘이 왕복 전에 풀리지 않습니다: {t!r}"
         # 그룹에 속한 카드 ⋮ = [이동, 삭제] · 그룹 헤더 ⋮ = [개명, 해산].
         assert t["menu_shown"] is True, "카드 ⋮ 클릭에 메뉴가 열리지 않았습니다."
         assert t["card_menu_items"] == ["use", "move", "delete"], (

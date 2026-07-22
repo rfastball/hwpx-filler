@@ -226,7 +226,7 @@
           ? `<button class="job-more grp-more" data-grp-more="${esc(sec.group)}" aria-haspopup="true" aria-label="그룹 관리">⋮</button>`
           : "") +
         `</div>` +
-        (sec.collapsed ? "" : `<div class="job-grp-rows">${sec.rows.map(rowHtml).join("")}</div>`);
+        `<div class="job-grp-rows"${sec.collapsed ? " hidden" : ""}>${sec.rows.map(rowHtml).join("")}</div>`;
       return head;
     }).join("");
   }
@@ -574,6 +574,32 @@
     }
   }
 
+  function setJobOpening(item, opening) {
+    if (!item) return;
+    if (opening) {
+      if (!item.dataset.idleLabel) item.dataset.idleLabel = item.textContent;
+      item.setAttribute("aria-busy", "true");
+      item.textContent = `${item.dataset.idleLabel} · 여는 중…`;
+      return;
+    }
+    item.removeAttribute("aria-busy");
+    if (item.dataset.idleLabel) {
+      item.textContent = item.dataset.idleLabel;
+      delete item.dataset.idleLabel;
+    }
+  }
+
+  async function selectJobFromItem(item) {
+    // 검색 디바운스 정산·Python 로드보다 먼저 표지를 세운다. 정본 판정은 select_job push가 덮는다.
+    setJobOpening(item, true);
+    try {
+      await dz.flushPendingSearch();
+      return await selectJobGuarded(item.dataset.job);
+    } finally {
+      if (item.isConnected) setJobOpening(item, false);
+    }
+  }
+
   function onMasterClick(e) {
     // 관리 어포던스(⋮·그룹 헤더)가 행 진입 동사보다 먼저 — 행 클릭=실행(주동사)과 분리.
     const more = e.target.closest(".job-more[data-more]");
@@ -583,7 +609,11 @@
     const grp = e.target.closest(".job-grp-head[data-grp-toggle]");
     if (grp) {
       // 접힘 토글은 보기만 바꾼다 — 선택·세션 무영향(결정 6-⑤). ""=「그룹 없음」.
-      Bridge.call(SCREEN, "toggle_group", { group: grp.getAttribute("data-grp-toggle") });
+      GroupList.toggleGroup(
+        grp,
+        () => Bridge.call(SCREEN, "toggle_group", { group: grp.getAttribute("data-grp-toggle") }),
+        "작업 그룹 접힘 상태를 저장하지 못했습니다."
+      );
       return;
     }
     const item = e.target.closest(".job-item[data-job]");
@@ -597,18 +627,21 @@
     if (MODE === "edit") {
       (async () => {
         if (!already) {
-          await dz.flushPendingSearch();
-          if ((await selectJobGuarded(item.dataset.job)) === false) return;  // 머무르기
+          if ((await selectJobFromItem(item)) === false) return;  // 머무르기
         }
         if (await exitEditToRun()) showExitNote();  // T2 고지(미저장 편집 있을 때만)
-      })();
+      })().catch((err) => {
+        log("작업 열기 실패: " + String((err && err.message) || err));
+      });
       return;
     }
     // 이미 선택된 작업 재클릭 = 무동작(세션 재구성으로 데이터 겨눔이 날아가지 않게).
     if (already) return;
     // 미적용 검색어는 전환 시도 전에 정산(적용) — 취소만 하면 「머무르기」 세션에서
     // 마지막 타이핑이 증발한다(리뷰 #2). 새 세션 오발도 함께 차단(PR-2b 리뷰 #1).
-    dz.flushPendingSearch().then(() => selectJobGuarded(item.dataset.job));
+    selectJobFromItem(item).catch((err) => {
+      log("작업 열기 실패: " + String((err && err.message) || err));
+    });
   }
 
   /* ---- 좌 목록 관리(결정 43) — ⋮ 메뉴·인라인 이름 변경·그룹 이동/관리 ----

@@ -73,8 +73,14 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
    이동(scale)은 prefers-reduced-motion 에서 제거하고 페이드(opacity)만 남긴다. 전부 <300ms. */
 .btn,.navbtn,.ctx-menu button,.job-more,.grp-more,.tpl-assign,button.pill{
   transition:transform var(--dur-press) var(--ease-out)}
+.job-item,.job-grp-head,.jobtb tbody tr,.mir-row.miss,.fico,.fchip button,
+.wstep-tab.as-tab,.rail-toggle,.rail-theme{
+  transition:transform var(--dur-press) var(--ease-out)}
 .btn:active:not(:disabled),.navbtn:active,.ctx-menu button:active,.job-more:active,
 .grp-more:active,.tpl-assign:active,button.pill:active:not(:disabled){transform:scale(.97)}
+.job-item:active,.job-grp-head:active,.jobtb tbody tr:active,.mir-row.miss:active,
+.fico:active,.fchip button:active,.wstep-tab.as-tab:active,.rail-toggle:active,
+.rail-theme:active{transform:scale(.97)}
 
 /* 부유 메뉴·열 필터 = 트리거 쪽(좌상단 origin) opacity+scale(.98) 팝(scale(0) 금지). */
 .ctx-menu,.colpanel{transform-origin:top left;
@@ -97,8 +103,13 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 
 @media (prefers-reduced-motion:reduce){
   .btn,.navbtn,.ctx-menu button,.job-more,.grp-more,.tpl-assign,button.pill{transition:none}
+  .job-item,.job-grp-head,.jobtb tbody tr,.mir-row.miss,.fico,.fchip button,
+  .wstep-tab.as-tab,.rail-toggle,.rail-theme{transition:none}
   .btn:active:not(:disabled),.navbtn:active,.ctx-menu button:active,.job-more:active,
   .grp-more:active,.tpl-assign:active,button.pill:active:not(:disabled){transform:none}
+  .job-item:active,.job-grp-head:active,.jobtb tbody tr:active,.mir-row.miss:active,
+  .fico:active,.fchip button:active,.wstep-tab.as-tab:active,.rail-toggle:active,
+  .rail-theme:active{transform:none}
   /* 페이드만 유지, 이동 제거 — @starting-style 의 scale 은 transition 대상 밖이라 즉시 스냅. */
   .ctx-menu,.colpanel,.modal-card{transition-property:opacity}
   .modal{transition-property:background-color}
@@ -678,6 +689,7 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
   color:var(--a-ink);padding:var(--sp-6) var(--sp-8);border-radius:var(--rad-control);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .job-item:hover{background:var(--n-hover)}
+.job-item[aria-busy="true"]{cursor:progress;background:var(--a-sel);color:var(--a-primary)}
 .job-item[aria-current="true"]{background:var(--a-primary);color:var(--a-on-accent);font-weight:600}
 .job-empty{font-size:var(--fs-body);padding:var(--sp-6)}
 .job-empty .btn{margin-top:var(--sp-8)}

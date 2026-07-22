@@ -729,6 +729,32 @@ _JOB_MIRROR_PROBE_JS = r"""
     // 스트립 항목별 × 해제 어포던스(리뷰 #6 — 진술만 하고 행동을 못 주면 반쪽).
     out.strip_unsel = !!document.querySelector('#jobSelStrip [data-unsel="1"]');
     out.sel_line = document.getElementById('jobRestate').textContent;
+    // 왕복을 일부러 미결로 둔 채 두 번 누른다. 둘째 값이 첫 낙관 표지를 기준으로 계산돼야
+    // true→false→true가 되고, native checkbox·aria-selected·행 tint가 같은 프레임에 맞는다(#217 R2).
+    var realCall = window.Bridge.call;
+    var toggleValues = [];
+    window.Bridge.call = function (screen, action, payload) {
+      if (action === 'toggle_record') {
+        toggleValues.push(payload.value);
+        return new Promise(function () {});
+      }
+      if (action === 'filter_panel') return new Promise(function () {});
+      return realCall.call(window.Bridge, screen, action, payload);
+    };
+    renderedRow.click();
+    out.row_optimistic_off = !renderedRow.classList.contains('on') &&
+      renderedRow.getAttribute('aria-selected') === 'false' && !renderedRow.querySelector('input').checked;
+    renderedRow.click();
+    out.row_optimistic_on = renderedRow.classList.contains('on') &&
+      renderedRow.getAttribute('aria-selected') === 'true' && renderedRow.querySelector('input').checked;
+    out.row_toggle_values = toggleValues.slice();
+    // filter_panel 응답은 영원히 미결이어도 클릭 프레임에 제목+로딩 껍데기가 먼저 선다(#217 R4).
+    document.querySelector('#jobTableHead .fico').click();
+    var loadingPanel = document.getElementById('jobColPanel');
+    out.panel_shell_immediate = !loadingPanel.hidden && loadingPanel.getAttribute('aria-busy') === 'true' &&
+      loadingPanel.textContent.indexOf('불러오는 중') >= 0 && loadingPanel.textContent.indexOf('공고명') >= 0;
+    loadingPanel.querySelector('[data-act="panel-close"]').click();
+    window.Bridge.call = realCall;
     // 열 패널 기본 닫힘 — [hidden] 이 display:flex 를 실제로 이긴다(부록 B-9 overlay/hidden
     // 결함류의 자동 눈검증: .colpanel 은 flex 라 override 가 없으면 hidden 이 은닉에 실패한다).
     out.panel_hidden = getComputedStyle(document.getElementById('jobColPanel')).display === 'none';
@@ -805,9 +831,11 @@ _JOB_LIST_GROUP_PROBE_JS = r"""
     };
     window.__push('job', snap);
     out.grp_heads = document.querySelectorAll('#jobListHwpx .job-grp-head').length;
-    out.rows_visible = document.querySelectorAll('#jobListHwpx .job-item').length;
+    out.rows_visible = document.querySelectorAll(
+      '#jobListHwpx > .job-row .job-item, #jobListHwpx .job-grp-rows:not([hidden]) .job-item').length;
     out.grp_more = document.querySelectorAll('#jobListHwpx .grp-more').length;
-    out.row_more = document.querySelectorAll('#jobListHwpx .job-more[data-more]').length;
+    out.row_more = document.querySelectorAll(
+      '#jobListHwpx > .job-row .job-more[data-more], #jobListHwpx .job-grp-rows:not([hidden]) .job-more[data-more]').length;
     var caretOf = function (expanded) {
       var c = document.querySelector(
         '#jobListHwpx .job-grp-head[aria-expanded="' + expanded + '"] .grp-caret');
@@ -815,6 +843,23 @@ _JOB_LIST_GROUP_PROBE_JS = r"""
     };
     out.caret_collapsed = caretOf('false');
     out.caret_expanded = caretOf('true');
+    // 영속 왕복을 미결로 둬도 접힌 그룹의 aria/caret/body가 클릭 프레임에 먼저 열린다(#217 R3).
+    var realCall = window.Bridge.call;
+    window.Bridge.call = function () { return new Promise(function () {}); };
+    var collapsedHead = document.querySelector('#jobListHwpx .job-grp-head[aria-expanded="false"]');
+    collapsedHead.click();
+    var openedBody = collapsedHead.closest('.job-grp').nextElementSibling;
+    out.collapse_local_flip = collapsedHead.getAttribute('aria-expanded') === 'true' &&
+      collapsedHead.querySelector('.grp-caret').textContent === '▾' && !openedBody.hidden;
+    window.Bridge.call = realCall;
+    // 검색 정산 promise가 이어지는 동안 select_job은 미결로 두되, 클릭 프레임의 여는 중 표지는
+    // 즉시 보여야 한다(#217 R1). continuation이 mock을 잡은 뒤 다음 microtask에서 복원한다.
+    window.Bridge.call = function () { return new Promise(function () {}); };
+    var openingItem = document.querySelector('#jobListHwpx .job-item[data-job]');
+    openingItem.click();
+    out.opening_marker_immediate = openingItem.getAttribute('aria-busy') === 'true' &&
+      openingItem.textContent.indexOf('여는 중') >= 0;
+    Promise.resolve().then(function () { window.Bridge.call = realCall; });
     var more = document.querySelector('#jobListHwpx .job-more[data-more]');
     more.click();
     var menu = document.getElementById('jobRowMenu');
@@ -874,9 +919,20 @@ _DRAFT_LIST_PROBE_JS = r"""
     window.__push('draft', snap);
     out.grp_heads = document.querySelectorAll('#draftList .job-grp-head').length;   // 현장 A·정기·그룹없음
     // 저장 기안 행만 센다(data-job) — 상시 「이번 세션」 행(.draft-vol, 슬라이스 5a)은 뺀다.
-    out.rows_visible = document.querySelectorAll('#draftList .job-item[data-job]').length;  // 정기 접힘 → 2+0+1
+    out.rows_visible = document.querySelectorAll(
+      '#draftList > .job-row .job-item[data-job], #draftList .job-grp-rows:not([hidden]) .job-item[data-job]').length;
     out.grp_more = document.querySelectorAll('#draftList .grp-more').length;        // 명명 그룹만
-    out.row_more = document.querySelectorAll('#draftList .job-more[data-more]').length;
+    out.row_more = document.querySelectorAll(
+      '#draftList > .job-row .job-more[data-more], #draftList .job-grp-rows:not([hidden]) .job-more[data-more]').length;
+    var realCall = window.Bridge.call;
+    window.Bridge.call = function () { return new Promise(function () {}); };
+    var collapsedHead = document.querySelector('#draftList .job-grp-head[aria-expanded="false"]');
+    flush();
+    collapsedHead.click();
+    var openedBody = collapsedHead.closest('.job-grp').nextElementSibling;
+    out.collapse_local_flip = collapsedHead.getAttribute('aria-expanded') === 'true' &&
+      collapsedHead.querySelector('.grp-caret').textContent === '▾' && !openedBody.hidden;
+    window.Bridge.call = realCall;
     // 미선택 = **휘발 세션**(결정 5) — 4존이 선다. 저장/휘발 한 패널(슬라이스 5a, 껍데기 stub 폐기).
     out.session_shown =
       getComputedStyle(document.getElementById('draftSessionPanel')).display !== 'none';
@@ -1316,16 +1372,25 @@ _TPL_LIST_GROUP_PROBE_JS = r"""
     window.__push('tpl', snap);
     var host = document.getElementById('tplHwpxGroups');
     out.grp_heads = host.querySelectorAll('.job-grp-head').length;          // 입찰·계약·그룹없음
-    out.cards_visible = host.querySelectorAll('.tplcard').length;           // 계약 접힘 → 2+1
+    out.cards_visible = host.querySelectorAll('.tpl-grp-rows:not([hidden]) .tplcard').length; // 계약 접힘 → 2+1
     out.grp_more = host.querySelectorAll('.grp-more').length;               // 명명 그룹만(그룹없음 제외)
-    out.card_more = host.querySelectorAll('.tplcard-more').length;
-    out.assign_chips = host.querySelectorAll('.tpl-assign').length;         // 「그룹 없음」 카드만
+    out.card_more = host.querySelectorAll('.tpl-grp-rows:not([hidden]) .tplcard-more').length;
+    out.assign_chips = host.querySelectorAll('.tpl-grp-rows:not([hidden]) .tpl-assign').length; // 「그룹 없음」 카드만
     var caretOf = function (expanded) {
       var c = host.querySelector('.job-grp-head[aria-expanded="' + expanded + '"] .grp-caret');
       return c ? getComputedStyle(c).visibility : 'missing';
     };
     out.caret_collapsed = caretOf('false');   // 접힌 그룹 캐럿 상시 노출
     out.caret_expanded = caretOf('true');      // 펼친 그룹 캐럿 호버 전 숨김
+    var realCall = window.Bridge.call;
+    window.Bridge.call = function () { return new Promise(function () {}); };
+    var collapsedHead = host.querySelector('.job-grp-head[aria-expanded="false"]');
+    document.body.click();
+    collapsedHead.click();
+    var openedBody = collapsedHead.closest('.job-grp').nextElementSibling;
+    out.collapse_local_flip = collapsedHead.getAttribute('aria-expanded') === 'true' &&
+      collapsedHead.querySelector('.grp-caret').textContent === '▾' && !openedBody.hidden;
+    window.Bridge.call = realCall;
     // 앞선 프로브가 Popover 바깥-닫기 pointerdown 을 남기면 그 인스턴스의 "다음 click 1회 소비"
     // 플래그가 상주해 우리 첫 click 을 캡처 단계에서 먹는다(교차 프로브 오염). 던짐 click 으로
     // 미리 소비해 상태를 청소한다(메뉴 개폐 사이마다도 동일 — 우리 close pointerdown 자기 소비).
