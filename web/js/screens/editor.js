@@ -122,16 +122,14 @@
       <div class="row" style="margin-bottom:var(--sp-4)"><span class="cap">템플릿 라이브러리</span>
         <span class="spacer"></span>
         <button class="btn sm" data-act="import-template">가져오기…</button></div>
-      <p class="note quiet" style="margin-top:0">이 마법사는 .hwpx 문서를 만들므로 HWPX 서식만
-        보입니다. 그룹은 관리 화면과 같습니다.</p>
+      <p class="note quiet" style="margin-top:0">HWPX 서식만 표시됩니다.</p>
       ${body}
     </div>`;
   }
 
   function templateStage(s) {
     let out = `<div class="wtitle">${esc(stageTitle(s, 0))}</div>
-      <p class="wsub">라이브러리에서 누름틀 템플릿을 고르세요. 다른 파일은 '가져오기…'로
-        라이브러리에 복사해 시작합니다.</p>
+      <p class="wsub">라이브러리에서 누름틀 템플릿을 고르거나 '가져오기…'로 추가하세요.</p>
       ${libraryPicker(s)}`;
     if (s.template_name) {
       out += `<div class="row"><span class="lbl">선택한 템플릿</span>
@@ -241,7 +239,7 @@
       ? `<details class="hidden-hdrs ign-fold"${(s.ignored_expanded || foldOpen) ? " open" : ""}><summary>미사용 ${ignored.length}개 (펼쳐 다시 사용)</summary>
            <div class="hchips">${ignored.map((f) =>
               `<button class="hchip ign" data-act="toggle-header" data-field="${esc(f)}" title="클릭 = 다시 사용">${esc(f)}</button>`).join("")}</div>
-           <p class="hint" style="margin-top:var(--sp-4)">미사용 헤더는 자동 매핑 제안·소스 후보에서 빠집니다. 클릭하면 다시 사용합니다.</p>
+           <p class="hint" style="margin-top:var(--sp-4)">미사용 헤더는 자동 매핑 제안·소스 후보에서 빠집니다.</p>
          </details>`
       : "";
     return `<div class="grp">
@@ -269,7 +267,7 @@
         `${s.preview_empties && s.preview_empties.length ? " (" + esc(s.preview_empties.join(", ")) + ")" : ""}</span>`
       : "";
     const banner = s.schema_only
-      ? `<p class="note warnbox">데이터 없이 매핑 중입니다. 값이 비어 보이는 건 '미매칭'이 아니라 '데이터 없음'입니다. 고정값을 넣거나 비움으로 확정하세요.</p>`
+      ? `<p class="note warnbox">데이터 없이 매핑 중입니다. 고정값을 넣거나 비움으로 확정하세요.</p>`
       : "";
     return `<div class="wtitle">${esc(stageTitle(s, 1))}</div>
       <p class="wsub">필드마다 데이터 열을 지정하고 전 행을 확정하세요.</p>
@@ -347,8 +345,7 @@
   /* ---- 분류 2: 저장 ---- */
   function saveStage(s) {
     return `<div class="wtitle">${esc(stageTitle(s, 2))}${s.editing_origin ? ` <span class="pill">편집: ${esc(s.editing_origin)}</span>` : ""}</div>
-      <p class="wsub">이 작업(템플릿·매핑·파일명)을 저장합니다. 데이터·행은 저장하지 않습니다.
-        실행할 때 고릅니다.</p>
+      <p class="wsub">이 작업(템플릿·매핑·파일명)을 저장합니다. 데이터는 실행할 때 고릅니다.</p>
       <div class="row"><span class="lbl lbl-fixed">작업 이름</span>
         <input class="field" data-act="name" value="${esc(s.name)}" placeholder="예: 공고서 자동생성"></div>
       <div class="row"><span class="lbl lbl-fixed">파일명 패턴</span>
@@ -394,9 +391,9 @@
     if (!s.data_path) return "";
     return `<div class="grp">
       <span class="cap">데이터 함께 등록</span>
-      <p class="hint" style="margin-top:0">저장하면 이 작업이 쓴 데이터(${esc(s.data_name)})를
-        등록 데이터에 올리고 <b>이 작업의 기본 데이터로 연결</b>합니다. 경로 참조만
-        저장(행·내용 없음)하고, '작업' 화면에서 작업을 고르면 자동으로 연결해 그때 다시 읽습니다.</p>
+      <p class="hint" style="margin-top:0">저장하면 데이터(${esc(s.data_name)})를 등록 데이터에
+        올리고 <b>이 작업의 기본 데이터로 연결</b>합니다. 파일 위치만 기억하고, 실행할 때
+        원본을 읽습니다.</p>
       <div class="row"><span class="lbl lbl-fixed">등록 이름</span>
         <input class="field" data-act="dataset-name" value="${esc(s.dataset_name)}"></div>
     </div>`;
@@ -495,15 +492,13 @@
     if (editing) {
       const busy = await Bridge.editorHasUnsavedWork();
       return Modal.confirm({ body:
-        `'${editing}' 편집을 닫고 새 작업 초안을 시작합니다.\n` +
-        (busy
-          ? "저장하지 않은 변경은 사라집니다."
-          : `저장된 '${editing}' 은 그대로 남습니다.`) +
+        `'${editing}' 편집을 닫고 새 작업 초안을 시작합니다.` +
+        (busy ? "\n저장하지 않은 변경은 사라집니다." : "") +
         "\n\n계속할까요?" });
     }
     return EditorEntry.confirmDiscard(
-      "저장하지 않은 작업 세션이 있습니다.\n" +
-      "새 템플릿으로 시작하면 이전의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?");
+      "새 템플릿으로 시작하면 저장하지 않은 작업 세션이 사라집니다.\n" +
+      "사라지는 것: 이름 · 데이터 · 매핑\n\n계속할까요?");
   }
 
   async function confirmMappingResetIfConfirmed(verbPhrase) {
@@ -511,8 +506,8 @@
     const n = (st && st.human) || 0;
     if (!n) return true;
     return Modal.confirm({ body:
-      `확정했거나 직접 편집한 매핑 ${n}개가 있습니다.\n${verbPhrase} 값은 이월되지만 ` +
-      `전부 미확정으로 돌아가 다시 확인해야 합니다.\n\n계속할까요?` });
+      `${verbPhrase} 확정했거나 직접 편집한 매핑 ${n}개가 전부 미확정으로 돌아갑니다` +
+      `(값은 이월).\n\n계속할까요?` });
   }
 
   /* ---- 이벤트 위임(innerHTML 재구성이라 위임이 안전) ---- */
@@ -576,8 +571,8 @@
           }
           const man = (st && st.manual_unconfirmed) || 0;
           if (man && !(await Modal.confirm({ body:
-            `직접 소스를 고른 매핑 ${man}개가 있습니다.\n전체 미사용하면 이 수동 지정이 해제됩니다` +
-            `(다시 켜도 자동 제안으로만 복원됩니다).\n\n계속할까요?` }))) break;
+            `전체 미사용하면 직접 소스를 고른 매핑 ${man}개의 수동 지정이 해제됩니다` +
+            `(자동 제안으로만 복원).\n\n계속할까요?` }))) break;
           await Bridge.call(SCREEN, "use_none", {});
           break;
         }

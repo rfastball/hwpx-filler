@@ -22,7 +22,7 @@
     emptyNoData: "데이터를 선택하면 기안 대상 행이 여기에 표시됩니다.",
     emptyFiltered: "필터와 일치하는 행이 없습니다. 위 칩의 정의를 확인하세요.",
     emptyNoRows: "데이터에 행이 없습니다.",
-    stripLead: (n) => `필터 밖 선택 <b>${n}행</b>. 화면엔 안 보이지만 큐에 포함됩니다: `,
+    stripLead: (n) => `필터 밖 선택 <b>${n}행</b>도 큐에 포함됩니다: `,
   };
 
   /* 붙여넣기 모달은 두 화면이 **한 벌 DOM** 을 공유한다 — 확정 버튼 배선은 모듈 1회,
@@ -238,8 +238,8 @@
         // 휘발 note(#148 슬라이스 5a, 결정 7) — 휘발 모드에선 유형·확정을 묻지 않는 이유를
         // 정직하게 말한다(열이 왜 없는지). 저장 모드에선 열이 그 자리를 대신 설명한다.
         const volNote = (s.mode || "volatile") === "volatile"
-          ? `<span class="muted volatile-note">이 세션은 저장하지 않으므로 <b>유형·확정</b>은 ` +
-            `묻지 않습니다. 남기려면 '기안으로 저장'.</span>`
+          ? `<span class="muted volatile-note">이 세션은 저장하지 않습니다. ` +
+            `남기려면 '기안으로 저장'.</span>`
           : "";
         $(id.mapLegend).innerHTML =
           `<span><i class="own auto"></i>데이터에서 자동</span>` +
@@ -379,10 +379,9 @@
       const applied = !!lint.applied;
       box.dataset.level = applied ? "ok" : "warn";
       const msg = applied
-        ? "전각 공백으로 치환했습니다. 어느 글꼴에서도 정렬이 유지되며, 복사되는 텍스트도 " +
-          "지금 보이는 그대로입니다."
-        : "정렬 취약: 연속 공백으로 맞춘 정렬은 선언된 비례폭 글꼴에서 흐트러질 수 있습니다. " +
-          "한글과 전각 공백은 모든 글꼴에서 폭이 같아 견고합니다.";
+        ? "전각 공백으로 치환했습니다."
+        : "정렬 취약: 연속 공백으로 맞춘 정렬은 대상 글꼴에서 흐트러질 수 있습니다. " +
+          "전각 공백으로 치환하면 유지됩니다.";
       // 처방 버튼의 **id 는 두 상태에서 같다**: 누르면 곧바로 재렌더되는데 id 가 바뀌면
       // preserve.js 가 포커스를 복원할 대상을 잃는다(키보드 사용자가 자리를 놓친다).
       box.innerHTML = `<span class="txt">${msg}</span>` +
@@ -529,7 +528,7 @@
       if (em.length) lines.push(`빈 값 ${em.length}건: ${list(em)}`);
       // 꼬리 문장은 해당 종류가 실제로 있을 때만 — 빈 값만 있는 카드에 "{{토큰}} 원문이
       // 실린다"고 말하면 일어나지 않는 일을 경고하는 것이 된다(over-warn 도 거짓이다).
-      const tail = mi.length ? "\n항목 없음은 {{토큰}} 원문 그대로 클립보드에 실립니다." : "";
+      const tail = mi.length ? "\n항목 없음은 {{토큰}} 그대로 복사됩니다." : "";
       // 행 접두 — 가상 카드(무데이터, 결정 14)는 행 번호가 없다(row=null).
       const pfx = pre.row == null ? "이대로 복사하면" : `${pre.row + 1}행을 이대로 복사하면`;
       return `${pfx} 아래 항목이 채워지지 않은 채 나갑니다.\n` +
@@ -581,7 +580,7 @@
       if (includeRecipe && g.map_dirty) lost.push("미저장 매핑 편집");
       if (includeRecipe && g.source_dirty) lost.push("미저장 원문 편집");
       // 앞머리만 제스처별로 갈린다(데이터 교체 / 새 기안) — 잃는 것의 열거는 같은 술어를 공유한다.
-      return `${lead || "다른 데이터를 겨누면"} 이 큐는 새로 만들어집니다.\n` +
+      return `${lead || "데이터를 바꾸면"} 이 큐는 새로 만들어집니다.\n` +
         `사라지는 것: ${lost.join(" · ")}.`;
     }
 
@@ -594,8 +593,7 @@
       if (g.session_armed) who.push("지금 진행 중인 기안");
       if (g.stash_armed) who.push("이전 붙여넣기 세션");
       const subj = who.join("과 ") || "지금 세션";
-      return `${subj}의 저장되지 않은 작업은 저장된 기안에 보관되지 않아, 다른 템플릿을 열면 ` +
-        `사라집니다. 계속하시겠습니까?`;
+      return `다른 템플릿을 열면 ${subj}의 저장되지 않은 작업이 사라집니다. 계속할까요?`;
     }
 
     /* 데이터 교체 사전 확인 — 피커를 열기 **전에** 묻는다(파일까지 고른 뒤 "머무르기"는 고른
@@ -606,7 +604,7 @@
       if (!g || !g.armed) return true;
       return window.Modal.confirm({
         title: "데이터 변경 확인",
-        body: guardBody(g, "다른 데이터를 겨누면"),
+        body: guardBody(g, "데이터를 바꾸면"),
         confirmLabel: "데이터 바꾸고 버리기",
         cancelLabel: "취소",
       });
@@ -745,8 +743,8 @@
           const nCopied = card.copied_total || 0;
           if (nCopied > 0 && !(await window.Modal.confirm({
             title: "사본으로 편집",
-            body: `이미 복사한 ${nCopied}건은 이전 문안으로 남습니다. 되돌릴 수 없습니다. 앞으로 ` +
-              `복사할 카드부터 새 문안이 적용됩니다. 저장된 기안은 그대로 두고 이 세션만 사본으로 가릅니다.`,
+            body: `이 세션만 사본으로 갈라 원문을 고칩니다(저장된 기안은 그대로).\n` +
+              `이미 복사한 ${nCopied}건은 이전 문안으로 남습니다(되돌릴 수 없음).`,
             confirmLabel: "사본으로 편집", cancelLabel: "취소",
           }))) return;
           // 사본이 유일 휘발("이번 세션")이 되어 직전에 붙여넣던 세션을 밀어낸다(단일 슬롯). 그

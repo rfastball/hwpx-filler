@@ -1168,7 +1168,7 @@ def test_reapply_gated_off_while_current_filter_is_live(tmp_path):
     assert ctrl.snapshot()["filter"]["reapply_available"] is True   # 백지 상태에선 제공
     ctrl.dispatch("filter_col_values", {"column": "bidNtceNm", "values": ["사무비품"]})
     assert ctrl.snapshot()["filter"]["reapply_available"] is False  # 정의가 서면 회수
-    with pytest.raises(ValueError, match="현재 필터가 설정돼 있어"):
+    with pytest.raises(ValueError, match="필터를 지운 뒤에"):
         ctrl.dispatch("filter_reapply", {})
     snap = ctrl.snapshot()
     assert snap["filter"]["active"] is True and snap["table"]["visible_count"] == 1
@@ -1265,7 +1265,7 @@ def test_reapply_abandons_pruning_when_branches_all_lost(tmp_path):
     ctrl.load_data_path(str(both))
     res = ctrl.dispatch("filter_reapply", {})
     assert res["ok"] is True
-    assert any("프루닝" in d for d in res["dropped"])         # 포기 고지
+    assert any("복원하지 못했습니다" in d for d in res["dropped"])  # 포기 고지
     snap = ctrl.snapshot()
     assert snap["table"]["visible_count"] == 1               # 매치가 산다(거짓 전멸 아님)
     assert snap["filter"]["branches"] == ["bidNtceNm"]       # 가지 부활

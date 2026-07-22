@@ -663,7 +663,7 @@ def test_save_job_blocked_for_pasted_session(tmp_path):
     ctrl.dispatch("set_template_text", {"text": "붙여넣기 {{공고명}}"})
     assert ctrl.snapshot()["can_save_job"] is False
     res = ctrl.dispatch("save_job", {"name": "무효"})
-    assert res["ok"] is False and "라이브러리" in res["error"]
+    assert res["ok"] is False and "템플릿으로 저장" in res["error"]
     assert jobs.names() == []
 
 

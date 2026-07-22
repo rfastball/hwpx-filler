@@ -49,7 +49,7 @@
       emptyNoData: "데이터를 선택하면 생성 대상 문서가 여기에 표시됩니다.",
       emptyFiltered: "필터와 일치하는 행이 없습니다. 위 칩의 정의를 확인하세요.",
       emptyNoRows: "데이터에 행이 없습니다.",
-      stripLead: (n) => `필터 밖 선택 <b>${n}행</b>. 화면엔 안 보이지만 생성에 포함됩니다: `,
+      stripLead: (n) => `필터 밖 선택 <b>${n}행</b>도 생성에 포함됩니다: `,
     },
     tableKey: (s) => (s.job_name || "") + "|" + (s.data_source_label || ""),
     log,
@@ -167,8 +167,7 @@
   function showExitNote() {
     const el = $("jobEditExitNote");
     el.innerHTML =
-      `저장하지 않은 편집이 있습니다. 편집으로 돌아가면 그대로 있고, ` +
-      `저장 전에는 실행에 반영되지 않습니다. ` +
+      `저장하지 않은 편집이 있습니다. 저장 전에는 실행에 반영되지 않습니다. ` +
       // 복귀 버튼(PR-5 리뷰 F1) — 레일 심 사망 후 이 고지가 유일한 **비파괴** 복귀 경로다
       // (다른 진입은 전부 세션 초기화/재로드). 고지가 약속한 「돌아가면 그대로」의 실행 수단.
       `<button class="btn sm" data-act="return-to-edit">편집으로 돌아가기</button> ` +
@@ -290,8 +289,8 @@
       // danger = 차단 배너 + 상시 행동 링크(막다른 경보 금지 — 경보 어포던스는 숨지 않는다).
       host.innerHTML =
         `<div class="mir-drift" role="alert">` +
-        `<p>템플릿 구조가 확정 매핑과 달라졌습니다. 어긋난 필드: <b>${esc(drift.join(", "))}</b>. ` +
-        `매핑을 다시 확정해야 문서를 생성할 수 있습니다.</p>` +
+        `<p>템플릿 구조가 확정 매핑과 달라져 문서를 생성할 수 없습니다. ` +
+        `어긋난 필드: <b>${esc(drift.join(", "))}</b>.</p>` +
         `<button class="btn sm" data-act="fix-mapping" data-busy-lock>편집에서 매핑 확정…</button>` +
         `</div>`;
       return;
@@ -305,8 +304,8 @@
       const toks = nameTokens.map((t) => `{{${t}}}`).join(", ");
       host.innerHTML =
         `<div class="mir-drift" role="alert">` +
-        `<p>파일명 패턴의 토큰을 이 작업이 채우지 못합니다. 남는 토큰: <b>${esc(toks)}</b>. ` +
-        `파일명 패턴을 고쳐야 문서를 생성할 수 있습니다.</p>` +
+        `<p>파일명 패턴의 토큰을 채우지 못해 문서를 생성할 수 없습니다. ` +
+        `남는 토큰: <b>${esc(toks)}</b>.</p>` +
         `<button class="btn sm" data-act="fix-filename" data-busy-lock>편집에서 파일명 패턴 고치기…</button>` +
         `</div>`;
       return;
@@ -472,7 +471,7 @@
           confirmLabel: "덮어쓰고 생성", cancelLabel: "취소",
         });
         if (ok) { await doGenerate(true); }
-        else { log("생성 취소. 기존 파일 덮어쓰기를 확정하지 않았습니다."); }
+        else { log("생성을 취소했습니다."); }
         return;
       }
       warnResult(res.error || "생성할 수 없습니다.", res.level);
@@ -512,12 +511,10 @@
   const selectionLine = window.Guard.selectionLine;
 
   function guardBody(g, verbPhrase) {
-    const lost = g.filter_parts > 0
-      ? `행 선택과 필터 정의(${g.filter_parts}개 조건)가 사라집니다.`
-      : `행 선택이 사라집니다.`;
-    return `이 세션에는 다시 만들기 어려운 선택이 있습니다: ` +
-      `${selectionLine(g.sel_count, g.filter_active, g.in_def, g.extra)}.\n` +
-      `${verbPhrase} ${lost}`;
+    const lost = [selectionLine(g.sel_count, g.filter_active, g.in_def, g.extra)];
+    if (g.filter_parts > 0) lost.push(`필터 정의(${g.filter_parts}개 조건)`);
+    return `${verbPhrase} 이 세션의 선택이 사라집니다.\n` +
+      `사라지는 것: ${lost.join(" · ")}.`;
   }
 
   /* 파괴 전이 사전 확인(데이터 재겨눔·템플릿 재연결 — T1 동류 세션 재구성). 피커/흐름을
@@ -536,7 +533,7 @@
 
   function confirmDataSwapIfArmed() {
     return confirmDestructiveIfArmed(
-      "데이터 변경 확인", "다른 데이터를 겨누면", "데이터 바꾸고 버리기");
+      "데이터 변경 확인", "데이터를 바꾸면", "데이터 바꾸고 버리기");
   }
 
   /* T1 가드 왕복(RC-02 동형): 무변이 needs_confirm → modal.js 이진 확인(기본 포커스=
@@ -731,7 +728,7 @@
     if (res.open_session) {
       body += `\n지금 열려 있는 세션도 닫힙니다.`;
       if (res.armed) {
-        body += ` 세션에는 다시 만들기 어려운 선택이 있습니다: ` +
+        body += ` 사라지는 것: ` +
           `${selectionLine(res.sel_count, res.filter_active, res.in_def, res.extra)}.`;
       }
     }
@@ -756,9 +753,8 @@
       // 읽히면 안 되고, 옮겨지는 집합의 규칙('전부')이 실제로 참인 진술이다.
       const ok = await window.Modal.confirm({
         title: "그룹 병합 확인",
-        body: `'${r.new}' 그룹이 이미 있습니다. '${old}' 의 작업 전부를 ` +
-          `'${r.new}' 에 합칩니다(지금 기준 ${r.count}개 → 현재 ${r.target_count}개인 그룹). ` +
-          `그룹은 하나가 됩니다.`,
+        body: `'${r.new}' 그룹이 이미 있습니다. '${old}' 의 작업 전부(지금 기준 ${r.count}개)를 ` +
+          `'${r.new}'(현재 ${r.target_count}개)에 합칩니다.`,
         confirmLabel: "합치기", cancelLabel: "취소",
       });
       if (!ok) return;
@@ -783,8 +779,8 @@
     // 덧붙인다(#149) — 확인 왕복 사이 소속이 바뀌어도 규칙 쪽은 언제나 참이다.
     const ok = await window.Modal.confirm({
       title: "그룹 해산 확인",
-      body: `그룹 '${name}' 을(를) 해산합니다. 해산 시점의 소속 작업 전부가 '그룹 없음'으로 ` +
-        `이동합니다(지금 기준 ${res.count}개). 작업 자체는 삭제되지 않습니다.`,
+      body: `그룹 '${name}' 을(를) 해산합니다. 해산 시점의 소속 작업 전부(지금 기준 ${res.count}개)가 ` +
+        `'그룹 없음'으로 이동합니다.`,
       confirmLabel: "해산", cancelLabel: "취소",
     });
     if (!ok) return;
@@ -919,7 +915,7 @@
       let r = await Bridge.pickDataFile(SCREEN);
       if (r && typeof r === "object" && r.needs_sheet) {   // 다중 시트 → 확정 게이트(#33)
         r = await SheetPicker.choose(SCREEN, r);
-        if (r === null) { log("데이터 선택 취소. 시트를 확정하지 않았습니다."); return; }
+        if (r === null) { log("데이터 선택을 취소했습니다."); return; }
       }
       if (r === null) return;                       // 취소
       if (typeof r === "string" && r.startsWith("ERROR:")) { log("데이터 오류: " + r.slice(6).trim()); return; }

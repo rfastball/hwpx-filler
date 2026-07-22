@@ -145,7 +145,7 @@
         // 재진입 거절(#92 리뷰 #1) — 미결 확인 위에 두 번째 확인을 얹지 않는다(native 단일 실행).
         // 조용한 거절이 아니라 loud: 사용자·개발자 둘 다에게 상태를 재진술한다.
         console.error("Modal: promise 다이얼로그 재진입 거절 — " + spec.id);
-        window.alert("다른 확인 창이 이미 열려 있습니다. 열려 있는 확인 창을 먼저 끝내 주세요.");
+        window.alert("다른 확인 창이 이미 열려 있습니다. 먼저 끝내세요.");
         resolve(spec.refusal);
         return;
       }
@@ -187,7 +187,7 @@
       okId: "confirmModalOk",
       cancelId: "confirmModalCancel",
       refusal: false,
-      missingText: "확인 창을 열 수 없어 요청을 실행하지 않았습니다. 프로그램 오류이니 다시 시도하고, 반복되면 알려 주세요.",
+      missingText: "확인 창을 열 수 없어 요청을 실행하지 않았습니다. 다시 시도하세요.",
       prepare: function (els) {
         _setText("confirmModalTitle", opts.title || "확인");
         _setText("confirmModalBody", opts.body || "");
@@ -210,7 +210,7 @@
       cancelId: "promptModalCancel",
       inputId: "promptModalInput",
       refusal: null,
-      missingText: "입력 창을 열 수 없어 요청을 실행하지 않았습니다. 프로그램 오류이니 다시 시도하고, 반복되면 알려 주세요.",
+      missingText: "입력 창을 열 수 없어 요청을 실행하지 않았습니다. 다시 시도하세요.",
       prepare: function (els) {
         _setText("promptModalTitle", opts.title || "입력");
         _setText("promptModalBody", opts.body || "");

@@ -318,15 +318,14 @@
     const rt = parseTags(ser);
     if (rt.err !== undefined || !sameTags(rt.tags, cur)) {
       window.alert(
-        `'${name}' 의 태그에 쉼표(값) 또는 등호/쉼표(축)가 포함돼 있어\n` +
-        `'축=값, …' 인라인 편집으로는 안전하게 수정할 수 없습니다.\n\n` +
+        `'${name}' 의 태그에 쉼표나 등호가 들어 있어 여기서 수정할 수 없습니다.\n` +
         `현재 태그: ${ser}\n\n작업 파일(.job.json)의 tags 를 직접 수정하세요.`);
       return;
     }
     const input = await Modal.prompt({
       body:
-        `'${name}' 의 분류 태그: '축=값' 쌍을 쉼표로 구분해 입력하세요.\n` +
-        `(예: 물품=의약품, 금액구간=소액)\n비우면 태그를 전부 해제합니다.`,
+        `'${name}' 의 태그를 '축=값' 쌍, 쉼표 구분으로 입력하세요. ` +
+        `(예: 물품=의약품, 금액구간=소액)\n비우면 전부 해제합니다.`,
       value: ser,
     });
     if (input === null) return;

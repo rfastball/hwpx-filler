@@ -114,8 +114,7 @@
     note.hidden = can;
     if (!can) {
       note.textContent =
-        "붙여넣거나 고친 원문은 기안으로 저장할 수 없습니다. 라이브러리 템플릿을 골라 채우거나, " +
-        "원문을 '템플릿으로 저장'한 뒤 저장하세요.";
+        "붙여넣거나 고친 원문은 기안으로 저장할 수 없습니다. 원문을 '템플릿으로 저장'한 뒤 저장하세요.";
     }
     // 「템플릿으로 저장」(#148 슬라이스 6, #135) — 세션 원문을 TXT 라이브러리로 승격하는 두 번째
     // 동사(구 「빠른 기안」에서 흡수). **휘발 세션 전용**(사용자 결정 · Python can_save_template):
@@ -146,7 +145,7 @@
     const s = LAST || {};
     const name = await window.Modal.prompt({
       title: s.has_job ? "다른 이름으로 저장" : "기안으로 저장",
-      body: "이 기안 작업의 이름을 넣으세요. 템플릿·맞추기 정의가 저장됩니다(데이터는 매번 새로 물립니다).",
+      body: "이 기안 작업의 이름을 넣으세요. 템플릿과 맞추기 정의만 저장됩니다.",
       value: s.has_job ? "" : (s.template_name || ""),
     });
     if (name === null) return;  // 취소
@@ -242,10 +241,10 @@
       const where = r.group
         ? `기존 그룹 '${r.group}'이 그대로 유지됩니다`
         : `이 템플릿은 그룹 없이 남습니다`;
-      note.textContent = `${head} 다만 요청한 그룹 변경은 저장되지 않았습니다(${r.group_error}). ${where}.`;
+      note.textContent = `${head} 그룹 변경은 저장되지 않았습니다(${r.group_error}). ${where}.`;
     } else {
       note.dataset.level = "ok";
-      note.textContent = `${head} 이 세션은 그대로 이어집니다(값은 저장되지 않았습니다).`;
+      note.textContent = head;
     }
   }
 
@@ -289,7 +288,7 @@
     if (r.map_dirty) parts.push("미저장 매핑 편집");
     if (r.source_dirty) parts.push("미저장 원문 편집");
     return parts.length
-      ? `지금 물린 데이터와 진행(${parts.join(" · ")})은`
+      ? `지금 연결한 데이터와 진행(${parts.join(" · ")})은`
       : "지금 진행 중인 세션은";
   }
 
@@ -298,7 +297,7 @@
     if (r && r.needs_confirm) {
       const ok = await window.Modal.confirm({
         title: "진행 중인 기안을 떠납니다",
-        body: leaveLossBody(r) + " 저장된 기안에 보관되지 않아, 넘어가면 사라집니다.",
+        body: leaveLossBody(r) + " 넘어가면 사라집니다.",
         confirmLabel: "넘어가기", cancelLabel: "취소",
       });
       if (!ok) return;
@@ -414,9 +413,9 @@
     // 재진술(리뷰 5a 2R P1, job.js 삭제와 동형). 술어·수치는 Python(_guard_state) 판정.
     let body = `기안 작업 '${name}' 을(를) 삭제합니다. 템플릿 연결과 매핑 정의가 함께 사라집니다.`;
     if (res.open_session) {
-      body += `\n지금 결속한 세션도 닫힙니다.`;
+      body += `\n지금 연결한 세션도 닫힙니다.`;
       if (res.armed) {
-        body += ` ${leaveLossBody(res)} 저장된 기안에 보관되지 않아 함께 사라집니다.`;
+        body += ` ${leaveLossBody(res)} 함께 사라집니다.`;
       }
     }
     const ok = await window.Modal.confirm({
@@ -437,8 +436,8 @@
       // 기존 그룹으로의 개명 = 병합 — 수치 재진술 후 확정(지금 기준 관측, #149).
       const ok = await window.Modal.confirm({
         title: "그룹 병합 확인",
-        body: `'${r.new}' 그룹이 이미 있습니다. '${old}' 의 작업 전부를 '${r.new}' 에 ` +
-          `합칩니다(지금 기준 ${r.count}개 → 현재 ${r.target_count}개인 그룹). 그룹은 하나가 됩니다.`,
+        body: `'${r.new}' 그룹이 이미 있습니다. '${old}' 의 작업 전부(지금 기준 ${r.count}개)를 ` +
+          `'${r.new}'(현재 ${r.target_count}개)에 합칩니다.`,
         confirmLabel: "합치기", cancelLabel: "취소",
       });
       if (!ok) return;
@@ -453,8 +452,8 @@
     if (!(res && res.needs_confirm)) return;
     const ok = await window.Modal.confirm({
       title: "그룹 해산 확인",
-      body: `그룹 '${name}' 을(를) 해산합니다. 해산 시점의 소속 작업 전부가 '그룹 없음'으로 ` +
-        `이동합니다(지금 기준 ${res.count}개). 작업 자체는 삭제되지 않습니다.`,
+      body: `그룹 '${name}' 을(를) 해산합니다. 해산 시점의 소속 작업 전부(지금 기준 ${res.count}개)가 ` +
+        `'그룹 없음'으로 이동합니다.`,
       confirmLabel: "해산", cancelLabel: "취소",
     });
     if (!ok) return;

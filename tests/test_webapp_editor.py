@@ -566,7 +566,7 @@ def test_ensure_model_carries_values_but_requires_reconfirm_on_data_change(tmp_p
     assert snap["rows"][0]["type"] == "const"
     assert all(row["confirmed"] is False for row in snap["rows"])  # 확정 전원 해제
     assert snap["is_complete"] is False                  # 재확정 없이는 저장 게이트 미통과
-    assert snap["notice"] and "미확정" in snap["notice"]["text"]
+    assert snap["notice"] and "다시 확정" in snap["notice"]["text"]
     assert "다시 확정" in snap["notice"]["text"]         # 재확정 필요를 loud 재진술
 
 

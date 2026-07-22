@@ -153,8 +153,8 @@ class DraftController(DraftSessionMixin):
                     bits.append("미저장 매핑 편집")
                 detail = f"(진행: {' · '.join(bits)}) " if bits else ""
                 return {"notice": (
-                    f"결속했던 기안 '{name}' 이(가) 다른 화면에서 삭제되어, 진행 중이던 세션이 "
-                    f"닫혔습니다. {detail}이 진행은 저장된 기안에 보관되지 않아 복구할 수 없습니다."
+                    f"연결했던 기안 '{name}' 이(가) 다른 화면에서 삭제되어 세션이 닫혔습니다. "
+                    f"{detail}이 진행은 복구할 수 없습니다."
                 )}
         return None
 
@@ -219,8 +219,8 @@ class DraftController(DraftSessionMixin):
         전이(원문 읽기 전용). 스태시(붙여넣던 이전 휘발)는 건드리지 않는다."""
         if self._source_dirty or not self._template_path:
             return {"ok": False, "error": (
-                "붙여넣거나 고친 원문은 아직 기안으로 저장할 수 없습니다. 라이브러리 템플릿을 "
-                "골라 채우거나, 원문을 '템플릿으로 저장'한 뒤 저장하세요.")}
+                "붙여넣거나 고친 원문은 기안으로 저장할 수 없습니다. "
+                "원문을 '템플릿으로 저장'한 뒤 저장하세요.")}
         # 캐시된 template_path 재검증(리뷰 5c P2) — 이 세션이 경로를 캐시한 뒤 템플릿 관리에서
         # 삭제·이동됐을 수 있다. 빈 문자열만 보던 위 게이트는 통과하지만, 그러면 다시 못 여는
         # 템플릿을 가리키는 Job 이 생긴다. 지금 실 파일인지 읽어 확인한다(confirm-or-alarm).
@@ -481,8 +481,7 @@ class DraftController(DraftSessionMixin):
                     digest = "????????"  # 읽기 실패 — 내용 불명, 조용히 덮지 않게 그래도 게이트
                 gate_text = (
                     f"라이브러리에 이미 '{name}' 템플릿이 있습니다 (현재 내용 #{digest}). "
-                    "지금 원문으로 덮어쓰면 기존 내용은 되돌릴 수 없습니다. "
-                    "채운 값은 저장되지 않고 원문만 저장됩니다."
+                    "덮어쓰면 기존 내용은 되돌릴 수 없고, 채운 값 없이 원문만 저장됩니다."
                 )
                 if not p.get("confirm") or p.get("confirmed_text", "") != gate_text:
                     return {"ok": False, "needs_confirm": True, "name": name, "confirm_text": gate_text}
