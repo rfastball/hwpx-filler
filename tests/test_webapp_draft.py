@@ -947,13 +947,59 @@ def test_save_template_assigns_group_visible_to_manager(tmp_path):
 
 
 def test_save_template_same_name_needs_confirm_then_overwrites(tmp_path):
-    """동명은 조용히 덮지 않는다(결정 34) — 확인 왕복 뒤에만 파괴한다."""
+    """동명은 조용히 덮지 않는다(결정 34) — 확인 왕복(관측 문안 되돌림) 뒤에만 파괴한다."""
     ctrl, _jobs, _ = _lib_session(tmp_path)
     res = ctrl.dispatch("save_template", {"name": "개찰참관보고", "group": ""})
     assert res["ok"] is False and res["needs_confirm"] is True
     assert "개찰참관보고" in res["confirm_text"]
-    res = ctrl.dispatch("save_template", {"name": "개찰참관보고", "group": "", "confirm": True})
+    res = ctrl.dispatch("save_template", {"name": "개찰참관보고", "group": "",
+                                          "confirm": True, "confirmed_text": res["confirm_text"]})
     assert res["ok"] is True and res["overwritten"] is True
+
+
+def test_save_template_overwrite_rebinds_to_observed_version(tmp_path):
+    """덮어쓰기 확인은 관측한 **버전**(내용 지문)에 못박인다 — TOCTOU 방어(리뷰 F2, save_job 동형).
+
+    확인창이 열린 사이 다른 writer 가 대상 파일을 바꾸면, 옛 문안으로 확인해도(confirm=True)
+    지문이 어긋나 새 문안으로 다시 묻는다(검토한 적 없는 내용을 무확인 덮지 않는다)."""
+    ctrl, _jobs, _ = _lib_session(tmp_path)
+    r1 = ctrl.dispatch("save_template", {"name": "개찰참관보고", "group": ""})
+    assert r1["needs_confirm"] is True
+    # 확인창이 열린 사이 외부가 대상 파일을 바꿈 → 지문 변화.
+    (tmp_path / "개찰참관보고.txt").write_text("외부가 바꾼 내용 {{다른}}", encoding="utf-8")
+    r2 = ctrl.dispatch("save_template", {"name": "개찰참관보고",
+                                         "confirm": True, "confirmed_text": r1["confirm_text"]})
+    assert r2["needs_confirm"] is True, "대상이 바뀌었는데 옛 확인으로 무확인 덮었습니다(TOCTOU)."
+    assert r2["confirm_text"] != r1["confirm_text"]
+    # 이제 새(관측) 문안으로 확인하면 저장된다.
+    r3 = ctrl.dispatch("save_template", {"name": "개찰참관보고",
+                                         "confirm": True, "confirmed_text": r2["confirm_text"]})
+    assert r3["ok"] is True and r3["overwritten"] is True
+
+
+def test_save_template_out_of_root_backing_writes_library_copy_not_external(tmp_path):
+    """루트 밖 배접(손상 Job 등)은 되돌려-쓰기 관용에서 제외 — 외부 파일을 덮지 않는다(리뷰 F1).
+
+    저장 기안이 라이브러리 밖 파일을 가리키면, 그 정체로 「템플릿으로 저장」이 외부 파일을 덮으며
+    "라이브러리 템플릿" 문안이 거짓이 될 뻔했다. 프리필 이름은 빈칸(외부 stem 오도 금지), 저장은
+    루트 안 새 항목으로 낙착하고 외부 파일은 불변이어야 한다."""
+    lib = tmp_path / "lib"; lib.mkdir()
+    outside = tmp_path / "outside"; outside.mkdir()
+    ext = outside / "외부원본.txt"
+    ext.write_text("외부 원문 {{공고명}}", encoding="utf-8")
+    jobs = JobRegistry(tmp_path / "jobs")
+    jobs.save(Job(name="외부기안", template_path=str(ext)))
+    pushes: list = []
+    ctrl = DraftController(jobs, lambda s, snap: pushes.append((s, snap)),
+                           TextTemplateRegistry(lib))
+    ctrl.dispatch("select_job", {"name": "외부기안"})   # 복원 → _template_path = 외부 경로
+    ctrl.dispatch("fork_to_volatile", {})                # 휘발 사본(편집 가능)·경로는 외부 유지
+    # 프리필: 루트 밖이라 이름 빈칸(외부 stem 을 라이브러리 이름처럼 오도하지 않는다).
+    assert ctrl.dispatch("promote_info", {}) == {"name": "", "groups": [], "group": ""}
+    res = ctrl.dispatch("save_template", {"name": "사본", "group": ""})
+    assert res["ok"] is True and res["overwritten"] is False
+    assert (lib / "사본.txt").exists()                              # 라이브러리 안 새 항목
+    assert ext.read_text(encoding="utf-8") == "외부 원문 {{공고명}}"  # 외부 파일 불변
 
 
 def test_save_template_rejects_bad_name_inline(tmp_path):
@@ -997,7 +1043,8 @@ def test_nested_library_template_can_be_overwritten(tmp_path):
     assert info["name"] == "기안문/보고"
     res = ctrl.dispatch("save_template", {"name": info["name"], "group": ""})
     assert res["ok"] is False and res["needs_confirm"] is True        # 동명 = 확인 게이트
-    res = ctrl.dispatch("save_template", {"name": info["name"], "group": "기안", "confirm": True})
+    res = ctrl.dispatch("save_template", {"name": info["name"], "group": "기안",
+                                          "confirm": True, "confirmed_text": res["confirm_text"]})
     assert res["ok"] is True and res["overwritten"] is True
     assert (nested / "보고.txt").read_text(encoding="utf-8") == "고친 {{사업명}} {{비고}}"
     assert sorted(p.name for p in tmp_path.glob("*.txt")) == ["착수계.txt"]   # 루트에 사본 없음
@@ -1038,7 +1085,10 @@ def test_group_persist_failure_keeps_existing_group_in_report(tmp_path, monkeypa
         raise OSError("설정 파일 쓰기 거부")
 
     monkeypatch.setattr(ctrl._groups, "set_group", _boom)
-    res = ctrl.dispatch("save_template", {"name": "보고서", "group": "다른그룹", "confirm": True})
+    r1 = ctrl.dispatch("save_template", {"name": "보고서", "group": "다른그룹"})  # 동명 = 확인 게이트
+    assert r1["needs_confirm"] is True
+    res = ctrl.dispatch("save_template", {"name": "보고서", "group": "다른그룹",
+                                          "confirm": True, "confirmed_text": r1["confirm_text"]})
     assert res["ok"] is True and res["group_error"]
     assert res["group"] == "기안문"                               # 실제로 남아 있는 그룹
 

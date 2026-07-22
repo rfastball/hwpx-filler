@@ -359,17 +359,20 @@ class DraftController(DraftSessionMixin):
         편집(``set_template_text``)은 ``template_name`` 을 **None 으로** 지우지만 배접 파일 경로는
         유지한다(수정됨 표지 = ``_source_dirty``, 경로 = ``_template_path``). 그래서 편집한
         라이브러리 템플릿도 원 이름으로 프리필해 **되돌려 쓰기**(같은 파일 덮어쓰기)가 정상 경로가
-        된다(구 「빠른 기안」은 origin=='lib' 이 편집에도 살아 같은 효과). 붙여넣기는 경로가 없어
-        (``_template_path==""``) 빈칸에서 사람이 짓는다. 그룹 후보는 **살아있는 지정만** 센다(고아
+        된다(구 「빠른 기안」은 origin=='lib' 이 편집에도 살아 같은 효과). 붙여넣기(경로 없음)와
+        **루트 밖 배접**(손상 Job 등, 리뷰 F1)은 빈칸에서 사람이 짓는다 — 루트 밖 경로의 stem 을
+        라이브러리 이름처럼 프리필하면 그 외부 정체를 되돌려-쓰는 것처럼 오도한다(실제 저장은
+        루트 안 새 항목으로 낙착, `_resolve_dest` 참조). 그룹 후보는 **살아있는 지정만** 센다(고아
         그룹 부활 금지 — #108 결정 8). 판정은 여기 Python 단일 출처다.
         """
         dest = Path(self._template_path) if self._template_path else None
-        name = self._registry_name(dest) if dest is not None else ""
+        in_root = dest is not None and self._under_registry_root(dest)
+        name = self._registry_name(dest) if in_root else ""
         keys = self._library_keys()
         return {
             "name": name,
             "groups": self._groups.existing_groups(keys),
-            "group": self._groups.group_of(rel_key(dest, self._registry.directory)) if dest else "",
+            "group": self._groups.group_of(rel_key(dest, self._registry.directory)) if in_root else "",
         }
 
     _do_promote_info.is_query = True  # 무변이 질의 — 재렌더 유발 금지
@@ -396,6 +399,20 @@ class DraftController(DraftSessionMixin):
             rel = Path(path.name)
         return rel.with_suffix("").as_posix()
 
+    def _under_registry_root(self, path: "Path") -> bool:
+        """경로가 라이브러리 루트 **안**인가 — 루트 밖 ``_template_path`` 재사용 차단(리뷰 F1).
+
+        저장 기안이 라이브러리 밖 파일을 가리키면(손상 Job·외부에서 만든 txt Job), 그 정체로
+        「템플릿으로 저장」이 되돌려-쓰기 관용을 타고 **그 외부 파일을 덮어쓰며** "라이브러리 템플릿"
+        이라는 문안이 거짓이 된다(라이브러리 항목은 생기지도 않는다 — 계약 거짓말). 관용은 루트 안
+        등록분으로만 한정한다. ``resolve()`` 로 ``..``·심볼릭 우회까지 정규화해 판정한다.
+        """
+        try:
+            path.resolve().relative_to(self._registry.directory.resolve())
+            return True
+        except (OSError, ValueError):
+            return False
+
     def _resolve_dest(self, raw_name: str) -> "Path":
         """제출된 이름 → 저장 경로. 실패는 :class:`ValueError`(인라인 재진술용).
 
@@ -405,12 +422,14 @@ class DraftController(DraftSessionMixin):
         그 값인데, 그걸 새 이름처럼 검증하면 ``/`` 때문에 거부돼 **하위폴더 템플릿은 고쳐서 되돌려
         쓰는 정상 경로가 언제나 막힌다**. 반대로 경로 구분자를 허용하면 새 이름으로 루트 밖·임의
         하위 경로를 만들 수 있으므로, 관용은 **현 세션의 그 배접 파일 하나**로만 한정한다(붙여넣기는
-        ``_template_path=="" `` 라 이 관용에 못 든다 — 새 이름엔 구분자 계속 금지).
+        ``_template_path=="" `` 라 이 관용에 못 든다). **루트 밖 배접도 제외**한다(리뷰 F1 — 외부
+        파일 덮어쓰기 차단): 그 경우 관용을 안 타고 ``<루트>/<검증된 이름>.txt`` 새 항목으로 낙착해
+        라이브러리 안에 사본이 생긴다(새 이름엔 구분자 계속 금지).
         """
         name = (raw_name or "").strip()
         if name and self._template_path:
             dest = Path(self._template_path)
-            if dest.exists() and self._registry_name(dest) == name:
+            if self._under_registry_root(dest) and dest.exists() and self._registry_name(dest) == name:
                 return dest
         return self._registry.directory / (
             validate_template_name(raw_name) + TextTemplateRegistry.SUFFIX
@@ -437,18 +456,25 @@ class DraftController(DraftSessionMixin):
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}  # 모달 인라인 재진술(창 밖 예외 금지)
         name = self._registry_name(dest)
-        if dest.exists() and not p.get("confirm"):
-            return {
-                "ok": False,
-                "needs_confirm": True,
-                "name": name,
-                "confirm_text": (
-                    f"라이브러리에 이미 「{name}」 템플릿이 있습니다. "
-                    "지금 원문으로 덮어쓰면 기존 내용은 되돌릴 수 없습니다. "
-                    "채운 값은 저장되지 않고 원문만 저장됩니다."
-                ),
-            }
         overwritten = dest.exists()
+        # 덮어쓰기 확인을 관측한 **버전**(내용 지문)에 못박는다(리뷰 F2 — save_job `_do_save_job`
+        # 동형 TOCTOU 방어). 종전 게이트는 `confirm` 플래그만 봐, 확인창이 열린 사이 다른
+        # writer(다른 앱 인스턴스·외부 편집기)가 dest 를 바꿔도 재시도가 무검증 통과해 **사용자가
+        # 검토한 적 없는 내용을 파괴**했다(구 quickdraft 에서 이식된 단순 게이트가 5c 가 세운 안전
+        # 장치를 상속 못 함). 지금 디스크 내용의 지문을 문안에 실어, 재시도의 confirmed_text 가
+        # 지금 문안과 어긋나면(그 사이 또 바뀜) confirm:true 라도 새 문안으로 다시 묻는다.
+        if overwritten:
+            try:
+                digest = hashlib.sha256(dest.read_bytes()).hexdigest()[:8]
+            except OSError:
+                digest = "????????"  # 읽기 실패 — 내용 불명, 조용히 덮지 않게 그래도 게이트
+            gate_text = (
+                f"라이브러리에 이미 「{name}」 템플릿이 있습니다 (현재 내용 #{digest}). "
+                "지금 원문으로 덮어쓰면 기존 내용은 되돌릴 수 없습니다. "
+                "채운 값은 저장되지 않고 원문만 저장됩니다."
+            )
+            if not p.get("confirm") or p.get("confirmed_text", "") != gate_text:
+                return {"ok": False, "needs_confirm": True, "name": name, "confirm_text": gate_text}
         dest.parent.mkdir(parents=True, exist_ok=True)
         write_text_atomic(str(dest), self.vm.template_text)
         # 그룹 지정은 **저장 성공 뒤에만** — 파일 없는 키에 지정을 남기면 고아가 된다. 여기서

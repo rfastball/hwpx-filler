@@ -205,20 +205,23 @@
 
   /* 확정 — 실패는 **모달을 닫지 않고** 인라인 재진술한다(이름을 다시 칠 자리가 사라지지 않게).
      동명은 Python 이 needs_confirm 으로 되묻고, 확인하면 confirm 을 실어 재호출한다(덮어쓰기
-     왕복 = 「기안으로 저장」·에디터 저장과 동형). */
-  async function confirmSaveTpl(confirmFlag) {
+     왕복 = 「기안으로 저장」·에디터 저장과 동형). **관측한 확인 문안을 되돌려 보낸다**(confirmed_text,
+     리뷰 F2) — 백엔드가 지금 문안(디스크 내용 지문 포함)과 대조해, 모달이 열린 사이 대상이
+     바뀌었으면(TOCTOU) 새 문안으로 다시 묻는다(확인한 것과 다른 내용을 무확인 덮어쓰지 않는다). */
+  async function confirmSaveTpl(confirmFlag, confirmedText) {
     const name = $("draftSaveTplName").value;
     const group = saveTplGroup();
     const sel = document.querySelector('input[name="draftSaveGrp"]:checked');
     if (sel && sel.dataset.new && !group) { saveTplErr("새 그룹 이름을 입력하세요."); return; }
-    const r = await Bridge.call(SCREEN, "save_template", { name, group, confirm: !!confirmFlag });
+    const r = await Bridge.call(SCREEN, "save_template",
+      { name, group, confirm: !!confirmFlag, confirmed_text: confirmedText || "" });
     if (!r) return;
     if (r.needs_confirm) {
       const go = await window.Modal.confirm({
         title: "덮어쓰기 확인", body: r.confirm_text,
         confirmLabel: "덮어쓰고 저장", cancelLabel: "머무르기",
       });
-      if (go) await confirmSaveTpl(true);
+      if (go) await confirmSaveTpl(true, r.confirm_text);  // 관측한 문안 되돌려 보냄(재검증)
       return;
     }
     if (!r.ok) { saveTplErr(r.error || "저장할 수 없습니다."); return; }
