@@ -813,6 +813,9 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .jcard .jm{font-size:var(--fs-body);color:var(--a-muted);margin-top:var(--sp-2)}
 .jcard .jfoot{display:flex;justify-content:space-between;align-items:center;margin-top:var(--sp-8);gap:var(--sp-8);flex-wrap:wrap}
 .jcard .jr{font-size:var(--fs-caption);color:var(--a-muted)}
+/* 홈 카드 ⋮(복제·태그·삭제 격납, #179 행동 계층) — tplcard 동형: 호버·포커스 시 노출.
+   focus-within 로 키보드 도달 유지(늘 보이는 실행/편집에 탭→카드 focus-within→⋮ 노출→탭). */
+.jcard:hover .job-more,.jcard:focus-within .job-more{visibility:visible}
 
 /* 빈 상태(온보딩) */
 .empty{background:var(--a-card);border:1px dashed var(--a-border);border-radius:var(--rad-surface);

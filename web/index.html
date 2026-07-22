@@ -103,6 +103,8 @@
           <div class="tlist" id="homeTxt"></div>
         </div>
       </div>
+      <!-- 작업 카드 ⋮ 메뉴(복제·태그·삭제, #179 행동 계층) — 부유 단일 요소(job/tpl 동형). -->
+      <div id="homeRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
     </section>
 
     <!-- ============ 「작업」 화면 (R-flow 슬라이스 1 — master-detail 세션 패널 4존, #90) ============ -->
@@ -414,13 +416,16 @@
           <p class="sub">문서를 만들 원본 서식을 한곳에서 관리합니다 — 매체(HWPX·TXT)로 나뉘고, 그 안에서
             작업 목록과 같은 그룹으로 정리합니다. 판본 비교(diff)는 별도 제품(hwpxdiff)이 담당합니다.</p>
         </div>
-        <button class="btn sm" id="tplRefresh">새로고침</button>
       </header>
 
-      <!-- 라이브러리 바 — 고정 루트(결정 4)라 폴더 재지정 없음. 가져오기=복사·새 TXT 저작. -->
+      <!-- 라이브러리 바 — 고정 루트(결정 4)라 폴더 재지정 없음. 가져오기=복사·새 TXT 저작.
+           새로고침(외부 FS 재스캔)도 같은 지역 행동 그룹으로 모은다(#179 P0 — 헤더에서 강등),
+           우측 스페이서로 유틸리티(재스캔)와 생성 행동을 시각 구분. -->
       <div class="tpl-libbar">
         <button class="btn sm" id="btnTplImport">가져오기…</button>
         <button class="btn sm" id="btnTplNewTxt">새 TXT 템플릿…</button>
+        <span class="spacer"></span>
+        <button class="btn sm" id="tplRefresh">새로고침</button>
       </div>
 
       <!-- HWPX 매체 구획 — 소비 동사=작업 에디터. 열 틴트 파랑 승계. -->
@@ -459,14 +464,17 @@
           <p class="sub">등록 데이터는 참조(경로·시트)만 저장합니다 — 실행할 때 원본을 다시 읽습니다.
             계약 사이클이 끝나면 보관으로 정리하세요.</p>
         </div>
-        <button class="btn sm" id="poolRefresh">새로고침</button>
       </header>
       <div class="tpl-catalogs">
         <section class="grp tpl-cat">
           <span class="cap">등록 데이터</span>
+          <!-- 등록·새로고침(외부 FS 재스캔)을 같은 지역 행동 그룹으로(#179 P0 — 헤더에서 강등). -->
           <div class="tpl-cathead">
             <span class="muted capnote" id="poolCount"></span>
-            <button class="btn sm" id="btnPoolRegister">＋ 데이터 등록…</button>
+            <span class="acts">
+              <button class="btn sm" id="btnPoolRegister">＋ 데이터 등록…</button>
+              <button class="btn sm" id="poolRefresh">새로고침</button>
+            </span>
           </div>
           <div id="poolCorrupt"></div>
           <div class="tpllist" id="poolList"></div>

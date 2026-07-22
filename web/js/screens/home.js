@@ -9,6 +9,11 @@
   const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
 
   let LAST = null;  // 마지막 스냅샷 — 태그 편집 프리필 등 이벤트 핸들러가 참조(#26)
+  let menuFor = null;  // 열린 카드 ⋮ 메뉴의 작업 이름(#179 행동 계층) — null=닫힘
+
+  /* 카드 ⋮ 부유 메뉴(복제·태그·삭제) = 공용 팩토리(grouplist.js, job/tpl 과 단일 출처).
+     위치잡기·표시만 팩토리 소유; 내용·정체(작업 이름)·바깥닫기 배선은 홈이 주입한다. */
+  const rowMenu = window.GroupList.createMenu({ menuId: "homeRowMenu" });
 
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
@@ -147,12 +152,15 @@
     }).join("");
   }
 
+  /* 카드 행동 계층(#179 P0) — 실행=primary·편집=secondary 만 상시 노출, 부차 관리 행동
+     (복제·태그·삭제)은 ⋮ 메뉴로 강등해 카드가 5개 동등 버튼으로 평평해지지 않게 한다.
+     「템플릿 다시 연결」은 셋 중 하나가 아니라 깨진 상태(template_missing)의 복구 동선이라
+     그 상태에서만 인라인 유지 — 막다른 상태의 유일 출구를 ⋮ 안에 숨기지 않는다(confirm-or-alarm). */
   function jobCard(r) {
     const nm = esc(r.name);
     const badge = r.compile_badge
       ? ` <span class="pill ${esc(r.badge_level)}">${esc(r.compile_badge)}</span>` : "";
     const runAttr = r.runnable ? "" : " disabled";
-    // 템플릿 다시 연결(#67) — 파일이 사라진 작업(template_missing)에만 복구 동선 노출.
     const relink = r.template_missing
       ? `<button class="btn sm" data-relink="${nm}">템플릿 다시 연결…</button>` : "";
     return `<div class="jcard">` +
@@ -162,11 +170,36 @@
       `<span class="acts">` +
       `<button class="btn primary sm" data-run="${nm}"${runAttr}>실행</button>` +
       `<button class="btn sm" data-edit="${nm}">편집</button>` +
-      `<button class="btn sm" data-clone="${nm}">복제</button>` +
       relink +
-      `<button class="btn sm" data-tags="${nm}">태그</button>` +
-      `<button class="btn sm" data-del="${nm}">삭제</button>` +
+      `<button class="job-more" data-job-more="${nm}" aria-haspopup="true" aria-label="작업 관리">⋮</button>` +
       `</span></div></div>`;
+  }
+
+  /* ---- 카드 ⋮ 메뉴(복제·태그·삭제 — job/tpl 동형 단일 부유 요소) ---- */
+  function closeRowMenu() {
+    menuFor = null;
+    rowMenu.hide();
+  }
+  function openRowMenu(name, btn) {
+    menuFor = name;
+    rowMenu.show(
+      `<button data-menu="clone">복제</button>` +
+      `<button data-menu="tags">태그…</button>` +
+      `<div class="sep"></div>` +
+      `<button data-menu="delete" class="danger">삭제</button>`, btn);
+  }
+  function toggleRowMenu(name, btn) {
+    if (menuFor === name) { closeRowMenu(); return; }
+    openRowMenu(name, btn);
+  }
+  function onRowMenuClick(e) {
+    const btn = e.target.closest("button[data-menu]");
+    if (!btn || menuFor === null) return;
+    const name = menuFor, act = btn.dataset.menu;
+    closeRowMenu();
+    if (act === "clone") cloneJob(name);
+    else if (act === "tags") editTags(name);
+    else if (act === "delete") deleteJob(name);
   }
 
   /* txt 트랙 — 즉시 기안 템플릿 목록(정해진 루트). */
@@ -332,14 +365,11 @@
     if (run && !run.disabled) { runJob(run.dataset.run); return; }
     const edit = e.target.closest("[data-edit]");
     if (edit) { editJob(edit.dataset.edit); return; }
-    const cl = e.target.closest("[data-clone]");
-    if (cl) { cloneJob(cl.dataset.clone); return; }
     const rl = e.target.closest("[data-relink]");
     if (rl) { relinkTemplate(rl.dataset.relink); return; }
-    const tg = e.target.closest("[data-tags]");
-    if (tg) { editTags(tg.dataset.tags); return; }
-    const del = e.target.closest("[data-del]");
-    if (del) { deleteJob(del.dataset.del); return; }
+    // 부차 행동(복제·태그·삭제)은 카드 ⋮ 로 이동(#179) — 여기선 메뉴 개폐만, 실행은 onRowMenuClick.
+    const more = e.target.closest("[data-job-more]");
+    if (more) { toggleRowMenu(more.dataset.jobMore, more); return; }
     const nj = e.target.closest("[data-new-job]");
     if (nj) { newJob(); return; }
   }
@@ -367,6 +397,13 @@
     $("homeEmpty").addEventListener("click", onJobsClick);
     $("homeContinue").addEventListener("click", onJobsClick);
     $("homeCorrupt").addEventListener("click", onCorruptClick);  // 손상 조치(#26 #8)
+    $("homeRowMenu").addEventListener("click", onRowMenuClick);   // 카드 ⋮ 메뉴 항목(#179)
+    // ⋮ 메뉴 바깥 닫기(job/tpl 동형) — 캡처 클릭 억제 + 바깥 pointerdown + Escape.
+    window.Popover.wireDismiss({
+      isOpen: () => menuFor !== null,
+      contains: (t) => !!(t.closest("#homeRowMenu") || t.closest(".job-more")),
+      close: closeRowMenu,
+    });
     $("homeTxt").addEventListener("click", (e) => {
       const open = e.target.closest("[data-open]");
       if (open) openDraft(open.dataset.open);
