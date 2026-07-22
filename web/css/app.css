@@ -813,7 +813,7 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 /* [B] 61C7ADF8: 불투명 배경 카드 — 뒤에 비칠 숨김 텍스트 레이어가 없어 겹침 렌더 버그가
    구성상 소멸(Qt QListWidget 반투명 하이라이트의 웹 대체). */
 .tplcard{background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface);
-  padding:var(--sp-8) var(--sp-10);display:flex;flex-direction:column;gap:var(--sp-4)}
+  border-left:3px solid transparent;padding:var(--sp-8) var(--sp-10);display:flex;flex-direction:column;gap:var(--sp-4)}
 .tplcard.muted{color:var(--a-muted);font-size:var(--fs-body)}
 .tplcard-top{display:flex;align-items:center;gap:var(--sp-8)}
 .tplcard-name{font-weight:600;font-size:var(--fs-body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -862,8 +862,6 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .groupsec{font-weight:700;margin:var(--sp-8) 0 var(--sp-4);color:var(--a-ink)}
 .jcard{border:1px solid var(--a-border);border-radius:var(--rad-surface);padding:var(--sp-10) var(--sp-12);margin-bottom:var(--sp-8);
   border-left:3px solid transparent}
-.jcard:hover{background:var(--n-hover);border-left-color:var(--a-primary)}
-.jcard.corrupt{border-left-color:var(--a-danger)}
 .jcard .jn{font-weight:700;display:flex;gap:var(--sp-8);align-items:center;flex-wrap:wrap}
 .jcard .jm{font-size:var(--fs-body);color:var(--a-muted);margin-top:var(--sp-2)}
 .jcard .jfoot{display:flex;justify-content:space-between;align-items:center;margin-top:var(--sp-8);gap:var(--sp-8);flex-wrap:wrap}
@@ -880,12 +878,20 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 
 /* txt 트랙 목록 */
 .tlist .titem{display:flex;justify-content:space-between;align-items:center;gap:var(--sp-8);
-  border:1px solid var(--a-border);border-radius:var(--rad-surface);padding:var(--sp-8) var(--sp-12);margin-bottom:var(--sp-8)}
-.tlist .titem:hover{background:var(--n-hover);border-color:var(--a-primary)}
+  border:1px solid var(--a-border);border-left:3px solid transparent;border-radius:var(--rad-surface);
+  padding:var(--sp-8) var(--sp-12);margin-bottom:var(--sp-8)}
 .tlist .tn{font-weight:600}
 .tlist .tm{font-size:var(--fs-caption);color:var(--a-muted);margin-top:1px}
 .route{font-size:var(--fs-caption);color:var(--a-muted);margin:var(--sp-10) 0 0;
   font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
+
+/* 카드 상호작용 어휘(H-14) — hover는 배경 틴트 하나, 좌 막대는 지속 상태만 쓴다. */
+.jcard:hover,.tlist .titem:hover,.tplcard:hover{background:var(--n-hover)}
+.jcard[aria-current="true"],.tlist .titem[aria-current="true"],.tplcard[aria-current="true"]{
+  background:var(--a-sel);border-left-color:var(--a-primary)}
+.jcard.corrupt{border-left-color:var(--a-danger)}
+.jcard:focus-visible,.tlist .titem:focus-visible,.tplcard:focus-visible{
+  outline:2px solid var(--a-primary);outline-offset:2px}
 
 /* ---- 강제 색상 모드(Windows 고대비) 대응 — WCAG 1.4.3 (#3) ----
    forced-colors 는 배경/전경/보더를 시스템 팔레트로 강제 재매핑한다 — 단 transparent·
@@ -901,7 +907,9 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
   .wstep-tab[aria-current="true"],
   .btn.primary:not(:disabled){background:Highlight;color:HighlightText;border-color:Highlight}
 
-  .jcard:hover{border-left-color:Highlight}
+  .jcard[aria-current="true"],.tlist .titem[aria-current="true"],.tplcard[aria-current="true"]{
+    border-left-color:Highlight}
+  .jcard.corrupt{border-left-color:Mark}
 
   tr.r-unconfirmed td{border-left:3px solid Mark}
   tr.r-unmatched td{border-left:3px dashed CanvasText}

@@ -587,6 +587,29 @@ def test_gallery_exposes_template_media_surface():
     assert ".tpl-medium — 매체 sunken 구획 / 카드 층" in html
 
 
+def test_card_families_share_hover_and_keep_persistent_state_separate():
+    """H-14: jcard·titem·tplcard hover는 틴트뿐이고 막대는 선택·오류에만 남는다."""
+    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    assert ".jcard:hover,.tlist.titem:hover,.tplcard:hover{background:var(--n-hover)}" in css
+    assert (
+        '.jcard[aria-current="true"],.tlist.titem[aria-current="true"],'
+        '.tplcard[aria-current="true"]{background:var(--a-sel);'
+        "border-left-color:var(--a-primary)}"
+    ) in css
+    assert ".jcard.corrupt{border-left-color:var(--a-danger)}" in css
+    for selector in (".jcard:hover", ".tlist.titem:hover", ".tplcard:hover"):
+        body = re.search(re.escape(selector) + r"(?:,[^{]+)?\{([^}]*)\}", css)
+        assert body and "border" not in body.group(1), f"hover가 상태 보더를 사용합니다: {selector}"
+
+
+def test_card_families_keep_keyboard_focus_outline():
+    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    assert (
+        ".jcard:focus-visible,.tlist.titem:focus-visible,.tplcard:focus-visible{"
+        "outline:2pxsolidvar(--a-primary);outline-offset:2px}"
+    ) in css
+
+
 def test_web_diff_pinned_to_light_until_tints_themed():
     """web-diff 는 다크 셀 틴트가 준비될 때까지 라이트로 고정돼야 한다(<html data-theme="light">).
 
