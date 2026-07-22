@@ -1,8 +1,8 @@
 """실행(Run) 화면 ViewModel — Qt 비의존 실행 결정(데이터·대상·사전검증·게이트).
 
-위젯(:class:`~hwpxfiller.gui.run_view.RunView`)에서 백엔드로 새던 부분을 여기로 옮겼다:
-``DataSource`` 포트(팩토리 경유)·``HwpxEngine``·``RunRequest`` 는 이 뷰모델만 만지고,
-위젯은 QThread·QMessageBox·QFileDialog 같은 Qt 오케스트레이션만 남긴다(링1: PySide6 금지).
+웹 작업 컨트롤러(:class:`~hwpxfiller.webapp.screen_job.JobController`)는 이 뷰모델에 실행 결정을
+위임한다. ``DataSource`` 포트(팩토리 경유)·``HwpxEngine``·``RunRequest`` 는 이 뷰모델만
+만지고, 컨트롤러는 렌더·확인·파일 선택 같은 UI 오케스트레이션을 맡는다(링1: PySide6 금지).
 **매핑 재확정 없음** — 매핑은 작업 정의 때 확정됐고 여기선 사전검증만 한다.
 
 이 뷰모델 표면(dataclass 결과 + 메서드)이 목업 실행 화면이 겨누는 seam 계약이다.
@@ -52,7 +52,7 @@ class PrevNote:
 
 @dataclass
 class GateError:
-    """생성 차단 사유 — 위젯이 message/level 로 대화상자를 띄운다."""
+    """생성 차단 사유 — 표현 계층이 ``message``/``level``로 고지한다."""
 
     message: str
     level: str  # "warn"(확인) / "danger"(오류)
@@ -69,9 +69,9 @@ class FieldState:
 
 @dataclass(frozen=True)
 class GateState:
-    """생성 게이트의 **단일 표시 결정**(RC-23) — 위젯은 이걸 그대로 렌더만 한다.
+    """생성 게이트의 **단일 표시 결정**(RC-23) — 표현 계층은 이걸 그대로 렌더만 한다.
 
-    unmet/drift 판정과 차단 문구가 위젯에 재조립되던 이중 진실을 소거한다 —
+    unmet/drift 판정과 차단 문구가 표현 계층에 재조립되던 이중 진실을 소거한다 —
     버튼 활성 여부와 게이트 라벨(level/text)이 한 산출에서 나온다.
     """
 
@@ -103,7 +103,7 @@ class RunStatus:
 class GenerationPlan:
     """생성 1회의 **불변 계획**(RC-07) — 게이트 통과 시점의 전체 스냅샷.
 
-    워커·완료 핸들러·원장 export 가 이것만 소비한다. 실행 중 사용자의 위젯 조작
+    실행기·완료 처리·원장 export 가 이것만 소비한다. 실행 중 사용자의 화면 조작
     (출력 폴더 편집·데이터 재로드)이 라이브 재독을 통해 원장에 생성물과 다른
     데이터·폴더를 '증거'로 기록하던 결함의 봉합 — 계획에 없는 값은 소비할 수 없다.
     """
@@ -163,7 +163,7 @@ def resolve_file_source(path: str, *, sheet: "str | None" = None) -> "tuple[obje
     """파일 경로 → (DataSource, records). 팩토리가 종류 선택(엑셀/CSV). 로드 실패는 raise.
 
     ``sheet`` 는 사용자가 **확정한** 시트명(T2) — None 이면 기본(첫/유일 시트).
-    확정은 링2(시트 다이얼로그)가 하고 여기는 옵션 관통만 한다(링1: PySide6 금지).
+    확정은 표현 계층의 시트 선택 UI가 하고 여기는 옵션 관통만 한다(링1: PySide6 금지).
     """
     source = source_for_path(path, sheet=sheet)
     return source, source.records()
@@ -248,7 +248,7 @@ class RunViewModel:
     # ------------------------------------------------------------ 데이터
     def load_data(self, path: str, *, sheet: "str | None" = None) -> "list[dict]":
         """겨눈 경로에서 레코드를 읽는다(팩토리가 종류 선택). 로드 실패는 raise,
-        레코드 0건이면 상태를 바꾸지 않고 빈 리스트 반환(위젯이 경고).
+        레코드 0건이면 상태를 바꾸지 않고 빈 리스트 반환(표현 계층이 경고).
         ``sheet`` 는 사용자가 확정한 시트명(T2) — None 이면 기본(첫/유일 시트)."""
         source, records = resolve_file_source(path, sheet=sheet)
         if not records:
@@ -270,7 +270,7 @@ class RunViewModel:
           소스를 복원(지연·캐시, 파일 재읽기가 곧 싱크).
 
         키는 복원 순간에만 저장소에서 읽혀 스냅샷·레코드 어디에도 남지 않는다. 취득 실패는
-        **마스킹된 채** raise(위젯이 시끄럽게 표시), 레코드 0건이면 상태 불변(위젯이 경고).
+        **마스킹된 채** raise(표현 계층이 시끄럽게 표시), 레코드 0건이면 상태 불변(표현 계층이 경고).
         실제 복원·마스킹·스냅샷은 :func:`resolve_pool_source` 가 한다."""
         source, records = resolve_pool_source(
             item, secret_store=secret_store, fetcher=fetcher
@@ -300,7 +300,7 @@ class RunViewModel:
     def preflight(self, indices: "list[int]") -> PreflightResult:
         """데이터에 없는 항목(치명)·구조 드리프트(치명)·빈값(경고) 판정(재확정 아님).
 
-        위젯은 level/text 를 **그대로** 렌더한다(RC-23) — 드리프트 차단 중에 상단만
+        표현 계층은 level/text 를 **그대로** 렌더한다(RC-23) — 드리프트 차단 중에 상단만
         '통과' 녹색으로 남는 모순 신호를 여기서 차단한다.
         """
         return self.refresh(indices).preflight
@@ -580,7 +580,7 @@ class RunViewModel:
         """생성이 덮어쓸 **기존** 파일 경로 목록 — 실행 전 덮어쓰기 확인의 원천(RC-02).
 
         생성과 동일한 매핑·표식·파일명 규칙으로 대상 경로를 계산해 디스크 존재만
-        조회한다(무변형). 위젯은 이 목록이 비지 않으면 "기존 N개 파일을 덮어씁니다"
+        조회한다(무변형). 표현 계층은 이 목록이 비지 않으면 "기존 N개 파일을 덮어씁니다"
         사용자 확정을 받은 뒤에만 ``overwrite=True`` 로 진행한다(확인-또는-경보).
         ``now`` 는 날짜 토큰 기준 시각 — 이후 생성 계획과 **같은 값**을 넘겨야 하위-일
         토큰에서 확인 대상과 실제 생성 대상이 갈라지지 않는다(RC-02).
@@ -604,7 +604,7 @@ class RunViewModel:
     ) -> GenerationPlan:
         """게이트 통과 직후 호출 — 생성·완료 처리·원장이 소비할 전부를 원자 캡처한다.
 
-        이후 위젯/VM 이 어떻게 바뀌어도 이 계획은 불변이다(RC-07). ``marker`` 는
+        이후 표현 계층/VM 이 어떻게 바뀌어도 이 계획은 불변이다(RC-07). ``marker`` 는
         생성에 실제 쓸 표식과 동일해야 원장 dry-run 행이 주입값과 일치한다. ``now`` 는
         덮어쓰기 확인(:meth:`output_conflicts`)에 넘긴 시각과 **같은 값**이어야 확인
         대상과 실제 생성 대상이 하위-일 날짜 토큰에서 갈라지지 않는다(RC-02).
@@ -657,7 +657,7 @@ class RunViewModel:
         """생성 원장 JSON 사이드카 저장(**opt-in**) — 저장 경로 반환, 실패는 raise.
 
         지금 상태를 계획으로 캡처해 :func:`export_plan_ledger` 에 위임한다 — 정상
-        경로(위젯)는 생성 시점 계획을 워커 꼬리에서 그대로 export 하므로(RC-07)
+        표현 계층은 생성 시점 계획을 실행기 꼬리에서 그대로 export 하므로(RC-07)
         이 메서드는 헤드리스/사후 export 용 보조 표면이다. ``mark_missing`` 은 생성에
         실제 쓴 표식과 동일해야 dry-run 행이 주입값과 일치한다. 되읽기 검증·마스킹은
         :func:`~hwpxfiller.core.fill_ledger.export_run_ledger` 계열이 관통시킨다.

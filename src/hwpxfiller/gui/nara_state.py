@@ -1,10 +1,9 @@
 """나라장터 취득 ViewModel — Qt 비의존(링1). 키 등록/취득 결정의 단일 진실원.
 
-위젯(:class:`~hwpxfiller.gui.nara_view.NaraAcquireDialog`)은 이 뷰모델을 들고
+현재 배포 웹 화면에는 직접 연결되지 않은 동결 링1 계약이다. 재착지할 표현 계층은
 ``save_key``/``delete_key``/``test_connection``/``acquire`` 로 **오케스트레이션만** 한다.
 키 저장(N1 :class:`~hwpxfiller.data.secret_store.SecretStore`)·기간 검증(1개월 제한)·
-취득/파싱·redaction 경계는 전부 여기 산다 — PySide6 임포트 없이 헤드리스로 테스트된다
-(home_state↔home 분리를 그대로 미러링).
+취득/파싱·redaction 경계는 전부 여기 산다 — PySide6 임포트 없이 창 없이 테스트된다.
 
 **보안 불변식**([[confirm-or-alarm-principle]]):
 - 키는 **N1 SecretStore 경유로만** 오간다. 뷰모델은 키를 인스턴스 속성으로 붙들지 않고
@@ -38,7 +37,7 @@ from ..data.secret_store import (
 )
 
 # DT_FMT 는 데이터층(data.nara)이 소유하고 여기서 재노출한다(RC-03 경계 하강) —
-# nara_view 등 기존 소비자의 임포트 경로(nara_state.DT_FMT)는 불변.
+# 공개 재노출 경로(nara_state.DT_FMT)는 호환성을 위해 유지한다.
 __all__ = [
     "DT_FMT",
     "AcquiredNaraData",
@@ -100,8 +99,8 @@ class AcquiredNaraData:
 class AcquireResult:
     """취득 1회의 결과 — 성공(레코드·필드) 또는 시끄러운 실패(마스킹된 ``error``).
 
-    ``bgn_dt``~``page_no`` 는 **취득 시점 쿼리 스냅샷** — 이후 위젯 편집과 무관하게
-    이 결과가 어떤 쿼리의 산물인지 붙들어, 풀 등록·라벨이 위젯 현재값을 재독하지
+    ``bgn_dt``~``page_no`` 는 **취득 시점 쿼리 스냅샷** — 이후 화면 입력 편집과 무관하게
+    이 결과가 어떤 쿼리의 산물인지 붙들어, 풀 등록·라벨이 현재 입력값을 재독하지
     않게 한다(RC-13 이중 소스 차단).
     """
 
@@ -131,7 +130,7 @@ class AcquireResult:
         return self.ok and bool(self.records)
 
     def source_label(self) -> str:
-        """수용 시 세션·풀에 표시할 소스 라벨 — 취득 시점 기간·건수로 조합(위젯값 아님)."""
+        """수용 시 세션·풀에 표시할 소스 라벨 — 취득 시점 기간·건수로 조합한다."""
         return f"나라장터 · {self.bgn_dt}~{self.end_dt} · {self.count}건"
 
     def as_datasource(self) -> AcquiredNaraData:
@@ -155,7 +154,7 @@ class ConnResult:
 
 
 class NaraAcquireViewModel:
-    """나라장터 키 등록 + 취득 상태/결정. 위젯은 이 뷰모델을 구독해 렌더한다(Qt 비의존).
+    """나라장터 키 등록 + 취득 상태/결정(표현 계층 비의존).
 
     ``store`` 는 주입 가능(테스트는 :class:`~hwpxfiller.data.secret_store.MemorySecretStore`
     를 넣어 실 자격증명 저장소 무접촉). ``fetcher``(url->bytes)도 주입 가능 —
@@ -249,10 +248,10 @@ class NaraAcquireViewModel:
     def acquire_result(
         self, bgn: str, end: str, *, num_rows: int = 100, page_no: int = 1
     ) -> AcquireResult:
-        """취득 계산만(스냅샷 **미커밋**) — 워커 스레드에서 안전한 순수 호출(RC-12).
+        """취득 계산만(스냅샷 **미커밋**) — 백그라운드 실행에 안전한 순수 호출(RC-12).
 
-        위젯이 취득을 QThread 로 옮길 때 이걸 태우고, 결과 도착 시 UI 스레드에서
-        :meth:`commit` 한다 — 진행 중 편집/중지로 무효화된(스테일) 결과가 스레드
+        호출자는 이 메서드를 백그라운드에서 실행하고, 결과가 여전히 유효할 때
+        :meth:`commit` 한다 — 진행 중 편집/중지로 무효화된(스테일) 결과가 실행
         경합으로 ``last_result`` 를 덮는 일이 없다(RC-13 게이트 보존).
         """
         res = self._acquire(bgn, end, num_rows=num_rows, page_no=page_no)

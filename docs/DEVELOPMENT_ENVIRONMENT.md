@@ -1,5 +1,10 @@
 # 개발·빌드·배포 환경
 
+> **문서 상태:** 현재 정본
+> **권위 범위:** Python·의존성·품질 게이트·패키징·릴리스 절차
+> **후속 정본:** 없음
+> **편집 정책:** 계속 갱신
+
 이 문서는 HWPX Tools의 로컬 개발환경, 품질 검사, Windows 패키징과 GitHub 릴리스
 구성을 기록한다. 환경 설정의 기준 파일은 `pyproject.toml`, `.python-version`,
 `uv.lock`이며 Python과 패키지를 개별적으로 수동 설치하지 않는다.
@@ -11,7 +16,7 @@
 | 운영체제 | Windows 11, GitHub Actions `windows-latest` |
 | Python | CPython 3.13 계열 (`.python-version`) |
 | 환경·의존성 관리 | uv 0.11.28, `uv.lock` |
-| GUI | pywebview 6.x + Windows EdgeChromium(WebView2) |
+| GUI | pywebview 6.x + Windows EdgeChromium(WebView2 Runtime) |
 | 테스트 | pytest, pytest-cov |
 | 정적 검사 | Ruff, Pyright basic |
 | portable 패키징 | PyInstaller onedir |
@@ -44,7 +49,7 @@ uv sync --locked --all-extras --group dev --group build
 이 명령은 프로젝트의 `.venv`를 만들고 다음 환경을 함께 설치한다.
 
 - 런타임: lxml, openpyxl
-- GUI: pywebview
+- GUI: pywebview(Windows EdgeChromium 백엔드)
 - 개발: pytest, coverage, Ruff, Pyright, pre-commit
 - 빌드: PyInstaller
 
@@ -207,9 +212,10 @@ PFX를 Base64로 변환하는 예시는 다음과 같다. 결과를 파일이나
 
 ### WebView2 실창 테스트가 화면 환경 때문에 실패
 
-Windows 데스크톱 세션과 WebView2 Runtime 설치 여부를 확인한다. 일반 Python coverage와
-분리된 subprocess 실창 게이트이며, 의도적으로 건너뛸 때만 해당 테스트가 문서화한 skip
-환경 변수를 명시한다. CI 필수 상태에서는 native 양성 시나리오를 skip하지 않는다.
+Windows 데스크톱 세션과 WebView2 Runtime 설치 여부를 확인한다. 일반 Python 코드와 달리
+별도 WebView2 프로세스의 실행 내용은 coverage 수치에 잡히지 않지만, `test.ps1`과 Windows
+quality CI의 전체 pytest는 subprocess 실창 게이트를 실행한다. 화면 없는 환경에서
+의도적으로 건너뛸 때만 해당 테스트가 문서화한 `HWPX_SKIP_GUI_TESTS=1`을 명시한다.
 
 ### 빌드는 성공했지만 설치파일을 만들지 못함
 
