@@ -610,6 +610,16 @@ def test_card_families_keep_keyboard_focus_outline():
     ) in css
 
 
+def test_disabled_primary_uses_light_neutral_surface_globally():
+    """H-11: 비활성 primary는 무거운 솔리드 색 대신 전역 중립 상태 한 벌을 쓴다."""
+    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    assert (
+        ".btn.primary:disabled{background:var(--n-track);color:var(--a-muted);"
+        "border-color:var(--a-border);opacity:1}"
+    ) in css
+    assert ".btn.primary:disabled{background:var(--a-muted)" not in css
+
+
 def test_web_diff_pinned_to_light_until_tints_themed():
     """web-diff 는 다크 셀 틴트가 준비될 때까지 라이트로 고정돼야 한다(<html data-theme="light">).
 
