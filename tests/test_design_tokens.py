@@ -118,9 +118,22 @@ def test_scale_tokens_theme_invariant():
     region = gen.render_web_region(gen.load_tokens())
     light_block = region.split("@media", 1)[0]
     dark_region = region.split("@media", 1)[1]  # @media + [data-theme=dark] 두 다크 블록 전부
-    for prefix in ("--sp-", "--rad-", "--fs-"):
-        assert prefix in light_block, f"라이트 :root 에 {prefix} 스케일 누락"
-        assert prefix not in dark_region, f"다크 블록에 {prefix} 스케일이 새어듦(테마 불변 위반)"
+    # 스케일(--sp-·--rad-·--fs-)에 더해 모션(--dur-·--ease-, #179 슬라이스 4)도 테마 불변.
+    for prefix in ("--sp-", "--rad-", "--fs-", "--dur-", "--ease-"):
+        assert prefix in light_block, f"라이트 :root 에 {prefix} 스케일/모션 누락"
+        assert prefix not in dark_region, f"다크 블록에 {prefix} 가 새어듦(테마 불변 위반)"
+
+
+def test_web_region_emits_motion_tokens():
+    """웹 CSS 영역이 모션 변수를 방출한다(dur=ms 부착·ease=cubic-bezier 문자열, #179 슬라이스 4)."""
+    region = gen.render_web_region(gen.load_tokens())
+    assert "--dur-press:140ms;" in region      # 버튼 눌림(100~160)
+    assert "--dur-modal:200ms;" in region       # 모달 등장(180~220)
+    assert "--ease-out:cubic-bezier(.23,1,.32,1);" in region  # 강한 ease-out(문자열 그대로)
+    # 완료 조건: 모든 지속시간 <300ms.
+    import re
+    for ms in re.findall(r"--dur-[\w-]+:(\d+)ms;", region):
+        assert int(ms) < 300, f"모션 지속시간 {ms}ms 가 300ms 이상입니다(#179 완료 조건)."
 
 
 def test_app_css_free_of_metric_literals():
