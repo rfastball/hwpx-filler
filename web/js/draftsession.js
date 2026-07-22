@@ -51,13 +51,19 @@
 
     /* 타이핑 구동(값 입력·원문 라이브 편집)은 서버 왕복을 디바운스한다(빠른 기안 선례) — 타건
        마다 왕복은 낭비고, 값 유실 경합은 _NO_PUSH+겨냥 패치가 막는다(포커스 입력 미재구성). */
-    let debTimer = null, debFn = null, debPending = null;
-    // 날아간 왕복을 추적한다 — flush 가 **이미 발사된** 편집도 착지까지 기다리게(승격·복사가
-    // 화면에 보이는 원문/값을 저장하려면 미커밋·미착지 편집이 모두 정산돼야 한다, 빠른 기안 선례).
+    let debTimer = null, debFn = null;
+    // 편집 왕복을 **직렬 체인**으로 잇는다(리뷰 A) — 타이핑 편집이 dispatch 순서대로 착지하고,
+    // flush 가 최신뿐 아니라 **미착지 편집 전부**를 기다리게 한다. 종전(단일 debPending)은 최신
+    // promise 만 추적해, 왕복이 180ms 를 넘어 겹치면 flush 가 이전 편집을 안 기다리고 그 편집이
+    // 뒤늦게/역순으로 착지해 컨트롤러에 stale 원문을 복원할 수 있었다(승격이 화면과 다른 원문 저장).
+    // 체인이면 다음 편집이 직전 착지 후에 발사돼 순서가 보장되고, flush 는 체인 tail 을 기다린다.
+    let editChain = Promise.resolve();
     function runDeb(f) {
-      const p = Promise.resolve(f());
-      debPending = p;
-      return p.finally(() => { if (debPending === p) debPending = null; });
+      const next = editChain.then(() => f());
+      // 한 편집 실패가 체인을 끊지 않게 파생(editChain)에서 흡수하되, 반환 next 는 실패를 그대로
+      // 전파해 awaiter(flush)·셸 백스톱이 시끄럽게 받는다(조용한 삼킴 아님 — confirm-or-alarm).
+      editChain = next.catch(() => {});
+      return next;
     }
     function debounce(fn) {
       debFn = fn;
@@ -67,8 +73,8 @@
     function flushDeb() {
       if (debTimer) { clearTimeout(debTimer); debTimer = null; }
       const f = debFn; debFn = null;
-      if (f) return runDeb(f);
-      return debPending || Promise.resolve();  // 이미 날아간 왕복도 착지까지 기다린다
+      if (f) return runDeb(f);   // 방금 스케줄분 + 체인 전체를 기다림(runDeb 가 tail 반환)
+      return editChain;          // 대기분 없어도 미착지 체인 전체를 기다린다
     }
     /* 렌더 세대 — 구조 변화(전면 render)가 나면 올라가, 늦게 착지한 타이핑 응답이 옛 세대의
        스냅샷으로 미리보기를 되돌리는 경합을 막는다(빠른 기안 EPOCH 선례). */
