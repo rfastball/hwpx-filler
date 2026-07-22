@@ -618,13 +618,13 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .run-promote-note{font-size:var(--fs-caption);margin-top:var(--sp-6)}
 .run-promote-note[hidden]{display:none}
 /* 하단 sticky 액션바(#179 슬라이스 5b) — 최종 생성/복사를 스크롤과 무관하게 항상 도달 가능하게.
-   세션 패널(.job-panel, overflow:auto)의 마지막 자식이라 bottom:0 로 패널 뷰포트 하단에 고정,
-   불투명 카드 배경 + 상단 승강 그림자로 위 스크롤 내용과 시각 분리. job=생성+게이트·draft=복사+큐이동. */
+   세션 패널(.job-panel, overflow:auto)의 마지막 자식이라 bottom:0 로 패널 뷰포트 하단에 고정.
+   sticky 표 머리와 같은 단일 크롬 재질(#244)을 소비해 밑의 내용이 잘린 대신 흐르는 층으로 읽힌다. */
 .session-actionbar{position:sticky;bottom:0;z-index:5;
   display:flex;align-items:center;gap:var(--sp-12);flex-wrap:wrap;
   margin-top:var(--sp-12);padding:var(--sp-12) var(--sp-16);
-  background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface);
-  box-shadow:0 -2px 8px var(--a-shadow)}
+  border:1px solid color-mix(in srgb,var(--a-border) 62%,transparent);border-radius:var(--rad-surface);
+  box-shadow:0 -8px 18px -14px var(--a-shadow)}
 .bar{height:8px;background:var(--n-track);border-radius:var(--rad-pill);overflow:hidden;margin-top:var(--sp-12)}
 .bar>i{display:block;height:100%;width:0;background:var(--a-primary);transition:width .25s ease}
 .run-result{font-size:var(--fs-body);margin-top:var(--sp-8);font-weight:600;min-height:1.2em}
@@ -936,9 +936,17 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .jobtbwrap{max-height:280px;overflow:auto;border:1px solid var(--a-border);
   border-radius:var(--rad-surface);background:var(--a-card)}
 .jobtb{width:100%;border-collapse:collapse;font-size:var(--fs-caption)}
-.jobtb th{position:sticky;top:0;z-index:1;background:var(--a-card);text-align:left;
+.jobtb th{position:sticky;top:0;z-index:1;text-align:left;
   color:var(--a-muted);font-weight:600;padding:var(--sp-4) var(--sp-8);
-  border-bottom:1px solid var(--a-border);white-space:nowrap}
+  border-bottom:1px solid color-mix(in srgb,var(--a-border) 62%,transparent);white-space:nowrap}
+.session-actionbar,.jobtb th{
+  background:color-mix(in srgb,var(--a-card) 82%,transparent);
+  -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
+@media (prefers-reduced-transparency:reduce){
+  .session-actionbar,.jobtb th{
+    background:var(--a-card);border-color:var(--a-border);
+    -webkit-backdrop-filter:none;backdrop-filter:none}
+}
 .jobtb th .col-hint{font-weight:400;margin-left:var(--sp-6)}
 .jobtb td{padding:var(--sp-4) var(--sp-8);border-bottom:1px solid var(--a-border);
   white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis;vertical-align:top}
