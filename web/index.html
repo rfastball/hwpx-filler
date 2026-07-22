@@ -171,7 +171,7 @@
                        placeholder="전체 열 검색" autocomplete="off" data-busy-lock>
                 <!-- 직전 필터 재적용(결정 28) — 슬롯 존재·소스 일치일 때만 노출. 정의(보기)만
                      복원하고 선택은 불변(전체 선택과 2클릭 분리 — 의사표시 격 구분). -->
-                <button class="btn sm" id="jobFilterReapply" style="display:none"
+                <button class="btn sm filter-reapply" id="jobFilterReapply" style="display:none"
                         data-busy-lock>직전 필터 재적용</button>
                 <div class="acts"><span class="muted capnote" id="jobSelCount">선택 0/0</span>
                   <button class="btn sm" id="jobSelAll" data-busy-lock>전체 선택</button>
@@ -300,7 +300,7 @@
                 <span class="lbl" style="font-weight:600">기안 대상 행</span>
                 <input class="field jobsearch" id="draftFilterSearch" type="search"
                        placeholder="전체 열 검색" autocomplete="off" data-busy-lock>
-                <button class="btn sm" id="draftFilterReapply" style="display:none"
+                <button class="btn sm filter-reapply" id="draftFilterReapply" style="display:none"
                         data-busy-lock>직전 필터 재적용</button>
                 <div class="acts"><span class="muted capnote" id="draftSelCount">선택 0/0</span>
                   <button class="btn sm" id="draftSelAll" data-busy-lock>전체 선택</button>

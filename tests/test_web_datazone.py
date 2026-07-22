@@ -257,3 +257,17 @@ def test_unselected_lead_guidance_is_single_sourced_in_headers():
     assert 'doc-off">선택하면 큐에 담깁니다' not in draft
     assert 'aria-hidden="true">—</span>' in job
     assert 'aria-hidden="true">—</span>' in draft
+
+
+def test_filter_roles_have_distinct_labels_and_surface_hierarchy():
+    """정의·가지·관통 선택은 공용 렌더의 텍스트 라벨과 서로 다른 면을 함께 쓴다."""
+    src = DZ_JS.read_text(encoding="utf-8")
+    css = (WEB / "css" / "app.css").read_text(encoding="utf-8")
+    assert 'class="fchip definition"><span class="chip-role">필터</span>' in src
+    assert 'class="fchip branch"><span class="chip-role">가지</span>' in src
+    assert 'class="fchip selection"><span class="chip-role">선택</span>' in src
+    assert ".fchip.definition{" in css and "var(--a-primary) 10%" in css
+    assert ".fchip.branch{background:var(--n-surface-alt)" in css
+    assert ".fchip.branch{border-style:dashed" not in css
+    assert ".fstrip{border:1px solid var(--a-border)" in css
+    assert ".filter-reapply{" in css

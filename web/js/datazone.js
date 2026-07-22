@@ -335,9 +335,11 @@
       if (!s.has_data || !f.active) { box.style.display = "none"; box.innerHTML = ""; return; }
       box.style.display = "";
       box.innerHTML =
-        (f.chips || []).map((c) => `<span class="fchip">${esc(c)}</span>`).join("") +
+        (f.chips || []).map((c) =>
+          `<span class="fchip definition"><span class="chip-role">필터</span>${esc(c)}</span>`
+        ).join("") +
         (f.branches || []).map((b) =>
-          `<span class="fchip branch">${esc(b)}` +
+          `<span class="fchip branch"><span class="chip-role">가지</span>${esc(b)}` +
           `<button data-prune="${esc(b)}" aria-label="${esc(b)} 가지 제거" data-busy-lock>×</button></span>`
         ).join("") +
         `<button class="btn sm" data-act="filter-clear" data-busy-lock>필터 지우기</button>`;
@@ -352,7 +354,8 @@
       // 항목별 × = 개별 해제 어포던스(리뷰 #6 — 구 목록의 행별 체크박스가 지던 의무 승계:
       // 필터를 허물거나 전체 해제하지 않고도 필터 밖 선택 하나만 뺄 수 있어야 한다).
       const chips = hs.map((r) =>
-        `<span class="fchip">${esc(r.name || r.summary || `${r.index + 1}행`)}` +
+        `<span class="fchip selection"><span class="chip-role">선택</span>` +
+        `${esc(r.name || r.summary || `${r.index + 1}행`)}` +
         `<button data-unsel="${r.index}" aria-label="${r.index + 1}행 선택 해제" data-busy-lock>×</button></span>`
       ).join("");
       box.innerHTML = cfg.copy.stripLead(hs.length) + chips;

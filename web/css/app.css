@@ -968,14 +968,20 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .fchip{display:inline-flex;gap:var(--sp-4);align-items:center;border:1px solid var(--a-border);
   border-radius:var(--rad-pill);background:var(--a-card);padding:var(--sp-2) var(--sp-8);
   font-size:var(--fs-caption);color:var(--a-ink)}
-.fchip.branch{border-style:dashed;color:var(--a-muted)}
+.fchip.definition{border-color:color-mix(in srgb,var(--a-primary) 35%,var(--a-border));
+  background:color-mix(in srgb,var(--a-primary) 10%,var(--a-card))}
+.fchip.branch{background:var(--n-surface-alt);color:var(--n-ink-soft)}
+.fchip.selection{border-color:var(--n-border-strong);background:var(--a-card)}
+.fchip .chip-role{font-weight:700;color:var(--a-primary)}
+.fchip.branch .chip-role,.fchip.selection .chip-role{color:var(--a-muted)}
 .fchip button{border:0;background:transparent;color:var(--a-muted);cursor:pointer;
   font-size:var(--fs-caption);padding:0}
 .fchip button:hover{color:var(--a-danger)}
+.filter-reapply{color:var(--a-primary);border-color:color-mix(in srgb,var(--a-primary) 30%,var(--a-border))}
 
 /* 필터 밖 선택 스트립(결정 3) — 관통 가시성. */
-.fstrip{border:1px dashed var(--a-border);border-radius:var(--rad-surface);
-  background:var(--a-card);padding:var(--sp-4) var(--sp-10);margin-top:var(--sp-6);
+.fstrip{border:1px solid var(--a-border);border-radius:var(--rad-surface);
+  background:var(--n-surface-alt);padding:var(--sp-4) var(--sp-10);margin-top:var(--sp-6);
   font-size:var(--fs-caption);color:var(--a-muted)}
 .fstrip b{color:var(--a-ink)}
 
