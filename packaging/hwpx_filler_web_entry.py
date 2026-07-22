@@ -14,15 +14,22 @@ def _selfcheck() -> int:
     import tempfile
     from pathlib import Path
 
+    from hwpxfiller.core.job import JobRegistry
     from hwpxfiller.core.text_registry import TextTemplateRegistry
     from hwpxfiller.webapp.app import web_dir
-    from hwpxfiller.webapp.screen_txt import TxtController
+    from hwpxfiller.webapp.screen_draft import DraftController
 
     tmp = Path(tempfile.mkdtemp())
     (tmp / "샘플.txt").write_text("제목: {{공고명}} / 담당: {{담당자}}", encoding="utf-8")
 
     pushes: list = []
-    ctrl = TxtController(TextTemplateRegistry(tmp), lambda s, snap: pushes.append((s, snap)))
+    # 「기안」 화면(#148 슬라이스 6 — 구 TxtController 흡수)로 스모크한다: 좌 목록(JobRegistry)+
+    # 우 휘발 세션(TextTemplateRegistry). 세션이 첫 템플릿을 자동 선택해 initial 에 tokens 를 낸다.
+    ctrl = DraftController(
+        JobRegistry(tmp / "jobs"),
+        lambda s, snap: pushes.append((s, snap)),
+        TextTemplateRegistry(tmp),
+    )
     init = ctrl.initial()
     vm_ok = "샘플" in init["templates"] and any(t["name"] == "공고명" for t in init["tokens"])
 

@@ -261,13 +261,29 @@
       const btn = e.target.closest("button[data-txt]");
       if (!btn) return;
       if (btn.dataset.txt === "open") {
-        Bridge.call("txt", "select_template", { name: btn.dataset.name });
-        window.Nav.go("txt");
+        openDraftTemplate(btn.dataset.name);  // 「기안」 라우팅(#148 슬라이스 6) — 세션 교체 가드 동반
       } else if (btn.dataset.txt === "edit") {
         Bridge.call(SCREEN, "txt_content", { path: btn.dataset.path }).then((res) =>
           openEditModal("edit", btn.dataset.path, btn.dataset.name, (res && res.content) || ""));
       }
     }
+  }
+
+  /* 라이브러리 템플릿을 「기안」 화면에서 연다(#148 슬라이스 6 — 구 txt 흡수). 저장 기안 결속
+     세션이 진행 중이면 백엔드가 needs_confirm 을 돌려준다(리뷰 F3 — 홈 openDraft 와 같은 규약):
+     세션 교체는 저장되지 않은 진행을 폐기하므로 조용히 버리지 않는다. 취소=현 세션 그대로. */
+  async function openDraftTemplate(name) {
+    let r = await Bridge.call("draft", "select_template", { name });
+    if (r && r.needs_confirm) {
+      const ok = await window.Modal.confirm({
+        title: "진행 중인 기안을 떠납니다",
+        body: window.DraftScreen.leaveForTemplateBody(r),  // 두 세션 무장 반영(단일 출처, 리뷰 C)
+        confirmLabel: "열기", cancelLabel: "머무르기",
+      });
+      if (!ok) return;
+      r = await Bridge.call("draft", "select_template", { name, confirm: true });
+    }
+    window.Nav.go("draft");
   }
 
   /* ---- 편집/생성 모달(네이티브 입력 대체) ---- */

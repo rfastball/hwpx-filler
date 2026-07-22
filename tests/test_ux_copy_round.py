@@ -87,13 +87,14 @@ def test_web_surfaces_free_of_issue_numbers():
 
 
 def test_txt_note_single_source_in_copy_js():
-    """txt 기본 안내문은 copy.js 단일 출처여야 한다 — index.html/txt.js 두 벌 중복(실측된
-    드리프트 위험)의 재발 차단. 정적 #txtNote 는 비워 두고 txt.js 가 Copy.TXT_NOTE 로 채운다."""
+    """기안 기본 안내문은 copy.js 단일 출처여야 한다 — index.html/화면 JS 두 벌 중복(실측된
+    드리프트 위험)의 재발 차단. 정적 #draftNote 는 비워 두고 draftsession.js 가 Copy.TXT_NOTE 로
+    채운다(구 #txtNote 는 #148 슬라이스 6 에서 scr-txt 와 함께 삭제 — 「기안」의 note 로 재겨눔)."""
     index = WEB_INDEX.read_text(encoding="utf-8")
-    m = re.search(r'<p class="note" id="txtNote">([^<]*)</p>', index)
-    assert m is not None, "txtNote 요소가 사라졌습니다."
+    m = re.search(r'<p class="note" id="draftNote">([^<]*)</p>', index)
+    assert m is not None, "draftNote 요소가 사라졌습니다."
     assert m.group(1).strip() == "", (
-        "index.html #txtNote 에 정적 문구가 다시 들어왔습니다 — copy.js(Copy.TXT_NOTE) 단일 출처 위반."
+        "index.html #draftNote 에 정적 문구가 다시 들어왔습니다 — copy.js(Copy.TXT_NOTE) 단일 출처 위반."
     )
     assert 'src="js/copy.js"' in index, "copy.js 가 index.html 에 로드되지 않았습니다."
     copy_js = (WEB / "js" / "copy.js").read_text(encoding="utf-8")

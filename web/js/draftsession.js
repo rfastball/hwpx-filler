@@ -415,6 +415,8 @@
         renderCard(s);  // 작업점 카드(상태 색인·코드블록 렌더·동사 게이트) — 큐 판(결정 16)
         // 소스 종류 병기 라벨(#26 #6) — 서버가 플래그에서 합성(K8)·화면별 고유 id(#27).
         $(id.dataLabel).value = s.data_source_label || "";
+        // 데이터 해제 버튼은 데이터가 물렸을 때만(무데이터엔 해제할 게 없어 dead control, 리뷰 F).
+        if (id.clearBtn && $(id.clearBtn)) $(id.clearBtn).hidden = !s.has_data;
         dz.render(s);  // 데이터 존(테이블·칩·스트립) — 팩토리 소유(datazone.js)
         // 존 고지는 데이터 소스가 바뀌면 걷는다(다른 세션으로의 누수 방지 — 읽힐 때까지 유지).
         // 키는 표시 라벨이 아니라 정체(data_key) — 동명 다른 폴더 전환에서 이전 소스의 고지가
@@ -563,7 +565,7 @@
        술어·수치는 Python(_guard_state)이 판정하고 여기는 문안만 입힌다(작업 화면과 같은 규율).
        T3 성분(큐 부분 진행)이 기안 고유다: 어디까지 붙여넣었는지는 앱 밖 기억이라, 처리
        표지가 증발하면 복구할 방법이 없다. 잃는 것을 종류별로 명시한다(결정 27 수치 재진술). */
-    function guardBody(g, lead) {
+    function guardBody(g, lead, includeRecipe) {
       const lost = [];
       if (g.queue_partial) lost.push(`복사 진행 ${g.copied_count}/${g.sel_count}행(처리 표지)`);
       // 선택 재진술 조각은 「작업」 가드와 **공유**(guard.js, 리뷰 F6) — 같은 가드 상태를 두
@@ -572,9 +574,28 @@
         lost.push(window.Guard.selectionLine(g.sel_count, g.filter_active, g.in_def, g.extra));
       }
       if (g.filter_parts > 0) lost.push(`필터 정의 ${g.filter_parts}개 조건`);
+      // 세션 **교체**(새 기안)는 미저장 매핑·원문 편집도 폐기한다 — 데이터 스왑(매핑·원문 유지)과
+      // 달리 열거해야 "사라지는 것: ."(빈 목록)이 되지 않는다(리뷰 F6 — leave_guard 가 이 둘만으로
+      // 무장할 수 있다). 어휘는 leaveLossBody(draft.js)와 같게. 데이터 스왑은 includeRecipe 없이
+      // 불러 이 둘을 뺀다(스왑은 유지하므로 열거하면 over-warn).
+      if (includeRecipe && g.map_dirty) lost.push("미저장 매핑 편집");
+      if (includeRecipe && g.source_dirty) lost.push("미저장 원문 편집");
       // 앞머리만 제스처별로 갈린다(데이터 교체 / 새 기안) — 잃는 것의 열거는 같은 술어를 공유한다.
       return `${lead || "다른 데이터를 겨누면"} 이 큐는 새로 만들어집니다.\n` +
         `사라지는 것: ${lost.join(" · ")}.`;
+    }
+
+    /* 템플릿 교체(콤보·홈/관리 「열기」·붙여넣기)의 세션 교체 확인 문안 — **현 세션과 스태시된
+       이전 세션 중 무장한 것만** 주어로 든다(리뷰 C·I). 정확성: ``session_armed``(현 세션 자체)와
+       ``stash_armed`` 를 따로 봐, 세션 미무장·스태시만 무장이면 "지금 진행 중인 기안"을 빼야
+       문안≠집합이 안 된다(``armed`` 는 둘의 합이라 여기 못 쓴다). 콤보·붙여넣기·홈·관리 단일 출처. */
+    function leaveForTemplateBody(g) {
+      const who = [];
+      if (g.session_armed) who.push("지금 진행 중인 기안");
+      if (g.stash_armed) who.push("이전 붙여넣기 세션");
+      const subj = who.join("과 ") || "지금 세션";
+      return `${subj}의 저장되지 않은 작업은 저장된 기안에 보관되지 않아, 다른 템플릿을 열면 ` +
+        `사라집니다. 계속하시겠습니까?`;
     }
 
     /* 데이터 교체 사전 확인 — 피커를 열기 **전에** 묻는다(파일까지 고른 뒤 "머무르기"는 고른
@@ -593,14 +614,17 @@
 
     /* 「＋ 새 기안」 사전 확인(#126 — T3 면제 철회). 원장 F11 의 면제 근거("txt 출력은 일회성이라
        버릴 durable 상태가 없다")는 블록 3 전-선언 큐 신설로 거짓이 됐다: 20건 중 12건까지 붙여넣은
-       큐가 클릭 한 번에 사라지고, 어디까지 처리했는지는 앱 밖 기억이라 복원 수단이 없다. 술어·수치는
-       데이터 교체 가드와 **같은 _guard_state** 를 쓴다(두 파괴 경로가 한 술어를 공유). true=진행. */
+       큐가 클릭 한 번에 사라지고, 어디까지 처리했는지는 앱 밖 기억이라 복원 수단이 없다. 「새 기안」은
+       세션 **교체**(매핑·원문 편집까지 폐기)라 데이터 스왑 전용 guard_state 가 아니라 **leave_guard**
+       를 질의한다(리뷰 F4 — guard_state 는 map_dirty 를 armed 에 안 넣어 저장 기안의 미저장 매핑
+       편집을 데이터 없이 조용히 버렸다). true=진행. */
     async function confirmNewDraftIfArmed() {
-      const g = await Bridge.call(SCREEN, "guard_state", {});
+      const g = await Bridge.call(SCREEN, "leave_guard", {});
       if (!g || !g.armed) return true;
       return window.Modal.confirm({
         title: "새 기안 확인",
-        body: guardBody(g, "새 기안을 시작하면"),
+        // 세션 교체라 미저장 매핑·원문 편집도 열거한다(includeRecipe, 리뷰 F6).
+        body: guardBody(g, "새 기안을 시작하면", true),
         confirmLabel: "새로 시작하고 버리기",
         cancelLabel: "머무르기",
       });
@@ -610,8 +634,21 @@
     function wire() {
       // 데이터 존(테이블·열 패널·칩·스트립·전체 선택/해제·문서 레벨 닫기)은 팩토리 몫 배선.
       dz.wire();
-      $(id.tplSel).addEventListener("change", (e) =>
-        Bridge.call(SCREEN, "select_template", { name: e.target.value }));
+      // 콤보 템플릿 전환 — **세션 교체 가드**(리뷰 I). 휘발 세션에 미저장 원문·매핑 편집이 있으면
+      // 백엔드가 needs_confirm 을 돌려준다(select_template 단일 초크). 취소=콤보를 현 템플릿으로
+      // 되돌려(전환 안 함) render 의 sel.value=template_name 복원과 정합.
+      $(id.tplSel).addEventListener("change", async (e) => {
+        const name = e.target.value;
+        let r = await Bridge.call(SCREEN, "select_template", { name });
+        if (r && r.needs_confirm) {
+          const ok = await window.Modal.confirm({
+            title: "진행 중인 기안을 떠납니다",
+            body: leaveForTemplateBody(r), confirmLabel: "바꾸기", cancelLabel: "머무르기",
+          });
+          if (!ok) { if (LAST) e.target.value = LAST.template_name || ""; return; }  // 취소 = 콤보 되돌림
+          r = await Bridge.call(SCREEN, "select_template", { name, confirm: true });
+        }
+      });
 
       // 작업점 카드 동사(결정 16) — 큐 네비게이션(◀▶ 경계 멈춤·점 클릭)·복사(카드 결속·Enter)·
       // 복사 후 전진 토글. ◀▶·점 클릭이 **자유 이동**이라 미루기(결정 10 사망)를 대체한다.
@@ -749,13 +786,34 @@
         if (!(await confirmDataSwapIfArmed())) return;  // T3 가드 — 파일 경로와 같은 규율
         await PoolPicker.choose(SCREEN);             // 라벨은 스냅샷(data_source_label)이 채운다
       });
+      // 데이터 해제(R-flow 결정 30, 리뷰 F — 구 「빠른 기안」 승계) — 결속 값을 지금 값으로 상수
+      // 동결하고 무데이터 직접 입력으로 되돌린다. 데이터 교체와 같은 파괴라 T3 확인을 지난다.
+      // id 미부여 화면(구 「기안문 채우기」는 이 버튼 없음)은 팩토리가 유무로 가드(dead control 없음).
+      if (id.clearBtn && $(id.clearBtn)) {
+        $(id.clearBtn).addEventListener("click", async () => {
+          await dz.flushPendingSearch();
+          if (!(await confirmDataSwapIfArmed())) return;  // T3 가드 — 데이터 교체와 같은 규율
+          Bridge.call(SCREEN, "clear_data", {});
+        });
+      }
 
       // 붙여넣기 모달(세션 템플릿) — 개폐·초기포커스·복귀·Escape 는 Modal 헬퍼가 소유(#27/#28).
       // 모달 DOM 은 **두 화면 공유 한 벌**이라 확정 버튼도 한 번만 배선하고, 어느 화면이
       // 열었는지는 소유권 슬롯이 기억한다(두 인스턴스가 각자 리스너를 달면 한 번 누를 때
       // 두 화면이 다 바뀐다 — 조용한 교차 오염).
       wirePasteModal();
-      $(id.pasteBtn).addEventListener("click", () => {
+      $(id.pasteBtn).addEventListener("click", async () => {
+        // **세션 교체 가드**(리뷰 I·GAP1) — 붙여넣기도 현 원문/편집을 갈아치운다. 모달을 **열기
+        // 전에** 묻는다(텍스트를 다 붙인 뒤 "버릴까요"는 그 노동을 또 버리게 한다 — 구 「빠른
+        // 기안」도 진입 시 확인). 콤보와 같은 단일 술어(leave_for_template_guard 무변이 질의).
+        const g = await Bridge.call(SCREEN, "leave_for_template_guard", {});
+        if (g && g.armed) {
+          const ok = await window.Modal.confirm({
+            title: "진행 중인 기안을 떠납니다",
+            body: leaveForTemplateBody(g), confirmLabel: "붙여넣기", cancelLabel: "머무르기",
+          });
+          if (!ok) return;  // 머무르기 = 현 세션 보존(모달 안 엶)
+        }
         pasteOwner = pasteOk;
         $("pasteText").value = LAST ? LAST.template_text : "";
         window.Modal.open("pasteModal", { initialFocus: $("pasteText") });
@@ -803,6 +861,8 @@
       render, wire, fillTemplateSelect, refreshOnEnter, pasteOk,
       guardBody, copyGateBody, confirmNewDraftIfArmed, confirmDataSwapIfArmed,
       warnNote, dz,
+      // 세션 교체 확인 문안(콤보·붙여넣기·홈·관리 단일 출처, 리뷰 C·I) — 순수 합성기.
+      leaveForTemplateBody,
       // 대기·미착지 타이핑 편집 정산(승격이 화면에 보이는 원문/값을 저장하게) — 「템플릿으로
       // 저장」이 promote_info/save_template 전에 await 한다(빠른 기안 flushDebounce 선례).
       flush: flushDeb,
