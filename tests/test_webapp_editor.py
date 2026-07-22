@@ -620,6 +620,23 @@ def test_save_dataset_same_name_requires_confirm(tmp_path):
     assert pool.load("multi_sheet").opts["path"] == str(MULTI_SHEET)
 
 
+def test_save_dataset_confirm_does_not_resurrect_concurrently_deleted_item(tmp_path):
+    """자동등록 확인 중 삭제된 참조는 작업 저장이나 데이터셋 재생성 없이 다시 판정한다."""
+    pool = DatasetPoolRegistry(tmp_path / "pool")
+    pool.save(DatasetPoolItem(name="multi_sheet", kind="excel", opts={"path": "old.xlsx"}))
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "삭제경합작업")
+    first = ctrl.dispatch("save", {})
+    assert first.get("needs_dataset_confirm") is True
+
+    DatasetPoolRegistry(pool.directory).delete("multi_sheet")
+    second = ctrl.dispatch("save", {"confirm_dataset": True})
+
+    assert second["ok"] is False and "삭제" in second["dataset_error"]
+    assert not pool.exists("multi_sheet")
+    assert not JobRegistry(tmp_path / "jobs").exists("삭제경합작업")
+
+
 def test_save_dataset_slug_collision_demands_rename(tmp_path):
     """다른 이름·같은 slug 는 덮어쓰기 경로 없이 이름 변경만 안내(소유 항목 보호)."""
     pool = DatasetPoolRegistry(tmp_path / "pool")

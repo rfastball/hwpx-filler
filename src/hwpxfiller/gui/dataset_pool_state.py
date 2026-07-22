@@ -242,12 +242,15 @@ class DatasetPoolViewModel:
         opts: "dict[str, object]" = {"path": path}
         if sheet:
             opts["sheet"] = sheet
-        item.kind = "excel"  # kind/opts 정합 — 하이브리드 손상 항목 금지(r4)
-        item.opts = opts
-        if note:
-            item.note = note
-        # 동명(자기-갱신)으로 이미 확정된 뒤라 slug 가드 재판정 불필요 — 명시적 opt-in.
-        self.registry.save(item, allow_overwrite=True)
+        def update(current: DatasetPoolItem) -> None:
+            # 호출자가 건넨 item 은 확인 모달 전 스냅샷일 수 있다. 현재 디스크 항목을 잠금 안에서
+            # 다시 읽어 참조 필드만 바꿔야 동시 보관 상태·메모를 되돌리거나 삭제를 부활시키지 않는다.
+            current.kind = "excel"  # kind/opts 정합 — 하이브리드 손상 항목 금지(r4)
+            current.opts = opts
+            if note:
+                current.note = note
+
+        item = self.registry.mutate(item.name, update)
         self.refresh()
         return item
 
@@ -286,9 +289,7 @@ class DatasetPoolViewModel:
 
     # ---------------------------------------------------------- 상태/삭제
     def _transition(self, name: str, action: str) -> None:
-        item = self.registry.load(name)
-        getattr(item, action)()  # archive/activate — 순수 전이
-        self.registry.save(item)
+        self.registry.mutate(name, lambda item: getattr(item, action)())
         self.refresh()
 
     def archive(self, name: str) -> None:
