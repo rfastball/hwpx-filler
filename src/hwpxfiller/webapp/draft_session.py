@@ -1,16 +1,15 @@
-"""기안 세션(txt) 공용 본체 — 「기안문 채우기」와 「기안」 화면의 단일 출처. #148 슬라이스 3a.
+"""기안 세션(txt) 공용 본체 — 「기안」 화면의 세션 기계. #148 슬라이스 3a.
 
-R-info 3부 결정 1·5·7 의 합병은 **두 표면이 같은 세션 기계를 쓴다**는 뜻이다. 이 모듈은
-:class:`~hwpxfiller.webapp.screens.TxtController` 가 혼자 갖고 있던 세션 본체(템플릿 원문 ·
+R-info 3부 결정 1·5·7 의 합병은 **하나의 세션 기계**라는 뜻이다. 이 모듈은 구 「기안문 채우기」
+(``screen_txt.TxtController``, #148 슬라이스 6 삭제)가 혼자 갖고 있던 세션 본체(템플릿 원문 ·
 데이터 존 · 큐 · 작업점 카드 · 대상 글꼴 · 정렬 린트 · T3 가드 · 클립보드 렌더)를 **무변화로**
 끌어올린 것이다 — 「기안」 화면이 400줄 사본을 새로 짓지 않게(#94 가 남긴 교훈: 한시적
-중복은 한시적이지 않다).
+중복은 한시적이지 않다). 슬라이스 3a~5 에선 신·구 두 표면이 잠시 공존하며 같은 이 믹스인을
+봐 드리프트가 생길 자리가 없었고, 슬라이스 6 에서 구 화면이 흡수·삭제돼 소비자는 하나가 됐다.
 
-소비자는 둘:
+소비자:
 
-- :class:`~hwpxfiller.webapp.screens.TxtController` — 구 화면. 세션이 화면의 전부라
-  스냅샷·디스패치를 그대로 물려받는다(슬라이스 6에서 사망).
-- :class:`~hwpxfiller.webapp.screen_draft.DraftController` — 신 화면. 좌 목록(master)에
+- :class:`~hwpxfiller.webapp.screen_draft.DraftController` — 「기안」 화면. 좌 목록(master)에
   세션(detail)을 얹는다. 스냅샷은 목록 키 + :meth:`DraftSessionMixin._session_snapshot`
   병합이고 디스패치는 두 계열의 ``_do_*`` 가 한 라우터를 공유한다(MRO).
 
@@ -107,7 +106,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
     """기안(txt) 휘발 세션 — :class:`TxtDraftViewModel` 소유·위임.
 
     스파이크가 끝까지 검증한 첫 실화면(SPIKE_FINDINGS.md). 표현 재진술(빨강 미입력
-    ``{{토큰}}`` · 〈빈 값〉)은 링2 대체라 웹(js/screens/txt.js · draft.js)에서 만든다 — VM
+    ``{{토큰}}`` · 〈빈 값〉)은 링2 대체라 웹(js/screens/draft.js)에서 만든다 — VM
     로직 재구현이 아니다.
 
     **데이터 존(블록 3·4, 슬라이스 6 PR-2b)**: 행 선택 = 복사용 렌더링 큐의 **전-선언**
@@ -748,8 +747,9 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         상태가 없다"였는데, 블록 3 전-선언 큐가 신설되면서 거짓이 됐다. 큐의 복사 진행은
         durable 은 아니어도 **복구 불가**다 — 어디까지 붙여넣었는지는 앱 밖 기억이다. 이제
         이 전이도 T3 술어(:meth:`_guard_state`)를 지나며, 확인은 제스처를 소유한 표면
-        (``TxtScreen.confirmNewDraftIfArmed``)이 큐 진행을 재진술해 받는다. 결정 32 가 빠른
-        기안에서 같은 F11 전제를 이미 부분 개정했다(수기 폼 신설로 버릴 상태가 생김).
+        (``DraftScreen.confirmNewDraftIfArmed``, 홈 「＋ 새 기안」도 이를 소비 — #148 슬라이스 6)이
+        큐 진행을 재진술해 받는다. 결정 32 가 같은 F11 전제를 이미 부분 개정했다(수기 폼 신설로
+        버릴 상태가 생김).
         """
         self._fresh_session()
 

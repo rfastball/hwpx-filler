@@ -194,9 +194,10 @@
     if (window.JobScreen) { window.JobScreen.openJob(name); return; }
     window.Nav.go("job");
   }
-  function openTxt(name) {
-    Bridge.call("txt", "select_template", { name });
-    window.Nav.go("txt");
+  function openDraft(name) {
+    // 「기안」 화면으로 라우팅(#148 슬라이스 6 — 구 txt 흡수). 템플릿을 휘발 세션에 물려 채우게.
+    Bridge.call("draft", "select_template", { name });
+    window.Nav.go("draft");
   }
 
   /* '＋ 새 작업'(F10) — 라벨-행동 일치: 이전 에디터 세션을 초기화한 뒤 이동한다.
@@ -210,14 +211,15 @@
 
   /* '＋ 새 기안'(F11) — F10 과 대칭. **무확인 면제 철회(#126)**: 원장 F11 의 근거였던 "txt
      출력은 일회성이라 버릴 durable 상태가 없다"가 블록 3 전-선언 큐 신설로 거짓이 됐다.
-     확인·문안은 TxtScreen 이 소유한다(같은 T3 술어를 데이터 교체 가드와 공유) — 홈이 큐
-     사정을 따로 알아 문안을 짓기 시작하면 두 화면이 같은 상태를 다르게 말한다. */
-  async function newTxt() {
+     확인·문안은 「기안」 화면(DraftScreen)이 소유한다(같은 T3 술어를 데이터 교체 가드와 공유,
+     #148 슬라이스 6 — 구 TxtScreen 승계) — 홈이 큐 사정을 따로 알아 문안을 짓기 시작하면 두
+     화면이 같은 상태를 다르게 말한다. */
+  async function newDraft() {
     // #99-6 동형 loud — 진입 셔틀 미로드 시 조용한 무가드 파괴가 되지 않게(가드 소실 > 무반응).
-    if (!window.TxtScreen) { window.alert("기안 화면 구성 요소(TxtScreen)가 로드되지 않았습니다."); return; }
-    if (!(await TxtScreen.confirmNewDraftIfArmed())) return;  // 머무르기 = 큐 불변
-    await Bridge.call("txt", "new_draft", {});
-    window.Nav.go("txt");
+    if (!window.DraftScreen) { window.alert("기안 화면 구성 요소(DraftScreen)가 로드되지 않았습니다."); return; }
+    if (!(await DraftScreen.confirmNewDraftIfArmed())) return;  // 머무르기 = 큐 불변
+    await Bridge.call("draft", "new_draft", {});
+    window.Nav.go("draft");
   }
 
   /* ---- 웹→Python 이벤트(위임) ---- */
@@ -349,14 +351,14 @@
     // 수동 새로고침 버튼은 제거(F6) — 화면 진입 자동 갱신(app.js REFRESH_ON_NAV)이 유일 경로.
     // 실패 표면화(N1)는 그 경로의 .catch → alert 가 담당한다.
     $("homeNewJob").addEventListener("click", newJob);
-    $("homeNewTxt").addEventListener("click", newTxt);
+    $("homeNewTxt").addEventListener("click", newDraft);
     $("homeJobs").addEventListener("click", onJobsClick);
     $("homeEmpty").addEventListener("click", onJobsClick);
     $("homeContinue").addEventListener("click", onJobsClick);
     $("homeCorrupt").addEventListener("click", onCorruptClick);  // 손상 조치(#26 #8)
     $("homeTxt").addEventListener("click", (e) => {
       const open = e.target.closest("[data-open]");
-      if (open) openTxt(open.dataset.open);
+      if (open) openDraft(open.dataset.open);
     });
     $("homeBrowser").addEventListener("change", onBrowserChange);
     $("homeBrowser").addEventListener("click", onBrowserClick);

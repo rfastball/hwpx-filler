@@ -261,8 +261,9 @@
       const btn = e.target.closest("button[data-txt]");
       if (!btn) return;
       if (btn.dataset.txt === "open") {
-        Bridge.call("txt", "select_template", { name: btn.dataset.name });
-        window.Nav.go("txt");
+        // 「기안」 화면으로 라우팅(#148 슬라이스 6 — 구 txt 흡수).
+        Bridge.call("draft", "select_template", { name: btn.dataset.name });
+        window.Nav.go("draft");
       } else if (btn.dataset.txt === "edit") {
         Bridge.call(SCREEN, "txt_content", { path: btn.dataset.path }).then((res) =>
           openEditModal("edit", btn.dataset.path, btn.dataset.name, (res && res.content) || ""));

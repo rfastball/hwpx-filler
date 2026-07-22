@@ -12,8 +12,9 @@ from pathlib import Path
 
 import pytest
 
+from hwpxfiller.core.job import JobRegistry
 from hwpxfiller.core.text_registry import TextTemplateRegistry
-from hwpxfiller.webapp.screen_txt import TxtController
+from hwpxfiller.webapp.screen_draft import DraftController
 
 REPO = Path(__file__).resolve().parents[1]
 WEB = REPO / "web"
@@ -28,12 +29,18 @@ def _frontend(tmp_path, monkeypatch):
     return app_mod.WebFrontend(tmp_path / "txt")
 
 
-def _controller(tmp_path: Path) -> "tuple[TxtController, list]":
+def _controller(tmp_path: Path) -> "tuple[DraftController, list]":
+    # 「기안」 화면(#148 슬라이스 6 — 구 TxtController 흡수)을 브리지 경로의 편의 컨트롤러로 쓴다:
+    # 작업 없이도 휘발 세션이 첫 템플릿을 자동 선택해 단독 로드된다(구 txt 와 같은 성질).
     (tmp_path / "샘플기안.txt").write_text(
         "제목: {{공고명}}\n담당: {{담당자}}\n금액: {{추정가격}}", encoding="utf-8"
     )
     pushes: list = []
-    ctrl = TxtController(TextTemplateRegistry(tmp_path), lambda s, snap: pushes.append((s, snap)))
+    ctrl = DraftController(
+        JobRegistry(tmp_path / "jobs"),
+        lambda s, snap: pushes.append((s, snap)),
+        TextTemplateRegistry(tmp_path),
+    )
     return ctrl, pushes
 
 
@@ -87,7 +94,7 @@ def test_load_data_drives_card_and_pushes(tmp_path):
 
     assert pushes, "load 후 관측 푸시가 없음"
     screen, snap = pushes[-1]
-    assert screen == "txt"
+    assert screen == "draft"
     assert snap["record_count"] == 2
     card = snap["card"]
     assert card["has_current"] is True and card["index"] == 0  # 작업점 = 첫 미처리
@@ -213,8 +220,10 @@ def test_new_draft_without_templates_is_empty_session(tmp_path):
     empty = tmp_path / "empty"
     empty.mkdir()
     pushes: list = []
-    ctrl = TxtController(
-        TextTemplateRegistry(empty), lambda s, snap: pushes.append((s, snap))
+    ctrl = DraftController(
+        JobRegistry(tmp_path / "jobs"),
+        lambda s, snap: pushes.append((s, snap)),
+        TextTemplateRegistry(empty),
     )
     ctrl.dispatch("new_draft", {})
     snap = pushes[-1][1]
@@ -224,7 +233,7 @@ def test_new_draft_without_templates_is_empty_session(tmp_path):
 def test_unknown_action_is_loud(tmp_path):
     """confirm-or-alarm: 미지 액션은 조용히 무시하지 않고 시끄럽게 거부."""
     ctrl, _ = _controller(tmp_path)
-    with pytest.raises(ValueError, match="알 수 없는 txt 액션"):
+    with pytest.raises(ValueError, match="알 수 없는 기안 화면 액션"):
         ctrl.dispatch("frobnicate", {})
 
 
@@ -289,12 +298,13 @@ def test_pick_data_file_multi_sheet_defers_and_asks(tmp_path, monkeypatch):
     assert frontend.controllers["editor"].data_path == ""
 
 
-@pytest.mark.parametrize("screen", ["editor", "job", "txt"])
+@pytest.mark.parametrize("screen", ["editor", "job", "draft"])
 def test_pick_data_file_multi_sheet_defers_on_every_screen(screen, tmp_path, monkeypatch):
     """pick_data_file 반환 계약은 screen-불가지 — 데이터를 붙이는 세 화면 모두 needs_sheet 로
-    보류돼야 한다(리뷰 P1: txt 가 객체를 못 다뤄 첫 시트로 조용히 강등되던 회귀 차단).
+    보류돼야 한다(리뷰 P1: 기안이 객체를 못 다뤄 첫 시트로 조용히 강등되던 회귀 차단).
 
-    run 사망(슬라이스 3) 후 데이터-부착 화면은 editor·job·txt — 세 화면 모두 관통을 지킨다."""
+    데이터-부착 화면은 editor·job·기안(run 사망=슬라이스 3, 구 txt 흡수=슬라이스 6) — 세 화면
+    모두 관통을 지킨다."""
     from hwpxfiller.webapp import app as app_mod
 
     frontend = _frontend(tmp_path, monkeypatch)
@@ -304,19 +314,19 @@ def test_pick_data_file_multi_sheet_defers_on_every_screen(screen, tmp_path, mon
     assert [s["name"] for s in result["sheets"]] == ["공고목록", "낙찰현황"]
 
 
-def test_load_data_sheet_threads_confirmed_sheet_into_txt_controller(tmp_path, monkeypatch):
+def test_load_data_sheet_threads_confirmed_sheet_into_draft_controller(tmp_path, monkeypatch):
     """확정 시트가 브리지→컨트롤러(load_data_path sheet=)→링1 VM 까지 관통해 로드된다(리뷰 P1).
 
-    txt 컨트롤러는 작업 없이 단독 로드 가능해 브리지 경로 검증에 쓴다 — 다른 화면
-    (editor·job)의 sheet 관통은 각자의 컨트롤러 테스트가 픽스처와 함께 본다.
+    「기안」 컨트롤러는 작업 없이 단독 로드 가능해 브리지 경로 검증에 쓴다(구 txt 흡수, 슬라이스 6)
+    — 다른 화면(editor·job)의 sheet 관통은 각자의 컨트롤러 테스트가 픽스처와 함께 본다.
     """
     frontend = _frontend(tmp_path, monkeypatch)
-    result = frontend.load_data_sheet("txt", str(MULTI_SHEET), "낙찰현황")
+    result = frontend.load_data_sheet("draft", str(MULTI_SHEET), "낙찰현황")
     assert result == "multi_sheet.xlsx"
-    txt = frontend.controllers["txt"]
-    assert txt.data_label == "multi_sheet.xlsx"
+    draft = frontend.controllers["draft"]
+    assert draft.data_label == "multi_sheet.xlsx"
     # 첫 시트(공고목록, 2건)가 아니라 확정 시트(낙찰현황, 3건)가 실렸는가 — 조용한 강등 아님.
-    assert txt.snapshot()["record_count"] == 3
+    assert draft.snapshot()["record_count"] == 3
 
 
 def test_pick_data_file_corrupt_workbook_returns_error_not_raise(tmp_path, monkeypatch):
@@ -383,24 +393,24 @@ def test_load_data_sheet_rejects_unknown_sheet_loudly(tmp_path, monkeypatch):
 def test_web_assets_present_and_wired():
     """web/ 골격이 서 있고 index.html 이 생성 토큰 CSS 와 화면 스크립트를 물었는가."""
     for rel in ("index.html", "css/tokens.css", "css/app.css",
-                "js/bridge.js", "js/app.js", "js/screens/txt.js"):
+                "js/bridge.js", "js/app.js", "js/screens/draft.js"):
         assert (WEB / rel).exists(), f"web/{rel} 없음"
     html = (WEB / "index.html").read_text(encoding="utf-8")
     assert "css/tokens.css" in html and "js/bridge.js" in html
-    # 레일 계약은 NAV_SCREENS 단일 출처(PR-5 리뷰 F7 — 3곳 하드코딩은 후속 레일 변경
-    # [빠른 기안·랜딩 전환]마다 어긋난 채 초록이 된다) + txt 실화면 심.
+    # 레일 계약은 NAV_SCREENS 단일 출처(PR-5 리뷰 F7 — 3곳 하드코딩은 후속 레일 변경마다
+    # 어긋난 채 초록이 된다) + 「기안」 실화면 심(구 txt 흡수, 슬라이스 6).
     from test_web_dom_contract import NAV_SCREENS
     for scr in NAV_SCREENS:
         assert f'data-scr="{scr}"' in html, f"레일에 {scr} 없음"
-    assert 'id="scr-txt"' in html
+    assert 'id="scr-draft"' in html
 
 
-# ============================================================ #26 #6 — txt 2소스
+# ============================================================ #26 #6 — 기안 2소스
 from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
 
 
-def test_txt_load_pool_and_nara_frozen(tmp_path):
-    """즉시 기안의 풀 겨눔(UD-25 비대칭 해소) — 엑셀 참조 성공(라벨 서버 소유), 나라 동결 거절."""
+def test_draft_load_pool_and_nara_frozen(tmp_path):
+    """기안의 풀 겨눔(UD-25 비대칭 해소) — 엑셀 참조 성공(라벨 서버 소유), 나라 동결 거절."""
     csv = tmp_path / "d.csv"
     csv.write_text("공고명,담당자\n전산장비,김주무\n", encoding="utf-8")
     pool = DatasetPoolRegistry(tmp_path / "pool")
@@ -408,8 +418,9 @@ def test_txt_load_pool_and_nara_frozen(tmp_path):
     pool.save(DatasetPoolItem(name="나라쿼리", kind="nara", opts={"bgn_dt": "202607010000", "end_dt": "202607080000"}))
     (tmp_path / "샘플기안.txt").write_text("제목: {{공고명}}", encoding="utf-8")
     pushes: list = []
-    ctrl = TxtController(TextTemplateRegistry(tmp_path), lambda s, snap: pushes.append((s, snap)),
-                         pool_registry=pool)
+    ctrl = DraftController(JobRegistry(tmp_path / "jobs"),
+                           lambda s, snap: pushes.append((s, snap)),
+                           TextTemplateRegistry(tmp_path), pool_registry=pool)
     res = ctrl.dispatch("load_pool", {"name": "기안데이터"})
     assert res["ok"] is True and res["label"] == "등록 데이터: 기안데이터"
     snap = ctrl.snapshot()
@@ -428,9 +439,9 @@ def test_copy_clipboard_blocks_empty_when_no_work_point(tmp_path, monkeypatch):
     """
     from hwpxfiller.webapp import app as app_mod
 
-    fe = _frontend(tmp_path, monkeypatch)  # 기본 txt 컨트롤러 = 데이터 없음 → 작업점 없음
+    fe = _frontend(tmp_path, monkeypatch)  # 기본 기안 컨트롤러 = 템플릿 없음 → 복사할 원문 없음
     writes: list = []
     monkeypatch.setattr(app_mod, "set_clipboard_text", lambda t: writes.append(t))
-    res = fe.copy_clipboard("txt")
+    res = fe.copy_clipboard("draft")
     assert res["copied"] is False
     assert writes == [], "작업점 없는데 클립보드에 기록됐습니다(빈 템플릿 오염)."

@@ -496,5 +496,11 @@
 
   // 화면 진입마다 재동기(txt 와 같은 규율) — 다른 표면이 저장한 템플릿·바꾼 전역 글꼴 선언이
   // 앱 재시작 없이 여기에 반영된다.
-  window.DraftScreen = { init, refreshOnEnter: sess.refreshOnEnter };
+  // confirmNewDraftIfArmed 는 홈의 「＋ 새 기안」이 소비(#126 · #148 슬라이스 6 — 구 TxtScreen
+  // 에서 승계). 화면 진입 전에 현 세션 무장(T3 큐 진행)을 사전 확인해 조용한 파괴를 막는다.
+  window.DraftScreen = {
+    init,
+    refreshOnEnter: sess.refreshOnEnter,
+    confirmNewDraftIfArmed: sess.confirmNewDraftIfArmed,
+  };
 })();

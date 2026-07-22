@@ -19,7 +19,6 @@ from hwpxfiller.gui.selection_state import SelectionModel
 from hwpxfiller.gui.txt_queue import TxtQueueModel
 from hwpxfiller.webapp.draft_session import TargetFontSetting
 from hwpxfiller.webapp.screen_draft import DraftController
-from hwpxfiller.webapp.screen_txt import TxtController
 
 
 def _arm_queue(ctrl, selected: int = 2, copied: int = 1) -> None:
@@ -836,19 +835,19 @@ def test_unknown_action_is_loud(tmp_path):
 
 # ------------------------------------------------------------------ 전역 글꼴 선언(코덱스 P2)
 def test_target_font_setting_is_shared_across_surfaces(tmp_path):
-    """대상 글꼴 선언은 **앱 전역**이라 두 기안 표면이 한 실체를 본다.
+    """대상 글꼴 선언은 **앱 전역**이라 한 실체를 공유하는 표면들이 서로의 변경을 본다.
 
     회귀 원본(코덱스 리뷰 P2): 컨트롤러마다 사본을 캐시하면 한쪽에서 바꾼 선언이 다른 쪽에
     **재부팅까지 도달하지 않는다** — 저장은 됐는데 그 화면의 콤보·미리보기 글꼴·비례폭 정렬
-    린트는 옛 값으로 판정한다(선언과 실제가 갈라지는 지배 결함류).
+    린트는 옛 값으로 판정한다(선언과 실제가 갈라지는 지배 결함류). 슬라이스 6 에서 구 「기안문
+    채우기」가 흡수돼 실제 소비 표면은 하나지만, 공유 실체 기제는 그대로라 두 컨트롤러 인스턴스로
+    기제를 가드한다(주입한 하나를 둘이 보면 한쪽 변경이 다른 쪽에 즉시 도달).
     """
     shared = TargetFontSetting()
     ctrl, _jobs, _ = _controller(tmp_path, target_font=shared)
-    txt = TxtController(TextTemplateRegistry(tmp_path), lambda s, snap: None,
-                        pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
-                        target_font=shared)
-    assert ctrl.snapshot()["target_font"] == txt.snapshot()["target_font"] == "gulimche"
-    txt.dispatch("set_target_font", {"font": "malgun"})   # 구 화면에서 선언 변경
+    other, _jobs2, _ = _controller(tmp_path, target_font=shared)
+    assert ctrl.snapshot()["target_font"] == other.snapshot()["target_font"] == "gulimche"
+    other.dispatch("set_target_font", {"font": "malgun"})   # 한 표면에서 선언 변경
     assert ctrl.snapshot()["target_font"] == "malgun", "다른 기안 표면에 선언이 도달하지 않았습니다."
     # 비례폭 판정(정렬 린트의 근거)도 같은 값을 따라간다 — 문안만 갈라지는 일이 없게.
     assert ctrl.snapshot()["card"]["lint"]["proportional"] is True

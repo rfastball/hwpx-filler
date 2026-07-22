@@ -37,22 +37,14 @@
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h5v12H4zM11 4h5v7h-5z"/></svg></span><span class="lbl"><span class="n">작업</span><span class="d">목록 + 세션 패널</span></span></button>
     <!-- 「기안」(R-info 3부, #148) — TXT 작업-앵커 master-detail. 「작업」(HWPX)의 대칭 화면으로
          바로 다음 순번(최종 형상 작업·기안·템플릿·데이터). 좌 목록 + 우 휘발 세션 4존(3a) +
-         맞추기 표·원문 뷰 전환(3b)까지 착지. 큐 퇴화·구 화면 흡수(3c·슬라이스 6) 전까지
-         기안문 채우기·빠른 기안 항목과 잠시 공존한다. -->
+         맞추기 표·원문 뷰 전환(3b)·큐 퇴화(3c)·유래/복원/승격(5)·「템플릿으로 저장」 흡수
+         (6a)까지 착지. 슬라이스 6b 에서 구 「기안문 채우기」·「빠른 기안」을 흡수·삭제하며
+         **레일 6→5**(홈·작업·기안·템플릿·데이터)가 됐다(결정 5·34). -->
     <button class="navbtn" data-scr="draft" aria-label="기안" title="기안 — 저장된 기안 작업을 골라 채워 복사 (TXT)">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h8l4 4v8H4zM12 4v4h4M7 11h6M7 14h6"/></svg></span><span class="lbl"><span class="n">기안</span><span class="d">기안 작업 목록 + 채움 (TXT)</span></span></button>
     <!-- 레일 「작업 에디터」 사망(결정 39 — 에디터 흡수 완결): 생성 진입은 「작업」 구획
          ＋ 새 작업(#jobNewBtn — 이 삭제가 승계 신설)·홈 ＋/카드 편집·템플릿 관리 「작업
-         만들기」가 담당한다(카드 ⋮ 편집 메뉴는 #110 목록 관리 소관). 레일 5→4 의 최종
-         형상은 빠른 기안[블록 5]·랜딩 전환 후속과 함께 완성. -->
-    <button class="navbtn" data-scr="txt" aria-label="기안문 채우기 (txt)" title="기안문 채우기 (txt) — 템플릿을 실시간으로 채워 복사">
-      <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h5l3 3v11H6zM11 3v3h3M8 11h5M8 14h5"/></svg></span><span class="lbl"><span class="n">기안문 채우기 (txt)</span><span class="d">실시간 채움 → 복사</span></span></button>
-    <!-- 빠른 기안(R-flow 블록 5, #90 슬라이스 7) — 작업의 휘발 쌍둥이. 최종 레일 형상
-         (작업·빠른 기안·템플릿·데이터)에서 「작업」 바로 다음 순번이라 txt 뒤·템플릿 앞에
-         앉힌다. 현재는 이 항목이 더해져 **6항목**이고, txt 흡수·랜딩 전환(둘 다 에픽 #90
-         스코프 밖 후속)이 끝나야 4항목이 된다. 레일 문구는 R-copy(PR-4)에서 확정. -->
-    <button class="navbtn" data-scr="quickdraft" aria-label="빠른 기안" title="빠른 기안 — 저장 없이 한 번 쓰고 복사하는 휘발 표면">
-      <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2L5 11h4l-1 7 6-9h-4z"/></svg></span><span class="lbl"><span class="n">빠른 기안</span><span class="d">저장 없이 채워 복사</span></span></button>
+         만들기」가 담당한다(카드 ⋮ 편집 메뉴는 #110 목록 관리 소관). -->
     <button class="navbtn" data-scr="tpl" aria-label="템플릿 관리" title="템플릿 관리 — HWPX·TXT 라이브러리 · 상태·변환·검토">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3l7 4-7 4-7-4zM3 11l7 4 7-4"/></svg></span><span class="lbl"><span class="n">템플릿 관리</span><span class="d">HWPX·TXT 라이브러리 · 상태·변환·검토</span></span></button>
     <button class="navbtn" data-scr="pool" aria-label="데이터 관리" title="데이터 관리 — 등록 데이터(참조) · 수명 관리">
@@ -102,9 +94,10 @@
           <div id="homeEmpty" style="display:none"></div>
         </div>
 
-        <!-- txt 트랙 — 기안 템플릿 목록 -->
+        <!-- txt 트랙 — 기안 템플릿 목록. 클릭·「＋ 새 기안」은 「기안」 화면으로 라우팅(#148
+             슬라이스 6 — 구 「기안문 채우기」 흡수). -->
         <div class="track txt">
-          <div class="th"><span class="tt">기안문 채우기 · txt</span>
+          <div class="th"><span class="tt">기안 · txt</span>
             <button class="btn primary sm" id="homeNewTxt">＋ 새 기안</button></div>
           <p class="tsub">평문 {{필드}} 템플릿을 실시간으로 채워 복사합니다 — 온나라 기안 등에 바로 붙여넣기.</p>
           <div class="tlist" id="homeTxt"></div>
@@ -404,226 +397,6 @@
       </div>
     </section>
 
-    <!-- ============ TXT 기안문 채우기 (첫 실화면) ============ -->
-    <section class="scr" id="scr-txt">
-      <header class="scr-head">
-        <div>
-          <h1>기안문 채우기</h1>
-          <p class="sub">템플릿과 데이터를 실시간으로 채워 기안문을 복사합니다.</p>
-        </div>
-        <div class="status" id="txtStatus" data-level="idle">준비됨</div>
-      </header>
-
-      <!-- 동선(A): 무엇으로(템플릿) → 무엇을(데이터) → 어느 건(레코드) 좌→우 -->
-      <div class="txt-controls">
-        <label class="ctl"><span class="lbl">템플릿</span>
-          <select class="field" id="tplSel"></select></label>
-        <label class="ctl grow"><span class="lbl">데이터</span>
-          <input class="field ro" id="txtDataLabel" type="text" readonly
-                 placeholder="데이터를 선택하세요 — 없으면 토큰이 그대로 남습니다"></label>
-        <div class="ctl-actions">
-          <button class="btn" id="btnTxtPoolData">등록 데이터…</button>
-          <button class="btn" id="btnPick">파일 선택…</button>
-          <button class="btn" id="btnPaste">템플릿 붙여넣기…</button>
-        </div>
-      </div>
-
-      <!-- 데이터 존(전-선언 큐 선택 · 블록 3, 슬라이스 6 PR-2b) — 공용 팩토리(datazone.js)의
-           두 번째 인스턴스. 구조·표면 클래스는 scr-job 데이터 존과 동형(jobtb 계열 클래스는
-           화면 공유 표면), id 만 화면 고유(txt*). 행 선택 = 복사용 렌더링 큐의 전-선언
-           (결정 16) — 작업점 카드·복사 동사·상태 색인은 다음 PR, 선두 「큐」 열 표지(대기
-           순번·작업점)는 링1 큐 모델의 사영이라 먼저 선다. -->
-      <div class="run-row run-recs-head">
-        <span class="lbl" style="font-weight:600">기안 대상 행</span>
-        <input class="field jobsearch" id="txtFilterSearch" type="search"
-               placeholder="전체 열 검색" autocomplete="off" data-busy-lock>
-        <button class="btn sm" id="txtFilterReapply" style="display:none"
-                data-busy-lock>직전 필터 재적용</button>
-        <div class="acts"><span class="muted capnote" id="txtSelCount">선택 0/0</span>
-          <button class="btn sm" id="txtSelAll" data-busy-lock>전체 선택</button>
-          <button class="btn sm" id="txtSelNone" data-busy-lock>전체 해제</button></div>
-      </div>
-      <div class="fchips" id="txtFilterChips" style="display:none"></div>
-      <div class="jobtb-host" id="txtTableHost">
-        <div class="tbwrap jobtbwrap" id="txtTableWrap" data-preserve-scroll>
-          <table class="tb jobtb">
-            <thead id="txtTableHead"></thead>
-            <tbody id="txtTableBody"></tbody>
-          </table>
-        </div>
-        <!-- ①존 빈 상태(결정 14) — 데이터 필수처럼 말하지 않는다. 두 길을 다 말한다. -->
-        <div class="job-empty muted" id="txtTableEmpty">데이터를 물리면 <b>여러 건을 한 번에</b> 채웁니다 — 안 물려도 아래 「맞추기」에서 <b>직접 채워 복사</b>할 수 있습니다.</div>
-        <div class="colpanel" id="txtColPanel" hidden></div>
-      </div>
-      <div class="fstrip" id="txtSelStrip" style="display:none"></div>
-      <!-- 데이터 존 고지(재적용 결과·전멸 필터 무동작 등) — 렌더 함수가 안 만지는 JS 소유
-           요소(T2 고지 관례): 푸시 재렌더에 증발하지 않고 데이터 전환 때 걷힌다. -->
-      <div class="note warnbox" id="txtZoneNote" style="display:none"></div>
-
-      <!-- 작업점 카드(블록 3, 결정 16) — 커서가 목록을 걷지 않고 큐가 한 장 카드를 지나간다.
-           좌=필드 상태(작업점의 빈칸 지도 상세), 우=카드(상태 색인 + 코드블록 렌더 + 카드 결속
-           복사 동사). 자유 레코드 스테퍼·전역 복사/저장 버튼은 사망(결정 16·18). 좁으면 세로 적층. -->
-      <div class="panes">
-        <section class="pane tokens">
-          <h4>맞추기</h4>
-          <!-- ② 맞추기(#148 슬라이스 3b) — 「기안」 화면과 **같은 팩토리**가 렌더한다(합병: 기안문
-               채우기가 결속·근사 제안·표시형·소유권 색을 얻는다). 원문 뷰 전환은 이 화면의
-               붙여넣기 모달이 겸하므로 두지 않는다(id 미부여 = 팩토리가 건너뜀). -->
-          <div id="tokPanel" class="mapwrap" data-preserve-scroll></div>
-          <div class="maplegend" id="txtMapLegend"></div>
-        </section>
-        <section class="pane workcard" id="txtCard">
-          <!-- 대상 글꼴 선언(결정 17) — 붙여넣을 곳(기안작성기)의 표준 글꼴. 클립보드 평문은
-               글꼴을 운반하지 않으므로 약속은 「글자 그대로」이고, 이 선언은 원문 렌더가 미리
-               따를 글꼴이다. 배치는 큐 상단(워드프로세서 툴바 멘탈 모델)이지만 값은 전역 영속. -->
-          <div class="wc-fontbar">
-            <label class="lbl" for="txtTargetFont">대상 글꼴</label>
-            <select class="field sm" id="txtTargetFont"
-                    title="붙여넣는 곳(기안작성기)의 표준 글꼴입니다.">
-              <option value="gulimche">굴림체</option>
-              <option value="dotumche">돋움체</option>
-              <option value="malgun">맑은고딕</option>
-            </select>
-            <span class="muted capnote">붙여넣는 곳의 표준 글꼴입니다. 전역 설정으로 저장됩니다.</span>
-          </div>
-          <!-- 상태 색인: 위치·처리·빈칸 지도(결정 16). 점 클릭 = 작업점 지정("포커스=첫 미답"의
-               큐 판). 순번은 큐 순서라 여기선 단조롭다(레코드 순서 표와 달리). -->
-          <div class="wc-index">
-            <div class="wc-readout" id="txtCardReadout"></div>
-            <div class="wc-nav">
-              <button class="btn sm icon" id="txtCardPrev" title="이전 카드" aria-label="이전 카드">◀</button>
-              <button class="btn sm icon" id="txtCardNext" title="다음 카드" aria-label="다음 카드">▶</button>
-            </div>
-          </div>
-          <div class="wc-dots" id="txtCardDots" role="list" aria-label="큐 상태 색인"></div>
-          <!-- 카드 헤더: 정체 + 복사 동사(우상단, 결정 16) + 복사 후 전진(기본 꺼짐). 미루기는
-               사망(결정 10 · 슬라이스 3c) — 자유 이동(◀▶·점 클릭)이 막힌 카드의 탈출구다. -->
-          <div class="wc-head">
-            <span class="wc-title" id="txtCardTitle">이대로 복사됩니다</span>
-            <div class="wc-acts">
-              <label class="wc-advance" title="켜면 복사 후 다음 미처리 카드로 넘어갑니다">
-                <input type="checkbox" id="txtAdvance"> 복사 후 다음으로</label>
-              <button class="btn primary" id="txtCardCopy">📋 복사</button>
-            </div>
-          </div>
-          <!-- 원문 렌더 = 코드블록 문법(고정폭 pre + 채움 표지 삼분, 결정 16·22). Enter=복사. -->
-          <pre class="wc-render" id="txtCardRender" aria-live="polite" data-preserve-scroll
-               tabindex="0"></pre>
-          <!-- 선언-조건부 정렬 린트(결정 17) — 비례폭을 선언했을 때만 연속 공백 정렬을 경보하고
-               전각 공백 치환을 제안한다. 문안·버튼 라벨은 txt.js 가 상태에 맞춰 채운다. -->
-          <div class="wc-lint" id="txtCardLint" hidden></div>
-          <!-- 기본 안내문은 copy.js(Copy.TXT_NOTE) 단일 출처 — txt.js 가 부팅·리셋 때 채운다. -->
-          <p class="note" id="txtNote"></p>
-        </section>
-      </div>
-    </section>
-
-    <!-- ============ 빠른 기안 (작업의 휘발 쌍둥이 · R-flow 블록 5 · #90 슬라이스 7) ============ -->
-    <!-- 안정 DOM(id) + quickdraft.js 가 window.__push('quickdraft', snapshot) 로 값만 채운다
-         (txt/job 패턴). 링1 QuickDraftViewModel 에 브리지로 배선 — VM 로직 재구현 없음.
-         PR-1(골격) → PR-2(템플릿 소스·토큰 폼·미리보기) → PR-3(데이터 이원·제스처 결속·
-         표현형 3층)까지 착지. 휘발도 가드·복사·표지 토글(PR-4)은 뒤 PR 이 이 껍데기 안
-         (#qdBody)을 확장한다 — 없는 기능을 있는 척하지 않는다(confirm-or-alarm). -->
-    <section class="scr" id="scr-quickdraft">
-      <header class="scr-head">
-        <div>
-          <h1>빠른 기안</h1>
-          <p class="sub">템플릿과 데이터를 세션 안에서만 결합해 복사합니다 — 저장 없이 한 번 쓰고 버리는 휘발 표면입니다.</p>
-        </div>
-        <!-- 헤더 우측 = 휘발 표지(상시) + 채움 상태 알약 + 「새 기안」.
-             **표지와 알약은 별개다**(#134): 종전엔 하나였는데, 내용이 생기는 순간 알약이
-             비어있음→미채움으로 바뀌며 「세션 휘발 · 저장 없음」 신호가 꺼졌다 — 잃을 것이
-             생긴 바로 그 시점에 경고가 사라지는 방향이다. 표지는 이 화면의 성질이라 상시
-             병존하고, 알약은 미채움/전량 채움을 말한다. 「새 기안」은 세션을 비운다(결정 32) —
-             버릴 노동이 있으면 quickdraft.js 가 먼저 확인 모달을 세운다(session_guard). -->
-        <div class="scr-head-actions">
-          <span class="qd-volatile" id="qdVolatile">세션 휘발 · 저장 없음</span>
-          <div class="status" id="qdStatus" data-level="idle">비어 있음</div>
-          <button class="btn sm" id="qdBtnFresh" hidden>새 기안</button>
-        </div>
-      </header>
-
-      <!-- 슬롯 — 템플릿(라이브러리 사본·붙여넣기) + 데이터(등록 데이터·임의 파일, 결정 34).
-           데이터 슬롯 안쪽(라벨·행 스테퍼·해제)은 겨눔 상태라 quickdraft.js 가 채운다 —
-           미겨눔이면 두 겨눔 버튼만 산다(dead 버튼 없음). -->
-      <div class="qd-slots">
-        <div class="qd-slot">
-          <span class="lbl">템플릿</span>
-          <select class="field sm" id="qdTplSel" aria-label="템플릿 선택"></select>
-          <button class="btn sm" id="qdBtnPaste">붙여넣기…</button>
-        </div>
-        <div class="qd-slot">
-          <span class="lbl">데이터</span>
-          <span class="qd-dataline" id="qdDataLine"></span>
-          <button class="btn sm" id="qdBtnPoolData">등록 데이터…</button>
-          <button class="btn sm" id="qdBtnPickFile">파일 열기…</button>
-          <button class="btn sm" id="qdBtnClearData" hidden>데이터 해제</button>
-        </div>
-      </div>
-      <!-- 실패·경보 재진술(빈 데이터·읽기 실패·교체로 굳은 자리) — 조용한 무반응 금지.
-           quickdraft.js 가 문구를 넣을 때만 보인다(hidden 속성 — 이 코드베이스에 일반
-           .hidden 클래스 규칙은 없다). role=alert 로 화면 낭독기에도 닿는다. -->
-      <p class="note warnbox" id="qdNote" role="alert" hidden></p>
-
-      <!-- 본문 = 값 폼 + 미리보기 2판, 또는 빈손 진입 카드. quickdraft.js 가 스냅샷으로 채운다
-           (안정 컨테이너, run/txt 패턴). 데이터 이원·제스처 결속(PR-3)·복사/가드(PR-4)는 이
-           안을 확장한다. 정적 부트스트랩 표지 — render 가 즉시 갈아치우지만, init 이 실패하면
-           빈 화면 대신 이 문구가 남고 전역 rejection 백스톱(app.js)이 시끄럽게 알린다. -->
-      <div class="qd-body" id="qdBody"><div class="muted job-empty">불러오는 중…</div></div>
-
-      <!-- 출구 푸터(결정 32·33) — 템플릿이 깔렸을 때만 선다(빈손엔 없음). 복사 = 세션을 남기는
-           가벼운 출구, 「템플릿으로 저장」 = 원문 승격(#135). 「작업으로 저장」은 목적지(기안
-           작업 TXT)가 아직 없어 **비활성 + 자기 사유**로 남는다(죽은 버튼 금지 — 사유가
-           버튼별이라야 한쪽이 열렸을 때 공통 문안이 거짓이 되지 않는다). 복사·저장 리포트는
-           aria-live 로 낭독기에도 닿는다. -->
-      <footer class="qd-foot" id="qdFoot" hidden>
-        <div class="qd-foot-main">
-          <button class="btn primary" id="qdBtnCopy">복사</button>
-          <span class="qd-copynote" id="qdCopyNote" role="status" aria-live="polite"></span>
-        </div>
-        <div class="qd-foot-promote">
-          <span class="qd-promote-lbl">남기려면:</span>
-          <button class="btn sm" id="qdBtnSaveJob" disabled aria-describedby="qdPromoteNote">작업으로 저장</button>
-          <button class="btn sm" id="qdBtnSaveTpl">템플릿으로 저장</button>
-          <span class="qd-promote-note" id="qdPromoteNote">「작업으로 저장」은 기안 작업(TXT)이 준비되면 열립니다. 지금은 템플릿으로 저장하거나 복사해 남기세요.</span>
-          <span class="qd-copynote" id="qdSaveNote" role="status" aria-live="polite"></span>
-        </div>
-      </footer>
-    </section>
-
-    <!-- 붙여넣기 모달(빠른 기안 전용) — txt 의 #pasteModal 과 별개 id 여야 리스너 충돌이 없다
-         (화면별 고유 겨눔). 세션 사본으로만 쓰고 라이브러리에 저장하지 않는다(결정 34). -->
-    <div id="qdPasteModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="qdPasteTitle">
-      <div class="modal-card">
-        <h3 id="qdPasteTitle">템플릿 붙여넣기</h3>
-        <p class="muted">받은 서식을 그대로 붙여 넣으세요. {{필드}} 토큰을 찾아 폼을 만듭니다. 라이브러리에는 저장되지 않습니다.</p>
-        <textarea id="qdPasteText" rows="10" placeholder="제목: {{사업명}} ..."></textarea>
-        <div class="modal-actions">
-          <button class="btn" id="qdPasteCancel">취소</button>
-          <button class="btn primary" id="qdPasteOk">이 텍스트로 시작</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 「템플릿으로 저장」 모달(승격, 결정 33·34 · #135) — 이름 + 그룹(tplMoveModal 문법 동형:
-         기존 그룹 · 그룹 없음 · 새 그룹 입력 동거). 저장되는 것은 **원문뿐**이라 그 사실을
-         본문이 먼저 말한다(채운 값이 함께 저장된다는 오해 차단). 동명 덮어쓰기는 Python 이
-         needs_confirm 으로 되물어 Modal.confirm 이 파괴를 재진술한다. -->
-    <div id="qdSaveTplModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="qdSaveTplTitle">
-      <div class="modal-card">
-        <h3 id="qdSaveTplTitle">템플릿으로 저장</h3>
-        <p class="muted">지금 원문을 라이브러리에 저장합니다. 채운 값은 저장되지 않습니다.</p>
-        <label class="modal-sub" for="qdSaveTplName">이름</label>
-        <input class="field" id="qdSaveTplName" type="text" placeholder="예: 개찰 참관 보고">
-        <div id="qdSaveTplGroups" class="sheet-list"></div>
-        <p id="qdSaveTplErr" class="note dangerbox" style="display:none"></p>
-        <div class="modal-actions">
-          <button class="btn" id="qdSaveTplCancel">취소</button>
-          <button class="btn primary" id="qdSaveTplOk">저장</button>
-        </div>
-      </div>
-    </div>
-
     <!-- ============ 템플릿 관리 (HWPX·TXT 라이브러리, #13 → R-info 2부 #108) ============ -->
     <!-- 매체(HWPX/TXT) 2구획 + 그 안 작업 목록과 같은 그룹+접힘. 안정 DOM(id) + template.js 가
          window.__push('tpl', snapshot) 로 값만 채운다(판정은 Python). 그룹 헤더·행 ⋮·이동 다이얼로그·
@@ -890,12 +663,10 @@
 <script src="js/datazone.js"></script>
 <script src="js/grouplist.js"></script>
 <!-- 기안 세션 공용 팩토리(#148 슬라이스 3a) — datazone·segview·modal 위에 서고, 소비 화면
-     (txt·draft) 앞에 온다. 백엔드 draft_session.py 와 짝. -->
+     (draft) 앞에 온다. 백엔드 draft_session.py 와 짝(구 txt·quickdraft 는 슬라이스 6 삭제). -->
 <script src="js/draftsession.js"></script>
 <script src="js/editor_entry.js"></script>
 <script src="js/screens/home.js"></script>
-<script src="js/screens/txt.js"></script>
-<script src="js/screens/quickdraft.js"></script>
 <script src="js/screens/editor.js"></script>
 <script src="js/screens/job.js"></script>
 <script src="js/screens/draft.js"></script>

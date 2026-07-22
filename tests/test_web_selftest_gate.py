@@ -86,7 +86,7 @@ class TestWebSelftestGate:
         assert selftest_result["pool_rendered"] is True
 
     def test_pool_source_buttons_present(self, selftest_result: dict) -> None:
-        # 2소스 진입점(#26 #6) — 작업·txt 의 '등록 데이터…' 버튼이 실 DOM 에 있다.
+        # 2소스 진입점(#26 #6) — 작업·기안(구 txt 흡수, 슬라이스 6)의 '등록 데이터…' 버튼이 실 DOM 에 있다.
         assert selftest_result["pool_buttons"] is True
 
     def test_home_kpis_actually_rendered(self, selftest_result: dict) -> None:
@@ -94,10 +94,11 @@ class TestWebSelftestGate:
         assert selftest_result["home_kpi_count"] >= 1
 
     def test_modal_opens_with_initial_focus_inside(self, selftest_result: dict) -> None:
-        # 커스텀 모달을 열면 hidden 해제 + 초기 포커스가 모달 안(pasteText)으로 들어간다(#27/#28).
+        # 커스텀 모달을 열면 hidden 해제 + 초기 포커스가 모달 안(draftSaveTplName)으로 들어간다
+        # (#27/#28 — 구 pasteModal 은 슬라이스 6 삭제, 같은 Modal 헬퍼 쓰는 생존 모달로 재겨눔).
         m = selftest_result["modal_a11y"]
         assert m["opened"] is True
-        assert m["focus_in"] == "pasteText"
+        assert m["focus_in"] == "draftSaveTplName"
 
     def test_modal_escape_closes_and_restores_focus(self, selftest_result: dict) -> None:
         # Escape 로 닫히고, 포커스가 열기 직전 트리거로 복귀한다(조용한 포커스 유실 금지 — #28).
@@ -218,17 +219,20 @@ class TestWebSelftestGate:
     def test_real_screen_renders_survive_rerender(self, selftest_result: dict) -> None:
         # 3개 실화면이 shipped __push 경로로 실 스냅샷을 재렌더해도 던지지 않는다 —
         # Preserve.around 래핑이 실 render() 를 깨지 않음을 실 DOM 에서 가드(#28 완료기준).
+        # (구 txt 는 슬라이스 6 삭제 — 같은 세션 팩토리를 쓰는 「기안」으로 재겨눔.)
         p = selftest_result["preserve_real"]
-        for scr in ("txt", "editor", "job"):
+        for scr in ("draft", "editor", "job"):
             assert p.get(scr) == "ok", f"{scr} 실화면 재렌더 실패: {p.get(scr)!r}"
 
     def test_real_screen_scroll_preserved_end_to_end(self, selftest_result: dict) -> None:
-        # 실 txt 작업점 카드 렌더(#txtCardRender)의 스크롤이 실 재렌더를 가로질러 유지된다(#28) —
-        # 합성 픽스처가 아닌 shipped render() 경로의 end-to-end 보존 검증. 보존 없으면 재구성이
-        # 0 으로 리셋하므로, 설정값 150 근처(DPI 서브픽셀 스냅 허용 ±2)면 복원된 것.
+        # 실 기안 맞추기 표 패널(#draftTokPanel, max-height 180px·overflow auto)의 스크롤이 실
+        # 재렌더를 가로질러 유지된다(#28) — 합성 픽스처가 아닌 shipped render() 경로의 end-to-end
+        # 보존 검증. 카드 렌더는 master-detail 우측 패널이 통째로 스크롤하는 설계라(구 txt 전체화면과
+        # 다름) 내부 스크롤 요소인 토큰 패널로 겨눈다. 보존 없으면 재구성이 0 으로 리셋하므로,
+        # 설정값 60 근처(DPI 서브픽셀 스냅 허용 ±2)면 복원된 것.
         p = selftest_result["preserve_real"]
-        top = p["txt_scroll_top"]
-        assert isinstance(top, (int, float)) and abs(top - 150) < 2, (
+        top = p["draft_scroll_top"]
+        assert isinstance(top, (int, float)) and abs(top - 60) < 2, (
             f"실화면 스크롤 유실(재구성이 0 으로 리셋됐거나 예외): {top!r}"
         )
 
@@ -462,8 +466,8 @@ class TestWebSelftestGate:
             f"무데이터 결속 드롭다운이 「직접 입력」만이 아닙니다(열 후보 누출): {d['degen_src_options']!r}"
         )
         assert d["nondegen_dots_shown"] is True, "비퇴화(≥2건) 복귀에 진행 색인이 돌아오지 않았습니다."
-        # 두 인스턴스 격리 — draft 렌더가 숨은 txt 화면 DOM 으로 새지 않는다.
-        assert d["txt_leak"] is False, "기안 세션 렌더가 txt 화면 카드로 샜습니다(id 격리 파손)."
+        # (구 txt_leak 격리 단언은 슬라이스 6 에서 소멸 — 두 번째 인스턴스였던 txt 화면 DOM 이
+        # 삭제돼 누출 대상 자체가 없다. datazone 팩토리 격리는 test_web_datazone 이 정적으로 가드.)
         # 유래별 열 게이팅(#148 슬라이스 5a, 결정 7) — 휘발 모드에선 유형·확정(.persist) 열이 숨고
         # 휘발 note 가 뜬다. 저장 기안 선택 → 세션 패널은 그대로 서고(껍데기 없음) 열이 뜨며 원문은
         # 읽기 전용, note 는 사라진다. 겨눔 해제(휘발 귀환) → 패널 유지·열 재숨김(두 세션 병존).
@@ -535,258 +539,6 @@ class TestWebSelftestGate:
         for want in ("확정", "수동", "제안", "후보 없음"):
             assert want in tags, f"소유권 태그 '{want}' 미렌더(칩-라이브 결정 12): {tags!r}"
         assert e["auto_revert_option"] is True, "touched 행에 '자동 제안으로 되돌리기'(↩) 버튼이 없습니다(리뷰 R5)."
-
-    def test_txt_zone_renders_queue_table_chips_strip(self, selftest_result: dict) -> None:
-        # txt 데이터 존(블록 3, 슬라이스 6 PR-2b) — datazone.js **두 번째 인스턴스**가 실
-        # WebView2 의 txt 화면에서 가시 행·<mark> 하이라이트·선두 「큐」 열 표지(작업점 ▶·
-        # 대기 순번, 결정 16)·칩 줄·필터 밖 선택 스트립(결정 3)을 실제로 그리는지 되읽는다.
-        z = selftest_result["txt_zone"]
-        assert z.get("error") is None, f"txt 존 프로브 예외: {z.get('error')!r}"
-        assert z["rows"] == 1, f"가시 행 렌더 수가 다릅니다: {z!r}"
-        assert z["mark"] == "전산", f"하이라이트 세그먼트 미렌더: {z['mark']!r}"
-        assert z["head_lead"] == "큐", f"선두 열 머리가 「큐」가 아닙니다: {z['head_lead']!r}"
-        assert "▶" in z["lead"] and "작업점" in z["lead"], (
-            f"큐 표지(작업점 ▶)가 렌더되지 않았습니다: {z['lead']!r}"
-        )
-        # 순번은 이 표에 렌더하지 않는다 — 큐-꼬리 순서라 레코드 순서 표에선 비단조로
-        # 읽힌다(PR-2b 리뷰). 거처는 큐 순서로 그리는 상태 색인(PR-3).
-        assert "대기 1" not in z["lead"], (
-            f"레코드 순서 표에 큐 순번이 되살아났습니다(비단조 오독): {z['lead']!r}"
-        )
-        assert "「전산」" in z["chips_text"], f"칩 줄 정의 재진술 누락: {z['chips_text']!r}"
-        assert z["strip_shown"] is True, "필터 밖 선택 스트립이 표시되지 않았습니다(결정 3)."
-        assert "2행" in z["strip_text"], f"스트립 재진술이 다릅니다: {z['strip_text']!r}"
-        assert "선택 2/2" in z["sel_count"] and "표시 1" in z["sel_count"], (
-            f"선택/표시 수치 재진술이 다릅니다: {z['sel_count']!r}"
-        )
-
-    def test_txt_work_point_card_renders_and_binds_copy(self, selftest_result: dict) -> None:
-        # 작업점 카드(블록 3, 슬라이스 6 PR-3) — 큐가 지나가는 한 장이 실 WebView2 에서
-        # 코드블록 렌더(채움 표지 삼분)·상태 색인 점·카드 결속 복사 동사를 그리는지 되읽는다.
-        z = selftest_result["txt_zone"]
-        assert z.get("error") is None, f"txt 존 프로브 예외: {z.get('error')!r}"
-        # 채움 표지 삼분: fill(음영 값)·blank(〈빈 값〉) 세그먼트가 실제로 페인트된다(링1 사영).
-        assert "전산장비 구매" in z["card_render"], f"작업점 카드 채움 렌더 누락: {z['card_render']!r}"
-        assert "〈빈 값〉" in z["card_render"], f"빈 값 표지 미렌더: {z['card_render']!r}"
-        assert z["card_fill"] is True and z["card_blank"] is True, (
-            f"채움 표지 세그먼트 클래스 미부착(fill·blank): {z!r}"
-        )
-        # 상태 색인 점(위치·빈칸 지도) — 작업점 점 + 빈칸 카드 표지가 실렌더.
-        assert z["card_dots"] == 2, f"상태 색인 점 수가 다릅니다: {z['card_dots']!r}"
-        assert z["card_current_dot"] is True, "작업점 점(.current)이 렌더되지 않았습니다."
-        assert z["card_gap_dot"] is True, "빈칸 지도 표지(.gap)가 렌더되지 않았습니다."
-        assert "작업점 1/2" in z["card_readout"], f"상태 색인 재진술이 다릅니다: {z['card_readout']!r}"
-        # 복사 동사는 카드에 결속(우상단)되고 전역 복사·저장 버튼은 사망(결정 16·18).
-        assert z["card_copy_enabled"] is True, "카드 결속 복사 버튼이 없거나 비활성입니다."
-        assert z["card_global_copy_dead"] is True, (
-            "전역 복사(btnCopy)·저장(btnSave) 버튼이 남아 있습니다 — 결정 16·18 위반."
-        )
-        # 미루기 사망(결정 10 · 슬라이스 3c) — **구 화면 포함 전수**. 「기안문 채우기」에서도
-        # 큐 뒤로 보내는 버튼이 사라졌다(자유 이동 ◀▶·점 클릭이 탈출구).
-        assert z["defer_absent"] is True, "「기안문 채우기」에 미루기 버튼이 남아 있습니다(결정 10 사망 위반)."
-
-    def test_txt_target_font_and_alignment_lint(self, selftest_result: dict) -> None:
-        # 대상 글꼴 선언·선언-조건부 정렬 린트(블록 3, 슬라이스 6 PR-4) — 선언이 원문 렌더에
-        # 실제로 걸리고(글꼴 클래스), 비례폭 선언에서 경보 줄과 처방 버튼이 서는지 되읽는다.
-        z = selftest_result["txt_zone"]
-        assert z.get("error") is None, f"txt 존 프로브 예외: {z.get('error')!r}"
-        assert z["font_sel"] == "malgun", f"대상 글꼴 콤보가 선언과 어긋납니다: {z['font_sel']!r}"
-        assert "f-malgun" in z["font_class"], (
-            f"원문 렌더가 선언 글꼴을 추종하지 않습니다: {z['font_class']!r}"
-        )
-        assert z["lint_shown"] is True, "비례폭 선언인데 정렬 린트 줄이 서지 않았습니다(결정 17)."
-        assert "정렬 취약" in z["lint_text"], f"린트 경보 문안이 다릅니다: {z['lint_text']!r}"
-        assert z["lint_fix"] == "fix", (
-            f"전각 치환 처방 버튼이 없거나 동사가 다릅니다(막다른 경보 금지): {z['lint_fix']!r}"
-        )
-        # 고정폭으로 되밀면 린트는 **실제로** 사라진다(부록 B-9: display:flex 가 [hidden] 을
-        # 이기는 함정 — hidden 프로퍼티가 아니라 계산된 표시로 판정한다).
-        assert z["lint_silent_display"] == "none", (
-            f"고정폭 선언인데 린트 상자가 계산상 남아 있습니다: {z['lint_silent_display']!r}"
-        )
-        assert "f-gulimche" in z["font_class_fixed"] and "f-malgun" not in z["font_class_fixed"], (
-            f"글꼴 클래스가 교체되지 않고 누적됐습니다: {z['font_class_fixed']!r}"
-        )
-
-    def test_txt_t3_guard_body_restates_progress_and_selection(self, selftest_result: dict) -> None:
-        # T3 가드(결정 26·27) — 데이터 교체 확인 본문이 **종류별 수치**를 재진술하는지.
-        # 복사 진행이 첫 자리인 이유: 큐 진행은 앱 밖 기억(어디까지 붙여넣었나)이라 복구 불가.
-        body = selftest_result["txt_zone"]["guard_body"]
-        assert "복사 진행 2/5행" in body, f"큐 진행 재진술 누락: {body!r}"
-        # 선택 재진술은 「작업」 가드와 **같은 조각**(guard.js 공유 합성기, 리뷰 F6).
-        assert "직접 선택 5행" in body and "정의 매치 3" in body and "정의 밖 2" in body, (
-            f"선택 재진술이 종류별로 서지 않았습니다: {body!r}"
-        )
-        assert "필터 정의 2개 조건" in body, f"필터 정의 재진술 누락: {body!r}"
-        assert "—" not in body, f"가드 본문에 em-dash 가 있습니다(R-copy 가드): {body!r}"
-
-    def test_txt_new_draft_guard_shares_predicate_with_data_swap(self, selftest_result: dict) -> None:
-        # #126 T3 면제 철회 — 「＋ 새 기안」도 같은 가드를 지난다. 앞머리(제스처)만 갈리고
-        # 잃는 것의 열거는 한 술어를 공유한다: 두 파괴 경로가 같은 상태를 다르게 말하면
-        # 어느 쪽이 참인지 사용자가 판정할 수 없다.
-        z = selftest_result["txt_zone"]
-        assert z["new_draft_guard_wired"] is True, (
-            "TxtScreen.confirmNewDraftIfArmed 배선이 사라졌습니다 — 「＋ 새 기안」 무가드 파괴 회귀."
-        )
-        assert z["tpl_refresh_wired"] is True, (
-            "진입 재동기(refreshOnEnter) 배선이 사라졌습니다 — 다른 화면이 더한 템플릿을 "
-            "재시작 전엔 못 고르는 조용한 어긋남 회귀(#135 리뷰 P2)."
-        )
-        nd, swap = z["guard_body_newdraft"], z["guard_body"]
-        assert nd.startswith("새 기안을 시작하면"), f"제스처 앞머리 어긋남: {nd!r}"
-        assert "복사 진행 2/5행" in nd, f"큐 진행 재진술 누락: {nd!r}"
-        assert nd.split("\n", 1)[1] == swap.split("\n", 1)[1], (
-            "두 제스처의 '사라지는 것' 열거가 갈라졌습니다(술어 단일 출처 파손): "
-            f"{nd!r} vs {swap!r}"
-        )
-
-    def test_txt_copy_blank_gate_body_enumerates_and_folds(self, selftest_result: dict) -> None:
-        # #125 빈칸 게이트(결정 16 · A-3-28) — 복사 **전** 확인 모달의 문안. 집합은 Python 이
-        # 복사와 같은 render 통로로 확정하므로 열거가 정확하다(추정 열거 금지 조항의 예외 조건).
-        z = selftest_result["txt_zone"]
-        body = z["copy_gate_body"]
-        assert "3행" in body, f"복사 대상 행 재진술 누락(0-기반 index 2 = 3행): {body!r}"
-        assert "항목 없음 1건: 납품기한" in body, f"항목 없음 열거 누락: {body!r}"
-        assert "빈 값 1건: 비고" in body, f"빈 값 열거 누락: {body!r}"
-        assert "—" not in body, f"게이트 본문에 em-dash 가 있습니다(R-copy 가드): {body!r}"
-        # 긴 목록은 접는다 — 모달이 스크롤로 번지면 정작 결론 버튼이 시야 밖으로 나간다.
-        many = z["copy_gate_body_many"]
-        assert "외 2개" in many and ", g" not in many, f"목록 접기 실패: {many!r}"
-        # 꼬리 문장은 해당 종류가 있을 때만(over-warn 도 거짓): 빈 값만인 카드엔 서지 않는다.
-        only_empty = z["copy_gate_body_empty_only"]
-        assert "{{토큰}}" not in only_empty, (
-            f"빈 값만인 카드에 '토큰 원문이 실린다'는 문장이 섰습니다: {only_empty!r}"
-        )
-
-    def test_txt_zone_panel_hidden_and_instance_isolated(self, selftest_result: dict) -> None:
-        # 열 패널 기본 닫힘([hidden] vs display:flex — 부록 B-9 자동 눈검증의 txt 판) +
-        # 두 인스턴스 격리(txt 존 렌더가 작업 화면 데이터 존 DOM 을 만지지 않는다 — id 분리).
-        z = selftest_result["txt_zone"]
-        assert z["panel_hidden"] is True, "txt colpanel [hidden] 이 display:flex 에 져서 떠 있습니다."
-        assert z["job_body_untouched"] is True, (
-            "txt 존 렌더가 작업 화면 테이블 DOM 에 흘러들었습니다 — 인스턴스 격리 파손."
-        )
-
-    def test_quickdraft_token_form_and_preview_fill_marking(self, selftest_result: dict) -> None:
-        # 빠른 기안(R-flow 블록 5, 슬라이스 7 PR-2) — 파이프라인 토큰 폼·미리보기 채움 표지가
-        # 실 WebView2 에서 그려지는지 되읽는다(render_segments 사영, 결정 22·34). 원문 편집 탭
-        # 전환은 이 엔진 evaluate_js 의 합성 클릭이 파싱 노드에 안 닿아 프로브로 구동 불가라
-        # 여기서 되읽지 않는다 — 버튼 존재는 아래·DOM 계약이, 라이브 재구성 거동은 백엔드
-        # test_edit_source_live_retokenizes_and_demotes 가 가드(상보 커버리지).
-        q = selftest_result["quickdraft"]
-        assert q.get("error") is None, f"빠른 기안 프로브 예외: {q.get('error')!r}"
-        assert q["rows"] == 2, f"토큰 폼 행 수가 다릅니다: {q!r}"
-        assert q["val0"] == "행정정보시스템", f"수기 값 textarea 미렌더: {q['val0']!r}"
-        assert q["chip1"] == "비어 있음", f"빈 토큰 칩 상태가 다릅니다: {q['chip1']!r}"
-        # 채움 표지 삼분: fill(음영 값) + missing({{토큰}} 빨강)이 실제로 페인트된다.
-        assert "행정정보시스템" in q["render_text"], f"미리보기 채움 렌더 누락: {q['render_text']!r}"
-        assert "{{추정가격}}" in q["render_text"], f"미채움 토큰 원문 미노출: {q['render_text']!r}"
-        assert q["seg_fill"] is True and q["seg_missing"] is True, (
-            f"채움 표지 세그먼트 클래스 미부착(fill·missing): {q!r}"
-        )
-        assert q["pill"] == "미채움 1", f"미채움 알약 재진술이 다릅니다: {q['pill']!r}"
-        # 미리보기/원문 편집 두 탭 진입점이 렌더된다(전환 거동은 상보 커버리지가 가드).
-        assert q["tabs"] == 2, f"미리보기/원문 편집 탭 버튼이 2개가 아닙니다: {q!r}"
-        # 껍데기 격리 — 빠른 기안 렌더가 작업 화면 데이터 존 DOM 에 흘러들지 않는다(id 분리).
-        assert q["job_body_untouched"] is True, (
-            "빠른 기안 렌더가 작업 화면 테이블 DOM 에 흘러들었습니다 — 인스턴스 격리 파손."
-        )
-
-    def test_quickdraft_data_slot_pipeline_and_suggestion(self, selftest_result: dict) -> None:
-        # 슬라이스 7 PR-3 — 데이터 겨눔 표면이 실 WebView2 에서 그려지는지 되읽는다:
-        # 경량 슬롯(라벨·행 스테퍼·해제)·파이프라인 2열(소스→표시형)·근사 제안 원클릭
-        # (결정 30·31·34). 겨눔 자체는 네이티브 다이얼로그라 프로브가 구동할 수 없어
-        # 스냅샷 푸시로 렌더 계약만 되읽고, 결속 판정은 백엔드 테스트가 가드(상보 커버리지).
-        q = selftest_result["quickdraft"]
-        assert q.get("error") is None, f"빠른 기안 프로브 예외: {q.get('error')!r}"
-        assert "파일: 낙찰현황.csv" in q["data_label_text"], f"겨눔 라벨 미렌더: {q['data_label_text']!r}"
-        assert "3 / 12행" in q["data_label_text"], f"행 스테퍼 위치 재진술이 다릅니다: {q['data_label_text']!r}"
-        assert q["stepper"] is True, "행 스테퍼 두 버튼이 살아 있지 않습니다(중간 행인데 비활성)."
-        # 표시 여부는 클래스 토큰이 아니라 **실제 렌더**로 잰다(계측 리트머스: 음성 대조 선행).
-        # 데이터가 없을 때 숨어 있음을 먼저 확인해야 "보인다"는 판정에 판별력이 생긴다.
-        assert q["clear_visible_before"] is False, (
-            "데이터가 없는데 「데이터 해제」가 화면에 서 있습니다 — dead 버튼(.hidden 클래스는 이 앱에 없다)."
-        )
-        assert q["note_visible_before"] is False, "경보 문구가 없는데 경고 상자가 떠 있습니다(빈 warnbox)."
-        assert q["clear_visible"] is True, "데이터를 골랐는데 「데이터 해제」가 숨어 있습니다."
-        assert q["note_visible"] is False, "경보가 없는 스냅샷인데 경고 상자가 떴습니다."
-        # 결속 토큰 = 소스 select 가 그 열을 고른 채 뜨고 표시형이 함께 산다.
-        assert q["src0"] == "사업명", f"결속 열이 소스 드롭다운에 반영되지 않았습니다: {q['src0']!r}"
-        assert q["fmt0"] is True, "결속 토큰에 표시형 드롭다운이 없습니다(표현형 2층 소실)."
-        # 무결속 토큰 = (직접 입력) + 표시형 없음(아무 일도 안 하는 손잡이 금지) + 제안 버튼.
-        assert q["src1"] == "", f"무결속 토큰의 소스가 (직접 입력)이 아닙니다: {q['src1']!r}"
-        assert q["fmt1"] is False, "무결속 토큰에 표시형 드롭다운이 떴습니다(dead control)."
-        # 방향 화살표(결정 34 `소스→표시형`, #134) — 두 드롭다운이 나란한 동급이 아니라
-        # 값이 소스에서 표시형을 거쳐 나온다는 진술이다. 표시형이 없는 행엔 서지 않는다.
-        assert q["pipe_arrow0"] is True, "결속 행 파이프라인에 방향 화살표가 없습니다."
-        assert q["pipe_arrow1"] is False, "표시형이 없는 행에 화살표가 섰습니다(없는 단계 암시)."
-        assert q["suggest1"] is True, "근사 제안 원클릭 버튼이 없습니다(결정 30 — 자동 금지·제안 필수)."
-        assert "추정가격(원)" in q["suggest_text"], f"제안 문안에 열 이름이 없습니다: {q['suggest_text']!r}"
-        assert "—" not in q["suggest_text"], f"제안 문안에 em-dash 가 있습니다(R-copy 가드): {q['suggest_text']!r}"
-        # 알람 갈래 — 교체로 굳은 자리는 확인이 불가능한 사후 사실이라 경보로만 말한다.
-        assert q["note_visible_after"] is True, "frozen_notice 를 실었는데 경보 상자가 뜨지 않았습니다."
-        assert "굳었습니다" in q["note_text"], f"경보 문구가 그대로 서지 않았습니다: {q['note_text']!r}"
-
-    def test_quickdraft_exit_footer_guard_surface_and_ownership(self, selftest_result: dict) -> None:
-        # 슬라이스 7 PR-4 — 출구 크롬(새 기안·복사·승격 표면)·소유권 색이 실 WebView2 에서
-        # 계약대로 그려지는지 되읽는다. 음성 대조(빈손엔 숨음)로 표시 판정에 판별력을 준다.
-        q = selftest_result["quickdraft"]
-        assert q.get("error") is None, f"빠른 기안 프로브 예외: {q.get('error')!r}"
-        # 「새 기안」·출구 푸터는 빈손엔 숨고 템플릿이 실리면 선다(dead 크롬 금지, 음성 대조 짝).
-        assert q["fresh_visible_before"] is False, "빈손인데 「새 기안」이 서 있습니다(dead 버튼)."
-        assert q["foot_visible_before"] is False, "빈손인데 출구 푸터가 서 있습니다(dead 크롬)."
-        assert q["fresh_visible"] is True, "템플릿이 실렸는데 「새 기안」이 숨어 있습니다."
-        assert q["foot_visible"] is True, "템플릿이 실렸는데 출구 푸터가 숨어 있습니다."
-        assert q["copy_btn"] is True, "복사 버튼이 없습니다(휘발 세션의 유일한 실동작 출구)."
-        # 채움 표지 토글 — 미리보기 기본이라 켜짐(aria-pressed=true)으로 뜬다.
-        assert q["marker_toggle"] is True, "채움 표지 토글 버튼이 없습니다."
-        assert q["marker_pressed"] == "true", f"표지 토글 초기 상태가 ON 이 아닙니다: {q['marker_pressed']!r}"
-        # 승격 2동사의 **비대칭**(#135): 「템플릿으로 저장」은 열렸고, 「작업으로 저장」은
-        # 목적지(기안 작업 TXT)가 없어 비활성 + 자기 사유로 남는다. 둘 다 단언해야 한쪽이
-        # 조용히 뒤집혀도(열려선 안 될 게 열리거나, 열린 게 다시 잠기거나) 잡힌다.
-        assert q["save_tpl_disabled"] is False, (
-            "「템플릿으로 저장」이 비활성입니다 — 승격 실동작이 착지했는데 손잡이가 잠겨 있습니다."
-        )
-        assert q["save_job_disabled"] is True, (
-            "「작업으로 저장」이 활성입니다 — 기안 작업(TXT)이 아직 없어 열 수 없는 승격입니다."
-        )
-        assert "기안 작업" in q["promote_note"], (
-            f"비활성 승격의 인라인 사유(기안 작업 준비 중)가 없습니다: {q['promote_note']!r}"
-        )
-        assert "—" not in q["promote_note"], f"승격 사유에 em-dash 가 있습니다(R-copy 가드): {q['promote_note']!r}"
-        # 소유권 색 — 자동 결속 값(사업명)이 own-auto 로 페인트된다(폼 칩과 한 색 언어, 결정 33).
-        assert q["own_auto"] is True, "자동 결속 값에 소유권 색(own-auto)이 붙지 않았습니다."
-
-    def test_quickdraft_volatility_badge_survives_content(self, selftest_result: dict) -> None:
-        # #134 — 휘발 표지는 채움 알약과 **별개로 상시** 산다. 종전엔 한 자리를 나눠 써서
-        # 내용이 생기는 순간(비어있음 → 미채움) 「세션 휘발 · 저장 없음」 신호가 꺼졌다:
-        # 잃을 것이 생긴 바로 그 시점에 경고가 사라지는 방향이었다.
-        q = selftest_result["quickdraft"]
-        assert q["volatile_visible_before"] is True, "빈손에서 휘발 표지가 보이지 않습니다."
-        assert q["volatile_visible"] is True, (
-            "내용이 실리자 휘발 표지가 사라졌습니다 — 잃을 것이 생긴 시점에 경고 소멸."
-        )
-        assert q["pill_before"] == "비어 있음", f"빈손 알약 문안이 다릅니다: {q['pill_before']!r}"
-        assert q["pill"] == "미채움 1", f"채움 상태 알약이 다릅니다: {q['pill']!r}"
-
-    def test_quickdraft_font_declaration_and_align_lint(self, selftest_result: dict) -> None:
-        # #134 부록 B-7 (g) — 미리보기가 **전역 선언**을 추종하고(하드코딩 f-malgun 회귀 핀),
-        # 정렬 린트가 선언-조건부로 서며 처방 버튼을 단다(txt 큐와 같은 술어·같은 문안).
-        q = selftest_result["quickdraft"]
-        assert "f-malgun" in q["render_font_class"], (
-            f"미리보기가 선언 글꼴을 추종하지 않습니다: {q['render_font_class']!r}"
-        )
-        assert "정렬 취약" in q["lint_text"], f"선언-조건부 린트 경보가 서지 않았습니다: {q['lint_text']!r}"
-        assert q["lint_action"] == "fix", f"치환 처방 버튼이 없습니다: {q['lint_action']!r}"
-
-    def test_quickdraft_manual_chip_is_neutral_not_verified(self, selftest_result: dict) -> None:
-        # #134 — 「직접 입력」 칩이 채움 계열 초록(--a-ok)을 쓰면 "사람이 친 값"이 "검증된 값"
-        # 처럼 읽힌다. 사람이 친 값은 아직 아무것도 대조되지 않은 값이다.
-        q = selftest_result["quickdraft"]
-        assert q["chip_man_color"], "man 칩을 찾지 못했습니다(프로브 오염 가능)."
-        assert q["chip_man_color"] != q["ok_color"], (
-            f"man 칩이 채움 초록과 같은 색입니다: {q['chip_man_color']!r}"
-        )
 
     def test_tpl_media_groups_render_collapse_and_menu(self, selftest_result: dict) -> None:
         # 템플릿 관리(#108) — 매체 구획 + 그 안 그룹(작업 모델 재사용)이 실 WebView2 에서 서는지.

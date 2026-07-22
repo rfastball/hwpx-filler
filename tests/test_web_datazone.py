@@ -2,7 +2,7 @@
 
 「작업」 화면의 데이터 존 ~450줄(열 필터 패널·필터 테이블/Shift 선택·칩 줄·필터 밖 선택
 스트립·자모 하이라이트 세그먼트)을 ``web/js/datazone.js`` 의 ``DataZone.create(config)``
-팩토리로 추출했다(#90 착지 6 — PR-2b 에서 txt 일괄 큐가 같은 표면을 재사용). 이 모듈은
+팩토리로 추출했다(#90 착지 6 — 기안 일괄 큐가 같은 표면을 재사용). 이 모듈은
 추출이 조용히 되감기는 회귀를 정적으로 차단한다:
 
 1. 팩토리 존재·로드 순서(esc.js < datazone.js < screens/job.js).
@@ -32,9 +32,8 @@ WEB_INDEX = WEB / "index.html"
 DZ_JS = WEB / "js" / "datazone.js"
 POPOVER_JS = WEB / "js" / "popover.js"
 JOB_JS = WEB / "js" / "screens" / "job.js"
-TXT_JS = WEB / "js" / "screens" / "txt.js"  # 구 화면 껍데기(id 맵만 — 세션은 팩토리 소유)
 SESSION_JS = WEB / "js" / "draftsession.js"  # 기안 세션 표면(두 번째 인스턴스 생성처, #148 3a)
-DRAFT_JS = WEB / "js" / "screens" / "draft.js"  # 「기안」 화면(세 번째 인스턴스 id 맵)
+DRAFT_JS = WEB / "js" / "screens" / "draft.js"  # 「기안」 화면(세션 id 맵 — 구 txt 흡수, 슬라이스 6)
 
 # 데이터 존이 소유하는 디스패치 액션 — 전부 팩토리 단일 출처여야 한다(가드 3).
 ZONE_ACTIONS = (
@@ -62,9 +61,14 @@ def test_factory_exists_and_exposes_create():
 
 
 def test_load_order_esc_then_shared_then_screens():
-    """로드 순서 — esc.js < popover.js·datazone.js < 소비 화면(job·txt) (미정의 시점 참조 방지)."""
+    """로드 순서 — esc.js < popover.js·datazone.js < 소비 화면(job·기안) (미정의 시점 참조 방지).
+
+    기안 소비는 draft.js 가 트리거한다: DataZone.create 는 draftsession.js 팩토리 create() 안에서
+    불리고, 그 create() 는 draft.js 가 module-eval 에 window.DraftSession.create({...}) 로 부른다 —
+    그때 window.DataZone 이 있어야 한다(구 txt.js 소비자는 슬라이스 6 삭제).
+    """
     index = WEB_INDEX.read_text(encoding="utf-8")
-    consumers = ('src="js/screens/job.js"', 'src="js/screens/txt.js"')
+    consumers = ('src="js/screens/job.js"', 'src="js/screens/draft.js"')
     for needle in ('src="js/esc.js"', 'src="js/popover.js"', 'src="js/datazone.js"',
                    *consumers):
         assert needle in index, f"{needle} 가 index.html 에 없습니다."
@@ -72,7 +76,7 @@ def test_load_order_esc_then_shared_then_screens():
     first_consumer = min(index.index(c) for c in consumers)
     for shared in ('src="js/popover.js"', 'src="js/datazone.js"'):
         assert esc_pos < index.index(shared) < first_consumer, (
-            f"로드 순서가 esc.js → {shared} → 소비 화면(job·txt)이 아닙니다."
+            f"로드 순서가 esc.js → {shared} → 소비 화면(job·기안)이 아닙니다."
         )
 
 
@@ -91,12 +95,12 @@ def test_job_consumes_factory_with_job_identity():
 
 
 def test_zone_dispatch_actions_single_sourced_in_factory():
-    """데이터 존 디스패치 리터럴은 팩토리에만 — 소비 화면(job·txt) 재중복 금지(가드 3, #94 동형)."""
+    """데이터 존 디스패치 리터럴은 팩토리에만 — 소비 화면(job·기안) 재중복 금지(가드 3, #94 동형)."""
     dz = DZ_JS.read_text(encoding="utf-8")
     for action in ZONE_ACTIONS:
         needle = f'"{action}"'
         assert needle in dz, f"팩토리에 {needle} 디스패치가 없습니다 — 이동이 덜 됐습니다."
-        for consumer in (JOB_JS, TXT_JS, SESSION_JS, DRAFT_JS):
+        for consumer in (JOB_JS, SESSION_JS, DRAFT_JS):
             assert needle not in consumer.read_text(encoding="utf-8"), (
                 f"{consumer.name} 에 {needle} 디스패치가 남아/되살아 있습니다 — 데이터 존 "
                 "사본 재유입(#94 중복 클래스 동형). datazone.js 단일 출처를 유지하세요."
@@ -107,8 +111,9 @@ def test_draft_session_consumes_factory_with_queue_identity():
     """기안 세션 표면이 데이터 존 인스턴스를 소비한다 — 큐 표지 + 화면별 행 id 접두.
 
     세션 표면은 공용 팩토리(draftsession.js) 소유이고, **화면 고유값은 소비 화면이 준다**:
-    rowIdPrefix 는 전역 id 유일성(preserve.js 복원 계약)의 화면 몫이라 job 행(jobRow-)과도
-    서로와도 갈라져야 한다. 선두 열 「큐」는 전-선언 큐 표지(블록 3 결정 16)의 표면.
+    rowIdPrefix 는 전역 id 유일성(preserve.js 복원 계약)의 화면 몫이라 두 소비 화면(job·기안)이
+    서로 갈라져야 한다(jobRow- vs draftRow-). 선두 열 「큐」는 전-선언 큐 표지(블록 3 결정 16)의 표면.
+    (구 「기안문 채우기」 표면은 슬라이스 6 에서 삭제 — 이제 기안 세션 소비 화면은 draft.js 하나다.)
     """
     src = SESSION_JS.read_text(encoding="utf-8")
     assert "DataZone.create({" in src, "기안 세션 팩토리가 DataZone.create 를 소비하지 않습니다."
@@ -118,13 +123,13 @@ def test_draft_session_consumes_factory_with_queue_identity():
         "마지막 타이핑이 실리지 않습니다(결정 28)."
     )
     prefixes = {}
-    for name, path in (("txt", TXT_JS), ("draft", DRAFT_JS)):
+    for name, path in (("job", JOB_JS), ("draft", DRAFT_JS)):
         csrc = path.read_text(encoding="utf-8")
         m = re.search(r'rowIdPrefix:\s*"([^"]+)"', csrc)
         assert m, f"{name} 화면이 행 안정 id 접두를 주지 않습니다 — 포커스 복원 대상 충돌."
         prefixes[name] = m.group(1)
-    assert prefixes["txt"] != prefixes["draft"], (
-        f"두 기안 표면의 행 id 접두가 같습니다({prefixes!r}) — 전역 유일성 파손(preserve.js)."
+    assert prefixes["job"] != prefixes["draft"], (
+        f"두 데이터 존 소비 화면의 행 id 접두가 같습니다({prefixes!r}) — 전역 유일성 파손(preserve.js)."
     )
 
 
@@ -140,7 +145,7 @@ def test_draft_session_keys_use_source_identity_not_label():
         "기안 세션 tableKey 가 소스 정체(data_key)를 쓰지 않습니다 — 동명 파일 전환에 stale 앵커."
     )
     # 존 고지 키도 같은 정체에 겨눈다(라벨이면 동명 전환에 이전 고지가 남는다). 표시 라벨
-    # 자체의 소비(#txtDataLabel 채우기)는 정당하므로 **키 대입만** 본다.
+    # 자체의 소비(#draftDataLabel 채우기)는 정당하므로 **키 대입만** 본다.
     assert re.search(r"zkey\s*=\s*s\.data_key", src), (
         "존 고지 키(zoneNoteKey)가 소스 정체를 쓰지 않습니다 — 동명 전환에 고지 잔존."
     )
