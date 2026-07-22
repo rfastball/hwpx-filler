@@ -25,6 +25,7 @@ import threading
 from pathlib import Path
 
 from . import boot_budget, settings
+from .action_registry import validate_dispatch
 from ..core.job import JobRegistry, default_jobs_dir
 from ..core.text_registry import TextTemplateRegistry, default_text_templates_dir
 from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확정 게이트 판정(#33)
@@ -164,7 +165,8 @@ class WebFrontend:
 
     def dispatch(self, screen: str, action: str, payload: "dict | None" = None):
         """순수 데이터 액션(창 불필요) 라우팅. 액션이 값을 돌려주면 그대로 웹에 반환."""
-        return self._controller(screen).dispatch(action, payload or {})
+        checked = validate_dispatch(screen, action, {} if payload is None else payload)
+        return self._controller(screen).dispatch(action, checked)
 
     def set_theme(self, mode: str) -> str:
         """테마 선택 영속 — 프런트 토글이 부른다(#74). 확정값 반환(비유효는 ValueError)."""
@@ -1367,6 +1369,50 @@ _EDITOR_LIB_PICKER_PROBE_JS = r"""
 """
 
 
+# 실제 클릭→Bridge.call→Python dispatch→initial snapshot 왕복(#189). 프로브가 만든 버튼도
+# 브라우저의 click 이벤트 경로를 지나므로 API 직접 호출만으로는 잡지 못하는 이벤트/Promise
+# 연결 단절을 함께 검출한다. 동작은 모두 빈 홈에서도 안전한 세션 초기화·새로고침이다.
+_ACTION_ROUNDTRIP_PROBE_SETUP_JS = r"""
+(() => {
+  const out = { pending: true, families: {} };
+  window.__actionRoundtrip = out;
+  const specs = [
+    ['editor', 'editor', 'new_session'],
+    ['job', 'job', 'refresh'],
+    ['draft', 'draft', 'refresh'],
+    ['pool', 'pool', 'refresh'],
+    ['template', 'tpl', 'refresh'],
+  ];
+  const host = document.createElement('div');
+  host.hidden = true;
+  host.id = 'selftestActionClicks';
+  document.body.appendChild(host);
+  Promise.all(specs.map(([family, screen, action]) => new Promise((resolve) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.family = family;
+    button.addEventListener('click', async () => {
+      try {
+        await Bridge.call(screen, action, {});
+        const snapshot = await Bridge.initial(screen);
+        out.families[family] = {
+          screen, action,
+          snapshot: !!snapshot && typeof snapshot === 'object',
+          snapshot_keys: snapshot && typeof snapshot === 'object' ? Object.keys(snapshot) : [],
+        };
+      } catch (e) {
+        out.families[family] = { screen, action, error: String((e && e.message) || e) };
+      }
+      resolve();
+    }, { once: true });
+    host.appendChild(button);
+    button.click();
+  }))).then(() => { out.pending = false; host.remove(); });
+  return true;
+})()
+"""
+
+
 # ------------------------------------------------------------------ 자가검증(Q3)
 def _finish_selftest(window: "object", result: dict) -> None:
     """되읽기 결과를 결정적 위치에 쓰고 정식 종료한다(쓰기·읽기 단계 공용).
@@ -1442,6 +1488,18 @@ def _selftest_drive(window: "object") -> None:
         result["pool_buttons"] = window.evaluate_js(  # type: ignore[attr-defined]
             "['jobBtnPoolData','draftBtnPoolData']"
             ".every(function(i){return !!document.getElementById(i)})")
+        # 다섯 액션군의 실 브라우저 클릭부터 Python registry dispatch, 반환 snapshot까지 한 실행
+        # 단위로 완주한다(#189). 완료 표지를 폴링해 evaluate_js의 Promise 비대기 의미론과 분리.
+        window.evaluate_js(_ACTION_ROUNDTRIP_PROBE_SETUP_JS)  # type: ignore[attr-defined]
+        action_deadline = time.monotonic() + 10.0
+        while time.monotonic() < action_deadline:
+            if window.evaluate_js(  # type: ignore[attr-defined]
+                "!!(window.__actionRoundtrip && !window.__actionRoundtrip.pending)"
+            ):
+                break
+            time.sleep(0.1)
+        result["action_roundtrip"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "window.__actionRoundtrip")
         # 커스텀 모달 접근성 동적 거동(#27/#28) — 정적 계약(role/aria)은 test_web_dom_contract 가
         # 보고, 여기선 실 브라우저에서 Modal 헬퍼가 초기포커스·Escape 닫기·트리거 복귀를 실제로
         # 수행하는지 되읽는다. 알려진 트리거(첫 내비 버튼)에 포커스를 두고 열었다가 Escape 로 닫는다.
