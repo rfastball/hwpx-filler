@@ -51,15 +51,24 @@
 
     /* 타이핑 구동(값 입력·원문 라이브 편집)은 서버 왕복을 디바운스한다(빠른 기안 선례) — 타건
        마다 왕복은 낭비고, 값 유실 경합은 _NO_PUSH+겨냥 패치가 막는다(포커스 입력 미재구성). */
-    let debTimer = null, debFn = null;
+    let debTimer = null, debFn = null, debPending = null;
+    // 날아간 왕복을 추적한다 — flush 가 **이미 발사된** 편집도 착지까지 기다리게(승격·복사가
+    // 화면에 보이는 원문/값을 저장하려면 미커밋·미착지 편집이 모두 정산돼야 한다, 빠른 기안 선례).
+    function runDeb(f) {
+      const p = Promise.resolve(f());
+      debPending = p;
+      return p.finally(() => { if (debPending === p) debPending = null; });
+    }
     function debounce(fn) {
       debFn = fn;
       if (debTimer) clearTimeout(debTimer);
-      debTimer = setTimeout(() => { debTimer = null; const f = debFn; debFn = null; if (f) f(); }, 180);
+      debTimer = setTimeout(() => { debTimer = null; const f = debFn; debFn = null; if (f) runDeb(f); }, 180);
     }
     function flushDeb() {
       if (debTimer) { clearTimeout(debTimer); debTimer = null; }
-      const f = debFn; debFn = null; if (f) f();
+      const f = debFn; debFn = null;
+      if (f) return runDeb(f);
+      return debPending || Promise.resolve();  // 이미 날아간 왕복도 착지까지 기다린다
     }
     /* 렌더 세대 — 구조 변화(전면 render)가 나면 올라가, 늦게 착지한 타이핑 응답이 옛 세대의
        스냅샷으로 미리보기를 되돌리는 경합을 막는다(빠른 기안 EPOCH 선례). */
@@ -772,6 +781,9 @@
       render, wire, fillTemplateSelect, refreshOnEnter, pasteOk,
       guardBody, copyGateBody, confirmNewDraftIfArmed, confirmDataSwapIfArmed,
       warnNote, dz,
+      // 대기·미착지 타이핑 편집 정산(승격이 화면에 보이는 원문/값을 저장하게) — 「템플릿으로
+      // 저장」이 promote_info/save_template 전에 await 한다(빠른 기안 flushDebounce 선례).
+      flush: flushDeb,
     };
   }
 

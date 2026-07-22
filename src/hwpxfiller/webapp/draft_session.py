@@ -691,6 +691,11 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
             # 않은 원문만 저장할 수 있다(결정 = 라이브러리 배접만). 붙여넣기·수정 원문은 먼저
             # 「템플릿으로 저장」이 필요하다(비활성 + 사유, dead button 금지). 판정은 Python 단일.
             "can_save_job": (not self._source_dirty) and bool(self._template_path),
+            # 「템플릿으로 저장」 노출(#148 슬라이스 6, #135) — 세션 원문을 TXT 라이브러리로 승격하는
+            # 두 번째 승격 동사(구 「빠른 기안」에서 흡수). **휘발 세션 전용**(사용자 결정): 저장 기안
+            # 결속(saved) 모드는 원문이 이미 라이브러리에 있어 재저장이 무의미하다. 빈손은 저장할
+            # 원문이 없어 숨는다(dead button 금지 — 표면은 hidden 으로 가른다). 판정은 Python 단일.
+            "can_save_template": (not self._bound_job) and bool(vm.template_text.strip()),
         }
 
     # ------------------------------------------------------- 웹→Python 데이터 액션

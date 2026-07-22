@@ -44,6 +44,8 @@ import hashlib
 from dataclasses import replace
 from pathlib import Path
 
+from hwpxcore.atomic import write_text_atomic
+
 from ..core.job import Job, JobRegistry
 from ..core.text_registry import TextTemplateRegistry
 from ..gui.job_editor_state import overwrite_confirm_text
@@ -51,6 +53,7 @@ from .draft_session import DraftSessionMixin, TargetFontSetting
 from .job_list import build_flat_rows, build_group_sections, drift_note
 from .screens import DatasetPoolRegistry, PushSink
 from .settings import load_draft_collapsed_groups, save_draft_collapsed_groups
+from .template_groups import TemplateGroupModel, rel_key, validate_template_name
 
 
 class DraftController(DraftSessionMixin):
@@ -72,9 +75,16 @@ class DraftController(DraftSessionMixin):
         *,
         pool_registry: "DatasetPoolRegistry | None" = None,
         target_font: "TargetFontSetting | None" = None,
+        txt_groups: "TemplateGroupModel | None" = None,
     ) -> None:
         self.registry = registry
         self._push_sink = push
+        # txt 템플릿 그룹 모델(#108) — 「템플릿으로 저장」(#135)이 그룹을 지정하므로 필요하다.
+        # 관리 화면·구 「빠른 기안」과 **같은 인스턴스**여야 한다(app.py 가 주입): 별도면 지정·접힘
+        # 인메모리 캐시가 갈라져 여기서 넣은 그룹이 관리 화면 목록에 안 보인다(에디터 1단계 피커에
+        # hwpx 모델을 공유한 것과 같은 이유). 「기안으로 저장」의 Job.group(레지스트리 전역)과는
+        # 별개 축이다 — 이건 TXT **라이브러리** 그룹(TemplateGroupModel), 저건 작업 그룹.
+        self._groups = txt_groups if txt_groups is not None else TemplateGroupModel("txt")
         # 좌 목록 접힌 그룹 — 「작업」과 별도 키(매체별 격리, 결정 1). Python 설정 영속(#74).
         self._collapsed: "set[str]" = set(load_draft_collapsed_groups())
         # 좌 목록에서 겨눈 저장 기안 = 세션 유래 결속(``_bound_job``, draft_session 소유·단일
@@ -331,6 +341,144 @@ class DraftController(DraftSessionMixin):
         if was_unbound:
             self._volatile_stash = None
         return {"ok": True, "name": name}
+
+    # ---------------------------------- 「템플릿으로 저장」 승격(#148 슬라이스 6, #135)
+    #
+    # 구 「빠른 기안」이 혼자 갖고 있던 두 번째 승격 동사를 흡수한다(삭제는 의무를 상속한다).
+    # 「기안으로 저장」(위 `_do_save_job`)은 **바인딩**(Job = template_path+매핑+그룹)을 남기고
+    # **라이브러리 배접 원문만** 자격이 있다 — 붙여넣거나 고친 원문은 파일과 어긋나 저장할 수
+    # 없어, `_do_save_job` 의 비활성 사유가 "「템플릿으로 저장」한 뒤 저장하세요"로 안내한다.
+    # 그 동사가 여기다: 세션 **원문 자체**를 TXT 라이브러리(.txt 파일)로 동결한다(값은 저장 대상
+    # 아님). 착지 뒤 세션은 죽지 않고 정체만 라이브러리 배접으로 승격해(원문≠파일 표지 해제) 곧
+    # 「기안으로 저장」 자격이 선다. 노출은 **휘발 세션 전용**(스냅샷 `can_save_template`) — 저장
+    # 기안 결속(saved) 모드는 원문이 이미 라이브러리에 있어 재저장이 무의미하다(사용자 결정).
+    def _do_promote_info(self, p: dict) -> dict:
+        """저장 모달 프리필 — 이름 후보·그룹 후보·현재 그룹(무변이 질의).
+
+        정체 원천은 ``_template_path`` 다(``vm.template_name`` 이 아니라): 신 세션에서 원문 라이브
+        편집(``set_template_text``)은 ``template_name`` 을 **None 으로** 지우지만 배접 파일 경로는
+        유지한다(수정됨 표지 = ``_source_dirty``, 경로 = ``_template_path``). 그래서 편집한
+        라이브러리 템플릿도 원 이름으로 프리필해 **되돌려 쓰기**(같은 파일 덮어쓰기)가 정상 경로가
+        된다(구 「빠른 기안」은 origin=='lib' 이 편집에도 살아 같은 효과). 붙여넣기는 경로가 없어
+        (``_template_path==""``) 빈칸에서 사람이 짓는다. 그룹 후보는 **살아있는 지정만** 센다(고아
+        그룹 부활 금지 — #108 결정 8). 판정은 여기 Python 단일 출처다.
+        """
+        dest = Path(self._template_path) if self._template_path else None
+        name = self._registry_name(dest) if dest is not None else ""
+        keys = self._library_keys()
+        return {
+            "name": name,
+            "groups": self._groups.existing_groups(keys),
+            "group": self._groups.group_of(rel_key(dest, self._registry.directory)) if dest else "",
+        }
+
+    _do_promote_info.is_query = True  # 무변이 질의 — 재렌더 유발 금지
+
+    def _library_keys(self) -> "list[str]":
+        """살아있는 txt 템플릿의 그룹 식별키 — 관리 화면과 같은 규칙(루트 상대경로+확장자).
+
+        키는 **실제 경로**에서 뽑는다(구 화면 리뷰 2R P2): 이름에 소문자 ``.txt`` 를 합성하면
+        Windows 에서 정상 등록되는 ``REPORT.TXT`` 의 키가 관리 화면(실경로 기준)과 갈라진다.
+        """
+        root = self._registry.directory
+        return [rel_key(t.path, root) for t in self._registry.list_templates()]
+
+    def _registry_name(self, path: "Path") -> str:
+        """실제 경로 → 레지스트리 이름(루트 상대·확장자 제외, POSIX).
+
+        접미사 **대소문자에 의존하지 않는다**(구 화면 리뷰 2R P2): ``removesuffix(".txt")`` 는
+        ``REPORT.TXT`` 를 못 벗겨 세션 이름과 레지스트리 이름이 갈라지고, 그러면 콤보 현재 선택·
+        그룹 조회·다음 저장의 경로 재발견이 전부 어긋난다.
+        """
+        try:
+            rel = path.relative_to(self._registry.directory)
+        except ValueError:  # 루트 밖(방어) — rel_key 폴백과 같은 규율
+            rel = Path(path.name)
+        return rel.with_suffix("").as_posix()
+
+    def _resolve_dest(self, raw_name: str) -> "Path":
+        """제출된 이름 → 저장 경로. 실패는 :class:`ValueError`(인라인 재진술용).
+
+        **현 세션이 든 라이브러리 정체와 같은 이름이면 그 파일의 실제 경로**를 돌려준다(구 화면
+        Codex 리뷰 P2). 정체는 ``_template_path`` 로 판정한다(``vm.template_name`` 은 편집에 지워짐 —
+        위 promote_info 참조). 재귀 스캔이 하위폴더 파일을 ``하위폴더/이름`` 으로 노출하므로 프리필도
+        그 값인데, 그걸 새 이름처럼 검증하면 ``/`` 때문에 거부돼 **하위폴더 템플릿은 고쳐서 되돌려
+        쓰는 정상 경로가 언제나 막힌다**. 반대로 경로 구분자를 허용하면 새 이름으로 루트 밖·임의
+        하위 경로를 만들 수 있으므로, 관용은 **현 세션의 그 배접 파일 하나**로만 한정한다(붙여넣기는
+        ``_template_path=="" `` 라 이 관용에 못 든다 — 새 이름엔 구분자 계속 금지).
+        """
+        name = (raw_name or "").strip()
+        if name and self._template_path:
+            dest = Path(self._template_path)
+            if dest.exists() and self._registry_name(dest) == name:
+                return dest
+        return self._registry.directory / (
+            validate_template_name(raw_name) + TextTemplateRegistry.SUFFIX
+        )
+
+    def _do_save_template(self, p: dict) -> dict:
+        """「템플릿으로 저장」(결정 33·34) — 세션 원문을 TXT 라이브러리로 승격. 값은 저장 대상 아님.
+
+        동명은 **확인 게이트**를 거친다(결정 34). 관리 화면의 두 기존 경로와 다른 계약인 것은
+        의도다: 「가져오기」는 ``이름 (2).txt`` 접미로 회피하고 「새 TXT」는 loud 거부하는데, 여기선
+        **되돌려 쓰기가 본래 목적**(라이브러리 사본을 고쳐 왔으니 같은 이름으로 되돌아가는 게 정상
+        경로)이라 회피도 거부도 사용자가 원한 일을 막는다. 대신 파괴를 확인받는다.
+
+        저장 뒤 세션은 죽지 않고 **정체만 승격**한다(구 ``mark_saved_as`` 등가): ``vm.template_name``
+        을 새 이름으로, ``_template_path`` 를 실경로로, ``_source_dirty`` 를 내린다 — 채우던 값·데이터
+        겨눔·큐 진행은 그대로라 하던 일을 잇고, 곧 「기안으로 저장」 자격(라이브러리 배접·미수정)이
+        선다. 매핑·원문은 불변이라 재구성하지 않는다(토큰 집합 그대로).
+        """
+        if not self.vm.template_text.strip():  # 빈손 승격 = 빈 템플릿 양산(복사 게이트 동형)
+            return {"ok": False, "error": "저장할 템플릿 원문이 없습니다."}
+        root = self._registry.directory
+        try:
+            dest = self._resolve_dest(p.get("name", ""))
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}  # 모달 인라인 재진술(창 밖 예외 금지)
+        name = self._registry_name(dest)
+        if dest.exists() and not p.get("confirm"):
+            return {
+                "ok": False,
+                "needs_confirm": True,
+                "name": name,
+                "confirm_text": (
+                    f"라이브러리에 이미 「{name}」 템플릿이 있습니다. "
+                    "지금 원문으로 덮어쓰면 기존 내용은 되돌릴 수 없습니다. "
+                    "채운 값은 저장되지 않고 원문만 저장됩니다."
+                ),
+            }
+        overwritten = dest.exists()
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        write_text_atomic(str(dest), self.vm.template_text)
+        # 그룹 지정은 **저장 성공 뒤에만** — 파일 없는 키에 지정을 남기면 고아가 된다. 여기서
+        # 실패해도(설정 파일 읽기 전용 등) **저장 자체는 이미 일어났다**(구 화면 Codex 리뷰 P2):
+        # 예외로 되던지면 "실패"라 말하면서 라이브러리 내용은 바뀐 상태가 되고 재시도는 난데없이
+        # 덮어쓰기 게이트를 만난다. 파일 쓰기를 되돌리면 덮어쓰기에서 원본 복원이 불가해 더 나쁘다
+        # — 성공으로 보고하되 못 남긴 것을 정확히 진술한다(일어난 일과 안 일어난 일을 가른다).
+        key = rel_key(dest, root)
+        group_error = ""
+        try:
+            self._groups.set_group(key, p.get("group", ""))
+        except (OSError, ValueError) as exc:
+            group_error = str(exc) or exc.__class__.__name__
+        # 정체 승격(구 mark_saved_as 등가) — 세션은 그대로, 원문만 라이브러리 배접이 된다.
+        self.vm.template_name = name
+        self._template_path = str(dest)
+        self._source_dirty = False
+        return {
+            "ok": True,
+            "name": name,
+            "overwritten": overwritten,
+            "group_error": group_error,
+            # 실패 뒤 **실제로 남아 있는 그룹**(구 화면 리뷰 2R P2). ``set_group`` 은 저장 성공 뒤에만
+            # 인메모리를 교체하므로 실패 시 이전 지정이 그대로 산다 — "「그룹 없음」에 있다"고
+            # 단정하면 관리 화면 상태와 어긋난 거짓이 된다(over-warn). 표면은 이 값을 그대로 재진술.
+            "group": self._groups.group_of(key),
+            # 콤보는 initial() 에서 한 번 받아 캐시하므로, 새 이름이 목록에 서려면 갱신본을 함께
+            # 돌려준다(방금 만든 템플릿이 콤보에 없는 어긋남 방지).
+            "templates": self.vm.template_names(),
+        }
 
     def _do_toggle_group(self, p: dict) -> None:
         """그룹 접힘/펼침 토글 — 마지막 상태를 Python 설정에 영속(「작업」과 별도 키)."""

@@ -134,7 +134,7 @@ class WebFrontend:
             # 채우기」와 **같은 믹스인**이라 TXT 레지스트리·풀도 같은 공유 인스턴스를 쓴다
             # (라이브러리 변경·손상 경보가 두 표면에 함께 반영).
             DraftController(job_registry, self._push, registry, pool_registry=pool_registry,
-                            target_font=target_font),
+                            target_font=target_font, txt_groups=txt_groups),
             # 템플릿 관리(#13) — TXT 레지스트리는 즉시 기안과 공유(변경이 양쪽에 반영).
             TemplateController(registry, self._push, txt_groups=txt_groups),
             # 데이터 관리(#26 #4) — 등록 데이터 참조·수명.
@@ -1101,6 +1101,18 @@ _DRAFT_SESSION_PROBE_JS = r"""
     out.prev_disabled = document.getElementById('draftCardPrev').disabled;  // 첫 카드 = 경계 잠금
     out.next_enabled = !document.getElementById('draftCardNext').disabled;
     out.defer_absent = !document.getElementById('draftCardDefer');
+    // 「템플릿으로 저장」(#148 슬라이스 6, #135) — 구 「빠른 기안」에서 흡수한 두 번째 승격 동사.
+    // 휘발 세션 + 원문 있으면 뜨고(can_save_template), 플래그가 거짓이면(저장 결속·빈손) 숨는다
+    // (사용자 결정 · dead button 금지 — hidden 으로 가른다). 판정은 Python, 여긴 렌더 되읽기.
+    // 격리 push 후 원상 복귀(뒤 되읽기 오염 방지).
+    var tsnap = JSON.parse(JSON.stringify(snap));
+    tsnap.can_save_template = true;
+    window.__push('draft', tsnap);
+    out.savetpl_shown = document.getElementById('draftSaveTpl').hidden === false;
+    tsnap.can_save_template = false;
+    window.__push('draft', tsnap);
+    out.savetpl_hidden = document.getElementById('draftSaveTpl').hidden === true;
+    window.__push('draft', snap);  // 원상 복귀
     // 두 인스턴스 격리 — draft 세션 렌더가 **숨은 txt 화면 DOM 을 만지지 않는다**(id 분리).
     // getElementById 는 화면 은닉과 무관하게 해소되므로(poolList 전례) 실물로 확인한다.
     // 판정은 "이 프로브만의 문자열이 저쪽에 새지 않았는가" — 앞선 프로브가 남긴 상태와

@@ -867,3 +867,193 @@ def test_target_font_sharing_comes_only_from_injection(tmp_path):
     c, _j3, _p3 = _controller(tmp_path, target_font=shared)
     d, _j4, _p4 = _controller(tmp_path, target_font=shared)
     assert c._font is d._font is shared
+
+
+# ======= 「템플릿으로 저장」 승격(#148 슬라이스 6, #135) — 구 「빠른 기안」에서 흡수 =======
+# 삭제는 의무를 상속한다: 구 test_webapp_quickdraft 의 save_template 클러스터를 신 모델
+# (_template_path·_source_dirty·can_save_template)에 맞춰 이관한다. 저장되는 것은 원문뿐이고
+# 세션은 죽지 않고 정체만 라이브러리 배접으로 승격한다.
+def _lib_session(tmp_path):
+    """라이브러리 템플릿(두 토큰)을 골라 든 휘발 세션 — 승격 자격(파일 배접·미수정)이 선다."""
+    ctrl, jobs, pushes = _controller(tmp_path)
+    (tmp_path / "개찰참관보고.txt").write_text("제목: {{사업명}}\n비고: {{비고}}", encoding="utf-8")
+    ctrl.dispatch("select_template", {"name": "개찰참관보고"})
+    return ctrl, jobs, pushes
+
+
+def _tok(snap, name):
+    return next(t for t in snap["tokens"] if t["name"] == name)
+
+
+def test_save_template_gated_to_volatile_with_text(tmp_path):
+    """노출 = 휘발 세션 + 원문 있음(사용자 결정) — 빈손·저장 결속(saved)은 숨는다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    assert ctrl.snapshot()["can_save_template"] is True   # 빈손 아님(부팅 시 첫 템플릿 선택)
+    ctrl.dispatch("set_template_text", {"text": ""})        # 원문 비움
+    assert ctrl.snapshot()["can_save_template"] is False
+    ctrl.dispatch("set_template_text", {"text": "붙여넣은 {{토큰}}"})
+    assert ctrl.snapshot()["can_save_template"] is True    # 휘발·원문 있음
+    # 저장 기안 결속(saved) 모드는 숨는다 — 원문이 이미 라이브러리에 있어 재저장 무의미.
+    _save_real(tmp_path, jobs, "저장기안", "저장기안.txt", "굳은 {{사업명}}")
+    ctrl.dispatch("select_job", {"name": "저장기안"})
+    assert ctrl.snapshot()["mode"] == "saved"
+    assert ctrl.snapshot()["can_save_template"] is False
+
+
+def test_promote_info_prefills_name_and_groups(tmp_path):
+    """저장 모달 프리필 — 라이브러리 유래는 그 이름, 붙여넣기는 빈칸(사람이 짓는다)."""
+    ctrl, _jobs, _ = _lib_session(tmp_path)
+    info = ctrl.dispatch("promote_info", {})
+    assert info["name"] == "개찰참관보고"
+    assert info["group"] == "" and info["groups"] == []
+    ctrl.dispatch("set_template_text", {"text": "붙여넣은 {{토큰}}"})
+    assert ctrl.dispatch("promote_info", {})["name"] == ""
+
+
+def test_promote_info_does_not_push(tmp_path):
+    """무변이 질의 — 모달 여는 것이 화면을 재렌더하지 않는다."""
+    ctrl, _jobs, pushes = _lib_session(tmp_path)
+    before = len(pushes)
+    ctrl.dispatch("promote_info", {})
+    assert len(pushes) == before
+
+
+def test_save_template_writes_source_and_promotes_identity(tmp_path):
+    """승격 = 원문 저장 + 정체 동결 — 세션은 죽지 않고 값·데이터가 그대로 이어진다."""
+    ctrl, _jobs, _ = _lib_session(tmp_path)
+    ctrl.dispatch("set_map_value", {"name": "비고", "text": "손으로 친 값"})
+    res = ctrl.dispatch("save_template", {"name": "개찰참관보고 v2", "group": "기안문"})
+    assert res["ok"] is True and res["overwritten"] is False
+    saved = (tmp_path / "개찰참관보고 v2.txt").read_text(encoding="utf-8")
+    assert "{{비고}}" in saved                    # 저장된 것은 원문
+    assert "손으로 친 값" not in saved             # 값은 저장 대상이 아니다
+    snap = ctrl.snapshot()
+    # 정체 승격: 라이브러리 배접·미수정 → 「기안으로 저장」 자격이 서고 「템플릿으로 저장」은 유지.
+    assert snap["template_name"] == "개찰참관보고 v2"
+    assert snap["source_dirty"] is False and snap["can_save_job"] is True
+    assert snap["can_save_template"] is True
+    assert _tok(snap, "비고")["value"] == "손으로 친 값"   # 하던 일은 그대로 이어진다
+    assert "개찰참관보고 v2" in res["templates"]           # 콤보 갱신본 동반
+
+
+def test_save_template_assigns_group_visible_to_manager(tmp_path):
+    """그룹 지정은 관리 화면과 **같은 모델·같은 키**(루트 상대경로+확장자)로 남는다."""
+    from hwpxfiller.webapp.template_groups import TemplateGroupModel
+    ctrl, _jobs, _ = _lib_session(tmp_path)
+    ctrl.dispatch("save_template", {"name": "보고서", "group": "기안문"})
+    assert TemplateGroupModel("txt").group_of("보고서.txt") == "기안문"
+    info = ctrl.dispatch("promote_info", {})
+    assert info["groups"] == ["기안문"] and info["group"] == "기안문"
+
+
+def test_save_template_same_name_needs_confirm_then_overwrites(tmp_path):
+    """동명은 조용히 덮지 않는다(결정 34) — 확인 왕복 뒤에만 파괴한다."""
+    ctrl, _jobs, _ = _lib_session(tmp_path)
+    res = ctrl.dispatch("save_template", {"name": "개찰참관보고", "group": ""})
+    assert res["ok"] is False and res["needs_confirm"] is True
+    assert "개찰참관보고" in res["confirm_text"]
+    res = ctrl.dispatch("save_template", {"name": "개찰참관보고", "group": "", "confirm": True})
+    assert res["ok"] is True and res["overwritten"] is True
+
+
+def test_save_template_rejects_bad_name_inline(tmp_path):
+    """이름 검증 실패는 창 밖 예외가 아니라 모달 인라인 재진술(다시 칠 자리 보존)."""
+    ctrl, _jobs, _ = _lib_session(tmp_path)
+    for bad in ("", "  ", "보고서.txt", "하위/보고서"):
+        res = ctrl.dispatch("save_template", {"name": bad, "group": ""})
+        assert res["ok"] is False and res.get("needs_confirm") is None and res["error"]
+    # 아무 새 파일도 안 만들었다(기존 착수계·개찰참관보고 만 존재).
+    assert sorted(p.name for p in tmp_path.glob("*.txt")) == ["개찰참관보고.txt", "착수계.txt"]
+
+
+def test_save_template_refuses_empty_session(tmp_path):
+    """빈손 승격 = 빈 템플릿 양산 — 복사 게이트와 같은 술어로 막는다."""
+    ctrl, _jobs, _ = _controller(tmp_path)
+    ctrl.dispatch("set_template_text", {"text": "   "})
+    res = ctrl.dispatch("save_template", {"name": "빈것", "group": ""})
+    assert res["ok"] is False and not (tmp_path / "빈것.txt").exists()
+
+
+def test_save_template_group_is_not_left_on_failure(tmp_path):
+    """실패 경로는 그룹 지정을 남기지 않는다 — 파일 없는 키 = 고아 지정."""
+    from hwpxfiller.webapp.template_groups import TemplateGroupModel
+    ctrl, _jobs, _ = _lib_session(tmp_path)
+    ctrl.dispatch("save_template", {"name": "보고서.txt", "group": "기안문"})    # 이름 거부
+    ctrl.dispatch("save_template", {"name": "개찰참관보고", "group": "기안문"})   # 확인 대기
+    assert TemplateGroupModel("txt").group_of("보고서.txt") == ""
+    assert TemplateGroupModel("txt").group_of("개찰참관보고.txt") == ""
+
+
+def test_nested_library_template_can_be_overwritten(tmp_path):
+    """하위폴더 템플릿도 고쳐서 되돌려 쓸 수 있다 — 프리필이 곧 거부되는 이름이면 안 된다(Codex P2)."""
+    from hwpxfiller.webapp.template_groups import TemplateGroupModel
+    nested = tmp_path / "기안문"
+    nested.mkdir()
+    (nested / "보고.txt").write_text("원본 {{사업명}}", encoding="utf-8")
+    ctrl, _jobs, _ = _controller(tmp_path)
+    ctrl.dispatch("select_template", {"name": "기안문/보고"})
+    ctrl.dispatch("edit_source", {"text": "고친 {{사업명}} {{비고}}"})
+    info = ctrl.dispatch("promote_info", {})
+    assert info["name"] == "기안문/보고"
+    res = ctrl.dispatch("save_template", {"name": info["name"], "group": ""})
+    assert res["ok"] is False and res["needs_confirm"] is True        # 동명 = 확인 게이트
+    res = ctrl.dispatch("save_template", {"name": info["name"], "group": "기안", "confirm": True})
+    assert res["ok"] is True and res["overwritten"] is True
+    assert (nested / "보고.txt").read_text(encoding="utf-8") == "고친 {{사업명}} {{비고}}"
+    assert sorted(p.name for p in tmp_path.glob("*.txt")) == ["착수계.txt"]   # 루트에 사본 없음
+    assert TemplateGroupModel("txt").group_of("기안문/보고.txt") == "기안"
+    assert ctrl.dispatch("promote_info", {})["group"] == "기안"
+
+
+def test_path_separator_still_forbidden_for_new_names(tmp_path):
+    """관용은 현 세션의 등록된 정체 하나뿐 — 새 이름의 경로 구분자는 계속 막는다."""
+    ctrl, _jobs, _ = _lib_session(tmp_path)
+    res = ctrl.dispatch("save_template", {"name": "어디/새이름", "group": ""})
+    assert res["ok"] is False and res["error"]
+    assert not (tmp_path / "어디").exists()
+
+
+def test_group_persist_failure_reports_what_landed(tmp_path, monkeypatch):
+    """그룹 영속만 실패하면 **저장은 성공으로 보고**하되 못 남긴 것을 진술한다(P2)."""
+    ctrl, _jobs, _ = _lib_session(tmp_path)
+
+    def _boom(*a, **k):
+        raise OSError("설정 파일 쓰기 거부")
+
+    monkeypatch.setattr(ctrl._groups, "set_group", _boom)
+    res = ctrl.dispatch("save_template", {"name": "보고서", "group": "기안문"})
+    assert res["ok"] is True and res["group_error"] == "설정 파일 쓰기 거부"
+    assert (tmp_path / "보고서.txt").exists()                     # 저장은 실제로 일어났다
+    assert ctrl.snapshot()["template_name"] == "보고서"           # 정체 승격도 함께
+    assert res["group"] == ""                                     # 남은 그룹 = 사실 그대로
+
+
+def test_group_persist_failure_keeps_existing_group_in_report(tmp_path, monkeypatch):
+    """실패해도 이전 지정은 살아 있다(영속-후-교체) — 「그룹 없음」이라 단정하면 거짓(2R P2)."""
+    ctrl, _jobs, _ = _lib_session(tmp_path)
+    ctrl.dispatch("save_template", {"name": "보고서", "group": "기안문"})    # 먼저 그룹 지정
+    ctrl.dispatch("edit_source", {"text": "다시 고친 {{사업명}}"})
+
+    def _boom(*a, **k):
+        raise OSError("설정 파일 쓰기 거부")
+
+    monkeypatch.setattr(ctrl._groups, "set_group", _boom)
+    res = ctrl.dispatch("save_template", {"name": "보고서", "group": "다른그룹", "confirm": True})
+    assert res["ok"] is True and res["group_error"]
+    assert res["group"] == "기안문"                               # 실제로 남아 있는 그룹
+
+
+def test_save_template_then_save_job_flows(tmp_path):
+    """붙여넣기 → 「템플릿으로 저장」 → 라이브러리 배접이 되어 「기안으로 저장」 자격이 선다.
+
+    5c 의 save_job 비활성 사유("「템플릿으로 저장」한 뒤 저장하세요")가 죽은 지시가 아님을 확인:
+    두 승격 동사가 한 세션에서 이어진다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    ctrl.dispatch("set_template_text", {"text": "제목: {{공고명}}"})
+    assert ctrl.snapshot()["can_save_job"] is False              # 붙여넣기는 저장 불가
+    assert ctrl.snapshot()["can_save_template"] is True
+    ctrl.dispatch("save_template", {"name": "붙임원문", "group": ""})
+    assert ctrl.snapshot()["can_save_job"] is True              # 이제 라이브러리 배접
+    ctrl.dispatch("set_map_value", {"name": "공고명", "text": "값"})
+    res = ctrl.dispatch("save_job", {"name": "붙임기안"})
+    assert res["ok"] is True and "붙임기안" in jobs.names()
