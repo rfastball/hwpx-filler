@@ -1,6 +1,6 @@
-/* 홈(대시보드) 화면 — 브리지로 링1 HomeViewModel 과 왕복. 목업 scr-home 이관(#20, 마지막).
+/* 홈(경보·상태 허브) 화면 — 브리지로 링1 HomeViewModel 과 왕복. 목업 scr-home 이관(#20, 마지막).
    안정 DOM(index.html) + Python 이 window.__push('home', snapshot) 로 값만 채운다(run 패턴).
-   표현 계층(KPI 타일·작업 카드·group-by/facet 칩바)만 여기서 만든다 — VM 로직 아님(링2 대체).
+   표현 계층(조건부 경보·작업 카드·group-by/facet 칩바)만 여기서 만든다 — VM 로직 아님(링2 대체).
    허브 이동은 window.Nav(셸 라우터)로만; 대상 화면의 자체 dispatch 로 미리 겨눈 뒤 전환한다. */
 (function () {
   const SCREEN = "home";
@@ -18,46 +18,24 @@
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
     LAST = s;
-    renderKpis(s.kpi);
-    renderContinue(s.continue_runs);
+    renderAlerts(s.kpi);
     renderCorrupt(s.corrupt_rows);
     renderBrowser(s.axes, s.group_by, s.facets);
     renderJobs(s.grouped_rows, s.group_by, s.is_empty);
     renderTxt(s.txt_rows);
   }
 
-  /* KPI — 목업 3타일(저장된 작업·템플릿 없는 작업·기안 템플릿). 전부 실재 데이터.
-     손상된 등록 데이터(pool_corrupted)는 KPI 가 아니라 경보라 >0 일 때만 danger 타일로
-     끼어든다(#45) — 0 은 정상이라 상시 타일은 소음, 손상은 조용히 감추지 않는다. */
-  function renderKpis(k) {
-    k = k || { job_count: 0, missing_template_count: 0, txt_template_count: 0, pool_corrupted: 0 };
-    const warn = k.missing_template_count > 0 ? " warn" : "";
-    $("homeKpis").innerHTML =
-      tile(k.job_count, "저장된 작업 · HWPX") +
-      tile(k.missing_template_count, "템플릿 없는 작업", warn) +
-      tile(k.txt_template_count, "기안 템플릿 · txt") +
-      (k.pool_corrupted > 0
-        ? tile(k.pool_corrupted, "손상된 등록 데이터: 데이터 관리에서 확인", " danger")
-        : "");
-  }
-  function tile(v, label, cls) {
-    return `<div class="kpi${cls || ""}"><div class="v">${v}</div><div class="l">${esc(label)}</div></div>`;
-  }
-
-  /* 이어서 실행 — 실행 이력 있는 작업 최근순(있을 때만 노출). 버튼 라벨은 섹션 제목과
-     겹치지 않게 "실행"(F14) — 작업 카드의 실행 버튼과 같은 동작·같은 어휘. */
-  function renderContinue(rows) {
-    const box = $("homeContinue");
-    rows = rows || [];
-    if (!rows.length) { box.style.display = "none"; box.innerHTML = ""; return; }
-    box.style.display = "";
-    box.innerHTML =
-      `<div class="cr-head">이어서 실행</div>` +
-      rows.map((r) =>
-        `<div class="continue-run"><span class="name">${esc(r.name)}</span>` +
-        `<span class="when">${esc(r.last_run_display)}</span>` +
-        `<button class="btn sm" data-run="${esc(r.name)}"${r.runnable ? "" : " disabled"}>실행</button></div>`
-      ).join("");
+  /* 정보 위생(#239 결정 8): 개수 타일은 렌더하지 않고 조치가 필요한 조건만 경보로 승계한다. */
+  function renderAlerts(k) {
+    k = k || { missing_template_count: 0, pool_corrupted: 0 };
+    const alerts = [];
+    if (k.missing_template_count > 0) {
+      alerts.push(`<div class="note warnbox">템플릿이 연결되지 않은 작업 ${k.missing_template_count}건이 있습니다. 작업에서 다시 연결하세요.</div>`);
+    }
+    if (k.pool_corrupted > 0) {
+      alerts.push(`<div class="note dangerbox">손상된 등록 데이터 ${k.pool_corrupted}건이 있습니다. 데이터 관리에서 확인하세요.</div>`);
+    }
+    $("homeAlerts").innerHTML = alerts.join("");
   }
 
   /* 손상 작업 — 숨기지 않고 시끄러운 위험 카드로(RC-05) + 해소 동선(#26 #8·UD-44):
@@ -394,7 +372,6 @@
     $("homeNewTxt").addEventListener("click", newDraft);
     $("homeJobs").addEventListener("click", onJobsClick);
     $("homeEmpty").addEventListener("click", onJobsClick);
-    $("homeContinue").addEventListener("click", onJobsClick);
     $("homeCorrupt").addEventListener("click", onCorruptClick);  // 손상 조치(#26 #8)
     $("homeRowMenu").addEventListener("click", onRowMenuClick);   // 카드 ⋮ 메뉴 항목(#179)
     // ⋮ 메뉴 바깥 닫기(job/tpl 동형) — 캡처 클릭 억제 + 바깥 pointerdown + Escape.

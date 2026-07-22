@@ -13,8 +13,9 @@
 <body>
 <!-- 웹 프론트엔드 셸 — 목업 docs/UI_PROTOTYPE_APPB.html 의 앱윈도 구조를 스튜디오 크롬(마스트헤드·
      주석·캔버스) 없이 실앱으로 전개. 좌 레일(5화면 라우팅) + 우 스테이지. 링1 VM 에 브리지로 배선.
-     화면: home(허브·기본)·작업(R-flow 세션+편집 두 모드 · #90)·txt·tpl(#13)·pool(데이터 관리 ·
-     #26 #4). 실행 화면(#18)은 슬라이스 3, 작업 에디터 별도 화면은 슬라이스 5(블록 2 개정 결정
+     화면: 작업(부팅 랜딩·R-flow 세션+편집 두 모드 · #90)·기안·tpl(#13)·pool(데이터 관리 ·
+     #26 #4)·home(경보·상태 허브, 기본 랜딩 아님). 실행 화면(#18)은 슬라이스 3,
+     작업 에디터 별도 화면은 슬라이스 5(블록 2 개정 결정
      39 — 「작업」 편집 모드로 흡수)에서 사망. matrix 는 F9 로 제거 — 실행 모델은 하나다. -->
 <div class="app">
   <nav class="rail" aria-label="화면 전환">
@@ -28,12 +29,12 @@
     <!-- #27(개정): .ni 는 이제 SVG 상시 아이콘 표지 — 접힘/펼침 모두 노출. 접힘 시 라벨(.lbl=.n+.d)만
          숨어 아이콘이 표지를 잇는다(옛 '펼침 숨김' 계약 폐기 — 아이콘+라벨 공존은 스캔 보조). 접근
          이름=aria-label, 호버 툴팁=title("이름 — 설명"). 부제 .d 는 활성 항목에만 인라인 노출. -->
-    <button class="navbtn" data-scr="home" aria-current="true" aria-label="대시보드" title="대시보드: 저장된 작업과 기안 템플릿 요약">
-      <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l7-6 7 6M5 9v7h4v-4h2v4h4V9"/></svg></span><span class="lbl"><span class="n">대시보드</span><span class="d">작업·기안 요약</span></span></button>
+    <button class="navbtn" data-scr="home" aria-label="홈" title="홈: 작업·템플릿·데이터 경보와 상태">
+      <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l7-6 7 6M5 9v7h4v-4h2v4h4V9"/></svg></span><span class="lbl"><span class="n">홈</span><span class="d">경보·상태</span></span></button>
     <!-- 「작업」(R-flow, #90) — 좌 목록 + 우 세션 패널. 데이터를 채워 문서를 생성하는 유일
          표면이다(실행 화면은 슬라이스 3에서 사망, 레일 「실행」 동시 제거 · 부록 A-4-36).
-         R-info 1부는 이 화면을 부팅 랜딩으로 확정했으나, 랜딩 전환(기본 화면 교체)은 별도 후속. -->
-    <button class="navbtn" data-scr="job" aria-label="작업" title="작업: 저장된 작업을 골라 세션 패널에서 데이터를 채워 생성">
+         R-info 1부 결정 1에 따라 이 화면이 부팅 랜딩이다(#239). -->
+    <button class="navbtn" data-scr="job" aria-current="true" aria-label="작업" title="작업: 저장된 작업을 골라 세션 패널에서 데이터를 채워 생성">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h5v12H4zM11 4h5v7h-5z"/></svg></span><span class="lbl"><span class="n">작업</span><span class="d">목록 + 세션 패널</span></span></button>
     <!-- 「기안」(R-info 3부, #148) — TXT 작업-앵커 master-detail. 「작업」(HWPX)의 대칭 화면으로
          바로 다음 순번(최종 형상 작업·기안·템플릿·데이터). 좌 목록 + 우 휘발 세션 4존(3a) +
@@ -58,26 +59,23 @@
   </nav>
 
   <main class="stage">
-    <!-- ============ 대시보드 (허브, 마지막 페이로드 화면 · #20) ============ -->
+    <!-- ============ 홈 (경보·상태 허브, 기본 랜딩 아님 · #20/#239) ============ -->
     <!-- 목업 scr-home 이관. 안정 DOM(id) + home.js 가 window.__push('home', snapshot) 로 값만
-         채운다(run 패턴). 링1 HomeViewModel(KPI·작업 브라우저 group-by/facet·빈 상태·손상 격리·
+         채운다(run 패턴). 링1 HomeViewModel(조건부 경보·작업 브라우저 group-by/facet·빈 상태·손상 격리·
          txt 트랙)에 브리지로 배선 — VM 로직 재구현 없음. 카드/버튼의 워크플로 이동은 window.Nav
          (셸 라우터)로만; 홈은 다른 화면 컨트롤러를 모른다. 스코프 경계는 screen_home.py docstring. -->
-    <section class="scr on" id="scr-home">
+    <section class="scr" id="scr-home">
       <header class="scr-head">
         <div>
-          <h1>대시보드</h1>
-          <p class="sub">저장된 작업(HWPX)과 기안 템플릿(txt)을 한눈에.</p>
+          <h1>홈</h1>
+          <p class="sub">작업·템플릿·데이터의 상태와 조치할 경보를 확인합니다.</p>
         </div>
         <!-- 수동 새로고침 버튼 제거(F6) — 화면 진입 시 자동 갱신(app.js REFRESH_ON_NAV)이 대체.
              tpl·pool 의 새로고침은 외부 파일시스템 재스캔 용도라 존치(다른 문제). -->
       </header>
 
-      <!-- KPI — 전부 실재 데이터(레지스트리·템플릿 상태·txt 루트). 가짜 지표 없음. -->
-      <div class="kpis" id="homeKpis"></div>
-
-      <!-- 이어서 실행 — 실행 이력 있는 작업 최근순(있을 때만 노출) -->
-      <div class="continue-runs" id="homeContinue" style="display:none"></div>
+      <!-- KPI·이어서 실행은 제거(#239 결정 8). 경보만 기존 note 문법으로 승계한다. -->
+      <div id="homeAlerts"></div>
 
       <!-- 손상 작업 — 숨기지 않고 시끄러운 위험 카드로(RC-05, 있을 때만) -->
       <div id="homeCorrupt" style="display:none"></div>
@@ -111,7 +109,7 @@
     <!-- 안정 DOM(id) + job.js 가 window.__push('job', snapshot) 로 값만 채운다(run/txt 패턴). 링1
          RunViewModel·SelectionModel 에 브리지로 배선 — VM 로직 재구현 없음(#87 가드). 좌 master
          목록 클릭 = 우 패널 in-pane 세션(화면 전환 0). 4존 = 헤더·데이터·본문·완료(블록 1). -->
-    <section class="scr" id="scr-job">
+    <section class="scr on" id="scr-job">
       <header class="scr-head">
         <div>
           <h1>작업</h1>
@@ -130,7 +128,10 @@
             <div class="job-sec-head hwpx">문서 작업 · HWPX
               <button class="btn sm" id="jobNewBtn" title="새 작업: 편집 모드에서 초안을 만듭니다">＋ 새 작업</button></div>
             <div id="jobListHwpx" class="job-list"></div>
-            <div id="jobListHwpxEmpty" class="muted job-empty" style="display:none">저장된 작업이 없습니다.</div>
+            <div id="jobListHwpxEmpty" class="muted job-empty" style="display:none">
+              <div>아직 작업이 없습니다.</div>
+              <button class="btn primary sm" id="jobEmptyNewBtn">＋ 첫 작업 만들기</button>
+            </div>
           </div>
           <!-- 행/그룹 ⋮ 컨텍스트 메뉴 — job.js 가 대상별 항목을 채우고 fixed 좌표로 편다. -->
           <div id="jobRowMenu" class="ctx-menu" role="menu" style="display:none"></div>

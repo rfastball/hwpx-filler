@@ -871,6 +871,14 @@
     Relink.relinkTemplate(SCREEN, LAST.job_name, (msg) => log(msg));
   }
 
+  function startNewJob() {
+    if (!window.EditorEntry) {
+      window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다.");
+      return;
+    }
+    EditorEntry.newDraft();
+  }
+
   function wire() {
     $("jobListHwpx").addEventListener("click", onMasterClick);
     $("jobListHwpx").addEventListener("keydown", onMasterKeydown);
@@ -895,10 +903,8 @@
     });
     // 구획 ＋ 새 작업(1부 결정 10 — 레일 항목 사망의 생성 진입 승계, 리뷰 F2). 흐름은
     // EditorEntry.newDraft 단일 출처(홈 ＋ 와 공유 — 폐기 확인·착지 드리프트 금지).
-    $("jobNewBtn").addEventListener("click", () => {
-      if (!window.EditorEntry) { window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다."); return; }
-      EditorEntry.newDraft();
-    });
+    $("jobNewBtn").addEventListener("click", startNewJob);
+    $("jobEmptyNewBtn").addEventListener("click", startNewJob);
     // 재렌더에도 살아남게 안정 컨테이너에 위임(#67).
     $("jobRelink").addEventListener("click", (e) => {
       if (e.target.closest('[data-act="relink-template"]')) doRelinkTemplate();

@@ -670,6 +670,7 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .job-item:hover{background:var(--n-hover)}
 .job-item[aria-current="true"]{background:var(--a-primary);color:var(--a-on-accent);font-weight:600}
 .job-empty{font-size:var(--fs-body);padding:var(--sp-6)}
+.job-empty .btn{margin-top:var(--sp-8)}
 /* 상시 「이번 세션」 행(#148 슬라이스 5a) — 붙여넣기 휘발 세션의 목록 표현. 저장 기안과 구분되게
    점선 상단 구획 + 점선 테두리(시안 `.jrow.session`) — 결속(aria-current) 시 실선 강조로 승격. */
 .draft-vol-sep{border-top:1px dashed var(--a-border);margin-top:var(--sp-8);padding-top:var(--sp-6)}
@@ -846,23 +847,7 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .tplcard-meta{font-size:var(--fs-caption)}
 .tplcard-acts{display:flex;justify-content:flex-end;gap:var(--sp-6);flex-wrap:wrap;margin-top:var(--sp-2)}
 
-/* ---- 홈(대시보드) 허브 (#20) ---- */
-/* KPI — 전부 실재 데이터(가짜 지표·차트 없음). 목업 3타일. */
-.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--sp-12);margin-bottom:var(--sp-12)}
-@media(max-width:720px){.kpis{grid-template-columns:repeat(2,1fr)}}
-.kpi{background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface);padding:var(--sp-12) var(--sp-12)}
-.kpi .v{font-size:var(--fs-kpi);font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:var(--a-ink)}
-.kpi .l{font-size:var(--fs-caption);color:var(--a-muted);margin-top:var(--sp-2)}
-.kpi.warn .v{color:var(--a-warn)}
-.kpi.danger .v{color:var(--a-danger)}
-
-/* 이어서 실행 */
-.continue-runs{background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface);
-  padding:var(--sp-10) var(--sp-12);margin-bottom:var(--sp-16)}
-.continue-runs .cr-head{font-weight:700;margin-bottom:var(--sp-4)}
-.continue-run{display:flex;align-items:center;gap:var(--sp-10);padding:var(--sp-4) 0;border-top:1px solid var(--a-border)}
-.continue-run .name{font-weight:650;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.continue-run .when{font-size:var(--fs-caption);color:var(--a-muted)}
+/* ---- 홈 경보·상태 허브 (#20/#239) ---- */
 
 /* 두 트랙 */
 .tracks{display:grid;grid-template-columns:1.3fr 1fr;gap:var(--sp-16)}

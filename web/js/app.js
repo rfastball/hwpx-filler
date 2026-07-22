@@ -14,6 +14,8 @@
 
   const navs = document.querySelectorAll(".navbtn");
   const scrs = document.querySelectorAll(".scr");
+  const DEFAULT_SCREEN = "job";  // R-info 결정 1: 작업이 중심 개체이자 콜드 부팅 랜딩(#239).
+  let routingReady = false;
 
   /* 전환 시 자동 새로고침 대상(C6) — 다른 화면의 변경(에디터 자동등록·삭제 등)이 부팅
      스냅샷에 가려지는 고착 방지. 백엔드에 _do_refresh 가 있는 컨트롤러만 화이트리스트로
@@ -27,6 +29,7 @@
   function go(id) {
     navs.forEach((x) => x.setAttribute("aria-current", x.dataset.scr === id ? "true" : "false"));
     scrs.forEach((s) => s.classList.toggle("on", s.id === "scr-" + id));
+    if (!routingReady) return;  // pywebviewready 전에는 DOM 기본 랜딩만 정하고 브리지 호출은 미룬다.
     // pywebview 미준비(브라우저 단독 미리보기·부팅 직전)면 새로고칠 백엔드 자체가 없다.
     if (REFRESH_ON_NAV.includes(id) && window.pywebview && window.Bridge) {
       // 실패는 조용히 삼키지 않는다(confirm-or-alarm) — 화면은 이미 전환됐고 스냅샷만 낡음.
@@ -53,8 +56,9 @@
   // 레일 「작업 에디터」 과도기 심은 항목 사망(슬라이스 5 삭제 PR)과 함께 제거 — 편집
   // 진입은 EditorEntry.land 소비처(홈·템플릿 관리·작업 ⋮)가 담당한다.
   navs.forEach((b) => b.addEventListener("click", () => go(b.dataset.scr)));
-  // 홈(허브)이 카드/버튼에서 워크플로 화면으로 보내는 진입점(home.js 가 소비).
+  // 홈(경보·상태 허브)이 카드/버튼에서 워크플로 화면으로 보내는 진입점(home.js 가 소비).
   window.Nav = { go };
+  go(DEFAULT_SCREEN);  // 브리지 준비 전에는 DOM·레일 기본 상태만 확정한다.
 
   // 사이드 패널 접기(#18/9B2AB35D-A) — 좁은 창에서 작업 영역 확장(반응형). 셸 전역.
   const railToggle = document.getElementById("railToggle");
@@ -82,6 +86,7 @@
 
   // pywebview.api 준비 후 실화면 초기화(브라우저 단독 미리보기에선 안 뜸 — 정상).
   window.addEventListener("pywebviewready", () => {
+    routingReady = true;
     if (window.HomeScreen) window.HomeScreen.init();
     if (window.EditorScreen) window.EditorScreen.init();
     if (window.JobScreen) window.JobScreen.init();  // 「작업」 화면(#90) — 유일 생성 표면
