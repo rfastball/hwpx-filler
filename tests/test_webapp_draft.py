@@ -163,6 +163,38 @@ def test_bound_job_deleted_returns_to_volatile(tmp_path):
     assert snap["template_text"] == "붙여넣기 {{공고명}}"  # 스태시한 휘발 복원
 
 
+def test_deleting_bound_session_with_progress_restates_loss(tmp_path):
+    """결속 중인 저장 기안을 삭제하면 세션 진행 소실도 재진술한다(리뷰 5a 2R P1, screen_job 동형).
+
+    삭제는 정의(템플릿 연결·매핑)만 아니라 결속 세션의 데이터·선택·큐 진행도 없앤다 — Job 에
+    저장되지 않아 복원 불가다. 무확인 응답에 ``open_session`` 과 무장 수치(_guard_state)를 실어
+    표면이 파괴 전모를 한 모달로 말하게 한다(confirm-or-alarm)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "A {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    _arm_queue(ctrl, selected=2, copied=1)             # 1/2 복사 = queue_partial → armed
+    res = ctrl.dispatch("delete_job", {"name": "기안A"})
+    assert res["needs_confirm"] is True
+    assert res["open_session"] is True, "결속 세션 삭제가 open_session 을 빠뜨렸습니다(조용한 소실)."
+    assert res["armed"] is True and res["copied_count"] == 1
+    assert ctrl.snapshot()["bound_job"] == "기안A"      # 확인 전 = 안 지움
+
+
+def test_deleting_unbound_job_reports_no_session_loss(tmp_path):
+    """결속 아닌 기안 삭제는 세션 무영향 — 정의 삭제만 재진술하고 진행 수치를 부풀리지 않는다.
+
+    현 세션은 다른 기안(또는 휘발)에 물려 있는데도 open_session/armed 를 실으면 지우지도 않을
+    진행을 잃는다고 거짓 경고한다(over-warn 도 confirm-or-alarm 위반)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "A {{공고명}}")
+    _save_real(tmp_path, jobs, "기안B", "job_b.txt", "B {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    _arm_queue(ctrl, selected=2, copied=1)             # 기안A 세션에 진행이 있어도
+    res = ctrl.dispatch("delete_job", {"name": "기안B"})  # 결속 아닌 기안B 삭제는 무영향
+    assert res["needs_confirm"] is True and res["open_session"] is False
+    assert "armed" not in res, "결속 아닌 삭제가 무관한 세션 무장 수치를 실었습니다(거짓 경고)."
+
+
 def test_leaving_saved_session_with_progress_needs_confirm(tmp_path):
     """저장 세션(진행 있음)에서 다른 기안으로 전환 = 확인 왕복(리뷰 5a P1) — 진행은 Job 에 없어 사라진다.
 
