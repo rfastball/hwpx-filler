@@ -537,6 +537,33 @@ def test_gallery_exposes_heading_role_specimens():
         assert label in html, f"갤러리에 제목 역할 표본이 없습니다: {label}"
 
 
+def test_job_zones_reuse_number_badges_and_action_labels():
+    """H-03: 작업 4존은 기안과 같은 znum 문법으로 순서와 다음 행동을 말한다."""
+    html = " ".join(WEB_INDEX.read_text(encoding="utf-8").split())
+    labels = (
+        ("1", "템플릿·헤더 확인"),
+        ("2", "데이터 연결"),
+        ("3", "본문 확인·거울"),
+        ("4", "생성"),
+    )
+    for ordinal, label in labels:
+        needle = f'<div class="zone-cap"><span class="znum">{ordinal}</span>{label}</div>'
+        assert needle in html, f"작업 존 단계 표지가 없습니다: {ordinal} {label}"
+
+
+def test_job_gate_adds_blocked_step_only_in_display_layer():
+    """H-03: gate.level 판정은 건드리지 않고 표시층에서 막힌 단계 서수만 결합한다."""
+    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    assert "function gateStep(s, g)" in src
+    assert 'g.level === "danger") return "① "' in src
+    assert '!s.has_data || !(s.selected_count > 0)) return "② "' in src
+    assert 'return "③ ";' in src
+    assert 'gateStep(s, g) + g.text' in src
+    assert not re.search(r"\bg\.level\s*=(?!=)", src), (
+        "표시층이 gate.level 판정을 변조하면 안 됩니다."
+    )
+
+
 def test_web_diff_pinned_to_light_until_tints_themed():
     """web-diff 는 다크 셀 틴트가 준비될 때까지 라이트로 고정돼야 한다(<html data-theme="light">).
 

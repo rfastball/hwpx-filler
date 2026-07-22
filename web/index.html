@@ -147,7 +147,7 @@
             <div class="note warnbox" id="jobEditExitNote" style="display:none"></div>
             <!-- 헤더 존 — 작업 정체(이름·템플릿·소스) -->
             <div class="zone">
-              <div class="zone-cap">헤더</div>
+              <div class="zone-cap"><span class="znum">1</span>템플릿·헤더 확인</div>
               <div class="job-head-title" id="jobHeadTitle"></div>
               <div class="job-head-tpl muted" id="jobHeadTpl"></div>
               <div class="note" id="jobRelink" style="display:none"></div>
@@ -155,7 +155,7 @@
 
             <!-- 데이터 존 — 겨눔 + 행 선택 -->
             <div class="zone">
-              <div class="zone-cap">데이터</div>
+              <div class="zone-cap"><span class="znum">2</span>데이터 연결</div>
               <div class="run-row"><span class="lbl">데이터(.xlsx/.csv)</span>
                 <input class="field ro" id="jobDataLabel" type="text" readonly
                        placeholder="데이터를 선택하세요">
@@ -198,7 +198,7 @@
 
             <!-- 본문 존 — 라이브 거울(필드 채움 테이블) + 재진술 블록 + 생성 의식 1회 -->
             <div class="zone">
-              <div class="zone-cap">채울 값</div>
+              <div class="zone-cap"><span class="znum">3</span>본문 확인·거울</div>
               <p class="muted hint">이 문서에 들어갈 값입니다. <span class="danger">빈 값</span>
                 행은 <b>눌러서 확인</b>해야 생성할 수 있습니다.</p>
               <!-- 거울 = 필드 채움 테이블(결정 36 ⓑ). danger(드리프트·토큰)는 차단 배너로 분리. -->
@@ -217,7 +217,7 @@
 
             <!-- 완료 존 — 세션 스코프(진행·결과·로그) -->
             <div class="zone">
-              <div class="zone-cap">완료</div>
+              <div class="zone-cap"><span class="znum">4</span>생성</div>
               <div class="bar"><i id="jobGenBar"></i></div>
               <div id="jobGenResult" class="run-result"></div>
               <div class="logbox" id="jobGenLog">작업, 데이터, 저장 폴더를 확인한 뒤 생성하세요.</div>

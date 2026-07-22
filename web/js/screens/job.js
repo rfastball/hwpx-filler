@@ -394,6 +394,16 @@
   }
 
   /* ---- 본문 존: 게이트·저장 폴더·생성 버튼 ---- */
+  function gateStep(s, g) {
+    // 게이트의 판정(level/enabled/text)은 Python 단일 출처 그대로 두고, 현재 막힌 존의
+    // 서수만 표시층에서 결합한다(H-03). danger는 템플릿·매핑 정의, 선택 0은 데이터 존,
+    // 나머지 미입력·저장 폴더 사유는 본문 확인 존에서 해소한다.
+    if (!g || g.enabled || !g.text) return "";
+    if (!s.has_job || s.template_missing || g.level === "danger") return "① ";
+    if (!s.has_data || !(s.selected_count > 0)) return "② ";
+    return "③ ";
+  }
+
   function renderGateAndFolder(s) {
     $("jobOutDir").value = s.out_dir || "";
     // 저장 폴더 열기/경로 복사 어포던스(#53-B) — 실행 화면에서 승계(리뷰 F3). 생성 후 앱에서
@@ -403,7 +413,7 @@
     const g = s.gate || { enabled: false, level: "", text: "" };
     $("jobGenBtn").disabled = !g.enabled || generating;
     const gate = $("jobGate");
-    gate.textContent = generating ? "" : g.text;
+    gate.textContent = generating ? "" : gateStep(s, g) + g.text;
     gate.className = "muted";
     gate.style.color = g.level === "danger" ? "var(--a-danger)"
       : g.level === "warn" ? "var(--a-warn)" : "";
