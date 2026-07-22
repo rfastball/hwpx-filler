@@ -1,5 +1,10 @@
 # 테스트 포트폴리오 생성 매트릭스
 
+> **문서 상태:** 현재 정본
+> **권위 범위:** 생성 시점의 테스트 위험 표면·coverage 집계
+> **후속 정본:** 기계 판독 원장은 `test_portfolio_inventory.csv`
+> **편집 정책:** 계속 갱신(생성기로만)
+
 > `scripts/audit_test_portfolio.py render`로 재생성한다. 수치는 위험 태그별 중복 집계를 허용한다.
 
 - 기준 SHA: `8cace7a2648e602cd3e770902a74af1b2f288fe6`
