@@ -82,13 +82,14 @@ Python production line을 직접 통과하지 않는 계약이다. 이를 미실
 
 ## Coverage와 CI 권고
 
-즉시 전체 `fail_under=90`을 넣지 않는다. 현재 수치를 내림한 package별 초기 floor를 #191에서
-XML 판정기로 도입한다. line/branch 제안은 `hwpxcore` 95/87, `hwpxdiff` 96/90,
-`hwpxdiff.webapp` 67/56, `hwpxfiller` 77/67, `hwpxfiller.core` 97/93,
-`hwpxfiller.data` 96/88, `hwpxfiller.gui` 96/89, `hwpxfiller.webapp` 86/82다.
+즉시 전체 `fail_under=90`을 넣지 않는다. 현재 수치를 내림한 package별 초기 floor를 #191의
+XML 판정기와 `package_coverage_floors.toml`로 적용한다. 마일스톤 G 최종 통합 코드에서 다시 측정해
+내림한 line/branch 기준은 `hwpxcore` 95/87, `hwpxdiff` 95/88,
+`hwpxdiff.webapp` 60/40, `hwpxfiller` 77/67, `hwpxfiller.core` 96/92,
+`hwpxfiller.data` 93/85, `hwpxfiller.gui` 96/89, `hwpxfiller.webapp` 86/82다.
 
 `hwpxcore.native`의 40/32를 낮은 floor로 정당화하지 않는다. #190의 Windows 양성 시나리오를
-먼저 만들고 별도 필수 상태로 보고한다. JS/CSS 33개 자산, WebView2 subprocess, frozen bundle,
+별도 필수 단계로 보고한다. JS/CSS 33개 자산, WebView2 subprocess, frozen bundle,
 installer/signing은 Python coverage 분모에 넣지 않는다. PR/push에는 package coverage와 portable
 3타깃 self-check를 별도 job으로 추가하고, installer/signing은 release 또는 required pre-release에 둔다.
 

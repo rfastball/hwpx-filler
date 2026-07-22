@@ -7,7 +7,8 @@
   빌드 메타데이터, onedir 빌드, 번들 경계 검사, selfcheck·GUI 기동 스모크)은
   packaging\build.ps1 이 소유한다. 이 래퍼는 기존 진입점 관례(-App,
   release.yml·package-installer.ps1 호출부)만 보존한다.
-  산출물은 onedir: dist\hwpx-filler\hwpx-filler.exe, dist\hwpx-diff\hwpx-diff.exe.
+  산출물은 onedir: dist\hwpx-filler-web\hwpx-filler-web.exe,
+  dist\hwpx-diff\hwpx-diff.exe. CLI는 dist\hwpx-cli\hwpx-cli.exe.
 
 .PARAMETER App
   filler | diff | all(기본; filler+diff).

@@ -9,9 +9,10 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  static:
+    name: static
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -20,16 +21,77 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
       - name: Install locked environment
-        run: uv sync --locked --all-extras --group dev --group build
-      - name: Quality and tests
+        run: uv sync --locked --all-extras --group dev
+      - name: Ruff
+        run: uv run --no-sync ruff check src tests scripts
+      - name: Pyright
+        run: uv run --no-sync pyright
+
+  pytest-package-floor:
+    name: pytest + package coverage floor
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.28"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked environment
+        run: uv sync --locked --all-extras --group dev
+      - name: Windows native positive scenarios
         shell: pwsh
-        run: .\test.ps1
-      - name: Upload test reports
+        run: |
+          Remove-Item Env:HWPX_SKIP_NATIVE_TESTS -ErrorAction SilentlyContinue
+          uv run --no-sync pytest -q tests/test_native_positive.py --basetemp="$env:RUNNER_TEMP/native"
+      - name: Full pytest with Python coverage
+        shell: pwsh
+        run: >-
+          uv run --no-sync pytest -q
+          --junitxml=pytest.xml
+          --cov=hwpxcore --cov=hwpxdiff --cov=hwpxfiller
+          --cov-branch --cov-report=term-missing --cov-report=xml:coverage.xml
+          --basetemp="$env:RUNNER_TEMP/pytest"
+      - name: Enforce package line and branch floors
+        shell: pwsh
+        run: |
+          uv run --no-sync python scripts/check_package_coverage.py coverage.xml `
+            --config docs/package_coverage_floors.toml `
+            --markdown-output package-coverage.md
+          $gateExit = $LASTEXITCODE
+          Get-Content package-coverage.md | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          exit $gateExit
+      - name: Upload pytest and coverage evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-reports
+          name: pytest-package-coverage
           path: |
             pytest.xml
             coverage.xml
+            package-coverage.md
           if-no-files-found: warn
+
+  distribution:
+    name: distribution (filler + diff + CLI)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.28"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked build environment
+        run: uv sync --locked --all-extras --group dev --group build
+      - name: Build and self-check all portable distributions
+        shell: pwsh
+        run: .\packaging\build.ps1 -Target all
