@@ -133,7 +133,7 @@ def lint_template(
                 LintFinding(
                     "split_token",
                     "warning",
-                    f"수동 처리 필요 토큰: {site.name} — {site.reason}",
+                    f"수동 처리 필요 토큰: {site.name} ({site.reason})",
                     [site.name],
                 )
             )

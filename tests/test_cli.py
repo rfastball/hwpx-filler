@@ -638,5 +638,5 @@ def test_fill_notes_surface_on_stderr_once_per_batch(tmp_path, capsys):
     assert rc == 0
     err = capsys.readouterr().err
     # 두 완화가 각각 정확히 1회 — 레코드 2건이어도 반복 고지하지 않는다.
-    assert err.count("빈 누름틀 「계약명」") == 1
+    assert err.count("빈 누름틀 '계약명'") == 1
     assert err.count("인라인 요소(markpenBegin)") == 1

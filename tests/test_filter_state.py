@@ -182,7 +182,7 @@ def test_single_branch_group_is_not_normalized() -> None:
     m.set_search("긴급")
     assert m.group_branches(ROWS) == ["비고"]
     assert not m.has_condition("비고")
-    assert "(비고) 포함 「긴급」" in m.describe(ROWS)
+    assert "(비고) 포함 '긴급'" in m.describe(ROWS)
 
 
 def test_pruning_last_branch_dissolves_group() -> None:
@@ -320,9 +320,9 @@ def test_describe_parts_shapes() -> None:
     m.set_search("긴급")  # 조건 통과 행(3행)의 비고에 실매치 — 가지 = 비고
     parts = m.describe_parts(ROWS)
     assert "수요기관 = 조달청" in parts
-    assert "공고명 포함 「사무」" in parts
-    assert "금액 ≥ 「1000」 ∧ ≤ 「4000000」" in parts
-    assert "(비고) 포함 「긴급」" in parts
+    assert "공고명 포함 '사무'" in parts
+    assert "금액 ≥ '1000' ∧ ≤ '4000000'" in parts
+    assert "(비고) 포함 '긴급'" in parts
     assert " · ".join(parts) == m.describe(ROWS)
 
 
@@ -336,7 +336,7 @@ def test_describe_multi_values_and_blank_label() -> None:
 def test_describe_search_without_match_is_honest() -> None:
     m = model()
     m.set_search("없는말")
-    assert m.describe_parts(ROWS) == ["검색 「없는말」 — 매치 없음"]
+    assert m.describe_parts(ROWS) == ["검색 '없는말' (매치 없음)"]
 
 
 # ------------------------------------------------------------- 층화 표본(결정 5)

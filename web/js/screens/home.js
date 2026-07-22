@@ -37,7 +37,7 @@
       tile(k.missing_template_count, "템플릿 없는 작업", warn) +
       tile(k.txt_template_count, "기안 템플릿 · txt") +
       (k.pool_corrupted > 0
-        ? tile(k.pool_corrupted, "손상된 등록 데이터 — 데이터 관리에서 확인", " danger")
+        ? tile(k.pool_corrupted, "손상된 등록 데이터: 데이터 관리에서 확인", " danger")
         : "");
   }
   function tile(v, label, cls) {
@@ -207,7 +207,7 @@
     const host = $("homeTxt");
     rows = rows || [];
     if (!rows.length) {
-      host.innerHTML = `<p class="route">기안 템플릿이 없습니다 — ＋ 새 기안으로 시작하세요.</p>`;
+      host.innerHTML = `<p class="route">기안 템플릿이 없습니다. ＋ 새 기안으로 시작하세요.</p>`;
       return;
     }
     host.innerHTML = rows.map((t) =>
@@ -236,7 +236,7 @@
       const ok = await window.Modal.confirm({
         title: "진행 중인 기안을 떠납니다",
         body: window.DraftScreen.leaveForTemplateBody(r),  // 두 세션(저장·이전) 무장 반영(F3·리뷰 C)
-        confirmLabel: "열기", cancelLabel: "머무르기",
+        confirmLabel: "열기", cancelLabel: "취소",
       });
       if (!ok) return;  // 머무르기 = 현 세션 보존(홈에 남는다)
       r = await Bridge.call("draft", "select_template", { name, confirm: true });
@@ -325,14 +325,14 @@
     }
     const input = await Modal.prompt({
       body:
-        `'${name}' 의 분류 태그 — '축=값' 쌍을 쉼표로 구분해 입력하세요.\n` +
+        `'${name}' 의 분류 태그: '축=값' 쌍을 쉼표로 구분해 입력하세요.\n` +
         `(예: 물품=의약품, 금액구간=소액)\n비우면 태그를 전부 해제합니다.`,
       value: ser,
     });
     if (input === null) return;
     const parsed = parseTags(input);
     if (parsed.err !== undefined) {
-      window.alert(`태그 형식 오류: '${parsed.err}' — '축=값' 으로 입력하세요.`);
+      window.alert(`태그 형식 오류: '${parsed.err}'. '축=값' 으로 입력하세요.`);
       return;
     }
     try {

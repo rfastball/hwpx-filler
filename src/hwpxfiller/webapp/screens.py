@@ -36,7 +36,7 @@ PushSink = Callable[[str, dict], None]
 # 풀에 이미 있는 nara 항목은 숨기지 않고 목록에 표시하되, 겨눔은 아래 관문이 시끄럽게
 # 거절한다(confirm-or-alarm: 조용한 실패·조용한 숨김 둘 다 금지).
 NARA_FROZEN_TEXT = (
-    "나라장터 소스는 현재 웹에서 지원되지 않습니다(동결) — "
+    "나라장터 소스는 현재 웹에서 지원되지 않습니다(동결). "
     "파일 또는 엑셀 참조 등록 데이터를 사용하세요."
 )
 
@@ -111,7 +111,7 @@ def pool_sources_payload(pool_registry: DatasetPoolRegistry) -> dict:
         )
     ]
     note = (
-        f"손상 {len(corrupted)}건 — 데이터 관리에서 확인" if corrupted else ""
+        f"손상 {len(corrupted)}건(데이터 관리에서 확인)" if corrupted else ""
     )
     return {"items": rows, "corrupted_note": note}
 
@@ -138,7 +138,7 @@ def load_pool_item_checked(
     if item.kind == "excel" and not item.opts.get("sheet"):
         err = ambiguous_sheet_error(
             str(item.opts.get("path", "")),
-            prefix=f"등록 데이터 '{name}' 에 시트가 지정되지 않았습니다 — ",
+            prefix=f"등록 데이터 '{name}' 에 시트가 지정되지 않았습니다. ",
         )
         if err:
             raise ValueError(err)
@@ -147,7 +147,7 @@ def load_pool_item_checked(
 
 # 빈 데이터 재진술 단일 출처(R-copy) — run/editor/pool 공유. "레코드"는 개발 어휘라
 # 사용자 문구에선 "행"(엑셀 어휘)으로 통일한다(101 순회 F15 계열).
-NO_ROWS_TEXT = "데이터에 행이 없습니다 — 데이터를 바꾸지 않았습니다."
+NO_ROWS_TEXT = "데이터에 행이 없습니다."
 
 
 def load_pool_into(
@@ -219,7 +219,7 @@ def relink_job_template(job_registry, name: str, path: str, *, confirm: bool = F
     if drift.read_error:  # has_drift 는 read_error 를 포함하므로 반드시 선판정
         return {
             "ok": False,
-            "error": f"새 템플릿을 읽을 수 없습니다: {drift.read_error} — 연결을 바꾸지 않았습니다.",
+            "error": f"새 템플릿을 읽을 수 없습니다: {drift.read_error}",
         }
     if not confirm:
         drift_clause = (

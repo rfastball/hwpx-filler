@@ -13,7 +13,7 @@
   function land() {
     window.Nav.go("job");
     if (window.JobScreen && window.JobScreen.showEditMode) window.JobScreen.showEditMode();
-    else window.alert("편집 모드를 열 수 없습니다 — 화면 구성 요소(JobScreen)가 로드되지 않았습니다.");
+    else window.alert("편집 모드를 열 수 없습니다. 화면 구성 요소(JobScreen)가 로드되지 않았습니다.");
   }
 
   /* newDraft() — 「＋ 새 작업」의 단일 정의(PR-5 리뷰 F2: 홈·작업 구획 ＋ 가 같은 흐름을

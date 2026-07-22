@@ -113,7 +113,7 @@
           `<input class="field" data-ctext type="text" value="${esc(d.text || "")}" ` +
           `placeholder="치는 동안 바로 좁혀집니다" data-busy-lock></div>`;
       p.innerHTML =
-        `<div class="cp-head"><span>「${esc(d.column)}」 필터</span>` +
+        `<div class="cp-head"><span>'${esc(d.column)}' 필터</span>` +
         `<button data-act="panel-close" aria-label="닫기">✕</button></div>` +
         range +
         `<div class="cp-sec"><span class="cp-cap">값 선택(같은 열 안은 OR)</span>` +
@@ -242,7 +242,7 @@
       reapplyBtn.style.display = hasData && f.reapply_available ? "" : "none";
       // 무엇이 설치되는지 업고 있다(목업 칩 문법 승계) — 정의 문안이 없으면 라벨만 남긴다.
       reapplyBtn.title = f.reapply_hint
-        ? `직전 필터 재적용 — ${f.reapply_hint}`
+        ? `직전 필터 재적용: ${f.reapply_hint}`
         : "직전 필터 재적용";
       const wrap = $(ids.tableWrap);
       const empty = $(ids.tableEmpty);
@@ -399,7 +399,7 @@
         if (!res.ok) { cfg.log("확인 필요: " + res.error); return; }
         cfg.log(`직전 필터를 재적용했습니다 (조건 열: ${res.installed.join(", ") || "검색만"}).`);
         if (res.dropped.length) {
-          cfg.log(`확인 필요: 현재 데이터에 없는 조건은 빠졌습니다 — ${res.dropped.join(", ")}`);
+          cfg.log(`확인 필요: 현재 데이터에 없는 조건은 빠졌습니다(${res.dropped.join(", ")})`);
         }
       });
       // 필터 밖 선택 스트립 — 항목별 × 해제(리뷰 #6).

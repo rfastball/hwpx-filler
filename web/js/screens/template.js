@@ -210,7 +210,7 @@
   async function disbandGroup(media, name) {
     const r = await Bridge.call(SCREEN, "disband_group", { media, group: name });
     if (r && r.needs_confirm && (await window.Modal.confirm({
-      body: `'${name}' 그룹을 해산하면 ${r.count}개가 「그룹 없음」으로 이동합니다. 해산할까요?`,
+      body: `'${name}' 그룹을 해산하면 ${r.count}개가 '그룹 없음'으로 이동합니다. 해산할까요?`,
     }))) {
       await Bridge.call(SCREEN, "disband_group", { media, group: name, confirm: true });
     }
@@ -297,7 +297,7 @@
       const ok = await window.Modal.confirm({
         title: "진행 중인 기안을 떠납니다",
         body: window.DraftScreen.leaveForTemplateBody(r),  // 두 세션 무장 반영(단일 출처, 리뷰 C)
-        confirmLabel: "열기", cancelLabel: "머무르기",
+        confirmLabel: "열기", cancelLabel: "취소",
       });
       if (!ok) return;
       r = await Bridge.call("draft", "select_template", { name, confirm: true });
@@ -309,7 +309,7 @@
   function openEditModal(mode, path, name, content) {
     editMode = mode;
     editPath = path || "";
-    $("txtEditTitle").textContent = mode === "new" ? "새 TXT 템플릿" : `TXT 템플릿 편집 — ${name}`;
+    $("txtEditTitle").textContent = mode === "new" ? "새 TXT 템플릿" : `TXT 템플릿 편집: ${name}`;
     $("txtNameRow").style.display = mode === "new" ? "" : "none";
     $("txtEditName").value = "";
     $("txtEditContent").value = content || "";

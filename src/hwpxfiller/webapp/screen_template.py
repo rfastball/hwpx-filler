@@ -168,8 +168,8 @@ class TemplateController:
         if d is None:
             return "표시할 템플릿이 없습니다."
         if not d.is_dir():
-            return f"아직 HWPX 서식이 없습니다 — 「가져오기…」로 .hwpx 서식을 넣으세요.\n{d}"
-        return f"이 폴더에 .hwpx 서식이 없습니다 — 「가져오기…」로 추가하세요.\n{d}"
+            return f"아직 HWPX 서식이 없습니다. '가져오기…'로 .hwpx 서식을 넣으세요.\n{d}"
+        return f"이 폴더에 .hwpx 서식이 없습니다. '가져오기…'로 추가하세요.\n{d}"
 
     def initial(self) -> dict:
         return self.snapshot()
@@ -212,7 +212,7 @@ class TemplateController:
             self.vm.refresh()  # TXT 는 snapshot 의 list_templates 가 매번 재스캔
         renamed = f" (이름 충돌로 '{dest.name}')" if dest.name != src.name else ""
         self._set_result(
-            _ok(f"'{src.name}' 을 라이브러리로 가져왔습니다{renamed} — 「그룹 없음」에서 시작합니다.")
+            _ok(f"'{src.name}' 을 라이브러리로 가져왔습니다{renamed}. '그룹 없음'에서 시작합니다.")
         )
         self._push()
         return dest.name
