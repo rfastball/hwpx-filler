@@ -104,7 +104,8 @@ def test_web_region_emits_scale_tokens():
     assert "--sp-8:8px;" in region
     assert "--rad-control:6px;" in region   # 모서리(역할 문법 #59)
     assert "--rad-pill:999px;" in region    # 완전 둥근 pill
-    assert "--fs-body:13px;" in region      # 본문 폰트
+    assert "--fs-body:14px;" in region      # 본문 폰트(#179 가독성 승격)
+    assert "--fs-dense:13px;" in region     # 고밀도 데이터 그리드 전용(#179)
     assert "--fs-kpi:23px;" in region
 
 
