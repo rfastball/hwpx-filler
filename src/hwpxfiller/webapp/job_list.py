@@ -62,4 +62,4 @@ def drift_note(seen, count: int) -> str:
     """
     if not isinstance(seen, int) or seen == count:
         return ""
-    return f" · 확인 시점 {seen}건과 다릅니다(그 사이 소속이 바뀌었습니다)"
+    return f" · 확인 시점 {seen}건과 다릅니다"

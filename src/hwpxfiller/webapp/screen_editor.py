@@ -641,8 +641,7 @@ class EditorController:
         if not Path(job.template_path).exists():
             raise ValueError(
                 f"템플릿 파일을 찾을 수 없습니다: {job.template_path}\n"
-                "템플릿을 옮겼거나 지웠으면 파일을 되돌리거나, 실행/홈 화면의 "
-                "[템플릿 다시 연결…]로 경로를 바꿔 주세요."
+                "파일을 되돌리거나, 홈/작업 화면의 [템플릿 다시 연결…]로 경로를 바꾸세요."
             )
         self._reset()
         self.load_template_path(job.template_path)
@@ -836,8 +835,7 @@ class EditorController:
         active = {f for f in active if f in self.source_fields}
         if self.source_fields and not active and not allow_empty:
             raise ValueError(
-                "사용할 헤더를 하나 이상 남겨 두세요. 하나씩 끄되 마지막 하나는 남기거나, "
-                "'전체 미사용'으로 다시 골라 켜세요."
+                "사용할 헤더를 하나 이상 남겨 두세요. 전부 끄려면 '전체 미사용'을 쓰세요."
             )
         self._ignored_sources = {f for f in self.source_fields if f not in active}
         demoted: "list[str]" = []
@@ -905,9 +903,8 @@ class EditorController:
             carried = self.model.apply_profile(prior, confirm=False)
             self._set_notice(
                 f"템플릿/데이터가 바뀌어 매핑 초안을 다시 만들었습니다. 확정했거나 직접 "
-                f"편집한 {carried}개 행의 소스·유형·서식은 이월했지만 전 행이 미확정입니다.\n"
-                "같은 이름 컬럼이라도 새 데이터에서는 의미가 다를 수 있습니다. "
-                "저장하려면 전 행을 다시 확정하세요.",
+                f"편집한 {carried}개 행의 소스·유형·서식은 이월했지만, 저장하려면 전 행을 "
+                "다시 확정하세요.",
                 "warn",
             )
         self._model_key = key
@@ -1207,8 +1204,8 @@ class EditorController:
                 register_error = (
                     f"작업 '{self.job_name}' 은 저장됐지만 등록 데이터 "
                     f"'{self.dataset_name}' 등록에 실패했습니다: {exc}\n"
-                    f"이 작업은 '{self.dataset_name}' 을 기본 데이터로 연결해 뒀으니, "
-                    "데이터 관리 화면에서 같은 이름으로 등록하면 연결이 완성됩니다(#53-A)."
+                    f"'{self.dataset_name}' 은 기본 데이터로 연결돼 있으니, "
+                    "데이터 관리 화면에서 같은 이름으로 등록하면 연결이 완성됩니다."
                 )
         saved = self.job_name
         # 저장 착지 = 방금 저장한 작업의 **편집 세션**(결정 40 저장 제자리 · 결정 41 전환점=저장:

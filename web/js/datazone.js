@@ -421,7 +421,7 @@
         const r = await Bridge.call(SCREEN, "set_all", {});
         // 전멸 필터에서의 무동작은 정직하게 알린다(confirm-or-alarm, 리뷰 #9).
         if (r && r.added === 0) {
-          cfg.log("전체 선택: 현재 필터와 일치하는 새로 추가할 행이 없습니다.");
+          cfg.log("전체 선택: 추가할 행이 없습니다.");
         }
       });
       $(ids.selNone).addEventListener("click", () => Bridge.call(SCREEN, "set_none", {}));

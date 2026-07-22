@@ -20,8 +20,8 @@
      복붙하면 폐기 확인·착지가 드리프트한다): 폐기 확인 → 세션 초기화 → 편집 모드 착지. */
   async function newDraft() {
     if (!(await confirmDiscard(
-      "저장하지 않은 편집(정의) 세션이 있습니다.\n" +
-      "새 작업을 시작하면 그 세션의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?"))) return false;
+      "새 작업을 시작하면 저장하지 않은 편집 세션이 사라집니다.\n" +
+      "사라지는 것: 이름 · 데이터 · 매핑\n\n계속할까요?"))) return false;
     await Bridge.call("editor", "new_session", {});
     land();
     return true;
@@ -38,8 +38,8 @@
      반환: 열었으면 true, 확인 취소·오류로 중단했으면 false(호출부 후속 판단용). */
   async function openGuarded(name) {
     if (!(await confirmDiscard(
-      "저장하지 않은 편집(정의) 세션이 있습니다.\n" +
-      `'${name}' 편집을 열면 그 세션의 이름·데이터·매핑이 사라집니다.\n\n계속할까요?`))) {
+      `'${name}' 편집을 열면 저장하지 않은 편집 세션이 사라집니다.\n` +
+      "사라지는 것: 이름 · 데이터 · 매핑\n\n계속할까요?"))) {
       return false;
     }
     const r = await Bridge.openJobInEditor(name);
