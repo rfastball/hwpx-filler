@@ -116,6 +116,9 @@ python -m hwpxfiller.cli lint T.hwpx        # 위생 점검 / drift·fieldize·r
 | `data/secret_store.py` | 비밀 저장소 포트(OS 자격증명) + ServiceKey 마스킹 |
 | `webapp/` · `gui/` | pywebview 웹 UI(작업 홈·에디터·실행·템플릿 관리·데이터 관리) |
 
+현재 정본·결정 기록·역사 시안의 권위와 탐색 순서는
+[문서 지도](docs/README.md)를 따른다.
+
 ## Windows 빌드와 배포
 
 ```powershell

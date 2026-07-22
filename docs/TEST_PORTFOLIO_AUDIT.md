@@ -1,5 +1,10 @@
 # 테스트 포트폴리오 전수조사 — #168
 
+> **문서 상태:** 역사 기록
+> **권위 범위:** #168 기준점의 테스트 포트폴리오 조사 방법·판정
+> **후속 정본:** 현재 수치와 하한은 생성 매트릭스·coverage 원장·`package_coverage_floors.toml`
+> **편집 정책:** 동결
+
 > 기준: `8cace7a2648e602cd3e770902a74af1b2f288fe6` (`origin/master`, 2026-07-22).
 > 기계 판독 원장은 [`test_portfolio_inventory.csv`](test_portfolio_inventory.csv), 생성 집계는
 > [`TEST_PORTFOLIO_MATRIX.md`](TEST_PORTFOLIO_MATRIX.md)에 있다.
