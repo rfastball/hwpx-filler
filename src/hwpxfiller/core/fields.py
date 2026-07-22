@@ -15,15 +15,22 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from lxml import etree
 
 from hwpxcore.lineseg import serialize_modified_section
+from hwpxcore.package import HwpxPackage
 from hwpxcore.text_extract import _to_package
 
 HP_NS = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 _NSMAP = {"hp": HP_NS}
+_FIELD_PART_PATTERNS = (
+    (0, re.compile(r"section(\d+)\.xml$", re.IGNORECASE)),
+    (1, re.compile(r"header(\d+)\.xml$", re.IGNORECASE)),
+    (2, re.compile(r"footer(\d+)\.xml$", re.IGNORECASE)),
+)
 
 
 @dataclass(frozen=True)
@@ -359,6 +366,36 @@ class FieldDocument:
         )
 
 
+def field_xml_names(pkg: HwpxPackage) -> "list[str]":
+    """필드 대상 XML을 본문→머리말→꼬리말, 각 번호순으로 반환한다.
+
+    동일 필드명이 여러 파트에 있어도 이 목록의 모든 파트를 채운다. 읽기에서 중복
+    이름의 첫 값을 고를 때도 같은 순서를 사용해 package ZIP 엔트리 순서에 의미가
+    새지 않게 한다. 숫자 접미사가 없는 ``header.xml`` 같은 스타일 파트는 필드가
+    없을 때만 제외한다. 미지원 이름에 ``fieldBegin``이 있으면 조용히 누락하지 않고
+    loud failure로 남긴다.
+    """
+    supported: "list[tuple[int, int, str]]" = []
+    unsupported: "list[str]" = []
+    for name in pkg.content_xml_names():
+        base = name.rsplit("/", 1)[-1]
+        for region_order, pattern in _FIELD_PART_PATTERNS:
+            match = pattern.fullmatch(base)
+            if match:
+                supported.append((region_order, int(match.group(1)), name))
+                break
+        else:
+            if FieldDocument(pkg.entries[name]).required_fields():
+                unsupported.append(name)
+
+    if unsupported:
+        joined = ", ".join(sorted(unsupported))
+        raise ValueError(f"지원하지 않는 필드 XML 파트: {joined}")
+
+    supported.sort(key=lambda item: (item[0], item[1], item[2]))
+    return [name for _, _, name in supported]
+
+
 def fill_precheck(pkg_or_path: object) -> "list[FillNote]":
     """HWPX 패키지 전체의 채움 완화 사전 판정(#154) — 변형 없음, 중복 없이.
 
@@ -367,7 +404,7 @@ def fill_precheck(pkg_or_path: object) -> "list[FillNote]":
     """
     pkg = _to_package(pkg_or_path)
     notes: "list[FillNote]" = []
-    for xml_name in pkg.content_xml_names():
+    for xml_name in field_xml_names(pkg):
         notes.extend(FieldDocument(pkg.entries[xml_name]).precheck())
     return list(dict.fromkeys(notes))
 
@@ -380,7 +417,7 @@ def read_fields(pkg_or_path: object) -> "dict[str, str]":
     """
     pkg = _to_package(pkg_or_path)
     values: "dict[str, str]" = {}
-    for xml_name in pkg.content_xml_names():
+    for xml_name in field_xml_names(pkg):
         doc = FieldDocument(pkg.entries[xml_name])
         for field_name in doc.required_fields():
             value = doc.read_field(field_name)

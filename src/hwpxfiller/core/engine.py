@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .fields import FieldDocument, FillNote
+from .fields import FieldDocument, FillNote, field_xml_names
 from hwpxcore.package import HwpxPackage
 
 
@@ -45,7 +45,7 @@ class HwpxEngine:
         active = {k: str(v) for k, v in data.items() if str(v).strip() != ""}
 
         try:
-            for name in pkg.content_xml_names():
+            for name in field_xml_names(pkg):
                 doc = FieldDocument(pkg.entries[name])
                 for key, val in active.items():
                     if doc.set_field(key, val):
@@ -78,7 +78,7 @@ class HwpxEngine:
         """템플릿이 요구하는 누름틀 이름 전체(사전검증용)."""
         pkg = HwpxPackage.open(template_path)
         seen: dict[str, None] = {}
-        for name in pkg.content_xml_names():
+        for name in field_xml_names(pkg):
             for f in FieldDocument(pkg.entries[name]).required_fields():
                 seen.setdefault(f, None)
         return list(seen)
