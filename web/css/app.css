@@ -776,8 +776,13 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 
 /* R-info 2부(#108) — 라이브러리 바 + 매체 구획(밴드) + 그 안 그룹 구획(작업 목록 job-grp 재사용). */
 .tpl-libbar{display:flex;align-items:center;gap:var(--sp-8);margin-top:var(--sp-12);flex-wrap:wrap}
+/* 매체 표면 = 카드보다 한 층 내려간(sunken) HWPX/TXT 구획. n-surface-alt 와
+   n-border-strong 은 라이트·다크 짝 토큰이라 어두운 테마에서도 내부 카드 경계가 남는다. */
+.tpl-medium{margin-top:var(--sp-16);padding:var(--sp-8) var(--sp-10) var(--sp-10);
+  background:var(--n-surface-alt);border:1px solid var(--a-border);border-radius:var(--rad-surface)}
+.tpl-medium .tplcard{border-color:var(--n-border-strong)}
 /* 매체 밴드 = 내재 경성 축(HWPX/TXT) 구획 헤더. 열 틴트 승계(홈 트랙 색): HWPX 파랑 / TXT 초록. */
-.tpl-band{display:flex;align-items:center;gap:var(--sp-8);margin-top:var(--sp-16);
+.tpl-band{display:flex;align-items:center;gap:var(--sp-8);
   padding:var(--sp-4) var(--sp-8);border-left:3px solid var(--a-border)}
 .tpl-band.hwpx{border-left-color:var(--a-primary)}
 .tpl-band.txt{border-left-color:var(--a-ok)}

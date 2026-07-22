@@ -564,6 +564,29 @@ def test_job_gate_adds_blocked_step_only_in_display_layer():
     )
 
 
+def test_template_media_sections_use_sunken_surface_without_shared_catalog_drift():
+    """H-04: HWPX/TXT만 sunken 표면을 쓰고 공유 tpl-catalogs는 독립적으로 남는다."""
+    html = WEB_INDEX.read_text(encoding="utf-8")
+    assert html.count('class="tpl-medium"') == 2
+    for medium, groups_id in (("hwpx", "tplHwpxGroups"), ("txt", "tplTxtGroups")):
+        assert f'data-medium="{medium}"' in html
+        assert f'id="{groups_id}"' in html
+
+    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    assert (
+        ".tpl-medium{margin-top:var(--sp-16);padding:var(--sp-8)var(--sp-10)var(--sp-10);"
+        "background:var(--n-surface-alt);border:1pxsolidvar(--a-border);"
+        "border-radius:var(--rad-surface)}"
+    ) in css
+    assert ".tpl-medium.tplcard{border-color:var(--n-border-strong)}" in css
+    assert ".tpl-catalogs{display:grid" in css
+
+
+def test_gallery_exposes_template_media_surface():
+    html = GALLERY.read_text(encoding="utf-8")
+    assert ".tpl-medium — 매체 sunken 구획 / 카드 층" in html
+
+
 def test_web_diff_pinned_to_light_until_tints_themed():
     """web-diff 는 다크 셀 틴트가 준비될 때까지 라이트로 고정돼야 한다(<html data-theme="light">).
 
