@@ -57,12 +57,17 @@
     // promise 만 추적해, 왕복이 180ms 를 넘어 겹치면 flush 가 이전 편집을 안 기다리고 그 편집이
     // 뒤늦게/역순으로 착지해 컨트롤러에 stale 원문을 복원할 수 있었다(승격이 화면과 다른 원문 저장).
     // 체인이면 다음 편집이 직전 착지 후에 발사돼 순서가 보장되고, flush 는 체인 tail 을 기다린다.
-    let editChain = Promise.resolve();
+    // 두 실체로 가른다(리뷰 E): ①``editChain`` = 연속용(실패를 흡수해 다음 편집이 계속 발사되게)
+    // ②``editTail`` = **flush 가 기다리는** 최신 편집의 promise(실패를 **전파**). 종전엔 flush 가
+    // 대기분 없을 때 ``editChain``(흡수판)을 돌려줘, blur 가 먼저 flush 해 편집이 실패해도 다음
+    // ``sess.flush()`` 가 resolve → stale 원문으로 승격했다(confirm-or-alarm 위반). 최신 편집이
+    // 실패하면 컨트롤러가 화면과 어긋난 상태이므로, 그때만 flush 가 reject 해 승격을 시끄럽게 막는다
+    // (이전 실패는 최신 성공이 덮으므로 무관 — 최신의 성패가 곧 컨트롤러 최신성).
+    let editChain = Promise.resolve(), editTail = Promise.resolve();
     function runDeb(f) {
       const next = editChain.then(() => f());
-      // 한 편집 실패가 체인을 끊지 않게 파생(editChain)에서 흡수하되, 반환 next 는 실패를 그대로
-      // 전파해 awaiter(flush)·셸 백스톱이 시끄럽게 받는다(조용한 삼킴 아님 — confirm-or-alarm).
-      editChain = next.catch(() => {});
+      editChain = next.catch(() => {});  // 연속: 실패 흡수(다음 편집 계속)
+      editTail = next;                   // flush 대상: 실패 전파(최신 편집 결과 = 컨트롤러 최신성)
       return next;
     }
     function debounce(fn) {
@@ -73,8 +78,8 @@
     function flushDeb() {
       if (debTimer) { clearTimeout(debTimer); debTimer = null; }
       const f = debFn; debFn = null;
-      if (f) return runDeb(f);   // 방금 스케줄분 + 체인 전체를 기다림(runDeb 가 tail 반환)
-      return editChain;          // 대기분 없어도 미착지 체인 전체를 기다린다
+      if (f) return runDeb(f);   // 방금 스케줄분(= 최신 편집)을 기다림 — 실패 전파
+      return editTail;           // 대기분 없어도 미착지 최신 편집을 기다림(실패 전파, 흡수판 아님)
     }
     /* 렌더 세대 — 구조 변화(전면 render)가 나면 올라가, 늦게 착지한 타이핑 응답이 옛 세대의
        스냅샷으로 미리보기를 되돌리는 경합을 막는다(빠른 기안 EPOCH 선례). */
@@ -754,9 +759,15 @@
       });
     }
 
-    /* 붙여넣기 확정 — 템플릿만 바꾼다(겨눈 데이터는 유지, VM datasource 불변). */
+    /* 붙여넣기 확정 — 템플릿만 바꾼다(겨눈 데이터는 유지, VM datasource 불변).
+
+       **편집 체인에 태운다**(리뷰 D): 종전엔 미착지 Bridge 호출을 그냥 쏴, 붙여넣고 즉시
+       「템플릿으로 저장」하면 그 호출이 아직 나는 사이 promote_info 가 **옛 라이브러리 정체**로
+       이름·그룹을 프리필하고, 붙여넣은 원문이 모달 열린 채 착지해 **이전 템플릿을 덮어쓸** 뻔했다.
+       runDeb 로 체인에 넣으면 openSaveTpl 의 ``sess.flush()`` 가 이 붙여넣기 착지까지 기다린 뒤에야
+       promote_info 를 읽는다(타이핑 편집과 같은 정산 통로). */
     function pasteOk() {
-      Bridge.call(SCREEN, "set_template_text", { text: $("pasteText").value });
+      runDeb(() => Bridge.call(SCREEN, "set_template_text", { text: $("pasteText").value }));
     }
 
     /* 템플릿 목록 채우기 — 선택은 **세션의 실제 템플릿**(스냅샷)이 정한다(드롭다운은 표시일 뿐). */
