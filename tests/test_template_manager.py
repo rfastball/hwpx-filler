@@ -1,4 +1,4 @@
-"""템플릿 관리 워크숍 ViewModel(C5) 계약 테스트 — Qt/QApplication 불필요(링1, Qt-free).
+"""템플릿 관리 워크숍 ViewModel(C5) 계약 테스트 — 창 없이 실행하는 링1 테스트.
 
 핵심 증명:
 1. 상태별(RAW/PARTIAL/COMPILED/FILLED) 게이트 액션이 정확히 합의된 집합이다.
@@ -6,8 +6,7 @@
    컴파일·저장하고 그 파일의 compile_status 가 진행한다(RAW/PARTIAL → COMPILED).
 3. lint/drift 결과가 VM 을 통해 렌더된다.
 
-파일 하단에 offscreen GUI 스모크(PySide6 있을 때만)를 얹는다 — 위젯이 VM 을 카드로
-렌더하고 상태별 버튼을 배선하는 최소 배선 확인.
+웹 표현 계층과의 배선은 ``test_webapp_template``·``test_webapp_editor``가 별도로 검증한다.
 """
 
 from __future__ import annotations
@@ -133,7 +132,7 @@ def test_rows_expose_gated_actions_matching_state(tmp_path):
     assert [a.key for a in by_name["comp.hwpx"].actions()] == ["preview", "make_job"]
     assert by_name["fill.hwpx"].state == CompileState.FILLED
     assert [a.key for a in by_name["fill.hwpx"].actions()] == ["preview"]
-    # 배지·상세가 성형돼 위젯이 읽을 수 있다.
+    # 배지·상세가 성형돼 표현 계층이 읽을 수 있다.
     assert by_name["raw.hwpx"].badge_label == "원문"
     assert "필드" in by_name["comp.hwpx"].detail_line()
 
@@ -273,7 +272,7 @@ def test_vm_lint_accepts_vocabulary(tmp_path):
     """VM.lint(path, vocabulary=None) 가 코어 lint_template 시그니처와 정렬(RC-14).
 
     통제 어휘를 주면 어휘 밖 필드명이 off_vocabulary 로 신고된다 — CLI --vocab 과
-    GUI 위생 점검 범위 동등.
+    웹·CLI 위생 점검 범위와 동등하다.
     """
     path = _write_compiled(
         tmp_path / "v.hwpx",

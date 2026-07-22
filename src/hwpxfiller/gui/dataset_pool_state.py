@@ -113,7 +113,7 @@ def kind_transition_clause(item: DatasetPoolItem) -> str:
 
 @dataclass
 class DatasetPoolRow:
-    """풀 1항목이 렌더할 성형 데이터 — 위젯은 이 필드만 읽는다."""
+    """풀 1항목이 렌더할 성형 데이터 — 표현 계층은 이 필드만 읽는다."""
 
     name: str
     kind: str
@@ -152,7 +152,7 @@ class DatasetPoolRow:
 
 
 class DatasetPoolViewModel:
-    """데이터셋 풀 상태 + 오케스트레이션. 위젯은 구독해 렌더한다(Qt 비의존).
+    """데이터셋 풀 상태 + 오케스트레이션. 웹 컨트롤러는 결과를 읽어 렌더한다(Qt 비의존).
 
     ``registry`` 주입 가능(테스트는 ``DatasetPoolRegistry(tmp_path)``); 기본은 홈 레지스트리.
     """

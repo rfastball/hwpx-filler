@@ -18,9 +18,6 @@ if (-not $uv) {
     exit 1
 }
 
-# GUI 스모크가 헤드리스로 돌도록(미설정 시 offscreen).
-if (-not $env:QT_QPA_PLATFORM) { $env:QT_QPA_PLATFORM = 'offscreen' }
-
 # 한글 테스트/메시지가 깨지지 않도록 UTF-8 강제(콘솔 코드페이지 무관).
 $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'
