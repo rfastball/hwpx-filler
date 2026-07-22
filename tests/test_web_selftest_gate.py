@@ -3,7 +3,7 @@
 파이썬 ``html.parser`` 계약(:mod:`test_web_dom_contract`)은 배포 ``web/index.html`` 의 *정적*
 구조(전역 id 유일성·화면 루트)만 본다 — 렌더 로직은 안 돈다. 이 모듈은 그 위층을 메운다:
 실 :class:`~hwpxfiller.webapp.app.WebFrontend` + 실 컨트롤러 + 실 ``render()`` 를 pywebview 로
-구동하고 ``evaluate_js`` 로 DOM 을 되읽어 **렌더 거동**(창 부팅·기본 화면·KPI 실렌더·내비 실체)을
+구동하고 ``evaluate_js`` 로 DOM 을 되읽어 **렌더 거동**(창 부팅·작업 기본 화면·홈 경보·내비 실체)을
 CI 에서 가드한다.
 
 **Windows/WebView2 전용.** 데스크톱 세션이 없는 헤드리스 러너는 ``HWPX_SKIP_GUI_TESTS=1`` 로
@@ -75,9 +75,9 @@ class TestWebSelftestGate:
         from test_web_dom_contract import NAV_SCREENS
         assert selftest_result["nav_count"] == len(NAV_SCREENS)
 
-    def test_home_is_default_screen(self, selftest_result: dict) -> None:
-        # 허브(홈)가 기본 활성 화면으로 뜸(scr-home.on).
-        assert selftest_result["home_on"] is True
+    def test_job_is_default_screen(self, selftest_result: dict) -> None:
+        # H-05: 콜드 부팅은 살아 있는 소비 화면인 작업으로 곧장 진입한다.
+        assert selftest_result["job_on"] is True
 
     def test_pool_screen_actually_rendered(self, selftest_result: dict) -> None:
         # 데이터 관리 화면(#26 #4)이 실앱에서 init·렌더됨(빈 상태 문구도 렌더로 침).
@@ -109,9 +109,11 @@ class TestWebSelftestGate:
             assert got["snapshot"] is True, f"{family}: {got}"
             assert got["snapshot_keys"], f"{family}: 빈 snapshot: {got}"
 
-    def test_home_kpis_actually_rendered(self, selftest_result: dict) -> None:
-        # home.js 가 push 스냅샷으로 KPI 타일을 실제 렌더 = Python→웹 관측 푸시 왕복 확인.
-        assert selftest_result["home_kpi_count"] >= 1
+    def test_home_dead_summary_surfaces_are_absent(self, selftest_result: dict) -> None:
+        # H-05: KPI·이어서 실행은 DOM과 렌더 경로에서 함께 제거되고 홈 경보 허브만 남는다.
+        assert selftest_result["home_kpi_count"] == 0
+        assert selftest_result["home_continue_count"] == 0
+        assert selftest_result["home_alerts_present"] is True
 
     def test_modal_opens_with_initial_focus_inside(self, selftest_result: dict) -> None:
         # 커스텀 모달을 열면 hidden 해제 + 초기 포커스가 모달 안(draftSaveTplName)으로 들어간다.
@@ -122,6 +124,7 @@ class TestWebSelftestGate:
     def test_modal_escape_closes_and_restores_focus(self, selftest_result: dict) -> None:
         # Escape 로 닫히고, 포커스가 열기 직전 트리거로 복귀한다(조용한 포커스 유실 금지 — #28).
         m = selftest_result["modal_a11y"]
+        assert m["escape_entered_closing"] is True
         assert m["closed_by_escape"] is True
         assert m["focus_restored"] == m["focus_before"]
 
@@ -136,6 +139,7 @@ class TestWebSelftestGate:
         assert m["confirm_focus"] == "confirmModalCancel", (
             f"확인 모달 초기 포커스가 취소가 아닙니다(현재: {m['confirm_focus']!r})."
         )
+        assert m["confirm_entered_closing"] is True, "확인 모달이 퇴장 상태를 거치지 않았습니다."
         assert m["confirm_closed"] is True, "확인 클릭 후 confirmModal 이 다시 hidden 이 아닙니다."
         assert m["confirm_display_closed"] == "none", (
             "닫힌 confirmModal 의 display 가 none 이 아닙니다 — .modal.hidden 이 display:flex 를 "
@@ -604,8 +608,8 @@ class TestWebSelftestGate:
         assert t["caret_expanded"] == "hidden", f"펼친 그룹 화살표가 호버 전에 보입니다: {t!r}"
         # 그룹에 속한 카드 ⋮ = [이동, 삭제] · 그룹 헤더 ⋮ = [개명, 해산].
         assert t["menu_shown"] is True, "카드 ⋮ 클릭에 메뉴가 열리지 않았습니다."
-        assert t["card_menu_items"] == ["move", "delete"], (
-            f"그룹 있는 카드 ⋮ 구성이 [이동·삭제]와 다릅니다: {t['card_menu_items']!r}"
+        assert t["card_menu_items"] == ["use", "move", "delete"], (
+            f"그룹 있는 HWPX 카드 ⋮ 구성이 [새 작업·이동·삭제]와 다릅니다: {t['card_menu_items']!r}"
         )
         assert t["menu_closed"] is True, "바깥 클릭에 메뉴가 닫히지 않았습니다."
         assert t["group_menu_items"] == ["grp-rename", "grp-disband"], (
@@ -658,6 +662,45 @@ class TestWebSelftestGate:
         assert s["sticky_position"] == "sticky"
         assert s["scroll_top"] > 0
         assert s["sticky_holds"] is True
+
+    def test_milestone_h_overlay_root_scrollbar_and_sticky_material_render(self, selftest_result: dict) -> None:
+        h = selftest_result["milestone_h_overlay"]
+        assert h.get("error") is None, h.get("error")
+        assert h["pending"] is False
+        assert h["overlay_root_direct"] is True and h["overlay_children_owned"] is True
+        assert h["scrollbar"] == {
+            "width": "8px", "button_display": "none", "button_width": "0px", "button_height": "0px",
+        }
+        assert h["sticky_material"]["position"] == "sticky"
+        assert "blur(14px)" in h["sticky_material"]["backdrop"]
+
+    def test_milestone_h_workcard_and_popover_interactions_render(self, selftest_result: dict) -> None:
+        h = selftest_result["milestone_h_overlay"]
+        w = h["workcard"]
+        assert w["max_height"] == "360px" and w["overflow_y"] == "auto"
+        assert "stable" in w["gutter"] and "contain" in w["overscroll"]
+        assert w["dot_hit"] == ["24px", "24px"] and w["dot_mark"] == ["14px", "14px"]
+        assert w["dots_overflow"] == "visible"
+        p = h["popover_place"]
+        assert p["placement"] == "top" and p["in_viewport"] is True and p["origin"].endswith(" bottom")
+        assert p["radius"] == "12px" and p["shadow"] != "none"
+        assert h["drag_closed"] is True and h["click_after_drag"] is True
+        assert h["click_after_right"] is True
+        assert h["focusout_closed"] is True and h["scroll_closed"] is True
+        assert h["close_all_closed"] is True
+
+    def test_milestone_h_modal_stack_ime_focus_and_short_viewport_render(self, selftest_result: dict) -> None:
+        h = selftest_result["milestone_h_overlay"]
+        assert h["modal_closed_popover"] is True and h["z_order"] is True
+        assert h["modal_focus_in"] == "draftSaveTplName"
+        assert h["ime_escape_kept_open"] is True
+        assert h["exit_blocks_pointer"] is True and h["menu_trigger_restored"] is True
+        assert h["escape_one_layer"] is True
+        short = h["short_viewport"]
+        # pywebview의 OS 최소 창 높이가 요청한 500px를 564px로 clamp할 수 있으므로 실제
+        # innerHeight에서 2×16px inset을 뺀 계약으로 판정한다(720×500 캡처는 별도 시각 QA).
+        assert short["viewport"] <= 600 and short["height"] <= short["viewport"] - 32
+        assert short["scrollable"] is True and short["actions_reachable"] is True
 
     def test_editor_library_picker_renders_grouped_select(self, selftest_result: dict) -> None:
         # 에디터 1단계 피커 — 라이브러리가 관리 화면과 같은 그룹 구획(선택 전용)

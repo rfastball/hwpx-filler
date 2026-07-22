@@ -31,7 +31,7 @@ def test_actionbar_and_table_header_share_one_material_rule() -> None:
 
 def test_reduced_transparency_downgrades_the_whole_material_set() -> None:
     compact = _compact(CSS)
-    marker = "@media(prefers-reduced-transparency:reduce){"
+    marker = "@media(prefers-reduced-transparency:reduce){.session-actionbar,.jobtbth{"
     start = compact.find(marker)
     assert start >= 0, "투명도 축소 강등 미디어 쿼리가 없습니다."
     block = compact[start : start + 280]

@@ -31,8 +31,8 @@ def test_shared_row_menu_puts_use_cta_before_management_actions() -> None:
 
 def test_menu_ctas_route_with_preselected_template() -> None:
     assert 'act === "use" && m.media === "hwpx"' in SCRIPT
-    assert "makeJob(m.item.path)" in SCRIPT
-    assert "openDraftTemplate(m.item.name)" in SCRIPT
+    assert "makeJob(m.item.path, m.trigger)" in SCRIPT
+    assert "openDraftTemplate(m.item.name, m.trigger)" in SCRIPT
     assert 'Bridge.call("draft", "select_template", { name })' in SCRIPT
     assert 'window.Nav.go("draft")' in SCRIPT
 

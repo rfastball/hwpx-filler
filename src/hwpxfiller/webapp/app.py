@@ -393,6 +393,13 @@ class WebFrontend:
 # 모달로 재겨눔.) IIFE 가 JSON 직렬화 가능한 객체를 반환하고, 게이트 테스트가 각 필드를 단언한다.
 _MODAL_A11Y_PROBE_JS = r"""
 (function () {
+  function finishModal(id) {
+    var card = document.querySelector('#' + id + ' .modal-card');
+    if (!card) return;
+    var ev = new Event('transitionend', { bubbles: true });
+    Object.defineProperty(ev, 'propertyName', { value: 'opacity' });
+    card.dispatchEvent(ev);
+  }
   var trigger = document.querySelector('.navbtn');
   trigger.focus();
   var before = document.activeElement.getAttribute('data-scr');
@@ -400,6 +407,8 @@ _MODAL_A11Y_PROBE_JS = r"""
   var opened = !document.getElementById('draftSaveTplModal').classList.contains('hidden');
   var focusIn = document.activeElement.id;
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  var escapeClosing = document.getElementById('draftSaveTplModal').classList.contains('is-closing');
+  finishModal('draftSaveTplModal');
   var closed = document.getElementById('draftSaveTplModal').classList.contains('hidden');
   var restored = document.activeElement.getAttribute('data-scr');
   // #86/B-9: 네이티브 confirm 대체 모달의 실 개폐 — .modal{display:flex} 가 hidden 을 덮지
@@ -425,6 +434,8 @@ _MODAL_A11Y_PROBE_JS = r"""
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
   var trapWrapped = document.activeElement.id;               // confirmModalCancel 기대
   document.getElementById('confirmModalOk').click();         // 확인 클릭 → 닫힘 + resolve(true)
+  var confirmClosing = cm.classList.contains('is-closing');
+  finishModal('confirmModal');
   var cClosed = cm.classList.contains('hidden');
   var cDisplayClosed = getComputedStyle(cm).display;         // 닫힌 뒤 'none'
   window.alert = origAlert;
@@ -468,13 +479,17 @@ _MODAL_A11Y_PROBE_JS = r"""
     if (!cmR.classList.contains('modal')) cmR.classList.add('modal');  // 어떤 경로든 .modal 원복
     console.error = oErr2; window.alert = oAlert2;
   }
-  if (afterMalfOpens) document.getElementById('confirmModalCancel').click();  // 후속 닫아 상태 원복
+  if (afterMalfOpens) {
+    document.getElementById('confirmModalCancel').click();  // 후속 닫아 상태 원복
+    finishModal('confirmModal');
+  }
   return {
     opened: opened,               // 열기 후 hidden 해제됐는가
     focus_in: focusIn,            // 초기 포커스가 모달 안(pasteText)으로 들어갔는가
     closed_by_escape: closed,     // Escape 로 닫혔는가
     focus_before: before,         // 열기 직전 트리거(내비 data-scr)
     focus_restored: restored,     // 닫은 뒤 포커스가 트리거로 복귀했는가
+    escape_entered_closing: escapeClosing, // H-16: display:none 전 퇴장 상태를 실제 거쳤는가
     confirm_display_closed_before: cDisplayClosedBefore,  // #86: 열기 전 display(none 기대)
     confirm_opened: cOpened,      // #86: Modal.confirm 이 hidden 해제했는가
     confirm_display_open: cDisplayOpen,  // #86/B-9: 열린 동안 display(flex 기대)
@@ -483,6 +498,7 @@ _MODAL_A11Y_PROBE_JS = r"""
     confirm_body_after_reentry: bodyAfterReentry, // #92 #1: 첫 본문이 덮이지 않았는가
     confirm_trap_wrapped: trapWrapped,           // #92 #1: Tab 이 모달 안에서 순환했는가
     confirm_closed: cClosed,      // #86: 확인 클릭 후 다시 hidden 인가
+    confirm_entered_closing: confirmClosing, // H-16: 확인도 대칭 퇴장 상태를 실제 거쳤는가
     confirm_display_closed: cDisplayClosed,  // #86/B-9: 닫힌 뒤 display(none 기대, hidden 이 flex 를 이긴다)
     non_modal_open_rejected_loud: openRejected,   // #132.4: .modal 없는 open 이 loud 거절+미개방인가
     non_modal_close_rejected_loud: closeRejected, // #132.4: .modal 없는 close 도 loud 거절인가
@@ -500,6 +516,13 @@ _MODAL_A11Y_PROBE_JS = r"""
 # choose 는 async·상호작용 구동이라 setup 에서 fire→window.__sheetProbe 에 stash, 뒤에서 되읽는다.
 _SHEET_PROBE_SETUP_JS = r"""
 (function () {
+  function finishModal(id) {
+    var card = document.querySelector('#' + id + ' .modal-card');
+    if (!card) return;
+    var ev = new Event('transitionend', { bubbles: true });
+    Object.defineProperty(ev, 'propertyName', { value: 'opacity' });
+    card.dispatchEvent(ev);
+  }
   window.__sheetProbe = { status: 'running' };
   var origLoad = window.Bridge.loadDataSheet;
   window.Bridge.loadDataSheet = function (screen, path, sheet) {
@@ -517,10 +540,15 @@ _SHEET_PROBE_SETUP_JS = r"""
       var btns = document.querySelectorAll('#sheetList .sheet-opt');
       var focusFirst = document.activeElement === btns[0];
       btns[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      // onPick은 Bridge.loadDataSheet(Promise)를 await한 뒤 close하므로 마이크로태스크를 먼저
+      // 흘려 실제 is-closing 진입을 만든 다음 transitionend를 완료시킨다.
+      await Promise.resolve();
+      finishModal('sheetModal');
       var picked = await p1;
       // (2) 취소 경로 — 다시 열고 Escape → null 로 해소(로드 없음).
       var p2 = window.SheetPicker.choose('job', payload);
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      finishModal('sheetModal');
       var cancelled = await p2;
       window.__sheetProbe = {
         status: 'done',
@@ -869,6 +897,12 @@ _DRAFT_LIST_PROBE_JS = r"""
     out.move_opts = document.querySelectorAll('#draftMoveList .grp-opt').length;    // 그룹 2 + 없음 + 새 = 4
     out.move_has_new = !!document.getElementById('draftMoveNewRadio');
     document.getElementById('draftMoveCancel').click();
+    (function () {
+      var card = document.querySelector('#draftMoveModal .modal-card');
+      var ev = new Event('transitionend', {bubbles:true});
+      Object.defineProperty(ev, 'propertyName', {value:'opacity'});
+      card.dispatchEvent(ev);
+    })();
     out.move_closed = document.getElementById('draftMoveModal').classList.contains('hidden');
     // 퇴화 평면(그룹 0개) — 헤더 없는 나열.
     snap.job_flat = true;
@@ -1317,6 +1351,12 @@ _TPL_LIST_GROUP_PROBE_JS = r"""
     host.querySelector('.tpl-assign').click();
     out.move_shown_after_chip = !document.getElementById('tplMoveModal').classList.contains('hidden');
     window.Modal.close('tplMoveModal');
+    (function () {
+      var card = document.querySelector('#tplMoveModal .modal-card');
+      var ev = new Event('transitionend', {bubbles:true});
+      Object.defineProperty(ev, 'propertyName', {value:'opacity'});
+      card.dispatchEvent(ev);
+    })();
     // 퇴화 평면(그룹 0개) — 헤더 없는 카드 나열.
     snap.hwpx.flat = true;
     snap.hwpx.group_names = [];
@@ -1514,6 +1554,177 @@ _MILESTONE_H_WAVE1_PROBE_JS = r"""
 """
 
 
+# 마일스톤 H 최종 동적 프로브 — H-08/H-09/H-10/H-15/H-16의 계산 스타일과 실제
+# dismissal/stack/IME/짧은 viewport 거동을 한 실 WebView2에서 검증한다. setup은 click 없는
+# pointer 제스처의 다음-task 만료를 재현하므로 Python 드라이버가 한 task 이상 기다린 뒤 finish한다.
+_MILESTONE_H_OVERLAY_PROBE_SETUP_JS = r"""
+(function () {
+  var out = { pending: true };
+  window.__milestoneHOverlay = out;
+  function finishModal(id) {
+    var card = document.querySelector('#' + id + ' .modal-card');
+    if (!card) return;
+    var ev = new Event('transitionend', { bubbles: true });
+    Object.defineProperty(ev, 'propertyName', { value: 'opacity' });
+    card.dispatchEvent(ev);
+  }
+  try {
+    var root = document.getElementById('overlayRoot');
+    out.overlay_root_direct = root && root.parentElement === document.body;
+    out.overlay_children_owned = Array.from(document.querySelectorAll('.modal,.ctx-menu,.colpanel'))
+      .every(function (el) { return el.parentElement === root; });
+
+    var scrollHost = document.createElement('div');
+    scrollHost.className = 'jobtbwrap';
+    scrollHost.style.cssText = 'height:72px;width:320px;overflow:auto';
+    scrollHost.innerHTML = '<table class="jobtb"><thead><tr><th>머리</th></tr></thead><tbody>' +
+      Array.from({length:16}, function (_, i) { return '<tr><td>행 ' + i + '</td></tr>'; }).join('') +
+      '</tbody></table>';
+    document.body.appendChild(scrollHost);
+    var sb = getComputedStyle(scrollHost, '::-webkit-scrollbar');
+    var sbtn = getComputedStyle(scrollHost, '::-webkit-scrollbar-button');
+    var sh = getComputedStyle(scrollHost.querySelector('th'));
+    out.scrollbar = { width: sb.width, button_display: sbtn.display,
+      button_width: sbtn.width, button_height: sbtn.height };
+    out.sticky_material = { position: sh.position, backdrop: sh.backdropFilter,
+      background: sh.backgroundColor };
+    scrollHost.remove();
+
+    var cardRender = document.getElementById('draftCardRender');
+    var dot = document.querySelector('#draftCardDots .wc-dot');
+    var madeDot = false;
+    if (!dot) {
+      dot = document.createElement('button');
+      dot.className = 'wc-dot';
+      document.getElementById('draftCardDots').appendChild(dot);
+      madeDot = true;
+    }
+    var cr = cardRender && getComputedStyle(cardRender);
+    var ds = dot && getComputedStyle(dot);
+    var dm = dot && getComputedStyle(dot, '::before');
+    out.workcard = {
+      max_height: cr && cr.maxHeight, overflow_y: cr && cr.overflowY,
+      gutter: cr && cr.scrollbarGutter, overscroll: cr && cr.overscrollBehavior,
+      dot_hit: ds && [ds.width, ds.height], dot_mark: dm && [dm.width, dm.height],
+      dots_overflow: getComputedStyle(document.getElementById('draftCardDots')).overflow
+    };
+    if (madeDot) dot.remove();
+
+    var trigger = document.createElement('button');
+    trigger.id = '__hOverlayTrigger'; trigger.textContent = 'trigger';
+    trigger.style.cssText = 'position:fixed;right:2px;bottom:2px';
+    document.body.appendChild(trigger);
+    var outside = document.createElement('button');
+    outside.id = '__hOverlayOutside'; outside.textContent = 'outside';
+    document.body.appendChild(outside);
+    var pop = document.createElement('div');
+    pop.className = 'ctx-menu'; pop.style.cssText = 'display:flex;width:260px;height:160px';
+    pop.innerHTML = '<button id="__hOverlayInside">inside</button>';
+    root.appendChild(pop);
+    var popOpen = true;
+    var closeCount = 0;
+    function openPop() { popOpen = true; pop.style.display = 'flex'; }
+    function closePop() { popOpen = false; pop.style.display = 'none'; closeCount += 1; }
+    var unregister = window.Popover.register({
+      isOpen: function () { return popOpen; },
+      contains: function (t) { return pop.contains(t); },
+      close: closePop
+    });
+    var placed = window.Popover.place(pop, trigger);
+    var pr = pop.getBoundingClientRect();
+    var ps = getComputedStyle(pop);
+    out.popover_place = { placement: placed.placement,
+      in_viewport: pr.left >= 0 && pr.top >= 0 && pr.right <= innerWidth && pr.bottom <= innerHeight,
+      origin: pop.style.transformOrigin, radius: ps.borderRadius, shadow: ps.boxShadow };
+
+    trigger.focus();
+    window.Modal.open('draftSaveTplModal', {
+      initialFocus: document.getElementById('draftSaveTplName'), returnFocus: trigger
+    });
+    var formModal = document.getElementById('draftSaveTplModal');
+    out.modal_closed_popover = !popOpen;
+    out.modal_focus_in = document.activeElement.id;
+    out.z_order = parseInt(getComputedStyle(formModal).zIndex, 10) > parseInt(ps.zIndex, 10);
+    var imeEscape = new KeyboardEvent('keydown', { key:'Escape', bubbles:true });
+    Object.defineProperty(imeEscape, 'isComposing', { value:true });
+    document.dispatchEvent(imeEscape);
+    out.ime_escape_kept_open = !formModal.classList.contains('hidden') &&
+      !formModal.classList.contains('is-closing');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', bubbles:true }));
+    out.exit_blocks_pointer = formModal.classList.contains('is-closing') &&
+      getComputedStyle(formModal).pointerEvents === 'auto';
+    finishModal('draftSaveTplModal');
+    out.menu_trigger_restored = document.activeElement === trigger;
+
+    // 두 겹에서 Escape 한 번은 최상위만 퇴장시킨다.
+    window.Modal.open('draftSaveTplModal', { returnFocus: trigger });
+    window.Modal.open('confirmModal', { returnFocus: trigger });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', bubbles:true }));
+    out.escape_one_layer = document.getElementById('confirmModal').classList.contains('is-closing') &&
+      !document.getElementById('draftSaveTplModal').classList.contains('is-closing');
+    finishModal('confirmModal');
+    window.Modal.close('draftSaveTplModal'); finishModal('draftSaveTplModal');
+
+    // 720x500에서 200줄 본문을 끝까지 스크롤하면 액션이 viewport 안에 도달한다.
+    var longModal = document.getElementById('confirmModal');
+    var longBody = document.getElementById('confirmModalBody');
+    var savedBody = longBody.innerHTML;
+    longBody.innerHTML = Array.from({length:200}, function (_, i) { return '<div>본문 ' + i + '</div>'; }).join('');
+    window.Modal.open('confirmModal', { returnFocus: trigger });
+    var longCard = longModal.querySelector('.modal-card');
+    longCard.scrollTop = longCard.scrollHeight;
+    var actions = longModal.querySelector('.modal-actions').getBoundingClientRect();
+    out.short_viewport = { height: longCard.getBoundingClientRect().height,
+      viewport: innerHeight, scrollable: longCard.scrollHeight > longCard.clientHeight,
+      actions_reachable: actions.bottom <= innerHeight + 1 && actions.top >= -1 };
+    window.Modal.close('confirmModal'); finishModal('confirmModal');
+    longBody.innerHTML = savedBody;
+
+    var outsideClicks = 0;
+    outside.addEventListener('click', function () { outsideClicks += 1; });
+    openPop();
+    outside.dispatchEvent(new PointerEvent('pointerdown', {
+      bubbles:true, button:0, pointerId:77, isPrimary:true
+    }));
+    outside.dispatchEvent(new PointerEvent('pointerup', {
+      bubbles:true, button:0, pointerId:77, isPrimary:true
+    }));
+    out.drag_closed = !popOpen;
+    out.finish = function () {
+      outside.click();
+      out.click_after_drag = outsideClicks === 1;
+      openPop();
+      outside.dispatchEvent(new PointerEvent('pointerdown', {
+        bubbles:true, button:2, pointerId:78, isPrimary:true
+      }));
+      outside.click();
+      out.click_after_right = outsideClicks === 2;
+      openPop();
+      var inside = document.getElementById('__hOverlayInside');
+      inside.focus();
+      inside.dispatchEvent(new FocusEvent('focusout', { bubbles:true, relatedTarget:outside }));
+      out.focusout_closed = !popOpen;
+      openPop();
+      document.body.dispatchEvent(new Event('scroll', { bubbles:false }));
+      out.scroll_closed = !popOpen;
+      openPop();
+      window.Popover.closeAll();
+      out.close_all_closed = !popOpen;
+      unregister(); pop.remove(); trigger.remove(); outside.remove();
+      out.close_count = closeCount;
+      out.pending = false;
+      delete out.finish;
+      return out;
+    };
+  } catch (e) {
+    out.pending = false;
+    out.error = String((e && e.stack) || e);
+  }
+  return out;
+})()
+"""
+
+
 def _finish_selftest(window: "object", result: dict) -> None:
     """되읽기 결과를 결정적 위치에 쓰고 정식 종료한다(쓰기·읽기 단계 공용).
 
@@ -1575,11 +1786,15 @@ def _selftest_drive(window: "object") -> None:
         result["nav_count"] = window.evaluate_js("document.querySelectorAll('.navbtn').length")  # type: ignore[attr-defined]
         result["tpl_options"] = window.evaluate_js(  # type: ignore[attr-defined]
             "Array.from(document.querySelectorAll('#tplSel option')).map(o=>o.value)")
-        # 홈(허브)이 기본 화면으로 뜨고 KPI 타일이 실렌더됐는지 되읽는다(#20 착지 심).
-        result["home_on"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "document.getElementById('scr-home').classList.contains('on')")
+        # H-05: 콜드 부팅은 작업으로 진입하고, 홈은 KPI·이어서 없이 경보 허브로만 남는다.
+        result["job_on"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "document.getElementById('scr-job').classList.contains('on')")
         result["home_kpi_count"] = window.evaluate_js(  # type: ignore[attr-defined]
             "document.querySelectorAll('#homeKpis .kpi').length")
+        result["home_continue_count"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "document.querySelectorAll('#homeContinue .continue-run').length")
+        result["home_alerts_present"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "!!document.getElementById('homeAlerts')")
         # 데이터 관리 화면(#26 #4) — 7번째 화면이 실제 init·렌더됐는지(빈 상태 문구도 렌더).
         result["pool_rendered"] = window.evaluate_js(  # type: ignore[attr-defined]
             "(document.getElementById('poolList')||{innerHTML:''}).innerHTML.length > 0")
@@ -1651,6 +1866,18 @@ def _selftest_drive(window: "object") -> None:
         result["milestone_h_wave1"] = window.evaluate_js(  # type: ignore[attr-defined]
             _MILESTONE_H_WAVE1_PROBE_JS
         )
+        # H 최종 실창 시나리오: overlay/modal/popover와 짧은 viewport, 전역 scrollbar/workcard를
+        # 실제 계산 스타일·이벤트로 되읽는다. click 없는 pointer 제스처 만료는 task 경계를 둔다.
+        window.resize(720, 500)  # type: ignore[attr-defined]
+        time.sleep(0.3)
+        window.evaluate_js(_MILESTONE_H_OVERLAY_PROBE_SETUP_JS)  # type: ignore[attr-defined]
+        time.sleep(0.1)
+        result["milestone_h_overlay"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "window.__milestoneHOverlay.finish ? "
+            "window.__milestoneHOverlay.finish() : window.__milestoneHOverlay"
+        )
+        window.resize(1180, 820)  # type: ignore[attr-defined]
+        time.sleep(0.3)
         # 에디터 1단계 피커(#108 슬라이스 3) — 라이브러리 그룹 구획(선택 전용) 실렌더 되읽기.
         result["editor_lib"] = window.evaluate_js(_EDITOR_LIB_PICKER_PROBE_JS)  # type: ignore[attr-defined]
         # 다크모드 영속·무깜빡임(콜드부트 되읽기, #74) — 부팅 시 loaded 핸들러가 저장 테마
