@@ -760,7 +760,9 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 
 /* 카탈로그 목록 — 데이터 관리(scr-pool) 등 공유 유틸(캡션 박스 안 헤더 + 스크롤 리스트).
    템플릿 관리는 #108 개편으로 매체 밴드 구조로 갈라져 나갔지만 이 클래스들은 pool 이 계속 쓴다. */
-.tpl-catalogs{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-16);margin-top:var(--sp-8);min-height:0}
+/* 데이터 관리 카탈로그(#179 슬라이스 6) — 구획이 하나뿐인데 2열 격자라 우측 절반이 늘 빈
+   캔버스로 남아 미완성처럼 보였다. 단일 열을 읽기 좋은 폭으로 캡(우측 여백은 의도된 여백). */
+.tpl-catalogs{display:grid;grid-template-columns:minmax(0,720px);gap:var(--sp-16);margin-top:var(--sp-8);min-height:0}
 @media (max-width:820px){.tpl-catalogs{grid-template-columns:1fr}}
 .tpl-cat{display:flex;flex-direction:column;min-height:0;margin-top:var(--sp-12)}
 .tpl-cathead{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-8);flex-wrap:wrap}
