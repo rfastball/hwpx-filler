@@ -120,13 +120,8 @@ def test_pool_registry_construction_has_one_call_site() -> None:
     """webapp 의 ``DatasetPoolRegistry(...)`` 생성은 ``screens.py`` 의
     ``default_pool_registry()`` 단일 출처를 통해서만 — 인라인 재구현 재유입 차단.
 
-    2026-07-16 high 코드리뷰(#26 웹 패리티 2차)에서 이 팩토리보다 나중에 커밋된
-    ``screen_editor.py``가 팩토리를 쓰지 않고 ``DatasetPoolRegistry(default_dataset_pool_dir())``
-    를 그대로 복붙한 결함이 확정됐다(``screen_pool.py`` 도 동형 — 다만 그쪽은 팩토리
-    도입보다 먼저 작성돼 역사적으로는 이해 가능하나 지금은 정합 대상). 팩토리가 나중에
-    바뀌면(캐싱·환경변수 오버라이드 등) 인라인 사본은 조용히 구식 동작을 유지한다 — 그
-    드리프트를 재유입 즉시 차단한다. ``gui/`` 계층(Qt 시절 VM, 팩토리보다 먼저 존재)은
-    이 규칙 밖이다 — webapp 이 아래로 임포트하는 방향이라 gui 가 webapp 을 참조할 수 없다.
+    팩토리가 바뀌면(캐싱·환경변수 오버라이드 등) 인라인 사본은 조용히 구식 동작을 유지한다.
+    ``gui/`` 계층은 webapp을 참조할 수 없는 의존 방향이므로 이 규칙 밖이다.
     """
     pattern = re.compile(r"\bDatasetPoolRegistry\(")
     offenders: list[str] = []
@@ -147,9 +142,8 @@ def test_home_controller_does_not_bypass_vm_registry() -> None:
     """webapp/screen_home.py 는 ``self.vm.registry`` 에 직접 접근하지 않는다(#44).
 
     HomeViewModel 의 공개 표면(JobRow 필드 + 메서드)이 seam 계약이다(home_state.py
-    docstring). 2026-07-16 리뷰에서 ``_do_set_tags`` 만 이 계약을 우회해 컨트롤러가
-    ``vm.registry.load/save`` 를 직접 호출한 결함이 확정됐다 — 검증 규칙이 Qt-free
-    계층 밖으로 새고, 다른 모든 액션(위임 규약)과 어긋난다. 스코프를 ``screen_home.py``
+    docstring). 컨트롤러가 ``vm.registry.load/save`` 를 직접 호출하면 검증 규칙이 Qt-free
+    계층 밖으로 새고 위임 규약과 어긋난다. 스코프를 ``screen_home.py``
     단일 파일로 좁힌 이유: 저장소에는 별개 개념의 registry(데이터 풀)가 공존하고
     ``screen_pool.py`` 는 그걸 정당하게 직접 소유한다 — 파일 전역 문자열 grep 은
     두 개념을 뒤섞으므로 AST 로 ``self.vm.registry`` 접근 경로만 정확히 잡는다.
@@ -190,7 +184,7 @@ def test_core_mapping_carries_no_source_specific_vocabulary() -> None:
 
 
 def test_job_panel_imports_ring1_and_does_not_reimplement() -> None:
-    """#87(R-flow 슬라이스 1): 「작업」 패널 컨트롤러는 링1 VM 을 임포트하고 재구현하지 않는다.
+    """「작업」 패널 컨트롤러는 링1 VM 을 임포트하고 재구현하지 않는다(#87).
 
     부록 A 의 구조 관찰("계약 대부분은 링1이 소유하고, 죽는 것은 링2 표면뿐")을 못박는다 —
     패널은 새 링2 표면이되 실행 결정(사전검증·게이트 단일 산출·생성 계획·ack 상태기계)은
@@ -230,9 +224,9 @@ def test_job_panel_imports_ring1_and_does_not_reimplement() -> None:
     )
 
 
-# 작업 durable 쓰기의 **허용 호출 지점**(#129 리뷰 3R P1). 값 = 그 자리가 정당한 이유.
+# 작업 durable 쓰기의 **허용 호출 지점**(#129). 값 = 그 자리가 정당한 이유.
 # 새 호출 지점이 생기면 여기 올리기 전까지 실패한다 — "잠금 밖 writer 가 조용히 는다"는
-# 세 라운드 연속 재발한 결함류라, 개별 결함이 아니라 **재유입 경로**를 막는다.
+# 결함을 개별 사례가 아니라 재유입 경로에서 막는다.
 _ALLOWED_JOB_WRITE_SITES = {
     ("webapp/screen_editor.py", "save"):
         "저장 임계구역(_save_locked)이 registry.write_lock() 안 — 보존값 재읽기~저장 원자",
@@ -246,8 +240,7 @@ def test_job_registry_writes_go_through_the_locked_path() -> None:
 
     ``registry.load(...)`` 로 읽어 고친 뒤 ``registry.save(...)`` 로 통째 저장하는 손 엮음은
     다른 writer 와 겹칠 때 **읽은 시점이 낡은** 저장이 되어 상대 변경을 되돌린다(lost update).
-    그 패턴이 세 라운드 연속 새로 발견됐으므로(스탬프 → delete → set_tags·relink) 호출 지점
-    자체를 봉쇄한다: 남아도 되는 자리는 위 화이트리스트에 사유와 함께 적는다.
+    호출 지점 자체를 봉쇄하며, 남아도 되는 자리는 위 화이트리스트에 사유와 함께 적는다.
     """
     # 수신자까지 잡아 **별개 개념 레지스트리**(데이터 풀·txt 라이브러리)를 이름으로 가른다 —
     # 줄 어딘가에 'pool' 이 있으면 건너뛰는 식은 판별력이 없다(주석 한 줄로 규칙이 뚫린다).
@@ -281,7 +274,7 @@ def test_job_registry_writes_go_through_the_locked_path() -> None:
     )
 
 
-# hwpx 전용 소비 경로의 **허용 파싱 지점**(R-info 3부 결정 13 · 3층 재유입 가드). 코어 밖에서
+# hwpx 전용 소비 경로의 **허용 파싱 지점**. 코어 밖에서
 # hwpx 를 파싱하는(HwpxEngine·extract_schema·compile_status·template_path_drift) 자리는 전부
 # 여기 사유와 함께 등재된다. 새 자리가 생기면 등재 전까지 실패한다 — "txt 기안 작업이 hwpx
 # 코드에 조용히 닿는다"를 개별 결함이 아니라 **재유입 경로**로 막는다(결정 4 매체 유도의 짝).
@@ -289,8 +282,7 @@ def test_job_registry_writes_go_through_the_locked_path() -> None:
 # (에디터·매핑·템플릿 라이브러리 — 조회 경계 1층이 매체를 보장, Job 매체 분기 아님) ③매체 교차
 # 재확인(relink, 결정 13 예외) 또는 사용자 지정 raw 경로(CLI 역할 테스터, Job 아님).
 # **값 = (호출 수, 사유).** 호출 지점 정체를 (파일, 심볼)로만 잡으면 이미 등재된 파일에 같은
-# 심볼의 **새 미가드 호출**이 조용히 통과한다(리뷰 #2) — 등재 수를 함께 못박아, 한 자리라도
-# 늘거나 줄면 실패시켜 새 호출 지점을 리뷰 경계에 세운다.
+# 심볼의 새 미가드 호출이 조용히 통과하므로 등재 수를 함께 못박는다.
 _ALLOWED_HWPX_CONSUMERS = {
     ("gui/home_state.py", "compile_status"):
         (1, "_derive_compile — from_job 이 job.media 로 선분기 후 require_hwpx_template 백스톱"),
@@ -333,9 +325,9 @@ def test_hwpx_consumers_are_media_guarded() -> None:
     가드는 그 호출 경계에 놓인다(프리미티브 자신에 넣으면 CLI 의 raw 경로·bytes 입력과
     고도가 어긋난다).
 
-    **호출 수까지 못박는다(리뷰 #2)**: (파일, 심볼)로만 잡으면 이미 등재된 파일에 같은 심볼의
+    **호출 수까지 못박는다**: (파일, 심볼)로만 잡으면 이미 등재된 파일에 같은 심볼의
     새 미가드 호출이 조용히 통과한다. 각 (파일, 심볼)의 실 매치 수가 등재 수와 다르면(늘거나
-    줄거나) 실패시켜, 새 호출 지점 하나하나를 리뷰 경계에 세운다.
+    줄거나) 실패시켜 새 호출 지점을 검토 대상으로 만든다.
     """
     symbols = ("HwpxEngine", "extract_schema", "compile_status", "template_path_drift")
     pattern = re.compile(r"\b(" + "|".join(symbols) + r")\(")
@@ -359,7 +351,7 @@ def test_hwpx_consumers_are_media_guarded() -> None:
         "require_hwpx_template(path) 를 두고, 정당하면 _ALLOWED_HWPX_CONSUMERS 에 (수, 사유)로 "
         "등재하라:\n" + "\n".join(unlisted)
     )
-    # 등재 수 대조 — 한 자리라도 늘거나 줄면(새 호출·삭제) 실패(리뷰 #2: 파일·심볼 재사용 뚫림 봉합).
+    # 등재 수 대조 — 한 자리라도 늘거나 줄면(새 호출·삭제) 실패한다.
     miscounts = [
         f"{rel}:{symbol} 등재 {exp}회 ≠ 실제 {counts.get((rel, symbol), 0)}회"
         for (rel, symbol), (exp, _reason) in _ALLOWED_HWPX_CONSUMERS.items()
@@ -398,10 +390,8 @@ def test_packaging_entry_imports_resolve() -> None:
     """패키징 엔트리(``packaging/*.py``)의 앱 심볼 임포트가 실제로 해소되어야 한다.
 
     엔트리는 평소 테스트가 임포트하지 않고 **릴리스 빌드에서 처음 실행**되므로(``--selfcheck``),
-    앱 쪽에서 클래스를 다른 모듈로 옮기면 그 어긋남이 여기서만, 그것도 가장 늦게 터진다 —
-    실측된 회귀다(#148 슬라이스 3a 에서 ``TxtController`` 가 ``screens`` → ``screen_txt`` 로
-    옮겨가며 엔트리가 낡았고, 코덱스 리뷰가 P1 로 잡았다 — 이후 슬라이스 6 에서 ``screen_txt``
-    삭제·엔트리를 ``DraftController`` 로 재겨눔). 정적으로 못박아 빌드까지 미루지 않는다.
+    앱 쪽에서 클래스를 다른 모듈로 옮기면 그 어긋남이 릴리스 빌드에서 늦게 터진다.
+    정적으로 못박아 빌드까지 미루지 않는다.
     """
     import importlib
 

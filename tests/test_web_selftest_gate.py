@@ -4,13 +4,13 @@
 구조(전역 id 유일성·화면 루트)만 본다 — 렌더 로직은 안 돈다. 이 모듈은 그 위층을 메운다:
 실 :class:`~hwpxfiller.webapp.app.WebFrontend` + 실 컨트롤러 + 실 ``render()`` 를 pywebview 로
 구동하고 ``evaluate_js`` 로 DOM 을 되읽어 **렌더 거동**(창 부팅·기본 화면·KPI 실렌더·내비 실체)을
-CI 에서 가드한다. #29 봉합 검증에 쓴 일회용 드라이버를 커밋된 게이트로 승격한 것(#30 결정: 접근 A).
+CI 에서 가드한다.
 
 **Windows/WebView2 전용.** 데스크톱 세션이 없는 헤드리스 러너는 ``HWPX_SKIP_GUI_TESTS=1`` 로
 명시 옵트아웃한다 — 런타임 부재를 자동 감지해 조용히 스킵하지 않는다(confirm-or-alarm: 커버리지
 착시 금지). 실행 자리는 ``build.ps1``/``test.ps1`` (WebView2 존재). 이 경계는 "게이트 테스트"이지
-클라우드-CI 헤드리스 커버가 아니다 — 잔여(#27·#28)가 애초에 Windows 앱 focus/scroll/layout
-거동이라 정합적이다.
+클라우드-CI 헤드리스 커버가 아니다. 이 게이트가 확인하는 대상은 Windows 앱의
+focus/scroll/layout 거동이다.
 """
 from __future__ import annotations
 
@@ -71,9 +71,7 @@ class TestWebSelftestGate:
         assert selftest_result["title_dom"]
 
     def test_all_nav_buttons_rendered(self, selftest_result: dict) -> None:
-        # 내비(.navbtn) 가 실체로 그려짐 — 화면 소실 회귀 가드. 기대 수는 NAV_SCREENS
-        # 단일 출처(PR-5 리뷰 F7): matrix 제거 F9 → 실행 사망(슬라이스 3) → 작업 에디터
-        # 흡수 사망(슬라이스 5, 결정 39)의 역사는 그 목록의 주석이 진다.
+        # 내비(.navbtn) 가 실체로 그려짐 — 화면 소실 회귀 가드. 기대 수는 NAV_SCREENS가 소유한다.
         from test_web_dom_contract import NAV_SCREENS
         assert selftest_result["nav_count"] == len(NAV_SCREENS)
 
@@ -86,7 +84,7 @@ class TestWebSelftestGate:
         assert selftest_result["pool_rendered"] is True
 
     def test_pool_source_buttons_present(self, selftest_result: dict) -> None:
-        # 2소스 진입점(#26 #6) — 작업·기안(구 txt 흡수, 슬라이스 6)의 '등록 데이터…' 버튼이 실 DOM 에 있다.
+        # 2소스 진입점(#26 #6) — 작업·기안의 '등록 데이터…' 버튼이 실 DOM 에 있다.
         assert selftest_result["pool_buttons"] is True
 
     def test_each_action_family_click_dispatches_and_returns_snapshot(
@@ -116,8 +114,7 @@ class TestWebSelftestGate:
         assert selftest_result["home_kpi_count"] >= 1
 
     def test_modal_opens_with_initial_focus_inside(self, selftest_result: dict) -> None:
-        # 커스텀 모달을 열면 hidden 해제 + 초기 포커스가 모달 안(draftSaveTplName)으로 들어간다
-        # (#27/#28 — 구 pasteModal 은 슬라이스 6 삭제, 같은 Modal 헬퍼 쓰는 생존 모달로 재겨눔).
+        # 커스텀 모달을 열면 hidden 해제 + 초기 포커스가 모달 안(draftSaveTplName)으로 들어간다.
         m = selftest_result["modal_a11y"]
         assert m["opened"] is True
         assert m["focus_in"] == "draftSaveTplName"
@@ -175,7 +172,7 @@ class TestWebSelftestGate:
         )
 
     def test_confirm_modal_serializes_single_inflight(self, selftest_result: dict) -> None:
-        # PR #92 리뷰 #1: promise 다이얼로그는 동시 1건 — 미결 confirm 위에 두 번째 confirm 을
+        # promise 다이얼로그는 동시 1건 — 미결 confirm 위에 두 번째 confirm 을
         # 요청하면 즉시 안전측 거절(false) + loud(alert) 이어야 하고, 첫 다이얼로그의 본문·리스너가
         # 덮이면 안 된다(덮이면 OK 1클릭에 두 파괴 동작이 디스패치되는 이중 삭제 결함).
         m = selftest_result["modal_a11y"]
@@ -194,7 +191,7 @@ class TestWebSelftestGate:
         )
 
     def test_confirm_modal_traps_tab_within_card(self, selftest_result: dict) -> None:
-        # PR #92 리뷰 #1: 포커스 트랩 — 모달의 마지막 포커서블(확인)에서 Tab 이 배경 버튼으로
+        # 포커스 트랩 — 모달의 마지막 포커서블(확인)에서 Tab 이 배경 버튼으로
         # 새지 않고 모달 안 첫 요소(취소)로 순환해야 한다. 배경 버튼 Tab+Enter 로 두 번째 파괴
         # 동작이 발화되는 경로(이중/오대상 삭제·생성 동시 실행)의 원천 차단.
         m = selftest_result["modal_a11y"]
@@ -240,8 +237,7 @@ class TestWebSelftestGate:
 
     def test_real_screen_renders_survive_rerender(self, selftest_result: dict) -> None:
         # 3개 실화면이 shipped __push 경로로 실 스냅샷을 재렌더해도 던지지 않는다 —
-        # Preserve.around 래핑이 실 render() 를 깨지 않음을 실 DOM 에서 가드(#28 완료기준).
-        # (구 txt 는 슬라이스 6 삭제 — 같은 세션 팩토리를 쓰는 「기안」으로 재겨눔.)
+        # Preserve.around 래핑이 실 render() 를 깨지 않음을 실 DOM 에서 가드한다.
         p = selftest_result["preserve_real"]
         for scr in ("draft", "editor", "job"):
             assert p.get(scr) == "ok", f"{scr} 실화면 재렌더 실패: {p.get(scr)!r}"
@@ -259,7 +255,7 @@ class TestWebSelftestGate:
         )
 
     def test_job_mirror_table_renders_four_state_rows(self, selftest_result: dict) -> None:
-        # 「작업」 본문 존 거울(블록 6 ⓑ, 슬라이스 2) — 합성 스냅샷을 실 render() 에 흘려 필드
+        # 「작업」 본문 존 거울 — 합성 스냅샷을 실 render() 에 흘려 필드
         # 채움 테이블이 실 WebView2 에서 4행(채움·채움+표시형·미입력·빈칸)으로 그려지고 미입력
         # 행이 클릭형(role=button)인지 되읽는다. 배지=거울의 행(별도 UI 아님)의 실물 검증.
         j = selftest_result["job_mirror"]
@@ -272,13 +268,13 @@ class TestWebSelftestGate:
         assert any("비움 확정" in c for c in chips), f"의도적 빈칸 칩 미렌더: {chips!r}"
 
     def test_job_restate_block_lists_selected_names(self, selftest_result: dict) -> None:
-        # 재진술 블록(블록 6 D1-B, 슬라이스 2) — 선택 2행의 이름 목록이 상시 블록으로 실렌더된다.
+        # 재진술 블록 — 선택 2행의 이름 목록이 상시 블록으로 실렌더된다.
         j = selftest_result["job_mirror"]
         assert j["restate_shown"] is True, "재진술 블록이 표시되지 않았습니다(선택 있음)."
         assert j["restate_names"] == 2, f"재진술 이름 목록이 선택 수와 다릅니다: {j['restate_names']!r}"
 
     def test_job_filter_surface_renders_table_chips_strip(self, selftest_result: dict) -> None:
-        # 필터 표면(블록 4, 슬라이스 4 PR-2b) — 합성 필터 스냅샷이 실 WebView2 에서:
+        # 필터 표면 — 합성 필터 스냅샷이 실 WebView2 에서:
         # 가시 1행 테이블 + <mark> 하이라이트(Python 세그먼트를 그대로 칠함) + 열 머리 필터
         # 아이콘 + 칩 줄(정의 재진술)·가지 ×(프루닝) + 필터 밖 선택 스트립(결정 3) + 선택
         # 유래 수치 병기(S4)로 되읽힌다.
@@ -325,20 +321,18 @@ class TestWebSelftestGate:
         assert j["panel_hidden"] is True, "colpanel [hidden] 이 display:flex 에 져서 항시 떠 있습니다."
 
     def test_job_guard_body_composes_counts_and_losses(self, selftest_result: dict) -> None:
-        # 세션 가드 확인 본문(결정 27 종류별 수치 재진술, 슬라이스 4 PR-3) — 합성 문안을 되읽어
+        # 세션 가드 확인 본문(결정 27 종류별 수치 재진술) — 합성 문안을 되읽어
         # 수치 배치·소실 목록(행 선택+필터 정의)이 조용히 드리프트하지 않게 한다(RC-02 짝 동형).
         body = selftest_result["job_mirror"]["guard_body"]
         assert "직접 선택 3행" in body, f"선택 수치 미표기: {body!r}"
         assert "정의 매치 2" in body and "정의 밖 1" in body, f"S4 델타 병기 누락: {body!r}"
         assert "작업을 전환하면" in body, f"전이 동사구 누락: {body!r}"
         assert "필터 정의(2개 조건)" in body, f"필터 소실 재진술 누락: {body!r}"
-        # 데이터 재겨눔 사전 확인은 JS 전용 가드 지점 — 존재 핀(삭제 = 결정 26 절반의 조용한
-        # 회귀인데 다른 테스트가 못 잡는다, 리뷰 #6).
+        # 데이터 재겨눔 사전 확인은 JS 전용 가드 지점이라 존재 자체를 핀한다.
         assert selftest_result["job_mirror"]["data_guard_wired"] is True, (
             "confirmDataSwapIfArmed 배선이 사라졌습니다 — 데이터 재겨눔 가드(결정 26) 회귀."
         )
-        # 직전 필터 재적용 어포던스(결정 28) — 양 분기 핀(켜짐만 고정하면 "항상 떠 있는
-        # 죽은 버튼" 회귀가 초록으로 샌다, 리뷰 #3).
+        # 직전 필터 재적용 어포던스(결정 28) — 양 분기를 핀해 항상 떠 있는 죽은 버튼을 막는다.
         assert selftest_result["job_mirror"]["reapply_shown"] is True, (
             "reapply_available=true 인데 「직전 필터 재적용」 버튼이 표시되지 않았습니다."
         )
@@ -512,14 +506,14 @@ class TestWebSelftestGate:
         assert d["fork_fork_hidden"] is True, "휘발(사본)인데 「사본으로 편집」이 남아 있습니다(dead control)."
         assert d["fork_modbadge_shown"] is True, "사본(수정됨)인데 수정됨 표지가 뜨지 않았습니다."
         assert d["fork_src_editable"] is True, "사본인데 원문이 편집 불가입니다(포크 = 읽기 전용 해제)."
-        # 저장 모드 원문 정의 잠금(리뷰 5a P1) — 콤보·붙여넣기까지(textarea 만이 아니라). 데이터
+        # 저장 모드 원문 정의 잠금 — 콤보·붙여넣기까지(textarea 만이 아니라). 데이터
         # 컨트롤은 안 잠근다. 휘발 귀환 시 다시 풀린다(조용한 정의 교체 차단 = 계약 거짓말 봉합).
         assert d["saved_tpl_locked"] is True, "저장 모드인데 템플릿 콤보·붙여넣기가 잠기지 않았습니다(원문 조용한 교체)."
         assert d["saved_data_unlocked"] is True, "저장 모드인데 데이터 컨트롤까지 잠겼습니다(과잉 잠금)."
         assert d["back_restores_session"] is True, "휘발 귀환에 세션 패널이 서지 않았습니다."
         assert d["back_persist_hidden"] is True, "휘발 귀환에 유형·확정 열이 다시 숨지 않았습니다."
         assert d["vol_tpl_unlocked"] is True, "휘발 귀환에 템플릿 콤보·붙여넣기가 다시 풀리지 않았습니다."
-        # 복원 결속 정직 표시(리뷰 5a P2) — 데이터 미연결이어도 결속된 열이 드롭다운에 selected.
+        # 복원 결속 정직 표시 — 데이터 미연결이어도 결속된 열이 드롭다운에 selected.
         assert d["restored_bind_option"] == "selected", (
             f"복원 결속(데이터 미연결)이 드롭다운에 정직히 표시되지 않았습니다: {d['restored_bind_option']!r}"
         )
@@ -531,7 +525,7 @@ class TestWebSelftestGate:
         assert d["save_note_hidden"] is True, "저장 활성인데 비활성 사유가 남아 있습니다."
         assert d["save_label_volatile"] == "기안으로 저장", f"휘발 라벨이 다릅니다: {d['save_label_volatile']!r}"
         assert d["save_label_saved"] == "다른 이름으로 저장", f"저장 라벨이 다릅니다: {d['save_label_saved']!r}"
-        # 세션 교체 가드 문안(리뷰 F6) — 「새 기안」은 세션을 교체하므로 미저장 매핑 편집만으로
+        # 세션 교체 가드 문안 — 「새 기안」은 세션을 교체하므로 미저장 매핑 편집만으로
         # 무장해도 그 편집을 열거해야 "사라지는 것: ."(빈 목록)이 되지 않는다. 데이터 스왑은 매핑을
         # 유지하므로 같은 상태에서 매핑 편집을 열거하면 over-warn(문안≠집합 결함류 양방향).
         assert "미저장 매핑 편집" in d["guard_body_new_draft"], (
@@ -545,7 +539,7 @@ class TestWebSelftestGate:
         )
 
     def test_job_edit_mode_hosts_definition_surface(self, selftest_result: dict) -> None:
-        # 에디터 흡수(블록 2 개정, 결정 39~41) — 편집 모드 전환이 실 WebView2 에서 편집 호스트를
+        # 편집 모드 전환이 실 WebView2 에서 편집 호스트를
         # 켜고 세션 4존을 숨기며(배타 표시 = B-9 overlay/hidden 눈검증의 자동판), 이사한 정의
         # surface 가 같은 3분류를 신규=단계(번호 표지)·편집=탭(자유 이동 버튼)으로 갈라 렌더한다.
         j = selftest_result["job_editmode"]
@@ -562,7 +556,7 @@ class TestWebSelftestGate:
         )
 
     def test_editor_chip_live_renders_ownership_and_toggle_chips(self, selftest_result: dict) -> None:
-        # 매핑 분류 칩-라이브(블록 2 결정 12·13, 슬라이스 5 PR-3) — 합성 매핑 스냅샷을 실
+        # 매핑 분류 칩-라이브(결정 12·13) — 합성 매핑 스냅샷을 실
         # render() 에 흘려 사용할 헤더가 즉시 토글 칩(체크박스 스테이징 소거)으로, 미사용
         # 구역이 펼쳐지고, 소유권 태그 4종과 touched 행 ↩(자동 제안 복귀)가 흡수된 편집
         # 호스트(#jobEditHost) 실 WebView2 에 그려지는지 되읽는다(백엔드는 test_mapping_state).
@@ -608,7 +602,7 @@ class TestWebSelftestGate:
         assert t["flat_heads"] == 0 and t["flat_cards"] == 1, f"퇴화 평면 위반: {t!r}"
 
     def test_editor_library_picker_renders_grouped_select(self, selftest_result: dict) -> None:
-        # 에디터 1단계 피커(#108 슬라이스 3) — 라이브러리가 관리 화면과 같은 그룹 구획(선택 전용)
+        # 에디터 1단계 피커 — 라이브러리가 관리 화면과 같은 그룹 구획(선택 전용)
         # 으로 실 WebView2 에 서는지. 접힌 그룹 행 제외·현 선택 표지·필터 고지·퇴화 평면 되읽기.
         e = selftest_result["editor_lib"]
         assert e.get("error") is None, f"에디터 피커 프로브 예외: {e.get('error')!r}"
@@ -620,9 +614,9 @@ class TestWebSelftestGate:
         assert e["import_btn"] is True, "「가져오기…」 어포던스가 없습니다."
         assert e["filter_notice"] is True, "매체 자동 필터 고지가 렌더되지 않았습니다(결정 6)."
         assert e["caret_collapsed"] == "visible", f"접힌 그룹 화살표가 상시 노출이 아닙니다: {e!r}"
-        # #138 리뷰 F13 — 그룹 헤더 안정 id(재렌더 뒤 Preserve 포커스 복원 근거).
+        # 그룹 헤더 안정 id는 재렌더 뒤 Preserve 포커스 복원의 근거다.
         assert e["grp_head_has_id"] is True, "그룹 헤더에 안정 id 가 없어 토글 뒤 포커스가 사라집니다."
-        # #138 리뷰 F14 — 긴 파일명이 선택 동작을 밀지 않게 이름 칸이 말줄임/축소된다.
+        # 긴 파일명이 선택 동작을 밀지 않게 이름 칸이 말줄임/축소된다.
         assert e["fname_ellipsis"] == "ellipsis", f"파일명 칸 말줄임 미적용: {e['fname_ellipsis']!r}"
         assert e["fname_minwidth"] == "0px", f"파일명 칸 min-width:0 미적용: {e['fname_minwidth']!r}"
         # 퇴화 불변식 — 그룹 0개면 헤더 없는 평면.
@@ -641,7 +635,7 @@ class TestWebSelftestGate:
         )
 
     def test_job_overwrite_body_composes_counts_and_names(self, selftest_result: dict) -> None:
-        # 파괴적 덮어쓰기 확인 본문(A-2-22) — 백엔드 overwrite_text 단언 폐기의 커버리지 짝(리뷰).
+        # 파괴적 덮어쓰기 확인 본문 — 수치와 이름을 실 DOM에서 함께 검증한다.
         # 수치 배치(총량·파괴분·신규분)와 파일 이름 목록이 합성되는지 실 함수 출력으로 되읽는다.
         # count 스왑·이름 목록 누락이 조용히 배포돼 사용자가 축소된 그림 위에서 덮어쓰는 것을 막는다.
         body = selftest_result["job_mirror"]["ow_body"]
@@ -706,13 +700,9 @@ def test_theme_choice_persists_across_restart_without_flicker(tmp_path) -> None:
     dark_card = gen.load_tokens()["dark"]["color"]["card_bg"]
     assert tp["a_card"] == dark_card, f"다크 --a-card({dark_card}) 미해소: {tp!r}"
 
-# NOTE(#74): test_stale_cached_asset_not_served_across_restart 삭제 — private_mode=True(인메모리
-# 프로필) 복원으로 재시작 간 공유 디스크 캐시가 없어 스테일 자산 서빙 실패모드가 구조적으로
-# 불가능해졌다. 지키던 헬퍼 _purge_webview_http_cache 와 asset_stamp 프로브도 함께 은퇴(#69/#71).
-# 리뷰3(#74) 보강: InPrivate 의미론이 미래 pywebview/WebView2 에서 변해도, 부팅마다 webview_root
-# 를 통째 청소하고 고정 프로필을 새로 만들므로(단일 인스턴스 가드가 이 홈에 우리뿐임을 보장)
-# 재시작 간 공유 캐시·구판 잔재는 우리 코드 층에서 이중 차단된다 — 부팅 청소 가드는
-# test_webapp_profile.test_prepare_purges_orphans_and_legacy_layout.
+# InPrivate 의미론이 바뀌어도 부팅마다 webview_root를 청소하고 고정 프로필을 새로 만든다.
+# 재시작 간 공유 캐시·구판 잔재 차단은
+# test_webapp_profile.test_prepare_purges_orphans_and_legacy_layout이 검증한다.
 
 
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
