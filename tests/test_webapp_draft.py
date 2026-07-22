@@ -663,6 +663,30 @@ def test_saved_resave_detects_external_content_drift(tmp_path):
     assert res2["ok"] is True
 
 
+def test_drift_confirmation_rebinds_when_version_changes_again(tmp_path):
+    """드리프트 확인 문안은 관측한 **버전**에 묶인다(리뷰 5c 6R P1 / 273) — 모달이 열린 사이 또
+    다른 외부 버전으로 바뀌면 재확인한다(victim TOCTOU와 동형, 자기 재저장은 이름 불변이라 내용
+    다이제스트로 못박는다). 안 묶으면 v2 확인 문안이 v3 에도 맞아 무확인 덮는다."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "제목: {{공고명}}",
+               mappings=(FieldMapping(template_field="공고명", source="공고명", type="text"),))
+    ctrl.dispatch("select_job", {"name": "기안A"})       # v1 지문 캐시
+
+    def _external(col):  # 다른 표면이 이 작업의 매핑을 바꾼다
+        jobs.save(Job(name="기안A", template_path=str(tmp_path / "job_a.txt"),
+                      mapping=MappingProfile(name="기안A", mappings=[
+                          FieldMapping(template_field="공고명", source=col, type="text")])))
+
+    _external("v2열")
+    r1 = ctrl.dispatch("save_job", {"name": "기안A"})    # v2 드리프트 확인 문안
+    assert r1["needs_confirm"] is True
+    _external("v3열")                                    # 모달 열린 사이 v3 로 또 바뀜
+    r2 = ctrl.dispatch("save_job",
+                       {"name": "기안A", "confirm": True, "confirmed_text": r1["confirm_text"]})
+    assert r2["needs_confirm"] is True, "버전이 또 바뀌었는데 v2 확인으로 v3 를 무확인 덮었습니다(273)."
+    assert r2["confirm_text"] != r1["confirm_text"]      # 새 버전 = 새 다이제스트 문안
+
+
 def test_overwrite_slug_collision_uses_requested_name(tmp_path):
     """slug 만 같고 표기가 다른 victim 을 덮으면 저장분 이름이 **요청 이름**이 된다(리뷰 5c 3R P2 / 235).
 
