@@ -35,6 +35,35 @@
     return { show, hide };
   }
 
+  /* 접힘은 보기 상태라 클릭한 프레임에 먼저 반영하고, 영속 요청은 뒤에서 보낸다.
+     판정 데이터는 건드리지 않는다. 실패하면 현 DOM 이 아직 살아 있을 때만 되돌리고 loud 하게
+     알린다 — job/draft/template 세 화면이 같은 즉답·실패 규율을 공유한다(#217 R3). */
+  function setGroupExpanded(button, expanded) {
+    button.setAttribute("aria-expanded", expanded ? "true" : "false");
+    const caret = button.querySelector(".grp-caret");
+    if (caret) caret.textContent = expanded ? "▾" : "▸";
+    const shell = button.closest(".job-grp");
+    const body = shell && shell.nextElementSibling;
+    if (body && body.matches(".job-grp-rows,.tpl-grp-rows")) body.hidden = !expanded;
+  }
+
+  function toggleGroup(button, persist, errorMessage) {
+    const wasExpanded = button.getAttribute("aria-expanded") === "true";
+    setGroupExpanded(button, !wasExpanded);
+    let request;
+    try {
+      request = persist();
+    } catch (err) {
+      setGroupExpanded(button, wasExpanded);
+      window.alert((errorMessage || "그룹 접힘 상태를 저장하지 못했습니다.") + "\n" + String(err));
+      return;
+    }
+    Promise.resolve(request).catch((err) => {
+      if (button.isConnected) setGroupExpanded(button, wasExpanded);
+      window.alert((errorMessage || "그룹 접힘 상태를 저장하지 못했습니다.") + "\n" + String(err));
+    });
+  }
+
   /* 그룹 이동 다이얼로그 — 기존 그룹 라디오 + 「그룹 없음(해제)」 + 「새 그룹」(data-new 로 값
      센티넬 충돌 봉쇄, 포커스하면 자동 선택). 빈 새 이름은 조용히 넘기지 않고 인라인 재진술
      (모달 유지). 대상 이름 문안·확정 디스패치는 화면이 open() 인자로 주입한다. */
@@ -102,5 +131,5 @@
     return { open, wire };
   }
 
-  window.GroupList = { createMenu, createMoveDialog };
+  window.GroupList = { createMenu, createMoveDialog, toggleGroup };
 })();

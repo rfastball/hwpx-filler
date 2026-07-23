@@ -157,6 +157,8 @@ class EditorController:
         # 미변경 세션의 헛확인(폐기 확인·T2 고지)을 억제한다(리뷰 — confirm-or-alarm 의
         # 「불필요한 프롬프트 억제」 확장).
         self._session_clean = False
+        # 「모두 해제」 직전 확정 집합 1슬롯. 다음 해제/세션 리셋이 덮으며 durable 저장하지 않는다.
+        self._unconfirm_undo: "list[int]" = []
 
     def _set_notice(self, text: str, level: str = "muted") -> None:
         self.notice_text = text
@@ -303,6 +305,7 @@ class EditorController:
             "name": self.job_name,
             "pattern": self.pattern,
             "has_unsaved_work": self.has_unsaved_work(),
+            "unconfirm_undo_count": len(self._unconfirm_undo),
             # #26 편집 모드·프로파일·자동등록 표면.
             "editing_origin": self._editing_origin,
             "dataset_name": self.dataset_name,
@@ -728,6 +731,12 @@ class EditorController:
         """
         self._reset()
 
+    def _do_discard_session(self, p: dict) -> None:
+        """신규 마법사 취소 — 확인을 마친 호출측이 휘발 초안을 실제로 폐기한다(#218 G5)."""
+        if self._editing_origin:
+            raise ValueError("저장된 작업 편집은 신규 마법사 취소로 닫을 수 없습니다.")
+        self._reset()
+
     # ---- 마법사/탭 이동
     def _do_goto_step(self, p: dict) -> None:
         """단계 이동 — 신규(마법사)는 전진 게이트, 편집(탭)은 자유 이동(결정 41).
@@ -986,8 +995,19 @@ class EditorController:
         """재진술·확인된 미매칭 행을 의도적 비움으로 확정."""
         self.model.confirm_fields(list(p.get("fields", [])))
 
-    def _do_unconfirm_all(self, p: dict) -> None:
+    def _do_unconfirm_all(self, p: dict) -> dict:
+        self._unconfirm_undo = [i for i, row in enumerate(self.model.rows) if row.confirmed]
         self.model.unconfirm_all()
+        return {"undo_count": len(self._unconfirm_undo)}
+
+    def _do_restore_confirmed(self, p: dict) -> dict:
+        restored = 0
+        for index in self._unconfirm_undo:
+            if index < len(self.model.rows):
+                self.model.set_confirmed(index, True)
+                restored += 1
+        self._unconfirm_undo = []
+        return {"restored": restored}
 
     def _do_step_preview(self, p: dict) -> None:
         if self.records:

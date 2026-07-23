@@ -49,6 +49,7 @@
        인라인 재진술(조용한 강등 금지). */
     let panelCol = null;   // 열린 패널의 열(null=닫힘)
     let panelData = null;  // 패널이 연 시점의 filter_panel 질의 결과(체크 상태 병합용, 리뷰 #4)
+    let panelEpoch = 0;    // 닫힘·다른 열 열기 뒤 늦은 응답이 현 패널을 덮지 못하게 한다.
     const RANGE_OPS = [["ge", "≥"], ["gt", ">"], ["le", "≤"], ["lt", "<"], ["eq", "="], ["ne", "≠"]];
 
     function closeColPanel() {
@@ -57,20 +58,56 @@
       p.innerHTML = "";
       panelCol = null;
       panelData = null;
+      panelEpoch += 1;
     }
 
     async function openColPanel(col, anchorBtn) {
       // 앵커 좌표는 await **전에** 캡처한다 — dispatch 가 push 를 먼저 흘리면 head 재렌더로
       // anchorBtn 이 DOM 에서 떨어져 rect 가 0이 되고 패널이 엉뚱한 위치에 뜬다(리뷰 #5).
       const rectBefore = anchorBtn.getBoundingClientRect();
-      const d = await Bridge.call(SCREEN, "filter_panel", { column: col });
       panelCol = col;
+      panelData = null;
+      const epoch = ++panelEpoch;
+      renderColPanelShell(col);
+      positionColPanel(rectBefore);
+      let d;
+      try {
+        d = await Bridge.call(SCREEN, "filter_panel", { column: col });
+      } catch (err) {
+        if (epoch === panelEpoch && panelCol === col) {
+          renderColPanelError(col, err);
+          positionColPanel(rectBefore);
+        }
+        return;
+      }
+      if (epoch !== panelEpoch || panelCol !== col) return;
       panelData = d;
       renderColPanel(d);
       // 재렌더됐을 수 있으니 현 DOM 의 같은 열 버튼을 재조회하고, 없으면 캡처 좌표로.
       // 자기 head 스코프로만 찾는다 — 두 인스턴스(작업·txt)의 .fico 혼선 차단.
       const btnNow = $(ids.tableHead).querySelector(`.fico[data-col="${CSS.escape(col)}"]`);
       positionColPanel(btnNow || rectBefore);
+    }
+
+    function panelHead(col) {
+      return `<div class="cp-head"><span>'${esc(col)}' 필터</span>` +
+        `<button data-act="panel-close" aria-label="닫기">✕</button></div>`;
+    }
+
+    function renderColPanelShell(col) {
+      const p = $(ids.colPanel);
+      p.innerHTML = panelHead(col) +
+        `<div class="cp-sec cp-loading" role="status">불러오는 중…</div>`;
+      p.setAttribute("aria-busy", "true");
+      p.hidden = false;
+    }
+
+    function renderColPanelError(col, err) {
+      const p = $(ids.colPanel);
+      p.innerHTML = panelHead(col) +
+        `<div class="cp-sec cp-err" role="alert">필터를 불러오지 못했습니다. ${esc(String((err && err.message) || err))}</div>`;
+      p.removeAttribute("aria-busy");
+      p.hidden = false;
     }
 
     function positionColPanel(anchor) {
@@ -112,14 +149,14 @@
           `<input class="field" data-ctext type="text" value="${esc(d.text || "")}" ` +
           `placeholder="치는 동안 바로 좁혀집니다" data-busy-lock></div>`;
       p.innerHTML =
-        `<div class="cp-head"><span>'${esc(d.column)}' 필터</span>` +
-        `<button data-act="panel-close" aria-label="닫기">✕</button></div>` +
+        panelHead(d.column) +
         range +
         `<div class="cp-sec"><span class="cp-cap">값 선택(같은 열 안은 OR)</span>` +
         `<div class="cp-vals">` +
         `<label><input type="checkbox" data-val-all${allOn ? " checked" : ""}><b>(전체)</b></label>` +
         `${vals}</div></div>` +
         `<div class="cp-acts"><button class="btn sm" data-act="col-clear" data-busy-lock>이 열 조건 지우기</button></div>`;
+      p.removeAttribute("aria-busy");
       p.hidden = false;
     }
 
@@ -295,7 +332,18 @@
        앵커 상태는 마지막 디스패치 값(selAnchorState)을 쓴다 — LAST 스냅샷은 왕복 전이라
        앵커 자신의 직전 토글이 아직 안 비쳐, 빠른 클릭+Shift 에서 범위 전체가 반대로
        전파되는 stale 결함이 있다(리뷰 #2). */
-    function toggleRow(idx, shift) {
+    function applyRowSelection(tr, value) {
+      if (!tr) return;
+      tr.classList.toggle("on", value);
+      tr.setAttribute("aria-selected", value ? "true" : "false");
+      const box = tr.querySelector('input[type="checkbox"]');
+      if (box) box.checked = value;
+      const rows = (LAST && LAST.table && LAST.table.rows) || [];
+      const row = rows.find((r) => r.index === Number(tr.dataset.i));
+      if (row) row.selected = value;
+    }
+
+    function toggleRow(idx, shift, sourceRow) {
       const rows = (LAST && LAST.table && LAST.table.rows) || [];
       const visOrder = rows.map((r) => r.index);
       if (shift && selAnchor !== null && visOrder.includes(selAnchor) && visOrder.includes(idx)) {
@@ -304,19 +352,25 @@
         const anchorRow = rows.find((r) => r.index === selAnchor);
         const value = selAnchorState !== null
           ? selAnchorState : !!(anchorRow && anchorRow.selected);
+        range.forEach((i) => {
+          applyRowSelection($(ids.tableBody).querySelector(`tr[data-i="${i}"]`), value);
+        });
         Bridge.call(SCREEN, "select_range", { indices: range, value });
         return;
       }
       selAnchor = idx;
-      const row = rows.find((r) => r.index === idx);
-      selAnchorState = !(row && row.selected);  // 이번 디스패치가 만드는 상태 = 앵커의 현재
+      const tr = sourceRow || $(ids.tableBody).querySelector(`tr[data-i="${idx}"]`);
+      // 왕복 전 재클릭도 화면의 현재 표지를 기준으로 계산한다. LAST 기반이면 첫 push 전 두 번째
+      // 클릭이 같은 값을 다시 보내 최종 상태가 뒤집히지 않는 경합이 생긴다(#217 R2).
+      selAnchorState = !(tr && tr.getAttribute("aria-selected") === "true");
+      applyRowSelection(tr, selAnchorState);
       Bridge.call(SCREEN, "toggle_record", { index: idx, value: selAnchorState });
     }
 
     function onTableClick(e) {
       const tr = e.target.closest("tr[data-i]");
       if (!tr) return;
-      toggleRow(Number(tr.dataset.i), e.shiftKey);
+      toggleRow(Number(tr.dataset.i), e.shiftKey, tr);
     }
 
     function onTableKey(e) {
@@ -324,7 +378,7 @@
       const tr = e.target.closest("tr[data-i]");
       if (!tr) return;
       e.preventDefault();
-      toggleRow(Number(tr.dataset.i), e.shiftKey);
+      toggleRow(Number(tr.dataset.i), e.shiftKey, tr);
     }
 
     /* ---- 칩 줄 — 정의 재진술(describe_parts 단일 출처) + 가지 칩(× 프루닝) ---- */

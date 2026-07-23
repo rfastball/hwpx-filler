@@ -12,6 +12,8 @@
   let LAST = { hwpx: {}, txt: {} };   // 스냅샷 캐시 — 그룹명·현 그룹·행 조회(메뉴/다이얼로그).
   let editMode = "new", editPath = "";
   let menuFor = null;                 // 열린 ⋮ 메뉴: {media, kind:"row"|"group", key?, group?, item?}
+  let editBaseline = { name: "", content: "" };
+  let editAllowClose = false;
 
   /* 그룹 목록 기제(부유 ⋮ 메뉴·이동 다이얼로그) = 공용 팩토리(grouplist.js, job.js 와 단일 출처).
      위치잡기·다이얼로그 조립은 팩토리 소유. 여기는 매체 축·메뉴 내용·확정 디스패치만 주입한다. */
@@ -72,8 +74,9 @@
             ` aria-haspopup="true" aria-label="그룹 관리">⋮</button>`
           : "") +
       `</div>`;
-    const body = sec.collapsed ? "" :
-      `<div class="tpl-grp-rows">${sec.items.map((it) => cardHtml(media, it)).join("")}</div>`;
+    const body =
+      `<div class="tpl-grp-rows"${sec.collapsed ? " hidden" : ""}>` +
+      `${sec.items.map((it) => cardHtml(media, it)).join("")}</div>`;
     return head + body;
   }
 
@@ -210,7 +213,7 @@
     if (r && r.needs_confirm) {
       if (await window.Modal.confirm({
         body: `'${r.new}' 그룹이 이미 있습니다. '${old}' 의 ${r.count}개를 '${r.new}'(${r.target}개)에 합칠까요?`,
-        returnFocus,
+        confirmLabel: "합치기", cancelLabel: "취소", returnFocus,
       })) {
         await Bridge.call(SCREEN, "rename_group", { media, group: old, new: val, confirm: true });
       }
@@ -223,27 +226,30 @@
     const r = await Bridge.call(SCREEN, "disband_group", { media, group: name });
     if (r && r.needs_confirm && (await window.Modal.confirm({
       body: `'${name}' 그룹을 해산하면 ${r.count}개가 '그룹 없음'으로 이동합니다. 해산할까요?`, returnFocus,
+      confirmLabel: "해산", cancelLabel: "취소",
     }))) {
       await Bridge.call(SCREEN, "disband_group", { media, group: name, confirm: true });
     }
   }
 
-  /* ---- 삭제(HWPX·TXT 공통 · 확인 라운드트립) ---- */
+  /* ---- 삭제(HWPX·TXT 공통 · 30일 휴지통 + 최근 1건 복원) ---- */
   async function deleteTemplate(media, item, returnFocus) {
     if (!item) return;
     const r = await Bridge.call(SCREEN, "delete", { media, path: item.path });
-    if (r && r.needs_confirm && (await window.Modal.confirm({
-      body: r.confirm_text + "\n\n삭제할까요?", returnFocus,
-    }))) {
-      await Bridge.call(SCREEN, "delete", { media, path: item.path, confirm: true });
-    }
+    if (r && r.undo) window.UndoToast.show(`템플릿 '${item.name}' 을(를) 휴지통으로 옮겼습니다.`, async () => {
+      const restored = await Bridge.call(SCREEN, "undo_delete", {});
+      if (restored && restored.ok === false) throw new Error(restored.error);
+    });
   }
 
   /* ---- HWPX 상태 게이트 액션 ---- */
   async function doCompile(path) {
     const res = await Bridge.call(SCREEN, "compile", { path });
     if (res && res.needs_confirm) {
-      if (await window.Modal.confirm({ body: res.confirm_text + "\n\n지금 변환할까요?" })) {
+      if (await window.Modal.confirm({
+        body: res.confirm_text + "\n\n지금 변환할까요?",
+        confirmLabel: "제자리 변환", cancelLabel: "취소", danger: true,
+      })) {
         await Bridge.call(SCREEN, "compile", { path, confirm: true });
       }
     }
@@ -276,7 +282,16 @@
       return;
     }
     const toggle = e.target.closest(".job-grp-head[data-grp-toggle]");
-    if (toggle) { Bridge.call(SCREEN, "toggle_group", { media, group: toggle.getAttribute("data-grp-toggle") }); return; }
+    if (toggle) {
+      GroupList.toggleGroup(
+        toggle,
+        () => Bridge.call(SCREEN, "toggle_group", {
+          media, group: toggle.getAttribute("data-grp-toggle"),
+        }),
+        "템플릿 그룹 접힘 상태를 저장하지 못했습니다."
+      );
+      return;
+    }
     const grpMore = e.target.closest(".grp-more[data-grp-more]");
     if (grpMore) { toggleRowMenu(media, "group", grpMore.getAttribute("data-grp-more"), grpMore); return; }
     const rowMore = e.target.closest(".tplcard-more[data-tpl-more]");
@@ -318,8 +333,40 @@
     $("txtNameRow").style.display = mode === "new" ? "" : "none";
     $("txtEditName").value = "";
     $("txtEditContent").value = content || "";
+    editBaseline = { name: "", content: content || "" };
+    editAllowClose = false;
+    $("txtEditError").style.display = "none";
     const focusTo = mode === "new" ? $("txtEditName") : $("txtEditContent");
-    window.Modal.open("txtEditModal", { initialFocus: focusTo, returnFocus });
+      window.Modal.open("txtEditModal", {
+      initialFocus: focusTo, returnFocus,
+      beforeClose: () => {
+        if (editAllowClose || !editModalDirty()) return true;
+        confirmDiscardEdit();
+        return false;
+      },
+    });
+  }
+
+  function editModalDirty() {
+    return $("txtEditName").value !== editBaseline.name ||
+      $("txtEditContent").value !== editBaseline.content;
+  }
+
+  async function confirmDiscardEdit() {
+    if (!editModalDirty()) {
+      editAllowClose = true;
+      window.Modal.close("txtEditModal");
+      return;
+    }
+    const ok = await window.Modal.confirm({
+      title: "편집 내용 버리기",
+      body: "저장하지 않은 템플릿 내용이 사라집니다.",
+      confirmLabel: "편집 내용 버리기", cancelLabel: "계속 편집",
+    });
+    if (ok) {
+      editAllowClose = true;
+      window.Modal.close("txtEditModal");
+    }
   }
 
   async function submitEditModal() {
@@ -330,9 +377,12 @@
       } else {
         await Bridge.call(SCREEN, "txt_edit", { path: editPath, content });
       }
+      editAllowClose = true;
       window.Modal.close("txtEditModal");
     } catch (err) {
-      window.alert(String((err && err.message) || err));  // confirm-or-alarm: 검증 실패 시끄럽게.
+      const note = $("txtEditError");
+      note.textContent = String((err && err.message) || err);
+      note.style.display = "block";
     }
   }
 
@@ -345,7 +395,7 @@
     $("tplTxtGroups").addEventListener("click", (e) => onBandClick("txt", e));
     $("tplRowMenu").addEventListener("click", onRowMenuClick);
     $("btnTplNewTxt").addEventListener("click", (e) => openEditModal("new", "", "", "", e.currentTarget));
-    $("txtEditCancel").addEventListener("click", () => window.Modal.close("txtEditModal"));
+    $("txtEditCancel").addEventListener("click", confirmDiscardEdit);
     $("txtEditOk").addEventListener("click", submitEditModal);
     moveDialog.wire("tplMoveOk", "tplMoveCancel");
     $("btnTplImport").addEventListener("click", importTemplate);

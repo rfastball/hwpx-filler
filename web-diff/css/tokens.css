@@ -55,12 +55,12 @@
   --rad-surface:9px;
   --rad-overlay:12px;
   --rad-pill:999px;
-  --fs-caption:12px;
-  --fs-body:14px;
-  --fs-dense:13px;
-  --fs-strong:15px;
-  --fs-section:19px;
-  --fs-kpi:23px;
+  --fs-caption:0.75rem;
+  --fs-body:0.875rem;
+  --fs-dense:0.8125rem;
+  --fs-strong:0.9375rem;
+  --fs-section:1.1875rem;
+  --fs-kpi:1.4375rem;
   --dur-press:140ms;
   --dur-pop:150ms;
   --dur-modal:160ms;
@@ -71,6 +71,9 @@
   --z-modal:200;
   color-scheme:light;
 }
+html{font-size:100%;}
+html[data-font-scale="large"]{font-size:125%;}
+html[data-font-scale="larger"]{font-size:150%;}
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
     --a-primary:#6f97e8;
