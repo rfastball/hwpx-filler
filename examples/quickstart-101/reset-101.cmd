@@ -12,7 +12,7 @@ cd /d "%~dp0"
 
 echo This will delete practice state created by the app in this folder:
 echo   jobs\  datasets\  mapping_bases\  webview\  out\  Results\  templates\Results\
-echo   ui_settings.ini  settings.json
+echo   ui_settings.ini  settings.json  webapp-alerts.log
 echo.
 choice /m "Reset now"
 if errorlevel 2 exit /b 0
@@ -23,6 +23,7 @@ for %%D in (jobs datasets mapping_bases webview out Results) do (
 if exist "templates\Results" rd /s /q "templates\Results"
 if exist "ui_settings.ini" del /q "ui_settings.ini"
 if exist "settings.json" del /q "settings.json"
+if exist "webapp-alerts.log" del /q "webapp-alerts.log"
 
 echo.
 echo Done. Run start-101.cmd to begin again from a clean state.

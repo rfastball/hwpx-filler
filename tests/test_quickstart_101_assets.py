@@ -85,7 +85,11 @@ def test_launcher_and_reset_cover_generated_state() -> None:
     """reset 스크립트가 .gitignore 의 생성물 목록을 전부 다루고, 예제 자산은 건드리지 않는다."""
     reset = (Q101 / "reset-101.cmd").read_text(encoding="utf-8")
     ignored = (Q101 / ".gitignore").read_text(encoding="utf-8")
-    for state in ("jobs", "datasets", "mapping_bases", "webview", "out", "ui_settings.ini", "settings.json"):
+    # 목록의 단일 출처는 "앱이 HWPXFILLER_HOME 밑에 쓰는 것 전수"(home_dir() 소비처 sweep):
+    # jobs/·datasets/·templates/(자산이라 불가침)·text_templates/(자산)·webview/·settings.json·
+    # ui_settings.ini·mapping_bases/·webapp-alerts.log(settings.alert 내구 채널 — Codex P2).
+    for state in ("jobs", "datasets", "mapping_bases", "webview", "out",
+                  "ui_settings.ini", "settings.json", "webapp-alerts.log"):
         assert state in ignored, f".gitignore 에 {state} 누락"
         assert state in reset, f"reset-101.cmd 가 {state} 를 안 지운다"
     # Results/ 는 .gitignore 상 임의 깊이 생성물 — 실습에서 나오는 두 위치(루트·templates 밑)를
