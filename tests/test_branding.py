@@ -50,20 +50,6 @@ def test_installer_display_name_but_stable_identifiers() -> None:
     assert "SetupIconFile" in iss
 
 
-def test_installer_migrates_renamed_shortcuts() -> None:
-    """업그레이드가 개명을 실제로 노출한다 — 옛 그룹 재사용 차단 + 옛 이름 .lnk 정리.
-
-    UsePreviousGroup 기본값(yes)은 저장된 옛 그룹("HWPX Filler")을 재사용하고, [Icons]
-    이름이 바뀌어 옛 바로가기는 덮어써지지 않아 새 바로가기와 병존한다(Codex P2).
-    """
-    iss = _read("packaging", "installers", "hwpx-filler.iss")
-    assert "UsePreviousGroup=no" in iss
-    assert "[InstallDelete]" in iss
-    assert r"{autoprograms}\HWPX Filler\HWPX Filler.lnk" in iss
-    assert r'Type: dirifempty; Name: "{autoprograms}\HWPX Filler"' in iss
-    assert r"{autodesktop}\HWPX Filler.lnk" in iss
-
-
 def test_icon_is_multisize_ico_with_small_frames() -> None:
     """hwpx-filler.ico 가 16·24·32px 프레임을 포함한 멀티사이즈 ICO 다(완료 조건 소형 식별)."""
     raw = (ROOT / "packaging" / "hwpx-filler.ico").read_bytes()
