@@ -19,12 +19,14 @@ TXT 관리는 코어 :class:`~hwpxfiller.core.text_registry.TextTemplateRegistry
 **결정 반영(#13 승계)**:
 - 미리보기(필드명·토큰) 액션 **제외**(10F2FF98-B) — 링1 seam 은 보존하되 노출 안 함.
 - 판본 드리프트 비교는 **숨김/강등**(10F2FF98-D) — diff 는 앱 A(hwpxdiff) 책임.
-파괴 확정(fieldize 적용·삭제)은 조용히 넘기지 않고 **확인 라운드트립**으로 재진술한다.
+제자리 fieldize 적용은 확인 라운드트립으로 지키고, 삭제는 30일 휴지통+최근 1건 복원으로 완화한다.
 """
 from __future__ import annotations
 
 import shutil
 import threading
+import time
+import uuid
 from pathlib import Path
 
 from hwpxcore.atomic import write_text_atomic
@@ -69,6 +71,7 @@ class TemplateController:
         # 마지막 결과 문구(컴파일·검토·가져오기·TXT 변경) — 성과별 심각도 채널(UD-07).
         self.result_text = ""
         self.result_level = "muted"
+        self._deleted_template_slot = None
 
     # ------------------------------------------------------------- 관측 푸시
     def _push(self) -> None:
@@ -327,9 +330,9 @@ class TemplateController:
             return {self._norm(r.path) for r in self.vm.rows()}
         return {self._norm(t.path) for t in self.text_registry.list_templates()}
 
-    # ---- 삭제(HWPX·TXT 공통 · 파괴이므로 확인 라운드트립)
+    # ---- 삭제(HWPX·TXT 공통 · 30일 휴지통 + 최근 1건 복원)
     def _do_delete(self, p: dict) -> dict:
-        """템플릿 삭제 — 1차=재진술(매체별 파급 명시), 2차=삭제. 그룹 지정은 reconcile 이 정리.
+        """템플릿을 매체 루트의 .trash로 옮긴다. 그룹 지정은 reconcile 이 정리.
 
         **경로 검증**(#137 리뷰 F10): 렌더러 페이로드의 ``media``·``path`` 를 그대로 unlink 하면
         라이브러리 밖 임의 파일도 지워진다. 매체를 열거 검증하고(``_model``), 경로가 그 매체
@@ -339,21 +342,39 @@ class TemplateController:
         path = Path(p["path"])
         if self._norm(path) not in self._live_paths(media):
             raise ValueError("현재 라이브러리 목록에 없는 경로는 삭제할 수 없습니다.")
-        if not p.get("confirm"):
-            if media == "txt":
-                body = f"삭제하면 기안 서식 목록에서도 사라집니다:\n{path}"
-            else:
-                body = (
-                    "이 서식으로 새 작업을 만들 수 없게 되고, 이 서식을 쓰는 작업은 템플릿을 "
-                    f"다시 연결해야 합니다:\n{path}"
-                )
-            return {"ok": True, "needs_confirm": True, "media": media,
-                    "path": str(path), "confirm_text": body}
-        path.unlink()
+        root = self.vm.library_dir if media == "hwpx" else self.text_registry.directory
+        trash = Path(root) / ".trash"
+        trash.mkdir(parents=True, exist_ok=True)
+        cutoff = time.time() - 30 * 24 * 60 * 60
+        for old in trash.iterdir():
+            try:
+                if old.is_file() and old.stat().st_mtime < cutoff:
+                    old.unlink()
+            except OSError:
+                continue
+        trashed = trash / f"{int(time.time())}-{uuid.uuid4().hex}-{path.name}"
+        path.replace(trashed)
+        self._deleted_template_slot = (media, path, trashed)
         if media == "hwpx":
             self.vm.refresh()
-        self._set_result(_ok(f"템플릿을 삭제했습니다: {path.stem}"))
-        return {"ok": True}
+        self._set_result(_ok(f"템플릿을 휴지통으로 옮겼습니다: {path.stem}"))
+        return {"ok": True, "undo": True, "name": path.stem}
+
+    def _do_undo_delete(self, p: dict) -> dict:
+        if self._deleted_template_slot is None:
+            return {"ok": False, "error": "복원할 최근 템플릿이 없습니다."}
+        media, path, trashed = self._deleted_template_slot
+        if not trashed.exists():
+            return {"ok": False, "error": "복원할 템플릿이 휴지통에 없습니다."}
+        if path.exists():
+            return {"ok": False, "error": "같은 이름의 템플릿이 이미 있어 복원할 수 없습니다."}
+        path.parent.mkdir(parents=True, exist_ok=True)
+        trashed.replace(path)
+        self._deleted_template_slot = None
+        if media == "hwpx":
+            self.vm.refresh()
+        self._set_result(_ok(f"템플릿을 복원했습니다: {path.stem}"))
+        return {"ok": True, "name": path.stem}
 
     # ---- TXT 저작(HWPX와 동등 · 10F2FF98-C)
     def _do_txt_new(self, p: dict) -> dict:

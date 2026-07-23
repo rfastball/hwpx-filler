@@ -123,6 +123,19 @@ def test_delete_job_updates_snapshot(tmp_path):
     assert any(s == "home" for s, _snap in pushes)
 
 
+def test_delete_job_can_restore_last_slot(tmp_path):
+    ctrl, _ = _controller(tmp_path)
+    assert ctrl.dispatch("undo_delete_job", {}) == {
+        "ok": False, "error": "복원할 최근 작업이 없습니다."
+    }
+    result = ctrl.dispatch("delete_job", {"name": "낙찰"})
+    assert result == {"ok": True, "undo": True, "name": "낙찰"}
+    assert not ctrl._job_registry.exists("낙찰")
+    restored = ctrl.dispatch("undo_delete_job", {})
+    assert restored == {"ok": True, "name": "낙찰"}
+    assert ctrl._job_registry.exists("낙찰")
+
+
 def test_continue_runs_sorted_recent_first(tmp_path):
     ctrl, _ = _controller(tmp_path)
     runs = ctrl.snapshot()["continue_runs"]

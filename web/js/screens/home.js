@@ -72,7 +72,9 @@
       // try/catch 없이는 rejection 이 삼켜져 클릭이 무반응이 된다 — 시끄럽게 재진술한다(editTags 미러).
       try {
         const res = await Bridge.call(SCREEN, "delete_corrupt", { path });
-        if (res && res.needs_confirm && (await Modal.confirm({ body: res.confirm_text }))) {
+        if (res && res.needs_confirm && (await Modal.confirm({
+          body: res.confirm_text, confirmLabel: "삭제", cancelLabel: "취소", danger: true,
+        }))) {
           await Bridge.call(SCREEN, "delete_corrupt", { path, confirm: true });
         }
       } catch (err) {
@@ -306,18 +308,20 @@
         `(예: 물품=의약품, 금액구간=소액)\n비우면 전부 해제합니다.`,
       value: ser,
       returnFocus,
+      validate: async (input) => {
+        const parsed = parseTags(input);
+        if (parsed.err !== undefined) {
+          return `태그 형식 오류: '${parsed.err}'. '축=값' 으로 입력하세요.`;
+        }
+        try {
+          await Bridge.call(SCREEN, "set_tags", { name, tags: parsed.tags });
+          return "";
+        } catch (err) {
+          return String((err && err.message) || err);
+        }
+      },
     });
     if (input === null) return;
-    const parsed = parseTags(input);
-    if (parsed.err !== undefined) {
-      window.alert(`태그 형식 오류: '${parsed.err}'. '축=값' 으로 입력하세요.`);
-      return;
-    }
-    try {
-      await Bridge.call(SCREEN, "set_tags", { name, tags: parsed.tags });
-    } catch (err) {
-      window.alert(String((err && err.message) || err));  // 백엔드 loud 거절 재진술
-    }
   }
 
   /* 템플릿 다시 연결(#67) — 공용 흐름(relink.js)에 위임. 홈은 로그 패널이 없어 커밋
@@ -329,16 +333,13 @@
     });
   }
 
-  /* 작업 삭제 — 조용한 삭제 금지, 재진술 후 확인 시에만(confirm-or-alarm). onJobsClick 이
-     동기라 여기로 뽑아 await 를 쓴다(Modal.confirm 은 Promise 기반). 삭제 호출은 원래처럼
-     fire-and-forget — rejection 은 셸 unhandledrejection 백스톱이 loud 재진술한다(#45). */
+  /* 작업 삭제 — 30일 휴지통 + 최근 1건 복원. 사후 관용이 있으므로 사전 확인을 없앤다. */
   async function deleteJob(name, returnFocus) {
-    if (await Modal.confirm({
-      body: `작업 '${name}' 을(를) 삭제할까요? 되돌릴 수 없습니다.\n` +
-        "작업 화면에서 이 작업을 열어 둔 실행 세션도 다음에 돌아갈 때 닫힙니다.", returnFocus,
-    })) {
-      Bridge.call(SCREEN, "delete_job", { name });
-    }
+    const r = await Bridge.call(SCREEN, "delete_job", { name });
+    if (r && r.undo) window.UndoToast.show(`작업 '${name}' 을(를) 휴지통으로 옮겼습니다.`, async () => {
+      const restored = await Bridge.call(SCREEN, "undo_delete_job", {});
+      if (restored && restored.ok === false) throw new Error(restored.error);
+    });
   }
 
   function onJobsClick(e) {

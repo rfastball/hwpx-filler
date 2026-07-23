@@ -125,6 +125,12 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .btn.icon{padding:var(--sp-4) var(--sp-8)}
 .btn.primary{background:var(--a-primary);color:var(--a-on-accent);border-color:var(--a-primary);font-weight:600;padding:var(--sp-6) var(--sp-16)}
 .btn.primary:hover{background:var(--a-primary-h);border-color:var(--a-primary-h)}
+/* 내구 파괴 확정(#219) — 삭제·덮어쓰기 전용. 텍스트 danger와 달리 솔리드 행동 버튼이며,
+   라이트/다크는 --a-danger 쌍을 그대로 소비한다. */
+.btn.danger{background:var(--a-danger);color:var(--a-on-accent);border-color:var(--a-danger);
+  font-weight:600;padding:var(--sp-6) var(--sp-16)}
+.btn.danger:hover{background:color-mix(in srgb,var(--a-danger) 82%,var(--a-ink));
+  border-color:color-mix(in srgb,var(--a-danger) 82%,var(--a-ink))}
 /* 비활성 주동사(H-11) — 솔리드 accent/muted 필을 쓰지 않고 옅은 중립 면으로 물러난다.
    사유 문안은 인접 게이트 캡션이 소유하므로 버튼에는 상태 표현만 남긴다. */
 .btn.primary:disabled{background:var(--n-track);color:var(--a-muted);border-color:var(--a-border);opacity:1}
@@ -676,8 +682,15 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 /* 좌 master 목록 + 우 패널을 한 화면에 상시 병치(변형 B: 화면 전환 0). 좌는 고정폭·자체 스크롤,
    우는 신축·자체 스크롤 — 페이지 세로 스크롤 없이 두 축이 독립적으로 걷힌다. */
 .job-layout{display:flex;gap:var(--sp-16);flex:1;min-height:0}
-.job-master{flex:none;width:240px;overflow:auto;display:flex;flex-direction:column;gap:var(--sp-16);
+.job-master{flex:none;width:var(--master-width,240px);overflow:auto;display:flex;flex-direction:column;gap:var(--sp-16);
   border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card);padding:var(--sp-10)}
+.master-splitter{flex:none;width:7px;margin:0 -7px 0 -9px;position:relative;z-index:2;cursor:col-resize;
+  touch-action:none;user-select:none}
+.master-splitter::after{content:"";position:absolute;left:3px;top:var(--sp-8);bottom:var(--sp-8);
+  width:1px;background:var(--a-border);transition:background-color var(--dur-press) var(--ease-out)}
+.master-splitter:hover::after,.master-splitter:focus-visible::after{background:var(--a-primary);width:2px}
+.master-splitter:focus-visible{outline:2px solid var(--a-primary);outline-offset:1px}
+body.resizing-master{cursor:col-resize;user-select:none}
 .job-sec-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-8);
   padding:var(--sp-4) var(--sp-6);border-radius:var(--rad-control);
   border-left:3px solid var(--a-border)}
@@ -750,7 +763,8 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .job-head-title{font-size:var(--fs-body);font-weight:600}
 .job-head-tpl{font-size:var(--fs-body);margin-top:var(--sp-2)}
 /* 좁은 창(반응형): 좌 목록을 위로 접어 세로 적층 — 셀프테스트 그리드 경계와 별개 국소 규칙. */
-@media (max-width:820px){.job-layout{flex-direction:column}.job-master{width:auto;flex-direction:row;flex-wrap:wrap}}
+@media (max-width:820px){.job-layout{flex-direction:column}.job-master{width:auto;flex-direction:row;flex-wrap:wrap}
+  .master-splitter{display:none}}
 
 /* ---- 사이드 패널 접기(#18/9B2AB35D-A) ---- */
 .rail .brand{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-8)}
@@ -770,17 +784,24 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 /* ---- 테마 전환(레일 하단) — System→Light→Dark 순환(theme.js). navbtn 이 아니므로 라우팅
    대상이 아니고, 접힘 표지는 .ni 가 아닌 .ti 를 써 #27 시각표지 카운트를 오염시키지 않는다.
    margin-top:auto 로 레일 바닥에 고정(접힘에서도 생존). ---- */
-.rail-theme{margin-top:auto;width:100%;text-align:left;font:inherit;cursor:pointer;border:0;
+.rail-theme,.rail-font{width:100%;text-align:left;font:inherit;cursor:pointer;border:0;
   background:transparent;color:var(--n-ink-control);padding:var(--sp-8) var(--sp-10);border-radius:var(--rad-control);display:block}
-.rail-theme:hover{background:var(--n-hover)}
-.rail-theme .n{font-size:var(--fs-body);font-weight:600;display:block}
-.rail-theme .d{font-size:var(--fs-caption);color:var(--a-muted);margin-top:1px;display:block}
-.rail-theme:focus-visible{outline:2px solid var(--a-primary);outline-offset:-2px}
-.rail-theme .ti{display:none;font-weight:700;font-size:var(--fs-body)}
-.app.rail-collapsed .rail-theme{text-align:center;padding:var(--sp-8) var(--sp-4)}
-.app.rail-collapsed .rail-theme .n,
-.app.rail-collapsed .rail-theme .d{display:none}
-.app.rail-collapsed .rail-theme .ti{display:block;text-align:center}
+.rail-theme{margin-top:auto}
+.rail-theme:hover,.rail-font:hover{background:var(--n-hover)}
+.rail-theme .n,.rail-font .n{font-size:var(--fs-body);font-weight:600;display:block}
+.rail-theme .d,.rail-font .d{font-size:var(--fs-caption);color:var(--a-muted);margin-top:1px;display:block}
+.rail-theme:focus-visible,.rail-font:focus-visible{outline:2px solid var(--a-primary);outline-offset:-2px}
+.rail-theme .ti,.rail-font .ti{display:none;font-weight:700;font-size:var(--fs-body)}
+.app.rail-collapsed .rail-theme,.app.rail-collapsed .rail-font{text-align:center;padding:var(--sp-8) var(--sp-4)}
+.app.rail-collapsed .rail-theme .n,.app.rail-collapsed .rail-font .n,
+.app.rail-collapsed .rail-theme .d,.app.rail-collapsed .rail-font .d{display:none}
+.app.rail-collapsed .rail-theme .ti,.app.rail-collapsed .rail-font .ti{display:block;text-align:center}
+/* 저장된 접힘 상태가 좁은 창의 단일열 반응형 규칙보다 나중에 이기지 않게 한다. */
+@media (max-width:820px){.app.rail-collapsed{grid-template-columns:1fr}}
+
+/* text_select=True에서 본문은 선택·복사 가능하되 조작 표면은 드래그 선택을 만들지 않는다.
+   jobtb 행의 user-select:none은 Shift+클릭 범위 선택 이벤트를 보존하면서 파란 텍스트 선택만 막는다. */
+.rail,button,select,input[type="checkbox"],input[type="radio"],.jobtb tbody tr{user-select:none}
 
 /* ---- 모달 ---- */
 #overlayRoot{position:fixed;inset:0;z-index:var(--z-overlay-root);pointer-events:none}
@@ -945,6 +966,7 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
   .navbtn[aria-current="true"],
   .wstep-tab[aria-current="true"],
   .btn.primary:not(:disabled){background:Highlight;color:HighlightText;border-color:Highlight}
+  .btn.danger:not(:disabled){background:Mark;color:MarkText;border-color:Mark}
 
   .jcard[aria-current="true"],.tlist .titem[aria-current="true"],.tplcard[aria-current="true"]{
     border-left-color:Highlight}
@@ -957,6 +979,14 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 
   .bar{border:1px solid CanvasText;background:Canvas}
   .bar>i{background:Highlight}
+
+  /* 채움 소유권 3종 — 자동/직접 고침/무결속 수기를 시스템색 밑줄로 계속 구별한다. */
+  .wc-render .seg-fill{border:1px solid CanvasText;background:Canvas}
+  .wc-render .seg-fill.own-auto{box-shadow:inset 0 -3px 0 Highlight}
+  .wc-render .seg-fill.own-hand{box-shadow:inset 0 -3px 0 Mark}
+  .wc-render .seg-fill.own-man{box-shadow:inset 0 -3px 0 LinkText}
+  .own{border:1px solid CanvasText;background:CanvasText}
+  .own.auto{background:Highlight}.own.man{background:LinkText}
 }
 
 /* ---- 작업 데이터 존 필터 표면(R-flow 블록 4, 슬라이스 4 PR-2b) ----
@@ -1045,6 +1075,13 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .colpanel .cp-range-row input{flex:1;min-width:0}
 .colpanel .cp-err{color:var(--a-danger);font-size:var(--fs-caption);white-space:pre-line}
 .colpanel .cp-acts{display:flex;gap:var(--sp-6);justify-content:flex-end}
+
+.undo-toast{position:fixed;z-index:var(--z-modal);left:50%;bottom:var(--sp-16);
+  transform:translateX(-50%);display:flex;align-items:center;gap:var(--sp-12);
+  max-width:min(560px,calc(100vw - 32px));padding:var(--sp-8) var(--sp-12);
+  color:var(--a-ink);background:var(--a-card);border:1px solid var(--a-border);
+  border-radius:var(--rad-overlay);box-shadow:0 8px 24px var(--a-shadow)}
+.undo-toast[hidden]{display:none}
 
 /* ---- 내부 스크롤포트 인벤토리(H-07) ----
    캡+헤더 지속 표: .tblwrap(위저드 3벌), .mapwrap(#draftTokPanel), .jobtbwrap.

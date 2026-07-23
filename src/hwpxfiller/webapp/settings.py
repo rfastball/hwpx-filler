@@ -33,6 +33,10 @@ from hwpxfiller.core.paths import home_dir
 _MUTATE_LOCK = threading.Lock()
 
 VALID_THEMES = ("system", "light", "dark")
+VALID_FONT_SCALES = ("normal", "large", "larger")
+DEFAULT_MASTER_WIDTH = 240
+MIN_MASTER_WIDTH = 180
+MAX_MASTER_WIDTH = 420
 
 # 대상 글꼴 선언(R-flow 블록 3 결정 17) — 붙여넣는 곳(기안작성기)의 표준 글꼴. 클립보드
 # 평문은 글꼴을 운반하지 않으므로(글꼴=목적지 소유) 이건 원문 렌더가 미리 따를 글꼴일 뿐이고,
@@ -179,6 +183,83 @@ def save_theme(mode: str) -> None:
     if mode not in VALID_THEMES:
         raise ValueError(f"유효하지 않은 테마: {mode!r} (허용: {VALID_THEMES})")
     _save_key("theme", mode)
+
+
+def load_font_scale() -> str:
+    """앱 전역 글자 배율 — 기본/크게(125%)/더 크게(150%)."""
+    scale = _read().get("font_scale")
+    return scale if scale in VALID_FONT_SCALES else "normal"
+
+
+def save_font_scale(scale: str) -> None:
+    if scale not in VALID_FONT_SCALES:
+        raise ValueError(f"유효하지 않은 글자 크기: {scale!r} (허용: {VALID_FONT_SCALES})")
+    _save_key("font_scale", scale)
+
+
+def load_rail_collapsed() -> bool:
+    """사이드 레일의 마지막 접힘 상태. 손상 값은 안전한 펼침으로 폴백한다."""
+    value = _read().get("rail_collapsed")
+    return value if isinstance(value, bool) else False
+
+
+def save_rail_collapsed(collapsed: bool) -> None:
+    if not isinstance(collapsed, bool):
+        raise ValueError("레일 접힘 상태는 bool 이어야 합니다")
+    _save_key("rail_collapsed", collapsed)
+
+
+def load_master_width() -> int:
+    """작업·기안 좌 목록의 공유 폭(px). 비유효 값은 240px 기본으로 폴백한다."""
+    value = _read().get("master_width")
+    if isinstance(value, int) and not isinstance(value, bool) and MIN_MASTER_WIDTH <= value <= MAX_MASTER_WIDTH:
+        return value
+    return DEFAULT_MASTER_WIDTH
+
+
+def save_master_width(width: int) -> None:
+    if (
+        not isinstance(width, int)
+        or isinstance(width, bool)
+        or not MIN_MASTER_WIDTH <= width <= MAX_MASTER_WIDTH
+    ):
+        raise ValueError(
+            f"목록 폭은 {MIN_MASTER_WIDTH}~{MAX_MASTER_WIDTH}px 정수여야 합니다"
+        )
+    _save_key("master_width", width)
+
+
+def load_window_geometry() -> "dict[str, int | bool] | None":
+    """마지막 정상 창 기하. 화면 가시성 판정은 현재 모니터를 아는 app 계층이 맡는다."""
+    raw = _read().get("window_geometry")
+    if not isinstance(raw, dict):
+        return None
+    x, y = raw.get("x"), raw.get("y")
+    width, height = raw.get("width"), raw.get("height")
+    maximized = raw.get("maximized")
+    if not (
+        isinstance(x, int) and not isinstance(x, bool)
+        and isinstance(y, int) and not isinstance(y, bool)
+        and isinstance(width, int) and not isinstance(width, bool)
+        and isinstance(height, int) and not isinstance(height, bool)
+        and isinstance(maximized, bool)
+    ):
+        return None
+    if width < 760 or height < 600:
+        return None
+    return {"x": x, "y": y, "width": width, "height": height, "maximized": maximized}
+
+
+def save_window_geometry(*, x: int, y: int, width: int, height: int, maximized: bool) -> None:
+    geometry = {"x": x, "y": y, "width": width, "height": height, "maximized": maximized}
+    if (
+        any(not isinstance(geometry[key], int) or isinstance(geometry[key], bool) for key in ("x", "y", "width", "height"))
+        or not isinstance(maximized, bool)
+        or width < 760
+        or height < 600
+    ):
+        raise ValueError("창 기하는 정수 좌표·최소 760×600 크기·bool 최대화 상태여야 합니다")
+    _save_key("window_geometry", geometry)
 
 
 def load_draft_target_font() -> str:
