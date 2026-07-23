@@ -984,6 +984,67 @@ _JOB_MIRROR_PROBE_JS = r"""
     window.__push('job', snap);
     out.reapply_hidden = getComputedStyle(document.getElementById('jobFilterReapply')).display === 'none';
     snap.filter.reapply_available = true;
+    // #272: 420px 거울 캡과 두 펼침 면을 실 DOM 이동/복귀 및 기존 dispatch까지 검증한다.
+    snap.drift = []; snap.name_tokens = [];
+    snap.gate = {enabled:true, level:'', text:'생성 준비'};
+    snap.mirror = [];
+    for (var mi = 0; mi < 36; mi++) snap.mirror.push({
+      name:'필드' + mi, state:mi === 0 ? 'missing' : 'filled', acknowledged:false,
+      value:mi === 0 ? '(빈 값)' : '값 ' + mi, formatted:false
+    });
+    window.__push('job', snap);
+    out.job_duo_wide = getComputedStyle(document.getElementById('jobDuo')).gridTemplateColumns;
+    var mirror = document.getElementById('jobMirror');
+    var restate = document.getElementById('jobRestate');
+    var mirrorParent = mirror.parentNode, restateParent = restate.parentNode;
+    out.mirror_capped = mirror.clientHeight <= 421 && mirror.scrollHeight > mirror.clientHeight;
+    out.mirror_capstrip = !document.getElementById('jobMirrorCapstrip').hidden &&
+      /전체\s*36필드/.test(document.getElementById('jobMirrorCapstrip').textContent);
+    var mirrorTrigger = document.getElementById('jobMirrorExpand');
+    mirrorTrigger.focus(); mirrorTrigger.click();
+    out.confirm_moved = document.getElementById('jobConfirmSheetMirrorSlot').contains(mirror) &&
+      document.getElementById('jobConfirmSheetRestateSlot').contains(restate);
+    var dispatched = [];
+    var sheetRealCall = window.Bridge.call;
+    window.Bridge.call = function (screen, action, payload) {
+      dispatched.push({screen:screen, action:action, field:payload && payload.field});
+      return Promise.resolve({});
+    };
+    mirror.querySelector('.mir-row.miss').click();
+    window.Bridge.call = sheetRealCall;
+    out.confirm_dispatch = dispatched.length === 1 && dispatched[0].action === 'ack_field' &&
+      dispatched[0].field === '필드0';
+    document.getElementById('jobConfirmSheetClose').click();
+    (function () { var card = document.querySelector('#jobConfirmSheet .modal-card');
+      var ev = new Event('transitionend', {bubbles:true});
+      Object.defineProperty(ev, 'propertyName', {value:'opacity'}); card.dispatchEvent(ev); })();
+    out.confirm_restored = mirror.parentNode === mirrorParent && restate.parentNode === restateParent &&
+      document.activeElement === mirrorTrigger;
+
+    var dataIds = ['jobRecsHead','jobFilterChips','jobTableHost','jobSelStrip','jobColPanel'];
+    var dataNodes = dataIds.map(function (id) { return document.getElementById(id); });
+    var dataParents = dataNodes.map(function (el) { return el.parentNode; });
+    var dataTrigger = document.getElementById('jobDataExpand'); dataTrigger.focus(); dataTrigger.click();
+    var dataSlot = document.getElementById('dataSheetSlot');
+    out.job_data_moved = dataNodes.every(function (el) { return dataSlot.contains(el); });
+    out.job_data_first_sticky = getComputedStyle(
+      document.querySelector('#jobTableHead th:first-child')).position === 'sticky';
+    document.getElementById('dataSheetClose').click();
+    (function () { var card = document.querySelector('#dataSheet .modal-card');
+      var ev = new Event('transitionend', {bubbles:true});
+      Object.defineProperty(ev, 'propertyName', {value:'opacity'}); card.dispatchEvent(ev); })();
+    out.job_data_restored = dataNodes.every(function (el, i) { return el.parentNode === dataParents[i]; }) &&
+      document.activeElement === dataTrigger;
+
+    mirrorTrigger.click();
+    window.JobScreen.showEditMode();
+    out.edit_closes_sheets = !window.SurfaceSheet.isOpen('jobConfirmSheet') &&
+      mirror.parentNode === mirrorParent && restate.parentNode === restateParent &&
+      getComputedStyle(document.getElementById('jobEditHost')).display !== 'none';
+    (function () { var card = document.querySelector('#jobConfirmSheet .modal-card');
+      var ev = new Event('transitionend', {bubbles:true});
+      Object.defineProperty(ev, 'propertyName', {value:'opacity'}); card.dispatchEvent(ev); })();
+    window.JobScreen.showRunMode();
   } catch (e) { out.error = 'throw:' + (e && e.message); }
   return out;
 })()
@@ -1812,7 +1873,9 @@ _MILESTONE_H_WAVE1_PROBE_JS = r"""
       zone: style('#scr-job .zone-cap')
     },
     job_steps: Array.from(document.querySelectorAll('#scr-job .zone-cap')).map(function (e) {
-      return e.textContent.trim();
+      var label = e.cloneNode(true);
+      label.querySelectorAll('button').forEach(function (b) { b.remove(); });
+      return label.textContent.trim();
     }),
     job_step_badges: document.querySelectorAll('#scr-job .zone-cap .znum').length,
     template_media_count: document.querySelectorAll('#scr-tpl .tpl-medium').length,
@@ -2175,6 +2238,13 @@ def _selftest_drive(window: "object") -> None:
         result["preserve_real"] = window.evaluate_js(_PRESERVE_REAL_PROBE_JS)  # type: ignore[attr-defined]
         # 「작업」 거울 + 재진술 블록(슬라이스 2) — 합성 스냅샷으로 실 render() 구동 후 DOM 되읽기.
         result["job_mirror"] = window.evaluate_js(_JOB_MIRROR_PROBE_JS)  # type: ignore[attr-defined]
+        window.resize(1180, 820)  # type: ignore[attr-defined]
+        time.sleep(0.4)
+        result["job_density_narrow"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "({columns:getComputedStyle(document.getElementById('jobDuo')).gridTemplateColumns})"
+        )
+        window.resize(1440, 900)  # type: ignore[attr-defined]
+        time.sleep(0.4)
         # 「작업」 좌 목록 그룹·⋮ 관리 메뉴(결정 43) — 그룹 헤더·접힘·메뉴 개폐 실렌더 되읽기.
         result["job_list_groups"] = window.evaluate_js(_JOB_LIST_GROUP_PROBE_JS)  # type: ignore[attr-defined]
         # 「기안」 좌 목록(#148 슬라이스 2b) — 그룹 구획·⋮ 메뉴·이동 다이얼로그(grouplist.js 3번째 소비) 되읽기.

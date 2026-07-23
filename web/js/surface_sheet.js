@@ -43,7 +43,15 @@
   }
 
   function close(id) { if (active[id]) window.Modal.close(id); }
+  function closeAndRestore(id) {
+    if (!active[id]) return;
+    window.Modal.close(id);
+    restore(id);
+  }
   function isOpen(id) { return !!active[id]; }
 
-  window.SurfaceSheet = { open: open, close: close, isOpen: isOpen, restore: restore };
+  window.SurfaceSheet = {
+    open: open, close: close, closeAndRestore: closeAndRestore,
+    isOpen: isOpen, restore: restore,
+  };
 })();

@@ -69,6 +69,7 @@ MODAL_LABELLEDBY = {
     "promptModal": "promptModalTitle",  # 네이티브 window.prompt 대체(#86)
     "draftMapSheet": "draftMapSheetTitle",  # 기안 맞추기 펼침 면(#271)
     "dataSheet": "dataSheetTitle",  # 기안·작업 공용 데이터 펼침 면(#271/#272)
+    "jobConfirmSheet": "jobConfirmSheetTitle",  # 작업 거울·재진술 펼침 면(#272)
 }
 
 
@@ -355,6 +356,33 @@ def test_milestone_l_draft_expansion_sheets_move_live_surfaces():
     assert "position:sticky;left:0" in css
 
 
+def test_milestone_l_job_density_and_expansion_sheets():
+    """#272: 작업 duo·420px 캡·두 펼침 면·편집 전 즉시 복귀 계약을 고정한다."""
+    html = WEB_INDEX.read_text(encoding="utf-8")
+    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    sheets = (WEB_JS_DIR / "surface_sheet.js").read_text(encoding="utf-8")
+
+    assert 'class="duo job-duo" id="jobDuo"' in html
+    duo = html.split('id="jobDuo"', 1)[1].split("<!-- 완료 존", 1)[0]
+    assert duo.index('id="jobTableHost"') < duo.index('id="jobMirror"')
+    assert 'id="jobMirrorCapstrip" role="status" hidden' in duo
+    assert "#jobMirror{max-height:420px;overflow:auto}" in css
+    assert "@containersession-panel(max-width:900px)" in css
+    assert '<div id="jobConfirmSheet" class="modal sheet hidden"' in html
+    assert "펼쳐서 행 고르기 ⤢" in html and "펼쳐서 확인 ⤢" in html
+    assert 'modalId: "jobConfirmSheet"' in job_js
+    assert '{ id: "jobMirror", slotId: "jobConfirmSheetMirrorSlot" }' in job_js
+    assert '{ id: "jobRestate", slotId: "jobConfirmSheetRestateSlot" }' in job_js
+    for node_id in (
+        "jobRecsHead", "jobFilterChips", "jobTableHost", "jobSelStrip", "jobColPanel",
+    ):
+        assert f'{{ id: "{node_id}", slotId: "dataSheetSlot" }}' in job_js
+    assert 'closeAndRestore("jobConfirmSheet")' in job_js
+    assert 'closeAndRestore("dataSheet")' in job_js
+    assert "window.Modal.close(id);\n    restore(id);" in sheets
+
+
 def _forced_colors_block(css_path: Path) -> str:
     """``@media (forced-colors:active)`` 블록의 **본문**만 공백 제거 형태로 반환.
 
@@ -599,8 +627,8 @@ def test_job_zones_reuse_number_badges_and_action_labels():
         ("4", "생성"),
     )
     for ordinal, label in labels:
-        needle = f'<div class="zone-cap"><span class="znum">{ordinal}</span>{label}</div>'
-        assert needle in html, f"작업 존 단계 표지가 없습니다: {ordinal} {label}"
+        needle = rf'<div class="zone-cap[^"]*">.*?<span class="znum">{ordinal}</span>{re.escape(label)}'
+        assert re.search(needle, html), f"작업 존 단계 표지가 없습니다: {ordinal} {label}"
 
 
 def test_job_gate_adds_blocked_step_only_in_display_layer():
