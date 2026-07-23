@@ -93,6 +93,30 @@ raise SystemExit(9)
     assert not owner.path_for("침입").exists()
 
 
+def test_write_state_ownership_is_per_process_not_inherited(monkeypatch) -> None:
+    """#234 리뷰 — POSIX fork 자식은 ``_owner``(핸들/스트림)를 그대로 상속하는데, 조기
+    반환이 그걸 신뢰하면 부모·자식이 무경보 동시 writer 가 된다(RLock 은 프로세스-로컬).
+    소유권 판정은 획득 PID 와 묶여야 하고, PID 가 다르면 재획득을 시도해야 한다."""
+    from hwpxfiller.core.job import _RegistryWriteState
+
+    state = _RegistryWriteState("test-key")
+    claims: list[str] = []
+    monkeypatch.setattr(state, "_claim_windows_mutex", lambda: claims.append("claim"))
+    monkeypatch.setattr(state, "_claim_posix_lock", lambda: claims.append("claim"))
+
+    state.claim_process_ownership()          # 최초 획득
+    assert claims == ["claim"] and state._owner_pid == os.getpid()
+    state._owner = object()
+    state.claim_process_ownership()          # 같은 프로세스 재호출 = no-op
+    assert claims == ["claim"]
+
+    state._owner_pid = os.getpid() + 1       # fork 자식 시뮬레이션(상속 owner + 남의 PID)
+    state.claim_process_ownership()
+    assert claims == ["claim", "claim"], "상속 소유를 신뢰하지 말고 재획득해야 한다"
+    assert state._owner_pid == os.getpid()
+    assert state._owner is None              # 상속분 참조는 끊되(부모 락 보존) 닫지 않는다
+
+
 def test_product_entrypoints_match_documented_single_writer_topology() -> None:
     """웹앱은 registry 생성 전에 단일 인스턴스를 잡고 CLI는 registry를 열지 않는다."""
     app = (ROOT / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(encoding="utf-8")

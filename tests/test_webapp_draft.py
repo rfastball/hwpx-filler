@@ -258,6 +258,20 @@ def test_leave_guard_arms_on_map_dirty_unlike_data_swap_guard(tmp_path):
     assert lg["map_dirty"] is True and lg["armed"] is True    # 세션 교체: 편집도 잃으므로 무장
 
 
+def test_session_guard_for_cross_screen_query(tmp_path):
+    """#268 리뷰 — 홈 삭제 가드 조회: 무장 결속 기안에만 가드 수치(+screen), 그 외 None
+    (screen_job.session_guard_for 동형 — leave_guard 술어 재사용)."""
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "기안A", "job_a.txt", "제목: {{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    assert ctrl.session_guard_for("기안A") is None            # 클린 결속 = None
+    ctrl.dispatch("set_confirmed", {"name": "공고명", "value": False})  # 미저장 매핑 편집
+    g = ctrl.session_guard_for("기안A")
+    assert g is not None and g["screen"] == "draft" and g["armed"] is True
+    assert ctrl.session_guard_for("다른기안") is None
+    assert ctrl.session_guard_for("") is None
+
+
 def test_open_template_in_saved_mode_guards_then_clears_binding(tmp_path):
     """저장 결속 세션에 라이브러리 템플릿을 열면(홈·템플릿 관리 라우팅) = 세션 교체 가드 + 결속 해제(리뷰 F3).
 

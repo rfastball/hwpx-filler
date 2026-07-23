@@ -86,6 +86,24 @@ def test_parse_rejects_unknown_items_shape_loudly():
         NaraStdDataSource.parse(raw)
 
 
+def test_page_meta_rejects_non_integral_numbers():
+    """#253 리뷰 — ``int(2.9)`` 절단 금지: totalCount 가 조용히 깎이면 마지막 페이지
+    상한이 줄어 표방된 행을 다 요청하지 않고도 성공 반환한다(fail-closed 정수 스키마
+    위반). 정수값 실수(4.0)는 표기 차이일 뿐이라 통과."""
+    rows = [{"a": "1"}]
+    assert NaraStdDataSource._page_meta(_page(1, 4, rows)) == (1, 2, 4)
+
+    def _meta_with(**body_overrides) -> bytes:
+        payload = json.loads(_page(1, 4, rows))
+        payload["response"]["body"].update(body_overrides)
+        return json.dumps(payload, ensure_ascii=False).encode()
+
+    for bad in ({"totalCount": 2.9}, {"pageNo": 1.5}, {"numOfRows": 0.25}):
+        with pytest.raises(ValueError, match="정수가 아닙니다"):
+            NaraStdDataSource._page_meta(_meta_with(**bad))
+    assert NaraStdDataSource._page_meta(_meta_with(totalCount=4.0)) == (1, 2, 4)
+
+
 def test_result_code_parsed():
     code, msg = NaraStdDataSource.result(_fixture_bytes())
     assert code == "00"

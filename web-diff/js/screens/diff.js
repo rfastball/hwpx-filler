@@ -237,12 +237,17 @@
     });
   }
 
-  /* 화면 부팅 — app.js 가 pywebviewready 후 호출. */
+  /* 화면 부팅 — app.js 가 pywebviewready 후 호출. ready 표지(#252 리뷰): 스크립트 파싱
+     시점엔 window.DiffScreen 이 존재해도 렌더러(onPush)는 아직 미등록이라, 게이트가
+     객체 존재만 보고 push 하면 __push 가 조용히 버린다. 표지는 **initial 렌더까지 끝난
+     뒤**에만 선다(#280 리뷰) — onPush 등록 직후에 세우면 게이트 push 가 아직 미해결인
+     initial 응답과 경합해, 늦게 도착한 빈 initial 스냅샷이 push 를 덮어쓴다. */
   async function init() {
     Bridge.onPush(SCREEN, render);
     wire();
     render(await Bridge.initial(SCREEN));
+    window.DiffScreen.ready = true;
   }
 
-  window.DiffScreen = { init };
+  window.DiffScreen = { init, ready: false };
 })();

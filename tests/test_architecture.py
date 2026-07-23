@@ -386,6 +386,23 @@ def test_home_dir_idiom_has_one_source() -> None:
     )
 
 
+def test_ui_contract_documents_every_direct_bridge_method() -> None:
+    """#257 리뷰 — UI 계약 정본은 dispatch 밖 **직접 브리지 경로**를 전부 열거해야 한다:
+    bridge.js 가 새 `api.<메서드>` 를 추가했는데 문서가 침묵하면, 계약 문서를 근거로 감사한
+    호출이 validate_dispatch 밖 경로를 조용히 놓친다(문서가 거짓말하는 드리프트)."""
+    import re
+
+    root = Path(__file__).resolve().parents[1]
+    bridge = (root / "web" / "js" / "bridge.js").read_text(encoding="utf-8")
+    contract = (root / "docs" / "UI_CONTRACT.md").read_text(encoding="utf-8")
+    methods = set(re.findall(r"\bapi\.(\w+)", bridge)) - {"initial", "dispatch"}
+    assert methods, "bridge.js 에서 직접 브리지 메서드를 찾지 못했습니다(추출 회귀)."
+    undocumented = sorted(m for m in methods if f"`{m}`" not in contract)
+    assert not undocumented, (
+        "UI_CONTRACT.md 직접 브리지 목록에 없는 메서드: " + ", ".join(undocumented)
+    )
+
+
 def test_packaging_entry_imports_resolve() -> None:
     """패키징 엔트리(``packaging/*.py``)의 앱 심볼 임포트가 실제로 해소되어야 한다.
 

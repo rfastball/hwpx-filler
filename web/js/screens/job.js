@@ -368,7 +368,8 @@
   function openJobConfirmSheet(e) {
     window.SurfaceSheet.open({
       modalId: "jobConfirmSheet",
-      returnFocus: e && e.currentTarget ? e.currentTarget : document.activeElement,
+      // 클릭된 버튼(캡스트립 위임 포함) → 상시 ⤢ 버튼 순(#279 리뷰, SurfaceSheet.trigger).
+      returnFocus: window.SurfaceSheet.trigger(e, $("jobMirrorExpand")),
       initialFocus: $("jobConfirmSheetClose"),
       moves: [
         { id: "jobMirror", slotId: "jobConfirmSheetMirrorSlot" },
@@ -382,7 +383,7 @@
     $("dataSheetTitle").textContent = "작업 데이터 행 고르기";
     window.SurfaceSheet.open({
       modalId: "dataSheet",
-      returnFocus: e && e.currentTarget ? e.currentTarget : document.activeElement,
+      returnFocus: window.SurfaceSheet.trigger(e, $("jobDataExpand")),
       initialFocus: $("dataSheetClose"),
       moves: [
         { id: "jobRecsHead", slotId: "dataSheetSlot" },
@@ -567,10 +568,16 @@
   }
 
   function renderResult(res) {
-    $("jobGenBar").style.width = "100%";
+    // 취소된 배치는 부분 결과로 그린다(#278 리뷰) — 진행바를 무조건 100% 로 채우고
+    // warn 을 danger 로 접으면, 정확한 요약 문안 옆에서 시각이 "완주했고 오류"라고
+    // 거짓말한다. 진행 = 시도한 만큼, 색 = Python 판정 level 그대로(warn 채널 보존).
+    const pct = res.cancelled && res.total
+      ? Math.round(((res.attempted || 0) / res.total) * 100) : 100;
+    $("jobGenBar").style.width = pct + "%";
     const r = $("jobGenResult");
     r.textContent = res.summary;
-    r.className = "run-result " + (res.level === "ok" ? "ok" : "danger");
+    r.className = "run-result " +
+      (res.level === "ok" ? "ok" : res.level === "warn" ? "warn" : "danger");
     log(res.summary);
     (res.failures || []).forEach((f) => log("  [실패] " + f));
     // 채움 완화 사실(#154) — 문안은 Python(describe_fill_note)이 확정, JS 는 표기만.

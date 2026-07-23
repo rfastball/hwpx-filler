@@ -111,7 +111,11 @@ def _geometry_is_visible(
         return False
     x, y = int(geometry["x"]), int(geometry["y"])
     width = int(geometry["width"])
-    return x + min(width, 64) > vx and x < vx + vw and y + 32 > vy and y < vy + vh
+    # 가로 판정은 제목줄 **전체 폭**과 화면의 겹침으로(#276 리뷰) — 왼쪽 64px 조각만 보면
+    # 왼쪽 모서리가 64px 넘게 화면 밖인 창(예: x=-100, 폭 1180)은 제목줄 대부분이 보이는데도
+    # 미가시로 판정돼, 쓸 만한 저장 위치를 버리고 다음 부팅이 창을 예고 없이 리셋한다.
+    overlap = min(x + width, vx + vw) - max(x, vx)
+    return overlap >= min(width, 64) and y + 32 > vy and y < vy + vh
 
 
 # ------------------------------------------------------------------ 브리지
@@ -178,6 +182,12 @@ class WebFrontend:
             ),
         )
         self.controllers = {c.name: c for c in controllers}
+        # 홈 삭제의 타 화면 무장 세션 가드 배선(#268 리뷰) — 홈이 작업·기안 화면보다 먼저
+        # 생성되므로 사후 주입. 홈 삭제는 이 조회로 소유 화면의 무장 세션을 먼저 묻는다.
+        self.controllers["home"].session_guards = [
+            self.controllers["job"].session_guard_for,
+            self.controllers["draft"].session_guard_for,
+        ]
 
     def _controller(self, screen: str):
         try:

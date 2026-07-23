@@ -128,6 +128,52 @@ def test_nested_cell_change_is_not_misattributed_to_parent_or_sibling():
     assert change.location_label.endswith("셀(3,4)")
 
 
+def _nested_at(row: int, col: int) -> Document:
+    """중첩 셀 좌표만 매개변수 — 부모 셀의 평탄화 전문은 좌표와 무관하게 동일해진다."""
+    return _doc_from_xml(
+        f"""
+        <hp:p><hp:run><hp:tbl>
+          <hp:tr>
+            <hp:tc>
+              <hp:cellAddr colAddr="0" rowAddr="0"/>
+              <hp:cellSpan colSpan="1" rowSpan="1"/>
+              <hp:subList>
+                <hp:p><hp:run><hp:t>부모 고정</hp:t></hp:run></hp:p>
+                <hp:p><hp:run><hp:tbl>
+                  <hp:tr><hp:tc>
+                    <hp:cellAddr colAddr="{col}" rowAddr="{row}"/>
+                    <hp:cellSpan colSpan="1" rowSpan="1"/>
+                    <hp:subList><hp:p><hp:run><hp:t>중첩 금액: 100만원</hp:t></hp:run></hp:p></hp:subList>
+                  </hp:tc></hp:tr>
+                </hp:tbl></hp:run></hp:p>
+              </hp:subList>
+            </hp:tc>
+          </hp:tr>
+        </hp:tbl></hp:run></hp:p>
+        """
+    )
+
+
+def test_nested_move_with_equal_flat_text_still_attributes_nested_cells():
+    """#254 리뷰 — 부모 셀의 평탄화 전문이 같아도 중첩 재귀는 돌아야 한다: 같은 값이 중첩
+    좌표 사이를 이동하면 평탄화 등호 조기 반환은 변경 0건으로 조용히 삼켜, table_path/실셀
+    귀속을 스스로 무력화한다. 이동 = 옛 좌표 removed + 새 좌표 added 로 정확 귀속."""
+    result = diff_documents(_nested_at(3, 4), _nested_at(0, 0))
+
+    facts = sorted(_facts(result))
+    assert facts == [
+        ("added", "", "중첩 금액: 100만원"),
+        ("removed", "중첩 금액: 100만원", ""),
+    ]
+    for change in result.changes:
+        assert change.location["table_path"] == [0, 0]
+        assert change.location["parent_cells"] == [{"rowAddr": 0, "colAddr": 0}]
+    removed = next(c for c in result.changes if c.kind == "removed")
+    added = next(c for c in result.changes if c.kind == "added")
+    assert (removed.location["rowAddr"], removed.location["colAddr"]) == (3, 4)
+    assert (added.location["rowAddr"], added.location["colAddr"]) == (0, 0)
+
+
 def test_repeated_and_similar_paragraphs_pair_only_their_position_owner():
     old = _paragraph_doc(
         "반복 안내: 증빙을 제출합니다.",

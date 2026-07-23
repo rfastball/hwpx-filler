@@ -123,6 +123,43 @@ def test_delete_job_updates_snapshot(tmp_path):
     assert any(s == "home" for s, _snap in pushes)
 
 
+def test_app_wires_home_session_guards_to_job_and_draft(tmp_path, monkeypatch):
+    """#268 리뷰 배선 가드 — WebFrontend 가 홈 삭제 가드에 작업·기안 화면의
+    ``session_guard_for`` 를 실제로 꽂는다(가드 로직만 있고 배선이 빠지면 무의미)."""
+    from hwpxfiller.webapp import app as app_mod
+
+    monkeypatch.setattr(app_mod, "default_jobs_dir", lambda: tmp_path / "jobs")
+    frontend = app_mod.WebFrontend(tmp_path / "txt")
+    home = frontend.controllers["home"]
+    assert home.session_guards == [
+        frontend.controllers["job"].session_guard_for,
+        frontend.controllers["draft"].session_guard_for,
+    ]
+    # 무장 아닌 상태에선 어떤 가드도 발화하지 않는다(홈 삭제 즉시 통과 성질 보존).
+    assert all(guard("아무거나") is None for guard in home.session_guards)
+
+
+def test_delete_job_consults_cross_screen_armed_sessions(tmp_path):
+    """#268 리뷰 — 홈 삭제는 작업·기안 화면의 무장 세션을 먼저 묻는다: 세션의 선택·진행은
+    파일 복원으로도 못 돌아오는 소실이라, 무확인 즉시 삭제는 그 화면 복귀 시 무확인 세션
+    소거로 이어진다. 무장이면 needs_confirm(무변이), confirm 재호출로만 통과."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.session_guards = [
+        lambda name: {"screen": "job", "armed": True, "sel_count": 2}
+        if name == "낙찰" else None
+    ]
+    res = ctrl.dispatch("delete_job", {"name": "낙찰"})
+    assert res["needs_confirm"] is True and res["open_session"] is True
+    assert res["screen"] == "job"
+    assert ctrl._job_registry.exists("낙찰")  # 무변이 재진술
+    confirmed = ctrl.dispatch("delete_job", {"name": "낙찰", "confirm": True})
+    assert confirmed == {"ok": True, "undo": True, "name": "낙찰"}
+    assert not ctrl._job_registry.exists("낙찰")
+    # 무관 작업(가드 None)은 사전 확인 없이 휴지통 관용에 맡긴다.
+    res2 = ctrl.dispatch("delete_job", {"name": "공고서"})
+    assert res2["undo"] is True
+
+
 def test_delete_job_can_restore_last_slot(tmp_path):
     ctrl, _ = _controller(tmp_path)
     assert ctrl.dispatch("undo_delete_job", {}) == {

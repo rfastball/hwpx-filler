@@ -25,10 +25,26 @@
 3. **링2 — 웹 프레젠테이션:** `src/hwpxfiller/webapp/`의 컨트롤러·브리지와 `web/`의
    HTML/CSS/JavaScript. 링1을 호출해 JSON-safe snapshot으로 바꾸고 DOM에 렌더한다.
 
-웹→Python은 `WebFrontend.initial(screen)`과 `dispatch(screen, action, payload)`를 통한다.
-허용 화면·액션·payload 키는 `webapp/action_registry.py`가 검증한다. Python→웹 관측 갱신은
-`window.__push(screen, snapshot)`으로 흐른다. 파일 선택, 확인, 클립보드, 창 수명 같은 네이티브
-동작은 링2 브리지가 소유한다. 링0·링1이 WebView2 또는 DOM을 알게 해서는 안 된다.
+웹→Python 경로는 두 갈래다(#257 리뷰 — 전 경로를 여기서 계약한다).
+
+- **디스패치 경로:** 순수 데이터 액션은 `WebFrontend.initial(screen)`과
+  `dispatch(screen, action, payload)`를 통하고, 허용 화면·액션·payload 키는
+  `webapp/action_registry.py`의 `validate_dispatch`가 검증한다.
+- **직접 브리지 경로:** 네이티브 자원이 관여하는 호출은 `web/js/bridge.js`가
+  `WebFrontend` 공개 메서드를 **직접** 부른다 — 파일/폴더 피커(`pick_data_file`,
+  `pick_output_folder`, `pick_template_path`, `pick_pool_data_file`), 실행·가져오기
+  (`generate`, `import_template_file`, `import_library_template`), 에디터 착지
+  (`load_template_into_editor`, `open_job_in_editor`, `editor_has_unsaved_work`), 경로 추적
+  (`open_path`, `reveal_path`, `copy_path`, `reveal_corrupt_job`), 클립보드·설정
+  (`copy_clipboard`, `set_theme`, `set_font_scale`, `set_rail_collapsed`, `set_master_width`),
+  시트 적재(`load_data_sheet`). 이 경로는 action registry **밖**이므로, 새 직접 메서드를
+  추가하면 이 목록과 payload 검증 책임(메서드 본문)을 함께 갱신한다.
+
+Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다. 사용자 확인(파괴 전이의
+`needs_confirm` 왕복)은 pywebview 네이티브 다이얼로그가 아니라 **JavaScript `Modal.confirm`**
+(`web/js/modal.js`)이 구현한다 — 판정·수치는 Python이 내리고 문안·확인 UI는 웹이 소유한다.
+창 수명 같은 나머지 네이티브 동작도 링2 브리지가 소유한다. 링0·링1이 WebView2 또는 DOM을
+알게 해서는 안 된다.
 
 ## 현재 라우팅과 소유권
 

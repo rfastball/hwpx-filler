@@ -2,6 +2,11 @@
 # Paths are non-recursive by design: native/runtime/distribution surfaces use
 # their own gates and must not be hidden inside a low aggregate Python floor.
 
+# Measured source packages must carry a floor above OR appear here (#255 review):
+# an unlisted new subpackage fails the gate instead of being silently skipped.
+# hwpxcore/native is validated by its own native scenario gate.
+unmatched_allow = ["src/hwpxcore/native"]
+
 [packages.hwpxcore]
 path = "src/hwpxcore"
 line = 95
