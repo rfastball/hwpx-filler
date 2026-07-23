@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 980" role="img" aria-labelledby="title desc">
+  <title id="title">문서나르미 최종 브랜드 시안</title>
+  <desc id="desc">심벌, 워드마크, 소형 크기와 색상 규칙을 보여주는 최종 시안</desc>
+  <rect width="1440" height="980" fill="#F4F6F9"/>
+  <text x="96" y="102" fill="#111827" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif" font-size="24" font-weight="700">문서나르미 · FINAL DIRECTION</text>
+  <text x="96" y="142" fill="#667085" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif" font-size="17">문서가 아니라, 문서가 완성되어 전달되는 움직임을 남겼습니다.</text>
+
+  <rect x="96" y="194" width="1248" height="326" rx="28" fill="#FFFFFF"/>
+  <g transform="translate(177 287) scale(2.05)" fill="#2874A6">
+    <path d="M6 14.5 34.5 8c2.1-.5 3.5.7 3.5 2.8v12.7c0 2.2-1.3 3.7-3.4 4.2L6 34.5Z"/>
+    <path d="m26 38.5 32-8v18.2c0 2.3-1.7 3.5-3.8 2.9L26 43.8Z"/>
+  </g>
+  <text x="342" y="388" fill="#111827" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif" font-size="72" font-weight="700" letter-spacing="-2.6">문서나르미</text>
+  <text x="345" y="432" fill="#667085" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif" font-size="18" letter-spacing="-.2">HWPX 문서 자동화</text>
+
+  <rect x="96" y="552" width="608" height="330" rx="28" fill="#FFFFFF"/>
+  <text x="144" y="615" fill="#111827" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif" font-size="20" font-weight="700">SMALL SIZE</text>
+  <text x="144" y="648" fill="#667085" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif" font-size="15">형태를 더하지 않고 두 면의 간격만 유지합니다.</text>
+  <g transform="translate(148 708) scale(.5)" fill="#2874A6">
+    <path d="M6 14.5 34.5 8c2.1-.5 3.5.7 3.5 2.8v12.7c0 2.2-1.3 3.7-3.4 4.2L6 34.5Z"/>
+    <path d="m26 38.5 32-8v18.2c0 2.3-1.7 3.5-3.8 2.9L26 43.8Z"/>
+  </g>
+  <text x="146" y="784" fill="#98A2B3" font-family="Arial, sans-serif" font-size="14">32 px</text>
+  <g transform="translate(275 712) scale(.375)" fill="#2874A6">
+    <path d="M6 14.5 34.5 8c2.1-.5 3.5.7 3.5 2.8v12.7c0 2.2-1.3 3.7-3.4 4.2L6 34.5Z"/>
+    <path d="m26 38.5 32-8v18.2c0 2.3-1.7 3.5-3.8 2.9L26 43.8Z"/>
+  </g>
+  <text x="270" y="784" fill="#98A2B3" font-family="Arial, sans-serif" font-size="14">24 px</text>
+  <g transform="translate(394 716) scale(.25)" fill="#2874A6">
+    <path d="M6 14.5 34.5 8c2.1-.5 3.5.7 3.5 2.8v12.7c0 2.2-1.3 3.7-3.4 4.2L6 34.5Z"/>
+    <path d="m26 38.5 32-8v18.2c0 2.3-1.7 3.5-3.8 2.9L26 43.8Z"/>
+  </g>
+  <text x="385" y="784" fill="#98A2B3" font-family="Arial, sans-serif" font-size="14">16 px</text>
+
+  <rect x="736" y="552" width="608" height="330" rx="28" fill="#2874A6"/>
+  <text x="784" y="615" fill="#FFFFFF" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif" font-size="20" font-weight="700">REVERSED</text>
+  <text x="784" y="648" fill="#DCEBFA" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif" font-size="15">강조 면에서는 흰색 단색으로만 반전합니다.</text>
+  <g transform="translate(797 700) scale(1.35)" fill="#FFFFFF">
+    <path d="M6 14.5 34.5 8c2.1-.5 3.5.7 3.5 2.8v12.7c0 2.2-1.3 3.7-3.4 4.2L6 34.5Z"/>
+    <path d="m26 38.5 32-8v18.2c0 2.3-1.7 3.5-3.8 2.9L26 43.8Z"/>
+  </g>
+  <text x="905" y="776" fill="#FFFFFF" font-family="Pretendard, 'Noto Sans KR', 'Malgun Gothic', sans-serif" font-size="42" font-weight="700" letter-spacing="-1.5">문서나르미</text>
+
+  <circle cx="113" cy="929" r="11" fill="#2874A6"/>
+  <text x="137" y="936" fill="#475467" font-family="Arial, sans-serif" font-size="16">Primary Blue  #2874A6</text>
+  <circle cx="365" cy="929" r="11" fill="#111827"/>
+  <text x="389" y="936" fill="#475467" font-family="Arial, sans-serif" font-size="16">Wordmark  #111827</text>
+</svg>

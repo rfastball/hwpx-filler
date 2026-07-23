@@ -47,7 +47,7 @@ from .screens import (
 )
 
 
-WINDOW_TITLE = "HWPX Filler"  # 창 제목 = 파일 다이얼로그 소유주 창을 FindWindowW 로 찾는 키
+WINDOW_TITLE = "문서나르미"  # 창 제목(#258 제품명) = 파일 다이얼로그 소유주 창을 FindWindowW 로 찾는 키
 DEFAULT_WINDOW_WIDTH = 1440
 DEFAULT_WINDOW_HEIGHT = 900
 
