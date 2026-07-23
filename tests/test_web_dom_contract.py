@@ -67,6 +67,8 @@ MODAL_LABELLEDBY = {
     # 전용 jobOverwriteModal DOM 폐기(아래 test_job_overwrite_uses_shared_confirm_modal 가드).
     "confirmModal": "confirmModalTitle",  # 네이티브 window.confirm 대체(#86) + 덮어쓰기 확인
     "promptModal": "promptModalTitle",  # 네이티브 window.prompt 대체(#86)
+    "draftMapSheet": "draftMapSheetTitle",  # 기안 맞추기 펼침 면(#271)
+    "dataSheet": "dataSheetTitle",  # 기안·작업 공용 데이터 펼침 면(#271/#272)
 }
 
 
@@ -329,6 +331,28 @@ def test_milestone_l_draft_density_structure_and_values():
     assert "host.scrollHeight > host.clientHeight + 1" in draft_js
     assert 'mapCapstrip: "draftMapCapstrip"' in screen_js
     assert "ResizeObserver(measureMapCap)" in draft_js
+
+
+def test_milestone_l_draft_expansion_sheets_move_live_surfaces():
+    """#271: 두 펼침 면의 골격·정확한 버튼 문안·실 DOM 이동/복귀 계약을 고정한다."""
+    html = WEB_INDEX.read_text(encoding="utf-8")
+    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    sheets = (WEB_JS_DIR / "surface_sheet.js").read_text(encoding="utf-8")
+    draft_js = (WEB_JS_DIR / "draftsession.js").read_text(encoding="utf-8")
+
+    assert html.count("펼쳐서 맞추기 ⤢") >= 1
+    assert html.count("펼쳐서 행 고르기 ⤢") >= 1
+    assert '<div id="draftMapSheet" class="modal sheet hidden"' in html
+    assert '<div id="dataSheet" class="modal sheet hidden"' in html
+    for key in ("tokPanel", "mapLegend", "cardReadout", "cardRender"):
+        assert f"{{ id: id.{key}, slotId:" in draft_js
+    for key in ("recsHead", "chips", "tableHost", "strip", "colPanel"):
+        assert f"{{ id: id.{key}, slotId: \"dataSheetSlot\" }}" in draft_js
+    assert ".cloneNode(" not in sheets
+    assert "slot.appendChild(el)" in sheets
+    assert "m.parent.insertBefore(m.el, m.next)" in sheets
+    assert ".data-sheet-body.jobtbth:first-child" in css
+    assert "position:sticky;left:0" in css
 
 
 def _forced_colors_block(css_path: Path) -> str:

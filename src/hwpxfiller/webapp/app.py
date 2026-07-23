@@ -769,6 +769,72 @@ _PRESERVE_REAL_PROBE_JS = r"""
 """
 
 
+# 기안 펼침 면(#271) — 실 DOM 이동(복제 없음), Filled 강제, Escape/버튼 닫기 뒤 원위치·
+# 포커스·스크롤 복귀, 데이터 첫 열 sticky를 실제 WebView2에서 되읽는다.
+_DRAFT_SHEETS_PROBE_JS = r"""
+(function () {
+  var out = {};
+  function finish(id) {
+    var card = document.querySelector('#' + id + ' .modal-card');
+    var ev = new Event('transitionend', {bubbles:true});
+    Object.defineProperty(ev, 'propertyName', {value:'opacity'});
+    card.dispatchEvent(ev);
+  }
+  try {
+    window.Nav.go('draft');
+    var map = document.getElementById('draftTokPanel');
+    var legend = document.getElementById('draftMapLegend');
+    var readout = document.getElementById('draftCardReadout');
+    var render = document.getElementById('draftCardRender');
+    var mapParent = map.parentNode, legendParent = legend.parentNode;
+    var readoutParent = readout.parentNode, renderParent = render.parentNode;
+    // 현재 스냅샷의 토큰 수와 무관하게 실제 오버플로를 만들어 이동 전 스크롤을 검증한다.
+    var spacer = document.createElement('div'); spacer.style.height = '500px';
+    map.appendChild(spacer); map.style.maxHeight = '80px'; map.style.height = '80px';
+    map.scrollTop = 37;
+    document.getElementById('draftViewSource').click();
+    var trigger = document.getElementById('draftMapExpand');
+    trigger.focus(); trigger.click();
+    var sheet = document.getElementById('draftMapSheet');
+    out.map_open = !sheet.classList.contains('hidden');
+    out.map_moved = document.getElementById('draftMapSheetMapSlot').contains(map) &&
+      document.getElementById('draftMapSheetMapSlot').contains(legend);
+    out.preview_moved = document.getElementById('draftMapSheetPreviewSlot').contains(readout) &&
+      document.getElementById('draftMapSheetPreviewSlot').contains(render);
+    out.filled_forced = !render.hidden && document.getElementById('draftSrcView').hidden;
+    out.same_map = map === document.getElementById('draftTokPanel');
+    document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}));
+    finish('draftMapSheet');
+    out.map_restored = map.parentNode === mapParent && legend.parentNode === legendParent &&
+      readout.parentNode === readoutParent && render.parentNode === renderParent;
+    out.map_scroll = map.scrollTop;
+    out.map_focus_restored = document.activeElement === trigger;
+    spacer.remove(); map.style.maxHeight = ''; map.style.height = '';
+
+    var head = document.getElementById('draftRecsHead');
+    var chips = document.getElementById('draftFilterChips');
+    var table = document.getElementById('draftTableHost');
+    var strip = document.getElementById('draftSelStrip');
+    var panel = document.getElementById('draftColPanel');
+    var parents = [head.parentNode, chips.parentNode, table.parentNode, strip.parentNode, panel.parentNode];
+    var dataTrigger = document.getElementById('draftDataExpand');
+    dataTrigger.focus(); dataTrigger.click();
+    var slot = document.getElementById('dataSheetSlot');
+    out.data_moved = slot.contains(head) && slot.contains(chips) && slot.contains(table) &&
+      slot.contains(strip) && slot.contains(panel);
+    var first = document.querySelector('#draftTableHead th:first-child');
+    out.first_col_sticky = !first || getComputedStyle(first).position === 'sticky';
+    document.getElementById('dataSheetClose').click(); finish('dataSheet');
+    out.data_restored = head.parentNode === parents[0] && chips.parentNode === parents[1] &&
+      table.parentNode === parents[2] && strip.parentNode === parents[3] && panel.parentNode === parents[4];
+    out.data_focus_restored = document.activeElement === dataTrigger;
+    out.error = null;
+  } catch (e) { out.error = 'throw:' + (e && e.message); }
+  return out;
+})()
+"""
+
+
 # 「작업」 본문 존 거울 + 재진술 블록(블록 6 D2/D1, 슬라이스 2) — 합성 스냅샷을 shipped __push 로
 # 실 render() 에 흘려 거울 테이블 4상태 행·미입력 클릭형·재진술 이름 목록·드리프트 차단 배너가
 # 실 WebView2 에서 실제로 그려지는지 되읽는다(정적 계약은 test_web_dom_contract, 값 합성은
@@ -2116,6 +2182,7 @@ def _selftest_drive(window: "object") -> None:
         # 「기안」 휘발 세션 4존(#148 슬라이스 3a) — 공용 팩토리(draftsession.js)의 두 번째
         # 소비 인스턴스가 draft 화면 DOM 에서 실제로 서는지(데이터 존·카드·린트·완료) 되읽기.
         result["draft_session"] = window.evaluate_js(_DRAFT_SESSION_PROBE_JS)  # type: ignore[attr-defined]
+        result["draft_sheets"] = window.evaluate_js(_DRAFT_SHEETS_PROBE_JS)  # type: ignore[attr-defined]
         # #270 컨테이너 쿼리의 협폭 분기 — 같은 DOM을 1180급 창에서 되읽어 적층·sticky 해제를
         # 실제 Chromium 레이아웃으로 고정하고 즉시 새 기본창으로 복원한다.
         window.resize(1180, 820)  # type: ignore[attr-defined]

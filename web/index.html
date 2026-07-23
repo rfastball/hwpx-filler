@@ -288,7 +288,8 @@
           <div class="job-zones" id="draftSessionPanel">
             <!-- ① 데이터 — 템플릿(무엇으로) → 데이터(무엇을) → 행(어느 건) -->
             <div class="zone">
-              <div class="zone-cap"><span class="znum">1</span>데이터</div>
+              <div class="zone-cap zone-cap-actions"><span><span class="znum">1</span>데이터</span>
+                <button class="btn sm" id="draftDataExpand" type="button">펼쳐서 행 고르기 ⤢</button></div>
               <div class="run-row"><span class="lbl">템플릿</span>
                 <select class="field" id="draftTplSel"></select>
                 <button class="btn" id="draftBtnPaste" data-busy-lock>템플릿 붙여넣기…</button></div>
@@ -302,7 +303,7 @@
                      때만 뜬다(draftsession.js has_data). 데이터 교체와 같은 파괴라 T3 확인을 지난다. -->
                 <button class="btn" id="draftBtnClearData" data-busy-lock hidden>데이터 해제</button></div>
 
-              <div class="run-row run-recs-head">
+              <div class="run-row run-recs-head" id="draftRecsHead">
                 <span class="lbl" style="font-weight:600">기안 대상 행</span>
                 <input class="field jobsearch" id="draftFilterSearch" type="search"
                        placeholder="전체 열 검색" autocomplete="off" data-busy-lock>
@@ -336,7 +337,8 @@
               <!-- ② 맞추기(#148 슬라이스 3b) — 토큰별 결속·근사 제안·표시형·소유권 색. 표는 공용
                    팩토리(draftsession.js)가 렌더하고, 여기는 호스트·범례만. -->
               <div class="zone draft-map-zone">
-                <div class="zone-cap"><span class="znum">2</span>맞추기</div>
+                <div class="zone-cap zone-cap-actions"><span><span class="znum">2</span>맞추기</span>
+                  <button class="btn sm" id="draftMapExpand" type="button">펼쳐서 맞추기 ⤢</button></div>
                 <div id="draftTokPanel" class="mapwrap" data-preserve-scroll></div>
                 <!-- 실제 오버플로일 때만 draftsession.js가 펼친다. display:flex가 hidden을 이기지
                      못하도록 CSS에 .capstrip[hidden] 계약을 둔다(B-9 결함류). -->
@@ -652,6 +654,33 @@
       </div>
     </div>
 
+    <!-- 기안 펼침 면(#271) — 기존 표면을 복제하지 않고 슬롯으로 옮긴 뒤 정확한 원위치에 복귀한다. -->
+    <div id="draftMapSheet" class="modal sheet hidden" role="dialog" aria-modal="true"
+         aria-labelledby="draftMapSheetTitle">
+      <div class="modal-card sheet-card">
+        <div class="sheet-head">
+          <h3 id="draftMapSheetTitle">기안 맞추기</h3>
+          <button class="btn" id="draftMapSheetClose" type="button">닫기</button>
+        </div>
+        <div class="sheet-body sheet-duo draft-map-sheet-body">
+          <section class="sheet-pane" aria-label="토큰 맞추기" id="draftMapSheetMapSlot"></section>
+          <section class="sheet-pane" aria-label="채운 모습" id="draftMapSheetPreviewSlot"></section>
+        </div>
+      </div>
+    </div>
+
+    <!-- 기안·작업이 한 벌을 쓰는 데이터 펼침 면(#271/#272). 소유 화면의 실 DOM을 이 슬롯으로 이동한다. -->
+    <div id="dataSheet" class="modal sheet hidden" role="dialog" aria-modal="true"
+         aria-labelledby="dataSheetTitle">
+      <div class="modal-card sheet-card">
+        <div class="sheet-head">
+          <h3 id="dataSheetTitle">데이터 행 고르기</h3>
+          <button class="btn" id="dataSheetClose" type="button">닫기</button>
+        </div>
+        <div class="sheet-body data-sheet-body" id="dataSheetSlot"></div>
+      </div>
+    </div>
+
     <!-- 템플릿 그룹 이동 다이얼로그(#108, groupMoveModal 동형·별도 요소) — 화면별 wiring 격리.
          기존 그룹 + 새 그룹 입력 동거 + 해제. 목록은 template.js 가 스냅샷 그룹명으로 채운다. -->
     <div id="tplMoveModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="tplMoveTitle">
@@ -703,6 +732,7 @@
 <script src="js/segview.js"></script>
 <script src="js/preserve.js"></script>
 <script src="js/modal.js"></script>
+<script src="js/surface_sheet.js"></script>
 <script src="js/undo_toast.js"></script>
 <script src="js/sheet_picker.js"></script>
 <script src="js/pool_picker.js"></script>
