@@ -265,6 +265,16 @@ class TestWebSelftestGate:
             f"실화면 스크롤 유실(재구성이 0 으로 리셋됐거나 예외): {top!r}"
         )
 
+    def test_draft_expansion_sheets_move_and_restore_live_dom(self, selftest_result: dict) -> None:
+        s = selftest_result["draft_sheets"]
+        assert s.get("error") is None, s
+        assert s["map_open"] and s["map_moved"] and s["preview_moved"] and s["same_map"], s
+        assert s["filled_forced"], "맞추기 펼침 면은 채운 모습으로 열려야 합니다."
+        assert s["map_restored"] and s["map_focus_restored"], s
+        assert abs(s["map_scroll"] - 37) < 2, s
+        assert s["data_moved"] and s["data_restored"] and s["data_focus_restored"], s
+        assert s["first_col_sticky"], s
+
     def test_job_mirror_table_renders_four_state_rows(self, selftest_result: dict) -> None:
         # 「작업」 본문 존 거울 — 합성 스냅샷을 실 render() 에 흘려 필드
         # 채움 테이블이 실 WebView2 에서 4행(채움·채움+표시형·미입력·빈칸)으로 그려지고 미입력

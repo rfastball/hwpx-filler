@@ -366,6 +366,8 @@ table.dmap tr:last-child td{border-bottom:0}
   border-radius:var(--rad-control)}
 /* display:flex가 UA [hidden] 규칙을 이기는 B-9 결함류를 명시 차단한다. */
 .capstrip[hidden]{display:none}
+.zone-cap-actions{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-8)}
+.zone-cap-actions>.btn{margin-left:auto}
 /* 완료 노트 — 구 화면에선 .pane.workcard 자손이라 색이 붙었다. 4존에선 자기 id 로 잇는다. */
 #draftNote{margin:var(--sp-8) 0 0;color:var(--a-muted);font-size:var(--fs-body)}
 #draftNote[data-level="ok"]{color:var(--a-ok)}
@@ -848,6 +850,24 @@ body.resizing-master{cursor:col-resize;user-select:none}
 .modal-actions{display:flex;justify-content:flex-end;gap:var(--sp-8);margin-top:var(--sp-12)}
 .modal-card .ctl{display:flex;flex-direction:column;gap:var(--sp-4);margin-top:var(--sp-4)}
 .modal-card .ctl .field{width:100%}
+.sheet .sheet-card{width:calc(100vw - 2 * var(--sp-16));height:calc(100vh - 2 * var(--sp-16));
+  height:calc(100dvh - 2 * var(--sp-16));max-height:none;padding:0;overflow:hidden;display:flex;flex-direction:column}
+.sheet-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-12);
+  padding:var(--sp-16) var(--sp-20);border-bottom:1px solid var(--a-border);flex:0 0 auto}
+.sheet-head h3{margin:0}
+.sheet-body{min-width:0;min-height:0;flex:1;padding:var(--sp-16);overflow:auto}
+.sheet-duo{display:grid;grid-template-columns:minmax(0,1.08fr) minmax(0,1fr);gap:var(--sp-16)}
+.sheet-pane{min-width:0;min-height:0;overflow:auto;border:1px solid var(--a-border);
+  border-radius:var(--rad-card);padding:var(--sp-12)}
+.draft-map-sheet-body #draftTokPanel{max-height:none;height:100%}
+.draft-map-sheet-body #draftCardRender{max-height:none}
+.data-sheet-body{display:flex;flex-direction:column;gap:var(--sp-10)}
+.data-sheet-body .jobtb-host{display:flex;flex-direction:column;min-height:0;flex:1}
+.data-sheet-body .jobtbwrap{max-height:none;min-height:0;flex:1}
+.data-sheet-body .jobtb th:first-child,.data-sheet-body .jobtb td:first-child{position:sticky;left:0;background:var(--a-card)}
+.data-sheet-body .jobtb th:first-child{z-index:3}
+.data-sheet-body .jobtb td:first-child{z-index:2}
+@media (max-width:900px){.sheet-duo{grid-template-columns:1fr}.sheet .sheet-card{width:100vw;height:100vh;height:100dvh}}
 @media (prefers-reduced-transparency:reduce){
   .modal{background:var(--a-scrim-reduced);backdrop-filter:none}
   .modal.is-closing{background:transparent}
