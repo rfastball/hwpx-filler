@@ -98,15 +98,17 @@ _APP_CSS = (
 
 
 def test_web_region_emits_scale_tokens():
-    """웹 CSS 영역이 여백·모서리·폰트크기 스케일 변수를 px 부착으로 방출한다(대표값 검증)."""
+    """구조 스케일은 px, 타이포는 전역 앱 배율을 따르는 rem으로 방출한다."""
     region = gen.render_web_region(gen.load_tokens())
     assert "--sp-12:12px;" in region       # 여백 그리드
     assert "--sp-8:8px;" in region
     assert "--rad-control:6px;" in region   # 모서리(역할 문법 #59)
     assert "--rad-pill:999px;" in region    # 완전 둥근 pill
-    assert "--fs-body:14px;" in region      # 본문 폰트(#179 가독성 승격)
-    assert "--fs-dense:13px;" in region     # 고밀도 데이터 그리드 전용(#179)
-    assert "--fs-kpi:23px;" in region
+    assert "--fs-body:0.875rem;" in region   # 14px @ 100%, 17.5px @ 125%
+    assert "--fs-dense:0.8125rem;" in region
+    assert "--fs-kpi:1.4375rem;" in region
+    assert 'html[data-font-scale="large"]{font-size:125%;}' in region
+    assert 'html[data-font-scale="larger"]{font-size:150%;}' in region
 
 
 def test_scale_tokens_theme_invariant():

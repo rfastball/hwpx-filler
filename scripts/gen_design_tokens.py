@@ -72,7 +72,7 @@ _WEB_MAP = [
 ]
 
 # 스케일 변수(여백·모서리·폰트크기) ← JSON space/radius/type. 색과 달리 **테마 불변** —
-# 라이트 :root 블록에만 방출하고 다크 블록엔 중복하지 않는다. 값은 무단위 정수 → px 부착.
+# 라이트 :root 블록에만 방출하고 다크 블록엔 중복하지 않는다. 구조 치수는 px, type은 rem.
 # space 는 수치키(--sp-8 = 8px, 촘촘한 px 그리드), radius/type 은 역할 의미키.
 _SCALE_MAP = [
     # 여백은 2px 기저 수치 사다리 — 희소 오드볼(14·20·28)은 꼬리청소로 퇴역(#60), 인접값 스냅.
@@ -138,8 +138,13 @@ def _web_vars(root: dict, indent: str) -> "list[str]":
 
 
 def _scale_vars(tokens: dict, indent: str) -> "list[str]":
-    """``_SCALE_MAP`` 을 판 스케일 CSS 변수 선언들(무단위 정수 → ``px`` 부착)."""
-    return [f"{indent}{name}:{_dig(tokens, path)}px;" for name, path in _SCALE_MAP]
+    """스케일 선언. 타이포는 전역 html 배율을 따르는 rem, 구조 치수는 px로 방출한다."""
+    lines = []
+    for name, path in _SCALE_MAP:
+        value = _dig(tokens, path)
+        rendered = f"{value / 16:g}rem" if path.startswith("type.") else f"{value}px"
+        lines.append(f"{indent}{name}:{rendered};")
+    return lines
 
 
 def _motion_vars(tokens: dict, indent: str) -> "list[str]":
@@ -170,6 +175,9 @@ def render_web_region(tokens: dict) -> str:
     lines += _motion_vars(tokens, "  ")
     lines += _layer_vars(tokens, "  ")
     lines += ["  color-scheme:light;", "}",
+              "html{font-size:100%;}",
+              'html[data-font-scale="large"]{font-size:125%;}',
+              'html[data-font-scale="larger"]{font-size:150%;}',
               "@media (prefers-color-scheme:dark){",
               '  :root:not([data-theme="light"]){']
     lines += _web_vars(dark, "    ")
