@@ -3,6 +3,7 @@
   "color": {
     "primary": "#2f5fbf",
     "primary_hover": "#274fa0",
+    "brand": "#2874A6",
     "warn": "#a05a00",
     "danger": "#c0392b",
     "ok": "#1e8449",
@@ -55,6 +56,7 @@
     "color": {
       "primary": "#6f97e8",
       "primary_hover": "#8badf0",
+      "brand": "#4ea8e5",
       "warn": "#e0a850",
       "danger": "#ec7264",
       "ok": "#43b877",

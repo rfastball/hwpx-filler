@@ -456,7 +456,7 @@ class _RegistryWriteState:
         if error == 183:  # ERROR_ALREADY_EXISTS — 다른 프로세스의 writer가 생존 중.
             kernel32.CloseHandle(handle)
             raise JobRegistryOwnershipError(
-                "이 작업 저장소는 이미 다른 HWPX Filler 프로세스가 쓰고 있습니다. "
+                "이 작업 저장소는 이미 다른 문서나르미 프로세스가 쓰고 있습니다. "
                 "기존 앱을 닫은 뒤 다시 시도하세요."
             )
         self._owner = handle
@@ -473,7 +473,7 @@ class _RegistryWriteState:
         except OSError as exc:
             stream.close()
             raise JobRegistryOwnershipError(
-                "이 작업 저장소는 이미 다른 HWPX Filler 프로세스가 쓰고 있습니다. "
+                "이 작업 저장소는 이미 다른 문서나르미 프로세스가 쓰고 있습니다. "
                 "기존 앱을 닫은 뒤 다시 시도하세요."
             ) from exc
         self._owner = stream

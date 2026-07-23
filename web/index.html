@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HWPX Filler</title>
+<title>문서나르미</title>
+<link rel="icon" type="image/svg+xml" href="img/narmi-mark.svg">
 <!-- 테마 영속은 오리진 비의존 Python 설정으로 이관(#74) — 부팅 시 app.py 가 창을 숨긴 채 loaded
      에서 저장 테마를 data-theme 로 주입한 뒤 show 한다(FOUC 은닉). pywebview 엔 첫 페인트 전
      주입 훅이 없어 head 동기 인라인(구 localStorage 판독)은 불가·불필요해 제거했다. -->
@@ -19,7 +20,9 @@
      39 — 「작업」 편집 모드로 흡수)에서 사망. matrix 는 F9 로 제거 — 실행 모델은 하나다. -->
 <div class="app">
   <nav class="rail" aria-label="화면 전환">
-    <div class="brand">HWPX Filler
+    <!-- #258 제품명 문서나르미 — 심벌(두 평면, 단색 var(--a-brand))+워드마크 락업. 심벌은 장식이라
+         aria-hidden(접근 이름은 텍스트 워드마크가 담당). 원본 SVG=docs/branding/document-narmi-mark-final.svg. -->
+    <div class="brand"><span class="brand-lockup"><svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><path d="M6 14.5 34.5 8c2.1-.5 3.5.7 3.5 2.8v12.7c0 2.2-1.3 3.7-3.4 4.2L6 34.5Z"/><path d="m26 38.5 32-8v18.2c0 2.3-1.7 3.5-3.8 2.9L26 43.8Z"/></svg><span class="brand-name">문서나르미</span></span>
       <!-- #18/9B2AB35D-A: 사이드 패널 접기 — 좁은 창에서 작업 영역 확장(반응형) -->
       <button class="rail-toggle" id="railToggle" title="사이드 패널 접기/펼치기"
               aria-label="사이드 패널 접기/펼치기" aria-expanded="true">«</button></div>

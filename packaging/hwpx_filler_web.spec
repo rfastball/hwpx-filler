@@ -23,6 +23,10 @@ SRC = str(REPO / "src")
 version_path = REPO / "build" / "version" / "hwpx_filler_version.txt"
 version_res = str(version_path) if version_path.exists() else None
 
+# 아이콘은 커밋된 정적 리소스(#258 문서나르미 심벌 — scripts/render_document_narmi_branding.py 산출).
+icon_path = SPEC_DIR / "hwpx-filler.ico"
+icon_res = str(icon_path) if icon_path.exists() else None
+
 a = Analysis(
     [str(SPEC_DIR / "hwpx_filler_web_entry.py")],
     pathex=[SRC],
@@ -66,6 +70,7 @@ exe = EXE(
     [],
     name="hwpx-filler-web",
     version=version_res,
+    icon=icon_res,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

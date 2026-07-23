@@ -14,7 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 PRODUCTS = {
     "filler": {
-        "product_name": "HWPX Filler",
+        # 사용자 노출 제품명(#258). 기술 식별자(파일명·internal_name)는 hwpx-filler 유지.
+        "product_name": "문서나르미",
         "description": "HWPX 누름틀 문서 생성기",
         "filename": "hwpx-filler-web.exe",
         "internal_name": "hwpx-filler-web",
