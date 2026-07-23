@@ -30,6 +30,7 @@ from ..core.fields import fill_precheck, read_fields
 from ..core.lint import LintReport, SchemaDrift, diff_schema, lint_template
 from ..core.template_status import (
     OUTPUT_SUBDIR_NAME,
+    TRASH_DIR_NAME,
     CompileState,
     TemplateStatus,
     compile_status,
@@ -233,7 +234,10 @@ class TemplateManagerViewModel:
 
         **산출물 하위폴더 제외**(#136 리뷰 F2): 작업 실행 기본 저장 폴더가 ``템플릿/Results`` 라
         라이브러리 루트 밑에 완성 문서가 쌓인다. 그 하위트리를 템플릿으로 재수집하면 실행할수록
-        라이브러리가 산출물로 오염되므로 ``Results`` 경로 성분이 있는 파일은 건너뛴다."""
+        라이브러리가 산출물로 오염되므로 ``Results`` 경로 성분이 있는 파일은 건너뛴다.
+
+        **휴지통 하위폴더 제외**(#267 리뷰): 삭제는 루트 밑 ``.trash`` 로의 이동이라 제외하지
+        않으면 삭제한 템플릿이 개명된 채 즉시 재수집된다."""
         if self._explicit_paths is not None:
             return list(self._explicit_paths)
         if self.library_dir is not None and self.library_dir.is_dir():
@@ -243,6 +247,7 @@ class TemplateManagerViewModel:
                     for p in self.library_dir.rglob("*.hwpx")
                     if p.is_file()
                     and OUTPUT_SUBDIR_NAME not in p.relative_to(self.library_dir).parts
+                    and TRASH_DIR_NAME not in p.relative_to(self.library_dir).parts
                 ),
                 key=lambda p: (p.name, str(p)),
             )

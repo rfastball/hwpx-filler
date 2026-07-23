@@ -78,7 +78,7 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "set_group_by": _schema(optional="axis"),
         "toggle_facet": _schema("axis value"),
         "clear_facets": _schema(),
-        "delete_job": _schema("name"),
+        "delete_job": _schema("name", "confirm"),
         "undo_delete_job": _schema(),
         "clone_job": _schema("name"),
         "relink_template": _schema("name", "path confirm"),

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .paths import home_dir
+from .template_status import TRASH_DIR_NAME
 from .text_render import template_fields
 
 
@@ -67,7 +68,9 @@ class TextTemplateRegistry:
 
         비재귀 ``glob`` 은 탐색기로 하위폴더에 떨군 템플릿을 조용히 누락했다(confirm-or-alarm
         위반) — ``rglob`` 으로 반드시 찾아 올린다("파일 등장은 관용, 폴더 조직은 불인정" —
-        하위폴더는 조직이 아니라 관용된 등장지라 평평하게 나열된다).
+        하위폴더는 조직이 아니라 관용된 등장지라 평평하게 나열된다). 단 ``.trash`` 아래는
+        삭제 항목의 30일 보관소(#267 리뷰)라 스캔에서 제외한다 — 안 그러면 삭제한 템플릿이
+        ``타임스탬프-uuid-이름`` 으로 목록에 재등장한다.
 
         **이름 = 루트 상대경로(확장자 제외, POSIX)** — 루트 직속 파일은 곧 stem 이고 하위폴더
         파일은 ``하위폴더/이름``. 재귀가 ``a/동명.txt``·``b/동명.txt`` 를 stem 하나로 노출하면
@@ -78,7 +81,12 @@ class TextTemplateRegistry:
         return [
             TextTemplate(p.relative_to(self.directory).with_suffix("").as_posix(), p)
             for p in sorted(
-                (p for p in self.directory.rglob("*" + self.SUFFIX) if p.is_file()),
+                (
+                    p
+                    for p in self.directory.rglob("*" + self.SUFFIX)
+                    if p.is_file()
+                    and TRASH_DIR_NAME not in p.relative_to(self.directory).parts
+                ),
                 key=lambda p: (p.name, str(p)),
             )
         ]

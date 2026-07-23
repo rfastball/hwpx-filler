@@ -126,10 +126,14 @@ def _selftest_drive(window: "object", *, frontend: WebFrontend) -> None:
         ready_deadline = time.monotonic() + 20
         while time.monotonic() < ready_deadline:
             try:
+                # DiffScreen.ready — 객체 존재(스크립트 파싱)가 아니라 **렌더러 등록 완료**
+                # 표지(#252 리뷰): pywebviewready → init() → onPush 등록 전에 push 하면
+                # __push 가 조용히 버려 비교 버튼이 비활성인 채 게이트가 간헐 실패한다.
                 ready = window.evaluate_js(  # type: ignore[attr-defined]
                     "document.readyState === 'complete' && "
                     "typeof window.__push === 'function' && "
-                    "typeof window.DiffScreen === 'object'"
+                    "typeof window.DiffScreen === 'object' && "
+                    "window.DiffScreen.ready === true"
                 )
             except Exception:  # noqa: BLE001 — WebView2 cold-start 동안 재시도
                 ready = False

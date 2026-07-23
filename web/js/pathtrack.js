@@ -23,10 +23,14 @@
   function affordances(path, opts) {
     if (!path) return "";
     const which = (opts && opts.only) || ["open", "reveal"];
+    // 버튼 title 에도 전체 경로를 병기한다(#264 리뷰) — 아이콘 버튼 위에선 버튼 자신의
+    // title 이 부모 .track-affords 의 경로 title 을 가려, 경로 텍스트를 안 그리는 호출부
+    // (풀 카드 등)에서 전체 경로가 발견 불가능해진다(full-path-tooltip 계약 위반).
     const btns = which.map((k) => {
       const spec = ACTS[k];
       return `<button type="button" class="btn sm icon track-btn" data-track-act="${k}"` +
-        ` data-path="${esc(path)}" title="${spec.label}" aria-label="${spec.label}">${spec.icon}</button>`;
+        ` data-path="${esc(path)}" title="${spec.label} — ${esc(path)}"` +
+        ` aria-label="${spec.label}">${spec.icon}</button>`;
     }).join("");
     return `<span class="track-affords" title="${esc(path)}">${btns}</span>`;
   }

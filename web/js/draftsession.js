@@ -866,7 +866,9 @@
       applyView();
       window.SurfaceSheet.open({
         modalId: "draftMapSheet",
-        returnFocus: e && e.currentTarget ? e.currentTarget : document.activeElement,
+        // 클릭된 버튼(캡스트립 위임 포함) → 상시 ⤢ 버튼 순 — currentTarget 은 위임 시
+        // 포커스 불가능한 컨테이너 div 라 복귀 실패(#279 리뷰, SurfaceSheet.trigger 단일 출처).
+        returnFocus: window.SurfaceSheet.trigger(e, $(id.mapExpand)),
         initialFocus: $(id.mapSheetClose),
         moves: [
           { id: id.tokPanel, slotId: "draftMapSheetMapSlot" },
@@ -882,7 +884,7 @@
       $("dataSheetTitle").textContent = "기안 데이터 행 고르기";
       window.SurfaceSheet.open({
         modalId: "dataSheet",
-        returnFocus: e && e.currentTarget ? e.currentTarget : document.activeElement,
+        returnFocus: window.SurfaceSheet.trigger(e, $(id.dataExpand)),
         initialFocus: $(id.dataSheetClose),
         moves: [
           { id: id.recsHead, slotId: "dataSheetSlot" },

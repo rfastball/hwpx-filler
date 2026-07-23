@@ -38,6 +38,12 @@ from hwpxfiller.core.schema import extract_schema
 # 저장 위치가 같은 이름을 봐야 어긋나지 않아 여기 단일 출처로 둔다.
 OUTPUT_SUBDIR_NAME = "Results"
 
+# 템플릿 삭제의 30일 휴지통 하위폴더 이름(screen_template._do_delete). 파일은 매체 루트 밑
+# ``.trash`` 로 이동만 하므로, 재귀 스캔이 이 하위트리를 제외하지 않으면 삭제한 템플릿이
+# ``타임스탬프-uuid-이름`` 으로 즉시 목록에 재등장한다(#267 리뷰). 저장 위치와 스캔 제외가
+# 같은 이름을 봐야 하므로 여기 단일 출처로 둔다.
+TRASH_DIR_NAME = ".trash"
+
 
 def default_templates_dir() -> Path:
     """GUI 기본 템플릿 라이브러리 위치 — 사용자 홈(``~/.hwpxfiller/templates``).

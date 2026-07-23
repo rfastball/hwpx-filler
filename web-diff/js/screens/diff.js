@@ -237,12 +237,15 @@
     });
   }
 
-  /* 화면 부팅 — app.js 가 pywebviewready 후 호출. */
+  /* 화면 부팅 — app.js 가 pywebviewready 후 호출. ready 표지(#252 리뷰): 스크립트 파싱
+     시점엔 window.DiffScreen 이 존재해도 렌더러(onPush)는 아직 미등록이라, 게이트가
+     객체 존재만 보고 push 하면 __push 가 조용히 버린다 — 렌더러 등록 완료를 표지로 노출. */
   async function init() {
     Bridge.onPush(SCREEN, render);
+    window.DiffScreen.ready = true;
     wire();
     render(await Bridge.initial(SCREEN));
   }
 
-  window.DiffScreen = { init };
+  window.DiffScreen = { init, ready: false };
 })();

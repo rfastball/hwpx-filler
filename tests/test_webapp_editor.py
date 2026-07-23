@@ -160,6 +160,22 @@ def test_unconfirm_all_restores_exact_previous_confirmed_set(tmp_path):
     assert ctrl.snapshot()["unconfirm_undo_count"] == 0
 
 
+def test_unconfirm_undo_slot_dies_with_model_rebuild(tmp_path):
+    """#273 리뷰 — 「모두 해제」 undo 슬롯은 **이전 모델의** 숫자 인덱스라, 템플릿/데이터
+    교체로 모델이 재생성되면 소멸해야 한다. 살아남으면 아직 보이는 「되돌리기」가 새 입력의
+    행들을 검토 없이 확정해 '키 변경 시 전원 미확정' 불변식을 우회한다(조용한 게이트 우회)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("goto_step", {"step": 1})
+    ctrl.dispatch("skip_data", {})
+    ctrl.dispatch("set_confirmed", {"index": 1, "confirmed": True})
+    assert ctrl.dispatch("unconfirm_all", {}) == {"undo_count": 1}
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")  # 키 변경 → 모델 재생성
+    assert ctrl.snapshot()["unconfirm_undo_count"] == 0      # 슬롯 소멸(버튼 근거 사라짐)
+    assert ctrl.dispatch("restore_confirmed", {}) == {"restored": 0}
+    assert all(row["confirmed"] is False for row in ctrl.snapshot()["rows"])
+
+
 def test_gateway_data_pick_rebuilds_mapping_in_place(tmp_path):
     """3단계 접기(블록 2 결정 11·12): 매핑 진입 후 관문에서 데이터를 고르면 매핑표가 그
     자리에서 다시 선다 — 컬럼·자동 제안 반영, 스키마온리 탈출, 전환 없음(라이브 순서 가드).

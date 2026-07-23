@@ -291,7 +291,7 @@ def test_undo_delete_reports_missing_and_conflicting_slots(tmp_path, monkeypatch
 
     original = tp / "txt" / "온나라_기안.txt"
     ctrl.dispatch("delete", {"media": "txt", "path": str(original)})
-    _media, _path, trashed = ctrl._deleted_template_slot
+    _media, _path, trashed, _group = ctrl._deleted_template_slot
     trashed.unlink()
     assert ctrl.dispatch("undo_delete", {}) == {
         "ok": False, "error": "복원할 템플릿이 휴지통에 없습니다."
@@ -336,6 +336,52 @@ def test_empty_hint_points_to_import_not_removed_folder_picker(tmp_path, monkeyp
     )
     hint = ctrl.snapshot()["hwpx"]["empty_hint"]
     assert "가져오기" in hint and "폴더 선택" not in hint
+
+
+def test_trash_is_not_rediscovered_as_template(tmp_path, monkeypatch):
+    """#267 리뷰 — 삭제=루트 밑 ``.trash`` 이동이라, 재귀 스캔이 그 하위트리를 제외하지
+    않으면 삭제한 템플릿이 ``타임스탬프-uuid-이름`` 으로 즉시 목록에 재등장한다(HWPX·TXT
+    공통). 삭제가 삭제로 보여야 하고, 파일은 30일 보관소에 남아야 한다."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    ctrl.dispatch("delete", {"media": "hwpx", "path": str(tp / "lib" / "raw.hwpx")})
+    ctrl.dispatch("delete", {"media": "txt", "path": str(tp / "txt" / "온나라_기안.txt")})
+    snap = ctrl.snapshot()
+    assert _names(snap["hwpx"]) == {"comp.hwpx"}
+    assert _names(snap["txt"]) == set()
+    # 파일 자체는 휴지통에 살아 있다(복원 재료) — 목록에서만 사라진다.
+    assert list((tp / "lib" / ".trash").iterdir())
+    assert list((tp / "txt" / ".trash").iterdir())
+
+
+def test_undo_restores_group_assignment(tmp_path, monkeypatch):
+    """#269 리뷰 — 삭제 직후 관측 push 의 reconcile 이 사라진 키의 그룹 지정을 영구
+    제거하므로, 복원은 슬롯에 떠 둔 **삭제 시점 그룹**으로 재지정해야 한다(파일만 돌아와
+    조용히 「그룹 없음」이 되는 것 금지)."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    ctrl.dispatch("set_group", {"media": "hwpx", "key": "raw.hwpx", "group": "입찰"})
+    ctrl.dispatch("delete", {"media": "hwpx", "path": str(tp / "lib" / "raw.hwpx")})
+    ctrl.snapshot()  # 삭제 직후 관측 — 고아 지정은 정리된다(결정 8 유지)
+    assert settings.load_template_group_map("hwpx") == {}
+    assert ctrl.dispatch("undo_delete", {})["ok"] is True
+    assert _item(ctrl.snapshot()["hwpx"], "raw.hwpx")["group"] == "입찰"
+    assert settings.load_template_group_map("hwpx") == {"raw.hwpx": "입찰"}
+
+
+def test_txt_undo_restore_holds_writer_lock(tmp_path, monkeypatch):
+    """#268 리뷰 — TXT 복원의 존재 검사~``replace`` 는 공유 writer 락 임계구역이어야
+    한다(새 템플릿·템플릿으로 저장과 교차 시 조용한 덮어쓰기 금지)."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    ctrl.dispatch("delete", {"media": "txt", "path": str(tp / "txt" / "온나라_기안.txt")})
+    calls: list = []
+    real = ctrl.text_registry.write_lock
+
+    def spy():
+        calls.append(True)
+        return real()
+
+    monkeypatch.setattr(ctrl.text_registry, "write_lock", spy)
+    assert ctrl.dispatch("undo_delete", {})["ok"] is True
+    assert calls, "TXT 복원이 공유 writer 락을 잡지 않았다"
 
 
 def test_delete_rejects_path_outside_library(tmp_path, monkeypatch):

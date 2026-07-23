@@ -85,6 +85,10 @@ class HomeController:
         self._job_registry = registry
         self._push_sink = push
         self._deleted_job_slot = None
+        # 타 화면 무장 세션 가드 조회 함수들(#268 리뷰) — app.py 가 작업·기안 컨트롤러의
+        # ``session_guard_for`` 를 배선한다(생성 순서상 홈이 먼저라 사후 배선). 각 함수는
+        # 그 화면이 해당 이름에 무장 세션을 열어 두었으면 가드 수치 dict, 아니면 None.
+        self.session_guards: "list" = []
 
     # ------------------------------------------------------------- 관측 푸시
     def _push(self) -> None:
@@ -173,10 +177,23 @@ class HomeController:
         self.vm.clear_facets()
 
     def _do_delete_job(self, p: dict) -> dict:
-        """작업을 휴지통으로 옮긴다. 최근 1건은 앱에서 즉시 복원할 수 있다."""
-        self._deleted_job_slot = self._job_registry.soft_delete(p["name"])
+        """작업을 휴지통으로 옮긴다. 최근 1건은 앱에서 즉시 복원할 수 있다.
+
+        **타 화면 무장 세션 가드(#268 리뷰, `screen_job._do_delete_job` 동형)**: 이 작업이
+        작업·기안 화면에 무장 세션(재현 불가능한 수작업 선택·진행)으로 열려 있으면, 홈에서의
+        즉시 삭제가 그 화면 복귀 시 `_do_refresh` 의 무확인 세션 소거로 이어진다 — 파일은
+        복원돼도 세션은 못 돌아온다. 소유 화면들의 가드(:attr:`session_guards`)를 조회해
+        무장이면 ``needs_confirm`` 재진술로 멈춘다(RC-02 왕복 동형). 클린/무관 세션은
+        30일 휴지통과 최근 1건 복원에 맡긴다."""
+        name = p["name"]
+        if not p.get("confirm"):
+            for guard_of in self.session_guards:
+                g = guard_of(name)
+                if g is not None:
+                    return {"needs_confirm": True, "name": name, "open_session": True, **g}
+        self._deleted_job_slot = self._job_registry.soft_delete(name)
         self.vm.refresh()
-        return {"ok": True, "undo": True, "name": p["name"]}
+        return {"ok": True, "undo": True, "name": name}
 
     def _do_undo_delete_job(self, p: dict) -> dict:
         if self._deleted_job_slot is None:
