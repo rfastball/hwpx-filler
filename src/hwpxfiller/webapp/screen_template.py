@@ -395,10 +395,18 @@ class TemplateController:
             error = restore()
         if error is not None:
             return error
-        self._deleted_template_slot = None
         if group:
-            root = self.vm.library_dir if media == "hwpx" else self.text_registry.directory
-            self._model(media).set_group(rel_key(path, Path(root)), group)
+            # 그룹 복원까지 성공해야 슬롯을 비운다(#280 리뷰) — 슬롯이 삭제 시점 그룹의
+            # 유일한 생존 기록이라, 설정 쓰기 실패 후 슬롯을 이미 비웠다면 재시도가
+            # "복원할 템플릿이 없습니다"로 막히고 템플릿은 조용히 「그룹 없음」이 된다.
+            # 실패 시 파일 이동을 되돌려(슬롯↔실상태 정합) 재시도를 가능하게 남긴다.
+            try:
+                root = self.vm.library_dir if media == "hwpx" else self.text_registry.directory
+                self._model(media).set_group(rel_key(path, Path(root)), group)
+            except Exception:
+                path.replace(trashed)  # 이동 롤백 — 슬롯은 그대로, Undo 재시도 가능
+                raise
+        self._deleted_template_slot = None
         if media == "hwpx":
             self.vm.refresh()
         self._set_result(_ok(f"템플릿을 복원했습니다: {path.stem}"))

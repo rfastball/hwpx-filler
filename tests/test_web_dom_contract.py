@@ -404,10 +404,11 @@ def test_diff_selftest_waits_for_renderer_registration_not_script_parse():
     diff_app = (root / "src" / "hwpxdiff" / "webapp" / "app.py").read_text(encoding="utf-8")
     assert "window.DiffScreen = { init, ready: false }" in diff_js
     assert "window.DiffScreen.ready = true" in diff_js
-    # 표지는 onPush 등록 뒤에만 선다(등록 전 ready 는 같은 결함의 재도입).
+    # 표지는 initial 렌더 **완료 뒤**에만 선다(#280 리뷰) — onPush 등록 직후 세우면
+    # 게이트 push 가 미해결 initial 응답과 경합해 빈 스냅샷이 push 를 덮어쓴다.
     assert diff_js.index("Bridge.onPush(SCREEN, render)") < diff_js.index(
-        "window.DiffScreen.ready = true"
-    )
+        "render(await Bridge.initial(SCREEN))"
+    ) < diff_js.index("window.DiffScreen.ready = true")
     assert "window.DiffScreen.ready === true" in diff_app
 
 

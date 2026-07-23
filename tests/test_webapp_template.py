@@ -367,6 +367,31 @@ def test_undo_restores_group_assignment(tmp_path, monkeypatch):
     assert settings.load_template_group_map("hwpx") == {"raw.hwpx": "입찰"}
 
 
+def test_undo_keeps_slot_when_group_restore_fails(tmp_path, monkeypatch):
+    """#280 리뷰 — 그룹 복원(설정 쓰기)까지 성공해야 슬롯을 비운다: 실패 후 슬롯을 이미
+    비웠다면 재시도가 '복원할 템플릿이 없습니다'로 막히고 템플릿은 조용히 「그룹 없음」이
+    된다. 실패 시 파일 이동을 되돌려 Undo 재시도를 가능하게 남긴다."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    ctrl.dispatch("set_group", {"media": "hwpx", "key": "raw.hwpx", "group": "입찰"})
+    ctrl.dispatch("delete", {"media": "hwpx", "path": str(tp / "lib" / "raw.hwpx")})
+    trashed = ctrl._deleted_template_slot[2]
+
+    original_set_group = ctrl.hwpx_groups.set_group
+    monkeypatch.setattr(
+        ctrl.hwpx_groups, "set_group",
+        lambda *a, **k: (_ for _ in ()).throw(OSError("설정 디렉터리 쓰기 불가")),
+    )
+    with pytest.raises(OSError):
+        ctrl.dispatch("undo_delete", {})
+    # 파일은 휴지통으로 롤백, 슬롯은 생존(재시도 재료 보존).
+    assert trashed.exists() and not (tp / "lib" / "raw.hwpx").exists()
+    assert ctrl._deleted_template_slot is not None
+
+    monkeypatch.setattr(ctrl.hwpx_groups, "set_group", original_set_group)
+    assert ctrl.dispatch("undo_delete", {})["ok"] is True
+    assert _item(ctrl.snapshot()["hwpx"], "raw.hwpx")["group"] == "입찰"
+
+
 def test_txt_undo_restore_holds_writer_lock(tmp_path, monkeypatch):
     """#268 리뷰 — TXT 복원의 존재 검사~``replace`` 는 공유 writer 락 임계구역이어야
     한다(새 템플릿·템플릿으로 저장과 교차 시 조용한 덮어쓰기 금지)."""
