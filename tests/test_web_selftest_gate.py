@@ -254,7 +254,7 @@ class TestWebSelftestGate:
             assert p.get(scr) == "ok", f"{scr} 실화면 재렌더 실패: {p.get(scr)!r}"
 
     def test_real_screen_scroll_preserved_end_to_end(self, selftest_result: dict) -> None:
-        # 실 기안 맞추기 표 패널(#draftTokPanel, max-height 180px·overflow auto)의 스크롤이 실
+        # 실 기안 맞추기 표 패널(#draftTokPanel, max-height 300px·overflow auto)의 스크롤이 실
         # 재렌더를 가로질러 유지된다(#28) — 합성 픽스처가 아닌 shipped render() 경로의 end-to-end
         # 보존 검증. 카드 렌더는 master-detail 우측 패널이 통째로 스크롤하는 설계라(구 txt 전체화면과
         # 다름) 내부 스크롤 요소인 토큰 패널로 겨눈다. 보존 없으면 재구성이 0 으로 리셋하므로,
@@ -439,6 +439,22 @@ class TestWebSelftestGate:
         assert d["move_closed"] is True, "취소에 이동 다이얼로그가 닫히지 않았습니다."
         # 퇴화 불변식 — 그룹 0개면 헤더 없는 평면.
         assert d["flat_heads"] == 0 and d["flat_rows"] == 1, f"퇴화 평면 위반: {d!r}"
+
+    def test_milestone_l_draft_density_duo_cap_and_fallback(self, selftest_result: dict) -> None:
+        """#270: duo/sticky, 300px 실측 캡 표지, 1180급 적층을 실제 WebView2로 되읽는다."""
+        wide = selftest_result["draft_session"]
+        assert len(wide["density_wide_columns"].split()) == 2, wide
+        assert wide["density_preview_position"] == "sticky", wide
+        assert wide["density_cap_height"] == "300px", wide
+        assert wide["density_default_cap_hidden"] is True, (
+            wide["density_default_client_height"], wide["density_default_scroll_height"]
+        )
+        assert wide["density_stress_cap_shown"] is True, wide
+        assert "전체 22행" in wide["density_stress_cap_text"], wide
+
+        narrow = selftest_result["draft_density_narrow"]
+        assert len(narrow["columns"].split()) == 1, narrow
+        assert narrow["preview_position"] == "static", narrow
 
     def test_draft_session_zones_render(self, selftest_result: dict) -> None:
         """「기안」 휘발 세션 4존(#148 슬라이스 3a) — 공용 팩토리의 두 번째 소비 인스턴스 실렌더.

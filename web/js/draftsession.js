@@ -45,6 +45,8 @@
     let LAST = null;
     let lastDotsSig = null;  // 상태 색인 점 재구축 스킵 서명(리뷰 F7) — 점 지형 불변 push 에 reflow 회피
     let zoneNoteKey = null;
+    let mapRowCount = 0;     // capstrip 문안·실측의 현재 토큰 수(#270)
+    let mapResizeObserver = null;
     // 카드 보기 = 채운 모습/원문(순수 뷰 상태, 클라이언트 소유 — 서버 왕복 없음). 「기안문
     // 채우기」는 뷰 전환 손잡이가 없어(id 미부여) 항상 채운 모습이다.
     let view = "filled";
@@ -213,6 +215,28 @@
         `<td class="mapck-cell persist">${ckCell}</td></tr>`;
     }
 
+    /* 300px 캡이 **실제로** 행을 가릴 때만 정직한 표지를 세운다(#270). 토큰 수만으로
+       추정하면 글자 배율·저장 모드 열·컨테이너 폭에 따라 거짓 양성/음성이 생기므로 실 DOM의
+       scrollHeight/clientHeight를 단일 판정으로 쓴다. */
+    function measureMapCap() {
+      if (!id.mapCapstrip || !$(id.mapCapstrip)) return;
+      const host = $(id.tokPanel), strip = $(id.mapCapstrip);
+      const clipped = mapRowCount > 0 && host.clientHeight > 0
+        && host.scrollHeight > host.clientHeight + 1;
+      strip.hidden = !clipped;
+      strip.innerHTML = clipped
+        ? `전체 <b>${mapRowCount}행</b> — 일부만 보입니다.`
+        : "";
+    }
+
+    function syncMapCap(count) {
+      mapRowCount = count;
+      measureMapCap();
+      // display:none 화면의 첫 계산은 높이 0일 수 있다. 다음 페인트와 ResizeObserver가 화면
+      // 진입·레일 접힘·글자 배율 변경 뒤의 실제 크기로 다시 판정한다.
+      if (window.requestAnimationFrame) window.requestAnimationFrame(measureMapCap);
+    }
+
     function renderMap(s) {
       const tokens = s.tokens || [];
       const host = $(id.tokPanel);
@@ -248,6 +272,7 @@
           `<span class="muted">항목 없음은 <span class="mono">{{토큰}}</span> 그대로 복사됩니다.</span>` +
           volNote;
       }
+      syncMapCap(tokens.length);
     }
 
     /* 소유권 맵(결정 33) — {토큰이름: own}. 카드 fill 세그먼트에 own-* 클래스를 입혀 값이
@@ -634,6 +659,10 @@
     function wire() {
       // 데이터 존(테이블·열 패널·칩·스트립·전체 선택/해제·문서 레벨 닫기)은 팩토리 몫 배선.
       dz.wire();
+      if (id.mapCapstrip && window.ResizeObserver && !mapResizeObserver) {
+        mapResizeObserver = new ResizeObserver(measureMapCap);
+        mapResizeObserver.observe($(id.tokPanel));
+      }
       // 콤보 템플릿 전환 — **세션 교체 가드**(리뷰 I). 휘발 세션에 미저장 원문·매핑 편집이 있으면
       // 백엔드가 needs_confirm 을 돌려준다(select_template 단일 초크). 취소=콤보를 현 템플릿으로
       // 되돌려(전환 안 함) render 의 sel.value=template_name 복원과 정합.
