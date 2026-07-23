@@ -993,7 +993,14 @@ _JOB_MIRROR_PROBE_JS = r"""
       value:mi === 0 ? '(빈 값)' : '값 ' + mi, formatted:false
     });
     window.__push('job', snap);
+    // CI 가상 데스크톱은 window.resize(1440, 900)을 실제 화면 상한(약 1024px)에서
+    // 클램프한다. 운영 CSS를 바꾸지 않고 컨테이너 자체를 900px 경계 너머로 고정해 wide
+    // 분기를 검증한 뒤 즉시 복원한다(실 협폭 분기는 별도 실제 창 프로브가 맡는다).
+    var jobPanel = document.getElementById('jobPanel');
+    var jobPanelFlex = jobPanel.style.flex, jobPanelWidth = jobPanel.style.width;
+    jobPanel.style.flex = '0 0 1100px'; jobPanel.style.width = '1100px';
     out.job_duo_wide = getComputedStyle(document.getElementById('jobDuo')).gridTemplateColumns;
+    jobPanel.style.flex = jobPanelFlex; jobPanel.style.width = jobPanelWidth;
     var mirror = document.getElementById('jobMirror');
     var restate = document.getElementById('jobRestate');
     var mirrorParent = mirror.parentNode, restateParent = restate.parentNode;
@@ -1375,9 +1382,15 @@ _DRAFT_SESSION_PROBE_JS = r"""
         confirmed:true, blank_declared:false});
     }
     window.__push('draft', calm);
+    // Actions 가상 화면의 물리 폭과 무관하게 container-query wide 분기를 직접 겨눈다.
+    // 실제 창 협폭→단일열 검증은 _run_selftest의 draft_density_narrow가 그대로 담당한다.
+    var draftPanel = document.getElementById('draftPanel');
+    var draftPanelFlex = draftPanel.style.flex, draftPanelWidth = draftPanel.style.width;
+    draftPanel.style.flex = '0 0 1100px'; draftPanel.style.width = '1100px';
     out.density_wide_columns = getComputedStyle(document.getElementById('draftDuo')).gridTemplateColumns;
     out.density_preview_position = getComputedStyle(
       document.querySelector('#draftDuo .draft-preview-zone')).position;
+    draftPanel.style.flex = draftPanelFlex; draftPanel.style.width = draftPanelWidth;
     out.density_cap_height = getComputedStyle(document.getElementById('draftTokPanel')).maxHeight;
     out.density_default_client_height = document.getElementById('draftTokPanel').clientHeight;
     out.density_default_scroll_height = document.getElementById('draftTokPanel').scrollHeight;
