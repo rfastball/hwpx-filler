@@ -554,13 +554,16 @@ class _Differ:
             # 같은 값이 중첩 좌표·구조 사이를 이동했을 수 있다 — 평탄화 비교로 먼저
             # 반환하면 중첩 재귀(_diff_nested_tables)가 안 돌아 이동·중복 내용의
             # table_path/실셀 귀속이 변경 0건으로 조용히 사라진다. 직접 문단 비교와
-            # 중첩 재귀가 등호 판정까지 소유한다(각 층이 자기 층만 판정).
-            o_txt = _cell_text(oc) if oc else ""
-            n_txt = _cell_text(nc) if nc else ""
+            # 중첩 재귀가 등호 판정까지 소유한다(각 층이 자기 층만 판정). 평탄화
+            # ``_cell_text`` 는 한쪽-부재 분기에서만 계산한다(#280 리뷰) — 양쪽 존재
+            # 경로에서 무조건 평탄화하면 중첩 사슬의 층마다 후손 전체를 재순회해
+            # 선형이던 등호 경로가 제곱 비용이 된다.
             if oc and not nc:
+                o_txt = _cell_text(oc)
                 if not _is_blank(o_txt):
                     self._emit("removed", "cell", loc, label, old_text=o_txt)
             elif nc and not oc:
+                n_txt = _cell_text(nc)
                 if not _is_blank(n_txt):
                     self._emit("added", "cell", loc, label, new_text=n_txt)
             else:
