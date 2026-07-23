@@ -45,10 +45,13 @@
   /* 펼침 트리거 해석(#279 리뷰) — 캡스트립 위임 클릭은 currentTarget 이 포커스 불가능한
      컨테이너 div 라, 그대로 returnFocus 로 넘기면 Modal 이 Escape/닫기 후 키보드 포커스를
      복귀시키지 못하고 body 에 남긴다. 실제 클릭된 버튼(위임 포함)을 우선하고, 없으면
-     호출부가 준 안정 트리거(상시 헤더 ⤢ 버튼), 마지막으로 activeElement. */
+     호출부가 준 안정 트리거(상시 헤더 ⤢ 버튼), 마지막으로 activeElement.
+     단 재렌더-휘발 컨테이너(.capstrip)의 생성 버튼은 복귀 표적으로 부적합(#280 리뷰) —
+     Modal 이 포커스를 되돌린 직후 afterRestore 의 measure* 가 innerHTML 을 갈아 방금
+     포커스한 버튼이 분리되고 포커스는 body 로 소실된다. 그 경우도 안정 트리거로 고정. */
   function trigger(e, fallback) {
     const btn = e && e.target && e.target.closest ? e.target.closest("button") : null;
-    if (btn) return btn;
+    if (btn && !btn.closest(".capstrip")) return btn;
     return fallback || document.activeElement;
   }
 

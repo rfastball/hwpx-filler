@@ -388,6 +388,10 @@ def test_milestone_l_job_density_and_expansion_sheets():
     for src in (job_js, draft_session):
         assert "window.SurfaceSheet.trigger(e," in src
         assert "returnFocus: e && e.currentTarget" not in src
+    # 캡스트립 생성 버튼은 복귀 표적 제외(#280 리뷰) — afterRestore 의 measure* 가
+    # innerHTML 을 갈아 방금 포커스한 버튼이 분리된다(안정 헤더 ⤢ 폴백 고정).
+    assert 'btn.closest(".capstrip")' in sheets
+    assert html.count('class="capstrip"') >= 2
     # sticky 첫 열의 행 상태 보존(#279 리뷰) — 무조건 --a-card 는 tr.on/호버 배경을 덮어
     # 문서 정체 셀만 미선택처럼 보인다. sticky 는 투명 불가라 불투명 등가색으로 맞춘다.
     assert ".data-sheet-body.jobtbtbodytr.ontd:first-child{background:var(--a-sel)}" in css

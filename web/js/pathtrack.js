@@ -53,7 +53,9 @@
         setTimeout(() => {
           el.innerHTML = old;
           el.setAttribute("aria-label", spec.label);
-          el.setAttribute("title", spec.label);
+          // 라벨만으로 되돌리면 첫 복사 이후 경로 툴팁이 재렌더까지 사라진다(#280 리뷰)
+          // — 생성 시와 같은 「라벨 — 경로」 형태로 복원한다.
+          el.setAttribute("title", `${spec.label} — ${path}`);
         }, 1200);
       }
     } catch (err) {

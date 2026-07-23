@@ -110,6 +110,10 @@ def test_pathtrack_secondary_actions_are_accessible_icon_buttons():
     assert 'title="${spec.label} — ${esc(path)}"' in src
     assert 'aria-label="${spec.label}"' in src
     assert '${spec.icon}</button>' in src
+    # 복사 피드백 복원도 「라벨 — 경로」(#280 리뷰) — 라벨만 되돌리면 첫 복사 이후
+    # 경로 툴팁이 재렌더까지 사라진다.
+    assert 'el.setAttribute("title", `${spec.label} — ${path}`)' in src
+    assert 'el.setAttribute("title", spec.label)' not in src
 
 
 def test_pathtrack_icon_style_is_visually_secondary_and_focusable():
