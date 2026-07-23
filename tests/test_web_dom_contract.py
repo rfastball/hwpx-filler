@@ -383,6 +383,17 @@ def test_milestone_l_job_density_and_expansion_sheets():
     assert "window.Modal.close(id);\n    restore(id);" in sheets
 
 
+def test_milestone_l_wide_probes_do_not_depend_on_host_monitor_width():
+    """Actions 가상 화면이 1440px 미만이어도 wide 컨테이너 분기를 직접 검증해야 한다."""
+    app_py = (WEB_INDEX.parents[1] / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(
+        encoding="utf-8"
+    )
+    assert "jobPanel.style.flex = '0 0 1100px'" in app_py
+    assert "draftPanel.style.flex = '0 0 1100px'" in app_py
+    assert "jobPanel.style.flex = jobPanelFlex" in app_py
+    assert "draftPanel.style.flex = draftPanelFlex" in app_py
+
+
 def _forced_colors_block(css_path: Path) -> str:
     """``@media (forced-colors:active)`` 블록의 **본문**만 공백 제거 형태로 반환.
 
