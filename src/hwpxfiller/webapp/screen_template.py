@@ -367,45 +367,56 @@ class TemplateController:
         return {"ok": True, "undo": True, "name": path.stem}
 
     def _do_undo_delete(self, p: dict) -> dict:
-        """휴지통 최근 1건 복원 — 존재 검사~교체는 TXT writer 락 임계구역(#268 리뷰).
+        """휴지통 최근 1건 복원 — TXT 는 **복원 전 구간**이 writer 락 임계구역(#268/#280 리뷰).
 
         TXT 는 존재 검사와 ``replace`` 사이에 다른 pywebview 호출(새 템플릿·템플릿으로 저장)이
         같은 이름을 새로 쓸 수 있다 — 무락이면 복원이 그 새 파일을 조용히 덮거나, 동시 writer 가
         복원본을 즉시 덮는다. :meth:`~hwpxfiller.core.text_registry.TextTemplateRegistry.write_lock`
-        을 잡아 이름 충돌 재검증과 교체를 한 임계구역으로 묶는다(HWPX 는 공유 writer 락이 없는
-        단일 표면이라 기존 검사 유지). 복원 후 삭제 시점 그룹을 재지정한다(#269 리뷰) —
+        을 존재 검사~교체~그룹 복원~실패 롤백까지 한 임계구역으로 잡는다(부분만 덮으면 롤백
+        ``replace`` 가 락 밖에서 동시 편집을 쓸어 넣는다 — 3R). HWPX 는 공유 writer 락이 없는
+        단일 표면이라 무락 동일 몸통. 복원 후 삭제 시점 그룹을 재지정한다(#269 리뷰) —
         삭제 직후 reconcile 이 지정을 지웠으므로 슬롯의 그룹이 유일한 생존 기록이다."""
         if self._deleted_template_slot is None:
             return {"ok": False, "error": "복원할 최근 템플릿이 없습니다."}
         media, path, trashed, group = self._deleted_template_slot
 
-        def restore() -> "dict | None":
+        def restore_and_regroup() -> "dict | None":
+            """복원의 **모든 durable 변이**(존재 검사~이동~그룹 복원~실패 롤백) 한 몸통.
+
+            TXT 는 이 전체가 writer 락 임계구역 안이어야 한다(#280 리뷰 3R) — 이동만 락으로
+            덮고 그룹 복원·롤백을 밖에 두면, 락 해제 후 동시 writer 가 같은 이름을 새로 쓴
+            뒤 설정 쓰기가 실패했을 때 롤백 ``replace`` 가 그 새 내용을 무락으로 휴지통에
+            쓸어 넣는다(재시도 Undo = 엉뚱한 내용 복원 + 동시 편집 소실).
+            """
             if not trashed.exists():
                 return {"ok": False, "error": "복원할 템플릿이 휴지통에 없습니다."}
             if path.exists():
                 return {"ok": False, "error": "같은 이름의 템플릿이 이미 있어 복원할 수 없습니다."}
             path.parent.mkdir(parents=True, exist_ok=True)
             trashed.replace(path)
+            if group:
+                # 그룹 복원까지 성공해야 슬롯을 비운다(#280 리뷰) — 슬롯이 삭제 시점 그룹의
+                # 유일한 생존 기록이라, 설정 쓰기 실패 후 슬롯을 이미 비웠다면 재시도가
+                # "복원할 템플릿이 없습니다"로 막히고 템플릿은 조용히 「그룹 없음」이 된다.
+                # 실패 시 파일 이동을 되돌려(슬롯↔실상태 정합) 재시도를 가능하게 남긴다.
+                try:
+                    root = (
+                        self.vm.library_dir if media == "hwpx"
+                        else self.text_registry.directory
+                    )
+                    self._model(media).set_group(rel_key(path, Path(root)), group)
+                except Exception:
+                    path.replace(trashed)  # 이동 롤백 — 슬롯은 그대로, Undo 재시도 가능
+                    raise
             return None
 
         if media == "txt":
             with self.text_registry.write_lock():
-                error = restore()
+                error = restore_and_regroup()
         else:
-            error = restore()
+            error = restore_and_regroup()
         if error is not None:
             return error
-        if group:
-            # 그룹 복원까지 성공해야 슬롯을 비운다(#280 리뷰) — 슬롯이 삭제 시점 그룹의
-            # 유일한 생존 기록이라, 설정 쓰기 실패 후 슬롯을 이미 비웠다면 재시도가
-            # "복원할 템플릿이 없습니다"로 막히고 템플릿은 조용히 「그룹 없음」이 된다.
-            # 실패 시 파일 이동을 되돌려(슬롯↔실상태 정합) 재시도를 가능하게 남긴다.
-            try:
-                root = self.vm.library_dir if media == "hwpx" else self.text_registry.directory
-                self._model(media).set_group(rel_key(path, Path(root)), group)
-            except Exception:
-                path.replace(trashed)  # 이동 롤백 — 슬롯은 그대로, Undo 재시도 가능
-                raise
         self._deleted_template_slot = None
         if media == "hwpx":
             self.vm.refresh()

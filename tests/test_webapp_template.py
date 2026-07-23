@@ -409,6 +409,37 @@ def test_txt_undo_restore_holds_writer_lock(tmp_path, monkeypatch):
     assert calls, "TXT 복원이 공유 writer 락을 잡지 않았다"
 
 
+def test_txt_undo_group_restore_and_rollback_run_inside_writer_lock(tmp_path, monkeypatch):
+    """#280 리뷰 3R — 그룹 복원(과 그 실패 롤백)까지 임계구역 **안**이어야 한다: 이동만
+    락으로 덮으면, 락 해제 후 동시 writer 가 같은 이름을 새로 쓴 뒤 설정 쓰기가 실패했을
+    때 롤백 replace 가 그 새 내용을 무락으로 휴지통에 쓸어 넣는다."""
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    ctrl.dispatch("set_group", {"media": "txt", "key": "온나라_기안.txt", "group": "기안"})
+    ctrl.dispatch("delete", {"media": "txt", "path": str(tp / "txt" / "온나라_기안.txt")})
+
+    events: list = []
+    real_lock = ctrl.text_registry.write_lock()
+    original_set_group = ctrl.txt_groups.set_group
+
+    class SpyLock:
+        def __enter__(self):
+            events.append("lock_enter")
+            return real_lock.__enter__()
+
+        def __exit__(self, *exc):
+            events.append("lock_exit")
+            return real_lock.__exit__(*exc)
+
+    monkeypatch.setattr(ctrl.text_registry, "write_lock", lambda: SpyLock())
+    monkeypatch.setattr(
+        ctrl.txt_groups, "set_group",
+        lambda key, group: (events.append("set_group"), original_set_group(key, group))[1],
+    )
+    assert ctrl.dispatch("undo_delete", {})["ok"] is True
+    assert events == ["lock_enter", "set_group", "lock_exit"]
+    assert _item(ctrl.snapshot()["txt"], "온나라_기안")["group"] == "기안"
+
+
 def test_delete_rejects_path_outside_library(tmp_path, monkeypatch):
     """#137 리뷰 F10 — 렌더러가 임의 경로를 실어도 라이브러리 밖 파일은 삭제 거부."""
     ctrl, tp, _ = _controller(tmp_path, monkeypatch)
