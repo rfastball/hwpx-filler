@@ -27,7 +27,6 @@
 | [UI 계약](UI_CONTRACT.md) | 현재 웹 UI의 계층, 화면 소유권, 계약 테스트 |
 | [화면 문안 스타일](COPY_STYLE_GUIDE.md) | 사용자 대면 문장의 문형·길이·금지 표현 |
 | [UI 용어 규약](UI_VOCABULARY.md) | 사용자 가시 용어·단위·폼 배치의 단일 출처 |
-| [프로세스 topology](PROCESS_TOPOLOGY.md) | 작업 저장소의 writer·잠금·프로세스 경계 |
 | [로드맵](ROADMAP.md) | 열린 방향·동결 항목·재개 신호 |
 | [UI 갤러리](UI_GALLERY.html) | 실제 CSS를 사용하는 현재 시각 표면 |
 | `package_coverage_floors.toml` | 패키지별 coverage 하한의 기계 판독 원장 |
@@ -42,23 +41,15 @@
 | [UI/백엔드 분리](ARCH_UI_SEPARATION.md) | 부분 대체 | 링0·링1 분리는 유효, Qt 링2는 [UI 계약](UI_CONTRACT.md)이 대체 |
 | [시각 디자인 언어](DESIGN_LANGUAGE.md) | 유효 결정 | 시각 문법의 이유; 실제 값은 UI 갤러리·토큰이 소유 |
 | [UI 표면 ADR](UI_DESIGN_DECISIONS.md) | 부분 대체 | 상호작용 결정과 뒤집힘의 원장; 현재 표면은 UI 계약이 소유 |
-| [작업 브라우저 설계](JOB_BROWSER_DESIGN.md) | 부분 대체 | 패싯 탐색 결정; 현재 화면·라우팅은 UI 계약이 소유 |
-| [R-flow 합의](R_FLOW_JOB_SESSION.md) | 유효 결정 | 작업 세션·에디터 접합 결정 |
-| [R-info 합의](R_INFO_JOB_HOME.md) | 유효 결정 | 작업의 집·템플릿 라이브러리 정보구조 결정 |
 | [웹 재렌더 보존](WEB_RENDER_PRESERVATION.md) | 유효 결정 | 전체 스냅샷 렌더에서 포커스·캐럿·스크롤을 보존하는 이유 |
-| [kordoc 비교](KORDOC_COMPARISON.md) | 유효 결정 | 제품 경계·존속 근거; 외부 프로젝트 세부는 조사 시점 스냅샷 |
 
 ## 역사·동결 자료
 
 | 문서군 | 상태 | 보존 이유 |
 |---|---|---|
-| [리뷰 통합 원장](REVIEW_LEDGER.md) | 역사 기록 | RC·UD·ST 앵커와 조치 증거 |
-| [101 UX findings](UX_FINDINGS_101_WALKTHROUGH.md) | 역사 기록 | 관찰·트리아지·후속 설계 라운드의 출처 |
-| [Qt 셸 설계](SHELL_DESIGN.md) | 역사 기록 | 철거된 Qt 셸의 결정과 기각안 |
 | [테스트 포트폴리오 전수조사](TEST_PORTFOLIO_AUDIT.md) | 역사 기록 | #168 기준점·방법·해석 |
 | `design_language_*.html` | 동결 시안 | 시각 언어 결정 당시 비교안 |
-| `r-flow-mockups/`, `r-info-mockups/` | 동결 시안 | 합의문이 참조하는 결정 시점 목업 |
-| `ux-findings-101/screenshots/` | 동결 시안 | UX 워크스루의 원관측 증거 |
+| `r-flow-mockups/` | 동결 시안 | 합의문이 참조하는 결정 시점 목업 |
 | `archive/UI_CONTRACT_QT.md` (#225에서 분리) | 역사 기록 | 웹 이관 전 목업↔ViewModel↔Qt 계약 |
 
 ## 유지·아카이브·폐기 기준
