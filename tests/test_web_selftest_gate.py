@@ -254,7 +254,7 @@ class TestWebSelftestGate:
             assert p.get(scr) == "ok", f"{scr} 실화면 재렌더 실패: {p.get(scr)!r}"
 
     def test_real_screen_scroll_preserved_end_to_end(self, selftest_result: dict) -> None:
-        # 실 기안 맞추기 표 패널(#draftTokPanel, max-height 180px·overflow auto)의 스크롤이 실
+        # 실 기안 맞추기 표 패널(#draftTokPanel, max-height 300px·overflow auto)의 스크롤이 실
         # 재렌더를 가로질러 유지된다(#28) — 합성 픽스처가 아닌 shipped render() 경로의 end-to-end
         # 보존 검증. 카드 렌더는 master-detail 우측 패널이 통째로 스크롤하는 설계라(구 txt 전체화면과
         # 다름) 내부 스크롤 요소인 토큰 패널로 겨눈다. 보존 없으면 재구성이 0 으로 리셋하므로,
@@ -264,6 +264,16 @@ class TestWebSelftestGate:
         assert isinstance(top, (int, float)) and abs(top - 60) < 2, (
             f"실화면 스크롤 유실(재구성이 0 으로 리셋됐거나 예외): {top!r}"
         )
+
+    def test_draft_expansion_sheets_move_and_restore_live_dom(self, selftest_result: dict) -> None:
+        s = selftest_result["draft_sheets"]
+        assert s.get("error") is None, s
+        assert s["map_open"] and s["map_moved"] and s["preview_moved"] and s["same_map"], s
+        assert s["filled_forced"], "맞추기 펼침 면은 채운 모습으로 열려야 합니다."
+        assert s["map_restored"] and s["map_focus_restored"], s
+        assert abs(s["map_scroll"] - 37) < 2, s
+        assert s["data_moved"] and s["data_restored"] and s["data_focus_restored"], s
+        assert s["first_col_sticky"], s
 
     def test_job_mirror_table_renders_four_state_rows(self, selftest_result: dict) -> None:
         # 「작업」 본문 존 거울 — 합성 스냅샷을 실 render() 에 흘려 필드
@@ -277,6 +287,16 @@ class TestWebSelftestGate:
         assert any("채움 · 표시형" in c for c in chips), f"표시형 칩 미렌더: {chips!r}"
         assert any("빈 값 · 클릭=확인" in c for c in chips), f"미입력 칩 미렌더: {chips!r}"
         assert any("비움 확정" in c for c in chips), f"의도적 빈칸 칩 미렌더: {chips!r}"
+
+    def test_job_density_and_expansion_sheets(self, selftest_result: dict) -> None:
+        j = selftest_result["job_mirror"]
+        assert j.get("error") is None, j
+        assert j["mirror_capped"] and j["mirror_capstrip"], j
+        assert j["confirm_moved"] and j["confirm_dispatch"] and j["confirm_restored"], j
+        assert j["job_data_moved"] and j["job_data_first_sticky"] and j["job_data_restored"], j
+        assert j["edit_closes_sheets"], j
+        assert len(j["job_duo_wide"].split()) == 2, j
+        assert len(selftest_result["job_density_narrow"]["columns"].split()) == 1
 
     def test_job_restate_block_lists_selected_names(self, selftest_result: dict) -> None:
         # 재진술 블록 — 선택 2행의 이름 목록이 상시 블록으로 실렌더된다.
@@ -439,6 +459,22 @@ class TestWebSelftestGate:
         assert d["move_closed"] is True, "취소에 이동 다이얼로그가 닫히지 않았습니다."
         # 퇴화 불변식 — 그룹 0개면 헤더 없는 평면.
         assert d["flat_heads"] == 0 and d["flat_rows"] == 1, f"퇴화 평면 위반: {d!r}"
+
+    def test_milestone_l_draft_density_duo_cap_and_fallback(self, selftest_result: dict) -> None:
+        """#270: duo/sticky, 300px 실측 캡 표지, 1180급 적층을 실제 WebView2로 되읽는다."""
+        wide = selftest_result["draft_session"]
+        assert len(wide["density_wide_columns"].split()) == 2, wide
+        assert wide["density_preview_position"] == "sticky", wide
+        assert wide["density_cap_height"] == "300px", wide
+        assert wide["density_default_cap_hidden"] is True, (
+            wide["density_default_client_height"], wide["density_default_scroll_height"]
+        )
+        assert wide["density_stress_cap_shown"] is True, wide
+        assert "전체 22행" in wide["density_stress_cap_text"], wide
+
+        narrow = selftest_result["draft_density_narrow"]
+        assert len(narrow["columns"].split()) == 1, narrow
+        assert narrow["preview_position"] == "static", narrow
 
     def test_draft_session_zones_render(self, selftest_result: dict) -> None:
         """「기안」 휘발 세션 4존(#148 슬라이스 3a) — 공용 팩토리의 두 번째 소비 인스턴스 실렌더.

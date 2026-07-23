@@ -12,6 +12,8 @@
   let lastSessionKey = null;  // 완료 존 세션 스코프 판정(결정 7) — 세션 변경 시에만 리셋
   let restateExpanded = false;  // 재진술 블록 이름 목록 펼침(대량 표본+「외 N건」, 결정 36)
   let lastRestateKey = null;    // 펼침 리셋 판정 — 작업/데이터 전환 시 펼침을 끈다(세션 누수 방지)
+  let mirrorRowCount = 0;       // 420px 실측 캡의 현재 필드 수(#272)
+  let mirrorResizeObserver = null;
   /* 패널 모드(결정 39·40) — "run"(행 클릭=실행 세션, 기본) | "edit"(정의 편집·신규 마법사).
      모드는 표시 상태일 뿐: 실행 세션은 JobController, 정의 세션은 EditorController 가 각자
      소유해 전환이 어느 쪽도 파괴하지 않는다. 파괴 가능 지점은 진입 가드가 지킨다 —
@@ -120,6 +122,11 @@
   /* ---- 패널 두 모드(결정 39·40) ---- */
   function syncModeDisplay(hasJob) {
     const edit = MODE === "edit";
+    if (edit || !hasJob) {
+      // 펼침 면의 실 DOM이 overlay 슬롯에 남은 채 편집 호스트를 여는 교차 모드 상태를 막는다.
+      window.SurfaceSheet.closeAndRestore("jobConfirmSheet");
+      window.SurfaceSheet.closeAndRestore("dataSheet");
+    }
     $("jobZones").style.display = (!edit && hasJob) ? "" : "none";
     // 하단 sticky 생성 액션바(#179 슬라이스 5b) — 세션 4존과 같이 실행 모드·작업 선택 시에만.
     // 편집 모드(정의 호스트)·미선택에선 숨어 고아 버튼이 되지 않는다.
@@ -308,6 +315,7 @@
         `어긋난 필드: <b>${esc(drift.join(", "))}</b>.</p>` +
         `<button class="btn sm" data-act="fix-mapping" data-busy-lock>편집에서 매핑 확정…</button>` +
         `</div>`;
+      syncMirrorCap(0);
       return;
     }
     // 미해소 파일명 토큰(#128) — **드리프트와 같은 danger 자격**이라 같은 자리에서 같은 형상으로
@@ -323,16 +331,67 @@
         `남는 토큰: <b>${esc(toks)}</b>.</p>` +
         `<button class="btn sm" data-act="fix-filename" data-busy-lock>편집에서 파일명 패턴 고치기…</button>` +
         `</div>`;
+      syncMirrorCap(0);
       return;
     }
     const rows = s.mirror || [];
     if (!rows.length) {  // 선택 0(또는 데이터 미겨눔) = 생성될 문서 없음
       host.innerHTML = `<p class="mirempty muted capnote">행을 선택하면 이 문서에 들어갈 값이 여기 표시됩니다.</p>`;
+      syncMirrorCap(0);
       return;
     }
     host.innerHTML =
       `<div class="tbwrap"><table class="tb mir"><tbody>` +
       rows.map(mirrorRow).join("") + `</tbody></table></div>`;
+    syncMirrorCap(rows.length);
+  }
+
+  /* 420px 캡은 필드 수가 아니라 실 오버플로로 판정한다. 배율·문안 줄바꿈에서도 거짓 표지를
+     내지 않고, 펼침 면에선 max-height 해제 뒤 ResizeObserver가 표지를 즉시 걷는다. */
+  function measureMirrorCap() {
+    const host = $("jobMirror"), strip = $("jobMirrorCapstrip");
+    const clipped = mirrorRowCount > 0 && host.clientHeight > 0
+      && host.scrollHeight > host.clientHeight + 1;
+    strip.hidden = !clipped;
+    strip.innerHTML = clipped
+      ? `전체 <b>${mirrorRowCount}필드</b> — ` +
+        `<button class="btn sm" type="button" data-mirror-expand>펼쳐서 확인 ⤢</button>`
+      : "";
+  }
+
+  function syncMirrorCap(count) {
+    mirrorRowCount = count;
+    measureMirrorCap();
+    if (window.requestAnimationFrame) window.requestAnimationFrame(measureMirrorCap);
+  }
+
+  function openJobConfirmSheet(e) {
+    window.SurfaceSheet.open({
+      modalId: "jobConfirmSheet",
+      returnFocus: e && e.currentTarget ? e.currentTarget : document.activeElement,
+      initialFocus: $("jobConfirmSheetClose"),
+      moves: [
+        { id: "jobMirror", slotId: "jobConfirmSheetMirrorSlot" },
+        { id: "jobRestate", slotId: "jobConfirmSheetRestateSlot" },
+      ],
+      afterRestore: measureMirrorCap,
+    });
+  }
+
+  function openJobDataSheet(e) {
+    $("dataSheetTitle").textContent = "작업 데이터 행 고르기";
+    window.SurfaceSheet.open({
+      modalId: "dataSheet",
+      returnFocus: e && e.currentTarget ? e.currentTarget : document.activeElement,
+      initialFocus: $("dataSheetClose"),
+      moves: [
+        { id: "jobRecsHead", slotId: "dataSheetSlot" },
+        { id: "jobFilterChips", slotId: "dataSheetSlot" },
+        { id: "jobTableHost", slotId: "dataSheetSlot" },
+        { id: "jobSelStrip", slotId: "dataSheetSlot" },
+        { id: "jobColPanel", slotId: "dataSheetSlot" },
+      ],
+    });
   }
 
   function mirrorRow(r, i) {
@@ -959,6 +1018,18 @@
     moveDialog.wire("grpMoveOk", "grpMoveCancel");
     // 데이터 존(테이블·열 패널·칩·스트립·전체 선택/해제·문서 레벨 닫기)은 팩토리 몫 배선.
     dz.wire();
+    if (window.ResizeObserver && !mirrorResizeObserver) {
+      mirrorResizeObserver = new ResizeObserver(measureMirrorCap);
+      mirrorResizeObserver.observe($("jobMirror"));
+    }
+    $("jobDataExpand").addEventListener("click", openJobDataSheet);
+    $("jobMirrorExpand").addEventListener("click", openJobConfirmSheet);
+    $("jobMirrorCapstrip").addEventListener("click", (e) => {
+      if (e.target.closest("[data-mirror-expand]")) openJobConfirmSheet(e);
+    });
+    $("jobConfirmSheetClose").addEventListener("click", () =>
+      window.SurfaceSheet.close("jobConfirmSheet"));
+    $("dataSheetClose").addEventListener("click", () => window.SurfaceSheet.close("dataSheet"));
     // T2 복귀 고지 — 확인=걷기, 돌아가기=비파괴 편집 재진입(세션 무접촉 — 리뷰 F1/F4).
     $("jobEditExitNote").addEventListener("click", (e) => {
       if (e.target.closest('[data-act="return-to-edit"]')) { showEditMode(); return; }
@@ -1036,6 +1107,6 @@
   // showEditMode/refreshList 는 편집 모드 seam(EditorEntry·editor.js doSave 가 소비).
   window.JobScreen = {
     init, overwriteBody, guardBody, confirmDataSwapIfArmed, openJob,
-    showEditMode, showRunMode, refreshList,
+    showEditMode, showRunMode, refreshList, openJobConfirmSheet, openJobDataSheet,
   };
 })();

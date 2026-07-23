@@ -67,6 +67,9 @@ MODAL_LABELLEDBY = {
     # 전용 jobOverwriteModal DOM 폐기(아래 test_job_overwrite_uses_shared_confirm_modal 가드).
     "confirmModal": "confirmModalTitle",  # 네이티브 window.confirm 대체(#86) + 덮어쓰기 확인
     "promptModal": "promptModalTitle",  # 네이티브 window.prompt 대체(#86)
+    "draftMapSheet": "draftMapSheetTitle",  # 기안 맞추기 펼침 면(#271)
+    "dataSheet": "dataSheetTitle",  # 기안·작업 공용 데이터 펼침 면(#271/#272)
+    "jobConfirmSheet": "jobConfirmSheetTitle",  # 작업 거울·재진술 펼침 면(#272)
 }
 
 
@@ -301,6 +304,94 @@ def test_responsive_breakpoint_collapses_layout():
     assert ".app{grid-template-columns:1fr}" in css, (
         ".app 세로 단일열 접힘 규칙이 사라졌습니다 — 최소 크기에서 가로 오버플로 회귀(#27)."
     )
+
+
+def test_milestone_l_draft_density_structure_and_values():
+    """#270: 기본창·duo·300px 캡·정직한 표지·컨테이너 쿼리를 정적으로 고정한다."""
+    html = WEB_INDEX.read_text(encoding="utf-8")
+    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    app_py = (WEB_INDEX.parents[1] / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(
+        encoding="utf-8"
+    )
+    draft_js = (WEB_JS_DIR / "draftsession.js").read_text(encoding="utf-8")
+    screen_js = (WEB_JS_DIR / "screens" / "draft.js").read_text(encoding="utf-8")
+
+    assert "DEFAULT_WINDOW_WIDTH = 1440" in app_py
+    assert "DEFAULT_WINDOW_HEIGHT = 900" in app_py
+    assert 'class="duo draft-duo" id="draftDuo"' in html
+    duo = html.split('id="draftDuo"', 1)[1].split("<!-- ④ 완료", 1)[0]
+    assert duo.index('id="draftTokPanel"') < duo.index('id="draftCard"')
+    assert 'id="draftMapCapstrip" role="status" hidden' in duo
+    assert (
+        ".job-panel{flex:1;min-width:0;overflow:auto;display:flex;flex-direction:column;"
+        "container-type:inline-size;container-name:session-panel}" in css
+    )
+    assert "#draftTokPanel{max-height:300px;overflow:auto}" in css
+    assert ".capstrip[hidden]{display:none}" in css
+    assert "@containersession-panel(max-width:900px)" in css
+    assert "host.scrollHeight > host.clientHeight + 1" in draft_js
+    assert 'mapCapstrip: "draftMapCapstrip"' in screen_js
+    assert "ResizeObserver(measureMapCap)" in draft_js
+
+
+def test_milestone_l_draft_expansion_sheets_move_live_surfaces():
+    """#271: 두 펼침 면의 골격·정확한 버튼 문안·실 DOM 이동/복귀 계약을 고정한다."""
+    html = WEB_INDEX.read_text(encoding="utf-8")
+    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    sheets = (WEB_JS_DIR / "surface_sheet.js").read_text(encoding="utf-8")
+    draft_js = (WEB_JS_DIR / "draftsession.js").read_text(encoding="utf-8")
+
+    assert html.count("펼쳐서 맞추기 ⤢") >= 1
+    assert html.count("펼쳐서 행 고르기 ⤢") >= 1
+    assert '<div id="draftMapSheet" class="modal sheet hidden"' in html
+    assert '<div id="dataSheet" class="modal sheet hidden"' in html
+    for key in ("tokPanel", "mapLegend", "cardReadout", "cardRender"):
+        assert f"{{ id: id.{key}, slotId:" in draft_js
+    for key in ("recsHead", "chips", "tableHost", "strip", "colPanel"):
+        assert f"{{ id: id.{key}, slotId: \"dataSheetSlot\" }}" in draft_js
+    assert ".cloneNode(" not in sheets
+    assert "slot.appendChild(el)" in sheets
+    assert "m.parent.insertBefore(m.el, m.next)" in sheets
+    assert ".data-sheet-body.jobtbth:first-child" in css
+    assert "position:sticky;left:0" in css
+
+
+def test_milestone_l_job_density_and_expansion_sheets():
+    """#272: 작업 duo·420px 캡·두 펼침 면·편집 전 즉시 복귀 계약을 고정한다."""
+    html = WEB_INDEX.read_text(encoding="utf-8")
+    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    sheets = (WEB_JS_DIR / "surface_sheet.js").read_text(encoding="utf-8")
+
+    assert 'class="duo job-duo" id="jobDuo"' in html
+    duo = html.split('id="jobDuo"', 1)[1].split("<!-- 완료 존", 1)[0]
+    assert duo.index('id="jobTableHost"') < duo.index('id="jobMirror"')
+    assert 'id="jobMirrorCapstrip" role="status" hidden' in duo
+    assert "#jobMirror{max-height:420px;overflow:auto}" in css
+    assert "@containersession-panel(max-width:900px)" in css
+    assert '<div id="jobConfirmSheet" class="modal sheet hidden"' in html
+    assert "펼쳐서 행 고르기 ⤢" in html and "펼쳐서 확인 ⤢" in html
+    assert 'modalId: "jobConfirmSheet"' in job_js
+    assert '{ id: "jobMirror", slotId: "jobConfirmSheetMirrorSlot" }' in job_js
+    assert '{ id: "jobRestate", slotId: "jobConfirmSheetRestateSlot" }' in job_js
+    for node_id in (
+        "jobRecsHead", "jobFilterChips", "jobTableHost", "jobSelStrip", "jobColPanel",
+    ):
+        assert f'{{ id: "{node_id}", slotId: "dataSheetSlot" }}' in job_js
+    assert 'closeAndRestore("jobConfirmSheet")' in job_js
+    assert 'closeAndRestore("dataSheet")' in job_js
+    assert "window.Modal.close(id);\n    restore(id);" in sheets
+
+
+def test_milestone_l_wide_probes_do_not_depend_on_host_monitor_width():
+    """Actions 가상 화면이 1440px 미만이어도 wide 컨테이너 분기를 직접 검증해야 한다."""
+    app_py = (WEB_INDEX.parents[1] / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(
+        encoding="utf-8"
+    )
+    assert "jobPanel.style.flex = '0 0 1100px'" in app_py
+    assert "draftPanel.style.flex = '0 0 1100px'" in app_py
+    assert "jobPanel.style.flex = jobPanelFlex" in app_py
+    assert "draftPanel.style.flex = draftPanelFlex" in app_py
 
 
 def _forced_colors_block(css_path: Path) -> str:
@@ -547,8 +638,8 @@ def test_job_zones_reuse_number_badges_and_action_labels():
         ("4", "생성"),
     )
     for ordinal, label in labels:
-        needle = f'<div class="zone-cap"><span class="znum">{ordinal}</span>{label}</div>'
-        assert needle in html, f"작업 존 단계 표지가 없습니다: {ordinal} {label}"
+        needle = rf'<div class="zone-cap[^"]*">.*?<span class="znum">{ordinal}</span>{re.escape(label)}'
+        assert re.search(needle, html), f"작업 존 단계 표지가 없습니다: {ordinal} {label}"
 
 
 def test_job_gate_adds_blocked_step_only_in_display_layer():
