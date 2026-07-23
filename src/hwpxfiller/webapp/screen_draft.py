@@ -562,6 +562,15 @@ class DraftController(DraftSessionMixin):
         """작업 복제 — 레지스트리 clone(유일 이름 합성·이력 미계승) 위임. 그룹 계승 = 인접."""
         return {"ok": True, "name": self.registry.clone(p["name"])}
 
+    def session_guard_for(self, name: str) -> "dict | None":
+        """타 화면(홈) 삭제 가드 조회(#268 리뷰, `screen_job.session_guard_for` 동형) —
+        이 화면이 ``name`` 기안에 무장 결속 세션을 열어 두었으면 가드 수치(+``screen``)."""
+        if name and name == self._bound_job:
+            g = self._leave_guard()
+            if g["armed"]:
+                return {"screen": self.name, **g}
+        return None
+
     def _do_delete_job(self, p: dict) -> "dict | None":
         """작업 삭제 — 무확인 호출은 재진술 자료를 돌려주고 멈춘다(RC-02 왕복 동형).
 

@@ -35,6 +35,20 @@ def test_saved_window_geometry_checks_every_titlebar_edge() -> None:
     assert _geometry_is_visible({**base, "y": 1080}, screen) is False
 
 
+def test_saved_window_geometry_keeps_partially_offscreen_but_usable_position() -> None:
+    """#276 리뷰 — 판정은 제목줄 **전체 폭**과 화면의 겹침: 왼쪽 64px 조각만 보면
+    왼쪽 모서리가 64px 넘게 밖인(그러나 제목줄 대부분이 보이는) 창을 미가시로 오판해
+    쓸 만한 저장 위치를 버리고 다음 부팅이 창을 예고 없이 리셋한다."""
+    screen = (0, 0, 1920, 1080)
+    base = {"y": 20, "width": 1180, "height": 820, "maximized": False}
+    # 왼쪽으로 100px 밀림 — 제목줄 1080px 이 화면 안(잡을 수 있음) → 보존.
+    assert _geometry_is_visible({**base, "x": -100}, screen) is True
+    # 오른쪽 가장자리 걸침 — 겹침 60px(<64) → 리셋(잡기엔 부족).
+    assert _geometry_is_visible({**base, "x": 1860}, screen) is False
+    # 겹침이 정확히 64px 이면 보존(경계 포함).
+    assert _geometry_is_visible({**base, "x": 1856}, screen) is True
+
+
 def test_virtual_screen_bounds_handles_platform_metrics_and_api_failure(monkeypatch) -> None:
     import ctypes
     from types import SimpleNamespace

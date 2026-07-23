@@ -333,9 +333,23 @@
     });
   }
 
-  /* 작업 삭제 — 30일 휴지통 + 최근 1건 복원. 사후 관용이 있으므로 사전 확인을 없앤다. */
+  /* 작업 삭제 — 30일 휴지통 + 최근 1건 복원. 사후 관용이 있으므로 사전 확인을 없앤다.
+     단 작업·기안 화면에 무장 세션이 열려 있으면 백엔드가 needs_confirm 을 돌려준다(#268
+     리뷰) — 세션의 선택·진행은 파일 복원으로도 못 돌아오는 소실이라 확인 왕복만 남긴다. */
   async function deleteJob(name, returnFocus) {
-    const r = await Bridge.call(SCREEN, "delete_job", { name });
+    let r = await Bridge.call(SCREEN, "delete_job", { name });
+    if (r && r.needs_confirm) {
+      const where = r.screen === "draft" ? "기안" : "작업";
+      const ok = await window.Modal.confirm({
+        title: "작업 삭제 확인",
+        body: `작업 '${name}' 이(가) ${where} 화면에 진행 중인 세션으로 열려 있습니다.\n` +
+          `삭제하면 그 세션의 선택·데이터·진행이 함께 사라지며, 파일을 복원해도 세션은 돌아오지 않습니다.`,
+        confirmLabel: "휴지통으로 이동", cancelLabel: "취소",
+        returnFocus,
+      });
+      if (!ok) return;
+      r = await Bridge.call(SCREEN, "delete_job", { name, confirm: true });
+    }
     if (r && r.undo) window.UndoToast.show(`작업 '${name}' 을(를) 휴지통으로 옮겼습니다.`, async () => {
       const restored = await Bridge.call(SCREEN, "undo_delete_job", {});
       if (restored && restored.ok === false) throw new Error(restored.error);

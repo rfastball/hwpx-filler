@@ -916,6 +916,11 @@ class EditorController:
         # 미사용 헤더(#49)는 자동 제안 후보에서 제외 — 매핑 진입 전 좁혀두면 여기서
         # 반영된다(진입 후의 활성 변화는 _apply_active → apply_active_sources 관문 소관).
         self.model = MappingModel.from_suggestions(self.schema, self._active_sources())
+        # 「모두 해제」 undo 슬롯 무효화(#273 리뷰) — 슬롯은 **이전 모델의** 숫자 인덱스라
+        # 재생성된 모델에선 엉뚱한(또는 우연히 같은 자리의) 행을 가리킨다. 살려두면 아직
+        # 보이는 「되돌리기」가 새 입력의 행들을 검토 없이 확정해, 위 "전원 미확정 재생성"
+        # 불변식을 그대로 우회한다(조용한 게이트 우회). 재생성 = 슬롯 소멸.
+        self._unconfirm_undo = []
         if prior is not None:
             carried = self.model.apply_profile(prior, confirm=False)
             self._set_notice(

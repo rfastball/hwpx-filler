@@ -550,15 +550,20 @@ class _Differ:
             )
             # 통째로 추가/삭제된 셀은 중첩 표까지 한 건으로 요약한다. 양쪽 셀이
             # 존재하면 직접 문단과 중첩 표를 분리해 부모 셀 오귀속을 막는다.
-            o_txt = _cell_text(oc) if oc else ""
-            n_txt = _cell_text(nc) if nc else ""
-            if o_txt == n_txt:
-                self._note_equal("cell", label, n_txt)
-                continue
+            # **평탄화 동일 조기 반환 금지(#254 리뷰)**: 양쪽 셀의 평탄화 전문이 같아도
+            # 같은 값이 중첩 좌표·구조 사이를 이동했을 수 있다 — 평탄화 비교로 먼저
+            # 반환하면 중첩 재귀(_diff_nested_tables)가 안 돌아 이동·중복 내용의
+            # table_path/실셀 귀속이 변경 0건으로 조용히 사라진다. 직접 문단 비교와
+            # 중첩 재귀가 등호 판정까지 소유한다(각 층이 자기 층만 판정). 평탄화
+            # ``_cell_text`` 는 한쪽-부재 분기에서만 계산한다(#280 리뷰) — 양쪽 존재
+            # 경로에서 무조건 평탄화하면 중첩 사슬의 층마다 후손 전체를 재순회해
+            # 선형이던 등호 경로가 제곱 비용이 된다.
             if oc and not nc:
+                o_txt = _cell_text(oc)
                 if not _is_blank(o_txt):
                     self._emit("removed", "cell", loc, label, old_text=o_txt)
             elif nc and not oc:
+                n_txt = _cell_text(nc)
                 if not _is_blank(n_txt):
                     self._emit("added", "cell", loc, label, new_text=n_txt)
             else:

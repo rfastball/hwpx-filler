@@ -381,6 +381,49 @@ def test_milestone_l_job_density_and_expansion_sheets():
     assert 'closeAndRestore("jobConfirmSheet")' in job_js
     assert 'closeAndRestore("dataSheet")' in job_js
     assert "window.Modal.close(id);\n    restore(id);" in sheets
+    # 펼침 트리거 포커스 복귀(#279 리뷰) — 캡스트립 위임 클릭의 currentTarget 은 포커스
+    # 불가능한 컨테이너 div: 실클릭 버튼→상시 ⤢ 순으로 해석하는 SurfaceSheet.trigger 만 쓴다.
+    draft_session = (WEB_JS_DIR / "draftsession.js").read_text(encoding="utf-8")
+    assert "trigger: trigger" in sheets
+    for src in (job_js, draft_session):
+        assert "window.SurfaceSheet.trigger(e," in src
+        assert "returnFocus: e && e.currentTarget" not in src
+    # 캡스트립 생성 버튼은 복귀 표적 제외(#280 리뷰) — afterRestore 의 measure* 가
+    # innerHTML 을 갈아 방금 포커스한 버튼이 분리된다(안정 헤더 ⤢ 폴백 고정).
+    assert 'btn.closest(".capstrip")' in sheets
+    assert html.count('class="capstrip"') >= 2
+    # sticky 첫 열의 행 상태 보존(#279 리뷰) — 무조건 --a-card 는 tr.on/호버 배경을 덮어
+    # 문서 정체 셀만 미선택처럼 보인다. sticky 는 투명 불가라 불투명 등가색으로 맞춘다.
+    assert ".data-sheet-body.jobtbtbodytr.ontd:first-child{background:var(--a-sel)}" in css
+    assert ".data-sheet-body.jobtbtbodytr:hovertd:first-child{" in css
+    assert "color-mix(insrgb,var(--a-sel)40%,var(--a-card))" in css
+
+
+def test_diff_selftest_waits_for_renderer_registration_not_script_parse():
+    """#252 리뷰 — `typeof window.DiffScreen === 'object'` 는 스크립트 파싱 즉시 참이라,
+    pywebviewready → init() → onPush 등록 **전**에 push 하면 __push 가 조용히 버려 비교
+    버튼이 비활성인 채 게이트가 간헐 실패한다. 게이트는 렌더러 등록 표지(ready)를 기다린다."""
+    root = WEB_INDEX.parents[1]
+    diff_js = (root / "web-diff" / "js" / "screens" / "diff.js").read_text(encoding="utf-8")
+    diff_app = (root / "src" / "hwpxdiff" / "webapp" / "app.py").read_text(encoding="utf-8")
+    assert "window.DiffScreen = { init, ready: false }" in diff_js
+    assert "window.DiffScreen.ready = true" in diff_js
+    # 표지는 initial 렌더 **완료 뒤**에만 선다(#280 리뷰) — onPush 등록 직후 세우면
+    # 게이트 push 가 미해결 initial 응답과 경합해 빈 스냅샷이 push 를 덮어쓴다.
+    assert diff_js.index("Bridge.onPush(SCREEN, render)") < diff_js.index(
+        "render(await Bridge.initial(SCREEN))"
+    ) < diff_js.index("window.DiffScreen.ready = true")
+    assert "window.DiffScreen.ready === true" in diff_app
+
+
+def test_job_generation_result_renders_partial_cancellation_honestly():
+    """#278 리뷰 — 취소된 배치를 진행바 100% + danger 로 그리면 정확한 요약 문안 옆에서
+    시각이 '완주했고 오류'라고 거짓말한다: 진행 = attempted/total, warn 채널 보존."""
+    job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    block = job_js[job_js.index("function renderResult"):job_js.index("function warnResult")]
+    assert "res.cancelled" in block and "res.attempted" in block
+    assert 'res.level === "warn" ? "warn"' in block
+    assert '$("jobGenBar").style.width = "100%"' not in block
 
 
 def test_milestone_l_wide_probes_do_not_depend_on_host_monitor_width():

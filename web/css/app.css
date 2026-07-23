@@ -873,6 +873,12 @@ body.resizing-master{cursor:col-resize;user-select:none}
 .data-sheet-body .jobtb-host{display:flex;flex-direction:column;min-height:0;flex:1}
 .data-sheet-body .jobtbwrap{max-height:none;min-height:0;flex:1}
 .data-sheet-body .jobtb th:first-child,.data-sheet-body .jobtb td:first-child{position:sticky;left:0;background:var(--a-card)}
+/* sticky 첫 열의 행 상태 보존(#279 리뷰) — 무조건 --a-card 만 깔면 tr.on/호버가 칠한
+   행 배경을 덮어, 문서 정체 셀(선택하며 보는 1차 셀)만 늘 미선택처럼 보인다. sticky 는
+   투명 불가(밑 열이 비침)라 카드 위에 같은 비율을 섞은 불투명 등가색으로 맞춘다. */
+.data-sheet-body .jobtb tbody tr:hover td:first-child{
+  background:color-mix(in srgb, var(--a-sel) 40%, var(--a-card))}
+.data-sheet-body .jobtb tbody tr.on td:first-child{background:var(--a-sel)}
 .data-sheet-body .jobtb th:first-child{z-index:3}
 .data-sheet-body .jobtb td:first-child{z-index:2}
 @media (max-width:900px){.sheet-duo{grid-template-columns:1fr}.sheet .sheet-card{width:100vw;height:100vh;height:100dvh}}
@@ -1132,7 +1138,9 @@ body.resizing-master{cursor:col-resize;user-select:none}
 .colpanel .cp-err{color:var(--a-danger);font-size:var(--fs-caption);white-space:pre-line}
 .colpanel .cp-acts{display:flex;gap:var(--sp-6);justify-content:flex-end}
 
-.undo-toast{position:fixed;z-index:var(--z-modal);left:50%;bottom:var(--sp-16);
+/* pointer-events:auto — #overlayRoot(pointer-events:none) 자식이라 명시 복구해야
+   「되돌리기」 버튼이 실클릭을 받는다(#269 리뷰: 모달·ctx-menu·colpanel과 같은 규약). */
+.undo-toast{position:fixed;z-index:var(--z-modal);left:50%;bottom:var(--sp-16);pointer-events:auto;
   transform:translateX(-50%);display:flex;align-items:center;gap:var(--sp-12);
   max-width:min(560px,calc(100vw - 32px));padding:var(--sp-8) var(--sp-12);
   color:var(--a-ink);background:var(--a-card);border:1px solid var(--a-border);

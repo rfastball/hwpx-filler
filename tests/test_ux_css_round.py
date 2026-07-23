@@ -97,14 +97,23 @@ def test_pathtrack_default_affordances_are_open_and_reveal():
 
 
 def test_pathtrack_secondary_actions_are_accessible_icon_buttons():
-    """H-12: 열기·폴더보기·경로복사는 같은 아이콘 급이며 접근 이름·툴팁을 보존한다."""
+    """H-12: 열기·폴더보기·경로복사는 같은 아이콘 급이며 접근 이름·툴팁을 보존한다.
+
+    버튼 title 은 경로를 병기한다(#264 리뷰) — 아이콘 버튼 위에선 버튼 자신의 title 이
+    부모 .track-affords 의 경로 title 을 가리므로, 라벨만 남기면 경로 텍스트를 안 그리는
+    호출부(풀 카드 등)에서 전체 경로가 발견 불가능해진다(full-path-tooltip 계약)."""
     src = PATHTRACK_JS.read_text(encoding="utf-8")
     for action, label in (("open", "열기"), ("reveal", "폴더에서 보기"), ("copy", "경로 복사")):
         assert f"{action}: '<svg" in src
         assert f'label: "{label}", icon: ICONS.{action}' in src
     assert 'class="btn sm icon track-btn"' in src
-    assert 'title="${spec.label}" aria-label="${spec.label}"' in src
+    assert 'title="${spec.label} — ${esc(path)}"' in src
+    assert 'aria-label="${spec.label}"' in src
     assert '${spec.icon}</button>' in src
+    # 복사 피드백 복원도 「라벨 — 경로」(#280 리뷰) — 라벨만 되돌리면 첫 복사 이후
+    # 경로 툴팁이 재렌더까지 사라진다.
+    assert 'el.setAttribute("title", `${spec.label} — ${path}`)' in src
+    assert 'el.setAttribute("title", spec.label)' not in src
 
 
 def test_pathtrack_icon_style_is_visually_secondary_and_focusable():

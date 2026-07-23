@@ -31,7 +31,7 @@ from pathlib import Path
 
 from hwpxcore.atomic import write_text_atomic
 
-from ..core.template_status import default_templates_dir
+from ..core.template_status import TRASH_DIR_NAME, default_templates_dir
 from ..core.text_registry import TextTemplateRegistry
 from ..gui.template_manager_state import TemplateManagerViewModel
 from .screens import PushSink
@@ -71,7 +71,10 @@ class TemplateController:
         # 마지막 결과 문구(컴파일·검토·가져오기·TXT 변경) — 성과별 심각도 채널(UD-07).
         self.result_text = ""
         self.result_level = "muted"
-        self._deleted_template_slot = None
+        # 최근 삭제 1건 복원 슬롯 — (media, 원경로, 휴지통경로, 삭제 시점 그룹). 그룹을 슬롯에
+        # 보존해야 한다(#269 리뷰): 삭제 직후 스냅샷 푸시의 reconcile 이 사라진 키의 그룹 지정을
+        # 영구 제거하므로, 복원 시 파일만 돌아오면 조용히 「그룹 없음」이 된다.
+        self._deleted_template_slot: "tuple[str, Path, Path, str] | None" = None
 
     # ------------------------------------------------------------- 관측 푸시
     def _push(self) -> None:
@@ -332,18 +335,21 @@ class TemplateController:
 
     # ---- 삭제(HWPX·TXT 공통 · 30일 휴지통 + 최근 1건 복원)
     def _do_delete(self, p: dict) -> dict:
-        """템플릿을 매체 루트의 .trash로 옮긴다. 그룹 지정은 reconcile 이 정리.
+        """템플릿을 매체 루트의 .trash로 옮긴다. 그룹은 슬롯에 보존(복원 시 재지정), 스토어의
+        지정 자체는 reconcile 이 정리.
 
         **경로 검증**(#137 리뷰 F10): 렌더러 페이로드의 ``media``·``path`` 를 그대로 unlink 하면
         라이브러리 밖 임의 파일도 지워진다. 매체를 열거 검증하고(``_model``), 경로가 그 매체
         라이브러리의 **현재 목록**에 속하는지 정규화 후 대조해 임의 파일 삭제 권한 승격을 막는다."""
         media = p["media"]
-        self._model(media)  # 매체 열거 검증(오타·미지 매체 loud)
+        model = self._model(media)  # 매체 열거 검증(오타·미지 매체 loud)
         path = Path(p["path"])
         if self._norm(path) not in self._live_paths(media):
             raise ValueError("현재 라이브러리 목록에 없는 경로는 삭제할 수 없습니다.")
         root = self.vm.library_dir if media == "hwpx" else self.text_registry.directory
-        trash = Path(root) / ".trash"
+        # 그룹은 이동 전에 떠 둔다 — 이동 직후 reconcile 이 이 키의 지정을 영구 제거한다.
+        group = model.group_of(rel_key(path, Path(root)))
+        trash = Path(root) / TRASH_DIR_NAME
         trash.mkdir(parents=True, exist_ok=True)
         cutoff = time.time() - 30 * 24 * 60 * 60
         for old in trash.iterdir():
@@ -354,22 +360,63 @@ class TemplateController:
                 continue
         trashed = trash / f"{int(time.time())}-{uuid.uuid4().hex}-{path.name}"
         path.replace(trashed)
-        self._deleted_template_slot = (media, path, trashed)
+        self._deleted_template_slot = (media, path, trashed, group)
         if media == "hwpx":
             self.vm.refresh()
         self._set_result(_ok(f"템플릿을 휴지통으로 옮겼습니다: {path.stem}"))
         return {"ok": True, "undo": True, "name": path.stem}
 
     def _do_undo_delete(self, p: dict) -> dict:
+        """휴지통 최근 1건 복원 — TXT 는 **복원 전 구간**이 writer 락 임계구역(#268/#280 리뷰).
+
+        TXT 는 존재 검사와 ``replace`` 사이에 다른 pywebview 호출(새 템플릿·템플릿으로 저장)이
+        같은 이름을 새로 쓸 수 있다 — 무락이면 복원이 그 새 파일을 조용히 덮거나, 동시 writer 가
+        복원본을 즉시 덮는다. :meth:`~hwpxfiller.core.text_registry.TextTemplateRegistry.write_lock`
+        을 존재 검사~교체~그룹 복원~실패 롤백까지 한 임계구역으로 잡는다(부분만 덮으면 롤백
+        ``replace`` 가 락 밖에서 동시 편집을 쓸어 넣는다 — 3R). HWPX 는 공유 writer 락이 없는
+        단일 표면이라 무락 동일 몸통. 복원 후 삭제 시점 그룹을 재지정한다(#269 리뷰) —
+        삭제 직후 reconcile 이 지정을 지웠으므로 슬롯의 그룹이 유일한 생존 기록이다."""
         if self._deleted_template_slot is None:
             return {"ok": False, "error": "복원할 최근 템플릿이 없습니다."}
-        media, path, trashed = self._deleted_template_slot
-        if not trashed.exists():
-            return {"ok": False, "error": "복원할 템플릿이 휴지통에 없습니다."}
-        if path.exists():
-            return {"ok": False, "error": "같은 이름의 템플릿이 이미 있어 복원할 수 없습니다."}
-        path.parent.mkdir(parents=True, exist_ok=True)
-        trashed.replace(path)
+        media, path, trashed, group = self._deleted_template_slot
+
+        def restore_and_regroup() -> "dict | None":
+            """복원의 **모든 durable 변이**(존재 검사~이동~그룹 복원~실패 롤백) 한 몸통.
+
+            TXT 는 이 전체가 writer 락 임계구역 안이어야 한다(#280 리뷰 3R) — 이동만 락으로
+            덮고 그룹 복원·롤백을 밖에 두면, 락 해제 후 동시 writer 가 같은 이름을 새로 쓴
+            뒤 설정 쓰기가 실패했을 때 롤백 ``replace`` 가 그 새 내용을 무락으로 휴지통에
+            쓸어 넣는다(재시도 Undo = 엉뚱한 내용 복원 + 동시 편집 소실).
+            """
+            if not trashed.exists():
+                return {"ok": False, "error": "복원할 템플릿이 휴지통에 없습니다."}
+            if path.exists():
+                return {"ok": False, "error": "같은 이름의 템플릿이 이미 있어 복원할 수 없습니다."}
+            path.parent.mkdir(parents=True, exist_ok=True)
+            trashed.replace(path)
+            if group:
+                # 그룹 복원까지 성공해야 슬롯을 비운다(#280 리뷰) — 슬롯이 삭제 시점 그룹의
+                # 유일한 생존 기록이라, 설정 쓰기 실패 후 슬롯을 이미 비웠다면 재시도가
+                # "복원할 템플릿이 없습니다"로 막히고 템플릿은 조용히 「그룹 없음」이 된다.
+                # 실패 시 파일 이동을 되돌려(슬롯↔실상태 정합) 재시도를 가능하게 남긴다.
+                try:
+                    root = (
+                        self.vm.library_dir if media == "hwpx"
+                        else self.text_registry.directory
+                    )
+                    self._model(media).set_group(rel_key(path, Path(root)), group)
+                except Exception:
+                    path.replace(trashed)  # 이동 롤백 — 슬롯은 그대로, Undo 재시도 가능
+                    raise
+            return None
+
+        if media == "txt":
+            with self.text_registry.write_lock():
+                error = restore_and_regroup()
+        else:
+            error = restore_and_regroup()
+        if error is not None:
+            return error
         self._deleted_template_slot = None
         if media == "hwpx":
             self.vm.refresh()

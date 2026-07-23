@@ -420,14 +420,22 @@ class _RegistryWriteState:
         self.key = key
         self.lock = threading.RLock()
         self._owner: object | None = None
+        self._owner_pid: "int | None" = None
 
     def claim_process_ownership(self) -> None:
-        if self._owner is not None:
+        # 소유권은 **프로세스** 단위 계약이다(#234 리뷰) — POSIX fork 자식은 ``_owner`` 를
+        # 그대로 상속해 조기 반환으로 원 writer 행세할 수 있었다(RLock 은 프로세스-로컬이라
+        # 부모·자식이 무경보 동시 쓰기). 획득 시점 PID 를 기록하고, PID 가 다르면 상속분
+        # 참조를 끊고(닫지 않는다 — flock OFD 는 부모와 공유라 닫으면 부모 락을 건드린다)
+        # 새로 획득을 시도한다: 부모가 살아 있으면 flock 이 막혀 시끄럽게 거부된다.
+        if self._owner is not None and self._owner_pid == os.getpid():
             return
+        self._owner = None
         if sys.platform == "win32":
             self._claim_windows_mutex()
         else:
             self._claim_posix_lock()
+        self._owner_pid = os.getpid()
 
     def _claim_windows_mutex(self) -> None:
         import ctypes

@@ -1028,6 +1028,20 @@ def _second_job(ctrl, tmp_path):
     ))
 
 
+def test_session_guard_for_cross_screen_query(tmp_path):
+    """#268 리뷰 — 홈 삭제 가드 조회(session_guard_for): 이 화면이 무장 세션으로 겨눈
+    작업명에만 가드 수치(+screen)를 내고, 비무장·타 작업·빈 이름은 None(홈 즉시 삭제)."""
+    ctrl, _ = _session(tmp_path)
+    assert ctrl.session_guard_for(ctrl.job_name) is None      # 비무장(전체 선택) = None
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("toggle_record", {"index": 0, "value": True})
+    g = ctrl.session_guard_for(ctrl.job_name)
+    assert g is not None and g["screen"] == "job" and g["armed"] is True
+    assert g["sel_count"] == 1
+    assert ctrl.session_guard_for("다른작업") is None
+    assert ctrl.session_guard_for("") is None
+
+
 def test_guard_armed_by_set_comparison(tmp_path):
     """무장 술어(결정 27) — 전체/빈/정의-유래/완주 집합은 비무장, 수작업 열거만 무장."""
     ctrl, _ = _session(tmp_path)

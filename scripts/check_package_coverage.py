@@ -90,6 +90,22 @@ def load_floors(path: Path) -> list[Floor]:
     return floors
 
 
+def load_unmatched_allow(path: Path) -> set[str]:
+    """Source directories intentionally outside the floor table (#255 review).
+
+    Every measured source package must either carry a floor or appear here —
+    otherwise a new production subpackage would be silently skipped and could
+    ship entirely untested while all configured floors stay green.
+    """
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    raw = data.get("unmatched_allow", [])
+    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+        raise CoverageGateError("unmatched_allow must be a list of path strings")
+    return {
+        str(item).replace("\\", "/").removeprefix("src/").rstrip("/") for item in raw
+    }
+
+
 def _branch_counts(line: ET.Element) -> tuple[int, int]:
     if line.attrib.get("branch") != "true":
         return 0, 0
@@ -99,7 +115,9 @@ def _branch_counts(line: ET.Element) -> tuple[int, int]:
     return int(match.group(1)), int(match.group(2))
 
 
-def evaluate(xml_path: Path, floors: list[Floor]) -> list[PackageResult]:
+def evaluate(
+    xml_path: Path, floors: list[Floor], allow: "set[str] | frozenset[str]" = frozenset()
+) -> list[PackageResult]:
     if not xml_path.is_file():
         raise CoverageGateError(f"coverage XML missing: {xml_path}")
     try:
@@ -108,6 +126,7 @@ def evaluate(xml_path: Path, floors: list[Floor]) -> list[PackageResult]:
         raise CoverageGateError(f"invalid coverage XML: {xml_path}") from exc
 
     results = {floor.path: PackageResult(floor) for floor in floors}
+    unmatched: set[str] = set()
     for class_element in root.findall(".//class"):
         filename = class_element.attrib.get("filename")
         if not filename:
@@ -115,6 +134,11 @@ def evaluate(xml_path: Path, floors: list[Floor]) -> list[PackageResult]:
         source_path = _normalized_source_path(filename)
         result = results.get(source_path.parent.as_posix())
         if result is None:
+            # Unconfigured production subpackage (#255 review): refuse to skip it
+            # silently — the separate-surface model requires every measured package
+            # to carry its own floor or an explicit allowlist entry.
+            if source_path.parent.as_posix() not in allow:
+                unmatched.add(source_path.parent.as_posix())
             continue
         for line in class_element.findall("./lines/line"):
             try:
@@ -133,6 +157,11 @@ def evaluate(xml_path: Path, floors: list[Floor]) -> list[PackageResult]:
             if total and covered < total:
                 result.missing_branches.setdefault(filename, []).append(number)
 
+    if unmatched:
+        raise CoverageGateError(
+            "source packages without a configured floor (add [packages.*] or "
+            f"unmatched_allow): {', '.join(sorted(unmatched))}"
+        )
     for result in results.values():
         if result.lines_total == 0:
             raise CoverageGateError(f"no coverage evidence for package {result.floor.name}")
@@ -189,7 +218,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--markdown-output", type=Path)
     args = parser.parse_args(argv)
     try:
-        results = evaluate(args.coverage_xml, load_floors(args.config))
+        results = evaluate(
+            args.coverage_xml, load_floors(args.config), load_unmatched_allow(args.config)
+        )
         report = render_markdown(results)
         if args.markdown_output:
             args.markdown_output.write_text(report, encoding="utf-8")
