@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import csv
+import importlib.util
 import io
 from pathlib import Path
 
@@ -101,10 +102,23 @@ def test_launcher_and_reset_cover_generated_state() -> None:
 
 
 def test_make_template_source_of_truth_matches_committed_csv() -> None:
-    """make_template.py 의 FIELDS/RECORDS(진실원)와 커밋된 CSV 가 일치한다(같은 입력=같은 자산)."""
-    src = (Q101 / "make_template.py").read_text(encoding="utf-8")
-    for field_name in FIELDS:
-        assert f'"{field_name}"' in src
-    headers, rows = _csv_rows("발주목록.csv")
-    for row in rows:
-        assert row["공고번호"] in src, f"커밋 CSV 의 {row['공고번호']} 가 진실원에 없다"
+    """진실원(RECORDS/RECORDS_2)에서 CSV 를 재생성해 커밋 실물과 바이트 대조.
+
+    substring 표본 검사는 판별력이 없다(값 하나 바꿔도 통과 — Codex 3라운드) —
+    make_template.write_csv 와 같은 직렬화로 두 파일 전행·전열을 재현해 비교한다.
+    줄끝만 정규화(체크아웃 CRLF 속성 비의존).
+    """
+    spec = importlib.util.spec_from_file_location("q101_make_template", Q101 / "make_template.py")
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod.FIELDS == FIELDS, "진실원 FIELDS 드리프트"
+    for name, records in (("발주목록.csv", mod.RECORDS), ("발주목록_2.csv", mod.RECORDS_2)):
+        buf = io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=mod.FIELDS, lineterminator="\n")
+        writer.writeheader()
+        for rec in records:
+            writer.writerow(rec)
+        expected = buf.getvalue().encode("utf-8-sig")
+        committed = (Q101 / "data" / name).read_bytes().replace(b"\r\n", b"\n")
+        assert committed == expected, f"{name} 가 진실원과 다르다 — make_template.py 재실행 필요"
