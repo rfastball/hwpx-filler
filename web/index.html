@@ -160,9 +160,12 @@
               <div class="note" id="jobRelink" style="display:none"></div>
             </div>
 
+            <!-- 데이터|거울 duo(#272) — 고르는 표와 그 결과를 같은 시야에 둔다. -->
+            <div class="duo job-duo" id="jobDuo">
             <!-- 데이터 존 — 겨눔 + 행 선택 -->
-            <div class="zone">
-              <div class="zone-cap"><span class="znum">2</span>데이터 연결</div>
+            <div class="zone job-data-zone">
+              <div class="zone-cap zone-cap-actions"><span><span class="znum">2</span>데이터 연결</span>
+                <button class="btn sm" id="jobDataExpand" type="button">펼쳐서 행 고르기 ⤢</button></div>
               <div class="run-row"><span class="lbl">데이터(.xlsx/.csv)</span>
                 <input class="field ro" id="jobDataLabel" type="text" readonly
                        placeholder="데이터를 선택하세요">
@@ -171,7 +174,7 @@
               <div class="note" id="jobDataNotice" style="display:none;white-space:pre-line"></div>
               <div class="preflight note" id="jobPreflight" style="display:none"></div>
 
-              <div class="run-row run-recs-head">
+              <div class="run-row run-recs-head" id="jobRecsHead">
                 <span class="lbl" style="font-weight:600">생성 대상 문서</span>
                 <!-- 전열 검색 = 재현 OR 그룹 편집기(블록 4 결정 23) — 검색창을 비우면 그룹이 걷힌다. -->
                 <input class="field jobsearch" id="jobFilterSearch" type="search"
@@ -202,13 +205,21 @@
             </div>
 
             <!-- 본문 존 — 라이브 거울(필드 채움 테이블) + 재진술 블록 + 생성 의식 1회 -->
-            <div class="zone">
-              <div class="zone-cap"><span class="znum">3</span>본문 확인·거울</div>
+            <div class="zone job-mirror-zone">
+              <div class="zone-cap zone-cap-actions"><span><span class="znum">3</span>본문 확인·거울</span>
+                <button class="btn sm" id="jobMirrorExpand" type="button">펼쳐서 확인 ⤢</button></div>
               <p class="muted hint">이 문서에 들어갈 값입니다. <span class="danger">빈 값</span>
                 행은 <b>눌러서 확인</b>해야 생성할 수 있습니다.</p>
               <!-- 거울 = 필드 채움 테이블(결정 36 ⓑ). danger(드리프트·토큰)는 차단 배너로 분리. -->
-              <div id="jobMirror"></div>
+              <div id="jobMirror" data-preserve-scroll></div>
+              <div class="capstrip" id="jobMirrorCapstrip" role="status" hidden></div>
+              <!-- 생성 버튼은 하단 sticky 액션바로 이관(#179 슬라이스 5b) — 스크롤 무관 상시 도달. -->
+            </div>
+            </div>
 
+            <!-- 완료 존 — 세션 스코프(진행·결과·로그) -->
+            <div class="zone">
+              <div class="zone-cap"><span class="znum">4</span>생성</div>
               <div class="run-row"><span class="lbl">저장 폴더</span>
                 <input class="field ro" id="jobOutDir" type="text" readonly
                        placeholder="이 폴더에 문서를 저장합니다">
@@ -217,12 +228,6 @@
 
               <!-- 게이트 · 재진술 블록(상시 — 이미 보이는 것 재검증 안 함, 결정 36 D1-B). -->
               <div class="defblk" id="jobRestate" style="display:none"></div>
-              <!-- 생성 버튼은 하단 sticky 액션바로 이관(#179 슬라이스 5b) — 스크롤 무관 상시 도달. -->
-            </div>
-
-            <!-- 완료 존 — 세션 스코프(진행·결과·로그) -->
-            <div class="zone">
-              <div class="zone-cap"><span class="znum">4</span>생성</div>
               <div class="bar"><i id="jobGenBar"></i></div>
               <div id="jobGenResult" class="run-result"></div>
               <div class="logbox" id="jobGenLog">작업, 데이터, 저장 폴더를 확인한 뒤 생성하세요.</div>
@@ -288,7 +293,8 @@
           <div class="job-zones" id="draftSessionPanel">
             <!-- ① 데이터 — 템플릿(무엇으로) → 데이터(무엇을) → 행(어느 건) -->
             <div class="zone">
-              <div class="zone-cap"><span class="znum">1</span>데이터</div>
+              <div class="zone-cap zone-cap-actions"><span><span class="znum">1</span>데이터</span>
+                <button class="btn sm" id="draftDataExpand" type="button">펼쳐서 행 고르기 ⤢</button></div>
               <div class="run-row"><span class="lbl">템플릿</span>
                 <select class="field" id="draftTplSel"></select>
                 <button class="btn" id="draftBtnPaste" data-busy-lock>템플릿 붙여넣기…</button></div>
@@ -302,7 +308,7 @@
                      때만 뜬다(draftsession.js has_data). 데이터 교체와 같은 파괴라 T3 확인을 지난다. -->
                 <button class="btn" id="draftBtnClearData" data-busy-lock hidden>데이터 해제</button></div>
 
-              <div class="run-row run-recs-head">
+              <div class="run-row run-recs-head" id="draftRecsHead">
                 <span class="lbl" style="font-weight:600">기안 대상 행</span>
                 <input class="field jobsearch" id="draftFilterSearch" type="search"
                        placeholder="전체 열 검색" autocomplete="off" data-busy-lock>
@@ -330,55 +336,62 @@
               <div class="note warnbox" id="draftZoneNote" style="display:none"></div>
             </div>
 
-            <!-- ② 맞추기(#148 슬라이스 3b) — 토큰별 결속·근사 제안·표시형·소유권 색. 표는 공용
-                 팩토리(draftsession.js)가 렌더하고, 여기는 호스트·범례만. 항등 매핑(토큰명==열명)의
-                 제약을 풀어 이름이 달라도 결속·직접 입력할 수 있다. -->
-            <div class="zone">
-              <div class="zone-cap"><span class="znum">2</span>맞추기</div>
-              <div id="draftTokPanel" class="mapwrap" data-preserve-scroll></div>
-              <div class="maplegend" id="draftMapLegend"></div>
-            </div>
+            <!-- ②|③ duo(마일스톤 L #270) — 타이핑하는 맞추기 면과 그 결과가 비치는 미리보기를
+                 같은 시야에 둔다. 패널 실폭이 좁으면 컨테이너 쿼리로 종전 세로 적층에 복귀한다. -->
+            <div class="duo draft-duo" id="draftDuo">
+              <!-- ② 맞추기(#148 슬라이스 3b) — 토큰별 결속·근사 제안·표시형·소유권 색. 표는 공용
+                   팩토리(draftsession.js)가 렌더하고, 여기는 호스트·범례만. -->
+              <div class="zone draft-map-zone">
+                <div class="zone-cap zone-cap-actions"><span><span class="znum">2</span>맞추기</span>
+                  <button class="btn sm" id="draftMapExpand" type="button">펼쳐서 맞추기 ⤢</button></div>
+                <div id="draftTokPanel" class="mapwrap" data-preserve-scroll></div>
+                <!-- 실제 오버플로일 때만 draftsession.js가 펼친다. display:flex가 hidden을 이기지
+                     못하도록 CSS에 .capstrip[hidden] 계약을 둔다(B-9 결함류). -->
+                <div class="capstrip" id="draftMapCapstrip" role="status" hidden></div>
+                <div class="maplegend" id="draftMapLegend"></div>
+              </div>
 
-            <!-- ③ 미리보기 — 큐가 지나가는 한 장(결정 16). 「채운 모습 ↔ 원문」 뷰 전환(같은 칸의
-                 두 모습, 결정 34): 원문은 휘발 세션의 입력구고 타이핑이 ② 표를 실시간 재구성한다. -->
-            <div class="zone workcard" id="draftCard">
-              <div class="wc-index-head">
-                <div class="zone-cap" style="margin:0"><span class="znum">3</span><span id="draftCardTitle">이대로 복사됩니다</span></div>
-                <div class="viewsw" role="group" aria-label="카드 보기 전환">
-                  <button type="button" id="draftViewFilled" aria-pressed="true">채운 모습</button>
-                  <button type="button" id="draftViewSource" aria-pressed="false">원문</button>
+              <!-- ③ 미리보기 — 큐가 지나가는 한 장(결정 16). 「채운 모습 ↔ 원문」 뷰 전환(같은 칸의
+                   두 모습, 결정 34): 원문은 휘발 세션의 입력구고 타이핑이 ② 표를 실시간 재구성한다. -->
+              <div class="zone workcard draft-preview-zone" id="draftCard">
+                <div class="wc-index-head">
+                  <div class="zone-cap" style="margin:0"><span class="znum">3</span><span id="draftCardTitle">이대로 복사됩니다</span></div>
+                  <div class="viewsw" role="group" aria-label="카드 보기 전환">
+                    <button type="button" id="draftViewFilled" aria-pressed="true">채운 모습</button>
+                    <button type="button" id="draftViewSource" aria-pressed="false">원문</button>
+                  </div>
                 </div>
-              </div>
-              <div class="wc-fontbar">
-                <label class="lbl" for="draftTargetFont">대상 글꼴</label>
-                <select class="field sm" id="draftTargetFont"
-                        title="붙여넣는 곳(기안작성기)의 표준 글꼴입니다.">
-                  <option value="gulimche">굴림체</option>
-                  <option value="dotumche">돋움체</option>
-                  <option value="malgun">맑은고딕</option>
-                </select>
-                <span class="muted capnote">붙여넣는 곳의 표준 글꼴입니다(전역 설정으로 저장).</span>
-              </div>
-              <div class="wc-index"><div class="wc-readout" id="draftCardReadout"></div></div>
-              <div class="wc-dots" id="draftCardDots" role="list" aria-label="큐 진행 표시"></div>
-              <pre class="wc-render" id="draftCardRender" aria-live="polite" data-preserve-scroll
-                   tabindex="0"></pre>
-              <!-- 원문 뷰 = 같은 칸의 두 번째 모습(결정 34). 휘발 세션은 편집 가능(타이핑→② 표
-                   재구성). 저장된 기안은 읽기 전용이고, 원문바의 「사본으로 편집」이 휘발 사본으로
-                   가른다(값·데이터·큐 진행 승계). 수정됨 표지는 원문이 라이브러리에서 갈라졌음을
-                   정직하게 말한다(슬라이스 5a·5b). -->
-              <div class="wc-srcview" id="draftSrcView" hidden>
-                <div class="wc-srcbar">
-                  <span class="wc-srcname" id="draftSrcName"></span>
-                  <span class="wc-modbadge" id="draftModBadge" hidden>수정됨</span>
-                  <button class="btn sm" id="draftSrcFork" hidden
-                          title="저장된 기안은 그대로 두고, 이 세션을 사본으로 만들어 고칩니다(값·데이터·진행 유지).">사본으로 편집</button>
+                <div class="wc-fontbar">
+                  <label class="lbl" for="draftTargetFont">대상 글꼴</label>
+                  <select class="field sm" id="draftTargetFont"
+                          title="붙여넣는 곳(기안작성기)의 표준 글꼴입니다.">
+                    <option value="gulimche">굴림체</option>
+                    <option value="dotumche">돋움체</option>
+                    <option value="malgun">맑은고딕</option>
+                  </select>
+                  <span class="muted capnote">붙여넣는 곳의 표준 글꼴입니다(전역 설정으로 저장).</span>
                 </div>
-                <textarea class="wc-srcbox mono" id="draftSrcBox" spellcheck="false"
-                          data-preserve-scroll aria-label="템플릿 원문"></textarea>
-                <p class="muted hint">여기서 고친 원문은 이 세션의 사본이고, 타이핑하면 위 '맞추기' 표에 바로 반영됩니다.</p>
+                <div class="wc-index"><div class="wc-readout" id="draftCardReadout"></div></div>
+                <div class="wc-dots" id="draftCardDots" role="list" aria-label="큐 진행 표시"></div>
+                <pre class="wc-render" id="draftCardRender" aria-live="polite" data-preserve-scroll
+                     tabindex="0"></pre>
+                <!-- 원문 뷰 = 같은 칸의 두 번째 모습(결정 34). 휘발 세션은 편집 가능(타이핑→② 표
+                     재구성). 저장된 기안은 읽기 전용이고, 원문바의 「사본으로 편집」이 휘발 사본으로
+                     가른다(값·데이터·큐 진행 승계). 수정됨 표지는 원문이 라이브러리에서 갈라졌음을
+                     정직하게 말한다(슬라이스 5a·5b). -->
+                <div class="wc-srcview" id="draftSrcView" hidden>
+                  <div class="wc-srcbar">
+                    <span class="wc-srcname" id="draftSrcName"></span>
+                    <span class="wc-modbadge" id="draftModBadge" hidden>수정됨</span>
+                    <button class="btn sm" id="draftSrcFork" hidden
+                            title="저장된 기안은 그대로 두고, 이 세션을 사본으로 만들어 고칩니다(값·데이터·진행 유지).">사본으로 편집</button>
+                  </div>
+                  <textarea class="wc-srcbox mono" id="draftSrcBox" spellcheck="false"
+                            data-preserve-scroll aria-label="템플릿 원문"></textarea>
+                  <p class="muted hint">여기서 고친 원문은 이 세션의 사본이고, 타이핑하면 위 '맞추기' 표에 바로 반영됩니다.</p>
+                </div>
+                <div class="wc-lint" id="draftCardLint" hidden></div>
               </div>
-              <div class="wc-lint" id="draftCardLint" hidden></div>
             </div>
 
             <!-- ④ 완료 — 복사(=완료, 결정 16) + 자유 이동(◀▶ · 위 점 클릭) + 전진 opt-in.
@@ -646,6 +659,48 @@
       </div>
     </div>
 
+    <!-- 기안 펼침 면(#271) — 기존 표면을 복제하지 않고 슬롯으로 옮긴 뒤 정확한 원위치에 복귀한다. -->
+    <div id="draftMapSheet" class="modal sheet hidden" role="dialog" aria-modal="true"
+         aria-labelledby="draftMapSheetTitle">
+      <div class="modal-card sheet-card">
+        <div class="sheet-head">
+          <h3 id="draftMapSheetTitle">기안 맞추기</h3>
+          <button class="btn" id="draftMapSheetClose" type="button">닫기</button>
+        </div>
+        <div class="sheet-body sheet-duo draft-map-sheet-body">
+          <section class="sheet-pane" aria-label="토큰 맞추기" id="draftMapSheetMapSlot"></section>
+          <section class="sheet-pane" aria-label="채운 모습" id="draftMapSheetPreviewSlot"></section>
+        </div>
+      </div>
+    </div>
+
+    <!-- 기안·작업이 한 벌을 쓰는 데이터 펼침 면(#271/#272). 소유 화면의 실 DOM을 이 슬롯으로 이동한다. -->
+    <div id="dataSheet" class="modal sheet hidden" role="dialog" aria-modal="true"
+         aria-labelledby="dataSheetTitle">
+      <div class="modal-card sheet-card">
+        <div class="sheet-head">
+          <h3 id="dataSheetTitle">데이터 행 고르기</h3>
+          <button class="btn" id="dataSheetClose" type="button">닫기</button>
+        </div>
+        <div class="sheet-body data-sheet-body" id="dataSheetSlot"></div>
+      </div>
+    </div>
+
+    <!-- 작업 확인 펼침 면(#272) — 거울과 생성 재진술의 실 DOM을 양쪽 슬롯으로 이동한다. -->
+    <div id="jobConfirmSheet" class="modal sheet hidden" role="dialog" aria-modal="true"
+         aria-labelledby="jobConfirmSheetTitle">
+      <div class="modal-card sheet-card">
+        <div class="sheet-head">
+          <h3 id="jobConfirmSheetTitle">작업 본문 확인</h3>
+          <button class="btn" id="jobConfirmSheetClose" type="button">닫기</button>
+        </div>
+        <div class="sheet-body sheet-duo job-confirm-sheet-body">
+          <section class="sheet-pane" aria-label="필드 채움 거울" id="jobConfirmSheetMirrorSlot"></section>
+          <section class="sheet-pane" aria-label="생성 재진술" id="jobConfirmSheetRestateSlot"></section>
+        </div>
+      </div>
+    </div>
+
     <!-- 템플릿 그룹 이동 다이얼로그(#108, groupMoveModal 동형·별도 요소) — 화면별 wiring 격리.
          기존 그룹 + 새 그룹 입력 동거 + 해제. 목록은 template.js 가 스냅샷 그룹명으로 채운다. -->
     <div id="tplMoveModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="tplMoveTitle">
@@ -697,6 +752,7 @@
 <script src="js/segview.js"></script>
 <script src="js/preserve.js"></script>
 <script src="js/modal.js"></script>
+<script src="js/surface_sheet.js"></script>
 <script src="js/undo_toast.js"></script>
 <script src="js/sheet_picker.js"></script>
 <script src="js/pool_picker.js"></script>
