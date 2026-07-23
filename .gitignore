@@ -39,6 +39,9 @@ pytest.xml
 # Installer output
 installer-dist/
 
+# 비공개 리서치 자료(공개 레포 제외) — 셋째 계보 앵커 조사 등
+research-private/
+
 # OS
 Thumbs.db
 desktop.ini
