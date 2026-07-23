@@ -75,6 +75,25 @@ def test_brand_token_defined_in_both_themes_and_consumed() -> None:
     assert "var(--a-brand)" in app_css
 
 
+def test_root_readme_is_product_entry() -> None:
+    """루트 README = 문서나르미 제품 진입점(#259) — 제품명·로고·101 링크·파일명 계약.
+
+    상대 링크(문서·이미지)는 실물 존재를 기계로 비준한다 — 링크 썩음이 조용히 남지 않게.
+    """
+    import re
+
+    md = _read("README.md")
+    assert f"# {PRODUCT}" in md, "제품명 헤딩이 없다"
+    assert "document-narmi-mark-final.svg" in md, "로고(심벌)가 없다"
+    assert "examples/quickstart-101/README.md" in md, "101 사용설명서 링크가 없다"
+    assert "HWPX-Filler-*-Setup.exe" in md, "설치본 파일명 계약 표기가 없다"
+    rels = set(re.findall(r"\]\(([^)#]+)\)", md)) | set(re.findall(r'src="([^"]+)"', md))
+    for rel in rels:
+        if rel.startswith(("http://", "https://", "../../")):
+            continue  # 외부 URL·저장소 상대 GitHub 경로(releases)는 대상 밖
+        assert (ROOT / rel).exists(), f"README 링크 썩음: {rel}"
+
+
 def test_favicon_asset_bundled() -> None:
     """web/img 심벌 SVG(파비콘)가 존재하고 브랜드 파랑 단색이다."""
     svg = _read("web", "img", "narmi-mark.svg")
