@@ -699,7 +699,7 @@ _READERS = {
 }
 _WRITERS = {
     "save", "delete", "rename", "clone", "mutate", "stamp_last_run",
-    "set_group", "rename_group", "disband_group",
+    "set_group", "rename_group", "disband_group", "soft_delete", "restore_soft_deleted",
 }
 
 
@@ -750,6 +750,7 @@ def test_every_writer_holds_the_write_lock_during_file_io(tmp_path, monkeypatch)
 
     real_write = Job.save
     real_unlink = Path.unlink
+    real_replace = Path.replace
 
     def spy_write(self, path):
         _probe(f"save:{self.name}")
@@ -760,8 +761,22 @@ def test_every_writer_holds_the_write_lock_during_file_io(tmp_path, monkeypatch)
             _probe(f"unlink:{self.name}")
         return real_unlink(self, *a, **kw)
 
+    def spy_replace(self, target):
+        if str(self).endswith(JobRegistry.SUFFIX) or str(target).endswith(JobRegistry.SUFFIX):
+            _probe(f"replace:{self.name}")
+        return real_replace(self, target)
+
     monkeypatch.setattr(Job, "save", spy_write)
     monkeypatch.setattr(Path, "unlink", spy_unlink)
+    monkeypatch.setattr(Path, "replace", spy_replace)
+
+    deleted_slot = [None]
+
+    def soft_delete():
+        deleted_slot[0] = reg.soft_delete("B2")
+
+    def restore_soft_deleted():
+        reg.restore_soft_deleted(deleted_slot[0])
 
     exercised = {
         "save": lambda: reg.save(Job(name="C", template_path="t.hwpx"), allow_overwrite=True),
@@ -772,6 +787,8 @@ def test_every_writer_holds_the_write_lock_during_file_io(tmp_path, monkeypatch)
         "disband_group": lambda: reg.disband_group("G3"),
         "clone": lambda: reg.clone("A"),
         "rename": lambda: reg.rename("B", "B2"),
+        "soft_delete": soft_delete,
+        "restore_soft_deleted": restore_soft_deleted,
         "delete": lambda: reg.delete("B2"),
     }
     assert set(exercised) == _WRITERS, "writer 목록과 실행 목록이 어긋납니다(새 writer 미실행)."

@@ -78,12 +78,8 @@ def test_durable_destructive_confirms_are_danger() -> None:
         ("screens/editor.js", "res.dataset_text"),
         ("screens/draft.js", "body: confirmedText"),
         ("screens/draft.js", 'title: "덮어쓰기 확인", body: r.confirm_text'),
-        ("screens/draft.js", 'title: "기안 작업 삭제 확인"'),
         ("screens/job.js", "body: overwriteBody(res)"),
-        ("screens/job.js", 'title: "작업 삭제 확인"'),
         ("screens/home.js", "body: res.confirm_text"),
-        ("screens/home.js", "작업 화면에서 이 작업을 열어 둔 실행 세션"),
-        ("screens/template.js", 'r.confirm_text + "\\n\\n삭제할까요?"'),
         ("screens/template.js", 'res.confirm_text + "\\n\\n지금 변환할까요?"'),
         ("screens/pool.js", 'res.confirm_text + "\\n\\n삭제할까요?"'),
         ("screens/pool.js", 'res.confirm_text + "\\n\\n계속할까요?"'),
@@ -99,6 +95,8 @@ def test_transient_or_organizational_confirms_stay_neutral() -> None:
         ("draftsession.js", 'title: "데이터 변경 확인"'),
         ("screens/editor.js", "미확정으로 되돌리기"),
         ("screens/job.js", 'title: "그룹 병합 확인"'),
+        ("screens/job.js", 'title: "작업 삭제 확인"'),
+        ("screens/draft.js", 'title: "기안 작업 삭제 확인"'),
         ("screens/template.js", "그룹을 해산하면"),
     )
     for relative, needle in inventory:

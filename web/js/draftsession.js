@@ -741,27 +741,22 @@
           // 복사 이력·건수 판정은 copied_total(내구 단조)로 — 무데이터 가상 복사는 copied_count
           // 에 안 잡히고(큐 미기록, 682), copied_count 는 선택 해제·데이터 교체로 줄어(reconcile)
           // 이미 붙여넣은 문서 수를 못 센다(685). 이 카운터는 복사 조작마다 +1 되어 유지된다.
-          const card = (LAST && LAST.card) || {};
-          const nCopied = card.copied_total || 0;
-          if (nCopied > 0 && !(await window.Modal.confirm({
-            title: "사본으로 편집",
-            body: `이 세션만 사본으로 갈라 원문을 고칩니다(저장된 기안은 그대로).\n` +
-              `이미 복사한 ${nCopied}건은 이전 문안으로 남습니다(되돌릴 수 없음).`,
-            confirmLabel: "사본으로 편집", cancelLabel: "취소",
-          }))) return;
-          // 사본이 유일 휘발("이번 세션")이 되어 직전에 붙여넣던 세션을 밀어낸다(단일 슬롯). 그
-          // 세션에 복구 불가 진행이 있으면 백엔드가 needs_confirm 으로 되묻는다(리뷰 5b 2R P1).
-          let r = await Bridge.call(SCREEN, "fork_to_volatile", {});  // 푸시가 원문을 편집 가능으로 재렌더
-          if (r && r.needs_confirm) {
-            const prev = r.copied_count || 0;
+          const guard = await Bridge.call(SCREEN, "fork_guard", {});
+          const nCopied = guard.copied_total || 0;
+          const stash = guard.stash || {};
+          if (nCopied > 0 || guard.stash_armed) {
+            let body = "이 세션만 사본으로 갈라 원문을 고칩니다(저장된 기안은 그대로).";
+            if (nCopied > 0) body += `\n이미 복사한 ${nCopied}건은 이전 문안으로 남습니다(되돌릴 수 없음).`;
+            if (guard.stash_armed) {
+              body += "\n직전에 붙여넣던 세션도 사라집니다: 원문 편집 · 데이터 연결 · 선택" +
+                (stash.copied_count > 0 ? ` · 복사 진행 ${stash.copied_count}건(복사한 결과는 남음)` : "");
+            }
             if (!(await window.Modal.confirm({
-              title: "붙여넣던 세션이 사라집니다",
-              body: `사본으로 편집하면 붙여넣던 세션이 사라집니다.\n사라지는 것: 원문 편집 · 데이터 연결 · 선택` +
-                (prev > 0 ? ` · 복사 진행 ${prev}건(복사한 결과는 남음)` : ""),
+              title: "사본으로 편집", body,
               confirmLabel: "사본으로 편집", cancelLabel: "취소",
             }))) return;
-            await Bridge.call(SCREEN, "fork_to_volatile", { confirm: true });
           }
+          await Bridge.call(SCREEN, "fork_to_volatile", { confirm: !!guard.stash_armed });
         });
       }
 

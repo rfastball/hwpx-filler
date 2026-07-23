@@ -284,6 +284,7 @@
         <span class="spacer"></span>
         <button class="btn" data-act="confirm-all">모두 확정</button>
         <button class="btn" data-act="unconfirm-all">모두 해제</button>
+        ${s.unconfirm_undo_count ? `<button class="btn" data-act="restore-confirmed">직전 확정 ${s.unconfirm_undo_count}개 복원</button>` : ""}
       </div>
       ${dataPreview(s)}`;
   }
@@ -492,9 +493,10 @@
     const editing = LAST && LAST.editing_origin;
     if (editing) {
       const busy = await Bridge.editorHasUnsavedWork();
+      if (!busy) return true;
       return Modal.confirm({ body:
         `'${editing}' 편집을 닫고 새 작업 초안을 시작합니다.` +
-        (busy ? "\n저장하지 않은 변경은 사라집니다." : "") +
+        "\n저장하지 않은 변경은 사라집니다." +
         "\n\n계속할까요?", confirmLabel: "새 작업 시작", cancelLabel: "취소" });
     }
     return EditorEntry.confirmDiscard(
@@ -583,6 +585,7 @@
         case "prev-rec": await Bridge.call(SCREEN, "step_preview", { delta: -1 }); break;
         case "next-rec": await Bridge.call(SCREEN, "step_preview", { delta: 1 }); break;
         case "unconfirm-all": await Bridge.call(SCREEN, "unconfirm_all", {}); break;
+        case "restore-confirmed": await Bridge.call(SCREEN, "restore_confirmed", {}); break;
         case "confirm-all": await confirmAll(); break;
         case "row-confirm": await Bridge.call(SCREEN, "set_confirmed", { index: idx, confirmed: el.checked }); break;
         case "cancel-new": {

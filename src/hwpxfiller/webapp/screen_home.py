@@ -84,6 +84,7 @@ class HomeController:
         # (relink_job_template)가 담당하므로 주입분을 직접 보관한다(run.registry 동형).
         self._job_registry = registry
         self._push_sink = push
+        self._deleted_job_slot = None
 
     # ------------------------------------------------------------- 관측 푸시
     def _push(self) -> None:
@@ -171,9 +172,19 @@ class HomeController:
     def _do_clear_facets(self, p: dict) -> None:
         self.vm.clear_facets()
 
-    def _do_delete_job(self, p: dict) -> None:
-        """작업 삭제(웹이 확인 후 호출). VM 이 레지스트리에서 지우고 목록을 갱신·통지한다."""
-        self.vm.delete(p["name"])
+    def _do_delete_job(self, p: dict) -> dict:
+        """작업을 휴지통으로 옮긴다. 최근 1건은 앱에서 즉시 복원할 수 있다."""
+        self._deleted_job_slot = self._job_registry.soft_delete(p["name"])
+        self.vm.refresh()
+        return {"ok": True, "undo": True, "name": p["name"]}
+
+    def _do_undo_delete_job(self, p: dict) -> dict:
+        if self._deleted_job_slot is None:
+            return {"ok": False, "error": "복원할 최근 작업이 없습니다."}
+        name = self._job_registry.restore_soft_deleted(self._deleted_job_slot)
+        self._deleted_job_slot = None
+        self.vm.refresh()
+        return {"ok": True, "name": name}
 
     def _do_clone_job(self, p: dict) -> dict:
         """작업 복제(F22) — 매핑 재사용의 단일 동선(공유 베이스 프로파일의 대체).
