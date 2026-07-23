@@ -88,6 +88,10 @@ def test_launcher_and_reset_cover_generated_state() -> None:
     for state in ("jobs", "datasets", "mapping_bases", "webview", "out", "ui_settings.ini", "settings.json"):
         assert state in ignored, f".gitignore 에 {state} 누락"
         assert state in reset, f"reset-101.cmd 가 {state} 를 안 지운다"
+    # Results/ 는 .gitignore 상 임의 깊이 생성물 — 실습에서 나오는 두 위치(루트·templates 밑)를
+    # 삭제 루프가 정확히 다룬다(substring 포함만으론 templates\Results 가 루트 몫을 가린다 — Codex P2).
+    assert "in (jobs datasets mapping_bases webview out Results)" in reset, "루트 Results 미삭제"
+    assert r'rd /s /q "templates\Results"' in reset
     for asset in ("templates", "text_templates", "data", "make_template.py", "start-101.cmd"):
         assert f'rd /s /q "{asset}"' not in reset, f"reset 이 예제 자산 {asset} 을 지운다"
 

@@ -11,13 +11,13 @@ REM ===================================================================
 cd /d "%~dp0"
 
 echo This will delete practice state created by the app in this folder:
-echo   jobs\  datasets\  mapping_bases\  webview\  out\  templates\Results\
+echo   jobs\  datasets\  mapping_bases\  webview\  out\  Results\  templates\Results\
 echo   ui_settings.ini  settings.json
 echo.
 choice /m "Reset now"
 if errorlevel 2 exit /b 0
 
-for %%D in (jobs datasets mapping_bases webview out) do (
+for %%D in (jobs datasets mapping_bases webview out Results) do (
     if exist "%%D" rd /s /q "%%D"
 )
 if exist "templates\Results" rd /s /q "templates\Results"
