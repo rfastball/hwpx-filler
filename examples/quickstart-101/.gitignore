@@ -5,6 +5,8 @@ datasets/
 mapping_bases/
 ui_settings.ini
 settings.json
+webview/
+webapp-alerts.log
 
 # 문서 생성 산출물
 out/
