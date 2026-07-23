@@ -879,6 +879,7 @@
     }
 
     function openDataSheet(e) {
+      $("dataSheetTitle").textContent = "기안 데이터 행 고르기";
       window.SurfaceSheet.open({
         modalId: "dataSheet",
         returnFocus: e && e.currentTarget ? e.currentTarget : document.activeElement,

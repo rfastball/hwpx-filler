@@ -288,6 +288,16 @@ class TestWebSelftestGate:
         assert any("빈 값 · 클릭=확인" in c for c in chips), f"미입력 칩 미렌더: {chips!r}"
         assert any("비움 확정" in c for c in chips), f"의도적 빈칸 칩 미렌더: {chips!r}"
 
+    def test_job_density_and_expansion_sheets(self, selftest_result: dict) -> None:
+        j = selftest_result["job_mirror"]
+        assert j.get("error") is None, j
+        assert j["mirror_capped"] and j["mirror_capstrip"], j
+        assert j["confirm_moved"] and j["confirm_dispatch"] and j["confirm_restored"], j
+        assert j["job_data_moved"] and j["job_data_first_sticky"] and j["job_data_restored"], j
+        assert j["edit_closes_sheets"], j
+        assert len(j["job_duo_wide"].split()) == 2, j
+        assert len(selftest_result["job_density_narrow"]["columns"].split()) == 1
+
     def test_job_restate_block_lists_selected_names(self, selftest_result: dict) -> None:
         # 재진술 블록 — 선택 2행의 이름 목록이 상시 블록으로 실렌더된다.
         j = selftest_result["job_mirror"]

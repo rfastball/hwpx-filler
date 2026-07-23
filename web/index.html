@@ -160,9 +160,12 @@
               <div class="note" id="jobRelink" style="display:none"></div>
             </div>
 
+            <!-- 데이터|거울 duo(#272) — 고르는 표와 그 결과를 같은 시야에 둔다. -->
+            <div class="duo job-duo" id="jobDuo">
             <!-- 데이터 존 — 겨눔 + 행 선택 -->
-            <div class="zone">
-              <div class="zone-cap"><span class="znum">2</span>데이터 연결</div>
+            <div class="zone job-data-zone">
+              <div class="zone-cap zone-cap-actions"><span><span class="znum">2</span>데이터 연결</span>
+                <button class="btn sm" id="jobDataExpand" type="button">펼쳐서 행 고르기 ⤢</button></div>
               <div class="run-row"><span class="lbl">데이터(.xlsx/.csv)</span>
                 <input class="field ro" id="jobDataLabel" type="text" readonly
                        placeholder="데이터를 선택하세요">
@@ -171,7 +174,7 @@
               <div class="note" id="jobDataNotice" style="display:none;white-space:pre-line"></div>
               <div class="preflight note" id="jobPreflight" style="display:none"></div>
 
-              <div class="run-row run-recs-head">
+              <div class="run-row run-recs-head" id="jobRecsHead">
                 <span class="lbl" style="font-weight:600">생성 대상 문서</span>
                 <!-- 전열 검색 = 재현 OR 그룹 편집기(블록 4 결정 23) — 검색창을 비우면 그룹이 걷힌다. -->
                 <input class="field jobsearch" id="jobFilterSearch" type="search"
@@ -202,13 +205,21 @@
             </div>
 
             <!-- 본문 존 — 라이브 거울(필드 채움 테이블) + 재진술 블록 + 생성 의식 1회 -->
-            <div class="zone">
-              <div class="zone-cap"><span class="znum">3</span>본문 확인·거울</div>
+            <div class="zone job-mirror-zone">
+              <div class="zone-cap zone-cap-actions"><span><span class="znum">3</span>본문 확인·거울</span>
+                <button class="btn sm" id="jobMirrorExpand" type="button">펼쳐서 확인 ⤢</button></div>
               <p class="muted hint">이 문서에 들어갈 값입니다. <span class="danger">빈 값</span>
                 행은 <b>눌러서 확인</b>해야 생성할 수 있습니다.</p>
               <!-- 거울 = 필드 채움 테이블(결정 36 ⓑ). danger(드리프트·토큰)는 차단 배너로 분리. -->
-              <div id="jobMirror"></div>
+              <div id="jobMirror" data-preserve-scroll></div>
+              <div class="capstrip" id="jobMirrorCapstrip" role="status" hidden></div>
+              <!-- 생성 버튼은 하단 sticky 액션바로 이관(#179 슬라이스 5b) — 스크롤 무관 상시 도달. -->
+            </div>
+            </div>
 
+            <!-- 완료 존 — 세션 스코프(진행·결과·로그) -->
+            <div class="zone">
+              <div class="zone-cap"><span class="znum">4</span>생성</div>
               <div class="run-row"><span class="lbl">저장 폴더</span>
                 <input class="field ro" id="jobOutDir" type="text" readonly
                        placeholder="이 폴더에 문서를 저장합니다">
@@ -217,12 +228,6 @@
 
               <!-- 게이트 · 재진술 블록(상시 — 이미 보이는 것 재검증 안 함, 결정 36 D1-B). -->
               <div class="defblk" id="jobRestate" style="display:none"></div>
-              <!-- 생성 버튼은 하단 sticky 액션바로 이관(#179 슬라이스 5b) — 스크롤 무관 상시 도달. -->
-            </div>
-
-            <!-- 완료 존 — 세션 스코프(진행·결과·로그) -->
-            <div class="zone">
-              <div class="zone-cap"><span class="znum">4</span>생성</div>
               <div class="bar"><i id="jobGenBar"></i></div>
               <div id="jobGenResult" class="run-result"></div>
               <div class="logbox" id="jobGenLog">작업, 데이터, 저장 폴더를 확인한 뒤 생성하세요.</div>
@@ -678,6 +683,21 @@
           <button class="btn" id="dataSheetClose" type="button">닫기</button>
         </div>
         <div class="sheet-body data-sheet-body" id="dataSheetSlot"></div>
+      </div>
+    </div>
+
+    <!-- 작업 확인 펼침 면(#272) — 거울과 생성 재진술의 실 DOM을 양쪽 슬롯으로 이동한다. -->
+    <div id="jobConfirmSheet" class="modal sheet hidden" role="dialog" aria-modal="true"
+         aria-labelledby="jobConfirmSheetTitle">
+      <div class="modal-card sheet-card">
+        <div class="sheet-head">
+          <h3 id="jobConfirmSheetTitle">작업 본문 확인</h3>
+          <button class="btn" id="jobConfirmSheetClose" type="button">닫기</button>
+        </div>
+        <div class="sheet-body sheet-duo job-confirm-sheet-body">
+          <section class="sheet-pane" aria-label="필드 채움 거울" id="jobConfirmSheetMirrorSlot"></section>
+          <section class="sheet-pane" aria-label="생성 재진술" id="jobConfirmSheetRestateSlot"></section>
+        </div>
       </div>
     </div>
 

@@ -783,12 +783,20 @@ body.resizing-master{cursor:col-resize;user-select:none}
 .draft-duo .dmap .field.sm,.draft-duo .dmap .btn.sm,
 .draft-duo .dmap .mapval-in{padding:var(--sp-2) var(--sp-6);line-height:1.2}
 .draft-duo .draft-preview-zone{position:sticky;top:0;align-self:start;background:var(--a-card)}
+.job-duo{display:grid;grid-template-columns:minmax(0,1.12fr) minmax(0,.88fr);
+  border-top:1px solid var(--a-border)}
+.job-duo>.zone{min-width:0}
+.job-duo>.zone+.zone{border-top:0;border-left:1px solid var(--a-border)}
+#jobMirror{max-height:420px;overflow:auto}
+.job-confirm-sheet-body #jobMirror{max-height:none;height:100%}
 /* 창폭이 아니라 실제 세션 패널 폭으로 판정한다. 900px 이하는 표가 읽힐 한 열 폭을 지키며
    종전 세로 적층으로 복귀한다(1440 기본창=duo, 1180급 협폭=stack). */
 @container session-panel (max-width:900px){
   .draft-duo{grid-template-columns:1fr}
   .draft-duo>.zone+.zone{border-left:0;border-top:1px solid var(--a-border)}
   .draft-duo .draft-preview-zone{position:static}
+  .job-duo{grid-template-columns:1fr}
+  .job-duo>.zone+.zone{border-left:0;border-top:1px solid var(--a-border)}
 }
 .job-head-title{font-size:var(--fs-body);font-weight:600}
 .job-head-tpl{font-size:var(--fs-body);margin-top:var(--sp-2)}
