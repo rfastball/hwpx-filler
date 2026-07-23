@@ -366,9 +366,13 @@
   }
 
   function openJobConfirmSheet(e) {
+    // capstrip 클릭은 위임되어 currentTarget이 비포커스 strip이다. 실제 버튼을
+    // 우선 보존하고, 프로그램 호출이면 영구 헤더 버튼을 복귀점으로 쓴다.
+    const trigger = e && e.target && e.target.closest
+      ? e.target.closest("button") : null;
     window.SurfaceSheet.open({
       modalId: "jobConfirmSheet",
-      returnFocus: e && e.currentTarget ? e.currentTarget : document.activeElement,
+      returnFocus: trigger || $("jobMirrorExpand") || document.activeElement,
       initialFocus: $("jobConfirmSheetClose"),
       moves: [
         { id: "jobMirror", slotId: "jobConfirmSheetMirrorSlot" },
@@ -567,10 +571,16 @@
   }
 
   function renderResult(res) {
-    $("jobGenBar").style.width = "100%";
+    const total = Number(res.total) || 0;
+    const attempted = Number(res.attempted) || 0;
+    const percent = res.cancelled && total > 0
+      ? Math.max(0, Math.min(100, Math.round(attempted / total * 100)))
+      : 100;
+    $("jobGenBar").style.width = percent + "%";
     const r = $("jobGenResult");
     r.textContent = res.summary;
-    r.className = "run-result " + (res.level === "ok" ? "ok" : "danger");
+    r.className = "run-result " +
+      (res.level === "ok" ? "ok" : (res.level === "warn" ? "warn" : "danger"));
     log(res.summary);
     (res.failures || []).forEach((f) => log("  [실패] " + f));
     // 채움 완화 사실(#154) — 문안은 Python(describe_fill_note)이 확정, JS 는 표기만.

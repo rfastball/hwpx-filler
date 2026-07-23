@@ -585,6 +585,20 @@ class DraftController(DraftSessionMixin):
             self._restore_volatile()
         return {"ok": True, "undo": True, "name": name}
 
+    def external_delete_guard(self, name: str) -> "dict | None":
+        """홈 등 다른 표면의 삭제가 현재 저장 기안 세션을 잃는지 판정한다."""
+        if name != self._bound_job:
+            return None
+        guard = self._leave_guard()
+        if not guard["armed"]:
+            return None
+        return {"session_screen": "draft", "open_session": True, **guard}
+
+    def external_job_deleted(self, name: str) -> None:
+        """외부 삭제 뒤 사라진 정의에 결속된 기안 세션을 휘발 세션으로 되돌린다."""
+        if name == self._bound_job:
+            self._restore_volatile()
+
     def _do_undo_delete_job(self, p: dict) -> dict:
         if self._deleted_job_slot is None:
             return {"ok": False, "error": "복원할 최근 기안 작업이 없습니다."}

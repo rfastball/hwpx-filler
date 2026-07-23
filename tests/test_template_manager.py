@@ -114,6 +114,14 @@ def test_library_scan_excludes_results_output_subtree(tmp_path):
     assert {r.name for r in vm.rows()} == {"서식.hwpx"}  # 산출물은 목록에 없다
 
 
+def test_library_scan_excludes_trash_subtrees(tmp_path):
+    _write_raw(tmp_path / "서식.hwpx", "<hp:p><hp:run><hp:t>{{계약명}}</hp:t></hp:run></hp:p>")
+    trash = tmp_path / ".trash" / "nested"
+    trash.mkdir(parents=True)
+    _write_raw(trash / "삭제됨.hwpx", "<hp:p><hp:run><hp:t>{{노출금지}}</hp:t></hp:run></hp:p>")
+    assert {r.name for r in TemplateManagerViewModel(library_dir=tmp_path).rows()} == {"서식.hwpx"}
+
+
 def test_rows_expose_gated_actions_matching_state(tmp_path):
     """VM 행이 실제 파일 상태에서 계산한 액션 집합을 노출한다(라이브러리 전 상태)."""
     raw = _write_raw(tmp_path / "raw.hwpx", "<hp:p><hp:run><hp:t>계약명: {{계약명}}</hp:t></hp:run></hp:p>")

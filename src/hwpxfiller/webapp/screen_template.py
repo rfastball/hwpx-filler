@@ -27,6 +27,7 @@ import shutil
 import threading
 import time
 import uuid
+from contextlib import nullcontext
 from pathlib import Path
 
 from hwpxcore.atomic import write_text_atomic
@@ -338,11 +339,13 @@ class TemplateController:
         라이브러리 밖 임의 파일도 지워진다. 매체를 열거 검증하고(``_model``), 경로가 그 매체
         라이브러리의 **현재 목록**에 속하는지 정규화 후 대조해 임의 파일 삭제 권한 승격을 막는다."""
         media = p["media"]
-        self._model(media)  # 매체 열거 검증(오타·미지 매체 loud)
+        model = self._model(media)  # 매체 열거 검증(오타·미지 매체 loud)
         path = Path(p["path"])
         if self._norm(path) not in self._live_paths(media):
             raise ValueError("현재 라이브러리 목록에 없는 경로는 삭제할 수 없습니다.")
         root = self.vm.library_dir if media == "hwpx" else self.text_registry.directory
+        key = rel_key(path, Path(root))
+        group = model.group_of(key)
         trash = Path(root) / ".trash"
         trash.mkdir(parents=True, exist_ok=True)
         cutoff = time.time() - 30 * 24 * 60 * 60
@@ -354,7 +357,7 @@ class TemplateController:
                 continue
         trashed = trash / f"{int(time.time())}-{uuid.uuid4().hex}-{path.name}"
         path.replace(trashed)
-        self._deleted_template_slot = (media, path, trashed)
+        self._deleted_template_slot = (media, path, trashed, group)
         if media == "hwpx":
             self.vm.refresh()
         self._set_result(_ok(f"템플릿을 휴지통으로 옮겼습니다: {path.stem}"))
@@ -363,16 +366,23 @@ class TemplateController:
     def _do_undo_delete(self, p: dict) -> dict:
         if self._deleted_template_slot is None:
             return {"ok": False, "error": "복원할 최근 템플릿이 없습니다."}
-        media, path, trashed = self._deleted_template_slot
-        if not trashed.exists():
-            return {"ok": False, "error": "복원할 템플릿이 휴지통에 없습니다."}
-        if path.exists():
-            return {"ok": False, "error": "같은 이름의 템플릿이 이미 있어 복원할 수 없습니다."}
-        path.parent.mkdir(parents=True, exist_ok=True)
-        trashed.replace(path)
+        media, path, trashed, group = self._deleted_template_slot
+        # TXT의 생성·편집·기안 승격과 같은 프로세스 공유 락으로 존재 검사~복원을
+        # 한 임계구역에 둔다. otherwise check 뒤 동명 writer가 끼어들어 덮어쓸 수 있다.
+        restore_lock = self.text_registry.write_lock() if media == "txt" else nullcontext()
+        with restore_lock:
+            if not trashed.exists():
+                return {"ok": False, "error": "복원할 템플릿이 휴지통에 없습니다."}
+            if path.exists():
+                return {"ok": False, "error": "같은 이름의 템플릿이 이미 있어 복원할 수 없습니다."}
+            path.parent.mkdir(parents=True, exist_ok=True)
+            trashed.replace(path)
         self._deleted_template_slot = None
         if media == "hwpx":
             self.vm.refresh()
+        if group:
+            root = self.vm.library_dir if media == "hwpx" else self.text_registry.directory
+            self._model(media).set_group(rel_key(path, Path(root)), group)
         self._set_result(_ok(f"템플릿을 복원했습니다: {path.stem}"))
         return {"ok": True, "name": path.stem}
 

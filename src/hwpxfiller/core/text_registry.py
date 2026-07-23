@@ -78,7 +78,12 @@ class TextTemplateRegistry:
         return [
             TextTemplate(p.relative_to(self.directory).with_suffix("").as_posix(), p)
             for p in sorted(
-                (p for p in self.directory.rglob("*" + self.SUFFIX) if p.is_file()),
+                  (
+                      p
+                      for p in self.directory.rglob("*" + self.SUFFIX)
+                      if p.is_file()
+                      and ".trash" not in p.relative_to(self.directory).parts
+                  ),
                 key=lambda p: (p.name, str(p)),
             )
         ]

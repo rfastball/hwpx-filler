@@ -243,6 +243,7 @@ class TemplateManagerViewModel:
                     for p in self.library_dir.rglob("*.hwpx")
                     if p.is_file()
                     and OUTPUT_SUBDIR_NAME not in p.relative_to(self.library_dir).parts
+                    and ".trash" not in p.relative_to(self.library_dir).parts
                 ),
                 key=lambda p: (p.name, str(p)),
             )

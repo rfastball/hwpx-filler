@@ -904,6 +904,9 @@ class EditorController:
         key = (self.template_path, self.data_path, self.data_sheet, tuple(self.source_fields))
         if self.model is not None and self._model_key == key:
             return
+        # 인덱스 기반 복원 슬롯은 오직 현재 모델에만 유효하다. 모델 정체가 바뀐 뒤
+        # 남겨 두면 새 행의 같은 인덱스를 확정해 조용히 검토 관문을 우회한다.
+        self._unconfirm_undo = []
         prior = None
         if self.model is not None:
             # 이월 = carry_profile(확정 + 내용 있는 touched — PR-2 리뷰 F1): 확정-전용

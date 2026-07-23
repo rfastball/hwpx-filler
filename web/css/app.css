@@ -873,6 +873,8 @@ body.resizing-master{cursor:col-resize;user-select:none}
 .data-sheet-body .jobtb-host{display:flex;flex-direction:column;min-height:0;flex:1}
 .data-sheet-body .jobtbwrap{max-height:none;min-height:0;flex:1}
 .data-sheet-body .jobtb th:first-child,.data-sheet-body .jobtb td:first-child{position:sticky;left:0;background:var(--a-card)}
+.data-sheet-body .jobtb tbody tr:hover td:first-child{background:color-mix(in srgb,var(--a-brand) 5%,var(--a-card))}
+.data-sheet-body .jobtb tbody tr.on td:first-child{background:var(--a-sel)}
 .data-sheet-body .jobtb th:first-child{z-index:3}
 .data-sheet-body .jobtb td:first-child{z-index:2}
 @media (max-width:900px){.sheet-duo{grid-template-columns:1fr}.sheet .sheet-card{width:100vw;height:100vh;height:100dvh}}
@@ -1134,6 +1136,7 @@ body.resizing-master{cursor:col-resize;user-select:none}
 
 .undo-toast{position:fixed;z-index:var(--z-modal);left:50%;bottom:var(--sp-16);
   transform:translateX(-50%);display:flex;align-items:center;gap:var(--sp-12);
+  pointer-events:auto;
   max-width:min(560px,calc(100vw - 32px));padding:var(--sp-8) var(--sp-12);
   color:var(--a-ink);background:var(--a-card);border:1px solid var(--a-border);
   border-radius:var(--rad-overlay);box-shadow:0 8px 24px var(--a-shadow)}

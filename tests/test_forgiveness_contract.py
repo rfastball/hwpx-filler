@@ -28,11 +28,27 @@ def test_forgiveness_surface_contracts_are_wired() -> None:
 def test_soft_delete_replaces_preconfirmation_on_recoverable_surfaces() -> None:
     home = _read("web/js/screens/home.js")
     template = _read("web/js/screens/template.js")
-    assert 'Modal.confirm({' not in home[home.index("async function deleteJob"):home.index("function onJobsClick")]
+    home_delete = home[home.index("async function deleteJob"):home.index("function onJobsClick")]
+    assert "r.needs_confirm" in home_delete and 'Modal.confirm({' in home_delete
+    assert 'confirm: true' in home_delete  # 열린 세션의 비복구 진행이 있을 때만 확인 왕복
     start = template.index("async function deleteTemplate")
     delete_block = template[start:template.index("async function doCompile", start)]
     assert "Modal.confirm" not in delete_block
     assert "UndoToast.show" in home and "UndoToast.show" in template
+
+
+def test_review_forgiveness_fixes_keep_interactive_and_stateful_contracts() -> None:
+    css = _read("web/css/app.css").replace(" ", "").replace("\n", "")
+    job = _read("web/js/screens/job.js")
+    draft = _read("web/js/draftsession.js")
+
+    assert ".undo-toast{" in css and "pointer-events:auto" in css
+    assert ".data-sheet-body.jobtbtbodytr:hovertd:first-child" in css
+    assert ".data-sheet-body.jobtbtbodytr.ontd:first-child" in css
+    assert 'e.target.closest("button")' in job and '$("jobMirrorExpand")' in job
+    assert 'e.target.closest("button")' in draft and '$(id.mapExpand)' in draft
+    assert "res.cancelled && total > 0" in job
+    assert 'res.level === "warn" ? "warn"' in job
 
 
 def test_copy_fork_uses_one_composed_confirmation() -> None:
@@ -48,4 +64,6 @@ def test_confirm_inventory_is_net_lower_than_audit_ledger() -> None:
         path.read_text(encoding="utf-8").count("Modal.confirm({")
         for path in (ROOT / "web" / "js").rglob("*.js")
     )
-    assert count < 38
+    # 홈의 복구 가능한 정의 삭제 자체는 무확인이지만, 같은 정의에 결속된 비복구 세션
+    # 진행이 있을 때의 확인 1건은 안전 가드라 유지한다.
+    assert count <= 38

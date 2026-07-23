@@ -333,9 +333,26 @@
     });
   }
 
-  /* 작업 삭제 — 30일 휴지통 + 최근 1건 복원. 사후 관용이 있으므로 사전 확인을 없앤다. */
+  /* 작업 삭제 — 정의는 복원 가능하지만 열린 세션의 선택·큐·편집은 복구할 수 없다.
+     백엔드가 같은 대상을 연 세션의 무장을 판정한 경우에만 확인 왕복한다. */
   async function deleteJob(name, returnFocus) {
-    const r = await Bridge.call(SCREEN, "delete_job", { name });
+    let r = await Bridge.call(SCREEN, "delete_job", { name });
+    if (r && r.needs_confirm) {
+      const isDraft = r.session_screen === "draft";
+      const body = isDraft
+        ? window.DraftScreen.guardBody(r, "작업을 삭제하면", true)
+        : window.JobScreen.guardBody(r, "작업을 삭제하면");
+      const ok = await window.Modal.confirm({
+        title: "열린 세션과 작업을 삭제합니다",
+        body,
+        confirmLabel: "삭제하고 세션 닫기",
+        cancelLabel: "취소",
+        danger: true,
+        returnFocus,
+      });
+      if (!ok) return;
+      r = await Bridge.call(SCREEN, "delete_job", { name, confirm: true });
+    }
     if (r && r.undo) window.UndoToast.show(`작업 '${name}' 을(를) 휴지통으로 옮겼습니다.`, async () => {
       const restored = await Bridge.call(SCREEN, "undo_delete_job", {});
       if (restored && restored.ok === false) throw new Error(restored.error);

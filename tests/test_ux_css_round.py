@@ -103,7 +103,8 @@ def test_pathtrack_secondary_actions_are_accessible_icon_buttons():
         assert f"{action}: '<svg" in src
         assert f'label: "{label}", icon: ICONS.{action}' in src
     assert 'class="btn sm icon track-btn"' in src
-    assert 'title="${spec.label}" aria-label="${spec.label}"' in src
+    assert 'title="${spec.label}: ${esc(path)}" aria-label="${spec.label}"' in src
+    assert 'el.setAttribute("title", oldTitle)' in src
     assert '${spec.icon}</button>' in src
 
 

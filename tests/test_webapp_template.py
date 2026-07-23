@@ -291,7 +291,7 @@ def test_undo_delete_reports_missing_and_conflicting_slots(tmp_path, monkeypatch
 
     original = tp / "txt" / "온나라_기안.txt"
     ctrl.dispatch("delete", {"media": "txt", "path": str(original)})
-    _media, _path, trashed = ctrl._deleted_template_slot
+    _media, _path, trashed, _group = ctrl._deleted_template_slot
     trashed.unlink()
     assert ctrl.dispatch("undo_delete", {}) == {
         "ok": False, "error": "복원할 템플릿이 휴지통에 없습니다."
@@ -304,6 +304,49 @@ def test_undo_delete_reports_missing_and_conflicting_slots(tmp_path, monkeypatch
     assert ctrl.dispatch("undo_delete", {}) == {
         "ok": False, "error": "같은 이름의 템플릿이 이미 있어 복원할 수 없습니다."
     }
+
+
+@pytest.mark.parametrize(
+    ("media", "relative"),
+    (("hwpx", "raw.hwpx"), ("txt", "온나라_기안.txt")),
+)
+def test_delete_undo_restores_template_group(tmp_path, monkeypatch, media, relative):
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    root = tp / ("lib" if media == "hwpx" else "txt")
+    ctrl.dispatch("set_group", {"media": media, "key": relative, "group": "업무서식"})
+    ctrl.dispatch("delete", {"media": media, "path": str(root / relative)})
+    ctrl.dispatch("undo_delete", {})
+    assert ctrl._model(media).group_of(relative) == "업무서식"
+
+
+def test_txt_undo_check_and_restore_hold_shared_write_lock(tmp_path, monkeypatch):
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    original = tp / "txt" / "온나라_기안.txt"
+    ctrl.dispatch("delete", {"media": "txt", "path": str(original)})
+
+    entered = False
+    shared = ctrl.text_registry.write_lock()
+
+    class TrackingLock:
+        def __enter__(self):
+            nonlocal entered
+            shared.acquire()
+            entered = True
+
+        def __exit__(self, *exc):
+            nonlocal entered
+            entered = False
+            shared.release()
+
+    real_replace = Path.replace
+
+    def checked_replace(path, target):
+        assert entered, "TXT 복원이 공유 write_lock 밖에서 실행됐습니다."
+        return real_replace(path, target)
+
+    monkeypatch.setattr(ctrl.text_registry, "write_lock", lambda: TrackingLock())
+    monkeypatch.setattr(Path, "replace", checked_replace)
+    assert ctrl.dispatch("undo_delete", {})["ok"] is True
 
 
 def test_import_cleans_partial_file_on_copy_failure(tmp_path, monkeypatch):

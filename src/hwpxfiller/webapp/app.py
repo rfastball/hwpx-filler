@@ -102,7 +102,7 @@ def _virtual_screen_bounds() -> "tuple[int, int, int, int] | None":
 def _geometry_is_visible(
     geometry: "dict[str, int | bool]", bounds: "tuple[int, int, int, int] | None" = None
 ) -> bool:
-    """저장 창의 제목줄 일부(64×32)가 현재 가상 화면 안에 남는지 판정한다."""
+    """저장 창의 전체 제목줄(width×32) 중 일부가 현재 가상 화면 안에 남는지 판정한다."""
     bounds = _virtual_screen_bounds() if bounds is None else bounds
     if bounds is None:
         return True
@@ -111,7 +111,7 @@ def _geometry_is_visible(
         return False
     x, y = int(geometry["x"]), int(geometry["y"])
     width = int(geometry["width"])
-    return x + min(width, 64) > vx and x < vx + vw and y + 32 > vy and y < vy + vh
+    return x + width > vx and x < vx + vw and y + 32 > vy and y < vy + vh
 
 
 # ------------------------------------------------------------------ 브리지
@@ -143,20 +143,27 @@ class WebFrontend:
         self._job_registry = job_registry
         self._pool_registry = pool_registry
         # 화면 등록 — 새 화면 = 컨트롤러 1개 추가(순수 데이터는 dispatch, 네이티브는 아래 메서드).
+        job_controller = JobController(job_registry, self._push, pool_registry=pool_registry)
+        draft_controller = DraftController(
+            job_registry, self._push, registry, pool_registry=pool_registry,
+            target_font=target_font, txt_groups=txt_groups,
+        )
         controllers = [
             # 홈(대시보드) — 허브. TXT 레지스트리는 즉시 기안·템플릿 관리와 공유(변경이 반영).
             # pool_registry 공유 = 데이터 관리에서 생긴 손상이 홈 KPI 경보에 즉시 보인다(#45).
-            HomeController(job_registry, registry, self._push, pool_registry=pool_registry),
+            HomeController(
+                job_registry, registry, self._push, pool_registry=pool_registry,
+                delete_participants=(job_controller, draft_controller),
+            ),
             # 「작업」 화면 — 좌 목록 + 우 세션 패널 4존. 링1 VM 을 직접 소유하며
             # 실행 결정 계약을 소비하는 유일 세션 표면이다.
-            JobController(job_registry, self._push, pool_registry=pool_registry),
+            job_controller,
             # 「기안」 화면 — TXT 작업-앵커 master-detail(「작업」의 대칭).
             # 같은 job_registry 를 쓰되 media=txt 만 조회한다(조회 경계 결정 13) — 저장 기계는
             # 하나·화면은 둘. 우 상세는 휘발 세션 4존이고, 세션 기계는 「기안문
             # 채우기」와 **같은 믹스인**이라 TXT 레지스트리·풀도 같은 공유 인스턴스를 쓴다
             # (라이브러리 변경·손상 경보가 두 표면에 함께 반영).
-            DraftController(job_registry, self._push, registry, pool_registry=pool_registry,
-                            target_font=target_font, txt_groups=txt_groups),
+            draft_controller,
             # 템플릿 관리(#13) — TXT 레지스트리는 즉시 기안과 공유(변경이 양쪽에 반영).
             TemplateController(registry, self._push, txt_groups=txt_groups),
             # 데이터 관리(#26 #4) — 등록 데이터 참조·수명.

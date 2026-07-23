@@ -53,6 +53,15 @@ def test_recursive_scan_finds_subfolder_templates(tmp_path):
     assert "탐색기묶음/협조전" in reg.names()  # 비재귀 glob 이던 시절엔 조용히 빠졌다
 
 
+def test_recursive_scan_excludes_trash_subtrees(tmp_path):
+    d = _seed(tmp_path)
+    trash = d / ".trash" / "nested"
+    trash.mkdir(parents=True)
+    (trash / "삭제됨.txt").write_text("{{노출금지}}", encoding="utf-8")
+    assert "삭제됨" not in TextTemplateRegistry(d).names()
+    assert not any(".trash" in name for name in TextTemplateRegistry(d).names())
+
+
 def test_load_resolves_subfolder_path(tmp_path):
     """list→load 왕복 정합 — 하위폴더 파일도 실제 경로로 열어야(루트 경로 재구성 금지)."""
     d = _seed(tmp_path)

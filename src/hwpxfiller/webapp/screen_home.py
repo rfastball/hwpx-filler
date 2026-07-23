@@ -34,6 +34,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Protocol
 
 from ..core.dataset_pool import DatasetPoolRegistry
 from ..core.job import JobRegistry
@@ -44,6 +45,14 @@ from .screens import PushSink, default_pool_registry, relink_job_template
 
 # 이어서 실행(continue-runs) 목록 상한 — 최근 실행순 상위 N. 대시보드 요약이라 짧게 유지.
 _CONTINUE_LIMIT = 5
+
+
+class DeleteSessionParticipant(Protocol):
+    """홈 삭제가 영향을 주는 열린 세션의 최소 협력 계약."""
+
+    def external_delete_guard(self, name: str) -> "dict | None": ...
+
+    def external_job_deleted(self, name: str) -> None: ...
 
 
 def _job_row_dict(r: JobRow) -> dict:
@@ -72,7 +81,8 @@ class HomeController:
 
     def __init__(self, registry: JobRegistry, text_registry: TextTemplateRegistry,
                  push: PushSink,
-                 pool_registry: "DatasetPoolRegistry | None" = None) -> None:
+                 pool_registry: "DatasetPoolRegistry | None" = None,
+                 delete_participants: "tuple[DeleteSessionParticipant, ...]" = ()) -> None:
         # pool_registry 는 pool_corrupted 경보(#45) 용 — pool_count KPI 는 여전히 미표면
         # (docstring 스코프 경계). 미주입 시 다른 컨트롤러들과 같은 단일 출처 팩토리.
         self.vm = HomeViewModel(
@@ -85,6 +95,7 @@ class HomeController:
         self._job_registry = registry
         self._push_sink = push
         self._deleted_job_slot = None
+        self._delete_participants = delete_participants
 
     # ------------------------------------------------------------- 관측 푸시
     def _push(self) -> None:
@@ -159,7 +170,10 @@ class HomeController:
         if handler is None:  # confirm-or-alarm: 미지 액션은 시끄럽게.
             raise ValueError(f"알 수 없는 home 액션: {action!r}")
         result = handler(payload)
-        self._push()
+        # 확인 자료만 돌려주는 1차 호출은 무변이이며, 여기서 재렌더하면 메뉴의 원래
+        # 포커스 트리거가 DOM에서 떨어져 확인 모달의 복귀점이 사라진다.
+        if not (isinstance(result, dict) and result.get("needs_confirm")):
+            self._push()
         return result
 
     def _do_set_group_by(self, p: dict) -> None:
@@ -173,10 +187,18 @@ class HomeController:
         self.vm.clear_facets()
 
     def _do_delete_job(self, p: dict) -> dict:
-        """작업을 휴지통으로 옮긴다. 최근 1건은 앱에서 즉시 복원할 수 있다."""
-        self._deleted_job_slot = self._job_registry.soft_delete(p["name"])
+        """작업을 휴지통으로 옮기되 열린 세션의 비복구 진행은 먼저 재진술한다."""
+        name = p["name"]
+        if not p.get("confirm"):
+            for participant in self._delete_participants:
+                guard = participant.external_delete_guard(name)
+                if guard is not None:
+                    return {"needs_confirm": True, "name": name, **guard}
+        self._deleted_job_slot = self._job_registry.soft_delete(name)
+        for participant in self._delete_participants:
+            participant.external_job_deleted(name)
         self.vm.refresh()
-        return {"ok": True, "undo": True, "name": p["name"]}
+        return {"ok": True, "undo": True, "name": name}
 
     def _do_undo_delete_job(self, p: dict) -> dict:
         if self._deleted_job_slot is None:

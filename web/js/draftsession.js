@@ -864,9 +864,13 @@
     function openMapSheet(e) {
       view = "filled";
       applyView();
+      // capstrip은 위임 리스너라 currentTarget이 비포커스 컨테이너다. 실제 버튼을
+      // 우선 잡고, 프로그램 호출이면 영구 헤더 버튼으로 돌아간다.
+      const trigger = e && e.target && e.target.closest
+        ? e.target.closest("button") : null;
       window.SurfaceSheet.open({
         modalId: "draftMapSheet",
-        returnFocus: e && e.currentTarget ? e.currentTarget : document.activeElement,
+        returnFocus: trigger || $(id.mapExpand) || document.activeElement,
         initialFocus: $(id.mapSheetClose),
         moves: [
           { id: id.tokPanel, slotId: "draftMapSheetMapSlot" },

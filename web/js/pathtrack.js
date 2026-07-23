@@ -26,7 +26,7 @@
     const btns = which.map((k) => {
       const spec = ACTS[k];
       return `<button type="button" class="btn sm icon track-btn" data-track-act="${k}"` +
-        ` data-path="${esc(path)}" title="${spec.label}" aria-label="${spec.label}">${spec.icon}</button>`;
+        ` data-path="${esc(path)}" title="${spec.label}: ${esc(path)}" aria-label="${spec.label}">${spec.icon}</button>`;
     }).join("");
     return `<span class="track-affords" title="${esc(path)}">${btns}</span>`;
   }
@@ -43,13 +43,14 @@
         window.alert(r.slice(6).trim());   // 소유 밖·죽은 참조 등 시끄럽게
       } else if (el.dataset.trackAct === "copy") {
         const old = el.innerHTML;          // 아이콘 급을 유지한 채 복사 성공을 잠깐 재진술
+        const oldTitle = el.getAttribute("title");
         el.innerHTML = ICONS.done;
         el.setAttribute("aria-label", "복사됨");
         el.setAttribute("title", "복사됨");
         setTimeout(() => {
           el.innerHTML = old;
           el.setAttribute("aria-label", spec.label);
-          el.setAttribute("title", spec.label);
+          el.setAttribute("title", oldTitle);
         }, 1200);
       }
     } catch (err) {

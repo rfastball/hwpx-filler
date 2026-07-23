@@ -29,6 +29,8 @@ def test_saved_window_geometry_handles_unavailable_and_invalid_screens(monkeypat
 def test_saved_window_geometry_checks_every_titlebar_edge() -> None:
     screen = (0, 0, 1920, 1080)
     base = {"x": 20, "y": 20, "width": 1180, "height": 820, "maximized": False}
+    assert _geometry_is_visible({**base, "x": -100}, screen) is True
+    assert _geometry_is_visible({**base, "x": -1180}, screen) is False
     assert _geometry_is_visible({**base, "x": -1200}, screen) is False
     assert _geometry_is_visible({**base, "x": 1920}, screen) is False
     assert _geometry_is_visible({**base, "y": -32}, screen) is False

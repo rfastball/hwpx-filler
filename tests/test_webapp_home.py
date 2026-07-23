@@ -136,6 +136,37 @@ def test_delete_job_can_restore_last_slot(tmp_path):
     assert ctrl._job_registry.exists("낙찰")
 
 
+def test_delete_job_honors_open_session_guard_before_soft_delete(tmp_path):
+    class Participant:
+        def __init__(self):
+            self.deleted = []
+
+        def external_delete_guard(self, name):
+            return {
+                "session_screen": "job", "open_session": True, "armed": True,
+                "sel_count": 2, "filter_active": False, "in_def": 0, "extra": 0,
+                "filter_parts": 0,
+            }
+
+        def external_job_deleted(self, name):
+            self.deleted.append(name)
+
+    participant = Participant()
+    registry = _reg(tmp_path)
+    pushes = []
+    ctrl = HomeController(
+        registry, _text_reg(tmp_path), lambda *args: pushes.append(args), pool_registry=_pool(tmp_path),
+        delete_participants=(participant,),
+    )
+    guarded = ctrl.dispatch("delete_job", {"name": "낙찰"})
+    assert guarded["needs_confirm"] is True and guarded["session_screen"] == "job"
+    assert registry.exists("낙찰") and participant.deleted == [] and pushes == []
+
+    deleted = ctrl.dispatch("delete_job", {"name": "낙찰", "confirm": True})
+    assert deleted == {"ok": True, "undo": True, "name": "낙찰"}
+    assert not registry.exists("낙찰") and participant.deleted == ["낙찰"]
+
+
 def test_continue_runs_sorted_recent_first(tmp_path):
     ctrl, _ = _controller(tmp_path)
     runs = ctrl.snapshot()["continue_runs"]

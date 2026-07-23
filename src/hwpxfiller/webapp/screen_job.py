@@ -675,6 +675,20 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self._do_select_job({"name": "", "confirm": True})
         return {"ok": True, "undo": True, "name": name}
 
+    def external_delete_guard(self, name: str) -> "dict | None":
+        """홈 등 다른 표면의 삭제가 현재 실행 세션을 잃는지 실시간 판정한다."""
+        if name != self.job_name:
+            return None
+        guard = self._guard_state()
+        if not guard["armed"]:
+            return None
+        return {"session_screen": "job", "open_session": True, **guard}
+
+    def external_job_deleted(self, name: str) -> None:
+        """외부 삭제 뒤 유령 실행 세션이 남지 않도록 즉시 빈 패널로 전환한다."""
+        if name == self.job_name:
+            self._do_select_job({"name": "", "confirm": True})
+
     def _do_undo_delete_job(self, p: dict) -> dict:
         if self._deleted_job_slot is None:
             return {"ok": False, "error": "복원할 최근 작업이 없습니다."}
