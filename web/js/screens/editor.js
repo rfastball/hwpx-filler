@@ -284,6 +284,7 @@
         <span class="spacer"></span>
         <button class="btn" data-act="confirm-all">모두 확정</button>
         <button class="btn" data-act="unconfirm-all">모두 해제</button>
+        ${s.unconfirm_undo_count ? `<button class="btn" data-act="restore-confirmed">직전 확정 ${s.unconfirm_undo_count}개 복원</button>` : ""}
       </div>
       ${dataPreview(s)}`;
   }
@@ -449,7 +450,7 @@
     return `<span class="pv">${esc(display)}</span>`;
   }
 
-  /* ---- 푸터 내비 — 신규=마법사(뒤로/다음/저장), 편집=탭이라 내비 없음(저장 탭에 저장만).
+  /* ---- 푸터 내비 — 신규=마법사(취소/뒤로/다음/저장), 편집=탭이라 내비 없음(저장 탭에 저장만).
      복귀 어포던스 불설치(결정 40): "저장하고 실행으로" 류 포커스 튕김 버튼은 두지 않는다 —
      실행 복귀는 좌 목록 행 클릭이 담당하고, 저장은 제자리에서 완결된다. ---- */
   function footer(s) {
@@ -469,7 +470,8 @@
     }
     const hint = (s.step < 2 && !s.reachable[s.step])
       ? `<span class="muted capnote">${gateHint(s)}</span>` : "";
-    return `${back}<span class="spacer"></span>${hint}${next}`;
+    return `<button class="btn" data-act="cancel-new">취소</button>${back}` +
+      `<span class="spacer"></span>${hint}${next}`;
   }
 
   function gateHint(s) {
@@ -491,10 +493,11 @@
     const editing = LAST && LAST.editing_origin;
     if (editing) {
       const busy = await Bridge.editorHasUnsavedWork();
+      if (!busy) return true;
       return Modal.confirm({ body:
         `'${editing}' 편집을 닫고 새 작업 초안을 시작합니다.` +
-        (busy ? "\n저장하지 않은 변경은 사라집니다." : "") +
-        "\n\n계속할까요?" });
+        "\n저장하지 않은 변경은 사라집니다." +
+        "\n\n계속할까요?", confirmLabel: "새 작업 시작", cancelLabel: "취소" });
     }
     return EditorEntry.confirmDiscard(
       "새 템플릿으로 시작하면 저장하지 않은 작업 세션이 사라집니다.\n" +
@@ -507,7 +510,7 @@
     if (!n) return true;
     return Modal.confirm({ body:
       `${verbPhrase} 확정했거나 직접 편집한 매핑 ${n}개가 전부 미확정으로 돌아갑니다` +
-      `(값은 이월).\n\n계속할까요?` });
+      `(값은 이월).\n\n계속할까요?`, confirmLabel: "미확정으로 되돌리기", cancelLabel: "취소" });
   }
 
   /* ---- 이벤트 위임(innerHTML 재구성이라 위임이 안전) ---- */
@@ -572,7 +575,8 @@
           const man = (st && st.manual_unconfirmed) || 0;
           if (man && !(await Modal.confirm({ body:
             `전체 미사용하면 직접 소스를 고른 매핑 ${man}개의 수동 지정이 해제됩니다` +
-            `(자동 제안으로만 복원).\n\n계속할까요?` }))) break;
+            `(자동 제안으로만 복원).\n\n계속할까요?`,
+            confirmLabel: "전체 미사용", cancelLabel: "취소" }))) break;
           await Bridge.call(SCREEN, "use_none", {});
           break;
         }
@@ -581,8 +585,18 @@
         case "prev-rec": await Bridge.call(SCREEN, "step_preview", { delta: -1 }); break;
         case "next-rec": await Bridge.call(SCREEN, "step_preview", { delta: 1 }); break;
         case "unconfirm-all": await Bridge.call(SCREEN, "unconfirm_all", {}); break;
+        case "restore-confirmed": await Bridge.call(SCREEN, "restore_confirmed", {}); break;
         case "confirm-all": await confirmAll(); break;
         case "row-confirm": await Bridge.call(SCREEN, "set_confirmed", { index: idx, confirmed: el.checked }); break;
+        case "cancel-new": {
+          if (!(await EditorEntry.confirmDiscard(
+            "새 작업 만들기를 취소하면 입력한 이름 · 데이터 · 매핑이 사라집니다.\n\n계속할까요?",
+            el))) break;
+          await Bridge.call(SCREEN, "discard_session", {});
+          if (window.JobScreen && window.JobScreen.showRunMode) window.JobScreen.showRunMode();
+          else window.alert("실행 모드로 돌아갈 수 없습니다. 화면 구성 요소(JobScreen)가 로드되지 않았습니다.");
+          break;
+        }
         case "back": await Bridge.call(SCREEN, "goto_step", { step: LAST.step - 1 }); break;
         case "next": await Bridge.call(SCREEN, "goto_step", { step: LAST.step + 1 }); break;
         case "save": await doSave({}); break;
@@ -615,7 +629,8 @@
     const blanks = (res && res.blanks) || [];
     if (!blanks.length) return;
     const ok = await Modal.confirm({ body:
-      `아래 ${blanks.length}개 필드는 채우지 않고 '비움'으로 확정합니다:\n\n${blanks.join(", ")}\n\n계속할까요?`
+      `아래 ${blanks.length}개 필드는 채우지 않고 '비움'으로 확정합니다:\n\n${blanks.join(", ")}\n\n계속할까요?`,
+      confirmLabel: "비움으로 확정", cancelLabel: "취소",
     });
     // await 로 던진다 — fire-and-forget 이면 rejection 이 디스패처 가드 밖으로 샌다(#45).
     if (ok) await Bridge.call(SCREEN, "confirm_blanks", { fields: blanks });
@@ -654,7 +669,10 @@
       // 본 문안을 그대로 되돌려 준다(#149) — 모달을 읽는 사이 디스크가 바뀌면 확인은 다른
       // 상태에 대한 것이 된다. 판정은 Python 이 쓰기 잠금 안에서 다시 하고(문안 대조),
       // 달라졌으면 새 문안으로 다시 묻는다. 여기는 무엇을 보여 줬는지만 실어 보낸다.
-      if (await Modal.confirm({ body: res.overwrite_text + "\n\n계속할까요?" })) {
+      if (await Modal.confirm({
+        body: res.overwrite_text + "\n\n계속할까요?",
+        confirmLabel: "덮어쓰기", cancelLabel: "취소", danger: true,
+      })) {
         doSave(Object.assign({}, flags, {
           confirm_overwrite: true,
           confirmed_overwrite_text: res.overwrite_text,
@@ -663,7 +681,9 @@
       return;
     }
     if (res.needs_dataset_confirm) {
-      if (await Modal.confirm({ body: res.dataset_text })) {
+      if (await Modal.confirm({
+        body: res.dataset_text, confirmLabel: "덮어쓰기", cancelLabel: "취소", danger: true,
+      })) {
         doSave(Object.assign({}, flags, { confirm_dataset: true }));
       }
       return;

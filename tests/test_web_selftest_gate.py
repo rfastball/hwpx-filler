@@ -155,6 +155,13 @@ class TestWebSelftestGate:
             "Modal.open 이 .modal 없는 요소를 조용히 삼켰습니다 — loud 거절(console.error)+미개방 기대."
         )
 
+    def test_danger_confirm_toggles_visual_variant_without_leaking(self, selftest_result: dict) -> None:
+        """#219: 실 WebView2에서 danger 버튼이 솔리드 배경으로 서고 다음 중립 확인엔 남지 않는다."""
+        m = selftest_result["modal_a11y"]
+        assert m["danger_class"] is True
+        assert m["danger_background"] not in ("transparent", "rgba(0, 0, 0, 0)")
+        assert m["danger_resets_to_neutral"] is True
+
     def test_modal_close_rejects_non_modal_target_loudly(self, selftest_result: dict) -> None:
         # 동일 잠복(#132.4) — close 도 .modal 없는 대상을 loud 거절한다(open 과 대칭).
         m = selftest_result["modal_a11y"]
@@ -770,6 +777,14 @@ class TestWebSelftestGate:
         assert tp["data_theme"] is None, f"미저장인데 data-theme 이 강제됨: {tp!r}"
         assert tp["a_card"] == "#ffffff", f"미저장 기본이 라이트 카드가 아님: {tp!r}"
 
+    def test_personalization_defaults_render_in_real_webview(self, selftest_result: dict) -> None:
+        p = selftest_result["personalization_persist"]
+        assert p["font_scale"] == "normal" and p["root_px"] == "16px"
+        assert p["rail_collapsed"] is False and p["master_width"] == 240
+        assert p["splitters"] == 2
+        assert p["body_overflow"] is False, f"기본 배율에서 가로 오버플로: {p!r}"
+        assert p["selected_text"] == "선택 가능한 본문", f"본문 텍스트 선택 실패: {p!r}"
+
 
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
 def test_theme_choice_persists_across_restart_without_flicker(tmp_path) -> None:
@@ -817,6 +832,84 @@ def test_theme_choice_persists_across_restart_without_flicker(tmp_path) -> None:
         f"콜드부트에서 저장 테마 미적용 — Python 설정 영속 또는 loaded 주입 실패: {tp!r}")
     dark_card = gen.load_tokens()["dark"]["color"]["card_bg"]
     assert tp["a_card"] == dark_card, f"다크 --a-card({dark_card}) 미해소: {tp!r}"
+
+
+@pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
+@pytest.mark.parametrize(("scale", "root_px"), [("large", "20px"), ("larger", "24px")])
+def test_font_scale_persists_across_restart_without_major_overflow(
+    tmp_path, scale: str, root_px: str
+) -> None:
+    """125/150%를 실 브리지로 저장한 뒤 콜드부트에서 적용·레이아웃을 되읽는다."""
+    home = tmp_path / scale
+    out_write = tmp_path / f"{scale}-write.json"
+    out_read = tmp_path / f"{scale}-read.json"
+    base = dict(os.environ, HWPXFILLER_HOME=str(home))
+    cmd = [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"]
+    written_proc = subprocess.run(
+        cmd, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
+        env=dict(
+            base,
+            HWPX_SELFTEST_OUT=str(out_write),
+            HWPX_SELFTEST_SET_FONT_SCALE=scale,
+        ),
+    )
+    assert out_write.exists(), f"배율 쓰기 실패 rc={written_proc.returncode}: {written_proc.stderr[-2000:]}"
+    assert json.loads(out_write.read_text(encoding="utf-8"))["set_result"] == scale
+    saved = json.loads((home / "settings.json").read_text(encoding="utf-8"))
+    saved.update(rail_collapsed=True, master_width=333)
+    (home / "settings.json").write_text(json.dumps(saved), encoding="utf-8")
+
+    read_proc = subprocess.run(
+        cmd, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
+        env=dict(base, HWPX_SELFTEST_OUT=str(out_read)),
+    )
+    assert out_read.exists(), f"배율 되읽기 실패 rc={read_proc.returncode}: {read_proc.stderr[-2000:]}"
+    p = json.loads(out_read.read_text(encoding="utf-8"))["personalization_persist"]
+    assert p["font_scale"] == scale and p["root_px"] == root_px
+    assert p["rail_collapsed"] is True and p["master_width"] == 333
+    assert p["body_overflow"] is False, f"{scale}에서 주요 가로 오버플로: {p!r}"
+    full = json.loads(out_read.read_text(encoding="utf-8"))
+    assert len(full["grid_narrow"].split()) == 1 and len(full["grid_wide"].split()) == 2
+
+
+@pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
+@pytest.mark.parametrize("mode", ["normal", "maximized", "offscreen"])
+def test_window_geometry_restores_or_falls_back_in_real_webview(tmp_path, mode: str) -> None:
+    """저장 크기·위치·최대화는 복원하고, 화면 밖 좌표는 기본 배치로 회수한다."""
+    home = tmp_path / mode
+    home.mkdir()
+    geometry = {
+        "x": 120 if mode != "offscreen" else 50_000,
+        "y": 100,
+        "width": 1000,
+        "height": 700,
+        "maximized": mode == "maximized",
+    }
+    (home / "settings.json").write_text(
+        json.dumps({"window_geometry": geometry}), encoding="utf-8"
+    )
+    out = tmp_path / f"geometry-{mode}.json"
+    env = dict(
+        os.environ,
+        HWPXFILLER_HOME=str(home),
+        HWPX_SELFTEST_OUT=str(out),
+        HWPX_SELFTEST_GEOMETRY_ONLY="1",
+    )
+    proc = subprocess.run(
+        [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"],
+        env=env, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
+    )
+    assert out.exists(), f"창 기하 부팅 실패 rc={proc.returncode}: {proc.stderr[-2000:]}"
+    actual = json.loads(out.read_text(encoding="utf-8"))["window_geometry"]
+    if mode == "normal":
+        # WinForms screenX/Y에는 DPI별 비클라이언트 프레임 오프셋이 붙는다.
+        assert abs(actual["x"] - 120) <= 40 and abs(actual["y"] - 100) <= 40
+        assert abs(actual["width"] - 1000) <= 40 and abs(actual["height"] - 700) <= 40
+        assert actual["maximized_like"] is False
+    elif mode == "maximized":
+        assert actual["maximized_like"] is True, f"최대화 복원 실패: {actual!r}"
+    else:
+        assert actual["x"] < 50_000 and actual["maximized_like"] is False
 
 # InPrivate 의미론이 바뀌어도 부팅마다 webview_root를 청소하고 고정 프로필을 새로 만든다.
 # 재시작 간 공유 캐시·구판 잔재 차단은

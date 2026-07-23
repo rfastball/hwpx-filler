@@ -153,13 +153,17 @@ def test_switching_saved_jobs_keeps_stashed_volatile(tmp_path):
 def test_bound_job_deleted_returns_to_volatile(tmp_path):
     """결속 중인 저장 기안이 삭제되면 휘발 세션으로 복귀한다 — 사라진 정의가 저장 모드로 뜨지 않게."""
     ctrl, jobs, _ = _controller(tmp_path)
+    assert ctrl.dispatch("undo_delete_job", {})["ok"] is False
     _save_real(tmp_path, jobs, "기안A", "job_a.txt", "A 원문 {{공고명}}")
     ctrl.dispatch("set_template_text", {"text": "붙여넣기 {{공고명}}"})
     ctrl.dispatch("select_job", {"name": "기안A"})
-    ctrl.dispatch("delete_job", {"name": "기안A", "confirm": True})
+    deleted = ctrl.dispatch("delete_job", {"name": "기안A"})
+    assert deleted == {"ok": True, "undo": True, "name": "기안A"}
     snap = ctrl.snapshot()
     assert snap["has_job"] is False and snap["mode"] == "volatile"
     assert snap["template_text"] == "붙여넣기 {{공고명}}"  # 스태시한 휘발 복원
+    assert ctrl.dispatch("undo_delete_job", {}) == {"ok": True, "name": "기안A"}
+    assert jobs.exists("기안A")
 
 
 def test_deleting_bound_session_with_progress_restates_loss(tmp_path):
@@ -179,7 +183,7 @@ def test_deleting_bound_session_with_progress_restates_loss(tmp_path):
     assert ctrl.snapshot()["bound_job"] == "기안A"      # 확인 전 = 안 지움
 
 
-def test_deleting_unbound_job_reports_no_session_loss(tmp_path):
+def test_deleting_unbound_job_needs_no_session_prompt(tmp_path):
     """결속 아닌 기안 삭제는 세션 무영향 — 정의 삭제만 재진술하고 진행 수치를 부풀리지 않는다.
 
     현 세션은 다른 기안(또는 휘발)에 물려 있는데도 open_session/armed 를 실으면 지우지도 않을
@@ -190,8 +194,9 @@ def test_deleting_unbound_job_reports_no_session_loss(tmp_path):
     ctrl.dispatch("select_job", {"name": "기안A"})
     _arm_queue(ctrl, selected=2, copied=1)             # 기안A 세션에 진행이 있어도
     res = ctrl.dispatch("delete_job", {"name": "기안B"})  # 결속 아닌 기안B 삭제는 무영향
-    assert res["needs_confirm"] is True and res["open_session"] is False
-    assert "armed" not in res, "결속 아닌 삭제가 무관한 세션 무장 수치를 실었습니다(거짓 경고)."
+    assert res["undo"] is True
+    assert not jobs.exists("기안B")
+    assert ctrl.snapshot()["bound_job"] == "기안A"
 
 
 # ------------------------------------------ 미저장 레시피 편집 가드(리뷰 5a 3R P1 / 147)
@@ -329,6 +334,21 @@ def test_volatile_template_switch_guards_unsaved_edits(tmp_path):
     ctrl.dispatch("select_template", {"name": "다른", "confirm": True})
     snap = ctrl.snapshot()
     assert snap["template_name"] == "다른" and snap["source_dirty"] is False  # 전환·미저장 원문 폐기
+
+
+def test_pasted_original_arms_leave_guard_before_any_edit(tmp_path):
+    """파일 정본 없는 붙여넣기 자체가 미저장 작업 — 즉시 새 기안/템플릿 전환 가드 대상(#218)."""
+    ctrl, _jobs, _ = _controller(tmp_path)
+    ctrl.dispatch("set_template_text", {"text": "붙여넣은 {{공고명}} 원문"})
+    snap = ctrl.snapshot()
+    assert snap["template_name"] == "(붙여넣은 텍스트)"
+    assert snap["source_dirty"] is False  # 수정됨 표지와 파일-무배접 가드는 별도 의미
+    guard = ctrl.dispatch("leave_guard", {})
+    assert guard["armed"] is True and guard["pasted_unbacked"] is True
+
+    r = ctrl.dispatch("select_template", {"name": "착수계"})
+    assert r and r["needs_confirm"] is True
+    assert ctrl.snapshot()["template_name"] == "(붙여넣은 텍스트)"  # 확인 전 불변
 
 
 def test_leave_for_template_guard_query_is_nonmutating(tmp_path):
@@ -585,24 +605,26 @@ def test_fork_clears_stash_so_next_select_does_not_orphan_copy(tmp_path):
     _save_real(tmp_path, jobs, "기안B", "job_b.txt", "B 저장 원문 {{공고명}}")
     ctrl.dispatch("set_template_text", {"text": "밀려날 붙여넣기 {{공고명}}"})
     ctrl.dispatch("select_job", {"name": "기안A"})       # 붙여넣기 세션 스태시
-    ctrl.dispatch("fork_to_volatile", {})               # 미무장 스태시 → 확인 없이 포크(스태시 비움)
+    gate = ctrl.dispatch("fork_to_volatile", {})        # 붙여넣기 원문 스태시도 복구 불가라 확인
+    assert gate and gate["needs_confirm"] is True and gate["pasted_unbacked"] is True
+    ctrl.dispatch("fork_to_volatile", {"confirm": True})  # 확인 뒤 포크(스태시 비움)
     ctrl.dispatch("edit_source", {"text": "사본에서 고친 원문 {{공고명}}"})
     ctrl.dispatch("select_job", {"name": "기안B"})       # 사본이 새로 스태시
     ctrl.dispatch("select_job", {"name": ""})           # 「이번 세션」 = 사본 복구(옛 세션 아님)
     assert ctrl.snapshot()["template_text"] == "사본에서 고친 원문 {{공고명}}"
 
 
-def test_fork_displacing_unarmed_stash_is_silent(tmp_path):
-    """미무장 이전 휘발(**붙여넣기만** 한 clean 원문)은 확인 없이 포크한다 — 과경보 금지.
-
-    붙여넣기(set_template_text)는 source_dirty=False(깨끗한 시작)라 재입력이 재현을 담보한다 —
-    새 기안 가드와 같은 문턱. **편집된**(source_dirty) 원문은 다르다(다음 테스트)."""
+def test_fork_displacing_pasted_stash_requires_confirmation(tmp_path):
+    """붙여넣기만 한 원문도 파일 정본이 없으므로 스태시를 밀어낼 때 확인한다(#218 G2)."""
     ctrl, jobs, _ = _controller(tmp_path)
     _save_real(tmp_path, jobs, "기안A", "job_a.txt", "저장 원문 {{공고명}}")
-    ctrl.dispatch("set_template_text", {"text": "붙여넣기만 {{공고명}}"})  # source_dirty=False → 무장 아님
+    ctrl.dispatch("set_template_text", {"text": "붙여넣기만 {{공고명}}"})
     ctrl.dispatch("select_job", {"name": "기안A"})
     res = ctrl.dispatch("fork_to_volatile", {})
-    assert res is None and ctrl.snapshot()["mode"] == "volatile"
+    assert res and res["needs_confirm"] is True and res["pasted_unbacked"] is True
+    assert ctrl.snapshot()["mode"] == "saved"
+    ctrl.dispatch("fork_to_volatile", {"confirm": True})
+    assert ctrl.snapshot()["mode"] == "volatile"
 
 
 def test_fork_displacing_edited_source_stash_needs_confirm(tmp_path):
@@ -947,7 +969,10 @@ def test_router_is_shared_between_list_and_session_actions(tmp_path):
 def test_confirm_roundtrip_skips_push(tmp_path):
     """확인 왕복(needs_confirm)은 변이가 없으므로 재렌더도 없다 — RC-02 동형."""
     ctrl, jobs, pushes = _controller(tmp_path)
-    _save(jobs, "기안A", "C:/t/a.txt")
+    _save_real(tmp_path, jobs, "기안A", "guard.txt", "{{공고명}}")
+    ctrl.dispatch("select_job", {"name": "기안A"})
+    _arm_queue(ctrl, selected=2, copied=1)
+    pushes.clear()
     res = ctrl.dispatch("delete_job", {"name": "기안A"})
     assert res["needs_confirm"] is True and pushes == []
     ctrl.dispatch("delete_job", {"name": "기안A", "confirm": True})
@@ -958,6 +983,12 @@ def test_query_actions_skip_push(tmp_path):
     """무변이 질의(guard_state)는 push 를 생략한다 — 세션 믹스인 규약 승계."""
     ctrl, _jobs, pushes = _controller(tmp_path)
     assert ctrl.dispatch("guard_state", {})["armed"] is False
+    assert ctrl.dispatch("validate_save_name", {"name": "  "}) == {
+        "ok": False, "error": "기안 이름을 입력하세요."
+    }
+    assert ctrl.dispatch("validate_save_name", {"name": "새 기안"}) == {
+        "ok": True, "error": ""
+    }
     assert pushes == []
 
 

@@ -79,6 +79,7 @@ class DraftController(DraftSessionMixin):
     ) -> None:
         self.registry = registry
         self._push_sink = push
+        self._deleted_job_slot = None
         # txt 템플릿 그룹 모델(#108) — 「템플릿으로 저장」(#135)이 그룹을 지정하므로 필요하다.
         # 관리 화면·구 「빠른 기안」과 **같은 인스턴스**여야 한다(app.py 가 주입): 별도면 지정·접힘
         # 인메모리 캐시가 갈라져 여기서 넣은 그룹이 관리 화면 목록에 안 보인다(에디터 1단계 피커에
@@ -329,6 +330,7 @@ class DraftController(DraftSessionMixin):
         self._bound_job = name
         self._source_readonly = True
         self._source_dirty = False
+        self._pasted_unbacked = False
         # 방금 이 매핑을 영속했으니 미저장 편집은 없다 — 표지를 내린다(리뷰 5c 3R P2 / 301).
         # 안 내리면 저장 직후 다른 기안으로 떠날 때 _leave_guard 가 있지도 않은 "미저장 매핑
         # 편집"으로 거짓 파괴 확인을 띄운다(저장 = 새 baseline, restore/fresh 와 동형).
@@ -341,6 +343,14 @@ class DraftController(DraftSessionMixin):
         if was_unbound:
             self._volatile_stash = None
         return {"ok": True, "name": name}
+
+    def _do_validate_save_name(self, p: dict) -> dict:
+        """저장명 prompt의 보존형 인라인 검증. 변이 없이 입력만 판정한다."""
+        if not p.get("name", "").strip():
+            return {"ok": False, "error": "기안 이름을 입력하세요."}
+        return {"ok": True, "error": ""}
+
+    _do_validate_save_name.is_query = True
 
     # ---------------------------------- 「템플릿으로 저장」 승격(#148 슬라이스 6, #135)
     #
@@ -505,6 +515,7 @@ class DraftController(DraftSessionMixin):
         self.vm.template_name = name
         self._template_path = str(dest)
         self._source_dirty = False
+        self._pasted_unbacked = False
         return {
             "ok": True,
             "name": name,
@@ -560,18 +571,26 @@ class DraftController(DraftSessionMixin):
         **결속 세션 소실 재진술(리뷰 5a 2R P1, `screen_job._do_delete_job` 동형)**: 지금 결속한
         저장 기안을 삭제하면 그 세션의 데이터·선택·큐 진행이 함께 사라진다(Job 계약 = 데이터/행
         미저장 → 복원 불가). ``open_session`` 과 무장 수치(:meth:`_guard_state`)를 동봉해 표면이
-        파괴 전모(정의 삭제 + 세션 진행 소실)를 한 모달로 말하게 한다(confirm-or-alarm). 결속
-        아닌 기안 삭제는 세션 무영향이라 정의 삭제만 재진술한다."""
+        세션 진행 소실만 한 모달로 말하게 한다(confirm-or-alarm). 결속 아닌 기안과 클린
+        결속은 복원 가능한 휴지통 이동이므로 사전 확인 없이 실행한다."""
         name = p["name"]
         if not p.get("confirm"):
-            out = {"needs_confirm": True, "name": name,
-                   "open_session": name == self._bound_job}
             if name == self._bound_job:
-                out.update(self._leave_guard())  # 선택·큐 ∨ 미저장 레시피 편집(147)
-            return out
-        self.registry.delete(name)
+                guard = self._leave_guard()
+                if guard["armed"]:
+                    return {"needs_confirm": True, "name": name,
+                            "open_session": True, **guard}
+        self._deleted_job_slot = self.registry.soft_delete(name)
         if name == self._bound_job:
             self._restore_volatile()
+        return {"ok": True, "undo": True, "name": name}
+
+    def _do_undo_delete_job(self, p: dict) -> dict:
+        if self._deleted_job_slot is None:
+            return {"ok": False, "error": "복원할 최근 기안 작업이 없습니다."}
+        name = self.registry.restore_soft_deleted(self._deleted_job_slot)
+        self._deleted_job_slot = None
+        return {"ok": True, "name": name}
 
     def _do_set_group(self, p: dict) -> None:
         """그룹 지정/해제(이동 다이얼로그 확정) — ``group=""`` 는 「그룹 없음」으로 이동."""
