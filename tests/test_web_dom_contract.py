@@ -303,6 +303,34 @@ def test_responsive_breakpoint_collapses_layout():
     )
 
 
+def test_milestone_l_draft_density_structure_and_values():
+    """#270: 기본창·duo·300px 캡·정직한 표지·컨테이너 쿼리를 정적으로 고정한다."""
+    html = WEB_INDEX.read_text(encoding="utf-8")
+    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    app_py = (WEB_INDEX.parents[1] / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(
+        encoding="utf-8"
+    )
+    draft_js = (WEB_JS_DIR / "draftsession.js").read_text(encoding="utf-8")
+    screen_js = (WEB_JS_DIR / "screens" / "draft.js").read_text(encoding="utf-8")
+
+    assert "DEFAULT_WINDOW_WIDTH = 1440" in app_py
+    assert "DEFAULT_WINDOW_HEIGHT = 900" in app_py
+    assert 'class="duo draft-duo" id="draftDuo"' in html
+    duo = html.split('id="draftDuo"', 1)[1].split("<!-- ④ 완료", 1)[0]
+    assert duo.index('id="draftTokPanel"') < duo.index('id="draftCard"')
+    assert 'id="draftMapCapstrip" role="status" hidden' in duo
+    assert (
+        ".job-panel{flex:1;min-width:0;overflow:auto;display:flex;flex-direction:column;"
+        "container-type:inline-size;container-name:session-panel}" in css
+    )
+    assert "#draftTokPanel{max-height:300px;overflow:auto}" in css
+    assert ".capstrip[hidden]{display:none}" in css
+    assert "@containersession-panel(max-width:900px)" in css
+    assert "host.scrollHeight > host.clientHeight + 1" in draft_js
+    assert 'mapCapstrip: "draftMapCapstrip"' in screen_js
+    assert "ResizeObserver(measureMapCap)" in draft_js
+
+
 def _forced_colors_block(css_path: Path) -> str:
     """``@media (forced-colors:active)`` 블록의 **본문**만 공백 제거 형태로 반환.
 

@@ -48,8 +48,8 @@ from .screens import (
 
 
 WINDOW_TITLE = "HWPX Filler"  # 창 제목 = 파일 다이얼로그 소유주 창을 FindWindowW 로 찾는 키
-DEFAULT_WINDOW_WIDTH = 1180
-DEFAULT_WINDOW_HEIGHT = 820
+DEFAULT_WINDOW_WIDTH = 1440
+DEFAULT_WINDOW_HEIGHT = 900
 
 # 파일 선택 다이얼로그 필터 — pick_data_file·pick_pool_data_file 공유 단일 출처(둘 다
 # "엑셀/CSV 데이터" 참조를 다루므로 필터가 같다; 확장자 자체의 단일 출처는 EXCEL_FILTER_PATTERN).
@@ -742,11 +742,11 @@ _PRESERVE_REAL_PROBE_JS = r"""
       out[scr] = 'ok';
     } catch (e) { out[scr] = 'throw:' + (e && e.message); }
   });
-  // 기안 스크롤 보존 end-to-end: **맞추기 표 패널**(#draftTokPanel, max-height 180px·overflow
+  // 기안 스크롤 보존 end-to-end: **맞추기 표 패널**(#draftTokPanel, max-height 300px·overflow
   // auto)을 강제로 길게 → 오버플로 → 스크롤 → 재렌더 → 유지? 작업점 카드(#draftCardRender)는
   // master-detail 우측 패널(.job-panel{overflow:auto})이 통째로 스크롤하는 설계라 자라기만 하고
   // 내부 스크롤이 없다(구 txt 전체화면과 다르다) — 실제 내부 스크롤 요소인 토큰 패널로 겨눈다.
-  // renderMap 은 snap.tokens 를 그대로 그리므로 토큰 15개를 주입해 180px 를 넘긴다(패널 자체가
+  // renderMap 은 snap.tokens 를 그대로 그리므로 토큰 15개를 주입해 300px 를 넘긴다(패널 자체가
   // Preserve.around 안에서 재구성되므로 재렌더 가로지른 스크롤 복원을 실 render() 경로로 본다).
   try {
     var snap = snaps['draft'];
@@ -760,7 +760,7 @@ _PRESERVE_REAL_PROBE_JS = r"""
     snap.tokens = toks;
     window.__push('draft', snap);
     var box = document.getElementById('draftTokPanel');
-    box.scrollTop = 60;                 // 180px 패널의 오버플로 안 — 클램프 없이 남을 값
+    box.scrollTop = 60;                 // 300px 패널의 오버플로 안 — 클램프 없이 남을 값
     window.__push('draft', snap);       // 실 재렌더 — Preserve 가 스크롤 복원해야
     out.draft_scroll_top = document.getElementById('draftTokPanel').scrollTop;
   } catch (e) { out.draft_scroll_top = 'throw:' + (e && e.message); }
@@ -1238,6 +1238,36 @@ _DRAFT_SESSION_PROBE_JS = r"""
             last_copy:null}
     };
     window.__push('draft', snap);
+    // 마일스톤 L #270 — 새 기본창에서 duo·sticky가 성립하고 평시 자동결속 8토큰은 300px 캡을
+    // 발동하지 않는다. 22토큰 스트레스는 실제 scrollHeight 판정으로 capstrip을 세워야 한다.
+    var calm = JSON.parse(JSON.stringify(snap));
+    calm.tokens = [];
+    for (var ci = 0; ci < 8; ci++) {
+      calm.tokens.push({name:'기본' + ci, state:'fill', source:'공고명', own:'auto', manual:false,
+        value:'값 ' + ci, fmt_kind:'text', fmt_code:'', suggest:'', can_revert:false,
+        confirmed:true, blank_declared:false});
+    }
+    window.__push('draft', calm);
+    out.density_wide_columns = getComputedStyle(document.getElementById('draftDuo')).gridTemplateColumns;
+    out.density_preview_position = getComputedStyle(
+      document.querySelector('#draftDuo .draft-preview-zone')).position;
+    out.density_cap_height = getComputedStyle(document.getElementById('draftTokPanel')).maxHeight;
+    out.density_default_client_height = document.getElementById('draftTokPanel').clientHeight;
+    out.density_default_scroll_height = document.getElementById('draftTokPanel').scrollHeight;
+    out.density_default_cap_hidden =
+      getComputedStyle(document.getElementById('draftMapCapstrip')).display === 'none';
+    var stress = JSON.parse(JSON.stringify(calm));
+    stress.tokens = [];
+    for (var di = 0; di < 22; di++) {
+      stress.tokens.push({name:'스트레스' + di, state:'fill', source:'공고명', own:'auto', manual:false,
+        value:'값 ' + di, fmt_kind:'text', fmt_code:'', suggest:'', can_revert:false,
+        confirmed:true, blank_declared:false});
+    }
+    window.__push('draft', stress);
+    out.density_stress_cap_shown =
+      getComputedStyle(document.getElementById('draftMapCapstrip')).display !== 'none';
+    out.density_stress_cap_text = document.getElementById('draftMapCapstrip').textContent;
+    window.__push('draft', snap);  // 아래 기존 계약은 4토큰 정본으로 계속 검증
     // ① 데이터 존 — 두 번째 인스턴스가 draft id 로 섰는가(가시 행·하이라이트·관통 스트립).
     out.rows = document.querySelectorAll('#draftTableBody tr[data-i]').length;
     out.mark = (function(){ var m = document.querySelector('#draftTableBody mark');
@@ -2063,7 +2093,7 @@ def _selftest_drive(window: "object") -> None:
         window.resize(760, 600)  # type: ignore[attr-defined]  # 최소 크기 = 경계 아래 → 세로 적층
         time.sleep(0.6)
         result["grid_narrow"] = window.evaluate_js(grid_probe)  # type: ignore[attr-defined]
-        window.resize(1180, 820)  # type: ignore[attr-defined]  # 기본 크기 = 경계 위 → 2판 복귀
+        window.resize(1440, 900)  # type: ignore[attr-defined]  # 새 기본 크기 = 셸 2판 + 기안 duo
         time.sleep(0.6)
         result["grid_wide"] = window.evaluate_js(grid_probe)  # type: ignore[attr-defined]
         # 다중 시트 확정 게이트(#33) — SheetPicker.choose 를 실 DOM 에서 구동(확정→로드, 취소→중단).
@@ -2086,6 +2116,16 @@ def _selftest_drive(window: "object") -> None:
         # 「기안」 휘발 세션 4존(#148 슬라이스 3a) — 공용 팩토리(draftsession.js)의 두 번째
         # 소비 인스턴스가 draft 화면 DOM 에서 실제로 서는지(데이터 존·카드·린트·완료) 되읽기.
         result["draft_session"] = window.evaluate_js(_DRAFT_SESSION_PROBE_JS)  # type: ignore[attr-defined]
+        # #270 컨테이너 쿼리의 협폭 분기 — 같은 DOM을 1180급 창에서 되읽어 적층·sticky 해제를
+        # 실제 Chromium 레이아웃으로 고정하고 즉시 새 기본창으로 복원한다.
+        window.resize(1180, 820)  # type: ignore[attr-defined]
+        time.sleep(0.4)
+        result["draft_density_narrow"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "({columns:getComputedStyle(document.getElementById('draftDuo')).gridTemplateColumns,"
+            "preview_position:getComputedStyle(document.querySelector('#draftDuo .draft-preview-zone')).position})"
+        )
+        window.resize(1440, 900)  # type: ignore[attr-defined]
+        time.sleep(0.4)
         result["job_editmode"] = window.evaluate_js(_JOB_EDITMODE_PROBE_JS)  # type: ignore[attr-defined]
         # 매핑 칩-라이브(슬라이스 5 PR-3) — 합성 매핑 스냅샷으로 실 render() 구동 후 칩·태그 되읽기.
         result["editor_chip"] = window.evaluate_js(_EDITOR_CHIP_PROBE_JS)  # type: ignore[attr-defined]
@@ -2108,7 +2148,7 @@ def _selftest_drive(window: "object") -> None:
             "window.__milestoneHOverlay.finish ? "
             "window.__milestoneHOverlay.finish() : window.__milestoneHOverlay"
         )
-        window.resize(1180, 820)  # type: ignore[attr-defined]
+        window.resize(1440, 900)  # type: ignore[attr-defined]
         time.sleep(0.3)
         # 에디터 1단계 피커(#108 슬라이스 3) — 라이브러리 그룹 구획(선택 전용) 실렌더 되읽기.
         result["editor_lib"] = window.evaluate_js(_EDITOR_LIB_PICKER_PROBE_JS)  # type: ignore[attr-defined]

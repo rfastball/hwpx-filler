@@ -356,7 +356,16 @@ table.dmap tr:last-child td{border-bottom:0}
 .zone-cap .znum{display:inline-grid;place-items:center;width:15px;height:15px;margin-right:var(--sp-4);
   border-radius:var(--rad-pill);background:var(--a-primary);color:var(--a-on-accent);
   font-size:var(--fs-caption);font-weight:700;vertical-align:-2px}
-#draftTokPanel{max-height:180px;overflow:auto}
+/* 마일스톤 L #270 — 평시 8토큰은 모두 보이고 대량 세션만 내부 스크롤이 생기는 넉넉 캡.
+   실제 잘림 여부는 draftsession.js가 측정해 capstrip으로 재진술한다. */
+#draftTokPanel{max-height:300px;overflow:auto}
+#draftTokPanel table.dmap th{position:sticky;top:0;z-index:1}
+.capstrip{display:flex;align-items:center;gap:var(--sp-8);margin-top:var(--sp-6);
+  padding:var(--sp-6) var(--sp-10);font-size:var(--fs-caption);color:var(--a-warn);
+  background:var(--fb-blank-bg);border:1px solid var(--fb-blank-bd);
+  border-radius:var(--rad-control)}
+/* display:flex가 UA [hidden] 규칙을 이기는 B-9 결함류를 명시 차단한다. */
+.capstrip[hidden]{display:none}
 /* 완료 노트 — 구 화면에선 .pane.workcard 자손이라 색이 붙었다. 4존에선 자기 id 로 잇는다. */
 #draftNote{margin:var(--sp-8) 0 0;color:var(--a-muted);font-size:var(--fs-body)}
 #draftNote[data-level="ok"]{color:var(--a-ok)}
@@ -746,7 +755,8 @@ body.resizing-master{cursor:col-resize;user-select:none}
 .grp-opt{display:flex;align-items:center;gap:var(--sp-8);padding:var(--sp-4) var(--sp-2);
   font-size:var(--fs-body)}
 .grp-opt .field{flex:1}
-.job-panel{flex:1;min-width:0;overflow:auto;display:flex;flex-direction:column}
+.job-panel{flex:1;min-width:0;overflow:auto;display:flex;flex-direction:column;
+  container-type:inline-size;container-name:session-panel}
 .job-empty-panel{padding:var(--sp-16);font-size:var(--fs-body)}
 /* 세션 표면(#179 슬라이스 5a) — 4존을 상자 4개(중첩 경계)에서 **하나의 연속 표면 + 내부
    구분선**으로. 종전엔 존마다 border+radius 카드에 legend(zone-cap 이 border 를 타넘던 절대배치)
@@ -760,6 +770,24 @@ body.resizing-master{cursor:col-resize;user-select:none}
 .zone + .zone{border-top:1px solid var(--a-border)}
 .zone-cap{display:block;margin-bottom:var(--sp-10);
   color:var(--n-header-ink)}
+.draft-duo{display:grid;grid-template-columns:minmax(0,1.08fr) minmax(0,1fr);
+  border-top:1px solid var(--a-border)}
+.draft-duo + .zone{border-top:1px solid var(--a-border)}
+.draft-duo>.zone{min-width:0}
+.draft-duo>.zone+.zone{border-top:0;border-left:1px solid var(--a-border)}
+.draft-duo table.dmap{min-width:900px}
+.draft-duo table.dmap th,.draft-duo table.dmap td{padding:var(--sp-2) var(--sp-6)}
+.draft-duo .mapsrc{flex-wrap:nowrap}
+.draft-duo .dmap .field.sm,.draft-duo .dmap .btn.sm,
+.draft-duo .dmap .mapval-in{padding:var(--sp-2) var(--sp-6);line-height:1.2}
+.draft-duo .draft-preview-zone{position:sticky;top:0;align-self:start;background:var(--a-card)}
+/* 창폭이 아니라 실제 세션 패널 폭으로 판정한다. 900px 이하는 표가 읽힐 한 열 폭을 지키며
+   종전 세로 적층으로 복귀한다(1440 기본창=duo, 1180급 협폭=stack). */
+@container session-panel (max-width:900px){
+  .draft-duo{grid-template-columns:1fr}
+  .draft-duo>.zone+.zone{border-left:0;border-top:1px solid var(--a-border)}
+  .draft-duo .draft-preview-zone{position:static}
+}
 .job-head-title{font-size:var(--fs-body);font-weight:600}
 .job-head-tpl{font-size:var(--fs-body);margin-top:var(--sp-2)}
 /* 좁은 창(반응형): 좌 목록을 위로 접어 세로 적층 — 셀프테스트 그리드 경계와 별개 국소 규칙. */

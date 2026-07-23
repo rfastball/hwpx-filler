@@ -330,55 +330,61 @@
               <div class="note warnbox" id="draftZoneNote" style="display:none"></div>
             </div>
 
-            <!-- ② 맞추기(#148 슬라이스 3b) — 토큰별 결속·근사 제안·표시형·소유권 색. 표는 공용
-                 팩토리(draftsession.js)가 렌더하고, 여기는 호스트·범례만. 항등 매핑(토큰명==열명)의
-                 제약을 풀어 이름이 달라도 결속·직접 입력할 수 있다. -->
-            <div class="zone">
-              <div class="zone-cap"><span class="znum">2</span>맞추기</div>
-              <div id="draftTokPanel" class="mapwrap" data-preserve-scroll></div>
-              <div class="maplegend" id="draftMapLegend"></div>
-            </div>
+            <!-- ②|③ duo(마일스톤 L #270) — 타이핑하는 맞추기 면과 그 결과가 비치는 미리보기를
+                 같은 시야에 둔다. 패널 실폭이 좁으면 컨테이너 쿼리로 종전 세로 적층에 복귀한다. -->
+            <div class="duo draft-duo" id="draftDuo">
+              <!-- ② 맞추기(#148 슬라이스 3b) — 토큰별 결속·근사 제안·표시형·소유권 색. 표는 공용
+                   팩토리(draftsession.js)가 렌더하고, 여기는 호스트·범례만. -->
+              <div class="zone draft-map-zone">
+                <div class="zone-cap"><span class="znum">2</span>맞추기</div>
+                <div id="draftTokPanel" class="mapwrap" data-preserve-scroll></div>
+                <!-- 실제 오버플로일 때만 draftsession.js가 펼친다. display:flex가 hidden을 이기지
+                     못하도록 CSS에 .capstrip[hidden] 계약을 둔다(B-9 결함류). -->
+                <div class="capstrip" id="draftMapCapstrip" role="status" hidden></div>
+                <div class="maplegend" id="draftMapLegend"></div>
+              </div>
 
-            <!-- ③ 미리보기 — 큐가 지나가는 한 장(결정 16). 「채운 모습 ↔ 원문」 뷰 전환(같은 칸의
-                 두 모습, 결정 34): 원문은 휘발 세션의 입력구고 타이핑이 ② 표를 실시간 재구성한다. -->
-            <div class="zone workcard" id="draftCard">
-              <div class="wc-index-head">
-                <div class="zone-cap" style="margin:0"><span class="znum">3</span><span id="draftCardTitle">이대로 복사됩니다</span></div>
-                <div class="viewsw" role="group" aria-label="카드 보기 전환">
-                  <button type="button" id="draftViewFilled" aria-pressed="true">채운 모습</button>
-                  <button type="button" id="draftViewSource" aria-pressed="false">원문</button>
+              <!-- ③ 미리보기 — 큐가 지나가는 한 장(결정 16). 「채운 모습 ↔ 원문」 뷰 전환(같은 칸의
+                   두 모습, 결정 34): 원문은 휘발 세션의 입력구고 타이핑이 ② 표를 실시간 재구성한다. -->
+              <div class="zone workcard draft-preview-zone" id="draftCard">
+                <div class="wc-index-head">
+                  <div class="zone-cap" style="margin:0"><span class="znum">3</span><span id="draftCardTitle">이대로 복사됩니다</span></div>
+                  <div class="viewsw" role="group" aria-label="카드 보기 전환">
+                    <button type="button" id="draftViewFilled" aria-pressed="true">채운 모습</button>
+                    <button type="button" id="draftViewSource" aria-pressed="false">원문</button>
+                  </div>
                 </div>
-              </div>
-              <div class="wc-fontbar">
-                <label class="lbl" for="draftTargetFont">대상 글꼴</label>
-                <select class="field sm" id="draftTargetFont"
-                        title="붙여넣는 곳(기안작성기)의 표준 글꼴입니다.">
-                  <option value="gulimche">굴림체</option>
-                  <option value="dotumche">돋움체</option>
-                  <option value="malgun">맑은고딕</option>
-                </select>
-                <span class="muted capnote">붙여넣는 곳의 표준 글꼴입니다(전역 설정으로 저장).</span>
-              </div>
-              <div class="wc-index"><div class="wc-readout" id="draftCardReadout"></div></div>
-              <div class="wc-dots" id="draftCardDots" role="list" aria-label="큐 진행 표시"></div>
-              <pre class="wc-render" id="draftCardRender" aria-live="polite" data-preserve-scroll
-                   tabindex="0"></pre>
-              <!-- 원문 뷰 = 같은 칸의 두 번째 모습(결정 34). 휘발 세션은 편집 가능(타이핑→② 표
-                   재구성). 저장된 기안은 읽기 전용이고, 원문바의 「사본으로 편집」이 휘발 사본으로
-                   가른다(값·데이터·큐 진행 승계). 수정됨 표지는 원문이 라이브러리에서 갈라졌음을
-                   정직하게 말한다(슬라이스 5a·5b). -->
-              <div class="wc-srcview" id="draftSrcView" hidden>
-                <div class="wc-srcbar">
-                  <span class="wc-srcname" id="draftSrcName"></span>
-                  <span class="wc-modbadge" id="draftModBadge" hidden>수정됨</span>
-                  <button class="btn sm" id="draftSrcFork" hidden
-                          title="저장된 기안은 그대로 두고, 이 세션을 사본으로 만들어 고칩니다(값·데이터·진행 유지).">사본으로 편집</button>
+                <div class="wc-fontbar">
+                  <label class="lbl" for="draftTargetFont">대상 글꼴</label>
+                  <select class="field sm" id="draftTargetFont"
+                          title="붙여넣는 곳(기안작성기)의 표준 글꼴입니다.">
+                    <option value="gulimche">굴림체</option>
+                    <option value="dotumche">돋움체</option>
+                    <option value="malgun">맑은고딕</option>
+                  </select>
+                  <span class="muted capnote">붙여넣는 곳의 표준 글꼴입니다(전역 설정으로 저장).</span>
                 </div>
-                <textarea class="wc-srcbox mono" id="draftSrcBox" spellcheck="false"
-                          data-preserve-scroll aria-label="템플릿 원문"></textarea>
-                <p class="muted hint">여기서 고친 원문은 이 세션의 사본이고, 타이핑하면 위 '맞추기' 표에 바로 반영됩니다.</p>
+                <div class="wc-index"><div class="wc-readout" id="draftCardReadout"></div></div>
+                <div class="wc-dots" id="draftCardDots" role="list" aria-label="큐 진행 표시"></div>
+                <pre class="wc-render" id="draftCardRender" aria-live="polite" data-preserve-scroll
+                     tabindex="0"></pre>
+                <!-- 원문 뷰 = 같은 칸의 두 번째 모습(결정 34). 휘발 세션은 편집 가능(타이핑→② 표
+                     재구성). 저장된 기안은 읽기 전용이고, 원문바의 「사본으로 편집」이 휘발 사본으로
+                     가른다(값·데이터·큐 진행 승계). 수정됨 표지는 원문이 라이브러리에서 갈라졌음을
+                     정직하게 말한다(슬라이스 5a·5b). -->
+                <div class="wc-srcview" id="draftSrcView" hidden>
+                  <div class="wc-srcbar">
+                    <span class="wc-srcname" id="draftSrcName"></span>
+                    <span class="wc-modbadge" id="draftModBadge" hidden>수정됨</span>
+                    <button class="btn sm" id="draftSrcFork" hidden
+                            title="저장된 기안은 그대로 두고, 이 세션을 사본으로 만들어 고칩니다(값·데이터·진행 유지).">사본으로 편집</button>
+                  </div>
+                  <textarea class="wc-srcbox mono" id="draftSrcBox" spellcheck="false"
+                            data-preserve-scroll aria-label="템플릿 원문"></textarea>
+                  <p class="muted hint">여기서 고친 원문은 이 세션의 사본이고, 타이핑하면 위 '맞추기' 표에 바로 반영됩니다.</p>
+                </div>
+                <div class="wc-lint" id="draftCardLint" hidden></div>
               </div>
-              <div class="wc-lint" id="draftCardLint" hidden></div>
             </div>
 
             <!-- ④ 완료 — 복사(=완료, 결정 16) + 자유 이동(◀▶ · 위 점 클릭) + 전진 opt-in.

@@ -44,7 +44,8 @@
       cardCopy: "draftCardCopy", advance: "draftAdvance", targetFont: "draftTargetFont",
       // 맞추기 표 범례 + 원문 뷰 전환(#148 슬라이스 3b) — 뷰 전환 id 는 「기안」만 준다
       // (「기안문 채우기」는 붙여넣기 모달이 겸함 → 팩토리가 id 유무로 가드).
-      mapLegend: "draftMapLegend", viewFilled: "draftViewFilled",
+      mapLegend: "draftMapLegend", mapCapstrip: "draftMapCapstrip",
+      viewFilled: "draftViewFilled",
       viewSource: "draftViewSource", srcView: "draftSrcView", srcBox: "draftSrcBox",
       // 원문바(#148 슬라이스 5b) — 이름·수정됨 표지·「사본으로 편집」. 「기안문 채우기」는 원문
       // 뷰가 없어 이 id 들을 안 주고 팩토리가 유무로 가드한다(dead control 없음).

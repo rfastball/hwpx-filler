@@ -1,0 +1,861 @@
+<title>「기안」 세로 밀도 후보 시안 — A 평면 2열 vs B z축 편집면</title>
+<style>
+  :root{
+    --a-primary:#2f5fbf; --a-primary-h:#274fa0; --a-warn:#a05a00; --a-danger:#c0392b;
+    --a-ok:#1e8449; --a-ok-h:#186c3b; --a-muted:#656a72; --a-border:#e2e4e8; --a-card:#ffffff;
+    --a-window:#f6f7f9; --a-ink:#1c2126; --a-on-accent:#ffffff; --a-sel:#dfe6fb;
+    --a-ok-sel:#dcefe3;
+    --fb-fill-bg:#e5f2ea; --fb-fill-bd:#bfe0cb; --fb-blank-bg:#f6ecdb; --fb-blank-bd:#e6c98f;
+    --fb-missing-bg:#fbe6e3; --fb-missing-bd:#e6a49c;
+    --own-auto:#2f5fbf; --own-hand:#a05a00; --own-man:#1e8449;
+    --n-header-bg:#eef1f4; --n-hover:#f0f2f5; --n-surface-alt:#f3f4f6; --n-track:#eef0f3;
+    --n-border-strong:#cbd0d6; --n-ink-control:#2b3038; --n-pressed:#e6e9ee;
+    --ovl:rgba(20,24,28,.42);
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --a-primary:#6f97e8; --a-primary-h:#8badf0; --a-warn:#e0a850; --a-danger:#ec7264;
+    --a-ok:#43b877; --a-ok-h:#5ac98a; --a-muted:#98a0ab; --a-border:#333a44; --a-card:#1c2127;
+    --a-window:#131619; --a-ink:#e7eaee; --a-on-accent:#0f1418; --a-sel:#1e2846;
+    --a-ok-sel:#16301f;
+    --fb-fill-bg:#17301f; --fb-fill-bd:#2b5738; --fb-blank-bg:#33291a; --fb-blank-bd:#5c4a26;
+    --fb-missing-bg:#3a2320; --fb-missing-bd:#5f342e;
+    --own-auto:#6f97e8; --own-hand:#e0a850; --own-man:#43b877;
+    --n-header-bg:#191d23; --n-hover:#232830; --n-surface-alt:#20252c; --n-track:#20252c;
+    --n-border-strong:#3d4550; --n-ink-control:#d4d9df; --n-pressed:#2c333c;
+    --ovl:rgba(0,0,0,.6);}}
+  :root[data-theme="dark"]{
+    --a-primary:#6f97e8; --a-primary-h:#8badf0; --a-warn:#e0a850; --a-danger:#ec7264;
+    --a-ok:#43b877; --a-ok-h:#5ac98a; --a-muted:#98a0ab; --a-border:#333a44; --a-card:#1c2127;
+    --a-window:#131619; --a-ink:#e7eaee; --a-on-accent:#0f1418; --a-sel:#1e2846;
+    --a-ok-sel:#16301f;
+    --fb-fill-bg:#17301f; --fb-fill-bd:#2b5738; --fb-blank-bg:#33291a; --fb-blank-bd:#5c4a26;
+    --fb-missing-bg:#3a2320; --fb-missing-bd:#5f342e;
+    --own-auto:#6f97e8; --own-hand:#e0a850; --own-man:#43b877;
+    --n-header-bg:#191d23; --n-hover:#232830; --n-surface-alt:#20252c; --n-track:#20252c;
+    --n-border-strong:#3d4550; --n-ink-control:#d4d9df; --n-pressed:#2c333c;
+    --ovl:rgba(0,0,0,.6);}
+  :root[data-theme="light"]{
+    --a-primary:#2f5fbf; --a-primary-h:#274fa0; --a-warn:#a05a00; --a-danger:#c0392b;
+    --a-ok:#1e8449; --a-ok-h:#186c3b; --a-muted:#656a72; --a-border:#e2e4e8; --a-card:#ffffff;
+    --a-window:#f6f7f9; --a-ink:#1c2126; --a-on-accent:#ffffff; --a-sel:#dfe6fb;
+    --a-ok-sel:#dcefe3;
+    --fb-fill-bg:#e5f2ea; --fb-fill-bd:#bfe0cb; --fb-blank-bg:#f6ecdb; --fb-blank-bd:#e6c98f;
+    --fb-missing-bg:#fbe6e3; --fb-missing-bd:#e6a49c;
+    --own-auto:#2f5fbf; --own-hand:#a05a00; --own-man:#1e8449;
+    --n-header-bg:#eef1f4; --n-hover:#f0f2f5; --n-surface-alt:#f3f4f6; --n-track:#eef0f3;
+    --n-border-strong:#cbd0d6; --n-ink-control:#2b3038; --n-pressed:#e6e9ee;
+    --ovl:rgba(20,24,28,.42);}
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--a-window);color:var(--a-ink);
+    font-family:"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;
+    font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .mono{font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
+  .muted{color:var(--a-muted)}
+  .page{max-width:1560px;margin:0 auto;padding:26px 22px 64px}
+
+  .topbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+  .topbar h1{font-size:21px;margin:0;font-weight:700;letter-spacing:-.01em}
+  .tag{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--a-ok);background:var(--a-ok-sel);padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .lede{color:var(--a-muted);margin:4px 0 14px;max-width:88ch}
+  .lede b{color:var(--a-ink);font-weight:600}
+  .spacer{flex:1}
+  .tbtn{border:1px solid var(--a-border);background:var(--a-card);color:var(--a-ink);
+    border-radius:6px;padding:6px 12px;font:inherit;cursor:pointer}
+  .tbtn:hover{background:var(--n-hover)}
+  .tbtn:focus-visible{outline:2px solid var(--a-ok);outline-offset:2px}
+
+  /* 조작 축: 후보 전환 + 창폭 + 스트레스 */
+  .switch{display:flex;gap:0;border:1px solid var(--n-border-strong);border-radius:8px;
+    overflow:hidden;background:var(--a-card)}
+  .switch button{border:0;background:transparent;color:var(--a-ink);font:inherit;
+    padding:7px 14px;cursor:pointer;display:flex;align-items:center;gap:7px}
+  .switch button+button{border-left:1px solid var(--a-border)}
+  .switch button:hover{background:var(--n-hover)}
+  .switch button:focus-visible{outline:2px solid var(--a-ok);outline-offset:-2px}
+  .switch button[aria-pressed="true"]{background:var(--a-ok);color:var(--a-on-accent);font-weight:600}
+  .ctlbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0 18px}
+  .ctlbar .lbl{font-size:11px;font-weight:700;color:var(--a-muted)}
+  .chk{display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none}
+
+  /* ── 앱 창 시뮬레이션 ───────────────────────────────── */
+  .winwrap{overflow-x:auto;padding-bottom:8px}
+  .win{border:1px solid var(--n-border-strong);border-radius:10px;overflow:hidden;
+    height:820px;display:flex;background:var(--a-window);
+    box-shadow:0 16px 48px rgba(0,0,0,.18);margin:0 auto;position:relative;flex:none}
+  .win[data-w="1180"]{width:1180px}
+  .win[data-w="1440"]{width:1440px}
+  .wincap{text-align:center;margin:8px 0 22px;font-size:12px;color:var(--a-muted)}
+
+  .rail{width:212px;flex:none;background:var(--n-header-bg);border-right:1px solid var(--a-border);
+    padding:10px 8px;display:flex;flex-direction:column;gap:2px}
+  .rail .brand{font-weight:800;font-size:14px;padding:6px 10px 8px;letter-spacing:-.01em}
+  .navbtn{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;
+    color:var(--a-muted);font-weight:600;position:relative}
+  .navbtn.on{background:var(--n-pressed);color:var(--n-ink-control)}
+  .navbtn.on::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:3px;
+    border-radius:2px;background:var(--a-primary)}
+  .navbtn .ico{width:18px;text-align:center}
+
+  .main{flex:1;min-width:0;display:flex;flex-direction:column;padding:14px 16px;gap:0}
+  .scr-head{display:flex;align-items:flex-end;gap:16px;margin-bottom:12px;flex:none}
+  .scr-head h1{font-size:17px;margin:0}
+  .scr-head .sub{margin:2px 0 0;color:var(--a-muted);font-size:12px}
+  .pill{font-size:10px;font-weight:700;border:1px solid var(--a-border);border-radius:999px;
+    padding:1px 8px;color:var(--a-muted);vertical-align:2px}
+  .status{margin-left:auto;font-size:12px;font-weight:700;color:var(--a-muted);
+    border:1px solid var(--a-border);border-radius:999px;padding:4px 12px;background:var(--a-card)}
+
+  .job-layout{display:flex;gap:14px;flex:1;min-height:0}
+  .master{width:240px;flex:none;overflow:auto;display:flex;flex-direction:column;gap:8px}
+  .sec-head{font-size:11px;font-weight:800;color:var(--a-ok);letter-spacing:.03em;
+    padding:6px 8px;border-bottom:2px solid var(--a-ok);margin-bottom:2px}
+  .mrow{padding:7px 10px;border-radius:8px;cursor:pointer;display:flex;gap:8px;align-items:center}
+  .mrow:hover{background:var(--n-hover)}
+  .mrow.on{background:var(--a-sel)}
+  .mrow .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+  .mgrp{font-size:11px;font-weight:700;color:var(--a-muted);padding:8px 8px 2px}
+
+  .panel{flex:1;min-width:0;overflow:auto;display:flex;flex-direction:column;position:relative}
+  .zones{background:var(--a-card);border:1px solid var(--a-border);border-radius:10px;flex:none}
+  .zone{padding:14px 16px 12px;position:relative}
+  .zone+.zone,.duo{border-top:1px solid var(--a-border)}
+  .zcap{display:block;margin-bottom:9px;font-size:12px;font-weight:700}
+  .znum{display:inline-grid;place-items:center;width:15px;height:15px;margin-right:5px;
+    border-radius:999px;background:var(--a-primary);color:var(--a-on-accent);
+    font-size:10px;font-weight:700;vertical-align:-2px}
+
+  .row{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+  .row .lbl{font-size:11px;font-weight:700;color:var(--a-muted);flex:none;width:86px}
+  .field{border:1px solid var(--a-border);border-radius:6px;background:var(--a-card);
+    color:var(--a-ink);font:inherit;padding:5px 9px}
+  .field.ro{background:var(--n-surface-alt);color:var(--a-muted)}
+  .field.grow{flex:1;min-width:0}
+  .btn{border:1px solid var(--a-border);background:var(--a-card);color:var(--a-ink);
+    border-radius:6px;padding:5px 11px;font:inherit;cursor:pointer;white-space:nowrap}
+  .btn:hover{background:var(--n-hover)}
+  .btn.primary{background:var(--a-primary);border-color:var(--a-primary);color:var(--a-on-accent);font-weight:700}
+  .btn.sm{padding:3px 8px;font-size:12px}
+
+  /* ①존 대상 행 표(요약 축소판) */
+  .tbwrap{max-height:150px;overflow:auto;border:1px solid var(--a-border);border-radius:8px}
+  table.tb{border-collapse:collapse;width:100%;font-size:12px}
+  .tb th,.tb td{padding:5px 9px;text-align:left;border-bottom:1px solid var(--a-border);white-space:nowrap}
+  .tb th{position:sticky;top:0;background:var(--a-window);font-size:11px;color:var(--a-muted)}
+  .tb tr.sel{background:var(--a-sel)}
+
+  /* ② 맞추기 표 — 캡 유무가 A/B 비교 축 */
+  .mapwrap{border:1px solid var(--a-border);border-radius:8px;overflow-x:auto}
+  table.dmap{border-collapse:collapse;width:100%;font-size:12px;min-width:420px}
+  .dmap th,.dmap td{padding:6px 10px;text-align:left;border-bottom:1px solid var(--a-border);vertical-align:middle}
+  .dmap th{background:var(--a-window);font-weight:600;font-size:11px;color:var(--a-muted);white-space:nowrap;
+    position:sticky;top:0;z-index:1}
+  .dmap tr:last-child td{border-bottom:0}
+  .maptok{font-weight:600;white-space:nowrap;font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
+  .maptok::before{content:"{{";color:var(--a-muted);font-weight:400}
+  .maptok::after{content:"}}";color:var(--a-muted);font-weight:400}
+  .own{width:8px;height:8px;border-radius:50%;flex:none;display:inline-block;margin-right:6px}
+  .own.auto{background:var(--own-auto)} .own.man{background:var(--own-man)} .own.hand{background:var(--own-hand)}
+  .mval{border:1px solid var(--a-border);border-radius:6px;background:var(--fb-fill-bg);
+    padding:3px 8px;font:inherit;font-size:12px;min-width:8ch;max-width:100%}
+  .mval.empty{background:transparent;border-style:dashed;color:var(--a-muted)}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:11px;color:var(--a-muted)}
+  .legend span{display:inline-flex;align-items:center;gap:4px}
+
+  /* ③ 미리보기 카드 */
+  .render{background:var(--a-card);border:1px solid var(--a-border);border-radius:8px;
+    padding:14px 18px;font-size:13px;line-height:1.85;white-space:pre-wrap;margin:0;
+    font-family:"GulimChe","굴림체",ui-monospace,monospace;overflow:auto;
+    box-shadow:inset 0 1px 3px rgba(0,0,0,.03)}
+  .seg-fill{background:var(--fb-fill-bg);border-radius:4px;padding:0 2px;box-shadow:inset 0 -2px 0 var(--own-auto)}
+  .seg-fill.man{box-shadow:inset 0 -2px 0 var(--own-man)}
+  .seg-blank{color:var(--a-warn);background:var(--fb-blank-bg);border-radius:4px;padding:0 4px;font-weight:600}
+  .dots{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 8px}
+  .dot{width:13px;height:13px;border-radius:999px;border:1px solid var(--a-border);background:var(--a-card)}
+  .dot.copied{background:var(--fb-fill-bg);border-color:var(--fb-fill-bd)}
+  .dot.cur{background:var(--a-primary);border-color:var(--a-primary);outline:2px solid var(--a-primary);outline-offset:1px}
+  .readout{font-size:11px;color:var(--a-muted);font-weight:600;margin-bottom:2px}
+  .fontbar{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:11px;color:var(--a-muted)}
+  .viewsw{display:flex;border:1px solid var(--a-border);border-radius:6px;overflow:hidden;margin-left:auto}
+  .viewsw b{background:var(--fb-fill-bg);color:var(--a-primary);padding:3px 10px;font-size:11px}
+  .viewsw s{text-decoration:none;color:var(--a-muted);padding:3px 10px;font-size:11px;border-left:1px solid var(--a-border)}
+
+  /* ④ + sticky 액션바 */
+  .actionbar{position:sticky;bottom:0;z-index:5;margin-top:10px;
+    display:flex;align-items:center;gap:8px;padding:10px 14px;
+    background:var(--a-card);border:1px solid var(--a-border);border-radius:10px;
+    box-shadow:0 -4px 16px rgba(0,0,0,.06)}
+
+  /* ── A안: ②|③ 평면 2열 ─────────────────────────────── */
+  .duo{display:grid;grid-template-columns:minmax(0,1.08fr) minmax(0,1fr)}
+  .duo>.zone+.zone{border-top:0;border-left:1px solid var(--a-border)}
+  .duo .mapwrap{overflow:visible;border:0;border-radius:0}   /* 캡 제거 — 문서 흐름으로 */
+  .duo table.dmap{min-width:0}
+  .duo .prevcol{align-self:start;position:sticky;top:0;background:var(--a-card)}
+  .duo .prevcol .render{max-height:520px;min-height:300px}
+  /* 좁은 창 폴백 — 현행 세로 적층으로 (A안의 전제=넓은 창) */
+  .win[data-w="1180"] .duo{grid-template-columns:1fr}
+  .win[data-w="1180"] .duo>.zone+.zone{border-left:0;border-top:1px solid var(--a-border)}
+  .win[data-w="1180"] .duo .prevcol{position:static}
+  .win[data-w="1180"] .fallnote{display:block}
+  .fallnote{display:none;margin:0 16px 10px;padding:7px 10px;font-size:11px;border-radius:6px;
+    background:var(--fb-blank-bg);border:1px solid var(--fb-blank-bd)}
+
+  /* ── B안: 메인=요약, z축 오버레이=전용 편집면 ───────── */
+  .sumcard{display:flex;align-items:center;gap:12px;border:1px solid var(--a-border);
+    border-radius:8px;padding:10px 12px;background:var(--n-surface-alt);cursor:pointer}
+  .sumcard:hover{background:var(--n-hover)}
+  .sumcard .stats{flex:1;min-width:0}
+  .sumcard .nums{font-weight:700}
+  .sumcard .nums .miss{color:var(--a-warn)}
+  .sumcard .peek{font-size:11px;color:var(--a-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .scrim{position:absolute;inset:0;background:var(--ovl);z-index:20;display:none}
+  .sheet{position:absolute;inset:22px;z-index:21;display:none;flex-direction:column;
+    background:var(--a-card);border:1px solid var(--n-border-strong);border-radius:12px;
+    box-shadow:0 24px 64px rgba(0,0,0,.35);overflow:hidden}
+  .win.ovl-open .scrim{display:block}
+  .win.ovl-open .sheet.on{display:flex;animation:pop .18s ease-out}
+  @keyframes pop{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:scale(1)}}
+  @media (prefers-reduced-motion:reduce){.win.ovl-open .sheet.on{animation:none}}
+  .sheet-head{display:flex;align-items:center;gap:10px;padding:12px 16px;
+    border-bottom:1px solid var(--a-border);flex:none}
+  .sheet-head h2{font-size:14px;margin:0}
+  .sheet-body{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr)}
+  .sheet-map{overflow:auto;padding:12px 16px;border-right:1px solid var(--a-border)}
+  .sheet-prev{overflow:auto;padding:12px 16px;background:var(--a-window)}
+  .sheet-prev .render{font-size:12.5px}
+  .sheet-map .mapwrap{overflow:visible;border:0}
+
+  /* ── C안 개정: 넉넉 캡(평시 무발동) + 잘림 표지 ─────── */
+  .win[data-variant="C"] .duo .mapwrap{max-height:300px;overflow:auto;
+    border:1px solid var(--a-border);border-radius:8px}
+  .capstrip{margin-top:6px;padding:6px 10px;font-size:11px;border-radius:6px;
+    display:flex;align-items:center;gap:8px;
+    background:var(--fb-blank-bg);border:1px solid var(--fb-blank-bd)}
+  .capstrip .spacer{flex:1}
+
+  /* ── 작업(HWPX) 시뮬레이션 — 거울(채울 값) + 재진술 ── */
+  .mirwrap{border:1px solid var(--a-border);border-radius:8px;overflow:auto;max-height:420px}
+  table.mir{width:100%;border-collapse:collapse;font-size:12px}
+  .mir td{padding:4px 8px;border-top:1px solid var(--a-border);vertical-align:top}
+  .mir tr:first-child td{border-top:0}
+  .mir-f{font-weight:600;white-space:nowrap;width:110px;color:var(--a-muted)}
+  .mir-v{min-width:0;word-break:break-word}
+  .mir-s{white-space:nowrap;text-align:right;width:1%}
+  .mir .st{font-size:11px;border-radius:999px;padding:1px 8px;white-space:nowrap}
+  .mir .st.filled{background:var(--fb-fill-bg);color:var(--a-ok)}
+  .mir .st.miss{background:var(--fb-missing-bg);color:var(--a-danger)}
+  .mir .st.ackd{background:var(--fb-blank-bg);color:var(--a-warn)}
+  .mir tr.miss td{background:var(--fb-missing-bg);cursor:pointer}
+  .restate{margin-top:8px;padding:8px 10px;font-size:12px;border-radius:6px;
+    background:var(--n-surface-alt);border:1px solid var(--a-border)}
+
+  /* ── 데이터 전용 행 고르기 면 — 전 열·원본 순서·식별 열 고정 ── */
+  .sheet-databar{display:flex;align-items:center;gap:8px;padding:10px 16px;
+    border-bottom:1px solid var(--a-border);flex:none;flex-wrap:wrap}
+  .sheet-databar .chip{font-size:11px;border:1px solid var(--fb-fill-bd);
+    background:var(--fb-fill-bg);border-radius:999px;padding:2px 9px}
+  .sheet-tbwrap{flex:1;min-height:0;overflow:auto}
+  .sheet-tbwrap table{border-collapse:collapse;font-size:12px;min-width:100%}
+  .sheet-tbwrap th,.sheet-tbwrap td{padding:5px 10px;border-bottom:1px solid var(--a-border);
+    white-space:nowrap;text-align:left}
+  .sheet-tbwrap th{position:sticky;top:0;background:var(--a-window);z-index:2;
+    font-size:11px;color:var(--a-muted)}
+  .sheet-tbwrap .leadcol{position:sticky;left:0;background:var(--a-card);z-index:1;
+    border-right:1px solid var(--n-border-strong);font-weight:600}
+  .sheet-tbwrap th.leadcol{z-index:3;background:var(--a-window)}
+  .sheet-tbwrap tr.sel td{background:var(--a-sel)}
+  .sheet-fstrip{flex:none;padding:8px 16px;border-top:1px solid var(--a-border);
+    font-size:11px;background:var(--fb-blank-bg)}
+
+  /* 주석 패널 */
+  .notes{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:26px}
+  .note-card{border:1px solid var(--a-border);border-radius:10px;background:var(--a-card);padding:16px 18px}
+  .note-card h3{margin:0 0 8px;font-size:14px}
+  .note-card ul{margin:6px 0;padding-left:18px}
+  .note-card li{margin:4px 0}
+  .good{color:var(--a-ok);font-weight:700}
+  .bad{color:var(--a-danger);font-weight:700}
+  @media (max-width:900px){.notes{grid-template-columns:1fr}}
+</style>
+
+<div class="page">
+  <div class="topbar">
+    <h1>「기안」 세로 밀도 — 후보 시안</h1>
+    <span class="tag">density round</span>
+    <div class="spacer"></div>
+    <button class="tbtn" id="themeBtn">라이트/다크</button>
+  </div>
+  <p class="lede">
+    진단: 기본 1180×820 창에서 세션 패널 실폭 <b>~680px</b>에 4존이 세로 적층 —
+    합계 ~1,100px vs 뷰포트 ~700px라 <b>③미리보기는 거의 항상 접선 아래</b>,
+    ②맞추기는 <b>180px 하드캡</b> 속 중첩 스크롤. 「타이핑하며 바로 본다」(결정 34)가 물리적으로 불가능.
+    아래 두 후보를 창폭·데이터량 조건을 바꿔가며 비교한다.
+  </p>
+
+  <div class="ctlbar">
+    <span class="lbl">화면</span>
+    <div class="switch" role="group">
+      <button id="scrDraft" aria-pressed="true">기안 (TXT)</button>
+      <button id="scrJob" aria-pressed="false">작업 (HWPX)</button>
+    </div>
+    <span class="lbl">후보</span>
+    <div class="switch" role="group" id="candSwitch">
+      <button id="tabA" aria-pressed="true"><span>A안 · 평면 2열 병치</span></button>
+      <button id="tabB" aria-pressed="false"><span>B안 · z축 전용 편집면</span></button>
+      <button id="tabC" aria-pressed="false"><span>C안 · 절충(캡+⤢)</span></button>
+    </div>
+    <span class="lbl">창폭</span>
+    <div class="switch" role="group">
+      <button id="w1180" aria-pressed="false">1180 (현행)</button>
+      <button id="w1440" aria-pressed="true">1440 (확대)</button>
+    </div>
+    <span class="lbl">데이터량</span>
+    <div class="switch" role="group">
+      <button id="tok8" aria-pressed="true">기본 (8토큰 · 10필드)</button>
+      <button id="tok22" aria-pressed="false">대량 (22토큰 · 40필드)</button>
+    </div>
+  </div>
+
+  <div class="winwrap">
+  <div class="win" id="win" data-w="1440">
+    <div class="rail">
+      <div class="brand">hwpx-filler</div>
+      <div class="navbtn"><span class="ico">🏠</span>홈</div>
+      <div class="navbtn"><span class="ico">📄</span>작업</div>
+      <div class="navbtn on"><span class="ico">✍️</span>기안</div>
+      <div class="navbtn"><span class="ico">🗂️</span>템플릿</div>
+      <div class="navbtn"><span class="ico">⚙️</span>설정</div>
+    </div>
+    <div class="main">
+      <div class="scr-head">
+        <div>
+          <h1>기안 <span class="pill">TXT</span></h1>
+          <p class="sub">저장된 기안을 고르거나, 그냥 템플릿을 붙여넣어 채워 복사합니다.</p>
+        </div>
+        <div class="status" id="statusChip">3/12 건 · 매핑 2 미결</div>
+      </div>
+      <div class="job-layout">
+        <aside class="master">
+          <div id="masterDraft">
+            <div class="sec-head">기안 작업 · TXT</div>
+            <div class="mgrp">개찰 업무</div>
+            <div class="mrow on"><span class="nm">개찰 참관 보고</span></div>
+            <div class="mrow"><span class="nm">적격심사 통보</span></div>
+            <div class="mgrp">계약 일반</div>
+            <div class="mrow"><span class="nm">계약체결 요청</span></div>
+            <div class="mrow"><span class="nm">검사·검수 조서</span></div>
+          </div>
+          <div id="masterJob" style="display:none">
+            <div class="sec-head" style="color:var(--a-primary);border-color:var(--a-primary)">문서 작업 · HWPX</div>
+            <div class="mgrp">검사 업무</div>
+            <div class="mrow on"><span class="nm">6월 물품검사 통지</span></div>
+            <div class="mrow"><span class="nm">검사조서 일괄</span></div>
+            <div class="mgrp">계약 일반</div>
+            <div class="mrow"><span class="nm">계약체결 통보</span></div>
+            <div class="mrow"><span class="nm">지연배상금 고지</span></div>
+          </div>
+        </aside>
+
+        <!-- ═══════════ A안: ①전폭 → ②|③ 평면 2열(③ sticky) ═══════════ -->
+        <div class="panel" id="panelA">
+          <div class="zones">
+            <div class="zone">
+              <span class="zcap"><span class="znum">1</span>데이터
+                <button class="btn sm" id="dataExpand" style="display:none;float:right"
+                        title="전 열·전 행을 전용 면에서 봅니다 — 식별 열은 왼쪽 고정">펼쳐서 행 고르기 ⤢</button></span>
+              <div class="row"><span class="lbl">템플릿</span>
+                <select class="field"><option>개찰 참관 보고.txt</option></select>
+                <button class="btn">템플릿 붙여넣기…</button></div>
+              <div class="row"><span class="lbl">데이터</span>
+                <input class="field ro grow" value="2026-07월_개찰목록.xlsx · 12행">
+                <button class="btn">등록 데이터…</button><button class="btn">파일 선택…</button></div>
+              <div class="tbwrap"><table class="tb">
+                <thead><tr><th></th><th>공고번호</th><th>공고명</th><th>개찰일시</th><th>낙찰자</th></tr></thead>
+                <tbody>
+                  <tr class="sel"><td>☑</td><td>20260722-00123</td><td>사무용 복합기 임차</td><td>07-24 11:00</td><td>가나상사</td></tr>
+                  <tr class="sel"><td>☑</td><td>20260722-00124</td><td>청사 방역 용역</td><td>07-24 14:00</td><td>—</td></tr>
+                  <tr><td>☐</td><td>20260722-00125</td><td>전산 소모품 구매</td><td>07-25 10:00</td><td>—</td></tr>
+                  <tr class="sel"><td>☑</td><td>20260723-00126</td><td>회의실 AV 구축</td><td>07-25 15:00</td><td>다라시스템</td></tr>
+                </tbody></table></div>
+            </div>
+
+            <div class="fallnote">⚠ 창폭 1180 폴백 — 2열이 성립하지 않아 현행 세로 적층으로 돌아간 상태.
+              A안은 <b>기본 창폭 확대가 전제</b>임을 이 조건이 보여준다.
+              C안에서는 이 조건에서 「펼쳐서 맞추기 ⤢」가 <b>주 통로</b>로 승격된다.</div>
+            <div class="duo">
+              <div class="zone">
+                <span class="zcap"><span class="znum">2</span>맞추기 <span class="muted" id="mapCapNote">— 높이 캡 제거, 표는 문서 흐름으로 길어진다</span>
+                  <button class="btn sm" id="mapExpand" style="display:none;float:right"
+                          title="맞추기와 미리보기를 창 전체 크기의 전용 면으로 펼칩니다 (Esc·완료로 복귀)">펼쳐서 맞추기 ⤢</button></span>
+                <div class="mapwrap"><table class="dmap">
+                  <thead><tr><th>토큰</th><th>결속</th><th>지금 행의 값</th></tr></thead>
+                  <tbody class="mapbody"></tbody>
+                </table></div>
+                <div class="capstrip" id="capStrip" style="display:none"></div>
+                <div class="legend"><span><i class="own auto"></i>데이터 결속</span>
+                  <span><i class="own man"></i>직접 입력</span><span><i class="own hand"></i>비워둠</span></div>
+              </div>
+              <div class="zone prevcol">
+                <span class="zcap"><span class="znum">3</span>이대로 복사됩니다
+                  <span class="viewsw"><b>채운 모습</b><s>원문</s></span></span>
+                <div class="fontbar">대상 글꼴 <select class="field"><option>굴림체</option></select></div>
+                <div class="readout">3번째 · 20260723-00126 회의실 AV 구축</div>
+                <div class="dots"><span class="dot copied"></span><span class="dot copied"></span><span class="dot cur"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+                <pre class="render">수의계약(견적) 개찰 참관 보고
+
+1. 공고번호: <span class="seg-fill">20260723-00126</span> (<span class="seg-fill">회의실 AV 구축</span>)
+2. 개찰일시: <span class="seg-fill">2026-07-25 15:00</span>
+3. 참가업체: <span class="seg-fill">4</span>개사
+4. 낙찰(예정)자: <span class="seg-fill">다라시스템</span>
+   (견적금액 <span class="seg-fill">27,300,000</span>원)
+5. 담당: <span class="seg-fill man">계약팀 김주무관</span>
+6. 특이사항: <span class="seg-blank">특이사항</span>
+
+위와 같이 개찰에 참관하였음을 보고합니다.</pre>
+              </div>
+            </div>
+
+            <div class="zone">
+              <span class="zcap"><span class="znum">4</span>완료 · 남기려면</span>
+              <div class="row"><span class="lbl muted">남기려면</span>
+                <button class="btn">기안으로 저장</button></div>
+            </div>
+          </div>
+          <div class="actionbar">
+            <button class="btn primary">📋 복사</button>
+            <button class="btn sm">◀</button><button class="btn sm">▶</button>
+            <label class="chk muted"><input type="checkbox" checked> 복사 후 다음으로</label>
+          </div>
+        </div>
+
+        <!-- ═══════════ B안: 메인=요약+큰 미리보기, 오버레이=전용 편집면 ═══════════ -->
+        <div class="panel" id="panelB" style="display:none">
+          <div class="zones">
+            <div class="zone">
+              <span class="zcap"><span class="znum">1</span>데이터</span>
+              <div class="row"><span class="lbl">템플릿</span>
+                <select class="field"><option>개찰 참관 보고.txt</option></select>
+                <button class="btn">템플릿 붙여넣기…</button></div>
+              <div class="row"><span class="lbl">데이터</span>
+                <input class="field ro grow" value="2026-07월_개찰목록.xlsx · 12행 · 선택 12/12">
+                <button class="btn">등록 데이터…</button><button class="btn sm">행 고르기…</button></div>
+            </div>
+
+            <div class="zone">
+              <span class="zcap"><span class="znum">2</span>맞추기 <span class="muted">— 메인 층은 요약, 편집은 전용 면에서</span></span>
+              <div class="sumcard" id="openSheet" role="button" tabindex="0">
+                <div class="stats">
+                  <div class="nums">토큰 <span class="tokcount">8</span>개 · 결속 <span class="autocount">5</span> · 직접 2 ·
+                    <span class="miss">미결 1</span></div>
+                  <div class="peek">공고번호←공고번호(열) · 공고명←공고명(열) · 개찰일시←개찰일시(열) · 담당=계약팀 김주무관 · …</div>
+                </div>
+                <button class="btn">펼쳐서 맞추기 ⤢</button>
+              </div>
+            </div>
+
+            <div class="zone">
+              <span class="zcap"><span class="znum">3</span>이대로 복사됩니다
+                <span class="viewsw"><b>채운 모습</b><s>원문</s></span></span>
+              <div class="fontbar">대상 글꼴 <select class="field"><option>굴림체</option></select></div>
+              <div class="readout">3번째 · 20260723-00126 회의실 AV 구축</div>
+              <div class="dots"><span class="dot copied"></span><span class="dot copied"></span><span class="dot cur"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+              <pre class="render" style="min-height:280px">수의계약(견적) 개찰 참관 보고
+
+1. 공고번호: <span class="seg-fill">20260723-00126</span> (<span class="seg-fill">회의실 AV 구축</span>)
+2. 개찰일시: <span class="seg-fill">2026-07-25 15:00</span>
+3. 참가업체: <span class="seg-fill">4</span>개사
+4. 낙찰(예정)자: <span class="seg-fill">다라시스템</span>
+   (견적금액 <span class="seg-fill">27,300,000</span>원)
+5. 담당: <span class="seg-fill man">계약팀 김주무관</span>
+6. 특이사항: <span class="seg-blank">특이사항</span>
+
+위와 같이 개찰에 참관하였음을 보고합니다.</pre>
+            </div>
+
+            <div class="zone">
+              <span class="zcap"><span class="znum">4</span>완료 · 남기려면</span>
+              <div class="row"><span class="lbl muted">남기려면</span>
+                <button class="btn">기안으로 저장</button></div>
+            </div>
+          </div>
+          <div class="actionbar">
+            <button class="btn primary">📋 복사</button>
+            <button class="btn sm">◀</button><button class="btn sm">▶</button>
+            <label class="chk muted"><input type="checkbox" checked> 복사 후 다음으로</label>
+          </div>
+        </div>
+
+        <!-- ═══════════ 작업(HWPX) — C-패턴 대칭 적용 시뮬레이션 ═══════════
+             루프의 대칭: 기안=타이핑→미리보기 반영 / 작업=행 선택→거울 반영.
+             duo: 데이터(고르는 면) | 채울 값=거울(비치는 면, sticky+캡) + ⤢ 전용 확인면. -->
+        <div class="panel" id="panelJob" style="display:none">
+          <div class="zones">
+            <div class="zone">
+              <span class="zcap">헤더</span>
+              <div style="font-weight:700;font-size:14px">6월 물품검사 통지</div>
+              <div class="muted" style="font-size:12px">템플릿: 물품검사 통지서.hwpx · 마지막 실행 2026-07-18</div>
+            </div>
+
+            <div class="duo">
+              <div class="zone">
+                <span class="zcap">데이터 <span class="muted">— 행을 고르면 오른쪽 거울에 그 문서의 값이 비친다</span>
+                  <button class="btn sm" id="jobDataExpand" style="float:right"
+                          title="전 열·전 행을 전용 면에서 봅니다 — 식별 열은 왼쪽 고정">펼쳐서 행 고르기 ⤢</button></span>
+                <div class="row"><span class="lbl">데이터</span>
+                  <input class="field ro grow" value="2026-06_검사대상.xlsx · 38행 · 선택 12/38">
+                  <button class="btn">등록 데이터…</button><button class="btn">파일 선택…</button></div>
+                <div class="tbwrap" style="max-height:340px"><table class="tb">
+                  <thead><tr><th></th><th>문서</th><th>계약번호</th><th>업체명</th><th>계약금액</th></tr></thead>
+                  <tbody>
+                    <tr class="sel"><td>☑</td><td>검사통지_한빛물산</td><td>2026-0612-034</td><td>(주)한빛물산</td><td>18,700,000</td></tr>
+                    <tr class="sel"><td>☑</td><td>검사통지_두리테크</td><td>2026-0612-035</td><td>두리테크</td><td>9,240,000</td></tr>
+                    <tr><td>☐</td><td>검사통지_세움상사</td><td>2026-0613-041</td><td>세움상사</td><td>31,050,000</td></tr>
+                    <tr class="sel"><td>☑</td><td>검사통지_나래유통</td><td>2026-0615-002</td><td>나래유통</td><td>6,600,000</td></tr>
+                    <tr class="sel"><td>☑</td><td>검사통지_믿음산업</td><td>2026-0615-007</td><td>믿음산업</td><td>12,980,000</td></tr>
+                  </tbody></table></div>
+              </div>
+              <div class="zone prevcol">
+                <span class="zcap">채울 값 <span class="muted">— 지금 행의 거울</span>
+                  <button class="btn sm" id="jobExpand" style="float:right"
+                          title="거울과 재진술 게이트를 전용 확인면으로 펼칩니다 (Esc·완료로 복귀)">펼쳐서 확인 ⤢</button></span>
+                <p class="muted" style="margin:0 0 6px;font-size:11px"><span style="color:var(--a-danger)">빈 값</span>
+                  행은 눌러서 확인해야 생성할 수 있습니다.</p>
+                <div class="mirwrap"><table class="mir"><tbody class="mirbody"></tbody></table></div>
+                <div class="capstrip" id="jobCapStrip" style="display:none"></div>
+              </div>
+            </div>
+
+            <div class="zone">
+              <span class="zcap">생성</span>
+              <div class="row"><span class="lbl">저장 폴더</span>
+                <input class="field ro grow" value="C:\작업\6월-물품검사">
+                <button class="btn">찾아보기…</button></div>
+              <div class="restate">선택 <b>12건</b> · 빈 값 확인 <b style="color:var(--a-danger)">2 남음</b> ·
+                같은 이름 0 — 확인이 끝나야 생성됩니다.</div>
+            </div>
+          </div>
+          <div class="actionbar">
+            <button class="btn primary" disabled>이 작업으로 문서 생성</button>
+            <span class="muted" style="font-size:11px">빈 값 확인 2 남음</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 오버레이: 전용 편집면 (창 내부 z층) -->
+    <div class="scrim" id="scrim"></div>
+
+    <!-- 작업(HWPX) 전용 확인면 — 거울 전폭 + 재진술 게이트 동반 -->
+    <div class="sheet" id="sheetJob" role="dialog" aria-modal="true" aria-label="채울 값 확인">
+      <div class="sheet-head">
+        <h2>채울 값 확인 — 6월 물품검사 통지</h2>
+        <span class="muted">빈 값 행을 눌러 확인 — 남은 확인이 0이 되면 생성이 열립니다</span>
+        <div class="spacer"></div>
+        <button class="btn primary" id="closeSheetJob">완료</button>
+      </div>
+      <div class="sheet-body">
+        <div class="sheet-map">
+          <div class="mirwrap" style="max-height:none;border:0"><table class="mir"><tbody class="mirbody"></tbody></table></div>
+        </div>
+        <div class="sheet-prev">
+          <div class="readout">문서 3/12 · 2026-0615-002 나래유통</div>
+          <div class="restate">선택 <b>12건</b> · 빈 값 확인 <b style="color:var(--a-danger)">2 남음</b> · 같은 이름 0<br>
+            확인이 끝나야 생성됩니다.</div>
+          <p class="muted" style="font-size:11px;margin-top:10px">확인 의식(빈 값 클릭)과 그 결과(게이트 문안)가
+            같은 면에서 오간다 — 기안 시트의 「맞추기|미리보기」 병치와 같은 문법.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 데이터 전용 행 고르기 면 — 전 열·원본 순서, 식별성은 「선별」이 아니라 「고정」으로 -->
+    <div class="sheet" id="sheetData" role="dialog" aria-modal="true" aria-label="행 고르기">
+      <div class="sheet-head">
+        <h2 id="sheetDataTitle">행 고르기</h2>
+        <span class="muted">전 열 표시 · 식별 열 왼쪽 고정 · 필터·선택은 본 화면과 같은 정의</span>
+        <div class="spacer"></div>
+        <button class="btn primary" id="closeSheetData">완료</button>
+      </div>
+      <div class="sheet-databar">
+        <input class="field" style="width:220px" type="search" placeholder="전체 열 검색">
+        <span class="chip" id="sheetDataChip">개찰일시: 7월 ×</span>
+        <span class="muted" id="sheetDataCount">선택 0/0</span>
+        <button class="btn sm">전체 선택</button><button class="btn sm">전체 해제</button>
+      </div>
+      <div class="sheet-tbwrap"><table class="tb" id="sheetDataTable"></table></div>
+      <div class="sheet-fstrip" id="sheetDataStrip">필터 밖 선택 <b>1건</b> — 지금 정의로는 보이지 않지만 선택은 살아 있습니다(결정 3).</div>
+    </div>
+    <div class="sheet" id="sheetDraft" role="dialog" aria-modal="true" aria-label="맞추기 펼쳐서 편집">
+      <div class="sheet-head">
+        <h2>맞추기 — 개찰 참관 보고</h2>
+        <span class="muted">타이핑하면 오른쪽 미리보기에 바로 반영</span>
+        <div class="spacer"></div>
+        <button class="btn primary" id="closeSheet">완료</button>
+      </div>
+      <div class="sheet-body">
+        <div class="sheet-map">
+          <div class="mapwrap"><table class="dmap">
+            <thead><tr><th>토큰</th><th>결속</th><th>지금 행의 값</th></tr></thead>
+            <tbody class="mapbody"></tbody>
+          </table></div>
+          <div class="legend"><span><i class="own auto"></i>데이터 결속</span>
+            <span><i class="own man"></i>직접 입력</span><span><i class="own hand"></i>비워둠</span></div>
+        </div>
+        <div class="sheet-prev">
+          <div class="readout">3번째 · 20260723-00126 회의실 AV 구축</div>
+          <pre class="render">수의계약(견적) 개찰 참관 보고
+
+1. 공고번호: <span class="seg-fill">20260723-00126</span> (<span class="seg-fill">회의실 AV 구축</span>)
+2. 개찰일시: <span class="seg-fill">2026-07-25 15:00</span>
+3. 참가업체: <span class="seg-fill">4</span>개사
+4. 낙찰(예정)자: <span class="seg-fill">다라시스템</span>
+   (견적금액 <span class="seg-fill">27,300,000</span>원)
+5. 담당: <span class="seg-fill man">계약팀 김주무관</span>
+6. 특이사항: <span class="seg-blank">특이사항</span>
+
+위와 같이 개찰에 참관하였음을 보고합니다.</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
+  <p class="wincap" id="wincap">창 1440×820 시뮬레이션 — 패널 안을 실제로 스크롤해 보세요.</p>
+
+  <div class="notes">
+    <div class="note-card">
+      <h3>A안 — 평면 2열 병치 <span class="muted">(②|③ 나란히, ③ sticky)</span></h3>
+      <ul>
+        <li><span class="good">루프가 한 층</span> — 타이핑→반영→복사→다음이 모드 전환 없이 흐른다(§12 병렬 패널=흐름 유지).</li>
+        <li><span class="good">② 캡 제거</span> — 중첩 스크롤 폐지, 표가 길어져도 ③은 sticky로 제자리(파생 이슈 4 해소).</li>
+        <li><span class="bad">창폭 확대 전제</span> — 1180 토글에서 보듯 좁으면 현행 적층으로 폴백(=문제 그대로).</li>
+        <li><span class="bad">스트레스 22토큰</span>에서도 성립하나, ①존은 여전히 세로 예산을 먹는다(→ 접힘은 후속 판단).</li>
+      </ul>
+    </div>
+    <div class="note-card">
+      <h3>B안 — z축 전용 편집면 <span class="muted">(메인=요약+미리보기, 오버레이=맞추기)</span></h3>
+      <ul>
+        <li><span class="good">창폭 불문</span> — 1180 그대로도 성립. 메인 층이 한 화면에 다 들어온다(③이 처음으로 주인공).</li>
+        <li><span class="good">편집면 시야 최대</span> — 오버레이가 창 전체를 쓰므로 22토큰 스트레스에서 가장 쾌적.</li>
+        <li><span class="bad">모드 비용</span> — 맞추기가 주 작업인 세션에선 열고-닫기가 반복 마찰(§12 모달=흐름 차단). 미결 발견→수정 왕복마다 2클릭.</li>
+        <li><span class="bad">층 계약 비용</span> — 해제·포커스 귀환·Escape(#210·#211 부류) 가드가 스코프에 추가된다.</li>
+      </ul>
+    </div>
+    <div class="note-card" style="grid-column:1/-1">
+      <h3>C안 (개정) — 2열 병치 + 넉넉 캡 + ⤢ 전용 편집면 <span class="muted">(각 불만에 각 도구)</span></h3>
+      <ul>
+        <li><b>병치</b>가 불만 2(편집하며-보기)의 해법, <b>캡+⤢</b>가 불만 4(대량 스트레스)의 해법, <b>창폭 확대</b>가 병치의 전제 — 캡은 병치를 대체하지 못한다(캡+세로 적층이면 불만 2 미해결).</li>
+        <li>캡은 <span class="good">평시 무발동 크기</span>(기본 8토큰이 스크롤 없이 다 보이는 ~300px) — 발동했을 때만 존재가 드러난다.</li>
+        <li>캡 발동 = <span class="good">정직한 잘림 표지</span> — 「전체 N행 — 펼쳐서 맞추기 ⤢」. 조용한 잘림은 두지 않는다(confirm-or-alarm).</li>
+        <li><span class="bad">표면 이원의 비용</span> — 같은 ②·③이 두 곳에 뜬다. 구현은 <b>DOM 이사(단일 실체)</b>로 상태 발산을 차단(복제 렌더 금지 — #138 F8·F11 교훈).</li>
+      </ul>
+    </div>
+    <div class="note-card" style="grid-column:1/-1">
+      <h3>작업(HWPX) 대칭 적용 <span class="muted">— 같은 병리, 같은 처방 (화면 토글로 확인)</span></h3>
+      <ul>
+        <li>루프의 대칭: 기안=<b>타이핑→미리보기 반영</b> / 작업=<b>행 선택→거울 반영</b>. 현행은 둘 다 세로 적층이라 조작면과 반영면이 동시에 안 보인다 — 작업은 미리보기가 없어 문제가 늦게 드러났을 뿐.</li>
+        <li>duo = 데이터(고르는 면) | 채울 값=거울(비치는 면, sticky). 거울은 현행 <b>무캡</b>(40필드면 무한정) → 캡 420px + 잘림 표지 + 「펼쳐서 확인 ⤢」.</li>
+        <li>작업의 전용 면은 「편집」이 아니라 <b>「확인 의식」</b>의 면 — 빈 값 클릭 확인과 재진술 게이트가 같은 면에서 오간다(생성 게이트의 정직성 유지).</li>
+        <li>구현 공유: duo CSS·capstrip·시트 골격·이사 프로토콜 전부 클래스 재사용 — 기안 착지 후 작업 편입 비용은 작다.</li>
+      </ul>
+    </div>
+    <div class="note-card" style="grid-column:1/-1">
+      <h3>①데이터에도 같은 펼치기 — 열 정책: 「선별」이 아니라 「고정」 <span class="muted">(C안·작업 화면의 ⤢로 확인)</span></h3>
+      <ul>
+        <li>실코드 확인: 인라인 표는 이미 <b>전 열</b>을 싣는다(<span class="mono">data_zone.py</span> — columns 전체). 자동 선별은 선두 「문서」 열의 <b>식별 요약</b>(<span class="mono">identity_summary</span>, 결정 37)이 담당 — 좁은 상자+가로 스크롤이 사실상의 열 잘림이고, 식별 요약은 그 보상 압축이다.</li>
+        <li>펼친 면 = 전체 진실: <b>전 열 · 원본 순서</b>(엑셀 대조 정신 모델 보존). 열 자동 선별을 펼친 면에 가져가지 않는다 — 그것은 좁은 면의 압축 장치라, 넓은 면에 이식하면 목적 없이 정보만 숨긴다.</li>
+        <li>식별성 담보는 선별 대신 <b>고정</b>: 선두 식별 열(체크+식별 요약)을 왼쪽 sticky, 머리행을 위 sticky — 오른쪽 끝 열을 스캔해도 어느 행인지 잃지 않는다. 식별 요약의 역할이 「대표 열 노릇」에서 <b>「스캔 앵커」</b>로 바뀐다.</li>
+        <li>필터·선택은 <b>같은 정의</b>가 따라온다: 검색·칩·전체 선택·필터 밖 선택 스트립까지 이사 — 면이 달라져도 판정은 하나(FilterModel 단일 출처, 「판정은 Python」 유지).</li>
+        <li>부담 통제: ⤢는 존마다 다른 발명이 아니라 <b>「캡 있는 그리드 존의 공통 출구」 한 문법</b> — 같은 시트 기계(modal.js)·같은 이사 프로토콜·같은 표지 문안을 존별 내용으로 여는 것.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script>
+  // 매핑 행 데이터 — 8개 기본 / 22개 스트레스
+  const BASE = [
+    ["공고번호","공고번호 (열)","auto","20260723-00126"],
+    ["공고명","공고명 (열)","auto","회의실 AV 구축"],
+    ["개찰일시","개찰일시 (열)","auto","2026-07-25 15:00"],
+    ["참가업체수","참가업체수 (열)","auto","4"],
+    ["낙찰자","낙찰자 (열)","auto","다라시스템"],
+    ["낙찰금액","낙찰금액 (열)","auto","27,300,000"],
+    ["담당","직접 입력","man","계약팀 김주무관"],
+    ["특이사항","(미결)","hand",""],
+  ];
+  const EXTRA = [
+    ["계약방법","계약방법 (열)","auto","수의계약(견적)"],
+    ["수요기관","수요기관 (열)","auto","○○지방조달청"],
+    ["개찰장소","직접 입력","man","나라장터 전자개찰"],
+    ["기초금액","기초금액 (열)","auto","28,000,000"],
+    ["예정가격","예정가격 (열)","auto","27,850,000"],
+    ["투찰률","투찰률 (열)","auto","98.02%"],
+    ["차순위업체","차순위업체 (열)","auto","마바테크"],
+    ["차순위금액","차순위금액 (열)","auto","27,410,000"],
+    ["개찰결과","직접 입력","man","적격심사 대상 통보"],
+    ["집행관","직접 입력","man","계약팀장"],
+    ["참관자","직접 입력","man","김주무관"],
+    ["작성일","작성일 (열)","auto","2026-07-25"],
+    ["비고","(미결)","hand",""],
+    ["첨부","(미결)","hand",""],
+  ];
+  let stress = false;
+  function rowsHtml(){
+    const rows = stress ? BASE.concat(EXTRA) : BASE;
+    return rows.map(([t,s,o,v]) =>
+      `<tr><td><span class="own ${o}"></span><span class="maptok">${t}</span></td>` +
+      `<td class="muted">${s}</td>` +
+      `<td>${v ? `<span class="mval">${v}</span>` : `<span class="mval empty">비어 있음</span>`}</td></tr>`
+    ).join("");
+  }
+  function renderRows(){
+    document.querySelectorAll(".mapbody").forEach(tb => tb.innerHTML = rowsHtml());
+    const n = stress ? 22 : 8, a = stress ? 14 : 5;
+    document.querySelectorAll(".tokcount").forEach(e => e.textContent = n);
+    document.querySelectorAll(".autocount").forEach(e => e.textContent = a);
+  }
+  renderRows();
+
+  // ── 작업(HWPX) 거울 — 10필드 기본 / 40필드 스트레스(나라 40필드 실측 규모)
+  const MIR_BASE = [
+    ["수요기관","○○지방조달청","filled"],["계약번호","2026-0615-002","filled"],
+    ["계약명","전산 소모품 구매","filled"],["업체명","나래유통","filled"],
+    ["대표자","박나래","filled"],["계약일자","2026-06-15","filled"],
+    ["납품기한","2026-07-14","filled"],["계약금액","6,600,000원","filled"],
+    ["검사일자","","miss"],["검사장소","수요기관 지정 장소","ackd"],
+  ];
+  const MIR_LABEL = {filled:"채움", miss:"빈 값 — 눌러 확인", ackd:"확인됨"};
+  function renderMirror(){
+    const rows = MIR_BASE.slice();
+    if (stress) for (let i=1;i<=30;i++)
+      rows.push(["검사항목"+i, i===7 ? "" : "규격 적합 · 수량 "+(i*10), i===7 ? "miss" : "filled"]);
+    const html = rows.map(([f,v,st]) =>
+      `<tr class="mir-row ${st}"><td class="mir-f">${f}</td>` +
+      `<td class="mir-v">${v || '<span class="muted">—</span>'}</td>` +
+      `<td class="mir-s"><span class="st ${st}">${MIR_LABEL[st]}</span></td></tr>`).join("");
+    document.querySelectorAll(".mirbody").forEach(tb => tb.innerHTML = html);
+  }
+  renderMirror();
+
+  // ── 데이터 전용 행 고르기 면 — 전 열·원본 순서 + 식별 열(선두) sticky 고정
+  const DATA_DEF = {
+    draft: {
+      title: "행 고르기 — 2026-07월_개찰목록.xlsx",
+      cols: ["공고번호","공고명","개찰일시","수요기관","계약방법","참가업체수","낙찰자","낙찰금액","기초금액","예정가격","투찰률","비고"],
+      names: ["사무용 복합기 임차","청사 방역 용역","전산 소모품 구매","회의실 AV 구축","제복 구매","냉난방기 유지보수"],
+      mk(i){ const nm=this.names[i%6], won=(n)=>String(n).replace(/\B(?=(\d{3})+(?!\d))/g,",");
+        return { lead:`20260722-00${123+i} · ${nm}`, sel:i%3!==2,
+          cells:[`20260722-00${123+i}`, nm, `07-${24+(i%5)} 1${i%2?4:1}:00`, "○○지방조달청",
+                 "수의계약(견적)", String(2+(i%5)), i%4===1?"—":["가나상사","다라시스템","마바테크"][i%3],
+                 i%4===1?"—":won((18+i)*1000000), won((20+i)*1000000), won((19+i)*1000000),
+                 "98."+(i%10)+"%", i%5===0?"긴급":"—"] }; },
+    },
+    job: {
+      title: "행 고르기 — 2026-06_검사대상.xlsx",
+      cols: ["계약번호","계약명","업체명","대표자","계약일자","납품기한","계약금액","검사장소","담당","연락처","주소","비고"],
+      names: ["(주)한빛물산","두리테크","세움상사","나래유통","믿음산업","가온전자"],
+      mk(i){ const nm=this.names[i%6], won=(n)=>String(n).replace(/\B(?=(\d{3})+(?!\d))/g,",");
+        return { lead:`검사통지_${nm.replace(/[()주]/g,"")}`, sel:i%3!==2,
+          cells:[`2026-06${String(12+(i%4)).padStart(2,"0")}-0${34+i}`, "전산 소모품 구매 외", nm,
+                 "대표"+(i+1), `2026-06-${12+(i%15)}`, `2026-07-${11+(i%15)}`, won((6+i)*1100000),
+                 i%7===3?"":"수요기관 지정 장소", "계약팀", "054-000-00"+String(10+i), "경북 ○○시 ○○로 "+(i+1), "—"] }; },
+    },
+  };
+  function fillDataSheet(){
+    const d = DATA_DEF[screenSel], n = stress ? 38 : 12;
+    document.getElementById("sheetDataTitle").textContent = d.title;
+    let selN = 0;
+    let html = `<thead><tr><th class="leadcol">☑ 문서(식별 요약)</th>` +
+      d.cols.map(c => `<th>${c}</th>`).join("") + `</tr></thead><tbody>`;
+    for (let i=0;i<n;i++){
+      const r = d.mk(i); if (r.sel) selN++;
+      html += `<tr${r.sel?' class="sel"':''}><td class="leadcol">${r.sel?"☑":"☐"} ${r.lead}</td>` +
+        r.cells.map(v => `<td>${v || '<span class="muted">—</span>'}</td>`).join("") + `</tr>`;
+    }
+    document.getElementById("sheetDataTable").innerHTML = html + `</tbody>`;
+    document.getElementById("sheetDataCount").textContent = `선택 ${selN}/${n}`;
+  }
+
+  // ── 조작 축 배선 — 화면(기안/작업) × 후보(A/B/C) × 창폭 × 데이터량 ──
+  const win = document.getElementById("win");
+  const $id = (i) => document.getElementById(i);
+  let screenSel = "draft", variant = "A";
+  function pressGrp(list, on){ list.forEach(b => b.setAttribute("aria-pressed", String(b===on))); }
+
+  function closeSheets(){
+    win.classList.remove("ovl-open");
+    document.querySelectorAll(".sheet").forEach(s => s.classList.remove("on"));
+  }
+  function openSheet(id){ closeSheets(); win.classList.add("ovl-open"); $id(id).classList.add("on"); }
+
+  const tabA=$id("tabA"), tabB=$id("tabB"), tabC=$id("tabC"), mapExpand=$id("mapExpand");
+  function syncStrips(){
+    // C안 캡 발동 표지 — 잘림은 조용히 두지 않는다(confirm-or-alarm).
+    const capOn = variant==="C" && stress && screenSel==="draft";
+    $id("capStrip").style.display = capOn ? "flex" : "none";
+    if (capOn) $id("capStrip").innerHTML =
+      `전체 <b>22행</b> — 캡 발동으로 일부만 보입니다.` +
+      `<span class="spacer"></span><button class="btn sm" id="capStripBtn">펼쳐서 맞추기 ⤢</button>`;
+    if (capOn) $id("capStripBtn").onclick = () => openSheet("sheetDraft");
+    const jOn = stress && screenSel==="job";
+    $id("jobCapStrip").style.display = jOn ? "flex" : "none";
+    if (jOn) $id("jobCapStrip").innerHTML =
+      `전체 <b>40필드</b> — 거울 캡 발동(내부 스크롤).` +
+      `<span class="spacer"></span><button class="btn sm" id="jobStripBtn">펼쳐서 확인 ⤢</button>`;
+    if (jOn) $id("jobStripBtn").onclick = () => openSheet("sheetJob");
+  }
+  function sync(){
+    const job = screenSel==="job";
+    $id("masterDraft").style.display = job ? "none" : "";
+    $id("masterJob").style.display   = job ? "" : "none";
+    $id("panelJob").style.display    = job ? "flex" : "none";
+    $id("panelA").style.display = (!job && variant!=="B") ? "flex" : "none";
+    $id("panelB").style.display = (!job && variant==="B") ? "flex" : "none";
+    // 작업 화면은 C-패턴 고정 시뮬레이션 — 후보 축은 기안에서만 유효
+    $id("candSwitch").style.opacity = job ? ".35" : "";
+    $id("candSwitch").style.pointerEvents = job ? "none" : "";
+    $id("statusChip").textContent = job ? "선택 12/38 · 빈 값 확인 2" : "3/12 건 · 매핑 2 미결";
+    win.dataset.variant = variant;
+    mapExpand.style.display = variant==="C" ? "inline-block" : "none";
+    $id("dataExpand").style.display = variant==="C" ? "inline-block" : "none";
+    $id("mapCapNote").textContent = variant==="C"
+      ? "— 넉넉 캡(평시 무발동) · 넘치면 표지+⤢가 출구"
+      : "— 높이 캡 제거, 표는 문서 흐름으로 길어진다";
+    syncStrips();
+    closeSheets();
+  }
+  [["tabA","A"],["tabB","B"],["tabC","C"]].forEach(([i,v]) =>
+    $id(i).onclick = () => { variant=v; pressGrp([tabA,tabB,tabC], $id(i)); sync(); });
+  const scrD=$id("scrDraft"), scrJ=$id("scrJob");
+  scrD.onclick = () => { screenSel="draft"; pressGrp([scrD,scrJ],scrD); sync(); };
+  scrJ.onclick = () => { screenSel="job";   pressGrp([scrD,scrJ],scrJ); sync(); };
+
+  const w1180=$id("w1180"), w1440=$id("w1440"), cap=$id("wincap");
+  w1180.onclick = () => { pressGrp([w1180,w1440],w1180); win.dataset.w="1180"; cap.textContent="창 1180×820 시뮬레이션 (현행 기본) — 패널 안을 실제로 스크롤해 보세요."; };
+  w1440.onclick = () => { pressGrp([w1180,w1440],w1440); win.dataset.w="1440"; cap.textContent="창 1440×820 시뮬레이션 (확대안) — 패널 안을 실제로 스크롤해 보세요."; };
+  const tok8=$id("tok8"), tok22=$id("tok22");
+  tok8.onclick  = () => { pressGrp([tok8,tok22],tok8);  stress=false; renderRows(); renderMirror(); syncStrips(); };
+  tok22.onclick = () => { pressGrp([tok8,tok22],tok22); stress=true;  renderRows(); renderMirror(); syncStrips(); };
+
+  // 오버레이 — 시트별 개폐(실구현에선 modal.js 가 층 계약을 승계)
+  const openB=$id("openSheet");
+  openB.onclick = () => openSheet("sheetDraft");
+  openB.onkeydown = e => { if(e.key==="Enter"||e.key===" ") openSheet("sheetDraft"); };
+  mapExpand.onclick = () => openSheet("sheetDraft");
+  $id("jobExpand").onclick = () => openSheet("sheetJob");
+  $id("dataExpand").onclick = () => { fillDataSheet(); openSheet("sheetData"); };
+  $id("jobDataExpand").onclick = () => { fillDataSheet(); openSheet("sheetData"); };
+  $id("closeSheet").onclick = closeSheets;
+  $id("closeSheetJob").onclick = closeSheets;
+  $id("closeSheetData").onclick = closeSheets;
+  $id("scrim").onclick = closeSheets;
+  addEventListener("keydown", e => { if(e.key==="Escape") closeSheets(); });
+
+  // 테마 토글
+  document.getElementById("themeBtn").onclick = () => {
+    const r=document.documentElement;
+    const cur=r.dataset.theme || (matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light");
+    r.dataset.theme = cur==="dark" ? "light" : "dark";
+  };
+</script>
