@@ -4,6 +4,7 @@
 :root{
   --a-primary:#2f5fbf;
   --a-primary-h:#274fa0;
+  --a-brand:#2874A6;
   --a-warn:#a05a00;
   --a-danger:#c0392b;
   --a-ok:#1e8449;
@@ -77,6 +78,7 @@ html[data-font-scale="larger"]{font-size:150%;}
   :root:not([data-theme="light"]){
     --a-primary:#6f97e8;
     --a-primary-h:#8badf0;
+    --a-brand:#4ea8e5;
     --a-warn:#e0a850;
     --a-danger:#ec7264;
     --a-ok:#43b877;
@@ -120,6 +122,7 @@ html[data-font-scale="larger"]{font-size:150%;}
 :root[data-theme="dark"]{
   --a-primary:#6f97e8;
   --a-primary-h:#8badf0;
+  --a-brand:#4ea8e5;
   --a-warn:#e0a850;
   --a-danger:#ec7264;
   --a-ok:#43b877;

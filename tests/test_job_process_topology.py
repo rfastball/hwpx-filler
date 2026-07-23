@@ -88,7 +88,7 @@ raise SystemExit(9)
     )
     assert result.returncode == 0, result.stderr
     assert "JobRegistryOwnershipError" in result.stdout
-    assert "다른 HWPX Filler 프로세스" in result.stdout
+    assert "다른 문서나르미 프로세스" in result.stdout
     assert owner.path_for("기존").read_bytes() == before
     assert not owner.path_for("침입").exists()
 

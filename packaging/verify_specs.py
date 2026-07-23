@@ -34,6 +34,8 @@ def main() -> int:
     assert '"PySide6"' in web, "web spec: PySide6 전량 제외 누락(Qt 미탑재)"
     assert '(str(REPO / "web"), "web")' in web, "web spec: 정적 자산 web/ 번들 누락"
     assert '"hwpxfiller.webapp.app"' in web, "web spec: 브리지 hidden import 누락"
+    assert "hwpx-filler.ico" in web, "web spec: 문서나르미 아이콘(#258) 배선 누락"
+    assert (HERE / "hwpx-filler.ico").exists(), "hwpx-filler.ico 없음(#258 브랜딩 아이콘)"
 
     # diff 웹 프론트엔드 spec(#22) — onedir·Qt 전량 제외·web-diff/ 번들·브리지 hidden import.
     diffweb = specs["hwpx_diff.spec"]

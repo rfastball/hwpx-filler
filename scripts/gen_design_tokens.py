@@ -48,6 +48,9 @@ _MOCKUP_MAP = [
 # 실앱 CSS(web/css/app.css)는 이 변수만 참조 — 색 리터럴 하드코딩 금지(스파이크 임시색 교체).
 _WEB_MAP = [
     ("--a-primary", "color.primary"), ("--a-primary-h", "color.primary_hover"),
+    # brand = 문서나르미 심벌 단색(#258). 액센트(--a-primary, 로열블루)와 별개의 브랜드 파랑 —
+    # 밝은 배경 파란 단색·다크에선 accent 와 같은 밝힘 규칙(라이트닝)으로 재산출.
+    ("--a-brand", "color.brand"),
     ("--a-warn", "color.warn"), ("--a-danger", "color.danger"), ("--a-ok", "color.ok"),
     ("--a-muted", "color.muted"), ("--a-border", "color.border"), ("--a-card", "color.card_bg"),
     ("--a-window", "color.window_bg"), ("--a-ink", "color.ink"),

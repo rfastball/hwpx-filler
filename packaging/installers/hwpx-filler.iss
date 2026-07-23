@@ -1,6 +1,9 @@
 #include "..\..\build\version\version.iss"
 
-#define AppName "HWPX Filler"
+; 사용자 노출 제품명(#258) — 설치 마법사·시작 메뉴·바로가기 표기.
+; 기술 식별자(설치 폴더·산출 파일명·AppId)는 hwpx-filler 계열 유지: 폴더/파일명 변경은
+; 기존 설치 업그레이드 연속성과 release.yml 스모크(HWPX-Filler-*-Setup.exe 수집)를 깬다.
+#define AppName "문서나르미"
 #define AppExe "hwpx-filler-web.exe"
 
 [Setup]
@@ -9,7 +12,7 @@ AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher=HWPX Tools
 DefaultDirName={localappdata}\Programs\HWPX Filler
-DefaultGroupName=HWPX Filler
+DefaultGroupName={#AppName}
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -19,6 +22,7 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayIcon={app}\{#AppExe}
+SetupIconFile=..\hwpx-filler.ico
 VersionInfoVersion={#AppVersion}
 
 [Tasks]

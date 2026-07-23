@@ -41,6 +41,11 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .rail{background:var(--n-header-bg);border-right:1px solid var(--a-border);
   padding:var(--sp-12) var(--sp-10);display:flex;flex-direction:column;gap:var(--sp-2);overflow:auto}
 .rail .brand{font-weight:800;font-size:var(--fs-strong);padding:var(--sp-6) var(--sp-10) var(--sp-2);letter-spacing:-.01em}
+/* #258 문서나르미 락업 — 심벌은 브랜드 파랑 단색(--a-brand, 액센트와 별개), 워드마크는 잉크 상속.
+   16–24px 소형 사용 원칙에 따라 20px·배경 타일 없음. */
+.brand-lockup{display:flex;align-items:center;gap:var(--sp-6);min-width:0}
+.brand-mark{width:20px;height:20px;flex:none;fill:var(--a-brand)}
+.brand-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* 레일 항목: 아이콘(.ni SVG 상시) + 라벨열(.lbl=.n+.d). 부제 .d 는 기본 숨김·활성 항목에만
    인라인 노출(호버 지터 회피; 전체 설명은 title 호버 툴팁). 활성=틴트+좌측 3px 막대(조용한 표시). */
 .navbtn{width:100%;text-align:left;font:inherit;cursor:pointer;border:0;background:transparent;
@@ -816,6 +821,8 @@ body.resizing-master{cursor:col-resize;user-select:none}
 /* 접힘: 라벨열(.lbl)만 숨긴다 — 아이콘(.ni)은 상시라 시각 표지가 이어진다(#27 개정). */
 .app.rail-collapsed .navbtn .lbl{display:none}
 .app.rail-collapsed .rail .brand{font-size:0}                 /* 로고 글자 접기 */
+/* 접힘 48px 레일엔 심벌(20px)+토글(22px)이 나란히 못 선다 — 심벌도 접고 토글만 남긴다(현행 계약 유지). */
+.app.rail-collapsed .brand-mark{display:none}
 .app.rail-collapsed .rail-toggle{font-size:var(--fs-body);transform:rotate(180deg)}
 .app.rail-collapsed .navbtn{justify-content:center;padding:var(--sp-8) var(--sp-4)}
 
