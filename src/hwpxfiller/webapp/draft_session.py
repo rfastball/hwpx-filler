@@ -195,6 +195,9 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         # 편집·원문 라이브 편집). 깨끗한 라이브러리 픽·복원·붙여넣기는 False. modBadge(수정됨)
         # 의 단일 출처 — 표면이 "원문≠라이브러리"를 정직하게 말한다(문안≠상태 차단).
         self._source_dirty = False
+        # 파일 정본 없는 붙여넣기 원문(#218 G2). ``_source_dirty``는 UI의 "라이브러리에서
+        # 수정됨" 의미를 보존하고, 이 별도 표지가 세션 교체 가드의 복구 불가 원본을 나타낸다.
+        self._pasted_unbacked = False
         # 현 원문의 라이브러리/Job 파일 경로(#148 슬라이스 5c) — 「기안으로 저장」이 Job.template_path
         # 로 쓴다. 라이브러리 픽·복원은 실경로, 붙여넣기는 "". 매 스냅샷 재해석(I/O)을 피해 필드로
         # 든다(TargetFontSetting 과 같은 규율 — 타건마다 파일 스캔 금지). 수정된 원문(_source_dirty)
@@ -230,6 +233,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self._bound_job = ""
         self._source_readonly = False
         self._source_dirty = False  # 갓 선택한 첫 템플릿 = 깨끗한 라이브러리 정의
+        self._pasted_unbacked = False
         # 미저장 레시피 편집 표지(리뷰 5a 3R P1 / 147) — 사람이 소스·상수·확정·유형을 손대면
         # True. 세션-교체(전환·귀환·삭제·포크) 앞 가드가 이걸 무장으로 친다(:meth:`_leave_guard`).
         # 갓 세운 세션·복원 직후는 사람 편집 전이라 깨끗하다(리셋). 자동 골격(_rebuild_mapping)은
@@ -257,6 +261,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         "vm", "data_label", "data_source", "_data_key", "selection", "queue",
         "filter", "mapping", "_fullwidth", "_last_copy", "_gap_cache", "_gap_cache_key",
         "_source_dirty",   # 사본/편집 여부는 그 원문에 붙는다 — 스태시·복원과 함께 이동(슬라이스 5b)
+        "_pasted_unbacked",  # 파일 정본 없는 붙여넣기 원문도 스태시·복원과 함께 이동(#218)
         "_template_path",  # 원문의 파일 경로도 그 세션에 붙는다(슬라이스 5c 저장 자격)
         "_map_dirty",      # 미저장 레시피 편집 표지도 그 세션에 붙는다 — 스태시·복원과 함께 이동(147)
         "_copied_total",   # 복사 이력 카운터도 그 세션에 붙는다 — 스태시·복원과 함께 이동(682·685)
@@ -337,6 +342,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self._bound_job = job.name
         self._source_readonly = True
         self._source_dirty = False  # 저장 정의 = 깨끗한 원문(읽기 전용 — 손보려면 「사본으로 편집」)
+        self._pasted_unbacked = False
         self._template_path = job.template_path  # 재저장(save-as) 시 이 경로를 재사용
         self._map_dirty = False  # 복원한 레시피 = 저장분과 일치하는 깨끗한 baseline(147)
         self._copied_total = 0  # 복원 = 아직 이 세션에서 복사 안 함(682·685)
@@ -384,6 +390,17 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self._source_dirty = True  # 사본 = 저장 정의에서 갈라진 원문(수정됨 표지)
         self._volatile_stash = None  # 포크 = 유일 휘발 — 밀려난 스태시를 조용히 덮지 않게 비운다
         return None
+
+    def _do_fork_guard(self, p: dict) -> dict:
+        """사본 분기 전 한 모달에 합성할 현재/스태시 손실 정보를 무변이로 반환한다."""
+        g = self._stash_guard()
+        return {
+            "copied_total": self._copied_total,
+            "stash_armed": g is not None,
+            "stash": g or {},
+        }
+
+    _do_fork_guard.is_query = True
 
     def _records(self) -> list:
         return self.vm.records
@@ -787,6 +804,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self.vm.select_template(p["name"])
         self._fullwidth = False  # 치환은 그 원문에 대한 판단 — 원문이 바뀌면 함께 죽는다(리뷰 F2)
         self._source_dirty = False  # 깨끗한 라이브러리 픽 — 수정됨 표지 해제(슬라이스 5b)
+        self._pasted_unbacked = False
         self._template_path = self._resolve_template_path(p["name"])  # 저장 배접(슬라이스 5c)
         self._map_dirty = False  # 확인된 전환 = 새 baseline(휘발 콤보 전환도 미저장 표지 리셋)
         self._rebuild_mapping()  # 새 토큰 집합 → 맞추기 골격 재구성(같은 이름 결속은 승계)
@@ -837,7 +855,8 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
     def _do_set_template_text(self, p: dict) -> None:
         self.vm.set_template_text(p["text"])
         self._fullwidth = False  # 붙여넣은 새 원문에 옛 치환 결정이 승계되지 않는다(리뷰 F2)
-        self._source_dirty = False  # 새로 붙여넣은 원문 = 깨끗한 시작(수정됨 아님, 슬라이스 5b)
+        self._source_dirty = False  # 새 붙여넣기 = 라이브러리에서 "수정됨"은 아님
+        self._pasted_unbacked = True  # 단, 파일 정본이 없어 세션 교체/닫기 가드는 무장(#218 G2)
         self._template_path = ""  # 붙여넣기 = 파일 배접 없음 → 저장 불가(먼저 「템플릿으로 저장」)
         self._rebuild_mapping()  # 붙여넣은 원문의 토큰 → 맞추기 골격
 
@@ -1020,6 +1039,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         g["queue_partial"] = queue_partial
         g["map_dirty"] = self._map_dirty
         g["source_dirty"] = self._source_dirty  # 원문 편집 성분(342) — 문안이 정직하게 짚도록
+        g["pasted_unbacked"] = self._pasted_unbacked
         g["armed"] = g["armed"] or queue_partial
         return g
 
@@ -1029,13 +1049,14 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         데이터 교체(T3, :meth:`_guard_state`)와 갈린다: 데이터 스왑은 매핑·상수·원문을 **유지**
         하므로 편집은 잃을 게 없다(거기 실으면 over-warn — confirm-or-alarm 역방향 위반). 반면
         다른 기안 전환·「이번 세션」 귀환·삭제·포크는 세션 전체(매핑·원문 포함)를 재구성/폐기하므로
-        미저장 상수·확정·유형 편집(``_map_dirty``, 147)과 **미저장 원문 편집**(``_source_dirty``,
-        리뷰 5b 4R P1 / 342)도 사라진다. 원문 편집은 붙여넣기와 달리 재타이핑이 재현을 담보하지
-        못하는 손댄 작업이라(재현성 기준) 무장으로 친다. 데이터 미로드·선택·큐 0이어도 이 두
-        성분이 무장을 세운다. 소비처: :meth:`~...DraftController._do_select_job`(전환·귀환)·
+        미저장 상수·확정·유형 편집(``_map_dirty``, 147), **미저장 원문 편집**(``_source_dirty``),
+        파일 정본 없는 붙여넣기(``_pasted_unbacked``, #218)도 사라진다. 데이터 미로드·선택·큐
+        0이어도 이 성분들이 무장을 세운다. 소비처: :meth:`~...DraftController._do_select_job`(전환·귀환)·
         ``_do_delete_job``(결속 삭제)·:meth:`_stash_guard`(포크 대체)."""
         g = self._guard_state()
-        g["armed"] = g["armed"] or self._map_dirty or self._source_dirty
+        g["armed"] = (
+            g["armed"] or self._map_dirty or self._source_dirty or self._pasted_unbacked
+        )
         return g
 
     def _do_guard_state(self, p: dict) -> dict:

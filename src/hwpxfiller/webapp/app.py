@@ -48,6 +48,8 @@ from .screens import (
 
 
 WINDOW_TITLE = "HWPX Filler"  # 창 제목 = 파일 다이얼로그 소유주 창을 FindWindowW 로 찾는 키
+DEFAULT_WINDOW_WIDTH = 1180
+DEFAULT_WINDOW_HEIGHT = 820
 
 # 파일 선택 다이얼로그 필터 — pick_data_file·pick_pool_data_file 공유 단일 출처(둘 다
 # "엑셀/CSV 데이터" 참조를 다루므로 필터가 같다; 확장자 자체의 단일 출처는 EXCEL_FILTER_PATTERN).
@@ -79,6 +81,39 @@ def web_dir() -> Path:
     return _repo_root() / "web"
 
 
+def _virtual_screen_bounds() -> "tuple[int, int, int, int] | None":
+    """Windows 가상 데스크톱의 논리 경계. 조회 불가 플랫폼은 ``None``."""
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        return (
+            int(user32.GetSystemMetrics(76)),  # SM_XVIRTUALSCREEN
+            int(user32.GetSystemMetrics(77)),  # SM_YVIRTUALSCREEN
+            int(user32.GetSystemMetrics(78)),  # SM_CXVIRTUALSCREEN
+            int(user32.GetSystemMetrics(79)),  # SM_CYVIRTUALSCREEN
+        )
+    except (AttributeError, OSError):
+        return None
+
+
+def _geometry_is_visible(
+    geometry: "dict[str, int | bool]", bounds: "tuple[int, int, int, int] | None" = None
+) -> bool:
+    """저장 창의 제목줄 일부(64×32)가 현재 가상 화면 안에 남는지 판정한다."""
+    bounds = _virtual_screen_bounds() if bounds is None else bounds
+    if bounds is None:
+        return True
+    vx, vy, vw, vh = bounds
+    if vw <= 0 or vh <= 0:
+        return False
+    x, y = int(geometry["x"]), int(geometry["y"])
+    width = int(geometry["width"])
+    return x + min(width, 64) > vx and x < vx + vw and y + 32 > vy and y < vy + vh
+
+
 # ------------------------------------------------------------------ 브리지
 class WebFrontend:
     """웹→Python js_api + 화면 라우팅. 컨트롤러를 소유하고 창(네이티브 자원)을 쥔다."""
@@ -89,6 +124,10 @@ class WebFrontend:
         # 무한 재귀(recursion depth 초과)하며 WebView2 COM 을 주입 스레드에서 건드려 부팅을
         # 불안정하게 만든다. 밑줄 접두면 반영이 건너뛴다 — 이 참조는 내부 배선일 뿐 JS API 아님.
         self._window: "object | None" = None  # webview.Window (지연 배선)
+        # 네이티브 X 닫기 가드(#218 G1) — 확인 뒤 destroy()가 다시 closing 이벤트를
+        # 통과하므로 1회 통과 표지와 중복 모달 억제 표지를 브리지가 소유한다.
+        self._close_confirmed = False
+        self._close_prompt_open = False
         registry = TextTemplateRegistry(text_templates_dir)
         job_registry = JobRegistry(default_jobs_dir())
         # 데이터셋 풀(#26) — 단일 인스턴스를 화면들이 공유: 에디터 자동등록(#3)·실행 겨눔(#6)·
@@ -167,6 +206,19 @@ class WebFrontend:
         """테마 선택 영속 — 프런트 토글이 부른다(#74). 확정값 반환(비유효는 ValueError)."""
         settings.save_theme(mode)
         return mode
+
+    def set_font_scale(self, scale: str) -> str:
+        """앱 전역 글자 배율 영속 — 브라우저 줌 대신 예측 가능한 3단계 앱 배율."""
+        settings.save_font_scale(scale)
+        return scale
+
+    def set_rail_collapsed(self, collapsed: bool) -> bool:
+        settings.save_rail_collapsed(collapsed)
+        return collapsed
+
+    def set_master_width(self, width: int) -> int:
+        settings.save_master_width(width)
+        return width
 
     # 바깥 파일의 유일 입구는 import_template_file(가져오기=복사)이다.
     def import_template_file(self, screen: str) -> "str | None":
@@ -288,6 +340,58 @@ class WebFrontend:
     def editor_has_unsaved_work(self) -> bool:
         """에디터에 진행 중인(미저장) 작업 세션이 있는가 — 크로스스크린 진입 전 폐기 확인용(#25)."""
         return self._controller("editor").has_unsaved_work()
+
+    def close_guard_state(self) -> dict:
+        """창 종료로 사라질 세션 상태를 한 시점에 판정한다(#218 G1)."""
+        reasons: list[str] = []
+        if self._controller("editor").has_unsaved_work():
+            reasons.append("저장하지 않은 작업 편집")
+        if self._controller("job")._guard_state()["armed"]:
+            reasons.append("작업 화면의 완료하지 않은 선택")
+        if self._controller("draft")._leave_guard()["armed"]:
+            reasons.append("기안 화면의 미저장 원문·매핑 또는 큐 진행")
+        return {"armed": bool(reasons), "reasons": reasons}
+
+    def _show_close_prompt(self, state: dict) -> None:
+        """closing 콜백 바깥 스레드에서 웹 확인창을 연다(WinForms UI 재진입 회피)."""
+        if self._window is None:
+            self._close_prompt_open = False
+            return
+        try:
+            payload = json.dumps(state, ensure_ascii=False)
+            self._window.evaluate_js(  # type: ignore[attr-defined]
+                f"window.AppCloseGuard && window.AppCloseGuard.prompt({payload})"
+            )
+        except Exception as exc:  # noqa: BLE001 — 실패 시 안전측(창 유지)+loud
+            self._close_prompt_open = False
+            _alarm(f"종료 확인창 표시 실패: {exc!r}", self._window)
+
+    def _handle_window_closing(self) -> "bool | None":
+        """pywebview ``closing`` 이벤트 — False면 닫기를 취소한다."""
+        if self._close_confirmed:
+            return None
+        state = self.close_guard_state()
+        if not state["armed"]:
+            return None
+        if not self._close_prompt_open:
+            self._close_prompt_open = True
+            timer = threading.Timer(0, self._show_close_prompt, args=(state,))
+            timer.daemon = True
+            timer.start()
+        return False
+
+    def confirm_window_close(self) -> bool:
+        """웹 종료 확인의 확정 착지 — 다음 closing 1회를 통과시켜 실제로 닫는다."""
+        self._close_confirmed = True
+        self._close_prompt_open = False
+        if self._window is not None:
+            self._window.destroy()  # type: ignore[attr-defined]
+        return True
+
+    def cancel_window_close(self) -> bool:
+        """웹 종료 확인 취소 — 다음 X 입력에서 현재 상태를 다시 판정할 수 있게 한다."""
+        self._close_prompt_open = False
+        return True
 
     def pick_pool_data_file(self) -> "str | None":
         """데이터 관리 등록 모달 '찾아보기' → **경로만** 반환(#26 #4).
@@ -438,6 +542,17 @@ _MODAL_A11Y_PROBE_JS = r"""
   finishModal('confirmModal');
   var cClosed = cm.classList.contains('hidden');
   var cDisplayClosed = getComputedStyle(cm).display;         // 닫힌 뒤 'none'
+  // #219 danger 변형 — 같은 안정 버튼이 danger↔neutral 양방향으로 클래스·계산색을 바꾸는가.
+  window.Modal.confirm({ body: '영구 삭제', confirmLabel: '삭제', danger: true });
+  var dangerOk = document.getElementById('confirmModalOk');
+  var dangerClass = dangerOk.classList.contains('danger') && !dangerOk.classList.contains('primary');
+  var dangerBg = getComputedStyle(dangerOk).backgroundColor;
+  document.getElementById('confirmModalCancel').click();
+  finishModal('confirmModal');
+  window.Modal.confirm({ body: '중립 전환', confirmLabel: '계속' });
+  var neutralReset = !dangerOk.classList.contains('danger') && dangerOk.classList.contains('primary');
+  document.getElementById('confirmModalCancel').click();
+  finishModal('confirmModal');
   window.alert = origAlert;
   // #132.4: Modal.open/close 가 .modal 없는 요소를 시끄럽게 거절하는가(조용한 no-op 차단).
   // 잠복 결함: .hidden 은 .modal.hidden 규칙으로만 숨어, .modal 없는 요소에 open 하면 토글이 무효다.
@@ -500,6 +615,9 @@ _MODAL_A11Y_PROBE_JS = r"""
     confirm_closed: cClosed,      // #86: 확인 클릭 후 다시 hidden 인가
     confirm_entered_closing: confirmClosing, // H-16: 확인도 대칭 퇴장 상태를 실제 거쳤는가
     confirm_display_closed: cDisplayClosed,  // #86/B-9: 닫힌 뒤 display(none 기대, hidden 이 flex 를 이긴다)
+    danger_class: dangerClass,      // #219: danger=true가 primary를 적색 변형으로 교체
+    danger_background: dangerBg,    // #219: 실 계산 배경색(transparent 금지)
+    danger_resets_to_neutral: neutralReset, // #219: 다음 중립 confirm에 danger 클래스 누수 없음
     non_modal_open_rejected_loud: openRejected,   // #132.4: .modal 없는 open 이 loud 거절+미개방인가
     non_modal_close_rejected_loud: closeRejected, // #132.4: .modal 없는 close 도 loud 거절인가
     malformed_confirm_root_refused_loud: malfLoud, // Codex P2: 불량(.modal 없는) confirm root loud 거절
@@ -729,6 +847,32 @@ _JOB_MIRROR_PROBE_JS = r"""
     // 스트립 항목별 × 해제 어포던스(리뷰 #6 — 진술만 하고 행동을 못 주면 반쪽).
     out.strip_unsel = !!document.querySelector('#jobSelStrip [data-unsel="1"]');
     out.sel_line = document.getElementById('jobRestate').textContent;
+    // 왕복을 일부러 미결로 둔 채 두 번 누른다. 둘째 값이 첫 낙관 표지를 기준으로 계산돼야
+    // true→false→true가 되고, native checkbox·aria-selected·행 tint가 같은 프레임에 맞는다(#217 R2).
+    var realCall = window.Bridge.call;
+    var toggleValues = [];
+    window.Bridge.call = function (screen, action, payload) {
+      if (action === 'toggle_record') {
+        toggleValues.push(payload.value);
+        return new Promise(function () {});
+      }
+      if (action === 'filter_panel') return new Promise(function () {});
+      return realCall.call(window.Bridge, screen, action, payload);
+    };
+    renderedRow.click();
+    out.row_optimistic_off = !renderedRow.classList.contains('on') &&
+      renderedRow.getAttribute('aria-selected') === 'false' && !renderedRow.querySelector('input').checked;
+    renderedRow.click();
+    out.row_optimistic_on = renderedRow.classList.contains('on') &&
+      renderedRow.getAttribute('aria-selected') === 'true' && renderedRow.querySelector('input').checked;
+    out.row_toggle_values = toggleValues.slice();
+    // filter_panel 응답은 영원히 미결이어도 클릭 프레임에 제목+로딩 껍데기가 먼저 선다(#217 R4).
+    document.querySelector('#jobTableHead .fico').click();
+    var loadingPanel = document.getElementById('jobColPanel');
+    out.panel_shell_immediate = !loadingPanel.hidden && loadingPanel.getAttribute('aria-busy') === 'true' &&
+      loadingPanel.textContent.indexOf('불러오는 중') >= 0 && loadingPanel.textContent.indexOf('공고명') >= 0;
+    loadingPanel.querySelector('[data-act="panel-close"]').click();
+    window.Bridge.call = realCall;
     // 열 패널 기본 닫힘 — [hidden] 이 display:flex 를 실제로 이긴다(부록 B-9 overlay/hidden
     // 결함류의 자동 눈검증: .colpanel 은 flex 라 override 가 없으면 hidden 이 은닉에 실패한다).
     out.panel_hidden = getComputedStyle(document.getElementById('jobColPanel')).display === 'none';
@@ -805,9 +949,11 @@ _JOB_LIST_GROUP_PROBE_JS = r"""
     };
     window.__push('job', snap);
     out.grp_heads = document.querySelectorAll('#jobListHwpx .job-grp-head').length;
-    out.rows_visible = document.querySelectorAll('#jobListHwpx .job-item').length;
+    out.rows_visible = document.querySelectorAll(
+      '#jobListHwpx > .job-row .job-item, #jobListHwpx .job-grp-rows:not([hidden]) .job-item').length;
     out.grp_more = document.querySelectorAll('#jobListHwpx .grp-more').length;
-    out.row_more = document.querySelectorAll('#jobListHwpx .job-more[data-more]').length;
+    out.row_more = document.querySelectorAll(
+      '#jobListHwpx > .job-row .job-more[data-more], #jobListHwpx .job-grp-rows:not([hidden]) .job-more[data-more]').length;
     var caretOf = function (expanded) {
       var c = document.querySelector(
         '#jobListHwpx .job-grp-head[aria-expanded="' + expanded + '"] .grp-caret');
@@ -815,6 +961,23 @@ _JOB_LIST_GROUP_PROBE_JS = r"""
     };
     out.caret_collapsed = caretOf('false');
     out.caret_expanded = caretOf('true');
+    // 영속 왕복을 미결로 둬도 접힌 그룹의 aria/caret/body가 클릭 프레임에 먼저 열린다(#217 R3).
+    var realCall = window.Bridge.call;
+    window.Bridge.call = function () { return new Promise(function () {}); };
+    var collapsedHead = document.querySelector('#jobListHwpx .job-grp-head[aria-expanded="false"]');
+    collapsedHead.click();
+    var openedBody = collapsedHead.closest('.job-grp').nextElementSibling;
+    out.collapse_local_flip = collapsedHead.getAttribute('aria-expanded') === 'true' &&
+      collapsedHead.querySelector('.grp-caret').textContent === '▾' && !openedBody.hidden;
+    window.Bridge.call = realCall;
+    // 검색 정산 promise가 이어지는 동안 select_job은 미결로 두되, 클릭 프레임의 여는 중 표지는
+    // 즉시 보여야 한다(#217 R1). continuation이 mock을 잡은 뒤 다음 microtask에서 복원한다.
+    window.Bridge.call = function () { return new Promise(function () {}); };
+    var openingItem = document.querySelector('#jobListHwpx .job-item[data-job]');
+    openingItem.click();
+    out.opening_marker_immediate = openingItem.getAttribute('aria-busy') === 'true' &&
+      openingItem.textContent.indexOf('여는 중') >= 0;
+    Promise.resolve().then(function () { window.Bridge.call = realCall; });
     var more = document.querySelector('#jobListHwpx .job-more[data-more]');
     more.click();
     var menu = document.getElementById('jobRowMenu');
@@ -874,9 +1037,20 @@ _DRAFT_LIST_PROBE_JS = r"""
     window.__push('draft', snap);
     out.grp_heads = document.querySelectorAll('#draftList .job-grp-head').length;   // 현장 A·정기·그룹없음
     // 저장 기안 행만 센다(data-job) — 상시 「이번 세션」 행(.draft-vol, 슬라이스 5a)은 뺀다.
-    out.rows_visible = document.querySelectorAll('#draftList .job-item[data-job]').length;  // 정기 접힘 → 2+0+1
+    out.rows_visible = document.querySelectorAll(
+      '#draftList > .job-row .job-item[data-job], #draftList .job-grp-rows:not([hidden]) .job-item[data-job]').length;
     out.grp_more = document.querySelectorAll('#draftList .grp-more').length;        // 명명 그룹만
-    out.row_more = document.querySelectorAll('#draftList .job-more[data-more]').length;
+    out.row_more = document.querySelectorAll(
+      '#draftList > .job-row .job-more[data-more], #draftList .job-grp-rows:not([hidden]) .job-more[data-more]').length;
+    var realCall = window.Bridge.call;
+    window.Bridge.call = function () { return new Promise(function () {}); };
+    var collapsedHead = document.querySelector('#draftList .job-grp-head[aria-expanded="false"]');
+    flush();
+    collapsedHead.click();
+    var openedBody = collapsedHead.closest('.job-grp').nextElementSibling;
+    out.collapse_local_flip = collapsedHead.getAttribute('aria-expanded') === 'true' &&
+      collapsedHead.querySelector('.grp-caret').textContent === '▾' && !openedBody.hidden;
+    window.Bridge.call = realCall;
     // 미선택 = **휘발 세션**(결정 5) — 4존이 선다. 저장/휘발 한 패널(슬라이스 5a, 껍데기 stub 폐기).
     out.session_shown =
       getComputedStyle(document.getElementById('draftSessionPanel')).display !== 'none';
@@ -1316,16 +1490,25 @@ _TPL_LIST_GROUP_PROBE_JS = r"""
     window.__push('tpl', snap);
     var host = document.getElementById('tplHwpxGroups');
     out.grp_heads = host.querySelectorAll('.job-grp-head').length;          // 입찰·계약·그룹없음
-    out.cards_visible = host.querySelectorAll('.tplcard').length;           // 계약 접힘 → 2+1
+    out.cards_visible = host.querySelectorAll('.tpl-grp-rows:not([hidden]) .tplcard').length; // 계약 접힘 → 2+1
     out.grp_more = host.querySelectorAll('.grp-more').length;               // 명명 그룹만(그룹없음 제외)
-    out.card_more = host.querySelectorAll('.tplcard-more').length;
-    out.assign_chips = host.querySelectorAll('.tpl-assign').length;         // 「그룹 없음」 카드만
+    out.card_more = host.querySelectorAll('.tpl-grp-rows:not([hidden]) .tplcard-more').length;
+    out.assign_chips = host.querySelectorAll('.tpl-grp-rows:not([hidden]) .tpl-assign').length; // 「그룹 없음」 카드만
     var caretOf = function (expanded) {
       var c = host.querySelector('.job-grp-head[aria-expanded="' + expanded + '"] .grp-caret');
       return c ? getComputedStyle(c).visibility : 'missing';
     };
     out.caret_collapsed = caretOf('false');   // 접힌 그룹 캐럿 상시 노출
     out.caret_expanded = caretOf('true');      // 펼친 그룹 캐럿 호버 전 숨김
+    var realCall = window.Bridge.call;
+    window.Bridge.call = function () { return new Promise(function () {}); };
+    var collapsedHead = host.querySelector('.job-grp-head[aria-expanded="false"]');
+    document.body.click();
+    collapsedHead.click();
+    var openedBody = collapsedHead.closest('.job-grp').nextElementSibling;
+    out.collapse_local_flip = collapsedHead.getAttribute('aria-expanded') === 'true' &&
+      collapsedHead.querySelector('.grp-caret').textContent === '▾' && !openedBody.hidden;
+    window.Bridge.call = realCall;
     // 앞선 프로브가 Popover 바깥-닫기 pointerdown 을 남기면 그 인스턴스의 "다음 click 1회 소비"
     // 플래그가 상주해 우리 첫 click 을 캡처 단계에서 먹는다(교차 프로브 오염). 던짐 click 으로
     // 미리 소비해 상태를 청소한다(메뉴 개폐 사이마다도 동일 — 우리 close pointerdown 자기 소비).
@@ -1745,7 +1928,56 @@ def _selftest_drive(window: "object") -> None:
     """
     import time
 
+    if os.environ.get("HWPX_SELFTEST_GEOMETRY_ONLY"):
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline:
+            if window.evaluate_js("document.readyState === 'complete' && !!document.body"):  # type: ignore[attr-defined]
+                break
+            time.sleep(0.1)
+        time.sleep(0.4)  # 네이티브 최대화/복원 이벤트와 JS outer* 반영 안정
+        geometry = window.evaluate_js(  # type: ignore[attr-defined]
+            "({x:screenX,y:screenY,width:outerWidth,height:outerHeight,"
+            "avail_x:screen.availLeft||0,avail_y:screen.availTop||0,"
+            "avail_width:screen.availWidth,avail_height:screen.availHeight})"
+        )
+        geometry["maximized_like"] = (
+            geometry["x"] <= geometry["avail_x"] + 32
+            and geometry["y"] <= geometry["avail_y"] + 32
+            and geometry["x"] + geometry["width"]
+            >= geometry["avail_x"] + geometry["avail_width"] - 8
+            and geometry["y"] + geometry["height"]
+            >= geometry["avail_y"] + geometry["avail_height"] - 8
+        )
+        _finish_selftest(window, {"window_geometry": geometry})
+        return
+
     set_theme = os.environ.get("HWPX_SELFTEST_SET_THEME")
+    set_font_scale = os.environ.get("HWPX_SELFTEST_SET_FONT_SCALE")
+    if set_font_scale:
+        result = {"font_scale_write": set_font_scale}
+        try:
+            ready_probe = "!!(window.pywebview && window.pywebview.api && window.Personalization)"
+            ready_deadline = time.monotonic() + 15.0
+            while time.monotonic() < ready_deadline:
+                if window.evaluate_js(ready_probe):  # type: ignore[attr-defined]
+                    break
+                time.sleep(0.1)
+            else:
+                result["error"] = "브리지 준비 시한 초과 — Personalization.setFontScale 미구동"
+                _finish_selftest(window, result)
+                return
+            window.evaluate_js(  # type: ignore[attr-defined]
+                "window.Personalization.setFontScale(" + json.dumps(set_font_scale) + ")"
+            )
+            deadline = time.monotonic() + 10.0
+            while settings.load_font_scale() != set_font_scale and time.monotonic() < deadline:
+                time.sleep(0.1)
+            result["set_result"] = settings.load_font_scale()
+        except Exception as exc:  # noqa: BLE001
+            result["error"] = repr(exc)
+        _finish_selftest(window, result)
+        return
+
     if set_theme:
         result: dict = {"theme_write": set_theme}
         try:
@@ -1887,6 +2119,18 @@ def _selftest_drive(window: "object") -> None:
         result["theme_persist"] = window.evaluate_js(  # type: ignore[attr-defined]
             "({data_theme: document.documentElement.getAttribute('data-theme'),"
             " a_card: getComputedStyle(document.documentElement).getPropertyValue('--a-card').trim()})")
+        result["personalization_persist"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "(function(){"
+            "var root=document.documentElement,app=document.querySelector('.app'),body=document.body;"
+            "var p=document.createElement('p');p.textContent='선택 가능한 본문';body.appendChild(p);"
+            "var r=document.createRange();r.selectNodeContents(p);var s=getSelection();s.removeAllRanges();s.addRange(r);"
+            "var selected=s.toString();s.removeAllRanges();p.remove();"
+            "return {font_scale:root.getAttribute('data-font-scale'),root_px:getComputedStyle(root).fontSize,"
+            "rail_collapsed:app.classList.contains('rail-collapsed'),"
+            "master_width:parseFloat(getComputedStyle(app).getPropertyValue('--master-width')),"
+            "splitters:document.querySelectorAll('.master-splitter').length,"
+            "body_overflow:body.scrollWidth>body.clientWidth+1,selected_text:selected};})()"
+        )
     except Exception as exc:  # noqa: BLE001
         result["error"] = repr(exc)
     _finish_selftest(window, result)
@@ -1949,16 +2193,83 @@ def main() -> int:
             return 0
 
     frontend = WebFrontend(default_text_templates_dir())
+    saved_geometry = settings.load_window_geometry()
+    if saved_geometry is not None and not _geometry_is_visible(saved_geometry):
+        settings.alert("저장된 창 위치가 현재 화면 밖이라 기본 위치로 복원합니다")
+        saved_geometry = None
     window = webview.create_window(
         WINDOW_TITLE,
         str(web_dir() / "index.html"),
         js_api=frontend,
-        width=1180,
-        height=820,
+        width=int(saved_geometry["width"]) if saved_geometry else DEFAULT_WINDOW_WIDTH,
+        height=int(saved_geometry["height"]) if saved_geometry else DEFAULT_WINDOW_HEIGHT,
+        x=int(saved_geometry["x"]) if saved_geometry else None,
+        y=int(saved_geometry["y"]) if saved_geometry else None,
+        maximized=bool(saved_geometry["maximized"]) if saved_geometry else False,
         min_size=(760, 600),
+        text_select=True,
+        # 브라우저 줌은 앱 레이아웃·다이얼로그 좌표까지 임의 배율로 갈라놓는다. 대신 S1의
+        # 저장형 100/125/150% 앱 글자 배율을 제공해 재시작 뒤에도 같은 레이아웃을 재현한다.
+        zoomable=False,
         hidden=True,  # 테마 주입 후 show — FOUC 은닉(#74, 아래 _apply_theme_then_show)
     )
     frontend._window = window
+    window.events.closing += frontend._handle_window_closing
+
+    # 창 기하 영속(S5) — 최대화 중 들어오는 resize/move 값은 정상 창 복원 좌표를 덮지 않는다.
+    geometry_state: "dict[str, int | bool]" = dict(saved_geometry or {
+        "x": 0, "y": 0, "width": DEFAULT_WINDOW_WIDTH, "height": DEFAULT_WINDOW_HEIGHT,
+        "maximized": False,
+    })
+    geometry_lock = threading.Lock()
+    geometry_timer: "list[threading.Timer | None]" = [None]
+
+    def _persist_geometry() -> None:
+        with geometry_lock:
+            snapshot = dict(geometry_state)
+            geometry_timer[0] = None
+        try:
+            settings.save_window_geometry(**snapshot)  # type: ignore[arg-type]
+        except (OSError, ValueError) as exc:
+            settings.alert(f"창 위치 저장 실패 — 현재 실행은 계속합니다: {exc!r}")
+
+    def _schedule_geometry_save() -> None:
+        with geometry_lock:
+            old = geometry_timer[0]
+            if old is not None:
+                old.cancel()
+            timer = threading.Timer(0.25, _persist_geometry)
+            timer.daemon = True
+            geometry_timer[0] = timer
+            timer.start()
+
+    def _on_window_resized(width: int, height: int) -> None:
+        with geometry_lock:
+            if not geometry_state["maximized"]:
+                geometry_state.update(width=max(760, int(width)), height=max(600, int(height)))
+        _schedule_geometry_save()
+
+    def _on_window_moved(x: int, y: int) -> None:
+        with geometry_lock:
+            if not geometry_state["maximized"]:
+                geometry_state.update(x=int(x), y=int(y))
+        _schedule_geometry_save()
+
+    def _on_window_maximized() -> None:
+        with geometry_lock:
+            geometry_state["maximized"] = True
+        _schedule_geometry_save()
+
+    def _on_window_restored() -> None:
+        with geometry_lock:
+            geometry_state["maximized"] = False
+        _schedule_geometry_save()
+
+    window.events.resized += _on_window_resized
+    window.events.moved += _on_window_moved
+    window.events.maximized += _on_window_maximized
+    window.events.restored += _on_window_restored
+    window.events.closed += _persist_geometry
     # 소이슈 ②: Windows 는 EdgeChromium(WebView2) 백엔드 명시 핀.
     gui = "edgechromium" if sys.platform == "win32" else None
 
@@ -1998,6 +2309,18 @@ def main() -> int:
             settings.alert(f"부팅 완료 기록 저장 실패 — 다음 부팅도 넓은 예산: {exc!r}")
         err: "object | None" = None
         try:
+            personalization = {
+                "font_scale": settings.load_font_scale(),
+                "rail_collapsed": settings.load_rail_collapsed(),
+                "master_width": settings.load_master_width(),
+            }
+            personalized = window.evaluate_js(  # type: ignore[attr-defined]
+                "window.Personalization ? (window.Personalization.apply("
+                + json.dumps(personalization)
+                + "), true) : false"
+            )
+            if personalized is not True:
+                err = f"window.Personalization 부재(evaluate_js 반환={personalized!r})"
             theme = settings.load_theme()
             if theme in ("light", "dark"):
                 # Theme.apply(theme.js) 경유 — data-theme 설정 + themechange 발신으로 레일
@@ -2005,7 +2328,7 @@ def main() -> int:
                 # body 스크립트 실행 후라 window.Theme 실재가 계약 — 부재는 곧 주입 실패.
                 ok = window.evaluate_js(  # type: ignore[attr-defined]
                     f"window.Theme ? (window.Theme.apply({json.dumps(theme)}), true) : false")
-                if ok is not True:
+                if ok is not True and err is None:
                     err = f"window.Theme 부재(evaluate_js 반환={ok!r})"
         except Exception as exc:  # noqa: BLE001  테마 실패로 창이 안 뜨면 안 된다 — show 진행 후 경보
             err = exc

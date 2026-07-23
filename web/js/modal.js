@@ -92,6 +92,7 @@
       el: el,
       returnFocus: returnFocus, // 닫을 때 여기로 복귀(#28/H-16 메뉴 seam)
       onCloseCb: opts.onClose || null, // Escape·취소 등 어떤 경로로 닫혀도 통지
+      beforeCloseCb: opts.beforeClose || null, // 폼 dirty 가드: false면 닫기 요청을 소비
       closing: false,
     });
     el.style.setProperty("--modal-depth", String(stack.length - 1));
@@ -140,6 +141,7 @@
       found = true;
       const entry = stack[i];
       if (entry.closing) return; // 퇴장 중 버튼/Escape 재입력은 한 번만 정착.
+      if (entry.beforeCloseCb && entry.beforeCloseCb() === false) return;
       if (!el.classList.contains("modal")) {
         rejectNonModal("close", id);
         entry.closing = true;
@@ -184,6 +186,7 @@
         ok: document.getElementById(spec.okId),
         cancel: document.getElementById(spec.cancelId),
         input: spec.inputId ? document.getElementById(spec.inputId) : null,
+        error: spec.errorId ? document.getElementById(spec.errorId) : null,
       };
       // 골격 부재(요소 결측)에 더해 root 의 .modal 결여도 여기서 거른다(Codex P2) — open 가드는
       // .modal 없는 root 를 조용히 early-return 하는데, 여기선 이미 pendingDialog 를 세우기 *전*이라
@@ -211,6 +214,7 @@
       let settled = false;
       let closing = false;
       let closeValue = spec.refusal;
+      let validating = false;
       function cleanup() {
         els.ok.removeEventListener("click", onOk);
         els.cancel.removeEventListener("click", onCancel);
@@ -229,13 +233,34 @@
         cleanup();
         close(spec.id);
       }
-      function onOk() { finish(spec.okValue(els)); }
+      async function onOk() {
+        if (validating) return;
+        const value = spec.okValue(els);
+        if (spec.validate) {
+          validating = true;
+          els.ok.disabled = true;
+          try {
+            const error = await spec.validate(value);
+            if (error) {
+              if (els.error) {
+                els.error.textContent = String(error);
+                els.error.style.display = "block";
+              }
+              return;
+            }
+          } finally {
+            validating = false;
+            els.ok.disabled = false;
+          }
+        }
+        finish(value);
+      }
       function onCancel() { finish(spec.refusal); }
       function onInputKey(e) {
         // 한글 IME 조합 확정 Enter 는 제출이 아니다(#92 리뷰 #3) — isComposing/229 선-가드.
         // 없으면 마지막 음절 확정 Enter 가 조합 중 문자열로 조기 제출돼 잘린 값이 조용히 저장된다.
         if (e.isComposing || e.keyCode === 229) return;
-        if (e.key === "Enter") { e.preventDefault(); finish(spec.okValue(els)); }
+        if (e.key === "Enter") { e.preventDefault(); onOk(); }
       }
       els.ok.addEventListener("click", onOk);
       els.cancel.addEventListener("click", onCancel);
@@ -254,7 +279,8 @@
   }
 
   /* 네이티브 window.confirm 대체(#86) — Promise<boolean>. 기본 포커스=취소(머무르기),
-     Escape·복귀=머무르기(false). opts: { body, title?, confirmLabel?, cancelLabel? }. */
+     Escape·복귀=머무르기(false). opts: { body, title?, confirmLabel?, cancelLabel?, danger? }.
+     danger 는 영구 파일/정의 삭제·덮어쓰기처럼 내구 파괴인 확정에만 쓴다(#219). */
   function confirm(opts) {
     opts = opts || {};
     return _promiseModal({
@@ -268,6 +294,10 @@
         _setText("confirmModalBody", opts.body || "");
         els.ok.textContent = opts.confirmLabel || "확인";
         els.cancel.textContent = opts.cancelLabel || "취소";
+        // 같은 안정 버튼을 재사용하므로 양방향 토글한다 — danger 뒤 중립 confirm 이 빨갛게
+        // 남거나 primary 뒤 danger 가 파란색으로 남는 상태 누수 차단.
+        els.ok.classList.toggle("danger", !!opts.danger);
+        els.ok.classList.toggle("primary", !opts.danger);
       },
       initialFocus: function (els) { return els.cancel; }, // 기본=머무르기, Enter-반사 파괴 차단(F7)
       okValue: function () { return true; },
@@ -285,15 +315,18 @@
       okId: "promptModalOk",
       cancelId: "promptModalCancel",
       inputId: "promptModalInput",
+      errorId: "promptModalError",
       refusal: null,
       missingText: "입력 창을 열 수 없어 요청을 실행하지 않았습니다. 다시 시도하세요.",
       prepare: function (els) {
         _setText("promptModalTitle", opts.title || "입력");
         _setText("promptModalBody", opts.body || "");
         els.input.value = opts.value == null ? "" : String(opts.value);
+        if (els.error) { els.error.textContent = ""; els.error.style.display = "none"; }
       },
       initialFocus: function (els) { return els.input; },
       okValue: function (els) { return els.input.value; },
+      validate: opts.validate,
       returnFocus: opts.returnFocus,
     });
   }

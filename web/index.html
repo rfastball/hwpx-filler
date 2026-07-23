@@ -22,7 +22,7 @@
     <div class="brand">HWPX Filler
       <!-- #18/9B2AB35D-A: 사이드 패널 접기 — 좁은 창에서 작업 영역 확장(반응형) -->
       <button class="rail-toggle" id="railToggle" title="사이드 패널 접기/펼치기"
-              aria-label="사이드 패널 접기/펼치기">«</button></div>
+              aria-label="사이드 패널 접기/펼치기" aria-expanded="true">«</button></div>
     <!-- 섹션 라벨("투트랙 허브")은 R-copy 에서 삭제(F1) — 개발결정 용어(ADR I)인 데다
          5항목 단일 목록엔 섹션 구분 정보가 없다. -->
 
@@ -56,6 +56,10 @@
             title="테마 전환 (시스템 → 라이트 → 다크)">
       <span class="ti">◐</span><span class="n">테마</span>
       <span class="d" id="themeLabel">시스템</span></button>
+    <button class="rail-font" id="fontScaleToggle" aria-label="글자 크기 전환 (기본 → 크게 → 더 크게)"
+            title="글자 크기 전환 (기본 → 크게 → 더 크게)">
+      <span class="ti">A</span><span class="n">글자 크기</span>
+      <span class="d" id="fontScaleLabel">기본</span></button>
   </nav>
 
   <main class="stage">
@@ -114,7 +118,10 @@
           <h1>작업</h1>
           <p class="sub">저장된 작업을 골라 데이터를 채워 문서를 만듭니다.</p>
         </div>
-        <div class="status" id="jobStatus" data-level="idle">작업 선택</div>
+        <div class="scr-head-actions">
+          <button class="btn sm" id="jobEditResume" style="display:none">편집 계속</button>
+          <div class="status" id="jobStatus" data-level="idle">작업 선택</div>
+        </div>
       </header>
 
       <div class="job-layout">
@@ -133,6 +140,8 @@
             </div>
           </div>
         </aside>
+        <div class="master-splitter" role="separator" tabindex="0" aria-orientation="vertical"
+             aria-label="작업 목록 너비" aria-valuemin="180" aria-valuemax="420" aria-valuenow="240"></div>
 
         <!-- 우 세션 패널 4존 -->
         <div class="job-panel" id="jobPanel">
@@ -235,6 +244,7 @@
                jobZones 와 함께 토글) — 편집 모드·미선택에선 숨는다. -->
           <div class="session-actionbar" id="jobActionBar" style="display:none">
             <button class="btn primary" id="jobGenBtn" disabled>이 작업으로 문서 생성</button>
+            <button class="btn" id="jobGenCancel" style="display:none">다음 건부터 중단</button>
             <span class="muted capnote" id="jobGate"></span>
           </div>
         </div>
@@ -267,6 +277,8 @@
             <div id="draftListEmpty" class="muted job-empty" style="display:none">저장된 기안 작업이 없습니다.</div>
           </div>
         </aside>
+        <div class="master-splitter" role="separator" tabindex="0" aria-orientation="vertical"
+             aria-label="기안 작업 목록 너비" aria-valuemin="180" aria-valuemax="420" aria-valuenow="240"></div>
 
         <!-- 우 상세 패널 — 세션 4존(슬라이스 3a). **저장/휘발 한 패널**(슬라이스 5a): 목록 미선택
              = 휘발 세션(붙여넣기), 저장 기안 선택 = 그 Job 에서 복원한 저장-세션(유형·확정 열·
@@ -489,6 +501,11 @@
 <!-- H-16: 모달·팝오버의 유일한 포털. 앱 그리드/스크롤 stacking context 밖 body 직속에 둔다. -->
 <div id="overlayRoot">
 
+    <div id="undoToast" class="undo-toast" role="status" aria-live="polite" hidden>
+      <span id="undoToastText"></span>
+      <button class="btn sm" id="undoToastBtn">되돌리기</button>
+    </div>
+
     <!-- H-15/H-16 경량층도 같은 body 직속 포털을 쓴다. 좌표는 viewport 기준 Popover.place가 소유. -->
     <div id="homeRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
     <div id="jobRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
@@ -527,6 +544,7 @@
           <input class="field" id="txtEditName" type="text" placeholder="예: 회의결과보고"></label>
         <p class="modal-sub">{{필드}} 토큰을 포함한 템플릿 내용</p>
         <textarea id="txtEditContent" rows="10" placeholder="제목: {{공고명}} ..."></textarea>
+        <p id="txtEditError" class="note dangerbox" role="alert" style="display:none"></p>
         <div class="modal-actions">
           <button class="btn" id="txtEditCancel">취소</button>
           <button class="btn primary" id="txtEditOk">저장</button>
@@ -662,6 +680,7 @@
         <h3 id="promptModalTitle">입력</h3>
         <p class="modal-body" id="promptModalBody"></p>
         <input class="field" id="promptModalInput" type="text">
+        <p id="promptModalError" class="note dangerbox" role="alert" style="display:none"></p>
         <div class="modal-actions">
           <button class="btn" id="promptModalCancel">취소</button>
           <button class="btn primary" id="promptModalOk">확인</button>
@@ -673,10 +692,12 @@
 <script src="js/bridge.js"></script>
 <script src="js/copy.js"></script>
 <script src="js/theme.js"></script>
+<script src="js/personalization.js"></script>
 <script src="js/esc.js"></script>
 <script src="js/segview.js"></script>
 <script src="js/preserve.js"></script>
 <script src="js/modal.js"></script>
+<script src="js/undo_toast.js"></script>
 <script src="js/sheet_picker.js"></script>
 <script src="js/pool_picker.js"></script>
 <script src="js/pathtrack.js"></script>
