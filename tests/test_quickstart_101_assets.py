@@ -101,6 +101,23 @@ def test_launcher_and_reset_cover_generated_state() -> None:
         assert f'rd /s /q "{asset}"' not in reset, f"reset 이 예제 자산 {asset} 을 지운다"
 
 
+def test_readme_screenshots_exist_one_to_one() -> None:
+    """README 가 참조하는 스크린샷 = img/ 실물 (양방향 1:1) — 죽은 링크도 고아 컷도 없다.
+
+    스크린샷은 capture_101_screenshots.py 전량 재생성이라, 참조·실물이 어긋나면
+    캡처 대본과 문서 중 하나가 뒤처진 것이다(둘 다 같은 커밋에서 갱신돼야 한다).
+    """
+    import re
+
+    readme = (Q101 / "README.md").read_text(encoding="utf-8")
+    refs = set(re.findall(r"img/(\d{2}-[a-z-]+\.png)", readme))
+    files = {p.name for p in (Q101 / "img").glob("*.png")}
+    assert refs, "README 에 스크린샷 참조가 없다"
+    assert refs == files, (
+        f"참조-실물 어긋남 — README에만: {sorted(refs - files)}, img/에만: {sorted(files - refs)}"
+    )
+
+
 def test_make_template_source_of_truth_matches_committed_csv() -> None:
     """진실원(RECORDS/RECORDS_2)에서 CSV 를 재생성해 커밋 실물과 바이트 대조.
 

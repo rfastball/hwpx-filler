@@ -8,6 +8,9 @@ settings.json
 webview/
 webapp-alerts.log
 
+# 스크린샷 캡처 도구(scripts/capture_101_screenshots.py)의 임시 산출
+_capture_*
+
 # 문서 생성 산출물
 out/
 Results/
