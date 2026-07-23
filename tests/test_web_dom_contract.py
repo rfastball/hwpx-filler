@@ -707,6 +707,22 @@ def test_boot_hides_window_until_theme_applied():
     )
 
 
+def test_native_close_and_editor_escape_affordances_are_wired():
+    """#218: X 가드·신규 취소·dismiss 뒤 편집 복귀 경로가 DOM/JS에서 함께 살아 있어야 한다."""
+    html = WEB_INDEX.read_text(encoding="utf-8")
+    app_py = (WEB_INDEX.parents[1] / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(encoding="utf-8")
+    app_js = (WEB_JS_DIR / "app.js").read_text(encoding="utf-8")
+    editor_js = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
+    job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+
+    assert "window.events.closing += frontend._handle_window_closing" in app_py
+    assert "AppCloseGuard" in app_js and "confirm_window_close" in app_js
+    assert 'id="jobEditResume"' in html and "jobEditResume" in job_js
+    assert 'data-act="cancel-new"' in editor_js
+    assert 'Bridge.call(SCREEN, "discard_session", {})' in editor_js
+    assert "showRunMode" in job_js
+
+
 def test_unhandledrejection_backstop_present_in_both_shells():
     """비동기 실패 최종 백스톱 — 두 셸이 unhandledrejection 을 alert 로 재진술해야 한다.
 

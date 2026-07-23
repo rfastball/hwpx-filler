@@ -2,7 +2,7 @@
    실행 모드(기본)=세션 패널 4존, 편집 모드=정의 호스트(#jobEditHost — editor.js 가 렌더).
    안정 DOM(index.html) + Python 이 window.__push('job', snapshot) 로 값만 채운다(run/txt 패턴).
    표현 계층(거울 테이블·재진술 블록·게이트·진행/로그)만 여기서 만든다 — VM 로직 아님(링2 대체, #87).
-   덮어쓰기 확인은 공용 Modal.confirm(수치 합성 본문)으로 — 네이티브 다이얼로그 무사용이라 #86
+   덮어쓰기 확인은 공용 Modal.confirm의 수치 합성 본문으로 — 네이티브 다이얼로그 무사용이라 #86
    재유입 가드에 처음부터 부합한다. 존 배치(헤더·데이터·본문·완료)는 여기서 안정 DOM 에 값을 채운다. */
 (function () {
   const SCREEN = "job";
@@ -141,6 +141,7 @@
     syncModeDisplay(!!(LAST && LAST.has_job));
     setEditStatus();
     $("jobEditExitNote").style.display = "none";  // 편집 재진입 = 복귀 고지 소임 종료
+    $("jobEditResume").style.display = "none";
   }
 
   /* 실행 복귀(T2 재정의, 블록 2 개정 결정 45) — 가드 대상이 화면 인계에서 "편집 중 행 클릭"
@@ -162,6 +163,15 @@
     return busy;
   }
 
+  /* 신규 마법사 취소 착지 — 백엔드 discard_session 뒤 실행/미선택 패널로 돌아간다. */
+  function showRunMode() {
+    MODE = "run";
+    syncModeDisplay(!!(LAST && LAST.has_job));
+    if (LAST) renderStatus(LAST);
+    $("jobEditExitNote").style.display = "none";
+    $("jobEditResume").style.display = "none";
+  }
+
   /* T2 고지 표면(PR-2 리뷰 F4) — 완료 존 log() 는 세션 전환 리셋(resetGenResult)·존 은닉에
      증발했다. 이 요소는 어떤 렌더 함수도 쓰지 않는 JS 소유라 push·세션 리셋을 관통해
      살아남고, 사용자가 확인 버튼으로 걷거나 편집 재진입 때 걷힌다(고지=읽힐 때까지). */
@@ -174,6 +184,8 @@
       `<button class="btn sm" data-act="return-to-edit">편집으로 돌아가기</button> ` +
       `<button class="btn sm" data-act="dismiss-exit-note">확인</button>`;
     el.style.display = "";
+    // 고지를 확인해 걷어도 미저장 편집 세션의 비파괴 복귀 경로는 헤더에 남는다(#218 G4).
+    $("jobEditResume").style.display = "";
   }
 
   /* 좌 목록 갱신 — 편집 저장 직후 새/개명 작업이 바로 보이게(editor.js doSave 가 호출).
@@ -196,7 +208,9 @@
   function rowHtml(r) {
     if (RENAMING && RENAMING.name === r.name) {
       return `<div class="job-row"><input class="field job-rename" id="jobRenameInput"` +
-        ` data-orig="${esc(r.name)}" value="${esc(RENAMING.value)}" aria-label="새 이름"></div>`;
+        ` data-orig="${esc(r.name)}" value="${esc(RENAMING.value)}" aria-label="새 이름">` +
+        (RENAMING.error ? `<span class="note dangerbox" role="alert">${esc(RENAMING.error)}</span>` : "") +
+        `</div>`;
     }
     return `<div class="job-row">` +
       `<button class="job-item" data-job="${esc(r.name)}" aria-current="${r.selected ? "true" : "false"}">${esc(r.name)}</button>` +
@@ -226,7 +240,7 @@
           ? `<button class="job-more grp-more" data-grp-more="${esc(sec.group)}" aria-haspopup="true" aria-label="그룹 관리">⋮</button>`
           : "") +
         `</div>` +
-        (sec.collapsed ? "" : `<div class="job-grp-rows">${sec.rows.map(rowHtml).join("")}</div>`);
+        `<div class="job-grp-rows"${sec.collapsed ? " hidden" : ""}>${sec.rows.map(rowHtml).join("")}</div>`;
       return head;
     }).join("");
   }
@@ -452,11 +466,13 @@
     $("scr-job").querySelectorAll("[data-busy-lock]").forEach((el) => { el.disabled = busy; });
     $("jobGenBtn").disabled = busy || !(LAST && LAST.gate && LAST.gate.enabled);
     $("jobGenBtn").textContent = busy ? "생성 중…" : "이 작업으로 문서 생성";
+    $("jobGenCancel").style.display = busy ? "" : "none";
+    if (!busy) { $("jobGenCancel").disabled = false; $("jobGenCancel").textContent = "다음 건부터 중단"; }
   }
 
   /* ---- 덮어쓰기 확인 본문 = 수치 합성(A-2-22, 결정 36) — 총량·파괴분·신규분을 종류별로
      재진술한다(블록 4 가드 형식 승계). 별도 재진술 모달을 만들지 않고, 어차피 떠야 하는 RC-02
-     덮어쓰기 모달이 수치를 나른다. 공용 modal.js Modal.confirm(기본 포커스=머무르기·Escape=
+     덮어쓰기 모달이 수치를 나른다. 공용 modal.js Modal.confirm의 기본 포커스=머무르기·Escape=
      머무르기)이 담당한다 — 새 표면은 처음부터 #86 재유입 가드에 부합(window.confirm 무사용). */
   function overwriteBody(res) {
     const names = res.conflict_names || [];
@@ -479,7 +495,7 @@
         // 조용한 덮어쓰기 금지 — 수치 재진술 후 확인 시에만 재호출(RC-02). 모달 대기 동안 busy 유지.
         const ok = await window.Modal.confirm({
           title: "덮어쓰기 확인", body: overwriteBody(res),
-          confirmLabel: "덮어쓰고 생성", cancelLabel: "취소",
+          confirmLabel: "덮어쓰고 생성", cancelLabel: "취소", danger: true,
         });
         if (ok) { await doGenerate(true); }
         else { log("생성을 취소했습니다."); }
@@ -574,6 +590,32 @@
     }
   }
 
+  function setJobOpening(item, opening) {
+    if (!item) return;
+    if (opening) {
+      if (!item.dataset.idleLabel) item.dataset.idleLabel = item.textContent;
+      item.setAttribute("aria-busy", "true");
+      item.textContent = `${item.dataset.idleLabel} · 여는 중…`;
+      return;
+    }
+    item.removeAttribute("aria-busy");
+    if (item.dataset.idleLabel) {
+      item.textContent = item.dataset.idleLabel;
+      delete item.dataset.idleLabel;
+    }
+  }
+
+  async function selectJobFromItem(item) {
+    // 검색 디바운스 정산·Python 로드보다 먼저 표지를 세운다. 정본 판정은 select_job push가 덮는다.
+    setJobOpening(item, true);
+    try {
+      await dz.flushPendingSearch();
+      return await selectJobGuarded(item.dataset.job);
+    } finally {
+      if (item.isConnected) setJobOpening(item, false);
+    }
+  }
+
   function onMasterClick(e) {
     // 관리 어포던스(⋮·그룹 헤더)가 행 진입 동사보다 먼저 — 행 클릭=실행(주동사)과 분리.
     const more = e.target.closest(".job-more[data-more]");
@@ -583,7 +625,11 @@
     const grp = e.target.closest(".job-grp-head[data-grp-toggle]");
     if (grp) {
       // 접힘 토글은 보기만 바꾼다 — 선택·세션 무영향(결정 6-⑤). ""=「그룹 없음」.
-      Bridge.call(SCREEN, "toggle_group", { group: grp.getAttribute("data-grp-toggle") });
+      GroupList.toggleGroup(
+        grp,
+        () => Bridge.call(SCREEN, "toggle_group", { group: grp.getAttribute("data-grp-toggle") }),
+        "작업 그룹 접힘 상태를 저장하지 못했습니다."
+      );
       return;
     }
     const item = e.target.closest(".job-item[data-job]");
@@ -597,18 +643,21 @@
     if (MODE === "edit") {
       (async () => {
         if (!already) {
-          await dz.flushPendingSearch();
-          if ((await selectJobGuarded(item.dataset.job)) === false) return;  // 머무르기
+          if ((await selectJobFromItem(item)) === false) return;  // 머무르기
         }
         if (await exitEditToRun()) showExitNote();  // T2 고지(미저장 편집 있을 때만)
-      })();
+      })().catch((err) => {
+        log("작업 열기 실패: " + String((err && err.message) || err));
+      });
       return;
     }
     // 이미 선택된 작업 재클릭 = 무동작(세션 재구성으로 데이터 겨눔이 날아가지 않게).
     if (already) return;
     // 미적용 검색어는 전환 시도 전에 정산(적용) — 취소만 하면 「머무르기」 세션에서
     // 마지막 타이핑이 증발한다(리뷰 #2). 새 세션 오발도 함께 차단(PR-2b 리뷰 #1).
-    dz.flushPendingSearch().then(() => selectJobGuarded(item.dataset.job));
+    selectJobFromItem(item).catch((err) => {
+      log("작업 열기 실패: " + String((err && err.message) || err));
+    });
   }
 
   /* ---- 좌 목록 관리(결정 43) — ⋮ 메뉴·인라인 이름 변경·그룹 이동/관리 ----
@@ -682,14 +731,13 @@
     if (typed.trim() === orig) { if (LAST) renderMaster(LAST); return; }  // 무변경 = 조용히 복귀
     const r = await Bridge.call(SCREEN, "rename_job", { name: orig, new: typed });
     if (r && r.ok) { log(`이름 변경: '${orig}' → '${typed.trim()}'`); return; }
-    log("이름 변경 실패: " + ((r && r.error) || "알 수 없는 오류"));
+    const error = (r && r.error) || "알 수 없는 오류";
+    log("이름 변경 실패: " + error);
+    RENAMING = { name: orig, value: typed, error };
+    if (LAST) renderMaster(LAST);
     if (restoreOnError) {
-      RENAMING = { name: orig, value: typed };
-      if (LAST) renderMaster(LAST);
       const again = $("jobRenameInput");
       if (again) { again.focus(); again.select(); }
-    } else if (LAST) {
-      renderMaster(LAST);
     }
   }
 
@@ -735,6 +783,10 @@
 
   async function deleteJob(name, returnFocus) {
     const res = await Bridge.call(SCREEN, "delete_job", { name });
+    if (res && res.undo) {
+      showDeleteUndo(name, res);
+      return;
+    }
     if (!(res && res.needs_confirm)) return;
     let body = `작업 '${name}' 을(를) 삭제합니다. 템플릿 연결과 매핑 정의가 함께 사라집니다.`;
     if (res.open_session) {
@@ -746,12 +798,20 @@
     }
     const ok = await window.Modal.confirm({
       title: "작업 삭제 확인", body,
-      confirmLabel: "삭제", cancelLabel: "취소",
+      confirmLabel: "휴지통으로 이동", cancelLabel: "취소",
       returnFocus,
     });
     if (!ok) return;
-    await Bridge.call(SCREEN, "delete_job", { name, confirm: true });
-    log(`작업 삭제: '${name}'`);
+    const deleted = await Bridge.call(SCREEN, "delete_job", { name, confirm: true });
+    log(`작업을 휴지통으로 이동: '${name}'`);
+    showDeleteUndo(name, deleted);
+  }
+
+  function showDeleteUndo(name, deleted) {
+    if (deleted && deleted.undo) window.UndoToast.show(`작업 '${name}' 을(를) 휴지통으로 옮겼습니다.`, async () => {
+      const restored = await Bridge.call(SCREEN, "undo_delete_job", {});
+      if (restored && restored.ok === false) throw new Error(restored.error);
+    });
   }
 
   async function renameGroup(old, returnFocus) {
@@ -906,6 +966,7 @@
         $("jobEditExitNote").style.display = "none";
       }
     });
+    $("jobEditResume").addEventListener("click", showEditMode);
     // 구획 ＋ 새 작업(1부 결정 10 — 레일 항목 사망의 생성 진입 승계, 리뷰 F2). 흐름은
     // EditorEntry.newDraft 단일 출처(홈 ＋ 와 공유 — 폐기 확인·착지 드리프트 금지).
     $("jobNewBtn").addEventListener("click", startNewJob);
@@ -927,6 +988,13 @@
       }
     });
     $("jobGenBtn").addEventListener("click", () => doGenerate(false));
+    $("jobGenCancel").addEventListener("click", async () => {
+      const btn = $("jobGenCancel");
+      btn.disabled = true;
+      btn.textContent = "중단 요청됨…";
+      await Bridge.call(SCREEN, "cancel_generation", {});
+      log("중단 요청: 진행 중인 문서를 마친 뒤 미착수 건을 중단합니다.");
+    });
 
     $("jobBtnPickData").addEventListener("click", async () => {
       if (!(await confirmDataSwapIfArmed())) return;  // 데이터 재겨눔 = T1 동류 파괴 전이
@@ -968,6 +1036,6 @@
   // showEditMode/refreshList 는 편집 모드 seam(EditorEntry·editor.js doSave 가 소비).
   window.JobScreen = {
     init, overwriteBody, guardBody, confirmDataSwapIfArmed, openJob,
-    showEditMode, refreshList,
+    showEditMode, showRunMode, refreshList,
   };
 })();

@@ -155,6 +155,13 @@ class TestWebSelftestGate:
             "Modal.open 이 .modal 없는 요소를 조용히 삼켰습니다 — loud 거절(console.error)+미개방 기대."
         )
 
+    def test_danger_confirm_toggles_visual_variant_without_leaking(self, selftest_result: dict) -> None:
+        """#219: 실 WebView2에서 danger 버튼이 솔리드 배경으로 서고 다음 중립 확인엔 남지 않는다."""
+        m = selftest_result["modal_a11y"]
+        assert m["danger_class"] is True
+        assert m["danger_background"] not in ("transparent", "rgba(0, 0, 0, 0)")
+        assert m["danger_resets_to_neutral"] is True
+
     def test_modal_close_rejects_non_modal_target_loudly(self, selftest_result: dict) -> None:
         # 동일 잠복(#132.4) — close 도 .modal 없는 대상을 loud 거절한다(open 과 대칭).
         m = selftest_result["modal_a11y"]
@@ -315,6 +322,19 @@ class TestWebSelftestGate:
         assert j["amount_align"] == "right"
         assert "tabular-nums" in j["amount_nums"]
 
+    def test_job_row_toggle_is_optimistic_and_uses_live_state(self, selftest_result: dict) -> None:
+        """I-217 R2: push를 미결로 둬도 표지가 즉시 뒤집히고 재클릭은 현 DOM 상태를 쓴다."""
+        j = selftest_result["job_mirror"]
+        assert j["row_optimistic_off"] is True, f"첫 행 토글이 즉시 해제 표지를 못 냈습니다: {j!r}"
+        assert j["row_optimistic_on"] is True, f"push 전 재클릭이 즉시 재선택되지 않았습니다: {j!r}"
+        assert j["row_toggle_values"] == [False, True], (
+            f"재클릭 값이 화면의 현재 상태를 따르지 않습니다: {j['row_toggle_values']!r}"
+        )
+
+    def test_filter_panel_shell_appears_before_backend_response(self, selftest_result: dict) -> None:
+        """I-217 R4: filter_panel 응답이 미결이어도 제목+로딩 껍데기는 클릭 프레임에 선다."""
+        assert selftest_result["job_mirror"]["panel_shell_immediate"] is True
+
     def test_job_filename_token_danger_blocks_with_an_exit(self, selftest_result: dict) -> None:
         # #128 — 파일명 토큰 danger 는 드리프트와 **같은 자격**이라 같은 자리에서 차단 배너 +
         # 행동 링크로 선다. 종전엔 거울이 「채움」 표를 그려 문서가 건강해 보이고, 재진술은
@@ -379,6 +399,8 @@ class TestWebSelftestGate:
         # 접힘 화살표: 접힌 그룹=상시 노출, 펼친 그룹=호버 전 은닉(결정 5 — visibility 자동 눈검증).
         assert j["caret_collapsed"] == "visible", f"접힌 그룹 화살표가 상시 노출이 아닙니다: {j!r}"
         assert j["caret_expanded"] == "hidden", f"펼친 그룹 화살표가 호버 전에 보입니다: {j!r}"
+        assert j["collapse_local_flip"] is True, f"그룹 접힘이 왕복 전에 즉시 풀리지 않습니다: {j!r}"
+        assert j["opening_marker_immediate"] is True, f"작업 열기 표지가 클릭 즉시 서지 않습니다: {j!r}"
         # 행 ⋮ 메뉴 — 실개방(항목 구성 포함) + 바깥 pointerdown 닫기.
         assert j["menu_shown"] is True, "행 ⋮ 클릭에 메뉴가 열리지 않았습니다."
         assert j["menu_items"] == ["edit", "clone", "rename", "move", "delete"], (
@@ -399,6 +421,7 @@ class TestWebSelftestGate:
         assert d["rows_visible"] == 3, f"접힌 그룹 행이 뷰에서 제외되지 않았습니다: {d!r}"
         assert d["grp_more"] == 2, "그룹 ⋮ 는 이름 그룹에만 있어야 합니다(「그룹 없음」 제외)."
         assert d["row_more"] == 3, f"행 ⋮ 수가 가시 행 수와 다릅니다: {d!r}"
+        assert d["collapse_local_flip"] is True, f"기안 그룹 접힘이 왕복 전에 풀리지 않습니다: {d!r}"
         # 미선택 = **휘발 세션 4존**(결정 5, 슬라이스 3a). 저장/휘발 한 패널(슬라이스 5a — 껍데기
         # stub 폐기, 선택이 실제 복원이 되며 사라졌다). 상시 「이번 세션」 행이 휘발 귀환구.
         assert d["session_shown"] is True, "미선택 상세에 휘발 세션 4존이 서지 않았습니다."
@@ -606,6 +629,7 @@ class TestWebSelftestGate:
         # 접힘 화살표: 접힌 그룹=상시 노출, 펼친 그룹=호버 전 은닉(결정 5, job 목록 동형).
         assert t["caret_collapsed"] == "visible", f"접힌 그룹 화살표가 상시 노출이 아닙니다: {t!r}"
         assert t["caret_expanded"] == "hidden", f"펼친 그룹 화살표가 호버 전에 보입니다: {t!r}"
+        assert t["collapse_local_flip"] is True, f"템플릿 그룹 접힘이 왕복 전에 풀리지 않습니다: {t!r}"
         # 그룹에 속한 카드 ⋮ = [이동, 삭제] · 그룹 헤더 ⋮ = [개명, 해산].
         assert t["menu_shown"] is True, "카드 ⋮ 클릭에 메뉴가 열리지 않았습니다."
         assert t["card_menu_items"] == ["use", "move", "delete"], (
@@ -753,6 +777,14 @@ class TestWebSelftestGate:
         assert tp["data_theme"] is None, f"미저장인데 data-theme 이 강제됨: {tp!r}"
         assert tp["a_card"] == "#ffffff", f"미저장 기본이 라이트 카드가 아님: {tp!r}"
 
+    def test_personalization_defaults_render_in_real_webview(self, selftest_result: dict) -> None:
+        p = selftest_result["personalization_persist"]
+        assert p["font_scale"] == "normal" and p["root_px"] == "16px"
+        assert p["rail_collapsed"] is False and p["master_width"] == 240
+        assert p["splitters"] == 2
+        assert p["body_overflow"] is False, f"기본 배율에서 가로 오버플로: {p!r}"
+        assert p["selected_text"] == "선택 가능한 본문", f"본문 텍스트 선택 실패: {p!r}"
+
 
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
 def test_theme_choice_persists_across_restart_without_flicker(tmp_path) -> None:
@@ -800,6 +832,84 @@ def test_theme_choice_persists_across_restart_without_flicker(tmp_path) -> None:
         f"콜드부트에서 저장 테마 미적용 — Python 설정 영속 또는 loaded 주입 실패: {tp!r}")
     dark_card = gen.load_tokens()["dark"]["color"]["card_bg"]
     assert tp["a_card"] == dark_card, f"다크 --a-card({dark_card}) 미해소: {tp!r}"
+
+
+@pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
+@pytest.mark.parametrize(("scale", "root_px"), [("large", "20px"), ("larger", "24px")])
+def test_font_scale_persists_across_restart_without_major_overflow(
+    tmp_path, scale: str, root_px: str
+) -> None:
+    """125/150%를 실 브리지로 저장한 뒤 콜드부트에서 적용·레이아웃을 되읽는다."""
+    home = tmp_path / scale
+    out_write = tmp_path / f"{scale}-write.json"
+    out_read = tmp_path / f"{scale}-read.json"
+    base = dict(os.environ, HWPXFILLER_HOME=str(home))
+    cmd = [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"]
+    written_proc = subprocess.run(
+        cmd, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
+        env=dict(
+            base,
+            HWPX_SELFTEST_OUT=str(out_write),
+            HWPX_SELFTEST_SET_FONT_SCALE=scale,
+        ),
+    )
+    assert out_write.exists(), f"배율 쓰기 실패 rc={written_proc.returncode}: {written_proc.stderr[-2000:]}"
+    assert json.loads(out_write.read_text(encoding="utf-8"))["set_result"] == scale
+    saved = json.loads((home / "settings.json").read_text(encoding="utf-8"))
+    saved.update(rail_collapsed=True, master_width=333)
+    (home / "settings.json").write_text(json.dumps(saved), encoding="utf-8")
+
+    read_proc = subprocess.run(
+        cmd, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
+        env=dict(base, HWPX_SELFTEST_OUT=str(out_read)),
+    )
+    assert out_read.exists(), f"배율 되읽기 실패 rc={read_proc.returncode}: {read_proc.stderr[-2000:]}"
+    p = json.loads(out_read.read_text(encoding="utf-8"))["personalization_persist"]
+    assert p["font_scale"] == scale and p["root_px"] == root_px
+    assert p["rail_collapsed"] is True and p["master_width"] == 333
+    assert p["body_overflow"] is False, f"{scale}에서 주요 가로 오버플로: {p!r}"
+    full = json.loads(out_read.read_text(encoding="utf-8"))
+    assert len(full["grid_narrow"].split()) == 1 and len(full["grid_wide"].split()) == 2
+
+
+@pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
+@pytest.mark.parametrize("mode", ["normal", "maximized", "offscreen"])
+def test_window_geometry_restores_or_falls_back_in_real_webview(tmp_path, mode: str) -> None:
+    """저장 크기·위치·최대화는 복원하고, 화면 밖 좌표는 기본 배치로 회수한다."""
+    home = tmp_path / mode
+    home.mkdir()
+    geometry = {
+        "x": 120 if mode != "offscreen" else 50_000,
+        "y": 100,
+        "width": 1000,
+        "height": 700,
+        "maximized": mode == "maximized",
+    }
+    (home / "settings.json").write_text(
+        json.dumps({"window_geometry": geometry}), encoding="utf-8"
+    )
+    out = tmp_path / f"geometry-{mode}.json"
+    env = dict(
+        os.environ,
+        HWPXFILLER_HOME=str(home),
+        HWPX_SELFTEST_OUT=str(out),
+        HWPX_SELFTEST_GEOMETRY_ONLY="1",
+    )
+    proc = subprocess.run(
+        [sys.executable, "-m", "hwpxfiller.webapp.app", "--selftest"],
+        env=env, timeout=_SELFTEST_TIMEOUT, capture_output=True, text=True,
+    )
+    assert out.exists(), f"창 기하 부팅 실패 rc={proc.returncode}: {proc.stderr[-2000:]}"
+    actual = json.loads(out.read_text(encoding="utf-8"))["window_geometry"]
+    if mode == "normal":
+        # WinForms screenX/Y에는 DPI별 비클라이언트 프레임 오프셋이 붙는다.
+        assert abs(actual["x"] - 120) <= 40 and abs(actual["y"] - 100) <= 40
+        assert abs(actual["width"] - 1000) <= 40 and abs(actual["height"] - 700) <= 40
+        assert actual["maximized_like"] is False
+    elif mode == "maximized":
+        assert actual["maximized_like"] is True, f"최대화 복원 실패: {actual!r}"
+    else:
+        assert actual["x"] < 50_000 and actual["maximized_like"] is False
 
 # InPrivate 의미론이 바뀌어도 부팅마다 webview_root를 청소하고 고정 프로필을 새로 만든다.
 # 재시작 간 공유 캐시·구판 잔재 차단은

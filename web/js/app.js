@@ -1,6 +1,34 @@
 /* 라우터 + 부팅 — 레일 나비로 화면 전환, pywebview 준비 시 실화면 초기화.
    화면별 로직은 js/screens/*.js 가 소유(DraftScreen.init 등). 여기선 배선만. */
 (function () {
+  /* 네이티브 X 닫기 확인 착지(#218 G1). Python closing 이벤트가 현재 세션 술어를 판정해
+     호출하며, 취소/Escape는 창을 유지하고 다음 X에서 새 상태를 다시 판정한다. */
+  let closePromptPending = false;
+  window.AppCloseGuard = {
+    async prompt(state) {
+      if (closePromptPending) return;
+      closePromptPending = true;
+      const reasons = (state && state.reasons) || [];
+      try {
+        const ok = await Modal.confirm({
+          title: "앱 종료 확인",
+          body: "앱을 닫으면 다음 진행 상태가 사라집니다:\n\n• " + reasons.join("\n• ") +
+            "\n\n그래도 종료할까요?",
+          confirmLabel: "종료",
+          cancelLabel: "계속 작업",
+          danger: true,
+        });
+        if (ok) await window.pywebview.api.confirm_window_close();
+        else await window.pywebview.api.cancel_window_close();
+      } catch (err) {
+        await window.pywebview.api.cancel_window_close();
+        window.alert("종료 확인을 처리하지 못해 창을 유지합니다: " +
+          String((err && err.message) || err));
+      } finally {
+        closePromptPending = false;
+      }
+    },
+  };
   /* 비동기 실패 최종 백스톱 — 지역 가드(디스패처 try/catch·.catch)를 빠뜨린 브리지
      rejection 이 조용한 무반응으로 증발하는 결함류(F8·F9·#45 profile_*·P2 onClick)가
      파일마다 반복 재발했다. 사이트별 규율 대신 셸에서 구조적으로 받는다: 여기 도달한
@@ -62,10 +90,63 @@
 
   // 사이드 패널 접기(#18/9B2AB35D-A) — 좁은 창에서 작업 영역 확장(반응형). 셸 전역.
   const railToggle = document.getElementById("railToggle");
-  if (railToggle) {
-    railToggle.addEventListener("click", () =>
-      document.querySelector(".app").classList.toggle("rail-collapsed"));
+  function syncPersonalizationLabels() {
+    const collapsed = document.querySelector(".app").classList.contains("rail-collapsed");
+    if (railToggle) railToggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    const fontLabel = document.getElementById("fontScaleLabel");
+    const fontText = { normal: "기본", large: "크게 (125%)", larger: "더 크게 (150%)" };
+    if (fontLabel && window.Personalization) {
+      fontLabel.textContent = fontText[window.Personalization.currentFontScale()];
+    }
   }
+  if (railToggle) {
+    railToggle.addEventListener("click", () => {
+      const app = document.querySelector(".app");
+      window.Personalization.setRailCollapsed(!app.classList.contains("rail-collapsed"));
+    });
+  }
+  const fontScaleToggle = document.getElementById("fontScaleToggle");
+  if (fontScaleToggle) fontScaleToggle.addEventListener("click", () =>
+    window.Personalization.toggleFontScale());
+  window.addEventListener("hwpx:personalizationchange", syncPersonalizationLabels);
+  syncPersonalizationLabels();
+
+  // 작업·기안 master 폭 스플리터(S7) — 두 화면은 같은 CSS 변수/설정값을 공유한다.
+  document.querySelectorAll(".master-splitter").forEach((splitter) => {
+    splitter.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      const app = document.querySelector(".app");
+      const startX = event.clientX;
+      const startWidth = parseFloat(getComputedStyle(app).getPropertyValue("--master-width")) || 240;
+      splitter.setPointerCapture(event.pointerId);
+      document.body.classList.add("resizing-master");
+      const move = (e) => window.Personalization.setMasterWidth(startWidth + e.clientX - startX);
+      const finish = (e) => {
+        splitter.removeEventListener("pointermove", move);
+        splitter.removeEventListener("pointerup", finish);
+        splitter.removeEventListener("pointercancel", finish);
+        document.body.classList.remove("resizing-master");
+        if (splitter.hasPointerCapture(e.pointerId)) splitter.releasePointerCapture(e.pointerId);
+        window.Personalization.saveMasterWidth(
+          parseFloat(getComputedStyle(app).getPropertyValue("--master-width")));
+      };
+      splitter.addEventListener("pointermove", move);
+      splitter.addEventListener("pointerup", finish);
+      splitter.addEventListener("pointercancel", finish);
+    });
+    splitter.addEventListener("keydown", (event) => {
+      const now = parseFloat(getComputedStyle(document.querySelector(".app"))
+        .getPropertyValue("--master-width")) || 240;
+      let next = now;
+      if (event.key === "ArrowLeft") next -= 10;
+      else if (event.key === "ArrowRight") next += 10;
+      else if (event.key === "Home") next = window.Personalization.masterMin;
+      else if (event.key === "End") next = window.Personalization.masterMax;
+      else return;
+      event.preventDefault();
+      window.Personalization.saveMasterWidth(next);
+    });
+  });
 
   // 테마 전환(System→Light→Dark) — 셸 전역. Theme(theme.js)가 data-theme 를 소유하고
   // 브리지로 Python 설정에 영속(#74), 여기선 배선 + 레일 라벨을 현재 모드로 동기화만 한다.
