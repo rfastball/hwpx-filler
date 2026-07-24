@@ -29,6 +29,9 @@ sample_bid_data.csv
 # Claude 워크플로 실행 산출물(격리 worktree — 커밋 금지)
 .claude/worktrees/
 
+# 백지 UI 랩의 격리된 앱 홈(창 위치·향후 시연 데이터)
+.ui-lab-home/
+
 # Tool caches / reports
 .coverage
 coverage.xml

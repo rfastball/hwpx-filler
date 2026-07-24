@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "id": "normal",
+  "label": "정상 생성",
+  "status": "planned",
+  "description": "템플릿과 데이터가 정상이며 모든 필드가 채워지는 비교 시나리오",
+  "fixture": null
+}

@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "id": "blank",
+  "label": "빈 시작",
+  "status": "baseline",
+  "description": "템플릿·데이터·저장 작업이 없는 최초 진입 상태",
+  "fixture": null
+}

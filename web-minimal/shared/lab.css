@@ -1,0 +1,46 @@
+:root {
+  color-scheme: light dark;
+  font-family: "Segoe UI", "Malgun Gothic", sans-serif;
+  background: #f7f7f5;
+  color: #171717;
+}
+
+:root[data-theme="dark"] {
+  background: #171817;
+  color: #f4f4f1;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#ui-lab-root {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+}
+
+#ui-lab-root {
+  position: relative;
+  background: inherit;
+}
+
+.lab-marker {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  color: color-mix(in srgb, currentColor 35%, transparent);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  user-select: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    background: #171817;
+    color: #f4f4f1;
+  }
+}

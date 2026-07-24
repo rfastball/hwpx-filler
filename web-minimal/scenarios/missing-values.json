@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "id": "missing-values",
+  "label": "빈 값 확인",
+  "status": "planned",
+  "description": "일부 값이 비어 명시 확인 게이트가 필요한 비교 시나리오",
+  "fixture": null
+}

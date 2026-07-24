@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "default": "blank",
+  "variants": [
+    {
+      "id": "blank",
+      "label": "백지 기준점",
+      "path": "variants/blank",
+      "status": "baseline",
+      "description": "제품 워크플로와 백엔드 호출이 없는 최초 비교 기준"
+    }
+  ]
+}
