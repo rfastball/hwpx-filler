@@ -1073,9 +1073,14 @@
       mirrorResizeObserver.observe($("jobMirror"));
     }
     // 문서 작업 후보 카드 클릭 = 작업 선택(§18.2 보존 전환 — 데이터·선택은 세션 소유라 생존).
+    // 활성 후보 재활성화는 무시한다(#302 리뷰 P2): CSS pointer-events:none 은 키보드
+    // (Enter/Space) 합성 클릭을 막지 못하고, 재선택은 vm 재생성 = ack·완주 담보·폴더의
+    // 조용한 소실이라 무해하지 않다(좌 목록의 재선택 no-op 과 대칭).
     $("jobCandidates").addEventListener("click", (e) => {
       const btn = e.target.closest("[data-cand]");
-      if (btn) selectJobGuarded(btn.getAttribute("data-cand"));
+      if (btn && btn.getAttribute("aria-pressed") !== "true") {
+        selectJobGuarded(btn.getAttribute("data-cand"));
+      }
     });
     $("jobDataExpand").addEventListener("click", openJobDataSheet);
     $("jobMirrorExpand").addEventListener("click", openJobConfirmSheet);

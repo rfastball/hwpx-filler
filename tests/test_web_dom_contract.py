@@ -717,6 +717,9 @@ def test_job_data_first_prework_surface_contract():
     assert "jobEmptyPanel" not in src
     assert 'if (!s.has_job) return "② ";' in src, "무작업 prework 서수(②) 배선이 없습니다."
     assert "data-cand" in src  # 후보 카드 클릭 → select_job 위임
+    # 활성 후보 재활성화 가드(#302 리뷰 P2) — pointer-events:none 은 키보드 합성 클릭을
+    # 못 막으므로 핸들러가 aria-pressed 를 검사해야 한다(재선택=실행 증거 조용한 소실).
+    assert 'aria-pressed") !== "true"' in src, "활성 후보 재활성화 가드가 없습니다."
 
 
 def test_template_media_sections_use_sunken_surface_without_shared_catalog_drift():
