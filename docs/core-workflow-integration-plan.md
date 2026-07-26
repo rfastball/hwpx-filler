@@ -80,8 +80,13 @@ git worktree add ..\hwpx-filler-integration -b feat/data-first-integration maste
 현재 결손은 계층이 아니라 **방향**이다 — 기존은 작업→데이터, v6는 데이터→작업 후보.
 JobController가 마운트·선택·게이트·생성 오케스트레이션을 이미 소유하므로
 (슬라이스 3에서 RunController를 상위집합이라는 이유로 죽인 전례), 신규분은
-아래 §4의 두 조각으로 한정될 가능성이 크다. 지도가 그보다 큰 결손을 증명하면
-이 문서를 먼저 개정한다.
+아래 §4의 세 조각(링1 둘 + 링2 세션 소유권 재배선)으로 한정한다. 지도가 그보다 큰
+결손을 증명하면 이 문서를 먼저 개정한다.
+
+> 단계 1 완료(2026-07-26): 봉합 지도는 통합 브랜치
+> `docs/DATA_FIRST_INTEGRATION_MAP.md`. 지도가 증명한 개정분 두 가지가 이 판에 반영됨 —
+> ①링2 세 번째 조각(작업 전환 시 데이터·선택 보존, §18.2·§19.10), ②전역 작업 건강 분리
+> 계약의 절 번호는 §20이 아니라 **§19.7**.
 
 ## 4. 구현 커밋 경계 (통합 브랜치, 직렬)
 
@@ -100,16 +105,23 @@ UI 무변경. 재사용 경계를 테스트로 고정한다:
 1. **최소 호환성 판정** — v6 `compatibilityFor(workId, runtimeFields)`(§18.4)의 Python 이식.
    계약: *최소 Binding 호환성*(필수 source key ∈ 현재 데이터 fields)만 판정하고,
    실행 완료 가능성은 보장하지 않는다. 권위 판정은 작업 선택 뒤 `RunViewModel.refresh()`.
-   전역 작업 건강(`libraryHealthFor`)과 섞지 않는다(§20). 배치는 `gui/` 링1 모듈.
+   전역 작업 건강(`libraryHealthFor`)과 섞지 않는다(§19.7). 배치는 `gui/` 링1 모듈.
 2. **작업 미선택 상태의 스냅샷** — 데이터는 마운트됐으나 active work가 없는 상태를
    JobController 스냅샷이 표현(후보 목록·무선택 게이트 문안 포함). 데이터 준비 전에는
-   후보를 계산하지 않는다(§계약: "DataTarget 미준비 시 호환성 계산 금지").
+   후보를 계산하지 않는다(§18.1: DataTarget 미준비 시 호환성 계산 금지).
 
 `v6.js`의 `requestValidation`/`invalidateRunEvidence`/`commitPreparedMount`/
 `preview.required·approved`/mock result/localStorage는 **이식하지 않는다** —
 전부 Python이 이미 소유하거나(검증·무효화=RunStatus 재계산) 첫 슬라이스 제외 범위다.
 
-### 커밋 3 — 브리지·스냅샷 배선
+### 커밋 3 — 세션 소유권 재배선 + 브리지·스냅샷 배선
+
+**링2 세 번째 조각(지도가 증명한 개정분):** 현재 `_do_select_job`은 작업 전환 시
+데이터·선택·필터를 파기한다 — 작업-우선 전제의 산물. data-first에서는 §18.2 보존 계약에
+따라 datasource·records·`SelectionModel`·필터를 세션(JobController) 소유로 승격하고,
+작업 전환은 `RunViewModel`만 재생성해 데이터를 재주입(`load_data` 재사용)한다.
+무효화는 §19.10 규칙(실행 증거만 폐기). 기존 전환 가드 테스트는 삭제가 아니라 재정의
+승계한다(무장 시 잃는 것이 "세션 전체"→"실행 증거"로 줄었음을 문안까지 정직하게).
 
 첫 슬라이스의 **양 끝단은 직접 브리지 경로**임을 명시한다(조언의 단일 디스패치 모델은
 이 저장소 실물과 다르다):
