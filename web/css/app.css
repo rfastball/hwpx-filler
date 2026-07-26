@@ -788,10 +788,19 @@ body.resizing-master{cursor:col-resize;user-select:none}
 .draft-duo .dmap .field.sm,.draft-duo .dmap .btn.sm,
 .draft-duo .dmap .mapval-in{padding:var(--sp-2) var(--sp-6);line-height:1.2}
 .draft-duo .draft-preview-zone{position:sticky;top:0;align-self:start;background:var(--a-card)}
-.job-duo{display:grid;grid-template-columns:minmax(0,1.12fr) minmax(0,.88fr);
-  border-top:1px solid var(--a-border)}
-.job-duo>.zone{min-width:0}
-.job-duo>.zone+.zone{border-top:0;border-left:1px solid var(--a-border)}
+/* v6 `screen-data` 2열(재작성 R1) — 좌 `.dg-main`(현재 데이터·거울·결과) / 우 `.dg-side`
+   (이 데이터에 사용할 문서·선택한 작업·생성 준비). 구 `.job-duo`(표|거울 병치, #272)를
+   대체한다: v6 의 성격은 데이터와 문서 선택이 가로로 마주 보는 것이고, 표↔거울 같은 시야는
+   세로 인접 + 펼침 면(⤢)이 승계한다. 두 열은 존 구분선을 공유하는 한 카드 안의 구획이다. */
+.data-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(268px,.46fr)}
+.data-grid>.dg-main,.data-grid>.dg-side{min-width:0;display:flex;flex-direction:column}
+.data-grid>.dg-side{border-left:1px solid var(--a-border)}
+/* side-card 는 한 열이 좁다 — 라벨+입력+버튼을 한 줄에 밀어 넣으면 경로가 몇 글자로 잘려
+   "어디에 저장되는지"를 못 읽는다(저장 폴더는 생성의 되읽기 대상). 라벨을 위로 올리고
+   입력이 열 전체를 쓰게 감싼다. */
+.dg-side .run-row{flex-wrap:wrap;row-gap:var(--sp-4)}
+.dg-side .run-row>.lbl{flex:1 0 100%}
+.dg-side .run-row>.field{flex:1 1 100%}
 #jobMirror{max-height:420px;overflow:auto}
 .job-confirm-sheet-body #jobMirror{max-height:none;height:100%}
 /* 창폭이 아니라 실제 세션 패널 폭으로 판정한다. 900px 이하는 표가 읽힐 한 열 폭을 지키며
@@ -800,8 +809,8 @@ body.resizing-master{cursor:col-resize;user-select:none}
   .draft-duo{grid-template-columns:1fr}
   .draft-duo>.zone+.zone{border-left:0;border-top:1px solid var(--a-border)}
   .draft-duo .draft-preview-zone{position:static}
-  .job-duo{grid-template-columns:1fr}
-  .job-duo>.zone+.zone{border-left:0;border-top:1px solid var(--a-border)}
+  .data-grid{grid-template-columns:1fr}
+  .data-grid>.dg-side{border-left:0;border-top:1px solid var(--a-border)}
 }
 .job-head-title{font-size:var(--fs-body);font-weight:600}
 .job-head-tpl{font-size:var(--fs-body);margin-top:var(--sp-2)}
@@ -1123,10 +1132,12 @@ body.resizing-master{cursor:col-resize;user-select:none}
   font-size:var(--fs-caption);color:var(--a-muted)}
 .fstrip b{color:var(--a-ink)}
 
-/* 문서 작업 후보 줄(§18.4, data-first) — 데이터 존 하단. 순위 카드(별+선택)와 확인 필요
-   비활성 칩(btn.sm 재사용)이 한 줄에 흐른다(§19.3 방식 구획은 1방식이라 평면 퇴화). */
-.job-cands-row{margin-top:var(--sp-6)}
+/* 문서 작업 후보(§18.4, data-first) — R1 부터 우 side-card 의 첫 구획이다(v6 문서 선택기).
+   순위 카드(별+선택)와 확인 필요 비활성 칩(btn.sm 재사용)이 세로로 흐르고, 좁아지면 감싼다
+   (§19.3 방식 구획은 1방식이라 평면 퇴화 — 2방식 구획은 F6 에서 TXT 가 합류할 때). */
 .job-cands{display:flex;flex-wrap:wrap;gap:var(--sp-4);align-items:center}
+.dg-side .job-cands{flex-direction:column;align-items:stretch}
+.dg-side .job-cand-card{width:100%}
 .job-cand[aria-pressed="true"]{pointer-events:none}
 .job-cand-card{display:flex;align-items:stretch;border:1px solid var(--a-border);
   border-radius:var(--rad-control);background:var(--a-card);overflow:hidden}

@@ -357,18 +357,36 @@ def test_milestone_l_draft_expansion_sheets_move_live_surfaces():
 
 
 def test_milestone_l_job_density_and_expansion_sheets():
-    """#272: 작업 duo·420px 캡·두 펼침 면·편집 전 즉시 복귀 계약을 고정한다."""
+    """#272 승계 + 재작성 R1: 세션 패널 2열·420px 캡·두 펼침 면·편집 전 즉시 복귀 계약.
+
+    R1 이 구 `.job-duo`(표|거울 가로 병치)를 v6 `screen-data` 2열로 대체했다 — 가로 축은
+    이제 데이터 ↔ 문서 선택기이고, 표↔거울은 좌 열 안에서 **세로 인접**으로 남는다(같은
+    시야 요구는 인접 + 펼침 면 ⤢ 가 승계). #272 의 나머지 계약(420px 캡·캡스트립·두 면의
+    실 DOM 이동/복귀)은 그대로 살아 여기서 계속 고정된다.
+    """
     html = WEB_INDEX.read_text(encoding="utf-8")
     css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
     job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
     sheets = (WEB_JS_DIR / "surface_sheet.js").read_text(encoding="utf-8")
 
-    assert 'class="duo job-duo" id="jobDuo"' in html
-    duo = html.split('id="jobDuo"', 1)[1].split("<!-- 완료 존", 1)[0]
-    assert duo.index('id="jobTableHost"') < duo.index('id="jobMirror"')
-    assert 'id="jobMirrorCapstrip" role="status" hidden' in duo
+    assert 'class="data-grid" id="jobDataGrid"' in html
+    assert 'class="duo job-duo"' not in html and ".job-duo{" not in css, (
+        "구 표|거울 duo 가 재유입됐습니다 — R1 의 가로 축은 데이터↔문서 선택기입니다."
+    )
+    grid = html.split('id="jobDataGrid"', 1)[1].split("job-edit-host", 1)[0]
+    main, side = grid.split('class="dg-side"', 1)
+    # 좌 열 = 현재 데이터 → 거울 → 결과(세로), 우 열 = 문서 선택기 → 선택한 작업 → 생성 준비.
+    assert main.index('id="jobTableHost"') < main.index('id="jobMirror"') < main.index('id="jobGenLog"')
+    assert side.index('id="jobCandidates"') < side.index('id="jobHeadTitle"') < side.index('id="jobOutDir"')
+    assert 'id="jobMirrorCapstrip" role="status" hidden' in main
     assert "#jobMirror{max-height:420px;overflow:auto}" in css
+    assert ".data-grid{display:grid;grid-template-columns:minmax(0,1fr)minmax(268px,.46fr)}" in css
     assert "@containersession-panel(max-width:900px)" in css
+    assert ".data-grid{grid-template-columns:1fr}" in css
+    # 좁은 side-card 에서 라벨+입력+버튼을 한 줄에 밀어 넣으면 저장 폴더 경로가 몇 글자로
+    # 잘려 "어디에 저장되는지"를 못 읽는다 — 감싸기 규칙이 그 되읽기를 지킨다.
+    assert ".dg-side.run-row{flex-wrap:wrap;row-gap:var(--sp-4)}" in css
+    assert ".dg-side.run-row>.field{flex:11100%}" in css
     assert '<div id="jobConfirmSheet" class="modal sheet hidden"' in html
     assert "펼쳐서 행 고르기 ⤢" in html and "펼쳐서 확인 ⤢" in html
     assert 'modalId: "jobConfirmSheet"' in job_js
@@ -671,27 +689,46 @@ def test_gallery_exposes_heading_role_specimens():
         assert label in html, f"갤러리에 제목 역할 표본이 없습니다: {label}"
 
 
-def test_job_zones_reuse_number_badges_and_action_labels():
-    """H-03: 작업 4존은 기안과 같은 znum 문법으로 순서와 다음 행동을 말한다."""
+def test_job_session_surface_uses_v6_two_column_captions():
+    """재작성 R1: 「작업」 세션 표면의 구획 문법 — 번호 없는 v6 캡션 6종.
+
+    H-03 의 znum 4존 문법은 **이 화면에서만** 은퇴한다: v6 `screen-data` 는 순서가 있는
+    4단계가 아니라 마주 보는 두 열이고, 세로 1·2·3·4 를 2열에 얹으면 번호가 읽는 순서와
+    어긋난다(우측 첫 구획이 ②가 되는 식). 기안(`draft`)의 znum 문법은 그대로 산다 —
+    거기는 여전히 순서 있는 세션이다. 번호의 정보(다음에 어디로)는 게이트 문안의 구획
+    지목(`gateStep`)이 승계한다.
+    """
     html = " ".join(WEB_INDEX.read_text(encoding="utf-8").split())
-    labels = (
-        ("1", "템플릿·헤더 확인"),
-        ("2", "데이터 연결"),
-        ("3", "본문 확인·거울"),
-        ("4", "생성"),
+    job = html.split('id="scr-job"', 1)[1].split('id="scr-draft"', 1)[0]
+    for caption in (
+        "현재 데이터", "본문 확인", "생성 결과",
+        "이 데이터에 사용할 문서", "선택한 작업", "생성 준비",
+    ):
+        needle = rf'<div class="zone-cap[^"]*">(?:<span>)?{re.escape(caption)}'
+        assert re.search(needle, job), f"세션 구획 캡션이 없습니다: {caption}"
+    assert '<span class="znum">' not in job, (
+        "「작업」 세션 표면에 구 4존 서수가 재유입됐습니다."
     )
-    for ordinal, label in labels:
-        needle = rf'<div class="zone-cap[^"]*">.*?<span class="znum">{ordinal}</span>{re.escape(label)}'
-        assert re.search(needle, html), f"작업 존 단계 표지가 없습니다: {ordinal} {label}"
+    # 기안은 같은 은퇴에 휩쓸리지 않는다(순서 있는 세션 — 문법을 함께 지우면 회귀).
+    assert '<span class="znum">' in html.split('id="scr-draft"', 1)[1]
 
 
 def test_job_gate_adds_blocked_step_only_in_display_layer():
-    """H-03: gate.level 판정은 건드리지 않고 표시층에서 막힌 단계 서수만 결합한다."""
+    """H-03 승계: gate.level 판정은 건드리지 않고 표시층에서 막힌 **구획 이름**만 결합한다.
+
+    R1 이 4존 서수를 은퇴시켰으므로 지목도 실재하는 구획 캡션을 쓴다 — 죽은 번호를 남기면
+    지목 자체가 거짓말이 된다. 지목 문자열은 반드시 실제 `zone-cap` 캡션과 일치해야 한다.
+    """
     src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    html = " ".join(WEB_INDEX.read_text(encoding="utf-8").split())
+    job = html.split('id="scr-job"', 1)[1].split('id="scr-draft"', 1)[0]
     assert "function gateStep(s, g)" in src
-    assert 'g.level === "danger") return "① "' in src
-    assert '!s.has_data || !(s.selected_count > 0)) return "② "' in src
-    assert 'return "③ ";' in src
+    assert not re.search(r'return "[①②③]', src), "죽은 4존 서수가 남아 있습니다."
+    for caption in ("현재 데이터", "이 데이터에 사용할 문서", "선택한 작업", "본문 확인"):
+        assert f'"{caption} · "' in src or f'= "{caption} · "' in src, (
+            f"게이트 구획 지목 누락: {caption}"
+        )
+        assert caption in job, f"지목이 실재하지 않는 구획을 가리킵니다: {caption}"
     assert 'gateStep(s, g) + g.text' in src
     assert not re.search(r"\bg\.level\s*=(?!=)", src), (
         "표시층이 gate.level 판정을 변조하면 안 됩니다."
@@ -715,7 +752,9 @@ def test_job_data_first_prework_surface_contract():
     src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
     assert "function renderCandidates(s)" in src
     assert "jobEmptyPanel" not in src
-    assert 'if (!s.has_job) return "② ";' in src, "무작업 prework 서수(②) 배선이 없습니다."
+    assert "if (!s.has_job) return noRows ? DATA : DOC;" in src, (
+        "무작업 prework 게이트의 구획 지목 배선이 없습니다."
+    )
     assert "data-cand" in src  # 후보 카드 클릭 → select_job 위임
     # 활성 후보 재활성화 가드(#302 리뷰 P2) — pointer-events:none 은 키보드 합성 클릭을
     # 못 막으므로 핸들러가 aria-pressed 를 검사해야 한다(재선택=실행 증거 조용한 소실).

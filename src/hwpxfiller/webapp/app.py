@@ -1261,7 +1261,7 @@ _JOB_MIRROR_PROBE_JS = r"""
     var jobPanel = document.getElementById('jobPanel');
     var jobPanelFlex = jobPanel.style.flex, jobPanelWidth = jobPanel.style.width;
     jobPanel.style.flex = '0 0 1100px'; jobPanel.style.width = '1100px';
-    out.job_duo_wide = getComputedStyle(document.getElementById('jobDuo')).gridTemplateColumns;
+    out.job_grid_wide = getComputedStyle(document.getElementById('jobDataGrid')).gridTemplateColumns;
     jobPanel.style.flex = jobPanelFlex; jobPanel.style.width = jobPanelWidth;
     var mirror = document.getElementById('jobMirror');
     var restate = document.getElementById('jobRestate');
@@ -2573,7 +2573,7 @@ def _selftest_drive(window: "object") -> None:
         window.resize(1180, 820)  # type: ignore[attr-defined]
         time.sleep(0.4)
         result["job_density_narrow"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "({columns:getComputedStyle(document.getElementById('jobDuo')).gridTemplateColumns})"
+            "({columns:getComputedStyle(document.getElementById('jobDataGrid')).gridTemplateColumns})"
         )
         window.resize(1440, 900)  # type: ignore[attr-defined]
         time.sleep(0.4)

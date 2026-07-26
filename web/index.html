@@ -146,27 +146,25 @@
         <div class="master-splitter" role="separator" tabindex="0" aria-orientation="vertical"
              aria-label="작업 목록 너비" aria-valuemin="180" aria-valuemax="420" aria-valuenow="240"></div>
 
-        <!-- 우 세션 패널 4존 -->
+        <!-- 우 세션 패널 — v6 `screen-data` 2열(재작성 R1). 좌=현재 데이터(카드·표·거울·결과),
+             우=side-card(이 데이터에 사용할 문서·선택한 작업·생성 준비). 구 4존 znum 문법
+             (H-03)과 표|거울 duo(#272)는 이 형상으로 대체된다 — 데이터와 문서 선택이 가로로
+             마주 보는 것이 v6 의 성격이고, 표↔거울 같은 시야 요구는 세로 인접 + 펼침 면(⤢)이
+             승계한다. 정본: docs/DATA_FIRST_INTEGRATION_MAP.md §10.5 R1. -->
         <div class="job-panel" id="jobPanel">
-          <!-- 구 미선택 안내 패널은 데이터-우선 전환으로 은퇴 — 세션 4존이 작업 미선택에도
+          <!-- 구 미선택 안내 패널은 데이터-우선 전환으로 은퇴 — 세션 표면이 작업 미선택에도
                살아 있고(데이터 존=진입점), 다음 할 일 안내는 게이트 문안(prework_gate)이 승계. -->
           <div class="job-zones" id="jobZones" style="display:none">
             <!-- T2 복귀 고지(결정 45 재정의) — 렌더 함수가 안 만지는 JS 소유 요소: 세션 전환
                  리셋·재렌더에 증발하지 않고, 확인 버튼/편집 재진입으로만 걷힌다(job.js 소유). -->
             <div class="note warnbox" id="jobEditExitNote" style="display:none"></div>
-            <!-- 헤더 존 — 작업 정체(이름·템플릿·소스) -->
-            <div class="zone">
-              <div class="zone-cap"><span class="znum">1</span>템플릿·헤더 확인</div>
-              <div class="job-head-title" id="jobHeadTitle"></div>
-              <div class="job-head-tpl muted" id="jobHeadTpl"></div>
-              <div class="note" id="jobRelink" style="display:none"></div>
-            </div>
 
-            <!-- 데이터|거울 duo(#272) — 고르는 표와 그 결과를 같은 시야에 둔다. -->
-            <div class="duo job-duo" id="jobDuo">
+            <div class="data-grid" id="jobDataGrid">
+            <!-- ── 좌: 현재 데이터 ─────────────────────────────────────────────── -->
+            <section class="dg-main">
             <!-- 데이터 존 — 겨눔 + 행 선택 -->
             <div class="zone job-data-zone">
-              <div class="zone-cap zone-cap-actions"><span><span class="znum">2</span>데이터 연결</span>
+              <div class="zone-cap zone-cap-actions"><span>현재 데이터</span>
                 <button class="btn sm" id="jobDataExpand" type="button">펼쳐서 행 고르기 ⤢</button></div>
               <div class="run-row"><span class="lbl">데이터(.xlsx/.csv)</span>
                 <input class="field ro" id="jobDataLabel" type="text" readonly
@@ -204,43 +202,59 @@
               </div>
               <!-- 필터 밖 선택 스트립(결정 3) — 선택은 필터를 관통하고, 밖은 여기서 상시 가시. -->
               <div class="fstrip" id="jobSelStrip" style="display:none"></div>
-              <!-- 문서 작업 후보(§18.4·§18.5·§19.3, data-first) — 현재 데이터로 만들 수 있는
-                   저장 작업. 판정·순위·추천은 Python(work_candidates) 단일 출처, 여기는 카드
-                   렌더만. top=상위 5 순위(별 토글·추천 표지)·more=잘린 수 고지·
-                   needs=정직한 비활성(없는 열 병기). -->
-              <div class="run-row job-cands-row" id="jobCandsRow" style="display:none">
-                <span class="lbl">문서 작업</span>
-                <div class="job-cands" id="jobCandidates" role="group" aria-label="문서 작업 후보"></div>
-              </div>
             </div>
 
-            <!-- 본문 존 — 라이브 거울(필드 채움 테이블) + 재진술 블록 + 생성 의식 1회 -->
+            <!-- 본문 존 — 라이브 거울(필드 채움 테이블). 결정 3(§10.6): 거울은 빈 값 확인
+                 게이트의 표면이라 v6 validationCard 로 대체되지 않고 병존한다. -->
             <div class="zone job-mirror-zone">
-              <div class="zone-cap zone-cap-actions"><span><span class="znum">3</span>본문 확인·거울</span>
+              <div class="zone-cap zone-cap-actions"><span>본문 확인</span>
                 <button class="btn sm" id="jobMirrorExpand" type="button">펼쳐서 확인 ⤢</button></div>
               <p class="muted hint">이 문서에 들어갈 값입니다. <span class="danger">빈 값</span>
                 행은 <b>눌러서 확인</b>해야 생성할 수 있습니다.</p>
               <!-- 거울 = 필드 채움 테이블(결정 36 ⓑ). danger(드리프트·토큰)는 차단 배너로 분리. -->
               <div id="jobMirror" data-preserve-scroll></div>
               <div class="capstrip" id="jobMirrorCapstrip" role="status" hidden></div>
-              <!-- 생성 버튼은 하단 sticky 액션바로 이관(#179 슬라이스 5b) — 스크롤 무관 상시 도달. -->
-            </div>
             </div>
 
-            <!-- 완료 존 — 세션 스코프(진행·결과·로그) -->
-            <div class="zone">
-              <div class="zone-cap"><span class="znum">4</span>생성</div>
-              <div class="run-row"><span class="lbl">저장 폴더</span>
-                <input class="field ro" id="jobOutDir" type="text" readonly
-                       placeholder="이 폴더에 문서를 저장합니다">
-                <button class="btn" id="jobBtnPickFolder" data-busy-lock>찾아보기…</button>
-                <span id="jobOutTrack"></span></div>
-
-              <!-- 게이트 · 재진술 블록(상시 — 이미 보이는 것 재검증 안 함, 결정 36 D1-B). -->
-              <div class="defblk" id="jobRestate" style="display:none"></div>
+            <!-- 결과 존 — 세션 스코프(진행·결과·로그). v6 상단 result-panel·3태 구획은 F4. -->
+            <div class="zone job-result-zone">
+              <div class="zone-cap">생성 결과</div>
               <div class="bar"><i id="jobGenBar"></i></div>
               <div id="jobGenResult" class="run-result"></div>
               <div class="logbox" id="jobGenLog">작업, 데이터, 저장 폴더를 확인한 뒤 생성하세요.</div>
+            </div>
+            </section>
+
+            <!-- ── 우: side-card(이 데이터에 사용할 문서) ──────────────────────── -->
+            <aside class="dg-side" id="jobSideCard" aria-label="이 데이터에 사용할 문서">
+              <!-- 문서 작업 후보(§18.4·§18.5·§19.3, data-first) — 현재 데이터로 만들 수 있는
+                   저장 작업. 판정·순위·추천은 Python(work_candidates) 단일 출처, 여기는 카드
+                   렌더만. top=상위 5 순위(별 토글·추천 표지)·more=잘린 수 고지·
+                   needs=정직한 비활성(없는 열 병기). -->
+              <div class="zone job-cands-row" id="jobCandsRow" style="display:none">
+                <div class="zone-cap">이 데이터에 사용할 문서</div>
+                <div class="job-cands" id="jobCandidates" role="group" aria-label="문서 작업 후보"></div>
+              </div>
+
+              <!-- 선택한 작업의 정체(이름·템플릿·재연결 경보) — 구 헤더 존 승계. -->
+              <div class="zone job-active-zone">
+                <div class="zone-cap">선택한 작업</div>
+                <div class="job-head-title" id="jobHeadTitle"></div>
+                <div class="job-head-tpl muted" id="jobHeadTpl"></div>
+                <div class="note" id="jobRelink" style="display:none"></div>
+              </div>
+
+              <!-- 생성 준비 — 저장 폴더 + 게이트 재진술 블록(상시, 결정 36 D1-B). -->
+              <div class="zone">
+                <div class="zone-cap">생성 준비</div>
+                <div class="run-row"><span class="lbl">저장 폴더</span>
+                  <input class="field ro" id="jobOutDir" type="text" readonly
+                         placeholder="이 폴더에 문서를 저장합니다">
+                  <button class="btn" id="jobBtnPickFolder" data-busy-lock>찾아보기…</button>
+                  <span id="jobOutTrack"></span></div>
+                <div class="defblk" id="jobRestate" style="display:none"></div>
+              </div>
+            </aside>
             </div>
           </div>
 

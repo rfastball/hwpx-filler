@@ -379,7 +379,7 @@ class TestWebSelftestGate:
         assert j["confirm_moved"] and j["confirm_dispatch"] and j["confirm_restored"], j
         assert j["job_data_moved"] and j["job_data_first_sticky"] and j["job_data_restored"], j
         assert j["edit_closes_sheets"], j
-        assert len(j["job_duo_wide"].split()) == 2, j
+        assert len(j["job_grid_wide"].split()) == 2, j
         assert len(selftest_result["job_density_narrow"]["columns"].split()) == 1
 
     def test_job_restate_block_lists_selected_names(self, selftest_result: dict) -> None:
@@ -780,9 +780,14 @@ class TestWebSelftestGate:
         assert h["headings"]["section"]["font_weight"] == "700"
         assert h["headings"]["zone"]["font_size"] == "13px"
         assert h["headings"]["zone"]["font_weight"] == "700"
-        assert h["job_step_badges"] == 4
+        # 재작성 R1: 「작업」 세션 표면은 순서 있는 4존이 아니라 마주 보는 두 열이라 znum 이
+        # 은퇴했다(정적 판은 test_job_session_surface_uses_v6_two_column_captions). 여기서는
+        # **실렌더로** 서수 0 + v6 캡션 6종을 되읽어, 죽은 번호가 실화면에 남지 않았음을 본다.
+        # zone-cap 타이포 역할(위 13px/700)은 그대로라 H-01 3역할 계약은 유지된다.
+        assert h["job_step_badges"] == 0
         assert h["job_steps"] == [
-            "1템플릿·헤더 확인", "2데이터 연결", "3본문 확인·거울", "4생성",
+            "현재 데이터", "본문 확인", "생성 결과",
+            "이 데이터에 사용할 문서", "선택한 작업", "생성 준비",
         ]
 
     def test_milestone_h_template_and_card_surfaces_render(self, selftest_result: dict) -> None:

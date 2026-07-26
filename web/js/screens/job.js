@@ -1,5 +1,7 @@
 /* 「작업」 화면 — 좌 master 목록 + 우 상세 패널 **두 모드**(R-flow #90 · 블록 2 개정 39~41).
-   실행 모드(기본)=세션 패널 4존, 편집 모드=정의 호스트(#jobEditHost — editor.js 가 렌더).
+   실행 모드(기본)=세션 패널 v6 `screen-data` 2열(재작성 R1 — 좌 `.dg-main` 현재 데이터·거울·
+   결과 / 우 `.dg-side` 문서 선택기·선택한 작업·생성 준비. 구 4존 znum 은 이 형상으로 대체),
+   편집 모드=정의 호스트(#jobEditHost — editor.js 가 렌더).
    안정 DOM(index.html) + Python 이 window.__push('job', snapshot) 로 값만 채운다(run/txt 패턴).
    표현 계층(거울 테이블·재진술 블록·게이트·진행/로그)만 여기서 만든다 — VM 로직 아님(링2 대체, #87).
    덮어쓰기 확인은 공용 Modal.confirm의 수치 합성 본문으로 — 네이티브 다이얼로그 무사용이라 #86
@@ -699,16 +701,19 @@
 
   /* ---- 본문 존: 게이트·저장 폴더·생성 버튼 ---- */
   function gateStep(s, g) {
-    // 게이트의 판정(level/enabled/text)은 Python 단일 출처 그대로 두고, 현재 막힌 존의
-    // 서수만 표시층에서 결합한다(H-03). danger는 템플릿·매핑 정의, 선택 0은 데이터 존,
-    // 나머지 미입력·저장 폴더 사유는 본문 확인 존에서 해소한다.
+    // 게이트의 판정(level/enabled/text)은 Python 단일 출처 그대로 두고, 현재 막힌 **구획의
+    // 이름**만 표시층에서 결합한다(H-03 승계). R1 재작성으로 4존 znum 이 사라져 구 서수
+    // ①②③ 은 가리킬 대상을 잃었다 — 정보(어디로 가야 하는가)는 살리고 표기를 실재하는
+    // 구획 캡션으로 바꾼다(죽은 번호를 남기면 지목이 거짓말이 된다).
     if (!g || g.enabled || !g.text) return "";
-    // 작업 미선택(데이터-우선 prework) — 데이터 겨눔·행 선택·문서 작업 후보가 전부
-    // 데이터 존(②)에 있으므로 서수도 ②다(①=템플릿·헤더는 작업 선택 뒤의 존).
-    if (!s.has_job) return "② ";
-    if (s.template_missing || g.level === "danger") return "① ";
-    if (!s.has_data || !(s.selected_count > 0)) return "② ";
-    return "③ ";
+    const DATA = "현재 데이터 · ", DOC = "이 데이터에 사용할 문서 · ";
+    const noRows = !s.has_data || !(s.selected_count > 0);
+    // 작업 미선택(데이터-우선 prework)은 데이터가 먼저다 — 데이터·행이 갖춰진 뒤에야
+    // 막힌 곳이 문서 선택기다(prework_gate 의 순서와 같은 걸음).
+    if (!s.has_job) return noRows ? DATA : DOC;
+    if (s.template_missing || g.level === "danger") return "선택한 작업 · ";
+    if (noRows) return DATA;
+    return "본문 확인 · ";
   }
 
   function renderGateAndFolder(s) {
