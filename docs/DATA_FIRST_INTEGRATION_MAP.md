@@ -103,6 +103,35 @@ mock 실행·결과(`runCurrent` 1909 이후, `mock-backend.js` 전체), localSt
 **신규 필요**: "데이터 없음"과 "호환 작업 없음"의 구분, 작업 전환 시 데이터·선택 생존,
 호환성 판정 경계(선택 필드 미연결·새 열 무해), 표시순 투영 실행 순서.
 
+## 7. v6 상태전이 결함 보고서 triage (2026-07-26)
+
+외부 리뷰 보고서(F-01~F-08 + C-01·C-02, 원문은 비공개 원장
+`research-private/v6-state-transition-review.md`)의 봉합 관점 3분류. **판정: 첫 슬라이스
+(PR #302) 구현 범위(마운트·전환·선택·무효화·후보·prework 게이트) 직격 결함 없음** —
+F-02의 교정안(자동 선택 금지)은 #302가 §18.3 자동 선정을 후속으로 미뤄 이미 준수 상태.
+
+| ID | 분류 | 귀속 | 조치 |
+|---|---|---|---|
+| F-01 새 필드→문서 지목 | ② 계약 | 슬6 | deep-link 권위 규칙(targetAuthority) 계약 개정 후 구현 |
+| F-02 유일 호환 자동 선택 | ② 계약 | **슬2 스코프 변경** | §18.3 개정: 자동 선택 삭제 → suggestedWorkId **추천**(카드 강조, activeWorkId는 사용자 선택만). preferredWorkId(명시 사건 유래)만 자동 허용 |
+| F-03 dataFamily 추론 분기 | ①mock+② 계약 | 슬6 + §4 폐기 추가 | dataFamily 추론은 **이식 금지 명문**(백엔드 정본에 권위 없음 — 보고서도 확인). 연결 복구/신작업 분기는 identityDecision 사용자 택일로 계약 개정 |
+| F-04 라이브러리 편집이 runtime 데이터 차용 | ② 계약 | 슬6 | EditDataContext(문맥 명시 선택) 계약 편입. 현 master 에디터는 명시 로드라 기존 표면 무해 |
+| F-05 완료 결과 '이번 생성에 적용' | ② 계약 | 슬5·6 | runPhase·mutationScope 계약 편입 — completed Run 불변, 새 draft/기본 규칙 분기만 |
+| F-06 승인 압축 | ② 계약 | **슬5 재정의** | PreviewRequired → ReviewRequirement(위험 분류+증거 정책+fingerprint)로 확장해 구현 |
+| F-07 구조 변경을 값 미리보기로 승인 | ② 계약 | 슬8(+슬5) | 구조 검토 요구 편입. master 는 구조 드리프트 danger 게이트가 이미 fail-closed — 승인 표면만 신설 |
+| F-08 TXT per-record vs 전역 승인 | ② 계약 | **슬4 중단점 A 의제** | per-record 검토가 복사 gate 권위 — 기안 관계 토의에 편입 |
+| C-01 파일명 집합 검증 | 조건부 | 슬5 대조 | master 는 `plan_output_names` 순차 dedupe·`output_conflicts`·미해소 토큰 게이트가 집합 검증 상당 — 충족 여부 슬5에서 확정 |
+| C-02 승인 일괄 폐기 | 조건부 | 슬5 | ReviewRequirement fingerprint 도입 시 차등화 |
+
+**로드맵 영향**: 순서 불변. 슬5·6의 스코프가 커진다(링1 신규 상태 계약 4종 —
+targetAuthority·mutationScope·EditDataContext·ReviewRequirement, 보고서 §8). 신규 절대
+불변식 12종(보고서 §10)과 수용 시나리오(§11)는 해당 슬라이스 계약 개정 시 core-workflow.md
+로 흡수한다.
+
+**부수 발견 1건**: 보고서 §7이 안전 반례로 꼽은 "기본 데이터 전환=사용자 확인 선행"과
+master #53-A 자동 조준(확인 없음+재진술)이 어긋난다 — 완화 조항(전면 가시성+무반복+틀리면
+보이는 추측) 해당 여부를 슬2에서 재론.
+
 ## 6. 원재료
 
 - 계약: lab `docs/core-workflow.md` §2·§18.1-§18.11·§19.1-§19.11 (주의: 전역 건강 분리는
