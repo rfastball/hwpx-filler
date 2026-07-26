@@ -25,6 +25,7 @@
 |---|---|
 | [개발·빌드·배포 환경](DEVELOPMENT_ENVIRONMENT.md) | Python·의존성·품질 게이트·패키징·릴리스 절차 |
 | [UI 계약](UI_CONTRACT.md) | 현재 웹 UI의 계층, 화면 소유권, 계약 테스트 |
+| [data-first 봉합 지도](DATA_FIRST_INTEGRATION_MAP.md) | v6 워크플로 계약 ↔ master seam 소유권 대조, 신규·폐기·게이트 목록 |
 | [화면 문안 스타일](COPY_STYLE_GUIDE.md) | 사용자 대면 문장의 문형·길이·금지 표현 |
 | [UI 용어 규약](UI_VOCABULARY.md) | 사용자 가시 용어·단위·폼 배치의 단일 출처 |
 | [로드맵](ROADMAP.md) | 열린 방향·동결 항목·재개 신호 |
