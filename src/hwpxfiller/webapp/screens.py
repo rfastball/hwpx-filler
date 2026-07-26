@@ -274,6 +274,11 @@ class PoolTargetingMixin:
     def _after_pool_load(self, records: list) -> None:
         """겨눔 성공 후 화면별 후처리(행 선택 초기화 등). 기본 no-op."""
 
+    def _pool_loader(self):
+        """겨눔 로더 — 기본은 링1 VM(작업-앵커 화면). 세션 소유 화면(데이터-우선 「작업」)은
+        vm 없이도 겨눌 수 있게 재정의한다."""
+        return self.vm.load_pool_item
+
     def _do_pool_sources(self, p: dict) -> dict:
         """활성 등록 데이터 목록 — 웹 선택 모달이 소비(이름·종류·참조 요약 + 손상 병기)."""
         return pool_sources_payload(self.pool_registry)
@@ -288,7 +293,7 @@ class PoolTargetingMixin:
         if blocked:
             return {"ok": False, "error": blocked}
         name = p["name"]
-        res = load_pool_into(self.pool_registry, name, self.vm.load_pool_item)
+        res = load_pool_into(self.pool_registry, name, self._pool_loader())
         if not res["ok"]:
             return res
         self.data_label = name

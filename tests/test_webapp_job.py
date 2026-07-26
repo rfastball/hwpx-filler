@@ -66,6 +66,13 @@ def _data_csv(tmp_path) -> str:
     return str(csv)
 
 
+def _mount_all(ctrl, path, *, sheet=None) -> None:
+    """마운트 + 전체 선택 — 데이터-우선 전이(§18.2: 마운트 직후 선택 0건) 이후, 전체
+    레코드를 대상으로 하던 기존 시나리오는 명시적 set_all 로 같은 전제를 복원한다."""
+    ctrl.load_data_path(path, sheet=sheet)
+    ctrl.dispatch("set_all", {})
+
+
 # ---------------------------------------------------------------- 좌 목록 + 스냅샷 골격
 def test_initial_lists_jobs_and_loud_gate(tmp_path):
     ctrl, _ = _controller(tmp_path)
@@ -73,7 +80,9 @@ def test_initial_lists_jobs_and_loud_gate(tmp_path):
     assert snap["has_job"] is False
     # 좌 master 목록 = 저장된 작업(선택 표지 포함).
     assert snap["job_rows"] == [{"name": "공고서", "selected": False}]
-    assert snap["gate"]["enabled"] is False and "작업을 선택" in snap["gate"]["text"]
+    # 데이터-우선 도입 순서(§18.2) — 첫 할 일은 데이터 선택이다.
+    assert snap["gate"]["enabled"] is False and "데이터 파일" in snap["gate"]["text"]
+    assert snap["candidates"] == []  # 데이터 미준비 = 후보 계산 자체를 안 한다(§18.1)
 
 
 def test_select_job_marks_master_and_sets_session(tmp_path):
@@ -92,8 +101,11 @@ def test_select_job_then_data_populates_records_and_badges(tmp_path):
     ctrl.load_data_path(_data_csv(tmp_path))
     snap = ctrl.snapshot()
     assert snap["has_data"] is True and snap["record_count"] == 2
-    assert snap["selected_count"] == 2  # 데이터 겨눔 = 전체 선택 초기화
+    assert snap["selected_count"] == 0  # 마운트 직후 선택 0건(§18.2 — 구 전체선택 개정)
     assert snap["template_path"].endswith("t.hwpx")  # 추적성 로케이트용 전체 경로(#53-B)
+    ctrl.dispatch("set_all", {})
+    snap = ctrl.snapshot()
+    assert snap["selected_count"] == 2
     # 본문 존 거울 행(비-drift 필드) — 이름·상태·값 병기.
     states = {s["name"]: s["state"] for s in snap["mirror"]}
     assert states["공고명"] == "filled"
@@ -105,7 +117,7 @@ def test_record_summary_consumes_ring1_identity_not_keyed_temp(tmp_path):
     """식별 요약은 링1 ``identity_summary``를 소비하고 원본 값만 병기한다."""
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     summaries = [r["summary"] for r in ctrl.snapshot()["records"]]
     assert all("bidNtceNm" not in s for s in summaries)  # 임시 판의 키 접두 폐기(값만 병기)
     # display_for: rec0 은 presmptPrce 빈값이라 마커로 자리 보존(매달린 구분자 아님), rec1 은
@@ -142,7 +154,7 @@ def test_filename_token_mode_back_resolves_and_excludes_non_carriers(tmp_path):
     )
     ctrl = JobController(reg, lambda s, snap: None)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(str(csv))
+    _mount_all(ctrl, str(csv))
     # text·present 인 공고명(→bidNtceNm)만 나르는 열. const·blank·부재 source 는 배제.
     assert ctrl._filename_source_columns() == ["bidNtceNm"]
 
@@ -151,7 +163,7 @@ def test_filename_token_mode_back_resolves_and_excludes_non_carriers(tmp_path):
 def test_missing_gate_blocks_generate_until_acked(tmp_path):
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
 
     snap = ctrl.snapshot()
@@ -169,7 +181,7 @@ def test_missing_gate_blocks_generate_until_acked(tmp_path):
 def test_generate_writes_documents_and_marks_missing(tmp_path):
     ctrl, pushes = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
     ctrl.set_output_folder(str(out))
     ctrl.dispatch("ack_field", {"field": "추정가격"})
@@ -189,7 +201,7 @@ def test_generate_cancel_keeps_completed_and_restates_unstarted(tmp_path, monkey
 
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
     ctrl.dispatch("ack_field", {"field": "추정가격"})
 
@@ -242,7 +254,7 @@ def test_generation_stamps_last_run_at(tmp_path):
     ctrl, _ = _controller(tmp_path)
     assert ctrl.registry.load("공고서").last_run_at == ""      # 선조건: 미실행
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
     ctrl.dispatch("ack_field", {"field": "추정가격"})
 
@@ -259,7 +271,7 @@ def test_generation_stamp_does_not_clobber_disk_edits(tmp_path):
     """스탬프는 단일 필드 뮤테이션 — 세션이 든 옛 사본으로 디스크 최신 편집을 되돌리지 않는다."""
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
     ctrl.dispatch("ack_field", {"field": "추정가격"})
     # 세션이 열린 사이 다른 표면(에디터)이 같은 작업을 편집·저장했다.
@@ -285,7 +297,7 @@ def test_stamp_goes_to_the_job_the_run_started_on(tmp_path, monkeypatch):
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _second_job(ctrl, tmp_path)                       # 전환 대상(공고서2) 등록
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
     ctrl.dispatch("ack_field", {"field": "추정가격"})
 
@@ -313,7 +325,7 @@ def test_stamp_uses_the_serialized_registry_path(tmp_path, monkeypatch):
     """
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
     ctrl.dispatch("ack_field", {"field": "추정가격"})
 
@@ -333,7 +345,7 @@ def test_stamp_failure_is_loud_not_silent(tmp_path, monkeypatch):
     """기록 실패를 삼키지 않는다(confirm-or-alarm) — 문서는 남기고 사유를 완료 요약에 병기."""
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
     ctrl.set_output_folder(str(out))
     ctrl.dispatch("ack_field", {"field": "추정가격"})
@@ -366,7 +378,7 @@ def test_partial_failure_does_not_stamp_last_run_at(tmp_path, monkeypatch):
     monkeypatch.setattr(sj, "generate_batch", lambda *a, **k: _FakeBatch())
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
     ctrl.dispatch("ack_field", {"field": "추정가격"})
 
@@ -377,7 +389,7 @@ def test_partial_failure_does_not_stamp_last_run_at(tmp_path, monkeypatch):
 def test_overwrite_confirm_flow(tmp_path):
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
     ctrl.dispatch("ack_field", {"field": "추정가격"})
     assert ctrl.generate()["ok"] is True  # 최초 생성
@@ -413,7 +425,7 @@ def test_mirror_value_display_filled_sample_missing_blank(tmp_path):
     """거울 행 = 필드별 값 집계(재구현 아님, mapped_records 소비). 상태별 값·표시형 병기."""
     ctrl = JobController(_mirror_job(tmp_path), lambda s, snap: None)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     m = {r["name"]: r for r in ctrl.snapshot()["mirror"]}
     # 공고명: 선택 2행 값이 달라 표본 명시 병기(S10) — 서로 다른 값 1개 더, text 라 표시형 아님.
     assert m["공고명"]["state"] == "filled"
@@ -433,7 +445,7 @@ def test_mirror_filled_same_value_is_not_labeled_sample(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     csv = tmp_path / "same.csv"
     csv.write_text("bidNtceNm,presmptPrce\n동일공고,100\n동일공고,200\n", encoding="utf-8")
-    ctrl.load_data_path(str(csv))
+    _mount_all(ctrl, str(csv))
     m = {r["name"]: r for r in ctrl.snapshot()["mirror"]}
     assert m["공고명"]["value"] == "동일공고"  # 표본 라벨 없음
 
@@ -448,7 +460,7 @@ def test_mirror_sample_counts_distinct_values_not_rows(tmp_path):
         "bidNtceNm,presmptPrce\n전산장비,1\n전산장비,2\n전산장비,3\n전산장비,4\n사무비품,5\n",
         encoding="utf-8",
     )
-    ctrl.load_data_path(str(csv))
+    _mount_all(ctrl, str(csv))
     m = {r["name"]: r for r in ctrl.snapshot()["mirror"]}
     assert m["공고명"]["value"] == "전산장비 (표본 · 외 1개 값)"  # 행 수 아님(외 4행 금지)
 
@@ -457,7 +469,7 @@ def test_mirror_empty_when_no_selection(tmp_path):
     """선택 0 = 생성될 문서 없음 → 거울 행 없음(빈 값을 '채움'으로 오도하지 않는다)."""
     ctrl = JobController(_mirror_job(tmp_path), lambda s, snap: None)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.dispatch("set_none", {})
     snap = ctrl.snapshot()
     assert snap["mirror"] == [] and snap["drift"] == []
@@ -475,7 +487,7 @@ def test_mirror_drift_split_into_blocking_list(tmp_path):
     ))
     ctrl = JobController(reg, lambda s, snap: None)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     snap = ctrl.snapshot()
     assert snap["drift"] == ["유령"]
     assert [r["name"] for r in snap["mirror"]] == ["공고명"]  # drift 필드는 표에서 제외
@@ -498,7 +510,7 @@ def test_snapshot_carries_unresolved_name_tokens_for_banner(tmp_path):
     ))
     ctrl = JobController(reg, lambda s, snap: None)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     snap = ctrl.snapshot()
     assert snap["name_tokens"] == ["미해소"]
     assert snap["gate"]["level"] == "danger" and snap["gate"]["enabled"] is False
@@ -525,7 +537,7 @@ def test_name_token_banner_yields_to_template_read_error(tmp_path):
     ))
     ctrl = JobController(reg, lambda s, snap: None)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     assert ctrl.snapshot()["name_tokens"] == ["미해소"]     # 정상 지형에선 토큰이 이긴다
     template.write_bytes(b"not a zip")                      # 템플릿 손상 → 구조 재읽기 실패
     snap = ctrl.snapshot()
@@ -538,7 +550,7 @@ def test_name_token_banner_yields_to_template_read_error(tmp_path):
 def test_select_none_closes_record_gate(tmp_path):
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
     ctrl.dispatch("ack_field", {"field": "추정가격"})
     assert ctrl.snapshot()["gate"]["enabled"] is True
@@ -564,7 +576,7 @@ def test_refresh_invalidates_session_when_job_deleted(tmp_path):
     reg = _registry(tmp_path)
     ctrl = JobController(reg, lambda s, snap: None)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     assert ctrl.snapshot()["has_job"] is True
 
     reg.delete("공고서")  # 다른 화면이 삭제(그 화면으로 가려면 작업 화면 이탈 → 복귀 시 refresh)
@@ -584,7 +596,7 @@ def test_refresh_keeps_session_when_job_still_present(tmp_path):
     """refresh 가 멀쩡한 세션을 건드리지 않는다 — 무효화는 삭제/개명된 작업에만(과잉 리셋 방지)."""
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     assert ctrl.dispatch("refresh", {}) is None
     snap = ctrl.snapshot()
     assert snap["has_job"] is True and snap["job_name"] == "공고서"
@@ -642,12 +654,21 @@ def test_load_pool_targets_excel_reference(tmp_path):
     assert snap["record_count"] == 2
 
 
-def test_load_pool_without_job_is_loud(tmp_path):
-    """겨눔 전제 = 작업 선택 — 미선택이면 공용 래퍼가 오류 dict 로 재진술(조용한 실패 금지)."""
+def test_load_pool_without_job_mounts_session_data(tmp_path):
+    """데이터-우선(§18.2): 작업 미선택에도 풀 겨눔이 세션에 마운트된다 — 구 「작업 먼저」
+    전제의 개정. 마운트 직후 선택 0건 + 후보(§18.4) + prework 게이트가 다음 할 일을 말한다."""
     ctrl, pool = _pool_controller(tmp_path)
     pool.save(DatasetPoolItem(name="7월공고", kind="excel", opts={"path": _data_csv(tmp_path)}))
     res = ctrl.dispatch("load_pool", {"name": "7월공고"})
-    assert res["ok"] is False and "작업" in res["error"]
+    assert res["ok"] is True
+    snap = ctrl.snapshot()
+    assert snap["has_job"] is False and snap["has_data"] is True
+    assert snap["record_count"] == 2 and snap["selected_count"] == 0
+    # 후보 = 현재 데이터 fields 로 판정(§18.4) — '공고서'는 필수 소스가 전부 있어 available.
+    assert [(c["name"], c["kind"]) for c in snap["candidates"]] == [("공고서", "available")]
+    assert snap["gate"]["enabled"] is False and "항목을 선택" in snap["gate"]["text"]
+    ctrl.dispatch("toggle_record", {"index": 0, "value": True})
+    assert "문서 작업" in ctrl.snapshot()["gate"]["text"]  # 다음 할 일 = 작업 선택
 
 
 # --------------------------------------- 기본 데이터셋 자동 조준(#53-A, A-1-11)
@@ -669,8 +690,24 @@ def test_select_job_auto_aims_default_dataset(tmp_path):
     snap = ctrl.snapshot()
     assert snap["has_data"] is True and snap["record_count"] == 2      # 자동 재읽기(싱크)
     assert snap["data_source_label"] == "등록 데이터: 7월공고"
-    assert snap["selected_count"] == 2                                  # 겨눔 = 전체 선택 초기화
+    assert snap["selected_count"] == 0                                  # 겨눔 = 선택 0건(§18.2)
     assert snap["data_notice"]["level"] == "ok" and "자동" in snap["data_notice"]["text"]
+
+
+def test_auto_aim_does_not_clobber_mounted_session_data(tmp_path):
+    """세션에 이미 마운트된 데이터가 있으면 기본 참조 자동 조준을 건너뛴다 — 참조가
+    사용자의 현재 데이터를 조용히 덮으면 §18.2(성공 전 현재 runtime 미파기) 위반이다."""
+    ctrl, pool = _pool_controller(tmp_path)
+    _job_with_default(ctrl, pool, tmp_path, "7월공고")
+    other = tmp_path / "직접.csv"
+    other.write_text("bidNtceNm,presmptPrce\n수동데이터,900\n", encoding="utf-8")
+    ctrl.load_data_path(str(other))                      # 작업 미선택 상태의 수동 마운트
+    ctrl.dispatch("toggle_record", {"index": 0, "value": True})
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    snap = ctrl.snapshot()
+    assert snap["data_label"] == "직접.csv"              # 마운트 데이터 생존(자동 조준 생략)
+    assert snap["record_count"] == 1 and snap["selected_count"] == 1
+    assert snap["data_notice"] is None                   # 조준 재진술 없음 = 실제로 안 했다
 
 
 def test_select_job_dead_default_ref_is_loud_no_silent_fallback(tmp_path):
@@ -714,7 +751,7 @@ def test_manual_data_clears_auto_aim_notice(tmp_path):
     _job_with_default(ctrl, pool, tmp_path, "7월공고")
     ctrl.dispatch("select_job", {"name": "공고서"})
     assert ctrl.snapshot()["data_notice"] is not None
-    ctrl.load_data_path(_data_csv(tmp_path))               # 수동 파일 겨눔
+    _mount_all(ctrl, _data_csv(tmp_path))               # 수동 파일 겨눔
     snap = ctrl.snapshot()
     assert snap["data_notice"] is None
     assert snap["data_source_label"].startswith("파일:")
@@ -760,7 +797,7 @@ def test_relink_selected_job_reloads_vm_and_restates(tmp_path):
     """지금 선택된 작업을 재연결하면 stale VM 을 재적재하고 상태 초기화를 재진술한다(#67)."""
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))               # 데이터 겨눔(재적재로 초기화될 상태)
+    _mount_all(ctrl, _data_csv(tmp_path))               # 데이터 겨눔(재적재로 초기화될 상태)
     new_tpl = tmp_path / "moved.hwpx"
     _write_template(new_tpl, ["공고명", "추정가격"])
     res = ctrl.dispatch(
@@ -779,7 +816,7 @@ def test_load_data_honors_confirmed_sheet(tmp_path):
     """
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    _mount_all(ctrl, str(MULTI_SHEET), sheet="낙찰현황")
     snap = ctrl.snapshot()
     assert snap["data_label"] == "multi_sheet.xlsx"
     assert snap["has_data"] is True and snap["record_count"] == 3
@@ -790,7 +827,7 @@ def test_record_names_follow_selection_not_invented(tmp_path):
     따라 달라지므로 선택 변경 시 남은 행 이름이 생성 결과대로 재계산된다."""
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.dispatch("toggle_record", {"index": 0, "value": False})
     rows = ctrl.snapshot()["records"]
     assert rows[0]["name"] == "" and rows[0]["selected"] is False   # 미선택 = 이름 없음
@@ -809,7 +846,7 @@ def test_generate_uses_previewed_name_timestamp(tmp_path):
     job.filename_pattern = "doc-{{date:HHmmSS}}-{{seq}}"
     ctrl.registry.save(job, allow_overwrite=True)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
     ctrl.set_output_folder(str(out))
     ctrl.dispatch("ack_field", {"field": "추정가격"})
@@ -843,7 +880,7 @@ def test_unresolved_pattern_gate_surfaces_in_snapshot(tmp_path):
     job.filename_pattern = "공고서-{{ID}}"                 # 101 워크스루 실증 지뢰(데이터에 ID 없음)
     ctrl.registry.save(job, allow_overwrite=True)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
     snap = ctrl.snapshot()
     assert snap["gate"]["enabled"] is False and snap["gate"]["level"] == "danger"
@@ -857,12 +894,13 @@ def _session(tmp_path):
     """작업 선택 + 데이터 겨눔까지 마친 컨트롤러 — 필터 계약 테스트 공용."""
     ctrl, pushes = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     return ctrl, pushes
 
 
-def test_filter_lifecycle_session_scoped(tmp_path):
-    """필터 = 세션 수명(결정 24): 데이터 겨눔에 생성, 작업 전환에 소멸, 재겨눔에 재생성."""
+def test_filter_lifecycle_data_scoped(tmp_path):
+    """필터 = 데이터 스코프(§18.10, 결정 24 개정): 데이터 겨눔에 생성, **작업 전환·해제에
+    생존**(데이터-우선 — 필터는 가시성만이라 작업과 무관), 데이터 교체에 재생성."""
     ctrl, _ = _session(tmp_path)
     assert ctrl.filter is not None
     # 매핑 확정 유형(text)이 힌트로 우선한다 — 수치 열이어도 사용자 확정 존중.
@@ -871,12 +909,14 @@ def test_filter_lifecycle_session_scoped(tmp_path):
     assert kinds == {"bidNtceNm": "text", "presmptPrce": "text"}
     ctrl.dispatch("filter_search", {"text": "전산"})
     assert ctrl.filter.is_active()
-    ctrl.dispatch("select_job", {"name": ""})  # 작업 전환 = 필터 소멸(세션 휘발, 결정 8)
-    assert ctrl.filter is None
-    assert ctrl.snapshot()["filter"] == {
-        "active": False, "reapply_available": False, "reapply_hint": "", "search": "",
-        "chips": [], "definition": "", "branches": [], "columns": [],
-    }
+    ctrl.dispatch("select_job", {"name": ""})  # 작업 해제 — 데이터 존은 그대로(§18.2)
+    assert ctrl.filter is not None and ctrl.filter.is_active()
+    assert ctrl.snapshot()["filter"]["active"] is True
+    # 데이터 교체 = 필터 재생성(열 지형이 바뀐다 — 결정 24의 존속 부분).
+    other = tmp_path / "e.csv"
+    other.write_text("다른열\n값\n", encoding="utf-8")
+    ctrl.load_data_path(str(other))
+    assert ctrl.filter is not None and not ctrl.filter.is_active()
 
 
 def test_filter_search_shapes_table_and_chips(tmp_path):
@@ -952,7 +992,7 @@ def test_filter_range_on_amount_column_and_inline_error(tmp_path):
     ))
     ctrl = JobController(reg, lambda s, snap: None)
     ctrl.dispatch("select_job", {"name": "금액작업"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     kinds = {c["name"]: c["kind"] for c in ctrl.snapshot()["filter"]["columns"]}
     assert kinds["presmptPrce"] == "amount"              # 매핑 확정 유형 힌트
     res = ctrl.dispatch("filter_col_range", {
@@ -1045,7 +1085,7 @@ def test_session_guard_for_cross_screen_query(tmp_path):
 def test_guard_armed_by_set_comparison(tmp_path):
     """무장 술어(결정 27) — 전체/빈/정의-유래/완주 집합은 비무장, 수작업 열거만 무장."""
     ctrl, _ = _session(tmp_path)
-    ctrl.load_data_path(_data_csv3(tmp_path))
+    _mount_all(ctrl, _data_csv3(tmp_path))
     assert ctrl.snapshot()["guard"]["armed"] is False       # 초기 전체 선택 = 1클릭 재현
     ctrl.dispatch("set_none", {})
     assert ctrl.snapshot()["guard"]["armed"] is False       # 빈 선택 = 지킬 것 없음
@@ -1067,7 +1107,7 @@ def test_guard_armed_by_set_comparison(tmp_path):
 def test_guard_disarmed_by_generation_completion(tmp_path):
     """완료 이벤트 = 무장 해제(결정 27) — 내역은 완료 존이 담보. 재편집 시 재무장."""
     ctrl, _ = _session(tmp_path)
-    ctrl.load_data_path(_data_csv3(tmp_path))
+    _mount_all(ctrl, _data_csv3(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
     ctrl.dispatch("set_none", {})
     ctrl.dispatch("toggle_record", {"index": 1, "value": True})  # 수작업 1행(빈칸 없는 행)
@@ -1079,20 +1119,24 @@ def test_guard_disarmed_by_generation_completion(tmp_path):
     assert ctrl.snapshot()["guard"]["armed"] is True
 
 
-def test_guard_blocks_job_switch_until_confirmed(tmp_path):
-    """T1 가드 왕복(RC-02 동형) — 무변이 needs_confirm, confirm=True 만 전환."""
+def test_job_switch_preserves_session_data_and_selection(tmp_path):
+    """작업 전환 = 보존(§18.2, 구 T1 스위치 가드의 재정의 승계): 무장 선택이어도 확인
+    없이 즉시 전환한다 — 파괴가 없으니 물을 것도 없다(가드 문안=실제 상실 집합 규율).
+    전환이 잃는 것은 실행 증거뿐(§19.10)이고 게이트 재검증이 그것을 강제한다."""
     ctrl, _ = _session(tmp_path)
     _second_job(ctrl, tmp_path)
     ctrl.dispatch("set_none", {})
-    ctrl.dispatch("toggle_record", {"index": 0, "value": True})  # 무장
-    res = ctrl.dispatch("select_job", {"name": "공고서2"})
-    assert res["needs_confirm"] is True and res["kind"] == "switch_job"
-    assert res["sel_count"] == 1 and res["target"] == "공고서2"
+    ctrl.dispatch("toggle_record", {"index": 0, "value": True})  # 구 계약 기준 '무장' 선택
+    assert ctrl.dispatch("select_job", {"name": "공고서2"}) is None  # 즉시 전환(무확인)
     snap = ctrl.snapshot()
-    assert snap["job_name"] == "공고서"                      # 무변이 — 세션 그대로
-    assert snap["has_data"] is True
-    ctrl.dispatch("select_job", {"name": "공고서2", "confirm": True})
-    assert ctrl.snapshot()["job_name"] == "공고서2"          # 확인 후 전환
+    assert snap["job_name"] == "공고서2"
+    assert snap["has_data"] is True and snap["record_count"] == 2    # 데이터 생존
+    assert snap["selected_count"] == 1                               # 선택 생존
+    assert [r["index"] for r in snap["records"] if r["selected"]] == [0]
+    ctrl.dispatch("select_job", {"name": ""})                        # 해제도 데이터 존 보존
+    snap = ctrl.snapshot()
+    assert snap["has_job"] is False and snap["has_data"] is True
+    assert snap["selected_count"] == 1
 
 
 def test_guard_free_paths_do_not_block(tmp_path):
@@ -1102,7 +1146,7 @@ def test_guard_free_paths_do_not_block(tmp_path):
     assert ctrl.dispatch("select_job", {"name": "공고서2"}) is None  # 비무장 = 즉시 전환
     assert ctrl.snapshot()["job_name"] == "공고서2"
     # 소실 무효화(C6) — 무장 상태여도 유령 세션으로 좌초시키지 않는다(confirm 승계).
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.dispatch("set_none", {})
     ctrl.dispatch("toggle_record", {"index": 0, "value": True})
     ctrl.registry.delete("공고서2")
@@ -1126,13 +1170,16 @@ def test_guard_state_query_is_live_and_pushless(tmp_path):
 
 
 def test_needs_confirm_does_not_push(tmp_path):
-    """가드 차단 왕복은 무변이 — 동일 스냅샷 전량 재계산·재렌더를 얹지 않는다(리뷰 #8)."""
+    """가드 차단 왕복은 무변이 — 동일 스냅샷 전량 재계산·재렌더를 얹지 않는다(리뷰 #8).
+
+    구 표본이던 switch_job 가드는 데이터-우선 보존으로 죽었으므로(§18.2) 살아있는
+    needs_confirm 경로(열린 세션 작업 삭제)로 같은 dispatch 불변식을 가드한다.
+    """
     ctrl, pushes = _session(tmp_path)
-    _second_job(ctrl, tmp_path)
     ctrl.dispatch("set_none", {})
-    ctrl.dispatch("toggle_record", {"index": 0, "value": True})
+    ctrl.dispatch("toggle_record", {"index": 0, "value": True})  # 무장(재현 불가 수작업)
     before = len(pushes)
-    res = ctrl.dispatch("select_job", {"name": "공고서2"})
+    res = ctrl.dispatch("delete_job", {"name": "공고서"})
     assert res["needs_confirm"] is True
     assert len(pushes) == before                       # 차단 = 상태 그대로 = push 생략
 
@@ -1168,11 +1215,11 @@ def test_reapply_slot_written_on_session_death_and_source_gated(tmp_path):
     csv1 = _data_csv(tmp_path)
     ctrl.dispatch("filter_search", {"text": "전산"})
     assert ctrl.snapshot()["filter"]["reapply_available"] is False  # 아직 산 세션
-    ctrl.load_data_path(_data_csv3(tmp_path))               # 데이터 교체 = 옛 정의 슬롯행
+    _mount_all(ctrl, _data_csv3(tmp_path))               # 데이터 교체 = 옛 정의 슬롯행
     snap = ctrl.snapshot()
     assert snap["filter"]["active"] is False                # 새 세션 필터는 백지
     assert snap["filter"]["reapply_available"] is False     # 소스 다름(d.csv≠d3.csv) — 게이트
-    ctrl.load_data_path(csv1)                               # 같은 소스로 복귀
+    _mount_all(ctrl, csv1)                               # 같은 소스로 복귀
     assert ctrl.snapshot()["filter"]["reapply_available"] is True
 
 
@@ -1181,8 +1228,8 @@ def test_reapply_restores_definition_only_two_click_split(tmp_path):
     ctrl, _ = _session(tmp_path)
     csv1 = _data_csv(tmp_path)
     ctrl.dispatch("filter_search", {"text": "전산"})
-    ctrl.load_data_path(_data_csv3(tmp_path))               # 죽음 → 슬롯
-    ctrl.load_data_path(csv1)                               # 같은 소스 재겨눔
+    _mount_all(ctrl, _data_csv3(tmp_path))               # 죽음 → 슬롯
+    _mount_all(ctrl, csv1)                               # 같은 소스 재겨눔
     ctrl.dispatch("set_none", {})
     before_sel = ctrl.snapshot()["selected_count"]
     res = ctrl.dispatch("filter_reapply", {})
@@ -1204,9 +1251,9 @@ def test_reapply_full_drop_refused_without_touching_current(tmp_path):
     ctrl.dispatch("filter_col_values", {"column": "bidNtceNm", "values": ["전산장비"]})
     other = tmp_path / "other.csv"
     other.write_text("colA,colB\nx,y\n", encoding="utf-8")
-    ctrl.load_data_path(str(other))                         # 죽음 → 슬롯(csv1 열 조건만)
+    _mount_all(ctrl, str(other))                         # 죽음 → 슬롯(csv1 열 조건만)
     Path(csv1).write_text("colA,colB\nx,y\n", encoding="utf-8")  # 외부 편집 — 열 전면 교체
-    ctrl.load_data_path(csv1)                               # 같은 경로 재겨눔 → 소스 일치
+    _mount_all(ctrl, csv1)                               # 같은 경로 재겨눔 → 소스 일치
     assert ctrl.snapshot()["filter"]["reapply_available"] is True
     res = ctrl.dispatch("filter_reapply", {})
     assert res["ok"] is False and "하나도 남지 않아" in res["error"]
@@ -1228,8 +1275,8 @@ def test_reapply_gated_off_while_current_filter_is_live(tmp_path):
     ctrl, _ = _session(tmp_path)
     csv1 = _data_csv(tmp_path)
     ctrl.dispatch("filter_search", {"text": "전산"})
-    ctrl.load_data_path(_data_csv3(tmp_path))               # 죽음 → 슬롯
-    ctrl.load_data_path(csv1)                               # 같은 소스 복귀 = 슬롯·소스 연언 충족
+    _mount_all(ctrl, _data_csv3(tmp_path))               # 죽음 → 슬롯
+    _mount_all(ctrl, csv1)                               # 같은 소스 복귀 = 슬롯·소스 연언 충족
     assert ctrl.snapshot()["filter"]["reapply_available"] is True   # 백지 상태에선 제공
     ctrl.dispatch("filter_col_values", {"column": "bidNtceNm", "values": ["사무비품"]})
     assert ctrl.snapshot()["filter"]["reapply_available"] is False  # 정의가 서면 회수
@@ -1255,8 +1302,8 @@ def test_reapply_hint_describes_the_dying_session_not_the_incoming_data(tmp_path
     assert "전산" in alive and "매치 없음" not in alive
     other = tmp_path / "other.csv"                       # 열도 값도 다른 소스(매치 0)
     other.write_text("colA,colB\nx,y\n", encoding="utf-8")
-    ctrl.load_data_path(str(other))                      # 죽음 → 슬롯(레코드는 이미 교체됨)
-    ctrl.load_data_path(csv1)                            # 원 소스 복귀
+    _mount_all(ctrl, str(other))                      # 죽음 → 슬롯(레코드는 이미 교체됨)
+    _mount_all(ctrl, csv1)                            # 원 소스 복귀
     hint = ctrl.snapshot()["filter"]["reapply_hint"]
     assert hint == alive, f"슬롯 문안이 죽는 세션이 아니라 새 데이터로 지어졌습니다: {hint!r}"
 
@@ -1269,9 +1316,9 @@ def test_reapply_hint_carries_definition_to_be_installed(tmp_path):
     ctrl, _ = _session(tmp_path)
     csv1 = _data_csv(tmp_path)
     ctrl.dispatch("filter_search", {"text": "전산"})
-    ctrl.load_data_path(_data_csv3(tmp_path))               # 죽음 → 슬롯(정의줄 동반)
+    _mount_all(ctrl, _data_csv3(tmp_path))               # 죽음 → 슬롯(정의줄 동반)
     assert ctrl.snapshot()["filter"]["reapply_hint"] == ""  # 소스 불일치 = 문안도 없음
-    ctrl.load_data_path(csv1)
+    _mount_all(ctrl, csv1)
     hint = ctrl.snapshot()["filter"]["reapply_hint"]
     assert "전산" in hint, hint
     ctrl.dispatch("filter_search", {"text": "사무"})         # 정의가 서면 어포던스·문안 회수
@@ -1282,11 +1329,11 @@ def test_reapply_source_key_distinguishes_sheets(tmp_path):
     """소스 키 = 경로+시트(리뷰 #0) — 같은 워크북의 다른 시트는 다른 소스다."""
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(str(MULTI_SHEET), sheet="공고목록")
+    _mount_all(ctrl, str(MULTI_SHEET), sheet="공고목록")
     ctrl.dispatch("filter_search", {"text": "물"})           # 정의 있는 세션
-    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")  # 같은 파일·다른 시트
+    _mount_all(ctrl, str(MULTI_SHEET), sheet="낙찰현황")  # 같은 파일·다른 시트
     assert ctrl.snapshot()["filter"]["reapply_available"] is False  # 교차 재사용 차단
-    ctrl.load_data_path(str(MULTI_SHEET), sheet="공고목록")  # 같은 시트 복귀
+    _mount_all(ctrl, str(MULTI_SHEET), sheet="공고목록")  # 같은 시트 복귀
     # 무정의 세션(낙찰현황)의 죽음은 슬롯을 보존한다 — 공고목록 정의가 제 시트에 제공.
     assert ctrl.snapshot()["filter"]["reapply_available"] is True
 
@@ -1296,8 +1343,8 @@ def test_reapply_source_key_normalizes_path_spelling(tmp_path):
     ctrl, _ = _session(tmp_path)
     csv1 = _data_csv(tmp_path)
     ctrl.dispatch("filter_search", {"text": "전산"})
-    ctrl.load_data_path(_data_csv3(tmp_path))               # 죽음 → 슬롯(csv1 키)
-    ctrl.load_data_path(csv1.upper())                       # 같은 파일, 표기만 다름(Windows)
+    _mount_all(ctrl, _data_csv3(tmp_path))               # 죽음 → 슬롯(csv1 키)
+    _mount_all(ctrl, csv1.upper())                       # 같은 파일, 표기만 다름(Windows)
     assert ctrl.snapshot()["filter"]["reapply_available"] is True
 
 
@@ -1321,13 +1368,13 @@ def test_reapply_abandons_pruning_when_branches_all_lost(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     both = tmp_path / "both.csv"
     both.write_text("bidNtceNm,memo\n전산장비,전산비고\n사무비품,일반\n", encoding="utf-8")
-    ctrl.load_data_path(str(both))
+    _mount_all(ctrl, str(both))
     ctrl.dispatch("filter_search", {"text": "전산"})         # 가지 = bidNtceNm·memo
     ctrl.dispatch("filter_prune", {"column": "bidNtceNm"})   # 가지 하나 쳐냄(memo 잔존)
-    ctrl.load_data_path(_data_csv(tmp_path))                 # 죽음 → 슬롯
+    _mount_all(ctrl, _data_csv(tmp_path))                 # 죽음 → 슬롯
     # 외부 편집: memo 열 소실 — 프루닝 대상(bidNtceNm)만 남는 지형.
     both.write_text("bidNtceNm\n전산장비\n사무비품\n", encoding="utf-8")
-    ctrl.load_data_path(str(both))
+    _mount_all(ctrl, str(both))
     res = ctrl.dispatch("filter_reapply", {})
     assert res["ok"] is True
     assert any("복원하지 못했습니다" in d for d in res["dropped"])  # 포기 고지
@@ -1372,7 +1419,7 @@ def test_toggle_group_collapses_persists_and_keeps_selection(tmp_path):
     reg = ctrl.registry
     reg.set_group("공고서", "입찰")
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     assert ctrl.snapshot()["selected_count"] == 2
     ctrl.dispatch("toggle_group", {"group": "입찰"})
     snap = ctrl.snapshot()
@@ -1414,7 +1461,7 @@ def test_delete_open_session_job_confirm_roundtrip_closes_panel(tmp_path):
     # RC-02 왕복 동형: 무확인 = 재진술 자료 반환·무변이, 확인 = 삭제 + 세션 닫힘(빈 패널 재진술).
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.dispatch("toggle_record", {"index": 0, "value": False})  # 수작업 선택 = 무장
     res = ctrl.dispatch("delete_job", {"name": "공고서"})
     assert res["needs_confirm"] is True and res["open_session"] is True
@@ -1690,7 +1737,7 @@ def test_generate_surfaces_fill_notes(tmp_path):
     ).save(str(tmp_path / "t.hwpx"))
 
     ctrl.dispatch("select_job", {"name": "공고서"})
-    ctrl.load_data_path(_data_csv(tmp_path))
+    _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
     ctrl.dispatch("ack_field", {"field": "추정가격"})
 

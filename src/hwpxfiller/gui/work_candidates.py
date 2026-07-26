@@ -23,6 +23,8 @@ v6 워크플로 계약 §18.4 의 이식(정본: ``lab/ui-reboot`` 태그 ``prot
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from .run_state import GateState
+
 if TYPE_CHECKING:
     from ..core.job import Job
 
@@ -79,3 +81,24 @@ def candidate_rows(
             continue
         rows.append((job, compat))
     return rows
+
+
+def prework_gate(
+    *, has_data: bool, selected_count: int, has_candidates: bool
+) -> GateState:
+    """작업 미선택 상태의 생성 게이트 — 단일 표시 결정(RC-23 동형, 링2 재조립 금지).
+
+    데이터-우선 도입 순서(§18.2)대로 다음 할 일 하나만 말한다: 데이터 → 항목 선택 →
+    문서 작업. "데이터 없음"과 "호환 작업 없음"은 구분해 재진술한다(§18.4 문안 3구분 —
+    과경고도 과소경고도 없이, 막힌 실제 이유만). 작업이 선택되면 이 게이트는 퇴장하고
+    권위 판정(``RunViewModel.refresh``)이 이어받는다.
+    """
+    if not has_data:
+        return GateState(False, "warn", "데이터 파일을 먼저 선택하세요.")
+    if selected_count == 0:
+        return GateState(False, "warn", "처리할 항목을 선택하세요.")
+    if not has_candidates:
+        return GateState(
+            False, "warn", "현재 데이터에 사용할 수 있는 문서 작업이 없습니다."
+        )
+    return GateState(False, "warn", "문서 작업을 선택하세요.")
