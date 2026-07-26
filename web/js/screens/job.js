@@ -330,6 +330,17 @@
       `<span class="cand-meta">${meta}</span></button></div>`;
   }
 
+  /* 즐겨찾기 전이 단일 몸통 — 후보 카드의 별과 좌 목록 ⋮ 메뉴가 같은 경로를 쓴다(두 표면이
+     서로 다른 왕복을 갖지 않게). 낙관 표지 없이 Python 왕복 결과(push)로만 상태가 바뀐다 —
+     별이 먼저 켜졌다가 저장 실패로 되돌아가면 영속된 척하는 거짓 표지다(#215 동류). */
+  function toggleFavorite(name, value) {
+    Bridge.call(SCREEN, "toggle_favorite", { name, value }).then((res) => {
+      if (res && res.ok === false) log(res.error);
+    }).catch((err) => {
+      log("즐겨찾기 변경 실패: " + String((err && err.message) || err));
+    });
+  }
+
   function renderCandidates(s) {
     const row = $("jobCandsRow");
     const host = $("jobCandidates");
@@ -346,7 +357,8 @@
     // 지금 실제로 갈 수 있는 곳(좌 목록)만 가리킨다 — 없는 화면을 약속하지 않는다.
     if (c.more > 0) {
       html += `<span class="cand-more muted">이 데이터로 쓸 수 있는 작업 ` +
-        `<b>${c.more}건</b>이 더 있습니다 — 왼쪽 목록에서 고르세요.</span>`;
+        `<b>${c.more}건</b>이 더 있습니다 — 왼쪽 목록에서 고르거나, ⋮ 메뉴로 ` +
+        `즐겨찾기에 추가하면 여기 올라옵니다.</span>`;
     }
     if (needs.length) {
       // 확인 필요는 **자기 줄**을 갖는다(눈검증): 순위 카드 줄에 이어 붙으면 「외 N건」
@@ -826,12 +838,27 @@
     openRowMenu(kind, name, btn);
   }
 
+  /* 좌 목록 행의 즐겨찾기 상태 — 메뉴 문안("추가"/"제거")의 근거. 판정은 Python 스냅샷이
+     소유하고 여기서 뒤집지 않는다. 행이 사라졌으면(다른 화면 삭제) false 로 퇴화. */
+  function isFavorited(name) {
+    const rows = (LAST && LAST.job_rows) || [];
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i].name === name) return rows[i].favorited === true;
+    }
+    return false;
+  }
+
   function openRowMenu(kind, name, btn) {
     menuFor = { kind, name, trigger: btn };
-    // 메뉴 내용은 화면 소유(작업=편집/복제/이름/이동/삭제, 그룹=이름변경/해산), 위치·표시는 팩토리.
+    // 메뉴 내용은 화면 소유(작업=편집/복제/즐겨찾기/이름/이동/삭제, 그룹=이름변경/해산),
+    // 위치·표시는 팩토리. 즐겨찾기가 여기 있는 이유(리뷰 2R P2): 후보 구획의 별은 상위
+    // 5장에만 있어 순위 밖 작업은 승격 경로가 없었다 — 좌 목록은 절단되지 않는 표면이다.
+    const fav = isFavorited(name);
     const html = kind === "job"
       ? `<button data-menu="edit">편집</button>` +
         `<button data-menu="clone">복제</button>` +
+        `<button data-menu="favorite">` +
+        (fav ? "즐겨찾기에서 제거" : "즐겨찾기에 추가") + `</button>` +
         `<button data-menu="rename">이름 변경</button>` +
         `<div class="sep"></div>` +
         `<button data-menu="move">그룹으로 이동…</button>` +
@@ -855,6 +882,7 @@
         if (r && r.name) log(`복제: '${name}' → '${r.name}'`);
         return;
       }
+      if (act === "favorite") { toggleFavorite(name, !isFavorited(name)); return; }
       if (act === "rename") { startRename(name); return; }
       if (act === "move") { openGroupMove(name, trigger); return; }
       if (act === "delete") { deleteJob(name, trigger); return; }
@@ -1122,15 +1150,8 @@
       // 별 = 정렬 메타만(§18.5) — 작업 선택이 아니다. 카드 안 중첩 버튼이라 먼저 가른다.
       const fav = e.target.closest("[data-fav]");
       if (fav) {
-        const name = fav.getAttribute("data-fav");
-        const value = fav.getAttribute("aria-pressed") !== "true";
-        // 낙관 표지 없이 Python 왕복 결과(push)로만 상태를 바꾼다 — 별이 먼저 켜졌다가
-        // 저장 실패로 되돌아가면 영속된 척하는 거짓 표지가 된다(#215 토글 경합 동류).
-        Bridge.call(SCREEN, "toggle_favorite", { name, value }).then((res) => {
-          if (res && res.ok === false) log(res.error);
-        }).catch((err) => {
-          log("즐겨찾기 변경 실패: " + String((err && err.message) || err));
-        });
+        toggleFavorite(fav.getAttribute("data-fav"),
+                       fav.getAttribute("aria-pressed") !== "true");
         return;
       }
       const btn = e.target.closest("[data-cand]");

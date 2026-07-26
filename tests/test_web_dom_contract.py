@@ -729,6 +729,10 @@ def test_job_candidate_ranking_surface_contract():
     """
     src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
     assert "data-fav" in src and "toggle_favorite" in src, "즐겨찾기 토글 배선이 없습니다."
+    # 도달성(리뷰 2R P2): 카드 별은 상위 5장뿐이라 순위 밖 작업의 승격 경로는 절단되지 않는
+    # 표면(좌 목록 ⋮ 메뉴)이 져야 한다. 두 표면은 같은 전이 몸통을 쓴다.
+    assert 'data-menu="favorite"' in src, "좌 목록 ⋮ 메뉴에 즐겨찾기 항목이 없습니다."
+    assert src.count("function toggleFavorite(") == 1, "즐겨찾기 전이 몸통이 둘입니다."
     assert "c.more" in src, "순위 밖 후보 수(외 N건) 고지가 없습니다 — 조용한 절단 금지."
     assert "cand-sug" in src, "추천 표지가 없습니다(§18.3 개정)."
     # JS 가 순위를 재계산하지 않는다(RC-23 동형 — 이중 진실 금지).

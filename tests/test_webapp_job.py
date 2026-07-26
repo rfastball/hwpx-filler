@@ -79,7 +79,10 @@ def test_initial_lists_jobs_and_loud_gate(tmp_path):
     snap = ctrl.initial()
     assert snap["has_job"] is False
     # 좌 master 목록 = 저장된 작업(선택 표지 포함).
-    assert snap["job_rows"] == [{"name": "공고서", "selected": False}]
+    # 행에는 선택 표지와 즐겨찾기(좌 목록 ⋮ 메뉴 문안의 근거, 리뷰 2R P2)가 함께 실린다.
+    assert snap["job_rows"] == [
+        {"name": "공고서", "selected": False, "favorited": False}
+    ]
     # 데이터-우선 도입 순서(§18.2) — 첫 할 일은 데이터 선택이다.
     assert snap["gate"]["enabled"] is False and "데이터 파일" in snap["gate"]["text"]
     # 데이터 미준비 = 후보 계산 자체를 안 한다(§18.1) — 4구획 전부 빈 골격.
@@ -93,7 +96,9 @@ def test_select_job_marks_master_and_sets_session(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     snap = ctrl.snapshot()
     assert snap["has_job"] is True and snap["job_name"] == "공고서"
-    assert snap["job_rows"] == [{"name": "공고서", "selected": True}]  # 좌 목록 선택 표지
+    assert snap["job_rows"] == [
+        {"name": "공고서", "selected": True, "favorited": False}
+    ]  # 좌 목록 선택 표지
     # 저장 폴더 기본값 = 템플릿 폴더/Results(실행 화면 동형).
     assert snap["out_dir"].endswith("Results")
 
@@ -318,6 +323,32 @@ def test_rapid_favorites_within_one_second_keep_newest_first(tmp_path):
     second = ctrl.registry.load("공고서").favorited_at
     assert first != second, f"같은 시각으로 찍혀 동률입니다: {first!r}"
     assert [c["name"] for c in ctrl.snapshot()["candidates"]["top"]] == ["공고서", "가나다"]
+
+
+def test_overflow_job_can_be_promoted_and_left_list_carries_the_flag(tmp_path):
+    """순위 밖 작업도 즐겨찾기로 승격된다(리뷰 2R P2 — 카드 별은 상위 5장뿐).
+
+    도달성은 **절단되지 않는 표면**(좌 목록 ⋮ 메뉴)이 지고, 그 메뉴 문안의 근거인
+    ``favorited`` 표지는 좌 목록 행이 싣는다. 승격 뒤 후보 상위권에 실제로 올라온다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    for i in range(6):
+        _extra_job(ctrl, f"작업{i}", last_run_at=f"2026-07-2{i}T09:00:00")
+    ctrl.load_data_path(_data_csv(tmp_path))
+    cands = ctrl.snapshot()["candidates"]
+    assert cands["more"] >= 1
+    hidden = [j.name for j in ctrl.registry.list_jobs()
+              if j.name not in {c["name"] for c in cands["top"]}]
+    target = hidden[0]                                       # 순위 밖 = 카드에 별이 없다
+
+    assert ctrl.dispatch("toggle_favorite", {"name": target, "value": True})["ok"] is True
+    snap = ctrl.snapshot()
+    assert snap["candidates"]["top"][0]["name"] == target     # 승격돼 1순위
+    rows = {r["name"]: r["favorited"] for r in snap["job_rows"]}
+    assert rows[target] is True                              # 좌 목록이 상태를 싣는다
+    sect_rows = {r["name"]: r["favorited"]
+                 for sec in snap["job_sections"] for r in sec["rows"]}
+    assert sect_rows[target] is True                         # 구획 뷰도 같은 값(드리프트 없음)
 
 
 def test_toggle_favorite_on_vanished_job_is_restated_not_silent(tmp_path):
@@ -816,7 +847,10 @@ def test_deselect_job_returns_to_empty_panel(tmp_path):
     ctrl.dispatch("select_job", {"name": ""})  # 선택 해제
     snap = ctrl.snapshot()
     assert snap["has_job"] is False and snap["job_name"] == ""
-    assert snap["job_rows"] == [{"name": "공고서", "selected": False}]
+    # 행에는 선택 표지와 즐겨찾기(좌 목록 ⋮ 메뉴 문안의 근거, 리뷰 2R P2)가 함께 실린다.
+    assert snap["job_rows"] == [
+        {"name": "공고서", "selected": False, "favorited": False}
+    ]
 
 
 def test_refresh_invalidates_session_when_job_deleted(tmp_path):

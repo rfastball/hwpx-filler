@@ -1170,15 +1170,22 @@ _JOB_LIST_GROUP_PROBE_JS = r"""
   try {
     window.Nav.go('job');
     var snap = {
-      job_rows: [{name:'물품 공고서', selected:false},{name:'물품 기안', selected:false},
-                 {name:'용역 공고서', selected:false},{name:'회의 기안', selected:false}],
+      // favorited(슬라이스 2) — 좌 목록 ⋮ 메뉴 즐겨찾기 문안의 근거. 첫 행만 지정 상태로
+      // 둬서 메뉴가 "제거"를 말하는지(플래그 추종) 되읽는다.
+      job_rows: [{name:'물품 공고서', selected:false, favorited:true},
+                 {name:'물품 기안', selected:false, favorited:false},
+                 {name:'용역 공고서', selected:false, favorited:false},
+                 {name:'회의 기안', selected:false, favorited:false}],
       job_flat: false,
       job_group_names: ['2026 상반기', '입찰'],
       job_sections: [
         {group:'2026 상반기', collapsed:false, count:2,
-         rows:[{name:'물품 공고서', selected:false},{name:'물품 기안', selected:false}]},
-        {group:'입찰', collapsed:true, count:1, rows:[{name:'용역 공고서', selected:false}]},
-        {group:'', collapsed:false, count:1, rows:[{name:'회의 기안', selected:false}]}
+         rows:[{name:'물품 공고서', selected:false, favorited:true},
+               {name:'물품 기안', selected:false, favorited:false}]},
+        {group:'입찰', collapsed:true, count:1,
+         rows:[{name:'용역 공고서', selected:false, favorited:false}]},
+        {group:'', collapsed:false, count:1,
+         rows:[{name:'회의 기안', selected:false, favorited:false}]}
       ],
       job_name:'', has_job:false,
       guard:{armed:false, sel_count:0, in_def:0, extra:0, filter_active:false, filter_parts:0},
@@ -1222,6 +1229,10 @@ _JOB_LIST_GROUP_PROBE_JS = r"""
     out.menu_shown = getComputedStyle(menu).display !== 'none';
     out.menu_items = Array.prototype.map.call(
       menu.querySelectorAll('button[data-menu]'), function (b) { return b.dataset.menu; });
+    out.menu_fav_label = (function () {
+      var b = menu.querySelector('button[data-menu="favorite"]');
+      return b ? b.textContent : '';
+    })();
     document.body.dispatchEvent(new MouseEvent('pointerdown', {bubbles:true}));
     out.menu_closed = getComputedStyle(menu).display === 'none';
     out.move_modal_hidden = document.getElementById('groupMoveModal').classList.contains('hidden');

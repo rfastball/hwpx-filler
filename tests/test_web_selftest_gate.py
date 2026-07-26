@@ -460,9 +460,15 @@ class TestWebSelftestGate:
         assert j["opening_marker_immediate"] is True, f"작업 열기 표지가 클릭 즉시 서지 않습니다: {j!r}"
         # 행 ⋮ 메뉴 — 실개방(항목 구성 포함) + 바깥 pointerdown 닫기.
         assert j["menu_shown"] is True, "행 ⋮ 클릭에 메뉴가 열리지 않았습니다."
-        assert j["menu_items"] == ["edit", "clone", "rename", "move", "delete"], (
-            f"메뉴 항목 구성이 결정 43(편집·복제·이름 변경·그룹 이동·삭제)과 다릅니다: {j['menu_items']!r}"
+        assert j["menu_items"] == [
+            "edit", "clone", "favorite", "rename", "move", "delete"
+        ], (
+            "메뉴 항목 구성이 결정 43(편집·복제·이름 변경·그룹 이동·삭제)+즐겨찾기"
+            f"(슬라이스 2 도달성)와 다릅니다: {j['menu_items']!r}"
         )
+        # 문안은 행의 favorited 플래그를 추종한다 — 첫 행은 지정 상태라 "제거"여야 한다
+        # (반대로 말하면 순위 밖 승격 경로가 사용자를 속인다).
+        assert j["menu_fav_label"] == "즐겨찾기에서 제거", j["menu_fav_label"]
         assert j["menu_closed"] is True, "바깥 클릭에 메뉴가 닫히지 않았습니다."
         assert j["move_modal_hidden"] is True, "그룹 이동 다이얼로그가 기본 닫힘이 아닙니다."
         # 퇴화 불변식(결정 5) — 그룹 0개면 헤더·들여쓰기 없는 평면.

@@ -12,13 +12,28 @@ screen_job.JobController` 와 :class:`~hwpxfiller.webapp.screen_draft.DraftContr
 from __future__ import annotations
 
 
+def _row(j, selected_name: str) -> dict:
+    """행 1건 성형 — 두 뷰(평면·구획)의 단일 출처.
+
+    ``favorited`` 는 좌 목록 ⋮ 메뉴가 즐겨찾기 문안("추가"/"제거")을 정하는 근거다
+    (리뷰 2R P2): 후보 구획의 별은 상위 5장에만 있어 순위 밖 작업은 손이 닿지 않았다 —
+    **절단되지 않는 표면**인 좌 목록이 그 도달성을 진다. 판정은 여기(Python)뿐이고 메뉴는
+    받은 값으로 문안만 고른다.
+    """
+    return {
+        "name": j.name,
+        "selected": j.name == selected_name,
+        "favorited": bool(j.favorited_at),
+    }
+
+
 def build_flat_rows(jobs, selected_name: str) -> "list[dict]":
-    """그룹과 무관한 평면 뷰 — 이름 + 선택 표지. "전체 집합" 소비자(테스트·세션 판정)용.
+    """그룹과 무관한 평면 뷰 — 이름 + 선택·즐겨찾기 표지. "전체 집합" 소비자용.
 
     :func:`build_group_sections` 과 같은 ``jobs`` 를 받아 두 뷰가 어긋나지 않게 한다(호출측이
     ``list_jobs`` 를 1회 읽어 둘에 같은 목록을 넘긴다).
     """
-    return [{"name": j.name, "selected": j.name == selected_name} for j in jobs]
+    return [_row(j, selected_name) for j in jobs]
 
 
 def build_group_sections(
@@ -34,9 +49,7 @@ def build_group_sections(
     """
     grouped: "dict[str, list[dict]]" = {}
     for j in jobs:
-        grouped.setdefault(j.group, []).append(
-            {"name": j.name, "selected": j.name == selected_name}
-        )
+        grouped.setdefault(j.group, []).append(_row(j, selected_name))
     named = sorted(g for g in grouped if g)
     flat = not named
     order = named + ([""] if "" in grouped else [])
