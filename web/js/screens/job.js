@@ -399,8 +399,13 @@
       ` data-busy-lock data-browse-tab="${t.key}" aria-selected="${b.tab === t.key}">` +
       `${esc(t.label)}</button>`
     ).join("");
+    // 타이핑 중엔 스냅샷이 입력값을 덮지 않는다(리뷰 4R P2 — 데이터 존 검색과 같은 규칙):
+    // 왕복 중 이어 친 글자가 옛 검색어로 되돌아가면 사용자의 의도가 조용히 잘린다. 확정은
+    // 포커스가 떠난 뒤(또는 재진입) 렌더가 맡는다.
     const q = $("jobBrowseQuery");
-    if (q.value !== (b.query || "")) q.value = b.query || "";
+    if (document.activeElement !== q && q.value !== (b.query || "")) {
+      q.value = b.query || "";
+    }
     const rows = b.rows || [];
     const needsTab = b.tab === "needs_action";
     $("jobBrowseRows").innerHTML = rows.length

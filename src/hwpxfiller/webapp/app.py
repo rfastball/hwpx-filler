@@ -916,6 +916,18 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
       out.browse_note = document.getElementById('jobBrowseNote').textContent;
       out.browse_focus_is_query =
         document.activeElement === document.getElementById('jobBrowseQuery');
+      // 왕복 중 이어 친 검색어가 옛 스냅샷에 덮이지 않는가(리뷰 4R P2): 입력에 포커스를 두고
+      // 새 글자를 넣은 뒤, **옛 검색어를 담은** 스냅샷을 밀어도 입력값이 살아 있어야 한다.
+      (function () {
+        var qi = document.getElementById('jobBrowseQuery');
+        qi.focus();
+        qi.value = '견적요청';                      // 사용자가 이어 친 상태
+        window.__push('job', snap);                // 옛 검색어('견적')를 담은 응답 도착
+        out.browse_query_kept = qi.value;
+        qi.blur();
+        window.__push('job', snap);                // 포커스가 떠난 뒤엔 서버 값으로 확정
+        out.browse_query_settled = qi.value;
+      })();
       // 탭 전환 재렌더에서 키보드 포커스가 살아남는가(리뷰 1R P2 — 안정 id + preserve.js).
       var tabA = document.getElementById('jobBrowseTab-available');
       if (tabA) {

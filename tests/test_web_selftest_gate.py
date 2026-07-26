@@ -358,6 +358,10 @@ class TestWebSelftestGate:
         assert "2건" in j["browse_note"], j["browse_note"]
         assert j["browse_focus_is_query"] is True, "탐색 면 초기 포커스가 검색 입력이 아닙니다."
         assert j["browse_closing"] is True, "탐색 면이 닫기 클릭에 닫히지 않았습니다."
+        # 왕복 경합(4R P2): 타이핑 중 도착한 옛 스냅샷은 입력을 덮지 않고, 포커스가 떠난
+        # 뒤에는 서버 값으로 확정된다(데이터 존 검색과 같은 규칙).
+        assert j["browse_query_kept"] == "견적요청", j["browse_query_kept"]
+        assert j["browse_query_settled"] == "견적", j["browse_query_settled"]
         # 탭 전환은 재렌더다 — 안정 id 가 없으면 포커스가 열린 모달 밖으로 떨어진다(1R P2).
         assert j["browse_tab_focus"] == "jobBrowseTab-available", j["browse_tab_focus"]
         # 행을 고르면 **성사 뒤에** 면이 닫히고(가드 취소·거절에서 문맥 보존, 2R P2)

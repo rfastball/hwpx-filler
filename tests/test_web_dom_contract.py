@@ -744,6 +744,8 @@ def test_job_document_browser_surface_contract():
     # 포커스 착지는 **예약이 아니라** 닫은 직후 실 DOM 조회다(3R P2): 예약 방식은 왕복 순서에
     # 의존해 렌더보다 늦고, 남은 예약이 무관한 뒤 렌더를 흔들었다.
     assert "function focusAfterPick(" in src, "선택 후 포커스 착지가 없습니다."
+    # 타이핑 중 스냅샷이 검색 입력을 덮지 않는다(4R P2 — 데이터 존과 같은 규칙).
+    assert 'document.activeElement !== q' in src, "탐색 검색이 왕복 경합에 입력을 덮습니다."
     assert "pendingFocus" not in src, "예약 포커스 기제가 남아 있습니다(유령 착지)."
     pick = src.split("data-browse-pick]\")")[1][:900]
     assert pick.index("Modal.close") < pick.index("focusAfterPick"), (
