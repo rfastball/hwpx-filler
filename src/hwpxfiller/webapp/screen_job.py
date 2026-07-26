@@ -61,7 +61,14 @@ from ..gui.filter_state import (
 from ..gui.result_errors import describe_fill_note, describe_result_error
 from ..gui.run_state import RunViewModel, resolve_file_source, resolve_pool_source
 from ..gui.selection_state import SelectionModel
-from ..gui.work_candidates import KIND_AVAILABLE, candidate_rows, prework_gate
+from ..gui.work_candidates import (
+    KIND_NEEDS_ACTION,
+    MAIN_TOP_N,
+    candidate_rows,
+    prework_gate,
+    rank_available,
+    suggested_work,
+)
 from .job_list import build_flat_rows, build_group_sections, drift_note
 from .data_zone import (
     EMPTY_FILTER as _EMPTY_FILTER,
@@ -186,20 +193,57 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         return self._display_indices(self.selection.selected_indices())
 
-    def _candidate_payload(self, jobs) -> "list[dict]":
-        """현재 데이터에 대한 문서 작업 후보(§18.4) — 판정은 링1 단일 출처 소비.
+    def _candidate_payload(self, jobs) -> dict:
+        """현재 데이터에 대한 문서 작업 후보(§18.4)+메인 순위(§18.5·§19.3) — 판정·정렬 모두
+        링1 단일 출처 소비.
 
-        데이터 미준비면 빈 목록(§18.1 — 계산 자체를 하지 않는다). ``jobs`` 는 좌 목록과
+        데이터 미준비면 빈 구획(§18.1 — 계산 자체를 하지 않는다). ``jobs`` 는 좌 목록과
         같은 스캔 1회 결과를 받아 목록·후보가 갈라지지 않는다. fields 는 필터 열 파생과
         같은 원천(``records[0].keys``) — 표시와 판정이 같은 열 집합을 본다.
+
+        반환 3구획:
+
+        - ``top`` = 상위 :data:`~hwpxfiller.gui.work_candidates.MAIN_TOP_N` available,
+          순위순. 카드가 그릴 근거(계층·즐겨찾기·마지막 실행·추천 표지)를 함께 싣는다.
+        - ``more`` = 순위 밖 available 수. 0이 아니면 표면이 **정직하게 고지**한다 —
+          전체 목록 표면(문서 탐색)은 슬라이스 3 소관이라 지금은 수치만 말한다.
+        - ``needs`` = 확인 필요(needs_action) 전체, 이름순. 메인 순위엔 못 들어가지만
+          (§18.5) 전용 표면이 생기기 전까지 막힌 이유를 여기서 계속 말한다(삭제는 의무를
+          상속한다 — 표면이 생기면 이 구획이 그쪽으로 이사한다).
         """
+        empty = {"top": [], "more": 0, "needs": [], "suggested": ""}
         if self.datasource is None or not self.records:
-            return []
+            return empty
         fields = list(self.records[0].keys())
-        return [
-            {"name": j.name, "kind": c.kind, "missing": list(c.missing)}
-            for j, c in candidate_rows(jobs, fields)
-        ]
+        by_name = {j.name: j for j in jobs}
+        ranked = rank_available(jobs, fields)
+        suggested = suggested_work(ranked, active=self.job_name)
+        top = []
+        for r in ranked[:MAIN_TOP_N]:
+            job = by_name[r.name]
+            top.append({
+                "name": r.name,
+                "tier": r.tier,
+                "favorited": bool(job.favorited_at),
+                # 원시 ISO — 표시 문안(자릿수·구분자)은 표면이 만든다(판정만 Python).
+                # 의미는 **완주(전건 성공) 실행**이다(지도 §8.2 ②).
+                "last_run_at": job.last_run_at,
+                "suggested": r.name == suggested,
+            })
+        needs = sorted(
+            (
+                {"name": j.name, "missing": list(c.missing)}
+                for j, c in candidate_rows(jobs, fields)
+                if c.kind == KIND_NEEDS_ACTION
+            ),
+            key=lambda d: d["name"],
+        )
+        return {
+            "top": top,
+            "more": max(0, len(ranked) - MAIN_TOP_N),
+            "needs": needs,
+            "suggested": suggested,
+        }
 
     def _filename_source_columns(self) -> "list[str]":
         """파일명 패턴이 이미 나르는 **원본 데이터 열** — 식별 요약 토큰 모드 입력(결정 37).
@@ -453,9 +497,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 selected_count=self.selection.selected_count(),
                 # available 만 센다(#302 리뷰 P2) — needs_action 뿐이면 모든 후보 버튼이
                 # 비활성이라 "선택하세요"는 이행 불가능한 지시(문안 정직성 위반)가 된다.
-                has_candidates=any(
-                    c["kind"] == KIND_AVAILABLE for c in base["candidates"]
-                ),
+                # 순위 밖(more)도 선택 가능한 후보라 top 이 비어야만 "없음"이다.
+                has_candidates=bool(base["candidates"]["top"]),
             )
             base.update({
                 "template_name": "", "template_path": "", "filename_pattern": "",
@@ -643,6 +686,26 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         )
         if job.default_dataset_ref and self.datasource is None:
             self._auto_aim_default(job.default_dataset_ref)
+
+    def _do_toggle_favorite(self, p: dict) -> dict:
+        """즐겨찾기 지정/해제(§18.5) — 정렬 메타만 바꾸고 세션은 건드리지 않는다.
+
+        활성 작업·매핑·파일명·검증·선택 어느 것도 폐기하지 않는다(§18.5 명문). 값은
+        표면이 보내는 **의도한 상태**(``value``)다 — 현재 값을 여기서 뒤집으면 빠른 연속
+        클릭이 서로의 결과를 되돌린다(토글 경합, #215 동류).
+
+        지정 시각은 서버 시각으로 찍는다(정렬 근거를 표면이 정하지 않는다). 작업이 다른
+        화면에서 사라졌으면 조용히 넘기지 않고 재진술한다 — 목록이 곧 다음 스냅샷에서
+        갱신되므로 파괴는 없다.
+        """
+        name = p["name"]
+        when = datetime.now().isoformat(timespec="seconds")
+        try:
+            self.registry.set_favorite(name, bool(p["value"]), when)
+        except (FileNotFoundError, ValueError) as exc:
+            return {"ok": False,
+                    "error": f"'{name}' 작업의 즐겨찾기를 바꾸지 못했습니다: {exc}"}
+        return {"ok": True}
 
     def _clear_data_notice(self) -> None:
         self.data_notice_text = ""

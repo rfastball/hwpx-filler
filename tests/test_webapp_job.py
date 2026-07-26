@@ -82,7 +82,8 @@ def test_initial_lists_jobs_and_loud_gate(tmp_path):
     assert snap["job_rows"] == [{"name": "공고서", "selected": False}]
     # 데이터-우선 도입 순서(§18.2) — 첫 할 일은 데이터 선택이다.
     assert snap["gate"]["enabled"] is False and "데이터 파일" in snap["gate"]["text"]
-    assert snap["candidates"] == []  # 데이터 미준비 = 후보 계산 자체를 안 한다(§18.1)
+    # 데이터 미준비 = 후보 계산 자체를 안 한다(§18.1) — 4구획 전부 빈 골격.
+    assert snap["candidates"] == {"top": [], "more": 0, "needs": [], "suggested": ""}
 
 
 def test_select_job_marks_master_and_sets_session(tmp_path):
@@ -121,7 +122,8 @@ def test_prework_gate_counts_only_available_candidates(tmp_path):
     ctrl.load_data_path(str(csv))                       # '공고서' 필수 소스가 없는 데이터
     ctrl.dispatch("toggle_record", {"index": 0, "value": True})
     snap = ctrl.snapshot()
-    assert [c["kind"] for c in snap["candidates"]] == ["needs_action"]  # 목록엔 남는다
+    cands = snap["candidates"]
+    assert cands["top"] == [] and [n["name"] for n in cands["needs"]] == ["공고서"]  # 목록엔 남는다
     assert "사용할 수 있는 문서 작업이 없습니다" in snap["gate"]["text"]
 
 
@@ -184,7 +186,7 @@ def test_data_first_flow_end_to_end(tmp_path):
     assert snap["selected_count"] == 0                            # §18.2 초기 0건
     ctrl.dispatch("toggle_record", {"index": 1, "value": True})   # 채움 완결 행 선택
     cands = ctrl.snapshot()["candidates"]
-    assert [(c["name"], c["kind"]) for c in cands] == [("공고서", "available")]
+    assert [c["name"] for c in cands["top"]] == ["공고서"] and cands["needs"] == []
     ctrl.dispatch("select_job", {"name": "공고서"})               # 명시 선택(§18.3 자동 아님)
     snap = ctrl.snapshot()
     assert snap["has_job"] is True and snap["selected_count"] == 1  # 선택 생존(§18.2)
@@ -192,6 +194,107 @@ def test_data_first_flow_end_to_end(tmp_path):
     res = ctrl.generate()
     assert res["ok"] is True and res["succeeded"] == 1 and res["failed"] == 0
     assert (Path(snap["out_dir"]) / "doc-001.hwpx").exists()      # 실물 산출
+
+
+# ------------------- 메인 후보 순위·추천·즐겨찾기 (슬라이스 2, §18.5·§19.3·§18.3 개정)
+def _extra_job(ctrl, name: str, *, favorited_at: str = "", last_run_at: str = "",
+               sources=("bidNtceNm", "presmptPrce")) -> None:
+    """같은 템플릿을 쓰는 추가 hwpx 작업 저장(순위 표본용)."""
+    base = ctrl.registry.load("공고서")
+    ctrl.registry.save(Job(
+        name=name,
+        template_path=base.template_path,
+        mapping=MappingProfile(mappings=[
+            FieldMapping(template_field="공고명", source=sources[0]),
+            FieldMapping(template_field="추정가격", source=sources[1]),
+        ]),
+        filename_pattern="doc-{{seq:001}}",
+        favorited_at=favorited_at,
+        last_run_at=last_run_at,
+    ))
+
+
+def test_candidate_top_is_ranked_and_capped_with_honest_overflow(tmp_path):
+    """메인은 상위 5건만 그리되 잘린 나머지를 **수치로 고지**한다(조용한 절단 금지).
+
+    전체 목록 표면(문서 탐색)은 슬라이스 3 소관이라 지금은 "외 N건"까지가 정직한 최대치다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    _extra_job(ctrl, "즐겨", favorited_at="2026-07-20T09:00:00")
+    _extra_job(ctrl, "최근", last_run_at="2026-07-25T09:00:00")
+    for i in range(4):
+        _extra_job(ctrl, f"미사용{i}")
+    ctrl.load_data_path(_data_csv(tmp_path))
+    cands = ctrl.snapshot()["candidates"]
+    assert [c["name"] for c in cands["top"]] == [
+        "즐겨", "최근", "공고서", "미사용0", "미사용1",
+    ]
+    assert [c["tier"] for c in cands["top"][:3]] == ["favorite", "recent", "unused"]
+    assert cands["top"][0]["favorited"] is True
+    assert cands["top"][1]["last_run_at"] == "2026-07-25T09:00:00"
+    assert cands["more"] == 2                     # 미사용2·미사용3 — 수치로 남는다
+
+
+def test_needs_action_candidates_stay_visible_by_name(tmp_path):
+    """확인 필요는 순위 밖이지만(§18.5) 전용 표면이 생기기 전까지 막힌 이유를 계속 말한다."""
+    ctrl, _ = _controller(tmp_path)
+    _extra_job(ctrl, "확인나", sources=("없는열", "presmptPrce"))
+    _extra_job(ctrl, "확인가", sources=("bidNtceNm", "다른없는열"))
+    ctrl.load_data_path(_data_csv(tmp_path))
+    needs = ctrl.snapshot()["candidates"]["needs"]
+    assert [n["name"] for n in needs] == ["확인가", "확인나"]      # 이름순
+    assert needs[0]["missing"] == ["다른없는열"]                   # 막힌 이유 병기
+
+
+def test_single_candidate_is_suggested_but_never_auto_selected(tmp_path):
+    """§18.3 개정(F-02) — 유일 후보는 추천 표지만 받고 활성 작업은 사용자 클릭으로만 바뀐다."""
+    ctrl, _ = _controller(tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))                        # 항목 선택까지 마친 상태
+    snap = ctrl.snapshot()
+    assert snap["candidates"]["suggested"] == "공고서"
+    assert snap["candidates"]["top"][0]["suggested"] is True
+    assert snap["has_job"] is False and snap["job_name"] == ""   # 자동 선택 없음
+    assert "문서 작업을 선택하세요" in snap["gate"]["text"]        # 게이트도 사용자에게 넘긴다
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    after = ctrl.snapshot()["candidates"]
+    assert after["suggested"] == "" and after["top"][0]["suggested"] is False
+
+
+def test_two_candidates_get_no_suggestion(tmp_path):
+    """2개 이상이면 1위를 밀지 않는다 — 순위는 이력의 관측이지 이 데이터의 권위가 아니다."""
+    ctrl, _ = _controller(tmp_path)
+    _extra_job(ctrl, "다른작업", favorited_at="2026-07-20T09:00:00")
+    ctrl.load_data_path(_data_csv(tmp_path))
+    assert ctrl.snapshot()["candidates"]["suggested"] == ""
+
+
+def test_toggle_favorite_persists_and_reorders_without_touching_session(tmp_path):
+    """즐겨찾기는 정렬 메타만 바꾼다(§18.5) — 활성 작업·데이터·선택·게이트 불변."""
+    ctrl, _ = _controller(tmp_path)
+    _extra_job(ctrl, "가나다")
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    before = ctrl.snapshot()
+    assert [c["name"] for c in before["candidates"]["top"]] == ["가나다", "공고서"]
+
+    assert ctrl.dispatch("toggle_favorite", {"name": "공고서", "value": True})["ok"] is True
+    after = ctrl.snapshot()
+    assert [c["name"] for c in after["candidates"]["top"]] == ["공고서", "가나다"]
+    assert ctrl.registry.load("공고서").favorited_at != ""         # 영속
+    assert after["job_name"] == "공고서" and after["has_job"] is True
+    assert after["selected_count"] == before["selected_count"]
+    assert after["gate"] == before["gate"]
+
+    assert ctrl.dispatch("toggle_favorite", {"name": "공고서", "value": False})["ok"] is True
+    assert ctrl.registry.load("공고서").favorited_at == ""
+    assert [c["name"] for c in ctrl.snapshot()["candidates"]["top"]] == ["가나다", "공고서"]
+
+
+def test_toggle_favorite_on_vanished_job_is_restated_not_silent(tmp_path):
+    """다른 화면에서 사라진 작업의 별은 조용히 삼키지 않는다(목록은 다음 스냅샷이 갱신)."""
+    ctrl, _ = _controller(tmp_path)
+    res = ctrl.dispatch("toggle_favorite", {"name": "없는작업", "value": True})
+    assert res["ok"] is False and "즐겨찾기를 바꾸지 못했습니다" in res["error"]
 
 
 # ------------------------------------------- 표시순 투영(§18.10·§2, 충돌 B 확정)
@@ -782,7 +885,7 @@ def test_load_pool_without_job_mounts_session_data(tmp_path):
     assert snap["has_job"] is False and snap["has_data"] is True
     assert snap["record_count"] == 2 and snap["selected_count"] == 0
     # 후보 = 현재 데이터 fields 로 판정(§18.4) — '공고서'는 필수 소스가 전부 있어 available.
-    assert [(c["name"], c["kind"]) for c in snap["candidates"]] == [("공고서", "available")]
+    assert [c["name"] for c in snap["candidates"]["top"]] == ["공고서"]
     assert snap["gate"]["enabled"] is False and "항목을 선택" in snap["gate"]["text"]
     ctrl.dispatch("toggle_record", {"index": 0, "value": True})
     assert "문서 작업" in ctrl.snapshot()["gate"]["text"]  # 다음 할 일 = 작업 선택
