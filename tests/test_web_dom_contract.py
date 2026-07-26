@@ -752,6 +752,11 @@ def test_job_document_browser_surface_contract():
     # 착지 결정은 닫힘 1지점에서만(사유 플래그) — 선택 경로가 따로 focus 하면 전이 종료 뒤
     # onClose 가 덮어써 두 착지가 경합한다.
     assert "browsePickedName" in src, "닫힘 사유 표식이 없습니다(착지 경합)."
+    # 큐에 선 선택은 그 사이 면이 닫히면 무효다(P2): 취소한 전환이 뒤늦게 일어나고 표식이
+    # 남아 다음 닫기의 착지까지 오염시킨다. 개폐 세대로 자기 것이 아닌 큐를 접는다.
+    assert "browseOpenGen" in src and "gen !== browseOpenGen" in src, (
+        "탐색 선택 큐의 개폐 세대 가드가 없습니다."
+    )
     # 정의 1 + 호출 1 = 2 (호출이 늘면 닫힘 1지점 계약이 깨진 것)
     assert src.count("focusAfterPick(") == 2, "착지 호출이 닫힘 1지점 밖에도 있습니다."
     # 타이핑 중 스냅샷이 검색 입력을 덮지 않는다(4R P2 — 데이터 존과 같은 규칙).

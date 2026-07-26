@@ -567,6 +567,10 @@
      세운다 — 착지 우선순위는 방금 고른 작업 카드 → 다시 탐색을 열 출구 → 생성 버튼
      (순위 밖 작업을 골라 카드가 없을 수도 있다). */
   let browsePickedName = "";  // 이번 닫힘이 "고르고 닫음"이면 그 작업 이름(아니면 "")
+  // 면의 개폐 세대(리뷰 P2) — 큐에 선 선택이 **그 사이 닫힌** 면의 잔여 명령으로 실행되면
+  // 사용자가 취소한 전환이 뒤늦게 일어나고, 표식까지 남아 다음 닫기의 착지를 오염시킨다.
+  // 열림·닫힘마다 올려서, 큐가 자기 세대가 아니면 조용히 접는다(전이 없음 = 파괴 없음).
+  let browseOpenGen = 0;
 
   function focusAfterPick(name) {
     // 이름이 비면(단순 닫기) 카드 후보를 건너뛰고 출구 → 생성 버튼 순으로 내려간다.
@@ -583,6 +587,7 @@
   }
 
   function openBrowseSheet(e) {
+    browseOpenGen += 1;
     window.Modal.open("jobBrowseSheet", {
       initialFocus: $("jobBrowseQuery"),
       // 노드를 붙잡아 두지 않는다(리뷰 6R P2): 면 안에서 탭·검색을 한 번이라도 하면 그 사이
@@ -592,7 +597,12 @@
       // 착지 결정은 **닫힘 1지점**에서만 한다(리뷰 P2): 고르고 닫았으면 그 작업 카드,
       // 그냥 닫았으면(취소) 다시 열 출구다. 선택 경로가 따로 focus 하면 전이 종료 뒤 이
       // 콜백이 덮어써 두 착지가 경합한다 — 사유를 플래그로 넘겨 한 번만 결정한다.
-      onClose: () => { const n = browsePickedName; browsePickedName = ""; focusAfterPick(n); },
+      onClose: () => {
+        browseOpenGen += 1;                       // 닫힘도 세대 전환(큐에 선 선택 무효화)
+        const n = browsePickedName;
+        browsePickedName = "";
+        focusAfterPick(n);
+      },
     });
   }
 
@@ -1337,7 +1347,9 @@
       // 선택도 **같은 체인**에 태운다(리뷰 P1): 느린 browse_query·browse_tab 이 아직 돌고
       // 있으면 그 응답이 선택 뒤에 도착해 패널·후보 스냅샷을 옛 상태로 되돌린다. 탐색 표면의
       // 모든 왕복이 한 줄에 서야 화면이 마지막 사용자 행동을 반영한다.
+      const gen = browseOpenGen;                  // 이 클릭이 속한 개폐 세대
       chained("browse", () =>
+        gen !== browseOpenGen ? null :            // 그 사이 닫혔다 = 취소된 의도(조용히 접는다)
         selectJobGuarded(name).then((ok) => {
           if (!ok) return;                      // 가드 취소·거절 = 면 유지(문맥 보존)
           browsePickedName = name;              // 착지 사유 표식 — 결정은 onClose 단일 지점
