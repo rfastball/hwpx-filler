@@ -14,6 +14,9 @@ from hwpxfiller.gui.work_candidates import (
     TIER_FAVORITE,
     TIER_RECENT,
     TIER_UNUSED,
+    TAB_AVAILABLE,
+    TAB_NEEDS_ACTION,
+    browse_candidates,
     candidate_rows,
     compatibility_for,
     rank_available,
@@ -209,3 +212,45 @@ def test_suggestion_only_when_exactly_one_available_and_no_active():
     )
     assert suggested_work(two, active="") == ""
     assert suggested_work([], active="") == ""
+
+
+# ------------------------------------------------- 문서 탐색 (§18.6·§19.5, 슬라이스 3)
+def _browse_jobs():
+    return [
+        _hwpx_job("공고서", FieldMapping("공고명", source="bidNtceNm")),
+        _hwpx_job("계약서", FieldMapping("공고명", source="bidNtceNm")),
+        _hwpx_job("견적요청서", FieldMapping("담당자", source="없는열")),
+        Job(name="기안문", template_path="/tmp/t.txt"),          # 매체 국경(§19.1)
+    ]
+
+
+def test_browse_tabs_split_by_availability_with_stable_counts():
+    """탭 = 현재 데이터 실행 가능성(primary), 건수는 **검색 전** 데이터에 대한 사실이다."""
+    res = browse_candidates(_browse_jobs(), ["bidNtceNm"], tab=TAB_AVAILABLE)
+    assert res.tab == TAB_AVAILABLE
+    assert [r["name"] for r in res.rows] == ["계약서", "공고서"]     # 이름순
+    assert res.available_count == 2 and res.needs_count == 1       # txt 는 후보 아님
+    needs = browse_candidates(_browse_jobs(), ["bidNtceNm"], tab=TAB_NEEDS_ACTION)
+    assert [r["name"] for r in needs.rows] == ["견적요청서"]
+    assert needs.rows[0]["missing"] == ["없는열"]                   # 막힌 이유 병기
+    assert needs.available_count == 2                              # 탭 건수는 양쪽 다 싣는다
+
+
+def test_browse_search_matches_display_name_by_jamo_only():
+    """검색 대상은 표시 이름만(§18.6) — 일치는 앱 전역과 같은 자모 부분일치(core.jamo)."""
+    jobs = _browse_jobs()
+    res = browse_candidates(jobs, ["bidNtceNm"], tab=TAB_AVAILABLE, query="계약")
+    assert [r["name"] for r in res.rows] == ["계약서"]
+    assert res.available_count == 2 and res.filtered_out == 1  # 탭 숫자는 안 흔들린다
+    # 자모 조각도 같은 규칙으로 걸린다(전열 검색·열 조건과 동일 어휘).
+    frag = browse_candidates(jobs, ["bidNtceNm"], tab=TAB_NEEDS_ACTION, query="ㄱㅇ")
+    assert [r["name"] for r in frag.rows] == ["견적요청서"]
+    # 소스 키·매체·그룹은 검색 대상이 아니다.
+    assert browse_candidates(jobs, ["bidNtceNm"], tab=TAB_AVAILABLE,
+                             query="bidNtceNm").rows == ()
+
+
+def test_browse_unknown_tab_degenerates_to_available():
+    """미지 탭 값은 사용 가능으로 퇴화 — 표면 오타가 빈 화면을 만들지 않는다."""
+    res = browse_candidates(_browse_jobs(), ["bidNtceNm"], tab="엉뚱")
+    assert res.tab == TAB_AVAILABLE and len(res.rows) == 2

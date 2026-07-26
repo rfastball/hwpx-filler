@@ -159,6 +159,68 @@ def suggested_work(ranked: "list[RankedWork]", *, active: str) -> str:
     return ranked[0].name if len(ranked) == 1 else ""
 
 
+#: 문서 탐색 탭(§18.6) — primary classification 은 현재 데이터 실행 가능성이다.
+TAB_AVAILABLE = "available"
+TAB_NEEDS_ACTION = "needs_action"
+
+
+@dataclass(frozen=True)
+class BrowseResult:
+    """문서 탐색 한 판정 — 탭 건수는 **검색 전** 전체이고, 행은 검색 적용 결과다.
+
+    건수를 검색 전으로 두는 건 탭 라벨(「사용 가능 N」·「확인 필요 M」)이 *데이터에 대한
+    사실*이지 검색어에 대한 사실이 아니기 때문이다 — 검색 중에 탭 숫자가 흔들리면
+    사용자가 "이 데이터에 몇 건이 있나"를 잃는다. 검색으로 0행이 되면 그 사실은 행 목록의
+    빈 상태가 말한다(§18.6 탭 전환 뒤 검색어 유지와 같은 결).
+    """
+
+    tab: str
+    rows: "tuple[dict, ...]"
+    available_count: int
+    needs_count: int
+    #: 검색어가 걸러낸 건수(그 탭 전체 − 표시 행) — 0이 아니면 표면이 정직하게 고지한다.
+    filtered_out: int = 0
+
+
+def browse_candidates(
+    jobs: "list[Job]", fields: "list[str]", *, tab: str, query: str = ""
+) -> BrowseResult:
+    """현재 데이터 문서 탐색(§18.6·§19.5) — 탭 분류 + 이름 검색의 단일 판정.
+
+    - 분류는 :func:`candidate_rows` 그대로 소비한다(호환성 판정 단일 출처 §18.4).
+    - 검색 대상은 **작업 표시 이름만**이다(§18.6 — 그룹·태그·매체·필드·소스 이름과 데이터
+      경로는 대상이 아니다). 일치 규칙은 앱 전역과 같은 자모 부분일치
+      (:mod:`~hwpxfiller.core.jamo`) — 검색 어휘를 이 표면만 다르게 발명하지 않는다.
+    - 행은 이름순(결정적 순서). 메인 순위(§19.3)는 여기 쓰지 않는다: 탐색은 "찾기"이고
+      순위는 "고르기"의 문법이라, 같은 목록에 두 정렬 근거를 겹치면 어느 쪽도 못 읽는다.
+    """
+    from ..core.jamo import jamo_contains
+
+    rows = candidate_rows(jobs, fields)
+    avail = sorted(
+        ({"name": j.name, "missing": []} for j, c in rows if c.kind == KIND_AVAILABLE),
+        key=lambda d: d["name"],
+    )
+    needs = sorted(
+        (
+            {"name": j.name, "missing": list(c.missing)}
+            for j, c in rows
+            if c.kind == KIND_NEEDS_ACTION
+        ),
+        key=lambda d: d["name"],
+    )
+    pool = needs if tab == TAB_NEEDS_ACTION else avail
+    q = query.strip()
+    shown = [r for r in pool if jamo_contains(r["name"], q)] if q else list(pool)
+    return BrowseResult(
+        tab=TAB_NEEDS_ACTION if tab == TAB_NEEDS_ACTION else TAB_AVAILABLE,
+        rows=tuple(shown),
+        available_count=len(avail),
+        needs_count=len(needs),
+        filtered_out=len(pool) - len(shown),
+    )
+
+
 def prework_gate(
     *, has_data: bool, selected_count: int, has_candidates: bool
 ) -> GateState:
