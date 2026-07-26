@@ -2366,6 +2366,21 @@ def _finish_selftest(window: "object", result: dict) -> None:
     window.destroy()  # type: ignore[attr-defined]
 
 
+def _probe_late(window: "object", flag: str, expr: str) -> dict:
+    """프로브의 비동기 단계가 끝나길 기다렸다가 결과 묶음(JSON)을 한 번에 회수한다.
+
+    setTimeout 사슬·microtask 로 확정되는 값은 프로브의 동기 반환에 담기지 않는다. 플래그가
+    설 때까지 짧게 폴링하고, 여러 값을 **한 표현식**으로 받아 회수 코드 자체를 최소로 둔다.
+    """
+    import time
+
+    for _ in range(50):
+        if window.evaluate_js(f"!!window.{flag}"):  # type: ignore[attr-defined]
+            break
+        time.sleep(0.05)
+    return json.loads(window.evaluate_js(expr))  # type: ignore[attr-defined]
+
+
 def _selftest_drive(window: "object") -> None:
     """동결 exe 부팅 자가검증 — 창이 뜨고 렌더/브리지가 도는지 되읽어 파일로 확정 후 정식 종료.
 
@@ -2531,31 +2546,19 @@ def _selftest_drive(window: "object") -> None:
         result["job_data_first"] = window.evaluate_js(_JOB_DATA_FIRST_PROBE_JS)  # type: ignore[attr-defined]
         # 체인 결과는 microtask 뒤에 확정된다 — 같은 프로브에서 동기로 읽을 수 없어 후속
         # 평가로 회수한다(즐겨찾기 쓰기 직렬화, 4R P2).
-        result["job_data_first"]["fav_chain"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "String(window.__favChain)"
-        )
-        # 스텁 단계 진행(setTimeout 사슬)이 끝날 때까지 잠깐 기다린 뒤 최종 발신열을 읽는다.
-        for _ in range(50):
-            if window.evaluate_js("!!window.__favDone"):  # type: ignore[attr-defined]
-                break
-            time.sleep(0.05)
-        result["job_data_first"]["fav_order"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "JSON.stringify(window.__favSent || null)"
-        )
-        result["job_data_first"]["fav_diag"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "JSON.stringify(window.__favDiag || null)"
-        )
-        # 탐색 면 선택 경로도 microtask 뒤에 확정된다(성사 후 닫기·포커스 예약).
-        for _ in range(50):
-            if window.evaluate_js("!!window.__browseDone"):  # type: ignore[attr-defined]
-                break
-            time.sleep(0.05)
-        result["job_data_first"]["browse_pick_focus"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "String(window.__browsePickFocus)"
-        )
-        result["job_data_first"]["browse_sheet_closed"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "!!window.__browseSheetClosed"
-        )
+        # 비동기 단계(setTimeout 사슬·microtask)가 끝난 뒤 확정되는 값들은 한 번에 회수한다
+        # — 프로브 회수 코드는 실창에서만 도는 줄이라 늘릴수록 커버리지 플로어를 갉는다.
+        result["job_data_first"].update(_probe_late(
+            window, "__favDone",
+            "JSON.stringify({fav_chain: String(window.__favChain),"
+            " fav_order: JSON.stringify(window.__favSent || null),"
+            " fav_diag: JSON.stringify(window.__favDiag || null)})",
+        ))
+        result["job_data_first"].update(_probe_late(
+            window, "__browseDone",
+            "JSON.stringify({browse_pick_focus: String(window.__browsePickFocus),"
+            " browse_sheet_closed: !!window.__browseSheetClosed})",
+        ))
         result["job_mirror"] = window.evaluate_js(_JOB_MIRROR_PROBE_JS)  # type: ignore[attr-defined]
         window.resize(1180, 820)  # type: ignore[attr-defined]
         time.sleep(0.4)
