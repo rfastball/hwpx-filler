@@ -681,6 +681,24 @@ def test_unreadable_txt_template_is_not_healthy(tmp_path):
     assert library_health(rows["정상"])[0] == 0
 
 
+def test_unresolved_filename_tokens_surface_in_health(tmp_path):
+    """파일명 토큰을 못 채우는 작업은 「확인 필요」에 든다(리뷰 P2).
+
+    실행 게이트가 danger 로 차단하는 **데이터 무관** 상태라 라이브러리에서 먼저 말할 수 있다.
+    판정 몸통은 실행 게이트와 공유한다(두 표면이 같은 상태를 다르게 부르지 않게).
+    """
+    reg = JobRegistry(tmp_path / "tokens")
+    tpl = _compiled_hwpx(tmp_path, "tok.hwpx")             # 필드 = 계약명
+    mapping = MappingProfile(mappings=[FieldMapping("계약명", "src")])
+    reg.save(Job(name="토큰불일치", template_path=tpl, mapping=mapping,
+                 filename_pattern="계약-{{추정가격}}"))     # 매핑이 못 채우는 토큰
+    reg.save(Job(name="토큰정상", template_path=tpl, mapping=mapping,
+                 filename_pattern="계약-{{계약명}}"))
+    rows = {r.name: r for r in HomeViewModel(reg).rows()}
+    assert library_health(rows["토큰불일치"]) == (3, "파일명 패턴의 토큰을 채우지 못합니다.")
+    assert library_health(rows["토큰정상"])[0] == 0
+
+
 def test_library_projection_ands_active_tag_facets(tmp_path):
     """태그 facet 은 보기 4종 전부와 AND(§19.6) — 보기를 바꿨다고 켜 둔 칩이 풀리지 않는다."""
     vm = HomeViewModel(_library_reg(tmp_path))

@@ -197,6 +197,20 @@ def resolve_pool_source(item, *, secret_store=None, fetcher=None) -> "tuple[obje
     return source, source.records()
 
 
+def unresolved_name_tokens_for(job: "Job") -> "list[str]":
+    """파일명 패턴이 요구하는데 이 작업이 채우지 못하는 데이터 토큰(F34, RC-20 GUI 짝).
+
+    생성 파일명은 **매핑 적용 후** 레코드({템플릿필드: 값})에서 해소되므로 해소 가능 집합 =
+    비움 아닌 매핑 커버 필드다(blank 선언 필드는 출력 dict 에서 빠져 토큰이 리터럴로 남는다).
+    매핑 적용 키는 전 레코드 균일이라 CLI 의 '일부 레코드 누락' 경고 분기는 GUI 에 원리적으로
+    없다. **데이터 없이도 판정 가능한 작업 정의 수준의 계약 검사**라, 실행 게이트
+    (:meth:`RunViewModel._name_token_gate`)와 전역 건강 보기(§19.7 번역)가 이 한 몸통을
+    공유한다 — 두 표면이 같은 상태를 다르게 부르지 않게(리뷰 P2).
+    """
+    resolved = set(job.mapping.cover_fields()) - set(job.mapping.blank_fields())
+    return [t for t in pattern_field_tokens(job.filename_pattern) if t not in resolved]
+
+
 class RunViewModel:
     """작업 1건 실행 상태·결정. 데이터·대상 문서는 DataSource 이음새 뒤에 둔다."""
 
@@ -334,19 +348,8 @@ class RunViewModel:
 
     # ------------------------------------------------ 상태 스냅샷·게이트 단일 산출(RC-23)
     def unresolved_name_tokens(self) -> "list[str]":
-        """파일명 패턴이 요구하는데 이 작업이 채우지 못하는 데이터 토큰(F34, RC-20 GUI 짝).
-
-        생성 파일명은 **매핑 적용 후** 레코드({템플릿필드: 값})에서 해소되므로 해소
-        가능 집합 = 비움 아닌 매핑 커버 필드다(blank 선언 필드는 출력 dict 에서 빠져
-        토큰이 리터럴로 남는다). 매핑 적용 키는 전 레코드 균일이라 CLI 의 '일부
-        레코드 누락' 경고 분기는 GUI 에 원리적으로 없다. 데이터 없이도 판정 가능한
-        작업 정의 수준의 계약 검사다.
-        """
-        resolved = set(self.job.mapping.cover_fields()) - set(self.job.mapping.blank_fields())
-        return [
-            t for t in pattern_field_tokens(self.job.filename_pattern)
-            if t not in resolved
-        ]
+        """이 작업의 미해소 파일명 토큰 — 판정 몸통은 :func:`unresolved_name_tokens_for`."""
+        return unresolved_name_tokens_for(self.job)
 
     def _name_token_gate(self) -> "GateState | None":
         """미해소 파일명 토큰의 게이트 발화(danger·차단) — 없으면 None."""
