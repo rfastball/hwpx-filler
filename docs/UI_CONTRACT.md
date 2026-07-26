@@ -100,8 +100,9 @@ Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다.
   (`HomeViewModel.library_*`)이 낸다.
 - 탭 건수는 **검색 전** 값이다(라이브러리에 대한 사실 — 문서 탐색 탭과 같은 규칙).
 - 검색 대상은 작업 이름·사용자 그룹·태그 값뿐이다(소스 키·데이터 경로 제외, §19.6).
-- 확인 필요 사유 문구는 `library_health()`(§19.7 번역)가 소유한다 — 표면이 다시 만들지
-  않는다. 현재 데이터 호환성(`work_candidates`)과는 **섞지 않는다**(§19.7 명문).
+- 확인 필요 행의 `health` 는 `{severity, text}` 쌍이다 — 문구만 주면 소비자가 경고(2)와
+  차단(3)을 구분하지 못해 §19.7 건강 축이 "사유 있음/없음"으로 뭉개진다. 판정·문구는
+  `library_health()`(§19.7 번역)가 소유하고 표면이 다시 만들지 않는다. 현재 데이터 호환성(`work_candidates`)과는 **섞지 않는다**(§19.7 명문).
 - 액션: `set_library_view`(`view`)·`set_library_mode`(`mode`)·`set_library_query`(`text`).
 
 ## DOM과 런타임 게이트

@@ -337,7 +337,10 @@ def test_library_snapshot_carries_views_counts_and_health(tmp_path):
     assert {r["name"] for r in rows} == {"공고서", "낙찰"}
     # 확인 필요 사유는 §19.7 번역을 그대로 싣는다(표면이 문구를 다시 만들지 않는다).
     by_name = {r["name"]: r for r in rows}
-    assert "템플릿 파일을 찾을 수 없습니다." == by_name["공고서"]["health"]
+    # 건강은 (심각도, 문구) 쌍이다 — 경고(2)와 차단(3)을 소비자가 구분할 수 있어야 한다.
+    assert by_name["공고서"]["health"] == {
+        "severity": 3, "text": "템플릿 파일을 찾을 수 없습니다.",
+    }
     # 페이로드 매체는 필터가 쓰는 정규화 값이다(미연결 = hwpx) — 표시와 판정이 갈라지지 않게.
     assert by_name["낙찰"]["media"] == "hwpx"   # template_path 빈 값(미연결)
 
