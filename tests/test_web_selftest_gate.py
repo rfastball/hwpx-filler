@@ -367,6 +367,9 @@ class TestWebSelftestGate:
         # 행을 고르면 **성사 뒤에** 면이 닫히고(가드 취소·거절에서 문맥 보존, 2R P2)
         # 포커스는 방금 고른 작업 카드에 착지한다(모달 복귀 트리거는 재렌더로 해제됨).
         assert j["browse_sheet_closed"] is True, "선택 성사 뒤 면이 닫히지 않았습니다."
+        # 단순 닫기에서도 포커스는 페이지로 돌아온다(6R P2) — 면 안 재렌더로 끊긴 노드가
+        # 아니라 **닫히는 시점의 출구**를 다시 찾아 세운다.
+        assert j["browse_close_focus"] in ("jobBrowseOpen", "jobGenBtn"), j["browse_close_focus"]
         assert j["browse_pick_focus"] == "jobCand-" + quote("공고서"), j["browse_pick_focus"]
 
     def test_job_density_and_expansion_sheets(self, selftest_result: dict) -> None:

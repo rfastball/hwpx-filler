@@ -966,7 +966,12 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
           window.__browseSheetClosed = cls.contains('is-closing') || cls.contains('hidden');
           window.__browsePickFocus = document.activeElement && document.activeElement.id;
           window.__push('job', snap);              // 원판 복구(뒤 프로브 방해 금지)
-          window.__browseDone = true;
+          // 단순 닫기의 포커스 복귀는 **전이 종료 뒤**(Modal.finishClose→onClose) 일어난다 —
+          // 그 시점을 지나서 관측해야 6R P2 가 실제로 잡힌다(즉시 읽으면 늘 탭이 보인다).
+          setTimeout(function () {
+            window.__browseCloseFocus = document.activeElement && document.activeElement.id;
+            window.__browseDone = true;
+          }, 450);
         });
       })();
       document.getElementById('jobBrowseClose').click();
@@ -974,6 +979,10 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
       // (전이 없는 환경에선 곧바로 hidden 이라 둘 중 하나면 통과).
       var closing = document.getElementById('jobBrowseSheet').classList;
       out.browse_closing = closing.contains('is-closing') || closing.contains('hidden');
+      // 단순 닫기(면 안에서 재렌더가 있었어도)에서 포커스가 페이지로 돌아오는가(6R P2) —
+      // 붙잡아 둔 노드가 아니라 **그 시점의 출구**를 다시 찾아 세운다. 전이 종료를 기다리지
+      // 않도록 Modal 의 즉시 종료 경로(닫힘 전이 없는 환경)와 타이머 경로 모두를 허용한다.
+
     })();
     // 순위 카드(슬라이스 2) — 받은 순서 그대로·별 상태·추천 표지·「외 N건」 고지.
     out.cand_order = Array.prototype.map.call(
@@ -2557,7 +2566,8 @@ def _selftest_drive(window: "object") -> None:
         result["job_data_first"].update(_probe_late(
             window, "__browseDone",
             "JSON.stringify({browse_pick_focus: String(window.__browsePickFocus),"
-            " browse_sheet_closed: !!window.__browseSheetClosed})",
+            " browse_sheet_closed: !!window.__browseSheetClosed,"
+            " browse_close_focus: String(window.__browseCloseFocus)})",
         ))
         result["job_mirror"] = window.evaluate_js(_JOB_MIRROR_PROBE_JS)  # type: ignore[attr-defined]
         window.resize(1180, 820)  # type: ignore[attr-defined]

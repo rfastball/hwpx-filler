@@ -567,7 +567,9 @@
      세운다 — 착지 우선순위는 방금 고른 작업 카드 → 다시 탐색을 열 출구 → 생성 버튼
      (순위 밖 작업을 골라 카드가 없을 수도 있다). */
   function focusAfterPick(name) {
-    const ids = ["jobCand-" + encodeURIComponent(name), "jobBrowseOpen", "jobGenBtn"];
+    // 이름이 비면(단순 닫기) 카드 후보를 건너뛰고 출구 → 생성 버튼 순으로 내려간다.
+    const ids = (name ? ["jobCand-" + encodeURIComponent(name)] : [])
+      .concat(["jobBrowseOpen", "jobGenBtn"]);
     for (let i = 0; i < ids.length; i++) {
       const el = document.getElementById(ids[i]);
       if (el && el.focus && !el.disabled) {
@@ -581,7 +583,11 @@
   function openBrowseSheet(e) {
     window.Modal.open("jobBrowseSheet", {
       initialFocus: $("jobBrowseQuery"),
-      returnFocus: (e && e.target && e.target.closest("[data-browse-open]")) || null,
+      // 노드를 붙잡아 두지 않는다(리뷰 6R P2): 면 안에서 탭·검색을 한 번이라도 하면 그 사이
+      // 재렌더가 후보 줄을 통째로 갈아 끼워 붙잡아 둔 출구 노드가 끊긴다 — Modal 은 끊긴
+      // 복귀점을 건너뛰므로 포커스가 방금 숨은 면에 남는다. **닫히는 시점에 다시 찾는다.**
+      returnFocus: null,
+      onClose: () => focusAfterPick(LAST && LAST.job_name ? LAST.job_name : ""),
     });
   }
 
