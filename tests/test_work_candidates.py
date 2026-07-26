@@ -10,8 +10,14 @@ from hwpxfiller.gui.work_candidates import (
     KIND_AVAILABLE,
     KIND_EXCLUDED,
     KIND_NEEDS_ACTION,
+    MAIN_TOP_N,
+    TIER_FAVORITE,
+    TIER_RECENT,
+    TIER_UNUSED,
     candidate_rows,
     compatibility_for,
+    rank_available,
+    suggested_work,
 )
 
 
@@ -126,3 +132,80 @@ def test_candidate_rows_drops_excluded_and_preserves_input_order():
 
 def test_candidate_rows_empty_jobs_yield_empty_list():
     assert candidate_rows([], ["아무열"]) == []
+
+
+# ------------------------------------------------- 메인 순위·추천 (§18.5·§19.3·§18.3 개정)
+def _ranked_job(name: str, *, favorited_at: str = "", last_run_at: str = "") -> Job:
+    job = _hwpx_job(name, FieldMapping("공고명", source="bidNtceNm"))
+    job.favorited_at = favorited_at
+    job.last_run_at = last_run_at
+    return job
+
+
+def test_rank_orders_favorites_then_recent_then_unused():
+    """§19.3 3단 계층 — 즐겨찾기(최신순) → 최근 사용(최신순) → 미사용(이름순)."""
+    jobs = [
+        _ranked_job("미사용ㄴ"),
+        _ranked_job("최근옛", last_run_at="2026-07-01T09:00:00"),
+        _ranked_job("즐겨옛", favorited_at="2026-07-01T09:00:00"),
+        _ranked_job("미사용ㄱ"),
+        _ranked_job("최근새", last_run_at="2026-07-20T09:00:00"),
+        _ranked_job("즐겨새", favorited_at="2026-07-20T09:00:00"),
+    ]
+    ranked = rank_available(jobs, ["bidNtceNm"])
+    assert [r.name for r in ranked] == [
+        "즐겨새", "즐겨옛", "최근새", "최근옛", "미사용ㄱ", "미사용ㄴ",
+    ]
+    assert [r.tier for r in ranked[:2]] == [TIER_FAVORITE, TIER_FAVORITE]
+    assert ranked[2].tier == TIER_RECENT and ranked[-1].tier == TIER_UNUSED
+
+
+def test_favorite_wins_over_recency():
+    """즐겨찾기는 사용자 우선순위 — 더 최근에 실행된 작업보다 앞선다(§19.2)."""
+    jobs = [
+        _ranked_job("방금실행", last_run_at="2026-07-26T09:00:00"),
+        _ranked_job("즐겨찾기", favorited_at="2026-01-01T09:00:00",
+                    last_run_at="2026-01-01T09:00:00"),
+    ]
+    assert [r.name for r in rank_available(jobs, ["bidNtceNm"])] == ["즐겨찾기", "방금실행"]
+
+
+def test_rank_ties_fall_back_to_name_order():
+    """같은 계층·같은 시각이면 표시 이름순(결정적 순서 — 스캔 순서에 흔들리지 않는다)."""
+    jobs = [
+        _ranked_job("나작업", favorited_at="2026-07-20T09:00:00"),
+        _ranked_job("가작업", favorited_at="2026-07-20T09:00:00"),
+    ]
+    assert [r.name for r in rank_available(jobs, ["bidNtceNm"])] == ["가작업", "나작업"]
+
+
+def test_rank_excludes_needs_action_and_other_media():
+    """메인 순위는 available 만(§18.5) — 확인 필요·txt 는 순위에 들어오지 않는다."""
+    jobs = [
+        _hwpx_job("확인필요", FieldMapping("담당자", source="없는열")),
+        Job(name="기안", template_path="/tmp/t.txt"),
+        _ranked_job("가능"),
+    ]
+    assert [r.name for r in rank_available(jobs, ["bidNtceNm"])] == ["가능"]
+
+
+def test_rank_returns_full_order_without_truncating():
+    """자르지 않는다 — 상위 N 절단과 「외 N건」 고지는 표면 몫(조용한 절단 금지)."""
+    jobs = [_ranked_job(f"작업{i}") for i in range(MAIN_TOP_N + 3)]
+    assert len(rank_available(jobs, ["bidNtceNm"])) == MAIN_TOP_N + 3
+
+
+def test_suggestion_only_when_exactly_one_available_and_no_active():
+    """§18.3 개정 — 추천은 자동 선택이 서 있던 자리(유일 후보)에만, 표지일 뿐 전이가 아니다."""
+    one = rank_available([_ranked_job("유일")], ["bidNtceNm"])
+    assert suggested_work(one, active="") == "유일"
+    # 활성 작업이 있으면 추천하지 않는다(사용자가 이미 골랐다).
+    assert suggested_work(one, active="유일") == ""
+    assert suggested_work(one, active="다른작업") == ""
+    # 2개 이상이면 1위를 밀지 않는다 — 순위는 이력의 관측이지 이 데이터의 권위가 아니다.
+    two = rank_available(
+        [_ranked_job("갑", favorited_at="2026-07-20T09:00:00"), _ranked_job("을")],
+        ["bidNtceNm"],
+    )
+    assert suggested_work(two, active="") == ""
+    assert suggested_work([], active="") == ""

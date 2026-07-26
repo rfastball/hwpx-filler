@@ -70,8 +70,8 @@ def candidate_rows(
 ) -> "list[tuple[Job, WorkCompatibility]]":
     """저장 작업 전체 → 후보 목록. excluded 는 반환에서 제외(fail-closed, §19.1).
 
-    입력 순서를 보존한다 — 정렬(즐겨찾기·최근 사용, §19.3)은 후속 슬라이스의 소관이고
-    여기서 미리 흉내 내지 않는다. 반환된 (작업, 판정) 쌍의 분류는 호출측이
+    입력 순서를 보존한다 — 메인 순위(즐겨찾기·최근 사용, §19.3)는 :func:`rank_available`
+    이 available 만 대상으로 따로 매긴다(판정과 정렬의 분리). 반환된 (작업, 판정) 쌍의 분류는 호출측이
     :data:`KIND_AVAILABLE` / :data:`KIND_NEEDS_ACTION` 으로 나눈다.
     """
     rows: "list[tuple[Job, WorkCompatibility]]" = []
@@ -81,6 +81,82 @@ def candidate_rows(
             continue
         rows.append((job, compat))
     return rows
+
+
+#: 메인 후보 구획이 한 번에 보여 주는 최대 개수(§18.5 — 전체 합계 5, 구획별 5가 아니다).
+MAIN_TOP_N = 5
+
+#: 순위 계층(§19.3) — 즐겨찾기 → 최근 사용 → 미사용. 카드 표지의 근거이기도 하다.
+TIER_FAVORITE = "favorite"
+TIER_RECENT = "recent"
+TIER_UNUSED = "unused"
+
+_TIER_ORDER = {TIER_FAVORITE: 0, TIER_RECENT: 1, TIER_UNUSED: 2}
+
+
+@dataclass(frozen=True)
+class RankedWork:
+    """순위가 매겨진 available 후보 1건 — 표면은 이 순서·계층을 그대로 그린다."""
+
+    name: str
+    tier: str
+    #: 계층의 정렬 근거 시각(즐겨찾기=favorited_at, 최근 사용=last_run_at, 미사용="").
+    at: str = ""
+
+
+def rank_available(jobs: "list[Job]", fields: "list[str]") -> "list[RankedWork]":
+    """현재 데이터에서 **선택 가능한** 작업의 메인 순위(§18.5·§19.3).
+
+    정렬 = 즐겨찾기(``favorited_at`` 최신순) → 즐겨찾기가 아닌 최근 사용(``last_run_at``
+    최신순) → 미사용(이름순)이며, 계층 안 동률은 모두 이름순이다. 자르지 않은 전체 순위를
+    돌려준다 — 상위 :data:`MAIN_TOP_N` 만 쓸지는 표면 결정이고, 잘린 나머지의 존재는
+    호출측이 정직하게 고지해야 하므로(조용한 절단 금지) 여기서 미리 버리지 않는다.
+
+    ``needs_action`` 은 순위에 넣지 않는다(§18.5: 메인은 available 만). 확인 필요 목록은
+    별도 표면(§19.5 문서 탐색, 후속 슬라이스)이 소유하고 그 전까지는 호출측이 같은
+    :func:`candidate_rows` 결과에서 따로 추려 정직하게 병기한다.
+
+    **최근 사용의 의미**(지도 §8.2 ②): master 의 ``last_run_at`` 은 **완주(전건 성공)**
+    스탬프다. v6 §19.4 는 부분 성공도 최근 사용으로 치지만, 같은 절이 시안 mock 값이
+    백엔드 의미를 덮지 않는다고 못 박았고 완주 술어는 세션 가드 무장 해제와 단일 출처라
+    (#129) 여기서 갈라 놓지 않는다 — 표면 문안도 "마지막 성공 실행"으로 맞춘다.
+    """
+    ranked = [
+        RankedWork(
+            job.name,
+            TIER_FAVORITE if job.favorited_at
+            else (TIER_RECENT if job.last_run_at else TIER_UNUSED),
+            job.favorited_at or job.last_run_at,
+        )
+        for job, compat in candidate_rows(jobs, fields)
+        if compat.kind == KIND_AVAILABLE
+    ]
+    # 3단 안정 정렬: 이름순(최종 동률) → 시각 최신순(안정이라 동률은 이름순 유지) → 계층.
+    # reverse=True 도 안정성을 지키므로 같은 시각끼리의 이름 순서가 뒤집히지 않는다.
+    ranked.sort(key=lambda r: r.name)
+    ranked.sort(key=lambda r: r.at, reverse=True)
+    ranked.sort(key=lambda r: _TIER_ORDER[r.tier])
+    return ranked
+
+
+def suggested_work(ranked: "list[RankedWork]", *, active: str) -> str:
+    """추천 작업 이름(§18.3 **개정판** — 자동 선택 삭제, F-02). 없으면 ``""``.
+
+    추천은 **표지일 뿐 전이가 아니다**: 활성 작업(``active``)은 사용자 클릭 사건으로만
+    바뀐다. 유일 후보라도 앱이 대신 고르면, 사용자가 고른 적 없는 작업의 게이트·파일명
+    규칙이 화면의 진실이 된다(v6 상태전이 리뷰 F-02).
+
+    발화 조건은 v6 가 자동 선택하려던 딱 그 자리로 한정한다 — 활성 작업이 없고 선택
+    가능한 후보가 **정확히 1개**일 때. 2개 이상에서 1위를 추천하지 않는 것은 의도다:
+    순위는 사용 이력의 관측이지 이 데이터에 맞는 문서라는 권위가 아니다.
+
+    ``preferredWorkId``(명시 사건 유래 자동 선정)는 이 슬라이스에 **구현하지 않는다** —
+    그 사건의 원천(문서 탐색·기본 데이터 확인 흐름)이 후속 슬라이스 소관이라 seam 을
+    비워 둔다(없는 기능을 있는 척하지 않는다).
+    """
+    if active:
+        return ""
+    return ranked[0].name if len(ranked) == 1 else ""
 
 
 def prework_gate(
