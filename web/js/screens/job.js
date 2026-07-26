@@ -349,7 +349,9 @@
         `<b>${c.more}건</b>이 더 있습니다 — 왼쪽 목록에서 고르세요.</span>`;
     }
     if (needs.length) {
-      html += `<span class="cand-needs-lbl muted">확인 필요</span>` +
+      // 확인 필요는 **자기 줄**을 갖는다(눈검증): 순위 카드 줄에 이어 붙으면 「외 N건」
+      // 고지와 한 문장처럼 읽혀 "쓸 수 있는 작업"과 "막힌 작업"의 경계가 흐려진다.
+      html += `<div class="cand-needs"><span class="cand-needs-lbl muted">확인 필요</span>` +
         needs.map((n) =>
           `<button class="btn sm job-cand" type="button" disabled` +
           ` title="현재 데이터에 없는 열: ${esc((n.missing || []).join(", "))}">` +
@@ -357,7 +359,8 @@
         ).join("") +
         // 확인 필요도 같은 상한을 쓴다 — 잘린 만큼은 available 과 똑같이 수치로.
         (c.needs_more > 0
-          ? `<span class="cand-more muted">외 <b>${c.needs_more}건</b></span>` : "");
+          ? `<span class="cand-more muted">외 <b>${c.needs_more}건</b></span>` : "") +
+        `</div>`;
     }
     host.innerHTML = html;
   }
