@@ -86,6 +86,7 @@
       renderMirror(s);
       dz.render(s);  // 데이터 존(테이블·칩·스트립) — 팩토리 소유(datazone.js)
       renderCandidates(s);
+      renderBrowse(s);   // 탐색 면은 열려 있지 않아도 그린다(열 때 이미 최신)
       renderRestate(s);
       renderGateAndFolder(s);
       renderStatus(s);
@@ -379,38 +380,68 @@
     FAV_LAST.set(name, tail);  // 작업별 "마지막으로 큐에 든 링" — 정리 식별(5R)
   }
 
+  /* ---- 문서 탐색 면(§18.6·§19.5) — 「문서 만들기」 하위 화면(레일은 계속 「작업」) ----
+     탭 라벨의 수치·행·검색 판정은 Python 이 내고 여기는 그린다. 사용 가능 행 클릭 = 작업
+     선택(세션 데이터·선택·필터는 생존, §18.2). 확인 필요 행은 정직한 비활성 + 막힌 열 병기. */
+  function renderBrowse(s) {
+    const b = s.browse || {
+      tab: "available", query: "", rows: [], available_count: 0,
+      needs_count: 0, filtered_out: 0,
+    };
+    const tabs = [
+      { key: "available", label: `사용 가능 ${b.available_count}` },
+      { key: "needs_action", label: `확인 필요 ${b.needs_count}` },
+    ];
+    $("jobBrowseTabs").innerHTML = tabs.map((t) =>
+      `<button class="browse-tab" type="button" role="tab" data-browse-tab="${t.key}"` +
+      ` aria-selected="${b.tab === t.key}">${esc(t.label)}</button>`
+    ).join("");
+    const q = $("jobBrowseQuery");
+    if (q.value !== (b.query || "")) q.value = b.query || "";
+    const rows = b.rows || [];
+    const needsTab = b.tab === "needs_action";
+    $("jobBrowseRows").innerHTML = rows.length
+      ? rows.map((r) => {
+        if (needsTab) {
+          return `<div class="browse-row off"><span class="browse-nm">${esc(r.name)}</span>` +
+            `<span class="browse-why muted">현재 데이터에 없는 열: ` +
+            `${esc((r.missing || []).join(", "))}</span></div>`;
+        }
+        const active = r.name === s.job_name;
+        return `<button class="browse-row" type="button" data-browse-pick="${esc(r.name)}"` +
+          ` aria-pressed="${active}"><span class="browse-nm">${esc(r.name)}</span>` +
+          (active ? `<span class="browse-why muted">지금 선택된 작업</span>` : "") +
+          `</button>`;
+      }).join("")
+      : `<p class="muted capnote">${b.query
+        ? "이름이 일치하는 작업이 없습니다."
+        : (needsTab ? "확인이 필요한 작업이 없습니다."
+                    : "현재 데이터로 쓸 수 있는 작업이 없습니다.")}</p>`;
+    // 검색이 감춘 건수는 조용히 두지 않는다 — 탭 수치와 화면 행 수의 차이를 설명한다.
+    $("jobBrowseNote").textContent = b.filtered_out > 0
+      ? `검색으로 ${b.filtered_out}건이 목록에서 빠졌습니다.` : "";
+  }
+
   function renderCandidates(s) {
     const row = $("jobCandsRow");
     const host = $("jobCandidates");
     if (!s.has_data) { row.style.display = "none"; host.innerHTML = ""; return; }
     row.style.display = "";
-    const c = s.candidates || { top: [], more: 0, needs: [], suggested: "" };
-    const top = c.top || [], needs = c.needs || [];
+    const c = s.candidates || { top: [], more: 0, needs_count: 0, suggested: "" };
+    const top = c.top || [], needs = c.needs_count ? [1] : [];
     if (!top.length && !needs.length) {
       host.innerHTML = `<span class="muted">현재 데이터에 사용할 수 있는 문서 작업이 없습니다.</span>`;
       return;
     }
     let html = top.map((t) => candCard(t, s)).join("");
-    // 잘린 나머지를 수치로 말한다(조용한 절단 금지). 전체 목록 표면은 아직 없으므로
-    // 지금 실제로 갈 수 있는 곳(좌 목록)만 가리킨다 — 없는 화면을 약속하지 않는다.
-    if (c.more > 0) {
-      html += `<span class="cand-more muted">이 데이터로 쓸 수 있는 작업 ` +
-        `<b>${c.more}건</b>이 더 있습니다. 왼쪽 목록에서 고르거나 즐겨찾기에 추가하세요.` +
-        `</span>`;
-    }
-    if (needs.length) {
-      // 확인 필요는 **자기 줄**을 갖는다(눈검증): 순위 카드 줄에 이어 붙으면 「외 N건」
-      // 고지와 한 문장처럼 읽혀 "쓸 수 있는 작업"과 "막힌 작업"의 경계가 흐려진다.
-      html += `<div class="cand-needs"><span class="cand-needs-lbl muted">확인 필요</span>` +
-        needs.map((n) =>
-          `<button class="btn sm job-cand" type="button" disabled` +
-          ` title="현재 데이터에 없는 열: ${esc((n.missing || []).join(", "))}">` +
-          `${esc(n.name)}</button>`
-        ).join("") +
-        // 확인 필요도 같은 상한을 쓴다 — 잘린 만큼은 available 과 똑같이 수치로.
-        (c.needs_more > 0
-          ? `<span class="cand-more muted">외 <b>${c.needs_more}건</b></span>` : "") +
-        `</div>`;
+    // 잘린 나머지·확인 필요는 **수치 + 문서 탐색 출구**로만 말한다(슬라이스 3): 목록의
+    // 소유자는 이제 탐색 면이고, 후보 줄은 "지금 고를 것"만 보여 준다(조용한 절단 금지).
+    const bits = [];
+    if (c.more > 0) bits.push(`쓸 수 있는 작업 <b>${c.more}건</b> 더`);
+    if (c.needs_count > 0) bits.push(`확인 필요 <b>${c.needs_count}건</b>`);
+    if (bits.length) {
+      html += `<span class="cand-more muted">${bits.join(" · ")} — ` +
+        `<button class="btn sm" type="button" data-browse-open>문서 작업 찾기…</button></span>`;
     }
     host.innerHTML = html;
   }
@@ -502,6 +533,15 @@
         { id: "jobRestate", slotId: "jobConfirmSheetRestateSlot" },
       ],
       afterRestore: measureMirrorCap,
+    });
+  }
+
+  /* 문서 탐색 면 열기 — 실 DOM 이동(SurfaceSheet)이 아니라 자체 내용을 가진 면이라
+     Modal 로 직접 연다. 포커스는 검색 입력으로: 이 표면에 온 이유가 "찾기"다. */
+  function openBrowseSheet(e) {
+    window.Modal.open("jobBrowseSheet", {
+      initialFocus: $("jobBrowseQuery"),
+      returnFocus: (e && e.target && e.target.closest("[data-browse-open]")) || null,
     });
   }
 
@@ -1193,10 +1233,38 @@
                        fav.getAttribute("aria-pressed") === "true");
         return;
       }
+      if (e.target.closest("[data-browse-open]")) { openBrowseSheet(e); return; }
       const btn = e.target.closest("[data-cand]");
       if (btn && btn.getAttribute("aria-pressed") !== "true") {
         selectJobGuarded(btn.getAttribute("data-cand"));
       }
+    });
+    // 문서 탐색 면(§18.6) — 탭·검색은 Python 판정 왕복, 행 클릭은 명시 작업 선택.
+    $("jobBrowseClose").addEventListener("click", () => window.Modal.close("jobBrowseSheet"));
+    $("jobBrowseTabs").addEventListener("click", (e) => {
+      const t = e.target.closest("[data-browse-tab]");
+      if (!t || t.getAttribute("aria-selected") === "true") return;
+      Bridge.call(SCREEN, "browse_tab", { tab: t.getAttribute("data-browse-tab") })
+        .catch((err) => log("탭 전환 실패: " + String((err && err.message) || err)));
+    });
+    // 검색은 타이핑마다 왕복하지 않고 짧게 모은다(데이터 존 검색 관례) — 판정은 여전히
+    // Python 이 지금 내린다(JS 가 목록을 자체 필터하면 이중 진실).
+    let browseTimer = null;
+    $("jobBrowseQuery").addEventListener("input", (e) => {
+      const text = e.target.value;
+      if (browseTimer) window.clearTimeout(browseTimer);
+      browseTimer = window.setTimeout(() => {
+        browseTimer = null;
+        Bridge.call(SCREEN, "browse_query", { text })
+          .catch((err) => log("검색 실패: " + String((err && err.message) || err)));
+      }, 180);
+    });
+    $("jobBrowseRows").addEventListener("click", (e) => {
+      const pick = e.target.closest("[data-browse-pick]");
+      if (!pick || pick.getAttribute("aria-pressed") === "true") return;
+      // 선택은 명시 사건이다(§18.6) — 면을 닫고 세션 패널로 돌려보낸다(데이터는 생존).
+      window.Modal.close("jobBrowseSheet");
+      selectJobGuarded(pick.getAttribute("data-browse-pick"));
     });
     $("jobDataExpand").addEventListener("click", openJobDataSheet);
     $("jobMirrorExpand").addEventListener("click", openJobConfirmSheet);

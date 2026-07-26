@@ -296,8 +296,10 @@ class TestWebSelftestGate:
         assert j.get("error") is None, f"data-first 프로브 예외: {j.get('error')!r}"
         assert j["zones_shown"] and j["actionbar_shown"], "무작업 상태에서 세션 존이 죽어 있습니다."
         assert j["cands_row_shown"] and j["cand_buttons"] == 2, j
-        assert j["needs_action_disabled"] is True, "확인 필요 후보가 비활성이 아닙니다."
-        assert "담당자" in j["needs_action_title"], "비활성 사유(없는 열)가 병기되지 않았습니다."
+        # 확인 필요·순위 밖은 후보 줄에서 수치 + 출구로만 말한다(슬라이스 3 구획 이사).
+        assert j["cand_exit"] is True, "문서 탐색 출구가 후보 줄에 없습니다."
+        assert j["cand_disabled_chips"] == 0, "확인 필요 비활성 칩이 후보 줄에 남아 있습니다."
+        assert "2건" in j["cand_more_text"] and "1건" in j["cand_more_text"], j["cand_more_text"]
         assert "문서 작업을 선택하세요" in j["gate_text"], j["gate_text"]
         assert j["gen_disabled"] is True, "prework 상태에서 생성 버튼이 열려 있습니다."
         assert "문서 작업을 선택하면" in j["head_hint"], j["head_hint"]
@@ -338,6 +340,23 @@ class TestWebSelftestGate:
         assert json.loads(j["fav_order"]) == [
             False, True, True, False, True, False
         ], j["fav_order"]
+
+    def test_job_document_browser_sheet_renders_tabs_rows_and_reasons(
+        self, selftest_result: dict
+    ) -> None:
+        # 문서 탐색 면(§18.6·§19.5) — 후보 줄 출구로 실제로 열리고, 탭 라벨(검색 전 건수)·
+        # 확인 필요 행의 막힌 열·검색으로 걸러낸 수 고지가 실 WebView2 에 그려진다.
+        # 포커스는 검색 입력(이 표면에 온 이유가 찾기)이고 닫기로 닫힌다.
+        j = selftest_result["job_data_first"]
+        assert j.get("error") is None, f"data-first 프로브 예외: {j.get('error')!r}"
+        assert j["browse_open"] is True, j["browse_open"]
+        assert j["browse_tabs"] == ["사용 가능 7/false", "확인 필요 1/true"], j["browse_tabs"]
+        assert len(j["browse_rows"]) == 1, j["browse_rows"]
+        row = j["browse_rows"][0]      # flex gap 이라 textContent 에는 공백이 없다
+        assert row.startswith("견적서") and "없는 열: 담당자" in row, row
+        assert "2건" in j["browse_note"], j["browse_note"]
+        assert j["browse_focus_is_query"] is True, "탐색 면 초기 포커스가 검색 입력이 아닙니다."
+        assert j["browse_closing"] is True, "탐색 면이 닫기 클릭에 닫히지 않았습니다."
 
     def test_job_density_and_expansion_sheets(self, selftest_result: dict) -> None:
         j = selftest_result["job_mirror"]

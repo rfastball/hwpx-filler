@@ -869,9 +869,11 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
               last_run_at:'2026-07-20T09:00:00', suggested:false},
              {name:'계약서', tier:'unused', favorited:false,
               last_run_at:'', suggested:true}],
-        more:2,
-        needs:[{name:'견적서', missing:['담당자']}],
+        more:2, needs_count:1,
         suggested:'계약서'},
+      // 문서 탐색 구획(슬라이스 3) — 확인 필요 탭 + 검색으로 걸러낸 수.
+      browse:{tab:'needs_action', query:'견적', rows:[{name:'견적서', missing:['담당자']}],
+              available_count:7, needs_count:1, filtered_out:2},
       filter:{active:false, reapply_available:false, reapply_hint:'', search:'', chips:[],
               definition:'', branches:[],
               columns:[{name:'공고명', kind:'text', active:false}]},
@@ -890,9 +892,36 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
     out.actionbar_shown = getComputedStyle(document.getElementById('jobActionBar')).display !== 'none';
     out.cands_row_shown = getComputedStyle(document.getElementById('jobCandsRow')).display !== 'none';
     out.cand_buttons = document.querySelectorAll('#jobCandidates [data-cand]').length;
-    var na = document.querySelector('#jobCandidates button[disabled]');
-    out.needs_action_disabled = !!na;
-    out.needs_action_title = na ? na.getAttribute('title') : '';
+    // 확인 필요·순위 밖은 후보 줄에서 **수치 + 출구**로만 말한다(슬라이스 3 이사).
+    out.cand_exit = !!document.querySelector('#jobCandidates [data-browse-open]');
+    out.cand_more_text = (function () {
+      var m = document.querySelector('#jobCandidates .cand-more');
+      return m ? m.textContent.replace(/\s+/g, ' ').trim() : '';
+    })();
+    out.cand_disabled_chips = document.querySelectorAll('#jobCandidates button[disabled]').length;
+    // 문서 탐색 면(슬라이스 3) — 출구 클릭으로 실제로 열리고, 탭 라벨·행·사유·검색 고지가
+    // 실 WebView2 에 그려지는지 되읽는다(닫아 두고 뒤 프로브를 방해하지 않는다).
+    (function () {
+      var exit = document.querySelector('#jobCandidates [data-browse-open]');
+      if (!exit) { out.browse_open = 'no-exit'; return; }
+      exit.click();
+      var sheet = document.getElementById('jobBrowseSheet');
+      out.browse_open = !sheet.classList.contains('hidden');
+      out.browse_tabs = Array.prototype.map.call(
+        sheet.querySelectorAll('[data-browse-tab]'),
+        function (b) { return b.textContent + '/' + b.getAttribute('aria-selected'); });
+      out.browse_rows = Array.prototype.map.call(
+        sheet.querySelectorAll('.browse-row'),
+        function (r) { return r.textContent.replace(/\s+/g, ' ').trim(); });
+      out.browse_note = document.getElementById('jobBrowseNote').textContent;
+      out.browse_focus_is_query =
+        document.activeElement === document.getElementById('jobBrowseQuery');
+      document.getElementById('jobBrowseClose').click();
+      // 닫기는 전이 애니메이션을 타므로 `hidden` 은 뒤에 붙는다 — 닫힘 **시작**을 관측한다
+      // (전이 없는 환경에선 곧바로 hidden 이라 둘 중 하나면 통과).
+      var closing = document.getElementById('jobBrowseSheet').classList;
+      out.browse_closing = closing.contains('is-closing') || closing.contains('hidden');
+    })();
     // 순위 카드(슬라이스 2) — 받은 순서 그대로·별 상태·추천 표지·「외 N건」 고지.
     out.cand_order = Array.prototype.map.call(
       document.querySelectorAll('#jobCandidates [data-cand]'),

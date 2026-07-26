@@ -722,6 +722,27 @@ def test_job_data_first_prework_surface_contract():
     assert 'aria-pressed") !== "true"' in src, "활성 후보 재활성화 가드가 없습니다."
 
 
+def test_job_document_browser_surface_contract():
+    """슬라이스 3 정적 계약 — 문서 탐색 면은 `job` 화면의 **하위 화면**이고 판정은 Python 소유.
+
+    별 라우트를 만들지 않는다(§18.6: 상단 내비게이션은 계속 「문서 만들기」 활성) —
+    시트 루트·탭·검색·행 호스트가 실재하고, JS 는 목록을 자체 필터하지 않는다.
+    """
+    html = WEB_INDEX.read_text(encoding="utf-8")
+    for dom_id in ("jobBrowseSheet", "jobBrowseTabs", "jobBrowseQuery", "jobBrowseRows",
+                   "jobBrowseNote", "jobBrowseClose"):
+        assert f'id="{dom_id}"' in html, f"문서 탐색 면 요소 누락: {dom_id}"
+    # 라우팅 화면은 다섯 개 그대로다 — 탐색은 시트라 SCREEN·컨트롤러가 늘지 않는다.
+    assert 'id="scr-browse"' not in html and "scr-documents" not in html
+    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    assert "browse_tab" in src and "browse_query" in src, "탐색 액션 배선이 없습니다."
+    assert "data-browse-pick" in src, "탐색 행 선택(명시 사건) 배선이 없습니다."
+    # 검색·분류를 JS 가 재계산하지 않는다(RC-23 동형 — 판정은 Python 이 지금).
+    browse = src.split("function renderBrowse")[1][:2200]
+    for banned in ("filter(", "toLowerCase", "includes("):
+        assert banned not in browse, f"탐색 렌더가 자체 필터를 합니다: {banned!r}"
+
+
 def test_job_candidate_ranking_surface_contract():
     """슬라이스 2 정적 계약 — 순위 카드·별 토글·추천 표지·「외 N건」 고지 배선.
 
@@ -749,6 +770,10 @@ def test_job_candidate_ranking_surface_contract():
         "카드 문안이 완주 스탬프 의미(마지막 성공 실행)와 어긋납니다."
     )
     assert "c.more" in src, "순위 밖 후보 수(외 N건) 고지가 없습니다 — 조용한 절단 금지."
+    # 확인 필요 목록은 탐색 면으로 이사했다 — 후보 줄엔 수치 + 출구만 남는다(슬라이스 3).
+    assert "c.needs_count" in src and "data-browse-open" in src, (
+        "확인 필요 수치·문서 탐색 출구가 후보 줄에 없습니다."
+    )
     assert "cand-sug" in src, "추천 표지가 없습니다(§18.3 개정)."
     # JS 가 순위를 재계산하지 않는다(RC-23 동형 — 이중 진실 금지).
     for banned in ("favorited_at <", "sort(", "localeCompare"):
