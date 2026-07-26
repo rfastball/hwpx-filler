@@ -781,10 +781,13 @@ def test_job_candidate_ranking_surface_contract():
     )
     # 쓰기 자체도 클릭 순서로 직렬화돼야 한다(4R P2 — pywebview 는 호출마다 별도 스레드라
     # 동시 발신이면 나중 클릭의 쓰기가 먼저 잠금을 잡아 반대 상태가 영속될 수 있다).
-    assert "FAV_CHAIN" in src, "즐겨찾기 쓰기 체인(직렬화)이 없습니다."
-    # 체인은 전역 1개다(6R P2): 즐겨찾기 시각은 작업들 사이의 순위라, 서로 다른 작업을
-    # 연속으로 별 찍을 때도 클릭 순서 = 쓰기 순서여야 한다.
-    assert "let FAV_CHAIN = null" in src, "즐겨찾기 체인이 작업별로 갈라져 있습니다."
+    # 직렬화 몸통은 공용이다(PR-1 5R): 즐겨찾기·탐색이 같은 기제를 쓰고 가드도 하나다.
+    # 즐겨찾기는 키 하나(작업 간 순위라 전역 1체인)로 클릭 순서 = 쓰기 순서를 보장한다.
+    assert "function chained(" in src and "CALL_CHAINS" in src, "호출 직렬화 몸통이 없습니다."
+    assert 'chained("favorite"' in src, "즐겨찾기 쓰기가 체인을 타지 않습니다."
+    assert src.count('chained("browse"') == 2, (
+        "탐색 탭·검색이 같은 체인을 타지 않습니다 — 늦은 옛 응답이 새 결과를 되돌린다."
+    )
     # 문안은 완주 스탬프 의미와 일치해야 한다(성공 뒤 실패 런에서 거짓이 되지 않게).
     assert "마지막 성공 실행" in src and "마지막 실행 " not in src, (
         "카드 문안이 완주 스탬프 의미(마지막 성공 실행)와 어긋납니다."
