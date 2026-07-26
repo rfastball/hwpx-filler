@@ -541,6 +541,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         ``sheet`` 는 웹에서 확정한 시트명(다중 시트 확정 게이트 #33, None=CSV·단일 시트).
         시그니처 동형 — 브리지 ``pick_data_file``/``load_data_sheet`` 재사용.
         """
+        if self._generation_lock.locked():  # 생성 중 데이터 교체 금지(#302 P1 동류)
+            raise ValueError("문서 생성이 진행 중입니다. 중단하거나 완료된 뒤 데이터를 바꾸세요.")
         source, records = resolve_file_source(path, sheet=sheet)  # 실패는 raise(§18.2 원자)
         if not records:
             raise ValueError(NO_ROWS_TEXT)  # 성공 전 현재 runtime 미파기 — 아래 대입 전 반환
@@ -612,6 +614,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         조준한다 — 사용자가 이미 마운트한 데이터를 참조가 조용히 덮으면 §18.2 위반이다.
         """
         name = p["name"]
+        # 생성 진행 중 전환 금지(#302 P1) — vm 교체가 진행 중 배치의 검증·계획과 경합한다.
+        # 조용한 무시가 아니라 시끄러운 거부(raise → 셸 rejection 백스톱이 표면화).
+        if self._generation_lock.locked():
+            raise ValueError("문서 생성이 진행 중입니다. 중단하거나 완료된 뒤 작업을 전환하세요.")
         self._clear_data_notice()
         self._last_generated = None  # 실행 증거는 세션 스코프 — 전환 시 소멸(§19.10)
         if not name:  # 선택 해제 = 작업만 내려놓는다(데이터 존은 그대로)
@@ -860,6 +866,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         vm 경유(``load_pool_item``)는 작업 선택을 전제해 데이터-우선과 어긋난다. vm 이
         있으면 같은 데이터를 ``set_acquired`` 로 주입(ack 재평가 포함, RC-22).
         """
+        if self._generation_lock.locked():  # 생성 중 데이터 교체 금지(#302 P1 동류)
+            raise ValueError("문서 생성이 진행 중입니다. 중단하거나 완료된 뒤 데이터를 바꾸세요.")
         source, records = resolve_pool_source(item)
         if not records:
             return []
@@ -933,19 +941,20 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
     def _generate_locked(self, *, confirm_overwrite: bool = False) -> dict:
         """단일 생성 실행의 본체. ``generate``가 재진입 잠금과 취소 토큰을 소유한다."""
-        # 이 런의 주체를 **시작 시점에 붙든다** — 생성 중 작업 전환이 가능하므로(P1 리뷰,
-        # _stamp_last_run 참조) 완주 뒤 현재 상태를 읽으면 남의 작업에 역사를 적는다.
+        # 이 런의 주체를 **시작 시점에 붙들고 이후 self.vm 을 다시 읽지 않는다**(#302 P1):
+        # 생성 중 작업 전환이 self.vm 을 갈아끼우면 검증·계획이 남의 작업으로 새고,
+        # 완주 뒤 현재 상태를 읽으면 남의 작업에 역사를 적는다(_stamp_last_run 동류).
         run_job_name, run_vm = self.job_name, self.vm
         indices = self._indices()
         out_dir = self.out_dir
 
         # 1) 기본 가드(데이터·폴더·레코드·구조 드리프트) — 링1 단일 판정.
-        errors = self.vm.validate_generate(indices, out_dir)
+        errors = run_vm.validate_generate(indices, out_dir)
         if errors:
             return {"ok": False, "error": errors[0].message, "level": errors[0].level}
 
         # 2) 미입력 강제 확인 게이트(ADR-E) — 버튼이 이미 비활성이어도 방어적 재확인.
-        unmet = self.vm.unmet_blanks(indices)
+        unmet = run_vm.unmet_blanks(indices)
         if unmet:
             return {
                 "ok": False, "level": "warn",
@@ -953,7 +962,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             }
 
         # 3) 미입력 표식(확인된 빈칸) — 완료 요약이 병기한다(낙관 서사 해소).
-        blanks = self.vm.blank_fields(indices)
+        blanks = run_vm.blank_fields(indices)
         self._marked_fields = list(blanks)
         marker = MISSING_MARKER if blanks else ""
 
@@ -962,7 +971,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         #    형식 "종류별 수치 재진술" 승계). 모달은 파괴 지점=덮어쓰기에만 선다. 표면(job.js)이
         #    이 수치로 modal.js 본문을 합성한다 — 별도 재진술 모달을 만들지 않는다.
         now = self._names_now or datetime.now()
-        conflicts = self.vm.output_conflicts(indices, out_dir, mark_missing=marker, now=now)
+        conflicts = run_vm.output_conflicts(indices, out_dir, mark_missing=marker, now=now)
         if conflicts and not confirm_overwrite:
             names = [Path(p).name for p in conflicts]
             return {
@@ -976,7 +985,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         overwrite = bool(conflicts)
 
         # 5) 불변 생성 계획(RC-07) → 동기 생성(진행 델타 푸시).
-        plan = self.vm.build_generation_plan(
+        plan = run_vm.build_generation_plan(
             indices, out_dir, marker=marker, overwrite=overwrite, now=now
         )
         self._push_progress(0, len(plan.records))

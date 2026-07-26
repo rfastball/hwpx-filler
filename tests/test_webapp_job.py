@@ -144,6 +144,32 @@ def test_job_selection_reconciles_filter_kinds_unless_defined(tmp_path):
     assert {c: ctrl2.filter.kind(c) for c in ctrl2.filter.columns} == kinds_before
 
 
+def test_generation_in_flight_blocks_switch_and_remount(tmp_path):
+    """생성 진행 중 작업 전환·데이터 교체는 시끄럽게 거부된다(#302 리뷰 P1) — vm 교체가
+    진행 중 배치의 검증·계획과 경합해 남의 작업으로 생성될 수 있다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    assert ctrl._generation_lock.acquire(blocking=False)
+    try:
+        with pytest.raises(ValueError, match="생성이 진행 중"):
+            ctrl.dispatch("select_job", {"name": ""})
+        with pytest.raises(ValueError, match="생성이 진행 중"):
+            ctrl.load_data_path(_data_csv(tmp_path))
+    finally:
+        ctrl._generation_lock.release()
+
+
+def test_generate_locked_never_rereads_live_vm():
+    """_generate_locked 는 캡처한 run_vm 만 소비한다(#302 리뷰 P1) — 생성 중 전환이
+    self.vm 을 갈아끼워도 이 런의 검증·계획·완주 기록이 남의 작업으로 새지 않는다."""
+    import inspect
+
+    src = inspect.getsource(JobController._generate_locked)
+    assert "self.vm." not in src, "_generate_locked 가 라이브 vm 을 재참조합니다(P1 재유입)."
+    assert "run_vm." in src
+
+
 # --------------------------------------- data-first 첫 슬라이스 성공 기준(계획 §5)
 def test_data_first_flow_end_to_end(tmp_path):
     """데이터 마운트(무작업) → 행 선택 → 후보 → 명시 선택 → 게이트 → 실제 HWPX 생성 1회.
@@ -375,17 +401,18 @@ def test_generation_stamp_does_not_clobber_disk_edits(tmp_path):
 
 
 def test_stamp_goes_to_the_job_the_run_started_on(tmp_path, monkeypatch):
-    """생성 중 작업 전환이 일어나도 역사는 **그 런의 작업**에 적힌다.
+    """생성 중 작업 전환은 **시끄럽게 거부**되고(#302 리뷰 P1 — 구 관용 계약의 개정),
+    역사는 그 런의 작업에 적히며 세션은 그대로다.
 
-    생성 중 좌 목록은 잠기지 않고(busy 잠금은 선언 요소만), 기본 전체 선택 세션은 무장이
-    아니라 전환이 확인도 안 거친다. 브리지가 별도 스레드라 배치 도중 세션이 B 로 옮겨갈 수
-    있는데, 완주 뒤 현재 상태를 읽으면 A 의 실행이 B 의 역사가 되고 A 는 이력을 잃는다.
+    브리지가 별도 스레드라 배치 도중 전환 dispatch 가 도달할 수 있다 — 구 계약은 전환을
+    허용하고 캡처로 스탬프만 방어했지만, 검증·계획도 라이브 vm 을 볼 수 있어 남의 작업
+    생성으로 샐 수 있었다. 이제 가드(시끄러운 거부)+캡처(이중 방어)를 함께 고정한다.
     """
     import hwpxfiller.webapp.screen_job as sj
 
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    _second_job(ctrl, tmp_path)                       # 전환 대상(공고서2) 등록
+    _second_job(ctrl, tmp_path)                       # 전환 시도 대상(공고서2) 등록
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
     ctrl.dispatch("ack_field", {"field": "추정가격"})
@@ -394,15 +421,15 @@ def test_stamp_goes_to_the_job_the_run_started_on(tmp_path, monkeypatch):
 
     def _switch_midflight(*a, **k):
         result = real_batch(*a, **k)
-        ctrl.dispatch("select_job", {"name": "공고서2"})   # 배치 도는 사이 세션이 옮겨갔다
+        with pytest.raises(ValueError, match="생성이 진행 중"):   # 전환은 loud 거부
+            ctrl.dispatch("select_job", {"name": "공고서2"})
         return result
 
     monkeypatch.setattr(sj, "generate_batch", _switch_midflight)
     assert ctrl.generate()["ok"] is True
     assert ctrl.registry.load("공고서").last_run_at != ""   # 실제로 돈 작업에 역사
     assert ctrl.registry.load("공고서2").last_run_at == ""  # 없던 실행을 지어내지 않는다
-    assert ctrl.vm is not None and ctrl.vm.job.name == "공고서2"
-    assert ctrl.vm.job.last_run_at == ""                    # 남의 VM 도 안 만진다
+    assert ctrl.vm is not None and ctrl.vm.job.name == "공고서"  # 세션 불변(거부됐으니)
 
 
 def test_stamp_uses_the_serialized_registry_path(tmp_path, monkeypatch):

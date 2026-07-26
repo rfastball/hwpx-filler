@@ -314,8 +314,9 @@
     host.innerHTML = cands.map((c) => {
       if (c.kind === "available") {
         const active = c.name === s.job_name;
+        // data-busy-lock: 생성 중 setBusy 가 비활성 — 진행 중 전환은 Python 도 거부(P1).
         return `<button class="btn sm job-cand${active ? " primary" : ""}" type="button"` +
-          ` data-cand="${esc(c.name)}" aria-pressed="${active}">${esc(c.name)}</button>`;
+          ` data-busy-lock data-cand="${esc(c.name)}" aria-pressed="${active}">${esc(c.name)}</button>`;
       }
       return `<button class="btn sm job-cand" type="button" disabled` +
         ` title="현재 데이터에 없는 열: ${esc((c.missing || []).join(", "))}">` +
