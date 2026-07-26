@@ -1574,3 +1574,24 @@ def test_overwrite_gate_is_judged_inside_the_write_lock(tmp_path):
     ctrl._overwrite_gate = spy  # type: ignore[method-assign]
     assert ctrl.dispatch("save", {})["ok"] is True
     assert held and all(held), "덮어쓰기 게이트가 쓰기 잠금 밖입니다 — 판정·실행 창 회귀."
+
+
+def test_edit_save_preserves_group_and_favorite(tmp_path):
+    """편집 저장이 **이 화면이 편집하지 않는** durable 메타를 조용히 떨어뜨리지 않는다.
+
+    태그·마지막 실행은 이미 보존됐지만 그룹과 즐겨찾기(슬라이스 2 신설)는 저장이 새로
+    조립한 Job 에 실리지 않아 소실됐다 — 좌 목록 구획과 메인 후보 순위가 편집 한 번에
+    조용히 초기화된다(confirm-or-alarm: 편집이 파괴한 것을 아무도 말하지 않는다).
+    """
+    ctrl, _ = _controller26(tmp_path)
+    _save_named(ctrl, "메타보존작업")
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.set_group("메타보존작업", "조달")
+    reg.set_favorite("메타보존작업", True, "2026-07-26T09:00:00")
+
+    ctrl.load_job("메타보존작업")
+    assert ctrl.dispatch("save", {})["ok"] is True
+
+    saved = reg.load("메타보존작업")
+    assert saved.group == "조달"
+    assert saved.favorited_at == "2026-07-26T09:00:00"
