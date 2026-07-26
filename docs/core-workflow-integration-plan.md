@@ -100,15 +100,25 @@ UI 무변경. 재사용 경계를 테스트로 고정한다:
 - "데이터 없음"과 "호환 작업 없음"의 구분
 - 표현 계층이 `GateState.text`를 재조립하지 않음 (기존 테스트 있으면 참조로 갈음)
 
+> 판정(2026-07-26, 지도 §5): **기존 스위트가 재사용 seam을 이미 전부 잠근다** —
+> `SelectionModel` 0건 의미론(`test_selection_state.py`), 게이트 선행조건 흡수·데이터
+> 없음(`test_run_state.py:92,182,206`), `source_keys` blank 제외·중복제거(`test_job.py:193-219`),
+> `template_media` 확장자-단독·미상 loud(`test_job.py:825,838` — v6 §19.1의 기존 구현),
+> 링1 위임 불변식(`test_webapp_job.py:607`). 신규 characterization 0건으로 충족.
+> 미래 행동(선택 0건 초기화·표시순 투영·전환 보존)의 테스트는 각 행동을 바꾸는 커밋에
+> 동반한다(현재와 다른 행동을 "characterization"으로 선작성하지 않는다).
+
 ### 커밋 2 — 링1 신규분 두 조각 (Qt-free·DOM-free)
 
 1. **최소 호환성 판정** — v6 `compatibilityFor(workId, runtimeFields)`(§18.4)의 Python 이식.
    계약: *최소 Binding 호환성*(필수 source key ∈ 현재 데이터 fields)만 판정하고,
    실행 완료 가능성은 보장하지 않는다. 권위 판정은 작업 선택 뒤 `RunViewModel.refresh()`.
    전역 작업 건강(`libraryHealthFor`)과 섞지 않는다(§19.7). 배치는 `gui/` 링1 모듈.
-2. **작업 미선택 상태의 스냅샷** — 데이터는 마운트됐으나 active work가 없는 상태를
-   JobController 스냅샷이 표현(후보 목록·무선택 게이트 문안 포함). 데이터 준비 전에는
-   후보를 계산하지 않는다(§18.1: DataTarget 미준비 시 호환성 계산 금지).
+2. **후보 열거** — 저장 작업 전체에 1을 적용해 후보 목록(호환/확인 필요/제외)을 내는
+   순수 함수까지가 커밋 2다. ~~작업 미선택 상태의 스냅샷~~ → **커밋 3으로 이동**
+   (2026-07-26 개정): "데이터는 마운트됐으나 작업 없음" 상태는 세션 소유권 승격 없이는
+   존재할 수 없으므로 스냅샷 표현은 재배선과 같은 커밋이 맞다. 데이터 준비 전에는
+   후보를 계산하지 않는다(§18.1)는 호출측(컨트롤러) 의무로 커밋 3에서 함께 고정한다.
 
 `v6.js`의 `requestValidation`/`invalidateRunEvidence`/`commitPreparedMount`/
 `preview.required·approved`/mock result/localStorage는 **이식하지 않는다** —
