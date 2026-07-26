@@ -76,6 +76,9 @@ _DRAFT_SESSION = {
 _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
     "home": {
         "set_group_by": _schema(optional="axis"),
+        "set_library_view": _schema(optional="view"),
+        "set_library_mode": _schema(optional="mode"),
+        "set_library_query": _schema(optional="text"),
         "toggle_facet": _schema("axis value"),
         "clear_facets": _schema(),
         "delete_job": _schema("name", "confirm"),

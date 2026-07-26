@@ -39,7 +39,12 @@ from ..core.dataset_pool import DatasetPoolRegistry
 from ..core.job import JobRegistry
 from ..core.text_registry import TextTemplateRegistry
 from ..gui.compile_badge import badge_level
-from ..gui.home_state import CORRUPT_PATH_REJECT, HomeViewModel, JobRow
+from ..gui.home_state import (
+    CORRUPT_PATH_REJECT,
+    HomeViewModel,
+    JobRow,
+    library_health,
+)
 from .screens import PushSink, default_pool_registry, relink_job_template
 
 # 이어서 실행(continue-runs) 목록 상한 — 최근 실행순 상위 N. 대시보드 요약이라 짧게 유지.
@@ -128,6 +133,35 @@ class HomeController:
             for fa in self.vm.facets()
         ]
 
+    def _library(self) -> dict:
+        """전역 라이브러리 구획(§19.6) — 보기·방식·검색 판정은 전부 링1 소비.
+
+        탭 건수는 **검색 전**(라이브러리에 대한 사실), 행은 현재 보기의 투영이다. 확인 필요
+        보기의 사유는 §19.7 번역(:func:`library_health`)을 그대로 실어 표면이 문구를 다시
+        만들지 않는다(문안 재조립 금지).
+        """
+        return {
+            "view": self.vm.library_view,
+            "mode": self.vm.library_mode,
+            "query": self.vm.library_query,
+            "counts": self.vm.library_counts(),
+            "sections": [
+                {
+                    "value": sec.value,
+                    "count": sec.count,
+                    "rows": [
+                        {**_job_row_dict(r),
+                         "group": r.group,
+                         "favorited": bool(r.favorited_at),
+                         "media": r.media,
+                         "health": library_health(r)[1]}
+                        for r in sec.rows
+                    ],
+                }
+                for sec in self.vm.library_sections()
+            ],
+        }
+
     def snapshot(self) -> dict:
         kpi = self.vm.kpi()
         return {
@@ -145,6 +179,8 @@ class HomeController:
             "group_by": self.vm.effective_group_by(),
             "facets": self._facets(),
             "grouped_rows": self._grouped(),
+            # 전역 문서 작업 라이브러리(§19.6) — 보기 4종 × 작업 방식 × 검색의 투영.
+            "library": self._library(),
             # 손상 작업 — 숨기지 않고 시끄러운 위험 카드로(RC-05) + 조치 경로(#26 #8).
             "corrupt_rows": [
                 {"file_name": c.file_name, "detail_line": c.detail_line(), "path": c.path}
@@ -169,6 +205,16 @@ class HomeController:
     def _do_set_group_by(self, p: dict) -> None:
         """group-by 렌즈 교체(""=flat). 빈 축 값은 flat 로 자연 강등."""
         self.vm.set_group_by(p.get("axis") or "")
+
+    def _do_set_library_view(self, p: dict) -> None:
+        """보기 교체(§19.6) — 검색어·방식 필터는 유지한다(축이 다르므로 서로 지우지 않는다)."""
+        self.vm.set_library_view(p.get("view") or "")
+
+    def _do_set_library_mode(self, p: dict) -> None:
+        self.vm.set_library_mode(p.get("mode") or "")
+
+    def _do_set_library_query(self, p: dict) -> None:
+        self.vm.set_library_query(str(p.get("text", "")))
 
     def _do_toggle_facet(self, p: dict) -> None:
         self.vm.toggle_facet(p["axis"], p["value"])
