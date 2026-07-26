@@ -917,32 +917,68 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
     // 을 읽으면 같은 의도를 두 번 보내고, 멱등 처리 탓에 "껐다" 가 사라진다. Bridge 를
     // 미결로 세운 뒤 두 번 눌러 **보낸 의도열**을 되읽는다.
     (function () {
-      var star = document.querySelector('#jobCandidates [data-fav]');
-      if (!star) { out.fav_intents = 'no-star'; return; }
+      // 즐겨찾기 쓰기 계약 2건을 실 DOM·실 핸들러로 되읽는다(리뷰 4R·5R P2).
+      // 브리지를 **우리가 한 건씩 풀어 주는** 스텁으로 갈아 큐 상태를 관측한다. 단계 전이는
+      // setTimeout(0) — 각 단계 사이에 이벤트 루프가 돌아 체인이 실제로 진행된다.
+      // 노드 참조를 들고 있지 않는다 — 뒤따르는 포커스 프로브의 재푸시가 DOM 을 교체하므로
+      // 매 단계에서 **이름으로 다시 찾는다**(떼어진 노드 클릭은 조용한 무동작이 된다).
+      var starOf = function (name) {
+        return document.getElementById('jobFav-' + encodeURIComponent(name));
+      };
+      if (!starOf('공고서') || !starOf('계약서')) { out.fav_intents = 'no-stars'; return; }
       var sent = [], release = [], real = window.Bridge.call;
       window.Bridge.call = function (screen, action, payload) {
         if (action !== 'toggle_favorite') return real.apply(null, arguments);
         sent.push(payload.value);
-        // 두 번째(=체인이 순서대로 흘려보낸) 발신까지 잡은 뒤에 실 브리지를 되돌린다 —
-        // 먼저 되돌리면 큐에 있던 발신이 실 브리지로 새어 기록에서 사라진다.
-        if (sent.length >= 2) Promise.resolve().then(function () { window.Bridge.call = real; });
-        return new Promise(function (res) { release.push(res); });  // 우리가 풀 때까지 미결
+        return new Promise(function (res) { release.push(res); });
       };
-      star.click();
-      star.click();
-      // 클릭은 즉시 왕복을 띄우지 않는다(체인 진입) — 동기 시점엔 발신 0.
-      out.fav_sync_sends = sent.length;
-      out.fav_intents = JSON.stringify(sent);
-      // 이하는 microtask 순서 검증(4R P2): 첫 왕복이 끝나기 전엔 둘째를 보내지 않고,
-      // 첫 왕복을 풀면 클릭 순서대로 둘째가 나간다. `sent` 배열 **참조**를 노출해 Python 이
-      // 다음 왕복(IPC 1회 = 모든 microtask 소진 후)에서 최종 상태를 회수한다 — hop 수를
-      // 세어 맞추는 취약한 검증을 피한다.
-      window.__favSent = sent;
+      window.__favSent = sent;          // 배열 참조 — Python 이 마지막에 최종 상태를 읽는다
       window.__favChain = null;
-      Promise.resolve().then(function () {
-        window.__favChain = JSON.stringify({inflight: sent.length});  // 직렬화 관측
-        if (release[0]) release[0]();
-      });
+      var drain = function (res) { var r = release.shift(); if (r) r(res); };
+      // 레일 진입(Nav.go)이 유발한 **실 refresh** 스냅샷이 뒤늦게 도착해 합성 화면을 덮는다
+      // (실 홈엔 데이터가 없어 후보 줄이 비워진다). 클릭 단계마다 합성 스냅샷을 다시 밀어
+      // 카드를 되살린다 — 스냅샷이 다시 와도 **표시는 여전히 낡은 상태**이므로 DOM-대-미결
+      // 의도 시나리오는 그대로 성립한다(오히려 실제와 같다).
+      var repush = function () { window.__push('job', snap); };
+      starOf('공고서').click();
+      starOf('공고서').click();
+      out.fav_sync_sends = sent.length;   // 0 — 클릭은 체인 진입이고 즉시 발신하지 않는다
+      out.fav_intents = JSON.stringify(sent);
+      var steps = [
+        // ① 직렬화: 앞 왕복이 끝나기 전엔 둘째를 보내지 않는다(발신 1건).
+        function () { window.__favChain = JSON.stringify({inflight: sent.length}); drain({ok: true}); },
+        function () { drain({ok: true}); },                       // 첫 카드 큐 소진
+        // ② 정리 식별: 같은 값이 다시 큐에 드는 3연속(true→false→true) 뒤,
+        //    **첫 왕복만** 실패로 완료(스냅샷 없음)시키고 4번째 클릭의 의도를 관측한다.
+        function () {
+          repush();
+          starOf('계약서').click(); starOf('계약서').click(); starOf('계약서').click();
+        },
+        function () { drain({ok: false, error: '실패 시늉'}); },
+        function () { repush(); starOf('계약서').click(); },
+        // 남은 큐를 전부 흘려 보내 최종 발신열을 확정한다(각 단계 = 이벤트 루프 1회전).
+        function () { drain({ok: false, error: '실패 시늉'}); },
+        function () { drain({ok: false, error: '실패 시늉'}); },
+        function () { drain({ok: false, error: '실패 시늉'}); },
+        function () { window.Bridge.call = real; }
+      ];
+      window.__favDiag = [];
+      (function step(i) {
+        if (i >= steps.length) { window.__favDone = true; return; }
+        setTimeout(function () {
+          try {
+            steps[i]();
+            window.__favDiag.push('ok' + i);
+          }
+          catch (e) {
+            window.__favDiag.push('err' + i + ':' + (e && e.message) + ' ids=' +
+              Array.prototype.map.call(document.querySelectorAll('#jobCandidates [data-fav]'),
+                function (b) { return b.id; }).join('|') +
+              ' html=' + document.getElementById('jobCandidates').innerHTML.slice(0, 80));
+          }
+          step(i + 1);
+        }, 0);
+      })(0);
     })();
     // 별 포커스가 재렌더(=별을 누르면 카드가 1순위로 이동)를 가로질러 살아남는가 —
     // preserve.js 는 id 로 복원하므로 이름 유래 안정 id 가 실제로 붙었는지 실물로 본다.
@@ -2416,8 +2452,16 @@ def _selftest_drive(window: "object") -> None:
         result["job_data_first"]["fav_chain"] = window.evaluate_js(  # type: ignore[attr-defined]
             "String(window.__favChain)"
         )
+        # 스텁 단계 진행(setTimeout 사슬)이 끝날 때까지 잠깐 기다린 뒤 최종 발신열을 읽는다.
+        for _ in range(50):
+            if window.evaluate_js("!!window.__favDone"):  # type: ignore[attr-defined]
+                break
+            time.sleep(0.05)
         result["job_data_first"]["fav_order"] = window.evaluate_js(  # type: ignore[attr-defined]
             "JSON.stringify(window.__favSent || null)"
+        )
+        result["job_data_first"]["fav_diag"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "JSON.stringify(window.__favDiag || null)"
         )
         result["job_mirror"] = window.evaluate_js(_JOB_MIRROR_PROBE_JS)  # type: ignore[attr-defined]
         window.resize(1180, 820)  # type: ignore[attr-defined]

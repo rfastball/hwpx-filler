@@ -362,10 +362,14 @@
         log("즐겨찾기 변경 실패: " + String((err && err.message) || err));
       });
     // 체인 링은 절대 reject 하지 않는다(위 catch) — 한 번 실패해도 뒤 클릭이 영구히 막히지 않게.
+    // 정리는 **꼬리 식별**로 판정한다(리뷰 5R P2): 값 비교로는 true→false→true 처럼 같은 값이
+    // 다시 큐에 있을 때 첫 왕복 완료가 최신 의도를 지운다. 그러면 뒤 클릭이 (스냅샷이 아직
+    // 없는) 낡은 DOM 을 읽어 의도가 어긋난다. 이 링이 마지막으로 큐에 든 것일 때만 걷는다.
     const tail = (FAV_CHAIN.get(name) || Promise.resolve()).then(send).then(() => {
-      // 마지막 의도였을 때만 걷는다 — 뒤이은 클릭의 의도·체인을 지우지 않게.
-      if (FAV_PENDING.get(name) === value) FAV_PENDING.delete(name);
-      if (FAV_CHAIN.get(name) === tail) FAV_CHAIN.delete(name);
+      if (FAV_CHAIN.get(name) === tail) {
+        FAV_CHAIN.delete(name);
+        FAV_PENDING.delete(name);
+      }
     });
     FAV_CHAIN.set(name, tail);
   }

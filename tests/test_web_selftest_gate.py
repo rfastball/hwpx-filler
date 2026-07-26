@@ -331,7 +331,13 @@ class TestWebSelftestGate:
         assert j["fav_sync_sends"] == 0, j["fav_sync_sends"]     # 클릭 = 체인 진입
         assert j["fav_intents"] == "[]", j["fav_intents"]
         assert json.loads(j["fav_chain"])["inflight"] == 1, j["fav_chain"]  # 둘째 대기
-        assert json.loads(j["fav_order"]) == [False, True], j["fav_order"]  # 클릭 순 = 쓰기 순
+        # 발신열 = ① 첫 카드(즐겨찾기 상태) 두 번 = false,true — 클릭 순서 = 쓰기 순서,
+        # ② 둘째 카드(미즐겨찾기) 3연속 = true,false,true 뒤 **첫 왕복만 실패로 완료**된
+        # 상태의 4번째 클릭 = false. 정리를 값 비교로 하면 최신 의도가 지워져 여기서
+        # true 가 나오고(=껐다가 다시 켜짐) 사용자 의도가 소실된다(5R P2).
+        assert json.loads(j["fav_order"]) == [
+            False, True, True, False, True, False
+        ], j["fav_order"]
 
     def test_job_density_and_expansion_sheets(self, selftest_result: dict) -> None:
         j = selftest_result["job_mirror"]
