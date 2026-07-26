@@ -87,8 +87,10 @@ def test_initial_lists_jobs_and_loud_gate(tmp_path):
     assert snap["gate"]["enabled"] is False and "데이터 파일" in snap["gate"]["text"]
     # 데이터 미준비 = 후보 계산 자체를 안 한다(§18.1) — 4구획 전부 빈 골격.
     assert snap["candidates"] == {
-        "top": [], "more": 0, "needs": [], "needs_more": 0, "suggested": "",
+        "top": [], "more": 0, "needs_count": 0, "suggested": "",
     }
+    # 문서 탐색도 미계산 골격(§18.1) — 탭·검색어는 세션 기본값을 그대로 재진술한다.
+    assert snap["browse"]["rows"] == [] and snap["browse"]["available_count"] == 0
 
 
 def test_select_job_marks_master_and_sets_session(tmp_path):
@@ -130,7 +132,10 @@ def test_prework_gate_counts_only_available_candidates(tmp_path):
     ctrl.dispatch("toggle_record", {"index": 0, "value": True})
     snap = ctrl.snapshot()
     cands = snap["candidates"]
-    assert cands["top"] == [] and [n["name"] for n in cands["needs"]] == ["공고서"]  # 목록엔 남는다
+    assert cands["top"] == [] and cands["needs_count"] == 1        # 수치로 남는다
+    # 확인 필요 **목록**은 문서 탐색 탭이 소유한다(슬라이스 3 이사).
+    ctrl.dispatch("browse_tab", {"tab": "needs_action"})
+    assert [r["name"] for r in ctrl.snapshot()["browse"]["rows"]] == ["공고서"]
     assert "사용할 수 있는 문서 작업이 없습니다" in snap["gate"]["text"]
 
 
@@ -193,7 +198,7 @@ def test_data_first_flow_end_to_end(tmp_path):
     assert snap["selected_count"] == 0                            # §18.2 초기 0건
     ctrl.dispatch("toggle_record", {"index": 1, "value": True})   # 채움 완결 행 선택
     cands = ctrl.snapshot()["candidates"]
-    assert [c["name"] for c in cands["top"]] == ["공고서"] and cands["needs"] == []
+    assert [c["name"] for c in cands["top"]] == ["공고서"] and cands["needs_count"] == 0
     ctrl.dispatch("select_job", {"name": "공고서"})               # 명시 선택(§18.3 자동 아님)
     snap = ctrl.snapshot()
     assert snap["has_job"] is True and snap["selected_count"] == 1  # 선택 생존(§18.2)
@@ -242,26 +247,40 @@ def test_candidate_top_is_ranked_and_capped_with_honest_overflow(tmp_path):
     assert cands["more"] == 2                     # 미사용2·미사용3 — 수치로 남는다
 
 
-def test_needs_action_candidates_stay_visible_by_name(tmp_path):
-    """확인 필요는 순위 밖이지만(§18.5) 전용 표면이 생기기 전까지 막힌 이유를 계속 말한다."""
+def test_needs_action_moves_to_the_document_browser_tab(tmp_path):
+    """확인 필요 목록은 문서 탐색 탭이 소유한다(슬라이스 3 이사) — 후보 줄엔 수치만.
+
+    구획이 이사할 때 의무도 함께 간다(삭제는 의무를 상속한다): 막힌 이유(없는 열)는
+    새 표면에서 계속 말해야 한다.
+    """
     ctrl, _ = _controller(tmp_path)
     _extra_job(ctrl, "확인나", sources=("없는열", "presmptPrce"))
     _extra_job(ctrl, "확인가", sources=("bidNtceNm", "다른없는열"))
     ctrl.load_data_path(_data_csv(tmp_path))
-    cands = ctrl.snapshot()["candidates"]
-    assert [n["name"] for n in cands["needs"]] == ["확인가", "확인나"]   # 이름순
-    assert cands["needs"][0]["missing"] == ["다른없는열"]                # 막힌 이유 병기
-    assert cands["needs_more"] == 0
+    snap = ctrl.snapshot()
+    assert snap["candidates"]["needs_count"] == 2                 # 후보 줄 = 수치
+    assert snap["browse"]["needs_count"] == 2                     # 탭 라벨도 같은 수치
+
+    ctrl.dispatch("browse_tab", {"tab": "needs_action"})
+    rows = ctrl.snapshot()["browse"]["rows"]
+    assert [r["name"] for r in rows] == ["확인가", "확인나"]      # 이름순
+    assert rows[0]["missing"] == ["다른없는열"]                   # 막힌 이유 승계
 
 
-def test_needs_action_overflow_is_counted_not_dropped(tmp_path):
-    """확인 필요도 available 과 같은 상한 — 잘린 만큼은 수치로 말한다(조용한 절단 금지)."""
+def test_browse_search_keeps_tab_counts_and_survives_tab_switch(tmp_path):
+    """검색어는 탭 전환에서 살고(§18.6), 탭 건수는 검색 중에도 데이터에 대한 사실로 남는다."""
     ctrl, _ = _controller(tmp_path)
-    for i in range(6):
-        _extra_job(ctrl, f"확인{i}", sources=("없는열", "presmptPrce"))
+    _extra_job(ctrl, "계약서")
+    _extra_job(ctrl, "확인필요건", sources=("없는열", "presmptPrce"))
     ctrl.load_data_path(_data_csv(tmp_path))
-    cands = ctrl.snapshot()["candidates"]
-    assert len(cands["needs"]) == 5 and cands["needs_more"] == 1
+    ctrl.dispatch("browse_query", {"text": "계약"})
+    snap = ctrl.snapshot()["browse"]
+    assert [r["name"] for r in snap["rows"]] == ["계약서"]
+    assert snap["available_count"] == 2 and snap["filtered_out"] == 1
+    ctrl.dispatch("browse_tab", {"tab": "needs_action"})
+    after = ctrl.snapshot()["browse"]
+    assert after["query"] == "계약"                    # 검색어 생존(계약 명문)
+    assert after["rows"] == [] and after["needs_count"] == 1  # 그 탭엔 일치 0건
 
 
 def test_single_candidate_is_suggested_but_never_auto_selected(tmp_path):
