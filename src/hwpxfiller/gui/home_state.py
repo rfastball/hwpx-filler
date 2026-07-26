@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from ..core.fill_ledger import template_path_drift
 from ..core.job import Job, JobRegistry, require_hwpx_template
 from ..core.template_status import CompileState, compile_status
 from .compile_badge import ERROR_BADGE_LEVEL, badge_level
@@ -98,6 +99,11 @@ class JobRow:
     # 템플릿을 아직 연결하지 않은 상태(경로 빈 값) — **미상 매체와 다르다**: 저작 중인
     # 정상 hwpx 작업이고 복구 동선도 「템플릿 다시 연결」로 명확하다(리뷰 P2).
     template_linked: bool = True
+    # 템플릿 구조 ↔ 확정 매핑의 대칭차(리뷰 P2). COMPILED 여도 필드가 늘거나 빠지면 실행은
+    # `validate_generate` 가 **차단**하는데 건강 보기가 건강으로 분류하면, 사용자는 실행을
+    # 눌러 보고서야 안다. compile_status 와 같은 compute-not-store 원칙(재편집 드리프트가
+    # 나므로 저장하지 않는다) — 그 대가로 hwpx 행마다 템플릿을 한 번 더 읽는다.
+    structure_drift: bool = False
 
     @classmethod
     def from_job(cls, job: Job) -> "JobRow":
@@ -110,6 +116,12 @@ class JobRow:
             compile_state, compile_badge = _derive_compile(tpath, template_missing)
         else:
             compile_state, compile_badge = None, ""
+        drift = False
+        if job.media == "hwpx" and compile_state is not None and job.mapping.mappings:
+            # 읽을 수 있는 템플릿 ∧ **확정 매핑이 있는** 작업에서만 본다: 못 읽는 건 이미
+            # danger 로 말하고 있고, 매핑이 아직 없는 작업은 "달라진" 게 아니라 "아직 안 맞춘"
+            # 상태다 — 그걸 드리프트로 부르면 1R 의 오진(미연결→미상 매체)과 같은 잘못이다.
+            drift = template_path_drift(tpath, job.mapping).has_drift
         return cls(
             name=job.name,
             template_name=(Path(tpath).name or "—") if tpath else "—",
@@ -127,6 +139,7 @@ class JobRow:
             favorited_at=job.favorited_at,
             media=job.media,
             template_linked=bool(tpath),
+            structure_drift=drift,
         )
 
     def meta_line(self) -> str:
@@ -276,6 +289,11 @@ def library_health(row: "JobRow") -> "tuple[int, str]":
     # 기존 신호가 이미 warn 배지로 말하고 있는데 「확인 필요」에서 빼면 그 경고가 이 화면에서만
     # 증발한다(리뷰 P2). §19.7 의 "확인된 drift = 심각도 2, 차단하지 않음" 자리에 대응한다.
     # 판정은 새로 만들지 않고 배지 레벨(RC-29 단일 어휘)을 번역할 뿐이다.
+    if row.structure_drift:
+        # §19.7 "확인된 Template/Binding drift = 2, 차단하지 않음"의 자리. 실행 게이트는
+        # 실제로 차단하지만(fail-closed), 여기서 말하는 건 **작업 자체의 건강**이라 등급은
+        # 계약 표를 따르고 강도는 실행 게이트가 낸다(두 표면이 서로 다른 판정을 만들지 않게).
+        return 2, "템플릿 구조가 확정 매핑과 달라졌습니다."
     if badge_level(row.compile_state) == "warn":
         return 2, row.compile_badge or "템플릿에 확인할 항목이 남아 있습니다."
     return 0, ""

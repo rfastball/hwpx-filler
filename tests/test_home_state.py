@@ -541,7 +541,9 @@ def _library_reg(tmp_path) -> JobRegistry:
     """보기 4종을 가르는 표본 — 즐겨찾기·최근 사용·미사용·확인 필요·txt 매체."""
     reg = JobRegistry(tmp_path)
     tpl = _compiled_hwpx(tmp_path, "lib.hwpx")   # 실 템플릿(건강 판정이 실물을 읽는다)
-    common = dict(mapping=MappingProfile(mappings=[FieldMapping("공고명", "bidNtceNm")]))
+    # 템플릿(_compiled_hwpx)의 실제 필드에 맞춘 매핑 — 안 맞추면 구조 드리프트로 잡힌다
+    # (그게 정상 판정이다: 건강 보기가 실행 차단을 미리 말한다).
+    common = dict(mapping=MappingProfile(mappings=[FieldMapping("계약명", "bidNtceNm")]))
     reg.save(Job(name="즐겨공고", template_path=tpl, group="조달",
                  favorited_at="2026-07-20T09:00:00", **common))
     reg.save(Job(name="최근계약", template_path=tpl, group="조달",
@@ -640,6 +642,26 @@ def test_partial_template_lands_in_needs_action(tmp_path):
     assert vm.library_counts()[VIEW_NEEDS] == 1
     vm.set_library_view(VIEW_NEEDS)
     assert [r.name for sec in vm.library_sections() for r in sec.rows] == ["부분컴파일"]
+
+
+def test_structure_drift_surfaces_in_needs_action(tmp_path):
+    """템플릿 구조가 확정 매핑과 달라지면 「확인 필요」에 든다(리뷰 P2).
+
+    COMPILED 라도 필드가 늘거나 빠지면 실행은 `validate_generate` 가 차단한다 — 건강 보기가
+    건강으로 분류하면 사용자는 실행을 눌러 보고서야 안다. 단 **매핑이 아직 없는** 작업은
+    "달라진" 게 아니라 "아직 안 맞춘" 상태라 드리프트로 부르지 않는다.
+    """
+    reg = JobRegistry(tmp_path / "drift")
+    tpl = _compiled_hwpx(tmp_path, "drift.hwpx")           # 필드 = 계약명
+    reg.save(Job(name="어긋난작업", template_path=tpl,
+                 mapping=MappingProfile(mappings=[FieldMapping("없는필드", "src")])))
+    reg.save(Job(name="맞춘작업", template_path=tpl,
+                 mapping=MappingProfile(mappings=[FieldMapping("계약명", "src")])))
+    reg.save(Job(name="매핑없음", template_path=tpl))       # 확정 매핑 0 = 드리프트 아님
+    rows = {r.name: r for r in HomeViewModel(reg).rows()}
+    assert library_health(rows["어긋난작업"]) == (2, "템플릿 구조가 확정 매핑과 달라졌습니다.")
+    assert library_health(rows["맞춘작업"])[0] == 0
+    assert library_health(rows["매핑없음"])[1] != "템플릿 구조가 확정 매핑과 달라졌습니다."
 
 
 def test_library_projection_ands_active_tag_facets(tmp_path):

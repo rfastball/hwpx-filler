@@ -286,6 +286,9 @@ def test_job_registry_writes_go_through_the_locked_path() -> None:
 _ALLOWED_HWPX_CONSUMERS = {
     ("gui/home_state.py", "compile_status"):
         (1, "_derive_compile — from_job 이 job.media 로 선분기 후 require_hwpx_template 백스톱"),
+    ("gui/home_state.py", "template_path_drift"):
+        (1, "JobRow.from_job 건강 번역 — 같은 media=='hwpx' 분기 안, _derive_compile 의 "
+            "require_hwpx_template 이 같은 경로를 이미 통과시킨 뒤에만 실행"),
     ("gui/run_state.py", "HwpxEngine"):
         (3, "RunViewModel 메서드 — __init__ 의 require_hwpx(job) 진입 가드 아래"),
     ("gui/run_state.py", "template_path_drift"):
