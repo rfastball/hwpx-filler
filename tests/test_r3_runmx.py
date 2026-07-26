@@ -85,7 +85,9 @@ def test_pool_wrappers_are_shared_not_copied():
         assert issubclass(ctrl_cls, PoolTargetingMixin), (
             f"{ctrl_cls.__name__} 이 PoolTargetingMixin 을 상속하지 않습니다(K4)."
         )
-        for meth in ("_do_pool_sources", "_do_load_pool"):
+        # `_do_pool_sources` 는 사망(재작성 F1) — 목록의 소비자가 pool 컨트롤러 스냅샷으로
+        # 바뀌어 활성-only 페이로드가 불필요해졌다. 남은 공용 래퍼는 겨눔 하나다.
+        for meth in ("_do_load_pool",):
             assert getattr(ctrl_cls, meth) is getattr(PoolTargetingMixin, meth), (
                 f"{ctrl_cls.__name__}.{meth} 가 믹스인 구현이 아닙니다 — 래퍼 사본 재유입(K4)."
             )

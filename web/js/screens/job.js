@@ -760,9 +760,10 @@
 
   /* ---- busy 잠금 — [data-busy-lock] 속성 선언(setBusy 누락 회귀 방지, #26) ---- */
   function setBusy(busy) {
-    // 탐색 면은 **오버레이 루트**에 살아 `#scr-job` 질의에 안 걸린다(리뷰 2R P2) — 생성 중
-    // 열려 있으면 행 클릭이 Python 거절로 끝나고 사용자는 문맥만 잃는다. 같은 잠금에 넣는다.
-    [$("scr-job"), $("jobBrowseSheet")].forEach((root) => {
+    // 탐색 면·데이터 선택 면은 **오버레이 루트**에 살아 `#scr-job` 질의에 안 걸린다(리뷰 2R
+    // P2) — 생성 중 열려 있으면 클릭이 Python 거절로 끝나고 사용자는 문맥만 잃는다. 같은
+    // 잠금에 넣는다(지도 §10.7.1 계약면 2).
+    [$("scr-job"), $("jobBrowseSheet"), $("dataPickerModal")].forEach((root) => {
       root.querySelectorAll("[data-busy-lock]").forEach((el) => { el.disabled = busy; });
     });
     $("jobGenBtn").disabled = busy || !(LAST && LAST.gate && LAST.gate.enabled);
@@ -872,6 +873,18 @@
   function confirmDataSwapIfArmed() {
     return confirmDestructiveIfArmed(
       "데이터 변경 확인", "데이터를 바꾸면", "데이터 바꾸고 버리기");
+  }
+
+  /* 데이터 선택 다이얼로그 「현재 데이터」 구획 소재 — 스냅샷이 이미 낸 값만 옮긴다(재판정
+     금지). `path`·`sheet` 는 「이 데이터 고정」이 프리필로 쓰는 참조 정체(Python 소유
+     data_target)이고, 출처가 `pool` 이면 이미 고정된 참조라 고정 버튼이 뜨지 않는다. */
+  function currentDataDescriptor() {
+    const t = (LAST && LAST.data_target) || {};
+    return {
+      label: (LAST && LAST.data_source_label) || "",
+      detail: LAST && LAST.has_data ? `${LAST.record_count}건` : "",
+      path: t.path || "", sheet: t.sheet || "", origin: t.origin || "",
+    };
   }
 
   /* T1 가드 왕복(RC-02 동형): 무변이 needs_confirm → modal.js 이진 확인(기본 포커스=
@@ -1408,23 +1421,15 @@
       log("중단 요청: 진행 중인 문서를 마친 뒤 미착수 건을 중단합니다.");
     });
 
-    $("jobBtnPickData").addEventListener("click", async () => {
-      if (!(await confirmDataSwapIfArmed())) return;  // 데이터 재겨눔 = T1 동류 파괴 전이
-      let r = await Bridge.pickDataFile(SCREEN);
-      if (r && typeof r === "object" && r.needs_sheet) {   // 다중 시트 → 확정 게이트(#33)
-        r = await SheetPicker.choose(SCREEN, r);
-        if (r === null) { log("데이터 선택을 취소했습니다."); return; }
-      }
-      if (r === null) return;                       // 취소
-      if (typeof r === "string" && r.startsWith("ERROR:")) { log("데이터 오류: " + r.slice(6).trim()); return; }
-      log(`데이터 불러옴: ${r}`);
-    });
-    // 등록 데이터(풀) 겨눔(#26 #6) — 취소=중단, 실패는 모달 안에서 재진술(PoolPicker).
-    $("jobBtnPoolData").addEventListener("click", async () => {
-      if (!(await confirmDataSwapIfArmed())) return;  // 데이터 재겨눔 = T1 동류 파괴 전이
-      const label = await PoolPicker.choose(SCREEN);
-      if (label === null) return;                   // 취소 = 겨눔 중단
-      log(`등록 데이터 불러옴: ${label}`);
+    // 데이터 선택 = 단일 출구(재작성 F1) — 현재/고정한/다른 세 갈래가 한 면 안에서 갈리고,
+    // 손실 가드는 대상이 정해진 직후 다이얼로그가 이 콜백으로 묻는다(지도 §10.7.2 D).
+    $("jobBtnPickData").addEventListener("click", () => {
+      DataPicker.open({
+        screen: SCREEN,
+        current: currentDataDescriptor(),
+        confirmSwap: confirmDataSwapIfArmed,   // 데이터 재겨눔 = T1 동류 파괴 전이
+        onLoaded: (label) => log(`데이터 불러옴: ${label}`),
+      });
     });
     $("jobBtnPickFolder").addEventListener("click", async () => {
       const r = await Bridge.pickOutputFolder(SCREEN);

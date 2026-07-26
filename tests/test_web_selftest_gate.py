@@ -80,13 +80,34 @@ class TestWebSelftestGate:
         # H-05: 콜드 부팅은 살아 있는 소비 화면인 작업으로 곧장 진입한다.
         assert selftest_result["job_on"] is True
 
-    def test_pool_screen_actually_rendered(self, selftest_result: dict) -> None:
-        # 데이터 관리 화면(#26 #4)이 실앱에서 init·렌더됨(빈 상태 문구도 렌더로 침).
-        assert selftest_result["pool_rendered"] is True
+    def test_data_picker_buttons_present(self, selftest_result: dict) -> None:
+        # 데이터 선택 단일 출구(재작성 F1) — 작업·기안 두 세션 표면에 실재한다.
+        assert selftest_result["data_picker_buttons"] is True
 
-    def test_pool_source_buttons_present(self, selftest_result: dict) -> None:
-        # 2소스 진입점(#26 #6) — 작업·기안의 '등록 데이터…' 버튼이 실 DOM 에 있다.
-        assert selftest_result["pool_buttons"] is True
+    def test_data_picker_dialog_absorbs_pool_screen(self, selftest_result: dict) -> None:
+        """`pool` 화면 사망의 승계처가 실앱에서 실제로 선다(지도 §10.7.4 점검표).
+
+        정적 DOM 계약이 못 잡는 세 승계 의무를 실 렌더로 못박는다: 보관 항목이 목록에
+        남아 `활성화` 에 도달 가능할 것(§10.7.2 C), 손상 격리가 상주 재진술될 것(RC-05),
+        「이 데이터 고정」이 현재 마운트 대상을 프리필할 것(v6 pinDataDialog).
+        """
+        probe = selftest_result["data_picker"]
+        assert probe["error"] is None, probe
+        assert probe["opened"] is True, probe
+        assert probe["rows"] == 2, probe
+        # 보관 항목은 숨기지 않고 **정직하게 비활성** — 그래야 활성화 동사가 도달 가능하다.
+        assert probe["use_active_enabled"] is True, probe
+        assert probe["use_archived_disabled"] is True, probe
+        assert probe["activate_reachable"] is True, probe
+        assert probe["relink_reachable"] is True, probe
+        assert probe["corrupt_shown"] is True, probe
+        # 고정 = 등록 모달 재사용이되 진입 사유가 제목·프리필로 드러난다.
+        assert probe["pin_offered"] is True, probe
+        assert probe["pin_title"] == "이 데이터 고정", probe
+        # 제목과 확정 버튼이 같은 동사를 쓴다 — 「고정」을 열고 「등록」을 누르게 하지 않는다.
+        assert probe["pin_ok"] == "고정", probe
+        assert probe["pin_path"] == "C:/d/대장.xlsx", probe
+        assert probe["pin_sheet"] == "물품", probe
 
     def test_each_action_family_click_dispatches_and_returns_snapshot(
         self, selftest_result: dict,

@@ -62,9 +62,28 @@ class DataZoneMixin:
     _data_key: str                # 현 데이터 소스 정체(file:경로 | pool:참조) — 소스 일치 판정
     pool_registry: DatasetPoolRegistry
     data_label: str
+    data_source: str              # ''(미겨눔) | 'file' | 'pool'
+    #: 현 마운트 대상의 참조 정체(겨눔 시점 캐시) — 데이터 선택 다이얼로그 「현재 데이터」와
+    #: 「이 데이터 고정」 프리필의 소재(재작성 F1). 라벨(파일명)만으론 고정할 참조를 지을 수
+    #: 없어서 경로·확정 시트를 함께 남긴다(에디터 ``data_path``/``data_sheet`` 선례).
+    data_path: str = ""
+    data_sheet: str = ""
 
     def _records(self) -> list:
         raise NotImplementedError  # 컨트롤러가 현 데이터소스 레코드를 댄다
+
+    def _data_target(self) -> dict:
+        """마운트 대상 재진술 ``{path, sheet, origin}`` — 스냅샷 동봉(신설 상태 아님, 파생).
+
+        「이 데이터 고정」은 ``origin == 'file'`` 에서만 뜬다: 등록 데이터 출처는 **이미
+        고정된 참조**라 다시 고정하면 같은 파일의 참조가 둘로 갈린다(v6 ``pinCurrentData``
+        hidden 동형). 값은 겨눔 시점 캐시라 로드된 레코드와 같은 신선도 의미다.
+        """
+        return {
+            "path": self.data_path,
+            "sheet": self.data_sheet,
+            "origin": self.data_source,
+        }
 
     def _display_indices(self, indices: "list[int]") -> "list[int]":
         """표시 순서 투영 훅 — 기본 항등(원본 오름차순). 데이터-우선 「작업」 화면이

@@ -564,9 +564,13 @@ F7 의 판본·patch 거래는 다른 항목의 전제가 아니다 — 계약 �
 | 커밋 | 내용 |
 |---|---|
 | 1 | 이 절(4계약면·판정 5건·가드 감사·사망 점검표) |
-| 2 | 통합 다이얼로그 표면 — `web/js/data_picker.js` + 정적 골격 + `job`·`draft` 배선, `pool_picker.js`·`#poolModal`·`pool_sources` 사망 |
+| 2 | 통합 다이얼로그 표면 + `pool` 화면 사망을 **한 전이로** — `web/js/data_picker.js`·정적 골격·`job`/`draft` 배선 / `pool_picker.js`·`screens/pool.js`·`#poolModal`·`#scr-pool`·레일 항목·`pool_sources` 삭제 / UI_CONTRACT·DOM 계약·selftest 정산 |
 | 3 | 전환 손실 가드 열거 정직화(§10.7.3 조치열) |
-| 4 | `pool` 화면 사망 — `#scr-pool`·`screens/pool.js`·레일 항목 삭제 + UI_CONTRACT·DOM 계약·selftest 정산 |
+
+커밋 2가 신설과 사망을 함께 지는 이유: 등록 모달(`#poolRegModal`)은 두 표면이 공유하는
+**한 벌**이라 중간 상태에선 소유자가 둘이 된다(같은 버튼에 리스너 2개 = 클릭 1회에 왕복 2회).
+승계처가 서기 전에 지우지 않는다는 규율(§10.4 서문)은 지켜진다 — 같은 커밋 안에서 먼저 서고
+그다음 죽는다.
 
 ## 6. 원재료
 

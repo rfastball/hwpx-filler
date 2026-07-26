@@ -29,7 +29,7 @@ from hwpxfiller.gui.home_state import HomeViewModel
 from hwpxfiller.gui.pipeline_builder_state import PipelineBuilderViewModel
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp.screen_pool import PoolController
-from hwpxfiller.webapp.screens import load_pool_item_checked, pool_sources_payload
+from hwpxfiller.webapp.screens import load_pool_item_checked
 
 MULTI_SHEET = Path(__file__).resolve().parent / "fixtures" / "multi_sheet.xlsx"
 
@@ -81,26 +81,21 @@ def test_list_items_without_corrupted_raises_on_corruption(tmp_path):
     assert len(corrupted) == 1 and corrupted[0][0].name.endswith(reg.SUFFIX)
 
 
-def test_pool_sources_payload_surfaces_corruption_note(tmp_path):
-    """피커 페이로드 — 손상은 목록에서 빠지되 '손상 N건' 노트로 병기된다(무표시 증발 금지)."""
+def test_pool_snapshot_surfaces_corruption_rows(tmp_path):
+    """데이터 선택 다이얼로그 소재 — 손상은 목록에서 빠지되 별도 행으로 병기된다.
+
+    구 ``pool_sources_payload``(활성만 + '손상 N건' 노트)의 승계분(재작성 F1): 다이얼로그가
+    소비하는 것은 ``PoolController`` 스냅샷이고, 손상은 노트 한 줄이 아니라 파일명·오류를
+    가진 행으로 실린다 — 무표시 증발 금지의 요건은 같고 정보는 늘었다.
+    """
     reg = _pool_with_corruption(tmp_path)
-    payload = pool_sources_payload(reg)
-    assert [i["name"] for i in payload["items"]] == ["살아있음"]
-    assert payload["corrupted_note"] == "손상 1건(데이터 관리에서 확인)"
-    # 손상이 없으면 노트는 빈 문자열(거짓 경보 없음).
+    snap = PoolController(reg, _push_noop).snapshot()
+    assert [r["name"] for r in snap["rows"]] == ["살아있음"]
+    assert [c["file"] for c in snap["corrupted"]] == ["깨진.dataset.json"]
+    # 손상이 없으면 손상 행도 없다(거짓 경보 없음).
     clean = DatasetPoolRegistry(tmp_path / "clean")
     clean.save(DatasetPoolItem(name="정상", kind="excel", opts={"path": "C:/b.xlsx"}))
-    assert pool_sources_payload(clean)["corrupted_note"] == ""
-
-
-def test_job_pool_sources_action_carries_corruption_note(tmp_path):
-    """작업 화면 pool_sources 액션도 노트를 나른다 — 화면 하나의 손상이 다른 화면을
-    전멸시키지 않되(items 생존), 어디서도 조용히 사라지지 않는다(corrupted_note)."""
-    reg = _pool_with_corruption(tmp_path)
-    ctrl = JobController(JobRegistry(tmp_path / "jobs"), _push_noop, pool_registry=reg)
-    res = ctrl.dispatch("pool_sources", {})
-    assert [i["name"] for i in res["items"]] == ["살아있음"]
-    assert "손상 1건" in res["corrupted_note"]
+    assert PoolController(clean, _push_noop).snapshot()["corrupted"] == []
 
 
 def test_home_kpi_counts_pool_corruption(tmp_path):

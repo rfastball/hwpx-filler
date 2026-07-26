@@ -680,6 +680,8 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
             "data_label": self.data_label,  # 서버 소유(P4) — 붙여넣기/템플릿 전환에도 실상태 반영
             # 소스 종류 병기 라벨(#26) — 저장 상태가 아니라 플래그에서 매번 합성(K8).
             "data_source_label": source_label(self.data_source, self.data_label),
+            # 마운트 대상 재진술(F1) — 데이터 선택 다이얼로그의 「현재 데이터」·고정 프리필.
+            "data_target": self._data_target(),
             # 데이터 존 계약(datazone.js 소비 키) — 작업 화면과 같은 모양.
             # ``data_key`` = 소스 **정체**(경로 정규화·시트/참조 병기) — 표시 라벨은
             # basename 이라 `folder1/명단.xlsx`↔`folder2/명단.xlsx` 가 같은 문자열이 된다.
@@ -1010,6 +1012,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self.vm.records = []
         self.data_label = ""
         self.data_source = ""
+        self.data_path = self.data_sheet = ""  # 마운트 대상도 함께 뗀다(F1 — 유령 프리필 금지)
         self._data_key = ""
         self.selection = SelectionModel(0)  # 무데이터 = 가상 1행 큐로 퇴화(결정 14)
         self.queue = TxtQueueModel(self.selection)
@@ -1106,6 +1109,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self._stash_filter()  # 죽는 세션의 정의 → 직전 필터 슬롯(결정 28, 옛 소스 키 기준)
         self.data_label = Path(path).name  # 서버 소유(P4)
         self.data_source = "file"  # 병기 라벨은 스냅샷이 합성(#26·K8)
+        self.data_path, self.data_sheet = path, sheet or ""  # 「이 데이터 고정」 프리필(F1)
         self._data_key = self._file_key(path, sheet)  # 소스 일치 게이트(결정 28)
         self.selection = SelectionModel(len(records))  # 데이터 변경 → 전체 선택 초기화
         self.queue = TxtQueueModel(self.selection)     # 큐 = 세션 휘발 — 새 데이터 = 새 큐

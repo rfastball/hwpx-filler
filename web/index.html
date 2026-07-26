@@ -51,8 +51,9 @@
          만들기」가 담당한다(카드 ⋮ 편집 메뉴는 #110 목록 관리 소관). -->
     <button class="navbtn" data-scr="tpl" aria-label="템플릿 관리" title="템플릿 관리: HWPX·TXT 라이브러리 · 상태·변환·검토">
       <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3l7 4-7 4-7-4zM3 11l7 4 7-4"/></svg></span><span class="lbl"><span class="n">템플릿 관리</span><span class="d">HWPX·TXT 라이브러리 · 상태·변환·검토</span></span></button>
-    <button class="navbtn" data-scr="pool" aria-label="데이터 관리" title="데이터 관리: 등록 데이터(참조) · 수명 관리">
-      <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3c3.3 0 6 1 6 2.3S13.3 7.7 10 7.7 4 6.7 4 5.3 6.7 3 10 3M4 5.3v9.4C4 16 6.7 17 10 17s6-1 6-2.3V5.3"/></svg></span><span class="lbl"><span class="n">데이터 관리</span><span class="d">등록 데이터(참조) · 수명 관리</span></span></button>
+    <!-- 「데이터 관리」 항목은 사망(재작성 F1, 지도 §10.7) — 등록 데이터의 목록·등록·보관·
+         활성화·삭제·다시 연결·손상 격리는 전부 데이터 선택 다이얼로그(#dataPickerModal)가
+         승계했다. 데이터는 작업의 입력이지 별도 자산 축이 아니라는 결정 1의 이행분. -->
     <!-- 테마 전환(레일 하단, margin-top:auto) — navbtn 이 아니라 라우팅되지 않는다. 접힘 표지는
          .ti(≠.ni)라 #27 시각표지 카운트와 무관. 라벨은 app.js 가 현재 모드로 갱신(themeLabel). -->
     <button class="rail-theme" id="themeToggle" aria-label="테마 전환 (시스템 → 라이트 → 다크)"
@@ -166,11 +167,12 @@
             <div class="zone job-data-zone">
               <div class="zone-cap zone-cap-actions"><span>현재 데이터</span>
                 <button class="btn sm" id="jobDataExpand" type="button">펼쳐서 행 고르기 ⤢</button></div>
+              <!-- 데이터 선택은 단일 출구(재작성 F1) — 현재/고정한/다른 세 갈래는 모두
+                   #dataPickerModal 안에서 갈린다(구 2버튼 「등록 데이터…」·「파일 선택…」 승계). -->
               <div class="run-row"><span class="lbl">데이터(.xlsx/.csv)</span>
                 <input class="field ro" id="jobDataLabel" type="text" readonly
                        placeholder="데이터를 선택하세요">
-                <button class="btn" id="jobBtnPoolData" data-busy-lock>등록 데이터…</button>
-                <button class="btn" id="jobBtnPickData" data-busy-lock>파일 선택…</button></div>
+                <button class="btn primary" id="jobBtnPickData" data-busy-lock>데이터 선택…</button></div>
               <div class="note" id="jobDataNotice" style="display:none;white-space:pre-line"></div>
               <div class="preflight note" id="jobPreflight" style="display:none"></div>
 
@@ -325,8 +327,7 @@
               <div class="run-row"><span class="lbl">데이터(.xlsx/.csv)</span>
                 <input class="field ro" id="draftDataLabel" type="text" readonly
                        placeholder="데이터를 선택하세요(없으면 토큰이 그대로 남습니다)">
-                <button class="btn" id="draftBtnPoolData" data-busy-lock>등록 데이터…</button>
-                <button class="btn" id="draftBtnPickData" data-busy-lock>파일 선택…</button>
+                <button class="btn" id="draftBtnPickData" data-busy-lock>데이터 선택…</button>
                 <!-- 데이터 해제(R-flow 결정 30, #148 슬라이스 6 — 구 「빠른 기안」에서 승계) — 결속
                      값을 지금 값으로 상수 동결하고 무데이터 직접 입력으로 되돌린다. 데이터가 있을
                      때만 뜬다(draftsession.js has_data). 데이터 교체와 같은 파괴라 T3 확인을 지난다. -->
@@ -507,30 +508,9 @@
          링1 DatasetPoolViewModel(참조 등록·상태 전이·행 성형)에 브리지로 배선 — VM 재구현 없음.
          참조만 저장(행·ServiceKey 없음, ADR J) — 실행 때 원본을 다시 읽는다("싱크").
          나라장터 등록은 동결로 미노출(기존 nara 항목 표시는 유지 — 숨김 금지). -->
-    <section class="scr" id="scr-pool">
-      <header class="scr-head">
-        <div>
-          <h1>데이터 관리</h1>
-          <p class="sub">등록 데이터는 위치(경로·시트)만 기억하고, 실행할 때 원본을 읽습니다.</p>
-        </div>
-      </header>
-      <div class="tpl-catalogs">
-        <section class="grp tpl-cat">
-          <span class="cap">등록 데이터</span>
-          <!-- 등록·새로고침(외부 FS 재스캔)을 같은 지역 행동 그룹으로(#179 P0 — 헤더에서 강등). -->
-          <div class="tpl-cathead">
-            <span class="muted capnote" id="poolCount"></span>
-            <span class="acts">
-              <button class="btn sm" id="btnPoolRegister">＋ 데이터 등록…</button>
-              <button class="btn sm" id="poolRefresh">새로고침</button>
-            </span>
-          </div>
-          <div id="poolCorrupt"></div>
-          <div class="tpllist" id="poolList"></div>
-        </section>
-      </div>
-      <div id="poolResult" class="run-result"></div>
-    </section>
+    <!-- 「데이터 관리」 화면은 사망(재작성 F1) — 목록·등록·보관·활성화·삭제·다시 연결·손상
+         격리는 #dataPickerModal 이 승계했다(지도 §10.7.4). 링1·컨트롤러(PoolController)는
+         그대로 살아 그 다이얼로그가 소비한다 — 죽은 것은 표면뿐이다. -->
 
   </main>
 </div>
@@ -551,7 +531,9 @@
     <div class="colpanel" id="jobColPanel" hidden></div>
     <div class="colpanel" id="draftColPanel" hidden></div>
 
-    <!-- 데이터 등록 모달(#26 #4) — 참조만(경로 포인터). 동명 재등록은 확인 승격. -->
+    <!-- 데이터 고정·등록 모달(#26 #4 → 재작성 F1 승계) — 참조만(경로 포인터). 동명 재등록은
+         확인 승격. 데이터 선택 다이얼로그 **위에** 스택으로 뜨며 제목은 진입 사유로 갈린다
+         (「이 데이터 고정」·「데이터 등록」·「데이터 다시 연결」 — data_picker.js 소유). -->
     <div id="poolRegModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="poolRegTitle">
       <div class="modal-card">
         <h3 id="poolRegTitle">데이터 등록</h3>
@@ -605,17 +587,40 @@
     <!-- 「작업」 덮어쓰기 확인은 공용 modal.js Modal.confirm(수치 합성 본문)이 담당한다 —
          전용 모달 DOM 폐기(슬라이스 2, A-2-22: 총량·파괴분·신규분 종류별 재진술). -->
 
-    <!-- 등록 데이터 선택 모달(#26 #6) — 작업·txt 공유 겨눔 게이트(거동은 pool_picker.js 소유).
-         목록 id 는 poolPickList — 데이터 관리 화면(#scr-pool)의 poolList 와 반드시 다른 id 여야 한다
-         (같으면 getElementById 가 숨은 화면 요소로 해소돼 피커가 빈 채로 뜬다). -->
-    <div id="poolModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="poolTitle">
-      <div class="modal-card">
-        <h3 id="poolTitle">등록 데이터 선택</h3>
-        <p class="modal-sub">활성 등록 데이터만 고를 수 있습니다. 선택하면 원본을 다시 읽습니다.</p>
-        <div id="poolPickList" class="sheet-list"></div>
-        <p id="poolNote" class="note dangerbox" style="display:none;white-space:pre-line"></p>
+    <!-- 데이터 선택 다이얼로그(재작성 F1, v6 dataPickerDialog) — 「작업」·「기안」 공유.
+         현재/고정한/다른 세 구획이 한 면에 있고, 구 `pool` 화면의 목록·등록·보관·활성화·
+         삭제·다시 연결·손상 격리를 전부 승계한다(지도 §10.7.4 점검표). 거동은 data_picker.js. -->
+    <div id="dataPickerModal" class="modal hidden" role="dialog" aria-modal="true"
+         aria-labelledby="dataPickerTitle">
+      <div class="modal-card data-picker">
+        <h3 id="dataPickerTitle">데이터 선택</h3>
+        <p class="modal-sub">엑셀·CSV 는 위치(경로·시트)만 기억하고, 고를 때 원본을 읽습니다.</p>
+        <p id="dataPickerNote" class="note" role="status" aria-live="polite"
+           style="display:none;white-space:pre-line"></p>
+
+        <section class="picker-sec" aria-labelledby="dataPickerCurCap">
+          <div class="cap" id="dataPickerCurCap">현재 데이터</div>
+          <div id="dataPickerCurrent"></div>
+        </section>
+
+        <section class="picker-sec" aria-labelledby="dataPickerPinCap">
+          <div class="cap" id="dataPickerPinCap">고정한 데이터
+            <span class="acts">
+              <button class="btn sm" id="dataPickerRegister" data-busy-lock>＋ 직접 등록…</button>
+              <button class="btn sm" id="dataPickerRefresh" data-busy-lock>새로고침</button>
+            </span></div>
+          <div id="dataPickerPinned" class="tpllist"></div>
+          <div id="dataPickerCorrupt"></div>
+        </section>
+
+        <section class="picker-sec" aria-labelledby="dataPickerOtherCap">
+          <div class="cap" id="dataPickerOtherCap">다른 데이터</div>
+          <p class="muted capnote">한 번만 쓸 파일. 고른 뒤 「이 데이터 고정」으로 남길 수 있습니다.</p>
+          <button class="btn" id="dataPickerBrowse" data-busy-lock>파일 찾아보기…</button>
+        </section>
+
         <div class="modal-actions">
-          <button class="btn" id="poolCancel">취소</button>
+          <button class="btn" id="dataPickerClose">닫기</button>
         </div>
       </div>
     </div>
@@ -802,7 +807,7 @@
 <script src="js/surface_sheet.js"></script>
 <script src="js/undo_toast.js"></script>
 <script src="js/sheet_picker.js"></script>
-<script src="js/pool_picker.js"></script>
+<script src="js/data_picker.js"></script>
 <script src="js/pathtrack.js"></script>
 <script src="js/relink.js"></script>
 <script src="js/popover.js"></script>
@@ -818,7 +823,6 @@
 <script src="js/screens/job.js"></script>
 <script src="js/screens/draft.js"></script>
 <script src="js/screens/template.js"></script>
-<script src="js/screens/pool.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

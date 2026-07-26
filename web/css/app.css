@@ -977,6 +977,27 @@ body.resizing-master{cursor:col-resize;user-select:none}
 .tplcard-meta{font-size:var(--fs-caption)}
 .tplcard-acts{display:flex;justify-content:flex-end;gap:var(--sp-6);flex-wrap:wrap;margin-top:var(--sp-2)}
 
+/* ---- 데이터 선택 다이얼로그 (재작성 F1 — v6 dataPickerDialog) ----
+   구획 셋(현재/고정한/다른)이 한 면에 서므로 표준 모달보다 넓고, 고정 목록만 세로로
+   자란다: 목록이 길어져도 「다른 데이터」와 닫기가 화면 밖으로 밀리지 않는다. */
+.data-picker{width:min(760px,94vw)}
+.picker-sec{margin-top:var(--sp-16)}
+.picker-sec>.cap{display:flex;align-items:center;gap:var(--sp-8);font-weight:600;
+  font-size:var(--fs-caption);color:var(--a-muted);margin-bottom:var(--sp-6)}
+.picker-sec>.cap .acts{margin-left:auto;display:flex;gap:var(--sp-6)}
+.picker-sec .tpllist{display:flex;flex-direction:column;gap:var(--sp-6);
+  max-height:38vh;overflow:auto;overscroll-behavior:contain}
+.picker-sec .capnote{display:block;margin-bottom:var(--sp-6)}
+#dataPickerCorrupt .note{margin-top:var(--sp-6)}
+/* 행 = 정보 열 + 행동 열(세로 밀도) — 참조·메모·로케이트가 각자 한 줄을 먹으면 3항목만으로
+   면이 넘친다. 이름 칸만 줄어 행동이 화면 밖으로 밀리지 않는다(#138 F14 규율 승계). */
+.pk-row{flex-direction:row;align-items:center;justify-content:space-between;gap:var(--sp-12)}
+.pk-info{min-width:0;display:flex;flex-direction:column;gap:var(--sp-2)}
+.pk-ref{display:flex;align-items:center;gap:var(--sp-6);min-width:0}
+.pk-ref>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pk-note{display:block}
+.pk-row .tplcard-acts{flex:none;margin:0;max-width:230px}
+
 /* ---- 홈 경보·상태 허브 (#20/#239) ---- */
 
 /* 두 트랙 */

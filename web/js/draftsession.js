@@ -638,6 +638,17 @@
       });
     }
 
+    /* 데이터 선택 다이얼로그 「현재 데이터」 구획 소재 — 스냅샷이 이미 낸 값만 옮긴다(재판정
+       금지). 「작업」 화면 currentDataDescriptor 와 같은 계약(Python data_target 소유). */
+    function currentDataDescriptor() {
+      const t = (LAST && LAST.data_target) || {};
+      return {
+        label: (LAST && LAST.data_source_label) || "",
+        detail: LAST && LAST.has_data ? `${LAST.record_count}건` : "",
+        path: t.path || "", sheet: t.sheet || "", origin: t.origin || "",
+      };
+    }
+
     /* 「＋ 새 기안」 사전 확인(#126 — T3 면제 철회). 원장 F11 의 면제 근거("txt 출력은 일회성이라
        버릴 durable 상태가 없다")는 블록 3 전-선언 큐 신설로 거짓이 됐다: 20건 중 12건까지 붙여넣은
        큐가 클릭 한 번에 사라지고, 어디까지 처리했는지는 앱 밖 기억이라 복원 수단이 없다. 「새 기안」은
@@ -807,25 +818,18 @@
         });
       }
 
+      // 데이터 선택 = 단일 출구(재작성 F1) — 현재/고정한/다른 세 갈래가 한 면 안에서 갈린다.
+      // 「작업」과 같은 다이얼로그를 쓴다: 데이터 선택 어휘를 화면마다 가르지 않는다(판정 B).
       $(id.pickBtn).addEventListener("click", async () => {
         // 데이터 재선택 = 필터 세션의 죽음 — 대기 중 검색 디바운스를 먼저 정산해 직전 필터
         // 슬롯(결정 28)에 마지막 타이핑까지 실린다(작업 화면 flush 규율 승계).
         await dz.flushPendingSearch();
-        if (!(await confirmDataSwapIfArmed())) return;  // T3 가드(결정 26·27) — 피커 열기 전에
-        let r = await Bridge.pickDataFile(SCREEN);
-        if (r && typeof r === "object" && r.needs_sheet) {   // 다중 시트 → 확정 게이트(#33)
-          r = await SheetPicker.choose(SCREEN, r);
-          if (r === null) return;                            // 취소 = 중단(첫 시트 강등 없음)
-        }
-        if (r === null) return;                      // 취소
-        if (typeof r === "string" && r.startsWith("ERROR:")) { warnNote(r.slice(6).trim()); return; }
-        // 파일명은 load_data_path 가 스냅샷(data_label)으로 밀어 render 가 채운다(P4 서버 소유).
-      });
-      // 등록 데이터(풀) 겨눔(#26 #6) — 취소=중단, 실패는 모달 안에서 재진술(PoolPicker).
-      $(id.poolBtn).addEventListener("click", async () => {
-        await dz.flushPendingSearch();  // 재겨눔 전 검색 정산(위 pickBtn 과 같은 규율)
-        if (!(await confirmDataSwapIfArmed())) return;  // T3 가드 — 파일 경로와 같은 규율
-        await PoolPicker.choose(SCREEN);             // 라벨은 스냅샷(data_source_label)이 채운다
+        DataPicker.open({
+          screen: SCREEN,
+          current: currentDataDescriptor(),
+          confirmSwap: confirmDataSwapIfArmed,   // T3 가드(결정 26·27) — 읽기 직전
+        });
+        // 라벨은 load_data_path·load_pool 이 스냅샷(data_source_label)으로 밀어 render 가 채운다.
       });
       // 데이터 해제(R-flow 결정 30, 리뷰 F — 구 「빠른 기안」 승계) — 결속 값을 지금 값으로 상수
       // 동결하고 무데이터 직접 입력으로 되돌린다. 데이터 교체와 같은 파괴라 T3 확인을 지난다.

@@ -17,14 +17,12 @@ from pathlib import Path
 from typing import Callable, Iterable, Protocol
 
 from ..core.dataset_pool import (
-    STATUS_ACTIVE,
     DatasetPoolItem,
     DatasetPoolRegistry,
     default_dataset_pool_dir,
 )
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
 from ..core.fill_ledger import template_path_drift  # 재연결 드리프트 재진술(#67)
-from ..gui.dataset_pool_state import DatasetPoolRow
 
 # 푸시 sink: (화면 id, 스냅샷 dict) → None. 앱=evaluate_js, 테스트=수집.
 PushSink = Callable[[str, dict], None]
@@ -80,37 +78,6 @@ def validate_owned_path(path: str, owned: "set[str]") -> str:
 def default_pool_registry() -> DatasetPoolRegistry:
     """웹 컨트롤러 기본 풀 레지스트리 — 홈 레지스트리(ADR J). 테스트는 생성자 주입."""
     return DatasetPoolRegistry(default_dataset_pool_dir())
-
-
-def pool_sources_payload(pool_registry: DatasetPoolRegistry) -> dict:
-    """피커 페이로드 ``{"items": 활성 풀 항목 행, "corrupted_note": 손상 병기 문구}``.
-
-    **활성** 풀 항목의 웹 직렬화(이름·종류·참조 요약) — 실행 후보는 active 만(ADR J).
-    행 성형은 링1 :class:`~hwpxfiller.gui.dataset_pool_state.DatasetPoolRow` 재사용
-    (참조 요약·종류 라벨 재구현 금지). nara 항목도 그대로 실린다 — 존재를 숨기지 않고
-    겨눔 시점에 :func:`load_pool_item_checked` 가 거절한다.
-
-    **손상 병기(C5)**: 손상 ``.dataset.json`` 은 격리 수집해 ``corrupted_note`` 로
-    함께 싣는다(없으면 ``""``) — 예전엔 미수집 격리로 손상 데이터셋이 피커에서
-    무표시 증발했다(조용한 드롭 금지). 상세 조치는 데이터 관리 화면 몫.
-    """
-    corrupted: "list[tuple[Path, str]]" = []
-    rows = [
-        {
-            "name": row.name,
-            "kind": row.kind,
-            "kind_label": row.kind_label,
-            "reference": row.reference,
-        }
-        for row in (
-            DatasetPoolRow.from_item(it)
-            for it in pool_registry.list_items(status=STATUS_ACTIVE, corrupted=corrupted)
-        )
-    ]
-    note = (
-        f"손상 {len(corrupted)}건(데이터 관리에서 확인)" if corrupted else ""
-    )
-    return {"items": rows, "corrupted_note": note}
 
 
 def load_pool_item_checked(
@@ -248,24 +215,22 @@ def relink_job_template(job_registry, name: str, path: str, *, confirm: bool = F
 
 
 class PoolTargetingMixin:
-    """등록 데이터(풀) 겨눔 래퍼 공용화(K4) — ``_do_pool_sources``/``_do_load_pool`` 화면 동형.
+    """등록 데이터(풀) 겨눔 래퍼 공용화(K4) — ``_do_load_pool`` 화면 동형.
 
-    예전엔 이 두 래퍼가 실행 표면 컨트롤러들에 독스트링('(#26/#6)')까지 복붙돼
+    예전엔 이 래퍼가 실행 표면 컨트롤러들에 독스트링('(#26/#6)')까지 복붙돼
     있었다 — 게이트 실행부(:func:`load_pool_into`)만 공용이고 래퍼는 여러 벌. 여기로 수렴하고
     화면별 차이는 두 훅으로만 남긴다:
 
     - :meth:`_pool_guard` — 겨눔 전제 미충족 시 사용자 문구 반환(기본 없음, run=작업 선택).
     - :meth:`_after_pool_load` — 성공 후처리(기본 no-op, run=행 선택 초기화).
 
-    요구 표면: ``pool_registry``·``vm.load_pool_item``·``data_label``·``data_source``.
+    요구 표면: ``pool_registry``·``vm.load_pool_item``·``data_label``·``data_source``·
+    ``data_path``/``data_sheet``(:class:`~hwpxfiller.webapp.data_zone.DataZoneMixin` 소유).
     """
 
     pool_registry: DatasetPoolRegistry
     data_label: str
     data_source: str  # ''(미겨눔) | 'file' | 'pool' — 라벨은 source_label 이 합성(K8)
-    # 로케이트 대상 파일 경로(#67) — 겨눔 시점에 캐시(렌더당 I/O 0). 겨눔 후 풀 항목이
-    # 재연결되면 구식화되지만, 이는 로드된 레코드와 동일한 sync-at-aim 신선도 의미다.
-    data_track_path: str = ""
 
     def _pool_guard(self) -> "str | None":
         """겨눔 전제조건 검사 — 미충족이면 사용자 문구, 충족이면 None."""
@@ -278,10 +243,6 @@ class PoolTargetingMixin:
         """겨눔 로더 — 기본은 링1 VM(작업-앵커 화면). 세션 소유 화면(데이터-우선 「작업」)은
         vm 없이도 겨눌 수 있게 재정의한다."""
         return self.vm.load_pool_item
-
-    def _do_pool_sources(self, p: dict) -> dict:
-        """활성 등록 데이터 목록 — 웹 선택 모달이 소비(이름·종류·참조 요약 + 손상 병기)."""
-        return pool_sources_payload(self.pool_registry)
 
     def _do_load_pool(self, p: dict) -> dict:
         """등록 데이터 항목을 이름으로 겨눔 — 공유 관문(:func:`load_pool_into`)에 위임.
@@ -298,11 +259,15 @@ class PoolTargetingMixin:
             return res
         self.data_label = name
         self.data_source = "pool"
-        # 로케이트 경로 캐시(#67) — kind 판정을 DatasetPoolRow.locate_path 와 동형으로
-        # (excel 만 파일 경로; opts["path"]만 보면 두 사이트의 판정이 표류한다 — PR #70 리뷰).
+        # 마운트 대상 재진술(F1, 구 data_track_path 승계) — 출처가 pool 이면 「이 데이터 고정」은 뜨지 않지만(이미 고정된
+        # 참조), 「현재 데이터」 구획이 경로·확정 시트를 말할 수 있어야 한다. kind 판정은
+        # DatasetPoolRow.locate_path 와 동형(excel 만 파일 경로 — opts["path"]만 보면 두 사이트의
+        # 판정이 표류한다, PR #70 리뷰).
         item = res["item"]
         raw = item.opts.get("path") if isinstance(item.opts, dict) else None
-        self.data_track_path = raw if (item.kind == "excel" and isinstance(raw, str)) else ""
+        self.data_path = raw if (item.kind == "excel" and isinstance(raw, str)) else ""
+        raw_sheet = item.opts.get("sheet") if isinstance(item.opts, dict) else None
+        self.data_sheet = raw_sheet if isinstance(raw_sheet, str) else ""
         self._after_pool_load(res["records"])
         return {"ok": True, "label": source_label("pool", name)}
 

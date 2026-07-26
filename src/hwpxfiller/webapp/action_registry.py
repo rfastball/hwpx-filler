@@ -44,7 +44,6 @@ _DATA_ZONE = {
 }
 
 _POOL_TARGETING = {
-    "pool_sources": _schema(),
     "load_pool": _schema("name"),
 }
 

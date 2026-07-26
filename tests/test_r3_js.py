@@ -20,12 +20,12 @@ WEB_JS = WEB / "js"
 
 # 공유 이스케이퍼를 소비하는 파일들 — 전부 esc.js 뒤에 로드돼야 한다.
 ESC_CONSUMERS = (
-    "sheet_picker.js", "pool_picker.js", "datazone.js",
+    "sheet_picker.js", "data_picker.js", "datazone.js",
     # 기안 세션 표면은 공용 팩토리 소유(#148 슬라이스 3a) — txt.js 는 id 맵만 남아
     # escape 소비가 없다. 계약은 소유 파일을 따라간다.
     "draftsession.js",
     "screens/home.js", "screens/editor.js", "screens/job.js",
-    "screens/draft.js", "screens/template.js", "screens/pool.js",
+    "screens/draft.js", "screens/template.js",
 )
 
 
@@ -74,16 +74,22 @@ def test_no_local_escaper_copies_remain():
         assert "window.escHtml" in src, f"{rel} 이 window.escHtml 을 참조하지 않습니다(K1)."
 
 
-def test_pool_header_describes_delivered_state():
-    """pool.js 헤더가 배달된 현재 상태를 기술해야 한다 — 미래형 거짓 기술 재퇴행 가드(K11)."""
-    src = (WEB_JS / "screens" / "pool.js").read_text(encoding="utf-8")
+def test_data_picker_header_describes_delivered_state():
+    """data_picker.js 헤더가 배달된 현재 상태를 기술해야 한다 — 미래형 거짓 기술 가드(K11).
+
+    구 pool.js 헤더 계약의 승계분(재작성 F1): 헤더가 말하는 소유 경계와 배선이 실제 코드에
+    있어야 한다(주석-코드 정합).
+    """
+    src = (WEB_JS / "data_picker.js").read_text(encoding="utf-8")
     header = src.split("(function", 1)[0]  # IIFE 이전 = 파일 헤더 주석
-    for stale in ("통합 단계에서 index.html 에 추가", "브리지 메서드 추가 예정", "그때까지 경로 직접 입력"):
+    for stale in ("추가 예정", "그때까지", "임시로"):
         assert stale not in header, (
-            f"pool.js 헤더에 낡은 미래형 기술('{stale}')이 남아 있습니다 — 배선은 이미 존재(K11)."
+            f"data_picker.js 헤더에 낡은 미래형 기술('{stale}')이 남아 있습니다(K11)."
         )
-    # 헤더가 기술하는 배선이 실제로 존재하는지 상호 검증(주석-코드 정합).
-    assert "pickPoolDataFile" in header and "poolRegBrowse" in header, (
-        "pool.js 헤더가 실제 배선(poolRegBrowse→Bridge.pickPoolDataFile)을 기술하지 않습니다(K11)."
+    body = src.split("(function", 1)[1]
+    assert "PoolController" in header and "load_pool" in header, (
+        "data_picker.js 헤더가 소유 경계(pool 컨트롤러 소비·호스트 마운트)를 기술하지 않습니다(K11)."
     )
-    assert "poolRegBrowse" in src.split("(function", 1)[1], "헤더가 기술한 poolRegBrowse 배선이 코드에 없습니다."
+    assert "pickPoolDataFile" in body and "poolRegBrowse" in body, (
+        "헤더가 기술한 등록 모달 배선(poolRegBrowse→pickPoolDataFile)이 코드에 없습니다."
+    )

@@ -39,7 +39,8 @@ GALLERY = Path(__file__).resolve().parents[1] / "docs" / "UI_GALLERY.html"
 # 화면 루트 — 셸 라우터가 표시/숨김으로 전환하는 최상위 컨테이너(회귀 시 화면 소실).
 SCREEN_ROOTS = (
     "scr-home", "scr-tpl",
-    "scr-pool",  # 데이터 관리(#26 #4)
+    # 「데이터 관리」(scr-pool)는 사망(재작성 F1) — 등록 데이터의 목록·수명은 데이터 선택
+    # 다이얼로그가 승계했다(PoolController 는 생존, 소비자만 바뀜).
     # 「작업」(R-flow · #90) — 유일 생성 표면(실행 화면=슬라이스 3 사망) + 편집 모드(작업
     # 에디터 별도 화면=슬라이스 5 사망, 결정 39 흡수 — 정의 surface 는 scr-job 내부).
     "scr-job",
@@ -52,7 +53,9 @@ SCREEN_ROOTS = (
 SCOPED_DATA_LABELS = ("draftDataLabel", "jobDataLabel")
 
 # 접힘 상태에서 라벨이 사라지는 내비 버튼(회귀 시 접근 이름·툴팁 소실 → #27).
-NAV_SCREENS = ("home", "job", "draft", "tpl", "pool")  # run=슬라이스 3·editor=슬라이스 5 사망(흡수); 「기안」이 구 txt·quickdraft 를 흡수·삭제(#148 슬라이스 6, 레일 6→5)
+# run=슬라이스 3·editor=슬라이스 5 사망(흡수); 「기안」이 구 txt·quickdraft 를 흡수·삭제
+# (#148 슬라이스 6, 레일 6→5); 「데이터 관리」는 데이터 선택 다이얼로그로 흡수·사망(F1, 5→4).
+NAV_SCREENS = ("home", "job", "draft", "tpl")
 
 # 커스텀 모달 → aria-labelledby 가 가리켜야 할 제목 id(다이얼로그 시맨틱, #27/#28).
 # sheetModal 은 다중 시트 확정 게이트(#33) — 같은 Modal 헬퍼·다이얼로그 계약을 공유한다.
@@ -61,8 +64,8 @@ MODAL_LABELLEDBY = {
     "pasteModal": "pasteTitle",  # 「기안」 붙여넣기(draftsession.js 공용 팩토리가 소비)
     "draftSaveTplModal": "draftSaveTplTitle",  # 「기안」 「템플릿으로 저장」 승격(#148 슬라이스 6, #135)
     "sheetModal": "sheetTitle",
-    "poolRegModal": "poolRegTitle",  # 데이터 등록(#26 #4)
-    "poolModal": "poolTitle",  # 등록 데이터 선택(#26 #6) — 정적 골격 이관(r3 K12)
+    "poolRegModal": "poolRegTitle",  # 데이터 고정·등록(#26 #4 → F1 승계, 다이얼로그 위 스택)
+    "dataPickerModal": "dataPickerTitle",  # 데이터 선택 통합 면(재작성 F1 — pool 화면 승계)
     # 「작업」 덮어쓰기 확인은 슬라이스 2(A-2-22)에서 공용 confirmModal(수치 합성 본문)로 이관 —
     # 전용 jobOverwriteModal DOM 폐기(아래 test_job_overwrite_uses_shared_confirm_modal 가드).
     "confirmModal": "confirmModalTitle",  # 네이티브 window.confirm 대체(#86) + 덮어쓰기 확인
@@ -527,9 +530,9 @@ def test_forced_colors_block_present_in_web_diff():
 
 # pickDataFile(=pick_data_file) 을 소비하는 모든 화면 — 브리지 반환 계약이 screen-불가지라
 # needs_sheet 분기를 처리해야 다중 시트가 첫 시트로 강등되지 않는다(리뷰 P1: txt 누락 회귀).
-DATA_PICK_FILES = ("screens/editor.js", "draftsession.js", "screens/job.js")
-# 「기안」 세션(draftsession.js 공용 팩토리)이 임의 파일 선택을 소비 — 구 txt·quickdraft 는
-# 같은 팩토리를 쓰던 소비 화면이라 삭제(#148 슬라이스 6)돼도 계약은 팩토리에 남는다.
+# 「작업」·「기안」의 파일 선택은 데이터 선택 다이얼로그 한 곳으로 수렴했다(재작성 F1) —
+# 두 화면이 같은 모듈을 쓰므로 계약도 그 모듈이 진다. 에디터는 아직 자기 경로를 쓴다(F7).
+DATA_PICK_FILES = ("screens/editor.js", "data_picker.js")
 
 
 def test_sheet_picker_loaded_and_wired_on_all_data_screens():
@@ -804,7 +807,7 @@ def test_job_document_browser_surface_contract():
     # 선택 경로는 닫기까지만 하고 착지는 onClose 가 한다(아래 1지점 계약).
     # 생성 중 잠금(2R P2): 탐색 면은 오버레이 루트라 `#scr-job` 질의에 안 걸린다 —
     # setBusy 가 그 루트도 훑고, 출구·탭·행이 busy-lock 을 달아야 한다.
-    assert 'jobBrowseSheet")].forEach' in src, "setBusy 가 탐색 면을 잠그지 않습니다."
+    assert 'dataPickerModal")].forEach' in src, "setBusy 가 탐색 면을 잠그지 않습니다."
     assert src.count("data-busy-lock data-browse") == 3, (
         "탐색 면 출구·탭·행의 busy-lock 표식이 빠졌습니다."
     )

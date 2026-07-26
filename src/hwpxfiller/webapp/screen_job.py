@@ -515,6 +515,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "data_label": self.data_label,
             # 소스 종류 병기 라벨(#26) — 저장 상태가 아니라 플래그에서 매번 합성(K8).
             "data_source_label": source_label(self.data_source, self.data_label),
+            # 마운트 대상 재진술(F1) — 데이터 선택 다이얼로그의 「현재 데이터」·고정 프리필.
+            "data_target": self._data_target(),
             # 기본 데이터셋 자동 조준 재진술(#53-A) — 없으면 None.
             "data_notice": (
                 {"level": self.data_notice_level, "text": self.data_notice_text}
@@ -637,6 +639,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self.vm.set_acquired(source, records)  # ack 재평가 포함(RC-22)
         self.data_label = Path(path).name
         self.data_source = "file"  # 병기 라벨은 스냅샷이 합성(#26·K8)
+        self.data_path, self.data_sheet = path, sheet or ""  # 「이 데이터 고정」 프리필(F1)
         self._data_key = self._file_key(path, sheet)  # 소스 일치 게이트(결정 28)
         self.selection = SelectionModel(len(records), all_selected=False)  # 선택 0건(§18.2)
         self._init_filter()  # 데이터 교체 = 필터 재생성(결정 24 — 열 지형이 바뀐다)
