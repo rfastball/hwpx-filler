@@ -83,7 +83,9 @@ def test_initial_lists_jobs_and_loud_gate(tmp_path):
     # 데이터-우선 도입 순서(§18.2) — 첫 할 일은 데이터 선택이다.
     assert snap["gate"]["enabled"] is False and "데이터 파일" in snap["gate"]["text"]
     # 데이터 미준비 = 후보 계산 자체를 안 한다(§18.1) — 4구획 전부 빈 골격.
-    assert snap["candidates"] == {"top": [], "more": 0, "needs": [], "suggested": ""}
+    assert snap["candidates"] == {
+        "top": [], "more": 0, "needs": [], "needs_more": 0, "suggested": "",
+    }
 
 
 def test_select_job_marks_master_and_sets_session(tmp_path):
@@ -241,9 +243,20 @@ def test_needs_action_candidates_stay_visible_by_name(tmp_path):
     _extra_job(ctrl, "확인나", sources=("없는열", "presmptPrce"))
     _extra_job(ctrl, "확인가", sources=("bidNtceNm", "다른없는열"))
     ctrl.load_data_path(_data_csv(tmp_path))
-    needs = ctrl.snapshot()["candidates"]["needs"]
-    assert [n["name"] for n in needs] == ["확인가", "확인나"]      # 이름순
-    assert needs[0]["missing"] == ["다른없는열"]                   # 막힌 이유 병기
+    cands = ctrl.snapshot()["candidates"]
+    assert [n["name"] for n in cands["needs"]] == ["확인가", "확인나"]   # 이름순
+    assert cands["needs"][0]["missing"] == ["다른없는열"]                # 막힌 이유 병기
+    assert cands["needs_more"] == 0
+
+
+def test_needs_action_overflow_is_counted_not_dropped(tmp_path):
+    """확인 필요도 available 과 같은 상한 — 잘린 만큼은 수치로 말한다(조용한 절단 금지)."""
+    ctrl, _ = _controller(tmp_path)
+    for i in range(6):
+        _extra_job(ctrl, f"확인{i}", sources=("없는열", "presmptPrce"))
+    ctrl.load_data_path(_data_csv(tmp_path))
+    cands = ctrl.snapshot()["candidates"]
+    assert len(cands["needs"]) == 5 and cands["needs_more"] == 1
 
 
 def test_single_candidate_is_suggested_but_never_auto_selected(tmp_path):
@@ -288,6 +301,23 @@ def test_toggle_favorite_persists_and_reorders_without_touching_session(tmp_path
     assert ctrl.dispatch("toggle_favorite", {"name": "공고서", "value": False})["ok"] is True
     assert ctrl.registry.load("공고서").favorited_at == ""
     assert [c["name"] for c in ctrl.snapshot()["candidates"]["top"]] == ["가나다", "공고서"]
+
+
+def test_rapid_favorites_within_one_second_keep_newest_first(tmp_path):
+    """1초 안의 연속 즐겨찾기도 최신순을 지킨다(리뷰 1R P2 — 초 절단이면 동률→이름순 추락).
+
+    연속 클릭은 이 표면의 정상 사용이다: 두 번째로 누른 별이 위로 오지 않으면
+    "즐겨찾기 최신순"(§18.5)이 문안만 남고 거짓이 된다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    _extra_job(ctrl, "가나다")                                  # 이름순은 '가나다' 가 앞
+    ctrl.load_data_path(_data_csv(tmp_path))
+    ctrl.dispatch("toggle_favorite", {"name": "가나다", "value": True})
+    ctrl.dispatch("toggle_favorite", {"name": "공고서", "value": True})   # 같은 초 안
+    first = ctrl.registry.load("가나다").favorited_at
+    second = ctrl.registry.load("공고서").favorited_at
+    assert first != second, f"같은 시각으로 찍혀 동률입니다: {first!r}"
+    assert [c["name"] for c in ctrl.snapshot()["candidates"]["top"]] == ["공고서", "가나다"]
 
 
 def test_toggle_favorite_on_vanished_job_is_restated_not_silent(tmp_path):

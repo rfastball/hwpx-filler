@@ -201,17 +201,20 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         같은 스캔 1회 결과를 받아 목록·후보가 갈라지지 않는다. fields 는 필터 열 파생과
         같은 원천(``records[0].keys``) — 표시와 판정이 같은 열 집합을 본다.
 
-        반환 3구획:
+        반환 5구획:
 
         - ``top`` = 상위 :data:`~hwpxfiller.gui.work_candidates.MAIN_TOP_N` available,
           순위순. 카드가 그릴 근거(계층·즐겨찾기·마지막 실행·추천 표지)를 함께 싣는다.
         - ``more`` = 순위 밖 available 수. 0이 아니면 표면이 **정직하게 고지**한다 —
           전체 목록 표면(문서 탐색)은 슬라이스 3 소관이라 지금은 수치만 말한다.
-        - ``needs`` = 확인 필요(needs_action) 전체, 이름순. 메인 순위엔 못 들어가지만
-          (§18.5) 전용 표면이 생기기 전까지 막힌 이유를 여기서 계속 말한다(삭제는 의무를
-          상속한다 — 표면이 생기면 이 구획이 그쪽으로 이사한다).
+        - ``needs``·``needs_more`` = 확인 필요(needs_action) 이름순 상위 N + 잘린 수.
+          메인 순위엔 못 들어가지만(§18.5) 전용 표면(확인 필요 탭)이 생기기 전까지 막힌
+          이유를 여기서 계속 말한다(삭제는 의무를 상속한다). available 과 같은 상한을
+          두는 건 데이터 존이 비활성 칩으로 넘치지 않게 하기 위함이고, 잘린 만큼은
+          available 과 똑같이 수치로 고지한다.
+        - ``suggested`` = 추천 작업 이름(§18.3 개정, 없으면 ``""``).
         """
-        empty = {"top": [], "more": 0, "needs": [], "suggested": ""}
+        empty = {"top": [], "more": 0, "needs": [], "needs_more": 0, "suggested": ""}
         if self.datasource is None or not self.records:
             return empty
         fields = list(self.records[0].keys())
@@ -241,7 +244,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         return {
             "top": top,
             "more": max(0, len(ranked) - MAIN_TOP_N),
-            "needs": needs,
+            "needs": needs[:MAIN_TOP_N],
+            "needs_more": max(0, len(needs) - MAIN_TOP_N),
             "suggested": suggested,
         }
 
@@ -697,9 +701,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         지정 시각은 서버 시각으로 찍는다(정렬 근거를 표면이 정하지 않는다). 작업이 다른
         화면에서 사라졌으면 조용히 넘기지 않고 재진술한다 — 목록이 곧 다음 스냅샷에서
         갱신되므로 파괴는 없다.
+
+        **마이크로초까지 찍는다**(리뷰 1R P2): 초 절단이면 1초 안에 두 작업을 즐겨찾기할 때
+        시각이 같아지고, 정렬이 동률 → 이름순으로 떨어져 "즐겨찾기 최신순"(§18.5)이 거짓이
+        된다. 연속 클릭이야말로 이 표면의 정상 사용이다. (생성 스탬프 ``last_run_at`` 은
+        런 자체가 초 단위보다 길어 같은 함정이 성립하지 않아 그대로 둔다.)
         """
         name = p["name"]
-        when = datetime.now().isoformat(timespec="seconds")
+        when = datetime.now().isoformat()
         try:
             self.registry.set_favorite(name, bool(p["value"]), when)
         except (FileNotFoundError, ValueError) as exc:

@@ -354,7 +354,10 @@
           `<button class="btn sm job-cand" type="button" disabled` +
           ` title="현재 데이터에 없는 열: ${esc((n.missing || []).join(", "))}">` +
           `${esc(n.name)}</button>`
-        ).join("");
+        ).join("") +
+        // 확인 필요도 같은 상한을 쓴다 — 잘린 만큼은 available 과 똑같이 수치로.
+        (c.needs_more > 0
+          ? `<span class="cand-more muted">외 <b>${c.needs_more}건</b></span>` : "");
     }
     host.innerHTML = html;
   }
