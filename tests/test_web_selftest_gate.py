@@ -295,7 +295,7 @@ class TestWebSelftestGate:
         j = selftest_result["job_data_first"]
         assert j.get("error") is None, f"data-first 프로브 예외: {j.get('error')!r}"
         assert j["zones_shown"] and j["actionbar_shown"], "무작업 상태에서 세션 존이 죽어 있습니다."
-        assert j["cands_row_shown"] and j["cand_buttons"] == 1, j
+        assert j["cands_row_shown"] and j["cand_buttons"] == 2, j
         assert j["needs_action_disabled"] is True, "확인 필요 후보가 비활성이 아닙니다."
         assert "담당자" in j["needs_action_title"], "비활성 사유(없는 열)가 병기되지 않았습니다."
         assert "문서 작업을 선택하세요" in j["gate_text"], j["gate_text"]
@@ -306,6 +306,21 @@ class TestWebSelftestGate:
         # 저장 폴더 선택은 작업 속성이라 비활성(선택이 기본값에 조용히 덮이는 창 봉쇄).
         assert j["restate_hidden"] is True, "prework 상태에서 생성 재진술이 노출됩니다."
         assert j["folder_pick_disabled"] is True, "prework 상태에서 폴더 선택이 열려 있습니다."
+
+    def test_job_candidate_ranking_renders_stars_suggestion_and_overflow(
+        self, selftest_result: dict
+    ) -> None:
+        # 슬라이스 2 — 메인 순위 카드가 실 WebView2 에서 되읽힌다: Python 이 준 순서 그대로,
+        # 별은 스냅샷 상태를 반영(낙관 토글 아님), 추천은 점선(활성과 구별되는 표지),
+        # 잘린 나머지는 수치로 고지(조용한 절단 금지), 최근 사용은 날짜만.
+        j = selftest_result["job_data_first"]
+        assert j.get("error") is None, f"data-first 프로브 예외: {j.get('error')!r}"
+        assert j["cand_order"] == ["공고서", "계약서"], j["cand_order"]
+        assert j["fav_pressed"] == ["true", "false"], j["fav_pressed"]
+        assert j["suggested_marks"] == 1, "추천 표지가 렌더되지 않았습니다."
+        assert j["suggested_dashed"] == "dashed", j["suggested_dashed"]
+        assert "2건" in j["more_text"], f"「외 N건」 고지가 없습니다: {j['more_text']!r}"
+        assert j["last_run_text"] == "마지막 실행 2026-07-20", j["last_run_text"]
 
     def test_job_density_and_expansion_sheets(self, selftest_result: dict) -> None:
         j = selftest_result["job_mirror"]

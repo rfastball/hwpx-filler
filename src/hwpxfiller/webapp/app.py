@@ -863,8 +863,15 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
       has_data:true, record_count:2, selected_count:1,
       records:[{index:1, selected:true, name:'', summary:'사무비품'},
                {index:0, selected:false, name:'', summary:'전산장비'}],
-      candidates:[{name:'공고서', kind:'available', missing:[]},
-                  {name:'견적서', kind:'needs_action', missing:['담당자']}],
+      // 후보 4구획(슬라이스 2) — 순위 카드 2건(즐겨찾기·추천)·잘린 수·확인 필요.
+      candidates:{
+        top:[{name:'공고서', tier:'favorite', favorited:true,
+              last_run_at:'2026-07-20T09:00:00', suggested:false},
+             {name:'계약서', tier:'unused', favorited:false,
+              last_run_at:'', suggested:true}],
+        more:2,
+        needs:[{name:'견적서', missing:['담당자']}],
+        suggested:'계약서'},
       filter:{active:false, reapply_available:false, reapply_hint:'', search:'', chips:[],
               definition:'', branches:[],
               columns:[{name:'공고명', kind:'text', active:false}]},
@@ -886,6 +893,26 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
     var na = document.querySelector('#jobCandidates button[disabled]');
     out.needs_action_disabled = !!na;
     out.needs_action_title = na ? na.getAttribute('title') : '';
+    // 순위 카드(슬라이스 2) — 받은 순서 그대로·별 상태·추천 표지·「외 N건」 고지.
+    out.cand_order = Array.prototype.map.call(
+      document.querySelectorAll('#jobCandidates [data-cand]'),
+      function (b) { return b.getAttribute('data-cand'); });
+    out.fav_pressed = Array.prototype.map.call(
+      document.querySelectorAll('#jobCandidates [data-fav]'),
+      function (b) { return b.getAttribute('aria-pressed'); });
+    out.suggested_marks = document.querySelectorAll('#jobCandidates .cand-sug').length;
+    out.suggested_dashed = (function () {
+      var card = document.querySelector('#jobCandidates .job-cand-card.suggested');
+      return card ? getComputedStyle(card).borderStyle : '';
+    })();
+    out.more_text = (function () {
+      var m = document.querySelector('#jobCandidates .cand-more');
+      return m ? m.textContent : '';
+    })();
+    out.last_run_text = (function () {
+      var r = document.querySelector('#jobCandidates .cand-run');
+      return r ? r.textContent : '';
+    })();
     out.gate_text = document.getElementById('jobGate').textContent;
     out.gen_disabled = document.getElementById('jobGenBtn').disabled;
     out.head_hint = document.getElementById('jobHeadTpl').textContent;

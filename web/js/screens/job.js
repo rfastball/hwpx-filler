@@ -298,30 +298,59 @@
     }
   }
 
-  /* ---- 문서 작업 후보(§18.4, data-first) — 판정은 Python 단일 출처, 여기는 카드만 ----
-     available=클릭 선택(현재 작업은 눌린 표지), needs_action=정직한 비활성 + 없는 열 병기
-     (막힌 이유를 숨기지 않는다). 데이터 미준비면 줄 자체가 없다(§18.1 — 후보 미계산). */
+  /* ---- 문서 작업 후보(§18.4·§18.5·§19.3, data-first) — 판정·순위는 Python 단일 출처 ----
+     top=상위 5 순위 카드(클릭 선택·별 토글·추천 표지), more=잘린 수 정직 고지, needs=확인
+     필요(막힌 이유 병기). 데이터 미준비면 줄 자체가 없다(§18.1 — 후보 미계산).
+     한 가지 작업 방식(HWPX)뿐이라 §19.3 의 방식 구획은 평면으로 퇴화한다 — 「기안」(TXT)이
+     이 구획에 합류하는 슬라이스에서 헤더가 선다. */
+  function lastRunLabel(iso) {
+    // 표시 문안만 여기서 만든다(판정은 Python). 의미 = 마지막 **완주** 실행(전건 성공).
+    return iso ? `마지막 실행 ${esc(iso.slice(0, 10))}` : "실행한 적 없음";
+  }
+
+  function candCard(c, s) {
+    const active = c.name === s.job_name;
+    const fav = c.favorited === true;
+    const verb = fav ? "즐겨찾기에서 제거" : "즐겨찾기에 추가";
+    const meta = (c.suggested ? `<span class="cand-sug">추천</span>` : "") +
+      `<span class="cand-run">${lastRunLabel(c.last_run_at)}</span>`;
+    return `<div class="job-cand-card${active ? " active" : ""}${c.suggested ? " suggested" : ""}">` +
+      `<button class="cand-fav" type="button" data-fav="${esc(c.name)}"` +
+      ` aria-pressed="${fav}" aria-label="${esc(c.name)} ${verb}" title="${verb}">` +
+      `${fav ? "★" : "☆"}</button>` +
+      // data-busy-lock: 생성 중 setBusy 가 비활성 — 진행 중 전환은 Python 도 거부(P1).
+      `<button class="cand-pick" type="button" data-busy-lock data-cand="${esc(c.name)}"` +
+      ` aria-pressed="${active}"><span class="cand-nm">${esc(c.name)}</span>` +
+      `<span class="cand-meta">${meta}</span></button></div>`;
+  }
+
   function renderCandidates(s) {
     const row = $("jobCandsRow");
     const host = $("jobCandidates");
     if (!s.has_data) { row.style.display = "none"; host.innerHTML = ""; return; }
     row.style.display = "";
-    const cands = s.candidates || [];
-    if (!cands.length) {
+    const c = s.candidates || { top: [], more: 0, needs: [], suggested: "" };
+    const top = c.top || [], needs = c.needs || [];
+    if (!top.length && !needs.length) {
       host.innerHTML = `<span class="muted">현재 데이터에 사용할 수 있는 문서 작업이 없습니다.</span>`;
       return;
     }
-    host.innerHTML = cands.map((c) => {
-      if (c.kind === "available") {
-        const active = c.name === s.job_name;
-        // data-busy-lock: 생성 중 setBusy 가 비활성 — 진행 중 전환은 Python 도 거부(P1).
-        return `<button class="btn sm job-cand${active ? " primary" : ""}" type="button"` +
-          ` data-busy-lock data-cand="${esc(c.name)}" aria-pressed="${active}">${esc(c.name)}</button>`;
-      }
-      return `<button class="btn sm job-cand" type="button" disabled` +
-        ` title="현재 데이터에 없는 열: ${esc((c.missing || []).join(", "))}">` +
-        `${esc(c.name)} · 확인 필요</button>`;
-    }).join("");
+    let html = top.map((t) => candCard(t, s)).join("");
+    // 잘린 나머지를 수치로 말한다(조용한 절단 금지). 전체 목록 표면은 아직 없으므로
+    // 지금 실제로 갈 수 있는 곳(좌 목록)만 가리킨다 — 없는 화면을 약속하지 않는다.
+    if (c.more > 0) {
+      html += `<span class="cand-more muted">이 데이터로 쓸 수 있는 작업 ` +
+        `<b>${c.more}건</b>이 더 있습니다 — 왼쪽 목록에서 고르세요.</span>`;
+    }
+    if (needs.length) {
+      html += `<span class="cand-needs-lbl muted">확인 필요</span>` +
+        needs.map((n) =>
+          `<button class="btn sm job-cand" type="button" disabled` +
+          ` title="현재 데이터에 없는 열: ${esc((n.missing || []).join(", "))}">` +
+          `${esc(n.name)}</button>`
+        ).join("");
+    }
+    host.innerHTML = html;
   }
 
   function renderPreflight(s) {
@@ -1078,6 +1107,20 @@
     // (Enter/Space) 합성 클릭을 막지 못하고, 재선택은 vm 재생성 = ack·완주 담보·폴더의
     // 조용한 소실이라 무해하지 않다(좌 목록의 재선택 no-op 과 대칭).
     $("jobCandidates").addEventListener("click", (e) => {
+      // 별 = 정렬 메타만(§18.5) — 작업 선택이 아니다. 카드 안 중첩 버튼이라 먼저 가른다.
+      const fav = e.target.closest("[data-fav]");
+      if (fav) {
+        const name = fav.getAttribute("data-fav");
+        const value = fav.getAttribute("aria-pressed") !== "true";
+        // 낙관 표지 없이 Python 왕복 결과(push)로만 상태를 바꾼다 — 별이 먼저 켜졌다가
+        // 저장 실패로 되돌아가면 영속된 척하는 거짓 표지가 된다(#215 토글 경합 동류).
+        Bridge.call(SCREEN, "toggle_favorite", { name, value }).then((res) => {
+          if (res && res.ok === false) log(res.error);
+        }).catch((err) => {
+          log("즐겨찾기 변경 실패: " + String((err && err.message) || err));
+        });
+        return;
+      }
       const btn = e.target.closest("[data-cand]");
       if (btn && btn.getAttribute("aria-pressed") !== "true") {
         selectJobGuarded(btn.getAttribute("data-cand"));

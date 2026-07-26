@@ -722,6 +722,26 @@ def test_job_data_first_prework_surface_contract():
     assert 'aria-pressed") !== "true"' in src, "활성 후보 재활성화 가드가 없습니다."
 
 
+def test_job_candidate_ranking_surface_contract():
+    """슬라이스 2 정적 계약 — 순위 카드·별 토글·추천 표지·「외 N건」 고지 배선.
+
+    판정·순위는 Python 소유라 JS 는 **받은 순서를 그대로** 그린다(정렬 재구현 금지).
+    """
+    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    assert "data-fav" in src and "toggle_favorite" in src, "즐겨찾기 토글 배선이 없습니다."
+    assert "c.more" in src, "순위 밖 후보 수(외 N건) 고지가 없습니다 — 조용한 절단 금지."
+    assert "cand-sug" in src, "추천 표지가 없습니다(§18.3 개정)."
+    # JS 가 순위를 재계산하지 않는다(RC-23 동형 — 이중 진실 금지).
+    for banned in ("favorited_at <", "sort(", "localeCompare"):
+        assert banned not in src.split("renderCandidates")[1][:2000], (
+            f"후보 렌더가 자체 정렬을 합니다: {banned!r}"
+        )
+    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    # 추천은 활성과 시각으로 구별된다 — 점선(아직 고른 것 아님) vs 실선 강조(활성).
+    assert ".job-cand-card.suggested:not(.active){border-style:dashed" in css
+    assert ".job-cand-card.active{border-color:var(--a-primary)" in css
+
+
 def test_template_media_sections_use_sunken_surface_without_shared_catalog_drift():
     """H-04: HWPX/TXT만 sunken 표면을 쓰고 공유 tpl-catalogs는 독립적으로 남는다."""
     html = WEB_INDEX.read_text(encoding="utf-8")
