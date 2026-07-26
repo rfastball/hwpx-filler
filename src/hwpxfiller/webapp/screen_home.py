@@ -44,6 +44,7 @@ from ..gui.home_state import (
     HomeViewModel,
     JobRow,
     library_health,
+    library_mode_of,
 )
 from .screens import PushSink, default_pool_registry, relink_job_template
 
@@ -153,7 +154,10 @@ class HomeController:
                         {**_job_row_dict(r),
                          "group": r.group,
                          "favorited": bool(r.favorited_at),
-                         "media": r.media,
+                         # 필터가 쓰는 **정규화된** 매체를 그대로 싣는다(리뷰 P2): 미연결을
+                         # hwpx 로 걸러 놓고 페이로드엔 빈 값을 주면 소비자가 같은 행을 다른
+                         # 방식으로 읽는다(표시=판정 정합 붕괴).
+                         "media": library_mode_of(r),
                          "health": library_health(r)[1]}
                         for r in sec.rows
                     ],

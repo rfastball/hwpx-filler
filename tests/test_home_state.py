@@ -625,6 +625,16 @@ def test_unlinked_template_is_not_reported_as_unsupported_media(tmp_path):
     assert library_mode_of(rows["미상"]) == ""
 
 
+def test_library_projection_ands_active_tag_facets(tmp_path):
+    """태그 facet 은 보기 4종 전부와 AND(§19.6) — 보기를 바꿨다고 켜 둔 칩이 풀리지 않는다."""
+    vm = HomeViewModel(_library_reg(tmp_path))
+    vm.toggle_facet("물품", "의약품")
+    assert {r.name for sec in vm.library_sections() for r in sec.rows} == {"미사용문서"}
+    assert vm.library_counts()[VIEW_ALL] == 1        # 탭 건수도 켜진 칩 안에서 센다
+    vm.set_library_view(VIEW_FAVORITES)
+    assert vm.library_sections()[0].rows == []       # 즐겨찾기 ∧ 그 태그 = 0건
+
+
 def test_unknown_library_view_and_mode_degenerate(tmp_path):
     vm = HomeViewModel(_library_reg(tmp_path))
     vm.set_library_view("엉뚱")

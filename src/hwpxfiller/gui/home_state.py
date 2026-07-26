@@ -529,10 +529,14 @@ class HomeViewModel:
         self._notify()
 
     def _library_pool(self) -> "list[JobRow]":
-        """보기 이전 단계 — 작업 방식 필터 ∧ 검색(이름·그룹·태그 값, §19.6)."""
+        """보기 이전 단계 — **태그 facet** ∧ 작업 방식 ∧ 검색(이름·그룹·태그 값, §19.6).
+
+        facet 은 보기 4종 전부와 AND 로 묶인다(§19.6 명문) — 사용자가 켜 둔 칩이 보기를
+        바꿨다고 조용히 풀리면 화면이 자기 필터를 배신한다(리뷰 P2).
+        """
         from ..core.jamo import jamo_contains
 
-        rows = list(self._rows)
+        rows = [r for r in self._rows if self._passes_facets(r, exclude_axis="")]
         if self.library_mode != MODE_ALL:
             rows = [r for r in rows if library_mode_of(r) == self.library_mode]
         q = self.library_query.strip()
@@ -585,9 +589,10 @@ class HomeViewModel:
         """보기 탭 라벨의 건수 — **검색 전** 작업 방식 필터까지만 반영한다.
 
         탭은 라이브러리에 대한 사실이라 검색어에 따라 흔들리면 "여기 몇 건인가"를 잃는다
-        (문서 탐색 탭과 같은 규칙). 작업 방식은 보기와 AND 로 묶이는 축이라 반영한다.
+        (문서 탐색 탭과 같은 규칙). 작업 방식·태그 facet 은 사용자가 켜 둔 **필터 축**이라
+        반영한다 — 켜진 칩 밖의 건수를 세면 탭 숫자가 화면과 어긋난다.
         """
-        rows = list(self._rows)
+        rows = [r for r in self._rows if self._passes_facets(r, exclude_axis="")]
         if self.library_mode != MODE_ALL:
             rows = [r for r in rows if library_mode_of(r) == self.library_mode]
         return {
