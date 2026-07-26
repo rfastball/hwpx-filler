@@ -471,10 +471,18 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         ``vis_set`` 은 렌더 경로(:meth:`_filter_sections`)가 이미 산출한 가시 집합 —
         스냅샷에서 필터를 이중 평가하지 않기 위한 전달이다(FilterView 캐시 계약,
         고효율 리뷰 #7). 디스패치 단발 판정(select_job·guard_state)은 생략하고 직접 평가.
+
+        **``ack_count`` 는 열거 성분이지 무장 성분이 아니다**(재작성 F1, 지도 §10.7.3):
+        데이터 전환은 ``set_acquired`` 로 빈 값 확인을 전량 재평가하므로 세워 둔 확인이
+        있으면 가드 문안이 그 사실을 말해야 한다. 그렇다고 확인만으로 무장시키지는 않는다 —
+        확인이 사라지면 게이트가 **다시 닫히는**(더 엄격해지는) 안전 방향이라, 결정 27 의
+        "재현 불가능한 수작업" 기준에 확인은 들지 않는다. 과경고는 경보를 싸구려로 만든다.
         """
-        return self._selection_guard(
+        guard = self._selection_guard(
             settled=set(self._last_generated or ()), vis_set=vis_set
         )
+        guard["ack_count"] = self.vm.acked_count() if self.vm is not None else 0
+        return guard
 
     def _do_guard_state(self, p: dict) -> dict:
         """무장 상태 실시간 질의 — 표면의 파괴 전이 사전 확인(데이터 재겨눔·재연결)이 소비.

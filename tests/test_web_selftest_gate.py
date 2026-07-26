@@ -491,8 +491,16 @@ class TestWebSelftestGate:
         body = selftest_result["job_mirror"]["guard_body"]
         assert "직접 선택 3행" in body, f"선택 수치 미표기: {body!r}"
         assert "정의 매치 2" in body and "정의 밖 1" in body, f"S4 델타 병기 누락: {body!r}"
-        assert "작업을 전환하면" in body, f"전이 동사구 누락: {body!r}"
+        assert "데이터를 바꾸면" in body, f"전이 동사구 누락: {body!r}"
         assert "필터 정의(2개 조건)" in body, f"필터 소실 재진술 누락: {body!r}"
+        # 실제 파기 집합과 일치(F1 §10.7.3): 빈 값 확인은 set_acquired 가 재평가로 지운다.
+        assert "빈 값 확인 2개" in body, f"ack 소실 열거 누락: {body!r}"
+        # 필터 정의는 직전 슬롯에 남지만 **소스 일치**를 요구한다 — 조건을 함께 말한다.
+        assert "직전 필터 재적용" in body, f"필터 복원 조건 재진술 누락: {body!r}"
+        no_ack = selftest_result["job_mirror"]["guard_body_no_ack"]
+        assert "빈 값 확인" not in no_ack, f"없는 손실을 열거합니다(과경고): {no_ack!r}"
+        assert "직전 필터 재적용" not in no_ack, (
+            f"필터 정의가 없는데 복원 문구가 붙습니다(과경고): {no_ack!r}")
         # 데이터 재겨눔 사전 확인은 JS 전용 가드 지점이라 존재 자체를 핀한다.
         assert selftest_result["job_mirror"]["data_guard_wired"] is True, (
             "confirmDataSwapIfArmed 배선이 사라졌습니다 — 데이터 재겨눔 가드(결정 26) 회귀."

@@ -1472,6 +1472,28 @@ def test_guard_state_query_is_live_and_pushless(tmp_path):
     assert len(pushes) == before                       # 무변이 질의 = push 생략
 
 
+def test_guard_state_counts_acks_without_arming_on_them(tmp_path):
+    """빈 값 확인은 **열거 성분이지 무장 성분이 아니다**(재작성 F1, 지도 §10.7.3).
+
+    데이터 전환은 ``set_acquired`` 로 ack 를 재평가(=소거)하므로 문안이 그 손실을 말해야
+    한다 — 그래서 수치를 싣는다. 반대로 ack 만으로 무장시키지는 않는다: 확인이 사라지면
+    게이트가 다시 닫히는 안전 방향이라, 확인 왕복을 물리면 과경고다(결정 27 기준).
+    """
+    ctrl, _ = _session(tmp_path)
+    ctrl.dispatch("set_none", {})
+    assert ctrl.dispatch("guard_state", {})["ack_count"] == 0
+    # 미입력 필드를 확인해도 무장하지 않는다(선택이 비어 있으므로).
+    field = ctrl.snapshot()["mirror"]
+    ctrl.vm.acknowledge("없는필드")  # 이름 무관 — 확인 집합의 크기만 센다
+    g = ctrl.dispatch("guard_state", {})
+    assert g["ack_count"] == 1 and g["armed"] is False, (g, field)
+    # 실제로 데이터 전환이 확인을 지운다 — 열거가 거짓이 아님을 같은 테스트가 증명한다.
+    other = tmp_path / "ack.csv"
+    other.write_text("다른열\n값\n", encoding="utf-8")
+    ctrl.load_data_path(str(other))
+    assert ctrl.dispatch("guard_state", {})["ack_count"] == 0
+
+
 def test_needs_confirm_does_not_push(tmp_path):
     """가드 차단 왕복은 무변이 — 동일 스냅샷 전량 재계산·재렌더를 얹지 않는다(리뷰 #8).
 

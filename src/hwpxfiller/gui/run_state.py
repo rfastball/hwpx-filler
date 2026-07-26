@@ -530,6 +530,14 @@ class RunViewModel:
         """확인 상태 초기화(새 데이터 겨눔 등)."""
         self._acked.clear()
 
+    def acked_count(self) -> int:
+        """확인해 둔 미입력 필드 수 — **데이터 전환 손실 열거**가 소비한다(재작성 F1).
+
+        전환은 :meth:`set_acquired` 로 ack 를 전량 재평가(=소거)하므로, 세워 둔 확인이
+        있으면 가드 문안이 그 사실을 말해야 한다(§10.7.3 감사: 실제 파기 집합과 문안 일치).
+        """
+        return len(self._acked)
+
     def unmet_blanks(self, indices: "list[int]") -> "list[str]":
         """미입력이면서 아직 확인 안 된 필드 — 이게 남아 있으면 생성 게이트가 닫힌다."""
         return [

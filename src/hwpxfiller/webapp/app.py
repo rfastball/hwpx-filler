@@ -1234,7 +1234,12 @@ _JOB_MIRROR_PROBE_JS = r"""
       {total:10, overwrite_count:3, new_count:7, conflict_names:['a.hwpx','b.hwpx'], conflict_more:5});
     // 세션 가드 재진술 본문 합성(결정 27 수치 재진술) — 되읽어 수치·소실 목록 드리프트를 막는다.
     out.guard_body = window.JobScreen.guardBody(
-      {sel_count:3, in_def:2, extra:1, filter_active:true, filter_parts:2}, '작업을 전환하면');
+      {sel_count:3, in_def:2, extra:1, filter_active:true, filter_parts:2, ack_count:2},
+      '데이터를 바꾸면');
+    // ack 0 분기도 함께 핀한다 — 없는 손실을 열거하면 과경고(경보의 인플레)다.
+    out.guard_body_no_ack = window.JobScreen.guardBody(
+      {sel_count:1, in_def:0, extra:0, filter_active:false, filter_parts:0, ack_count:0},
+      '데이터를 바꾸면');
     // 데이터 변경 사전 확인 배선 존재 핀(리뷰 #6) — JS 전용 가드 지점의 삭제 회귀 표식.
     out.data_guard_wired = typeof window.JobScreen.confirmDataSwapIfArmed === 'function';
     // 직전 필터 재적용 버튼(결정 28) — reapply_available 스냅샷이 어포던스를 실제로 켜고 끈다.

@@ -849,11 +849,21 @@
      넓어졌다 — txt T3 가드와 같은 조각을 쓴다(guard.js, PR-4 리뷰 F6). */
   const selectionLine = window.Guard.selectionLine;
 
+  /* 손실 열거는 **실제로 파기되는 집합**과 일치해야 한다(지도 §10.7.3 감사) — 과경고도
+     누락도 거짓말이다. 데이터 전환이 파기하는 것: ①선택(0건 재생성) ②필터 정의(재생성)
+     ③빈 값 확인(`set_acquired` 의 ack 재평가). 자동 조준 재진술은 사라지는 게 아니라 새
+     데이터가 스스로를 재진술하며 **대체**되고, 생성 결과·로그는 그대로 남으므로 열거하지
+     않는다. 필터 정의는 직전 슬롯에 스태시되지만 재적용은 **소스 일치**를 요구하므로
+     (`_reapply_available` 3연언) 다른 데이터로 가면 지금 자리에선 되살릴 수 없다 — 그 조건
+     까지 말해야 "사라진다"가 정확해진다. */
   function guardBody(g, verbPhrase) {
     const lost = [selectionLine(g.sel_count, g.filter_active, g.in_def, g.extra)];
     if (g.filter_parts > 0) lost.push(`필터 정의(${g.filter_parts}개 조건)`);
+    if (g.ack_count > 0) lost.push(`빈 값 확인 ${g.ack_count}개`);
+    const stash = g.filter_parts > 0
+      ? "\n필터 정의는 이 데이터로 돌아오면 「직전 필터 재적용」으로 되살릴 수 있습니다." : "";
     return `${verbPhrase} 이 세션의 선택이 사라집니다.\n` +
-      `사라지는 것: ${lost.join(" · ")}.`;
+      `사라지는 것: ${lost.join(" · ")}.${stash}`;
   }
 
   /* 파괴 전이 사전 확인(데이터 재겨눔·템플릿 재연결 — T1 동류 세션 재구성). 피커/흐름을
@@ -887,27 +897,21 @@
     };
   }
 
-  /* T1 가드 왕복(RC-02 동형): 무변이 needs_confirm → modal.js 이진 확인(기본 포커스=
-     머무르기·Escape=머무르기) → 확인 시에만 confirm=true 재호출. 단일 실행(switching)
-     — 더블클릭이 두 왕복·두 모달을 만들면 modal.js 재진입 가드가 loud 거절을 띄운다
-     (리뷰 #5: 정상 제스처에 오류성 경보). */
+  /* 작업 전환 — **가드 없음**이 계약이다(데이터-우선 §18.2): 전환은 vm 만 재생성하고
+     데이터·선택·필터는 세션 소유라 생존한다. 구 T1 스위치 가드는 파기 자체가 사라져 함께
+     죽었고(백엔드 `_do_select_job` 은 더 이상 needs_confirm 을 내지 않는다), 여기 남아 있던
+     확인 왕복 분기도 함께 걷는다 — 죽은 가드 코드는 "이 전이는 파괴적"이라는 거짓 신호이자,
+     되살아난 백엔드 분기를 소리 없이 받아 주는 통로다. 남는 것은 단일 실행(switching)뿐:
+     더블클릭이 두 왕복을 만들면 modal.js 재진입 가드가 정상 제스처에 오류성 경보를 띄운다
+     (리뷰 #5). */
   let switching = false;
   async function selectJobGuarded(name) {
-    /* 반환 = 전환 성사 여부(false=머무르기/재진입 거절) — 편집 모드 이탈이 이 판정을
-       기다린다(가드 선행·전환 후행, PR-2 리뷰 F5: 취소는 무변화여야 한다). */
+    /* 반환 = 전환 성사 여부(false=재진입 거절) — 편집 모드 이탈이 이 판정을 기다린다
+       (PR-2 리뷰 F5: 취소는 무변화여야 한다). */
     if (switching) return false;
     switching = true;
     try {
-      const res = await Bridge.call(SCREEN, "select_job", { name });
-      if (res && res.needs_confirm) {
-        const ok = await window.Modal.confirm({
-          title: "작업 전환 확인",
-          body: guardBody(res, "작업을 전환하면"),
-          confirmLabel: "전환하고 버리기", cancelLabel: "취소",
-        });
-        if (!ok) return false;
-        await Bridge.call(SCREEN, "select_job", { name, confirm: true });
-      }
+      await Bridge.call(SCREEN, "select_job", { name });
       return true;
     } finally {
       switching = false;
