@@ -90,6 +90,11 @@ class JobRow:
     # 브라우징용 분류 태그 {축→값}(JOB_BROWSER_DESIGN D1·D2) — group-by/facet 의 소스.
     # 카드에 직접 렌더하지 않는다(D8 카드 스펙 불변); 섹션·칩만 이 값을 소비한다.
     tags: "dict[str, str]" = field(default_factory=dict)
+    # 라이브러리 보기(§19.6)의 축 — 사용자 group(구획)·즐겨찾기(우선순위)·매체(작업 방식).
+    # 전부 이미 durable 에 있는 값의 성형이다(무확장 — 새 판정을 만들지 않는다).
+    group: str = ""
+    favorited_at: str = ""
+    media: str = ""
 
     @classmethod
     def from_job(cls, job: Job) -> "JobRow":
@@ -115,6 +120,9 @@ class JobRow:
             compile_state=compile_state,
             compile_badge=compile_badge,
             tags=dict(job.tags),
+            group=job.group,
+            favorited_at=job.favorited_at,
+            media=job.media,
         )
 
     def meta_line(self) -> str:
@@ -217,6 +225,37 @@ class FacetAxis:
     values: "list[FacetValue]"
 
 
+#: 전역 라이브러리 보기(§19.6) — 투영만 바꾸는 사용자 렌즈.
+VIEW_ALL = "all"
+VIEW_RECENT = "recent"
+VIEW_FAVORITES = "favorites"
+VIEW_NEEDS = "needsAction"
+_VIEWS = (VIEW_ALL, VIEW_RECENT, VIEW_FAVORITES, VIEW_NEEDS)
+
+#: 작업 방식 필터 — 매체에서 파생(저장 필드 아님). 모든 보기와 AND 로 결합한다.
+MODE_ALL = "all"
+MODE_HWPX = "hwpx"
+MODE_TXT = "txt"
+_MODES = (MODE_ALL, MODE_HWPX, MODE_TXT)
+
+
+def library_health(row: "JobRow") -> "tuple[int, str]":
+    """전역 작업 건강(§19.7)의 **번역** — 기존 신호를 심각도 1축으로 모은다(새 판정 금지).
+
+    현재 데이터 호환성(`compatibility_for`)과 섞지 않는다(§19.7 명문): 여기 들어오는 건
+    데이터와 무관한 작업 자체의 상태뿐이다. master 가 이미 내는 신호만 옮긴다 —
+    템플릿 파일 부재, 지원하지 않는 매체, hwpx 인데 템플릿을 읽지 못함. 손상 JSON 은
+    애초에 :class:`CorruptJobRow` 로 분리돼 이 목록에 오지 않는다.
+    """
+    if row.template_missing:
+        return 3, "템플릿 파일을 찾을 수 없습니다."
+    if row.media not in ("hwpx", "txt"):
+        return 3, "지원하지 않는 작업 방식입니다."
+    if row.media == "hwpx" and row.compile_state is None:
+        return 3, "템플릿을 읽을 수 없습니다."
+    return 0, ""
+
+
 class HomeViewModel:
     """작업 목록 상태 + 레지스트리 어댑터. 표현 계층은 구독해서 렌더한다."""
 
@@ -233,6 +272,11 @@ class HomeViewModel:
         self.active_group_by: str = SEED_GROUP_BY_AXIS
         # facet 선택(D10 — facet 내 OR / facet 간 AND). {축 → 선택된 값 집합}, 빈 축은 제거.
         self.active_facets: "dict[str, set[str]]" = {}
+        # 전역 라이브러리 보기(§19.6) — 보기 4종 × 작업 방식 필터 × 이름/그룹/태그 검색.
+        # 셋 다 **투영**일 뿐 저장 상태가 아니다(무확장: 새 durable 없음).
+        self.library_view: str = VIEW_ALL
+        self.library_mode: str = MODE_ALL
+        self.library_query: str = ""
         self.refresh()
 
     # ---------------------------------------------------------- 변경 통지
@@ -450,6 +494,89 @@ class HomeViewModel:
                 )
             )
         return sections
+
+    # ------------------------------------------------- 전역 라이브러리 보기(§19.6)
+    def set_library_view(self, view: str) -> None:
+        """보기 교체 — 미지 값은 「모든 작업」으로 퇴화(표면 오타가 빈 화면을 만들지 않는다)."""
+        self.library_view = view if view in _VIEWS else VIEW_ALL
+        self._notify()
+
+    def set_library_mode(self, mode: str) -> None:
+        self.library_mode = mode if mode in _MODES else MODE_ALL
+        self._notify()
+
+    def set_library_query(self, text: str) -> None:
+        self.library_query = text
+        self._notify()
+
+    def _library_pool(self) -> "list[JobRow]":
+        """보기 이전 단계 — 작업 방식 필터 ∧ 검색(이름·그룹·태그 값, §19.6)."""
+        from ..core.jamo import jamo_contains
+
+        rows = list(self._rows)
+        if self.library_mode != MODE_ALL:
+            rows = [r for r in rows if r.media == self.library_mode]
+        q = self.library_query.strip()
+        if q:
+            rows = [
+                r for r in rows
+                if jamo_contains(r.name, q)
+                or jamo_contains(r.group, q)
+                or any(jamo_contains(v, q) for v in r.tags.values())
+            ]
+        return rows
+
+    def library_sections(self) -> "list[GroupSection]":
+        """보기별 투영(§19.6 표) — 모든 작업만 구획, 나머지는 평면.
+
+        - 모든 작업: 사용자 group 구획(그룹 이름순 → 「그룹 없음」 마지막), 그룹 안 이름순.
+          저장된 이름 있는 group 이 하나도 없으면 헤더 없는 평면으로 퇴화한다(1구획 반환).
+        - 최근 사용: `last_run_at` 최신순 / 즐겨찾기: `favorited_at` 최신순 / 확인 필요:
+          심각도 → 이름순. 동률은 전부 이름순(결정적 순서).
+        """
+        rows = self._library_pool()
+        if self.library_view == VIEW_RECENT:
+            picked = [r for r in rows if r.last_run_at]
+            picked.sort(key=lambda r: r.name)
+            picked.sort(key=lambda r: r.last_run_at, reverse=True)
+            return [GroupSection(value="", count=len(picked), rows=picked)]
+        if self.library_view == VIEW_FAVORITES:
+            picked = [r for r in rows if r.favorited_at]
+            picked.sort(key=lambda r: r.name)
+            picked.sort(key=lambda r: r.favorited_at, reverse=True)
+            return [GroupSection(value="", count=len(picked), rows=picked)]
+        if self.library_view == VIEW_NEEDS:
+            picked = [r for r in rows if library_health(r)[0] > 0]
+            picked.sort(key=lambda r: r.name)
+            picked.sort(key=lambda r: library_health(r)[0], reverse=True)
+            return [GroupSection(value="", count=len(picked), rows=picked)]
+        named: "dict[str, list[JobRow]]" = {}
+        for r in sorted(rows, key=lambda r: r.name):
+            named.setdefault(r.group, []).append(r)
+        groups = sorted(g for g in named if g)
+        if not groups:  # 저장된 이름 있는 group 0개 = 헤더 없는 평면(퇴화 불변식)
+            flat = [r for r in sorted(rows, key=lambda r: r.name)]
+            return [GroupSection(value="", count=len(flat), rows=flat)]
+        order = groups + ([""] if "" in named else [])
+        return [
+            GroupSection(value=g, count=len(named[g]), rows=named[g]) for g in order
+        ]
+
+    def library_counts(self) -> "dict[str, int]":
+        """보기 탭 라벨의 건수 — **검색 전** 작업 방식 필터까지만 반영한다.
+
+        탭은 라이브러리에 대한 사실이라 검색어에 따라 흔들리면 "여기 몇 건인가"를 잃는다
+        (문서 탐색 탭과 같은 규칙). 작업 방식은 보기와 AND 로 묶이는 축이라 반영한다.
+        """
+        rows = list(self._rows)
+        if self.library_mode != MODE_ALL:
+            rows = [r for r in rows if r.media == self.library_mode]
+        return {
+            VIEW_ALL: len(rows),
+            VIEW_RECENT: sum(1 for r in rows if r.last_run_at),
+            VIEW_FAVORITES: sum(1 for r in rows if r.favorited_at),
+            VIEW_NEEDS: sum(1 for r in rows if library_health(r)[0] > 0),
+        }
 
     def facets(self) -> "list[FacetAxis]":
         """group-by 로 쓰이지 않는 축들 = facet. 각 값에 건수·활성 여부(D10).

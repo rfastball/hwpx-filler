@@ -16,8 +16,15 @@ from hwpxfiller.gui.home_state import (
     BADGE_MISSING,
     BADGE_RAW,
     BADGE_READY,
+    MODE_HWPX,
+    MODE_TXT,
+    VIEW_ALL,
+    VIEW_FAVORITES,
+    VIEW_NEEDS,
+    VIEW_RECENT,
     HomeViewModel,
     JobRow,
+    library_health,
 )
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
@@ -526,3 +533,76 @@ def test_discover_tag_axes_helper(tmp_path):
         "낙찰방법": ["적격심사", "협상"],
     }
     assert discover_tag_axes([]) == {}
+
+
+# ------------------------------------------- 전역 라이브러리 보기(§19.6·§19.7, 슬라이스 3)
+def _library_reg(tmp_path) -> JobRegistry:
+    """보기 4종을 가르는 표본 — 즐겨찾기·최근 사용·미사용·확인 필요·txt 매체."""
+    reg = JobRegistry(tmp_path)
+    tpl = _compiled_hwpx(tmp_path, "lib.hwpx")   # 실 템플릿(건강 판정이 실물을 읽는다)
+    common = dict(mapping=MappingProfile(mappings=[FieldMapping("공고명", "bidNtceNm")]))
+    reg.save(Job(name="즐겨공고", template_path=tpl, group="조달",
+                 favorited_at="2026-07-20T09:00:00", **common))
+    reg.save(Job(name="최근계약", template_path=tpl, group="조달",
+                 last_run_at="2026-07-25T09:00:00", **common))
+    reg.save(Job(name="미사용문서", template_path=tpl, tags={"물품": "의약품"}, **common))
+    reg.save(Job(name="깨진연결", template_path="/none/x.hwpx", **common))   # 확인 필요
+    reg.save(Job(name="기안문", template_path=str(tmp_path / "t.txt"), **common))
+    return reg
+
+
+def test_library_views_project_without_new_state(tmp_path):
+    """보기 4종은 저장 상태가 아니라 투영이다 — 정렬 근거도 이미 있는 필드뿐."""
+    vm = HomeViewModel(_library_reg(tmp_path))
+    counts = vm.library_counts()
+    assert counts[VIEW_ALL] == 5 and counts[VIEW_RECENT] == 1
+    assert counts[VIEW_FAVORITES] == 1 and counts[VIEW_NEEDS] == 2  # 깨진연결 + txt 아닌 미상
+
+    vm.set_library_view(VIEW_FAVORITES)
+    assert [r.name for sec in vm.library_sections() for r in sec.rows] == ["즐겨공고"]
+    vm.set_library_view(VIEW_RECENT)
+    assert [r.name for sec in vm.library_sections() for r in sec.rows] == ["최근계약"]
+    vm.set_library_view(VIEW_NEEDS)
+    names = [r.name for sec in vm.library_sections() for r in sec.rows]
+    assert "깨진연결" in names
+    assert library_health({r.name: r for r in vm.rows()}["깨진연결"])[0] == 3
+
+
+def test_library_all_view_sections_by_group_and_degenerates(tmp_path):
+    """모든 작업만 사용자 group 으로 구획하고, 이름 있는 group 이 없으면 평면으로 퇴화한다."""
+    vm = HomeViewModel(_library_reg(tmp_path))
+    vm.set_library_view(VIEW_ALL)
+    secs = vm.library_sections()
+    assert [s.value for s in secs] == ["조달", ""]          # 「그룹 없음」 마지막
+    assert {r.name for r in secs[0].rows} == {"즐겨공고", "최근계약"}
+
+    plain = JobRegistry(tmp_path / "plain")
+    plain.save(Job(name="가", template_path=""))
+    flat = HomeViewModel(plain)
+    flat.set_library_view(VIEW_ALL)
+    assert [s.value for s in flat.library_sections()] == [""]   # 헤더 없는 평면
+
+
+def test_library_mode_filter_and_search_are_anded(tmp_path):
+    """작업 방식 필터는 모든 보기와 AND, 검색은 이름·그룹·태그 값만(§19.6)."""
+    vm = HomeViewModel(_library_reg(tmp_path))
+    vm.set_library_mode(MODE_TXT)
+    assert {r.name for sec in vm.library_sections() for r in sec.rows} == {"기안문"}
+    assert vm.library_counts()[VIEW_ALL] == 1                  # 탭 건수도 방식은 반영
+
+    vm.set_library_mode(MODE_HWPX)
+    vm.set_library_query("조달")                               # 그룹 이름으로 검색
+    assert {r.name for sec in vm.library_sections() for r in sec.rows} == {"즐겨공고", "최근계약"}
+    vm.set_library_query("의약품")                             # 태그 값으로 검색
+    assert {r.name for sec in vm.library_sections() for r in sec.rows} == {"미사용문서"}
+    # 검색은 탭 건수를 흔들지 않는다(라이브러리에 대한 사실).
+    assert vm.library_counts()[VIEW_ALL] == 4
+    vm.set_library_query("bidNtceNm")                          # 소스 키는 검색 대상 아님
+    assert vm.library_sections()[0].rows == []
+
+
+def test_unknown_library_view_and_mode_degenerate(tmp_path):
+    vm = HomeViewModel(_library_reg(tmp_path))
+    vm.set_library_view("엉뚱")
+    vm.set_library_mode("엉뚱")
+    assert vm.library_view == VIEW_ALL and vm.library_mode == "all"
