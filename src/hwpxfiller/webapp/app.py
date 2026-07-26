@@ -926,16 +926,18 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
       // 사용 가능 행을 고르면 포커스가 **방금 고른 작업 카드**에 착지한다(모달 복귀 트리거는
       // 재렌더로 해제되므로 명시 착지). 실 select_job 왕복은 스텁으로 대체하고, 이어 도착할
       // 스냅샷(job_name 채움)을 우리가 밀어 렌더 훅을 태운다.
+      // 사용 가능 행을 고르면 **성사 뒤에** 면이 닫히고 포커스가 그 시점의 실 DOM 에 선다.
+      // 스텁은 select_job 만 가로채고(교차오염 금지) **Python push 를 흉내 내지 않는다** —
+      // 프로덕션에선 push·render 가 resolve 보다 먼저 끝나므로, 여기서 우리가 스냅샷을
+      // 밀어 주면 그 순서를 가려 버린다(3R P2 지적). 이미 렌더된 카드에 서는지만 본다.
       (function () {
         var avail = JSON.parse(JSON.stringify(snap));
         avail.browse = {tab:'available', query:'', rows:[{name:'공고서', missing:[]}],
                         available_count:7, needs_count:1, filtered_out:0};
         window.__push('job', avail);
         var row = document.getElementById('jobBrowseRow-' + encodeURIComponent('공고서'));
-        if (!row) { out.browse_pick_focus = 'no-row'; return; }
+        if (!row) { window.__browsePickFocus = 'no-row'; window.__browseDone = true; return; }
         var real = window.Bridge.call;
-        // **select_job 만** 가로챈다: 앞 블록(즐겨찾기)의 스텁을 덮으면 그쪽 큐에서 흘러나오는
-        // 발신이 여기로 새어 기록에서 사라진다(프로브 교차오염 — [[gate-env-gotchas]] 동류).
         var stub = function (screen, action) {
           if (action !== 'select_job') return real.apply(null, arguments);
           return Promise.resolve({});
@@ -944,20 +946,14 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
         var unstub = function () {                 // 새 스텁이 이미 들어섰으면 건드리지 않는다
           if (window.Bridge.call === stub) window.Bridge.call = real;
         };
-        row.click();
-        // 선택은 **성사 뒤에** 면을 닫고 포커스를 예약한다(2R P2) — 그 판정이 microtask 라
-        // 스냅샷 밀기도 그 뒤로 미룬다. 결과는 Python 이 뒤이어 회수한다.
-        var picked = JSON.parse(JSON.stringify(avail));
-        picked.job_name = '공고서';             // 선택이 반영된 스냅샷(실 push 대역)
         window.__browseDone = false;
+        row.click();
         Promise.resolve().then(function () {}).then(function () {}).then(function () {
           unstub();
-          window.__browseSheetClosed = document.getElementById('jobBrowseSheet')
-            .classList.contains('is-closing') ||
-            document.getElementById('jobBrowseSheet').classList.contains('hidden');
-          window.__push('job', picked);
+          var cls = document.getElementById('jobBrowseSheet').classList;
+          window.__browseSheetClosed = cls.contains('is-closing') || cls.contains('hidden');
           window.__browsePickFocus = document.activeElement && document.activeElement.id;
-          window.__push('job', snap);          // 원판 복구(뒤 프로브 방해 금지)
+          window.__push('job', snap);              // 원판 복구(뒤 프로브 방해 금지)
           window.__browseDone = true;
         });
       })();

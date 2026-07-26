@@ -100,10 +100,6 @@
       lastSessionKey = key;
       setBusy(generating);
     });
-    // **Preserve 복원 뒤에** 착지시킨다(리뷰 1R P2): 안쪽에서 focus 하면 Preserve 가 렌더 전
-    // 활성 요소(탐색 면의 탭·검색)를 복원해 덮어쓴다 — 예약 포커스는 그 복원보다 나중이어야
-    // 사용자를 방금 고른 작업 카드에 세울 수 있다.
-    applyPendingFocus();
   }
 
   /* 이전 생성 결과(요약·진행바·로그)를 기본 상태로 되돌린다(오래된 성공 잔존 방지, #28). */
@@ -547,20 +543,23 @@
 
   /* 문서 탐색 면 열기 — 실 DOM 이동(SurfaceSheet)이 아니라 자체 내용을 가진 면이라
      Modal 로 직접 연다. 포커스는 검색 입력으로: 이 표면에 온 이유가 "찾기"다. */
-  /* 렌더 후 1회성 포커스 착지 — 후보 id 우선, 없으면 출구(둘 다 없으면 조용히 포기). */
-  let pendingFocus = null;
+  /* 탐색 면을 닫은 **직후** 포커스를 연결된 컨트롤에 세운다(리뷰 3R P2).
 
-  function applyPendingFocus() {
-    if (!pendingFocus) return;
-    const ids = pendingFocus;
-    pendingFocus = null;
+     렌더 훅에 예약하는 방식은 왕복 순서에 의존했다: `select_job` 은 Python 이 이미 push·
+     render 를 끝낸 뒤 resolve 하므로 예약이 렌더보다 늦고, 그 예약은 무관한 다음 렌더를
+     흔드는 유령으로 남았다. 그래서 **예약을 없애고** 그 시점의 실 DOM 을 id 로 찾아 바로
+     세운다 — 착지 우선순위는 방금 고른 작업 카드 → 다시 탐색을 열 출구 → 생성 버튼
+     (순위 밖 작업을 골라 카드가 없을 수도 있다). */
+  function focusAfterPick(name) {
+    const ids = ["jobCand-" + encodeURIComponent(name), "jobBrowseOpen", "jobGenBtn"];
     for (let i = 0; i < ids.length; i++) {
       const el = document.getElementById(ids[i]);
-      if (el && el.focus && el.offsetParent !== null) {
+      if (el && el.focus && !el.disabled) {
         try { el.focus({ preventScroll: true }); } catch (err) { el.focus(); }
-        return;
+        return ids[i];
       }
     }
+    return "";
   }
 
   function openBrowseSheet(e) {
@@ -1298,12 +1297,13 @@
       // 포커스가 숨은 검색 입력이나 body 로 떨어진다. 착지점은 방금 고른 작업의 카드 —
       // 사용자의 다음 관심이 거기 있고, 없으면 다시 탐색을 열 출구로 내린다.
       // **성사 뒤에만 닫는다**(리뷰 2R P2): 가드 취소·Python 거절(생성 중 등)에서 면을 먼저
-      // 닫으면 사용자는 오류만 받고 찾던 문맥을 잃는다. 예약 포커스도 성사 시에만 건다 —
-      // 실패 경로에 남으면 무관한 뒤 렌더가 포커스를 엉뚱하게 옮긴다.
+      // 닫으면 사용자는 오류만 받고 찾던 문맥을 잃는다. 성사 시점엔 Python 의 push·render 가
+      // 이미 끝나 있으므로(3R P2) 닫은 **직후** 실 DOM 을 찾아 포커스를 세운다 — 예약을
+      // 남기지 않으니 무관한 뒤 렌더를 흔들 유령도 없다.
       selectJobGuarded(name).then((ok) => {
         if (!ok) return;
-        pendingFocus = ["jobCand-" + encodeURIComponent(name), "jobBrowseOpen"];
         window.Modal.close("jobBrowseSheet");
+        focusAfterPick(name);
       }).catch((err) => {
         log("작업 열기 실패: " + String((err && err.message) || err));
       });

@@ -741,8 +741,14 @@ def test_job_document_browser_surface_contract():
     # Preserve 복원 **뒤에** 일어난다(안쪽이면 복원이 덮어써 탐색 면 컨트롤에 갇힌다).
     for token in ('id="jobBrowseTab-', 'id="jobBrowseRow-', 'id="jobBrowseOpen"'):
         assert token in src, f"탐색 면 안정 id 누락: {token}"
-    tail = src.split("setBusy(generating);")[1][:400]
-    assert "applyPendingFocus()" in tail, "예약 포커스가 Preserve 복원 뒤에 있지 않습니다."
+    # 포커스 착지는 **예약이 아니라** 닫은 직후 실 DOM 조회다(3R P2): 예약 방식은 왕복 순서에
+    # 의존해 렌더보다 늦고, 남은 예약이 무관한 뒤 렌더를 흔들었다.
+    assert "function focusAfterPick(" in src, "선택 후 포커스 착지가 없습니다."
+    assert "pendingFocus" not in src, "예약 포커스 기제가 남아 있습니다(유령 착지)."
+    pick = src.split("data-browse-pick]\")")[1][:900]
+    assert pick.index("Modal.close") < pick.index("focusAfterPick"), (
+        "닫기보다 포커스 착지가 앞섭니다 — 열린 면 뒤 컨트롤에 포커스가 갇힌다."
+    )
     # 생성 중 잠금(2R P2): 탐색 면은 오버레이 루트라 `#scr-job` 질의에 안 걸린다 —
     # setBusy 가 그 루트도 훑고, 출구·탭·행이 busy-lock 을 달아야 한다.
     assert 'jobBrowseSheet")].forEach' in src, "setBusy 가 탐색 면을 잠그지 않습니다."
