@@ -357,7 +357,6 @@ class TestWebSelftestGate:
         assert row.startswith("견적서") and "없는 열: 담당자" in row, row
         assert "2건" in j["browse_note"], j["browse_note"]
         assert j["browse_focus_is_query"] is True, "탐색 면 초기 포커스가 검색 입력이 아닙니다."
-        assert j["browse_closing"] is True, "탐색 면이 닫기 클릭에 닫히지 않았습니다."
         # 왕복 경합(4R P2): 타이핑 중 도착한 옛 스냅샷은 입력을 덮지 않고, 포커스가 떠난
         # 뒤에는 서버 값으로 확정된다(데이터 존 검색과 같은 규칙).
         assert j["browse_query_kept"] == "견적요청", j["browse_query_kept"]
@@ -369,8 +368,9 @@ class TestWebSelftestGate:
         assert j["browse_sheet_closed"] is True, "선택 성사 뒤 면이 닫히지 않았습니다."
         # 단순 닫기에서도 포커스는 페이지로 돌아온다(6R P2) — 면 안 재렌더로 끊긴 노드가
         # 아니라 **닫히는 시점의 출구**를 다시 찾아 세운다.
-        assert j["browse_close_focus"] in ("jobBrowseOpen", "jobGenBtn"), j["browse_close_focus"]
+        assert j["browse_close_focus"] == "jobBrowseOpen", j["browse_close_focus"]
         assert j["browse_pick_focus"] == "jobCand-" + quote("공고서"), j["browse_pick_focus"]
+        # 취소(그냥 닫기)는 고른 작업 카드가 아니라 **다시 열 출구**로 돌려보낸다.
 
     def test_job_density_and_expansion_sheets(self, selftest_result: dict) -> None:
         j = selftest_result["job_mirror"]

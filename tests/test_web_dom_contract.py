@@ -749,13 +749,20 @@ def test_job_document_browser_surface_contract():
     assert "returnFocus: null" in src and "onClose:" in src, (
         "탐색 면 닫기 복귀가 보관 노드에 묶여 있습니다."
     )
+    # 착지 결정은 닫힘 1지점에서만(사유 플래그) — 선택 경로가 따로 focus 하면 전이 종료 뒤
+    # onClose 가 덮어써 두 착지가 경합한다.
+    assert "browsePickedName" in src, "닫힘 사유 표식이 없습니다(착지 경합)."
+    # 큐에 선 선택은 그 사이 면이 닫히면 무효다(P2): 취소한 전환이 뒤늦게 일어나고 표식이
+    # 남아 다음 닫기의 착지까지 오염시킨다. 개폐 세대로 자기 것이 아닌 큐를 접는다.
+    assert "browseOpenGen" in src and "gen !== browseOpenGen" in src, (
+        "탐색 선택 큐의 개폐 세대 가드가 없습니다."
+    )
+    # 정의 1 + 호출 1 = 2 (호출이 늘면 닫힘 1지점 계약이 깨진 것)
+    assert src.count("focusAfterPick(") == 2, "착지 호출이 닫힘 1지점 밖에도 있습니다."
     # 타이핑 중 스냅샷이 검색 입력을 덮지 않는다(4R P2 — 데이터 존과 같은 규칙).
     assert 'document.activeElement !== q' in src, "탐색 검색이 왕복 경합에 입력을 덮습니다."
     assert "pendingFocus" not in src, "예약 포커스 기제가 남아 있습니다(유령 착지)."
-    pick = src.split("data-browse-pick]\")")[1][:900]
-    assert pick.index("Modal.close") < pick.index("focusAfterPick"), (
-        "닫기보다 포커스 착지가 앞섭니다 — 열린 면 뒤 컨트롤에 포커스가 갇힌다."
-    )
+    # 선택 경로는 닫기까지만 하고 착지는 onClose 가 한다(아래 1지점 계약).
     # 생성 중 잠금(2R P2): 탐색 면은 오버레이 루트라 `#scr-job` 질의에 안 걸린다 —
     # setBusy 가 그 루트도 훑고, 출구·탭·행이 busy-lock 을 달아야 한다.
     assert 'jobBrowseSheet")].forEach' in src, "setBusy 가 탐색 면을 잠그지 않습니다."
@@ -790,8 +797,8 @@ def test_job_candidate_ranking_surface_contract():
     # 즐겨찾기는 키 하나(작업 간 순위라 전역 1체인)로 클릭 순서 = 쓰기 순서를 보장한다.
     assert "function chained(" in src and "CALL_CHAINS" in src, "호출 직렬화 몸통이 없습니다."
     assert 'chained("favorite"' in src, "즐겨찾기 쓰기가 체인을 타지 않습니다."
-    assert src.count('chained("browse"') == 2, (
-        "탐색 탭·검색이 같은 체인을 타지 않습니다 — 늦은 옛 응답이 새 결과를 되돌린다."
+    assert src.count('chained("browse"') == 3, (
+        "탐색 탭·검색·선택이 같은 체인을 타지 않습니다 — 늦은 옛 응답이 새 결과·선택을 되돌린다."
     )
     # 문안은 완주 스탬프 의미와 일치해야 한다(성공 뒤 실패 런에서 거짓이 되지 않게).
     assert "마지막 성공 실행" in src and "마지막 실행 " not in src, (
