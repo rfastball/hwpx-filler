@@ -171,8 +171,20 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         return build_group_sections(jobs, self.job_name, self._collapsed)
 
     # ------------------------------------------------------------- 스냅샷
+    def _display_indices(self, indices: "list[int]") -> "list[int]":
+        """표시 순서 = sourceDesc(§18.10, 충돌 B 확정 2026-07-26) — 최신 행(마지막 원본
+        행)이 먼저다. 표 렌더·실행 입력이 이 한 훅을 공유한다(보이는 것=실행되는 것)."""
+        return sorted(indices, reverse=True)
+
     def _indices(self) -> "list[int]":
-        return self.selection.selected_indices()
+        """실행 입력 = OrderedSelection(§2): 선택 집합을 **전체 표시순서에 투영**한다.
+
+        생성·미리보기·거울이 전부 이 순서를 소비한다 — 순번 토큰(``{{seq}}``)과 동명
+        꼬리표(``naming._dedupe``)가 화면에 보이는 위→아래 순서를 그대로 따른다(WYSIWYG).
+        같은 선택이라도 표시 순서가 다르면 파일명이 달라질 수 있다 — 인지하고 수용한
+        확정(봉합 지도 §2)이며, 완화는 파일명 미리보기가 같은 투영을 보여주는 것이다.
+        """
+        return self._display_indices(self.selection.selected_indices())
 
     def _candidate_payload(self, jobs) -> "list[dict]":
         """현재 데이터에 대한 문서 작업 후보(§18.4) — 판정은 링1 단일 출처 소비.
@@ -249,14 +261,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         isum = identity_summary(
             self.records, filename_tokens=self._filename_source_columns()
         )
+        # 목록 순서 = 표시순(sourceDesc) — 각 행은 원본 index 를 지녀 선택·토글이 안전하다.
         return [
             {
                 "index": i,
                 "selected": self.selection.is_selected(i),
                 "name": names.get(i, ""),
-                "summary": isum.display_for(rec),  # 표시=빈 세그먼트를 마커(빈칸)로 채워 위치 보존(생략 아님 — 서로 다른 행이 동일 문자열로 붕괴하는 것 차단)
+                "summary": isum.display_for(self.records[i]),  # 표시=빈 세그먼트를 마커(빈칸)로 채워 위치 보존(생략 아님 — 서로 다른 행이 동일 문자열로 붕괴하는 것 차단)
             }
-            for i, rec in enumerate(self.records)
+            for i in self._display_indices(list(range(len(self.records))))
         ]
 
     # ---- 본문 존 거울(D2 ⓑ, 결정 36) — 필드 채움 테이블 값 집계 --------------

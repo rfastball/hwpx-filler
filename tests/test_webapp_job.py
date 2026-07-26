@@ -112,6 +112,39 @@ def test_select_job_then_data_populates_records_and_badges(tmp_path):
     assert states["추정가격"] == "missing"  # rec0 빈값 → 미입력
 
 
+# ------------------------------------------- 표시순 투영(§18.10·§2, 충돌 B 확정)
+def test_display_order_newest_first_and_execution_follows_projection(tmp_path):
+    """표 순서 = sourceDesc(최신 행 먼저), 실행 입력 = 표시순 투영(WYSIWYG).
+
+    {{seq}} 순번·동명 꼬리표가 화면 위→아래 순서를 그대로 따른다 — 같은 선택이라도
+    표시 순서가 바뀌면 파일명이 달라진다(인지·수용된 확정, 봉합 지도 §2). 완화 의무 =
+    파일명 미리보기가 같은 투영을 보여준다(보이는 것=생성되는 것).
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    rows = ctrl.snapshot()["records"]
+    assert [r["index"] for r in rows] == [1, 0]          # 최신(마지막 원본 행)이 먼저
+    assert rows[0]["name"] == "doc-001.hwpx"             # 실행 1번 = 화면 1번(최신 행)
+    assert rows[1]["name"] == "doc-002.hwpx"
+
+
+def test_filtered_table_rows_follow_display_order(tmp_path):
+    """필터 가시 행도 같은 표시순 투영을 쓴다 — 표와 실행이 다른 순서를 말하지 않는다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    csv = tmp_path / "three.csv"
+    csv.write_text(
+        "bidNtceNm,presmptPrce" + chr(10)
+        + "전산장비A,1" + chr(10) + "사무비품,2" + chr(10) + "전산장비B,3" + chr(10),
+        encoding="utf-8",
+    )
+    ctrl.load_data_path(str(csv))
+    ctrl.dispatch("filter_search", {"text": "전산"})
+    table = ctrl.snapshot()["table"]
+    assert [r["index"] for r in table["rows"]] == [2, 0]  # 가시 집합도 최신 먼저
+
+
 # ------------------------------------------------------ 식별 요약 링1 소비
 def test_record_summary_consumes_ring1_identity_not_keyed_temp(tmp_path):
     """식별 요약은 링1 ``identity_summary``를 소비하고 원본 값만 병기한다."""
@@ -121,8 +154,8 @@ def test_record_summary_consumes_ring1_identity_not_keyed_temp(tmp_path):
     summaries = [r["summary"] for r in ctrl.snapshot()["records"]]
     assert all("bidNtceNm" not in s for s in summaries)  # 임시 판의 키 접두 폐기(값만 병기)
     # display_for: rec0 은 presmptPrce 빈값이라 마커로 자리 보존(매달린 구분자 아님), rec1 은
-    # 두 값 병기. 인지층 = 왼쪽 2열(bidNtceNm·presmptPrce).
-    assert summaries == ["전산장비 · (빈칸)", "사무비품 · 2000000"]
+    # 두 값 병기. 인지층 = 왼쪽 2열. 목록 순서 = 표시순(sourceDesc, §18.10 — 최신 행 먼저).
+    assert summaries == ["사무비품 · 2000000", "전산장비 · (빈칸)"]
 
 
 def test_filename_token_mode_back_resolves_and_excludes_non_carriers(tmp_path):
@@ -427,9 +460,9 @@ def test_mirror_value_display_filled_sample_missing_blank(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     m = {r["name"]: r for r in ctrl.snapshot()["mirror"]}
-    # 공고명: 선택 2행 값이 달라 표본 명시 병기(S10) — 서로 다른 값 1개 더, text 라 표시형 아님.
+    # 공고명: 선택 2행 값이 달라 표본 명시 병기(S10) — 표본 = 표시순 첫 행(최신 행) 값.
     assert m["공고명"]["state"] == "filled"
-    assert m["공고명"]["value"] == "전산장비 (표본 · 외 1개 값)"
+    assert m["공고명"]["value"] == "사무비품 (표본 · 외 1개 값)"
     assert m["공고명"]["formatted"] is False
     # 추정가격: rec0 빈값 → missing, 값 = 빈 행수 재진술(낙관 서사 해소), amount → 표시형.
     assert m["추정가격"]["state"] == "missing"
@@ -462,7 +495,8 @@ def test_mirror_sample_counts_distinct_values_not_rows(tmp_path):
     )
     _mount_all(ctrl, str(csv))
     m = {r["name"]: r for r in ctrl.snapshot()["mirror"]}
-    assert m["공고명"]["value"] == "전산장비 (표본 · 외 1개 값)"  # 행 수 아님(외 4행 금지)
+    # 표본 = 표시순 첫 행(최신 행='사무비품') 값, '외 K'는 서로 다른 값 수(2종-1=1).
+    assert m["공고명"]["value"] == "사무비품 (표본 · 외 1개 값)"  # 행 수 아님(외 4행 금지)
 
 
 def test_mirror_empty_when_no_selection(tmp_path):
@@ -829,10 +863,10 @@ def test_record_names_follow_selection_not_invented(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.dispatch("toggle_record", {"index": 0, "value": False})
-    rows = ctrl.snapshot()["records"]
-    assert rows[0]["name"] == "" and rows[0]["selected"] is False   # 미선택 = 이름 없음
+    rows = ctrl.snapshot()["records"]  # 표시순: rows[0]=원본 rec1(최신), rows[1]=원본 rec0
+    assert rows[1]["name"] == "" and rows[1]["selected"] is False   # 미선택 = 이름 없음
     # 남은 1건만 생성하면 그 파일이 doc-001 — 미리보기도 같은 사실을 말한다.
-    assert rows[1]["name"] == "doc-001.hwpx" and rows[1]["selected"] is True
+    assert rows[0]["name"] == "doc-001.hwpx" and rows[0]["selected"] is True
 
 
 def test_generate_uses_previewed_name_timestamp(tmp_path):
