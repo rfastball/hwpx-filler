@@ -92,6 +92,9 @@ def prework_gate(
     문서 작업. "데이터 없음"과 "호환 작업 없음"은 구분해 재진술한다(§18.4 문안 3구분 —
     과경고도 과소경고도 없이, 막힌 실제 이유만). 작업이 선택되면 이 게이트는 퇴장하고
     권위 판정(``RunViewModel.refresh``)이 이어받는다.
+
+    ``has_candidates`` 는 **선택 가능한(available) 후보의 존재**다 — needs_action 뿐인
+    목록으로 True 를 주면 "선택하세요"가 이행 불가능한 지시가 된다(#302 리뷰 P2).
     """
     if not has_data:
         return GateState(False, "warn", "데이터 파일을 먼저 선택하세요.")

@@ -112,6 +112,38 @@ def test_select_job_then_data_populates_records_and_badges(tmp_path):
     assert states["추정가격"] == "missing"  # rec0 빈값 → 미입력
 
 
+def test_prework_gate_counts_only_available_candidates(tmp_path):
+    """후보가 전부 needs_action 이면 "선택하세요"는 이행 불가능한 지시다(#302 리뷰 P2)
+    — 게이트는 available 존재로만 선택을 권하고, 없으면 없다고 말한다."""
+    ctrl, _ = _controller(tmp_path)
+    csv = tmp_path / "other.csv"
+    csv.write_text("엉뚱한열" + chr(10) + "값" + chr(10), encoding="utf-8")
+    ctrl.load_data_path(str(csv))                       # '공고서' 필수 소스가 없는 데이터
+    ctrl.dispatch("toggle_record", {"index": 0, "value": True})
+    snap = ctrl.snapshot()
+    assert [c["kind"] for c in snap["candidates"]] == ["needs_action"]  # 목록엔 남는다
+    assert "사용할 수 있는 문서 작업이 없습니다" in snap["gate"]["text"]
+
+
+def test_job_selection_reconciles_filter_kinds_unless_defined(tmp_path):
+    """무작업 마운트 필터는 스니핑 유형 — 작업 선택이 매핑 힌트로 재조정한다(#302 리뷰 P2).
+    단 정의가 있는 필터는 그대로(사용자 확정 > 유형 힌트 — 술어 조용한 소실 금지)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_data_csv(tmp_path))            # 무작업 마운트 = 스니핑만
+    assert ctrl.filter is not None
+    assert ctrl.filter.kind("presmptPrce") == "amount"  # 수치 값 → 스니핑 판정
+    ctrl.dispatch("select_job", {"name": "공고서"})     # 정의 없음 → 힌트 반영 재생성
+    assert ctrl.filter.kind("presmptPrce") == "text"    # 매핑 확정 유형(text) 우선
+    # 정의가 있으면 재생성하지 않는다 — 술어·유형 그대로 생존.
+    ctrl2, _ = _controller(tmp_path)
+    ctrl2.load_data_path(_data_csv(tmp_path))
+    ctrl2.dispatch("filter_search", {"text": "전산"})
+    kinds_before = {c: ctrl2.filter.kind(c) for c in ctrl2.filter.columns}
+    ctrl2.dispatch("select_job", {"name": "공고서"})
+    assert ctrl2.filter.is_active()                     # 정의 생존
+    assert {c: ctrl2.filter.kind(c) for c in ctrl2.filter.columns} == kinds_before
+
+
 # --------------------------------------- data-first 첫 슬라이스 성공 기준(계획 §5)
 def test_data_first_flow_end_to_end(tmp_path):
     """데이터 마운트(무작업) → 행 선택 → 후보 → 명시 선택 → 게이트 → 실제 HWPX 생성 1회.

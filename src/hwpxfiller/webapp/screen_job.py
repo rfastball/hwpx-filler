@@ -61,7 +61,7 @@ from ..gui.filter_state import (
 from ..gui.result_errors import describe_fill_note, describe_result_error
 from ..gui.run_state import RunViewModel, resolve_file_source, resolve_pool_source
 from ..gui.selection_state import SelectionModel
-from ..gui.work_candidates import candidate_rows, prework_gate
+from ..gui.work_candidates import KIND_AVAILABLE, candidate_rows, prework_gate
 from .job_list import build_flat_rows, build_group_sections, drift_note
 from .data_zone import (
     EMPTY_FILTER as _EMPTY_FILTER,
@@ -451,7 +451,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             g = prework_gate(
                 has_data=self.datasource is not None,
                 selected_count=self.selection.selected_count(),
-                has_candidates=bool(base["candidates"]),
+                # available 만 센다(#302 리뷰 P2) — needs_action 뿐이면 모든 후보 버튼이
+                # 비활성이라 "선택하세요"는 이행 불가능한 지시(문안 정직성 위반)가 된다.
+                has_candidates=any(
+                    c["kind"] == KIND_AVAILABLE for c in base["candidates"]
+                ),
             )
             base.update({
                 "template_name": "", "template_path": "", "filename_pattern": "",
@@ -620,6 +624,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.job_name = name
         if self.records:
             self.vm.set_acquired(self.datasource, self.records)  # ack 재평가 포함(RC-22)
+            # 필터 열 유형 재조정(#302 리뷰 P2): 무작업 마운트의 필터는 값 스니핑만 탔다 —
+            # 작업이 정해진 지금 매핑 확정 유형 힌트를 반영한다. 단 **정의 없는 필터만**
+            # 재생성한다: 사용자가 이미 만든 정의는 유형 재판정이 술어를 조용히 떨어뜨릴
+            # 수 있어 그대로 둔다(사용자 확정 > 유형 힌트 — 조작 순서 의존을 정의 유무의
+            # 명시 규칙으로 환원).
+            if self.filter is not None and not self.filter.is_active():
+                self._init_filter()
         self.out_dir = (
             str(Path(job.template_path).parent / OUTPUT_SUBDIR_NAME)
             if job.template_path else ""
