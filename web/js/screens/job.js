@@ -304,8 +304,11 @@
      한 가지 작업 방식(HWPX)뿐이라 §19.3 의 방식 구획은 평면으로 퇴화한다 — 「기안」(TXT)이
      이 구획에 합류하는 슬라이스에서 헤더가 선다. */
   function lastRunLabel(iso) {
-    // 표시 문안만 여기서 만든다(판정은 Python). 의미 = 마지막 **완주** 실행(전건 성공).
-    return iso ? `마지막 실행 ${esc(iso.slice(0, 10))}` : "실행한 적 없음";
+    // 표시 문안만 여기서 만든다(판정은 Python). 의미는 **완주(전건 성공) 실행**이므로 문안도
+    // 「마지막 성공 실행」이다(리뷰 4R P2): 성공 뒤 실패·부분 실패 런이 있으면 스탬프는 앞선
+    // 성공 시각에 머무르는데, 그걸 "마지막 실행"이라 쓰면 하필 구별이 중요한 그 상황에서
+    // 이력을 거짓으로 말한다. 없을 때도 "실행한 적 없음"이 아니라 성공 부재로 말한다.
+    return iso ? `마지막 성공 실행 ${esc(iso.slice(0, 10))}` : "성공한 실행 없음";
   }
 
   function candCard(c, s) {
@@ -337,8 +340,14 @@
      **의도 직렬화**(리뷰 3R P2): 표시는 왕복 뒤에 바뀌므로, 왕복 중 두 번째 클릭이 DOM 의
      낡은 상태를 읽으면 같은 의도를 두 번 보낸다 — `set_favorite` 은 재지정을 멱등 처리하니
      껐다 켠 것이 아니라 **켜진 채로 남는다**(사용자 의도 소실). 그래서 다음 값은 DOM 이
-     아니라 **미결 의도**에서 계산한다. 계산만 여기서 하고 판정·영속은 여전히 Python 몫이다. */
-  const FAV_PENDING = new Map();  // 작업 이름 → 왕복 중인 의도 상태
+     아니라 **미결 의도**에서 계산한다. 계산만 여기서 하고 판정·영속은 여전히 Python 몫이다.
+
+     **쓰기 직렬화**(리뷰 4R P2): 의도를 옳게 계산해도 왕복을 동시에 띄우면 안 된다 —
+     pywebview 는 호출마다 별도 스레드라 나중 클릭의 쓰기가 먼저 레지스트리 잠금을 잡을 수
+     있고, 그러면 **마지막 클릭과 반대 상태가 영속된다**. 작업 이름별로 체인을 만들어 앞
+     왕복이 끝난 뒤 다음 것을 보낸다(클릭 순서 = 쓰기 순서). */
+  const FAV_PENDING = new Map();  // 작업 이름 → 왕복 중인(또는 대기 중인) 의도 상태
+  const FAV_CHAIN = new Map();    // 작업 이름 → 진행 중 쓰기 체인의 꼬리
 
   function favPending(name, domPressed) {
     return FAV_PENDING.has(name) ? FAV_PENDING.get(name) : domPressed;
@@ -347,14 +356,18 @@
   function toggleFavorite(name, domPressed) {
     const value = !favPending(name, domPressed);
     FAV_PENDING.set(name, value);
-    Bridge.call(SCREEN, "toggle_favorite", { name, value }).then((res) => {
-      if (res && res.ok === false) log(res.error);
-    }).catch((err) => {
-      log("즐겨찾기 변경 실패: " + String((err && err.message) || err));
-    }).then(() => {
-      // 이 왕복이 마지막 의도였을 때만 걷는다 — 뒤이은 클릭의 의도를 지우지 않게.
+    const send = () => Bridge.call(SCREEN, "toggle_favorite", { name, value })
+      .then((res) => { if (res && res.ok === false) log(res.error); })
+      .catch((err) => {
+        log("즐겨찾기 변경 실패: " + String((err && err.message) || err));
+      });
+    // 체인 링은 절대 reject 하지 않는다(위 catch) — 한 번 실패해도 뒤 클릭이 영구히 막히지 않게.
+    const tail = (FAV_CHAIN.get(name) || Promise.resolve()).then(send).then(() => {
+      // 마지막 의도였을 때만 걷는다 — 뒤이은 클릭의 의도·체인을 지우지 않게.
       if (FAV_PENDING.get(name) === value) FAV_PENDING.delete(name);
+      if (FAV_CHAIN.get(name) === tail) FAV_CHAIN.delete(name);
     });
+    FAV_CHAIN.set(name, tail);
   }
 
   function renderCandidates(s) {

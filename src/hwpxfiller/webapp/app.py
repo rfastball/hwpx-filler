@@ -919,15 +919,30 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
     (function () {
       var star = document.querySelector('#jobCandidates [data-fav]');
       if (!star) { out.fav_intents = 'no-star'; return; }
-      var sent = [], real = window.Bridge.call;
+      var sent = [], release = [], real = window.Bridge.call;
       window.Bridge.call = function (screen, action, payload) {
-        if (action === 'toggle_favorite') sent.push(payload.value);
-        return new Promise(function () {});           // 미결 — push 가 오지 않은 창
+        if (action !== 'toggle_favorite') return real.apply(null, arguments);
+        sent.push(payload.value);
+        // 두 번째(=체인이 순서대로 흘려보낸) 발신까지 잡은 뒤에 실 브리지를 되돌린다 —
+        // 먼저 되돌리면 큐에 있던 발신이 실 브리지로 새어 기록에서 사라진다.
+        if (sent.length >= 2) Promise.resolve().then(function () { window.Bridge.call = real; });
+        return new Promise(function (res) { release.push(res); });  // 우리가 풀 때까지 미결
       };
       star.click();
       star.click();
-      window.Bridge.call = real;
+      // 클릭은 즉시 왕복을 띄우지 않는다(체인 진입) — 동기 시점엔 발신 0.
+      out.fav_sync_sends = sent.length;
       out.fav_intents = JSON.stringify(sent);
+      // 이하는 microtask 순서 검증(4R P2): 첫 왕복이 끝나기 전엔 둘째를 보내지 않고,
+      // 첫 왕복을 풀면 클릭 순서대로 둘째가 나간다. `sent` 배열 **참조**를 노출해 Python 이
+      // 다음 왕복(IPC 1회 = 모든 microtask 소진 후)에서 최종 상태를 회수한다 — hop 수를
+      // 세어 맞추는 취약한 검증을 피한다.
+      window.__favSent = sent;
+      window.__favChain = null;
+      Promise.resolve().then(function () {
+        window.__favChain = JSON.stringify({inflight: sent.length});  // 직렬화 관측
+        if (release[0]) release[0]();
+      });
     })();
     // 별 포커스가 재렌더(=별을 누르면 카드가 1순위로 이동)를 가로질러 살아남는가 —
     // preserve.js 는 id 로 복원하므로 이름 유래 안정 id 가 실제로 붙었는지 실물로 본다.
@@ -2396,6 +2411,14 @@ def _selftest_drive(window: "object") -> None:
         # 경로 어포던스(.track-btn)를 읽는 뒤 프로브(milestone_h)가 mirror 의 경로 있는
         # 스냅샷을 복원받게 순서로 오염을 차단한다(#137 프로브 교차오염 교훈).
         result["job_data_first"] = window.evaluate_js(_JOB_DATA_FIRST_PROBE_JS)  # type: ignore[attr-defined]
+        # 체인 결과는 microtask 뒤에 확정된다 — 같은 프로브에서 동기로 읽을 수 없어 후속
+        # 평가로 회수한다(즐겨찾기 쓰기 직렬화, 4R P2).
+        result["job_data_first"]["fav_chain"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "String(window.__favChain)"
+        )
+        result["job_data_first"]["fav_order"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "JSON.stringify(window.__favSent || null)"
+        )
         result["job_mirror"] = window.evaluate_js(_JOB_MIRROR_PROBE_JS)  # type: ignore[attr-defined]
         window.resize(1180, 820)  # type: ignore[attr-defined]
         time.sleep(0.4)

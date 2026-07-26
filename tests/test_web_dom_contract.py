@@ -738,6 +738,13 @@ def test_job_candidate_ranking_surface_contract():
     assert "FAV_PENDING" in src and "function favPending(" in src, (
         "즐겨찾기 미결 의도 직렬화가 없습니다."
     )
+    # 쓰기 자체도 클릭 순서로 직렬화돼야 한다(4R P2 — pywebview 는 호출마다 별도 스레드라
+    # 동시 발신이면 나중 클릭의 쓰기가 먼저 잠금을 잡아 반대 상태가 영속될 수 있다).
+    assert "FAV_CHAIN" in src, "즐겨찾기 쓰기 체인(작업별 직렬화)이 없습니다."
+    # 문안은 완주 스탬프 의미와 일치해야 한다(성공 뒤 실패 런에서 거짓이 되지 않게).
+    assert "마지막 성공 실행" in src and "마지막 실행 " not in src, (
+        "카드 문안이 완주 스탬프 의미(마지막 성공 실행)와 어긋납니다."
+    )
     assert "c.more" in src, "순위 밖 후보 수(외 N건) 고지가 없습니다 — 조용한 절단 금지."
     assert "cand-sug" in src, "추천 표지가 없습니다(§18.3 개정)."
     # JS 가 순위를 재계산하지 않는다(RC-23 동형 — 이중 진실 금지).

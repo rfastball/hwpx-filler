@@ -320,12 +320,18 @@ class TestWebSelftestGate:
         assert j["suggested_marks"] == 1, "추천 표지가 렌더되지 않았습니다."
         assert j["suggested_dashed"] == "dashed", j["suggested_dashed"]
         assert "2건" in j["more_text"], f"「외 N건」 고지가 없습니다: {j['more_text']!r}"
-        assert j["last_run_text"] == "마지막 실행 2026-07-20", j["last_run_text"]
+        # 문안은 **완주 스탬프**의 의미와 일치해야 한다(4R P2): 성공 뒤 실패 런이 있으면
+        # 스탬프는 앞선 성공에 머무르므로 "마지막 실행"은 거짓이 된다.
+        assert j["last_run_text"] == "마지막 성공 실행 2026-07-20", j["last_run_text"]
         # 별을 누르면 카드가 1순위로 이동한다 — 그 재렌더를 가로질러 포커스가 같은 작업의
         # 별에 남아야 키보드 사용자가 문서 처음으로 떨어지지 않는다(이름 유래 안정 id).
         assert j["fav_focus_restored"] == "kept", j["fav_focus_restored"]
-        # 왕복 중 두 번째 클릭은 의도를 뒤집는다(첫 카드는 이미 즐겨찾기 → false, true).
-        assert j["fav_intents"] == "[false,true]", j["fav_intents"]
+        # 왕복 중 두 번째 클릭은 의도를 뒤집고(첫 카드는 이미 즐겨찾기 → false, true),
+        # **앞 왕복이 끝나기 전에는 보내지 않는다**(클릭 순서 = 쓰기 순서, 4R P2).
+        assert j["fav_sync_sends"] == 0, j["fav_sync_sends"]     # 클릭 = 체인 진입
+        assert j["fav_intents"] == "[]", j["fav_intents"]
+        assert json.loads(j["fav_chain"])["inflight"] == 1, j["fav_chain"]  # 둘째 대기
+        assert json.loads(j["fav_order"]) == [False, True], j["fav_order"]  # 클릭 순 = 쓰기 순
 
     def test_job_density_and_expansion_sheets(self, selftest_result: dict) -> None:
         j = selftest_result["job_mirror"]
