@@ -1,8 +1,12 @@
 """JobRegistry 프로세스 topology 계약(#192).
 
-지원 topology는 한 작업 디렉터리당 writer 프로세스 하나다. 앱은 홈 단일 인스턴스 가드를
-먼저 잡고, CLI는 JobRegistry를 사용하지 않는다. 같은 프로세스 안의 여러 registry instance는
-경로 공유 RLock을 쓰며, 다른 프로세스의 두 번째 writer는 파일 변경 전에 loud 실패한다.
+지원 topology는 **한 작업 디렉터리당 writer 프로세스 하나**다. 앱은 홈 단일 인스턴스
+가드를 먼저 잡고, CLI는 JobRegistry를 사용하지 않는다. 같은 프로세스 안의 여러 registry
+instance는 경로 공유 RLock을 쓰며, 다른 프로세스의 두 번째 writer는 파일 변경 전에
+``JobRegistryOwnershipError`` 로 loud 실패한다.
+
+정책 서사 원장(`docs/PROCESS_TOPOLOGY.md`)은 비공개 이관됐다(2026-07-24) — 공개
+저장소에서는 이 docstring이 정책 문장의 정본이고, 아래 테스트들이 행동 계약을 강제한다.
 """
 from __future__ import annotations
 
@@ -125,7 +129,3 @@ def test_product_entrypoints_match_documented_single_writer_topology() -> None:
 
     cli = (ROOT / "src" / "hwpxfiller" / "cli.py").read_text(encoding="utf-8")
     assert "JobRegistry" not in cli
-
-    policy = (ROOT / "docs" / "PROCESS_TOPOLOGY.md").read_text(encoding="utf-8")
-    assert "한 디렉터리당 writer 프로세스 하나" in policy
-    assert "JobRegistryOwnershipError" in policy
