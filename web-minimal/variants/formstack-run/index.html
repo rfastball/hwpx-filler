@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>문서나르미 · Formstack 패턴 실험</title>
+  <link rel="stylesheet" href="../../shared/lab.css">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="fs-app">
+    <header class="global-bar">
+      <a class="global-brand" href="#" id="brandHome" aria-label="문서나르미 처음으로">
+        <span class="brand-symbol" aria-hidden="true"><i></i><i></i></span>
+        <span>문서나르미</span>
+      </a>
+      <span class="product-name">Documents</span>
+      <div class="global-actions" aria-label="전역 상태">
+        <span class="prototype-badge">FORMSTACK PATTERN</span>
+        <span class="avatar" aria-hidden="true">나</span>
+      </div>
+    </header>
+
+    <div class="app-body">
+      <nav class="side-nav" aria-label="주요 화면">
+        <button class="side-link is-active" type="button" aria-current="page">
+          <span class="side-icon" aria-hidden="true">▶</span><span>실행</span>
+        </button>
+        <button class="side-link" type="button" disabled>
+          <span class="side-icon" aria-hidden="true">▤</span><span>레시피</span>
+        </button>
+        <button class="side-link" type="button" disabled>
+          <span class="side-icon" aria-hidden="true">□</span><span>템플릿</span>
+        </button>
+        <button class="side-link" type="button" disabled>
+          <span class="side-icon" aria-hidden="true">▦</span><span>데이터</span>
+        </button>
+        <button class="side-link" type="button" disabled>
+          <span class="side-icon" aria-hidden="true">◷</span><span>기록</span>
+        </button>
+      </nav>
+
+      <main id="ui-lab-root" class="main-surface">
+        <section id="startView" class="start-view" aria-labelledby="startTitle">
+          <div class="breadcrumbs" aria-label="현재 위치">실행 <span>/</span> 새 실행</div>
+          <header class="page-heading">
+            <div>
+              <h1 id="startTitle">새 실행</h1>
+              <p>먼저 사용할 데이터를 선택하세요.</p>
+            </div>
+          </header>
+
+          <div class="start-grid">
+            <button class="source-card primary-source" id="openDemoBtn" type="button">
+              <span class="source-icon sheet-icon" aria-hidden="true">▦</span>
+              <span>
+                <strong>예제 데이터 열기</strong>
+                <small>신규 임용자.xlsx · 인사 시트</small>
+              </span>
+              <span class="source-arrow" aria-hidden="true">→</span>
+            </button>
+
+            <button class="source-card" type="button" disabled>
+              <span class="source-icon" aria-hidden="true">＋</span>
+              <span>
+                <strong>파일에서 열기</strong>
+                <small>XLSX 또는 CSV</small>
+              </span>
+              <span class="soon-badge">배선 전</span>
+            </button>
+          </div>
+
+          <section class="recent-source" aria-labelledby="recentSourceTitle">
+            <div class="section-title-row">
+              <div>
+                <h2 id="recentSourceTitle">최근 데이터</h2>
+                <p>이 시안은 예제 데이터 한 건만 사용합니다.</p>
+              </div>
+            </div>
+            <button class="recent-row" id="recentDemoBtn" type="button">
+              <span class="file-tile" aria-hidden="true">X</span>
+              <span class="recent-main">
+                <strong>신규 임용자.xlsx</strong>
+                <small>인사 시트 · 데이터 4건</small>
+              </span>
+              <span class="recent-time">예제</span>
+              <span aria-hidden="true">›</span>
+            </button>
+          </section>
+
+          <p class="simulation-note">UI 시연이므로 실제 파일을 열거나 생성하지 않습니다.</p>
+        </section>
+
+        <section id="runView" class="run-view" hidden aria-labelledby="runTitle">
+          <div class="breadcrumbs" aria-label="현재 위치">실행 <span>/</span> 신규 임용자.xlsx</div>
+          <header class="run-heading">
+            <div>
+              <div class="title-line">
+                <h1 id="runTitle">신규 임용자.xlsx</h1>
+                <span class="draft-badge">준비 중</span>
+              </div>
+              <p>인사 시트 · 데이터 4건</p>
+            </div>
+            <button class="secondary-button" id="changeDataBtn" type="button">데이터 바꾸기</button>
+          </header>
+
+          <nav class="workflow-tabs" aria-label="실행 단계">
+            <button class="workflow-tab is-active" id="dataTab" type="button" aria-current="step">
+              <span>1</span> Data
+            </button>
+            <button class="workflow-tab" id="recipeTab" type="button" disabled>
+              <span>2</span> Recipe
+            </button>
+            <button class="workflow-tab" id="testTab" type="button" disabled>
+              <span>3</span> Test
+            </button>
+            <button class="workflow-tab" id="overviewTab" type="button" disabled>
+              <span>4</span> Overview
+            </button>
+          </nav>
+
+          <section class="step-panel data-step" id="dataStep" aria-labelledby="dataStepTitle">
+            <header class="panel-heading">
+              <div>
+                <p class="step-kicker">STEP 1</p>
+                <h2 id="dataStepTitle">생성할 행을 선택하세요</h2>
+                <p>데이터는 자동으로 전체 선택되지 않습니다.</p>
+              </div>
+              <strong id="selectionCount" aria-live="polite">선택 0/4</strong>
+            </header>
+
+            <div class="data-toolbar">
+              <label class="search-box">
+                <span aria-hidden="true">⌕</span>
+                <input type="search" placeholder="행 검색" disabled>
+              </label>
+              <span class="toolbar-note">필터·검색은 다음 실험에서 연결</span>
+            </div>
+
+            <div class="data-table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col" class="check-col"><span class="sr-only">선택</span></th>
+                    <th scope="col">이름</th>
+                    <th scope="col">부서</th>
+                    <th scope="col">직위</th>
+                    <th scope="col">임용일</th>
+                    <th scope="col">상태</th>
+                  </tr>
+                </thead>
+                <tbody id="dataTableBody"></tbody>
+              </table>
+            </div>
+
+            <footer class="step-footer">
+              <span id="dataStepMessage">계속하려면 한 행 이상 선택하세요.</span>
+              <button class="primary-button" id="continueButton" type="button" disabled>
+                Recipe로 계속
+              </button>
+            </footer>
+          </section>
+
+          <section class="builder-step" id="recipeStep" hidden aria-labelledby="recipeStepTitle">
+            <header class="builder-topline">
+              <div>
+                <p class="step-kicker">STEP 2</p>
+                <h2 id="recipeStepTitle">레시피와 채울 값을 확인하세요</h2>
+              </div>
+              <span id="builderSelectionCount">선택 0건</span>
+            </header>
+
+            <div class="builder-tabs" aria-label="레시피 설정 구획">
+              <button type="button">Overview</button>
+              <button class="is-active" type="button" aria-current="page">Document</button>
+              <button type="button">Settings</button>
+              <button type="button">Test</button>
+            </div>
+
+            <div class="builder-toolbar" aria-hidden="true">
+              <span>↶</span><span>↷</span><span>✂</span><i></i>
+              <strong>기본 문단</strong><span>⌄</span><i></i>
+              <strong>맑은 고딕</strong><span>⌄</span><i></i>
+              <strong>11</strong><span>⌄</span><i></i>
+              <b>B</b><em>I</em><u>U</u><span>≡</span>
+            </div>
+
+            <div class="builder-workspace">
+              <div class="document-canvas">
+                <article class="document-page" aria-label="첫 문서 미리보기">
+                  <header class="document-heading">
+                    <span>문서나르미</span>
+                    <small>신규 임용 통지서</small>
+                  </header>
+                  <h3>임용 통지서</h3>
+                  <p class="document-lead">
+                    귀하를 다음과 같이 임용하였음을 알려드립니다.
+                  </p>
+                  <div class="document-fields">
+                    <p><span>성명</span><button class="merge-pill" type="button" data-field="name">성명</button></p>
+                    <p><span>부서</span><button class="merge-pill" type="button" data-field="department">부서</button></p>
+                    <p><span>직위</span><button class="merge-pill" type="button" data-field="position">직위</button></p>
+                    <p><span>임용일</span><button class="merge-pill" type="button" data-field="date">임용일</button></p>
+                  </div>
+                  <p class="document-footer">2026년 · 인사담당관</p>
+                </article>
+              </div>
+
+              <aside class="fields-panel" aria-labelledby="fieldsPanelTitle">
+                <div class="fields-heading">
+                  <div>
+                    <h3 id="fieldsPanelTitle">Recipe</h3>
+                    <p>저장된 레시피를 적용합니다.</p>
+                  </div>
+                </div>
+
+                <button class="recipe-card" id="recipeChoice" type="button" aria-pressed="false">
+                  <span class="recipe-file" aria-hidden="true">한</span>
+                  <span>
+                    <strong>신규 임용 통지서</strong>
+                    <small>HWPX · 필드 4개</small>
+                  </span>
+                  <span class="radio-mark" aria-hidden="true"></span>
+                </button>
+
+                <div class="fields-subheading">
+                  <h4>Merge fields</h4>
+                  <span id="fieldStatus">대기</span>
+                </div>
+                <div class="merge-field-list" id="mergeFieldList">
+                  <p>레시피를 선택하면 첫 행의 값을 연결합니다.</p>
+                </div>
+              </aside>
+            </div>
+
+            <footer class="step-footer builder-footer">
+              <button class="secondary-button" id="backToDataButton" type="button">Data로 돌아가기</button>
+              <div>
+                <span id="recipeStepMessage">레시피를 선택하세요.</span>
+                <button class="primary-button" id="runButton" type="button" disabled>
+                  Test merge
+                </button>
+              </div>
+            </footer>
+          </section>
+
+          <section class="overview-step" id="overviewStep" hidden aria-labelledby="overviewTitle">
+            <div class="overview-banner">
+              <span class="success-icon" aria-hidden="true">✓</span>
+              <div>
+                <p class="step-kicker">TEST MERGE COMPLETE</p>
+                <h2 id="overviewTitle">선택한 문서를 확인했습니다.</h2>
+                <p id="overviewSummary"></p>
+              </div>
+              <button class="primary-button" id="newRunButton" type="button">새 실행</button>
+            </div>
+
+            <div class="summary-grid">
+              <div><span>상태</span><strong>완료</strong></div>
+              <div><span>문서</span><strong id="documentCount">0건</strong></div>
+              <div><span>필드 확인</span><strong id="verifiedCount">0/0</strong></div>
+              <div><span>실패</span><strong>0건</strong></div>
+            </div>
+
+            <section class="recent-merges" aria-labelledby="recentMergesTitle">
+              <header class="section-title-row">
+                <div>
+                  <h2 id="recentMergesTitle">Recent Runs</h2>
+                  <p>이 실행에서 확인한 결과입니다.</p>
+                </div>
+                <span class="local-evidence">로컬 증거</span>
+              </header>
+              <div class="merge-table-wrap">
+                <table class="merge-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">결과 문서</th>
+                      <th scope="col">레시피</th>
+                      <th scope="col">상태</th>
+                      <th scope="col">필드 확인</th>
+                    </tr>
+                  </thead>
+                  <tbody id="resultTableBody"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <p class="simulation-note overview-note">
+              UI 시연이므로 실제 HWPX 파일과 실행 원장은 생성하지 않았습니다.
+            </p>
+          </section>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script src="../../shared/bootstrap.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

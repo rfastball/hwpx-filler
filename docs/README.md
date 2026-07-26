@@ -25,6 +25,8 @@
 |---|---|
 | [개발·빌드·배포 환경](DEVELOPMENT_ENVIRONMENT.md) | Python·의존성·품질 게이트·패키징·릴리스 절차 |
 | [UI 계약](UI_CONTRACT.md) | 현재 웹 UI의 계층, 화면 소유권, 계약 테스트 |
+| [프론트엔드 워크플로 시안 작성 원칙](FRONTEND_WORKFLOW_PROTOTYPE_RULES.md) | 시안의 워크플로·capability·상태·복구·접근성 작성 규칙 |
+| [V6 → master 봉합 계획](core-workflow-integration-plan.md) | data-first 워크플로 통합의 실행 앵커 — 단계·커밋 경계·검증 게이트·중단 신호 |
 | [화면 문안 스타일](COPY_STYLE_GUIDE.md) | 사용자 대면 문장의 문형·길이·금지 표현 |
 | [UI 용어 규약](UI_VOCABULARY.md) | 사용자 가시 용어·단위·폼 배치의 단일 출처 |
 | [로드맵](ROADMAP.md) | 열린 방향·동결 항목·재개 신호 |
@@ -50,6 +52,9 @@
 | [테스트 포트폴리오 전수조사](TEST_PORTFOLIO_AUDIT.md) | 역사 기록 | #168 기준점·방법·해석 |
 | `design_language_*.html` | 동결 시안 | 시각 언어 결정 당시 비교안 |
 | `r-flow-mockups/` | 동결 시안 | 합의문이 참조하는 결정 시점 목업 |
+| [핵심 문서 생성 워크플로 MVP](core-workflow-ui-mvp-demo.html) | 실험 시안 | 데이터 실행·문서 설정·연결 편집·생성 미리보기의 클릭형 구현안 |
+| [데이터 선택 통합 워크플로 v5](core-workflow-ui-mvp-demo-v5.html) | 실험 시안 | 마지막 물림 복원·명시적 시트 선택·고정 데이터·원자 전환을 v4 편집 계약과 통합한 구현안 |
+| [작업 방식·문서 작업 라이브러리 v6](core-workflow-ui-mvp-demo-v6.html) | 실험 시안 | 시스템 작업 방식 판정, 메인 Top 5 방식 구획, 사용자 그룹 기반 전역 라이브러리, 템플릿 교체 안내 연쇄 |
 | `archive/UI_CONTRACT_QT.md` (#225에서 분리) | 역사 기록 | 웹 이관 전 목업↔ViewModel↔Qt 계약 |
 
 ## 유지·아카이브·폐기 기준

@@ -1,0 +1,924 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>문서나르미 · 핵심 워크플로 시안 v2</title>
+<style>
+:root{
+  --bg:#f4f6f9;--card:#fff;--surface:#f7f8fa;--line:#dfe3e8;--line-strong:#c8ced7;
+  --ink:#202632;--soft:#46505f;--muted:#707b8b;--primary:#5b55c7;--primary-hover:#4842ae;
+  --primary-bg:#efedff;--ok:#18794e;--ok-bg:#eaf7f0;--warn:#9b5c00;--warn-bg:#fff4dd;
+  --danger:#b4233a;--danger-bg:#fff0f2;--info:#2563a8;--info-bg:#edf5ff;
+  --shadow:0 18px 50px rgba(30,38,50,.14);--r:14px;--rs:10px
+}
+*{box-sizing:border-box}
+html,body{min-height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 Pretendard,"Pretendard GOV","Malgun Gothic",system-ui,sans-serif}
+button,input,select{font:inherit}
+button{cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible,[tabindex]:focus-visible{outline:3px solid rgba(91,85,199,.26);outline-offset:2px}
+[hidden]{display:none!important}
+.app{min-height:100vh;display:grid;grid-template-rows:64px 1fr}
+.topbar{position:sticky;top:0;z-index:30;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 28px;background:rgba(255,255,255,.94);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;font-weight:850;font-size:16px;letter-spacing:-.02em}
+.brand-mark{width:28px;height:28px;border-radius:9px;background:linear-gradient(145deg,var(--primary),#827cea);color:#fff;display:grid;place-items:center;font-size:12px;box-shadow:0 5px 14px rgba(91,85,199,.25)}
+.nav{height:100%;display:flex;gap:6px}.nav button{position:relative;border:0;background:transparent;color:var(--soft);padding:0 18px;font-weight:750}.nav button[aria-current=page]{color:var(--primary)}.nav button[aria-current=page]::after{content:"";position:absolute;left:16px;right:16px;bottom:0;height:3px;border-radius:3px 3px 0 0;background:var(--primary)}
+.top-actions{justify-self:end}.icon-btn{width:35px;height:35px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--soft);font-weight:850}
+.workspace{width:min(1240px,calc(100% - 48px));margin:0 auto;padding:28px 0 50px}.screen{display:none}.screen.on{display:block;animation:appear .16s ease-out}@keyframes appear{from{opacity:.5;transform:translateY(3px)}}
+h1,h2,h3,p{margin:0}h1{font-size:26px;line-height:1.25;letter-spacing:-.03em}h2{font-size:18px;letter-spacing:-.015em}h3{font-size:15px}
+.eyebrow{margin-bottom:4px;color:var(--primary);font-size:12px;font-weight:850;letter-spacing:.06em}.subtitle{margin-top:6px;color:var(--muted)}
+.page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:20px}.head-actions{display:flex;align-items:flex-end;gap:10px}
+.button{min-height:39px;border:1px solid var(--line-strong);border-radius:9px;padding:8px 14px;background:#fff;color:var(--ink);font-weight:720;display:inline-flex;align-items:center;justify-content:center;gap:7px}.button:hover{background:var(--surface)}.button.primary{border-color:var(--primary);background:var(--primary);color:#fff}.button.primary:hover{background:var(--primary-hover)}.button.ghost{border-color:transparent;background:transparent;color:var(--primary)}.button.small{min-height:32px;padding:5px 10px;font-size:12px}.button:disabled{opacity:.45;cursor:not-allowed}
+.back{border:0;background:transparent;color:var(--soft);padding:0;margin-bottom:14px;font-weight:700}.back:hover{color:var(--primary)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r)}
+.status{display:inline-flex;align-items:center;gap:6px;min-height:26px;padding:3px 9px;border-radius:99px;font-size:12px;font-weight:800;white-space:nowrap}.status::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}.status.ready{color:var(--ok);background:var(--ok-bg)}.status.review{color:var(--warn);background:var(--warn-bg)}.status.missing{color:var(--danger);background:var(--danger-bg)}.status.neutral{color:var(--soft);background:#eef0f3}.status.info{color:var(--info);background:var(--info-bg)}
+.surface-notice{margin:-7px 0 18px;padding:11px 13px;border:1px solid #bce0cc;border-radius:10px;background:var(--ok-bg);color:var(--ok);font-size:13px}.surface-notice.warn{border-color:#efd09a;background:var(--warn-bg);color:var(--warn)}
+.surface-notice.error{border-color:#efbac3;background:var(--danger-bg);color:var(--danger)}
+.workflow-strip{display:flex;align-items:center;gap:8px;margin:-4px 0 18px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--muted);font-size:12px}.workflow-strip strong{color:var(--ink)}.workflow-strip .workflow-next{margin-left:auto}.workflow-dot{width:8px;height:8px;border-radius:50%;background:var(--primary);box-shadow:0 0 0 4px var(--primary-bg)}
+.run-progress{display:none;padding:11px 12px;border:1px solid #b9d2ef;border-radius:10px;background:var(--info-bg);color:var(--info);font-size:12px}.run-progress.on{display:flex;align-items:center;justify-content:space-between;gap:10px}.run-progress strong{display:block}.run-progress span{display:block;margin-top:2px}.run-progress .button{flex:0 0 auto}
+  .result-panel{display:none;margin:0 0 18px;padding:14px;border:1px solid var(--line);border-radius:11px;background:#fff}.result-panel.on{display:flex;align-items:flex-start;gap:14px}.result-panel[data-status=completed]{border-color:#bce0cc;background:var(--ok-bg)}.result-panel[data-status=partiallyCompleted],.result-panel[data-status=cancelled]{border-color:#efd09a;background:var(--warn-bg)}.result-panel[data-status=failed]{border-color:#efbac3;background:var(--danger-bg)}.result-copy{flex:1}.result-copy strong{display:block}.result-copy span{display:block;margin-top:3px;color:var(--soft);font-size:12px}.result-cause{margin-top:8px;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,.66);color:var(--soft);font-size:12px}.result-actions{display:flex;gap:8px}
+.scenario-picker{display:grid;gap:4px;color:var(--soft);font-size:12px;font-weight:800}.scenario-picker select{min-width:280px;min-height:39px;border:1px solid var(--line-strong);border-radius:9px;background:#fff;color:var(--ink);padding:7px 32px 7px 10px}
+.data-grid{display:grid;grid-template-columns:minmax(0,1fr) 370px;gap:18px;align-items:start}
+.file-card{overflow:hidden}.file-head{display:flex;align-items:center;gap:14px;padding:18px 20px;border-bottom:1px solid var(--line)}.file-icon{width:42px;height:42px;border-radius:10px;background:var(--ok-bg);color:var(--ok);display:grid;place-items:center;font-weight:900;font-size:11px}.file-title{min-width:0;flex:1}.file-title h2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.file-meta{margin-top:2px;color:var(--muted);font-size:12px}
+.compat-note{display:none;margin:14px 18px 0;padding:12px 13px;border:1px solid #efd09a;border-radius:10px;background:var(--warn-bg);color:var(--warn);align-items:flex-start;justify-content:space-between;gap:14px}.compat-note.on{display:flex}.compat-note p{margin-top:2px;font-size:12px}
+.table-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px}.select-summary{font-weight:750}.select-summary span{margin-left:6px;color:var(--muted);font-size:12px;font-weight:500}.search{width:220px;border:1px solid var(--line-strong);border-radius:8px;padding:8px 10px;background:#fff;color:var(--ink)}
+.table-wrap{overflow:auto;border-top:1px solid var(--line)}table{width:100%;border-collapse:collapse}th{padding:9px 12px;background:#f1f3f6;color:var(--soft);text-align:left;font-size:12px;white-space:nowrap;border-bottom:1px solid var(--line)}td{padding:11px 12px;border-bottom:1px solid var(--line);white-space:nowrap}tbody tr{transition:.12s}tbody tr:hover{background:#fafaff}tbody tr.selected{background:var(--primary-bg)}tbody tr:last-child td{border-bottom:0}.checkcell{width:42px;text-align:center}input[type=checkbox]{width:16px;height:16px;accent-color:var(--primary)}.money{text-align:right;font-variant-numeric:tabular-nums}
+  .side-card{position:sticky;top:84px;padding:18px}.side-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.side-desc{margin:4px 0 14px;color:var(--muted);font-size:13px}.doc-empty{padding:16px;border:1px dashed var(--line-strong);border-radius:11px;background:var(--surface)}.doc-empty strong{display:block}.doc-empty p{margin:5px 0 12px;color:var(--muted);font-size:12px}.doc-list{display:grid;gap:9px}.doc-option{width:100%;border:1px solid var(--line);border-radius:11px;background:#fff;padding:13px;text-align:left;color:var(--ink);transition:.12s}.doc-option:hover{border-color:#aaa5e8;transform:translateY(-1px)}.doc-option.selected{border-color:var(--primary);box-shadow:0 0 0 2px rgba(91,85,199,.11)}.doc-option.blocked{background:var(--warn-bg);border-color:#efd09a}.doc-top{display:flex;align-items:center;justify-content:space-between;gap:8px}.doc-name{font-weight:800}.doc-mode{display:block;margin-top:7px;color:var(--soft);font-size:12px;font-weight:750}.doc-meta{display:block;margin-top:2px;color:var(--muted);font-size:12px}
+  .side-actions{display:grid;gap:9px;margin-top:15px;padding-top:15px;border-top:1px solid var(--line)}.run-validation{display:flex;align-items:flex-start;gap:10px;padding:12px;border:1px solid #bce0cc;border-radius:10px;background:var(--ok-bg);color:var(--ok)}.run-validation[data-level=warn]{border-color:#efd09a;background:var(--warn-bg);color:var(--warn)}.run-validation[data-level=bad]{border-color:#efbac3;background:var(--danger-bg);color:var(--danger)}.validation-mark{width:22px;height:22px;flex:0 0 auto;border-radius:50%;background:rgba(255,255,255,.6);display:grid;place-items:center;font-weight:900}.run-validation strong{display:block;font-size:13px}.run-validation p{margin-top:2px;font-size:12px}.run-actions,.secondary-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.run-actions.one{grid-template-columns:1fr}.secondary-actions .button{font-size:12px}.selection-foot{text-align:center;color:var(--muted);font-size:12px}
+
+/* 문서 설정 */
+.template-shell{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(330px,.8fr);gap:18px}.structure-teaser{min-height:590px;padding:26px;background:linear-gradient(145deg,#edf0f5,#f8f9fb);display:flex;flex-direction:column;align-items:center;justify-content:center}.structure-frame{width:min(520px,94%);border:1px solid var(--line-strong);border-radius:12px;background:#fff;padding:26px;box-shadow:0 12px 28px rgba(28,35,47,.08)}.structure-kicker{color:var(--primary);font-size:11px;font-weight:850;letter-spacing:.08em}.structure-frame h2{margin:8px 0 18px}.structure-lines{display:grid;gap:9px}.structure-line{height:9px;border-radius:5px;background:#e7e9ee}.structure-line.short{width:64%}.structure-table{margin-top:18px;display:grid;grid-template-columns:36% 64%;border:1px solid #d7dbe1}.structure-cell{min-height:38px;border-right:1px solid #d7dbe1;border-bottom:1px solid #d7dbe1;padding:8px;font-size:11px;color:var(--muted)}.structure-cell:nth-child(2n){border-right:0}.structure-cell:nth-last-child(-n+2){border-bottom:0}.token-chip{display:inline-block;border-radius:5px;padding:2px 5px;background:var(--primary-bg);color:var(--primary);font-weight:750}.structure-caption{width:min(520px,94%);margin-top:14px;color:var(--muted);font-size:12px;text-align:center}
+.template-side{padding:20px}.template-side>.subtitle{font-size:13px}.template-format{margin:18px 0;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}.template-format span{display:block;color:var(--muted);font-size:12px}.template-format strong{display:block;margin-top:3px;font-size:16px}.template-actions{display:grid;gap:8px}.template-summary{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:18px 0}.metric{padding:12px;border-radius:10px;background:var(--surface)}.metric span{display:block;color:var(--muted);font-size:11px}.metric strong{display:block;margin-top:2px}.section-label{margin:18px 0 7px;color:var(--soft);font-size:12px;font-weight:850;letter-spacing:.04em}.linked-data{padding:14px;border:1px solid var(--line);border-radius:10px}.linked-title{display:flex;align-items:center;justify-content:space-between;gap:8px}.linked-data p{margin-top:7px;color:var(--muted);font-size:12px}.linked-actions{display:flex;gap:8px;margin-top:12px}
+
+/* 연결 편집 */
+  .editor-wrap{max-width:1220px;margin:0 auto}.editor-card{overflow:hidden}.editor-head{display:flex;align-items:center;gap:15px;padding:20px 22px;border-bottom:1px solid var(--line)}.relation-mark{width:44px;height:44px;flex:0 0 auto;border-radius:11px;background:var(--primary-bg);color:var(--primary);display:grid;place-items:center;font-weight:900}.editor-title{flex:1}.editor-title h1{font-size:21px}.editor-title p{margin-top:3px;color:var(--muted);font-size:13px}.mapping-head,.mapping-row{display:grid;grid-template-columns:.92fr 1.05fr .86fr .84fr 1.05fr;gap:12px;align-items:center}.mapping-head{padding:10px 22px;background:#f1f3f6;color:var(--soft);font-size:12px;font-weight:800;border-bottom:1px solid var(--line)}.mapping-list{padding:0 22px}.mapping-row{min-height:94px;border-bottom:1px solid var(--line)}.mapping-row:last-child{border-bottom:0}.field-name strong{display:block}.field-name span{display:block;color:var(--muted);font-size:11px}.required{color:var(--danger);margin-left:2px}.mapping-control{min-width:0}.mapping-select,.type-select,.format-select,.literal-input{width:100%;min-height:38px;border:1px solid var(--line-strong);border-radius:8px;padding:6px 8px;background:#fff;color:var(--ink)}.literal-input{margin-top:6px}.inference-note{display:block;margin-top:3px;color:var(--info);font-size:10px;font-weight:750}.inference-note.user{color:var(--soft)}.result-cell{min-width:0}.result-main{display:block;font-weight:750;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row-state{display:block;margin-top:3px;color:var(--ok);font-size:11px;font-weight:750}.row-state.warn{color:var(--warn)}.row-state.bad{color:var(--danger)}.row-state.info{color:var(--info)}.mapping-note{padding:10px 22px;color:var(--muted);font-size:12px;background:#fafbfc;border-top:1px solid var(--line)}.editor-foot{display:flex;align-items:center;gap:9px;padding:15px 22px;border-top:1px solid var(--line);background:var(--surface)}.editor-foot .hint{flex:1;color:var(--muted);font-size:12px}.save-note{display:none;margin:14px 22px 0;padding:10px 12px;border-radius:10px}.save-note.on{display:block}.save-note.ok{background:var(--ok-bg);color:var(--ok)}.save-note.warn{background:var(--warn-bg);color:var(--warn)}.save-note.bad{background:var(--danger-bg);color:var(--danger)}
+.save-state{color:var(--muted);font-size:12px;font-weight:750}.save-state[data-status=dirty]{color:var(--warn)}.save-state[data-status=saving]{color:var(--info)}.save-state[data-status=failed]{color:var(--danger)}.save-state[data-status=saved]{color:var(--ok)}
+
+/* 안내 화면 */
+  .info-shell{max-width:780px;margin:44px auto}.info-card{padding:30px}.info-icon{width:48px;height:48px;border-radius:13px;background:var(--primary-bg);color:var(--primary);display:grid;place-items:center;font-weight:900}.info-card h1{margin-top:18px}.quote{margin:20px 0;padding:17px 18px;border-left:4px solid var(--primary);border-radius:0 10px 10px 0;background:var(--surface);color:var(--soft);font-size:15px}.coming-list{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:18px 0 24px}.coming-item{padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff}.coming-item::before{content:"✓";margin-right:8px;color:var(--primary);font-weight:900}.flow-steps{display:flex;align-items:center;gap:8px;margin:22px 0}.flow-step{flex:1;padding:12px;border-radius:10px;background:var(--surface);color:var(--muted);text-align:center;font-size:12px;font-weight:800}.flow-step.on{background:var(--primary-bg);color:var(--primary)}.flow-arrow{color:var(--muted)}.structure-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin:20px 0}.structure-summary .metric{text-align:center}.plain-structure{margin:18px 0;padding:18px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}.plain-row{display:grid;grid-template-columns:130px 1fr;border-bottom:1px solid var(--line)}.plain-row:last-child{border-bottom:0}.plain-row span{padding:9px}.plain-row span:first-child{font-weight:750;border-right:1px solid var(--line)}.prototype-boundary{padding:16px;border:1px solid #b9d2ef;border-radius:10px;background:var(--info-bg);color:var(--info)}.prototype-boundary strong{display:block}.prototype-boundary p{margin-top:4px;font-size:12px}.structure-boundary{grid-column:1/-1}
+
+/* 미리보기 */
+.scrim{position:fixed;inset:0;z-index:50;background:rgba(17,24,39,.46);opacity:0;pointer-events:none;transition:.2s}.scrim.on{opacity:1;pointer-events:auto}.drawer{position:fixed;z-index:60;top:0;right:0;width:min(610px,100%);height:100%;background:#fff;box-shadow:-18px 0 50px rgba(20,28,40,.18);transform:translateX(102%);transition:.22s;display:grid;grid-template-rows:auto 1fr auto}.drawer.on{transform:translateX(0)}.drawer-head{display:flex;align-items:center;gap:12px;padding:17px 20px;border-bottom:1px solid var(--line)}.drawer-head h2{flex:1}.preview-nav{display:flex;align-items:center;gap:7px}.preview-nav strong{min-width:46px;text-align:center}.drawer-body{overflow:auto;padding:20px;background:var(--surface)}.sample-label{width:min(430px,100%);margin:0 auto 9px;color:var(--muted);font-size:12px;font-weight:750}.mini-preview{width:min(430px,100%);margin:0 auto;border:1px solid var(--line);border-radius:12px;background:#fff;padding:25px;box-shadow:0 8px 20px rgba(28,35,47,.07)}.mini-preview h3{text-align:center;margin-bottom:20px;font-size:18px;letter-spacing:.08em}.preview-line{display:flex;justify-content:space-between;gap:14px;padding:8px 0;border-bottom:1px solid var(--line)}.preview-line span{color:var(--muted)}.preview-total{display:flex;justify-content:space-between;margin-top:18px;padding:12px;background:var(--surface);font-weight:850}.preview-summary-card{width:min(430px,100%);margin:12px auto 0;padding:13px;border:1px solid #efd09a;border-radius:10px;background:var(--warn-bg)}.preview-summary-card strong{display:block}.preview-summary-card span{display:block;margin-top:3px;color:var(--warn);font-size:12px}.drawer-foot{padding:15px 20px;border-top:1px solid var(--line)}.run-summary{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;margin-bottom:13px}.run-summary span{display:block;color:var(--muted);font-size:11px}.drawer-actions{display:flex;justify-content:flex-end;gap:8px}.result{display:none;margin-bottom:12px;padding:12px;border:1px solid #bce0cc;border-radius:10px;background:var(--ok-bg);color:var(--ok)}.result.on{display:block}.result span{display:block;font-size:12px}
+.preview-state{width:min(430px,100%);margin:0 auto 12px;padding:11px 12px;border:1px solid #b9d2ef;border-radius:10px;background:var(--info-bg);color:var(--info);font-size:12px}.preview-state.error{border-color:#efbac3;background:var(--danger-bg);color:var(--danger)}
+
+/* 온나라 작업대 */
+.workspace.workbench-space{width:100%;padding:0}.workbench-screen{min-height:calc(100vh - 64px);background:#edf0f4}.workbench-head{height:72px;padding:0 24px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:16px}.workbench-head .back{margin:0}.workbench-title{flex:1}.workbench-title h1{font-size:20px}.workbench-title p{color:var(--muted);font-size:12px}.workbench-stats{display:flex;align-items:center;gap:18px}.stat-pair span{display:block;color:var(--muted);font-size:11px}.stat-pair strong{font-size:14px}.queue-dots{display:flex;gap:6px}.queue-dot{width:18px;height:18px;border:4px solid transparent;padding:0;border-radius:50%;background:#d5d9df;background-clip:content-box}.queue-dot.current{outline:2px solid var(--primary);outline-offset:1px;background-color:#fff}.queue-dot.copied{background-color:var(--ok)}.queue-dot.review{background-color:var(--warn)}
+.work-tabs{display:none}.workbench-body{height:calc(100vh - 64px - 72px - 78px);display:grid;grid-template-columns:minmax(420px,43%) minmax(0,57%);gap:1px;background:var(--line)}.work-panel{min-width:0;overflow:auto;background:#fff}.work-left{padding:20px}.work-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:14px}.work-panel-head p{margin-top:3px;color:var(--muted);font-size:12px}.work-map-head,.work-map-row{display:grid;grid-template-columns:.8fr 1fr .72fr .95fr;gap:8px;align-items:center}.work-map-head{padding:8px 9px;background:#f1f3f6;border-radius:8px 8px 0 0;color:var(--soft);font-size:11px;font-weight:800}.work-map-row{min-height:67px;padding:8px 9px;border:1px solid var(--line);border-top:0}.work-map-row:last-child{border-radius:0 0 8px 8px}.work-map-row strong{font-size:12px}.work-map-row select{width:100%;min-width:0;min-height:34px;border:1px solid var(--line-strong);border-radius:7px;background:#fff;color:var(--ink);padding:5px}.work-result{font-size:12px;overflow:hidden;text-overflow:ellipsis}.work-result span{display:block;color:var(--muted);font-size:10px}.work-tip{margin-top:13px;padding:11px;border-radius:9px;background:var(--info-bg);color:var(--info);font-size:12px}
+.work-right{padding:20px;background:#f6f7f9}.preview-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}.segmented{display:inline-flex;padding:3px;border-radius:9px;background:#e8ebef}.segmented button{min-height:32px;border:0;border-radius:7px;background:transparent;color:var(--soft);padding:5px 11px;font-weight:750}.segmented button.on{background:#fff;color:var(--primary);box-shadow:0 1px 5px rgba(30,38,50,.12)}.font-select{min-height:38px;border:1px solid var(--line-strong);border-radius:8px;background:#fff;padding:6px 9px;color:var(--ink)}
+.text-preview{min-height:430px;border:1px solid var(--line);border-radius:12px;background:#fff;padding:30px 34px;box-shadow:0 10px 25px rgba(28,35,47,.07);font-family:"Noto Sans KR","Malgun Gothic",sans-serif;font-size:15px;line-height:2}.text-preview h2{text-align:center;margin-bottom:24px;font-size:19px}.text-preview p+p{margin-top:14px}.filled-value{border-radius:4px;background:#fff0b8;padding:1px 3px;color:#654c00;font-weight:750}.token-value{border-radius:4px;background:var(--primary-bg);padding:1px 3px;color:var(--primary);font:13px/1.5 Consolas,monospace}.record-state{display:none;margin-bottom:12px;padding:10px 12px;border-radius:9px;background:var(--warn-bg);color:var(--warn);font-size:12px}.record-state.on{display:block}.record-state.copied{background:var(--ok-bg);color:var(--ok)}.complete-card{display:none;margin-bottom:12px;padding:13px;border:1px solid #bce0cc;border-radius:10px;background:var(--ok-bg);color:var(--ok)}.complete-card.on{display:block}.complete-card strong{display:block}.complete-card span{font-size:12px}
+.prototype-badge{display:inline-flex;margin-left:7px;padding:2px 6px;border-radius:99px;background:var(--info-bg);color:var(--info);font-size:10px;font-weight:850;vertical-align:middle}
+.modal{width:min(560px,calc(100% - 32px));border:0;border-radius:14px;padding:0;box-shadow:var(--shadow);color:var(--ink)}.modal::backdrop{background:rgba(17,24,39,.5)}.modal-card{padding:22px}.modal-card h2{margin-bottom:8px}.modal-card>p{color:var(--soft);white-space:pre-line}.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}.capability-list{display:grid;gap:8px;margin-top:16px;max-height:55vh;overflow:auto}.capability-row{padding:10px;border:1px solid var(--line);border-radius:9px}.capability-row strong{display:flex;align-items:center;justify-content:space-between;gap:8px}.capability-row p{margin-top:3px;color:var(--muted);font-size:12px}.capability-status{padding:2px 6px;border-radius:99px;background:var(--surface);color:var(--soft);font-size:10px}
+.workbench-bar{position:relative;height:78px;background:#fff;border-top:1px solid var(--line);padding:0 24px;display:flex;align-items:center;gap:9px}.workbench-bar .spacer{flex:1}.copy-option{display:flex;align-items:center;gap:7px;color:var(--soft);font-size:12px;font-weight:700;margin-right:4px}.copy-option input{width:16px;height:16px}
+.toast{position:fixed;z-index:90;left:50%;bottom:24px;transform:translate(-50%,18px);padding:11px 15px;border-radius:10px;background:#202632;color:#fff;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:.18s}.toast.on{opacity:1;transform:translate(-50%,0)}
+
+@media(max-width:920px){
+  .topbar{grid-template-columns:1fr auto;padding:0 18px}.nav{display:none}.workspace{width:min(100% - 28px,760px);padding-top:20px}.data-grid,.template-shell{grid-template-columns:1fr}.side-card{position:static}.structure-teaser{min-height:430px}
+  .mapping-head{display:none}.mapping-row{grid-template-columns:1fr 1fr;padding:12px 0;align-items:start}.result-cell{grid-column:1/-1;padding:8px 10px;background:var(--surface);border-radius:8px}
+  .workbench-head{height:auto;min-height:78px;flex-wrap:wrap;padding:12px 16px}.workbench-title{min-width:220px}.workbench-stats{width:100%;justify-content:space-between}.work-tabs{display:grid;grid-template-columns:1fr 1fr;padding:9px;background:#fff;border-bottom:1px solid var(--line)}.work-tabs button{border:1px solid var(--line);background:#fff;padding:8px;font-weight:750;color:var(--soft)}.work-tabs button:first-child{border-radius:8px 0 0 8px}.work-tabs button:last-child{border-radius:0 8px 8px 0}.work-tabs button.on{background:var(--primary-bg);color:var(--primary);border-color:#b9b5ec}.workbench-body{height:auto;min-height:calc(100vh - 230px);display:block}.work-panel{display:none;min-height:calc(100vh - 300px)}.work-panel.mobile-on{display:block}.workbench-bar{position:sticky;bottom:0;height:auto;min-height:78px;padding:10px 12px;flex-wrap:wrap}.workbench-bar .spacer{display:none}.copy-option{width:100%;order:-1}.workbench-bar .button{flex:1}.workbench-screen{padding-bottom:0}
+}
+@media(max-width:580px){
+  .page-head{align-items:stretch;flex-direction:column}.head-actions{align-items:stretch;flex-direction:column}.scenario-picker select{width:100%;min-width:0}.file-head{align-items:flex-start;flex-wrap:wrap}.file-head>.status{margin-left:56px}.table-tools{align-items:stretch;flex-direction:column}.search{width:100%}.run-actions,.secondary-actions{grid-template-columns:1fr}.template-side{padding:16px}.structure-frame{padding:18px}.coming-list,.structure-summary{grid-template-columns:1fr}.flow-steps{align-items:stretch;flex-direction:column}.flow-arrow{transform:rotate(90deg);text-align:center}.editor-head{align-items:flex-start}.editor-head>.status{display:none}.mapping-row{grid-template-columns:1fr}.result-cell{grid-column:1}.editor-foot{align-items:stretch;flex-direction:column}.editor-foot .hint{order:5}.run-summary{grid-template-columns:1fr}.drawer-foot{max-height:45vh;overflow:auto}.work-map-head{display:none}.work-map-row{grid-template-columns:1fr 1fr}.work-map-row .work-result{grid-column:1/-1;padding:7px;background:var(--surface);border-radius:7px}.preview-toolbar{align-items:stretch;flex-direction:column}.font-select{width:100%}.text-preview{padding:22px 18px}.workflow-strip{align-items:flex-start;flex-direction:column}.workflow-strip .workflow-next{margin-left:0}.result-panel.on{display:block}.result-actions{margin-top:10px}
+}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar" id="topbar">
+    <div class="brand"><span class="brand-mark">나</span><span>문서나르미</span></div>
+    <nav class="nav" aria-label="주요 화면">
+      <button type="button" data-nav="data" aria-current="page">문서 만들기</button>
+      <button type="button" data-nav="settings">문서 설정</button>
+    </nav>
+    <div class="top-actions"><button class="icon-btn" type="button" id="helpButton" aria-label="도움말">?</button></div>
+  </header>
+
+  <main class="workspace" id="workspace">
+    <section class="screen on" id="screen-data" aria-labelledby="data-title">
+      <div class="page-head">
+        <div><p class="eyebrow">문서 만들기 <span class="prototype-badge">인터랙티브 시안</span></p><h1 id="data-title">데이터에서 처리할 항목을 고르세요</h1><p class="subtitle">데이터와 항목, 문서 작업을 고르면 연결·값 해석·표시 결과를 먼저 확인합니다.</p></div>
+        <div class="head-actions">
+          <label class="scenario-picker"><span>데이터 상태</span><select id="scenarioSelect">
+            <option value="normal">1 · 정상 직원 데이터</option>
+            <option value="newField">2 · 새 필드 추가</option>
+            <option value="missing">3 · 필수 필드 누락</option>
+            <option value="customer">4 · 고객 데이터 · 새 연결</option>
+          </select></label>
+          <label class="scenario-picker"><span>mock 처리 결과</span><select id="outcomeSelect">
+            <option value="success">정상 처리</option>
+            <option value="previewFailure">미리보기 실패</option>
+            <option value="saveFailure">저장 실패</option>
+            <option value="partialResult">문서 일부 실패</option>
+            <option value="processingFailure">문서 생성 실패</option>
+          </select></label>
+        </div>
+      </div>
+      <div class="workflow-strip" id="workflowStrip" role="status" aria-live="polite"><span class="workflow-dot" aria-hidden="true"></span><span>현재 단계 <strong id="workflowCurrent">문서 만들기</strong></span><span id="workflowRequirement">항목과 문서를 선택하고 자동 검증을 통과하세요.</span><span class="workflow-next">다음 <strong id="workflowNext">처리 결과</strong></span></div>
+      <div class="surface-notice" id="dataNotice" hidden></div>
+      <section class="result-panel" id="runResultPanel" aria-labelledby="runResultTitle" aria-live="polite">
+        <div class="result-copy"><strong id="runResultTitle">처리 결과</strong><span id="runResultDetail"></span><div class="result-cause" id="runResultCause" hidden></div></div>
+        <div class="result-actions"><button class="button primary" type="button" id="resolveFailureButton" hidden>실패 항목과 입력 확인</button><button class="button" type="button" id="dismissResultButton">결과 닫기</button></div>
+      </section>
+      <div class="data-grid">
+        <section class="card file-card">
+          <div class="file-head"><div class="file-icon">XLSX</div><div class="file-title"><h2 id="fileName">7월_급여자료.xlsx</h2><p class="file-meta" id="fileMeta">직원 5개 항목 · 열 7개 · 첫 행을 제목으로 인식</p></div><span class="status ready" id="fileStatus">직원 데이터로 인식됨</span></div>
+          <div class="compat-note" id="compatNote"><div><strong id="compatTitle">연결을 확인해야 합니다.</strong><p id="compatText"></p></div><button class="button small" type="button" id="compatAction">연결 복구</button></div>
+          <div class="table-tools"><div class="select-summary"><strong id="selectionTitle">5개 선택</strong><span id="selectionType">직원 5명</span></div><input class="search" id="recordSearch" type="search" placeholder="항목 검색" aria-label="항목 검색"></div>
+          <div class="table-wrap"><table><thead id="recordHead"></thead><tbody id="recordBody"></tbody></table></div>
+        </section>
+        <aside class="card side-card">
+          <div class="side-head"><h2 id="documentWorkTitle">이 데이터로 할 수 있는 문서 작업</h2><span class="status ready" id="docCountStatus">3개 준비됨</span></div>
+          <p class="side-desc" id="documentWorkDescription">저장된 데이터 형식 연결을 기준으로 표시합니다.</p>
+          <div class="doc-empty" id="newConnectionEmpty" hidden><strong>추천할 문서 작업이 아직 없습니다.</strong><p>등록된 데이터 형식과 정확히 일치하는 연결이 없습니다. 유사 스키마 자동 추천은 하지 않으며, 연결할 문서를 직접 고릅니다.</p><button class="button primary" type="button" id="chooseDocumentButton">문서 작업 직접 고르기</button></div>
+          <div class="doc-list" id="documentList">
+            <button class="doc-option selected" type="button" data-document="salary"><span class="doc-top"><span class="doc-name">급여명세서</span><span class="status ready doc-status">연결됨</span></span><span class="doc-mode">HWPX 일괄 생성</span><span class="doc-meta">필수 필드 4개 · 한글 문서 템플릿</span></button>
+            <button class="doc-option" type="button" data-document="order"><span class="doc-top"><span class="doc-name">발주 요청문</span><span class="status ready doc-status">연결됨</span></span><span class="doc-mode">온나라 복사 작업</span><span class="doc-meta">필수 필드 3개 · 텍스트 템플릿</span></button>
+            <button class="doc-option" type="button" data-document="employment"><span class="doc-top"><span class="doc-name">재직증명서</span><span class="status ready doc-status">연결됨</span></span><span class="doc-mode">HWPX 일괄 생성</span><span class="doc-meta">필수 필드 2개 · 한글 문서 템플릿</span></button>
+          </div>
+          <div class="side-actions">
+            <div class="run-validation" id="runValidation" data-level="ready"><span class="validation-mark" id="validationMark">✓</span><div><strong id="validationTitle">실행 준비 완료</strong><p id="validationText">연결, 값 해석, 표시 결과가 정상입니다.</p></div></div>
+            <div class="run-progress" id="runProgress" role="status" aria-live="polite"><div><strong id="runProgressTitle">문서를 만들고 있습니다.</strong><span id="runProgressDetail">0 / 5 완료 · 중복 실행이 잠겼습니다.</span></div><button class="button small" type="button" id="cancelRunButton">현재 문서 뒤 취소</button></div>
+            <div class="run-actions" id="runActions"><button class="button" type="button" id="previewButton">미리보기</button><button class="button primary" type="button" id="primaryRunButton">5개 생성</button></div>
+            <div class="secondary-actions"><button class="button ghost" type="button" id="documentSettingsButton">문서 설정</button><button class="button ghost" type="button" id="connectionButton">연결 편집</button></div>
+            <p class="selection-foot" id="selectionFoot">직원 5명 · 급여명세서 5개 생성 예정</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="screen" id="screen-settings" aria-labelledby="settings-title">
+      <button class="back" type="button" data-back-data>← 문서 만들기로 돌아가기</button>
+      <div class="page-head"><div><p class="eyebrow">문서 설정</p><h1 id="settings-title">급여명세서</h1><p class="subtitle">템플릿 형식에 맞는 저작 방식과 데이터 연결을 관리합니다.</p></div><label class="scenario-picker"><span>설정할 문서</span><select id="settingsDocumentSelect"><option value="salary">급여명세서</option><option value="order">발주 요청문</option><option value="employment">재직증명서</option></select></label></div>
+      <div class="surface-notice" id="settingsNotice" hidden></div>
+      <div class="template-shell">
+        <section class="card structure-teaser">
+          <div class="structure-frame">
+            <p class="structure-kicker" id="teaserKicker">HWPX 구조 개요</p><h2 id="teaserTitle">급여명세서</h2>
+            <div class="structure-lines"><div class="structure-line short"></div><div class="structure-line"></div><div class="structure-line"></div></div>
+            <div class="structure-table" id="teaserTable"></div>
+          </div>
+          <p class="structure-caption" id="teaserCaption">정밀한 문서 모양이 아니라 텍스트, 문단, 표와 토큰의 위치만 간단히 보여줍니다.</p>
+        </section>
+        <aside class="card template-side">
+          <h2>템플릿과 연결</h2><p class="subtitle">형식에 맞는 도구에서 템플릿을 관리합니다.</p>
+          <div class="template-format"><span>템플릿 형식</span><strong id="templateFormat">한글 문서 HWPX</strong></div>
+          <div class="template-actions" id="templateActions"></div>
+          <div class="template-summary"><div class="metric"><span>문서 필드</span><strong id="templateFieldCount">6개</strong></div><div class="metric"><span>필수 연결</span><strong id="templateRequiredCount">4개</strong></div><div class="metric"><span>최근 확인</span><strong>오늘</strong></div><div class="metric"><span>상태</span><strong id="templateState">연결됨</strong></div></div>
+          <p class="section-label">연결된 데이터</p>
+          <div class="linked-data"><div class="linked-title"><strong id="linkedDataset">직원 데이터</strong><span class="status ready" id="linkedStatus">연결됨</span></div><p id="linkedMeta">성명, 급여기준일, 기본급, 성과급 열을 사용합니다.</p><div class="linked-actions"><button class="button small" type="button" id="settingsConnectionButton">연결 편집</button></div></div>
+          <button class="button ghost" type="button" id="newConnectionButton" style="margin-top:8px">새 데이터 형식 연결</button>
+          <div class="template-actions" style="margin-top:18px"><button class="button primary" type="button" id="settingsRunButton">이 문서로 만들기</button></div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="screen" id="screen-connection" aria-labelledby="connection-title">
+      <div class="editor-wrap">
+        <button class="back" type="button" id="connectionBack">← 이전 화면으로 돌아가기</button>
+        <section class="card editor-card">
+          <div class="editor-head"><div class="relation-mark">↔</div><div class="editor-title"><p class="eyebrow" id="connectionEyebrow">연결 편집</p><h1 id="connection-title">급여명세서 ↔ 직원 데이터</h1><p>데이터 항목을 고르고 문서에 표시할 형식을 확인하세요.</p></div><span class="status ready" id="connectionStatus">연결됨</span></div>
+          <div class="save-note" id="saveNote"></div>
+          <div class="mapping-head"><span>문서 필드</span><span>데이터 항목</span><span>값 유형</span><span>표시형</span><span>지금 결과 · 상태</span></div>
+          <div class="mapping-list" id="mappingList"></div>
+          <p class="mapping-note">값 유형은 샘플 값으로 추론해 표시하며 사용자가 다시 고를 수 있습니다. 표시형은 선택한 유형에 맞는 후보만 보여줍니다. ‘직접 입력’은 모든 항목에 같은 고정값을 사용합니다.</p>
+          <div class="editor-foot"><button class="button" type="button" id="autoMapButton">빈 필드만 자동 추천</button><span class="hint" id="revisionHint">기존 연결은 유지하고 비어 있는 필드만 채웁니다.</span><span class="save-state" id="connectionSaveState" data-status="saved">저장됨</span><button class="button" type="button" id="cancelConnection">취소</button><button class="button primary" type="button" id="saveConnection">연결 저장</button></div>
+        </section>
+      </div>
+    </section>
+
+    <section class="screen" id="screen-txt" aria-labelledby="txt-title">
+      <div class="info-shell"><button class="back" type="button" data-back-settings>← 문서 설정으로 돌아가기</button><section class="card info-card"><div class="info-icon">TXT</div><p class="eyebrow">지원 범위 안내</p><h1 id="txt-title">텍스트 템플릿 편집은 현재 범위에서 연기되었습니다</h1><div class="quote">현재 시안에서는 편집이 저장되는 것처럼 연출하지 않습니다. 기존 텍스트 템플릿을 사용한 검토·복사와 기안 저장은 지원합니다.</div><h2>후속 범위 후보</h2><div class="coming-list"><div class="coming-item">토큰 강조와 자동완성</div><div class="coming-item">문법 및 연결 검사</div><div class="coming-item">샘플 데이터 실시간 미리보기</div><div class="coming-item">템플릿 변경 이력 관리</div></div><button class="button primary" type="button" data-back-settings>문서 설정으로 돌아가기</button></section></div>
+    </section>
+
+    <section class="screen" id="screen-hwp-edit" aria-labelledby="hwp-edit-title">
+      <div class="info-shell"><button class="back" type="button" data-back-settings>← 문서 설정으로 돌아가기</button><section class="card info-card"><div class="info-icon">HWPX</div><p class="eyebrow">한글에서 편집 <span class="prototype-badge">composed</span></p><h1 id="hwp-edit-title">연결된 원본 문서를 외부 편집기로 엽니다</h1><div class="quote">실제 제품은 파일 열기와 돌아온 뒤 재분석을 조합합니다. 이 HTML 시안은 파일을 열지 않으며 아래 버튼은 복귀·재분석 상태만 검증합니다.</div><div class="flow-steps"><div class="flow-step on" id="editStep1">1 · 외부에서 편집</div><span class="flow-arrow">→</span><div class="flow-step" id="editStep2">2 · 변경 확인</div><span class="flow-arrow">→</span><div class="flow-step" id="editStep3">3 · 토큰·구조 재분석</div></div><button class="button primary" type="button" id="finishHwpEdit">복귀·재분석 시나리오 실행</button></section></div>
+    </section>
+
+    <section class="screen" id="screen-structure" aria-labelledby="structure-title">
+      <div class="info-shell"><button class="back" type="button" data-back-settings>← 문서 설정으로 돌아가기</button><section class="card info-card"><div class="info-icon">구조</div><p class="eyebrow">HWPX 구조 확인</p><h1 id="structure-title">급여명세서의 문서 구조</h1><div class="quote">이 화면은 문서의 텍스트, 문단, 표 구조와 토큰 위치를 보여줍니다.<br>실제 글꼴, 간격, 개체 배치와 쪽 모양은 한글에서 확인합니다.</div><div class="prototype-boundary" id="structureBoundary" hidden><strong>이 문서의 구조 샘플은 시안에 없습니다.</strong><p>다른 문서의 구조를 대신 표시하지 않습니다. 실제 제품에서는 분석된 템플릿 구조를 이 위치에 표시합니다.</p></div><div class="structure-summary" id="structureSummary"><div class="metric"><span>문단</span><strong>4개</strong></div><div class="metric"><span>표</span><strong>1개</strong></div><div class="metric"><span>토큰</span><strong>5개</strong></div><div class="metric"><span>필수 연결</span><strong>4개</strong></div></div><div class="plain-structure" id="plainStructure"><div class="plain-row"><span>제목 문단</span><span>급여명세서</span></div><div class="plain-row"><span>표 · 5행 × 2열</span><span>이름 · 지급일 · 기본급 · 상여금 · 지급합계</span></div><div class="plain-row"><span>마침 문단</span><span>위와 같이 급여를 지급합니다.</span></div></div><button class="button primary" type="button" data-back-settings>문서 설정으로 돌아가기</button></section></div>
+    </section>
+
+    <!--
+      v2 동작 결정:
+      기존 TxtQueueModel의 "복사한 항목을 처리 후미로 재정렬"하는 규칙은 오류에 가까운
+      기존 동작으로 분류하여 계승하지 않는다. 화면의 레코드 순서는 세션 동안 고정하고,
+      복사는 해당 레코드의 상태만 바꾼다. 자유 이동·재복사·명시적 자동 전진은 계승한다.
+    -->
+    <section class="screen workbench-screen" id="screen-workbench" aria-labelledby="workbench-title">
+      <div class="workbench-head"><button class="back" type="button" id="workbenchBack">← 문서 만들기</button><div class="workbench-title"><h1 id="workbench-title">발주 요청문 · 검토·복사</h1><p>레코드별 결과를 확인하고 온나라 기안문에 전달할 내용을 복사합니다.</p></div><div class="workbench-stats"><div class="stat-pair"><span>작업점</span><strong id="workPosition">1 / 3</strong></div><div class="stat-pair"><span>복사 완료</span><strong id="copyCount">0 / 3</strong></div><div class="queue-dots" id="queueDots" aria-label="레코드 진행 상태"></div></div></div>
+      <div class="work-tabs"><button class="on" type="button" data-work-tab="map">연결·표시</button><button type="button" data-work-tab="preview">결과 미리보기</button></div>
+      <div class="workbench-body">
+        <section class="work-panel work-left mobile-on" data-work-panel="map"><div class="work-panel-head"><div><h2>연결과 표시 결과</h2><p>이 세션에서 바꾸면 오른쪽 결과에 즉시 반영됩니다.</p></div><span class="status info">세션 조정</span></div><div class="work-map-head"><span>문서 필드</span><span>데이터 항목</span><span>표시형</span><span>지금 결과</span></div><div id="workMappings"></div><p class="work-tip">복사한 항목이 있는 상태에서 표시 규칙을 바꾸면 해당 항목은 ‘다시 확인 필요’로 바뀝니다.</p></section>
+        <section class="work-panel work-right" data-work-panel="preview"><div class="preview-toolbar"><div class="segmented" aria-label="미리보기 종류"><button class="on" type="button" data-preview-mode="filled">채운 모습</button><button type="button" data-preview-mode="raw">원문</button></div><label><span style="position:absolute;clip:rect(0 0 0 0)">대상 글꼴</span><select class="font-select" id="fontSelect"><option value="gulimche">대상 글꼴 · 굴림체</option><option value="dotumche">대상 글꼴 · 돋움체</option><option value="malgun">대상 글꼴 · 맑은고딕</option></select></label></div><div class="complete-card" id="completeCard"><strong>모든 항목의 복사를 완료했습니다.</strong><span>필요하면 이전 항목으로 돌아가 결과를 다시 확인할 수 있습니다.</span></div><div class="record-state" id="recordReviewState"></div><article class="text-preview" id="textPreview"></article></section>
+      </div>
+      <div class="workbench-bar"><label class="copy-option"><input type="checkbox" id="copyNextOption"> 복사 후 다음 항목으로 이동</label><button class="button" type="button" id="saveDraftButton">기안으로 저장</button><button class="button" type="button" id="saveTemplateButton">템플릿으로 저장</button><span class="spacer"></span><button class="button" type="button" id="workPrev">이전</button><button class="button" type="button" id="workNext">다음</button><button class="button primary" type="button" id="copyButton">복사</button></div>
+    </section>
+  </main>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="previewDrawer" role="dialog" aria-modal="true" aria-labelledby="previewDrawerTitle" aria-hidden="true" inert>
+  <div class="drawer-head"><div><p class="eyebrow">대표 샘플</p><h2 id="previewDrawerTitle">생성 값 미리보기</h2></div><div class="preview-nav"><button class="icon-btn" id="previewPrev" type="button" aria-label="이전 레코드">‹</button><strong id="previewPosition">1 / 5</strong><button class="icon-btn" id="previewNext" type="button" aria-label="다음 레코드">›</button></div><button class="icon-btn" id="closePreview" type="button" aria-label="미리보기 닫기">×</button></div>
+  <div class="drawer-body"><div class="preview-state" id="previewState" role="status">실제로 주입될 값과 파일명을 준비하고 있습니다.</div><p class="sample-label">HWPX 최종 모양이 아니라 선택한 항목 한 건에 들어갈 값</p><article class="mini-preview" id="previewContent"></article><div class="preview-summary-card"><strong id="batchSummaryTitle">전체 5건 · 정상 5 · 확인 필요 0</strong><span>대표 값 미리보기와 전체 연결·값 검증 요약은 서로 다른 확인 단계입니다.</span></div></div>
+  <div class="drawer-foot"><div class="result" id="generationResult"><strong id="generationTitle">HWPX 5개를 만들었습니다.</strong><span id="generationDetail">완료된 파일은 지정한 출력 폴더에서 확인할 수 있습니다.</span></div><div class="run-summary"><div><span>선택한 항목</span><strong id="drawerSelection">직원 5명</strong></div><div><span>생성 문서</span><strong id="drawerDocument">급여명세서</strong></div><div><span>전체 검증</span><strong id="drawerValidation">정상 5 · 확인 필요 0</strong></div><div><span>미리보기 승인</span><strong id="drawerApproval">선택 사항</strong></div><div><span>현재 파일 이름</span><strong id="drawerFilename">김민수_급여명세서.hwpx</strong></div></div><div class="drawer-actions"><button class="button" type="button" id="drawerBack">뒤로</button><button class="button primary" type="button" id="resolvePreviewFailureButton" hidden>입력·연결 확인</button><button class="button" type="button" id="cancelDrawerRunButton" hidden>현재 문서 뒤 취소</button><button class="button primary" type="button" id="approvePreviewButton" hidden>결과 확인 완료</button><button class="button primary" type="button" id="generateButton" disabled>5개 생성</button></div></div>
+</aside>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<dialog class="modal" id="missingValueDialog" aria-labelledby="missingValueTitle">
+  <div class="modal-card"><h2 id="missingValueTitle">빈 값 확인</h2><p id="missingValueBody"></p><div class="modal-actions"><button class="button" type="button" id="missingValueCancel">현재 항목에 머무르기</button><button class="button primary" type="button" id="missingValueConfirm">빈 값 표식과 함께 복사</button></div></div>
+</dialog>
+<dialog class="modal" id="capabilityDialog" aria-labelledby="capabilityTitle">
+  <div class="modal-card"><h2 id="capabilityTitle">시안 워크플로와 지원 범위</h2><p>이 HTML은 상태 전환을 검증하는 시안입니다. 실제 파일을 만들거나 외부 앱을 열지는 않습니다.</p><div class="capability-list" id="capabilityList"></div><div class="modal-actions"><button class="button primary" type="button" id="closeCapabilityDialog">확인</button></div></div>
+</dialog>
+
+<script src="core-workflow-prototype/contracts.js"></script>
+<script src="core-workflow-prototype/mock-backend.js"></script>
+<script>
+(()=>{
+  "use strict";
+  const $=id=>document.getElementById(id);
+  const esc=value=>String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+  const won=value=>Number.isFinite(Number(value))?new Intl.NumberFormat("ko-KR").format(Number(value))+"원":"해석할 수 없음";
+  const workflow=window.WorkflowContract.workflow;
+  const newConnectionContract=window.WorkflowContract.newConnection;
+  const capabilities=window.WorkflowContract.capabilities;
+  const prototypeOutcomes=window.WorkflowContract.prototypeOutcomes;
+  const actions=window.documentActions;
+  const employees=[
+    {id:1,name:"김민수",department:"인사운영팀",date:"2026-07-25",salary:4200000,bonus:350000,company:"가람상사",item:"업무용 노트북",quantity:3,amount:4650000},
+    {id:2,name:"이서연",department:"재정기획팀",date:"2026-07-25",salary:3850000,bonus:0,company:"나래기획",item:"회의실 모니터",quantity:2,amount:1280000},
+    {id:3,name:"박준호",department:"민원지원팀",date:"2026-07-25",salary:4010000,bonus:220000,company:"다온유통",item:"문서 보관함",quantity:12,amount:960000},
+    {id:4,name:"최유진",department:"정보화담당관",date:"2026-07-25",salary:4480000,bonus:180000,company:"라온테크",item:"보안 키보드",quantity:8,amount:704000},
+    {id:5,name:"정하늘",department:"정책홍보팀",date:"2026-07-25",salary:3960000,bonus:0,company:"마루산업",item:"홍보물 인쇄",quantity:500,amount:1250000}
+  ];
+  const customers=[
+    {id:101,name:"한빛복지관",contact:"오지현",phone:"02-710-2210",requestDate:"2026-07-28",amount:1800000},
+    {id:102,name:"푸른도서관",contact:"강현우",phone:"02-710-2232",requestDate:"2026-07-29",amount:950000},
+    {id:103,name:"새봄센터",contact:"윤하린",phone:"02-710-2251",requestDate:"2026-07-30",amount:2300000}
+  ];
+  const scenarios={
+    normal:{file:"7월_급여자료.xlsx",kind:"employee",meta:"직원 5개 항목 · 열 7개 · 첫 행을 제목으로 인식",fileStatus:"직원 데이터로 인식됨"},
+    newField:{file:"7월_급여자료_성과급추가.xlsx",kind:"employee",meta:"직원 5개 항목 · 새 열 ‘성과급’ 감지",fileStatus:"새 필드 감지"},
+    missing:{file:"7월_급여자료_이름누락.xlsx",kind:"employee",meta:"직원 5개 항목 · 필수 열 ‘성명’ 없음",fileStatus:"필수 필드 누락"},
+    customer:{file:"고객_요청목록.csv",kind:"customer",meta:"고객 3개 항목 · 처음 보는 데이터 형식",fileStatus:"새 데이터 형식"}
+  };
+  const docs={
+    salary:{name:"급여명세서",mode:"batch",format:"한글 문서 HWPX",dataset:"직원 데이터",fieldCount:5,requiredCount:4},
+    order:{name:"발주 요청문",mode:"copy",format:"텍스트 템플릿",dataset:"직원 데이터",fieldCount:4,requiredCount:3},
+    employment:{name:"재직증명서",mode:"batch",format:"한글 문서 HWPX",dataset:"직원 데이터",fieldCount:3,requiredCount:2}
+  };
+  const baseColumns=[
+    {key:"name",label:"성명",type:"text"},{key:"department",label:"소속부서",type:"text"},{key:"date",label:"급여기준일",type:"date"},{key:"salary",label:"기본급",type:"amount"},{key:"bonus",label:"성과급",type:"amount"},
+    {key:"company",label:"업체명",type:"text"},{key:"item",label:"요청 품목",type:"text"},{key:"quantity",label:"수량",type:"amount"},{key:"amount",label:"요청 금액",type:"amount"}
+  ];
+  const customerColumns=[{key:"name",label:"고객명",type:"text"},{key:"contact",label:"담당자",type:"text"},{key:"phone",label:"연락처",type:"text",format:"phone"},{key:"requestDate",label:"요청일",type:"date"},{key:"amount",label:"예상 금액",type:"amount"}];
+  const fields={
+    salary:[
+      {key:"name",label:"이름",required:true,source:"name",type:"text",format:"raw"},
+      {key:"date",label:"지급일",required:true,source:"date",type:"date",format:"date"},
+      {key:"salary",label:"기본급",required:true,source:"salary",type:"amount",format:"won"},
+      {key:"bonus",label:"상여금",required:false,source:"bonus",type:"amount",format:"won"},
+      {key:"total",label:"지급합계",required:true,source:"calc",type:"amount",format:"won",calc:true}
+    ],
+    order:[
+      {key:"company",label:"업체명",required:true,source:"company",type:"text",format:"raw"},
+      {key:"item",label:"요청 품목",required:true,source:"item",type:"text",format:"raw"},
+      {key:"quantity",label:"수량",required:true,source:"quantity",type:"amount",format:"number"},
+      {key:"amount",label:"요청 금액",required:false,source:"amount",type:"amount",format:"won"}
+    ],
+    employment:[
+      {key:"name",label:"성명",required:true,source:"name",type:"text",format:"raw"},
+      {key:"department",label:"소속",required:true,source:"department",type:"text",format:"raw"},
+      {key:"date",label:"발급 기준일",required:false,source:"date",type:"date",format:"date"}
+    ]
+  };
+  const state={
+    // 화면 위치와 실제 작업·백엔드·입력·저장 상태를 서로 다른 축으로 보관한다.
+    view:"data",workflowStep:"data",returnView:"data",
+    scenario:"normal",outcome:"success",document:"salary",settingsDocument:"salary",connectionDocument:"salary",selected:new Set(employees.map(x=>x.id)),search:"",
+    validation:{status:"idle",id:null,error:null},
+    backend:{status:"idle",progress:{completed:0,total:0},error:null},
+    save:{status:"saved",error:null,bindingRevision:1},
+    preview:{status:"idle",id:null,required:false,approved:false,error:null},
+    previewRequiredDocuments:new Set(),result:null,failedRecordIds:[],lastFocus:null,
+    newConnection:{phase:"idle",targetDocument:null},
+    editor:null,connectionMode:"edit",bindings:{},formats:{},resolved:new Set(),previewIndex:0,previewOpen:false,
+    workRecords:[],workIndex:0,copyStates:[],workMode:"filled",workTab:"map",workBindings:{company:"company",item:"item",quantity:"quantity",amount:"amount"},workFormats:{company:"raw",item:"raw",quantity:"number",amount:"won"},workConstants:{}
+  };
+
+  function activeRecords(){return scenarios[state.scenario].kind==="customer"?customers:employees}
+  function columns(){
+    if(scenarios[state.scenario].kind==="customer")return customerColumns;
+    if(state.scenario==="missing")return baseColumns.filter(column=>column.key!=="name");
+    return baseColumns;
+  }
+  function selectedRecords(){return activeRecords().filter(r=>state.selected.has(r.id))}
+  function itemNoun(){return scenarios[state.scenario].kind==="customer"?"고객":"직원"}
+  function workflowStepForScreen(name){
+    if(name==="txt"||name==="hwp-edit"||name==="structure")return "settings";
+    return workflow[name]?name:"data";
+  }
+  function renderWorkflowStrip(){
+    const step=workflow[state.workflowStep]||workflow.data;
+    $("workflowCurrent").textContent=step.label;
+    $("workflowRequirement").textContent=step.completionCondition;
+    const next=step.next==="returnView"?workflow[state.returnView]:workflow[step.next];
+    $("workflowNext").textContent=next?next.label:"완료";
+    $("workflowStrip").hidden=state.view==="workbench";
+  }
+  function showScreen(name){
+    if(!document.getElementById(`screen-${name}`))throw new Error(`정의되지 않은 화면 전이: ${name}`);
+    state.view=name;
+    state.workflowStep=workflowStepForScreen(name);
+    document.querySelectorAll(".screen").forEach(s=>s.classList.toggle("on",s.id===`screen-${name}`));
+    document.querySelectorAll("[data-nav]").forEach(b=>b.setAttribute("aria-current",b.dataset.nav===name||(name==="connection"&&b.dataset.nav===state.returnView)?"page":"false"));
+    const isWork=name==="workbench";$("topbar").hidden=isWork;$("workspace").classList.toggle("workbench-space",isWork);
+    renderWorkflowStrip();
+    window.scrollTo(0,0);
+  }
+  function toast(message){$("toast").textContent=message;$("toast").classList.add("on");clearTimeout(toast.timer);toast.timer=setTimeout(()=>$("toast").classList.remove("on"),2300)}
+  function notice(target,message,tone="ok"){
+    const el=$(target);el.textContent=message;el.hidden=false;
+    el.classList.toggle("warn",tone==="warn");el.classList.toggle("error",tone==="error");
+  }
+  function invalidateExecutionEvidence(){
+    state.validation={status:"idle",id:null,error:null};
+    state.preview={status:"idle",id:null,required:state.previewRequiredDocuments.has(state.document),approved:false,error:null};
+  }
+  async function requestValidation(){
+    if(!state.selected.size||!state.document){state.validation={status:"idle",id:null,error:null};renderRunState();return}
+    const requestToken={};
+    state.validation={status:"pending",id:null,error:null,requestToken};renderRunState();
+    try{
+      const result=await actions.validateRun({
+        selectedCount:state.selected.size,
+        documentId:state.document,
+        bindingRevision:state.save.bindingRevision
+      });
+      if(state.validation.requestToken!==requestToken)return;
+      state.validation={status:"completed",id:result.validationId,error:null};
+    }catch(error){
+      if(state.validation.requestToken!==requestToken)return;
+      state.validation={status:"failed",id:null,error};
+    }
+    renderRunState();
+  }
+  function resultCopy(result,error=null){
+    if(error)return {status:"failed",title:error.message,detail:"입력과 이전 성공 결과는 보존했습니다.",cause:error.recovery};
+    if(result.status==="completed")return {status:"completed",title:`문서 ${result.succeeded}개를 만들었습니다.`,detail:"선택과 연결은 유지되어 같은 조건으로 다시 실행할 수 있습니다."};
+    if(result.status==="partiallyCompleted")return {status:"partiallyCompleted",title:`${result.succeeded}개 완료 · ${result.failed}개 실패${result.cancelled?` · ${result.cancelled}개 취소`:""}`,detail:result.failed?"성공 파일은 보존했습니다. 실패 항목의 원인과 입력을 먼저 확인하세요.":"완료된 파일은 보존했습니다. 남은 항목을 확인하세요.",cause:result.failed?"이 시안에는 실제 항목별 원인 진단이 연결되어 있지 않습니다. 실패 항목을 유지한 채 데이터·연결·문서 설정을 교정하는 흐름만 보여줍니다.":""};
+    return {status:"cancelled",title:"문서 생성을 취소했습니다.",detail:"입력과 완료된 결과는 보존했습니다."};
+  }
+  function renderResult(result,error=null){
+    const copy=resultCopy(result,error),panel=$("runResultPanel");
+    state.result=error?{status:"failed",error}:result;state.workflowStep="result";
+    panel.classList.add("on");panel.dataset.status=copy.status;
+    $("runResultTitle").textContent=copy.title;$("runResultDetail").textContent=copy.detail;
+    $("runResultCause").hidden=!copy.cause;$("runResultCause").textContent=copy.cause||"";
+    $("resolveFailureButton").hidden=!["failed","partiallyCompleted"].includes(copy.status);
+    renderWorkflowStrip();
+  }
+  function statusFor(docId){
+    if(!docId)return {level:"neutral",label:"문서 미선택"};
+    if(state.resolved.has(`${state.scenario}:${docId}`))return {level:"ready",label:"연결됨"};
+    if(state.scenario==="customer")return state.newConnection.targetDocument===docId
+      ?{level:"missing",label:"새 연결 필요"}
+      :{level:"neutral",label:"연결 없음"};
+    if(state.scenario==="missing")return {level:"missing",label:"연결 복구"};
+    if(state.scenario==="newField"&&docId==="salary")return {level:"review",label:"새 필드 확인"};
+    return {level:"ready",label:"연결됨"};
+  }
+  function defaultSelection(){
+    const records=activeRecords();
+    if(!state.document)state.selected=new Set(records.map(x=>x.id));
+    else if(state.document==="order")state.selected=new Set(records.slice(0,3).map(x=>x.id));
+    else state.selected=new Set(records.map(x=>x.id));
+  }
+  function renderRecords(){
+    const records=activeRecords(),query=state.search.toLowerCase();
+    const shown=records.filter(r=>Object.values(r).some(v=>String(v).toLowerCase().includes(query)));
+    if(scenarios[state.scenario].kind==="customer"){
+      $("recordHead").innerHTML="<tr><th class='checkcell'><input id='selectAll' type='checkbox' aria-label='전체 선택'></th><th>고객명</th><th>담당자</th><th>연락처</th><th>요청일</th></tr>";
+      $("recordBody").innerHTML=shown.map(r=>`<tr data-id="${r.id}" class="${state.selected.has(r.id)?"selected":""}"><td class="checkcell"><input type="checkbox" ${state.selected.has(r.id)?"checked":""} aria-label="${esc(r.name)} 선택"></td><td><strong>${esc(r.name)}</strong></td><td>${esc(r.contact)}</td><td>${esc(r.phone)}</td><td>${esc(r.requestDate)}</td></tr>`).join("");
+    }else{
+      $("recordHead").innerHTML="<tr><th class='checkcell'><input id='selectAll' type='checkbox' aria-label='전체 선택'></th><th>성명</th><th>소속부서</th><th>지급일</th><th class='money'>기본급</th></tr>";
+      $("recordBody").innerHTML=shown.map(r=>`<tr data-id="${r.id}" class="${state.selected.has(r.id)?"selected":""}"><td class="checkcell"><input type="checkbox" ${state.selected.has(r.id)?"checked":""} aria-label="${esc(r.name)} 선택"></td><td><strong>${esc(r.name)}</strong></td><td>${esc(r.department)}</td><td>${esc(r.date)}</td><td class="money">${won(r.salary)}</td></tr>`).join("");
+    }
+    const all=$("selectAll");if(all){all.checked=shown.length>0&&shown.every(r=>state.selected.has(r.id));all.indeterminate=shown.some(r=>state.selected.has(r.id))&&!all.checked}
+    renderRunState();
+  }
+  function renderDocStatuses(){
+    const isNew=state.scenario==="customer",unselected=isNew&&state.newConnection.phase==="unselected";
+    $("docCountStatus").title=isNew?(newConnectionContract[state.newConnection.phase]?.label||"새 연결"):"";
+    $("newConnectionEmpty").hidden=!unselected;$("documentList").hidden=unselected;
+    $("documentWorkTitle").textContent=isNew?"연결할 문서 작업":"이 데이터로 할 수 있는 문서 작업";
+    $("documentWorkDescription").textContent=isNew
+      ?"정확히 일치하는 저장 연결이 없으므로 자동 추천 대신 사용자가 대상을 정합니다."
+      :"저장된 데이터 형식 연결을 기준으로 표시합니다.";
+    let issues=0;
+    document.querySelectorAll(".doc-option").forEach(button=>{
+      const s=statusFor(button.dataset.document),badge=button.querySelector(".doc-status");
+      badge.className=`status doc-status ${s.level}`;badge.textContent=s.label;button.classList.toggle("blocked",["missing","review"].includes(s.level));button.classList.toggle("selected",button.dataset.document===state.document);
+      if(["missing","review"].includes(s.level))issues++;
+    });
+    if(unselected){
+      $("docCountStatus").className="status neutral";$("docCountStatus").textContent="추천 없음";
+    }else if(isNew){
+      $("docCountStatus").className=`status ${state.document?"review":"neutral"}`;$("docCountStatus").textContent=state.document?"직접 선택됨":"직접 선택";
+    }else{
+      $("docCountStatus").className=`status ${issues?"review":"ready"}`;$("docCountStatus").textContent=issues?`${issues}개 확인 필요`:"3개 준비됨";
+    }
+  }
+  function renderRunState(){
+    const count=state.selected.size,doc=docs[state.document],s=statusFor(state.document),isCopy=doc?.mode==="copy";
+    $("selectionTitle").textContent=`${count}개 선택`;$("selectionType").textContent=`${itemNoun()} ${count}${itemNoun()==="직원"?"명":"개"}`;
+    const validation=$("runValidation"),mark=$("validationMark");
+    let level=s.level==="ready"?"ready":s.level==="review"?"warn":"bad",title="실행 준비 완료",text="연결, 값 해석, 표시 결과가 정상입니다.";
+    if(!state.document){level="bad";title="문서 작업을 직접 고르세요";text="새 데이터 형식은 자동 추천하지 않습니다. 연결할 문서를 먼저 선택하세요."}
+    else if(!count){level="bad";title="처리할 항목을 선택하세요";text="한 개 이상의 항목이 필요합니다."}
+    else if(state.validation.status==="pending"){level="warn";title="실행 조건을 확인하고 있습니다";text="검증이 끝날 때까지 실행과 중복 요청을 잠급니다."}
+    else if(state.validation.status==="failed"){level="bad";title="자동 검증을 완료하지 못했습니다";text=`${state.validation.error?.recovery||"선택은 보존했습니다. 다시 확인하세요."}`}
+    else if(s.level==="missing"){title=s.label;text=state.scenario==="customer"?"이 데이터 형식에 맞는 연결 후보를 먼저 만드세요.":"필수 필드의 데이터 항목을 다시 지정해야 합니다."}
+    else if(state.scenario==="newField"&&s.level==="review"){title="새 필드 연결 권장";text="새 ‘성과급’ 열을 상여금에 연결하고 표시형을 확인할 수 있습니다."}
+    else if(state.preview.required&&!state.preview.approved){level="warn";title="생성 값을 확인해야 합니다";text="새 연결 또는 출력 변경이 있어 값 미리보기에서 ‘결과 확인 완료’를 선택해야 합니다."}
+    validation.dataset.level=level;mark.textContent=level==="ready"?"✓":level==="warn"?"!":"×";$("validationTitle").textContent=title;$("validationText").textContent=text;
+    const busy=state.backend.status==="running",previewGate=state.preview.required&&!state.preview.approved;
+    const needsNewConnection=state.scenario==="customer"&&s.level==="missing";
+    const blocked=!state.document||!count||s.level==="missing"||state.validation.status!=="completed"||busy;
+    $("runActions").classList.toggle("one",isCopy);
+    $("previewButton").hidden=isCopy||previewGate;$("previewButton").disabled=blocked;
+    $("primaryRunButton").disabled=blocked;
+    $("primaryRunButton").textContent=previewGate?"생성 값 확인":isCopy?`${count}건 검토·복사 시작`:`${count}개 생성`;
+    $("connectionButton").hidden=false;$("connectionButton").disabled=!state.document;
+    $("connectionButton").classList.toggle("primary",needsNewConnection);
+    $("connectionButton").classList.toggle("ghost",!needsNewConnection);
+    $("connectionButton").textContent=!state.document?"문서 선택 후 연결":s.level==="missing"?(state.scenario==="customer"?"새 연결 만들기":"연결 복구"):s.level==="review"?"변경 검토":"연결 편집";
+    $("selectionFoot").textContent=!doc?`${itemNoun()} ${count}${itemNoun()==="직원"?"명":""} · 연결할 문서 미선택`:isCopy?`${itemNoun()} ${count}${itemNoun()==="직원"?"명":""} · 온나라 검토·복사 작업`:`${itemNoun()} ${count}${itemNoun()==="직원"?"명":""} · ${doc.name} ${count}개 생성 예정`;
+  }
+  function renderScenario(){
+    const sc=scenarios[state.scenario];$("fileName").textContent=sc.file;$("fileMeta").textContent=sc.meta;$("fileStatus").textContent=sc.fileStatus;
+    $("fileStatus").className=`status ${state.scenario==="normal"?"ready":state.scenario==="customer"||state.scenario==="missing"?"missing":"review"}`;
+    const s=statusFor(state.document),show=state.scenario!=="normal"&&s.level!=="ready";$("compatNote").classList.toggle("on",show);
+    if(show){
+      $("compatTitle").textContent=state.scenario==="customer"?"처음 보는 데이터 형식입니다.":state.scenario==="missing"?"필수 필드 연결이 손상되었습니다.":"새 데이터 항목을 발견했습니다.";
+      $("compatText").textContent=state.scenario==="customer"?"정확히 일치하는 저장 연결이 없습니다. 문서를 직접 고른 뒤 새 연결을 만드세요.":state.scenario==="missing"?"‘성명’ 항목이 없어 이름 필드의 지금 결과를 만들 수 없습니다.":"기존 연결은 유지됩니다. 빈 상여금 필드에 새 데이터 항목을 연결할 수 있습니다.";
+      const customerNeedsTarget=state.scenario==="customer"&&!state.document;
+      const customerNeedsConnection=state.scenario==="customer"&&s.level==="missing";
+      $("compatAction").textContent=customerNeedsTarget?"연결할 문서 고르기":customerNeedsConnection?"새 연결 만들기":s.level==="missing"?"연결 복구":"변경 검토";
+      $("compatAction").classList.toggle("primary",customerNeedsTarget||customerNeedsConnection);
+    }
+    renderDocStatuses();renderRecords();renderSettings();
+  }
+  function selectDocument(id){
+    if(state.scenario==="customer"){
+      state.newConnection.phase="targetSelected";
+      state.newConnection.targetDocument=id;
+    }
+    state.document=id;defaultSelection();invalidateExecutionEvidence();renderDocStatuses();renderRecords();renderSettings();requestValidation();
+  }
+  const typeLabels={text:"텍스트",date:"날짜",amount:"금액",const:"고정값"};
+  const formatCatalog={
+    text:[["raw","원문"],["phone","전화번호"]],
+    date:[["date","표준 날짜"],["raw","원문"]],
+    amount:[["won","원"],["number","숫자"],["raw","원문"]],
+    const:[["raw","입력한 그대로"]]
+  };
+  function recommendedFormat(type,source){
+    if(type==="date")return "date";
+    if(type==="amount")return source==="quantity"?"number":"won";
+    if(type==="text"&&source==="phone")return "phone";
+    return "raw";
+  }
+  function inferType(source,field){
+    if(source==="__direct__")return "const";
+    if(field.calc)return "amount";
+    return columns().find(column=>column.key===source)?.type||field.type||"text";
+  }
+  function formatValue(value,format){
+    if(value===""||value==null)return "—";
+    if(format==="won")return won(value);
+    if(format==="date"){
+      const str=String(value);return /^\d{4}-\d{2}-\d{2}$/.test(str)?str.replace(/-/g,". ")+".":str;
+    }
+    if(format==="number")return new Intl.NumberFormat("ko-KR").format(Number(value)||0);
+    if(format==="phone")return String(value);
+    return String(value);
+  }
+  function sampleValue(field,draft,record=activeRecords()[0]){
+    if(field.calc){const salary=Number(record.salary)||0,bonus=Number(record.bonus)||0;return salary+bonus}
+    if(draft.source==="__direct__")return draft.constant;
+    if(!draft.source)return "";
+    return record[draft.source];
+  }
+  function initialEditor(){
+    const draft={};
+    fields[state.connectionDocument].forEach(f=>{
+      let source=f.source;
+      if(state.scenario==="customer")source="";
+      if(state.scenario==="missing"&&f.key==="name")source="";
+      if(state.scenario==="newField"&&f.key==="bonus")source="";
+      const type=inferType(source,f);
+      draft[f.key]={source,type,format:source?recommendedFormat(type,source):f.format,typeSource:"inferred",constant:""};
+    });
+    return draft;
+  }
+  function connectionLabel(){
+    if(state.scenario==="customer")return "새 연결 만들기";
+    if(state.scenario==="missing")return "연결 복구";
+    if(state.scenario==="newField")return "변경 검토";
+    return "연결 편집";
+  }
+  function openConnection(mode=null){
+    state.returnView=state.view==="settings"?"settings":"data";
+    state.connectionDocument=state.returnView==="settings"?state.settingsDocument:state.document;
+    if(!state.connectionDocument)return;
+    state.editor=initialEditor();state.connectionMode=mode||connectionLabel();
+    if(state.scenario==="customer")state.newConnection.phase="editing";
+    state.save.status="saved";state.save.error=null;
+    $("connectionEyebrow").textContent=state.connectionMode;$("connection-title").textContent=`${docs[state.connectionDocument].name} ↔ ${scenarios[state.scenario].kind==="customer"?"고객 데이터":"직원 데이터"}`;
+    $("saveNote").className="save-note";renderMappings();showScreen("connection");
+  }
+  function mappingOptions(selected,field){
+    if(field.calc)return `<option value="calc" selected>기본급 + 상여금</option>`;
+    const opts=[`<option value="">연결 안 함</option>`,`<option value="__direct__" ${selected==="__direct__"?"selected":""}>직접 입력</option>`];
+    columns().forEach(c=>opts.push(`<option value="${c.key}" ${c.key===selected?"selected":""}>${esc(c.label)}</option>`));
+    return opts.join("");
+  }
+  function typeOptions(selected){
+    const types=selected==="const"?["const"]:["text","date","amount"];
+    return types.map(type=>`<option value="${type}" ${type===selected?"selected":""}>${typeLabels[type]}</option>`).join("");
+  }
+  function formatOptions(selected,type="text"){
+    return (formatCatalog[type]||formatCatalog.text).map(([v,l])=>`<option value="${v}" ${v===selected?"selected":""}>${l}</option>`).join("");
+  }
+  function mappingEvaluation(field,draft){
+    const value=sampleValue(field,draft),requiredMissing=field.required&&!draft.source;
+    if(requiredMissing)return {value:"결과 없음",level:"bad",text:"필수 데이터 항목을 선택하세요"};
+    if(draft.source==="__direct__"&&!draft.constant)return {value:"결과 없음",level:"bad",text:"직접 입력 값을 입력하세요"};
+    if(state.scenario==="newField"&&field.key==="bonus"&&!draft.source)return {value:"표시하지 않음",level:"warn",text:"새 ‘성과급’ 항목을 연결할 수 있음"};
+    if(!draft.source)return {value:"표시하지 않음",level:"info",text:"선택 필드 · 연결 안 함"};
+    return {value:formatValue(value,draft.format),level:"",text:field.calc?"계산 결과":draft.source==="__direct__"?"고정값 적용":"유형·표시 정상"};
+  }
+  function renderMappings(){
+    const list=fields[state.connectionDocument];
+    $("mappingList").innerHTML=list.map(field=>{
+      const draft=state.editor[field.key],ev=mappingEvaluation(field,draft);
+      const provenance=field.calc?"계산식에서 정함":draft.source==="__direct__"?"직접 입력 · 고정값":draft.typeSource==="user"?"사용자가 선택함":draft.source?"샘플 값으로 추론됨 · 다르면 변경":"문서 필드에서 추천됨 · 연결 후 재추론";
+      const literal=draft.source==="__direct__"?`<input class="literal-input" data-kind="constant" value="${esc(draft.constant)}" aria-label="${esc(field.label)} 직접 입력 값" placeholder="고정 텍스트 입력">`:"";
+      return `<div class="mapping-row" data-key="${field.key}"><div class="field-name"><strong>${esc(field.label)}${field.required?'<span class="required">*</span>':""}</strong><span>${field.required?"필수":"선택"} 문서 필드</span></div><div class="mapping-control"><select class="mapping-select" data-kind="source" ${field.calc?"disabled":""} aria-label="${esc(field.label)} 데이터 항목">${mappingOptions(draft.source,field)}</select>${literal}</div><div class="mapping-control"><select class="type-select" data-kind="type" ${field.calc||draft.source==="__direct__"?"disabled":""} aria-label="${esc(field.label)} 값 유형">${typeOptions(draft.type)}</select><span class="inference-note ${draft.typeSource==="user"?"user":""}">${esc(provenance)}</span></div><div class="mapping-control"><select class="format-select" data-kind="format" aria-label="${esc(field.label)} 표시형">${formatOptions(draft.format,draft.type)}</select></div><div class="result-cell"><strong class="result-main">${esc(ev.value)}</strong><span class="row-state ${ev.level}">${esc(ev.text)}</span></div></div>`;
+    }).join("");
+    const evaluations=list.map(f=>mappingEvaluation(f,state.editor[f.key])),invalid=evaluations.some(e=>e.level==="bad"),warn=evaluations.some(e=>e.level==="warn");
+    $("connectionStatus").className=`status ${invalid?"missing":warn?"review":"ready"}`;$("connectionStatus").textContent=invalid?"확인 필요":warn?"변경 검토":"연결됨";
+    $("saveConnection").textContent={
+      "연결 편집":"연결 저장",
+      "새 연결 만들기":"새 연결 저장",
+      "연결 복구":"복구 내용 저장",
+      "변경 검토":"변경 내용 저장"
+    }[state.connectionMode]||"연결 저장";
+    $("saveConnection").disabled=invalid||state.save.status==="saving";
+    $("connectionSaveState").dataset.status=state.save.status;
+    $("connectionSaveState").textContent={dirty:"변경 사항 있음",saving:"저장 중…",failed:"저장 실패 · 입력 보존",saved:"저장됨"}[state.save.status]||"";
+    $("revisionHint").textContent="유형 추론과 자동 추천은 초안이며, 사용자가 고른 값과 기존 연결을 덮어쓰지 않습니다.";
+  }
+  async function saveConnection(){
+    const invalid=fields[state.connectionDocument].filter(f=>mappingEvaluation(f,state.editor[f.key]).level==="bad");
+    if(invalid.length){
+      $("saveNote").className="save-note on bad";$("saveNote").textContent=invalid.map(f=>`${f.label}: ${mappingEvaluation(f,state.editor[f.key]).text}`).join(" · ");return;
+    }
+    state.save.status="saving";state.save.error=null;renderMappings();
+    $("saveNote").className="save-note on warn";$("saveNote").textContent="연결을 저장하고 실행 조건을 다시 확인하고 있습니다.";
+    try{
+      const result=await actions.saveConnection({
+        outcome:state.outcome,
+        bindingRevision:state.save.bindingRevision,
+        documentId:state.connectionDocument,
+        mapping:state.editor
+      });
+      state.save.status="saved";state.save.bindingRevision=result.bindingRevision;
+      state.resolved.add(`${state.scenario}:${state.connectionDocument}`);
+      if(state.scenario==="customer"){
+        state.newConnection.phase="savedPendingPreview";
+        state.newConnection.targetDocument=state.connectionDocument;
+        state.document=state.connectionDocument;
+      }
+      state.previewRequiredDocuments.add(state.connectionDocument);
+      state.preview={status:"idle",id:null,required:state.connectionDocument===state.document,approved:false,error:null};
+      $("saveNote").className="save-note on ok";$("saveNote").textContent="연결을 저장했습니다. 새 결과를 확인하기 전에는 생성할 수 없습니다.";
+      notice(state.returnView==="settings"?"settingsNotice":"dataNotice","연결을 저장했습니다. 실행 조건을 다시 확인한 뒤 생성 값을 검토하세요.");
+      showScreen(state.returnView);renderScenario();await requestValidation();
+    }catch(error){
+      state.save.status="failed";state.save.error=error;
+      $("saveNote").className="save-note on bad";$("saveNote").textContent=`${error.message} 편집값은 보존했습니다. ${error.recovery}`;
+      renderMappings();
+    }
+  }
+  function renderSettings(){
+    const documentId=state.settingsDocument,doc=docs[documentId],s=statusFor(documentId);
+    $("settings-title").textContent=doc.name;$("settingsDocumentSelect").value=documentId;$("templateFormat").textContent=doc.format;$("templateFieldCount").textContent=`${doc.fieldCount}개`;$("templateRequiredCount").textContent=`${doc.requiredCount}개`;
+    $("templateState").textContent=s.label;$("linkedDataset").textContent=scenarios[state.scenario].kind==="customer"?"고객 데이터":doc.dataset;
+    $("linkedStatus").className=`status ${s.level}`;$("linkedStatus").textContent=s.label;
+    $("settingsConnectionButton").textContent=state.scenario==="customer"&&!state.resolved.has(`${state.scenario}:${documentId}`)?"새 연결 만들기":s.level==="missing"?"연결 복구":s.level==="review"?"변경 검토":"연결 편집";
+    $("linkedMeta").textContent=state.scenario==="customer"&&!state.resolved.has(`${state.scenario}:${documentId}`)
+      ?"이 데이터 형식과의 저장 연결이 없습니다. 대상을 명시적으로 선택한 뒤 새 연결을 만드세요."
+      :doc.mode==="copy"?"업체명, 요청 품목, 수량, 요청 금액 항목을 사용합니다.":"성명, 지급일, 기본급 등 문서별 필수 데이터 항목을 사용합니다.";
+    if(doc.mode==="copy"){
+      $("teaserKicker").textContent="TXT 토큰 구조";$("teaserTitle").textContent="발주 요청문";
+      $("teaserTable").innerHTML=`<div class="structure-cell">업체</div><div class="structure-cell"><span class="token-chip">{{업체명}}</span></div><div class="structure-cell">요청 품목</div><div class="structure-cell"><span class="token-chip">{{요청_품목}}</span></div>`;
+      $("teaserCaption").textContent="이 시안은 기존 텍스트 템플릿의 대표 토큰만 보여줍니다. 템플릿 편집은 현재 범위에 없습니다.";
+      $("templateActions").innerHTML=`<button class="button" type="button" id="editTxtTemplate">텍스트 편집 지원 범위</button>`;
+    }else if(documentId==="employment"){
+      $("teaserKicker").textContent="HWPX 구조 개요";$("teaserTitle").textContent=doc.name;
+      $("teaserTable").innerHTML=`<div class="prototype-boundary structure-boundary"><strong>구조 샘플 없음</strong><p>급여명세서 구조를 대신 표시하지 않습니다.</p></div>`;
+      $("teaserCaption").textContent="재직증명서의 실제 구조 분석 결과는 이 시안에 연결되어 있지 않습니다.";
+      $("templateActions").innerHTML=`<button class="button" type="button" id="editInHwp">외부 편집 흐름</button><button class="button" type="button" id="inspectStructure">구조 확인 범위</button>`;
+    }else{
+      $("teaserKicker").textContent="HWPX 구조 개요";$("teaserTitle").textContent=doc.name;
+      $("teaserTable").innerHTML=`<div class="structure-cell">이름</div><div class="structure-cell"><span class="token-chip">{{이름}}</span></div><div class="structure-cell">지급일</div><div class="structure-cell"><span class="token-chip">{{지급일}}</span></div>`;
+      $("teaserCaption").textContent="정밀한 문서 모양이 아니라 텍스트, 문단, 표와 토큰의 위치만 간단히 보여줍니다.";
+      $("templateActions").innerHTML=`<button class="button" type="button" id="editInHwp">외부 편집 흐름</button><button class="button" type="button" id="inspectStructure">구조 확인</button>`;
+    }
+  }
+  function openSettings(){if(state.view==="data"&&state.document)state.settingsDocument=state.document;renderSettings();showScreen("settings")}
+  function renderStructure(documentId){
+    const hasSample=documentId==="salary";
+    $("structure-title").textContent=`${docs[documentId].name}의 문서 구조`;
+    $("structureBoundary").hidden=hasSample;
+    $("structureSummary").hidden=!hasSample;
+    $("plainStructure").hidden=!hasSample;
+  }
+  function previewHtml(record){
+    if(state.scenario==="customer")return `<h3>새 연결 결과 확인 범위</h3><div class="prototype-boundary"><strong>실제 매핑 결과는 이 시안에 연결되어 있지 않습니다.</strong><p>다른 데이터의 값을 대신 표시하지 않습니다. 이 화면은 새 연결 저장 후 결과 확인 단계로 이동하는 흐름만 검증합니다.</p></div>`;
+    if(state.document==="employment")return `<h3>재 직 증 명 서</h3><div class="preview-line"><span>성명</span><strong>${esc(record.name)}</strong></div><div class="preview-line"><span>소속</span><strong>${esc(record.department)}</strong></div><div class="preview-line"><span>기준일</span><strong>${esc(formatValue(record.date,"date"))}</strong></div><p style="margin-top:22px;text-align:center;color:var(--soft)">위 사람은 현재 당 기관에 재직하고 있음을 증명합니다.</p>`;
+    return `<h3>급 여 명 세 서</h3><div class="preview-line"><span>이름</span><strong>${esc(record.name)}</strong></div><div class="preview-line"><span>지급일</span><strong>${esc(formatValue(record.date,"date"))}</strong></div><div class="preview-line"><span>기본급</span><strong>${esc(won(record.salary))}</strong></div><div class="preview-line"><span>상여금</span><strong>${esc(won(record.bonus))}</strong></div><div class="preview-total"><span>지급합계</span><strong>${esc(won(record.salary+record.bonus))}</strong></div>`;
+  }
+  function renderPreview(){
+    const records=selectedRecords(),record=records[state.previewIndex]||records[0];if(!record)return;
+    $("previewPosition").textContent=`${state.previewIndex+1} / ${records.length}`;$("previewContent").innerHTML=previewHtml(record);
+    $("drawerSelection").textContent=`${itemNoun()} ${records.length}${itemNoun()==="직원"?"명":""}`;$("drawerDocument").textContent=docs[state.document].name;
+    const needs=0,normal=records.length;
+    $("batchSummaryTitle").textContent=`전체 ${records.length}건 · 정상 ${normal} · 확인 필요 ${needs}`;$("drawerValidation").textContent=`정상 ${normal} · 확인 필요 ${needs}`;
+    $("drawerFilename").textContent=`${record.name}_${docs[state.document].name}.hwpx`;$("generateButton").textContent=`${records.length}개 생성`;$("generationTitle").textContent=`HWPX ${records.length}개를 만들었습니다.`;
+    $("drawerApproval").textContent=state.preview.required?(state.preview.approved?"확인 완료":"확인 필요"):"선택 사항";
+    $("previewPrev").disabled=state.previewIndex===0;$("previewNext").disabled=state.previewIndex>=records.length-1;
+  }
+  async function preparePreview(){
+    const previewState=$("previewState");
+    state.preview.status="loading";state.preview.error=null;
+    previewState.className="preview-state";previewState.textContent="실제로 주입될 값과 파일명을 준비하고 있습니다.";
+    $("resolvePreviewFailureButton").hidden=true;$("approvePreviewButton").hidden=true;$("generateButton").disabled=true;
+    try{
+      const result=await actions.createValuePreview({outcome:state.outcome,recordCount:selectedRecords().length});
+      state.preview.status="completed";state.preview.id=result.previewId;
+      previewState.textContent=state.scenario==="customer"?"시안 상태 전환: 새 연결 뒤 결과 확인 단계에 진입했습니다. 실제 매핑 결과는 표시하지 않습니다.":"값과 파일명을 준비했습니다. 이 화면은 HWPX 최종 모양을 재현하지 않습니다.";
+      renderPreview();
+      $("approvePreviewButton").hidden=!state.preview.required||state.preview.approved;
+      $("generateButton").disabled=state.preview.required&&!state.preview.approved;
+    }catch(error){
+      state.preview.status="failed";state.preview.error=error;
+      previewState.className="preview-state error";previewState.textContent=`${error.message} ${error.recovery}`;
+      $("resolvePreviewFailureButton").hidden=false;
+    }
+  }
+  async function openPreview(){
+    state.lastFocus=document.activeElement;state.previewIndex=0;state.previewOpen=true;state.workflowStep="preview";
+    $("generationResult").classList.remove("on");$("scrim").classList.add("on");$("previewDrawer").classList.add("on");
+    document.querySelector(".app").inert=true;$("previewDrawer").inert=false;$("previewDrawer").setAttribute("aria-hidden","false");document.body.style.overflow="hidden";
+    renderWorkflowStrip();$("closePreview").focus();await preparePreview();
+  }
+  function closePreview(){
+    state.previewOpen=false;$("scrim").classList.remove("on");$("previewDrawer").classList.remove("on");$("previewDrawer").inert=true;
+    $("previewDrawer").setAttribute("aria-hidden","true");document.querySelector(".app").inert=false;document.body.style.overflow="";state.workflowStep="data";renderWorkflowStrip();
+    if(state.lastFocus&&document.contains(state.lastFocus))state.lastFocus.focus();
+  }
+  function approvePreview(){
+    if(state.preview.status!=="completed")return;
+    state.preview.approved=true;$("approvePreviewButton").hidden=true;$("generateButton").disabled=false;
+    $("drawerApproval").textContent="확인 완료";$("previewState").textContent="이 실행 조건의 생성 값을 확인했습니다. 문서를 생성할 수 있습니다.";
+    renderRunState();
+  }
+  async function executeDocuments({retry=false,fromDrawer=false}={}){
+    const records=retry&&state.failedRecordIds.length
+      ?activeRecords().filter(record=>state.failedRecordIds.includes(record.id))
+      :selectedRecords();
+    if(!records.length||state.backend.status==="running")return;
+    state.backend={status:"running",progress:{completed:0,total:records.length},error:null};
+    $("runProgress").classList.add("on");$("runProgressTitle").textContent=retry?"실패 항목을 다시 실행하고 있습니다.":"문서를 만들고 있습니다.";
+    $("runProgressDetail").textContent=`0 / ${records.length} 완료 · 중복 실행이 잠겼습니다.`;renderRunState();
+    if(fromDrawer){$("generateButton").disabled=true;$("cancelDrawerRunButton").hidden=false}
+    const onProgress=progress=>{state.backend.progress=progress;$("runProgressDetail").textContent=`${progress.completed} / ${progress.total} 완료 · 현재 문서를 마친 뒤 취소할 수 있습니다.`};
+    try{
+      const run=retry
+        ?await actions.retryFailedDocuments({recordCount:records.length,recordIds:records.map(r=>r.id)},onProgress)
+        :await actions.runDocuments({outcome:state.outcome,recordCount:records.length,recordIds:records.map(r=>r.id)},onProgress);
+      state.backend.status=run.status;state.failedRecordIds=run.failedRecordIds||[];
+      if(run.status==="completed"){
+        state.previewRequiredDocuments.delete(state.document);
+        if(state.scenario==="customer")state.newConnection.phase="ready";
+      }
+      renderResult(run);
+      if(fromDrawer){
+        const copy=resultCopy(run);$("generationResult").classList.add("on");$("generationTitle").textContent=copy.title;$("generationDetail").textContent=copy.detail;
+      }
+    }catch(error){
+      state.backend={status:"failed",progress:state.backend.progress,error};state.failedRecordIds=records.map(r=>r.id);
+      renderResult(null,error);
+      if(fromDrawer){$("generationResult").classList.add("on");$("generationTitle").textContent=error.message;$("generationDetail").textContent=error.recovery}
+    }finally{
+      $("runProgress").classList.remove("on");$("generateButton").disabled=false;$("cancelDrawerRunButton").hidden=true;renderRunState();
+      toast(state.backend.status==="completed"?"문서 생성을 완료했습니다.":"처리 결과를 확인하세요.");
+    }
+  }
+  function setupWorkbench(){
+    state.workRecords=selectedRecords().slice(0,3);if(!state.workRecords.length)return;
+    state.workIndex=0;state.copyStates=state.workRecords.map(()=>"pending");state.workMode="filled";state.workTab="map";
+    state.workBindings={company:"company",item:"item",quantity:"quantity",amount:"amount"};state.workFormats={company:"raw",item:"raw",quantity:"number",amount:"won"};state.workConstants={};
+    $("copyNextOption").checked=false;
+    document.querySelectorAll("[data-preview-mode]").forEach(b=>b.classList.toggle("on",b.dataset.previewMode==="filled"));
+    document.querySelectorAll("[data-work-tab]").forEach(b=>b.classList.toggle("on",b.dataset.workTab==="map"));
+    document.querySelectorAll("[data-work-panel]").forEach(p=>p.classList.toggle("mobile-on",p.dataset.workPanel==="map"));
+    renderWorkbench();showScreen("workbench");
+  }
+  function workValue(key,record=state.workRecords[state.workIndex]){
+    const source=state.workBindings[key];return source==="__direct__"?state.workConstants[key]||"":source?record[source]:"";
+  }
+  function renderWorkMappings(){
+    const workFields=fields.order;
+    $("workMappings").innerHTML=workFields.map(f=>{
+      const source=state.workBindings[f.key],format=state.workFormats[f.key],value=formatValue(workValue(f.key),format);
+      const literal=source==="__direct__"?`<input class="literal-input" data-work-kind="constant" value="${esc(state.workConstants[f.key]||"")}" aria-label="${esc(f.label)} 직접 입력 값" placeholder="고정 텍스트 입력">`:"";
+      return `<div class="work-map-row" data-key="${f.key}"><strong>${esc(f.label)}${f.required?'<span class="required">*</span>':""}</strong><div><select data-work-kind="source" aria-label="${esc(f.label)} 데이터 항목">${mappingOptions(source,f)}</select>${literal}</div><select data-work-kind="format" aria-label="${esc(f.label)} 표시형">${formatOptions(format,f.type)}</select><div class="work-result"><strong>${esc(value)}</strong><span>${source==="__direct__"?"직접 입력 고정값":source?"즉시 반영됨":"연결 안 함"}</span></div></div>`;
+    }).join("");
+  }
+  function token(label){return `<span class="token-value">{{${esc(label)}}}</span>`}
+  function filled(key,label){return state.workMode==="raw"?token(label):`<span class="filled-value">${esc(formatValue(workValue(key),state.workFormats[key]))}</span>`}
+  function renderWorkText(){
+    const record=state.workRecords[state.workIndex];if(!record)return;
+    const fontFamilies={gulimche:"GulimChe,monospace",dotumche:"DotumChe,monospace",malgun:"'Malgun Gothic',sans-serif"};
+    $("textPreview").style.fontFamily=fontFamilies[$("fontSelect").value]||fontFamilies.gulimche;
+    $("textPreview").innerHTML=`<h2>물품 발주 요청</h2><p>${filled("company","업체명")} 귀중</p><p>업무 수행을 위해 ${filled("item","요청_품목")} ${filled("quantity","수량")}개를 발주하고자 합니다.</p><p>예상 금액은 ${filled("amount","요청_금액")}이며, 검토 후 처리하여 주시기 바랍니다.</p><p style="margin-top:30px;color:var(--muted)">2026년 7월 24일<br>문서나르미 시안</p>`;
+  }
+  function renderWorkbench(){
+    const total=state.workRecords.length,copied=state.copyStates.filter(s=>s==="copied").length,currentState=state.copyStates[state.workIndex];
+    $("workPosition").textContent=`${state.workIndex+1} / ${total}`;$("copyCount").textContent=`${copied} / ${total}`;
+    $("queueDots").innerHTML=state.copyStates.map((s,i)=>{
+      const label=s==="copied"?"복사 완료":s==="review"?"다시 확인 필요":"미처리";
+      return `<button type="button" class="queue-dot ${s} ${i===state.workIndex?"current":""}" data-work-index="${i}" aria-label="${i+1}번 항목 · ${label}${i===state.workIndex?" · 현재 작업점":""}" title="${i+1}번 · ${label}"></button>`;
+    }).join("");
+    const recordState=$("recordReviewState");
+    recordState.className=`record-state ${currentState==="copied"?"on copied":currentState==="review"?"on":""}`;
+    recordState.textContent=currentState==="copied"
+      ?"이 항목은 복사 완료되었습니다. 다시 복사하면 현재 결과로 갱신됩니다."
+      :currentState==="review"
+        ?"이 항목은 복사 후 표시 규칙이 바뀌었습니다. 다시 확인하고 복사하세요."
+        :"";
+    $("completeCard").classList.toggle("on",copied===total);
+    const degenerate=total<=1;
+    $("queueDots").hidden=degenerate;$("workPrev").hidden=degenerate;$("workNext").hidden=degenerate;
+    $("copyNextOption").closest(".copy-option").hidden=degenerate;
+    $("workPrev").disabled=state.workIndex===0;$("workNext").disabled=state.workIndex>=total-1;$("copyButton").textContent=currentState==="copied"?"다시 복사":"복사";
+    renderWorkMappings();renderWorkText();
+  }
+  function confirmMissingValues(gaps){
+    const dialog=$("missingValueDialog");
+    $("missingValueBody").textContent=`${gaps.join(", ")} 값이 비어 있습니다.\n입력은 유지됩니다. 빈 값 표식과 함께 복사할까요?`;
+    return new Promise(resolve=>{
+      const finish=value=>{dialog.close();$("missingValueCancel").removeEventListener("click",cancel);$("missingValueConfirm").removeEventListener("click",confirm);dialog.removeEventListener("cancel",onCancel);resolve(value)};
+      const cancel=()=>finish(false),confirm=()=>finish(true);
+      const onCancel=event=>{event.preventDefault();cancel()};
+      $("missingValueCancel").addEventListener("click",cancel);$("missingValueConfirm").addEventListener("click",confirm);
+      dialog.addEventListener("cancel",onCancel);
+      dialog.showModal();$("missingValueCancel").focus();
+    });
+  }
+  async function copyCurrent(){
+    // 기존 구현의 "처리 후미 재정렬"은 계승하지 않는다. 원래 순서는 고정하고 상태만 완료로 바꾼다.
+    const gaps=fields.order.filter(field=>field.required&&!workValue(field.key)).map(field=>field.label);
+    if(gaps.length&&!await confirmMissingValues(gaps))return;
+    state.copyStates[state.workIndex]="copied";toast("현재 항목을 복사 완료로 표시했습니다.");
+    if($("copyNextOption").checked){
+      const nextUncopied=state.copyStates.findIndex(status=>status!=="copied");
+      if(nextUncopied>=0)state.workIndex=nextUncopied;
+    }
+    renderWorkbench();
+    if(state.copyStates.every(s=>s==="copied"))toast("모든 항목의 복사를 완료했습니다.");
+  }
+  function markCopiedForReview(){
+    let changed=false;state.copyStates=state.copyStates.map(s=>{if(s==="copied"){changed=true;return "review"}return s});
+    if(changed)toast("표시 규칙이 바뀌어 복사 완료 항목을 다시 확인해야 합니다.");
+  }
+  async function saveWorkbench(kind){
+    const button=$(kind==="template"?"saveTemplateButton":"saveDraftButton");
+    if(state.save.status==="saving")return;
+    state.save.status="saving";button.disabled=true;button.textContent="저장 중…";
+    try{
+      await actions.saveDraft({outcome:state.outcome,kind});
+      state.save.status="saved";state.save.error=null;
+      toast(`${kind==="template"?"템플릿":"기안"}을 저장했습니다.`);
+    }catch(error){
+      state.save.status="failed";state.save.error=error;
+      toast(`${error.message} ${error.recovery}`);
+    }finally{
+      button.disabled=false;button.textContent=kind==="template"?"템플릿으로 저장":"기안으로 저장";
+    }
+  }
+
+  document.querySelectorAll("[data-nav]").forEach(b=>b.addEventListener("click",()=>b.dataset.nav==="settings"?openSettings():showScreen("data")));
+  document.querySelectorAll("[data-back-data]").forEach(b=>b.addEventListener("click",()=>showScreen("data")));
+  document.querySelectorAll("[data-back-settings]").forEach(b=>b.addEventListener("click",()=>showScreen("settings")));
+  document.querySelectorAll(".doc-option").forEach(b=>b.addEventListener("click",()=>selectDocument(b.dataset.document)));
+  $("scenarioSelect").addEventListener("change",e=>{
+    state.scenario=e.target.value;
+    state.newConnection=state.scenario==="customer"?{phase:"unselected",targetDocument:null}:{phase:"idle",targetDocument:null};
+    state.document=state.scenario==="customer"?null:"salary";
+    defaultSelection();state.search="";$("recordSearch").value="";$("dataNotice").hidden=true;$("runResultPanel").classList.remove("on");state.result=null;invalidateExecutionEvidence();renderScenario();requestValidation();
+  });
+  $("outcomeSelect").addEventListener("change",e=>{state.outcome=e.target.value;toast(`${prototypeOutcomes[state.outcome].label}: ${prototypeOutcomes[state.outcome].description}`)});
+  $("recordSearch").addEventListener("input",e=>{state.search=e.target.value;renderRecords()});
+  $("recordBody").addEventListener("click",e=>{if(e.target.matches("input[type=checkbox]"))return;const row=e.target.closest("tr[data-id]");if(!row)return;const id=Number(row.dataset.id);state.selected.has(id)?state.selected.delete(id):state.selected.add(id);invalidateExecutionEvidence();renderRecords();requestValidation()});
+  $("recordBody").addEventListener("change",e=>{if(!e.target.matches("input[type=checkbox]"))return;const row=e.target.closest("tr[data-id]");const id=Number(row.dataset.id);e.target.checked?state.selected.add(id):state.selected.delete(id);invalidateExecutionEvidence();renderRecords();requestValidation()});
+  $("recordHead").addEventListener("change",e=>{if(e.target.id!=="selectAll")return;activeRecords().forEach(r=>e.target.checked?state.selected.add(r.id):state.selected.delete(r.id));invalidateExecutionEvidence();renderRecords();requestValidation()});
+  function revealDocumentCatalog(){
+    state.newConnection.phase="choosing";renderDocStatuses();renderRunState();$("documentList").querySelector(".doc-option")?.focus();
+  }
+  $("chooseDocumentButton").addEventListener("click",revealDocumentCatalog);
+  $("compatAction").addEventListener("click",()=>state.scenario==="customer"&&!state.document?revealDocumentCatalog():openConnection());
+  $("connectionButton").addEventListener("click",()=>openConnection());$("settingsConnectionButton").addEventListener("click",()=>openConnection());
+  $("documentSettingsButton").addEventListener("click",openSettings);$("settingsDocumentSelect").addEventListener("change",e=>{state.settingsDocument=e.target.value;renderSettings()});
+  $("settingsRunButton").addEventListener("click",()=>{state.document=state.settingsDocument;if(state.scenario==="customer"){state.newConnection.phase="targetSelected";state.newConnection.targetDocument=state.settingsDocument}invalidateExecutionEvidence();defaultSelection();renderScenario();showScreen("data");requestValidation()});
+  $("newConnectionButton").addEventListener("click",()=>openConnection("새 연결 만들기"));
+  $("templateActions").addEventListener("click",e=>{if(e.target.id==="editTxtTemplate")showScreen("txt");if(e.target.id==="editInHwp")showScreen("hwp-edit");if(e.target.id==="inspectStructure"){renderStructure(state.settingsDocument);showScreen("structure")}});
+  $("connectionBack").addEventListener("click",()=>showScreen(state.returnView));$("cancelConnection").addEventListener("click",()=>showScreen(state.returnView));
+  $("mappingList").addEventListener("change",e=>{
+    const row=e.target.closest("[data-key]");if(!row)return;
+    const field=fields[state.connectionDocument].find(item=>item.key===row.dataset.key),draft=state.editor[row.dataset.key],kind=e.target.dataset.kind;
+    if(kind==="source"){
+      draft.source=e.target.value;
+      draft.type=inferType(draft.source,field);
+      draft.typeSource="inferred";
+      draft.format=recommendedFormat(draft.type,draft.source);
+    }else if(kind==="type"){
+      draft.type=e.target.value;
+      draft.typeSource="user";
+      draft.format=recommendedFormat(draft.type,draft.source);
+    }else if(kind==="format"){
+      draft.format=e.target.value;
+    }
+    state.save.status="dirty";state.save.error=null;renderMappings();
+  });
+  $("mappingList").addEventListener("input",e=>{
+    if(e.target.dataset.kind!=="constant")return;
+    const row=e.target.closest("[data-key]");state.editor[row.dataset.key].constant=e.target.value;state.save.status="dirty";state.save.error=null;
+    const field=fields[state.connectionDocument].find(item=>item.key===row.dataset.key),ev=mappingEvaluation(field,state.editor[row.dataset.key]);
+    row.querySelector(".result-main").textContent=ev.value;const status=row.querySelector(".row-state");status.className=`row-state ${ev.level}`;status.textContent=ev.text;
+    const invalid=fields[state.connectionDocument].some(item=>mappingEvaluation(item,state.editor[item.key]).level==="bad");
+    $("saveConnection").disabled=invalid;
+    $("connectionStatus").className=`status ${invalid?"missing":"ready"}`;$("connectionStatus").textContent=invalid?"확인 필요":"연결됨";
+    $("connectionSaveState").dataset.status="dirty";$("connectionSaveState").textContent="변경 사항 있음";
+  });
+  $("autoMapButton").addEventListener("click",()=>{
+    let count=0;fields[state.connectionDocument].forEach(f=>{const draft=state.editor[f.key];if(draft.source||f.calc)return;const match=columns().find(c=>c.key===f.key);if(match){draft.source=match.key;draft.type=inferType(match.key,f);draft.typeSource="inferred";draft.format=recommendedFormat(draft.type,match.key);count++}});
+    if(count)state.save.status="dirty";
+    renderMappings();toast(count?`빈 필드 ${count}개에만 추천을 적용했습니다.`:"추천할 빈 필드가 없습니다.");
+  });
+  $("saveConnection").addEventListener("click",saveConnection);
+  $("previewButton").addEventListener("click",openPreview);$("scrim").addEventListener("click",closePreview);$("closePreview").addEventListener("click",closePreview);$("drawerBack").addEventListener("click",closePreview);
+  $("resolvePreviewFailureButton").addEventListener("click",()=>{closePreview();notice("dataNotice","미리보기 입력과 연결을 확인하세요. 시안에는 실제 실패 원인 진단이 연결되어 있지 않아 선택과 입력을 보존했습니다.","warn")});
+  $("approvePreviewButton").addEventListener("click",approvePreview);
+  $("previewPrev").addEventListener("click",()=>{state.previewIndex=Math.max(0,state.previewIndex-1);renderPreview()});$("previewNext").addEventListener("click",()=>{state.previewIndex=Math.min(selectedRecords().length-1,state.previewIndex+1);renderPreview()});
+  $("primaryRunButton").addEventListener("click",()=>{if(state.preview.required&&!state.preview.approved)openPreview();else if(docs[state.document].mode==="copy")setupWorkbench();else executeDocuments()});
+  $("generateButton").addEventListener("click",()=>executeDocuments({fromDrawer:true}));
+  $("cancelRunButton").addEventListener("click",()=>{actions.cancelRun();$("runProgressTitle").textContent="취소를 요청했습니다.";$("runProgressDetail").textContent="현재 문서를 마친 뒤 남은 항목을 중단합니다."});
+  $("cancelDrawerRunButton").addEventListener("click",()=>{actions.cancelRun();$("previewState").textContent="취소를 요청했습니다. 현재 문서를 마친 뒤 남은 항목을 중단합니다."});
+  $("resolveFailureButton").addEventListener("click",()=>{
+    if(state.failedRecordIds.length)state.selected=new Set(state.failedRecordIds);
+    $("runResultPanel").classList.remove("on");state.workflowStep="data";
+    notice("dataNotice","실패한 항목을 선택 상태로 보존했습니다. 실제 진단 결과가 연결되면 원인과 교정 위치를 여기에 표시합니다. 지금은 데이터 값·연결·문서 설정을 확인하세요.","warn");
+    renderRecords();renderWorkflowStrip();$("recordBody").querySelector("tr.selected")?.focus();
+  });
+  $("dismissResultButton").addEventListener("click",()=>{$("runResultPanel").classList.remove("on");state.workflowStep="data";renderWorkflowStrip()});
+  $("finishHwpEdit").addEventListener("click",()=>{
+    const button=$("finishHwpEdit");button.disabled=true;button.textContent="변경 확인 중…";$("editStep2").classList.add("on");
+    setTimeout(()=>{button.textContent="토큰과 구조 재분석 중…";$("editStep3").classList.add("on")},500);
+    setTimeout(()=>{button.disabled=false;button.textContent="복귀·재분석 시나리오 실행";$("editStep2").classList.remove("on");$("editStep3").classList.remove("on");notice("settingsNotice","시안 상태 전환: 변경을 확인하고 토큰과 연결 상태를 다시 분석했습니다.");showScreen("settings")},1150);
+  });
+  $("workbenchBack").addEventListener("click",()=>showScreen("data"));
+  $("workPrev").addEventListener("click",()=>{state.workIndex=Math.max(0,state.workIndex-1);renderWorkbench()});$("workNext").addEventListener("click",()=>{state.workIndex=Math.min(state.workRecords.length-1,state.workIndex+1);renderWorkbench()});$("copyButton").addEventListener("click",copyCurrent);
+  $("queueDots").addEventListener("click",e=>{const dot=e.target.closest("[data-work-index]");if(!dot)return;state.workIndex=Number(dot.dataset.workIndex);renderWorkbench()});
+  $("workMappings").addEventListener("change",e=>{const row=e.target.closest("[data-key]");if(!row)return;markCopiedForReview();const key=row.dataset.key;if(e.target.dataset.workKind==="source")state.workBindings[key]=e.target.value;else if(e.target.dataset.workKind==="format")state.workFormats[key]=e.target.value;renderWorkbench()});
+  $("workMappings").addEventListener("input",e=>{if(e.target.dataset.workKind!=="constant")return;const row=e.target.closest("[data-key]");state.workConstants[row.dataset.key]=e.target.value;markCopiedForReview();renderWorkText()});
+  document.querySelectorAll("[data-preview-mode]").forEach(b=>b.addEventListener("click",()=>{state.workMode=b.dataset.previewMode;document.querySelectorAll("[data-preview-mode]").forEach(x=>x.classList.toggle("on",x===b));renderWorkText()}));
+  $("fontSelect").addEventListener("change",renderWorkText);$("saveDraftButton").addEventListener("click",()=>saveWorkbench("draft"));$("saveTemplateButton").addEventListener("click",()=>saveWorkbench("template"));
+  document.querySelectorAll("[data-work-tab]").forEach(b=>b.addEventListener("click",()=>{state.workTab=b.dataset.workTab;document.querySelectorAll("[data-work-tab]").forEach(x=>x.classList.toggle("on",x===b));document.querySelectorAll("[data-work-panel]").forEach(p=>p.classList.toggle("mobile-on",p.dataset.workPanel===state.workTab))}));
+  $("helpButton").addEventListener("click",()=>{
+    const labels={supported:"지원",composed:"조합",unsupported:"미지원",deferred:"연기",removed:"제거"};
+    $("capabilityList").innerHTML=Object.entries(capabilities).map(([key,item])=>`<div class="capability-row"><strong>${esc(key)}<span class="capability-status">${labels[item.status]}</span></strong><p>${esc(item.reason||item.operations?.join(" + ")||"")}</p></div>`).join("");
+    $("capabilityDialog").showModal();$("closeCapabilityDialog").focus();
+  });
+  $("closeCapabilityDialog").addEventListener("click",()=>$("capabilityDialog").close());
+  document.addEventListener("keydown",e=>{if(e.key==="Escape"&&state.previewOpen)closePreview()});
+  renderScenario();renderWorkflowStrip();requestValidation();
+})();
+</script>
+</body>
+</html>

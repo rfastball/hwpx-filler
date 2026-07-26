@@ -1,0 +1,1388 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>문서나르미 · 편집 워크플로 시안 v3</title>
+<style>
+:root{
+  --bg:#f4f6f9;--card:#fff;--surface:#f7f8fa;--line:#dfe3e8;--line-strong:#c8ced7;
+  --ink:#202632;--soft:#46505f;--muted:#707b8b;--primary:#5b55c7;--primary-hover:#4842ae;
+  --primary-bg:#efedff;--ok:#18794e;--ok-bg:#eaf7f0;--warn:#9b5c00;--warn-bg:#fff4dd;
+  --danger:#b4233a;--danger-bg:#fff0f2;--info:#2563a8;--info-bg:#edf5ff;
+  --shadow:0 18px 50px rgba(30,38,50,.14);--r:14px;--rs:10px
+}
+*{box-sizing:border-box}
+html,body{min-height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 Pretendard,"Pretendard GOV","Malgun Gothic",system-ui,sans-serif}
+button,input,select{font:inherit}
+button{cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible,[tabindex]:focus-visible{outline:3px solid rgba(91,85,199,.3);outline-offset:2px}
+[hidden]{display:none!important}
+.app{min-height:100vh;display:grid;grid-template-rows:64px 1fr}
+.topbar{position:sticky;top:0;z-index:30;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;padding:0 28px;background:rgba(255,255,255,.95);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;font-weight:850;font-size:16px;letter-spacing:-.02em}
+.brand-mark{width:28px;height:28px;border-radius:9px;background:linear-gradient(145deg,var(--primary),#827cea);color:#fff;display:grid;place-items:center;font-size:12px;box-shadow:0 5px 14px rgba(91,85,199,.25)}
+.nav{height:100%;display:flex;gap:6px}
+.nav button{position:relative;border:0;background:transparent;color:var(--soft);padding:0 18px;font-weight:750}
+.nav button[aria-current=page]{color:var(--primary)}
+.nav button[aria-current=page]::after{content:"";position:absolute;left:16px;right:16px;bottom:0;height:3px;border-radius:3px 3px 0 0;background:var(--primary)}
+.top-actions{justify-self:end}
+.icon-btn{width:36px;height:36px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--soft);font-weight:850}
+.workspace{width:min(1240px,calc(100% - 48px));margin:0 auto;padding:28px 0 50px}
+.workspace.workbench-space{width:100%;padding:0}
+.screen{display:none}.screen.on{display:block;animation:appear .16s ease-out}
+@keyframes appear{from{opacity:.5;transform:translateY(3px)}}
+h1,h2,h3,p{margin:0}h1{font-size:26px;line-height:1.25;letter-spacing:-.03em}h2{font-size:18px;letter-spacing:-.015em}h3{font-size:15px}
+.eyebrow{margin-bottom:4px;color:var(--primary);font-size:12px;font-weight:850;letter-spacing:.06em}
+.subtitle{margin-top:6px;color:var(--muted)}
+.page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:20px}
+.head-actions{display:flex;align-items:flex-end;gap:10px}
+.button{min-height:39px;border:1px solid var(--line-strong);border-radius:9px;padding:8px 14px;background:#fff;color:var(--ink);font-weight:720;display:inline-flex;align-items:center;justify-content:center;gap:7px}
+.button:hover{background:var(--surface)}.button.primary{border-color:var(--primary);background:var(--primary);color:#fff}.button.primary:hover{background:var(--primary-hover)}
+.button.ghost{border-color:transparent;background:transparent;color:var(--primary)}.button.small{min-height:32px;padding:5px 10px;font-size:12px}.button:disabled{opacity:.45;cursor:not-allowed}
+.back{border:0;background:transparent;color:var(--soft);padding:0;margin-bottom:14px;font-weight:700}.back:hover{color:var(--primary)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r)}
+.status{display:inline-flex;align-items:center;gap:6px;min-height:26px;padding:3px 9px;border-radius:99px;font-size:12px;font-weight:800;white-space:nowrap}
+.status::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.status.ready{color:var(--ok);background:var(--ok-bg)}.status.review{color:var(--warn);background:var(--warn-bg)}
+.status.missing{color:var(--danger);background:var(--danger-bg)}.status.neutral{color:var(--soft);background:#eef0f3}.status.info{color:var(--info);background:var(--info-bg)}
+.prototype-badge{display:inline-flex;margin-left:7px;padding:2px 6px;border-radius:99px;background:var(--info-bg);color:var(--info);font-size:10px;font-weight:850;vertical-align:middle}
+.scenario-picker{display:grid;gap:4px;color:var(--soft);font-size:12px;font-weight:800}
+.scenario-picker select{min-width:260px;min-height:39px;border:1px solid var(--line-strong);border-radius:9px;background:#fff;color:var(--ink);padding:7px 32px 7px 10px}
+.workflow-strip{display:flex;align-items:center;gap:8px;margin:-4px 0 18px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--muted);font-size:12px}
+.workflow-strip strong{color:var(--ink)}.workflow-strip .workflow-next{margin-left:auto}
+.workflow-dot{width:8px;height:8px;border-radius:50%;background:var(--primary);box-shadow:0 0 0 4px var(--primary-bg)}
+.surface-notice{margin:-7px 0 18px;padding:11px 13px;border:1px solid #bce0cc;border-radius:10px;background:var(--ok-bg);color:var(--ok);font-size:13px}
+.surface-notice.warn{border-color:#efd09a;background:var(--warn-bg);color:var(--warn)}.surface-notice.error{border-color:#efbac3;background:var(--danger-bg);color:var(--danger)}
+.data-grid{display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:18px;align-items:start}
+.file-card{overflow:hidden}.file-head{display:flex;align-items:center;gap:14px;padding:18px 20px;border-bottom:1px solid var(--line)}
+.file-icon{width:42px;height:42px;border-radius:10px;background:var(--ok-bg);color:var(--ok);display:grid;place-items:center;font-weight:900;font-size:11px}
+.file-title{min-width:0;flex:1}.file-title h2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.file-meta{margin-top:2px;color:var(--muted);font-size:12px}
+.compat-note{display:none;margin:14px 18px 0;padding:13px;border:1px solid #efd09a;border-radius:10px;background:var(--warn-bg);color:var(--warn)}
+.compat-note.on{display:block}.compat-note p{margin-top:3px;font-size:12px}.compat-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px}
+.table-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px}.select-summary{font-weight:750}.select-summary span{margin-left:6px;color:var(--muted);font-size:12px;font-weight:500}
+.search{width:220px;border:1px solid var(--line-strong);border-radius:8px;padding:8px 10px;background:#fff;color:var(--ink)}
+.table-wrap{overflow:auto;border-top:1px solid var(--line)}table{width:100%;border-collapse:collapse}
+th{padding:9px 12px;background:#f1f3f6;color:var(--soft);text-align:left;font-size:12px;white-space:nowrap;border-bottom:1px solid var(--line)}
+td{padding:11px 12px;border-bottom:1px solid var(--line);white-space:nowrap}tbody tr:hover{background:#fafaff}tbody tr.selected{background:var(--primary-bg)}tbody tr:last-child td{border-bottom:0}
+.checkcell{width:42px;text-align:center}input[type=checkbox]{width:16px;height:16px;accent-color:var(--primary)}.money{text-align:right;font-variant-numeric:tabular-nums}
+.side-card{position:sticky;top:84px;padding:18px}.side-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.side-desc{margin:4px 0 14px;color:var(--muted);font-size:13px}
+.doc-empty{padding:16px;border:1px dashed var(--line-strong);border-radius:11px;background:var(--surface)}.doc-empty strong{display:block}.doc-empty p{margin:5px 0 12px;color:var(--muted);font-size:12px}
+.doc-list{display:grid;gap:9px}.doc-row{display:grid;grid-template-columns:minmax(0,1fr) 40px;gap:5px}
+.doc-select{min-width:0;border:1px solid var(--line);border-radius:11px 8px 8px 11px;background:#fff;padding:12px;text-align:left;color:var(--ink);transition:.12s}
+.doc-select:hover{border-color:#aaa5e8}.doc-select.selected{border-color:var(--primary);box-shadow:0 0 0 2px rgba(91,85,199,.11)}.doc-select.blocked{background:var(--warn-bg);border-color:#efd09a}
+.doc-menu{border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--soft);font-weight:900}.doc-menu:hover{border-color:#aaa5e8;color:var(--primary)}
+.doc-top{display:flex;align-items:center;justify-content:space-between;gap:8px}.doc-name{font-weight:800}.doc-mode{display:block;margin-top:7px;color:var(--soft);font-size:12px;font-weight:750}.doc-meta{display:block;margin-top:2px;color:var(--muted);font-size:12px}
+.object-menu{position:absolute;z-index:20;right:18px;top:178px;width:210px;padding:6px;border:1px solid var(--line);border-radius:10px;background:#fff;box-shadow:var(--shadow)}
+.object-menu p{padding:7px 9px;color:var(--muted);font-size:11px}.object-menu button{width:100%;border:0;border-radius:7px;background:#fff;padding:9px;text-align:left;color:var(--ink);font-weight:700}.object-menu button:hover{background:var(--primary-bg);color:var(--primary)}
+.side-actions{display:grid;gap:9px;margin-top:15px;padding-top:15px;border-top:1px solid var(--line)}
+.run-validation{display:flex;align-items:flex-start;gap:10px;padding:12px;border:1px solid #bce0cc;border-radius:10px;background:var(--ok-bg);color:var(--ok)}
+.run-validation[data-level=warn]{border-color:#efd09a;background:var(--warn-bg);color:var(--warn)}.run-validation[data-level=bad]{border-color:#efbac3;background:var(--danger-bg);color:var(--danger)}
+.validation-mark{width:22px;height:22px;flex:0 0 auto;border-radius:50%;background:rgba(255,255,255,.6);display:grid;place-items:center;font-weight:900}
+.run-validation strong{display:block;font-size:13px}.run-validation p{margin-top:2px;font-size:12px}.run-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.run-actions.one{grid-template-columns:1fr}.selection-foot{text-align:center;color:var(--muted);font-size:12px}
+.run-progress{display:none;padding:11px 12px;border:1px solid #b9d2ef;border-radius:10px;background:var(--info-bg);color:var(--info);font-size:12px}.run-progress.on{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.result-panel{display:none;margin:0 0 18px;padding:15px;border:1px solid var(--line);border-radius:11px;background:#fff}.result-panel.on{display:block}
+.result-panel[data-status=completed]{border-color:#bce0cc;background:var(--ok-bg)}.result-panel[data-status=partiallyCompleted]{border-color:#efd09a;background:var(--warn-bg)}.result-panel[data-status=failed]{border-color:#efbac3;background:var(--danger-bg)}
+.result-panel h2{font-size:16px}.result-detail{margin-top:4px;color:var(--soft);font-size:12px}.result-evidence{margin-top:10px;padding:10px;border-radius:9px;background:rgba(255,255,255,.72)}
+.result-evidence.return-highlight{box-shadow:0 0 0 3px rgba(91,85,199,.28)}.result-evidence strong{display:block}.result-evidence p{margin-top:3px;color:var(--soft);font-size:12px}.result-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px}
+
+/* 문서 작업 목록 */
+.library-tools{display:flex;gap:10px;margin-bottom:16px}.library-tools .search{width:min(380px,100%)}
+.work-library{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.work-card{padding:18px}.work-card.return-highlight{box-shadow:0 0 0 3px rgba(91,85,199,.25)}
+.work-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.work-card h2{font-size:17px}.work-card p{margin-top:6px;color:var(--muted);font-size:12px}.work-card .button{margin-top:16px;width:100%}
+
+/* 통합 문서 작업 편집기 */
+.editor-shell{max-width:1180px;margin:0 auto}.editor-page-head{align-items:center}.editor-title-row{display:flex;align-items:center;gap:10px}
+.editor-tabs{display:flex;gap:5px;padding:5px;border:1px solid var(--line);border-radius:11px;background:#fff;margin-bottom:14px;overflow:auto}
+.editor-tabs button{min-width:118px;min-height:38px;border:0;border-radius:8px;background:transparent;color:var(--soft);font-weight:780;white-space:nowrap}
+.editor-tabs button[aria-selected=true]{background:var(--primary-bg);color:var(--primary)}
+.context-banner{margin-bottom:14px;padding:15px;border:1px solid #b9d2ef;border-radius:12px;background:var(--info-bg);color:var(--info)}
+.context-banner-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.context-banner strong{display:block}.context-banner p{margin-top:4px;font-size:12px}
+.evidence-grid{display:flex;flex-wrap:wrap;gap:7px 16px;margin-top:9px;font-size:12px}.evidence-grid span{display:inline-flex;gap:5px}.evidence-grid b{color:var(--ink)}
+.editor-status{display:none;margin-bottom:14px;padding:11px 13px;border-radius:10px;background:var(--surface);color:var(--soft);font-size:12px}
+.editor-status.on{display:block}.editor-status.saving{background:var(--info-bg);color:var(--info)}.editor-status.ok{background:var(--ok-bg);color:var(--ok)}.editor-status.bad{background:var(--danger-bg);color:var(--danger)}
+.editor-card{overflow:hidden}.editor-panel{display:none}.editor-panel.on{display:block}.panel-pad{padding:22px}
+.section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:18px}.section-head p{margin-top:4px;color:var(--muted);font-size:12px}
+.template-layout{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(300px,.85fr);gap:16px}.structure-teaser{min-height:430px;padding:25px;background:linear-gradient(145deg,#edf0f5,#f8f9fb);display:flex;align-items:center;justify-content:center}
+.structure-frame{width:min(520px,94%);border:1px solid var(--line-strong);border-radius:12px;background:#fff;padding:26px;box-shadow:0 12px 28px rgba(28,35,47,.08)}
+.structure-kicker{color:var(--primary);font-size:11px;font-weight:850;letter-spacing:.08em}.structure-frame h2{margin:8px 0 18px}
+.structure-lines{display:grid;gap:9px}.structure-line{height:9px;border-radius:5px;background:#e7e9ee}.structure-line.short{width:64%}
+.structure-table{margin-top:18px;display:grid;grid-template-columns:36% 64%;border:1px solid #d7dbe1}.structure-cell{min-height:38px;border-right:1px solid #d7dbe1;border-bottom:1px solid #d7dbe1;padding:8px;font-size:11px;color:var(--muted)}.structure-cell:nth-child(2n){border-right:0}.structure-cell:nth-last-child(-n+2){border-bottom:0}
+.token-chip{display:inline-block;border-radius:5px;padding:2px 5px;background:var(--primary-bg);color:var(--primary);font-weight:750}.template-side{padding:20px}
+.template-format,.boundary-card,.candidate-card{margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}.template-format span{display:block;color:var(--muted);font-size:12px}.template-format strong{display:block;margin-top:3px;font-size:16px}
+.boundary-card{border-color:#b9d2ef;background:var(--info-bg);color:var(--info)}.boundary-card strong,.candidate-card strong{display:block}.boundary-card p,.candidate-card p{margin-top:4px;font-size:12px}.candidate-card{border-color:#efd09a;background:var(--warn-bg);color:var(--warn)}
+.candidate-list{margin:8px 0 0;padding-left:18px;font-size:12px}
+.mapping-head,.mapping-row{display:grid;grid-template-columns:.88fr 1.02fr .8fr .82fr 1.08fr;gap:11px;align-items:center}
+.mapping-head{padding:10px 22px;background:#f1f3f6;color:var(--soft);font-size:12px;font-weight:800;border-bottom:1px solid var(--line)}
+.mapping-list{padding:0 22px}.mapping-row{min-height:96px;border-bottom:1px solid var(--line);scroll-margin:130px}.mapping-row:last-child{border-bottom:0}
+.mapping-row.target-row{margin:5px -9px;padding:0 9px;border:1px solid #9f9ae4;border-radius:10px;background:var(--primary-bg);box-shadow:0 0 0 3px rgba(91,85,199,.1)}
+.mapping-row.suggested-row:not(.target-row){background:#fffaf0}.field-name strong{display:block}.field-name span{display:block;color:var(--muted);font-size:11px}.required{color:var(--danger);margin-left:2px}
+.mapping-select,.type-select,.format-select,.literal-input{width:100%;min-height:38px;border:1px solid var(--line-strong);border-radius:8px;padding:6px 8px;background:#fff;color:var(--ink)}
+.literal-input{margin-top:6px}.inference-note{display:block;margin-top:3px;color:var(--info);font-size:10px;font-weight:750}.inference-note.user{color:var(--soft)}
+.result-main{display:block;font-weight:750;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row-state{display:block;margin-top:3px;color:var(--ok);font-size:11px;font-weight:750}.row-state.warn{color:var(--warn)}.row-state.bad{color:var(--danger)}.row-state.info{color:var(--info)}
+.row-evidence{grid-column:1/-1;margin:-3px 0 8px;padding:8px 10px;border-radius:8px;background:#fff;color:var(--soft);font-size:11px}.mapping-note{padding:11px 22px;color:var(--muted);font-size:12px;background:#fafbfc;border-top:1px solid var(--line)}
+.execution-form{display:grid;grid-template-columns:1fr 1fr;gap:15px}.form-field{display:grid;gap:6px;padding:14px;border:1px solid var(--line);border-radius:10px;background:#fff;scroll-margin:130px}
+.form-field.target-rule{border-color:#9f9ae4;background:var(--primary-bg);box-shadow:0 0 0 3px rgba(91,85,199,.1)}.form-field>span{font-size:12px;font-weight:800;color:var(--soft)}
+.form-field input,.form-field select{width:100%;min-height:40px;border:1px solid var(--line-strong);border-radius:8px;background:#fff;padding:7px 9px;color:var(--ink)}
+.form-field small{color:var(--muted)}.execution-boundary{grid-column:1/-1}
+.test-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}.metric{padding:13px;border-radius:10px;background:var(--surface)}.metric span{display:block;color:var(--muted);font-size:11px}.metric strong{display:block;margin-top:2px}
+.test-sample{padding:16px;border:1px solid var(--line);border-radius:11px;background:#fff}.test-sample p{margin-top:5px;color:var(--soft)}
+.editor-foot{position:sticky;bottom:0;z-index:8;display:flex;align-items:center;gap:14px;padding:14px 18px;border-top:1px solid var(--line);background:rgba(255,255,255,.97);backdrop-filter:blur(10px)}
+.scope-box{flex:1}.scope-box>strong{display:block;font-size:12px}.scope-options{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:5px}.scope-options label{display:flex;align-items:center;gap:6px;font-size:12px}.scope-options input{accent-color:var(--primary)}
+.save-state{color:var(--muted);font-size:12px;font-weight:750}.save-state[data-status=dirty]{color:var(--warn)}.save-state[data-status=saving]{color:var(--info)}.save-state[data-status=failed]{color:var(--danger)}.save-state[data-status=saved]{color:var(--ok)}
+
+/* 미리보기 */
+.scrim{position:fixed;inset:0;z-index:50;background:rgba(17,24,39,.46);opacity:0;pointer-events:none;transition:.2s}.scrim.on{opacity:1;pointer-events:auto}
+.drawer{position:fixed;z-index:60;top:0;right:0;width:min(650px,100%);height:100%;background:#fff;box-shadow:-18px 0 50px rgba(20,28,40,.18);transform:translateX(102%);transition:.22s;display:grid;grid-template-rows:auto 1fr auto}
+.drawer.on{transform:translateX(0)}.drawer-head{display:flex;align-items:center;gap:12px;padding:17px 20px;border-bottom:1px solid var(--line)}.drawer-head>div:first-child{flex:1}
+.preview-nav{display:flex;align-items:center;gap:7px}.preview-nav strong{min-width:46px;text-align:center}.drawer-body{overflow:auto;padding:20px;background:var(--surface)}
+.sample-label{width:min(470px,100%);margin:0 auto 9px;color:var(--muted);font-size:12px;font-weight:750}.mini-preview{width:min(470px,100%);margin:0 auto;border:1px solid var(--line);border-radius:12px;background:#fff;padding:25px;box-shadow:0 8px 20px rgba(28,35,47,.07)}
+.mini-preview h3{text-align:center;margin-bottom:20px;font-size:18px;letter-spacing:.08em}.preview-line{display:grid;grid-template-columns:90px minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
+.preview-line>span:first-child{color:var(--muted)}.preview-line.return-highlight{margin:0 -8px;padding:9px 8px;border-radius:8px;background:var(--primary-bg);box-shadow:0 0 0 2px rgba(91,85,199,.2)}
+.scope-marker{display:inline-flex;margin-left:6px;padding:2px 6px;border-radius:99px;background:var(--warn-bg);color:var(--warn);font-size:10px;font-weight:850}
+.preview-total{display:grid;grid-template-columns:90px minmax(0,1fr) auto;gap:10px;align-items:center;margin-top:14px;padding:12px;background:var(--surface);font-weight:850}
+.preview-secondary{margin-top:16px;padding-top:12px;border-top:1px dashed var(--line)}.filename-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center}.filename-row strong{overflow-wrap:anywhere}
+.preview-state{width:min(470px,100%);margin:0 auto 12px;padding:11px 12px;border:1px solid #b9d2ef;border-radius:10px;background:var(--info-bg);color:var(--info);font-size:12px}.preview-state.error{border-color:#efbac3;background:var(--danger-bg);color:var(--danger)}
+.preview-summary-card{width:min(470px,100%);margin:12px auto 0;padding:13px;border:1px solid #efd09a;border-radius:10px;background:var(--warn-bg)}.preview-summary-card strong{display:block}.preview-summary-card span{display:block;margin-top:3px;color:var(--warn);font-size:12px}
+.drawer-foot{padding:15px 20px;border-top:1px solid var(--line)}.run-summary{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;margin-bottom:13px}.run-summary span{display:block;color:var(--muted);font-size:11px}.drawer-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+
+/* 온나라 작업대 */
+.workbench-screen{min-height:calc(100vh - 64px);background:#edf0f4}.workbench-head{min-height:72px;padding:10px 24px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:16px}.workbench-head .back{margin:0}.workbench-title{flex:1}.workbench-title h1{font-size:20px}.workbench-title p{color:var(--muted);font-size:12px}
+.workbench-stats{display:flex;align-items:center;gap:18px}.stat-pair span{display:block;color:var(--muted);font-size:11px}.queue-dots{display:flex;gap:6px}.queue-dot{width:18px;height:18px;border:4px solid transparent;padding:0;border-radius:50%;background:#d5d9df;background-clip:content-box}.queue-dot.current{outline:2px solid var(--primary);outline-offset:1px;background-color:#fff}.queue-dot.copied{background-color:var(--ok)}.queue-dot.review{background-color:var(--warn)}
+.work-tabs{display:none}.workbench-body{height:calc(100vh - 64px - 72px - 88px);display:grid;grid-template-columns:minmax(430px,44%) minmax(0,56%);gap:1px;background:var(--line)}.work-panel{min-width:0;overflow:auto;background:#fff}.work-left{padding:20px}.work-right{padding:20px;background:#f6f7f9}
+.work-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:14px}.work-panel-head p{margin-top:3px;color:var(--muted);font-size:12px}.session-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.work-map-head,.work-map-row{display:grid;grid-template-columns:.8fr 1fr .72fr .95fr;gap:8px;align-items:center}.work-map-head{padding:8px 9px;background:#f1f3f6;border-radius:8px 8px 0 0;color:var(--soft);font-size:11px;font-weight:800}
+.work-map-row{min-height:67px;padding:8px 9px;border:1px solid var(--line);border-top:0;scroll-margin:90px}.work-map-row.rule-highlight{position:relative;z-index:1;border:2px solid var(--primary);background:var(--primary-bg)}
+.work-map-row select{width:100%;min-width:0;min-height:34px;border:1px solid var(--line-strong);border-radius:7px;background:#fff;color:var(--ink);padding:5px}.work-result{font-size:12px;overflow:hidden;text-overflow:ellipsis}.work-result span{display:block;color:var(--muted);font-size:10px}
+.work-tip{margin-top:13px;padding:11px;border-radius:9px;background:var(--info-bg);color:var(--info);font-size:12px}.preview-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.segmented{display:inline-flex;padding:3px;border-radius:9px;background:#e8ebef}.segmented button{min-height:32px;border:0;border-radius:7px;background:transparent;color:var(--soft);padding:5px 11px;font-weight:750}.segmented button.on{background:#fff;color:var(--primary);box-shadow:0 1px 5px rgba(30,38,50,.12)}
+.font-select{min-height:38px;border:1px solid var(--line-strong);border-radius:8px;background:#fff;padding:6px 9px;color:var(--ink)}
+.text-preview{min-height:430px;border:1px solid var(--line);border-radius:12px;background:#fff;padding:30px 34px;box-shadow:0 10px 25px rgba(28,35,47,.07);font-family:"Noto Sans KR","Malgun Gothic",sans-serif;font-size:15px;line-height:2}.text-preview h2{text-align:center;margin-bottom:24px;font-size:19px}.text-preview p+p{margin-top:14px}
+.filled-value,.token-value{border:0;border-radius:4px;padding:1px 4px;font-weight:750}.filled-value{background:#fff0b8;color:#654c00}.token-value{background:var(--primary-bg);color:var(--primary);font:13px/1.5 Consolas,monospace}.filled-value:hover,.token-value:hover{box-shadow:0 0 0 2px var(--primary)}
+.record-state,.complete-card{display:none;margin-bottom:12px;padding:10px 12px;border-radius:9px;background:var(--warn-bg);color:var(--warn);font-size:12px}.record-state.on,.complete-card.on{display:block}.record-state.copied,.complete-card{background:var(--ok-bg);color:var(--ok)}
+.workbench-bar{position:relative;min-height:88px;background:#fff;border-top:1px solid var(--line);padding:10px 24px;display:flex;align-items:center;gap:9px}.workbench-bar .spacer{flex:1}.copy-option{display:flex;align-items:center;gap:7px;color:var(--soft);font-size:12px;font-weight:700}.copy-option input{width:16px;height:16px}
+
+.modal{width:min(590px,calc(100% - 32px));border:0;border-radius:14px;padding:0;box-shadow:var(--shadow);color:var(--ink)}.modal::backdrop{background:rgba(17,24,39,.5)}.modal-card{padding:22px}.modal-card h2{margin-bottom:8px}.modal-card>p{color:var(--soft);white-space:pre-line}.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px;flex-wrap:wrap}
+.evidence-list{display:grid;gap:8px;margin-top:16px}.evidence-item{padding:10px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}.evidence-item span{display:block;color:var(--muted);font-size:11px}.evidence-item strong{display:block;margin-top:2px}
+.capability-list{display:grid;gap:8px;margin-top:16px;max-height:55vh;overflow:auto}.capability-row{padding:10px;border:1px solid var(--line);border-radius:9px}.capability-row strong{display:flex;align-items:center;justify-content:space-between;gap:8px}.capability-row p{margin-top:3px;color:var(--muted);font-size:12px}.capability-status{padding:2px 6px;border-radius:99px;background:var(--surface);color:var(--soft);font-size:10px}
+.toast{position:fixed;z-index:90;left:50%;bottom:24px;transform:translate(-50%,18px);padding:11px 15px;border-radius:10px;background:#202632;color:#fff;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:.18s}.toast.on{opacity:1;transform:translate(-50%,0)}
+
+@media(max-width:920px){
+  .topbar{grid-template-columns:auto 1fr auto;padding:0 18px}.nav{display:flex;justify-self:center}.workspace{width:min(100% - 28px,760px);padding-top:20px}.data-grid,.template-layout{grid-template-columns:1fr}.side-card{position:static}.work-library{grid-template-columns:1fr 1fr}
+  .page-head{align-items:stretch;flex-direction:column}.head-actions{display:grid;grid-template-columns:1fr 1fr}.scenario-picker select{width:100%;min-width:0}
+  .mapping-head{display:none}.mapping-row{grid-template-columns:1fr 1fr;padding:12px 0;align-items:start}.mapping-row .result-cell,.row-evidence{grid-column:1/-1}.execution-form{grid-template-columns:1fr}.execution-boundary{grid-column:1}
+  .workbench-head{height:auto;flex-wrap:wrap;padding:12px 16px}.workbench-title{min-width:220px}.workbench-stats{width:100%;justify-content:space-between}.work-tabs{display:grid;grid-template-columns:1fr 1fr;padding:9px;background:#fff;border-bottom:1px solid var(--line)}
+  .work-tabs button{border:1px solid var(--line);background:#fff;padding:8px;font-weight:750;color:var(--soft)}.work-tabs button:first-child{border-radius:8px 0 0 8px}.work-tabs button:last-child{border-radius:0 8px 8px 0}.work-tabs button.on{background:var(--primary-bg);color:var(--primary);border-color:#b9b5ec}
+  .workbench-body{height:auto;min-height:calc(100vh - 250px);display:block}.work-panel{display:none;min-height:calc(100vh - 320px)}.work-panel.mobile-on{display:block}.workbench-bar{position:sticky;bottom:0;height:auto;padding:10px 12px;flex-wrap:wrap}.workbench-bar .spacer{display:none}.copy-option{width:100%;order:-1}.workbench-bar .button{flex:1}
+}
+@media(max-width:580px){
+  .topbar{padding:0 10px}.brand>span:last-child{display:none}.nav button{padding:0 10px;font-size:12px}.nav button[aria-current=page]::after{left:8px;right:8px}.head-actions{display:flex;align-items:stretch;flex-direction:column}.file-head{align-items:flex-start;flex-wrap:wrap}.file-head>.status{margin-left:56px}.table-tools{align-items:stretch;flex-direction:column}.search{width:100%}.run-actions{grid-template-columns:1fr}.work-library{grid-template-columns:1fr}
+  .mapping-row{grid-template-columns:1fr}.mapping-row .result-cell,.row-evidence{grid-column:1}.editor-foot{align-items:stretch;flex-direction:column}.scope-options{display:grid}.test-grid{grid-template-columns:1fr}.template-side{padding:16px}.context-banner-head{display:block}.context-banner .button{margin-top:10px;width:100%}
+  .run-summary{grid-template-columns:1fr}.drawer-foot{max-height:48vh;overflow:auto}.preview-line,.preview-total{grid-template-columns:75px minmax(0,1fr)}.preview-line .button,.preview-total .button{grid-column:1/-1}.filename-row{grid-template-columns:1fr}.preview-toolbar{align-items:stretch;flex-direction:column}.font-select{width:100%}.text-preview{padding:22px 18px}
+  .work-map-head{display:none}.work-map-row{grid-template-columns:1fr 1fr}.work-map-row .work-result{grid-column:1/-1;padding:7px;background:var(--surface);border-radius:7px}.workflow-strip{align-items:flex-start;flex-direction:column}.workflow-strip .workflow-next{margin-left:0}
+}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar" id="topbar">
+    <div class="brand"><span class="brand-mark">나</span><span>문서나르미</span></div>
+    <nav class="nav" aria-label="주요 화면">
+      <button type="button" data-nav="data" aria-current="page">문서 만들기</button>
+      <button type="button" data-nav="library" aria-current="false">문서 작업</button>
+    </nav>
+    <div class="top-actions"><button class="icon-btn" type="button" id="helpButton" aria-label="도움말">?</button></div>
+  </header>
+
+  <main class="workspace" id="workspace">
+    <section class="screen on" id="screen-data" aria-labelledby="data-title">
+      <div class="page-head">
+        <div><p class="eyebrow">문서 만들기 <span class="prototype-badge">인터랙티브 시안 v3</span></p><h1 id="data-title">데이터에서 처리할 항목을 고르세요</h1><p class="subtitle">결과와 경고에서 정확한 문서 규칙으로 이동하고, 같은 업무 위치로 돌아옵니다.</p></div>
+        <div class="head-actions">
+          <label class="scenario-picker"><span>데이터 상태</span><select id="scenarioSelect">
+            <option value="normal">1 · 정상 직원 데이터</option>
+            <option value="newField">2 · 새 성과급 필드</option>
+            <option value="missing">3 · 필수 성명 필드 누락</option>
+            <option value="customer">4 · 고객 데이터 · 새 연결</option>
+          </select></label>
+          <label class="scenario-picker"><span>mock 처리 결과</span><select id="outcomeSelect">
+            <option value="success">정상 처리</option>
+            <option value="previewFailure">미리보기 실패 · 진단 미연결</option>
+            <option value="saveFailure">저장 실패</option>
+            <option value="partialResult">일부 실패 · 이름 충돌</option>
+            <option value="processingFailure">전체 실패 · 원인 미확정</option>
+          </select></label>
+        </div>
+      </div>
+      <div class="workflow-strip" id="workflowStrip" role="status" aria-live="polite"><span class="workflow-dot" aria-hidden="true"></span><span>현재 <strong id="workflowCurrent">문서 만들기</strong></span><span id="workflowRequirement">항목과 문서를 선택하고 자동 검증을 통과하세요.</span><span class="workflow-next">다음 <strong id="workflowNext">처리 결과</strong></span></div>
+      <div class="surface-notice" id="dataNotice" hidden></div>
+      <section class="result-panel" id="runResultPanel" aria-labelledby="runResultTitle" aria-live="polite">
+        <h2 id="runResultTitle">처리 결과</h2><p class="result-detail" id="runResultDetail"></p><div id="runResultBody"></div>
+      </section>
+      <div class="data-grid">
+        <section class="card file-card">
+          <div class="file-head"><div class="file-icon">XLSX</div><div class="file-title"><h2 id="fileName">7월_급여자료.xlsx</h2><p class="file-meta" id="fileMeta">직원 5건 · 열 9개 · 첫 행을 제목으로 인식</p></div><span class="status ready" id="fileStatus">직원 데이터로 인식됨</span></div>
+          <div class="compat-note" id="compatNote"><strong id="compatTitle">변경 증거</strong><p id="compatText"></p><div class="compat-actions"><button class="button primary small" type="button" id="compatPrimary">정확한 규칙 열기</button><button class="button small" type="button" id="compatSecondary">다른 해결 방법</button></div></div>
+          <div class="table-tools"><div class="select-summary"><strong id="selectionTitle">5건 선택</strong><span id="selectionType">직원 5명</span></div><input class="search" id="recordSearch" type="search" placeholder="항목 검색" aria-label="항목 검색"></div>
+          <div class="table-wrap"><table><thead id="recordHead"></thead><tbody id="recordBody"></tbody></table></div>
+        </section>
+        <aside class="card side-card" id="documentSideCard">
+          <div class="side-head"><h2 id="documentWorkTitle">이 데이터로 할 수 있는 문서 작업</h2><span class="status ready" id="docCountStatus">3건 준비됨</span></div>
+          <p class="side-desc" id="documentWorkDescription">저장된 데이터 형식 연결을 기준으로 표시합니다. 문서 조회와 실행 선택은 서로 다른 사건입니다.</p>
+          <div class="doc-empty" id="newConnectionEmpty" hidden><strong>추천할 문서 작업이 아직 없습니다.</strong><p>정확히 일치하는 저장 연결이 없습니다. 유사도 추천은 하지 않으며 대상을 직접 고릅니다.</p><button class="button primary" type="button" id="chooseDocumentButton">문서 작업 직접 고르기</button></div>
+          <div class="doc-list" id="documentList"></div>
+          <div class="object-menu" id="objectMenu" role="menu" hidden><p id="objectMenuLabel">급여명세서 변경</p><button type="button" role="menuitem" data-menu-section="template">템플릿 변경</button><button type="button" role="menuitem" data-menu-section="binding">데이터 연결 변경</button><button type="button" role="menuitem" data-menu-section="execution">생성 방식 변경</button></div>
+          <div class="side-actions">
+            <div class="run-validation" id="runValidation" data-level="ready"><span class="validation-mark" id="validationMark">✓</span><div><strong id="validationTitle">실행 준비 완료</strong><p id="validationText">연결, 값 해석, 표시 결과가 정상입니다.</p></div></div>
+            <div class="run-progress" id="runProgress" role="status" aria-live="polite"><div><strong id="runProgressTitle">문서를 만들고 있습니다.</strong><span id="runProgressDetail">0 / 5 완료 · 중복 실행이 잠겼습니다.</span></div><button class="button small" type="button" id="cancelRunButton">현재 문서 뒤 취소</button></div>
+            <div class="run-actions" id="runActions"><button class="button" type="button" id="previewButton">미리보기</button><button class="button primary" type="button" id="primaryRunButton">5개 생성</button></div>
+            <p class="selection-foot" id="selectionFoot">직원 5명 · 급여명세서 5개 생성 예정</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="screen" id="screen-library" aria-labelledby="library-title">
+      <div class="page-head"><div><p class="eyebrow">문서 작업</p><h1 id="library-title">저장된 문서 작업</h1><p class="subtitle">작업을 조회해도 문서 만들기의 선택 문서와 검증 상태는 바뀌지 않습니다.</p></div><button class="button primary" type="button" id="newWorkButton">＋ 새 문서 작업</button></div>
+      <div class="surface-notice" id="libraryNotice" hidden></div>
+      <div class="library-tools"><input class="search" id="librarySearch" type="search" placeholder="문서 작업 검색" aria-label="문서 작업 검색"></div>
+      <div class="work-library" id="workLibrary"></div>
+    </section>
+
+    <section class="screen" id="screen-editor" aria-labelledby="editor-title">
+      <div class="editor-shell">
+        <button class="back" type="button" id="editorBack">← 원래 업무로 돌아가기</button>
+        <div class="page-head editor-page-head"><div><p class="eyebrow">문서 작업 편집기</p><div class="editor-title-row"><h1 id="editor-title">급여명세서</h1><span class="status ready" id="editorWorkStatus">연결 정상</span></div><p class="subtitle" id="editorSubtitle">직원 데이터를 사용해 HWPX를 일괄 생성합니다.</p></div><span class="save-state" id="editorSaveState" data-status="saved">저장됨</span></div>
+        <div class="editor-tabs" role="tablist" aria-label="문서 작업 편집 영역">
+          <button type="button" role="tab" id="editorTabTemplate" aria-controls="editorPanelTemplate" aria-selected="false" data-editor-tab="template">템플릿</button>
+          <button type="button" role="tab" id="editorTabBinding" aria-controls="editorPanelBinding" aria-selected="true" data-editor-tab="binding">데이터 연결</button>
+          <button type="button" role="tab" id="editorTabExecution" aria-controls="editorPanelExecution" aria-selected="false" data-editor-tab="execution">실행 방식</button>
+          <button type="button" role="tab" id="editorTabTest" aria-controls="editorPanelTest" aria-selected="false" data-editor-tab="test">시험</button>
+        </div>
+        <section class="context-banner" id="editContextBanner" aria-labelledby="editContextTitle" hidden>
+          <div class="context-banner-head"><div><strong id="editContextTitle">미리보기에서 열었습니다.</strong><p id="editContextMessage"></p></div><button class="button small" type="button" id="contextReturnButton">미리보기로 돌아가기</button></div>
+          <div class="evidence-grid" id="editEvidence"></div>
+        </section>
+        <div class="editor-status" id="editorStatus" role="status" aria-live="polite"></div>
+        <section class="card editor-card">
+          <div class="editor-panel" id="editorPanelTemplate" role="tabpanel" aria-labelledby="editorTabTemplate">
+            <div class="template-layout">
+              <div class="structure-teaser"><div class="structure-frame"><p class="structure-kicker" id="templateKicker">HWPX 구조 개요</p><h2 id="templatePreviewTitle">급여명세서</h2><div class="structure-lines"><div class="structure-line short"></div><div class="structure-line"></div><div class="structure-line"></div></div><div class="structure-table" id="templateStructureTable"></div></div></div>
+              <aside class="template-side"><h2>템플릿 구조와 외부 편집</h2><p class="subtitle">HWPX는 한글에서 편집하고 돌아온 뒤 변경 후보를 분석합니다.</p><div class="template-format"><span>템플릿 형식</span><strong id="editorTemplateFormat">한글 문서 HWPX</strong></div><button class="button" type="button" id="simulateExternalEditButton">외부 편집 뒤 변경 확인</button><div class="boundary-card"><strong>시안 지원 경계</strong><p>실제 파일이나 외부 앱을 열지 않습니다. 구조 위치를 모르면 다른 문단 좌표를 꾸며내지 않습니다.</p></div><div class="candidate-card" id="templateCandidate" hidden></div></aside>
+            </div>
+          </div>
+          <div class="editor-panel on" id="editorPanelBinding" role="tabpanel" aria-labelledby="editorTabBinding">
+            <div class="section-head panel-pad"><div><h2>데이터 연결과 표시 규칙</h2><p>문서 필드마다 데이터 항목 하나, 값 유형 하나와 표시형을 정합니다.</p></div><button class="button small" type="button" id="autoMapButton">빈 필드만 자동 추천</button></div>
+            <div class="mapping-head"><span>문서 필드</span><span>데이터 항목</span><span>값 유형</span><span>표시형</span><span>지금 결과 · 상태</span></div>
+            <div class="mapping-list" id="mappingList"></div>
+            <p class="mapping-note">추천은 저장된 연결과 구분합니다. 값 유형은 샘플로 추론하며 사용자가 정정할 수 있고, ‘직접 입력’은 모든 선택 항목에 같은 고정값을 사용합니다.</p>
+          </div>
+          <div class="editor-panel" id="editorPanelExecution" role="tabpanel" aria-labelledby="editorTabExecution">
+            <div class="panel-pad"><div class="section-head"><div><h2>실행 방식</h2><p>이 시안의 ExecutionProfile mock 상태입니다. 실제 파일 저장이나 외부 앱 전달은 수행하지 않습니다.</p></div><span class="prototype-badge">prototype mock</span></div>
+              <div class="execution-form">
+                <label class="form-field" data-rule-id="mode"><span>실행 모드</span><select id="executionMode"><option value="batch">HWPX 일괄 생성</option><option value="workbench">온나라 검토·복사</option></select><small>문서 형식에 맞지 않는 모드는 저장 전에 확인합니다.</small></label>
+                <label class="form-field" data-rule-id="filenamePattern"><span>파일 이름 규칙</span><input id="filenamePattern" type="text" value="{성명}_급여명세서"><small id="filenameExample">예: 김민수_급여명세서.hwpx</small></label>
+                <label class="form-field" data-rule-id="outputLocation"><span>출력 위치</span><input id="outputLocation" type="text" value="급여/2026-07"><small>실제 폴더를 만들지 않는 mock 값입니다.</small></label>
+                <label class="form-field" data-rule-id="collisionPolicy"><span>같은 이름의 파일이 있을 때</span><select id="collisionPolicy"><option value="stop">중단</option><option value="number">자동으로 번호 붙이기</option><option value="confirm">덮어쓰기 확인</option></select><small>실제 백엔드는 충돌을 생성 전에 차단하며, 이 선택의 영속 배선은 아직 없습니다.</small></label>
+                <div class="boundary-card execution-boundary" id="workbenchExecutionOptions" hidden><strong>온나라 검토·복사 옵션</strong><p>복사 후 다음 항목 이동, 대상 글꼴, 전달 방식은 세션과 영구 규칙의 소유자를 나누어 표시합니다.</p></div>
+              </div>
+            </div>
+          </div>
+          <div class="editor-panel" id="editorPanelTest" role="tabpanel" aria-labelledby="editorTabTest">
+            <div class="panel-pad"><div class="section-head"><div><h2>변경 영향과 시험</h2><p>revision 저장, 실행 검증, 미리보기 생성, 미리보기 승인은 각각 다른 사건입니다.</p></div><button class="button" type="button" id="editorPreviewButton">이 변경으로 미리보기 다시 만들기</button></div>
+              <div class="test-grid"><div class="metric"><span>현재 validation</span><strong id="testValidation">검증 완료</strong></div><div class="metric"><span>Template revision</span><strong id="testTemplateRevision">r1</strong></div><div class="metric"><span>Binding revision</span><strong id="testBindingRevision">r1</strong></div><div class="metric"><span>Execution profile</span><strong id="testExecutionRevision">mock r1</strong></div><div class="metric"><span>미리보기 생성</span><strong id="testPreviewCreated">준비됨</strong></div><div class="metric"><span>미리보기 승인</span><strong id="testPreviewApproved">승인 안 됨</strong></div></div>
+              <div class="test-sample"><strong>대표 샘플 1건</strong><p id="testSampleValue">김민수 · 지급일 2026. 07. 25. · 김민수_급여명세서.hwpx</p></div>
+              <div class="boundary-card"><strong>출력 영향 변경</strong><p id="testGateMessage">출력에 영향을 주는 기본 규칙 변경은 저장 뒤 현재 실행을 다시 검증하고 결과 확인 게이트를 만듭니다. 미리보기를 만들었다는 이유만으로 승인하지 않습니다.</p></div>
+            </div>
+          </div>
+          <footer class="editor-foot">
+            <div class="scope-box"><strong>변경 범위</strong><div class="scope-options" id="scopeOptions"></div></div>
+            <button class="button" type="button" id="cancelEditor">취소</button><button class="button primary" type="button" id="applyEditor" disabled>적용</button>
+          </footer>
+        </section>
+      </div>
+    </section>
+
+    <section class="screen workbench-screen" id="screen-workbench" aria-labelledby="workbench-title">
+      <div class="workbench-head"><button class="back" type="button" id="workbenchBack">← 문서 만들기</button><div class="workbench-title"><h1 id="workbench-title">발주 요청문 · 검토·복사</h1><p>오른쪽 결과를 누르면 왼쪽의 소유 규칙이 강조됩니다. 세션 조정은 기본 규칙을 바꾸지 않습니다.</p></div><div class="workbench-stats"><div class="stat-pair"><span>작업점</span><strong id="workPosition">1 / 3</strong></div><div class="stat-pair"><span>복사 완료</span><strong id="copyCount">0 / 3</strong></div><div class="queue-dots" id="queueDots" aria-label="레코드 진행 상태"></div></div></div>
+      <div class="work-tabs"><button class="on" type="button" data-work-tab="map">연결·표시</button><button type="button" data-work-tab="preview">결과 미리보기</button></div>
+      <div class="workbench-body">
+        <section class="work-panel work-left mobile-on" data-work-panel="map"><div class="work-panel-head"><div><h2>연결과 표시 결과</h2><p>이 세션에서 바꾸면 오른쪽 결과에 즉시 반영됩니다.</p></div><div class="session-actions"><span class="status info" id="sessionRuleStatus">이번 작업에만 적용 중</span><button class="button small" type="button" id="persistWorkbenchRule">이후에도 이 규칙 사용</button></div></div><div class="work-map-head"><span>문서 필드</span><span>데이터 항목</span><span>표시형</span><span>지금 결과</span></div><div id="workMappings"></div><p class="work-tip">복사 완료 항목은 규칙 변경 뒤 ‘다시 확인 필요’가 되지만 최초 레코드 순서는 바뀌지 않습니다.</p></section>
+        <section class="work-panel work-right" data-work-panel="preview"><div class="preview-toolbar"><div class="segmented" aria-label="미리보기 종류"><button class="on" type="button" data-preview-mode="filled">채운 모습</button><button type="button" data-preview-mode="raw">원문</button></div><label><span style="position:absolute;clip:rect(0 0 0 0)">대상 글꼴</span><select class="font-select" id="fontSelect"><option value="gulimche">대상 글꼴 · 굴림체</option><option value="dotumche">대상 글꼴 · 돋움체</option><option value="malgun">대상 글꼴 · 맑은고딕</option></select></label></div><div class="complete-card" id="completeCard"><strong>모든 항목의 복사를 완료했습니다.</strong><span>필요하면 원래 위치의 항목으로 돌아가 다시 확인할 수 있습니다.</span></div><div class="record-state" id="recordReviewState"></div><article class="text-preview" id="textPreview"></article></section>
+      </div>
+      <div class="workbench-bar"><label class="copy-option"><input type="checkbox" id="copyNextOption"> 복사 후 다음 항목으로 이동</label><button class="button" type="button" id="saveDraftButton">기안으로 저장</button><span class="spacer"></span><button class="button" type="button" id="workPrev">이전</button><button class="button" type="button" id="workNext">다음</button><button class="button primary" type="button" id="copyButton">복사</button></div>
+    </section>
+  </main>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="previewDrawer" role="dialog" aria-modal="true" aria-labelledby="previewDrawerTitle" aria-hidden="true" inert>
+  <div class="drawer-head"><div><p class="eyebrow">대표 샘플</p><h2 id="previewDrawerTitle">생성 값 미리보기</h2></div><div class="preview-nav"><button class="icon-btn" id="previewPrev" type="button" aria-label="이전 레코드">‹</button><strong id="previewPosition">1 / 5</strong><button class="icon-btn" id="previewNext" type="button" aria-label="다음 레코드">›</button></div><button class="icon-btn" id="closePreview" type="button" aria-label="미리보기 닫기">×</button></div>
+  <div class="drawer-body"><div class="preview-state" id="previewState" role="status">실제로 주입될 값과 파일명을 준비하고 있습니다.</div><p class="sample-label">HWPX 최종 모양이 아니라 선택한 항목 한 건에 들어갈 값</p><article class="mini-preview" id="previewContent"></article><div class="preview-summary-card"><strong id="batchSummaryTitle">전체 5건 · 정상 5 · 확인 필요 0</strong><span>대표 값 미리보기와 전체 실행 검증은 다른 확인 단계입니다.</span></div></div>
+  <div class="drawer-foot"><div class="run-summary"><div><span>선택한 항목</span><strong id="drawerSelection">직원 5명</strong></div><div><span>생성 문서</span><strong id="drawerDocument">급여명세서</strong></div><div><span>전체 검증</span><strong id="drawerValidation">정상 5 · 확인 필요 0</strong></div><div><span>미리보기 승인</span><strong id="drawerApproval">선택 사항</strong></div><div><span>현재 파일 이름</span><strong id="drawerFilename">김민수_급여명세서.hwpx</strong></div><div><span>적용 범위</span><strong id="drawerScope">기본 규칙</strong></div></div><div class="drawer-actions"><button class="button" type="button" id="drawerBack">뒤로</button><button class="button primary" type="button" id="resolvePreviewFailureButton" hidden>확인 가능한 증거</button><button class="button" type="button" id="cancelDrawerRunButton" hidden>현재 문서 뒤 취소</button><button class="button primary" type="button" id="approvePreviewButton" hidden>결과 확인 완료</button><button class="button primary" type="button" id="generateButton" disabled>5개 생성</button></div></div>
+</aside>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<dialog class="modal" id="sourceRepairDialog" aria-labelledby="sourceRepairTitle"><div class="modal-card"><h2 id="sourceRepairTitle">원본 파일에서 수정</h2><p>현재 선택·검색·실행 문서는 그대로 보존합니다.
+
+이 시안은 원본 파일을 직접 편집하지 않습니다. 외부에서 ‘성명’ 열을 복구한 뒤 파일을 다시 분석해야 하며, 지금 상태를 실행 가능으로 바꾸지 않습니다.</p><div class="modal-actions"><button class="button primary" type="button" id="closeSourceRepair">현재 상태로 돌아가기</button></div></div></dialog>
+<dialog class="modal" id="failureInspectorDialog" aria-labelledby="failureInspectorTitle"><div class="modal-card"><h2 id="failureInspectorTitle">처리 실패 증거</h2><p>구체적인 원인을 꾸며내지 않고 현재 확인 가능한 사실만 표시합니다.</p><div class="evidence-list" id="failureEvidence"></div><div class="modal-actions"><button class="button primary" type="button" id="closeFailureInspector">결과로 돌아가기</button></div></div></dialog>
+<dialog class="modal" id="newWorkDialog" aria-labelledby="newWorkTitle"><div class="modal-card"><h2 id="newWorkTitle">새 문서 작업은 후속 범위입니다</h2><p>완전한 생성 마법사는 v3 범위에 포함되지 않습니다. 이 버튼은 작업을 저장하거나 목록에 추가하지 않습니다.</p><div class="modal-actions"><button class="button primary" type="button" id="closeNewWorkDialog">문서 작업 목록으로 돌아가기</button></div></div></dialog>
+<dialog class="modal" id="forkDialog" aria-labelledby="forkTitle"><div class="modal-card"><h2 id="forkTitle">별도 작업으로 만들기는 후속 범위입니다</h2><p>현재 작업은 변경하지 않았습니다. 복제 identity·이름 충돌·revision 이력을 포함한 생성 흐름이 연결되기 전에는 저장된 것처럼 연출하지 않습니다.</p><div class="modal-actions"><button class="button primary" type="button" id="closeForkDialog">편집기로 돌아가기</button></div></div></dialog>
+<dialog class="modal" id="missingValueDialog" aria-labelledby="missingValueTitle"><div class="modal-card"><h2 id="missingValueTitle">빈 값 확인</h2><p id="missingValueBody"></p><div class="modal-actions"><button class="button" type="button" id="missingValueCancel">현재 항목에 머무르기</button><button class="button primary" type="button" id="missingValueConfirm">빈 값 표식과 함께 복사</button></div></div></dialog>
+<dialog class="modal" id="capabilityDialog" aria-labelledby="capabilityTitle"><div class="modal-card"><h2 id="capabilityTitle">시안 워크플로와 지원 범위</h2><p>실제 파일·외부 앱·영속 ExecutionProfile을 성공한 것처럼 연출하지 않습니다.</p><div class="capability-list" id="capabilityList"></div><div class="modal-actions"><button class="button primary" type="button" id="closeCapabilityDialog">확인</button></div></div></dialog>
+
+<script src="core-workflow-prototype/contracts.js"></script>
+<script src="core-workflow-prototype/mock-backend.js"></script>
+<script>
+(()=>{
+  "use strict";
+  const $=id=>document.getElementById(id);
+  const esc=value=>String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+  const clone=value=>JSON.parse(JSON.stringify(value));
+  const won=value=>Number.isFinite(Number(value))?new Intl.NumberFormat("ko-KR").format(Number(value))+"원":"해석할 수 없음";
+  const workflow=window.WorkflowContract.workflowV3;
+  const capabilities=window.WorkflowContract.capabilities;
+  const prototypeOutcomes=window.WorkflowContract.prototypeOutcomes;
+  const actions=window.documentActions;
+
+  const employees=[
+    {id:1,name:"김민수",department:"인사운영팀",date:"2026-07-25",salary:4200000,bonus:350000,performanceBonus:350000,company:"가람상사",item:"업무용 노트북",quantity:3,amount:4650000},
+    {id:2,name:"이서연",department:"재정기획팀",date:"2026-07-25",salary:3850000,bonus:0,performanceBonus:0,company:"나래기획",item:"회의실 모니터",quantity:2,amount:1280000},
+    {id:3,name:"박준호",department:"민원지원팀",date:"2026-07-25",salary:4010000,bonus:220000,performanceBonus:220000,company:"다온유통",item:"문서 보관함",quantity:12,amount:960000},
+    {id:4,name:"최유진",department:"정보화담당관",date:"2026-07-25",salary:4480000,bonus:180000,performanceBonus:180000,company:"라온테크",item:"보안 키보드",quantity:8,amount:704000},
+    {id:5,name:"정하늘",department:"정책홍보팀",date:"2026-07-25",salary:3960000,bonus:0,performanceBonus:0,company:"마루산업",item:"홍보물 인쇄",quantity:500,amount:1250000}
+  ];
+  const customers=[
+    {id:101,name:"한빛복지관",contact:"오지현",phone:"02-710-2210",requestDate:"2026-07-28",amount:1800000},
+    {id:102,name:"푸른도서관",contact:"강현우",phone:"02-710-2232",requestDate:"2026-07-29",amount:950000},
+    {id:103,name:"새봄센터",contact:"윤하린",phone:"02-710-2251",requestDate:"2026-07-30",amount:2300000}
+  ];
+  const scenarios={
+    normal:{file:"7월_급여자료.xlsx",kind:"employee",meta:"직원 5건 · 열 9개 · 첫 행을 제목으로 인식",fileStatus:"직원 데이터로 인식됨"},
+    newField:{file:"7월_급여자료_성과급추가.xlsx",kind:"employee",meta:"직원 5건 · 새 열 ‘성과급’ 감지",fileStatus:"새 필드 감지"},
+    missing:{file:"7월_급여자료_성명누락.xlsx",kind:"employee",meta:"직원 5건 · 필수 열 ‘성명’ 없음",fileStatus:"필수 필드 누락"},
+    customer:{file:"고객_요청목록.csv",kind:"customer",meta:"고객 3건 · 처음 보는 데이터 형식",fileStatus:"새 데이터 형식"}
+  };
+  const docs={
+    salary:{name:"급여명세서",mode:"batch",modeLabel:"HWPX 일괄 생성",format:"한글 문서 HWPX",dataset:"직원 데이터",description:"직원 데이터를 사용해 HWPX를 일괄 생성합니다."},
+    order:{name:"발주 요청문",mode:"workbench",modeLabel:"온나라 검토·복사",format:"텍스트 템플릿",dataset:"직원 데이터",description:"직원 데이터를 사용해 온나라 검토·복사 작업을 진행합니다."},
+    employment:{name:"재직증명서",mode:"batch",modeLabel:"HWPX 일괄 생성",format:"한글 문서 HWPX",dataset:"직원 데이터",description:"직원 데이터를 사용해 HWPX를 일괄 생성합니다."}
+  };
+  const baseColumns=[
+    {key:"name",label:"성명",type:"text"},{key:"department",label:"소속부서",type:"text"},{key:"date",label:"급여기준일",type:"date"},
+    {key:"salary",label:"기본급",type:"amount"},{key:"bonus",label:"상여금",type:"amount"},{key:"company",label:"업체명",type:"text"},
+    {key:"item",label:"요청 품목",type:"text"},{key:"quantity",label:"수량",type:"amount"},{key:"amount",label:"요청 금액",type:"amount"}
+  ];
+  const customerColumns=[
+    {key:"name",label:"고객명",type:"text"},{key:"contact",label:"담당자",type:"text"},{key:"phone",label:"연락처",type:"text"},
+    {key:"requestDate",label:"요청일",type:"date"},{key:"amount",label:"예상 금액",type:"amount"}
+  ];
+  const fieldDefs={
+    salary:[
+      {key:"name",label:"이름",required:true,source:"name",type:"text",format:"raw"},
+      {key:"date",label:"지급일",required:true,source:"date",type:"date",format:"date"},
+      {key:"salary",label:"기본급",required:true,source:"salary",type:"amount",format:"won"},
+      {key:"bonus",label:"상여금",required:false,source:"bonus",type:"amount",format:"won"},
+      {key:"total",label:"지급합계",required:true,source:"calc",type:"amount",format:"won",calc:true}
+    ],
+    order:[
+      {key:"company",label:"업체명",required:true,source:"company",type:"text",format:"raw"},
+      {key:"item",label:"요청 품목",required:true,source:"item",type:"text",format:"raw"},
+      {key:"quantity",label:"수량",required:true,source:"quantity",type:"amount",format:"number"},
+      {key:"amount",label:"요청 금액",required:false,source:"amount",type:"amount",format:"won"}
+    ],
+    employment:[
+      {key:"name",label:"성명",required:true,source:"name",type:"text",format:"raw"},
+      {key:"department",label:"소속",required:true,source:"department",type:"text",format:"raw"},
+      {key:"date",label:"발급 기준일",required:false,source:"date",type:"date",format:"date"}
+    ]
+  };
+  const initialBindings=Object.fromEntries(Object.entries(fieldDefs).map(([docId,list])=>[
+    docId,
+    Object.fromEntries(list.map(field=>[field.key,{
+      source:field.source,type:field.type,format:field.format,typeSource:field.calc?"calculation":"saved",constant:""
+    }]))
+  ]));
+  const initialProfiles={
+    salary:{mode:"batch",filenamePattern:"{성명}_급여명세서",outputLocation:"급여/2026-07",collisionPolicy:"stop",revision:1},
+    order:{mode:"workbench",filenamePattern:"{업체명}_발주요청문",outputLocation:"온나라 작업대",collisionPolicy:"stop",revision:1},
+    employment:{mode:"batch",filenamePattern:"{성명}_재직증명서",outputLocation:"증명서/2026-07",collisionPolicy:"stop",revision:1}
+  };
+  const state={
+    view:"data",workflowStep:"data",scenario:"normal",outcome:"success",document:"salary",
+    selected:new Set(employees.map(record=>record.id)),search:"",librarySearch:"",libraryScroll:0,
+    validation:{status:"idle",id:null,error:null},backend:{status:"idle",progress:{completed:0,total:0},error:null},
+    save:{status:"saved",error:null},preview:{status:"idle",id:null,required:false,approved:false,error:null},
+    previewIndex:0,previewOpen:false,lastFocus:null,result:null,failedRecordIds:[],
+    bindings:clone(initialBindings),bindingRevisions:{salary:1,order:1,employment:1},
+    templateRevisions:{salary:1,order:1,employment:1},executionProfiles:clone(initialProfiles),
+    runOverrides:{},appliedMarkers:{},resolved:new Set(),schemaSuggestionDismissed:new Set(),
+    editContext:null,editorDraft:null,editorDirty:false,editorChangedTarget:null,editorStatus:"",editorCandidate:null,
+    objectMenuDocument:null,objectMenuTrigger:null,targetHighlight:null,catalogOpen:false,
+    workRecords:[],workIndex:0,copyStates:[],workMode:"filled",workTab:"map",
+    workBindings:{company:"company",item:"item",quantity:"quantity",amount:"amount"},
+    workFormats:{company:"raw",item:"raw",quantity:"number",amount:"won"},workConstants:{},
+    workSessionDirty:false,workLastChanged:"company",workRuleHighlight:null
+  };
+
+  const typeLabels={text:"텍스트",date:"날짜",amount:"금액",const:"고정값"};
+  const formatCatalog={
+    text:[["raw","원문"],["phone","전화번호"]],
+    date:[["date","2026. 07. 25."],["dateLongKo","2026년 7월 25일"],["raw","원문"]],
+    amount:[["won","원"],["number","숫자"],["raw","원문"]],
+    const:[["raw","입력한 그대로"]]
+  };
+  const scopeLabels={
+    run:"이번 생성에만 적용",
+    default:docId=>`이후에도 ${docs[docId].name}에 적용`,
+    fork:"별도 작업으로 만들기"
+  };
+
+  function activeRecords(){return scenarios[state.scenario].kind==="customer"?customers:employees}
+  function selectedRecords(){return activeRecords().filter(record=>state.selected.has(record.id))}
+  function itemNoun(){return scenarios[state.scenario].kind==="customer"?"고객":"직원"}
+  function columns(){
+    if(state.scenario==="customer")return customerColumns;
+    const list=state.scenario==="missing"?baseColumns.filter(column=>column.key!=="name"):baseColumns.slice();
+    if(state.scenario==="newField")list.push({key:"performanceBonus",label:"성과급 · 새 항목",type:"amount",suggested:true});
+    return list;
+  }
+  function fieldDef(docId,key){return fieldDefs[docId].find(field=>field.key===key)}
+  function selectedRecordById(id){return activeRecords().find(record=>record.id===id)||selectedRecords()[0]||activeRecords()[0]}
+  function formatValue(value,format){
+    if(value===""||value==null)return "—";
+    if(format==="won")return won(value);
+    if(format==="date"||format==="dateLongKo"){
+      const match=String(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if(!match)return String(value);
+      return format==="dateLongKo"?`${match[1]}년 ${Number(match[2])}월 ${Number(match[3])}일`:`${match[1]}. ${match[2]}. ${match[3]}.`;
+    }
+    if(format==="number")return new Intl.NumberFormat("ko-KR").format(Number(value)||0);
+    return String(value);
+  }
+  function effectiveBinding(docId,key){
+    const base=state.bindings[docId][key];
+    return {...base,...(state.runOverrides[docId]?.fields?.[key]||{})};
+  }
+  function effectiveProfile(docId){
+    return {...state.executionProfiles[docId],...(state.runOverrides[docId]?.execution||{})};
+  }
+  function fieldValue(docId,key,record,binding=effectiveBinding(docId,key)){
+    const def=fieldDef(docId,key);
+    if(def?.calc)return (Number(record.salary)||0)+(Number(record.performanceBonus??record.bonus)||0);
+    if(binding.source==="__direct__")return binding.constant;
+    return binding.source?record[binding.source]:"";
+  }
+  function filenameFor(docId,record,profile=effectiveProfile(docId)){
+    const tokenValues={성명:record.name,업체명:record.company,부서:record.department};
+    let result=profile.filenamePattern;
+    Object.entries(tokenValues).forEach(([key,value])=>{result=result.replaceAll(`{${key}}`,value??"")});
+    return result.toLowerCase().endsWith(".hwpx")?result:`${result}.hwpx`;
+  }
+  function markerFor(docId,targetId){
+    const marker=state.appliedMarkers[docId]?.[targetId];
+    if(!marker)return "";
+    return marker.scope==="run"?"이번 생성에만 적용됨":"기본 규칙 r"+marker.revision;
+  }
+  function issueFor(docId){
+    if(!docId)return {level:"neutral",label:"문서 미선택",blocking:true};
+    if(state.scenario==="customer"&&!state.resolved.has(`customer:${docId}`))return {level:"missing",label:"새 연결 필요",blocking:true};
+    if(state.scenario==="missing"&&docId==="salary"&&!state.resolved.has("missing:salary"))return {level:"missing",label:"필수 연결 누락",blocking:true};
+    if(state.scenario==="newField"&&docId==="salary"&&!state.resolved.has("newField:salary")&&!state.schemaSuggestionDismissed.has("newField:salary:performanceBonus"))return {level:"review",label:"새 필드 추천",blocking:false};
+    return {level:"ready",label:"연결 정상",blocking:false};
+  }
+  function toast(message){
+    $("toast").textContent=message;$("toast").classList.add("on");clearTimeout(toast.timer);
+    toast.timer=setTimeout(()=>$("toast").classList.remove("on"),2300);
+  }
+  function notice(id,message,tone="ok"){
+    const element=$(id);element.textContent=message;element.hidden=false;
+    element.classList.toggle("warn",tone==="warn");element.classList.toggle("error",tone==="error");
+  }
+  function workflowStepForView(view){
+    if(view==="editor")return "editor";
+    if(view==="library")return "library";
+    if(view==="workbench")return "workbench";
+    return state.result?"result":"data";
+  }
+  function renderWorkflowStrip(){
+    state.workflowStep=workflowStepForView(state.view);
+    const step=workflow[state.workflowStep]||workflow.data;
+    $("workflowCurrent").textContent=step.label;$("workflowRequirement").textContent=step.completionCondition;
+    const next=workflow[step.next];$("workflowNext").textContent=next?next.label:"원래 업무";
+  }
+  function showScreen(name,{preserveScroll=false}={}){
+    if(!$(`screen-${name}`))throw new Error(`정의되지 않은 화면 전이: ${name}`);
+    state.view=name;
+    document.querySelectorAll(".screen").forEach(screen=>screen.classList.toggle("on",screen.id===`screen-${name}`));
+    document.querySelectorAll("[data-nav]").forEach(button=>button.setAttribute("aria-current",button.dataset.nav===name?"page":"false"));
+    const isWork=name==="workbench";$("topbar").hidden=isWork;$("workspace").classList.toggle("workbench-space",isWork);
+    renderWorkflowStrip();
+    if(!preserveScroll)window.scrollTo(0,0);
+  }
+  function invalidateExecutionEvidence({requirePreview=false}={}){
+    state.validation={status:"idle",id:null,error:null};
+    state.preview={status:"idle",id:null,required:requirePreview,approved:false,error:null};
+  }
+
+  function renderRecords(){
+    const records=activeRecords(),query=state.search.toLowerCase();
+    const shown=records.filter(record=>Object.values(record).some(value=>String(value).toLowerCase().includes(query)));
+    if(scenarios[state.scenario].kind==="customer"){
+      $("recordHead").innerHTML="<tr><th class='checkcell'><input id='selectAll' type='checkbox' aria-label='전체 선택'></th><th>고객명</th><th>담당자</th><th>연락처</th><th>요청일</th></tr>";
+      $("recordBody").innerHTML=shown.map(record=>`<tr data-id="${record.id}" class="${state.selected.has(record.id)?"selected":""}"><td class="checkcell"><input type="checkbox" ${state.selected.has(record.id)?"checked":""} aria-label="${esc(record.name)} 선택"></td><td><strong>${esc(record.name)}</strong></td><td>${esc(record.contact)}</td><td>${esc(record.phone)}</td><td>${esc(record.requestDate)}</td></tr>`).join("");
+    }else if(state.scenario==="missing"){
+      $("recordHead").innerHTML="<tr><th class='checkcell'><input id='selectAll' type='checkbox' aria-label='전체 선택'></th><th>행</th><th>소속부서</th><th>지급일</th><th class='money'>기본급</th></tr>";
+      $("recordBody").innerHTML=shown.map((record,index)=>`<tr data-id="${record.id}" class="${state.selected.has(record.id)?"selected":""}"><td class="checkcell"><input type="checkbox" ${state.selected.has(record.id)?"checked":""} aria-label="${index+1}번 행 선택"></td><td><strong>${index+1}번 행</strong></td><td>${esc(record.department)}</td><td>${esc(record.date)}</td><td class="money">${won(record.salary)}</td></tr>`).join("");
+    }else{
+      $("recordHead").innerHTML="<tr><th class='checkcell'><input id='selectAll' type='checkbox' aria-label='전체 선택'></th><th>성명</th><th>소속부서</th><th>지급일</th><th class='money'>기본급</th></tr>";
+      $("recordBody").innerHTML=shown.map(record=>`<tr data-id="${record.id}" class="${state.selected.has(record.id)?"selected":""}"><td class="checkcell"><input type="checkbox" ${state.selected.has(record.id)?"checked":""} aria-label="${esc(record.name)} 선택"></td><td><strong>${esc(record.name)}</strong></td><td>${esc(record.department)}</td><td>${esc(record.date)}</td><td class="money">${won(record.salary)}</td></tr>`).join("");
+    }
+    const all=$("selectAll");
+    if(all){all.checked=shown.length>0&&shown.every(record=>state.selected.has(record.id));all.indeterminate=shown.some(record=>state.selected.has(record.id))&&!all.checked}
+    $("selectionTitle").textContent=`${state.selected.size}건 선택`;
+    $("selectionType").textContent=`${itemNoun()} ${state.selected.size}${itemNoun()==="직원"?"명":"건"}`;
+  }
+  function renderDocumentList(){
+    const isCustomer=state.scenario==="customer",unselected=isCustomer&&!state.document&&!state.catalogOpen;
+    $("newConnectionEmpty").hidden=!unselected;$("documentList").hidden=unselected;
+    $("documentWorkTitle").textContent=isCustomer?"연결할 문서 작업":"이 데이터로 할 수 있는 문서 작업";
+    $("documentWorkDescription").textContent=isCustomer
+      ?"정확한 저장 연결이 없어 추천하지 않습니다. 사용자가 대상을 직접 고릅니다."
+      :"저장된 데이터 형식 연결을 기준으로 표시합니다. 문서 조회와 실행 선택은 서로 다른 사건입니다.";
+    $("documentList").innerHTML=Object.entries(docs).map(([id,doc])=>{
+      const issue=issueFor(id),selected=state.document===id;
+      return `<div class="doc-row" data-document-row="${id}"><button class="doc-select ${selected?"selected":""} ${issue.blocking?"blocked":""}" type="button" data-select-document="${id}"><span class="doc-top"><span class="doc-name">${esc(doc.name)}</span><span class="status ${issue.level}">${esc(issue.label)}</span></span><span class="doc-mode">${esc(doc.modeLabel)}</span><span class="doc-meta">${esc(doc.dataset)} · ${doc.format==="텍스트 템플릿"?"텍스트":"한글 문서"} 템플릿</span></button><button class="doc-menu" type="button" data-document-menu="${id}" aria-label="${esc(doc.name)} 변경 메뉴" aria-expanded="false">⋯</button></div>`;
+    }).join("");
+    const issues=Object.keys(docs).filter(id=>issueFor(id).blocking||issueFor(id).level==="review").length;
+    $("docCountStatus").className=`status ${unselected?"neutral":issues?"review":"ready"}`;
+    $("docCountStatus").textContent=unselected?"추천 없음":issues?`${issues}건 확인`:"3건 준비됨";
+  }
+  function renderCompatibility(){
+    const note=$("compatNote");
+    note.classList.remove("on");
+    const issue=issueFor(state.document);
+    if(state.scenario==="newField"&&state.document==="salary"&&issue.level==="review"){
+      note.classList.add("on");$("compatTitle").textContent="새 ‘성과급’ 열을 발견했습니다.";
+      $("compatText").textContent="급여명세서의 ‘상여금’에 연결할 수 있습니다. 기존 필수 연결은 유지되며 이 추천은 아직 저장된 연결이 아닙니다.";
+      $("compatPrimary").textContent="상여금에 연결";$("compatSecondary").textContent="이번에는 사용하지 않음";
+    }else if(state.scenario==="missing"&&state.document==="salary"&&issue.blocking){
+      note.classList.add("on");$("compatTitle").textContent="현재 데이터에서 ‘성명’ 열을 찾을 수 없습니다.";
+      $("compatText").textContent="급여명세서의 ‘이름’ 필드가 영향을 받습니다. 기존 연결: 이름 ← 성명. 해결 전 생성은 차단됩니다.";
+      $("compatPrimary").textContent="이름 연결 복구";$("compatSecondary").textContent="원본 파일에서 수정";
+    }else if(state.scenario==="customer"&&state.document){
+      note.classList.add("on");$("compatTitle").textContent="선택한 문서와 새 데이터 형식의 연결이 없습니다.";
+      $("compatText").textContent="새 Binding draft를 만들 수 있지만 실제 LogicalDataset 저장 API는 이 시안에 연결되지 않았습니다.";
+      $("compatPrimary").textContent="새 연결 만들기";$("compatSecondary").textContent="문서 다시 고르기";
+    }
+  }
+  function renderRunState(){
+    const count=state.selected.size,doc=docs[state.document],issue=issueFor(state.document),isWorkbench=doc?.mode==="workbench";
+    let level="ready",title="실행 준비 완료",text="연결, 값 해석, 표시 결과가 정상입니다.";
+    if(!state.document){level="bad";title="문서 작업을 직접 고르세요";text="새 데이터 형식은 자동 추천하지 않습니다."}
+    else if(!count){level="bad";title="처리할 항목을 선택하세요";text="한 건 이상의 항목이 필요합니다."}
+    else if(state.validation.status==="pending"){level="warn";title="실행 조건을 확인하고 있습니다";text="검증이 끝날 때까지 실행을 잠급니다."}
+    else if(state.validation.status==="failed"){level="bad";title="자동 검증을 완료하지 못했습니다";text=state.validation.error?.recovery||"선택은 보존했습니다."}
+    else if(issue.blocking){level="bad";title=issue.label;text=state.scenario==="missing"?"‘이름 ← 성명’ 연결을 복구하거나 원본 파일을 수정해야 합니다.":"이 데이터 형식의 연결을 먼저 만들어야 합니다."}
+    else if(issue.level==="review"){level="warn";title="선택 필드 연결 제안";text="새 성과급은 선택 필드입니다. 연결하거나 이번 분석에서 무시해도 기존 Binding은 유지됩니다."}
+    else if(state.preview.required&&!state.preview.approved){level="warn";title="새 결과 확인이 필요합니다";text="기본 revision이 바뀌었습니다. 미리보기 생성과 승인은 분리됩니다."}
+    $("runValidation").dataset.level=level;$("validationMark").textContent=level==="ready"?"✓":level==="warn"?"!":"×";
+    $("validationTitle").textContent=title;$("validationText").textContent=text;
+    const busy=state.backend.status==="running",blocked=!state.document||!count||issue.blocking||state.validation.status!=="completed"||busy;
+    $("runActions").classList.toggle("one",isWorkbench);
+    $("previewButton").hidden=isWorkbench;$("previewButton").disabled=blocked;
+    $("primaryRunButton").disabled=blocked;
+    $("primaryRunButton").textContent=state.preview.required&&!state.preview.approved?"생성 값 확인":isWorkbench?`${count}건 검토·복사 시작`:`${count}개 생성`;
+    $("selectionFoot").textContent=!doc?`${itemNoun()} ${count}건 · 실행 문서 미선택`:isWorkbench?`${itemNoun()} ${count}건 · 온나라 검토·복사`:`${itemNoun()} ${count}건 · ${doc.name} ${count}개 생성 예정`;
+  }
+  function renderScenario(){
+    const scenario=scenarios[state.scenario];
+    $("fileName").textContent=scenario.file;$("fileMeta").textContent=scenario.meta;$("fileStatus").textContent=scenario.fileStatus;
+    $("fileStatus").className=`status ${state.scenario==="normal"?"ready":state.scenario==="newField"?"review":"missing"}`;
+    renderRecords();renderDocumentList();renderCompatibility();renderRunState();
+  }
+  async function requestValidation(){
+    if(!state.document||!state.selected.size){state.validation={status:"idle",id:null,error:null};renderRunState();return}
+    const requestToken={};state.validation={status:"pending",id:null,error:null,requestToken};renderRunState();
+    try{
+      const result=await actions.validateRun({selectedCount:state.selected.size,documentId:state.document,bindingRevision:state.bindingRevisions[state.document]});
+      if(state.validation.requestToken!==requestToken)return;
+      state.validation={status:"completed",id:result.validationId,error:null};
+    }catch(error){
+      if(state.validation.requestToken!==requestToken)return;
+      state.validation={status:"failed",id:null,error};
+    }
+    renderRunState();
+  }
+  function defaultSelection(){
+    const records=activeRecords();
+    state.selected=new Set((state.document==="order"?records.slice(0,3):records).map(record=>record.id));
+  }
+  function selectRunDocument(docId){
+    state.document=docId;defaultSelection();state.result=null;$("runResultPanel").classList.remove("on");
+    invalidateExecutionEvidence();renderScenario();requestValidation();
+  }
+  function renderLibrary(){
+    const query=state.librarySearch.toLowerCase();
+    $("librarySearch").value=state.librarySearch;
+    $("workLibrary").innerHTML=Object.entries(docs).filter(([,doc])=>`${doc.name} ${doc.dataset} ${doc.modeLabel}`.toLowerCase().includes(query)).map(([id,doc])=>`
+      <article class="card work-card" id="library-card-${id}" data-library-card="${id}">
+        <div class="work-card-head"><div><h2>${esc(doc.name)}</h2><p>${esc(doc.dataset)} · ${esc(doc.modeLabel)} · 연결 정상</p></div><span class="status ready">연결 정상</span></div>
+        <button class="button" type="button" data-open-library-work="${id}">문서 작업 열기</button>
+      </article>`).join("");
+    if(!$("workLibrary").children.length)$("workLibrary").innerHTML="<div class='card work-card'><strong>검색 결과가 없습니다.</strong><p>검색어를 바꾸면 기존 문서 작업을 다시 볼 수 있습니다.</p></div>";
+  }
+
+  function scopesForContext(context){
+    if(context.availableScopes?.length)return context.availableScopes;
+    const hasRun=context.returnContext.surface!=="library";
+    if(context.section==="template")return ["default","fork"];
+    return hasRun?["run","default"]:["default","fork"];
+  }
+  function makeContext({documentId,section,target={kind:"none",id:null},entryReason="voluntary",evidence={},returnContext,availableScopes}){
+    return {documentId,section,target,entryReason,evidence,returnContext,availableScopes:availableScopes||null};
+  }
+  function dataReturnContext(focusTarget=null){
+    return {surface:"data",previewIndex:null,workIndex:null,focusTarget,scrollTarget:focusTarget,reopenDrawer:false};
+  }
+  function libraryReturnContext(documentId){
+    return {surface:"library",previewIndex:null,workIndex:null,focusTarget:`library-card-${documentId}`,scrollTarget:null,reopenDrawer:false,search:state.librarySearch,scrollY:window.scrollY};
+  }
+  function editorSampleRecord(){
+    return selectedRecordById(state.editContext?.evidence?.recordId);
+  }
+  function buildEditorDraft(context){
+    const binding=clone(state.bindings[context.documentId]);
+    Object.keys(binding).forEach(key=>Object.assign(binding[key],state.runOverrides[context.documentId]?.fields?.[key]||{}));
+    if(context.entryReason==="schema_new_field"&&context.target.id==="bonus"){
+      binding.bonus={source:"performanceBonus",type:"amount",format:"won",typeSource:"suggested",constant:"",suggested:true};
+    }
+    if(context.entryReason==="schema_missing_field"&&context.target.id==="name"){
+      binding.name.missingSource=true;
+    }
+    if(context.entryReason==="workbench_result"){
+      Object.keys(state.workBindings).forEach(key=>{
+        if(!binding[key])return;
+        binding[key].source=state.workBindings[key];binding[key].format=state.workFormats[key];
+        binding[key].constant=state.workConstants[key]||"";binding[key].type=binding[key].source==="__direct__"?"const":fieldDef("order",key).type;
+        binding[key].typeSource="session";
+      });
+    }
+    return {
+      binding,
+      execution:clone(effectiveProfile(context.documentId)),
+      template:{candidate:false}
+    };
+  }
+  function returnLabel(surface){
+    return {preview:"미리보기로 돌아가기",data:"데이터로 돌아가기",result:"실행 결과로 돌아가기",workbench:"작업대로 돌아가기",library:"문서 작업 목록으로 돌아가기"}[surface]||"원래 업무로 돌아가기";
+  }
+  function renderContextBanner(){
+    const context=state.editContext,banner=$("editContextBanner");
+    if(!context||["voluntary","library"].includes(context.entryReason)){banner.hidden=true;return}
+    banner.hidden=false;
+    const titles={
+      schema_new_field:"새 데이터 열에서 열었습니다.",
+      schema_missing_field:"필수 필드 누락에서 열었습니다.",
+      preview_result:`미리보기 ${(context.returnContext.previewIndex??0)+1}/${selectedRecords().length}에서 열었습니다.`,
+      run_failure:"실패한 실행에서 열었습니다.",
+      output_result:"생성 결과에서 열었습니다.",
+      workbench_result:`온나라 작업대 ${Number(context.returnContext.workIndex)+1}/${state.workRecords.length}에서 열었습니다.`
+    };
+    $("editContextTitle").textContent=titles[context.entryReason]||"업무 증거에서 열었습니다.";
+    $("editContextMessage").textContent=context.evidence.message||"문제가 발견된 값과 결과 소유 규칙을 함께 유지합니다.";
+    $("contextReturnButton").textContent=returnLabel(context.returnContext.surface);
+    const labels={label:"대상",rawValue:"원본 값",displayValue:"현재 표시",sourceField:"데이터 항목",newField:"새 열",sampleValues:"샘플 값",recommendedTarget:"추천 대상",failedFile:"실패 파일",confirmedCause:"확인된 원인",receivedMessage:"받은 메시지",runId:"실행",recordId:"레코드"};
+    $("editEvidence").innerHTML=Object.entries(context.evidence).filter(([key,value])=>value!==null&&value!==undefined&&value!==""&&key!=="message"&&labels[key]).map(([key,value])=>`<span>${esc(labels[key])} <b>${esc(Array.isArray(value)?value.join(", "):value)}</b></span>`).join("");
+  }
+  function setEditorStatus(message,tone=""){
+    const element=$("editorStatus");state.editorStatus=message;element.textContent=message;
+    element.className=`editor-status ${message?"on":""} ${tone}`.trim();
+  }
+  function renderEditorChrome(){
+    const context=state.editContext,doc=docs[context.documentId],issue=issueFor(context.documentId);
+    $("editor-title").textContent=doc.name;$("editorSubtitle").textContent=doc.description;
+    $("editorWorkStatus").className=`status ${issue.level==="missing"?"missing":"ready"}`;$("editorWorkStatus").textContent=issue.level==="missing"?"확인 필요":"연결 정상";
+    $("editorBack").textContent=`← ${returnLabel(context.returnContext.surface)}`;
+    $("editorSaveState").dataset.status=state.save.status;
+    $("editorSaveState").textContent={dirty:"변경 사항 있음",saving:"저장 중…",failed:"저장 실패 · draft 보존",saved:"저장됨"}[state.save.status]||"";
+    document.querySelectorAll("[data-editor-tab]").forEach(button=>button.setAttribute("aria-selected",String(button.dataset.editorTab===context.section)));
+    document.querySelectorAll(".editor-panel").forEach(panel=>panel.classList.toggle("on",panel.id===`editorPanel${context.section[0].toUpperCase()}${context.section.slice(1)}`));
+    renderContextBanner();
+  }
+  function renderTemplatePanel(){
+    const docId=state.editContext.documentId,doc=docs[docId],isText=doc.format==="텍스트 템플릿";
+    $("templatePreviewTitle").textContent=doc.name;$("editorTemplateFormat").textContent=doc.format;
+    $("templateKicker").textContent=isText?"TXT 토큰 구조":"HWPX 구조 개요";
+    $("simulateExternalEditButton").textContent=isText?"텍스트 편집 지원 범위":"외부 편집 뒤 변경 확인";
+    $("templateStructureTable").innerHTML=isText
+      ?`<div class="structure-cell">업체</div><div class="structure-cell"><span class="token-chip">{{업체명}}</span></div><div class="structure-cell">요청 품목</div><div class="structure-cell"><span class="token-chip">{{요청_품목}}</span></div>`
+      :docId==="salary"
+        ?`<div class="structure-cell">이름</div><div class="structure-cell"><span class="token-chip">{{이름}}</span></div><div class="structure-cell">지급일</div><div class="structure-cell"><span class="token-chip">{{지급일}}</span></div>`
+        :`<div class="structure-cell" style="grid-column:1/-1"><strong>구조 샘플 없음</strong><br>급여명세서 구조를 대신 표시하지 않습니다.</div>`;
+    const candidate=$("templateCandidate");
+    if(state.editorCandidate){
+      candidate.hidden=false;
+      candidate.innerHTML=`<strong>Template revision 후보 · 샘플 분석</strong><p>실제 diff 엔진 결과가 아닙니다.</p><ul class="candidate-list"><li>추가 토큰: ${esc(state.editorCandidate.addedTokens.join(", ")||"없음")}</li><li>삭제 토큰: ${esc(state.editorCandidate.removedTokens.join(", ")||"없음")}</li><li>영향 연결: ${esc(state.editorCandidate.affectedFields.join(", "))}</li><li>시험 필요</li></ul>`;
+    }else candidate.hidden=true;
+  }
+  function inferType(source,field){
+    if(source==="__direct__")return "const";
+    if(field.calc)return "amount";
+    return columns().find(column=>column.key===source)?.type||field.type||"text";
+  }
+  function recommendedFormat(type,source){
+    if(type==="date")return "date";
+    if(type==="amount")return source==="quantity"?"number":"won";
+    if(type==="text"&&source==="phone")return "phone";
+    return "raw";
+  }
+  function mappingOptions(selected,field){
+    if(field.calc)return `<option value="calc" selected>기본급 + 상여금</option>`;
+    const options=[`<option value="">연결 안 함</option>`,`<option value="__direct__" ${selected==="__direct__"?"selected":""}>직접 입력</option>`];
+    if(selected&&!["__direct__","calc"].includes(selected)&&!columns().some(column=>column.key===selected)){
+      options.push(`<option value="${esc(selected)}" selected>${esc(selected==="name"?"성명":selected)} · 현재 없음</option>`);
+    }
+    columns().forEach(column=>options.push(`<option value="${esc(column.key)}" ${column.key===selected?"selected":""}>${esc(column.label)}</option>`));
+    return options.join("");
+  }
+  function typeOptions(selected){
+    const options=selected==="const"?["const"]:["text","date","amount"];
+    return options.map(type=>`<option value="${type}" ${type===selected?"selected":""}>${typeLabels[type]}</option>`).join("");
+  }
+  function formatOptions(selected,type){
+    return (formatCatalog[type]||formatCatalog.text).map(([value,label])=>`<option value="${value}" ${value===selected?"selected":""}>${esc(label)}</option>`).join("");
+  }
+  function mappingEvaluation(field,draft,record=editorSampleRecord()){
+    const sourceAvailable=field.calc||draft.source==="__direct__"||columns().some(column=>column.key===draft.source);
+    if(field.required&&(!draft.source||!sourceAvailable))return {value:"결과 없음",level:"bad",text:!draft.source?"필수 데이터 항목을 선택하세요":"기존 데이터 항목을 현재 파일에서 찾을 수 없습니다"};
+    if(draft.source==="__direct__"&&!draft.constant)return {value:"결과 없음",level:"bad",text:"직접 입력 값을 입력하세요"};
+    if(!draft.source)return {value:"표시하지 않음",level:draft.suggested?"warn":"info",text:"선택 필드 · 연결 안 함"};
+    const value=fieldValue(state.editContext.documentId,field.key,record,draft);
+    return {value:formatValue(value,draft.format),level:draft.suggested?"warn":"",text:field.calc?"계산 결과":draft.suggested?"추천 초안 · 아직 저장되지 않음":draft.source==="__direct__"?"고정값 적용":"유형·표시 정상"};
+  }
+  function renderMappings(){
+    const docId=state.editContext.documentId,target=state.editContext.section==="binding"?state.editContext.target.id:null;
+    $("mappingList").innerHTML=fieldDefs[docId].map(field=>{
+      const draft=state.editorDraft.binding[field.key],evaluation=mappingEvaluation(field,draft);
+      const targetRow=target===field.key,provenance=field.calc?"계산식에서 정함":draft.suggested?"새 데이터 열 추천 · 저장 전":draft.source==="__direct__"?"직접 입력 · 고정값":draft.typeSource==="user"?"사용자가 선택함":draft.typeSource==="session"?"작업대 세션 조정":draft.source?"저장된 연결 · 샘플 유형 확인":"연결 안 함";
+      const literal=draft.source==="__direct__"?`<input class="literal-input" data-editor-kind="constant" value="${esc(draft.constant)}" aria-label="${esc(field.label)} 직접 입력 값" placeholder="고정 텍스트 입력">`:"";
+      let evidence="";
+      if(targetRow&&state.editContext.entryReason==="preview_result")evidence=`<div class="row-evidence">원본 값 <strong>${esc(state.editContext.evidence.rawValue)}</strong> · 현재 표시 <strong>${esc(state.editContext.evidence.displayValue)}</strong> · 바꾸려는 규칙 <strong>${esc(state.editContext.evidence.label)}</strong></div>`;
+      if(targetRow&&state.editContext.entryReason==="schema_new_field")evidence=`<div class="row-evidence">새 데이터 열 <strong>성과급</strong> · 샘플 값 <strong>350000, 0, 220000</strong> · 추천 대상 <strong>상여금</strong> · 추천은 아직 저장된 연결이 아닙니다.</div>`;
+      if(targetRow&&state.editContext.entryReason==="schema_missing_field")evidence=`<div class="row-evidence">기존 연결 <strong>이름 ← 성명</strong> · 현재 파일에는 ‘성명’ 항목이 없습니다. 다른 항목에 연결하거나 원본 파일을 수정해야 합니다.</div>`;
+      if(targetRow&&field.calc)evidence=`<div class="row-evidence">지급합계 = 기본급 ${won(editorSampleRecord().salary)} + 상여금 ${won(editorSampleRecord().performanceBonus??editorSampleRecord().bonus)}. 이 계산식은 시안 샘플 데이터에 명시된 근거입니다.</div>`;
+      return `<div class="mapping-row ${targetRow?"target-row":""} ${draft.suggested?"suggested-row":""}" data-field-id="${field.key}"><div class="field-name"><strong>${esc(field.label)}${field.required?'<span class="required">*</span>':""}</strong><span>${field.required?"필수":"선택"} 문서 필드</span></div><div><select class="mapping-select" data-editor-kind="source" ${field.calc?"disabled":""} aria-label="${esc(field.label)} 데이터 항목">${mappingOptions(draft.source,field)}</select>${literal}</div><div><select class="type-select" data-editor-kind="type" ${field.calc||draft.source==="__direct__"?"disabled":""} aria-label="${esc(field.label)} 값 유형">${typeOptions(draft.type)}</select><span class="inference-note ${draft.typeSource==="user"?"user":""}">${esc(provenance)}</span></div><div><select class="format-select" data-editor-kind="format" aria-label="${esc(field.label)} 표시형">${formatOptions(draft.format,draft.type)}</select></div><div class="result-cell"><strong class="result-main">${esc(evaluation.value)}</strong><span class="row-state ${evaluation.level}">${esc(evaluation.text)}</span></div>${evidence}</div>`;
+    }).join("");
+  }
+  function renderExecutionPanel(){
+    const profile=state.editorDraft.execution,target=state.editContext.section==="execution"?state.editContext.target.id:null;
+    $("executionMode").value=profile.mode;$("filenamePattern").value=profile.filenamePattern;$("outputLocation").value=profile.outputLocation;$("collisionPolicy").value=profile.collisionPolicy;
+    document.querySelectorAll("[data-rule-id]").forEach(field=>field.classList.toggle("target-rule",field.dataset.ruleId===target));
+    $("workbenchExecutionOptions").hidden=profile.mode!=="workbench";
+    const record=editorSampleRecord();$("filenameExample").textContent=`예: ${filenameFor(state.editContext.documentId,record,profile)}`;
+  }
+  function renderTestPanel(){
+    const docId=state.editContext.documentId,record=editorSampleRecord(),dateDraft=state.editorDraft.binding.date||Object.values(state.editorDraft.binding)[0];
+    $("testValidation").textContent=state.validation.status==="pending"?"재검증 중":state.validation.status==="failed"?"검증 실패":state.validation.status==="completed"?"검증 완료":"검증 대기";
+    $("testTemplateRevision").textContent=`r${state.templateRevisions[docId]}`;
+    $("testBindingRevision").textContent=`r${state.bindingRevisions[docId]}`;
+    $("testExecutionRevision").textContent=`mock r${state.executionProfiles[docId].revision}`;
+    $("testPreviewCreated").textContent=state.preview.status==="completed"?"생성됨":"아직 없음";
+    $("testPreviewApproved").textContent=state.preview.approved?"명시적 승인 완료":"승인 안 됨";
+    const dateValue=record.date?formatValue(record.date,dateDraft?.format||"date"):"해당 없음";
+    $("testSampleValue").textContent=`${record.name||"대표 항목"} · 날짜 ${dateValue} · ${filenameFor(docId,record,state.editorDraft.execution)}`;
+  }
+  function hasInvalidRequired(){
+    return fieldDefs[state.editContext.documentId].some(field=>mappingEvaluation(field,state.editorDraft.binding[field.key]).level==="bad");
+  }
+  function renderScopeOptions(){
+    const context=state.editContext,scopes=scopesForContext(context);
+    const current=$("scopeOptions").querySelector("input:checked")?.value;
+    $("scopeOptions").innerHTML=scopes.map((scope,index)=>{
+      const label=typeof scopeLabels[scope]==="function"?scopeLabels[scope](context.documentId):scopeLabels[scope];
+      return `<label><input type="radio" name="editScope" value="${scope}" ${(current===scope||(!current&&index===0))?"checked":""}> ${esc(label)}</label>`;
+    }).join("");
+  }
+  function renderEditor(){
+    renderEditorChrome();renderTemplatePanel();renderMappings();renderExecutionPanel();renderTestPanel();renderScopeOptions();
+    const invalid=state.editContext.section==="binding"&&hasInvalidRequired();
+    $("applyEditor").disabled=!state.editorDirty||invalid||state.save.status==="saving";
+  }
+  function focusEditorTarget(){
+    const context=state.editContext;if(!context||!context.target?.id)return;
+    const selector=context.section==="binding"?`[data-field-id="${CSS.escape(context.target.id)}"]`:`[data-rule-id="${CSS.escape(context.target.id)}"]`;
+    const target=document.querySelector(selector);if(!target)return;
+    target.scrollIntoView({block:"center",behavior:"smooth"});
+    const control=target.querySelector("select:not(:disabled),input:not(:disabled),button:not(:disabled)");
+    if(control)setTimeout(()=>control.focus(),180);
+  }
+  function openWorkEditor(editContext){
+    if(!editContext?.documentId||!docs[editContext.documentId])throw new Error("EditContext에 유효한 documentId가 필요합니다.");
+    if(state.previewOpen)suspendPreviewForEdit();
+    closeObjectMenu();
+    state.editContext=clone(editContext);state.editContext.availableScopes=scopesForContext(state.editContext);
+    state.editorDraft=buildEditorDraft(state.editContext);state.editorDirty=state.editContext.entryReason==="schema_new_field"||state.editContext.entryReason==="workbench_result";
+    state.editorChangedTarget=clone(state.editContext.target);state.editorCandidate=null;
+    state.save={status:state.editorDirty?"dirty":"saved",error:null};setEditorStatus("");
+    renderEditor();showScreen("editor");requestAnimationFrame(focusEditorTarget);
+  }
+  function markEditorDirty(kind,id){
+    state.editorDirty=true;state.save.status="dirty";state.save.error=null;
+    state.editorChangedTarget={kind,id};renderEditorChrome();renderScopeOptions();
+    $("applyEditor").disabled=state.editContext.section==="binding"&&hasInvalidRequired();
+    renderTestPanel();
+  }
+  function changedTargetId(){
+    return state.editorChangedTarget?.id||state.editContext.target?.id||state.editContext.section;
+  }
+  function applyBindingDraftToBase(docId){
+    state.bindings[docId]=clone(state.editorDraft.binding);
+    Object.values(state.bindings[docId]).forEach(binding=>{delete binding.suggested;delete binding.missingSource;if(binding.typeSource==="suggested"||binding.typeSource==="session")binding.typeSource="saved"});
+  }
+  function storeRunOverride(docId,target){
+    state.runOverrides[docId]??={fields:{},execution:{}};
+    if(state.editContext.section==="binding"&&target.id)state.runOverrides[docId].fields[target.id]=clone(state.editorDraft.binding[target.id]);
+    if(state.editContext.section==="execution"&&target.id)state.runOverrides[docId].execution[target.id]=state.editorDraft.execution[target.id];
+  }
+  async function refreshPreviewAfterEdit(){
+    state.preview.status="loading";state.preview.approved=false;
+    const result=await actions.createValuePreview({outcome:state.outcome,recordCount:selectedRecords().length});
+    state.preview.status="completed";state.preview.id=result.previewId;state.preview.error=null;
+  }
+  async function applyEditorChange(){
+    const context=state.editContext,scope=$("scopeOptions").querySelector("input:checked")?.value;
+    if(!context||!scope||!state.editorDirty)return;
+    if(scope==="fork"){$("forkDialog").showModal();$("closeForkDialog").focus();return}
+    const docId=context.documentId,target=state.editorChangedTarget||context.target;
+    state.save.status="saving";setEditorStatus(scope==="run"?"이번 실행 override를 저장하고 미리보기를 다시 계산하고 있습니다.":"새 기본 revision을 저장하고 있습니다.","saving");renderEditor();
+    try{
+      let revision=state.bindingRevisions[docId];
+      if(scope==="run"){
+        await actions.saveRunOverride({documentId:docId,section:context.section,changedTarget:target});
+        storeRunOverride(docId,target);
+        state.preview.approved=false;
+        setEditorStatus("Run draft override를 저장했습니다. 기본 Binding과 ExecutionProfile은 바뀌지 않았습니다.","ok");
+      }else{
+        const saved=await actions.saveEditorChange({
+          outcome:state.outcome,documentId:docId,section:context.section,
+          bindingRevision:state.bindingRevisions[docId],templateRevision:state.templateRevisions[docId],
+          executionRevision:state.executionProfiles[docId].revision
+        });
+        if(context.section==="binding"){applyBindingDraftToBase(docId);state.bindingRevisions[docId]=saved.bindingRevision;revision=saved.bindingRevision}
+        if(context.section==="template"){state.templateRevisions[docId]=saved.templateRevision;revision=saved.templateRevision}
+        if(context.section==="execution"){state.executionProfiles[docId]=clone(state.editorDraft.execution);state.executionProfiles[docId].revision=saved.executionRevision;revision=saved.executionRevision}
+        if(context.section==="binding"&&target.id&&state.runOverrides[docId]?.fields)delete state.runOverrides[docId].fields[target.id];
+        if(context.section==="execution"&&target.id&&state.runOverrides[docId]?.execution)delete state.runOverrides[docId].execution[target.id];
+        state.save.status="saved";setEditorStatus(`기본 규칙 r${revision} 저장 완료 · 실행 검증은 아직 완료되지 않았습니다.`,"ok");renderEditor();
+        if(context.returnContext.surface!=="library"&&state.document===docId){
+          state.validation={status:"pending",id:null,error:null};setEditorStatus(`기본 규칙 r${revision} 저장 완료 · 현재 실행 컨텍스트를 다시 검증하고 있습니다.`,"saving");renderEditor();
+          const validation=await actions.validateRun({selectedCount:state.selected.size,documentId:docId,bindingRevision:state.bindingRevisions[docId]});
+          state.validation={status:"completed",id:validation.validationId,error:null};
+        }
+        state.preview.required=context.returnContext.surface!=="library";state.preview.approved=false;
+        if(context.entryReason==="schema_new_field")state.resolved.add("newField:salary");
+        if(context.entryReason==="schema_missing_field"&&columns().some(column=>column.key===state.editorDraft.binding.name.source))state.resolved.add("missing:salary");
+      }
+      const hasActiveResult=context.returnContext.surface!=="library"&&state.document===docId;
+      if(hasActiveResult)await refreshPreviewAfterEdit();
+      state.appliedMarkers[docId]??={};
+      state.appliedMarkers[docId][target.id||context.section]={scope,revision,at:Date.now()};
+      state.save.status="saved";state.editorDirty=false;
+      setEditorStatus(scope==="run"?"미리보기를 다시 계산했습니다. 원래 결과 위치로 돌아갑니다.":`기본 규칙 r${revision} 저장 · 실행 재검증 · 새 미리보기 생성 완료. 승인은 자동 처리하지 않았습니다.`,"ok");
+      renderEditor();
+      setTimeout(()=>returnFromWorkEditor({changedTarget:target,scope,validationResult:state.validation.status}),280);
+    }catch(error){
+      state.save={status:"failed",error};setEditorStatus(`${error.message} ${error.recovery||""} 편집기 draft는 보존했습니다.`,"bad");renderEditor();
+    }
+  }
+  function highlightAndFocus(id){
+    if(!id)return;
+    const element=$(id)||document.querySelector(`[data-focus-id="${CSS.escape(id)}"]`);
+    if(!element)return;
+    element.classList.add("return-highlight");element.scrollIntoView({block:"center"});
+    const focusable=element.matches("button,input,select")?element:element.querySelector("button,input,select,[tabindex]");
+    if(focusable)setTimeout(()=>focusable.focus(),80);
+    setTimeout(()=>element.classList.remove("return-highlight"),2600);
+  }
+  function returnFromWorkEditor({changedTarget=null,scope=null,validationResult=null,cancelled=false}={}){
+    const context=clone(state.editContext),returnContext=context.returnContext;
+    state.editContext=null;state.editorDraft=null;state.editorCandidate=null;state.targetHighlight={changedTarget,scope,validationResult};
+    if(returnContext.surface==="preview"){
+      showScreen("data");renderScenario();
+      state.previewIndex=returnContext.previewIndex??state.previewIndex;
+      openPreviewDrawer({
+        preserveIndex:true,
+        prepare:false,
+        focusTarget:returnContext.focusTarget,
+        statusMessage:cancelled?"편집을 취소했습니다. 저장하지 않은 변경은 적용하지 않았습니다.":null
+      });
+    }else if(returnContext.surface==="data"){
+      showScreen("data");renderScenario();highlightAndFocus(returnContext.focusTarget||returnContext.scrollTarget);
+    }else if(returnContext.surface==="result"){
+      showScreen("data");renderScenario();
+      if(state.result)state.result.corrected={target:changedTarget,scope};
+      renderRunResult();highlightAndFocus(returnContext.focusTarget);
+    }else if(returnContext.surface==="workbench"){
+      state.workIndex=returnContext.workIndex??state.workIndex;state.workMode=returnContext.previewMode||state.workMode;state.workTab=returnContext.workTab||state.workTab;
+      if(scope==="default")state.workSessionDirty=false;
+      renderWorkbench();showScreen("workbench");highlightAndFocus(returnContext.focusTarget);
+    }else{
+      state.librarySearch=returnContext.search??state.librarySearch;renderLibrary();showScreen("library");
+      window.scrollTo(0,returnContext.scrollY||0);highlightAndFocus(returnContext.focusTarget);
+    }
+  }
+  function cancelEditor(){
+    if(!state.editContext)return;
+    state.editorDirty=false;state.save.status="saved";returnFromWorkEditor({cancelled:true});
+  }
+  async function createEditorPreview(){
+    $("editorPreviewButton").disabled=true;setEditorStatus("편집기 draft로 대표 값을 계산하고 있습니다. 이 작업은 승인이 아닙니다.","saving");
+    try{
+      const result=await actions.createValuePreview({outcome:state.outcome,recordCount:selectedRecords().length||1});
+      state.preview.status="completed";state.preview.id=result.previewId;state.preview.approved=false;
+      setEditorStatus("미리보기 값을 만들었습니다. PreviewCreated이며 PreviewApproved는 아닙니다.","ok");renderTestPanel();
+    }catch(error){
+      setEditorStatus(`${error.message} ${error.recovery}`,"bad");
+    }finally{$("editorPreviewButton").disabled=false}
+  }
+  async function analyzeTemplateCandidate(){
+    if(docs[state.editContext.documentId].format==="텍스트 템플릿"){
+      setEditorStatus("텍스트 본문 편집기는 v3에서 연기되었습니다. 저장이나 변경 완료로 처리하지 않았습니다.","bad");return;
+    }
+    $("simulateExternalEditButton").disabled=true;setEditorStatus("외부 파일을 열지 않고, 복귀 뒤 변경 후보 분석 상태만 시뮬레이션합니다.","saving");
+    try{
+      state.editorCandidate=await actions.analyzeTemplateCandidate({documentId:state.editContext.documentId});
+      state.editorDraft.template.candidate=true;markEditorDirty("paragraph","template-candidate");
+      setEditorStatus("샘플 Template revision 후보를 만들었습니다. 실제 diff가 아니며 적용 전 시험이 필요합니다.","ok");renderTemplatePanel();
+    }finally{$("simulateExternalEditButton").disabled=false}
+  }
+
+  function scopeMarkerHtml(docId,targetId){
+    const marker=markerFor(docId,targetId);
+    return marker?`<span class="scope-marker">${esc(marker)}</span>`:"";
+  }
+  function previewHtml(record){
+    const docId=state.document;
+    if(state.scenario==="customer")return `<h3>새 연결 결과 확인 범위</h3><div class="boundary-card"><strong>실제 매핑 결과는 연결되지 않았습니다.</strong><p>다른 데이터의 값을 대신 표시하지 않습니다. 저장 API가 연결되기 전에는 결과가 생성된 것처럼 연출하지 않습니다.</p></div>`;
+    if(docId==="employment"){
+      const name=fieldValue(docId,"name",record),department=fieldValue(docId,"department",record),date=fieldValue(docId,"date",record);
+      return `<h3>재 직 증 명 서</h3><div class="preview-line"><span>성명</span><strong>${esc(name)}</strong><button class="button small" type="button" data-preview-edit="binding:name">연결 확인</button></div><div class="preview-line"><span>소속</span><strong>${esc(department)}</strong><button class="button small" type="button" data-preview-edit="binding:department">연결 확인</button></div><div class="preview-line"><span>기준일</span><strong>${esc(formatValue(date,effectiveBinding(docId,"date").format))}</strong><button class="button small" type="button" data-preview-edit="binding:date">표시 변경</button></div><div class="preview-secondary"><button class="button small" type="button" data-preview-edit="template:structure">문서 내용·구조 · 템플릿 열기</button></div>`;
+    }
+    const nameBinding=effectiveBinding(docId,"name"),dateBinding=effectiveBinding(docId,"date"),salaryBinding=effectiveBinding(docId,"salary"),bonusBinding=effectiveBinding(docId,"bonus"),totalBinding=effectiveBinding(docId,"total");
+    const bonusValue=fieldValue(docId,"bonus",record,bonusBinding),totalValue=fieldValue(docId,"total",record,totalBinding);
+    return `<h3>급 여 명 세 서</h3>
+      <div class="preview-line" id="preview-name"><span>이름</span><strong>${esc(formatValue(fieldValue(docId,"name",record,nameBinding),nameBinding.format))}</strong><button class="button small" type="button" data-preview-edit="binding:name">연결 확인</button></div>
+      <div class="preview-line" id="preview-date"><span>지급일</span><strong>${esc(formatValue(fieldValue(docId,"date",record,dateBinding),dateBinding.format))}${scopeMarkerHtml(docId,"date")}</strong><button class="button small" type="button" data-preview-edit="binding:date">표시 변경</button></div>
+      <div class="preview-line" id="preview-salary"><span>기본급</span><strong>${esc(formatValue(fieldValue(docId,"salary",record,salaryBinding),salaryBinding.format))}</strong><button class="button small" type="button" data-preview-edit="binding:salary">값·표시 확인</button></div>
+      <div class="preview-line" id="preview-bonus"><span>상여금</span><strong>${esc(formatValue(bonusValue,bonusBinding.format))}</strong><button class="button small" type="button" data-preview-edit="binding:bonus">0·빈 값 표시</button></div>
+      <div class="preview-total" id="preview-total"><span>지급합계</span><strong>${esc(formatValue(totalValue,totalBinding.format))}</strong><button class="button small" type="button" data-preview-edit="binding:total">계산 근거</button></div>
+      <div class="preview-secondary"><span style="display:block;color:var(--muted);font-size:11px">현재 파일 이름</span><div class="filename-row" id="preview-filename"><strong>${esc(filenameFor(docId,record))}${scopeMarkerHtml(docId,"filenamePattern")}</strong><button class="button small" type="button" data-preview-edit="execution:filenamePattern">이름 규칙 변경</button></div><button class="button small" style="margin-top:12px" type="button" id="preview-template" data-preview-edit="template:structure">문서 내용·구조 · 템플릿 열기</button></div>`;
+  }
+  function renderPreview(){
+    const records=selectedRecords(),record=records[state.previewIndex]||records[0];if(!record)return;
+    $("previewPosition").textContent=`${state.previewIndex+1} / ${records.length}`;$("previewContent").innerHTML=previewHtml(record);
+    $("drawerSelection").textContent=`${itemNoun()} ${records.length}${itemNoun()==="직원"?"명":"건"}`;$("drawerDocument").textContent=docs[state.document].name;
+    $("batchSummaryTitle").textContent=`전체 ${records.length}건 · 정상 ${issueFor(state.document).blocking?0:records.length} · 확인 필요 ${issueFor(state.document).blocking?records.length:0}`;
+    $("drawerValidation").textContent=issueFor(state.document).blocking?`정상 0 · 확인 필요 ${records.length}`:`정상 ${records.length} · 확인 필요 0`;
+    $("drawerFilename").textContent=filenameFor(state.document,record);
+    $("drawerApproval").textContent=state.preview.required?(state.preview.approved?"명시적 승인 완료":"확인 필요"):"선택 사항";
+    const runMarkers=Object.values(state.appliedMarkers[state.document]||{}).filter(marker=>marker.scope==="run").length;
+    $("drawerScope").textContent=runMarkers?"이번 생성 override 포함":"기본 규칙";
+    $("previewPrev").disabled=state.previewIndex===0;$("previewNext").disabled=state.previewIndex>=records.length-1;
+    $("generateButton").textContent=`${records.length}개 생성`;
+  }
+  async function preparePreview(){
+    state.preview.status="loading";state.preview.error=null;
+    $("previewState").className="preview-state";$("previewState").textContent="실제로 주입될 값과 파일명을 준비하고 있습니다.";
+    $("resolvePreviewFailureButton").hidden=true;$("approvePreviewButton").hidden=true;$("generateButton").disabled=true;
+    try{
+      const result=await actions.createValuePreview({outcome:state.outcome,recordCount:selectedRecords().length});
+      state.preview.status="completed";state.preview.id=result.previewId;
+      $("previewState").textContent="값과 파일명을 준비했습니다. HWPX 최종 렌더가 아니며 생성만으로 승인되지는 않습니다.";
+      renderPreview();$("approvePreviewButton").hidden=!state.preview.required||state.preview.approved;
+      $("generateButton").disabled=state.preview.required&&!state.preview.approved;
+    }catch(error){
+      state.preview.status="failed";state.preview.error=error;
+      $("previewState").className="preview-state error";$("previewState").textContent=`${error.message} ${error.recovery}`;
+      $("resolvePreviewFailureButton").hidden=false;
+    }
+  }
+  async function openPreviewDrawer({preserveIndex=false,prepare=true,focusTarget=null,statusMessage=null}={}){
+    state.lastFocus=document.activeElement;if(!preserveIndex)state.previewIndex=0;
+    state.previewOpen=true;state.workflowStep="preview";$("scrim").classList.add("on");$("previewDrawer").classList.add("on");
+    document.querySelector(".app").inert=true;$("previewDrawer").inert=false;$("previewDrawer").setAttribute("aria-hidden","false");document.body.style.overflow="hidden";
+    renderPreview();
+    if(prepare)await preparePreview();
+    else{
+      $("previewState").className="preview-state";$("previewState").textContent=statusMessage||(state.preview.required?"변경 결과를 다시 만들었습니다. 아직 결과 확인 승인은 완료되지 않았습니다.":"변경 결과를 다시 만들었습니다.");
+      $("approvePreviewButton").hidden=!state.preview.required||state.preview.approved;$("generateButton").disabled=state.preview.required&&!state.preview.approved;
+    }
+    if(focusTarget)highlightAndFocus(focusTarget);else $("closePreview").focus();
+  }
+  function suspendPreviewForEdit(){
+    state.previewOpen=false;$("scrim").classList.remove("on");$("previewDrawer").classList.remove("on");$("previewDrawer").inert=true;
+    $("previewDrawer").setAttribute("aria-hidden","true");document.querySelector(".app").inert=false;document.body.style.overflow="";
+  }
+  function closePreview(){
+    if(!state.previewOpen)return;
+    suspendPreviewForEdit();state.workflowStep=state.result?"result":"data";renderWorkflowStrip();
+    if(state.lastFocus&&document.contains(state.lastFocus))state.lastFocus.focus();
+  }
+  function approvePreview(){
+    if(state.preview.status!=="completed")return;
+    state.preview.approved=true;$("approvePreviewButton").hidden=true;$("generateButton").disabled=false;
+    $("drawerApproval").textContent="명시적 승인 완료";$("previewState").textContent="이 미리보기와 현재 revision의 결과를 확인했습니다.";
+    renderRunState();
+  }
+  function previewEditContext(spec){
+    const [section,id]=spec.split(":"),record=selectedRecords()[state.previewIndex],docId=state.document;
+    const def=fieldDef(docId,id),binding=def?effectiveBinding(docId,id):null;
+    const sourceLabel=columns().find(column=>column.key===binding?.source)?.label||binding?.source;
+    let label=def?`${def.label} ${id==="date"?"표시형":id==="total"?"계산식":"값·표시 규칙"}`:id==="filenamePattern"?"파일 이름 규칙":"문서 내용·구조";
+    let rawValue=def?fieldValue(docId,id,record,binding):null,displayValue=def?formatValue(rawValue,binding.format):null;
+    const target=section==="template"?{kind:"paragraph",id:"structure"}:section==="execution"?{kind:"rule",id}:{kind:id==="total"?"calculation":"field",id};
+    const scopes=section==="template"?["default","fork"]:["run","default"];
+    return makeContext({
+      documentId:docId,section,target,entryReason:"preview_result",
+      evidence:{label,rawValue:id==="date"?record.date:rawValue,displayValue,sourceField:sourceLabel,message:"미리보기에서 보고 있던 결과와 그 결과를 소유한 최소 규칙을 함께 열었습니다.",runId:null,recordId:record.id},
+      returnContext:{surface:"preview",previewIndex:state.previewIndex,workIndex:null,focusTarget:`preview-${section==="template"?"template":id}`,scrollTarget:null,reopenDrawer:true},
+      availableScopes:scopes
+    });
+  }
+
+  function resultCopy(result,error=null){
+    if(error)return {status:"failed",title:"문서 생성 단계가 완료되지 않았습니다.",detail:"선택과 이전 결과를 보존했습니다."};
+    if(result.status==="completed")return {status:"completed",title:`문서 ${result.succeeded}개 생성 완료`,detail:`저장 위치: ${effectiveProfile(state.document).outputLocation}`};
+    if(result.status==="partiallyCompleted")return {status:"partiallyCompleted",title:`${result.succeeded}개 완료 · ${result.failed}개 실패`,detail:"성공 결과는 보존하고 실패 항목의 원인과 영향 범위를 표시합니다."};
+    return {status:"failed",title:"문서 생성을 취소했습니다.",detail:"완료된 결과와 입력을 보존했습니다."};
+  }
+  function renderRunResult(){
+    const panel=$("runResultPanel");if(!state.result){panel.classList.remove("on");return}
+    const error=state.result.error||null,result=state.result.run||state.result,copy=resultCopy(result,error);
+    panel.classList.add("on");panel.dataset.status=copy.status;$("runResultTitle").textContent=copy.title;$("runResultDetail").textContent=copy.detail;
+    if(copy.status==="completed"){
+      const sample=selectedRecords().slice(0,3).map(record=>`<span>${esc(filenameFor(state.document,record))} · 생성 상태 mock</span>`).join("<br>");
+      $("runResultBody").innerHTML=`<div class="result-evidence"><strong>출력 이름 시안</strong><p>실제 다운로드 링크나 파일 존재를 만들지 않습니다.</p><p>${sample}</p></div><div class="result-actions"><button class="button" type="button" data-result-action="filename">파일 이름 규칙 변경</button><button class="button" type="button" data-result-action="output">다음부터 저장 방식 변경</button><button class="button" type="button" data-result-action="dismiss">결과 닫기</button></div>`;
+    }else if(copy.status==="partiallyCompleted"){
+      const corrected=state.result.corrected?`<span class="scope-marker">규칙 변경됨 · 재실행 전 검증 완료</span>`:"";
+      const cause=state.result.corrected
+        ?"확인된 원인: 실패 당시 충돌 정책은 ‘중단’이었습니다. 현재 기본 정책은 ‘자동 번호 붙이기’로 변경했습니다."
+        :"확인된 원인: 같은 이름의 파일이 있으며 현재 충돌 정책은 ‘중단’입니다.";
+      $("runResultBody").innerHTML=`<div class="result-evidence" id="failed-output-5"><strong>정하늘_급여명세서.hwpx 저장 실패 ${corrected}</strong><p>${cause}</p><div class="result-actions"><button class="button primary" type="button" data-result-action="collision">충돌 정책 변경</button><button class="button" type="button" data-result-action="one-filename">이번 파일 이름 바꾸기</button></div></div><div class="result-actions"><button class="button" type="button" data-result-action="dismiss">결과 닫기</button></div>`;
+    }else{
+      $("runResultBody").innerHTML=`<div class="result-evidence" id="unknown-failure"><strong>원인 진단 미연결</strong><p>실패 단계, 영향 레코드, 받은 메시지, 사용 revision만 확인할 수 있습니다. 구체적 원인은 확정되지 않았습니다.</p></div><div class="result-actions"><button class="button primary" type="button" data-result-action="inspect-unknown">확인 가능한 증거</button><button class="button" type="button" data-result-action="dismiss">결과 닫기</button></div>`;
+    }
+    renderWorkflowStrip();
+  }
+  async function executeDocuments({fromDrawer=false}={}){
+    const records=selectedRecords();if(!records.length||state.backend.status==="running")return;
+    state.backend={status:"running",progress:{completed:0,total:records.length},error:null};
+    $("runProgress").classList.add("on");$("runProgressTitle").textContent="문서를 만들고 있습니다.";$("runProgressDetail").textContent=`0 / ${records.length} 완료 · 중복 실행이 잠겼습니다.`;renderRunState();
+    if(fromDrawer){$("generateButton").disabled=true;$("cancelDrawerRunButton").hidden=false}
+    try{
+      const run=await actions.runDocuments({outcome:state.outcome,recordCount:records.length,recordIds:records.map(record=>record.id)},progress=>{
+        state.backend.progress=progress;$("runProgressDetail").textContent=`${progress.completed} / ${progress.total} 완료 · 현재 문서를 마친 뒤 취소할 수 있습니다.`;
+      });
+      state.backend.status=run.status;state.failedRecordIds=run.failedRecordIds||[];state.result={run,corrected:null};
+    }catch(error){
+      state.backend={status:"failed",progress:state.backend.progress,error};state.failedRecordIds=records.map(record=>record.id);state.result={error,corrected:null};
+    }finally{
+      $("runProgress").classList.remove("on");$("cancelDrawerRunButton").hidden=true;
+      if(state.previewOpen)closePreview();
+      renderRunResult();renderRunState();toast(state.backend.status==="completed"?"문서 생성 mock을 완료했습니다.":"처리 결과를 확인하세요.");
+    }
+  }
+  function inspectUnknownFailure(){
+    $("failureEvidence").innerHTML=`<div class="evidence-item"><span>실패 단계</span><strong>HWPX 생성 처리</strong></div><div class="evidence-item"><span>영향 레코드</span><strong>${esc(state.failedRecordIds.join(", ")||"선택한 전체 레코드")}</strong></div><div class="evidence-item"><span>받은 메시지</span><strong>${esc(state.result?.error?.message||"처리 단계가 완료되지 않았습니다.")}</strong></div><div class="evidence-item"><span>사용한 revision</span><strong>Template r${state.templateRevisions[state.document]} · Binding r${state.bindingRevisions[state.document]} · Execution mock r${state.executionProfiles[state.document].revision}</strong></div><div class="evidence-item"><span>진단 상태</span><strong>원인 진단 미연결</strong></div>`;
+    $("failureInspectorDialog").showModal();$("closeFailureInspector").focus();
+  }
+  function openResultEditor(action){
+    const failedRecord=employees[4],baseReturn={surface:"result",previewIndex:null,workIndex:null,focusTarget:action==="collision"||action==="one-filename"?"failed-output-5":"runResultPanel",scrollTarget:null,reopenDrawer:false};
+    if(action==="collision")openWorkEditor(makeContext({documentId:state.document,section:"execution",target:{kind:"rule",id:"collisionPolicy"},entryReason:"run_failure",evidence:{label:"충돌 정책",failedFile:"정하늘_급여명세서.hwpx",confirmedCause:"같은 이름의 파일이 존재하며 충돌 정책이 중단입니다.",recordId:failedRecord.id,message:"확인된 출력 충돌 원인에서 정확한 실행 규칙을 열었습니다."},returnContext:baseReturn,availableScopes:["default"]}));
+    if(action==="one-filename")openWorkEditor(makeContext({documentId:state.document,section:"execution",target:{kind:"rule",id:"filenamePattern"},entryReason:"run_failure",evidence:{label:"이번 파일 이름",failedFile:"정하늘_급여명세서.hwpx",confirmedCause:"같은 이름의 파일이 존재합니다.",recordId:failedRecord.id,message:"이 실패 레코드의 이번 실행 파일 이름만 바꿉니다."},returnContext:baseReturn,availableScopes:["run"]}));
+    if(action==="filename"||action==="output")openWorkEditor(makeContext({documentId:state.document,section:"execution",target:{kind:"rule",id:action==="filename"?"filenamePattern":"outputLocation"},entryReason:"output_result",evidence:{label:action==="filename"?"파일 이름 규칙":"출력 위치",message:"생성 성공 결과에서 다음 실행에 적용할 규칙을 열었습니다."},returnContext:baseReturn,availableScopes:["default"]}));
+  }
+
+  function closeObjectMenu({restoreFocus=false}={}){
+    $("objectMenu").hidden=true;document.querySelectorAll("[data-document-menu]").forEach(button=>button.setAttribute("aria-expanded","false"));
+    if(restoreFocus&&state.objectMenuTrigger)state.objectMenuTrigger.focus();
+    state.objectMenuDocument=null;state.objectMenuTrigger=null;
+  }
+  function openObjectMenu(docId,trigger){
+    state.objectMenuDocument=docId;state.objectMenuTrigger=trigger;$("objectMenuLabel").textContent=`${docs[docId].name} 변경`;
+    $("objectMenu").hidden=false;trigger.setAttribute("aria-expanded","true");$("objectMenu").querySelector("button").focus();
+  }
+  function openMenuEditor(section){
+    const docId=state.objectMenuDocument||state.document;
+    openWorkEditor(makeContext({documentId:docId,section,target:{kind:"none",id:null},entryReason:"voluntary",evidence:{},returnContext:dataReturnContext("documentSideCard"),availableScopes:section==="template"?["default","fork"]:["run","default"]}));
+  }
+  function openNewFieldEditor(){
+    openWorkEditor(makeContext({
+      documentId:"salary",section:"binding",target:{kind:"field",id:"bonus"},entryReason:"schema_new_field",
+      evidence:{label:"상여금 연결",newField:"성과급",sampleValues:["350000","0","220000"],recommendedTarget:"급여명세서의 상여금",message:"새 필드 추천은 기존 연결과 구분되며 아직 저장되지 않았습니다."},
+      returnContext:dataReturnContext("compatNote"),availableScopes:["default"]
+    }));
+  }
+  function openMissingFieldEditor(){
+    openWorkEditor(makeContext({
+      documentId:"salary",section:"binding",target:{kind:"field",id:"name"},entryReason:"schema_missing_field",
+      evidence:{label:"이름 연결",sourceField:"성명",message:"기존 연결 ‘이름 ← 성명’과 현재 누락 증거를 함께 열었습니다."},
+      returnContext:dataReturnContext("compatNote"),availableScopes:["default"]
+    }));
+  }
+
+  function setupWorkbench(){
+    state.workRecords=selectedRecords().slice(0,3);if(!state.workRecords.length)return;
+    state.workIndex=0;state.copyStates=state.workRecords.map(()=>"pending");state.workMode="filled";state.workTab="map";
+    state.workBindings={company:"company",item:"item",quantity:"quantity",amount:"amount"};
+    state.workFormats={company:"raw",item:"raw",quantity:"number",amount:"won"};state.workConstants={};
+    state.workSessionDirty=false;state.workLastChanged="company";state.workRuleHighlight=null;$("copyNextOption").checked=false;
+    document.querySelectorAll("[data-preview-mode]").forEach(button=>button.classList.toggle("on",button.dataset.previewMode==="filled"));
+    document.querySelectorAll("[data-work-tab]").forEach(button=>button.classList.toggle("on",button.dataset.workTab==="map"));
+    document.querySelectorAll("[data-work-panel]").forEach(panel=>panel.classList.toggle("mobile-on",panel.dataset.workPanel==="map"));
+    renderWorkbench();showScreen("workbench");
+  }
+  function workValue(key,record=state.workRecords[state.workIndex]){
+    const source=state.workBindings[key];return source==="__direct__"?state.workConstants[key]||"":source?record[source]:"";
+  }
+  function renderWorkMappings(){
+    $("workMappings").innerHTML=fieldDefs.order.map(field=>{
+      const source=state.workBindings[field.key],format=state.workFormats[field.key],value=formatValue(workValue(field.key),format);
+      const literal=source==="__direct__"?`<input class="literal-input" data-work-kind="constant" value="${esc(state.workConstants[field.key]||"")}" aria-label="${esc(field.label)} 직접 입력 값" placeholder="고정 텍스트 입력">`:"";
+      return `<div class="work-map-row ${state.workRuleHighlight===field.key?"rule-highlight":""}" id="work-rule-${field.key}" data-key="${field.key}"><strong>${esc(field.label)}${field.required?'<span class="required">*</span>':""}</strong><div><select data-work-kind="source" aria-label="${esc(field.label)} 데이터 항목">${mappingOptions(source,field)}</select>${literal}</div><select data-work-kind="format" aria-label="${esc(field.label)} 표시형">${formatOptions(format,field.type)}</select><div class="work-result"><strong>${esc(value)}</strong><span>${source==="__direct__"?"직접 입력 고정값":source?"세션에 즉시 반영됨":"연결 안 함"}</span></div></div>`;
+    }).join("");
+  }
+  function workToken(key,label){
+    const className=state.workMode==="raw"?"token-value":"filled-value";
+    const text=state.workMode==="raw"?`{{${label}}}`:formatValue(workValue(key),state.workFormats[key]);
+    return `<button class="${className}" type="button" data-work-result-target="${key}" aria-label="${esc(label)} 결과 · 규칙 강조">${esc(text)}</button>`;
+  }
+  function renderWorkText(){
+    const record=state.workRecords[state.workIndex];if(!record)return;
+    const fonts={gulimche:"GulimChe,monospace",dotumche:"DotumChe,monospace",malgun:"'Malgun Gothic',sans-serif"};
+    $("textPreview").style.fontFamily=fonts[$("fontSelect").value]||fonts.gulimche;
+    $("textPreview").innerHTML=`<h2>물품 발주 요청</h2><p>${workToken("company","업체명")} 귀중</p><p>업무 수행을 위해 ${workToken("item","요청_품목")} ${workToken("quantity","수량")}개를 발주하고자 합니다.</p><p>예상 금액은 ${workToken("amount","요청_금액")}이며, 검토 후 처리하여 주시기 바랍니다.</p><p style="margin-top:30px;color:var(--muted)">2026년 7월 26일<br>문서나르미 시안</p>`;
+  }
+  function renderWorkbench(){
+    const total=state.workRecords.length,copied=state.copyStates.filter(status=>status==="copied").length,current=state.copyStates[state.workIndex];
+    $("workPosition").textContent=`${state.workIndex+1} / ${total}`;$("copyCount").textContent=`${copied} / ${total}`;
+    $("queueDots").innerHTML=state.copyStates.map((status,index)=>{
+      const label=status==="copied"?"복사 완료":status==="review"?"다시 확인 필요":"미처리";
+      return `<button type="button" class="queue-dot ${status} ${index===state.workIndex?"current":""}" data-work-index="${index}" aria-label="${index+1}번 항목 · ${label}${index===state.workIndex?" · 현재 작업점":""}" title="${index+1}번 · ${label}"></button>`;
+    }).join("");
+    $("recordReviewState").className=`record-state ${current==="copied"?"on copied":current==="review"?"on":""}`;
+    $("recordReviewState").textContent=current==="copied"?"이 항목은 복사 완료되었습니다. 다시 복사하면 현재 결과로 갱신됩니다.":current==="review"?"이 항목은 복사 뒤 규칙이 바뀌었습니다. 같은 위치에서 다시 확인하고 복사하세요.":"";
+    $("completeCard").classList.toggle("on",total>0&&copied===total);
+    const single=total<=1;$("queueDots").hidden=single;$("workPrev").hidden=single;$("workNext").hidden=single;$("copyNextOption").closest(".copy-option").hidden=single;
+    $("workPrev").disabled=state.workIndex===0;$("workNext").disabled=state.workIndex>=total-1;$("copyButton").textContent=current==="copied"?"다시 복사":"복사";
+    $("sessionRuleStatus").textContent=state.workSessionDirty?"이번 작업에만 적용 중":"기본 규칙 사용 중";
+    $("sessionRuleStatus").className=`status ${state.workSessionDirty?"info":"ready"}`;$("persistWorkbenchRule").disabled=!state.workSessionDirty;
+    renderWorkMappings();renderWorkText();
+  }
+  function markCopiedForReview(){
+    let changed=false;
+    state.copyStates=state.copyStates.map(status=>{if(status==="copied"){changed=true;return "review"}return status});
+    if(changed)toast("규칙이 바뀌어 복사 완료 항목을 다시 확인해야 합니다.");
+  }
+  function confirmMissingValues(gaps){
+    const dialog=$("missingValueDialog");$("missingValueBody").textContent=`${gaps.join(", ")} 값이 비어 있습니다.\n입력과 현재 작업점은 유지됩니다. 빈 값 표식과 함께 복사할까요?`;
+    return new Promise(resolve=>{
+      const finish=value=>{dialog.close();$("missingValueCancel").removeEventListener("click",cancel);$("missingValueConfirm").removeEventListener("click",confirm);dialog.removeEventListener("cancel",onCancel);resolve(value)};
+      const cancel=()=>finish(false),confirm=()=>finish(true),onCancel=event=>{event.preventDefault();cancel()};
+      $("missingValueCancel").addEventListener("click",cancel);$("missingValueConfirm").addEventListener("click",confirm);dialog.addEventListener("cancel",onCancel);
+      dialog.showModal();$("missingValueCancel").focus();
+    });
+  }
+  async function copyCurrent(){
+    const gaps=fieldDefs.order.filter(field=>field.required&&!workValue(field.key)).map(field=>field.label);
+    if(gaps.length&&!await confirmMissingValues(gaps))return;
+    state.copyStates[state.workIndex]="copied";toast("현재 항목을 복사 완료로 표시했습니다.");
+    if($("copyNextOption").checked){
+      const next=state.copyStates.findIndex(status=>status!=="copied");if(next>=0)state.workIndex=next;
+    }
+    renderWorkbench();if(state.copyStates.every(status=>status==="copied"))toast("모든 항목의 복사를 완료했습니다.");
+  }
+  async function saveWorkbenchDraft(){
+    if(state.save.status==="saving")return;
+    state.save.status="saving";$("saveDraftButton").disabled=true;$("saveDraftButton").textContent="저장 중…";
+    try{
+      await actions.saveDraft({outcome:state.outcome,kind:"draft"});state.save.status="saved";toast("기안 저장 mock을 완료했습니다.");
+    }catch(error){
+      state.save.status="failed";toast(`${error.message} ${error.recovery}`);
+    }finally{$("saveDraftButton").disabled=false;$("saveDraftButton").textContent="기안으로 저장"}
+  }
+  function persistWorkbenchRule(){
+    const key=state.workLastChanged||"company",record=state.workRecords[state.workIndex];
+    openWorkEditor(makeContext({
+      documentId:"order",section:"binding",target:{kind:"field",id:key},entryReason:"workbench_result",
+      evidence:{label:fieldDef("order",key).label,rawValue:record[state.workBindings[key]],displayValue:formatValue(workValue(key),state.workFormats[key]),recordId:record.id,message:"작업대 세션 조정을 기본 Binding 규칙으로 저장하려고 열었습니다. Template 저장이 아닙니다."},
+      returnContext:{surface:"workbench",previewIndex:null,workIndex:state.workIndex,focusTarget:`work-rule-${key}`,scrollTarget:null,reopenDrawer:false,previewMode:state.workMode,workTab:state.workTab},
+      availableScopes:["default"]
+    }));
+  }
+  function highlightWorkbenchRule(key){
+    state.workRuleHighlight=key;renderWorkMappings();
+    const row=$(`work-rule-${key}`);row?.scrollIntoView({block:"center"});
+    const control=row?.querySelector("select");if(control)control.focus();
+    setTimeout(()=>{if(state.workRuleHighlight===key){state.workRuleHighlight=null;renderWorkMappings()}},2400);
+  }
+
+  document.querySelectorAll("[data-nav]").forEach(button=>button.addEventListener("click",()=>{
+    closeObjectMenu();
+    if(button.dataset.nav==="library"){state.libraryScroll=window.scrollY;renderLibrary();showScreen("library")}
+    else{showScreen("data");renderScenario()}
+  }));
+  $("scenarioSelect").addEventListener("change",event=>{
+    state.scenario=event.target.value;state.document=state.scenario==="customer"?null:"salary";state.catalogOpen=false;
+    state.runOverrides={};state.appliedMarkers={};state.result=null;state.search="";$("recordSearch").value="";$("dataNotice").hidden=true;$("runResultPanel").classList.remove("on");
+    defaultSelection();invalidateExecutionEvidence();renderScenario();requestValidation();
+  });
+  $("outcomeSelect").addEventListener("change",event=>{state.outcome=event.target.value;toast(`${prototypeOutcomes[state.outcome].label}: ${prototypeOutcomes[state.outcome].description}`)});
+  $("recordSearch").addEventListener("input",event=>{state.search=event.target.value;renderRecords();renderRunState()});
+  $("recordBody").addEventListener("click",event=>{
+    if(event.target.matches("input[type=checkbox]"))return;
+    const row=event.target.closest("tr[data-id]");if(!row)return;const id=Number(row.dataset.id);
+    state.selected.has(id)?state.selected.delete(id):state.selected.add(id);invalidateExecutionEvidence();renderRecords();renderRunState();requestValidation();
+  });
+  $("recordBody").addEventListener("change",event=>{
+    if(!event.target.matches("input[type=checkbox]"))return;
+    const id=Number(event.target.closest("tr[data-id]").dataset.id);event.target.checked?state.selected.add(id):state.selected.delete(id);
+    invalidateExecutionEvidence();renderRecords();renderRunState();requestValidation();
+  });
+  $("recordHead").addEventListener("change",event=>{
+    if(event.target.id!=="selectAll")return;activeRecords().forEach(record=>event.target.checked?state.selected.add(record.id):state.selected.delete(record.id));
+    invalidateExecutionEvidence();renderRecords();renderRunState();requestValidation();
+  });
+  $("documentList").addEventListener("click",event=>{
+    const select=event.target.closest("[data-select-document]"),menu=event.target.closest("[data-document-menu]");
+    if(select){selectRunDocument(select.dataset.selectDocument);return}
+    if(menu){const id=menu.dataset.documentMenu;if(!$("objectMenu").hidden&&state.objectMenuDocument===id){closeObjectMenu({restoreFocus:true});return}closeObjectMenu();openObjectMenu(id,menu)}
+  });
+  $("objectMenu").addEventListener("click",event=>{const item=event.target.closest("[data-menu-section]");if(item)openMenuEditor(item.dataset.menuSection)});
+  $("chooseDocumentButton").addEventListener("click",()=>{state.catalogOpen=true;renderDocumentList();$("documentList").querySelector("[data-select-document]")?.focus()});
+  $("compatPrimary").addEventListener("click",()=>{
+    if(state.scenario==="newField")openNewFieldEditor();
+    else if(state.scenario==="missing")openMissingFieldEditor();
+    else if(state.scenario==="customer"&&state.document)openWorkEditor(makeContext({documentId:state.document,section:"binding",target:{kind:"none",id:null},entryReason:"voluntary",evidence:{},returnContext:dataReturnContext("compatNote"),availableScopes:["default"]}));
+  });
+  $("compatSecondary").addEventListener("click",()=>{
+    if(state.scenario==="newField"){
+      state.schemaSuggestionDismissed.add("newField:salary:performanceBonus");notice("dataNotice","새 ‘성과급’ 추천을 이번 분석에서 숨겼습니다. 기존 Binding은 바뀌지 않았고 실행을 차단하지 않습니다.");renderScenario();requestValidation();
+    }else if(state.scenario==="missing"){$("sourceRepairDialog").showModal();$("closeSourceRepair").focus()}
+    else if(state.scenario==="customer"){state.document=null;state.catalogOpen=true;renderScenario()}
+  });
+  $("previewButton").addEventListener("click",()=>openPreviewDrawer());
+  $("primaryRunButton").addEventListener("click",()=>{
+    if(state.preview.required&&!state.preview.approved)openPreviewDrawer();
+    else if(docs[state.document]?.mode==="workbench")setupWorkbench();
+    else executeDocuments();
+  });
+  $("cancelRunButton").addEventListener("click",()=>{actions.cancelRun();$("runProgressTitle").textContent="취소를 요청했습니다.";$("runProgressDetail").textContent="현재 문서를 마친 뒤 남은 항목을 중단합니다."});
+  $("runResultBody").addEventListener("click",event=>{
+    const action=event.target.closest("[data-result-action]")?.dataset.resultAction;if(!action)return;
+    if(action==="dismiss"){state.result=null;$("runResultPanel").classList.remove("on");renderWorkflowStrip()}
+    else if(action==="inspect-unknown")inspectUnknownFailure();
+    else openResultEditor(action);
+  });
+
+  $("librarySearch").addEventListener("input",event=>{state.librarySearch=event.target.value;renderLibrary()});
+  $("workLibrary").addEventListener("click",event=>{
+    const button=event.target.closest("[data-open-library-work]");if(!button)return;const docId=button.dataset.openLibraryWork;
+    openWorkEditor(makeContext({documentId:docId,section:"template",target:{kind:"none",id:null},entryReason:"library",evidence:{},returnContext:libraryReturnContext(docId),availableScopes:["default","fork"]}));
+  });
+  $("newWorkButton").addEventListener("click",()=>{$("newWorkDialog").showModal();$("closeNewWorkDialog").focus()});
+
+  document.querySelectorAll("[data-editor-tab]").forEach(button=>button.addEventListener("click",()=>{
+    state.editContext.section=button.dataset.editorTab;
+    if(state.editContext.target.id&&((state.editContext.target.kind==="field"||state.editContext.target.kind==="calculation")!==(button.dataset.editorTab==="binding")))state.editContext.target={kind:"none",id:null};
+    renderEditor();
+  }));
+  $("editorBack").addEventListener("click",cancelEditor);$("contextReturnButton").addEventListener("click",cancelEditor);$("cancelEditor").addEventListener("click",cancelEditor);$("applyEditor").addEventListener("click",applyEditorChange);
+  $("mappingList").addEventListener("change",event=>{
+    const row=event.target.closest("[data-field-id]");if(!row)return;
+    const key=row.dataset.fieldId,field=fieldDef(state.editContext.documentId,key),draft=state.editorDraft.binding[key],kind=event.target.dataset.editorKind;
+    if(kind==="source"){
+      draft.source=event.target.value;draft.type=inferType(draft.source,field);draft.typeSource="inferred";draft.format=recommendedFormat(draft.type,draft.source);delete draft.suggested;delete draft.missingSource;
+    }else if(kind==="type"){draft.type=event.target.value;draft.typeSource="user";draft.format=recommendedFormat(draft.type,draft.source)}
+    else if(kind==="format")draft.format=event.target.value;
+    markEditorDirty(field.calc?"calculation":"field",key);renderMappings();renderTestPanel();
+  });
+  $("mappingList").addEventListener("input",event=>{
+    if(event.target.dataset.editorKind!=="constant")return;const row=event.target.closest("[data-field-id]");
+    state.editorDraft.binding[row.dataset.fieldId].constant=event.target.value;markEditorDirty("field",row.dataset.fieldId);renderMappings();
+  });
+  $("autoMapButton").addEventListener("click",()=>{
+    let count=0;fieldDefs[state.editContext.documentId].forEach(field=>{
+      const draft=state.editorDraft.binding[field.key];if(draft.source||field.calc)return;
+      const match=columns().find(column=>column.key===field.key);if(match){draft.source=match.key;draft.type=inferType(match.key,field);draft.typeSource="inferred";draft.format=recommendedFormat(draft.type,match.key);count++}
+    });
+    if(count)markEditorDirty("field",state.editContext.target.id||fieldDefs[state.editContext.documentId][0].key);
+    renderMappings();toast(count?`빈 필드 ${count}개에만 추천을 적용했습니다.`:"추천할 빈 필드가 없습니다.");
+  });
+  ["executionMode","filenamePattern","outputLocation","collisionPolicy"].forEach(id=>{
+    const eventName=id==="filenamePattern"||id==="outputLocation"?"input":"change";
+    $(id).addEventListener(eventName,event=>{
+      const key={executionMode:"mode",filenamePattern:"filenamePattern",outputLocation:"outputLocation",collisionPolicy:"collisionPolicy"}[id];
+      state.editorDraft.execution[key]=event.target.value;markEditorDirty("rule",key);renderExecutionPanel();renderTestPanel();
+    });
+  });
+  $("simulateExternalEditButton").addEventListener("click",analyzeTemplateCandidate);$("editorPreviewButton").addEventListener("click",createEditorPreview);
+
+  $("scrim").addEventListener("click",closePreview);$("closePreview").addEventListener("click",closePreview);$("drawerBack").addEventListener("click",closePreview);
+  $("previewPrev").addEventListener("click",()=>{state.previewIndex=Math.max(0,state.previewIndex-1);renderPreview()});
+  $("previewNext").addEventListener("click",()=>{state.previewIndex=Math.min(selectedRecords().length-1,state.previewIndex+1);renderPreview()});
+  $("previewContent").addEventListener("click",event=>{const button=event.target.closest("[data-preview-edit]");if(button)openWorkEditor(previewEditContext(button.dataset.previewEdit))});
+  $("approvePreviewButton").addEventListener("click",approvePreview);$("generateButton").addEventListener("click",()=>executeDocuments({fromDrawer:true}));
+  $("cancelDrawerRunButton").addEventListener("click",()=>{actions.cancelRun();$("previewState").textContent="취소를 요청했습니다. 현재 문서를 마친 뒤 남은 항목을 중단합니다."});
+  $("resolvePreviewFailureButton").addEventListener("click",()=>{closePreview();state.result={error:state.preview.error||new Error("미리보기 단계 실패")};renderRunResult();inspectUnknownFailure()});
+
+  $("workbenchBack").addEventListener("click",()=>showScreen("data"));
+  $("workPrev").addEventListener("click",()=>{state.workIndex=Math.max(0,state.workIndex-1);renderWorkbench()});$("workNext").addEventListener("click",()=>{state.workIndex=Math.min(state.workRecords.length-1,state.workIndex+1);renderWorkbench()});
+  $("queueDots").addEventListener("click",event=>{const dot=event.target.closest("[data-work-index]");if(!dot)return;state.workIndex=Number(dot.dataset.workIndex);renderWorkbench()});
+  $("copyButton").addEventListener("click",copyCurrent);$("saveDraftButton").addEventListener("click",saveWorkbenchDraft);$("persistWorkbenchRule").addEventListener("click",persistWorkbenchRule);
+  $("workMappings").addEventListener("change",event=>{
+    const row=event.target.closest("[data-key]");if(!row)return;const key=row.dataset.key;markCopiedForReview();
+    if(event.target.dataset.workKind==="source")state.workBindings[key]=event.target.value;else if(event.target.dataset.workKind==="format")state.workFormats[key]=event.target.value;
+    state.workSessionDirty=true;state.workLastChanged=key;renderWorkbench();
+  });
+  $("workMappings").addEventListener("input",event=>{
+    if(event.target.dataset.workKind!=="constant")return;const key=event.target.closest("[data-key]").dataset.key;
+    state.workConstants[key]=event.target.value;markCopiedForReview();state.workSessionDirty=true;state.workLastChanged=key;renderWorkText();$("persistWorkbenchRule").disabled=false;
+  });
+  $("textPreview").addEventListener("click",event=>{const target=event.target.closest("[data-work-result-target]");if(target)highlightWorkbenchRule(target.dataset.workResultTarget)});
+  document.querySelectorAll("[data-preview-mode]").forEach(button=>button.addEventListener("click",()=>{state.workMode=button.dataset.previewMode;document.querySelectorAll("[data-preview-mode]").forEach(item=>item.classList.toggle("on",item===button));renderWorkText()}));
+  document.querySelectorAll("[data-work-tab]").forEach(button=>button.addEventListener("click",()=>{
+    state.workTab=button.dataset.workTab;
+    document.querySelectorAll("[data-work-tab]").forEach(item=>item.classList.toggle("on",item===button));
+    document.querySelectorAll("[data-work-panel]").forEach(panel=>panel.classList.toggle("mobile-on",panel.dataset.workPanel===state.workTab));
+  }));
+  $("fontSelect").addEventListener("change",renderWorkText);
+
+  $("closeSourceRepair").addEventListener("click",()=>$("sourceRepairDialog").close());
+  $("closeFailureInspector").addEventListener("click",()=>$("failureInspectorDialog").close());
+  $("closeNewWorkDialog").addEventListener("click",()=>$("newWorkDialog").close());
+  $("closeForkDialog").addEventListener("click",()=>$("forkDialog").close());
+  $("helpButton").addEventListener("click",()=>{
+    const labels={supported:"지원",composed:"조합",unsupported:"미지원",deferred:"연기",removed:"제거"};
+    $("capabilityList").innerHTML=Object.entries(capabilities).map(([key,item])=>`<div class="capability-row"><strong>${esc(key)}<span class="capability-status">${labels[item.status]}</span></strong><p>${esc(item.reason||item.operations?.join(" + ")||"")}</p></div>`).join("");
+    $("capabilityDialog").showModal();$("closeCapabilityDialog").focus();
+  });
+  $("closeCapabilityDialog").addEventListener("click",()=>$("capabilityDialog").close());
+  document.addEventListener("click",event=>{if(!$("objectMenu").hidden&&!event.target.closest("#objectMenu")&&!event.target.closest("[data-document-menu]"))closeObjectMenu()});
+  document.addEventListener("keydown",event=>{
+    if(event.key!=="Escape")return;
+    if(state.previewOpen){event.preventDefault();closePreview()}
+    else if(!$("objectMenu").hidden){event.preventDefault();closeObjectMenu({restoreFocus:true})}
+    else if(state.view==="editor"&&!document.querySelector("dialog[open]")){event.preventDefault();cancelEditor()}
+  });
+
+  renderScenario();renderLibrary();renderWorkflowStrip();requestValidation();
+})();
+</script>
+</body>
+</html>

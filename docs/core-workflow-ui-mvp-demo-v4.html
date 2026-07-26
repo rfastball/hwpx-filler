@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>문서나르미 · 편집 워크플로 시안 v4</title>
+<link rel="stylesheet" href="core-workflow-prototype/v4.css">
+</head>
+<body>
+<div class="app">
+  <header class="topbar" id="topbar">
+    <div class="brand"><span class="brand-mark">나</span><span>문서나르미</span></div>
+    <nav class="nav" aria-label="주요 화면">
+      <button type="button" data-nav="data" aria-current="page">문서 만들기</button>
+      <button type="button" data-nav="library" aria-current="false">문서 작업</button>
+    </nav>
+    <button class="icon-button" type="button" id="helpButton" aria-label="지원 범위 보기">?</button>
+  </header>
+
+  <main class="workspace" id="workspace">
+    <section class="screen on" id="screen-data" aria-labelledby="dataTitle">
+      <div class="page-head">
+        <div><p class="eyebrow">문서 만들기 <span class="badge">인터랙티브 시안 v4</span></p><h1 id="dataTitle">데이터에서 처리할 항목을 고르세요</h1><p>증거를 정확한 한 규칙으로 가져가 고친 뒤, 같은 업무 위치로 돌아옵니다.</p></div>
+        <div class="pickers">
+          <label><span>데이터 상태</span><select id="scenarioSelect"><option value="normal">정상 직원 데이터</option><option value="newField">새 성과급 열</option><option value="missing">필수 성명 열 누락</option><option value="customer">고객 데이터 · 새 작업</option></select></label>
+          <label><span>mock 처리 결과</span><select id="outcomeSelect"><option value="success">정상 처리</option><option value="partialResult">일부 실패 · 이름 충돌</option><option value="processingFailure">전체 실패 · 원인 미확정</option><option value="saveFailure">규칙 저장 실패</option></select></label>
+        </div>
+      </div>
+      <div class="workflow-strip" role="status" aria-live="polite"><span class="dot"></span><strong id="workflowState">검증 중</strong><span id="workflowMessage">현재 선택을 자동 검증합니다.</span></div>
+      <div class="notice" id="dataNotice" hidden></div>
+      <section class="result-panel" id="resultPanel" aria-live="polite" aria-labelledby="resultTitle" hidden>
+        <div class="section-head"><div><p class="eyebrow">처리 결과</p><h2 id="resultTitle">처리 결과</h2></div><button class="button" id="closeResult" type="button">결과 닫기</button></div>
+        <div id="resultBody"></div>
+      </section>
+      <div class="data-grid">
+        <section class="card">
+          <div class="file-head"><div class="file-icon">XLSX</div><div><h2 id="fileName">7월_급여자료.xlsx</h2><p id="fileMeta">직원 5건</p></div><span class="status" id="fileStatus">분석됨</span></div>
+          <section class="evidence-card" id="compatNote" aria-labelledby="compatTitle">
+            <h3 id="compatTitle">변경 증거</h3><p id="compatText"></p>
+            <div class="actions"><button class="button primary" type="button" id="compatPrimary">정확한 규칙 열기</button><button class="button" type="button" id="compatSecondary">다른 해결 방법</button></div>
+          </section>
+          <div class="table-tools"><div><strong id="selectionTitle">5건 선택</strong><span id="selectionType">직원 5명</span></div><input id="recordSearch" type="search" placeholder="항목 검색" aria-label="항목 검색"></div>
+          <div class="table-wrap"><table><thead id="recordHead"></thead><tbody id="recordBody"></tbody></table></div>
+        </section>
+        <aside class="card side-card" id="documentSideCard">
+          <div class="section-head"><div><h2 id="workChooserTitle">이 데이터로 할 수 있는 문서 작업</h2><p>목록 조회는 실행 문서 선택을 바꾸지 않습니다.</p></div><span class="status ready" id="workCount">3건 준비됨</span></div>
+          <div class="empty" id="customerEmpty" hidden><strong>저장된 연결과 일치하는 작업이 없습니다.</strong><p>기존 급여명세서를 덮어쓰지 않고 새 작업 identity를 만듭니다.</p><button class="button primary" type="button" id="startNewWork">이 데이터로 새 문서 작업 만들기</button></div>
+          <div class="work-list" id="workList"></div>
+          <div class="object-menu" id="objectMenu" role="menu" hidden></div>
+          <div class="validation" id="validationCard" data-state="pending"><span id="validationMark">…</span><div><strong id="validationTitle">검증 중</strong><p id="validationText">선택한 작업과 데이터를 확인합니다.</p></div></div>
+          <div class="run-actions"><button class="button" id="previewButton" type="button">미리보기</button><button class="button primary" id="runButton" type="button" disabled>5개 생성</button></div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="screen" id="screen-library" aria-labelledby="libraryTitle">
+      <div class="page-head"><div><p class="eyebrow">문서 작업</p><h1 id="libraryTitle">저장된 문서 작업</h1><p>여기서 다른 작업을 열어도 문서 만들기의 선택과 승인 상태는 유지됩니다.</p></div><button class="button" id="libraryNewWork" type="button">새 문서 작업</button></div>
+      <div class="notice" id="libraryNotice" hidden></div>
+      <input class="library-search" id="librarySearch" type="search" placeholder="문서 작업 검색" aria-label="문서 작업 검색">
+      <div class="library-grid" id="libraryGrid"></div>
+    </section>
+
+    <section class="screen" id="screen-editor" aria-labelledby="editorTitle">
+      <div class="editor-shell">
+        <button class="back" type="button" id="editorBack">← 원래 업무로 돌아가기</button>
+        <div class="page-head"><div><p class="eyebrow">문서 작업 편집기</p><h1 id="editorTitle">급여명세서</h1><p id="editorSubtitle"></p></div><span class="save-state" id="saveState">저장됨</span></div>
+        <div class="editor-tabs" role="tablist" aria-label="문서 작업 편집 영역">
+          <button type="button" role="tab" data-tab="template" aria-controls="panel-template">템플릿</button>
+          <button type="button" role="tab" data-tab="binding" aria-controls="panel-binding">필드 연결·표시</button>
+          <button type="button" role="tab" data-tab="filename" aria-controls="panel-filename">파일 이름</button>
+          <button type="button" role="tab" data-tab="test" aria-controls="panel-test">시험</button>
+        </div>
+        <section class="context-banner" id="contextBanner" aria-labelledby="contextTitle" hidden>
+          <div class="section-head"><div><h2 id="contextTitle">미리보기에서 열었습니다.</h2><p id="contextMessage"></p></div><button class="button" id="contextReturn" type="button">미리보기로 돌아가기</button></div>
+          <div class="evidence-grid" id="evidenceGrid"></div>
+        </section>
+        <div class="notice" id="editorNotice" role="status" aria-live="polite" hidden></div>
+        <section class="card editor-card">
+          <div class="editor-panel" id="panel-template" role="tabpanel">
+            <div class="template-grid"><div class="template-paper"><p id="templateKicker">HWPX 구조 개요</p><h2 id="templateName">급여명세서</h2><div id="templateTokens"></div></div><div><h2>템플릿</h2><p id="templateBoundary"></p><button class="button" id="templateInspect" type="button">외부 편집 뒤 변경 확인</button><div class="boundary"><strong>지원 경계</strong><p>시안은 파일이나 외부 앱을 열지 않습니다. 실제 위치를 모르는 문단 좌표도 만들지 않습니다.</p></div><div class="candidate" id="templateCandidate" hidden></div></div></div>
+          </div>
+          <div class="editor-panel" id="panel-binding" role="tabpanel">
+            <div class="section-head panel-pad"><div><h2>필드 연결과 표시 규칙</h2><p>이번 진입에서 바꾸는 필드만 patch에 담습니다.</p></div><button class="button" id="recommendButton" type="button">연결되지 않은 필드 추천</button></div>
+            <div class="mapping-head"><span>문서 필드</span><span>데이터 항목</span><span>값 유형</span><span>표시형</span><span>지금 결과</span></div>
+            <div id="mappingList"></div>
+          </div>
+          <div class="editor-panel" id="panel-filename" role="tabpanel">
+            <div class="panel-pad"><h2>파일 이름 규칙</h2><p>HWPX 작업의 영구 규칙입니다. 이번 생성에서만 쓸 값은 별도 override로 보관합니다.</p>
+              <label class="form-field" data-rule-id="filenamePattern"><span>파일 이름</span><input id="filenamePattern" type="text"><small id="filenameExample"></small></label>
+              <div class="boundary"><strong>사용할 수 있는 토큰</strong><p id="filenameTokens">{성명}</p></div>
+            </div>
+          </div>
+          <div class="editor-panel" id="panel-test" role="tabpanel">
+            <div class="panel-pad"><div class="section-head"><div><h2>변경 영향과 시험</h2><p>판본 저장, 실행 검증, 미리보기 생성, 승인은 서로 다른 사건입니다.</p></div><button class="button" id="testPreview" type="button">이 변경으로 미리보기 만들기</button></div>
+              <div class="metrics"><div><span>현재 validation</span><strong id="testValidation">검증 완료</strong></div><div><span>Template revision</span><strong id="testTemplate">r1</strong></div><div><span>Binding revision</span><strong id="testBinding">r1</strong></div><div><span>미리보기 생성</span><strong id="testCreated">아직 없음</strong></div><div><span>미리보기 승인</span><strong id="testApproved">승인 안 됨</strong></div></div>
+              <div class="sample"><strong>대표 샘플</strong><p id="testSample"></p></div>
+            </div>
+          </div>
+          <footer class="editor-footer">
+            <div class="scope-copy"><strong id="scopeTitle">변경 범위</strong><p id="scopeHelp">현재 patch와 진입 문맥에 맞는 행동만 제공합니다.</p></div>
+            <button class="button" id="cancelEdit" type="button">취소</button><button class="button" id="secondaryApply" type="button" hidden></button><button class="button primary" id="primaryApply" type="button" disabled></button>
+          </footer>
+        </section>
+      </div>
+    </section>
+
+    <section class="screen workbench-screen" id="screen-workbench" aria-labelledby="workbenchTitle">
+      <header class="workbench-head"><button class="back" id="workbenchBack" type="button">← 문서 만들기</button><div><h1 id="workbenchTitle">발주 요청문 · 검토·복사</h1><p>오른쪽 결과를 누르면 왼쪽의 소유 규칙을 강조합니다.</p></div><div class="work-stats"><span>작업점 <strong id="workPosition">1 / 3</strong></span><span>복사 완료 <strong id="copyCount">0 / 3</strong></span></div></header>
+      <div class="workbench-body">
+        <section class="work-left"><div class="section-head"><div><h2>필드 연결·표시</h2><p>세션 조정은 기본 규칙과 분리됩니다.</p></div><div><span class="status info" id="sessionStatus">이번 작업에만 적용 중</span><button class="button" id="persistWorkPatch" type="button" disabled>기본 규칙으로 저장…</button></div></div><div id="workMappings"></div></section>
+        <section class="work-right"><div class="work-toolbar"><button class="button" data-work-mode="filled" type="button">채운 모습</button><button class="button" data-work-mode="raw" type="button">원문</button></div><div class="review-state" id="reviewState"></div><article class="text-preview" id="workPreview"></article></section>
+      </div>
+      <footer class="work-footer"><label><input type="checkbox" id="autoAdvance"> 복사 후 다음 항목으로 이동</label><span></span><button class="button" id="workPrev" type="button">이전</button><button class="button" id="workNext" type="button">다음</button><button class="button primary" id="copyRecord" type="button">복사</button></footer>
+    </section>
+  </main>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="previewDrawer" role="dialog" aria-modal="true" aria-labelledby="previewTitle" aria-hidden="true" inert>
+  <header class="drawer-head"><div><p class="eyebrow">대표 샘플</p><h2 id="previewTitle">생성 값 미리보기</h2></div><div class="preview-nav"><button class="icon-button" id="previewPrev" type="button" aria-label="이전 레코드">‹</button><strong id="previewPosition">1 / 5</strong><button class="icon-button" id="previewNext" type="button" aria-label="다음 레코드">›</button></div><button class="icon-button" id="closePreview" type="button" aria-label="미리보기 닫기">×</button></header>
+  <div class="drawer-body"><div class="preview-state" id="previewState" role="status"></div><article class="preview-card" id="previewContent"></article></div>
+  <footer class="drawer-footer"><div><span>현재 파일 이름</span><strong id="drawerFilename"></strong></div><div><span>적용 범위</span><strong id="drawerScope">기본 규칙</strong></div><div class="drawer-actions"><button class="button" id="drawerBack" type="button">뒤로</button><button class="button" id="approvePreview" type="button" hidden>결과 확인 완료</button><button class="button primary" id="drawerRun" type="button">5개 생성</button></div></footer>
+</aside>
+
+<dialog id="sectionGuardDialog" aria-labelledby="sectionGuardTitle"><form method="dialog" class="dialog-card"><h2 id="sectionGuardTitle">현재 변경을 먼저 정리하세요</h2><p id="sectionGuardSummary"></p><div class="dialog-actions"><button class="button" value="stay">여기에 머무르기</button><button class="button" value="discard">변경 버리기</button><button class="button primary" value="apply">현재 변경 적용</button></div></form></dialog>
+<dialog id="confirmDefaultDialog" aria-labelledby="confirmDefaultTitle"><form method="dialog" class="dialog-card"><h2 id="confirmDefaultTitle">기본 규칙으로 저장할까요?</h2><p id="confirmDefaultSummary"></p><div class="dialog-actions"><button class="button" value="cancel">취소</button><button class="button primary" value="confirm">기본 규칙으로 저장</button></div></form></dialog>
+<dialog id="sourceBoundaryDialog" aria-labelledby="sourceBoundaryTitle"><form method="dialog" class="dialog-card"><h2 id="sourceBoundaryTitle">원본 파일에서 수정</h2><p>현재 선택과 실행 문맥은 유지됩니다. 이 시안은 원본 파일을 직접 바꾸지 않습니다. 외부에서 ‘성명’ 열을 복구한 뒤 다시 분석해야 하며, 지금 상태를 준비 완료로 바꾸지 않습니다.</p><div class="dialog-actions"><button class="button primary" value="close">현재 상태로 돌아가기</button></div></form></dialog>
+<dialog id="newWorkDialog" aria-labelledby="newWorkTitle"><form method="dialog" class="dialog-card"><h2 id="newWorkTitle">고객 데이터용 새 문서 작업</h2><p>새 identity를 만든 뒤 현재 레코드 선택을 유지하고 검증합니다.</p><label class="form-field"><span>작업 이름</span><input id="newWorkName" value="고객 급여 안내문"></label><label class="form-field"><span>템플릿</span><select id="newWorkTemplate"><option value="salary">급여명세서 HWPX</option><option value="employment">재직증명서 HWPX</option></select></label><div class="dialog-actions"><button class="button" value="cancel">취소</button><button class="button primary" id="continueNewWork" value="continue">필드 연결 편집</button></div></form></dialog>
+<dialog id="workPatchDialog" aria-labelledby="workPatchTitle"><form method="dialog" class="dialog-card"><h2 id="workPatchTitle">기본 규칙으로 저장</h2><p>이번 세션에서 바꾼 항목만 새 Binding revision에 저장합니다.</p><ul id="workPatchList"></ul><div class="dialog-actions"><button class="button" value="cancel">취소</button><button class="button primary" value="confirm">저장하고 재검증</button></div></form></dialog>
+<dialog id="unknownFailureDialog" aria-labelledby="unknownFailureTitle"><form method="dialog" class="dialog-card"><h2 id="unknownFailureTitle">처리 실패 증거</h2><p>원인 진단 미연결 · 확인 가능한 사실만 표시합니다.</p><dl id="unknownEvidence"></dl><div class="dialog-actions"><button class="button primary" value="close">결과로 돌아가기</button></div></form></dialog>
+<dialog id="runtimeFolderDialog" aria-labelledby="runtimeFolderTitle"><form method="dialog" class="dialog-card"><h2 id="runtimeFolderTitle">다른 폴더에서 다시 시도</h2><p>이 시안은 실제 폴더 선택과 파일 저장을 지원하지 않습니다. 성공한 4건은 그대로 보존됩니다.</p><div class="dialog-actions"><button class="button primary" value="close">실패 결과로 돌아가기</button></div></form></dialog>
+<dialog id="deferredDialog" aria-labelledby="deferredTitle"><form method="dialog" class="dialog-card"><h2 id="deferredTitle">후속 지원 범위</h2><p id="deferredText"></p><div class="dialog-actions"><button class="button primary" value="close">확인</button></div></form></dialog>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="core-workflow-prototype/contracts.js"></script>
+<script src="core-workflow-prototype/mock-backend.js"></script>
+<script src="core-workflow-prototype/v4.js"></script>
+</body>
+</html>

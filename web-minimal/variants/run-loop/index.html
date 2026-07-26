@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>문서나르미 · 최소 실행 루프</title>
+  <link rel="stylesheet" href="../../shared/lab.css">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="prototype-shell">
+    <header class="topbar">
+      <a class="brand" href="#" id="brandHome" aria-label="문서나르미 실행 처음으로">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i></span>
+        <span>문서나르미</span>
+      </a>
+      <span class="lab-badge">실행 루프 시안</span>
+    </header>
+
+    <main id="ui-lab-root">
+      <section class="start-view" id="startView" aria-labelledby="startTitle">
+        <div class="start-copy">
+          <p class="eyebrow">새 실행</p>
+          <h1 id="startTitle">데이터에서 시작하세요.</h1>
+          <p>행을 고르고 저장된 레시피를 적용해 결과까지 확인합니다.</p>
+          <button class="button primary large" id="openDemoBtn" type="button">
+            예제 데이터 열기
+          </button>
+          <p class="prototype-note">이 시안은 실제 파일을 만들지 않습니다.</p>
+        </div>
+        <div class="start-illustration" aria-hidden="true">
+          <div class="data-sheet">
+            <span></span><span></span><span></span>
+            <span></span><span></span><span></span>
+            <span></span><span></span><span></span>
+          </div>
+          <div class="flow-line"></div>
+          <div class="document-sheet">
+            <span></span><span></span><span></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="workspace-view" id="workspaceView" hidden aria-labelledby="workspaceTitle">
+        <header class="workspace-head">
+          <div>
+            <p class="eyebrow">실행 준비</p>
+            <h1 id="workspaceTitle">신규 임용자.xlsx</h1>
+            <p class="source-meta">인사 시트 · 데이터 4건</p>
+          </div>
+          <button class="button quiet" id="changeDataBtn" type="button">데이터 바꾸기</button>
+        </header>
+
+        <div class="workspace-grid">
+          <section class="data-panel" aria-labelledby="rowsTitle">
+            <div class="section-head">
+              <div>
+                <h2 id="rowsTitle">만들 행</h2>
+                <p>필요한 행만 선택하세요.</p>
+              </div>
+              <strong id="selectionCount" aria-live="polite">선택 0/4</strong>
+            </div>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col" class="check-column"><span class="sr-only">선택</span></th>
+                    <th scope="col">이름</th>
+                    <th scope="col">부서</th>
+                    <th scope="col">직위</th>
+                    <th scope="col">임용일</th>
+                  </tr>
+                </thead>
+                <tbody id="dataTableBody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <aside class="recipe-panel" aria-labelledby="recipeTitle">
+            <div class="section-head compact">
+              <div>
+                <span class="step-number">1</span>
+                <h2 id="recipeTitle">레시피</h2>
+              </div>
+            </div>
+
+            <button class="recipe-choice" id="recipeChoice" type="button" aria-pressed="false">
+              <span class="file-icon" aria-hidden="true">한</span>
+              <span class="recipe-copy">
+                <strong>신규 임용 통지서</strong>
+                <small>HWPX · 필드 4개</small>
+              </span>
+              <span class="choice-indicator" aria-hidden="true"></span>
+            </button>
+
+            <div class="preview-block" id="previewBlock">
+              <div class="section-head compact">
+                <div>
+                  <span class="step-number">2</span>
+                  <h2>들어갈 값</h2>
+                </div>
+                <span class="ready-count" id="readyCount">대기</span>
+              </div>
+              <div class="preview-empty" id="previewEmpty">
+                행과 레시피를 고르면 첫 문서의 값을 보여 줍니다.
+              </div>
+              <dl class="field-preview" id="fieldPreview" hidden></dl>
+            </div>
+          </aside>
+        </div>
+
+        <footer class="actionbar">
+          <div>
+            <strong id="actionSummary">행을 선택하세요.</strong>
+            <span id="actionDetail">데이터 전체가 자동으로 선택되지 않습니다.</span>
+          </div>
+          <button class="button primary" id="runButton" type="button" disabled>
+            문서 만들기
+          </button>
+        </footer>
+      </section>
+
+      <section class="receipt-view" id="receiptView" hidden aria-labelledby="receiptTitle">
+        <div class="receipt-card">
+          <div class="success-mark" aria-hidden="true">✓</div>
+          <p class="eyebrow">실행 결과</p>
+          <h1 id="receiptTitle">행동 루프를 완료했습니다.</h1>
+          <p class="receipt-summary" id="receiptSummary"></p>
+
+          <div class="receipt-evidence">
+            <div>
+              <span>데이터</span>
+              <strong>신규 임용자.xlsx · 인사 시트</strong>
+            </div>
+            <div>
+              <span>레시피</span>
+              <strong>신규 임용 통지서</strong>
+            </div>
+            <div>
+              <span>확인</span>
+              <strong id="verifiedSummary"></strong>
+            </div>
+          </div>
+
+          <ul class="output-list" id="outputList" aria-label="결과 문서"></ul>
+
+          <p class="simulation-note">UI 시연이므로 실제 HWPX 파일은 생성하지 않았습니다.</p>
+          <button class="button primary" id="restartBtn" type="button">새 실행</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="../../shared/bootstrap.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

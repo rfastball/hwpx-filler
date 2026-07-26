@@ -1,0 +1,637 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>문서나르미 · 핵심 워크플로 MVP</title>
+<link rel="stylesheet" href="../web/css/tokens.css">
+<style>
+@font-face{font-family:"Pretendard GOV Variable";src:url("../web/fonts/PretendardGOVVariable.woff2") format("woff2");font-weight:100 900;font-display:swap}
+:root{
+  /* 제품 정본 토큰을 그대로 소비하고, 이 시안 안에서만 쓰는 역할 이름으로 별칭한다. */
+  --primary:var(--a-primary);--primary-hover:var(--a-primary-h);--primary-tint:var(--a-sel);
+  --primary-line:color-mix(in srgb,var(--a-primary) 35%,var(--a-border));
+  --ink:var(--a-ink);--soft:var(--n-ink-soft);--muted:var(--a-muted);--window:var(--a-window);
+  --card:var(--a-card);--surface:var(--n-surface-alt);--border:var(--a-border);
+  --border-strong:var(--n-border-strong);--ok:var(--a-ok);--ok-bg:var(--fb-fill-bg);
+  --warn:var(--a-warn);--warn-bg:var(--fb-blank-bg);--danger:var(--a-danger);
+  --danger-bg:var(--fb-missing-bg);--shadow:0 18px 48px var(--a-shadow);--radius:var(--rad-overlay)
+}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;background:var(--window);color:var(--ink);font:var(--fs-body)/1.5 "Pretendard GOV Variable","Malgun Gothic",system-ui,sans-serif}
+button,input,select{font:inherit}button{cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
+.app{min-height:100%;display:grid;grid-template-rows:64px 1fr}
+.topbar{position:sticky;top:0;z-index:20;display:grid;grid-template-columns:minmax(180px,1fr) auto minmax(180px,1fr);align-items:center;padding:0 28px;background:color-mix(in srgb,var(--a-card) 94%,transparent);backdrop-filter:blur(14px);border-bottom:1px solid var(--border)}
+.brand{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:800;letter-spacing:-.02em}.brand img{width:26px;height:26px}
+.nav{display:flex;align-self:stretch;gap:6px}.nav button{position:relative;border:0;background:transparent;color:var(--soft);padding:0 18px;font-weight:650}.nav button:hover{color:var(--ink)}.nav button[aria-current="page"]{color:var(--primary)}.nav button[aria-current="page"]::after{content:"";position:absolute;left:16px;right:16px;bottom:0;height:3px;border-radius:3px 3px 0 0;background:var(--primary)}
+.top-actions{display:flex;justify-content:flex-end;align-items:center;gap:8px}.icon-btn{width:34px;height:34px;border:1px solid var(--border);border-radius:9px;color:var(--soft);background:var(--card);font-weight:800}
+.workspace{width:min(1240px,calc(100% - 48px));margin:0 auto;padding:28px 0 48px}.screen{display:none}.screen.on{display:block;animation:screen-in .18s ease-out}@keyframes screen-in{from{opacity:.5;transform:translateY(4px)}}
+.page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:20px}.eyebrow{margin:0 0 4px;color:var(--primary);font-size:12px;font-weight:800;letter-spacing:.06em}
+h1,h2,h3,p{margin:0}h1{font-size:25px;line-height:1.25;letter-spacing:-.025em}.subtitle{margin-top:6px;color:var(--muted)}
+.button{min-height:38px;border:1px solid var(--border-strong);border-radius:var(--rad-control);padding:8px 14px;background:var(--card);color:var(--ink);font-weight:650;display:inline-flex;align-items:center;justify-content:center;gap:7px}.button:hover{background:var(--surface)}.button.primary{border-color:var(--primary);background:var(--primary);color:var(--a-on-accent)}.button.primary:hover{background:var(--primary-hover)}.button.ghost{border-color:transparent;background:transparent;color:var(--primary)}.button.small{min-height:32px;padding:5px 10px;font-size:var(--fs-dense)}.button:disabled{opacity:.45;cursor:not-allowed}
+.status{display:inline-flex;align-items:center;gap:6px;min-height:26px;border-radius:var(--rad-pill);padding:3px 9px;font-size:var(--fs-caption);font-weight:750;white-space:nowrap}.status::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}.status.ready{color:var(--ok);background:var(--ok-bg)}.status.review{color:var(--warn);background:var(--warn-bg)}.status.neutral{color:var(--soft);background:var(--n-surface-alt)}.status.missing{color:var(--danger);background:var(--danger-bg)}
+.surface-notice{margin:-8px 0 18px;padding:10px 13px;border:1px solid var(--fb-fill-bd);border-radius:var(--rad-surface);background:var(--fb-fill-bg);color:var(--ok);font-size:var(--fs-dense)}.surface-notice[hidden]{display:none}
+.data-grid{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:18px;align-items:start}.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius)}.file-card{overflow:hidden}
+.file-head{display:flex;align-items:center;gap:14px;padding:18px 20px;border-bottom:1px solid var(--border)}.file-icon{width:42px;height:42px;border-radius:var(--rad-surface);background:var(--fb-fill-bg);color:var(--ok);display:grid;place-items:center;font-weight:850;font-size:var(--fs-caption);letter-spacing:.03em}.file-title{min-width:0;flex:1}.file-title h2{font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.file-meta{color:var(--muted);font-size:var(--fs-caption);margin-top:2px}.file-change{position:relative}.file-change select{min-height:36px;max-width:224px;border:1px solid var(--border-strong);border-radius:var(--rad-control);background:var(--card);color:var(--ink);padding:6px 32px 6px 10px}
+.compat-note{display:none;margin:14px 18px 0;padding:11px 13px;border-radius:var(--rad-surface);color:var(--warn);background:var(--warn-bg);border:1px solid var(--fb-blank-bd)}.compat-note.on{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.table-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px}.select-summary{display:flex;align-items:center;gap:10px;font-weight:650}.select-summary span{color:var(--muted);font-size:12px;font-weight:500}.search{width:220px;border:1px solid var(--border-strong);border-radius:8px;padding:8px 10px;background:var(--card);color:var(--ink)}
+.table-wrap{overflow:auto;border-top:1px solid var(--border)}table{width:100%;border-collapse:collapse}th{padding:9px 12px;background:var(--n-header-bg);color:var(--n-header-ink);text-align:left;font-size:var(--fs-caption);font-weight:750;white-space:nowrap;border-bottom:1px solid var(--border)}td{padding:11px 12px;border-bottom:1px solid var(--border);white-space:nowrap}tbody tr{transition:background var(--dur-press)}tbody tr:hover{background:var(--n-hover)}tbody tr.selected{background:var(--primary-tint)}tbody tr:last-child td{border-bottom:0}.checkcell{width:42px;text-align:center}input[type="checkbox"]{width:16px;height:16px;accent-color:var(--primary)}.money{text-align:right;font-variant-numeric:tabular-nums}
+.side-card{padding:18px;position:sticky;top:84px}.side-head{display:flex;align-items:start;justify-content:space-between;gap:10px;margin-bottom:4px}.side-head h2{font-size:17px}.side-desc{color:var(--muted);font-size:13px;margin-bottom:14px}.doc-list{display:flex;flex-direction:column;gap:9px}
+.doc-option{width:100%;border:1px solid var(--border);border-radius:var(--rad-surface);background:var(--card);padding:13px;text-align:left;color:var(--ink);transition:var(--dur-press)}.doc-option:hover{border-color:var(--primary-line);transform:translateY(-1px)}.doc-option.selected{border-color:var(--primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--a-primary) 14%,transparent)}.doc-option.blocked{border-color:var(--fb-blank-bd);background:var(--fb-blank-bg)}.doc-top{display:flex;align-items:center;justify-content:space-between;gap:10px}.doc-name{font-weight:750}.doc-info{display:block;margin-top:7px;color:var(--muted);font-size:var(--fs-caption)}.doc-info strong{color:var(--soft)}.side-actions{margin-top:15px;padding-top:15px;border-top:1px solid var(--border);display:grid;gap:9px}.side-actions .button{width:100%}.run-validation{display:flex;align-items:flex-start;gap:10px;padding:12px;border:1px solid var(--fb-fill-bd);border-radius:var(--rad-surface);background:var(--ok-bg);color:var(--ok)}.run-validation[data-level="warn"]{border-color:var(--fb-blank-bd);background:var(--warn-bg);color:var(--warn)}.run-validation[data-level="bad"]{border-color:var(--fb-missing-bd);background:var(--danger-bg);color:var(--danger)}.validation-mark{width:22px;height:22px;flex:0 0 auto;display:grid;place-items:center;border-radius:50%;background:color-mix(in srgb,currentColor 12%,transparent);font-weight:850}.run-validation strong{display:block;font-size:var(--fs-dense)}.run-validation p{margin-top:2px;font-size:var(--fs-caption);line-height:1.4}.run-actions,.secondary-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.run-actions [hidden]{display:none!important}.run-actions .button:only-child{grid-column:1/-1}.secondary-actions .button{font-size:var(--fs-dense)}.selection-foot{color:var(--muted);font-size:var(--fs-caption);text-align:center}
+.template-shell{display:grid;grid-template-columns:minmax(470px,1.35fr) minmax(330px,.65fr);gap:18px}.template-head-actions{display:flex;align-items:flex-end;gap:10px}.template-picker{display:grid;gap:4px;color:var(--soft);font-size:var(--fs-caption);font-weight:750}.template-picker select{min-width:190px;min-height:38px;border:1px solid var(--border-strong);border-radius:var(--rad-control);padding:7px 32px 7px 10px;background:var(--card);color:var(--ink)}.preview-card{padding:22px;min-height:650px;background:#eceff3}.paper{width:min(520px,92%);min-height:604px;margin:0 auto;background:#fff;box-shadow:0 12px 30px rgba(24,31,40,.14);padding:46px 48px;color:#222}.paper-brand{font-size:12px;color:#747b84;text-align:right}.paper h2{text-align:center;font-size:23px;letter-spacing:.16em;margin:44px 0 35px}.paper-grid{display:grid;grid-template-columns:110px 1fr;border-top:2px solid #40454c;border-bottom:1px solid #8a9098}.paper-grid dt,.paper-grid dd{margin:0;padding:10px 12px;border-bottom:1px solid #c7cbd0}.paper-grid dt{background:#f2f3f4;font-weight:700}.paper-grid dd{color:#6b5cb3}.paper-total{display:flex;justify-content:space-between;margin-top:35px;padding:16px;border:1px solid #aeb4bb}.paper-copy{margin:42px 4px 0;line-height:1.9;text-align:center}.paper-foot{margin-top:72px;text-align:center;color:#777;font-size:12px}
+.template-side{padding:20px}.template-side h2{font-size:17px;margin-bottom:4px}.template-side>.subtitle{font-size:var(--fs-dense);margin-bottom:18px}.template-summary{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px}.metric{padding:12px;border-radius:var(--rad-surface);background:var(--surface)}.metric .label{display:block;color:var(--muted);font-size:var(--fs-caption)}.metric strong{display:block;margin-top:2px}.section-label{font-size:var(--fs-caption);color:var(--soft);font-weight:800;letter-spacing:.04em;margin:20px 0 8px}.linked-data{border:1px solid var(--border);border-radius:var(--rad-surface);padding:14px}.linked-title{display:flex;justify-content:space-between;align-items:center;gap:10px}.linked-title strong{font-size:var(--fs-strong)}.linked-meta{margin-top:7px;color:var(--muted);font-size:var(--fs-caption)}.linked-actions{display:flex;gap:8px;margin-top:13px}.template-actions{display:grid;gap:8px;margin-top:18px;padding-top:18px;border-top:1px solid var(--border)}
+.editor-wrap{max-width:980px;margin:0 auto}.back{border:0;background:transparent;color:var(--soft);padding:0;margin-bottom:14px;font-weight:650}.back:hover{color:var(--primary)}.editor-card{overflow:hidden}.editor-head{display:flex;align-items:center;gap:16px;padding:20px 22px;border-bottom:1px solid var(--border)}.relation-mark{width:44px;height:44px;border-radius:var(--rad-surface);background:var(--primary-tint);color:var(--primary);display:grid;place-items:center;font-size:18px;font-weight:800}.editor-title{flex:1}.editor-title h1{font-size:21px}.editor-title p{color:var(--muted);font-size:var(--fs-dense);margin-top:3px}.mapping-head{display:grid;grid-template-columns:1.1fr 34px 1.25fr .8fr;gap:10px;padding:10px 22px;background:var(--n-header-bg);color:var(--n-header-ink);font-size:var(--fs-caption);font-weight:750;border-bottom:1px solid var(--border)}.mapping-list{padding:0 22px}.mapping-row{display:grid;grid-template-columns:1.1fr 34px 1.25fr .8fr;gap:10px;align-items:center;min-height:76px;border-bottom:1px solid var(--border)}.mapping-row:last-child{border-bottom:0}.field-name strong{display:block}.field-name span{display:block;color:var(--muted);font-size:var(--fs-caption)}.required{color:var(--danger);margin-left:3px}.arrow{text-align:center;color:var(--muted)}.mapping-select{width:100%;min-height:38px;border:1px solid var(--border-strong);border-radius:var(--rad-control);padding:6px 9px;background:var(--card);color:var(--ink)}.sample{color:var(--soft);font-size:var(--fs-caption);overflow:hidden;text-overflow:ellipsis}.sample.risk-copy{color:var(--warn);white-space:normal}.transform-card{border:1px solid var(--fb-ack-bd);border-radius:var(--rad-control);padding:8px 10px;background:var(--fb-ack-bg)}.transform-kind{display:block;color:var(--fb-ack-fg);font-size:var(--fs-caption);font-weight:750}.transform-card code{display:block;margin-top:3px;color:var(--ink);font:var(--fs-dense)/1.4 ui-monospace,Consolas,monospace}.row-state{display:flex;align-items:center;gap:6px;font-size:var(--fs-caption);font-weight:700;color:var(--ok)}.row-state.warn{color:var(--warn)}.row-state.bad{color:var(--danger)}.row-state.calc{color:var(--fb-ack-fg)}.row-state::before{content:"✓";width:20px;height:20px;display:grid;place-items:center;border-radius:50%;background:var(--ok-bg)}.row-state.warn::before{content:"!";background:var(--warn-bg)}.row-state.bad::before{content:"×";background:var(--danger-bg)}.row-state.calc::before{content:"ƒ";background:var(--fb-ack-bg)}.editor-foot{display:flex;align-items:center;gap:10px;padding:15px 22px;border-top:1px solid var(--border);background:var(--n-surface-alt)}.editor-foot .hint{flex:1;color:var(--muted);font-size:var(--fs-caption)}.save-note{display:none;margin:14px 22px 0;padding:10px 12px;border-radius:var(--rad-surface)}.save-note.on{display:block}.save-note.ok{background:var(--ok-bg);color:var(--ok)}.save-note.warn{background:var(--warn-bg);color:var(--warn);border:1px solid var(--fb-blank-bd)}.save-note.bad{background:var(--danger-bg);color:var(--danger)}
+.scrim{position:fixed;inset:0;z-index:40;background:var(--a-scrim);opacity:0;pointer-events:none;transition:opacity var(--dur-modal)}.scrim.on{opacity:1;pointer-events:auto}.drawer{position:fixed;z-index:50;top:0;right:0;height:100%;width:min(580px,100%);background:var(--card);box-shadow:-18px 0 50px var(--a-shadow);transform:translateX(102%);transition:transform var(--dur-modal) var(--ease-out);display:grid;grid-template-rows:auto 1fr auto}.drawer.on{transform:translateX(0)}.drawer-head{display:flex;align-items:center;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}.drawer-head h2{flex:1;font-size:var(--fs-section)}.drawer-body{overflow:auto;padding:20px;background:var(--n-surface-alt)}.mini-paper{width:min(380px,100%);min-height:480px;margin:0 auto;background:#fff;color:#222;padding:34px 38px;box-shadow:0 10px 26px rgba(22,28,36,.12)}.mini-paper h3{text-align:center;font-size:19px;letter-spacing:.12em;margin:25px 0}.mini-paper .line{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #ddd}.mini-paper .line span:first-child{color:#777}.mini-paper .amount{margin-top:24px;padding:14px;background:#f5f6f7;display:flex;justify-content:space-between;font-weight:800}.mini-paper .body-copy{margin:34px 0;line-height:1.9;text-align:center}.mini-paper .seal{margin-top:62px;text-align:center;color:#777;font-size:11px}.drawer-foot{padding:16px 20px;border-top:1px solid var(--border);background:var(--card)}.run-summary{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin-bottom:14px}.run-summary div{font-size:var(--fs-dense)}.run-summary span{display:block;color:var(--muted);font-size:11px}.drawer-actions{display:flex;gap:8px;justify-content:flex-end}.result{display:none;margin-bottom:14px;padding:12px;border:1px solid var(--fb-fill-bd);border-radius:var(--rad-surface);background:var(--ok-bg);color:var(--ok)}.result.on{display:block}.result strong{display:block}.result span{font-size:var(--fs-caption)}.toast{position:fixed;z-index:70;left:50%;bottom:24px;transform:translate(-50%,20px);padding:11px 15px;border-radius:var(--rad-surface);background:var(--log-surface);color:var(--log-ink);box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:var(--dur-pop)}.toast.on{opacity:1;transform:translate(-50%,0)}
+.summary-value.warn{color:var(--warn)}.summary-value.bad{color:var(--danger)}.summary-value.ok{color:var(--ok)}
+.sample-dialog{width:min(520px,calc(100% - 32px));border:1px solid var(--border);border-radius:var(--rad-overlay);padding:0;background:var(--card);color:var(--ink);box-shadow:var(--shadow)}.sample-dialog::backdrop{background:var(--a-scrim)}.sample-dialog-head{display:flex;align-items:center;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}.sample-dialog-head h2{flex:1;font-size:var(--fs-section)}.sample-dialog-body{padding:20px}.sample-dialog-body>p{color:var(--muted);margin-bottom:14px}.sample-choice{display:flex;align-items:flex-start;gap:10px;padding:13px;border:1px solid var(--border);border-radius:var(--rad-surface);background:var(--surface)}.sample-choice strong,.sample-choice span{display:block}.sample-choice span{margin-top:2px;color:var(--muted);font-size:var(--fs-caption)}.sample-dialog-foot{display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid var(--border)}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}
+@media (max-width:900px){.topbar{grid-template-columns:1fr auto;padding:0 18px}.nav{order:3;grid-column:1/-1;height:44px;justify-content:center;border-top:1px solid var(--border)}.app{grid-template-rows:108px 1fr}.top-actions{display:none}.workspace{width:min(100% - 28px,760px);padding-top:20px}.data-grid,.template-shell{grid-template-columns:1fr}.side-card{position:static}.preview-card{min-height:auto}.mapping-head{display:none}.mapping-row{grid-template-columns:1fr 26px 1.2fr;align-items:start;padding:12px 0}.mapping-row .row-state{grid-column:3}}
+@media (max-width:560px){.page-head{align-items:start;flex-direction:column}.template-head-actions{width:100%;align-items:stretch;flex-direction:column}.template-picker select{width:100%}.file-head{align-items:flex-start;flex-wrap:wrap}.file-change{width:100%}.file-change select{max-width:none;width:100%}.table-tools{align-items:stretch;flex-direction:column}.search{width:100%}.paper{padding:30px 24px}.template-shell{display:block}.template-side{margin-top:14px}.editor-head{align-items:flex-start}.editor-head>.status{display:none}.mapping-row{grid-template-columns:1fr}.mapping-row .arrow{display:none}.mapping-row .row-state{grid-column:1}.editor-foot{align-items:stretch;flex-direction:column}.editor-foot .hint{order:4}.run-summary{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><img src="../web/img/narmi-mark.svg" alt=""><span>문서나르미</span></div>
+    <nav class="nav" aria-label="주요 화면">
+      <button type="button" data-view="data" aria-current="page">문서 만들기</button>
+      <button type="button" data-view="template">문서 설정</button>
+    </nav>
+    <div class="top-actions"><button class="icon-btn" type="button" id="helpButton" title="도움말" aria-label="도움말">?</button></div>
+  </header>
+  <main class="workspace">
+    <section class="screen on" id="screen-data" aria-labelledby="data-title">
+      <div class="page-head">
+        <div><p class="eyebrow">문서 만들기</p><h1 id="data-title">직원 데이터에서 만들 항목을 고르세요</h1><p class="subtitle">데이터와 레코드, 문서를 고르면 시스템이 생성 가능 여부를 자동으로 검증합니다.</p></div>
+        <button class="button" type="button" id="openFileButton">다른 파일 열기</button>
+      </div>
+      <div class="surface-notice" id="dataSurfaceNotice" role="status" hidden></div>
+      <div class="data-grid">
+        <section class="card file-card" aria-label="직원 데이터">
+          <div class="file-head">
+            <div class="file-icon" aria-hidden="true">XLSX</div>
+            <div class="file-title"><h2 id="fileName">직원명단_2026-07.xlsx</h2><p class="file-meta" id="fileMeta">직원 데이터 · 직원 5명 · 방금 분석함</p></div>
+            <span class="status ready" id="fileStatus">직원 데이터로 인식됨</span>
+            <label class="file-change"><span style="position:absolute;width:1px;height:1px;overflow:hidden">시안 데이터 선택</span>
+              <select id="scenarioSelect" aria-label="시안 데이터 선택">
+                <option value="normal">7월 파일 · 정상</option>
+                <option value="added">8월 파일 · 필드 추가</option>
+                <option value="missing">9월 파일 · 필수 필드 누락</option>
+                <option value="type">10월 파일 · 타입 변경</option>
+                <option value="unmatched">고객 파일 · 연결 필요</option>
+              </select>
+            </label>
+          </div>
+          <div class="compat-note" id="compatNote">
+            <div><strong id="compatTitle">문서의 필수 필드가 달라졌습니다.</strong><div id="compatText" style="font-size:12px;margin-top:2px">연결을 검토한 뒤 문서를 만들 수 있습니다.</div></div>
+            <button class="button small" type="button" data-edit-connection>연결 검토</button>
+          </div>
+          <div class="table-tools">
+            <label class="select-summary"><input type="checkbox" id="selectAll" checked><span style="color:var(--ink);font-size:14px;font-weight:700">전체 선택</span><span id="selectedLabel">5명 선택</span></label>
+            <input class="search" type="search" id="recordSearch" placeholder="이름 또는 부서 검색" aria-label="이름 또는 부서 검색">
+          </div>
+          <div class="table-wrap"><table><thead id="recordHead"></thead><tbody id="recordBody"></tbody></table></div>
+        </section>
+        <aside class="card side-card">
+          <div class="side-head"><h2>이 데이터로 만들 수 있는 문서</h2><span class="status ready" id="docCountStatus">문서 연결 3개</span></div>
+          <p class="side-desc">문서를 고르면 자동 검증 후 바로 미리보거나 생성할 수 있습니다.</p>
+          <div class="doc-list">
+            <button class="doc-option selected" type="button" data-document="salary"><span class="doc-top"><span class="doc-name">급여명세서</span><span class="status ready doc-status">연결됨</span></span><span class="doc-info"><strong>필수 필드 4개</strong> · 최근 사용: 오늘</span></button>
+            <button class="doc-option" type="button" data-document="employment"><span class="doc-top"><span class="doc-name">재직증명서</span><span class="status ready doc-status">연결됨</span></span><span class="doc-info"><strong>필수 필드 2개</strong> · 최근 사용: 7월 19일</span></button>
+            <button class="doc-option" type="button" data-document="contact"><span class="doc-top"><span class="doc-name">직원 연락망</span><span class="status ready doc-status">연결됨</span></span><span class="doc-info"><strong>필수 필드 2개</strong> · 최근 사용: 7월 8일</span></button>
+          </div>
+          <div class="side-actions">
+            <div class="run-validation" id="runValidation" data-level="ready" role="status"><span class="validation-mark" id="runValidationMark">✓</span><div><strong id="runValidationTitle">생성 준비 완료</strong><p id="runValidationText">필수 필드와 출력 설정이 정상입니다.</p></div></div>
+            <div class="run-actions"><button class="button" type="button" id="runFixButton" hidden>연결 수정</button><button class="button" type="button" id="previewButton">미리보기</button><button class="button primary" type="button" id="directGenerateButton">5개 생성</button></div>
+            <div class="secondary-actions"><button class="button ghost" type="button" id="documentSettingsButton">문서 설정</button><button class="button ghost" type="button" data-edit-connection>연결 편집</button></div>
+            <p class="selection-foot" id="selectionFoot">직원 5명 · 급여명세서 5개 생성 예정</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+    <section class="screen" id="screen-template" aria-labelledby="template-title">
+      <button class="back" type="button" id="templateBackButton">← 문서 만들기로 돌아가기</button>
+      <div class="page-head"><div><p class="eyebrow">문서 설정</p><h1 id="template-title">급여명세서</h1><p class="subtitle">문서 필드와 연결된 데이터 형식을 확인합니다.</p></div><div class="template-head-actions"><label class="template-picker"><span>편집할 문서</span><select id="templateDocumentSelect" aria-label="편집할 문서"><option value="salary">급여명세서</option><option value="employment">재직증명서</option><option value="contact">직원 연락망</option></select></label><button class="button" type="button" id="openTemplateButton">템플릿 파일 열기</button></div></div>
+      <div class="surface-notice" id="templateSurfaceNotice" role="status" hidden></div>
+      <div class="template-shell">
+        <section class="card preview-card" id="templatePreviewCard" aria-label="급여명세서 템플릿 미리보기">
+          <div class="paper" id="templatePaper"></div>
+        </section>
+        <aside class="card template-side">
+          <h2>문서 정보</h2><p class="subtitle">이 문서를 반복 생성하는 데 필요한 설정입니다.</p>
+          <div class="template-summary"><div class="metric"><span class="label">문서 필드</span><strong id="templateFieldCount">6개</strong></div><div class="metric"><span class="label">필수 필드</span><strong id="templateRequiredCount">4개</strong></div><div class="metric"><span class="label">출력 형식</span><strong id="templateOutputFormat">HWPX</strong></div><div class="metric"><span class="label">최근 수정</span><strong id="templateUpdatedAt">7월 18일</strong></div></div>
+          <p class="section-label">연결된 데이터</p>
+          <div class="linked-data"><div class="linked-title"><strong id="templateLinkedDataset">직원 데이터</strong><span class="status ready template-status">연결됨</span></div><p class="linked-meta" id="linkedMeta">성명, 소속부서, 급여기준일, 기본급을 사용합니다.</p><div class="linked-actions"><button class="button small" type="button" data-edit-connection>연결 편집</button></div></div>
+          <button class="button ghost" type="button" id="newConnectionButton" style="margin-top:8px">새 데이터 연결</button>
+          <div class="template-actions"><button class="button primary" type="button" id="templateRunButton">이 문서로 만들기</button><button class="button" type="button" id="editTemplateButton">템플릿 편집</button></div>
+        </aside>
+      </div>
+    </section>
+    <section class="screen" id="screen-connection" aria-labelledby="connection-title">
+      <div class="editor-wrap">
+        <button class="back" type="button" id="connectionBack">← 이전 화면</button>
+        <section class="card editor-card">
+          <div class="editor-head"><div class="relation-mark" aria-hidden="true">↔</div><div class="editor-title"><p class="eyebrow">연결 편집</p><h1 id="connection-title">급여명세서 ↔ 직원 데이터</h1><p>문서 필드마다 사용할 데이터 열을 지정하세요.</p></div><span class="status ready" id="connectionStatus">연결됨</span></div>
+          <div class="save-note" id="saveNote" role="status"></div>
+          <div class="mapping-head" aria-hidden="true"><span>문서 필드</span><span></span><span>연결 또는 변환</span><span>상태</span></div>
+          <div class="mapping-list" id="mappingList"></div>
+          <div class="editor-foot"><button class="button" type="button" id="autoMapButton">비어 있는 필드 추천</button><span class="hint" id="revisionHint">필수 필드를 모두 연결하면 저장할 수 있습니다.</span><button class="button" type="button" id="cancelConnection">취소</button><button class="button primary" type="button" id="saveConnection">연결 저장</button></div>
+        </section>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="previewDrawer" role="dialog" aria-modal="true" aria-labelledby="preview-title" aria-hidden="true" inert>
+  <div class="drawer-head"><h2 id="preview-title">생성 미리보기</h2><button class="icon-btn" type="button" id="closeDrawer" aria-label="미리보기 닫기">×</button></div>
+  <div class="drawer-body"><div class="mini-paper" id="previewPaper"></div></div>
+  <div class="drawer-foot"><div class="result" id="generationResult"><strong id="resultTitle">문서 5개를 만들었습니다.</strong><span id="resultDetail">급여명세서_2026-07 폴더에서 확인할 수 있습니다.</span></div><div class="run-summary"><div><span>선택한 항목</span><strong id="drawerSelected">직원 5명</strong></div><div><span>생성 문서</span><strong id="drawerDocument">급여명세서</strong></div><div><span>필수 필드</span><strong class="summary-value ok" id="previewRequiredState">정상</strong></div><div><span>빈 선택 필드</span><strong class="summary-value" id="previewOptionalState">1개</strong></div><div><span>연결·변환 경고</span><strong class="summary-value ok" id="previewTransformState">없음</strong></div><div><span>파일명 충돌</span><strong class="summary-value ok" id="previewCollisionState">없음</strong></div><div><span>파일 이름</span><strong id="drawerFilename">김민수_급여명세서.hwpx</strong></div></div><div class="drawer-actions"><button class="button" type="button" id="drawerBack">뒤로</button><button class="button primary" type="button" id="generateButton">5개 생성</button></div></div>
+</aside>
+<dialog class="sample-dialog" id="sampleFileDialog" aria-labelledby="sample-dialog-title">
+  <div class="sample-dialog-head"><h2 id="sample-dialog-title">새 데이터 연결</h2><button class="icon-btn" type="button" id="sampleDialogClose" aria-label="닫기">×</button></div>
+  <div class="sample-dialog-body"><p>문서를 채울 샘플 파일을 선택하면 데이터 필드와 값을 분석합니다.</p><label class="sample-choice"><input type="radio" name="sampleFile" value="normal" checked><span><strong>직원_샘플.xlsx</strong><span>성명, 소속부서, 급여기준일, 기본급 · 직원 5명</span></span></label></div>
+  <div class="sample-dialog-foot"><button class="button" type="button" id="sampleDialogCancel">취소</button><button class="button primary" type="button" id="analyzeSampleButton">분석하고 연결하기</button></div>
+</dialog>
+<div class="toast" id="toast" role="status"></div>
+<script>
+(() => {
+  const employees=[
+    {id:1,employee_id:"직원-001",name:"김민수",department:"개발팀",date:"2026-07-25",salary:4200000,bonus:350000},
+    {id:2,employee_id:"직원-002",name:"이서연",department:"운영팀",date:"2026-07-25",salary:3850000,bonus:280000},
+    {id:3,employee_id:"직원-003",name:"박지훈",department:"영업팀",date:"2026-07-25",salary:4100000,bonus:520000},
+    {id:4,employee_id:"직원-004",name:"최유진",department:"기획팀",date:"2026-07-25",salary:3950000,bonus:310000},
+    {id:5,employee_id:"직원-005",name:"정하늘",department:"개발팀",date:"2026-07-25",salary:4500000,bonus:400000}
+  ];
+  const docs={
+    salary:{
+      name:"급여명세서",heading:"급 여 명 세 서",fieldCount:6,requiredCount:4,outputFormat:"HWPX",updatedAt:"7월 18일",linkedDataset:"직원 데이터",
+      fields:[
+        {key:"name",label:"이름",type:"문자",expectedType:"string",semantic:"person_name",required:true,previous:"name"},
+        {key:"department",label:"부서",type:"문자",expectedType:"string",semantic:"department",required:true,previous:"department"},
+        {key:"date",label:"지급일",type:"날짜",expectedType:"date",semantic:"date",required:true,previous:"date"},
+        {key:"salary",label:"기본급",type:"숫자",expectedType:"number",semantic:"pay_amount",required:true,previous:"salary"},
+        {key:"bonus",label:"상여금",type:"숫자",expectedType:"number",semantic:"pay_bonus",required:false,previous:""}
+      ],
+      defaultBinding:{name:"name",department:"department",date:"date",salary:"salary",bonus:""}
+    },
+    employment:{
+      name:"재직증명서",heading:"재 직 증 명 서",fieldCount:4,requiredCount:2,outputFormat:"HWPX",updatedAt:"7월 16일",linkedDataset:"직원 데이터",
+      fields:[
+        {key:"name",label:"이름",type:"문자",expectedType:"string",semantic:"person_name",required:true,previous:"name"},
+        {key:"department",label:"부서",type:"문자",expectedType:"string",semantic:"department",required:true,previous:"department"},
+        {key:"position",label:"직위",type:"문자",expectedType:"string",semantic:"job_title",required:false,previous:""},
+        {key:"employmentPeriod",label:"재직기간",type:"문자",expectedType:"string",semantic:"employment_period",required:false,previous:""}
+      ],
+      defaultBinding:{name:"name",department:"department",position:"",employmentPeriod:""}
+    },
+    contact:{
+      name:"직원 연락망",heading:"직 원 연 락 망",fieldCount:4,requiredCount:2,outputFormat:"HWPX",updatedAt:"7월 12일",linkedDataset:"직원 데이터",
+      fields:[
+        {key:"name",label:"이름",type:"문자",expectedType:"string",semantic:"person_name",required:true,previous:"name"},
+        {key:"department",label:"부서",type:"문자",expectedType:"string",semantic:"department",required:true,previous:"department"},
+        {key:"extension",label:"내선번호",type:"문자",expectedType:"string",semantic:"phone",required:false,previous:""},
+        {key:"email",label:"전자우편",type:"문자",expectedType:"string",semantic:"email",required:false,previous:""}
+      ],
+      defaultBinding:{name:"name",department:"department",extension:"",email:""}
+    }
+  };
+  const schemas={
+    normal:[
+      {key:"name",label:"성명",type:"string",semantic:"person_name"},
+      {key:"department",label:"소속부서",type:"string",semantic:"department"},
+      {key:"date",label:"급여기준일",type:"date",semantic:"date"},
+      {key:"salary",label:"기본급",type:"number",semantic:"pay_amount"}
+    ],
+    added:[
+      {key:"name",label:"성명",type:"string",semantic:"person_name"},
+      {key:"department",label:"소속부서",type:"string",semantic:"department"},
+      {key:"date",label:"급여기준일",type:"date",semantic:"date"},
+      {key:"salary",label:"기본급",type:"number",semantic:"pay_amount"},
+      {key:"bonus",label:"성과급",type:"number",semantic:"pay_bonus",isNew:true}
+    ],
+    missing:[
+      {key:"employee_id",label:"직원번호",type:"string",semantic:"identifier"},
+      {key:"department",label:"소속부서",type:"string",semantic:"department"},
+      {key:"date",label:"급여기준일",type:"date",semantic:"date"},
+      {key:"salary",label:"기본급",type:"number",semantic:"pay_amount"}
+    ],
+    type:[
+      {key:"name",label:"성명",type:"string",semantic:"person_name"},
+      {key:"department",label:"소속부서",type:"string",semantic:"department"},
+      {key:"date",label:"급여기준일",type:"date",semantic:"date"},
+      {key:"salary_text",label:"기본급",type:"string",semantic:"pay_amount"}
+    ],
+    unmatched:[
+      {key:"customer_id",label:"고객번호",type:"string",semantic:"customer_id"},
+      {key:"company",label:"회사명",type:"string",semantic:"company"},
+      {key:"contact_name",label:"담당자",type:"string",semantic:"contact_name"}
+    ]
+  };
+  const scenarioMeta={
+    normal:{file:"직원명단_2026-07.xlsx",meta:"직원 데이터 · 직원 5명 · 방금 분석함"},
+    added:{file:"employee_august_final.xlsx",meta:"직원 데이터 · 직원 5명 · 사용하지 않는 새 필드 1개"},
+    missing:{file:"직원명단_2026-09_수정.xlsx",meta:"직원 데이터 · 직원 5명 · 필수 필드 1개 누락"},
+    type:{file:"직원명단_2026-10_오류.xlsx",meta:"직원 데이터 · 직원 5명 · 필드 타입 1개 변경"},
+    unmatched:{file:"고객목록_2026.xlsx",meta:"새 데이터 형식 · 기존 문서 연결 없음"}
+  };
+  const companies=["가람상사","나래기획","다온유통","라온테크","마루산업"];
+  const state={
+    view:"data",returnView:"data",scenario:"normal",selected:new Set(employees.map(e=>e.id)),
+    document:"salary",returnDocumentId:null,search:"",previewReturnFocus:null,
+    bindings:{
+      salary:{...docs.salary.defaultBinding},
+      employment:{...docs.employment.defaultBinding},
+      contact:{...docs.contact.defaultBinding}
+    },
+    bindingRevisions:{salary:1,employment:1,contact:1},
+    confirmedRisks:{salary:false,employment:false,contact:false},
+    previewGates:{
+      salary:{required:false,approved:false,reason:""},
+      employment:{required:false,approved:false,reason:""},
+      contact:{required:false,approved:false,reason:""}
+    },
+    validationRevision:1,editorMapping:null,connectionDocument:null,riskConfirmArmed:false,connectionMode:"edit"
+  };
+  const $=id=>document.getElementById(id);
+  const esc=value=>String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+  const won=value=>new Intl.NumberFormat("ko-KR").format(Number(value)||0)+"원";
+  const currentSchema=()=>schemas[state.scenario];
+  const columnByKey=key=>currentSchema().find(column=>column.key===key);
+  const activeFields=(documentId=state.document)=>docs[documentId].fields;
+  const activeBinding=(documentId=state.document)=>state.bindings[documentId];
+  const activeGate=(documentId=state.document)=>state.previewGates[documentId];
+  function columnValue(employee,key){
+    if(key==="salary_text")return "협의 후 결정";
+    if(key==="customer_id")return `C-2026-${String(employee.id).padStart(3,"0")}`;
+    if(key==="company")return companies[employee.id-1];
+    if(key==="contact_name")return employee.name;
+    return employee[key]??"";
+  }
+  function formatValue(column,value){
+    return column.type==="number"?won(value):String(value);
+  }
+  function typeCompatible(expected,column){
+    if(!column)return false;
+    if(expected==="date")return column.type==="date"||(column.type==="string"&&column.semantic==="date");
+    return expected===column.type;
+  }
+  function evaluateMapping(field,sourceKey){
+    if(!sourceKey)return field.required
+      ?{level:"bad",text:"연결 필요",reason:"필수 데이터 열이 선택되지 않았습니다."}
+      :{level:"empty",text:"선택 사항",reason:"이번 연결에서 사용하지 않습니다."};
+    const column=columnByKey(sourceKey);
+    if(!column)return {level:"bad",text:"필드 없음",reason:"현재 파일에 이 데이터 열이 없습니다."};
+    if(!typeCompatible(field.expectedType,column))return {level:"bad",text:"타입 충돌",reason:`${field.type} 필드에 ${column.label}(${column.type})을 사용할 수 없습니다.`};
+    if(column.semantic!==field.semantic)return {level:"warn",text:"변경 확인",reason:`이전 연결과 다른 종류의 데이터입니다. ${field.label} ← ${column.label}`};
+    return {level:"ok",text:"정상",reason:""};
+  }
+  function bindingEvaluations(mapping=activeBinding(),documentId=state.document){
+    return activeFields(documentId).map(field=>({field,source:mapping[field.key]||"",result:evaluateMapping(field,mapping[field.key]||"")}));
+  }
+  function documentStatus(key){
+    if(state.scenario==="unmatched")return {level:"missing",label:"연결 필요"};
+    const evaluations=bindingEvaluations(activeBinding(key),key);
+    if(evaluations.some(item=>item.result.level==="bad"))return {level:"review",label:"필드 변경 감지"};
+    if(evaluations.some(item=>item.result.level==="warn"))return state.confirmedRisks[key]
+      ?{level:"ready",tone:"review",label:"연결됨 · 경고"}
+      :{level:"review",label:"연결 경고"};
+    return {level:"ready",label:"연결됨"};
+  }
+  function syncDocumentControls(){
+    document.querySelectorAll(".doc-option").forEach(option=>option.classList.toggle("selected",option.dataset.document===state.document));
+    $("templateDocumentSelect").value=state.document;
+  }
+  function templatePaperHtml(documentId){
+    const doc=docs[documentId],head=`<p class="paper-brand">문서나르미 샘플</p><h2>${doc.heading}</h2>`;
+    if(documentId==="employment"){
+      return `${head}<dl class="paper-grid"><dt>성명</dt><dd>{{ 이름 }}</dd><dt>소속</dt><dd>{{ 부서 }}</dd><dt>직위</dt><dd>{{ 직위 }}</dd><dt>재직기간</dt><dd>{{ 재직기간 }}</dd></dl><p class="paper-copy">위 사람은 현재 당 기관에 재직하고 있음을 증명합니다.</p><p class="paper-foot">2026년 7월 24일 · 문서나르미 샘플</p>`;
+    }
+    if(documentId==="contact"){
+      return `${head}<dl class="paper-grid"><dt>성명</dt><dd>{{ 이름 }}</dd><dt>부서</dt><dd>{{ 부서 }}</dd><dt>내선번호</dt><dd>{{ 내선번호 }}</dd><dt>전자우편</dt><dd>{{ 전자우편 }}</dd></dl><p class="paper-copy">업무 연락을 위한 직원 정보입니다.</p><p class="paper-foot">문서나르미 샘플 · 내부 업무용</p>`;
+    }
+    return `${head}<dl class="paper-grid"><dt>성명</dt><dd>{{ 이름 }}</dd><dt>소속</dt><dd>{{ 부서 }}</dd><dt>지급일</dt><dd>{{ 지급일 }}</dd><dt>기본급</dt><dd>{{ 기본급 }}</dd><dt>상여금</dt><dd>{{ 상여금 }}</dd></dl><div class="paper-total"><span>지급 합계</span><strong>{{ 지급합계 }}</strong></div><p class="paper-foot">위와 같이 급여를 지급합니다.</p>`;
+  }
+  function renderTemplateSettings(){
+    const doc=docs[state.document],status=documentStatus(state.document),mapping=activeBinding();
+    syncDocumentControls();
+    $("template-title").textContent=doc.name;
+    $("templatePaper").innerHTML=templatePaperHtml(state.document);
+    $("templatePreviewCard").setAttribute("aria-label",`${doc.name} 템플릿 미리보기`);
+    $("templateFieldCount").textContent=`${doc.fieldCount}개`;
+    $("templateRequiredCount").textContent=`${doc.requiredCount}개`;
+    $("templateOutputFormat").textContent=doc.outputFormat;
+    $("templateUpdatedAt").textContent=doc.updatedAt;
+    $("templateLinkedDataset").textContent=doc.linkedDataset;
+    const templateStatus=document.querySelector(".template-status");
+    templateStatus.className=`status template-status ${status.tone||status.level}`;templateStatus.textContent=status.label;
+    const usedLabels=activeFields().filter(field=>mapping[field.key]).map(field=>columnByKey(mapping[field.key])?.label).filter(Boolean);
+    $("linkedMeta").textContent=usedLabels.length?`${usedLabels.join(", ")}을 사용합니다.`:"현재 파일에서 사용할 수 있는 연결을 찾지 못했습니다.";
+  }
+  function openTemplateSettings(documentId=state.document){
+    if(state.view==="data")state.returnDocumentId=state.document;
+    state.document=documentId;
+    renderTemplateSettings();
+    setView("template");
+  }
+  function returnFromTemplate(){
+    if(state.returnDocumentId)state.document=state.returnDocumentId;
+    state.returnDocumentId=null;
+    syncDocumentControls();renderScenario();setView("data");
+  }
+  function runWithTemplateDocument(){
+    const doc=docs[state.document];
+    state.returnDocumentId=null;state.validationRevision+=1;
+    syncDocumentControls();renderScenario();setView("data");
+    showSurfaceNotice("data",`${doc.name}가 선택되었습니다. 데이터와 레코드를 확인한 뒤 미리보거나 생성하세요.`);
+  }
+  function selectExecutionDocument(documentId){
+    state.document=documentId;state.validationRevision+=1;
+    syncDocumentControls();renderScenario();
+  }
+  function setView(view){
+    state.view=view;
+    document.querySelectorAll(".screen").forEach(el=>el.classList.toggle("on",el.id===`screen-${view}`));
+    document.querySelectorAll(".nav button").forEach(button=>{
+      const active=button.dataset.view===view||(view==="connection"&&button.dataset.view===state.returnView);
+      if(active)button.setAttribute("aria-current","page");else button.removeAttribute("aria-current");
+    });
+    window.scrollTo({top:0,behavior:"smooth"});
+  }
+  function showSurfaceNotice(view,message){
+    const el=$(view==="template"?"templateSurfaceNotice":"dataSurfaceNotice");
+    el.textContent=message;el.hidden=false;
+  }
+  function visibleEmployees(){
+    const query=state.search.trim().toLowerCase();
+    if(!query)return employees;
+    return employees.filter(employee=>currentSchema().some(column=>String(columnValue(employee,column.key)).toLowerCase().includes(query)));
+  }
+  function renderRecords(){
+    const columns=currentSchema(),rows=visibleEmployees();
+    $("recordHead").innerHTML=`<tr><th class="checkcell">선택</th>${columns.map(column=>`<th class="${column.type==="number"?"money":""}">${esc(column.label)}${column.isNew?' <span aria-label="새 필드">＋</span>':""}</th>`).join("")}</tr>`;
+    $("recordBody").innerHTML=rows.map(employee=>`<tr class="${state.selected.has(employee.id)?"selected":""}" data-id="${employee.id}"><td class="checkcell"><input type="checkbox" aria-label="${esc(employee.name)} 선택" ${state.selected.has(employee.id)?"checked":""}></td>${columns.map(column=>`<td class="${column.type==="number"?"money":""}">${esc(formatValue(column,columnValue(employee,column.key)))}</td>`).join("")}</tr>`).join("");
+    const count=state.selected.size;
+    $("selectedLabel").textContent=`${count}명 선택`;
+    $("selectAll").checked=rows.length>0&&rows.every(employee=>state.selected.has(employee.id));
+    $("selectAll").indeterminate=rows.some(employee=>state.selected.has(employee.id))&&!rows.every(employee=>state.selected.has(employee.id));
+    updateSelectionCopy();
+  }
+  function updateSelectionCopy(){
+    const count=state.selected.size,doc=docs[state.document],status=documentStatus(state.document);
+    const connectionBlocked=status.level!=="ready",selectionBlocked=count===0;
+    const gate=activeGate(),previewGate=gate.required&&!gate.approved,previewConfirmed=gate.required&&gate.approved;
+    const validation=$("runValidation"),fixButton=$("runFixButton"),previewButton=$("previewButton"),generateButton=$("directGenerateButton");
+    let level="ready",mark="✓",title="생성 준비 완료",text="필수 필드와 출력 설정이 정상입니다.";
+    if(selectionBlocked){
+      level="bad";mark="!";title="레코드를 선택하세요";text="문서를 만들 항목을 한 명 이상 선택해야 합니다.";
+    }else if(connectionBlocked){
+      level="bad";mark="×";title=status.level==="missing"?"연결이 필요합니다":"필수 연결을 확인하세요";
+      text=status.level==="missing"
+        ?`이 데이터 형식에는 ${doc.name} 연결이 없습니다.`
+        :"누락되었거나 타입이 달라진 필드를 수정해야 합니다.";
+    }else if(previewGate){
+      level="warn";mark="!";title="미리보기 확인이 필요합니다";text=gate.reason||"출력에 영향을 주는 연결이 변경되었습니다.";
+    }else if(previewConfirmed){
+      title="변경된 연결의 결과를 확인했습니다";text="검증과 미리보기가 완료되어 문서를 생성할 수 있습니다.";
+    }
+    validation.dataset.level=level;validation.dataset.revision=String(state.validationRevision);$("runValidationMark").textContent=mark;$("runValidationTitle").textContent=title;$("runValidationText").textContent=text;
+    fixButton.hidden=!connectionBlocked&&!previewGate;
+    previewButton.hidden=connectionBlocked;
+    previewButton.textContent=previewConfirmed?"다시 미리보기":previewGate?"미리보기 필수":"미리보기";
+    previewButton.classList.toggle("primary",previewGate);
+    previewButton.disabled=selectionBlocked||connectionBlocked;
+    generateButton.hidden=previewGate;
+    generateButton.disabled=selectionBlocked||connectionBlocked||previewGate;
+    generateButton.textContent=connectionBlocked?"생성 불가":`${count}개 생성`;
+    $("selectionFoot").textContent=count
+      ?(connectionBlocked?`${doc.name}을 만들려면 연결 수정이 필요합니다.`:`직원 ${count}명 · ${doc.name} ${count}개 생성 예정`)
+      :"한 명 이상 선택하세요.";
+    $("drawerSelected").textContent=`직원 ${count}명`;$("drawerDocument").textContent=doc.name;
+    if(!$("generateButton").dataset.done)$("generateButton").textContent=`${count}개 생성`;
+  }
+  function renderDocumentStatuses(){
+    const options=[...document.querySelectorAll(".doc-option")];
+    let reviewCount=0,missingCount=0;
+    options.forEach(option=>{
+      const status=documentStatus(option.dataset.document),badge=option.querySelector(".doc-status");
+      badge.className=`status doc-status ${status.tone||status.level}`;badge.textContent=status.label;
+      option.classList.toggle("blocked",status.level!=="ready");
+      if(status.level==="review")reviewCount+=1;if(status.level==="missing")missingCount+=1;
+    });
+    const aggregate=$("docCountStatus");
+    if(missingCount){
+      aggregate.className="status missing";aggregate.textContent="새 연결 필요";
+    }else if(reviewCount){
+      aggregate.className="status review";aggregate.textContent=`${reviewCount}개 검토 필요`;
+    }else{
+      aggregate.className="status ready";aggregate.textContent="문서 연결 3개";
+    }
+  }
+  function renderScenario(){
+    const scenario=scenarioMeta[state.scenario];
+    $("fileName").textContent=scenario.file;$("fileMeta").textContent=scenario.meta;
+    renderDocumentStatuses();
+    const statuses=Object.keys(docs).map(documentStatus),review=statuses.some(status=>status.level==="review"),missing=statuses.every(status=>status.level==="missing");
+    $("fileStatus").className=`status ${missing?"missing":review?"review":"ready"}`;
+    $("fileStatus").textContent=missing?"새 데이터 형식":review?"필드 변경 감지":"직원 데이터로 인식됨";
+    const currentStatus=documentStatus(state.document),currentDoc=docs[state.document],showNotice=currentStatus.level!=="ready";
+    $("compatNote").classList.toggle("on",showNotice);
+    if(showNotice){
+      $("compatTitle").textContent=currentStatus.level==="missing"?`이 데이터 형식에는 ${currentDoc.name} 연결이 없습니다.`:`${currentDoc.name} 연결을 검토해야 합니다.`;
+      $("compatText").textContent=state.scenario==="type"?"기본급 열의 타입이 숫자에서 문자로 바뀌었습니다.":state.scenario==="missing"?"성명 열이 없어 이름 필드를 해석할 수 없습니다.":"새 데이터 연결을 설정한 뒤 문서를 만들 수 있습니다.";
+    }
+    renderTemplateSettings();
+    renderRecords();
+  }
+  function editorDraft(){
+    if(state.editorMapping)return state.editorMapping;
+    const documentId=state.connectionDocument||state.document,binding=activeBinding(documentId);
+    state.editorMapping={};
+    activeFields(documentId).forEach(field=>{
+      const source=binding[field.key]||"";
+      state.editorMapping[field.key]=columnByKey(source)?source:"";
+    });
+    return state.editorMapping;
+  }
+  function mappingRowHtml(field,draft){
+    const current=draft[field.key]||"",result=evaluateMapping(field,current),column=columnByKey(current);
+    const previousColumn=schemas.normal.find(item=>item.key===field.previous);
+    const options=[`<option value="">연결 안 함</option>`].concat(currentSchema().map(item=>`<option value="${item.key}" ${item.key===current?"selected":""}>${esc(item.label)} · ${item.type}</option>`));
+    const risk=result.level==="warn"?`<div class="sample risk-copy">이전: ${esc(previousColumn?.label||"연결 없음")} · ${esc(result.reason)}</div>`:"";
+    return `<div class="mapping-row" data-key="${field.key}"><div class="field-name"><strong>${field.label}${field.required?'<span class="required" aria-label="필수">*</span>':""}</strong><span>${field.type}${field.required?" · 필수":" · 선택"}</span></div><div class="arrow" aria-hidden="true">→</div><div><select class="mapping-select" aria-label="${field.label}에 연결할 데이터 열">${options.join("")}</select><div class="sample">샘플: ${column?esc(formatValue(column,columnValue(employees[0],column.key))):"선택되지 않음"}</div>${risk}</div><div class="row-state ${result.level==="bad"?"bad":result.level==="warn"?"warn":""}">${result.text}</div></div>`;
+  }
+  function renderMappings(){
+    const documentId=state.connectionDocument||state.document,draft=editorDraft();
+    const calculation=documentId==="salary"
+      ?`<div class="mapping-row calculation-row"><div class="field-name"><strong>지급합계</strong><span>숫자 · 파생 필드</span></div><div class="arrow" aria-hidden="true">→</div><div class="transform-card"><span class="transform-kind">ƒ 간단한 계산</span><code>기본급 + (상여금 또는 0)</code></div><div class="row-state calc">계산</div></div>`
+      :"";
+    $("mappingList").innerHTML=activeFields(documentId).map(field=>mappingRowHtml(field,draft)).join("")+calculation;
+    syncConnectionStatus();
+  }
+  function syncConnectionStatus(){
+    const documentId=state.connectionDocument||state.document,evaluations=bindingEvaluations(editorDraft(),documentId),invalid=evaluations.some(item=>item.result.level==="bad"),risky=evaluations.some(item=>item.result.level==="warn");
+    const status=$("connectionStatus");
+    status.className=`status ${invalid?"missing":risky?"review":"ready"}`;
+    status.textContent=invalid?"연결 필요":risky?"변경 확인":"연결됨";
+    $("saveConnection").textContent=risky?(state.riskConfirmArmed?"이 변경으로 저장":"위험 변경 확인"):"연결 저장";
+  }
+  function openConnection(mode="edit"){
+    state.connectionMode=mode;
+    state.returnView=state.view==="template"?"template":"data";
+    state.connectionDocument=state.document;
+    state.editorMapping=null;state.riskConfirmArmed=false;
+    $("saveNote").className="save-note";$("saveNote").textContent="";
+    $("connection-title").textContent=`${docs[state.connectionDocument].name} ↔ ${docs[state.connectionDocument].linkedDataset}`;
+    $("revisionHint").textContent=`연결 revision ${state.bindingRevisions[state.connectionDocument]} · 비어 있는 필드만 추천합니다.`;
+    renderMappings();setView("connection");
+  }
+  function resolveDocumentField(target,employee,documentId=state.document){
+    const source=activeBinding(documentId)[target];
+    return source&&columnByKey(source)?columnValue(employee,source):"";
+  }
+  function previewPaperHtml(employee){
+    const doc=docs[state.document],head=`<p style="text-align:right;color:#777;font-size:11px">2026년 7월</p><h3>${doc.heading}</h3>`;
+    if(state.document==="employment"){
+      const name=resolveDocumentField("name",employee),department=resolveDocumentField("department",employee),position=resolveDocumentField("position",employee)||"주무관",period=resolveDocumentField("employmentPeriod",employee)||"2022. 03. 02. ~ 현재";
+      return `${head}<div class="line"><span>성명</span><strong>${esc(name)}</strong></div><div class="line"><span>소속</span><strong>${esc(department)}</strong></div><div class="line"><span>직위</span><strong>${esc(position)}</strong></div><div class="line"><span>재직기간</span><strong>${esc(period)}</strong></div><p class="body-copy">위 사람은 현재 당 기관에 재직하고 있음을 증명합니다.</p><p class="seal">2026년 7월 24일 · 문서나르미 샘플</p>`;
+    }
+    if(state.document==="contact"){
+      const name=resolveDocumentField("name",employee),department=resolveDocumentField("department",employee),extension=resolveDocumentField("extension",employee)||`02-2100-${1400+employee.id}`,email=resolveDocumentField("email",employee)||`user${employee.id}@example.go.kr`;
+      return `${head}<div class="line"><span>성명</span><strong>${esc(name)}</strong></div><div class="line"><span>부서</span><strong>${esc(department)}</strong></div><div class="line"><span>내선번호</span><strong>${esc(extension)}</strong></div><div class="line"><span>전자우편</span><strong>${esc(email)}</strong></div><p class="body-copy">업무 연락을 위한 직원 정보입니다.</p><p class="seal">문서나르미 샘플 · 내부 업무용</p>`;
+    }
+    const name=resolveDocumentField("name",employee),department=resolveDocumentField("department",employee),date=resolveDocumentField("date",employee),salary=Number(resolveDocumentField("salary",employee))||0,bonus=Number(resolveDocumentField("bonus",employee))||0;
+    return `${head}<div class="line"><span>성명</span><strong>${esc(name)}</strong></div><div class="line"><span>소속</span><strong>${esc(department)}</strong></div><div class="line"><span>지급일</span><strong>${esc(date)}</strong></div><div class="line"><span>기본급</span><strong>${won(salary)}</strong></div>${bonus?`<div class="line"><span>성과급</span><strong>${won(bonus)}</strong></div>`:""}<div class="amount"><span>지급 합계</span><strong>${won(salary+bonus)}</strong></div><p class="seal">위와 같이 급여를 지급합니다.</p>`;
+  }
+  function renderPreflight(employee){
+    const evaluations=bindingEvaluations(),risks=evaluations.filter(item=>item.result.level==="warn"),optionalEmpty=evaluations.filter(item=>!item.field.required&&item.result.level==="empty").length;
+    $("previewRequiredState").className="summary-value ok";$("previewRequiredState").textContent="정상";
+    $("previewOptionalState").textContent=optionalEmpty?`${optionalEmpty}개`:"없음";
+    $("previewTransformState").className=`summary-value ${risks.length?"warn":"ok"}`;
+    $("previewTransformState").textContent=risks.length?risks.map(item=>`${item.field.label} ← ${columnByKey(item.source)?.label}`).join(", "):"없음";
+    $("previewCollisionState").className="summary-value ok";$("previewCollisionState").textContent="없음";
+    const fileNameValue=resolveDocumentField("name",employee)||employee.name;
+    $("drawerFilename").textContent=`${fileNameValue}_${docs[state.document].name}.hwpx`;
+  }
+  function openPreview(){
+    if(!state.selected.size)return;
+    const status=documentStatus(state.document);
+    if(status.level!=="ready"){toast("연결을 검토한 뒤 미리볼 수 있습니다.");return;}
+    const employee=employees.find(item=>state.selected.has(item.id))||employees[0];
+    state.previewReturnFocus=document.activeElement;
+    $("previewPaper").innerHTML=previewPaperHtml(employee);renderPreflight(employee);
+    const gate=activeGate();if(gate.required){gate.approved=true;updateSelectionCopy();}
+    $("generationResult").classList.remove("on");$("generateButton").disabled=false;$("generateButton").dataset.done="";$("generateButton").textContent=`${state.selected.size}개 생성`;
+    $("previewDrawer").inert=false;$("previewDrawer").setAttribute("aria-hidden","false");
+    $("scrim").classList.add("on");$("previewDrawer").classList.add("on");document.body.style.overflow="hidden";setTimeout(()=>$("closeDrawer").focus(),230);
+  }
+  function closePreview(){
+    $("scrim").classList.remove("on");$("previewDrawer").classList.remove("on");document.body.style.overflow="";
+    $("previewDrawer").setAttribute("aria-hidden","true");$("previewDrawer").inert=true;
+    if(state.previewReturnFocus&&document.contains(state.previewReturnFocus))state.previewReturnFocus.focus();
+  }
+  function toast(message){$("toast").textContent=message;$("toast").classList.add("on");clearTimeout(toast.timer);toast.timer=setTimeout(()=>$("toast").classList.remove("on"),2200)}
+  function resetScenario(scenario){
+    state.scenario=scenario;state.editorMapping=null;state.riskConfirmArmed=false;state.connectionMode="edit";state.validationRevision+=1;
+    Object.values(state.previewGates).forEach(gate=>{if(gate.required)gate.approved=false;});
+    syncDocumentControls();
+    $("dataSurfaceNotice").hidden=true;$("templateSurfaceNotice").hidden=true;
+    renderScenario();
+  }
+  document.querySelectorAll(".nav button").forEach(button=>button.addEventListener("click",()=>{
+    if(button.dataset.view==="template"){openTemplateSettings(state.document);return;}
+    if(state.view==="template"){returnFromTemplate();return;}
+    setView("data");
+  }));
+  document.querySelectorAll("[data-edit-connection]").forEach(button=>button.addEventListener("click",()=>openConnection("edit")));
+  $("runFixButton").addEventListener("click",()=>openConnection("edit"));
+  $("documentSettingsButton").addEventListener("click",()=>openTemplateSettings(state.document));
+  $("templateBackButton").addEventListener("click",returnFromTemplate);
+  $("templateDocumentSelect").addEventListener("change",event=>{state.document=event.target.value;renderTemplateSettings()});
+  document.querySelectorAll(".doc-option").forEach(button=>button.addEventListener("click",()=>selectExecutionDocument(button.dataset.document)));
+  $("scenarioSelect").addEventListener("change",event=>resetScenario(event.target.value));
+  $("recordSearch").addEventListener("input",event=>{state.search=event.target.value;renderRecords()});
+  $("recordBody").addEventListener("click",event=>{const row=event.target.closest("tr");if(!row)return;const id=Number(row.dataset.id);if(state.selected.has(id))state.selected.delete(id);else state.selected.add(id);state.validationRevision+=1;renderRecords()});
+  $("selectAll").addEventListener("change",event=>{visibleEmployees().forEach(employee=>{if(event.target.checked)state.selected.add(employee.id);else state.selected.delete(employee.id)});state.validationRevision+=1;renderRecords()});
+  $("previewButton").addEventListener("click",openPreview);
+  $("templateRunButton").addEventListener("click",runWithTemplateDocument);
+  $("openFileButton").addEventListener("click",()=>{$("scenarioSelect").focus();toast("오른쪽 목록에서 파일 상태를 바꿔 워크플로를 확인할 수 있습니다.")});
+  $("helpButton").addEventListener("click",()=>toast("데이터 선택 → 레코드 선택 → 문서 선택 → 자동 검증 → 미리보기 또는 생성 순서입니다."));
+  $("openTemplateButton").addEventListener("click",()=>toast(`시안에서는 ${docs[state.document].name} 샘플 템플릿을 사용합니다.`));
+  $("editTemplateButton").addEventListener("click",()=>toast(`${docs[state.document].name} 템플릿 본문 편집은 이번 핵심 워크플로 시안의 범위 밖입니다.`));
+  $("newConnectionButton").addEventListener("click",()=>{$("sampleFileDialog").showModal()});
+  $("sampleDialogClose").addEventListener("click",()=>$("sampleFileDialog").close());
+  $("sampleDialogCancel").addEventListener("click",()=>$("sampleFileDialog").close());
+  $("analyzeSampleButton").addEventListener("click",()=>{$("sampleFileDialog").close();resetScenario("normal");$("scenarioSelect").value="normal";openConnection("new");toast("샘플 파일에서 필드 4개와 직원 5명을 분석했습니다.")});
+  $("connectionBack").addEventListener("click",()=>setView(state.returnView));$("cancelConnection").addEventListener("click",()=>setView(state.returnView));
+  $("mappingList").addEventListener("change",event=>{
+    const row=event.target.closest(".mapping-row[data-key]");if(!row)return;
+    state.editorMapping[row.dataset.key]=event.target.value;state.riskConfirmArmed=false;
+    $("saveNote").className="save-note";renderMappings();
+  });
+  $("autoMapButton").addEventListener("click",()=>{
+    const documentId=state.connectionDocument||state.document,draft=editorDraft();let count=0;
+    activeFields(documentId).forEach(field=>{
+      if(draft[field.key])return;
+      const candidate=currentSchema().find(column=>column.semantic===field.semantic&&typeCompatible(field.expectedType,column));
+      if(candidate){draft[field.key]=candidate.key;count+=1;}
+    });
+    state.riskConfirmArmed=false;renderMappings();toast(count?`비어 있는 필드 ${count}개에 추천을 적용했습니다.`:"새로 추천할 빈 필드가 없습니다.");
+  });
+  $("saveConnection").addEventListener("click",()=>{
+    const documentId=state.connectionDocument||state.document,fields=activeFields(documentId),draft=editorDraft(),evaluations=bindingEvaluations(draft,documentId),invalid=evaluations.filter(item=>item.result.level==="bad"),risks=evaluations.filter(item=>item.result.level==="warn");
+    if(invalid.length){
+      $("saveNote").className="save-note on bad";
+      $("saveNote").textContent=invalid.map(item=>`${item.field.label}: ${item.result.reason}`).join(" ");
+      const first=document.querySelector(`[data-key="${invalid[0].field.key}"] select`);if(first)first.focus();return;
+    }
+    if(risks.length&&!state.riskConfirmArmed){
+      state.riskConfirmArmed=true;$("saveNote").className="save-note on warn";
+      $("saveNote").textContent=`${risks.map(item=>item.result.reason).join(" ")} 샘플 값을 확인하고 다시 눌러 저장하세요.`;
+      syncConnectionStatus();return;
+    }
+    const changedFields=fields.filter(field=>(state.bindings[documentId][field.key]||"")!==(draft[field.key]||""));
+    const needsPreview=state.connectionMode==="new"||changedFields.length>0;
+    state.bindings[documentId]={...draft};state.confirmedRisks[documentId]=risks.length>0;
+    state.bindingRevisions[documentId]+=1;state.validationRevision+=1;
+    if(needsPreview){
+      const gate=activeGate(documentId);gate.required=true;gate.approved=false;
+      gate.reason=state.connectionMode==="new"
+        ?"새 연결의 최초 생성 전에 샘플 결과를 확인해야 합니다."
+        :`${changedFields.map(field=>field.label).join(", ")} 연결이 변경되어 결과 확인이 필요합니다.`;
+    }
+    state.connectionMode="edit";
+    $("saveNote").className="save-note on ok";$("saveNote").textContent="연결을 저장했습니다. 이 형식의 새 파일에도 적용됩니다.";
+    $("revisionHint").textContent=`연결 revision ${state.bindingRevisions[documentId]}로 저장했습니다.`;renderScenario();
+    const message=`${docs[documentId].name} ↔ ${docs[documentId].linkedDataset} 연결을 업데이트했습니다. 같은 형식의 새 파일에도 적용됩니다.`;
+    showSurfaceNotice(state.returnView,message);setTimeout(()=>setView(state.returnView),650);
+  });
+  $("scrim").addEventListener("click",closePreview);$("closeDrawer").addEventListener("click",closePreview);$("drawerBack").addEventListener("click",closePreview);
+  function executeRun(source){
+    const status=documentStatus(state.document),gate=activeGate(),previewGate=gate.required&&!gate.approved;
+    if(!state.selected.size||status.level!=="ready"||previewGate){updateSelectionCopy();return;}
+    const drawerButton=$("generateButton"),directButton=$("directGenerateButton");
+    drawerButton.disabled=true;directButton.disabled=true;
+    if(source==="drawer")drawerButton.textContent="생성 중…";else directButton.textContent="생성 중…";
+    setTimeout(()=>{
+      if(source==="drawer"){
+        $("resultTitle").textContent=`문서 ${state.selected.size}개를 만들었습니다.`;$("resultDetail").textContent=`${docs[state.document].name}_2026-07 폴더에서 확인할 수 있습니다.`;$("generationResult").classList.add("on");
+        drawerButton.disabled=false;drawerButton.dataset.done="true";drawerButton.textContent="문서 만들기로 돌아가기";
+      }else{
+        showSurfaceNotice("data",`${docs[state.document].name} ${state.selected.size}개를 만들었습니다.`);
+      }
+      directButton.disabled=false;updateSelectionCopy();toast("문서 생성을 완료했습니다.");
+    },700);
+  }
+  $("directGenerateButton").addEventListener("click",()=>executeRun("surface"));
+  $("generateButton").addEventListener("click",()=>{
+    const button=$("generateButton");
+    if(button.dataset.done){closePreview();setView("data");showSurfaceNotice("data",`${docs[state.document].name} ${state.selected.size}개를 만들었습니다.`);return;}
+    executeRun("drawer");
+  });
+  document.addEventListener("keydown",event=>{if(event.key==="Escape"&&$("previewDrawer").classList.contains("on"))closePreview()});
+  renderScenario();
+})();
+</script>
+</body>
+</html>
