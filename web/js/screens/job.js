@@ -566,6 +566,8 @@
      흔드는 유령으로 남았다. 그래서 **예약을 없애고** 그 시점의 실 DOM 을 id 로 찾아 바로
      세운다 — 착지 우선순위는 방금 고른 작업 카드 → 다시 탐색을 열 출구 → 생성 버튼
      (순위 밖 작업을 골라 카드가 없을 수도 있다). */
+  let browsePickedName = "";  // 이번 닫힘이 "고르고 닫음"이면 그 작업 이름(아니면 "")
+
   function focusAfterPick(name) {
     // 이름이 비면(단순 닫기) 카드 후보를 건너뛰고 출구 → 생성 버튼 순으로 내려간다.
     const ids = (name ? ["jobCand-" + encodeURIComponent(name)] : [])
@@ -587,7 +589,10 @@
       // 재렌더가 후보 줄을 통째로 갈아 끼워 붙잡아 둔 출구 노드가 끊긴다 — Modal 은 끊긴
       // 복귀점을 건너뛰므로 포커스가 방금 숨은 면에 남는다. **닫히는 시점에 다시 찾는다.**
       returnFocus: null,
-      onClose: () => focusAfterPick(LAST && LAST.job_name ? LAST.job_name : ""),
+      // 착지 결정은 **닫힘 1지점**에서만 한다(리뷰 P2): 고르고 닫았으면 그 작업 카드,
+      // 그냥 닫았으면(취소) 다시 열 출구다. 선택 경로가 따로 focus 하면 전이 종료 뒤 이
+      // 콜백이 덮어써 두 착지가 경합한다 — 사유를 플래그로 넘겨 한 번만 결정한다.
+      onClose: () => { const n = browsePickedName; browsePickedName = ""; focusAfterPick(n); },
     });
   }
 
@@ -1329,13 +1334,17 @@
       // 닫으면 사용자는 오류만 받고 찾던 문맥을 잃는다. 성사 시점엔 Python 의 push·render 가
       // 이미 끝나 있으므로(3R P2) 닫은 **직후** 실 DOM 을 찾아 포커스를 세운다 — 예약을
       // 남기지 않으니 무관한 뒤 렌더를 흔들 유령도 없다.
-      selectJobGuarded(name).then((ok) => {
-        if (!ok) return;
-        window.Modal.close("jobBrowseSheet");
-        focusAfterPick(name);
-      }).catch((err) => {
-        log("작업 열기 실패: " + String((err && err.message) || err));
-      });
+      // 선택도 **같은 체인**에 태운다(리뷰 P1): 느린 browse_query·browse_tab 이 아직 돌고
+      // 있으면 그 응답이 선택 뒤에 도착해 패널·후보 스냅샷을 옛 상태로 되돌린다. 탐색 표면의
+      // 모든 왕복이 한 줄에 서야 화면이 마지막 사용자 행동을 반영한다.
+      chained("browse", () =>
+        selectJobGuarded(name).then((ok) => {
+          if (!ok) return;                      // 가드 취소·거절 = 면 유지(문맥 보존)
+          browsePickedName = name;              // 착지 사유 표식 — 결정은 onClose 단일 지점
+          window.Modal.close("jobBrowseSheet");
+        }).catch((err) => {
+          log("작업 열기 실패: " + String((err && err.message) || err));
+        }));
     });
     $("jobDataExpand").addEventListener("click", openJobDataSheet);
     $("jobMirrorExpand").addEventListener("click", openJobConfirmSheet);

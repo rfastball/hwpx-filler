@@ -960,25 +960,25 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
         };
         window.__browseDone = false;
         row.click();
-        Promise.resolve().then(function () {}).then(function () {}).then(function () {
+        // 착지는 **닫힘 전이 종료 뒤**(Modal.finishClose→onClose)에 확정된다 — 즉시 읽으면
+        // 늘 직전 포커스가 보여 프로브가 거짓 통과한다(관측자 오염). 두 사유를 차례로 본다:
+        // ① 고르고 닫음 = 그 작업 카드 ② 그냥 닫음(취소) = 다시 열 출구.
+        setTimeout(function () {
           unstub();
           var cls = document.getElementById('jobBrowseSheet').classList;
           window.__browseSheetClosed = cls.contains('is-closing') || cls.contains('hidden');
           window.__browsePickFocus = document.activeElement && document.activeElement.id;
-          window.__push('job', snap);              // 원판 복구(뒤 프로브 방해 금지)
-          // 단순 닫기의 포커스 복귀는 **전이 종료 뒤**(Modal.finishClose→onClose) 일어난다 —
-          // 그 시점을 지나서 관측해야 6R P2 가 실제로 잡힌다(즉시 읽으면 늘 탭이 보인다).
+          window.__push('job', snap);            // 원판 복구(뒤 프로브 방해 금지)
+          document.querySelector('#jobCandidates [data-browse-open]').click();  // 다시 열고
           setTimeout(function () {
-            window.__browseCloseFocus = document.activeElement && document.activeElement.id;
-            window.__browseDone = true;
-          }, 450);
-        });
+            document.getElementById('jobBrowseClose').click();                  // 그냥 닫기
+            setTimeout(function () {
+              window.__browseCloseFocus = document.activeElement && document.activeElement.id;
+              window.__browseDone = true;
+            }, 450);
+          }, 60);
+        }, 450);
       })();
-      document.getElementById('jobBrowseClose').click();
-      // 닫기는 전이 애니메이션을 타므로 `hidden` 은 뒤에 붙는다 — 닫힘 **시작**을 관측한다
-      // (전이 없는 환경에선 곧바로 hidden 이라 둘 중 하나면 통과).
-      var closing = document.getElementById('jobBrowseSheet').classList;
-      out.browse_closing = closing.contains('is-closing') || closing.contains('hidden');
       // 단순 닫기(면 안에서 재렌더가 있었어도)에서 포커스가 페이지로 돌아오는가(6R P2) —
       // 붙잡아 둔 노드가 아니라 **그 시점의 출구**를 다시 찾아 세운다. 전이 종료를 기다리지
       // 않도록 Modal 의 즉시 종료 경로(닫힘 전이 없는 환경)와 타이머 경로 모두를 허용한다.
