@@ -100,6 +100,10 @@
       lastSessionKey = key;
       setBusy(generating);
     });
+    // **Preserve 복원 뒤에** 착지시킨다(리뷰 1R P2): 안쪽에서 focus 하면 Preserve 가 렌더 전
+    // 활성 요소(탐색 면의 탭·검색)를 복원해 덮어쓴다 — 예약 포커스는 그 복원보다 나중이어야
+    // 사용자를 방금 고른 작업 카드에 세울 수 있다.
+    applyPendingFocus();
   }
 
   /* 이전 생성 결과(요약·진행바·로그)를 기본 상태로 되돌린다(오래된 성공 잔존 방지, #28). */
@@ -392,9 +396,12 @@
       { key: "available", label: `사용 가능 ${b.available_count}` },
       { key: "needs_action", label: `확인 필요 ${b.needs_count}` },
     ];
+    // 안정 id(리뷰 1R P2): 탭 전환은 재렌더라 id 없으면 preserve.js 가 방금 누른 탭으로
+    // 포커스를 못 돌리고, 활성 요소가 열린 모달 밖으로 떨어진다(키보드 사용자 좌초).
     $("jobBrowseTabs").innerHTML = tabs.map((t) =>
-      `<button class="browse-tab" type="button" role="tab" data-browse-tab="${t.key}"` +
-      ` aria-selected="${b.tab === t.key}">${esc(t.label)}</button>`
+      `<button class="browse-tab" type="button" role="tab" id="jobBrowseTab-${t.key}"` +
+      ` data-browse-tab="${t.key}" aria-selected="${b.tab === t.key}">` +
+      `${esc(t.label)}</button>`
     ).join("");
     const q = $("jobBrowseQuery");
     if (q.value !== (b.query || "")) q.value = b.query || "";
@@ -408,7 +415,8 @@
             `${esc((r.missing || []).join(", "))}</span></div>`;
         }
         const active = r.name === s.job_name;
-        return `<button class="browse-row" type="button" data-browse-pick="${esc(r.name)}"` +
+        return `<button class="browse-row" type="button" id="jobBrowseRow-${encodeURIComponent(r.name)}"` +
+          ` data-browse-pick="${esc(r.name)}"` +
           ` aria-pressed="${active}"><span class="browse-nm">${esc(r.name)}</span>` +
           (active ? `<span class="browse-why muted">지금 선택된 작업</span>` : "") +
           `</button>`;
@@ -441,7 +449,8 @@
     if (c.needs_count > 0) bits.push(`확인 필요 <b>${c.needs_count}건</b>`);
     if (bits.length) {
       html += `<span class="cand-more muted">${bits.join(" · ")} — ` +
-        `<button class="btn sm" type="button" data-browse-open>문서 작업 찾기…</button></span>`;
+        `<button class="btn sm" type="button" id="jobBrowseOpen" data-browse-open>` +
+        `문서 작업 찾기…</button></span>`;
     }
     host.innerHTML = html;
   }
@@ -538,6 +547,22 @@
 
   /* 문서 탐색 면 열기 — 실 DOM 이동(SurfaceSheet)이 아니라 자체 내용을 가진 면이라
      Modal 로 직접 연다. 포커스는 검색 입력으로: 이 표면에 온 이유가 "찾기"다. */
+  /* 렌더 후 1회성 포커스 착지 — 후보 id 우선, 없으면 출구(둘 다 없으면 조용히 포기). */
+  let pendingFocus = null;
+
+  function applyPendingFocus() {
+    if (!pendingFocus) return;
+    const ids = pendingFocus;
+    pendingFocus = null;
+    for (let i = 0; i < ids.length; i++) {
+      const el = document.getElementById(ids[i]);
+      if (el && el.focus && el.offsetParent !== null) {
+        try { el.focus({ preventScroll: true }); } catch (err) { el.focus(); }
+        return;
+      }
+    }
+  }
+
   function openBrowseSheet(e) {
     window.Modal.open("jobBrowseSheet", {
       initialFocus: $("jobBrowseQuery"),
@@ -1263,8 +1288,14 @@
       const pick = e.target.closest("[data-browse-pick]");
       if (!pick || pick.getAttribute("aria-pressed") === "true") return;
       // 선택은 명시 사건이다(§18.6) — 면을 닫고 세션 패널로 돌려보낸다(데이터는 생존).
+      const name = pick.getAttribute("data-browse-pick");
+      // 포커스 착지를 **명시로** 예약한다(리뷰 1R P2): 면을 닫는 전이와 선택 재렌더가 겹쳐
+      // 모달이 기억한 복귀 트리거(출구 버튼)가 교체·해제되므로, Modal 의 복귀는 건너뛰어지고
+      // 포커스가 숨은 검색 입력이나 body 로 떨어진다. 착지점은 방금 고른 작업의 카드 —
+      // 사용자의 다음 관심이 거기 있고, 없으면 다시 탐색을 열 출구로 내린다.
+      pendingFocus = ["jobCand-" + encodeURIComponent(name), "jobBrowseOpen"];
       window.Modal.close("jobBrowseSheet");
-      selectJobGuarded(pick.getAttribute("data-browse-pick"));
+      selectJobGuarded(name);
     });
     $("jobDataExpand").addEventListener("click", openJobDataSheet);
     $("jobMirrorExpand").addEventListener("click", openJobConfirmSheet);

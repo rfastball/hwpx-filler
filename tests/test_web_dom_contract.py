@@ -737,6 +737,12 @@ def test_job_document_browser_surface_contract():
     src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
     assert "browse_tab" in src and "browse_query" in src, "탐색 액션 배선이 없습니다."
     assert "data-browse-pick" in src, "탐색 행 선택(명시 사건) 배선이 없습니다."
+    # 재렌더를 가로지르는 포커스 계약(1R P2): 탭·행·출구에 안정 id 가 있고, 선택 뒤 착지는
+    # Preserve 복원 **뒤에** 일어난다(안쪽이면 복원이 덮어써 탐색 면 컨트롤에 갇힌다).
+    for token in ('id="jobBrowseTab-', 'id="jobBrowseRow-', 'id="jobBrowseOpen"'):
+        assert token in src, f"탐색 면 안정 id 누락: {token}"
+    tail = src.split("setBusy(generating);")[1][:400]
+    assert "applyPendingFocus()" in tail, "예약 포커스가 Preserve 복원 뒤에 있지 않습니다."
     # 검색·분류를 JS 가 재계산하지 않는다(RC-23 동형 — 판정은 Python 이 지금).
     browse = src.split("function renderBrowse")[1][:2200]
     for banned in ("filter(", "toLowerCase", "includes("):

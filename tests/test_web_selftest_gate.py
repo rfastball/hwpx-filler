@@ -18,6 +18,7 @@ import json
 import os
 import subprocess
 import sys
+from urllib.parse import quote
 
 import pytest
 
@@ -357,6 +358,10 @@ class TestWebSelftestGate:
         assert "2건" in j["browse_note"], j["browse_note"]
         assert j["browse_focus_is_query"] is True, "탐색 면 초기 포커스가 검색 입력이 아닙니다."
         assert j["browse_closing"] is True, "탐색 면이 닫기 클릭에 닫히지 않았습니다."
+        # 탭 전환은 재렌더다 — 안정 id 가 없으면 포커스가 열린 모달 밖으로 떨어진다(1R P2).
+        assert j["browse_tab_focus"] == "jobBrowseTab-available", j["browse_tab_focus"]
+        # 행을 고르면 포커스는 방금 고른 작업 카드에 착지한다(모달 복귀 트리거는 해제됨).
+        assert j["browse_pick_focus"] == "jobCand-" + quote("공고서"), j["browse_pick_focus"]
 
     def test_job_density_and_expansion_sheets(self, selftest_result: dict) -> None:
         j = selftest_result["job_mirror"]

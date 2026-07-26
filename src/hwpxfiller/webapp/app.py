@@ -916,6 +916,37 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
       out.browse_note = document.getElementById('jobBrowseNote').textContent;
       out.browse_focus_is_query =
         document.activeElement === document.getElementById('jobBrowseQuery');
+      // 탭 전환 재렌더에서 키보드 포커스가 살아남는가(리뷰 1R P2 — 안정 id + preserve.js).
+      var tabA = document.getElementById('jobBrowseTab-available');
+      if (tabA) {
+        tabA.focus();
+        window.__push('job', snap);            // 재렌더(탭 노드 교체)
+        out.browse_tab_focus = document.activeElement && document.activeElement.id;
+      }
+      // 사용 가능 행을 고르면 포커스가 **방금 고른 작업 카드**에 착지한다(모달 복귀 트리거는
+      // 재렌더로 해제되므로 명시 착지). 실 select_job 왕복은 스텁으로 대체하고, 이어 도착할
+      // 스냅샷(job_name 채움)을 우리가 밀어 렌더 훅을 태운다.
+      (function () {
+        var avail = JSON.parse(JSON.stringify(snap));
+        avail.browse = {tab:'available', query:'', rows:[{name:'공고서', missing:[]}],
+                        available_count:7, needs_count:1, filtered_out:0};
+        window.__push('job', avail);
+        var row = document.getElementById('jobBrowseRow-' + encodeURIComponent('공고서'));
+        if (!row) { out.browse_pick_focus = 'no-row'; return; }
+        var real = window.Bridge.call;
+        window.Bridge.call = function () { return Promise.resolve({}); };
+        row.click();
+        window.Bridge.call = real;
+        out.browse_pick_focus_now = document.activeElement && document.activeElement.id;
+        out.browse_pick_card_present = !!document.getElementById(
+          'jobCand-' + encodeURIComponent('공고서'));
+        var picked = JSON.parse(JSON.stringify(avail));
+        picked.job_name = '공고서';             // 선택이 반영된 스냅샷(실 push 대역)
+        picked.candidates.top[0].name = '공고서';
+        window.__push('job', picked);
+        out.browse_pick_focus = document.activeElement && document.activeElement.id;
+        window.__push('job', snap);            // 원판 복구(뒤 프로브 방해 금지)
+      })();
       document.getElementById('jobBrowseClose').click();
       // 닫기는 전이 애니메이션을 타므로 `hidden` 은 뒤에 붙는다 — 닫힘 **시작**을 관측한다
       // (전이 없는 환경에선 곧바로 hidden 이라 둘 중 하나면 통과).
