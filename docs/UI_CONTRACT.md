@@ -55,7 +55,7 @@ Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다.
 | 라우트/표면 | DOM·JavaScript 소유자 | Python 컨트롤러 | 링1 ViewModel·상태 소유자 |
 |---|---|---|---|
 | `home` 대시보드 | `#scr-home`, `screens/home.js` | `HomeController` | `HomeViewModel` |
-| `job` 작업 목록·실행 | `#scr-job`, `screens/job.js` | `JobController` | `RunViewModel`, `SelectionModel`, 필터 상태 |
+| `job` 작업 목록·실행 | `#scr-job`, `screens/job.js` | `JobController` | `RunViewModel`, `SelectionModel`, 필터 상태, 후보 판정(`work_candidates`) |
 | `job` 내부 작업 편집 | `#jobEditHost`, `screens/editor.js`, `editor_entry.js` | `EditorController` | `MappingModel`, 저장 판정, 공유 `TemplateManagerViewModel` |
 | `draft` 기안 작업·세션 | `#scr-draft`, `screens/draft.js`, `draftsession.js` | `DraftController` | `TxtDraftViewModel`, `MappingModel`, `SelectionModel`, `TxtQueueModel` |
 | `tpl` 템플릿 관리 | `#scr-tpl`, `screens/template.js` | `TemplateController` | `TemplateManagerViewModel`, 템플릿 그룹 상태 |
@@ -64,6 +64,20 @@ Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다.
 화면을 추가·삭제·이름 변경할 때는 DOM 루트, 화면 JavaScript의 `SCREEN`, Python 컨트롤러
 `name`, `WebFrontend.controllers`, action registry를 한 계약 변경으로 갱신한다. `job` 내부 편집
 표면처럼 라우트와 컨트롤러가 1:1이 아닌 경우도 위 표에 명시한다.
+
+### `job` 화면의 데이터-우선 세션 계약 (data-first 봉합)
+
+`JobController` 는 마운트된 데이터(`datasource`·`records`)·선택(`SelectionModel`)·필터를
+**세션(컨트롤러) 소유**로 보유한다 — 정본: `docs/DATA_FIRST_INTEGRATION_MAP.md`.
+
+- 데이터 마운트(`pick_data_file`→`load_data_path`, `load_data_sheet`, `load_pool`)는 **작업
+  미선택에도 허용**되고, 마운트 직후 선택은 **0건**이다.
+- `select_job` 은 vm 만 재생성하고 세션 데이터를 주입한다(`RunViewModel.set_acquired`) —
+  데이터·선택·필터는 **전환·해제에서 생존**하고, 잃는 것은 실행 증거(ack·완주 담보)뿐이다.
+  구 T1 스위치 가드(`needs_confirm`/`switch_job`)는 파괴가 사라져 함께 죽었다.
+- 스냅샷은 데이터 준비 시 `candidates`(현재 데이터 호환 작업 후보 — 링1
+  `gui/work_candidates.py` §18.4 단일 판정)를 싣고, 작업 미선택 게이트는 링1
+  `prework_gate` 산출을 그대로 렌더한다(링2 문안 재조립 금지).
 
 ## DOM과 런타임 게이트
 

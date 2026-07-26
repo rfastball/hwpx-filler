@@ -1123,6 +1123,11 @@ body.resizing-master{cursor:col-resize;user-select:none}
   font-size:var(--fs-caption);color:var(--a-muted)}
 .fstrip b{color:var(--a-ink)}
 
+/* 문서 작업 후보 줄(§18.4, data-first) — 데이터 존 하단, 카드는 btn.sm 재사용. */
+.job-cands-row{margin-top:var(--sp-6)}
+.job-cands{display:flex;flex-wrap:wrap;gap:var(--sp-4);align-items:center}
+.job-cand[aria-pressed="true"]{pointer-events:none}
+
 /* 열 필터 패널(엑셀식 아이콘 펼침, 결정 25) — 데이터 존 내 부유 패널. */
 .colpanel{position:fixed;z-index:var(--z-popover);pointer-events:auto;min-width:240px;max-width:340px;
   background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-overlay);

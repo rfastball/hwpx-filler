@@ -66,6 +66,12 @@ class DataZoneMixin:
     def _records(self) -> list:
         raise NotImplementedError  # 컨트롤러가 현 데이터소스 레코드를 댄다
 
+    def _display_indices(self, indices: "list[int]") -> "list[int]":
+        """표시 순서 투영 훅 — 기본 항등(원본 오름차순). 데이터-우선 「작업」 화면이
+        sourceDesc(§18.10)로 재정의한다. 표·실행 입력이 같은 훅을 소비해 보이는 순서와
+        생성 순서가 갈라지지 않는다(WYSIWYG)."""
+        return indices
+
     # ------------------------------------------------------------- 행 선택 액션
     def _do_toggle_record(self, p: dict) -> None:
         self.selection.toggle(int(p["index"]), bool(p["value"]))
@@ -368,7 +374,7 @@ class DataZoneMixin:
         # 슬롯 스태시가 복사해 갈 정의줄 — **지금 살아있는 데이터 기준**으로 여기서만 짓는다
         # (리뷰 F1: 스태시 시점엔 레코드가 이미 교체됐다). 아래 "definition" 과 같은 값이다.
         self._filter_desc = view.describe() if fm.is_active() else ""
-        visible = view.visible_indices()
+        visible = self._display_indices(view.visible_indices())  # 표 순서 = 표시순 투영
         vis_set = set(visible)
         columns = fm.columns
         table_rows = [

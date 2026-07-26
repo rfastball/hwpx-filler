@@ -288,6 +288,25 @@ class TestWebSelftestGate:
         assert any("빈 값 · 클릭=확인" in c for c in chips), f"미입력 칩 미렌더: {chips!r}"
         assert any("비움 확정" in c for c in chips), f"의도적 빈칸 칩 미렌더: {chips!r}"
 
+    def test_job_data_first_prework_surface(self, selftest_result: dict) -> None:
+        # 데이터-우선(§18.2) — 작업 미선택+데이터 마운트 상태에서 세션 존·액션바가 살아 있고,
+        # 후보 카드(available=클릭형·needs_action=정직한 비활성+없는 열 병기)와 prework 게이트
+        # 문안, 표시순(sourceDesc — 최신 행 먼저) 테이블이 실 WebView2 에 그려지는지 되읽는다.
+        j = selftest_result["job_data_first"]
+        assert j.get("error") is None, f"data-first 프로브 예외: {j.get('error')!r}"
+        assert j["zones_shown"] and j["actionbar_shown"], "무작업 상태에서 세션 존이 죽어 있습니다."
+        assert j["cands_row_shown"] and j["cand_buttons"] == 1, j
+        assert j["needs_action_disabled"] is True, "확인 필요 후보가 비활성이 아닙니다."
+        assert "담당자" in j["needs_action_title"], "비활성 사유(없는 열)가 병기되지 않았습니다."
+        assert "문서 작업을 선택하세요" in j["gate_text"], j["gate_text"]
+        assert j["gen_disabled"] is True, "prework 상태에서 생성 버튼이 열려 있습니다."
+        assert "문서 작업을 선택하면" in j["head_hint"], j["head_hint"]
+        assert j["tbl_rows_order"] == ["1", "0"], f"표시순(최신 먼저)이 아닙니다: {j['tbl_rows_order']!r}"
+        # #302 리뷰 P2 — prework 은 생성 재진술을 하지 않고(파일명·폴더 정의 불가 = 과진술),
+        # 저장 폴더 선택은 작업 속성이라 비활성(선택이 기본값에 조용히 덮이는 창 봉쇄).
+        assert j["restate_hidden"] is True, "prework 상태에서 생성 재진술이 노출됩니다."
+        assert j["folder_pick_disabled"] is True, "prework 상태에서 폴더 선택이 열려 있습니다."
+
     def test_job_density_and_expansion_sheets(self, selftest_result: dict) -> None:
         j = selftest_result["job_mirror"]
         assert j.get("error") is None, j

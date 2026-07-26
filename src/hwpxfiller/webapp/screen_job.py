@@ -59,8 +59,9 @@ from ..gui.filter_state import (
     FilterModel,
 )
 from ..gui.result_errors import describe_fill_note, describe_result_error
-from ..gui.run_state import RunViewModel
+from ..gui.run_state import RunViewModel, resolve_file_source, resolve_pool_source
 from ..gui.selection_state import SelectionModel
+from ..gui.work_candidates import KIND_AVAILABLE, candidate_rows, prework_gate
 from .job_list import build_flat_rows, build_group_sections, drift_note
 from .data_zone import (
     EMPTY_FILTER as _EMPTY_FILTER,
@@ -115,6 +116,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.registry = registry
         self._push_sink = push
         self.vm: "RunViewModel | None" = None
+        # 세션 소유 데이터(data-first 봉합, §18.2 보존 계약) — 마운트된 datasource·records 는
+        # 컨트롤러(세션)가 보유해 **작업 전환에서 생존**한다. vm 은 재생성 시
+        # ``set_acquired`` 로 이 상태를 주입받는 소비자다(RC-22 원자 진입점 재사용).
+        self.datasource = None
+        self.records: "list[dict]" = []
         self.selection = SelectionModel(0)
         # 필터 선언 상태(블록 4, 결정 23~25) — 스코프 = 세션(작업×데이터, 결정 24).
         # 데이터 겨눔 시 생성, 작업 전환·데이터 교체 시 재생성(전환 인계는 PR-4 결정 28).
@@ -165,8 +171,35 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         return build_group_sections(jobs, self.job_name, self._collapsed)
 
     # ------------------------------------------------------------- 스냅샷
+    def _display_indices(self, indices: "list[int]") -> "list[int]":
+        """표시 순서 = sourceDesc(§18.10, 충돌 B 확정 2026-07-26) — 최신 행(마지막 원본
+        행)이 먼저다. 표 렌더·실행 입력이 이 한 훅을 공유한다(보이는 것=실행되는 것)."""
+        return sorted(indices, reverse=True)
+
     def _indices(self) -> "list[int]":
-        return self.selection.selected_indices()
+        """실행 입력 = OrderedSelection(§2): 선택 집합을 **전체 표시순서에 투영**한다.
+
+        생성·미리보기·거울이 전부 이 순서를 소비한다 — 순번 토큰(``{{seq}}``)과 동명
+        꼬리표(``naming._dedupe``)가 화면에 보이는 위→아래 순서를 그대로 따른다(WYSIWYG).
+        같은 선택이라도 표시 순서가 다르면 파일명이 달라질 수 있다 — 인지하고 수용한
+        확정(봉합 지도 §2)이며, 완화는 파일명 미리보기가 같은 투영을 보여주는 것이다.
+        """
+        return self._display_indices(self.selection.selected_indices())
+
+    def _candidate_payload(self, jobs) -> "list[dict]":
+        """현재 데이터에 대한 문서 작업 후보(§18.4) — 판정은 링1 단일 출처 소비.
+
+        데이터 미준비면 빈 목록(§18.1 — 계산 자체를 하지 않는다). ``jobs`` 는 좌 목록과
+        같은 스캔 1회 결과를 받아 목록·후보가 갈라지지 않는다. fields 는 필터 열 파생과
+        같은 원천(``records[0].keys``) — 표시와 판정이 같은 열 집합을 본다.
+        """
+        if self.datasource is None or not self.records:
+            return []
+        fields = list(self.records[0].keys())
+        return [
+            {"name": j.name, "kind": c.kind, "missing": list(c.missing)}
+            for j, c in candidate_rows(jobs, fields)
+        ]
 
     def _filename_source_columns(self) -> "list[str]":
         """파일명 패턴이 이미 나르는 **원본 데이터 열** — 식별 요약 토큰 모드 입력(결정 37).
@@ -185,8 +218,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         from ..naming import pattern_field_tokens
 
+        if self.vm is None:
+            return []  # 작업 미선택 = 파일명 네임스페이스 부재 — 토큰 모드 입력 없음
         tokens = set(pattern_field_tokens(self.vm.job.filename_pattern))
-        present = set(self.vm.records[0].keys()) if self.vm.records else set()
+        present = set(self.records[0].keys()) if self.records else set()
         cols: "list[str]" = []
         for m in self.vm.job.mapping.mappings:
             # source 유래 유형만 파일명이 그 열을 나른다(단일 출처 SOURCE_CARRIER_TYPES).
@@ -212,28 +247,29 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         기준 시각은 여기서 캡처해 ``_names_now`` 로 남긴다(:meth:`generate` 가 같은 값 소비 —
         RC-02 '확인 대상=생성 대상'의 미리보기 확장).
         """
-        if self.vm is None:
+        if not self.records:
             return []
         from ..naming import plan_output_names
 
         names: "dict[int, str]" = {}
-        if indices:
+        if indices and self.vm is not None:  # 파일명은 작업 속성 — 미선택이면 미리보기 없음
             self._names_now = datetime.now()
             planned = plan_output_names(
                 self.vm.job.filename_pattern, mapped, now=self._names_now,
             )
             names = dict(zip(indices, planned, strict=True))
         isum = identity_summary(
-            self.vm.records, filename_tokens=self._filename_source_columns()
+            self.records, filename_tokens=self._filename_source_columns()
         )
+        # 목록 순서 = 표시순(sourceDesc) — 각 행은 원본 index 를 지녀 선택·토글이 안전하다.
         return [
             {
                 "index": i,
                 "selected": self.selection.is_selected(i),
                 "name": names.get(i, ""),
-                "summary": isum.display_for(rec),  # 표시=빈 세그먼트를 마커(빈칸)로 채워 위치 보존(생략 아님 — 서로 다른 행이 동일 문자열로 붕괴하는 것 차단)
+                "summary": isum.display_for(self.records[i]),  # 표시=빈 세그먼트를 마커(빈칸)로 채워 위치 보존(생략 아님 — 서로 다른 행이 동일 문자열로 붕괴하는 것 차단)
             }
-            for i, rec in enumerate(self.vm.records)
+            for i in self._display_indices(list(range(len(self.records))))
         ]
 
     # ---- 본문 존 거울(D2 ⓑ, 결정 36) — 필드 채움 테이블 값 집계 --------------
@@ -312,7 +348,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
           그 외 = 직접(필터 활성이면 매치/밖 수치 병기 — S4 델타).
         - **restate.sample**: 층화 표본(결정 5) — 광의 OR 에서 소수 가지가 반드시 등장.
         """
-        if self.filter is None or self.vm is None:
+        if self.filter is None:  # 데이터 미겨눔 — 작업 미선택은 무관(데이터 존은 세션 소유)
             return _EMPTY_FILTER, _EMPTY_TABLE, _EMPTY_RESTATE, self._guard_state()
         # 선두 열 소재는 ``record_rows`` 재사용 — 이 화면은 그 목록을 스냅샷 ``records`` 로도
         # 싣기 때문에 이미 전량 지어져 있다(믹스인은 실리는 행에만 이 조회를 부른다).
@@ -402,15 +438,38 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 if self.data_notice_text else None
             ),
         }
+        # 후보(§18.4) — 데이터 준비 시에만 계산(§18.1: 미준비면 계산 자체를 하지 않는다).
+        # 판정 fields 는 필터 열 파생과 같은 원천(records[0].keys — 표시=판정 정합).
+        base["candidates"] = self._candidate_payload(jobs)
         if self.vm is None:
+            # 작업 미선택 상태 — 데이터 존은 세션 소유라 그대로 산다(데이터-우선, §18.2).
+            indices = self._indices()
+            record_rows = self._record_rows(indices, [])
+            filter_snap, table_snap, restate_snap, guard_snap = self._filter_sections(
+                indices, record_rows
+            )
+            g = prework_gate(
+                has_data=self.datasource is not None,
+                selected_count=self.selection.selected_count(),
+                # available 만 센다(#302 리뷰 P2) — needs_action 뿐이면 모든 후보 버튼이
+                # 비활성이라 "선택하세요"는 이행 불가능한 지시(문안 정직성 위반)가 된다.
+                has_candidates=any(
+                    c["kind"] == KIND_AVAILABLE for c in base["candidates"]
+                ),
+            )
             base.update({
                 "template_name": "", "template_path": "", "filename_pattern": "",
-                "template_missing": False, "has_data": False,
-                "record_count": 0, "selected_count": 0, "records": [],
+                "template_missing": False,
+                "has_data": self.datasource is not None,
+                "record_count": len(self.records),
+                "selected_count": self.selection.selected_count(),
+                "records": record_rows,
                 "preflight": {"level": "", "text": ""},
                 "mirror": [], "drift": [], "name_tokens": [],
-                "filter": _EMPTY_FILTER, "table": _EMPTY_TABLE, "restate": _EMPTY_RESTATE,
-                "gate": {"enabled": False, "level": "warn", "text": "왼쪽에서 작업을 선택하세요."},
+                "filter": filter_snap, "table": table_snap, "restate": restate_snap,
+                "guard": guard_snap,
+                # 게이트는 링1 단일 산출(prework_gate) 소비 — 링2 문안 재조립 금지(RC-23 동형).
+                "gate": {"enabled": g.enabled, "level": g.level, "text": g.text},
             })
             return base
         job = self.vm.job
@@ -434,8 +493,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 not job.template_path or not Path(job.template_path).exists()
             ),
             "filename_pattern": job.filename_pattern,
-            "has_data": self.vm.datasource is not None,
-            "record_count": len(self.vm.records),
+            "has_data": self.datasource is not None,
+            "record_count": len(self.records),
             "selected_count": self.selection.selected_count(),
             "records": record_rows,
             # 필터 상태·데이터 테이블·재진술 유래·가드(블록 4) — 표면은 받은 것을 그리기만.
@@ -473,21 +532,29 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
     # ------------------------------------------- 네이티브 보조(브리지가 다이얼로그 담당)
     def load_data_path(self, path: str, *, sheet: "str | None" = None) -> None:
-        """선택된 데이터 파일을 링1 VM 으로 로드. 레코드 0건이면 시끄럽게 실패.
+        """선택된 데이터 파일을 세션에 마운트. 레코드 0건이면 시끄럽게 실패.
+
+        **데이터-우선(§18.2)**: 작업 미선택에도 마운트할 수 있다 — 데이터는 세션 소유고
+        vm 은 있으면 ``set_acquired`` 로 주입받는다. 마운트 직후 선택은 **0건**이다
+        (§18.2 commit 뒤 초기화 — 구 전체선택 계약의 개정, 봉합 지도 충돌 A).
 
         ``sheet`` 는 웹에서 확정한 시트명(다중 시트 확정 게이트 #33, None=CSV·단일 시트).
-        시그니처는 실행 화면과 동형 — 브리지 ``pick_data_file``/``load_data_sheet`` 재사용.
+        시그니처 동형 — 브리지 ``pick_data_file``/``load_data_sheet`` 재사용.
         """
-        if self.vm is None:
-            raise ValueError("먼저 작업을 선택하세요.")
-        records = self.vm.load_data(path, sheet=sheet)  # 파일 소스 리졸버(Qt-free). 실패는 raise.
+        if self._generation_lock.locked():  # 생성 중 데이터 교체 금지(#302 P1 동류)
+            raise ValueError("문서 생성이 진행 중입니다. 중단하거나 완료된 뒤 데이터를 바꾸세요.")
+        source, records = resolve_file_source(path, sheet=sheet)  # 실패는 raise(§18.2 원자)
         if not records:
-            raise ValueError(NO_ROWS_TEXT)
+            raise ValueError(NO_ROWS_TEXT)  # 성공 전 현재 runtime 미파기 — 아래 대입 전 반환
         self._stash_filter()  # 죽는 세션의 정의 → 직전 필터 슬롯(결정 28, 옛 소스 키 기준)
+        self.datasource = source
+        self.records = records
+        if self.vm is not None:
+            self.vm.set_acquired(source, records)  # ack 재평가 포함(RC-22)
         self.data_label = Path(path).name
         self.data_source = "file"  # 병기 라벨은 스냅샷이 합성(#26·K8)
         self._data_key = self._file_key(path, sheet)  # 소스 일치 게이트(결정 28)
-        self.selection = SelectionModel(len(records))  # 데이터 변경 → 전체 선택 초기화
+        self.selection = SelectionModel(len(records), all_selected=False)  # 선택 0건(§18.2)
         self._init_filter()  # 데이터 교체 = 필터 재생성(결정 24 — 열 지형이 바뀐다)
         self._clear_data_notice()  # 사용자가 직접 데이터를 겨눔 → 자동 조준 재진술 소거
         self._push()
@@ -534,44 +601,47 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         return None
 
     def _do_select_job(self, p: dict) -> "dict | None":
-        """좌 목록 클릭 → RunViewModel 재구성(패널 세션 진입). 저장 폴더 기본 = 템플릿/Results.
+        """좌 목록 클릭 → RunViewModel 재구성. 저장 폴더 기본 = 템플릿/Results.
 
-        **T1 세션 가드(결정 26·27)**: 무장 상태(재현 불가능한 수작업 선택)에서 다른 작업으로
-        전환하면 파괴를 먼저 재진술한다 — ``needs_confirm`` 반환(무변이), 표면이 modal.js
-        이진 확인(기본 포커스=머무르기) 후 ``confirm=True`` 로 재호출(RC-02 왕복 동형).
-        내부 경로(레지스트리 소실 무효화·재연결 재적재)는 confirm 승계로 통과한다.
+        **데이터-우선 보존 계약(§18.2)**: 데이터·선택·필터는 세션 소유라 작업 전환에서
+        **생존**한다 — 전환은 vm 만 재생성하고 세션 데이터를 ``set_acquired`` 로 주입한다.
+        전환이 잃는 것은 실행 증거(ack·완주 담보)뿐이고(§19.10) 게이트가 재검증을 강제하므로
+        조용한 소실이 없다. 구 T1 스위치 가드(전환=세션 파기 재확인)는 파기 자체가 사라져
+        함께 죽었다 — 가드 문안은 실제로 사라지는 집합과 일치해야 한다(과경고=거짓말).
+        ``confirm`` 페이로드 키는 왕복 동형 유지를 위해 수용하되 더는 판정에 쓰지 않는다.
 
-        작업에 기본 데이터셋 참조(#53-A)가 있으면 실행 시점에 다시 읽어 자동 조준한다.
+        작업에 기본 데이터셋 참조(#53-A)가 있으면 **세션에 데이터가 없을 때만** 자동
+        조준한다 — 사용자가 이미 마운트한 데이터를 참조가 조용히 덮으면 §18.2 위반이다.
         """
         name = p["name"]
-        if name != self.job_name and not p.get("confirm"):
-            g = self._guard_state()
-            if g["armed"]:
-                return {"needs_confirm": True, "kind": "switch_job", "target": name, **g}
+        # 생성 진행 중 전환 금지(#302 P1) — vm 교체가 진행 중 배치의 검증·계획과 경합한다.
+        # 조용한 무시가 아니라 시끄러운 거부(raise → 셸 rejection 백스톱이 표면화).
+        if self._generation_lock.locked():
+            raise ValueError("문서 생성이 진행 중입니다. 중단하거나 완료된 뒤 작업을 전환하세요.")
         self._clear_data_notice()
-        self._stash_filter()  # 죽는 세션의 정의 → 직전 필터 슬롯(결정 28 — 저장 아닌 전달)
-        self._last_generated = None  # 완주 담보는 세션 스코프 — 전환 시 소멸
-        self.filter = None  # 필터 정의 = 세션 휘발(결정 8·24) — 작업 전환 시 소멸
-        self._data_key = ""  # 데이터도 함께 죽는다 — 소스 키 무효
-        if not name:  # 선택 해제 = 빈 패널
+        self._last_generated = None  # 실행 증거는 세션 스코프 — 전환 시 소멸(§19.10)
+        if not name:  # 선택 해제 = 작업만 내려놓는다(데이터 존은 그대로)
             self.vm = None
-            self.selection = SelectionModel(0)
             self.job_name = ""
-            self.data_label = ""
-            self.data_source = ""
             self.out_dir = ""
             return
         job = self.registry.load(name)
         self.vm = RunViewModel(job)
-        self.selection = SelectionModel(0)
         self.job_name = name
-        self.data_label = ""
-        self.data_source = ""
+        if self.records:
+            self.vm.set_acquired(self.datasource, self.records)  # ack 재평가 포함(RC-22)
+            # 필터 열 유형 재조정(#302 리뷰 P2): 무작업 마운트의 필터는 값 스니핑만 탔다 —
+            # 작업이 정해진 지금 매핑 확정 유형 힌트를 반영한다. 단 **정의 없는 필터만**
+            # 재생성한다: 사용자가 이미 만든 정의는 유형 재판정이 술어를 조용히 떨어뜨릴
+            # 수 있어 그대로 둔다(사용자 확정 > 유형 힌트 — 조작 순서 의존을 정의 유무의
+            # 명시 규칙으로 환원).
+            if self.filter is not None and not self.filter.is_active():
+                self._init_filter()
         self.out_dir = (
             str(Path(job.template_path).parent / OUTPUT_SUBDIR_NAME)
             if job.template_path else ""
         )
-        if job.default_dataset_ref:
+        if job.default_dataset_ref and self.datasource is None:
             self._auto_aim_default(job.default_dataset_ref)
 
     def _clear_data_notice(self) -> None:
@@ -585,7 +655,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         데이터 미겨눔으로 남기고 원인·복구 동선을 시끄럽게 재진술한다(confirm-or-alarm).
         A-1-11 승계: 동기 I/O 지연·표시 부재 우려는 이슈 #65 가 소비 시점에 재평가.
         """
-        res = load_pool_into(self.pool_registry, ref, self.vm.load_pool_item)
+        res = load_pool_into(self.pool_registry, ref, self._load_pool_records)
         if res["ok"]:
             self.data_label = ref
             self.data_source = "pool"
@@ -756,17 +826,20 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     #  슬라이스 6 PR-2b: txt 큐가 같은 존을 재사용한다. data_zone.py 가 정본.)
 
     def _records(self) -> list:
-        return self.vm.records if self.vm is not None else []
+        return self.records  # 세션 소유(데이터-우선) — vm 은 주입 소비자일 뿐
 
     def _init_filter(self) -> None:
-        """데이터 겨눔 시 필터 신설(결정 24) — 설치는 믹스인, 힌트(매핑 확정 유형)는 화면 몫."""
-        records = self.vm.records if self.vm is not None else []
+        """데이터 겨눔 시 필터 신설(결정 24) — 설치는 믹스인, 힌트(매핑 확정 유형)는 화면 몫.
+
+        작업 미선택 마운트(데이터-우선)에선 힌트 없이 값 스니핑만 쓴다 — 작업을 나중에
+        선택해도 필터는 데이터 스코프라 재생성하지 않는다(§18.10: 필터는 가시성만).
+        """
         hints = {
             m.source: m.type
             for m in (self.vm.job.mapping.mappings if self.vm is not None else [])
             if m.source and m.type in (KIND_TEXT, KIND_DATE, KIND_AMOUNT)
         }
-        self._install_filter(records, hints)
+        self._install_filter(self.records, hints)
         self._last_generated = None  # 완주 집합의 인덱스는 이전 데이터 좌표 — 교체 시 무효
 
     def _do_ack_field(self, p: dict) -> None:
@@ -782,15 +855,33 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.vm.unacknowledge(p["field"])
 
     # -------------------------- 등록 데이터(풀) 겨눔(#26/#6) — 공용 래퍼(K4)의 화면별 훅
-    def _pool_guard(self) -> "str | None":
-        """겨눔 전제 = 작업 선택 — 미선택이면 공용 래퍼가 오류 dict 로 재진술한다."""
-        return "먼저 작업을 선택하세요." if self.vm is None else None
+    def _pool_loader(self):
+        """세션 소유 풀 로더(데이터-우선) — 작업 미선택에도 겨눌 수 있다."""
+        return self._load_pool_records
+
+    def _load_pool_records(self, item) -> list:
+        """풀 항목 → 세션 마운트. 0건이면 상태 불변(공용 관문이 문구 재진술).
+
+        링1 리졸버(:func:`~hwpxfiller.gui.run_state.resolve_pool_source`)를 직접 소비한다 —
+        vm 경유(``load_pool_item``)는 작업 선택을 전제해 데이터-우선과 어긋난다. vm 이
+        있으면 같은 데이터를 ``set_acquired`` 로 주입(ack 재평가 포함, RC-22).
+        """
+        if self._generation_lock.locked():  # 생성 중 데이터 교체 금지(#302 P1 동류)
+            raise ValueError("문서 생성이 진행 중입니다. 중단하거나 완료된 뒤 데이터를 바꾸세요.")
+        source, records = resolve_pool_source(item)
+        if not records:
+            return []
+        self.datasource = source
+        self.records = records
+        if self.vm is not None:
+            self.vm.set_acquired(source, records)
+        return records
 
     def _after_pool_load(self, records: list) -> None:
-        """풀 겨눔도 파일과 동일하게 새 데이터 = 전체 선택·ack·필터 초기화를 탄다."""
+        """풀 겨눔도 파일과 동일하게 새 데이터 = 선택 0건(§18.2)·ack·필터 초기화를 탄다."""
         self._stash_filter()  # 죽는 세션의 정의 → 슬롯(옛 소스 키 기준 — 키 갱신 전에)
         self._data_key = self._pool_key()  # 라벨은 믹스인/자동 조준이 이미 세팅
-        self.selection = SelectionModel(len(records))  # 데이터 변경 → 전체 선택 초기화
+        self.selection = SelectionModel(len(records), all_selected=False)  # 선택 0건(§18.2)
         self._init_filter()  # 데이터 교체 = 필터 재생성(결정 24)
         self._clear_data_notice()  # 사용자가 직접 겨눔 → 자동 조준 재진술 소거
 
@@ -850,19 +941,20 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
     def _generate_locked(self, *, confirm_overwrite: bool = False) -> dict:
         """단일 생성 실행의 본체. ``generate``가 재진입 잠금과 취소 토큰을 소유한다."""
-        # 이 런의 주체를 **시작 시점에 붙든다** — 생성 중 작업 전환이 가능하므로(P1 리뷰,
-        # _stamp_last_run 참조) 완주 뒤 현재 상태를 읽으면 남의 작업에 역사를 적는다.
+        # 이 런의 주체를 **시작 시점에 붙들고 이후 self.vm 을 다시 읽지 않는다**(#302 P1):
+        # 생성 중 작업 전환이 self.vm 을 갈아끼우면 검증·계획이 남의 작업으로 새고,
+        # 완주 뒤 현재 상태를 읽으면 남의 작업에 역사를 적는다(_stamp_last_run 동류).
         run_job_name, run_vm = self.job_name, self.vm
         indices = self._indices()
         out_dir = self.out_dir
 
         # 1) 기본 가드(데이터·폴더·레코드·구조 드리프트) — 링1 단일 판정.
-        errors = self.vm.validate_generate(indices, out_dir)
+        errors = run_vm.validate_generate(indices, out_dir)
         if errors:
             return {"ok": False, "error": errors[0].message, "level": errors[0].level}
 
         # 2) 미입력 강제 확인 게이트(ADR-E) — 버튼이 이미 비활성이어도 방어적 재확인.
-        unmet = self.vm.unmet_blanks(indices)
+        unmet = run_vm.unmet_blanks(indices)
         if unmet:
             return {
                 "ok": False, "level": "warn",
@@ -870,7 +962,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             }
 
         # 3) 미입력 표식(확인된 빈칸) — 완료 요약이 병기한다(낙관 서사 해소).
-        blanks = self.vm.blank_fields(indices)
+        blanks = run_vm.blank_fields(indices)
         self._marked_fields = list(blanks)
         marker = MISSING_MARKER if blanks else ""
 
@@ -879,7 +971,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         #    형식 "종류별 수치 재진술" 승계). 모달은 파괴 지점=덮어쓰기에만 선다. 표면(job.js)이
         #    이 수치로 modal.js 본문을 합성한다 — 별도 재진술 모달을 만들지 않는다.
         now = self._names_now or datetime.now()
-        conflicts = self.vm.output_conflicts(indices, out_dir, mark_missing=marker, now=now)
+        conflicts = run_vm.output_conflicts(indices, out_dir, mark_missing=marker, now=now)
         if conflicts and not confirm_overwrite:
             names = [Path(p).name for p in conflicts]
             return {
@@ -893,7 +985,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         overwrite = bool(conflicts)
 
         # 5) 불변 생성 계획(RC-07) → 동기 생성(진행 델타 푸시).
-        plan = self.vm.build_generation_plan(
+        plan = run_vm.build_generation_plan(
             indices, out_dir, marker=marker, overwrite=overwrite, now=now
         )
         self._push_progress(0, len(plan.records))

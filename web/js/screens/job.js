@@ -78,15 +78,16 @@
       renderMaster(s);
       const hasJob = !!s.has_job;
       syncModeDisplay(hasJob);
-      if (hasJob) {
-        renderHeader(s);
-        renderData(s);
-        renderPreflight(s);
-        renderMirror(s);
-        dz.render(s);  // 데이터 존(테이블·칩·스트립) — 팩토리 소유(datazone.js)
-        renderRestate(s);
-        renderGateAndFolder(s);
-      }
+      // 데이터-우선(§18.2): 세션 4존은 작업 미선택에도 산다 — 스냅샷이 vm-None 상태를
+      // 전 키 유효값으로 방출하므로(prework 게이트·빈 거울·후보) 렌더러는 무조건 돈다.
+      renderHeader(s);
+      renderData(s);
+      renderPreflight(s);
+      renderMirror(s);
+      dz.render(s);  // 데이터 존(테이블·칩·스트립) — 팩토리 소유(datazone.js)
+      renderCandidates(s);
+      renderRestate(s);
+      renderGateAndFolder(s);
       renderStatus(s);
       if (MODE === "edit") setEditStatus();  // 편집 모드 표지는 세션 상태 pill 을 덮는다
       // 완료 존(생성 결과·로그)은 세션 스코프로 보존한다(결정 7) — 매 push 가 아니라 세션이
@@ -127,11 +128,10 @@
       window.SurfaceSheet.closeAndRestore("jobConfirmSheet");
       window.SurfaceSheet.closeAndRestore("dataSheet");
     }
-    $("jobZones").style.display = (!edit && hasJob) ? "" : "none";
-    // 하단 sticky 생성 액션바(#179 슬라이스 5b) — 세션 4존과 같이 실행 모드·작업 선택 시에만.
-    // 편집 모드(정의 호스트)·미선택에선 숨어 고아 버튼이 되지 않는다.
-    $("jobActionBar").style.display = (!edit && hasJob) ? "" : "none";
-    $("jobEmptyPanel").style.display = (edit || hasJob) ? "none" : "";
+    // 데이터-우선: 세션 4존·액션바는 실행 모드면 상시 — 작업 미선택에도 데이터 존이
+    // 진입점이다(§18.2). 구 미선택 빈 패널은 은퇴(안내는 prework 게이트 문안이 승계).
+    $("jobZones").style.display = !edit ? "" : "none";
+    $("jobActionBar").style.display = !edit ? "" : "none";
     $("jobEditHost").style.display = edit ? "" : "none";
   }
 
@@ -254,8 +254,17 @@
 
   /* ---- 헤더 존 — 작업 정체(이름·템플릿·재연결 동선) ---- */
   function renderHeader(s) {
-    $("jobHeadTitle").textContent = s.job_name || "";
     const tpl = $("jobHeadTpl");
+    if (!s.has_job) {
+      // 작업 미선택(데이터-우선 진입) — "템플릿 경로가 비었다"는 작업 있는 상태의 문안이라
+      // 여기 쓰면 거짓말이다. 선택하면 채워질 자리임을 담백하게 말한다.
+      $("jobHeadTitle").textContent = "";
+      tpl.textContent = "문서 작업을 선택하면 템플릿 정보가 표시됩니다.";
+      $("jobRelink").style.display = "none";
+      $("jobRelink").innerHTML = "";
+      return;
+    }
+    $("jobHeadTitle").textContent = s.job_name || "";
     tpl.innerHTML = s.template_name
       ? `템플릿 <span class="mono">${esc(s.template_name)}</span> ${PathTrack.affordances(s.template_path)}`
       : `템플릿 경로가 비어 있습니다. 편집 모드의 템플릿 탭에서 지정하세요.`;
@@ -287,6 +296,32 @@
       note.style.display = "none";
       note.textContent = "";
     }
+  }
+
+  /* ---- 문서 작업 후보(§18.4, data-first) — 판정은 Python 단일 출처, 여기는 카드만 ----
+     available=클릭 선택(현재 작업은 눌린 표지), needs_action=정직한 비활성 + 없는 열 병기
+     (막힌 이유를 숨기지 않는다). 데이터 미준비면 줄 자체가 없다(§18.1 — 후보 미계산). */
+  function renderCandidates(s) {
+    const row = $("jobCandsRow");
+    const host = $("jobCandidates");
+    if (!s.has_data) { row.style.display = "none"; host.innerHTML = ""; return; }
+    row.style.display = "";
+    const cands = s.candidates || [];
+    if (!cands.length) {
+      host.innerHTML = `<span class="muted">현재 데이터에 사용할 수 있는 문서 작업이 없습니다.</span>`;
+      return;
+    }
+    host.innerHTML = cands.map((c) => {
+      if (c.kind === "available") {
+        const active = c.name === s.job_name;
+        // data-busy-lock: 생성 중 setBusy 가 비활성 — 진행 중 전환은 Python 도 거부(P1).
+        return `<button class="btn sm job-cand${active ? " primary" : ""}" type="button"` +
+          ` data-busy-lock data-cand="${esc(c.name)}" aria-pressed="${active}">${esc(c.name)}</button>`;
+      }
+      return `<button class="btn sm job-cand" type="button" disabled` +
+        ` title="현재 데이터에 없는 열: ${esc((c.missing || []).join(", "))}">` +
+        `${esc(c.name)} · 확인 필요</button>`;
+    }).join("");
   }
 
   function renderPreflight(s) {
@@ -440,7 +475,9 @@
     // 동시에 진술하면 모순(confirm-or-alarm, 리뷰). '차단' 판정은 게이트 단일 출처를 소비한다
     // (drift 를 독립 재유도하지 않는다 — 백엔드 RC-23 서열이 danger 를 이미 합성; 토큰 danger 도 포섭).
     const blocked = !!(s.gate && s.gate.level === "danger");
-    if (!s.has_data || !sel.length || blocked) { box.style.display = "none"; box.innerHTML = ""; return; }
+    // 작업 미선택(prework)이면 재진술 자체가 성립하지 않는다 — 파일명·폴더가 정의 불가한데
+    // "문서 N건 생성"을 말하면 과진술(거짓)이다(#302 리뷰 P2). 게이트가 다음 할 일을 말한다.
+    if (!s.has_job || !s.has_data || !sel.length || blocked) { box.style.display = "none"; box.innerHTML = ""; return; }
     box.style.display = "";
     const rs = s.restate || { origin: null, filter_active: false, sample: [] };
     const byIndex = {};
@@ -474,7 +511,10 @@
     // 서수만 표시층에서 결합한다(H-03). danger는 템플릿·매핑 정의, 선택 0은 데이터 존,
     // 나머지 미입력·저장 폴더 사유는 본문 확인 존에서 해소한다.
     if (!g || g.enabled || !g.text) return "";
-    if (!s.has_job || s.template_missing || g.level === "danger") return "① ";
+    // 작업 미선택(데이터-우선 prework) — 데이터 겨눔·행 선택·문서 작업 후보가 전부
+    // 데이터 존(②)에 있으므로 서수도 ②다(①=템플릿·헤더는 작업 선택 뒤의 존).
+    if (!s.has_job) return "② ";
+    if (s.template_missing || g.level === "danger") return "① ";
     if (!s.has_data || !(s.selected_count > 0)) return "② ";
     return "③ ";
   }
@@ -525,6 +565,10 @@
   function setBusy(busy) {
     $("scr-job").querySelectorAll("[data-busy-lock]").forEach((el) => { el.disabled = busy; });
     $("jobGenBtn").disabled = busy || !(LAST && LAST.gate && LAST.gate.enabled);
+    // 저장 폴더는 작업 속성(기본 = 템플릿/Results) — 작업 미선택에서 고르게 두면 작업
+    // 선택이 기본값으로 조용히 덮어써 선택이 증발한다(#302 리뷰 P2). busy-lock 일괄 복원이
+    // 되살리지 않도록 여기(렌더 말미 단일 지점)서 판정한다.
+    $("jobBtnPickFolder").disabled = busy || !(LAST && LAST.has_job);
     $("jobGenBtn").textContent = busy ? "생성 중…" : "이 작업으로 문서 생성";
     $("jobGenCancel").style.display = busy ? "" : "none";
     if (!busy) { $("jobGenCancel").disabled = false; $("jobGenCancel").textContent = "다음 건부터 중단"; }
@@ -1029,6 +1073,16 @@
       mirrorResizeObserver = new ResizeObserver(measureMirrorCap);
       mirrorResizeObserver.observe($("jobMirror"));
     }
+    // 문서 작업 후보 카드 클릭 = 작업 선택(§18.2 보존 전환 — 데이터·선택은 세션 소유라 생존).
+    // 활성 후보 재활성화는 무시한다(#302 리뷰 P2): CSS pointer-events:none 은 키보드
+    // (Enter/Space) 합성 클릭을 막지 못하고, 재선택은 vm 재생성 = ack·완주 담보·폴더의
+    // 조용한 소실이라 무해하지 않다(좌 목록의 재선택 no-op 과 대칭).
+    $("jobCandidates").addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-cand]");
+      if (btn && btn.getAttribute("aria-pressed") !== "true") {
+        selectJobGuarded(btn.getAttribute("data-cand"));
+      }
+    });
     $("jobDataExpand").addEventListener("click", openJobDataSheet);
     $("jobMirrorExpand").addEventListener("click", openJobConfirmSheet);
     $("jobMirrorCapstrip").addEventListener("click", (e) => {

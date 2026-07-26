@@ -849,6 +849,57 @@ _DRAFT_SHEETS_PROBE_JS = r"""
 # 실 render() 에 흘려 거울 테이블 4상태 행·미입력 클릭형·재진술 이름 목록·드리프트 차단 배너가
 # 실 WebView2 에서 실제로 그려지는지 되읽는다(정적 계약은 test_web_dom_contract, 값 합성은
 # test_webapp_job 가 보고, 여기선 렌더 거동 — 부록 B-9 overlay/hidden 눈검증의 자동판).
+_JOB_DATA_FIRST_PROBE_JS = r"""
+(function () {
+  var out = {};
+  try {
+    window.Nav.go('job');
+    // 작업 미선택 + 데이터 마운트(데이터-우선 §18.2) 합성 스냅샷 — vm-None 분기가 방출하는
+    // 전 키 유효 모양 그대로. 후보 2종(available/needs_action)·prework 게이트·표시순 목록.
+    var snap = {
+      job_rows:[{name:'공고서', selected:false}], job_name:'', has_job:false,
+      out_dir:'', data_label:'d.csv', data_source_label:'파일: d.csv', data_notice:null,
+      template_name:'', template_path:'', filename_pattern:'', template_missing:false,
+      has_data:true, record_count:2, selected_count:1,
+      records:[{index:1, selected:true, name:'', summary:'사무비품'},
+               {index:0, selected:false, name:'', summary:'전산장비'}],
+      candidates:[{name:'공고서', kind:'available', missing:[]},
+                  {name:'견적서', kind:'needs_action', missing:['담당자']}],
+      filter:{active:false, reapply_available:false, reapply_hint:'', search:'', chips:[],
+              definition:'', branches:[],
+              columns:[{name:'공고명', kind:'text', active:false}]},
+      table:{columns:[{name:'공고명', kind:'text'}],
+             rows:[{index:1, selected:true, name:'', summary:'사무비품',
+                    cells:[[['사무비품',false]]]},
+                   {index:0, selected:false, name:'', summary:'전산장비',
+                    cells:[[['전산장비',false]]]}],
+             visible_count:2, hidden_selected:[]},
+      restate:{origin:'manual', filter_active:false, in_def:0, extra:0, sample:[1]},
+      preflight:{level:'', text:''}, mirror:[], drift:[], name_tokens:[],
+      gate:{enabled:false, level:'warn', text:'문서 작업을 선택하세요.'}
+    };
+    window.__push('job', snap);
+    out.zones_shown = getComputedStyle(document.getElementById('jobZones')).display !== 'none';
+    out.actionbar_shown = getComputedStyle(document.getElementById('jobActionBar')).display !== 'none';
+    out.cands_row_shown = getComputedStyle(document.getElementById('jobCandsRow')).display !== 'none';
+    out.cand_buttons = document.querySelectorAll('#jobCandidates [data-cand]').length;
+    var na = document.querySelector('#jobCandidates button[disabled]');
+    out.needs_action_disabled = !!na;
+    out.needs_action_title = na ? na.getAttribute('title') : '';
+    out.gate_text = document.getElementById('jobGate').textContent;
+    out.gen_disabled = document.getElementById('jobGenBtn').disabled;
+    out.head_hint = document.getElementById('jobHeadTpl').textContent;
+    out.tbl_rows_order = Array.prototype.map.call(
+      document.querySelectorAll('#jobTableBody tr[data-i]'),
+      function (r) { return r.getAttribute('data-i'); });
+    // #302 리뷰 P2 두 건의 실렌더 되읽기 — prework 과진술·폴더 선택 금지.
+    out.restate_hidden = getComputedStyle(document.getElementById('jobRestate')).display === 'none';
+    out.folder_pick_disabled = document.getElementById('jobBtnPickFolder').disabled;
+  } catch (e) { out.error = String(e); }
+  return out;
+})()
+"""
+
 _JOB_MIRROR_PROBE_JS = r"""
 (function () {
   var out = {};
@@ -1866,6 +1917,16 @@ _MILESTONE_H_WAVE1_PROBE_JS = r"""
     else card.setAttribute('aria-current', oldCurrent);
   }
 
+  // 로케이트 어포던스 표본 자급(self-seed) — 종전엔 앞 프로브(job_mirror)가 남긴 DOM 에
+  // 무임승차했는데, 데이터-우선 무조건 렌더가 빈 경로 스냅샷으로 정직하게 지우면서 교차
+  // 의존이 드러났다(#137 프로브 교차오염 교훈). 이 프로브의 목적은 아이콘·접근 이름
+  // *스타일 계약*이므로 표본을 직접 심는다(렌더 경로 검증은 각 화면 프로브 소관).
+  if (!document.querySelector('.track-btn')) {
+    var ot = document.getElementById('jobOutTrack');
+    if (ot && window.PathTrack) {
+      ot.innerHTML = window.PathTrack.affordances('C:\\Probe\\Results', {only: ['reveal', 'copy']});
+    }
+  }
   var pathButtons = Array.from(document.querySelectorAll('.track-btn'));
   var scrollHost = document.createElement('div');
   scrollHost.className = 'tblwrap';
@@ -2260,6 +2321,11 @@ def _selftest_drive(window: "object") -> None:
         time.sleep(1.2)  # initial() 해소 + 렌더 안정
         result["preserve_real"] = window.evaluate_js(_PRESERVE_REAL_PROBE_JS)  # type: ignore[attr-defined]
         # 「작업」 거울 + 재진술 블록(슬라이스 2) — 합성 스냅샷으로 실 render() 구동 후 DOM 되읽기.
+        # 데이터-우선 prework 표면(§18.2) — 작업 미선택+데이터 마운트 합성 스냅샷의 실렌더
+        # 되읽기. **mirror 프로브보다 먼저** 돈다: 이 프로브는 빈 경로 스냅샷을 남기므로,
+        # 경로 어포던스(.track-btn)를 읽는 뒤 프로브(milestone_h)가 mirror 의 경로 있는
+        # 스냅샷을 복원받게 순서로 오염을 차단한다(#137 프로브 교차오염 교훈).
+        result["job_data_first"] = window.evaluate_js(_JOB_DATA_FIRST_PROBE_JS)  # type: ignore[attr-defined]
         result["job_mirror"] = window.evaluate_js(_JOB_MIRROR_PROBE_JS)  # type: ignore[attr-defined]
         window.resize(1180, 820)  # type: ignore[attr-defined]
         time.sleep(0.4)

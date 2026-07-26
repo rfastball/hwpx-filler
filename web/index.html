@@ -148,9 +148,8 @@
 
         <!-- 우 세션 패널 4존 -->
         <div class="job-panel" id="jobPanel">
-          <!-- 미선택 안내(작업 미선택 시) -->
-          <div class="job-empty-panel muted" id="jobEmptyPanel">왼쪽에서 작업을 선택하면 세션 패널이 열립니다.</div>
-
+          <!-- 구 미선택 안내 패널은 데이터-우선 전환으로 은퇴 — 세션 4존이 작업 미선택에도
+               살아 있고(데이터 존=진입점), 다음 할 일 안내는 게이트 문안(prework_gate)이 승계. -->
           <div class="job-zones" id="jobZones" style="display:none">
             <!-- T2 복귀 고지(결정 45 재정의) — 렌더 함수가 안 만지는 JS 소유 요소: 세션 전환
                  리셋·재렌더에 증발하지 않고, 확인 버튼/편집 재진입으로만 걷힌다(job.js 소유). -->
@@ -205,6 +204,13 @@
               </div>
               <!-- 필터 밖 선택 스트립(결정 3) — 선택은 필터를 관통하고, 밖은 여기서 상시 가시. -->
               <div class="fstrip" id="jobSelStrip" style="display:none"></div>
+              <!-- 문서 작업 후보(§18.4, data-first) — 현재 데이터로 만들 수 있는 저장 작업.
+                   판정은 Python(work_candidates) 단일 출처, 여기는 카드 렌더만.
+                   available=클릭 선택, needs_action=정직한 비활성(없는 열 병기). -->
+              <div class="run-row job-cands-row" id="jobCandsRow" style="display:none">
+                <span class="lbl">문서 작업</span>
+                <div class="job-cands" id="jobCandidates" role="group" aria-label="문서 작업 후보"></div>
+              </div>
             </div>
 
             <!-- 본문 존 — 라이브 거울(필드 채움 테이블) + 재진술 블록 + 생성 의식 1회 -->

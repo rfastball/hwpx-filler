@@ -91,24 +91,27 @@ def test_pool_wrappers_are_shared_not_copied():
             )
 
 
-def test_job_pool_guard_requires_job(tmp_path):
-    """job 훅: 작업 미선택 겨눔은 공용 래퍼가 훅 문구로 시끄럽게 거절한다(K4)."""
+def test_job_pool_mount_without_job_is_session_owned(tmp_path):
+    """job 훅 개정(데이터-우선 §18.2): 작업 미선택 겨눔을 거절하지 않는다 — 세션이
+    데이터를 소유하고, 구 「작업 먼저」 전제(K4 job 가드)는 방향 반전으로 죽었다."""
     pushes, sink = _sink()
     ctrl = JobController(_registry(tmp_path), sink, pool_registry=_pool(tmp_path))
     res = ctrl.dispatch("load_pool", {"name": "7월공고"})
-    assert res["ok"] is False and "작업" in res["error"]
-    assert ctrl.snapshot()["data_source_label"] == ""    # 거절이 상태를 오염시키지 않음
+    assert res["ok"] is True
+    snap = ctrl.snapshot()
+    assert snap["has_job"] is False and snap["has_data"] is True
+    assert snap["data_source_label"] == "등록 데이터: 7월공고"
 
 
 def test_job_pool_load_resets_selection_via_hook(tmp_path):
-    """job 훅: 풀 겨눔 성공 = 파일과 동일하게 전체 선택 초기화(K4 훅 경유)."""
+    """job 훅: 풀 겨눔 성공 = 파일과 동일하게 **선택 0건** 초기화(§18.2, K4 훅 경유)."""
     pushes, sink = _sink()
     ctrl = JobController(_registry(tmp_path), sink, pool_registry=_pool(tmp_path))
     ctrl.dispatch("select_job", {"name": "공고서"})
     res = ctrl.dispatch("load_pool", {"name": "7월공고"})
     assert res["ok"] is True and res["label"] == "등록 데이터: 7월공고"
     snap = ctrl.snapshot()
-    assert snap["record_count"] == 2 and snap["selected_count"] == 2  # 새 데이터 = 전체 선택
+    assert snap["record_count"] == 2 and snap["selected_count"] == 0  # 새 데이터 = 선택 0건
 
 
 def test_draft_pool_load_uses_default_hooks(tmp_path):
@@ -162,9 +165,9 @@ def test_snapshot_label_follows_source_flag_transitions(tmp_path):
     assert ctrl.snapshot()["data_source_label"] == "파일: d.csv"
     ctrl.dispatch("load_pool", {"name": "7월공고"})
     assert ctrl.snapshot()["data_source_label"] == "등록 데이터: 7월공고"
-    ctrl.dispatch("select_job", {"name": "공고서"})          # 작업 재선택 = 데이터 리셋
-    assert ctrl.snapshot()["data_source_label"] == ""
-    assert ctrl.snapshot()["data_label"] == ""
+    ctrl.dispatch("select_job", {"name": "공고서"})          # 작업 재선택 = 데이터 보존(§18.2)
+    assert ctrl.snapshot()["data_source_label"] == "등록 데이터: 7월공고"
+    assert ctrl.snapshot()["data_label"] == "7월공고"
 
 
 def test_js_dead_fallback_removed():

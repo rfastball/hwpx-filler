@@ -208,9 +208,12 @@ def test_factory_snapshot_observed_unconditionally():
     assert re.search(r"return \{[^}]*\bsync\b", dz), "sync 가 팩토리 반환 API 에 없습니다."
     job = JOB_JS.read_text(encoding="utf-8")
     assert "dz.sync(s)" in job, "job.js 가 dz.sync 를 호출하지 않습니다 — stale LAST 오발 창."
-    # sync 는 hasJob 게이트 **앞**(무조건 경로)에 있어야 한다 — 렌더 호출로의 강등 금지.
-    assert job.index("dz.sync(s)") < job.index("if (hasJob)"), (
-        "dz.sync 가 hasJob 게이트 뒤로 밀렸습니다 — 무조건 관측 계약 위반(PR 리뷰)."
+    # 데이터-우선 전환(§18.2)으로 hasJob 렌더 게이트 자체가 사망 — 전 렌더러 무조건이라
+    # "게이트 앞" 순서 단언은 좌표를 잃었다. 불변식의 정신(무조건 관측)은 재유입 가드로
+    # 개정: dz.sync 가 hasJob 조건 블록 안으로 다시 들어가면 안 된다.
+    import re as _re
+    assert not _re.search(r"if\s*\(\s*hasJob\s*\)[\s\S]{0,300}dz\.sync", job), (
+        "dz.sync 가 hasJob 게이트 안으로 강등됐습니다 — 무조건 관측 계약 위반(PR 리뷰)."
     )
 
 

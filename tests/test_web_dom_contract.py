@@ -698,6 +698,30 @@ def test_job_gate_adds_blocked_step_only_in_display_layer():
     )
 
 
+def test_job_data_first_prework_surface_contract():
+    """데이터-우선(§18.2) 정적 계약 — 후보 구획 실재·빈 패널 은퇴·무작업 렌더 배선.
+
+    구 미선택 빈 패널(jobEmptyPanel)의 재유입을 막고(안내 의무는 prework 게이트 문안이
+    승계), 후보 카드 구획과 무작업 서수(②)가 배선돼 있는지 소스 수준에서 못박는다 —
+    실렌더 동작판은 selftest ``job_data_first`` 프로브.
+    """
+    html = WEB_INDEX.read_text(encoding="utf-8")
+    assert 'id="jobCandsRow"' in html and 'id="jobCandidates"' in html, (
+        "문서 작업 후보 구획이 없습니다(데이터-우선 §18.4)."
+    )
+    assert "jobEmptyPanel" not in html, (
+        "은퇴한 미선택 빈 패널이 재유입됐습니다 — 세션 존은 무작업에도 살아야 합니다(§18.2)."
+    )
+    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    assert "function renderCandidates(s)" in src
+    assert "jobEmptyPanel" not in src
+    assert 'if (!s.has_job) return "② ";' in src, "무작업 prework 서수(②) 배선이 없습니다."
+    assert "data-cand" in src  # 후보 카드 클릭 → select_job 위임
+    # 활성 후보 재활성화 가드(#302 리뷰 P2) — pointer-events:none 은 키보드 합성 클릭을
+    # 못 막으므로 핸들러가 aria-pressed 를 검사해야 한다(재선택=실행 증거 조용한 소실).
+    assert 'aria-pressed") !== "true"' in src, "활성 후보 재활성화 가드가 없습니다."
+
+
 def test_template_media_sections_use_sunken_surface_without_shared_catalog_drift():
     """H-04: HWPX/TXT만 sunken 표면을 쓰고 공유 tpl-catalogs는 독립적으로 남는다."""
     html = WEB_INDEX.read_text(encoding="utf-8")
