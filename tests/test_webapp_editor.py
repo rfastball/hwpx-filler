@@ -1595,3 +1595,56 @@ def test_edit_save_preserves_group_and_favorite(tmp_path):
     saved = reg.load("메타보존작업")
     assert saved.group == "조달"
     assert saved.favorited_at == "2026-07-26T09:00:00"
+
+
+def test_overwriting_another_job_keeps_the_victims_ranking_meta(tmp_path):
+    """이름을 바꿔 남의 자리를 덮어도 **그 작업의** 분류·이력·즐겨찾기는 그대로다(리뷰 3R P2).
+
+    확인 문안이 약속한 것은 "그 파일을 덮어쓴다"뿐이다 — 원점 메타를 실으면 남의 즐겨찾기가
+    조용히 꺼지거나 남의 카드에 내 실행 이력이 붙는다(문안 ≠ 실제 집합).
+    """
+    ctrl, _ = _controller26(tmp_path)
+    reg = JobRegistry(tmp_path / "jobs")
+    _save_named(ctrl, "덮힐작업")
+    reg.set_group("덮힐작업", "대상그룹")
+    reg.set_favorite("덮힐작업", True, "2026-07-01T09:00:00")
+    reg.stamp_last_run("덮힐작업", "2026-07-02T09:00:00")
+
+    _save_named(ctrl, "원점작업")                              # 두 번째 작업(편집 원점)
+    reg.set_group("원점작업", "원점그룹")
+    reg.set_favorite("원점작업", True, "2026-07-20T09:00:00")
+    reg.stamp_last_run("원점작업", "2026-07-21T09:00:00")
+
+    ctrl.load_job("원점작업")
+    ctrl.dispatch("set_name", {"name": "덮힐작업"})            # 남의 자리로 이름 변경
+    blocked = ctrl.dispatch("save", {})
+    assert blocked["needs_overwrite"] is True
+    res = ctrl.dispatch("save", {
+        "confirm_overwrite": True,
+        "confirmed_overwrite_text": blocked["overwrite_text"],
+    })
+    assert res["ok"] is True
+
+    saved = reg.load("덮힐작업")
+    assert saved.group == "대상그룹"                           # 남의 분류 불변
+    assert saved.favorited_at == "2026-07-01T09:00:00"        # 남의 즐겨찾기 불변
+    assert saved.last_run_at == "2026-07-02T09:00:00"         # 남의 이력 불변(이식 없음)
+
+
+def test_saving_under_a_new_name_inherits_class_but_not_history(tmp_path):
+    """빈 자리에 새 이름 = 새 identity — 그룹·태그는 따라가고 이력·즐겨찾기는 계승하지 않는다."""
+    ctrl, _ = _controller26(tmp_path)
+    reg = JobRegistry(tmp_path / "jobs")
+    _save_named(ctrl, "원본")
+    reg.set_group("원본", "조달")
+    reg.set_favorite("원본", True, "2026-07-20T09:00:00")
+    reg.stamp_last_run("원본", "2026-07-21T09:00:00")
+
+    ctrl.load_job("원본")
+    ctrl.dispatch("set_name", {"name": "새이름"})
+    assert ctrl.dispatch("save", {})["ok"] is True
+
+    fresh = reg.load("새이름")
+    assert fresh.group == "조달"                               # 분류는 편집을 따라간다
+    assert fresh.favorited_at == "" and fresh.last_run_at == ""  # 위조 금지
+    assert reg.load("원본").favorited_at == "2026-07-20T09:00:00"  # 원본 불변

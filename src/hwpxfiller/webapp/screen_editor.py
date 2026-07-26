@@ -1151,6 +1151,42 @@ class EditorController:
             victim = ""
         return overwrite_confirm_text(self.job_name, victim)
 
+    def _preserved_for_target(self) -> "dict[str, object]":
+        """저장 대상 파일이 **자기 것으로 유지해야 하는** 비-편집 메타(잠금 안에서 호출).
+
+        세 갈래다(리뷰 3R P2 — 종전엔 세 경우 모두 편집 원점의 메타를 실어 남의 파일에
+        원점의 순위·이력을 이식했다):
+
+        - **자기-갱신**(대상 == 편집 원점): 원점 메타를 디스크에서 재읽어 보존. 편집 세션이
+          열린 사이 홈에서 단 태그·다른 표면의 별을 stale 스냅샷으로 되돌리지 않는다.
+        - **남의 자리 덮어쓰기**(대상이 이미 존재하는 다른 작업): **대상(victim)의** 메타를
+          유지한다. 확인 문안이 약속한 것은 "그 파일을 덮어쓴다"이지 "그 작업의 분류·이력·
+          즐겨찾기를 내 것으로 바꾼다"가 아니다 — 원점 메타를 실으면 남의 즐겨찾기가 조용히
+          꺼지거나 남의 카드에 내 실행 이력이 붙는다.
+        - **빈 자리에 새 이름**: 분류(그룹·태그)는 편집을 따라가되(사본이 「그룹 없음」으로
+          조용히 튀지 않게 — 「기안」 저장의 같은 결정) **이력·즐겨찾기는 계승하지 않는다**:
+          새 identity 는 실행된 적도, 사용자가 고른 적도 없다(복제 규칙과 동형).
+        """
+        target = self.job_name
+        if self._editing_origin and target == self._editing_origin:
+            try:
+                return _preserved_meta(self.registry.load(self._editing_origin))
+            except Exception:  # noqa: BLE001 — 원본이 사라졌으면 스냅샷 유지(추측 없음)
+                return dict(self._preserved_meta)
+        if self.registry.exists(target):
+            try:
+                return _preserved_meta(self.registry.load(target))
+            except Exception:  # noqa: BLE001 — 손상 파일: 추측 대신 빈 메타로 새로 시작
+                return dict(_EMPTY_PRESERVED)
+        origin = dict(self._preserved_meta)
+        if self._editing_origin:
+            try:
+                origin = _preserved_meta(self.registry.load(self._editing_origin))
+            except Exception:  # noqa: BLE001
+                pass
+        return {**_EMPTY_PRESERVED, "tags": dict(origin["tags"]),  # type: ignore[arg-type]
+                "group": origin["group"]}
+
     def _do_save(self, p: dict) -> dict:
         """저장 게이트 → 덮어쓰기 확인 → 자동등록 게이트 → 저장·등록. 결과 dict 로 재진술.
 
@@ -1201,12 +1237,7 @@ class EditorController:
             blocked = self._dataset_gate(p)
             if blocked is not None:
                 return blocked
-        preserved = dict(self._preserved_meta)
-        if self._editing_origin:
-            try:
-                preserved = _preserved_meta(self.registry.load(self._editing_origin))
-            except Exception:  # noqa: BLE001 — 원본이 사라졌으면 스냅샷 유지(추측 없음)
-                pass
+        preserved = self._preserved_for_target()
         # 작성 출처 지문(#53-C) — 순수 설명 메타(실행 경로 무영향). 저장 매핑에 새긴다.
         verdict.profile.provenance = self._build_provenance(verdict.profile)
         # 기본 데이터셋 참조(#53-A): 이 세션이 데이터를 골랐으면 곧 자동등록될 이름과 연결,

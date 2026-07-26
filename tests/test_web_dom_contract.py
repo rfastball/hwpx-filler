@@ -733,6 +733,11 @@ def test_job_candidate_ranking_surface_contract():
     # 표면(좌 목록 ⋮ 메뉴)이 져야 한다. 두 표면은 같은 전이 몸통을 쓴다.
     assert 'data-menu="favorite"' in src, "좌 목록 ⋮ 메뉴에 즐겨찾기 항목이 없습니다."
     assert src.count("function toggleFavorite(") == 1, "즐겨찾기 전이 몸통이 둘입니다."
+    # 왕복 중 두 번째 클릭이 의도를 뒤집으려면 다음 값을 DOM 이 아니라 미결 의도에서
+    # 계산해야 한다(리뷰 3R P2 — 멱등 재지정이 "껐다"를 삼키는 창).
+    assert "FAV_PENDING" in src and "function favPending(" in src, (
+        "즐겨찾기 미결 의도 직렬화가 없습니다."
+    )
     assert "c.more" in src, "순위 밖 후보 수(외 N건) 고지가 없습니다 — 조용한 절단 금지."
     assert "cand-sug" in src, "추천 표지가 없습니다(§18.3 개정)."
     # JS 가 순위를 재계산하지 않는다(RC-23 동형 — 이중 진실 금지).

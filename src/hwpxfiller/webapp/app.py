@@ -913,6 +913,22 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
       var r = document.querySelector('#jobCandidates .cand-run');
       return r ? r.textContent : '';
     })();
+    // 왕복 중 두 번째 클릭이 의도를 뒤집는가(리뷰 3R P2) — 표시는 push 뒤에 바뀌므로 DOM
+    // 을 읽으면 같은 의도를 두 번 보내고, 멱등 처리 탓에 "껐다" 가 사라진다. Bridge 를
+    // 미결로 세운 뒤 두 번 눌러 **보낸 의도열**을 되읽는다.
+    (function () {
+      var star = document.querySelector('#jobCandidates [data-fav]');
+      if (!star) { out.fav_intents = 'no-star'; return; }
+      var sent = [], real = window.Bridge.call;
+      window.Bridge.call = function (screen, action, payload) {
+        if (action === 'toggle_favorite') sent.push(payload.value);
+        return new Promise(function () {});           // 미결 — push 가 오지 않은 창
+      };
+      star.click();
+      star.click();
+      window.Bridge.call = real;
+      out.fav_intents = JSON.stringify(sent);
+    })();
     // 별 포커스가 재렌더(=별을 누르면 카드가 1순위로 이동)를 가로질러 살아남는가 —
     // preserve.js 는 id 로 복원하므로 이름 유래 안정 id 가 실제로 붙었는지 실물로 본다.
     (function () {

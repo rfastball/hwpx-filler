@@ -331,13 +331,29 @@
   }
 
   /* 즐겨찾기 전이 단일 몸통 — 후보 카드의 별과 좌 목록 ⋮ 메뉴가 같은 경로를 쓴다(두 표면이
-     서로 다른 왕복을 갖지 않게). 낙관 표지 없이 Python 왕복 결과(push)로만 상태가 바뀐다 —
-     별이 먼저 켜졌다가 저장 실패로 되돌아가면 영속된 척하는 거짓 표지다(#215 동류). */
-  function toggleFavorite(name, value) {
+     서로 다른 왕복을 갖지 않게). 낙관 표지 없이 Python 왕복 결과(push)로만 표시가 바뀐다 —
+     별이 먼저 켜졌다가 저장 실패로 되돌아가면 영속된 척하는 거짓 표지다(#215 동류).
+
+     **의도 직렬화**(리뷰 3R P2): 표시는 왕복 뒤에 바뀌므로, 왕복 중 두 번째 클릭이 DOM 의
+     낡은 상태를 읽으면 같은 의도를 두 번 보낸다 — `set_favorite` 은 재지정을 멱등 처리하니
+     껐다 켠 것이 아니라 **켜진 채로 남는다**(사용자 의도 소실). 그래서 다음 값은 DOM 이
+     아니라 **미결 의도**에서 계산한다. 계산만 여기서 하고 판정·영속은 여전히 Python 몫이다. */
+  const FAV_PENDING = new Map();  // 작업 이름 → 왕복 중인 의도 상태
+
+  function favPending(name, domPressed) {
+    return FAV_PENDING.has(name) ? FAV_PENDING.get(name) : domPressed;
+  }
+
+  function toggleFavorite(name, domPressed) {
+    const value = !favPending(name, domPressed);
+    FAV_PENDING.set(name, value);
     Bridge.call(SCREEN, "toggle_favorite", { name, value }).then((res) => {
       if (res && res.ok === false) log(res.error);
     }).catch((err) => {
       log("즐겨찾기 변경 실패: " + String((err && err.message) || err));
+    }).then(() => {
+      // 이 왕복이 마지막 의도였을 때만 걷는다 — 뒤이은 클릭의 의도를 지우지 않게.
+      if (FAV_PENDING.get(name) === value) FAV_PENDING.delete(name);
     });
   }
 
@@ -357,8 +373,8 @@
     // 지금 실제로 갈 수 있는 곳(좌 목록)만 가리킨다 — 없는 화면을 약속하지 않는다.
     if (c.more > 0) {
       html += `<span class="cand-more muted">이 데이터로 쓸 수 있는 작업 ` +
-        `<b>${c.more}건</b>이 더 있습니다 — 왼쪽 목록에서 고르거나, ⋮ 메뉴로 ` +
-        `즐겨찾기에 추가하면 여기 올라옵니다.</span>`;
+        `<b>${c.more}건</b>이 더 있습니다. 왼쪽 목록에서 고르거나 즐겨찾기에 추가하세요.` +
+        `</span>`;
     }
     if (needs.length) {
       // 확인 필요는 **자기 줄**을 갖는다(눈검증): 순위 카드 줄에 이어 붙으면 「외 N건」
@@ -853,7 +869,8 @@
     // 메뉴 내용은 화면 소유(작업=편집/복제/즐겨찾기/이름/이동/삭제, 그룹=이름변경/해산),
     // 위치·표시는 팩토리. 즐겨찾기가 여기 있는 이유(리뷰 2R P2): 후보 구획의 별은 상위
     // 5장에만 있어 순위 밖 작업은 승격 경로가 없었다 — 좌 목록은 절단되지 않는 표면이다.
-    const fav = isFavorited(name);
+    // 미결 의도가 있으면 그것을 따른다 — 메뉴 문안은 **이 클릭이 할 일**을 말해야 한다.
+    const fav = favPending(name, isFavorited(name));
     const html = kind === "job"
       ? `<button data-menu="edit">편집</button>` +
         `<button data-menu="clone">복제</button>` +
@@ -882,7 +899,7 @@
         if (r && r.name) log(`복제: '${name}' → '${r.name}'`);
         return;
       }
-      if (act === "favorite") { toggleFavorite(name, !isFavorited(name)); return; }
+      if (act === "favorite") { toggleFavorite(name, isFavorited(name)); return; }
       if (act === "rename") { startRename(name); return; }
       if (act === "move") { openGroupMove(name, trigger); return; }
       if (act === "delete") { deleteJob(name, trigger); return; }
@@ -1151,7 +1168,7 @@
       const fav = e.target.closest("[data-fav]");
       if (fav) {
         toggleFavorite(fav.getAttribute("data-fav"),
-                       fav.getAttribute("aria-pressed") !== "true");
+                       fav.getAttribute("aria-pressed") === "true");
         return;
       }
       const btn = e.target.closest("[data-cand]");
