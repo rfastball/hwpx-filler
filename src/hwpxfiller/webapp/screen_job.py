@@ -702,15 +702,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         화면에서 사라졌으면 조용히 넘기지 않고 재진술한다 — 목록이 곧 다음 스냅샷에서
         갱신되므로 파괴는 없다.
 
-        **마이크로초까지 찍는다**(리뷰 1R P2): 초 절단이면 1초 안에 두 작업을 즐겨찾기할 때
-        시각이 같아지고, 정렬이 동률 → 이름순으로 떨어져 "즐겨찾기 최신순"(§18.5)이 거짓이
-        된다. 연속 클릭이야말로 이 표면의 정상 사용이다. (생성 스탬프 ``last_run_at`` 은
-        런 자체가 초 단위보다 길어 같은 함정이 성립하지 않아 그대로 둔다.)
+        **시각은 레지스트리가 쓰기 잠금 안에서 찍는다**(리뷰 1R·6R P2): ①초 절단이면 1초 안의
+        두 지정이 동률이 돼 "최신순"(§18.5)이 거짓이 되고, ②여기서 미리 찍으면 서로 다른 작업
+        둘을 연속으로 별 찍을 때 스레드 스케줄링이 나중 클릭에 이른 시각을 줄 수 있다. 잠금 안
+        스탬프는 쓰기 순서 = 시각 순서를 담보한다. (생성 스탬프 ``last_run_at`` 은 런 자체가
+        초 단위보다 길어 같은 함정이 성립하지 않아 그대로 둔다.)
         """
         name = p["name"]
-        when = datetime.now().isoformat()
         try:
-            self.registry.set_favorite(name, bool(p["value"]), when)
+            self.registry.set_favorite(name, bool(p["value"]))
         except (FileNotFoundError, ValueError) as exc:
             return {"ok": False,
                     "error": f"'{name}' 작업의 즐겨찾기를 바꾸지 못했습니다: {exc}"}

@@ -28,6 +28,7 @@ import time
 import uuid
 import weakref
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -406,8 +407,11 @@ class Job:
 def content_fingerprint(job: "Job") -> str:
     """저장 세션이 덮어쓰는 작업 **내용**의 지문 — 외부 변경 감지(자기-갱신 확인 게이트).
 
-    태그·마지막 실행·즐겨찾기는 제외한다: 저장이 어차피 직전 디스크 값을 재읽어 보존하므로
-    (홈 태그 편집·후보 구획 즐겨찾기와의 공존) 그 셋의 변경은 파괴가 아니다. 즐겨찾기는
+    태그·마지막 실행·즐겨찾기·그룹은 제외한다: 저장이 어차피 직전 디스크 값을 재읽어 보존하므로
+    (홈 태그 편집·좌 목록 그룹 이동·후보 구획 즐겨찾기와의 공존) 그 넷의 변경은 파괴가 아니다.
+    **그룹 제외는 보존과 같은 커밋에서 온다**(리뷰 P2): 보존하는 필드를 지문에 남기면
+    편집 중 그룹 이동이 "외부 변경을 덮어씁니다"라는 **거짓 파괴 확인**을 띄운다 — 실제로는
+    저장이 그 새 그룹을 그대로 되싣는다(과경고도 문안 부정직의 한 형태). 즐겨찾기는
     정렬 메타만 바꾼다는 계약(§18.5)의 코드측 귀결이기도 하다 — 별을 눌렀다는 이유로 열어 둔
     편집 세션이 '외부 변경' 확인을 요구하면 과경고다. 나머지(템플릿·매핑·파일명 패턴·계보·기본
     데이터셋 참조)는 세션 상태로 덮어써지므로, 로드 시점과 달라져 있으면 '열어 둔 사이 외부
@@ -417,6 +421,7 @@ def content_fingerprint(job: "Job") -> str:
     d.pop("tags", None)
     d.pop("last_run_at", None)
     d.pop("favorited_at", None)
+    d.pop("group", None)
     return json.dumps(d, ensure_ascii=False, sort_keys=True)
 
 
@@ -642,18 +647,25 @@ class JobRegistry:
 
         return self.mutate(name, _stamp)
 
-    def set_favorite(self, name: str, favorited: bool, when: str) -> Job:
+    def set_favorite(self, name: str, favorited: bool, when: "str | None" = None) -> Job:
         """즐겨찾기 지정/해제(§18.5) — 다른 writer 와 직렬화된 단일 필드 갱신.
 
-        ``when`` 은 호출측이 정한 지정 시각(ISO-8601)이다 — 정렬 계약이 `favoritedAt`
-        최신순이라 bool 이 아니라 시각을 적는다. 해제는 ``""``. **이미 같은 상태면 시각을
-        다시 쓰지 않는다**: 같은 별을 다시 눌러도 순위가 조용히 앞으로 튀지 않게(재지정
-        의도가 없는 왕복까지 순서를 흔들면 사용자가 만든 우선순위가 클릭 노이즈에 진다).
+        정렬 계약이 `favoritedAt` 최신순이라 bool 이 아니라 시각을 적는다. 해제는 ``""``.
+        **이미 같은 상태면 시각을 다시 쓰지 않는다**: 같은 별을 다시 눌러도 순위가 조용히
+        앞으로 튀지 않게(재지정 의도가 없는 왕복까지 순서를 흔들면 사용자가 만든 우선순위가
+        클릭 노이즈에 진다).
+
+        ``when=None`` 이면 시각을 **쓰기 잠금 안에서** 찍는다(리뷰 P2): 호출측이 미리 찍으면
+        서로 다른 작업 둘을 연속으로 별 찍을 때 pywebview 의 스레드 스케줄링이 나중 클릭에
+        이른 시각을 줄 수 있어 순위가 클릭 순서와 어긋난다. 잠금 안 스탬프는 **쓰기 순서 =
+        시각 순서**를 담보한다. 명시 ``when`` 은 결정적 테스트용 경로다.
         """
         def _set(job: Job) -> None:
             if favorited:
                 if not job.favorited_at:
-                    job.favorited_at = when
+                    job.favorited_at = (
+                        when if when is not None else datetime.now().isoformat()
+                    )
             else:
                 job.favorited_at = ""
 

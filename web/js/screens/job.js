@@ -342,12 +342,14 @@
      껐다 켠 것이 아니라 **켜진 채로 남는다**(사용자 의도 소실). 그래서 다음 값은 DOM 이
      아니라 **미결 의도**에서 계산한다. 계산만 여기서 하고 판정·영속은 여전히 Python 몫이다.
 
-     **쓰기 직렬화**(리뷰 4R P2): 의도를 옳게 계산해도 왕복을 동시에 띄우면 안 된다 —
+     **쓰기 직렬화**(리뷰 4R·6R P2): 의도를 옳게 계산해도 왕복을 동시에 띄우면 안 된다 —
      pywebview 는 호출마다 별도 스레드라 나중 클릭의 쓰기가 먼저 레지스트리 잠금을 잡을 수
-     있고, 그러면 **마지막 클릭과 반대 상태가 영속된다**. 작업 이름별로 체인을 만들어 앞
-     왕복이 끝난 뒤 다음 것을 보낸다(클릭 순서 = 쓰기 순서). */
+     있고, 그러면 **마지막 클릭과 반대 상태가 영속된다**. 체인은 **작업별이 아니라 전역
+     하나**다(6R): 즐겨찾기 시각은 작업들 사이의 **순위**라 서로 다른 작업 둘을 연속으로
+     별 찍을 때도 클릭 순서가 곧 쓰기 순서여야 한다(시각 자체는 Python 이 잠금 안에서 찍는다). */
   const FAV_PENDING = new Map();  // 작업 이름 → 왕복 중인(또는 대기 중인) 의도 상태
-  const FAV_CHAIN = new Map();    // 작업 이름 → 진행 중 쓰기 체인의 꼬리
+  let FAV_CHAIN = null;           // 진행 중 즐겨찾기 쓰기 체인의 꼬리(전역 1개)
+  const FAV_LAST = new Map();     // 작업 이름 → 그 작업이 마지막으로 큐에 든 링(정리 식별)
 
   function favPending(name, domPressed) {
     return FAV_PENDING.has(name) ? FAV_PENDING.get(name) : domPressed;
@@ -365,13 +367,16 @@
     // 정리는 **꼬리 식별**로 판정한다(리뷰 5R P2): 값 비교로는 true→false→true 처럼 같은 값이
     // 다시 큐에 있을 때 첫 왕복 완료가 최신 의도를 지운다. 그러면 뒤 클릭이 (스냅샷이 아직
     // 없는) 낡은 DOM 을 읽어 의도가 어긋난다. 이 링이 마지막으로 큐에 든 것일 때만 걷는다.
-    const tail = (FAV_CHAIN.get(name) || Promise.resolve()).then(send).then(() => {
-      if (FAV_CHAIN.get(name) === tail) {
-        FAV_CHAIN.delete(name);
+    const tail = (FAV_CHAIN || Promise.resolve()).then(send).then(() => {
+      // 이 작업의 마지막 의도만 걷는다(뒤에 다른 작업 쓰기가 붙어 있어도 무관).
+      if (FAV_PENDING.get(name) === value && FAV_LAST.get(name) === tail) {
         FAV_PENDING.delete(name);
+        FAV_LAST.delete(name);
       }
+      if (FAV_CHAIN === tail) FAV_CHAIN = null;
     });
-    FAV_CHAIN.set(name, tail);
+    FAV_CHAIN = tail;
+    FAV_LAST.set(name, tail);  // 작업별 "마지막으로 큐에 든 링" — 정리 식별(5R)
   }
 
   function renderCandidates(s) {

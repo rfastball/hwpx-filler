@@ -536,12 +536,39 @@ def test_favorited_at_type_corruption_is_loud():
         Job.from_dict(d)
 
 
-def test_favorited_at_is_outside_the_content_fingerprint():
-    """즐겨찾기는 정렬 메타만 바꾼다(§18.5) — 별을 눌렀다고 편집 세션이 '외부 변경'을 묻지 않는다."""
+def test_preserved_metadata_is_outside_the_content_fingerprint():
+    """보존(재읽기) 메타는 지문 밖이다 — 저장이 되싣는 값의 변경으로 파괴 확인을 띄우면 과경고다.
+
+    즐겨찾기는 정렬 메타만 바꾸고(§18.5), 그룹 이동도 저장이 디스크 값을 그대로 되싣는다 —
+    별을 눌렀다고, 다른 화면에서 그룹을 옮겼다고 편집 세션이 '외부 변경'을 물어선 안 된다.
+    """
     job = _job()
     before = content_fingerprint(job)
     job.favorited_at = "2026-07-26T09:00:00"
+    job.group = "조달"
+    job.tags = {"물품": "의약품"}
+    job.last_run_at = "2026-07-26T10:00:00"
     assert content_fingerprint(job) == before
+    job.filename_pattern = "다른패턴"          # 편집 대상 필드는 여전히 지문에 든다
+    assert content_fingerprint(job) != before
+
+
+def test_set_favorite_stamps_under_the_write_lock_when_time_is_not_given():
+    """시각 미지정이면 레지스트리가 **잠금 안에서** 찍는다(리뷰 P2 — 교차 작업 순위 역전 차단).
+
+    호출측이 미리 찍으면 서로 다른 작업 둘을 연속으로 별 찍을 때 스레드 스케줄링이 나중
+    클릭에 이른 시각을 줄 수 있다. 잠금 안 스탬프는 쓰기 순서 = 시각 순서를 담보한다.
+    """
+    import tempfile
+    from pathlib import Path as _Path
+
+    with tempfile.TemporaryDirectory() as tmp:
+        reg = JobRegistry(_Path(tmp) / "jobs")
+        reg.save(Job(name="갑", template_path="t.hwpx"))
+        reg.save(Job(name="을", template_path="t.hwpx"))
+        first = reg.set_favorite("갑", True).favorited_at
+        second = reg.set_favorite("을", True).favorited_at
+        assert first and second and first < second   # 쓰기 순서 = 시각 순서
 
 
 def test_set_favorite_toggles_and_keeps_first_timestamp(tmp_path):
