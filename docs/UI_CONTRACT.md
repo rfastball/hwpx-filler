@@ -92,6 +92,18 @@ Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다.
   매핑·검증·선택을 폐기하지 않는다(§18.5). 값은 표면이 보내는 의도 상태이고 시각은 Python 이
   찍는다.
 
+### `home` 화면의 전역 라이브러리 계약 (§19.6·§19.7)
+
+- 스냅샷은 `library`(보기·작업 방식·검색어·탭 건수·구획된 행)를 싣는다. 보기 4종
+  (`all`/`recent`/`favorites`/`needsAction`)·방식 필터(`all`/`hwpx`/`txt`)·검색은 **서로 다른
+  축**이라 하나를 바꿔도 나머지가 살아 있고, 판정·정렬·건수는 전부 링1
+  (`HomeViewModel.library_*`)이 낸다.
+- 탭 건수는 **검색 전** 값이다(라이브러리에 대한 사실 — 문서 탐색 탭과 같은 규칙).
+- 검색 대상은 작업 이름·사용자 그룹·태그 값뿐이다(소스 키·데이터 경로 제외, §19.6).
+- 확인 필요 사유 문구는 `library_health()`(§19.7 번역)가 소유한다 — 표면이 다시 만들지
+  않는다. 현재 데이터 호환성(`work_candidates`)과는 **섞지 않는다**(§19.7 명문).
+- 액션: `set_library_view`(`view`)·`set_library_mode`(`mode`)·`set_library_query`(`text`).
+
 ## DOM과 런타임 게이트
 
 - `tests/test_web_dom_contract.py`는 **실제 배포 자산**을 읽는 정적 계약이다. 전역 `id` 유일성,

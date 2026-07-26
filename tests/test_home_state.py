@@ -16,8 +16,16 @@ from hwpxfiller.gui.home_state import (
     BADGE_MISSING,
     BADGE_RAW,
     BADGE_READY,
+    MODE_HWPX,
+    MODE_TXT,
+    VIEW_ALL,
+    VIEW_FAVORITES,
+    VIEW_NEEDS,
+    VIEW_RECENT,
     HomeViewModel,
     JobRow,
+    library_health,
+    library_mode_of,
 )
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
@@ -526,3 +534,216 @@ def test_discover_tag_axes_helper(tmp_path):
         "낙찰방법": ["적격심사", "협상"],
     }
     assert discover_tag_axes([]) == {}
+
+
+# ------------------------------------------- 전역 라이브러리 보기(§19.6·§19.7, 슬라이스 3)
+def _library_reg(tmp_path) -> JobRegistry:
+    """보기 4종을 가르는 표본 — 즐겨찾기·최근 사용·미사용·확인 필요·txt 매체."""
+    reg = JobRegistry(tmp_path)
+    tpl = _compiled_hwpx(tmp_path, "lib.hwpx")   # 실 템플릿(건강 판정이 실물을 읽는다)
+    # 템플릿(_compiled_hwpx)의 실제 필드에 맞춘 매핑 — 안 맞추면 구조 드리프트로 잡힌다
+    # (그게 정상 판정이다: 건강 보기가 실행 차단을 미리 말한다).
+    common = dict(mapping=MappingProfile(mappings=[FieldMapping("계약명", "bidNtceNm")]))
+    reg.save(Job(name="즐겨공고", template_path=tpl, group="조달",
+                 favorited_at="2026-07-20T09:00:00", **common))
+    reg.save(Job(name="최근계약", template_path=tpl, group="조달",
+                 last_run_at="2026-07-25T09:00:00", **common))
+    reg.save(Job(name="미사용문서", template_path=tpl, tags={"물품": "의약품"}, **common))
+    reg.save(Job(name="깨진연결", template_path="/none/x.hwpx", **common))   # 확인 필요
+    reg.save(Job(name="기안문", template_path=str(tmp_path / "t.txt"), **common))
+    return reg
+
+
+def test_library_views_project_without_new_state(tmp_path):
+    """보기 4종은 저장 상태가 아니라 투영이다 — 정렬 근거도 이미 있는 필드뿐."""
+    vm = HomeViewModel(_library_reg(tmp_path))
+    counts = vm.library_counts()
+    assert counts[VIEW_ALL] == 5 and counts[VIEW_RECENT] == 1
+    assert counts[VIEW_FAVORITES] == 1 and counts[VIEW_NEEDS] == 2  # 깨진연결 + txt 아닌 미상
+
+    vm.set_library_view(VIEW_FAVORITES)
+    assert [r.name for sec in vm.library_sections() for r in sec.rows] == ["즐겨공고"]
+    vm.set_library_view(VIEW_RECENT)
+    assert [r.name for sec in vm.library_sections() for r in sec.rows] == ["최근계약"]
+    vm.set_library_view(VIEW_NEEDS)
+    names = [r.name for sec in vm.library_sections() for r in sec.rows]
+    assert "깨진연결" in names
+    assert library_health({r.name: r for r in vm.rows()}["깨진연결"])[0] == 3
+
+
+def test_library_all_view_sections_by_group_and_degenerates(tmp_path):
+    """모든 작업만 사용자 group 으로 구획하고, 이름 있는 group 이 없으면 평면으로 퇴화한다."""
+    vm = HomeViewModel(_library_reg(tmp_path))
+    vm.set_library_view(VIEW_ALL)
+    secs = vm.library_sections()
+    assert [s.value for s in secs] == ["조달", ""]          # 「그룹 없음」 마지막
+    assert {r.name for r in secs[0].rows} == {"즐겨공고", "최근계약"}
+
+    plain = JobRegistry(tmp_path / "plain")
+    plain.save(Job(name="가", template_path=""))
+    flat = HomeViewModel(plain)
+    flat.set_library_view(VIEW_ALL)
+    assert [s.value for s in flat.library_sections()] == [""]   # 헤더 없는 평면
+
+
+def test_library_mode_filter_and_search_are_anded(tmp_path):
+    """작업 방식 필터는 모든 보기와 AND, 검색은 이름·그룹·태그 값만(§19.6)."""
+    vm = HomeViewModel(_library_reg(tmp_path))
+    vm.set_library_mode(MODE_TXT)
+    assert {r.name for sec in vm.library_sections() for r in sec.rows} == {"기안문"}
+    assert vm.library_counts()[VIEW_ALL] == 1                  # 탭 건수도 방식은 반영
+
+    vm.set_library_mode(MODE_HWPX)
+    vm.set_library_query("조달")                               # 그룹 이름으로 검색
+    assert {r.name for sec in vm.library_sections() for r in sec.rows} == {"즐겨공고", "최근계약"}
+    vm.set_library_query("의약품")                             # 태그 값으로 검색
+    assert {r.name for sec in vm.library_sections() for r in sec.rows} == {"미사용문서"}
+    # 검색은 탭 건수를 흔들지 않는다(라이브러리에 대한 사실).
+    assert vm.library_counts()[VIEW_ALL] == 4
+    vm.set_library_query("bidNtceNm")                          # 소스 키는 검색 대상 아님
+    assert vm.library_sections()[0].rows == []
+
+
+def test_unlinked_template_is_not_reported_as_unsupported_media(tmp_path):
+    """경로가 빈 작업은 **아직 연결하지 않은** 저작 중 hwpx 작업이다(리뷰 P2).
+
+    "지원하지 않는 작업 방식"으로 진단하면 처방도 틀린다 — 사용자는 「템플릿 다시 연결」로
+    복구할 수 있는데 지원 범위 밖이라는 막다른 문안을 받는다.
+    """
+    reg = JobRegistry(tmp_path / "unlinked")
+    reg.save(Job(name="저작중", template_path=""))                 # 미연결(정상 상태)
+    reg.save(Job(name="미상", template_path=str(tmp_path / "x.doc")))  # 실제 미상 확장자
+    rows = {r.name: r for r in HomeViewModel(reg).rows()}
+    assert library_health(rows["저작중"]) == (3, "템플릿을 아직 연결하지 않았습니다.")
+    assert library_health(rows["미상"])[1] == "템플릿 파일을 찾을 수 없습니다."
+
+    # 미연결은 HWPX 필터에 **남는다**(리뷰 P2): 진단만 내고 사용자가 고치러 오는 필터에서
+    # 빼면 손 닿는 곳이 없어진다. 실제 미상 확장자는 그대로 미상이다.
+    vm = HomeViewModel(reg)
+    vm.set_library_mode(MODE_HWPX)
+    assert "저작중" in {r.name for sec in vm.library_sections() for r in sec.rows}
+    assert vm.library_counts()[VIEW_NEEDS] >= 1
+    assert library_mode_of(rows["저작중"]) == MODE_HWPX
+    assert library_mode_of(rows["미상"]) == ""
+
+
+def test_partial_template_lands_in_needs_action(tmp_path):
+    """미확인 토큰이 남은 템플릿(PARTIAL)은 「확인 필요」에 든다(리뷰 P2).
+
+    기존 신호가 이미 warn 배지로 말하는데 이 보기에서만 빼면 그 경고가 증발한다. 차단은
+    하지 않으므로 심각도는 2(§19.7 "확인된 drift" 자리)이고, 문구는 배지를 그대로 쓴다.
+    """
+    reg = JobRegistry(tmp_path / "partial")
+    # 매핑을 템플릿 필드에 맞춘다 — 비워 두면 "매핑 미확정"(3)이 먼저 잡혀 PARTIAL 분기가
+    # 가려진다(둘 다 참일 땐 실행이 막히는 쪽이 먼저 말한다).
+    reg.save(Job(name="부분컴파일", template_path=_partial_hwpx(tmp_path),
+                 mapping=MappingProfile(mappings=[FieldMapping("계약명", "src")])))
+    vm = HomeViewModel(reg)
+    row = vm.rows()[0]
+    sev, text = library_health(row)
+    assert sev == 2 and text == row.compile_badge
+    assert vm.library_counts()[VIEW_NEEDS] == 1
+    vm.set_library_view(VIEW_NEEDS)
+    assert [r.name for sec in vm.library_sections() for r in sec.rows] == ["부분컴파일"]
+
+
+def test_structure_drift_surfaces_in_needs_action(tmp_path):
+    """템플릿 구조가 확정 매핑과 달라지면 「확인 필요」에 든다(리뷰 P2).
+
+    COMPILED 라도 필드가 늘거나 빠지면 실행은 `validate_generate` 가 차단한다 — 건강 보기가
+    건강으로 분류하면 사용자는 실행을 눌러 보고서야 안다. 단 **매핑이 아직 없는** 작업은
+    "달라진" 게 아니라 "아직 안 맞춘" 상태라 드리프트로 부르지 않는다.
+    """
+    reg = JobRegistry(tmp_path / "drift")
+    tpl = _compiled_hwpx(tmp_path, "drift.hwpx")           # 필드 = 계약명
+    reg.save(Job(name="어긋난작업", template_path=tpl,
+                 mapping=MappingProfile(mappings=[FieldMapping("없는필드", "src")])))
+    reg.save(Job(name="맞춘작업", template_path=tpl,
+                 mapping=MappingProfile(mappings=[FieldMapping("계약명", "src")])))
+    reg.save(Job(name="매핑없음", template_path=tpl))       # 확정 매핑 0 = 드리프트 아님
+    rows = {r.name: r for r in HomeViewModel(reg).rows()}
+    assert library_health(rows["어긋난작업"]) == (2, "템플릿 구조가 확정 매핑과 달라졌습니다.")
+    assert library_health(rows["맞춘작업"])[0] == 0
+    # 매핑이 아직 없는 작업은 드리프트가 **아니지만 건강도 아니다**(리뷰 P2): 실행 게이트는
+    # 그 상태를 template_only 드리프트로 막으므로 숨기면 숨은 차단이 된다. 이름만 다르게.
+    assert library_health(rows["매핑없음"]) == (3, "매핑을 아직 확정하지 않았습니다.")
+
+
+def test_unreadable_txt_template_is_not_healthy(tmp_path):
+    """파일이 있다고 열리는 건 아니다(리뷰 P2) — 깨진 인코딩·`.txt` 디렉터리는 확인 필요."""
+    reg = JobRegistry(tmp_path / "txtjobs")
+    bad = tmp_path / "깨진.txt"
+    bad.write_bytes(bytes([0xFF, 0xFE, 0x80, 0x81]))   # UTF-8 로 못 읽는 바이트열
+    as_dir = tmp_path / "폴더.txt"
+    as_dir.mkdir()                                    # 존재하지만 읽을 수 없는 경로
+    ok = tmp_path / "정상.txt"
+    ok.write_text("제목: {{공고명}}", encoding="utf-8")
+    for name, path in (("깨짐", bad), ("폴더", as_dir), ("정상", ok)):
+        reg.save(Job(name=name, template_path=str(path)))
+    rows = {r.name: r for r in HomeViewModel(reg).rows()}
+    assert library_health(rows["깨짐"]) == (3, "템플릿을 읽을 수 없습니다.")
+    assert library_health(rows["폴더"]) == (3, "템플릿을 읽을 수 없습니다.")
+    assert library_health(rows["정상"])[0] == 0
+
+
+def test_unresolved_filename_tokens_surface_in_health(tmp_path):
+    """파일명 토큰을 못 채우는 작업은 「확인 필요」에 든다(리뷰 P2).
+
+    실행 게이트가 danger 로 차단하는 **데이터 무관** 상태라 라이브러리에서 먼저 말할 수 있다.
+    판정 몸통은 실행 게이트와 공유한다(두 표면이 같은 상태를 다르게 부르지 않게).
+    """
+    reg = JobRegistry(tmp_path / "tokens")
+    tpl = _compiled_hwpx(tmp_path, "tok.hwpx")             # 필드 = 계약명
+    mapping = MappingProfile(mappings=[FieldMapping("계약명", "src")])
+    reg.save(Job(name="토큰불일치", template_path=tpl, mapping=mapping,
+                 filename_pattern="계약-{{추정가격}}"))     # 매핑이 못 채우는 토큰
+    reg.save(Job(name="토큰정상", template_path=tpl, mapping=mapping,
+                 filename_pattern="계약-{{계약명}}"))
+    rows = {r.name: r for r in HomeViewModel(reg).rows()}
+    assert library_health(rows["토큰불일치"]) == (3, "파일명 패턴의 토큰을 채우지 못합니다.")
+    assert library_health(rows["토큰정상"])[0] == 0
+
+
+def test_health_translation_covers_every_data_independent_gate_reason():
+    """**근본 조치**(리뷰 7라운드): 실행 게이트의 데이터-무관 차단 사유를 건강 번역이 전부 덮는다.
+
+    이 PR 의 라운드들은 같은 결함류를 하나씩 잡았다 — 실행은 차단하는데 라이브러리는 건강으로
+    분류하는 상태(미연결·못 읽는 템플릿·PARTIAL·구조 드리프트·미해소 토큰·못 읽는 txt).
+    개별 대응 대신 **누락을 세는 가드**를 둔다: run_state 가 새 차단 사유(GateState.reason)를
+    만들면, home_state 의 번역이 그 이름을 알고 있어야 이 테스트가 통과한다.
+    """
+    import re
+    from pathlib import Path as _Path
+
+    root = _Path(__file__).resolve().parents[1] / "src" / "hwpxfiller" / "gui"
+    reasons = set(re.findall(r'reason="([a-z_]+)"', (root / "run_state.py").read_text(encoding="utf-8")))
+    assert reasons, "run_state 에서 게이트 사유를 찾지 못했습니다(정규식 stale)."
+    covered = (root / "home_state.py").read_text(encoding="utf-8")
+    # 번역이 각 사유에 대응하는 근거를 갖는지 — 이름 자체 또는 그 사유의 판정 입력이 보이면 통과.
+    evidence = {
+        "name_tokens": "unresolved_name_tokens",
+        "drift": "structure_drift",
+        "template_unreadable": "compile_state is None",
+    }
+    missing = [r for r in reasons if evidence.get(r, r) not in covered]
+    assert not missing, (
+        "실행 게이트가 차단하는데 라이브러리 건강 번역이 모르는 사유입니다 — "
+        f"library_health() 에 분기를 더하거나 evidence 표를 갱신하세요: {missing}"
+    )
+
+
+def test_library_projection_ands_active_tag_facets(tmp_path):
+    """태그 facet 은 보기 4종 전부와 AND(§19.6) — 보기를 바꿨다고 켜 둔 칩이 풀리지 않는다."""
+    vm = HomeViewModel(_library_reg(tmp_path))
+    vm.toggle_facet("물품", "의약품")
+    assert {r.name for sec in vm.library_sections() for r in sec.rows} == {"미사용문서"}
+    assert vm.library_counts()[VIEW_ALL] == 1        # 탭 건수도 켜진 칩 안에서 센다
+    vm.set_library_view(VIEW_FAVORITES)
+    assert vm.library_sections()[0].rows == []       # 즐겨찾기 ∧ 그 태그 = 0건
+
+
+def test_unknown_library_view_and_mode_degenerate(tmp_path):
+    vm = HomeViewModel(_library_reg(tmp_path))
+    vm.set_library_view("엉뚱")
+    vm.set_library_mode("엉뚱")
+    assert vm.library_view == VIEW_ALL and vm.library_mode == "all"

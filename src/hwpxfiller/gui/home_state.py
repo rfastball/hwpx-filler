@@ -14,9 +14,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from ..core.fill_ledger import template_path_drift
 from ..core.job import Job, JobRegistry, require_hwpx_template
 from ..core.template_status import CompileState, compile_status
 from .compile_badge import ERROR_BADGE_LEVEL, badge_level
+from .run_state import unresolved_name_tokens_for
 
 #: 손상 파일 조치의 화이트리스트 거절 문구 — 컨트롤러 선판정과 VM 재판정이 **같은 말**을
 #: 하도록 단일 출처로 둔다(두 곳이 다른 문구면 같은 거절이 두 얼굴로 보인다).
@@ -90,6 +92,27 @@ class JobRow:
     # 브라우징용 분류 태그 {축→값}(JOB_BROWSER_DESIGN D1·D2) — group-by/facet 의 소스.
     # 카드에 직접 렌더하지 않는다(D8 카드 스펙 불변); 섹션·칩만 이 값을 소비한다.
     tags: "dict[str, str]" = field(default_factory=dict)
+    # 라이브러리 보기(§19.6)의 축 — 사용자 group(구획)·즐겨찾기(우선순위)·매체(작업 방식).
+    # 전부 이미 durable 에 있는 값의 성형이다(무확장 — 새 판정을 만들지 않는다).
+    group: str = ""
+    favorited_at: str = ""
+    media: str = ""
+    # 템플릿을 아직 연결하지 않은 상태(경로 빈 값) — **미상 매체와 다르다**: 저작 중인
+    # 정상 hwpx 작업이고 복구 동선도 「템플릿 다시 연결」로 명확하다(리뷰 P2).
+    template_linked: bool = True
+    # 템플릿 구조 ↔ 확정 매핑의 대칭차(리뷰 P2). COMPILED 여도 필드가 늘거나 빠지면 실행은
+    # `validate_generate` 가 **차단**하는데 건강 보기가 건강으로 분류하면, 사용자는 실행을
+    # 눌러 보고서야 안다. compile_status 와 같은 compute-not-store 원칙(재편집 드리프트가
+    # 나므로 저장하지 않는다) — 그 대가로 hwpx 행마다 템플릿을 한 번 더 읽는다.
+    structure_drift: bool = False
+    # txt 템플릿을 지금 읽을 수 있는가(리뷰 P2). 파일이 "있다"는 것과 "열린다"는 것은 다르다 —
+    # 깨진 인코딩·`.txt` 로 끝나는 디렉터리는 존재하지만 여는 순간 실패한다.
+    txt_readable: bool = True
+    # 파일명 패턴이 요구하는데 매핑이 채우지 못하는 토큰(데이터 무관·작업 정의 수준 계약).
+    # 실행은 danger 로 차단하는데 건강 보기가 침묵하면 사용자는 열어 보고서야 안다.
+    unresolved_name_tokens: bool = False
+    # 확정 매핑이 아직 없음 — 드리프트와 **원인이 다르지만 둘 다 실행을 막는다**(리뷰 P2).
+    mapping_empty: bool = False
 
     @classmethod
     def from_job(cls, job: Job) -> "JobRow":
@@ -102,6 +125,23 @@ class JobRow:
             compile_state, compile_badge = _derive_compile(tpath, template_missing)
         else:
             compile_state, compile_badge = None, ""
+        txt_readable = True
+        if job.media == "txt" and tpath and not template_missing:
+            # 여는 계약과 **같은 방식**으로 읽어 본다(UTF-8) — 다른 방식으로 재보면 이 화면과
+            # 실제 열기가 서로 다른 답을 낸다. 소량 텍스트라 비용은 hwpx zip 파싱보다 싸다.
+            try:
+                Path(tpath).read_text(encoding="utf-8")
+            except Exception:  # noqa: BLE001 — 못 읽으면 이유 불문 "지금 열 수 없다"
+                txt_readable = False
+        # 실행 게이트와 **같은 몸통**을 쓴다(두 표면이 같은 상태를 다르게 부르지 않게).
+        name_tokens = bool(unresolved_name_tokens_for(job)) if job.media == "hwpx" else False
+        drift = False
+        if job.media == "hwpx" and compile_state is not None:
+            # 읽을 수 있는 템플릿에서만 본다(못 읽는 건 이미 danger 로 말한다). 매핑이 비어
+            # 있어도 **계산은 한다**: 실행 게이트는 그 상태를 template_only 드리프트로 막으므로
+            # 건강 보기가 침묵하면 숨은 차단이 된다. 다만 **부르는 이름은 다르다** — 아직 안
+            # 맞춘 것은 "달라졌다"가 아니다(사유는 library_health 가 가른다).
+            drift = template_path_drift(tpath, job.mapping).has_drift
         return cls(
             name=job.name,
             template_name=(Path(tpath).name or "—") if tpath else "—",
@@ -115,6 +155,14 @@ class JobRow:
             compile_state=compile_state,
             compile_badge=compile_badge,
             tags=dict(job.tags),
+            group=job.group,
+            favorited_at=job.favorited_at,
+            media=job.media,
+            template_linked=bool(tpath),
+            structure_drift=drift,
+            txt_readable=txt_readable,
+            unresolved_name_tokens=name_tokens,
+            mapping_empty=not job.mapping.mappings,
         )
 
     def meta_line(self) -> str:
@@ -217,6 +265,75 @@ class FacetAxis:
     values: "list[FacetValue]"
 
 
+#: 전역 라이브러리 보기(§19.6) — 투영만 바꾸는 사용자 렌즈.
+VIEW_ALL = "all"
+VIEW_RECENT = "recent"
+VIEW_FAVORITES = "favorites"
+VIEW_NEEDS = "needsAction"
+_VIEWS = (VIEW_ALL, VIEW_RECENT, VIEW_FAVORITES, VIEW_NEEDS)
+
+#: 작업 방식 필터 — 매체에서 파생(저장 필드 아님). 모든 보기와 AND 로 결합한다.
+MODE_ALL = "all"
+MODE_HWPX = "hwpx"
+MODE_TXT = "txt"
+_MODES = (MODE_ALL, MODE_HWPX, MODE_TXT)
+
+
+def library_mode_of(row: "JobRow") -> str:
+    """작업 방식 필터가 보는 매체 — **미연결은 hwpx 로 센다**(리뷰 P2).
+
+    경로가 비면 ``Job.media`` 는 ``""`` 지만 그건 저작 중인 hwpx 작업이다(「작업」 화면의
+    조회 경계와 같은 판정). 미상으로 두면 사용자가 고치러 오는 바로 그 필터(HWPX)에서
+    사라지고 「확인 필요」 건수에서도 빠진다 — 진단은 내면서 손 닿는 곳에는 안 두는 꼴.
+    실제 미상 확장자(경로는 있는데 hwpx/txt 가 아님)는 그대로 미상으로 남는다.
+    """
+    return MODE_HWPX if not row.template_linked else row.media
+
+
+def library_health(row: "JobRow") -> "tuple[int, str]":
+    """전역 작업 건강(§19.7)의 **번역** — 기존 신호를 심각도 1축으로 모은다(새 판정 금지).
+
+    현재 데이터 호환성(`compatibility_for`)과 섞지 않는다(§19.7 명문): 여기 들어오는 건
+    데이터와 무관한 작업 자체의 상태뿐이다. master 가 이미 내는 신호만 옮긴다 —
+    템플릿 파일 부재, 지원하지 않는 매체, hwpx 인데 템플릿을 읽지 못함. 손상 JSON 은
+    애초에 :class:`CorruptJobRow` 로 분리돼 이 목록에 오지 않는다.
+    """
+    if not row.template_linked:
+        # 경로가 비어 있는 건 "미상 매체"가 아니라 **아직 연결하지 않은 저작 중 작업**이다.
+        # 진단이 틀리면 처방도 틀린다 — 여기서 갈라야 사용자가 「템플릿 다시 연결」로 간다.
+        return 3, "템플릿을 아직 연결하지 않았습니다."
+    if row.template_missing:
+        return 3, "템플릿 파일을 찾을 수 없습니다."
+    if row.media not in ("hwpx", "txt"):
+        return 3, "지원하지 않는 작업 방식입니다."
+    if row.media == "hwpx" and row.compile_state is None:
+        return 3, "템플릿을 읽을 수 없습니다."
+    if not row.txt_readable:
+        # 파일이 있다고 열리는 건 아니다(깨진 인코딩·`.txt` 디렉터리) — 열면 바로 실패하는데
+        # 건강 보기가 건강으로 분류하면 「확인 필요」가 정작 못 여는 작업을 빼놓는다.
+        return 3, "템플릿을 읽을 수 없습니다."
+    # 미확인 토큰이 남은 템플릿(PARTIAL)은 **실행을 막지는 않지만** 손볼 것이 있는 상태다 —
+    # 기존 신호가 이미 warn 배지로 말하고 있는데 「확인 필요」에서 빼면 그 경고가 이 화면에서만
+    # 증발한다(리뷰 P2). §19.7 의 "확인된 drift = 심각도 2, 차단하지 않음" 자리에 대응한다.
+    # 판정은 새로 만들지 않고 배지 레벨(RC-29 단일 어휘)을 번역할 뿐이다.
+    if row.unresolved_name_tokens:
+        # 실행 게이트가 danger 로 차단하는 상태(§19.7 차단 등급) — 데이터가 없어도 참이라
+        # 라이브러리에서 먼저 말할 수 있다.
+        return 3, "파일명 패턴의 토큰을 채우지 못합니다."
+    if row.structure_drift and row.mapping_empty:
+        # 같은 신호(대칭차)지만 원인이 다르다: 아직 아무것도 맞추지 않은 작업이다. 드리프트로
+        # 부르면 오진이고(무엇이 "달라졌다"는 말인가), 숨기면 실행에서 막히는 걸 뒤늦게 안다.
+        return 3, "매핑을 아직 확정하지 않았습니다."
+    if row.structure_drift:
+        # §19.7 "확인된 Template/Binding drift = 2, 차단하지 않음"의 자리. 실행 게이트는
+        # 실제로 차단하지만(fail-closed), 여기서 말하는 건 **작업 자체의 건강**이라 등급은
+        # 계약 표를 따르고 강도는 실행 게이트가 낸다(두 표면이 서로 다른 판정을 만들지 않게).
+        return 2, "템플릿 구조가 확정 매핑과 달라졌습니다."
+    if badge_level(row.compile_state) == "warn":
+        return 2, row.compile_badge or "템플릿에 확인할 항목이 남아 있습니다."
+    return 0, ""
+
+
 class HomeViewModel:
     """작업 목록 상태 + 레지스트리 어댑터. 표현 계층은 구독해서 렌더한다."""
 
@@ -233,6 +350,11 @@ class HomeViewModel:
         self.active_group_by: str = SEED_GROUP_BY_AXIS
         # facet 선택(D10 — facet 내 OR / facet 간 AND). {축 → 선택된 값 집합}, 빈 축은 제거.
         self.active_facets: "dict[str, set[str]]" = {}
+        # 전역 라이브러리 보기(§19.6) — 보기 4종 × 작업 방식 필터 × 이름/그룹/태그 검색.
+        # 셋 다 **투영**일 뿐 저장 상태가 아니다(무확장: 새 durable 없음).
+        self.library_view: str = VIEW_ALL
+        self.library_mode: str = MODE_ALL
+        self.library_query: str = ""
         self.refresh()
 
     # ---------------------------------------------------------- 변경 통지
@@ -450,6 +572,94 @@ class HomeViewModel:
                 )
             )
         return sections
+
+    # ------------------------------------------------- 전역 라이브러리 보기(§19.6)
+    def set_library_view(self, view: str) -> None:
+        """보기 교체 — 미지 값은 「모든 작업」으로 퇴화(표면 오타가 빈 화면을 만들지 않는다)."""
+        self.library_view = view if view in _VIEWS else VIEW_ALL
+        self._notify()
+
+    def set_library_mode(self, mode: str) -> None:
+        self.library_mode = mode if mode in _MODES else MODE_ALL
+        self._notify()
+
+    def set_library_query(self, text: str) -> None:
+        self.library_query = text
+        self._notify()
+
+    def _library_pool(self) -> "list[JobRow]":
+        """보기 이전 단계 — **태그 facet** ∧ 작업 방식 ∧ 검색(이름·그룹·태그 값, §19.6).
+
+        facet 은 보기 4종 전부와 AND 로 묶인다(§19.6 명문) — 사용자가 켜 둔 칩이 보기를
+        바꿨다고 조용히 풀리면 화면이 자기 필터를 배신한다(리뷰 P2).
+        """
+        from ..core.jamo import jamo_contains
+
+        rows = [r for r in self._rows if self._passes_facets(r, exclude_axis="")]
+        if self.library_mode != MODE_ALL:
+            rows = [r for r in rows if library_mode_of(r) == self.library_mode]
+        q = self.library_query.strip()
+        if q:
+            rows = [
+                r for r in rows
+                if jamo_contains(r.name, q)
+                or jamo_contains(r.group, q)
+                or any(jamo_contains(v, q) for v in r.tags.values())
+            ]
+        return rows
+
+    def library_sections(self) -> "list[GroupSection]":
+        """보기별 투영(§19.6 표) — 모든 작업만 구획, 나머지는 평면.
+
+        - 모든 작업: 사용자 group 구획(그룹 이름순 → 「그룹 없음」 마지막), 그룹 안 이름순.
+          저장된 이름 있는 group 이 하나도 없으면 헤더 없는 평면으로 퇴화한다(1구획 반환).
+        - 최근 사용: `last_run_at` 최신순 / 즐겨찾기: `favorited_at` 최신순 / 확인 필요:
+          심각도 → 이름순. 동률은 전부 이름순(결정적 순서).
+        """
+        rows = self._library_pool()
+        if self.library_view == VIEW_RECENT:
+            picked = [r for r in rows if r.last_run_at]
+            picked.sort(key=lambda r: r.name)
+            picked.sort(key=lambda r: r.last_run_at, reverse=True)
+            return [GroupSection(value="", count=len(picked), rows=picked)]
+        if self.library_view == VIEW_FAVORITES:
+            picked = [r for r in rows if r.favorited_at]
+            picked.sort(key=lambda r: r.name)
+            picked.sort(key=lambda r: r.favorited_at, reverse=True)
+            return [GroupSection(value="", count=len(picked), rows=picked)]
+        if self.library_view == VIEW_NEEDS:
+            picked = [r for r in rows if library_health(r)[0] > 0]
+            picked.sort(key=lambda r: r.name)
+            picked.sort(key=lambda r: library_health(r)[0], reverse=True)
+            return [GroupSection(value="", count=len(picked), rows=picked)]
+        named: "dict[str, list[JobRow]]" = {}
+        for r in sorted(rows, key=lambda r: r.name):
+            named.setdefault(r.group, []).append(r)
+        groups = sorted(g for g in named if g)
+        if not groups:  # 저장된 이름 있는 group 0개 = 헤더 없는 평면(퇴화 불변식)
+            flat = [r for r in sorted(rows, key=lambda r: r.name)]
+            return [GroupSection(value="", count=len(flat), rows=flat)]
+        order = groups + ([""] if "" in named else [])
+        return [
+            GroupSection(value=g, count=len(named[g]), rows=named[g]) for g in order
+        ]
+
+    def library_counts(self) -> "dict[str, int]":
+        """보기 탭 라벨의 건수 — **검색 전** 작업 방식 필터까지만 반영한다.
+
+        탭은 라이브러리에 대한 사실이라 검색어에 따라 흔들리면 "여기 몇 건인가"를 잃는다
+        (문서 탐색 탭과 같은 규칙). 작업 방식·태그 facet 은 사용자가 켜 둔 **필터 축**이라
+        반영한다 — 켜진 칩 밖의 건수를 세면 탭 숫자가 화면과 어긋난다.
+        """
+        rows = [r for r in self._rows if self._passes_facets(r, exclude_axis="")]
+        if self.library_mode != MODE_ALL:
+            rows = [r for r in rows if library_mode_of(r) == self.library_mode]
+        return {
+            VIEW_ALL: len(rows),
+            VIEW_RECENT: sum(1 for r in rows if r.last_run_at),
+            VIEW_FAVORITES: sum(1 for r in rows if r.favorited_at),
+            VIEW_NEEDS: sum(1 for r in rows if library_health(r)[0] > 0),
+        }
 
     def facets(self) -> "list[FacetAxis]":
         """group-by 로 쓰이지 않는 축들 = facet. 각 값에 건수·활성 여부(D10).

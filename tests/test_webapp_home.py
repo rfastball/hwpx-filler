@@ -323,3 +323,38 @@ def test_clone_missing_job_is_loud(tmp_path):
     ctrl, _ = _controller(tmp_path)
     res = ctrl.dispatch("clone_job", {"name": "없는작업"})
     assert res["ok"] is False and "복제할 수 없습니다" in res["error"]
+
+
+# ------------------------------------------- 전역 라이브러리 구획(§19.6, 슬라이스 3 PR-2a)
+def test_library_snapshot_carries_views_counts_and_health(tmp_path):
+    """스냅샷은 보기·방식·검색과 그 투영을 싣는다 — 판정·문구는 전부 링1 소비."""
+    ctrl, _ = _controller(tmp_path)
+    lib = ctrl.initial()["library"]
+    assert lib["view"] == "all" and lib["mode"] == "all" and lib["query"] == ""
+    assert lib["counts"]["all"] == 2 and lib["counts"]["recent"] == 2
+    assert lib["counts"]["favorites"] == 0 and lib["counts"]["needsAction"] == 2
+    rows = [r for sec in lib["sections"] for r in sec["rows"]]
+    assert {r["name"] for r in rows} == {"공고서", "낙찰"}
+    # 확인 필요 사유는 §19.7 번역을 그대로 싣는다(표면이 문구를 다시 만들지 않는다).
+    by_name = {r["name"]: r for r in rows}
+    assert "템플릿 파일을 찾을 수 없습니다." == by_name["공고서"]["health"]
+    # 페이로드 매체는 필터가 쓰는 정규화 값이다(미연결 = hwpx) — 표시와 판정이 갈라지지 않게.
+    assert by_name["낙찰"]["media"] == "hwpx"   # template_path 빈 값(미연결)
+
+
+def test_library_actions_switch_view_mode_and_query(tmp_path):
+    """보기·방식·검색은 서로 다른 축이라 하나를 바꿔도 나머지가 살아 있다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.vm.registry.set_favorite("낙찰", True, "2026-07-20T09:00:00")
+    ctrl.dispatch("refresh", {})
+    ctrl.dispatch("set_library_view", {"view": "favorites"})
+    ctrl.dispatch("set_library_query", {"text": "낙찰"})
+    lib = ctrl.snapshot()["library"]
+    assert lib["view"] == "favorites" and lib["query"] == "낙찰"
+    assert [r["name"] for sec in lib["sections"] for r in sec["rows"]] == ["낙찰"]
+
+    ctrl.dispatch("set_library_mode", {"mode": "txt"})
+    lib = ctrl.snapshot()["library"]
+    assert lib["mode"] == "txt" and lib["view"] == "favorites"   # 축 독립
+    assert lib["query"] == "낙찰"
+    assert [r["name"] for sec in lib["sections"] for r in sec["rows"]] == []
