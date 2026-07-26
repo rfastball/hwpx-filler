@@ -625,6 +625,23 @@ def test_unlinked_template_is_not_reported_as_unsupported_media(tmp_path):
     assert library_mode_of(rows["미상"]) == ""
 
 
+def test_partial_template_lands_in_needs_action(tmp_path):
+    """미확인 토큰이 남은 템플릿(PARTIAL)은 「확인 필요」에 든다(리뷰 P2).
+
+    기존 신호가 이미 warn 배지로 말하는데 이 보기에서만 빼면 그 경고가 증발한다. 차단은
+    하지 않으므로 심각도는 2(§19.7 "확인된 drift" 자리)이고, 문구는 배지를 그대로 쓴다.
+    """
+    reg = JobRegistry(tmp_path / "partial")
+    reg.save(Job(name="부분컴파일", template_path=_partial_hwpx(tmp_path)))
+    vm = HomeViewModel(reg)
+    row = vm.rows()[0]
+    sev, text = library_health(row)
+    assert sev == 2 and text == row.compile_badge
+    assert vm.library_counts()[VIEW_NEEDS] == 1
+    vm.set_library_view(VIEW_NEEDS)
+    assert [r.name for sec in vm.library_sections() for r in sec.rows] == ["부분컴파일"]
+
+
 def test_library_projection_ands_active_tag_facets(tmp_path):
     """태그 facet 은 보기 4종 전부와 AND(§19.6) — 보기를 바꿨다고 켜 둔 칩이 풀리지 않는다."""
     vm = HomeViewModel(_library_reg(tmp_path))

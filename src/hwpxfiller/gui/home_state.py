@@ -272,6 +272,12 @@ def library_health(row: "JobRow") -> "tuple[int, str]":
         return 3, "지원하지 않는 작업 방식입니다."
     if row.media == "hwpx" and row.compile_state is None:
         return 3, "템플릿을 읽을 수 없습니다."
+    # 미확인 토큰이 남은 템플릿(PARTIAL)은 **실행을 막지는 않지만** 손볼 것이 있는 상태다 —
+    # 기존 신호가 이미 warn 배지로 말하고 있는데 「확인 필요」에서 빼면 그 경고가 이 화면에서만
+    # 증발한다(리뷰 P2). §19.7 의 "확인된 drift = 심각도 2, 차단하지 않음" 자리에 대응한다.
+    # 판정은 새로 만들지 않고 배지 레벨(RC-29 단일 어휘)을 번역할 뿐이다.
+    if badge_level(row.compile_state) == "warn":
+        return 2, row.compile_badge or "템플릿에 확인할 항목이 남아 있습니다."
     return 0, ""
 
 
