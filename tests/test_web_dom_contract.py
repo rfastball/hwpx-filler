@@ -722,6 +722,52 @@ def test_job_data_first_prework_surface_contract():
     assert 'aria-pressed") !== "true"' in src, "활성 후보 재활성화 가드가 없습니다."
 
 
+def test_job_document_browser_surface_contract():
+    """슬라이스 3 정적 계약 — 문서 탐색 면은 `job` 화면의 **하위 화면**이고 판정은 Python 소유.
+
+    별 라우트를 만들지 않는다(§18.6: 상단 내비게이션은 계속 「문서 만들기」 활성) —
+    시트 루트·탭·검색·행 호스트가 실재하고, JS 는 목록을 자체 필터하지 않는다.
+    """
+    html = WEB_INDEX.read_text(encoding="utf-8")
+    for dom_id in ("jobBrowseSheet", "jobBrowseTabs", "jobBrowseQuery", "jobBrowseRows",
+                   "jobBrowseNote", "jobBrowseClose"):
+        assert f'id="{dom_id}"' in html, f"문서 탐색 면 요소 누락: {dom_id}"
+    # 라우팅 화면은 다섯 개 그대로다 — 탐색은 시트라 SCREEN·컨트롤러가 늘지 않는다.
+    assert 'id="scr-browse"' not in html and "scr-documents" not in html
+    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    assert "browse_tab" in src and "browse_query" in src, "탐색 액션 배선이 없습니다."
+    assert "data-browse-pick" in src, "탐색 행 선택(명시 사건) 배선이 없습니다."
+    # 재렌더를 가로지르는 포커스 계약(1R P2): 탭·행·출구에 안정 id 가 있고, 선택 뒤 착지는
+    # Preserve 복원 **뒤에** 일어난다(안쪽이면 복원이 덮어써 탐색 면 컨트롤에 갇힌다).
+    for token in ('id="jobBrowseTab-', 'id="jobBrowseRow-', 'id="jobBrowseOpen"'):
+        assert token in src, f"탐색 면 안정 id 누락: {token}"
+    # 포커스 착지는 **예약이 아니라** 닫은 직후 실 DOM 조회다(3R P2): 예약 방식은 왕복 순서에
+    # 의존해 렌더보다 늦고, 남은 예약이 무관한 뒤 렌더를 흔들었다.
+    assert "function focusAfterPick(" in src, "선택 후 포커스 착지가 없습니다."
+    # 단순 닫기의 복귀도 노드 보관이 아니라 닫힘 시점 재조회다(6R P2 — 면 안 재렌더가
+    # 붙잡아 둔 출구를 끊으면 Modal 은 복귀를 건너뛰고 포커스가 숨은 면에 남는다).
+    assert "returnFocus: null" in src and "onClose:" in src, (
+        "탐색 면 닫기 복귀가 보관 노드에 묶여 있습니다."
+    )
+    # 타이핑 중 스냅샷이 검색 입력을 덮지 않는다(4R P2 — 데이터 존과 같은 규칙).
+    assert 'document.activeElement !== q' in src, "탐색 검색이 왕복 경합에 입력을 덮습니다."
+    assert "pendingFocus" not in src, "예약 포커스 기제가 남아 있습니다(유령 착지)."
+    pick = src.split("data-browse-pick]\")")[1][:900]
+    assert pick.index("Modal.close") < pick.index("focusAfterPick"), (
+        "닫기보다 포커스 착지가 앞섭니다 — 열린 면 뒤 컨트롤에 포커스가 갇힌다."
+    )
+    # 생성 중 잠금(2R P2): 탐색 면은 오버레이 루트라 `#scr-job` 질의에 안 걸린다 —
+    # setBusy 가 그 루트도 훑고, 출구·탭·행이 busy-lock 을 달아야 한다.
+    assert 'jobBrowseSheet")].forEach' in src, "setBusy 가 탐색 면을 잠그지 않습니다."
+    assert src.count("data-busy-lock data-browse") == 3, (
+        "탐색 면 출구·탭·행의 busy-lock 표식이 빠졌습니다."
+    )
+    # 검색·분류를 JS 가 재계산하지 않는다(RC-23 동형 — 판정은 Python 이 지금).
+    browse = src.split("function renderBrowse")[1][:2200]
+    for banned in ("filter(", "toLowerCase", "includes("):
+        assert banned not in browse, f"탐색 렌더가 자체 필터를 합니다: {banned!r}"
+
+
 def test_job_candidate_ranking_surface_contract():
     """슬라이스 2 정적 계약 — 순위 카드·별 토글·추천 표지·「외 N건」 고지 배선.
 
@@ -740,15 +786,22 @@ def test_job_candidate_ranking_surface_contract():
     )
     # 쓰기 자체도 클릭 순서로 직렬화돼야 한다(4R P2 — pywebview 는 호출마다 별도 스레드라
     # 동시 발신이면 나중 클릭의 쓰기가 먼저 잠금을 잡아 반대 상태가 영속될 수 있다).
-    assert "FAV_CHAIN" in src, "즐겨찾기 쓰기 체인(직렬화)이 없습니다."
-    # 체인은 전역 1개다(6R P2): 즐겨찾기 시각은 작업들 사이의 순위라, 서로 다른 작업을
-    # 연속으로 별 찍을 때도 클릭 순서 = 쓰기 순서여야 한다.
-    assert "let FAV_CHAIN = null" in src, "즐겨찾기 체인이 작업별로 갈라져 있습니다."
+    # 직렬화 몸통은 공용이다(PR-1 5R): 즐겨찾기·탐색이 같은 기제를 쓰고 가드도 하나다.
+    # 즐겨찾기는 키 하나(작업 간 순위라 전역 1체인)로 클릭 순서 = 쓰기 순서를 보장한다.
+    assert "function chained(" in src and "CALL_CHAINS" in src, "호출 직렬화 몸통이 없습니다."
+    assert 'chained("favorite"' in src, "즐겨찾기 쓰기가 체인을 타지 않습니다."
+    assert src.count('chained("browse"') == 2, (
+        "탐색 탭·검색이 같은 체인을 타지 않습니다 — 늦은 옛 응답이 새 결과를 되돌린다."
+    )
     # 문안은 완주 스탬프 의미와 일치해야 한다(성공 뒤 실패 런에서 거짓이 되지 않게).
     assert "마지막 성공 실행" in src and "마지막 실행 " not in src, (
         "카드 문안이 완주 스탬프 의미(마지막 성공 실행)와 어긋납니다."
     )
     assert "c.more" in src, "순위 밖 후보 수(외 N건) 고지가 없습니다 — 조용한 절단 금지."
+    # 확인 필요 목록은 탐색 면으로 이사했다 — 후보 줄엔 수치 + 출구만 남는다(슬라이스 3).
+    assert "c.needs_count" in src and "data-browse-open" in src, (
+        "확인 필요 수치·문서 탐색 출구가 후보 줄에 없습니다."
+    )
     assert "cand-sug" in src, "추천 표지가 없습니다(§18.3 개정)."
     # JS 가 순위를 재계산하지 않는다(RC-23 동형 — 이중 진실 금지).
     for banned in ("favorited_at <", "sort(", "localeCompare"):

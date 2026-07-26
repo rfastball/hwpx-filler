@@ -869,9 +869,11 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
               last_run_at:'2026-07-20T09:00:00', suggested:false},
              {name:'계약서', tier:'unused', favorited:false,
               last_run_at:'', suggested:true}],
-        more:2,
-        needs:[{name:'견적서', missing:['담당자']}],
+        more:2, needs_count:1,
         suggested:'계약서'},
+      // 문서 탐색 구획(슬라이스 3) — 확인 필요 탭 + 검색으로 걸러낸 수.
+      browse:{tab:'needs_action', query:'견적', rows:[{name:'견적서', missing:['담당자']}],
+              available_count:7, needs_count:1, filtered_out:2},
       filter:{active:false, reapply_available:false, reapply_hint:'', search:'', chips:[],
               definition:'', branches:[],
               columns:[{name:'공고명', kind:'text', active:false}]},
@@ -890,9 +892,98 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
     out.actionbar_shown = getComputedStyle(document.getElementById('jobActionBar')).display !== 'none';
     out.cands_row_shown = getComputedStyle(document.getElementById('jobCandsRow')).display !== 'none';
     out.cand_buttons = document.querySelectorAll('#jobCandidates [data-cand]').length;
-    var na = document.querySelector('#jobCandidates button[disabled]');
-    out.needs_action_disabled = !!na;
-    out.needs_action_title = na ? na.getAttribute('title') : '';
+    // 확인 필요·순위 밖은 후보 줄에서 **수치 + 출구**로만 말한다(슬라이스 3 이사).
+    out.cand_exit = !!document.querySelector('#jobCandidates [data-browse-open]');
+    out.cand_more_text = (function () {
+      var m = document.querySelector('#jobCandidates .cand-more');
+      return m ? m.textContent.replace(/\s+/g, ' ').trim() : '';
+    })();
+    out.cand_disabled_chips = document.querySelectorAll('#jobCandidates button[disabled]').length;
+    // 문서 탐색 면(슬라이스 3) — 출구 클릭으로 실제로 열리고, 탭 라벨·행·사유·검색 고지가
+    // 실 WebView2 에 그려지는지 되읽는다(닫아 두고 뒤 프로브를 방해하지 않는다).
+    (function () {
+      var exit = document.querySelector('#jobCandidates [data-browse-open]');
+      if (!exit) { out.browse_open = 'no-exit'; return; }
+      exit.click();
+      var sheet = document.getElementById('jobBrowseSheet');
+      out.browse_open = !sheet.classList.contains('hidden');
+      out.browse_tabs = Array.prototype.map.call(
+        sheet.querySelectorAll('[data-browse-tab]'),
+        function (b) { return b.textContent + '/' + b.getAttribute('aria-selected'); });
+      out.browse_rows = Array.prototype.map.call(
+        sheet.querySelectorAll('.browse-row'),
+        function (r) { return r.textContent.replace(/\s+/g, ' ').trim(); });
+      out.browse_note = document.getElementById('jobBrowseNote').textContent;
+      out.browse_focus_is_query =
+        document.activeElement === document.getElementById('jobBrowseQuery');
+      // 왕복 중 이어 친 검색어가 옛 스냅샷에 덮이지 않는가(리뷰 4R P2): 입력에 포커스를 두고
+      // 새 글자를 넣은 뒤, **옛 검색어를 담은** 스냅샷을 밀어도 입력값이 살아 있어야 한다.
+      (function () {
+        var qi = document.getElementById('jobBrowseQuery');
+        qi.focus();
+        qi.value = '견적요청';                      // 사용자가 이어 친 상태
+        window.__push('job', snap);                // 옛 검색어('견적')를 담은 응답 도착
+        out.browse_query_kept = qi.value;
+        qi.blur();
+        window.__push('job', snap);                // 포커스가 떠난 뒤엔 서버 값으로 확정
+        out.browse_query_settled = qi.value;
+      })();
+      // 탭 전환 재렌더에서 키보드 포커스가 살아남는가(리뷰 1R P2 — 안정 id + preserve.js).
+      var tabA = document.getElementById('jobBrowseTab-available');
+      if (tabA) {
+        tabA.focus();
+        window.__push('job', snap);            // 재렌더(탭 노드 교체)
+        out.browse_tab_focus = document.activeElement && document.activeElement.id;
+      }
+      // 사용 가능 행을 고르면 포커스가 **방금 고른 작업 카드**에 착지한다(모달 복귀 트리거는
+      // 재렌더로 해제되므로 명시 착지). 실 select_job 왕복은 스텁으로 대체하고, 이어 도착할
+      // 스냅샷(job_name 채움)을 우리가 밀어 렌더 훅을 태운다.
+      // 사용 가능 행을 고르면 **성사 뒤에** 면이 닫히고 포커스가 그 시점의 실 DOM 에 선다.
+      // 스텁은 select_job 만 가로채고(교차오염 금지) **Python push 를 흉내 내지 않는다** —
+      // 프로덕션에선 push·render 가 resolve 보다 먼저 끝나므로, 여기서 우리가 스냅샷을
+      // 밀어 주면 그 순서를 가려 버린다(3R P2 지적). 이미 렌더된 카드에 서는지만 본다.
+      (function () {
+        var avail = JSON.parse(JSON.stringify(snap));
+        avail.browse = {tab:'available', query:'', rows:[{name:'공고서', missing:[]}],
+                        available_count:7, needs_count:1, filtered_out:0};
+        window.__push('job', avail);
+        var row = document.getElementById('jobBrowseRow-' + encodeURIComponent('공고서'));
+        if (!row) { window.__browsePickFocus = 'no-row'; window.__browseDone = true; return; }
+        var real = window.Bridge.call;
+        var stub = function (screen, action) {
+          if (action !== 'select_job') return real.apply(null, arguments);
+          return Promise.resolve({});
+        };
+        window.Bridge.call = stub;
+        var unstub = function () {                 // 새 스텁이 이미 들어섰으면 건드리지 않는다
+          if (window.Bridge.call === stub) window.Bridge.call = real;
+        };
+        window.__browseDone = false;
+        row.click();
+        Promise.resolve().then(function () {}).then(function () {}).then(function () {
+          unstub();
+          var cls = document.getElementById('jobBrowseSheet').classList;
+          window.__browseSheetClosed = cls.contains('is-closing') || cls.contains('hidden');
+          window.__browsePickFocus = document.activeElement && document.activeElement.id;
+          window.__push('job', snap);              // 원판 복구(뒤 프로브 방해 금지)
+          // 단순 닫기의 포커스 복귀는 **전이 종료 뒤**(Modal.finishClose→onClose) 일어난다 —
+          // 그 시점을 지나서 관측해야 6R P2 가 실제로 잡힌다(즉시 읽으면 늘 탭이 보인다).
+          setTimeout(function () {
+            window.__browseCloseFocus = document.activeElement && document.activeElement.id;
+            window.__browseDone = true;
+          }, 450);
+        });
+      })();
+      document.getElementById('jobBrowseClose').click();
+      // 닫기는 전이 애니메이션을 타므로 `hidden` 은 뒤에 붙는다 — 닫힘 **시작**을 관측한다
+      // (전이 없는 환경에선 곧바로 hidden 이라 둘 중 하나면 통과).
+      var closing = document.getElementById('jobBrowseSheet').classList;
+      out.browse_closing = closing.contains('is-closing') || closing.contains('hidden');
+      // 단순 닫기(면 안에서 재렌더가 있었어도)에서 포커스가 페이지로 돌아오는가(6R P2) —
+      // 붙잡아 둔 노드가 아니라 **그 시점의 출구**를 다시 찾아 세운다. 전이 종료를 기다리지
+      // 않도록 Modal 의 즉시 종료 경로(닫힘 전이 없는 환경)와 타이머 경로 모두를 허용한다.
+
+    })();
     // 순위 카드(슬라이스 2) — 받은 순서 그대로·별 상태·추천 표지·「외 N건」 고지.
     out.cand_order = Array.prototype.map.call(
       document.querySelectorAll('#jobCandidates [data-cand]'),
@@ -2284,6 +2375,21 @@ def _finish_selftest(window: "object", result: dict) -> None:
     window.destroy()  # type: ignore[attr-defined]
 
 
+def _probe_late(window: "object", flag: str, expr: str) -> dict:
+    """프로브의 비동기 단계가 끝나길 기다렸다가 결과 묶음(JSON)을 한 번에 회수한다.
+
+    setTimeout 사슬·microtask 로 확정되는 값은 프로브의 동기 반환에 담기지 않는다. 플래그가
+    설 때까지 짧게 폴링하고, 여러 값을 **한 표현식**으로 받아 회수 코드 자체를 최소로 둔다.
+    """
+    import time
+
+    for _ in range(50):
+        if window.evaluate_js(f"!!window.{flag}"):  # type: ignore[attr-defined]
+            break
+        time.sleep(0.05)
+    return json.loads(window.evaluate_js(expr))  # type: ignore[attr-defined]
+
+
 def _selftest_drive(window: "object") -> None:
     """동결 exe 부팅 자가검증 — 창이 뜨고 렌더/브리지가 도는지 되읽어 파일로 확정 후 정식 종료.
 
@@ -2449,20 +2555,20 @@ def _selftest_drive(window: "object") -> None:
         result["job_data_first"] = window.evaluate_js(_JOB_DATA_FIRST_PROBE_JS)  # type: ignore[attr-defined]
         # 체인 결과는 microtask 뒤에 확정된다 — 같은 프로브에서 동기로 읽을 수 없어 후속
         # 평가로 회수한다(즐겨찾기 쓰기 직렬화, 4R P2).
-        result["job_data_first"]["fav_chain"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "String(window.__favChain)"
-        )
-        # 스텁 단계 진행(setTimeout 사슬)이 끝날 때까지 잠깐 기다린 뒤 최종 발신열을 읽는다.
-        for _ in range(50):
-            if window.evaluate_js("!!window.__favDone"):  # type: ignore[attr-defined]
-                break
-            time.sleep(0.05)
-        result["job_data_first"]["fav_order"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "JSON.stringify(window.__favSent || null)"
-        )
-        result["job_data_first"]["fav_diag"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "JSON.stringify(window.__favDiag || null)"
-        )
+        # 비동기 단계(setTimeout 사슬·microtask)가 끝난 뒤 확정되는 값들은 한 번에 회수한다
+        # — 프로브 회수 코드는 실창에서만 도는 줄이라 늘릴수록 커버리지 플로어를 갉는다.
+        result["job_data_first"].update(_probe_late(
+            window, "__favDone",
+            "JSON.stringify({fav_chain: String(window.__favChain),"
+            " fav_order: JSON.stringify(window.__favSent || null),"
+            " fav_diag: JSON.stringify(window.__favDiag || null)})",
+        ))
+        result["job_data_first"].update(_probe_late(
+            window, "__browseDone",
+            "JSON.stringify({browse_pick_focus: String(window.__browsePickFocus),"
+            " browse_sheet_closed: !!window.__browseSheetClosed,"
+            " browse_close_focus: String(window.__browseCloseFocus)})",
+        ))
         result["job_mirror"] = window.evaluate_js(_JOB_MIRROR_PROBE_JS)  # type: ignore[attr-defined]
         window.resize(1180, 820)  # type: ignore[attr-defined]
         time.sleep(0.4)

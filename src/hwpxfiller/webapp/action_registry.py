@@ -121,6 +121,8 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "refresh": _schema(),
         "select_job": _schema("name", "confirm"),
         "toggle_favorite": _schema("name value"),
+        "browse_tab": _schema(optional="tab"),
+        "browse_query": _schema(optional="text"),
         "relink_template": _schema("name", "path confirm"),
         "toggle_group": _schema("group"),
         "rename_job": _schema("name", "new"),

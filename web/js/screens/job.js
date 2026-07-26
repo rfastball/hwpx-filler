@@ -86,6 +86,7 @@
       renderMirror(s);
       dz.render(s);  // 데이터 존(테이블·칩·스트립) — 팩토리 소유(datazone.js)
       renderCandidates(s);
+      renderBrowse(s);   // 탐색 면은 열려 있지 않아도 그린다(열 때 이미 최신)
       renderRestate(s);
       renderGateAndFolder(s);
       renderStatus(s);
@@ -348,8 +349,22 @@
      하나**다(6R): 즐겨찾기 시각은 작업들 사이의 **순위**라 서로 다른 작업 둘을 연속으로
      별 찍을 때도 클릭 순서가 곧 쓰기 순서여야 한다(시각 자체는 Python 이 잠금 안에서 찍는다). */
   const FAV_PENDING = new Map();  // 작업 이름 → 왕복 중인(또는 대기 중인) 의도 상태
-  let FAV_CHAIN = null;           // 진행 중 즐겨찾기 쓰기 체인의 꼬리(전역 1개)
   const FAV_LAST = new Map();     // 작업 이름 → 그 작업이 마지막으로 큐에 든 링(정리 식별)
+
+  /* 브리지 호출 직렬화 공용 몸통 — 키 하나당 체인 하나. pywebview 는 호출마다 별도 스레드라
+     동시 발신은 **도착 순서를 보장하지 않는다**: 즐겨찾기는 나중 클릭과 반대 상태가 영속될 수
+     있고(4R·6R), 탐색 검색은 늦게 도착한 옛 응답이 새 검색 결과를 되돌린다(PR-1 5R). 두 표면이
+     같은 기제를 쓰므로 가드도 하나다(즐겨찾기 프로브가 이 몸통을 실물로 증명한다). */
+  const CALL_CHAINS = new Map();
+
+  function chained(key, send) {
+    // `return tail` 금지 — 자기 자신으로 resolve 하면 체인 순환(TypeError)으로 영영 안 끝난다.
+    const tail = (CALL_CHAINS.get(key) || Promise.resolve()).then(send).then(() => {
+      if (CALL_CHAINS.get(key) === tail) CALL_CHAINS.delete(key);
+    });
+    CALL_CHAINS.set(key, tail);
+    return tail;
+  }
 
   function favPending(name, domPressed) {
     return FAV_PENDING.has(name) ? FAV_PENDING.get(name) : domPressed;
@@ -363,20 +378,68 @@
       .catch((err) => {
         log("즐겨찾기 변경 실패: " + String((err && err.message) || err));
       });
-    // 체인 링은 절대 reject 하지 않는다(위 catch) — 한 번 실패해도 뒤 클릭이 영구히 막히지 않게.
-    // 정리는 **꼬리 식별**로 판정한다(리뷰 5R P2): 값 비교로는 true→false→true 처럼 같은 값이
+    // 체인 링은 절대 reject 하지 않는다(send 안 catch) — 한 번 실패해도 뒤 클릭이 막히지 않게.
+    // 정리는 **꼬리 식별**로 판정한다(슬2 5R P2): 값 비교로는 true→false→true 처럼 같은 값이
     // 다시 큐에 있을 때 첫 왕복 완료가 최신 의도를 지운다. 그러면 뒤 클릭이 (스냅샷이 아직
     // 없는) 낡은 DOM 을 읽어 의도가 어긋난다. 이 링이 마지막으로 큐에 든 것일 때만 걷는다.
-    const tail = (FAV_CHAIN || Promise.resolve()).then(send).then(() => {
-      // 이 작업의 마지막 의도만 걷는다(뒤에 다른 작업 쓰기가 붙어 있어도 무관).
+    const tail = chained("favorite", send).then(() => {
       if (FAV_PENDING.get(name) === value && FAV_LAST.get(name) === tail) {
         FAV_PENDING.delete(name);
         FAV_LAST.delete(name);
       }
-      if (FAV_CHAIN === tail) FAV_CHAIN = null;
     });
-    FAV_CHAIN = tail;
-    FAV_LAST.set(name, tail);  // 작업별 "마지막으로 큐에 든 링" — 정리 식별(5R)
+    FAV_LAST.set(name, tail);  // 작업별 "마지막으로 큐에 든 링" — 정리 식별
+  }
+
+  /* ---- 문서 탐색 면(§18.6·§19.5) — 「문서 만들기」 하위 화면(레일은 계속 「작업」) ----
+     탭 라벨의 수치·행·검색 판정은 Python 이 내고 여기는 그린다. 사용 가능 행 클릭 = 작업
+     선택(세션 데이터·선택·필터는 생존, §18.2). 확인 필요 행은 정직한 비활성 + 막힌 열 병기. */
+  function renderBrowse(s) {
+    const b = s.browse || {
+      tab: "available", query: "", rows: [], available_count: 0,
+      needs_count: 0, filtered_out: 0,
+    };
+    const tabs = [
+      { key: "available", label: `사용 가능 ${b.available_count}` },
+      { key: "needs_action", label: `확인 필요 ${b.needs_count}` },
+    ];
+    // 안정 id(리뷰 1R P2): 탭 전환은 재렌더라 id 없으면 preserve.js 가 방금 누른 탭으로
+    // 포커스를 못 돌리고, 활성 요소가 열린 모달 밖으로 떨어진다(키보드 사용자 좌초).
+    $("jobBrowseTabs").innerHTML = tabs.map((t) =>
+      `<button class="browse-tab" type="button" role="tab" id="jobBrowseTab-${t.key}"` +
+      ` data-busy-lock data-browse-tab="${t.key}" aria-selected="${b.tab === t.key}">` +
+      `${esc(t.label)}</button>`
+    ).join("");
+    // 타이핑 중엔 스냅샷이 입력값을 덮지 않는다(리뷰 4R P2 — 데이터 존 검색과 같은 규칙):
+    // 왕복 중 이어 친 글자가 옛 검색어로 되돌아가면 사용자의 의도가 조용히 잘린다. 확정은
+    // 포커스가 떠난 뒤(또는 재진입) 렌더가 맡는다.
+    const q = $("jobBrowseQuery");
+    if (document.activeElement !== q && q.value !== (b.query || "")) {
+      q.value = b.query || "";
+    }
+    const rows = b.rows || [];
+    const needsTab = b.tab === "needs_action";
+    $("jobBrowseRows").innerHTML = rows.length
+      ? rows.map((r) => {
+        if (needsTab) {
+          return `<div class="browse-row off"><span class="browse-nm">${esc(r.name)}</span>` +
+            `<span class="browse-why muted">현재 데이터에 없는 열: ` +
+            `${esc((r.missing || []).join(", "))}</span></div>`;
+        }
+        const active = r.name === s.job_name;
+        return `<button class="browse-row" type="button" id="jobBrowseRow-${encodeURIComponent(r.name)}"` +
+          ` data-busy-lock data-browse-pick="${esc(r.name)}"` +
+          ` aria-pressed="${active}"><span class="browse-nm">${esc(r.name)}</span>` +
+          (active ? `<span class="browse-why muted">지금 선택된 작업</span>` : "") +
+          `</button>`;
+      }).join("")
+      : `<p class="muted capnote">${b.query
+        ? "이름이 일치하는 작업이 없습니다."
+        : (needsTab ? "확인이 필요한 작업이 없습니다."
+                    : "현재 데이터로 쓸 수 있는 작업이 없습니다.")}</p>`;
+    // 검색이 감춘 건수는 조용히 두지 않는다 — 탭 수치와 화면 행 수의 차이를 설명한다.
+    $("jobBrowseNote").textContent = b.filtered_out > 0
+      ? `검색으로 ${b.filtered_out}건이 목록에서 빠졌습니다.` : "";
   }
 
   function renderCandidates(s) {
@@ -384,33 +447,22 @@
     const host = $("jobCandidates");
     if (!s.has_data) { row.style.display = "none"; host.innerHTML = ""; return; }
     row.style.display = "";
-    const c = s.candidates || { top: [], more: 0, needs: [], suggested: "" };
-    const top = c.top || [], needs = c.needs || [];
+    const c = s.candidates || { top: [], more: 0, needs_count: 0, suggested: "" };
+    const top = c.top || [], needs = c.needs_count ? [1] : [];
     if (!top.length && !needs.length) {
       host.innerHTML = `<span class="muted">현재 데이터에 사용할 수 있는 문서 작업이 없습니다.</span>`;
       return;
     }
     let html = top.map((t) => candCard(t, s)).join("");
-    // 잘린 나머지를 수치로 말한다(조용한 절단 금지). 전체 목록 표면은 아직 없으므로
-    // 지금 실제로 갈 수 있는 곳(좌 목록)만 가리킨다 — 없는 화면을 약속하지 않는다.
-    if (c.more > 0) {
-      html += `<span class="cand-more muted">이 데이터로 쓸 수 있는 작업 ` +
-        `<b>${c.more}건</b>이 더 있습니다. 왼쪽 목록에서 고르거나 즐겨찾기에 추가하세요.` +
-        `</span>`;
-    }
-    if (needs.length) {
-      // 확인 필요는 **자기 줄**을 갖는다(눈검증): 순위 카드 줄에 이어 붙으면 「외 N건」
-      // 고지와 한 문장처럼 읽혀 "쓸 수 있는 작업"과 "막힌 작업"의 경계가 흐려진다.
-      html += `<div class="cand-needs"><span class="cand-needs-lbl muted">확인 필요</span>` +
-        needs.map((n) =>
-          `<button class="btn sm job-cand" type="button" disabled` +
-          ` title="현재 데이터에 없는 열: ${esc((n.missing || []).join(", "))}">` +
-          `${esc(n.name)}</button>`
-        ).join("") +
-        // 확인 필요도 같은 상한을 쓴다 — 잘린 만큼은 available 과 똑같이 수치로.
-        (c.needs_more > 0
-          ? `<span class="cand-more muted">외 <b>${c.needs_more}건</b></span>` : "") +
-        `</div>`;
+    // 잘린 나머지·확인 필요는 **수치 + 문서 탐색 출구**로만 말한다(슬라이스 3): 목록의
+    // 소유자는 이제 탐색 면이고, 후보 줄은 "지금 고를 것"만 보여 준다(조용한 절단 금지).
+    const bits = [];
+    if (c.more > 0) bits.push(`쓸 수 있는 작업 <b>${c.more}건</b> 더`);
+    if (c.needs_count > 0) bits.push(`확인 필요 <b>${c.needs_count}건</b>`);
+    if (bits.length) {
+      html += `<span class="cand-more muted">${bits.join(" · ")} — ` +
+        `<button class="btn sm" type="button" id="jobBrowseOpen" data-busy-lock data-browse-open>` +
+        `문서 작업 찾기…</button></span>`;
     }
     host.innerHTML = html;
   }
@@ -502,6 +554,40 @@
         { id: "jobRestate", slotId: "jobConfirmSheetRestateSlot" },
       ],
       afterRestore: measureMirrorCap,
+    });
+  }
+
+  /* 문서 탐색 면 열기 — 실 DOM 이동(SurfaceSheet)이 아니라 자체 내용을 가진 면이라
+     Modal 로 직접 연다. 포커스는 검색 입력으로: 이 표면에 온 이유가 "찾기"다. */
+  /* 탐색 면을 닫은 **직후** 포커스를 연결된 컨트롤에 세운다(리뷰 3R P2).
+
+     렌더 훅에 예약하는 방식은 왕복 순서에 의존했다: `select_job` 은 Python 이 이미 push·
+     render 를 끝낸 뒤 resolve 하므로 예약이 렌더보다 늦고, 그 예약은 무관한 다음 렌더를
+     흔드는 유령으로 남았다. 그래서 **예약을 없애고** 그 시점의 실 DOM 을 id 로 찾아 바로
+     세운다 — 착지 우선순위는 방금 고른 작업 카드 → 다시 탐색을 열 출구 → 생성 버튼
+     (순위 밖 작업을 골라 카드가 없을 수도 있다). */
+  function focusAfterPick(name) {
+    // 이름이 비면(단순 닫기) 카드 후보를 건너뛰고 출구 → 생성 버튼 순으로 내려간다.
+    const ids = (name ? ["jobCand-" + encodeURIComponent(name)] : [])
+      .concat(["jobBrowseOpen", "jobGenBtn"]);
+    for (let i = 0; i < ids.length; i++) {
+      const el = document.getElementById(ids[i]);
+      if (el && el.focus && !el.disabled) {
+        try { el.focus({ preventScroll: true }); } catch (err) { el.focus(); }
+        return ids[i];
+      }
+    }
+    return "";
+  }
+
+  function openBrowseSheet(e) {
+    window.Modal.open("jobBrowseSheet", {
+      initialFocus: $("jobBrowseQuery"),
+      // 노드를 붙잡아 두지 않는다(리뷰 6R P2): 면 안에서 탭·검색을 한 번이라도 하면 그 사이
+      // 재렌더가 후보 줄을 통째로 갈아 끼워 붙잡아 둔 출구 노드가 끊긴다 — Modal 은 끊긴
+      // 복귀점을 건너뛰므로 포커스가 방금 숨은 면에 남는다. **닫히는 시점에 다시 찾는다.**
+      returnFocus: null,
+      onClose: () => focusAfterPick(LAST && LAST.job_name ? LAST.job_name : ""),
     });
   }
 
@@ -654,7 +740,11 @@
 
   /* ---- busy 잠금 — [data-busy-lock] 속성 선언(setBusy 누락 회귀 방지, #26) ---- */
   function setBusy(busy) {
-    $("scr-job").querySelectorAll("[data-busy-lock]").forEach((el) => { el.disabled = busy; });
+    // 탐색 면은 **오버레이 루트**에 살아 `#scr-job` 질의에 안 걸린다(리뷰 2R P2) — 생성 중
+    // 열려 있으면 행 클릭이 Python 거절로 끝나고 사용자는 문맥만 잃는다. 같은 잠금에 넣는다.
+    [$("scr-job"), $("jobBrowseSheet")].forEach((root) => {
+      root.querySelectorAll("[data-busy-lock]").forEach((el) => { el.disabled = busy; });
+    });
     $("jobGenBtn").disabled = busy || !(LAST && LAST.gate && LAST.gate.enabled);
     // 저장 폴더는 작업 속성(기본 = 템플릿/Results) — 작업 미선택에서 고르게 두면 작업
     // 선택이 기본값으로 조용히 덮어써 선택이 증발한다(#302 리뷰 P2). busy-lock 일괄 복원이
@@ -1193,10 +1283,59 @@
                        fav.getAttribute("aria-pressed") === "true");
         return;
       }
+      if (e.target.closest("[data-browse-open]")) { openBrowseSheet(e); return; }
       const btn = e.target.closest("[data-cand]");
       if (btn && btn.getAttribute("aria-pressed") !== "true") {
         selectJobGuarded(btn.getAttribute("data-cand"));
       }
+    });
+    // 문서 탐색 면(§18.6) — 탭·검색은 Python 판정 왕복, 행 클릭은 명시 작업 선택.
+    $("jobBrowseClose").addEventListener("click", () => window.Modal.close("jobBrowseSheet"));
+    $("jobBrowseTabs").addEventListener("click", (e) => {
+      const t = e.target.closest("[data-browse-tab]");
+      if (!t || t.getAttribute("aria-selected") === "true") return;
+      const tab = t.getAttribute("data-browse-tab");
+      chained("browse", () =>
+        Bridge.call(SCREEN, "browse_tab", { tab })
+          .catch((err) => log("탭 전환 실패: " + String((err && err.message) || err))));
+    });
+    // 검색은 타이핑마다 왕복하지 않고 짧게 모은다(데이터 존 검색 관례) — 판정은 여전히
+    // Python 이 지금 내린다(JS 가 목록을 자체 필터하면 이중 진실).
+    let browseTimer = null;
+    $("jobBrowseQuery").addEventListener("input", (e) => {
+      const text = e.target.value;
+      if (browseTimer) window.clearTimeout(browseTimer);
+      browseTimer = window.setTimeout(() => {
+        browseTimer = null;
+        // 같은 체인에 태워 **도착 순서**를 고정한다(리뷰 5R P2): 큰 레지스트리에서 한 응답이
+        // 디바운스보다 느리면 두 요청이 겹치고, 늦게 온 옛 응답이 새 검색 결과를 되돌린다
+        // (입력값만 지키는 포커스 가드로는 결과-문안 불일치가 남는다). 탭 전환도 같은 체인:
+        // 탭과 검색은 한 목록의 두 축이라 서로 앞질러도 같은 어긋남이 난다.
+        chained("browse", () =>
+          Bridge.call(SCREEN, "browse_query", { text })
+            .catch((err) => log("검색 실패: " + String((err && err.message) || err))));
+      }, 180);
+    });
+    $("jobBrowseRows").addEventListener("click", (e) => {
+      const pick = e.target.closest("[data-browse-pick]");
+      if (!pick || pick.getAttribute("aria-pressed") === "true") return;
+      // 선택은 명시 사건이다(§18.6) — 면을 닫고 세션 패널로 돌려보낸다(데이터는 생존).
+      const name = pick.getAttribute("data-browse-pick");
+      // 포커스 착지를 **명시로** 예약한다(리뷰 1R P2): 면을 닫는 전이와 선택 재렌더가 겹쳐
+      // 모달이 기억한 복귀 트리거(출구 버튼)가 교체·해제되므로, Modal 의 복귀는 건너뛰어지고
+      // 포커스가 숨은 검색 입력이나 body 로 떨어진다. 착지점은 방금 고른 작업의 카드 —
+      // 사용자의 다음 관심이 거기 있고, 없으면 다시 탐색을 열 출구로 내린다.
+      // **성사 뒤에만 닫는다**(리뷰 2R P2): 가드 취소·Python 거절(생성 중 등)에서 면을 먼저
+      // 닫으면 사용자는 오류만 받고 찾던 문맥을 잃는다. 성사 시점엔 Python 의 push·render 가
+      // 이미 끝나 있으므로(3R P2) 닫은 **직후** 실 DOM 을 찾아 포커스를 세운다 — 예약을
+      // 남기지 않으니 무관한 뒤 렌더를 흔들 유령도 없다.
+      selectJobGuarded(name).then((ok) => {
+        if (!ok) return;
+        window.Modal.close("jobBrowseSheet");
+        focusAfterPick(name);
+      }).catch((err) => {
+        log("작업 열기 실패: " + String((err && err.message) || err));
+      });
     });
     $("jobDataExpand").addEventListener("click", openJobDataSheet);
     $("jobMirrorExpand").addEventListener("click", openJobConfirmSheet);

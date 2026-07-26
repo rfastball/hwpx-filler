@@ -64,6 +64,9 @@ from ..gui.selection_state import SelectionModel
 from ..gui.work_candidates import (
     KIND_NEEDS_ACTION,
     MAIN_TOP_N,
+    TAB_AVAILABLE,
+    TAB_NEEDS_ACTION,
+    browse_candidates,
     candidate_rows,
     prework_gate,
     rank_available,
@@ -139,6 +142,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._last_filter: "dict | None" = None  # {"source_key": str, "state": dict}
         self._data_key = ""  # 현 데이터 소스 정체(file:경로 | pool:참조) — 소스 일치 판정
         self.job_name = ""  # 좌 목록에서 겨눈 작업(패널 세션의 주체)
+        # 문서 탐색 상태(§18.6) — 탭·검색어는 **세션 소유**다: 탭을 옮겨도 검색어가 살아야
+        # 하고(계약 명문), 시트를 닫고 다시 열어도 방금 찾던 자리로 돌아온다. 스크롤·포커스는
+        # 기존 보존 기제(preserve.js) 소관이라 여기 두지 않는다.
+        self.browse_tab = TAB_AVAILABLE
+        self.browse_query = ""
         # 좌 목록 접힌 그룹(결정 43·R-info 결정 6) — 마지막 상태를 Python 설정에서 복원.
         # 앱은 홈당 단일 인스턴스(뮤텍스 가드)라 메모리 캐시가 디스크와 갈라질 경로가 없다.
         self._collapsed: "set[str]" = set(load_job_collapsed_groups())
@@ -214,7 +222,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
           available 과 똑같이 수치로 고지한다.
         - ``suggested`` = 추천 작업 이름(§18.3 개정, 없으면 ``""``).
         """
-        empty = {"top": [], "more": 0, "needs": [], "needs_more": 0, "suggested": ""}
+        empty = {"top": [], "more": 0, "needs_count": 0, "suggested": ""}
         if self.datasource is None or not self.records:
             return empty
         fields = list(self.records[0].keys())
@@ -244,9 +252,36 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         return {
             "top": top,
             "more": max(0, len(ranked) - MAIN_TOP_N),
-            "needs": needs[:MAIN_TOP_N],
-            "needs_more": max(0, len(needs) - MAIN_TOP_N),
+            # 확인 필요 전체는 문서 탐색(§18.6)이 소유한다 — 후보 줄엔 **수치만** 남긴다
+            # (슬라이스 3: 칩 구획 이사, 삭제는 의무를 상속한다).
+            "needs_count": len(needs),
             "suggested": suggested,
+        }
+
+    def _browse_payload(self, jobs) -> dict:
+        """문서 탐색 구획(§18.6·§19.5) — 탭·검색 판정은 링1 단일 출처 소비.
+
+        데이터 미준비면 빈 골격이다(§18.1 — 후보를 계산하지 않으므로 탐색도 없다). 시트가
+        열려 있는지는 표면 상태라 여기서 모른다: 판정은 언제나 최신이고, 열지 않았으면
+        아무도 안 본다(스냅샷 분기보다 단순한 쪽).
+        """
+        empty = {
+            "tab": self.browse_tab, "query": self.browse_query, "rows": [],
+            "available_count": 0, "needs_count": 0, "filtered_out": 0,
+        }
+        if self.datasource is None or not self.records:
+            return empty
+        res = browse_candidates(
+            jobs, list(self.records[0].keys()),
+            tab=self.browse_tab, query=self.browse_query,
+        )
+        return {
+            "tab": res.tab,
+            "query": self.browse_query,
+            "rows": [dict(r) for r in res.rows],
+            "available_count": res.available_count,
+            "needs_count": res.needs_count,
+            "filtered_out": res.filtered_out,
         }
 
     def _filename_source_columns(self) -> "list[str]":
@@ -489,6 +524,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 후보(§18.4) — 데이터 준비 시에만 계산(§18.1: 미준비면 계산 자체를 하지 않는다).
         # 판정 fields 는 필터 열 파생과 같은 원천(records[0].keys — 표시=판정 정합).
         base["candidates"] = self._candidate_payload(jobs)
+        # 문서 탐색(§18.6) — 후보 줄의 「외 N건」·「확인 필요」가 여기로 이어진다.
+        base["browse"] = self._browse_payload(jobs)
         if self.vm is None:
             # 작업 미선택 상태 — 데이터 존은 세션 소유라 그대로 산다(데이터-우선, §18.2).
             indices = self._indices()
@@ -715,6 +752,20 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return {"ok": False,
                     "error": f"'{name}' 작업의 즐겨찾기를 바꾸지 못했습니다: {exc}"}
         return {"ok": True}
+
+    def _do_browse_tab(self, p: dict) -> None:
+        """문서 탐색 탭 전환(§18.6) — **검색어는 유지한다**(계약 명문).
+
+        미지 값은 링1이 사용 가능으로 퇴화시키므로(표면 오타가 빈 화면을 만들지 않는다)
+        여기서는 받은 값을 그대로 세션에 둔다.
+        """
+        self.browse_tab = (
+            TAB_NEEDS_ACTION if p.get("tab") == TAB_NEEDS_ACTION else TAB_AVAILABLE
+        )
+
+    def _do_browse_query(self, p: dict) -> None:
+        """문서 탐색 검색어 갱신 — 대상은 작업 표시 이름만(§18.6, 판정은 링1)."""
+        self.browse_query = str(p.get("text", ""))
 
     def _clear_data_notice(self) -> None:
         self.data_notice_text = ""
