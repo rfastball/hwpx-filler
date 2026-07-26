@@ -111,6 +111,8 @@ class JobRow:
     # 파일명 패턴이 요구하는데 매핑이 채우지 못하는 토큰(데이터 무관·작업 정의 수준 계약).
     # 실행은 danger 로 차단하는데 건강 보기가 침묵하면 사용자는 열어 보고서야 안다.
     unresolved_name_tokens: bool = False
+    # 확정 매핑이 아직 없음 — 드리프트와 **원인이 다르지만 둘 다 실행을 막는다**(리뷰 P2).
+    mapping_empty: bool = False
 
     @classmethod
     def from_job(cls, job: Job) -> "JobRow":
@@ -134,10 +136,11 @@ class JobRow:
         # 실행 게이트와 **같은 몸통**을 쓴다(두 표면이 같은 상태를 다르게 부르지 않게).
         name_tokens = bool(unresolved_name_tokens_for(job)) if job.media == "hwpx" else False
         drift = False
-        if job.media == "hwpx" and compile_state is not None and job.mapping.mappings:
-            # 읽을 수 있는 템플릿 ∧ **확정 매핑이 있는** 작업에서만 본다: 못 읽는 건 이미
-            # danger 로 말하고 있고, 매핑이 아직 없는 작업은 "달라진" 게 아니라 "아직 안 맞춘"
-            # 상태다 — 그걸 드리프트로 부르면 1R 의 오진(미연결→미상 매체)과 같은 잘못이다.
+        if job.media == "hwpx" and compile_state is not None:
+            # 읽을 수 있는 템플릿에서만 본다(못 읽는 건 이미 danger 로 말한다). 매핑이 비어
+            # 있어도 **계산은 한다**: 실행 게이트는 그 상태를 template_only 드리프트로 막으므로
+            # 건강 보기가 침묵하면 숨은 차단이 된다. 다만 **부르는 이름은 다르다** — 아직 안
+            # 맞춘 것은 "달라졌다"가 아니다(사유는 library_health 가 가른다).
             drift = template_path_drift(tpath, job.mapping).has_drift
         return cls(
             name=job.name,
@@ -159,6 +162,7 @@ class JobRow:
             structure_drift=drift,
             txt_readable=txt_readable,
             unresolved_name_tokens=name_tokens,
+            mapping_empty=not job.mapping.mappings,
         )
 
     def meta_line(self) -> str:
@@ -316,6 +320,10 @@ def library_health(row: "JobRow") -> "tuple[int, str]":
         # 실행 게이트가 danger 로 차단하는 상태(§19.7 차단 등급) — 데이터가 없어도 참이라
         # 라이브러리에서 먼저 말할 수 있다.
         return 3, "파일명 패턴의 토큰을 채우지 못합니다."
+    if row.structure_drift and row.mapping_empty:
+        # 같은 신호(대칭차)지만 원인이 다르다: 아직 아무것도 맞추지 않은 작업이다. 드리프트로
+        # 부르면 오진이고(무엇이 "달라졌다"는 말인가), 숨기면 실행에서 막히는 걸 뒤늦게 안다.
+        return 3, "매핑을 아직 확정하지 않았습니다."
     if row.structure_drift:
         # §19.7 "확인된 Template/Binding drift = 2, 차단하지 않음"의 자리. 실행 게이트는
         # 실제로 차단하지만(fail-closed), 여기서 말하는 건 **작업 자체의 건강**이라 등급은

@@ -634,7 +634,10 @@ def test_partial_template_lands_in_needs_action(tmp_path):
     하지 않으므로 심각도는 2(§19.7 "확인된 drift" 자리)이고, 문구는 배지를 그대로 쓴다.
     """
     reg = JobRegistry(tmp_path / "partial")
-    reg.save(Job(name="부분컴파일", template_path=_partial_hwpx(tmp_path)))
+    # 매핑을 템플릿 필드에 맞춘다 — 비워 두면 "매핑 미확정"(3)이 먼저 잡혀 PARTIAL 분기가
+    # 가려진다(둘 다 참일 땐 실행이 막히는 쪽이 먼저 말한다).
+    reg.save(Job(name="부분컴파일", template_path=_partial_hwpx(tmp_path),
+                 mapping=MappingProfile(mappings=[FieldMapping("계약명", "src")])))
     vm = HomeViewModel(reg)
     row = vm.rows()[0]
     sev, text = library_health(row)
@@ -661,7 +664,9 @@ def test_structure_drift_surfaces_in_needs_action(tmp_path):
     rows = {r.name: r for r in HomeViewModel(reg).rows()}
     assert library_health(rows["어긋난작업"]) == (2, "템플릿 구조가 확정 매핑과 달라졌습니다.")
     assert library_health(rows["맞춘작업"])[0] == 0
-    assert library_health(rows["매핑없음"])[1] != "템플릿 구조가 확정 매핑과 달라졌습니다."
+    # 매핑이 아직 없는 작업은 드리프트가 **아니지만 건강도 아니다**(리뷰 P2): 실행 게이트는
+    # 그 상태를 template_only 드리프트로 막으므로 숨기면 숨은 차단이 된다. 이름만 다르게.
+    assert library_health(rows["매핑없음"]) == (3, "매핑을 아직 확정하지 않았습니다.")
 
 
 def test_unreadable_txt_template_is_not_healthy(tmp_path):
