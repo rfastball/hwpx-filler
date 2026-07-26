@@ -33,7 +33,9 @@
       alerts.push(`<div class="note warnbox">템플릿이 연결되지 않은 작업 ${k.missing_template_count}건이 있습니다. 작업에서 다시 연결하세요.</div>`);
     }
     if (k.pool_corrupted > 0) {
-      alerts.push(`<div class="note dangerbox">손상된 등록 데이터 ${k.pool_corrupted}건이 있습니다. 데이터 관리에서 확인하세요.</div>`);
+      // 조치처는 실재해야 한다(F1: 「데이터 관리」 화면 사망) — 손상 격리 재진술의 새 거처는
+      // 「작업」의 [데이터 선택…] 안 「고정한 데이터」 구획이다.
+      alerts.push(`<div class="note dangerbox">손상된 등록 데이터 ${k.pool_corrupted}건이 있습니다. 「작업」의 [데이터 선택…]에서 확인하세요.</div>`);
     }
     $("homeAlerts").innerHTML = alerts.join("");
   }

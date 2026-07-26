@@ -119,6 +119,56 @@ def test_two_sessions_coexist_select_restores_and_return_preserves_volatile(tmp_
     assert vol["template_text"] == "붙여넣은 원문 {{공고명}}"  # 붙여넣던 세션 그대로
 
 
+def test_data_mount_writes_only_session_scoped_state(tmp_path):
+    """데이터 마운트가 바꾸는 컨트롤러 상태는 **전부 세션 이관 목록**에 있어야 한다.
+
+    구조 가드(F1 리뷰 P2 근본원인): 새 세션 필드(``data_path``·``data_sheet``)를 더하면서
+    ``_SESSION_ATTRS`` 에 넣는 것을 잊으면, 스태시·복원이 그 필드만 남의 세션 값으로 두고
+    간다 — 라벨은 A 인데 「이 데이터 고정」이 B 를 프리필하는 조용한 어긋남. 한 필드를
+    이름으로 박제하는 대신 **마운트가 실제로 건드린 키를 diff 로 세어** 다음 추가분도
+    자동으로 잡는다.
+
+    예외는 의도적으로 세션보다 오래 사는 것 하나뿐이다: 직전 필터 슬롯(결정 28)은 죽는
+    세션의 정의를 다음 세션에 건네는 통로라 이관 목록 밖이 정본이다.
+    """
+    outlives_session = {"_last_filter"}
+    ctrl, _jobs, _ = _controller(tmp_path)
+    csv = tmp_path / "d.csv"
+    csv.write_text("공고명\n전산장비\n", encoding="utf-8")
+    before = dict(vars(ctrl))
+    ctrl.load_data_path(str(csv))
+    touched = {k for k, v in vars(ctrl).items() if k not in before or before[k] is not v}
+    missing = touched - set(ctrl._SESSION_ATTRS) - outlives_session
+    assert not missing, (
+        f"데이터 마운트가 세션 이관 목록 밖의 상태를 씁니다: {sorted(missing)} — "
+        "「이번 세션」 귀환에서 그 필드만 남의 세션 값으로 남습니다(_SESSION_ATTRS 에 추가)."
+    )
+
+
+def test_stashed_volatile_restores_mount_target_not_just_label(tmp_path):
+    """「이번 세션」 귀환은 라벨뿐 아니라 **마운트 대상**(경로·시트)도 되돌린다(F1 리뷰 P2).
+
+    휘발 세션이 A 를 물고 스태시된 뒤 저장 기안이 B 를 물면, 귀환 시 표시는 A 인데
+    ``data_path`` 만 B 로 남을 수 있었다 — 그 상태의 「이 데이터 고정」은 화면이 A 라고
+    말하는 동안 **B 를 등록**한다(조용한 남의 파일 등록).
+    """
+    ctrl, jobs, _ = _controller(tmp_path)
+    _save_real(tmp_path, jobs, "착수계 기안", "job_t.txt", "저장 원문 {{공고명}}")
+    a = tmp_path / "a.csv"
+    a.write_text("공고명\nA건\n", encoding="utf-8")
+    b = tmp_path / "b.csv"
+    b.write_text("공고명\nB건\n", encoding="utf-8")
+    ctrl.load_data_path(str(a))                       # 휘발 세션이 A 를 문다
+    ctrl.dispatch("select_job", {"name": "착수계 기안"})  # 휘발 스태시 + 저장 세션
+    ctrl.load_data_path(str(b))                       # 저장 세션이 B 를 문다
+    ctrl.dispatch("select_job", {"name": ""})         # 「이번 세션」 귀환
+    snap = ctrl.snapshot()
+    assert snap["data_label"] == "a.csv"
+    assert snap["data_target"]["path"] == str(a), (
+        "라벨은 A 인데 마운트 대상이 B 로 남았습니다 — 「이 데이터 고정」이 남의 파일을 등록합니다."
+    )
+
+
 def test_restore_applies_profile_confirmed(tmp_path):
     """저장 기안 복원은 매핑을 사람 소유 확정으로 되살린다(apply_profile confirm=True, 결정 12).
 

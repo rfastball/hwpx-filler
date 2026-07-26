@@ -1,5 +1,7 @@
 /* 「작업」 화면 — 좌 master 목록 + 우 상세 패널 **두 모드**(R-flow #90 · 블록 2 개정 39~41).
-   실행 모드(기본)=세션 패널 4존, 편집 모드=정의 호스트(#jobEditHost — editor.js 가 렌더).
+   실행 모드(기본)=세션 패널 v6 `screen-data` 2열(재작성 R1 — 좌 `.dg-main` 현재 데이터·거울·
+   결과 / 우 `.dg-side` 문서 선택기·선택한 작업·생성 준비. 구 4존 znum 은 이 형상으로 대체),
+   편집 모드=정의 호스트(#jobEditHost — editor.js 가 렌더).
    안정 DOM(index.html) + Python 이 window.__push('job', snapshot) 로 값만 채운다(run/txt 패턴).
    표현 계층(거울 테이블·재진술 블록·게이트·진행/로그)만 여기서 만든다 — VM 로직 아님(링2 대체, #87).
    덮어쓰기 확인은 공용 Modal.confirm의 수치 합성 본문으로 — 네이티브 다이얼로그 무사용이라 #86
@@ -699,16 +701,19 @@
 
   /* ---- 본문 존: 게이트·저장 폴더·생성 버튼 ---- */
   function gateStep(s, g) {
-    // 게이트의 판정(level/enabled/text)은 Python 단일 출처 그대로 두고, 현재 막힌 존의
-    // 서수만 표시층에서 결합한다(H-03). danger는 템플릿·매핑 정의, 선택 0은 데이터 존,
-    // 나머지 미입력·저장 폴더 사유는 본문 확인 존에서 해소한다.
+    // 게이트의 판정(level/enabled/text)은 Python 단일 출처 그대로 두고, 현재 막힌 **구획의
+    // 이름**만 표시층에서 결합한다(H-03 승계). R1 재작성으로 4존 znum 이 사라져 구 서수
+    // ①②③ 은 가리킬 대상을 잃었다 — 정보(어디로 가야 하는가)는 살리고 표기를 실재하는
+    // 구획 캡션으로 바꾼다(죽은 번호를 남기면 지목이 거짓말이 된다).
     if (!g || g.enabled || !g.text) return "";
-    // 작업 미선택(데이터-우선 prework) — 데이터 겨눔·행 선택·문서 작업 후보가 전부
-    // 데이터 존(②)에 있으므로 서수도 ②다(①=템플릿·헤더는 작업 선택 뒤의 존).
-    if (!s.has_job) return "② ";
-    if (s.template_missing || g.level === "danger") return "① ";
-    if (!s.has_data || !(s.selected_count > 0)) return "② ";
-    return "③ ";
+    const DATA = "현재 데이터 · ", DOC = "이 데이터에 사용할 문서 · ";
+    const noRows = !s.has_data || !(s.selected_count > 0);
+    // 작업 미선택(데이터-우선 prework)은 데이터가 먼저다 — 데이터·행이 갖춰진 뒤에야
+    // 막힌 곳이 문서 선택기다(prework_gate 의 순서와 같은 걸음).
+    if (!s.has_job) return noRows ? DATA : DOC;
+    if (s.template_missing || g.level === "danger") return "선택한 작업 · ";
+    if (noRows) return DATA;
+    return "본문 확인 · ";
   }
 
   function renderGateAndFolder(s) {
@@ -755,9 +760,10 @@
 
   /* ---- busy 잠금 — [data-busy-lock] 속성 선언(setBusy 누락 회귀 방지, #26) ---- */
   function setBusy(busy) {
-    // 탐색 면은 **오버레이 루트**에 살아 `#scr-job` 질의에 안 걸린다(리뷰 2R P2) — 생성 중
-    // 열려 있으면 행 클릭이 Python 거절로 끝나고 사용자는 문맥만 잃는다. 같은 잠금에 넣는다.
-    [$("scr-job"), $("jobBrowseSheet")].forEach((root) => {
+    // 탐색 면·데이터 선택 면은 **오버레이 루트**에 살아 `#scr-job` 질의에 안 걸린다(리뷰 2R
+    // P2) — 생성 중 열려 있으면 클릭이 Python 거절로 끝나고 사용자는 문맥만 잃는다. 같은
+    // 잠금에 넣는다(지도 §10.7.1 계약면 2).
+    [$("scr-job"), $("jobBrowseSheet"), $("dataPickerModal")].forEach((root) => {
       root.querySelectorAll("[data-busy-lock]").forEach((el) => { el.disabled = busy; });
     });
     $("jobGenBtn").disabled = busy || !(LAST && LAST.gate && LAST.gate.enabled);
@@ -843,11 +849,21 @@
      넓어졌다 — txt T3 가드와 같은 조각을 쓴다(guard.js, PR-4 리뷰 F6). */
   const selectionLine = window.Guard.selectionLine;
 
+  /* 손실 열거는 **실제로 파기되는 집합**과 일치해야 한다(지도 §10.7.3 감사) — 과경고도
+     누락도 거짓말이다. 데이터 전환이 파기하는 것: ①선택(0건 재생성) ②필터 정의(재생성)
+     ③빈 값 확인(`set_acquired` 의 ack 재평가). 자동 조준 재진술은 사라지는 게 아니라 새
+     데이터가 스스로를 재진술하며 **대체**되고, 생성 결과·로그는 그대로 남으므로 열거하지
+     않는다. 필터 정의는 직전 슬롯에 스태시되지만 재적용은 **소스 일치**를 요구하므로
+     (`_reapply_available` 3연언) 다른 데이터로 가면 지금 자리에선 되살릴 수 없다 — 그 조건
+     까지 말해야 "사라진다"가 정확해진다. */
   function guardBody(g, verbPhrase) {
     const lost = [selectionLine(g.sel_count, g.filter_active, g.in_def, g.extra)];
     if (g.filter_parts > 0) lost.push(`필터 정의(${g.filter_parts}개 조건)`);
+    if (g.ack_count > 0) lost.push(`빈 값 확인 ${g.ack_count}개`);
+    const stash = g.filter_parts > 0
+      ? "\n필터 정의는 이 데이터로 돌아오면 「직전 필터 재적용」으로 되살릴 수 있습니다." : "";
     return `${verbPhrase} 이 세션의 선택이 사라집니다.\n` +
-      `사라지는 것: ${lost.join(" · ")}.`;
+      `사라지는 것: ${lost.join(" · ")}.${stash}`;
   }
 
   /* 파괴 전이 사전 확인(데이터 재겨눔·템플릿 재연결 — T1 동류 세션 재구성). 피커/흐름을
@@ -869,27 +885,33 @@
       "데이터 변경 확인", "데이터를 바꾸면", "데이터 바꾸고 버리기");
   }
 
-  /* T1 가드 왕복(RC-02 동형): 무변이 needs_confirm → modal.js 이진 확인(기본 포커스=
-     머무르기·Escape=머무르기) → 확인 시에만 confirm=true 재호출. 단일 실행(switching)
-     — 더블클릭이 두 왕복·두 모달을 만들면 modal.js 재진입 가드가 loud 거절을 띄운다
-     (리뷰 #5: 정상 제스처에 오류성 경보). */
+  /* 데이터 선택 다이얼로그 「현재 데이터」 구획 소재 — 스냅샷이 이미 낸 값만 옮긴다(재판정
+     금지). `path`·`sheet` 는 「이 데이터 고정」이 프리필로 쓰는 참조 정체(Python 소유
+     data_target)이고, 출처가 `pool` 이면 이미 고정된 참조라 고정 버튼이 뜨지 않는다. */
+  function currentDataDescriptor() {
+    const t = (LAST && LAST.data_target) || {};
+    return {
+      label: (LAST && LAST.data_source_label) || "",
+      detail: LAST && LAST.has_data ? `${LAST.record_count}건` : "",
+      path: t.path || "", sheet: t.sheet || "", origin: t.origin || "",
+    };
+  }
+
+  /* 작업 전환 — **가드 없음**이 계약이다(데이터-우선 §18.2): 전환은 vm 만 재생성하고
+     데이터·선택·필터는 세션 소유라 생존한다. 구 T1 스위치 가드는 파기 자체가 사라져 함께
+     죽었고(백엔드 `_do_select_job` 은 더 이상 needs_confirm 을 내지 않는다), 여기 남아 있던
+     확인 왕복 분기도 함께 걷는다 — 죽은 가드 코드는 "이 전이는 파괴적"이라는 거짓 신호이자,
+     되살아난 백엔드 분기를 소리 없이 받아 주는 통로다. 남는 것은 단일 실행(switching)뿐:
+     더블클릭이 두 왕복을 만들면 modal.js 재진입 가드가 정상 제스처에 오류성 경보를 띄운다
+     (리뷰 #5). */
   let switching = false;
   async function selectJobGuarded(name) {
-    /* 반환 = 전환 성사 여부(false=머무르기/재진입 거절) — 편집 모드 이탈이 이 판정을
-       기다린다(가드 선행·전환 후행, PR-2 리뷰 F5: 취소는 무변화여야 한다). */
+    /* 반환 = 전환 성사 여부(false=재진입 거절) — 편집 모드 이탈이 이 판정을 기다린다
+       (PR-2 리뷰 F5: 취소는 무변화여야 한다). */
     if (switching) return false;
     switching = true;
     try {
-      const res = await Bridge.call(SCREEN, "select_job", { name });
-      if (res && res.needs_confirm) {
-        const ok = await window.Modal.confirm({
-          title: "작업 전환 확인",
-          body: guardBody(res, "작업을 전환하면"),
-          confirmLabel: "전환하고 버리기", cancelLabel: "취소",
-        });
-        if (!ok) return false;
-        await Bridge.call(SCREEN, "select_job", { name, confirm: true });
-      }
+      await Bridge.call(SCREEN, "select_job", { name });
       return true;
     } finally {
       switching = false;
@@ -1403,23 +1425,15 @@
       log("중단 요청: 진행 중인 문서를 마친 뒤 미착수 건을 중단합니다.");
     });
 
-    $("jobBtnPickData").addEventListener("click", async () => {
-      if (!(await confirmDataSwapIfArmed())) return;  // 데이터 재겨눔 = T1 동류 파괴 전이
-      let r = await Bridge.pickDataFile(SCREEN);
-      if (r && typeof r === "object" && r.needs_sheet) {   // 다중 시트 → 확정 게이트(#33)
-        r = await SheetPicker.choose(SCREEN, r);
-        if (r === null) { log("데이터 선택을 취소했습니다."); return; }
-      }
-      if (r === null) return;                       // 취소
-      if (typeof r === "string" && r.startsWith("ERROR:")) { log("데이터 오류: " + r.slice(6).trim()); return; }
-      log(`데이터 불러옴: ${r}`);
-    });
-    // 등록 데이터(풀) 겨눔(#26 #6) — 취소=중단, 실패는 모달 안에서 재진술(PoolPicker).
-    $("jobBtnPoolData").addEventListener("click", async () => {
-      if (!(await confirmDataSwapIfArmed())) return;  // 데이터 재겨눔 = T1 동류 파괴 전이
-      const label = await PoolPicker.choose(SCREEN);
-      if (label === null) return;                   // 취소 = 겨눔 중단
-      log(`등록 데이터 불러옴: ${label}`);
+    // 데이터 선택 = 단일 출구(재작성 F1) — 현재/고정한/다른 세 갈래가 한 면 안에서 갈리고,
+    // 손실 가드는 대상이 정해진 직후 다이얼로그가 이 콜백으로 묻는다(지도 §10.7.2 D).
+    $("jobBtnPickData").addEventListener("click", () => {
+      DataPicker.open({
+        screen: SCREEN,
+        current: currentDataDescriptor(),
+        confirmSwap: confirmDataSwapIfArmed,   // 데이터 재겨눔 = T1 동류 파괴 전이
+        onLoaded: (label) => log(`데이터 불러옴: ${label}`),
+      });
     });
     $("jobBtnPickFolder").addEventListener("click", async () => {
       const r = await Bridge.pickOutputFolder(SCREEN);

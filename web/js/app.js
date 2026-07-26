@@ -51,7 +51,7 @@
      버튼은 유지된다(명시적 재스캔 경로). 「작업」 화면도 레지스트리 파생 작업 목록(좌 master
      목록)을 스냅샷으로 그리므로 포함한다 — 빼면 에디터에서 막 저장한 작업이 좌 목록에 안
      보인다. 실행 화면(run)은 사망(슬라이스 3)이라 목록에서 제거. */
-  const REFRESH_ON_NAV = ["home", "pool", "tpl", "job", "draft"];
+  const REFRESH_ON_NAV = ["home", "tpl", "job", "draft"];
 
   /* 화면 전환 — 레일 클릭과 허브(홈) 카드의 프로그램적 이동이 공유하는 단일 경로. */
   function go(id) {
@@ -173,6 +173,8 @@
     if (window.JobScreen) window.JobScreen.init();  // 「작업」 화면(#90) — 유일 생성 표면
     if (window.DraftScreen) window.DraftScreen.init();  // 「기안」 화면(#148 슬라이스 2b) — TXT 작업-앵커
     if (window.TemplateScreen) window.TemplateScreen.init();
-    if (window.PoolScreen) window.PoolScreen.init();  // 데이터 관리(#26 #4)
+    // 데이터 선택 다이얼로그(재작성 F1) — 화면이 아니라 오버레이라 라우팅 대상이 아니지만
+    // pool 관측 푸시의 구독자라 여기서 배선한다(구 PoolScreen.init 승계).
+    if (window.DataPicker) window.DataPicker.init();
   });
 })();

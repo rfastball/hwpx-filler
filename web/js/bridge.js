@@ -58,7 +58,7 @@
     /** 홈 손상 카드 '폴더 열기' → 탐색기에서 파일 표시(#26 #8). null·"ERROR:…". */
     revealCorruptJob(path) { return window.pywebview.api.reveal_corrupt_job(path); },
 
-    /** 데이터 관리 등록 모달 '찾아보기' → 경로만 반환(로드 없음, #26 #4). null=취소. */
+    /** 데이터 고정·등록 모달 '찾아보기' → 경로만 반환(로드 없음, #26 #4). null=취소. */
     pickPoolDataFile() { return window.pywebview.api.pick_pool_data_file(); },
 
     /** 템플릿 다시 연결(#67) '찾아보기' → 경로만 반환(로드 없음). null=취소. */

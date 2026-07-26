@@ -81,8 +81,9 @@ def test_durable_destructive_confirms_are_danger() -> None:
         ("screens/job.js", "body: overwriteBody(res)"),
         ("screens/home.js", "body: res.confirm_text"),
         ("screens/template.js", 'res.confirm_text + "\\n\\n지금 변환할까요?"'),
-        ("screens/pool.js", 'res.confirm_text + "\\n\\n삭제할까요?"'),
-        ("screens/pool.js", 'res.confirm_text + "\\n\\n계속할까요?"'),
+        # 등록 데이터 삭제·동명 재등록 — 화면 사망 뒤 거처는 데이터 선택 다이얼로그(F1).
+        ("data_picker.js", 'res.confirm_text + "\\n\\n삭제할까요?"'),
+        ("data_picker.js", 'res.confirm_text + "\\n\\n계속할까요?"'),
     )
     for relative, needle in inventory:
         call = _call_containing(relative, needle)

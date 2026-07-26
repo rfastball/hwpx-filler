@@ -39,7 +39,8 @@ GALLERY = Path(__file__).resolve().parents[1] / "docs" / "UI_GALLERY.html"
 # 화면 루트 — 셸 라우터가 표시/숨김으로 전환하는 최상위 컨테이너(회귀 시 화면 소실).
 SCREEN_ROOTS = (
     "scr-home", "scr-tpl",
-    "scr-pool",  # 데이터 관리(#26 #4)
+    # 「데이터 관리」(scr-pool)는 사망(재작성 F1) — 등록 데이터의 목록·수명은 데이터 선택
+    # 다이얼로그가 승계했다(PoolController 는 생존, 소비자만 바뀜).
     # 「작업」(R-flow · #90) — 유일 생성 표면(실행 화면=슬라이스 3 사망) + 편집 모드(작업
     # 에디터 별도 화면=슬라이스 5 사망, 결정 39 흡수 — 정의 surface 는 scr-job 내부).
     "scr-job",
@@ -52,7 +53,9 @@ SCREEN_ROOTS = (
 SCOPED_DATA_LABELS = ("draftDataLabel", "jobDataLabel")
 
 # 접힘 상태에서 라벨이 사라지는 내비 버튼(회귀 시 접근 이름·툴팁 소실 → #27).
-NAV_SCREENS = ("home", "job", "draft", "tpl", "pool")  # run=슬라이스 3·editor=슬라이스 5 사망(흡수); 「기안」이 구 txt·quickdraft 를 흡수·삭제(#148 슬라이스 6, 레일 6→5)
+# run=슬라이스 3·editor=슬라이스 5 사망(흡수); 「기안」이 구 txt·quickdraft 를 흡수·삭제
+# (#148 슬라이스 6, 레일 6→5); 「데이터 관리」는 데이터 선택 다이얼로그로 흡수·사망(F1, 5→4).
+NAV_SCREENS = ("home", "job", "draft", "tpl")
 
 # 커스텀 모달 → aria-labelledby 가 가리켜야 할 제목 id(다이얼로그 시맨틱, #27/#28).
 # sheetModal 은 다중 시트 확정 게이트(#33) — 같은 Modal 헬퍼·다이얼로그 계약을 공유한다.
@@ -61,8 +64,8 @@ MODAL_LABELLEDBY = {
     "pasteModal": "pasteTitle",  # 「기안」 붙여넣기(draftsession.js 공용 팩토리가 소비)
     "draftSaveTplModal": "draftSaveTplTitle",  # 「기안」 「템플릿으로 저장」 승격(#148 슬라이스 6, #135)
     "sheetModal": "sheetTitle",
-    "poolRegModal": "poolRegTitle",  # 데이터 등록(#26 #4)
-    "poolModal": "poolTitle",  # 등록 데이터 선택(#26 #6) — 정적 골격 이관(r3 K12)
+    "poolRegModal": "poolRegTitle",  # 데이터 고정·등록(#26 #4 → F1 승계, 다이얼로그 위 스택)
+    "dataPickerModal": "dataPickerTitle",  # 데이터 선택 통합 면(재작성 F1 — pool 화면 승계)
     # 「작업」 덮어쓰기 확인은 슬라이스 2(A-2-22)에서 공용 confirmModal(수치 합성 본문)로 이관 —
     # 전용 jobOverwriteModal DOM 폐기(아래 test_job_overwrite_uses_shared_confirm_modal 가드).
     "confirmModal": "confirmModalTitle",  # 네이티브 window.confirm 대체(#86) + 덮어쓰기 확인
@@ -357,18 +360,36 @@ def test_milestone_l_draft_expansion_sheets_move_live_surfaces():
 
 
 def test_milestone_l_job_density_and_expansion_sheets():
-    """#272: 작업 duo·420px 캡·두 펼침 면·편집 전 즉시 복귀 계약을 고정한다."""
+    """#272 승계 + 재작성 R1: 세션 패널 2열·420px 캡·두 펼침 면·편집 전 즉시 복귀 계약.
+
+    R1 이 구 `.job-duo`(표|거울 가로 병치)를 v6 `screen-data` 2열로 대체했다 — 가로 축은
+    이제 데이터 ↔ 문서 선택기이고, 표↔거울은 좌 열 안에서 **세로 인접**으로 남는다(같은
+    시야 요구는 인접 + 펼침 면 ⤢ 가 승계). #272 의 나머지 계약(420px 캡·캡스트립·두 면의
+    실 DOM 이동/복귀)은 그대로 살아 여기서 계속 고정된다.
+    """
     html = WEB_INDEX.read_text(encoding="utf-8")
     css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
     job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
     sheets = (WEB_JS_DIR / "surface_sheet.js").read_text(encoding="utf-8")
 
-    assert 'class="duo job-duo" id="jobDuo"' in html
-    duo = html.split('id="jobDuo"', 1)[1].split("<!-- 완료 존", 1)[0]
-    assert duo.index('id="jobTableHost"') < duo.index('id="jobMirror"')
-    assert 'id="jobMirrorCapstrip" role="status" hidden' in duo
+    assert 'class="data-grid" id="jobDataGrid"' in html
+    assert 'class="duo job-duo"' not in html and ".job-duo{" not in css, (
+        "구 표|거울 duo 가 재유입됐습니다 — R1 의 가로 축은 데이터↔문서 선택기입니다."
+    )
+    grid = html.split('id="jobDataGrid"', 1)[1].split("job-edit-host", 1)[0]
+    main, side = grid.split('class="dg-side"', 1)
+    # 좌 열 = 현재 데이터 → 거울 → 결과(세로), 우 열 = 문서 선택기 → 선택한 작업 → 생성 준비.
+    assert main.index('id="jobTableHost"') < main.index('id="jobMirror"') < main.index('id="jobGenLog"')
+    assert side.index('id="jobCandidates"') < side.index('id="jobHeadTitle"') < side.index('id="jobOutDir"')
+    assert 'id="jobMirrorCapstrip" role="status" hidden' in main
     assert "#jobMirror{max-height:420px;overflow:auto}" in css
+    assert ".data-grid{display:grid;grid-template-columns:minmax(0,1fr)minmax(268px,.46fr)}" in css
     assert "@containersession-panel(max-width:900px)" in css
+    assert ".data-grid{grid-template-columns:1fr}" in css
+    # 좁은 side-card 에서 라벨+입력+버튼을 한 줄에 밀어 넣으면 저장 폴더 경로가 몇 글자로
+    # 잘려 "어디에 저장되는지"를 못 읽는다 — 감싸기 규칙이 그 되읽기를 지킨다.
+    assert ".dg-side.run-row{flex-wrap:wrap;row-gap:var(--sp-4)}" in css
+    assert ".dg-side.run-row>.field{flex:11100%}" in css
     assert '<div id="jobConfirmSheet" class="modal sheet hidden"' in html
     assert "펼쳐서 행 고르기 ⤢" in html and "펼쳐서 확인 ⤢" in html
     assert 'modalId: "jobConfirmSheet"' in job_js
@@ -509,9 +530,9 @@ def test_forced_colors_block_present_in_web_diff():
 
 # pickDataFile(=pick_data_file) 을 소비하는 모든 화면 — 브리지 반환 계약이 screen-불가지라
 # needs_sheet 분기를 처리해야 다중 시트가 첫 시트로 강등되지 않는다(리뷰 P1: txt 누락 회귀).
-DATA_PICK_FILES = ("screens/editor.js", "draftsession.js", "screens/job.js")
-# 「기안」 세션(draftsession.js 공용 팩토리)이 임의 파일 선택을 소비 — 구 txt·quickdraft 는
-# 같은 팩토리를 쓰던 소비 화면이라 삭제(#148 슬라이스 6)돼도 계약은 팩토리에 남는다.
+# 「작업」·「기안」의 파일 선택은 데이터 선택 다이얼로그 한 곳으로 수렴했다(재작성 F1) —
+# 두 화면이 같은 모듈을 쓰므로 계약도 그 모듈이 진다. 에디터는 아직 자기 경로를 쓴다(F7).
+DATA_PICK_FILES = ("screens/editor.js", "data_picker.js")
 
 
 def test_sheet_picker_loaded_and_wired_on_all_data_screens():
@@ -671,27 +692,46 @@ def test_gallery_exposes_heading_role_specimens():
         assert label in html, f"갤러리에 제목 역할 표본이 없습니다: {label}"
 
 
-def test_job_zones_reuse_number_badges_and_action_labels():
-    """H-03: 작업 4존은 기안과 같은 znum 문법으로 순서와 다음 행동을 말한다."""
+def test_job_session_surface_uses_v6_two_column_captions():
+    """재작성 R1: 「작업」 세션 표면의 구획 문법 — 번호 없는 v6 캡션 6종.
+
+    H-03 의 znum 4존 문법은 **이 화면에서만** 은퇴한다: v6 `screen-data` 는 순서가 있는
+    4단계가 아니라 마주 보는 두 열이고, 세로 1·2·3·4 를 2열에 얹으면 번호가 읽는 순서와
+    어긋난다(우측 첫 구획이 ②가 되는 식). 기안(`draft`)의 znum 문법은 그대로 산다 —
+    거기는 여전히 순서 있는 세션이다. 번호의 정보(다음에 어디로)는 게이트 문안의 구획
+    지목(`gateStep`)이 승계한다.
+    """
     html = " ".join(WEB_INDEX.read_text(encoding="utf-8").split())
-    labels = (
-        ("1", "템플릿·헤더 확인"),
-        ("2", "데이터 연결"),
-        ("3", "본문 확인·거울"),
-        ("4", "생성"),
+    job = html.split('id="scr-job"', 1)[1].split('id="scr-draft"', 1)[0]
+    for caption in (
+        "현재 데이터", "본문 확인", "생성 결과",
+        "이 데이터에 사용할 문서", "선택한 작업", "생성 준비",
+    ):
+        needle = rf'<div class="zone-cap[^"]*">(?:<span>)?{re.escape(caption)}'
+        assert re.search(needle, job), f"세션 구획 캡션이 없습니다: {caption}"
+    assert '<span class="znum">' not in job, (
+        "「작업」 세션 표면에 구 4존 서수가 재유입됐습니다."
     )
-    for ordinal, label in labels:
-        needle = rf'<div class="zone-cap[^"]*">.*?<span class="znum">{ordinal}</span>{re.escape(label)}'
-        assert re.search(needle, html), f"작업 존 단계 표지가 없습니다: {ordinal} {label}"
+    # 기안은 같은 은퇴에 휩쓸리지 않는다(순서 있는 세션 — 문법을 함께 지우면 회귀).
+    assert '<span class="znum">' in html.split('id="scr-draft"', 1)[1]
 
 
 def test_job_gate_adds_blocked_step_only_in_display_layer():
-    """H-03: gate.level 판정은 건드리지 않고 표시층에서 막힌 단계 서수만 결합한다."""
+    """H-03 승계: gate.level 판정은 건드리지 않고 표시층에서 막힌 **구획 이름**만 결합한다.
+
+    R1 이 4존 서수를 은퇴시켰으므로 지목도 실재하는 구획 캡션을 쓴다 — 죽은 번호를 남기면
+    지목 자체가 거짓말이 된다. 지목 문자열은 반드시 실제 `zone-cap` 캡션과 일치해야 한다.
+    """
     src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    html = " ".join(WEB_INDEX.read_text(encoding="utf-8").split())
+    job = html.split('id="scr-job"', 1)[1].split('id="scr-draft"', 1)[0]
     assert "function gateStep(s, g)" in src
-    assert 'g.level === "danger") return "① "' in src
-    assert '!s.has_data || !(s.selected_count > 0)) return "② "' in src
-    assert 'return "③ ";' in src
+    assert not re.search(r'return "[①②③]', src), "죽은 4존 서수가 남아 있습니다."
+    for caption in ("현재 데이터", "이 데이터에 사용할 문서", "선택한 작업", "본문 확인"):
+        assert f'"{caption} · "' in src or f'= "{caption} · "' in src, (
+            f"게이트 구획 지목 누락: {caption}"
+        )
+        assert caption in job, f"지목이 실재하지 않는 구획을 가리킵니다: {caption}"
     assert 'gateStep(s, g) + g.text' in src
     assert not re.search(r"\bg\.level\s*=(?!=)", src), (
         "표시층이 gate.level 판정을 변조하면 안 됩니다."
@@ -715,7 +755,9 @@ def test_job_data_first_prework_surface_contract():
     src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
     assert "function renderCandidates(s)" in src
     assert "jobEmptyPanel" not in src
-    assert 'if (!s.has_job) return "② ";' in src, "무작업 prework 서수(②) 배선이 없습니다."
+    assert "if (!s.has_job) return noRows ? DATA : DOC;" in src, (
+        "무작업 prework 게이트의 구획 지목 배선이 없습니다."
+    )
     assert "data-cand" in src  # 후보 카드 클릭 → select_job 위임
     # 활성 후보 재활성화 가드(#302 리뷰 P2) — pointer-events:none 은 키보드 합성 클릭을
     # 못 막으므로 핸들러가 aria-pressed 를 검사해야 한다(재선택=실행 증거 조용한 소실).
@@ -765,7 +807,7 @@ def test_job_document_browser_surface_contract():
     # 선택 경로는 닫기까지만 하고 착지는 onClose 가 한다(아래 1지점 계약).
     # 생성 중 잠금(2R P2): 탐색 면은 오버레이 루트라 `#scr-job` 질의에 안 걸린다 —
     # setBusy 가 그 루트도 훑고, 출구·탭·행이 busy-lock 을 달아야 한다.
-    assert 'jobBrowseSheet")].forEach' in src, "setBusy 가 탐색 면을 잠그지 않습니다."
+    assert 'dataPickerModal")].forEach' in src, "setBusy 가 탐색 면을 잠그지 않습니다."
     assert src.count("data-busy-lock data-browse") == 3, (
         "탐색 면 출구·탭·행의 busy-lock 표식이 빠졌습니다."
     )

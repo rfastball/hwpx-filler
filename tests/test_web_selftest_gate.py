@@ -80,13 +80,34 @@ class TestWebSelftestGate:
         # H-05: 콜드 부팅은 살아 있는 소비 화면인 작업으로 곧장 진입한다.
         assert selftest_result["job_on"] is True
 
-    def test_pool_screen_actually_rendered(self, selftest_result: dict) -> None:
-        # 데이터 관리 화면(#26 #4)이 실앱에서 init·렌더됨(빈 상태 문구도 렌더로 침).
-        assert selftest_result["pool_rendered"] is True
+    def test_data_picker_buttons_present(self, selftest_result: dict) -> None:
+        # 데이터 선택 단일 출구(재작성 F1) — 작업·기안 두 세션 표면에 실재한다.
+        assert selftest_result["data_picker_buttons"] is True
 
-    def test_pool_source_buttons_present(self, selftest_result: dict) -> None:
-        # 2소스 진입점(#26 #6) — 작업·기안의 '등록 데이터…' 버튼이 실 DOM 에 있다.
-        assert selftest_result["pool_buttons"] is True
+    def test_data_picker_dialog_absorbs_pool_screen(self, selftest_result: dict) -> None:
+        """`pool` 화면 사망의 승계처가 실앱에서 실제로 선다(지도 §10.7.4 점검표).
+
+        정적 DOM 계약이 못 잡는 세 승계 의무를 실 렌더로 못박는다: 보관 항목이 목록에
+        남아 `활성화` 에 도달 가능할 것(§10.7.2 C), 손상 격리가 상주 재진술될 것(RC-05),
+        「이 데이터 고정」이 현재 마운트 대상을 프리필할 것(v6 pinDataDialog).
+        """
+        probe = selftest_result["data_picker"]
+        assert probe["error"] is None, probe
+        assert probe["opened"] is True, probe
+        assert probe["rows"] == 2, probe
+        # 보관 항목은 숨기지 않고 **정직하게 비활성** — 그래야 활성화 동사가 도달 가능하다.
+        assert probe["use_active_enabled"] is True, probe
+        assert probe["use_archived_disabled"] is True, probe
+        assert probe["activate_reachable"] is True, probe
+        assert probe["relink_reachable"] is True, probe
+        assert probe["corrupt_shown"] is True, probe
+        # 고정 = 등록 모달 재사용이되 진입 사유가 제목·프리필로 드러난다.
+        assert probe["pin_offered"] is True, probe
+        assert probe["pin_title"] == "이 데이터 고정", probe
+        # 제목과 확정 버튼이 같은 동사를 쓴다 — 「고정」을 열고 「등록」을 누르게 하지 않는다.
+        assert probe["pin_ok"] == "고정", probe
+        assert probe["pin_path"] == "C:/d/대장.xlsx", probe
+        assert probe["pin_sheet"] == "물품", probe
 
     def test_each_action_family_click_dispatches_and_returns_snapshot(
         self, selftest_result: dict,
@@ -379,7 +400,7 @@ class TestWebSelftestGate:
         assert j["confirm_moved"] and j["confirm_dispatch"] and j["confirm_restored"], j
         assert j["job_data_moved"] and j["job_data_first_sticky"] and j["job_data_restored"], j
         assert j["edit_closes_sheets"], j
-        assert len(j["job_duo_wide"].split()) == 2, j
+        assert len(j["job_grid_wide"].split()) == 2, j
         assert len(selftest_result["job_density_narrow"]["columns"].split()) == 1
 
     def test_job_restate_block_lists_selected_names(self, selftest_result: dict) -> None:
@@ -470,8 +491,16 @@ class TestWebSelftestGate:
         body = selftest_result["job_mirror"]["guard_body"]
         assert "직접 선택 3행" in body, f"선택 수치 미표기: {body!r}"
         assert "정의 매치 2" in body and "정의 밖 1" in body, f"S4 델타 병기 누락: {body!r}"
-        assert "작업을 전환하면" in body, f"전이 동사구 누락: {body!r}"
+        assert "데이터를 바꾸면" in body, f"전이 동사구 누락: {body!r}"
         assert "필터 정의(2개 조건)" in body, f"필터 소실 재진술 누락: {body!r}"
+        # 실제 파기 집합과 일치(F1 §10.7.3): 빈 값 확인은 set_acquired 가 재평가로 지운다.
+        assert "빈 값 확인 2개" in body, f"ack 소실 열거 누락: {body!r}"
+        # 필터 정의는 직전 슬롯에 남지만 **소스 일치**를 요구한다 — 조건을 함께 말한다.
+        assert "직전 필터 재적용" in body, f"필터 복원 조건 재진술 누락: {body!r}"
+        no_ack = selftest_result["job_mirror"]["guard_body_no_ack"]
+        assert "빈 값 확인" not in no_ack, f"없는 손실을 열거합니다(과경고): {no_ack!r}"
+        assert "직전 필터 재적용" not in no_ack, (
+            f"필터 정의가 없는데 복원 문구가 붙습니다(과경고): {no_ack!r}")
         # 데이터 재겨눔 사전 확인은 JS 전용 가드 지점이라 존재 자체를 핀한다.
         assert selftest_result["job_mirror"]["data_guard_wired"] is True, (
             "confirmDataSwapIfArmed 배선이 사라졌습니다 — 데이터 재겨눔 가드(결정 26) 회귀."
@@ -780,9 +809,14 @@ class TestWebSelftestGate:
         assert h["headings"]["section"]["font_weight"] == "700"
         assert h["headings"]["zone"]["font_size"] == "13px"
         assert h["headings"]["zone"]["font_weight"] == "700"
-        assert h["job_step_badges"] == 4
+        # 재작성 R1: 「작업」 세션 표면은 순서 있는 4존이 아니라 마주 보는 두 열이라 znum 이
+        # 은퇴했다(정적 판은 test_job_session_surface_uses_v6_two_column_captions). 여기서는
+        # **실렌더로** 서수 0 + v6 캡션 6종을 되읽어, 죽은 번호가 실화면에 남지 않았음을 본다.
+        # zone-cap 타이포 역할(위 13px/700)은 그대로라 H-01 3역할 계약은 유지된다.
+        assert h["job_step_badges"] == 0
         assert h["job_steps"] == [
-            "1템플릿·헤더 확인", "2데이터 연결", "3본문 확인·거울", "4생성",
+            "현재 데이터", "본문 확인", "생성 결과",
+            "이 데이터에 사용할 문서", "선택한 작업", "생성 준비",
         ]
 
     def test_milestone_h_template_and_card_surfaces_render(self, selftest_result: dict) -> None:

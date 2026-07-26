@@ -48,7 +48,7 @@ Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다.
 
 ## 현재 라우팅과 소유권
 
-레일과 최상위 DOM 화면의 현재 목록은 `home`, `job`, `draft`, `tpl`, `pool` 다섯 개다.
+레일과 최상위 DOM 화면의 현재 목록은 `home`, `job`, `draft`, `tpl` 네 개다.
 `web/js/app.js`의 `window.Nav.go`가 표시 상태를 전환한다. `editor`는 라우팅 화면이 아니라
 `job` 화면 안의 편집 호스트이며 `EditorEntry`가 편집 모드로 착지시킨다.
 
@@ -59,11 +59,56 @@ Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다.
 | `job` 내부 작업 편집 | `#jobEditHost`, `screens/editor.js`, `editor_entry.js` | `EditorController` | `MappingModel`, 저장 판정, 공유 `TemplateManagerViewModel` |
 | `draft` 기안 작업·세션 | `#scr-draft`, `screens/draft.js`, `draftsession.js` | `DraftController` | `TxtDraftViewModel`, `MappingModel`, `SelectionModel`, `TxtQueueModel` |
 | `tpl` 템플릿 관리 | `#scr-tpl`, `screens/template.js` | `TemplateController` | `TemplateManagerViewModel`, 템플릿 그룹 상태 |
-| `pool` 데이터 관리 | `#scr-pool`, `screens/pool.js` | `PoolController` | `DatasetPoolViewModel` |
+| 데이터 선택 다이얼로그(화면 아님) | `#dataPickerModal`, `data_picker.js` | `PoolController` + 호스트 화면 | `DatasetPoolViewModel` |
 
 화면을 추가·삭제·이름 변경할 때는 DOM 루트, 화면 JavaScript의 `SCREEN`, Python 컨트롤러
 `name`, `WebFrontend.controllers`, action registry를 한 계약 변경으로 갱신한다. `job` 내부 편집
 표면처럼 라우트와 컨트롤러가 1:1이 아닌 경우도 위 표에 명시한다.
+
+### 데이터 선택 다이얼로그 (재작성 F1 — `pool` 화면 사망의 승계처)
+
+데이터 선택은 「작업」·「기안」 두 세션 표면이 공유하는 **한 오버레이**(`#dataPickerModal`,
+`web/js/data_picker.js`)로 수렴한다. 구 2버튼(「등록 데이터…」·「파일 선택…」)과 `pool`
+화면(`#scr-pool`·`screens/pool.js`)은 사망했고, 그 기능은 세 구획으로 흡수됐다:
+
+| 구획 | 내용 | 백엔드 |
+|---|---|---|
+| 현재 데이터 | 마운트 재진술 + 「이 데이터 고정」(파일 출처에서만 — 등록 데이터는 이미 고정된 참조) | 호스트 스냅샷 `data_target` |
+| 고정한 데이터 | 등록 데이터 **전 상태**(활성·보관·끊김·나라) + 사용·보관·활성화·삭제·다시 연결 + 손상 격리 | `pool` 컨트롤러 스냅샷·액션 **그대로** |
+| 다른 데이터 | 파일 찾아보기(1회용) → 다중 시트면 시트 확정 게이트 | 호스트 `pick_data_file`/`load_data_sheet` |
+
+- **화면은 죽고 컨트롤러는 산다**: `PoolController` 는 그대로 살아 이 다이얼로그가 `pool`
+  관측 푸시의 구독자다(`Bridge.onPush("pool", …)`). 판정·문구는 Python 단일 출처.
+- 보관·끊김 항목은 숨기지 않고 **정직하게 비활성** + 사유 병기 — 숨기면 `활성화`·`다시 연결`
+  동사에 도달할 길이 사라진다.
+- 마운트 성사 시에만 닫는다. 실패(나라 동결·죽은 참조·모호 시트·행 0건·읽기 실패)는 면 안
+  상태줄에 재진술하고 면을 유지한다. 마운트 진행 중에는 닫기·Escape 를 차단하고 표기한다.
+- 전환 손실 가드는 **대상 확정 직후·읽기 직전**에 호스트 콜백으로 묻는다(`confirmSwap`).
+- 고정·등록·다시 연결은 `#poolRegModal` 을 이 면 **위에** 스택으로 띄운다(제목이 진입 사유).
+
+### `job` 세션 표면의 형상 (v6 `screen-data` 2열 — 재작성 R1)
+
+세션 패널(`#jobZones`)은 구 4존(헤더·데이터·본문·완료)이 아니라 **v6 `screen-data` 2열**이다
+(`.data-grid` — 정본 `docs/DATA_FIRST_INTEGRATION_MAP.md` §10.5 R1).
+
+| 열 | 구획 | 소유 |
+|---|---|---|
+| 좌 `.dg-main` | 현재 데이터(겨눔·검색·필터·표·필터 밖 스트립) → 본문 확인(거울) → 생성 결과 | 데이터-우선 흐름의 입력과 되읽기 |
+| 우 `.dg-side` | 이 데이터에 사용할 문서(후보·추천·탐색 출구) → 선택한 작업(정체·템플릿·재연결) → 생성 준비(저장 폴더·재진술) | 문서 선택과 실행 준비 |
+
+- 두 열은 존 구분선을 공유하는 **한 카드 안의 구획**이고, 컨테이너 900px 이하에서 1열로
+  퇴화한다(`@container session-panel`). 구 `.job-duo`(표\|거울 가로 병치, #272)는 이 형상으로
+  대체됐다 — 표↔거울 같은 시야 요구는 좌 열 안의 세로 인접 + 펼침 면(⤢)이 승계한다.
+- **znum 4존 서수는 이 화면에서 은퇴**했다(v6 는 순서 있는 4단계가 아니라 마주 보는 두 열).
+  「다음에 어디로」의 정보는 게이트 문안 앞머리의 **구획 이름 지목**(`gateStep`)이 승계하며,
+  지목 문자열은 실재하는 `zone-cap` 캡션과 일치해야 한다(죽은 번호는 지목을 거짓말로 만든다).
+  「기안」(`draft`)의 znum 문법은 그대로 산다 — 거기는 여전히 순서 있는 세션이다.
+- 좌 master 작업 목록과 그 관리 동사(`rename_job`·`set_group`·`rename_group`·`disband_group`·
+  `toggle_group`·`toggle_favorite`)는 **존치**한다. 라이브러리 표면이 승계할 때 함께 죽는다
+  (지도 §10.5 F2) — `home` 에 없는 동사라 지금 지우면 조용히 사라진다.
+- 생성 버튼은 계속 하단 sticky 액션바(`#jobActionBar`)다(#179 슬라이스 5b — 스크롤 무관 상시
+  도달). v6 시안의 side-card `run-actions` 배치와 다른 유일한 지점이며, 결과 3태 구획과 함께
+  재검토한다(지도 F4).
 
 ### `job` 화면의 데이터-우선 세션 계약 (data-first 봉합)
 

@@ -180,30 +180,35 @@ def _segment(src: str, start: str, end: str) -> str:
     return src[i:src.index(end, i)]
 
 
-def test_pool_js_list_actions_are_guarded():
-    """onListClick — try/catch + alert 재진술, 전이도 await(fire-and-forget 금지)."""
-    seg = _segment(_js("screens/pool.js"), "function onListClick", "function openRegModal")
-    assert "try {" in seg and "catch" in seg and "window.alert" in seg, (
-        "pool.js onListClick 이 무방비 await/fire-and-forget 으로 회귀(C7)."
+def test_data_picker_row_actions_are_guarded():
+    """행 수명 관리(보관·활성화·삭제) — try/catch + 면 안 재진술, 전이도 await(C7 승계).
+
+    구 `pool` 화면 ``onListClick`` 의 의무를 데이터 선택 다이얼로그가 승계한다(재작성 F1).
+    재진술 채널만 바뀐다: 화면이 없으니 alert 이 아니라 **면 안 상태줄**이다(오버레이의
+    실패 경로 문맥 보존 — 지도 §10.7.1 계약면 4).
+    """
+    seg = _segment(_js("data_picker.js"), "async function onPinnedClick", "function openRegDialog")
+    assert "try {" in seg and "catch" in seg and "setStatus(" in seg, (
+        "data_picker.js onPinnedClick 이 무방비 await/fire-and-forget 으로 회귀(C7)."
     )
     assert not re.search(r"(?<!await )Bridge\.call\(", seg), (
-        "pool.js onListClick 에 await 없는 Bridge.call 이 남아 있습니다 — "
+        "data_picker.js onPinnedClick 에 await 없는 Bridge.call 이 남아 있습니다 — "
         "rejection 이 try/catch 를 우회합니다(C7)."
     )
 
 
-def test_pool_js_register_modal_is_guarded():
-    """submitRegModal — 브리지 예외를 try/catch 로 표면화(버튼 무반응 금지)."""
-    seg = _segment(_js("screens/pool.js"), "function submitRegModal", "function wire")
+def test_data_picker_register_dialog_is_guarded():
+    """고정·등록 확정 — 브리지 예외를 try/catch 로 표면화(버튼 무반응 금지)."""
+    seg = _segment(_js("data_picker.js"), "async function submitRegDialog", "function onEscCapture")
     assert "try {" in seg and "catch" in seg and "window.alert" in seg, (
-        "pool.js submitRegModal 이 무방비 await 로 회귀(C7)."
+        "data_picker.js submitRegDialog 이 무방비 await 로 회귀(C7)."
     )
 
 
 def test_refresh_buttons_are_guarded():
-    """poolRefresh·tplRefresh — fire-and-forget refresh 배선 금지(N1)."""
+    """새로고침 배선 — fire-and-forget refresh 금지(N1). 풀 재스캔의 거처는 다이얼로그다."""
     wiring = (
-        ("screens/pool.js", "poolRefresh", '$("poolList")'),
+        ("data_picker.js", "dataPickerRefresh", '$("dataPickerPinned")'),
         ("screens/template.js", "tplRefresh", '$("tplHwpxGroups")'),
     )
     for rel, btn, nxt in wiring:
@@ -229,7 +234,9 @@ def test_appjs_nav_autorefresh_whitelist_matches_backend():
     # job 포함 — 레지스트리 파생 작업 목록을 스냅샷으로 그리는 표면이 빠지면 에디터에서 막
     # 저장한 작업이 좌 목록에 안 보인다(전환 시 스냅샷 고착). draft(#148)도 같은 파생 목록이라
     # 포함(TXT 작업 조회). run 은 사망(슬라이스 3).
-    assert listed == {"home", "pool", "tpl", "job", "draft"}
+    # pool 은 화면 사망(재작성 F1)이라 빠진다 — 등록 데이터 재스캔은 라우팅이 아니라 데이터
+    # 선택 다이얼로그가 **열 때** 지불한다(안 여는 세션이 풀 I/O 를 물지 않는다).
+    assert listed == {"home", "tpl", "job", "draft"}
 
     # go() 안에서 화이트리스트 판정 후 refresh dispatch + 실패 표면화(.catch).
     seg = _segment(src, "function go(id)", "window.Nav")
@@ -239,7 +246,7 @@ def test_appjs_nav_autorefresh_whitelist_matches_backend():
 
     # 백엔드 상호 검증 — 화이트리스트 화면명 == 컨트롤러 name, 전부 _do_refresh 보유.
     ctrls = {c.name: c for c in (
-        HomeController, PoolController, TemplateController, JobController, DraftController,
+        HomeController, TemplateController, JobController, DraftController,
     )}
     assert set(ctrls) == listed
     for cls in ctrls.values():
@@ -250,5 +257,5 @@ def test_appjs_nav_autorefresh_whitelist_matches_backend():
 
 def test_manual_refresh_buttons_kept():
     """자동 refresh 가 수동 새로고침 버튼을 대체하지 않는다 — 명시적 재스캔 경로 유지(C6)."""
-    assert '$("poolRefresh")' in _js("screens/pool.js")
+    assert '$("dataPickerRefresh")' in _js("data_picker.js")
     assert '$("tplRefresh")' in _js("screens/template.js")

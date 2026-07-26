@@ -149,7 +149,7 @@ class WebFrontend:
         # 화면 등록 — 새 화면 = 컨트롤러 1개 추가(순수 데이터는 dispatch, 네이티브는 아래 메서드).
         controllers = [
             # 홈(대시보드) — 허브. TXT 레지스트리는 즉시 기안·템플릿 관리와 공유(변경이 반영).
-            # pool_registry 공유 = 데이터 관리에서 생긴 손상이 홈 KPI 경보에 즉시 보인다(#45).
+            # pool_registry 공유 = 등록 데이터에서 생긴 손상이 홈 KPI 경보에 즉시 보인다(#45).
             HomeController(job_registry, registry, self._push, pool_registry=pool_registry),
             # 「작업」 화면 — 좌 목록 + 우 세션 패널 4존. 링1 VM 을 직접 소유하며
             # 실행 결정 계약을 소비하는 유일 세션 표면이다.
@@ -163,7 +163,7 @@ class WebFrontend:
                             target_font=target_font, txt_groups=txt_groups),
             # 템플릿 관리(#13) — TXT 레지스트리는 즉시 기안과 공유(변경이 양쪽에 반영).
             TemplateController(registry, self._push, txt_groups=txt_groups),
-            # 데이터 관리(#26 #4) — 등록 데이터 참조·수명.
+            # 등록 데이터 참조·수명(#26 #4) — 화면은 사망하고 데이터 선택 다이얼로그가 소비(F1).
             PoolController(pool_registry, self._push),
         ]
         # 에디터의 템플릿 라이브러리 = tpl 화면의 VM **같은 인스턴스**:
@@ -404,7 +404,7 @@ class WebFrontend:
         return True
 
     def pick_pool_data_file(self) -> "str | None":
-        """데이터 관리 등록 모달 '찾아보기' → **경로만** 반환(#26 #4).
+        """데이터 고정·등록 모달 '찾아보기' → **경로만** 반환(#26 #4).
 
         ``pick_data_file`` 과 달리 어떤 컨트롤러에도 로드하지 않는다 — 등록은 참조
         저장이지 데이터 로드가 아니다(행 미저장 불변식). None = 취소.
@@ -1234,7 +1234,12 @@ _JOB_MIRROR_PROBE_JS = r"""
       {total:10, overwrite_count:3, new_count:7, conflict_names:['a.hwpx','b.hwpx'], conflict_more:5});
     // 세션 가드 재진술 본문 합성(결정 27 수치 재진술) — 되읽어 수치·소실 목록 드리프트를 막는다.
     out.guard_body = window.JobScreen.guardBody(
-      {sel_count:3, in_def:2, extra:1, filter_active:true, filter_parts:2}, '작업을 전환하면');
+      {sel_count:3, in_def:2, extra:1, filter_active:true, filter_parts:2, ack_count:2},
+      '데이터를 바꾸면');
+    // ack 0 분기도 함께 핀한다 — 없는 손실을 열거하면 과경고(경보의 인플레)다.
+    out.guard_body_no_ack = window.JobScreen.guardBody(
+      {sel_count:1, in_def:0, extra:0, filter_active:false, filter_parts:0, ack_count:0},
+      '데이터를 바꾸면');
     // 데이터 변경 사전 확인 배선 존재 핀(리뷰 #6) — JS 전용 가드 지점의 삭제 회귀 표식.
     out.data_guard_wired = typeof window.JobScreen.confirmDataSwapIfArmed === 'function';
     // 직전 필터 재적용 버튼(결정 28) — reapply_available 스냅샷이 어포던스를 실제로 켜고 끈다.
@@ -1261,7 +1266,7 @@ _JOB_MIRROR_PROBE_JS = r"""
     var jobPanel = document.getElementById('jobPanel');
     var jobPanelFlex = jobPanel.style.flex, jobPanelWidth = jobPanel.style.width;
     jobPanel.style.flex = '0 0 1100px'; jobPanel.style.width = '1100px';
-    out.job_duo_wide = getComputedStyle(document.getElementById('jobDuo')).gridTemplateColumns;
+    out.job_grid_wide = getComputedStyle(document.getElementById('jobDataGrid')).gridTemplateColumns;
     jobPanel.style.flex = jobPanelFlex; jobPanel.style.width = jobPanelWidth;
     var mirror = document.getElementById('jobMirror');
     var restate = document.getElementById('jobRestate');
@@ -1578,6 +1583,55 @@ _EDITOR_CHIP_PROBE_JS = r"""
   return out;
 })()
 """
+
+# 데이터 선택 다이얼로그(재작성 F1) — `pool` 화면 사망의 승계처가 **실제로 서는지** 되읽는다.
+# 정적 DOM 계약이 못 잡는 것 셋: ①「이 데이터 고정」이 파일 출처에서만 뜨는가(pool 출처는 이미
+# 고정된 참조라 숨는다) ②보관 항목이 목록에 남아 `활성화` 에 도달 가능한가(§10.7.2 C — 활성만
+# 실으면 그 동사가 사라진다) ③손상 격리가 목록 아래 상주 재진술되는가(RC-05).
+# 합성 pool 스냅샷을 실 __push 로 밀어 렌더 경로를 그대로 통과시킨다.
+_DATA_PICKER_PROBE_JS = r"""
+(function () {
+  var out = {};
+  try {
+    window.Nav.go('job');
+    DataPicker.open({screen:'job', current:{
+      label:'파일: 대장.xlsx', detail:'3건', path:'C:/d/대장.xlsx', sheet:'물품', origin:'file'}});
+    out.opened = !document.getElementById('dataPickerModal').classList.contains('hidden');
+    out.pin_offered = !!document.getElementById('dataPickerPin');
+    function row(name, status, badge, level, actions) {
+      return {name:name, kind:'excel', kind_label:'엑셀/CSV', status:status,
+        badge_label:badge, badge_level:level, reference:'C:/d/' + name + '.xlsx (물품)',
+        locate_path:'C:/d/' + name + '.xlsx', sheet:'물품', missing:false, note:'',
+        actions:actions};
+    }
+    window.__push('pool', {
+      rows:[row('7월 공고목록','active','활성','ok',[{key:'archive',label:'보관'},{key:'delete',label:'삭제'}]),
+            row('6월 보관분','archived','보관','muted',[{key:'activate',label:'활성화'},{key:'delete',label:'삭제'}])],
+      corrupted:[{file:'broken.dataset.json', error:'JSON 을 읽을 수 없습니다'}],
+      count:'2건', empty:false, result:{text:'', level:'muted'}});
+    var host = document.getElementById('dataPickerPinned');
+    out.rows = host.querySelectorAll('.tplcard').length;
+    var uses = host.querySelectorAll('[data-act="use"]');
+    out.use_active_enabled = uses.length > 0 && !uses[0].disabled;
+    out.use_archived_disabled = uses.length > 1 && !!uses[1].disabled;
+    out.activate_reachable = !!host.querySelector('[data-act="activate"]');
+    out.relink_reachable = !!host.querySelector('[data-act="relink"]');
+    out.corrupt_shown =
+      document.getElementById('dataPickerCorrupt').textContent.indexOf('손상') >= 0;
+    // 「이 데이터 고정」 = 등록 모달 재사용(현재 대상 프리필) — 제목·프리필까지 되읽는다.
+    document.getElementById('dataPickerPin').click();
+    out.pin_title = document.getElementById('poolRegTitle').textContent;
+    out.pin_ok = document.getElementById('poolRegOk').textContent;
+    out.pin_path = document.getElementById('poolRegPath').value;
+    out.pin_sheet = document.getElementById('poolRegSheet').value;
+    Modal.close('poolRegModal');
+    Modal.close('dataPickerModal');
+    out.error = null;
+  } catch (e) { out.error = String((e && e.message) || e); }
+  return out;
+})()
+"""
+
 
 # 「기안」 휘발 세션 4존(#148 슬라이스 3a) — 공용 팩토리(draftsession.js)의 **두 번째 소비
 # 인스턴스**를 draft 화면에서 실 render 구동해 되읽는다. 같은 팩토리라도 id 맵이 어긋나면
@@ -2497,13 +2551,10 @@ def _selftest_drive(window: "object") -> None:
             "document.querySelectorAll('#homeContinue .continue-run').length")
         result["home_alerts_present"] = window.evaluate_js(  # type: ignore[attr-defined]
             "!!document.getElementById('homeAlerts')")
-        # 데이터 관리 화면(#26 #4) — 7번째 화면이 실제 init·렌더됐는지(빈 상태 문구도 렌더).
-        result["pool_rendered"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "(document.getElementById('poolList')||{innerHTML:''}).innerHTML.length > 0")
-        # 2소스 진입점(#26 #6) — 두 세션 표면(작업·기안)의 '등록 데이터…' 버튼 실재.
-        # (구 txt 의 btnTxtPoolData 는 슬라이스 6 에서 삭제 — 「기안」의 draftBtnPoolData 로 재겨눔.)
-        result["pool_buttons"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "['jobBtnPoolData','draftBtnPoolData']"
+        # 데이터 선택 진입점(재작성 F1) — 두 세션 표면(작업·기안)의 단일 출구 버튼 실재.
+        # 구 2버튼('등록 데이터…'·'파일 선택…')과 pool 화면은 사망하고 다이얼로그가 승계했다.
+        result["data_picker_buttons"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "['jobBtnPickData','draftBtnPickData']"
             ".every(function(i){return !!document.getElementById(i)})")
         # 다섯 액션군의 실 브라우저 클릭부터 Python registry dispatch, 반환 snapshot까지 한 실행
         # 단위로 완주한다(#189). 완료 표지를 폴링해 evaluate_js의 Promise 비대기 의미론과 분리.
@@ -2573,7 +2624,7 @@ def _selftest_drive(window: "object") -> None:
         window.resize(1180, 820)  # type: ignore[attr-defined]
         time.sleep(0.4)
         result["job_density_narrow"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "({columns:getComputedStyle(document.getElementById('jobDuo')).gridTemplateColumns})"
+            "({columns:getComputedStyle(document.getElementById('jobDataGrid')).gridTemplateColumns})"
         )
         window.resize(1440, 900)  # type: ignore[attr-defined]
         time.sleep(0.4)
@@ -2596,6 +2647,10 @@ def _selftest_drive(window: "object") -> None:
         window.resize(1440, 900)  # type: ignore[attr-defined]
         time.sleep(0.4)
         result["job_editmode"] = window.evaluate_js(_JOB_EDITMODE_PROBE_JS)  # type: ignore[attr-defined]
+        # 데이터 선택 다이얼로그(재작성 F1) — pool 화면 사망의 승계처 실렌더 되읽기. 「작업」이
+        # 활성인 지점에 둔다(다이얼로그가 Nav 를 옮기므로 화면 폭 측정 프로브 앞이면 안 된다).
+        result["data_picker"] = window.evaluate_js(_DATA_PICKER_PROBE_JS)  # type: ignore[attr-defined]
+        time.sleep(0.4)  # 모달 닫힘 전이(CSS 160ms) 정산 — 다음 프로브의 클릭이 백드롭에 막히지 않게
         # 매핑 칩-라이브(슬라이스 5 PR-3) — 합성 매핑 스냅샷으로 실 render() 구동 후 칩·태그 되읽기.
         result["editor_chip"] = window.evaluate_js(_EDITOR_CHIP_PROBE_JS)  # type: ignore[attr-defined]
         # (구 txt_zone·quickdraft 프로브는 #148 슬라이스 6 에서 두 화면과 함께 삭제 — 두 화면이
