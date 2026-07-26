@@ -474,7 +474,9 @@
     // 동시에 진술하면 모순(confirm-or-alarm, 리뷰). '차단' 판정은 게이트 단일 출처를 소비한다
     // (drift 를 독립 재유도하지 않는다 — 백엔드 RC-23 서열이 danger 를 이미 합성; 토큰 danger 도 포섭).
     const blocked = !!(s.gate && s.gate.level === "danger");
-    if (!s.has_data || !sel.length || blocked) { box.style.display = "none"; box.innerHTML = ""; return; }
+    // 작업 미선택(prework)이면 재진술 자체가 성립하지 않는다 — 파일명·폴더가 정의 불가한데
+    // "문서 N건 생성"을 말하면 과진술(거짓)이다(#302 리뷰 P2). 게이트가 다음 할 일을 말한다.
+    if (!s.has_job || !s.has_data || !sel.length || blocked) { box.style.display = "none"; box.innerHTML = ""; return; }
     box.style.display = "";
     const rs = s.restate || { origin: null, filter_active: false, sample: [] };
     const byIndex = {};
@@ -562,6 +564,10 @@
   function setBusy(busy) {
     $("scr-job").querySelectorAll("[data-busy-lock]").forEach((el) => { el.disabled = busy; });
     $("jobGenBtn").disabled = busy || !(LAST && LAST.gate && LAST.gate.enabled);
+    // 저장 폴더는 작업 속성(기본 = 템플릿/Results) — 작업 미선택에서 고르게 두면 작업
+    // 선택이 기본값으로 조용히 덮어써 선택이 증발한다(#302 리뷰 P2). busy-lock 일괄 복원이
+    // 되살리지 않도록 여기(렌더 말미 단일 지점)서 판정한다.
+    $("jobBtnPickFolder").disabled = busy || !(LAST && LAST.has_job);
     $("jobGenBtn").textContent = busy ? "생성 중…" : "이 작업으로 문서 생성";
     $("jobGenCancel").style.display = busy ? "" : "none";
     if (!busy) { $("jobGenCancel").disabled = false; $("jobGenCancel").textContent = "다음 건부터 중단"; }

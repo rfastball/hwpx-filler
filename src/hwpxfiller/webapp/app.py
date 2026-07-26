@@ -892,6 +892,9 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
     out.tbl_rows_order = Array.prototype.map.call(
       document.querySelectorAll('#jobTableBody tr[data-i]'),
       function (r) { return r.getAttribute('data-i'); });
+    // #302 리뷰 P2 두 건의 실렌더 되읽기 — prework 과진술·폴더 선택 금지.
+    out.restate_hidden = getComputedStyle(document.getElementById('jobRestate')).display === 'none';
+    out.folder_pick_disabled = document.getElementById('jobBtnPickFolder').disabled;
   } catch (e) { out.error = String(e); }
   return out;
 })()

@@ -302,6 +302,10 @@ class TestWebSelftestGate:
         assert j["gen_disabled"] is True, "prework 상태에서 생성 버튼이 열려 있습니다."
         assert "문서 작업을 선택하면" in j["head_hint"], j["head_hint"]
         assert j["tbl_rows_order"] == ["1", "0"], f"표시순(최신 먼저)이 아닙니다: {j['tbl_rows_order']!r}"
+        # #302 리뷰 P2 — prework 은 생성 재진술을 하지 않고(파일명·폴더 정의 불가 = 과진술),
+        # 저장 폴더 선택은 작업 속성이라 비활성(선택이 기본값에 조용히 덮이는 창 봉쇄).
+        assert j["restate_hidden"] is True, "prework 상태에서 생성 재진술이 노출됩니다."
+        assert j["folder_pick_disabled"] is True, "prework 상태에서 폴더 선택이 열려 있습니다."
 
     def test_job_density_and_expansion_sheets(self, selftest_result: dict) -> None:
         j = selftest_result["job_mirror"]
