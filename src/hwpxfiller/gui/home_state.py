@@ -104,6 +104,9 @@ class JobRow:
     # 눌러 보고서야 안다. compile_status 와 같은 compute-not-store 원칙(재편집 드리프트가
     # 나므로 저장하지 않는다) — 그 대가로 hwpx 행마다 템플릿을 한 번 더 읽는다.
     structure_drift: bool = False
+    # txt 템플릿을 지금 읽을 수 있는가(리뷰 P2). 파일이 "있다"는 것과 "열린다"는 것은 다르다 —
+    # 깨진 인코딩·`.txt` 로 끝나는 디렉터리는 존재하지만 여는 순간 실패한다.
+    txt_readable: bool = True
 
     @classmethod
     def from_job(cls, job: Job) -> "JobRow":
@@ -116,6 +119,14 @@ class JobRow:
             compile_state, compile_badge = _derive_compile(tpath, template_missing)
         else:
             compile_state, compile_badge = None, ""
+        txt_readable = True
+        if job.media == "txt" and tpath and not template_missing:
+            # 여는 계약과 **같은 방식**으로 읽어 본다(UTF-8) — 다른 방식으로 재보면 이 화면과
+            # 실제 열기가 서로 다른 답을 낸다. 소량 텍스트라 비용은 hwpx zip 파싱보다 싸다.
+            try:
+                Path(tpath).read_text(encoding="utf-8")
+            except Exception:  # noqa: BLE001 — 못 읽으면 이유 불문 "지금 열 수 없다"
+                txt_readable = False
         drift = False
         if job.media == "hwpx" and compile_state is not None and job.mapping.mappings:
             # 읽을 수 있는 템플릿 ∧ **확정 매핑이 있는** 작업에서만 본다: 못 읽는 건 이미
@@ -140,6 +151,7 @@ class JobRow:
             media=job.media,
             template_linked=bool(tpath),
             structure_drift=drift,
+            txt_readable=txt_readable,
         )
 
     def meta_line(self) -> str:
@@ -284,6 +296,10 @@ def library_health(row: "JobRow") -> "tuple[int, str]":
     if row.media not in ("hwpx", "txt"):
         return 3, "지원하지 않는 작업 방식입니다."
     if row.media == "hwpx" and row.compile_state is None:
+        return 3, "템플릿을 읽을 수 없습니다."
+    if not row.txt_readable:
+        # 파일이 있다고 열리는 건 아니다(깨진 인코딩·`.txt` 디렉터리) — 열면 바로 실패하는데
+        # 건강 보기가 건강으로 분류하면 「확인 필요」가 정작 못 여는 작업을 빼놓는다.
         return 3, "템플릿을 읽을 수 없습니다."
     # 미확인 토큰이 남은 템플릿(PARTIAL)은 **실행을 막지는 않지만** 손볼 것이 있는 상태다 —
     # 기존 신호가 이미 warn 배지로 말하고 있는데 「확인 필요」에서 빼면 그 경고가 이 화면에서만

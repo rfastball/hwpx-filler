@@ -664,6 +664,23 @@ def test_structure_drift_surfaces_in_needs_action(tmp_path):
     assert library_health(rows["매핑없음"])[1] != "템플릿 구조가 확정 매핑과 달라졌습니다."
 
 
+def test_unreadable_txt_template_is_not_healthy(tmp_path):
+    """파일이 있다고 열리는 건 아니다(리뷰 P2) — 깨진 인코딩·`.txt` 디렉터리는 확인 필요."""
+    reg = JobRegistry(tmp_path / "txtjobs")
+    bad = tmp_path / "깨진.txt"
+    bad.write_bytes(bytes([0xFF, 0xFE, 0x80, 0x81]))   # UTF-8 로 못 읽는 바이트열
+    as_dir = tmp_path / "폴더.txt"
+    as_dir.mkdir()                                    # 존재하지만 읽을 수 없는 경로
+    ok = tmp_path / "정상.txt"
+    ok.write_text("제목: {{공고명}}", encoding="utf-8")
+    for name, path in (("깨짐", bad), ("폴더", as_dir), ("정상", ok)):
+        reg.save(Job(name=name, template_path=str(path)))
+    rows = {r.name: r for r in HomeViewModel(reg).rows()}
+    assert library_health(rows["깨짐"]) == (3, "템플릿을 읽을 수 없습니다.")
+    assert library_health(rows["폴더"]) == (3, "템플릿을 읽을 수 없습니다.")
+    assert library_health(rows["정상"])[0] == 0
+
+
 def test_library_projection_ands_active_tag_facets(tmp_path):
     """태그 facet 은 보기 4종 전부와 AND(§19.6) — 보기를 바꿨다고 켜 둔 칩이 풀리지 않는다."""
     vm = HomeViewModel(_library_reg(tmp_path))
