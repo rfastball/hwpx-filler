@@ -799,7 +799,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         else:
             self.data_notice_text = (
                 f"기본 데이터 '{ref}' 를 자동으로 열 수 없습니다: {res['error']}\n"
-                "다른 데이터를 직접 선택하거나 데이터 관리에서 참조를 다시 연결하세요."
+                "「데이터 선택」에서 다른 데이터를 고르거나 그 참조를 다시 연결하세요."
             )
             self.data_notice_level = "warn"
 

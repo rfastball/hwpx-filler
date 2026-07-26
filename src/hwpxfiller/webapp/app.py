@@ -149,7 +149,7 @@ class WebFrontend:
         # 화면 등록 — 새 화면 = 컨트롤러 1개 추가(순수 데이터는 dispatch, 네이티브는 아래 메서드).
         controllers = [
             # 홈(대시보드) — 허브. TXT 레지스트리는 즉시 기안·템플릿 관리와 공유(변경이 반영).
-            # pool_registry 공유 = 데이터 관리에서 생긴 손상이 홈 KPI 경보에 즉시 보인다(#45).
+            # pool_registry 공유 = 등록 데이터에서 생긴 손상이 홈 KPI 경보에 즉시 보인다(#45).
             HomeController(job_registry, registry, self._push, pool_registry=pool_registry),
             # 「작업」 화면 — 좌 목록 + 우 세션 패널 4존. 링1 VM 을 직접 소유하며
             # 실행 결정 계약을 소비하는 유일 세션 표면이다.
@@ -163,7 +163,7 @@ class WebFrontend:
                             target_font=target_font, txt_groups=txt_groups),
             # 템플릿 관리(#13) — TXT 레지스트리는 즉시 기안과 공유(변경이 양쪽에 반영).
             TemplateController(registry, self._push, txt_groups=txt_groups),
-            # 데이터 관리(#26 #4) — 등록 데이터 참조·수명.
+            # 등록 데이터 참조·수명(#26 #4) — 화면은 사망하고 데이터 선택 다이얼로그가 소비(F1).
             PoolController(pool_registry, self._push),
         ]
         # 에디터의 템플릿 라이브러리 = tpl 화면의 VM **같은 인스턴스**:
@@ -404,7 +404,7 @@ class WebFrontend:
         return True
 
     def pick_pool_data_file(self) -> "str | None":
-        """데이터 관리 등록 모달 '찾아보기' → **경로만** 반환(#26 #4).
+        """데이터 고정·등록 모달 '찾아보기' → **경로만** 반환(#26 #4).
 
         ``pick_data_file`` 과 달리 어떤 컨트롤러에도 로드하지 않는다 — 등록은 참조
         저장이지 데이터 로드가 아니다(행 미저장 불변식). None = 취소.
