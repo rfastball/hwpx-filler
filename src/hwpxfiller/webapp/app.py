@@ -934,18 +934,32 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
         var row = document.getElementById('jobBrowseRow-' + encodeURIComponent('공고서'));
         if (!row) { out.browse_pick_focus = 'no-row'; return; }
         var real = window.Bridge.call;
-        window.Bridge.call = function () { return Promise.resolve({}); };
+        // **select_job 만** 가로챈다: 앞 블록(즐겨찾기)의 스텁을 덮으면 그쪽 큐에서 흘러나오는
+        // 발신이 여기로 새어 기록에서 사라진다(프로브 교차오염 — [[gate-env-gotchas]] 동류).
+        var stub = function (screen, action) {
+          if (action !== 'select_job') return real.apply(null, arguments);
+          return Promise.resolve({});
+        };
+        window.Bridge.call = stub;
+        var unstub = function () {                 // 새 스텁이 이미 들어섰으면 건드리지 않는다
+          if (window.Bridge.call === stub) window.Bridge.call = real;
+        };
         row.click();
-        window.Bridge.call = real;
-        out.browse_pick_focus_now = document.activeElement && document.activeElement.id;
-        out.browse_pick_card_present = !!document.getElementById(
-          'jobCand-' + encodeURIComponent('공고서'));
+        // 선택은 **성사 뒤에** 면을 닫고 포커스를 예약한다(2R P2) — 그 판정이 microtask 라
+        // 스냅샷 밀기도 그 뒤로 미룬다. 결과는 Python 이 뒤이어 회수한다.
         var picked = JSON.parse(JSON.stringify(avail));
         picked.job_name = '공고서';             // 선택이 반영된 스냅샷(실 push 대역)
-        picked.candidates.top[0].name = '공고서';
-        window.__push('job', picked);
-        out.browse_pick_focus = document.activeElement && document.activeElement.id;
-        window.__push('job', snap);            // 원판 복구(뒤 프로브 방해 금지)
+        window.__browseDone = false;
+        Promise.resolve().then(function () {}).then(function () {}).then(function () {
+          unstub();
+          window.__browseSheetClosed = document.getElementById('jobBrowseSheet')
+            .classList.contains('is-closing') ||
+            document.getElementById('jobBrowseSheet').classList.contains('hidden');
+          window.__push('job', picked);
+          window.__browsePickFocus = document.activeElement && document.activeElement.id;
+          window.__push('job', snap);          // 원판 복구(뒤 프로브 방해 금지)
+          window.__browseDone = true;
+        });
       })();
       document.getElementById('jobBrowseClose').click();
       // 닫기는 전이 애니메이션을 타므로 `hidden` 은 뒤에 붙는다 — 닫힘 **시작**을 관측한다
@@ -2522,6 +2536,17 @@ def _selftest_drive(window: "object") -> None:
         )
         result["job_data_first"]["fav_diag"] = window.evaluate_js(  # type: ignore[attr-defined]
             "JSON.stringify(window.__favDiag || null)"
+        )
+        # 탐색 면 선택 경로도 microtask 뒤에 확정된다(성사 후 닫기·포커스 예약).
+        for _ in range(50):
+            if window.evaluate_js("!!window.__browseDone"):  # type: ignore[attr-defined]
+                break
+            time.sleep(0.05)
+        result["job_data_first"]["browse_pick_focus"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "String(window.__browsePickFocus)"
+        )
+        result["job_data_first"]["browse_sheet_closed"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "!!window.__browseSheetClosed"
         )
         result["job_mirror"] = window.evaluate_js(_JOB_MIRROR_PROBE_JS)  # type: ignore[attr-defined]
         window.resize(1180, 820)  # type: ignore[attr-defined]

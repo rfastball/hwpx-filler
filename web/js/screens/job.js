@@ -400,7 +400,7 @@
     // 포커스를 못 돌리고, 활성 요소가 열린 모달 밖으로 떨어진다(키보드 사용자 좌초).
     $("jobBrowseTabs").innerHTML = tabs.map((t) =>
       `<button class="browse-tab" type="button" role="tab" id="jobBrowseTab-${t.key}"` +
-      ` data-browse-tab="${t.key}" aria-selected="${b.tab === t.key}">` +
+      ` data-busy-lock data-browse-tab="${t.key}" aria-selected="${b.tab === t.key}">` +
       `${esc(t.label)}</button>`
     ).join("");
     const q = $("jobBrowseQuery");
@@ -416,7 +416,7 @@
         }
         const active = r.name === s.job_name;
         return `<button class="browse-row" type="button" id="jobBrowseRow-${encodeURIComponent(r.name)}"` +
-          ` data-browse-pick="${esc(r.name)}"` +
+          ` data-busy-lock data-browse-pick="${esc(r.name)}"` +
           ` aria-pressed="${active}"><span class="browse-nm">${esc(r.name)}</span>` +
           (active ? `<span class="browse-why muted">지금 선택된 작업</span>` : "") +
           `</button>`;
@@ -449,7 +449,7 @@
     if (c.needs_count > 0) bits.push(`확인 필요 <b>${c.needs_count}건</b>`);
     if (bits.length) {
       html += `<span class="cand-more muted">${bits.join(" · ")} — ` +
-        `<button class="btn sm" type="button" id="jobBrowseOpen" data-browse-open>` +
+        `<button class="btn sm" type="button" id="jobBrowseOpen" data-busy-lock data-browse-open>` +
         `문서 작업 찾기…</button></span>`;
     }
     host.innerHTML = html;
@@ -719,7 +719,11 @@
 
   /* ---- busy 잠금 — [data-busy-lock] 속성 선언(setBusy 누락 회귀 방지, #26) ---- */
   function setBusy(busy) {
-    $("scr-job").querySelectorAll("[data-busy-lock]").forEach((el) => { el.disabled = busy; });
+    // 탐색 면은 **오버레이 루트**에 살아 `#scr-job` 질의에 안 걸린다(리뷰 2R P2) — 생성 중
+    // 열려 있으면 행 클릭이 Python 거절로 끝나고 사용자는 문맥만 잃는다. 같은 잠금에 넣는다.
+    [$("scr-job"), $("jobBrowseSheet")].forEach((root) => {
+      root.querySelectorAll("[data-busy-lock]").forEach((el) => { el.disabled = busy; });
+    });
     $("jobGenBtn").disabled = busy || !(LAST && LAST.gate && LAST.gate.enabled);
     // 저장 폴더는 작업 속성(기본 = 템플릿/Results) — 작업 미선택에서 고르게 두면 작업
     // 선택이 기본값으로 조용히 덮어써 선택이 증발한다(#302 리뷰 P2). busy-lock 일괄 복원이
@@ -1293,9 +1297,16 @@
       // 모달이 기억한 복귀 트리거(출구 버튼)가 교체·해제되므로, Modal 의 복귀는 건너뛰어지고
       // 포커스가 숨은 검색 입력이나 body 로 떨어진다. 착지점은 방금 고른 작업의 카드 —
       // 사용자의 다음 관심이 거기 있고, 없으면 다시 탐색을 열 출구로 내린다.
-      pendingFocus = ["jobCand-" + encodeURIComponent(name), "jobBrowseOpen"];
-      window.Modal.close("jobBrowseSheet");
-      selectJobGuarded(name);
+      // **성사 뒤에만 닫는다**(리뷰 2R P2): 가드 취소·Python 거절(생성 중 등)에서 면을 먼저
+      // 닫으면 사용자는 오류만 받고 찾던 문맥을 잃는다. 예약 포커스도 성사 시에만 건다 —
+      // 실패 경로에 남으면 무관한 뒤 렌더가 포커스를 엉뚱하게 옮긴다.
+      selectJobGuarded(name).then((ok) => {
+        if (!ok) return;
+        pendingFocus = ["jobCand-" + encodeURIComponent(name), "jobBrowseOpen"];
+        window.Modal.close("jobBrowseSheet");
+      }).catch((err) => {
+        log("작업 열기 실패: " + String((err && err.message) || err));
+      });
     });
     $("jobDataExpand").addEventListener("click", openJobDataSheet);
     $("jobMirrorExpand").addEventListener("click", openJobConfirmSheet);

@@ -360,7 +360,9 @@ class TestWebSelftestGate:
         assert j["browse_closing"] is True, "탐색 면이 닫기 클릭에 닫히지 않았습니다."
         # 탭 전환은 재렌더다 — 안정 id 가 없으면 포커스가 열린 모달 밖으로 떨어진다(1R P2).
         assert j["browse_tab_focus"] == "jobBrowseTab-available", j["browse_tab_focus"]
-        # 행을 고르면 포커스는 방금 고른 작업 카드에 착지한다(모달 복귀 트리거는 해제됨).
+        # 행을 고르면 **성사 뒤에** 면이 닫히고(가드 취소·거절에서 문맥 보존, 2R P2)
+        # 포커스는 방금 고른 작업 카드에 착지한다(모달 복귀 트리거는 재렌더로 해제됨).
+        assert j["browse_sheet_closed"] is True, "선택 성사 뒤 면이 닫히지 않았습니다."
         assert j["browse_pick_focus"] == "jobCand-" + quote("공고서"), j["browse_pick_focus"]
 
     def test_job_density_and_expansion_sheets(self, selftest_result: dict) -> None:

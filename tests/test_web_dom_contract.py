@@ -743,6 +743,12 @@ def test_job_document_browser_surface_contract():
         assert token in src, f"탐색 면 안정 id 누락: {token}"
     tail = src.split("setBusy(generating);")[1][:400]
     assert "applyPendingFocus()" in tail, "예약 포커스가 Preserve 복원 뒤에 있지 않습니다."
+    # 생성 중 잠금(2R P2): 탐색 면은 오버레이 루트라 `#scr-job` 질의에 안 걸린다 —
+    # setBusy 가 그 루트도 훑고, 출구·탭·행이 busy-lock 을 달아야 한다.
+    assert 'jobBrowseSheet")].forEach' in src, "setBusy 가 탐색 면을 잠그지 않습니다."
+    assert src.count("data-busy-lock data-browse") == 3, (
+        "탐색 면 출구·탭·행의 busy-lock 표식이 빠졌습니다."
+    )
     # 검색·분류를 JS 가 재계산하지 않는다(RC-23 동형 — 판정은 Python 이 지금).
     browse = src.split("function renderBrowse")[1][:2200]
     for banned in ("filter(", "toLowerCase", "includes("):
