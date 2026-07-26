@@ -220,6 +220,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self.vm = TxtDraftViewModel(self._registry)
         self.data_label = ""  # 겨눈 데이터 파일 표시명(서버 소유 — run 과 정렬, P4)
         self.data_source = ""  # 소스 종류 플래그('file'|'pool') — 병기 라벨은 스냅샷이 합성(K8)
+        self.data_path = self.data_sheet = ""  # 마운트 대상 참조(F1) — 라벨과 함께 죽는다
         self._data_key = ""
         # 데이터 존(슬라이스 6) — 레코드 정체 = 세션 내 인덱스(SelectionModel 키를 큐가 재사용).
         self.selection = SelectionModel(0)
@@ -258,7 +259,17 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
     # 휘발 세션과 함께 스태시/복원되는 세션-스코프 속성. 컨트롤러 수명(_advance_after·_font·
     # _last_filter·pool_registry·_registry)은 두 세션을 관통하므로 여기 없다(스태시 대상 아님).
     _SESSION_ATTRS = (
-        "vm", "data_label", "data_source", "_data_key", "selection", "queue",
+        "vm", "data_label", "data_source", "_data_key",
+        # 마운트 대상 참조(F1) — 라벨·소스 플래그와 **같은 세션**에 붙는다. 빠뜨리면
+        # 「이번 세션」 귀환에서 라벨은 A 인데 「이 데이터 고정」이 B 를 프리필한다
+        # (조용한 남의 파일 등록 — 라벨 계열과 함께 움직여야 하는 이유).
+        "data_path", "data_sheet",
+        "selection", "queue",
+        # 정의줄 문안도 그 세션의 필터를 묘사한다 — 남의 세션 문안을 업고 있으면 다음
+        # `_stash_filter` 가 **틀린 요약**을 직전 슬롯에 박아 「직전 필터 재적용」이 거짓을
+        # 업고 뜬다(data_zone `_stash_filter` 주석의 리뷰 F1 이 경고한 그 실패). 렌더가
+        # 대개 다시 지어 주지만, 재생성에 기대는 대신 세션과 함께 움직이는 게 정본이다.
+        "_filter_desc",
         "filter", "mapping", "_fullwidth", "_last_copy", "_gap_cache", "_gap_cache_key",
         "_source_dirty",   # 사본/편집 여부는 그 원문에 붙는다 — 스태시·복원과 함께 이동(슬라이스 5b)
         "_pasted_unbacked",  # 파일 정본 없는 붙여넣기 원문도 스태시·복원과 함께 이동(#218)
@@ -331,6 +342,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         self.mapping = mapping
         self.data_label = ""
         self.data_source = ""
+        self.data_path = self.data_sheet = ""  # 마운트 대상 참조(F1) — 라벨과 함께 초기화
         self._data_key = ""
         self.selection = SelectionModel(0)   # 데이터 미로드 — 무데이터 가상 1건 큐(결정 14)
         self.queue = TxtQueueModel(self.selection)
