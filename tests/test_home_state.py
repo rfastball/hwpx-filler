@@ -25,6 +25,7 @@ from hwpxfiller.gui.home_state import (
     HomeViewModel,
     JobRow,
     library_health,
+    library_mode_of,
 )
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
@@ -613,6 +614,15 @@ def test_unlinked_template_is_not_reported_as_unsupported_media(tmp_path):
     rows = {r.name: r for r in HomeViewModel(reg).rows()}
     assert library_health(rows["저작중"]) == (3, "템플릿을 아직 연결하지 않았습니다.")
     assert library_health(rows["미상"])[1] == "템플릿 파일을 찾을 수 없습니다."
+
+    # 미연결은 HWPX 필터에 **남는다**(리뷰 P2): 진단만 내고 사용자가 고치러 오는 필터에서
+    # 빼면 손 닿는 곳이 없어진다. 실제 미상 확장자는 그대로 미상이다.
+    vm = HomeViewModel(reg)
+    vm.set_library_mode(MODE_HWPX)
+    assert "저작중" in {r.name for sec in vm.library_sections() for r in sec.rows}
+    assert vm.library_counts()[VIEW_NEEDS] >= 1
+    assert library_mode_of(rows["저작중"]) == MODE_HWPX
+    assert library_mode_of(rows["미상"]) == ""
 
 
 def test_unknown_library_view_and_mode_degenerate(tmp_path):

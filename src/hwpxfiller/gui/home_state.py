@@ -243,6 +243,17 @@ MODE_TXT = "txt"
 _MODES = (MODE_ALL, MODE_HWPX, MODE_TXT)
 
 
+def library_mode_of(row: "JobRow") -> str:
+    """작업 방식 필터가 보는 매체 — **미연결은 hwpx 로 센다**(리뷰 P2).
+
+    경로가 비면 ``Job.media`` 는 ``""`` 지만 그건 저작 중인 hwpx 작업이다(「작업」 화면의
+    조회 경계와 같은 판정). 미상으로 두면 사용자가 고치러 오는 바로 그 필터(HWPX)에서
+    사라지고 「확인 필요」 건수에서도 빠진다 — 진단은 내면서 손 닿는 곳에는 안 두는 꼴.
+    실제 미상 확장자(경로는 있는데 hwpx/txt 가 아님)는 그대로 미상으로 남는다.
+    """
+    return MODE_HWPX if not row.template_linked else row.media
+
+
 def library_health(row: "JobRow") -> "tuple[int, str]":
     """전역 작업 건강(§19.7)의 **번역** — 기존 신호를 심각도 1축으로 모은다(새 판정 금지).
 
@@ -523,7 +534,7 @@ class HomeViewModel:
 
         rows = list(self._rows)
         if self.library_mode != MODE_ALL:
-            rows = [r for r in rows if r.media == self.library_mode]
+            rows = [r for r in rows if library_mode_of(r) == self.library_mode]
         q = self.library_query.strip()
         if q:
             rows = [
@@ -578,7 +589,7 @@ class HomeViewModel:
         """
         rows = list(self._rows)
         if self.library_mode != MODE_ALL:
-            rows = [r for r in rows if r.media == self.library_mode]
+            rows = [r for r in rows if library_mode_of(r) == self.library_mode]
         return {
             VIEW_ALL: len(rows),
             VIEW_RECENT: sum(1 for r in rows if r.last_run_at),
