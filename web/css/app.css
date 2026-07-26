@@ -1123,10 +1123,36 @@ body.resizing-master{cursor:col-resize;user-select:none}
   font-size:var(--fs-caption);color:var(--a-muted)}
 .fstrip b{color:var(--a-ink)}
 
-/* 문서 작업 후보 줄(§18.4, data-first) — 데이터 존 하단, 카드는 btn.sm 재사용. */
+/* 문서 작업 후보 줄(§18.4, data-first) — 데이터 존 하단. 순위 카드(별+선택)와 확인 필요
+   비활성 칩(btn.sm 재사용)이 한 줄에 흐른다(§19.3 방식 구획은 1방식이라 평면 퇴화). */
 .job-cands-row{margin-top:var(--sp-6)}
 .job-cands{display:flex;flex-wrap:wrap;gap:var(--sp-4);align-items:center}
 .job-cand[aria-pressed="true"]{pointer-events:none}
+.job-cand-card{display:flex;align-items:stretch;border:1px solid var(--a-border);
+  border-radius:var(--rad-control);background:var(--a-card);overflow:hidden}
+.job-cand-card.active{border-color:var(--a-primary);
+  background:color-mix(in srgb,var(--a-primary) 8%,var(--a-card))}
+/* 추천은 **강조 표지**일 뿐 선택이 아니다(§18.3 개정) — 점선 테두리로 "아직 고른 것이
+   아님"을 시각으로도 말한다(실선=활성과 구별). */
+.job-cand-card.suggested:not(.active){border-style:dashed;border-color:var(--a-primary)}
+.cand-fav{border:0;border-right:1px solid var(--a-border);background:transparent;cursor:pointer;
+  color:var(--a-muted);font-size:var(--fs-body);padding:0 var(--sp-4);line-height:1}
+.cand-fav[aria-pressed="true"]{color:var(--a-primary)}
+.cand-fav:hover{background:var(--n-surface-alt)}
+.cand-pick{border:0;background:transparent;cursor:pointer;text-align:left;
+  padding:var(--sp-4) var(--sp-8);display:flex;flex-direction:column;gap:2px}
+.cand-pick[aria-pressed="true"]{pointer-events:none}
+.cand-nm{color:var(--a-ink);font-size:var(--fs-body)}
+.job-cand-card.active .cand-nm{font-weight:600}
+.cand-meta{display:flex;gap:var(--sp-4);align-items:center;
+  font-size:var(--fs-caption);color:var(--a-muted)}
+.cand-sug{color:var(--a-primary)}
+.cand-more,.cand-needs-lbl{font-size:var(--fs-caption)}
+/* 고지·확인 필요는 각자 줄을 갖는다 — 카드 줄에 이어 붙으면 "쓸 수 있는 작업"과
+   "막힌 작업"이 한 문장으로 읽힌다(눈검증 교정). */
+.cand-more{flex-basis:100%}
+.cand-needs{flex-basis:100%;display:flex;flex-wrap:wrap;gap:var(--sp-4);align-items:center}
+.cand-needs .cand-more{flex-basis:auto}
 
 /* 열 필터 패널(엑셀식 아이콘 펼침, 결정 25) — 데이터 존 내 부유 패널. */
 .colpanel{position:fixed;z-index:var(--z-popover);pointer-events:auto;min-width:240px;max-width:340px;

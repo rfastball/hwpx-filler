@@ -295,7 +295,7 @@ class TestWebSelftestGate:
         j = selftest_result["job_data_first"]
         assert j.get("error") is None, f"data-first 프로브 예외: {j.get('error')!r}"
         assert j["zones_shown"] and j["actionbar_shown"], "무작업 상태에서 세션 존이 죽어 있습니다."
-        assert j["cands_row_shown"] and j["cand_buttons"] == 1, j
+        assert j["cands_row_shown"] and j["cand_buttons"] == 2, j
         assert j["needs_action_disabled"] is True, "확인 필요 후보가 비활성이 아닙니다."
         assert "담당자" in j["needs_action_title"], "비활성 사유(없는 열)가 병기되지 않았습니다."
         assert "문서 작업을 선택하세요" in j["gate_text"], j["gate_text"]
@@ -306,6 +306,38 @@ class TestWebSelftestGate:
         # 저장 폴더 선택은 작업 속성이라 비활성(선택이 기본값에 조용히 덮이는 창 봉쇄).
         assert j["restate_hidden"] is True, "prework 상태에서 생성 재진술이 노출됩니다."
         assert j["folder_pick_disabled"] is True, "prework 상태에서 폴더 선택이 열려 있습니다."
+
+    def test_job_candidate_ranking_renders_stars_suggestion_and_overflow(
+        self, selftest_result: dict
+    ) -> None:
+        # 슬라이스 2 — 메인 순위 카드가 실 WebView2 에서 되읽힌다: Python 이 준 순서 그대로,
+        # 별은 스냅샷 상태를 반영(낙관 토글 아님), 추천은 점선(활성과 구별되는 표지),
+        # 잘린 나머지는 수치로 고지(조용한 절단 금지), 최근 사용은 날짜만.
+        j = selftest_result["job_data_first"]
+        assert j.get("error") is None, f"data-first 프로브 예외: {j.get('error')!r}"
+        assert j["cand_order"] == ["공고서", "계약서"], j["cand_order"]
+        assert j["fav_pressed"] == ["true", "false"], j["fav_pressed"]
+        assert j["suggested_marks"] == 1, "추천 표지가 렌더되지 않았습니다."
+        assert j["suggested_dashed"] == "dashed", j["suggested_dashed"]
+        assert "2건" in j["more_text"], f"「외 N건」 고지가 없습니다: {j['more_text']!r}"
+        # 문안은 **완주 스탬프**의 의미와 일치해야 한다(4R P2): 성공 뒤 실패 런이 있으면
+        # 스탬프는 앞선 성공에 머무르므로 "마지막 실행"은 거짓이 된다.
+        assert j["last_run_text"] == "마지막 성공 실행 2026-07-20", j["last_run_text"]
+        # 별을 누르면 카드가 1순위로 이동한다 — 그 재렌더를 가로질러 포커스가 같은 작업의
+        # 별에 남아야 키보드 사용자가 문서 처음으로 떨어지지 않는다(이름 유래 안정 id).
+        assert j["fav_focus_restored"] == "kept", j["fav_focus_restored"]
+        # 왕복 중 두 번째 클릭은 의도를 뒤집고(첫 카드는 이미 즐겨찾기 → false, true),
+        # **앞 왕복이 끝나기 전에는 보내지 않는다**(클릭 순서 = 쓰기 순서, 4R P2).
+        assert j["fav_sync_sends"] == 0, j["fav_sync_sends"]     # 클릭 = 체인 진입
+        assert j["fav_intents"] == "[]", j["fav_intents"]
+        assert json.loads(j["fav_chain"])["inflight"] == 1, j["fav_chain"]  # 둘째 대기
+        # 발신열 = ① 첫 카드(즐겨찾기 상태) 두 번 = false,true — 클릭 순서 = 쓰기 순서,
+        # ② 둘째 카드(미즐겨찾기) 3연속 = true,false,true 뒤 **첫 왕복만 실패로 완료**된
+        # 상태의 4번째 클릭 = false. 정리를 값 비교로 하면 최신 의도가 지워져 여기서
+        # true 가 나오고(=껐다가 다시 켜짐) 사용자 의도가 소실된다(5R P2).
+        assert json.loads(j["fav_order"]) == [
+            False, True, True, False, True, False
+        ], j["fav_order"]
 
     def test_job_density_and_expansion_sheets(self, selftest_result: dict) -> None:
         j = selftest_result["job_mirror"]
@@ -442,9 +474,15 @@ class TestWebSelftestGate:
         assert j["opening_marker_immediate"] is True, f"작업 열기 표지가 클릭 즉시 서지 않습니다: {j!r}"
         # 행 ⋮ 메뉴 — 실개방(항목 구성 포함) + 바깥 pointerdown 닫기.
         assert j["menu_shown"] is True, "행 ⋮ 클릭에 메뉴가 열리지 않았습니다."
-        assert j["menu_items"] == ["edit", "clone", "rename", "move", "delete"], (
-            f"메뉴 항목 구성이 결정 43(편집·복제·이름 변경·그룹 이동·삭제)과 다릅니다: {j['menu_items']!r}"
+        assert j["menu_items"] == [
+            "edit", "clone", "favorite", "rename", "move", "delete"
+        ], (
+            "메뉴 항목 구성이 결정 43(편집·복제·이름 변경·그룹 이동·삭제)+즐겨찾기"
+            f"(슬라이스 2 도달성)와 다릅니다: {j['menu_items']!r}"
         )
+        # 문안은 행의 favorited 플래그를 추종한다 — 첫 행은 지정 상태라 "제거"여야 한다
+        # (반대로 말하면 순위 밖 승격 경로가 사용자를 속인다).
+        assert j["menu_fav_label"] == "즐겨찾기에서 제거", j["menu_fav_label"]
         assert j["menu_closed"] is True, "바깥 클릭에 메뉴가 닫히지 않았습니다."
         assert j["move_modal_hidden"] is True, "그룹 이동 다이얼로그가 기본 닫힘이 아닙니다."
         # 퇴화 불변식(결정 5) — 그룹 0개면 헤더·들여쓰기 없는 평면.

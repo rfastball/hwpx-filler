@@ -74,6 +74,24 @@ _FMT_OPTIONS = {t: [{"code": code, "label": label} for label, code in format_pre
 # 에 있으나 스냅샷엔 매핑 감(感)만 주는 소량만 노출한다(record_count 로 "외 M건" 표기).
 _SAMPLE_ROWS = 3
 
+# 이 화면이 **편집하지 않는** durable 메타 — 저장이 Job 을 새로 조립하므로 여기 열거되지
+# 않은 필드는 조용히 기본값으로 떨어진다. 태그·마지막 실행만 열거하던 시절 그룹이 실제로
+# 그렇게 소실됐다(편집 한 번에 좌 목록 구획이 「그룹 없음」으로 초기화). 필드를 늘릴 땐 이
+# 한 곳만 고치면 되도록 사전으로 모은다 — 즐겨찾기(슬라이스 2)가 같은 함정을 밟지 않게.
+_EMPTY_PRESERVED: "dict[str, object]" = {
+    "tags": {}, "last_run_at": "", "group": "", "favorited_at": "",
+}
+
+
+def _preserved_meta(job: "Job") -> "dict[str, object]":
+    """저장이 그대로 되싣는 비-편집 메타(태그·마지막 실행·그룹·즐겨찾기)."""
+    return {
+        "tags": dict(job.tags),
+        "last_run_at": job.last_run_at,
+        "group": job.group,
+        "favorited_at": job.favorited_at,
+    }
+
 
 class EditorController:
     """작업 에디터 화면 — 마법사 세션 상태 소유·링1 VM 위임."""
@@ -136,11 +154,10 @@ class EditorController:
         # 편집 모드에서 복원한 기본 데이터셋 참조(#53-A) — 데이터를 새로 안 고르고 저장하면
         # 이 값을 보존한다(편집 저장이 조용히 기본 데이터 연결을 소실시키지 않게).
         self.default_dataset_ref = ""
-        # 편집 모드 상태(#26): 원점 이름(자기-갱신 판정)·보존 메타(태그·마지막 실행) —
-        # 편집 저장이 브라우저 태그·이력을 조용히 소실시키지 않는다.
+        # 편집 모드 상태(#26): 원점 이름(자기-갱신 판정)·보존 메타(:func:`_preserved_meta`) —
+        # 편집 저장이 브라우저 태그·이력·구획·순위를 조용히 소실시키지 않는다.
         self._editing_origin = ""
-        self._preserved_tags: "dict[str, str]" = {}
-        self._preserved_last_run = ""
+        self._preserved_meta: "dict[str, object]" = dict(_EMPTY_PRESERVED)
         # 로드 시점 작업 내용 지문(태그·마지막 실행 제외) — 자기-갱신 저장이 편집 중
         # 외부 변경을 무확인으로 덮지 않게 하는 근거(_do_save 확인 게이트).
         self._editing_fingerprint = ""
@@ -661,8 +678,7 @@ class EditorController:
         self.job_name = job.name
         self.pattern = job.filename_pattern
         self._editing_origin = job.name
-        self._preserved_tags = dict(job.tags)
-        self._preserved_last_run = job.last_run_at
+        self._preserved_meta = _preserved_meta(job)
         # 로드 시점 내용 지문 — 자기-갱신 저장 시 편집 중 외부 변경(같은 이름 작업 교체)을
         # 무확인으로 덮지 않기 위한 대조 기준(_do_save).
         self._editing_fingerprint = content_fingerprint(job)
@@ -1135,6 +1151,42 @@ class EditorController:
             victim = ""
         return overwrite_confirm_text(self.job_name, victim)
 
+    def _preserved_for_target(self) -> "dict[str, object]":
+        """저장 대상 파일이 **자기 것으로 유지해야 하는** 비-편집 메타(잠금 안에서 호출).
+
+        세 갈래다(리뷰 3R P2 — 종전엔 세 경우 모두 편집 원점의 메타를 실어 남의 파일에
+        원점의 순위·이력을 이식했다):
+
+        - **자기-갱신**(대상 == 편집 원점): 원점 메타를 디스크에서 재읽어 보존. 편집 세션이
+          열린 사이 홈에서 단 태그·다른 표면의 별을 stale 스냅샷으로 되돌리지 않는다.
+        - **남의 자리 덮어쓰기**(대상이 이미 존재하는 다른 작업): **대상(victim)의** 메타를
+          유지한다. 확인 문안이 약속한 것은 "그 파일을 덮어쓴다"이지 "그 작업의 분류·이력·
+          즐겨찾기를 내 것으로 바꾼다"가 아니다 — 원점 메타를 실으면 남의 즐겨찾기가 조용히
+          꺼지거나 남의 카드에 내 실행 이력이 붙는다.
+        - **빈 자리에 새 이름**: 분류(그룹·태그)는 편집을 따라가되(사본이 「그룹 없음」으로
+          조용히 튀지 않게 — 「기안」 저장의 같은 결정) **이력·즐겨찾기는 계승하지 않는다**:
+          새 identity 는 실행된 적도, 사용자가 고른 적도 없다(복제 규칙과 동형).
+        """
+        target = self.job_name
+        if self._editing_origin and target == self._editing_origin:
+            try:
+                return _preserved_meta(self.registry.load(self._editing_origin))
+            except Exception:  # noqa: BLE001 — 원본이 사라졌으면 스냅샷 유지(추측 없음)
+                return dict(self._preserved_meta)
+        if self.registry.exists(target):
+            try:
+                return _preserved_meta(self.registry.load(target))
+            except Exception:  # noqa: BLE001 — 손상 파일: 추측 대신 빈 메타로 새로 시작
+                return dict(_EMPTY_PRESERVED)
+        origin = dict(self._preserved_meta)
+        if self._editing_origin:
+            try:
+                origin = _preserved_meta(self.registry.load(self._editing_origin))
+            except Exception:  # noqa: BLE001
+                pass
+        return {**_EMPTY_PRESERVED, "tags": dict(origin["tags"]),  # type: ignore[arg-type]
+                "group": origin["group"]}
+
     def _do_save(self, p: dict) -> dict:
         """저장 게이트 → 덮어쓰기 확인 → 자동등록 게이트 → 저장·등록. 결과 dict 로 재진술.
 
@@ -1185,15 +1237,7 @@ class EditorController:
             blocked = self._dataset_gate(p)
             if blocked is not None:
                 return blocked
-        preserved_tags = dict(self._preserved_tags)
-        preserved_last_run = self._preserved_last_run
-        if self._editing_origin:
-            try:
-                current = self.registry.load(self._editing_origin)
-                preserved_tags = dict(current.tags)
-                preserved_last_run = current.last_run_at
-            except Exception:  # noqa: BLE001 — 원본이 사라졌으면 스냅샷 유지(추측 없음)
-                pass
+        preserved = self._preserved_for_target()
         # 작성 출처 지문(#53-C) — 순수 설명 메타(실행 경로 무영향). 저장 매핑에 새긴다.
         verdict.profile.provenance = self._build_provenance(verdict.profile)
         # 기본 데이터셋 참조(#53-A): 이 세션이 데이터를 골랐으면 곧 자동등록될 이름과 연결,
@@ -1205,8 +1249,12 @@ class EditorController:
             template_path=self.template_path,
             mapping=verdict.profile,
             filename_pattern=self.pattern,
-            last_run_at=preserved_last_run,
-            tags=preserved_tags,
+            # 비-편집 메타는 사전 하나에서 통째로 되싣는다(_preserved_meta 단일 출처) —
+            # 편집이 그룹·즐겨찾기를 조용히 초기화하던 자리(슬라이스 2 인접 수선).
+            last_run_at=str(preserved["last_run_at"]),
+            tags=dict(preserved["tags"]),  # type: ignore[arg-type]
+            group=str(preserved["group"]),
+            favorited_at=str(preserved["favorited_at"]),
             default_dataset_ref=default_dataset_ref,
         )
         # 위 게이트(needs_overwrite_confirm→confirm_overwrite)가 victim 을 재진술 확인시킨 뒤라

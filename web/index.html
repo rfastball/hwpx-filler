@@ -204,9 +204,10 @@
               </div>
               <!-- 필터 밖 선택 스트립(결정 3) — 선택은 필터를 관통하고, 밖은 여기서 상시 가시. -->
               <div class="fstrip" id="jobSelStrip" style="display:none"></div>
-              <!-- 문서 작업 후보(§18.4, data-first) — 현재 데이터로 만들 수 있는 저장 작업.
-                   판정은 Python(work_candidates) 단일 출처, 여기는 카드 렌더만.
-                   available=클릭 선택, needs_action=정직한 비활성(없는 열 병기). -->
+              <!-- 문서 작업 후보(§18.4·§18.5·§19.3, data-first) — 현재 데이터로 만들 수 있는
+                   저장 작업. 판정·순위·추천은 Python(work_candidates) 단일 출처, 여기는 카드
+                   렌더만. top=상위 5 순위(별 토글·추천 표지)·more=잘린 수 고지·
+                   needs=정직한 비활성(없는 열 병기). -->
               <div class="run-row job-cands-row" id="jobCandsRow" style="display:none">
                 <span class="lbl">문서 작업</span>
                 <div class="job-cands" id="jobCandidates" role="group" aria-label="문서 작업 후보"></div>

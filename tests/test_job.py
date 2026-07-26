@@ -16,6 +16,7 @@ from hwpxfiller.core.job import (
     JobSlugCollisionError,
     RunRequest,
     SlugCollisionError,
+    content_fingerprint,
     default_jobs_dir,
 )
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
@@ -515,6 +516,91 @@ def test_group_roundtrip_and_backward_compat():
     assert Job.from_dict(d).group == ""
 
 
+# ---------------------------------------------- 즐겨찾기(v6 §18.5, data-first 슬라이스 2)
+def test_favorited_at_roundtrip_and_backward_compat():
+    """즐겨찾기는 가산 필드 — 구 JSON 은 기본값 ""(미즐겨찾기)로 관용 로드된다."""
+    job = _job()
+    job.favorited_at = "2026-07-26T09:00:00"
+    d = job.to_dict()
+    assert d["favorited_at"] == "2026-07-26T09:00:00"
+    assert Job.from_dict(d).favorited_at == "2026-07-26T09:00:00"
+    assert Job.from_dict(d).version == 1  # 가산 필드는 version 을 올리지 않는다
+    d.pop("favorited_at")
+    assert Job.from_dict(d).favorited_at == ""
+
+
+def test_favorited_at_type_corruption_is_loud():
+    d = _job().to_dict()
+    d["favorited_at"] = True
+    with pytest.raises(ValueError):
+        Job.from_dict(d)
+
+
+def test_preserved_metadata_is_outside_the_content_fingerprint():
+    """보존(재읽기) 메타는 지문 밖이다 — 저장이 되싣는 값의 변경으로 파괴 확인을 띄우면 과경고다.
+
+    즐겨찾기는 정렬 메타만 바꾸고(§18.5), 그룹 이동도 저장이 디스크 값을 그대로 되싣는다 —
+    별을 눌렀다고, 다른 화면에서 그룹을 옮겼다고 편집 세션이 '외부 변경'을 물어선 안 된다.
+    """
+    job = _job()
+    before = content_fingerprint(job)
+    job.favorited_at = "2026-07-26T09:00:00"
+    job.group = "조달"
+    job.tags = {"물품": "의약품"}
+    job.last_run_at = "2026-07-26T10:00:00"
+    assert content_fingerprint(job) == before
+    job.filename_pattern = "다른패턴"          # 편집 대상 필드는 여전히 지문에 든다
+    assert content_fingerprint(job) != before
+
+
+def test_set_favorite_stamps_under_the_write_lock_when_time_is_not_given():
+    """시각 미지정이면 레지스트리가 **잠금 안에서** 찍는다(리뷰 P2 — 교차 작업 순위 역전 차단).
+
+    호출측이 미리 찍으면 서로 다른 작업 둘을 연속으로 별 찍을 때 스레드 스케줄링이 나중
+    클릭에 이른 시각을 줄 수 있다. 잠금 안 스탬프는 쓰기 순서 = 시각 순서를 담보한다.
+    """
+    import tempfile
+    from pathlib import Path as _Path
+
+    with tempfile.TemporaryDirectory() as tmp:
+        reg = JobRegistry(_Path(tmp) / "jobs")
+        reg.save(Job(name="갑", template_path="t.hwpx"))
+        reg.save(Job(name="을", template_path="t.hwpx"))
+        first = reg.set_favorite("갑", True).favorited_at
+        second = reg.set_favorite("을", True).favorited_at
+        assert first and second and first < second   # 쓰기 순서 = 시각 순서
+
+
+def test_set_favorite_toggles_and_keeps_first_timestamp(tmp_path):
+    """지정/해제는 단일 필드 갱신이고, 이미 즐겨찾기면 시각을 다시 쓰지 않는다.
+
+    재지정에서 시각을 갱신하면 같은 별을 두 번 누른 것만으로 순위가 앞으로 튄다 —
+    사용자가 만든 우선순위가 클릭 노이즈에 진다.
+    """
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="공고서", template_path="t.hwpx", mapping=_profile(),
+                 filename_pattern="패턴", group="입찰"))
+    reg.set_favorite("공고서", True, "2026-07-26T09:00:00")
+    assert reg.load("공고서").favorited_at == "2026-07-26T09:00:00"
+    reg.set_favorite("공고서", True, "2026-07-27T09:00:00")   # 재지정
+    after = reg.load("공고서")
+    assert after.favorited_at == "2026-07-26T09:00:00"        # 최초 지정 시각 유지
+    assert after.group == "입찰" and after.filename_pattern == "패턴"  # 단일 필드 갱신
+    reg.set_favorite("공고서", False, "2026-07-28T09:00:00")
+    assert reg.load("공고서").favorited_at == ""
+
+
+def test_clone_does_not_inherit_favorite(tmp_path):
+    """복제본은 사용자가 고른 적 없다 — 즐겨찾기를 계승하면 메인 Top 5 를 조용히 점유한다."""
+    reg = JobRegistry(tmp_path / "jobs")
+    job = _job()
+    job.favorited_at = "2026-07-26T09:00:00"
+    job.last_run_at = "2026-07-25T09:00:00"
+    reg.save(job)
+    copy = reg.load(reg.clone(job.name))
+    assert copy.favorited_at == "" and copy.last_run_at == ""
+
+
 def test_group_type_corruption_is_loud():
     d = _job().to_dict()
     d["group"] = 3
@@ -698,7 +784,7 @@ _READERS = {
     "exists", "load", "list_jobs", "names", "groups", "path_for", "write_lock",
 }
 _WRITERS = {
-    "save", "delete", "rename", "clone", "mutate", "stamp_last_run",
+    "save", "delete", "rename", "clone", "mutate", "stamp_last_run", "set_favorite",
     "set_group", "rename_group", "disband_group", "soft_delete", "restore_soft_deleted",
 }
 
@@ -782,6 +868,7 @@ def test_every_writer_holds_the_write_lock_during_file_io(tmp_path, monkeypatch)
         "save": lambda: reg.save(Job(name="C", template_path="t.hwpx"), allow_overwrite=True),
         "mutate": lambda: reg.mutate("A", lambda j: setattr(j, "filename_pattern", "p")),
         "stamp_last_run": lambda: reg.stamp_last_run("A", "2026-07-21T09:00:00"),
+        "set_favorite": lambda: reg.set_favorite("A", True, "2026-07-26T09:00:00"),
         "set_group": lambda: reg.set_group("A", "G2"),
         "rename_group": lambda: reg.rename_group("G", "G3"),
         "disband_group": lambda: reg.disband_group("G3"),

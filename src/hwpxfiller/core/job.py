@@ -28,6 +28,7 @@ import time
 import uuid
 import weakref
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -292,6 +293,12 @@ class Job:
     # 마지막 성공 실행 시각(ISO-8601, ""=미실행). 작업 자체의 사용 메타 — 실행의
     # 데이터·행을 저장하는 게 아니므로 "Job 에 데이터 미포함" 불변식과 무관.
     last_run_at: str = ""
+    # 즐겨찾기 시각(ISO-8601, ""=아님) — 메인 후보 정렬의 1순위 축(v6 계약 §18.5·§19.3,
+    # 데이터-우선 봉합 슬라이스 2). bool 이 아니라 **시각**인 이유는 정렬 계약이
+    # `favoritedAt` 최신순이기 때문이다(같은 즐겨찾기끼리의 순서가 있어야 한다).
+    # 순수 정렬 메타 — 매핑·파일명·실행 경로에 무영향이라 내용 지문(content_fingerprint)에서
+    # 빠지고, 데이터 참조의 '고정'과도 다른 사용자 어휘다(§18.5).
+    favorited_at: str = ""
     # 브라우징용 분류 태그 {축이름 → 값}(차원-불가지·선택적, JOB_BROWSER_DESIGN D1·D2·D12·D13).
     # **순수 메타** — 코드는 "물품"·"금액구간"이 뭔지 모르고 얇은 매핑만 든다(run-path 무영향).
     # 축·값은 이름 문자열이지 enum/bool 타입 필드 발명 금지(도메인을 코드에 안 박는다).
@@ -340,6 +347,7 @@ class Job:
             "filename_pattern": self.filename_pattern,
             "mapping": self.mapping.to_dict(),
             "last_run_at": self.last_run_at,
+            "favorited_at": self.favorited_at,
             "tags": dict(self.tags),
             "group": self.group,
             "default_dataset_ref": self.default_dataset_ref,
@@ -381,6 +389,7 @@ class Job:
             # base_mapping_name(구 J3 공유 베이스 계보)은 F22 로 개념째 제거 — 구 JSON 의
             # 해당 키는 미지 키로 무시된다(가산 스키마 규율의 역방향, 하위호환 무해).
             last_run_at=_str("last_run_at"),
+            favorited_at=_str("favorited_at"),
             tags=tags,
             group=_str("group"),
             default_dataset_ref=_str("default_dataset_ref"),
@@ -398,14 +407,21 @@ class Job:
 def content_fingerprint(job: "Job") -> str:
     """저장 세션이 덮어쓰는 작업 **내용**의 지문 — 외부 변경 감지(자기-갱신 확인 게이트).
 
-    태그·마지막 실행은 제외한다: 저장이 어차피 직전 디스크 값을 재읽어 보존하므로(홈 태그
-    편집과의 공존) 그 둘의 변경은 파괴가 아니다. 나머지(템플릿·매핑·파일명 패턴·계보·기본
+    태그·마지막 실행·즐겨찾기·그룹은 제외한다: 저장이 어차피 직전 디스크 값을 재읽어 보존하므로
+    (홈 태그 편집·좌 목록 그룹 이동·후보 구획 즐겨찾기와의 공존) 그 넷의 변경은 파괴가 아니다.
+    **그룹 제외는 보존과 같은 커밋에서 온다**(리뷰 P2): 보존하는 필드를 지문에 남기면
+    편집 중 그룹 이동이 "외부 변경을 덮어씁니다"라는 **거짓 파괴 확인**을 띄운다 — 실제로는
+    저장이 그 새 그룹을 그대로 되싣는다(과경고도 문안 부정직의 한 형태). 즐겨찾기는
+    정렬 메타만 바꾼다는 계약(§18.5)의 코드측 귀결이기도 하다 — 별을 눌렀다는 이유로 열어 둔
+    편집 세션이 '외부 변경' 확인을 요구하면 과경고다. 나머지(템플릿·매핑·파일명 패턴·계보·기본
     데이터셋 참조)는 세션 상태로 덮어써지므로, 로드 시점과 달라져 있으면 '열어 둔 사이 외부
     변경'으로 확인을 요구해야 한다(무확인 파괴 금지). 에디터·「기안」 저장 두 표면이 같은
     지문을 쓰도록 코어에 둔다(복붙하면 한쪽만 고쳐지는 드리프트가 곧 조용한 파괴다)."""
     d = job.to_dict()
     d.pop("tags", None)
     d.pop("last_run_at", None)
+    d.pop("favorited_at", None)
+    d.pop("group", None)
     return json.dumps(d, ensure_ascii=False, sort_keys=True)
 
 
@@ -631,6 +647,30 @@ class JobRegistry:
 
         return self.mutate(name, _stamp)
 
+    def set_favorite(self, name: str, favorited: bool, when: "str | None" = None) -> Job:
+        """즐겨찾기 지정/해제(§18.5) — 다른 writer 와 직렬화된 단일 필드 갱신.
+
+        정렬 계약이 `favoritedAt` 최신순이라 bool 이 아니라 시각을 적는다. 해제는 ``""``.
+        **이미 같은 상태면 시각을 다시 쓰지 않는다**: 같은 별을 다시 눌러도 순위가 조용히
+        앞으로 튀지 않게(재지정 의도가 없는 왕복까지 순서를 흔들면 사용자가 만든 우선순위가
+        클릭 노이즈에 진다).
+
+        ``when=None`` 이면 시각을 **쓰기 잠금 안에서** 찍는다(리뷰 P2): 호출측이 미리 찍으면
+        서로 다른 작업 둘을 연속으로 별 찍을 때 pywebview 의 스레드 스케줄링이 나중 클릭에
+        이른 시각을 줄 수 있어 순위가 클릭 순서와 어긋난다. 잠금 안 스탬프는 **쓰기 순서 =
+        시각 순서**를 담보한다. 명시 ``when`` 은 결정적 테스트용 경로다.
+        """
+        def _set(job: Job) -> None:
+            if favorited:
+                if not job.favorited_at:
+                    job.favorited_at = (
+                        when if when is not None else datetime.now().isoformat()
+                    )
+            else:
+                job.favorited_at = ""
+
+        return self.mutate(name, _set)
+
     def exists(self, name: str) -> bool:
         return self.path_for(name).exists()
 
@@ -642,8 +682,9 @@ class JobRegistry:
 
         매핑 재사용의 단일 동선이다: 공유 베이스 프로파일을 걷어낸 자리를 「복제 후
         필요한 부분만 수정」이 맡는다. 템플릿·매핑·파일명 패턴·태그·그룹·기본 데이터 참조는
-        그대로 계승하되(그룹 계승 = 복사본이 원본 옆 같은 구획에 뜬다, 결정 43 인접) **실행 이력(last_run_at)은 계승하지 않는다** — 복사본은 아직
-        실행된 적 없다는 사실을 홈 카드가 그대로 말하게(조용한 이력 위조 금지).
+        그대로 계승하되(그룹 계승 = 복사본이 원본 옆 같은 구획에 뜬다, 결정 43 인접) **실행 이력(last_run_at)과 즐겨찾기(favorited_at)는 계승하지 않는다** — 복사본은 아직
+        실행된 적도 사용자가 고른 적도 없다는 사실을 홈 카드·후보 순위가 그대로 말하게
+        (조용한 이력·우선순위 위조 금지).
         원본 부재·손상은 loud raise(호출측이 재진술). 자리 선점 검사는 파일 존재
         기준(:meth:`path_for`)이라 slug 충돌 자리도 건너뛴다 — 후보가 비어 있을 때만
         저장하므로 :meth:`save` 의 slug 가드는 백스톱으로 남는다.
@@ -663,6 +704,9 @@ class JobRegistry:
                 i += 1
             job.name = candidate
             job.last_run_at = ""
+            # 즐겨찾기도 미계승(슬라이스 2): 복사본이 사용자가 고르지도 않은 우선순위로
+            # 메인 Top 5 를 점유하면 즐겨찾기가 '사용자 우선순위'라는 정의(§19.2)를 잃는다.
+            job.favorited_at = ""
             self.save(job)
             return candidate
 

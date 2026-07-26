@@ -863,8 +863,15 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
       has_data:true, record_count:2, selected_count:1,
       records:[{index:1, selected:true, name:'', summary:'사무비품'},
                {index:0, selected:false, name:'', summary:'전산장비'}],
-      candidates:[{name:'공고서', kind:'available', missing:[]},
-                  {name:'견적서', kind:'needs_action', missing:['담당자']}],
+      // 후보 4구획(슬라이스 2) — 순위 카드 2건(즐겨찾기·추천)·잘린 수·확인 필요.
+      candidates:{
+        top:[{name:'공고서', tier:'favorite', favorited:true,
+              last_run_at:'2026-07-20T09:00:00', suggested:false},
+             {name:'계약서', tier:'unused', favorited:false,
+              last_run_at:'', suggested:true}],
+        more:2,
+        needs:[{name:'견적서', missing:['담당자']}],
+        suggested:'계약서'},
       filter:{active:false, reapply_available:false, reapply_hint:'', search:'', chips:[],
               definition:'', branches:[],
               columns:[{name:'공고명', kind:'text', active:false}]},
@@ -886,6 +893,109 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
     var na = document.querySelector('#jobCandidates button[disabled]');
     out.needs_action_disabled = !!na;
     out.needs_action_title = na ? na.getAttribute('title') : '';
+    // 순위 카드(슬라이스 2) — 받은 순서 그대로·별 상태·추천 표지·「외 N건」 고지.
+    out.cand_order = Array.prototype.map.call(
+      document.querySelectorAll('#jobCandidates [data-cand]'),
+      function (b) { return b.getAttribute('data-cand'); });
+    out.fav_pressed = Array.prototype.map.call(
+      document.querySelectorAll('#jobCandidates [data-fav]'),
+      function (b) { return b.getAttribute('aria-pressed'); });
+    out.suggested_marks = document.querySelectorAll('#jobCandidates .cand-sug').length;
+    out.suggested_dashed = (function () {
+      var card = document.querySelector('#jobCandidates .job-cand-card.suggested');
+      return card ? getComputedStyle(card).borderStyle : '';
+    })();
+    out.more_text = (function () {
+      var m = document.querySelector('#jobCandidates .cand-more');
+      return m ? m.textContent : '';
+    })();
+    out.last_run_text = (function () {
+      var r = document.querySelector('#jobCandidates .cand-run');
+      return r ? r.textContent : '';
+    })();
+    // 왕복 중 두 번째 클릭이 의도를 뒤집는가(리뷰 3R P2) — 표시는 push 뒤에 바뀌므로 DOM
+    // 을 읽으면 같은 의도를 두 번 보내고, 멱등 처리 탓에 "껐다" 가 사라진다. Bridge 를
+    // 미결로 세운 뒤 두 번 눌러 **보낸 의도열**을 되읽는다.
+    (function () {
+      // 즐겨찾기 쓰기 계약 2건을 실 DOM·실 핸들러로 되읽는다(리뷰 4R·5R P2).
+      // 브리지를 **우리가 한 건씩 풀어 주는** 스텁으로 갈아 큐 상태를 관측한다. 단계 전이는
+      // setTimeout(0) — 각 단계 사이에 이벤트 루프가 돌아 체인이 실제로 진행된다.
+      // 노드 참조를 들고 있지 않는다 — 뒤따르는 포커스 프로브의 재푸시가 DOM 을 교체하므로
+      // 매 단계에서 **이름으로 다시 찾는다**(떼어진 노드 클릭은 조용한 무동작이 된다).
+      var starOf = function (name) {
+        return document.getElementById('jobFav-' + encodeURIComponent(name));
+      };
+      if (!starOf('공고서') || !starOf('계약서')) { out.fav_intents = 'no-stars'; return; }
+      var sent = [], release = [], real = window.Bridge.call;
+      window.Bridge.call = function (screen, action, payload) {
+        if (action !== 'toggle_favorite') return real.apply(null, arguments);
+        sent.push(payload.value);
+        return new Promise(function (res) { release.push(res); });
+      };
+      window.__favSent = sent;          // 배열 참조 — Python 이 마지막에 최종 상태를 읽는다
+      window.__favChain = null;
+      var drain = function (res) { var r = release.shift(); if (r) r(res); };
+      // 레일 진입(Nav.go)이 유발한 **실 refresh** 스냅샷이 뒤늦게 도착해 합성 화면을 덮는다
+      // (실 홈엔 데이터가 없어 후보 줄이 비워진다). 클릭 단계마다 합성 스냅샷을 다시 밀어
+      // 카드를 되살린다 — 스냅샷이 다시 와도 **표시는 여전히 낡은 상태**이므로 DOM-대-미결
+      // 의도 시나리오는 그대로 성립한다(오히려 실제와 같다).
+      var repush = function () { window.__push('job', snap); };
+      starOf('공고서').click();
+      starOf('공고서').click();
+      out.fav_sync_sends = sent.length;   // 0 — 클릭은 체인 진입이고 즉시 발신하지 않는다
+      out.fav_intents = JSON.stringify(sent);
+      var steps = [
+        // ① 직렬화: 앞 왕복이 끝나기 전엔 둘째를 보내지 않는다(발신 1건).
+        function () { window.__favChain = JSON.stringify({inflight: sent.length}); drain({ok: true}); },
+        function () { drain({ok: true}); },                       // 첫 카드 큐 소진
+        // ② 정리 식별: 같은 값이 다시 큐에 드는 3연속(true→false→true) 뒤,
+        //    **첫 왕복만** 실패로 완료(스냅샷 없음)시키고 4번째 클릭의 의도를 관측한다.
+        function () {
+          repush();
+          starOf('계약서').click(); starOf('계약서').click(); starOf('계약서').click();
+        },
+        function () { drain({ok: false, error: '실패 시늉'}); },
+        function () { repush(); starOf('계약서').click(); },
+        // 남은 큐를 전부 흘려 보내 최종 발신열을 확정한다(각 단계 = 이벤트 루프 1회전).
+        function () { drain({ok: false, error: '실패 시늉'}); },
+        function () { drain({ok: false, error: '실패 시늉'}); },
+        function () { drain({ok: false, error: '실패 시늉'}); },
+        function () { window.Bridge.call = real; }
+      ];
+      window.__favDiag = [];
+      (function step(i) {
+        if (i >= steps.length) { window.__favDone = true; return; }
+        setTimeout(function () {
+          try {
+            steps[i]();
+            window.__favDiag.push('ok' + i);
+          }
+          catch (e) {
+            window.__favDiag.push('err' + i + ':' + (e && e.message) + ' ids=' +
+              Array.prototype.map.call(document.querySelectorAll('#jobCandidates [data-fav]'),
+                function (b) { return b.id; }).join('|') +
+              ' html=' + document.getElementById('jobCandidates').innerHTML.slice(0, 80));
+          }
+          step(i + 1);
+        }, 0);
+      })(0);
+    })();
+    // 별 포커스가 재렌더(=별을 누르면 카드가 1순위로 이동)를 가로질러 살아남는가 —
+    // preserve.js 는 id 로 복원하므로 이름 유래 안정 id 가 실제로 붙었는지 실물로 본다.
+    (function () {
+      var star = document.getElementById('jobFav-' + encodeURIComponent('계약서'));
+      if (!star) { out.fav_focus_restored = 'no-id'; return; }
+      star.focus();
+      var moved = JSON.parse(JSON.stringify(snap));   // 깊은 사본만 만진다(원판 불변)
+      moved.candidates.top.reverse();
+      moved.candidates.top[0].favorited = true;   // 즐겨찾기 지정 후 1순위로 이동한 판
+      window.__push('job', moved);
+      out.fav_focus_restored =
+        document.activeElement && document.activeElement.id === 'jobFav-' +
+        encodeURIComponent('계약서') ? 'kept' : String(
+          document.activeElement && document.activeElement.id);
+      window.__push('job', snap);                 // 뒤 프로브를 위해 원판 복구
+    })();
     out.gate_text = document.getElementById('jobGate').textContent;
     out.gen_disabled = document.getElementById('jobGenBtn').disabled;
     out.head_hint = document.getElementById('jobHeadTpl').textContent;
@@ -1127,15 +1237,22 @@ _JOB_LIST_GROUP_PROBE_JS = r"""
   try {
     window.Nav.go('job');
     var snap = {
-      job_rows: [{name:'물품 공고서', selected:false},{name:'물품 기안', selected:false},
-                 {name:'용역 공고서', selected:false},{name:'회의 기안', selected:false}],
+      // favorited(슬라이스 2) — 좌 목록 ⋮ 메뉴 즐겨찾기 문안의 근거. 첫 행만 지정 상태로
+      // 둬서 메뉴가 "제거"를 말하는지(플래그 추종) 되읽는다.
+      job_rows: [{name:'물품 공고서', selected:false, favorited:true},
+                 {name:'물품 기안', selected:false, favorited:false},
+                 {name:'용역 공고서', selected:false, favorited:false},
+                 {name:'회의 기안', selected:false, favorited:false}],
       job_flat: false,
       job_group_names: ['2026 상반기', '입찰'],
       job_sections: [
         {group:'2026 상반기', collapsed:false, count:2,
-         rows:[{name:'물품 공고서', selected:false},{name:'물품 기안', selected:false}]},
-        {group:'입찰', collapsed:true, count:1, rows:[{name:'용역 공고서', selected:false}]},
-        {group:'', collapsed:false, count:1, rows:[{name:'회의 기안', selected:false}]}
+         rows:[{name:'물품 공고서', selected:false, favorited:true},
+               {name:'물품 기안', selected:false, favorited:false}]},
+        {group:'입찰', collapsed:true, count:1,
+         rows:[{name:'용역 공고서', selected:false, favorited:false}]},
+        {group:'', collapsed:false, count:1,
+         rows:[{name:'회의 기안', selected:false, favorited:false}]}
       ],
       job_name:'', has_job:false,
       guard:{armed:false, sel_count:0, in_def:0, extra:0, filter_active:false, filter_parts:0},
@@ -1179,6 +1296,10 @@ _JOB_LIST_GROUP_PROBE_JS = r"""
     out.menu_shown = getComputedStyle(menu).display !== 'none';
     out.menu_items = Array.prototype.map.call(
       menu.querySelectorAll('button[data-menu]'), function (b) { return b.dataset.menu; });
+    out.menu_fav_label = (function () {
+      var b = menu.querySelector('button[data-menu="favorite"]');
+      return b ? b.textContent : '';
+    })();
     document.body.dispatchEvent(new MouseEvent('pointerdown', {bubbles:true}));
     out.menu_closed = getComputedStyle(menu).display === 'none';
     out.move_modal_hidden = document.getElementById('groupMoveModal').classList.contains('hidden');
@@ -2326,6 +2447,22 @@ def _selftest_drive(window: "object") -> None:
         # 경로 어포던스(.track-btn)를 읽는 뒤 프로브(milestone_h)가 mirror 의 경로 있는
         # 스냅샷을 복원받게 순서로 오염을 차단한다(#137 프로브 교차오염 교훈).
         result["job_data_first"] = window.evaluate_js(_JOB_DATA_FIRST_PROBE_JS)  # type: ignore[attr-defined]
+        # 체인 결과는 microtask 뒤에 확정된다 — 같은 프로브에서 동기로 읽을 수 없어 후속
+        # 평가로 회수한다(즐겨찾기 쓰기 직렬화, 4R P2).
+        result["job_data_first"]["fav_chain"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "String(window.__favChain)"
+        )
+        # 스텁 단계 진행(setTimeout 사슬)이 끝날 때까지 잠깐 기다린 뒤 최종 발신열을 읽는다.
+        for _ in range(50):
+            if window.evaluate_js("!!window.__favDone"):  # type: ignore[attr-defined]
+                break
+            time.sleep(0.05)
+        result["job_data_first"]["fav_order"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "JSON.stringify(window.__favSent || null)"
+        )
+        result["job_data_first"]["fav_diag"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "JSON.stringify(window.__favDiag || null)"
+        )
         result["job_mirror"] = window.evaluate_js(_JOB_MIRROR_PROBE_JS)  # type: ignore[attr-defined]
         window.resize(1180, 820)  # type: ignore[attr-defined]
         time.sleep(0.4)

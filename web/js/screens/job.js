@@ -298,30 +298,121 @@
     }
   }
 
-  /* ---- 문서 작업 후보(§18.4, data-first) — 판정은 Python 단일 출처, 여기는 카드만 ----
-     available=클릭 선택(현재 작업은 눌린 표지), needs_action=정직한 비활성 + 없는 열 병기
-     (막힌 이유를 숨기지 않는다). 데이터 미준비면 줄 자체가 없다(§18.1 — 후보 미계산). */
+  /* ---- 문서 작업 후보(§18.4·§18.5·§19.3, data-first) — 판정·순위는 Python 단일 출처 ----
+     top=상위 5 순위 카드(클릭 선택·별 토글·추천 표지), more=잘린 수 정직 고지, needs=확인
+     필요(막힌 이유 병기). 데이터 미준비면 줄 자체가 없다(§18.1 — 후보 미계산).
+     한 가지 작업 방식(HWPX)뿐이라 §19.3 의 방식 구획은 평면으로 퇴화한다 — 「기안」(TXT)이
+     이 구획에 합류하는 슬라이스에서 헤더가 선다. */
+  function lastRunLabel(iso) {
+    // 표시 문안만 여기서 만든다(판정은 Python). 의미는 **완주(전건 성공) 실행**이므로 문안도
+    // 「마지막 성공 실행」이다(리뷰 4R P2): 성공 뒤 실패·부분 실패 런이 있으면 스탬프는 앞선
+    // 성공 시각에 머무르는데, 그걸 "마지막 실행"이라 쓰면 하필 구별이 중요한 그 상황에서
+    // 이력을 거짓으로 말한다. 없을 때도 "실행한 적 없음"이 아니라 성공 부재로 말한다.
+    return iso ? `마지막 성공 실행 ${esc(iso.slice(0, 10))}` : "성공한 실행 없음";
+  }
+
+  function candCard(c, s) {
+    const active = c.name === s.job_name;
+    const fav = c.favorited === true;
+    const verb = fav ? "즐겨찾기에서 제거" : "즐겨찾기에 추가";
+    const meta = (c.suggested ? `<span class="cand-sug">추천</span>` : "") +
+      `<span class="cand-run">${lastRunLabel(c.last_run_at)}</span>`;
+    // 안정 id는 **이름 유래**다(#138 F13 관례의 변형): 별을 누르면 카드가 1순위로 이동하므로
+    // 인덱스는 안정 식별자가 아니고, 그러면 preserve.js 가 방금 누른 별로 포커스를 못 돌려
+    // 키보드 사용자가 재렌더마다 문서 처음으로 떨어진다. encodeURIComponent 로 특수문자를
+    // 회피한다(따옴표·공백이 속성 경계를 깨지 않게).
+    const key = encodeURIComponent(c.name);
+    return `<div class="job-cand-card${active ? " active" : ""}${c.suggested ? " suggested" : ""}">` +
+      `<button class="cand-fav" type="button" id="jobFav-${key}" data-fav="${esc(c.name)}"` +
+      ` aria-pressed="${fav}" aria-label="${esc(c.name)} ${verb}" title="${verb}">` +
+      `${fav ? "★" : "☆"}</button>` +
+      // data-busy-lock: 생성 중 setBusy 가 비활성 — 진행 중 전환은 Python 도 거부(P1).
+      `<button class="cand-pick" type="button" id="jobCand-${key}" data-busy-lock` +
+      ` data-cand="${esc(c.name)}"` +
+      ` aria-pressed="${active}"><span class="cand-nm">${esc(c.name)}</span>` +
+      `<span class="cand-meta">${meta}</span></button></div>`;
+  }
+
+  /* 즐겨찾기 전이 단일 몸통 — 후보 카드의 별과 좌 목록 ⋮ 메뉴가 같은 경로를 쓴다(두 표면이
+     서로 다른 왕복을 갖지 않게). 낙관 표지 없이 Python 왕복 결과(push)로만 표시가 바뀐다 —
+     별이 먼저 켜졌다가 저장 실패로 되돌아가면 영속된 척하는 거짓 표지다(#215 동류).
+
+     **의도 직렬화**(리뷰 3R P2): 표시는 왕복 뒤에 바뀌므로, 왕복 중 두 번째 클릭이 DOM 의
+     낡은 상태를 읽으면 같은 의도를 두 번 보낸다 — `set_favorite` 은 재지정을 멱등 처리하니
+     껐다 켠 것이 아니라 **켜진 채로 남는다**(사용자 의도 소실). 그래서 다음 값은 DOM 이
+     아니라 **미결 의도**에서 계산한다. 계산만 여기서 하고 판정·영속은 여전히 Python 몫이다.
+
+     **쓰기 직렬화**(리뷰 4R·6R P2): 의도를 옳게 계산해도 왕복을 동시에 띄우면 안 된다 —
+     pywebview 는 호출마다 별도 스레드라 나중 클릭의 쓰기가 먼저 레지스트리 잠금을 잡을 수
+     있고, 그러면 **마지막 클릭과 반대 상태가 영속된다**. 체인은 **작업별이 아니라 전역
+     하나**다(6R): 즐겨찾기 시각은 작업들 사이의 **순위**라 서로 다른 작업 둘을 연속으로
+     별 찍을 때도 클릭 순서가 곧 쓰기 순서여야 한다(시각 자체는 Python 이 잠금 안에서 찍는다). */
+  const FAV_PENDING = new Map();  // 작업 이름 → 왕복 중인(또는 대기 중인) 의도 상태
+  let FAV_CHAIN = null;           // 진행 중 즐겨찾기 쓰기 체인의 꼬리(전역 1개)
+  const FAV_LAST = new Map();     // 작업 이름 → 그 작업이 마지막으로 큐에 든 링(정리 식별)
+
+  function favPending(name, domPressed) {
+    return FAV_PENDING.has(name) ? FAV_PENDING.get(name) : domPressed;
+  }
+
+  function toggleFavorite(name, domPressed) {
+    const value = !favPending(name, domPressed);
+    FAV_PENDING.set(name, value);
+    const send = () => Bridge.call(SCREEN, "toggle_favorite", { name, value })
+      .then((res) => { if (res && res.ok === false) log(res.error); })
+      .catch((err) => {
+        log("즐겨찾기 변경 실패: " + String((err && err.message) || err));
+      });
+    // 체인 링은 절대 reject 하지 않는다(위 catch) — 한 번 실패해도 뒤 클릭이 영구히 막히지 않게.
+    // 정리는 **꼬리 식별**로 판정한다(리뷰 5R P2): 값 비교로는 true→false→true 처럼 같은 값이
+    // 다시 큐에 있을 때 첫 왕복 완료가 최신 의도를 지운다. 그러면 뒤 클릭이 (스냅샷이 아직
+    // 없는) 낡은 DOM 을 읽어 의도가 어긋난다. 이 링이 마지막으로 큐에 든 것일 때만 걷는다.
+    const tail = (FAV_CHAIN || Promise.resolve()).then(send).then(() => {
+      // 이 작업의 마지막 의도만 걷는다(뒤에 다른 작업 쓰기가 붙어 있어도 무관).
+      if (FAV_PENDING.get(name) === value && FAV_LAST.get(name) === tail) {
+        FAV_PENDING.delete(name);
+        FAV_LAST.delete(name);
+      }
+      if (FAV_CHAIN === tail) FAV_CHAIN = null;
+    });
+    FAV_CHAIN = tail;
+    FAV_LAST.set(name, tail);  // 작업별 "마지막으로 큐에 든 링" — 정리 식별(5R)
+  }
+
   function renderCandidates(s) {
     const row = $("jobCandsRow");
     const host = $("jobCandidates");
     if (!s.has_data) { row.style.display = "none"; host.innerHTML = ""; return; }
     row.style.display = "";
-    const cands = s.candidates || [];
-    if (!cands.length) {
+    const c = s.candidates || { top: [], more: 0, needs: [], suggested: "" };
+    const top = c.top || [], needs = c.needs || [];
+    if (!top.length && !needs.length) {
       host.innerHTML = `<span class="muted">현재 데이터에 사용할 수 있는 문서 작업이 없습니다.</span>`;
       return;
     }
-    host.innerHTML = cands.map((c) => {
-      if (c.kind === "available") {
-        const active = c.name === s.job_name;
-        // data-busy-lock: 생성 중 setBusy 가 비활성 — 진행 중 전환은 Python 도 거부(P1).
-        return `<button class="btn sm job-cand${active ? " primary" : ""}" type="button"` +
-          ` data-busy-lock data-cand="${esc(c.name)}" aria-pressed="${active}">${esc(c.name)}</button>`;
-      }
-      return `<button class="btn sm job-cand" type="button" disabled` +
-        ` title="현재 데이터에 없는 열: ${esc((c.missing || []).join(", "))}">` +
-        `${esc(c.name)} · 확인 필요</button>`;
-    }).join("");
+    let html = top.map((t) => candCard(t, s)).join("");
+    // 잘린 나머지를 수치로 말한다(조용한 절단 금지). 전체 목록 표면은 아직 없으므로
+    // 지금 실제로 갈 수 있는 곳(좌 목록)만 가리킨다 — 없는 화면을 약속하지 않는다.
+    if (c.more > 0) {
+      html += `<span class="cand-more muted">이 데이터로 쓸 수 있는 작업 ` +
+        `<b>${c.more}건</b>이 더 있습니다. 왼쪽 목록에서 고르거나 즐겨찾기에 추가하세요.` +
+        `</span>`;
+    }
+    if (needs.length) {
+      // 확인 필요는 **자기 줄**을 갖는다(눈검증): 순위 카드 줄에 이어 붙으면 「외 N건」
+      // 고지와 한 문장처럼 읽혀 "쓸 수 있는 작업"과 "막힌 작업"의 경계가 흐려진다.
+      html += `<div class="cand-needs"><span class="cand-needs-lbl muted">확인 필요</span>` +
+        needs.map((n) =>
+          `<button class="btn sm job-cand" type="button" disabled` +
+          ` title="현재 데이터에 없는 열: ${esc((n.missing || []).join(", "))}">` +
+          `${esc(n.name)}</button>`
+        ).join("") +
+        // 확인 필요도 같은 상한을 쓴다 — 잘린 만큼은 available 과 똑같이 수치로.
+        (c.needs_more > 0
+          ? `<span class="cand-more muted">외 <b>${c.needs_more}건</b></span>` : "") +
+        `</div>`;
+    }
+    host.innerHTML = html;
   }
 
   function renderPreflight(s) {
@@ -785,12 +876,28 @@
     openRowMenu(kind, name, btn);
   }
 
+  /* 좌 목록 행의 즐겨찾기 상태 — 메뉴 문안("추가"/"제거")의 근거. 판정은 Python 스냅샷이
+     소유하고 여기서 뒤집지 않는다. 행이 사라졌으면(다른 화면 삭제) false 로 퇴화. */
+  function isFavorited(name) {
+    const rows = (LAST && LAST.job_rows) || [];
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i].name === name) return rows[i].favorited === true;
+    }
+    return false;
+  }
+
   function openRowMenu(kind, name, btn) {
     menuFor = { kind, name, trigger: btn };
-    // 메뉴 내용은 화면 소유(작업=편집/복제/이름/이동/삭제, 그룹=이름변경/해산), 위치·표시는 팩토리.
+    // 메뉴 내용은 화면 소유(작업=편집/복제/즐겨찾기/이름/이동/삭제, 그룹=이름변경/해산),
+    // 위치·표시는 팩토리. 즐겨찾기가 여기 있는 이유(리뷰 2R P2): 후보 구획의 별은 상위
+    // 5장에만 있어 순위 밖 작업은 승격 경로가 없었다 — 좌 목록은 절단되지 않는 표면이다.
+    // 미결 의도가 있으면 그것을 따른다 — 메뉴 문안은 **이 클릭이 할 일**을 말해야 한다.
+    const fav = favPending(name, isFavorited(name));
     const html = kind === "job"
       ? `<button data-menu="edit">편집</button>` +
         `<button data-menu="clone">복제</button>` +
+        `<button data-menu="favorite">` +
+        (fav ? "즐겨찾기에서 제거" : "즐겨찾기에 추가") + `</button>` +
         `<button data-menu="rename">이름 변경</button>` +
         `<div class="sep"></div>` +
         `<button data-menu="move">그룹으로 이동…</button>` +
@@ -814,6 +921,7 @@
         if (r && r.name) log(`복제: '${name}' → '${r.name}'`);
         return;
       }
+      if (act === "favorite") { toggleFavorite(name, isFavorited(name)); return; }
       if (act === "rename") { startRename(name); return; }
       if (act === "move") { openGroupMove(name, trigger); return; }
       if (act === "delete") { deleteJob(name, trigger); return; }
@@ -1078,6 +1186,13 @@
     // (Enter/Space) 합성 클릭을 막지 못하고, 재선택은 vm 재생성 = ack·완주 담보·폴더의
     // 조용한 소실이라 무해하지 않다(좌 목록의 재선택 no-op 과 대칭).
     $("jobCandidates").addEventListener("click", (e) => {
+      // 별 = 정렬 메타만(§18.5) — 작업 선택이 아니다. 카드 안 중첩 버튼이라 먼저 가른다.
+      const fav = e.target.closest("[data-fav]");
+      if (fav) {
+        toggleFavorite(fav.getAttribute("data-fav"),
+                       fav.getAttribute("aria-pressed") === "true");
+        return;
+      }
       const btn = e.target.closest("[data-cand]");
       if (btn && btn.getAttribute("aria-pressed") !== "true") {
         selectJobGuarded(btn.getAttribute("data-cand"));

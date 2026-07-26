@@ -722,6 +722,45 @@ def test_job_data_first_prework_surface_contract():
     assert 'aria-pressed") !== "true"' in src, "활성 후보 재활성화 가드가 없습니다."
 
 
+def test_job_candidate_ranking_surface_contract():
+    """슬라이스 2 정적 계약 — 순위 카드·별 토글·추천 표지·「외 N건」 고지 배선.
+
+    판정·순위는 Python 소유라 JS 는 **받은 순서를 그대로** 그린다(정렬 재구현 금지).
+    """
+    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    assert "data-fav" in src and "toggle_favorite" in src, "즐겨찾기 토글 배선이 없습니다."
+    # 도달성(리뷰 2R P2): 카드 별은 상위 5장뿐이라 순위 밖 작업의 승격 경로는 절단되지 않는
+    # 표면(좌 목록 ⋮ 메뉴)이 져야 한다. 두 표면은 같은 전이 몸통을 쓴다.
+    assert 'data-menu="favorite"' in src, "좌 목록 ⋮ 메뉴에 즐겨찾기 항목이 없습니다."
+    assert src.count("function toggleFavorite(") == 1, "즐겨찾기 전이 몸통이 둘입니다."
+    # 왕복 중 두 번째 클릭이 의도를 뒤집으려면 다음 값을 DOM 이 아니라 미결 의도에서
+    # 계산해야 한다(리뷰 3R P2 — 멱등 재지정이 "껐다"를 삼키는 창).
+    assert "FAV_PENDING" in src and "function favPending(" in src, (
+        "즐겨찾기 미결 의도 직렬화가 없습니다."
+    )
+    # 쓰기 자체도 클릭 순서로 직렬화돼야 한다(4R P2 — pywebview 는 호출마다 별도 스레드라
+    # 동시 발신이면 나중 클릭의 쓰기가 먼저 잠금을 잡아 반대 상태가 영속될 수 있다).
+    assert "FAV_CHAIN" in src, "즐겨찾기 쓰기 체인(직렬화)이 없습니다."
+    # 체인은 전역 1개다(6R P2): 즐겨찾기 시각은 작업들 사이의 순위라, 서로 다른 작업을
+    # 연속으로 별 찍을 때도 클릭 순서 = 쓰기 순서여야 한다.
+    assert "let FAV_CHAIN = null" in src, "즐겨찾기 체인이 작업별로 갈라져 있습니다."
+    # 문안은 완주 스탬프 의미와 일치해야 한다(성공 뒤 실패 런에서 거짓이 되지 않게).
+    assert "마지막 성공 실행" in src and "마지막 실행 " not in src, (
+        "카드 문안이 완주 스탬프 의미(마지막 성공 실행)와 어긋납니다."
+    )
+    assert "c.more" in src, "순위 밖 후보 수(외 N건) 고지가 없습니다 — 조용한 절단 금지."
+    assert "cand-sug" in src, "추천 표지가 없습니다(§18.3 개정)."
+    # JS 가 순위를 재계산하지 않는다(RC-23 동형 — 이중 진실 금지).
+    for banned in ("favorited_at <", "sort(", "localeCompare"):
+        assert banned not in src.split("renderCandidates")[1][:2000], (
+            f"후보 렌더가 자체 정렬을 합니다: {banned!r}"
+        )
+    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    # 추천은 활성과 시각으로 구별된다 — 점선(아직 고른 것 아님) vs 실선 강조(활성).
+    assert ".job-cand-card.suggested:not(.active){border-style:dashed" in css
+    assert ".job-cand-card.active{border-color:var(--a-primary)" in css
+
+
 def test_template_media_sections_use_sunken_surface_without_shared_catalog_drift():
     """H-04: HWPX/TXT만 sunken 표면을 쓰고 공유 tpl-catalogs는 독립적으로 남는다."""
     html = WEB_INDEX.read_text(encoding="utf-8")
