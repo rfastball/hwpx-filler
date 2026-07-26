@@ -601,6 +601,20 @@ def test_library_mode_filter_and_search_are_anded(tmp_path):
     assert vm.library_sections()[0].rows == []
 
 
+def test_unlinked_template_is_not_reported_as_unsupported_media(tmp_path):
+    """경로가 빈 작업은 **아직 연결하지 않은** 저작 중 hwpx 작업이다(리뷰 P2).
+
+    "지원하지 않는 작업 방식"으로 진단하면 처방도 틀린다 — 사용자는 「템플릿 다시 연결」로
+    복구할 수 있는데 지원 범위 밖이라는 막다른 문안을 받는다.
+    """
+    reg = JobRegistry(tmp_path / "unlinked")
+    reg.save(Job(name="저작중", template_path=""))                 # 미연결(정상 상태)
+    reg.save(Job(name="미상", template_path=str(tmp_path / "x.doc")))  # 실제 미상 확장자
+    rows = {r.name: r for r in HomeViewModel(reg).rows()}
+    assert library_health(rows["저작중"]) == (3, "템플릿을 아직 연결하지 않았습니다.")
+    assert library_health(rows["미상"])[1] == "템플릿 파일을 찾을 수 없습니다."
+
+
 def test_unknown_library_view_and_mode_degenerate(tmp_path):
     vm = HomeViewModel(_library_reg(tmp_path))
     vm.set_library_view("엉뚱")

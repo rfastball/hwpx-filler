@@ -95,6 +95,9 @@ class JobRow:
     group: str = ""
     favorited_at: str = ""
     media: str = ""
+    # 템플릿을 아직 연결하지 않은 상태(경로 빈 값) — **미상 매체와 다르다**: 저작 중인
+    # 정상 hwpx 작업이고 복구 동선도 「템플릿 다시 연결」로 명확하다(리뷰 P2).
+    template_linked: bool = True
 
     @classmethod
     def from_job(cls, job: Job) -> "JobRow":
@@ -123,6 +126,7 @@ class JobRow:
             group=job.group,
             favorited_at=job.favorited_at,
             media=job.media,
+            template_linked=bool(tpath),
         )
 
     def meta_line(self) -> str:
@@ -247,6 +251,10 @@ def library_health(row: "JobRow") -> "tuple[int, str]":
     템플릿 파일 부재, 지원하지 않는 매체, hwpx 인데 템플릿을 읽지 못함. 손상 JSON 은
     애초에 :class:`CorruptJobRow` 로 분리돼 이 목록에 오지 않는다.
     """
+    if not row.template_linked:
+        # 경로가 비어 있는 건 "미상 매체"가 아니라 **아직 연결하지 않은 저작 중 작업**이다.
+        # 진단이 틀리면 처방도 틀린다 — 여기서 갈라야 사용자가 「템플릿 다시 연결」로 간다.
+        return 3, "템플릿을 아직 연결하지 않았습니다."
     if row.template_missing:
         return 3, "템플릿 파일을 찾을 수 없습니다."
     if row.media not in ("hwpx", "txt"):
