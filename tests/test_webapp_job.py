@@ -112,6 +112,30 @@ def test_select_job_then_data_populates_records_and_badges(tmp_path):
     assert states["추정가격"] == "missing"  # rec0 빈값 → 미입력
 
 
+# --------------------------------------- data-first 첫 슬라이스 성공 기준(계획 §5)
+def test_data_first_flow_end_to_end(tmp_path):
+    """데이터 마운트(무작업) → 행 선택 → 후보 → 명시 선택 → 게이트 → 실제 HWPX 생성 1회.
+
+    봉합 계획 §5 성공 기준의 자동판 — master 생성 엔진을 그대로 쓰면서 data-first
+    메인 흐름이 실제 문서 1건을 완주한다. 각 단계의 스냅샷 재진술도 함께 되읽는다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_data_path(_data_csv(tmp_path))                      # 작업 없이 마운트
+    snap = ctrl.snapshot()
+    assert snap["has_job"] is False and snap["has_data"] is True
+    assert snap["selected_count"] == 0                            # §18.2 초기 0건
+    ctrl.dispatch("toggle_record", {"index": 1, "value": True})   # 채움 완결 행 선택
+    cands = ctrl.snapshot()["candidates"]
+    assert [(c["name"], c["kind"]) for c in cands] == [("공고서", "available")]
+    ctrl.dispatch("select_job", {"name": "공고서"})               # 명시 선택(§18.3 자동 아님)
+    snap = ctrl.snapshot()
+    assert snap["has_job"] is True and snap["selected_count"] == 1  # 선택 생존(§18.2)
+    assert snap["gate"]["enabled"] is True                          # 권위 판정 = RunViewModel
+    res = ctrl.generate()
+    assert res["ok"] is True and res["succeeded"] == 1 and res["failed"] == 0
+    assert (Path(snap["out_dir"]) / "doc-001.hwpx").exists()      # 실물 산출
+
+
 # ------------------------------------------- 표시순 투영(§18.10·§2, 충돌 B 확정)
 def test_display_order_newest_first_and_execution_follows_projection(tmp_path):
     """표 순서 = sourceDesc(최신 행 먼저), 실행 입력 = 표시순 투영(WYSIWYG).
