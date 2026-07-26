@@ -158,7 +158,10 @@ class HomeController:
                          # hwpx 로 걸러 놓고 페이로드엔 빈 값을 주면 소비자가 같은 행을 다른
                          # 방식으로 읽는다(표시=판정 정합 붕괴).
                          "media": library_mode_of(r),
-                         "health": library_health(r)[1]}
+                         # 심각도 숫자까지 싣는다(리뷰 P2): 문구만 주면 소비자가 경고(2)와
+                         # 차단(3)을 구분 못 해 §19.7 건강 축을 "사유 있음/없음"으로 뭉갠다.
+                         "health": {"severity": library_health(r)[0],
+                                    "text": library_health(r)[1]}}
                         for r in sec.rows
                     ],
                 }
