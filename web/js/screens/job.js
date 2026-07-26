@@ -314,12 +314,18 @@
     const verb = fav ? "즐겨찾기에서 제거" : "즐겨찾기에 추가";
     const meta = (c.suggested ? `<span class="cand-sug">추천</span>` : "") +
       `<span class="cand-run">${lastRunLabel(c.last_run_at)}</span>`;
+    // 안정 id는 **이름 유래**다(#138 F13 관례의 변형): 별을 누르면 카드가 1순위로 이동하므로
+    // 인덱스는 안정 식별자가 아니고, 그러면 preserve.js 가 방금 누른 별로 포커스를 못 돌려
+    // 키보드 사용자가 재렌더마다 문서 처음으로 떨어진다. encodeURIComponent 로 특수문자를
+    // 회피한다(따옴표·공백이 속성 경계를 깨지 않게).
+    const key = encodeURIComponent(c.name);
     return `<div class="job-cand-card${active ? " active" : ""}${c.suggested ? " suggested" : ""}">` +
-      `<button class="cand-fav" type="button" data-fav="${esc(c.name)}"` +
+      `<button class="cand-fav" type="button" id="jobFav-${key}" data-fav="${esc(c.name)}"` +
       ` aria-pressed="${fav}" aria-label="${esc(c.name)} ${verb}" title="${verb}">` +
       `${fav ? "★" : "☆"}</button>` +
       // data-busy-lock: 생성 중 setBusy 가 비활성 — 진행 중 전환은 Python 도 거부(P1).
-      `<button class="cand-pick" type="button" data-busy-lock data-cand="${esc(c.name)}"` +
+      `<button class="cand-pick" type="button" id="jobCand-${key}" data-busy-lock` +
+      ` data-cand="${esc(c.name)}"` +
       ` aria-pressed="${active}"><span class="cand-nm">${esc(c.name)}</span>` +
       `<span class="cand-meta">${meta}</span></button></div>`;
   }

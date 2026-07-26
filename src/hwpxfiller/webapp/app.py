@@ -913,6 +913,22 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
       var r = document.querySelector('#jobCandidates .cand-run');
       return r ? r.textContent : '';
     })();
+    // 별 포커스가 재렌더(=별을 누르면 카드가 1순위로 이동)를 가로질러 살아남는가 —
+    // preserve.js 는 id 로 복원하므로 이름 유래 안정 id 가 실제로 붙었는지 실물로 본다.
+    (function () {
+      var star = document.getElementById('jobFav-' + encodeURIComponent('계약서'));
+      if (!star) { out.fav_focus_restored = 'no-id'; return; }
+      star.focus();
+      var moved = JSON.parse(JSON.stringify(snap));   // 깊은 사본만 만진다(원판 불변)
+      moved.candidates.top.reverse();
+      moved.candidates.top[0].favorited = true;   // 즐겨찾기 지정 후 1순위로 이동한 판
+      window.__push('job', moved);
+      out.fav_focus_restored =
+        document.activeElement && document.activeElement.id === 'jobFav-' +
+        encodeURIComponent('계약서') ? 'kept' : String(
+          document.activeElement && document.activeElement.id);
+      window.__push('job', snap);                 // 뒤 프로브를 위해 원판 복구
+    })();
     out.gate_text = document.getElementById('jobGate').textContent;
     out.gen_disabled = document.getElementById('jobGenBtn').disabled;
     out.head_hint = document.getElementById('jobHeadTpl').textContent;

@@ -321,6 +321,9 @@ class TestWebSelftestGate:
         assert j["suggested_dashed"] == "dashed", j["suggested_dashed"]
         assert "2건" in j["more_text"], f"「외 N건」 고지가 없습니다: {j['more_text']!r}"
         assert j["last_run_text"] == "마지막 실행 2026-07-20", j["last_run_text"]
+        # 별을 누르면 카드가 1순위로 이동한다 — 그 재렌더를 가로질러 포커스가 같은 작업의
+        # 별에 남아야 키보드 사용자가 문서 처음으로 떨어지지 않는다(이름 유래 안정 id).
+        assert j["fav_focus_restored"] == "kept", j["fav_focus_restored"]
 
     def test_job_density_and_expansion_sheets(self, selftest_result: dict) -> None:
         j = selftest_result["job_mirror"]
