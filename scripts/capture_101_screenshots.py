@@ -329,6 +329,35 @@ def _drive(d: Driver) -> None:
     d.wait("!document.getElementById('jobGenBtn').disabled", "행 선택·게이트 열림")
     d.shot("session-panel")
 
+    # ---- S5b 범위 편집기(⤢) — 초안 거래를 사람 순서로 한 바퀴(F3) ----------
+    # 여는 것 자체가 Python 왕복(초안 생성)이고, 여기서의 편집은 **적용 전까지** 메인 범위를
+    # 바꾸지 않는다. 캡처 뒤 **취소**로 나오므로 아래 단계들의 상태는 그대로다.
+    d.click_sel("#jobDataExpand")
+    d.wait(
+        "!document.getElementById('dataSheet').classList.contains('hidden')"
+        " && document.getElementById('dataSheetSlot').contains("
+        "document.getElementById('jobRangeFoot'))",
+        "범위 편집기·footer",
+    )
+    # 표시순서를 뒤집어 표가 실제로 따라오는지 본다(보이는 것 = 만들어지는 것).
+    assert d.js("window.__cap.setValue('#jobOrderSel', 'sourceAsc')")
+    d.wait(
+        "(document.querySelector('#jobTableBody tr')||{dataset:{}}).dataset.i === '0'",
+        "표시순서 전환 반영",
+    )
+    d.shot("range-editor")
+    d.click_sel("#jobRangeCancel")
+    # 변경이 있으므로 이탈 가드가 끼어든다(적용하지 않은 편집을 조용히 버리지 않는다).
+    d.wait("!!window.__cap.btn(null,'버리고 닫기')", "이탈 가드")
+    d.js("window.__cap.clickBtn(null,'버리고 닫기'); true;")
+    # 취소 = 초안만 버린다: 메인 범위(선택 3건)와 축(최신 행 먼저)이 그대로여야 한다.
+    d.wait(
+        "document.getElementById('dataSheet').classList.contains('hidden')"
+        " && document.getElementById('jobOrderSel').value === 'sourceDesc'"
+        " && !document.getElementById('jobGenBtn').disabled",
+        "취소 뒤 메인 범위 보존",
+    )
+
     # ---- S6 본문 확인(거울) ------------------------------------------------
     d.scroll_to("#jobMirror")
     d.shot("mirror-check")
