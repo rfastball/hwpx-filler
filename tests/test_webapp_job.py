@@ -3211,3 +3211,45 @@ def test_the_timestamp_is_frozen_while_the_drawer_is_open(tmp_path):
     ctrl.dispatch("preview_close", {})
     ctrl.snapshot()
     assert ctrl._names_now != frozen, "면을 닫았는데도 시각이 얼어 있습니다."
+
+
+def test_approval_does_not_survive_acknowledging_blanks(tmp_path):
+    """4R P2 — 확인 안 된 빈 값이 있는 상태로 승인하면 값은 비어 있고 이름은 표식 없이
+    계산된다. 면을 닫고 빈 값을 확인하는 순간 실행 입력이 표식으로 바뀌는데, 규칙도 선택도
+    안 바뀌었으니 승인은 그대로 유효하다 — 그러면 생성이 **한 번도 보여준 적 없는** 값과
+    이름을 쓴다. 표식 상태를 승인 정체에 넣어 그 창을 닫는다.
+    """
+    ctrl, _ = _controller(tmp_path, reviewed=False)
+    job = ctrl.registry.load("공고서")
+    job.filename_pattern = "{{추정가격}}"     # 빈 값이 나는 필드를 이름이 참조한다
+    ctrl.registry.save(job, allow_overwrite=True)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+
+    ctrl.dispatch("preview_open", {})          # 빈 값 미확인 상태에서 미리보기
+    ctrl.dispatch("preview_approve", {})
+    ctrl.dispatch("ack_field", {"field": "추정가격"})   # 실행 입력이 표식으로 바뀐다
+    assert ctrl.snapshot()["gate"]["enabled"] is False, (
+        "표식이 붙어 값·이름이 달라졌는데 옛 승인이 그대로 유효합니다."
+    )
+    assert ctrl.generate()["ok"] is False
+
+
+def test_unacknowledging_blanks_restores_the_earlier_approval(tmp_path):
+    """되돌리면 되살아난다 — 표식 상태는 정체의 일부이지 단조 무효화 신호가 아니다
+    (같은 실행 입력으로 돌아왔으면 이미 확인한 것이 맞다)."""
+    ctrl, _ = _controller(tmp_path, reviewed=False)
+    job = ctrl.registry.load("공고서")
+    job.filename_pattern = "{{추정가격}}"
+    ctrl.registry.save(job, allow_overwrite=True)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    ctrl.dispatch("preview_open", {})
+    ctrl.dispatch("preview_approve", {})
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    assert ctrl.snapshot()["gate"]["enabled"] is False
+    ctrl.dispatch("unack_field", {"field": "추정가격"})
+    assert ctrl.snapshot()["gate"]["enabled"] is False   # 빈 값 게이트가 다시 닫는다
+    assert ctrl._review()[1] is None, "같은 실행 입력인데 승인이 사라졌습니다."

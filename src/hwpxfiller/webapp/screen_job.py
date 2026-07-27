@@ -511,7 +511,22 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         return ",".join(str(i) for i in self._indices())
 
-    def _review_scope_key(self, indices: "list[int] | None" = None) -> str:
+    def _run_marker(self, indices: "list[int]") -> str:
+        """이 실행 입력에 실제로 붙을 미입력 표식 — 생성·미리보기·승인의 **단일 술어**.
+
+        생성은 미입력 게이트를 통과한 **뒤에야** 표식을 붙이므로(``_generate_locked`` 3),
+        아직 확인 안 된 빈 값이 있으면 표식은 없다. 이 조건이 세 자리에서 갈리면 각각
+        다른 실행 입력을 그리거나 승인하게 된다(1R P2 · 4R P2 가 같은 술어의 두 얼굴).
+        """
+        if self.vm is None or not indices:
+            return ""
+        if self.vm.unmet_blanks(indices) or not self.vm.blank_fields(indices):
+            return ""
+        return MISSING_MARKER
+
+    def _review_scope_key(
+        self, indices: "list[int] | None" = None, marker: "str | None" = None,
+    ) -> str:
         """승인이 결속되는 범위 — **어느 스냅샷의** 어느 선택인가(2R P1).
 
         선택 index 만으로는 부족하다: 데이터 A 에서 의미·파일명 위험을 승인한 뒤 데이터 B 를
@@ -524,14 +539,18 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         문자열이 두 질문을 겸하면 한쪽 요구가 다른 쪽 의미를 조용히 바꾼다(F3 3R 의
         `selected_count` 가 표 머리와 게이트 지목을 겸하던 자리와 같은 결함류).
         """
-        sel = (
-            self._selection_key() if indices is None
-            else ",".join(str(i) for i in indices)
-        )
-        return f"{self._snapshot_gen}|{sel}"
+        idx = self._indices() if indices is None else indices
+        sel = ",".join(str(i) for i in idx)
+        # 표식 상태도 승인의 일부다(4R P2): 확인 안 된 빈 값이 있는 상태로 승인하면 값은
+        # 비어 있고 이름은 표식 없이 계산된다. 사용자가 면을 닫고 빈 값을 확인하는 순간
+        # 실행 입력이 표식으로 바뀌는데, 규칙도 선택도 안 바뀌었으니 **승인은 그대로 유효**
+        # 하다 — 그러면 생성이 한 번도 보여준 적 없는 값과 이름을 쓴다. 상태가 바뀌면
+        # 승인이 무효가 되는 것이 정직하다(다시 확인하면 그때는 진짜 실행 입력을 본다).
+        mk = self._run_marker(idx) if marker is None else marker
+        return f"{self._snapshot_gen}|{'M' if mk else '-'}|{sel}"
 
     def _review(
-        self, vm=None, indices: "list[int] | None" = None,
+        self, vm=None, indices: "list[int] | None" = None, marker: "str | None" = None,
     ) -> "tuple[ReviewRequirement, ReviewRequirement | None]":
         """(현재 검토 요구, 아직 승인 안 된 요구 or None) — F5 판정 B·I.
 
@@ -550,7 +569,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         req = review_requirement(target.job)
         if not req.required:
             return req, None
-        approved = self.review.is_approved(req, self._review_scope_key(indices))
+        approved = self.review.is_approved(
+            req, self._review_scope_key(indices, marker)
+        )
         return req, (None if approved else req)
 
     def _review_payload(self, req: ReviewRequirement, unmet) -> dict:
@@ -1032,8 +1053,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return base
         job = self.vm.job
         indices = self._indices()
+        # 생성이 실제로 쓸 표식(1R P2 · 4R P2) — 확인된 빈칸은 문서에 **표식 문자열**로
+        # 들어가고, 파일명 패턴이 그 필드를 참조하면 이름·수렴·경로 길이가 전부 달라진다.
+        # 검토·감사·드로어·생성이 **같은 술어**(`_run_marker`)를 공유한다.
+        marker = self._run_marker(indices)
         # 검토 요구(F5) — 요구 판정은 durable 기준선이, 승인 대조는 세션이 한다.
-        req, req_unmet = self._review()
+        req, req_unmet = self._review(marker=marker)
         # 파일명 날짜 토큰의 기준 시각(2R·3R P2) — 이 값은 **승인의 일부**다.
         #
         # 스냅샷당 1회 캡처하면 한 스냅샷 안의 소비처(게이트 감사·표 「문서」 열·드로어·
@@ -1048,18 +1073,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self._names_now = datetime.now()
         # 선택분 매핑 적용은 1회 — 파일명 미리보기(_record_rows)와 거울 값(_mirror)이 공유한다.
         mapped = self.vm.mapped_records(indices) if indices else []
-        # 생성이 실제로 쓸 표식(1R P2) — 확인된 빈칸은 문서에 **표식 문자열**로 들어가고,
-        # 파일명 패턴이 그 필드를 참조하면 이름·수렴·경로 길이가 전부 달라진다. 표식 없는
-        # 값으로 미리보기를 그리면 사용자는 **생성될 것과 다른 파일 이름을 승인**한다.
-        # 표식은 **생성이 실제로 붙이는 조건에서만** 붙인다: 생성은 미입력 게이트를 통과한
-        # 뒤에야 3) 에 도달하므로, 아직 확인 안 된 빈 값이 있으면 표식은 없다. 조건을 느슨히
-        # 잡으면 실행되지도 않을 상태의 이름을 미리보기가 말한다(반대 방향의 같은 거짓말).
-        marker = (
-            MISSING_MARKER
-            if (indices and not self.vm.unmet_blanks(indices)
-                and self.vm.blank_fields(indices))
-            else ""
-        )
         # 거울은 표식 **없는** 값을 본다: 「선택 N행 중 M행에서 값이 비어 있습니다」가
         # 빈 값을 세는 진술이라, 표식을 채우면 언제나 0행이 되어 문안이 거짓이 된다.
         # 두 면이 같은 사실을 다른 각도로 말하는 것이지 판정이 둘인 게 아니다.
@@ -1081,12 +1094,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         zone_mapped = run_mapped
         if self.range_draft is not None:
             # 초안 집합의 표식은 그 집합에서 다시 센다 — 빈 값 여부는 선택에 딸린 사실이다.
-            zone_marker = (
-                MISSING_MARKER
-                if (zone_indices and not self.vm.unmet_blanks(zone_indices)
-                    and self.vm.blank_fields(zone_indices))
-                else ""
-            )
+            zone_marker = self._run_marker(zone_indices)
             zone_mapped = (
                 self.vm.mapped_records(zone_indices, zone_marker) if zone_indices else []
             )

@@ -32,6 +32,7 @@ import json
 from dataclasses import dataclass, field
 
 from ..core.job import Job, rules_fingerprints
+from ..naming import pattern_field_tokens
 
 #: 승인을 요구하는 위험 축 — **무거운 순**. 여러 축이 동시에 바뀌면 앞선 것이 이긴다
 #: (그 증거 정책이 나머지를 덮는다).
@@ -154,8 +155,18 @@ def review_requirement(job: Job) -> ReviewRequirement:
         return ReviewRequirement(rules_key=key)
 
     structure = "template" in changed
+    # 파일명이 **소비하는 필드**가 바뀌면 패턴 문자열이 그대로여도 이름 집합이 바뀐다(4R P2).
+    # 이걸 의미·표시형으로만 분류하면 ⓐ드로어가 수렴·경로 증거를 건너뛰고 ⓑ표시형 승인은
+    # 선택 결속이 아니라(판정 I) 선택을 넓혀도 살아남아, **새로 고른 레코드가 만드는 이름
+    # 충돌이 검토를 통과한다**. 위험은 "무엇을 편집했는가"가 아니라 **무엇이 달라지는가**로
+    # 정한다 — 파일명 토큰 판정기는 링0 단일 출처(`pattern_field_tokens`)다.
+    name_fields = set(pattern_field_tokens(job.filename_pattern))
+    touches_name = any(
+        k.startswith("field:") and k[len("field:"):].rpartition(":")[0] in name_fields
+        for k in changed
+    )
     risk = ""
-    if "filename" in changed:
+    if "filename" in changed or touches_name:
         risk = "filename_set"
     elif any(k.endswith(":source") for k in changed):
         risk = "semantic_binding"

@@ -337,3 +337,33 @@ def test_clone_does_not_inherit_the_review_baseline(tmp_path):
     clone = reg.load(reg.clone("공고"))
     assert clone.reviewed_rules == {}
     assert review_requirement(clone).required and review_requirement(clone).first_run
+
+
+# ---------------- 리뷰 4R 조치의 영구 가드 ----------------
+def test_a_field_the_filename_consumes_is_a_filename_risk():
+    """4R P2 — 패턴 문자열이 그대로여도 그 패턴이 **소비하는 필드**가 바뀌면 이름 집합이
+    바뀐다. 위험은 "무엇을 편집했는가"가 아니라 **무엇이 달라지는가**로 정한다.
+    """
+    job = _reviewed(_job(filename_pattern="{{금액}}.hwpx"))
+    job.mapping.mappings[1].source = "다른열"          # 이름이 소비하는 필드의 연결 변경
+    req = review_requirement(job)
+    assert req.risk_class == "filename_set" and req.selection_bound
+
+
+def test_a_presentation_change_on_a_filename_field_does_not_escape_selection_binding():
+    """표시형 승인은 선택 결속이 아니라(판정 I) 선택을 넓혀도 살아남는다 — 그 필드가
+    파일 이름을 만든다면 **새로 고른 레코드의 이름 충돌이 검토를 통과**한다."""
+    job = _reviewed(_job(filename_pattern="{{금액}}.hwpx"))
+    job.mapping.mappings[1].fmt = "천단위"
+    req = review_requirement(job)
+    assert req.risk_class == "filename_set"
+    st = ReviewState()
+    st.approve(req, "0,1")
+    assert not st.is_approved(req, "0,1,2"), "선택이 넓어졌는데 승인이 살아남았습니다."
+
+
+def test_a_field_the_filename_ignores_keeps_its_own_risk():
+    """반대 방향 — 이름이 안 쓰는 필드까지 파일명 위험으로 올리면 증거가 엉뚱해진다."""
+    job = _reviewed(_job(filename_pattern="{{공고명}}.hwpx"))
+    job.mapping.mappings[1].fmt = "천단위"             # 금액은 이름에 안 쓰인다
+    assert review_requirement(job).risk_class == "presentation"
