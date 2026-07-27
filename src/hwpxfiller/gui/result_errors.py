@@ -36,15 +36,29 @@ _ERROR_HINTS: "tuple[tuple[str, str], ...]" = (
 )
 
 
+def classify_result_error(error: str) -> "tuple[str, bool]":
+    """실패 사유 → ``(안내 문안, 원인 확정 여부)`` — 계약 §10.3 경계의 단일 판정.
+
+    ``known=False`` 는 "아는 패턴이 없다" = 계약이 말하는 **원인 진단 미연결**이다.
+    표면은 이 경계로만 그 표지를 붙인다 — 아는 원인에 붙이면 경보가 싸구려가 되고,
+    모르는 원인을 아는 척하면 조용한 오진이다(지도 §10.10 판정 B).
+
+    문안 규칙은 :func:`describe_result_error` 와 **같은 한 벌**이다(원문은 괄호로
+    보존 — 증거 무손실). 짝을 나눈 것은 표기 경계를 얻기 위함이지 재작성이 아니다.
+    """
+    for needle, hint in _ERROR_HINTS:
+        if needle in error:
+            return f"{hint} (원문: {error})", True
+    return error, False
+
+
 def describe_result_error(error: str) -> str:
     """레코드 실패 사유를 행동 지향 문구로 보강(RC-30) — 원시 errno 관통 해소.
 
     아는 패턴이 없으면 원문 그대로(조용한 재작성 금지 — 원문이 곧 증거).
+    문안만 필요한 소비자(CLI·로그)용 얇은 래퍼 — 판정은 :func:`classify_result_error`.
     """
-    for needle, hint in _ERROR_HINTS:
-        if needle in error:
-            return f"{hint} (원문: {error})"
-    return error
+    return classify_result_error(error)[0]
 
 
 # FillNote kind → (사후 문안, 사전 문안) 짝 — 같은 사실을 시제만 바꿔 말한다

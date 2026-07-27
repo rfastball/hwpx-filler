@@ -58,7 +58,7 @@ from ..gui.filter_state import (
     KIND_TEXT,
     FilterModel,
 )
-from ..gui.result_errors import describe_fill_note, describe_result_error
+from ..gui.result_errors import classify_result_error, describe_fill_note
 from ..gui.run_state import RunViewModel, resolve_file_source, resolve_pool_source
 from ..gui.selection_state import SelectionModel
 from ..gui.work_candidates import (
@@ -103,6 +103,45 @@ _EMPTY_RESTATE = {
 _RESTATE_SAMPLE = 3
 
 
+def _run_status(succeeded: int, total: int, cancelled: bool = False) -> str:
+    """결과 3태(계약 §10 · 지도 §10.10 판정 A) — 성공/전체 + 중단 여부의 함수다.
+
+    불변식 §13-10("일부 성공을 전체 성공으로 표시하지 않는다")이 경계를 정한다: 전건
+    성공만 ``completed``, 1건이라도 성공했고 남은 게 있으면 ``partiallyCompleted``,
+    성공 0건은 ``failed``. **취소는 네 번째 태가 아니라** ``partiallyCompleted`` 의
+    변종이다(``cancelled`` 플래그 + 미착수 재진술 + warn 채널) — 태를 늘리면 "중단"이
+    성공·실패와 같은 층위인 것처럼 읽힌다. 표면은 이 판정을 재계산하지 않는다.
+
+    그래서 **중단은 성공 수와 무관하게** 부분이다(1R P2): 첫 레코드 전에 멈춘 런은
+    성공 0·실패 0인데 성공 수만 보면 ``failed`` 가 되어, "중단했습니다 · 0개 완료"라고
+    말하는 제목 옆에서 태가 "실패"라고 다른 얘기를 한다. 실패한 시도가 없는데 실패
+    태를 다는 것은 없던 실패를 지어내는 쪽이다 — 중단은 완주하지 않은 **중간 상태**이고
+    그것이 부분 태의 뜻이다(실패분이 있으면 실패 행이 그 사실을 따로 나른다).
+    """
+    if cancelled:
+        return "partiallyCompleted"
+    if total > 0 and succeeded >= total:
+        return "completed"
+    if succeeded > 0:
+        return "partiallyCompleted"
+    return "failed"
+
+
+def _run_title(status: str, cancelled: bool, succeeded: int, failed: int) -> str:
+    """3태 제목 — 취소는 태를 바꾸지 않고 제목이 그 사실을 **먼저** 말한다.
+
+    문안이 Python 에 있는 이유는 요약(``summary``)과 같다: 같은 수치를 두 층이 따로
+    조립하면 제목과 요약이 갈라진다(공유 합성기 규율).
+    """
+    if cancelled:
+        return f"생성을 중단했습니다 · {succeeded}개 완료"
+    if status == "completed":
+        return f"문서 생성 완료 · {succeeded}개"
+    if status == "partiallyCompleted":
+        return f"{succeeded}개 성공 · {failed}개 실패"
+    return "문서 생성 실패"
+
+
 class JobController(DataZoneMixin, PoolTargetingMixin):
     """「작업」 화면 — 좌 작업 목록 선택 + 우 세션 패널(링1 RunViewModel/SelectionModel 위임).
 
@@ -138,6 +177,17 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.filter: "FilterModel | None" = None
         # 마지막 생성 완주 집합(결정 27) — 완료 이벤트 = 무장 해제(내역은 완료 존이 담보).
         self._last_generated: "set[int] | None" = None
+        # 직전 런의 실패 레코드 원본 index(지도 §10.10 판정 F) — 「실패한 N건만 선택」의
+        # 소재. **Python 이 소유**한다: 웹이 들고 있다 되돌려주면 그 사이의 데이터 교체·
+        # 표시순서 변경이 남의 행을 고른다. 수명 = 이 데이터·이 작업(둘 중 하나가 바뀌면 비운다).
+        self._last_failed: "list[int]" = []
+        # 직전 런의 **주체**(3R P2 근본 조치) — 결과는 그 실행의 것이고 세션은 그 뒤로도
+        # 움직인다. 그 정체를 결과 payload(한 번 찍고 안 변하는 값)에 넣으면 **정체의
+        # 변화**(이름 변경)를 따라가지 못해 같은 작업이 남처럼 보인다. 그래서 주체 추적은
+        # 세션 상태의 일이고, 표면은 이 값과 `job_name` — **둘 다 Python 이 낸 값** — 만
+        # 비교한다. 작업 전환에도 남는다: 남아 있어야 "지금 열린 작업이 그 런의 작업과
+        # 다르다"를 말할 수 있다.
+        self._last_run_job = ""
         # 직전 필터 슬롯(결정 28) — 정의 가진 세션이 죽을 때 덮어쓰는 1칸 세션 메모리
         # (앱 수명·미저장 — 필터 영속 뒷문 금지). 소스 일치 게이트용 키와 쌍.
         self._last_filter: "dict | None" = None  # {"source_key": str, "state": dict}
@@ -498,6 +548,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         jobs = [j for j in self.registry.list_jobs() if j.media != "txt"]
         base = {
             "job_name": self.job_name,
+            # 직전 런의 주체(3R P2) — 결과 구획의 행동이 "이 결과가 지금 열린 작업의
+            # 것인가"를 물을 때 쓰는 값. 판정에 드는 두 값이 같은 출처(이 스냅샷)에서 온다.
+            "last_run_job": self._last_run_job,
             "has_job": self.vm is not None,
             # 세션 가드 무장 상태(결정 26·27) — 표면 참고용(진실은 guard_state 실시간 질의;
             # 렌더 판은 _filter_sections 가 같은 뷰로 산출해 아래 update 가 덮는다).
@@ -627,6 +680,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if not records:
             raise ValueError(NO_ROWS_TEXT)  # 성공 전 현재 runtime 미파기 — 아래 대입 전 반환
         self._stash_filter()  # 죽는 세션의 정의 → 직전 필터 슬롯(결정 28, 옛 소스 키 기준)
+        self._last_failed = []  # 실패 index 는 이 레코드 집합에서만 뜻이 있다(§10.10 판정 F)
         self.datasource = source
         self.records = records
         if self.vm is not None:
@@ -709,8 +763,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self.vm = None
             self.job_name = ""
             self.out_dir = ""
+            self._last_failed = []
             return
         job = self.registry.load(name)
+        # 실패 목록은 **전환이 실제로 성사된 뒤에** 비운다(2R P2): `load` 가 실패하면
+        # 세션은 그대로인데(vm·job_name 불변) 목록만 사라져, 화면에 남은 「실패한 N건만
+        # 선택」이 0건을 돌려주는 유령 행동이 된다. 위 `_last_generated` 조기 소거는
+        # 안전 방향(가드 재무장)이라 그대로 두지만, 이쪽은 **복구 경로가 사라지는** 방향이다.
+        self._last_failed = []
         self.vm = RunViewModel(job)
         self.job_name = name
         if self.records:
@@ -919,11 +979,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self.registry.rename(name, new)
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}
+        new_clean = new.strip()
         if self.job_name == name:
-            new_clean = new.strip()
             self.job_name = new_clean
             if self.vm is not None:
                 self.vm.job.name = new_clean
+        # 직전 런의 주체도 **같은 전이에서** 추종한다(3R P2) — 안 따라가면 같은 작업의
+        # 결과가 남의 것으로 판정돼 복구 행동이 사라지고 강등 문구가 거짓말을 한다.
+        if self._last_run_job == name:
+            self._last_run_job = new_clean
         return {"ok": True}
 
     def session_guard_for(self, name: str) -> "dict | None":
@@ -940,6 +1004,25 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """진행 중인 문서를 완결한 뒤 다음 레코드부터 중단하도록 요청한다."""
         self._cancel_generation.set()
         return {"ok": True}
+
+    def _do_select_failed(self, p: dict) -> dict:
+        """「실패한 N건만 선택」 — 선택을 직전 런의 실패 레코드로 **교체**한다(§10.10 판정 F).
+
+        **생성은 하지 않는다**: 의사표시 2클릭 분리(결정 28 「직전 필터 재적용」이 정의만
+        복원하고 선택은 건드리지 않는 것과 같은 격 구분). 성공분 보존은 신설 기제가 아니라
+        덮어쓰기 확인 왕복(RC-02)이 담보한다 — 재생성이 성공분을 겨누면 그 수치가 모달에
+        선다. 재시도(건별 재실행·filename override)는 이 슬라이스 밖이다(F7 선행).
+
+        목록이 비었으면(수명 경계를 지났거나 실패 없던 런) ``0`` 을 돌려 표면이 무동작을
+        정직하게 말한다 — 아무 반응 없는 버튼은 결함으로 읽힌다(``_do_set_all`` 선례).
+        """
+        idx = [i for i in self._last_failed if 0 <= i < len(self.records)]
+        if not idx:
+            return {"selected": 0}
+        self.selection.set_none()
+        for i in idx:
+            self.selection.toggle(i, True)
+        return {"selected": len(idx)}
 
     def _do_set_group(self, p: dict) -> None:
         """그룹 지정/해제(이동 다이얼로그 확정) — ``group=""`` 는 「그룹 없음」으로 이동.
@@ -1064,6 +1147,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     def _after_pool_load(self, records: list) -> None:
         """풀 겨눔도 파일과 동일하게 새 데이터 = 선택 0건(§18.2)·ack·필터 초기화를 탄다."""
         self._stash_filter()  # 죽는 세션의 정의 → 슬롯(옛 소스 키 기준 — 키 갱신 전에)
+        self._last_failed = []  # 파일 마운트와 같은 수명(§10.10 판정 F)
         self._data_key = self._pool_key()  # 라벨은 믹스인/자동 조준이 이미 세팅
         self.selection = SelectionModel(len(records), all_selected=False)  # 선택 0건(§18.2)
         self._init_filter()  # 데이터 교체 = 필터 재생성(결정 24)
@@ -1120,9 +1204,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return {"ok": False, "error": "이미 문서를 생성하고 있습니다.", "level": "warn"}
         self._cancel_generation.clear()
         try:
-            return self._generate_locked(confirm_overwrite=confirm_overwrite)
+            result = self._generate_locked(confirm_overwrite=confirm_overwrite)
         finally:
             self._generation_lock.release()
+        # 런이 남긴 세션 변화(직전 런 주체·완주 스탬프)를 표면에 흘린다(3R P2) — `generate`
+        # 는 dispatch 밖이라 자동 push 가 없어, 표면은 **런 이전 스냅샷**으로 결과 행동을
+        # 판정하고 있었다. 덮어쓰기 확인 왕복(`needs_overwrite`)에는 밀지 않는다: 모달이
+        # 열린 동안의 재렌더는 dispatch 의 무변이 push 생략과 같은 이유로 낭비다.
+        if result.get("ok"):
+            self._push()
+        return result
 
     def _generate_locked(self, *, confirm_overwrite: bool = False) -> dict:
         """단일 생성 실행의 본체. ``generate``가 재진입 잠금과 취소 토큰을 소유한다."""
@@ -1130,6 +1221,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 생성 중 작업 전환이 self.vm 을 갈아끼우면 검증·계획이 남의 작업으로 새고,
         # 완주 뒤 현재 상태를 읽으면 남의 작업에 역사를 적는다(_stamp_last_run 동류).
         run_job_name, run_vm = self.job_name, self.vm
+        self._last_run_job = run_job_name   # 결과 행동의 주체(3R P2) — 세션 상태가 소유
         indices = self._indices()
         out_dir = self.out_dir
 
@@ -1174,12 +1266,22 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             indices, out_dir, marker=marker, overwrite=overwrite, now=now
         )
         self._push_progress(0, len(plan.records))
-        batch = generate_batch(
-            plan.template, list(plan.records), plan.out_dir, plan.pattern,
-            now=plan.now, overwrite=plan.overwrite, mapping=plan.mapping,
-            progress=self._push_progress,
-            cancelled=self._cancel_generation.is_set,
-        )
+        try:
+            batch = generate_batch(
+                plan.template, list(plan.records), plan.out_dir, plan.pattern,
+                now=plan.now, overwrite=plan.overwrite, mapping=plan.mapping,
+                progress=self._push_progress,
+                cancelled=self._cancel_generation.is_set,
+            )
+        except (ValueError, OSError) as exc:
+            # 배치가 **시작조차 못 한** 실패(구조 드리프트·산출물 충돌·폴더 오류) —
+            # 지도 §10.10 판정 C. 여기서 잡지 않으면 브리지 rejection 이 되고 결과 자리는
+            # 빈 채로 남아 사용자는 "아무 일도 안 일어났다"로 읽는다. 전역 백스톱은
+            # 최후 방어로 그대로 두고, 알려진 실패류만 앞에서 결과 구획으로 회수한다.
+            self._last_failed = list(indices)
+            return self._failed_result(
+                indices, plan.out_dir, str(exc) or exc.__class__.__name__,
+            )
         cancelled = bool(getattr(batch, "cancelled", False))
         attempted = int(getattr(batch, "attempted", len(batch.results)))
 
@@ -1213,10 +1315,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             summary += (
                 f" 문서는 모두 만들어졌지만 실행 기록 저장에 실패했습니다({stamp_error})."
             )
-        failures = [
-            f"{Path(r.output_path).name}: {describe_result_error(r.error)}"
-            for r in batch.results if not r.ok
-        ]
+        # 실패 항목은 **구조화**해 넘긴다(§10.10 판정 E) — 파일명만으로 부르면 "어느
+        # 행인가"를 사용자가 표에서 되찾아야 한다. 원본 index 는 「실패한 N건만 선택」의
+        # 입력이기도 하다(판정 F). ``batch.results`` 는 ``plan.records`` 와 같은 순서이고
+        # 그 순서는 ``indices`` 다(build_generation_plan 이 같은 리스트로 짓는다).
+        failures = self._failure_rows(indices, batch.results)
+        self._last_failed = [f["index"] for f in failures]
         # 채움 완화 사실(#154)은 완료 표면에 시끄럽게 — 파괴적 의미론(인라인 요소
         # 제거·값 런 합성)이 무경고면 조용한 데이터 손실이다(confirm-or-alarm).
         # 템플릿 구조 속성이라 레코드 수와 무관하게 한 번씩(순서 보존 dedupe).
@@ -1228,8 +1332,17 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         ]
         if fill_notes:
             summary += f" 채움 주의 {len(fill_notes)}건(아래 기록 확인)."
+        failed_n = attempted - batch.succeeded if cancelled else batch.failed
+        status = _run_status(batch.succeeded, batch.total, cancelled)
         return {
             "ok": True,
+            "status": status,
+            "title": _run_title(status, cancelled, batch.succeeded, failed_n),
+            # 실패 단계·받은 메시지는 배치 진입 전 실패(_failed_result)의 자리다 —
+            # 레코드 단위 실패는 각 행이 자기 사유를 진다. 모양은 한 벌로 유지한다.
+            "stage": "",
+            "message": "",
+            "known": True,
             "summary": summary,
             "level": (
                 "warn" if cancelled
@@ -1237,11 +1350,83 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             ),
             "out_dir": plan.out_dir,
             "succeeded": batch.succeeded,
-            "failed": attempted - batch.succeeded if cancelled else batch.failed,
+            "failed": failed_n,
+            # 「실패한 N건만 선택」의 노출·라벨은 **이 수치**가 정한다(1R P2): 실패 행
+            # 목록에서 파생하면, 행 없이 전량이 실패하는 런(배치 진입 전 실패)에서 복구
+            # 행동이 통째로 숨는다 — 뒤에 선택을 바꾸면 대상 집합을 되찾을 길이 없다.
+            # index 를 Python 이 소유하기로 한 이상(판정 F) 그 개수도 Python 이 낸다.
+            "failed_selectable": len(self._last_failed),
             "total": batch.total,
             "failures": failures,
             "fill_notes": fill_notes,
             "cancelled": cancelled,
             "attempted": attempted,
             "unstarted": batch.total - attempted,
+        }
+
+    def _failure_rows(self, indices: "list[int]", results: list) -> "list[dict]":
+        """실패 레코드 = 원본 index + 식별 요약 + 실파일명 + 사유(+원인 확정 여부).
+
+        식별 요약은 링1 단일 함수(:func:`~hwpxfiller.core.identity_summary.identity_summary`,
+        결정 37)를 재사용한다 — 표 「문서」 열과 **같은 판정**이라 사용자가 결과에서 본
+        이름으로 표에서 그 행을 찾는다(§10.10 판정 E: 어느 열로 부를지 재구현 금지).
+        ``results`` 는 취소 런에서 ``indices`` 보다 짧다 — zip 이 짧은 쪽에서 멈추는 것이
+        곧 "시도한 것만 결과가 있다"는 뜻이다(미착수는 실패가 아니다).
+        """
+        # strict=False 는 의도다(위 문단) — 취소 런의 짧은 results 가 정상 입력이다.
+        pairs = [(i, r) for i, r in zip(indices, results, strict=False) if not r.ok]
+        if not pairs:
+            return []
+        isum = identity_summary(
+            self.records, filename_tokens=self._filename_source_columns()
+        )
+        rows = []
+        for i, res in pairs:
+            reason, known = classify_result_error(res.error)
+            rows.append({
+                "index": i,
+                "identity": (
+                    isum.display_for(self.records[i])
+                    if 0 <= i < len(self.records) else ""
+                ),
+                "filename": Path(res.output_path).name,
+                "reason": reason,
+                "known": known,
+            })
+        return rows
+
+    def _failed_result(self, indices: "list[int]", out_dir: str, message: str) -> dict:
+        """배치 진입 전 실패 → ``failed`` 태 결과(§10.10 판정 C).
+
+        계약 §10.3 이 요구하는 것을 그대로 싣는다: **실패 단계·영향 레코드·받은 메시지**
+        와 원인 확정 여부. 원인을 꾸며내지 않으므로 아는 패턴이 없으면 ``known=False`` 로
+        표면이 「원인 진단 미연결」을 세운다. ``ok=True`` 인 이유: 이것은 게이트 거절
+        (실행하지 않음)이 아니라 **실행하다 실패**라서 결과 구획의 소관이다.
+
+        ``failures`` 는 비어 있다 — 레코드별 시도가 없었으므로 행별 사유를 지어내지
+        않는다. 영향 레코드는 수치(``failed``·``failed_selectable``)와 복구 행동으로
+        나른다: 행이 없다고 「실패한 N건만 선택」까지 숨으면 전량 실패에서 대상 집합을
+        되찾을 길이 사라진다(1R P2).
+        """
+        reason, known = classify_result_error(message)
+        n = len(indices)
+        return {
+            "ok": True,
+            "status": "failed",
+            "title": _run_title("failed", False, 0, n),
+            "summary": f"문서를 만들지 못했습니다. 대상 {n}건이 모두 생성되지 않았습니다.",
+            "level": "danger",
+            "stage": "생성 시작 전",
+            "message": reason,
+            "known": known,
+            "out_dir": out_dir,
+            "succeeded": 0,
+            "failed": n,
+            "failed_selectable": len(self._last_failed),
+            "total": n,
+            "failures": [],
+            "fill_notes": [],
+            "cancelled": False,
+            "attempted": 0,
+            "unstarted": n,
         }

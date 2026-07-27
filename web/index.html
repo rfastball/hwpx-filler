@@ -236,12 +236,56 @@
               <div class="capstrip" id="jobMirrorCapstrip" role="status" hidden></div>
             </div>
 
-            <!-- 결과 존 — 세션 스코프(진행·결과·로그). v6 상단 result-panel·3태 구획은 F4. -->
-            <div class="zone job-result-zone">
+            <!-- 결과 존 — 세션 스코프(진행·3태 결과·실행 기록). 자리는 v6 상단 result-panel 과
+                 달리 좌 본문 하단을 유지한다(지도 §10.10 판정 H — 흐름 순서·스크롤 보존 계약).
+                 태는 문안이 아니라 [data-state] 가 소유한다: completed·partiallyCompleted·
+                 failed(3태, Python 판정) + running(진행) + rejected(실행 전 거절). -->
+            <div class="zone job-result-zone" id="jobResultZone" tabindex="-1">
               <div class="zone-cap">생성 결과</div>
               <div class="bar"><i id="jobGenBar"></i></div>
-              <div id="jobGenResult" class="run-result"></div>
-              <div class="logbox" id="jobGenLog">작업, 데이터, 저장 폴더를 확인한 뒤 생성하세요.</div>
+              <section id="jobResult" class="result3" data-state="" aria-live="polite" hidden>
+                <div class="result3-head">
+                  <strong id="jobResultTitle"></strong>
+                  <div class="acts">
+                    <!-- 재시도(건별 재실행·이번 실패 파일 이름 바꾸기)는 F7 runOverrides 선행이라
+                         이 슬라이스 밖이다. 그 자리의 도달성은 「실패한 N건만 선택」이 진다
+                         (§10.10 판정 F) — 선택만 바꾸고 생성하지 않는다. -->
+                    <button class="btn sm" id="jobResultFailedSel" type="button"
+                            data-busy-lock hidden>실패한 건만 선택</button>
+                    <button class="btn sm" id="jobResultRename" type="button"
+                            data-busy-lock>파일 이름 규칙 수정</button>
+                    <button class="btn sm" id="jobResultClose" type="button"
+                            data-busy-lock>결과 닫기</button>
+                  </div>
+                </div>
+                <p class="result3-summary" id="jobResultSummary"></p>
+                <!-- 강등 표기(판정 G) — 지문이 갈린 결과는 지우지 않고 「직전 실행」으로 낮춘다.
+                     지우면 무엇을 다시 만드는지 볼 수 없고, 그대로 두면 지금 상태의 결과인 척한다. -->
+                <p class="result3-stale" id="jobResultStale" hidden></p>
+                <div class="result3-folder">
+                  <span class="lbl">저장 폴더</span>
+                  <span class="result3-dir" id="jobResultDir"></span>
+                  <span id="jobResultTrack"></span>
+                </div>
+                <div class="result3-fails" id="jobResultFails"></div>
+                <!-- 증거는 접혀 있되 **원문 그대로** 있다(로그 상자 승계 — §10.10.3).
+                     열림 상태는 DOM 이 소유해 재렌더를 건넌다. -->
+                <details class="result3-evidence" id="jobResultEvidence" hidden>
+                  <summary id="jobResultEvidenceCap">자세히</summary>
+                  <div id="jobResultEvidenceBody"></div>
+                </details>
+              </section>
+              <!-- 실행 기록 — 결과 사건은 위 3태 구획이 가져갔고(§10.10 판정 D), 여기 남는 것은
+                   이 화면의 비-결과 사건(데이터 불러옴·검색/열기 실패·중단 요청·고지)이다.
+                   **기본은 접힘**(평상시 노이즈 억제, 사용자 확정): 여기 쌓이는 대부분은
+                   평시에 볼 일 없는 진행 서사다. 단 이 상자가 이 화면의 유일한 비모달 사건
+                   채널이라 통째로 숨기면 실패 통보가 조용해진다 — 그래서 **마지막 기록 한
+                   줄은 접힌 채로도 보인다**(펼치면 전체 이력). -->
+              <details class="runlog" id="jobRunLog">
+                <summary><span class="zone-cap zone-cap-sub">실행 기록</span>
+                  <span class="runlog-last" id="jobRunLogLast">아직 기록이 없습니다.</span></summary>
+                <div class="logbox" id="jobGenLog">이 세션에서 일어난 일이 여기에 남습니다.</div>
+              </details>
             </div>
             </section>
 

@@ -90,20 +90,37 @@
       // 결과가 살아남고(리뷰 #3: 결정 7 위배 봉합), 작업·데이터·선택 변경(#28 UD-10)에서만
       // 이전 결과를 지운다. nav 는 CSS 토글이라 DOM 은 어차피 살아있다.
       const key = sessionKey(s);
-      if (!generating && key !== lastSessionKey) resetGenResult();
+      // 지문이 갈리면 결과를 **강등**한다(지도 §10.10 판정 G) — 지우지 않는다. 지우면
+      // 「실패한 N건만 선택」이 자기 결과를 없애 무엇을 다시 만드는지 볼 수 없고(선택 변경이
+      // 곧 지문 변경), 그대로 두면 지금 상태의 결과인 척한다(#28 이 막으려던 것). 강등
+      // 표기가 둘 다 만족한다. 명시 파기는 「결과 닫기」 하나뿐이다.
+      if (!generating && key !== lastSessionKey) markResultStale();
       lastSessionKey = key;
       setBusy(generating);
     });
   }
 
-  /* 이전 생성 결과(요약·진행바·로그)를 기본 상태로 되돌린다(오래된 성공 잔존 방지, #28). */
+  /* 결과 명시 파기(「결과 닫기」) — 진행바·구획·실행 기록을 기본 상태로 되돌린다. */
   function resetGenResult() {
     $("jobGenBar").style.width = "0%";
-    const r = $("jobGenResult");
-    r.textContent = "";
-    r.className = "run-result";
+    RESULT = null;
+    const box = $("jobResult");
+    box.hidden = true;
+    box.dataset.state = "";
+    box.dataset.level = "";
     $("jobGenLog").textContent = "";
+    $("jobRunLogLast").textContent = "아직 기록이 없습니다.";
+    $("jobRunLog").open = false;   // 세션이 죽으면 다시 접는다(펼침은 그 세션의 의사표시)
     logStarted = false;
+  }
+
+  /* 강등 = 결과는 남고 "직전 실행"이라고 말한다(판정 G). 이미 강등돼 있어도 **다시 그린다**
+     (2R P2): 두 번째 변화가 작업 전환일 수 있고, 그때 결과의 행동 가용성이 달라진다 —
+     한 번 강등했다고 건너뛰면 남의 작업을 겨누는 버튼이 그대로 남는다. */
+  function markResultStale() {
+    if (!RESULT) return;
+    RESULT.stale = true;
+    renderResultPanel();
   }
 
   /* 세션 지문 — 완료 존 보존 판정(결정 7). 작업·데이터·저장 폴더·선택 집합이 그대로면 같은
@@ -674,16 +691,16 @@
     else { pill.dataset.level = "warn"; pill.textContent = "확인 필요"; }
   }
 
-  /* 진행 델타 — 진행바만 갱신(전체 재렌더 없음). */
+  /* 진행 델타 — 진행바 + 진행 태만 갱신(전체 재렌더 없음). 진행은 3태를 덮지 않는다:
+     같은 구획에 `running` 태로 서고, 끝나면 Python 이 낸 태가 그 자리를 받는다. */
   function renderProgress(p) {
     const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
     $("jobGenBar").style.width = pct + "%";
-    const r = $("jobGenResult");
-    r.className = "run-result";
-    r.textContent = `생성 중… ${p.done}/${p.total}`;
+    RESULT = { running: true, title: `생성 중… ${p.done}/${p.total}`, summary: "" };
+    renderResultPanel();
   }
 
-  /* ---- 로그(완료 존, 세션 스코프) ---- */
+  /* ---- 실행 기록(비-결과 사건 채널, 세션 스코프) ---- */
   let logStarted = false;
   function log(msg) {
     const box = $("jobGenLog");
@@ -691,6 +708,9 @@
     if (!logStarted) { box.textContent = ""; logStarted = true; }
     box.textContent += (box.textContent ? "\n" : "") + `[${ts}] ${msg}`;
     box.scrollTop = box.scrollHeight;
+    // 접힌 채로도 **마지막 한 줄**은 보인다 — 상자를 통째로 숨기면 이 화면의 유일한 비모달
+    // 사건 채널(작업 열기 실패·폴더 오류 등)이 조용해진다. 접힘은 노이즈 억제지 소음 제거다.
+    $("jobRunLogLast").textContent = msg;
   }
 
   /* ---- busy 잠금 — [data-busy-lock] 속성 선언(setBusy 누락 회귀 방지, #26) ---- */
@@ -755,22 +775,116 @@
     const pct = res.cancelled && res.total
       ? Math.round(((res.attempted || 0) / res.total) * 100) : 100;
     $("jobGenBar").style.width = pct + "%";
-    const r = $("jobGenResult");
-    r.textContent = res.summary;
-    r.className = "run-result " +
-      (res.level === "ok" ? "ok" : res.level === "warn" ? "warn" : "danger");
-    log(res.summary);
-    (res.failures || []).forEach((f) => log("  [실패] " + f));
-    // 채움 완화 사실(#154) — 문안은 Python(describe_fill_note)이 확정, JS 는 표기만.
-    (res.fill_notes || []).forEach((n) => log("  [주의] " + n));
-    log(`저장 폴더: ${res.out_dir}`);
+    RESULT = res;
+    renderResultPanel();
   }
 
+  /* 실행 전 거절(게이트 방어 재확인) — 3태가 아니다. 같은 구획에 `rejected` 태로 서서
+     "생성하지 않았다"를 말한다: 결과 자리를 비워 두면 눌렀는데 아무 일도 없는 것으로 읽힌다. */
   function warnResult(msg, level) {
-    const r = $("jobGenResult");
-    r.textContent = "확인 필요: " + msg;
-    r.className = "run-result " + (level === "danger" ? "danger" : "warn");
+    RESULT = {
+      rejected: true, level: level === "danger" ? "danger" : "warn",
+      title: "생성하지 않았습니다", summary: msg,
+    };
+    renderResultPanel();
     log(msg);
+  }
+
+  /* ---- 결과 3태 구획(F4, 지도 §10.10) ----
+     RESULT 은 웹 소유 세션 상태다(Python 푸시가 덮지 않는다 — 결과는 그 실행의 것이고
+     스냅샷은 지금 상태의 것이다). 태·색·문안·실패 판정은 전부 Python 이 낸 값을 그대로
+     쓴다: 여기서 재계산하면 판정이 두 벌이 된다(판정 A). */
+  let RESULT = null;
+
+  function renderResultPanel() {
+    const box = $("jobResult");
+    if (!RESULT) { box.hidden = true; box.dataset.state = ""; return; }
+    const r = RESULT;
+    const state = r.running ? "running" : r.rejected ? "rejected" : (r.status || "failed");
+    box.hidden = false;
+    box.dataset.state = state;
+    box.dataset.level = r.level || "";
+    $("jobResultTitle").textContent = r.title || "";
+    $("jobResultSummary").textContent = r.summary || "";
+    // 이 결과가 **지금 열린 작업의 것인가** — 판정에 드는 두 값(직전 런의 주체·열린 작업)은
+    // 둘 다 Python 이 낸 스냅샷 값이다(3R P2 근본 조치). 표면이 정체를 들고 비교하면 그
+    // 정체가 변할 때(이름 변경) 같은 작업이 남처럼 보인다. 주체가 아니면 결과의 행동 2종은
+    // 남의 작업을 겨누거나 확실한 무동작이 되므로 **행동만 걷고 증거는 남긴다**.
+    const owner = (LAST && LAST.last_run_job) || "";
+    const mine = !!(owner && LAST.job_name && owner === LAST.job_name);
+    const foreign = !mine;
+    // 강등 표기 — 무엇이 달라졌는지까지는 말하지 않는다(추측 금지). 다만 다른 작업이 열려
+    // 있으면 **어느 작업의 결과인지**를 밝힌다: 행동이 걷힌 이유가 거기 있다.
+    const stale = $("jobResultStale");
+    stale.hidden = !r.stale;
+    stale.textContent = !r.stale ? ""
+      : foreign && owner
+        ? `이 결과는 '${owner}' 실행입니다. 지금은 그 작업이 열려 있지 않아 여기서 이어서 손볼 수 없습니다.`
+        : "이 결과는 직전 실행입니다. 그 뒤 작업·데이터·선택이 바뀌었습니다.";
+
+    const dir = $("jobResultDir");
+    const hasDir = !!(r.out_dir && !r.running && !r.rejected);
+    dir.parentElement.hidden = !hasDir;
+    dir.textContent = r.out_dir || "";
+    // 저장 폴더 어포던스는 **실패 태에서도** 남는다 — 실패 진단의 첫 걸음이 그 폴더 열기다.
+    $("jobResultTrack").innerHTML = hasDir
+      ? PathTrack.affordances(r.out_dir, { only: ["reveal", "copy"] }) : "";
+
+    const fails = r.failures || [];
+    $("jobResultFails").innerHTML = fails.map(failRow).join("");
+    // 복구 행동의 노출·라벨은 **행 목록이 아니라 Python 수치**(failed_selectable)가 정한다
+    // (1R P2): 배치 진입 전 실패는 레코드별 시도가 없어 행이 0개인데, 다시 만들 대상은
+    // 전량이다 — 행에서 파생하면 그 런에서만 복구 행동이 통째로 사라진다.
+    const sel = $("jobResultFailedSel");
+    const selectable = r.failed_selectable || 0;
+    // 작업이 바뀌었으면 실패 목록은 Python 에서 이미 죽었다 — 남겨 두면 0건을 돌려주는
+    // 유령 버튼이다. `hidden` 을 쓰는 이유: setBusy 가 [data-busy-lock] 의 disabled 를
+    // 매 렌더 되돌리므로 disabled 로는 이 판정이 유지되지 않는다.
+    sel.hidden = !selectable || foreign;
+    sel.textContent = `실패한 ${selectable}건만 선택`;
+    $("jobResultRename").hidden = !!(r.running || r.rejected) || foreign;
+    $("jobResultClose").hidden = !!r.running;
+    renderEvidence(r, fails);
+  }
+
+  /* 실패 행 = 식별 요약 + 실파일명 + 사유. 「어느 행인가」는 표 「문서」 열과 같은 판정
+     (Python identity_summary)이라 사용자가 결과에서 본 이름으로 표에서 그 행을 찾는다. */
+  function failRow(f) {
+    const undiag = f.known ? ""
+      : `<div class="result3-undiagnosed">원인 진단 미연결 — 확인된 원인이 없어 받은 메시지를 그대로 보여줍니다.</div>`;
+    const who = f.identity ? `<div class="result3-fail-why">${esc(f.identity)}</div>` : "";
+    return `<div class="result3-fail" id="jobResultFail-${esc(String(f.index))}">
+      <div class="result3-fail-name">${esc(f.filename || "")} 저장 실패</div>
+      ${who}<div class="result3-fail-why">${esc(f.reason || "")}</div>${undiag}</div>`;
+  }
+
+  /* 접힘 증거 — 로그 상자가 나르던 것(FillNote 사실·받은 메시지 원문)의 새 거처(§10.10.3).
+     열림 상태는 <details> 가 소유해 재렌더를 건넌다. */
+  function renderEvidence(r, fails) {
+    const notes = r.fill_notes || [];
+    const parts = [];
+    if (notes.length) {
+      parts.push(`<div><b>채움 주의 ${notes.length}건</b><ul>` +
+        notes.map((n) => `<li>${esc(n)}</li>`).join("") + "</ul></div>");
+    }
+    if (r.stage || r.message) {
+      parts.push(`<div><b>실패 단계</b> ${esc(r.stage || "")}` +
+        `<pre>${esc(r.message || "")}</pre></div>`);
+      if (r.known === false) {
+        parts.push(`<div class="result3-undiagnosed">원인 진단 미연결</div>`);
+      }
+    }
+    if (r.cancelled) {
+      parts.push(`<div>미착수 ${r.unstarted || 0}건 — 중단 요청 시점에 아직 시작하지 않았습니다.</div>`);
+    }
+    const box = $("jobResultEvidence");
+    box.hidden = !parts.length;
+    $("jobResultEvidenceCap").textContent =
+      notes.length ? `자세히 · 채움 주의 ${notes.length}건` : "자세히";
+    $("jobResultEvidenceBody").innerHTML = parts.join("");
+    if (!parts.length) box.open = false;
+    // 실패 원문은 각 실패 행이 이미 상시 가시로 진다(접어 두면 증거가 한 겹 뒤로 간다).
+    void fails;
   }
 
   /* ---- 웹→Python 이벤트 ---- */
@@ -1096,6 +1210,40 @@
       log("중단 요청: 진행 중인 문서를 마친 뒤 미착수 건을 중단합니다.");
     });
 
+    // ---- 결과 3태 구획의 행동 3종(F4) ----
+    $("jobResultClose").addEventListener("click", () => {
+      resetGenResult();                 // 명시 파기 = 유일한 파기 경로(판정 G)
+      // 닫은 뒤 포커스는 **실 DOM 에 착지**한다(계약면 3). 다음 행동은 생성이지만 게이트가
+      // 닫혀 있으면 그 버튼은 disabled 라 focus() 가 조용히 실패하고 body 로 떨어진다 —
+      // 그때는 구획 자신(존 컨테이너)이 받는다: 사용자를 방금 있던 문맥에 남긴다.
+      const btn = $("jobGenBtn");
+      if (!btn.disabled) btn.focus(); else $("jobResultZone").focus();
+    });
+    // 「실패한 N건만 선택」 — 선택만 바꾸고 생성하지 않는다(판정 F). 실패 index 는 Python
+    // 소유라 여기서 인덱스를 실어 보내지 않는다. 무동작(0건)은 사유를 말한다.
+    $("jobResultFailedSel").addEventListener("click", async () => {
+      const res = await Bridge.call(SCREEN, "select_failed", {});
+      const n = (res && res.selected) || 0;
+      log(n
+        ? `실패한 ${n}건만 선택했습니다. 그대로 다시 생성하면 이 건만 만듭니다.`
+        : "다시 만들 실패 건이 남아 있지 않습니다(데이터나 작업이 그사이 바뀌었습니다).");
+    });
+    // 파일 이름 규칙 수정 — 편집 진입은 공용 EditorEntry 단일 출처. 파일 이름 **탭**은 아직
+    // 없어(F7) 저장 단계의 규칙 입력으로 착지한다: 열리는 곳을 실제와 다르게 말하지 않는다.
+    $("jobResultRename").addEventListener("click", () => {
+      if (!(LAST && LAST.job_name)) { log("작업이 선택돼 있지 않습니다."); return; }
+      // 방어적 재확인(2R P2) — 이 버튼은 결과의 작업이 곧 열린 작업일 때만 뜨지만,
+      // 렌더 사이의 전환 경합이 있으면 열린 작업을 겨눠 **남의 작업을 편집**하게 된다.
+      // 겨눔 대상은 언제나 그 결과를 만든 작업이고, 어긋나면 열지 않고 사실을 말한다.
+      const owner = LAST.last_run_job || LAST.job_name;
+      if (owner !== LAST.job_name) {
+        log(`이 결과는 '${owner}' 실행입니다. 지금 열린 작업이 달라 파일 이름 규칙을 열지 않았습니다.`);
+        return;
+      }
+      if (!window.EditorEntry) { window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다."); return; }
+      EditorEntry.openGuarded(owner);
+    });
+
     // 데이터 선택 = 단일 출구(재작성 F1) — 현재/고정한/다른 세 갈래가 한 면 안에서 갈리고,
     // 손실 가드는 대상이 정해진 직후 다이얼로그가 이 콜백으로 묻는다(지도 §10.7.2 D).
     $("jobBtnPickData").addEventListener("click", () => {
@@ -1126,9 +1274,12 @@
   // confirmDataSwapIfArmed 는 배선 존재 핀(리뷰 #6 — JS 전용 가드 지점이라 삭제 회귀를
   // 실앱 게이트가 잡을 표식이 없었다).
   // showEditMode/refreshList 는 편집 모드 seam(EditorEntry·editor.js doSave 가 소비).
+  // renderResult 는 결과 3태 구획의 유일한 입구다(F4) — 실앱 게이트가 Python 이 내는
+  // 결과 dict 를 그대로 흘려 태·강등·증거 접힘이 실 WebView2 에서 서는지 되읽는다.
   window.JobScreen = {
     init, overwriteBody, guardBody, confirmDataSwapIfArmed, openJob,
     showEditMode, showRunMode, landRunMode, refreshList,
     openJobConfirmSheet, openJobDataSheet, openBrowseNeedsAction,
+    renderResult, markResultStale,
   };
 })();

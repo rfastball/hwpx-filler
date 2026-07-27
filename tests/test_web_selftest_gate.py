@@ -337,6 +337,51 @@ class TestWebSelftestGate:
         assert any("빈 값 · 클릭=확인" in c for c in chips), f"미입력 칩 미렌더: {chips!r}"
         assert any("비움 확정" in c for c in chips), f"의도적 빈칸 칩 미렌더: {chips!r}"
 
+    def test_job_result_three_state_zone_behaves(self, selftest_result: dict) -> None:
+        """결과 3태 구획(F4, 지도 §10.10) — 태·증거·강등·잠금·닫기 착지의 실 WebView2 되읽기.
+
+        정적 계약은 조각의 존재만 본다. 여기서 잡는 것은 **경로가 이어지는가**다(§10.9.5):
+        증거를 열어 둔 채 스냅샷이 밀려와도 닫히지 않는지, 지문이 갈릴 때 결과가 지워지지
+        않고 강등되는지, 실행 전 거절이 결과 자리를 비워 두지 않는지.
+        """
+        j = selftest_result["job_result"]
+        assert j.get("error") is None, f"결과 3태 프로브 예외: {j.get('error')!r}"
+        # ① 태는 Python 판정 그대로, 색은 별도 채널(level) — 둘을 한 축으로 접지 않는다.
+        assert j["shown"] and j["state"] == "partiallyCompleted", j
+        assert j["level"] == "danger" and "2개 성공" in j["title"], j
+        # ② 실패 행 = 원본 index 앵커 + 식별 요약, 모르는 원인엔 미연결 표지.
+        assert j["fail_row"] and j["fail_identity"] and j["undiagnosed"], j
+        assert j["failed_sel_shown"] and "1건만 선택" in j["failed_sel_label"], j
+        # 행 0개·전량 실패(배치 진입 전)에서도 복구 행동은 남는다 — 노출을 행 목록에서
+        # 파생하면 그 런에서만 통째로 사라진다(1R P2). 대신 없는 행을 지어내지도 않는다.
+        assert j["rowless_recovery_shown"] and "3건만 선택" in j["rowless_recovery_label"], j
+        assert j["rowless_no_fake_rows"], j
+        # ③ 증거는 접혀 서고, 연 뒤에는 재렌더를 건너 열린 채 남는다(계약면 1).
+        assert j["evidence_shown"] and j["evidence_open_survives_rerender"], j
+        # ④ 지문 변화 = 강등(파기 아님) — 실패분을 고르는 순간 결과가 사라지면 안 된다.
+        assert j["stale_shown"] and j["alive_after_stale"], j
+        # ⑤ 구획 행동은 생성 중 잠긴다(계약면 2) · ⑥ 닫기 뒤 포커스가 다음 행동에 착지.
+        # 이름만 바뀐 경우는 **같은 작업**이라 행동이 그대로 남는다(3R P2) — 주체 추적이
+        # 정체 변화를 따라오는지 실 렌더로 본다.
+        assert j["renamed_rename_shown"] and j["renamed_failedsel_shown"], j
+        # 작업 전환 뒤에는 결과가 남되 **행동만 걷힌다**(2R P2) — 편집 진입이 남의 작업을
+        # 겨누거나 실패분 선택이 확실한 무동작이 되는 것을 표면에서 끊는다. 증거는 남는다.
+        assert j["foreign_rename_hidden"] and j["foreign_failedsel_hidden"], j
+        assert j["foreign_evidence_alive"] and j["foreign_stale_names_owner"], j
+        assert j["busy_lock_declared"], j
+        # 저장 폴더 줄의 숨김은 계산 스타일로 확인한다(display:flex 가 [hidden] 을 이기는
+        # 결함 클래스 — 속성만 보는 계약은 이 결함을 통과시킨다).
+        assert j["folder_hidden_while_running"] and j["folder_shown_on_result"], j
+        # 닫기 뒤 포커스는 **실 DOM 에 착지**한다 — body 낙하가 결함이다. 게이트가 닫혀
+        # 있으면 생성 버튼이 disabled 라 구획 자신이 받는다(방금 있던 문맥 유지).
+        assert j["closed"] and j["close_focus"] in {"jobGenBtn", "jobResultZone"}, j
+        # ⑦ 실행 전 거절은 3태가 아니라 rejected 태 — 눌렀는데 아무 일도 없는 것으로 읽히지 않게.
+        assert j["reject_state"] == "rejected" and "빈 값" in j["reject_text"], j
+        # ⑧ 실행 기록은 기본 접힘(노이즈 억제)이되 마지막 한 줄은 접힌 채로 보인다 —
+        # 접힘이 소음 제거가 되면 이 화면의 유일한 비모달 사건 채널이 조용해진다.
+        assert j["runlog_collapsed"] and j["runlog_last_visible"], j
+        assert "빈 값" in j["runlog_last"], j
+
     def test_job_data_first_prework_surface(self, selftest_result: dict) -> None:
         # 데이터-우선(§18.2) — 작업 미선택+데이터 마운트 상태에서 세션 존·액션바가 살아 있고,
         # 후보 카드(available=클릭형·needs_action=정직한 비활성+없는 열 병기)와 prework 게이트
@@ -846,7 +891,9 @@ class TestWebSelftestGate:
         # zone-cap 타이포 역할(위 13px/700)은 그대로라 H-01 3역할 계약은 유지된다.
         assert h["job_step_badges"] == 0
         assert h["job_steps"] == [
-            "현재 데이터", "본문 확인", "생성 결과",
+            # 「실행 기록」 = 결과 3태 구획이 결과 사건을 가져간 뒤 로그 상자에 남은 역할
+            # (F4 판정 D) — 같은 존 안의 부캡션이라 이 목록에 함께 잡힌다.
+            "현재 데이터", "본문 확인", "생성 결과", "실행 기록",
             # 「시작하기」 = 데이터·작업이 둘 다 없을 때만 서는 흡수처 출구(F2 PR-B 판정 C).
             # 이 프로브의 합성 상태가 바로 그 상태라 캡션 목록에 함께 잡힌다.
             "시작하기", "이 데이터에 사용할 문서", "선택한 작업", "생성 준비",

@@ -471,12 +471,20 @@ def test_diff_selftest_waits_for_renderer_registration_not_script_parse():
 
 def test_job_generation_result_renders_partial_cancellation_honestly():
     """#278 리뷰 — 취소된 배치를 진행바 100% + danger 로 그리면 정확한 요약 문안 옆에서
-    시각이 '완주했고 오류'라고 거짓말한다: 진행 = attempted/total, warn 채널 보존."""
+    시각이 '완주했고 오류'라고 거짓말한다: 진행 = attempted/total, warn 채널 보존.
+
+    F4 의 3태 구획으로 옮겨 온 뒤에도 **채널은 둘 그대로**다: 태(data-state)는 구조를,
+    level(data-level)은 색을 정한다. JS 가 level 을 재판정하지 않고 Python 값을 그대로
+    싣는 것이 이 계약의 새 표현이며, warn 이 실제로 danger 와 다른 색을 받는지는 CSS 가 진다.
+    """
     job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
     block = job_js[job_js.index("function renderResult"):job_js.index("function warnResult")]
     assert "res.cancelled" in block and "res.attempted" in block
-    assert 'res.level === "warn" ? "warn"' in block
     assert '$("jobGenBar").style.width = "100%"' not in block
+    panel = job_js[job_js.index("function renderResultPanel"):job_js.index("function failRow")]
+    assert 'box.dataset.level = r.level' in panel, "level 채널을 JS 가 재판정하고 있습니다."
+    assert '.result3[data-level="warn"]' in css and '.result3[data-level="danger"]' in css
 
 
 def test_milestone_l_wide_probes_do_not_depend_on_host_monitor_width():
@@ -746,6 +754,41 @@ def test_job_session_surface_uses_v6_two_column_captions():
     )
     # 기안은 같은 은퇴에 휩쓸리지 않는다(순서 있는 세션 — 문법을 함께 지우면 회귀).
     assert '<span class="znum">' in html.split('id="scr-draft"', 1)[1]
+
+
+def test_job_result_zone_declares_the_three_state_contract():
+    """F4(지도 §10.10): 결과 3태 구획의 정적 계약 — 태 소유자·행동 4종·증거·실행 기록 존치.
+
+    태를 문안이 아니라 ``[data-state]`` 가 소유하는 것이 요점이다: 문안으로 태를 읽으면
+    번역·재작문 한 번에 판정이 끊긴다. 실행 기록(로그 상자)은 **살아 있어야 한다** —
+    결과 사건만 3태가 가져갔고 비-결과 사건(데이터 불러옴·검색 실패·중단 요청)은 이
+    화면의 유일한 비모달 채널이라 함께 죽이지 않았다(§10.10 판정 D).
+    """
+    html = WEB_INDEX.read_text(encoding="utf-8")
+    job = html.split('id="scr-job"', 1)[1].split('id="scr-draft"', 1)[0]
+    flat = " ".join(job.split())
+    assert 'id="jobResult" class="result3" data-state="" aria-live="polite" hidden' in flat
+    for bid in ("jobResultFailedSel", "jobResultRename", "jobResultClose"):
+        assert re.search(rf'id="{bid}"[^>]*type="button"\s*data-busy-lock', flat), (
+            f"결과 구획 행동이 busy-lock 을 선언하지 않았습니다: {bid}"
+        )
+    for pid in ("jobResultTitle", "jobResultSummary", "jobResultStale",
+                "jobResultDir", "jobResultTrack", "jobResultFails"):
+        assert f'id="{pid}"' in flat, f"결과 구획 조각 누락: {pid}"
+    # 증거는 <details> 다 — 열림 상태를 DOM 이 소유해야 재렌더를 건넌다(계약면 1).
+    assert '<details class="result3-evidence" id="jobResultEvidence" hidden>' in flat
+    # 구 단일 요약 줄은 3태 구획이 승계했다(두 벌 병존 금지).
+    assert 'id="jobGenResult"' not in html
+    # 실행 기록은 존치하되 역할이 바뀌었고(캡션), **기본은 접힘**이다(평상시 노이즈 억제).
+    # 단 접힘이 소음 제거가 되면 안 된다 — 마지막 기록 한 줄은 요약에 상시 남는다.
+    assert '<details class="runlog" id="jobRunLog">' in flat and "<details open" not in flat
+    assert '<span class="zone-cap zone-cap-sub">실행 기록</span>' in flat
+    assert 'id="jobRunLogLast"' in flat and 'id="jobGenLog"' in flat
+    job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    log_fn = job_js[job_js.index("function log(msg)"):job_js.index("function setBusy")]
+    assert '$("jobRunLogLast").textContent = msg' in log_fn, (
+        "접힌 실행 기록의 요약 줄이 갱신되지 않으면 실패 통보가 조용해집니다."
+    )
 
 
 def test_job_gate_adds_blocked_step_only_in_display_layer():

@@ -143,6 +143,9 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "relink_template": _schema("name", "path confirm"),
         "rename_job": _schema("name", "new"),
         "cancel_generation": _schema(),
+        # 결과 3태의 「실패한 N건만 선택」(지도 §10.10 판정 F) — 무페이로드: 실패 index 는
+        # Python 이 소유한다(웹이 들고 있다 되돌려주면 그 사이 교체된 데이터의 남의 행을 고른다).
+        "select_failed": _schema(),
         "set_group": _schema("name", "group"),
         "rename_group": _schema("name", "new confirm seen"),
         "disband_group": _schema("name", "confirm seen"),
