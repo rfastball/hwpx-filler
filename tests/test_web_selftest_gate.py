@@ -158,6 +158,20 @@ class TestWebSelftestGate:
         assert v["after_roundtrip"] == "sourceAsc", "왕복 뒤 축이 옛 값으로 되돌아갔습니다."
         assert v["restored"] == "sourceDesc"
 
+    def test_range_draft_refuses_to_open_without_data(self, selftest_result: dict) -> None:
+        """재작성 F3 — 데이터 없이 여는 범위 편집기는 **거절**이고, 초안은 서지 않는다.
+
+        면만 열리고 초안이 없으면 편집기가 무엇을 편집 중인지 거짓이 된다(성사 뒤에만
+        연다). footer 는 화면 안에서 숨어 있다가 면 슬롯 안에서만 서는 것도 함께 본다 —
+        같은 펼침 면을 「기안」이 쓰기 때문이다.
+        """
+        d = selftest_result["range_draft"]
+        assert d.get("error") is None, f"범위 초안 프로브 오류: {d!r}"
+        assert d["present"] is True
+        assert d["foot_hidden_in_screen"] is True, "footer 가 화면 안에서 노출돼 있습니다."
+        assert d["opened_without_data"] is False, "데이터 없이 초안이 섰습니다(거절 계약 위반)."
+        assert d["draft_state"]["open"] is False
+
     def test_call_chain_survives_a_rejected_link(self, selftest_result: dict) -> None:
         """리뷰 5R — 직렬화 체인은 실패 한 번으로 죽지 않는다.
 
@@ -485,8 +499,13 @@ class TestWebSelftestGate:
         assert j.get("error") is None, j
         assert j["mirror_capped"] and j["mirror_capstrip"], j
         assert j["confirm_moved"] and j["confirm_dispatch"] and j["confirm_restored"], j
-        assert j["job_data_moved"] and j["job_data_first_sticky"] and j["job_data_restored"], j
         assert j["edit_closes_sheets"], j
+        # ⤢ 데이터 면은 별도 비동기 프로브(열기가 Python 왕복 뒤 — F3): 이동·헤더 고정·복귀
+        # (포커스 포함)에 더해 범위 편집기 footer 가 **면 안에서만** 서는 것까지 본다.
+        d = selftest_result["data_sheet"]
+        assert d.get("error") is None, d
+        assert d["moved"] and d["first_sticky"] and d["restored"], d
+        assert d["foot_shown_in_sheet"] is True, "범위 편집기 footer 가 면 안에서 안 섭니다."
         assert len(j["job_grid_wide"].split()) == 2, j
         narrow = selftest_result["job_density_narrow"]
         assert narrow["panel"] <= 900, (

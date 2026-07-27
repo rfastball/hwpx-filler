@@ -38,7 +38,13 @@
     window.Modal.open(spec.modalId, {
       initialFocus: spec.initialFocus || modal.querySelector("button, input, select, [tabindex]"),
       returnFocus: spec.returnFocus,
-      onClose: function () { restore(spec.modalId); },
+      // 이탈 가드(F3): false 를 돌려 닫기 요청을 소비한다 — Escape·닫기 버튼·프로그램 close 가
+      // 전부 이 한 관문을 지난다(경로마다 가드를 걸면 하나는 반드시 빠진다).
+      beforeClose: spec.beforeClose || null,
+      onClose: function () {
+        restore(spec.modalId);
+        if (spec.onClose) spec.onClose();
+      },
     });
   }
 

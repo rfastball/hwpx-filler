@@ -79,6 +79,7 @@
       renderPreflight(s);
       renderMirror(s);
       dz.render(s);  // 데이터 존(테이블·칩·스트립) — 팩토리 소유(datazone.js)
+      renderRangeFoot(s);
       renderCandidates(s);
       renderBrowse(s);   // 탐색 면은 열려 있지 않아도 그린다(열 때 이미 최신)
       renderRestate(s);
@@ -585,22 +586,95 @@
     openBrowseSheet();
   }
 
+  /* ---- 전문 범위 편집기(F3, 계약 §18.10) — ⤢ 펼침 면 + 초안 거래 ----
+     면은 실 DOM 을 옮기고(SurfaceSheet), **의미론만** 새것이다: 여기서의 편집은 초안으로
+     격리돼 적용 전 메인 범위·게이트·거울·결과를 바꾸지 않는다(불변식 §18.11-21). 초안의
+     소유·판정은 전부 Python(지도 §10.11 판정 A) — 여기는 출구 3개와 가드 1개만 진다. */
+  let rangeApplied = false;    // 적용 경로로 닫히는 중(onClose 의 취소 발신 억제)
+  let rangeForceClose = false; // 가드 확인을 받은 닫기(다음 요청 1회 통과)
+
+  function draftState() {
+    return (LAST && LAST.range_draft) || null;
+  }
+
+  function renderRangeFoot(s) {
+    const d = s.range_draft || {};
+    const on = !!d.selected_only;
+    $("jobRangeApply").textContent = `선택 적용: ${d.sel_count || 0}건`;
+    const only = $("jobRangeSelectedOnly");
+    only.setAttribute("aria-pressed", on ? "true" : "false");
+    // 두 사실을 한 줄이 진다: ①지금 무엇을 보고 있는가 ②적용 전에는 반영되지 않는다.
+    $("jobRangeNote").textContent = on
+      ? "선택된 항목만 보는 중 — 검색과 열 필터는 잠시 적용하지 않습니다. 변경은 적용해야 반영됩니다."
+      : "변경은 적용하기 전까지 문서 만들기 화면에 반영되지 않습니다.";
+  }
+
+  /* 이탈 가드(판정 F) — 변경이 있을 때만 묻는다. 3택 대신 2택인 근거는 「적용」이 이미 면
+     안의 상시 버튼이라는 것: 가드가 세 번째 선택지를 새 기제로 만들 필요가 없다(계속 편집 →
+     적용 = 한 클릭). 파괴 방향만 명시 확인을 받는다. */
+  function guardRangeClose() {
+    if (rangeForceClose) { rangeForceClose = false; return true; }
+    const d = draftState();
+    if (!d || !d.open || !d.dirty) return true;
+    window.Modal.confirm({
+      title: "편집한 범위를 버릴까요?",
+      body: "적용하지 않은 변경이 있습니다. 버리면 문서 만들기 화면의 범위는 그대로 남습니다.",
+      confirmLabel: "버리고 닫기",
+      cancelLabel: "계속 편집",
+      danger: true,
+      returnFocus: $("jobRangeCancel"),
+    }).then((ok) => {
+      if (!ok) return;                       // 계속 편집 = 면 유지(아무 일도 안 일어난다)
+      rangeForceClose = true;
+      window.SurfaceSheet.close("dataSheet");
+    });
+    return false;                            // 이 닫기 요청은 소비 — 확인 뒤 다시 온다
+  }
+
+  async function applyRangeDraft() {
+    try {
+      await Bridge.call(SCREEN, "range_draft_apply", {});
+    } catch (err) {
+      // 실패(세대 불일치 등)에서는 **닫지 않는다**(§10.11.2 실패 경로 면) — 문맥을 남긴다.
+      log("범위를 적용하지 못했습니다: " + String((err && err.message) || err));
+      return;
+    }
+    rangeApplied = true;
+    rangeForceClose = true;
+    window.SurfaceSheet.close("dataSheet");
+  }
+
   function openJobDataSheet(e) {
-    $("dataSheetTitle").textContent = "작업 데이터 행 고르기";
-    window.SurfaceSheet.open({
-      modalId: "dataSheet",
-      returnFocus: window.SurfaceSheet.trigger(e, $("jobDataExpand")),
-      initialFocus: $("dataSheetClose"),
-      moves: [
-        { id: "jobRecsHead", slotId: "dataSheetSlot" },
-        // 표시순서 축도 따라간다(F3 판정 C): 축이 메인에만 남으면 펼친 면에서 순서를 못
-        // 바꾸고, 두 벌로 복제하면 상태가 둘로 갈린다 — 같은 요소가 이동하므로 둘 다 아니다.
-        { id: "jobOrderBar", slotId: "dataSheetSlot" },
-        { id: "jobFilterChips", slotId: "dataSheetSlot" },
-        { id: "jobTableHost", slotId: "dataSheetSlot" },
-        { id: "jobSelStrip", slotId: "dataSheetSlot" },
-        { id: "jobColPanel", slotId: "dataSheetSlot" },
-      ],
+    const trigger = window.SurfaceSheet.trigger(e, $("jobDataExpand"));
+    // 성사 뒤에만 연다(§9.3 4행): 초안 생성이 거절되면(생성 중·데이터 없음) 면을 띄우지
+    // 않는다 — 열어 놓고 나서 실패를 말하면 편집기가 무엇을 편집 중인지 거짓이 된다.
+    Bridge.call(SCREEN, "range_draft_open", {}).then(() => {
+      rangeApplied = false;
+      rangeForceClose = false;
+      $("dataSheetTitle").textContent = "처리할 행 범위";
+      window.SurfaceSheet.open({
+        modalId: "dataSheet",
+        returnFocus: trigger,
+        initialFocus: $("dataSheetClose"),
+        beforeClose: guardRangeClose,
+        onClose: () => {
+          // 어떤 경로로 닫혀도 초안은 정리된다(적용 경로만 예외 — 이미 커밋됐다).
+          if (!rangeApplied) Bridge.call(SCREEN, "range_draft_cancel", {});
+        },
+        moves: [
+          { id: "jobRecsHead", slotId: "dataSheetSlot" },
+          // 표시순서 축도 따라간다(F3 판정 C): 축이 메인에만 남으면 펼친 면에서 순서를 못
+          // 바꾸고, 두 벌로 복제하면 상태가 둘로 갈린다 — 같은 요소가 이동하므로 둘 다 아니다.
+          { id: "jobOrderBar", slotId: "dataSheetSlot" },
+          { id: "jobFilterChips", slotId: "dataSheetSlot" },
+          { id: "jobTableHost", slotId: "dataSheetSlot" },
+          { id: "jobSelStrip", slotId: "dataSheetSlot" },
+          { id: "jobColPanel", slotId: "dataSheetSlot" },
+          { id: "jobRangeFoot", slotId: "dataSheetSlot" },
+        ],
+      });
+    }).catch((err) => {
+      log("범위 편집기를 열지 못했습니다: " + String((err && err.message) || err));
     });
   }
 
@@ -752,7 +826,12 @@
      $("dataSheet"), $("jobConfirmSheet")].forEach((root) => {
       root.querySelectorAll("[data-busy-lock]").forEach((el) => { el.disabled = busy; });
     });
-    $("jobGenBtn").disabled = busy || !(LAST && LAST.gate && LAST.gate.enabled);
+    // 초안이 열려 있으면 생성은 닫혀 있다(§10.11.2 계약면 2 — 잠금은 DOM 이 아니라 상태가
+    // 진다). Python 도 같은 이유로 거절하지만, 버튼이 눌리는 척하면 거절 문구가 사후 통보가
+    // 된다. 모달에 가려 물리적으로 못 누르는 것과 잠긴 것은 다른 사실이다.
+    const draftOpen = !!(LAST && LAST.range_draft && LAST.range_draft.open);
+    $("jobGenBtn").disabled =
+      busy || draftOpen || !(LAST && LAST.gate && LAST.gate.enabled);
     // 저장 폴더는 작업 속성(기본 = 템플릿/Results) — 작업 미선택에서 고르게 두면 작업
     // 선택이 기본값으로 조용히 덮어써 선택이 증발한다(#302 리뷰 P2). busy-lock 일괄 복원이
     // 되살리지 않도록 여기(렌더 말미 단일 지점)서 판정한다.
@@ -1190,6 +1269,14 @@
     });
     $("jobOrderSel").addEventListener("change", onOrderChange);
     $("jobDataExpand").addEventListener("click", openJobDataSheet);
+    $("jobRangeApply").addEventListener("click", applyRangeDraft);
+    // 취소도 닫기와 같은 관문을 지난다(가드 → onClose 가 초안을 버린다) — 출구마다 다른
+    // 경로를 만들면 그중 하나는 가드를 안 탄다.
+    $("jobRangeCancel").addEventListener("click", () => window.SurfaceSheet.close("dataSheet"));
+    $("jobRangeSelectedOnly").addEventListener("click", () => {
+      const d = draftState();
+      Bridge.call(SCREEN, "set_selected_only", { value: !(d && d.selected_only) });
+    });
     $("jobMirrorExpand").addEventListener("click", openJobConfirmSheet);
     $("jobMirrorCapstrip").addEventListener("click", (e) => {
       if (e.target.closest("[data-mirror-expand]")) openJobConfirmSheet(e);

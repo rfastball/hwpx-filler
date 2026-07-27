@@ -860,6 +860,34 @@ def test_job_display_order_axis_surface_contract():
     assert "set_view_order" in src
 
 
+def test_job_range_draft_surface_contract():
+    """재작성 F3 정적 계약 — 범위 편집기 footer 의 소유·출구 단일 관문·성사 뒤 열기.
+
+    ①footer 는 화면 DOM 소유다(면 마크업에 두면 같은 면을 쓰는 「기안」에 남의 footer 가
+    뜬다) ②모든 출구(취소·닫기·Escape)가 `beforeClose` 한 관문을 지난다 — 경로마다 가드를
+    걸면 하나는 반드시 빠진다 ③초안 생성이 성사된 뒤에만 면을 연다.
+    """
+    html = WEB_INDEX.read_text(encoding="utf-8")
+    assert 'id="jobRangeFoot"' in html, "범위 편집기 footer 가 없습니다."
+    # 소유 = 「문서 만들기」 화면 루트 안(공용 펼침 면 마크업 밖). 면 안에 두면 같은 면을
+    # 쓰는 「기안」에 남의 footer 가 뜬다 — 실 DOM 이동이 소유를 대신 증명한다.
+    job_screen = html.split('id="scr-job"', 1)[1].split('id="dataSheet"', 1)[0]
+    assert 'id="jobRangeFoot"' in job_screen, (
+        "footer 가 화면 소유가 아닙니다 — 공용 펼침 면 마크업에 있으면 「기안」에도 뜹니다."
+    )
+    for element in ("jobRangeApply", "jobRangeCancel", "jobRangeSelectedOnly", "jobRangeNote"):
+        assert f'id="{element}"' in html, f"범위 편집기 출구가 없습니다: {element}"
+    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    assert "beforeClose: guardRangeClose" in src, "이탈 가드가 닫기 관문에 걸려 있지 않습니다."
+    assert 'Bridge.call(SCREEN, "range_draft_open"' in src
+    assert "SurfaceSheet.open" in src.split("range_draft_open", 1)[1], (
+        "초안 생성 **뒤에** 면을 여는 순서가 아닙니다(성사 뒤에만 닫고 연다)."
+    )
+    assert 'Bridge.call(SCREEN, "range_draft_cancel"' in src, "닫힘 경로가 초안을 버리지 않습니다."
+    sheet = (WEB_JS_DIR / "surface_sheet.js").read_text(encoding="utf-8")
+    assert "beforeClose" in sheet, "펼침 면이 이탈 가드를 Modal 로 넘기지 않습니다."
+
+
 def test_job_document_browser_surface_contract():
     """슬라이스 3 정적 계약 — 문서 탐색 면은 `job` 화면의 **하위 화면**이고 판정은 Python 소유.
 

@@ -1295,20 +1295,8 @@ _JOB_MIRROR_PROBE_JS = r"""
     out.confirm_restored = mirror.parentNode === mirrorParent && restate.parentNode === restateParent &&
       document.activeElement === mirrorTrigger;
 
-    var dataIds = ['jobRecsHead','jobFilterChips','jobTableHost','jobSelStrip','jobColPanel'];
-    var dataNodes = dataIds.map(function (id) { return document.getElementById(id); });
-    var dataParents = dataNodes.map(function (el) { return el.parentNode; });
-    var dataTrigger = document.getElementById('jobDataExpand'); dataTrigger.focus(); dataTrigger.click();
-    var dataSlot = document.getElementById('dataSheetSlot');
-    out.job_data_moved = dataNodes.every(function (el) { return dataSlot.contains(el); });
-    out.job_data_first_sticky = getComputedStyle(
-      document.querySelector('#jobTableHead th:first-child')).position === 'sticky';
-    document.getElementById('dataSheetClose').click();
-    (function () { var card = document.querySelector('#dataSheet .modal-card');
-      var ev = new Event('transitionend', {bubbles:true});
-      Object.defineProperty(ev, 'propertyName', {value:'opacity'}); card.dispatchEvent(ev); })();
-    out.job_data_restored = dataNodes.every(function (el, i) { return el.parentNode === dataParents[i]; }) &&
-      document.activeElement === dataTrigger;
+    // ⤢ 데이터 펼침 면은 **비동기 프로브**(_DATA_SHEET_PROBE_SETUP_JS)로 떼어 냈다: 열기가
+    // Python 왕복(초안 생성) 뒤로 바뀌어(F3) 동기 측정으로는 열리기 전을 재게 된다.
 
     mirrorTrigger.click();
     window.JobScreen.showEditMode();
@@ -2257,6 +2245,125 @@ _VIEW_ORDER_PROBE_SETUP_JS = r"""
 })();
 """
 
+_DATA_SHEET_PROBE_SETUP_JS = r"""
+(() => {
+  /* ⤢ 데이터 펼침 면의 실 DOM 이동·복귀(#271/#272)와 범위 편집기 footer 의 자리(F3).
+     열기가 **Python 왕복 뒤**로 바뀌었으므로(초안이 서야 면이 연다) 동기 프로브로는 열리기
+     전을 재게 된다 — 완료 표지를 남기고 폴링한다.
+
+     이 프로브가 세우는 전제 둘, 둘 다 실패 표본에서 왔다:
+     ① **앞 프로브의 늦은 push 를 먼저 흘려보낸다**(quiesce). 실 세션은 작업 미선택이라
+        `!has_job` 스냅샷이 도착하면 `syncModeDisplay` 가 펼침 면을 정당하게 닫는다 —
+        내 면이 남의 push 에 닫히면 "이동 안 됨"으로 오독된다(관측자 오염의 반대 방향).
+     ② 자기 판은 자기가 세운다: 표 헤더 고정을 재려면 실제로 그려진 표가 있어야 한다.
+     초안 생성만 자기 액션으로 스텁하고 복원은 "내 스텁일 때만"(프로브 교차 오염 금지). */
+  const out = { pending: true };
+  window.__dataSheet = out;
+  const ids = ['jobRecsHead', 'jobOrderBar', 'jobFilterChips', 'jobTableHost',
+               'jobSelStrip', 'jobColPanel', 'jobRangeFoot'];
+  const nodes = ids.map((id) => document.getElementById(id));
+  out.present = nodes.every(Boolean);
+  if (!out.present) { out.pending = false; return; }
+  const parents = nodes.map((el) => el.parentNode);
+  const slot = document.getElementById('dataSheetSlot');
+  const trigger = document.getElementById('jobDataExpand');
+  const real = window.Bridge.call;
+  const mine = function (screen, action, payload) {
+    if (screen === 'job' && action === 'range_draft_open') return Promise.resolve({ ok: true });
+    return real(screen, action, payload);
+  };
+  const restoreCall = () => { if (window.Bridge.call === mine) window.Bridge.call = real; };
+  const settle = (id) => {
+    const card = document.querySelector('#' + id + ' .modal-card');
+    const ev = new Event('transitionend', { bubbles: true });
+    Object.defineProperty(ev, 'propertyName', { value: 'opacity' });
+    card.dispatchEvent(ev);
+  };
+  setTimeout(() => {                       // ① 앞 프로브의 늦은 push 를 흘려보낸다
+    window.Bridge.call = mine;
+    // `Nav.go('job')` 를 부르지 않는다: 화면 전환은 REFRESH_ON_NAV 로 **실 refresh** 를 쏘고,
+    // 그 응답(작업 미선택 스냅샷)이 내가 연 면을 닫는다. 부팅 기본 화면이 이미 job 이다.
+    window.__push('job', {                 // ② 자기 판
+      job_name: '공고서', has_job: true, out_dir: 'C:\Results',
+      data_label: 'd.csv', data_source_label: 'd.csv (파일)', data_notice: null,
+      template_name: 't.hwpx', template_path: 'C:\t.hwpx', template_missing: false,
+      filename_pattern: 'doc-{{seq}}', has_data: true, record_count: 2, selected_count: 2,
+      view_order: 'sourceDesc', order_note: '보이는 순서대로 생성됩니다.',
+      range_draft: { open: true, dirty: false, sel_count: 2, selected_only: false,
+                     view_order: 'sourceDesc' },
+      records: [{ index: 1, selected: true, name: 'doc-001.hwpx', summary: '사무비품' },
+                { index: 0, selected: true, name: 'doc-002.hwpx', summary: '전산장비' }],
+      filter: { active: false, reapply_available: false, reapply_hint: '', search: '',
+                chips: [], definition: '', branches: [],
+                columns: [{ name: '공고명', kind: 'text' }] },
+      table: { columns: [{ name: '공고명', kind: 'text' }],
+               rows: [{ index: 1, selected: true, name: 'doc-001.hwpx', summary: '사무비품',
+                        cells: [[['사무비품', false]]] },
+                      { index: 0, selected: true, name: 'doc-002.hwpx', summary: '전산장비',
+                        cells: [[['전산장비', false]]] }],
+               visible_count: 2, hidden_selected: [] },
+      restate: { origin: 'manual', filter_active: false, in_def: 0, extra: 0, sample: [1, 0] },
+      preflight: { level: 'ok', text: 'ok' }, mirror: [], drift: [], name_tokens: [],
+      gate: { enabled: true, level: '', text: '생성 준비' },
+    });
+    trigger.focus();
+    trigger.click();
+    setTimeout(() => {
+      try {
+        out.moved = nodes.every((el) => slot.contains(el));
+        out.not_moved = ids.filter((id, i) => !slot.contains(nodes[i]));
+        out.first_sticky = getComputedStyle(
+          document.querySelector('#jobTableHead th:first-child')).position === 'sticky';
+        // footer 는 면 안에서만 선다 — 화면 안에서 숨긴 것과 같은 CSS 규칙의 반대 분기.
+        out.foot_shown_in_sheet =
+          getComputedStyle(document.getElementById('jobRangeFoot')).display !== 'none';
+        document.getElementById('dataSheetClose').click();
+        settle('dataSheet');
+        setTimeout(() => {
+          out.restored = nodes.every((el, i) => el.parentNode === parents[i]) &&
+            document.activeElement === trigger;
+          restoreCall();
+          out.pending = false;
+        }, 0);
+      } catch (e) {
+        out.error = 'throw:' + (e && e.message);
+        // 실패해도 면은 **반드시** 닫는다: 열린 채 남기면 뒤 프로브의 포커스·모달 스택이
+        // 통째로 오염돼 남의 계약이 대신 깨진다(프로브가 프로브를 오염시키는 자리).
+        try { window.SurfaceSheet.closeAndRestore('dataSheet'); settle('dataSheet'); } catch (e2) {}
+        restoreCall();
+        out.pending = false;
+      }
+    }, 0);
+  }, 300);
+})();
+"""
+
+_RANGE_DRAFT_PROBE_SETUP_JS = r"""
+(() => {
+  /* 범위 편집기 초안 거래(F3)를 실 창에서 본다: ⤢ 로 열면 초안이 서고 footer 가 면 안에
+     보이며, 닫으면 초안이 정리된다. 정적 계약은 배선까지만 보고 — 이 표면의 결함류는
+     "면은 열렸는데 초안이 안 섰다 / 닫았는데 초안이 남았다"라 상태를 되읽어야 잡힌다.
+     데이터가 없으면 초안 생성이 **거절**되는 것이 계약이므로, 그 거절도 함께 확인한다
+     (양성대조: 거절 경로와 성사 경로가 다른 값을 내야 프로브가 실물을 잰 것이다). */
+  const out = { pending: true };
+  window.__rangeDraft = out;
+  const expand = document.getElementById('jobDataExpand');
+  const foot = document.getElementById('jobRangeFoot');
+  out.present = !!(expand && foot);
+  if (!out.present) { out.pending = false; return; }
+  out.foot_hidden_in_screen = getComputedStyle(foot).display === 'none';
+  Bridge.call('job', 'range_draft_open', {})
+    .then(() => { out.opened_without_data = true; },
+          () => { out.opened_without_data = false; })   // 데이터 없음 = 거절이 계약
+    .then(() => Bridge.initial('job'))
+    .then((snap) => {
+      out.draft_state = snap.range_draft;
+      out.pending = false;
+    })
+    .catch((e) => { out.error = String((e && e.message) || e); out.pending = false; });
+})();
+"""
+
 _CHAIN_RECOVERY_PROBE_SETUP_JS = r"""
 (() => {
   /* 호출 직렬화 체인이 **실패 한 번으로 죽지 않는지** 실물로 본다(리뷰 5R).
@@ -2761,6 +2868,26 @@ def _selftest_drive(window: "object") -> None:
                 break
             time.sleep(0.1)
         result["view_order"] = window.evaluate_js("window.__viewOrder")  # type: ignore[attr-defined]
+        # ⤢ 데이터 펼침 면(실 DOM 이동·복귀 + footer 자리) — 열기가 왕복 뒤라 비동기.
+        window.evaluate_js(_DATA_SHEET_PROBE_SETUP_JS)  # type: ignore[attr-defined]
+        sheet_deadline = time.monotonic() + 6.0
+        while time.monotonic() < sheet_deadline:
+            if window.evaluate_js(  # type: ignore[attr-defined]
+                "!!(window.__dataSheet && !window.__dataSheet.pending)"
+            ):
+                break
+            time.sleep(0.1)
+        result["data_sheet"] = window.evaluate_js("window.__dataSheet")  # type: ignore[attr-defined]
+        # 범위 편집기 초안 거래(재작성 F3) — 면과 초안이 같이 서고 같이 죽는지 상태로 본다.
+        window.evaluate_js(_RANGE_DRAFT_PROBE_SETUP_JS)  # type: ignore[attr-defined]
+        draft_deadline = time.monotonic() + 6.0
+        while time.monotonic() < draft_deadline:
+            if window.evaluate_js(  # type: ignore[attr-defined]
+                "!!(window.__rangeDraft && !window.__rangeDraft.pending)"
+            ):
+                break
+            time.sleep(0.1)
+        result["range_draft"] = window.evaluate_js("window.__rangeDraft")  # type: ignore[attr-defined]
         # 호출 직렬화 체인의 실패 복구(리뷰 5R) — 정적 계약이 못 보는 실행 성질이라 실물로.
         window.evaluate_js(_CHAIN_RECOVERY_PROBE_SETUP_JS)  # type: ignore[attr-defined]
         chain_deadline = time.monotonic() + 5.0
