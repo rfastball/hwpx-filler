@@ -889,6 +889,24 @@ class TestWebSelftestGate:
             f"데이터 스왑 가드가 매핑 편집을 열거합니다(over-warn — 스왑은 유지): {d['guard_body_data_swap']!r}"
         )
 
+    def test_tab_disposition_actually_continues_after_saving(
+        self, selftest_result: dict
+    ) -> None:
+        # F7 1R P1 의 영구 가드 — 「저장하고 이동」은 **저장 뒤 이동까지** 가야 한다.
+        # 정적 계약은 이 결함을 못 봤다: 배선·문안·판정이 전부 제자리이고 성사 뒤 **이어짐**만
+        # 끊겼다(`doSave` 가 성공에 undefined 를 돌려줘 가드가 조기 반환). 실 클릭 → 실 모달 →
+        # 실 재발신 순서를 그대로 밟아 발신 기록으로 센다.
+        g = selftest_result["editor_guard"]
+        assert g.get("error") is None, f"탭 가드 프로브 예외: {g.get('error')!r}"
+        assert g.get("why") == "완료", f"3택 모달이 뜨지 않았습니다: {g!r}"
+        assert g.get("modal_label") == "저장하고 이동", (
+            f"3택 주 행동 라벨이 다릅니다: {g.get('modal_label')!r}"
+        )
+        assert g["calls"] == ["goto_section", "save", "goto_section:save"], (
+            "저장하고 이동이 저장에서 멈췄습니다 — 사용자가 고른 처분이 절반만 일어납니다"
+            f"(발신 기록: {g['calls']!r})."
+        )
+
     def test_editor_is_immersive_and_carries_its_context(self, selftest_result: dict) -> None:
         # 편집기가 실 WebView2 에서 **자기 화면**으로 서고 상단 2탭을 덮는지, 머리(이름·저장
         # 상태·판본)와 진입 문맥 배너가 실제로 그려지는지 되읽는다. 정적 계약(클래스·문자열

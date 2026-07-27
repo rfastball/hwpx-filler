@@ -1429,8 +1429,19 @@ def test_edit_entries_carry_their_context():
     job = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
     lib = (WEB_JS_DIR / "screens" / "library.js").read_text(encoding="utf-8")
     bridge = (WEB_JS_DIR / "bridge.js").read_text(encoding="utf-8")
+    entry = (WEB_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
     assert "openJobInEditor(name, context)" in bridge, (
         "브리지가 진입 문맥을 나르지 않습니다 — 문맥 없는 편집기는 나갈 곳이 없다."
+    )
+    # **단일 정의 seam 은 인자까지 단일이어야 한다**(1R P1 의 영구 가드): 호출자가 문맥을
+    # 실어도 공용 seam 이 인자를 흘리면 모든 진입이 기본 자발적 진입으로 떨어져 배너·복귀처가
+    # 통째로 사라진다. 종전 계약은 "호출자가 무엇을 싣는가"만 보고 "seam 이 흘려보내는가"를
+    # 보지 않아 그 드리프트를 통과시켰다.
+    assert "async function openGuarded(name, context)" in entry, (
+        "공용 진입 seam 이 문맥 인자를 받지 않습니다 — 호출자가 실은 문맥이 버려집니다."
+    )
+    assert "Bridge.openJobInEditor(name, context" in entry, (
+        "공용 진입 seam 이 문맥을 백엔드로 흘려보내지 않습니다."
     )
     for reason in ("document_browser_repair", "preview_result", "output_result", "run_failure"):
         assert reason in job, f"「문서 만들기」의 편집 진입이 사유({reason})를 싣지 않습니다."
@@ -1438,6 +1449,17 @@ def test_edit_entries_carry_their_context():
     # F4 가 남긴 빚의 회수 — 파일 이름 규칙 수리는 이제 전용 탭으로 곧장 착지한다.
     assert 'section: "filename"' in job, (
         "결과의 파일 이름 수리가 파일 이름 탭으로 착지하지 않습니다(F7 이 승격한 자리)."
+    )
+    # **약속한 복귀 상태는 실제로 되돌린다**(1R P2): 「미리보기로 돌아가기」가 보통의
+    # 「문서 만들기」로 데려다 놓으면 라벨이 거짓이 된다. 보낸 표면이 세운 `reopen_drawer` 를
+    # 복귀가 소비하고, 여는 절차는 그 화면의 seam 하나가 소유한다(열기 규율 두 벌 금지).
+    editor = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
+    assert "reopen_drawer" in job and "reopen_drawer" in editor, (
+        "미리보기 복귀 상태가 세워지기만 하고 소비되지 않습니다 — 라벨이 약속한 자리와"
+        " 실제 착지가 다릅니다."
+    )
+    assert "JobScreen.openPreview" in editor and "openPreview," in job, (
+        "복귀가 미리보기 열기 seam 을 쓰지 않습니다 — 열기 절차가 두 벌이 됩니다."
     )
 
 

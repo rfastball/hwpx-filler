@@ -638,8 +638,8 @@
       log("미리보기를 열지 못했습니다: " + String((err && err.message) || err));
       return;
     }
-    // 왕복 중 화면을 떠났거나 편집 모드로 넘어갔으면 열지 않고 상태를 되돌린다 —
-    // 남는 「열림」 상태가 다음 복귀에서 아무 트리거 없이 면을 띄운다.
+    // 왕복 중 화면을 떠났으면(다른 탭·편집기) 열지 않고 상태를 되돌린다 — 남는 「열림」
+    // 상태가 다음 복귀에서 아무 트리거 없이 면을 띄운다.
     if (!$("scr-job").classList.contains("on")) {
       Bridge.call(SCREEN, "preview_close", {});
       return;
@@ -1508,6 +1508,9 @@
     init, overwriteBody, guardBody, confirmDataSwapIfArmed, openJob,
     refreshList,
     openJobConfirmSheet, openJobDataSheet, openBrowseNeedsAction,
+    // 미리보기 복귀 seam(1R P2) — 편집기가 「미리보기로 돌아가기」라고 적은 이상 실제로
+    // 그 면으로 돌려보내야 한다. 열기 절차(왕복·성사 뒤 열기·포커스)는 여기 하나가 소유한다.
+    openPreview,
     renderResult, markResultStale,
   };
 })();

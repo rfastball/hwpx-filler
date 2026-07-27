@@ -793,7 +793,10 @@
         window.alert(`작업 '${res.saved_name}' 은 저장됐지만 데이터 등록이 실패했습니다.\n`
           + res.dataset_register_error);
       }
-      return;
+      // **성공을 값으로 돌려준다**(1R P1): 「저장하고 이동」·「저장하고 나가기」는 이 값으로
+      // 계속할지를 정한다 — undefined 를 돌려주면 성공한 저장이 이동을 막아, 사용자가 고른
+      // 처분이 절반만 일어난다(저장은 됐는데 가려던 곳에 못 간다).
+      return true;
     }
     if (res.needs_overwrite) {
       // 본 문안을 그대로 되돌려 준다(#149) — 모달을 읽는 사이 디스크가 바뀌면 확인은 다른
@@ -854,6 +857,19 @@
     return RETURN_SCREEN[(ctx.return_context || {}).surface] || "job";
   }
 
+  /* 복귀 **상태**까지 되돌린다(1R P2) — 화면 키만 맞추면 「미리보기로 돌아가기」가 보통의
+     「문서 만들기」로 데려다 놓는다. 라벨이 약속한 자리와 실제 착지가 다른 것은 문안 부정직의
+     한 형태다. 면을 여는 절차(Python 왕복·성사 뒤 열기·포커스)는 그 화면이 소유한 seam 을
+     그대로 쓴다 — 여기서 다시 조립하면 열기 규율이 두 벌이 된다. */
+  function restoreReturnState() {
+    const ret = ((LAST && LAST.context) || {}).return_context || {};
+    if (ret.surface === "preview" && ret.reopen_drawer
+        && window.JobScreen && window.JobScreen.openPreview) {
+      // 실패는 그 seam 이 자기 채널로 재진술한다(조용한 무반응 없음).
+      window.JobScreen.openPreview();
+    }
+  }
+
   /* 편집기를 나가는 **단일 출구**(§10.13 판정 N) — back·문맥 복귀·다른 화면의 프로그램적
      이동이 전부 여기로 모인다. 처분 미확정 patch 가 있으면 3택을 먼저 받고, 초안이면
      세션 폐기 확인을 받는다(초안은 patch 가 아니라 세션 전체가 미저장이다 — 판정 P).
@@ -887,6 +903,7 @@
       await Bridge.call(SCREEN, "new_session", {});   // 확인을 마쳤으면 실제로 폐기한다
     }
     window.Nav.go(target, { force: true });
+    if (target === returnScreen()) restoreReturnState();
   }
 
   /* 현 에디터 스냅샷 재당김·재렌더(#138 리뷰 F12) — 편집 모드로 복귀할 때 1단계 피커가

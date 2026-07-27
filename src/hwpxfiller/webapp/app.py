@@ -1721,6 +1721,84 @@ _JOB_EDITMODE_PROBE_JS = r"""
 # 구역이 펼쳐지고(ignored_expanded), (c) 소유권 태그 4종(확정·수동·제안·후보 없음)이,
 # (d) touched 행에 '자동 제안으로 되돌리기'(↩)가 실 WebView2 에서 그려지는지 되읽는다.
 # 정의 surface 는 몰입 표면(재작성 F7)에 산다 — 루트도 #scr-editor.
+_EDITOR_GUARD_PROBE_SETUP_JS = r"""
+(() => {
+  /* 탭 처분 3택의 **이어짐**(재작성 F7 1R P1) — 「저장하고 이동」이 저장까지만 하고 이동을
+     안 하면 사용자가 고른 처분이 절반만 일어난다(저장은 됐는데 가려던 곳에 못 간다).
+     정적 계약은 이 결함을 못 본다: 배선·문안·판정이 전부 제자리이고 **성사 뒤 이어짐**만
+     끊긴다. 그래서 실 클릭 → 실 모달 → 실 재발신 순서를 그대로 밟고 발신 기록을 되읽는다.
+
+     자기 액션만 스텁하고 복원은 "내 스텁일 때만"(프로브 교차 오염 금지 —
+     [[gate-env-gotchas]]). 모달은 비동기라 완료 표지를 남기고 폴링한다. */
+  const out = { pending: true, calls: [] };
+  window.__editorGuard = out;
+  const real = window.Bridge.call;
+  const mine = function (screen, action, payload) {
+    if (screen !== 'editor') return real(screen, action, payload);
+    out.calls.push(action + (payload && payload.disposition ? ':' + payload.disposition : ''));
+    if (action === 'goto_section' && !(payload && payload.disposition)) {
+      return Promise.resolve({
+        ok: false, needs_section_guard: true, section: 'binding',
+        section_label: '필드 연결·표시', target: payload.section,
+      });
+    }
+    if (action === 'save') return Promise.resolve({ ok: true, saved_name: '공고서' });
+    return Promise.resolve({});
+  };
+  const finish = (why) => {
+    if (window.Bridge.call === mine) window.Bridge.call = real;
+    // **자기 판을 자기가 걷는다**(프로브 교차 오염 금지 — 첫 판에서 실제로 밟았다):
+    // 편집기는 셸을 덮는 화면이라 그대로 두면 뒤따르는 프로브가 상단 탭·브랜드를
+    // 「사라졌다」고 읽고, 모달이 남긴 포커스는 다음 프로브의 복귀 표적을 오염시킨다.
+    try {
+      window.Nav.go('job', { force: true });
+      const home = document.querySelector('.navbtn[data-scr="job"]');
+      if (home) home.focus();
+    } catch (e) { out.teardown_error = String(e && e.message); }
+    out.why = why;
+    out.pending = false;
+  };
+  try {
+    window.Nav.go('editor', { force: true });
+    window.__push('editor', {
+      section: 'binding', sections: ['template', 'binding', 'filename'],
+      reachable: { template: true, binding: true, filename: true },
+      dirty_sections: ['binding'], is_draft: false, changes: {},
+      context: { entry_reason: 'voluntary', evidence: {}, return_context: {} },
+      revisions: { template: 1, binding: 2 }, template_path: 'C:/t/공고서.hwpx',
+      template_name: '공고서.hwpx', field_count: 0, fields: [], raw_block: '',
+      gate: null, gate_error: false, notice: null, editing_origin: '공고서',
+      name: '공고서', pattern: 'x', rows: [], source_fields: [],
+      active_source_fields: [], ignored_source_fields: [], sample_rows: [],
+      type_options: [], fmt_options: {}, provenance: null, default_dataset: null,
+    });
+    window.Bridge.call = mine;
+    const tab = document.querySelector('#editor-steps button[data-section="filename"]');
+    if (!tab) { finish('탭 버튼 없음'); return; }
+    tab.click();
+    let ticks = 0;
+    const step = () => {
+      ticks += 1;
+      const ok = document.getElementById('chooseModalOk');
+      const open = !document.getElementById('chooseModal').classList.contains('hidden');
+      if (open && ok) {
+        out.modal_label = ok.textContent;
+        ok.click();                       // 「저장하고 이동」
+        setTimeout(() => finish('완료'), 400);   // 모달 정착(160ms) + 재발신 왕복
+        return;
+      }
+      if (ticks > 40) { finish('모달 미개방'); return; }
+      setTimeout(step, 50);
+    };
+    setTimeout(step, 50);
+  } catch (e) {
+    out.error = 'throw:' + (e && e.message);
+    finish('예외');
+  }
+})()
+"""
+
+
 _EDITOR_CHIP_PROBE_JS = r"""
 (function () {
   var out = {};
@@ -3102,6 +3180,14 @@ def _selftest_drive(window: "object") -> None:
         result["preview_drawer"] = _probe_late(
             window, "__previewDrawer && !window.__previewDrawer.pending",
             "JSON.stringify(window.__previewDrawer)",
+        )
+        # 탭 처분 3택의 **이어짐**(F7 1R P1) — 「저장하고 이동」이 저장 뒤 실제로 이동을
+        # 재발신하는지. 배선·문안·판정이 다 제자리여도 성사 뒤 이어짐만 끊길 수 있고,
+        # 그건 정적 계약이 못 본다(실 클릭·실 모달·실 재발신 순서로만 드러난다).
+        window.evaluate_js(_EDITOR_GUARD_PROBE_SETUP_JS)  # type: ignore[attr-defined]
+        result["editor_guard"] = _probe_late(
+            window, "__editorGuard && !window.__editorGuard.pending",
+            "JSON.stringify(window.__editorGuard)",
         )
         # 호출 직렬화 체인의 실패 복구(리뷰 5R) — 정적 계약이 못 보는 실행 성질이라 실물로.
         window.evaluate_js(_CHAIN_RECOVERY_PROBE_SETUP_JS)  # type: ignore[attr-defined]

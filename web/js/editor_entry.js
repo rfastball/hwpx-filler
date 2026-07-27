@@ -7,11 +7,11 @@
    함께 넘어간다: 편집기는 스스로 열리지 않으므로(늘 다른 표면의 문제가 사람을 보낸다)
    문맥 없는 진입은 왜 왔는지도 어디로 돌아갈지도 없는 표면이 된다(계약 §5.1). */
 (function () {
-  /* land() — 편집 모드 착지의 단일 정의(PR-2 리뷰: 축자 복붙은 착지 변경 시 드리프트 표면 —
-     한 곳이 밀리면 실행 모드에 조용히 오착지한다). 소비처 = 신규 초안(newDraft — 「문서 작업」 ＋·작업
-     구획 ＋·template.makeJob 후속 착지)·기존 작업 열기(openGuarded)·미저장 초안 복귀(작업
-     화면 T2 고지). JobScreen 미로드는 **loud**(PR-5 리뷰 F3: 백엔드 세션은 이미 초기화됐는데
-     실행 모드에 조용히 떨어지면 사용자에게 설명 없는 무반응이 된다 — 조용한 오착지 금지). */
+  /* land() — 편집기 착지의 단일 정의(PR-2 리뷰: 축자 복붙은 착지 변경 시 드리프트 표면 —
+     한 곳이 밀리면 엉뚱한 화면에 조용히 오착지한다). 소비처 = 신규 초안(newDraft — 「문서
+     작업」 ＋·template.makeJob 후속 착지)·기존 작업 열기(openGuarded).
+     `force` 인 이유: 진입은 **이미 확인을 마친 뒤**라 편집기 이탈 가드를 다시 태울 것이
+     없다(그 가드는 나가는 길의 것이다). */
   function land() {
     window.Nav.go("editor", { force: true });
   }
@@ -36,15 +36,20 @@
     });
   }
 
-  /* openGuarded(name) — 미저장 정의 확인 → 작업 로드 → 「작업」 편집 모드. 취소·손상 시 무이동.
-     반환: 열었으면 true, 확인 취소·오류로 중단했으면 false(호출부 후속 판단용). */
-  async function openGuarded(name) {
+  /* openGuarded(name, context) — 미저장 정의 확인 → 작업 로드 → 편집기 화면. 취소·손상 시 무이동.
+     반환: 열었으면 true, 확인 취소·오류로 중단했으면 false(호출부 후속 판단용).
+
+     `context` = {entry_reason, evidence, return_context, section}(계약 §5.1) — **보낸 표면**이
+     자기가 본 것을 싣는다. 이 seam 이 인자를 흘리면 모든 진입이 기본 자발적 진입으로 떨어져
+     배너·복귀처가 통째로 사라진다(1R P1: 실제로 그렇게 빠뜨렸다 — 단일 정의는 인자까지
+     단일이어야 한다). */
+  async function openGuarded(name, context) {
     if (!(await confirmDiscard(
       `'${name}' 편집을 열면 저장하지 않은 편집 세션이 사라집니다.\n` +
       "사라지는 것: 이름 · 데이터 · 매핑\n\n계속할까요?"))) {
       return false;
     }
-    const r = await Bridge.openJobInEditor(name);
+    const r = await Bridge.openJobInEditor(name, context || {});
     if (typeof r === "string" && r.startsWith("ERROR:")) {
       window.alert(r.slice(6).trim());   // 손상·템플릿 부재 → loud(조용한 무시 금지)
       return false;
