@@ -14,6 +14,7 @@ from hwpxfiller.naming import (
     existing_outputs,
     make_output_filename,
     pattern_field_tokens,
+    pattern_uses_seq,
     plan_output_names,
 )
 
@@ -155,3 +156,11 @@ def test_pattern_field_tokens_excludes_reserved_and_dedupes():
 def test_pattern_field_tokens_empty_for_literal_and_reserved_only():
     assert pattern_field_tokens("고정이름-{{date}}-{{seq}}") == []
     assert pattern_field_tokens("고정이름") == []
+
+
+def test_pattern_uses_seq_marks_the_order_filename_link():
+    """표시순서(F3)와 파일 이름의 연동 판정 — 문안이 이 값 위에 선다(거짓 경보 방지)."""
+    assert pattern_uses_seq("{{공고명}}-{{seq}}") is True
+    assert pattern_uses_seq("{{공고명}}-{{seq:001}}") is True
+    assert pattern_uses_seq("{{공고명}}-{{date:YYYYMMDD}}") is False
+    assert pattern_uses_seq("고정이름") is False

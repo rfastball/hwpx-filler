@@ -2224,6 +2224,39 @@ _EDITOR_LIB_PICKER_PROBE_JS = r"""
 # 실제 클릭→Bridge.call→Python dispatch→initial snapshot 왕복(#189). 프로브가 만든 버튼도
 # 브라우저의 click 이벤트 경로를 지나므로 API 직접 호출만으로는 잡지 못하는 이벤트/Promise
 # 연결 단절을 함께 검출한다. 동작은 모두 빈 홈에서도 안전한 세션 초기화·새로고침이다.
+_VIEW_ORDER_PROBE_SETUP_JS = r"""
+(() => {
+  /* 전체 표시순서 축(재작성 F3)의 **실 왕복**을 본다: 선택기 change → Python `set_view_order`
+     → push 재렌더가 방금 고른 값을 유지하는가. 정적 계약은 요소 존재까지만 보고, 이 축의
+     결함류는 "왕복 뒤 옛 값으로 되돌아간다"라 실행으로만 잡힌다.
+     **양성대조 선행**(measurement-litmus): 프로브가 실물을 재는지 먼저 증명한다 — 부팅 직후
+     값이 기본값과 같음을 확인하고(렌더가 실제로 이 요소를 쓴다), 그 다음 바뀌는지 본다.
+     같은 값이면 통과하는 프로브였다면 두 단언 중 하나는 반드시 깨진다. */
+  const out = { pending: true };
+  window.__viewOrder = out;
+  const sel = document.getElementById('jobOrderSel');
+  out.present = !!sel;
+  if (!sel) { out.pending = false; return; }
+  out.options = Array.from(sel.options).map((o) => o.value);
+  Bridge.initial('job')
+    .then((snap) => {
+      out.control_before = sel.value === snap.view_order && sel.value === 'sourceDesc';
+      out.note_before = String(document.getElementById('jobOrderNote').textContent || '');
+      sel.value = 'sourceAsc';
+      sel.dispatchEvent(new Event('change'));
+      return new Promise((r) => setTimeout(r, 400));   // 왕복 + push 재렌더 여유
+    })
+    .then(() => {
+      out.after_roundtrip = sel.value;                 // 되돌아왔으면 'sourceDesc'
+      return Bridge.call('job', 'set_view_order', { value: 'sourceDesc' });
+    })
+    .then(() => new Promise((r) => setTimeout(r, 200)))
+    .then(() => { out.restored = sel.value; })
+    .catch((e) => { out.error = String((e && e.message) || e); })
+    .then(() => { out.pending = false; });
+})();
+"""
+
 _CHAIN_RECOVERY_PROBE_SETUP_JS = r"""
 (() => {
   /* 호출 직렬화 체인이 **실패 한 번으로 죽지 않는지** 실물로 본다(리뷰 5R).
@@ -2718,6 +2751,16 @@ def _selftest_drive(window: "object") -> None:
             time.sleep(0.1)
         result["action_roundtrip"] = window.evaluate_js(  # type: ignore[attr-defined]
             "window.__actionRoundtrip")
+        # 표시순서 축의 실 왕복(재작성 F3) — 되돌림 결함은 실행으로만 잡힌다.
+        window.evaluate_js(_VIEW_ORDER_PROBE_SETUP_JS)  # type: ignore[attr-defined]
+        order_deadline = time.monotonic() + 6.0
+        while time.monotonic() < order_deadline:
+            if window.evaluate_js(  # type: ignore[attr-defined]
+                "!!(window.__viewOrder && !window.__viewOrder.pending)"
+            ):
+                break
+            time.sleep(0.1)
+        result["view_order"] = window.evaluate_js("window.__viewOrder")  # type: ignore[attr-defined]
         # 호출 직렬화 체인의 실패 복구(리뷰 5R) — 정적 계약이 못 보는 실행 성질이라 실물로.
         window.evaluate_js(_CHAIN_RECOVERY_PROBE_SETUP_JS)  # type: ignore[attr-defined]
         chain_deadline = time.monotonic() + 5.0

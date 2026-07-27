@@ -429,7 +429,11 @@ class DataZoneMixin:
             "columns": [{"name": c, "kind": fm.kind(c)} for c in columns],
             "rows": table_rows,
             "visible_count": len(visible),
-            # 필터 밖 선택 — 스트립이 상시 진술(결정 3). 원본 순서.
+            # 필터 밖 선택 — 스트립이 상시 진술(결정 3). 순서는 **호출자가 준 ``indices``
+            # 순서** 그대로다: 작업 화면은 이미 표시순 투영을 통과한 실행 입력을 넘기므로
+            # 스트립 표본이 표와 같은 축을 말한다(F3 판정 H — 두 목록이 다른 순서를 말하면
+            # "보이는 것 = 실행되는 것"이 스트립에서만 깨진다). 기안 화면은 원본 순서를
+            # 넘기고 표도 같은 순서라 역시 일치한다.
             "hidden_selected": [lead_for(i) for i in indices if i not in vis_set],
         }
         return filter_snap, table_snap, view, visible

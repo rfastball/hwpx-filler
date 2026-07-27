@@ -839,6 +839,27 @@ def test_job_data_first_prework_surface_contract():
     assert 'aria-pressed") !== "true"' in src, "활성 후보 재활성화 가드가 없습니다."
 
 
+def test_job_display_order_axis_surface_contract():
+    """재작성 F3 정적 계약 — 표시순서 축의 요소·2값·⤢ 동행·왕복 의도 보호.
+
+    실행 거동(왕복 뒤 값 유지)은 selftest ``view_order`` 프로브가 본다. 여기서는 그 프로브가
+    없으면 조용히 사라질 배선을 못박는다: ①축 요소 3종 ②계약이 정한 2값 그대로(§18.10)
+    ③⤢ 펼침 면 이동 목록에 동행(축이 메인에만 남으면 펼친 면에서 도달 불가) ④왕복 중
+    의도 보호(pendingOrder) — 셋 다 "지우면 조용히 나빠지는" 배선이다.
+    """
+    html = WEB_INDEX.read_text(encoding="utf-8")
+    for element in ('id="jobOrderBar"', 'id="jobOrderSel"', 'id="jobOrderNote"'):
+        assert element in html, f"표시순서 축 요소가 없습니다: {element}"
+    assert 'value="sourceDesc"' in html and 'value="sourceAsc"' in html, (
+        "표시순서 2값(§18.10)이 계약 어휘와 다릅니다."
+    )
+    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    moves = src.split("openJobDataSheet", 1)[1].split("moves: [", 1)[1].split("]", 1)[0]
+    assert "jobOrderBar" in moves, "⤢ 펼침 면에 표시순서 축이 따라가지 않습니다(판정 C)."
+    assert "pendingOrder" in src, "왕복 중 의도 보호가 없습니다 — push 가 선택을 되돌립니다."
+    assert "set_view_order" in src
+
+
 def test_job_document_browser_surface_contract():
     """슬라이스 3 정적 계약 — 문서 탐색 면은 `job` 화면의 **하위 화면**이고 판정은 Python 소유.
 
@@ -881,8 +902,11 @@ def test_job_document_browser_surface_contract():
     assert "pendingFocus" not in src, "예약 포커스 기제가 남아 있습니다(유령 착지)."
     # 선택 경로는 닫기까지만 하고 착지는 onClose 가 한다(아래 1지점 계약).
     # 생성 중 잠금(2R P2): 탐색 면은 오버레이 루트라 `#scr-job` 질의에 안 걸린다 —
-    # setBusy 가 그 루트도 훑고, 출구·탭·행이 busy-lock 을 달아야 한다.
-    assert 'dataPickerModal")].forEach' in src, "setBusy 가 탐색 면을 잠그지 않습니다."
+    # setBusy 가 그 루트도 훑고, 출구·탭·행이 busy-lock 을 달아야 한다. ⤢ 펼침 면 2종도
+    # 같은 자격이다(F3): 실 DOM 이동이라 잠글 요소가 면 안으로 **옮겨가** 화면 질의에서 빠진다.
+    busy_roots = src.split("function setBusy", 1)[1].split("forEach", 1)[0]
+    for root in ("jobBrowseSheet", "dataPickerModal", "dataSheet", "jobConfirmSheet"):
+        assert f'$("{root}")' in busy_roots, f"setBusy 가 {root} 을(를) 잠그지 않습니다."
     assert src.count("data-busy-lock data-browse") == 3, (
         "탐색 면 출구·탭·행의 busy-lock 표식이 빠졌습니다."
     )

@@ -207,6 +207,18 @@
                   <button class="btn sm" id="jobSelAll" data-busy-lock>전체 선택</button>
                   <button class="btn sm" id="jobSelNone" data-busy-lock>전체 해제</button></div>
               </div>
+              <!-- 전체 표시순서 축(계약 §18.10, 재작성 F3) — 표·필터 밖 스트립·실행 입력·
+                   파일 이름 계획이 이 한 축을 공유한다(보이는 것 = 만들어지는 것). 옆 문안은
+                   순서와 파일 이름의 연동을 상시 재진술한다(지도 §10.11 판정 I — 보이는
+                   변화 앞에 확인 왕복을 두지 않는다). ⤢ 면에도 같은 요소가 따라간다. -->
+              <div class="run-row job-orderbar" id="jobOrderBar">
+                <label class="lbl" for="jobOrderSel">표시순서</label>
+                <select class="field sm" id="jobOrderSel" data-busy-lock>
+                  <option value="sourceDesc">최신 행 먼저</option>
+                  <option value="sourceAsc">원본 순서</option>
+                </select>
+                <span class="muted capnote" id="jobOrderNote"></span>
+              </div>
               <!-- 칩 줄 — 필터 정의 재진술(정의줄 단일 출처, 결정 4) + 가지 칩(× 프루닝) + 지우기. -->
               <div class="fchips" id="jobFilterChips" style="display:none"></div>
               <!-- 데이터 테이블 — 선두 「문서」 열(파일명·식별 요약, F33 승계) + 원본 데이터 열

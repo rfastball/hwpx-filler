@@ -134,6 +134,9 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         **_POOL_TARGETING,
         "guard_state": _schema(),
         "refresh": _schema(),
+        # 전체 표시순서 축(§18.10, 재작성 F3) — 데이터 존 공유 액션이 **아니다**: 기안 화면은
+        # 원본 순서 고정으로 살고, TXT 가 이 축을 얻는 것은 작업대 합류(F6) 소관이다.
+        "set_view_order": _schema("value"),
         "select_job": _schema("name", "confirm"),
         "toggle_favorite": _schema("name value"),
         # 라이브러리 「문서 만들기에서 사용」의 착지(§19.8) — 분기 판정은 Python 이 낸다.

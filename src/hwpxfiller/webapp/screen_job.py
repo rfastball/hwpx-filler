@@ -59,6 +59,7 @@ from ..gui.filter_state import (
     FilterModel,
 )
 from ..gui.result_errors import classify_result_error, describe_fill_note
+from ..naming import pattern_uses_seq
 from ..gui.run_state import RunViewModel, resolve_file_source, resolve_pool_source
 from ..gui.selection_state import SelectionModel
 from ..gui.work_candidates import (
@@ -101,6 +102,13 @@ _EMPTY_RESTATE = {
 
 # 재진술 이름 목록 표본 크기 — 소량(≤N)=전부, 대량=층화 표본 N + 「외 …건 펼치기」(결정 5·36).
 _RESTATE_SAMPLE = 3
+
+# 전체 표시순서 2값(§18.10) — ``snapshotOrdinal``(=로드 순서 index) 내림/오름차순.
+# 정렬 키가 정수라 **동률이 원리적으로 없다** — 2차 정렬 규칙이 필요 없고 두 값은 정확한
+# 역이다(지도 §10.11.1 정밀도 면). 새 값을 늘리려면 그 성질부터 다시 센다.
+VIEW_ORDER_DESC = "sourceDesc"
+VIEW_ORDER_ASC = "sourceAsc"
+VIEW_ORDERS = (VIEW_ORDER_DESC, VIEW_ORDER_ASC)
 
 
 def _run_status(succeeded: int, total: int, cancelled: bool = False) -> str:
@@ -172,6 +180,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.datasource = None
         self.records: "list[dict]" = []
         self.selection = SelectionModel(0)
+        # 전체 표시순서(§18.10 ``recordRange.viewOrder``, 재작성 F3 — 지도 §10.11).
+        # **데이터 귀속** 상태다: 새 스냅샷은 기본값으로 돌아간다(불변식 §18.11-13 "새
+        # 스냅샷은 최신 행 먼저"). 개인화 설정으로 승격하지 않는다 — 순서가 파일명의
+        # 함수라(§2 충돌 B) 지난 데이터의 순서를 새 데이터가 물고 오면 이름이 조용히 갈린다.
+        self.view_order = VIEW_ORDER_DESC
         # 필터 선언 상태(블록 4, 결정 23~25) — 스코프 = 세션(작업×데이터, 결정 24).
         # 데이터 겨눔 시 생성, 작업 전환·데이터 교체 시 재생성(전환 인계는 PR-4 결정 28).
         self.filter: "FilterModel | None" = None
@@ -226,9 +239,38 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
     # ------------------------------------------------------------- 스냅샷
     def _display_indices(self, indices: "list[int]") -> "list[int]":
-        """표시 순서 = sourceDesc(§18.10, 충돌 B 확정 2026-07-26) — 최신 행(마지막 원본
-        행)이 먼저다. 표 렌더·실행 입력이 이 한 훅을 공유한다(보이는 것=실행되는 것)."""
-        return sorted(indices, reverse=True)
+        """표시 순서 = ``view_order`` 의 함수(§18.10, 충돌 B 확정 2026-07-26).
+
+        기본 `sourceDesc` 는 최신 행(마지막 원본 행)이 먼저다. 표 렌더·필터 밖 선택 스트립·
+        실행 입력·파일명 계획이 **이 한 훅을 공유**한다(보이는 것 = 실행되는 것) — 축을
+        사용자에게 연 뒤에도 소비처를 늘리지 않는 것이 WYSIWYG 의 담보다(지도 §10.11.1
+        도달성 면).
+        """
+        return sorted(indices, reverse=self.view_order == VIEW_ORDER_DESC)
+
+    def _reset_range_for_snapshot(self, count: int) -> None:
+        """새 스냅샷(데이터 마운트·교체) = 범위 상태 초기화 — 선택 0건 + 기본 표시순서.
+
+        불변식 §18.11-12(commit 뒤 최초 선택 0건)·13(새 스냅샷은 최신 행 먼저)의 단일 이행
+        지점이다. 두 마운트 경로(파일·풀)가 같은 seam 을 타야 한 쪽만 고쳐지는 드리프트가
+        안 생긴다. **작업 선택은 이 seam 을 타지 않는다** — 불변식 §18.11-23(문서 작업 선택은
+        `RecordRangeState` 를 바꾸지 않는다). 필터 재생성(`_init_filter`)은 작업 선택도
+        조건부로 타므로 그쪽에 얹지 않는다.
+        """
+        self.selection = SelectionModel(count, all_selected=False)
+        self.view_order = VIEW_ORDER_DESC
+
+    def _do_set_view_order(self, p: dict) -> None:
+        """표시순서 전환 — 미지 값은 시끄럽게 거절한다(조용한 기본값 강등 금지).
+
+        선택 집합은 **건드리지 않는다**: 순서는 투영이고 선택은 집합이라 축이 바뀌어도
+        같은 행이 남는다(§18.10 "검색과 필터는 가시성만"의 정렬판). 바뀌는 것은 생성
+        **순서**와 그 함수인 파일명 순번이며, 그 사실은 표면 문안(`order_note`)이 진다.
+        """
+        value = str(p.get("value", ""))
+        if value not in VIEW_ORDERS:
+            raise ValueError(f"알 수 없는 표시순서: {value!r}")
+        self.view_order = value
 
     def _indices(self) -> "list[int]":
         """실행 입력 = OrderedSelection(§2): 선택 집합을 **전체 표시순서에 투영**한다.
@@ -239,6 +281,20 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         확정(봉합 지도 §2)이며, 완화는 파일명 미리보기가 같은 투영을 보여주는 것이다.
         """
         return self._display_indices(self.selection.selected_indices())
+
+    def _order_note(self) -> str:
+        """표시순서 축 옆 상시 재진술(지도 §10.11 판정 I) — 확인 왕복 대신 문안이 진다.
+
+        앞 절은 **언제나 참**이고(표시 순서 = 생성 순서), 파일 이름 절은 규칙이 실제로
+        ``{{seq}}`` 를 쓸 때만 붙는다 — 안 쓰는 작업에도 말하면 문안이 거짓이 되고 거짓
+        경보는 경보를 싸구려로 만든다. 같은 이름이 겹칠 때 붙는 꼬리표도 순서의 함수지만
+        문안이 지지 않는다: 표 「문서」 열이 그 행이 받을 **실이름**을 이미 보여준다
+        (보이는 변화 앞의 경고는 과경고 — 완화 조항).
+        """
+        note = "보이는 순서대로 생성됩니다."
+        if self.vm is not None and pattern_uses_seq(self.vm.job.filename_pattern):
+            note += " 파일 이름의 순번도 이 순서를 따릅니다."
+        return note
 
     def _candidate_payload(self, jobs) -> dict:
         """현재 데이터에 대한 문서 작업 후보(§18.4)+메인 순위(§18.5·§19.3) — 판정·정렬 모두
@@ -559,6 +615,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "filter_active": False, "filter_parts": 0,
             },
             "out_dir": self.out_dir,
+            # 전체 표시순서 축(§18.10) + 그 옆 상시 재진술(판정 I). 값은 데이터 귀속이라
+            # 작업 미선택 상태에서도 실린다 — 축은 데이터의 성질이지 작업의 성질이 아니다.
+            "view_order": self.view_order,
+            "order_note": self._order_note(),
             "data_label": self.data_label,
             # 소스 종류 병기 라벨(#26) — 저장 상태가 아니라 플래그에서 매번 합성(K8).
             "data_source_label": source_label(self.data_source, self.data_label),
@@ -689,7 +749,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.data_source = "file"  # 병기 라벨은 스냅샷이 합성(#26·K8)
         self.data_path, self.data_sheet = path, sheet or ""  # 「이 데이터 고정」 프리필(F1)
         self._data_key = self._file_key(path, sheet)  # 소스 일치 게이트(결정 28)
-        self.selection = SelectionModel(len(records), all_selected=False)  # 선택 0건(§18.2)
+        self._reset_range_for_snapshot(len(records))  # 선택 0건 + 표시순서 기본(§18.2·F3)
         self._init_filter()  # 데이터 교체 = 필터 재생성(결정 24 — 열 지형이 바뀐다)
         self._clear_data_notice()  # 사용자가 직접 데이터를 겨눔 → 자동 조준 재진술 소거
         self._apply_preferred_work()  # 보관된 명시 사건(§18.3 1행)을 이 데이터에서 판정
@@ -1149,7 +1209,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._stash_filter()  # 죽는 세션의 정의 → 슬롯(옛 소스 키 기준 — 키 갱신 전에)
         self._last_failed = []  # 파일 마운트와 같은 수명(§10.10 판정 F)
         self._data_key = self._pool_key()  # 라벨은 믹스인/자동 조준이 이미 세팅
-        self.selection = SelectionModel(len(records), all_selected=False)  # 선택 0건(§18.2)
+        self._reset_range_for_snapshot(len(records))  # 선택 0건 + 표시순서 기본(§18.2·F3)
         self._init_filter()  # 데이터 교체 = 필터 재생성(결정 24)
         self._clear_data_notice()  # 사용자가 직접 겨눔 → 자동 조준 재진술 소거
         self._apply_preferred_work()  # 보관된 명시 사건(§18.3 1행)을 이 데이터에서 판정

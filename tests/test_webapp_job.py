@@ -2343,3 +2343,110 @@ def test_cancelled_run_stays_a_partial_state(tmp_path, monkeypatch):
     assert res["status"] == "partiallyCompleted" and res["cancelled"] is True
     assert res["level"] == "warn" and res["unstarted"] == 1
     assert res["title"].startswith("생성을 중단했습니다")
+
+
+# ------------------------------------- 전체 표시순서 축(재작성 F3, 지도 §10.11.1 4계약면)
+def _order_session(tmp_path):
+    """3행 세션 — 축은 데이터의 성질이라 작업 선택 없이도 산다(스냅샷이 값을 낸다)."""
+    ctrl, pushes = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv3(tmp_path))
+    return ctrl, pushes
+
+
+def _axis(snap) -> "dict[str, list]":
+    """한 스냅샷이 말하는 순서 4벌 — 전부 같은 축이어야 한다."""
+    return {
+        "records": [r["index"] for r in snap["records"]],
+        "table": [r["index"] for r in snap["table"]["rows"]],
+        "strip": [r["index"] for r in snap["table"]["hidden_selected"]],
+        "sample": list(snap["restate"]["sample"]),
+    }
+
+
+def test_view_order_is_an_exact_reverse_with_no_ties(tmp_path):
+    """정밀도 면: 정렬 키가 정수 ordinal 이라 동률이 없고 두 값은 정확한 역이다."""
+    ctrl, _ = _order_session(tmp_path)
+    desc = _axis(ctrl.snapshot())["records"]
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
+    asc = _axis(ctrl.snapshot())["records"]
+    assert desc == [2, 1, 0] and asc == [0, 1, 2]
+    assert asc == list(reversed(desc))
+
+
+def test_every_order_consumer_shares_the_one_axis(tmp_path):
+    """도달성 면: 표·필터 밖 스트립·실행 입력·파일 이름 계획이 한 훅을 소비한다.
+
+    스트립이 원본 순서로 남으면 "보이는 것 = 만들어지는 것"이 거기서만 깨진다(판정 H).
+    """
+    ctrl, _ = _order_session(tmp_path)
+    ctrl.dispatch("filter_search", {"text": "책상"})  # 선택은 관통 — 2행이 필터 밖으로
+    for value, expect in (("sourceDesc", [1, 0]), ("sourceAsc", [0, 1])):
+        ctrl.dispatch("set_view_order", {"value": value})
+        snap = ctrl.snapshot()
+        seen = _axis(snap)
+        assert seen["strip"] == expect, f"{value}: 스트립이 표와 다른 축을 말합니다"
+        assert ctrl._indices() == ([2, 1, 0] if value == "sourceDesc" else [0, 1, 2])
+        # 파일 이름은 실행 입력 순서를 따라 발급된다({{seq:001}}) — 표의 「문서」 열이 증거.
+        names = {r["index"]: r["name"] for r in snap["records"]}
+        assert names[ctrl._indices()[0]].startswith("doc-001")
+
+
+def test_view_order_change_moves_no_row_in_or_out(tmp_path):
+    """축은 투영이고 선택은 집합 — 순서를 바꿔도 같은 행이 남는다."""
+    ctrl, _ = _order_session(tmp_path)
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("toggle_record", {"index": 1, "value": True})
+    before = ctrl.selection.selected_indices()
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
+    assert ctrl.selection.selected_indices() == before
+
+
+def test_new_snapshot_returns_to_the_default_axis(tmp_path):
+    """상태 주체 면 ①: 축은 데이터 귀속이라 새 스냅샷이 기본값으로 되돌린다(불변식 §18.11-13)."""
+    ctrl, _ = _order_session(tmp_path)
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    snap = ctrl.snapshot()
+    assert snap["view_order"] == "sourceDesc"
+    assert snap["selected_count"] == 0  # 같은 seam 이 선택 0건도 이행한다(§18.2)
+
+
+def test_view_order_is_not_persisted_across_sessions(tmp_path):
+    """상태 주체 면 ②: 개인화 설정으로 승격하지 않는다 — 새 세션은 기본값에서 시작한다.
+
+    순서가 파일 이름의 함수라(§2 충돌 B) 지난 데이터의 순서를 물고 오면 이름이 조용히 갈린다.
+    """
+    ctrl, _ = _order_session(tmp_path)
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
+    fresh = JobController(_registry(tmp_path), lambda s, snap: None)
+    assert fresh.initial()["view_order"] == "sourceDesc"
+
+
+def test_selecting_a_work_does_not_touch_the_axis(tmp_path):
+    """불변식 §18.11-23 — 문서 작업 선택은 `RecordRangeState` 를 바꾸지 않는다."""
+    ctrl, _ = _order_session(tmp_path)
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    assert ctrl.snapshot()["view_order"] == "sourceAsc"
+
+
+def test_unknown_view_order_is_refused_loudly(tmp_path):
+    """confirm-or-alarm: 미지 값은 조용한 기본값 강등이 아니라 거절이다."""
+    ctrl, _ = _order_session(tmp_path)
+    with pytest.raises(ValueError):
+        ctrl.dispatch("set_view_order", {"value": "alphabetical"})
+    assert ctrl.snapshot()["view_order"] == "sourceDesc"
+
+
+def test_order_note_claims_the_filename_link_only_when_it_is_true(tmp_path):
+    """판정 I: 상시 절은 언제나 참, 순번 절은 규칙이 `{{seq}}` 를 쓸 때만 붙는다."""
+    ctrl, _ = _order_session(tmp_path)
+    assert "보이는 순서대로" in ctrl.snapshot()["order_note"]
+    assert "순번" in ctrl.snapshot()["order_note"]  # 픽스처 규칙 = doc-{{seq:001}}
+    job = ctrl.registry.load("공고서")
+    job.filename_pattern = "{{bidNtceNm}}"
+    ctrl.registry.save(job)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    note = ctrl.snapshot()["order_note"]
+    assert "보이는 순서대로" in note and "순번" not in note

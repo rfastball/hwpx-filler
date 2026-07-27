@@ -143,6 +143,21 @@ class TestWebSelftestGate:
             "all", "recent", "favorites", "needsAction",
         ]
 
+    def test_display_order_axis_survives_the_push_rerender(self, selftest_result: dict) -> None:
+        """재작성 F3 — 표시순서를 바꾸면 왕복 뒤에도 고른 값이 남는다.
+
+        이 축의 결함류는 "왕복 중 도착한 push 가 선택기를 옛 값으로 되돌린다"이고, 정적
+        계약은 요소 존재까지만 본다. 양성대조(`control_before`)가 먼저 선다 — 렌더가 실제로
+        이 요소의 값을 쓴다는 증명이 없으면, 값이 안 바뀌는 프로브도 통과해 버린다.
+        """
+        v = selftest_result["view_order"]
+        assert v.get("error") is None, f"표시순서 프로브 오류: {v!r}"
+        assert v["present"] is True and v["options"] == ["sourceDesc", "sourceAsc"]
+        assert v["control_before"] is True, "양성대조 실패 — 렌더가 선택기를 쓰지 않습니다."
+        assert v["note_before"], "축 옆 재진술 문안이 비어 있습니다(판정 I)."
+        assert v["after_roundtrip"] == "sourceAsc", "왕복 뒤 축이 옛 값으로 되돌아갔습니다."
+        assert v["restored"] == "sourceDesc"
+
     def test_call_chain_survives_a_rejected_link(self, selftest_result: dict) -> None:
         """리뷰 5R — 직렬화 체인은 실패 한 번으로 죽지 않는다.
 

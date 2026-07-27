@@ -265,7 +265,32 @@
   }
 
   /* ---- 데이터 존 — 겨눔 라벨·자동 조준 재진술 ---- */
+  /* 표시순서 축(F3) — 값의 정본은 Python(`view_order`)이지만, **왕복 중에는 방금 고른 값이
+     이긴다**: 확정 전에 도착한 push 가 select 를 옛 값으로 되돌리면 사용자는 자기 조작이
+     씹힌 것으로 읽는다(#217 R2 의 선택 토글과 같은 계열). 값이 하나뿐이라 즐겨찾기 같은
+     의도 큐는 필요 없고 **마지막 값이 이긴다** — 중간 값은 버리는 것이지 취소가 아니다. */
+  let pendingOrder = null;
+
+  function renderOrderBar(s) {
+    const sel = $("jobOrderSel");
+    const want = pendingOrder !== null ? pendingOrder : (s.view_order || "sourceDesc");
+    if (sel.value !== want) sel.value = want;
+    $("jobOrderNote").textContent = s.order_note || "";
+  }
+
+  async function onOrderChange(e) {
+    const value = e.target.value;
+    pendingOrder = value;
+    try {
+      await Bridge.call(SCREEN, "set_view_order", { value });
+    } finally {
+      // 내 왕복이 마지막일 때만 의도를 놓는다 — 뒤에 더 고른 값이 있으면 그 값이 소유자다.
+      if (pendingOrder === value) pendingOrder = null;
+    }
+  }
+
   function renderData(s) {
+    renderOrderBar(s);
     $("jobDataLabel").value = s.data_source_label || "";
     const note = $("jobDataNotice");
     const n = s.data_notice;
@@ -568,6 +593,9 @@
       initialFocus: $("dataSheetClose"),
       moves: [
         { id: "jobRecsHead", slotId: "dataSheetSlot" },
+        // 표시순서 축도 따라간다(F3 판정 C): 축이 메인에만 남으면 펼친 면에서 순서를 못
+        // 바꾸고, 두 벌로 복제하면 상태가 둘로 갈린다 — 같은 요소가 이동하므로 둘 다 아니다.
+        { id: "jobOrderBar", slotId: "dataSheetSlot" },
         { id: "jobFilterChips", slotId: "dataSheetSlot" },
         { id: "jobTableHost", slotId: "dataSheetSlot" },
         { id: "jobSelStrip", slotId: "dataSheetSlot" },
@@ -718,7 +746,10 @@
     // 탐색 면·데이터 선택 면은 **오버레이 루트**에 살아 `#scr-job` 질의에 안 걸린다(리뷰 2R
     // P2) — 생성 중 열려 있으면 클릭이 Python 거절로 끝나고 사용자는 문맥만 잃는다. 같은
     // 잠금에 넣는다(지도 §10.7.1 계약면 2).
-    [$("scr-job"), $("jobBrowseSheet"), $("dataPickerModal")].forEach((root) => {
+    // ⤢ 펼침 면 2종도 같은 이유로 루트다: 실 DOM 이동이라 잠글 요소가 **면 안으로 옮겨가**
+    // `#scr-job` 질의에서 빠진다(표시순서 축·전체 선택·검색이 그렇게 새 있었다, F3).
+    [$("scr-job"), $("jobBrowseSheet"), $("dataPickerModal"),
+     $("dataSheet"), $("jobConfirmSheet")].forEach((root) => {
       root.querySelectorAll("[data-busy-lock]").forEach((el) => { el.disabled = busy; });
     });
     $("jobGenBtn").disabled = busy || !(LAST && LAST.gate && LAST.gate.enabled);
@@ -1157,6 +1188,7 @@
           log("작업 열기 실패: " + String((err && err.message) || err));
         }));
     });
+    $("jobOrderSel").addEventListener("change", onOrderChange);
     $("jobDataExpand").addEventListener("click", openJobDataSheet);
     $("jobMirrorExpand").addEventListener("click", openJobConfirmSheet);
     $("jobMirrorCapstrip").addEventListener("click", (e) => {

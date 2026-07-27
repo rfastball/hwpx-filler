@@ -52,6 +52,16 @@ def pattern_field_tokens(pattern: str) -> "list[str]":
     return list(out)
 
 
+def pattern_uses_seq(pattern: str) -> bool:
+    """패턴이 ``{{seq}}`` 계열 토큰을 쓰는가 — **표시순서와 파일명의 연동 여부** 판정.
+
+    표시순서(재작성 F3, 지도 §10.11 판정 I)를 사용자 축으로 열면 순번이 표시 순서를 따라
+    바뀐다. 그 사실을 문안이 말해야 하는데, 순번을 안 쓰는 패턴에도 말하면 문안이 거짓이
+    된다 — 어느 쪽인지는 토큰 판정기 단일 출처(:data:`_SEQ_TOKEN`)가 답한다.
+    """
+    return _SEQ_TOKEN.search(pattern) is not None
+
+
 def clean_filename(name: str) -> str:
     return _INVALID.sub("_", name)
 
