@@ -17,7 +17,7 @@ HWPX 파일을 직접 읽고 씁니다.
 템플릿·매핑·파일명을 한 번 저장해 둔 **작업(Job)** 으로 바꿔서, 다음부터는 데이터만
 갈아 끼우면 되게 합니다.
 
-![문서 만들기 화면](examples/quickstart-101/img/07-session-panel.png)
+![문서 만들기 화면](examples/quickstart-101/img/08-session-panel.png)
 
 ## 설치
 

@@ -1515,6 +1515,7 @@ def test_job_preview_drawer_surface_contract():
     for element in (
         "previewModal", "previewTitle", "previewPos", "previewPrev", "previewNext",
         "previewRows", "previewEvidence", "previewEvidenceRows", "previewEvidenceNote",
+        "previewEvidenceReason",
         "previewFilename", "previewScope", "previewApprove", "previewClose",
         "previewEdit", "previewEmpty", "jobPreviewOpen", "jobReviewFlag",
     ):

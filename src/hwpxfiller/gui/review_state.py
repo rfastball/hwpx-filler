@@ -200,16 +200,14 @@ def build_evidence(
     ``mapped`` 는 **선택 순서**(=표시순 투영)의 매핑 결과이고 ``pos`` 는 그 안의 자리다.
     """
     if not req.required or not mapped:
-        return {"policy": "", "rows": [], "note": ""}
+        return {"policy": "", "reason": "", "rows": [], "note": ""}
     record = mapped[pos] if 0 <= pos < len(mapped) else {}
     rows: "list[dict]" = []
     note = ""
     if req.risk_class == "filename_set":
-        rows.append({
-            "name": "파일 이름",
-            "value": names[pos] if 0 <= pos < len(names) else "",
-            "note": "",
-        })
+        # 이 레코드의 실이름은 **footer 가 소유**한다 — 증거 행에 다시 실으면 같은 문자열이
+        # 한 면에 두 번 서고(눈검증), 무엇을 확인하라는 건지 흐려진다. 여기서 말할 것은
+        # 대표 한 건이 답할 수 없는 것, 곧 **집합 성질**이다(C-01 의 요지).
         bits = []
         if converged:
             bits.append(f"같은 이름으로 겹쳐 꼬리표가 붙은 문서 {converged}건")
@@ -230,24 +228,33 @@ def build_evidence(
             else:
                 row_note = "표시형이 적용된 값입니다."
             rows.append({"name": name, "value": value, "note": row_note})
-    return {"policy": req.evidence_policy, "rows": rows, "note": note}
+    # 드로어 안에서는 게이트 문안이 안 보인다 — **왜 확인을 묻는지**를 면이 스스로 말한다
+    # (눈검증: 첫 실행인데 "이름이 모두 서로 다릅니다"만 뜨면 묻지 않은 질문에 답한 꼴).
+    # 같은 문장을 게이트와 공유해 두 표면이 같은 상태를 다르게 부르지 않게 한다.
+    return {
+        "policy": req.evidence_policy, "reason": review_reason_text(req),
+        "rows": rows, "note": note,
+    }
+
+
+def review_reason_text(req: ReviewRequirement) -> str:
+    """**왜** 확인을 묻는가 — 게이트와 드로어가 공유하는 한 문장(판정 N 의 세 갈래).
+
+    변경 대상은 **다 적는다**: "규칙이 바뀌었습니다"만으로는 무엇을 확인하러 가는지 모른 채
+    미리보기를 열게 되고, 그러면 확인이 형식이 된다(빈 값 게이트가 필드 이름을 다 적는 것과
+    같은 근거).
+    """
+    if req.first_run:
+        return "아직 한 번도 문서를 만들지 않은 작업입니다."
+    if req.unknown_baseline:
+        return "마지막 실행에 쓴 규칙을 확인할 수 없습니다."
+    return f"규칙이 바뀌었습니다: {', '.join(req.changed_targets)}."
 
 
 def review_gate_text(req: ReviewRequirement) -> str:
     """검토 요구가 게이트에 쓰는 문안 — ①무엇이 됐는가 ②다음에 뭘 하는가만
-    (`docs/COPY_STYLE_GUIDE.md` §1·§2 오류 문형: 최대 2문장).
-
-    변경 대상은 **다 적는다**: "규칙이 바뀌었습니다"만으로는 무엇을 확인하러 가는지
-    모른 채 미리보기를 열게 되고, 그러면 확인이 형식이 된다(빈 값 게이트가 필드 이름을
-    다 적는 것과 같은 근거).
-    """
-    if req.first_run:
-        head = "아직 한 번도 문서를 만들지 않은 작업입니다."
-    elif req.unknown_baseline:
-        head = "마지막 실행에 쓴 규칙을 확인할 수 없습니다."
-    else:
-        head = f"규칙이 바뀌었습니다: {', '.join(req.changed_targets)}."
-    return head + " 미리보기에서 결과를 확인해야 생성할 수 있습니다."
+    (`docs/COPY_STYLE_GUIDE.md` §1·§2 오류 문형: 최대 2문장)."""
+    return review_reason_text(req) + " 미리보기에서 결과를 확인해야 생성할 수 있습니다."
 
 
 @dataclass

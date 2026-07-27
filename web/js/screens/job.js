@@ -690,8 +690,9 @@
   function renderPreviewEvidence(ev) {
     const sec = $("previewEvidence");
     const rows = ev.rows || [];
-    if (!rows.length && !ev.note) { sec.style.display = "none"; return; }
+    if (!rows.length && !ev.note && !ev.reason) { sec.style.display = "none"; return; }
     sec.style.display = "";
+    $("previewEvidenceReason").textContent = ev.reason || "";
     $("previewEvidenceRows").innerHTML = rows.map((row) =>
       `<div class="mir-row" data-field="${esc(row.name)}">` +
       `<span class="mir-name">${esc(row.name)}</span>` +

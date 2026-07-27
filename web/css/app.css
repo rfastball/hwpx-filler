@@ -1071,7 +1071,10 @@ body.resizing-master{cursor:col-resize;user-select:none}
 .preview-drawer .preview-nav{display:flex;align-items:center;gap:var(--sp-8);
   margin-top:var(--sp-8)}
 .preview-drawer .preview-nav strong{font-variant-numeric:tabular-nums}
-.preview-drawer .picker-sec>div{display:flex;flex-direction:column;gap:var(--sp-2);
+/* 행 컨테이너만 겨눈다 — `.picker-sec>div` 로 넓게 걸면 구획 캡션(`.cap` 도 div)까지
+   세로 flex·스크롤 상자가 돼 캡션이 가운데로 뭉갠다(눈검증이 잡은 자리). */
+.preview-drawer #previewRows,
+.preview-drawer #previewEvidenceRows{display:flex;flex-direction:column;gap:var(--sp-2);
   max-height:34vh;overflow:auto;overscroll-behavior:contain}
 .preview-drawer .mir-row{display:flex;gap:var(--sp-12);align-items:baseline;
   padding:var(--sp-6) 0;border-bottom:1px solid var(--n-border)}

@@ -746,6 +746,8 @@
         <section class="picker-sec" id="previewEvidence" style="display:none"
                  aria-labelledby="previewEvidenceCap">
           <div class="cap" id="previewEvidenceCap">확인할 변경</div>
+          <!-- 왜 묻는지를 면이 스스로 말한다 — 드로어 안에서는 게이트 문안이 안 보인다. -->
+          <p class="muted capnote" id="previewEvidenceReason"></p>
           <div id="previewEvidenceRows"></div>
           <p class="muted capnote" id="previewEvidenceNote"></p>
         </section>
@@ -756,8 +758,10 @@
         </section>
 
         <div class="preview-foot">
+          <!-- 파일 이름은 mono 로 두지 않는다: 한글 파일명이 등폭 폴백에서 자간이 벌어져
+               실제와 다른 문자열처럼 보인다(눈검증). 이 값은 그대로 읽히는 게 일이다. -->
           <div><span class="muted capnote">파일 이름</span>
-            <strong class="mono" id="previewFilename"></strong></div>
+            <strong id="previewFilename"></strong></div>
           <div><span class="muted capnote">적용 범위</span>
             <strong id="previewScope"></strong></div>
         </div>

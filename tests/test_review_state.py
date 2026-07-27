@@ -236,6 +236,22 @@ def test_semantic_approval_dies_with_the_selection():
     assert not st.is_approved(req, "1,0")  # 순서만 바뀌어도 파일 이름이 달라진다
 
 
+def test_evidence_says_why_confirmation_is_asked():
+    """눈검증이 잡은 자리 — 드로어 안에서는 게이트 문안이 안 보인다. 첫 실행인데 "이름이
+    모두 서로 다릅니다"만 뜨면 묻지 않은 질문에 답한 꼴이다. 게이트와 **같은 문장**을
+    공유해 두 표면이 같은 상태를 다르게 부르지 않게 한다."""
+    from hwpxfiller.gui.review_state import build_evidence, review_reason_text
+
+    req = review_requirement(_job())          # 새 작업
+    ev = build_evidence(req, mapped=[{"공고명": "가"}], names=("가.hwpx",),
+                        converged=0, too_long=0, pos=0)
+    assert ev["reason"] == review_reason_text(req)
+    assert "한 번도 문서를 만들지 않은" in ev["reason"]
+    # 파일 이름은 footer 소유 — 증거 행에 다시 싣지 않는다(한 면에 같은 문자열 두 번 금지).
+    assert ev["rows"] == []
+    assert "서로 다릅니다" in ev["note"]
+
+
 def test_gate_text_names_what_changed():
     job = _reviewed(_job())
     job.mapping.mappings[1].source = "다른열"
