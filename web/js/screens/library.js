@@ -291,16 +291,23 @@
   }
 
   /* ---- 이동: 대상 화면을 먼저 겨눈 뒤 셸 라우터로 전환(§9.3 순서 면) ---- */
-  /* 「문서 만들기에서 사용」 — 명시적 버튼만 실행 문맥을 바꾼다(§19.8). 겨눔은 「작업」 화면의
-     자체 dispatch(JobScreen.openJob → select_job)로 하고, 그 다음에 화면을 전환한다. 재클릭
-     무동작 가드도 그쪽이 승계한다 — 이미 그 작업 세션이 진행 중이면 재구성하지 않아 데이터
-     겨눔·행 선택·확인이 조용히 소실되지 않는다.
-     §19.8 이 요구하는 3분기(데이터 없음 → preferredWorkId 보관, 비호환 → 확인 필요 탭 focus)는
-     **아직 갈리지 않는다** — 다음 커밋에서 붙인다. 지금은 명시 선택 뒤 게이트가 부족한 것을
-     시끄럽게 말하므로 조용한 오류는 없다. */
-  function useInJob(name) {
-    if (window.JobScreen) { window.JobScreen.openJob(name); return; }
+  /* 「문서 만들기에서 사용」 — 명시적 버튼만 실행 문맥을 바꾼다(§19.8).
+
+     3분기 **판정은 Python 이 낸다**(`job/prefer_work`): 데이터 준비·호환 여부는 링1 술어가
+     이미 소유하므로 여기서 다시 계산하면 같은 상태를 두 곳이 판정한다(판정 단일 출처).
+     이 함수가 하는 일은 반환 사유에 따른 라우팅뿐이다.
+
+       promoted     → 활성으로 섰다. 화면만 전환한다(RecordRangeState 는 세션 소유라 생존).
+       no_data      → 보관됐다. 게이트가 「데이터를 고르세요」를 말하고, 마운트 시 승격된다.
+       incompatible → 활성 불변. 막힌 사유가 있는 「확인 필요」 탭으로 데려간다.
+
+     겨눔이 실패하면(작업 소실·생성 중 등) await 가 throw 해 **화면을 바꾸지 않는다**. */
+  async function useInJob(name) {
+    const r = await Bridge.call(JOB, "prefer_work", { name });
     window.Nav.go(JOB);
+    if (r && r.reason === "incompatible" && window.JobScreen) {
+      await window.JobScreen.openBrowseNeedsAction(name);
+    }
   }
 
   /* 편집 진입 — 미저장 에디터 세션은 조용히 버리지 않고 확인(#25 미러) 후 복원.

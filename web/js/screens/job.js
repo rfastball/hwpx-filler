@@ -608,6 +608,15 @@
     });
   }
 
+  /* 「문서 작업」에서 온 비호환 착지(§19.8 2분기) — 조용히 아무 일도 안 일어나는 대신
+     막힌 사유가 있는 자리로 데려간다. 탭·검색어는 세션 소유라 Python 에 먼저 세우고
+     (판정·건수는 그쪽이 낸다) 면을 연다. */
+  async function openBrowseNeedsAction(name) {
+    await Bridge.call(SCREEN, "browse_tab", { tab: "needs_action" });
+    await Bridge.call(SCREEN, "browse_query", { text: name });
+    openBrowseSheet();
+  }
+
   function openJobDataSheet(e) {
     $("dataSheetTitle").textContent = "작업 데이터 행 고르기";
     window.SurfaceSheet.open({
@@ -1458,5 +1467,6 @@
   window.JobScreen = {
     init, overwriteBody, guardBody, confirmDataSwapIfArmed, openJob,
     showEditMode, showRunMode, refreshList, openJobConfirmSheet, openJobDataSheet,
+    openBrowseNeedsAction,
   };
 })();

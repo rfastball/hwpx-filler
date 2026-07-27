@@ -130,6 +130,8 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "refresh": _schema(),
         "select_job": _schema("name", "confirm"),
         "toggle_favorite": _schema("name value"),
+        # 라이브러리 「문서 만들기에서 사용」의 착지(§19.8) — 분기 판정은 Python 이 낸다.
+        "prefer_work": _schema("name"),
         "browse_tab": _schema(optional="tab"),
         "browse_query": _schema(optional="text"),
         "relink_template": _schema("name", "path confirm"),
