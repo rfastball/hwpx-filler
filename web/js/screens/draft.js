@@ -307,6 +307,9 @@
       : "지금 진행 중인 세션은";
   }
 
+  /* 저장 기안 결속 — 좌 목록 클릭과 **「문서 작업」 라이브러리의 열기**가 공유하는 단일
+     경로다(가드 문안·stale 재진술을 두 벌로 두지 않는다). 반환 = 실제로 결속했는가:
+     취소·실패면 false 라 호출자가 화면을 바꾸지 않는다(§9.3 전이 순서 면). */
   async function selectJob(name) {
     let r = await Bridge.call(SCREEN, "select_job", { name });
     if (r && r.needs_confirm) {
@@ -315,10 +318,11 @@
         body: leaveLossBody(r) + " 넘어가면 사라집니다.",
         confirmLabel: "넘어가기", cancelLabel: "취소",
       });
-      if (!ok) return;
+      if (!ok) return false;
       r = await Bridge.call(SCREEN, "select_job", { name, confirm: true });
     }
-    if (r && r.ok === false && r.error) window.alert(r.error);
+    if (r && r.ok === false && r.error) { window.alert(r.error); return false; }
+    return true;
   }
 
   /* ---- ⋮ 메뉴(내용은 화면 소유, 위치·표시는 팩토리) ---- */
@@ -522,7 +526,7 @@
 
   // 화면 진입마다 재동기(txt 와 같은 규율) — 다른 표면이 저장한 템플릿·바꾼 전역 글꼴 선언이
   // 앱 재시작 없이 여기에 반영된다.
-  // confirmNewDraftIfArmed 는 홈의 「＋ 새 기안」이 소비(#126 · #148 슬라이스 6 — 구 TxtScreen
+  // confirmNewDraftIfArmed 는 구 홈의 「＋ 새 기안」이 소비했다(#126 · #148 슬라이스 6 — 구 TxtScreen
   // 에서 승계). 화면 진입 전에 현 세션 무장(T3 큐 진행)을 사전 확인해 조용한 파괴를 막는다.
   window.DraftScreen = {
     init,
@@ -530,5 +534,6 @@
     confirmNewDraftIfArmed: sess.confirmNewDraftIfArmed,
     guardBody: sess.guardBody,  // 실앱 게이트가 세션 교체 가드 문안(F6 레시피 편집 열거)을 되읽음
     leaveForTemplateBody: sess.leaveForTemplateBody,  // 세션 교체 확인 문안(팩토리 단일 출처, 리뷰 C·I)
+    openWork: selectJob,  // 「문서 작업」 라이브러리의 TXT 열기 — 가드·문안 단일 출처(2R)
   };
 })();

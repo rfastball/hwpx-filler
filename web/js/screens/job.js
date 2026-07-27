@@ -337,60 +337,21 @@
   }
 
   /* 즐겨찾기 전이 단일 몸통 — 후보 카드의 별과 좌 목록 ⋮ 메뉴가 같은 경로를 쓴다(두 표면이
-     서로 다른 왕복을 갖지 않게). 낙관 표지 없이 Python 왕복 결과(push)로만 표시가 바뀐다 —
-     별이 먼저 켜졌다가 저장 실패로 되돌아가면 영속된 척하는 거짓 표지다(#215 동류).
+     서로 다른 왕복을 갖지 않게). 기제(미결 의도 계산·전역 쓰기 직렬화·꼬리 식별 정리)는
+     리뷰 3R·4R·5R·6R 가 세운 그대로이되 **공용 몸통**(js/intent.js)으로 걷었다 — 재작성 F2 의
+     라이브러리가 같은 별을 새로 그리며 기제 없이 DOM 값만 보내 같은 결함류를 재발시켰다
+     (리뷰 3R 근본 조치). 여기 남는 것은 이 화면의 브리지 키와 오류 표면뿐이다.
 
-     **의도 직렬화**(리뷰 3R P2): 표시는 왕복 뒤에 바뀌므로, 왕복 중 두 번째 클릭이 DOM 의
-     낡은 상태를 읽으면 같은 의도를 두 번 보낸다 — `set_favorite` 은 재지정을 멱등 처리하니
-     껐다 켠 것이 아니라 **켜진 채로 남는다**(사용자 의도 소실). 그래서 다음 값은 DOM 이
-     아니라 **미결 의도**에서 계산한다. 계산만 여기서 하고 판정·영속은 여전히 Python 몫이다.
-
-     **쓰기 직렬화**(리뷰 4R·6R P2): 의도를 옳게 계산해도 왕복을 동시에 띄우면 안 된다 —
-     pywebview 는 호출마다 별도 스레드라 나중 클릭의 쓰기가 먼저 레지스트리 잠금을 잡을 수
-     있고, 그러면 **마지막 클릭과 반대 상태가 영속된다**. 체인은 **작업별이 아니라 전역
-     하나**다(6R): 즐겨찾기 시각은 작업들 사이의 **순위**라 서로 다른 작업 둘을 연속으로
-     별 찍을 때도 클릭 순서가 곧 쓰기 순서여야 한다(시각 자체는 Python 이 잠금 안에서 찍는다). */
-  const FAV_PENDING = new Map();  // 작업 이름 → 왕복 중인(또는 대기 중인) 의도 상태
-  const FAV_LAST = new Map();     // 작업 이름 → 그 작업이 마지막으로 큐에 든 링(정리 식별)
-
-  /* 브리지 호출 직렬화 공용 몸통 — 키 하나당 체인 하나. pywebview 는 호출마다 별도 스레드라
-     동시 발신은 **도착 순서를 보장하지 않는다**: 즐겨찾기는 나중 클릭과 반대 상태가 영속될 수
-     있고(4R·6R), 탐색 검색은 늦게 도착한 옛 응답이 새 검색 결과를 되돌린다(PR-1 5R). 두 표면이
-     같은 기제를 쓰므로 가드도 하나다(즐겨찾기 프로브가 이 몸통을 실물로 증명한다). */
-  const CALL_CHAINS = new Map();
-
-  function chained(key, send) {
-    // `return tail` 금지 — 자기 자신으로 resolve 하면 체인 순환(TypeError)으로 영영 안 끝난다.
-    const tail = (CALL_CHAINS.get(key) || Promise.resolve()).then(send).then(() => {
-      if (CALL_CHAINS.get(key) === tail) CALL_CHAINS.delete(key);
-    });
-    CALL_CHAINS.set(key, tail);
-    return tail;
-  }
-
-  function favPending(name, domPressed) {
-    return FAV_PENDING.has(name) ? FAV_PENDING.get(name) : domPressed;
-  }
+     낙관 표지는 없다: Python 왕복 결과(push)로만 표시가 바뀐다 — 별이 먼저 켜졌다가 저장
+     실패로 되돌아가면 영속된 척하는 거짓 표지다(#215 동류). */
+  const favorite = window.Intent.createFavorite({
+    send: (name, value) => Bridge.call(SCREEN, "toggle_favorite", { name, value })
+      .then((res) => { if (res && res.ok === false) log(res.error); }),
+    onError: (msg) => log(msg),
+  });
 
   function toggleFavorite(name, domPressed) {
-    const value = !favPending(name, domPressed);
-    FAV_PENDING.set(name, value);
-    const send = () => Bridge.call(SCREEN, "toggle_favorite", { name, value })
-      .then((res) => { if (res && res.ok === false) log(res.error); })
-      .catch((err) => {
-        log("즐겨찾기 변경 실패: " + String((err && err.message) || err));
-      });
-    // 체인 링은 절대 reject 하지 않는다(send 안 catch) — 한 번 실패해도 뒤 클릭이 막히지 않게.
-    // 정리는 **꼬리 식별**로 판정한다(슬2 5R P2): 값 비교로는 true→false→true 처럼 같은 값이
-    // 다시 큐에 있을 때 첫 왕복 완료가 최신 의도를 지운다. 그러면 뒤 클릭이 (스냅샷이 아직
-    // 없는) 낡은 DOM 을 읽어 의도가 어긋난다. 이 링이 마지막으로 큐에 든 것일 때만 걷는다.
-    const tail = chained("favorite", send).then(() => {
-      if (FAV_PENDING.get(name) === value && FAV_LAST.get(name) === tail) {
-        FAV_PENDING.delete(name);
-        FAV_LAST.delete(name);
-      }
-    });
-    FAV_LAST.set(name, tail);  // 작업별 "마지막으로 큐에 든 링" — 정리 식별
+    favorite.toggle(name, domPressed);
   }
 
   /* ---- 문서 탐색 면(§18.6·§19.5) — 「문서 만들기」 하위 화면(레일은 계속 「작업」) ----
@@ -606,6 +567,15 @@
         focusAfterPick(n);
       },
     });
+  }
+
+  /* 「문서 작업」에서 온 비호환 착지(§19.8 2분기) — 조용히 아무 일도 안 일어나는 대신
+     막힌 사유가 있는 자리로 데려간다. 탭·검색어는 세션 소유라 Python 에 먼저 세우고
+     (판정·건수는 그쪽이 낸다) 면을 연다. */
+  async function openBrowseNeedsAction(name) {
+    await Bridge.call(SCREEN, "browse_tab", { tab: "needs_action" });
+    await Bridge.call(SCREEN, "browse_query", { text: name });
+    openBrowseSheet();
   }
 
   function openJobDataSheet(e) {
@@ -1019,7 +989,7 @@
     // 위치·표시는 팩토리. 즐겨찾기가 여기 있는 이유(리뷰 2R P2): 후보 구획의 별은 상위
     // 5장에만 있어 순위 밖 작업은 승격 경로가 없었다 — 좌 목록은 절단되지 않는 표면이다.
     // 미결 의도가 있으면 그것을 따른다 — 메뉴 문안은 **이 클릭이 할 일**을 말해야 한다.
-    const fav = favPending(name, isFavorited(name));
+    const fav = favorite.pending(name, isFavorited(name));
     const html = kind === "job"
       ? `<button data-menu="edit">편집</button>` +
         `<button data-menu="clone">복제</button>` +
@@ -1209,7 +1179,9 @@
     if (r && r.ok) log(`그룹 해산: '${name}' (작업 ${r.count}개 이동)${r.drift_note || ""}`);
   }
 
-  /* 허브(홈)에서 이 작업을 열기 — 좌 목록 재클릭 무동작 가드(onMasterClick)와 동형.
+  /* 이 작업을 세션에 열기 — 좌 목록 재클릭 무동작 가드(onMasterClick)와 동형.
+     라이브러리에서 오는 경로는 `prefer_work`(§19.8 3분기 판정)를 타므로 여기로 오지 않는다.
+     남는 소비처는 화면 안 진입과 외부 스크립트(캡처 하니스)다.
      이미 이 작업 세션이면 재구성하지 않고(진행 중 데이터 겨눔·행 선택·확인이 조용히 소실되지
      않게 — 리뷰 F1) 그대로 두고 화면만 전환한다. 아니면 겨눠 진입한다. */
   function openJob(name) {
@@ -1332,7 +1304,7 @@
       const t = e.target.closest("[data-browse-tab]");
       if (!t || t.getAttribute("aria-selected") === "true") return;
       const tab = t.getAttribute("data-browse-tab");
-      chained("browse", () =>
+      Intent.chained("browse", () =>
         Bridge.call(SCREEN, "browse_tab", { tab })
           .catch((err) => log("탭 전환 실패: " + String((err && err.message) || err))));
     });
@@ -1348,7 +1320,7 @@
         // 디바운스보다 느리면 두 요청이 겹치고, 늦게 온 옛 응답이 새 검색 결과를 되돌린다
         // (입력값만 지키는 포커스 가드로는 결과-문안 불일치가 남는다). 탭 전환도 같은 체인:
         // 탭과 검색은 한 목록의 두 축이라 서로 앞질러도 같은 어긋남이 난다.
-        chained("browse", () =>
+        Intent.chained("browse", () =>
           Bridge.call(SCREEN, "browse_query", { text })
             .catch((err) => log("검색 실패: " + String((err && err.message) || err))));
       }, 180);
@@ -1370,7 +1342,7 @@
       // 있으면 그 응답이 선택 뒤에 도착해 패널·후보 스냅샷을 옛 상태로 되돌린다. 탐색 표면의
       // 모든 왕복이 한 줄에 서야 화면이 마지막 사용자 행동을 반영한다.
       const gen = browseOpenGen;                  // 이 클릭이 속한 개폐 세대
-      chained("browse", () =>
+      Intent.chained("browse", () =>
         gen !== browseOpenGen ? null :            // 그 사이 닫혔다 = 취소된 의도(조용히 접는다)
         selectJobGuarded(name).then((ok) => {
           if (!ok) return;                      // 가드 취소·거절 = 면 유지(문맥 보존)
@@ -1397,7 +1369,7 @@
     });
     $("jobEditResume").addEventListener("click", showEditMode);
     // 구획 ＋ 새 작업(1부 결정 10 — 레일 항목 사망의 생성 진입 승계, 리뷰 F2). 흐름은
-    // EditorEntry.newDraft 단일 출처(홈 ＋ 와 공유 — 폐기 확인·착지 드리프트 금지).
+    // EditorEntry.newDraft 단일 출처(「문서 작업」 ＋ 와 공유 — 폐기 확인·착지 드리프트 금지).
     $("jobNewBtn").addEventListener("click", startNewJob);
     $("jobEmptyNewBtn").addEventListener("click", startNewJob);
     // 재렌더에도 살아남게 안정 컨테이너에 위임(#67).
@@ -1458,5 +1430,6 @@
   window.JobScreen = {
     init, overwriteBody, guardBody, confirmDataSwapIfArmed, openJob,
     showEditMode, showRunMode, refreshList, openJobConfirmSheet, openJobDataSheet,
+    openBrowseNeedsAction,
   };
 })();

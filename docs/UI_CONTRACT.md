@@ -48,13 +48,13 @@ Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다.
 
 ## 현재 라우팅과 소유권
 
-레일과 최상위 DOM 화면의 현재 목록은 `home`, `job`, `draft`, `tpl` 네 개다.
+레일과 최상위 DOM 화면의 현재 목록은 `library`, `job`, `draft`, `tpl` 네 개다.
 `web/js/app.js`의 `window.Nav.go`가 표시 상태를 전환한다. `editor`는 라우팅 화면이 아니라
 `job` 화면 안의 편집 호스트이며 `EditorEntry`가 편집 모드로 착지시킨다.
 
 | 라우트/표면 | DOM·JavaScript 소유자 | Python 컨트롤러 | 링1 ViewModel·상태 소유자 |
 |---|---|---|---|
-| `home` 대시보드 | `#scr-home`, `screens/home.js` | `HomeController` | `HomeViewModel` |
+| `library` 문서 작업(전역 라이브러리) | `#scr-library`, `screens/library.js` | `LibraryController` | `HomeViewModel`(모듈명은 유지 — 지도 §10.8 판정 A) |
 | `job` 작업 목록·실행 | `#scr-job`, `screens/job.js` | `JobController` | `RunViewModel`, `SelectionModel`, 필터 상태, 후보 판정(`work_candidates`) |
 | `job` 내부 작업 편집 | `#jobEditHost`, `screens/editor.js`, `editor_entry.js` | `EditorController` | `MappingModel`, 저장 판정, 공유 `TemplateManagerViewModel` |
 | `draft` 기안 작업·세션 | `#scr-draft`, `screens/draft.js`, `draftsession.js` | `DraftController` | `TxtDraftViewModel`, `MappingModel`, `SelectionModel`, `TxtQueueModel` |
@@ -103,9 +103,11 @@ Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다.
   「다음에 어디로」의 정보는 게이트 문안 앞머리의 **구획 이름 지목**(`gateStep`)이 승계하며,
   지목 문자열은 실재하는 `zone-cap` 캡션과 일치해야 한다(죽은 번호는 지목을 거짓말로 만든다).
   「기안」(`draft`)의 znum 문법은 그대로 산다 — 거기는 여전히 순서 있는 세션이다.
-- 좌 master 작업 목록과 그 관리 동사(`rename_job`·`set_group`·`rename_group`·`disband_group`·
-  `toggle_group`·`toggle_favorite`)는 **존치**한다. 라이브러리 표면이 승계할 때 함께 죽는다
-  (지도 §10.5 F2) — `home` 에 없는 동사라 지금 지우면 조용히 사라진다.
+- 좌 master 작업 목록은 **존치**한다 — 사망은 F2 PR-B 다(지도 §10.8). 그 관리 동사 중 열린
+  세션의 정체와 결속된 것(`rename_job`·`set_group`·`rename_group`·`disband_group`)은 이 화면
+  컨트롤러가 계속 **소유**하고, 라이브러리 표면이 교차 화면 dispatch 로 부른다(§10.8 판정 F) —
+  여기서 재구현하면 같은 상태를 두 판정이 내게 된다. `toggle_group`(그룹 접힘)의 소유는
+  라이브러리로 넘어갔고 두 화면이 같은 영속 키(`job_collapsed_groups`)를 공유한다.
 - 생성 버튼은 계속 하단 sticky 액션바(`#jobActionBar`)다(#179 슬라이스 5b — 스크롤 무관 상시
   도달). v6 시안의 side-card `run-actions` 배치와 다른 유일한 지점이며, 결과 3태 구획과 함께
   재검토한다(지도 F4).
@@ -136,18 +138,51 @@ Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다.
 - `toggle_favorite`(`name`·`value`)은 정렬 메타(`Job.favorited_at`)만 바꾼다 — 활성 작업·
   매핑·검증·선택을 폐기하지 않는다(§18.5). 값은 표면이 보내는 의도 상태이고 시각은 Python 이
   찍는다.
+- `prefer_work`(`name`)은 라이브러리 「문서 만들기에서 사용」의 착지다(§19.8). **3분기 판정은
+  이 컨트롤러가 낸다** — 준비·호환은 링1 술어가 소유하므로 표면이 다시 계산하면 같은 상태를
+  두 곳이 판정한다. 반환은 `{promoted}`(호환 → 명시 선택) / `{stored, reason:"incompatible"}`
+  (활성 불변, 표면이 「확인 필요」 탭으로 라우팅) / `{stored, reason:"no_data"}`.
+  보관된 `preferredWorkId` 는 마운트 시 §18.3 1행으로 판정되고 **1회 소비**된다(승격이든
+  거절이든). 명시 `select_job` 도 보관분을 소비한다. 승격하지 못한 경우도 침묵하지 않고
+  사유를 `data_notice` 로 재진술한다 — 방금 누른 버튼이 아무 일도 안 한 것처럼 보이면
+  그게 조용한 소실이다.
 
-### `home` 화면의 전역 라이브러리 계약 (§19.6·§19.7)
+### `library` 화면(전역 문서 작업 라이브러리) 계약 (§19.6·§19.7)
 
-- 스냅샷은 `library`(보기·작업 방식·검색어·탭 건수·구획된 행)를 싣는다. 보기 4종
-  (`all`/`recent`/`favorites`/`needsAction`)·방식 필터(`all`/`hwpx`/`txt`)·검색은 **서로 다른
-  축**이라 하나를 바꿔도 나머지가 살아 있고, 판정·정렬·건수는 전부 링1
-  (`HomeViewModel.library_*`)이 낸다.
+`LibraryController`(`web/js/screens/library.js`)가 홈 화면을 대체한다(재작성 F2 PR-A). 링1
+투영은 `HomeViewModel` 이 그대로 소유한다 — 모듈명 유지는 지도 §10.8 판정 A 의 기록된 어휘 빚.
+
+- 스냅샷 최상위가 곧 browser 상태다: `view`·`mode`·`query`·`counts`·`facets`·`sections`·
+  `selected`·`detail`·`alerts`·`corrupt_rows`. 보기 4종(`all`/`recent`/`favorites`/
+  `needsAction`)·방식 필터(`all`/`hwpx`/`txt`)·검색·태그 facet 은 **서로 다른 축**이라 하나를
+  바꿔도 나머지가 살아 있고, 판정·정렬·건수는 전부 링1(`HomeViewModel.library_*`)이 낸다.
+  구 group-by 렌즈는 **은퇴**했다 — 화면당 primary grouping 은 사용자 group 하나다(§19.2).
+- 액션: `set_view`·`set_mode`·`set_query`·`toggle_facet`·`clear_facets`·`clear_filters`·
+  `toggle_group`·`select_work`·`toggle_favorite`·`clone_job`·`set_tags`·`delete_job`·
+  `undo_delete_job`·`relink_template`·`delete_corrupt`·`refresh`.
+- `clear_filters` 는 0건 화면의 **상주 출구**다 — 네 절단자(보기·방식·검색·태그)를 한 번에
+  걷는다. 절단 밖 작업에 도달할 길이 사라지지 않게 하는 §8.4 「도달성」 면의 이행분이다.
+- `select_work` 는 상세 패널이 겨눌 행일 뿐 **활성 작업이 아니다** — 여기서 다른 작업을 열어도
+  「문서 만들기」의 선택·데이터·승인은 불변이다(§19.6 서문, 화면 머리 문안이 재진술).
+- 즐겨찾기는 행 선택 버튼의 **형제** 버튼이다(§19.6: 중첩 금지). 이 배치가 「표시 상한과 무관한
+  도달성」(§8.4 2행)의 새 거처다 — 메인 Top 5 밖 작업도 여기서 승격할 수 있다.
+- 그룹 접힘은 **보기**만 바꾼다 — 접어도 구획 건수와 행 페이로드는 그대로다. 구획의
+  `value=""` 는 두 뜻(퇴화 평면 / 「그룹 없음」)이라 `is_untagged`·`headed` 로 가른다.
 - 탭 건수는 **검색 전** 값이다(라이브러리에 대한 사실 — 문서 탐색 탭과 같은 규칙).
 - 검색 대상은 작업 이름·사용자 그룹·태그 값뿐이다(소스 키·데이터 경로 제외, §19.6).
 - 확인 필요 행의 `health` 는 `{severity, text}` 쌍이다 — 문구만 주면 소비자가 경고(2)와
   차단(3)을 구분하지 못해 §19.7 건강 축이 "사유 있음/없음"으로 뭉개진다. 판정·문구는
   `library_health()`(§19.7 번역)가 소유하고 표면이 다시 만들지 않는다. 현재 데이터 호환성(`work_candidates`)과는 **섞지 않는다**(§19.7 명문).
+- 목록의 1건은 **파생**이고 정본은 `library_health_causes()` 의 전 원인 열거다(§19.7 "상세에서
+  모든 실제 원인"). 상세 `detail.health_causes` 가 그것을 그대로 싣는다 — 같은 상태를 두 술어가
+  따로 판정하면 목록과 상세가 서로 다른 말을 한다.
+- 상세 「필드 연결」 표(`detail.bindings`)는 **저장된 항목 키**를 보인다. 현재 데이터는 「문서
+  만들기」 세션 소유라 라이브러리가 원본 열 표시 이름을 쓰면 화면 간 결합이 생긴다(지도 §10.8
+  판정 C — 되깎기 조건 기록됨). Template/Binding **판본** 열은 F7 신설분이라 오늘 만들지
+  않는다(빈 자리·「준비 중」 표기도 두지 않는다 — 판정 D).
+- 2-pane 공간 배분은 목록 길이에 끌려다니지 않는다: 넓고(≥921px) 높은(≥760px) 창에서 두 pane 이
+  뷰포트를 나눠 각자 스크롤하고 **페이지는 스크롤하지 않는다**. 상시 행동(`작업 편집`·`문서
+  만들기에서 사용`)은 상세 스크롤과 분리해 pane 아래 고정한다(§19.6 마지막 문단).
 - 액션: `set_library_view`(`view`)·`set_library_mode`(`mode`)·`set_library_query`(`text`).
 
 ## DOM과 런타임 게이트

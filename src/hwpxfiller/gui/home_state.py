@@ -1,12 +1,15 @@
-"""홈 화면 ViewModel — Qt 비의존 프레젠테이션 상태(작업 목록·메타 성형·선택).
+"""전역 문서 작업 라이브러리 ViewModel — Qt 비의존 프레젠테이션 상태(목록·투영·건강).
 
-웹 홈 컨트롤러(:class:`~hwpxfiller.webapp.screen_home.HomeController`)는 이 뷰모델의
-``rows()``·``is_empty()``·``count_label()`` 결과를 렌더한다. 레지스트리 접근, 카드 메타
-문자열, 최근실행 포맷, 선택 상태가 여기 산다 — 변경 통지는 순수 옵저버 콜백
-(``subscribe``)이라 창 없이 테스트된다(링1 규율: PySide6 임포트 금지).
+**이 모듈이 소유하는 것은 「문서 작업」 라이브러리(§19.6·§19.7)이지 홈 화면이 아니다.**
+홈은 재작성 F2 에서 죽었고(지도 §10.8) 그 자리를 라이브러리가 이었다. 파일명·클래스명
+(``home_state``·``HomeViewModel``)은 그대로 둔다 — 지도 §10.3 이 이 모듈을 "재작성 무영향"
+자산으로 배정했고 개명은 링1 전역 diff 를 부르는 데 비해 얻는 것이 어휘뿐이다. 링2 는
+정산했다(``screen_library``·푸시 채널 ``library``); 남은 어휘 빚을 숨기지 않고 여기 적는다.
 
-이 뷰모델의 공개 표면(``JobRow`` 필드 + 메서드)이 목업(``docs/UI_PROTOTYPE_APPB.html`` 홈)이
-겨누는 seam 계약이다.
+웹 컨트롤러(:class:`~hwpxfiller.webapp.screen_library.LibraryController`)는 이 뷰모델의
+``library_sections()``·``library_counts()``·``facets()``·``rows()`` 결과를 렌더한다.
+레지스트리 접근, 행 메타 문자열, 최근실행 포맷, 선택 상태가 여기 산다 — 변경 통지는 순수
+옵저버 콜백(``subscribe``)이라 창 없이 테스트된다(링1 규율: PySide6 임포트 금지).
 """
 from __future__ import annotations
 
@@ -219,33 +222,33 @@ class DashboardKpi:
     pool_corrupted: int = 0    # 데이터 풀 손상 파일 수 — 0 위장 금지, 병기 표시(C5)
 
 
-# ── 작업 브라우저(패싯 탐색) — group-by 렌즈 + facet (JOB_BROWSER_DESIGN §4) ──────
-# 씨앗 기본 group-by 축(D5·O2) — INI 지속 렌즈가 없을 때의 초기값으로만 쓴다. 축 레지스트리가
-# 아니다(D3 축은 태그에서 발견); 이 축에 태그가 없으면 flat 로 자연 강등된다. "틀려도 싼 값".
-SEED_GROUP_BY_AXIS = "금액구간"
-# 미태깅 작업이 서는 그룹의 표시 라벨(D12 — 선택적 태그의 1급 섹션). group-by 축의 값이
-# 없는 작업도 저장·브라우징에서 사라지지 않고 이 섹션에 모인다.
-NO_VALUE_LABEL = "(값 없음)"
+# ── 작업 브라우저(패싯 탐색) — tag facet (JOB_BROWSER_DESIGN §4) ─────────────────
+# group-by 렌즈는 은퇴했다(지도 §10.8 판정 B · §9.4 A안): 「모든 작업」 보기의 primary
+# grouping 은 **사용자 group** 하나뿐이고(§19.2 "화면당 primary grouping 하나"), 태그는
+# 좁히는 축(facet)으로만 남는다. 씨앗 축 상수·`active_group_by`·`grouped_rows` 도 함께
+# 죽었다 — 아무도 보지 않는 구획 축을 남기면 제2 정본이 되어 다음 세션이 되살린다.
+# 승계 의무(§9.4): ①facet 칩 존치 ②영속값은 애초에 없었다(씨앗 상수뿐 → 삭제가 이행분)
+# ③퇴화-코퍼스 불변식은 library_sections 가 계속 진다.
+#: 사용자 group 이 없는 작업이 서는 구획의 표시 라벨(§19.6 "`그룹 없음` 마지막").
+#: 표면이 문안을 다시 만들지 않도록 링1 이 소유한다.
+NO_GROUP_LABEL = "그룹 없음"
 
 
 @dataclass
 class GroupSection:
-    """group-by 축의 한 구간 — 값 라벨·건수·그 구간에 속한 카드 행들.
+    """목록의 한 구획 — 값 라벨·건수·그 구간에 속한 행들.
 
-    ``value`` = 태그 값(명명 그룹), :data:`NO_VALUE_LABEL`(미태깅 그룹), 또는 ""(flat 단일
-    버킷 — group-by 미적용). 표현 계층은 섹션이 ≤1개이고 활성 facet 이 없으면 헤더를 억제하고
-    오늘과 동일한 평면 리스트를 그린다(퇴화-코퍼스 불변식).
-
-    ``is_untagged`` = 이 섹션이 (그 축 값이 없는) 미태깅 그룹인가. 표현 계층이 섹션 정체성을
-    ``value`` 문자열로만 키잉하면, 사용자가 :data:`NO_VALUE_LABEL` 문자열('(값 없음)')을
-    실제 태그 값으로 입력했을 때 명명 섹션과 미태깅 섹션의 정체성이 충돌한다 — 이 플래그로
-    둘을 분리해 표시 라벨은 같아도 접기 등 인-플레이스 전이가 서로를 침범하지 않게 한다.
+    ``value`` = 사용자 group 이름, 또는 ""(구획 없음). ""는 **두 가지**를 뜻할 수 있어
+    ``is_untagged`` 로 가른다: 나눌 group 이 없어 헤더 없이 퇴화한 평면 단일 버킷
+    (``is_untagged=False``)과, group 없는 작업들이 명명 구간 뒤에 서는 1급 구획
+    (``is_untagged=True``)이다. 표현 계층이 ``value`` 문자열로만 키잉하면 둘이 같은 키가 돼
+    퇴화 평면에 헤더가 붙거나 「그룹 없음」이 헤더를 잃는다 — 정체성을 표시 값과 분리한다.
     """
 
     value: str
     count: int
     rows: "list[JobRow]"
-    is_untagged: bool = False  # 미태깅 그룹(그 축 값 없음) — 표시 라벨과 별개인 정체성 표식
+    is_untagged: bool = False  # 구획 값 없음(「그룹 없음」) — 표시 라벨과 별개인 정체성 표식
 
 
 @dataclass
@@ -290,48 +293,124 @@ def library_mode_of(row: "JobRow") -> str:
     return MODE_HWPX if not row.template_linked else row.media
 
 
-def library_health(row: "JobRow") -> "tuple[int, str]":
-    """전역 작업 건강(§19.7)의 **번역** — 기존 신호를 심각도 1축으로 모은다(새 판정 금지).
+def library_health_causes(row: "JobRow") -> "list[tuple[int, str]]":
+    """전역 작업 건강(§19.7)의 **전 원인** — 상세 패널이 읽는 정본(지도 §10.8 판정 E).
+
+    계약 §19.7: "목록에는 가장 높은 심각도 하나를 표시하고 상세에서 모든 실제 원인을
+    보여준다." 그래서 원인 열거가 정본이고 :func:`library_health` 의 1건은 **이 목록의
+    파생**이다 — 같은 상태를 두 술어가 따로 판정하면 목록과 상세가 서로 다른 말을 한다
+    (판정 단일 출처, `unresolved_name_tokens_for` 선례).
 
     현재 데이터 호환성(`compatibility_for`)과 섞지 않는다(§19.7 명문): 여기 들어오는 건
-    데이터와 무관한 작업 자체의 상태뿐이다. master 가 이미 내는 신호만 옮긴다 —
-    템플릿 파일 부재, 지원하지 않는 매체, hwpx 인데 템플릿을 읽지 못함. 손상 JSON 은
-    애초에 :class:`CorruptJobRow` 로 분리돼 이 목록에 오지 않는다.
+    데이터와 무관한 작업 자체의 상태뿐이다. master 가 이미 내는 신호만 옮긴다(새 판정
+    금지). 손상 JSON 은 애초에 :class:`CorruptJobRow` 로 분리돼 이 목록에 오지 않는다.
+
+    정렬 = 심각도 내림차순, 동률은 **발견 순서 유지**(안정 정렬). 발견 순서가 곧 진단의
+    구체성 순서라 목록에 서는 대표 1건이 가장 실행 가능한 처방을 가리킨다.
     """
+    causes: "list[tuple[int, str]]" = []
+    # ── 템플릿 계보: 앞의 사유가 참이면 뒤는 **판정할 근거가 없다**(연쇄 elif 유지).
+    # 연결 안 된 작업에 "지원하지 않는 작업 방식"을 함께 실으면 오진이 하나 늘 뿐이다.
     if not row.template_linked:
         # 경로가 비어 있는 건 "미상 매체"가 아니라 **아직 연결하지 않은 저작 중 작업**이다.
         # 진단이 틀리면 처방도 틀린다 — 여기서 갈라야 사용자가 「템플릿 다시 연결」로 간다.
-        return 3, "템플릿을 아직 연결하지 않았습니다."
-    if row.template_missing:
-        return 3, "템플릿 파일을 찾을 수 없습니다."
-    if row.media not in ("hwpx", "txt"):
-        return 3, "지원하지 않는 작업 방식입니다."
-    if row.media == "hwpx" and row.compile_state is None:
-        return 3, "템플릿을 읽을 수 없습니다."
-    if not row.txt_readable:
+        causes.append((3, "템플릿을 아직 연결하지 않았습니다."))
+    elif row.template_missing:
+        causes.append((3, "템플릿 파일을 찾을 수 없습니다."))
+    elif row.media not in ("hwpx", "txt"):
+        causes.append((3, "지원하지 않는 작업 방식입니다."))
+    elif row.media == "hwpx" and row.compile_state is None:
+        causes.append((3, "템플릿을 읽을 수 없습니다."))
+    elif not row.txt_readable:
         # 파일이 있다고 열리는 건 아니다(깨진 인코딩·`.txt` 디렉터리) — 열면 바로 실패하는데
         # 건강 보기가 건강으로 분류하면 「확인 필요」가 정작 못 여는 작업을 빼놓는다.
-        return 3, "템플릿을 읽을 수 없습니다."
-    # 미확인 토큰이 남은 템플릿(PARTIAL)은 **실행을 막지는 않지만** 손볼 것이 있는 상태다 —
-    # 기존 신호가 이미 warn 배지로 말하고 있는데 「확인 필요」에서 빼면 그 경고가 이 화면에서만
-    # 증발한다(리뷰 P2). §19.7 의 "확인된 drift = 심각도 2, 차단하지 않음" 자리에 대응한다.
-    # 판정은 새로 만들지 않고 배지 레벨(RC-29 단일 어휘)을 번역할 뿐이다.
+        causes.append((3, "템플릿을 읽을 수 없습니다."))
+    # ── 작업 정의 계보: 템플릿 상태와 **독립**이라 위 사유와 함께 실린다. 목록은 최고
+    # 심각도 1건만 보여주므로 여기 추가해도 대표 문구는 안 바뀌고, 상세만 두 원인을 본다.
     if row.unresolved_name_tokens:
         # 실행 게이트가 danger 로 차단하는 상태(§19.7 차단 등급) — 데이터가 없어도 참이라
         # 라이브러리에서 먼저 말할 수 있다.
-        return 3, "파일명 패턴의 토큰을 채우지 못합니다."
+        causes.append((3, "파일명 패턴의 토큰을 채우지 못합니다."))
     if row.structure_drift and row.mapping_empty:
         # 같은 신호(대칭차)지만 원인이 다르다: 아직 아무것도 맞추지 않은 작업이다. 드리프트로
         # 부르면 오진이고(무엇이 "달라졌다"는 말인가), 숨기면 실행에서 막히는 걸 뒤늦게 안다.
-        return 3, "매핑을 아직 확정하지 않았습니다."
-    if row.structure_drift:
+        causes.append((3, "매핑을 아직 확정하지 않았습니다."))
+    elif row.structure_drift:
         # §19.7 "확인된 Template/Binding drift = 2, 차단하지 않음"의 자리. 실행 게이트는
         # 실제로 차단하지만(fail-closed), 여기서 말하는 건 **작업 자체의 건강**이라 등급은
         # 계약 표를 따르고 강도는 실행 게이트가 낸다(두 표면이 서로 다른 판정을 만들지 않게).
-        return 2, "템플릿 구조가 확정 매핑과 달라졌습니다."
-    if badge_level(row.compile_state) == "warn":
-        return 2, row.compile_badge or "템플릿에 확인할 항목이 남아 있습니다."
-    return 0, ""
+        causes.append((2, "템플릿 구조가 확정 매핑과 달라졌습니다."))
+    elif badge_level(row.compile_state) == "warn":
+        # 미확인 토큰이 남은 템플릿(PARTIAL)은 **실행을 막지는 않지만** 손볼 것이 있다 —
+        # 기존 신호가 이미 warn 배지로 말하는데 「확인 필요」에서 빼면 그 경고가 이 화면에서만
+        # 증발한다. 판정은 새로 만들지 않고 배지 레벨(RC-29 단일 어휘)을 번역할 뿐이다.
+        causes.append((2, row.compile_badge or "템플릿에 확인할 항목이 남아 있습니다."))
+    causes.sort(key=lambda c: -c[0])  # 안정 정렬 — 동률은 위 발견 순서 그대로
+    return causes
+
+
+def library_health(row: "JobRow") -> "tuple[int, str]":
+    """목록 행이 쓰는 건강 대표 1건 — :func:`library_health_causes` 의 최고 심각도.
+
+    파생이지 독립 판정이 아니다(§19.7 "목록에는 가장 높은 심각도 하나"). 건강한 작업은
+    ``(0, "")``.
+    """
+    causes = library_health_causes(row)
+    return causes[0] if causes else (0, "")
+
+
+#: 매핑 유형의 표시 어휘 — 라이브러리 상세 「필드 연결」 표가 소비한다. 편집기(웹)가 같은
+#: 어휘를 자기 파일에 따로 두고 있다(`web/js/screens/editor.js` ``TYPE_LABEL``); 그 중복은
+#: 편집기를 재작성하는 F7 에서 이 상수로 걷는다 — 빚을 숨기지 않고 적어 둔다.
+MAPPING_TYPE_LABELS = {"text": "텍스트", "date": "날짜", "amount": "금액", "const": "고정값"}
+#: 소스를 아직 고르지 않은 항목 — 「없음」이 아니라 **미지정**이다(조용한 빈칸 금지).
+NO_SOURCE_LABEL = "미지정"
+
+
+@dataclass
+class FieldBindingRow:
+    """라이브러리 상세 「필드 연결」 표의 한 줄 — 문서 필드 · 데이터 항목 · 표시형(§19.6)."""
+
+    template_field: str
+    source_label: str
+    format_label: str
+    blank: bool = False  # 명시적 공란 선언 — "아직 안 정함"과 시각적으로 갈라야 한다
+
+
+def field_binding_rows(job: Job) -> "list[FieldBindingRow]":
+    """저장된 Binding 을 **그대로** 읽어 상세 표로 성형한다(§19.6 · 지도 §10.8 판정 C·D).
+
+    두 가지를 하지 않는다.
+
+    - **현재 데이터의 원본 열 표시 이름을 쓰지 않는다.** 계약 §19.6 은 데이터가 준비돼
+      있으면 열 표시 이름을 쓰라 하지만 그 전제는 v6 의 전역 단일 ``dataState`` 다. master
+      에서 현재 데이터는 「문서 만들기」 **세션 소유**라 라이브러리가 읽으면 화면 간 결합을
+      새로 만든다. 그래서 항상 저장된 항목 키를 보이고 표면 문안이 그 사실을 말한다.
+      되깎기 조건 = 전역 ``dataState`` 가 실제로 서는 시점.
+    - **값을 계산하지 않는다.** 미리보기는 데이터를 요구하고(F5 소관) 여기는 정의만 본다.
+    """
+    from ..core.format_engine import presets
+
+    rows: "list[FieldBindingRow]" = []
+    for m in job.mapping.mappings:
+        if m.is_blank:
+            rows.append(FieldBindingRow(m.template_field, "비움(명시)", "—", blank=True))
+            continue
+        type_label = MAPPING_TYPE_LABELS.get(m.type, m.type)
+        if m.type == "const":
+            # 상수는 데이터 항목이 아니라 값 자체가 정의다 — 표시형 칸에 쓸 것이 없다.
+            rows.append(FieldBindingRow(m.template_field, f"고정값 「{m.const}」", "—"))
+            continue
+        codes = {code: label for label, code in presets(m.type)}
+        # 미지 코드(프리셋 밖 직접 입력)는 코드 원문을 그대로 — 모르는 것을 아는 척하지 않는다.
+        # 빈 코드("")는 그 유형의 기본 프리셋 라벨이고, 프리셋 자체가 없는 유형이면 ""로 접힌다.
+        fmt_label = codes.get(m.fmt, m.fmt)
+        rows.append(FieldBindingRow(
+            m.template_field,
+            m.source or NO_SOURCE_LABEL,
+            f"{type_label} · {fmt_label}" if fmt_label else type_label,
+        ))
+    return rows
 
 
 class HomeViewModel:
@@ -345,9 +424,6 @@ class HomeViewModel:
         self._corrupt_rows: "list[CorruptJobRow]" = []
         self._selected: "str | None" = None
         self._subs: "list" = []
-        # 사용자 소유 group-by 렌즈(D4) — 축 키 하나(""=flat). 씨앗으로 초기화하되(D5)
-        # 호출자가 지속값으로 덮어쓸 수 있다(링1 VM 은 값만 보유, 지속 IO 는 바깥 몫).
-        self.active_group_by: str = SEED_GROUP_BY_AXIS
         # facet 선택(D10 — facet 내 OR / facet 간 AND). {축 → 선택된 값 집합}, 빈 축은 제거.
         self.active_facets: "dict[str, set[str]]" = {}
         # 전역 라이브러리 보기(§19.6) — 보기 4종 × 작업 방식 필터 × 이름/그룹/태그 검색.
@@ -519,19 +595,11 @@ class HomeViewModel:
             keys.update(r.tags.keys())
         return sorted(keys)
 
-    def effective_group_by(self) -> str:
-        """실제 적용되는 group-by 축 — 렌즈 값이 발견된 축일 때만 유효, 아니면 ""(flat).
-
-        씨앗 축(D5)이 이 코퍼스에 없으면(태그 0 등) 자동으로 flat 로 강등된다 — 첫 실행이
-        오늘과 동일해지는 퇴화-코퍼스 불변식의 링1 절반.
-        """
-        return self.active_group_by if self.active_group_by in self.axes() else ""
-
     def _passes_facets(self, row: "JobRow", exclude_axis: str) -> bool:
         """facet 간 AND / facet 내 OR — ``exclude_axis`` 축은 제약에서 뺀다.
 
-        group-by 축(섹션 분할 축)이나 자기 자신의 카운트를 셀 때 해당 축을 뺀다(표준 패싯
-        의미론: 한 facet 의 선택은 그 facet 자신의 카운트를 좁히지 않는다).
+        자기 자신의 카운트를 셀 때 해당 축을 뺀다(표준 패싯 의미론: 한 facet 의 선택은
+        그 facet 자신의 카운트를 좁히지 않는다).
         """
         for axis, sel in self.active_facets.items():
             if axis == exclude_axis or not sel:
@@ -539,39 +607,6 @@ class HomeViewModel:
             if row.tags.get(axis) not in sel:  # facet 내 OR(집합 소속) / facet 간 AND(전 축 통과)
                 return False
         return True
-
-    def grouped_rows(self) -> "list[GroupSection]":
-        """활성 facet 으로 좁힌 뒤 effective group-by 축으로 분할한 섹션들.
-
-        미태깅(그 축 값 없음) 작업은 :data:`NO_VALUE_LABEL` 섹션에 1급으로 선다(D12).
-        flat(축 미유효)이면 단일 버킷 하나만 돌려주고, 표현 계층이 헤더를 억제한다.
-        """
-        eff = self.effective_group_by()
-        rows = [r for r in self._rows if self._passes_facets(r, exclude_axis=eff)]
-        if not eff:
-            return [GroupSection(value="", count=len(rows), rows=list(rows))]
-        named: "dict[str, list[JobRow]]" = {}
-        untagged: "list[JobRow]" = []
-        for r in rows:
-            v = r.tags.get(eff)
-            if not v:  # None 또는 "" → 미태깅
-                untagged.append(r)
-            else:
-                named.setdefault(v, []).append(r)
-        sections = [
-            GroupSection(value=v, count=len(named[v]), rows=named[v])
-            for v in sorted(named)
-        ]
-        if untagged:  # 미태깅 그룹은 명명 그룹 뒤 1급 섹션(D12)
-            # is_untagged=True 로 정체성을 분리한다 — 누군가 '(값 없음)' 을 실제 값으로
-            # 태깅해 명명 섹션이 같은 라벨을 써도 표현 계층이 둘을 별개 섹션으로 다룬다.
-            sections.append(
-                GroupSection(
-                    value=NO_VALUE_LABEL, count=len(untagged), rows=untagged,
-                    is_untagged=True,
-                )
-            )
-        return sections
 
     # ------------------------------------------------- 전역 라이브러리 보기(§19.6)
     def set_library_view(self, view: str) -> None:
@@ -639,10 +674,16 @@ class HomeViewModel:
         if not groups:  # 저장된 이름 있는 group 0개 = 헤더 없는 평면(퇴화 불변식)
             flat = [r for r in sorted(rows, key=lambda r: r.name)]
             return [GroupSection(value="", count=len(flat), rows=flat)]
-        order = groups + ([""] if "" in named else [])
-        return [
-            GroupSection(value=g, count=len(named[g]), rows=named[g]) for g in order
+        sections = [
+            GroupSection(value=g, count=len(named[g]), rows=named[g]) for g in groups
         ]
+        if "" in named:
+            # 「그룹 없음」은 명명 group 뒤 1급 구획(§19.6). ``is_untagged`` 로 퇴화 평면
+            # 버킷(같은 value="")과 정체성을 가른다 — 표면이 헤더 유무를 여기서 읽는다.
+            sections.append(GroupSection(
+                value="", count=len(named[""]), rows=named[""], is_untagged=True,
+            ))
+        return sections
 
     def library_counts(self) -> "dict[str, int]":
         """보기 탭 라벨의 건수 — **검색 전** 작업 방식 필터까지만 반영한다.
@@ -662,7 +703,9 @@ class HomeViewModel:
         }
 
     def facets(self) -> "list[FacetAxis]":
-        """group-by 로 쓰이지 않는 축들 = facet. 각 값에 건수·활성 여부(D10).
+        """발견된 모든 분류 축 = facet. 각 값에 건수·활성 여부(D10).
+
+        group-by 렌즈 은퇴 뒤로는 축을 섹션으로 쓰는 소비자가 없어 하나도 빼지 않는다.
 
         건수는 **자기 축을 제외한** 다른 facet 제약 하의 행 수 — 표준 패싯 의미론. 0건 값도
         돌려주고(표현 계층이 회색/억제), 값 순서는 알파벳(D11 보류).
@@ -670,7 +713,7 @@ class HomeViewModel:
         고아(orphaned) 활성 facet 표면화(confirm-or-alarm): 지금 어떤 행도 지니지 않는
         축/값이 :attr:`active_facets` 에 남아 있으면(그 유일 작업이 삭제·재태깅된 뒤 렌즈가
         복원한 경우) 그 축은 :meth:`axes` 에 안 나와 칩이 하나도 안 그려지는데, 그래도
-        :meth:`_passes_facets` 는 여전히 강제해 :meth:`grouped_rows` 가 전부 비어 보인다 —
+        :meth:`_passes_facets` 는 여전히 강제해 :meth:`library_sections` 가 전부 비어 보인다 —
         범인 필터가 보이지 않는 채로 실재 작업을 숨기는 위반. 그런 선택을 count=0·
         active=True 인 켜진 칩으로 노출해 사용자가 보고 끌 수 있게 한다(축이 axes() 에 아예
         없으면 FacetAxis 를 새로 만든다).
@@ -678,12 +721,9 @@ class HomeViewModel:
         비용: 축마다 값별로 전체 행을 재스캔(O(값×행))하지 않고 **행을 한 번만** 순회해
         값별 건수를 집계한다(O(행)). axes() 도 상단에서 1회만 계산한다(FINDING #10).
         """
-        eff = self.effective_group_by()
         result: "list[FacetAxis]" = []
-        # 행이 지닌 축 ∪ 활성 facet 축(고아 포함) — group-by 축은 섹션이라 제외. 결정적 정렬.
+        # 행이 지닌 축 ∪ 활성 facet 축(고아 포함) — 결정적 정렬.
         for axis in sorted(set(self.axes()) | set(self.active_facets)):
-            if axis == eff:
-                continue  # group-by 축은 섹션이지 facet 이 아니다
             sel = self.active_facets.get(axis, set())
             # 단일 그룹 패스: 자기 축 제외 제약을 통과한 행만 값별 카운터에 가산(FINDING #10).
             counts: "dict[str, int]" = {}
@@ -702,19 +742,6 @@ class HomeViewModel:
             ]
             result.append(FacetAxis(axis=axis, values=fvals))
         return result
-
-    def set_group_by(self, axis: "str | None") -> None:
-        """group-by 렌즈 교체(""=flat). 변경 시 통지(select 와 달리 표시가 바뀌므로 재렌더).
-
-        새 group-by 축에 걸려 있던 facet 선택은 제거한다 — 그 축은 이제 섹션 분할 축이라
-        facet 이 아니다(의미론 일관).
-        """
-        axis = axis or ""
-        if axis == self.active_group_by:
-            return
-        self.active_group_by = axis
-        self.active_facets.pop(axis, None)
-        self._notify()
 
     def toggle_facet(self, axis: str, value: str) -> None:
         """한 facet 값 on/off. 마지막 값을 끄면 축 키를 제거해 상태를 깨끗이 유지."""

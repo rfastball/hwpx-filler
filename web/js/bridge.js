@@ -52,10 +52,10 @@
     /** 에디터에 미저장 작업 세션이 있는가 — 크로스스크린 진입 전 폐기 확인 판단(#25). */
     editorHasUnsavedWork() { return window.pywebview.api.editor_has_unsaved_work(); },
 
-    /** 홈 '편집' → 저장된 작업을 에디터 편집 세션으로 복원(#26). 이름·"ERROR:…". */
+    /** 「문서 작업」 상세 '작업 편집' → 저장된 작업을 에디터 편집 세션으로 복원(#26). 이름·"ERROR:…". */
     openJobInEditor(name) { return window.pywebview.api.open_job_in_editor(name); },
 
-    /** 홈 손상 카드 '폴더 열기' → 탐색기에서 파일 표시(#26 #8). null·"ERROR:…". */
+    /** 「문서 작업」 손상 카드 '폴더 열기' → 탐색기에서 파일 표시(#26 #8). null·"ERROR:…". */
     revealCorruptJob(path) { return window.pywebview.api.reveal_corrupt_job(path); },
 
     /** 데이터 고정·등록 모달 '찾아보기' → 경로만 반환(로드 없음, #26 #4). null=취소. */

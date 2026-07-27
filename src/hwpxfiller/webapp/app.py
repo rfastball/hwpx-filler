@@ -34,7 +34,7 @@ from hwpxcore.native.reveal import open_path as _native_open_path
 from hwpxcore.native.reveal import reveal_in_explorer as _native_reveal
 from .screen_draft import DraftController
 from .screen_editor import EditorController
-from .screen_home import HomeController
+from .screen_library import LibraryController
 from .screen_job import JobController
 from .screen_pool import PoolController
 from .draft_session import TargetFontSetting
@@ -148,9 +148,10 @@ class WebFrontend:
         self._pool_registry = pool_registry
         # 화면 등록 — 새 화면 = 컨트롤러 1개 추가(순수 데이터는 dispatch, 네이티브는 아래 메서드).
         controllers = [
-            # 홈(대시보드) — 허브. TXT 레지스트리는 즉시 기안·템플릿 관리와 공유(변경이 반영).
-            # pool_registry 공유 = 등록 데이터에서 생긴 손상이 홈 KPI 경보에 즉시 보인다(#45).
-            HomeController(job_registry, registry, self._push, pool_registry=pool_registry),
+            # 「문서 작업」 전역 라이브러리(§19.6) — 홈 화면의 승계자(재작성 F2). TXT
+            # 레지스트리는 기안·템플릿 관리와 공유(변경이 반영). pool_registry 공유 =
+            # 등록 데이터에서 생긴 손상이 라이브러리 경보에 즉시 보인다(#45).
+            LibraryController(job_registry, registry, self._push, pool_registry=pool_registry),
             # 「작업」 화면 — 좌 목록 + 우 세션 패널 4존. 링1 VM 을 직접 소유하며
             # 실행 결정 계약을 소비하는 유일 세션 표면이다.
             JobController(job_registry, self._push, pool_registry=pool_registry),
@@ -182,9 +183,9 @@ class WebFrontend:
             ),
         )
         self.controllers = {c.name: c for c in controllers}
-        # 홈 삭제의 타 화면 무장 세션 가드 배선(#268 리뷰) — 홈이 작업·기안 화면보다 먼저
-        # 생성되므로 사후 주입. 홈 삭제는 이 조회로 소유 화면의 무장 세션을 먼저 묻는다.
-        self.controllers["home"].session_guards = [
+        # 라이브러리 삭제의 타 화면 무장 세션 가드 배선(#268 리뷰) — 라이브러리가 작업·기안
+        # 화면보다 먼저 생성되므로 사후 주입. 삭제는 이 조회로 소유 화면의 무장 세션을 먼저 묻는다.
+        self.controllers["library"].session_guards = [
             self.controllers["job"].session_guard_for,
             self.controllers["draft"].session_guard_for,
         ]
@@ -427,7 +428,7 @@ class WebFrontend:
         경로를 여는 통로를 봉쇄. 실패는 ``ERROR:`` 접두.
         """
         try:
-            target = self._controller("home").validate_corrupt_path(path)
+            target = self._controller("library").validate_corrupt_path(path)
             _native_reveal(target)  # explorer /select 승격 헬퍼 재사용(#53-B)
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
@@ -2104,6 +2105,29 @@ _EDITOR_LIB_PICKER_PROBE_JS = r"""
 # 실제 클릭→Bridge.call→Python dispatch→initial snapshot 왕복(#189). 프로브가 만든 버튼도
 # 브라우저의 click 이벤트 경로를 지나므로 API 직접 호출만으로는 잡지 못하는 이벤트/Promise
 # 연결 단절을 함께 검출한다. 동작은 모두 빈 홈에서도 안전한 세션 초기화·새로고침이다.
+_CHAIN_RECOVERY_PROBE_SETUP_JS = r"""
+(() => {
+  /* 호출 직렬화 체인이 **실패 한 번으로 죽지 않는지** 실물로 본다(리뷰 5R).
+     rejected 링이 CALL_CHAINS 에 남으면 이후 같은 키의 모든 호출이 그 링에 .then 으로 붙어
+     영영 실행되지 않는다 — 접힘 영속이 한 번 실패했다고 그 화면의 탭·검색·필터가 세션 내내
+     죽는 결함이다. 정적 계약으로는 "catch 가 있다"까지만 보이므로 실행으로 증명한다. */
+  const out = { pending: true };
+  window.__chainRecovery = out;
+  const key = 'probe:' + String(Math.random());
+  const seen = [];
+  Intent.chained(key, () => Promise.reject(new Error('의도된 실패')))
+    .then(() => { out.rejected_surfaced = false; },
+          () => { out.rejected_surfaced = true; })   // 실패는 호출자에게 그대로 전해진다
+    .then(() => Intent.chained(key, () => { seen.push('after'); return 'ok'; }))
+    .then((v) => { out.after_value = v; })
+    .catch((e) => { out.error = String((e && e.message) || e); })
+    .then(() => {
+      out.after_ran = seen.length === 1;
+      out.pending = false;
+    });
+})();
+"""
+
 _ACTION_ROUNDTRIP_PROBE_SETUP_JS = r"""
 (() => {
   const out = { pending: true, families: {} };
@@ -2542,15 +2566,22 @@ def _selftest_drive(window: "object") -> None:
         result["nav_count"] = window.evaluate_js("document.querySelectorAll('.navbtn').length")  # type: ignore[attr-defined]
         result["tpl_options"] = window.evaluate_js(  # type: ignore[attr-defined]
             "Array.from(document.querySelectorAll('#tplSel option')).map(o=>o.value)")
-        # H-05: 콜드 부팅은 작업으로 진입하고, 홈은 KPI·이어서 없이 경보 허브로만 남는다.
+        # H-05: 콜드 부팅은 작업으로 진입한다.
         result["job_on"] = window.evaluate_js(  # type: ignore[attr-defined]
             "document.getElementById('scr-job').classList.contains('on')")
-        result["home_kpi_count"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "document.querySelectorAll('#homeKpis .kpi').length")
-        result["home_continue_count"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "document.querySelectorAll('#homeContinue .continue-run').length")
-        result["home_alerts_present"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "!!document.getElementById('homeAlerts')")
+        # 홈 화면 사망(재작성 F2) — 카드 나열·두 트랙·group-by 렌즈는 사라지고 「문서 작업」
+        # 라이브러리가 그 자리를 잇는다. 죽은 DOM 이 남아 있으면 부활 경로가 된다.
+        result["home_screen_gone"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "!document.getElementById('scr-home') && !document.getElementById('homeBrowser')")
+        # 라이브러리 표면 실재 — 축 4종(보기 탭·방식 칩·태그 facet·검색)과 2-pane 골격.
+        result["library_surface"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "['scr-library','libraryViewTabs','libraryModeFilters','libraryFacets',"
+            "'librarySearch','libraryList','libraryDetail','libraryCount']"
+            ".every(function(i){return !!document.getElementById(i)})")
+        # 보기 탭 4종이 계약(§19.6 표)대로 서 있고 하나만 선택돼 있다.
+        result["library_view_tabs"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "Array.from(document.querySelectorAll('#libraryViewTabs [data-library-view]'))"
+            ".map(function(b){return b.dataset.libraryView})")
         # 데이터 선택 진입점(재작성 F1) — 두 세션 표면(작업·기안)의 단일 출구 버튼 실재.
         # 구 2버튼('등록 데이터…'·'파일 선택…')과 pool 화면은 사망하고 다이얼로그가 승계했다.
         result["data_picker_buttons"] = window.evaluate_js(  # type: ignore[attr-defined]
@@ -2568,6 +2599,17 @@ def _selftest_drive(window: "object") -> None:
             time.sleep(0.1)
         result["action_roundtrip"] = window.evaluate_js(  # type: ignore[attr-defined]
             "window.__actionRoundtrip")
+        # 호출 직렬화 체인의 실패 복구(리뷰 5R) — 정적 계약이 못 보는 실행 성질이라 실물로.
+        window.evaluate_js(_CHAIN_RECOVERY_PROBE_SETUP_JS)  # type: ignore[attr-defined]
+        chain_deadline = time.monotonic() + 5.0
+        while time.monotonic() < chain_deadline:
+            if window.evaluate_js(  # type: ignore[attr-defined]
+                "!!(window.__chainRecovery && !window.__chainRecovery.pending)"
+            ):
+                break
+            time.sleep(0.1)
+        result["chain_recovery"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "window.__chainRecovery")
         # 커스텀 모달 접근성 동적 거동(#27/#28) — 정적 계약(role/aria)은 test_web_dom_contract 가
         # 보고, 여기선 실 브라우저에서 Modal 헬퍼가 초기포커스·Escape 닫기·트리거 복귀를 실제로
         # 수행하는지 되읽는다. 알려진 트리거(첫 내비 버튼)에 포커스를 두고 열었다가 Escape 로 닫는다.

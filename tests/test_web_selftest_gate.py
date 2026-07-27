@@ -131,11 +131,31 @@ class TestWebSelftestGate:
             assert got["snapshot"] is True, f"{family}: {got}"
             assert got["snapshot_keys"], f"{family}: 빈 snapshot: {got}"
 
-    def test_home_dead_summary_surfaces_are_absent(self, selftest_result: dict) -> None:
-        # H-05: KPI·이어서 실행은 DOM과 렌더 경로에서 함께 제거되고 홈 경보 허브만 남는다.
-        assert selftest_result["home_kpi_count"] == 0
-        assert selftest_result["home_continue_count"] == 0
-        assert selftest_result["home_alerts_present"] is True
+    def test_home_screen_is_dead_and_library_stands(self, selftest_result: dict) -> None:
+        """재작성 F2 — 홈 화면은 죽고 「문서 작업」 라이브러리가 그 자리를 잇는다.
+
+        죽은 DOM(카드 나열·group-by 렌즈 바)이 남아 있으면 다음 세션의 부활 경로가 된다.
+        승계처는 축 4종(보기·방식·태그·검색)과 2-pane 골격을 실물로 갖춰야 한다.
+        """
+        assert selftest_result["home_screen_gone"] is True
+        assert selftest_result["library_surface"] is True
+        assert selftest_result["library_view_tabs"] == [
+            "all", "recent", "favorites", "needsAction",
+        ]
+
+    def test_call_chain_survives_a_rejected_link(self, selftest_result: dict) -> None:
+        """리뷰 5R — 직렬화 체인은 실패 한 번으로 죽지 않는다.
+
+        rejected 링이 체인에 남으면 이후 같은 키의 모든 호출이 그 링에 붙어 영영 실행되지
+        않는다: 접힘 영속이 한 번 실패했다고 그 화면의 탭·검색·필터가 세션 내내 죽는다.
+        실패는 **호출자에게 그대로 전해지되**(되돌리기·loud 재진술이 그 위에 선다) 저장된
+        링은 성사 상태로 남아야 한다 — 정적 계약이 못 보는 실행 성질이라 실물로 본다.
+        """
+        c = selftest_result["chain_recovery"]
+        assert c.get("error") is None, f"체인 복구 프로브 오류: {c!r}"
+        assert c["rejected_surfaced"] is True, "실패가 호출자에게 전해지지 않습니다."
+        assert c["after_ran"] is True, "실패 뒤 호출이 실행되지 않았습니다 — 체인이 죽었습니다."
+        assert c["after_value"] == "ok"
 
     def test_modal_opens_with_initial_focus_inside(self, selftest_result: dict) -> None:
         # 커스텀 모달을 열면 hidden 해제 + 초기 포커스가 모달 안(draftSaveTplName)으로 들어간다.

@@ -138,17 +138,17 @@ def test_pool_registry_construction_has_one_call_site() -> None:
     )
 
 
-def test_home_controller_does_not_bypass_vm_registry() -> None:
-    """webapp/screen_home.py 는 ``self.vm.registry`` 에 직접 접근하지 않는다(#44).
+def test_library_controller_does_not_bypass_vm_registry() -> None:
+    """webapp/screen_library.py 는 ``self.vm.registry`` 에 직접 접근하지 않는다(#44).
 
     HomeViewModel 의 공개 표면(JobRow 필드 + 메서드)이 seam 계약이다(home_state.py
     docstring). 컨트롤러가 ``vm.registry.load/save`` 를 직접 호출하면 검증 규칙이 Qt-free
-    계층 밖으로 새고 위임 규약과 어긋난다. 스코프를 ``screen_home.py``
+    계층 밖으로 새고 위임 규약과 어긋난다. 스코프를 ``screen_library.py``
     단일 파일로 좁힌 이유: 저장소에는 별개 개념의 registry(데이터 풀)가 공존하고
     ``screen_pool.py`` 는 그걸 정당하게 직접 소유한다 — 파일 전역 문자열 grep 은
     두 개념을 뒤섞으므로 AST 로 ``self.vm.registry`` 접근 경로만 정확히 잡는다.
     """
-    path = ROOT / "src" / "hwpxfiller" / "webapp" / "screen_home.py"
+    path = ROOT / "src" / "hwpxfiller" / "webapp" / "screen_library.py"
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     offenders: list[str] = []
     for node in ast.walk(tree):
@@ -160,7 +160,7 @@ def test_home_controller_does_not_bypass_vm_registry() -> None:
             and isinstance(node.value.value, ast.Name)
             and node.value.value.id == "self"
         ):
-            offenders.append(f"screen_home.py:{node.lineno}")
+            offenders.append(f"screen_library.py:{node.lineno}")
     assert not offenders, (
         "홈 컨트롤러가 VM seam 을 우회해 vm.registry 에 직접 접근한다 — "
         "HomeViewModel 메서드로 위임하라(#44): " + ", ".join(offenders)

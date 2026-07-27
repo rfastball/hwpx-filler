@@ -10,7 +10,7 @@ from hwpxfiller.webapp.action_registry import ACTION_REGISTRY, validate_dispatch
 from hwpxfiller.webapp.app import WebFrontend
 from hwpxfiller.webapp.screen_draft import DraftController
 from hwpxfiller.webapp.screen_editor import EditorController
-from hwpxfiller.webapp.screen_home import HomeController
+from hwpxfiller.webapp.screen_library import LibraryController
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp.screen_pool import PoolController
 from hwpxfiller.webapp.screen_template import TemplateController
@@ -19,7 +19,7 @@ from hwpxfiller.webapp.screen_template import TemplateController
 ROOT = Path(__file__).resolve().parents[1]
 
 CONTROLLERS = {
-    "home": HomeController,
+    "library": LibraryController,
     "editor": EditorController,
     "job": JobController,
     "draft": DraftController,
@@ -30,7 +30,7 @@ CONTROLLERS = {
 # SCREEN 상수의 소유 화면. 공유 모듈은 호출 시 화면을 인자로 받으므로 별도 정적 추측 대신
 # 해당 액션의 백엔드 MRO↔registry 동등성으로 검증한다.
 SCREEN_JS = {
-    "home": "web/js/screens/home.js",
+    "library": "web/js/screens/library.js",
     "editor": "web/js/screens/editor.js",
     "job": "web/js/screens/job.js",
     "draft": "web/js/screens/draft.js",

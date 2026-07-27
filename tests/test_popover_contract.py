@@ -49,7 +49,7 @@ def test_focusout_and_capture_scroll_share_registry():
     assert re.search(r'addEventListener\("focusout"[\s\S]+?e\.relatedTarget', src)
     assert re.search(r'addEventListener\("scroll"[\s\S]+?\},\s*true\)', src)
     # 화면별 임시 scroll-close는 공용 capture 계약으로 대체되어야 한다.
-    for name in ("job.js", "draft.js", "home.js", "template.js"):
+    for name in ("job.js", "draft.js", "library.js", "template.js"):
         screen = _read(WEB / "js" / "screens" / name)
         assert not re.search(r'addEventListener\("scroll"', screen), name
 

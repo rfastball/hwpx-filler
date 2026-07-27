@@ -32,8 +32,11 @@
     <!-- #27(개정): .ni 는 이제 SVG 상시 아이콘 표지 — 접힘/펼침 모두 노출. 접힘 시 라벨(.lbl=.n+.d)만
          숨어 아이콘이 표지를 잇는다(옛 '펼침 숨김' 계약 폐기 — 아이콘+라벨 공존은 스캔 보조). 접근
          이름=aria-label, 호버 툴팁=title("이름 — 설명"). 부제 .d 는 활성 항목에만 인라인 노출. -->
-    <button class="navbtn" data-scr="home" aria-label="홈" title="홈: 작업·템플릿·데이터 경보와 상태">
-      <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l7-6 7 6M5 9v7h4v-4h2v4h4V9"/></svg></span><span class="lbl"><span class="n">홈</span><span class="d">경보·상태</span></span></button>
+    <!-- 「문서 작업」 전역 라이브러리(§19.6·§19.7, 재작성 F2 PR-A) — 홈 화면의 승계자.
+         저장된 작업을 찾는 자리가 여기 하나로 모였다(카드 나열 + group-by 렌즈였던 홈은 사망).
+         셸이 상단 2탭으로 바뀌는 것은 F2 PR-B 다 — 그때까지 레일이 정직한 과도기 상태다. -->
+    <button class="navbtn" data-scr="library" aria-label="문서 작업" title="문서 작업: 저장된 문서 작업을 찾고 상태를 확인·정리">
+      <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h4v12H4zM10 4h3v12h-3zM15 5l2 11"/></svg></span><span class="lbl"><span class="n">문서 작업</span><span class="d">저장된 작업 찾기·정리</span></span></button>
     <!-- 「작업」(R-flow, #90) — 좌 목록 + 우 세션 패널. 데이터를 채워 문서를 생성하는 유일
          표면이다(실행 화면은 슬라이스 3에서 사망, 레일 「실행」 동시 제거 · 부록 A-4-36).
          R-info 1부 결정 1에 따라 이 화면이 부팅 랜딩이다(#239). -->
@@ -67,49 +70,71 @@
   </nav>
 
   <main class="stage">
-    <!-- ============ 홈 (경보·상태 허브, 기본 랜딩 아님 · #20/#239) ============ -->
-    <!-- 목업 scr-home 이관. 안정 DOM(id) + home.js 가 window.__push('home', snapshot) 로 값만
-         채운다(run 패턴). 링1 HomeViewModel(조건부 경보·작업 브라우저 group-by/facet·빈 상태·손상 격리·
-         txt 트랙)에 브리지로 배선 — VM 로직 재구현 없음. 카드/버튼의 워크플로 이동은 window.Nav
-         (셸 라우터)로만; 홈은 다른 화면 컨트롤러를 모른다. 스코프 경계는 screen_home.py docstring. -->
-    <section class="scr" id="scr-home">
+    <!-- ============ 「문서 작업」 전역 라이브러리 (§19.6·§19.7 · 재작성 F2 PR-A) ============ -->
+    <!-- 홈(카드 나열 + group-by 렌즈)의 승계자. 안정 DOM(id) + library.js 가
+         window.__push('library', snapshot) 로 값만 채운다. 링1 HomeViewModel 의 보기 4종·작업
+         방식 필터·검색·태그 facet·건강 번역을 그대로 소비 — VM 로직 재구현 없음.
+         browser(좌) + detail(우) 2-pane 이고 공간 배분은 목록 길이에 끌려다니지 않는다:
+         넓고(≥921px) 높은(≥760px) 창에서 두 pane 이 뷰포트를 나눠 각자 스크롤하고 페이지는
+         스크롤하지 않는다(app.css .library-browser). 이동은 window.Nav 로만 — 이 화면은 다른
+         화면 컨트롤러를 모른다. 스코프 경계는 screen_library.py docstring. -->
+    <section class="scr" id="scr-library">
       <header class="scr-head">
         <div>
-          <h1>홈</h1>
-          <p class="sub">작업·템플릿·데이터의 상태와 조치할 경보를 확인합니다.</p>
+          <h1>문서 작업</h1>
+          <!-- §19.6 서문의 재진술: 여기서 행을 골라도 「작업」의 선택·데이터는 그대로다.
+               상세 선택이 활성 작업을 바꾼다는 오해가 이 화면의 유일한 큰 오해다. -->
+          <p class="sub">저장된 문서 작업을 찾고 상태를 확인합니다. 여기서 다른 작업을 열어도 「작업」 화면의 선택과 데이터는 그대로입니다.</p>
         </div>
-        <!-- 수동 새로고침 버튼 제거(F6) — 화면 진입 시 자동 갱신(app.js REFRESH_ON_NAV)이 대체.
-             tpl·pool 의 새로고침은 외부 파일시스템 재스캔 용도라 존치(다른 문제). -->
+        <div class="scr-head-actions">
+          <button class="btn primary sm" id="libraryNewWork">＋ 새 작업</button>
+        </div>
       </header>
 
-      <!-- KPI·이어서 실행은 제거(#239 결정 8). 경보만 기존 note 문법으로 승계한다. -->
-      <div id="homeAlerts"></div>
-
+      <!-- 조치가 필요한 조건만 경보로(#239 결정 8 승계) — 개수 타일은 렌더하지 않는다. -->
+      <div id="libraryAlerts"></div>
       <!-- 손상 작업 — 숨기지 않고 시끄러운 위험 카드로(RC-05, 있을 때만) -->
-      <div id="homeCorrupt" style="display:none"></div>
+      <div id="libraryCorrupt" style="display:none"></div>
 
-      <div class="tracks">
-        <!-- HWPX 트랙 — 작업 브라우저(group-by 렌즈 + facet 칩) -->
-        <div class="track hwpx">
-          <div class="th"><span class="tt">HWPX 문서 만들기</span>
-            <button class="btn primary sm" id="homeNewJob">＋ 새 작업</button></div>
-          <p class="tsub">누름틀 템플릿과 매핑을 작업으로 저장하고, 데이터를 골라 .hwpx 문서를 만듭니다.</p>
-          <!-- 작업 브라우저 바(태그 없으면 렌더 안 됨 — 퇴화-코퍼스 불변식) -->
-          <div class="jobbrowser" id="homeBrowser" style="display:none"></div>
-          <div id="homeJobs"></div>
-          <div id="homeEmpty" style="display:none"></div>
+      <!-- 축 도구줄: 검색 · 보기 4종 · 작업 방식 필터 · 태그 facet. 넷이 이 화면의 절단자라
+           0건이 되면 목록 자리에 「필터 지우고 전체 보기」 출구가 상주한다(§8.4 도달성 면). -->
+      <div class="library-toolbar">
+        <label class="library-search-field"><span class="lbl">작업 검색</span>
+          <input class="field" id="librarySearch" type="search" autocomplete="off"
+                 placeholder="작업 이름, 그룹, 태그" data-busy-lock></label>
+        <div class="library-filter-group">
+          <span class="library-filter-label" id="libraryViewLabel">보기</span>
+          <div class="library-tabs" role="tablist" aria-labelledby="libraryViewLabel" id="libraryViewTabs">
+            <button type="button" role="tab" id="library-view-all" data-library-view="all"
+                    aria-controls="libraryPanel" aria-selected="true" data-busy-lock>모든 작업</button>
+            <button type="button" role="tab" id="library-view-recent" data-library-view="recent"
+                    aria-controls="libraryPanel" aria-selected="false" tabindex="-1" data-busy-lock>최근 사용</button>
+            <button type="button" role="tab" id="library-view-favorites" data-library-view="favorites"
+                    aria-controls="libraryPanel" aria-selected="false" tabindex="-1" data-busy-lock>즐겨찾기</button>
+            <button type="button" role="tab" id="library-view-needsAction" data-library-view="needsAction"
+                    aria-controls="libraryPanel" aria-selected="false" tabindex="-1" data-busy-lock>확인 필요</button>
+          </div>
         </div>
-
-        <!-- txt 트랙 — 기안 템플릿 목록. 클릭·「＋ 새 기안」은 「기안」 화면으로 라우팅(#148
-             슬라이스 6 — 구 「기안문 채우기」 흡수). -->
-        <div class="track txt">
-          <div class="th"><span class="tt">기안 · txt</span>
-            <button class="btn primary sm" id="homeNewTxt">＋ 새 기안</button></div>
-          <p class="tsub">평문 {{필드}} 템플릿을 실시간으로 채워 복사합니다. 온나라 기안 등에 바로 붙여넣을 수 있습니다.</p>
-          <div class="tlist" id="homeTxt"></div>
+        <div class="library-filter-group">
+          <span class="library-filter-label" id="libraryModeLabel">작업 방식</span>
+          <div class="library-modes" role="group" aria-labelledby="libraryModeLabel" id="libraryModeFilters">
+            <button class="pill" type="button" data-library-mode="all" aria-pressed="true" data-busy-lock>전체</button>
+            <button class="pill" type="button" data-library-mode="hwpx" aria-pressed="false" data-busy-lock>HWPX 문서 생성</button>
+            <button class="pill" type="button" data-library-mode="txt" aria-pressed="false" data-busy-lock>온나라 기안 검토·복사</button>
+          </div>
         </div>
+        <!-- 태그 facet — 축이 하나도 없으면 UI 전체를 숨긴다(§19.6 · 퇴화-코퍼스 불변식). -->
+        <div class="library-facets" id="libraryFacets" style="display:none"></div>
       </div>
-      <!-- 작업 카드 ⋮ 메뉴(복제·태그·삭제, #179 행동 계층) — 부유 단일 요소(job/tpl 동형). -->
+
+      <div class="library-browser">
+        <section class="library-list-pane" id="libraryPanel" role="tabpanel" aria-labelledby="library-view-all">
+          <!-- 결과 수 재진술 — 필터가 목록을 비웠다는 사실이 조용히 지나가지 않게(§9.3 정체 면). -->
+          <p class="library-count" id="libraryCount" tabindex="-1" role="status" aria-live="polite"></p>
+          <div class="library-list" id="libraryList" data-preserve-scroll></div>
+        </section>
+        <aside class="library-detail" id="libraryDetail" aria-label="선택한 작업 상세"></aside>
+      </div>
     </section>
 
     <!-- ============ 「작업」 화면 (R-flow 슬라이스 1 — master-detail 세션 패널 4존, #90) ============ -->
@@ -524,7 +549,7 @@
     </div>
 
     <!-- H-15/H-16 경량층도 같은 body 직속 포털을 쓴다. 좌표는 viewport 기준 Popover.place가 소유. -->
-    <div id="homeRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
+    <div id="libraryGroupMenu" class="ctx-menu" role="menu" style="display:none"></div>
     <div id="jobRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
     <div id="draftRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
     <div id="tplRowMenu" class="ctx-menu" role="menu" style="display:none"></div>
@@ -649,6 +674,21 @@
         <div class="modal-actions">
           <button class="btn" id="grpMoveCancel">취소</button>
           <button class="btn primary" id="grpMoveOk">이동</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 라이브러리 그룹 이동 다이얼로그(F2, groupMoveModal 동형·별도 요소) — 상세 「그룹 이동」.
+         목록은 library.js 가 스냅샷 그룹명으로 채운다(공용 grouplist.js moveDialog 팩토리). -->
+    <div id="libraryMoveModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="libraryMoveTitle">
+      <div class="modal-card">
+        <h3 id="libraryMoveTitle">그룹으로 이동</h3>
+        <p class="modal-sub" id="libraryMoveName"></p>
+        <div id="libraryMoveList" class="sheet-list"></div>
+        <p id="libraryMoveErr" class="note dangerbox" style="display:none"></p>
+        <div class="modal-actions">
+          <button class="btn" id="libMoveCancel">취소</button>
+          <button class="btn primary" id="libMoveOk">이동</button>
         </div>
       </div>
     </div>
@@ -813,12 +853,13 @@
 <script src="js/popover.js"></script>
 <script src="js/guard.js"></script>
 <script src="js/datazone.js"></script>
+<script src="js/intent.js"></script>
 <script src="js/grouplist.js"></script>
 <!-- 기안 세션 공용 팩토리(#148 슬라이스 3a) — datazone·segview·modal 위에 서고, 소비 화면
      (draft) 앞에 온다. 백엔드 draft_session.py 와 짝(구 txt·quickdraft 는 슬라이스 6 삭제). -->
 <script src="js/draftsession.js"></script>
 <script src="js/editor_entry.js"></script>
-<script src="js/screens/home.js"></script>
+<script src="js/screens/library.js"></script>
 <script src="js/screens/editor.js"></script>
 <script src="js/screens/job.js"></script>
 <script src="js/screens/draft.js"></script>

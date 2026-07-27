@@ -69,6 +69,7 @@ from ..gui.work_candidates import (
     browse_candidates,
     candidate_rows,
     prework_gate,
+    preferred_promotion,
     rank_available,
     suggested_work,
 )
@@ -147,6 +148,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 기존 보존 기제(preserve.js) 소관이라 여기 두지 않는다.
         self.browse_tab = TAB_AVAILABLE
         self.browse_query = ""
+        # preferredWorkId(§18.3 개정 1행) — 라이브러리 「문서 만들기에서 사용」이 낸 **명시
+        # 사건**을 데이터가 준비되는 시점까지 들고 있는 자리. 슬2가 규칙만 박제하고 비워
+        # 뒀던 seam 이며, 그 사건의 유일한 원천이 F2 에서 섰다. 승격·소비 규칙은
+        # :meth:`_apply_preferred_work`.
+        self.preferred_work = ""
         # 좌 목록 접힌 그룹(결정 43·R-info 결정 6) — 마지막 상태를 Python 설정에서 복원.
         # 앱은 홈당 단일 인스턴스(뮤텍스 가드)라 메모리 캐시가 디스크와 갈라질 경로가 없다.
         self._collapsed: "set[str]" = set(load_job_collapsed_groups())
@@ -652,6 +658,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.selection = SelectionModel(len(records), all_selected=False)  # 선택 0건(§18.2)
         self._init_filter()  # 데이터 교체 = 필터 재생성(결정 24 — 열 지형이 바뀐다)
         self._clear_data_notice()  # 사용자가 직접 데이터를 겨눔 → 자동 조준 재진술 소거
+        self._apply_preferred_work()  # 보관된 명시 사건(§18.3 1행)을 이 데이터에서 판정
         self._push()
 
     def set_output_folder(self, path: str) -> None:
@@ -714,6 +721,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if self._generation_lock.locked():
             raise ValueError("문서 생성이 진행 중입니다. 중단하거나 완료된 뒤 작업을 전환하세요.")
         self._clear_data_notice()
+        # 사용자가 직접 골랐다 = 보관된 명시 사건보다 최신 의사. 들고 있으면 다음 마운트에서
+        # 옛 의도가 되살아나 방금 고른 작업을 밀어낸다(지연된 조용한 추측).
+        self.preferred_work = ""
         self._last_generated = None  # 실행 증거는 세션 스코프 — 전환 시 소멸(§19.10)
         if not name:  # 선택 해제 = 작업만 내려놓는다(데이터 존은 그대로)
             self.vm = None
@@ -738,6 +748,85 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         )
         if job.default_dataset_ref and self.datasource is None:
             self._auto_aim_default(job.default_dataset_ref)
+
+    # --------------------------------------- 「문서 만들기에서 사용」(§19.8 3분기)
+    def _ranked_now(self) -> list:
+        """현재 데이터 기준 available 순위 — 후보 구획과 **같은 링1 판정**을 재사용한다."""
+        if self.datasource is None or not self.records:
+            return []
+        fields = list(self.records[0].keys())
+        return rank_available(list(self.registry.list_jobs()), fields)
+
+    def _do_prefer_work(self, p: dict) -> dict:
+        """라이브러리 「문서 만들기에서 사용」의 착지 — §19.8 3분기를 **Python 이 가른다**.
+
+        분기 판정(데이터 준비·호환)은 링1 술어가 이미 소유하므로 표면이 다시 계산하면 같은
+        상태를 두 곳이 판정하게 된다(판정 단일 출처). 웹은 반환된 ``reason`` 으로 라우팅만
+        한다.
+
+        ```text
+        데이터 ready + 호환   → 명시 선택(select_job) — RecordRangeState 는 세션 소유라 생존
+        데이터 ready + 비호환 → 활성 불변 + 보관. 표면이 「확인 필요」 탭에서 사유를 보인다
+        데이터 없음           → 보관만. 마운트 시 _apply_preferred_work 가 판정한다
+        ```
+
+        **비호환에서 활성으로 세우지 않는 이유**: 게이트가 닫힌 채 화면이 "이걸 만들 참"이라고
+        말하게 된다. 계약도 그 경우 선택이 아니라 **사유 표면**으로 보내라고 적는다(§19.8).
+        """
+        name = str(p.get("name", "")).strip()
+        if not name:
+            raise ValueError("겨눌 작업 이름이 비어 있습니다.")
+        if not self.registry.exists(name):
+            raise ValueError(f"'{name}' 작업을 찾을 수 없습니다.")
+        self.preferred_work = name
+        if self.datasource is None or not self.records:
+            return {"stored": True, "reason": "no_data", "name": name}
+        if any(r.name == name for r in self._ranked_now()):
+            self.preferred_work = ""  # 소비 — 지금 이뤄졌다
+            self._do_select_job({"name": name})
+            return {"promoted": True, "name": name}
+        return {"stored": True, "reason": "incompatible", "name": name}
+
+    def _apply_preferred_work(self) -> None:
+        """마운트 직후 보관된 명시 사건을 판정한다(§18.3 개정 1행). **1회 소비**.
+
+        판정은 링1(:func:`preferred_promotion`)이 내고 여기서는 그 결과를 세션에 반영만
+        한다. 올리지 못하는 경우에도 보관분을 **비운다** — 다음 마운트까지 들고 있으면
+        사용자가 잊은 의도가 나중에 조용히 발화한다(지연된 조용한 추측 금지).
+
+        올리지 못한 사유는 삼키지 않는다: 사용자가 방금 「이 작업을 쓰겠다」고 눌렀는데
+        아무 일도 안 일어나면 그게 조용한 소실이다. 기존 활성 작업이 있어 계약이 유지를
+        지시한 경우(§18.3 2행)와 이 데이터로 실행할 수 없는 경우를 갈라 재진술한다.
+        """
+        name, self.preferred_work = self.preferred_work, ""
+        if not name:
+            return
+        if not self.registry.exists(name):  # 그사이 삭제·개명 — 유령을 겨누지 않는다
+            self.data_notice_text = (
+                f"「문서 작업」에서 고른 '{name}' 작업이 더는 없습니다."
+            )
+            self.data_notice_level = "warn"
+            return
+        ranked = self._ranked_now()
+        promoted = preferred_promotion(
+            ranked, active=self.job_name, preferred=name,
+        )
+        if promoted:
+            self._do_select_job({"name": promoted})
+            self.data_notice_text = f"「문서 작업」에서 고른 '{promoted}' 을(를) 열었습니다."
+            self.data_notice_level = "ok"
+            return
+        if self.job_name:
+            self.data_notice_text = (
+                f"'{self.job_name}' 작업이 이미 열려 있어 '{name}' 으로 바꾸지 않았습니다. "
+                "왼쪽 목록에서 직접 고르세요."
+            )
+        else:
+            self.data_notice_text = (
+                f"「문서 작업」에서 고른 '{name}' 은(는) 이 데이터로 실행할 수 없습니다. "
+                "「확인 필요」에서 사유를 확인하세요."
+            )
+        self.data_notice_level = "warn"
 
     def _do_toggle_favorite(self, p: dict) -> dict:
         """즐겨찾기 지정/해제(§18.5) — 정렬 메타만 바꾸고 세션은 건드리지 않는다.
@@ -1018,6 +1107,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.selection = SelectionModel(len(records), all_selected=False)  # 선택 0건(§18.2)
         self._init_filter()  # 데이터 교체 = 필터 재생성(결정 24)
         self._clear_data_notice()  # 사용자가 직접 겨눔 → 자동 조준 재진술 소거
+        self._apply_preferred_work()  # 보관된 명시 사건(§18.3 1행)을 이 데이터에서 판정
 
     # ------------------------------------------------------------------ 생성
     def _push_progress(self, done: int, total: int) -> None:

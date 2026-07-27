@@ -559,7 +559,7 @@ def test_generation_stamps_last_run_at(tmp_path):
     res = ctrl.generate()
     assert res["ok"] is True and res["level"] == "ok"
     stamped = ctrl.registry.load("공고서").last_run_at
-    # 소비처(home_state·screen_home)가 fromisoformat 파싱 + 원시 문자열 정렬로 쓴다.
+    # 소비처(home_state·screen_library)가 fromisoformat 파싱 + 원시 문자열 정렬로 쓴다.
     assert datetime.fromisoformat(stamped)
     assert len(stamped) == len("2026-07-21T09:00:00")           # 초 단위 고정폭 = 정렬 가능
     assert ctrl.vm.job.last_run_at == stamped                   # 인메모리 사본도 동행
@@ -2072,3 +2072,115 @@ def test_generate_surfaces_fill_notes(tmp_path):
     assert len(res["fill_notes"]) == 1
     assert "markpenBegin" in res["fill_notes"][0]
     assert "채움 주의 1건" in res["summary"]
+
+
+# ================================= 「문서 만들기에서 사용」 3분기(§19.8) + preferredWorkId
+def _incompatible_reg(tmp_path) -> JobRegistry:
+    """기본 픽스처에 **이 데이터로는 못 도는** 작업 하나를 더한다(소스 열 부재)."""
+    reg = _registry(tmp_path)
+    template = tmp_path / "t2.hwpx"
+    _write_template(template, ["계약명"])
+    reg.save(Job(
+        name="계약서",
+        template_path=str(template),
+        mapping=MappingProfile(mappings=[
+            FieldMapping(template_field="계약명", source="없는열"),
+        ]),
+        filename_pattern="c-{{seq:001}}",
+    ))
+    return reg
+
+
+def test_prefer_work_promotes_when_the_data_is_ready_and_compatible(tmp_path):
+    """§19.8 1분기 — 명시 선택과 같다. 데이터·선택은 세션 소유라 **생존**한다."""
+    ctrl, _ = _controller(tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    before = ctrl.selection.selected_count()
+    res = ctrl.dispatch("prefer_work", {"name": "공고서"})
+    assert res == {"promoted": True, "name": "공고서"}
+    assert ctrl.job_name == "공고서"
+    assert ctrl.preferred_work == ""              # 지금 이뤄졌으니 보관하지 않는다
+    assert ctrl.selection.selected_count() == before  # RecordRangeState 생존
+
+
+def test_prefer_work_stores_and_promotes_at_mount_when_no_data_yet(tmp_path):
+    """§19.8 3분기 — 데이터가 없으면 보관하고, 마운트 시 §18.3 1행이 승격한다.
+
+    슬2가 규칙만 박제하고 비워 뒀던 seam 이 여기서 처음 소비된다. 승격은 **조용하지 않다** —
+    사용자가 방금 낸 의도가 이제 발화했다는 사실을 데이터 재진술로 말한다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    res = ctrl.dispatch("prefer_work", {"name": "공고서"})
+    assert res == {"stored": True, "reason": "no_data", "name": "공고서"}
+    assert ctrl.job_name == "" and ctrl.preferred_work == "공고서"
+
+    ctrl.load_data_path(_data_csv(tmp_path))
+    assert ctrl.job_name == "공고서"
+    assert ctrl.preferred_work == ""              # 1회 소비
+    snap = ctrl.snapshot()
+    assert "공고서" in snap["data_notice"]["text"] and snap["data_notice"]["level"] == "ok"
+
+
+def test_prefer_work_keeps_the_active_work_and_says_so(tmp_path):
+    """§18.3 2행 — 이미 열린 작업은 밀어내지 않는다. 대신 못 바꿨다는 사실을 말한다.
+
+    조용히 아무 일도 안 일어나면 사용자는 자기가 누른 버튼이 무엇을 했는지 알 수 없다.
+    """
+    ctrl, _ = _controller(_p := tmp_path)
+    ctrl.dispatch("prefer_work", {"name": "공고서"})
+    ctrl.dispatch("select_job", {"name": "공고서"})   # 명시 선택 = 보관분 소비
+    assert ctrl.preferred_work == ""
+    ctrl.preferred_work = "공고서"                     # 활성이 있는 채로 보관분이 남은 상태
+    ctrl.load_data_path(_data_csv(_p))
+    snap = ctrl.snapshot()
+    assert ctrl.job_name == "공고서"
+    assert "이미 열려" in snap["data_notice"]["text"]
+    assert snap["data_notice"]["level"] == "warn"
+
+
+def test_prefer_work_does_not_activate_an_incompatible_work(tmp_path):
+    """§19.8 2분기 — 실행할 수 없는 작업을 활성으로 세우지 않는다(게이트가 닫힌 채 '만들 참').
+
+    표면은 반환 사유로 「확인 필요」 탭에 데려간다 — 판정은 여기(Python)가 낸다.
+    """
+    pushes: list = []
+    ctrl = JobController(_incompatible_reg(tmp_path), lambda s, snap: pushes.append((s, snap)))
+    _mount_all(ctrl, _data_csv(tmp_path))
+    res = ctrl.dispatch("prefer_work", {"name": "계약서"})
+    assert res == {"stored": True, "reason": "incompatible", "name": "계약서"}
+    assert ctrl.job_name == ""                    # 활성 불변 — 조용한 승격 없음
+    assert ctrl.preferred_work == "계약서"
+
+
+def test_stored_preference_that_stays_incompatible_is_restated_not_swallowed(tmp_path):
+    """보관분이 새 데이터에서도 못 도는 경우 — 사유를 재진술하고 보관분을 비운다.
+
+    들고 있으면 사용자가 잊은 의도가 다음 마운트에서 조용히 발화한다(지연된 조용한 추측).
+    """
+    pushes: list = []
+    ctrl = JobController(_incompatible_reg(tmp_path), lambda s, snap: pushes.append((s, snap)))
+    ctrl.dispatch("prefer_work", {"name": "계약서"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    snap = ctrl.snapshot()
+    assert ctrl.job_name == "" and ctrl.preferred_work == ""
+    assert "실행할 수 없습니다" in snap["data_notice"]["text"]
+    assert snap["data_notice"]["level"] == "warn"
+
+
+def test_stored_preference_pointing_at_a_deleted_work_is_loud(tmp_path):
+    """그사이 삭제·개명된 작업을 겨눈 보관분은 유령을 열지 않고 사실을 말한다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("prefer_work", {"name": "공고서"})
+    ctrl.registry.delete("공고서")
+    ctrl.load_data_path(_data_csv(tmp_path))
+    snap = ctrl.snapshot()
+    assert ctrl.job_name == "" and ctrl.preferred_work == ""
+    assert "더는 없습니다" in snap["data_notice"]["text"]
+
+
+def test_prefer_work_rejects_unknown_names_loudly(tmp_path):
+    ctrl, _ = _controller(tmp_path)
+    with pytest.raises(ValueError, match="찾을 수 없습니다"):
+        ctrl.dispatch("prefer_work", {"name": "없는작업"})
+    with pytest.raises(ValueError, match="비어 있습니다"):
+        ctrl.dispatch("prefer_work", {"name": "  "})

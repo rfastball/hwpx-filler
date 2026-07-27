@@ -73,18 +73,26 @@ _DRAFT_SESSION = {
 }
 
 _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
-    "home": {
-        "set_group_by": _schema(optional="axis"),
-        "set_library_view": _schema(optional="view"),
-        "set_library_mode": _schema(optional="mode"),
-        "set_library_query": _schema(optional="text"),
+    # 「문서 작업」 전역 라이브러리(§19.6·§19.7) — 구 `home` 채널의 승계자(재작성 F2).
+    # 좌 목록 관리 동사 중 **열린 세션의 정체와 결속된 것**(rename_job·set_group·
+    # rename_group·disband_group)은 여기 없다 — 「문서 만들기」(`job`)가 계속 소유하고
+    # 라이브러리 표면이 교차 화면 dispatch 로 부른다(지도 §10.8 판정 F).
+    "library": {
+        "set_view": _schema(optional="view"),
+        "set_mode": _schema(optional="mode"),
+        "set_query": _schema(optional="text"),
         "toggle_facet": _schema("axis value"),
         "clear_facets": _schema(),
+        "clear_filters": _schema(),
+        "toggle_group": _schema("group"),
+        "select_work": _schema(optional="name"),
+        "toggle_favorite": _schema("name value"),
         "delete_job": _schema("name", "confirm"),
         "undo_delete_job": _schema(),
         "clone_job": _schema("name"),
         "relink_template": _schema("name", "path confirm"),
-        "refresh": _schema(),
+        # `select` = 정체가 바뀌는 관리 동사(이름 변경)가 새 이름을 실어 선택을 승계하는 자리.
+        "refresh": _schema(optional="select"),
         "set_tags": _schema("name", "tags"),
         "delete_corrupt": _schema("path", "confirm"),
     },
@@ -123,6 +131,8 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "refresh": _schema(),
         "select_job": _schema("name", "confirm"),
         "toggle_favorite": _schema("name value"),
+        # 라이브러리 「문서 만들기에서 사용」의 착지(§19.8) — 분기 판정은 Python 이 낸다.
+        "prefer_work": _schema("name"),
         "browse_tab": _schema(optional="tab"),
         "browse_query": _schema(optional="text"),
         "relink_template": _schema("name", "path confirm"),

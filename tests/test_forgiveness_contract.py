@@ -14,7 +14,7 @@ def test_forgiveness_surface_contracts_are_wired() -> None:
     editor = _read("web/js/screens/editor.js")
     job = _read("web/js/screens/job.js")
     template = _read("web/js/screens/template.js")
-    home = _read("web/js/screens/home.js")
+    home = _read("web/js/screens/library.js")
     draft = _read("web/js/screens/draft.js")
 
     assert 'id="undoToast"' in index and 'src="js/undo_toast.js"' in index
@@ -26,18 +26,19 @@ def test_forgiveness_surface_contracts_are_wired() -> None:
 
 
 def test_soft_delete_replaces_preconfirmation_on_recoverable_surfaces() -> None:
-    home = _read("web/js/screens/home.js")
+    library = _read("web/js/screens/library.js")
     template = _read("web/js/screens/template.js")
-    # 복구 가능한 삭제 자체는 사전 확인 없음 — 홈의 confirm 은 백엔드 needs_confirm
+    # 복구 가능한 삭제 자체는 사전 확인 없음 — 라이브러리의 confirm 은 백엔드 needs_confirm
     # (타 화면 무장 세션 소실 = 파일 복원으로 못 돌아오는 파괴, #268 리뷰)이 돌려줄
     # 때만 발화한다. 무조건 confirm 재유입은 이 순서 검사가 잡는다.
-    home_block = home[home.index("async function deleteJob"):home.index("function onJobsClick")]
-    assert "needs_confirm" in home_block
-    assert home_block.index("needs_confirm") < home_block.index("Modal.confirm")
+    lib_block = library[library.index("async function deleteJob"):
+                        library.index("function closeGroupMenu")]
+    assert "needs_confirm" in lib_block
+    assert lib_block.index("needs_confirm") < lib_block.index("Modal.confirm")
     start = template.index("async function deleteTemplate")
     delete_block = template[start:template.index("async function doCompile", start)]
     assert "Modal.confirm" not in delete_block
-    assert "UndoToast.show" in home and "UndoToast.show" in template
+    assert "UndoToast.show" in library and "UndoToast.show" in template
 
 
 def test_undo_toast_receives_pointer_events() -> None:

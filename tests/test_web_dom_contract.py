@@ -38,7 +38,9 @@ GALLERY = Path(__file__).resolve().parents[1] / "docs" / "UI_GALLERY.html"
 
 # 화면 루트 — 셸 라우터가 표시/숨김으로 전환하는 최상위 컨테이너(회귀 시 화면 소실).
 SCREEN_ROOTS = (
-    "scr-home", "scr-tpl",
+    # 홈(scr-home)은 사망(재작성 F2 PR-A) — 저장된 작업을 찾는 자리는 「문서 작업」
+    # 라이브러리(§19.6 browser+detail)가 잇는다.
+    "scr-library", "scr-tpl",
     # 「데이터 관리」(scr-pool)는 사망(재작성 F1) — 등록 데이터의 목록·수명은 데이터 선택
     # 다이얼로그가 승계했다(PoolController 는 생존, 소비자만 바뀜).
     # 「작업」(R-flow · #90) — 유일 생성 표면(실행 화면=슬라이스 3 사망) + 편집 모드(작업
@@ -55,7 +57,7 @@ SCOPED_DATA_LABELS = ("draftDataLabel", "jobDataLabel")
 # 접힘 상태에서 라벨이 사라지는 내비 버튼(회귀 시 접근 이름·툴팁 소실 → #27).
 # run=슬라이스 3·editor=슬라이스 5 사망(흡수); 「기안」이 구 txt·quickdraft 를 흡수·삭제
 # (#148 슬라이스 6, 레일 6→5); 「데이터 관리」는 데이터 선택 다이얼로그로 흡수·사망(F1, 5→4).
-NAV_SCREENS = ("home", "job", "draft", "tpl")
+NAV_SCREENS = ("library", "job", "draft", "tpl")
 
 # 커스텀 모달 → aria-labelledby 가 가리켜야 할 제목 id(다이얼로그 시맨틱, #27/#28).
 # sheetModal 은 다중 시트 확정 게이트(#33) — 같은 Modal 헬퍼·다이얼로그 계약을 공유한다.
@@ -669,7 +671,7 @@ def test_heading_typography_uses_three_shared_roles():
     css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
     assert ".scr-headh1{font-size:var(--fs-section);font-weight:700}" in css
     assert (
-        ".track.tt,.job-sec-head,.tpl-band.tb-t,.modal-cardh3{"
+        ".lib-detail-name,.job-sec-head,.tpl-band.tb-t,.modal-cardh3{"
         "font-size:var(--fs-strong);font-weight:700}"
     ) in css
     assert (
@@ -681,7 +683,7 @@ def test_heading_typography_uses_three_shared_roles():
         ".job-sec-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-8);font-size:",
         ".zone-cap{display:block;margin-bottom:var(--sp-10);font-size:",
         ".tpl-band.tb-t{font-weight:",
-        ".track.tt{font-size:",
+        ".lib-detail-name{font-size:",
     ):
         assert stale not in css, f"개별 제목 타이포 재정의가 돌아왔습니다: {stale}"
 
@@ -829,17 +831,34 @@ def test_job_candidate_ranking_surface_contract():
     assert 'data-menu="favorite"' in src, "좌 목록 ⋮ 메뉴에 즐겨찾기 항목이 없습니다."
     assert src.count("function toggleFavorite(") == 1, "즐겨찾기 전이 몸통이 둘입니다."
     # 왕복 중 두 번째 클릭이 의도를 뒤집으려면 다음 값을 DOM 이 아니라 미결 의도에서
-    # 계산해야 한다(리뷰 3R P2 — 멱등 재지정이 "껐다"를 삼키는 창).
-    assert "FAV_PENDING" in src and "function favPending(" in src, (
-        "즐겨찾기 미결 의도 직렬화가 없습니다."
+    # 계산해야 하고(3R P2 — 멱등 재지정이 "껐다"를 삼키는 창), 쓰기 자체도 클릭 순서로
+    # 직렬화돼야 한다(4R P2 — pywebview 는 호출마다 별도 스레드라 동시 발신이면 나중 클릭의
+    # 쓰기가 먼저 잠금을 잡아 반대 상태가 영속될 수 있다).
+    #
+    # **기제는 공용 몸통(js/intent.js)이 소유한다**(재작성 F2 리뷰 3R 근본 조치): 라이브러리가
+    # 같은 별을 새로 그리며 기제 없이 DOM 값만 보내 같은 결함류가 표면을 넘어 재발했다.
+    # 그래서 가드도 몸통 하나를 보고, 두 소비 표면이 그것을 쓰는지 함께 본다.
+    intent = (WEB_JS_DIR / "intent.js").read_text(encoding="utf-8")
+    assert "function chained(" in intent and "CALL_CHAINS" in intent, "호출 직렬화 몸통이 없습니다."
+    assert "function createFavorite(" in intent and "function pending(" in intent, (
+        "즐겨찾기 미결 의도 직렬화가 공용 몸통에 없습니다."
     )
-    # 쓰기 자체도 클릭 순서로 직렬화돼야 한다(4R P2 — pywebview 는 호출마다 별도 스레드라
-    # 동시 발신이면 나중 클릭의 쓰기가 먼저 잠금을 잡아 반대 상태가 영속될 수 있다).
-    # 직렬화 몸통은 공용이다(PR-1 5R): 즐겨찾기·탐색이 같은 기제를 쓰고 가드도 하나다.
-    # 즐겨찾기는 키 하나(작업 간 순위라 전역 1체인)로 클릭 순서 = 쓰기 순서를 보장한다.
-    assert "function chained(" in src and "CALL_CHAINS" in src, "호출 직렬화 몸통이 없습니다."
-    assert 'chained("favorite"' in src, "즐겨찾기 쓰기가 체인을 타지 않습니다."
-    assert src.count('chained("browse"') == 3, (
+    assert 'chained("favorite"' in intent, "즐겨찾기 쓰기가 체인을 타지 않습니다."
+    # 저장되는 링은 **절대 reject 하지 않는다**(5R): 실패한 promise 가 체인에 남으면 이후
+    # 같은 키의 모든 호출이 거기 붙어 영영 실행되지 않는다. 실행 성질은 실앱 프로브가 본다.
+    chain = intent[intent.index("function chained("):intent.index("const FAV_PENDING")]
+    assert "result.catch(() => {})" in chain, "저장 링이 실패를 흡수하지 않습니다(5R)."
+    assert "return result;" in chain, "호출자에게 실패를 전하지 않습니다 — 되돌리기가 죽습니다."
+    for consumer in ("screens/job.js", "screens/library.js"):
+        text = (WEB_JS_DIR / consumer).read_text(encoding="utf-8")
+        assert "Intent.createFavorite(" in text, (
+            f"{consumer} 가 즐겨찾기 기제를 공용 몸통에서 받지 않습니다 — 두 벌이면 또 갈린다."
+        )
+        assert "FAV_PENDING" not in text, f"{consumer} 에 손짠 의도 큐가 남아 있습니다."
+    # 메뉴 문안은 **이 클릭이 할 일**을 말해야 하므로 미결 의도를 읽는다 — 기제가 몸통으로
+    # 이사할 때 이 소비처가 뒤에 남아 실앱에서 메뉴가 안 열렸다(3R 픽스의 실물 증거).
+    assert "favorite.pending(" in src, "좌 목록 ⋮ 메뉴가 미결 의도를 읽지 않습니다."
+    assert src.count('Intent.chained("browse"') == 3, (
         "탐색 탭·검색·선택이 같은 체인을 타지 않습니다 — 늦은 옛 응답이 새 결과·선택을 되돌린다."
     )
     # 문안은 완주 스탬프 의미와 일치해야 한다(성공 뒤 실패 런에서 거짓이 되지 않게).
@@ -887,16 +906,21 @@ def test_gallery_exposes_template_media_surface():
 
 
 def test_card_families_share_hover_and_keep_persistent_state_separate():
-    """H-14: jcard·titem·tplcard hover는 틴트뿐이고 막대는 선택·오류에만 남는다."""
+    """H-14: 카드류 hover는 틴트뿐이고 막대는 선택·오류에만 남는다.
+
+    구 홈 txt 목록(.tlist .titem)은 화면과 함께 사망했고(재작성 F2), 라이브러리 행(.lib-row)이
+    같은 어휘의 새 소비자다 — 같은 규칙을 쓰는지 여기서 함께 본다.
+    """
     css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
-    assert ".jcard:hover,.tlist.titem:hover,.tplcard:hover{background:var(--n-hover)}" in css
+    assert ".jcard:hover,.tplcard:hover{background:var(--n-hover)}" in css
+    assert ".lib-row:hover{background:var(--n-hover)}" in css
     assert (
-        '.jcard[aria-current="true"],.tlist.titem[aria-current="true"],'
-        '.tplcard[aria-current="true"]{background:var(--a-sel);'
+        '.jcard[aria-current="true"],.tplcard[aria-current="true"]{background:var(--a-sel);'
         "border-left-color:var(--a-primary)}"
     ) in css
+    assert ".lib-row.on{background:var(--a-sel);border-left-color:var(--a-primary)}" in css
     assert ".jcard.corrupt{border-left-color:var(--a-danger)}" in css
-    for selector in (".jcard:hover", ".tlist.titem:hover", ".tplcard:hover"):
+    for selector in (".jcard:hover", ".lib-row:hover", ".tplcard:hover"):
         body = re.search(re.escape(selector) + r"(?:,[^{]+)?\{([^}]*)\}", css)
         assert body and "border" not in body.group(1), f"hover가 상태 보더를 사용합니다: {selector}"
 
@@ -904,8 +928,14 @@ def test_card_families_share_hover_and_keep_persistent_state_separate():
 def test_card_families_keep_keyboard_focus_outline():
     css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
     assert (
-        ".jcard:focus-visible,.tlist.titem:focus-visible,.tplcard:focus-visible{"
+        ".jcard:focus-visible,.tplcard:focus-visible{"
         "outline:2pxsolidvar(--a-primary);outline-offset:2px}"
+    ) in css
+    # 라이브러리 행은 버튼 2개(선택·즐겨찾기)라 아웃라인이 **버튼**에 붙는다 — 행 껍데기에
+    # 붙이면 실제 포커스 대상과 표지가 어긋난다.
+    assert (
+        ".lib-row-main:focus-visible,.lib-fav:focus-visible{"
+        "outline:2pxsolidvar(--a-primary);outline-offset:-2px}"
     ) in css
 
 
@@ -1065,13 +1095,13 @@ def test_editor_surface_lives_in_job_panel():
         "(편집 진입은 EditorEntry.land 로)."
     )
     # 진입 흐름은 EditorEntry 단일 정의(land/newDraft/openGuarded — 축자 복붙=드리프트 표면).
-    # 소비처 전수(홈·템플릿 관리·작업 화면 — PR-5 리뷰 F5: job.js 가 가드 사각이었다)를 가드.
+    # 소비처 전수(라이브러리·템플릿 관리·작업 화면 — PR-5 리뷰 F5: job.js 가 가드 사각이었다).
     entry_src = (WEB_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
     for fn in ("function land", "function newDraft", "function openGuarded"):
         assert fn in entry_src, f"editor_entry.js 의 단일 정의({fn})가 사라졌습니다."
     for fname, needle in (
-        ("screens/home.js", "EditorEntry.newDraft"),
-        ("screens/home.js", "EditorEntry.openGuarded"),
+        ("screens/library.js", "EditorEntry.newDraft"),
+        ("screens/library.js", "EditorEntry.openGuarded"),
         ("screens/template.js", "EditorEntry.land"),
         ("screens/job.js", "EditorEntry.openGuarded"),
         ("screens/job.js", "EditorEntry.newDraft"),
