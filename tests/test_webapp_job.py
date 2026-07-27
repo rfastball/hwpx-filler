@@ -2804,7 +2804,7 @@ def test_approval_opens_the_gate_and_survives_a_push_round_trip(tmp_path):
     ctrl, _ = _unreviewed_session(tmp_path)
     req, unmet = ctrl._review()
     assert unmet is not None
-    ctrl.review.approve(req, ctrl._selection_key())
+    ctrl.review.approve(req, ctrl._review_scope_key())
     assert ctrl.snapshot()["gate"]["enabled"] is True
 
 
@@ -2812,7 +2812,7 @@ def test_selection_change_reinstates_a_selection_bound_approval(tmp_path):
     """판정 I — 새 작업의 증거는 이 배치의 것이라 선택이 바뀌면 다시 확인해야 한다."""
     ctrl, _ = _unreviewed_session(tmp_path)
     req, _ = ctrl._review()
-    ctrl.review.approve(req, ctrl._selection_key())
+    ctrl.review.approve(req, ctrl._review_scope_key())
     assert ctrl.snapshot()["gate"]["enabled"] is True
     ctrl.dispatch("toggle_record", {"index": 0, "value": False})
     assert ctrl.snapshot()["gate"]["enabled"] is False
@@ -2823,7 +2823,7 @@ def test_display_order_change_reinstates_the_approval(tmp_path):
     입력이 아니므로 승인이 승계되지 않는다."""
     ctrl, _ = _unreviewed_session(tmp_path)
     req, _ = ctrl._review()
-    ctrl.review.approve(req, ctrl._selection_key())
+    ctrl.review.approve(req, ctrl._review_scope_key())
     ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
     assert ctrl.snapshot()["gate"]["enabled"] is False
 
@@ -2832,7 +2832,7 @@ def test_a_completed_run_stamps_the_baseline_so_the_repeat_run_is_quiet(tmp_path
     """§13-2 — 정상 반복 실행에서 미리보기는 선택이다. 완주가 그 자격을 만든다."""
     ctrl, _ = _unreviewed_session(tmp_path)
     req, _ = ctrl._review()
-    ctrl.review.approve(req, ctrl._selection_key())
+    ctrl.review.approve(req, ctrl._review_scope_key())
     ctrl.generate()
     assert ctrl.registry.load("공고서").reviewed_rules  # 완주 스탬프가 기준선을 세웠다
     ctrl.review.clear()                                 # 재시작과 같은 상태(승인은 미영속)
@@ -2856,7 +2856,7 @@ def test_switching_jobs_does_not_carry_an_approval(tmp_path):
     """승인은 규칙 지문에 결속돼 남의 작업에 닿지 않는다."""
     ctrl, _ = _unreviewed_session(tmp_path)
     req, _ = ctrl._review()
-    ctrl.review.approve(req, ctrl._selection_key())
+    ctrl.review.approve(req, ctrl._review_scope_key())
     other = ctrl.registry.load("공고서")
     other.name = "다른공고서"
     other.filename_pattern = "다른-{{seq:001}}"
@@ -3032,7 +3032,7 @@ def test_generation_backstop_catches_a_rule_change_after_the_gate_opened(tmp_pat
     """승인 뒤 규칙이 바뀌면(에디터 저장) 그 승인은 무효다 — 백스톱이 지금 다시 묻는다."""
     ctrl, _ = _unreviewed_session(tmp_path)
     req, _ = ctrl._review()
-    ctrl.review.approve(req, ctrl._selection_key())
+    ctrl.review.approve(req, ctrl._review_scope_key())
     assert ctrl.snapshot()["gate"]["enabled"] is True
     job = ctrl.registry.load("공고서")
     job.filename_pattern = "다른-{{seq:001}}"
@@ -3046,7 +3046,7 @@ def test_completed_run_stamps_the_rules_it_used_not_the_disk(tmp_path):
     것으로 만들면 안 된다(조용한 승인). 런의 규칙을 찍으면 요구가 그대로 선다."""
     ctrl, _ = _unreviewed_session(tmp_path)
     req, _ = ctrl._review()
-    ctrl.review.approve(req, ctrl._selection_key())
+    ctrl.review.approve(req, ctrl._review_scope_key())
     ran_pattern = ctrl.vm.job.filename_pattern
     # 배치가 도는 사이 같은 프로세스의 에디터가 저장한 상황을 스탬프 직전에 재현한다.
     real_stamp = ctrl.registry.stamp_last_run
@@ -3112,3 +3112,51 @@ def test_the_mirror_still_counts_blanks_as_blank(tmp_path):
     ctrl.dispatch("ack_field", {"field": "추정가격"})
     row = next(r for r in ctrl.snapshot()["mirror"] if r["name"] == "추정가격")
     assert "1행에서 값이 비어 있습니다" in row["value"]
+
+
+# ---------------- 리뷰 2R 조치의 영구 가드(P1×1·P2×2) ----------------
+def test_approval_does_not_survive_a_data_swap(tmp_path):
+    """2R P1 — 데이터 A 에서 승인한 뒤 데이터 B 를 올리면 선택은 0건으로 리셋되지만
+    세션의 승인 집합은 남는다. 같은 index 를 다시 고르는 순간 **같은 키가 재구성돼**
+    B 의 값·이름을 한 번도 보지 않은 채 게이트가 열리면 안 된다.
+    """
+    ctrl, _ = _unreviewed_session(tmp_path)
+    req, _ = ctrl._review()
+    ctrl.review.approve(req, ctrl._review_scope_key())
+    assert ctrl.snapshot()["gate"]["enabled"] is True
+
+    other = tmp_path / "b.csv"
+    other.write_text("bidNtceNm,presmptPrce\n다른공고,\n다른비품,3000000\n", encoding="utf-8")
+    _mount_all(ctrl, str(other))          # 같은 열 지형·같은 행 수 = 같은 index 집합
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    assert ctrl.snapshot()["gate"]["enabled"] is False, (
+        "다른 데이터의 값을 보지 않은 채 승인이 재사용됐습니다."
+    )
+    assert ctrl.generate()["ok"] is False   # 백스톱도 같은 판정을 낸다
+
+
+def test_approval_scope_key_is_separate_from_the_result_fingerprint(tmp_path):
+    """두 값이 묻는 질문이 다르다: 결과 강등은 "지금 실행 입력의 것인가", 승인은 "무엇을
+    보고 난 것인가". 한 문자열이 둘을 겸하면 한쪽 요구가 다른 쪽 의미를 조용히 바꾼다."""
+    ctrl, _ = _session(tmp_path)
+    before_sel, before_scope = ctrl._selection_key(), ctrl._review_scope_key()
+    _mount_all(ctrl, _data_csv(tmp_path))   # 같은 파일 재마운트 = 같은 선택 지문
+    assert ctrl._selection_key() == before_sel
+    assert ctrl._review_scope_key() != before_scope, (
+        "새 스냅샷인데 승인 범위 키가 그대로입니다 — 승인이 되살아납니다."
+    )
+
+
+def test_preview_and_table_agree_on_the_filename_timestamp(tmp_path):
+    """2R P2 — 게이트 감사(refresh)와 표 「문서」 열이 각자 시각을 찍으면 `{{date:SS}}`
+    가 초 경계를 넘는 순간 드로어가 승인시킨 이름과 생성물이 갈린다."""
+    ctrl, _ = _controller(tmp_path, reviewed=True)
+    job = ctrl.registry.load("공고서")
+    job.filename_pattern = "doc-{{date:HHmmSS}}-{{seq}}"
+    ctrl.registry.save(job, allow_overwrite=True)
+    _rereview(ctrl)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("preview_open", {})
+    snap = ctrl.snapshot()
+    assert snap["preview"]["filename"] == snap["records"][0]["name"]

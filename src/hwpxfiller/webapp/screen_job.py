@@ -401,7 +401,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         req, unmet = self._review()
         if unmet is None:
             raise ValueError("지금 확인이 필요한 변경이 없습니다.")
-        self.review.approve(req, self._selection_key())
+        self.review.approve(req, self._review_scope_key())
 
     def _do_range_draft_open(self, p: dict) -> dict:
         """편집기 진입 = 범위 깊은 복제. 이미 열려 있으면 **다시 복제하지 않는다**.
@@ -511,6 +511,25 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         return ",".join(str(i) for i in self._indices())
 
+    def _review_scope_key(self, indices: "list[int] | None" = None) -> str:
+        """승인이 결속되는 범위 — **어느 스냅샷의** 어느 선택인가(2R P1).
+
+        선택 index 만으로는 부족하다: 데이터 A 에서 의미·파일명 위험을 승인한 뒤 데이터 B 를
+        올리면 선택은 0건으로 리셋되지만 세션의 승인 집합은 남고, 같은 index 를 다시 고르는
+        순간 **같은 키가 재구성돼** B 의 값·이름을 한 번도 보지 않은 채 게이트가 열린다.
+        `_snapshot_gen` 은 마운트마다 오르는 단조 표식이라 그 재구성을 원리적으로 막는다.
+
+        `selection_key`(F4 결과 강등)와 **따로 두는** 이유: 그쪽은 "이 결과가 지금 실행 입력의
+        것인가"를 묻는 값이고 이쪽은 "이 승인이 무엇을 보고 난 것인가"를 묻는 값이다. 한
+        문자열이 두 질문을 겸하면 한쪽 요구가 다른 쪽 의미를 조용히 바꾼다(F3 3R 의
+        `selected_count` 가 표 머리와 게이트 지목을 겸하던 자리와 같은 결함류).
+        """
+        sel = (
+            self._selection_key() if indices is None
+            else ",".join(str(i) for i in indices)
+        )
+        return f"{self._snapshot_gen}|{sel}"
+
     def _review(
         self, vm=None, indices: "list[int] | None" = None,
     ) -> "tuple[ReviewRequirement, ReviewRequirement | None]":
@@ -531,11 +550,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         req = review_requirement(target.job)
         if not req.required:
             return req, None
-        key = (
-            self._selection_key() if indices is None
-            else ",".join(str(i) for i in indices)
-        )
-        approved = self.review.is_approved(req, key)
+        approved = self.review.is_approved(req, self._review_scope_key(indices))
         return req, (None if approved else req)
 
     def _review_payload(self, req: ReviewRequirement, unmet) -> dict:
@@ -743,7 +758,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
         names: "dict[int, str]" = {}
         if indices and self.vm is not None:  # 파일명은 작업 속성 — 미선택이면 미리보기 없음
-            self._names_now = datetime.now()
+            # 시각은 **이 스냅샷이 잡아 둔 것**을 쓴다(2R P2): 여기서 따로 찍으면 같은
+            # 스냅샷 안에서 게이트 감사(refresh)와 표 「문서」 열이 다른 시각을 갖고,
+            # `{{date:SS}}` 같은 하위-일 토큰이 초 경계를 넘는 순간 미리보기가 승인시킨
+            # 이름과 생성물이 갈린다(덮어쓰기 대상 집합까지 함께 바뀐다). 캡처는
+            # :meth:`snapshot` 이 스냅샷당 1회 한다 — 폴백은 직접 호출(테스트) 경로용이다.
+            if self._names_now is None:
+                self._names_now = datetime.now()
             planned = plan_output_names(
                 self.vm.job.filename_pattern, mapped, now=self._names_now,
             )
@@ -1011,6 +1032,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return base
         job = self.vm.job
         indices = self._indices()
+        # 파일명 날짜 토큰의 기준 시각을 **스냅샷당 1회** 캡처한다(2R P2) — 게이트 감사·표
+        # 「문서」 열·드로어·생성(`_generate_locked` 가 이 값을 재사용)이 전부 같은 시각을
+        # 쓴다. 여기서 한 번 찍는 것이 "표시 = 확인 = 생성"(RC-02)의 시간 축이다.
+        self._names_now = datetime.now()
         # 선택분 매핑 적용은 1회 — 파일명 미리보기(_record_rows)와 거울 값(_mirror)이 공유한다.
         mapped = self.vm.mapped_records(indices) if indices else []
         # 생성이 실제로 쓸 표식(1R P2) — 확인된 빈칸은 문서에 **표식 문자열**로 들어가고,
@@ -1034,6 +1059,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         req, req_unmet = self._review()
         status = self.vm.refresh(  # 사전검증+배지+게이트+이름 계획 단일 산출(RC-23)
             indices, self.out_dir, review_unmet=req_unmet, mapped=run_mapped,
+            now=self._names_now,
         )
         preflight_text = (
             _PREFLIGHT_OK_TEXT if status.preflight.level == "ok" else status.preflight.text

@@ -89,7 +89,7 @@ class GateState:
     #: 거울 배너는 자기 사실(드리프트 목록·미해소 토큰)을 따로 보고 그리면 게이트가 실제로
     #: 막고 있는 이유와 다른 것을 크게 말할 수 있다(예: 템플릿을 못 읽는데 "파일명을 고치라").
     #: ""=이 사유 축과 무관(warn·열림).
-    #: 값: drift | template_unreadable | name_tokens | path_too_long | review_required
+    #: 값: drift | template_unreadable | name_tokens | review_required
     reason: str = ""
 
 
@@ -383,6 +383,7 @@ class RunViewModel:
         self, indices: "list[int]", out_dir: str = "", *,
         review_unmet: "ReviewRequirement | None" = None,
         mapped: "list[dict] | None" = None,
+        now: "datetime | None" = None,
     ) -> RunStatus:
         """상태 리프레시 1회의 단일 스냅샷 — 사전검증·필드 배지·게이트를 동시 파생.
 
@@ -420,10 +421,13 @@ class RunViewModel:
                 self.job.filename_pattern,
                 self.mapped_records(idx) if mapped is None else mapped,
                 out_dir,
+                now=now,
             ) if idx else OutputNameAudit()
         )
         return RunStatus(
-            preflight=self._compose_preflight(src, out, drift, name_gate is not None),
+            preflight=self._compose_preflight(
+                src, out, drift, name_gate is not None, len(audit.too_long),
+            ),
             field_states=tuple(states),
             gate=self._compose_gate(
                 states, drift, idx, out_dir, name_gate, review_unmet, audit,
@@ -477,7 +481,7 @@ class RunViewModel:
         audit: "OutputNameAudit | None" = None,
     ) -> GateState:
         """게이트 표시 결정 — 드리프트(danger·차단) > 파일명 토큰(danger) > 미확인
-        미입력(warn) > 전제조건(warn) > **경로 길이(warn)** > **검토 요구(warn)** > 열림.
+        미입력(warn) > 전제조건(warn) > **검토 요구(warn)** > 열림.
 
         UD-06: 이어채우기 문서·저장 폴더·레코드 선택 같은 warn 급 전제조건을 이 단일
         산출로 흡수해 '버튼 비활성 + 인라인 사유' 문법으로 통일한다(클릭 후 차단 모달
@@ -521,16 +525,6 @@ class RunViewModel:
                 False, "warn",
                 "기존 문서 이어채우기는 1건만 지원합니다. 생성 대상을 1건만 선택하세요.",
             )
-        if audit is not None and audit.too_long:
-            # 실행하면 확실히 실패하는 것을 실행해서 알게 하지 않는다(C-01 미충족분,
-            # 지도 §10.12 판정 K). 차단이 아니라 경고인 이유는 확장 경로·longPathsEnabled
-            # 환경에서 실제로 성공할 수 있어서다 — 단정하면 문안이 거짓이 된다.
-            return GateState(
-                False, "warn",
-                f"저장 경로가 너무 긴 문서가 {len(audit.too_long)}건 있습니다. "
-                "저장 폴더를 더 짧은 곳으로 바꾸거나 파일 이름 규칙을 줄이세요.",
-                reason="path_too_long",
-            )
         if review_unmet is not None and review_unmet.required:
             return GateState(
                 False, "warn", review_gate_text(review_unmet), reason="review_required",
@@ -539,6 +533,7 @@ class RunViewModel:
 
     def _compose_preflight(
         self, src, out, drift: TemplateStructureDrift, name_unresolved: bool = False,
+        long_paths: int = 0,
     ) -> PreflightResult:
         parts: "list[str]" = []
         if src.missing_columns:
@@ -556,9 +551,18 @@ class RunViewModel:
             # 상태 어휘 경계(UD-20): 사전검증 경고도 배지·게이트와 같은 '미입력'으로 통일
             # (같은 상태 2이름 해소) — '미입력'=출력값 빔(ack 대상).
             parts.append("[경고] 빈 값 필드: " + ", ".join(out.empty_valued))
+        if long_paths:
+            # **차단하지 않는다**(2R P2 · 재작성 F5 판정 K): 확장 경로·longPathsEnabled 에서는
+            # 실제로 성공하므로 게이트를 닫으면 잘 되는 환경의 사용자가 UI 로는 아예 못
+            # 만든다. 그렇다고 침묵하면 생성 중 OSError 로만 드러난다 — 그래서 사전 경고다.
+            # 문안도 단정하지 않는다("실패한다"가 아니라 "실패할 수 있다").
+            parts.append(
+                f"[경고] 저장 경로가 너무 길어 저장에 실패할 수 있는 문서 {long_paths}건. "
+                "저장 폴더를 더 짧은 곳으로 바꾸거나 파일 이름 규칙을 줄이면 확실합니다."
+            )
         if src.missing_columns or drift.has_drift or name_unresolved:
             level = "danger"
-        elif out.empty_valued:
+        elif out.empty_valued or long_paths:
             level = "warn"
         else:
             level = "ok"

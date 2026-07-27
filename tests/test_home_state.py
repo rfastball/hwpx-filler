@@ -691,10 +691,6 @@ def test_health_translation_covers_every_data_independent_gate_reason():
         # 검토를 끼우면 새로 만든 모든 작업이 「확인 필요」에 서서 그 구획이 뜻을 잃는다
         # (경보 인플레이션 — 진짜 고장 난 작업이 새 작업들 사이에 묻힌다).
         "review_required",
-        # 경로 길이(재작성 F5)는 **작업이 아니라 이번 저장 폴더**의 성질이다. 라이브러리는
-        # 저장 폴더를 모르고(§19.7: 현재 데이터·실행 문맥과 섞지 않는다), 폴더를 바꾸면
-        # 사라지는 상태를 작업의 건강으로 적으면 그 표기가 곧 거짓이 된다.
-        "path_too_long",
     }
     missing = [
         r for r in reasons if r not in not_health and evidence.get(r, r) not in covered

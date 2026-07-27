@@ -203,13 +203,31 @@ def test_audit_flags_paths_over_the_length_limit():
     """
     out = "C:/out"
     long_name = "가" * (MAX_PATH_CHARS - len(out) - len("/.hwpx"))
-    audit = audit_output_names("{{이름}}", [{"이름": "짧"}, {"이름": long_name}], out)
+    audit = audit_output_names(
+        "{{이름}}", [{"이름": "짧"}, {"이름": long_name}], out,
+        max_path=MAX_PATH_CHARS,   # 플랫폼 무관 결정성 — 한계 자체가 이 테스트의 대상이다
+    )
     assert audit.too_long == (1,) and audit.has_warning
 
 
 def test_length_audit_is_silent_without_a_folder():
     """폴더를 모르면 잴 경로가 없다 — 없는 근거로 경고하지 않는다."""
-    assert audit_output_names("{{이름}}", [{"이름": "가" * 300}]).too_long == ()
+    assert audit_output_names(
+        "{{이름}}", [{"이름": "가" * 300}], max_path=MAX_PATH_CHARS,
+    ).too_long == ()
+
+
+def test_length_limit_applies_only_where_it_exists(monkeypatch):
+    """휴리스틱은 그것이 참인 환경에서만 말한다(2R P2) — POSIX 에 260 한계는 없다."""
+    from hwpxfiller import naming
+
+    recs = [{"이름": "가" * 300}]
+    monkeypatch.setattr(naming.os, "name", "posix")
+    assert naming.default_max_path() == 0
+    assert audit_output_names("{{이름}}", recs, "/out").too_long == ()
+    monkeypatch.setattr(naming.os, "name", "nt")
+    assert naming.default_max_path() == MAX_PATH_CHARS
+    assert audit_output_names("{{이름}}", recs, "C:/out").too_long == (0,)
 
 
 def test_convergence_alone_is_not_a_warning():
