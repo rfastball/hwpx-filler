@@ -707,6 +707,46 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .bar>i{display:block;height:100%;width:0;background:var(--a-primary);transition:width .25s ease}
 .run-result{font-size:var(--fs-body);margin-top:var(--sp-8);font-weight:600;min-height:1.2em}
 .run-result.ok{color:var(--a-ok)} .run-result.warn{color:var(--a-warn)} .run-result.danger{color:var(--a-danger)}
+
+/* ---- 결과 3태 구획(F4, 지도 §10.10) — 색은 태가 아니라 Python level 이 정한다.
+   태(data-state)는 구조를 정하고(어떤 조각이 뜨는가), level 은 채널을 정한다(ok·warn·
+   danger). 둘을 한 축으로 접으면 취소(warn)가 실패(danger)로 읽힌다(#278 리뷰). ---- */
+.result3{margin-top:var(--sp-10);padding:var(--sp-12);border-radius:var(--rad-surface);
+  border:1px solid var(--a-border);background:var(--a-card);
+  display:flex;flex-direction:column;gap:var(--sp-8)}
+.result3[hidden]{display:none}
+.result3[data-level="ok"]{border-color:color-mix(in srgb,var(--a-ok) 46%,var(--a-border))}
+.result3[data-level="warn"]{border-color:color-mix(in srgb,var(--a-warn) 52%,var(--a-border))}
+.result3[data-level="danger"]{border-color:color-mix(in srgb,var(--a-danger) 52%,var(--a-border))}
+.result3-head{display:flex;align-items:center;gap:var(--sp-8);flex-wrap:wrap}
+.result3-head>strong{font-size:var(--fs-body);flex:1;min-width:0}
+.result3[data-level="ok"] .result3-head>strong{color:var(--a-ok)}
+.result3[data-level="warn"] .result3-head>strong{color:var(--a-warn)}
+.result3[data-level="danger"] .result3-head>strong{color:var(--a-danger)}
+.result3-head .acts{display:flex;gap:var(--sp-6);flex-wrap:wrap}
+.result3-summary{font-size:var(--fs-caption);color:var(--a-muted)}
+.result3-stale{font-size:var(--fs-caption);color:var(--a-warn)}
+.result3-stale[hidden]{display:none}
+.result3-folder{display:flex;align-items:center;gap:var(--sp-8);font-size:var(--fs-caption);
+  color:var(--a-muted);flex-wrap:wrap}
+/* display:flex 가 UA [hidden]{display:none} 을 특이도로 이긴다(부록 B-9 결함 클래스 2) —
+   진행·거절 태에서 저장 폴더 줄을 숨기려면 되돌려 놔야 한다. */
+.result3-folder[hidden]{display:none}
+.result3-dir{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;word-break:break-all}
+.result3-fails{display:flex;flex-direction:column;gap:var(--sp-6)}
+.result3-fail{border:1px solid color-mix(in srgb,var(--a-danger) 38%,var(--a-border));
+  border-radius:var(--rad-control);padding:var(--sp-8);display:flex;flex-direction:column;gap:2px}
+.result3-fail-name{font-weight:600;font-size:var(--fs-caption)}
+.result3-fail-why{font-size:var(--fs-caption);color:var(--a-muted)}
+/* 「원인 진단 미연결」 = 아는 패턴이 없다는 사실의 표지(계약 §10.3) — 원인을 꾸며내지
+   않았음을 표면이 말한다. 아는 원인에는 절대 붙지 않는다. */
+.result3-undiagnosed{font-size:var(--fs-caption);color:var(--a-warn);font-weight:600}
+.result3-evidence{font-size:var(--fs-caption);color:var(--a-muted)}
+.result3-evidence[hidden]{display:none}
+.result3-evidence>summary{cursor:pointer}
+.result3-evidence pre{margin-top:var(--sp-6);white-space:pre-wrap;word-break:break-word;
+  font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
+.zone-cap-sub{margin-top:var(--sp-12)}
 /* border 는 항상 — 라이트에선 어두운 콘솔의 은은한 테두리, 다크에선 카드와 붙는 콘솔을 분리
    (다크에선 로그 표면·페이지가 둘 다 어두워 경계가 소실되므로 보더가 승강을 대신한다). */
 .logbox{margin-top:var(--sp-10);background:var(--log-surface);color:var(--log-ink);border-radius:var(--rad-surface);

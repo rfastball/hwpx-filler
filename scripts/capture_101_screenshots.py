@@ -335,13 +335,13 @@ def _drive(d: Driver) -> None:
 
     # ---- S7 생성 → 완료 요약 ----------------------------------------------
     d.click_sel("#jobGenBtn")
+    # 결과는 3태 구획이 받는다(F4) — 제목이 태를, 요약이 수치를 말한다.
     d.wait(
-        "(document.getElementById('jobGenResult')||{textContent:''}).textContent"
-        ".includes('성공 3/3')",
-        "생성 완료 요약",
+        "(document.getElementById('jobResult')||{dataset:{}}).dataset.state === 'completed'",
+        "생성 완료 태",
         timeout=60.0,
     )
-    d.scroll_to("#jobGenResult")
+    d.scroll_to("#jobResult")
     d.shot("generated")
 
     # ---- S8 기안: 템플릿 + 데이터 채움 -------------------------------------

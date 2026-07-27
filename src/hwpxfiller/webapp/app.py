@@ -1480,6 +1480,85 @@ _DRAFT_LIST_PROBE_JS = r"""
 # 「작업」 패널 두 모드(에디터 흡수, 블록 2 개정 결정 39~41) — 편집 호스트/세션 4존의 배타
 # 표시와 신규=단계(번호 표지)·편집=탭(자유 이동 버튼) 이원 표현을 실 render 로 되읽는다
 # (부록 B-9 overlay/hidden 눈검증의 자동판 — 이사한 DOM 이 실 WebView2 에서 실제로 선다).
+# 결과 3태 구획(F4, 지도 §10.10) — Python 이 내는 결과 dict 를 실 렌더러에 그대로 흘려
+# ①태·색 채널 ②실패 행 식별·「원인 진단 미연결」 경계 ③증거 접힘이 재렌더를 건너 열린 채
+# ④지문 변화 = **강등**(파기 아님) ⑤구획 행동의 busy-lock ⑥닫기 뒤 포커스 착지를 되읽는다.
+# 정적 계약(test_web_dom_contract)은 조각의 존재만 보고, 이 프로브는 그 조각들이 실제로
+# 그 순서로 살아 움직이는지를 본다 — §10.9.5 가 세운 "경로가 이어지는가"의 기계판.
+_JOB_RESULT_PROBE_JS = r"""
+(function () {
+  var out = {};
+  try {
+    window.Nav.go('job');
+    var partial = {
+      ok:true, status:'partiallyCompleted', title:'2개 성공 · 1개 실패',
+      summary:'완료. 성공 2/3, 실패 1.', level:'danger', stage:'', message:'', known:true,
+      out_dir:'D:\\out', succeeded:2, failed:1, total:3,
+      failures:[{index:7, identity:'사무비품', filename:'doc-003.hwpx',
+                 reason:'설명 없는 오류', known:false}],
+      fill_notes:['누름틀 값 자리를 새로 만들어 채웠습니다.'],
+      cancelled:false, attempted:3, unstarted:0
+    };
+    window.JobScreen.renderResult(partial);
+    var box = document.getElementById('jobResult');
+    out.state = box.dataset.state;
+    out.level = box.dataset.level;
+    out.shown = !box.hidden;
+    out.title = document.getElementById('jobResultTitle').textContent;
+    out.fail_row = !!document.getElementById('jobResultFail-7');
+    out.fail_identity = document.getElementById('jobResultFails').textContent.indexOf('사무비품') >= 0;
+    out.undiagnosed = document.getElementById('jobResultFails')
+      .textContent.indexOf('원인 진단 미연결') >= 0;
+    out.failed_sel_shown = !document.getElementById('jobResultFailedSel').hidden;
+    out.failed_sel_label = document.getElementById('jobResultFailedSel').textContent;
+    // 증거는 접혀서 서고, 사용자가 연 뒤에는 재렌더(스냅샷 푸시)를 건너 열린 채 남는다.
+    var ev = document.getElementById('jobResultEvidence');
+    out.evidence_shown = !ev.hidden;
+    ev.open = true;
+    window.JobScreen.renderResult(partial);
+    out.evidence_open_survives_rerender = document.getElementById('jobResultEvidence').open;
+    // 지문 변화 = 강등이지 파기가 아니다(판정 G) — 결과가 남고 「직전 실행」이 붙는다.
+    window.JobScreen.markResultStale();
+    out.stale_shown = !document.getElementById('jobResultStale').hidden;
+    out.alive_after_stale = !document.getElementById('jobResult').hidden;
+    // 구획 행동은 생성 중 잠긴다(계약면 2) — 선언 표식이 실제로 disabled 를 받는가.
+    var acts = ['jobResultClose', 'jobResultFailedSel', 'jobResultRename'];
+    out.busy_lock_declared = acts.every(function (id) {
+      return document.getElementById(id).hasAttribute('data-busy-lock');
+    });
+    // 진행 태에서는 저장 폴더 줄이 숨는다 — display:flex 가 UA [hidden] 을 이기는
+    // 결함 클래스(부록 B-9)라 계산 스타일로 확인한다(속성만 보면 통과해 버린다).
+    window.JobScreen.renderResult({running:true, title:'생성 중… 1/3', summary:''});
+    out.folder_hidden_while_running =
+      getComputedStyle(document.querySelector('#jobResult .result3-folder')).display === 'none';
+    window.JobScreen.renderResult(partial);
+    out.folder_shown_on_result =
+      getComputedStyle(document.querySelector('#jobResult .result3-folder')).display !== 'none';
+    // 닫기 = 유일한 명시 파기 + 포커스는 다음 행동으로 착지(계약면 3).
+    document.getElementById('jobResultClose').click();
+    out.closed = document.getElementById('jobResult').hidden;
+    out.close_focus = document.activeElement && document.activeElement.id;
+    // 실행 전 거절은 3태가 아니라 rejected 태로 선다 — 결과 자리를 비워 두지 않는다.
+    var real = window.Bridge.generate;
+    window.Bridge.generate = function () {
+      return Promise.resolve({ok:false, error:'빈 값 필드를 먼저 확인하세요: 추정가격', level:'warn'});
+    };
+    document.getElementById('jobGenBtn').disabled = false;
+    document.getElementById('jobGenBtn').click();
+    window.__resultRejectProbe = true;
+    setTimeout(function () {
+      var b = document.getElementById('jobResult');
+      window.__rejectState = b.dataset.state;
+      window.__rejectText = document.getElementById('jobResultSummary').textContent;
+      window.Bridge.generate = real;
+      window.__resultProbeDone = true;
+    }, 60);
+  } catch (e) { out.error = 'throw:' + (e && e.message); }
+  return out;
+})()
+"""
+
+
 _JOB_EDITMODE_PROBE_JS = r"""
 (function () {
   var out = {};
@@ -2659,6 +2738,13 @@ def _selftest_drive(window: "object") -> None:
         result["job_inherited"] = window.evaluate_js(  # type: ignore[attr-defined]
             _JOB_INHERITED_AFFORDANCE_PROBE_JS)
         result["job_mirror"] = window.evaluate_js(_JOB_MIRROR_PROBE_JS)  # type: ignore[attr-defined]
+        # 결과 3태 구획(F4) — 거울 프로브 뒤(같은 화면·같은 스냅샷 문맥)에서 돈다.
+        result["job_result"] = window.evaluate_js(_JOB_RESULT_PROBE_JS)  # type: ignore[attr-defined]
+        result["job_result"].update(_probe_late(
+            window, "__resultProbeDone",
+            "JSON.stringify({reject_state: String(window.__rejectState),"
+            " reject_text: String(window.__rejectText)})",
+        ))
         # 협폭 적층 분기는 **창폭이 아니라 세션 패널 폭**(container query 900px)이 판정한다.
         # 좌 목록이 죽으며(F2 PR-B) 패널이 그만큼 넓어져 같은 창폭에서도 2열이 유지되므로,
         # 분기를 실제로 밟는 창으로 겨눈다 — 옛 1180 을 그대로 두면 프로브가 계약이 아니라
