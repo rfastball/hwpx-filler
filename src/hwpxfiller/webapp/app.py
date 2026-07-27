@@ -2378,6 +2378,122 @@ _RANGE_DRAFT_PROBE_SETUP_JS = r"""
 })();
 """
 
+_PREVIEW_DRAWER_PROBE_SETUP_JS = r"""
+(() => {
+  /* 미리보기 드로어(F5)를 실 창에서 본다. 정적 계약은 배선까지만 보고, 이 표면의 결함류는
+     "면은 떴는데 값이 안 그려졌다 / 승인 버튼이 요구 없이 서 있다 / 닫았는데 상태만 닫혔다"라
+     실제로 렌더된 DOM 을 되읽어야 잡힌다.
+
+     **양성대조 선행**(measurement-litmus): 먼저 데이터 없이 열어 **거절**을 받는다. 거절과
+     성사가 서로 다른 값을 내야 이 프로브가 실물을 잰 것이다 — 둘 다 통과하면 프로브가
+     아무것도 안 재고 있다는 뜻이다.
+
+     스텁은 자기 액션(`preview_open`)만 가로채고 복원은 "내 스텁일 때만" 한다(프로브 교차
+     오염 금지 — 앞 블록의 복원이 뒤 블록의 발신을 삼키는 표본이 이미 있다). */
+  const out = { pending: true };
+  window.__previewDrawer = out;
+  const btn = document.getElementById('jobPreviewOpen');
+  const modal = document.getElementById('previewModal');
+  out.present = !!(btn && modal);
+  if (!out.present) { out.pending = false; return; }
+  out.hidden_before = modal.classList.contains('hidden');
+  const real = window.Bridge.call;
+  const mine = function (screen, action, payload) {
+    if (screen === 'job' && action === 'preview_open') return Promise.resolve({ ok: true });
+    if (screen === 'job' && action === 'preview_close') return Promise.resolve(null);
+    return real(screen, action, payload);
+  };
+  const restoreCall = () => { if (window.Bridge.call === mine) window.Bridge.call = real; };
+  // 양성대조: 스텁을 걸기 **전에** 실 액션으로 거절을 받는다(데이터·작업 없음).
+  Bridge.call('job', 'preview_open', {})
+    .then(() => { out.opened_without_data = true; },
+          () => { out.opened_without_data = false; })
+    .then(() => new Promise((r) => setTimeout(r, 60)))   // 앞 프로브의 늦은 push 를 흘려보낸다
+    .then(() => {
+      window.Bridge.call = mine;
+      window.__push('job', {
+        job_name: '공고서', has_job: true, out_dir: 'C:\Results',
+        data_label: 'd.csv', data_source_label: 'd.csv (파일)', data_notice: null,
+        template_name: 't.hwpx', template_path: 'C:\t.hwpx', template_missing: false,
+        filename_pattern: 'doc-{{seq}}', has_data: true, record_count: 2, selected_count: 2,
+        view_order: 'sourceDesc', order_note: '보이는 순서대로 생성됩니다.',
+        range_draft: { open: false, dirty: false, sel_count: 0, selected_only: false,
+                       view_order: 'sourceDesc' },
+        records: [], filter: { active: false, reapply_available: false, reapply_hint: '',
+                               search: '', chips: [], definition: '', branches: [], columns: [] },
+        table: { columns: [], rows: [], visible_count: 0, hidden_selected: [] },
+        restate: { origin: null, filter_active: false, in_def: 0, extra: 0, sample: [] },
+        preflight: { level: 'ok', text: 'ok' }, mirror: [], drift: [], name_tokens: [],
+        gate: { enabled: false, level: 'warn', text: '결과를 확인해야 생성할 수 있습니다.' },
+        review: { required: true, approved: false, risk: 'presentation',
+                  targets: ['금액(표시형)'], first_run: false, unknown_baseline: false,
+                  structure_changed: false },
+        preview: {
+          open: true, can_open: true, pos: 1, total: 2, filename: 'doc-002.hwpx',
+          scope: '이 작업의 기본 규칙',
+          rows: [{ name: '공고명', value: '전산장비' }, { name: '금액', value: '' }],
+          evidence: { policy: 'formatted_value',
+                      rows: [{ name: '금액', value: '1,000', note: '표시형이 적용된 값입니다.' }],
+                      note: '' },
+          can_approve: true, empty_note: '',
+        },
+      });
+      btn.focus();
+      btn.click();
+      setTimeout(() => {
+        try {
+          out.flag_shown = getComputedStyle(
+            document.getElementById('jobReviewFlag')).display !== 'none';
+          out.opened = !modal.classList.contains('hidden');
+          out.pos_text = document.getElementById('previewPos').textContent;
+          out.prev_disabled = document.getElementById('previewPrev').disabled;
+          out.next_disabled = document.getElementById('previewNext').disabled;
+          out.value_rows = document.querySelectorAll('#previewRows .mir-row').length;
+          out.evidence_rows =
+            document.querySelectorAll('#previewEvidenceRows .mir-row').length;
+          out.filename = document.getElementById('previewFilename').textContent;
+          out.scope = document.getElementById('previewScope').textContent;
+          out.approve_shown = getComputedStyle(
+            document.getElementById('previewApprove')).display !== 'none';
+          // 원격 닫힘: Python 이 닫았다고 말하면 DOM 도 닫힌다(상태의 진실은 스냅샷이다).
+          // 세션은 살려 둔다 — 트리거가 살아 있어야 "초점이 트리거로 돌아온다"를 잴 수 있다
+          // (세션째 죽이면 트리거가 비활성이 되고, 그건 초점 **대안 착지**라는 다른 계약이다).
+          window.__push('job', { job_name: '공고서', has_job: true,
+            preview: { open: false, pos: 0, total: 2, can_open: true },
+            review: { required: false, approved: false, risk: '', targets: [],
+                      first_run: false, unknown_baseline: false, structure_changed: false },
+            records: [], mirror: [], drift: [], name_tokens: [],
+            gate: { enabled: false, level: 'warn', text: '' } });
+          setTimeout(() => {
+            try {
+              const card = modal.querySelector('.modal-card');
+              const ev = new Event('transitionend', { bubbles: true });
+              Object.defineProperty(ev, 'propertyName', { value: 'opacity' });
+              card.dispatchEvent(ev);              // 비동기 닫힘을 정착시킨다
+              out.closed_by_state = modal.classList.contains('hidden');
+              out.focus_returned = document.activeElement === btn;
+              // 초점이 문서 맨 앞으로 떨어지지 않았다는 사실도 따로 센다 — `focus()` 가
+              // 조용한 no-op 이 되는 경로(비활성 트리거)의 증상이 정확히 이것이다.
+              out.focus_on_body = document.activeElement === document.body;
+            } catch (e) { out.error = String((e && e.message) || e); }
+            restoreCall();
+            out.pending = false;
+          }, 40);
+        } catch (e) {
+          out.error = String((e && e.message) || e);
+          restoreCall();
+          out.pending = false;
+        }
+      }, 60);
+    })
+    .catch((e) => {
+      out.error = String((e && e.message) || e);
+      restoreCall();
+      out.pending = false;
+    });
+})();
+"""
+
 _CHAIN_RECOVERY_PROBE_SETUP_JS = r"""
 (() => {
   /* 호출 직렬화 체인이 **실패 한 번으로 죽지 않는지** 실물로 본다(리뷰 5R).
@@ -2902,6 +3018,14 @@ def _selftest_drive(window: "object") -> None:
                 break
             time.sleep(0.1)
         result["range_draft"] = window.evaluate_js("window.__rangeDraft")  # type: ignore[attr-defined]
+        # 미리보기 드로어(재작성 F5) — 값·이름·증거가 실제로 그려지고 상태가 면을 여닫는지.
+        # 회수는 공용 `_probe_late` 로 접는다: 실창에서만 도는 폴링 줄을 늘리면 커버리지
+        # 플로어를 갉는다(위 머리말과 같은 규율).
+        window.evaluate_js(_PREVIEW_DRAWER_PROBE_SETUP_JS)  # type: ignore[attr-defined]
+        result["preview_drawer"] = _probe_late(
+            window, "__previewDrawer && !window.__previewDrawer.pending",
+            "JSON.stringify(window.__previewDrawer)",
+        )
         # 호출 직렬화 체인의 실패 복구(리뷰 5R) — 정적 계약이 못 보는 실행 성질이라 실물로.
         window.evaluate_js(_CHAIN_RECOVERY_PROBE_SETUP_JS)  # type: ignore[attr-defined]
         chain_deadline = time.monotonic() + 5.0

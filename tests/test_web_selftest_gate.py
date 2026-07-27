@@ -172,6 +172,39 @@ class TestWebSelftestGate:
         assert d["opened_without_data"] is False, "데이터 없이 초안이 섰습니다(거절 계약 위반)."
         assert d["draft_state"]["open"] is False
 
+    def test_preview_drawer_renders_the_run_input_and_follows_state(
+        self, selftest_result: dict
+    ) -> None:
+        """재작성 F5 — 드로어가 실제로 값·이름·증거를 그리고, 상태가 면을 여닫는다.
+
+        **양성대조 선행**([[measurement-litmus]]): 데이터 없이 여는 미리보기는 거절이다
+        (§18.11-6). 거절과 성사가 다른 값을 내야 이 프로브가 실물을 잰 것이다.
+
+        정적 계약은 배선까지만 본다 — "면은 떴는데 값이 안 그려졌다 / 승인 버튼이 요구
+        없이 서 있다 / Python 은 닫혔다는데 면이 남아 있다"는 렌더된 DOM 을 되읽어야 잡힌다
+        (F2 PR-B 1R 이 `display:none` 인 채 배선만 있던 버튼을 놓친 자리와 같은 계열).
+        """
+        d = selftest_result["preview_drawer"]
+        assert d.get("error") is None, f"미리보기 프로브 오류: {d!r}"
+        assert d["present"] is True and d["hidden_before"] is True
+        assert d["opened_without_data"] is False, (
+            "데이터·작업 없이 미리보기가 열렸습니다 — 첫 레코드로 대신하지 않는다는 계약 위반."
+        )
+        assert d["opened"] is True, "성사 경로에서도 면이 열리지 않았습니다(프로브 무력)."
+        # 자리는 표시순 서수 1-based 로 그린다.
+        assert d["pos_text"] == "2 / 2"
+        assert d["prev_disabled"] is False and d["next_disabled"] is True
+        assert d["value_rows"] == 2 and d["evidence_rows"] == 1
+        assert d["filename"] == "doc-002.hwpx"
+        assert "기본 규칙" in d["scope"] and "이번 생성" not in d["scope"]
+        assert d["approve_shown"] is True and d["flag_shown"] is True
+        # 원격 닫힘 — 상태의 진실은 DOM 이 아니라 스냅샷이다.
+        assert d["closed_by_state"] is True, "Python 이 닫았는데 면이 남았습니다."
+        assert d["focus_returned"] is True, "닫힌 뒤 포커스가 여는 트리거로 돌아오지 않았습니다."
+        assert d["focus_on_body"] is False, (
+            "초점이 문서 맨 앞으로 떨어졌습니다 — `focus()` 가 조용한 no-op 이 된 증상입니다."
+        )
+
     def test_call_chain_survives_a_rejected_link(self, selftest_result: dict) -> None:
         """리뷰 5R — 직렬화 체인은 실패 한 번으로 죽지 않는다.
 

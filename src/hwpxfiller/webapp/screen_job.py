@@ -61,7 +61,12 @@ from ..gui.filter_state import (
 from ..gui.result_errors import classify_result_error, describe_fill_note
 from ..naming import pattern_uses_seq
 from ..gui.record_range import RecordRange, RecordRangeDraft
-from ..gui.review_state import ReviewRequirement, ReviewState, review_requirement
+from ..gui.review_state import (
+    ReviewRequirement,
+    ReviewState,
+    build_evidence,
+    review_requirement,
+)
 from ..gui.run_state import RunViewModel, resolve_file_source, resolve_pool_source
 from ..gui.selection_state import SelectionModel
 from ..gui.work_candidates import (
@@ -219,6 +224,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 채 재시작하면 요구가 되돌아온다(열린 게이트로 시작하지 않는다). 폐기 코드는 없다
         # — 승인이 규칙 지문(+선택 결속 위험이면 선택 지문)에 결속돼 자동으로 무효가 된다.
         self.review = ReviewState()
+        # 미리보기 드로어(F5) — **열림 여부와 자리가 Python 소유**다(§10.12.1 정체 면,
+        # F3 초안이 세운 선례). DOM 클래스로 들면 push 재렌더가 면을 조용히 닫거나
+        # 자리를 되돌린다. 자리는 **표시순 서수**이지 원본 index 가 아니다(판정 M).
+        self.preview_open = False
+        self.preview_pos = 0
         # 직전 필터 슬롯(결정 28) — 정의 가진 세션이 죽을 때 덮어쓰는 1칸 세션 메모리
         # (앱 수명·미저장 — 필터 영속 뒷문 금지). 소스 일치 게이트용 키와 쌍.
         self._last_filter: "dict | None" = None  # {"source_key": str, "state": dict}
@@ -339,6 +349,58 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if self.range_draft is None:  # 표면 오배선 — 초안 없는 초안 액션은 프로그램 결함
             raise ValueError("범위 편집기가 열려 있지 않습니다.")
         return self.range_draft
+
+    # ---- 미리보기 드로어(F5, 지도 §10.12) ------------------------------------
+    def _do_preview_open(self, p: dict) -> dict:
+        """드로어 열기. §13-2 대로 **요구가 없어도 열린다**(정상 반복 실행에서 선택).
+
+        거절 셋: ⓐ생성 중(진행 중 런의 입력을 보며 승인하면 어느 범위의 승인인지 갈린다)
+        ⓑ범위 초안 열림(판정 H — 미리보기는 **커밋된** 실행 입력의 상이다. 초안 세계를
+        그리면 적용도 안 한 편집을 승인하게 되고 그건 불변식 21 위반이다) ⓒ선택 0건
+        (§18.11-6: 선택 0건에서는 미리보기에 진입하지 않고 첫 레코드로 대신하지 않는다).
+        """
+        if self._generation_lock.locked():
+            raise ValueError("문서 생성이 진행 중입니다. 끝난 뒤에 미리보기를 여세요.")
+        if self.range_draft is not None:
+            raise ValueError("범위 편집을 적용하거나 취소한 뒤에 미리보기를 여세요.")
+        if self.vm is None:
+            raise ValueError("먼저 문서 작업을 선택하세요.")
+        if not self._indices():
+            raise ValueError("미리볼 문서를 최소 1건 선택하세요.")
+        self.preview_open = True
+        self.preview_pos = 0
+        return {"ok": True}
+
+    def _do_preview_close(self, p: dict) -> None:
+        self.preview_open = False
+        self.preview_pos = 0
+
+    def _do_preview_move(self, p: dict) -> None:
+        """레코드 이동 — 자리는 **표시순 서수**다(판정 M). 웹은 인덱스를 되돌려주지 않는다.
+
+        경계에서 멈춘다(순환하지 않는다): 마지막에서 한 번 더 눌러 첫 건으로 돌아가면
+        「몇 번째를 보고 있는가」가 사용자 머릿속에서 끊긴다.
+        """
+        if not self.preview_open:
+            raise ValueError("미리보기가 열려 있지 않습니다.")
+        total = len(self._indices())
+        if not total:
+            return
+        self.preview_pos = max(0, min(total - 1, self.preview_pos + int(p["delta"])))
+
+    def _do_preview_approve(self, p: dict) -> None:
+        """명시 승인 — 불변식 §13-4(생성 ≠ 승인)의 유일한 사건.
+
+        **면이 열려 있을 때만** 받는다: 승인은 증거를 본 사건이라, 증거를 띄우지 않은
+        경로로 세우면 그 승인은 무엇에 근거했는지 말할 수 없다(F-06 이 지목한 바로 그
+        결함을 우리 손으로 재현하는 꼴). 요구가 없으면 거절한다 — 조용히 세우지 않는다.
+        """
+        if not self.preview_open:
+            raise ValueError("미리보기를 연 뒤에 확인할 수 있습니다.")
+        req, unmet = self._review()
+        if unmet is None:
+            raise ValueError("지금 확인이 필요한 변경이 없습니다.")
+        self.review.approve(req, self._selection_key())
 
     def _do_range_draft_open(self, p: dict) -> dict:
         """편집기 진입 = 범위 깊은 복제. 이미 열려 있으면 **다시 복제하지 않는다**.
@@ -462,6 +524,62 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return req, None
         approved = self.review.is_approved(req, self._selection_key())
         return req, (None if approved else req)
+
+    def _review_payload(self, req: ReviewRequirement, unmet) -> dict:
+        """검토 요구의 표면 몫 — 「미리보기」 버튼 표지와 드로어 승인 버튼이 읽는다.
+
+        ``required`` 는 요구의 **존재**이고 ``approved`` 는 그 해소다. 둘을 한 불리언으로
+        뭉개면(v6 `preview.required && !approved`) 표면이 "승인했다"를 말할 수 없다 —
+        승인 뒤 남는 것이 안심의 근거다.
+        """
+        return {
+            "required": req.required,
+            "approved": req.required and unmet is None,
+            "risk": req.risk_class,
+            "targets": list(req.changed_targets),
+            "first_run": req.first_run,
+            "unknown_baseline": req.unknown_baseline,
+            "structure_changed": req.structure_changed,
+        }
+
+    def _preview_payload(
+        self, req: ReviewRequirement, unmet, mapped: "list[dict]", names: "list[str]",
+        audit_counts: "tuple[int, int]",
+    ) -> dict:
+        """드로어 구획 — 닫혀 있으면 뼈대만(그리지 않는 값은 오조립의 미끼, §10.8.6 규칙 ①).
+
+        값·이름은 **파생**이다(판정 A): 값은 실행 입력과 같은 ``mapped_records``, 이름은
+        표 「문서」 열이 쓰는 그 문자열 그대로다. 한 건만 따로 계산하면 ``{{seq}}`` 가 1 로
+        고정되고 꼬리표가 사라져 미리보기가 실행과 다른 이름을 말한다.
+        """
+        total = len(mapped)
+        if not self.preview_open:
+            return {"open": False, "pos": 0, "total": total, "can_open": total > 0}
+        # 열려 있는 동안 선택이 줄면 자리가 넘칠 수 있다 — 닫지 않고 자리를 당긴다
+        # (§10.12.1 실패 경로: 면 안에서 재진술하고 면을 닫지 않는다).
+        pos = min(self.preview_pos, total - 1) if total else 0
+        record = mapped[pos] if total else {}
+        order = [m.template_field for m in self.vm.job.mapping.mappings] if self.vm else []
+        converged, too_long = audit_counts
+        return {
+            "open": True,
+            "can_open": total > 0,
+            "pos": pos,
+            "total": total,
+            "filename": names[pos] if 0 <= pos < len(names) else "",
+            # 적용 범위는 「기본 규칙」 고정이다(F5 확정: override 는 F7). 없는 기능을
+            # 암시하는 문안을 두지 않는다 — "이번 생성에만" 은 여기서 말하지 않는다.
+            "scope": "이 작업의 기본 규칙",
+            "rows": [
+                {"name": f, "value": str(record.get(f, ""))} for f in order
+            ],
+            "evidence": build_evidence(
+                req, mapped=mapped, names=tuple(names), converged=converged,
+                too_long=too_long, pos=pos,
+            ),
+            "can_approve": unmet is not None and total > 0,
+            "empty_note": "" if total else "선택한 문서가 없습니다. 표에서 만들 문서를 고르세요.",
+        }
 
     def _order_note(self) -> str:
         """표시순서 축 옆 상시 재진술(지도 §10.11 판정 I) — 확인 왕복 대신 문안이 진다.
@@ -872,6 +990,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "guard": guard_snap,
                 # 게이트는 링1 단일 산출(prework_gate) 소비 — 링2 문안 재조립 금지(RC-23 동형).
                 "gate": {"enabled": g.enabled, "level": g.level, "text": g.text},
+                # 작업이 없으면 검토할 규칙도 미리볼 값도 없다 — 뼈대만 실어 표면이
+                # 키 부재로 갈라지지 않게 한다(빈 값과 없는 키는 다른 결함류를 만든다).
+                "review": self._review_payload(ReviewRequirement(), None),
+                "preview": {"open": False, "pos": 0, "total": 0, "can_open": False},
             })
             return base
         job = self.vm.job
@@ -881,8 +1003,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 검토 요구(F5) — 요구 판정은 durable 기준선이, 승인 대조는 세션이 한다. 게이트에는
         # **아직 승인 안 된** 요구만 넘긴다(승인됐으면 게이트가 그 자리에서 열려야 한다).
         req, req_unmet = self._review()
-        status = self.vm.refresh(  # 사전검증+배지+게이트 단일 산출(RC-23)
-            indices, self.out_dir, review_unmet=req_unmet,
+        status = self.vm.refresh(  # 사전검증+배지+게이트+이름 계획 단일 산출(RC-23)
+            indices, self.out_dir, review_unmet=req_unmet, mapped=mapped,
         )
         preflight_text = (
             _PREFLIGHT_OK_TEXT if status.preflight.level == "ok" else status.preflight.text
@@ -939,6 +1061,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "level": status.gate.level,
                 "text": status.gate.text,
             },
+            # 검토 요구·미리보기 드로어(F5). 이름·값은 위 단일 산출을 재사용한다 —
+            # 표면이 따로 계획하면 미리보기가 실행과 다른 이름을 말한다(판정 A).
+            "review": self._review_payload(req, req_unmet),
+            "preview": self._preview_payload(
+                req, req_unmet, mapped, list(status.audit.names),
+                (len(status.audit.converged), len(status.audit.too_long)),
+            ),
         })
         return base
 
@@ -1062,6 +1191,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 승인은 규칙·선택 지문에 결속돼 이미 남의 작업에 닿지 않는다(F5 판정 I) — 여기서
         # 비우는 건 무효화가 아니라 **누적 방지**다(작업을 오래 오가는 세션의 키 적재).
         self.review.clear()
+        # 열려 있던 미리보기는 남의 작업의 값을 그린다 — 전환과 함께 닫는다(모달이라
+        # 실표면에선 못 일어나지만, 상태 진실은 DOM 이 아니라 여기다).
+        self._do_preview_close({})
         if not name:  # 선택 해제 = 작업만 내려놓는다(데이터 존은 그대로)
             self.vm = None
             self.job_name = ""
@@ -1417,6 +1549,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         }
         self._install_filter(self.records, hints)
         self._last_generated = None  # 완주 집합의 인덱스는 이전 데이터 좌표 — 교체 시 무효
+        self._do_preview_close({})   # 미리보던 값은 이전 스냅샷의 것이다(F5)
 
     def _do_ack_field(self, p: dict) -> None:
         """미입력 배지 클릭 = 직접 확인(강제 상호작용, ADR-E). 다 확인되면 생성이 열린다."""

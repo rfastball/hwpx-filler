@@ -2850,3 +2850,151 @@ def test_switching_jobs_does_not_carry_an_approval(tmp_path):
     ctrl.registry.save(other)
     ctrl.dispatch("select_job", {"name": "다른공고서"})
     assert ctrl.snapshot()["gate"]["enabled"] is False
+
+
+def test_preview_drawer_projects_the_run_input_not_a_recomputation(tmp_path):
+    """판정 A — 값·이름은 실행 입력과 **같은 산출**의 투영이다.
+
+    한 건만 따로 계산하면 `{{seq}}` 가 1 로 고정되고 꼬리표가 사라져, 미리보기가 실행과
+    다른 이름을 말한다(픽스처 패턴이 `doc-{{seq:001}}` 이라 자리마다 이름이 다르다).
+    """
+    ctrl, _ = _session(tmp_path)
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    ctrl.dispatch("preview_open", {})
+    snap = ctrl.snapshot()
+    p = snap["preview"]
+    assert p["open"] is True and p["pos"] == 0 and p["total"] == 2
+    assert p["filename"] == snap["records"][0]["name"] == "doc-001.hwpx"
+    ctrl.dispatch("preview_move", {"delta": 1})
+    p = ctrl.snapshot()["preview"]
+    assert p["pos"] == 1 and p["filename"] == "doc-002.hwpx"
+
+
+def test_preview_position_follows_the_display_order(tmp_path):
+    """판정 M — 자리는 **표시순 서수**다. 원본 index 로 세면 「보이는 것 = 실행되는 것」이
+    이 면에서만 깨진다."""
+    ctrl, _ = _session(tmp_path)
+    ctrl.dispatch("preview_open", {})
+    first_desc = ctrl.snapshot()["preview"]["rows"]
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
+    assert ctrl.snapshot()["preview"]["rows"] != first_desc
+
+
+def test_preview_move_stops_at_the_edges(tmp_path):
+    """순환하지 않는다 — 마지막에서 첫 건으로 돌아가면 몇 번째인지가 끊긴다."""
+    ctrl, _ = _session(tmp_path)
+    ctrl.dispatch("preview_open", {})
+    ctrl.dispatch("preview_move", {"delta": -1})
+    assert ctrl.snapshot()["preview"]["pos"] == 0
+    ctrl.dispatch("preview_move", {"delta": 5})
+    assert ctrl.snapshot()["preview"]["pos"] == 1
+
+
+def test_preview_opens_even_when_nothing_needs_review(tmp_path):
+    """§13-2 — 정상 반복 실행에서 미리보기는 **선택**이지 금지가 아니다."""
+    ctrl, _ = _session(tmp_path)
+    assert ctrl.snapshot()["review"]["required"] is False
+    ctrl.dispatch("preview_open", {})
+    p = ctrl.snapshot()["preview"]
+    assert p["open"] is True and p["can_approve"] is False  # 승인 버튼은 안 선다
+
+
+def test_opening_the_preview_is_not_approval(tmp_path):
+    """불변식 §13-4 — PreviewCreated 와 PreviewApproved 는 다른 사건이다."""
+    ctrl, _ = _unreviewed_session(tmp_path)
+    ctrl.dispatch("preview_open", {})
+    assert ctrl.snapshot()["gate"]["enabled"] is False
+    ctrl.dispatch("preview_approve", {})
+    assert ctrl.snapshot()["gate"]["enabled"] is True
+
+
+def test_approval_is_refused_outside_the_drawer(tmp_path):
+    """승인은 증거를 본 사건이다 — 증거를 띄우지 않은 경로로 세우면 그 승인은 무엇에
+    근거했는지 말할 수 없다(F-06 이 지목한 결함을 우리 손으로 재현하는 꼴)."""
+    ctrl, _ = _unreviewed_session(tmp_path)
+    with pytest.raises(ValueError, match="미리보기를 연 뒤"):
+        ctrl.dispatch("preview_approve", {})
+
+
+def test_approval_is_refused_when_nothing_needs_review(tmp_path):
+    ctrl, _ = _session(tmp_path)
+    ctrl.dispatch("preview_open", {})
+    with pytest.raises(ValueError, match="확인이 필요한 변경이 없습니다"):
+        ctrl.dispatch("preview_approve", {})
+
+
+def test_preview_refuses_to_open_over_a_range_draft(tmp_path):
+    """판정 H — 미리보기는 **커밋된** 실행 입력의 상이다. 초안 세계를 그리면 적용도 안 한
+    편집을 승인하게 되고 그건 불변식 21 위반이다."""
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl.dispatch("range_draft_open", {})
+    with pytest.raises(ValueError, match="범위 편집"):
+        ctrl.dispatch("preview_open", {})
+
+
+def test_preview_refuses_to_open_with_no_selection(tmp_path):
+    """§18.11-6 — 선택 0건에서는 미리보기에 진입하지 않고 첫 레코드로 대신하지 않는다."""
+    ctrl, _ = _session(tmp_path)
+    ctrl.dispatch("set_none", {})
+    with pytest.raises(ValueError, match="최소 1건"):
+        ctrl.dispatch("preview_open", {})
+    assert ctrl.snapshot()["preview"]["can_open"] is False
+
+
+def test_preview_survives_a_shrinking_selection_by_restating(tmp_path):
+    """§10.12.1 실패 경로 — 면 안에서 재진술하고 **닫지 않는다**."""
+    ctrl, _ = _session(tmp_path)
+    ctrl.dispatch("preview_open", {})
+    ctrl.dispatch("preview_move", {"delta": 1})
+    ctrl.dispatch("set_none", {})
+    p = ctrl.snapshot()["preview"]
+    assert p["open"] is True and p["total"] == 0
+    assert "선택한 문서가 없습니다" in p["empty_note"]
+
+
+def test_switching_jobs_closes_the_preview(tmp_path):
+    """열려 있던 면은 남의 작업의 값을 그린다 — 상태의 진실은 DOM 이 아니라 여기다."""
+    ctrl, _ = _session(tmp_path)
+    ctrl.dispatch("preview_open", {})
+    ctrl.dispatch("select_job", {"name": ""})
+    assert ctrl.snapshot()["preview"]["open"] is False
+
+
+def test_preview_evidence_names_the_change_and_its_scale(tmp_path):
+    """판정 D — before/after 는 짓지 않는다(원천이 없다). 현재 값 + 대상 + 영향 규모."""
+    ctrl, _ = _controller(tmp_path, reviewed=True)
+    job = ctrl.registry.load("공고서")
+    job.mapping.mappings[0].source = "presmptPrce"   # 의미 연결 변경
+    ctrl.registry.save(job, allow_overwrite=True)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("preview_open", {})
+    ev = ctrl.snapshot()["preview"]["evidence"]
+    assert ev["policy"] == "value_scope_summary"
+    assert [r["name"] for r in ev["rows"]] == ["공고명"]
+    assert "서로 다른 값" in ev["rows"][0]["note"] and "비는 문서 1건" in ev["rows"][0]["note"]
+
+
+def test_filename_risk_evidence_reports_the_set_not_one_name(tmp_path):
+    """C-01 — 대표 이름 한 건은 패턴 형태만 답한다. 집합 성질은 따로 세어 말한다."""
+    ctrl, _ = _controller(tmp_path, reviewed=True)
+    job = ctrl.registry.load("공고서")
+    job.filename_pattern = "{{공고명}}"   # seq 를 뺀다 = 이름이 값에만 의존
+    ctrl.registry.save(job, allow_overwrite=True)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    csv = tmp_path / "dup.csv"
+    csv.write_text("bidNtceNm,presmptPrce\n같은이름,1\n같은이름,2\n", encoding="utf-8")
+    _mount_all(ctrl, str(csv))
+    ctrl.dispatch("preview_open", {})
+    ev = ctrl.snapshot()["preview"]["evidence"]
+    assert ev["policy"] == "name_set_summary"
+    assert "꼬리표가 붙은 문서 1건" in ev["note"]
+
+
+def test_scope_says_default_rules_without_hinting_at_overrides(tmp_path):
+    """적용 범위는 「기본 규칙」 고정이다(F5 확정: override 는 F7) — 없는 기능을 암시하는
+    문안은 미끼다."""
+    ctrl, _ = _session(tmp_path)
+    ctrl.dispatch("preview_open", {})
+    scope = ctrl.snapshot()["preview"]["scope"]
+    assert "기본 규칙" in scope and "이번 생성" not in scope

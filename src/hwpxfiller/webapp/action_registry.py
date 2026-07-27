@@ -155,6 +155,13 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "range_draft_open": _schema(),
         "range_draft_apply": _schema(),
         "range_draft_cancel": _schema(),
+        # 미리보기 드로어(§7 Value preview·§13-2·4, 재작성 F5) — 열림·자리는 **Python 소유**라
+        # 웹은 이동 방향만 보낸다(레코드 index 를 되돌려주지 않는다, 지도 §10.12 판정 M).
+        # 승인은 무페이로드 명시 사건이다: 무엇을 승인했는지는 Python 이 든 요구가 정한다.
+        "preview_open": _schema(),
+        "preview_close": _schema(),
+        "preview_move": _schema("delta"),
+        "preview_approve": _schema(),
         "set_selected_only": _schema("value"),
         "select_job": _schema("name", "confirm"),
         "toggle_favorite": _schema("name value"),

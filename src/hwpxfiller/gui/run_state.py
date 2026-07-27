@@ -105,6 +105,10 @@ class RunStatus:
     preflight: PreflightResult
     field_states: "tuple[FieldState, ...]"
     gate: GateState
+    #: 이 실행이 발급할 이름과 그 집합 성질(C-01, 재작성 F5). 게이트가 소비하고 미리보기
+    #: 증거가 **같은 산출**을 재사용한다 — 표면이 따로 계획하면 미리보기가 실행과 다른
+    #: 이름을 말할 수 있다(RC-23 이 표시면 간 모순에 대해 세운 규율의 파일명 판).
+    audit: OutputNameAudit = field(default_factory=OutputNameAudit)
 
 
 @dataclass(frozen=True)
@@ -378,6 +382,7 @@ class RunViewModel:
     def refresh(
         self, indices: "list[int]", out_dir: str = "", *,
         review_unmet: "ReviewRequirement | None" = None,
+        mapped: "list[dict] | None" = None,
     ) -> RunStatus:
         """상태 리프레시 1회의 단일 스냅샷 — 사전검증·필드 배지·게이트를 동시 파생.
 
@@ -407,10 +412,15 @@ class RunViewModel:
         out = req.output_report()
         drift, current_fields = self._structure_snapshot()
         states = self._compose_field_states(set(out.empty_valued), drift, current_fields)
-        # 경로 길이 감사는 **폴더와 대상이 다 정해졌을 때만** 뜻이 있다(그전엔 잴 경로가
-        # 없다). 앞선 전제조건이 이미 게이트를 닫는 구간이라 계산도 하지 않는다.
+        # 이름 계획은 **대상이 있으면** 낸다(미리보기가 폴더 없이도 이름을 보여준다).
+        # 경로 길이만 폴더에 의존하고, 폴더가 없으면 잴 경로가 없어 조용하다.
+        # ``mapped`` 는 호출측이 이미 만든 매핑 결과 — 넘겨받아 같은 계산을 두 번 하지 않는다.
         audit = (
-            self.output_name_audit(idx, out_dir) if idx and out_dir else OutputNameAudit()
+            audit_output_names(
+                self.job.filename_pattern,
+                self.mapped_records(idx) if mapped is None else mapped,
+                out_dir,
+            ) if idx else OutputNameAudit()
         )
         return RunStatus(
             preflight=self._compose_preflight(src, out, drift, name_gate is not None),
@@ -418,6 +428,7 @@ class RunViewModel:
             gate=self._compose_gate(
                 states, drift, idx, out_dir, name_gate, review_unmet, audit,
             ),
+            audit=audit,
         )
 
     def gate_state(self, indices: "list[int]", out_dir: str = "") -> GateState:

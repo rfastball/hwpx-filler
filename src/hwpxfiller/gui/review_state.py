@@ -66,8 +66,12 @@ class ReviewRequirement:
 
     #: ``""`` = 요구 없음. 그 외는 :data:`RISK_ORDER` 의 한 값.
     risk_class: str = ""
-    #: 사람이 읽는 변경 대상 이름(문서순). 문안·증거가 이것을 지목한다.
+    #: 사람이 읽는 변경 대상 이름(문서순). 문안이 이것을 지목한다.
     changed_targets: "tuple[str, ...]" = ()
+    #: 바뀐 **필드 이름**(문서순·중복 제거). 증거 행이 이것을 키로 값을 뜬다 — 표시용
+    #: 라벨(`금액(연결)`)에서 필드 이름을 되파싱하면 표시 문자열이 곧 조회 키가 된다
+    #: (F2 §10.8.6 규칙 ③ "표시용 정규화 값에서 행동 경로를 파생하지 않는다").
+    changed_fields: "tuple[str, ...]" = ()
     #: :data:`EVIDENCE_POLICY` 의 값. ``""`` = 요구 없음.
     evidence_policy: str = ""
     #: 한 번도 완주한 적 없는 작업인가 — §13-3 「새 문서 작업」. 문안이 갈린다
@@ -163,12 +167,16 @@ def review_requirement(job: Job) -> ReviewRequirement:
 
     # 문서순 = 매핑 순서. 정렬하면 사용자가 편집기에서 본 순서와 어긋난다.
     order = {k: i for i, k in enumerate(now)}
-    targets = tuple(
-        _target_label(k) for k in sorted(changed, key=lambda k: order.get(k, len(order)))
-    )
+    ordered = sorted(changed, key=lambda k: order.get(k, len(order)))
+    targets = tuple(_target_label(k) for k in ordered)
+    fields: "dict[str, None]" = {}
+    for k in ordered:
+        if k.startswith("field:"):
+            fields.setdefault(k[len("field:"):].rpartition(":")[0], None)
     return ReviewRequirement(
         risk_class=risk,
         changed_targets=targets,
+        changed_fields=tuple(fields),
         evidence_policy=EVIDENCE_POLICY[risk],
         first_run=first_run,
         unknown_baseline=unknown,
@@ -176,6 +184,53 @@ def review_requirement(job: Job) -> ReviewRequirement:
         rules_key=key,
         selection_bound=risk != "presentation",
     )
+
+
+def build_evidence(
+    req: ReviewRequirement, *, mapped: "list[dict]", names: "tuple[str, ...]",
+    converged: int, too_long: int, pos: int,
+) -> dict:
+    """이 요구가 요구하는 증거(지도 §10.12 판정 D) — 표면이 분기를 재발명하지 않게 한 모양.
+
+    **before/after 는 짓지 않는다.** 기준선은 지문만 저장하지 값을 저장하지 않으므로 이전
+    표시를 복원할 원천이 없다. 없는 값을 지어내느니 없다고 말한다(§10.3 "원인을 꾸며내지
+    않는다"와 같은 계열) — 대신 현재 값 + 변경 대상 이름 + **영향 규모**를 싣는다.
+    되깎기 조건: F7 판본이 서면 직전 판본의 값이 실재하므로 그때 before/after 를 채운다.
+
+    ``mapped`` 는 **선택 순서**(=표시순 투영)의 매핑 결과이고 ``pos`` 는 그 안의 자리다.
+    """
+    if not req.required or not mapped:
+        return {"policy": "", "rows": [], "note": ""}
+    record = mapped[pos] if 0 <= pos < len(mapped) else {}
+    rows: "list[dict]" = []
+    note = ""
+    if req.risk_class == "filename_set":
+        rows.append({
+            "name": "파일 이름",
+            "value": names[pos] if 0 <= pos < len(names) else "",
+            "note": "",
+        })
+        bits = []
+        if converged:
+            bits.append(f"같은 이름으로 겹쳐 꼬리표가 붙은 문서 {converged}건")
+        if too_long:
+            bits.append(f"저장 경로가 너무 긴 문서 {too_long}건")
+        note = " · ".join(bits) if bits else "선택한 문서의 이름이 모두 서로 다릅니다."
+    else:
+        n = len(mapped)
+        for name in req.changed_fields:
+            value = str(record.get(name, ""))
+            if req.risk_class == "semantic_binding":
+                vals = [str(r.get(name, "")) for r in mapped]
+                distinct = len(set(vals))
+                empty = sum(1 for v in vals if not v.strip())
+                row_note = f"선택 {n}건에서 서로 다른 값 {distinct}개"
+                if empty:
+                    row_note += f" · 값이 비는 문서 {empty}건"
+            else:
+                row_note = "표시형이 적용된 값입니다."
+            rows.append({"name": name, "value": value, "note": row_note})
+    return {"policy": req.evidence_policy, "rows": rows, "note": note}
 
 
 def review_gate_text(req: ReviewRequirement) -> str:
