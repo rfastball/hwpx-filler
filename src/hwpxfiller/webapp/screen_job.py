@@ -198,6 +198,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         push: PushSink,
         *,
         pool_registry: "DatasetPoolRegistry | None" = None,
+        generation_lock: "threading.Lock | None" = None,
     ) -> None:
         self.registry = registry
         self._push_sink = push
@@ -281,11 +282,43 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.data_notice_text = ""
         self.data_notice_level = ""
         self._cancel_generation = threading.Event()
-        self._generation_lock = threading.Lock()
+        # 진행 중인 런은 **한 앱에 하나뿐인 사실**이라 자물쇠를 주입받을 수 있다(9R P1) —
+        # 규칙을 쓰는 표면이 이 화면 밖에도 있으므로(편집기 진입·라이브러리 재연결) 그쪽이
+        # 같은 자물쇠를 봐야 한다. 미주입은 자기 것을 세운다(단독 구성 테스트 호환).
+        self._generation_lock = (
+            generation_lock if generation_lock is not None else threading.Lock()
+        )
         # 등록 데이터(풀) 겨눔(#26/#6) — 기본은 홈 레지스트리, 테스트는 주입.
         self.pool_registry = (
             pool_registry if pool_registry is not None else default_pool_registry()
         )
+
+    # --------------------------------------------- 진행 중인 런과의 경합 거절(9R P1)
+    def raise_if_generating(self, then_do: str) -> None:
+        """진행 중인 런과 겹치면 안 되는 전이의 **단일 거절**.
+
+        이 거절이 필요한 자리의 공통 형상: 진행 중 배치가 **고정한 입력**(vm·데이터·범위)을
+        그 배치가 끝나기 전에 갈아치우는 전이다. 그러면 결과가 어느 입력으로 만들어진 것인지
+        갈리고, 최악은 결과가 **디스크에 없는 세대**를 자기 근거로 대는 것이다(§13-7).
+
+        **왜 한 정의로 모으는가**(9R P1): 같은 판정이 표면마다 인라인 사본으로 흩어져 있었고,
+        그래서 이 화면 밖에 있는 규칙 쓰기 경로(편집기 진입·라이브러리 재연결)가 조용히
+        빠져 있었다 — 열거가 흩어지면 한 자리가 빠진다는 F7 의 반복 기제와 같은 형태다
+        (지도 §10.13.14). 새 규칙 쓰기 표면은 이 메서드를 부르면 된다.
+
+        ``then_do`` = 「끝난 뒤에 ___」에 들어갈 사람 어휘(무엇을 못 했는지 재진술).
+        """
+        if self._generation_lock.locked():
+            raise ValueError(f"문서 생성이 진행 중입니다. 끝난 뒤에 {then_do}.")
+
+    def raise_if_generating_before_swap(self, then_do: str) -> None:
+        """위와 같은 거절의 **교체 계열 문안** — 중단이라는 출구를 함께 재진술한다.
+
+        데이터·작업 교체는 진행 중 배치를 기다릴 것 없이 **중단**해도 되는 전이라, 거절이
+        기다림만 말하면 사람이 쥔 출구 하나를 숨기는 셈이 된다(과소 안내).
+        """
+        if self._generation_lock.locked():
+            raise ValueError(f"문서 생성이 진행 중입니다. 중단하거나 완료된 뒤 {then_do}.")
 
     # ------------------------------------------------------------- 관측 푸시
     def _push(self) -> None:
@@ -385,8 +418,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         그리면 적용도 안 한 편집을 승인하게 되고 그건 불변식 21 위반이다) ⓒ선택 0건
         (§18.11-6: 선택 0건에서는 미리보기에 진입하지 않고 첫 레코드로 대신하지 않는다).
         """
-        if self._generation_lock.locked():
-            raise ValueError("문서 생성이 진행 중입니다. 끝난 뒤에 미리보기를 여세요.")
+        self.raise_if_generating("미리보기를 여세요")
         if self.range_draft is not None:
             raise ValueError("범위 편집을 적용하거나 취소한 뒤에 미리보기를 여세요.")
         if self.vm is None:
@@ -438,8 +470,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         되돌린다(멱등). 생성 중 진입은 거절한다 — 초안 적용은 실행 입력을 바꾸는 전이라
         진행 중인 런과 겹치면 어느 범위로 만든 결과인지 갈린다.
         """
-        if self._generation_lock.locked():
-            raise ValueError("문서 생성이 진행 중입니다. 끝난 뒤에 범위를 편집하세요.")
+        self.raise_if_generating("범위를 편집하세요")
         if self.datasource is None or not self.records:
             raise ValueError("데이터를 먼저 선택하세요.")
         if self.range_draft is None:
@@ -462,8 +493,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         「결과 닫기」 하나뿐이라는 규칙을 초안이 되돌리지 않는다.
         """
         draft = self._draft_or_raise()
-        if self._generation_lock.locked():
-            raise ValueError("문서 생성이 진행 중입니다. 끝난 뒤에 적용하세요.")
+        self.raise_if_generating("적용하세요")
         if draft.snapshot_gen != self._snapshot_gen:
             raise ValueError(
                 "데이터가 바뀌어 편집하던 범위를 적용할 수 없습니다. "
@@ -1232,8 +1262,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         ``sheet`` 는 웹에서 확정한 시트명(다중 시트 확정 게이트 #33, None=CSV·단일 시트).
         시그니처 동형 — 브리지 ``pick_data_file``/``load_data_sheet`` 재사용.
         """
-        if self._generation_lock.locked():  # 생성 중 데이터 교체 금지(#302 P1 동류)
-            raise ValueError("문서 생성이 진행 중입니다. 중단하거나 완료된 뒤 데이터를 바꾸세요.")
+        self.raise_if_generating_before_swap("데이터를 바꾸세요")  # #302 P1 동류
         source, records = resolve_file_source(path, sheet=sheet)  # 실패는 raise(§18.2 원자)
         if not records:
             raise ValueError(NO_ROWS_TEXT)  # 성공 전 현재 runtime 미파기 — 아래 대입 전 반환
@@ -1376,8 +1405,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         name = p["name"]
         # 생성 진행 중 전환 금지(#302 P1) — vm 교체가 진행 중 배치의 검증·계획과 경합한다.
         # 조용한 무시가 아니라 시끄러운 거부(raise → 셸 rejection 백스톱이 표면화).
-        if self._generation_lock.locked():
-            raise ValueError("문서 생성이 진행 중입니다. 중단하거나 완료된 뒤 작업을 전환하세요.")
+        self.raise_if_generating_before_swap("작업을 전환하세요")
         self._clear_data_notice()
         # 사용자가 직접 골랐다 = 보관된 명시 사건보다 최신 의사. 들고 있으면 다음 마운트에서
         # 옛 의도가 되살아나 방금 고른 작업을 밀어낸다(지연된 조용한 추측).
@@ -1577,7 +1605,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
         커밋된 작업이 지금 패널에 선택돼 있으면 옛 경로의 VM 이 stale 이므로 ``_do_select_job``
         으로 재구성한다 — 데이터 겨눔·저장 폴더를 초기화하므로 결과 문구로 재진술(confirm-or-alarm).
+
+        **진행 중 런과 겹치면 거절한다**(9R P1 형제): 템플릿 경로는 durable 규칙이고 진행 중
+        배치는 옛 vm 을 고정해 뒀다 — 지금 갈아치우면 그 배치의 결과가 디스크에 없는 규칙을
+        자기 근거로 댄다. 편집기 진입과 같은 부류라 같은 술어를 쓴다.
         """
+        self.raise_if_generating("템플릿을 다시 연결하세요")
         res = relink_job_template(
             self.registry, p["name"], p.get("path", ""), confirm=bool(p.get("confirm")),
         )
@@ -1770,8 +1803,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         vm 경유(``load_pool_item``)는 작업 선택을 전제해 데이터-우선과 어긋난다. vm 이
         있으면 같은 데이터를 ``set_acquired`` 로 주입(ack 재평가 포함, RC-22).
         """
-        if self._generation_lock.locked():  # 생성 중 데이터 교체 금지(#302 P1 동류)
-            raise ValueError("문서 생성이 진행 중입니다. 중단하거나 완료된 뒤 데이터를 바꾸세요.")
+        self.raise_if_generating_before_swap("데이터를 바꾸세요")  # #302 P1 동류
         source, records = resolve_pool_source(item)
         if not records:
             return []

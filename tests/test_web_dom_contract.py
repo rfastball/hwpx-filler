@@ -1376,6 +1376,24 @@ def test_native_close_and_editor_escape_affordances_are_wired():
     assert editor_js.count("window.Nav.go(") == 1, (
         "편집기에 Nav.go 직행 경로가 남았습니다 — 착지 절차(landOn) 하나만 전환해야 합니다."
     )
+    # **초점도 되돌린다**(9R P2) — 화면만 바꾸면 초점이 방금 숨겨진 편집기 back 버튼에 남아
+    # 키보드 사용자가 보이는 초점 없이 착지한다. 되돌릴 자리를 아는 곳은 진입 seam 하나이고
+    # (복귀처 넷에 focus_target 을 심으면 새 진입처가 조용히 빠진다), 되돌림 **규칙**은
+    # 모달이 이미 가진 것을 쓴다(분리·비활성 요소 판정을 두 번 쓰지 않는다).
+    assert "window.EditorEntry.restoreEntryFocus()" in land, (
+        "이탈이 초점을 되돌리지 않습니다 — 숨은 요소에 초점이 남습니다(9R P2)."
+    )
+    entry_js = (WEB_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
+    assert entry_js.count("rememberEntryFocus()") == 3, (
+        "진입 seam 이 띄운 자리를 기억하지 않습니다 — 정의 1 + 두 진입(newDraft·openGuarded)."
+    )
+    assert "window.Modal.restoreFocus(" in entry_js, (
+        "초점 되돌림 규칙이 두 벌입니다 — 모달의 restoreFocus 를 재사용해야 합니다."
+    )
+    modal_js = (WEB_JS_DIR / "modal.js").read_text(encoding="utf-8")
+    assert re.search(r"window\.Modal = \{[^}]*\brestoreFocus\b", modal_js), (
+        "Modal.restoreFocus 가 내보내지지 않았습니다 — 이탈이 그 규칙을 쓸 수 없습니다."
+    )
     for guard in ("async function leaveTo(", "async function gotoSection("):
         body = editor_js[editor_js.index(guard):]
         body = body[:body.index("\n  }") + 4]

@@ -913,6 +913,10 @@
       return false;
     }
     window.Nav.go(target, { force: true, refreshed: true });
+    // **초점도 되돌린다**(9R P2) — 화면만 바꾸면 초점은 방금 숨겨진 편집기의 back 버튼에
+    // 남는다. 키보드 사용자는 보이는 초점 없이 착지해 남의(숨은) 요소부터 tab 을 시작한다.
+    // 되돌릴 자리는 편집기를 **띄운 자리**이고, 그것을 아는 곳은 진입 seam 하나다.
+    window.EditorEntry.restoreEntryFocus();
     return true;
   }
 

@@ -6,12 +6,15 @@ JobController가 링1 계약을 위임해 소비하는지 못박는다.
 """
 from __future__ import annotations
 
+import threading
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 
 from hwpxfiller.core.job import Job, JobRegistry, rules_fingerprints
+from hwpxfiller.core.text_registry import TextTemplateRegistry
+from hwpxfiller.webapp.screen_library import LibraryController
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.gui.review_state import review_requirement
 from hwpxfiller.gui.run_state import RunViewModel
@@ -183,6 +186,36 @@ def test_generation_in_flight_blocks_switch_and_remount(tmp_path):
             ctrl.load_data_path(_data_csv(tmp_path))
     finally:
         ctrl._generation_lock.release()
+
+
+def test_every_durable_rule_writer_refuses_while_generating(tmp_path):
+    """진행 중 런과 겹치는 **규칙 쓰기**는 표면을 가리지 않고 거절된다(9R P1).
+
+    리뷰는 편집기 진입 하나를 지적했지만, 같은 부류의 자리가 셋이다 — 편집기 진입·「문서
+    만들기」 재연결·라이브러리 재연결. 진행 중 배치는 옛 vm 을 고정해 뒀으므로 그 사이
+    durable 규칙이 바뀌면 결과가 **디스크에 없는 세대**를 자기 근거로 댄다(§13-7).
+
+    자물쇠가 화면 소유였던 것이 이 결함의 형태다: 라이브러리는 런을 돌리지 않아 자기
+    자물쇠를 봐도 늘 열려 있었다. 그래서 앱이 **하나를 주입**하고 세 자리가 같은 것을 본다.
+    """
+    lock = threading.Lock()
+    reg = JobRegistry(tmp_path / "jobs")
+    job_ctrl = JobController(reg, lambda s, snap: None, generation_lock=lock)
+    lib_ctrl = LibraryController(
+        reg, TextTemplateRegistry(tmp_path / "txt"), lambda s, snap: None,
+        generation_lock=lock,
+    )
+    assert lock.acquire(blocking=False)
+    try:
+        # ①편집기 진입 술어(app.open_job_in_editor 가 부르는 그 메서드) ②·③ 두 재연결
+        with pytest.raises(ValueError, match="생성이 진행 중"):
+            job_ctrl.raise_if_generating("편집기를 여세요")
+        with pytest.raises(ValueError, match="생성이 진행 중"):
+            job_ctrl.dispatch("relink_template", {"name": "공고서", "path": "x.hwpx"})
+        with pytest.raises(ValueError, match="생성이 진행 중"):
+            lib_ctrl.dispatch("relink_template", {"name": "공고서", "path": "x.hwpx"})
+    finally:
+        lock.release()
 
 
 def test_generate_locked_never_rereads_live_vm():

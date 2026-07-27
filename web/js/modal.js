@@ -386,5 +386,9 @@
     });
   }
 
-  window.Modal = { open, close, confirm, prompt, choose };
+  // `restoreFocus` 도 내보낸다(9R P2) — 몰입 편집기 이탈도 「띄운 자리로 초점을 되돌린다」는
+  // 같은 사건이다(면을 닫는 것과 화면을 되돌리는 것의 차이일 뿐). 규칙을 저쪽에서 다시
+  // 쓰면 되돌림 판정이 두 벌이 되고, 이 함수가 일부러 피한 함정(분리·비활성 요소 흉내내기)을
+  // 그 두 번째 사본이 되풀이한다.
+  window.Modal = { open, close, confirm, prompt, choose, restoreFocus };
 })();

@@ -147,15 +147,20 @@ class WebFrontend:
         # 추적성 로케이트 화이트리스트(#53-B)용 레지스트리 참조(밑줄=js_api 반영 제외).
         self._job_registry = job_registry
         self._pool_registry = pool_registry
+        # 진행 중인 런의 **단일 사실**(9R P1) — 규칙을 쓰는 표면이 여럿이라(「문서 만들기」·
+        # 라이브러리 재연결·편집기 진입) 자물쇠가 한 화면 소유이면 나머지가 조용히 빠진다.
+        generation_lock = threading.Lock()
         # 화면 등록 — 새 화면 = 컨트롤러 1개 추가(순수 데이터는 dispatch, 네이티브는 아래 메서드).
         controllers = [
             # 「문서 작업」 전역 라이브러리(§19.6) — 홈 화면의 승계자(재작성 F2). TXT
             # 레지스트리는 기안·템플릿 관리와 공유(변경이 반영). pool_registry 공유 =
             # 등록 데이터에서 생긴 손상이 라이브러리 경보에 즉시 보인다(#45).
-            LibraryController(job_registry, registry, self._push, pool_registry=pool_registry),
+            LibraryController(job_registry, registry, self._push, pool_registry=pool_registry,
+                              generation_lock=generation_lock),
             # 「문서 만들기」 — 세션 패널(v6 screen-data 2열). 링1 VM 을 직접 소유하며
             # 실행 결정 계약을 소비하는 유일 세션 표면이다.
-            JobController(job_registry, self._push, pool_registry=pool_registry),
+            JobController(job_registry, self._push, pool_registry=pool_registry,
+                          generation_lock=generation_lock),
             # 「기안」 화면 — TXT 작업-앵커 master-detail(「작업」의 대칭).
             # 같은 job_registry 를 쓰되 media=txt 만 조회한다(조회 경계 결정 13) — 저장 기계는
             # 하나·화면은 둘. 우 상세는 휘발 세션 4존이고, 세션 기계는 「기안문
@@ -483,6 +488,12 @@ class WebFrontend:
         """
         ctx = context or {}
         try:
+            # **진행 중 런과 겹치는 진입은 거절한다**(9R P1). `setBusy()` 는 「문서 만들기」
+            # 루트 아래만 비활성화하므로 상단 탭·라이브러리 컨트롤은 생성 중에도 눌린다 —
+            # 여기서 열면 진행 중 배치가 고정한 옛 vm 과 무관하게 durable 규칙이 저장되고,
+            # 그 배치의 결과가 **디스크에 없는 세대**를 자기 근거로 댄다(§13-7). 판정은
+            # 「문서 만들기」가 소유한 단일 술어를 쓴다(자물쇠는 앱이 공유 주입).
+            self._controller("job").raise_if_generating("편집기를 여세요")
             self._controller("editor").load_job(
                 name,
                 landing_section=str(ctx.get("section") or SECTION_BINDING),

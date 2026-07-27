@@ -32,6 +32,7 @@
 """
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 from ..core.dataset_pool import DatasetPoolRegistry
@@ -130,7 +131,8 @@ class LibraryController:
 
     def __init__(self, registry: JobRegistry, text_registry: TextTemplateRegistry,
                  push: PushSink,
-                 pool_registry: "DatasetPoolRegistry | None" = None) -> None:
+                 pool_registry: "DatasetPoolRegistry | None" = None,
+                 generation_lock: "threading.Lock | None" = None) -> None:
         # pool_registry 는 손상 등록 데이터 경보(#45) 용. 미주입 시 다른 컨트롤러들과 같은
         # 단일 출처 팩토리(text_registry 는 VM 이 보는 txt 트랙 판정에 쓰인다).
         self.vm = HomeViewModel(
@@ -141,6 +143,12 @@ class LibraryController:
         # test_architecture)와 정합: seam 밖 durable 뮤테이션은 공유 게이트
         # (relink_job_template)가 담당하므로 주입분을 직접 보관한다(run.registry 동형).
         self._job_registry = registry
+        # 「문서 만들기」와 **같은** 생성 자물쇠(9R P1) — 이 화면의 재연결도 durable 규칙을
+        # 쓰므로 진행 중 런과 겹치면 안 된다. 미주입이면 잠기지 않는 자기 것을 세운다
+        # (단독 구성 테스트 호환 — 그 구성엔 런을 돌리는 표면 자체가 없다).
+        self._generation_lock = (
+            generation_lock if generation_lock is not None else threading.Lock()
+        )
         self._push_sink = push
         self._deleted_job_slot = None
         # 「모든 작업」 보기의 그룹 접힘(§19.6 ``collapsedGroups``) — 보기만 바꾸고 행을
@@ -388,7 +396,13 @@ class LibraryController:
         커밋되면 행(건강·runnable)을 최신화한다. 「문서 만들기」에 같은 작업이 선택돼 있어도
         여기서 갱신하지 않는다 — 옛 경로는 죽어 있어 실행 게이트가 fail-closed 로 차단하고,
         재선택 시 재적재된다(수용, 그쪽 주석과 쌍).
+
+        **진행 중 런과 겹치면 거절한다**(9R P1 형제 — 「문서 만들기」 쪽 재연결과 쌍): 이
+        화면은 런을 돌리지 않지만 durable 규칙을 쓰므로, 저쪽에서 돌고 있는 배치가 고정한
+        규칙을 여기서 갈아치울 수 있었다. 그래서 같은 자물쇠를 본다.
         """
+        if self._generation_lock.locked():
+            raise ValueError("문서 생성이 진행 중입니다. 끝난 뒤에 템플릿을 다시 연결하세요.")
         res = relink_job_template(
             self._job_registry, p["name"], p.get("path", ""), confirm=bool(p.get("confirm")),
         )

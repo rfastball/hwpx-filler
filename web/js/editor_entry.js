@@ -12,6 +12,26 @@
      작업」 ＋·template.makeJob 후속 착지)·기존 작업 열기(openGuarded).
      `force` 인 이유: 진입은 **이미 확인을 마친 뒤**라 편집기 이탈 가드를 다시 태울 것이
      없다(그 가드는 나가는 길의 것이다). */
+  /* 편집기를 **띄운 자리** 1슬롯(9R P2) — 이탈이 초점을 여기로 되돌린다.
+
+     왜 진입 seam 이 기억하는가: 복귀처마다 `focus_target` 을 실어 보내면 표면이 넷이라 넷
+     모두 고쳐야 하고, 새 진입처가 생기면 조용히 빠진다(F7 이 복귀 봉합에서 겪은 그 형태 —
+     지도 §10.13.14). 편집기로 들어오는 문은 이 파일 하나이므로, 여기서 한 번 기억하면
+     모든 이탈이 공짜로 따라온다. 요소 참조로 두는 이유는 재렌더로 사라졌을 때의 대안이
+     이미 `Modal.restoreFocus` 에 있기 때문이다(판정을 흉내내지 않고 결과를 읽는다). */
+  let entryFocus = null;
+
+  function rememberEntryFocus() {
+    entryFocus = document.activeElement;
+  }
+
+  /* 이탈이 부르는 초점 되돌림 — 모달의 되돌림과 **같은 규칙**을 쓴다(재발명 금지). */
+  function restoreEntryFocus() {
+    const target = entryFocus;
+    entryFocus = null;      // 1슬롯 — 다음 진입이 다시 채운다(옛 자리로 두 번 되돌리지 않는다)
+    window.Modal.restoreFocus(target);
+  }
+
   function land() {
     window.Nav.go("editor", { force: true });
   }
@@ -19,6 +39,7 @@
   /* newDraft() — 「＋ 새 작업」의 단일 정의(PR-5 리뷰 F2: 「문서 작업」·작업 구획 ＋ 가 같은 흐름을
      복붙하면 폐기 확인·착지가 드리프트한다): 폐기 확인 → 세션 초기화 → 편집 모드 착지. */
   async function newDraft() {
+    rememberEntryFocus();   // 확인 모달 앞에서 — 모달은 자기 되돌림으로 이 자리를 복원한다
     if (!(await confirmDiscard(
       "새 작업을 시작하면 저장하지 않은 편집 세션이 사라집니다.\n" +
       "사라지는 것: 이름 · 데이터 · 매핑\n\n계속할까요?"))) return false;
@@ -44,6 +65,7 @@
      배너·복귀처가 통째로 사라진다(1R P1: 실제로 그렇게 빠뜨렸다 — 단일 정의는 인자까지
      단일이어야 한다). */
   async function openGuarded(name, context) {
+    rememberEntryFocus();
     if (!(await confirmDiscard(
       `'${name}' 편집을 열면 저장하지 않은 편집 세션이 사라집니다.\n` +
       "사라지는 것: 이름 · 데이터 · 매핑\n\n계속할까요?"))) {
@@ -58,5 +80,7 @@
     return true;
   }
 
-  window.EditorEntry = { openGuarded, land, confirmDiscard, newDraft };
+  window.EditorEntry = {
+    openGuarded, land, confirmDiscard, newDraft, restoreEntryFocus,
+  };
 })();
