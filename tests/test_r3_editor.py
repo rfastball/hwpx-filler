@@ -156,16 +156,19 @@ def test_editor_js_click_dispatch_guards_bridge_rejection():
     # awaited 여야 rejection 이 디스패처 가드로 올라온다 — fire-and-forget 강등 금지.
     # 개별 이름 나열이 아니라 onClick 안의 **모든** Bridge.* 호출을 검사한다(PR #46 P2 —
     # ack_gate·step_preview 등 직접 호출이 무대기라 가드 밖으로 새던 잔여 봉합).
-    unawaited = re.findall(r"(?<!await )Bridge\.\w+\(", body)
+    # 편집기 왕복은 공용 체인(`sendEdit`)을 지난다(재작성 F7 5R P2) — 발신 이름이 바뀌어도
+    # **무대기 강등 금지**라는 계약은 그대로다. 둘 다 센다: 체인 밖 직행도, 체인 무대기도
+    # 같은 결함(rejection 이 디스패처 가드 밖으로 새고, 정산이 그 발신을 못 기다린다).
+    unawaited = re.findall(r"(?<!await )(?:Bridge\.\w+|sendEdit)\(", body)
     assert not unawaited, (
-        f"onClick 안에 await 없는 Bridge 호출이 있습니다 — rejection 이 가드 밖으로 샙니다(#45): "
+        f"onClick 안에 await 없는 브리지 호출이 있습니다 — rejection 이 가드 밖으로 샙니다(#45): "
         f"{unawaited}"
     )
     for frag in ("await confirmAll()", "await doSave({})"):
         assert frag in body, f"onClick 이 '{frag}' 로 대기하지 않습니다 — 가드 상속 단절(#45)."
     # confirmAll 내부 2차 호출(confirm_blanks)도 fire-and-forget 이면 가드 밖으로 샌다.
     confirm_body = _segment(src, "async function confirmAll", "async function doSave")
-    assert 'await Bridge.call(SCREEN, "confirm_blanks"' in confirm_body, (
+    assert 'await sendEdit("confirm_blanks"' in confirm_body, (
         "confirmAll 의 confirm_blanks 호출이 awaited 가 아닙니다 — rejection 이 삼켜집니다(#45)."
     )
 

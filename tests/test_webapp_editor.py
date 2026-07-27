@@ -1123,6 +1123,26 @@ def test_discarding_one_section_keeps_edits_that_live_outside_sections(tmp_path)
     assert ctrl.job_name == "부분되돌리기" and ctrl.has_unsaved_work() is False
 
 
+def test_partial_discard_keeps_dirty_while_session_data_is_unsaved(tmp_path):
+    """되돌린 뒤 클린 표지는 **정말 남은 것이 없을 때만** 선다(5R P2).
+
+    데이터 선택은 저장 시 등록·기본 데이터 연결로 이어지는 **미저장 세션 상태**다 —
+    section 밖에 산다는 이유로 안 세면, 남아 있는 편집이 「저장됨」으로 위장하고 이탈이
+    아무것도 묻지 않는다. 2R 이 이 줄을 세울 때 이름만 본 것이 연 창이다.
+    """
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "표지정직")
+    ctrl.dispatch("save", {})
+    ctrl.load_job("표지정직")
+    assert ctrl.snapshot()["dirty"] is False           # 복원 직후 = 저장됨
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")   # 세션이 데이터를 골랐다
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": False})
+    ctrl.dispatch("discard_patch", {"section": "binding"})
+    assert ctrl.dirty_sections() == ()                 # 그 자리는 되돌아갔지만
+    assert ctrl.snapshot()["dirty"] is True            # 데이터 선택은 아직 미저장이다
+
+
 def test_discarding_a_binding_patch_keeps_the_loaded_data(tmp_path):
     """연결 patch 를 되돌려도 사람이 고른 데이터는 내려놓지 않는다(판정 L).
 

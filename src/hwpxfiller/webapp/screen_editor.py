@@ -1024,9 +1024,12 @@ class EditorController:
         self._set_notice(
             f"「{self.SECTION_LABELS.get(section, section)}」 에서 바꾼 것만 되돌렸습니다.", "ok"
         )
-        # 남은 것이 없으면 클린으로 돌아간다 — 되돌리기 뒤에도 표지가 켜져 있으면 이탈이
-        # 잃을 것 없는 확인을 묻는다(과경고). 이름은 section 밖이라 따로 대조한다.
-        if not self.dirty_sections() and self.job_name == base.name:
+        # 남은 것이 **정말** 없을 때만 클린으로 돌아간다 — 되돌리기 뒤에도 표지가 켜져
+        # 있으면 이탈이 잃을 것 없는 확인을 묻고(과경고), 반대로 성급히 끄면 남아 있는
+        # 편집이 「저장됨」으로 위장한다. section 밖에 사는 것을 **빠짐없이** 센다(5R P2 —
+        # 2R 이 이 줄을 세울 때 이름만 봤고, 데이터 선택은 저장 시 등록·기본 데이터 연결로
+        # 이어지는 미저장 세션 상태라 같은 자리에 든다).
+        if not self.dirty_sections() and self.job_name == base.name and not self.data_path:
             self._session_clean = True
 
     def _revert_binding(self, base: "Job") -> None:

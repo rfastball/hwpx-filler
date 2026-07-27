@@ -22,11 +22,15 @@
 
   const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
 
-  /* 입력 변이는 **한 체인**에 선다(4R P2 — job.js 존 체인 선례, 공용 `intent.js`).
-     blur 로 발화하는 `change` 는 아무도 기다리지 않는 발신이라, 이름을 고치고 곧바로 back 을
-     누르면 이탈 가드가 **그 발신보다 먼저** 판정한다 — 창이 열린 그 순간엔 잃을 것이 없다고
-     읽혀 방금 친 편집이 아무 확인 없이 좌초한다. 순서를 기제가 세우고, 이탈·탭 이동은
-     그 체인을 정산한 뒤 판정한다. */
+  /* 편집기의 브리지 왕복은 **한 줄에 선다**(4R P2 → 5R P2 확장, 공용 `intent.js` 체인).
+     blur 로 발화하는 `change` 는 아무도 기다리지 않는 발신이고, 클릭 변이는 **자기 핸들러
+     안에서만** 기다린다 — 어느 쪽이든 사용자가 곧바로 back·다른 탭을 누르면 그 발신보다
+     먼저 판정이 나서, 방금 한 편집이 아무 확인 없이 좌초한다. 그래서 `change` 만이 아니라
+     **상태를 바꾸거나 그 순서에 기대는 왕복 전부**가 이 체인을 지난다(질의도 포함 — 대기 중
+     변이 뒤의 답이라야 참이다). `flushPendingEdits` 는 그 줄이 비었음을 뜻한다.
+
+     체인 밖에 남는 것 둘: `Bridge.initial`(첫 스냅샷 당김)과 `Bridge.editorHasUnsavedWork`
+     (정산 **뒤** 컨트롤러에게 직접 묻는 질의 — 체인에 넣으면 자기가 기다리는 줄에 선다). */
   const EDIT_CHAIN = "editor:mutate";
   function sendEdit(action, payload) {
     return window.Intent.chained(EDIT_CHAIN, () => Bridge.call(SCREEN, action, payload));
@@ -591,7 +595,7 @@
     // 대기 중 입력이 판정을 추월하지 않게 먼저 정산한다(4R P2) — 방금 친 패턴이 아직
     // 도착하지 않은 채 판정하면 처분할 것이 없다고 읽고 그 편집을 다른 탭으로 끌고 간다.
     await flushPendingEdits();
-    const r = await Bridge.call(SCREEN, "goto_section", { section: target });
+    const r = await sendEdit("goto_section", { section: target });
     if (!(r && r.needs_section_guard)) return;
     const choice = await Modal.choose({
       title: `「${r.section_label}」 에서 바꾼 내용이 있습니다`,
@@ -609,11 +613,11 @@
     } else if (choice === "discard") {
       // **그 자리만** 되돌린다(2R P2) — 모달이 말한 범위가 곧 파기 범위다. 이름처럼 어느
       // section 에도 없는 편집은 이 처분의 대상이 아니다.
-      await Bridge.call(SCREEN, "discard_patch", { section: r.section });
+      await sendEdit("discard_patch", { section: r.section });
     } else {
       return;                                   // 머무르기(Escape 포함)
     }
-    await Bridge.call(SCREEN, "goto_section", { section: target, disposition: choice });
+    await sendEdit("goto_section", { section: target, disposition: choice });
   }
 
   /* 확정·수동 매핑 보호(PR#105 리뷰 F1) — 관문의 데이터 교체/비우기는 _ensure_model 재초안으로
@@ -641,7 +645,7 @@
   }
 
   async function confirmMappingResetIfConfirmed(verbPhrase) {
-    const st = await Bridge.call(SCREEN, "mapping_reset_stakes", {});
+    const st = await sendEdit("mapping_reset_stakes", {});
     const n = (st && st.human) || 0;
     if (!n) return true;
     return Modal.confirm({ body:
@@ -662,12 +666,12 @@
       switch (act) {
         case "use-library": {
           if (!(await confirmNewSessionIfUnsaved())) break;
-          await Bridge.call(SCREEN, "use_library_template", { path: el.dataset.path });
+          await sendEdit("use_library_template", { path: el.dataset.path });
           break;
         }
         case "toggle-lib-group":
           // 1단계 피커 그룹 접힘 — 관리 화면과 같은 모델 토글(뷰 상태, 세션 불변).
-          await Bridge.call(SCREEN, "toggle_library_group", { group: el.dataset.group });
+          await sendEdit("toggle_library_group", { group: el.dataset.group });
           break;
         case "import-template": {
           if (!(await confirmNewSessionIfUnsaved())) break;
@@ -675,7 +679,7 @@
           if (typeof r === "string" && r.startsWith("ERROR:")) alertMsg(r.slice(6).trim());
           break;
         }
-        case "ack-gate": await Bridge.call(SCREEN, "ack_gate", {}); break;
+        case "ack-gate": await sendEdit("ack_gate", {}); break;
         case "pick-data": {
           if (!(await confirmMappingResetIfConfirmed("데이터를 바꾸면"))) break;  // 확정 보호(F1)
           let r = await Bridge.pickDataFile(SCREEN);
@@ -688,7 +692,7 @@
         }
         case "skip-data": {
           if (!(await confirmMappingResetIfConfirmed("데이터 없이 진행하면"))) break;  // 확정 보호(F1)
-          await Bridge.call(SCREEN, "skip_data", {});
+          await sendEdit("skip_data", {});
           break;
         }
         case "goto-tab":  // 탭 이동 — 처분 미확정이면 백엔드가 3택을 요구한다(§5.2).
@@ -702,19 +706,19 @@
             body: "이 편집에서 바꾼 내용을 버리고 저장된 상태로 되돌립니다.\n\n계속할까요?",
             returnFocus: el, confirmLabel: "변경 버리기", cancelLabel: "취소",
           }))) break;
-          await Bridge.call(SCREEN, "discard_patch", {});
+          await sendEdit("discard_patch", {});
           break;
         }
         // 칩-라이브(결정 13): 칩 클릭 = 즉시 토글(활성↔미사용). 전체 사용/전체 미사용 대칭쌍.
         case "toggle-header":
-          await Bridge.call(SCREEN, "toggle_source_active", { field: el.dataset.field }); break;
-        case "use-all-headers": await Bridge.call(SCREEN, "use_all_headers", {}); break;
+          await sendEdit("toggle_source_active", { field: el.dataset.field }); break;
+        case "use-all-headers": await sendEdit("use_all_headers", {}); break;
         case "use-none": {
           // 수치는 Python 이 지금 판정(stale LAST 우회 차단 — F7 동형). 확정 존재는 확인
           // 모달 **전에** 선차단(PR-3 리뷰 F5: 파괴를 승인시킨 뒤 오류로 거부하는 확인-후-
           // 오류 순서 금지) — 백엔드 loud 차단은 백스톱으로 존속. 소스 겨눈 수동 미확정만
           // 실제 강등 집합이라 그 수치로 확인한다(리뷰 F4 — 문안=파괴 집합).
-          const st = await Bridge.call(SCREEN, "mapping_reset_stakes", {});
+          const st = await sendEdit("mapping_reset_stakes", {});
           if (st && st.confirmed) {
             window.alert(`확정한 매핑 ${st.confirmed}개가 있어 전체 미사용을 할 수 없습니다. 확정을 먼저 해제하거나 칩을 하나씩 끄세요.`);
             break;
@@ -724,22 +728,22 @@
             `전체 미사용하면 직접 소스를 고른 매핑 ${man}개의 수동 지정이 해제됩니다` +
             `(자동 제안으로만 복원).\n\n계속할까요?`,
             confirmLabel: "전체 미사용", cancelLabel: "취소" }))) break;
-          await Bridge.call(SCREEN, "use_none", {});
+          await sendEdit("use_none", {});
           break;
         }
         case "revert-source":
-          await Bridge.call(SCREEN, "revert_source", { index: idx }); break;
-        case "prev-rec": await Bridge.call(SCREEN, "step_preview", { delta: -1 }); break;
-        case "next-rec": await Bridge.call(SCREEN, "step_preview", { delta: 1 }); break;
-        case "unconfirm-all": await Bridge.call(SCREEN, "unconfirm_all", {}); break;
-        case "restore-confirmed": await Bridge.call(SCREEN, "restore_confirmed", {}); break;
+          await sendEdit("revert_source", { index: idx }); break;
+        case "prev-rec": await sendEdit("step_preview", { delta: -1 }); break;
+        case "next-rec": await sendEdit("step_preview", { delta: 1 }); break;
+        case "unconfirm-all": await sendEdit("unconfirm_all", {}); break;
+        case "restore-confirmed": await sendEdit("restore_confirmed", {}); break;
         case "confirm-all": await confirmAll(); break;
-        case "row-confirm": await Bridge.call(SCREEN, "set_confirmed", { index: idx, confirmed: el.checked }); break;
+        case "row-confirm": await sendEdit("set_confirmed", { index: idx, confirmed: el.checked }); break;
         case "cancel-new": {
           if (!(await EditorEntry.confirmDiscard(
             "새 작업 만들기를 취소하면 입력한 이름 · 데이터 · 매핑이 사라집니다.\n\n계속할까요?",
             el))) break;
-          await Bridge.call(SCREEN, "discard_session", {});
+          await sendEdit("discard_session", {});
           // 확인·폐기를 마쳤으니 이탈 가드를 다시 태우지 않는다(force) — 같은 폐기를 두 번
           // 묻는 것은 소음이고, 두 번째 확인에서 취소하면 이미 비운 세션에 남게 된다.
           window.Nav.go(returnScreen(), { force: true });
@@ -773,7 +777,7 @@
 
   /* 모두 확정 — 내용 행 즉시 확정 + 비움 승격 이름게이트(ADR-E 반사적 dismiss 봉쇄). */
   async function confirmAll() {
-    const res = await Bridge.call(SCREEN, "confirm_all", {});
+    const res = await sendEdit("confirm_all", {});
     const blanks = (res && res.blanks) || [];
     if (!blanks.length) return;
     const ok = await Modal.confirm({ body:
@@ -781,7 +785,7 @@
       confirmLabel: "비움으로 확정", cancelLabel: "취소",
     });
     // await 로 던진다 — fire-and-forget 이면 rejection 이 디스패처 가드 밖으로 샌다(#45).
-    if (ok) await Bridge.call(SCREEN, "confirm_blanks", { fields: blanks });
+    if (ok) await sendEdit("confirm_blanks", { fields: blanks });
   }
 
   /* 저장 — 차단 사유·덮어쓰기·자동등록 확인 재진술(조용한 덮어쓰기 금지).
@@ -791,7 +795,7 @@
   async function doSave(flags) {
     let res;
     try {
-      res = await Bridge.call(SCREEN, "save", flags || {});
+      res = await sendEdit("save", flags || {});
     } catch (err) {
       window.alert("저장 처리 중 오류가 발생했습니다. 작업이 저장됐는지 「문서 작업」에서 확인하세요.\n" + err);
       return;
@@ -880,12 +884,25 @@
      「문서 만들기」로 데려다 놓는다. 라벨이 약속한 자리와 실제 착지가 다른 것은 문안 부정직의
      한 형태다. 면을 여는 절차(Python 왕복·성사 뒤 열기·포커스)는 그 화면이 소유한 seam 을
      그대로 쓴다 — 여기서 다시 조립하면 열기 규율이 두 벌이 된다. */
-  function restoreReturnState() {
+  async function restoreReturnState() {
     const ret = ((LAST && LAST.context) || {}).return_context || {};
     if (ret.surface === "preview" && ret.reopen_drawer
         && window.JobScreen && window.JobScreen.openPreview) {
-      // 실패는 그 seam 이 자기 채널로 재진술한다(조용한 무반응 없음).
-      window.JobScreen.openPreview();
+      // **규칙을 다시 읽은 뒤에 연다**(5R P1). `Nav.go` 의 자동 refresh 는 기다려지지 않는
+      // 발신이라, 순서를 두지 않으면 ①드로어가 옛 규칙의 상을 그리거나 ②뒤늦게 도착한
+      // refresh 가 방금 연 면을 닫는다(규칙이 갈렸으면 재적재가 면을 닫는 것이 옳다 —
+      // 그 옳은 동작이 순서 때문에 사용자에겐 「열리자마자 사라짐」이 된다).
+      // 이 왕복을 기다리면 뒤이은 자동 refresh 는 지문이 같아 무동작이 된다.
+      try {
+        await Bridge.call("job", "refresh", {});
+      } catch (err) {
+        // 재적재 실패는 그 화면이 자기 채널로 말한다 — 여기서 삼키지 않고 면도 열지 않는다
+        // (옛 규칙의 상을 「돌아왔다」며 보여 주는 것이 조용한 거짓이다).
+        window.alert("작업을 다시 읽지 못해 미리보기를 열지 않았습니다: "
+          + String((err && err.message) || err));
+        return;
+      }
+      await window.JobScreen.openPreview();
     }
   }
 
@@ -925,7 +942,7 @@
       if (choice === "save") {
         if (!(await doSave({}))) return;      // 저장이 막혔으면 나가지 않는다(문맥 보존)
       } else if (choice === "discard") {
-        await Bridge.call(SCREEN, "discard_patch", {});
+        await sendEdit("discard_patch", {});
       } else {
         return;
       }
@@ -934,10 +951,10 @@
       + "\n사라지는 것: 이름 · 데이터 · 매핑\n\n계속할까요?"))) {
       return;
     } else if (s.is_draft) {
-      await Bridge.call(SCREEN, "new_session", {});   // 확인을 마쳤으면 실제로 폐기한다
+      await sendEdit("new_session", {});   // 확인을 마쳤으면 실제로 폐기한다
     }
     window.Nav.go(target, { force: true });
-    if (target === returnScreen()) restoreReturnState();
+    if (target === returnScreen()) await restoreReturnState();
   }
 
   /* 현 에디터 스냅샷 재당김·재렌더(#138 리뷰 F12) — 편집 모드로 복귀할 때 1단계 피커가

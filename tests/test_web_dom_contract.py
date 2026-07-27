@@ -1338,7 +1338,7 @@ def test_native_close_and_editor_escape_affordances_are_wired():
     assert "AppCloseGuard" in app_js and "confirm_window_close" in app_js
     assert 'id="editorBack"' in html and 'editorBack' in editor_js
     assert 'data-act="cancel-new"' in editor_js
-    assert 'Bridge.call(SCREEN, "discard_session", {})' in editor_js
+    assert 'sendEdit("discard_session", {})' in editor_js   # 체인 경유(5R P2)
     assert "async function leaveTo(" in editor_js, (
         "편집기 이탈의 단일 출구(leaveTo)가 없습니다 — 출구가 여럿이면 처분 가드가 새어 나갑니다."
     )
@@ -1350,8 +1350,22 @@ def test_native_close_and_editor_escape_affordances_are_wired():
     # 기다리지 않는 발신이라, 이름을 고치고 곧바로 back 을 누르면 가드가 그 발신보다 먼저
     # 판정해 방금 친 편집이 아무 확인 없이 좌초한다. 순서는 공용 체인(intent.js)이 세우고
     # 이탈·탭 이동은 정산 뒤에 판정한다 — job.js 존 체인과 같은 기제다(재발명 금지).
+    # **편집기의 브리지 왕복은 한 줄에 선다**(5R P2): `change` 만 체인에 세우면 클릭 변이
+    # (헤더 토글·확정·되돌리기…)가 밖에 남아, 누르자마자 back 을 누른 사용자의 편집이
+    # 판정보다 늦게 도착한다. 체인 밖 예외는 둘뿐 — 첫 스냅샷 당김과 정산 **뒤** 컨트롤러
+    # 직접 질의(자기가 기다리는 줄에 서면 안 된다).
+    assert editor_js.count("Bridge.call(SCREEN") == 1, (
+        "편집기 왕복이 체인을 우회합니다 — `sendEdit` 하나만 Bridge.call(SCREEN 을 씁니다."
+    )
     assert "window.Intent.chained(EDIT_CHAIN" in editor_js, (
         "편집기 입력 변이가 체인에 서지 않습니다 — 도착 순서가 보장되지 않습니다."
+    )
+    # 복귀는 **규칙을 다시 읽은 뒤** 드로어를 연다(5R P1) — 순서를 두지 않으면 옛 규칙의
+    # 상을 그리거나, 뒤늦은 refresh 가 방금 연 면을 닫는다.
+    restore = editor_js[editor_js.index("async function restoreReturnState("):]
+    restore = restore[:restore.index("\n  }") + 4]
+    assert restore.index('Bridge.call("job", "refresh"') < restore.index("openPreview()"), (
+        "미리보기 복귀가 작업 재적재를 기다리지 않습니다 — 옛 규칙의 상을 열거나 곧 닫힙니다."
     )
     for guard in ("async function leaveTo(", "async function gotoSection("):
         body = editor_js[editor_js.index(guard):]
