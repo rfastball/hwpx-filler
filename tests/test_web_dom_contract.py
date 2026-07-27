@@ -844,6 +844,11 @@ def test_job_candidate_ranking_surface_contract():
         "즐겨찾기 미결 의도 직렬화가 공용 몸통에 없습니다."
     )
     assert 'chained("favorite"' in intent, "즐겨찾기 쓰기가 체인을 타지 않습니다."
+    # 저장되는 링은 **절대 reject 하지 않는다**(5R): 실패한 promise 가 체인에 남으면 이후
+    # 같은 키의 모든 호출이 거기 붙어 영영 실행되지 않는다. 실행 성질은 실앱 프로브가 본다.
+    chain = intent[intent.index("function chained("):intent.index("const FAV_PENDING")]
+    assert "result.catch(() => {})" in chain, "저장 링이 실패를 흡수하지 않습니다(5R)."
+    assert "return result;" in chain, "호출자에게 실패를 전하지 않습니다 — 되돌리기가 죽습니다."
     for consumer in ("screens/job.js", "screens/library.js"):
         text = (WEB_JS_DIR / consumer).read_text(encoding="utf-8")
         assert "Intent.createFavorite(" in text, (

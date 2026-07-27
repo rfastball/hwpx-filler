@@ -2105,6 +2105,29 @@ _EDITOR_LIB_PICKER_PROBE_JS = r"""
 # 실제 클릭→Bridge.call→Python dispatch→initial snapshot 왕복(#189). 프로브가 만든 버튼도
 # 브라우저의 click 이벤트 경로를 지나므로 API 직접 호출만으로는 잡지 못하는 이벤트/Promise
 # 연결 단절을 함께 검출한다. 동작은 모두 빈 홈에서도 안전한 세션 초기화·새로고침이다.
+_CHAIN_RECOVERY_PROBE_SETUP_JS = r"""
+(() => {
+  /* 호출 직렬화 체인이 **실패 한 번으로 죽지 않는지** 실물로 본다(리뷰 5R).
+     rejected 링이 CALL_CHAINS 에 남으면 이후 같은 키의 모든 호출이 그 링에 .then 으로 붙어
+     영영 실행되지 않는다 — 접힘 영속이 한 번 실패했다고 그 화면의 탭·검색·필터가 세션 내내
+     죽는 결함이다. 정적 계약으로는 "catch 가 있다"까지만 보이므로 실행으로 증명한다. */
+  const out = { pending: true };
+  window.__chainRecovery = out;
+  const key = 'probe:' + String(Math.random());
+  const seen = [];
+  Intent.chained(key, () => Promise.reject(new Error('의도된 실패')))
+    .then(() => { out.rejected_surfaced = false; },
+          () => { out.rejected_surfaced = true; })   // 실패는 호출자에게 그대로 전해진다
+    .then(() => Intent.chained(key, () => { seen.push('after'); return 'ok'; }))
+    .then((v) => { out.after_value = v; })
+    .catch((e) => { out.error = String((e && e.message) || e); })
+    .then(() => {
+      out.after_ran = seen.length === 1;
+      out.pending = false;
+    });
+})();
+"""
+
 _ACTION_ROUNDTRIP_PROBE_SETUP_JS = r"""
 (() => {
   const out = { pending: true, families: {} };
@@ -2576,6 +2599,17 @@ def _selftest_drive(window: "object") -> None:
             time.sleep(0.1)
         result["action_roundtrip"] = window.evaluate_js(  # type: ignore[attr-defined]
             "window.__actionRoundtrip")
+        # 호출 직렬화 체인의 실패 복구(리뷰 5R) — 정적 계약이 못 보는 실행 성질이라 실물로.
+        window.evaluate_js(_CHAIN_RECOVERY_PROBE_SETUP_JS)  # type: ignore[attr-defined]
+        chain_deadline = time.monotonic() + 5.0
+        while time.monotonic() < chain_deadline:
+            if window.evaluate_js(  # type: ignore[attr-defined]
+                "!!(window.__chainRecovery && !window.__chainRecovery.pending)"
+            ):
+                break
+            time.sleep(0.1)
+        result["chain_recovery"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "window.__chainRecovery")
         # 커스텀 모달 접근성 동적 거동(#27/#28) — 정적 계약(role/aria)은 test_web_dom_contract 가
         # 보고, 여기선 실 브라우저에서 Modal 헬퍼가 초기포커스·Escape 닫기·트리거 복귀를 실제로
         # 수행하는지 되읽는다. 알려진 트리거(첫 내비 버튼)에 포커스를 두고 열었다가 Escape 로 닫는다.

@@ -143,6 +143,20 @@ class TestWebSelftestGate:
             "all", "recent", "favorites", "needsAction",
         ]
 
+    def test_call_chain_survives_a_rejected_link(self, selftest_result: dict) -> None:
+        """리뷰 5R — 직렬화 체인은 실패 한 번으로 죽지 않는다.
+
+        rejected 링이 체인에 남으면 이후 같은 키의 모든 호출이 그 링에 붙어 영영 실행되지
+        않는다: 접힘 영속이 한 번 실패했다고 그 화면의 탭·검색·필터가 세션 내내 죽는다.
+        실패는 **호출자에게 그대로 전해지되**(되돌리기·loud 재진술이 그 위에 선다) 저장된
+        링은 성사 상태로 남아야 한다 — 정적 계약이 못 보는 실행 성질이라 실물로 본다.
+        """
+        c = selftest_result["chain_recovery"]
+        assert c.get("error") is None, f"체인 복구 프로브 오류: {c!r}"
+        assert c["rejected_surfaced"] is True, "실패가 호출자에게 전해지지 않습니다."
+        assert c["after_ran"] is True, "실패 뒤 호출이 실행되지 않았습니다 — 체인이 죽었습니다."
+        assert c["after_value"] == "ok"
+
     def test_modal_opens_with_initial_focus_inside(self, selftest_result: dict) -> None:
         # 커스텀 모달을 열면 hidden 해제 + 초기 포커스가 모달 안(draftSaveTplName)으로 들어간다.
         m = selftest_result["modal_a11y"]

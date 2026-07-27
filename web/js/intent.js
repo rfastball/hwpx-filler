@@ -14,13 +14,24 @@
      있고, 탐색 검색은 늦게 도착한 옛 응답이 새 검색 결과를 되돌린다. */
   const CALL_CHAINS = new Map();
 
+  /* **저장되는 링은 절대 reject 하지 않는다**(리뷰 5R). 실패한 promise 를 체인에 남기면 이후
+     같은 키의 모든 호출이 그 rejected 링에 `.then(send)` 로 붙어 **영영 실행되지 않는다** —
+     접힘 영속이 한 번 실패했다고 그 화면의 탭·검색·필터가 세션 내내 죽는다.
+
+     즐겨찾기 소비처는 `send` 안에서 스스로 잡아 이 함정을 우연히 피해 있었고, 그래서 기제가
+     "호출자가 반드시 잡는다"는 암묵 계약 위에 서 있었다 — 라이브러리 축(4R)이 맨 `Bridge.call`
+     을 넘기며 그 계약을 밟았다. 암묵 계약은 언젠가 밟힌다: 기제 쪽에서 끊는다.
+
+     호출자에게는 **실패를 그대로 전한다**(`result` 반환) — 되돌리기·loud 재진술은 여전히
+     호출자 몫이고(GroupList.toggleGroup 이 그렇게 쓴다), 아무도 안 잡으면 셸 백스톱이 말한다. */
   function chained(key, send) {
+    const result = (CALL_CHAINS.get(key) || Promise.resolve()).then(send);
     // `return tail` 금지 — 자기 자신으로 resolve 하면 체인 순환(TypeError)으로 영영 안 끝난다.
-    const tail = (CALL_CHAINS.get(key) || Promise.resolve()).then(send).then(() => {
+    const tail = result.catch(() => {}).then(() => {
       if (CALL_CHAINS.get(key) === tail) CALL_CHAINS.delete(key);
     });
     CALL_CHAINS.set(key, tail);
-    return tail;
+    return result;
   }
 
   /* 미결 의도는 **모듈 스코프**다 — 표면마다 사본을 두면 "공용 몸통"이 이름뿐이 된다
