@@ -1489,6 +1489,10 @@ _JOB_EDITMODE_PROBE_JS = r"""
     out.edit_host_shown = getComputedStyle(document.getElementById('jobEditHost')).display !== 'none';
     out.zones_hidden = getComputedStyle(document.getElementById('jobZones')).display === 'none';
     out.status_text = document.getElementById('jobStatus').textContent;
+    // 실행 복귀 출구(F2 PR-B 판정 D) — 편집 모드에서 **실제로 보이는가**. 좌 목록이 죽으며
+    // 이 버튼이 유일한 직접 복귀 경로가 됐는데, 정적 존재만 보는 계약은 「배선했지만 영영
+    // 숨어 있는」 상태를 통과시킨다(코덱스 리뷰 P2 의 실물).
+    out.edit_exit_shown = getComputedStyle(document.getElementById('jobEditExit')).display !== 'none';
     var draft = {step:0, reachable:[false,false], template_path:'', template_name:'',
       field_count:0, fields:[], raw_block:'', gate_error:false, gate:null, notice:null,
       editing_origin:''};
@@ -1499,6 +1503,10 @@ _JOB_EDITMODE_PROBE_JS = r"""
     window.__push('editor', draft);
     out.edit_tabs = document.querySelectorAll('#editor-steps button.wstep-tab.as-tab').length;
     out.foot_hidden_edit = getComputedStyle(document.getElementById('editor-foot')).display === 'none';
+    // 실행 복귀 뒤엔 다시 숨는다 — 실행 모드에 「실행으로 돌아가기」가 남으면 거짓 어포던스다.
+    window.JobScreen.showRunMode();
+    out.edit_exit_hidden_in_run =
+      getComputedStyle(document.getElementById('jobEditExit')).display === 'none';
   } catch (e) { out.error = 'throw:' + (e && e.message); }
   return out;
 })()

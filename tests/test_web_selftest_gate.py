@@ -774,6 +774,15 @@ class TestWebSelftestGate:
         assert j["foot_hidden_edit"] is True, (
             "편집(탭)의 비저장 탭에서 푸터가 숨지 않았습니다 — 고아 경계선/죽은 내비 잔존."
         )
+        # 실행 복귀 출구(F2 PR-B 판정 D) — 좌 목록이 죽으며 이 버튼이 유일한 직접 복귀
+        # 경로가 됐다. 정적 존재만 보는 계약은 「배선했지만 영영 숨어 있는」 상태를 통과시켜
+        # 승계가 문서에만 남는다(코덱스 리뷰 P2 의 실물) — 실 렌더로 두 모드를 다 본다.
+        assert j["edit_exit_shown"] is True, (
+            "편집 모드에 「실행으로 돌아가기」가 보이지 않습니다 — 직접 복귀 경로 소실."
+        )
+        assert j["edit_exit_hidden_in_run"] is True, (
+            "실행 모드에 「실행으로 돌아가기」가 남아 있습니다 — 거짓 어포던스."
+        )
 
     def test_editor_chip_live_renders_ownership_and_toggle_chips(self, selftest_result: dict) -> None:
         # 매핑 분류 칩-라이브(결정 12·13) — 합성 매핑 스냅샷을 실

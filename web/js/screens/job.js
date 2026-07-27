@@ -128,6 +128,11 @@
     $("jobZones").style.display = !edit ? "" : "none";
     $("jobActionBar").style.display = !edit ? "" : "none";
     $("jobEditHost").style.display = edit ? "" : "none";
+    // 실행 복귀 출구는 편집 모드에서만 뜬다(F2 PR-B 판정 D). **여기서** 토글하는 이유:
+    // 모드 표시의 소유자가 이 함수 하나라, 진입·이탈 경로(showEditMode·exitEditToRun·
+    // showRunMode)가 늘어도 표시가 갈리지 않는다. 배선만 하고 노출을 잊으면 「승계처를
+    // 만들었다」는 계약이 문서에만 남는다(코덱스 리뷰 P2 — 실제로 그렇게 빠뜨렸다).
+    $("jobEditExit").style.display = edit ? "" : "none";
   }
 
   function setEditStatus() {
