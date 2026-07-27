@@ -322,6 +322,19 @@ class Job:
     # 검토 메타를 내용 지문에 남기면 실행 한 번이 열어 둔 편집 세션에 「외부 변경을
     # 덮어씁니다」라는 거짓 파괴 확인을 띄운다.
     reviewed_rules: "dict[str, str]" = field(default_factory=dict)
+    # Template·Binding **판본**(재작성 F7, 지도 §10.13 판정 F·G). 계약이 고정한 축은 이 둘뿐
+    # (§13-6·7) — 파일 이름 규칙은 문서 구조가 아니라 산출물 규칙이라 Binding 쪽이 진다.
+    # 저장 **횟수**가 아니라 **규칙이 갈린 횟수**다: 판본이 저장 횟수면 아무것도 안 바뀐
+    # 저장에도 §13-6(판본 변경 = validation·approval 폐기)이 걸려 §13-2 의 조용한 반복이
+    # 깨진다. 정산 주체는 :func:`JobRegistry.save` 하나다(판정 G).
+    template_revision: int = 1
+    binding_revision: int = 1
+    # **직전 판본의 규칙 값**(1세대만, 지도 §10.13 판정 H). 지문이 아니라 값인 이유:
+    # ``rules_fingerprints`` 는 ``\x1f`` 로 이어 붙인 **비교용** 문자열이라 거기서 값을
+    # 되뽑으면 정규화 값에서 실체를 파생하는 것이고(F2 §10.8.6 규칙 ③), 지문 포맷이 바뀌는
+    # 날 증거가 조용히 거짓말한다. 1세대만 두는 이유: 계약에 판본 이력 표면이 없다 —
+    # 요구 없는 무한 누적을 durable 파일에 지불하지 않는다. 형상은 :func:`rules_values`.
+    previous_rules: "dict" = field(default_factory=dict)
 
     @property
     def media(self) -> str:
@@ -362,6 +375,9 @@ class Job:
             "group": self.group,
             "default_dataset_ref": self.default_dataset_ref,
             "reviewed_rules": dict(self.reviewed_rules),
+            "template_revision": self.template_revision,
+            "binding_revision": self.binding_revision,
+            "previous_rules": _copy_rules_values(self.previous_rules),
         }
 
     @classmethod
@@ -379,6 +395,20 @@ class Job:
                 raise ValueError(
                     f"작업 필드 '{key}' 는 문자열이어야 하는데 {type(v).__name__} 입니다"
                 )
+            return v
+
+        def _revision(key: str) -> int:
+            """판본은 1 이상의 정수 — durable 훼손을 조용히 통과시키지 않는다(``_str`` 미러).
+
+            ``bool`` 을 거르는 이유: 파이썬에서 ``True`` 는 ``int`` 라 무검사면 ``r1`` 로
+            조용히 읽힌다(구 JSON 훼손·수기 편집의 실제 표본류)."""
+            v = d.get(key, 1)
+            if isinstance(v, bool) or not isinstance(v, int):
+                raise ValueError(
+                    f"작업 필드 '{key}' 는 정수여야 하는데 {type(v).__name__} 입니다"
+                )
+            if v < 1:
+                raise ValueError(f"작업 필드 '{key}' 는 1 이상이어야 하는데 {v} 입니다")
             return v
 
         raw_reviewed = d.get("reviewed_rules", {})
@@ -416,6 +446,9 @@ class Job:
             group=_str("group"),
             default_dataset_ref=_str("default_dataset_ref"),
             reviewed_rules=reviewed,
+            template_revision=_revision("template_revision"),
+            binding_revision=_revision("binding_revision"),
+            previous_rules=_rules_values_or_raise(d.get("previous_rules", {})),
         )
 
     def save(self, path: "str | Path") -> None:
@@ -448,6 +481,13 @@ def content_fingerprint(job: "Job") -> str:
     # 검토 기준선도 뺀다(재작성 F5 판정 B) — 완주 스탬프가 갱신하는 사용 메타라 위 넷과
     # 같은 부류다. 남기면 실행 한 번이 열어 둔 편집 세션에 거짓 파괴 확인을 띄운다.
     d.pop("reviewed_rules", None)
+    # 판본 3필드도 뺀다(재작성 F7 판정 G) — 저장이 **계산해서 다시 쓰는 파생 메타**라 위
+    # 다섯과 같은 부류다. 남기면 실행 한 번(스탬프)이나 다른 표면의 저장이 열어 둔 편집
+    # 세션에 「외부 변경을 덮어씁니다」라는 거짓 파괴 확인을 띄우고, 더 나쁘게는 세션이
+    # 든 옛 판본 번호를 지문 대조의 근거로 만든다(판본은 편집의 대상이 아니다).
+    d.pop("template_revision", None)
+    d.pop("binding_revision", None)
+    d.pop("previous_rules", None)
     return json.dumps(d, ensure_ascii=False, sort_keys=True)
 
 
@@ -472,20 +512,120 @@ def rules_fingerprints(job: "Job") -> "dict[str, str]":
     비교하는 대신 키 집합을 비교하는 이유다. 두 표면이 이 조립을 복붙하면 그 드리프트가
     곧 조용한 오판정이라 링0 에 단일 출처로 둔다(``content_fingerprint`` 와 같은 근거).
     """
+    values = rules_values(job)
     out = {
-        _FP_TEMPLATE: job.template_path,
-        _FP_FILENAME: job.filename_pattern,
+        _FP_TEMPLATE: values["template"],
+        _FP_FILENAME: values["filename"],
     }
-    for m in job.mapping.mappings:
-        name = m.template_field
+    for name, axes in values["fields"].items():
         # source 축은 "이 필드가 어떤 값을 낼 것인가"를 결정하는 전부다 — 유형·리터럴·
         # 비움 선언이 여기 든다(표시형만 fmt 로 뺀다). 구분자는 필드 이름·값에 못 들어가는
         # ``\x1f`` 라 "a|b" 와 "a" + "|b" 가 같은 지문으로 붕괴하지 않는다.
         out[f"field:{name}:source"] = "\x1f".join(
-            (m.source, m.type, m.const, "blank" if m.is_blank else "")
+            (axes["source"], axes["type"], axes["const"], axes["blank"])
         )
-        out[f"field:{name}:format"] = m.fmt
+        out[f"field:{name}:format"] = axes["fmt"]
     return out
+
+
+#: 필드별 규칙 축 — :func:`rules_values` 가 내는 사전의 키(표면·테스트가 문자열을 재조립하지
+#: 않게). ``blank`` 는 ``"blank"``/``""`` 두 값만 갖는다(지문 문자열과 같은 표기를 쓴다 —
+#: 표기를 바꾸면 디스크의 기존 검토 기준선이 전부 어긋나 한 번씩 헛 검토를 부른다).
+RULE_AXES = ("source", "type", "const", "blank", "fmt")
+
+
+def rules_values(job: "Job") -> "dict":
+    """작업 규칙의 **값** 형상(재작성 F7, 지도 §10.13 판정 H) — 지문의 원재료이자 판본 보관형.
+
+    ``{"template": 경로, "filename": 패턴, "fields": {필드: {축: 값}}}``.
+    :func:`rules_fingerprints` 가 이 위에서 지문을 조립한다 — 두 함수가 각자 매핑을 훑으면
+    한쪽만 고쳐지는 날 "무엇이 바뀌었나"(지문)와 "무엇이었나"(직전 판본)가 서로 다른 규칙을
+    말한다. 판본 보관이 지문이 아니라 이 값을 쓰는 근거는 §10.13 판정 H.
+    """
+    return {
+        "template": job.template_path,
+        "filename": job.filename_pattern,
+        "fields": {
+            m.template_field: {
+                "source": m.source,
+                "type": m.type,
+                "const": m.const,
+                "blank": "blank" if m.is_blank else "",
+                "fmt": m.fmt,
+            }
+            for m in job.mapping.mappings
+        },
+    }
+
+
+def _copy_rules_values(values: "dict") -> "dict":
+    """:func:`rules_values` 형상의 깊은 사본 — 보관·직렬화가 원본과 사전을 공유하지 않게."""
+    fields = values.get("fields", {}) if isinstance(values, dict) else {}
+    return {
+        "template": values.get("template", "") if isinstance(values, dict) else "",
+        "filename": values.get("filename", "") if isinstance(values, dict) else "",
+        "fields": {name: dict(axes) for name, axes in fields.items()},
+    } if values else {}
+
+
+def _rules_values_or_raise(raw: "object") -> "dict":
+    """durable 로드 경계의 ``previous_rules`` 검증 — 빈 사전은 「직전 판본 없음」.
+
+    ``from_dict`` 의 다른 필드와 같은 규율(조기 loud 격리 > 지연 크래시): 형상이 깨진 값을
+    통과시키면 증거 렌더가 뒤늦게 터지고, 그 자리는 사용자가 **변경을 확인하는** 자리라
+    조용한 결손이 가장 비싸다."""
+    if not raw:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError(f"'previous_rules' 는 사전이어야 하는데 {type(raw).__name__} 입니다")
+    fields = raw.get("fields", {})
+    if not isinstance(fields, dict):
+        raise ValueError("'previous_rules.fields' 는 사전이어야 합니다")
+    out_fields: "dict[str, dict[str, str]]" = {}
+    for name, axes in fields.items():
+        if not isinstance(name, str) or not isinstance(axes, dict):
+            raise ValueError("'previous_rules.fields' 의 항목은 필드이름→축사전이어야 합니다")
+        if set(axes) != set(RULE_AXES) or not all(isinstance(v, str) for v in axes.values()):
+            raise ValueError(
+                f"'previous_rules.fields[{name}]' 의 축은 {list(RULE_AXES)} 문자열이어야 합니다"
+            )
+        out_fields[name] = dict(axes)
+    template, filename = raw.get("template", ""), raw.get("filename", "")
+    if not isinstance(template, str) or not isinstance(filename, str):
+        raise ValueError("'previous_rules' 의 template·filename 은 문자열이어야 합니다")
+    return {"template": template, "filename": filename, "fields": out_fields}
+
+
+def advance_revisions(job: "Job", previous: "Job | None") -> None:
+    """저장 직전 판본 정산 — **오른 축만** 올리고 직전 판본 값을 갈무리한다(§10.13 판정 G·H).
+
+    판정 주체를 이 함수 하나로 두는 이유: 판본을 올리는 자리가 저장 표면마다 흩어지면
+    (에디터·기안·재연결·복제) 한 표면만 빠뜨려도 **아무 테스트도 울지 않고** 그 작업의
+    세대가 조용히 멈춘다 — 그 뒤 §13-7(Run 은 사용 판본을 고정)이 말하는 판본이 거짓이 된다.
+    :meth:`JobRegistry.save` 가 쓰기 잠금 안에서 부른다.
+
+    **잇는 기준은 이름이 아니라 파일 슬롯**이다: 같은 자리를 덮어쓰는 저장은 그 자리의 다음
+    세대가 된다. `_preserved_for_target`(태그·이력·즐겨찾기·검토 기준선이 **대상 파일**의
+    것으로 남는다)과 같은 규율이고, 이름 기준으로 하면 slug 이 같은 이름 변경(``a/b`` →
+    ``a_b``)이 판본을 1 로 되돌려 열 세대 실행한 작업이 신참으로 표시된다.
+
+    ``previous`` 가 없으면(새 자리·읽을 수 없는 자리) 인메모리 값을 그대로 둔다 — 이름
+    변경으로 새 파일에 착지하는 저장이 세대를 잃지 않게. 계승하지 **않아야** 하는 경로
+    (복제)는 :meth:`JobRegistry.clone` 이 이력·즐겨찾기와 같은 줄에서 명시적으로 지운다.
+    """
+    if previous is None:
+        return
+    old, new = rules_values(previous), rules_values(job)
+    template_changed = old["template"] != new["template"]
+    binding_changed = old["filename"] != new["filename"] or old["fields"] != new["fields"]
+    job.template_revision = previous.template_revision + (1 if template_changed else 0)
+    job.binding_revision = previous.binding_revision + (1 if binding_changed else 0)
+    # 규칙이 그대로면 직전 판본도 그대로다 — 저장할 때마다 "직전"이 현재로 밀리면
+    # before/after 증거가 **같은 값 두 개**를 보여주고 만다(변경이 없다는 사실을 변경으로
+    # 재진술하는 꼴).
+    job.previous_rules = _copy_rules_values(
+        old if (template_changed or binding_changed) else previous.previous_rules
+    )
 
 
 class JobRegistryOwnershipError(RuntimeError):
@@ -668,6 +808,11 @@ class JobRegistry:
         대상 파일이 이미 **다른 작업 이름**으로 존재하거나 읽을 수 없으면(손상)
         ``allow_overwrite`` 없이는 :class:`SlugCollisionError` 를 던진다 —
         조용한 durable 소실 방지. 같은 이름 재저장(자기 갱신)은 충돌이 아니라 그대로 통과.
+
+        **판본 정산의 유일한 자리**(재작성 F7, §10.13 판정 G): 저장 표면이 각자 올리면 한
+        표면만 빠뜨려도 그 작업의 세대가 조용히 멈춘다 — 여기 한 곳에서 디스크의 직전 판본과
+        대조해 :func:`advance_revisions` 가 오른 축만 올린다. 쓰기 잠금 안이라 대조와 쓰기
+        사이에 다른 writer 가 끼지 않는다(같은 잠금이 ``last_run_at`` 스탬프도 직렬화한다).
         """
         with self._write_lock:
             self.directory.mkdir(parents=True, exist_ok=True)
@@ -676,7 +821,20 @@ class JobRegistry:
                 guard_slug_collision(
                     path, job.name, lambda p: Job.load(p).name, kind="작업"
                 )
+            advance_revisions(job, self._previous_at(path))
             job.save(path)
+
+    def _previous_at(self, path: Path) -> "Job | None":
+        """저장 대상 자리의 직전 판본 — 없거나 **읽을 수 없으면** ``None``.
+
+        손상 파일 위에 저장하는 경로(``allow_overwrite=True``)에서 예외를 올리면 저장 자체가
+        막힌다 — 판본은 이력 메타지 저장의 전제가 아니다. 읽을 수 없는 과거를 추측해 잇는
+        대신 인메모리 값으로 새로 세운다(없는 것을 지어내지 않는다).
+        """
+        try:
+            return Job.load(path)
+        except Exception:  # noqa: BLE001 — 부재·손상·권한: 잇지 않는다(위 docstring)
+            return None
 
     def write_lock(self) -> "_OwnedWriteLock":
         """읽기-수정-쓰기 임계구역을 감쌀 디렉터리 공유 잠금.
@@ -793,6 +951,13 @@ class JobRegistry:
             # 않았으므로 처음부터 검토 요구를 진다 — 원본의 완주를 물려받으면 한 번도
             # 확인받지 않은 규칙이 열린 게이트로 시작한다.
             job.reviewed_rules = {}
+            # 판본도 미계승(재작성 F7 판정 H 의 짝): 복사본의 규칙은 이 identity 에서 처음
+            # 저장되는 것이라 「연결 r7」이라고 말하면 겪지 않은 여섯 세대를 지어내는 것이고,
+            # 직전 판본 값을 물려받으면 **이 작업에서 일어난 적 없는 변경**을 before/after
+            # 증거가 보여준다. 새 자리 저장이라 :func:`advance_revisions` 는 손대지 않는다.
+            job.template_revision = 1
+            job.binding_revision = 1
+            job.previous_rules = {}
             self.save(job)
             return candidate
 

@@ -1160,6 +1160,15 @@
     if (r.cancelled) {
       parts.push(`<div>미착수 ${r.unstarted || 0}건 — 중단 요청 시점에 아직 시작하지 않았습니다.</div>`);
     }
+    // 사용한 판본(§13-7 · 재작성 F7 판정 I) — 계약 §10.3 이 원인 미확정 화면에 명시적으로
+    // 요구하는 증거다. 값은 **런이 시작될 때 고정된 것**이라 그 뒤 편집 저장이 판본을
+    // 올려도 여기 숫자는 그 실행이 실제로 쓴 세대를 가리킨다. 없으면(구 결과·정체 소실)
+    // 줄 자체를 만들지 않는다 — 모르는 세대를 r1 로 채우지 않는다.
+    const rev = r.revisions || {};
+    if (rev.template || rev.binding) {
+      parts.push(`<div><b>사용한 판본</b> 템플릿 r${esc(String(rev.template || "?"))} · ` +
+        `연결 r${esc(String(rev.binding || "?"))}</div>`);
+    }
     const box = $("jobResultEvidence");
     box.hidden = !parts.length;
     $("jobResultEvidenceCap").textContent =

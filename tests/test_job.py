@@ -553,6 +553,143 @@ def test_preserved_metadata_is_outside_the_content_fingerprint():
     assert content_fingerprint(job) != before
 
 
+# ------------------------------- Template·Binding 판본(v6 §13-6·7, 재작성 F7 §10.13)
+def test_revisions_roundtrip_and_backward_compat():
+    """판본도 가산 필드 — 구 JSON 은 r1·직전 판본 없음으로 관용 로드된다."""
+    job = _job()
+    job.template_revision, job.binding_revision = 3, 7
+    d = job.to_dict()
+    assert (d["template_revision"], d["binding_revision"]) == (3, 7)
+    assert Job.from_dict(d).binding_revision == 7
+    assert Job.from_dict(d).version == 1  # 가산 필드는 version 을 올리지 않는다
+    d.pop("template_revision"), d.pop("binding_revision"), d.pop("previous_rules")
+    restored = Job.from_dict(d)
+    assert (restored.template_revision, restored.binding_revision) == (1, 1)
+    assert restored.previous_rules == {}
+
+
+@pytest.mark.parametrize("bad", [0, -1, "2", 1.0, True, None])
+def test_revision_corruption_is_loud(bad):
+    """판본은 1 이상의 정수 — ``True`` 도 거른다(파이썬에서 bool 은 int 라 조용히 r1 이 된다)."""
+    d = _job().to_dict()
+    d["binding_revision"] = bad
+    with pytest.raises(ValueError):
+        Job.from_dict(d)
+
+
+def test_previous_rules_shape_corruption_is_loud():
+    """직전 판본은 축이 온전한 값 사전이어야 한다 — 증거를 짓는 자리의 조용한 결손 금지."""
+    from hwpxfiller.core.job import rules_values
+
+    d = _job().to_dict()
+    d["previous_rules"] = rules_values(_job())
+    Job.from_dict(d)                                    # 온전한 형상은 통과
+    d["previous_rules"] = {"template": "t", "filename": "f", "fields": {"공고명": {"source": "x"}}}
+    with pytest.raises(ValueError):                     # 축 누락
+        Job.from_dict(d)
+    d["previous_rules"] = {"fields": []}
+    with pytest.raises(ValueError):                     # fields 가 사전이 아님
+        Job.from_dict(d)
+
+
+def test_revisions_are_outside_the_content_fingerprint():
+    """판본 3필드는 지문 밖 — 저장이 계산해 다시 쓰는 파생 메타라 보존 메타와 같은 부류다.
+
+    남기면 다른 표면의 저장·스탬프가 열어 둔 편집 세션에 거짓 파괴 확인을 띄운다.
+    """
+    from hwpxfiller.core.job import rules_values
+
+    job = _job()
+    before = content_fingerprint(job)
+    job.template_revision, job.binding_revision = 5, 9
+    job.previous_rules = rules_values(_job())
+    assert content_fingerprint(job) == before
+
+
+def test_rules_fingerprints_are_assembled_from_rules_values(tmp_path):
+    """지문과 직전 판본 값은 **같은 원재료**를 쓴다 — 한쪽만 고쳐지면 "무엇이 바뀌었나"와
+    "무엇이었나"가 서로 다른 규칙을 말한다(§10.13 판정 H).
+    """
+    from hwpxfiller.core.job import rules_fingerprints, rules_values
+
+    job = _job()
+    values, fp = rules_values(job), rules_fingerprints(job)
+    assert values["template"] == fp["template"] and values["filename"] == fp["filename"]
+    for name, axes in values["fields"].items():
+        assert fp[f"field:{name}:format"] == axes["fmt"]
+        assert axes["source"] in fp[f"field:{name}:source"]
+
+
+def test_save_advances_only_the_axis_whose_rules_changed(tmp_path):
+    """판본은 **규칙이 갈릴 때만** 오른다(§10.13 판정 G) — 저장 횟수가 아니다."""
+    reg = JobRegistry(tmp_path)
+    reg.save(_job())
+    assert (reg.load("입찰공고서").template_revision,
+            reg.load("입찰공고서").binding_revision) == (1, 1)
+
+    same = _job()
+    reg.save(same, allow_overwrite=True)                 # 내용 동일 재저장
+    saved = reg.load("입찰공고서")
+    assert (saved.template_revision, saved.binding_revision) == (1, 1)
+    assert saved.previous_rules == {}                    # 바뀐 적 없으면 직전 판본도 없다
+
+    changed = _job()
+    changed.filename_pattern = "공고서-{{공고명}}-2"       # 파일 이름 = Binding 축(판정 F)
+    reg.save(changed, allow_overwrite=True)
+    saved = reg.load("입찰공고서")
+    assert (saved.template_revision, saved.binding_revision) == (1, 2)
+    assert saved.previous_rules["filename"] == "공고서-{{공고명}}"
+
+    moved = _job()
+    moved.filename_pattern = "공고서-{{공고명}}-2"
+    moved.template_path = "/tmp/other.hwpx"
+    reg.save(moved, allow_overwrite=True)
+    saved = reg.load("입찰공고서")
+    assert (saved.template_revision, saved.binding_revision) == (2, 2)  # 템플릿 축만 추가로
+    assert saved.previous_rules["template"] == "/tmp/template.hwpx"
+
+
+def test_stamping_a_run_does_not_advance_revisions(tmp_path):
+    """완주 스탬프·즐겨찾기·그룹은 규칙이 아니다 — 세대를 올리지 않는다(§19.10 표)."""
+    from hwpxfiller.core.job import rules_fingerprints
+
+    reg = JobRegistry(tmp_path)
+    reg.save(_job())
+    reg.stamp_last_run("입찰공고서", "2026-07-27T09:00:00", rules=rules_fingerprints(_job()))
+    reg.set_favorite("입찰공고서", True, when="2026-07-27T09:01:00")
+    reg.set_group("입찰공고서", "조달")
+    saved = reg.load("입찰공고서")
+    assert (saved.template_revision, saved.binding_revision) == (1, 1)
+    assert saved.last_run_at and saved.group == "조달"   # 다른 갱신은 그대로 일어났다
+
+
+def test_rename_keeps_the_generation_but_clone_starts_over(tmp_path):
+    """이름 변경은 세대를 잇고(같은 규칙의 같은 계보), 복제는 r1 부터 — 겪지 않은 세대 금지."""
+    reg = JobRegistry(tmp_path)
+    reg.save(_job())
+    changed = _job()
+    changed.filename_pattern = "공고서-{{공고명}}-2"
+    reg.save(changed, allow_overwrite=True)              # binding r2
+
+    reg.rename("입찰공고서", "입찰공고서 2026")
+    assert reg.load("입찰공고서 2026").binding_revision == 2
+    assert reg.load("입찰공고서 2026").previous_rules["filename"] == "공고서-{{공고명}}"
+
+    copy_name = reg.clone("입찰공고서 2026")
+    copied = reg.load(copy_name)
+    assert (copied.template_revision, copied.binding_revision) == (1, 1)
+    assert copied.previous_rules == {}                   # 이 identity 에서 일어난 변경이 없다
+
+
+def test_save_over_a_corrupt_slot_starts_a_new_generation(tmp_path):
+    """읽을 수 없는 과거는 잇지 않는다 — 저장 자체는 막지 않는다(판본은 저장의 전제가 아니다)."""
+    reg = JobRegistry(tmp_path)
+    reg.save(_job())
+    reg.path_for("입찰공고서").write_text("{ 깨진 JSON", encoding="utf-8")
+    reg.save(_job(), allow_overwrite=True)
+    assert reg.load("입찰공고서").binding_revision == 1
+
+
 def test_set_favorite_stamps_under_the_write_lock_when_time_is_not_given():
     """시각 미지정이면 레지스트리가 **잠금 안에서** 찍는다(리뷰 P2 — 교차 작업 순위 역전 차단).
 

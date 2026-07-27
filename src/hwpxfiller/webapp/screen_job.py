@@ -159,6 +159,19 @@ def _run_title(status: str, cancelled: bool, succeeded: int, failed: int) -> str
     return "문서 생성 실패"
 
 
+def _revisions_of(vm) -> "dict[str, int]":
+    """이 런이 쓰는 Template·Binding 판본(§13-7, 재작성 F7 판정 I).
+
+    ``vm`` 이 없으면(작업 미선택 방어 경로) 빈 사전 — 판본을 **모르면 모른다고 한다**.
+    기본값 ``r1`` 을 채우면 결과 증거가 확인되지 않은 세대를 단정하게 된다(F5 판정 N 이
+    「기준선 없음」을 조용히 채우지 않은 것과 같은 규율).
+    """
+    job = getattr(vm, "job", None)
+    if job is None:
+        return {}
+    return {"template": job.template_revision, "binding": job.binding_revision}
+
+
 class JobController(DataZoneMixin, PoolTargetingMixin):
     """「작업」 화면 — 좌 작업 목록 선택 + 우 세션 패널(링1 RunViewModel/SelectionModel 위임).
 
@@ -220,6 +233,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 비교한다. 작업 전환에도 남는다: 남아 있어야 "지금 열린 작업이 그 런의 작업과
         # 다르다"를 말할 수 있다.
         self._last_run_job = ""
+        # 직전 런이 **고정한** 판본(재작성 F7 판정 I·§13-7). 런 시작 시점에 찍고 그 뒤
+        # 디스크를 다시 읽지 않는다 — 결과가 대는 근거는 그 런이 실제로 쓴 규칙의 세대다.
+        self._run_revisions: "dict[str, int]" = {}
         # 검토 승인 사건(재작성 F5, 지도 §10.12 판정 B) — **세션 소유·미영속**. 기준선은
         # `Job.reviewed_rules` 가 durable 로 들고, 승인만 여기 산다: 승인하고 실행하지 않은
         # 채 재시작하면 요구가 되돌아온다(열린 게이트로 시작하지 않는다). 폐기 코드는 없다
@@ -1783,6 +1799,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 완주 뒤 현재 상태를 읽으면 남의 작업에 역사를 적는다(_stamp_last_run 동류).
         run_job_name, run_vm = self.job_name, self.vm
         self._last_run_job = run_job_name   # 결과 행동의 주체(3R P2) — 세션 상태가 소유
+        # §13-7 「Run 은 사용한 Template·Binding 판본을 고정한다」(재작성 F7 판정 I).
+        # **시작 시점에** 붙든다: 배치가 도는 사이 에디터 저장이 착지하면 디스크 판본은
+        # 이미 다음 세대이고, 완주 뒤 그것을 읽어 말하면 결과가 **만들지 않은 규칙**을
+        # 자기 근거로 대게 된다(정체 고정과 같은 뿌리 — `_stamp_last_run` docstring).
+        self._run_revisions = _revisions_of(run_vm)
         indices = self._indices()
         out_dir = self.out_dir
 
@@ -1934,6 +1955,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "cancelled": cancelled,
             "attempted": attempted,
             "unstarted": batch.total - attempted,
+            "revisions": dict(self._run_revisions),
         }
 
     def _failure_rows(self, indices: "list[int]", results: list) -> "list[dict]":
@@ -2001,4 +2023,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "cancelled": False,
             "attempted": 0,
             "unstarted": n,
+            # 계약 §10.3 이 원인 미확정 화면에 **명시적으로** 요구하는 증거다("사용한
+            # Template·Binding 판본") — 원인을 모를수록 아는 사실을 빠짐없이 대야 한다.
+            "revisions": dict(self._run_revisions),
         }

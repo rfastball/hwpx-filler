@@ -117,10 +117,15 @@ _EDITOR_REBUILDS = {
 }
 #: 저장이 **되싣는** 비-편집 메타 — `_preserved_meta` 가 소유한다.
 _EDITOR_PRESERVES = {"tags", "last_run_at", "group", "favorited_at", "reviewed_rules"}
+#: 레지스트리가 **계산해 쓰는** 파생 메타(재작성 F7) — 어느 편집 표면도 값을 싣지 않고
+#: :func:`~hwpxfiller.core.job.advance_revisions` 가 저장 잠금 안에서 정산한다. 세 번째
+#: 갈래를 만든 이유: 이 셋을 '보존'으로 선언하면 편집 세션이 든 옛 판본이 디스크의 최신
+#: 세대를 되돌리고, '다시 짓는다'로 선언하면 편집기가 판본을 발명하게 된다.
+_REGISTRY_DERIVES = {"template_revision", "binding_revision", "previous_rules"}
 
 
 def test_every_durable_job_field_is_classified_by_the_editor_save():
-    """durable Job 필드는 저장이 **다시 짓거나 보존하거나** 둘 중 하나여야 한다.
+    """durable Job 필드는 저장이 **다시 짓거나 보존하거나 계산하거나** 셋 중 하나여야 한다.
 
     같은 결함이 두 번 났다: 그룹이 조용히 초기화되던 자리(슬라이스 2)와 검토 기준선이
     비워지던 자리(재작성 F5 3R). 두 번이면 목록이 아니라 **규율**이 문제다 — 새 durable
@@ -133,12 +138,17 @@ def test_every_durable_job_field_is_classified_by_the_editor_save():
     from hwpxfiller.webapp.screen_editor import _EMPTY_PRESERVED, _preserved_meta
 
     durable = {f.name for f in dataclass_fields(Job)}
-    classified = _EDITOR_REBUILDS | _EDITOR_PRESERVES
+    classified = _EDITOR_REBUILDS | _EDITOR_PRESERVES | _REGISTRY_DERIVES
     assert durable == classified, (
         "durable Job 필드가 분류되지 않았습니다 — 저장이 다시 짓는지(_EDITOR_REBUILDS) "
-        "보존하는지(_EDITOR_PRESERVES + _preserved_meta) 선언하세요: "
+        "보존하는지(_EDITOR_PRESERVES + _preserved_meta) 레지스트리가 계산하는지"
+        "(_REGISTRY_DERIVES) 선언하세요: "
         f"미분류={sorted(durable - classified)}, 유령={sorted(classified - durable)}"
     )
+    # 세 갈래는 배타적이다 — 한 필드가 두 갈래에 들면 어느 쪽이 이기는지가 코드 순서에
+    # 달리고, 그 순서는 리팩터링에 조용히 뒤집힌다.
+    assert not (_EDITOR_REBUILDS & _EDITOR_PRESERVES)
+    assert not (_REGISTRY_DERIVES & (_EDITOR_REBUILDS | _EDITOR_PRESERVES))
     # 선언과 실물이 갈리지 않게: 보존 목록의 두 표현(빈 기본값·추출기)이 같은 키를 든다.
     assert set(_EMPTY_PRESERVED) == _EDITOR_PRESERVES
     assert set(_preserved_meta(Job(name="x"))) == _EDITOR_PRESERVES
