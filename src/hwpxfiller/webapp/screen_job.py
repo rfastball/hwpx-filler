@@ -66,6 +66,7 @@ from ..gui.review_state import (
     ReviewState,
     build_evidence,
     review_gate_text,
+    previous_values,
     review_requirement,
 )
 from ..gui.run_state import RunViewModel, resolve_file_source, resolve_pool_source
@@ -613,9 +614,22 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "structure_changed": req.structure_changed,
         }
 
+    def _raw_record(self, indices: "list[int]", pos: int) -> "dict":
+        """표시순 자리(`pos`)의 **원본 레코드** — 이전 판본 규칙을 다시 적용할 재료.
+
+        렌더된 값(`mapped`)으로는 다른 규칙을 적용할 수 없다: 이미 지금 규칙이 통과한
+        결과라 원천이 아니다. 자리→원본 index 변환은 실행 입력과 같은 리스트를 쓴다
+        (같은 순서를 두 번 계산하지 않는다 — 판정 M 의 서수 규율).
+        """
+        if not (0 <= pos < len(indices)):
+            return {}
+        index = indices[pos]
+        return self.records[index] if 0 <= index < len(self.records) else {}
+
     def _preview_payload(
         self, req: ReviewRequirement, unmet, mapped: "list[dict]", names: "list[str]",
         audit_counts: "tuple[int, int]",
+        indices: "list[int]",
     ) -> dict:
         """드로어 구획 — 닫혀 있으면 뼈대만(그리지 않는 값은 오조립의 미끼, §10.8.6 규칙 ①).
 
@@ -647,6 +661,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "evidence": build_evidence(
                 req, mapped=mapped, names=tuple(names), converged=converged,
                 too_long=too_long, pos=pos,
+                # 직전 판본 규칙으로 **같은 레코드**를 다시 렌더한 값(F7 판정 H — F5 가
+                # 되깎기 조건으로 박제한 before/after 의 회수).
+                before=previous_values(
+                    self.vm.job, req.changed_fields, self._raw_record(indices, pos)
+                ) if self.vm is not None else None,
             ),
             "can_approve": unmet is not None and total > 0,
             "empty_note": "" if total else "선택한 문서가 없습니다. 표에서 만들 문서를 고르세요.",
@@ -1182,6 +1201,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "preview": self._preview_payload(
                 req, req_unmet, run_mapped, list(status.audit.names),
                 (len(status.audit.converged), len(status.audit.too_long)),
+                indices,
             ),
         })
         return base

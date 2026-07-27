@@ -32,6 +32,7 @@ import json
 from dataclasses import dataclass, field
 
 from ..core.job import Job, rules_fingerprints
+from ..core.mapping import FieldMapping
 from ..naming import pattern_field_tokens
 
 #: 승인을 요구하는 위험 축 — **무거운 순**. 여러 축이 동시에 바뀌면 앞선 것이 이긴다
@@ -197,16 +198,52 @@ def review_requirement(job: Job) -> ReviewRequirement:
     )
 
 
+def previous_values(job: Job, fields: "tuple[str, ...]", record: "dict") -> "dict[str, str]":
+    """**직전 판본의 규칙으로 같은 레코드를 렌더**한 값(재작성 F7 판정 H — F5 되깎기 이행).
+
+    F5 는 before/after 를 비웠다: 기준선이 지문만 저장해 이전 표시를 복원할 원천이 없었다.
+    F7 이 직전 판본의 **값**(`Job.previous_rules`)을 1세대 보관하므로 이제 지을 수 있다.
+
+    저장된 값을 되읽는 것이 **아니라** 이전 규칙을 지금 레코드에 적용한다 — 그래야 사용자가
+    보는 두 값이 **같은 레코드의 두 규칙**이 된다. 다른 시점의 다른 데이터를 before 라고
+    부르면 그게 곧 지어낸 증거다(§10.3 계열).
+
+    반환에 없는 필드는 세 경우다: ①직전 판본이 없다(첫 저장·구 버전 작업) ②그 판본엔 그
+    필드가 없었다 ③이전 규칙으로는 값을 낼 수 없다. 셋 다 **비워 둔다** — 표면이 "없음"과
+    "빈 값"을 가르는 문안을 지고, 여기서 빈 문자열로 뭉개면 그 구분이 사라진다.
+    """
+    fields_before = (job.previous_rules or {}).get("fields") or {}
+    out: "dict[str, str]" = {}
+    for name in fields:
+        axes = fields_before.get(name)
+        if not axes:
+            continue
+        try:
+            # `blank` 축은 따로 넘기지 않는다 — `is_blank` 는 ``type == "blank"`` 의 파생이라
+            # 두 자리에서 세우면 서로 어긋날 수 있다(지문이 둘을 다 적는 것은 비교용이다).
+            out[name] = FieldMapping(
+                template_field=name,
+                source=axes.get("source", ""),
+                type=axes.get("type", "text"),
+                const=axes.get("const", ""),
+                fmt=axes.get("fmt", ""),
+            ).value_for(record)
+        except (ValueError, KeyError):
+            # 이전 규칙이 지금 데이터에서 값을 못 내는 경우(그 열이 사라졌다 등) — 지어내지
+            # 않고 비운다. "이전엔 이랬다"를 못 말하는 것과 틀리게 말하는 것은 다르다.
+            continue
+    return out
+
+
 def build_evidence(
     req: ReviewRequirement, *, mapped: "list[dict]", names: "tuple[str, ...]",
-    converged: int, too_long: int, pos: int,
+    converged: int, too_long: int, pos: int, before: "dict[str, str] | None" = None,
 ) -> dict:
     """이 요구가 요구하는 증거(지도 §10.12 판정 D) — 표면이 분기를 재발명하지 않게 한 모양.
 
-    **before/after 는 짓지 않는다.** 기준선은 지문만 저장하지 값을 저장하지 않으므로 이전
-    표시를 복원할 원천이 없다. 없는 값을 지어내느니 없다고 말한다(§10.3 "원인을 꾸며내지
-    않는다"와 같은 계열) — 대신 현재 값 + 변경 대상 이름 + **영향 규모**를 싣는다.
-    되깎기 조건: F7 판본이 서면 직전 판본의 값이 실재하므로 그때 before/after 를 채운다.
+    ``before`` 는 :func:`previous_values` 가 낸 「직전 판본 규칙으로 렌더한 같은 레코드」다
+    (재작성 F7 판정 H). 없으면 행에 싣지 않는다 — 직전 판본이 없는 작업(첫 저장·구 버전)에
+    빈 before 를 세우면 "이전엔 비어 있었다"는 **거짓 증거**가 된다.
 
     ``mapped`` 는 **선택 순서**(=표시순 투영)의 매핑 결과이고 ``pos`` 는 그 안의 자리다.
     """
@@ -238,7 +275,12 @@ def build_evidence(
                     row_note += f" · 값이 비는 문서 {empty}건"
             else:
                 row_note = "표시형이 적용된 값입니다."
-            rows.append({"name": name, "value": value, "note": row_note})
+            row = {"name": name, "value": value, "note": row_note}
+            # before 는 **있을 때만** 싣는다(판정 H): 없는 세대를 빈 값으로 세우면
+            # "이전엔 비어 있었다"는 거짓 증거가 된다.
+            if before and name in before:
+                row["before"] = before[name]
+            rows.append(row)
     # 드로어 안에서는 게이트 문안이 안 보인다 — **왜 확인을 묻는지**를 면이 스스로 말한다
     # (눈검증: 첫 실행인데 "이름이 모두 서로 다릅니다"만 뜨면 묻지 않은 질문에 답한 꼴).
     # 같은 문장을 게이트와 공유해 두 표면이 같은 상태를 다르게 부르지 않게 한다.

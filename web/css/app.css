@@ -657,6 +657,8 @@ body.editor-open .nav,body.editor-open .nav-sep{display:none}
 .ctxbanner .ctx-ev{display:flex;flex-wrap:wrap;gap:var(--sp-6) var(--sp-12);
   font-size:var(--fs-dense);color:var(--a-muted)}
 .ctxbanner .ctx-ev b{color:var(--a-ink);font-weight:600}
+/* 증거의 이전 값(재작성 F7) — 지금 값과 대비되게 죽인다(강조는 새 값 쪽). */
+.ev-before{color:var(--a-muted);text-decoration:line-through}
 /* 이름은 제목 자리에 산다(「저장」 분류 사망의 승계) — 입력이되 제목처럼 읽힌다. */
 .title-input{font:inherit;font-size:var(--fs-h1,var(--fs-strong));font-weight:700;
   border-color:transparent;background:transparent;padding:var(--sp-2) var(--sp-4);width:100%}

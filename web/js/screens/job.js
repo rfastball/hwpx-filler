@@ -603,10 +603,17 @@
     if (!rows.length && !ev.note && !ev.reason) { sec.style.display = "none"; return; }
     sec.style.display = "";
     $("previewEvidenceReason").textContent = ev.reason || "";
+    // before 는 **있을 때만** 그린다(F7 판정 H): 직전 판본이 없는 작업(첫 저장·구 버전)에
+    // 빈 값을 세우면 "이전엔 비어 있었다"는 거짓 증거가 된다. 값은 저장해 둔 문자열이 아니라
+    // **이전 규칙으로 같은 행을 다시 렌더**한 것이라, 두 값이 같은 행의 두 규칙이다.
+    const shown = (v) => (v ? esc(v) : "<em class='muted'>(빈 값)</em>");
     $("previewEvidenceRows").innerHTML = rows.map((row) =>
       `<div class="mir-row" data-field="${esc(row.name)}">` +
       `<span class="mir-name">${esc(row.name)}</span>` +
-      `<span class="mir-val">${row.value ? esc(row.value) : "<em class='muted'>(빈 값)</em>"}` +
+      `<span class="mir-val">` +
+      (Object.prototype.hasOwnProperty.call(row, "before")
+        ? `<span class="ev-before">${shown(row.before)}</span> → ` : "") +
+      shown(row.value) +
       (row.note ? `<span class="doc-sum">${esc(row.note)}</span>` : "") +
       `</span></div>`).join("");
     $("previewEvidenceNote").textContent = ev.note || "";
