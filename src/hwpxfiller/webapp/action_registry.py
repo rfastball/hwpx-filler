@@ -91,7 +91,8 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "undo_delete_job": _schema(),
         "clone_job": _schema("name"),
         "relink_template": _schema("name", "path confirm"),
-        "refresh": _schema(),
+        # `select` = 정체가 바뀌는 관리 동사(이름 변경)가 새 이름을 실어 선택을 승계하는 자리.
+        "refresh": _schema(optional="select"),
         "set_tags": _schema("name", "tags"),
         "delete_corrupt": _schema("path", "confirm"),
     },

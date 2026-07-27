@@ -364,9 +364,19 @@ class LibraryController:
         return res
 
     def _do_refresh(self, p: dict) -> None:
-        """레지스트리·영속 접힘 재조회 — 다른 화면에서 저장·삭제·접기 후 복귀 시 최신화."""
+        """레지스트리·영속 접힘 재조회 — 다른 화면에서 저장·삭제·접기 후 복귀 시 최신화.
+
+        ``select`` 는 **정체가 바뀌는 관리 동사**(이름 변경)가 새 이름을 실어 보내는 자리다.
+        안 실으면 선택이 옛 이름에 남아 상세가 닫히고, 사용자가 보던 문맥과 모달 복귀
+        지점이 함께 사라진다(리뷰 2R) — 이름이 바뀌었을 뿐 그 작업은 그대로 있는데.
+        존재하지 않는 이름은 조용히 무시한다(경합으로 그사이 사라졌을 수 있다 — 상세는
+        어차피 빈 상태로 정직하게 그려진다).
+        """
         self.vm.refresh()
         self._collapsed = set(load_job_collapsed_groups())
+        sel = str(p.get("select", "") or "")
+        if sel and any(r.name == sel for r in self.vm.rows()):
+            self.selected_work = sel
 
     # ------------------------------------------------------- 태그 편집(#26 #2·D14)
     def _do_set_tags(self, p: dict) -> None:

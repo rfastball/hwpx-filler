@@ -120,3 +120,44 @@ def test_move_dialog_targets_come_from_the_registry_wide_group_list() -> None:
     src = LIB[LIB.index("function allGroups"):LIB.index("async function renameJob")]
     assert "LAST.group_names" in src, "도착지 후보가 레지스트리 전역 목록이 아닙니다(P2)."
     assert "LAST.sections" not in src, "도착지 후보를 걸러진 구획에서 파생합니다(P2)."
+
+
+def test_txt_works_route_to_the_draft_surface_not_the_hwpx_picker() -> None:
+    """리뷰 2R — TXT 작업의 「열기」는 「기안」으로 간다(라이브러리 합류는 F6).
+
+    「문서 만들기」로 보내면 후보 판정(`compatibility_for`)이 hwpx 아닌 작업을 전부 배제해
+    `incompatible` 이 되고, 이어 여는 「확인 필요」 탭에서도 그 작업이 빠져 **빈 화면**에
+    착지한다 — 사용자는 자기가 고른 작업을 어디서도 못 본다. 가드 문안·stale 재진술은
+    「기안」이 소유한 단일 경로(`DraftScreen.openWork`)에 위임한다.
+    """
+    body = LIB[LIB.index("async function useInJob"):LIB.index("function editJob")]
+    assert 'work.media === "txt"' in body, "TXT 작업을 가르지 않습니다(2R)."
+    assert "DraftScreen.openWork" in body, "TXT 열기를 「기안」 단일 경로에 위임하지 않습니다."
+    txt_branch = body[body.index('work.media === "txt"'):body.index('prefer_work')]
+    assert "prefer_work" not in txt_branch
+    assert 'Nav.go("draft")' in txt_branch
+    # 취소면 화면을 바꾸지 않는다(§9.3 전이 순서 면).
+    assert "if (!(await window.DraftScreen.openWork(name))) return;" in txt_branch
+    # 라벨-행동 일치 — 목적지가 다르면 라벨도 다르다.
+    detail = LIB[LIB.index("function renderDetail"):LIB.index("async function useInJob")]
+    assert '"기안에서 열기"' in detail and '"문서 만들기에서 사용"' in detail
+    # 「기안」이 실제로 그 단일 경로를 내보내고, 취소/실패를 boolean 으로 말한다.
+    draft = (ROOT / "web" / "js" / "screens" / "draft.js").read_text(encoding="utf-8")
+    assert "openWork: selectJob" in draft
+    sel = draft[draft.index("async function selectJob"):draft.index("/* ---- ⋮ 메뉴")]
+    assert "return false" in sel and "return true" in sel
+
+
+def test_rename_carries_the_selection_to_the_new_name() -> None:
+    """리뷰 2R — 이름 변경 뒤 선택이 옛 이름에 남으면 상세가 닫힌다.
+
+    이름만 바뀌었을 뿐 그 작업은 그대로 있는데 사용자가 보던 문맥과 모달 복귀 지점이
+    함께 사라진다. 새 이름을 refresh 에 실어 **한 왕복**으로 승계한다(중간 프레임 깜빡임도 없음).
+    """
+    body = LIB[LIB.index("async function jobDispatch"):LIB.index("function findRow")
+               if "function findRow" in LIB else LIB.index("function selectedWork")]
+    assert 'refresh", select ? { select } : {}' in body, "refresh 가 새 이름을 싣지 않습니다(2R)."
+    rename = LIB[LIB.index("async function renameJob"):LIB.index("function moveJob")]
+    assert '"rename_job", { name, new: v }, next' in rename, (
+        "이름 변경이 새 이름을 refresh 로 넘기지 않습니다(2R)."
+    )

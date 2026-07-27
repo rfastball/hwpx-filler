@@ -277,7 +277,9 @@
       `</div>` +
       // 상시 행동은 상세 스크롤과 **분리해** pane 아래 고정한다(§19.6 마지막 문단).
       `<div class="lib-detail-acts">` +
-      `<button class="btn primary sm" data-use="${nm}">문서 만들기에서 사용</button>` +
+      `<button class="btn primary sm" data-use="${nm}">` +
+      // 라벨-행동 일치: TXT 작업의 목적지는 「기안」이다(F6 합류 전까지).
+      (d.media === "txt" ? "기안에서 열기" : "문서 만들기에서 사용") + `</button>` +
       `<button class="btn sm" data-edit="${nm}">작업 편집</button>` +
       `<span class="lib-detail-manage">` +
       `<button class="btn sm" data-rename="${nm}">이름 변경</button>` +
@@ -303,6 +305,21 @@
 
      겨눔이 실패하면(작업 소실·생성 중 등) await 가 throw 해 **화면을 바꾸지 않는다**. */
   async function useInJob(name) {
+    const work = selectedWork(name);
+    if (!work) return;
+    if (work.media === "txt") {
+      // TXT 작업은 아직 「기안」 화면이 소유한다(라이브러리 합류는 F6). 「문서 만들기」로
+      // 보내면 후보 판정(`compatibility_for`)이 hwpx 아닌 작업을 전부 배제해 「확인 필요」
+      // 탭에서도 안 보이는 **빈 화면**에 착지한다(리뷰 2R). 가드 문안·stale 재진술은
+      // 「기안」이 소유한 단일 경로에 위임하고, 취소면 화면을 바꾸지 않는다.
+      if (!window.DraftScreen) {
+        window.alert("기안 화면 구성 요소(DraftScreen)가 로드되지 않았습니다.");
+        return;
+      }
+      if (!(await window.DraftScreen.openWork(name))) return;
+      window.Nav.go("draft");
+      return;
+    }
     const r = await Bridge.call(JOB, "prefer_work", { name });
     window.Nav.go(JOB);
     if (r && r.reason === "incompatible" && window.JobScreen) {
@@ -326,9 +343,12 @@
   /* ---- 관리 동사 ---- */
   /* 세션 정체와 결속된 동사는 「작업」 컨트롤러가 소유한다(§10.8 판정 F) — 여기서 부르고
      이 화면 스냅샷은 뒤이은 refresh 로 맞춘다. 판정을 두 곳에 두지 않는다. */
-  async function jobDispatch(action, payload) {
+  async function jobDispatch(action, payload, select) {
     const r = await Bridge.call(JOB, action, payload);
-    await Bridge.call(SCREEN, "refresh", {});
+    // `select` = 정체가 바뀐 뒤의 새 이름(이름 변경). 안 실으면 선택이 옛 이름에 남아
+    // 상세가 닫히고 사용자가 보던 문맥이 사라진다 — 이름만 바뀌었을 뿐 그 작업은 그대로
+    // 있는데(리뷰 2R). 한 왕복으로 끝내 중간 프레임에 상세가 깜빡이지도 않는다.
+    await Bridge.call(SCREEN, "refresh", select ? { select } : {});
     return r;
   }
 
@@ -360,7 +380,8 @@
       value: name,
       returnFocus,
       validate: async (v) => {
-        const r = await jobDispatch("rename_job", { name, new: v });
+        const next = String(v || "").trim();
+        const r = await jobDispatch("rename_job", { name, new: v }, next);
         return r && r.ok === false ? (r.error || "이름을 바꾸지 못했습니다.") : "";
       },
     });

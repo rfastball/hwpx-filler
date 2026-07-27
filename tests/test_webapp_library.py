@@ -475,3 +475,45 @@ def test_detail_survives_being_filtered_out_of_the_list(tmp_path):
     assert "공고서" not in _rows(snap)
     assert snap["detail"]["name"] == "공고서"
     assert snap["detail"]["tags"] == {"금액구간": "1억미만"}   # 프리필 원천이 살아 있다
+
+
+def test_refresh_can_carry_the_selection_to_a_renamed_work(tmp_path):
+    """리뷰 2R — 이름이 바뀐 작업의 선택을 승계한다. 없는 이름은 조용히 무시."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_work", {"name": "공고서"})
+    ctrl._job_registry.rename("공고서", "공고서 v2")
+    # 승계 없이 새로고침하면 선택이 옛 이름에 남아 상세가 닫힌다(회귀의 증상).
+    ctrl.dispatch("refresh", {})
+    assert ctrl.snapshot()["detail"] is None
+
+    ctrl.dispatch("select_work", {"name": "공고서"})
+    ctrl.dispatch("refresh", {"select": "공고서 v2"})
+    snap = ctrl.snapshot()
+    assert snap["selected"] == "공고서 v2" and snap["detail"]["name"] == "공고서 v2"
+
+    # 경합으로 그사이 사라진 이름은 선택을 옮기지 않는다(유령을 겨누지 않는다).
+    ctrl.dispatch("refresh", {"select": "없는작업"})
+    assert ctrl.snapshot()["selected"] == "공고서 v2"
+
+
+def test_txt_work_is_never_available_to_the_hwpx_picker(tmp_path):
+    """리뷰 2R 의 전제 — TXT 작업은 「문서 만들기」 후보에서 배제된다.
+
+    그래서 라이브러리가 TXT 를 그쪽으로 보내면 `incompatible` 뒤 빈 「확인 필요」에 착지한다.
+    이 전제가 바뀌면(F6 합류) 이 테스트가 시끄럽게 알린다 — 그때 라우팅 분기를 걷는다.
+    """
+    from hwpxfiller.gui.work_candidates import rank_available
+
+    txt = tmp_path / "안내문.txt"
+    txt.write_text("제목 {{공고명}}", encoding="utf-8")
+    reg = _reg(tmp_path)
+    reg.save(Job(name="기안문", template_path=str(txt),
+                 mapping=MappingProfile(mappings=[
+                     FieldMapping(template_field="공고명", source="bidNtceNm")])))
+    ranked = [r.name for r in rank_available(reg.list_jobs(), ["bidNtceNm"])]
+    assert "기안문" not in ranked
+
+    # 라이브러리는 그 작업을 **보여준다**(방식 필터의 존재 이유) — 그래서 열기 경로가 갈려야 한다.
+    ctrl = LibraryController(reg, _text_reg(tmp_path), lambda s, snap: None,
+                          pool_registry=_pool(tmp_path))
+    assert _rows(ctrl.snapshot())["기안문"]["media"] == "txt"
