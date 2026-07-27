@@ -918,8 +918,11 @@ def test_job_range_draft_surface_contract():
     assert "selection_key" in key and ".selected" not in key, (
         "세션 지문이 표의 선택 표지에서 파생됩니다 — 초안이 결과를 강등시킵니다."
     )
-    # 축 왕복은 직렬화한다(리뷰 1R P2) — 동시 발신은 도착 순서를 보장하지 않는다.
-    assert 'Intent.chained("job:view_order"' in src, "표시순서 왕복이 직렬화되지 않았습니다."
+    # 축 왕복도 **같은 체인**을 탄다(리뷰 1R P2·3R P1) — 체인 키는 상태 단위이지 위젯 단위가
+    # 아니다. 축만 따로 세우면 취소가 먼저 초안을 지우고 늦은 축 변경이 커밋에 착지한다.
+    order_fn = src.split("async function onOrderChange", 1)[1].split("\n  }", 1)[0]
+    assert "Intent.chained(ZONE_CHAIN" in order_fn, "표시순서가 존 체인 밖에서 발신됩니다."
+    assert "job:view_order" not in src, "축 전용 체인 키가 남아 있습니다(두 줄 = 순서 미보장)."
     sheet = (WEB_JS_DIR / "surface_sheet.js").read_text(encoding="utf-8")
     assert "beforeClose" in sheet, "펼침 면이 이탈 가드를 Modal 로 넘기지 않습니다."
 

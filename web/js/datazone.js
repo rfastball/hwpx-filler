@@ -293,7 +293,11 @@
       const t = s.table || { columns: [], rows: [], visible_count: 0 };
       const f = s.filter || { active: false, columns: [] };
       $(ids.selCount).textContent =
-        `선택 ${s.selected_count}/${s.record_count}` +
+        // 표 머리 수치는 **이 표가 그리는 세계**의 것이다(리뷰 3R): 범위 초안이 열려 있으면
+        // 표·체크박스·적용 footer 가 전부 초안인데 여기만 커밋 수치면 화면이 자기와 어긋난다.
+        // 초안 개념이 없는 화면(기안)은 키가 없어 커밋 수치로 자연 강등된다.
+        `선택 ${s.zone_selected_count !== undefined ? s.zone_selected_count : s.selected_count}` +
+        `/${s.record_count}` +
         (f.active ? ` · 표시 ${t.visible_count}` : "");
       const si = $(ids.search);
       si.style.display = hasData ? "" : "none";

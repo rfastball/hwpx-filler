@@ -2657,3 +2657,56 @@ def test_failed_selection_is_refused_while_a_draft_is_open(tmp_path):
         ctrl.dispatch("select_failed", {})
     ctrl.dispatch("range_draft_cancel", {})
     assert ctrl.dispatch("select_failed", {}) == {"selected": 1}
+
+
+def test_zone_count_follows_the_draft_while_gate_input_stays_committed(tmp_path):
+    """리뷰 3R P2 — 표 머리 수치는 표가 그리는 세계의 것이고, 게이트 소재는 커밋이다."""
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl.dispatch("range_draft_open", {})
+    ctrl.dispatch("set_none", {})
+    snap = ctrl.snapshot()
+    assert snap["zone_selected_count"] == 0, "표 머리가 초안을 따르지 않습니다."
+    assert snap["selected_count"] == 3, "게이트 소재가 초안에 물들었습니다."
+    ctrl.dispatch("range_draft_cancel", {})
+    snap = ctrl.snapshot()
+    assert snap["zone_selected_count"] == snap["selected_count"] == 3
+
+
+# 초안이 열렸을 때 **초안을 따라 움직이는** 스냅샷 키의 정본 목록(지도 §10.11.3 판정 D 경계표).
+# 여기 없는 키가 초안 편집에 흔들리면 커밋 세계를 소비하는 판정 하나가 조용히 초안에
+# 물든 것이고, 여기 있는 키가 안 흔들리면 편집기가 자기 편집을 안 그리는 것이다.
+_DRAFT_FACING_SNAPSHOT_KEYS = {
+    "records",              # 표 행(선택 표지·실 파일 이름 미리보기)
+    "table",                # 표 페이로드(가시 행·필터 밖 스트립)
+    "filter",               # 필터 정의·칩(초안이 편집 중인 정의)
+    "restate",              # 선택 유래 재진술(존 소유)
+    "range_draft",          # 초안 자신(열림·dirty·수치·보기 상태)
+    "zone_selected_count",  # 표 머리 「선택 N/M」 — 표가 그리는 세계의 수치
+}
+
+
+def test_draft_touches_exactly_the_keys_the_boundary_table_names(tmp_path):
+    """판정 D 경계표의 **구조 가드** — 새 키가 어느 세계에 속하는지 여기서 선언되게 한다.
+
+    리뷰 1R·2R·3R 이 전부 이 경계의 누수였다(세션 지문·표 머리 수치·늦은 발신). 표를
+    문서로만 두면 다음 키가 또 조용히 커밋 세계를 물들인다 — 목록에 없는 키가 초안에
+    흔들리면 실패한다(``_SESSION_ATTRS`` 구조 가드 선례).
+    """
+    ctrl, _ = _draft_session(tmp_path)
+    before = ctrl.snapshot()
+    ctrl.dispatch("range_draft_open", {})
+    ctrl.dispatch("set_none", {})                      # 선택
+    ctrl.dispatch("toggle_record", {"index": 1, "value": True})
+    ctrl.dispatch("filter_search", {"text": "책상"})    # 필터
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})  # 축
+    after = ctrl.snapshot()
+    moved = {k for k in before if before[k] != after.get(k)}
+    assert moved == _DRAFT_FACING_SNAPSHOT_KEYS, (
+        "초안이 움직인 키가 경계표와 다릅니다 — 커밋 세계로 샜거나(추가) "
+        f"편집이 안 그려집니다(누락): 추가={sorted(moved - _DRAFT_FACING_SNAPSHOT_KEYS)}, "
+        f"누락={sorted(_DRAFT_FACING_SNAPSHOT_KEYS - moved)}"
+    )
+    # 취소하면 전부 제자리 — 초안은 아무것도 커밋에 남기지 않는다(불변식 §18.11-21).
+    ctrl.dispatch("range_draft_cancel", {})
+    restored = ctrl.snapshot()
+    assert {k for k in before if before[k] != restored.get(k)} == set()

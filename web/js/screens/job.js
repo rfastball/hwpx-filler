@@ -304,7 +304,11 @@
       // 별도 스레드라, 빠르게 두 번 고르면 **먼저 고른 값이 나중에 커밋**돼 생성 순서와
       // 순번 파일 이름이 마지막 선택과 반대로 정해질 수 있다. 표시만 지키는 `pendingOrder`
       // 로는 못 막는다(그건 화면의 값, 이건 쓰기의 순서). 기제는 intent.js 가 이미 소유한다.
-      await window.Intent.chained("job:view_order", () =>
+      //
+      // 체인 키는 **상태 단위**이지 위젯 단위가 아니다(리뷰 3R): 축을 따로 세웠더니 취소가
+      // 먼저 초안을 지우고 늦은 축 변경이 **커밋된 범위**에 착지했다 — 같은 `recordRange`
+      // 를 바꾸는 발신은 전부 한 줄에 선다.
+      await window.Intent.chained(ZONE_CHAIN, () =>
         Bridge.call(SCREEN, "set_view_order", { value }));
     } finally {
       // 내 왕복이 마지막일 때만 의도를 놓는다 — 뒤에 더 고른 값이 있으면 그 값이 소유자다.
