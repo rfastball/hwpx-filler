@@ -149,12 +149,16 @@
   /* ---- 패널 두 모드(결정 39·40) ---- */
   function syncModeDisplay(hasJob) {
     const edit = MODE === "edit";
-    if (edit || !hasJob) {
-      // 펼침 면의 실 DOM이 overlay 슬롯에 남은 채 편집 호스트를 여는 교차 모드 상태를 막는다.
+    // 거울 면은 **작업의 것**이라 작업이 없으면 설 자리가 없다. 데이터 면은 다르다:
+    // 데이터-우선(§18.2)에서 데이터 존은 작업 없이도 살고, 범위 편집기도 데이터만 있으면
+    // 연다 — `!hasJob` 으로 함께 닫으면 작업을 고르기 전엔 편집이 첫 왕복마다 취소돼
+    // 편집기 자체가 못 쓰는 것이 된다(리뷰 5R). 강제 닫기의 사유를 면별로 가른다.
+    if (edit || !hasJob) window.SurfaceSheet.closeAndRestore("jobConfirmSheet");
+    if (edit) {
+      // 실 DOM 이 overlay 슬롯에 남은 채 편집 호스트를 여는 교차 모드 상태를 막는다.
       // 이 닫기는 **양보하지 않는다** — 이탈 가드가 소비하면 그 교차 상태가 그대로 남는다.
-      // 대신 초안은 여기서 놓아 주고(백스톱이 발신) 가드에 통과권을 준다.
+      // 대신 초안은 놓아 주고(닫힘 백스톱이 취소를 발신) 가드에 통과권을 준다.
       rangeForceClose = true;
-      window.SurfaceSheet.closeAndRestore("jobConfirmSheet");
       window.SurfaceSheet.closeAndRestore("dataSheet");
       rangeForceClose = false;
     }
@@ -713,7 +717,20 @@
     const trigger = window.SurfaceSheet.trigger(e, $("jobDataExpand"));
     // 성사 뒤에만 연다(§9.3 4행): 초안 생성이 거절되면(생성 중·데이터 없음) 면을 띄우지
     // 않는다 — 열어 놓고 나서 실패를 말하면 편집기가 무엇을 편집 중인지 거짓이 된다.
-    Bridge.call(SCREEN, "range_draft_open", {}).then(() => {
+    //
+    // **열기도 존 체인에 선다**(리뷰 5R): 방금 친 편집이 큐에 있는데 열기가 먼저 도착하면,
+    // 그 편집은 옛 세대를 업고 와 stale 로 거절된다 — 사용자가 화면에서 본 변경이 커밋에도
+    // 초안에도 없이 사라진다(세대 기제가 스스로 연 창). 디바운스 예약분도 먼저 정산해
+    // **복제되는 범위가 사용자가 보고 있던 그것**이 되게 한다.
+    (async () => {
+      try {
+        await dz.flushPendingEdits();
+        await window.Intent.chained(ZONE_CHAIN, () =>
+          Bridge.call(SCREEN, "range_draft_open", {}));
+      } catch (err) {
+        log("범위 편집기를 열지 못했습니다: " + String((err && err.message) || err));
+        return;
+      }
       // 왕복 중 다른 탭으로 떠났거나 편집 모드로 넘어갔으면 **열지 않는다**(리뷰 2R P2):
       // 전역 면이라 새 화면 위에 남의 화면 DOM 을 얹고 뜬다. 초안은 여기서 거둔다 —
       // 안 그러면 아무 표면도 없는 초안이 남아 생성이 조용히 잠긴 채로 있는다.
@@ -747,9 +764,7 @@
           { id: "jobRangeFoot", slotId: "dataSheetSlot" },
         ],
       });
-    }).catch((err) => {
-      log("범위 편집기를 열지 못했습니다: " + String((err && err.message) || err));
-    });
+    })();
   }
 
   function mirrorRow(r, i) {

@@ -223,6 +223,7 @@
           column: panelCol, first: clause(1), second: clause(2),
           joiner: p.querySelector("[data-rjoin]").value,
         });
+        if (res && res.stale) return;       // 사라진 세계의 요청 — 무동작
         const err = p.querySelector("[data-rerr]");
         if (err) {
           err.style.display = res.ok ? "none" : "";
@@ -271,6 +272,9 @@
       // 질의는 체인 밖이다. 넣으면 응답이 늦는 질의 하나가 **이후 모든 변이**를 막는다 —
       // 순서 보장은 같은 상태를 바꾸는 발신들 사이에서만 뜻이 있다.
       if (!cfg.chainKey || query) return send();
+      // 응답이 `{stale:true}` 면 **내 세계가 이미 사라진 것**이다(리뷰 4R): 결과 필드를 읽는
+      // 호출부는 그것부터 확인해야 한다 — 안 그러면 없는 필드로 "undefined 행 추가" 같은
+      // 유령 문안을 만든다. 사라진 세계의 요청에 대한 정직한 응답은 **무동작**이다.
       // 대기 중 변이 통지(리뷰 4R) — 이탈 가드가 "아직 푸시가 안 온 편집"을 셀 수 있게 한다.
       if (cfg.onMutation) cfg.onMutation(1);
       const done = window.Intent.chained(cfg.chainKey, send);
@@ -530,6 +534,7 @@
       // 직전 필터 재적용(결정 28) — 정의만 복원(선택 불변), 탈락은 시끄럽게 고지(백스톱).
       $(ids.reapply).addEventListener("click", async () => {
         const res = await call("filter_reapply", {});
+        if (!res || res.stale) return;      // 사라진 세계의 요청 — 무동작(유령 문안 금지)
         if (!res.ok) { cfg.log("확인 필요: " + res.error); return; }
         cfg.log(`직전 필터를 재적용했습니다 (조건 열: ${res.installed.join(", ") || "검색만"}).`);
         if (res.dropped.length) {
@@ -553,6 +558,7 @@
       $(ids.colPanel).addEventListener("click", onPanelClick);
       $(ids.selAll).addEventListener("click", async () => {
         const r = await call("set_all", {});
+        if (r && r.stale) return;           // 사라진 세계의 요청 — 무동작
         // 전멸 필터에서의 무동작은 정직하게 알린다(confirm-or-alarm, 리뷰 #9).
         if (r && r.added === 0) {
           cfg.log("전체 선택: 추가할 행이 없습니다.");

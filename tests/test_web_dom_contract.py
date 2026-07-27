@@ -960,6 +960,21 @@ def test_job_range_draft_surface_contract():
     assert "SurfaceSheet.open" in src.split("range_draft_open", 1)[1], (
         "초안 생성 **뒤에** 면을 여는 순서가 아닙니다(성사 뒤에만 닫고 연다)."
     )
+    # 열기도 **존 체인**에 선다(리뷰 5R): 방금 친 편집이 큐에 있는데 열기가 먼저 도착하면
+    # 그 편집이 옛 세대로 거절돼 사용자가 본 변경이 커밋에도 초안에도 없이 사라진다.
+    open_fn2 = src.split("function openJobDataSheet", 1)[1].split("\n  }", 1)[0]
+    assert "flushPendingEdits" in open_fn2 and "Intent.chained(ZONE_CHAIN" in open_fn2, (
+        "열기가 대기 중 편집을 추월합니다(정산·직렬화 없음)."
+    )
+    # 데이터-우선(§18.2): 데이터 면의 강제 닫기는 **편집 모드**에서만 — 작업 미선택 렌더마다
+    # 닫으면 작업을 고르기 전엔 범위 편집기가 첫 왕복마다 취소돼 쓸 수 없다(리뷰 5R).
+    mode_fn = src.split("function syncModeDisplay", 1)[1].split("\n  }", 1)[0]
+    assert 'if (edit) {' in mode_fn and 'closeAndRestore("dataSheet")' in mode_fn, (
+        "데이터 면 강제 닫기가 편집 모드 조건이 아닙니다."
+    )
+    assert '!hasJob) window.SurfaceSheet.closeAndRestore("jobConfirmSheet")' in mode_fn, (
+        "거울 면은 작업이 없으면 닫혀야 합니다(작업의 것이라 설 자리가 없다)."
+    )
     assert 'Bridge.call(SCREEN, "range_draft_cancel"' in src, "닫힘 경로가 초안을 버리지 않습니다."
     # 취소도 **성사 뒤에 닫는다**(리뷰 1R): 먼저 닫으면 느린 브리지에서 메인이 초안 기준
     # 행을 그리고, 발신이 거절되면 Python 초안만 고아로 남는다.
