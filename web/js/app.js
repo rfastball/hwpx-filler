@@ -56,6 +56,24 @@
      읽는다(다른 화면에서 접은 상태가 stale 로 남지 않게). */
   const REFRESH_ON_NAV = ["library", "tpl", "job", "draft"];
 
+  /* 화면 스냅샷 재당김의 **단일 정의**(8R 근본 조치) — 전환이 자동으로 쏘는 발신과, 그
+     화면을 **노출하기 전에** 완료를 기다려야 하는 호출자(편집기 이탈)가 같은 절차를 쓴다.
+     두 벌이 되면 한쪽만 고쳐지고 그 경로만 옛 규칙을 든 화면을 내보인다 — 실제로 F7 은
+     복귀처마다 따로 봉합하다 같은 결함을 네 라운드에 걸쳐 재발시켰다.
+     새로고칠 백엔드가 없으면(브라우저 단독 미리보기·부팅 직전) 무동작 이행 약속을 준다. */
+  function refresh(id) {
+    if (!routingReady || !REFRESH_ON_NAV.includes(id)
+        || !window.pywebview || !window.Bridge) {
+      return Promise.resolve(null);
+    }
+    // refresh 가 사후 고지(notice)를 돌려주면 alert 로 시끄럽게 알린다 — 결속 기안이 다른
+    // 화면에서 삭제돼 진행 세션이 닫힌 경우(draft 121). notice 없는 화면엔 무해(무반응).
+    return Bridge.call(id, "refresh", {}).then((r) => {
+      if (r && r.notice) window.alert(r.notice);
+      return r;
+    });
+  }
+
   /* 화면 전환 — 탭 클릭과 라이브러리 상세의 프로그램적 이동이 공유하는 단일 경로.
 
      편집기(재작성 F7)는 **몰입 표면**이라 두 가지가 다르다: ①상단 2탭을 덮는다(셸 표지를
@@ -80,14 +98,11 @@
     scrs.forEach((s) => s.classList.toggle("on", s.id === "scr-" + id));
     document.body.classList.toggle("editor-open", id === "editor");
     if (!routingReady) return;  // pywebviewready 전에는 DOM 기본 랜딩만 정하고 브리지 호출은 미룬다.
-    // pywebview 미준비(브라우저 단독 미리보기·부팅 직전)면 새로고칠 백엔드 자체가 없다.
-    if (REFRESH_ON_NAV.includes(id) && window.pywebview && window.Bridge) {
-      // 실패는 조용히 삼키지 않는다(confirm-or-alarm) — 화면은 이미 전환됐고 스냅샷만 낡음.
-      // refresh 가 사후 고지(notice)를 돌려주면 alert 로 시끄럽게 알린다 — 결속 기안이 다른
-      // 화면에서 삭제돼 진행 세션이 닫힌 경우(draft 121). notice 없는 화면엔 무해(무반응).
-      Bridge.call(id, "refresh", {})
-        .then((r) => { if (r && r.notice) window.alert(r.notice); })
-        .catch((err) => window.alert(String((err && err.message) || err)));
+    // 실패는 조용히 삼키지 않는다(confirm-or-alarm) — 화면은 이미 전환됐고 스냅샷만 낡음.
+    // `refreshed` 는 호출자가 **전환 전에** 이미 기다린 경우다(편집기 이탈 — 8R P1): 다시
+    // 쏘면 왕복이 두 벌이 되고, 늦게 도착한 두 번째가 방금 복원한 면을 흔든다.
+    if (!(opts && opts.refreshed)) {
+      refresh(id).catch((err) => window.alert(String((err && err.message) || err)));
     }
     // 「문서 만들기」 복귀 시 편집 호스트의 에디터도 재렌더(#138 리뷰 F12) — job refresh 는
     // 세션 스냅샷만 갱신하고 편집 모드 1단계 피커는 놔둬, 관리 화면에서 바뀐 공유 그룹
@@ -109,7 +124,7 @@
   navs.forEach((b) => b.addEventListener("click", () => go(b.dataset.scr)));
   // 화면 간 프로그램적 이동의 단일 경로 — 라이브러리 상세의 「문서 만들기에서 사용」 등이
   // 대상 화면을 자체 dispatch 로 먼저 겨눈 뒤 여기로 전환한다(library.js 가 소비).
-  window.Nav = { go };
+  window.Nav = { go, refresh };
   go(DEFAULT_SCREEN);  // 브리지 준비 전에는 DOM·탭 기본 상태만 확정한다.
 
   // 글자 크기 라벨 — 셸 전역 개인화 표지. 레일 접기(#18/9B2AB35D-A)는 상단 토바 교체와 함께

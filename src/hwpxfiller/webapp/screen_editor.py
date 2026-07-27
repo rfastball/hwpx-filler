@@ -303,6 +303,42 @@ class EditorController:
     def dirty_sections(self) -> "tuple[str, ...]":
         return self.session.dirty(self._draft_job(), pending_binding=self._pending_binding())
 
+    # ------------------------------------ section 밖 세션 상태의 열거(8R 근본 조치)
+    #
+    # 어느 section 에도 속하지 않으면서 **저장되면 durable 로 가는** 세션 값의 전체 목록
+    # (§10.13 판정 L). 이 튜플에 이름이 없으면 어떤 판정도 그 값을 세지 못한다 — 이탈
+    # 가드·머리의 「저장됨」 표지·되돌리기 범위·되돌린 뒤의 정체 판정이 전부 여기서 파생된다.
+    #
+    # **왜 상수로 세우는가**: F7 리뷰는 같은 결함을 라운드마다 한 값씩 재발견했다(2R 이름 →
+    # 3R 자동등록 이름 → 5R 데이터 선택 → 8R 전체 버리기의 과보존). 원인은 판정이 틀렸던
+    # 것이 아니라 **열거가 판정마다 손으로 다시 쓰여 있던 것**이다. 새 세션 값을 더하는
+    # 사람은 여기 한 줄만 고치면 네 판정이 함께 따라온다.
+    #
+    # ``data_sheet`` 가 함께 있는 이유(열거를 세우자 드러난 자리): 같은 엑셀의 **다른 시트**로
+    # 갈아타면 경로·자동등록 이름은 그대로다 — 시트는 자동등록 참조에 함께 저장되는 durable
+    # 값이라(#33) 빠지면 그 갈아타기만 「저장됨」으로 위장한다.
+    SESSION_EXTRAS = ("job_name", "data_path", "data_sheet", "dataset_name")
+
+    def _extras_now(self) -> "dict[str, str]":
+        return {k: getattr(self, k) for k in self.SESSION_EXTRAS}
+
+    def _extras_of(self, base: "Job") -> "dict[str, str]":
+        """저장본이 함의하는 extras — 이름은 저장본의 것이고 **데이터 선택은 없음**이다.
+
+        :meth:`load_job` 은 데이터를 싣지 않는다(``keep_data`` 없는 ``_restore_from``): 편집
+        세션의 데이터 선택은 언제나 사람이 이 세션에서 고른 것이고, 저장이 그것을 등록해
+        기본 데이터셋으로 만든다 — 그래서 「저장본과 다르다」의 올바른 기준값이 빈 문자열이다.
+        """
+        return {"job_name": base.name, "data_path": "", "data_sheet": "", "dataset_name": ""}
+
+    def dirty_extras(self) -> "tuple[str, ...]":
+        """저장본 대비 달라진 extras 이름들 — 초안은 비교 대상이 없어 빈 튜플이다."""
+        base = self.session.base
+        if base is None:
+            return ()
+        now, was = self._extras_now(), self._extras_of(base)
+        return tuple(k for k in self.SESSION_EXTRAS if now[k] != was[k])
+
     # --------------------------------------------------- 활성 헤더(#49)
     def _active_sources(self) -> "list[str]":
         """미사용을 뺀 활성 헤더(원 순서 보존) — 자동 제안·소스 드롭다운 후보의 단일 출처."""
@@ -601,12 +637,20 @@ class EditorController:
     def has_unsaved_work(self) -> bool:
         """버려질 **미저장** 변경이 있는가 — 폐기 전 확인·T2 고지 판단에 쓴다(#25).
 
-        ``_reset()`` 직후엔 False. **클린 세션**(편집 복원 직후·저장 착지 직후 —
-        ``_session_clean``)도 False: 내용이 디스크 저장본과 동일해 버릴 것이 없다(리뷰 —
-        미변경 편집 세션의 전환마다 헛확인이 떴었다). 그 외엔 이름·데이터·매핑 모델 중
-        하나라도 있으면 사용자가 손댄 세션이므로 True — 템플릿만 갓 로드한 상태(모델 전)는
-        아직 버릴 게 없어 False(불필요한 프롬프트 억제).
+        **저장된 작업 편집은 세어서 답한다**(8R 근본 조치): 잃을 것은 section patch
+        (:meth:`dirty_sections`) 와 section 밖 세션 상태(:meth:`dirty_extras`) 의 합집합이고,
+        둘 다 저장본과의 비교로 **파생**된다. 종전엔 손으로 켜고 끄는 표지(``_session_clean``)
+        가 이 답을 대신했는데, 변이 자리와 되돌리기 자리가 늘 때마다 한 곳이 빠졌다 — 빠짐은
+        「저장됨」이라는 거짓말(미저장 입력을 저장됨으로 표시)이나 되돌린 뒤의 헛확인으로
+        나타났고, 라운드마다 그 두 얼굴 중 하나가 다시 잡혔다. 파생은 빠질 자리가 없다:
+        되돌리면 비교가 같아져 저절로 깨끗해지고, 손대면 저절로 더러워진다.
+
+        초안(base 없음)은 비교 대상이 없어 종전 판정을 그대로 쓴다 — ``_reset()`` 직후엔
+        False, 클린 표지가 서 있으면 False, 그 외엔 이름·데이터·매핑 모델 중 하나라도 있으면
+        사용자가 손댄 세션이므로 True(템플릿만 갓 로드한 상태는 아직 버릴 게 없어 False).
         """
+        if self.session.base is not None:
+            return bool(self.dirty_sections()) or bool(self.dirty_extras())
         if self._session_clean:
             return False
         return bool(self.job_name or self.data_path or self.model is not None)
@@ -797,8 +841,11 @@ class EditorController:
         읽으면 편집 중 밖에서 일어난 변경을 사용자가 요청하지도 않은 채 조용히 채택하게
         되고, 그 변경은 저장 시점의 외부 변경 확인이 잡을 기회도 잃는다.
 
-        ``keep_data`` 는 「버리기」 전용이다 — 데이터 선택은 patch 가 아니라 세션 문맥이라
-        (§10.13 판정 L) 규칙을 되돌린다고 사람이 고른 엑셀까지 내려놓지 않는다.
+        ``keep_data`` 는 **탭 단위 버리기** 전용이다(8R P2 로 좁혀졌다) — 「필드 연결에서 바꾼
+        것만 되돌린다」고 말한 되돌리기가 사람이 고른 엑셀까지 내려놓으면 문안보다 넓은 파기다
+        (데이터 선택은 patch 가 아니라 세션 문맥 — §10.13 판정 L). 반대로 **세션 전체** 버리기는
+        데이터도 내려놓는다: 「저장된 상태로 되돌린다」가 문안이고, 남기면 버린 뒤에도 세션이
+        미저장으로 남아 같은 파기를 다시 묻는다.
         """
         if not Path(job.template_path).exists():
             raise ValueError(
@@ -987,21 +1034,35 @@ class EditorController:
     def _do_discard_patch(self, p: dict) -> None:
         """「변경 버리기」 — 진입 시점 스냅샷(baseSnapshot)으로 규칙만 되돌린다(§5.2).
 
-        디스크가 아니라 스냅샷으로 되돌리는 이유와 데이터를 유지하는 이유는
-        :meth:`_restore_from` 의 docstring 에 있다. 초안은 되돌릴 base 가 없으므로 거절한다 —
-        초안 전체를 버리는 것은 세션 폐기(``discard_session``)라는 다른 사건이고, 두 사건을
-        한 버튼이 겸하면 "변경만 버리려던" 사람이 초안째 잃는다.
+        디스크가 아니라 스냅샷으로 되돌리는 이유는 :meth:`_restore_from` 의 docstring 에 있다.
+        초안은 되돌릴 base 가 없으므로 거절한다 — 초안 전체를 버리는 것은 세션 폐기
+        (``discard_session``)라는 다른 사건이고, 두 사건을 한 버튼이 겸하면 "변경만 버리려던"
+        사람이 초안째 잃는다.
+
+        **범위는 확인 문안과 같아야 한다**(8R 근본 조치 — 이 함수의 두 갈래가 각각 한 번씩
+        어긴 자리다). 되돌리는 범위가 문안보다 넓으면 승인받지 않은 파기고, 좁으면 버렸다고
+        말한 것이 남아 다음 전환에서 다시 묻는다. 그래서 두 갈래를 대칭으로 세운다:
+        ``section`` 있음 = 그 탭만(extras 는 **보존**), 없음 = 세션 전체(extras 도 **함께**).
         """
         if self.session.is_draft or self.session.base is None:
             raise ValueError("아직 저장하지 않은 새 작업이라 되돌릴 이전 상태가 없습니다.")
         base = self.session.base
         section = str(p.get("section") or "")
         if not section:  # footer 「변경 버리기」·이탈의 「버리고 나가기」 = 세션 전체를 되돌린다
+            # **데이터 선택도 함께 내려놓는다**(8R P2): 문안이 「저장된 상태로 되돌린다」고
+            # 말했는데 고른 엑셀·자동등록 이름을 남기면, 버리기를 마친 세션이 여전히 미저장
+            # 이라 다음 작업을 열 때 방금 버린 것을 또 묻고(같은 파기를 두 번 승인시킨다),
+            # 편집기로 돌아가면 버렸다던 데이터 선택이 그대로 서 있다.
+            had_data = bool(self.data_path)
             self._restore_from(
                 base, landing_section=self.section, context=self.session.context,
-                emit_push=False, keep_data=True,
+                emit_push=False,
             )
-            self._set_notice("바꾼 내용을 버리고 저장된 상태로 되돌렸습니다.", "ok")
+            self._set_notice(
+                "바꾼 내용을 버리고 저장된 상태로 되돌렸습니다."
+                + ("\n고른 데이터도 함께 내려놨습니다." if had_data else ""),
+                "ok",
+            )
             return
         if section not in self.sections():
             raise ValueError(f"이 작업에는 '{section}' 탭이 없습니다.")
@@ -1024,13 +1085,10 @@ class EditorController:
         self._set_notice(
             f"「{self.SECTION_LABELS.get(section, section)}」 에서 바꾼 것만 되돌렸습니다.", "ok"
         )
-        # 남은 것이 **정말** 없을 때만 클린으로 돌아간다 — 되돌리기 뒤에도 표지가 켜져
-        # 있으면 이탈이 잃을 것 없는 확인을 묻고(과경고), 반대로 성급히 끄면 남아 있는
-        # 편집이 「저장됨」으로 위장한다. section 밖에 사는 것을 **빠짐없이** 센다(5R P2 —
-        # 2R 이 이 줄을 세울 때 이름만 봤고, 데이터 선택은 저장 시 등록·기본 데이터 연결로
-        # 이어지는 미저장 세션 상태라 같은 자리에 든다).
-        if not self.dirty_sections() and self.job_name == base.name and not self.data_path:
-            self._session_clean = True
+        # 되돌린 뒤의 정체는 **여기서 다시 세지 않는다**(8R 근본 조치). 저장본이 있는 세션의
+        # `has_unsaved_work` 는 section patch + extras 비교로 파생되므로, 이 자리에서 손으로
+        # 열거를 되풀이하던 줄은 그 자체가 라운드의 재료였다(2R 이 이름만 보고 세웠고 5R 이
+        # 데이터를 더했다 — 셋째 값이 생기면 또 빠졌을 자리다).
 
     def _revert_binding(self, base: "Job") -> None:
         """연결 patch 만 되돌린다 — 데이터·이름·파일 이름 규칙은 그대로 둔다.

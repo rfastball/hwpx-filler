@@ -238,11 +238,18 @@ def test_appjs_nav_autorefresh_whitelist_matches_backend():
     # 선택 다이얼로그가 **열 때** 지불한다(안 여는 세션이 풀 I/O 를 물지 않는다).
     assert listed == {"library", "tpl", "job", "draft"}
 
-    # go() 안에서 화이트리스트 판정 후 refresh dispatch + 실패 표면화(.catch).
+    # 재당김의 **단일 정의**(8R 근본 조치) — 화이트리스트 판정 + refresh dispatch 가 한 자리에
+    # 살고, 전환은 그것을 소비하며 실패를 표면화한다(.catch). 정의가 둘이면 한쪽만 고쳐진다.
+    defn = _segment(src, "function refresh(id)", "function go(id, opts)")
+    assert "REFRESH_ON_NAV.includes(id)" in defn
+    assert re.search(r'Bridge\.call\(id,\s*"refresh"', defn), "재당김 refresh dispatch 부재(C6)."
     seg = _segment(src, "function go(id, opts)", "window.Nav")
-    assert "REFRESH_ON_NAV.includes(id)" in seg
-    assert re.search(r'Bridge\.call\(id,\s*"refresh"', seg), "전환 자동 refresh dispatch 부재(C6)."
-    assert ".catch" in seg, "전환 자동 refresh 실패가 조용히 삼켜집니다(C6·confirm-or-alarm)."
+    assert re.search(r"refresh\(id\)\.catch", seg), (
+        "전환 자동 refresh 실패가 조용히 삼켜집니다(C6·confirm-or-alarm)."
+    )
+    assert not re.search(r'Bridge\.call\(id,\s*"refresh"', seg), (
+        "전환이 재당김을 자체 조립합니다 — 정의가 두 벌이면 한 경로만 고쳐집니다(8R)."
+    )
 
     # 백엔드 상호 검증 — 화이트리스트 화면명 == 컨트롤러 name, 전부 _do_refresh 보유.
     ctrls = {c.name: c for c in (

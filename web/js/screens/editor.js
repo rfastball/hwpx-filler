@@ -744,9 +744,11 @@
             "새 작업 만들기를 취소하면 입력한 이름 · 데이터 · 매핑이 사라집니다.\n\n계속할까요?",
             el))) break;
           await sendEdit("discard_session", {});
-          // 확인·폐기를 마쳤으니 이탈 가드를 다시 태우지 않는다(force) — 같은 폐기를 두 번
-          // 묻는 것은 소음이고, 두 번째 확인에서 취소하면 이미 비운 세션에 남게 된다.
-          window.Nav.go(returnScreen(), { force: true });
+          // 확인·폐기를 마쳤으니 이탈 가드를 다시 태우지 않는다(force — `landOn` 이 건다) —
+          // 같은 폐기를 두 번 묻는 것은 소음이고, 두 번째 확인에서 취소하면 이미 비운
+          // 세션에 남게 된다. 착지는 이탈과 **같은 절차**를 쓴다: 편집기를 나가는 길이
+          // 둘이면 그중 하나만 재적재를 기다리는 비대칭이 다시 생긴다.
+          await landOn(returnScreen());
           break;
         }
         case "back": await gotoSection(neighbour(-1)); break;
@@ -888,22 +890,30 @@
     const ret = ((LAST && LAST.context) || {}).return_context || {};
     if (ret.surface === "preview" && ret.reopen_drawer
         && window.JobScreen && window.JobScreen.openPreview) {
-      // **규칙을 다시 읽은 뒤에 연다**(5R P1). `Nav.go` 의 자동 refresh 는 기다려지지 않는
-      // 발신이라, 순서를 두지 않으면 ①드로어가 옛 규칙의 상을 그리거나 ②뒤늦게 도착한
-      // refresh 가 방금 연 면을 닫는다(규칙이 갈렸으면 재적재가 면을 닫는 것이 옳다 —
-      // 그 옳은 동작이 순서 때문에 사용자에겐 「열리자마자 사라짐」이 된다).
-      // 이 왕복을 기다리면 뒤이은 자동 refresh 는 지문이 같아 무동작이 된다.
-      try {
-        await Bridge.call("job", "refresh", {});
-      } catch (err) {
-        // 재적재 실패는 그 화면이 자기 채널로 말한다 — 여기서 삼키지 않고 면도 열지 않는다
-        // (옛 규칙의 상을 「돌아왔다」며 보여 주는 것이 조용한 거짓이다).
-        window.alert("작업을 다시 읽지 못해 미리보기를 열지 않았습니다: "
-          + String((err && err.message) || err));
-        return;
-      }
+      // 규칙 재적재는 `landOn` 이 **전환 전에** 이미 끝냈다(8R 근본 조치) — 여기서 다시
+      // 기다리면 순서 규율이 미리보기 복귀에만 사는 두 벌째가 되고, 그것이 5R→8R 사이에
+      // 데이터·결과 복귀를 무방비로 남긴 자리다.
       await window.JobScreen.openPreview();
     }
+  }
+
+  /* 편집기에서 나가는 **착지 절차**(8R P1) — 목적 화면을 노출하기 **전에** 그 화면이
+     디스크를 다시 읽게 한다. `Nav.go` 의 자동 refresh 는 기다려지지 않는 발신이라, 전환만
+     하면 사용자는 **편집 전 규칙**을 든 화면을 손에 쥔다: 그 창에서 「만들기」를 누르면
+     방금 고친 매핑이 반영되지 않은 문서가 나오고, 실행 증거는 그것을 최신이라 말한다.
+     복귀처별로 봉합하지 않고 이 한 자리에 두는 이유가 곧 F7 리뷰가 반복된 원인이다.
+     재적재가 실패하면 **나가지 않는다** — 옛 규칙을 든 화면에 실행구를 열어 주는 것이
+     조용한 거짓이고, 편집기에 머무르는 쪽은 시끄럽고 되돌릴 수 있다. */
+  async function landOn(target) {
+    try {
+      await window.Nav.refresh(target);
+    } catch (err) {
+      window.alert("돌아갈 화면을 다시 읽지 못해 편집기에 머무릅니다: "
+        + String((err && err.message) || err));
+      return false;
+    }
+    window.Nav.go(target, { force: true, refreshed: true });
+    return true;
   }
 
   /* 편집기를 나가는 **단일 출구**(§10.13 판정 N) — back·문맥 복귀·다른 화면의 프로그램적
@@ -953,7 +963,7 @@
     } else if (s.is_draft) {
       await sendEdit("new_session", {});   // 확인을 마쳤으면 실제로 폐기한다
     }
-    window.Nav.go(target, { force: true });
+    if (!(await landOn(target))) return;
     if (target === returnScreen()) await restoreReturnState();
   }
 

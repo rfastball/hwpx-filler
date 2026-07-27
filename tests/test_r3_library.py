@@ -118,16 +118,26 @@ def test_nav_refresh_covers_library_and_surfaces_rejection():
     library 가 REFRESH_ON_NAV 에서 빠지면 수동 버튼 없는 이 화면은 스냅샷이 고착되고,
     .catch 가 빠지면 갱신 실패가 조용히 삼켜진다 — 둘 다 시끄럽게 잡는다. 이 화면의
     refresh 는 레지스트리와 **영속 그룹 접힘**을 함께 다시 읽는다(다른 화면에서 접은 상태).
+
+    8R 근본 조치로 재당김이 `Nav.refresh` 한 정의로 모였다 — 분기 위치가 아니라 ①목록에
+    library 가 있는가 ②그 정의가 refresh 액션을 쏘는가 ③전환의 발신이 rejection 을 표면화
+    하는가를 본다(구현 형태를 못 박으면 다음 정리가 무고하게 붉어진다).
     """
     src = APP_JS.read_text(encoding="utf-8")
     m = re.search(r"const REFRESH_ON_NAV = \[[^\]]*\]", src)
     assert m and '"library"' in m.group(0), (
         "app.js REFRESH_ON_NAV 에 library 가 없습니다 — 수동 버튼 제거(F6) 전제가 무너집니다."
     )
-    block = re.search(r"if \(REFRESH_ON_NAV\.includes\(id\)[\s\S]*?\n  \}", src)
-    assert block, "전환 자동 새로고침 분기가 없습니다(REFRESH_ON_NAV 소비처 소실)."
-    wiring = block.group(0)
+    definition = re.search(r"function refresh\(id\) \{[\s\S]*?\n  \}", src)
+    assert definition, "재당김 단일 정의(Nav.refresh)가 없습니다(REFRESH_ON_NAV 소비처 소실)."
+    wiring = definition.group(0)
+    assert "REFRESH_ON_NAV.includes(id)" in wiring, (
+        "재당김 정의가 REFRESH_ON_NAV 화이트리스트를 보지 않습니다 — 미지 액션 무차별 dispatch."
+    )
     assert '"refresh"' in wiring, "자동 새로고침이 refresh 액션을 호출하지 않습니다."
-    assert ".catch" in wiring and "window.alert" in wiring, (
-        "자동 새로고침 Bridge.call 이 fire-and-forget 입니다 — 실패가 조용히 삼켜집니다(N1)."
+    assert re.search(r"refresh\(id\)\.catch\([\s\S]*?window\.alert", src), (
+        "전환의 자동 새로고침이 fire-and-forget 입니다 — 실패가 조용히 삼켜집니다(N1)."
+    )
+    assert re.search(r"window\.Nav = \{[^}]*\brefresh\b", src), (
+        "Nav.refresh 가 노출되지 않았습니다 — 이탈 착지가 전환 전에 기다릴 수 없습니다(8R P1)."
     )

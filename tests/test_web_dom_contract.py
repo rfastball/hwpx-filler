@@ -1360,12 +1360,21 @@ def test_native_close_and_editor_escape_affordances_are_wired():
     assert "window.Intent.chained(EDIT_CHAIN" in editor_js, (
         "편집기 입력 변이가 체인에 서지 않습니다 — 도착 순서가 보장되지 않습니다."
     )
-    # 복귀는 **규칙을 다시 읽은 뒤** 드로어를 연다(5R P1) — 순서를 두지 않으면 옛 규칙의
-    # 상을 그리거나, 뒤늦은 refresh 가 방금 연 면을 닫는다.
-    restore = editor_js[editor_js.index("async function restoreReturnState("):]
-    restore = restore[:restore.index("\n  }") + 4]
-    assert restore.index('Bridge.call("job", "refresh"') < restore.index("openPreview()"), (
-        "미리보기 복귀가 작업 재적재를 기다리지 않습니다 — 옛 규칙의 상을 열거나 곧 닫힙니다."
+    # 복귀는 **규칙을 다시 읽은 뒤** 목적 화면을 노출한다(8R P1 근본 조치). 5R 은 이 순서를
+    # 미리보기 복귀에만 세웠고, 그래서 데이터·결과 복귀는 옛 규칙을 든 화면을 내보인 채
+    # 「만들기」를 열어 뒀다 — 순서는 **모든** 복귀가 지나는 착지 절차 한 자리에 산다.
+    land = editor_js[editor_js.index("async function landOn("):]
+    land = land[:land.index("\n  }") + 4]
+    assert land.index("await window.Nav.refresh(") < land.index("window.Nav.go("), (
+        "착지가 재적재를 기다리지 않고 화면을 노출합니다 — 편집 전 규칙으로 실행됩니다(8R P1)."
+    )
+    assert "refreshed: true" in land, (
+        "착지가 전환에 기(既)대기를 알리지 않습니다 — 왕복이 두 벌이 되고 늦은 쪽이 면을 흔듭니다."
+    )
+    # 편집기를 나가는 길은 **모두** 그 절차를 지난다 — Nav.go 직행이 하나라도 남으면
+    # 그 경로만 재적재를 건너뛰는 비대칭이 다시 생긴다(F7 이 네 라운드에 걸쳐 겪은 자리).
+    assert editor_js.count("window.Nav.go(") == 1, (
+        "편집기에 Nav.go 직행 경로가 남았습니다 — 착지 절차(landOn) 하나만 전환해야 합니다."
     )
     for guard in ("async function leaveTo(", "async function gotoSection("):
         body = editor_js[editor_js.index(guard):]

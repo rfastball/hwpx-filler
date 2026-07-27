@@ -1209,6 +1209,98 @@ def test_discarding_a_binding_patch_keeps_the_loaded_data(tmp_path):
     assert ctrl.data_path and len(ctrl.records) == before_rows     # 데이터는 그대로
 
 
+def test_a_whole_session_discard_drops_the_data_it_said_it_dropped(tmp_path):
+    """세션 전체 버리기는 **문안이 말한 범위**를 버린다 — 고른 데이터까지(8R P2).
+
+    탭 단위 버리기와 대칭을 이루는 반대쪽이다: 그쪽은 「이 탭에서 바꾼 것만」이라 말하므로
+    데이터를 남기고, 이쪽은 「저장된 상태로 되돌린다」고 말하므로 데이터도 내려놓는다.
+    남기면 버리기를 마친 세션이 여전히 미저장이라 다음 작업을 열 때 방금 버린 것을 또 묻고,
+    편집기로 돌아가면 버렸다던 데이터 선택이 그대로 서 있다.
+    """
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "전체버리기")
+    ctrl.dispatch("save", {})
+    ctrl.load_job("전체버리기")
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("set_name", {"name": "새 이름"})
+    ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": False})
+    assert ctrl.has_unsaved_work() is True
+    ctrl.dispatch("discard_patch", {})                       # section 없음 = 세션 전체
+    assert ctrl.dirty_sections() == () and ctrl.dirty_extras() == ()
+    assert ctrl.job_name == "전체버리기"                      # 이름도 저장본으로
+    assert not ctrl.data_path and not ctrl.dataset_name and not ctrl.records
+    # 버린 뒤에는 잃을 것이 없다 — 다음 전환·새 작업이 같은 파기를 두 번 묻지 않는다.
+    assert ctrl.has_unsaved_work() is False
+    assert "함께 내려놨습니다" in ctrl.notice_text            # 무엇이 사라졌는지 재진술
+
+
+def test_every_session_extra_counts_as_unsaved_work(tmp_path):
+    """section 밖 세션 상태의 **열거를 순회해** 판정을 센다(8R 근본 조치).
+
+    F7 리뷰는 같은 결함을 라운드마다 한 값씩 재발견했다(2R 이름 → 3R 자동등록 이름 →
+    5R 데이터 선택). 판정이 틀렸던 것이 아니라 열거가 판정마다 손으로 다시 쓰여 있었다 —
+    이 테스트는 상수 하나를 순회하므로 목록에 값이 늘면 커버리지가 함께 늘고, 판정이 그
+    목록에서 파생되지 않으면 즉시 붉어진다.
+    """
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "열거순회")
+    ctrl.dispatch("save", {})
+    assert ctrl.SESSION_EXTRAS, "section 밖 세션 상태의 열거가 비었습니다."
+    # 초안은 비교 대상(base)이 없어 extras 판정이 성립하지 않는다 — 초안 전체의 미저장은
+    # 세션 폐기 확인이 따로 지킨다(판정 P). 빈 튜플이어야 「저장본과 다르다」를 참칭하지 않는다.
+    draft, _ = _controller26(tmp_path / "draft")
+    draft.load_template_path(str(TPL_COMPILED))
+    draft.dispatch("set_name", {"name": "초안 이름"})
+    assert draft.dirty_extras() == () and draft.has_unsaved_work() is True
+    for extra in ctrl.SESSION_EXTRAS:
+        ctrl.load_job("열거순회")                             # 매번 깨끗한 세션에서 시작
+        assert ctrl.has_unsaved_work() is False, f"{extra}: 복원 직후가 미저장으로 보입니다."
+        setattr(ctrl, extra, "손댄 값")
+        assert ctrl.dirty_extras() == (extra,), f"{extra}: 열거가 이 값을 세지 않습니다."
+        assert ctrl.has_unsaved_work() is True, (
+            f"{extra}: section 밖 편집이 「저장됨」으로 위장합니다 — 이탈이 조용히 버립니다."
+        )
+
+
+def test_switching_only_the_sheet_is_unsaved_work(tmp_path):
+    """같은 엑셀의 **다른 시트**로 갈아타는 것도 미저장이다 — 열거를 세우자 드러난 자리.
+
+    경로도 자동등록 이름도 그대로이므로 「데이터를 골랐는가」만 보는 판정에는 안 걸린다.
+    그런데 시트는 자동등록 참조에 함께 저장되는 durable 값이라(#33), 그 갈아타기를 놓치면
+    사람이 시트를 바꾸고 나갈 때 아무것도 묻지 않고 버린다 — 2R~5R 이 이름·자동등록
+    이름·데이터로 세 번 겪은 것과 **같은 결함의 네 번째 인스턴스**다.
+    """
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "시트갈아타기")
+    ctrl.dispatch("save", {})
+    ctrl.load_job("시트갈아타기")
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    path_then, name_then = ctrl.data_path, ctrl.dataset_name
+    ctrl.dispatch("discard_patch", {})                        # 데이터까지 내려놓고 다시 시작
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="공고목록")
+    assert ctrl.data_path == path_then and ctrl.dataset_name == name_then  # 둘은 그대로인데
+    assert "data_sheet" in ctrl.dirty_extras()                            # 시트는 갈렸다
+    assert ctrl.has_unsaved_work() is True
+
+
+def test_unsaved_work_is_derived_not_flagged(tmp_path):
+    """저장된 작업의 미저장 판정은 **파생**이다 — 손으로 켠 클린 표지가 이를 덮지 못한다.
+
+    표지 방식은 변이 자리·되돌리기 자리가 늘 때마다 한 곳이 빠졌고, 빠짐은 「저장됨」이라는
+    거짓말이나 되돌린 뒤의 헛확인 둘 중 하나로 나타났다. 파생은 빠질 자리가 없다: 여기서
+    표지를 거짓으로 세워 두고도 판정이 patch 를 보는지 확인한다(양방향).
+    """
+    ctrl, _ = _controller26(tmp_path)
+    assert _save_named(ctrl, "파생판정")["ok"] is True
+    ctrl.load_job("파생판정")
+    ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": False})
+    ctrl._session_clean = True                                # 표지를 거짓으로 세운다
+    assert ctrl.has_unsaved_work() is True, "표지가 실재하는 patch 를 덮었습니다."
+    ctrl.dispatch("discard_patch", {})
+    ctrl._session_clean = False                               # 반대 방향도 표지 무관
+    assert ctrl.has_unsaved_work() is False, "되돌린 뒤에도 헛확인을 묻습니다(과경고)."
+
+
 def test_editing_tabs_move_freely_until_a_patch_needs_disposing(tmp_path):
     """편집 탭은 자유 이동하되(결정 41), **손댄 patch 가 있으면** 처분을 먼저 받는다.
 
