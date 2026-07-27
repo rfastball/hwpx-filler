@@ -107,3 +107,38 @@ def test_overwrite_confirm_text_restates_actual_victim():
 
     corrupt = overwrite_confirm_text("작업1", "")
     assert "손상" in corrupt  # 이름 불명을 추측하지 않고 그대로 고지
+
+
+# --------- 근본 조치(리뷰 3R): durable Job 필드의 **분류 완전성** 구조 가드 ---------
+#: 에디터 저장이 세션 값으로 **다시 짓는** 필드 — 곧 편집기가 소유하는 규칙·정체다.
+_EDITOR_REBUILDS = {
+    "version", "name", "template_path", "mapping", "filename_pattern",
+    "default_dataset_ref",
+}
+#: 저장이 **되싣는** 비-편집 메타 — `_preserved_meta` 가 소유한다.
+_EDITOR_PRESERVES = {"tags", "last_run_at", "group", "favorited_at", "reviewed_rules"}
+
+
+def test_every_durable_job_field_is_classified_by_the_editor_save():
+    """durable Job 필드는 저장이 **다시 짓거나 보존하거나** 둘 중 하나여야 한다.
+
+    같은 결함이 두 번 났다: 그룹이 조용히 초기화되던 자리(슬라이스 2)와 검토 기준선이
+    비워지던 자리(재작성 F5 3R). 두 번이면 목록이 아니라 **규율**이 문제다 — 새 durable
+    필드를 더할 때 어느 쪽인지 **선언하지 않으면** 여기서 걸린다. 선언을 강제하면 다음
+    누락은 사람이 아니라 게이트가 잡는다.
+    """
+    from dataclasses import fields as dataclass_fields
+
+    from hwpxfiller.core.job import Job
+    from hwpxfiller.webapp.screen_editor import _EMPTY_PRESERVED, _preserved_meta
+
+    durable = {f.name for f in dataclass_fields(Job)}
+    classified = _EDITOR_REBUILDS | _EDITOR_PRESERVES
+    assert durable == classified, (
+        "durable Job 필드가 분류되지 않았습니다 — 저장이 다시 짓는지(_EDITOR_REBUILDS) "
+        "보존하는지(_EDITOR_PRESERVES + _preserved_meta) 선언하세요: "
+        f"미분류={sorted(durable - classified)}, 유령={sorted(classified - durable)}"
+    )
+    # 선언과 실물이 갈리지 않게: 보존 목록의 두 표현(빈 기본값·추출기)이 같은 키를 든다.
+    assert set(_EMPTY_PRESERVED) == _EDITOR_PRESERVES
+    assert set(_preserved_meta(Job(name="x"))) == _EDITOR_PRESERVES

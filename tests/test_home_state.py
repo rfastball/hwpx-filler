@@ -683,10 +683,21 @@ def test_health_translation_covers_every_data_independent_gate_reason():
         "drift": "structure_drift",
         "template_unreadable": "compile_state is None",
     }
-    missing = [r for r in reasons if evidence.get(r, r) not in covered]
+    # **건강 사유가 아니라고 선언한** 차단 사유 — 이유를 여기 적는다. 가드의 이빨은 그대로다:
+    # 새 사유는 번역을 얻든 여기서 배제 근거를 얻든, 둘 중 하나를 **명시적으로** 해야 한다.
+    not_health = {
+        # 검토 요구(재작성 F5)는 결함이 아니라 **정상 흐름의 한 단계**다. 계약 §19.7 의 원인
+        # 표는 손상·경로 없음·미지원·드리프트·끊어진 참조뿐인 **결함의 닫힌 목록**이고, 여기
+        # 검토를 끼우면 새로 만든 모든 작업이 「확인 필요」에 서서 그 구획이 뜻을 잃는다
+        # (경보 인플레이션 — 진짜 고장 난 작업이 새 작업들 사이에 묻힌다).
+        "review_required",
+    }
+    missing = [
+        r for r in reasons if r not in not_health and evidence.get(r, r) not in covered
+    ]
     assert not missing, (
         "실행 게이트가 차단하는데 라이브러리 건강 번역이 모르는 사유입니다 — "
-        f"library_health() 에 분기를 더하거나 evidence 표를 갱신하세요: {missing}"
+        f"library_health() 에 분기를 더하거나 evidence·not_health 표를 갱신하세요: {missing}"
     )
 
 

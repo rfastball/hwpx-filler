@@ -1064,6 +1064,31 @@ body.resizing-master{cursor:col-resize;user-select:none}
 .pk-note{display:block}
 .pk-row .tplcard-acts{flex:none;margin:0;max-width:230px}
 
+/* ---- 미리보기 드로어 (재작성 F5 — v6 previewDrawer) ----
+   레코드 1건의 전 필드를 보여주므로 세로로 자라고, **자리(N/M)와 파일 이름은 고정**이다:
+   목록을 스크롤하다 지금 몇 번째를 보는지 잃으면 미리보기의 뜻이 반쯤 사라진다. */
+.preview-drawer{width:min(680px,94vw)}
+.preview-drawer .preview-nav{display:flex;align-items:center;gap:var(--sp-8);
+  margin-top:var(--sp-8)}
+.preview-drawer .preview-nav strong{font-variant-numeric:tabular-nums}
+/* 행 컨테이너만 겨눈다 — `.picker-sec>div` 로 넓게 걸면 구획 캡션(`.cap` 도 div)까지
+   세로 flex·스크롤 상자가 돼 캡션이 가운데로 뭉갠다(눈검증이 잡은 자리). */
+.preview-drawer #previewRows,
+.preview-drawer #previewEvidenceRows{display:flex;flex-direction:column;gap:var(--sp-2);
+  max-height:34vh;overflow:auto;overscroll-behavior:contain}
+.preview-drawer .mir-row{display:flex;gap:var(--sp-12);align-items:baseline;
+  padding:var(--sp-6) 0;border-bottom:1px solid var(--n-border)}
+.preview-drawer .mir-name{flex:0 0 34%;min-width:0;color:var(--a-muted);
+  font-size:var(--fs-caption);overflow-wrap:anywhere}
+.preview-drawer .mir-val{flex:1;min-width:0;overflow-wrap:anywhere}
+.preview-drawer .mir-val .doc-sum{display:block;color:var(--a-muted);
+  font-size:var(--fs-caption)}
+.preview-drawer .preview-foot{display:flex;flex-wrap:wrap;gap:var(--sp-16);
+  margin-top:var(--sp-16);padding-top:var(--sp-12);border-top:1px solid var(--n-border)}
+.preview-drawer .preview-foot>div{display:flex;flex-direction:column;gap:var(--sp-2);
+  min-width:0}
+.preview-drawer .preview-foot strong{overflow-wrap:anywhere}
+
 /* ---- 「문서 작업」 전역 라이브러리 (§19.6·§19.7 · 재작성 F2 PR-A) ---- */
 /* 홈의 두 트랙(.tracks/.track)·작업 브라우저 바(.jobbrowser)·txt 목록(.tlist)은 화면과 함께
    사망했다. .jcard 는 손상 작업 danger 카드가 계속 쓰므로 남는다. */

@@ -49,7 +49,7 @@ import threading
 from ..batch import generate_batch
 from ..core.dataset_pool import DatasetPoolRegistry
 from ..core.identity_summary import identity_summary
-from ..core.job import MISSING_MARKER, JobRegistry
+from ..core.job import MISSING_MARKER, JobRegistry, rules_fingerprints
 from ..core.mapping import SOURCE_CARRIER_TYPES
 from ..core.template_status import OUTPUT_SUBDIR_NAME
 from ..gui.filter_state import (
@@ -61,6 +61,13 @@ from ..gui.filter_state import (
 from ..gui.result_errors import classify_result_error, describe_fill_note
 from ..naming import pattern_uses_seq
 from ..gui.record_range import RecordRange, RecordRangeDraft
+from ..gui.review_state import (
+    ReviewRequirement,
+    ReviewState,
+    build_evidence,
+    review_gate_text,
+    review_requirement,
+)
 from ..gui.run_state import RunViewModel, resolve_file_source, resolve_pool_source
 from ..gui.selection_state import SelectionModel
 from ..gui.work_candidates import (
@@ -213,6 +220,19 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 비교한다. 작업 전환에도 남는다: 남아 있어야 "지금 열린 작업이 그 런의 작업과
         # 다르다"를 말할 수 있다.
         self._last_run_job = ""
+        # 검토 승인 사건(재작성 F5, 지도 §10.12 판정 B) — **세션 소유·미영속**. 기준선은
+        # `Job.reviewed_rules` 가 durable 로 들고, 승인만 여기 산다: 승인하고 실행하지 않은
+        # 채 재시작하면 요구가 되돌아온다(열린 게이트로 시작하지 않는다). 폐기 코드는 없다
+        # — 승인이 규칙 지문(+선택 결속 위험이면 선택 지문)에 결속돼 자동으로 무효가 된다.
+        self.review = ReviewState()
+        # 미리보기 드로어(F5) — **열림 여부와 자리가 Python 소유**다(§10.12.1 정체 면,
+        # F3 초안이 세운 선례). DOM 클래스로 들면 push 재렌더가 면을 조용히 닫거나
+        # 자리를 되돌린다. 자리는 **표시순 서수**이지 원본 index 가 아니다(판정 M).
+        self.preview_open = False
+        self.preview_pos = 0
+        # 미리보기가 **본 이름**의 시각을 붙들어 두는 핀(5R P2) — 값은 그때의 실행 입력
+        # 정체다. 그 정체가 그대로인 동안만 유효하고, 생성이 소비하면 놓는다.
+        self._names_pin: "str | None" = None
         # 직전 필터 슬롯(결정 28) — 정의 가진 세션이 죽을 때 덮어쓰는 1칸 세션 메모리
         # (앱 수명·미저장 — 필터 영속 뒷문 금지). 소스 일치 게이트용 키와 쌍.
         self._last_filter: "dict | None" = None  # {"source_key": str, "state": dict}
@@ -334,6 +354,61 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             raise ValueError("범위 편집기가 열려 있지 않습니다.")
         return self.range_draft
 
+    # ---- 미리보기 드로어(F5, 지도 §10.12) ------------------------------------
+    def _do_preview_open(self, p: dict) -> dict:
+        """드로어 열기. §13-2 대로 **요구가 없어도 열린다**(정상 반복 실행에서 선택).
+
+        거절 셋: ⓐ생성 중(진행 중 런의 입력을 보며 승인하면 어느 범위의 승인인지 갈린다)
+        ⓑ범위 초안 열림(판정 H — 미리보기는 **커밋된** 실행 입력의 상이다. 초안 세계를
+        그리면 적용도 안 한 편집을 승인하게 되고 그건 불변식 21 위반이다) ⓒ선택 0건
+        (§18.11-6: 선택 0건에서는 미리보기에 진입하지 않고 첫 레코드로 대신하지 않는다).
+        """
+        if self._generation_lock.locked():
+            raise ValueError("문서 생성이 진행 중입니다. 끝난 뒤에 미리보기를 여세요.")
+        if self.range_draft is not None:
+            raise ValueError("범위 편집을 적용하거나 취소한 뒤에 미리보기를 여세요.")
+        if self.vm is None:
+            raise ValueError("먼저 문서 작업을 선택하세요.")
+        if not self._indices():
+            raise ValueError("미리볼 문서를 최소 1건 선택하세요.")
+        self.preview_open = True
+        self.preview_pos = 0
+        # 핀(5R P2)은 여기서 조립하지 않는다 — 면이 열려 있는 동안 스냅샷이 **같은
+        # 술어로** 채운다. 두 자리가 각자 조립하면 그 순간 정체가 두 벌이 된다
+        # (F3 1R 이 표면의 자체 조립에서 났던 자리).
+        return {"ok": True}
+
+    def _do_preview_close(self, p: dict) -> None:
+        self.preview_open = False
+        self.preview_pos = 0
+
+    def _do_preview_move(self, p: dict) -> None:
+        """레코드 이동 — 자리는 **표시순 서수**다(판정 M). 웹은 인덱스를 되돌려주지 않는다.
+
+        경계에서 멈춘다(순환하지 않는다): 마지막에서 한 번 더 눌러 첫 건으로 돌아가면
+        「몇 번째를 보고 있는가」가 사용자 머릿속에서 끊긴다.
+        """
+        if not self.preview_open:
+            raise ValueError("미리보기가 열려 있지 않습니다.")
+        total = len(self._indices())
+        if not total:
+            return
+        self.preview_pos = max(0, min(total - 1, self.preview_pos + int(p["delta"])))
+
+    def _do_preview_approve(self, p: dict) -> None:
+        """명시 승인 — 불변식 §13-4(생성 ≠ 승인)의 유일한 사건.
+
+        **면이 열려 있을 때만** 받는다: 승인은 증거를 본 사건이라, 증거를 띄우지 않은
+        경로로 세우면 그 승인은 무엇에 근거했는지 말할 수 없다(F-06 이 지목한 바로 그
+        결함을 우리 손으로 재현하는 꼴). 요구가 없으면 거절한다 — 조용히 세우지 않는다.
+        """
+        if not self.preview_open:
+            raise ValueError("미리보기를 연 뒤에 확인할 수 있습니다.")
+        req, unmet = self._review()
+        if unmet is None:
+            raise ValueError("지금 확인이 필요한 변경이 없습니다.")
+        self.review.approve(req, self._review_scope_key())
+
     def _do_range_draft_open(self, p: dict) -> dict:
         """편집기 진입 = 범위 깊은 복제. 이미 열려 있으면 **다시 복제하지 않는다**.
 
@@ -431,6 +506,134 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "sel_count": draft.range.selection.selected_count(),
             "selected_only": draft.selected_only,
             "view_order": draft.range.view_order,
+        }
+
+    def _selection_key(self) -> str:
+        """**커밋된** 실행 입력의 지문 — 결과 강등 판정(F4)과 승인 결속(F5)이 함께 쓴다.
+
+        순서까지 담는다: 표시순서가 바뀌면 파일 이름이 실제로 달라지므로 같은 선택도 다른
+        실행 입력이다(§2 충돌 B). 두 소비처가 각자 조립하면 그 순간 지문이 두 벌이 된다
+        (F3 리뷰 1R 이 표면의 자체 조립에서 났던 자리) — 그래서 메서드 하나가 낸다.
+        """
+        return ",".join(str(i) for i in self._indices())
+
+    def _run_marker(self, indices: "list[int]") -> str:
+        """이 실행 입력에 실제로 붙을 미입력 표식 — 생성·미리보기·승인의 **단일 술어**.
+
+        생성은 미입력 게이트를 통과한 **뒤에야** 표식을 붙이므로(``_generate_locked`` 3),
+        아직 확인 안 된 빈 값이 있으면 표식은 없다. 이 조건이 세 자리에서 갈리면 각각
+        다른 실행 입력을 그리거나 승인하게 된다(1R P2 · 4R P2 가 같은 술어의 두 얼굴).
+        """
+        if self.vm is None or not indices:
+            return ""
+        if self.vm.unmet_blanks(indices) or not self.vm.blank_fields(indices):
+            return ""
+        return MISSING_MARKER
+
+    def _review_scope_key(
+        self, indices: "list[int] | None" = None, marker: "str | None" = None,
+    ) -> str:
+        """승인이 결속되는 범위 — **어느 스냅샷의** 어느 선택인가(2R P1).
+
+        선택 index 만으로는 부족하다: 데이터 A 에서 의미·파일명 위험을 승인한 뒤 데이터 B 를
+        올리면 선택은 0건으로 리셋되지만 세션의 승인 집합은 남고, 같은 index 를 다시 고르는
+        순간 **같은 키가 재구성돼** B 의 값·이름을 한 번도 보지 않은 채 게이트가 열린다.
+        `_snapshot_gen` 은 마운트마다 오르는 단조 표식이라 그 재구성을 원리적으로 막는다.
+
+        `selection_key`(F4 결과 강등)와 **따로 두는** 이유: 그쪽은 "이 결과가 지금 실행 입력의
+        것인가"를 묻는 값이고 이쪽은 "이 승인이 무엇을 보고 난 것인가"를 묻는 값이다. 한
+        문자열이 두 질문을 겸하면 한쪽 요구가 다른 쪽 의미를 조용히 바꾼다(F3 3R 의
+        `selected_count` 가 표 머리와 게이트 지목을 겸하던 자리와 같은 결함류).
+        """
+        idx = self._indices() if indices is None else indices
+        sel = ",".join(str(i) for i in idx)
+        # 표식 상태도 승인의 일부다(4R P2): 확인 안 된 빈 값이 있는 상태로 승인하면 값은
+        # 비어 있고 이름은 표식 없이 계산된다. 사용자가 면을 닫고 빈 값을 확인하는 순간
+        # 실행 입력이 표식으로 바뀌는데, 규칙도 선택도 안 바뀌었으니 **승인은 그대로 유효**
+        # 하다 — 그러면 생성이 한 번도 보여준 적 없는 값과 이름을 쓴다. 상태가 바뀌면
+        # 승인이 무효가 되는 것이 정직하다(다시 확인하면 그때는 진짜 실행 입력을 본다).
+        mk = self._run_marker(idx) if marker is None else marker
+        return f"{self._snapshot_gen}|{'M' if mk else '-'}|{sel}"
+
+    def _review(
+        self, vm=None, indices: "list[int] | None" = None, marker: "str | None" = None,
+    ) -> "tuple[ReviewRequirement, ReviewRequirement | None]":
+        """(현재 검토 요구, 아직 승인 안 된 요구 or None) — F5 판정 B·I.
+
+        게이트에 넘기는 것은 **미승인분**이다. 요구 자체는 표면이 문안·증거를 그리는 데
+        쓰므로 승인 뒤에도 그대로 돌려준다(승인했다는 사실을 말하려면 무엇을 승인했는지가
+        필요하다).
+
+        ``vm``·``indices`` 를 받는 이유(1R P1): 생성 백스톱은 **그 런의 주체**로 물어야
+        한다. 세션은 배치가 도는 사이에도 움직이므로(브리지 호출이 스레드별) 현재 상태를
+        읽으면 남의 작업의 승인으로 이 런을 통과시킬 수 있다 — `_stamp_last_run` 이
+        정체를 인자로 받는 것과 같은 근거다.
+        """
+        target = self.vm if vm is None else vm
+        if target is None:
+            return ReviewRequirement(), None
+        req = review_requirement(target.job)
+        if not req.required:
+            return req, None
+        approved = self.review.is_approved(
+            req, self._review_scope_key(indices, marker)
+        )
+        return req, (None if approved else req)
+
+    def _review_payload(self, req: ReviewRequirement, unmet) -> dict:
+        """검토 요구의 표면 몫 — 「미리보기」 버튼 표지와 드로어 승인 버튼이 읽는다.
+
+        ``required`` 는 요구의 **존재**이고 ``approved`` 는 그 해소다. 둘을 한 불리언으로
+        뭉개면(v6 `preview.required && !approved`) 표면이 "승인했다"를 말할 수 없다 —
+        승인 뒤 남는 것이 안심의 근거다.
+        """
+        return {
+            "required": req.required,
+            "approved": req.required and unmet is None,
+            "risk": req.risk_class,
+            "targets": list(req.changed_targets),
+            "first_run": req.first_run,
+            "unknown_baseline": req.unknown_baseline,
+            "structure_changed": req.structure_changed,
+        }
+
+    def _preview_payload(
+        self, req: ReviewRequirement, unmet, mapped: "list[dict]", names: "list[str]",
+        audit_counts: "tuple[int, int]",
+    ) -> dict:
+        """드로어 구획 — 닫혀 있으면 뼈대만(그리지 않는 값은 오조립의 미끼, §10.8.6 규칙 ①).
+
+        값·이름은 **파생**이다(판정 A): 값은 실행 입력과 같은 ``mapped_records``, 이름은
+        표 「문서」 열이 쓰는 그 문자열 그대로다. 한 건만 따로 계산하면 ``{{seq}}`` 가 1 로
+        고정되고 꼬리표가 사라져 미리보기가 실행과 다른 이름을 말한다.
+        """
+        total = len(mapped)
+        if not self.preview_open:
+            return {"open": False, "pos": 0, "total": total, "can_open": total > 0}
+        # 열려 있는 동안 선택이 줄면 자리가 넘칠 수 있다 — 닫지 않고 자리를 당긴다
+        # (§10.12.1 실패 경로: 면 안에서 재진술하고 면을 닫지 않는다).
+        pos = min(self.preview_pos, total - 1) if total else 0
+        record = mapped[pos] if total else {}
+        order = [m.template_field for m in self.vm.job.mapping.mappings] if self.vm else []
+        converged, too_long = audit_counts
+        return {
+            "open": True,
+            "can_open": total > 0,
+            "pos": pos,
+            "total": total,
+            "filename": names[pos] if 0 <= pos < len(names) else "",
+            # 적용 범위는 「기본 규칙」 고정이다(F5 확정: override 는 F7). 없는 기능을
+            # 암시하는 문안을 두지 않는다 — "이번 생성에만" 은 여기서 말하지 않는다.
+            "scope": "이 작업의 기본 규칙",
+            "rows": [
+                {"name": f, "value": str(record.get(f, ""))} for f in order
+            ],
+            "evidence": build_evidence(
+                req, mapped=mapped, names=tuple(names), converged=converged,
+                too_long=too_long, pos=pos,
+            ),
+            "can_approve": unmet is not None and total > 0,
+            "empty_note": "" if total else "선택한 문서가 없습니다. 표에서 만들 문서를 고르세요.",
         }
 
     def _order_note(self) -> str:
@@ -582,7 +785,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
         names: "dict[int, str]" = {}
         if indices and self.vm is not None:  # 파일명은 작업 속성 — 미선택이면 미리보기 없음
-            self._names_now = datetime.now()
+            # 시각은 **이 스냅샷이 잡아 둔 것**을 쓴다(2R P2): 여기서 따로 찍으면 같은
+            # 스냅샷 안에서 게이트 감사(refresh)와 표 「문서」 열이 다른 시각을 갖고,
+            # `{{date:SS}}` 같은 하위-일 토큰이 초 경계를 넘는 순간 미리보기가 승인시킨
+            # 이름과 생성물이 갈린다(덮어쓰기 대상 집합까지 함께 바뀐다). 캡처는
+            # :meth:`snapshot` 이 스냅샷당 1회 한다 — 폴백은 직접 호출(테스트) 경로용이다.
+            if self._names_now is None:
+                self._names_now = datetime.now()
             planned = plan_output_names(
                 self.vm.job.filename_pattern, mapped, now=self._names_now,
             )
@@ -794,8 +1003,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 표면이 표의 선택 표지로 이 값을 만들면, 표가 초안을 그리는 동안(F3 판정 D)
             # 적용도 안 한 편집이 결과를 강등시키고 취소해도 되돌아오지 않는다(리뷰 1R).
             # 순서까지 담는다: 표시순서가 바뀌면 파일 이름이 실제로 달라지므로 같은 선택도
-            # 다른 실행 입력이다(§2 충돌 B).
-            "selection_key": ",".join(str(i) for i in self._indices()),
+            # 다른 실행 입력이다(§2 충돌 B). 승인 결속(F5 판정 I)이 같은 값을 쓴다.
+            "selection_key": self._selection_key(),
             "data_label": self.data_label,
             # 소스 종류 병기 라벨(#26) — 저장 상태가 아니라 플래그에서 매번 합성(K8).
             "data_source_label": source_label(self.data_source, self.data_label),
@@ -842,13 +1051,54 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "guard": guard_snap,
                 # 게이트는 링1 단일 산출(prework_gate) 소비 — 링2 문안 재조립 금지(RC-23 동형).
                 "gate": {"enabled": g.enabled, "level": g.level, "text": g.text},
+                # 작업이 없으면 검토할 규칙도 미리볼 값도 없다 — 뼈대만 실어 표면이
+                # 키 부재로 갈라지지 않게 한다(빈 값과 없는 키는 다른 결함류를 만든다).
+                "review": self._review_payload(ReviewRequirement(), None),
+                "preview": {"open": False, "pos": 0, "total": 0, "can_open": False},
             })
             return base
         job = self.vm.job
         indices = self._indices()
+        # 생성이 실제로 쓸 표식(1R P2 · 4R P2) — 확인된 빈칸은 문서에 **표식 문자열**로
+        # 들어가고, 파일명 패턴이 그 필드를 참조하면 이름·수렴·경로 길이가 전부 달라진다.
+        # 검토·감사·드로어·생성이 **같은 술어**(`_run_marker`)를 공유한다.
+        marker = self._run_marker(indices)
+        # 검토 요구(F5) — 요구 판정은 durable 기준선이, 승인 대조는 세션이 한다.
+        req, req_unmet = self._review(marker=marker)
+        # 파일명 날짜 토큰의 기준 시각(2R·3R·5R P2) — 이 값은 **사용자가 본 것**의 일부다.
+        #
+        # 스냅샷당 1회 캡처하면 한 스냅샷 안의 소비처(게이트 감사·표 「문서」 열·드로어·
+        # 생성)는 서로 맞지만 **스냅샷 사이**에서 움직인다: `{{date:SS}}` 가 그 사이 초
+        # 경계를 넘으면 생성이 사용자가 본 적 없는 이름을 쓴다. 그래서 **누군가 그 값에
+        # 기대는 동안 얼린다**. 기대는 자리는 셋이다:
+        #   ① 면이 열려 있다(지금 보고 있다)
+        #   ② 승인이 서 있다(그 이름으로 확인했다)
+        #   ③ **한 번 본 뒤 아직 그 실행 입력 그대로다**(5R P2) — 검토 요구가 없는 반복
+        #      실행에서도 미리보기는 열린다(§13-2). 생성 버튼을 누르려면 면을 닫아야
+        #      하는데 닫는 순간 ①②가 다 거짓이라, 1초만 들여다봐도 화면이 보여준 것과
+        #      다른 이름(그리고 다른 덮어쓰기 대상)이 만들어졌다.
+        # 핀은 **실행 입력이 그대로인 동안**만 유효하다 — 규칙·데이터·표식·선택 중 하나라도
+        # 바뀌면 화면이 보여준 이름도 이미 낡았으므로 새로 찍는 게 맞다(승인 정체와 같은 축).
+        pin = f"{req.rules_key}|{self._review_scope_key(indices, marker)}"
+        if self.preview_open:
+            self._names_pin = pin      # 보고 있는 동안 핀은 현재 정체를 따라간다
+        pinned = self._names_pin == pin
+        if self._names_now is None or not (
+            self.preview_open or (req.required and req_unmet is None) or pinned
+        ):
+            self._names_now = datetime.now()
+            self._names_pin = None
         # 선택분 매핑 적용은 1회 — 파일명 미리보기(_record_rows)와 거울 값(_mirror)이 공유한다.
         mapped = self.vm.mapped_records(indices) if indices else []
-        status = self.vm.refresh(indices, self.out_dir)  # 사전검증+배지+게이트 단일 산출(RC-23)
+        # 거울은 표식 **없는** 값을 본다: 「선택 N행 중 M행에서 값이 비어 있습니다」가
+        # 빈 값을 세는 진술이라, 표식을 채우면 언제나 0행이 되어 문안이 거짓이 된다.
+        # 두 면이 같은 사실을 다른 각도로 말하는 것이지 판정이 둘인 게 아니다.
+        run_mapped = self.vm.mapped_records(indices, marker) if marker else mapped
+        # 게이트에는 **아직 승인 안 된** 요구만 넘긴다(승인됐으면 그 자리에서 열려야 한다).
+        status = self.vm.refresh(  # 사전검증+배지+게이트+이름 계획 단일 산출(RC-23)
+            indices, self.out_dir, review_unmet=req_unmet, mapped=run_mapped,
+            now=self._names_now,
+        )
         preflight_text = (
             _PREFLIGHT_OK_TEXT if status.preflight.level == "ok" else status.preflight.text
         )
@@ -858,9 +1108,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 움직여 판정 I 의 완화가 하필 그 축을 만지는 자리에서 죽는다. 초안이 없으면 위에서
         # 이미 계산한 실행 입력·매핑을 그대로 재사용한다(평시 추가 비용 0).
         zone_indices = self._zone_indices()
-        zone_mapped = mapped
+        zone_mapped = run_mapped
         if self.range_draft is not None:
-            zone_mapped = self.vm.mapped_records(zone_indices) if zone_indices else []
+            # 초안 집합의 표식은 그 집합에서 다시 센다 — 빈 값 여부는 선택에 딸린 사실이다.
+            zone_marker = self._run_marker(zone_indices)
+            zone_mapped = (
+                self.vm.mapped_records(zone_indices, zone_marker) if zone_indices else []
+            )
         record_rows = self._record_rows(zone_indices, zone_mapped)
         filter_snap, table_snap, restate_snap, guard_snap = self._filter_sections(
             zone_indices, record_rows
@@ -904,6 +1158,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "level": status.gate.level,
                 "text": status.gate.text,
             },
+            # 검토 요구·미리보기 드로어(F5). 이름·값은 위 단일 산출을 재사용한다 —
+            # 표면이 따로 계획하면 미리보기가 실행과 다른 이름을 말한다(판정 A).
+            "review": self._review_payload(req, req_unmet),
+            # 드로어는 **생성 입력 그대로**를 그린다(표식 포함) — 여기가 "보이는 것 =
+            # 만들어지는 것"의 마지막 자리다.
+            "preview": self._preview_payload(
+                req, req_unmet, run_mapped, list(status.audit.names),
+                (len(status.audit.converged), len(status.audit.too_long)),
+            ),
         })
         return base
 
@@ -1024,6 +1287,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 옛 의도가 되살아나 방금 고른 작업을 밀어낸다(지연된 조용한 추측).
         self.preferred_work = ""
         self._last_generated = None  # 실행 증거는 세션 스코프 — 전환 시 소멸(§19.10)
+        # 승인은 규칙·선택 지문에 결속돼 이미 남의 작업에 닿지 않는다(F5 판정 I) — 여기서
+        # 비우는 건 무효화가 아니라 **누적 방지**다(작업을 오래 오가는 세션의 키 적재).
+        self.review.clear()
+        # 열려 있던 미리보기는 남의 작업의 값을 그린다 — 전환과 함께 닫는다(모달이라
+        # 실표면에선 못 일어나지만, 상태 진실은 DOM 이 아니라 여기다).
+        self._do_preview_close({})
         if not name:  # 선택 해제 = 작업만 내려놓는다(데이터 존은 그대로)
             self.vm = None
             self.job_name = ""
@@ -1379,6 +1648,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         }
         self._install_filter(self.records, hints)
         self._last_generated = None  # 완주 집합의 인덱스는 이전 데이터 좌표 — 교체 시 무효
+        self._do_preview_close({})   # 미리보던 값은 이전 스냅샷의 것이다(F5)
 
     def _do_ack_field(self, p: dict) -> None:
         """미입력 배지 클릭 = 직접 확인(강제 상호작용, ADR-E). 다 확인되면 생성이 열린다."""
@@ -1453,7 +1723,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         try:
             job = self.registry.stamp_last_run(
-                job_name, datetime.now().isoformat(timespec="seconds")
+                job_name, datetime.now().isoformat(timespec="seconds"),
+                # 기준선은 **이 런이 쓴 규칙**이다(1R P1) — 디스크의 지금 규칙으로 찍으면
+                # 배치 중 착지한 에디터 저장이 한 번도 실행된 적 없는 규칙을 검토받은
+                # 것으로 만든다. `vm` 이 없으면(정체 소실) 찍지 않는다: 무엇을 실행했는지
+                # 모르는 채 기준선을 세우는 것이 곧 조용한 승인이다.
+                rules=rules_fingerprints(vm.job) if vm is not None else None,
             )
         except (OSError, ValueError) as exc:
             return str(exc) or exc.__class__.__name__
@@ -1461,6 +1736,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 않게). 세션이 이미 다른 작업으로 옮겨갔으면 남의 VM 을 만지지 않는다.
         if vm is not None and vm is self.vm:
             vm.job.last_run_at = job.last_run_at
+            # 검토 기준선도 같이 되싣는다(F5 판정 B): 스탬프가 디스크에만 남으면 세션은
+            # 방금 완주한 규칙을 여전히 「미검토」로 읽어, 같은 규칙으로 한 번 더 만들려는
+            # 사용자에게 §13-2 가 선택이라고 한 미리보기를 다시 요구한다.
+            vm.job.reviewed_rules = dict(job.reviewed_rules)
         return ""
 
     def generate(self, *, confirm_overwrite: bool = False) -> dict:
@@ -1491,6 +1770,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 판정하고 있었다. 덮어쓰기 확인 왕복(`needs_overwrite`)에는 밀지 않는다: 모달이
         # 열린 동안의 재렌더는 dispatch 의 무변이 push 생략과 같은 이유로 낭비다.
         if result.get("ok"):
+            # 생성이 그 시각을 **소비했다** — 핀을 놓는다(5R P2). 안 놓으면 같은 입력으로
+            # 한 번 더 만들 때 지난 런의 시각이 그대로 재사용돼 날짜 토큰이 늙는다.
+            self._names_pin = None
             self._push()
         return result
 
@@ -1515,6 +1797,17 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return {
                 "ok": False, "level": "warn",
                 "error": "빈 값 필드를 먼저 확인하세요: " + ", ".join(unmet),
+            }
+
+        # 2-b) 검토 요구 방어적 재확인(1R P1) — 버튼이 이미 비활성이어도 다시 묻는다.
+        # 게이트는 **스냅샷을 만들 때** 판정한다. 그 사이 규칙이 바뀌거나(에디터 저장),
+        # 스냅샷을 안 거치는 경로(브리지 `generate` 직접 호출·stale 프론트)가 들어오면
+        # 승인 없이 생성이 난다 — 미입력 게이트가 같은 이유로 여기 백스톱을 두는 자리다.
+        # 주체는 **이 런의 것**(`run_vm`·`indices`)이지 지금 세션의 것이 아니다.
+        _, review_unmet = self._review(run_vm, indices)
+        if review_unmet is not None:
+            return {
+                "ok": False, "level": "warn", "error": review_gate_text(review_unmet),
             }
 
         # 3) 미입력 표식(확인된 빈칸) — 완료 요약이 병기한다(낙관 서사 해소).

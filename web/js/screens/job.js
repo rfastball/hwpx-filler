@@ -90,6 +90,7 @@
       renderMirror(s);
       dz.render(s);  // 데이터 존(테이블·칩·스트립) — 팩토리 소유(datazone.js)
       renderRangeFoot(s);
+      renderPreview(s);
       renderCandidates(s);
       renderBrowse(s);   // 탐색 면은 열려 있지 않아도 그린다(열 때 이미 최신)
       renderRestate(s);
@@ -656,6 +657,83 @@
       : "변경은 적용하기 전까지 문서 만들기 화면에 반영되지 않습니다.";
   }
 
+  /* ---- 미리보기 드로어(재작성 F5, 지도 §10.12) --------------------------------
+     이 렌더러는 **모듈 상태를 하나도 늘리지 않는다**: 열림·자리·값·이름·증거가 전부
+     스냅샷(`s.preview`)에서 온다(판정 A·M). DOM 개폐만 상태를 따라간다 — 여는 것은
+     사용자 클릭이 아니라 Python 이 "열렸다"고 말한 사실이다. */
+  function renderPreview(s) {
+    const p = s.preview || { open: false, can_open: false };
+    const r = s.review || {};
+    // 「확인 필요」 표지는 요구가 **아직 안 풀렸을 때만**: 승인한 뒤에도 붙어 있으면 확인이
+    // 무의미해진다. 버튼 가용성(열기·이동)은 여기서 정하지 않는다 — `setBusy` 가 렌더 말미에
+    // `[data-busy-lock]` 을 일괄 복원하므로 여기서 끈 것을 되살린다(`jobBtnPickFolder` 가 같은
+    // 이유로 거기 있다). 실 창 프로브가 잡은 자리다.
+    $("jobReviewFlag").style.display = r.required && !r.approved ? "" : "none";
+    if (!p.open) { closePreviewIfOpen(); return; }
+    $("previewPos").textContent = `${(p.pos || 0) + 1} / ${p.total || 0}`;
+    const empty = $("previewEmpty");
+    empty.textContent = p.empty_note || "";
+    empty.style.display = p.empty_note ? "" : "none";
+    $("previewRows").innerHTML = (p.rows || []).map((row) =>
+      `<div class="mir-row" data-field="${esc(row.name)}">` +
+      `<span class="mir-name">${esc(row.name)}</span>` +
+      `<span class="mir-val">${row.value ? esc(row.value) : "<em class='muted'>(빈 값)</em>"}</span>` +
+      `</div>`).join("");
+    renderPreviewEvidence(p.evidence || { rows: [], note: "" });
+    $("previewFilename").textContent = p.filename || "";
+    $("previewScope").textContent = p.scope || "";
+    // 승인 버튼은 **요구가 남아 있을 때만** 선다(v6 `approvePreview.hidden` 승계). 없는
+    // 사건의 버튼을 회색으로 두면 "여기서 뭔가 해야 하나" 하는 미끼가 된다.
+    $("previewApprove").style.display = p.can_approve ? "" : "none";
+  }
+
+  function renderPreviewEvidence(ev) {
+    const sec = $("previewEvidence");
+    const rows = ev.rows || [];
+    if (!rows.length && !ev.note && !ev.reason) { sec.style.display = "none"; return; }
+    sec.style.display = "";
+    $("previewEvidenceReason").textContent = ev.reason || "";
+    $("previewEvidenceRows").innerHTML = rows.map((row) =>
+      `<div class="mir-row" data-field="${esc(row.name)}">` +
+      `<span class="mir-name">${esc(row.name)}</span>` +
+      `<span class="mir-val">${row.value ? esc(row.value) : "<em class='muted'>(빈 값)</em>"}` +
+      (row.note ? `<span class="doc-sum">${esc(row.note)}</span>` : "") +
+      `</span></div>`).join("");
+    $("previewEvidenceNote").textContent = ev.note || "";
+  }
+
+  /* DOM 개폐를 상태에 맞춘다. Python 이 닫았다고 말했는데 면이 떠 있으면(작업 전환·데이터
+     교체 같은 원격 닫힘) 그 면은 남의 값을 그리고 있는 것이다.
+     열려 있지 않은 대상의 `Modal.close` 는 스택에 없어 아무 일도 하지 않는다 — 그래서
+     열림 여부를 DOM 에 되묻지 않는다(상태의 진실은 스냅샷이지 클래스가 아니다). */
+  function closePreviewIfOpen() {
+    window.Modal.close("previewModal");
+  }
+
+  async function openPreview(e) {
+    const trigger = (e && e.currentTarget) || $("jobPreviewOpen");
+    // 성사 뒤에만 연다(§9.3 4행 상속): 거절되면(생성 중·초안 열림·선택 0건) 면을 띄우지
+    // 않는다 — 열어 놓고 실패를 말하면 무엇을 미리보는 중인지가 거짓이 된다.
+    try {
+      await dz.flushPendingEdits();   // 예약된 편집이 뒤늦게 착지해 자리를 흔들지 않게
+      await Bridge.call(SCREEN, "preview_open", {});
+    } catch (err) {
+      log("미리보기를 열지 못했습니다: " + String((err && err.message) || err));
+      return;
+    }
+    // 왕복 중 화면을 떠났거나 편집 모드로 넘어갔으면 열지 않고 상태를 되돌린다 —
+    // 남는 「열림」 상태가 다음 복귀에서 아무 트리거 없이 면을 띄운다.
+    if (!$("scr-job").classList.contains("on") || MODE !== "run") {
+      Bridge.call(SCREEN, "preview_close", {});
+      return;
+    }
+    window.Modal.open("previewModal", {
+      returnFocus: trigger,
+      initialFocus: $("previewClose"),
+      onClose: () => { Bridge.call(SCREEN, "preview_close", {}); },
+    });
+  }
+
   /* 이탈 가드(판정 F) — 변경이 있을 때만 묻는다. 3택 대신 2택인 근거는 「적용」이 이미 면
      안의 상시 버튼이라는 것: 가드가 세 번째 선택지를 새 기제로 만들 필요가 없다(계속 편집 →
      적용 = 한 클릭). 파괴 방향만 명시 확인을 받는다. */
@@ -912,7 +990,7 @@
     // ⤢ 펼침 면 2종도 같은 이유로 루트다: 실 DOM 이동이라 잠글 요소가 **면 안으로 옮겨가**
     // `#scr-job` 질의에서 빠진다(표시순서 축·전체 선택·검색이 그렇게 새 있었다, F3).
     [$("scr-job"), $("jobBrowseSheet"), $("dataPickerModal"),
-     $("dataSheet"), $("jobConfirmSheet")].forEach((root) => {
+     $("dataSheet"), $("jobConfirmSheet"), $("previewModal")].forEach((root) => {
       root.querySelectorAll("[data-busy-lock]").forEach((el) => { el.disabled = busy; });
     });
     // 초안이 열려 있으면 생성은 닫혀 있다(§10.11.2 계약면 2 — 잠금은 DOM 이 아니라 상태가
@@ -925,6 +1003,12 @@
     // 선택이 기본값으로 조용히 덮어써 선택이 증발한다(#302 리뷰 P2). busy-lock 일괄 복원이
     // 되살리지 않도록 여기(렌더 말미 단일 지점)서 판정한다.
     $("jobBtnPickFolder").disabled = busy || !(LAST && LAST.has_job);
+    // 미리보기 버튼들도 여기서 정한다(F5) — 위 일괄 복원이 renderPreview 의 판정을 되살린다.
+    // 열기는 선택이 있을 때, 이동은 경계에서 멈춘다(순환하지 않으므로 끝에서 비활성).
+    const pv = (LAST && LAST.preview) || {};
+    $("jobPreviewOpen").disabled = busy || !pv.can_open;
+    $("previewPrev").disabled = busy || !pv.total || pv.pos <= 0;
+    $("previewNext").disabled = busy || !pv.total || pv.pos >= pv.total - 1;
     $("jobGenBtn").textContent = busy ? "생성 중…" : "이 작업으로 문서 생성";
     $("jobGenCancel").style.display = busy ? "" : "none";
     if (!busy) { $("jobGenCancel").disabled = false; $("jobGenCancel").textContent = "다음 건부터 중단"; }
@@ -1365,6 +1449,24 @@
     $("jobRangeSelectedOnly").addEventListener("click", () => {
       const d = draftState();
       Bridge.call(SCREEN, "set_selected_only", { value: !(d && d.selected_only) });
+    });
+    // 미리보기 드로어(F5) — 열기·이동·승인·편집 진입. 자리는 Python 이 서수로 소유하므로
+    // 웹은 **방향만** 보낸다(레코드 index 를 되돌려주지 않는다, 판정 M).
+    $("jobPreviewOpen").addEventListener("click", openPreview);
+    $("previewClose").addEventListener("click", () => window.Modal.close("previewModal"));
+    $("previewPrev").addEventListener("click", () =>
+      Bridge.call(SCREEN, "preview_move", { delta: -1 }));
+    $("previewNext").addEventListener("click", () =>
+      Bridge.call(SCREEN, "preview_move", { delta: 1 }));
+    $("previewApprove").addEventListener("click", () => {
+      Bridge.call(SCREEN, "preview_approve", {}).catch((err) =>
+        log("확인을 저장하지 못했습니다: " + String((err && err.message) || err)));
+    });
+    // 「수정」은 편집기 진입 하나다(판정 L) — 필드별 deep-link 는 F7(EditContext) 소관.
+    // 면을 먼저 닫아 편집 호스트 위에 남의 모달이 떠 있지 않게 한다(F2 PR-B 교훈).
+    $("previewEdit").addEventListener("click", () => {
+      window.Modal.close("previewModal");
+      openEditForRepair();
     });
     $("jobMirrorExpand").addEventListener("click", openJobConfirmSheet);
     $("jobMirrorCapstrip").addEventListener("click", (e) => {

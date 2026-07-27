@@ -25,7 +25,14 @@ from ..core.fill_ledger import (
 from ..core.job import Job, RunRequest, require_hwpx
 from ..core.mapping import MappingProfile
 from ..data import source_for_path
-from ..naming import existing_outputs, pattern_field_tokens, plan_output_names
+from ..naming import (
+    OutputNameAudit,
+    audit_output_names,
+    existing_outputs,
+    pattern_field_tokens,
+    plan_output_names,
+)
+from .review_state import ReviewRequirement, review_gate_text
 
 
 @dataclass
@@ -81,7 +88,8 @@ class GateState:
     #: 차단 사유의 기계 판독 이름 — **표시면이 게이트 서열을 재유도하지 않게** 한다(리뷰 F2).
     #: 거울 배너는 자기 사실(드리프트 목록·미해소 토큰)을 따로 보고 그리면 게이트가 실제로
     #: 막고 있는 이유와 다른 것을 크게 말할 수 있다(예: 템플릿을 못 읽는데 "파일명을 고치라").
-    #: ""=이 사유 축과 무관(warn·열림). 값: drift | template_unreadable | name_tokens
+    #: ""=이 사유 축과 무관(warn·열림).
+    #: 값: drift | template_unreadable | name_tokens | review_required
     reason: str = ""
 
 
@@ -97,6 +105,10 @@ class RunStatus:
     preflight: PreflightResult
     field_states: "tuple[FieldState, ...]"
     gate: GateState
+    #: 이 실행이 발급할 이름과 그 집합 성질(C-01, 재작성 F5). 게이트가 소비하고 미리보기
+    #: 증거가 **같은 산출**을 재사용한다 — 표면이 따로 계획하면 미리보기가 실행과 다른
+    #: 이름을 말할 수 있다(RC-23 이 표시면 간 모순에 대해 세운 규율의 파일명 판).
+    audit: OutputNameAudit = field(default_factory=OutputNameAudit)
 
 
 @dataclass(frozen=True)
@@ -367,7 +379,12 @@ class RunViewModel:
             reason="name_tokens",
         )
 
-    def refresh(self, indices: "list[int]", out_dir: str = "") -> RunStatus:
+    def refresh(
+        self, indices: "list[int]", out_dir: str = "", *,
+        review_unmet: "ReviewRequirement | None" = None,
+        mapped: "list[dict] | None" = None,
+        now: "datetime | None" = None,
+    ) -> RunStatus:
         """상태 리프레시 1회의 단일 스냅샷 — 사전검증·필드 배지·게이트를 동시 파생.
 
         레코드 매핑·템플릿 구조를 **각 1회만** 계산해 세 표시면이 같은 사실에서
@@ -378,6 +395,11 @@ class RunViewModel:
         게이트로 흡수해 모달은 danger 예외에만 남긴다. 파일명 토큰 계약(F34)은 데이터
         없이도 판정되므로 미겨눔 상태에서도 danger 로 먼저 발화한다 — 고칠 수 없는
         작업에 데이터부터 고르게 하지 않는다.
+
+        ``review_unmet`` 은 **아직 승인되지 않은** 검토 요구(재작성 F5, 지도 §10.12 판정 F).
+        요구 판정과 승인 대조는 세션이 하고(기준선은 durable·승인은 세션), 여기서는 그
+        결과를 게이트 서열에 끼운다 — 서열의 권위가 둘로 갈리지 않게 표시 결정은 계속
+        :meth:`_compose_gate` 단일 산출이다.
         """
         name_gate = self._name_token_gate()
         if self.datasource is None:
@@ -391,10 +413,26 @@ class RunViewModel:
         out = req.output_report()
         drift, current_fields = self._structure_snapshot()
         states = self._compose_field_states(set(out.empty_valued), drift, current_fields)
+        # 이름 계획은 **대상이 있으면** 낸다(미리보기가 폴더 없이도 이름을 보여준다).
+        # 경로 길이만 폴더에 의존하고, 폴더가 없으면 잴 경로가 없어 조용하다.
+        # ``mapped`` 는 호출측이 이미 만든 매핑 결과 — 넘겨받아 같은 계산을 두 번 하지 않는다.
+        audit = (
+            audit_output_names(
+                self.job.filename_pattern,
+                self.mapped_records(idx) if mapped is None else mapped,
+                out_dir,
+                now=now,
+            ) if idx else OutputNameAudit()
+        )
         return RunStatus(
-            preflight=self._compose_preflight(src, out, drift, name_gate is not None),
+            preflight=self._compose_preflight(
+                src, out, drift, name_gate is not None, len(audit.too_long),
+            ),
             field_states=tuple(states),
-            gate=self._compose_gate(states, drift, idx, out_dir, name_gate),
+            gate=self._compose_gate(
+                states, drift, idx, out_dir, name_gate, review_unmet, audit,
+            ),
+            audit=audit,
         )
 
     def gate_state(self, indices: "list[int]", out_dir: str = "") -> GateState:
@@ -439,14 +477,20 @@ class RunViewModel:
     def _compose_gate(
         self, states: "list[FieldState]", drift: TemplateStructureDrift,
         indices: "list[int]", out_dir: str, name_gate: "GateState | None" = None,
+        review_unmet: "ReviewRequirement | None" = None,
+        audit: "OutputNameAudit | None" = None,
     ) -> GateState:
         """게이트 표시 결정 — 드리프트(danger·차단) > 파일명 토큰(danger) > 미확인
-        미입력(warn) > 전제조건(warn) > 열림.
+        미입력(warn) > 전제조건(warn) > **검토 요구(warn)** > 열림.
 
         UD-06: 이어채우기 문서·저장 폴더·레코드 선택 같은 warn 급 전제조건을 이 단일
         산출로 흡수해 '버튼 비활성 + 인라인 사유' 문법으로 통일한다(클릭 후 차단 모달
         재유입 소거 — 모달은 danger 예외에만 남긴다). 템플릿 부재(danger)는
         ``validate_generate`` 의 모달 백스톱에 남긴다.
+
+        검토 요구가 **전제조건보다 뒤**인 이유(F5 판정 F): 선택 0건에서는 미리보기에
+        진입하지 않는 것이 불변식(§18.11-6·§13-26 "첫 레코드를 실행 미리보기로 대신하지
+        않는다")이라, 선택이 0인데 "검토하세요"라고 말하면 이행 불가능한 지시가 된다.
         """
         if self.target_mode == "continue" and not self.template_override:
             return GateState(False, "warn", "이어채울 기존 문서(.hwpx)를 선택하세요.")
@@ -481,10 +525,15 @@ class RunViewModel:
                 False, "warn",
                 "기존 문서 이어채우기는 1건만 지원합니다. 생성 대상을 1건만 선택하세요.",
             )
+        if review_unmet is not None and review_unmet.required:
+            return GateState(
+                False, "warn", review_gate_text(review_unmet), reason="review_required",
+            )
         return GateState(True, "", "")
 
     def _compose_preflight(
         self, src, out, drift: TemplateStructureDrift, name_unresolved: bool = False,
+        long_paths: int = 0,
     ) -> PreflightResult:
         parts: "list[str]" = []
         if src.missing_columns:
@@ -502,9 +551,18 @@ class RunViewModel:
             # 상태 어휘 경계(UD-20): 사전검증 경고도 배지·게이트와 같은 '미입력'으로 통일
             # (같은 상태 2이름 해소) — '미입력'=출력값 빔(ack 대상).
             parts.append("[경고] 빈 값 필드: " + ", ".join(out.empty_valued))
+        if long_paths:
+            # **차단하지 않는다**(2R P2 · 재작성 F5 판정 K): 확장 경로·longPathsEnabled 에서는
+            # 실제로 성공하므로 게이트를 닫으면 잘 되는 환경의 사용자가 UI 로는 아예 못
+            # 만든다. 그렇다고 침묵하면 생성 중 OSError 로만 드러난다 — 그래서 사전 경고다.
+            # 문안도 단정하지 않는다("실패한다"가 아니라 "실패할 수 있다").
+            parts.append(
+                f"[경고] 저장 경로가 너무 길어 저장에 실패할 수 있는 문서 {long_paths}건. "
+                "저장 폴더를 더 짧은 곳으로 바꾸거나 파일 이름 규칙을 줄이면 확실합니다."
+            )
         if src.missing_columns or drift.has_drift or name_unresolved:
             level = "danger"
-        elif out.empty_valued:
+        elif out.empty_valued or long_paths:
             level = "warn"
         else:
             level = "ok"
@@ -601,6 +659,20 @@ class RunViewModel:
             now=now,
         )
         return existing_outputs(out_dir, names)
+
+    def output_name_audit(
+        self, indices: "list[int]", out_dir: str = "", *,
+        mark_missing: str = "", now: "datetime | None" = None,
+    ) -> OutputNameAudit:
+        """이 실행이 발급할 이름의 집합 감사(C-01, 지도 §10.12 판정 K).
+
+        ``output_conflicts`` 와 같은 입력·같은 규칙이되 디스크를 보지 않는다 — 이쪽은
+        **배치 안에서 자기들끼리** 생기는 성질(수렴·경로 길이)만 센다.
+        """
+        return audit_output_names(
+            self.job.filename_pattern, self.mapped_records(indices, mark_missing),
+            out_dir, now=now,
+        )
 
     # ------------------------------------------------------------ 생성 계획(RC-07)
     def build_generation_plan(

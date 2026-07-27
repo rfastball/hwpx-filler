@@ -122,10 +122,28 @@
     if (!stack.length) document.removeEventListener("keydown", onKeydown, true);
     // 제거/재렌더된 트리거는 focus()해도 복귀가 되지 않는다. 연결된 원 트리거만 되돌린다.
     // 하위 모달을 프로그램적으로 닫는 동안 새 최상위가 열린 경우에는 그 초점을 빼앗지 않는다.
-    if (wasTop && entry.returnFocus && entry.returnFocus.focus && entry.returnFocus.isConnected !== false) {
-      entry.returnFocus.focus();
-    }
+    if (wasTop) restoreFocus(entry.returnFocus);
     if (entry.onCloseCb) entry.onCloseCb();
+  }
+
+  /* 닫힘 뒤 초점 착지 — 트리거가 **되돌릴 수 있는 상태일 때만** 그리로 간다.
+     `disabled` 요소의 `focus()` 는 조용한 no-op 라 초점이 `<body>` 로 떨어지고, 키보드
+     사용자는 문서 맨 앞에서 다시 걸어와야 한다. 트리거가 닫히는 사이 비활성이 되는 건
+     정상 경로다(면이 닫히면서 그 행동이 더는 불가능해지는 전이) — 그래서 이 불변식은
+     호출자 규율이 아니라 여기서 세운다. 대안 착지는 **지금 서 있는 화면 루트**다:
+     초점이 사라지는 것보다 화면 처음이 낫고, 프로그램 초점이라 tabindex 는 -1 이다. */
+  function restoreFocus(target) {
+    // **되돌려 놓고 확인한다**: 어떤 요소가 초점을 받을 수 있는지의 규칙(비활성·분리·숨김·
+    // inert·전이 중)을 여기서 재현하려 들면 그 목록이 곧 다음 결함이 된다. 실제로 옮겨
+    // 보고 안 옮겨졌으면 대안으로 간다 — 판정을 흉내내지 않고 결과를 읽는다.
+    if (target && target.focus && target.isConnected !== false) {
+      target.focus();
+      if (document.activeElement === target) return;
+    }
+    const screen = document.querySelector(".scr.on");
+    if (!screen) return;
+    if (!screen.hasAttribute("tabindex")) screen.setAttribute("tabindex", "-1");
+    screen.focus();
   }
 
   function close(id) {

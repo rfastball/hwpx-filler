@@ -10,6 +10,7 @@ import pytest
 
 from hwpxfiller.core.job import Job
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.gui.review_state import review_requirement
 from hwpxfiller.gui.run_state import RunViewModel
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
@@ -591,3 +592,96 @@ def test_mapped_and_reserved_tokens_open_gate(tmp_path):
         assert vm.unresolved_name_tokens() == []
         status = vm.refresh([0, 1], str(tmp_path / "out"))
         assert "파일명 패턴" not in status.gate.text
+
+
+# ------------------------------------------------ 검토 요구의 게이트 자리(재작성 F5)
+def test_review_requirement_sits_after_preconditions_and_before_open(tmp_path):
+    """지도 §10.12 판정 F — 서열은 드리프트·토큰(danger) > 미입력 > 전제조건 > 검토 > 열림.
+
+    검토가 **전제조건보다 뒤**인 것이 하중이다: 선택 0건에서는 미리보기에 진입하지 않는
+    것이 불변식(§18.11-6)이라, 선택이 0인데 "검토하세요"라고 말하면 이행 불가능한 지시가
+    된다(빈 화면을 앞에 두고 확인을 요구하는 자리).
+    """
+    vm = _vm(tmp_path)
+    vm.acknowledge("추정가격")
+    req = review_requirement(vm.job)  # 완주 이력 없음 = 새 작업(§13-3)
+    assert req.required
+
+    # 선택 0건 — 검토가 아니라 전제조건이 말한다.
+    gate = vm.refresh([], "out", review_unmet=req).gate
+    assert "선택하세요" in gate.text and gate.reason == ""
+
+    # 저장 폴더 없음 — 역시 전제조건이 먼저.
+    gate = vm.refresh([0, 1], "", review_unmet=req).gate
+    assert "저장 폴더" in gate.text and gate.reason == ""
+
+    # 전제조건이 다 갖춰지면 그때 검토가 막는다.
+    gate = vm.refresh([0, 1], "out", review_unmet=req).gate
+    assert gate.enabled is False and gate.level == "warn"
+    assert gate.reason == "review_required" and "미리보기" in gate.text
+
+
+def test_drift_outranks_review_requirement(tmp_path):
+    """구조 불일치(danger)가 먼저다 — 고칠 수 없는 작업에 미리보기부터 열게 하지 않는다."""
+    vm = _vm(tmp_path)
+    vm.acknowledge("추정가격")
+    _write_template(vm.job.template_path, ["공고명", "추정가격", "신규필드"])
+    gate = vm.refresh([0, 1], "out", review_unmet=review_requirement(vm.job)).gate
+    assert gate.reason == "drift" and gate.level == "danger"
+
+
+def test_no_review_requirement_leaves_the_gate_open(tmp_path):
+    """§13-2 — 규칙이 그대로면 미리보기는 선택이고 게이트는 열려 있다."""
+    vm = _vm(tmp_path)
+    vm.acknowledge("추정가격")
+    assert vm.refresh([0, 1], "out", review_unmet=None).gate.enabled is True
+
+
+def test_path_length_warns_without_blocking_generation(tmp_path):
+    """C-01 미충족분(재작성 F5 판정 K) — 사전에 말하되 **막지는 않는다**(2R P2).
+
+    막으면 확장 경로·`longPathsEnabled` 환경에서 **실제로 성공하는** 사용자가 UI 로는
+    아예 만들 수 없다. 그렇다고 침묵하면 생성 중 OSError 로만 드러난다. 그래서 게이트가
+    아니라 사전검증 경고이고, 문안도 단정하지 않는다("실패한다"가 아니라 "할 수 있다").
+    """
+    vm = _vm(tmp_path)
+    vm.acknowledge("추정가격")
+    vm.job.filename_pattern = "{{공고명}}" + "가" * 250
+    status = vm.refresh([0, 1], "C:/out")
+    assert status.gate.enabled is True, "휴리스틱이 생성을 막고 있습니다."
+    assert status.preflight.level == "warn"
+    assert "저장에 실패할 수 있는 문서 2건" in status.preflight.text
+    assert len(status.audit.too_long) == 2
+
+
+def test_path_length_is_silent_where_the_limit_does_not_exist(tmp_path, monkeypatch):
+    """휴리스틱은 그것이 참인 환경에서만 말한다 — POSIX 에 260 은 없다."""
+    monkeypatch.setattr("hwpxfiller.naming.os.name", "posix")
+    vm = _vm(tmp_path)
+    vm.acknowledge("추정가격")
+    vm.job.filename_pattern = "{{공고명}}" + "가" * 250
+    status = vm.refresh([0, 1], "/out")
+    # 이 픽스처는 빈 값이 있어 preflight 자체는 warn 이다 — 재는 것은 **경로 길이 절이
+    # 붙지 않는다**는 사실이다(존재하지 않는 한계로 경보하지 않는다).
+    assert status.audit.too_long == ()
+    assert "저장에 실패할 수 있는" not in status.preflight.text
+
+
+def test_short_paths_do_not_warn(tmp_path):
+    vm = _vm(tmp_path)
+    vm.acknowledge("추정가격")
+    status = vm.gate_state([0, 1], "C:/out")
+    assert status.enabled is True
+
+
+def test_audit_and_table_share_one_captured_timestamp(tmp_path):
+    """2R P2 — 게이트 감사와 표 「문서」 열이 다른 시각을 잡으면 `{{date:SS}}` 가 초
+    경계를 넘는 순간 미리보기가 승인시킨 이름과 생성물이 갈린다(덮어쓰기 대상까지)."""
+    from datetime import datetime as _dt
+
+    vm = _vm(tmp_path)
+    vm.acknowledge("추정가격")
+    vm.job.filename_pattern = "doc-{{date:HHmmSS}}"
+    fixed = _dt(2026, 1, 2, 3, 4, 5)
+    audit = vm.refresh([0, 1], "C:/out", now=fixed).audit
+    assert audit.names[0] == "doc-030405.hwpx"

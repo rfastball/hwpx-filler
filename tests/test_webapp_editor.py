@@ -1648,3 +1648,51 @@ def test_saving_under_a_new_name_inherits_class_but_not_history(tmp_path):
     assert fresh.group == "조달"                               # 분류는 편집을 따라간다
     assert fresh.favorited_at == "" and fresh.last_run_at == ""  # 위조 금지
     assert reg.load("원본").favorited_at == "2026-07-20T09:00:00"  # 원본 불변
+
+
+def test_edit_save_preserves_the_review_baseline(tmp_path):
+    """3R P2 — 규칙을 하나도 안 바꾸고 저장만 해도 기준선이 비면 §13-2 의 조용한 반복이
+    깨지고 다음 실행이 가장 무거운 검토를 다시 요구한다.
+
+    에디터가 소유하는 것은 **규칙**(템플릿·매핑·파일명)이고 "마지막 완주가 그중 무엇을
+    썼는가"는 실행 이력의 일이다 — 그룹·태그·이력과 같은 부류의 비-편집 메타다.
+    """
+    from hwpxfiller.core.job import rules_fingerprints
+    from hwpxfiller.gui.review_state import review_requirement
+
+    ctrl, _ = _controller26(tmp_path)
+    _save_named(ctrl, "기준선작업")
+    reg = JobRegistry(tmp_path / "jobs")
+    job = reg.load("기준선작업")
+    job.last_run_at = "2026-07-01T09:00:00"
+    job.reviewed_rules = rules_fingerprints(job)
+    reg.save(job, allow_overwrite=True)
+    assert not review_requirement(reg.load("기준선작업")).required
+
+    ctrl.load_job("기준선작업")
+    assert ctrl.dispatch("save", {})["ok"] is True
+    after = reg.load("기준선작업")
+    assert after.reviewed_rules == job.reviewed_rules, "저장이 검토 기준선을 지웠습니다."
+    assert not review_requirement(after).required
+
+
+def test_changing_the_rules_keeps_the_old_baseline_so_review_stands(tmp_path):
+    """보존은 **무효화를 막지 않는다**: 기준선은 「마지막 완주가 쓴 것」 그대로 남고,
+    바뀐 규칙과 어긋나 검토 요구가 선다(보존이 곧 승인은 아니다)."""
+    from hwpxfiller.core.job import rules_fingerprints
+    from hwpxfiller.gui.review_state import review_requirement
+
+    ctrl, _ = _controller26(tmp_path)
+    _save_named(ctrl, "규칙변경작업")
+    reg = JobRegistry(tmp_path / "jobs")
+    job = reg.load("규칙변경작업")
+    job.last_run_at = "2026-07-01T09:00:00"
+    job.reviewed_rules = rules_fingerprints(job)
+    reg.save(job, allow_overwrite=True)
+
+    ctrl.load_job("규칙변경작업")
+    ctrl.dispatch("set_pattern", {"pattern": "바뀐-{{seq:001}}"})
+    assert ctrl.dispatch("save", {})["ok"] is True
+    after = reg.load("규칙변경작업")
+    assert after.reviewed_rules == job.reviewed_rules      # 기준선은 그대로
+    assert review_requirement(after).required              # 규칙이 갈려 요구가 선다

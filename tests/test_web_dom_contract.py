@@ -1502,3 +1502,75 @@ def test_draft_live_edit_refreshes_source_bar():
     assert re.search(r"function patchMap\([\s\S]*?renderSourceBar\(", src), (
         "patchMap 이 renderSourceBar 를 부르지 않습니다 — 라이브 편집 뒤 원문바가 stale."
     )
+
+
+def test_job_preview_drawer_surface_contract():
+    """재작성 F5 정적 계약(지도 §10.12) — 드로어의 소유·개폐 순서·판정 단일 출처.
+
+    ①골격은 index.html 정적 DOM 이다(동적 생성은 role/aria 계약의 사각을 만든다 — 구
+    `pool_picker.js` K12 교훈) ②열림·자리는 **Python 소유**라 웹은 방향만 보낸다(판정 M)
+    ③성사 뒤에만 연다 ④승인은 명시 사건 하나이고 생성과 다른 사건이다(§13-4).
+    """
+    html = WEB_INDEX.read_text(encoding="utf-8")
+    for element in (
+        "previewModal", "previewTitle", "previewPos", "previewPrev", "previewNext",
+        "previewRows", "previewEvidence", "previewEvidenceRows", "previewEvidenceNote",
+        "previewEvidenceReason",
+        "previewFilename", "previewScope", "previewApprove", "previewClose",
+        "previewEdit", "previewEmpty", "jobPreviewOpen", "jobReviewFlag",
+    ):
+        assert f'id="{element}"' in html, f"미리보기 드로어 노드가 없습니다: {element}"
+    drawer = html.split('id="previewModal"', 1)[1].split('<!-- 붙여넣기 모달', 1)[0]
+    assert 'role="dialog"' in drawer and 'aria-modal="true"' in drawer, (
+        "드로어에 dialog 역할·모달 표기가 없습니다(정적 DOM 이 소유하는 계약)."
+    )
+    assert 'aria-label="이전 문서"' in drawer and 'aria-label="다음 문서"' in drawer, (
+        "레코드 이동 버튼에 접근 가능한 이름이 없습니다(‹ › 만으로는 무엇의 이동인지 모른다)."
+    )
+
+    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    # 자리는 서수이고 Python 이 소유한다 — 웹이 index 를 되돌려주면 그 사이의 데이터 교체·
+    # 표시순서 변경이 남의 행을 고른다(F4 판정 F·F3 판정 A 와 같은 뿌리).
+    assert '"preview_move", { delta: -1 }' in src and '"preview_move", { delta: 1 }' in src, (
+        "레코드 이동이 방향이 아니라 좌표를 보냅니다(판정 M)."
+    )
+    assert "preview_pos" not in src and "previewIndex" not in src, (
+        "웹이 미리보기 자리를 들고 있습니다 — 상태의 주체는 Python 입니다."
+    )
+    # 성사 뒤에만 연다(§9.3 4행 상속).
+    open_fn = src.split("async function openPreview", 1)[1].split("\n  }", 1)[0]
+    assert open_fn.index('"preview_open"') < open_fn.index('Modal.open("previewModal"'), (
+        "면을 먼저 열고 나서 성사를 묻습니다 — 거절되면 무엇을 미리보는 중인지 거짓이 됩니다."
+    )
+    assert "flushPendingEdits" in open_fn, (
+        "열기가 대기 중 편집을 추월합니다 — 미리보는 범위가 사용자가 본 그것이 아닙니다."
+    )
+    # 승인은 명시 클릭 하나. 면을 여는 것이 승인이 아니다(§13-4).
+    assert '"preview_approve"' in src
+    assert 'Bridge.call(SCREEN, "preview_approve"' not in open_fn, (
+        "면을 여는 경로가 승인을 발신합니다(생성 ≠ 승인)."
+    )
+    # 잠금 범위(§9.3 2행) — 오버레이 루트는 화면 루트 질의 밖이라 setBusy 가 따로 훑는다.
+    busy_fn = src.split("function setBusy", 1)[1].split("\n  }", 1)[0]
+    assert '$("previewModal")' in busy_fn, "생성 중 드로어가 잠기지 않습니다(오버레이 사각)."
+
+
+def test_preview_button_states_are_decided_after_the_busy_restore():
+    """실 창 프로브가 잡은 자리 — `setBusy` 는 렌더 말미에 `[data-busy-lock]` 을 **일괄
+    복원**하므로, 그전에 끈 버튼은 되살아난다(`jobBtnPickFolder` 가 같은 이유로 거기 있다).
+
+    미리보기 이동 버튼은 경계에서 멈추는 것이 계약인데(순환하지 않는다), 판정을
+    `renderPreview` 에만 두면 마지막 건에서도 「다음」이 눌린다 — 정적 배선은 멀쩡해 보이고
+    실물만 틀리는 결함류라 렌더 순서를 계약으로 못박는다.
+    """
+    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    render_fn = src.split("function renderPreview", 1)[1].split("\n  }", 1)[0]
+    for btn in ("previewPrev", "previewNext", "jobPreviewOpen"):
+        assert f'$("{btn}").disabled' not in render_fn, (
+            f"{btn} 가용성을 renderPreview 에서 정합니다 — setBusy 의 일괄 복원이 되살립니다."
+        )
+    busy_fn = src.split("function setBusy", 1)[1].split("\n  }", 1)[0]
+    for btn in ("previewPrev", "previewNext", "jobPreviewOpen"):
+        assert f'$("{btn}").disabled' in busy_fn, (
+            f"{btn} 가용성이 렌더 말미 단일 지점에서 정해지지 않습니다."
+        )

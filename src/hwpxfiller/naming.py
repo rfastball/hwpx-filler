@@ -12,7 +12,9 @@
 
 from __future__ import annotations
 
+import os
 import re
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -118,9 +120,19 @@ class OutputNamer:
         self._seen: "set[str]" = set()
 
     def next(self, data: "dict[str, object]") -> str:
+        return self.next_detail(data)[0]
+
+    def next_detail(self, data: "dict[str, object]") -> "tuple[str, bool]":
+        """``(발급한 이름, 꼬리표가 붙었는가)`` — 수렴 집계(C-01)의 원천.
+
+        꼬리표 자체는 파일 소실을 막는 올바른 처분이지만, **몇 건이 수렴했는지**를 아무도
+        세지 않으면 사용자는 왜 ``_1`` 이 붙었는지 모른다. 세는 자리를 여기 둔다: 규칙을
+        아는 유일한 지점이라 밖에서 재구현하면 그 순간 판정이 두 벌이 된다.
+        """
         self._seq += 1
         name = make_output_filename(self.pattern, data, seq=self._seq, now=self.now)
-        return self._dedupe(name)
+        deduped = self._dedupe(name)
+        return deduped, deduped != name
 
     def _dedupe(self, name: str) -> str:
         if name not in self._seen:
@@ -148,6 +160,72 @@ def plan_output_names(
     """
     namer = OutputNamer(pattern, now=now)
     return [namer.next(r) for r in records]
+
+
+#: Windows 기본 경로 길이 한계(끝 NUL 포함). 확장 경로(``\\?\``)·`longPathsEnabled` 에서는
+#: 더 길어도 성공하므로 **경고이지 차단이 아니다**(단정하면 문안이 거짓이 된다).
+MAX_PATH_CHARS = 260
+
+
+def default_max_path() -> int:
+    """이 런타임에서 적용할 경로 길이 한계(``0`` = 세지 않음).
+
+    Windows 밖에서는 이 한계가 **존재하지 않는다** — POSIX 는 구성요소 255 바이트 제한이고
+    전체 경로는 훨씬 길다. 그런데도 260 을 재면 정상 경로에 거짓 경보가 뜬다(리뷰 2R P2).
+    휴리스틱은 그것이 참인 환경에서만 말한다.
+    """
+    return MAX_PATH_CHARS if os.name == "nt" else 0
+
+
+@dataclass(frozen=True)
+class OutputNameAudit:
+    """배치가 발급할 이름의 **집합 단위** 감사 — 보고서 C-01 의 자리(지도 §10.12 판정 K).
+
+    master 가 이미 권위 있게 막는 것(미해소 토큰 danger 게이트·디스크 충돌 확인·배치 내
+    유일성)은 그대로 두고, **세지 않던 둘**만 센다:
+
+    - ``converged`` — 서로 다른 레코드가 같은 이름으로 수렴해 꼬리표가 붙은 자리. 표
+      「문서」 열이 실이름을 이미 보여주므로 경보로 승격하지 않는다(전면 가시성 완화 조항).
+      규모만 미리보기 증거가 말한다.
+    - ``too_long`` — 저장 경로가 한계를 넘을 **가능성**이 있는 자리. 이건 **보이지 않는다**:
+      지금은 생성 중 OSError 로만 드러난다. 실행해서 알게 하는 건 확인-또는-경보 위반이라
+      사전에 말한다. 다만 **차단하지는 않는다**(2R P2): 확장 경로·`longPathsEnabled` 에서는
+      실제로 성공하므로, 막으면 잘 되는 환경의 사용자가 UI 로는 아예 못 만든다.
+    """
+
+    names: "tuple[str, ...]" = ()
+    converged: "tuple[int, ...]" = ()   # 이름 목록 안의 자리(0-based)
+    too_long: "tuple[int, ...]" = ()
+
+    @property
+    def has_warning(self) -> bool:
+        return bool(self.too_long)
+
+
+def audit_output_names(
+    pattern: str, records: "list[dict[str, object]]", out_dir: "str | Path" = "",
+    *, now: "datetime | None" = None, max_path: "int | None" = None,
+) -> OutputNameAudit:
+    """:func:`plan_output_names` 와 **같은 규칙·순서**로 계산하며 집합 성질을 함께 센다.
+
+    이름 자체는 계획과 한 글자도 다르면 안 된다(미리보기가 실행과 다른 이름을 말하는 순간
+    「보이는 것 = 실행되는 것」이 이 자리에서만 깨진다) — 그래서 별도 구현이 아니라 같은
+    :class:`OutputNamer` 를 돈다.
+    """
+    limit = default_max_path() if max_path is None else max_path
+    namer = OutputNamer(pattern, now=now)
+    names: "list[str]" = []
+    converged: "list[int]" = []
+    too_long: "list[int]" = []
+    base = Path(out_dir) if (out_dir and limit) else None
+    for i, rec in enumerate(records):
+        name, dedup = namer.next_detail(rec)
+        names.append(name)
+        if dedup:
+            converged.append(i)
+        if base is not None and len(str(base / name)) >= limit:
+            too_long.append(i)
+    return OutputNameAudit(tuple(names), tuple(converged), tuple(too_long))
 
 
 def existing_outputs(out_dir: "str | Path", names: "list[str]") -> "list[str]":

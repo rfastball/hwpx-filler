@@ -326,7 +326,37 @@ def _drive(d: Driver) -> None:
     # 사용자가 고른다. 그래서 자동 연결만으로는 게이트가 열리지 않고, 여기서 전체 선택을
     # 눌러야 「N개 생성」이 열린다. 101 도 이 순서를 그대로 가르친다.
     d.click_sel("#jobSelAll")
-    d.wait("!document.getElementById('jobGenBtn').disabled", "행 선택·게이트 열림")
+
+    # ---- S5a 첫 실행의 결과 확인(F5) ---------------------------------------
+    # 방금 만든 작업은 아직 한 번도 문서를 만들지 않았다 — §13-3 대로 결과를 확인해야
+    # 실행할 수 있다. 행을 골라도 게이트는 아직 닫혀 있고, 미리보기에서 확인해야 열린다.
+    # 101 은 이 순서를 그대로 가르친다(다음 실행부터는 §13-2 대로 조용하다).
+    d.wait(
+        "document.getElementById('jobGenBtn').disabled"
+        " && document.getElementById('jobGate').textContent.includes('미리보기')",
+        "첫 실행 검토 요구",
+    )
+    d.click_sel("#jobPreviewOpen")
+    d.wait(
+        "!document.getElementById('previewModal').classList.contains('hidden')"
+        " && document.querySelectorAll('#previewRows .mir-row').length > 0"
+        " && document.getElementById('previewFilename').textContent.length > 0",
+        "미리보기 드로어·값·파일 이름",
+    )
+    d.shot("preview-drawer")
+    d.click_sel("#previewApprove")
+    # 승인은 명시 사건이다 — 버튼이 사라지는 것이 그 사건의 착지다(면은 열린 채 남아
+    # 나머지 문서를 계속 넘겨볼 수 있다).
+    d.wait(
+        "getComputedStyle(document.getElementById('previewApprove')).display === 'none'",
+        "결과 확인 착지",
+    )
+    d.click_sel("#previewClose")
+    d.wait(
+        "document.getElementById('previewModal').classList.contains('hidden')"
+        " && !document.getElementById('jobGenBtn').disabled",
+        "확인 뒤 게이트 열림",
+    )
     d.shot("session-panel")
 
     # ---- S5b 범위 편집기(⤢) — 초안 거래를 사람 순서로 한 바퀴(F3) ----------

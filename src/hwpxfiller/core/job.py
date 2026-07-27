@@ -312,6 +312,16 @@ class Job:
     # 소스 키 계약(source_keys)이 실행의 진짜 게이트이지 이 참조가 아니다(파일이 월별로
     # 바뀌어도 헤더가 같으면 재사용). 참조가 유일 실행 의존이 되지 않게 한다.
     default_dataset_ref: str = ""
+    # 마지막 **완주** 런이 쓴 규칙의 대상별 지문(재작성 F5, 지도 §10.12 판정 B).
+    # ``{}`` = 아직 완주한 적 없음 = 새 작업이라 검토 요구가 선다(§13-3).
+    # 왜 영속인가: §13-2("정상 반복 실행에서 미리보기는 선택")가 **앱 재시작을 넘어**
+    # 성립해야 한다 — 세션 사건만으로 세우면 어제 규칙을 바꾸고 오늘 열었을 때 요구가
+    # 조용히 사라진다. 반대로 **승인**은 영속시키지 않는다(승인만 하고 실행 안 한 채
+    # 재시작하면 요구가 되돌아온다 = fail-closed).
+    # ``content_fingerprint`` 에서 빠진다(tags·last_run_at·favorited_at·group 과 같은 줄):
+    # 검토 메타를 내용 지문에 남기면 실행 한 번이 열어 둔 편집 세션에 「외부 변경을
+    # 덮어씁니다」라는 거짓 파괴 확인을 띄운다.
+    reviewed_rules: "dict[str, str]" = field(default_factory=dict)
 
     @property
     def media(self) -> str:
@@ -351,6 +361,7 @@ class Job:
             "tags": dict(self.tags),
             "group": self.group,
             "default_dataset_ref": self.default_dataset_ref,
+            "reviewed_rules": dict(self.reviewed_rules),
         }
 
     @classmethod
@@ -369,6 +380,17 @@ class Job:
                     f"작업 필드 '{key}' 는 문자열이어야 하는데 {type(v).__name__} 입니다"
                 )
             return v
+
+        raw_reviewed = d.get("reviewed_rules", {})
+        if not isinstance(raw_reviewed, dict):
+            raise ValueError(
+                f"'reviewed_rules' 는 사전이어야 하는데 {type(raw_reviewed).__name__} 입니다"
+            )
+        reviewed: "dict[str, str]" = {}
+        for k, v in raw_reviewed.items():
+            if not isinstance(k, str) or not isinstance(v, str):
+                raise ValueError("'reviewed_rules' 의 대상·지문은 모두 문자열이어야 합니다")
+            reviewed[k] = v
 
         raw_tags = d.get("tags", {})
         if not isinstance(raw_tags, dict):
@@ -393,6 +415,7 @@ class Job:
             tags=tags,
             group=_str("group"),
             default_dataset_ref=_str("default_dataset_ref"),
+            reviewed_rules=reviewed,
         )
 
     def save(self, path: "str | Path") -> None:
@@ -422,7 +445,47 @@ def content_fingerprint(job: "Job") -> str:
     d.pop("last_run_at", None)
     d.pop("favorited_at", None)
     d.pop("group", None)
+    # 검토 기준선도 뺀다(재작성 F5 판정 B) — 완주 스탬프가 갱신하는 사용 메타라 위 넷과
+    # 같은 부류다. 남기면 실행 한 번이 열어 둔 편집 세션에 거짓 파괴 확인을 띄운다.
+    d.pop("reviewed_rules", None)
     return json.dumps(d, ensure_ascii=False, sort_keys=True)
+
+
+#: 검토 위험 축의 지문 키 접두사 — 표면·테스트가 문자열을 재조립하지 않게 한다.
+_FP_TEMPLATE = "template"
+_FP_FILENAME = "filename"
+
+
+def rules_fingerprints(job: "Job") -> "dict[str, str]":
+    """작업 규칙의 **대상별** 지문(재작성 F5, 지도 §10.12 판정 C).
+
+    ``content_fingerprint`` 는 "바뀌었나"만 답하는 blob 이라 **무엇이** 바뀌었는지 못
+    말한다 — 그 위에 승인을 세우면 F-06 이 P0 로 지목한 결함(표시형 변경과 source 변경이
+    같은 증거로 승인됨)이 그대로 남는다. 그래서 축을 넷으로 쪼갠다:
+
+    - ``template`` — 템플릿 경로(구조 위험)
+    - ``filename`` — 파일명 패턴(파일명 집합 위험)
+    - ``field:<이름>:source`` — 그 필드의 source·type·const·blank(의미 연결 위험)
+    - ``field:<이름>:format`` — 그 필드의 표시형 코드(표시형 위험)
+
+    키의 **등장·소멸**이 곧 필드 추가·삭제다(F-06 증거 표의 「의도적 미사용」 행) — 값만
+    비교하는 대신 키 집합을 비교하는 이유다. 두 표면이 이 조립을 복붙하면 그 드리프트가
+    곧 조용한 오판정이라 링0 에 단일 출처로 둔다(``content_fingerprint`` 와 같은 근거).
+    """
+    out = {
+        _FP_TEMPLATE: job.template_path,
+        _FP_FILENAME: job.filename_pattern,
+    }
+    for m in job.mapping.mappings:
+        name = m.template_field
+        # source 축은 "이 필드가 어떤 값을 낼 것인가"를 결정하는 전부다 — 유형·리터럴·
+        # 비움 선언이 여기 든다(표시형만 fmt 로 뺀다). 구분자는 필드 이름·값에 못 들어가는
+        # ``\x1f`` 라 "a|b" 와 "a" + "|b" 가 같은 지문으로 붕괴하지 않는다.
+        out[f"field:{name}:source"] = "\x1f".join(
+            (m.source, m.type, m.const, "blank" if m.is_blank else "")
+        )
+        out[f"field:{name}:format"] = m.fmt
+    return out
 
 
 class JobRegistryOwnershipError(RuntimeError):
@@ -640,10 +703,29 @@ class JobRegistry:
             self.save(job, allow_overwrite=True)  # 같은 이름 재저장 = 자기 갱신
             return job
 
-    def stamp_last_run(self, name: str, when: str) -> Job:
-        """마지막 실행 시각 스탬프(#129) — 다른 writer 와 직렬화된 단일 필드 갱신."""
+    def stamp_last_run(
+        self, name: str, when: str, *, rules: "dict[str, str] | None" = None,
+    ) -> Job:
+        """완주 스탬프(#129) — 다른 writer 와 직렬화된 갱신.
+
+        시각과 **검토 기준선**을 같은 잠긴 왕복에서 함께 찍는다(재작성 F5 판정 B): 완료
+        이벤트가 둘로 갈라지면 이력과 검토 요구가 서로 다른 실행을 완주로 부른다(#129 가
+        가드·이력을 한 술어로 묶은 것과 같은 근거).
+
+        ``rules`` 는 **그 런이 실제로 쓴 규칙**의 지문이다(1R P1). 디스크의 지금 규칙으로
+        찍으면 안 된다: 같은 프로세스의 에디터가 배치가 도는 사이 이 작업을 저장하면, 완주가
+        **한 번도 실행·확인된 적 없는 새 규칙**을 검토받은 것으로 기록한다(조용한 승인 —
+        되돌릴 수 없는 방향이다). 반대로 런의 규칙을 찍으면 디스크의 새 규칙과 어긋나
+        검토 요구가 **그대로 선다**: 안전한 방향이라 이쪽이 정본이다.
+
+        ``None`` 은 "무엇을 실행했는지 모른다"는 뜻이고, 그때는 기준선을 **건드리지 않는다** —
+        디스크 규칙으로 대신 찍는 폴백을 두면 그 폴백이 곧 위 결함의 통로다(안전한 기본값이
+        없는 인자는 필수로 두는 것이 낫다).
+        """
         def _stamp(job: Job) -> None:
             job.last_run_at = when
+            if rules is not None:
+                job.reviewed_rules = dict(rules)
 
         return self.mutate(name, _stamp)
 
@@ -707,6 +789,10 @@ class JobRegistry:
             # 즐겨찾기도 미계승(슬라이스 2): 복사본이 사용자가 고르지도 않은 우선순위로
             # 메인 Top 5 를 점유하면 즐겨찾기가 '사용자 우선순위'라는 정의(§19.2)를 잃는다.
             job.favorited_at = ""
+            # 검토 기준선도 미계승(재작성 F5 판정 B): 복사본은 아직 어떤 문서도 만들지
+            # 않았으므로 처음부터 검토 요구를 진다 — 원본의 완주를 물려받으면 한 번도
+            # 확인받지 않은 규칙이 열린 게이트로 시작한다.
+            job.reviewed_rules = {}
             self.save(job)
             return candidate
 
