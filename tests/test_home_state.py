@@ -18,13 +18,16 @@ from hwpxfiller.gui.home_state import (
     BADGE_READY,
     MODE_HWPX,
     MODE_TXT,
+    NO_SOURCE_LABEL,
     VIEW_ALL,
     VIEW_FAVORITES,
     VIEW_NEEDS,
     VIEW_RECENT,
     HomeViewModel,
     JobRow,
+    field_binding_rows,
     library_health,
+    library_health_causes,
     library_mode_of,
 )
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
@@ -740,6 +743,103 @@ def test_library_projection_ands_active_tag_facets(tmp_path):
     assert vm.library_counts()[VIEW_ALL] == 1        # 탭 건수도 켜진 칩 안에서 센다
     vm.set_library_view(VIEW_FAVORITES)
     assert vm.library_sections()[0].rows == []       # 즐겨찾기 ∧ 그 태그 = 0건
+
+
+def test_library_ungrouped_section_is_identified_apart_from_flat_degenerate(tmp_path):
+    """``value=""`` 두 뜻을 ``is_untagged`` 가 가른다(지도 §10.8 — 상세/목록 헤더 판정).
+
+    「그룹 없음」 구획과 "나눌 group 이 없어 퇴화한 평면"은 둘 다 빈 값이라, 표면이 값으로만
+    키잉하면 퇴화 평면에 헤더가 붙거나 「그룹 없음」이 헤더를 잃는다.
+    """
+    vm = HomeViewModel(_library_reg(tmp_path))
+    vm.set_library_view(VIEW_ALL)
+    secs = vm.library_sections()
+    assert [(s.value, s.is_untagged) for s in secs] == [("조달", False), ("", True)]
+
+    plain = JobRegistry(tmp_path / "flatgrp")
+    plain.save(Job(name="가", template_path=""))
+    flat = HomeViewModel(plain).library_sections()
+    assert [(s.value, s.is_untagged) for s in flat] == [("", False)]  # 퇴화 평면 ≠ 그룹 없음
+
+
+def test_health_causes_are_the_source_and_list_badge_is_derived(tmp_path):
+    """§19.7 "목록은 최고 심각도 1건, 상세는 모든 실제 원인" — 파생이지 별 판정이 아니다."""
+    reg = JobRegistry(tmp_path / "causes")
+    tpl = _compiled_hwpx(tmp_path, "cause.hwpx")               # 필드 = 계약명
+    # 템플릿 계보(파일 부재) + 작업 정의 계보(못 채우는 토큰) 두 원인이 함께 참인 작업.
+    reg.save(Job(name="두원인", template_path=str(tmp_path / "gone.hwpx"),
+                 mapping=MappingProfile(mappings=[FieldMapping("계약명", "src")]),
+                 filename_pattern="계약-{{추정가격}}"))
+    reg.save(Job(name="한원인", template_path=tpl,
+                 mapping=MappingProfile(mappings=[FieldMapping("계약명", "src")]),
+                 filename_pattern="계약-{{추정가격}}"))
+    reg.save(Job(name="건강", template_path=tpl,
+                 mapping=MappingProfile(mappings=[FieldMapping("계약명", "src")]),
+                 filename_pattern="계약-{{계약명}}"))
+    rows = {r.name: r for r in HomeViewModel(reg).rows()}
+
+    # 원인 열거가 정본이고, 목록 1건은 그 최댓값이다 — 같은 상태에 두 판정을 두지 않는다.
+    for name in ("두원인", "한원인", "건강"):
+        causes = library_health_causes(rows[name])
+        assert library_health(rows[name]) == (causes[0] if causes else (0, ""))
+    assert library_health_causes(rows["건강"]) == []
+
+    # 두 계보는 **함께** 실린다(상세가 둘 다 본다) — 목록만 보면 하나만 아는 상태였다.
+    both = library_health_causes(rows["두원인"])
+    assert [t for _, t in both] == [
+        "템플릿 파일을 찾을 수 없습니다.",
+        "파일명 패턴의 토큰을 채우지 못합니다.",
+    ]
+    # 그래도 목록 대표는 종전과 같다 — 정렬은 심각도 내림 + 발견 순 안정.
+    assert library_health(rows["두원인"]) == (3, "템플릿 파일을 찾을 수 없습니다.")
+    assert [s for s, _ in both] == sorted((s for s, _ in both), reverse=True)
+
+
+def test_health_causes_do_not_misdiagnose_unlinked_as_unsupported(tmp_path):
+    """전 원인 열거가 **오진을 늘리지 않는다** — 앞 사유가 참이면 뒤는 판정 근거가 없다.
+
+    경로가 비면 ``Job.media`` 도 비는데, 그것을 "지원하지 않는 작업 방식"으로 함께 실으면
+    사용자는 「템플릿 다시 연결」로 고칠 수 있는 작업에 막다른 문안을 하나 더 받는다.
+    """
+    reg = JobRegistry(tmp_path / "misdiag")
+    reg.save(Job(name="저작중", template_path=""))
+    row = next(r for r in HomeViewModel(reg).rows() if r.name == "저작중")
+    texts = [t for _, t in library_health_causes(row)]
+    assert texts == ["템플릿을 아직 연결하지 않았습니다."]
+    assert "지원하지 않는 작업 방식입니다." not in texts
+
+
+def test_field_binding_rows_read_saved_binding_without_current_data(tmp_path):
+    """상세 「필드 연결」 표는 **저장된 Binding 그대로**(지도 §10.8 판정 C).
+
+    현재 데이터는 「문서 만들기」 세션 소유라 라이브러리가 원본 열 표시 이름을 쓰면 화면 간
+    결합이 생긴다 — 항상 저장된 항목 키를 보이고, 값은 계산하지 않는다(미리보기는 F5).
+    """
+    job = Job(name="상세", template_path="", mapping=MappingProfile(mappings=[
+        FieldMapping("계약명", source="bidNtceNm"),
+        FieldMapping("추정가격", source="presmptPrce", type="amount", fmt="{:,}"),
+        FieldMapping("공고일", source="bidNtceDt", type="date"),
+        FieldMapping("발주처", type="const", const="조달청"),
+        FieldMapping("비고", type="blank"),
+        FieldMapping("담당자", type="text", fmt="phone"),
+        FieldMapping("미정", source=""),
+    ]))
+    rows = {r.template_field: r for r in field_binding_rows(job)}
+    assert rows["계약명"].source_label == "bidNtceNm"          # 저장 키 그대로(열 이름 아님)
+    assert rows["추정가격"].format_label == "금액 · 숫자"       # 프리셋 라벨은 링0 단일 출처
+    assert rows["공고일"].format_label == "날짜 · 표준"         # 빈 코드 = 기본 프리셋
+    assert rows["담당자"].format_label == "텍스트 · 전화"
+    assert rows["발주처"].source_label == "고정값 「조달청」" and rows["발주처"].format_label == "—"
+    assert rows["비고"].blank and rows["비고"].source_label == "비움(명시)"
+    # 소스를 아직 안 고른 항목은 "없음"이 아니라 **미지정**이다(조용한 빈칸 금지).
+    assert rows["미정"].source_label == NO_SOURCE_LABEL and not rows["미정"].blank
+
+
+def test_field_binding_rows_keep_unknown_format_code_verbatim():
+    """프리셋 밖 직접 입력 코드는 원문 그대로 — 모르는 것을 아는 척하지 않는다."""
+    job = Job(name="고급", template_path="", mapping=MappingProfile(
+        mappings=[FieldMapping("납기", source="dlvrDt", type="date", fmt="%y/%m")]))
+    assert field_binding_rows(job)[0].format_label == "날짜 · %y/%m"
 
 
 def test_unknown_library_view_and_mode_degenerate(tmp_path):
