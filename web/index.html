@@ -933,6 +933,21 @@
       </div>
     </div>
 
+    <!-- 3택 모달(재작성 F7) — patch 처분(저장하고 이동 · 버리고 이동 · 머무르기)처럼 답이
+         셋인 자리. 확인 모달로 두 번 물으면 "취소가 무엇을 취소하는지"가 갈리고(이동인가
+         편집인가) 그 모호함이 곧 조용한 파기다. 기본 포커스·Escape = 머무르기(안전측). -->
+    <div id="chooseModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="chooseModalTitle">
+      <div class="modal-card">
+        <h3 id="chooseModalTitle">선택</h3>
+        <p class="modal-body" id="chooseModalBody"></p>
+        <div class="modal-actions">
+          <button class="btn" id="chooseModalCancel">머무르기</button>
+          <button class="btn" id="chooseModalAlt"></button>
+          <button class="btn primary" id="chooseModalOk"></button>
+        </div>
+      </div>
+    </div>
+
     <!-- 입력 모달(#86) — 네이티브 window.prompt 대체. 기본 포커스=입력칸, Enter=확인, Escape=취소. -->
     <div id="promptModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="promptModalTitle">
       <div class="modal-card">

@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
@@ -44,12 +45,21 @@ from ..core.job import (
     JobRegistry,
     classify_existing,
     content_fingerprint,
+    template_media,
 )
-from ..core.mapping import TYPES
+from ..core.mapping import TYPES, MappingProfile
 from ..core.schema import extract_schema
 from ..core.template_status import default_templates_dir
 from ..data import source_for_path
 from ..gui.dataset_pool_state import kind_transition_clause, reference_summary
+from ..gui.edit_session import (
+    SECTION_BINDING,
+    SECTION_FILENAME,
+    SECTION_TEMPLATE,
+    EditSession,
+    make_context,
+    sections_for,
+)
 from ..gui.job_editor_state import (
     needs_overwrite_confirm,
     overwrite_confirm_text,
@@ -140,7 +150,11 @@ class EditorController:
         self._reset()
 
     def _reset(self) -> None:
-        self.step = 0
+        # 현재 탭 = 계약 §5.1 의 section 문자열(재작성 F7 판정 B — 정수 단계 어휘 사망).
+        self.section = SECTION_TEMPLATE
+        # 편집 거래(§5.2) — 새 세션은 **초안**이라 base 가 없다(§10.13 판정 P): 비교 대상이
+        # 없는 것을 patch 로 부르면 첫 저장이 "전 필드가 바뀝니다"를 재진술하게 된다.
+        self.session = EditSession(context=make_context(""), base=None, section=self.section)
         self.template_path = ""
         self.schema = None
         self.gate: "PartialGate | None" = None
@@ -242,17 +256,52 @@ class EditorController:
             and (self.gate is None or self.gate.can_proceed())
         )
 
-    def can_advance(self, from_step: int) -> bool:
-        """from_step → from_step+1 진행 가부(Qt 위저드 isComplete 미러).
+    def sections(self) -> "tuple[str, ...]":
+        """이 세션의 탭 구성 — **매체 파생**(§10.13 판정 A). 에디터 산출은 hwpx 라 매체가
+        아직 안 정해진 초안(템플릿 미선택)도 hwpx 구성으로 본다: 이 표면이 만드는 것이
+        무엇인지는 세션 시작 시점에 이미 정해져 있다(TXT 합류는 F6)."""
+        return sections_for(
+            template_media(self.template_path) if self.template_path else "hwpx"
+        )
 
-        3단계 접기(블록 2 결정 11): 데이터 선택이 매핑 단계의 관문으로 들어와 별도 단계가
-        아니게 됐다 — 0→1(템플릿→매핑)은 템플릿 준비, 1→2(매핑→저장)은 매핑 확정.
+    def can_advance(self, from_section: str) -> bool:
+        """`from_section` → 그 다음 탭으로의 진행 가부(신규 초안의 전진 게이트).
+
+        3단계 접기(블록 2 결정 11): 데이터 선택이 매핑 탭의 관문으로 들어와 별도 단계가
+        아니다 — 템플릿→연결은 템플릿 준비, 연결→파일 이름은 매핑 확정.
+
+        **초안에만 걸리는 규율**(§10.13 판정 M): 저장된 작업 편집은 의존이 전부 충족된
+        상태라 탭을 자유 이동한다. 초안은 순서 의존이 실재해(템플릿 없인 매핑 없음) 전진
+        마다 게이트를 세운다 — 빈 표를 열어 두고 "채우세요"라고 말하지 않는다.
         """
-        if from_step == 0:
+        if from_section == SECTION_TEMPLATE:
             return self._template_ready()
-        if from_step == 1:
+        if from_section == SECTION_BINDING:
             return self.model is not None and self.model.is_complete()
         return False
+
+    def _draft_job(self) -> "Job":
+        """지금 세션이 저장한다면 나올 규칙만 담은 Job — patch 유도의 오른쪽 항.
+
+        이름·기본 데이터 참조는 담지 않는다: 규칙이 아니라 정체·조준 힌트라 section 에
+        속하지 않는다(§10.13 판정 L). 매핑은 **확정 행만**(:meth:`MappingModel.to_profile`)
+        — 저장되는 것과 같은 집합이어야 "저장하면 무엇이 달라지나"가 참이 된다. 확정하지
+        않은 편집은 :func:`dirty_sections` 의 ``pending_binding`` 이 따로 센다.
+        """
+        return Job(
+            template_path=self.template_path,
+            mapping=self.model.to_profile() if self.model is not None else MappingProfile(),
+            filename_pattern=self.pattern,
+        )
+
+    def _pending_binding(self) -> bool:
+        """확정되지 않은 사람 손길이 매핑에 남아 있는가 — 버리면 사라지는 편집."""
+        if self.model is None:
+            return False
+        return any(r.touched and not r.confirmed for r in self.model.rows)
+
+    def dirty_sections(self) -> "tuple[str, ...]":
+        return self.session.dirty(self._draft_job(), pending_binding=self._pending_binding())
 
     # --------------------------------------------------- 활성 헤더(#49)
     def _active_sources(self) -> "list[str]":
@@ -302,9 +351,31 @@ class EditorController:
 
     def snapshot(self) -> dict:
         active_sources = self._active_sources()  # 활성/카운트 재사용(1회 계산)
+        sections = self.sections()
+        dirty = self.dirty_sections()
         snap: dict = {
-            "step": self.step,
-            "reachable": [self.can_advance(s) for s in range(2)],  # 0→1(템플릿→매핑),1→2(매핑→저장)
+            # 계약 §5.1 의 section 어휘 하나로 탭·patch·액션이 같은 문자열을 쓴다(판정 B).
+            "section": self.section,
+            "sections": list(sections),
+            # 전진 게이트는 **초안에만**(판정 M) — 편집은 자유 이동이라 전부 True.
+            "reachable": {
+                s: (True if self._editing_origin else self.can_advance(s)) for s in sections
+            },
+            # 거래 상태(§5.2) — 손댄 자리(가드가 본다)와 저장하면 달라지는 것(재진술·판본이
+            # 본다)을 **따로** 낸다. 둘을 하나로 뭉치면 미확정 편집이 조용히 버려진다.
+            "is_draft": self.session.is_draft,
+            "dirty_sections": list(dirty),
+            "changes": self.session.changes(self._draft_job()),
+            "context": self.session.context.to_dict(),
+            # 판본(F7 판정 O 표시 자리 ①) — 저장된 작업만 세대가 있다. 초안은 아직 없다:
+            # 저장되지 않은 규칙에 r1 을 붙이면 있지도 않은 세대를 말하게 된다.
+            "revisions": (
+                {
+                    "template": self.session.base.template_revision,
+                    "binding": self.session.base.binding_revision,
+                }
+                if self.session.base is not None else {}
+            ),
             "template_path": self.template_path,
             "template_name": self.template_path.rsplit("\\", 1)[-1].rsplit("/", 1)[-1],
             "field_count": len(self.schema.fields) if self.schema else 0,
@@ -341,20 +412,25 @@ class EditorController:
             "dataset_name": self.dataset_name,
             # 작성 출처 provenance(#53-C) — 편집 모드에서 복원한 것(없으면 None).
             "provenance": self._loaded_provenance or None,
-            # 기본 데이터 연결 상태(#67) — 저장 단계(2)에서만 계산: 표시가 저장 단계뿐이라
-            # 매핑 편집 등의 잦은 push 가 레지스트리 읽기+exists() 를 지불할 이유가 없다
-            # (저장 단계 자체의 push 는 change 단위라 비용 무시 수준).
+            # 기본 데이터 연결 상태(#67) — 거처가 「저장」 분류에서 **데이터 관문**으로
+            # 옮겨졌다(§10.13.3 승계 정산): 참조를 실제로 쓰는 자리가 여기다. 잦은 push 의
+            # 비용은 함수 자체가 막는다 — 데이터를 이미 골랐으면 첫 줄에서 None 으로
+            # 빠지므로 레지스트리 읽기는 「참조는 있고 데이터는 아직 없는」 상태에서만 난다.
             "default_dataset": (
-                self._default_dataset_snapshot() if self.step == 2 else None
+                self._default_dataset_snapshot()
+                if self.section == SECTION_BINDING else None
             ),
             # 템플릿 라이브러리(신규 1단계=라이브러리에서 그룹 구획으로 고르기, #108 슬라이스 3)
             # — 템플릿 분류(0)에서만 스캔한다(파일시스템 재스캔이라 매핑 편집의 잦은 push 에 지불
             # 금지; default_dataset 선례). 그 외 단계는 빈 구획.
             "library": (
-                self._library_snapshot() if self.step == 0 else {"sections": [], "flat": True}
+                self._library_snapshot() if self.section == SECTION_TEMPLATE
+                else {"sections": [], "flat": True}
             ),
             # F26 — 파일명 라이브 예시(표본 1행 고정). 저장 분류(2)에서만 계산.
-            "pattern_preview": self._pattern_preview() if self.step == 2 else "",
+            "pattern_preview": (
+                self._pattern_preview() if self.section == SECTION_FILENAME else ""
+            ),
             "notice": (
                 {"text": self.notice_text, "level": self.notice_level}
                 if self.notice_text else None
@@ -659,9 +735,45 @@ class EditorController:
 
     # ------------------------------------------------------- 편집 모드(#26 #1)
     def load_job(
-        self, name: str, *, landing_step: int = 1, emit_push: bool = True
+        self,
+        name: str,
+        *,
+        landing_section: str = SECTION_BINDING,
+        emit_push: bool = True,
+        entry_reason: str = "voluntary",
+        evidence: "dict | None" = None,
+        return_context: "dict | None" = None,
     ) -> None:
-        """저장된 작업을 편집 세션으로 복원 — 3단계 상태 재구성(단순 배선 아님).
+        """저장된 작업을 **문맥과 함께** 편집 세션으로 연다(계약 §5.1).
+
+        진입 문맥(사유·증거·복귀처)은 여기서 한 번 세우고 그 뒤 재렌더·왕복을 건너 산다 —
+        편집기는 스스로 열리지 않으므로(늘 다른 표면의 문제가 사람을 보낸다) 문맥 없는
+        진입은 "왜 왔는지도 어디로 돌아갈지도 없는 표면"이 된다. 미지·미배선 사유는
+        :func:`~hwpxfiller.gui.edit_session.make_context` 가 fail-closed 로 거절한다.
+        """
+        job = self.registry.load(name)  # 부재·손상 → loud raise
+        self._restore_from(
+            job,
+            landing_section=landing_section,
+            context=make_context(
+                job.name,
+                entry_reason=entry_reason,
+                evidence=evidence,
+                return_context=return_context,
+            ),
+            emit_push=emit_push,
+        )
+
+    def _restore_from(
+        self,
+        job: "Job",
+        *,
+        landing_section: str,
+        context,
+        emit_push: bool = True,
+        keep_data: bool = False,
+    ) -> None:
+        """작업 스냅샷 하나로 편집 세션 상태를 재구성 — 3분류 상태 재구성(단순 배선 아님).
 
         복원 경로: ``load_template_path``(스키마·게이트) → ``from_suggestions`` 초안 →
         ``apply_profile``(저장 매핑을 확정 상태로) → ``_model_key`` 정합 세팅(단계 이동이
@@ -673,13 +785,21 @@ class EditorController:
         - 템플릿 드리프트(저장 매핑에 있는데 현 스키마에 없는 필드)는 ``apply_profile`` 이
           조용히 누락시키므로 여기서 세어 notice 로 재진술한다.
         - 태그·마지막 실행 메타는 보존해 편집 저장이 조용히 소실시키지 않는다.
+
+        입력이 **레지스트리 이름이 아니라 Job 스냅샷**인 이유(F7): 「변경 버리기」는 디스크가
+        아니라 **진입 시점 스냅샷**으로 되돌아가야 한다(§5.2 의 baseSnapshot). 디스크를 다시
+        읽으면 편집 중 밖에서 일어난 변경을 사용자가 요청하지도 않은 채 조용히 채택하게
+        되고, 그 변경은 저장 시점의 외부 변경 확인이 잡을 기회도 잃는다.
+
+        ``keep_data`` 는 「버리기」 전용이다 — 데이터 선택은 patch 가 아니라 세션 문맥이라
+        (§10.13 판정 L) 규칙을 되돌린다고 사람이 고른 엑셀까지 내려놓지 않는다.
         """
-        job = self.registry.load(name)  # 부재·손상 → loud raise
         if not Path(job.template_path).exists():
             raise ValueError(
                 f"템플릿 파일을 찾을 수 없습니다: {job.template_path}\n"
                 "파일을 되돌리거나, 홈/작업 화면의 [템플릿 다시 연결…]로 경로를 바꾸세요."
             )
+        stash = self._data_stash() if keep_data else None
         self._reset()
         # 작업 복원은 하나의 화면 전환이다. 템플릿만 로드된 중간 상태를 먼저 내보내면
         # 최종 편집 상태 직전에 DOM 전체가 한 번 더 재구성돼 화면이 깜빡인다.
@@ -704,9 +824,20 @@ class EditorController:
         self.model = MappingModel.from_suggestions(self.schema, self.source_fields)
         applied = self.model.apply_profile(job.mapping)
         self._model_key = (self.template_path, self.data_path, self.data_sheet, tuple(self.source_fields))
-        # 일반 진입은 매핑 탭(기본값)으로 시작한다. 저장 직후 재로드는 호출자가 사용자가
-        # 머물던 편집 탭을 넘겨 같은 자리로 착지시킨다(저장할 때마다 매핑 탭으로 튕김 방지).
-        self.step = max(0, min(2, int(landing_step)))
+        # 거래 상태 — base = **이 스냅샷**(§5.2 baseSnapshot). patch 는 여기서부터의 차이다.
+        # 문맥의 대상은 늘 **지금 열려 있는 작업**이다: 초안이 저장으로 작업이 되는 전이에서
+        # 진입 시점의 빈 이름이 남으면 배너가 남의(없는) 작업을 가리킨다.
+        self.session = EditSession(
+            context=replace(context, work=job.name), base=job, section=self.section
+        )
+        # 일반 진입은 연결 탭(기본값). 저장 직후 재로드는 호출자가 사용자가 머물던 탭을
+        # 넘겨 같은 자리로 착지시킨다(저장할 때마다 연결 탭으로 튕김 방지).
+        self.section = (
+            landing_section if landing_section in self.sections() else SECTION_BINDING
+        )
+        self.session.section = self.section
+        if stash is not None:
+            self._apply_data_stash(stash)
         row_fields = {r.template_field for r in self.model.rows}
         dropped = [
             m.template_field for m in job.mapping.mappings
@@ -733,9 +864,40 @@ class EditorController:
         if emit_push:
             self._push()
 
+    def _data_stash(self) -> "dict":
+        """세션 문맥으로서의 데이터 — 규칙을 되돌릴 때 함께 내려놓지 않을 값들(판정 L)."""
+        return {
+            "data_path": self.data_path,
+            "data_sheet": self.data_sheet,
+            "source_fields": list(self.source_fields),
+            "records": self.records,
+            "dataset_name": self.dataset_name,
+            "ignored": set(self._ignored_sources),
+            "ignored_expanded": self._ignored_expanded,
+        }
+
+    def _apply_data_stash(self, stash: "dict") -> None:
+        """되돌린 규칙 위에 데이터 문맥을 다시 얹는다 — 데이터 선택 직후와 같은 경로.
+
+        ``_ensure_model`` 을 통과시키는 이유: 데이터 어휘로 모델을 다시 세우는 일은 이미
+        한 관문이 소유한다(값 이월 + 안 맞게 된 확정의 시끄러운 강등). 여기서 따로 조립하면
+        그 관문이 지키는 불변식(어떤 행도 검토 없이 확정 상태로 도착하지 않는다)을 두 번째
+        경로가 우회하게 된다.
+        """
+        if not stash["data_path"]:
+            return
+        self.data_path = stash["data_path"]
+        self.data_sheet = stash["data_sheet"]
+        self.source_fields = stash["source_fields"]
+        self.records = stash["records"]
+        self.dataset_name = stash["dataset_name"]
+        self._ignored_sources = stash["ignored"]
+        self._ignored_expanded = stash["ignored_expanded"]
+        self._ensure_model()
+
     # 세션 내용을 바꾸지 않는 액션 — 클린 표지를 끄지 않는다(보기 이동·미리보기·질의).
     _NONMUTATING_ACTIONS = frozenset(
-        {"goto_step", "step_preview", "mapping_reset_stakes", "toggle_library_group"}
+        {"goto_section", "step_preview", "mapping_reset_stakes", "toggle_library_group"}
     )
 
     # ------------------------------------------------------- 웹→Python 데이터 액션
@@ -766,26 +928,74 @@ class EditorController:
             raise ValueError("저장된 작업 편집은 신규 마법사 취소로 닫을 수 없습니다.")
         self._reset()
 
-    # ---- 마법사/탭 이동
-    def _do_goto_step(self, p: dict) -> None:
-        """단계 이동 — 신규(마법사)는 전진 게이트, 편집(탭)은 자유 이동(결정 41).
+    # ---- 탭 이동(§5.2 거래 규율)
+    #: 탭 라벨 — 거절 문안이 내부 키(`binding`)가 아니라 사람의 말로 자리를 지목하게 한다.
+    SECTION_LABELS = {
+        SECTION_TEMPLATE: "템플릿",
+        SECTION_BINDING: "필드 연결·표시",
+        SECTION_FILENAME: "파일 이름",
+    }
 
-        신규 초안은 순서 의존이 실재해(템플릿 없인 매핑 없음) 전진마다 게이트를 세운다.
-        편집(``_editing_origin`` 有)은 저장된 작업 복원이라 의존이 전부 충족된 상태 — 같은
-        3분류를 탭으로 자유 이동한다. 편집 중 사용자가 의존을 되무를 수는 있으나(매핑 해제
-        등) 탭 이동은 보기 이동일 뿐이고, 저장 게이트(``_do_save`` 의 검증·재진술)는 그대로
-        지켜져 무결성은 저장점에서 담보된다.
+    def _do_goto_section(self, p: dict) -> "dict | None":
+        """탭 이동 — 신규(초안)는 전진 게이트, 편집은 자유 이동. **처분 미확정 이동은 거절**.
+
+        §13-16(한 편집 진입은 한 section patch)은 전이 시점의 규율이다: 다른 탭의 규칙을
+        손대려면 지금 patch 를 **저장하거나 버려야** 한다. 그래서 이동은 조용히 일어나지
+        않고, 처분해야 할 자리가 있으면 ``needs_section_guard`` 로 되돌려 웹이 3택(저장하고
+        이동·버리고 이동·머무르기)을 받게 한다 — 판정은 여기(Python), 문안은 웹이다.
+
+        초안은 이 거래 밖이다(§10.13 판정 P): 아직 작업이 아니라 세션 전체가 하나의 초안이라
+        「직전 판본과의 차이」가 성립하지 않는다. 대신 초안에는 전진 게이트가 산다(판정 M).
         """
-        target = int(p["step"])
-        if target == 0 and self.step != 0:
-            self._refresh_library()  # 템플릿 분류 재진입 = 공유 VM 실 디스크 재스캔(외부 변경 반영)
-        if target > self.step and not self._editing_origin:
-            for s in range(self.step, target):  # 신규: 전진은 게이트 통과 필요(각 중간 단계).
+        target = str(p["section"])
+        sections = self.sections()
+        if target not in sections:
+            raise ValueError(f"이 작업에는 '{target}' 탭이 없습니다.")
+        blocking = self.session.blocking_section(
+            self._draft_job(), target, pending_binding=self._pending_binding()
+        )
+        if blocking and not p.get("disposition"):
+            return {
+                "ok": False,
+                "needs_section_guard": True,
+                "section": blocking,
+                "section_label": self.SECTION_LABELS.get(blocking, blocking),
+                "target": target,
+            }
+        if target == SECTION_TEMPLATE and self.section != SECTION_TEMPLATE:
+            self._refresh_library()  # 템플릿 탭 재진입 = 공유 VM 실 디스크 재스캔(외부 변경 반영)
+        if not self._editing_origin:  # 초안: 전진은 각 중간 탭의 게이트 통과 필요
+            here, there = sections.index(self.section), sections.index(target)
+            for s in sections[here:there]:
                 if not self.can_advance(s):
-                    raise ValueError(f"{s}단계 조건을 아직 채우지 못해 진행할 수 없습니다.")
-        if target == 1:  # 매핑 진입(3단계 접기) — 데이터 유무 불문 모델 초안 생성.
+                    raise ValueError(
+                        f"「{self.SECTION_LABELS.get(s, s)}」 조건을 아직 채우지 못해 "
+                        "다음으로 갈 수 없습니다."
+                    )
+        if target == SECTION_BINDING:  # 매핑 진입 — 데이터 유무 불문 모델 초안 생성.
             self._ensure_model()
-        self.step = max(0, min(2, target))
+        self.section = target
+        self.session.section = target
+        return None
+
+    def _do_discard_patch(self, p: dict) -> None:
+        """「변경 버리기」 — 진입 시점 스냅샷(baseSnapshot)으로 규칙만 되돌린다(§5.2).
+
+        디스크가 아니라 스냅샷으로 되돌리는 이유와 데이터를 유지하는 이유는
+        :meth:`_restore_from` 의 docstring 에 있다. 초안은 되돌릴 base 가 없으므로 거절한다 —
+        초안 전체를 버리는 것은 세션 폐기(``discard_session``)라는 다른 사건이고, 두 사건을
+        한 버튼이 겸하면 "변경만 버리려던" 사람이 초안째 잃는다.
+        """
+        if self.session.is_draft or self.session.base is None:
+            raise ValueError("아직 저장하지 않은 새 작업이라 되돌릴 이전 상태가 없습니다.")
+        self._restore_from(
+            self.session.base,
+            landing_section=self.section,
+            context=self.session.context,
+            emit_push=False,
+            keep_data=True,
+        )
+        self._set_notice("바꾼 내용을 버리고 저장된 상태로 되돌렸습니다.", "ok")
 
     def _do_ack_gate(self, p: dict) -> None:
         """PARTIAL 게이트 명시 확인 — 재진술된 미해결 토큰 전체를 확인(ADR-E)."""
@@ -812,7 +1022,7 @@ class EditorController:
         데이터가 실재할 때만 해제하고, 편집 세션의 해제는 현재 매핑이 참조하는 소스 어휘로
         복귀한다(load_job 초기 상태와 동형 — 빈 어휘 강등 금지).
         """
-        if self.step == 0 and not self.can_advance(0):
+        if self.section == SECTION_TEMPLATE and not self.can_advance(SECTION_TEMPLATE):
             raise ValueError(
                 "미해결 토큰을 확인하거나 템플릿을 정리해야 매핑으로 진행할 수 있습니다."
             )
@@ -834,7 +1044,8 @@ class EditorController:
             self._ignored_sources = set()
             self._ignored_expanded = False
         self._ensure_model()
-        self.step = 1
+        self.section = SECTION_BINDING
+        self.session.section = self.section
 
     # ---- 사용 헤더 칩(#49 + 칩-라이브 결정 12·13) — 즉시 동사, 활성/미사용 전환.
     # 체크박스 스테이징 소거(결정 13): 칩 토글이 곧 즉시 반영. 활성 집합 변화는 model.
@@ -1316,7 +1527,7 @@ class EditorController:
         saved = self.job_name
         # 신규 마법사는 저장 뒤 매핑 탭에 착지하는 기존 전환점을 유지한다. 이미 저장된 작업의
         # 편집 세션만 현재 탭을 기억해, 아래 디스크 기준 재로드가 탭 선택까지 초기화하지 않게 한다.
-        landing_step = self.step if self._editing_origin else 1
+        landing_section = self.section if self._editing_origin else SECTION_BINDING
         # 저장 착지 = 방금 저장한 작업의 **편집 세션**(결정 40 저장 제자리 · 결정 41 전환점=저장:
         # 초안은 저장으로 작업이 되고 이후 편집은 탭). 구판 ``_reset()`` 은 사용자를 빈 0단계
         # 마법사에 방치하고, 그 리셋 push 가 성공 표지(#save-msg)를 지워 완결 신호가 증발했다
@@ -1324,7 +1535,15 @@ class EditorController:
         # 새로 서고, 클린 착지(_session_clean)라 직후 전환·새 작업이 헛확인을 띄우지 않는다.
         # dispatch 가 notice 설정 뒤 최종 스냅샷을 한 번 push 한다. 재로드 중간 push 를 막아
         # 저장 한 번에 화면 전체가 여러 번 재구성되는 깜빡임을 없앤다.
-        self.load_job(saved, landing_step=landing_step, emit_push=False)
+        # 저장 착지도 **문맥을 잃지 않는다**(F7): 진입 사유·증거·복귀처는 저장 한 번으로
+        # 사라지지 않는다 — 미리보기에서 값을 고치러 온 사람은 저장 뒤에도 미리보기로
+        # 돌아가야 하고, 그 복귀 버튼이 저장으로 증발하면 문맥은 있으나 마나가 된다.
+        self._restore_from(
+            self.registry.load(saved),
+            landing_section=landing_section,
+            context=self.session.context,
+            emit_push=False,
+        )
         self._set_notice(f"작업 '{saved}' 을(를) 저장했습니다.", "ok")
         result = {"ok": True, "saved_name": saved, "dataset_registered": registered}
         if register_error:

@@ -114,7 +114,10 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "toggle_library_group": _schema("group"),
         "new_session": _schema(),
         "discard_session": _schema(),
-        "goto_step": _schema("step"),
+        # 탭 이동 — `disposition` 은 3택 가드를 통과했다는 표지(웹이 저장·버리기를 먼저
+        # 마친 뒤 실어 보낸다). 선택적인 이유: 처분할 것이 없는 이동이 대다수다.
+        "goto_section": _schema("section", "disposition"),
+        "discard_patch": _schema(),
         "ack_gate": _schema(),
         "skip_data": _schema(),
         "use_all_headers": _schema(),

@@ -1625,16 +1625,28 @@ _JOB_EDITMODE_PROBE_JS = r"""
     // 이 버튼이 유일한 직접 복귀 경로가 됐는데, 정적 존재만 보는 계약은 「배선했지만 영영
     // 숨어 있는」 상태를 통과시킨다(코덱스 리뷰 P2 의 실물).
     out.edit_exit_shown = getComputedStyle(document.getElementById('jobEditExit')).display !== 'none';
-    var draft = {step:0, reachable:[false,false], template_path:'', template_name:'',
+    // section 어휘(재작성 F7 판정 B) — 탭 집합은 Python 이 매체에서 파생해 내려준다.
+    var draft = {section:'template', sections:['template','binding','filename'],
+      reachable:{template:false, binding:false, filename:false}, dirty_sections:[],
+      is_draft:true, changes:{}, context:{entry_reason:'voluntary', evidence:{}, return_context:{}},
+      revisions:{}, template_path:'', template_name:'',
       field_count:0, fields:[], raw_block:'', gate_error:false, gate:null, notice:null,
       editing_origin:''};
     window.__push('editor', draft);
     out.wizard_steps = document.querySelectorAll('#editor-steps .wstep-tab .k').length;
     out.foot_shown_new = getComputedStyle(document.getElementById('editor-foot')).display !== 'none';
     draft.editing_origin = '공고서';
+    draft.is_draft = false;
     window.__push('editor', draft);
     out.edit_tabs = document.querySelectorAll('#editor-steps button.wstep-tab.as-tab').length;
-    out.foot_hidden_edit = getComputedStyle(document.getElementById('editor-foot')).display === 'none';
+    // 편집의 주 행동(「변경 저장」)은 어느 탭에서도 상시 있다(§10.13 판정 E) — 구판은 저장
+    // 분류에만 푸터가 있어 다른 탭에선 저장 자체가 도달 불가였다.
+    out.foot_shown_edit = getComputedStyle(document.getElementById('editor-foot')).display !== 'none';
+    out.edit_dirty_tab_marked = (function () {
+      draft.dirty_sections = ['binding'];
+      window.__push('editor', draft);
+      return document.querySelectorAll('#editor-steps button.wstep-tab.dirty').length;
+    })();
     // 실행 복귀 뒤엔 다시 숨는다 — 실행 모드에 「실행으로 돌아가기」가 남으면 거짓 어포던스다.
     window.JobScreen.showRunMode();
     out.edit_exit_hidden_in_run =
@@ -1660,7 +1672,10 @@ _EDITOR_CHIP_PROBE_JS = r"""
         row_state: conf?"confirmed":(hascontent?"unconfirmed":"unmatched")};
     };
     var snap = {
-      step:1, notice:null, reachable:[true,false],
+      section:'binding', sections:['template','binding','filename'], notice:null,
+      reachable:{template:true, binding:false, filename:false}, dirty_sections:[],
+      is_draft:false, changes:{}, revisions:{},
+      context:{entry_reason:'voluntary', evidence:{}, return_context:{}},
       template_path:"C:/t/공고서.hwpx", template_name:"공고서.hwpx", field_count:4,
       schema_summary:"", fields:[], raw_block:"", gate:null, gate_error:false,
       data_path:"C:/d/대장.xlsx", data_name:"대장.xlsx", data_sheet:"물품", record_count:3,
@@ -2178,7 +2193,11 @@ _EDITOR_LIB_PICKER_PROBE_JS = r"""
       return {key:name, name:name, path:'C:/lib/' + name, badge_label:badge, badge_level:level,
               is_error:false, detail:'필드 3개', current:!!cur};
     };
-    var draft = {step:0, reachable:[false,false], template_path:'', template_name:'',
+    var draft = {section:'template', sections:['template','binding','filename'],
+      reachable:{template:false, binding:false, filename:false}, dirty_sections:[],
+      is_draft:true, changes:{}, revisions:{},
+      context:{entry_reason:'voluntary', evidence:{}, return_context:{}},
+      template_path:'', template_name:'',
       field_count:0, fields:[], raw_block:'', gate_error:false, gate:null, notice:null,
       editing_origin:'',
       library:{flat:false, sections:[

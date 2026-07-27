@@ -11,7 +11,12 @@
   // 표시형/타입 라벨은 표현 계층 → 여기(뷰)에 둔다(Qt mapping_table 의 웹 짝).
   const TYPE_LABEL = { text: "텍스트", date: "날짜", amount: "금액", const: "고정값" };
   const INFERRED_LABEL = { text: "텍스트", date: "날짜", amount: "금액", number: "숫자", phone: "전화번호" };
-  const STEP_TITLES = ["템플릿 선택", "필드 매핑", "작업 저장"];
+  /* 탭 어휘 = 계약 §5.1 의 section 문자열(재작성 F7 판정 B) — 정수 단계는 사망했다.
+     탭 **집합**은 Python 이 매체에서 파생해 내려준다(s.sections): TXT 는 파일 이름 탭이
+     없고(§3.2) 「시험」은 F8 이라 아직 어느 매체에도 없다 — 여기서 목록을 발명하지 않는다. */
+  const SECTION_TITLES = {
+    template: "템플릿", binding: "필드 연결·표시", filename: "파일 이름", test: "시험",
+  };
   let LAST = null;
 
   const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
@@ -36,29 +41,35 @@
       $("editor-steps").innerHTML = stepHeader(s);
       $("editor-body").innerHTML = stepBody(s);
       $("editor-foot").innerHTML = footer(s);
-      // 편집(탭)에선 저장 탭에만 푸터가 있다 — 빈 푸터의 고아 경계선 방지.
-      $("editor-foot").style.display = (isEditing(s) && s.step < 2) ? "none" : "";
+      $("editor-foot").style.display = footer(s) ? "" : "none";
     });
   }
 
   /* 헤더: 신규=단계 표지(번호·게이트), 편집=탭(자유 이동 버튼). 같은 .wstep-tab 룩 재사용. */
   function stepHeader(s) {
+    const sections = s.sections || [];
+    const here = sections.indexOf(s.section);
     if (isEditing(s)) {
-      return STEP_TITLES.map((t, i) => {
-        const cur = i === s.step ? ' aria-current="true"' : "";
-        return `<button class="wstep-tab as-tab" data-act="goto-tab" data-step="${i}"${cur}>${esc(t)}</button>`;
+      return sections.map((sec) => {
+        const cur = sec === s.section ? ' aria-current="true"' : "";
+        const dirty = (s.dirty_sections || []).includes(sec) ? " dirty" : "";
+        return `<button class="wstep-tab as-tab${dirty}" data-act="goto-tab" data-section="${esc(sec)}"${cur}>` +
+          `${esc(SECTION_TITLES[sec] || sec)}</button>`;
       }).join("");
     }
-    return STEP_TITLES.map((t, i) => {
-      const cur = i === s.step ? ' aria-current="true"' : "";
-      const done = i < s.step ? " done" : "";
-      return `<div class="wstep-tab${done}"${cur}><span class="k">${i + 1}</span>${esc(t)}</div>`;
+    return sections.map((sec, i) => {
+      const cur = sec === s.section ? ' aria-current="true"' : "";
+      const done = i < here ? " done" : "";
+      return `<div class="wstep-tab${done}"${cur}><span class="k">${i + 1}</span>${esc(SECTION_TITLES[sec] || sec)}</div>`;
     }).join("");
   }
 
-  /* 본문 표제 — 신규는 단계 서수를 말하고, 편집(탭)은 분류 이름만 말한다. */
-  function stageTitle(s, i) {
-    return isEditing(s) ? STEP_TITLES[i] : `${i + 1}단계: ${STEP_TITLES[i]}`;
+  /* 본문 표제 — 신규는 단계 서수를 말하고(순서 의존이 실재), 편집은 탭 이름만 말한다. */
+  function stageTitle(s, section) {
+    const title = SECTION_TITLES[section] || section;
+    if (isEditing(s)) return title;
+    const i = (s.sections || []).indexOf(section);
+    return i < 0 ? title : `${i + 1}단계: ${title}`;
   }
 
   function stepBody(s) {
@@ -66,9 +77,9 @@
     const notice = s.notice
       ? `<p class="note ${s.notice.level === "ok" ? "quiet" : "warnbox"}" style="white-space:pre-line">${esc(s.notice.text)}</p>`
       : "";
-    if (s.step === 0) return notice + templateStage(s);
-    if (s.step === 1) return notice + mappingStage(s);
-    return notice + saveStage(s);  // 2 = 저장
+    if (s.section === "template") return notice + templateStage(s);
+    if (s.section === "binding") return notice + mappingStage(s);
+    return notice + saveStage(s);
   }
 
   /* ---- 분류 0: 템플릿 — 신규 1단계 = **라이브러리에서 그룹 구획으로 고르기**(#108 슬라이스 3).
@@ -128,7 +139,7 @@
   }
 
   function templateStage(s) {
-    let out = `<div class="wtitle">${esc(stageTitle(s, 0))}</div>
+    let out = `<div class="wtitle">${esc(stageTitle(s, "template"))}</div>
       <p class="wsub">라이브러리에서 누름틀 템플릿을 고르거나 '가져오기…'로 추가하세요.</p>
       ${libraryPicker(s)}`;
     if (s.template_name) {
@@ -269,7 +280,7 @@
     const banner = s.schema_only
       ? `<p class="note warnbox">데이터 없이 매핑 중입니다. 고정값을 넣거나 비움으로 확정하세요.</p>`
       : "";
-    return `<div class="wtitle">${esc(stageTitle(s, 1))}</div>
+    return `<div class="wtitle">${esc(stageTitle(s, "binding"))}</div>
       <p class="wsub">필드마다 데이터 열을 지정하고 전 행을 확정하세요.</p>
       ${dataGateway(s)}
       ${headerSelect(s)}
@@ -345,7 +356,7 @@
 
   /* ---- 분류 2: 저장 ---- */
   function saveStage(s) {
-    return `<div class="wtitle">${esc(stageTitle(s, 2))}${s.editing_origin ? ` <span class="pill">편집: ${esc(s.editing_origin)}</span>` : ""}</div>
+    return `<div class="wtitle">${esc(stageTitle(s, "filename"))}${s.editing_origin ? ` <span class="pill">편집: ${esc(s.editing_origin)}</span>` : ""}</div>
       <p class="wsub">이 작업(템플릿·매핑·파일명)을 저장합니다. 데이터는 실행할 때 고릅니다.</p>
       <div class="row"><span class="lbl lbl-fixed">작업 이름</span>
         <input class="field" data-act="name" value="${esc(s.name)}" placeholder="예: 공고서 자동생성"></div>
@@ -459,30 +470,71 @@
      실행 복귀는 화면 머리 「실행으로 돌아가기」가 담당하고(F2 PR-B — 좌 목록 행 클릭의
      승계처), 저장은 제자리에서 완결된다. ---- */
   function footer(s) {
+    const sections = s.sections || [];
+    const here = sections.indexOf(s.section);
     if (isEditing(s)) {
-      return s.step === 2
-        ? `<span class="spacer"></span><button class="btn primary" data-act="save">저장</button>`
-        : "";
+      // 편집의 주 행동은 **하나**다(§10.13 판정 E): 「변경 저장」. 「이번 생성에 적용」은
+      // runOverrides 가 서는 PR-B 자리라 여기 라디오를 미리 늘어놓지 않는다(§6: 같은
+      // 선택지를 모든 문맥에 나열하지 않는다). 손댄 것이 없으면 버릴 것도 없다.
+      const dirty = (s.dirty_sections || []).length > 0;
+      const discard = dirty
+        ? `<button class="btn" data-act="discard-patch">변경 버리기</button>` : "";
+      return `${discard}<span class="spacer"></span>` +
+        `<button class="btn primary" data-act="save">변경 저장</button>`;
     }
-    const back = s.step > 0
+    const back = here > 0
       ? `<button class="btn" data-act="back">◀ 뒤로</button>` : `<button class="btn" disabled>◀ 뒤로</button>`;
-    let next;
-    if (s.step < 2) {
-      const can = s.reachable[s.step];
-      next = `<button class="btn primary" data-act="next"${can ? "" : " disabled"}>다음 ▶</button>`;
-    } else {
-      next = `<button class="btn primary" data-act="save">작업 저장</button>`;
-    }
-    const hint = (s.step < 2 && !s.reachable[s.step])
-      ? `<span class="muted capnote">${gateHint(s)}</span>` : "";
+    const last = here >= sections.length - 1;
+    const can = !!(s.reachable || {})[s.section];
+    const next = last
+      ? `<button class="btn primary" data-act="save">작업 저장</button>`
+      : `<button class="btn primary" data-act="next"${can ? "" : " disabled"}>다음 ▶</button>`;
+    const hint = (!last && !can) ? `<span class="muted capnote">${gateHint(s)}</span>` : "";
     return `<button class="btn" data-act="cancel-new">취소</button>${back}` +
       `<span class="spacer"></span>${hint}${next}`;
   }
 
   function gateHint(s) {
-    if (s.step === 0) return "템플릿을 선택하고 미해결 토큰을 확인해야 진행할 수 있습니다";
-    if (s.step === 1) return "전 행을 확정해야 진행할 수 있습니다";
+    if (s.section === "template") return "템플릿을 선택하고 미해결 토큰을 확인해야 진행할 수 있습니다";
+    if (s.section === "binding") return "전 행을 확정해야 진행할 수 있습니다";
     return "";
+  }
+
+  /* 탭 이웃 — 초안 마법사의 ◀뒤로/다음▶ 이 쓰는 자리. 목록은 Python 이 준다(발명 금지). */
+  function neighbour(delta) {
+    const sections = (LAST && LAST.sections) || [];
+    const here = sections.indexOf(LAST && LAST.section);
+    return sections[Math.min(sections.length - 1, Math.max(0, here + delta))];
+  }
+
+  /* 탭 이동 — 처분 미확정 patch 가 있으면 Python 이 `needs_section_guard` 로 되돌리고,
+     여기서 **3택**(저장하고 이동 · 버리고 이동 · 머무르기)을 받는다(계약 §5.2).
+     판정이 Python 인 이유: "무엇이 dirty 인가"는 규칙 비교라 표면이 재유도하면 두 답이
+     생긴다. 문안만 여기 있고, 통과 표지(`disposition`)를 실어 같은 액션을 다시 부른다.
+     머무르기는 **기본값**이다 — 모달을 Escape 로 닫아도 편집이 사라지지 않는다. */
+  async function gotoSection(target) {
+    if (!target) return;
+    const r = await Bridge.call(SCREEN, "goto_section", { section: target });
+    if (!(r && r.needs_section_guard)) return;
+    const choice = await Modal.choose({
+      title: `「${r.section_label}」 에서 바꾼 내용이 있습니다`,
+      body: "다른 탭으로 가기 전에 이 변경을 어떻게 할지 정하세요.\n" +
+        "한 번에 한 곳만 고칩니다 — 저장하면 새 판본이 되고, 버리면 열었을 때 상태로 돌아갑니다.",
+      choices: [
+        { value: "save", label: "저장하고 이동" },
+        { value: "discard", label: "버리고 이동" },
+        { value: "stay", label: "머무르기" },
+      ],
+    });
+    if (choice === "save") {
+      const saved = await doSave({});
+      if (!saved) return;                       // 저장이 막혔으면 이동하지 않는다(문맥 보존)
+    } else if (choice === "discard") {
+      await Bridge.call(SCREEN, "discard_patch", {});
+    } else {
+      return;                                   // 머무르기(Escape 포함)
+    }
+    await Bridge.call(SCREEN, "goto_section", { section: target, disposition: choice });
   }
 
   /* 확정·수동 매핑 보호(PR#105 리뷰 F1) — 관문의 데이터 교체/비우기는 _ensure_model 재초안으로
@@ -560,9 +612,17 @@
           await Bridge.call(SCREEN, "skip_data", {});
           break;
         }
-        case "goto-tab":  // 편집(탭) 자유 이동(결정 41) — 게이트는 백엔드가 editing 기준으로 판정.
-          await Bridge.call(SCREEN, "goto_step", { step: Number(el.dataset.step) });
+        case "goto-tab":  // 탭 이동 — 처분 미확정이면 백엔드가 3택을 요구한다(§5.2).
+          await gotoSection(el.dataset.section);
           break;
+        case "discard-patch": {
+          if (!(await Modal.confirm({
+            body: "이 편집에서 바꾼 내용을 버리고 저장된 상태로 되돌립니다.\n\n계속할까요?",
+            returnFocus: el, confirmLabel: "변경 버리기", cancelLabel: "취소",
+          }))) break;
+          await Bridge.call(SCREEN, "discard_patch", {});
+          break;
+        }
         // 칩-라이브(결정 13): 칩 클릭 = 즉시 토글(활성↔미사용). 전체 사용/전체 미사용 대칭쌍.
         case "toggle-header":
           await Bridge.call(SCREEN, "toggle_source_active", { field: el.dataset.field }); break;
@@ -602,8 +662,8 @@
           else window.alert("실행 모드로 돌아갈 수 없습니다. 화면 구성 요소(JobScreen)가 로드되지 않았습니다.");
           break;
         }
-        case "back": await Bridge.call(SCREEN, "goto_step", { step: LAST.step - 1 }); break;
-        case "next": await Bridge.call(SCREEN, "goto_step", { step: LAST.step + 1 }); break;
+        case "back": await gotoSection(neighbour(-1)); break;
+        case "next": await gotoSection(neighbour(1)); break;
         case "save": await doSave({}); break;
         default: break;
       }
@@ -655,7 +715,7 @@
     }
     if (!res || typeof res !== "object") {
       alertMsg("저장 결과를 확인할 수 없습니다. 작업이 저장됐는지 「문서 작업」에서 확인하세요.");
-      return;
+      return false;
     }
     if (res.ok) {
       // 저장은 제자리(결정 40 — 포커스 튕김 없음). 후보·문서 탐색 스냅샷만 갱신해 새/개명
@@ -679,22 +739,23 @@
         body: res.overwrite_text + "\n\n계속할까요?",
         confirmLabel: "덮어쓰기", cancelLabel: "취소", danger: true,
       })) {
-        doSave(Object.assign({}, flags, {
+        return doSave(Object.assign({}, flags, {
           confirm_overwrite: true,
           confirmed_overwrite_text: res.overwrite_text,
         }));
       }
-      return;
+      return false;
     }
     if (res.needs_dataset_confirm) {
       if (await Modal.confirm({
         body: res.dataset_text, confirmLabel: "덮어쓰기", cancelLabel: "취소", danger: true,
       })) {
-        doSave(Object.assign({}, flags, { confirm_dataset: true }));
+        return doSave(Object.assign({}, flags, { confirm_dataset: true }));
       }
-      return;
+      return false;
     }
     alertMsg(res.dataset_error || res.block_reason || "저장할 수 없습니다.");
+    return false;
   }
 
   function alertMsg(msg, level) {

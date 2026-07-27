@@ -101,6 +101,9 @@ MODAL_LABELLEDBY = {
     # 전용 jobOverwriteModal DOM 폐기(아래 test_job_overwrite_uses_shared_confirm_modal 가드).
     "confirmModal": "confirmModalTitle",  # 네이티브 window.confirm 대체(#86) + 덮어쓰기 확인
     "promptModal": "promptModalTitle",  # 네이티브 window.prompt 대체(#86)
+    # 답이 셋인 자리(재작성 F7 — patch 처분: 저장하고 이동·버리고 이동·머무르기). 확인 모달로
+    # 두 번 물으면 "취소가 무엇을 취소하는지"가 갈리고 그 모호함이 곧 조용한 파기다.
+    "chooseModal": "chooseModalTitle",
     "draftMapSheet": "draftMapSheetTitle",  # 기안 맞추기 펼침 면(#271)
     "dataSheet": "dataSheetTitle",  # 기안·작업 공용 데이터 펼침 면(#271/#272)
     "jobConfirmSheet": "jobConfirmSheetTitle",  # 작업 거울·재진술 펼침 면(#272)

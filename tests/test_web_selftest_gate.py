@@ -880,11 +880,16 @@ class TestWebSelftestGate:
             f"두 모드 배타 표시 실패(호스트/존 동시 표시·동시 은닉): {j!r}"
         )
         assert j["status_text"] == "편집 모드", f"상태 pill 이 편집 모드를 말하지 않습니다: {j['status_text']!r}"
-        assert j["wizard_steps"] == 3, f"신규 마법사 단계 표지(번호) 수: {j['wizard_steps']!r}"
+        assert j["wizard_steps"] == 3, f"신규 초안 단계 표지(번호) 수: {j['wizard_steps']!r}"
         assert j["foot_shown_new"] is True, "신규 마법사 푸터(뒤로/다음)가 표시되지 않았습니다."
         assert j["edit_tabs"] == 3, f"편집 탭 버튼 수: {j['edit_tabs']!r}"
-        assert j["foot_hidden_edit"] is True, (
-            "편집(탭)의 비저장 탭에서 푸터가 숨지 않았습니다 — 고아 경계선/죽은 내비 잔존."
+        assert j["foot_shown_edit"] is True, (
+            "편집 탭에서 주 행동 푸터(「변경 저장」)가 보이지 않습니다 — 구판은 저장 분류에만"
+            " 푸터가 있어 다른 탭에서는 저장 자체가 도달 불가였다(재작성 F7 판정 E)."
+        )
+        assert j["edit_dirty_tab_marked"] == 1, (
+            "손댄 탭이 표지되지 않습니다 — 어느 자리를 처분해야 하는지 3택 모달 전에 보여야"
+            f" 한다(§5.2): {j['edit_dirty_tab_marked']!r}"
         )
         # 실행 복귀 출구(F2 PR-B 판정 D) — 좌 목록이 죽으며 이 버튼이 유일한 직접 복귀
         # 경로가 됐다. 정적 존재만 보는 계약은 「배선했지만 영영 숨어 있는」 상태를 통과시켜
