@@ -3200,17 +3200,39 @@ def test_the_timestamp_refreshes_when_nothing_depends_on_it(tmp_path):
     assert ctrl._names_now != datetime(2020, 1, 1) and first is not None
 
 
-def test_the_timestamp_is_frozen_while_the_drawer_is_open(tmp_path):
-    """면이 열려 있는 동안 = 사용자가 지금 그 이름을 보고 있는 동안."""
+def test_an_optional_preview_pins_the_timestamp_until_generation(tmp_path):
+    """5R P2 — 검토 요구가 없는 반복 실행에서도 미리보기는 열린다(§13-2). 생성 버튼을
+    누르려면 면을 **닫아야** 하는데, 닫는 순간 시각이 풀리면 1초만 들여다봐도 화면이
+    보여준 것과 다른 이름(그리고 다른 덮어쓰기 대상)이 만들어진다.
+    """
     ctrl, _ = _session(tmp_path)
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    assert ctrl.snapshot()["review"]["required"] is False   # 요구 없는 반복 실행
     ctrl.dispatch("preview_open", {})
-    frozen = ctrl._names_now
     ctrl.snapshot()
+    frozen = ctrl._names_now
     ctrl.dispatch("preview_move", {"delta": 1})
-    assert ctrl._names_now == frozen
+    assert ctrl._names_now == frozen                        # 보는 동안 얼어 있다
     ctrl.dispatch("preview_close", {})
     ctrl.snapshot()
-    assert ctrl._names_now != frozen, "면을 닫았는데도 시각이 얼어 있습니다."
+    assert ctrl._names_now == frozen, "면을 닫자 본 이름의 시각이 풀렸습니다."
+    assert ctrl.generate()["ok"] is True
+    ctrl.snapshot()
+    assert ctrl._names_now != frozen, "생성이 소비한 뒤에도 시각이 붙들려 있습니다."
+
+
+def test_the_pin_releases_when_the_run_input_changes(tmp_path):
+    """핀은 **실행 입력이 그대로인 동안**만 유효하다 — 선택이 바뀌면 화면이 보여준
+    이름도 이미 낡았으므로 새로 찍는 게 맞다(승인 정체와 같은 축)."""
+    ctrl, _ = _session(tmp_path)
+    ctrl.dispatch("preview_open", {})
+    ctrl.snapshot()
+    frozen = ctrl._names_now
+    ctrl.dispatch("preview_close", {})
+    ctrl.dispatch("toggle_record", {"index": 0, "value": False})
+    ctrl.snapshot()
+    assert ctrl._names_now != frozen
 
 
 def test_approval_does_not_survive_acknowledging_blanks(tmp_path):

@@ -230,6 +230,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 자리를 되돌린다. 자리는 **표시순 서수**이지 원본 index 가 아니다(판정 M).
         self.preview_open = False
         self.preview_pos = 0
+        # 미리보기가 **본 이름**의 시각을 붙들어 두는 핀(5R P2) — 값은 그때의 실행 입력
+        # 정체다. 그 정체가 그대로인 동안만 유효하고, 생성이 소비하면 놓는다.
+        self._names_pin: "str | None" = None
         # 직전 필터 슬롯(결정 28) — 정의 가진 세션이 죽을 때 덮어쓰는 1칸 세션 메모리
         # (앱 수명·미저장 — 필터 영속 뒷문 금지). 소스 일치 게이트용 키와 쌍.
         self._last_filter: "dict | None" = None  # {"source_key": str, "state": dict}
@@ -370,6 +373,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             raise ValueError("미리볼 문서를 최소 1건 선택하세요.")
         self.preview_open = True
         self.preview_pos = 0
+        # 핀(5R P2)은 여기서 조립하지 않는다 — 면이 열려 있는 동안 스냅샷이 **같은
+        # 술어로** 채운다. 두 자리가 각자 조립하면 그 순간 정체가 두 벌이 된다
+        # (F3 1R 이 표면의 자체 조립에서 났던 자리).
         return {"ok": True}
 
     def _do_preview_close(self, p: dict) -> None:
@@ -1059,18 +1065,29 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         marker = self._run_marker(indices)
         # 검토 요구(F5) — 요구 판정은 durable 기준선이, 승인 대조는 세션이 한다.
         req, req_unmet = self._review(marker=marker)
-        # 파일명 날짜 토큰의 기준 시각(2R·3R P2) — 이 값은 **승인의 일부**다.
+        # 파일명 날짜 토큰의 기준 시각(2R·3R·5R P2) — 이 값은 **사용자가 본 것**의 일부다.
         #
         # 스냅샷당 1회 캡처하면 한 스냅샷 안의 소비처(게이트 감사·표 「문서」 열·드로어·
-        # 생성)는 서로 맞지만, **스냅샷 사이**에서 움직인다: 승인 왕복과 면 닫기가 각각
-        # push 를 부르므로 `{{date:SS}}` 가 그 사이 초 경계를 넘으면 생성이 사용자가
-        # 승인하지 않은 이름을 쓴다. 그래서 **누군가 그 값에 기대고 있는 동안 얼린다** —
-        # 면이 열려 있거나(지금 보고 있다) 승인이 서 있는 동안(그 이름으로 확인했다).
-        # 아무도 안 기대면 매 스냅샷 새로 찍는다(오래 열어 둔 세션의 날짜가 늙지 않게).
-        if not (self.preview_open or (req.required and req_unmet is None)):
+        # 생성)는 서로 맞지만 **스냅샷 사이**에서 움직인다: `{{date:SS}}` 가 그 사이 초
+        # 경계를 넘으면 생성이 사용자가 본 적 없는 이름을 쓴다. 그래서 **누군가 그 값에
+        # 기대는 동안 얼린다**. 기대는 자리는 셋이다:
+        #   ① 면이 열려 있다(지금 보고 있다)
+        #   ② 승인이 서 있다(그 이름으로 확인했다)
+        #   ③ **한 번 본 뒤 아직 그 실행 입력 그대로다**(5R P2) — 검토 요구가 없는 반복
+        #      실행에서도 미리보기는 열린다(§13-2). 생성 버튼을 누르려면 면을 닫아야
+        #      하는데 닫는 순간 ①②가 다 거짓이라, 1초만 들여다봐도 화면이 보여준 것과
+        #      다른 이름(그리고 다른 덮어쓰기 대상)이 만들어졌다.
+        # 핀은 **실행 입력이 그대로인 동안**만 유효하다 — 규칙·데이터·표식·선택 중 하나라도
+        # 바뀌면 화면이 보여준 이름도 이미 낡았으므로 새로 찍는 게 맞다(승인 정체와 같은 축).
+        pin = f"{req.rules_key}|{self._review_scope_key(indices, marker)}"
+        if self.preview_open:
+            self._names_pin = pin      # 보고 있는 동안 핀은 현재 정체를 따라간다
+        pinned = self._names_pin == pin
+        if self._names_now is None or not (
+            self.preview_open or (req.required and req_unmet is None) or pinned
+        ):
             self._names_now = datetime.now()
-        elif self._names_now is None:
-            self._names_now = datetime.now()
+            self._names_pin = None
         # 선택분 매핑 적용은 1회 — 파일명 미리보기(_record_rows)와 거울 값(_mirror)이 공유한다.
         mapped = self.vm.mapped_records(indices) if indices else []
         # 거울은 표식 **없는** 값을 본다: 「선택 N행 중 M행에서 값이 비어 있습니다」가
@@ -1753,6 +1770,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 판정하고 있었다. 덮어쓰기 확인 왕복(`needs_overwrite`)에는 밀지 않는다: 모달이
         # 열린 동안의 재렌더는 dispatch 의 무변이 push 생략과 같은 이유로 낭비다.
         if result.get("ok"):
+            # 생성이 그 시각을 **소비했다** — 핀을 놓는다(5R P2). 안 놓으면 같은 입력으로
+            # 한 번 더 만들 때 지난 런의 시각이 그대로 재사용돼 날짜 토큰이 늙는다.
+            self._names_pin = None
             self._push()
         return result
 
