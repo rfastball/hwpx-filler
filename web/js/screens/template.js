@@ -38,7 +38,7 @@
     if (dirEl) { dirEl.textContent = band.dir || ""; dirEl.title = band.dir || ""; }
     if (!band.count) {
       // 전용 빈 상태(#179 슬라이스 6) — 설명 + 단일 CTA(문안 속 대괄호 지시 대신 실 버튼).
-      // 홈 빈 상태와 같은 .empty 컴포넌트. hwpx=가져오기(자작 불가)·txt=새 TXT 저작.
+      // 라이브러리 빈 상태와 같은 .empty 컴포넌트. hwpx=가져오기(자작 불가)·txt=새 TXT 저작.
       host.innerHTML = media === "hwpx"
         ? `<div class="empty"><div class="heading">HWPX 템플릿이 없습니다</div>` +
           `<p>${esc(band.empty_hint || "누름틀 서식(.hwpx)을 가져와 문서 작업의 원본으로 삼으세요.")}</p>` +
@@ -309,7 +309,7 @@
   }
 
   /* 라이브러리 템플릿을 「기안」 화면에서 연다(#148 슬라이스 6 — 구 txt 흡수). 저장 기안 결속
-     세션이 진행 중이면 백엔드가 needs_confirm 을 돌려준다(리뷰 F3 — 홈 openDraft 와 같은 규약):
+     세션이 진행 중이면 백엔드가 needs_confirm 을 돌려준다(리뷰 F3 — 구 홈 openDraft 와 같은 규약):
      세션 교체는 저장되지 않은 진행을 폐기하므로 조용히 버리지 않는다. 취소=현 세션 그대로. */
   async function openDraftTemplate(name, returnFocus) {
     let r = await Bridge.call("draft", "select_template", { name });

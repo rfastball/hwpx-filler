@@ -1,6 +1,6 @@
 /* 템플릿 다시 연결 공용 흐름(#67, PR #70 리뷰) — pick → 1차 재진술 confirm → 확정 커밋.
    Python 단일 출처(screens.relink_job_template)의 JS 짝. run/home 에 흐름이 복붙돼
-   오류 표면이 갈렸던 것(홈이 restated 를 버림)을 여기로 수렴하고, 결과 통지만
+   오류 표면이 갈렸던 것(구 홈이 restated 를 버림)을 여기로 수렴하고, 결과 통지만
    화면별 콜백(notify)으로 주입한다 — PathTrack/Modal 공용 헬퍼 선례. */
 (function () {
   /* notify(msg, kind) — kind: "ok"(커밋 재진술) | "cancel"(사용자 취소) | "error"(실패).

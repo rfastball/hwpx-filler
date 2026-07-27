@@ -1218,7 +1218,9 @@
     if (r && r.ok) log(`그룹 해산: '${name}' (작업 ${r.count}개 이동)${r.drift_note || ""}`);
   }
 
-  /* 허브(홈)에서 이 작업을 열기 — 좌 목록 재클릭 무동작 가드(onMasterClick)와 동형.
+  /* 이 작업을 세션에 열기 — 좌 목록 재클릭 무동작 가드(onMasterClick)와 동형.
+     라이브러리에서 오는 경로는 `prefer_work`(§19.8 3분기 판정)를 타므로 여기로 오지 않는다.
+     남는 소비처는 화면 안 진입과 외부 스크립트(캡처 하니스)다.
      이미 이 작업 세션이면 재구성하지 않고(진행 중 데이터 겨눔·행 선택·확인이 조용히 소실되지
      않게 — 리뷰 F1) 그대로 두고 화면만 전환한다. 아니면 겨눠 진입한다. */
   function openJob(name) {
@@ -1406,7 +1408,7 @@
     });
     $("jobEditResume").addEventListener("click", showEditMode);
     // 구획 ＋ 새 작업(1부 결정 10 — 레일 항목 사망의 생성 진입 승계, 리뷰 F2). 흐름은
-    // EditorEntry.newDraft 단일 출처(홈 ＋ 와 공유 — 폐기 확인·착지 드리프트 금지).
+    // EditorEntry.newDraft 단일 출처(「문서 작업」 ＋ 와 공유 — 폐기 확인·착지 드리프트 금지).
     $("jobNewBtn").addEventListener("click", startNewJob);
     $("jobEmptyNewBtn").addEventListener("click", startNewJob);
     // 재렌더에도 살아남게 안정 컨테이너에 위임(#67).

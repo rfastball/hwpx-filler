@@ -649,11 +649,11 @@
     try {
       res = await Bridge.call(SCREEN, "save", flags || {});
     } catch (err) {
-      window.alert("저장 처리 중 오류가 발생했습니다. 작업이 저장됐는지 홈에서 확인하세요.\n" + err);
+      window.alert("저장 처리 중 오류가 발생했습니다. 작업이 저장됐는지 「문서 작업」에서 확인하세요.\n" + err);
       return;
     }
     if (!res || typeof res !== "object") {
-      alertMsg("저장 결과를 확인할 수 없습니다. 작업이 저장됐는지 홈에서 확인하세요.");
+      alertMsg("저장 결과를 확인할 수 없습니다. 작업이 저장됐는지 「문서 작업」에서 확인하세요.");
       return;
     }
     if (res.ok) {

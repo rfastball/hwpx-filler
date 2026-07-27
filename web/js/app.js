@@ -55,7 +55,7 @@
      함께 다시 읽는다(다른 화면에서 접은 상태가 stale 로 남지 않게). */
   const REFRESH_ON_NAV = ["library", "tpl", "job", "draft"];
 
-  /* 화면 전환 — 레일 클릭과 허브(홈) 카드의 프로그램적 이동이 공유하는 단일 경로. */
+  /* 화면 전환 — 레일 클릭과 라이브러리 상세의 프로그램적 이동이 공유하는 단일 경로. */
   function go(id) {
     navs.forEach((x) => x.setAttribute("aria-current", x.dataset.scr === id ? "true" : "false"));
     scrs.forEach((s) => s.classList.toggle("on", s.id === "scr-" + id));
@@ -84,7 +84,7 @@
     }
   }
   // 레일 「작업 에디터」 과도기 심은 항목 사망(슬라이스 5 삭제 PR)과 함께 제거 — 편집
-  // 진입은 EditorEntry.land 소비처(홈·템플릿 관리·작업 ⋮)가 담당한다.
+  // 진입은 EditorEntry.land 소비처(「문서 작업」·템플릿 관리·작업 ⋮)가 담당한다.
   navs.forEach((b) => b.addEventListener("click", () => go(b.dataset.scr)));
   // 화면 간 프로그램적 이동의 단일 경로 — 라이브러리 상세의 「문서 만들기에서 사용」 등이
   // 대상 화면을 자체 dispatch 로 먼저 겨눈 뒤 여기로 전환한다(library.js 가 소비).

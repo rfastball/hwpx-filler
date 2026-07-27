@@ -63,7 +63,7 @@ body{padding:0}
         <div class="brand"><span class="brand-lockup"><svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><path d="M6 14.5 34.5 8c2.1-.5 3.5.7 3.5 2.8v12.7c0 2.2-1.3 3.7-3.4 4.2L6 34.5Z"/><path d="m26 38.5 32-8v18.2c0 2.3-1.7 3.5-3.8 2.9L26 43.8Z"/></svg><span class="brand-name">문서나르미</span></span></div>
         <!-- 실 레일 6항목 미러 — 실행·매트릭스는 슬라이스 3/F9, 작업 에디터는 슬라이스 5
              (결정 39 흡수)에서 사망. 손짠 표본이라 실앱과 자동 동기되지 않는다(항목이 늘면 수동 반영). -->
-        <button class="navbtn" aria-current="true"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10l7-6 7 6M5 9v7h4v-4h2v4h4V9"/></svg></span><span class="lbl"><span class="n">대시보드</span><span class="d">작업·기안 요약</span></span></button>
+        <button class="navbtn" aria-current="true"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h4v12H4zM10 4h3v12h-3zM15 5l2 11"/></svg></span><span class="lbl"><span class="n">문서 작업</span><span class="d">저장된 작업 찾기·정리</span></span></button>
         <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h5v12H4zM11 4h5v7h-5z"/></svg></span><span class="lbl"><span class="n">작업</span><span class="d">목록 + 세션 패널</span></span></button>
         <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h5l3 3v11H6zM11 3v3h3M8 11h5M8 14h5"/></svg></span><span class="lbl"><span class="n">기안문 채우기 (txt)</span><span class="d">실시간 채움 → 복사</span></span></button>
         <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2L5 11h4l-1 7 6-9h-4z"/></svg></span><span class="lbl"><span class="n">빠른 기안</span><span class="d">저장 없이 채워 복사</span></span></button>
@@ -71,18 +71,43 @@ body{padding:0}
         <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3c3.3 0 6 1 6 2.3S13.3 7.7 10 7.7 4 6.7 4 5.3 6.7 3 10 3M4 5.3v9.4C4 16 6.7 17 10 17s6-1 6-2.3V5.3"/></svg></span><span class="lbl"><span class="n">데이터 관리</span><span class="d">등록 데이터(참조)</span></span></button>
       </nav>
       <div class="stage">
-        <div class="scr-head"><div><h1>홈</h1><p class="sub">등록된 작업과 최근 실행</p></div><span class="status" data-level="ok">준비됨</span></div>
-        <div class="kpis">
-          <div class="kpi"><div class="v">128</div><div class="l">등록 작업</div></div>
-          <div class="kpi warn"><div class="v">3</div><div class="l">확인 대기</div></div>
-          <div class="kpi danger"><div class="v">1</div><div class="l">손상 템플릿</div></div>
-        </div>
-        <div class="tracks">
-          <div class="track hwpx"><div class="th"><span class="tt">HWPX 트랙</span><span class="status" data-level="ok">준비됨</span></div><p class="tsub">서식 문서 채우기</p>
-            <div class="jcard"><div class="jn">물품 구매 공고 <span class="pill ok">컴파일됨</span></div><div class="jm">mulpum.hwpx · 12 필드</div><div class="jfoot"><span class="jr">2일 전 실행</span><button class="btn sm">실행</button></div></div>
+        <div class="scr-head"><div><h1>문서 작업</h1><p class="sub">저장된 문서 작업을 찾고 상태를 확인합니다.</p></div></div>
+        <!-- 홈(KPI 타일 + 두 트랙 + group-by 렌즈)은 재작성 F2 에서 사망 — .kpis/.tracks/
+             .jobbrowser/.tlist 규칙도 함께 걷혔다. 표본을 승계처(라이브러리 축·행)로 바꾼다:
+             죽은 클래스를 겨눈 표본은 스타일 없이 렌더돼 갤러리가 거짓 증거가 된다. -->
+        <div class="library-toolbar">
+          <label class="library-search-field"><span class="lbl">작업 검색</span>
+            <input class="field" type="search" placeholder="작업 이름, 그룹, 태그"></label>
+          <div class="library-filter-group"><span class="library-filter-label">보기</span>
+            <div class="library-tabs" role="tablist">
+              <button type="button" role="tab" aria-selected="true">모든 작업 · 6</button>
+              <button type="button" role="tab" aria-selected="false">최근 사용 · 3</button>
+              <button type="button" role="tab" aria-selected="false">확인 필요 · 2</button>
+            </div>
           </div>
-          <div class="track txt"><div class="th"><span class="tt">TXT 트랙</span></div><p class="tsub">기안문 채우기</p>
-            <div class="tplcard"><div class="tplcard-top"><span class="tplcard-name">회의 안내문</span><span class="pill muted">초안</span></div><div class="tplcard-meta muted">6 토큰</div></div>
+          <div class="library-filter-group"><span class="library-filter-label">작업 방식</span>
+            <div class="library-modes" role="group">
+              <button class="pill" type="button" aria-pressed="true">전체</button>
+              <button class="pill" type="button" aria-pressed="false">HWPX 문서 생성</button>
+            </div>
+          </div>
+        </div>
+        <div class="lib-grp job-grp">
+          <button class="lib-grp-head" aria-expanded="true"><span class="grp-caret">▾</span> 조달 · 2</button>
+          <button class="job-more" aria-haspopup="true" aria-label="그룹 관리">⋮</button>
+        </div>
+        <div class="lib-grp-rows">
+          <div class="lib-row on">
+            <button class="lib-row-main" aria-current="true">
+              <span class="lib-row-name">물품 구매 공고서</span>
+              <span class="lib-row-meta">HWPX 문서 생성 · 조달 · 최근 실행 2026-07-25 14:02</span></button>
+            <button class="lib-fav" aria-pressed="true" aria-label="즐겨찾기">★</button>
+          </div>
+          <div class="lib-row">
+            <button class="lib-row-main" aria-current="false">
+              <span class="lib-row-name">계약 해지 통보 <span class="pill danger">템플릿 파일을 찾을 수 없습니다.</span></span>
+              <span class="lib-row-meta">HWPX 문서 생성 · 조달 · 아직 실행 안 함</span></button>
+            <button class="lib-fav" aria-pressed="false" aria-label="즐겨찾기">☆</button>
           </div>
         </div>
       </div>
@@ -134,7 +159,7 @@ body{padding:0}
     <div class="spec"><div class="spec-h">카드 어휘 — 정상 / 선택 / 손상</div>
       <div class="stack">
         <div class="jcard"><div class="jn">용역 계약서 <span class="pill ok">컴파일됨</span></div><div class="jm">yongyeok.hwpx · 8 필드</div><div class="jfoot"><span class="jr">방금</span><button class="btn sm">실행</button></div></div>
-        <div class="tlist"><div class="titem" aria-current="true"><div><div class="tn">회의 안내문</div><div class="tm">필드 6개</div></div><button class="btn sm">열기</button></div></div>
+        <div class="lib-row on"><button class="lib-row-main" aria-current="true"><span class="lib-row-name">회의 안내문</span><span class="lib-row-meta">온나라 기안 검토·복사 · 최근 사용 2026-07-24 17:10</span></button><button class="lib-fav" aria-pressed="false" aria-label="즐겨찾기">☆</button></div>
         <div class="jcard corrupt"><div class="jn">낡은 서식 <span class="pill danger">손상</span></div><div class="jm">열 수 없음</div></div>
       </div>
     </div>
