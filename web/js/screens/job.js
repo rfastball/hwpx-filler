@@ -816,9 +816,13 @@
 
     const fails = r.failures || [];
     $("jobResultFails").innerHTML = fails.map(failRow).join("");
+    // 복구 행동의 노출·라벨은 **행 목록이 아니라 Python 수치**(failed_selectable)가 정한다
+    // (1R P2): 배치 진입 전 실패는 레코드별 시도가 없어 행이 0개인데, 다시 만들 대상은
+    // 전량이다 — 행에서 파생하면 그 런에서만 복구 행동이 통째로 사라진다.
     const sel = $("jobResultFailedSel");
-    sel.hidden = !fails.length;
-    sel.textContent = `실패한 ${fails.length}건만 선택`;
+    const selectable = r.failed_selectable || 0;
+    sel.hidden = !selectable;
+    sel.textContent = `실패한 ${selectable}건만 선택`;
     $("jobResultRename").hidden = !!(r.running || r.rejected);
     $("jobResultClose").hidden = !!r.running;
     renderEvidence(r, fails);

@@ -103,15 +103,23 @@ _EMPTY_RESTATE = {
 _RESTATE_SAMPLE = 3
 
 
-def _run_status(succeeded: int, total: int) -> str:
-    """결과 3태(계약 §10 · 지도 §10.10 판정 A) — 성공/전체의 함수다.
+def _run_status(succeeded: int, total: int, cancelled: bool = False) -> str:
+    """결과 3태(계약 §10 · 지도 §10.10 판정 A) — 성공/전체 + 중단 여부의 함수다.
 
     불변식 §13-10("일부 성공을 전체 성공으로 표시하지 않는다")이 경계를 정한다: 전건
     성공만 ``completed``, 1건이라도 성공했고 남은 게 있으면 ``partiallyCompleted``,
     성공 0건은 ``failed``. **취소는 네 번째 태가 아니라** ``partiallyCompleted`` 의
     변종이다(``cancelled`` 플래그 + 미착수 재진술 + warn 채널) — 태를 늘리면 "중단"이
     성공·실패와 같은 층위인 것처럼 읽힌다. 표면은 이 판정을 재계산하지 않는다.
+
+    그래서 **중단은 성공 수와 무관하게** 부분이다(1R P2): 첫 레코드 전에 멈춘 런은
+    성공 0·실패 0인데 성공 수만 보면 ``failed`` 가 되어, "중단했습니다 · 0개 완료"라고
+    말하는 제목 옆에서 태가 "실패"라고 다른 얘기를 한다. 실패한 시도가 없는데 실패
+    태를 다는 것은 없던 실패를 지어내는 쪽이다 — 중단은 완주하지 않은 **중간 상태**이고
+    그것이 부분 태의 뜻이다(실패분이 있으면 실패 행이 그 사실을 따로 나른다).
     """
+    if cancelled:
+        return "partiallyCompleted"
     if total > 0 and succeeded >= total:
         return "completed"
     if succeeded > 0:
@@ -1298,7 +1306,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if fill_notes:
             summary += f" 채움 주의 {len(fill_notes)}건(아래 기록 확인)."
         failed_n = attempted - batch.succeeded if cancelled else batch.failed
-        status = _run_status(batch.succeeded, batch.total)
+        status = _run_status(batch.succeeded, batch.total, cancelled)
         return {
             "ok": True,
             "status": status,
@@ -1316,6 +1324,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "out_dir": plan.out_dir,
             "succeeded": batch.succeeded,
             "failed": failed_n,
+            # 「실패한 N건만 선택」의 노출·라벨은 **이 수치**가 정한다(1R P2): 실패 행
+            # 목록에서 파생하면, 행 없이 전량이 실패하는 런(배치 진입 전 실패)에서 복구
+            # 행동이 통째로 숨는다 — 뒤에 선택을 바꾸면 대상 집합을 되찾을 길이 없다.
+            # index 를 Python 이 소유하기로 한 이상(판정 F) 그 개수도 Python 이 낸다.
+            "failed_selectable": len(self._last_failed),
             "total": batch.total,
             "failures": failures,
             "fill_notes": fill_notes,
@@ -1362,6 +1375,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         와 원인 확정 여부. 원인을 꾸며내지 않으므로 아는 패턴이 없으면 ``known=False`` 로
         표면이 「원인 진단 미연결」을 세운다. ``ok=True`` 인 이유: 이것은 게이트 거절
         (실행하지 않음)이 아니라 **실행하다 실패**라서 결과 구획의 소관이다.
+
+        ``failures`` 는 비어 있다 — 레코드별 시도가 없었으므로 행별 사유를 지어내지
+        않는다. 영향 레코드는 수치(``failed``·``failed_selectable``)와 복구 행동으로
+        나른다: 행이 없다고 「실패한 N건만 선택」까지 숨으면 전량 실패에서 대상 집합을
+        되찾을 길이 사라진다(1R P2).
         """
         reason, known = classify_result_error(message)
         n = len(indices)
@@ -1377,6 +1395,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "out_dir": out_dir,
             "succeeded": 0,
             "failed": n,
+            "failed_selectable": len(self._last_failed),
             "total": n,
             "failures": [],
             "fill_notes": [],

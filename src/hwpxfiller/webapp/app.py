@@ -1493,7 +1493,7 @@ _JOB_RESULT_PROBE_JS = r"""
     var partial = {
       ok:true, status:'partiallyCompleted', title:'2개 성공 · 1개 실패',
       summary:'완료. 성공 2/3, 실패 1.', level:'danger', stage:'', message:'', known:true,
-      out_dir:'D:\\out', succeeded:2, failed:1, total:3,
+      out_dir:'D:\\out', succeeded:2, failed:1, failed_selectable:1, total:3,
       failures:[{index:7, identity:'사무비품', filename:'doc-003.hwpx',
                  reason:'설명 없는 오류', known:false}],
       fill_notes:['누름틀 값 자리를 새로 만들어 채웠습니다.'],
@@ -1517,6 +1517,19 @@ _JOB_RESULT_PROBE_JS = r"""
     ev.open = true;
     window.JobScreen.renderResult(partial);
     out.evidence_open_survives_rerender = document.getElementById('jobResultEvidence').open;
+    // 배치 진입 전 실패(행 0개·전량 실패) — 복구 행동이 행 목록에서 파생되면 여기서
+    // 통째로 사라진다(1R P2). 노출·라벨은 Python 수치(failed_selectable)가 정한다.
+    window.JobScreen.renderResult({
+      ok:true, status:'failed', title:'문서 생성 실패',
+      summary:'문서를 만들지 못했습니다. 대상 3건이 모두 생성되지 않았습니다.',
+      level:'danger', stage:'생성 시작 전', message:'[WinError 5] 액세스가 거부되었습니다',
+      known:true, out_dir:'D:\out', succeeded:0, failed:3, failed_selectable:3, total:3,
+      failures:[], fill_notes:[], cancelled:false, attempted:0, unstarted:3
+    });
+    out.rowless_recovery_shown = !document.getElementById('jobResultFailedSel').hidden;
+    out.rowless_recovery_label = document.getElementById('jobResultFailedSel').textContent;
+    out.rowless_no_fake_rows = document.getElementById('jobResultFails').children.length === 0;
+    window.JobScreen.renderResult(partial);
     // 지문 변화 = 강등이지 파기가 아니다(판정 G) — 결과가 남고 「직전 실행」이 붙는다.
     window.JobScreen.markResultStale();
     out.stale_shown = !document.getElementById('jobResultStale').hidden;

@@ -2167,6 +2167,9 @@ def test_result_three_states_are_python_judged(tmp_path, monkeypatch):
     # 취소는 네 번째 태가 아니라 부분의 변종 — 태는 그대로, 제목이 중단을 먼저 말한다.
     assert _run_title("partiallyCompleted", True, 1, 0).startswith("생성을 중단했습니다")
     assert "1개 성공" in _run_title("partiallyCompleted", False, 1, 1)
+    # 첫 레코드 전에 멈춘 런: 성공 0·실패 0이다. 성공 수만 보면 failed 가 되어 "중단
+    # 했습니다"라는 제목 옆에서 태가 없던 실패를 지어낸다(1R P2).
+    assert _run_status(0, 3, True) == "partiallyCompleted"
 
 
 def test_partial_run_reports_partial_state_and_failed_rows(tmp_path, monkeypatch):
@@ -2246,6 +2249,32 @@ def test_failed_indices_die_with_their_data_and_work(tmp_path, monkeypatch):
     _run_with(monkeypatch, ctrl, _fake_batch([True, False]))
     ctrl.dispatch("select_job", {"name": "공고서", "confirm": True})  # 작업 전환
     assert ctrl.dispatch("select_failed", {})["selected"] == 0
+
+
+def test_cancel_before_first_record_is_not_a_failure(tmp_path, monkeypatch):
+    """중단은 성공 수와 무관하게 부분이다(1R P2) — 실패한 시도가 없는데 실패 태를 달지 않는다."""
+    ctrl, _ = _result_session(tmp_path)
+    res = _run_with(monkeypatch, ctrl, _fake_batch([], cancelled=True, total=3))
+    assert res["status"] == "partiallyCompleted" and res["cancelled"] is True
+    assert res["succeeded"] == 0 and res["failed"] == 0 and res["unstarted"] == 3
+    assert res["failed_selectable"] == 0          # 다시 만들 '실패분'은 없다(미착수는 실패가 아니다)
+
+
+def test_batch_exception_keeps_the_recovery_action_reachable(tmp_path, monkeypatch):
+    """행이 0개라도 복구 대상은 전량이다(1R P2) — 표면이 「실패한 N건만 선택」을 숨기지 않게."""
+    import hwpxfiller.webapp.screen_job as sj
+
+    def _boom(*a, **k):
+        raise OSError("[WinError 5] 액세스가 거부되었습니다")
+
+    monkeypatch.setattr(sj, "generate_batch", _boom)
+    ctrl, _ = _result_session(tmp_path)
+    res = ctrl.generate()
+    assert res["failures"] == []                   # 시도가 없었으므로 행별 사유를 지어내지 않는다
+    assert res["failed_selectable"] == res["total"] > 0
+    # 그사이 선택을 바꿔도 대상 집합을 되찾는다 — 이것이 행 대신 수치로 노출을 정하는 이유.
+    ctrl.dispatch("set_none", {})
+    assert ctrl.dispatch("select_failed", {})["selected"] == res["failed_selectable"]
 
 
 def test_cancelled_run_stays_a_partial_state(tmp_path, monkeypatch):

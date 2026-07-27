@@ -352,6 +352,10 @@ class TestWebSelftestGate:
         # ② 실패 행 = 원본 index 앵커 + 식별 요약, 모르는 원인엔 미연결 표지.
         assert j["fail_row"] and j["fail_identity"] and j["undiagnosed"], j
         assert j["failed_sel_shown"] and "1건만 선택" in j["failed_sel_label"], j
+        # 행 0개·전량 실패(배치 진입 전)에서도 복구 행동은 남는다 — 노출을 행 목록에서
+        # 파생하면 그 런에서만 통째로 사라진다(1R P2). 대신 없는 행을 지어내지도 않는다.
+        assert j["rowless_recovery_shown"] and "3건만 선택" in j["rowless_recovery_label"], j
+        assert j["rowless_no_fake_rows"], j
         # ③ 증거는 접혀 서고, 연 뒤에는 재렌더를 건너 열린 채 남는다(계약면 1).
         assert j["evidence_shown"] and j["evidence_open_survives_rerender"], j
         # ④ 지문 변화 = 강등(파기 아님) — 실패분을 고르는 순간 결과가 사라지면 안 된다.
