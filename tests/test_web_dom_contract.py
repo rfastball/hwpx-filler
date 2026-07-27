@@ -1163,6 +1163,30 @@ def test_editor_surface_lives_in_job_panel():
     )
 
 
+def test_use_in_job_lands_run_mode_not_the_editor():
+    """「문서 만들기에서 사용」은 **실행 모드**에 착지한다(F2 PR-B).
+
+    좌 목록이 살아 있을 땐 행 클릭이 이 정산을 겸했다(결정 40) — 편집 모드면 실행으로
+    되돌리고 미저장 편집은 고지했다. 목록이 죽으면서 그 정산이 빠지면, 작업을 저장한 직후
+    「문서 작업」에서 그것을 쓰겠다고 눌렀을 때 편집 호스트가 그대로 뜬다: 사용자가 요청한
+    것과 다른 표면에 착지하는 결함(2R P2 「빈 화면 착지」와 같은 클래스). 전이는 비파괴다.
+    """
+    lib = (WEB_JS_DIR / "screens" / "library.js").read_text(encoding="utf-8")
+    job = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    use = lib[lib.index('Bridge.call(JOB, "prefer_work"'):lib.index("window.Nav.go(JOB);")]
+    assert "JobScreen.landRunMode" in use, (
+        "「문서 만들기에서 사용」이 실행 모드 착지를 정산하지 않습니다 — 편집 호스트에 착지합니다."
+    )
+    assert "async function landRunMode(" in job and "landRunMode," in job, (
+        "job.js 가 실행 모드 착지 seam(landRunMode)을 내보내지 않습니다."
+    )
+    body = job[job.index("async function landRunMode("):]
+    body = body[:body.index("\n  }") + 4]
+    assert "exitEditToRun()" in body and "showExitNote()" in body, (
+        "실행 착지가 기존 비파괴 전이·미저장 고지를 쓰지 않습니다(새 전이를 만들지 않는다)."
+    )
+
+
 def test_group_confirm_copy_states_the_rule_not_a_promised_count():
     """그룹 확인 문안이 **규칙**을 말하고 수치는 관측으로 적는다(#149).
 

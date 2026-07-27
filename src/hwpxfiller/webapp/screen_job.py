@@ -760,6 +760,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             raise ValueError(f"'{name}' 작업을 찾을 수 없습니다.")
         self.preferred_work = name
         if self.datasource is None or not self.records:
+            # 데이터가 없고 그 작업이 **기본 데이터 참조**(#53-A)를 가졌으면 보관에서 그치지
+            # 않고 연다(F2 PR-B 판정 I). 좌 목록이 죽기 전에는 목록 클릭이 이 경로의 진입이라
+            # `_do_select_job` 의 자동 조준이 발화했는데, 목록이 죽으면 무데이터 상태에서
+            # 작업을 겨눌 표면이 여기뿐이라 **보관만 하면 #53-A 가 도달 불가능해진다**
+            # (기능 소실). §19.8 의 "확인 없이 데이터를 자동 교체하지 않는다"는 여전히 참이다
+            # — 교체가 아니라 **빈 자리에 첫 마운트**이고, 결과는 `data_notice` 가 재진술한다.
+            if self.registry.load(name).default_dataset_ref:
+                self.preferred_work = ""       # 소비 — 지금 이뤄졌다
+                self._do_select_job({"name": name})
+                return {"promoted": True, "name": name, "reason": "default_data"}
             return {"stored": True, "reason": "no_data", "name": name}
         if any(r.name == name for r in self._ranked_now()):
             self.preferred_work = ""  # 소비 — 지금 이뤄졌다

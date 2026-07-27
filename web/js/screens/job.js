@@ -174,6 +174,16 @@
     $("jobEditResume").style.display = "none";
   }
 
+  /* 실행 모드 착지 — 다른 화면에서 「문서 만들기에서 사용」으로 넘어올 때의 진입점(F2 PR-B).
+     좌 목록이 살아 있을 땐 행 클릭이 이 정산을 겸했다(결정 40): 편집 모드로 들어와 있으면
+     실행으로 되돌리고 미저장 편집은 고지했다. 목록이 죽은 뒤 그 정산이 빠져 있어서, 저장
+     직후 「문서 작업」에서 그 작업을 쓰겠다고 누르면 **편집 호스트가 그대로 뜬다** — 사용자가
+     요청한 것(이 작업으로 문서 만들기)과 다른 표면에 착지하는 결함(2R P2 「빈 화면 착지」와
+     같은 클래스). 전이는 비파괴 그대로다. */
+  async function landRunMode() {
+    if (await exitEditToRun()) showExitNote();
+  }
+
   /* T2 고지 표면(PR-2 리뷰 F4) — 완료 존 log() 는 세션 전환 리셋(resetGenResult)·존 은닉에
      증발했다. 이 요소는 어떤 렌더 함수도 쓰지 않는 JS 소유라 push·세션 리셋을 관통해
      살아남고, 사용자가 확인 버튼으로 걷거나 편집 재진입 때 걷힌다(고지=읽힐 때까지). */
@@ -1113,7 +1123,7 @@
   // showEditMode/refreshList 는 편집 모드 seam(EditorEntry·editor.js doSave 가 소비).
   window.JobScreen = {
     init, overwriteBody, guardBody, confirmDataSwapIfArmed, openJob,
-    showEditMode, showRunMode, refreshList, openJobConfirmSheet, openJobDataSheet,
-    openBrowseNeedsAction,
+    showEditMode, showRunMode, landRunMode, refreshList,
+    openJobConfirmSheet, openJobDataSheet, openBrowseNeedsAction,
   };
 })();

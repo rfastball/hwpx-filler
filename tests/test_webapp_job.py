@@ -2032,6 +2032,26 @@ def test_prefer_work_stores_and_promotes_at_mount_when_no_data_yet(tmp_path):
     assert "공고서" in snap["data_notice"]["text"] and snap["data_notice"]["level"] == "ok"
 
 
+def test_prefer_work_opens_a_work_that_carries_its_own_default_data(tmp_path):
+    """판정 I(F2 PR-B) — 기본 데이터 참조를 가진 작업은 무데이터 상태에서도 **열린다**.
+
+    좌 목록이 살아 있을 땐 목록 클릭이 `select_job` 을 태워 #53-A 자동 조준이 발화했다.
+    목록이 죽은 뒤 무데이터 상태에서 작업을 겨눌 표면은 「문서 작업」의 이 동사뿐이므로,
+    여기서 보관만 하면 기본 데이터 자동 연결이 **도달 불가능**해진다(기능 소실). 자동
+    교체가 아니라 빈 자리의 첫 마운트라 §19.8 의 금지에도 걸리지 않고, 결과는 재진술된다.
+    """
+    ctrl, pool = _pool_controller(tmp_path)
+    _job_with_default(ctrl, pool, tmp_path, "7월공고")
+
+    res = ctrl.dispatch("prefer_work", {"name": "공고서"})
+    assert res == {"promoted": True, "name": "공고서", "reason": "default_data"}
+    assert ctrl.job_name == "공고서" and ctrl.preferred_work == ""   # 보관하지 않고 소비
+    snap = ctrl.snapshot()
+    assert snap["has_data"] is True, "기본 데이터 참조가 자동 조준되지 않았습니다(#53-A 소실)."
+    assert snap["data_source_label"] == "등록 데이터: 7월공고"
+    assert "자동으로 연결" in snap["data_notice"]["text"], "자동 연결이 조용히 일어났습니다."
+
+
 def test_prefer_work_keeps_the_active_work_and_says_so(tmp_path):
     """§18.3 2행 — 이미 열린 작업은 밀어내지 않는다. 대신 못 바꿨다는 사실을 말한다.
 

@@ -351,6 +351,12 @@
       return;
     }
     const r = await Bridge.call(JOB, "prefer_work", { name });
+    // 저쪽이 편집 모드로 열려 있으면 실행 모드로 되돌린 **뒤** 이동한다 — 「이 작업으로 문서
+    // 만들기」를 눌렀는데 편집 호스트에 착지하면 요청과 다른 표면이다(F2 PR-B). 전이 자체는
+    // 비파괴이고 미저장 편집이 있으면 저쪽이 고지한다.
+    if (window.JobScreen && window.JobScreen.landRunMode) {
+      await window.JobScreen.landRunMode();
+    }
     window.Nav.go(JOB);
     if (r && r.reason === "incompatible" && window.JobScreen) {
       await window.JobScreen.openBrowseNeedsAction(name);
