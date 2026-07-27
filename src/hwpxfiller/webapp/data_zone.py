@@ -72,6 +72,31 @@ class DataZoneMixin:
     def _records(self) -> list:
         raise NotImplementedError  # 컨트롤러가 현 데이터소스 레코드를 댄다
 
+    # ------------------------------------- 존이 편집·렌더하는 대상(재작성 F3 판정 A·D)
+    # 13액션과 존 렌더는 **여기를 통해서만** 선택·필터에 닿는다. 기본은 커밋된 세션 상태이고,
+    # 범위 초안이 열린 화면은 이 셋을 덮어 초안을 가리킨다 — 액션을 두 벌로 늘리지 않고
+    # (같은 동사가 대상만 바꾼다) **경계가 코드에 한 번만** 적힌다. 반대로 실행 입력·게이트·
+    # 거울·세션 가드는 이 훅을 쓰지 않는다(불변식 §18.11-21: 적용 전 메인 범위 불변).
+    def _zone_sel(self) -> SelectionModel:
+        return self.selection
+
+    def _zone_flt(self) -> "FilterModel | None":
+        return self.filter
+
+    def _zone_set_flt(self, model: FilterModel) -> None:
+        """필터 **원자 교체**의 착지처(직전 필터 재적용) — 소유자를 한 곳에서 답한다."""
+        self.filter = model
+
+    def _zone_visible(self, view: FilterView) -> "list[int]":
+        """존 표에 실제로 그릴 행(필터 판정 전) — 기본은 필터 가시 집합 그대로.
+
+        「선택된 항목만 보기」처럼 **가시성만** 갈아끼우는 보기 상태가 여기로 들어온다.
+        필터 정의 자체는 살아 있고(칩 줄이 계속 말한다) 판정(재진술·가드)은 필터의 가시
+        집합을 쓴다 — 보기와 판정을 같은 값으로 뭉개면 "선택만 보는 중"이 곧 "정의-유래
+        선택"으로 오독된다.
+        """
+        return view.visible_indices()
+
     def _data_target(self) -> dict:
         """마운트 대상 재진술 ``{path, sheet, origin}`` — 스냅샷 동봉(신설 상태 아님, 파생).
 
@@ -93,13 +118,14 @@ class DataZoneMixin:
 
     # ------------------------------------------------------------- 행 선택 액션
     def _do_toggle_record(self, p: dict) -> None:
-        self.selection.toggle(int(p["index"]), bool(p["value"]))
+        self._zone_sel().toggle(int(p["index"]), bool(p["value"]))
 
     def _do_select_range(self, p: dict) -> None:
         """Shift 범위 — 앵커 행의 상태를 범위에 전파(결정 2). 표면이 가시 순서 범위를 준다."""
         value = bool(p["value"])
+        sel = self._zone_sel()
         for i in p["indices"]:
-            self.selection.toggle(int(i), value)
+            sel.toggle(int(i), value)
 
     def _do_set_all(self, p: dict) -> dict:
         """「전체 선택」 — 필터 활성 시 **매치 전체를 가산**한다(결정 4·26 "전체 선택 가산적").
@@ -109,23 +135,25 @@ class DataZoneMixin:
         전멸 필터에서의 무동작(0)을 표면이 정직하게 알린다(confirm-or-alarm, 리뷰 #9:
         아무 반응 없는 버튼은 결함으로 읽힌다).
         """
-        before = self.selection.selected_count()
-        if self.filter is not None and self.filter.is_active():
-            for i in self.filter.visible_indices(self._records()):
-                self.selection.toggle(i, True)
+        sel, fm = self._zone_sel(), self._zone_flt()
+        before = sel.selected_count()
+        if fm is not None and fm.is_active():
+            for i in fm.visible_indices(self._records()):
+                sel.toggle(i, True)
         else:
-            self.selection.set_all()
-        return {"added": self.selection.selected_count() - before}
+            sel.set_all()
+        return {"added": sel.selected_count() - before}
 
     def _do_set_none(self, p: dict) -> None:
         """「전체 해제」 — 명시 동사라 가드 불요(T4), 필터와 무관하게 전부 해제."""
-        self.selection.set_none()
+        self._zone_sel().set_none()
 
     # ------------------------------------------------- 필터 액션(블록 4, 결정 23~25)
     def _filter_or_raise(self) -> FilterModel:
-        if self.filter is None:  # 표면 오배선 검출 — 데이터 없이 필터 액션은 프로그램 결함
+        fm = self._zone_flt()
+        if fm is None:  # 표면 오배선 검출 — 데이터 없이 필터 액션은 프로그램 결함
             raise ValueError("데이터를 먼저 선택하세요.")
-        return self.filter
+        return fm
 
     def _do_filter_search(self, p: dict) -> None:
         """전열 검색 = 재현 OR 그룹 재정의(교체) — 검색창이 그룹 편집기다."""
@@ -219,8 +247,9 @@ class DataZoneMixin:
             }
 
     def _current_filter_empty(self) -> bool:
-        """현 세션 필터가 백지인가 — 재적용 게이트의 셋째 연언(#127)."""
-        return self.filter is None or not self.filter.is_active()
+        """현 존 필터가 백지인가 — 재적용 게이트의 셋째 연언(#127)."""
+        fm = self._zone_flt()
+        return fm is None or not fm.is_active()
 
     def _reapply_available(self) -> bool:
         """재적용 제공 판정 — **3연언**: 슬롯 존재 ∧ 현 필터 빈 상태 ∧ 소스 일치.
@@ -276,7 +305,7 @@ class DataZoneMixin:
             if unpruned.view(records).branches:  # 프루닝만 걷으면 가지가 산다 = 소실 유래
                 probe = unpruned
                 dropped = dropped + ["(검색 일부 조건은 열이 사라져 복원하지 못했습니다)"]
-        self.filter = probe  # 원자 교체 — 검증된 초안이 그대로 정의가 된다
+        self._zone_set_flt(probe)  # 원자 교체 — 검증된 초안이 그대로 정의가 된다
         return {"ok": True, "installed": installed, "dropped": dropped}
 
     # ------------------------------------------------------- 데이터 소스 정체(결정 28)
@@ -384,16 +413,19 @@ class DataZoneMixin:
         전 레코드 dict 를 미리 지어 대부분 버리는 낭비가 없다(PR-2b 리뷰). 두 소비처가
         같은 함수를 통과하므로 소재는 여전히 단일 출처다. 미겨눔(filter None)은 빈 골격.
         """
-        if self.filter is None:
+        fm = self._zone_flt()
+        if fm is None:
             self._filter_desc = ""
             return EMPTY_FILTER, EMPTY_TABLE, None, []
         records = self._records()
-        fm = self.filter
         view = fm.view(records)  # 가지 1회 산출 — 렌더 경로 캐시 계약(filter_state)
         # 슬롯 스태시가 복사해 갈 정의줄 — **지금 살아있는 데이터 기준**으로 여기서만 짓는다
         # (리뷰 F1: 스태시 시점엔 레코드가 이미 교체됐다). 아래 "definition" 과 같은 값이다.
-        self._filter_desc = view.describe() if fm.is_active() else ""
-        visible = self._display_indices(view.visible_indices())  # 표 순서 = 표시순 투영
+        # **커밋된 필터를 그릴 때만** 갱신한다(F3): 초안의 정의를 여기 남기면 데이터 전환이
+        # 적용된 적 없는 정의를 직전 슬롯에 박아, 원 소스로 돌아왔을 때 버튼이 거짓을 업는다.
+        if fm is self.filter:
+            self._filter_desc = view.describe() if fm.is_active() else ""
+        visible = self._display_indices(self._zone_visible(view))  # 표 순서 = 표시순 투영
         vis_set = set(visible)
         columns = fm.columns
         table_rows = [

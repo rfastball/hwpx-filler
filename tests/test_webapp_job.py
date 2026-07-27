@@ -2450,3 +2450,172 @@ def test_order_note_claims_the_filename_link_only_when_it_is_true(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     note = ctrl.snapshot()["order_note"]
     assert "보이는 순서대로" in note and "순번" not in note
+
+
+# ------------------------- 전문 범위 편집기 초안(재작성 F3, 지도 §10.11 판정 A·B·D·F·J)
+def _draft_session(tmp_path):
+    """3행 + 작업 선택 + 저장 폴더 — 초안이 게이트·거울과 갈리는지 보려면 실행 세션이 필요하다."""
+    ctrl, pushes = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv3(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    return ctrl, pushes
+
+
+def test_range_draft_edits_do_not_touch_the_committed_range(tmp_path):
+    """불변식 §18.11-21 — 초안은 적용 전 메인 범위·실행 입력·게이트를 바꾸지 않는다."""
+    ctrl, _ = _draft_session(tmp_path)
+    before_gate = ctrl.snapshot()["gate"]["text"]
+    ctrl.dispatch("range_draft_open", {})
+    ctrl.dispatch("set_none", {})                     # 초안에서 전부 해제
+    ctrl.dispatch("toggle_record", {"index": 0, "value": True})
+    snap = ctrl.snapshot()
+    # 커밋 = 3건 그대로 · 실행 입력도 그대로 · 게이트 문안 불변
+    assert ctrl.selection.selected_count() == 3 and snap["selected_count"] == 3
+    assert ctrl._indices() == [2, 1, 0]
+    assert snap["gate"]["text"] == before_gate
+    # 초안 = 1건, 표는 초안을 그린다(판정 D 경계표 1행)
+    assert snap["range_draft"] == {
+        "open": True, "dirty": True, "sel_count": 1,
+        "selected_only": False, "view_order": "sourceDesc",
+    }
+    assert [r["index"] for r in snap["table"]["rows"] if r["selected"]] == [0]
+
+
+def test_range_draft_apply_commits_atomically(tmp_path):
+    """적용 = 선택·필터·표시순서를 한 번에 커밋으로 옮긴다(§18.10 한 그릇)."""
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl.dispatch("range_draft_open", {})
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("toggle_record", {"index": 2, "value": True})
+    ctrl.dispatch("filter_search", {"text": "책상"})
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
+    assert ctrl.view_order == "sourceDesc"           # 축도 초안이 덮는다(판정 B)
+    assert ctrl.dispatch("range_draft_apply", {}) == {"ok": True}
+    snap = ctrl.snapshot()
+    assert ctrl.selection.selected_indices() == [2]
+    assert ctrl.view_order == "sourceAsc" and snap["view_order"] == "sourceAsc"
+    assert ctrl.filter is not None and ctrl.filter.search_text == "책상"
+    assert snap["range_draft"]["open"] is False
+
+
+def test_range_draft_cancel_discards_only_the_draft(tmp_path):
+    """수용 기준 5(§18.10) — 취소는 메인 범위와 실행 증거를 바꾸지 않는다."""
+    ctrl, _ = _draft_session(tmp_path)
+    before = (ctrl.selection.selected_indices(), ctrl.view_order, ctrl.filter.export_state())
+    ctrl.dispatch("range_draft_open", {})
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("filter_search", {"text": "없는값"})
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
+    ctrl.dispatch("range_draft_cancel", {})
+    assert (ctrl.selection.selected_indices(), ctrl.view_order,
+            ctrl.filter.export_state()) == before
+    assert ctrl.range_draft is None
+
+
+def test_range_draft_open_is_idempotent(tmp_path):
+    """왕복 지연 중 두 번 눌린 출구가 편집을 조용히 되돌리지 않는다(재복제 금지)."""
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl.dispatch("range_draft_open", {})
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("range_draft_open", {})
+    assert ctrl.snapshot()["range_draft"]["sel_count"] == 0
+
+
+def test_range_draft_dirty_is_the_event_not_the_value(tmp_path):
+    """이탈 가드 무장 조건(판정 F) — 열자마자는 깨끗하고, 되돌리면 다시 깨끗하다."""
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl.dispatch("range_draft_open", {})
+    assert ctrl.snapshot()["range_draft"]["dirty"] is False
+    ctrl.dispatch("toggle_record", {"index": 1, "value": False})
+    assert ctrl.snapshot()["range_draft"]["dirty"] is True
+    ctrl.dispatch("toggle_record", {"index": 1, "value": True})
+    assert ctrl.snapshot()["range_draft"]["dirty"] is False
+
+
+def test_stale_draft_is_refused_instead_of_committing_someone_elses_rows(tmp_path):
+    """세대 불일치 적용은 거절한다 — 죽은 스냅샷의 index 는 남의 행이다(§10.11.2 실패 면)."""
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl.dispatch("range_draft_open", {})
+    ctrl.dispatch("set_none", {})
+    draft = ctrl.range_draft
+    ctrl.load_data_path(_data_csv(tmp_path))     # 새 스냅샷 = 초안 폐기 + 세대 증가(판정 J)
+    assert ctrl.range_draft is None
+    ctrl.range_draft = draft                     # 초안이 살아남는 경로를 가정한 백스톱
+    with pytest.raises(ValueError, match="데이터가 바뀌"):
+        ctrl.dispatch("range_draft_apply", {})
+    assert ctrl.selection.selected_count() == 0  # 마운트 직후 상태 그대로 — 커밋 안 됨
+
+
+def test_new_data_discards_the_open_draft(tmp_path):
+    """판정 J — 데이터 전환은 축을 되돌리고 초안을 버린다."""
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl.dispatch("range_draft_open", {})
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    snap = ctrl.snapshot()
+    assert snap["range_draft"]["open"] is False and snap["view_order"] == "sourceDesc"
+
+
+def test_generation_is_refused_while_the_draft_is_open(tmp_path):
+    """전역 잠금(§10.11.2 계약면 2) — 보고 있는 범위와 만들어지는 범위가 갈리지 않는다."""
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl.dispatch("range_draft_open", {})
+    res = ctrl.generate()
+    assert res["ok"] is False and "범위 편집기" in res["error"]
+
+
+def test_draft_cannot_open_during_generation(tmp_path):
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl._generation_lock.acquire()
+    try:
+        with pytest.raises(ValueError, match="생성이 진행 중"):
+            ctrl.dispatch("range_draft_open", {})
+    finally:
+        ctrl._generation_lock.release()
+
+
+def test_selected_only_swaps_visibility_without_touching_judgment(tmp_path):
+    """「선택된 항목만 보기」는 보기 상태다 — 필터 정의도, 유래 판정도 그대로다."""
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl.dispatch("range_draft_open", {})
+    ctrl.dispatch("filter_search", {"text": "책상"})   # 가시 1행, 선택은 3행 관통
+    snap = ctrl.snapshot()
+    assert [r["index"] for r in snap["table"]["rows"]] == [2]
+    assert snap["restate"]["origin"] == "manual" and snap["restate"]["extra"] == 2
+    ctrl.dispatch("set_selected_only", {"value": True})
+    snap = ctrl.snapshot()
+    assert [r["index"] for r in snap["table"]["rows"]] == [2, 1, 0]   # 선택 전부, 표시순
+    assert snap["filter"]["active"] is True and snap["filter"]["search"] == "책상"
+    assert snap["restate"]["origin"] == "manual", "보기 상태가 유래 판정을 물들였습니다"
+    assert snap["table"]["hidden_selected"] == []
+    # 적용해도 보기 상태는 따라가지 않는다(판정 B 예외) — 메인엔 그 토글이 없다.
+    ctrl.dispatch("range_draft_apply", {})
+    assert ctrl.snapshot()["range_draft"]["selected_only"] is False
+
+
+def test_draft_table_previews_the_names_the_draft_would_produce(tmp_path):
+    """판정 D 세부 — 편집기 안에서 축을 바꾸면 「문서」 열 이름이 즉시 따라온다(판정 I 완화)."""
+    ctrl, _ = _draft_session(tmp_path)
+    first_desc = ctrl.snapshot()["records"][0]
+    assert first_desc["index"] == 2 and first_desc["name"].startswith("doc-001")
+    ctrl.dispatch("range_draft_open", {})
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
+    rows = ctrl.snapshot()["records"]
+    assert rows[0]["index"] == 0 and rows[0]["name"].startswith("doc-001")
+    # 커밋된 실행 입력은 그대로 — 미리보기는 "적용하면 이렇게 된다"이지 실행 예약이 아니다.
+    assert ctrl._indices() == [2, 1, 0]
+
+
+def test_draft_does_not_leak_into_the_session_guard_or_filter_slot(tmp_path):
+    """세션 가드·직전 필터 슬롯은 커밋된 세션의 것이다(판정 D 경계표 2행)."""
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl.dispatch("range_draft_open", {})
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("toggle_record", {"index": 0, "value": True})
+    ctrl.dispatch("filter_search", {"text": "책상"})
+    guard = ctrl.snapshot()["guard"]
+    # 커밋은 여전히 전체 선택(1클릭 재현) = 비무장. 초안의 수작업 선택이 새면 무장한다.
+    assert guard["armed"] is False and guard["sel_count"] == 3
+    assert guard["filter_active"] is False, "초안 필터가 세션 가드로 샜습니다."
+    assert ctrl._filter_desc == "", "초안 정의가 직전 필터 슬롯 소재로 샜습니다."
