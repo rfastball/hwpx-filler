@@ -1075,6 +1075,51 @@ def test_skip_data_requires_template_gate(tmp_path):
     assert ctrl.section == "binding"
 
 
+def test_discarding_one_section_keeps_edits_that_live_outside_sections(tmp_path):
+    """탭 가드의 「버리고 이동」은 **그 자리만** 되돌린다(2R P2).
+
+    모달이 말한 것은 「그 탭에서 바꾼 것」인데 세션 전체를 되돌리면, 머리에서 고친 이름처럼
+    **어느 section 에도 속하지 않는 편집**(§10.13 판정 L 계열)까지 함께 사라진다 — 되돌리는
+    범위가 확인 문안보다 넓으면 그건 사용자가 승인하지 않은 파기다.
+    """
+    ctrl, _ = _controller26(tmp_path)
+    assert _save_named(ctrl, "부분되돌리기")["ok"] is True
+    ctrl.load_job("부분되돌리기")
+    ctrl.dispatch("set_name", {"name": "새 이름"})                 # section 밖(정체)
+    ctrl.dispatch("goto_section", {"section": "filename"})
+    ctrl.dispatch("set_pattern", {"pattern": "다른-{{공고명}}"})    # 파일 이름 patch
+    assert ctrl.dirty_sections() == ("filename",)
+
+    ctrl.dispatch("discard_patch", {"section": "filename"})
+    assert ctrl.dirty_sections() == ()                             # 그 자리는 되돌아갔고
+    assert ctrl.job_name == "새 이름"                              # 이름은 살아 있다
+    assert ctrl.has_unsaved_work() is True                         # 그래서 이탈은 여전히 묻는다
+
+    # 인자 없는 되돌리기(footer 「변경 버리기」·「버리고 나가기」)는 세션 전체가 대상이다.
+    ctrl.dispatch("discard_patch", {})
+    assert ctrl.job_name == "부분되돌리기" and ctrl.has_unsaved_work() is False
+
+
+def test_discarding_a_binding_patch_keeps_the_loaded_data(tmp_path):
+    """연결 patch 를 되돌려도 사람이 고른 데이터는 내려놓지 않는다(판정 L).
+
+    데이터 선택은 patch 가 아니라 세션 문맥이다 — 규칙을 되돌린다고 엑셀까지 걷으면
+    사용자는 되돌리기 한 번에 관문부터 다시 밟아야 한다.
+    """
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "데이터유지")
+    ctrl.dispatch("save", {})
+    ctrl.load_job("데이터유지")
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    before_rows = len(ctrl.records)
+    ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": False})
+    assert ctrl.dirty_sections() == ("binding",)
+    ctrl.dispatch("discard_patch", {"section": "binding"})
+    assert ctrl.dirty_sections() == ()
+    assert ctrl.data_path and len(ctrl.records) == before_rows     # 데이터는 그대로
+
+
 def test_editing_tabs_move_freely_until_a_patch_needs_disposing(tmp_path):
     """편집 탭은 자유 이동하되(결정 41), **손댄 patch 가 있으면** 처분을 먼저 받는다.
 

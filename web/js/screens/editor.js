@@ -590,7 +590,9 @@
       const saved = await doSave({});
       if (!saved) return;                       // 저장이 막혔으면 이동하지 않는다(문맥 보존)
     } else if (choice === "discard") {
-      await Bridge.call(SCREEN, "discard_patch", {});
+      // **그 자리만** 되돌린다(2R P2) — 모달이 말한 범위가 곧 파기 범위다. 이름처럼 어느
+      // section 에도 없는 편집은 이 처분의 대상이 아니다.
+      await Bridge.call(SCREEN, "discard_patch", { section: r.section });
     } else {
       return;                                   // 머무르기(Escape 포함)
     }
@@ -876,7 +878,12 @@
      Nav.go 는 `force` 로 되돌아온다(가드 재진입 방지). */
   async function leaveTo(target) {
     const s = LAST || {};
-    const dirty = (s.dirty_sections || []).length > 0;
+    // **section 밖의 편집도 잃을 것이다**(2R P1): 이름·자동등록 이름은 어느 section 에도
+    // 속하지 않아(판정 L 계열) `dirty_sections` 가 비어 있다 — 그것만 보면 머리에서 이름을
+    // 고치고 나가는 사람에게 아무것도 묻지 않고 그 편집을 버린다. 몰입 표면엔 그 세션으로
+    // 되돌아올 길이 없으므로(구 「편집 계속」은 사망) 조용한 파기가 된다. 세션이 손댔는지는
+    // Python 이 이미 `has_unsaved_work` 로 답한다 — 그 판정을 다시 만들지 않는다.
+    const dirty = (s.dirty_sections || []).length > 0 || !!s.has_unsaved_work;
     if (dirty && !s.is_draft) {
       const choice = await Modal.choose({
         title: "저장하지 않은 변경이 있습니다",

@@ -988,14 +988,61 @@ class EditorController:
         """
         if self.session.is_draft or self.session.base is None:
             raise ValueError("아직 저장하지 않은 새 작업이라 되돌릴 이전 상태가 없습니다.")
-        self._restore_from(
-            self.session.base,
-            landing_section=self.section,
-            context=self.session.context,
-            emit_push=False,
-            keep_data=True,
+        base = self.session.base
+        section = str(p.get("section") or "")
+        if not section:  # footer 「변경 버리기」·이탈의 「버리고 나가기」 = 세션 전체를 되돌린다
+            self._restore_from(
+                base, landing_section=self.section, context=self.session.context,
+                emit_push=False, keep_data=True,
+            )
+            self._set_notice("바꾼 내용을 버리고 저장된 상태로 되돌렸습니다.", "ok")
+            return
+        if section not in self.sections():
+            raise ValueError(f"이 작업에는 '{section}' 탭이 없습니다.")
+        # 탭 가드의 「버리고 이동」은 **그 자리만** 되돌린다(2R P2): 모달이 말한 것은 「필드
+        # 연결·표시에서 바꾼 것」인데 세션 전체를 되돌리면 머리에서 고친 이름처럼 **어느
+        # section 에도 속하지 않는 편집**(판정 L 계열)까지 함께 사라진다. 되돌리는 범위가
+        # 확인 문안보다 넓으면 그건 사용자가 승인하지 않은 파기다.
+        if section == SECTION_FILENAME:
+            self.pattern = base.filename_pattern
+        elif section == SECTION_BINDING:
+            self._revert_binding(base)
+        else:  # 템플릿 — 스키마·매핑이 함께 서야 하므로 규칙 전체를 다시 세운다(이름은 유지)
+            name, stash = self.job_name, self._data_stash()
+            self._restore_from(
+                base, landing_section=self.section, context=self.session.context,
+                emit_push=False, keep_data=True,
+            )
+            self.job_name = name
+            self.dataset_name = stash["dataset_name"]
+        self._set_notice(
+            f"「{self.SECTION_LABELS.get(section, section)}」 에서 바꾼 것만 되돌렸습니다.", "ok"
         )
-        self._set_notice("바꾼 내용을 버리고 저장된 상태로 되돌렸습니다.", "ok")
+        # 남은 것이 없으면 클린으로 돌아간다 — 되돌리기 뒤에도 표지가 켜져 있으면 이탈이
+        # 잃을 것 없는 확인을 묻는다(과경고). 이름은 section 밖이라 따로 대조한다.
+        if not self.dirty_sections() and self.job_name == base.name:
+            self._session_clean = True
+
+    def _revert_binding(self, base: "Job") -> None:
+        """연결 patch 만 되돌린다 — 데이터·이름·파일 이름 규칙은 그대로 둔다.
+
+        모델을 저장본 프로파일로 다시 세우는 일은 ``load_job`` 이 하는 것과 같다(초안 →
+        `apply_profile`): 여기서 행을 하나씩 되돌리면 「어떤 행도 검토 없이 확정 상태로
+        도착하지 않는다」는 ``_ensure_model`` 의 불변식을 두 번째 경로가 우회하게 된다.
+        """
+        if self.schema is None:
+            return
+        vocabulary = self._active_sources() or profile_source_vocabulary(base.mapping)
+        if not self.data_path:
+            # 데이터 없는 편집 세션의 어휘는 **저장 매핑이 참조하는 키**다(load_job 과 동형) —
+            # 이걸 빼면 되돌린 행이 전부 "(데이터에 없음)"으로 오표시된다.
+            self.source_fields = profile_source_vocabulary(base.mapping)
+            vocabulary = self.source_fields
+        self.model = MappingModel.from_suggestions(self.schema, vocabulary)
+        self.model.apply_profile(base.mapping)
+        self._model_key = (
+            self.template_path, self.data_path, self.data_sheet, tuple(self.source_fields)
+        )
 
     def _do_ack_gate(self, p: dict) -> None:
         """PARTIAL 게이트 명시 확인 — 재진술된 미해결 토큰 전체를 확인(ADR-E)."""
