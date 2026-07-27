@@ -124,6 +124,11 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "set_dataset_name": _schema("name"),
         "save": _schema(optional="confirm_dataset confirm_overwrite confirmed_overwrite_text"),
     },
+    # 「문서 만들기」(v6 nav 1) — 화면 키는 `job` 그대로다(Job 은 도메인 개체 이름이라 화면이
+    # 개명돼도 어휘가 갈리지 않는다 — 지도 §10.9 판정 A). 좌 목록 사망(F2 PR-B)으로 접힘·
+    # 복제·삭제·복원은 여기서 걷혔다: 라이브러리가 자기 채널에서 소유한다. 반대로 개명·그룹
+    # 이동/개명/해산은 **열린 세션의 정체와 결속**돼 있어 여기 남고, 라이브러리 표면이 교차
+    # 화면 dispatch 로 부른다(§10.8 판정 F).
     "job": {
         **_DATA_ZONE,
         **_POOL_TARGETING,
@@ -136,11 +141,7 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "browse_tab": _schema(optional="tab"),
         "browse_query": _schema(optional="text"),
         "relink_template": _schema("name", "path confirm"),
-        "toggle_group": _schema("group"),
         "rename_job": _schema("name", "new"),
-        "clone_job": _schema("name"),
-        "delete_job": _schema("name", "confirm"),
-        "undo_delete_job": _schema(),
         "cancel_generation": _schema(),
         "set_group": _schema("name", "group"),
         "rename_group": _schema("name", "new confirm seen"),

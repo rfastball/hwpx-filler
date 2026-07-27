@@ -718,6 +718,8 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 /* ---- 「작업」 화면 (R-flow 슬라이스 1, #90) — master-detail 세션 패널 4존 ---- */
 /* 좌 master 목록 + 우 패널을 한 화면에 상시 병치(변형 B: 화면 전환 0). 좌는 고정폭·자체 스크롤,
    우는 신축·자체 스크롤 — 페이지 세로 스크롤 없이 두 축이 독립적으로 걷힌다. */
+/* 「문서 만들기」는 좌 목록 사망(F2 PR-B) 뒤 세션 패널 하나다 — flex 는 「기안」과 공유하는
+   형상이라 남기고(그쪽은 여전히 master+detail), 여기선 자식이 하나라 그대로 편다. */
 .job-layout{display:flex;gap:var(--sp-16);flex:1;min-height:0}
 .job-master{flex:none;width:var(--master-width,240px);overflow:auto;display:flex;flex-direction:column;gap:var(--sp-16);
   border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card);padding:var(--sp-10)}
@@ -732,7 +734,6 @@ body.resizing-master{cursor:col-resize;user-select:none}
   padding:var(--sp-4) var(--sp-6);border-radius:var(--rad-control);
   border-left:3px solid var(--a-border)}
 /* 구획 열 틴트 승계(홈 트랙 색 언어) — HWPX 파랑 / TXT 초록. */
-.job-sec-head.hwpx{border-left-color:var(--a-primary)}
 .job-sec-head.txt{border-left-color:var(--a-ok)}
 .job-list{display:flex;flex-direction:column;margin-top:var(--sp-6)}
 .job-item{text-align:left;font:inherit;font-size:var(--fs-body);cursor:pointer;background:none;border:0;
@@ -740,6 +741,10 @@ body.resizing-master{cursor:col-resize;user-select:none}
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .job-item:hover{background:var(--n-hover)}
 .job-item[aria-busy="true"]{cursor:progress;background:var(--a-sel);color:var(--a-primary)}
+/* 「여는 중」 지연 표지(#217 R1) — 좌 목록 행에서 후보 카드·탐색 행으로 승계(F2 PR-B).
+   라벨을 갈아치우지 않고 덧붙는 표식이라 카드의 이름·메타 구조를 건드리지 않는다. */
+.openingMark{color:var(--a-primary);font-size:var(--fs-caption);white-space:nowrap}
+[aria-busy="true"] .openingMark{cursor:progress}
 .job-item[aria-current="true"]{background:var(--a-primary);color:var(--a-on-accent);font-weight:600}
 .job-empty{font-size:var(--fs-body);padding:var(--sp-6)}
 .job-empty .btn{margin-top:var(--sp-8)}

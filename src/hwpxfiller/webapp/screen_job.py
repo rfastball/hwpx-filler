@@ -73,7 +73,8 @@ from ..gui.work_candidates import (
     rank_available,
     suggested_work,
 )
-from .job_list import build_flat_rows, build_group_sections, drift_note
+from .job_list import drift_note
+from .settings import load_job_collapsed_groups, save_job_collapsed_groups
 from .data_zone import (
     EMPTY_FILTER as _EMPTY_FILTER,
     EMPTY_TABLE as _EMPTY_TABLE,
@@ -88,7 +89,6 @@ from .screens import (
     relink_job_template,
     source_label,
 )
-from .settings import load_job_collapsed_groups, save_job_collapsed_groups
 
 # 사전검증 성공 문구는 링2 사용자 어휘로 순화한다(실행 화면 _PREFLIGHT_OK_TEXT 동형).
 _PREFLIGHT_OK_TEXT = "검증 완료. 생성할 수 있습니다."
@@ -142,7 +142,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # (앱 수명·미저장 — 필터 영속 뒷문 금지). 소스 일치 게이트용 키와 쌍.
         self._last_filter: "dict | None" = None  # {"source_key": str, "state": dict}
         self._data_key = ""  # 현 데이터 소스 정체(file:경로 | pool:참조) — 소스 일치 판정
-        self.job_name = ""  # 좌 목록에서 겨눈 작업(패널 세션의 주체)
+        self.job_name = ""  # 후보·탐색에서 겨눈 작업(패널 세션의 주체)
         # 문서 탐색 상태(§18.6) — 탭·검색어는 **세션 소유**다: 탭을 옮겨도 검색어가 살아야
         # 하고(계약 명문), 시트를 닫고 다시 열어도 방금 찾던 자리로 돌아온다. 스크롤·포커스는
         # 기존 보존 기제(preserve.js) 소관이라 여기 두지 않는다.
@@ -153,9 +153,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 뒀던 seam 이며, 그 사건의 유일한 원천이 F2 에서 섰다. 승격·소비 규칙은
         # :meth:`_apply_preferred_work`.
         self.preferred_work = ""
-        # 좌 목록 접힌 그룹(결정 43·R-info 결정 6) — 마지막 상태를 Python 설정에서 복원.
-        # 앱은 홈당 단일 인스턴스(뮤텍스 가드)라 메모리 캐시가 디스크와 갈라질 경로가 없다.
-        self._collapsed: "set[str]" = set(load_job_collapsed_groups())
         self.data_label = ""
         self.data_source = ""  # 소스 종류 플래그('file'|'pool') — 병기 라벨은 스냅샷이 합성(K8)
         self.out_dir = ""
@@ -166,7 +163,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 기본 데이터셋 자동 조준(#53-A) 결과 재진술 — 성공(ok)/실패(warn)를 스냅샷에 노출.
         self.data_notice_text = ""
         self.data_notice_level = ""
-        self._deleted_job_slot = None
         self._cancel_generation = threading.Event()
         self._generation_lock = threading.Lock()
         # 등록 데이터(풀) 겨눔(#26/#6) — 기본은 홈 레지스트리, 테스트는 주입.
@@ -177,19 +173,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     # ------------------------------------------------------------- 관측 푸시
     def _push(self) -> None:
         self._push_sink(self.name, self.snapshot())
-
-    # ------------------------------------------------------------- 좌 목록
-    def _job_rows(self, jobs) -> "list[dict]":
-        """좌 master 목록의 평면 뷰 — 공용 빌더(job_list.build_flat_rows) 위임.
-
-        「기안」 화면과 같은 빌더를 쓴다(백엔드 사본 방지, 3부 결정 1). 두 뷰(평면·구획)가
-        어긋나지 않게 :meth:`snapshot` 이 media 필터한 ``jobs`` 를 둘에 같이 넘긴다.
-        """
-        return build_flat_rows(jobs, self.job_name)
-
-    def _job_sections(self, jobs) -> "tuple[list[dict], bool]":
-        """그룹 구획 뷰 — 공용 빌더(job_list.build_group_sections) 위임(「기안」 화면과 단일 출처)."""
-        return build_group_sections(jobs, self.job_name, self._collapsed)
 
     # ------------------------------------------------------------- 스냅샷
     def _display_indices(self, indices: "list[int]") -> "list[int]":
@@ -211,7 +194,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """현재 데이터에 대한 문서 작업 후보(§18.4)+메인 순위(§18.5·§19.3) — 판정·정렬 모두
         링1 단일 출처 소비.
 
-        데이터 미준비면 빈 구획(§18.1 — 계산 자체를 하지 않는다). ``jobs`` 는 좌 목록과
+        데이터 미준비면 빈 구획(§18.1 — 계산 자체를 하지 않는다). ``jobs`` 는 문서 탐색과
         같은 스캔 1회 결과를 받아 목록·후보가 갈라지지 않는다. fields 는 필터 열 파생과
         같은 원천(``records[0].keys``) — 표시와 판정이 같은 열 집합을 본다.
 
@@ -502,21 +485,18 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     _do_guard_state.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
 
     def snapshot(self) -> dict:
-        """4존 패널 스냅샷 — 필드는 실행 화면과 평행(링1 배선 감사 가능), 좌 목록 동봉.
+        """세션 패널 스냅샷 — 필드는 실행 화면과 평행(링1 배선 감사 가능).
 
-        존 배치는 job.js 소관(헤더=작업 정체, 데이터=겨눔·행, 본문=배지·게이트, 완료=결과).
+        존 배치는 job.js 소관(현재 데이터·거울·결과 / side-card 후보·정체·생성 준비).
+        좌 목록 4키(``job_rows``·``job_sections``·``job_flat``·``job_group_names``)는 표면과
+        함께 사망했다(F2 PR-B, 지도 §10.9 판정 F): 아무도 그리지 않는 페이로드가 남으면 다음
+        세션이 그걸 근거로 목록을 되살린다. 저장된 작업의 전역 목록은 「문서 작업」 소관이다.
         """
-        # 좌 목록은 레지스트리 1회 판독에서 평면·구획 두 뷰를 함께 파생한다(드리프트 봉쇄).
-        # 조회 경계(3부 결정 13 · 1층): 「작업」은 hwpx 워크플로 작업을 조회한다 — **txt 기안
+        # 조회 경계(3부 결정 13 · 1층): 이 화면은 hwpx 워크플로 작업을 조회한다 — **txt 기안
         # 작업만 뺀다**(「기안」 화면 소관). 빈/미상 매체(템플릿 미링크 = 저작 중)는 남긴다:
-        # 그것도 hwpx 작업이고, 여기서 빼면 막 만든 무템플릿 작업이 목록에서 사라진다.
+        # 그것도 hwpx 작업이고, 여기서 빼면 막 만든 무템플릿 작업이 후보에서 사라진다.
         jobs = [j for j in self.registry.list_jobs() if j.media != "txt"]
-        sections, flat = self._job_sections(jobs)
         base = {
-            "job_rows": self._job_rows(jobs),   # 좌 master 목록(평면 뷰)
-            "job_sections": sections,           # 그룹 구획 뷰(결정 43) — 표면 렌더 원천
-            "job_flat": flat,                   # 퇴화 불변식: 그룹 0개 = 헤더 없는 평면
-            "job_group_names": [s["group"] for s in sections if s["group"]],
             "job_name": self.job_name,
             "has_job": self.vm is not None,
             # 세션 가드 무장 상태(결정 26·27) — 표면 참고용(진실은 guard_state 실시간 질의;
@@ -684,10 +664,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     def _do_refresh(self, p: dict) -> "dict | None":
         """레지스트리 재스캔 반영(C6) + stale 세션 무효화(master-detail 불변식).
 
-        좌 목록(``registry.names()``)과 우 패널(``self.vm``)이 갈라지지 않게 조정한다: 선택된
+        레지스트리(``registry.names()``)와 세션 패널(``self.vm``)이 갈라지지 않게 조정한다: 선택된
         작업이 다른 화면에서 삭제·개명돼 레지스트리에서 사라졌으면 세션을 무효화한다 — 안 그러면
         존재하지 않는 작업의 라이브 세션이 활성 생성 버튼과 함께 남아 유령 작업에서 생성된다
-        (리뷰 #2). 조용히 두지 않고 빈 패널로 재진술(작업이 좌 목록에서도 사라져 상실이 보인다).
+        (리뷰 #2). 조용히 두지 않고 빈 패널로 재진술(후보·라이브러리에서도 사라져 상실이 보인다).
         재스캔 자체는 스냅샷이 매번 ``names()`` 를 재읽어 반영(에디터 저장분 즉시 노출).
         작업 화면은 REFRESH_ON_NAV 에 있어 이 액션이 레일 복귀마다 발화하므로, 타 화면에서의
         삭제(그 화면으로 가려면 반드시 작업 화면을 이탈)가 복귀 시점에 잡힌다.
@@ -703,7 +683,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         return None
 
     def _do_select_job(self, p: dict) -> "dict | None":
-        """좌 목록 클릭 → RunViewModel 재구성. 저장 폴더 기본 = 템플릿/Results.
+        """후보·탐색에서 작업 선택 → RunViewModel 재구성. 저장 폴더 기본 = 템플릿/Results.
 
         **데이터-우선 보존 계약(§18.2)**: 데이터·선택·필터는 세션 소유라 작업 전환에서
         **생존**한다 — 전환은 vm 만 재생성하고 세션 데이터를 ``set_acquired`` 로 주입한다.
@@ -819,7 +799,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if self.job_name:
             self.data_notice_text = (
                 f"'{self.job_name}' 작업이 이미 열려 있어 '{name}' 으로 바꾸지 않았습니다. "
-                "왼쪽 목록에서 직접 고르세요."
+                "바꾸려면 아래 후보에서 직접 고르세요."
             )
         else:
             self.data_notice_text = (
@@ -911,20 +891,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             res["restated"] = "템플릿을 다시 연결했습니다."
         return res
 
-    # --------------------------------------------- 좌 목록 관리(결정 43·R-info 결정 5·7)
-    def _do_toggle_group(self, p: dict) -> None:
-        """그룹 접힘/펼침 토글 — 마지막 상태를 Python 설정에 영속(결정 6-①, #74 전례).
-
-        접힘은 **보기**만 바꾼다: 행은 집합에서 빠지지 않아 선택·세션 판정에 무영향
-        (결정 6-⑤ 접어도 선택 유지). ``""`` 는 「그룹 없음」 구획.
-        """
-        g = p["group"]
-        if g in self._collapsed:
-            self._collapsed.discard(g)
-        else:
-            self._collapsed.add(g)
-        save_job_collapsed_groups(sorted(self._collapsed))
-
+    # ----------------------------------- 관리 동사(표면은 라이브러리, 소유는 이 컨트롤러)
+    # 좌 목록이 죽어도(F2 PR-B) 아래 넷은 남는다: 열린 세션의 정체(``job_name``·VM)와 결속돼
+    # 있어 여기가 계속 소유하고, 「문서 작업」 상세·그룹 헤더가 **교차 화면 dispatch** 로
+    # 부른다(지도 §10.8 판정 F). 라이브러리에서 재구현하면 거기서 이름을 바꾼 순간 열린
+    # 세션이 없는 이름을 가리킨다. 반면 세션과 무관한 복제·삭제·복원과 그룹 접힘은 표면과
+    # 함께 걷혔다 — 라이브러리가 자기 채널에서 소유한다(판정 F 정정분).
     def _do_rename_job(self, p: dict) -> dict:
         """작업 이름 변경(인라인 편집 커밋) — 검증 실패는 ``{"ok": False, error}`` 재진술.
 
@@ -944,10 +916,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 self.vm.job.name = new_clean
         return {"ok": True}
 
-    def _do_clone_job(self, p: dict) -> dict:
-        """작업 복제 — 레지스트리 clone(유일 이름 합성·이력 미계승) 위임. 그룹 계승 = 인접."""
-        return {"ok": True, "name": self.registry.clone(p["name"])}
-
     def session_guard_for(self, name: str) -> "dict | None":
         """타 화면(홈) 삭제 가드 조회(#268 리뷰) — 이 화면이 ``name`` 에 무장 세션을 열어
         두었으면 가드 수치(+``screen``)를 돌려준다. 판정·수치는 :meth:`_guard_state` 단일
@@ -957,33 +925,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             if g["armed"]:
                 return {"screen": self.name, **g}
         return None
-
-    def _do_delete_job(self, p: dict) -> "dict | None":
-        """작업을 휴지통으로 옮긴다. 무장 세션 소실만 확인 왕복한다.
-
-        열린 세션의 작업이면 세션도 함께 닫힌다 — 재진술에 ``open_session`` 과 무장 수치
-        (:meth:`_guard_state`)를 동봉해 표면이 세션 선택 소실을 한 모달로 말하게 한다.
-        클린/무관 세션은 사전 확인 없이 30일 휴지통과 최근 1건 복원에 맡긴다.
-        """
-        name = p["name"]
-        if not p.get("confirm"):
-            if name == self.job_name:
-                guard = self._guard_state()
-                if guard["armed"]:
-                    return {"needs_confirm": True, "name": name,
-                            "open_session": True, **guard}
-        self._deleted_job_slot = self.registry.soft_delete(name)
-        if name == self.job_name:
-            # 세션 주체가 사라졌다 — 빈 패널로 재진술(레지스트리 소실 무효화와 동일 경로).
-            self._do_select_job({"name": "", "confirm": True})
-        return {"ok": True, "undo": True, "name": name}
-
-    def _do_undo_delete_job(self, p: dict) -> dict:
-        if self._deleted_job_slot is None:
-            return {"ok": False, "error": "복원할 최근 작업이 없습니다."}
-        name = self.registry.restore_soft_deleted(self._deleted_job_slot)
-        self._deleted_job_slot = None
-        return {"ok": True, "name": name}
 
     def _do_cancel_generation(self, p: dict) -> dict:
         """진행 중인 문서를 완결한 뒤 다음 레코드부터 중단하도록 요청한다."""
@@ -1001,6 +942,22 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     def _drift_note(self, seen, count: int) -> str:
         """확인 시점 건수와 실제 이동 건수 어긋남 고지(#149) — 공용 job_list.drift_note 위임."""
         return drift_note(seen, count)
+
+    def _recollapse(self, old: str, new: str) -> None:
+        """사라진 그룹 이름의 접힘 영속을 정리한다(``new`` 가 있으면 그 이름으로 승계).
+
+        접힘의 **표면**은 라이브러리로 넘어갔지만(지도 §10.8 판정 F) 그룹을 개명·해산하는
+        동사는 여기가 소유하므로, 남는 유령 이름을 치우는 것도 여기다. 메모리 사본을 들지
+        않고 영속 키를 그때그때 읽고 쓴다 — 표면 없는 두 번째 인메모리 소유자가 남으면
+        라이브러리의 접힘과 갈라지고, 그게 제2 정본이다(키는 계속 공유).
+        """
+        collapsed = set(load_job_collapsed_groups())
+        if old not in collapsed:
+            return
+        collapsed.discard(old)
+        if new:
+            collapsed.add(new)
+        save_job_collapsed_groups(sorted(collapsed))
 
     def _do_rename_group(self, p: dict) -> dict:
         """그룹 이름 변경 — 새 이름이 **기존 그룹**이면 병합이므로 확인 승격(무확인 반환).
@@ -1023,11 +980,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return {"needs_confirm": True, "kind": "merge_group", "name": old,
                     "new": new, "count": count, "target_count": target_members}
         count = self.registry.rename_group(old, new)
-        if old in self._collapsed:
-            self._collapsed.discard(old)
-            if not target_members:
-                self._collapsed.add(new)
-            save_job_collapsed_groups(sorted(self._collapsed))
+        self._recollapse(old, new if not target_members else "")
         return {"ok": True, "count": count, "drift_note": self._drift_note(p.get("seen"), count)}
 
     def _do_disband_group(self, p: dict) -> dict:
@@ -1040,9 +993,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             count = sum(1 for j in self.registry.list_jobs() if j.group == name)
             return {"needs_confirm": True, "name": name, "count": count}
         count = self.registry.disband_group(name)
-        if name in self._collapsed:
-            self._collapsed.discard(name)
-            save_job_collapsed_groups(sorted(self._collapsed))
+        self._recollapse(name, "")
         return {"ok": True, "count": count, "drift_note": self._drift_note(p.get("seen"), count)}
 
     # (행 선택 4액션·필터 12액션·직전 필터 슬롯·소스 키는 DataZoneMixin 으로 이동 —
@@ -1124,7 +1075,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         브리지 호출이 스레드별이라 에디터 저장과 **진짜로 겹치고**, 잠금 없이는 늦게 착지한
         저장이 상대의 변경을 통째로 되돌린다(스탬프가 매핑 편집을 지우거나 그 반대).
 
-        **정체를 인자로 받는 이유**(Codex 리뷰 P1): 생성 중에도 좌 목록의 작업 행은 눌린다
+        **정체를 인자로 받는 이유**(Codex 리뷰 P1): 생성 중에도 후보 카드는 눌린다
         (busy 잠금은 ``[data-busy-lock]`` 선언 요소만 잠그는데 ``.job-item`` 엔 없다). 기본
         전체 선택 세션은 무장 상태가 아니라 전환이 확인도 거치지 않는다 — 브리지 호출이
         별도 스레드라 배치가 도는 사이 ``self.job_name``/``self.vm`` 이 B 로 바뀔 수 있고,

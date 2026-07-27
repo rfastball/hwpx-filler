@@ -28,7 +28,7 @@
       // system: 속성 제거 → @media 지배로 되돌린다.
       document.documentElement.removeAttribute("data-theme");
     }
-    // 관심자(app.js 레일 라벨 등)에게 재진술 — 토글이든 부팅 주입(app.py loaded)이든 같은 신호.
+    // 관심자(app.js 토바 라벨 등)에게 재진술 — 토글이든 부팅 주입(app.py loaded)이든 같은 신호.
     window.dispatchEvent(new CustomEvent("hwpx:themechange"));
   }
 

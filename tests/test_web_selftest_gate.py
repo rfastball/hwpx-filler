@@ -428,7 +428,11 @@ class TestWebSelftestGate:
         assert j["job_data_moved"] and j["job_data_first_sticky"] and j["job_data_restored"], j
         assert j["edit_closes_sheets"], j
         assert len(j["job_grid_wide"].split()) == 2, j
-        assert len(selftest_result["job_density_narrow"]["columns"].split()) == 1
+        narrow = selftest_result["job_density_narrow"]
+        assert narrow["panel"] <= 900, (
+            f"협폭 프로브가 분기 폭(container 900px)을 안 밟았습니다: {narrow!r}"
+        )
+        assert len(narrow["columns"].split()) == 1
 
     def test_job_restate_block_lists_selected_names(self, selftest_result: dict) -> None:
         # 재진술 블록 — 선택 2행의 이름 목록이 상시 블록으로 실렌더된다.
@@ -546,36 +550,27 @@ class TestWebSelftestGate:
             f"{selftest_result['job_mirror']['reapply_title']!r}"
         )
 
-    def test_job_list_groups_render_collapse_and_menu(self, selftest_result: dict) -> None:
-        # 좌 목록 그룹·관리 메뉴(결정 43, A안: 구획 안 그룹) — 합성 구획 스냅샷을 실 render()
-        # 에 흘려 그룹 헤더 3개(이름 그룹 2 + 「그룹 없음」)·접힌 그룹 행 뷰 제외·행/그룹 ⋮·
-        # 접힘 화살표 가시성 계약(결정 5: 접힌 그룹만 상시 노출)·메뉴 개폐를 되읽는다.
-        j = selftest_result["job_list_groups"]
-        assert j.get("error") is None, f"그룹 목록 프로브 예외: {j.get('error')!r}"
-        assert j["grp_heads"] == 3, f"그룹 헤더 수가 다릅니다: {j!r}"
-        assert j["rows_visible"] == 3, f"접힌 그룹 행이 뷰에서 제외되지 않았습니다: {j!r}"
-        assert j["grp_more"] == 2, "그룹 ⋮ 는 이름 그룹에만 있어야 합니다(「그룹 없음」 제외)."
-        assert j["row_more"] == 3, f"행 ⋮ 수가 가시 행 수와 다릅니다: {j!r}"
-        # 접힘 화살표: 접힌 그룹=상시 노출, 펼친 그룹=호버 전 은닉(결정 5 — visibility 자동 눈검증).
-        assert j["caret_collapsed"] == "visible", f"접힌 그룹 화살표가 상시 노출이 아닙니다: {j!r}"
-        assert j["caret_expanded"] == "hidden", f"펼친 그룹 화살표가 호버 전에 보입니다: {j!r}"
-        assert j["collapse_local_flip"] is True, f"그룹 접힘이 왕복 전에 즉시 풀리지 않습니다: {j!r}"
-        assert j["opening_marker_immediate"] is True, f"작업 열기 표지가 클릭 즉시 서지 않습니다: {j!r}"
-        # 행 ⋮ 메뉴 — 실개방(항목 구성 포함) + 바깥 pointerdown 닫기.
-        assert j["menu_shown"] is True, "행 ⋮ 클릭에 메뉴가 열리지 않았습니다."
-        assert j["menu_items"] == [
-            "edit", "clone", "favorite", "rename", "move", "delete"
-        ], (
-            "메뉴 항목 구성이 결정 43(편집·복제·이름 변경·그룹 이동·삭제)+즐겨찾기"
-            f"(슬라이스 2 도달성)와 다릅니다: {j['menu_items']!r}"
+    def test_job_opening_marker_and_no_data_exit_are_inherited(self, selftest_result: dict) -> None:
+        """좌 목록이 죽으며 넘긴 두 의무를 승계처에서 되읽는다(F2 PR-B, 지도 §10.9).
+
+        ① 「여는 중」 지연 표지(#217 R1) — 좌 목록 행에 있던 계약을 후보 카드가 진다.
+           삭제는 의무를 상속한다: 표지가 같이 죽으면 큰 레지스트리에서 클릭이 아무 일도 안
+           한 것처럼 보이는 시간이 되돌아온다.
+        ② 데이터·작업이 둘 다 없을 때의 흡수처 출구(판정 C) — 데이터 없이 작업을 보는 경로는
+           「문서 작업」이 흡수했고, 화면은 그 흡수처를 가리켜야 한다(막다른 화면 금지).
+           데이터가 있으면 숨는다(소음 금지).
+        """
+        j = selftest_result["job_inherited"]
+        assert j.get("error") is None, f"승계 어포던스 프로브 예외: {j.get('error')!r}"
+        assert j["opening_marker_immediate"] is True, (
+            f"후보 카드 클릭에 「여는 중」 표지가 즉시 서지 않습니다: {j!r}"
         )
-        # 문안은 행의 favorited 플래그를 추종한다 — 첫 행은 지정 상태라 "제거"여야 한다
-        # (반대로 말하면 순위 밖 승격 경로가 사용자를 속인다).
-        assert j["menu_fav_label"] == "즐겨찾기에서 제거", j["menu_fav_label"]
-        assert j["menu_closed"] is True, "바깥 클릭에 메뉴가 닫히지 않았습니다."
-        assert j["move_modal_hidden"] is True, "그룹 이동 다이얼로그가 기본 닫힘이 아닙니다."
-        # 퇴화 불변식(결정 5) — 그룹 0개면 헤더·들여쓰기 없는 평면.
-        assert j["flat_heads"] == 0 and j["flat_rows"] == 1, f"퇴화 평면 위반: {j!r}"
+        assert j["no_data_exit_with_data"] is False, (
+            f"데이터가 있는데 흡수처 출구가 떠 있습니다(소음): {j!r}"
+        )
+        assert j["no_data_exit_shown"] is True and j["no_data_exit_target"] is True, (
+            f"데이터·작업이 둘 다 없는데 「문서 작업」 출구가 없습니다: {j!r}"
+        )
 
     def test_draft_list_groups_render_and_menu(self, selftest_result: dict) -> None:
         # 「기안」 좌 목록(#148 슬라이스 2b) — 「작업」과 같은 그룹 구획 스캐폴드 + 공용
@@ -843,7 +838,9 @@ class TestWebSelftestGate:
         assert h["job_step_badges"] == 0
         assert h["job_steps"] == [
             "현재 데이터", "본문 확인", "생성 결과",
-            "이 데이터에 사용할 문서", "선택한 작업", "생성 준비",
+            # 「시작하기」 = 데이터·작업이 둘 다 없을 때만 서는 흡수처 출구(F2 PR-B 판정 C).
+            # 이 프로브의 합성 상태가 바로 그 상태라 캡션 목록에 함께 잡힌다.
+            "시작하기", "이 데이터에 사용할 문서", "선택한 작업", "생성 준비",
         ]
 
     def test_milestone_h_template_and_card_surfaces_render(self, selftest_result: dict) -> None:
@@ -967,7 +964,8 @@ class TestWebSelftestGate:
     def test_personalization_defaults_render_in_real_webview(self, selftest_result: dict) -> None:
         p = selftest_result["personalization_persist"]
         assert p["font_scale"] == "normal" and p["root_px"] == "16px"
-        assert p["master_width"] == 240 and p["splitters"] == 2
+        # 폭 스플리터 소비처는 「기안」 하나 — 「문서 만들기」 좌 목록은 사망(F2 PR-B).
+        assert p["master_width"] == 240 and p["splitters"] == 1
         # 토바 높이는 라이브러리 2-pane 계산이 소비하는 구조 치수 — 실 엔진 실측으로 핀한다.
         assert p["topbar_h"] == 64, f"토바 높이가 구조 치수(64px)와 다릅니다: {p!r}"
         assert p["body_overflow"] is False, f"기본 배율에서 가로 오버플로: {p!r}"

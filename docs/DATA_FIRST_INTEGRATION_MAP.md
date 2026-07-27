@@ -833,8 +833,9 @@ PR-A 가 미룬 절반이다 — 「문서 작업」이 실제로 *저장된 작
 |---|---|---|
 | `job` 스냅샷 `job_rows`·`job_sections`·`job_flat`·`job_group_names` | **사망** | 유일 소비처가 좌 목록·그 이동 다이얼로그다. 「기안」은 자기 스냅샷의 동명 키를 따로 낸다(무관) |
 | `job/toggle_group` 액션 + `JobController._collapsed` | **사망** | 접힘 소유는 §10.8 판정 F 로 라이브러리에 넘어갔고 영속 키(`job_collapsed_groups`)는 공유다 — 표면 없는 두 번째 소유자가 남으면 제2 정본 |
-| `job/rename_job`·`set_group`·`rename_group`·`disband_group` | **존치** | 표면은 죽어도 **소유는 「문서 만들기」 컨트롤러**다(§10.8 판정 F) — 라이브러리가 교차 화면 dispatch 로 부르는 유일 경로 |
-| `job/toggle_favorite`·`clone_job`·`delete_job`·`undo_delete_job` | **존치** | 후보 카드 별(§8.4 2행 승격)·라이브러리·에디터 소비처가 남는다 |
+| `job/rename_job`·`set_group`·`rename_group`·`disband_group` | **존치** | 표면은 죽어도 **소유는 「문서 만들기」 컨트롤러**다(§10.8 판정 F) — 라이브러리가 교차 화면 dispatch 로 부르는 유일 경로. 접힘 영속의 유령 이름 정리(`_recollapse`)도 여기 남는다: 그룹을 개명·해산하는 동사가 여기 있으므로. 인메모리 사본은 두지 않는다(제2 정본 금지 — 키는 라이브러리와 공유) |
+| `job/toggle_favorite` | **존치** | 후보 카드 별이 유일 소비처로 남는다(§8.4 2행 승격은 라이브러리 행이 승계) |
+| `job/clone_job`·`delete_job`·`undo_delete_job` | **사망**(착지 정정) | 착수 시엔 "라이브러리·에디터 소비처가 남는다"고 적었으나 **실측에서 되깎았다**: 라이브러리는 복제·삭제·복원을 **자기 채널에서** 소유하고(무장 세션은 `session_guards` 로 「문서 만들기」에 묻는다), 좌 목록이 죽으면 이 셋의 웹 소비처가 0 이다. 표면 없는 파괴 동사를 registry 에 남기는 것은 이 절이 금지한 바로 그 통로다 |
 | `#jobListHwpx`·`.job-master`·`jobRowMenu`·`groupMoveModal`·`jobNewBtn`·`jobEmptyNewBtn`·`master-splitter`(job) | **사망** | 승계처: 라이브러리 행·상세·`libraryNewWork`(§10.8.4 3·5행에서 이미 도달 확인) |
 | `job_list.build_group_sections`·`grouplist.js` 팩토리 | **존치** | 소비처 3(라이브러리·기안·템플릿 관리)이 남는다 |
 | `JobScreen.refreshList` | **존치·재정의** | 에디터 저장 착지가 부르는 seam 이다. 갱신 대상이 좌 목록에서 **후보·탐색 면**으로 바뀐다(저장한 작업이 즉시 후보에 뜨게) |

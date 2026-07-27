@@ -49,11 +49,11 @@
   /* 전환 시 자동 새로고침 대상(C6) — 다른 화면의 변경(에디터 자동등록·삭제 등)이 부팅
      스냅샷에 가려지는 고착 방지. 백엔드에 _do_refresh 가 있는 컨트롤러만 화이트리스트로
      보낸다(미지 액션은 백엔드가 loud 거절하므로 무차별 dispatch 금지). 수동 새로고침
-     버튼은 유지된다(명시적 재스캔 경로). 「작업」 화면도 레지스트리 파생 작업 목록(좌 master
-     목록)을 스냅샷으로 그리므로 포함한다 — 빼면 에디터에서 막 저장한 작업이 좌 목록에 안
-     보인다. 실행 화면(run)은 사망(슬라이스 3)이라 목록에서 제거. 홈은 「문서 작업」
-     라이브러리로 대체됐다(재작성 F2) — 그 화면의 refresh 는 레지스트리 + 영속 그룹 접힘을
-     함께 다시 읽는다(다른 화면에서 접은 상태가 stale 로 남지 않게). */
+     버튼은 유지된다(명시적 재스캔 경로). 「문서 만들기」도 레지스트리 파생 후보·문서 탐색을
+     스냅샷으로 그리므로 포함한다 — 빼면 에디터에서 막 저장한 작업이 후보에 안 보인다.
+     실행 화면(run)은 사망(슬라이스 3)이라 목록에서 제거. 홈은 「문서 작업」 라이브러리로
+     대체됐다(재작성 F2) — 그 화면의 refresh 는 레지스트리 + 영속 그룹 접힘을 함께 다시
+     읽는다(다른 화면에서 접은 상태가 stale 로 남지 않게). */
   const REFRESH_ON_NAV = ["library", "tpl", "job", "draft"];
 
   /* 화면 전환 — 탭 클릭과 라이브러리 상세의 프로그램적 이동이 공유하는 단일 경로. */
@@ -70,8 +70,9 @@
         .then((r) => { if (r && r.notice) window.alert(r.notice); })
         .catch((err) => window.alert(String((err && err.message) || err)));
     }
-    // 「작업」 복귀 시 편집 호스트의 에디터도 재렌더(#138 리뷰 F12) — job refresh 는 좌 목록만
-    // 갱신하고 편집 모드 1단계 피커는 놔둬, 관리 화면에서 바뀐 공유 그룹 접힘이 stale 로 남는다.
+    // 「문서 만들기」 복귀 시 편집 호스트의 에디터도 재렌더(#138 리뷰 F12) — job refresh 는
+    // 세션 스냅샷만 갱신하고 편집 모드 1단계 피커는 놔둬, 관리 화면에서 바뀐 공유 그룹
+    // 접힘이 stale 로 남는다.
     if (id === "job" && window.EditorScreen && window.EditorScreen.rerender) {
       window.EditorScreen.rerender();
     }
@@ -90,7 +91,7 @@
   // 화면 간 프로그램적 이동의 단일 경로 — 라이브러리 상세의 「문서 만들기에서 사용」 등이
   // 대상 화면을 자체 dispatch 로 먼저 겨눈 뒤 여기로 전환한다(library.js 가 소비).
   window.Nav = { go };
-  go(DEFAULT_SCREEN);  // 브리지 준비 전에는 DOM·레일 기본 상태만 확정한다.
+  go(DEFAULT_SCREEN);  // 브리지 준비 전에는 DOM·탭 기본 상태만 확정한다.
 
   // 글자 크기 라벨 — 셸 전역 개인화 표지. 레일 접기(#18/9B2AB35D-A)는 상단 토바 교체와 함께
   // 사망했다(F2 PR-B, 지도 §10.9): 토바는 64px 한 줄이라 접을 것이 없고, 좁은 창의 여유는
@@ -168,7 +169,7 @@
     routingReady = true;
     if (window.LibraryScreen) window.LibraryScreen.init();  // 「문서 작업」 라이브러리(F2 — 홈 승계)
     if (window.EditorScreen) window.EditorScreen.init();
-    if (window.JobScreen) window.JobScreen.init();  // 「작업」 화면(#90) — 유일 생성 표면
+    if (window.JobScreen) window.JobScreen.init();  // 「문서 만들기」(#90) — 유일 생성 표면
     if (window.DraftScreen) window.DraftScreen.init();  // 「기안」 화면(#148 슬라이스 2b) — TXT 작업-앵커
     if (window.TemplateScreen) window.TemplateScreen.init();
     // 데이터 선택 다이얼로그(재작성 F1) — 화면이 아니라 오버레이라 라우팅 대상이 아니지만

@@ -856,9 +856,13 @@ def test_job_candidate_ranking_surface_contract():
     """
     src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
     assert "data-fav" in src and "toggle_favorite" in src, "즐겨찾기 토글 배선이 없습니다."
-    # 도달성(리뷰 2R P2): 카드 별은 상위 5장뿐이라 순위 밖 작업의 승격 경로는 절단되지 않는
-    # 표면(좌 목록 ⋮ 메뉴)이 져야 한다. 두 표면은 같은 전이 몸통을 쓴다.
-    assert 'data-menu="favorite"' in src, "좌 목록 ⋮ 메뉴에 즐겨찾기 항목이 없습니다."
+    # 도달성(리뷰 2R P2 → F2 PR-B 이사): 카드 별은 상위 5장뿐이라 순위 밖 작업의 승격 경로는
+    # **절단되지 않는 표면**이 져야 한다. 그 표면이던 좌 목록 ⋮ 메뉴가 죽었으므로(지도 §10.9)
+    # 이제 「문서 작업」 라이브러리 **행**의 별이 그 자리다(§19.6: 행 선택 버튼 밖 형제).
+    lib = (WEB_JS_DIR / "screens" / "library.js").read_text(encoding="utf-8")
+    assert 'class="lib-fav" data-fav=' in lib, (
+        "라이브러리 행에 즐겨찾기 별이 없습니다 — 순위 밖 승격 도달성이 끊깁니다(§8.4 2행)."
+    )
     assert src.count("function toggleFavorite(") == 1, "즐겨찾기 전이 몸통이 둘입니다."
     # 왕복 중 두 번째 클릭이 의도를 뒤집으려면 다음 값을 DOM 이 아니라 미결 의도에서
     # 계산해야 하고(3R P2 — 멱등 재지정이 "껐다"를 삼키는 창), 쓰기 자체도 클릭 순서로
@@ -885,9 +889,10 @@ def test_job_candidate_ranking_surface_contract():
             f"{consumer} 가 즐겨찾기 기제를 공용 몸통에서 받지 않습니다 — 두 벌이면 또 갈린다."
         )
         assert "FAV_PENDING" not in text, f"{consumer} 에 손짠 의도 큐가 남아 있습니다."
-    # 메뉴 문안은 **이 클릭이 할 일**을 말해야 하므로 미결 의도를 읽는다 — 기제가 몸통으로
-    # 이사할 때 이 소비처가 뒤에 남아 실앱에서 메뉴가 안 열렸다(3R 픽스의 실물 증거).
-    assert "favorite.pending(" in src, "좌 목록 ⋮ 메뉴가 미결 의도를 읽지 않습니다."
+    # 미결 의도 판독(`pending`)의 소비처였던 좌 목록 ⋮ 메뉴 문안은 표면과 함께 죽었다
+    # (F2 PR-B) — 별은 두 표면 모두 aria-pressed 를 스냅샷에서 받으므로 「이 클릭이 할 일」을
+    # 문장으로 말할 자리가 없다. 기제는 몸통에 남겨 둔다: 다음 표면이 다시 손으로 짜지 않게.
+    assert "function pending(" in intent, "미결 의도 판독이 공용 몸통에서 사라졌습니다."
     assert src.count('Intent.chained("browse"') == 3, (
         "탐색 탭·검색·선택이 같은 체인을 타지 않습니다 — 늦은 옛 응답이 새 결과·선택을 되돌린다."
     )
@@ -1133,16 +1138,24 @@ def test_editor_surface_lives_in_job_panel():
         ("screens/library.js", "EditorEntry.newDraft"),
         ("screens/library.js", "EditorEntry.openGuarded"),
         ("screens/template.js", "EditorEntry.land"),
+        # 「문서 만들기」는 좌 목록 사망(F2 PR-B)으로 **새 작업 진입을 더는 갖지 않는다** —
+        # `＋ 새 작업`은 라이브러리 화면 머리 한 곳이다(진입이 둘이면 폐기 확인이 갈린다).
+        # 남는 것은 수리 동선(드리프트·파일명 토큰)의 편집 진입뿐이다.
         ("screens/job.js", "EditorEntry.openGuarded"),
-        ("screens/job.js", "EditorEntry.newDraft"),
     ):
         src = (WEB_JS_DIR / fname).read_text(encoding="utf-8")
         assert needle in src, f"{fname} 가 진입 단일 출처({needle})를 쓰지 않습니다."
-    # 레일 항목 사망의 어포던스 승계(PR-5 리뷰 F1·F2) — 「작업」 구획 ＋ 새 작업 + T2 고지의
-    # 비파괴 복귀 버튼(다른 진입은 전부 세션 초기화/재로드라 이 둘이 승계 실체다).
-    assert 'id="jobNewBtn"' in job_sec, "「작업」 구획 ＋ 새 작업이 없습니다(결정 10·레일 승계 F2)."
     job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    assert "EditorEntry.newDraft" not in job_js, (
+        "「문서 만들기」에 새 작업 진입이 되살아났습니다 — 승계처는 라이브러리 `＋ 새 작업`입니다."
+    )
+    # 편집 모드의 두 출구(F2 PR-B 판정 D) — 「편집으로 돌아가기」(T2 고지)와 「실행으로
+    # 돌아가기」(결정 40 이 좌 목록 행 클릭에 줬던 소임의 승계처). 둘 다 비파괴다.
     assert "return-to-edit" in job_js, "T2 고지의 비파괴 「편집으로 돌아가기」가 없습니다(F1)."
+    assert 'id="jobEditExit"' in job_sec, (
+        "편집 → 실행 복귀 어포던스가 없습니다 — 좌 목록 사망 뒤 실행으로 돌아갈 길이 사라집니다"
+        "(지도 §10.9 판정 D)."
+    )
     editor_js = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
     assert '$("jobEditHost")' in editor_js, "editor.js 위임 루트가 편집 호스트로 이사하지 않았습니다."
     assert "exitEditToRun" in job_js and "showEditMode" in job_js, (
@@ -1158,10 +1171,12 @@ def test_group_confirm_copy_states_the_rule_not_a_promised_count():
     옮겨지는 집합의 규칙('전부')은 언제나 참이므로 그것을 본문으로 삼고, 수치는 '지금 기준'
     으로 덧붙인다. 실제 건수는 실행 뒤 재진술(``drift_note``)이 진다.
     """
-    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    # 좌 목록 사망(F2 PR-B)으로 그룹 확인 문안의 거처가 라이브러리로 옮겼다 — 판정은 여전히
+    # 「문서 만들기」 컨트롤러(교차 화면 dispatch)가 내고, 문안 계약은 표면을 따라간다.
+    src = (WEB_JS_DIR / "screens" / "library.js").read_text(encoding="utf-8")
     assert "지금 기준" in src, "그룹 확인 수치가 관측으로 표기되지 않았습니다(#149)."
     assert "해산 시점의 소속 작업 전부" in src, "해산 확인이 이동 집합 규칙을 말하지 않습니다(#149)."
-    assert "seen: res.count" in src and "seen: r.count" in src, (
+    assert src.count("seen: r.count") == 2, (
         "확인 때 본 수를 확정 호출에 실어 보내지 않습니다 — 어긋남 판정(Python)이 불가(#149)."
     )
     assert "drift_note" in src, "실제 이동 건수의 어긋남 고지를 소비하지 않습니다(#149)."
