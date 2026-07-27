@@ -236,12 +236,20 @@ def _clean_practice_state() -> None:
 # ------------------------------------------------------------------ 단계 대본
 def _drive(d: Driver) -> None:
     """트랙 A·B 를 실 렌더로 완주하며 단계별 캡처."""
-    # ---- S1 부팅 랜딩(작업 · 빈 상태) --------------------------------------
-    d.wait("document.querySelector('#jobEmptyNewBtn') !== null", "빈 상태 랜딩")
+    # ---- S1 부팅 랜딩(문서 만들기 · 데이터도 작업도 없는 상태) --------------
+    # 좌 목록이 죽은 뒤(F2 PR-B) 이 자리의 출구는 「문서 작업」으로 가는 버튼 하나다.
+    d.wait("document.querySelector('#jobPickInLibrary') !== null", "빈 상태 랜딩")
+    d.wait(
+        "getComputedStyle(document.getElementById('jobNoDataExit')).display !== 'none'",
+        "흡수처 출구 상주",
+    )
     d.shot("job-landing")
 
-    # ---- S2 새 작업 → 편집 모드 1단계(라이브러리 피커) ----------------------
-    d.click_sel("#jobEmptyNewBtn")
+    # ---- S2 「문서 작업」 → ＋ 새 작업 → 편집 모드 1단계(라이브러리 피커) ----
+    d.click_sel("#jobPickInLibrary")
+    d.wait("document.querySelector('#scr-library.on') !== null", "문서 작업 화면")
+    d.shot("library-empty")
+    d.click_sel("#libraryNewWork")
     d.wait(
         "!document.getElementById('jobEditHost').hidden"
         " && !!window.__cap.btn('#jobEditHost','이 템플릿으로')",
@@ -288,21 +296,37 @@ def _drive(d: Driver) -> None:
     )
     d.shot("save-job")
     d.click("#jobEditHost", "작업 저장")
+    # 저장 착지를 먼저 확인한다 — 저장은 비동기라 곧바로 화면을 옮기면 라이브러리가 아직
+    # 없는 작업을 기다린다(경합). 성공 재진술은 Python notice(ok) 채널이 낸다.
     d.wait(
-        "!!document.querySelector('.job-item[data-job=\"발주요청서\"]')",
-        "저장·목록 반영",
+        "document.querySelector('#jobEditHost').textContent.includes('저장했습니다')",
+        "작업 저장 착지",
+        timeout=30.0,
     )
 
-    # ---- S5 실행 세션(작업 선택 → 기본 데이터 자동 연결) --------------------
-    # 3단계의 "데이터 함께 등록" 기본값 덕에 저장된 작업은 기본 데이터를 갖는다 —
-    # 선택만으로 자동 연결 고지 + 3건 로드 + 게이트 열림까지 온다(#53-A 자동 조준).
-    d.click_sel('.job-item[data-job="발주요청서"]')
+    # ---- S5 실행 세션(「문서 작업」에서 골라 문서 만들기로) ------------------
+    # 좌 목록 사망 뒤 저장된 작업을 찾는 자리는 「문서 작업」 하나다(F2 PR-B). 3단계의
+    # "데이터 함께 등록" 기본값 덕에 이 작업은 기본 데이터를 가지므로, 「문서 만들기에서
+    # 사용」이 곧바로 열고 3건을 자동 연결한다(#53-A · 지도 §10.9 판정 I).
+    d.js("window.Nav.go('library'); true;")
     d.wait(
-        "!document.getElementById('jobGenBtn').disabled"
-        " && document.querySelector('#scr-job').textContent.includes('자동으로 연결')",
-        "자동 연결·게이트 열림",
+        "!!document.querySelector('#libraryList [data-work=\"발주요청서\"]')",
+        "저장·라이브러리 반영",
+    )
+    d.click_sel('#libraryList [data-work="발주요청서"]')
+    d.wait("!!document.querySelector('#libraryDetail [data-use]')", "상세 상시 행동")
+    d.shot("library-detail")
+    d.click_sel('#libraryDetail [data-use="발주요청서"]')
+    d.wait(
+        "document.querySelector('#scr-job').textContent.includes('자동으로 연결')",
+        "기본 데이터 자동 연결",
         timeout=25.0,
     )
+    # 데이터-우선 계약(§18.2): 새 데이터의 선택은 **0건**에서 시작한다 — 무엇을 만들지는
+    # 사용자가 고른다. 그래서 자동 연결만으로는 게이트가 열리지 않고, 여기서 전체 선택을
+    # 눌러야 「N개 생성」이 열린다. 101 도 이 순서를 그대로 가르친다.
+    d.click_sel("#jobSelAll")
+    d.wait("!document.getElementById('jobGenBtn').disabled", "행 선택·게이트 열림")
     d.shot("session-panel")
 
     # ---- S6 본문 확인(거울) ------------------------------------------------
@@ -321,6 +345,8 @@ def _drive(d: Driver) -> None:
     d.shot("generated")
 
     # ---- S8 기안: 템플릿 + 데이터 채움 -------------------------------------
+    # 「기안」은 상단 탭의 구분선 오른쪽 **과도기 임시 항목**이다(F6 에서 「문서 만들기」로
+    # 합쳐지며 사라진다) — 캡처는 지금 실물을 그대로 찍는다.
     d.js("window.Nav.go('draft'); true;")
     d.wait("document.querySelector('#scr-draft.on') !== null", "기안 화면")
     d.wait("document.querySelectorAll('#draftTplSel option').length >= 2", "템플릿 콤보 채움")
@@ -330,8 +356,19 @@ def _drive(d: Driver) -> None:
         ".includes('발주 요청')",
         "기안 원문 렌더",
     )
-    _DIALOG_ANSWERS.append(CSV)
+    # 데이터 선택은 단일 출구(재작성 F1) — 버튼이 네이티브 피커를 바로 열지 않고 **데이터
+    # 선택 다이얼로그**를 연다. 「다른 데이터」의 [파일 찾아보기…]가 네이티브로 내려간다.
     d.click_sel("#draftBtnPickData")
+    d.wait(
+        "!document.getElementById('dataPickerModal').classList.contains('hidden')",
+        "데이터 선택 다이얼로그",
+    )
+    _DIALOG_ANSWERS.append(CSV)
+    d.click_sel("#dataPickerBrowse")
+    # 「작업」과 같은 데이터-우선 계약(§18.2) — 새 데이터는 선택 0건에서 시작하므로 채울
+    # 대상을 먼저 고른다. 그래야 카드가 첫 행 값으로 채워진다.
+    d.wait("!document.getElementById('draftSelAll').disabled", "기안 대상 행 표", timeout=25.0)
+    d.click_sel("#draftSelAll")
     d.wait(
         "(document.getElementById('draftCardRender')||{textContent:''}).textContent"
         ".includes('해양수산부')",
@@ -368,8 +405,13 @@ def _drive(d: Driver) -> None:
         " + (document.getElementById('draftDataLabel')||{textContent:''}).textContent)"
         ".includes('발주목록')"
     ):
-        _DIALOG_ANSWERS.append(CSV)
         d.click_sel("#draftBtnPickData")
+        d.wait(
+            "!document.getElementById('dataPickerModal').classList.contains('hidden')",
+            "데이터 선택 다이얼로그(재겨눔)",
+        )
+        _DIALOG_ANSWERS.append(CSV)
+        d.click_sel("#dataPickerBrowse")
     d.wait(
         "(document.getElementById('draftCardRender')||{textContent:''}).textContent"
         ".includes('{{담당연락처}}')",

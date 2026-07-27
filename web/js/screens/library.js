@@ -59,7 +59,7 @@
     if (a.pool_corrupted > 0) {
       // 조치처는 실재해야 한다(F1: 「데이터 관리」 화면 사망) — 손상 격리의 새 거처는
       // 「작업」의 [데이터 선택…] 안 「고정한 데이터」 구획이다.
-      alerts.push(`<div class="note dangerbox">손상된 등록 데이터 ${a.pool_corrupted}건이 있습니다. 「작업」의 [데이터 선택…]에서 확인하세요.</div>`);
+      alerts.push(`<div class="note dangerbox">손상된 등록 데이터 ${a.pool_corrupted}건이 있습니다. 「문서 만들기」의 [데이터 선택…]에서 확인하세요.</div>`);
     }
     $("libraryAlerts").innerHTML = alerts.join("");
   }
@@ -351,6 +351,12 @@
       return;
     }
     const r = await Bridge.call(JOB, "prefer_work", { name });
+    // 저쪽이 편집 모드로 열려 있으면 실행 모드로 되돌린 **뒤** 이동한다 — 「이 작업으로 문서
+    // 만들기」를 눌렀는데 편집 호스트에 착지하면 요청과 다른 표면이다(F2 PR-B). 전이 자체는
+    // 비파괴이고 미저장 편집이 있으면 저쪽이 고지한다.
+    if (window.JobScreen && window.JobScreen.landRunMode) {
+      await window.JobScreen.landRunMode();
+    }
     window.Nav.go(JOB);
     if (r && r.reason === "incompatible" && window.JobScreen) {
       await window.JobScreen.openBrowseNeedsAction(name);
@@ -578,7 +584,8 @@
     // 「작업」 화면과 같은 순서 — 값을 먼저 받고, 확정 왕복은 그다음이다.
     const val = await Modal.prompt({
       title: "그룹 이름 변경",
-      body: `그룹 '${group}' 의 새 이름을 입력하세요. 소속 작업 ${seen}건이 함께 옮겨집니다.`,
+      // 수치는 약속이 아니라 관측이다(#149) — 옮겨지는 집합의 규칙('전부')이 언제나 참이다.
+      body: `그룹 '${group}' 의 새 이름을 입력하세요. 소속 작업 전부(지금 기준 ${seen}건)가 함께 옮겨집니다.`,
       value: group,
       returnFocus,
     });
@@ -607,7 +614,11 @@
     if (!r || !r.needs_confirm) return;
     const ok = await window.Modal.confirm({
       title: "그룹 해산 확인",
-      body: `그룹 '${group}' 을(를) 해산합니다. 소속 작업 ${r.count}건은 「그룹 없음」으로 옮겨지고 작업 자체는 그대로입니다.`,
+      // 이동 집합은 '해산 시점의 소속 전부'라는 **규칙**으로 적고 수치는 지금 기준 관측으로
+      // 덧붙인다(#149) — 확인 왕복 사이 소속이 바뀌어도 규칙 쪽은 언제나 참이다. 좌 목록이
+      // 죽으며 넘어온 문안 계약이다(F2 PR-B: 삭제는 의무를 상속한다).
+      body: `그룹 '${group}' 을(를) 해산합니다. 해산 시점의 소속 작업 전부(지금 기준 ${r.count}건)가 ` +
+        `「그룹 없음」으로 옮겨지고 작업 자체는 그대로입니다.`,
       confirmLabel: "해산", cancelLabel: "취소",
       returnFocus,
     });

@@ -95,8 +95,10 @@ def test_transient_or_organizational_confirms_stay_neutral() -> None:
     inventory = (
         ("draftsession.js", 'title: "데이터 변경 확인"'),
         ("screens/editor.js", "미확정으로 되돌리기"),
-        ("screens/job.js", 'title: "그룹 병합 확인"'),
-        ("screens/job.js", 'title: "작업 삭제 확인"'),
+        # 좌 목록 사망(F2 PR-B)으로 두 문안의 거처가 라이브러리로 옮겼다 — 표면이 옮겨도
+        # 「되돌릴 수 있는 조직 행위는 danger 로 물들이지 않는다」는 계약은 따라간다.
+        ("screens/library.js", 'title: "그룹 병합 확인"'),
+        ("screens/library.js", 'title: "작업 삭제 확인"'),
         ("screens/draft.js", 'title: "기안 작업 삭제 확인"'),
         ("screens/template.js", "그룹을 해산하면"),
     )

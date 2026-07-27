@@ -73,16 +73,16 @@ def _mount_all(ctrl, path, *, sheet=None) -> None:
     ctrl.dispatch("set_all", {})
 
 
-# ---------------------------------------------------------------- 좌 목록 + 스냅샷 골격
-def test_initial_lists_jobs_and_loud_gate(tmp_path):
+# ---------------------------------------------------------------- 스냅샷 골격
+def test_initial_has_no_active_work_and_loud_gate(tmp_path):
     ctrl, _ = _controller(tmp_path)
     snap = ctrl.initial()
     assert snap["has_job"] is False
-    # 좌 master 목록 = 저장된 작업(선택 표지 포함).
-    # 행에는 선택 표지와 즐겨찾기(좌 목록 ⋮ 메뉴 문안의 근거, 리뷰 2R P2)가 함께 실린다.
-    assert snap["job_rows"] == [
-        {"name": "공고서", "selected": False, "favorited": False}
-    ]
+    # 좌 목록 4키는 표면과 함께 사망했다(F2 PR-B, 지도 §10.9 판정 F) — 아무도 그리지 않는
+    # 페이로드가 남으면 다음 세션이 그걸 근거로 목록을 되살린다. 저장된 작업의 전역 목록은
+    # 「문서 작업」 소관이고, 이 화면은 데이터가 준비된 뒤의 **후보**만 낸다.
+    for dead in ("job_rows", "job_sections", "job_flat", "job_group_names"):
+        assert dead not in snap, f"죽은 좌 목록 키가 스냅샷에 남았습니다: {dead}"
     # 데이터-우선 도입 순서(§18.2) — 첫 할 일은 데이터 선택이다.
     assert snap["gate"]["enabled"] is False and "데이터 파일" in snap["gate"]["text"]
     # 데이터 미준비 = 후보 계산 자체를 안 한다(§18.1) — 4구획 전부 빈 골격.
@@ -93,14 +93,11 @@ def test_initial_lists_jobs_and_loud_gate(tmp_path):
     assert snap["browse"]["rows"] == [] and snap["browse"]["available_count"] == 0
 
 
-def test_select_job_marks_master_and_sets_session(tmp_path):
+def test_select_job_sets_session_identity(tmp_path):
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     snap = ctrl.snapshot()
     assert snap["has_job"] is True and snap["job_name"] == "공고서"
-    assert snap["job_rows"] == [
-        {"name": "공고서", "selected": True, "favorited": False}
-    ]  # 좌 목록 선택 표지
     # 저장 폴더 기본값 = 템플릿 폴더/Results(실행 화면 동형).
     assert snap["out_dir"].endswith("Results")
 
@@ -363,11 +360,9 @@ def test_overflow_job_can_be_promoted_and_left_list_carries_the_flag(tmp_path):
     assert ctrl.dispatch("toggle_favorite", {"name": target, "value": True})["ok"] is True
     snap = ctrl.snapshot()
     assert snap["candidates"]["top"][0]["name"] == target     # 승격돼 1순위
-    rows = {r["name"]: r["favorited"] for r in snap["job_rows"]}
-    assert rows[target] is True                              # 좌 목록이 상태를 싣는다
-    sect_rows = {r["name"]: r["favorited"]
-                 for sec in snap["job_sections"] for r in sec["rows"]}
-    assert sect_rows[target] is True                         # 구획 뷰도 같은 값(드리프트 없음)
+    # 좌 목록 사망(F2 PR-B) 뒤 별 상태를 싣는 유일 표면은 후보 카드다 — 승격된 카드가
+    # 지정 상태를 함께 말해야 다시 눌러 해제할 수 있다(순위 밖 승격 도달성의 되돌림).
+    assert snap["candidates"]["top"][0]["favorited"] is True
 
 
 def test_toggle_favorite_on_vanished_job_is_restated_not_silent(tmp_path):
@@ -866,10 +861,6 @@ def test_deselect_job_returns_to_empty_panel(tmp_path):
     ctrl.dispatch("select_job", {"name": ""})  # 선택 해제
     snap = ctrl.snapshot()
     assert snap["has_job"] is False and snap["job_name"] == ""
-    # 행에는 선택 표지와 즐겨찾기(좌 목록 ⋮ 메뉴 문안의 근거, 리뷰 2R P2)가 함께 실린다.
-    assert snap["job_rows"] == [
-        {"name": "공고서", "selected": False, "favorited": False}
-    ]
 
 
 def test_refresh_invalidates_session_when_job_deleted(tmp_path):
@@ -889,7 +880,6 @@ def test_refresh_invalidates_session_when_job_deleted(tmp_path):
     }
     snap = ctrl.snapshot()
     assert snap["has_job"] is False and snap["job_name"] == ""
-    assert snap["job_rows"] == []  # 좌 목록에서도 사라져 상실이 보인다
     # 유령 작업 생성 시도도 loud 차단(세션 무효화 후).
     res = ctrl.generate()
     assert res["ok"] is False
@@ -1497,14 +1487,17 @@ def test_guard_state_counts_acks_without_arming_on_them(tmp_path):
 def test_needs_confirm_does_not_push(tmp_path):
     """가드 차단 왕복은 무변이 — 동일 스냅샷 전량 재계산·재렌더를 얹지 않는다(리뷰 #8).
 
-    구 표본이던 switch_job 가드는 데이터-우선 보존으로 죽었으므로(§18.2) 살아있는
-    needs_confirm 경로(열린 세션 작업 삭제)로 같은 dispatch 불변식을 가드한다.
+    구 표본이던 switch_job 가드는 데이터-우선 보존으로 죽었고(§18.2), 그다음 표본이던
+    작업 삭제는 좌 목록과 함께 이 채널에서 걷혔다(F2 PR-B) — 살아 있는 needs_confirm 경로
+    (그룹 병합 승격)로 같은 dispatch 불변식을 가드한다.
     """
     ctrl, pushes = _session(tmp_path)
-    ctrl.dispatch("set_none", {})
-    ctrl.dispatch("toggle_record", {"index": 0, "value": True})  # 무장(재현 불가 수작업)
+    reg = ctrl.registry
+    reg.save(Job(name="둘째"))
+    reg.set_group("공고서", "입찰")
+    reg.set_group("둘째", "수의")
     before = len(pushes)
-    res = ctrl.dispatch("delete_job", {"name": "공고서"})
+    res = ctrl.dispatch("rename_group", {"name": "수의", "new": "입찰"})
     assert res["needs_confirm"] is True
     assert len(pushes) == before                       # 차단 = 상태 그대로 = push 생략
 
@@ -1708,59 +1701,11 @@ def test_reapply_abandons_pruning_when_branches_all_lost(tmp_path):
     assert snap["filter"]["branches"] == ["bidNtceNm"]       # 가지 부활
 
 
-# ---------------------------------------------------------------- 좌 목록 관리(결정 43)
-def test_sections_flat_when_no_groups(tmp_path):
-    # 퇴화 불변식(R-info 결정 5): 그룹 0개 = 헤더·들여쓰기 없는 평면(현행 모습 그대로).
-    ctrl, _ = _controller(tmp_path)
-    snap = ctrl.snapshot()
-    assert snap["job_flat"] is True
-    assert snap["job_group_names"] == []
-    assert [s["group"] for s in snap["job_sections"]] == [""]
-    assert snap["job_sections"][0]["rows"] == snap["job_rows"]
-    assert snap["job_sections"][0]["collapsed"] is False
-
-
-def test_sections_group_order_and_counts(tmp_path):
-    # 그룹 배열 = 이름순 안정, 「그룹 없음」 = 마지막(R-info 결정 4·5). 두 뷰는 같은 판독에서 파생.
-    ctrl, _ = _controller(tmp_path)
-    reg = ctrl.registry
-    reg.save(Job(name="나 작업"))
-    reg.set_group("나 작업", "하 그룹")
-    reg.save(Job(name="다 작업"))
-    reg.set_group("다 작업", "가 그룹")
-    snap = ctrl.snapshot()
-    assert snap["job_flat"] is False
-    assert [s["group"] for s in snap["job_sections"]] == ["가 그룹", "하 그룹", ""]
-    assert snap["job_group_names"] == ["가 그룹", "하 그룹"]
-    by_group = {s["group"]: s for s in snap["job_sections"]}
-    assert [r["name"] for r in by_group[""]["rows"]] == ["공고서"]
-    assert by_group["가 그룹"]["count"] == 1 and by_group["하 그룹"]["count"] == 1
-    # 평면 뷰(job_rows)는 전체 집합 이름순 그대로 — 구획 뷰와 같은 원천.
-    assert [r["name"] for r in snap["job_rows"]] == ["공고서", "나 작업", "다 작업"]
-
-
-def test_toggle_group_collapses_persists_and_keeps_selection(tmp_path):
-    ctrl, _ = _controller(tmp_path)
-    reg = ctrl.registry
-    reg.set_group("공고서", "입찰")
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    _mount_all(ctrl, _data_csv(tmp_path))
-    assert ctrl.snapshot()["selected_count"] == 2
-    ctrl.dispatch("toggle_group", {"group": "입찰"})
-    snap = ctrl.snapshot()
-    assert next(s for s in snap["job_sections"] if s["group"] == "입찰")["collapsed"] is True
-    assert snap["selected_count"] == 2  # 접힘은 보기만 — 선택 유지(결정 6-⑤)
-    # 마지막 상태 영속(Python 설정) — 새 컨트롤러(재부팅 동형)가 접힘을 복원한다.
-    ctrl2 = JobController(reg, lambda s, snap: None)
-    snap2 = ctrl2.snapshot()
-    assert next(s for s in snap2["job_sections"] if s["group"] == "입찰")["collapsed"] is True
-    # 재토글 = 펼침 복원.
-    ctrl2.dispatch("toggle_group", {"group": "입찰"})
-    assert next(
-        s for s in ctrl2.snapshot()["job_sections"] if s["group"] == "입찰"
-    )["collapsed"] is False
-
-
+# ------------------------------------ 관리 동사(표면은 라이브러리, 소유는 이 컨트롤러)
+# 좌 목록 사망(F2 PR-B, 지도 §10.9)으로 구획·접힘·복제·삭제·복원 테스트는 여기서 걷혔다:
+# `toggle_group`·`clone_job`·`delete_job`·`undo_delete_job` 은 라이브러리 채널이 소유하고
+# (tests/test_webapp_library.py 가 판정), 여기 남는 넷은 **열린 세션의 정체와 결속**된 것들
+# (개명·그룹 이동/개명/해산)이라 라이브러리가 교차 화면 dispatch 로 부른다(§10.8 판정 F).
 def test_rename_job_follows_open_session(tmp_path):
     # 이름 변경은 비파괴 — 열린 세션의 정체(job_name·헤더)가 새 이름을 추종한다.
     ctrl, _ = _controller(tmp_path)
@@ -1782,52 +1727,14 @@ def test_rename_job_collision_and_empty_are_restated(tmp_path):
     assert ctrl.registry.exists("공고서")  # 실패 무손상
 
 
-def test_delete_open_session_job_confirm_roundtrip_closes_panel(tmp_path):
-    # RC-02 왕복 동형: 무확인 = 재진술 자료 반환·무변이, 확인 = 삭제 + 세션 닫힘(빈 패널 재진술).
-    ctrl, _ = _controller(tmp_path)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.dispatch("toggle_record", {"index": 0, "value": False})  # 수작업 선택 = 무장
-    res = ctrl.dispatch("delete_job", {"name": "공고서"})
-    assert res["needs_confirm"] is True and res["open_session"] is True
-    assert res["armed"] is True and res["sel_count"] == 1  # 파괴 전모(세션 선택 소실) 수치 동봉
-    assert ctrl.registry.exists("공고서")  # 무확인 = 무변이
-    ctrl.dispatch("delete_job", {"name": "공고서", "confirm": True})
-    snap = ctrl.snapshot()
-    assert not ctrl.registry.exists("공고서")
-    assert snap["has_job"] is False and snap["job_rows"] == []
-
-
-def test_delete_other_job_soft_deletes_without_session_prompt(tmp_path):
-    ctrl, _ = _controller(tmp_path)
-    assert ctrl.dispatch("undo_delete_job", {}) == {
-        "ok": False, "error": "복원할 최근 작업이 없습니다."
-    }
-    ctrl.registry.save(Job(name="둘째"))
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    res = ctrl.dispatch("delete_job", {"name": "둘째"})
-    assert res["undo"] is True
-    assert not ctrl.registry.exists("둘째")
-    assert ctrl.snapshot()["job_name"] == "공고서"  # 무관 세션 무영향
-    assert ctrl.dispatch("undo_delete_job", {}) == {"ok": True, "name": "둘째"}
-    assert ctrl.registry.exists("둘째")
-
-
-def test_clone_job_returns_unique_name_and_inherits_group(tmp_path):
-    ctrl, _ = _controller(tmp_path)
-    ctrl.registry.set_group("공고서", "입찰")
-    res = ctrl.dispatch("clone_job", {"name": "공고서"})
-    assert res["ok"] is True and res["name"] == "공고서 (복사본)"
-    assert ctrl.registry.load(res["name"]).group == "입찰"  # 인접(같은 그룹) 승계
-
-
-def test_set_group_moves_between_sections(tmp_path):
+def test_set_group_moves_and_clears(tmp_path):
+    """그룹 이동은 라이브러리 상세가 부르고 판정은 여기가 낸다 — 관측은 레지스트리다
+    (구획 스냅샷은 좌 목록과 함께 사망, F2 PR-B)."""
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("set_group", {"name": "공고서", "group": "입찰"})
-    snap = ctrl.snapshot()
-    assert snap["job_group_names"] == ["입찰"]
+    assert ctrl.registry.groups() == ["입찰"]
     ctrl.dispatch("set_group", {"name": "공고서", "group": ""})  # 해제 = 그룹 없음
-    assert ctrl.snapshot()["job_flat"] is True
+    assert ctrl.registry.groups() == []
 
 
 def test_rename_group_merge_needs_confirm_roundtrip(tmp_path):
@@ -1845,20 +1752,24 @@ def test_rename_group_merge_needs_confirm_roundtrip(tmp_path):
 
 
 def test_rename_group_carries_collapse_state(tmp_path):
+    """접힘의 **표면**은 라이브러리로 갔지만(§10.8 판정 F) 그룹을 개명하는 동사는 여기가
+    소유하므로 영속 키의 승계도 여기가 진다 — 이름만 바뀐 같은 그룹은 접힌 채로 남는다.
+    관측 지점이 스냅샷에서 영속 키로 내려온 것은 좌 목록 사망의 정산분이다(F2 PR-B)."""
+    from hwpxfiller.webapp.settings import load_job_collapsed_groups, save_job_collapsed_groups
+
     ctrl, _ = _controller(tmp_path)
     ctrl.registry.set_group("공고서", "입찰")
-    ctrl.dispatch("toggle_group", {"group": "입찰"})
+    save_job_collapsed_groups(["입찰"])                    # 라이브러리에서 접어 둔 상태
     ctrl.dispatch("rename_group", {"name": "입찰", "new": "2026 입찰"})
-    snap = ctrl.snapshot()
-    assert next(
-        s for s in snap["job_sections"] if s["group"] == "2026 입찰"
-    )["collapsed"] is True  # 이름만 바뀐 같은 그룹 — 접힘 승계
+    assert load_job_collapsed_groups() == ["2026 입찰"]     # 접힘 승계(유령 옛 이름 없음)
 
 
 def test_disband_group_confirm_roundtrip(tmp_path):
+    from hwpxfiller.webapp.settings import save_job_collapsed_groups
+
     ctrl, _ = _controller(tmp_path)
     ctrl.registry.set_group("공고서", "입찰")
-    ctrl.dispatch("toggle_group", {"group": "입찰"})
+    save_job_collapsed_groups(["입찰"])                    # 라이브러리에서 접어 둔 상태
     res = ctrl.dispatch("disband_group", {"name": "입찰"})
     assert res["needs_confirm"] is True and res["count"] == 1
     assert ctrl.registry.groups() == ["입찰"]  # 무확인 = 무변이
@@ -2119,6 +2030,26 @@ def test_prefer_work_stores_and_promotes_at_mount_when_no_data_yet(tmp_path):
     assert ctrl.preferred_work == ""              # 1회 소비
     snap = ctrl.snapshot()
     assert "공고서" in snap["data_notice"]["text"] and snap["data_notice"]["level"] == "ok"
+
+
+def test_prefer_work_opens_a_work_that_carries_its_own_default_data(tmp_path):
+    """판정 I(F2 PR-B) — 기본 데이터 참조를 가진 작업은 무데이터 상태에서도 **열린다**.
+
+    좌 목록이 살아 있을 땐 목록 클릭이 `select_job` 을 태워 #53-A 자동 조준이 발화했다.
+    목록이 죽은 뒤 무데이터 상태에서 작업을 겨눌 표면은 「문서 작업」의 이 동사뿐이므로,
+    여기서 보관만 하면 기본 데이터 자동 연결이 **도달 불가능**해진다(기능 소실). 자동
+    교체가 아니라 빈 자리의 첫 마운트라 §19.8 의 금지에도 걸리지 않고, 결과는 재진술된다.
+    """
+    ctrl, pool = _pool_controller(tmp_path)
+    _job_with_default(ctrl, pool, tmp_path, "7월공고")
+
+    res = ctrl.dispatch("prefer_work", {"name": "공고서"})
+    assert res == {"promoted": True, "name": "공고서", "reason": "default_data"}
+    assert ctrl.job_name == "공고서" and ctrl.preferred_work == ""   # 보관하지 않고 소비
+    snap = ctrl.snapshot()
+    assert snap["has_data"] is True, "기본 데이터 참조가 자동 조준되지 않았습니다(#53-A 소실)."
+    assert snap["data_source_label"] == "등록 데이터: 7월공고"
+    assert "자동으로 연결" in snap["data_notice"]["text"], "자동 연결이 조용히 일어났습니다."
 
 
 def test_prefer_work_keeps_the_active_work_and_says_so(tmp_path):

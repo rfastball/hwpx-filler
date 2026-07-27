@@ -1,7 +1,10 @@
-/* 「작업」 화면 — 좌 master 목록 + 우 상세 패널 **두 모드**(R-flow #90 · 블록 2 개정 39~41).
+/* 「문서 만들기」 화면 — 세션 패널 **두 모드**(R-flow #90 · 블록 2 개정 39~41).
    실행 모드(기본)=세션 패널 v6 `screen-data` 2열(재작성 R1 — 좌 `.dg-main` 현재 데이터·거울·
    결과 / 우 `.dg-side` 문서 선택기·선택한 작업·생성 준비. 구 4존 znum 은 이 형상으로 대체),
    편집 모드=정의 호스트(#jobEditHost — editor.js 가 렌더).
+   좌 master 작업 목록은 F2 PR-B 에서 사망했다(지도 §10.9): 작업 선택은 데이터가 준비된 뒤
+   후보 side-card·문서 탐색 면이 지고, 목록 관리 6동사와 데이터 없는 상태의 작업 찾기는
+   「문서 작업」 라이브러리가 승계했다.
    안정 DOM(index.html) + Python 이 window.__push('job', snapshot) 로 값만 채운다(run/txt 패턴).
    표현 계층(거울 테이블·재진술 블록·게이트·진행/로그)만 여기서 만든다 — VM 로직 아님(링2 대체, #87).
    덮어쓰기 확인은 공용 Modal.confirm의 수치 합성 본문으로 — 네이티브 다이얼로그 무사용이라 #86
@@ -60,16 +63,6 @@
     log,
   });
 
-  /* ---- 그룹 목록 기제(부유 ⋮ 메뉴·이동 다이얼로그) = 공용 팩토리(grouplist.js) ----
-     위치잡기·다이얼로그 조립은 팩토리 소유(template.js 와 단일 출처). 여기는 화면 고유값만:
-     메뉴 내용·menuFor 정체는 open/close 가 만들고, 이동 확정은 onConfirm 으로 디스패치한다. */
-  const rowMenu = window.GroupList.createMenu({ menuId: "jobRowMenu" });
-  const moveDialog = window.GroupList.createMoveDialog({
-    modalId: "groupMoveModal", listId: "groupMoveList", errId: "groupMoveErr",
-    nameId: "groupMoveJob", radioName: "grpMove",
-    newRadioId: "grpMoveNewRadio", newNameId: "grpMoveNewName",
-  });
-
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
     if (s && s.progress) { renderProgress(s.progress); return; }  // 진행 델타(경량)
@@ -77,7 +70,6 @@
       LAST = s;
       dz.sync(s);  // 존 렌더는 아래 hasJob 게이트를 타지만 스냅샷 관측은 무조건 — 팩토리
                    // flushPendingSearch 의 stale LAST 오발 차단(리뷰: master 계약 복원)
-      renderMaster(s);
       const hasJob = !!s.has_job;
       syncModeDisplay(hasJob);
       // 데이터-우선(§18.2): 세션 4존은 작업 미선택에도 산다 — 스냅샷이 vm-None 상태를
@@ -94,7 +86,7 @@
       renderStatus(s);
       if (MODE === "edit") setEditStatus();  // 편집 모드 표지는 세션 상태 pill 을 덮는다
       // 완료 존(생성 결과·로그)은 세션 스코프로 보존한다(결정 7) — 매 push 가 아니라 세션이
-      // 실제로 바뀔 때만 무효화한다. 레일 이탈 후 복귀(REFRESH_ON_NAV 재push)는 세션 불변이라
+      // 실제로 바뀔 때만 무효화한다. 탭 이탈 후 복귀(REFRESH_ON_NAV 재push)는 세션 불변이라
       // 결과가 살아남고(리뷰 #3: 결정 7 위배 봉합), 작업·데이터·선택 변경(#28 UD-10)에서만
       // 이전 결과를 지운다. nav 는 CSS 토글이라 DOM 은 어차피 살아있다.
       const key = sessionKey(s);
@@ -136,6 +128,11 @@
     $("jobZones").style.display = !edit ? "" : "none";
     $("jobActionBar").style.display = !edit ? "" : "none";
     $("jobEditHost").style.display = edit ? "" : "none";
+    // 실행 복귀 출구는 편집 모드에서만 뜬다(F2 PR-B 판정 D). **여기서** 토글하는 이유:
+    // 모드 표시의 소유자가 이 함수 하나라, 진입·이탈 경로(showEditMode·exitEditToRun·
+    // showRunMode)가 늘어도 표시가 갈리지 않는다. 배선만 하고 노출을 잊으면 「승계처를
+    // 만들었다」는 계약이 문서에만 남는다(코덱스 리뷰 P2 — 실제로 그렇게 빠뜨렸다).
+    $("jobEditExit").style.display = edit ? "" : "none";
   }
 
   function setEditStatus() {
@@ -182,6 +179,16 @@
     $("jobEditResume").style.display = "none";
   }
 
+  /* 실행 모드 착지 — 다른 화면에서 「문서 만들기에서 사용」으로 넘어올 때의 진입점(F2 PR-B).
+     좌 목록이 살아 있을 땐 행 클릭이 이 정산을 겸했다(결정 40): 편집 모드로 들어와 있으면
+     실행으로 되돌리고 미저장 편집은 고지했다. 목록이 죽은 뒤 그 정산이 빠져 있어서, 저장
+     직후 「문서 작업」에서 그 작업을 쓰겠다고 누르면 **편집 호스트가 그대로 뜬다** — 사용자가
+     요청한 것(이 작업으로 문서 만들기)과 다른 표면에 착지하는 결함(2R P2 「빈 화면 착지」와
+     같은 클래스). 전이는 비파괴 그대로다. */
+  async function landRunMode() {
+    if (await exitEditToRun()) showExitNote();
+  }
+
   /* T2 고지 표면(PR-2 리뷰 F4) — 완료 존 log() 는 세션 전환 리셋(resetGenResult)·존 은닉에
      증발했다. 이 요소는 어떤 렌더 함수도 쓰지 않는 JS 소유라 push·세션 리셋을 관통해
      살아남고, 사용자가 확인 버튼으로 걷거나 편집 재진입 때 걷힌다(고지=읽힐 때까지). */
@@ -198,61 +205,16 @@
     $("jobEditResume").style.display = "";
   }
 
-  /* 좌 목록 갱신 — 편집 저장 직후 새/개명 작업이 바로 보이게(editor.js doSave 가 호출).
+  /* 스냅샷 갱신 — 편집 저장 직후 새/개명 작업이 후보·문서 탐색에 바로 뜨게(editor.js doSave
+     가 호출). 좌 목록 사망(F2 PR-B) 뒤 갱신 대상이 목록에서 이 두 표면으로 옮겨졌다.
      실패 재진술은 모드를 따른다(PR-2 리뷰 F10): 편집 모드에선 완료 존 log 가 숨어 있어
      조용한 실패가 된다 — 그때는 alert 로 loud. */
   function refreshList() {
     Bridge.call(SCREEN, "refresh", {}).catch((err) => {
-      const msg = "목록 갱신 실패: " + String((err && err.message) || err);
+      const msg = "작업 목록 갱신 실패: " + String((err && err.message) || err);
       if (MODE === "edit") window.alert(msg);
       else log(msg);
     });
-  }
-
-  /* ---- 좌 master 목록(HWPX 구획 + 사용자 그룹, 결정 43) ----
-     구획/그룹/접힘의 판정은 Python(_job_sections)이 내리고 여기는 받은 구획을 그리기만 한다.
-     행 면 = 이름 단독(결정 7) + 호버·포커스 노출 ⋮(관리 메뉴). 그룹 0개면 job_flat 로
-     헤더·들여쓰기 없는 평면(퇴화 불변식 — 현행 모습 그대로). */
-  let RENAMING = null;  // {name, value} 인라인 이름 변경 중(재렌더 생존용 지역 상태)
-
-  function rowHtml(r) {
-    if (RENAMING && RENAMING.name === r.name) {
-      return `<div class="job-row"><input class="field job-rename" id="jobRenameInput"` +
-        ` data-orig="${esc(r.name)}" value="${esc(RENAMING.value)}" aria-label="새 이름">` +
-        (RENAMING.error ? `<span class="note dangerbox" role="alert">${esc(RENAMING.error)}</span>` : "") +
-        `</div>`;
-    }
-    return `<div class="job-row">` +
-      `<button class="job-item" data-job="${esc(r.name)}" aria-current="${r.selected ? "true" : "false"}">${esc(r.name)}</button>` +
-      `<button class="job-more" data-more="${esc(r.name)}" aria-haspopup="true" aria-label="작업 관리">⋮</button></div>`;
-  }
-
-  function renderMaster(s) {
-    const host = $("jobListHwpx");
-    const empty = $("jobListHwpxEmpty");
-    const sections = s.job_sections || [];
-    const total = sections.reduce((n, sec) => n + sec.rows.length, 0);
-    empty.style.display = total ? "none" : "";
-    if (s.job_flat) {
-      host.innerHTML = sections.map((sec) => sec.rows.map(rowHtml).join("")).join("");
-      return;
-    }
-    host.innerHTML = sections.map((sec) => {
-      const label = sec.group || "그룹 없음";
-      // 접힘 화살표는 이름 오른쪽·호버 노출, 접힌 그룹은 상시 노출(결정 5 — CSS 가 담당).
-      const head =
-        `<div class="job-grp">` +
-        `<button class="job-grp-head" data-grp-toggle="${esc(sec.group)}" aria-expanded="${sec.collapsed ? "false" : "true"}">` +
-        `<span class="grp-name">${esc(label)}</span>` +
-        `<span class="grp-count">${sec.count}</span>` +
-        `<span class="grp-caret">${sec.collapsed ? "▸" : "▾"}</span></button>` +
-        (sec.group
-          ? `<button class="job-more grp-more" data-grp-more="${esc(sec.group)}" aria-haspopup="true" aria-label="그룹 관리">⋮</button>`
-          : "") +
-        `</div>` +
-        `<div class="job-grp-rows"${sec.collapsed ? " hidden" : ""}>${sec.rows.map(rowHtml).join("")}</div>`;
-      return head;
-    }).join("");
   }
 
   /* ---- 헤더 존 — 작업 정체(이름·템플릿·재연결 동선) ---- */
@@ -336,7 +298,7 @@
       `<span class="cand-meta">${meta}</span></button></div>`;
   }
 
-  /* 즐겨찾기 전이 단일 몸통 — 후보 카드의 별과 좌 목록 ⋮ 메뉴가 같은 경로를 쓴다(두 표면이
+  /* 즐겨찾기 전이 단일 몸통 — 후보 카드의 별과 라이브러리 행의 별이 같은 경로를 쓴다(두 표면이
      서로 다른 왕복을 갖지 않게). 기제(미결 의도 계산·전역 쓰기 직렬화·꼬리 식별 정리)는
      리뷰 3R·4R·5R·6R 가 세운 그대로이되 **공용 몸통**(js/intent.js)으로 걷었다 — 재작성 F2 의
      라이브러리가 같은 별을 새로 그리며 기제 없이 DOM 값만 보내 같은 결함류를 재발시켰다
@@ -354,7 +316,7 @@
     favorite.toggle(name, domPressed);
   }
 
-  /* ---- 문서 탐색 면(§18.6·§19.5) — 「문서 만들기」 하위 화면(레일은 계속 「작업」) ----
+  /* ---- 문서 탐색 면(§18.6·§19.5) — 「문서 만들기」 하위 면(별 라우트 아님) ----
      탭 라벨의 수치·행·검색 판정은 Python 이 내고 여기는 그린다. 사용 가능 행 클릭 = 작업
      선택(세션 데이터·선택·필터는 생존, §18.2). 확인 필요 행은 정직한 비활성 + 막힌 열 병기. */
   function renderBrowse(s) {
@@ -408,6 +370,9 @@
   function renderCandidates(s) {
     const row = $("jobCandsRow");
     const host = $("jobCandidates");
+    // 데이터·작업이 **둘 다** 없을 때만 흡수처 출구를 세운다(지도 §10.9 판정 C). 작업이
+    // 이미 열려 있으면 화면은 할 말이 있으므로(선택한 작업 구획) 출구는 소음이다.
+    $("jobNoDataExit").style.display = (!s.has_data && !s.has_job) ? "" : "none";
     if (!s.has_data) { row.style.display = "none"; host.innerHTML = ""; return; }
     row.style.display = "";
     const c = s.candidates || { top: [], more: 0, needs_count: 0, suggested: "" };
@@ -888,298 +853,41 @@
     }
   }
 
-  function setJobOpening(item, opening) {
-    if (!item) return;
+  /* 「여는 중」 지연 표지(#217 R1) — 클릭 프레임에 즉시 서고 왕복이 끝나면 걷힌다. 좌 목록
+     행에 있던 것을 **후보 카드·탐색 행이 승계**했다(F2 PR-B, 지도 §10.9 판정 E): 표면이
+     죽어도 그 표면이 지던 경보는 승계처가 진다 — 아니면 큰 레지스트리에서 클릭이 아무 일도
+     안 한 것처럼 보이는 시간이 되돌아온다. 라벨 통째 치환(구 몸통) 대신 표식 노드를 덧붙인다
+     — 후보 카드는 이름·메타 두 span 구조라 textContent 를 갈면 카드가 무너진다. */
+  function setJobOpening(btn, opening) {
+    if (!btn) return;
+    const MARK = "openingMark";
     if (opening) {
-      if (!item.dataset.idleLabel) item.dataset.idleLabel = item.textContent;
-      item.setAttribute("aria-busy", "true");
-      item.textContent = `${item.dataset.idleLabel} · 여는 중…`;
+      if (btn.querySelector("." + MARK)) return;
+      btn.setAttribute("aria-busy", "true");
+      const mark = document.createElement("span");
+      mark.className = MARK;
+      mark.textContent = " · 여는 중…";
+      btn.appendChild(mark);
       return;
     }
-    item.removeAttribute("aria-busy");
-    if (item.dataset.idleLabel) {
-      item.textContent = item.dataset.idleLabel;
-      delete item.dataset.idleLabel;
-    }
+    btn.removeAttribute("aria-busy");
+    const mark = btn.querySelector("." + MARK);
+    if (mark) mark.remove();
   }
 
-  async function selectJobFromItem(item) {
-    // 검색 디바운스 정산·Python 로드보다 먼저 표지를 세운다. 정본 판정은 select_job push가 덮는다.
-    setJobOpening(item, true);
+  /* 표지를 세운 채 전환한다 — 검색 디바운스 정산·Python 로드보다 먼저 표지가 서고, 정본
+     판정은 select_job push 가 덮는다. 성사 여부를 그대로 돌려준다(호출측이 판정 소비). */
+  async function selectJobWithMarker(btn, name) {
+    setJobOpening(btn, true);
     try {
       await dz.flushPendingSearch();
-      return await selectJobGuarded(item.dataset.job);
+      return await selectJobGuarded(name);
     } finally {
-      if (item.isConnected) setJobOpening(item, false);
+      if (btn && btn.isConnected) setJobOpening(btn, false);
     }
   }
 
-  function onMasterClick(e) {
-    // 관리 어포던스(⋮·그룹 헤더)가 행 진입 동사보다 먼저 — 행 클릭=실행(주동사)과 분리.
-    const more = e.target.closest(".job-more[data-more]");
-    if (more) { toggleRowMenu("job", more.dataset.more, more); return; }
-    const gmore = e.target.closest(".grp-more[data-grp-more]");
-    if (gmore) { toggleRowMenu("group", gmore.dataset.grpMore, gmore); return; }
-    const grp = e.target.closest(".job-grp-head[data-grp-toggle]");
-    if (grp) {
-      // 접힘 토글은 보기만 바꾼다 — 선택·세션 무영향(결정 6-⑤). ""=「그룹 없음」.
-      GroupList.toggleGroup(
-        grp,
-        () => Bridge.call(SCREEN, "toggle_group", { group: grp.getAttribute("data-grp-toggle") }),
-        "작업 그룹 접힘 상태를 저장하지 못했습니다."
-      );
-      return;
-    }
-    const item = e.target.closest(".job-item[data-job]");
-    if (!item) return;
-    const already = item.getAttribute("aria-current") === "true";
-    // 편집 중 행 클릭 = 실행 복귀(결정 40 — 복귀 어포던스는 좌 목록이 담당). **가드 선행·
-    // 전환 후행**(PR-2 리뷰 F5): T1 확인이 끝나기 전엔 편집 표면을 걷지 않는다 —
-    // 「머무르기」=무변화(취소가 편집 화면을 잃게 하면 안 된다). 선택을 먼저 성사시키는
-    // 구조라 지연 선택이 뒤늦게 클릭을 추월하는 창도 없다(리뷰 F8). 같은 작업 재클릭이면
-    // 진행 중 세션을 그대로 다시 노출한다(재구성 없음 — 아래 무동작 가드와 동근).
-    if (MODE === "edit") {
-      (async () => {
-        if (!already) {
-          if ((await selectJobFromItem(item)) === false) return;  // 머무르기
-        }
-        if (await exitEditToRun()) showExitNote();  // T2 고지(미저장 편집 있을 때만)
-      })().catch((err) => {
-        log("작업 열기 실패: " + String((err && err.message) || err));
-      });
-      return;
-    }
-    // 이미 선택된 작업 재클릭 = 무동작(세션 재구성으로 데이터 겨눔이 날아가지 않게).
-    if (already) return;
-    // 미적용 검색어는 전환 시도 전에 정산(적용) — 취소만 하면 「머무르기」 세션에서
-    // 마지막 타이핑이 증발한다(리뷰 #2). 새 세션 오발도 함께 차단(PR-2b 리뷰 #1).
-    selectJobFromItem(item).catch((err) => {
-      log("작업 열기 실패: " + String((err && err.message) || err));
-    });
-  }
-
-  /* ---- 좌 목록 관리(결정 43) — ⋮ 메뉴·인라인 이름 변경·그룹 이동/관리 ----
-     파괴·병합 판정과 수치는 Python(_do_delete_job 등 needs_confirm 왕복)이 내리고,
-     여기는 문안을 입혀 modal.js 로 재진술한다(네이티브 다이얼로그 금지 #86). */
-  let menuFor = null;  // {kind:"job"|"group", name, trigger} — 열린 ⋮ 메뉴의 대상과 복귀점
-
-  function closeRowMenu() {
-    menuFor = null;
-    rowMenu.hide();
-  }
-
-  function toggleRowMenu(kind, name, btn) {
-    if (menuFor && menuFor.kind === kind && menuFor.name === name) { closeRowMenu(); return; }
-    openRowMenu(kind, name, btn);
-  }
-
-  /* 좌 목록 행의 즐겨찾기 상태 — 메뉴 문안("추가"/"제거")의 근거. 판정은 Python 스냅샷이
-     소유하고 여기서 뒤집지 않는다. 행이 사라졌으면(다른 화면 삭제) false 로 퇴화. */
-  function isFavorited(name) {
-    const rows = (LAST && LAST.job_rows) || [];
-    for (let i = 0; i < rows.length; i++) {
-      if (rows[i].name === name) return rows[i].favorited === true;
-    }
-    return false;
-  }
-
-  function openRowMenu(kind, name, btn) {
-    menuFor = { kind, name, trigger: btn };
-    // 메뉴 내용은 화면 소유(작업=편집/복제/즐겨찾기/이름/이동/삭제, 그룹=이름변경/해산),
-    // 위치·표시는 팩토리. 즐겨찾기가 여기 있는 이유(리뷰 2R P2): 후보 구획의 별은 상위
-    // 5장에만 있어 순위 밖 작업은 승격 경로가 없었다 — 좌 목록은 절단되지 않는 표면이다.
-    // 미결 의도가 있으면 그것을 따른다 — 메뉴 문안은 **이 클릭이 할 일**을 말해야 한다.
-    const fav = favorite.pending(name, isFavorited(name));
-    const html = kind === "job"
-      ? `<button data-menu="edit">편집</button>` +
-        `<button data-menu="clone">복제</button>` +
-        `<button data-menu="favorite">` +
-        (fav ? "즐겨찾기에서 제거" : "즐겨찾기에 추가") + `</button>` +
-        `<button data-menu="rename">이름 변경</button>` +
-        `<div class="sep"></div>` +
-        `<button data-menu="move">그룹으로 이동…</button>` +
-        `<div class="sep"></div>` +
-        `<button data-menu="delete" class="danger">삭제</button>`
-      : `<button data-menu="grp-rename">그룹 이름 변경</button>` +
-        `<button data-menu="grp-disband">그룹 해산</button>`;
-    rowMenu.show(html, btn);
-  }
-
-  async function onRowMenuClick(e) {
-    const b = e.target.closest("button[data-menu]");
-    if (!b || !menuFor) return;
-    const act = b.dataset.menu;
-    const { kind, name, trigger } = menuFor;
-    closeRowMenu();
-    if (kind === "job") {
-      if (act === "edit") { EditorEntry.openGuarded(name); return; }  // PR-5 에서 패널 편집 모드로 repoint
-      if (act === "clone") {
-        const r = await Bridge.call(SCREEN, "clone_job", { name });
-        if (r && r.name) log(`복제: '${name}' → '${r.name}'`);
-        return;
-      }
-      if (act === "favorite") { toggleFavorite(name, isFavorited(name)); return; }
-      if (act === "rename") { startRename(name); return; }
-      if (act === "move") { openGroupMove(name, trigger); return; }
-      if (act === "delete") { deleteJob(name, trigger); return; }
-    }
-    if (act === "grp-rename") { renameGroup(name, trigger); return; }
-    if (act === "grp-disband") { disbandGroup(name, trigger); }
-  }
-
-  /* 인라인 이름 변경 — 행이 입력칸으로 바뀐다(결정 43). Enter=확정·Escape=취소·포커스
-     이탈=확정 시도. 확정 실패(선점·빈 이름)는 loud 재진술 후 Enter 경로만 편집을 복원한다
-     (이탈 경로 복원은 사용자가 이미 다른 곳을 겨눈 포커스를 빼앗는다). */
-  function startRename(name) {
-    RENAMING = { name, value: name };
-    if (LAST) renderMaster(LAST);
-    const inp = $("jobRenameInput");
-    if (inp) { inp.focus(); inp.select(); }
-  }
-
-  async function commitRename(restoreOnError) {
-    const inp = $("jobRenameInput");
-    if (!inp || !RENAMING) return;
-    const orig = RENAMING.name;
-    const typed = inp.value;
-    RENAMING = null;  // 디스패치의 push 재렌더가 입력칸을 되살리지 않게 먼저 걷는다
-    if (typed.trim() === orig) { if (LAST) renderMaster(LAST); return; }  // 무변경 = 조용히 복귀
-    const r = await Bridge.call(SCREEN, "rename_job", { name: orig, new: typed });
-    if (r && r.ok) { log(`이름 변경: '${orig}' → '${typed.trim()}'`); return; }
-    const error = (r && r.error) || "알 수 없는 오류";
-    log("이름 변경 실패: " + error);
-    RENAMING = { name: orig, value: typed, error };
-    if (LAST) renderMaster(LAST);
-    if (restoreOnError) {
-      const again = $("jobRenameInput");
-      if (again) { again.focus(); again.select(); }
-    }
-  }
-
-  function cancelRename() {
-    RENAMING = null;
-    if (LAST) renderMaster(LAST);
-  }
-
-  function onMasterKeydown(e) {
-    if (e.target.id !== "jobRenameInput") return;
-    // 한글 IME 조합 확정 Enter 는 제출이 아니다(modal.js 관례 승계).
-    if (e.isComposing || e.keyCode === 229) return;
-    if (e.key === "Enter") { e.preventDefault(); commitRename(true); }
-    if (e.key === "Escape") { e.preventDefault(); cancelRename(); }
-  }
-
-  function onMasterFocusOut(e) {
-    if (e.target.id === "jobRenameInput" && RENAMING) commitRename(false);
-  }
-
-  /* 그룹 이동 다이얼로그(결정 43) — 조립·확정은 공용 moveDialog 팩토리, 여기는 현 그룹 조회와
-     확정 디스패치(set_group)·로그만 주입한다. 새 그룹 data-new·빈 이름 재진술은 팩토리 소유. */
-  function currentGroupOf(name) {
-    const sections = (LAST && LAST.job_sections) || [];
-    for (const sec of sections) {
-      if (sec.rows.some((r) => r.name === name)) return sec.group;
-    }
-    return "";
-  }
-
-  function openGroupMove(name, returnFocus) {
-    moveDialog.open({
-      nameText: `작업 '${name}' 을(를) 옮길 그룹을 고르세요.`,
-      groups: (LAST && LAST.job_group_names) || [],
-      current: currentGroupOf(name),
-      returnFocus,
-      onConfirm: async (group) => {
-        await Bridge.call(SCREEN, "set_group", { name, group });
-        log(group ? `그룹 이동: '${name}' → '${group}'` : `그룹 해제: '${name}'`);
-      },
-    });
-  }
-
-  async function deleteJob(name, returnFocus) {
-    const res = await Bridge.call(SCREEN, "delete_job", { name });
-    if (res && res.undo) {
-      showDeleteUndo(name, res);
-      return;
-    }
-    if (!(res && res.needs_confirm)) return;
-    let body = `작업 '${name}' 을(를) 삭제합니다. 템플릿 연결과 매핑 정의가 함께 사라집니다.`;
-    if (res.open_session) {
-      body += `\n지금 열려 있는 세션도 닫힙니다.`;
-      if (res.armed) {
-        body += ` 사라지는 것: ` +
-          `${selectionLine(res.sel_count, res.filter_active, res.in_def, res.extra)}.`;
-      }
-    }
-    const ok = await window.Modal.confirm({
-      title: "작업 삭제 확인", body,
-      confirmLabel: "휴지통으로 이동", cancelLabel: "취소",
-      returnFocus,
-    });
-    if (!ok) return;
-    const deleted = await Bridge.call(SCREEN, "delete_job", { name, confirm: true });
-    log(`작업을 휴지통으로 이동: '${name}'`);
-    showDeleteUndo(name, deleted);
-  }
-
-  function showDeleteUndo(name, deleted) {
-    if (deleted && deleted.undo) window.UndoToast.show(`작업 '${name}' 을(를) 휴지통으로 옮겼습니다.`, async () => {
-      const restored = await Bridge.call(SCREEN, "undo_delete_job", {});
-      if (restored && restored.ok === false) throw new Error(restored.error);
-    });
-  }
-
-  async function renameGroup(old, returnFocus) {
-    const val = await window.Modal.prompt({
-      title: "그룹 이름 변경", body: `그룹 '${old}' 의 새 이름을 넣으세요.`, value: old,
-      returnFocus,
-    });
-    if (val === null) return;
-    const r = await Bridge.call(SCREEN, "rename_group", { name: old, new: val });
-    if (r && r.needs_confirm) {
-      // 기존 그룹으로의 개명 = 병합 — 수치 재진술 후 확정(조용한 병합 금지). 수치는 '지금
-      // 기준' 관측으로 적는다(#149): 확인 왕복 사이 다른 표면이 소속을 옮길 수 있어 약속으로
-      // 읽히면 안 되고, 옮겨지는 집합의 규칙('전부')이 실제로 참인 진술이다.
-      const ok = await window.Modal.confirm({
-        title: "그룹 병합 확인",
-        body: `'${r.new}' 그룹이 이미 있습니다. '${old}' 의 작업 전부(지금 기준 ${r.count}개)를 ` +
-          `'${r.new}'(현재 ${r.target_count}개)에 합칩니다.`,
-        confirmLabel: "합치기", cancelLabel: "취소",
-        returnFocus,
-      });
-      if (!ok) return;
-      const r2 = await Bridge.call(SCREEN, "rename_group",
-        { name: old, new: val, confirm: true, seen: r.count });
-      if (r2 && r2.ok) {
-        log(`그룹 병합: '${old}' → '${val.trim()}' (작업 ${r2.count}개 이동)${r2.drift_note || ""}`);
-      }
-      return;
-    }
-    if (r && r.ok) {
-      if (r.count) log(`그룹 이름 변경: '${old}' → '${val.trim()}'`);
-    } else if (r) {
-      log("그룹 이름 변경 실패: " + r.error);
-    }
-  }
-
-  async function disbandGroup(name, returnFocus) {
-    const res = await Bridge.call(SCREEN, "disband_group", { name });
-    if (!(res && res.needs_confirm)) return;
-    // 이동 집합은 '해산 시점의 소속 전부' 라는 규칙으로 적고, 수치는 지금 기준 관측으로
-    // 덧붙인다(#149) — 확인 왕복 사이 소속이 바뀌어도 규칙 쪽은 언제나 참이다.
-    const ok = await window.Modal.confirm({
-      title: "그룹 해산 확인",
-      body: `그룹 '${name}' 을(를) 해산합니다. 해산 시점의 소속 작업 전부(지금 기준 ${res.count}개)가 ` +
-        `'그룹 없음'으로 이동합니다.`,
-      confirmLabel: "해산", cancelLabel: "취소",
-      returnFocus,
-    });
-    if (!ok) return;
-    const r = await Bridge.call(SCREEN, "disband_group", { name, confirm: true, seen: res.count });
-    if (r && r.ok) log(`그룹 해산: '${name}' (작업 ${r.count}개 이동)${r.drift_note || ""}`);
-  }
-
-  /* 이 작업을 세션에 열기 — 좌 목록 재클릭 무동작 가드(onMasterClick)와 동형.
+  /* 이 작업을 세션에 열기 — 후보 카드 재클릭 무동작 가드와 동형.
      라이브러리에서 오는 경로는 `prefer_work`(§19.8 3분기 판정)를 타므로 여기로 오지 않는다.
      남는 소비처는 화면 안 진입과 외부 스크립트(캡처 하니스)다.
      이미 이 작업 세션이면 재구성하지 않고(진행 중 데이터 겨눔·행 선택·확인이 조용히 소실되지
@@ -1234,7 +942,7 @@
 
   /* danger(구조 드리프트) 수리 동선 — 이 작업을 **패널 편집 모드**에 열어 매핑을 재확정한다
      (공용 EditorEntry.openGuarded: 미저장 정의 확인 후 모드 전환 — 에디터 흡수로 화면 이동이
-     아니라 제자리 모드 전환이 됐다). 확정·저장 후 좌 목록 행 클릭으로 세션 재개. */
+     아니라 제자리 모드 전환이 됐다). 확정·저장 후 「실행으로 돌아가기」로 세션 재개. */
   function openEditForRepair() {
     // #99-6 동형 방어(PR-5 리뷰 F4) — 셔틀 미로드의 동기 ReferenceError 는 조용한 무반응.
     if (!window.EditorEntry) { window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다."); return; }
@@ -1253,27 +961,7 @@
     Relink.relinkTemplate(SCREEN, LAST.job_name, (msg) => log(msg));
   }
 
-  function startNewJob() {
-    if (!window.EditorEntry) {
-      window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다.");
-      return;
-    }
-    EditorEntry.newDraft();
-  }
-
   function wire() {
-    $("jobListHwpx").addEventListener("click", onMasterClick);
-    $("jobListHwpx").addEventListener("keydown", onMasterKeydown);
-    $("jobListHwpx").addEventListener("focusout", onMasterFocusOut);
-    $("jobRowMenu").addEventListener("click", onRowMenuClick);
-    // ⋮ 메뉴 바깥 클릭 닫기+클릭 1회 소비·Escape — 기제는 공용 Popover.wireDismiss(단일
-    // 출처), 여기는 메뉴 술어만 주입한다(패널 몫은 팩토리가 자기 인스턴스로 주입).
-    Popover.wireDismiss({
-      isOpen: () => menuFor !== null,
-      contains: (t) => !!(t.closest("#jobRowMenu") || t.closest(".job-more")),
-      close: closeRowMenu,
-    });
-    moveDialog.wire("grpMoveOk", "grpMoveCancel");
     // 데이터 존(테이블·열 패널·칩·스트립·전체 선택/해제·문서 레벨 닫기)은 팩토리 몫 배선.
     dz.wire();
     if (window.ResizeObserver && !mirrorResizeObserver) {
@@ -1283,7 +971,7 @@
     // 문서 작업 후보 카드 클릭 = 작업 선택(§18.2 보존 전환 — 데이터·선택은 세션 소유라 생존).
     // 활성 후보 재활성화는 무시한다(#302 리뷰 P2): CSS pointer-events:none 은 키보드
     // (Enter/Space) 합성 클릭을 막지 못하고, 재선택은 vm 재생성 = ack·완주 담보·폴더의
-    // 조용한 소실이라 무해하지 않다(좌 목록의 재선택 no-op 과 대칭).
+    // 조용한 소실이라 무해하지 않다(탐색 면 재선택 no-op 과 대칭).
     $("jobCandidates").addEventListener("click", (e) => {
       // 별 = 정렬 메타만(§18.5) — 작업 선택이 아니다. 카드 안 중첩 버튼이라 먼저 가른다.
       const fav = e.target.closest("[data-fav]");
@@ -1295,7 +983,10 @@
       if (e.target.closest("[data-browse-open]")) { openBrowseSheet(e); return; }
       const btn = e.target.closest("[data-cand]");
       if (btn && btn.getAttribute("aria-pressed") !== "true") {
-        selectJobGuarded(btn.getAttribute("data-cand"));
+        // 지연 표지 승계(판정 E) — 큰 레지스트리에서 왕복이 길면 클릭이 아무 일도 안 한
+        // 것처럼 보인다. 실패는 완료 존 log 로 재진술(조용한 무반응 금지).
+        selectJobWithMarker(btn, btn.getAttribute("data-cand")).catch((err) =>
+          log("작업 열기 실패: " + String((err && err.message) || err)));
       }
     });
     // 문서 탐색 면(§18.6) — 탭·검색은 Python 판정 왕복, 행 클릭은 명시 작업 선택.
@@ -1344,7 +1035,7 @@
       const gen = browseOpenGen;                  // 이 클릭이 속한 개폐 세대
       Intent.chained("browse", () =>
         gen !== browseOpenGen ? null :            // 그 사이 닫혔다 = 취소된 의도(조용히 접는다)
-        selectJobGuarded(name).then((ok) => {
+        selectJobWithMarker(pick, name).then((ok) => {
           if (!ok) return;                      // 가드 취소·거절 = 면 유지(문맥 보존)
           browsePickedName = name;              // 착지 사유 표식 — 결정은 onClose 단일 지점
           window.Modal.close("jobBrowseSheet");
@@ -1368,10 +1059,18 @@
       }
     });
     $("jobEditResume").addEventListener("click", showEditMode);
-    // 구획 ＋ 새 작업(1부 결정 10 — 레일 항목 사망의 생성 진입 승계, 리뷰 F2). 흐름은
-    // EditorEntry.newDraft 단일 출처(「문서 작업」 ＋ 와 공유 — 폐기 확인·착지 드리프트 금지).
-    $("jobNewBtn").addEventListener("click", startNewJob);
-    $("jobEmptyNewBtn").addEventListener("click", startNewJob);
+    // 편집 → 실행 복귀(F2 PR-B 신설, 지도 §10.9 판정 D). 결정 40 은 이 소임을 좌 목록 행
+    // 클릭에 줬는데 그 표면이 죽었다 — 기존 작업 편집은 저장해도 제자리에 머무르므로
+    // (editor.js doSave: "저장은 제자리") 대체 어포던스가 없으면 실행 모드로 돌아갈 길이
+    // 사라진다. 전이는 기존 exitEditToRun 그대로라 비파괴이고 미저장 고지도 그대로 발화한다.
+    $("jobEditExit").addEventListener("click", () => {
+      exitEditToRun().then((busy) => { if (busy) showExitNote(); })
+        .catch((err) => window.alert(String((err && err.message) || err)));
+    });
+    // 데이터·작업이 둘 다 없는 상태의 유일 출구(지도 §10.9 판정 C) — 데이터 없이 작업을
+    // 보는 경로는 「문서 작업」이 흡수했고, 여기서는 그 흡수처를 가리키기만 한다(겨눔 없음:
+    // 명시 선택은 저쪽 「문서 만들기에서 사용」이 `prefer_work` 로 낸다).
+    $("jobPickInLibrary").addEventListener("click", () => window.Nav.go("library"));
     // 재렌더에도 살아남게 안정 컨테이너에 위임(#67).
     $("jobRelink").addEventListener("click", (e) => {
       if (e.target.closest('[data-act="relink-template"]')) doRelinkTemplate();
@@ -1429,7 +1128,7 @@
   // showEditMode/refreshList 는 편집 모드 seam(EditorEntry·editor.js doSave 가 소비).
   window.JobScreen = {
     init, overwriteBody, guardBody, confirmDataSwapIfArmed, openJob,
-    showEditMode, showRunMode, refreshList, openJobConfirmSheet, openJobDataSheet,
-    openBrowseNeedsAction,
+    showEditMode, showRunMode, landRunMode, refreshList,
+    openJobConfirmSheet, openJobDataSheet, openBrowseNeedsAction,
   };
 })();

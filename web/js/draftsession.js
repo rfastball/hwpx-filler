@@ -234,7 +234,7 @@
       mapRowCount = count;
       measureMapCap();
       // display:none 화면의 첫 계산은 높이 0일 수 있다. 다음 페인트와 ResizeObserver가 화면
-      // 진입·레일 접힘·글자 배율 변경 뒤의 실제 크기로 다시 판정한다.
+      // 진입·글자 배율 변경 뒤의 실제 크기로 다시 판정한다.
       if (window.requestAnimationFrame) window.requestAnimationFrame(measureMapCap);
     }
 

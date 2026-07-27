@@ -72,13 +72,14 @@ def test_virtual_screen_bounds_handles_platform_metrics_and_api_failure(monkeypa
 def test_personalization_bridge_setters_delegate_and_return_values(monkeypatch) -> None:
     calls: list[tuple[str, object]] = []
     monkeypatch.setattr(app_mod.settings, "save_font_scale", lambda value: calls.append(("scale", value)))
-    monkeypatch.setattr(app_mod.settings, "save_rail_collapsed", lambda value: calls.append(("rail", value)))
     monkeypatch.setattr(app_mod.settings, "save_master_width", lambda value: calls.append(("width", value)))
     frontend = object.__new__(app_mod.WebFrontend)
     assert frontend.set_font_scale("large") == "large"
-    assert frontend.set_rail_collapsed(True) is True
     assert frontend.set_master_width(333) == 333
-    assert calls == [("scale", "large"), ("rail", True), ("width", 333)]
+    assert calls == [("scale", "large"), ("width", 333)]
+    # 레일 접기는 셸 교체와 함께 사망(F2 PR-B) — 브리지 표면에 남으면 표면 없는 설정을 쓰는
+    # 통로가 되고, 그 통로가 다음 세션에 레일을 되살린다(지도 §10.9 판정 F 와 같은 규율).
+    assert not hasattr(app_mod.WebFrontend, "set_rail_collapsed")
 
 
 def _capture_selftest(monkeypatch) -> list[dict]:
@@ -231,11 +232,17 @@ def test_personalization_shell_and_splitters_are_wired() -> None:
     app_js = (ROOT / "web" / "js" / "app.js").read_text(encoding="utf-8")
     css = (ROOT / "web" / "css" / "app.css").read_text(encoding="utf-8")
     assert 'src="js/personalization.js"' in index
-    assert index.count('class="master-splitter"') == 2
-    assert "saveMasterWidth" in app_js and "setRailCollapsed" in app_js
+    # 「문서 만들기」 좌 목록 사망(F2 PR-B)으로 폭 스플리터 소비처는 「기안」 하나만 남았다 —
+    # 설정 키(master_width)와 배선은 그대로 공유 계약을 유지한다(F6 작업대 합류 지점).
+    assert index.count('class="master-splitter"') == 1
+    assert "saveMasterWidth" in app_js and "setRailCollapsed" not in app_js
     compact = "".join(css.split())
     assert ".jobtbtbodytr" in compact and "user-select:none" in compact
-    assert "@media(max-width:820px){.app.rail-collapsed{grid-template-columns:1fr}}" in compact
+    # 셸은 상단 토바 2행 그리드(F2 PR-B) — 좁은 창의 여유는 접기가 아니라 브랜드 워드마크·
+    # 도구 값 라벨 접힘이 번다(레일 접기 사망의 승계분, 지도 §10.9 4계약면 4행).
+    assert ".app{display:grid;grid-template-rows:var(--shell-topbar-h)1fr;height:100vh}" in compact
+    narrow = compact.split("@media(max-width:820px){.topbar{", 1)[1].split("}}", 1)[0]
+    assert ".brand-name{display:none}" in narrow and ".shell-tool.d{display:none" in narrow
 
 
 def test_forced_colors_preserves_three_owner_signals() -> None:

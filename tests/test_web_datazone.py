@@ -32,6 +32,7 @@ WEB_INDEX = WEB / "index.html"
 DZ_JS = WEB / "js" / "datazone.js"
 POPOVER_JS = WEB / "js" / "popover.js"
 JOB_JS = WEB / "js" / "screens" / "job.js"
+LIB_JS = WEB / "js" / "screens" / "library.js"
 SESSION_JS = WEB / "js" / "draftsession.js"  # 기안 세션 표면(두 번째 인스턴스 생성처, #148 3a)
 DRAFT_JS = WEB / "js" / "screens" / "draft.js"  # 「기안」 화면(세션 id 맵 — 구 txt 흡수, 슬라이스 6)
 
@@ -186,7 +187,8 @@ def test_popover_dismiss_mechanism_single_sourced():
     ):
         assert re.search(needle, pop), f"popover.js 에 {what}가 없습니다."
     # 두 표면은 헬퍼 소비만 — 손수 판(자기 suppress 플래그) 재유입 금지(주석 제외).
-    for path, owner in ((JOB_JS, "행/그룹 ⋮ 메뉴"), (DZ_JS, "열 필터 패널")):
+    # ⋮ 메뉴 소비처는 「문서 작업」 라이브러리로 옮겼다(F2 PR-B) — 기제는 한 벌 그대로.
+    for path, owner in ((LIB_JS, "행/그룹 ⋮ 메뉴"), (DZ_JS, "열 필터 패널")):
         src = _strip_js_comments(path.read_text(encoding="utf-8"))
         assert "Popover.wireDismiss({" in src, (
             f"{path.name} 이 Popover.wireDismiss 를 소비하지 않습니다({owner} 몫)."

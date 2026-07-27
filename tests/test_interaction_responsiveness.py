@@ -16,7 +16,7 @@ def test_press_feedback_covers_round_trip_surfaces_and_reduced_motion() -> None:
     css = _read("css/app.css")
     selectors = (
         ".job-item", ".job-grp-head", ".jobtb tbody tr", ".mir-row.miss",
-        ".fico", ".fchip button", ".wstep-tab.as-tab", ".rail-toggle", ".rail-theme",
+        ".fico", ".fchip button", ".wstep-tab.as-tab", ".shell-tool",
     )
     active = css[css.index(".btn:active:not(:disabled)"):css.index("/* 부유 메뉴")]
     reduced = css[css.index("@media (prefers-reduced-motion:reduce)"):css.index("/* ---- 공통 컨트롤")]
@@ -51,7 +51,9 @@ def test_group_collapse_uses_one_optimistic_helper_on_all_three_surfaces() -> No
     assert "function toggleGroup(button, persist, errorMessage)" in helper
     assert helper.index("setGroupExpanded(button, !wasExpanded)") < helper.index("request = persist()")
     assert "Promise.resolve(request).catch" in helper and "window.alert" in helper
-    for rel in ("js/screens/job.js", "js/screens/draft.js", "js/screens/template.js"):
+    # 소비 표면 셋 — 「문서 만들기」 좌 목록이 죽고(F2 PR-B) 「문서 작업」 라이브러리가
+    # 그 자리를 승계했다. 기제는 여전히 한 벌(grouplist.js)이다.
+    for rel in ("js/screens/library.js", "js/screens/draft.js", "js/screens/template.js"):
         src = _read(rel)
         assert "GroupList.toggleGroup(" in src, f"{rel}이 공용 즉답 토글을 쓰지 않습니다."
         assert 'sec.collapsed ? " hidden" : ""' in src, (
@@ -60,8 +62,16 @@ def test_group_collapse_uses_one_optimistic_helper_on_all_three_surfaces() -> No
 
 
 def test_job_opening_marker_precedes_search_flush_and_backend_load() -> None:
+    """「여는 중」 표지는 검색 정산·백엔드 왕복보다 **먼저** 선다(#217 R1).
+
+    좌 목록 사망(F2 PR-B)으로 이 계약의 거처가 후보 카드·문서 탐색 행으로 옮겼다 —
+    몸통은 하나(selectJobWithMarker)이고 두 표면이 그것을 쓴다(지도 §10.9 판정 E).
+    """
     src = _read("js/screens/job.js")
-    body = src[src.index("async function selectJobFromItem("):src.index("function onMasterClick(")]
-    assert body.index("setJobOpening(item, true)") < body.index("await dz.flushPendingSearch()")
+    body = src[src.index("async function selectJobWithMarker("):src.index("function onMasterClick(")
+               if "function onMasterClick(" in src else len(src)]
+    assert body.index("setJobOpening(btn, true)") < body.index("await dz.flushPendingSearch()")
     assert "여는 중…" in src and 'setAttribute("aria-busy", "true")' in src
     assert "작업 열기 실패:" in src
+    # 두 소비처가 같은 몸통을 쓴다 — 한쪽만 표지를 잃는 드리프트 금지.
+    assert src.count("selectJobWithMarker(") >= 3  # 정의 1 + 후보 카드 + 탐색 행

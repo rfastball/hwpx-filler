@@ -1,5 +1,6 @@
-/* 라우터 + 부팅 — 레일 나비로 화면 전환, pywebview 준비 시 실화면 초기화.
-   화면별 로직은 js/screens/*.js 가 소유(DraftScreen.init 등). 여기선 배선만. */
+/* 라우터 + 부팅 — 상단 토바 탭으로 화면 전환, pywebview 준비 시 실화면 초기화.
+   화면별 로직은 js/screens/*.js 가 소유(DraftScreen.init 등). 여기선 배선만.
+   셸은 좌 레일 5화면 라우팅에서 상단 2탭(+과도기 임시 2)으로 교체됐다(F2 PR-B, 지도 §10.9). */
 (function () {
   /* 네이티브 X 닫기 확인 착지(#218 G1). Python closing 이벤트가 현재 세션 술어를 판정해
      호출하며, 취소/Escape는 창을 유지하고 다음 X에서 새 상태를 다시 판정한다. */
@@ -48,14 +49,14 @@
   /* 전환 시 자동 새로고침 대상(C6) — 다른 화면의 변경(에디터 자동등록·삭제 등)이 부팅
      스냅샷에 가려지는 고착 방지. 백엔드에 _do_refresh 가 있는 컨트롤러만 화이트리스트로
      보낸다(미지 액션은 백엔드가 loud 거절하므로 무차별 dispatch 금지). 수동 새로고침
-     버튼은 유지된다(명시적 재스캔 경로). 「작업」 화면도 레지스트리 파생 작업 목록(좌 master
-     목록)을 스냅샷으로 그리므로 포함한다 — 빼면 에디터에서 막 저장한 작업이 좌 목록에 안
-     보인다. 실행 화면(run)은 사망(슬라이스 3)이라 목록에서 제거. 홈은 「문서 작업」
-     라이브러리로 대체됐다(재작성 F2) — 그 화면의 refresh 는 레지스트리 + 영속 그룹 접힘을
-     함께 다시 읽는다(다른 화면에서 접은 상태가 stale 로 남지 않게). */
+     버튼은 유지된다(명시적 재스캔 경로). 「문서 만들기」도 레지스트리 파생 후보·문서 탐색을
+     스냅샷으로 그리므로 포함한다 — 빼면 에디터에서 막 저장한 작업이 후보에 안 보인다.
+     실행 화면(run)은 사망(슬라이스 3)이라 목록에서 제거. 홈은 「문서 작업」 라이브러리로
+     대체됐다(재작성 F2) — 그 화면의 refresh 는 레지스트리 + 영속 그룹 접힘을 함께 다시
+     읽는다(다른 화면에서 접은 상태가 stale 로 남지 않게). */
   const REFRESH_ON_NAV = ["library", "tpl", "job", "draft"];
 
-  /* 화면 전환 — 레일 클릭과 라이브러리 상세의 프로그램적 이동이 공유하는 단일 경로. */
+  /* 화면 전환 — 탭 클릭과 라이브러리 상세의 프로그램적 이동이 공유하는 단일 경로. */
   function go(id) {
     navs.forEach((x) => x.setAttribute("aria-current", x.dataset.scr === id ? "true" : "false"));
     scrs.forEach((s) => s.classList.toggle("on", s.id === "scr-" + id));
@@ -69,8 +70,9 @@
         .then((r) => { if (r && r.notice) window.alert(r.notice); })
         .catch((err) => window.alert(String((err && err.message) || err)));
     }
-    // 「작업」 복귀 시 편집 호스트의 에디터도 재렌더(#138 리뷰 F12) — job refresh 는 좌 목록만
-    // 갱신하고 편집 모드 1단계 피커는 놔둬, 관리 화면에서 바뀐 공유 그룹 접힘이 stale 로 남는다.
+    // 「문서 만들기」 복귀 시 편집 호스트의 에디터도 재렌더(#138 리뷰 F12) — job refresh 는
+    // 세션 스냅샷만 갱신하고 편집 모드 1단계 피커는 놔둬, 관리 화면에서 바뀐 공유 그룹
+    // 접힘이 stale 로 남는다.
     if (id === "job" && window.EditorScreen && window.EditorScreen.rerender) {
       window.EditorScreen.rerender();
     }
@@ -83,30 +85,23 @@
       window.DraftScreen.refreshOnEnter().catch((err) => window.alert(String((err && err.message) || err)));
     }
   }
-  // 레일 「작업 에디터」 과도기 심은 항목 사망(슬라이스 5 삭제 PR)과 함께 제거 — 편집
-  // 진입은 EditorEntry.land 소비처(「문서 작업」·템플릿 관리·작업 ⋮)가 담당한다.
+  // 「작업 에디터」 과도기 항목 사망(슬라이스 5)과 함께 제거 — 편집 진입은 EditorEntry.land
+  // 소비처(「문서 작업」 상세·템플릿 관리)가 담당한다.
   navs.forEach((b) => b.addEventListener("click", () => go(b.dataset.scr)));
   // 화면 간 프로그램적 이동의 단일 경로 — 라이브러리 상세의 「문서 만들기에서 사용」 등이
   // 대상 화면을 자체 dispatch 로 먼저 겨눈 뒤 여기로 전환한다(library.js 가 소비).
   window.Nav = { go };
-  go(DEFAULT_SCREEN);  // 브리지 준비 전에는 DOM·레일 기본 상태만 확정한다.
+  go(DEFAULT_SCREEN);  // 브리지 준비 전에는 DOM·탭 기본 상태만 확정한다.
 
-  // 사이드 패널 접기(#18/9B2AB35D-A) — 좁은 창에서 작업 영역 확장(반응형). 셸 전역.
-  const railToggle = document.getElementById("railToggle");
+  // 글자 크기 라벨 — 셸 전역 개인화 표지. 레일 접기(#18/9B2AB35D-A)는 상단 토바 교체와 함께
+  // 사망했다(F2 PR-B, 지도 §10.9): 토바는 64px 한 줄이라 접을 것이 없고, 좁은 창의 여유는
+  // 브랜드 워드마크·도구 값 라벨 접힘(CSS 820px)이 대신 번다.
   function syncPersonalizationLabels() {
-    const collapsed = document.querySelector(".app").classList.contains("rail-collapsed");
-    if (railToggle) railToggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
     const fontLabel = document.getElementById("fontScaleLabel");
     const fontText = { normal: "기본", large: "크게 (125%)", larger: "더 크게 (150%)" };
     if (fontLabel && window.Personalization) {
       fontLabel.textContent = fontText[window.Personalization.currentFontScale()];
     }
-  }
-  if (railToggle) {
-    railToggle.addEventListener("click", () => {
-      const app = document.querySelector(".app");
-      window.Personalization.setRailCollapsed(!app.classList.contains("rail-collapsed"));
-    });
   }
   const fontScaleToggle = document.getElementById("fontScaleToggle");
   if (fontScaleToggle) fontScaleToggle.addEventListener("click", () =>
@@ -114,7 +109,8 @@
   window.addEventListener("hwpx:personalizationchange", syncPersonalizationLabels);
   syncPersonalizationLabels();
 
-  // 작업·기안 master 폭 스플리터(S7) — 두 화면은 같은 CSS 변수/설정값을 공유한다.
+  // 「기안」 master 폭 스플리터(S7) — 「문서 만들기」 좌 목록 사망 뒤 남는 유일 소비처지만
+  // CSS 변수·설정값(`master_width`)은 그대로 공유 계약을 유지한다(F6 작업대 합류 지점).
   document.querySelectorAll(".master-splitter").forEach((splitter) => {
     splitter.addEventListener("pointerdown", (event) => {
       if (event.button !== 0) return;
@@ -152,7 +148,7 @@
   });
 
   // 테마 전환(System→Light→Dark) — 셸 전역. Theme(theme.js)가 data-theme 를 소유하고
-  // 브리지로 Python 설정에 영속(#74), 여기선 배선 + 레일 라벨을 현재 모드로 동기화만 한다.
+  // 브리지로 Python 설정에 영속(#74), 여기선 배선 + 토바 라벨을 현재 모드로 동기화만 한다.
   const themeToggle = document.getElementById("themeToggle");
   const themeLabel = document.getElementById("themeLabel");
   const THEME_TEXT = { system: "시스템", light: "라이트", dark: "다크" };
@@ -173,7 +169,7 @@
     routingReady = true;
     if (window.LibraryScreen) window.LibraryScreen.init();  // 「문서 작업」 라이브러리(F2 — 홈 승계)
     if (window.EditorScreen) window.EditorScreen.init();
-    if (window.JobScreen) window.JobScreen.init();  // 「작업」 화면(#90) — 유일 생성 표면
+    if (window.JobScreen) window.JobScreen.init();  // 「문서 만들기」(#90) — 유일 생성 표면
     if (window.DraftScreen) window.DraftScreen.init();  // 「기안」 화면(#148 슬라이스 2b) — TXT 작업-앵커
     if (window.TemplateScreen) window.TemplateScreen.init();
     // 데이터 선택 다이얼로그(재작성 F1) — 화면이 아니라 오버레이라 라우팅 대상이 아니지만

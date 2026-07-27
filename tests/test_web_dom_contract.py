@@ -54,10 +54,13 @@ SCREEN_ROOTS = (
 # 화면별 데이터 라벨은 반드시 고유 id 여야 한다(#27 dup-id 회귀 가드).
 SCOPED_DATA_LABELS = ("draftDataLabel", "jobDataLabel")
 
-# 접힘 상태에서 라벨이 사라지는 내비 버튼(회귀 시 접근 이름·툴팁 소실 → #27).
-# run=슬라이스 3·editor=슬라이스 5 사망(흡수); 「기안」이 구 txt·quickdraft 를 흡수·삭제
-# (#148 슬라이스 6, 레일 6→5); 「데이터 관리」는 데이터 선택 다이얼로그로 흡수·사망(F1, 5→4).
+# 상단 토바 탭(회귀 시 화면 소실·접근 이름 소실 → #27). run=슬라이스 3·editor=슬라이스 5
+# 사망(흡수); 「기안」이 구 txt·quickdraft 를 흡수·삭제(#148 슬라이스 6); 「데이터 관리」는
+# 데이터 선택 다이얼로그로 흡수·사망(F1); home 은 「문서 작업」 라이브러리로 사망(F2 PR-A).
+# 좌 레일은 F2 PR-B 에서 상단 2탭으로 교체 — 계약 2탭(job·library) + 과도기 임시 2(draft·tpl).
 NAV_SCREENS = ("library", "job", "draft", "tpl")
+# 구분선 오른쪽 임시 항목 — 승계처가 서면(F6·F8) 죽는다. title 이 제거 예고를 진다(지도 §10.9 판정 B).
+TEMP_NAV_SCREENS = ("draft", "tpl")
 
 # 커스텀 모달 → aria-labelledby 가 가리켜야 할 제목 id(다이얼로그 시맨틱, #27/#28).
 # sheetModal 은 다중 시트 확정 게이트(#33) — 같은 Modal 헬퍼·다이얼로그 계약을 공유한다.
@@ -171,47 +174,74 @@ def test_scoped_data_labels_present_and_unique():
 
 
 def test_nav_buttons_have_accessible_name_and_tooltip():
-    """접힘 상태에서 .n/.d 가 display:none 이 되어도 각 내비 버튼은 접근 이름과 툴팁을 유지해야 한다(#27).
+    """각 탭은 접근 이름(aria-label)과 호버 툴팁(title)을 버튼별로 고정해야 한다(#27).
 
-    접힘 시 라벨 span 이 숨겨지면 aria-label 없는 버튼은 접근 이름이 사라지고 title 없는 버튼은
-    호버 툴팁도 없다 — 둘 다 버튼별로 고정돼 있어야 회귀를 막는다.
+    좁은 창에서 라벨이 줄어들어도 이름이 남아야 하고, 툴팁은 탭이 무슨 화면인지(그리고 임시
+    항목이면 언제 사라지는지) 말하는 유일한 자리다.
     """
     buttons = _collect_nav_buttons()
     missing = [s for s in NAV_SCREENS if s not in buttons]
-    assert not missing, f"내비 버튼이 사라졌습니다(data-scr): {missing}"
+    assert not missing, f"탭이 사라졌습니다(data-scr): {missing}"
     for scr in NAV_SCREENS:
         attrs = buttons[scr]
         assert attrs.get("aria-label", "").strip(), (
-            f"navbtn[data-scr={scr}] 에 비어있지 않은 aria-label 이 필요합니다"
-            " — 접힘 시 접근 이름 소실(#27)."
+            f"navbtn[data-scr={scr}] 에 비어있지 않은 aria-label 이 필요합니다 — 접근 이름 소실(#27)."
         )
         assert attrs.get("title", "").strip(), (
-            f"navbtn[data-scr={scr}] 에 비어있지 않은 title 이 필요합니다"
-            " — 접힘 시 호버 툴팁 소실(#27)."
+            f"navbtn[data-scr={scr}] 에 비어있지 않은 title 이 필요합니다 — 호버 툴팁 소실(#27)."
         )
 
 
-def test_collapsed_nav_has_visual_marker():
-    """각 내비 버튼에 상시 보이는 아이콘 표지(.ni SVG)가 있고, 접힘 시 라벨열(.lbl)이 숨겨져도
-    그 표지는 남아야 한다(#27 개정).
+def test_transitional_tabs_announce_their_removal():
+    """과도기 임시 탭(기안·템플릿 관리)은 구분선 오른쪽에 서고 title 이 제거를 예고해야 한다.
 
-    옛 계약은 '.ni 글자표지를 펼침엔 숨기고 접힘에만 노출'이었으나, 앱 디자인 언어 채택으로 .ni 가
-    SVG 아이콘으로 승격돼 라벨과 상시 공존한다(중복이 아니라 스캔 보조). 따라서 계약을 뒤집는다 —
-    아이콘 상시 표지 + 접힘 시 라벨열(.lbl)만 숨김. aria-label/title 은 SR 이름·호버 툴팁으로 유지.
+    지도 §10.9 판정 B: 아직 정상 동작하는 화면이라 상시 배너 대신 title 이 예고를 진다(없는
+    소실을 큰 소리로 고지하면 경보가 싸구려가 된다 — §10.8.4 착지 정산과 같은 판단). 계약
+    2탭은 그 반대로 **예고를 달지 않는다** — 최종 형상이 조용히 흐려지지 않게.
+    """
+    buttons = _collect_nav_buttons()
+    index = WEB_INDEX.read_text(encoding="utf-8")
+    assert index.count('class="nav-sep"') == 1, "탭 구분선(.nav-sep)이 정확히 1개여야 합니다."
+    for scr in TEMP_NAV_SCREENS:
+        assert "temp" in buttons[scr].get("class", ""), (
+            f"navbtn[data-scr={scr}] 에 임시 표지(.temp)가 없습니다 — 최종 형상과 구분이 사라집니다."
+        )
+        assert "사라집니다" in buttons[scr].get("title", ""), (
+            f"navbtn[data-scr={scr}] title 이 제거를 예고하지 않습니다(지도 §10.9 판정 B)."
+        )
+    # 구분선 왼쪽(계약 2탭)이 임시 표지를 얻으면 최종 형상이 흐려진다.
+    for scr in ("job", "library"):
+        assert "temp" not in buttons[scr].get("class", ""), (
+            f"navbtn[data-scr={scr}] 는 계약 2탭이라 임시 표지가 붙으면 안 됩니다(§19 서문)."
+        )
+
+
+def test_nav_has_visual_marker_and_shell_is_topbar():
+    """각 탭에 상시 보이는 아이콘 표지(.ni SVG)가 있고, 셸은 상단 토바여야 한다(#27 개정 · F2 PR-B).
+
+    .ni 는 앱 디자인 언어 채택으로 SVG 아이콘으로 승격돼 라벨과 상시 공존한다(중복이 아니라
+    스캔 보조). 셸 교체(지도 §10.9)로 좌 레일과 그 접기가 죽었으므로, 접힘 규칙이 되살아나면
+    표면 없는 상태가 CSS 에 남았다는 뜻이다 — 다음 세션이 그걸 근거로 레일을 되살린다.
     """
     index = WEB_INDEX.read_text(encoding="utf-8")
     marker_count = index.count('class="ni"')
     assert marker_count == len(NAV_SCREENS), (
-        f"내비 시각 표지(.ni)가 {marker_count}개 — 버튼마다 정확히 1개여야 합니다(#27)."
+        f"탭 시각 표지(.ni)가 {marker_count}개 — 버튼마다 정확히 1개여야 합니다(#27)."
+    )
+    assert 'class="topbar"' in index and 'class="rail"' not in index, (
+        "셸이 상단 토바가 아닙니다 — 좌 레일은 F2 PR-B 에서 사망했습니다(지도 §10.9)."
     )
     css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
-    # 아이콘(.ni svg)은 상시 표지 — 크기 규칙 존재로 SVG 아이콘 착지를 확인(펼침 숨김 규칙 폐기).
-    assert ".navbtn.nisvg{width:18px" in css, (
-        "내비 아이콘(.ni svg) 상시 표지 규칙이 사라졌습니다(#27 개정)."
+    # 아이콘(.ni svg)은 상시 표지 — 크기 규칙 존재로 SVG 아이콘 착지를 확인.
+    assert ".navbtn.nisvg{width:18px" in css, "탭 아이콘(.ni svg) 상시 표지 규칙이 사라졌습니다(#27)."
+    assert "rail-collapsed" not in css, (
+        "레일 접힘 규칙이 남아 있습니다 — 표면 없는 상태는 되살아날 통로입니다(§10.9 4계약면 4행)."
     )
-    # 접힘 시 라벨열(.lbl)을 숨겨 작업영역을 넓히되, 아이콘은 남아 표지를 잇는다.
-    assert ".app.rail-collapsed.navbtn.lbl{display:none" in css, (
-        "접힘 상태에서 라벨열(.lbl)을 숨기는 규칙이 사라졌습니다(#27)."
+    # 토바 높이는 구조 치수 단일 출처 — 라이브러리 2-pane 계산이 이 변수를 소비한다(판정 G).
+    assert "--shell-topbar-h:64px" in css, "토바 높이 변수(구조 치수 · §19.12)가 사라졌습니다."
+    assert "calc(100vh-var(--shell-topbar-h)-250px)" in css, (
+        "라이브러리 2-pane 높이가 토바 변수를 소비하지 않습니다 — 리터럴 드리프트로 페이지가 "
+        "조용히 스크롤합니다(§19.6 명문 · 지도 §10.9 판정 G)."
     )
 
 
@@ -826,9 +856,13 @@ def test_job_candidate_ranking_surface_contract():
     """
     src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
     assert "data-fav" in src and "toggle_favorite" in src, "즐겨찾기 토글 배선이 없습니다."
-    # 도달성(리뷰 2R P2): 카드 별은 상위 5장뿐이라 순위 밖 작업의 승격 경로는 절단되지 않는
-    # 표면(좌 목록 ⋮ 메뉴)이 져야 한다. 두 표면은 같은 전이 몸통을 쓴다.
-    assert 'data-menu="favorite"' in src, "좌 목록 ⋮ 메뉴에 즐겨찾기 항목이 없습니다."
+    # 도달성(리뷰 2R P2 → F2 PR-B 이사): 카드 별은 상위 5장뿐이라 순위 밖 작업의 승격 경로는
+    # **절단되지 않는 표면**이 져야 한다. 그 표면이던 좌 목록 ⋮ 메뉴가 죽었으므로(지도 §10.9)
+    # 이제 「문서 작업」 라이브러리 **행**의 별이 그 자리다(§19.6: 행 선택 버튼 밖 형제).
+    lib = (WEB_JS_DIR / "screens" / "library.js").read_text(encoding="utf-8")
+    assert 'class="lib-fav" data-fav=' in lib, (
+        "라이브러리 행에 즐겨찾기 별이 없습니다 — 순위 밖 승격 도달성이 끊깁니다(§8.4 2행)."
+    )
     assert src.count("function toggleFavorite(") == 1, "즐겨찾기 전이 몸통이 둘입니다."
     # 왕복 중 두 번째 클릭이 의도를 뒤집으려면 다음 값을 DOM 이 아니라 미결 의도에서
     # 계산해야 하고(3R P2 — 멱등 재지정이 "껐다"를 삼키는 창), 쓰기 자체도 클릭 순서로
@@ -855,9 +889,10 @@ def test_job_candidate_ranking_surface_contract():
             f"{consumer} 가 즐겨찾기 기제를 공용 몸통에서 받지 않습니다 — 두 벌이면 또 갈린다."
         )
         assert "FAV_PENDING" not in text, f"{consumer} 에 손짠 의도 큐가 남아 있습니다."
-    # 메뉴 문안은 **이 클릭이 할 일**을 말해야 하므로 미결 의도를 읽는다 — 기제가 몸통으로
-    # 이사할 때 이 소비처가 뒤에 남아 실앱에서 메뉴가 안 열렸다(3R 픽스의 실물 증거).
-    assert "favorite.pending(" in src, "좌 목록 ⋮ 메뉴가 미결 의도를 읽지 않습니다."
+    # 미결 의도 판독(`pending`)의 소비처였던 좌 목록 ⋮ 메뉴 문안은 표면과 함께 죽었다
+    # (F2 PR-B) — 별은 두 표면 모두 aria-pressed 를 스냅샷에서 받으므로 「이 클릭이 할 일」을
+    # 문장으로 말할 자리가 없다. 기제는 몸통에 남겨 둔다: 다음 표면이 다시 손으로 짜지 않게.
+    assert "function pending(" in intent, "미결 의도 판독이 공용 몸통에서 사라졌습니다."
     assert src.count('Intent.chained("browse"') == 3, (
         "탐색 탭·검색·선택이 같은 체인을 타지 않습니다 — 늦은 옛 응답이 새 결과·선택을 되돌린다."
     )
@@ -1103,20 +1138,52 @@ def test_editor_surface_lives_in_job_panel():
         ("screens/library.js", "EditorEntry.newDraft"),
         ("screens/library.js", "EditorEntry.openGuarded"),
         ("screens/template.js", "EditorEntry.land"),
+        # 「문서 만들기」는 좌 목록 사망(F2 PR-B)으로 **새 작업 진입을 더는 갖지 않는다** —
+        # `＋ 새 작업`은 라이브러리 화면 머리 한 곳이다(진입이 둘이면 폐기 확인이 갈린다).
+        # 남는 것은 수리 동선(드리프트·파일명 토큰)의 편집 진입뿐이다.
         ("screens/job.js", "EditorEntry.openGuarded"),
-        ("screens/job.js", "EditorEntry.newDraft"),
     ):
         src = (WEB_JS_DIR / fname).read_text(encoding="utf-8")
         assert needle in src, f"{fname} 가 진입 단일 출처({needle})를 쓰지 않습니다."
-    # 레일 항목 사망의 어포던스 승계(PR-5 리뷰 F1·F2) — 「작업」 구획 ＋ 새 작업 + T2 고지의
-    # 비파괴 복귀 버튼(다른 진입은 전부 세션 초기화/재로드라 이 둘이 승계 실체다).
-    assert 'id="jobNewBtn"' in job_sec, "「작업」 구획 ＋ 새 작업이 없습니다(결정 10·레일 승계 F2)."
     job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    assert "EditorEntry.newDraft" not in job_js, (
+        "「문서 만들기」에 새 작업 진입이 되살아났습니다 — 승계처는 라이브러리 `＋ 새 작업`입니다."
+    )
+    # 편집 모드의 두 출구(F2 PR-B 판정 D) — 「편집으로 돌아가기」(T2 고지)와 「실행으로
+    # 돌아가기」(결정 40 이 좌 목록 행 클릭에 줬던 소임의 승계처). 둘 다 비파괴다.
     assert "return-to-edit" in job_js, "T2 고지의 비파괴 「편집으로 돌아가기」가 없습니다(F1)."
+    assert 'id="jobEditExit"' in job_sec, (
+        "편집 → 실행 복귀 어포던스가 없습니다 — 좌 목록 사망 뒤 실행으로 돌아갈 길이 사라집니다"
+        "(지도 §10.9 판정 D)."
+    )
     editor_js = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
     assert '$("jobEditHost")' in editor_js, "editor.js 위임 루트가 편집 호스트로 이사하지 않았습니다."
     assert "exitEditToRun" in job_js and "showEditMode" in job_js, (
         "job.js 패널 두 모드 배선(showEditMode/exitEditToRun)이 사라졌습니다(결정 39·40)."
+    )
+
+
+def test_use_in_job_lands_run_mode_not_the_editor():
+    """「문서 만들기에서 사용」은 **실행 모드**에 착지한다(F2 PR-B).
+
+    좌 목록이 살아 있을 땐 행 클릭이 이 정산을 겸했다(결정 40) — 편집 모드면 실행으로
+    되돌리고 미저장 편집은 고지했다. 목록이 죽으면서 그 정산이 빠지면, 작업을 저장한 직후
+    「문서 작업」에서 그것을 쓰겠다고 눌렀을 때 편집 호스트가 그대로 뜬다: 사용자가 요청한
+    것과 다른 표면에 착지하는 결함(2R P2 「빈 화면 착지」와 같은 클래스). 전이는 비파괴다.
+    """
+    lib = (WEB_JS_DIR / "screens" / "library.js").read_text(encoding="utf-8")
+    job = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    use = lib[lib.index('Bridge.call(JOB, "prefer_work"'):lib.index("window.Nav.go(JOB);")]
+    assert "JobScreen.landRunMode" in use, (
+        "「문서 만들기에서 사용」이 실행 모드 착지를 정산하지 않습니다 — 편집 호스트에 착지합니다."
+    )
+    assert "async function landRunMode(" in job and "landRunMode," in job, (
+        "job.js 가 실행 모드 착지 seam(landRunMode)을 내보내지 않습니다."
+    )
+    body = job[job.index("async function landRunMode("):]
+    body = body[:body.index("\n  }") + 4]
+    assert "exitEditToRun()" in body and "showExitNote()" in body, (
+        "실행 착지가 기존 비파괴 전이·미저장 고지를 쓰지 않습니다(새 전이를 만들지 않는다)."
     )
 
 
@@ -1128,10 +1195,12 @@ def test_group_confirm_copy_states_the_rule_not_a_promised_count():
     옮겨지는 집합의 규칙('전부')은 언제나 참이므로 그것을 본문으로 삼고, 수치는 '지금 기준'
     으로 덧붙인다. 실제 건수는 실행 뒤 재진술(``drift_note``)이 진다.
     """
-    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    # 좌 목록 사망(F2 PR-B)으로 그룹 확인 문안의 거처가 라이브러리로 옮겼다 — 판정은 여전히
+    # 「문서 만들기」 컨트롤러(교차 화면 dispatch)가 내고, 문안 계약은 표면을 따라간다.
+    src = (WEB_JS_DIR / "screens" / "library.js").read_text(encoding="utf-8")
     assert "지금 기준" in src, "그룹 확인 수치가 관측으로 표기되지 않았습니다(#149)."
     assert "해산 시점의 소속 작업 전부" in src, "해산 확인이 이동 집합 규칙을 말하지 않습니다(#149)."
-    assert "seen: res.count" in src and "seen: r.count" in src, (
+    assert src.count("seen: r.count") == 2, (
         "확인 때 본 수를 확정 호출에 실어 보내지 않습니다 — 어긋남 판정(Python)이 불가(#149)."
     )
     assert "drift_note" in src, "실제 이동 건수의 어긋남 고지를 소비하지 않습니다(#149)."

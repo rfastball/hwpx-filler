@@ -152,7 +152,7 @@ class WebFrontend:
             # 레지스트리는 기안·템플릿 관리와 공유(변경이 반영). pool_registry 공유 =
             # 등록 데이터에서 생긴 손상이 라이브러리 경보에 즉시 보인다(#45).
             LibraryController(job_registry, registry, self._push, pool_registry=pool_registry),
-            # 「작업」 화면 — 좌 목록 + 우 세션 패널 4존. 링1 VM 을 직접 소유하며
+            # 「문서 만들기」 — 세션 패널(v6 screen-data 2열). 링1 VM 을 직접 소유하며
             # 실행 결정 계약을 소비하는 유일 세션 표면이다.
             JobController(job_registry, self._push, pool_registry=pool_registry),
             # 「기안」 화면 — TXT 작업-앵커 master-detail(「작업」의 대칭).
@@ -223,9 +223,8 @@ class WebFrontend:
         settings.save_font_scale(scale)
         return scale
 
-    def set_rail_collapsed(self, collapsed: bool) -> bool:
-        settings.save_rail_collapsed(collapsed)
-        return collapsed
+    # ``set_rail_collapsed`` 는 레일 사망(F2 PR-B)과 함께 제거 — 브리지 표면에 남으면
+    # 표면 없는 설정을 쓰는 통로가 되고, 그 통로가 다음 세션에 레일을 되살린다.
 
     def set_master_width(self, width: int) -> int:
         settings.save_master_width(width)
@@ -858,7 +857,7 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
     // 작업 미선택 + 데이터 마운트(데이터-우선 §18.2) 합성 스냅샷 — vm-None 분기가 방출하는
     // 전 키 유효 모양 그대로. 후보 2종(available/needs_action)·prework 게이트·표시순 목록.
     var snap = {
-      job_rows:[{name:'공고서', selected:false}], job_name:'', has_job:false,
+      job_name:'', has_job:false,
       out_dir:'', data_label:'d.csv', data_source_label:'파일: d.csv', data_notice:null,
       template_name:'', template_path:'', filename_pattern:'', template_missing:false,
       has_data:true, record_count:2, selected_count:1,
@@ -1108,7 +1107,7 @@ _JOB_MIRROR_PROBE_JS = r"""
   try {
     window.Nav.go('job');
     var snap = {
-      job_rows: [{name:'공고서', selected:true}], job_name:'공고서', has_job:true,
+      job_name:'공고서', has_job:true,
       out_dir:'C:\\Results', data_label:'d.csv', data_source_label:'d.csv (파일)', data_notice:null,
       template_name:'t.hwpx', template_path:'C:\\t.hwpx', template_missing:false,
       filename_pattern:'doc-{{seq}}', has_data:true, record_count:2, selected_count:2,
@@ -1325,93 +1324,67 @@ _JOB_MIRROR_PROBE_JS = r"""
 })()
 """
 
-# 「작업」 좌 목록 그룹·관리 메뉴(결정 43) — 합성 구획 스냅샷을 실 render() 에 흘려 그룹 헤더·
-# 접힘(뷰 제외)·⋮ 메뉴 실개방/바깥닫기·접힘 화살표 가시성(결정 5: 접힌 그룹 상시 노출)·퇴화
-# 불변식(그룹 0개=평면)을 실 WebView2 에서 되읽는다(부록 B-9 overlay/hidden 자동 눈검증 동형).
-_JOB_LIST_GROUP_PROBE_JS = r"""
+# 좌 목록 사망(F2 PR-B)이 넘긴 두 의무를 승계처에서 되읽는다(지도 §10.9 판정 C·E).
+# **별도 프로브로 떼어 낸 이유**: 후보 카드 클릭은 전환 재진입 가드(switching)를 잡으므로,
+# 같은 스크립트 안에서 돌면 뒤이어 풀리는 문서 탐색 착지(setTimeout 연속)의 선택이 조용히
+# 거절된다 — 프로브가 프로브를 오염시키는 자리다(관측자 오염 리트머스). 탐색 착지가 끝난
+# 것을 Python 이 확인한 뒤에 이 프로브를 돌린다.
+_JOB_INHERITED_AFFORDANCE_PROBE_JS = r"""
 (function () {
   var out = {};
   try {
     window.Nav.go('job');
     var snap = {
-      // favorited(슬라이스 2) — 좌 목록 ⋮ 메뉴 즐겨찾기 문안의 근거. 첫 행만 지정 상태로
-      // 둬서 메뉴가 "제거"를 말하는지(플래그 추종) 되읽는다.
-      job_rows: [{name:'물품 공고서', selected:false, favorited:true},
-                 {name:'물품 기안', selected:false, favorited:false},
-                 {name:'용역 공고서', selected:false, favorited:false},
-                 {name:'회의 기안', selected:false, favorited:false}],
-      job_flat: false,
-      job_group_names: ['2026 상반기', '입찰'],
-      job_sections: [
-        {group:'2026 상반기', collapsed:false, count:2,
-         rows:[{name:'물품 공고서', selected:false, favorited:true},
-               {name:'물품 기안', selected:false, favorited:false}]},
-        {group:'입찰', collapsed:true, count:1,
-         rows:[{name:'용역 공고서', selected:false, favorited:false}]},
-        {group:'', collapsed:false, count:1,
-         rows:[{name:'회의 기안', selected:false, favorited:false}]}
-      ],
-      job_name:'', has_job:false,
-      guard:{armed:false, sel_count:0, in_def:0, extra:0, filter_active:false, filter_parts:0},
-      out_dir:'', data_label:'', data_source_label:'', data_notice:null,
-      gate:{enabled:false, level:'warn', text:'왼쪽에서 작업을 선택하세요.'}
+      job_name:'', has_job:false, out_dir:'', data_label:'d.csv',
+      data_source_label:'파일: d.csv', data_notice:null,
+      template_name:'', template_path:'', filename_pattern:'', template_missing:false,
+      has_data:true, record_count:1, selected_count:1,
+      records:[{index:0, selected:true, name:'', summary:'사무비품'}],
+      candidates:{top:[{name:'공고서', favorited:false, suggested:false, last_run_at:''}],
+                  more:0, needs_count:0, suggested:''},
+      browse:{tab:'available', query:'', rows:[], available_count:1, needs_count:0, filtered_out:0},
+      guard:{armed:false, sel_count:1, in_def:0, extra:0, filter_active:false, filter_parts:0},
+      table:{columns:[{name:'공고명', kind:'text'}],
+             rows:[{index:0, selected:true, name:'', summary:'사무비품',
+                    cells:[[['사무비품',false]]]}],
+             visible_count:1, hidden_selected:[]},
+      restate:{origin:'manual', filter_active:false, in_def:0, extra:0, sample:[0]},
+      preflight:{level:'', text:''}, mirror:[], drift:[], name_tokens:[],
+      gate:{enabled:false, level:'warn', text:'문서 작업을 선택하세요.'}
     };
     window.__push('job', snap);
-    out.grp_heads = document.querySelectorAll('#jobListHwpx .job-grp-head').length;
-    out.rows_visible = document.querySelectorAll(
-      '#jobListHwpx > .job-row .job-item, #jobListHwpx .job-grp-rows:not([hidden]) .job-item').length;
-    out.grp_more = document.querySelectorAll('#jobListHwpx .grp-more').length;
-    out.row_more = document.querySelectorAll(
-      '#jobListHwpx > .job-row .job-more[data-more], #jobListHwpx .job-grp-rows:not([hidden]) .job-more[data-more]').length;
-    var caretOf = function (expanded) {
-      var c = document.querySelector(
-        '#jobListHwpx .job-grp-head[aria-expanded="' + expanded + '"] .grp-caret');
-      return c ? getComputedStyle(c).visibility : 'missing';
-    };
-    out.caret_collapsed = caretOf('false');
-    out.caret_expanded = caretOf('true');
-    // 영속 왕복을 미결로 둬도 접힌 그룹의 aria/caret/body가 클릭 프레임에 먼저 열린다(#217 R3).
-    var realCall = window.Bridge.call;
-    window.Bridge.call = function () { return new Promise(function () {}); };
-    var collapsedHead = document.querySelector('#jobListHwpx .job-grp-head[aria-expanded="false"]');
-    collapsedHead.click();
-    var openedBody = collapsedHead.closest('.job-grp').nextElementSibling;
-    out.collapse_local_flip = collapsedHead.getAttribute('aria-expanded') === 'true' &&
-      collapsedHead.querySelector('.grp-caret').textContent === '▾' && !openedBody.hidden;
-    window.Bridge.call = realCall;
-    // 검색 정산 promise가 이어지는 동안 select_job은 미결로 두되, 클릭 프레임의 여는 중 표지는
-    // 즉시 보여야 한다(#217 R1). continuation이 mock을 잡은 뒤 다음 microtask에서 복원한다.
-    window.Bridge.call = function () { return new Promise(function () {}); };
-    var openingItem = document.querySelector('#jobListHwpx .job-item[data-job]');
-    openingItem.click();
-    out.opening_marker_immediate = openingItem.getAttribute('aria-busy') === 'true' &&
-      openingItem.textContent.indexOf('여는 중') >= 0;
-    Promise.resolve().then(function () { window.Bridge.call = realCall; });
-    var more = document.querySelector('#jobListHwpx .job-more[data-more]');
-    more.click();
-    var menu = document.getElementById('jobRowMenu');
-    out.menu_shown = getComputedStyle(menu).display !== 'none';
-    out.menu_items = Array.prototype.map.call(
-      menu.querySelectorAll('button[data-menu]'), function (b) { return b.dataset.menu; });
-    out.menu_fav_label = (function () {
-      var b = menu.querySelector('button[data-menu="favorite"]');
-      return b ? b.textContent : '';
-    })();
-    document.body.dispatchEvent(new MouseEvent('pointerdown', {bubbles:true}));
-    out.menu_closed = getComputedStyle(menu).display === 'none';
-    out.move_modal_hidden = document.getElementById('groupMoveModal').classList.contains('hidden');
-    snap.job_flat = true;
-    snap.job_group_names = [];
-    snap.job_sections = [
-      {group:'', collapsed:false, count:1, rows:[{name:'회의 기안', selected:false}]}
-    ];
-    window.__push('job', snap);
-    out.flat_heads = document.querySelectorAll('#jobListHwpx .job-grp-head').length;
-    out.flat_rows = document.querySelectorAll('#jobListHwpx .job-item').length;
+    // ① 「여는 중」 지연 표지(#217 R1) — 좌 목록 행에 있던 계약을 후보 카드가 진다. 왕복을
+    //    **우리가 풀 수 있는** 미결로 세워 클릭 프레임의 표지를 읽고 곧바로 풀어 준다.
+    var card = document.getElementById('jobCand-' + encodeURIComponent('공고서'));
+    if (!card) { out.opening_marker_immediate = 'no-card'; }
+    else {
+      var release, real = window.Bridge.call;
+      window.Bridge.call = function () {
+        return new Promise(function (res) { release = res; });
+      };
+      card.click();
+      out.opening_marker_immediate = card.getAttribute('aria-busy') === 'true' &&
+        card.textContent.indexOf('여는 중') >= 0;
+      window.Bridge.call = real;
+      if (release) release({});
+    }
+    // ② 흡수처 출구(판정 C) — 데이터가 있으면 숨고(소음 금지), 데이터·작업이 둘 다 없으면
+    //    상주해 막다른 화면을 막는다.
+    out.no_data_exit_with_data =
+      getComputedStyle(document.getElementById('jobNoDataExit')).display !== 'none';
+    var empty = JSON.parse(JSON.stringify(snap));
+    empty.has_data = false; empty.record_count = 0; empty.records = [];
+    empty.table = {columns:[], rows:[], visible_count:0, hidden_selected:[]};
+    empty.candidates = {top:[], more:0, needs_count:0, suggested:''};
+    window.__push('job', empty);
+    out.no_data_exit_shown =
+      getComputedStyle(document.getElementById('jobNoDataExit')).display !== 'none';
+    out.no_data_exit_target = !!document.getElementById('jobPickInLibrary');
   } catch (e) { out.error = 'throw:' + (e && e.message); }
   return out;
 })()
 """
+
 
 # 「기안」 좌 목록(#148 슬라이스 2b) — 「작업」과 같은 그룹 구획 스캐폴드 + 공용 grouplist.js
 # 팩토리(⋮ 메뉴·이동 다이얼로그)의 **3번째 소비자**를 합성 스냅샷으로 실 render 구동해 되읽는다.
@@ -1516,6 +1489,10 @@ _JOB_EDITMODE_PROBE_JS = r"""
     out.edit_host_shown = getComputedStyle(document.getElementById('jobEditHost')).display !== 'none';
     out.zones_hidden = getComputedStyle(document.getElementById('jobZones')).display === 'none';
     out.status_text = document.getElementById('jobStatus').textContent;
+    // 실행 복귀 출구(F2 PR-B 판정 D) — 편집 모드에서 **실제로 보이는가**. 좌 목록이 죽으며
+    // 이 버튼이 유일한 직접 복귀 경로가 됐는데, 정적 존재만 보는 계약은 「배선했지만 영영
+    // 숨어 있는」 상태를 통과시킨다(코덱스 리뷰 P2 의 실물).
+    out.edit_exit_shown = getComputedStyle(document.getElementById('jobEditExit')).display !== 'none';
     var draft = {step:0, reachable:[false,false], template_path:'', template_name:'',
       field_count:0, fields:[], raw_block:'', gate_error:false, gate:null, notice:null,
       editing_origin:''};
@@ -1526,6 +1503,10 @@ _JOB_EDITMODE_PROBE_JS = r"""
     window.__push('editor', draft);
     out.edit_tabs = document.querySelectorAll('#editor-steps button.wstep-tab.as-tab').length;
     out.foot_hidden_edit = getComputedStyle(document.getElementById('editor-foot')).display === 'none';
+    // 실행 복귀 뒤엔 다시 숨는다 — 실행 모드에 「실행으로 돌아가기」가 남으면 거짓 어포던스다.
+    window.JobScreen.showRunMode();
+    out.edit_exit_hidden_in_run =
+      getComputedStyle(document.getElementById('jobEditExit')).display === 'none';
   } catch (e) { out.error = 'throw:' + (e && e.message); }
   return out;
 })()
@@ -2619,14 +2600,26 @@ def _selftest_drive(window: "object") -> None:
         # 첫 confirm=true(확인 클릭), 재진입 confirm=false(즉시 안전측 거절)여야 한다.
         result["modal_confirm_serial"] = window.evaluate_js(  # type: ignore[attr-defined]
             "({ first: window.__cf1, second: window.__cf2 })")
-        # 반응형 경계(#27) — 창을 최소폭(760<820 경계)으로 줄였다 넓히며 .app 그리드 열 수를
-        # 실 엔진에서 되읽는다. 정적 CSS 경계 존재는 test_web_dom_contract 가, 실제 접힘/펴짐은
-        # 여기가 가드. resize 는 OS 이벤트라 relayout 안정까지 짧게 대기(게이트는 flaky 금지).
-        grid_probe = "getComputedStyle(document.querySelector('.app')).gridTemplateColumns"
-        window.resize(760, 600)  # type: ignore[attr-defined]  # 최소 크기 = 경계 아래 → 세로 적층
+        # 반응형 경계(#27 → F2 PR-B 재정의) — 셸이 좌 레일에서 상단 토바로 바뀌면서 좁은 창의
+        # 대응이 **열 접힘에서 토바 축약**으로 옮겼다: .app 은 항상 2행(토바+스테이지)이고,
+        # 820px 아래에서 브랜드 워드마크·도구 값 라벨이 접혀 탭 4개의 자리를 먼저 지킨다
+        # (도달성 우선). 그래서 되읽는 것도 열 수가 아니라 **탭 도달성 + 가로 오버플로**다 —
+        # 좁은 창에서 탭이 잘려 화면에 못 가는 것이 이 셸의 진짜 회귀다. 정적 CSS 경계 존재는
+        # test_web_dom_contract 가, 실 렌더는 여기가 가드. resize 는 OS 이벤트라 relayout
+        # 안정까지 짧게 대기(게이트는 flaky 금지).
+        grid_probe = """(function(){
+          var app=document.querySelector('.app'),body=document.body;
+          var tabs=Array.prototype.filter.call(document.querySelectorAll('.navbtn'),
+            function(b){return b.offsetParent!==null});
+          var brand=document.querySelector('.brand-name');
+          return {rows:getComputedStyle(app).gridTemplateRows.split(' ').length,
+                  tabs:tabs.length,
+                  brand_visible:!!(brand&&brand.offsetParent!==null),
+                  overflow:body.scrollWidth>body.clientWidth+1};})()"""
+        window.resize(760, 600)  # type: ignore[attr-defined]  # 최소 크기 = 경계 아래 → 토바 축약
         time.sleep(0.6)
         result["grid_narrow"] = window.evaluate_js(grid_probe)  # type: ignore[attr-defined]
-        window.resize(1440, 900)  # type: ignore[attr-defined]  # 새 기본 크기 = 셸 2판 + 기안 duo
+        window.resize(1440, 900)  # type: ignore[attr-defined]  # 새 기본 크기 = 토바 전개 + 기안 duo
         time.sleep(0.6)
         result["grid_wide"] = window.evaluate_js(grid_probe)  # type: ignore[attr-defined]
         # 다중 시트 확정 게이트(#33) — SheetPicker.choose 를 실 DOM 에서 구동(확정→로드, 취소→중단).
@@ -2662,16 +2655,22 @@ def _selftest_drive(window: "object") -> None:
             " browse_sheet_closed: !!window.__browseSheetClosed,"
             " browse_close_focus: String(window.__browseCloseFocus)})",
         ))
+        # 승계 어포던스 2건(F2 PR-B) — 탐색 착지가 끝난 **뒤에** 돈다(위 프로브 머리말).
+        result["job_inherited"] = window.evaluate_js(  # type: ignore[attr-defined]
+            _JOB_INHERITED_AFFORDANCE_PROBE_JS)
         result["job_mirror"] = window.evaluate_js(_JOB_MIRROR_PROBE_JS)  # type: ignore[attr-defined]
-        window.resize(1180, 820)  # type: ignore[attr-defined]
+        # 협폭 적층 분기는 **창폭이 아니라 세션 패널 폭**(container query 900px)이 판정한다.
+        # 좌 목록이 죽으며(F2 PR-B) 패널이 그만큼 넓어져 같은 창폭에서도 2열이 유지되므로,
+        # 분기를 실제로 밟는 창으로 겨눈다 — 옛 1180 을 그대로 두면 프로브가 계약이 아니라
+        # 옛 레이아웃 산술을 지키게 된다.
+        window.resize(900, 820)  # type: ignore[attr-defined]
         time.sleep(0.4)
         result["job_density_narrow"] = window.evaluate_js(  # type: ignore[attr-defined]
-            "({columns:getComputedStyle(document.getElementById('jobDataGrid')).gridTemplateColumns})"
+            "({columns:getComputedStyle(document.getElementById('jobDataGrid')).gridTemplateColumns,"
+            "panel:Math.round(document.getElementById('jobPanel').getBoundingClientRect().width)})"
         )
         window.resize(1440, 900)  # type: ignore[attr-defined]
         time.sleep(0.4)
-        # 「작업」 좌 목록 그룹·⋮ 관리 메뉴(결정 43) — 그룹 헤더·접힘·메뉴 개폐 실렌더 되읽기.
-        result["job_list_groups"] = window.evaluate_js(_JOB_LIST_GROUP_PROBE_JS)  # type: ignore[attr-defined]
         # 「기안」 좌 목록(#148 슬라이스 2b) — 그룹 구획·⋮ 메뉴·이동 다이얼로그(grouplist.js 3번째 소비) 되읽기.
         result["draft_list"] = window.evaluate_js(_DRAFT_LIST_PROBE_JS)  # type: ignore[attr-defined]
         # 「기안」 휘발 세션 4존(#148 슬라이스 3a) — 공용 팩토리(draftsession.js)의 두 번째
@@ -2732,7 +2731,9 @@ def _selftest_drive(window: "object") -> None:
             "var r=document.createRange();r.selectNodeContents(p);var s=getSelection();s.removeAllRanges();s.addRange(r);"
             "var selected=s.toString();s.removeAllRanges();p.remove();"
             "return {font_scale:root.getAttribute('data-font-scale'),root_px:getComputedStyle(root).fontSize,"
-            "rail_collapsed:app.classList.contains('rail-collapsed'),"
+            # 토바 높이는 라이브러리 2-pane 계산이 소비하는 **구조 치수**라 실측으로 핀한다
+            # (리터럴 드리프트 = 페이지가 조용히 스크롤하는 자리, 지도 §10.9 판정 G).
+            "topbar_h:Math.round(document.querySelector('.topbar').getBoundingClientRect().height),"
             "master_width:parseFloat(getComputedStyle(app).getPropertyValue('--master-width')),"
             "splitters:document.querySelectorAll('.master-splitter').length,"
             "body_overflow:body.scrollWidth>body.clientWidth+1,selected_text:selected};})()"
@@ -2917,7 +2918,6 @@ def main() -> int:
         try:
             personalization = {
                 "font_scale": settings.load_font_scale(),
-                "rail_collapsed": settings.load_rail_collapsed(),
                 "master_width": settings.load_master_width(),
             }
             personalized = window.evaluate_js(  # type: ignore[attr-defined]

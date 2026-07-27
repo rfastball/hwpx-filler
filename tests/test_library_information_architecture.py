@@ -79,13 +79,17 @@ def test_library_row_keeps_favorite_outside_the_select_button() -> None:
     assert 'class="lib-fav" data-fav=' in row
 
 
-def test_empty_job_list_has_a_direct_new_job_cta_without_a_new_surface() -> None:
-    empty = INDEX.split('id="jobListHwpxEmpty"', 1)[1].split("</aside>", 1)[0]
-    assert 'id="jobEmptyNewBtn"' in empty
-    assert 'class="muted job-empty"' in INDEX
-    assert 'class="empty"' not in empty
-    assert '$("jobEmptyNewBtn").addEventListener("click", startNewJob)' in JOB
-    assert "EditorEntry.newDraft()" in JOB
+def test_new_job_entry_is_single_sourced_in_the_library() -> None:
+    """`＋ 새 작업`의 거처는 「문서 작업」 화면 머리 **하나**다(F2 PR-B, 지도 §10.9).
+
+    좌 목록의 구획 ＋ 와 빈 상태 CTA 는 목록과 함께 죽었다 — 진입이 둘이면 폐기 확인과 착지가
+    갈린다(EditorEntry.newDraft 단일 출처 규율). 라이브러리가 빈 목록일 때도 이 버튼은 화면
+    머리에 **상주**하므로 첫 작업 진입이 끊기지 않는다.
+    """
+    assert 'id="libraryNewWork"' in INDEX
+    assert 'id="jobNewBtn"' not in INDEX and 'id="jobEmptyNewBtn"' not in INDEX
+    assert "EditorEntry.newDraft()" in LIB
+    assert "EditorEntry.newDraft" not in JOB
 
 
 def test_management_verbs_read_identity_from_the_unfiltered_detail() -> None:
