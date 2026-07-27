@@ -806,17 +806,20 @@
     box.dataset.level = r.level || "";
     $("jobResultTitle").textContent = r.title || "";
     $("jobResultSummary").textContent = r.summary || "";
-    // 세션이 **다른 작업**으로 옮겨갔는가 — 결과는 그 실행(r.job_name)의 것이다(2R P2).
-    // 이때 결과의 행동 2종은 지금 작업을 겨누므로(편집 진입·실패분 선택) 남의 작업을
-    // 건드리거나 확실한 무동작이 된다. 그래서 **행동만 걷고 증거는 남긴다**.
-    const foreign = !!(r.job_name && LAST && LAST.job_name && r.job_name !== LAST.job_name);
-    // 강등 표기 — 무엇이 달라졌는지까지는 말하지 않는다(추측 금지). 다만 작업이 바뀐
-    // 경우엔 **어느 작업의 결과인지**를 밝힌다: 행동이 걷힌 이유가 거기 있다.
+    // 이 결과가 **지금 열린 작업의 것인가** — 판정에 드는 두 값(직전 런의 주체·열린 작업)은
+    // 둘 다 Python 이 낸 스냅샷 값이다(3R P2 근본 조치). 표면이 정체를 들고 비교하면 그
+    // 정체가 변할 때(이름 변경) 같은 작업이 남처럼 보인다. 주체가 아니면 결과의 행동 2종은
+    // 남의 작업을 겨누거나 확실한 무동작이 되므로 **행동만 걷고 증거는 남긴다**.
+    const owner = (LAST && LAST.last_run_job) || "";
+    const mine = !!(owner && LAST.job_name && owner === LAST.job_name);
+    const foreign = !mine;
+    // 강등 표기 — 무엇이 달라졌는지까지는 말하지 않는다(추측 금지). 다만 다른 작업이 열려
+    // 있으면 **어느 작업의 결과인지**를 밝힌다: 행동이 걷힌 이유가 거기 있다.
     const stale = $("jobResultStale");
     stale.hidden = !r.stale;
     stale.textContent = !r.stale ? ""
-      : foreign
-        ? `이 결과는 '${r.job_name}' 실행입니다. 지금은 다른 작업이 열려 있어 여기서 이어서 손볼 수 없습니다.`
+      : foreign && owner
+        ? `이 결과는 '${owner}' 실행입니다. 지금은 그 작업이 열려 있지 않아 여기서 이어서 손볼 수 없습니다.`
         : "이 결과는 직전 실행입니다. 그 뒤 작업·데이터·선택이 바뀌었습니다.";
 
     const dir = $("jobResultDir");
@@ -1232,7 +1235,7 @@
       // 방어적 재확인(2R P2) — 이 버튼은 결과의 작업이 곧 열린 작업일 때만 뜨지만,
       // 렌더 사이의 전환 경합이 있으면 열린 작업을 겨눠 **남의 작업을 편집**하게 된다.
       // 겨눔 대상은 언제나 그 결과를 만든 작업이고, 어긋나면 열지 않고 사실을 말한다.
-      const owner = (RESULT && RESULT.job_name) || LAST.job_name;
+      const owner = LAST.last_run_job || LAST.job_name;
       if (owner !== LAST.job_name) {
         log(`이 결과는 '${owner}' 실행입니다. 지금 열린 작업이 달라 파일 이름 규칙을 열지 않았습니다.`);
         return;

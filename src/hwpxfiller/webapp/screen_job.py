@@ -181,6 +181,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 소재. **Python 이 소유**한다: 웹이 들고 있다 되돌려주면 그 사이의 데이터 교체·
         # 표시순서 변경이 남의 행을 고른다. 수명 = 이 데이터·이 작업(둘 중 하나가 바뀌면 비운다).
         self._last_failed: "list[int]" = []
+        # 직전 런의 **주체**(3R P2 근본 조치) — 결과는 그 실행의 것이고 세션은 그 뒤로도
+        # 움직인다. 그 정체를 결과 payload(한 번 찍고 안 변하는 값)에 넣으면 **정체의
+        # 변화**(이름 변경)를 따라가지 못해 같은 작업이 남처럼 보인다. 그래서 주체 추적은
+        # 세션 상태의 일이고, 표면은 이 값과 `job_name` — **둘 다 Python 이 낸 값** — 만
+        # 비교한다. 작업 전환에도 남는다: 남아 있어야 "지금 열린 작업이 그 런의 작업과
+        # 다르다"를 말할 수 있다.
+        self._last_run_job = ""
         # 직전 필터 슬롯(결정 28) — 정의 가진 세션이 죽을 때 덮어쓰는 1칸 세션 메모리
         # (앱 수명·미저장 — 필터 영속 뒷문 금지). 소스 일치 게이트용 키와 쌍.
         self._last_filter: "dict | None" = None  # {"source_key": str, "state": dict}
@@ -541,6 +548,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         jobs = [j for j in self.registry.list_jobs() if j.media != "txt"]
         base = {
             "job_name": self.job_name,
+            # 직전 런의 주체(3R P2) — 결과 구획의 행동이 "이 결과가 지금 열린 작업의
+            # 것인가"를 물을 때 쓰는 값. 판정에 드는 두 값이 같은 출처(이 스냅샷)에서 온다.
+            "last_run_job": self._last_run_job,
             "has_job": self.vm is not None,
             # 세션 가드 무장 상태(결정 26·27) — 표면 참고용(진실은 guard_state 실시간 질의;
             # 렌더 판은 _filter_sections 가 같은 뷰로 산출해 아래 update 가 덮는다).
@@ -969,11 +979,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self.registry.rename(name, new)
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}
+        new_clean = new.strip()
         if self.job_name == name:
-            new_clean = new.strip()
             self.job_name = new_clean
             if self.vm is not None:
                 self.vm.job.name = new_clean
+        # 직전 런의 주체도 **같은 전이에서** 추종한다(3R P2) — 안 따라가면 같은 작업의
+        # 결과가 남의 것으로 판정돼 복구 행동이 사라지고 강등 문구가 거짓말을 한다.
+        if self._last_run_job == name:
+            self._last_run_job = new_clean
         return {"ok": True}
 
     def session_guard_for(self, name: str) -> "dict | None":
@@ -1190,9 +1204,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return {"ok": False, "error": "이미 문서를 생성하고 있습니다.", "level": "warn"}
         self._cancel_generation.clear()
         try:
-            return self._generate_locked(confirm_overwrite=confirm_overwrite)
+            result = self._generate_locked(confirm_overwrite=confirm_overwrite)
         finally:
             self._generation_lock.release()
+        # 런이 남긴 세션 변화(직전 런 주체·완주 스탬프)를 표면에 흘린다(3R P2) — `generate`
+        # 는 dispatch 밖이라 자동 push 가 없어, 표면은 **런 이전 스냅샷**으로 결과 행동을
+        # 판정하고 있었다. 덮어쓰기 확인 왕복(`needs_overwrite`)에는 밀지 않는다: 모달이
+        # 열린 동안의 재렌더는 dispatch 의 무변이 push 생략과 같은 이유로 낭비다.
+        if result.get("ok"):
+            self._push()
+        return result
 
     def _generate_locked(self, *, confirm_overwrite: bool = False) -> dict:
         """단일 생성 실행의 본체. ``generate``가 재진입 잠금과 취소 토큰을 소유한다."""
@@ -1200,6 +1221,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 생성 중 작업 전환이 self.vm 을 갈아끼우면 검증·계획이 남의 작업으로 새고,
         # 완주 뒤 현재 상태를 읽으면 남의 작업에 역사를 적는다(_stamp_last_run 동류).
         run_job_name, run_vm = self.job_name, self.vm
+        self._last_run_job = run_job_name   # 결과 행동의 주체(3R P2) — 세션 상태가 소유
         indices = self._indices()
         out_dir = self.out_dir
 
@@ -1259,7 +1281,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self._last_failed = list(indices)
             return self._failed_result(
                 indices, plan.out_dir, str(exc) or exc.__class__.__name__,
-                job_name=run_job_name,
             )
         cancelled = bool(getattr(batch, "cancelled", False))
         attempted = int(getattr(batch, "attempted", len(batch.results)))
@@ -1316,11 +1337,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         return {
             "ok": True,
             "status": status,
-            # 결과는 **그 실행의 것**이라 그 실행의 주체도 함께 진다(2R P2). 세션이 다른
-            # 작업으로 옮겨간 뒤에도 결과는 강등된 채 남으므로(판정 G), 주체를 안 실으면
-            # 표면의 행동(파일 이름 규칙 수정)이 지금 작업을 겨눠 **남의 작업을 편집**한다.
-            # 런의 주체를 시작 시점에 붙드는 규율(#302 P1)의 표면 쪽 짝이다.
-            "job_name": run_job_name,
             "title": _run_title(status, cancelled, batch.succeeded, failed_n),
             # 실패 단계·받은 메시지는 배치 진입 전 실패(_failed_result)의 자리다 —
             # 레코드 단위 실패는 각 행이 자기 사유를 진다. 모양은 한 벌로 유지한다.
@@ -1379,9 +1395,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             })
         return rows
 
-    def _failed_result(
-        self, indices: "list[int]", out_dir: str, message: str, *, job_name: str = "",
-    ) -> dict:
+    def _failed_result(self, indices: "list[int]", out_dir: str, message: str) -> dict:
         """배치 진입 전 실패 → ``failed`` 태 결과(§10.10 판정 C).
 
         계약 §10.3 이 요구하는 것을 그대로 싣는다: **실패 단계·영향 레코드·받은 메시지**
@@ -1399,7 +1413,6 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         return {
             "ok": True,
             "status": "failed",
-            "job_name": job_name,   # 결과의 주체(2R P2) — 완주 경로와 같은 모양
             "title": _run_title("failed", False, 0, n),
             "summary": f"문서를 만들지 못했습니다. 대상 {n}건이 모두 생성되지 않았습니다.",
             "level": "danger",

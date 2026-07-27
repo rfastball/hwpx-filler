@@ -361,6 +361,9 @@ class TestWebSelftestGate:
         # ④ 지문 변화 = 강등(파기 아님) — 실패분을 고르는 순간 결과가 사라지면 안 된다.
         assert j["stale_shown"] and j["alive_after_stale"], j
         # ⑤ 구획 행동은 생성 중 잠긴다(계약면 2) · ⑥ 닫기 뒤 포커스가 다음 행동에 착지.
+        # 이름만 바뀐 경우는 **같은 작업**이라 행동이 그대로 남는다(3R P2) — 주체 추적이
+        # 정체 변화를 따라오는지 실 렌더로 본다.
+        assert j["renamed_rename_shown"] and j["renamed_failedsel_shown"], j
         # 작업 전환 뒤에는 결과가 남되 **행동만 걷힌다**(2R P2) — 편집 진입이 남의 작업을
         # 겨누거나 실패분 선택이 확실한 무동작이 되는 것을 표면에서 끊는다. 증거는 남는다.
         assert j["foreign_rename_hidden"] and j["foreign_failedsel_hidden"], j

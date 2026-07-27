@@ -2296,11 +2296,21 @@ def test_failed_job_switch_keeps_the_recovery_target(tmp_path, monkeypatch):
     assert ctrl.dispatch("select_failed", {})["selected"] == 0
 
 
-def test_result_carries_the_job_that_produced_it(tmp_path, monkeypatch):
-    """결과는 그 실행의 것이다 — 주체를 함께 실어야 표면 행동이 남의 작업을 겨누지 않는다(2R P2)."""
+def test_run_owner_lives_in_session_state_and_follows_renames(tmp_path, monkeypatch):
+    """직전 런의 주체는 **세션 상태**가 소유하고 정체 변화를 따라간다(3R P2 근본 조치).
+
+    결과 payload(한 번 찍고 안 변하는 값)에 주체를 넣으면 이름 변경을 못 따라가 같은
+    작업이 남처럼 보인다 — 표면이 쓰는 두 값을 같은 출처(스냅샷)에서 낸다.
+    """
     ctrl, _ = _result_session(tmp_path)
-    res = _run_with(monkeypatch, ctrl, _fake_batch([True, False]))
-    assert res["job_name"] == "공고서"
+    _run_with(monkeypatch, ctrl, _fake_batch([True, False]))
+    snap = ctrl.snapshot()
+    assert snap["last_run_job"] == snap["job_name"] == "공고서"   # 그 런의 작업이 열려 있다
+
+    ctrl.dispatch("rename_job", {"name": "공고서", "new": "공고서(수정)"})
+    snap = ctrl.snapshot()
+    assert snap["last_run_job"] == snap["job_name"] == "공고서(수정)"  # 같은 전이에서 추종
+    assert ctrl.dispatch("select_failed", {})["selected"] == 1        # 복구 대상도 유효
 
     import hwpxfiller.webapp.screen_job as sj
 
@@ -2308,7 +2318,22 @@ def test_result_carries_the_job_that_produced_it(tmp_path, monkeypatch):
         raise OSError("[WinError 5] 액세스가 거부되었습니다")
 
     monkeypatch.setattr(sj, "generate_batch", _boom)
-    assert ctrl.generate()["job_name"] == "공고서"        # 실패 경로도 같은 모양
+    ctrl.generate()
+    assert ctrl.snapshot()["last_run_job"] == "공고서(수정)"          # 실패 경로도 같은 모양
+
+    ctrl.registry.save(Job(name="둘째"))
+    ctrl.dispatch("select_job", {"name": "둘째", "confirm": True})
+    snap = ctrl.snapshot()
+    assert snap["last_run_job"] == "공고서(수정)" != snap["job_name"]  # 남의 세계임을 말한다
+
+
+def test_run_pushes_a_snapshot_so_the_surface_can_judge(tmp_path, monkeypatch):
+    """`generate` 는 dispatch 밖이라 자동 push 가 없다 — 런이 바꾼 값을 표면이 못 본다(3R P2)."""
+    ctrl, pushes = _result_session(tmp_path)
+    before = len(pushes)
+    _run_with(monkeypatch, ctrl, _fake_batch([True, False]))
+    assert len(pushes) > before
+    assert pushes[-1][1]["last_run_job"] == "공고서"
 
 
 def test_cancelled_run_stays_a_partial_state(tmp_path, monkeypatch):

@@ -1492,7 +1492,7 @@ _JOB_RESULT_PROBE_JS = r"""
     window.Nav.go('job');
     // 이 프로브의 세션 = 작업 '공고서' — 결과의 주체와 같은 값에서 출발한다(2R P2 비교군).
     window.__jobResultSnap = {
-      job_name:'공고서', has_job:true, out_dir:'D:\\out', data_label:'d.csv',
+      job_name:'공고서', last_run_job:'공고서', has_job:true, out_dir:'D:\\out', data_label:'d.csv',
       data_source_label:'파일: d.csv', data_notice:null,
       template_name:'t.hwpx', template_path:'D:\\t.hwpx', filename_pattern:'doc-{{seq:001}}',
       template_missing:false, has_data:true, record_count:1, selected_count:1,
@@ -1509,7 +1509,6 @@ _JOB_RESULT_PROBE_JS = r"""
     var partial = {
       ok:true, status:'partiallyCompleted', title:'2개 성공 · 1개 실패',
       summary:'완료. 성공 2/3, 실패 1.', level:'danger', stage:'', message:'', known:true,
-      job_name:'공고서',
       out_dir:'D:\\out', succeeded:2, failed:1, failed_selectable:1, total:3,
       failures:[{index:7, identity:'사무비품', filename:'doc-003.hwpx',
                  reason:'설명 없는 오류', known:false}],
@@ -1554,6 +1553,15 @@ _JOB_RESULT_PROBE_JS = r"""
     // 세션이 **다른 작업**으로 옮겨가면 결과는 남되 행동만 걷힌다(2R P2) — 편집 진입이
     // 남의 작업을 겨누고 실패분 선택은 확실한 무동작이 되기 때문. 증거(제목·요약·실패 행)는
     // 그대로 남고, 강등 문구가 어느 작업의 결과인지 밝힌다.
+    // ① 이름 변경(3R P2) — 같은 작업인데 정체 표기만 바뀐 경우. 주체가 그 전이를 따라오므로
+    //    행동이 그대로 남아야 한다(여기서 걷히면 사용자는 제 결과를 이어서 못 손댄다).
+    var snapR = JSON.parse(JSON.stringify(window.__jobResultSnap));
+    snapR.job_name = '공고서(수정)'; snapR.last_run_job = '공고서(수정)';
+    window.__push('job', snapR);
+    window.JobScreen.markResultStale();
+    out.renamed_rename_shown = !document.getElementById('jobResultRename').hidden;
+    out.renamed_failedsel_shown = !document.getElementById('jobResultFailedSel').hidden;
+    // ② 다른 작업으로 전환 — 주체가 다르므로 행동만 걷힌다.
     var snapB = JSON.parse(JSON.stringify(window.__jobResultSnap));
     snapB.job_name = '둘째';
     window.__push('job', snapB);
