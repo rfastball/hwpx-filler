@@ -884,6 +884,19 @@ def test_job_range_draft_surface_contract():
         "초안 생성 **뒤에** 면을 여는 순서가 아닙니다(성사 뒤에만 닫고 연다)."
     )
     assert 'Bridge.call(SCREEN, "range_draft_cancel"' in src, "닫힘 경로가 초안을 버리지 않습니다."
+    # 취소도 **성사 뒤에 닫는다**(리뷰 1R): 먼저 닫으면 느린 브리지에서 메인이 초안 기준
+    # 행을 그리고, 발신이 거절되면 Python 초안만 고아로 남는다.
+    discard = src.split("async function discardAndClose", 1)[1].split("\n  }", 1)[0]
+    assert discard.index("await Bridge.call") < discard.index("SurfaceSheet.close"), (
+        "취소가 폐기 성사 전에 면을 닫습니다."
+    )
+    # 결과 강등 판정은 표의 선택 표지가 아니라 Python 이 낸 커밋 지문을 쓴다(리뷰 1R P1).
+    key = src.split("function sessionKey", 1)[1].split("\n  }", 1)[0]
+    assert "selection_key" in key and ".selected" not in key, (
+        "세션 지문이 표의 선택 표지에서 파생됩니다 — 초안이 결과를 강등시킵니다."
+    )
+    # 축 왕복은 직렬화한다(리뷰 1R P2) — 동시 발신은 도착 순서를 보장하지 않는다.
+    assert 'Intent.chained("job:view_order"' in src, "표시순서 왕복이 직렬화되지 않았습니다."
     sheet = (WEB_JS_DIR / "surface_sheet.js").read_text(encoding="utf-8")
     assert "beforeClose" in sheet, "펼침 면이 이탈 가드를 Modal 로 넘기지 않습니다."
 

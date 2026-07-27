@@ -2317,14 +2317,22 @@ _DATA_SHEET_PROBE_SETUP_JS = r"""
         // footer 는 면 안에서만 선다 — 화면 안에서 숨긴 것과 같은 CSS 규칙의 반대 분기.
         out.foot_shown_in_sheet =
           getComputedStyle(document.getElementById('jobRangeFoot')).display !== 'none';
+        // 닫기는 **비동기**다(리뷰 1R: 초안 폐기 성사 뒤에 닫는다) — 클릭 직후를 재면 아직
+        // 안 끝난 복귀를 실패로 읽는다. 퇴장 전이를 정착시키며 복귀를 폴링한다.
         document.getElementById('dataSheetClose').click();
-        settle('dataSheet');
-        setTimeout(() => {
-          out.restored = nodes.every((el, i) => el.parentNode === parents[i]) &&
-            document.activeElement === trigger;
-          restoreCall();
-          out.pending = false;
-        }, 0);
+        let tries = 0;
+        const finish = () => {
+          try { settle('dataSheet'); } catch (e2) { /* 카드 부재 = 이미 정착 */ }
+          const done = nodes.every((el, i) => el.parentNode === parents[i]);
+          if (done || tries++ > 40) {
+            out.restored = done && document.activeElement === trigger;
+            restoreCall();
+            out.pending = false;
+            return;
+          }
+          setTimeout(finish, 50);
+        };
+        setTimeout(finish, 50);
       } catch (e) {
         out.error = 'throw:' + (e && e.message);
         // 실패해도 면은 **반드시** 닫는다: 열린 채 남기면 뒤 프로브의 포커스·모달 스택이

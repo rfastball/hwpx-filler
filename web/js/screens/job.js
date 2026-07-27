@@ -129,8 +129,11 @@
      놓친다). 작업 미선택이면 빈 문자열 = 세션 없음. */
   function sessionKey(s) {
     if (!s.has_job) return "";
-    const sel = (s.records || []).filter((r) => r.selected).map((r) => r.index).join(",");
-    return [s.job_name, s.data_source_label, s.out_dir, sel].join("|");
+    // 선택 성분은 **Python 이 낸 커밋 지문**(`selection_key`)이다 — 표에서 세지 않는다.
+    // 표의 `selected` 는 범위 편집기가 열려 있으면 **초안** 표지라(F3 판정 D), 그걸로 지문을
+    // 만들면 적용도 안 한 편집이 직전 실행 결과를 「직전 실행」으로 강등시키고 취소해도
+    // 되돌아오지 않는다(리뷰 1R). 정합에 드는 값은 판정 주체가 낸다(F4 3R 근본 조치와 같은 형태).
+    return [s.job_name, s.data_source_label, s.out_dir, s.selection_key || ""].join("|");
   }
 
   /* ---- 패널 두 모드(결정 39·40) ---- */
@@ -138,8 +141,12 @@
     const edit = MODE === "edit";
     if (edit || !hasJob) {
       // 펼침 면의 실 DOM이 overlay 슬롯에 남은 채 편집 호스트를 여는 교차 모드 상태를 막는다.
+      // 이 닫기는 **양보하지 않는다** — 이탈 가드가 소비하면 그 교차 상태가 그대로 남는다.
+      // 대신 초안은 여기서 놓아 주고(백스톱이 발신) 가드에 통과권을 준다.
+      rangeForceClose = true;
       window.SurfaceSheet.closeAndRestore("jobConfirmSheet");
       window.SurfaceSheet.closeAndRestore("dataSheet");
+      rangeForceClose = false;
     }
     // 데이터-우선: 세션 4존·액션바는 실행 모드면 상시 — 작업 미선택에도 데이터 존이
     // 진입점이다(§18.2). 구 미선택 빈 패널은 은퇴(안내는 prework 게이트 문안이 승계).
@@ -274,7 +281,12 @@
 
   function renderOrderBar(s) {
     const sel = $("jobOrderSel");
-    const want = pendingOrder !== null ? pendingOrder : (s.view_order || "sourceDesc");
+    // 축의 값은 **존 대상**을 따른다(F3 판정 D): 초안이 열려 있으면 초안의 축이다. 커밋 값만
+    // 그리면 편집기에서 순서를 바꾼 뒤 아무 재렌더(행 토글 등)에나 선택기가 옛 값으로
+    // 되돌아가 표(초안 순서)와 선택기가 서로 다른 말을 한다.
+    const d = s.range_draft;
+    const committed = (d && d.open ? d.view_order : s.view_order) || "sourceDesc";
+    const want = pendingOrder !== null ? pendingOrder : committed;
     if (sel.value !== want) sel.value = want;
     $("jobOrderNote").textContent = s.order_note || "";
   }
@@ -283,7 +295,12 @@
     const value = e.target.value;
     pendingOrder = value;
     try {
-      await Bridge.call(SCREEN, "set_view_order", { value });
+      // **직렬화**(리뷰 1R): 동시 발신은 도착 순서를 보장하지 않는다 — pywebview 는 호출마다
+      // 별도 스레드라, 빠르게 두 번 고르면 **먼저 고른 값이 나중에 커밋**돼 생성 순서와
+      // 순번 파일 이름이 마지막 선택과 반대로 정해질 수 있다. 표시만 지키는 `pendingOrder`
+      // 로는 못 막는다(그건 화면의 값, 이건 쓰기의 순서). 기제는 intent.js 가 이미 소유한다.
+      await window.Intent.chained("job:view_order", () =>
+        Bridge.call(SCREEN, "set_view_order", { value }));
     } finally {
       // 내 왕복이 마지막일 때만 의도를 놓는다 — 뒤에 더 고른 값이 있으면 그 값이 소유자다.
       if (pendingOrder === value) pendingOrder = null;
@@ -615,7 +632,8 @@
   function guardRangeClose() {
     if (rangeForceClose) { rangeForceClose = false; return true; }
     const d = draftState();
-    if (!d || !d.open || !d.dirty) return true;
+    if (!d || !d.open) return true;          // 초안 없는 면 = 평범한 닫기
+    if (!d.dirty) { discardAndClose(); return false; }
     window.Modal.confirm({
       title: "편집한 범위를 버릴까요?",
       body: "적용하지 않은 변경이 있습니다. 버리면 문서 만들기 화면의 범위는 그대로 남습니다.",
@@ -624,11 +642,23 @@
       danger: true,
       returnFocus: $("jobRangeCancel"),
     }).then((ok) => {
-      if (!ok) return;                       // 계속 편집 = 면 유지(아무 일도 안 일어난다)
-      rangeForceClose = true;
-      window.SurfaceSheet.close("dataSheet");
+      if (ok) discardAndClose();             // 아니면 면 유지(아무 일도 안 일어난다)
     });
-    return false;                            // 이 닫기 요청은 소비 — 확인 뒤 다시 온다
+    return false;                            // 이 닫기 요청은 소비 — 폐기 성사 뒤 다시 닫는다
+  }
+
+  /* 취소도 **성사 뒤에 닫는다**(적용과 같은 순서, 리뷰 1R): 먼저 닫으면 느린 브리지에서
+     메인 화면이 잠시 초안 기준 행을 그리고 생성이 잠긴 채로 남으며, 발신이 거절되면 면은
+     닫혔는데 Python 초안만 살아남는다(고아). 실패하면 면을 유지하고 사유를 남긴다. */
+  async function discardAndClose() {
+    try {
+      await Bridge.call(SCREEN, "range_draft_cancel", {});
+    } catch (err) {
+      log("범위 편집을 취소하지 못했습니다: " + String((err && err.message) || err));
+      return;
+    }
+    rangeForceClose = true;
+    window.SurfaceSheet.close("dataSheet");
   }
 
   async function applyRangeDraft() {
@@ -658,8 +688,10 @@
         initialFocus: $("dataSheetClose"),
         beforeClose: guardRangeClose,
         onClose: () => {
-          // 어떤 경로로 닫혀도 초안은 정리된다(적용 경로만 예외 — 이미 커밋됐다).
-          if (!rangeApplied) Bridge.call(SCREEN, "range_draft_cancel", {});
+          // 백스톱: 정상 경로(적용·폐기)는 닫기 **전에** 이미 정리했다. 가드를 우회해 닫히는
+          // 경로(모드 전환의 강제 닫기 등)만 여기서 잡아 고아 초안을 남기지 않는다.
+          const d = draftState();
+          if (!rangeApplied && d && d.open) Bridge.call(SCREEN, "range_draft_cancel", {});
         },
         moves: [
           { id: "jobRecsHead", slotId: "dataSheetSlot" },

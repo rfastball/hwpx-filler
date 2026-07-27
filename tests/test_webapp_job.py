@@ -2619,3 +2619,30 @@ def test_draft_does_not_leak_into_the_session_guard_or_filter_slot(tmp_path):
     assert guard["armed"] is False and guard["sel_count"] == 3
     assert guard["filter_active"] is False, "초안 필터가 세션 가드로 샜습니다."
     assert ctrl._filter_desc == "", "초안 정의가 직전 필터 슬롯 소재로 샜습니다."
+
+
+def test_selection_key_is_committed_only_so_a_draft_cannot_stale_a_result(tmp_path):
+    """리뷰 1R P1 — 완료 결과의 세션 판정은 **커밋된** 실행 입력의 지문만 본다.
+
+    표는 초안을 그리므로(판정 D) 표의 선택 표지로 지문을 만들면 적용도 안 한 편집이 결과를
+    「직전 실행」으로 강등시키고, 취소해도 되돌아오지 않는다.
+    """
+    ctrl, _ = _draft_session(tmp_path)
+    before = ctrl.snapshot()["selection_key"]
+    ctrl.dispatch("range_draft_open", {})
+    ctrl.dispatch("set_none", {})
+    snap = ctrl.snapshot()
+    assert snap["selection_key"] == before, "초안 편집이 세션 지문을 움직였습니다."
+    assert [r["index"] for r in snap["records"] if r["selected"]] == [], (
+        "표는 초안을 그려야 합니다(경계표 1행) — 지문만 커밋이다."
+    )
+    ctrl.dispatch("range_draft_cancel", {})
+    assert ctrl.snapshot()["selection_key"] == before
+
+
+def test_selection_key_follows_the_display_axis(tmp_path):
+    """표시순서가 바뀌면 같은 선택도 다른 실행 입력이다(파일 이름이 실제로 달라진다)."""
+    ctrl, _ = _draft_session(tmp_path)
+    desc = ctrl.snapshot()["selection_key"]
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
+    assert ctrl.snapshot()["selection_key"] != desc

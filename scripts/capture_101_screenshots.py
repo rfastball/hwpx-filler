@@ -346,6 +346,21 @@ def _drive(d: Driver) -> None:
         "표시순서 전환 반영",
     )
     d.shot("range-editor")
+    # 재렌더가 축 선택기를 커밋 값으로 되돌리지 않는지 — 행 하나를 껐다 켜서 **실 왕복**을
+    # 만든다(초안의 축을 표는 따르는데 선택기만 옛 값으로 돌아가면 둘이 다른 말을 한다).
+    # 판정 수치(footer 「선택 적용: N건」)가 바뀐 것을 먼저 확인해 **push 가 도착한 뒤**를
+    # 재는 것이 요점이다 — 클릭 직후를 재면 아직 안 온 재렌더를 통과로 읽는다.
+    d.click_sel('#jobTableBody tr[data-i="0"] input[type="checkbox"]')
+    d.wait(
+        "document.getElementById('jobRangeApply').textContent.includes('2건')"
+        " && document.getElementById('jobOrderSel').value === 'sourceAsc'",
+        "재렌더 뒤에도 초안 축 유지",
+    )
+    d.click_sel('#jobTableBody tr[data-i="0"] input[type="checkbox"]')
+    d.wait(
+        "document.getElementById('jobRangeApply').textContent.includes('3건')",
+        "초안 선택 복원",
+    )
     d.click_sel("#jobRangeCancel")
     # 변경이 있으므로 이탈 가드가 끼어든다(적용하지 않은 편집을 조용히 버리지 않는다).
     d.wait("!!window.__cap.btn(null,'버리고 닫기')", "이탈 가드")
