@@ -1246,7 +1246,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
         목록이 비었으면(수명 경계를 지났거나 실패 없던 런) ``0`` 을 돌려 표면이 무동작을
         정직하게 말한다 — 아무 반응 없는 버튼은 결함으로 읽힌다(``_do_set_all`` 선례).
+
+        범위 초안이 열려 있으면 **거절**한다(F3): 이 동사는 존 액션이 아니라 **커밋된 선택을
+        직접 교체**하는 결과 구획의 행동이라, 초안 아래에서 커밋을 갈면 사용자가 보고 있는
+        범위와 적용 대상이 조용히 갈린다. 표면상 모달에 가려 닿지 않지만 잠금은 상태가 진다.
         """
+        if self.range_draft is not None:
+            raise ValueError("범위 편집기를 닫은 뒤에 실패분을 선택할 수 있습니다.")
         idx = [i for i in self._last_failed if 0 <= i < len(self.records)]
         if not idx:
             return {"selected": 0}

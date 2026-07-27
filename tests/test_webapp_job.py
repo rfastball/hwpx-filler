@@ -2646,3 +2646,14 @@ def test_selection_key_follows_the_display_axis(tmp_path):
     desc = ctrl.snapshot()["selection_key"]
     ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
     assert ctrl.snapshot()["selection_key"] != desc
+
+
+def test_failed_selection_is_refused_while_a_draft_is_open(tmp_path):
+    """결과 구획의 선택 교체는 **커밋** 대상 동사라 초안 아래에서 돌지 않는다(F3)."""
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl._last_failed = [0]
+    ctrl.dispatch("range_draft_open", {})
+    with pytest.raises(ValueError, match="범위 편집기"):
+        ctrl.dispatch("select_failed", {})
+    ctrl.dispatch("range_draft_cancel", {})
+    assert ctrl.dispatch("select_failed", {}) == {"selected": 1}
