@@ -2115,3 +2115,143 @@ def test_prefer_work_rejects_unknown_names_loudly(tmp_path):
         ctrl.dispatch("prefer_work", {"name": "없는작업"})
     with pytest.raises(ValueError, match="비어 있습니다"):
         ctrl.dispatch("prefer_work", {"name": "  "})
+
+
+# ---------------------------------------- 결과 3태 + 부분 실패 표면(F4, 지도 §10.10)
+def _fake_batch(oks, *, errors=(), cancelled=False, total=None):
+    """``oks`` 순서대로 성공/실패인 배치 대역 — ``errors`` 는 실패분 사유(순서대로)."""
+    errs = list(errors)
+
+    class _R:
+        def __init__(self, ok, name):
+            self.ok, self.output_path, self.notes = ok, name, []
+            self.error = "" if ok else (errs.pop(0) if errs else "boom")
+
+    results = [_R(ok, f"doc-{i:03}.hwpx") for i, ok in enumerate(oks, 1)]
+
+    class _B:
+        pass
+
+    b = _B()
+    b.results = results
+    b.succeeded = sum(1 for r in results if r.ok)
+    b.total = len(oks) if total is None else total
+    b.failed = b.total - b.succeeded
+    b.cancelled = cancelled
+    b.attempted = len(results)
+    return b
+
+
+def _run_with(monkeypatch, ctrl, batch):
+    import hwpxfiller.webapp.screen_job as sj
+    monkeypatch.setattr(sj, "generate_batch", lambda *a, **k: batch)
+    return ctrl.generate()
+
+
+def _result_session(tmp_path):
+    """빈 값 게이트를 태우지 않는 3행 세션 — 결과 3태 계약은 게이트 통과 이후가 무대다."""
+    ctrl, pushes = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv3(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    return ctrl, pushes
+
+
+def test_result_three_states_are_python_judged(tmp_path, monkeypatch):
+    """3태는 성공/전체의 함수다(§10.10 판정 A) — 불변식 §13-10(일부 성공≠전체 성공)."""
+    from hwpxfiller.webapp.screen_job import _run_status, _run_title
+
+    assert _run_status(2, 2) == "completed"
+    assert _run_status(1, 2) == "partiallyCompleted"
+    assert _run_status(0, 2) == "failed"
+    # 취소는 네 번째 태가 아니라 부분의 변종 — 태는 그대로, 제목이 중단을 먼저 말한다.
+    assert _run_title("partiallyCompleted", True, 1, 0).startswith("생성을 중단했습니다")
+    assert "1개 성공" in _run_title("partiallyCompleted", False, 1, 1)
+
+
+def test_partial_run_reports_partial_state_and_failed_rows(tmp_path, monkeypatch):
+    """부분 실패 = `partiallyCompleted` + 실패 행 구조화(§10.10 판정 E)."""
+    ctrl, _ = _result_session(tmp_path)
+    res = _run_with(monkeypatch, ctrl, _fake_batch(
+        [True, False], errors=["[WinError 32] 다른 프로세스가 파일을 사용 중"],
+    ))
+    assert res["status"] == "partiallyCompleted"
+    assert res["title"] == "1개 성공 · 1개 실패"
+    row = res["failures"][0]
+    assert row["filename"] == "doc-002.hwpx"
+    assert row["index"] in {0, 1}                 # 원본 index(선택 재사용의 입력)
+    assert row["identity"]                        # 식별 요약 = 표 「문서」 열과 같은 판정
+    assert row["known"] is True                   # 아는 원인 — 미연결 표지 금지
+    assert "원문:" in row["reason"]                # 증거 무손실
+
+
+def test_unknown_cause_keeps_the_undiagnosed_boundary(tmp_path, monkeypatch):
+    """모르는 원인은 아는 척하지 않는다 — 계약 §10.3 「원인 진단 미연결」(판정 B)."""
+    from hwpxfiller.gui.result_errors import classify_result_error
+
+    assert classify_result_error("[WinError 5] 액세스가 거부되었습니다")[1] is True
+    text, known = classify_result_error("알 수 없는 무엇")
+    assert known is False and text == "알 수 없는 무엇"   # 원문 관통(조용한 재작성 금지)
+
+    ctrl, _ = _result_session(tmp_path)
+    res = _run_with(monkeypatch, ctrl, _fake_batch([False], errors=["설명 없는 오류"]))
+    assert res["status"] == "failed"
+    assert res["failures"][0]["known"] is False
+
+
+def test_batch_exception_lands_in_the_result_zone(tmp_path, monkeypatch):
+    """배치가 시작조차 못 한 실패도 결과 구획에 선다(§10.10 판정 C) — 백스톱으로 새지 않는다."""
+    import hwpxfiller.webapp.screen_job as sj
+
+    def _boom(*a, **k):
+        raise ValueError("템플릿 구조가 확정 매핑과 달라 생성을 차단했습니다 — 필드 없음")
+
+    monkeypatch.setattr(sj, "generate_batch", _boom)
+    ctrl, _ = _result_session(tmp_path)
+    res = ctrl.generate()
+    assert res["ok"] is True and res["status"] == "failed"   # 거절이 아니라 실패
+    assert res["stage"] == "생성 시작 전"                     # 실패 단계(계약 §10.3)
+    assert "템플릿 구조" in res["message"]                    # 받은 메시지 원문
+    assert res["succeeded"] == 0 and res["failed"] == res["total"] > 0
+
+
+def test_select_failed_replaces_selection_and_does_not_generate(tmp_path, monkeypatch):
+    """「실패한 N건만 선택」 = 선택 교체뿐(§10.10 판정 F) — 2클릭 분리."""
+    ctrl, _ = _result_session(tmp_path)
+    res = _run_with(monkeypatch, ctrl, _fake_batch([True, False]))
+    failed_index = res["failures"][0]["index"]
+    calls: list = []
+    import hwpxfiller.webapp.screen_job as sj
+    monkeypatch.setattr(sj, "generate_batch", lambda *a, **k: calls.append(1))
+
+    out = ctrl.dispatch("select_failed", {})
+    assert out == {"selected": 1}
+    assert calls == []                                        # 생성은 하지 않는다
+    snap = ctrl.snapshot()
+    assert snap["selected_count"] == 1
+    assert [r["index"] for r in snap["records"] if r["selected"]] == [failed_index]
+
+
+def test_failed_indices_die_with_their_data_and_work(tmp_path, monkeypatch):
+    """실패 index 는 이 레코드 집합·이 작업에서만 뜻이 있다 — 경계를 지나면 무동작이 정직하다."""
+    ctrl, _ = _result_session(tmp_path)
+    _run_with(monkeypatch, ctrl, _fake_batch([True, False]))
+    assert ctrl.dispatch("select_failed", {})["selected"] == 1
+    other = tmp_path / "other.csv"
+    other.write_text("bidNtceNm,presmptPrce\n다른행,1\n", encoding="utf-8")
+    ctrl.load_data_path(str(other))                            # 데이터 교체
+    assert ctrl.dispatch("select_failed", {})["selected"] == 0  # 남의 행을 고르지 않는다
+
+    _mount_all(ctrl, _data_csv(tmp_path))
+    _run_with(monkeypatch, ctrl, _fake_batch([True, False]))
+    ctrl.dispatch("select_job", {"name": "공고서", "confirm": True})  # 작업 전환
+    assert ctrl.dispatch("select_failed", {})["selected"] == 0
+
+
+def test_cancelled_run_stays_a_partial_state(tmp_path, monkeypatch):
+    """취소 런은 부분 태 + warn 채널을 유지한다(#278 리뷰가 세운 색 계약과 같은 걸음)."""
+    ctrl, _ = _result_session(tmp_path)
+    res = _run_with(monkeypatch, ctrl, _fake_batch([True], cancelled=True, total=2))
+    assert res["status"] == "partiallyCompleted" and res["cancelled"] is True
+    assert res["level"] == "warn" and res["unstarted"] == 1
+    assert res["title"].startswith("생성을 중단했습니다")
