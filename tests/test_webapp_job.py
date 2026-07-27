@@ -13,6 +13,7 @@ import pytest
 
 from hwpxfiller.core.job import Job, JobRegistry, rules_fingerprints
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.gui.review_state import review_requirement
 from hwpxfiller.gui.run_state import RunViewModel
 from hwpxfiller.gui.selection_state import SelectionModel
 from hwpxfiller.webapp.screen_job import JobController
@@ -639,9 +640,9 @@ def test_stamp_uses_the_serialized_registry_path(tmp_path, monkeypatch):
     calls: list = []
     real = ctrl.registry.stamp_last_run
 
-    def spy(name, when):
+    def spy(name, when, **kw):
         calls.append((name, when))
-        return real(name, when)
+        return real(name, when, **kw)
 
     monkeypatch.setattr(ctrl.registry, "stamp_last_run", spy)
     assert ctrl.generate()["ok"] is True
@@ -1151,6 +1152,7 @@ def test_generate_uses_previewed_name_timestamp(tmp_path):
     job = ctrl.registry.load("공고서")
     job.filename_pattern = "doc-{{date:HHmmSS}}-{{seq}}"
     ctrl.registry.save(job, allow_overwrite=True)
+    _rereview(ctrl)   # 파일명 규칙 변경의 검토 요구는 이 테스트의 대상이 아니다
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
@@ -2769,6 +2771,17 @@ def test_new_data_invalidates_in_flight_zone_edits(tmp_path):
 
 
 # ------------------------- 검토 요구와 승인(재작성 F5, 지도 §10.12 판정 B·F·I·N)
+def _rereview(ctrl, name: str = "공고서") -> None:
+    """이 작업을 「방금 완주한 것」으로 만든다(재작성 F5).
+
+    규칙을 바꾸면 검토 요구가 서는 것이 계약이다(§13-3). 그것을 겨누지 않는 테스트가
+    픽스처의 규칙을 손보면 그 요구에 먼저 걸려 무엇을 재는 테스트인지 흐려진다.
+    """
+    job = ctrl.registry.load(name)
+    job.reviewed_rules = rules_fingerprints(job)
+    ctrl.registry.save(job, allow_overwrite=True)
+
+
 def _unreviewed_session(tmp_path):
     """검토 기준선이 없는 작업 + 데이터 + 저장 폴더 — 게이트가 검토에서 막히는 상태."""
     ctrl, pushes = _controller(tmp_path, reviewed=False)
@@ -2998,3 +3011,104 @@ def test_scope_says_default_rules_without_hinting_at_overrides(tmp_path):
     ctrl.dispatch("preview_open", {})
     scope = ctrl.snapshot()["preview"]["scope"]
     assert "기본 규칙" in scope and "이번 생성" not in scope
+
+
+# ---------------- 리뷰 1R 조치의 영구 가드(P1×2·P2×1) ----------------
+def test_generation_backstop_refuses_an_unapproved_run(tmp_path):
+    """1R P1 — 게이트는 **스냅샷을 만들 때** 판정한다. 스냅샷을 안 거치는 경로(브리지
+    `generate` 직접 호출·stale 프론트)가 승인 없이 생성을 내면 안 된다.
+
+    미입력 게이트가 같은 이유로 백스톱을 두는 자리다: 버튼 비활성은 표면의 사실이지
+    계약이 아니다.
+    """
+    ctrl, _ = _unreviewed_session(tmp_path)
+    res = ctrl.generate()          # 화면을 거치지 않고 곧바로 호출
+    assert res["ok"] is False and res["level"] == "warn"
+    assert "미리보기" in res["error"]
+    assert not list((tmp_path / "out").glob("*.hwpx")), "승인 없이 문서가 생성됐습니다."
+
+
+def test_generation_backstop_catches_a_rule_change_after_the_gate_opened(tmp_path):
+    """승인 뒤 규칙이 바뀌면(에디터 저장) 그 승인은 무효다 — 백스톱이 지금 다시 묻는다."""
+    ctrl, _ = _unreviewed_session(tmp_path)
+    req, _ = ctrl._review()
+    ctrl.review.approve(req, ctrl._selection_key())
+    assert ctrl.snapshot()["gate"]["enabled"] is True
+    job = ctrl.registry.load("공고서")
+    job.filename_pattern = "다른-{{seq:001}}"
+    ctrl.registry.save(job, allow_overwrite=True)
+    ctrl.vm.job.filename_pattern = "다른-{{seq:001}}"   # 세션이 편집 결과를 받은 상태
+    assert ctrl.generate()["ok"] is False
+
+
+def test_completed_run_stamps_the_rules_it_used_not_the_disk(tmp_path):
+    """1R P1 — 배치 중 착지한 에디터 저장이 **한 번도 실행된 적 없는 규칙**을 검토받은
+    것으로 만들면 안 된다(조용한 승인). 런의 규칙을 찍으면 요구가 그대로 선다."""
+    ctrl, _ = _unreviewed_session(tmp_path)
+    req, _ = ctrl._review()
+    ctrl.review.approve(req, ctrl._selection_key())
+    ran_pattern = ctrl.vm.job.filename_pattern
+    # 배치가 도는 사이 같은 프로세스의 에디터가 저장한 상황을 스탬프 직전에 재현한다.
+    real_stamp = ctrl.registry.stamp_last_run
+
+    def racing_stamp(name, when, **kw):
+        edited = ctrl.registry.load(name)
+        edited.filename_pattern = "에디터가-바꾼-{{seq:001}}"
+        ctrl.registry.save(edited, allow_overwrite=True)
+        return real_stamp(name, when, **kw)
+
+    ctrl.registry.stamp_last_run = racing_stamp  # type: ignore[method-assign]
+    assert ctrl.generate()["ok"] is True
+    after = ctrl.registry.load("공고서")
+    assert after.reviewed_rules["filename"] == ran_pattern, (
+        "디스크의 새 규칙이 검토 없이 기준선이 됐습니다 — 조용한 승인입니다."
+    )
+    assert review_requirement(after).required
+
+
+def test_preview_names_match_what_generation_will_write(tmp_path):
+    """1R P2 — 확인된 빈칸은 문서에 **표식 문자열**로 들어간다. 파일명 패턴이 그 필드를
+    참조하면 표식 없는 값으로 그린 미리보기는 **생성될 것과 다른 이름을 승인**시킨다.
+    """
+    ctrl, _ = _controller(tmp_path, reviewed=True)
+    job = ctrl.registry.load("공고서")
+    job.filename_pattern = "{{추정가격}}"    # 빈 값이 나는 필드를 이름이 참조한다
+    ctrl.registry.save(job, allow_overwrite=True)
+    _rereview(ctrl)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    ctrl.dispatch("preview_open", {})
+    shown = ctrl.snapshot()["preview"]["filename"]
+    assert ctrl.generate()["ok"] is True
+    written = {p.name for p in (tmp_path / "out").glob("*.hwpx")}
+    assert shown in written, f"미리보기 이름 {shown!r} 가 생성물 {written!r} 에 없습니다."
+
+
+def test_the_marker_appears_only_when_generation_would_apply_it(tmp_path):
+    """반대 방향의 같은 거짓말 — 아직 확인 안 된 빈 값이 있으면 생성은 3) 에 도달하지
+    못하므로 표식도 없다. 조건을 느슨히 잡으면 실행되지도 않을 상태의 이름을 말한다."""
+    ctrl, _ = _controller(tmp_path, reviewed=True)
+    job = ctrl.registry.load("공고서")
+    job.filename_pattern = "{{추정가격}}"
+    ctrl.registry.save(job, allow_overwrite=True)
+    _rereview(ctrl)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("preview_open", {})
+    ctrl.dispatch("preview_move", {"delta": 1})   # 빈 값이 나는 레코드로 이동
+    before = ctrl.snapshot()["preview"]["filename"]     # 미확인 = 표식 없음
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    after = ctrl.snapshot()["preview"]["filename"]      # 확인 뒤 = 표식 적용
+    assert "미입력" not in before and "미입력" in after
+
+
+def test_the_mirror_still_counts_blanks_as_blank(tmp_path):
+    """표식은 **파일 이름·미리보기 값**의 사실이고, 거울의 「N행에서 값이 비어 있습니다」는
+    빈 값을 세는 진술이다. 표식을 채우면 언제나 0행이 되어 그 문안이 거짓이 된다 —
+    두 면이 같은 사실을 다른 각도로 말하는 것이지 판정이 둘인 게 아니다."""
+    ctrl, _ = _session(tmp_path)
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    row = next(r for r in ctrl.snapshot()["mirror"] if r["name"] == "추정가격")
+    assert "1행에서 값이 비어 있습니다" in row["value"]

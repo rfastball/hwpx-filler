@@ -288,24 +288,45 @@ def test_approval_is_not_persisted_so_restart_reinstates_the_requirement():
 def test_completion_stamp_writes_the_review_baseline(tmp_path):
     """완주 이벤트가 둘로 갈라지지 않는다 — 시각과 기준선이 같은 잠긴 왕복에서 찍힌다."""
     reg = JobRegistry(tmp_path / "jobs")
-    reg.save(_job())
+    job = _job()
+    reg.save(job)
     assert review_requirement(reg.load("공고")).required  # 완주 전
-    reg.stamp_last_run("공고", "2026-07-27T09:00:00")
+    reg.stamp_last_run("공고", "2026-07-27T09:00:00", rules=rules_fingerprints(job))
     after = reg.load("공고")
     assert after.last_run_at == "2026-07-27T09:00:00"
     assert not review_requirement(after).required
 
 
-def test_completion_stamp_reads_the_rules_from_disk(tmp_path):
-    """호출측이 들고 있던 사본이 아니라 **지금 디스크의 규칙**으로 찍는다 — 실행 중
-    외부에서 바뀐 규칙을 검토받은 것으로 세우지 않는다."""
+def test_completion_stamp_records_the_rules_the_run_actually_used(tmp_path):
+    """1R P1 — **디스크의 지금 규칙으로 찍으면 안 된다**.
+
+    같은 프로세스의 에디터가 배치가 도는 사이 이 작업을 저장하면, 디스크 규칙을 찍는 순간
+    한 번도 실행·확인된 적 없는 새 규칙이 검토받은 것으로 기록된다(조용한 승인 — 되돌릴 수
+    없는 방향). 런의 규칙을 찍으면 요구가 **그대로 서서** 사용자가 다시 확인한다.
+    """
+    reg = JobRegistry(tmp_path / "jobs")
+    ran = _job()                      # 이 런이 쓴 규칙
+    reg.save(ran)
+    edited = _job()
+    edited.filename_pattern = "{{금액}}.hwpx"
+    reg.save(edited, allow_overwrite=True)   # 배치 중 착지한 에디터 저장
+    reg.stamp_last_run("공고", "2026-07-27T09:00:00", rules=rules_fingerprints(ran))
+    after = reg.load("공고")
+    assert after.reviewed_rules["filename"] == "{{공고명}}.hwpx"   # 런이 쓴 것
+    assert review_requirement(after).required, (
+        "디스크의 새 규칙이 검토 없이 통과했습니다 — 조용한 승인입니다."
+    )
+
+
+def test_completion_stamp_without_run_context_leaves_the_baseline_alone(tmp_path):
+    """무엇을 실행했는지 모르면 기준선을 세우지 않는다 — 디스크 규칙 폴백을 두면 그
+    폴백이 곧 위 결함의 통로다(안전한 기본값이 없는 인자는 필수로 두는 것이 낫다)."""
     reg = JobRegistry(tmp_path / "jobs")
     reg.save(_job())
-    changed = _job()
-    changed.filename_pattern = "{{금액}}.hwpx"
-    reg.save(changed, allow_overwrite=True)   # 실행 중 외부 편집
     reg.stamp_last_run("공고", "2026-07-27T09:00:00")
-    assert reg.load("공고").reviewed_rules["filename"] == "{{금액}}.hwpx"
+    after = reg.load("공고")
+    assert after.last_run_at == "2026-07-27T09:00:00"
+    assert after.reviewed_rules == {} and review_requirement(after).required
 
 
 def test_clone_does_not_inherit_the_review_baseline(tmp_path):

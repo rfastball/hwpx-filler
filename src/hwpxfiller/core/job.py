@@ -703,18 +703,29 @@ class JobRegistry:
             self.save(job, allow_overwrite=True)  # 같은 이름 재저장 = 자기 갱신
             return job
 
-    def stamp_last_run(self, name: str, when: str) -> Job:
+    def stamp_last_run(
+        self, name: str, when: str, *, rules: "dict[str, str] | None" = None,
+    ) -> Job:
         """완주 스탬프(#129) — 다른 writer 와 직렬화된 갱신.
 
         시각과 **검토 기준선**을 같은 잠긴 왕복에서 함께 찍는다(재작성 F5 판정 B): 완료
         이벤트가 둘로 갈라지면 이력과 검토 요구가 서로 다른 실행을 완주로 부른다(#129 가
-        가드·이력을 한 술어로 묶은 것과 같은 근거). 기준선은 **디스크의 지금 규칙**에서
-        뜬다 — 호출측이 들고 있던 VM 사본으로 찍으면 실행 중 외부에서 바뀐 규칙을 검토받은
-        것으로 세운다.
+        가드·이력을 한 술어로 묶은 것과 같은 근거).
+
+        ``rules`` 는 **그 런이 실제로 쓴 규칙**의 지문이다(1R P1). 디스크의 지금 규칙으로
+        찍으면 안 된다: 같은 프로세스의 에디터가 배치가 도는 사이 이 작업을 저장하면, 완주가
+        **한 번도 실행·확인된 적 없는 새 규칙**을 검토받은 것으로 기록한다(조용한 승인 —
+        되돌릴 수 없는 방향이다). 반대로 런의 규칙을 찍으면 디스크의 새 규칙과 어긋나
+        검토 요구가 **그대로 선다**: 안전한 방향이라 이쪽이 정본이다.
+
+        ``None`` 은 "무엇을 실행했는지 모른다"는 뜻이고, 그때는 기준선을 **건드리지 않는다** —
+        디스크 규칙으로 대신 찍는 폴백을 두면 그 폴백이 곧 위 결함의 통로다(안전한 기본값이
+        없는 인자는 필수로 두는 것이 낫다).
         """
         def _stamp(job: Job) -> None:
             job.last_run_at = when
-            job.reviewed_rules = rules_fingerprints(job)
+            if rules is not None:
+                job.reviewed_rules = dict(rules)
 
         return self.mutate(name, _stamp)
 

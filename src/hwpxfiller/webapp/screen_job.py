@@ -49,7 +49,7 @@ import threading
 from ..batch import generate_batch
 from ..core.dataset_pool import DatasetPoolRegistry
 from ..core.identity_summary import identity_summary
-from ..core.job import MISSING_MARKER, JobRegistry
+from ..core.job import MISSING_MARKER, JobRegistry, rules_fingerprints
 from ..core.mapping import SOURCE_CARRIER_TYPES
 from ..core.template_status import OUTPUT_SUBDIR_NAME
 from ..gui.filter_state import (
@@ -65,6 +65,7 @@ from ..gui.review_state import (
     ReviewRequirement,
     ReviewState,
     build_evidence,
+    review_gate_text,
     review_requirement,
 )
 from ..gui.run_state import RunViewModel, resolve_file_source, resolve_pool_source
@@ -510,19 +511,31 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         return ",".join(str(i) for i in self._indices())
 
-    def _review(self) -> "tuple[ReviewRequirement, ReviewRequirement | None]":
+    def _review(
+        self, vm=None, indices: "list[int] | None" = None,
+    ) -> "tuple[ReviewRequirement, ReviewRequirement | None]":
         """(현재 검토 요구, 아직 승인 안 된 요구 or None) — F5 판정 B·I.
 
         게이트에 넘기는 것은 **미승인분**이다. 요구 자체는 표면이 문안·증거를 그리는 데
         쓰므로 승인 뒤에도 그대로 돌려준다(승인했다는 사실을 말하려면 무엇을 승인했는지가
         필요하다).
+
+        ``vm``·``indices`` 를 받는 이유(1R P1): 생성 백스톱은 **그 런의 주체**로 물어야
+        한다. 세션은 배치가 도는 사이에도 움직이므로(브리지 호출이 스레드별) 현재 상태를
+        읽으면 남의 작업의 승인으로 이 런을 통과시킬 수 있다 — `_stamp_last_run` 이
+        정체를 인자로 받는 것과 같은 근거다.
         """
-        if self.vm is None:
+        target = self.vm if vm is None else vm
+        if target is None:
             return ReviewRequirement(), None
-        req = review_requirement(self.vm.job)
+        req = review_requirement(target.job)
         if not req.required:
             return req, None
-        approved = self.review.is_approved(req, self._selection_key())
+        key = (
+            self._selection_key() if indices is None
+            else ",".join(str(i) for i in indices)
+        )
+        approved = self.review.is_approved(req, key)
         return req, (None if approved else req)
 
     def _review_payload(self, req: ReviewRequirement, unmet) -> dict:
@@ -1000,11 +1013,27 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         indices = self._indices()
         # 선택분 매핑 적용은 1회 — 파일명 미리보기(_record_rows)와 거울 값(_mirror)이 공유한다.
         mapped = self.vm.mapped_records(indices) if indices else []
+        # 생성이 실제로 쓸 표식(1R P2) — 확인된 빈칸은 문서에 **표식 문자열**로 들어가고,
+        # 파일명 패턴이 그 필드를 참조하면 이름·수렴·경로 길이가 전부 달라진다. 표식 없는
+        # 값으로 미리보기를 그리면 사용자는 **생성될 것과 다른 파일 이름을 승인**한다.
+        # 표식은 **생성이 실제로 붙이는 조건에서만** 붙인다: 생성은 미입력 게이트를 통과한
+        # 뒤에야 3) 에 도달하므로, 아직 확인 안 된 빈 값이 있으면 표식은 없다. 조건을 느슨히
+        # 잡으면 실행되지도 않을 상태의 이름을 미리보기가 말한다(반대 방향의 같은 거짓말).
+        marker = (
+            MISSING_MARKER
+            if (indices and not self.vm.unmet_blanks(indices)
+                and self.vm.blank_fields(indices))
+            else ""
+        )
+        # 거울은 표식 **없는** 값을 본다: 「선택 N행 중 M행에서 값이 비어 있습니다」가
+        # 빈 값을 세는 진술이라, 표식을 채우면 언제나 0행이 되어 문안이 거짓이 된다.
+        # 두 면이 같은 사실을 다른 각도로 말하는 것이지 판정이 둘인 게 아니다.
+        run_mapped = self.vm.mapped_records(indices, marker) if marker else mapped
         # 검토 요구(F5) — 요구 판정은 durable 기준선이, 승인 대조는 세션이 한다. 게이트에는
         # **아직 승인 안 된** 요구만 넘긴다(승인됐으면 게이트가 그 자리에서 열려야 한다).
         req, req_unmet = self._review()
         status = self.vm.refresh(  # 사전검증+배지+게이트+이름 계획 단일 산출(RC-23)
-            indices, self.out_dir, review_unmet=req_unmet, mapped=mapped,
+            indices, self.out_dir, review_unmet=req_unmet, mapped=run_mapped,
         )
         preflight_text = (
             _PREFLIGHT_OK_TEXT if status.preflight.level == "ok" else status.preflight.text
@@ -1015,9 +1044,18 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 움직여 판정 I 의 완화가 하필 그 축을 만지는 자리에서 죽는다. 초안이 없으면 위에서
         # 이미 계산한 실행 입력·매핑을 그대로 재사용한다(평시 추가 비용 0).
         zone_indices = self._zone_indices()
-        zone_mapped = mapped
+        zone_mapped = run_mapped
         if self.range_draft is not None:
-            zone_mapped = self.vm.mapped_records(zone_indices) if zone_indices else []
+            # 초안 집합의 표식은 그 집합에서 다시 센다 — 빈 값 여부는 선택에 딸린 사실이다.
+            zone_marker = (
+                MISSING_MARKER
+                if (zone_indices and not self.vm.unmet_blanks(zone_indices)
+                    and self.vm.blank_fields(zone_indices))
+                else ""
+            )
+            zone_mapped = (
+                self.vm.mapped_records(zone_indices, zone_marker) if zone_indices else []
+            )
         record_rows = self._record_rows(zone_indices, zone_mapped)
         filter_snap, table_snap, restate_snap, guard_snap = self._filter_sections(
             zone_indices, record_rows
@@ -1064,8 +1102,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 검토 요구·미리보기 드로어(F5). 이름·값은 위 단일 산출을 재사용한다 —
             # 표면이 따로 계획하면 미리보기가 실행과 다른 이름을 말한다(판정 A).
             "review": self._review_payload(req, req_unmet),
+            # 드로어는 **생성 입력 그대로**를 그린다(표식 포함) — 여기가 "보이는 것 =
+            # 만들어지는 것"의 마지막 자리다.
             "preview": self._preview_payload(
-                req, req_unmet, mapped, list(status.audit.names),
+                req, req_unmet, run_mapped, list(status.audit.names),
                 (len(status.audit.converged), len(status.audit.too_long)),
             ),
         })
@@ -1624,7 +1664,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         try:
             job = self.registry.stamp_last_run(
-                job_name, datetime.now().isoformat(timespec="seconds")
+                job_name, datetime.now().isoformat(timespec="seconds"),
+                # 기준선은 **이 런이 쓴 규칙**이다(1R P1) — 디스크의 지금 규칙으로 찍으면
+                # 배치 중 착지한 에디터 저장이 한 번도 실행된 적 없는 규칙을 검토받은
+                # 것으로 만든다. `vm` 이 없으면(정체 소실) 찍지 않는다: 무엇을 실행했는지
+                # 모르는 채 기준선을 세우는 것이 곧 조용한 승인이다.
+                rules=rules_fingerprints(vm.job) if vm is not None else None,
             )
         except (OSError, ValueError) as exc:
             return str(exc) or exc.__class__.__name__
@@ -1690,6 +1735,17 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return {
                 "ok": False, "level": "warn",
                 "error": "빈 값 필드를 먼저 확인하세요: " + ", ".join(unmet),
+            }
+
+        # 2-b) 검토 요구 방어적 재확인(1R P1) — 버튼이 이미 비활성이어도 다시 묻는다.
+        # 게이트는 **스냅샷을 만들 때** 판정한다. 그 사이 규칙이 바뀌거나(에디터 저장),
+        # 스냅샷을 안 거치는 경로(브리지 `generate` 직접 호출·stale 프론트)가 들어오면
+        # 승인 없이 생성이 난다 — 미입력 게이트가 같은 이유로 여기 백스톱을 두는 자리다.
+        # 주체는 **이 런의 것**(`run_vm`·`indices`)이지 지금 세션의 것이 아니다.
+        _, review_unmet = self._review(run_vm, indices)
+        if review_unmet is not None:
+            return {
+                "ok": False, "level": "warn", "error": review_gate_text(review_unmet),
             }
 
         # 3) 미입력 표식(확인된 빈칸) — 완료 요약이 병기한다(낙관 서사 해소).
