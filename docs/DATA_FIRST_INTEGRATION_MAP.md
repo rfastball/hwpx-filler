@@ -341,8 +341,8 @@ C=characterization).
 | 5 | 검색·열 필터·행 선택·헤더 가산/해제·전체 해제·필터 밖 표본 3+「외 N건」 | `jobFilterSearch`·`jobFilterChips`·`jobSelStrip`·13액션 | `DataZoneMixin` 13액션·`FilterModel` | **재사용** | 표본 3+요약은 이미 `jobSelStrip`이 상시 가시 — 새 표면에서 **가시성 등급을 낮추지 않는다** | R1 | R(기존)·C |
 | 6 | 문서 선택기 side-card: Top 5·작업 방식 구획·카드(이름·방식·연결 상태·마지막 성공 실행·즐겨찾기·⋮) | `jobCandsRow`(top·more·needs·suggested 4구획) | `rank_available`·`suggested_work`·`MAIN_TOP_N` | **재배치** | §8.2 ④ 유보 해제 지점: TXT 합류(F6) 전까지 **한 방식 = 헤더 없는 평면**이되 카드 부제의 작업 방식 텍스트는 §19.3대로 유지 | R1(구획)·F6(2방식) | D·C·S |
 | 7 | `validationCard`+`run-scope-note`+실행 버튼(`N개 생성`) | `jobGate`+sticky `jobActionBar`+`jobRestate` 재진술+거울 `jobMirror`+`ack_field` | `GateState` 단일 산출·`RunStatus`·`field_states` | **재사용**(배치만 이동) | v6 `renderValidation`의 JS 재계산은 폐기 목록(§4) — 판정은 계속 Python. **거울·재진술은 존치**(결정 3) — side-card 와 병존하는 「본문 확인」 면 | R1 | S·C |
-| 8 | 결과 3태(완료/부분/실패)+`결과 닫기`+더보기 | `jobGenResult`+`jobGenLog`(로그 상자) | `generate` 반환 dict·`describe_result_error`·`describe_fill_note` | **재배치** | 3태 구획으로 옮길 때 로그 상자가 지금 말하는 것(FillNote 경고·원문 증거)을 잃지 않는다 | F4 | D·S |
-| 9 | 부분 실패 복구(건별 재시도·레코드 filename override·`unknownFailure` 증거·외부 폴더 경계) | 없음 — 실패는 결과 dict + 로그 | `output_conflicts`·`plan_output_names`(집합 검증 상당) | **신설** | §10.2 계약: 성공분 **보존**·원인 미확정은 꾸며내지 않음. `runOverrides` 선행(F7) | F4 | D·U·S·C |
+| 8 | 결과 3태(완료/부분/실패)+`결과 닫기`+더보기 | **착지**(F4) — `#jobResult` 3태 구획 + `jobGenLog`=「실행 기록」 | `generate` 반환 dict·`describe_result_error`·`describe_fill_note` | **재배치** | 3태 구획으로 옮길 때 로그 상자가 지금 말하는 것(FillNote 경고·원문 증거)을 잃지 않는다 | F4 | D·S |
+| 9 | 부분 실패 복구(건별 재시도·레코드 filename override·`unknownFailure` 증거·외부 폴더 경계) | **부분 착지**(F4) — 증거·성공분 보존·「실패한 N건만 선택」. 재시도 3종은 F7 | `output_conflicts`·`plan_output_names`(집합 검증 상당) | **신설** | §10.2 계약: 성공분 **보존**·원인 미확정은 꾸며내지 않음. `runOverrides` 선행(F7) | F4 | D·U·S·C |
 | 10 | 전문 범위 편집기(draft 복제·적용/취소·selected-only·이탈 가드) | `dataSheet` 시트(같은 상태 직접 편집 — draft 없음) | `SelectionModel`(index 기반)·`FilterModel` | **재배치+신설** | `RecordRangeState` 정본화(snapshot-local id·`snapshotOrdinal`·`shiftAnchorId` 정리 규칙)가 선행. 적용 시 **fingerprint 변화만** 증거 폐기 | F3 | D·R·U·S·C |
 | 11 | 문서 탐색(탭 2·이름 검색·탭 안 작업 방식 구획·needsAction 6분기) | `jobBrowseSheet`(탭·자모 검색·사유 병기) | `browse_candidates` | **재사용+확장** | §19.5 작업 방식 구획과 §18.7 6분기(연결 복구·기본 데이터·재연결·새 작업·Template-only·손상)가 미구현 — 지금은 사유 병기까지 | F1·F6 | R·S·C |
 | 12 | 데이터 선택 다이얼로그(현재/고정한/다른 + 파일 찾아보기)·시트 확정·`이 데이터 고정` | `poolModal`(등록 데이터)+네이티브 파일 피커+`sheetModal` | `DatasetPoolViewModel`(등록=고정 상당물) | **재배치** | v6 `pinnedDataRefs`는 별도 저장소를 만들지 않고 **Dataset Pool 재사용**이 계약(§18.2·확장 계약 `reuseBackend`). **`pool` 화면의 흡수처가 여기다**(결정 1) — 등록·보관/활성·삭제·손상 격리가 이 다이얼로그 안에서 전부 도달 가능해야 화면을 죽일 수 있다 | F1 | D·R·S |
@@ -454,7 +454,7 @@ HwpxRun`) + §10(성공과 실패). 이 절이 소유하는 것은 흐름의 정
 | ~~F1~~ **착지** | 데이터 선택 다이얼로그 통합(현재/고정한/다른) + 전환 손실 가드 → `pool` 흡수·**화면 사망** — 계약 §10.7 | 12·13 |
 | ~~F2~~ **착지** | 전역 라이브러리 표면(browser+detail) + 상단 2탭 → `home` 흡수·사망 — **PR 2분할**: A(표면·`home` 사망) 계약 §10.8 · PR #309 squash `446e081` / B(셸 교체·좌 목록 사망) 계약 §10.9 | 14·15·1 |
 | F3 | 표시순서 축 + 전문 범위 편집기(`RecordRangeState` 정본) | 4·10 |
-| F4 **착수** | 결과 3태 + 부분 실패 표면 — **재시도 3종 제외**(F7 `runOverrides` 선행), 계약 §10.10 | 8·9 |
+| ~~F4~~ **착지** | 결과 3태 + 부분 실패 표면 — **재시도 3종은 F7 로**(`runOverrides` 선행), 계약 §10.10·정산 §10.10.5 | 8·9 |
 | F5 | 미리보기 드로어 + 검토 요구(승인) | 16 |
 | F6 | TXT 합류 + 작업대 → `draft` 흡수·사망(휘발 세션 폐지 고지) | 17·18·19 |
 | F7 | 편집기 4탭 + `EditContext`·patch 거래 + 판본 + `runOverrides` | 20·21·22·23 |
@@ -1016,6 +1016,25 @@ DOM 계약 순서(`jobTableHost < jobMirror < 결과`)를 건드리지 않는다
 커밋 2·3 을 가르는 이유는 F2 PR-B 와 반대다: 여기는 라우팅 표면이 아니라 **한 구획의
 페이로드**라 두 벌이 공존해도 충돌하지 않는다(옛 `failures[]` 문자열과 새 구조가 한 커밋
 동안 병존해도 표면은 하나만 읽는다). 판정 층을 먼저 세우고 표면이 그것을 소비한다.
+
+#### 10.10.5 착지 정산 (2026-07-27)
+
+계약 대비 **구현이 달라진 3건**과 그 근거다(적어 두지 않으면 계약이 거짓말이 된다).
+
+| 계약 | 실제 | 근거 |
+|---|---|---|
+| 판정 I 「더보기(⋯)」 | **인라인 버튼** `파일 이름 규칙 수정` | F1 판정 E 와 같은 저울: 항목이 하나뿐인데 팝오버 생명주기(포커스 트랩·`Popover.closeAll`·좌표)를 새로 들이는 값이 도달성에 비해 크다. 밀도가 문제가 되면 그때 메뉴로 되깎는다 |
+| 3태 = `[data-state]` 3값 | **5값** — 3태 + `running` + `rejected` | 진행과 "실행 전 거절"은 결과가 아니지만 **같은 자리에 서야 한다**: 거절이 결과 자리를 비워 두면 눌렀는데 아무 일도 없는 것으로 읽힌다. 판정 A 의 "취소는 네 번째 태가 아니다"는 그대로다 — 늘어난 둘은 성공/실패 축이 아니라 **실행 이전·도중**의 표시 상태다 |
+| 계약면 3 「닫기 → 생성 버튼」 | 생성 버튼이 `disabled` 면 **구획 자신**(`#jobResultZone`, `tabindex="-1"`) | 게이트가 닫혀 있으면 그 버튼은 focus 를 못 받아 `focus()` 가 조용히 실패하고 body 로 떨어진다(§9.3 #2 결함 클래스의 재발). 착지는 "어느 요소"가 아니라 "실 DOM 안"이 계약이다 |
+
+**실앱 한 바퀴**(§10.9.5 규칙): 101 자동 캡처 하니스를 재실행해 12컷을 갱신했다 —
+실 클릭·실 dispatch·실 생성 3건이 새 구획을 통과한다. 101 README 의 결과 단계 문안도
+3태 어휘로 갱신했다(문서가 죽은 표면을 가리키지 않게). 실패 경로(부분 실패·미확정 원인·
+강등·닫기 착지·거절)는 실앱 게이트 프로브 `job_result` 7항이 실 WebView2 에서 진다.
+
+**되풀이된 결함 클래스 1건**: `display:flex` 가 UA `[hidden]{display:none}` 을 특이도로
+이기는 것(부록 B-9)을 또 밟을 뻔했다 — 이번엔 CSS 되돌림과 **계산 스타일 프로브**를 함께
+넣었다(속성 존재만 보는 계약은 이 결함을 통과시킨다).
 
 ## 6. 원재료
 
