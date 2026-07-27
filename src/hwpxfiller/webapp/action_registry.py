@@ -27,20 +27,33 @@ def _schema(required: str = "", optional: str = "") -> PayloadSchema:
     return PayloadSchema(frozenset(required.split()), frozenset(optional.split()))
 
 
+# 존 변이는 **대상 세계**를 함께 실어 보낸다(재작성 F3 리뷰 4R): `epoch` 는 발신 시점에 웹이
+# 보고 있던 범위 세계의 세대다. 초안이 열리거나 닫히거나(적용·취소) 데이터가 갈리면 세대가
+# 오르고, 그 전에 예약·발신된 변이는 **도착해도 남의 세계의 편집**이라 적용되지 않는다.
+# 선택 필드로 두는 이유: 존을 공유하는 「기안」 화면과 옛 호출부는 세대 개념이 없다(무검사 통과).
+_ZONE_MUTATIONS = {
+    "toggle_record": _schema("index value", "epoch"),
+    "select_range": _schema("indices value", "epoch"),
+    "set_all": _schema(optional="epoch"),
+    "set_none": _schema(optional="epoch"),
+    "filter_search": _schema(optional="text epoch"),
+    "filter_col_text": _schema("column", "text epoch"),
+    "filter_col_values": _schema("column", "values epoch"),
+    "filter_col_range": _schema("column", "first second joiner epoch"),
+    "filter_prune": _schema("column", "epoch"),
+    "filter_clear": _schema(optional="epoch"),
+    "filter_clear_col": _schema("column", "epoch"),
+    "filter_reapply": _schema(optional="epoch"),
+}
+#: 세대 검사 대상 = 존 **변이** 액션 이름(컨트롤러가 dispatch 관문에서 소비).
+#: 표시순서(`set_view_order`)도 같은 범위 상태를 바꾸므로 여기 든다 — 화면별 액션이지만
+#: 세대의 소속은 **무엇을 바꾸는가**로 정한다(체인 키를 상태 단위로 둔 것과 같은 근거).
+ZONE_MUTATIONS = frozenset(_ZONE_MUTATIONS) | {"set_view_order"}
+
 _DATA_ZONE = {
-    "toggle_record": _schema("index value"),
-    "select_range": _schema("indices value"),
-    "set_all": _schema(),
-    "set_none": _schema(),
-    "filter_search": _schema(optional="text"),
-    "filter_col_text": _schema("column", "text"),
-    "filter_col_values": _schema("column", "values"),
-    "filter_col_range": _schema("column", "first second joiner"),
-    "filter_prune": _schema("column"),
-    "filter_clear": _schema(),
-    "filter_clear_col": _schema("column"),
+    **_ZONE_MUTATIONS,
+    # 무변이 질의 — 세대와 무관하다(상태를 안 바꾸니 늦게 도착해도 해가 없다).
     "filter_panel": _schema("column"),
-    "filter_reapply": _schema(),
 }
 
 _POOL_TARGETING = {
@@ -134,6 +147,15 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         **_POOL_TARGETING,
         "guard_state": _schema(),
         "refresh": _schema(),
+        # 전체 표시순서 축(§18.10, 재작성 F3) — 데이터 존 공유 액션이 **아니다**: 기안 화면은
+        # 원본 순서 고정으로 살고, TXT 가 이 축을 얻는 것은 작업대 합류(F6) 소관이다.
+        "set_view_order": _schema("value", "epoch"),
+        # 전문 범위 편집기 초안(§18.10, 재작성 F3) — 열기·적용·취소·보기 토글. 존 13액션은
+        # **그대로** 초안을 향한다(같은 동사가 대상만 바꾼다, 지도 §10.11 판정 A).
+        "range_draft_open": _schema(),
+        "range_draft_apply": _schema(),
+        "range_draft_cancel": _schema(),
+        "set_selected_only": _schema("value"),
         "select_job": _schema("name", "confirm"),
         "toggle_favorite": _schema("name value"),
         # 라이브러리 「문서 만들기에서 사용」의 착지(§19.8) — 분기 판정은 Python 이 낸다.

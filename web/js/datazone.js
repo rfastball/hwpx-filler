@@ -26,7 +26,7 @@
      tableKey(s),               // 세션 지문 — 앵커·패널·대기 디바운스 리셋 판정
      log(msg),                  // 완료 존 로그 채널(재진술은 화면이 소유)
    }
-   반환: { wire, render, sync, flushPendingSearch }
+   반환: { wire, render, sync, flushPendingSearch, flushPendingEdits, dropPendingEdits }
      sync(s)   — 렌더 없이 스냅샷만 관측(화면이 존 렌더를 게이트하는 push 에서도 호출) —
                  flushPendingSearch 판정이 항상-최신 스냅샷을 보게(리뷰: stale LAST 오발 차단)
 
@@ -72,7 +72,7 @@
       positionColPanel(rectBefore);
       let d;
       try {
-        d = await Bridge.call(SCREEN, "filter_panel", { column: col });
+        d = await call("filter_panel", { column: col });
       } catch (err) {
         if (epoch === panelEpoch && panelCol === col) {
           renderColPanelError(col, err);
@@ -180,8 +180,11 @@
         const text = e.target.value;
         const col = panelCol;  // 타이머 발화 시점이 아니라 입력 시점의 열에 결속(리뷰 #0 —
                                // 창 안에 패널을 닫거나 다른 열을 열면 엉뚱한 열에 오발)
-        colTextTimer = setTimeout(
-          () => Bridge.call(SCREEN, "filter_col_text", { column: col, text }), 200);
+        colTextPending = { column: col, text };
+        colTextTimer = setTimeout(() => {
+          colTextPending = null;
+          call("filter_col_text", { column: col, text });
+        }, 200);
       }
     }
 
@@ -189,14 +192,14 @@
       if (e.target.matches("[data-val-all]")) {
         const all = e.target.checked;
         $(ids.colPanel).querySelectorAll("input[data-val]").forEach((b) => { b.checked = all; });
-        Bridge.call(SCREEN, "filter_col_values", { column: panelCol, values: all ? null : [] });
+        call("filter_col_values", { column: panelCol, values: all ? null : [] });
         return;
       }
       if (e.target.matches("input[data-val]")) {
         const values = panelValues();
         const allBox = $(ids.colPanel).querySelector("[data-val-all]");
         if (allBox) allBox.checked = values === null;
-        Bridge.call(SCREEN, "filter_col_values", { column: panelCol, values });
+        call("filter_col_values", { column: panelCol, values });
       }
     }
 
@@ -204,7 +207,7 @@
       if (e.target.closest('[data-act="panel-close"]')) { closeColPanel(); return; }
       if (e.target.closest('[data-act="col-clear"]')) {
         const col = panelCol;
-        await Bridge.call(SCREEN, "filter_clear_col", { column: col });
+        await call("filter_clear_col", { column: col });
         const btn = $(ids.tableHead).querySelector(`.fico[data-col="${CSS.escape(col)}"]`);
         if (btn) openColPanel(col, btn); else closeColPanel();
         return;
@@ -216,10 +219,11 @@
           const operand = p.querySelector(`[data-rval="${slot}"]`).value;
           return operand.trim() ? { op, operand } : null;
         };
-        const res = await Bridge.call(SCREEN, "filter_col_range", {
+        const res = await call("filter_col_range", {
           column: panelCol, first: clause(1), second: clause(2),
           joiner: p.querySelector("[data-rjoin]").value,
         });
+        if (res && res.stale) return;       // 사라진 세계의 요청 — 무동작
         const err = p.querySelector("[data-rerr]");
         if (err) {
           err.style.display = res.ok ? "none" : "";
@@ -246,6 +250,39 @@
                                // LAST 는 왕복 전이라 앵커 자신의 토글이 아직 안 비쳐 stale)
     let lastTableKey = null;   // 앵커 리셋 판정(화면 주입 세션 지문 — cfg.tableKey)
     let searchTimer = 0;       // 전열 검색 디바운스 — 세션 전환 시 취소(리뷰 #1: 다음 세션 오발)
+    let colTextPending = null; // 디바운스 대기 중인 열 텍스트 {column, text} — 정산·폐기의 소재
+
+    /* 존 발신 단일 통로. ``cfg.chainKey`` 가 있으면 **한 체인에 직렬화**한다(리뷰 2R):
+       pywebview 는 호출마다 별도 스레드라 도착 순서를 보장하지 않는데, 이 존의 발신은
+       전부 **같은 범위 상태 하나**를 바꾼다 — 특히 범위 초안의 적용·취소와 순서가 뒤바뀌면
+       사용자가 취소한 편집이 커밋된 범위에 착지한다. 기제는 intent.js 가 이미 소유한다. */
+    const ZONE_QUERIES = ["filter_panel"];   // 무변이 질의 — 상태를 안 바꾸니 줄 설 이유가 없다
+    function call(action, payload) {
+      // 통로는 **요청 시점**에 붙든다: 큐에서 풀릴 때 다시 찾으면 그 사이 바뀐 통로로 나간다
+      // (프로브 스텁이 대표 사례 — 요청은 스텁에 걸렸는데 발신은 실물로 새는 자리).
+      const dispatch = window.Bridge.call;   // **함수**를 붙든다 — 객체만 붙들면 큐에서 풀릴 때
+      const query = ZONE_QUERIES.indexOf(action) >= 0;
+      // 변이는 **발신 시점에 보고 있던 세계의 세대**를 업고 간다(리뷰 4R). 판정은 Python 이
+      // 한다 — 웹은 자기가 무엇을 보고 있었는지만 정직하게 말한다. 세대를 안 주는 화면
+      // (「기안」)은 필드 없이 나가고 무검사로 통과한다.
+      const epoch = !query && cfg.epoch ? cfg.epoch() : undefined;
+      const body = (epoch === undefined || epoch === null)
+        ? payload : Object.assign({}, payload, { epoch: epoch });
+      const send = () => dispatch.call(window.Bridge, SCREEN, action, body);
+      // 질의는 체인 밖이다. 넣으면 응답이 늦는 질의 하나가 **이후 모든 변이**를 막는다 —
+      // 순서 보장은 같은 상태를 바꾸는 발신들 사이에서만 뜻이 있다.
+      if (!cfg.chainKey || query) return send();
+      // 응답이 `{stale:true}` 면 **내 세계가 이미 사라진 것**이다(리뷰 4R): 결과 필드를 읽는
+      // 호출부는 그것부터 확인해야 한다 — 안 그러면 없는 필드로 "undefined 행 추가" 같은
+      // 유령 문안을 만든다. 사라진 세계의 요청에 대한 정직한 응답은 **무동작**이다.
+      // 대기 중 변이 통지(리뷰 4R) — 이탈 가드가 "아직 푸시가 안 온 편집"을 셀 수 있게 한다.
+      if (cfg.onMutation) cfg.onMutation(1);
+      const done = window.Intent.chained(cfg.chainKey, send);
+      if (cfg.onMutation) {
+        done.then(() => cfg.onMutation(-1), () => cfg.onMutation(-1));
+      }
+      return done;
+    }
 
     function segsHtml(segs) {
       if (!segs || !segs.length) return "";
@@ -267,13 +304,20 @@
         // 오발되지 않게: 필터=세션 휘발, 결정 24). (리뷰 #1)
         selAnchor = null; selAnchorState = null; lastTableKey = tkey;
         clearTimeout(searchTimer); clearTimeout(colTextTimer);
+        // 타이머만 끄고 **대기 소재**를 남기면 나중 정산(flushPendingEdits)이 죽은 세션의
+        // 열 조건을 새 세션에 보낸다(리뷰 4R P2) — 소재도 같이 버린다.
+        colTextPending = null;
         closeColPanel();
       }
       const hasData = !!s.has_data;
       const t = s.table || { columns: [], rows: [], visible_count: 0 };
       const f = s.filter || { active: false, columns: [] };
       $(ids.selCount).textContent =
-        `선택 ${s.selected_count}/${s.record_count}` +
+        // 표 머리 수치는 **이 표가 그리는 세계**의 것이다(리뷰 3R): 범위 초안이 열려 있으면
+        // 표·체크박스·적용 footer 가 전부 초안인데 여기만 커밋 수치면 화면이 자기와 어긋난다.
+        // 초안 개념이 없는 화면(기안)은 키가 없어 커밋 수치로 자연 강등된다.
+        `선택 ${s.zone_selected_count !== undefined ? s.zone_selected_count : s.selected_count}` +
+        `/${s.record_count}` +
         (f.active ? ` · 표시 ${t.visible_count}` : "");
       const si = $(ids.search);
       si.style.display = hasData ? "" : "none";
@@ -355,7 +399,7 @@
         range.forEach((i) => {
           applyRowSelection($(ids.tableBody).querySelector(`tr[data-i="${i}"]`), value);
         });
-        Bridge.call(SCREEN, "select_range", { indices: range, value });
+        call("select_range", { indices: range, value });
         return;
       }
       selAnchor = idx;
@@ -364,7 +408,7 @@
       // 클릭이 같은 값을 다시 보내 최종 상태가 뒤집히지 않는 경합이 생긴다(#217 R2).
       selAnchorState = !(tr && tr.getAttribute("aria-selected") === "true");
       applyRowSelection(tr, selAnchorState);
-      Bridge.call(SCREEN, "toggle_record", { index: idx, value: selAnchorState });
+      call("toggle_record", { index: idx, value: selAnchorState });
     }
 
     function onTableClick(e) {
@@ -422,8 +466,32 @@
       const si = $(ids.search);
       if (LAST && LAST.has_data && LAST.filter
           && si.value !== (LAST.filter.search || "")) {
-        await Bridge.call(SCREEN, "filter_search", { text: si.value });
+        await call("filter_search", { text: si.value });
       }
+    }
+
+    /* 대기 중 편집 **정산**(확정 경로: 범위 초안 적용) — 디바운스 안에서 확정을 눌러도
+       방금 친 조건이 사라지지 않게 먼저 보낸다. 열 텍스트도 검색과 같은 자격이다. */
+    async function flushPendingEdits() {
+      clearTimeout(colTextTimer);
+      const pending = colTextPending;
+      colTextPending = null;
+      if (pending) await call("filter_col_text", pending);
+      await flushPendingSearch();
+    }
+
+    /* 대기 중 편집 **폐기**(취소 경로) — 보내지 않는다. 디바운스 창 안에서 취소를 누르면
+       그 발신이 초안이 사라진 뒤 도착해 **커밋된 필터**에 착지한다(리뷰 2R P1): 사용자가
+       명시적으로 버린 검색어가 메인 화면에 걸리는 것이라 조용한 파괴다.
+       화면에 남은 타이핑도 함께 놓는다 — 렌더는 포커스가 없을 때만 값을 스냅샷으로
+       되돌리므로(타이핑 중 덮어쓰기 금지의 짝), 포커스를 놓아야 버린 값이 사라진다. */
+    function dropPendingEdits() {
+      clearTimeout(searchTimer);
+      clearTimeout(colTextTimer);
+      colTextPending = null;
+      const si = $(ids.search);
+      if (document.activeElement === si) si.blur();
+      closeColPanel();
     }
 
     /* 스냅샷 관측만 — 렌더 없이 LAST 를 최신으로 유지한다. 화면이 존 렌더를 게이트하는
@@ -461,11 +529,12 @@
       $(ids.search).addEventListener("input", (e) => {
         clearTimeout(searchTimer);
         const text = e.target.value;
-        searchTimer = setTimeout(() => Bridge.call(SCREEN, "filter_search", { text }), 200);
+        searchTimer = setTimeout(() => call("filter_search", { text }), 200);
       });
       // 직전 필터 재적용(결정 28) — 정의만 복원(선택 불변), 탈락은 시끄럽게 고지(백스톱).
       $(ids.reapply).addEventListener("click", async () => {
-        const res = await Bridge.call(SCREEN, "filter_reapply", {});
+        const res = await call("filter_reapply", {});
+        if (!res || res.stale) return;      // 사라진 세계의 요청 — 무동작(유령 문안 금지)
         if (!res.ok) { cfg.log("확인 필요: " + res.error); return; }
         cfg.log(`직전 필터를 재적용했습니다 (조건 열: ${res.installed.join(", ") || "검색만"}).`);
         if (res.dropped.length) {
@@ -475,29 +544,30 @@
       // 필터 밖 선택 스트립 — 항목별 × 해제(리뷰 #6).
       $(ids.strip).addEventListener("click", (e) => {
         const un = e.target.closest("[data-unsel]");
-        if (un) Bridge.call(SCREEN, "toggle_record", { index: Number(un.dataset.unsel), value: false });
+        if (un) call("toggle_record", { index: Number(un.dataset.unsel), value: false });
       });
       // 칩 줄 — 가지 프루닝 ×·필터 지우기(재렌더 생존 위임).
       $(ids.chips).addEventListener("click", (e) => {
         const pr = e.target.closest("[data-prune]");
-        if (pr) { Bridge.call(SCREEN, "filter_prune", { column: pr.dataset.prune }); return; }
-        if (e.target.closest('[data-act="filter-clear"]')) Bridge.call(SCREEN, "filter_clear", {});
+        if (pr) { call("filter_prune", { column: pr.dataset.prune }); return; }
+        if (e.target.closest('[data-act="filter-clear"]')) call("filter_clear", {});
       });
       // 열 필터 패널 — 내부 위임(바깥 클릭/Escape 닫기는 위 Popover.wireDismiss 주입).
       $(ids.colPanel).addEventListener("input", onPanelInput);
       $(ids.colPanel).addEventListener("change", onPanelChange);
       $(ids.colPanel).addEventListener("click", onPanelClick);
       $(ids.selAll).addEventListener("click", async () => {
-        const r = await Bridge.call(SCREEN, "set_all", {});
+        const r = await call("set_all", {});
+        if (r && r.stale) return;           // 사라진 세계의 요청 — 무동작
         // 전멸 필터에서의 무동작은 정직하게 알린다(confirm-or-alarm, 리뷰 #9).
         if (r && r.added === 0) {
           cfg.log("전체 선택: 추가할 행이 없습니다.");
         }
       });
-      $(ids.selNone).addEventListener("click", () => Bridge.call(SCREEN, "set_none", {}));
+      $(ids.selNone).addEventListener("click", () => call("set_none", {}));
     }
 
-    return { wire, render, sync, flushPendingSearch };
+    return { wire, render, sync, flushPendingSearch, flushPendingEdits, dropPendingEdits };
   }
 
   window.DataZone = { create };

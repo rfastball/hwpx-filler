@@ -276,3 +276,14 @@ def test_filter_roles_have_distinct_labels_and_surface_hierarchy():
     assert ".fchip.branch{border-style:dashed" not in css
     assert ".fstrip{border:1px solid var(--a-border)" in css
     assert ".filter-reapply{" in css
+
+
+def test_session_change_drops_pending_column_text() -> None:
+    """리뷰 4R P2 — 세션이 갈리면 대기 중 열 조건 **소재**도 함께 버린다.
+
+    타이머만 끄고 소재를 남기면 나중 정산(`flushPendingEdits`)이 죽은 세션의 조건을 새
+    세션에 보낸다 — 열이 남아 있으면 조용히 걸리고, 없으면 적용이 거절된다.
+    """
+    src = (WEB / "js" / "datazone.js").read_text(encoding="utf-8")
+    reset = src.split("clearTimeout(searchTimer); clearTimeout(colTextTimer);", 1)[1][:400]
+    assert "colTextPending = null" in reset, "세션 전환이 대기 중 열 조건을 남깁니다."

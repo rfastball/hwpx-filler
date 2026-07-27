@@ -143,6 +143,35 @@ class TestWebSelftestGate:
             "all", "recent", "favorites", "needsAction",
         ]
 
+    def test_display_order_axis_survives_the_push_rerender(self, selftest_result: dict) -> None:
+        """재작성 F3 — 표시순서를 바꾸면 왕복 뒤에도 고른 값이 남는다.
+
+        이 축의 결함류는 "왕복 중 도착한 push 가 선택기를 옛 값으로 되돌린다"이고, 정적
+        계약은 요소 존재까지만 본다. 양성대조(`control_before`)가 먼저 선다 — 렌더가 실제로
+        이 요소의 값을 쓴다는 증명이 없으면, 값이 안 바뀌는 프로브도 통과해 버린다.
+        """
+        v = selftest_result["view_order"]
+        assert v.get("error") is None, f"표시순서 프로브 오류: {v!r}"
+        assert v["present"] is True and v["options"] == ["sourceDesc", "sourceAsc"]
+        assert v["control_before"] is True, "양성대조 실패 — 렌더가 선택기를 쓰지 않습니다."
+        assert v["note_before"], "축 옆 재진술 문안이 비어 있습니다(판정 I)."
+        assert v["after_roundtrip"] == "sourceAsc", "왕복 뒤 축이 옛 값으로 되돌아갔습니다."
+        assert v["restored"] == "sourceDesc"
+
+    def test_range_draft_refuses_to_open_without_data(self, selftest_result: dict) -> None:
+        """재작성 F3 — 데이터 없이 여는 범위 편집기는 **거절**이고, 초안은 서지 않는다.
+
+        면만 열리고 초안이 없으면 편집기가 무엇을 편집 중인지 거짓이 된다(성사 뒤에만
+        연다). footer 는 화면 안에서 숨어 있다가 면 슬롯 안에서만 서는 것도 함께 본다 —
+        같은 펼침 면을 「기안」이 쓰기 때문이다.
+        """
+        d = selftest_result["range_draft"]
+        assert d.get("error") is None, f"범위 초안 프로브 오류: {d!r}"
+        assert d["present"] is True
+        assert d["foot_hidden_in_screen"] is True, "footer 가 화면 안에서 노출돼 있습니다."
+        assert d["opened_without_data"] is False, "데이터 없이 초안이 섰습니다(거절 계약 위반)."
+        assert d["draft_state"]["open"] is False
+
     def test_call_chain_survives_a_rejected_link(self, selftest_result: dict) -> None:
         """리뷰 5R — 직렬화 체인은 실패 한 번으로 죽지 않는다.
 
@@ -470,8 +499,13 @@ class TestWebSelftestGate:
         assert j.get("error") is None, j
         assert j["mirror_capped"] and j["mirror_capstrip"], j
         assert j["confirm_moved"] and j["confirm_dispatch"] and j["confirm_restored"], j
-        assert j["job_data_moved"] and j["job_data_first_sticky"] and j["job_data_restored"], j
         assert j["edit_closes_sheets"], j
+        # ⤢ 데이터 면은 별도 비동기 프로브(열기가 Python 왕복 뒤 — F3): 이동·헤더 고정·복귀
+        # (포커스 포함)에 더해 범위 편집기 footer 가 **면 안에서만** 서는 것까지 본다.
+        d = selftest_result["data_sheet"]
+        assert d.get("error") is None, d
+        assert d["moved"] and d["first_sticky"] and d["restored"], d
+        assert d["foot_shown_in_sheet"] is True, "범위 편집기 footer 가 면 안에서 안 섭니다."
         assert len(j["job_grid_wide"].split()) == 2, j
         narrow = selftest_result["job_density_narrow"]
         assert narrow["panel"] <= 900, (

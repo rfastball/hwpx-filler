@@ -33,6 +33,32 @@ WEB_JS_DIR = Path(__file__).resolve().parents[1] / "web" / "js"
 # 아니다(기안 세션은 공용 팩토리 draftsession.js 소유, 「기안」 화면이 소비).
 PRESERVE_WRAPPED_FILES = ("draftsession.js", "screens/editor.js", "screens/job.js")
 
+# 렌더 층 **가변 모듈 상태 예산**. Python 이 상태를 단일 소유하고 스냅샷을 미는 모델에서 JS 의
+# 가변 모듈 상태는 전부 "스냅샷이 답하지 않아 표면이 답하는 것"이다 — 조용히 자라면 파생 가능한
+# 값을 저장한 뒤 그것을 읽어 DOM 을 미는 **전이 함수**가 딸려 오고, 상태 조합은 곱셈으로 늘어
+# 전이가 그 조합만큼 갈린다(F3·F4 리뷰의 상태-누수 P1·P2 다수가 이 계열).
+#
+# 상한은 **현재 실측값**이고 비교는 `<=` 다 — 즉 **줄이는 건 언제나 통과하고 늘리는 것만 시끄럽다**.
+# 넘기려면 두 출구가 먼저다: ①스냅샷에서 파생해 변수를 지운다 ②Python 스냅샷으로 승격한다.
+# 그래도 필요하면(순수 뷰 찌꺼기 — 펼침·실측 픽셀·옵서버 핸들) 상한을 올리되 **파생 불가 사유를
+# 선언 옆 주석으로** 남긴다. 정리 자체는 메인 흐름 배선(F5~F8) 완주 후 일괄이고, 이 예산은
+# 그때까지 **천장만** 지킨다(사용자 확정 2026-07-27).
+#
+# `const`(팩토리·헬퍼·상수)는 세지 않는다 — 병은 가변성이지 모듈 스코프가 아니다. `datazone.js`
+# 가 0 인 것이 도달 가능한 목표라는 증거고, `screens/job.js` 17 은 이 앱에서 유일하게 **긴 수명의
+# 절차**(데이터 선택 → 게이트 → 생성 → 결과 → 강등)를 담기 때문이다. 숙주는 파일 크기가 아니라
+# 절차의 길이 — 절차를 늘리는 슬라이스(F7 재시도)가 이 천장을 먼저 만나야 한다.
+MUTABLE_MODULE_STATE_BUDGET = {
+    "screens/job.js": 17,
+    "screens/template.js": 5,
+    "screens/draft.js": 3,
+    "screens/editor.js": 3,
+    "screens/library.js": 3,
+    "data_picker.js": 4,
+    "draftsession.js": 2,
+    "datazone.js": 0,
+}
+
 # 살아있는 컴포넌트 갤러리(개발 전용) — 실 tokens.css+app.css 를 <link> 로 물어 드리프트 0.
 GALLERY = Path(__file__).resolve().parents[1] / "docs" / "UI_GALLERY.html"
 
@@ -609,6 +635,57 @@ def test_preserve_helper_loaded_and_wraps_screen_renders():
         assert "Preserve.around" in src, (
             f"{rel} 의 render() 가 Preserve.around 래핑을 잃었습니다 — 재렌더 시 상호작용 유실(#28)."
         )
+
+
+def _mutable_module_state(src: str) -> list[str]:
+    """IIFE 본문(2칸 들여쓰기)의 `let`·`var` 선언 이름 — 렌더 층 가변 모듈 상태의 실측치.
+
+    블록 주석을 먼저 지운다(주석 속 예시 코드가 예산을 먹지 않게). 이 앱의 `web/js/*` 는 전부
+    `(function () {` 즉시실행 래퍼라 **2칸 = 모듈 스코프**이고 함수 본문은 4칸 이상이다 —
+    파서 없이 성립하는 관례 기반 계측이며, 예산(천장)에는 이 정밀도로 충분하다.
+    """
+    body = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+    return re.findall(r"^  (?:let|var)\s+([A-Za-z_$][\w$]*)", body, flags=re.M)
+
+
+def test_render_layer_mutable_module_state_stays_within_budget():
+    """렌더 층의 가변 모듈 상태가 예산을 넘지 않는다 — 파생 가능한 상태의 조용한 축적 차단.
+
+    Python 단일소유 모델에서 JS 가변 모듈 상태는 "스냅샷이 답하지 않아 표면이 답하는 것"이다.
+    늘어나면 그것을 읽어 DOM 을 미는 전이 함수가 딸려 오고, 상태 조합은 곱셈으로 늘어 전이가
+    그만큼 갈린다 — F3·F4 리뷰가 상태-누수 P1·P2 로 실제로 밟은 자리다. 상한은 실측값이고
+    비교가 `<=` 라 **정리는 항상 통과하고 축적만 시끄럽다**(정리 시점은 F5~F8 완주 후 일괄).
+
+    이 계측이 잡는 것은 개수뿐이다 — 무효화 스킴이 여러 벌인지(캐시 무효화)나 표면이 판정을
+    재계산하는지는 못 본다. 그 둘은 슬라이스별 계약 테스트와 실앱 101 순회가 맡는다.
+    """
+    for rel, ceiling in sorted(MUTABLE_MODULE_STATE_BUDGET.items()):
+        path = WEB_JS_DIR / rel
+        assert path.exists(), f"예산 대상 {rel} 이 사라졌습니다 — 파일이 죽었으면 예산에서도 지우세요."
+        names = _mutable_module_state(path.read_text(encoding="utf-8"))
+        assert len(names) <= ceiling, (
+            f"{rel} 의 가변 모듈 상태가 {len(names)}개로 예산 {ceiling}개를 넘었습니다: "
+            f"{', '.join(names)}. 먼저 두 출구를 보세요 — ①스냅샷에서 파생해 변수를 지운다 "
+            f"②Python 스냅샷으로 승격한다(전이 함수가 렌더 팬아웃으로 붕괴). 순수 뷰 찌꺼기라 "
+            f"둘 다 아니면 이 예산의 상한을 올리되 파생 불가 사유를 선언 옆 주석으로 남기세요."
+        )
+
+
+def test_render_layer_state_budget_covers_every_screen():
+    """모든 화면 파일이 예산에 등재돼 있다 — 신설 화면이 예산 밖으로 조용히 새지 않게.
+
+    커버리지 가드가 없으면 예산은 "등재된 파일만" 지키고 다음 화면은 처음부터 자유가 된다.
+    F2 PR-A 의 건강 번역 커버리지 테스트와 같은 형태 — 다음 누락은 사람이 아니라 게이트가 잡는다.
+    """
+    screens = {f"screens/{p.name}" for p in (WEB_JS_DIR / "screens").glob("*.js")}
+    missing = sorted(screens - set(MUTABLE_MODULE_STATE_BUDGET))
+    assert not missing, (
+        f"화면 파일이 상태 예산에 없습니다: {', '.join(missing)}. "
+        f"MUTABLE_MODULE_STATE_BUDGET 에 실측 상한을 등재하세요(신설 화면의 기준선은 낮게 — "
+        f"job.js 17 은 긴 절차가 만든 부채지 목표가 아닙니다)."
+    )
+
+
 def test_job_overwrite_uses_shared_confirm_modal():
     """덮어쓰기 확인이 공용 Modal.confirm(수치 합성 본문)을 쓴다 — 전용 모달·window.confirm 무사용.
 
@@ -839,6 +916,122 @@ def test_job_data_first_prework_surface_contract():
     assert 'aria-pressed") !== "true"' in src, "활성 후보 재활성화 가드가 없습니다."
 
 
+def test_job_display_order_axis_surface_contract():
+    """재작성 F3 정적 계약 — 표시순서 축의 요소·2값·⤢ 동행·왕복 의도 보호.
+
+    실행 거동(왕복 뒤 값 유지)은 selftest ``view_order`` 프로브가 본다. 여기서는 그 프로브가
+    없으면 조용히 사라질 배선을 못박는다: ①축 요소 3종 ②계약이 정한 2값 그대로(§18.10)
+    ③⤢ 펼침 면 이동 목록에 동행(축이 메인에만 남으면 펼친 면에서 도달 불가) ④왕복 중
+    의도 보호(pendingOrder) — 셋 다 "지우면 조용히 나빠지는" 배선이다.
+    """
+    html = WEB_INDEX.read_text(encoding="utf-8")
+    for element in ('id="jobOrderBar"', 'id="jobOrderSel"', 'id="jobOrderNote"'):
+        assert element in html, f"표시순서 축 요소가 없습니다: {element}"
+    assert 'value="sourceDesc"' in html and 'value="sourceAsc"' in html, (
+        "표시순서 2값(§18.10)이 계약 어휘와 다릅니다."
+    )
+    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    moves = src.split("openJobDataSheet", 1)[1].split("moves: [", 1)[1].split("]", 1)[0]
+    assert "jobOrderBar" in moves, "⤢ 펼침 면에 표시순서 축이 따라가지 않습니다(판정 C)."
+    assert "pendingOrder" in src, "왕복 중 의도 보호가 없습니다 — push 가 선택을 되돌립니다."
+    assert "set_view_order" in src
+
+
+def test_job_range_draft_surface_contract():
+    """재작성 F3 정적 계약 — 범위 편집기 footer 의 소유·출구 단일 관문·성사 뒤 열기.
+
+    ①footer 는 화면 DOM 소유다(면 마크업에 두면 같은 면을 쓰는 「기안」에 남의 footer 가
+    뜬다) ②모든 출구(취소·닫기·Escape)가 `beforeClose` 한 관문을 지난다 — 경로마다 가드를
+    걸면 하나는 반드시 빠진다 ③초안 생성이 성사된 뒤에만 면을 연다.
+    """
+    html = WEB_INDEX.read_text(encoding="utf-8")
+    assert 'id="jobRangeFoot"' in html, "범위 편집기 footer 가 없습니다."
+    # 소유 = 「문서 만들기」 화면 루트 안(공용 펼침 면 마크업 밖). 면 안에 두면 같은 면을
+    # 쓰는 「기안」에 남의 footer 가 뜬다 — 실 DOM 이동이 소유를 대신 증명한다.
+    job_screen = html.split('id="scr-job"', 1)[1].split('id="dataSheet"', 1)[0]
+    assert 'id="jobRangeFoot"' in job_screen, (
+        "footer 가 화면 소유가 아닙니다 — 공용 펼침 면 마크업에 있으면 「기안」에도 뜹니다."
+    )
+    for element in ("jobRangeApply", "jobRangeCancel", "jobRangeSelectedOnly", "jobRangeNote"):
+        assert f'id="{element}"' in html, f"범위 편집기 출구가 없습니다: {element}"
+    src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    assert "beforeClose: guardRangeClose" in src, "이탈 가드가 닫기 관문에 걸려 있지 않습니다."
+    assert 'Bridge.call(SCREEN, "range_draft_open"' in src
+    assert "SurfaceSheet.open" in src.split("range_draft_open", 1)[1], (
+        "초안 생성 **뒤에** 면을 여는 순서가 아닙니다(성사 뒤에만 닫고 연다)."
+    )
+    # 열기도 **존 체인**에 선다(리뷰 5R): 방금 친 편집이 큐에 있는데 열기가 먼저 도착하면
+    # 그 편집이 옛 세대로 거절돼 사용자가 본 변경이 커밋에도 초안에도 없이 사라진다.
+    open_fn2 = src.split("function openJobDataSheet", 1)[1].split("\n  }", 1)[0]
+    assert "flushPendingEdits" in open_fn2 and "Intent.chained(ZONE_CHAIN" in open_fn2, (
+        "열기가 대기 중 편집을 추월합니다(정산·직렬화 없음)."
+    )
+    # 데이터-우선(§18.2): 데이터 면의 강제 닫기는 **편집 모드**에서만 — 작업 미선택 렌더마다
+    # 닫으면 작업을 고르기 전엔 범위 편집기가 첫 왕복마다 취소돼 쓸 수 없다(리뷰 5R).
+    mode_fn = src.split("function syncModeDisplay", 1)[1].split("\n  }", 1)[0]
+    assert 'if (edit) {' in mode_fn and 'closeAndRestore("dataSheet")' in mode_fn, (
+        "데이터 면 강제 닫기가 편집 모드 조건이 아닙니다."
+    )
+    assert '!hasJob) window.SurfaceSheet.closeAndRestore("jobConfirmSheet")' in mode_fn, (
+        "거울 면은 작업이 없으면 닫혀야 합니다(작업의 것이라 설 자리가 없다)."
+    )
+    assert 'Bridge.call(SCREEN, "range_draft_cancel"' in src, "닫힘 경로가 초안을 버리지 않습니다."
+    # 취소도 **성사 뒤에 닫는다**(리뷰 1R): 먼저 닫으면 느린 브리지에서 메인이 초안 기준
+    # 행을 그리고, 발신이 거절되면 Python 초안만 고아로 남는다.
+    discard = src.split("async function discardAndClose", 1)[1].split("\n  }", 1)[0]
+    assert discard.index("await window.Intent.chained") < discard.index("SurfaceSheet.close"), (
+        "취소가 폐기 성사 전에 면을 닫습니다."
+    )
+    # 디바운스 안에서 누른 취소는 대기 중 편집을 **보내지 않는다**(리뷰 2R P1) — 초안이
+    # 사라진 뒤 도착하면 버린 검색어가 커밋된 필터에 착지한다. 적용 쪽은 반대로 정산한다.
+    assert discard.index("dropPendingEdits") < discard.index("range_draft_cancel"), (
+        "취소가 대기 중 편집을 폐기하지 않습니다."
+    )
+    apply_fn = src.split("async function applyRangeDraft", 1)[1].split("\n  }", 1)[0]
+    assert apply_fn.index("flushPendingEdits") < apply_fn.index("range_draft_apply"), (
+        "적용이 대기 중 편집을 정산하지 않습니다(방금 친 조건이 사라집니다)."
+    )
+    # 존 변이는 **대상 세계 세대**를 업고 간다(리뷰 4R) — 느린 출구 뒤에 줄 선 편집이
+    # 커밋 범위에 착지하던 창을 원천에서 닫는다. 판정은 Python, 웹은 나르기만.
+    assert "epoch: () => (LAST ? LAST.zone_epoch : undefined)" in src, (
+        "존 변이가 대상 세계 세대를 싣지 않습니다."
+    )
+    assert "pendingZoneMutations" in src, "대기 중 편집 카운터가 없습니다(이탈 가드 소재)."
+    guard = src.split("function guardRangeClose", 1)[1].split("\n  }", 1)[0]
+    assert "pendingZoneMutations === 0" in guard, (
+        "이탈 가드가 아직 푸시 안 온 편집을 못 봅니다 — 확인 없이 버립니다."
+    )
+    # 축 왕복 실패는 선택기를 되돌린다(스냅샷이 안 오므로 화면이 거짓말한 채 남는다).
+    order_fail = src.split("async function onOrderChange", 1)[1].split("\n  }", 1)[0]
+    assert "renderOrderBar(LAST)" in order_fail, "축 왕복 실패가 선택기를 되돌리지 않습니다."
+    # 존 발신과 초안 출구가 **한 체인**을 쓴다 — 도착 순서가 뒤바뀌면 취소한 편집이 커밋된다.
+    assert 'chainKey: ZONE_CHAIN' in src and 'ZONE_CHAIN = "job:zone"' in src
+    zone = (WEB_JS_DIR / "datazone.js").read_text(encoding="utf-8")
+    assert "window.Intent.chained(cfg.chainKey, send)" in zone, "존 발신이 체인을 타지 않습니다."
+    # 무변이 질의는 체인 밖 — 응답이 늦는 질의 하나가 이후 모든 변이를 막지 않게.
+    assert "ZONE_QUERIES" in zone and '"filter_panel"' in zone
+    assert "Bridge.call(SCREEN" not in zone.split("function call(", 1)[1].split("}", 1)[1], (
+        "존 발신 중 통로를 우회하는 호출이 남아 있습니다."
+    )
+    # 열기 왕복 중 화면 이탈 — 전역 면이 남의 화면 위에 뜨지 않게 열지 않고 초안을 거둔다.
+    open_fn = src.split("function openJobDataSheet", 1)[1].split("\n  }", 1)[0]
+    assert 'classList.contains("on")' in open_fn and 'MODE !== "run"' in open_fn, (
+        "열기 왕복 중 화면 이탈을 확인하지 않습니다."
+    )
+    # 결과 강등 판정은 표의 선택 표지가 아니라 Python 이 낸 커밋 지문을 쓴다(리뷰 1R P1).
+    key = src.split("function sessionKey", 1)[1].split("\n  }", 1)[0]
+    assert "selection_key" in key and ".selected" not in key, (
+        "세션 지문이 표의 선택 표지에서 파생됩니다 — 초안이 결과를 강등시킵니다."
+    )
+    # 축 왕복도 **같은 체인**을 탄다(리뷰 1R P2·3R P1) — 체인 키는 상태 단위이지 위젯 단위가
+    # 아니다. 축만 따로 세우면 취소가 먼저 초안을 지우고 늦은 축 변경이 커밋에 착지한다.
+    order_fn = src.split("async function onOrderChange", 1)[1].split("\n  }", 1)[0]
+    assert "Intent.chained(ZONE_CHAIN" in order_fn, "표시순서가 존 체인 밖에서 발신됩니다."
+    assert "job:view_order" not in src, "축 전용 체인 키가 남아 있습니다(두 줄 = 순서 미보장)."
+    sheet = (WEB_JS_DIR / "surface_sheet.js").read_text(encoding="utf-8")
+    assert "beforeClose" in sheet, "펼침 면이 이탈 가드를 Modal 로 넘기지 않습니다."
+
+
 def test_job_document_browser_surface_contract():
     """슬라이스 3 정적 계약 — 문서 탐색 면은 `job` 화면의 **하위 화면**이고 판정은 Python 소유.
 
@@ -881,8 +1074,11 @@ def test_job_document_browser_surface_contract():
     assert "pendingFocus" not in src, "예약 포커스 기제가 남아 있습니다(유령 착지)."
     # 선택 경로는 닫기까지만 하고 착지는 onClose 가 한다(아래 1지점 계약).
     # 생성 중 잠금(2R P2): 탐색 면은 오버레이 루트라 `#scr-job` 질의에 안 걸린다 —
-    # setBusy 가 그 루트도 훑고, 출구·탭·행이 busy-lock 을 달아야 한다.
-    assert 'dataPickerModal")].forEach' in src, "setBusy 가 탐색 면을 잠그지 않습니다."
+    # setBusy 가 그 루트도 훑고, 출구·탭·행이 busy-lock 을 달아야 한다. ⤢ 펼침 면 2종도
+    # 같은 자격이다(F3): 실 DOM 이동이라 잠글 요소가 면 안으로 **옮겨가** 화면 질의에서 빠진다.
+    busy_roots = src.split("function setBusy", 1)[1].split("forEach", 1)[0]
+    for root in ("jobBrowseSheet", "dataPickerModal", "dataSheet", "jobConfirmSheet"):
+        assert f'$("{root}")' in busy_roots, f"setBusy 가 {root} 을(를) 잠그지 않습니다."
     assert src.count("data-busy-lock data-browse") == 3, (
         "탐색 면 출구·탭·행의 busy-lock 표식이 빠졌습니다."
     )

@@ -646,6 +646,21 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 .run-row{display:flex;align-items:center;gap:var(--sp-8);margin-top:var(--sp-12)}
 .run-row .field{flex:1;min-width:0}
 .run-recs-head{justify-content:space-between}
+/* 범위 편집기 footer(F3) — 소유는 화면 DOM 이고 **면 슬롯 안에서만** 보인다(실 DOM 이동).
+   면 바닥에 붙어 표를 스크롤하는 동안에도 적용·취소가 상시 도달 가능하다. */
+.range-foot{display:none}
+#dataSheetSlot > .range-foot{display:flex;align-items:center;gap:var(--sp-8);
+  position:sticky;bottom:0;z-index:1;margin-top:var(--sp-10);
+  padding:var(--sp-10) 0 var(--sp-4);background:var(--a-card);
+  border-top:1px solid var(--a-border)}
+#dataSheetSlot > .range-foot .muted{flex:1;min-width:0;margin:0;font-size:var(--fs-caption)}
+#dataSheetSlot > .range-foot .btn[aria-pressed="true"]{border-color:var(--a-primary);color:var(--a-primary)}
+/* 표시순서 축(F3) — 라벨+선택기는 고정폭, 재진술 문안이 남는 폭을 먹고 줄바꿈한다
+   (기안 글꼴 바 .wc-fontbar 와 같은 조판 — 같은 형태의 줄은 같은 규칙으로 선다). */
+.job-orderbar{margin-top:var(--sp-8);flex-wrap:wrap}
+.job-orderbar .lbl{font-size:var(--fs-caption);color:var(--a-muted);font-weight:700;flex:none}
+.job-orderbar .field{flex:none;width:auto}
+.job-orderbar .capnote{flex:1;min-width:0}
 
 /* 사전검증 박스 */
 .preflight{margin-top:var(--sp-12);font-size:var(--fs-body);padding:var(--sp-8) var(--sp-10);border-radius:var(--rad-surface);line-height:1.5}

@@ -59,6 +59,8 @@ from ..gui.filter_state import (
     FilterModel,
 )
 from ..gui.result_errors import classify_result_error, describe_fill_note
+from ..naming import pattern_uses_seq
+from ..gui.record_range import RecordRange, RecordRangeDraft
 from ..gui.run_state import RunViewModel, resolve_file_source, resolve_pool_source
 from ..gui.selection_state import SelectionModel
 from ..gui.work_candidates import (
@@ -73,6 +75,7 @@ from ..gui.work_candidates import (
     rank_available,
     suggested_work,
 )
+from .action_registry import ZONE_MUTATIONS
 from .job_list import drift_note
 from .settings import load_job_collapsed_groups, save_job_collapsed_groups
 from .data_zone import (
@@ -101,6 +104,13 @@ _EMPTY_RESTATE = {
 
 # 재진술 이름 목록 표본 크기 — 소량(≤N)=전부, 대량=층화 표본 N + 「외 …건 펼치기」(결정 5·36).
 _RESTATE_SAMPLE = 3
+
+# 전체 표시순서 2값(§18.10) — ``snapshotOrdinal``(=로드 순서 index) 내림/오름차순.
+# 정렬 키가 정수라 **동률이 원리적으로 없다** — 2차 정렬 규칙이 필요 없고 두 값은 정확한
+# 역이다(지도 §10.11.1 정밀도 면). 새 값을 늘리려면 그 성질부터 다시 센다.
+VIEW_ORDER_DESC = "sourceDesc"
+VIEW_ORDER_ASC = "sourceAsc"
+VIEW_ORDERS = (VIEW_ORDER_DESC, VIEW_ORDER_ASC)
 
 
 def _run_status(succeeded: int, total: int, cancelled: bool = False) -> str:
@@ -172,6 +182,21 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.datasource = None
         self.records: "list[dict]" = []
         self.selection = SelectionModel(0)
+        # 전문 범위 편집기 초안(§18.10, 재작성 F3) — 열려 있으면 존 13액션이 **이것**을
+        # 편집하고 커밋된 범위는 그대로 선다(불변식 §18.11-21). 스냅샷 세대는 초안이 어느
+        # 레코드 집합 위에서 열렸는지의 표식이다(적용 시점 정합 판정).
+        self.range_draft: "RecordRangeDraft | None" = None
+        self._snapshot_gen = 0
+        # 존 변이의 **대상 세계 세대**(리뷰 4R) — 초안이 열리거나 닫히거나(적용·취소) 데이터가
+        # 갈릴 때 오른다. 웹은 발신 시점에 보고 있던 세대를 실어 보내고, 세대가 다른 변이는
+        # **남의 세계의 편집**이라 적용하지 않는다: 느린 출구 뒤에 줄 선 편집이 초안이 사라진
+        # 커밋 범위에 착지하던 창을 원천에서 닫는다(경계의 시간 축, 지도 §10.11.9).
+        self.zone_epoch = 0
+        # 전체 표시순서(§18.10 ``recordRange.viewOrder``, 재작성 F3 — 지도 §10.11).
+        # **데이터 귀속** 상태다: 새 스냅샷은 기본값으로 돌아간다(불변식 §18.11-13 "새
+        # 스냅샷은 최신 행 먼저"). 개인화 설정으로 승격하지 않는다 — 순서가 파일명의
+        # 함수라(§2 충돌 B) 지난 데이터의 순서를 새 데이터가 물고 오면 이름이 조용히 갈린다.
+        self.view_order = VIEW_ORDER_DESC
         # 필터 선언 상태(블록 4, 결정 23~25) — 스코프 = 세션(작업×데이터, 결정 24).
         # 데이터 겨눔 시 생성, 작업 전환·데이터 교체 시 재생성(전환 인계는 PR-4 결정 28).
         self.filter: "FilterModel | None" = None
@@ -225,10 +250,144 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._push_sink(self.name, self.snapshot())
 
     # ------------------------------------------------------------- 스냅샷
+    # -------------------------------------------- 범위 상태 접근(커밋 vs 초안, 판정 A·D)
+    def _committed_range(self) -> RecordRange:
+        """세션의 커밋된 범위 — 실행 입력·게이트·거울·세션 가드가 보는 유일한 값."""
+        return RecordRange(self.selection, self.filter, self.view_order)
+
+    def _zone_range(self) -> RecordRange:
+        """존(표·필터·스트립·재진술)이 편집·표시하는 범위 — 초안이 열려 있으면 초안."""
+        return self.range_draft.range if self.range_draft else self._committed_range()
+
+    def _zone_sel(self) -> SelectionModel:
+        return self._zone_range().selection
+
+    def _zone_flt(self) -> "FilterModel | None":
+        return self._zone_range().filter
+
+    def _zone_set_flt(self, model: FilterModel) -> None:
+        if self.range_draft is not None:
+            self.range_draft.range.filter = model
+        else:
+            self.filter = model
+
+    def _zone_visible(self, view) -> "list[int]":
+        """「선택된 항목만 보기」(초안 전용 보기) — 검색·열 필터를 **일시적으로 적용하지 않고**
+        초안 선택 집합만 그린다. 필터 정의는 살아 있고(칩 줄 유지) 판정은 필터 가시 집합을
+        계속 쓴다 — 보기 상태가 판정을 물들이면 "선택만 보는 중"이 "정의-유래 선택"으로
+        오독된다(재진술 유래가 뒤집힌다)."""
+        if self.range_draft is not None and self.range_draft.selected_only:
+            return self.range_draft.range.selection.selected_indices()
+        return view.visible_indices()
+
+    @staticmethod
+    def _ordered(view_order: str, indices: "list[int]") -> "list[int]":
+        """표시 순서 투영의 몸통 — 축 값 하나에 대한 순수 함수(커밋·초안이 같이 쓴다)."""
+        return sorted(indices, reverse=view_order == VIEW_ORDER_DESC)
+
     def _display_indices(self, indices: "list[int]") -> "list[int]":
-        """표시 순서 = sourceDesc(§18.10, 충돌 B 확정 2026-07-26) — 최신 행(마지막 원본
-        행)이 먼저다. 표 렌더·실행 입력이 이 한 훅을 공유한다(보이는 것=실행되는 것)."""
-        return sorted(indices, reverse=True)
+        """**존 표시** 순서(§18.10, 충돌 B 확정 2026-07-26) — 초안이 열려 있으면 초안의 축.
+
+        기본 `sourceDesc` 는 최신 행(마지막 원본 행)이 먼저다. 표 렌더·필터 밖 선택 스트립·
+        파일 이름 미리보기가 **이 한 훅을 공유**한다(보이는 것 = 만들어지는 것) — 축을
+        사용자에게 연 뒤에도 소비처를 늘리지 않는 것이 WYSIWYG 의 담보다(지도 §10.11.1
+        도달성 면). 실행 입력만은 이 훅을 타지 않는다: :meth:`_indices` 는 **커밋된** 축으로
+        직접 투영한다(초안이 실행 순서를 미리 바꾸면 불변식 §18.11-21 이 깨진다).
+        """
+        return self._ordered(self._zone_range().view_order, indices)
+
+    def _reset_range_for_snapshot(self, count: int) -> None:
+        """새 스냅샷(데이터 마운트·교체) = 범위 상태 초기화 — 선택 0건 + 기본 표시순서.
+
+        불변식 §18.11-12(commit 뒤 최초 선택 0건)·13(새 스냅샷은 최신 행 먼저)의 단일 이행
+        지점이다. 두 마운트 경로(파일·풀)가 같은 seam 을 타야 한 쪽만 고쳐지는 드리프트가
+        안 생긴다. **작업 선택은 이 seam 을 타지 않는다** — 불변식 §18.11-23(문서 작업 선택은
+        `RecordRangeState` 를 바꾸지 않는다). 필터 재생성(`_init_filter`)은 작업 선택도
+        조건부로 타므로 그쪽에 얹지 않는다.
+        """
+        self.selection = SelectionModel(count, all_selected=False)
+        self.view_order = VIEW_ORDER_DESC
+        # 세대를 올리고 초안을 버린다(판정 J): 초안의 index 는 죽은 스냅샷의 좌표다. 세대는
+        # 초안이 살아남는 경로가 생기더라도 적용 시점에 그 사실이 **드러나게** 하는 표식이다.
+        self._snapshot_gen += 1
+        self.range_draft = None
+        self.zone_epoch += 1
+
+    def _do_set_view_order(self, p: dict) -> None:
+        """표시순서 전환 — 미지 값은 시끄럽게 거절한다(조용한 기본값 강등 금지).
+
+        선택 집합은 **건드리지 않는다**: 순서는 투영이고 선택은 집합이라 축이 바뀌어도
+        같은 행이 남는다(§18.10 "검색과 필터는 가시성만"의 정렬판). 바뀌는 것은 생성
+        **순서**와 그 함수인 파일명 순번이며, 그 사실은 표면 문안(`order_note`)이 진다.
+        """
+        value = str(p.get("value", ""))
+        if value not in VIEW_ORDERS:
+            raise ValueError(f"알 수 없는 표시순서: {value!r}")
+        if self.range_draft is not None:  # 축도 초안이 덮는다(판정 B) — 적용해야 실행에 든다
+            self.range_draft.range.view_order = value
+        else:
+            self.view_order = value
+
+    # --------------------------------- 전문 범위 편집기 초안(§18.10, 지도 §10.11 판정 A·F)
+    def _draft_or_raise(self) -> RecordRangeDraft:
+        if self.range_draft is None:  # 표면 오배선 — 초안 없는 초안 액션은 프로그램 결함
+            raise ValueError("범위 편집기가 열려 있지 않습니다.")
+        return self.range_draft
+
+    def _do_range_draft_open(self, p: dict) -> dict:
+        """편집기 진입 = 범위 깊은 복제. 이미 열려 있으면 **다시 복제하지 않는다**.
+
+        재진입이 복제를 갱신하면 왕복 지연 중 두 번 눌린 출구가 사용자의 편집을 조용히
+        되돌린다(멱등). 생성 중 진입은 거절한다 — 초안 적용은 실행 입력을 바꾸는 전이라
+        진행 중인 런과 겹치면 어느 범위로 만든 결과인지 갈린다.
+        """
+        if self._generation_lock.locked():
+            raise ValueError("문서 생성이 진행 중입니다. 끝난 뒤에 범위를 편집하세요.")
+        if self.datasource is None or not self.records:
+            raise ValueError("데이터를 먼저 선택하세요.")
+        if self.range_draft is None:
+            committed = self._committed_range()
+            self.range_draft = RecordRangeDraft(
+                range=committed.copy(),
+                snapshot_gen=self._snapshot_gen,
+                base_fingerprint=committed.fingerprint(),
+            )
+            self.zone_epoch += 1     # 이 순간부터 존 변이의 대상은 초안이다
+        return {"ok": True, "epoch": self.zone_epoch}
+
+    def _do_range_draft_apply(self, p: dict) -> dict:
+        """적용 = 초안을 커밋으로 원자 교체. 세대가 다르면 **거절하고 면을 닫지 않는다**.
+
+        세대 불일치(적용 전 데이터가 갈림)에서 조용히 커밋하면 죽은 스냅샷의 index 로 남의
+        행을 고른다 — F4 판정 F("웹이 인덱스를 들고 있다 되돌려주면")와 같은 뿌리다.
+        실행 증거의 처리는 여기서 하지 않는다: 지문이 갈리면 결과가 「직전 실행」으로
+        **강등**되고(F4 판정 G) 그 판정은 스냅샷을 보는 표면이 이미 갖고 있다 — 폐기는
+        「결과 닫기」 하나뿐이라는 규칙을 초안이 되돌리지 않는다.
+        """
+        draft = self._draft_or_raise()
+        if self._generation_lock.locked():
+            raise ValueError("문서 생성이 진행 중입니다. 끝난 뒤에 적용하세요.")
+        if draft.snapshot_gen != self._snapshot_gen:
+            raise ValueError(
+                "데이터가 바뀌어 편집하던 범위를 적용할 수 없습니다. "
+                "지금 데이터에서 다시 고르세요."
+            )
+        self.selection = draft.range.selection
+        self.filter = draft.range.filter
+        self.view_order = draft.range.view_order
+        self.range_draft = None
+        self.zone_epoch += 1     # 초안 세계는 여기서 끝난다 — 뒤늦은 편집은 남의 것
+        return {"ok": True}
+
+    def _do_range_draft_cancel(self, p: dict) -> dict:
+        """취소 = 초안만 버린다(불변식 §18.11-21) — 메인 범위·실행 증거는 그대로다."""
+        self.range_draft = None
+        self.zone_epoch += 1     # 적용과 같다: 버린 세계의 편집이 커밋에 착지하지 않게
+        return {"ok": True}
+
+    def _do_set_selected_only(self, p: dict) -> None:
+        """「선택된 항목만 보기」 — 초안 안에서만 사는 **보기** 상태(판정 B, 적용 대상 아님)."""
+        self._draft_or_raise().selected_only = bool(p.get("value"))
 
     def _indices(self) -> "list[int]":
         """실행 입력 = OrderedSelection(§2): 선택 집합을 **전체 표시순서에 투영**한다.
@@ -237,8 +396,56 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         꼬리표(``naming._dedupe``)가 화면에 보이는 위→아래 순서를 그대로 따른다(WYSIWYG).
         같은 선택이라도 표시 순서가 다르면 파일명이 달라질 수 있다 — 인지하고 수용한
         확정(봉합 지도 §2)이며, 완화는 파일명 미리보기가 같은 투영을 보여주는 것이다.
+
+        **커밋된 범위로만** 투영한다(F3 판정 D): 초안이 열려 있어도 실행 입력은 움직이지
+        않는다 — 적용 전 메인 범위 불변이 불변식 §18.11-21 이다.
         """
-        return self._display_indices(self.selection.selected_indices())
+        return self._ordered(self.view_order, self.selection.selected_indices())
+
+    def _zone_indices(self) -> "list[int]":
+        """존이 그리는 선택 투영 — 표의 파일 이름 미리보기와 재진술이 소비한다.
+
+        초안이 열려 있으면 **초안 기준**이다: 이름이 커밋 기준으로 남으면 편집기 안에서
+        순서를 바꿔도 「문서」 열이 안 움직여, 판정 I 의 완화("표가 새 이름을 즉시
+        보여준다")가 하필 그 축을 만지는 자리에서 죽는다.
+        """
+        zone = self._zone_range()
+        return self._ordered(zone.view_order, zone.selection.selected_indices())
+
+    def _range_draft_payload(self) -> dict:
+        """범위 초안 구획 — 열림·변경 여부·초안 수치·보기 상태.
+
+        ``dirty`` 는 **연 뒤 내가 바꿨는가**다(이탈 가드의 무장 조건, 판정 F). ``sel_count``
+        는 초안 기준이라 면 footer 의 「선택 적용: N건」이 커밋 수치와 갈리지 않는다 —
+        표면이 행을 세지 않는다(F4 3R 근본원인: 정합을 표면이 재판정하게 두지 않는다).
+        """
+        draft = self.range_draft
+        if draft is None:
+            return {
+                "open": False, "dirty": False, "sel_count": 0,
+                "selected_only": False, "view_order": self.view_order,
+            }
+        return {
+            "open": True,
+            "dirty": draft.is_dirty(),
+            "sel_count": draft.range.selection.selected_count(),
+            "selected_only": draft.selected_only,
+            "view_order": draft.range.view_order,
+        }
+
+    def _order_note(self) -> str:
+        """표시순서 축 옆 상시 재진술(지도 §10.11 판정 I) — 확인 왕복 대신 문안이 진다.
+
+        앞 절은 **언제나 참**이고(표시 순서 = 생성 순서), 파일 이름 절은 규칙이 실제로
+        ``{{seq}}`` 를 쓸 때만 붙는다 — 안 쓰는 작업에도 말하면 문안이 거짓이 되고 거짓
+        경보는 경보를 싸구려로 만든다. 같은 이름이 겹칠 때 붙는 꼬리표도 순서의 함수지만
+        문안이 지지 않는다: 표 「문서」 열이 그 행이 받을 **실이름**을 이미 보여준다
+        (보이는 변화 앞의 경고는 과경고 — 완화 조항).
+        """
+        note = "보이는 순서대로 생성됩니다."
+        if self.vm is not None and pattern_uses_seq(self.vm.job.filename_pattern):
+            note += " 파일 이름의 순번도 이 순서를 따릅니다."
+        return note
 
     def _candidate_payload(self, jobs) -> dict:
         """현재 데이터에 대한 문서 작업 후보(§18.4)+메인 순위(§18.5·§19.3) — 판정·정렬 모두
@@ -383,11 +590,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         isum = identity_summary(
             self.records, filename_tokens=self._filename_source_columns()
         )
-        # 목록 순서 = 표시순(sourceDesc) — 각 행은 원본 index 를 지녀 선택·토글이 안전하다.
+        # 목록 순서 = 표시순 투영 — 각 행은 원본 index 를 지녀 선택·토글이 안전하다.
+        # 선택 표지는 **존 대상**(초안이 열려 있으면 초안)이다: 표는 사용자가 지금 편집하는
+        # 것을 그린다(F3 판정 D 경계표 1행).
+        zone_sel = self._zone_sel()
         return [
             {
                 "index": i,
-                "selected": self.selection.is_selected(i),
+                "selected": zone_sel.is_selected(i),
                 "name": names.get(i, ""),
                 "summary": isum.display_for(self.records[i]),  # 표시=빈 세그먼트를 마커(빈칸)로 채워 위치 보존(생략 아님 — 서로 다른 행이 동일 문자열로 붕괴하는 것 차단)
             }
@@ -479,9 +689,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             indices, rows_by_index.__getitem__
         )
         assert view is not None  # filter 존재를 위에서 확인 — 믹스인 빈 골격 분기 아님
-        vis_set = set(visible)
+        # 판정(유래·수치)은 **필터의 가시 집합**을 쓴다 — 렌더용 `visible` 은 「선택된 항목만
+        # 보기」에서 갈아끼워지므로(F3), 그걸로 유래를 판정하면 보기 상태가 곧 「정의-유래」로
+        # 둔갑한다. 보기와 판정을 같은 값으로 뭉개지 않는다.
+        zone_flt = self._zone_flt()
+        assert zone_flt is not None
+        vis_set = set(view.visible_indices())
         sel_set = set(indices)
-        f_active = self.filter.is_active()
+        f_active = zone_flt.is_active()
         origin = None
         if indices:
             origin = "definition" if (f_active and sel_set == vis_set) else "manual"
@@ -495,8 +710,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 if f_active else indices[:_RESTATE_SAMPLE]
             ),
         }
-        # 가드 무장도 같은 뷰의 가시 집합으로 판정 — 스냅샷 경로 필터 이중 평가 금지(리뷰 #7).
-        return filter_snap, table_snap, restate_snap, self._guard_state(vis_set=vis_set)
+        # 세션 가드는 **커밋된** 범위의 판정이다(F3 판정 D): 초안이 열려 있으면 위 view 는
+        # 초안 필터의 것이라 가시 집합을 물려주면 남의 정의로 커밋 선택을 잰다. 그때만
+        # 재평가한다(평시엔 이중 평가 금지 계약 그대로 — 리뷰 #7).
+        guard = (
+            self._guard_state() if self.range_draft is not None
+            else self._guard_state(vis_set=vis_set)
+        )
+        return filter_snap, table_snap, restate_snap, guard
 
     # ------------------------------------------------- 세션 가드(블록 4, 결정 26·27)
     def _guard_state(self, vis_set: "set[int] | None" = None) -> dict:
@@ -559,6 +780,22 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "filter_active": False, "filter_parts": 0,
             },
             "out_dir": self.out_dir,
+            # 전체 표시순서 축(§18.10) + 그 옆 상시 재진술(판정 I). 값은 데이터 귀속이라
+            # 작업 미선택 상태에서도 실린다 — 축은 데이터의 성질이지 작업의 성질이 아니다.
+            "view_order": self.view_order,
+            "order_note": self._order_note(),
+            # 존 표 머리의 「선택 N/M」 — **존 대상**의 수치다(리뷰 3R). `selected_count` 는
+            # 커밋 수치로 남아 게이트 지목 같은 판정이 계속 소비한다: 같은 이름의 값 하나가
+            # 두 세계를 겸하면, 초안 체크박스와 footer 는 3건인데 표 머리만 5건인 자리가 난다.
+            "zone_selected_count": self._zone_sel().selected_count(),
+            # 존 변이가 되실어 보낼 대상 세계 세대(리뷰 4R) — 웹은 판정하지 않고 나른다.
+            "zone_epoch": self.zone_epoch,
+            # **커밋된** 실행 입력의 지문 — 완료 결과의 세션 판정(F4 판정 G 강등)이 소비한다.
+            # 표면이 표의 선택 표지로 이 값을 만들면, 표가 초안을 그리는 동안(F3 판정 D)
+            # 적용도 안 한 편집이 결과를 강등시키고 취소해도 되돌아오지 않는다(리뷰 1R).
+            # 순서까지 담는다: 표시순서가 바뀌면 파일 이름이 실제로 달라지므로 같은 선택도
+            # 다른 실행 입력이다(§2 충돌 B).
+            "selection_key": ",".join(str(i) for i in self._indices()),
             "data_label": self.data_label,
             # 소스 종류 병기 라벨(#26) — 저장 상태가 아니라 플래그에서 매번 합성(K8).
             "data_source_label": source_label(self.data_source, self.data_label),
@@ -575,12 +812,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         base["candidates"] = self._candidate_payload(jobs)
         # 문서 탐색(§18.6) — 후보 줄의 「외 N건」·「확인 필요」가 여기로 이어진다.
         base["browse"] = self._browse_payload(jobs)
+        # 범위 초안 구획(F3) — 열림 여부가 DOM 클래스가 아니라 **상태**다(§10.11.2 정체 면).
+        base["range_draft"] = self._range_draft_payload()
         if self.vm is None:
             # 작업 미선택 상태 — 데이터 존은 세션 소유라 그대로 산다(데이터-우선, §18.2).
-            indices = self._indices()
-            record_rows = self._record_rows(indices, [])
+            zone_indices = self._zone_indices()
+            record_rows = self._record_rows(zone_indices, [])
             filter_snap, table_snap, restate_snap, guard_snap = self._filter_sections(
-                indices, record_rows
+                zone_indices, record_rows
             )
             g = prework_gate(
                 has_data=self.datasource is not None,
@@ -614,9 +853,17 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             _PREFLIGHT_OK_TEXT if status.preflight.level == "ok" else status.preflight.text
         )
         mirror_rows, drift_fields = self._mirror(indices, status, mapped)
-        record_rows = self._record_rows(indices, mapped)
+        # 표는 **존 대상**을 그린다(F3 판정 D): 초안이 열려 있으면 그 선택·축으로 이름까지
+        # 다시 계획한다 — 이름이 커밋 기준이면 편집기 안에서 순서를 바꿔도 「문서」 열이 안
+        # 움직여 판정 I 의 완화가 하필 그 축을 만지는 자리에서 죽는다. 초안이 없으면 위에서
+        # 이미 계산한 실행 입력·매핑을 그대로 재사용한다(평시 추가 비용 0).
+        zone_indices = self._zone_indices()
+        zone_mapped = mapped
+        if self.range_draft is not None:
+            zone_mapped = self.vm.mapped_records(zone_indices) if zone_indices else []
+        record_rows = self._record_rows(zone_indices, zone_mapped)
         filter_snap, table_snap, restate_snap, guard_snap = self._filter_sections(
-            indices, record_rows
+            zone_indices, record_rows
         )
         base.update({
             "template_name": Path(job.template_path).name if job.template_path else "",
@@ -689,7 +936,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.data_source = "file"  # 병기 라벨은 스냅샷이 합성(#26·K8)
         self.data_path, self.data_sheet = path, sheet or ""  # 「이 데이터 고정」 프리필(F1)
         self._data_key = self._file_key(path, sheet)  # 소스 일치 게이트(결정 28)
-        self.selection = SelectionModel(len(records), all_selected=False)  # 선택 0건(§18.2)
+        self._reset_range_for_snapshot(len(records))  # 선택 0건 + 표시순서 기본(§18.2·F3)
         self._init_filter()  # 데이터 교체 = 필터 재생성(결정 24 — 열 지형이 바뀐다)
         self._clear_data_notice()  # 사용자가 직접 데이터를 겨눔 → 자동 조준 재진술 소거
         self._apply_preferred_work()  # 보관된 명시 사건(§18.3 1행)을 이 데이터에서 판정
@@ -705,6 +952,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         handler = getattr(self, f"_do_{action}", None)
         if handler is None:  # confirm-or-alarm: 미지 액션은 시끄럽게.
             raise ValueError(f"알 수 없는 작업 화면 액션: {action!r}")
+        if self._is_stale_zone_edit(action, payload):
+            # 조용한 무시가 아니라 **명시 판정**이다: 사용자는 그 세계를 이미 버렸고(취소·
+            # 적용·데이터 교체는 전부 명시 행동), 버린 세계의 편집을 지금 세계에 적용하는
+            # 것이야말로 조용한 파괴다. 상태는 그대로라 push 도 하지 않는다.
+            return {"stale": True, "epoch": self.zone_epoch}
         result = handler(payload)
         # 무변이 경로는 push 를 생략한다(고효율 리뷰 #8) — ① is_query 표식 핸들러(순수
         # 질의: filter_panel·guard_state) ② needs_confirm 반환(가드가 전이를 막아 상태
@@ -714,6 +966,19 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if not is_query and not blocked:
             self._push()
         return result
+
+    def _is_stale_zone_edit(self, action: str, payload: dict) -> bool:
+        """이 존 변이가 **남의 세계**를 겨누고 있는가(리뷰 4R).
+
+        세대를 안 실은 발신은 검사하지 않는다 — 존을 공유하는 「기안」 화면과 초안 개념이
+        없는 호출부는 세대를 모른다(무검사 통과가 그들에게는 정답이다).
+        """
+        if action not in ZONE_MUTATIONS or "epoch" not in payload:
+            return False
+        try:
+            return int(payload["epoch"]) != self.zone_epoch
+        except (TypeError, ValueError):
+            return True   # 해석 불가 = 정체 불명 → 적용하지 않는다(안전 방향)
 
     def _do_refresh(self, p: dict) -> "dict | None":
         """레지스트리 재스캔 반영(C6) + stale 세션 무효화(master-detail 불변식).
@@ -1015,7 +1280,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
         목록이 비었으면(수명 경계를 지났거나 실패 없던 런) ``0`` 을 돌려 표면이 무동작을
         정직하게 말한다 — 아무 반응 없는 버튼은 결함으로 읽힌다(``_do_set_all`` 선례).
+
+        범위 초안이 열려 있으면 **거절**한다(F3): 이 동사는 존 액션이 아니라 **커밋된 선택을
+        직접 교체**하는 결과 구획의 행동이라, 초안 아래에서 커밋을 갈면 사용자가 보고 있는
+        범위와 적용 대상이 조용히 갈린다. 표면상 모달에 가려 닿지 않지만 잠금은 상태가 진다.
         """
+        if self.range_draft is not None:
+            raise ValueError("범위 편집기를 닫은 뒤에 실패분을 선택할 수 있습니다.")
         idx = [i for i in self._last_failed if 0 <= i < len(self.records)]
         if not idx:
             return {"selected": 0}
@@ -1149,7 +1420,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._stash_filter()  # 죽는 세션의 정의 → 슬롯(옛 소스 키 기준 — 키 갱신 전에)
         self._last_failed = []  # 파일 마운트와 같은 수명(§10.10 판정 F)
         self._data_key = self._pool_key()  # 라벨은 믹스인/자동 조준이 이미 세팅
-        self.selection = SelectionModel(len(records), all_selected=False)  # 선택 0건(§18.2)
+        self._reset_range_for_snapshot(len(records))  # 선택 0건 + 표시순서 기본(§18.2·F3)
         self._init_filter()  # 데이터 교체 = 필터 재생성(결정 24)
         self._clear_data_notice()  # 사용자가 직접 겨눔 → 자동 조준 재진술 소거
         self._apply_preferred_work()  # 보관된 명시 사건(§18.3 1행)을 이 데이터에서 판정
@@ -1200,6 +1471,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         if self.vm is None:
             return {"ok": False, "error": "먼저 작업을 선택하세요.", "level": "warn"}
+        if self.range_draft is not None:
+            # 초안이 열린 채 생성하면 사용자가 보고 있는 범위(초안)와 만들어지는 범위(커밋)가
+            # 다르다 — 표면상 모달에 막혀 있지만 잠금은 DOM 이 아니라 상태가 진다(§10.11.2
+            # 계약면 2). 거절 문안이 다음 행동(적용 또는 취소)을 지목한다.
+            return {
+                "ok": False, "level": "warn",
+                "error": "범위 편집기가 열려 있습니다. 변경을 적용하거나 취소한 뒤 생성하세요.",
+            }
         if not self._generation_lock.acquire(blocking=False):
             return {"ok": False, "error": "이미 문서를 생성하고 있습니다.", "level": "warn"}
         self._cancel_generation.clear()

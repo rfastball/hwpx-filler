@@ -29,8 +29,9 @@ def test_data_rows_flip_locally_before_dispatch_and_use_live_dom_state() -> None
     src = _read("js/datazone.js")
     body = src[src.index("function toggleRow("):src.index("function onTableClick(")]
     assert 'tr.getAttribute("aria-selected")' in body
+    # 발신은 존 공용 통로(`call`)를 지난다(재작성 F3: 변이 직렬화) — 낙관 표지가 **먼저**다.
     assert body.index("applyRowSelection(tr, selAnchorState)") < body.index(
-        'Bridge.call(SCREEN, "toggle_record"'
+        'call("toggle_record"'
     )
     apply = src[src.index("function applyRowSelection("):src.index("function toggleRow(")]
     for needle in ('classList.toggle("on"', 'setAttribute("aria-selected"', "box.checked = value"):
@@ -41,7 +42,7 @@ def test_filter_panel_renders_loading_shell_before_query() -> None:
     src = _read("js/datazone.js")
     body = src[src.index("async function openColPanel("):src.index("function panelHead(")]
     assert body.index("renderColPanelShell(col)") < body.index(
-        'await Bridge.call(SCREEN, "filter_panel"'
+        'await call("filter_panel"'
     )
     assert "panelEpoch" in body and "renderColPanelError" in body
 

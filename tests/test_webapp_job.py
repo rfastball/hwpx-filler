@@ -2343,3 +2343,413 @@ def test_cancelled_run_stays_a_partial_state(tmp_path, monkeypatch):
     assert res["status"] == "partiallyCompleted" and res["cancelled"] is True
     assert res["level"] == "warn" and res["unstarted"] == 1
     assert res["title"].startswith("생성을 중단했습니다")
+
+
+# ------------------------------------- 전체 표시순서 축(재작성 F3, 지도 §10.11.1 4계약면)
+def _order_session(tmp_path):
+    """3행 세션 — 축은 데이터의 성질이라 작업 선택 없이도 산다(스냅샷이 값을 낸다)."""
+    ctrl, pushes = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv3(tmp_path))
+    return ctrl, pushes
+
+
+def _axis(snap) -> "dict[str, list]":
+    """한 스냅샷이 말하는 순서 4벌 — 전부 같은 축이어야 한다."""
+    return {
+        "records": [r["index"] for r in snap["records"]],
+        "table": [r["index"] for r in snap["table"]["rows"]],
+        "strip": [r["index"] for r in snap["table"]["hidden_selected"]],
+        "sample": list(snap["restate"]["sample"]),
+    }
+
+
+def test_view_order_is_an_exact_reverse_with_no_ties(tmp_path):
+    """정밀도 면: 정렬 키가 정수 ordinal 이라 동률이 없고 두 값은 정확한 역이다."""
+    ctrl, _ = _order_session(tmp_path)
+    desc = _axis(ctrl.snapshot())["records"]
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
+    asc = _axis(ctrl.snapshot())["records"]
+    assert desc == [2, 1, 0] and asc == [0, 1, 2]
+    assert asc == list(reversed(desc))
+
+
+def test_every_order_consumer_shares_the_one_axis(tmp_path):
+    """도달성 면: 표·필터 밖 스트립·실행 입력·파일 이름 계획이 한 훅을 소비한다.
+
+    스트립이 원본 순서로 남으면 "보이는 것 = 만들어지는 것"이 거기서만 깨진다(판정 H).
+    """
+    ctrl, _ = _order_session(tmp_path)
+    ctrl.dispatch("filter_search", {"text": "책상"})  # 선택은 관통 — 2행이 필터 밖으로
+    for value, expect in (("sourceDesc", [1, 0]), ("sourceAsc", [0, 1])):
+        ctrl.dispatch("set_view_order", {"value": value})
+        snap = ctrl.snapshot()
+        seen = _axis(snap)
+        assert seen["strip"] == expect, f"{value}: 스트립이 표와 다른 축을 말합니다"
+        assert ctrl._indices() == ([2, 1, 0] if value == "sourceDesc" else [0, 1, 2])
+        # 파일 이름은 실행 입력 순서를 따라 발급된다({{seq:001}}) — 표의 「문서」 열이 증거.
+        names = {r["index"]: r["name"] for r in snap["records"]}
+        assert names[ctrl._indices()[0]].startswith("doc-001")
+
+
+def test_view_order_change_moves_no_row_in_or_out(tmp_path):
+    """축은 투영이고 선택은 집합 — 순서를 바꿔도 같은 행이 남는다."""
+    ctrl, _ = _order_session(tmp_path)
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("toggle_record", {"index": 1, "value": True})
+    before = ctrl.selection.selected_indices()
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
+    assert ctrl.selection.selected_indices() == before
+
+
+def test_new_snapshot_returns_to_the_default_axis(tmp_path):
+    """상태 주체 면 ①: 축은 데이터 귀속이라 새 스냅샷이 기본값으로 되돌린다(불변식 §18.11-13)."""
+    ctrl, _ = _order_session(tmp_path)
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    snap = ctrl.snapshot()
+    assert snap["view_order"] == "sourceDesc"
+    assert snap["selected_count"] == 0  # 같은 seam 이 선택 0건도 이행한다(§18.2)
+
+
+def test_view_order_is_not_persisted_across_sessions(tmp_path):
+    """상태 주체 면 ②: 개인화 설정으로 승격하지 않는다 — 새 세션은 기본값에서 시작한다.
+
+    순서가 파일 이름의 함수라(§2 충돌 B) 지난 데이터의 순서를 물고 오면 이름이 조용히 갈린다.
+    """
+    ctrl, _ = _order_session(tmp_path)
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
+    fresh = JobController(_registry(tmp_path), lambda s, snap: None)
+    assert fresh.initial()["view_order"] == "sourceDesc"
+
+
+def test_selecting_a_work_does_not_touch_the_axis(tmp_path):
+    """불변식 §18.11-23 — 문서 작업 선택은 `RecordRangeState` 를 바꾸지 않는다."""
+    ctrl, _ = _order_session(tmp_path)
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    assert ctrl.snapshot()["view_order"] == "sourceAsc"
+
+
+def test_unknown_view_order_is_refused_loudly(tmp_path):
+    """confirm-or-alarm: 미지 값은 조용한 기본값 강등이 아니라 거절이다."""
+    ctrl, _ = _order_session(tmp_path)
+    with pytest.raises(ValueError):
+        ctrl.dispatch("set_view_order", {"value": "alphabetical"})
+    assert ctrl.snapshot()["view_order"] == "sourceDesc"
+
+
+def test_order_note_claims_the_filename_link_only_when_it_is_true(tmp_path):
+    """판정 I: 상시 절은 언제나 참, 순번 절은 규칙이 `{{seq}}` 를 쓸 때만 붙는다."""
+    ctrl, _ = _order_session(tmp_path)
+    assert "보이는 순서대로" in ctrl.snapshot()["order_note"]
+    assert "순번" in ctrl.snapshot()["order_note"]  # 픽스처 규칙 = doc-{{seq:001}}
+    job = ctrl.registry.load("공고서")
+    job.filename_pattern = "{{bidNtceNm}}"
+    ctrl.registry.save(job)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    note = ctrl.snapshot()["order_note"]
+    assert "보이는 순서대로" in note and "순번" not in note
+
+
+# ------------------------- 전문 범위 편집기 초안(재작성 F3, 지도 §10.11 판정 A·B·D·F·J)
+def _draft_session(tmp_path):
+    """3행 + 작업 선택 + 저장 폴더 — 초안이 게이트·거울과 갈리는지 보려면 실행 세션이 필요하다."""
+    ctrl, pushes = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv3(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    return ctrl, pushes
+
+
+def test_range_draft_edits_do_not_touch_the_committed_range(tmp_path):
+    """불변식 §18.11-21 — 초안은 적용 전 메인 범위·실행 입력·게이트를 바꾸지 않는다."""
+    ctrl, _ = _draft_session(tmp_path)
+    before_gate = ctrl.snapshot()["gate"]["text"]
+    ctrl.dispatch("range_draft_open", {})
+    ctrl.dispatch("set_none", {})                     # 초안에서 전부 해제
+    ctrl.dispatch("toggle_record", {"index": 0, "value": True})
+    snap = ctrl.snapshot()
+    # 커밋 = 3건 그대로 · 실행 입력도 그대로 · 게이트 문안 불변
+    assert ctrl.selection.selected_count() == 3 and snap["selected_count"] == 3
+    assert ctrl._indices() == [2, 1, 0]
+    assert snap["gate"]["text"] == before_gate
+    # 초안 = 1건, 표는 초안을 그린다(판정 D 경계표 1행)
+    assert snap["range_draft"] == {
+        "open": True, "dirty": True, "sel_count": 1,
+        "selected_only": False, "view_order": "sourceDesc",
+    }
+    assert [r["index"] for r in snap["table"]["rows"] if r["selected"]] == [0]
+
+
+def test_range_draft_apply_commits_atomically(tmp_path):
+    """적용 = 선택·필터·표시순서를 한 번에 커밋으로 옮긴다(§18.10 한 그릇)."""
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl.dispatch("range_draft_open", {})
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("toggle_record", {"index": 2, "value": True})
+    ctrl.dispatch("filter_search", {"text": "책상"})
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
+    assert ctrl.view_order == "sourceDesc"           # 축도 초안이 덮는다(판정 B)
+    assert ctrl.dispatch("range_draft_apply", {}) == {"ok": True}
+    snap = ctrl.snapshot()
+    assert ctrl.selection.selected_indices() == [2]
+    assert ctrl.view_order == "sourceAsc" and snap["view_order"] == "sourceAsc"
+    assert ctrl.filter is not None and ctrl.filter.search_text == "책상"
+    assert snap["range_draft"]["open"] is False
+
+
+def test_range_draft_cancel_discards_only_the_draft(tmp_path):
+    """수용 기준 5(§18.10) — 취소는 메인 범위와 실행 증거를 바꾸지 않는다."""
+    ctrl, _ = _draft_session(tmp_path)
+    before = (ctrl.selection.selected_indices(), ctrl.view_order, ctrl.filter.export_state())
+    ctrl.dispatch("range_draft_open", {})
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("filter_search", {"text": "없는값"})
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
+    ctrl.dispatch("range_draft_cancel", {})
+    assert (ctrl.selection.selected_indices(), ctrl.view_order,
+            ctrl.filter.export_state()) == before
+    assert ctrl.range_draft is None
+
+
+def test_range_draft_open_is_idempotent(tmp_path):
+    """왕복 지연 중 두 번 눌린 출구가 편집을 조용히 되돌리지 않는다(재복제 금지)."""
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl.dispatch("range_draft_open", {})
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("range_draft_open", {})
+    assert ctrl.snapshot()["range_draft"]["sel_count"] == 0
+
+
+def test_range_draft_dirty_is_the_event_not_the_value(tmp_path):
+    """이탈 가드 무장 조건(판정 F) — 열자마자는 깨끗하고, 되돌리면 다시 깨끗하다."""
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl.dispatch("range_draft_open", {})
+    assert ctrl.snapshot()["range_draft"]["dirty"] is False
+    ctrl.dispatch("toggle_record", {"index": 1, "value": False})
+    assert ctrl.snapshot()["range_draft"]["dirty"] is True
+    ctrl.dispatch("toggle_record", {"index": 1, "value": True})
+    assert ctrl.snapshot()["range_draft"]["dirty"] is False
+
+
+def test_stale_draft_is_refused_instead_of_committing_someone_elses_rows(tmp_path):
+    """세대 불일치 적용은 거절한다 — 죽은 스냅샷의 index 는 남의 행이다(§10.11.2 실패 면)."""
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl.dispatch("range_draft_open", {})
+    ctrl.dispatch("set_none", {})
+    draft = ctrl.range_draft
+    ctrl.load_data_path(_data_csv(tmp_path))     # 새 스냅샷 = 초안 폐기 + 세대 증가(판정 J)
+    assert ctrl.range_draft is None
+    ctrl.range_draft = draft                     # 초안이 살아남는 경로를 가정한 백스톱
+    with pytest.raises(ValueError, match="데이터가 바뀌"):
+        ctrl.dispatch("range_draft_apply", {})
+    assert ctrl.selection.selected_count() == 0  # 마운트 직후 상태 그대로 — 커밋 안 됨
+
+
+def test_new_data_discards_the_open_draft(tmp_path):
+    """판정 J — 데이터 전환은 축을 되돌리고 초안을 버린다."""
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl.dispatch("range_draft_open", {})
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
+    ctrl.load_data_path(_data_csv(tmp_path))
+    snap = ctrl.snapshot()
+    assert snap["range_draft"]["open"] is False and snap["view_order"] == "sourceDesc"
+
+
+def test_generation_is_refused_while_the_draft_is_open(tmp_path):
+    """전역 잠금(§10.11.2 계약면 2) — 보고 있는 범위와 만들어지는 범위가 갈리지 않는다."""
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl.dispatch("range_draft_open", {})
+    res = ctrl.generate()
+    assert res["ok"] is False and "범위 편집기" in res["error"]
+
+
+def test_draft_cannot_open_during_generation(tmp_path):
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl._generation_lock.acquire()
+    try:
+        with pytest.raises(ValueError, match="생성이 진행 중"):
+            ctrl.dispatch("range_draft_open", {})
+    finally:
+        ctrl._generation_lock.release()
+
+
+def test_selected_only_swaps_visibility_without_touching_judgment(tmp_path):
+    """「선택된 항목만 보기」는 보기 상태다 — 필터 정의도, 유래 판정도 그대로다."""
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl.dispatch("range_draft_open", {})
+    ctrl.dispatch("filter_search", {"text": "책상"})   # 가시 1행, 선택은 3행 관통
+    snap = ctrl.snapshot()
+    assert [r["index"] for r in snap["table"]["rows"]] == [2]
+    assert snap["restate"]["origin"] == "manual" and snap["restate"]["extra"] == 2
+    ctrl.dispatch("set_selected_only", {"value": True})
+    snap = ctrl.snapshot()
+    assert [r["index"] for r in snap["table"]["rows"]] == [2, 1, 0]   # 선택 전부, 표시순
+    assert snap["filter"]["active"] is True and snap["filter"]["search"] == "책상"
+    assert snap["restate"]["origin"] == "manual", "보기 상태가 유래 판정을 물들였습니다"
+    assert snap["table"]["hidden_selected"] == []
+    # 적용해도 보기 상태는 따라가지 않는다(판정 B 예외) — 메인엔 그 토글이 없다.
+    ctrl.dispatch("range_draft_apply", {})
+    assert ctrl.snapshot()["range_draft"]["selected_only"] is False
+
+
+def test_draft_table_previews_the_names_the_draft_would_produce(tmp_path):
+    """판정 D 세부 — 편집기 안에서 축을 바꾸면 「문서」 열 이름이 즉시 따라온다(판정 I 완화)."""
+    ctrl, _ = _draft_session(tmp_path)
+    first_desc = ctrl.snapshot()["records"][0]
+    assert first_desc["index"] == 2 and first_desc["name"].startswith("doc-001")
+    ctrl.dispatch("range_draft_open", {})
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
+    rows = ctrl.snapshot()["records"]
+    assert rows[0]["index"] == 0 and rows[0]["name"].startswith("doc-001")
+    # 커밋된 실행 입력은 그대로 — 미리보기는 "적용하면 이렇게 된다"이지 실행 예약이 아니다.
+    assert ctrl._indices() == [2, 1, 0]
+
+
+def test_draft_does_not_leak_into_the_session_guard_or_filter_slot(tmp_path):
+    """세션 가드·직전 필터 슬롯은 커밋된 세션의 것이다(판정 D 경계표 2행)."""
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl.dispatch("range_draft_open", {})
+    ctrl.dispatch("set_none", {})
+    ctrl.dispatch("toggle_record", {"index": 0, "value": True})
+    ctrl.dispatch("filter_search", {"text": "책상"})
+    guard = ctrl.snapshot()["guard"]
+    # 커밋은 여전히 전체 선택(1클릭 재현) = 비무장. 초안의 수작업 선택이 새면 무장한다.
+    assert guard["armed"] is False and guard["sel_count"] == 3
+    assert guard["filter_active"] is False, "초안 필터가 세션 가드로 샜습니다."
+    assert ctrl._filter_desc == "", "초안 정의가 직전 필터 슬롯 소재로 샜습니다."
+
+
+def test_selection_key_is_committed_only_so_a_draft_cannot_stale_a_result(tmp_path):
+    """리뷰 1R P1 — 완료 결과의 세션 판정은 **커밋된** 실행 입력의 지문만 본다.
+
+    표는 초안을 그리므로(판정 D) 표의 선택 표지로 지문을 만들면 적용도 안 한 편집이 결과를
+    「직전 실행」으로 강등시키고, 취소해도 되돌아오지 않는다.
+    """
+    ctrl, _ = _draft_session(tmp_path)
+    before = ctrl.snapshot()["selection_key"]
+    ctrl.dispatch("range_draft_open", {})
+    ctrl.dispatch("set_none", {})
+    snap = ctrl.snapshot()
+    assert snap["selection_key"] == before, "초안 편집이 세션 지문을 움직였습니다."
+    assert [r["index"] for r in snap["records"] if r["selected"]] == [], (
+        "표는 초안을 그려야 합니다(경계표 1행) — 지문만 커밋이다."
+    )
+    ctrl.dispatch("range_draft_cancel", {})
+    assert ctrl.snapshot()["selection_key"] == before
+
+
+def test_selection_key_follows_the_display_axis(tmp_path):
+    """표시순서가 바뀌면 같은 선택도 다른 실행 입력이다(파일 이름이 실제로 달라진다)."""
+    ctrl, _ = _draft_session(tmp_path)
+    desc = ctrl.snapshot()["selection_key"]
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
+    assert ctrl.snapshot()["selection_key"] != desc
+
+
+def test_failed_selection_is_refused_while_a_draft_is_open(tmp_path):
+    """결과 구획의 선택 교체는 **커밋** 대상 동사라 초안 아래에서 돌지 않는다(F3)."""
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl._last_failed = [0]
+    ctrl.dispatch("range_draft_open", {})
+    with pytest.raises(ValueError, match="범위 편집기"):
+        ctrl.dispatch("select_failed", {})
+    ctrl.dispatch("range_draft_cancel", {})
+    assert ctrl.dispatch("select_failed", {}) == {"selected": 1}
+
+
+def test_zone_count_follows_the_draft_while_gate_input_stays_committed(tmp_path):
+    """리뷰 3R P2 — 표 머리 수치는 표가 그리는 세계의 것이고, 게이트 소재는 커밋이다."""
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl.dispatch("range_draft_open", {})
+    ctrl.dispatch("set_none", {})
+    snap = ctrl.snapshot()
+    assert snap["zone_selected_count"] == 0, "표 머리가 초안을 따르지 않습니다."
+    assert snap["selected_count"] == 3, "게이트 소재가 초안에 물들었습니다."
+    ctrl.dispatch("range_draft_cancel", {})
+    snap = ctrl.snapshot()
+    assert snap["zone_selected_count"] == snap["selected_count"] == 3
+
+
+# 초안이 열렸을 때 **초안을 따라 움직이는** 스냅샷 키의 정본 목록(지도 §10.11.3 판정 D 경계표).
+# 여기 없는 키가 초안 편집에 흔들리면 커밋 세계를 소비하는 판정 하나가 조용히 초안에
+# 물든 것이고, 여기 있는 키가 안 흔들리면 편집기가 자기 편집을 안 그리는 것이다.
+_DRAFT_FACING_SNAPSHOT_KEYS = {
+    "records",              # 표 행(선택 표지·실 파일 이름 미리보기)
+    "table",                # 표 페이로드(가시 행·필터 밖 스트립)
+    "filter",               # 필터 정의·칩(초안이 편집 중인 정의)
+    "restate",              # 선택 유래 재진술(존 소유)
+    "range_draft",          # 초안 자신(열림·dirty·수치·보기 상태)
+    "zone_selected_count",  # 표 머리 「선택 N/M」 — 표가 그리는 세계의 수치
+    # 경계 **자신의 정체**(리뷰 4R): 어느 세계를 편집 중인지의 세대. 내용이 아니라 좌표라
+    # 여기 든다 — 세계가 갈릴 때 오르는 것이 이 값의 일이다(단조 증가라 취소해도 안 되돌아온다).
+    "zone_epoch",
+}
+
+
+def test_draft_touches_exactly_the_keys_the_boundary_table_names(tmp_path):
+    """판정 D 경계표의 **구조 가드** — 새 키가 어느 세계에 속하는지 여기서 선언되게 한다.
+
+    리뷰 1R·2R·3R 이 전부 이 경계의 누수였다(세션 지문·표 머리 수치·늦은 발신). 표를
+    문서로만 두면 다음 키가 또 조용히 커밋 세계를 물들인다 — 목록에 없는 키가 초안에
+    흔들리면 실패한다(``_SESSION_ATTRS`` 구조 가드 선례).
+    """
+    ctrl, _ = _draft_session(tmp_path)
+    before = ctrl.snapshot()
+    ctrl.dispatch("range_draft_open", {})
+    ctrl.dispatch("set_none", {})                      # 선택
+    ctrl.dispatch("toggle_record", {"index": 1, "value": True})
+    ctrl.dispatch("filter_search", {"text": "책상"})    # 필터
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})  # 축
+    after = ctrl.snapshot()
+    moved = {k for k in before if before[k] != after.get(k)}
+    assert moved == _DRAFT_FACING_SNAPSHOT_KEYS, (
+        "초안이 움직인 키가 경계표와 다릅니다 — 커밋 세계로 샜거나(추가) "
+        f"편집이 안 그려집니다(누락): 추가={sorted(moved - _DRAFT_FACING_SNAPSHOT_KEYS)}, "
+        f"누락={sorted(_DRAFT_FACING_SNAPSHOT_KEYS - moved)}"
+    )
+    # 취소하면 전부 제자리 — 초안은 아무것도 커밋에 남기지 않는다(불변식 §18.11-21).
+    # 예외는 세대뿐이다: 단조 증가가 곧 "버린 세계로는 못 돌아간다"는 보장이라 되돌리면 안 된다.
+    ctrl.dispatch("range_draft_cancel", {})
+    restored = ctrl.snapshot()
+    assert {k for k in before if before[k] != restored.get(k)} == {"zone_epoch"}
+    assert restored["zone_epoch"] > before["zone_epoch"]
+
+
+def test_zone_edit_from_a_dead_world_is_not_applied(tmp_path):
+    """리뷰 4R P1 — 느린 출구 뒤에 줄 선 편집이 커밋 범위에 착지하지 않는다.
+
+    세대는 웹이 **보고 있던 세계**의 좌표다. 취소·적용·데이터 교체는 전부 명시 행동이라,
+    그 뒤에 도착한 옛 세계의 편집을 지금 세계에 적용하는 쪽이 조용한 파괴다.
+    """
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl.dispatch("range_draft_open", {})
+    stale = ctrl.snapshot()["zone_epoch"]          # 초안 세계의 세대
+    ctrl.dispatch("range_draft_cancel", {})        # 출구 — 세대가 오른다
+    before = ctrl.selection.selected_indices()
+    res = ctrl.dispatch("set_none", {"epoch": stale})
+    assert res == {"stale": True, "epoch": ctrl.zone_epoch}
+    assert ctrl.selection.selected_indices() == before, "죽은 세계의 편집이 커밋에 착지했습니다."
+    # 축도 같은 자격이다 — 버린 세계의 순서가 생성 순서를 정하지 않는다.
+    assert ctrl.dispatch("set_view_order", {"value": "sourceAsc", "epoch": stale})["stale"]
+    assert ctrl.view_order == "sourceDesc"
+    # 지금 세계의 편집은 통과한다(세대 검사가 정상 편집을 막지 않는다).
+    ctrl.dispatch("set_none", {"epoch": ctrl.zone_epoch})
+    assert ctrl.selection.selected_count() == 0
+
+
+def test_zone_epoch_check_skips_callers_that_do_not_know_worlds(tmp_path):
+    """세대를 안 싣는 발신은 무검사 통과 — 존을 공유하는 「기안」 화면의 정답이다."""
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl.dispatch("set_none", {})
+    assert ctrl.selection.selected_count() == 0
+
+
+def test_new_data_invalidates_in_flight_zone_edits(tmp_path):
+    """데이터 교체도 세계를 가른다 — 옛 스냅샷 좌표의 편집이 새 데이터에 착지하지 않는다."""
+    ctrl, _ = _draft_session(tmp_path)
+    stale = ctrl.snapshot()["zone_epoch"]
+    ctrl.load_data_path(_data_csv(tmp_path))
+    assert ctrl.dispatch("toggle_record", {"index": 0, "value": True, "epoch": stale})["stale"]
+    assert ctrl.selection.selected_count() == 0

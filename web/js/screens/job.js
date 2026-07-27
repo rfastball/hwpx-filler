@@ -26,6 +26,8 @@
   let MODE = "run";
 
   const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
+  const ZONE_CHAIN = "job:zone";  // 데이터 존 + 범위 초안 출구의 공통 발신 체인
+  let pendingZoneMutations = 0;   // 발신했지만 아직 결과가 안 온 존 변이 수(이탈 가드 소재)
 
   /* ---- 데이터 존(필터 테이블·열 패널·칩·스트립) = 공용 팩토리(datazone.js, PR-2a 추출) ----
      표면 계약·리뷰 결정 주석은 팩토리가 소유한다 — 여기는 화면 고유값만 주입한다:
@@ -41,6 +43,14 @@
       tableHead: "jobTableHead", tableBody: "jobTableBody", colPanel: "jobColPanel",
       selAll: "jobSelAll", selNone: "jobSelNone",
     },
+    // 존 발신 직렬화 키(리뷰 2R) — 이 존의 13액션과 범위 초안의 적용·취소가 **한 체인**을
+    // 쓴다. 같은 범위 상태 하나를 바꾸는 발신들이라 도착 순서가 뒤바뀌면 취소한 편집이
+    // 커밋된 범위에 착지한다.
+    chainKey: ZONE_CHAIN,
+    // 대상 세계 세대(리뷰 4R) — 웹은 판정하지 않고 **보고 있던 세계**를 나른다.
+    epoch: () => (LAST ? LAST.zone_epoch : undefined),
+    // 아직 푸시가 안 온 편집 수 — 이탈 가드가 `dirty` 만 보면 방금 친 편집을 못 본다.
+    onMutation: (delta) => { pendingZoneMutations += delta; },
     rowIdPrefix: "jobRow-",  // preserve.js 가 id 로 포커스 복원 — 접두 변경은 보존 계약 파손
     lead: {
       header: "문서",
@@ -79,6 +89,7 @@
       renderPreflight(s);
       renderMirror(s);
       dz.render(s);  // 데이터 존(테이블·칩·스트립) — 팩토리 소유(datazone.js)
+      renderRangeFoot(s);
       renderCandidates(s);
       renderBrowse(s);   // 탐색 면은 열려 있지 않아도 그린다(열 때 이미 최신)
       renderRestate(s);
@@ -128,17 +139,28 @@
      놓친다). 작업 미선택이면 빈 문자열 = 세션 없음. */
   function sessionKey(s) {
     if (!s.has_job) return "";
-    const sel = (s.records || []).filter((r) => r.selected).map((r) => r.index).join(",");
-    return [s.job_name, s.data_source_label, s.out_dir, sel].join("|");
+    // 선택 성분은 **Python 이 낸 커밋 지문**(`selection_key`)이다 — 표에서 세지 않는다.
+    // 표의 `selected` 는 범위 편집기가 열려 있으면 **초안** 표지라(F3 판정 D), 그걸로 지문을
+    // 만들면 적용도 안 한 편집이 직전 실행 결과를 「직전 실행」으로 강등시키고 취소해도
+    // 되돌아오지 않는다(리뷰 1R). 정합에 드는 값은 판정 주체가 낸다(F4 3R 근본 조치와 같은 형태).
+    return [s.job_name, s.data_source_label, s.out_dir, s.selection_key || ""].join("|");
   }
 
   /* ---- 패널 두 모드(결정 39·40) ---- */
   function syncModeDisplay(hasJob) {
     const edit = MODE === "edit";
-    if (edit || !hasJob) {
-      // 펼침 면의 실 DOM이 overlay 슬롯에 남은 채 편집 호스트를 여는 교차 모드 상태를 막는다.
-      window.SurfaceSheet.closeAndRestore("jobConfirmSheet");
+    // 거울 면은 **작업의 것**이라 작업이 없으면 설 자리가 없다. 데이터 면은 다르다:
+    // 데이터-우선(§18.2)에서 데이터 존은 작업 없이도 살고, 범위 편집기도 데이터만 있으면
+    // 연다 — `!hasJob` 으로 함께 닫으면 작업을 고르기 전엔 편집이 첫 왕복마다 취소돼
+    // 편집기 자체가 못 쓰는 것이 된다(리뷰 5R). 강제 닫기의 사유를 면별로 가른다.
+    if (edit || !hasJob) window.SurfaceSheet.closeAndRestore("jobConfirmSheet");
+    if (edit) {
+      // 실 DOM 이 overlay 슬롯에 남은 채 편집 호스트를 여는 교차 모드 상태를 막는다.
+      // 이 닫기는 **양보하지 않는다** — 이탈 가드가 소비하면 그 교차 상태가 그대로 남는다.
+      // 대신 초안은 놓아 주고(닫힘 백스톱이 취소를 발신) 가드에 통과권을 준다.
+      rangeForceClose = true;
       window.SurfaceSheet.closeAndRestore("dataSheet");
+      rangeForceClose = false;
     }
     // 데이터-우선: 세션 4존·액션바는 실행 모드면 상시 — 작업 미선택에도 데이터 존이
     // 진입점이다(§18.2). 구 미선택 빈 패널은 은퇴(안내는 prework 게이트 문안이 승계).
@@ -265,7 +287,58 @@
   }
 
   /* ---- 데이터 존 — 겨눔 라벨·자동 조준 재진술 ---- */
+  /* 표시순서 축(F3) — 값의 정본은 Python(`view_order`)이지만, **왕복 중에는 방금 고른 값이
+     이긴다**: 확정 전에 도착한 push 가 select 를 옛 값으로 되돌리면 사용자는 자기 조작이
+     씹힌 것으로 읽는다(#217 R2 의 선택 토글과 같은 계열). 값이 하나뿐이라 즐겨찾기 같은
+     의도 큐는 필요 없고 **마지막 값이 이긴다** — 중간 값은 버리는 것이지 취소가 아니다. */
+  let pendingOrder = null;
+
+  function renderOrderBar(s) {
+    const sel = $("jobOrderSel");
+    // 축의 값은 **존 대상**을 따른다(F3 판정 D): 초안이 열려 있으면 초안의 축이다. 커밋 값만
+    // 그리면 편집기에서 순서를 바꾼 뒤 아무 재렌더(행 토글 등)에나 선택기가 옛 값으로
+    // 되돌아가 표(초안 순서)와 선택기가 서로 다른 말을 한다.
+    const d = s.range_draft;
+    const committed = (d && d.open ? d.view_order : s.view_order) || "sourceDesc";
+    const want = pendingOrder !== null ? pendingOrder : committed;
+    if (sel.value !== want) sel.value = want;
+    $("jobOrderNote").textContent = s.order_note || "";
+  }
+
+  async function onOrderChange(e) {
+    const value = e.target.value;
+    pendingOrder = value;
+    try {
+      // **직렬화**(리뷰 1R): 동시 발신은 도착 순서를 보장하지 않는다 — pywebview 는 호출마다
+      // 별도 스레드라, 빠르게 두 번 고르면 **먼저 고른 값이 나중에 커밋**돼 생성 순서와
+      // 순번 파일 이름이 마지막 선택과 반대로 정해질 수 있다. 표시만 지키는 `pendingOrder`
+      // 로는 못 막는다(그건 화면의 값, 이건 쓰기의 순서). 기제는 intent.js 가 이미 소유한다.
+      //
+      // 체인 키는 **상태 단위**이지 위젯 단위가 아니다(리뷰 3R): 축을 따로 세웠더니 취소가
+      // 먼저 초안을 지우고 늦은 축 변경이 **커밋된 범위**에 착지했다 — 같은 `recordRange`
+      // 를 바꾸는 발신은 전부 한 줄에 선다.
+      pendingZoneMutations += 1;
+      try {
+        await window.Intent.chained(ZONE_CHAIN, () =>
+          Bridge.call(SCREEN, "set_view_order", { value, epoch: LAST && LAST.zone_epoch }));
+      } finally {
+        pendingZoneMutations -= 1;
+      }
+    } catch (err) {
+      // 실패하면 **스냅샷이 안 온다** — 의도만 놓으면 선택기는 거절된 값을 계속 보이고
+      // 표·생성 순서는 옛 값이라 화면이 거짓말한다(리뷰 4R). 값을 되돌리고 시끄럽게 알린다.
+      log("표시순서를 바꾸지 못했습니다: " + String((err && err.message) || err));
+      if (pendingOrder === value) pendingOrder = null;
+      if (LAST) renderOrderBar(LAST);
+      return;
+    } finally {
+      // 내 왕복이 마지막일 때만 의도를 놓는다 — 뒤에 더 고른 값이 있으면 그 값이 소유자다.
+      if (pendingOrder === value) pendingOrder = null;
+    }
+  }
+
   function renderData(s) {
+    renderOrderBar(s);
     $("jobDataLabel").value = s.data_source_label || "";
     const note = $("jobDataNotice");
     const n = s.data_notice;
@@ -560,20 +633,138 @@
     openBrowseSheet();
   }
 
-  function openJobDataSheet(e) {
-    $("dataSheetTitle").textContent = "작업 데이터 행 고르기";
-    window.SurfaceSheet.open({
-      modalId: "dataSheet",
-      returnFocus: window.SurfaceSheet.trigger(e, $("jobDataExpand")),
-      initialFocus: $("dataSheetClose"),
-      moves: [
-        { id: "jobRecsHead", slotId: "dataSheetSlot" },
-        { id: "jobFilterChips", slotId: "dataSheetSlot" },
-        { id: "jobTableHost", slotId: "dataSheetSlot" },
-        { id: "jobSelStrip", slotId: "dataSheetSlot" },
-        { id: "jobColPanel", slotId: "dataSheetSlot" },
-      ],
+  /* ---- 전문 범위 편집기(F3, 계약 §18.10) — ⤢ 펼침 면 + 초안 거래 ----
+     면은 실 DOM 을 옮기고(SurfaceSheet), **의미론만** 새것이다: 여기서의 편집은 초안으로
+     격리돼 적용 전 메인 범위·게이트·거울·결과를 바꾸지 않는다(불변식 §18.11-21). 초안의
+     소유·판정은 전부 Python(지도 §10.11 판정 A) — 여기는 출구 3개와 가드 1개만 진다. */
+  let rangeApplied = false;    // 적용 경로로 닫히는 중(onClose 의 취소 발신 억제)
+  let rangeForceClose = false; // 가드 확인을 받은 닫기(다음 요청 1회 통과)
+
+  function draftState() {
+    return (LAST && LAST.range_draft) || null;
+  }
+
+  function renderRangeFoot(s) {
+    const d = s.range_draft || {};
+    const on = !!d.selected_only;
+    $("jobRangeApply").textContent = `선택 적용: ${d.sel_count || 0}건`;
+    const only = $("jobRangeSelectedOnly");
+    only.setAttribute("aria-pressed", on ? "true" : "false");
+    // 두 사실을 한 줄이 진다: ①지금 무엇을 보고 있는가 ②적용 전에는 반영되지 않는다.
+    $("jobRangeNote").textContent = on
+      ? "선택된 항목만 보는 중 — 검색과 열 필터는 잠시 적용하지 않습니다. 변경은 적용해야 반영됩니다."
+      : "변경은 적용하기 전까지 문서 만들기 화면에 반영되지 않습니다.";
+  }
+
+  /* 이탈 가드(판정 F) — 변경이 있을 때만 묻는다. 3택 대신 2택인 근거는 「적용」이 이미 면
+     안의 상시 버튼이라는 것: 가드가 세 번째 선택지를 새 기제로 만들 필요가 없다(계속 편집 →
+     적용 = 한 클릭). 파괴 방향만 명시 확인을 받는다. */
+  function guardRangeClose() {
+    if (rangeForceClose) { rangeForceClose = false; return true; }
+    const d = draftState();
+    if (!d || !d.open) return true;          // 초안 없는 면 = 평범한 닫기
+    // `dirty` 는 **푸시가 온 사실**이다(리뷰 4R): 방금 친 편집이 아직 왕복 중이면 false 라,
+    // 그것만 보면 약속한 확인 없이 조용히 버린다. 내가 보낸 편집의 수를 함께 센다.
+    if (!d.dirty && pendingZoneMutations === 0) { discardAndClose(); return false; }
+    window.Modal.confirm({
+      title: "편집한 범위를 버릴까요?",
+      body: "적용하지 않은 변경이 있습니다. 버리면 문서 만들기 화면의 범위는 그대로 남습니다.",
+      confirmLabel: "버리고 닫기",
+      cancelLabel: "계속 편집",
+      danger: true,
+      returnFocus: $("jobRangeCancel"),
+    }).then((ok) => {
+      if (ok) discardAndClose();             // 아니면 면 유지(아무 일도 안 일어난다)
     });
+    return false;                            // 이 닫기 요청은 소비 — 폐기 성사 뒤 다시 닫는다
+  }
+
+  /* 취소도 **성사 뒤에 닫는다**(적용과 같은 순서, 리뷰 1R): 먼저 닫으면 느린 브리지에서
+     메인 화면이 잠시 초안 기준 행을 그리고 생성이 잠긴 채로 남으며, 발신이 거절되면 면은
+     닫혔는데 Python 초안만 살아남는다(고아). 실패하면 면을 유지하고 사유를 남긴다. */
+  async function discardAndClose() {
+    try {
+      // 대기 중 편집은 **보내지 않는다**(리뷰 2R P1) — 초안이 사라진 뒤 도착하면 사용자가
+      // 버린 검색어가 커밋된 필터에 착지한다. 이미 나간 발신은 같은 체인이 순서를 지킨다.
+      dz.dropPendingEdits();
+      await window.Intent.chained(ZONE_CHAIN, () =>
+        Bridge.call(SCREEN, "range_draft_cancel", {}));
+    } catch (err) {
+      log("범위 편집을 취소하지 못했습니다: " + String((err && err.message) || err));
+      return;
+    }
+    rangeForceClose = true;
+    window.SurfaceSheet.close("dataSheet");
+  }
+
+  async function applyRangeDraft() {
+    try {
+      // 디바운스 창 안에서 눌러도 방금 친 조건이 사라지지 않게 먼저 정산한다.
+      await dz.flushPendingEdits();
+      await window.Intent.chained(ZONE_CHAIN, () =>
+        Bridge.call(SCREEN, "range_draft_apply", {}));
+    } catch (err) {
+      // 실패(세대 불일치 등)에서는 **닫지 않는다**(§10.11.2 실패 경로 면) — 문맥을 남긴다.
+      log("범위를 적용하지 못했습니다: " + String((err && err.message) || err));
+      return;
+    }
+    rangeApplied = true;
+    rangeForceClose = true;
+    window.SurfaceSheet.close("dataSheet");
+  }
+
+  function openJobDataSheet(e) {
+    const trigger = window.SurfaceSheet.trigger(e, $("jobDataExpand"));
+    // 성사 뒤에만 연다(§9.3 4행): 초안 생성이 거절되면(생성 중·데이터 없음) 면을 띄우지
+    // 않는다 — 열어 놓고 나서 실패를 말하면 편집기가 무엇을 편집 중인지 거짓이 된다.
+    //
+    // **열기도 존 체인에 선다**(리뷰 5R): 방금 친 편집이 큐에 있는데 열기가 먼저 도착하면,
+    // 그 편집은 옛 세대를 업고 와 stale 로 거절된다 — 사용자가 화면에서 본 변경이 커밋에도
+    // 초안에도 없이 사라진다(세대 기제가 스스로 연 창). 디바운스 예약분도 먼저 정산해
+    // **복제되는 범위가 사용자가 보고 있던 그것**이 되게 한다.
+    (async () => {
+      try {
+        await dz.flushPendingEdits();
+        await window.Intent.chained(ZONE_CHAIN, () =>
+          Bridge.call(SCREEN, "range_draft_open", {}));
+      } catch (err) {
+        log("범위 편집기를 열지 못했습니다: " + String((err && err.message) || err));
+        return;
+      }
+      // 왕복 중 다른 탭으로 떠났거나 편집 모드로 넘어갔으면 **열지 않는다**(리뷰 2R P2):
+      // 전역 면이라 새 화면 위에 남의 화면 DOM 을 얹고 뜬다. 초안은 여기서 거둔다 —
+      // 안 그러면 아무 표면도 없는 초안이 남아 생성이 조용히 잠긴 채로 있는다.
+      if (!$("scr-job").classList.contains("on") || MODE !== "run") {
+        Bridge.call(SCREEN, "range_draft_cancel", {});
+        return;
+      }
+      rangeApplied = false;
+      rangeForceClose = false;
+      $("dataSheetTitle").textContent = "처리할 행 범위";
+      window.SurfaceSheet.open({
+        modalId: "dataSheet",
+        returnFocus: trigger,
+        initialFocus: $("dataSheetClose"),
+        beforeClose: guardRangeClose,
+        onClose: () => {
+          // 백스톱: 정상 경로(적용·폐기)는 닫기 **전에** 이미 정리했다. 가드를 우회해 닫히는
+          // 경로(모드 전환의 강제 닫기 등)만 여기서 잡아 고아 초안을 남기지 않는다.
+          const d = draftState();
+          if (!rangeApplied && d && d.open) Bridge.call(SCREEN, "range_draft_cancel", {});
+        },
+        moves: [
+          { id: "jobRecsHead", slotId: "dataSheetSlot" },
+          // 표시순서 축도 따라간다(F3 판정 C): 축이 메인에만 남으면 펼친 면에서 순서를 못
+          // 바꾸고, 두 벌로 복제하면 상태가 둘로 갈린다 — 같은 요소가 이동하므로 둘 다 아니다.
+          { id: "jobOrderBar", slotId: "dataSheetSlot" },
+          { id: "jobFilterChips", slotId: "dataSheetSlot" },
+          { id: "jobTableHost", slotId: "dataSheetSlot" },
+          { id: "jobSelStrip", slotId: "dataSheetSlot" },
+          { id: "jobColPanel", slotId: "dataSheetSlot" },
+          { id: "jobRangeFoot", slotId: "dataSheetSlot" },
+        ],
+      });
+    })();
   }
 
   function mirrorRow(r, i) {
@@ -718,10 +909,18 @@
     // 탐색 면·데이터 선택 면은 **오버레이 루트**에 살아 `#scr-job` 질의에 안 걸린다(리뷰 2R
     // P2) — 생성 중 열려 있으면 클릭이 Python 거절로 끝나고 사용자는 문맥만 잃는다. 같은
     // 잠금에 넣는다(지도 §10.7.1 계약면 2).
-    [$("scr-job"), $("jobBrowseSheet"), $("dataPickerModal")].forEach((root) => {
+    // ⤢ 펼침 면 2종도 같은 이유로 루트다: 실 DOM 이동이라 잠글 요소가 **면 안으로 옮겨가**
+    // `#scr-job` 질의에서 빠진다(표시순서 축·전체 선택·검색이 그렇게 새 있었다, F3).
+    [$("scr-job"), $("jobBrowseSheet"), $("dataPickerModal"),
+     $("dataSheet"), $("jobConfirmSheet")].forEach((root) => {
       root.querySelectorAll("[data-busy-lock]").forEach((el) => { el.disabled = busy; });
     });
-    $("jobGenBtn").disabled = busy || !(LAST && LAST.gate && LAST.gate.enabled);
+    // 초안이 열려 있으면 생성은 닫혀 있다(§10.11.2 계약면 2 — 잠금은 DOM 이 아니라 상태가
+    // 진다). Python 도 같은 이유로 거절하지만, 버튼이 눌리는 척하면 거절 문구가 사후 통보가
+    // 된다. 모달에 가려 물리적으로 못 누르는 것과 잠긴 것은 다른 사실이다.
+    const draftOpen = !!(LAST && LAST.range_draft && LAST.range_draft.open);
+    $("jobGenBtn").disabled =
+      busy || draftOpen || !(LAST && LAST.gate && LAST.gate.enabled);
     // 저장 폴더는 작업 속성(기본 = 템플릿/Results) — 작업 미선택에서 고르게 두면 작업
     // 선택이 기본값으로 조용히 덮어써 선택이 증발한다(#302 리뷰 P2). busy-lock 일괄 복원이
     // 되살리지 않도록 여기(렌더 말미 단일 지점)서 판정한다.
@@ -1157,7 +1356,16 @@
           log("작업 열기 실패: " + String((err && err.message) || err));
         }));
     });
+    $("jobOrderSel").addEventListener("change", onOrderChange);
     $("jobDataExpand").addEventListener("click", openJobDataSheet);
+    $("jobRangeApply").addEventListener("click", applyRangeDraft);
+    // 취소도 닫기와 같은 관문을 지난다(가드 → onClose 가 초안을 버린다) — 출구마다 다른
+    // 경로를 만들면 그중 하나는 가드를 안 탄다.
+    $("jobRangeCancel").addEventListener("click", () => window.SurfaceSheet.close("dataSheet"));
+    $("jobRangeSelectedOnly").addEventListener("click", () => {
+      const d = draftState();
+      Bridge.call(SCREEN, "set_selected_only", { value: !(d && d.selected_only) });
+    });
     $("jobMirrorExpand").addEventListener("click", openJobConfirmSheet);
     $("jobMirrorCapstrip").addEventListener("click", (e) => {
       if (e.target.closest("[data-mirror-expand]")) openJobConfirmSheet(e);
