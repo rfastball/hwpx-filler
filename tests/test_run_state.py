@@ -10,6 +10,7 @@ import pytest
 
 from hwpxfiller.core.job import Job
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.gui.review_state import review_requirement
 from hwpxfiller.gui.run_state import RunViewModel
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
@@ -591,3 +592,46 @@ def test_mapped_and_reserved_tokens_open_gate(tmp_path):
         assert vm.unresolved_name_tokens() == []
         status = vm.refresh([0, 1], str(tmp_path / "out"))
         assert "파일명 패턴" not in status.gate.text
+
+
+# ------------------------------------------------ 검토 요구의 게이트 자리(재작성 F5)
+def test_review_requirement_sits_after_preconditions_and_before_open(tmp_path):
+    """지도 §10.12 판정 F — 서열은 드리프트·토큰(danger) > 미입력 > 전제조건 > 검토 > 열림.
+
+    검토가 **전제조건보다 뒤**인 것이 하중이다: 선택 0건에서는 미리보기에 진입하지 않는
+    것이 불변식(§18.11-6)이라, 선택이 0인데 "검토하세요"라고 말하면 이행 불가능한 지시가
+    된다(빈 화면을 앞에 두고 확인을 요구하는 자리).
+    """
+    vm = _vm(tmp_path)
+    vm.acknowledge("추정가격")
+    req = review_requirement(vm.job)  # 완주 이력 없음 = 새 작업(§13-3)
+    assert req.required
+
+    # 선택 0건 — 검토가 아니라 전제조건이 말한다.
+    gate = vm.refresh([], "out", review_unmet=req).gate
+    assert "선택하세요" in gate.text and gate.reason == ""
+
+    # 저장 폴더 없음 — 역시 전제조건이 먼저.
+    gate = vm.refresh([0, 1], "", review_unmet=req).gate
+    assert "저장 폴더" in gate.text and gate.reason == ""
+
+    # 전제조건이 다 갖춰지면 그때 검토가 막는다.
+    gate = vm.refresh([0, 1], "out", review_unmet=req).gate
+    assert gate.enabled is False and gate.level == "warn"
+    assert gate.reason == "review_required" and "미리보기" in gate.text
+
+
+def test_drift_outranks_review_requirement(tmp_path):
+    """구조 불일치(danger)가 먼저다 — 고칠 수 없는 작업에 미리보기부터 열게 하지 않는다."""
+    vm = _vm(tmp_path)
+    vm.acknowledge("추정가격")
+    _write_template(vm.job.template_path, ["공고명", "추정가격", "신규필드"])
+    gate = vm.refresh([0, 1], "out", review_unmet=review_requirement(vm.job)).gate
+    assert gate.reason == "drift" and gate.level == "danger"
+
+
+def test_no_review_requirement_leaves_the_gate_open(tmp_path):
+    """§13-2 — 규칙이 그대로면 미리보기는 선택이고 게이트는 열려 있다."""
+    vm = _vm(tmp_path)
+    vm.acknowledge("추정가격")
+    assert vm.refresh([0, 1], "out", review_unmet=None).gate.enabled is True

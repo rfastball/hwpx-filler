@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from hwpxfiller.core.job import Job, JobRegistry
+from hwpxfiller.core.job import Job, JobRegistry, rules_fingerprints
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.gui.run_state import RunViewModel
 from hwpxfiller.gui.selection_state import SelectionModel
@@ -37,11 +37,17 @@ def _write_template(path, fields) -> None:
     HwpxPackage(entries={MIMETYPE_NAME: MIMETYPE_VALUE, "Contents/section0.xml": xml}).save(str(path))
 
 
-def _registry(tmp_path) -> JobRegistry:
+def _registry(tmp_path, *, reviewed: bool = True) -> JobRegistry:
+    """공용 픽스처 — 기본은 **이미 한 번 완주한** 작업이다(재작성 F5).
+
+    검토 요구(§13-3)는 새 작업의 게이트를 닫으므로, 그것을 겨누지 않는 테스트(빈 값 ack·
+    선택 게이트·필터…)까지 전부 검토 문맥을 지고 가면 무엇을 재는 테스트인지 흐려진다.
+    검토 요구 자체는 ``reviewed=False`` 로 여는 전용 테스트가 잰다.
+    """
     template = tmp_path / "t.hwpx"
     _write_template(template, ["공고명", "추정가격"])
     reg = JobRegistry(tmp_path / "jobs")
-    reg.save(Job(
+    job = Job(
         name="공고서",
         template_path=str(template),
         mapping=MappingProfile(mappings=[
@@ -49,13 +55,20 @@ def _registry(tmp_path) -> JobRegistry:
             FieldMapping(template_field="추정가격", source="presmptPrce"),
         ]),
         filename_pattern="doc-{{seq:001}}",
-    ))
+    )
+    if reviewed:
+        # 기준선만 세운다 — `last_run_at` 은 건드리지 않는다: 실행 이력은 순위·완주 스탬프
+        # 테스트가 각자 겨누는 축이라, 픽스처가 미리 찍으면 그 테스트들이 재는 것이 바뀐다.
+        job.reviewed_rules = rules_fingerprints(job)
+    reg.save(job)
     return reg
 
 
-def _controller(tmp_path):
+def _controller(tmp_path, *, reviewed: bool = True):
     pushes: list = []
-    ctrl = JobController(_registry(tmp_path), lambda s, snap: pushes.append((s, snap)))
+    ctrl = JobController(
+        _registry(tmp_path, reviewed=reviewed), lambda s, snap: pushes.append((s, snap))
+    )
     return ctrl, pushes
 
 
@@ -2753,3 +2766,87 @@ def test_new_data_invalidates_in_flight_zone_edits(tmp_path):
     ctrl.load_data_path(_data_csv(tmp_path))
     assert ctrl.dispatch("toggle_record", {"index": 0, "value": True, "epoch": stale})["stale"]
     assert ctrl.selection.selected_count() == 0
+
+
+# ------------------------- 검토 요구와 승인(재작성 F5, 지도 §10.12 판정 B·F·I·N)
+def _unreviewed_session(tmp_path):
+    """검토 기준선이 없는 작업 + 데이터 + 저장 폴더 — 게이트가 검토에서 막히는 상태."""
+    ctrl, pushes = _controller(tmp_path, reviewed=False)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    ctrl.dispatch("ack_field", {"field": "추정가격"})  # 빈 값 게이트는 먼저 통과시킨다
+    return ctrl, pushes
+
+
+def test_new_job_is_blocked_until_the_result_is_reviewed(tmp_path):
+    """§13-3 — 새 문서 작업은 결과 확인 전 실행을 차단한다."""
+    ctrl, _ = _unreviewed_session(tmp_path)
+    gate = ctrl.snapshot()["gate"]
+    assert gate["enabled"] is False and gate["level"] == "warn"
+    assert "아직 한 번도 문서를 만들지 않은" in gate["text"]
+
+
+def test_approval_opens_the_gate_and_survives_a_push_round_trip(tmp_path):
+    ctrl, _ = _unreviewed_session(tmp_path)
+    req, unmet = ctrl._review()
+    assert unmet is not None
+    ctrl.review.approve(req, ctrl._selection_key())
+    assert ctrl.snapshot()["gate"]["enabled"] is True
+
+
+def test_selection_change_reinstates_a_selection_bound_approval(tmp_path):
+    """판정 I — 새 작업의 증거는 이 배치의 것이라 선택이 바뀌면 다시 확인해야 한다."""
+    ctrl, _ = _unreviewed_session(tmp_path)
+    req, _ = ctrl._review()
+    ctrl.review.approve(req, ctrl._selection_key())
+    assert ctrl.snapshot()["gate"]["enabled"] is True
+    ctrl.dispatch("toggle_record", {"index": 0, "value": False})
+    assert ctrl.snapshot()["gate"]["enabled"] is False
+
+
+def test_display_order_change_reinstates_the_approval(tmp_path):
+    """선택 집합이 같아도 순서가 바뀌면 파일 이름이 달라진다(§2 충돌 B) — 같은 실행
+    입력이 아니므로 승인이 승계되지 않는다."""
+    ctrl, _ = _unreviewed_session(tmp_path)
+    req, _ = ctrl._review()
+    ctrl.review.approve(req, ctrl._selection_key())
+    ctrl.dispatch("set_view_order", {"value": "sourceAsc"})
+    assert ctrl.snapshot()["gate"]["enabled"] is False
+
+
+def test_a_completed_run_stamps_the_baseline_so_the_repeat_run_is_quiet(tmp_path):
+    """§13-2 — 정상 반복 실행에서 미리보기는 선택이다. 완주가 그 자격을 만든다."""
+    ctrl, _ = _unreviewed_session(tmp_path)
+    req, _ = ctrl._review()
+    ctrl.review.approve(req, ctrl._selection_key())
+    ctrl.generate()
+    assert ctrl.registry.load("공고서").reviewed_rules  # 완주 스탬프가 기준선을 세웠다
+    ctrl.review.clear()                                 # 재시작과 같은 상태(승인은 미영속)
+    assert ctrl.snapshot()["gate"]["enabled"] is True
+
+
+def test_an_old_job_without_a_baseline_does_not_claim_it_never_ran(tmp_path):
+    """판정 N — 수백 번 실행한 작업에 「아직 한 번도 만들지 않았습니다」는 거짓말이다."""
+    ctrl, _ = _controller(tmp_path, reviewed=False)
+    ctrl.registry.stamp_last_run("공고서", "2026-07-01T09:00:00")
+    ctrl.registry.mutate("공고서", lambda j: setattr(j, "reviewed_rules", {}))  # 구 버전 작업
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    text = ctrl.snapshot()["gate"]["text"]
+    assert "확인할 수 없습니다" in text and "한 번도" not in text
+
+
+def test_switching_jobs_does_not_carry_an_approval(tmp_path):
+    """승인은 규칙 지문에 결속돼 남의 작업에 닿지 않는다."""
+    ctrl, _ = _unreviewed_session(tmp_path)
+    req, _ = ctrl._review()
+    ctrl.review.approve(req, ctrl._selection_key())
+    other = ctrl.registry.load("공고서")
+    other.name = "다른공고서"
+    other.filename_pattern = "다른-{{seq:001}}"
+    ctrl.registry.save(other)
+    ctrl.dispatch("select_job", {"name": "다른공고서"})
+    assert ctrl.snapshot()["gate"]["enabled"] is False

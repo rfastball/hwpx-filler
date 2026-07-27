@@ -26,6 +26,7 @@ from ..core.job import Job, RunRequest, require_hwpx
 from ..core.mapping import MappingProfile
 from ..data import source_for_path
 from ..naming import existing_outputs, pattern_field_tokens, plan_output_names
+from .review_state import ReviewRequirement, review_gate_text
 
 
 @dataclass
@@ -81,7 +82,8 @@ class GateState:
     #: 차단 사유의 기계 판독 이름 — **표시면이 게이트 서열을 재유도하지 않게** 한다(리뷰 F2).
     #: 거울 배너는 자기 사실(드리프트 목록·미해소 토큰)을 따로 보고 그리면 게이트가 실제로
     #: 막고 있는 이유와 다른 것을 크게 말할 수 있다(예: 템플릿을 못 읽는데 "파일명을 고치라").
-    #: ""=이 사유 축과 무관(warn·열림). 값: drift | template_unreadable | name_tokens
+    #: ""=이 사유 축과 무관(warn·열림).
+    #: 값: drift | template_unreadable | name_tokens | review_required
     reason: str = ""
 
 
@@ -367,7 +369,10 @@ class RunViewModel:
             reason="name_tokens",
         )
 
-    def refresh(self, indices: "list[int]", out_dir: str = "") -> RunStatus:
+    def refresh(
+        self, indices: "list[int]", out_dir: str = "", *,
+        review_unmet: "ReviewRequirement | None" = None,
+    ) -> RunStatus:
         """상태 리프레시 1회의 단일 스냅샷 — 사전검증·필드 배지·게이트를 동시 파생.
 
         레코드 매핑·템플릿 구조를 **각 1회만** 계산해 세 표시면이 같은 사실에서
@@ -378,6 +383,11 @@ class RunViewModel:
         게이트로 흡수해 모달은 danger 예외에만 남긴다. 파일명 토큰 계약(F34)은 데이터
         없이도 판정되므로 미겨눔 상태에서도 danger 로 먼저 발화한다 — 고칠 수 없는
         작업에 데이터부터 고르게 하지 않는다.
+
+        ``review_unmet`` 은 **아직 승인되지 않은** 검토 요구(재작성 F5, 지도 §10.12 판정 F).
+        요구 판정과 승인 대조는 세션이 하고(기준선은 durable·승인은 세션), 여기서는 그
+        결과를 게이트 서열에 끼운다 — 서열의 권위가 둘로 갈리지 않게 표시 결정은 계속
+        :meth:`_compose_gate` 단일 산출이다.
         """
         name_gate = self._name_token_gate()
         if self.datasource is None:
@@ -394,7 +404,9 @@ class RunViewModel:
         return RunStatus(
             preflight=self._compose_preflight(src, out, drift, name_gate is not None),
             field_states=tuple(states),
-            gate=self._compose_gate(states, drift, idx, out_dir, name_gate),
+            gate=self._compose_gate(
+                states, drift, idx, out_dir, name_gate, review_unmet,
+            ),
         )
 
     def gate_state(self, indices: "list[int]", out_dir: str = "") -> GateState:
@@ -439,14 +451,19 @@ class RunViewModel:
     def _compose_gate(
         self, states: "list[FieldState]", drift: TemplateStructureDrift,
         indices: "list[int]", out_dir: str, name_gate: "GateState | None" = None,
+        review_unmet: "ReviewRequirement | None" = None,
     ) -> GateState:
         """게이트 표시 결정 — 드리프트(danger·차단) > 파일명 토큰(danger) > 미확인
-        미입력(warn) > 전제조건(warn) > 열림.
+        미입력(warn) > 전제조건(warn) > **검토 요구(warn)** > 열림.
 
         UD-06: 이어채우기 문서·저장 폴더·레코드 선택 같은 warn 급 전제조건을 이 단일
         산출로 흡수해 '버튼 비활성 + 인라인 사유' 문법으로 통일한다(클릭 후 차단 모달
         재유입 소거 — 모달은 danger 예외에만 남긴다). 템플릿 부재(danger)는
         ``validate_generate`` 의 모달 백스톱에 남긴다.
+
+        검토 요구가 **전제조건보다 뒤**인 이유(F5 판정 F): 선택 0건에서는 미리보기에
+        진입하지 않는 것이 불변식(§18.11-6·§13-26 "첫 레코드를 실행 미리보기로 대신하지
+        않는다")이라, 선택이 0인데 "검토하세요"라고 말하면 이행 불가능한 지시가 된다.
         """
         if self.target_mode == "continue" and not self.template_override:
             return GateState(False, "warn", "이어채울 기존 문서(.hwpx)를 선택하세요.")
@@ -480,6 +497,10 @@ class RunViewModel:
             return GateState(
                 False, "warn",
                 "기존 문서 이어채우기는 1건만 지원합니다. 생성 대상을 1건만 선택하세요.",
+            )
+        if review_unmet is not None and review_unmet.required:
+            return GateState(
+                False, "warn", review_gate_text(review_unmet), reason="review_required",
             )
         return GateState(True, "", "")
 

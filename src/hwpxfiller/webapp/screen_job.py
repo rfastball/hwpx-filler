@@ -61,6 +61,7 @@ from ..gui.filter_state import (
 from ..gui.result_errors import classify_result_error, describe_fill_note
 from ..naming import pattern_uses_seq
 from ..gui.record_range import RecordRange, RecordRangeDraft
+from ..gui.review_state import ReviewRequirement, ReviewState, review_requirement
 from ..gui.run_state import RunViewModel, resolve_file_source, resolve_pool_source
 from ..gui.selection_state import SelectionModel
 from ..gui.work_candidates import (
@@ -213,6 +214,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 비교한다. 작업 전환에도 남는다: 남아 있어야 "지금 열린 작업이 그 런의 작업과
         # 다르다"를 말할 수 있다.
         self._last_run_job = ""
+        # 검토 승인 사건(재작성 F5, 지도 §10.12 판정 B) — **세션 소유·미영속**. 기준선은
+        # `Job.reviewed_rules` 가 durable 로 들고, 승인만 여기 산다: 승인하고 실행하지 않은
+        # 채 재시작하면 요구가 되돌아온다(열린 게이트로 시작하지 않는다). 폐기 코드는 없다
+        # — 승인이 규칙 지문(+선택 결속 위험이면 선택 지문)에 결속돼 자동으로 무효가 된다.
+        self.review = ReviewState()
         # 직전 필터 슬롯(결정 28) — 정의 가진 세션이 죽을 때 덮어쓰는 1칸 세션 메모리
         # (앱 수명·미저장 — 필터 영속 뒷문 금지). 소스 일치 게이트용 키와 쌍.
         self._last_filter: "dict | None" = None  # {"source_key": str, "state": dict}
@@ -432,6 +438,30 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "selected_only": draft.selected_only,
             "view_order": draft.range.view_order,
         }
+
+    def _selection_key(self) -> str:
+        """**커밋된** 실행 입력의 지문 — 결과 강등 판정(F4)과 승인 결속(F5)이 함께 쓴다.
+
+        순서까지 담는다: 표시순서가 바뀌면 파일 이름이 실제로 달라지므로 같은 선택도 다른
+        실행 입력이다(§2 충돌 B). 두 소비처가 각자 조립하면 그 순간 지문이 두 벌이 된다
+        (F3 리뷰 1R 이 표면의 자체 조립에서 났던 자리) — 그래서 메서드 하나가 낸다.
+        """
+        return ",".join(str(i) for i in self._indices())
+
+    def _review(self) -> "tuple[ReviewRequirement, ReviewRequirement | None]":
+        """(현재 검토 요구, 아직 승인 안 된 요구 or None) — F5 판정 B·I.
+
+        게이트에 넘기는 것은 **미승인분**이다. 요구 자체는 표면이 문안·증거를 그리는 데
+        쓰므로 승인 뒤에도 그대로 돌려준다(승인했다는 사실을 말하려면 무엇을 승인했는지가
+        필요하다).
+        """
+        if self.vm is None:
+            return ReviewRequirement(), None
+        req = review_requirement(self.vm.job)
+        if not req.required:
+            return req, None
+        approved = self.review.is_approved(req, self._selection_key())
+        return req, (None if approved else req)
 
     def _order_note(self) -> str:
         """표시순서 축 옆 상시 재진술(지도 §10.11 판정 I) — 확인 왕복 대신 문안이 진다.
@@ -794,8 +824,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 표면이 표의 선택 표지로 이 값을 만들면, 표가 초안을 그리는 동안(F3 판정 D)
             # 적용도 안 한 편집이 결과를 강등시키고 취소해도 되돌아오지 않는다(리뷰 1R).
             # 순서까지 담는다: 표시순서가 바뀌면 파일 이름이 실제로 달라지므로 같은 선택도
-            # 다른 실행 입력이다(§2 충돌 B).
-            "selection_key": ",".join(str(i) for i in self._indices()),
+            # 다른 실행 입력이다(§2 충돌 B). 승인 결속(F5 판정 I)이 같은 값을 쓴다.
+            "selection_key": self._selection_key(),
             "data_label": self.data_label,
             # 소스 종류 병기 라벨(#26) — 저장 상태가 아니라 플래그에서 매번 합성(K8).
             "data_source_label": source_label(self.data_source, self.data_label),
@@ -848,7 +878,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         indices = self._indices()
         # 선택분 매핑 적용은 1회 — 파일명 미리보기(_record_rows)와 거울 값(_mirror)이 공유한다.
         mapped = self.vm.mapped_records(indices) if indices else []
-        status = self.vm.refresh(indices, self.out_dir)  # 사전검증+배지+게이트 단일 산출(RC-23)
+        # 검토 요구(F5) — 요구 판정은 durable 기준선이, 승인 대조는 세션이 한다. 게이트에는
+        # **아직 승인 안 된** 요구만 넘긴다(승인됐으면 게이트가 그 자리에서 열려야 한다).
+        req, req_unmet = self._review()
+        status = self.vm.refresh(  # 사전검증+배지+게이트 단일 산출(RC-23)
+            indices, self.out_dir, review_unmet=req_unmet,
+        )
         preflight_text = (
             _PREFLIGHT_OK_TEXT if status.preflight.level == "ok" else status.preflight.text
         )
@@ -1024,6 +1059,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 옛 의도가 되살아나 방금 고른 작업을 밀어낸다(지연된 조용한 추측).
         self.preferred_work = ""
         self._last_generated = None  # 실행 증거는 세션 스코프 — 전환 시 소멸(§19.10)
+        # 승인은 규칙·선택 지문에 결속돼 이미 남의 작업에 닿지 않는다(F5 판정 I) — 여기서
+        # 비우는 건 무효화가 아니라 **누적 방지**다(작업을 오래 오가는 세션의 키 적재).
+        self.review.clear()
         if not name:  # 선택 해제 = 작업만 내려놓는다(데이터 존은 그대로)
             self.vm = None
             self.job_name = ""
@@ -1461,6 +1499,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 않게). 세션이 이미 다른 작업으로 옮겨갔으면 남의 VM 을 만지지 않는다.
         if vm is not None and vm is self.vm:
             vm.job.last_run_at = job.last_run_at
+            # 검토 기준선도 같이 되싣는다(F5 판정 B): 스탬프가 디스크에만 남으면 세션은
+            # 방금 완주한 규칙을 여전히 「미검토」로 읽어, 같은 규칙으로 한 번 더 만들려는
+            # 사용자에게 §13-2 가 선택이라고 한 미리보기를 다시 요구한다.
+            vm.job.reviewed_rules = dict(job.reviewed_rules)
         return ""
 
     def generate(self, *, confirm_overwrite: bool = False) -> dict:
