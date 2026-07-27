@@ -341,7 +341,7 @@ def test_discard_confirm_has_single_source():
     assert "function confirmDiscard" in entry, "confirmDiscard 단일 정의 소실."
     # 홈 ＋ 는 newDraft(내부가 confirmDiscard)로 한 층 더 수렴했다(PR-5 리뷰 F2).
     for rel, needle in (
-        ("screens/home.js", "EditorEntry.newDraft"),
+        ("screens/library.js", "EditorEntry.newDraft"),
         ("screens/template.js", "EditorEntry.confirmDiscard"),
         ("screens/editor.js", "EditorEntry.confirmDiscard"),
     ):

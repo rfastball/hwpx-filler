@@ -559,7 +559,7 @@ def test_generation_stamps_last_run_at(tmp_path):
     res = ctrl.generate()
     assert res["ok"] is True and res["level"] == "ok"
     stamped = ctrl.registry.load("공고서").last_run_at
-    # 소비처(home_state·screen_home)가 fromisoformat 파싱 + 원시 문자열 정렬로 쓴다.
+    # 소비처(home_state·screen_library)가 fromisoformat 파싱 + 원시 문자열 정렬로 쓴다.
     assert datetime.fromisoformat(stamped)
     assert len(stamped) == len("2026-07-21T09:00:00")           # 초 단위 고정폭 = 정렬 가능
     assert ctrl.vm.job.last_run_at == stamped                   # 인메모리 사본도 동행

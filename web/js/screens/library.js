@@ -1,0 +1,628 @@
+/* 「문서 작업」 전역 라이브러리(§19.6·§19.7) — browser + detail. 재작성 F2 PR-A.
+   홈(카드 나열 + group-by 렌즈)의 승계자다. 안정 DOM(index.html) + Python 이
+   window.__push('library', snapshot) 로 값만 채운다. 표현 계층(탭·칩·행·상세)만 여기서
+   만든다 — 보기·필터·검색·건강 판정은 전부 링1 소유(링2 대체 금지).
+
+   §9.3 4계약면(지도 §10.8.2)의 이행분이 이 파일에 있다:
+   - 정체: 행 id = 작업 이름(안정 키), 탭·칩·헤더·상세 버튼 id 고정, 재렌더는 Preserve.around.
+   - 잠금: 축 컨트롤·행 버튼에 data-busy-lock(생성 중 전역 잠금 대상).
+   - 순서: 이동은 대상 화면 dispatch 로 **먼저 겨눈 뒤** window.Nav — 실패하면 화면 불변.
+   - 실패: 실패는 이 화면 안에서 재진술하고 보기·필터·선택을 유지한다.
+
+   좌 목록 관리 동사 중 열린 세션의 정체와 결속된 것(이름 변경·그룹 지정/이름 변경/해산)은
+   「작업」 컨트롤러가 계속 소유한다 — 여기서는 교차 화면 dispatch 로 부르고 뒤이어
+   library/refresh 로 이 화면 스냅샷을 맞춘다(지도 §10.8 판정 F). */
+(function () {
+  const SCREEN = "library";
+  const JOB = "job";  // 세션 결속 관리 동사의 소유 화면(교차 화면 dispatch 대상)
+  const $ = (id) => document.getElementById(id);
+
+  const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
+
+  let LAST = null;      // 마지막 스냅샷 — 태그 프리필·그룹 목록 등 핸들러가 참조
+  let menuFor = null;   // 열린 그룹 ⋮ 메뉴의 {group, trigger} — null=닫힘
+  let searchTimer = null;
+
+  /* 그룹 헤더 ⋮ 메뉴·그룹 이동 다이얼로그 = 공용 팩토리(grouplist.js, job/tpl 과 단일 출처).
+     새 생명주기를 들이지 않는다(F1 판정 E 와 같은 규율) — 위치잡기·조립만 팩토리 소유. */
+  const groupMenu = window.GroupList.createMenu({ menuId: "libraryGroupMenu" });
+  const moveDialog = window.GroupList.createMoveDialog({
+    modalId: "libraryMoveModal", listId: "libraryMoveList", errId: "libraryMoveErr",
+    nameId: "libraryMoveName", radioName: "libMove",
+    newRadioId: "libMoveNewRadio", newNameId: "libMoveNewName",
+  });
+
+  /* ---- Python→웹 푸시 렌더 ---- */
+  function render(s) {
+    // 재렌더가 포커스·스크롤을 삼키지 않게(§9.3 정체 면) — 목록·상세가 매 액션마다 다시 그려진다.
+    Preserve.around(() => {
+      LAST = s;
+      renderAlerts(s.alerts);
+      renderCorrupt(s.corrupt_rows);
+      renderTabs(s.view, s.counts);
+      renderModes(s.mode);
+      renderFacets(s.facets);
+      syncSearch(s.query);
+      renderList(s);
+      renderDetail(s.detail);
+    });
+  }
+
+  /* 정보 위생(#239 결정 8 승계): 개수 타일은 렌더하지 않고 조치가 필요한 조건만 경보로. */
+  function renderAlerts(a) {
+    a = a || { missing_template_count: 0, pool_corrupted: 0 };
+    const alerts = [];
+    if (a.missing_template_count > 0) {
+      alerts.push(`<div class="note warnbox">템플릿이 연결되지 않은 작업 ${a.missing_template_count}건이 있습니다. 「확인 필요」 보기에서 조치하세요.</div>`);
+    }
+    if (a.pool_corrupted > 0) {
+      // 조치처는 실재해야 한다(F1: 「데이터 관리」 화면 사망) — 손상 격리의 새 거처는
+      // 「작업」의 [데이터 선택…] 안 「고정한 데이터」 구획이다.
+      alerts.push(`<div class="note dangerbox">손상된 등록 데이터 ${a.pool_corrupted}건이 있습니다. 「작업」의 [데이터 선택…]에서 확인하세요.</div>`);
+    }
+    $("libraryAlerts").innerHTML = alerts.join("");
+  }
+
+  /* 손상 작업 — 숨기지 않고 시끄러운 위험 카드로(RC-05) + 해소 동선(#26 #8·UD-44):
+     폴더 열기(탐색기 표시)·삭제(백엔드 재진술 확인 라운드트립). */
+  function renderCorrupt(rows) {
+    const box = $("libraryCorrupt");
+    rows = rows || [];
+    if (!rows.length) { box.style.display = "none"; box.innerHTML = ""; return; }
+    box.style.display = "";
+    box.innerHTML =
+      `<div class="grp"><span class="cap">손상된 작업 파일</span>` +
+      rows.map((c) =>
+        `<div class="jcard corrupt"><div class="jn">${esc(c.file_name)} <span class="pill danger">손상됨</span></div>` +
+        `<div class="jm">${esc(c.detail_line)}</div>` +
+        `<div class="jfoot"><span></span><span class="acts">` +
+        `<button class="btn sm" data-reveal="${esc(c.path)}">폴더 열기</button>` +
+        `<button class="btn sm" data-del-corrupt="${esc(c.path)}">삭제</button>` +
+        `</span></div></div>`
+      ).join("") + `</div>`;
+  }
+
+  async function onCorruptClick(e) {
+    const rv = e.target.closest("[data-reveal]");
+    if (rv) {
+      const r = await Bridge.revealCorruptJob(rv.dataset.reveal);
+      if (typeof r === "string" && r.startsWith("ERROR:")) window.alert(r.slice(6).trim());
+      return;
+    }
+    const dc = e.target.closest("[data-del-corrupt]");
+    if (dc) {
+      const path = dc.dataset.delCorrupt;
+      // 백엔드가 거절할 수 있다(목록에 없는 stale 경로 → ValueError, 잠긴 파일 → PermissionError).
+      // try/catch 없이는 rejection 이 삼켜져 클릭이 무반응이 된다 — 시끄럽게 재진술한다.
+      try {
+        const res = await Bridge.call(SCREEN, "delete_corrupt", { path });
+        if (res && res.needs_confirm && (await Modal.confirm({
+          body: res.confirm_text, confirmLabel: "삭제", cancelLabel: "취소", danger: true,
+        }))) {
+          await Bridge.call(SCREEN, "delete_corrupt", { path, confirm: true });
+        }
+      } catch (err) {
+        window.alert(String((err && err.message) || err));
+      }
+    }
+  }
+
+  /* ---- 축: 보기 탭 · 작업 방식 칩 · 태그 facet · 검색 ---- */
+  /* 탭 건수는 **검색 전** 사실이다(링1 계약) — 검색어에 따라 흔들리면 "여기 몇 건인가"를 잃는다.
+     라벨은 DOM 정본에서 읽고 건수만 덧댄다(재렌더마다 라벨이 누적되지 않게 접미를 걷는다). */
+  function renderTabs(view, counts) {
+    counts = counts || {};
+    $("libraryViewTabs").querySelectorAll("[data-library-view]").forEach((b) => {
+      const v = b.dataset.libraryView;
+      const on = v === view;
+      b.setAttribute("aria-selected", on ? "true" : "false");
+      b.tabIndex = on ? 0 : -1;
+      const label = b.dataset.label || (b.dataset.label = b.textContent.trim());
+      const n = counts[v];
+      b.textContent = typeof n === "number" ? `${label} · ${n}` : label;
+    });
+    $("libraryPanel").setAttribute("aria-labelledby", "library-view-" + view);
+  }
+
+  function renderModes(mode) {
+    $("libraryModeFilters").querySelectorAll("[data-library-mode]").forEach((b) => {
+      b.setAttribute("aria-pressed", b.dataset.libraryMode === mode ? "true" : "false");
+    });
+  }
+
+  /* facet 칩 — 축이 하나도 없으면 UI 전체를 숨긴다(§19.6 · 퇴화-코퍼스 불변식). 0건 값은
+     비활성이되 **켜진 고아 칩은 남긴다**(링1이 count=0·active=true 로 실어 보낸다) — 범인
+     필터가 보이지 않는 채 실재 작업을 숨기면 confirm-or-alarm 위반이다. */
+  function renderFacets(facets) {
+    const box = $("libraryFacets");
+    facets = facets || [];
+    const chips = facets.flatMap((fa) =>
+      fa.values.map((v) =>
+        `<button class="pill${v.active ? "" : " muted"}" data-axis="${esc(fa.axis)}" data-val="${esc(v.value)}"` +
+        `${v.count === 0 && !v.active ? " disabled" : ""} aria-pressed="${v.active ? "true" : "false"}" data-busy-lock>` +
+        `${esc(fa.axis)}: ${esc(v.value)} · ${v.count}</button>`
+      )
+    );
+    if (!chips.length) { box.style.display = "none"; box.innerHTML = ""; return; }
+    box.style.display = "";
+    box.innerHTML = `<span class="library-filter-label">태그</span>` + chips.join("") +
+      `<button class="btn sm" id="libraryClearFacets" data-busy-lock>태그 필터 해제</button>`;
+  }
+
+  /* 검색 입력은 사용자가 치는 중이면 덮어쓰지 않는다 — 왕복 중 도착한 푸시가 캐럿을 되감는
+     것이 §8.4 「지연 왕복 중의 의도」 면의 이 표면 판본이다. */
+  function syncSearch(query) {
+    const el = $("librarySearch");
+    if (document.activeElement !== el && el.value !== (query || "")) el.value = query || "";
+  }
+
+  /* ---- 목록(browser) ---- */
+  function healthPill(h) {
+    if (!h || !h.severity) return "";
+    const level = h.severity >= 3 ? "danger" : "warn";
+    return ` <span class="pill ${level}">${esc(h.text)}</span>`;
+  }
+
+  /* 행: 이름·작업 방식·사용자 group·최근 사용·건강·즐겨찾기(§19.6).
+     즐겨찾기와 상세 열기는 **형제** 버튼이다 — 선택 버튼 안에 중첩하지 않는다(§19.6 명문).
+     이 배치가 「표시 상한과 무관한 도달성」(§8.4 2행)의 새 거처다: 순위 밖 작업도 여기서 별을
+     켜 메인 Top 5 로 승격할 수 있다. */
+  function rowHtml(r, selected) {
+    const nm = esc(r.name);
+    const on = r.name === selected;
+    return `<div class="lib-row${on ? " on" : ""}">` +
+      `<button class="lib-row-main" data-work="${nm}" aria-current="${on ? "true" : "false"}" data-busy-lock>` +
+      `<span class="lib-row-name">${nm}${healthPill(r.health)}</span>` +
+      `<span class="lib-row-meta">${esc(r.mode_label)}` +
+      (r.group ? ` · ${esc(r.group)}` : "") +
+      ` · ${esc(r.last_run_display)}</span></button>` +
+      `<button class="lib-fav" data-fav="${nm}" data-next="${r.favorited ? "0" : "1"}"` +
+      ` aria-pressed="${r.favorited ? "true" : "false"}"` +
+      ` aria-label="${nm} 즐겨찾기" title="즐겨찾기" data-busy-lock>${r.favorited ? "★" : "☆"}</button></div>`;
+  }
+
+  function sectionHtml(sec, selected) {
+    const rows = sec.rows.map((r) => rowHtml(r, selected)).join("");
+    if (!sec.headed) return rows;  // 저장된 group 0개 = 헤더 없는 평면(퇴화 불변식)
+    const g = esc(sec.value);
+    return `<div class="lib-grp job-grp">` +
+      `<button class="lib-grp-head" data-group="${g}" aria-expanded="${sec.collapsed ? "false" : "true"}" data-busy-lock>` +
+      `<span class="grp-caret">${sec.collapsed ? "▸" : "▾"}</span> ${esc(sec.label)} · ${sec.count}</button>` +
+      `<button class="job-more" data-group-more="${g}" aria-haspopup="true" aria-label="${esc(sec.label)} 그룹 관리">⋮</button>` +
+      `</div><div class="lib-grp-rows"${sec.collapsed ? " hidden" : ""}>${rows}</div>`;
+  }
+
+  function isFiltered(s) {
+    return !!(s.query || s.mode !== "all" ||
+      (s.facets || []).some((fa) => fa.values.some((v) => v.active)));
+  }
+
+  function renderList(s) {
+    const host = $("libraryList");
+    const sections = s.sections || [];
+    const shown = sections.reduce((n, sec) => n + sec.count, 0);
+    if (s.is_empty) {
+      // 코퍼스 자체가 비었다 — 필터 탓이 아니므로 출구가 아니라 온보딩을 낸다.
+      $("libraryCount").textContent = "저장된 작업이 없습니다.";
+      host.innerHTML =
+        `<div class="empty"><div class="heading">저장된 작업이 없습니다</div>` +
+        `<p>템플릿과 매핑을 묶어 첫 작업을 만드세요.\n데이터·행은 문서를 만들 때 고릅니다.</p>` +
+        `<button class="btn primary" data-new-work>＋ 첫 작업 만들기</button></div>`;
+      return;
+    }
+    $("libraryCount").textContent = `${shown}건`;
+    if (!shown) {
+      // 0건의 범인은 네 절단자(보기·방식·검색·태그) 중 하나다. 어느 것인지 되짚게 두지 않고
+      // 한 번에 걷는 출구를 상주시킨다(§8.4 「절단과 무관한 도달성」).
+      host.innerHTML =
+        `<div class="empty"><div class="heading">조건에 맞는 작업이 없습니다</div>` +
+        `<p>${isFiltered(s) || s.view !== "all"
+          ? "보기·작업 방식·검색·태그 중 하나가 목록을 비웠습니다."
+          : "이 보기에 해당하는 작업이 없습니다."}</p>` +
+        `<button class="btn" data-clear-filters>필터 지우고 전체 보기</button></div>`;
+      return;
+    }
+    host.innerHTML = sections.map((sec) => sectionHtml(sec, s.selected)).join("");
+  }
+
+  /* ---- 상세(detail) ---- */
+  function bindingTable(rows) {
+    if (!rows || !rows.length) return `<p class="muted">확정한 필드 연결이 없습니다.</p>`;
+    return `<table class="tb lib-bindings"><thead><tr>` +
+      `<th>문서 필드</th><th>데이터 항목</th><th>표시형</th></tr></thead><tbody>` +
+      rows.map((b) =>
+        `<tr${b.blank ? ' class="muted"' : ""}><td>${esc(b.template_field)}</td>` +
+        `<td>${esc(b.source_label)}</td><td>${esc(b.format_label)}</td></tr>`).join("") +
+      `</tbody></table>`;
+  }
+
+  function renderDetail(d) {
+    const box = $("libraryDetail");
+    if (!d) {
+      // pane 자체가 이미 카드 테두리를 갖고 있어 .empty 의 점선 상자를 겹치지 않는다
+      // (상자 안 상자 = 이 화면에만 있는 이질 문법). 안내 한 줄로 족하다.
+      box.innerHTML = `<p class="lib-detail-blank muted">왼쪽에서 작업을 고르면 상세가 열립니다.</p>`;
+      return;
+    }
+    const nm = esc(d.name);
+    const causes = (d.health_causes || []).map((c) =>
+      `<li>${esc(c.text)}</li>`).join("");
+    const relink = d.template_missing
+      ? `<button class="btn sm" data-relink="${nm}">템플릿 다시 연결…</button>` : "";
+    const tags = Object.keys(d.tags || {}).length
+      ? Object.entries(d.tags).map(([k, v]) =>
+        `<span class="pill muted">${esc(k)}: ${esc(v)}</span>`).join(" ")
+      : '<span class="muted">태그 없음</span>';
+    box.innerHTML =
+      `<div class="lib-detail-scroll" data-preserve-scroll>` +
+      `<h2 class="lib-detail-name">${nm}</h2>` +
+      `<p class="lib-detail-sub">${esc(d.mode_label)}` +
+      (d.group ? ` · ${esc(d.group)}` : " · 그룹 없음") +
+      ` · ${esc(d.last_run_display)}</p>` +
+      // §19.7: 상세는 **모든 실제 원인**을 보인다(목록 배지는 최고 심각도 1건).
+      (causes
+        ? `<div class="note warnbox"><div class="cap">확인할 것</div>` +
+          `<ul class="lib-causes">${causes}</ul>${relink}</div>`
+        : "") +
+      `<dl class="lib-detail-facts">` +
+      `<dt>템플릿</dt><dd>${esc(d.template_name)}</dd>` +
+      (d.filename_pattern ? `<dt>파일 이름 규칙</dt><dd>${esc(d.filename_pattern)}</dd>` : "") +
+      (d.run_note ? `<dt>실행 방식</dt><dd>${esc(d.run_note)}</dd>` : "") +
+      `</dl>` +
+      // 저장된 항목 키를 그대로 보인다(지도 §10.8 판정 C) — 그 사실을 문안이 말한다.
+      `<div class="cap">필드 연결</div>` +
+      `<p class="muted lib-detail-note">작업에 저장된 데이터 항목 키입니다(현재 데이터의 열 이름이 아닙니다).</p>` +
+      bindingTable(d.bindings) +
+      `<div class="cap">태그</div><p class="lib-tags">${tags}</p>` +
+      `</div>` +
+      // 상시 행동은 상세 스크롤과 **분리해** pane 아래 고정한다(§19.6 마지막 문단).
+      `<div class="lib-detail-acts">` +
+      `<button class="btn primary sm" data-use="${nm}">문서 만들기에서 사용</button>` +
+      `<button class="btn sm" data-edit="${nm}">작업 편집</button>` +
+      `<span class="lib-detail-manage">` +
+      `<button class="btn sm" data-rename="${nm}">이름 변경</button>` +
+      `<button class="btn sm" data-move="${nm}">그룹 이동</button>` +
+      `<button class="btn sm" data-tags="${nm}">태그…</button>` +
+      `<button class="btn sm" data-clone="${nm}">복제</button>` +
+      // 솔리드 danger 는 확인 다이얼로그의 확정 버튼 몫이다(#184 행동 계층) — 상시 노출되는
+      // 관리 줄에서 그 무게를 쓰면 경보가 싸구려가 된다. 여기선 글자색만 위험을 말한다.
+      `<button class="btn sm lib-del" data-delete="${nm}">삭제</button>` +
+      `</span></div>`;
+  }
+
+  /* ---- 이동: 대상 화면을 먼저 겨눈 뒤 셸 라우터로 전환(§9.3 순서 면) ---- */
+  /* 「문서 만들기에서 사용」 — 명시적 버튼만 실행 문맥을 바꾼다(§19.8). 겨눔은 「작업」 화면의
+     자체 dispatch(JobScreen.openJob → select_job)로 하고, 그 다음에 화면을 전환한다. 재클릭
+     무동작 가드도 그쪽이 승계한다 — 이미 그 작업 세션이 진행 중이면 재구성하지 않아 데이터
+     겨눔·행 선택·확인이 조용히 소실되지 않는다.
+     §19.8 이 요구하는 3분기(데이터 없음 → preferredWorkId 보관, 비호환 → 확인 필요 탭 focus)는
+     **아직 갈리지 않는다** — 다음 커밋에서 붙인다. 지금은 명시 선택 뒤 게이트가 부족한 것을
+     시끄럽게 말하므로 조용한 오류는 없다. */
+  function useInJob(name) {
+    if (window.JobScreen) { window.JobScreen.openJob(name); return; }
+    window.Nav.go(JOB);
+  }
+
+  /* 편집 진입 — 미저장 에디터 세션은 조용히 버리지 않고 확인(#25 미러) 후 복원.
+     공용 흐름 EditorEntry.openGuarded 에 위임(job.openEditForRepair 와 단일 출처). */
+  function editJob(name) {
+    if (!window.EditorEntry) { window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다."); return; }
+    EditorEntry.openGuarded(name);
+  }
+
+  /* '＋ 새 작업' — 라벨-행동 일치: 이전 에디터 세션을 초기화한 뒤 이동한다(EditorEntry 단일 출처). */
+  async function newWork() {
+    if (window.EditorEntry) { await EditorEntry.newDraft(); return; }
+    window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다.");
+  }
+
+  /* ---- 관리 동사 ---- */
+  /* 세션 정체와 결속된 동사는 「작업」 컨트롤러가 소유한다(§10.8 판정 F) — 여기서 부르고
+     이 화면 스냅샷은 뒤이은 refresh 로 맞춘다. 판정을 두 곳에 두지 않는다. */
+  async function jobDispatch(action, payload) {
+    const r = await Bridge.call(JOB, action, payload);
+    await Bridge.call(SCREEN, "refresh", {});
+    return r;
+  }
+
+  function findRow(name) {
+    let found = null;
+    ((LAST && LAST.sections) || []).forEach((sec) =>
+      (sec.rows || []).forEach((r) => { if (r.name === name) found = r; }));
+    return found;
+  }
+
+  function allGroups() {
+    const seen = new Set();
+    ((LAST && LAST.sections) || []).forEach((sec) => { if (sec.value) seen.add(sec.value); });
+    return Array.from(seen).sort();
+  }
+
+  async function renameJob(name, returnFocus) {
+    await Modal.prompt({
+      body: `'${name}' 의 새 이름을 입력하세요.`,
+      value: name,
+      returnFocus,
+      validate: async (v) => {
+        const r = await jobDispatch("rename_job", { name, new: v });
+        return r && r.ok === false ? (r.error || "이름을 바꾸지 못했습니다.") : "";
+      },
+    });
+  }
+
+  function moveJob(name, returnFocus) {
+    const row = findRow(name);
+    moveDialog.open({
+      groups: allGroups(),
+      current: (row && row.group) || "",
+      nameText: `'${name}' 을(를) 옮길 그룹`,
+      returnFocus,
+      onConfirm: (group) => {
+        jobDispatch("set_group", { name, group })
+          .catch((err) => window.alert(String((err && err.message) || err)));
+      },
+    });
+  }
+
+  /* 즐겨찾기 — 값은 **의도한 상태**를 보낸다(현재 값을 백엔드가 뒤집지 않는다, #215 동류). */
+  async function toggleFavorite(name, next) {
+    const r = await Bridge.call(SCREEN, "toggle_favorite", { name, value: next });
+    if (r && r.ok === false) window.alert(r.error || "즐겨찾기를 바꾸지 못했습니다.");
+  }
+
+  async function cloneJob(name) {
+    try {
+      const r = await Bridge.call(SCREEN, "clone_job", { name });
+      if (r && r.ok === false) window.alert(r.error || "작업을 복제할 수 없습니다.");
+    } catch (err) {
+      window.alert(String((err && err.message) || err));
+    }
+  }
+
+  /* '축=값, 축=값' 텍스트 → 태그 dict. 형식 오류면 {err: 문제 조각} — 호출부가 loud 처리. */
+  function parseTags(text) {
+    const tags = {};
+    for (const part of text.split(",")) {
+      const t = part.trim();
+      if (!t) continue;
+      const i = t.indexOf("=");
+      if (i <= 0 || !t.slice(i + 1).trim()) return { err: t };
+      tags[t.slice(0, i).trim()] = t.slice(i + 1).trim();
+    }
+    return { tags };
+  }
+  function sameTags(a, b) {
+    const ka = Object.keys(a);
+    return ka.length === Object.keys(b).length && ka.every((k) => b[k] === a[k]);
+  }
+
+  /* 태그 편집(#26 #2·D14) — 현재 태그를 '축=값' 쌍으로 재진술·프리필하고 통째 교체 저장.
+     비우면 전체 해제(사용자가 명시적으로 지운 것 — 추측 아님). 형식 오류는 loud. */
+  async function editTags(name, returnFocus) {
+    const row = findRow(name);
+    const cur = (row && row.tags) || {};
+    const ser = Object.entries(cur).map(([k, v]) => `${k}=${v}`).join(", ");
+    // 왕복 가드(C9): 직렬화 직후 재파싱해 원본과 대조 — 값에 쉼표, 축에 쉼표/등호가 있으면
+    // 이 인라인 프롬프트는 태그를 조용히 쪼개 재작성하거나 형식 오류로 막는다. 왕복 불가면
+    // 조용히 진행하지 않고 시끄럽게 중단한다(confirm-or-alarm).
+    const rt = parseTags(ser);
+    if (rt.err !== undefined || !sameTags(rt.tags, cur)) {
+      window.alert(
+        `'${name}' 의 태그에 쉼표나 등호가 들어 있어 여기서 수정할 수 없습니다.\n` +
+        `현재 태그: ${ser}\n\n작업 파일(.job.json)의 tags 를 직접 수정하세요.`);
+      return;
+    }
+    await Modal.prompt({
+      body:
+        `'${name}' 의 태그를 '축=값' 쌍, 쉼표 구분으로 입력하세요. ` +
+        `(예: 물품=의약품, 금액구간=소액)\n비우면 전부 해제합니다.`,
+      value: ser,
+      returnFocus,
+      validate: async (raw) => {
+        const parsed = parseTags(raw);
+        if (parsed.err !== undefined) {
+          return `태그 형식 오류: '${parsed.err}'. '축=값' 으로 입력하세요.`;
+        }
+        try {
+          await Bridge.call(SCREEN, "set_tags", { name, tags: parsed.tags });
+          return "";
+        } catch (err) {
+          return String((err && err.message) || err);
+        }
+      },
+    });
+  }
+
+  /* 템플릿 다시 연결(#67) — 공용 흐름(relink.js)에 위임. 커밋 재진술을 alert 로 병기한다
+     (행만 조용히 바뀌는 것 방지) — 사용자 취소는 본인 행위라 재알림 생략, 실패는 공용 흐름이 alert. */
+  function relinkTemplate(name) {
+    Relink.relinkTemplate(SCREEN, name, (msg, kind) => {
+      if (kind === "ok") window.alert(msg);
+    });
+  }
+
+  /* 작업 삭제 — 30일 휴지통 + 최근 1건 복원. 사후 관용이 있으므로 사전 확인을 없앤다.
+     단 작업·기안 화면에 무장 세션이 열려 있으면 백엔드가 needs_confirm 을 돌려준다(#268
+     리뷰) — 세션의 선택·진행은 파일 복원으로도 못 돌아오는 소실이라 확인 왕복만 남긴다. */
+  async function deleteJob(name, returnFocus) {
+    let r = await Bridge.call(SCREEN, "delete_job", { name });
+    if (r && r.needs_confirm) {
+      const where = r.screen === "draft" ? "기안" : "작업";
+      const ok = await window.Modal.confirm({
+        title: "작업 삭제 확인",
+        body: `작업 '${name}' 이(가) ${where} 화면에 진행 중인 세션으로 열려 있습니다.\n` +
+          `삭제하면 그 세션의 선택·데이터·진행이 함께 사라지며, 파일을 복원해도 세션은 돌아오지 않습니다.`,
+        confirmLabel: "휴지통으로 이동", cancelLabel: "취소",
+        returnFocus,
+      });
+      if (!ok) return;
+      r = await Bridge.call(SCREEN, "delete_job", { name, confirm: true });
+    }
+    if (r && r.undo) window.UndoToast.show(`작업 '${name}' 을(를) 휴지통으로 옮겼습니다.`, async () => {
+      const restored = await Bridge.call(SCREEN, "undo_delete_job", {});
+      if (restored && restored.ok === false) throw new Error(restored.error);
+    });
+  }
+
+  /* ---- 그룹 헤더 ⋮(그룹 이름 변경·해산) ---- */
+  function closeGroupMenu() { menuFor = null; groupMenu.hide(); }
+  function toggleGroupMenu(group, btn) {
+    if (menuFor && menuFor.group === group) { closeGroupMenu(); return; }
+    menuFor = { group, trigger: btn };
+    groupMenu.show(
+      `<button data-gmenu="rename">그룹 이름 변경…</button>` +
+      `<div class="sep"></div>` +
+      `<button data-gmenu="disband" class="danger">그룹 해산</button>`, btn);
+  }
+  async function onGroupMenuClick(e) {
+    const btn = e.target.closest("button[data-gmenu]");
+    if (!btn || menuFor === null) return;
+    const { group, trigger } = menuFor, act = btn.dataset.gmenu;
+    closeGroupMenu();
+    // 「그룹 없음」은 저장된 group 이 아니라 그 부재의 이름이라 개명·해산 대상이 아니다.
+    if (!group) { window.alert("「그룹 없음」은 이름을 바꾸거나 해산할 수 없습니다."); return; }
+    if (act === "rename") await renameGroup(group, trigger);
+    else if (act === "disband") await disbandGroup(group, trigger);
+  }
+
+  function groupCount(group) {
+    const sec = ((LAST && LAST.sections) || []).find((s) => s.value === group);
+    return sec ? sec.count : 0;
+  }
+
+  async function renameGroup(group, returnFocus) {
+    const seen = groupCount(group);
+    await Modal.prompt({
+      body: `그룹 '${group}' 의 새 이름을 입력하세요. 소속 작업 ${seen}건이 함께 옮겨집니다.`,
+      value: group,
+      returnFocus,
+      validate: async (v) => {
+        let r = await jobDispatch("rename_group", { name: group, new: v, seen });
+        if (r && r.needs_confirm) {
+          // 기존 그룹으로의 개명 = 병합이라 건수를 재진술하고 확정을 받는다(#149 관측 고지).
+          const ok = await window.Modal.confirm({
+            title: "그룹 병합 확인",
+            body: `'${r.new}' 그룹이 이미 있습니다(${r.target_count}건).\n` +
+              `'${r.name}' 의 ${r.count}건을 그 그룹으로 합칩니다.`,
+            confirmLabel: "합치기", cancelLabel: "취소",
+          });
+          if (!ok) return "";  // 취소 = 본인 의사라 조용히 닫는다
+          r = await jobDispatch("rename_group", { name: group, new: v, seen, confirm: true });
+        }
+        if (r && r.ok === false) return r.error || "그룹 이름을 바꾸지 못했습니다.";
+        if (r && r.drift_note) window.alert(r.drift_note);
+        return "";
+      },
+    });
+  }
+
+  async function disbandGroup(group, returnFocus) {
+    const r = await jobDispatch("disband_group", { name: group });
+    if (!r || !r.needs_confirm) return;
+    const ok = await window.Modal.confirm({
+      title: "그룹 해산 확인",
+      body: `그룹 '${group}' 을(를) 해산합니다. 소속 작업 ${r.count}건은 「그룹 없음」으로 옮겨지고 작업 자체는 그대로입니다.`,
+      confirmLabel: "해산", cancelLabel: "취소",
+      returnFocus,
+    });
+    if (!ok) return;
+    const done = await jobDispatch("disband_group", { name: group, confirm: true, seen: r.count });
+    if (done && done.drift_note) window.alert(done.drift_note);
+  }
+
+  /* ---- 이벤트(위임) ---- */
+  function onListClick(e) {
+    const fav = e.target.closest("[data-fav]");
+    if (fav) { toggleFavorite(fav.dataset.fav, fav.dataset.next === "1"); return; }
+    const gm = e.target.closest("[data-group-more]");
+    if (gm) { toggleGroupMenu(gm.dataset.groupMore, gm); return; }
+    const gh = e.target.closest("[data-group]");
+    if (gh) {
+      // 접힘은 보기 상태라 클릭한 프레임에 먼저 반영하고 영속 요청은 뒤에서 보낸다(공용 규율).
+      GroupList.toggleGroup(gh, () =>
+        Bridge.call(SCREEN, "toggle_group", { group: gh.dataset.group }));
+      return;
+    }
+    const row = e.target.closest("[data-work]");
+    if (row) { Bridge.call(SCREEN, "select_work", { name: row.dataset.work }); return; }
+    const nw = e.target.closest("[data-new-work]");
+    if (nw) { newWork(); return; }
+    const cf = e.target.closest("[data-clear-filters]");
+    if (cf) { Bridge.call(SCREEN, "clear_filters", {}); }
+  }
+
+  function onDetailClick(e) {
+    const pick = (a) => e.target.closest("[data-" + a + "]");
+    const use = pick("use"); if (use) { useInJob(use.dataset.use); return; }
+    const ed = pick("edit"); if (ed) { editJob(ed.dataset.edit); return; }
+    const rn = pick("rename"); if (rn) { renameJob(rn.dataset.rename, rn); return; }
+    const mv = pick("move"); if (mv) { moveJob(mv.dataset.move, mv); return; }
+    const tg = pick("tags"); if (tg) { editTags(tg.dataset.tags, tg); return; }
+    const cl = pick("clone"); if (cl) { cloneJob(cl.dataset.clone); return; }
+    const rl = pick("relink"); if (rl) { relinkTemplate(rl.dataset.relink); return; }
+    const dl = pick("delete"); if (dl) { deleteJob(dl.dataset.delete, dl); }
+  }
+
+  function onToolbarClick(e) {
+    const view = e.target.closest("[data-library-view]");
+    if (view) { Bridge.call(SCREEN, "set_view", { view: view.dataset.libraryView }); return; }
+    const mode = e.target.closest("[data-library-mode]");
+    if (mode) { Bridge.call(SCREEN, "set_mode", { mode: mode.dataset.libraryMode }); return; }
+    const chip = e.target.closest("[data-axis]");
+    if (chip && !chip.disabled) {
+      Bridge.call(SCREEN, "toggle_facet", { axis: chip.dataset.axis, value: chip.dataset.val });
+      return;
+    }
+    if (e.target.id === "libraryClearFacets") Bridge.call(SCREEN, "clear_facets", {});
+  }
+
+  /* 보기 탭 좌우 이동(role=tablist 키보드 계약) — 탭은 primary classification 이라 화살표로
+     훑을 수 있어야 한다(§19.6 · 문서 탐색 탭과 같은 규약). */
+  function onTabsKeydown(e) {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    const tabs = Array.from($("libraryViewTabs").querySelectorAll("[data-library-view]"));
+    const i = tabs.indexOf(document.activeElement);
+    if (i < 0) return;
+    e.preventDefault();
+    const next = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+    next.focus();
+    Bridge.call(SCREEN, "set_view", { view: next.dataset.libraryView });
+  }
+
+  function wire() {
+    $("libraryNewWork").addEventListener("click", newWork);
+    $("libraryList").addEventListener("click", onListClick);
+    $("libraryDetail").addEventListener("click", onDetailClick);
+    $("libraryCorrupt").addEventListener("click", onCorruptClick);
+    $("libraryViewTabs").addEventListener("click", onToolbarClick);
+    $("libraryViewTabs").addEventListener("keydown", onTabsKeydown);
+    $("libraryModeFilters").addEventListener("click", onToolbarClick);
+    $("libraryFacets").addEventListener("click", onToolbarClick);
+    $("libraryGroupMenu").addEventListener("click", onGroupMenuClick);
+    // ⋮ 메뉴 바깥 닫기(job/tpl 동형) — 캡처 클릭 억제 + 바깥 pointerdown + Escape.
+    window.Popover.wireDismiss({
+      isOpen: () => menuFor !== null,
+      contains: (t) => !!(t.closest("#libraryGroupMenu") || t.closest(".job-more")),
+      close: closeGroupMenu,
+    });
+    moveDialog.wire("libMoveOk", "libMoveCancel");
+    $("librarySearch").addEventListener("input", (e) => {
+      // 디바운스: 타이핑 중 매 글자마다 왕복하면 캐럿·포커스가 재렌더에 시달린다.
+      if (searchTimer) clearTimeout(searchTimer);
+      const text = e.target.value;
+      searchTimer = setTimeout(() => {
+        searchTimer = null;
+        Bridge.call(SCREEN, "set_query", { text });
+      }, 180);
+    });
+  }
+
+  /* 화면 부팅 — 라우터(app.js)가 pywebviewready 후 호출. */
+  async function init() {
+    Bridge.onPush(SCREEN, render);
+    wire();
+    render(await Bridge.initial(SCREEN));
+  }
+
+  window.LibraryScreen = { init };
+})();

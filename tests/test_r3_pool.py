@@ -5,7 +5,7 @@ C3: 동명 확정 재등록이 항목을 통째 교체해 보관이 조용히 ac
     (에디터 ``_do_save`` 미러) + 비활성 상태면 확인 문구가 보존 계약을 재진술한다.
 C7: pool.js 액션이 try/catch 없는 await/fire-and-forget 이라 stale 카드(다른 표면에서
     삭제된 항목)의 FileNotFoundError 가 unhandled rejection 으로 삼켜져 버튼 무반응.
-    JS 는 loud 재진술(home.js 미러), 백엔드는 stale 을 danger 문구+재스캔으로,
+    JS 는 loud 재진술(library.js 미러), 백엔드는 stale 을 danger 문구+재스캔으로,
     저장 OSError 는 결과 문구로 표면화한다.
 N1: ``poolRefresh``/``tplRefresh`` 배선의 fire-and-forget ``Bridge.call`` — 같은 삼켜짐
     부류. try/catch 표면화를 정적으로 가드한다.
@@ -22,7 +22,7 @@ from pathlib import Path
 
 from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
 from hwpxfiller.webapp.screen_draft import DraftController
-from hwpxfiller.webapp.screen_home import HomeController
+from hwpxfiller.webapp.screen_library import LibraryController
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp.screen_pool import PoolController
 from hwpxfiller.webapp.screen_template import TemplateController
@@ -236,7 +236,7 @@ def test_appjs_nav_autorefresh_whitelist_matches_backend():
     # 포함(TXT 작업 조회). run 은 사망(슬라이스 3).
     # pool 은 화면 사망(재작성 F1)이라 빠진다 — 등록 데이터 재스캔은 라우팅이 아니라 데이터
     # 선택 다이얼로그가 **열 때** 지불한다(안 여는 세션이 풀 I/O 를 물지 않는다).
-    assert listed == {"home", "tpl", "job", "draft"}
+    assert listed == {"library", "tpl", "job", "draft"}
 
     # go() 안에서 화이트리스트 판정 후 refresh dispatch + 실패 표면화(.catch).
     seg = _segment(src, "function go(id)", "window.Nav")
@@ -246,7 +246,7 @@ def test_appjs_nav_autorefresh_whitelist_matches_backend():
 
     # 백엔드 상호 검증 — 화이트리스트 화면명 == 컨트롤러 name, 전부 _do_refresh 보유.
     ctrls = {c.name: c for c in (
-        HomeController, TemplateController, JobController, DraftController,
+        LibraryController, TemplateController, JobController, DraftController,
     )}
     assert set(ctrls) == listed
     for cls in ctrls.values():

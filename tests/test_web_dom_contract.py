@@ -38,7 +38,9 @@ GALLERY = Path(__file__).resolve().parents[1] / "docs" / "UI_GALLERY.html"
 
 # 화면 루트 — 셸 라우터가 표시/숨김으로 전환하는 최상위 컨테이너(회귀 시 화면 소실).
 SCREEN_ROOTS = (
-    "scr-home", "scr-tpl",
+    # 홈(scr-home)은 사망(재작성 F2 PR-A) — 저장된 작업을 찾는 자리는 「문서 작업」
+    # 라이브러리(§19.6 browser+detail)가 잇는다.
+    "scr-library", "scr-tpl",
     # 「데이터 관리」(scr-pool)는 사망(재작성 F1) — 등록 데이터의 목록·수명은 데이터 선택
     # 다이얼로그가 승계했다(PoolController 는 생존, 소비자만 바뀜).
     # 「작업」(R-flow · #90) — 유일 생성 표면(실행 화면=슬라이스 3 사망) + 편집 모드(작업
@@ -55,7 +57,7 @@ SCOPED_DATA_LABELS = ("draftDataLabel", "jobDataLabel")
 # 접힘 상태에서 라벨이 사라지는 내비 버튼(회귀 시 접근 이름·툴팁 소실 → #27).
 # run=슬라이스 3·editor=슬라이스 5 사망(흡수); 「기안」이 구 txt·quickdraft 를 흡수·삭제
 # (#148 슬라이스 6, 레일 6→5); 「데이터 관리」는 데이터 선택 다이얼로그로 흡수·사망(F1, 5→4).
-NAV_SCREENS = ("home", "job", "draft", "tpl")
+NAV_SCREENS = ("library", "job", "draft", "tpl")
 
 # 커스텀 모달 → aria-labelledby 가 가리켜야 할 제목 id(다이얼로그 시맨틱, #27/#28).
 # sheetModal 은 다중 시트 확정 게이트(#33) — 같은 Modal 헬퍼·다이얼로그 계약을 공유한다.
@@ -669,7 +671,7 @@ def test_heading_typography_uses_three_shared_roles():
     css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
     assert ".scr-headh1{font-size:var(--fs-section);font-weight:700}" in css
     assert (
-        ".track.tt,.job-sec-head,.tpl-band.tb-t,.modal-cardh3{"
+        ".lib-detail-name,.job-sec-head,.tpl-band.tb-t,.modal-cardh3{"
         "font-size:var(--fs-strong);font-weight:700}"
     ) in css
     assert (
@@ -681,7 +683,7 @@ def test_heading_typography_uses_three_shared_roles():
         ".job-sec-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-8);font-size:",
         ".zone-cap{display:block;margin-bottom:var(--sp-10);font-size:",
         ".tpl-band.tb-t{font-weight:",
-        ".track.tt{font-size:",
+        ".lib-detail-name{font-size:",
     ):
         assert stale not in css, f"개별 제목 타이포 재정의가 돌아왔습니다: {stale}"
 
@@ -887,16 +889,21 @@ def test_gallery_exposes_template_media_surface():
 
 
 def test_card_families_share_hover_and_keep_persistent_state_separate():
-    """H-14: jcard·titem·tplcard hover는 틴트뿐이고 막대는 선택·오류에만 남는다."""
+    """H-14: 카드류 hover는 틴트뿐이고 막대는 선택·오류에만 남는다.
+
+    구 홈 txt 목록(.tlist .titem)은 화면과 함께 사망했고(재작성 F2), 라이브러리 행(.lib-row)이
+    같은 어휘의 새 소비자다 — 같은 규칙을 쓰는지 여기서 함께 본다.
+    """
     css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
-    assert ".jcard:hover,.tlist.titem:hover,.tplcard:hover{background:var(--n-hover)}" in css
+    assert ".jcard:hover,.tplcard:hover{background:var(--n-hover)}" in css
+    assert ".lib-row:hover{background:var(--n-hover)}" in css
     assert (
-        '.jcard[aria-current="true"],.tlist.titem[aria-current="true"],'
-        '.tplcard[aria-current="true"]{background:var(--a-sel);'
+        '.jcard[aria-current="true"],.tplcard[aria-current="true"]{background:var(--a-sel);'
         "border-left-color:var(--a-primary)}"
     ) in css
+    assert ".lib-row.on{background:var(--a-sel);border-left-color:var(--a-primary)}" in css
     assert ".jcard.corrupt{border-left-color:var(--a-danger)}" in css
-    for selector in (".jcard:hover", ".tlist.titem:hover", ".tplcard:hover"):
+    for selector in (".jcard:hover", ".lib-row:hover", ".tplcard:hover"):
         body = re.search(re.escape(selector) + r"(?:,[^{]+)?\{([^}]*)\}", css)
         assert body and "border" not in body.group(1), f"hover가 상태 보더를 사용합니다: {selector}"
 
@@ -904,8 +911,14 @@ def test_card_families_share_hover_and_keep_persistent_state_separate():
 def test_card_families_keep_keyboard_focus_outline():
     css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
     assert (
-        ".jcard:focus-visible,.tlist.titem:focus-visible,.tplcard:focus-visible{"
+        ".jcard:focus-visible,.tplcard:focus-visible{"
         "outline:2pxsolidvar(--a-primary);outline-offset:2px}"
+    ) in css
+    # 라이브러리 행은 버튼 2개(선택·즐겨찾기)라 아웃라인이 **버튼**에 붙는다 — 행 껍데기에
+    # 붙이면 실제 포커스 대상과 표지가 어긋난다.
+    assert (
+        ".lib-row-main:focus-visible,.lib-fav:focus-visible{"
+        "outline:2pxsolidvar(--a-primary);outline-offset:-2px}"
     ) in css
 
 
@@ -1065,13 +1078,13 @@ def test_editor_surface_lives_in_job_panel():
         "(편집 진입은 EditorEntry.land 로)."
     )
     # 진입 흐름은 EditorEntry 단일 정의(land/newDraft/openGuarded — 축자 복붙=드리프트 표면).
-    # 소비처 전수(홈·템플릿 관리·작업 화면 — PR-5 리뷰 F5: job.js 가 가드 사각이었다)를 가드.
+    # 소비처 전수(라이브러리·템플릿 관리·작업 화면 — PR-5 리뷰 F5: job.js 가 가드 사각이었다).
     entry_src = (WEB_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
     for fn in ("function land", "function newDraft", "function openGuarded"):
         assert fn in entry_src, f"editor_entry.js 의 단일 정의({fn})가 사라졌습니다."
     for fname, needle in (
-        ("screens/home.js", "EditorEntry.newDraft"),
-        ("screens/home.js", "EditorEntry.openGuarded"),
+        ("screens/library.js", "EditorEntry.newDraft"),
+        ("screens/library.js", "EditorEntry.openGuarded"),
         ("screens/template.js", "EditorEntry.land"),
         ("screens/job.js", "EditorEntry.openGuarded"),
         ("screens/job.js", "EditorEntry.newDraft"),

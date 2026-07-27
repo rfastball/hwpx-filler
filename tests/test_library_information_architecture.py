@@ -1,0 +1,88 @@
+"""H-05 부팅 랜딩 · 「문서 작업」 라이브러리 정보 위생 · 첫 실행 CTA 계약.
+
+홈 화면은 재작성 F2 PR-A 에서 죽었고(지도 §10.8) 라이브러리가 그 자리를 이었다. 이 파일은
+승계된 계약(부팅 랜딩·개수 타일 부재·조건부 경보 존치·빈 상태 CTA)을 새 표면에서 다시 못박고,
+죽은 표면이 되살아나지 않는지를 함께 본다 — 삭제는 의무를 상속한다.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+INDEX = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+APP = (ROOT / "web" / "js" / "app.js").read_text(encoding="utf-8")
+LIB = (ROOT / "web" / "js" / "screens" / "library.js").read_text(encoding="utf-8")
+JOB = (ROOT / "web" / "js" / "screens" / "job.js").read_text(encoding="utf-8")
+CSS = (ROOT / "web" / "css" / "app.css").read_text(encoding="utf-8")
+
+
+def test_cold_boot_lands_on_jobs() -> None:
+    assert 'data-scr="job" aria-current="true"' in INDEX
+    assert '<section class="scr on" id="scr-job">' in INDEX
+    assert 'data-scr="library" aria-current="true"' not in INDEX
+    assert '<section class="scr on" id="scr-library">' not in INDEX
+    assert 'const DEFAULT_SCREEN = "job"' in APP
+    assert "go(DEFAULT_SCREEN)" in APP
+    assert "if (!routingReady) return" in APP
+
+
+def test_kpi_and_continue_surfaces_stay_removed_with_their_layout() -> None:
+    for dead in ("homeKpis", "homeContinue", "renderKpis", "renderContinue"):
+        assert dead not in INDEX + LIB
+    for dead_rule in (".kpis{", ".kpi{", ".continue-runs{", ".continue-run{"):
+        assert dead_rule not in CSS
+
+
+def test_dead_home_surface_leaves_no_dom_or_css_behind() -> None:
+    """홈 화면 사망(F2 PR-A) — 죽은 DOM·렌즈·CSS 가 남으면 다음 세션의 부활 경로가 된다."""
+    for dead in ("scr-home", "homeBrowser", "homeJobs", "homeTxt", "homeRowMenu",
+                 "homeGroupBy", "set_group_by"):
+        assert dead not in INDEX + LIB + APP, f"죽은 홈 표면이 남아 있습니다: {dead}"
+    for dead_rule in (".tracks{", ".jobbrowser{", ".tlist ", ".groupsec{"):
+        assert dead_rule not in CSS, f"죽은 홈 CSS 가 남아 있습니다: {dead_rule}"
+    assert not (ROOT / "web" / "js" / "screens" / "home.js").exists()
+
+
+def test_library_keeps_conditional_alert_information() -> None:
+    """경보 승계 — 개수 타일은 없어도 조치가 필요한 조건은 계속 시끄럽게 말한다."""
+    assert 'id="libraryAlerts"' in INDEX
+    assert "function renderAlerts" in LIB
+    assert "missing_template_count" in LIB and "pool_corrupted" in LIB
+    assert "renderCorrupt(s.corrupt_rows)" in LIB
+
+
+def test_library_carries_the_four_axes_and_two_pane_skeleton() -> None:
+    """§19.6 browser+detail — 축 4종과 2-pane 이 정적 DOM 에 서 있다."""
+    for anchor in ('id="librarySearch"', 'id="libraryViewTabs"', 'id="libraryModeFilters"',
+                   'id="libraryFacets"', 'id="libraryList"', 'id="libraryDetail"',
+                   'id="libraryCount"', 'class="library-browser"'):
+        assert anchor in INDEX, f"라이브러리 골격이 없습니다: {anchor}"
+    # 보기 4종은 계약 표(§19.6) 그대로 — 하나라도 빠지면 그 투영에 도달할 길이 없다.
+    for view in ("all", "recent", "favorites", "needsAction"):
+        assert f'data-library-view="{view}"' in INDEX
+    # 결과 수는 role=status 로 재진술한다 — 필터가 목록을 비운 사실이 조용히 지나가지 않게.
+    assert 'id="libraryCount" tabindex="-1" role="status"' in INDEX
+    # 2-pane 치수 계약(≥921px·≥760px)은 CSS 가 진다 — 그보다 좁으면 세로 퇴화.
+    assert "@media(min-width:921px) and (min-height:760px)" in CSS
+
+
+def test_library_row_keeps_favorite_outside_the_select_button() -> None:
+    """§19.6 "행 선택 버튼 안에 즐겨찾기나 메뉴 버튼을 중첩하지 않는다".
+
+    중첩하면 즐겨찾기 클릭이 행 선택을 함께 발화한다. 이 배치가 동시에 「표시 상한과 무관한
+    도달성」(§8.4 2행)의 새 거처다 — 순위 밖 작업도 여기서 별을 켤 수 있다.
+    """
+    row = LIB.split("function rowHtml", 1)[1].split("function sectionHtml", 1)[0]
+    main = row.split('class="lib-row-main"', 1)[1].split("</button>", 1)[0]
+    assert "data-fav" not in main, "즐겨찾기 버튼이 행 선택 버튼 **안에** 있습니다(§19.6 위반)."
+    assert 'class="lib-fav" data-fav=' in row
+
+
+def test_empty_job_list_has_a_direct_new_job_cta_without_a_new_surface() -> None:
+    empty = INDEX.split('id="jobListHwpxEmpty"', 1)[1].split("</aside>", 1)[0]
+    assert 'id="jobEmptyNewBtn"' in empty
+    assert 'class="muted job-empty"' in INDEX
+    assert 'class="empty"' not in empty
+    assert '$("jobEmptyNewBtn").addEventListener("click", startNewJob)' in JOB
+    assert "EditorEntry.newDraft()" in JOB

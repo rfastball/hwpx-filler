@@ -50,8 +50,10 @@
      보낸다(미지 액션은 백엔드가 loud 거절하므로 무차별 dispatch 금지). 수동 새로고침
      버튼은 유지된다(명시적 재스캔 경로). 「작업」 화면도 레지스트리 파생 작업 목록(좌 master
      목록)을 스냅샷으로 그리므로 포함한다 — 빼면 에디터에서 막 저장한 작업이 좌 목록에 안
-     보인다. 실행 화면(run)은 사망(슬라이스 3)이라 목록에서 제거. */
-  const REFRESH_ON_NAV = ["home", "tpl", "job", "draft"];
+     보인다. 실행 화면(run)은 사망(슬라이스 3)이라 목록에서 제거. 홈은 「문서 작업」
+     라이브러리로 대체됐다(재작성 F2) — 그 화면의 refresh 는 레지스트리 + 영속 그룹 접힘을
+     함께 다시 읽는다(다른 화면에서 접은 상태가 stale 로 남지 않게). */
+  const REFRESH_ON_NAV = ["library", "tpl", "job", "draft"];
 
   /* 화면 전환 — 레일 클릭과 허브(홈) 카드의 프로그램적 이동이 공유하는 단일 경로. */
   function go(id) {
@@ -84,7 +86,8 @@
   // 레일 「작업 에디터」 과도기 심은 항목 사망(슬라이스 5 삭제 PR)과 함께 제거 — 편집
   // 진입은 EditorEntry.land 소비처(홈·템플릿 관리·작업 ⋮)가 담당한다.
   navs.forEach((b) => b.addEventListener("click", () => go(b.dataset.scr)));
-  // 홈(경보·상태 허브)이 카드/버튼에서 워크플로 화면으로 보내는 진입점(home.js 가 소비).
+  // 화면 간 프로그램적 이동의 단일 경로 — 라이브러리 상세의 「문서 만들기에서 사용」 등이
+  // 대상 화면을 자체 dispatch 로 먼저 겨눈 뒤 여기로 전환한다(library.js 가 소비).
   window.Nav = { go };
   go(DEFAULT_SCREEN);  // 브리지 준비 전에는 DOM·레일 기본 상태만 확정한다.
 
@@ -168,7 +171,7 @@
   // pywebview.api 준비 후 실화면 초기화(브라우저 단독 미리보기에선 안 뜸 — 정상).
   window.addEventListener("pywebviewready", () => {
     routingReady = true;
-    if (window.HomeScreen) window.HomeScreen.init();
+    if (window.LibraryScreen) window.LibraryScreen.init();  // 「문서 작업」 라이브러리(F2 — 홈 승계)
     if (window.EditorScreen) window.EditorScreen.init();
     if (window.JobScreen) window.JobScreen.init();  // 「작업」 화면(#90) — 유일 생성 표면
     if (window.DraftScreen) window.DraftScreen.init();  // 「기안」 화면(#148 슬라이스 2b) — TXT 작업-앵커

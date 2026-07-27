@@ -24,7 +24,7 @@ ESC_CONSUMERS = (
     # 기안 세션 표면은 공용 팩토리 소유(#148 슬라이스 3a) — txt.js 는 id 맵만 남아
     # escape 소비가 없다. 계약은 소유 파일을 따라간다.
     "draftsession.js",
-    "screens/home.js", "screens/editor.js", "screens/job.js",
+    "screens/library.js", "screens/editor.js", "screens/job.js",
     "screens/draft.js", "screens/template.js",
 )
 
