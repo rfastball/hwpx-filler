@@ -484,7 +484,8 @@ class WebFrontend:
 
         ``context`` = ``{entry_reason, evidence, return_context, section}``. 기본값(빈 사전)은
         자발적 진입이고 그때는 배너 자체가 서지 않는다(할 말이 없으면 침묵). ``section`` 은
-        deep-link 의 **거친 형태**(어느 탭인가)다 — 필드 단위 target 은 PR-B 자리다.
+        deep-link 의 **거친 형태**(어느 탭인가)다 — 필드 단위 target 은 F6 동승분이다
+        (지도 §10.14.3).
         """
         ctx = context or {}
         try:

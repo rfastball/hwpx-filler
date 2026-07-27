@@ -107,8 +107,10 @@ def entry_reason_or_raise(reason: str) -> str:
 class EditContext:
     """이 편집 진입의 문맥 — 계약 §5.1. **Python 소유**(재렌더·왕복을 건너 산다).
 
-    `target`(필드 단위 deep-link)은 PR-B 자리다: 드로어의 행별 「수정」과 `runOverrides`
-    배지가 같은 축의 표면이라 함께 짓는다(§10.13 사용자 확정 1행).
+    `target`(필드 단위 deep-link, 계약 §8)은 아직 없다 — 드로어의 행별 「수정」과 함께 F6 에
+    동승한다(지도 §10.14.3). 같은 축의 표면으로 함께 짓기로 했던 `runOverrides` 배지 쪽은
+    **기각**됐고(§10.14), deep-link 는 override 없이 성립한다: 이상한 값을 본 자리에서 그
+    필드의 탭으로 가고, 고친 뒤 「변경 저장」 하나로 끝난다.
     """
 
     work: str = ""
@@ -196,8 +198,14 @@ class EditSession:
     """한 편집 진입의 거래 상태 — 계약 §5.2 `editSession`.
 
     `base`(진입 시점 디스크 스냅샷)만 들고 patch 는 유도한다(모듈 docstring 2절).
-    `inherited_run_overrides` 자리는 PR-B 다 — 없는 것을 빈 사전으로 세워 두면 §13-15
-    ("기본 저장은 상속된 override 를 포함하지 않는다")를 만족하는 척하게 된다.
+
+    계약 §5.2 의 합성 3층(`base + inheritedRunOverrides + patch`) 중 **가운데 층은 서지
+    않는다** — `runOverrides` 는 기각됐다(지도 §10.14): override 로 풀리는 실패가 이 제품에
+    없고(확정 실패 원인 4종은 권한·점유·공간·경로라 규칙과 무관하며, 이름 충돌은 실행 전
+    계획·원자 차단으로 애초에 실패가 되지 않는다), 실패 복구를 빼고 남는 용도는 *파일에
+    남지 않는 규칙으로 문서를 만드는 층*이라 재현 가능성과 검토 게이트를 동시에 깎는다.
+    따라서 유효 초안은 `base + patch` 2층이 최종형이고, §13-14·15 는 금지할 상태가 없어
+    **공허참**이다(불변식을 부정한 것이 아니라 그 전제를 짓지 않았다).
     """
 
     context: EditContext
