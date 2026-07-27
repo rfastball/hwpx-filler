@@ -250,6 +250,25 @@ class TestWebSelftestGate:
             "이기지 못합니다(부록 B-9 결함 재발)."
         )
 
+    def test_choose_modal_offers_three_answers_and_defaults_to_refusal(
+        self, selftest_result: dict
+    ) -> None:
+        # 3택 골격(재작성 F7) — patch 처분처럼 답이 셋인 자리. 확인 모달로 두 번 물으면
+        # "취소가 무엇을 취소하는지"가 갈리므로 별 골격을 뒀다. 배선만 하고 안 보이면
+        # 사용자는 편집기를 나갈 길이 없다 — 실 렌더로 세 버튼을 다 본다.
+        m = selftest_result["modal_a11y"]
+        assert m["choose_opened"] is True and m["choose_display"] == "flex", (
+            f"3택 모달이 열리지 않았습니다: {m['choose_opened']!r}/{m['choose_display']!r}"
+        )
+        assert m["choose_focus"] == "chooseModalCancel", (
+            f"3택 초기 포커스가 거절(머무르기)이 아닙니다: {m['choose_focus']!r} — Enter 반사로"
+            " 편집이 사라지는 경로를 만든다."
+        )
+        assert m["choose_labels"] == "저장하고 이동|버리고 이동|머무르기", (
+            f"세 버튼이 호출부 라벨을 받지 않았습니다: {m['choose_labels']!r}"
+        )
+        assert m["choose_all_visible"] is True, "3택 버튼 중 보이지 않는 것이 있습니다."
+
     def test_modal_open_rejects_non_modal_target_loudly(self, selftest_result: dict) -> None:
         # #132.4: 이 앱의 숨김 규칙은 `.modal.hidden` 뿐이라, .modal 없는 요소에 Modal.open 하면
         # `.hidden` 토글이 조용한 no-op(뜨지도 숨지도 않음)이 된다. confirm-or-alarm: 조용히

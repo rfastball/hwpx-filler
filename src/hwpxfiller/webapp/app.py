@@ -621,7 +621,38 @@ _MODAL_A11Y_PROBE_JS = r"""
     document.getElementById('confirmModalCancel').click();  // 후속 닫아 상태 원복
     finishModal('confirmModal');
   }
+  // 3택 모달(재작성 F7) — patch 처분처럼 답이 셋인 자리. 확인 모달을 두 번 물으면
+  // "취소가 무엇을 취소하는지"가 갈리므로 골격을 따로 뒀다. 여기서 보는 것은 ①세 버튼이
+  // 라벨을 받고 실제로 보이는가 ②초기 포커스가 **거절**(머무르기)인가 ③보조 버튼이 제
+  // 값을 돌려주는가. 배선만 하고 안 보이면 사용자는 나갈 길이 없다.
+  var chooseSpec = {
+    title: '처분 확인', body: '3택 프로브',
+    choices: [{value:'save',label:'저장하고 이동'},
+              {value:'discard',label:'버리고 이동'},
+              {value:'stay',label:'머무르기'}],
+  };
+  var chPromise = window.Modal.choose(chooseSpec);
+  var chRoot = document.getElementById('chooseModal');
+  var chOpen = !chRoot.classList.contains('hidden');
+  var chDisplay = getComputedStyle(chRoot).display;
+  var chFocus = document.activeElement ? document.activeElement.id : '';
+  var chLabels = ['chooseModalOk','chooseModalAlt','chooseModalCancel'].map(function (id) {
+    return document.getElementById(id).textContent;
+  }).join('|');
+  var chVisible = ['chooseModalOk','chooseModalAlt','chooseModalCancel'].every(function (id) {
+    return getComputedStyle(document.getElementById(id)).display !== 'none';
+  });
+  document.getElementById('chooseModalAlt').click();     // 보조 = 버리고 이동
+  finishModal('chooseModal');
+  var chValue = '';
+  chPromise.then(function (v) { chValue = v; window.__chooseValue = v; });
+
   return {
+    choose_opened: chOpen,          // F7: 3택 골격이 열렸는가
+    choose_display: chDisplay,      // F7: 열린 동안 display(flex 기대)
+    choose_focus: chFocus,          // F7: 초기 포커스 = 거절(머무르기)
+    choose_labels: chLabels,        // F7: 세 버튼이 호출부 라벨을 받았는가
+    choose_all_visible: chVisible,  // F7: 세 버튼이 **실제로 보이는가**
     opened: opened,               // 열기 후 hidden 해제됐는가
     focus_in: focusIn,            // 초기 포커스가 모달 안(pasteText)으로 들어갔는가
     closed_by_escape: closed,     // Escape 로 닫혔는가
