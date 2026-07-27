@@ -1,7 +1,7 @@
-/* 「문서 만들기」 화면 — 세션 패널 **두 모드**(R-flow #90 · 블록 2 개정 39~41).
-   실행 모드(기본)=세션 패널 v6 `screen-data` 2열(재작성 R1 — 좌 `.dg-main` 현재 데이터·거울·
-   결과 / 우 `.dg-side` 문서 선택기·선택한 작업·생성 준비. 구 4존 znum 은 이 형상으로 대체),
-   편집 모드=정의 호스트(#jobEditHost — editor.js 가 렌더).
+/* 「문서 만들기」 화면 — 세션 패널 하나(R-flow #90 · 재작성 R1·F7).
+   세션 패널 = v6 `screen-data` 2열(좌 `.dg-main` 현재 데이터·거울·결과 / 우 `.dg-side`
+   문서 선택기·선택한 작업·생성 준비. 구 4존 znum 은 이 형상으로 대체),
+   정의 편집은 자기 화면(#scr-editor, 재작성 F7)으로 나갔다 — 이 화면은 실행 세션 하나다.
    좌 master 작업 목록은 F2 PR-B 에서 사망했다(지도 §10.9): 작업 선택은 데이터가 준비된 뒤
    후보 side-card·문서 탐색 면이 지고, 목록 관리 6동사와 데이터 없는 상태의 작업 찾기는
    「문서 작업」 라이브러리가 승계했다.
@@ -19,11 +19,9 @@
   let lastRestateKey = null;    // 펼침 리셋 판정 — 작업/데이터 전환 시 펼침을 끈다(세션 누수 방지)
   let mirrorRowCount = 0;       // 420px 실측 캡의 현재 필드 수(#272)
   let mirrorResizeObserver = null;
-  /* 패널 모드(결정 39·40) — "run"(행 클릭=실행 세션, 기본) | "edit"(정의 편집·신규 마법사).
-     모드는 표시 상태일 뿐: 실행 세션은 JobController, 정의 세션은 EditorController 가 각자
-     소유해 전환이 어느 쪽도 파괴하지 않는다. 파괴 가능 지점은 진입 가드가 지킨다 —
-     T1(세션 전환)=selectJobGuarded, 미저장 정의 덮어쓰기=EditorEntry.openGuarded. */
-  let MODE = "run";
+  /* 패널 모드(결정 39·40)는 편집기가 몰입 표면이 되며 사망했다(재작성 F7 판정 N):
+     정의 편집은 자기 화면(#scr-editor)에 살고, 이 화면은 실행 세션 하나만 그린다.
+     「이 화면이 안 보인다」는 판정은 이제 `.scr.on` 하나로 충분하다. */
 
   const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
   const ZONE_CHAIN = "job:zone";  // 데이터 존 + 범위 초안 출구의 공통 발신 체인
@@ -96,7 +94,6 @@
       renderRestate(s);
       renderGateAndFolder(s);
       renderStatus(s);
-      if (MODE === "edit") setEditStatus();  // 편집 모드 표지는 세션 상태 pill 을 덮는다
       // 완료 존(생성 결과·로그)은 세션 스코프로 보존한다(결정 7) — 매 push 가 아니라 세션이
       // 실제로 바뀔 때만 무효화한다. 탭 이탈 후 복귀(REFRESH_ON_NAV 재push)는 세션 불변이라
       // 결과가 살아남고(리뷰 #3: 결정 7 위배 봉합), 작업·데이터·선택 변경(#28 UD-10)에서만
@@ -147,113 +144,26 @@
     return [s.job_name, s.data_source_label, s.out_dir, s.selection_key || ""].join("|");
   }
 
-  /* ---- 패널 두 모드(결정 39·40) ---- */
+  /* ---- 세션 표면 동기화 ---- */
   function syncModeDisplay(hasJob) {
-    const edit = MODE === "edit";
     // 거울 면은 **작업의 것**이라 작업이 없으면 설 자리가 없다. 데이터 면은 다르다:
     // 데이터-우선(§18.2)에서 데이터 존은 작업 없이도 살고, 범위 편집기도 데이터만 있으면
     // 연다 — `!hasJob` 으로 함께 닫으면 작업을 고르기 전엔 편집이 첫 왕복마다 취소돼
     // 편집기 자체가 못 쓰는 것이 된다(리뷰 5R). 강제 닫기의 사유를 면별로 가른다.
-    if (edit || !hasJob) window.SurfaceSheet.closeAndRestore("jobConfirmSheet");
-    if (edit) {
-      // 실 DOM 이 overlay 슬롯에 남은 채 편집 호스트를 여는 교차 모드 상태를 막는다.
-      // 이 닫기는 **양보하지 않는다** — 이탈 가드가 소비하면 그 교차 상태가 그대로 남는다.
-      // 대신 초안은 놓아 주고(닫힘 백스톱이 취소를 발신) 가드에 통과권을 준다.
-      rangeForceClose = true;
-      window.SurfaceSheet.closeAndRestore("dataSheet");
-      rangeForceClose = false;
-    }
-    // 데이터-우선: 세션 4존·액션바는 실행 모드면 상시 — 작업 미선택에도 데이터 존이
-    // 진입점이다(§18.2). 구 미선택 빈 패널은 은퇴(안내는 prework 게이트 문안이 승계).
-    $("jobZones").style.display = !edit ? "" : "none";
-    $("jobActionBar").style.display = !edit ? "" : "none";
-    $("jobEditHost").style.display = edit ? "" : "none";
-    // 실행 복귀 출구는 편집 모드에서만 뜬다(F2 PR-B 판정 D). **여기서** 토글하는 이유:
-    // 모드 표시의 소유자가 이 함수 하나라, 진입·이탈 경로(showEditMode·exitEditToRun·
-    // showRunMode)가 늘어도 표시가 갈리지 않는다. 배선만 하고 노출을 잊으면 「승계처를
-    // 만들었다」는 계약이 문서에만 남는다(코덱스 리뷰 P2 — 실제로 그렇게 빠뜨렸다).
-    $("jobEditExit").style.display = edit ? "" : "none";
-  }
-
-  function setEditStatus() {
-    const st = $("jobStatus");
-    st.dataset.level = "idle";
-    st.textContent = "편집 모드";
-  }
-
-  /* 편집 모드 진입 — 미저장 정의 확인은 호출측 단일 출처가 이미 지킨다(기존 작업=
-     EditorEntry.openGuarded, 신규=home.newJob 대칭 확인). 여기는 표시 전환만. */
-  function showEditMode() {
-    MODE = "edit";
-    syncModeDisplay(!!(LAST && LAST.has_job));
-    setEditStatus();
-    $("jobEditExitNote").style.display = "none";  // 편집 재진입 = 복귀 고지 소임 종료
-    $("jobEditResume").style.display = "none";
-  }
-
-  /* 실행 복귀(T2 재정의, 블록 2 개정 결정 45) — 가드 대상이 화면 인계에서 "편집 중 행 클릭"
-     으로 이동했다. 전환은 **비파괴**다: 정의 세션은 EditorController 에 그대로 살고, 미저장
-     정의를 덮을 수 있는 유일한 경로(다른 작업 편집·새 작업)는 openGuarded/newJob 확인이
-     지킨다. 그래서 묻지 않고 **고지**만 한다(T2 종결 해석과 동형 — 물을 파괴가 없으면 확인
-     모달은 소음이다). 반환 = 미저장 편집 존재 여부(호출측이 고지 표면을 켠다). */
-  async function exitEditToRun() {
-    if (MODE === "run") return false;
-    let busy = false;
-    try {
-      busy = await Bridge.editorHasUnsavedWork();
-    } catch (err) {
-      log("편집 상태 확인 실패: " + String((err && err.message) || err));
-    }
-    MODE = "run";
-    syncModeDisplay(!!(LAST && LAST.has_job));
-    if (LAST) renderStatus(LAST);
-    return busy;
-  }
-
-  /* 신규 마법사 취소 착지 — 백엔드 discard_session 뒤 실행/미선택 패널로 돌아간다. */
-  function showRunMode() {
-    MODE = "run";
-    syncModeDisplay(!!(LAST && LAST.has_job));
-    if (LAST) renderStatus(LAST);
-    $("jobEditExitNote").style.display = "none";
-    $("jobEditResume").style.display = "none";
-  }
-
-  /* 실행 모드 착지 — 다른 화면에서 「문서 만들기에서 사용」으로 넘어올 때의 진입점(F2 PR-B).
-     좌 목록이 살아 있을 땐 행 클릭이 이 정산을 겸했다(결정 40): 편집 모드로 들어와 있으면
-     실행으로 되돌리고 미저장 편집은 고지했다. 목록이 죽은 뒤 그 정산이 빠져 있어서, 저장
-     직후 「문서 작업」에서 그 작업을 쓰겠다고 누르면 **편집 호스트가 그대로 뜬다** — 사용자가
-     요청한 것(이 작업으로 문서 만들기)과 다른 표면에 착지하는 결함(2R P2 「빈 화면 착지」와
-     같은 클래스). 전이는 비파괴 그대로다. */
-  async function landRunMode() {
-    if (await exitEditToRun()) showExitNote();
-  }
-
-  /* T2 고지 표면(PR-2 리뷰 F4) — 완료 존 log() 는 세션 전환 리셋(resetGenResult)·존 은닉에
-     증발했다. 이 요소는 어떤 렌더 함수도 쓰지 않는 JS 소유라 push·세션 리셋을 관통해
-     살아남고, 사용자가 확인 버튼으로 걷거나 편집 재진입 때 걷힌다(고지=읽힐 때까지). */
-  function showExitNote() {
-    const el = $("jobEditExitNote");
-    el.innerHTML =
-      `저장하지 않은 편집이 있습니다. 저장 전에는 실행에 반영되지 않습니다. ` +
-      // 복귀 버튼(PR-5 리뷰 F1) — 레일 심 사망 후 이 고지가 유일한 **비파괴** 복귀 경로다
-      // (다른 진입은 전부 세션 초기화/재로드). 고지가 약속한 「돌아가면 그대로」의 실행 수단.
-      `<button class="btn sm" data-act="return-to-edit">편집으로 돌아가기</button> ` +
-      `<button class="btn sm" data-act="dismiss-exit-note">확인</button>`;
-    el.style.display = "";
-    // 고지를 확인해 걷어도 미저장 편집 세션의 비파괴 복귀 경로는 헤더에 남는다(#218 G4).
-    $("jobEditResume").style.display = "";
+    if (!hasJob) window.SurfaceSheet.closeAndRestore("jobConfirmSheet");
+    // 데이터-우선: 세션 4존·액션바는 상시 — 작업 미선택에도 데이터 존이 진입점이다(§18.2).
+    // 구 편집 모드 은닉(결정 39)은 편집기가 자기 화면으로 나가며 사라졌다(F7 판정 N).
+    $("jobZones").style.display = "";
+    $("jobActionBar").style.display = "";
   }
 
   /* 스냅샷 갱신 — 편집 저장 직후 새/개명 작업이 후보·문서 탐색에 바로 뜨게(editor.js doSave
      가 호출). 좌 목록 사망(F2 PR-B) 뒤 갱신 대상이 목록에서 이 두 표면으로 옮겨졌다.
-     실패 재진술은 모드를 따른다(PR-2 리뷰 F10): 편집 모드에선 완료 존 log 가 숨어 있어
-     조용한 실패가 된다 — 그때는 alert 로 loud. */
+     **실패는 늘 loud**(F7): 호출자가 편집기 화면에 있으면 이 화면의 완료 존 log 는 아예
+     보이지 않아 조용한 실패가 된다 — 화면이 갈린 뒤로는 모드 분기가 아니라 alert 가 정직하다. */
   function refreshList() {
     Bridge.call(SCREEN, "refresh", {}).catch((err) => {
-      const msg = "작업 목록 갱신 실패: " + String((err && err.message) || err);
-      if (MODE === "edit") window.alert(msg);
-      else log(msg);
+      window.alert("작업 목록 갱신 실패: " + String((err && err.message) || err));
     });
   }
 
@@ -723,7 +633,7 @@
     }
     // 왕복 중 화면을 떠났거나 편집 모드로 넘어갔으면 열지 않고 상태를 되돌린다 —
     // 남는 「열림」 상태가 다음 복귀에서 아무 트리거 없이 면을 띄운다.
-    if (!$("scr-job").classList.contains("on") || MODE !== "run") {
+    if (!$("scr-job").classList.contains("on")) {
       Bridge.call(SCREEN, "preview_close", {});
       return;
     }
@@ -812,7 +722,7 @@
       // 왕복 중 다른 탭으로 떠났거나 편집 모드로 넘어갔으면 **열지 않는다**(리뷰 2R P2):
       // 전역 면이라 새 화면 위에 남의 화면 DOM 을 얹고 뜬다. 초안은 여기서 거둔다 —
       // 안 그러면 아무 표면도 없는 초안이 남아 생성이 조용히 잠긴 채로 있는다.
-      if (!$("scr-job").classList.contains("on") || MODE !== "run") {
+      if (!$("scr-job").classList.contains("on")) {
         Bridge.call(SCREEN, "range_draft_cancel", {});
         return;
       }
@@ -1299,21 +1209,6 @@
      이미 이 작업 세션이면 재구성하지 않고(진행 중 데이터 겨눔·행 선택·확인이 조용히 소실되지
      않게 — 리뷰 F1) 그대로 두고 화면만 전환한다. 아니면 겨눠 진입한다. */
   function openJob(name) {
-    // 허브발 실행 진입도 행 클릭과 동형 — 가드 선행·전환 후행(리뷰 F5), 미저장 편집은 고지.
-    if (MODE === "edit") {
-      (async () => {
-        if (!(LAST && LAST.job_name === name)) {
-          await dz.flushPendingSearch();
-          if ((await selectJobGuarded(name)) === false) {
-            window.Nav.go(SCREEN);  // 머무르기 — 편집 표면 유지한 채 화면만 노출
-            return;
-          }
-        }
-        if (await exitEditToRun()) showExitNote();
-        window.Nav.go(SCREEN);
-      })();
-      return;
-    }
     if (!(LAST && LAST.job_name === name)) {
       // 미적용 검색 정산 후 T1 가드 승계 — 허브 진입도 같은 파괴 전이(결정 26).
       dz.flushPendingSearch().then(() => selectJobGuarded(name));
@@ -1330,8 +1225,16 @@
   function onMirrorClick(e) {
     // 두 danger 배너의 행동 링크(#128) — 목적지는 같은 편집 모드다(매핑도 파일명 패턴도 거기
     // 산다). 진입 흐름을 공유하되 라벨은 각자 고칠 것을 말한다.
-    if (e.target.closest('[data-act="fix-mapping"],[data-act="fix-filename"]')) {
-      openEditForRepair();
+    const fix = e.target.closest('[data-act="fix-mapping"],[data-act="fix-filename"]');
+    if (fix) {
+      openEditForRepair({
+        entry_reason: "document_browser_repair",
+        evidence: {
+          "고칠 것": fix.dataset.act === "fix-filename" ? "파일 이름 규칙" : "필드 연결",
+          "막힌 이유": ($("jobGate").textContent || "").trim(),
+        },
+        return_context: { surface: "data" },
+      });
       return;
     }
     const row = e.target.closest(".mir-row.miss");
@@ -1349,10 +1252,10 @@
   /* danger(구조 드리프트) 수리 동선 — 이 작업을 **패널 편집 모드**에 열어 매핑을 재확정한다
      (공용 EditorEntry.openGuarded: 미저장 정의 확인 후 모드 전환 — 에디터 흡수로 화면 이동이
      아니라 제자리 모드 전환이 됐다). 확정·저장 후 「실행으로 돌아가기」로 세션 재개. */
-  function openEditForRepair() {
+  function openEditForRepair(context) {
     // #99-6 동형 방어(PR-5 리뷰 F4) — 셔틀 미로드의 동기 ReferenceError 는 조용한 무반응.
     if (!window.EditorEntry) { window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다."); return; }
-    if (LAST && LAST.job_name) EditorEntry.openGuarded(LAST.job_name);
+    if (LAST && LAST.job_name) EditorEntry.openGuarded(LAST.job_name, context);
   }
 
   /* 템플릿 다시 연결(#67) — 공용 흐름(relink.js)에 위임, 결과 재진술 채널만 log 주입.
@@ -1475,7 +1378,11 @@
     // 면을 먼저 닫아 편집 호스트 위에 남의 모달이 떠 있지 않게 한다(F2 PR-B 교훈).
     $("previewEdit").addEventListener("click", () => {
       window.Modal.close("previewModal");
-      openEditForRepair();
+      openEditForRepair({
+        entry_reason: "preview_result",
+        evidence: { "보고 있던 행": ($("previewPos").textContent || "").trim() },
+        return_context: { surface: "preview", reopen_drawer: true },
+      });
     });
     $("jobMirrorExpand").addEventListener("click", openJobConfirmSheet);
     $("jobMirrorCapstrip").addEventListener("click", (e) => {
@@ -1484,22 +1391,6 @@
     $("jobConfirmSheetClose").addEventListener("click", () =>
       window.SurfaceSheet.close("jobConfirmSheet"));
     $("dataSheetClose").addEventListener("click", () => window.SurfaceSheet.close("dataSheet"));
-    // T2 복귀 고지 — 확인=걷기, 돌아가기=비파괴 편집 재진입(세션 무접촉 — 리뷰 F1/F4).
-    $("jobEditExitNote").addEventListener("click", (e) => {
-      if (e.target.closest('[data-act="return-to-edit"]')) { showEditMode(); return; }
-      if (e.target.closest('[data-act="dismiss-exit-note"]')) {
-        $("jobEditExitNote").style.display = "none";
-      }
-    });
-    $("jobEditResume").addEventListener("click", showEditMode);
-    // 편집 → 실행 복귀(F2 PR-B 신설, 지도 §10.9 판정 D). 결정 40 은 이 소임을 좌 목록 행
-    // 클릭에 줬는데 그 표면이 죽었다 — 기존 작업 편집은 저장해도 제자리에 머무르므로
-    // (editor.js doSave: "저장은 제자리") 대체 어포던스가 없으면 실행 모드로 돌아갈 길이
-    // 사라진다. 전이는 기존 exitEditToRun 그대로라 비파괴이고 미저장 고지도 그대로 발화한다.
-    $("jobEditExit").addEventListener("click", () => {
-      exitEditToRun().then((busy) => { if (busy) showExitNote(); })
-        .catch((err) => window.alert(String((err && err.message) || err)));
-    });
     // 데이터·작업이 둘 다 없는 상태의 유일 출구(지도 §10.9 판정 C) — 데이터 없이 작업을
     // 보는 경로는 「문서 작업」이 흡수했고, 여기서는 그 흡수처를 가리키기만 한다(겨눔 없음:
     // 명시 선택은 저쪽 「문서 만들기에서 사용」이 `prefer_work` 로 낸다).
@@ -1547,8 +1438,8 @@
         ? `실패한 ${n}건만 선택했습니다. 그대로 다시 생성하면 이 건만 만듭니다.`
         : "다시 만들 실패 건이 남아 있지 않습니다(데이터나 작업이 그사이 바뀌었습니다).");
     });
-    // 파일 이름 규칙 수정 — 편집 진입은 공용 EditorEntry 단일 출처. 파일 이름 **탭**은 아직
-    // 없어(F7) 저장 단계의 규칙 입력으로 착지한다: 열리는 곳을 실제와 다르게 말하지 않는다.
+    // 파일 이름 규칙 수정 — 편집 진입은 공용 EditorEntry 단일 출처. F7 이 파일 이름을
+    // **전용 탭**으로 승격했으므로 이제 그 탭으로 곧장 착지한다(F4 가 남긴 빚의 회수).
     $("jobResultRename").addEventListener("click", () => {
       if (!(LAST && LAST.job_name)) { log("작업이 선택돼 있지 않습니다."); return; }
       // 방어적 재확인(2R P2) — 이 버튼은 결과의 작업이 곧 열린 작업일 때만 뜨지만,
@@ -1560,7 +1451,17 @@
         return;
       }
       if (!window.EditorEntry) { window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다."); return; }
-      EditorEntry.openGuarded(owner);
+      const r = RESULT || {};   // 결과는 웹 소유 세션 상태다(Python 푸시가 덮지 않는다)
+      EditorEntry.openGuarded(owner, {
+        entry_reason: r.status === "failed" ? "run_failure" : "output_result",
+        section: "filename",
+        evidence: {
+          "이 실행": (r.title || "").trim(),
+          "사용한 판본": r.revisions
+            ? `템플릿 r${r.revisions.template} · 연결 r${r.revisions.binding}` : "",
+        },
+        return_context: { surface: "result" },
+      });
     });
 
     // 데이터 선택 = 단일 출구(재작성 F1) — 현재/고정한/다른 세 갈래가 한 면 안에서 갈리고,
@@ -1592,12 +1493,13 @@
   // 되읽어 회귀를 막는다(파괴적 확인의 조용한 드리프트 금지 — RC-02 판과 가드 판 동형).
   // confirmDataSwapIfArmed 는 배선 존재 핀(리뷰 #6 — JS 전용 가드 지점이라 삭제 회귀를
   // 실앱 게이트가 잡을 표식이 없었다).
-  // showEditMode/refreshList 는 편집 모드 seam(EditorEntry·editor.js doSave 가 소비).
+  // refreshList 는 편집 저장 seam(editor.js doSave 가 소비). 구 두 모드 seam 3종은
+  // 편집기가 자기 화면으로 나가며 사망했다(F7 판정 N) — 되돌릴 모드가 없다.
   // renderResult 는 결과 3태 구획의 유일한 입구다(F4) — 실앱 게이트가 Python 이 내는
   // 결과 dict 를 그대로 흘려 태·강등·증거 접힘이 실 WebView2 에서 서는지 되읽는다.
   window.JobScreen = {
     init, overwriteBody, guardBody, confirmDataSwapIfArmed, openJob,
-    showEditMode, showRunMode, landRunMode, refreshList,
+    refreshList,
     openJobConfirmSheet, openJobDataSheet, openBrowseNeedsAction,
     renderResult, markResultStale,
   };

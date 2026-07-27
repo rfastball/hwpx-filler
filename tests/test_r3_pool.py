@@ -239,7 +239,7 @@ def test_appjs_nav_autorefresh_whitelist_matches_backend():
     assert listed == {"library", "tpl", "job", "draft"}
 
     # go() 안에서 화이트리스트 판정 후 refresh dispatch + 실패 표면화(.catch).
-    seg = _segment(src, "function go(id)", "window.Nav")
+    seg = _segment(src, "function go(id, opts)", "window.Nav")
     assert "REFRESH_ON_NAV.includes(id)" in seg
     assert re.search(r'Bridge\.call\(id,\s*"refresh"', seg), "전환 자동 refresh dispatch 부재(C6)."
     assert ".catch" in seg, "전환 자동 refresh 실패가 조용히 삼켜집니다(C6·confirm-or-alarm)."

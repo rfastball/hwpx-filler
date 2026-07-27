@@ -870,18 +870,22 @@ class TestWebSelftestGate:
             f"데이터 스왑 가드가 매핑 편집을 열거합니다(over-warn — 스왑은 유지): {d['guard_body_data_swap']!r}"
         )
 
-    def test_job_edit_mode_hosts_definition_surface(self, selftest_result: dict) -> None:
-        # 편집 모드 전환이 실 WebView2 에서 편집 호스트를
-        # 켜고 세션 4존을 숨기며(배타 표시 = B-9 overlay/hidden 눈검증의 자동판), 이사한 정의
-        # surface 가 같은 3분류를 신규=단계(번호 표지)·편집=탭(자유 이동 버튼)으로 갈라 렌더한다.
+    def test_editor_is_immersive_and_carries_its_context(self, selftest_result: dict) -> None:
+        # 편집기가 실 WebView2 에서 **자기 화면**으로 서고 상단 2탭을 덮는지, 머리(이름·저장
+        # 상태·판본)와 진입 문맥 배너가 실제로 그려지는지 되읽는다. 정적 계약(클래스·문자열
+        # 존재)은 「배선했지만 영영 안 보이는」 상태를 통과시킨다 — F2 PR-B 가 같은 자리에서
+        # 그 결함을 실물로 확인했다(코덱스 리뷰 P2).
         j = selftest_result["job_editmode"]
-        assert j.get("error") is None, f"편집 모드 프로브 예외: {j.get('error')!r}"
-        assert j["edit_host_shown"] is True and j["zones_hidden"] is True, (
-            f"두 모드 배타 표시 실패(호스트/존 동시 표시·동시 은닉): {j!r}"
+        assert j.get("error") is None, f"편집기 프로브 예외: {j.get('error')!r}"
+        assert j["editor_screen_on"] and j["job_screen_off"], (
+            f"편집기가 자기 화면으로 서지 않습니다(두 화면 동시 표시·미표시): {j!r}"
         )
-        assert j["status_text"] == "편집 모드", f"상태 pill 이 편집 모드를 말하지 않습니다: {j['status_text']!r}"
+        assert j["nav_hidden"] is True, (
+            "편집 중에 상단 2탭이 살아 있습니다 — 처분 미확정 이탈구가 그대로입니다(F7)."
+        )
+        assert j["back_shown"] is True, "편집기의 유일한 출구(back)가 보이지 않습니다."
         assert j["wizard_steps"] == 3, f"신규 초안 단계 표지(번호) 수: {j['wizard_steps']!r}"
-        assert j["foot_shown_new"] is True, "신규 마법사 푸터(뒤로/다음)가 표시되지 않았습니다."
+        assert j["foot_shown_new"] is True, "신규 초안 푸터(뒤로/다음)가 표시되지 않았습니다."
         assert j["edit_tabs"] == 3, f"편집 탭 버튼 수: {j['edit_tabs']!r}"
         assert j["foot_shown_edit"] is True, (
             "편집 탭에서 주 행동 푸터(「변경 저장」)가 보이지 않습니다 — 구판은 저장 분류에만"
@@ -891,14 +895,21 @@ class TestWebSelftestGate:
             "손댄 탭이 표지되지 않습니다 — 어느 자리를 처분해야 하는지 3택 모달 전에 보여야"
             f" 한다(§5.2): {j['edit_dirty_tab_marked']!r}"
         )
-        # 실행 복귀 출구(F2 PR-B 판정 D) — 좌 목록이 죽으며 이 버튼이 유일한 직접 복귀
-        # 경로가 됐다. 정적 존재만 보는 계약은 「배선했지만 영영 숨어 있는」 상태를 통과시켜
-        # 승계가 문서에만 남는다(코덱스 리뷰 P2 의 실물) — 실 렌더로 두 모드를 다 본다.
-        assert j["edit_exit_shown"] is True, (
-            "편집 모드에 「실행으로 돌아가기」가 보이지 않습니다 — 직접 복귀 경로 소실."
+        # 머리 — 이름은 안정 입력이고 저장 상태가 **판본을 말한다**(§10.13 판정 O 표시 자리 ①).
+        assert j["name_input_value"] == "공고서", f"이름 입력이 값을 받지 않습니다: {j!r}"
+        assert "r2" in j["save_state"] and "r5" in j["save_state"], (
+            f"저장 상태가 판본을 말하지 않습니다 — 아무도 안 읽는 durable 은 조용히 틀린다: {j['save_state']!r}"
         )
-        assert j["edit_exit_hidden_in_run"] is True, (
-            "실행 모드에 「실행으로 돌아가기」가 남아 있습니다 — 거짓 어포던스."
+        # 진입 문맥 — 자발적 진입이면 침묵, 사유가 있으면 증거·복귀 버튼과 함께 선다.
+        assert j["ctx_hidden_when_voluntary"] is True, "할 말이 없는데 배너가 섰습니다."
+        assert j["ctx_shown"] is True and j["ctx_return_btn"] is True, (
+            f"진입 문맥 배너·복귀 버튼이 서지 않습니다: {j!r}"
+        )
+        assert "미리보기에서 열었습니다" in j["ctx_text"] and "4 / 12" in j["ctx_text"], (
+            f"배너가 사유·증거를 말하지 않습니다: {j['ctx_text']!r}"
+        )
+        assert j["nav_back_after_leave"] is True, (
+            "편집기를 나온 뒤에도 상단 2탭이 숨어 있습니다 — 몰입이 영구 은닉이 됐습니다."
         )
 
     def test_editor_chip_live_renders_ownership_and_toggle_chips(self, selftest_result: dict) -> None:

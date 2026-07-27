@@ -347,16 +347,12 @@
     if (target === "editor") {
       // 아직 「문서 만들기」가 받을 수 없는 작업(미연결·미상 방식) — 실제로 고칠 수 있는
       // 곳으로 보낸다. 빈 「확인 필요」에 착지시키는 것보다 정직하고 쓸모 있다.
-      editJob(name);
+      editJob(name, { "여기서 고칠 것": "이 작업은 아직 「문서 만들기」가 받을 수 없습니다" });
       return;
     }
     const r = await Bridge.call(JOB, "prefer_work", { name });
-    // 저쪽이 편집 모드로 열려 있으면 실행 모드로 되돌린 **뒤** 이동한다 — 「이 작업으로 문서
-    // 만들기」를 눌렀는데 편집 호스트에 착지하면 요청과 다른 표면이다(F2 PR-B). 전이 자체는
-    // 비파괴이고 미저장 편집이 있으면 저쪽이 고지한다.
-    if (window.JobScreen && window.JobScreen.landRunMode) {
-      await window.JobScreen.landRunMode();
-    }
+    // 편집기는 자기 화면으로 나갔으므로(재작성 F7) 「문서 만들기」로 가는 길에 모드 되돌림이
+    // 필요 없다 — 이 화면이 보이는 동안 편집기는 열려 있지 않다(몰입 표면은 셸을 덮는다).
     window.Nav.go(JOB);
     if (r && r.reason === "incompatible" && window.JobScreen) {
       await window.JobScreen.openBrowseNeedsAction(name);
@@ -365,9 +361,15 @@
 
   /* 편집 진입 — 미저장 에디터 세션은 조용히 버리지 않고 확인(#25 미러) 후 복원.
      공용 흐름 EditorEntry.openGuarded 에 위임(job.openEditForRepair 와 단일 출처). */
-  function editJob(name) {
+  function editJob(name, evidence) {
     if (!window.EditorEntry) { window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다."); return; }
-    EditorEntry.openGuarded(name);
+    // 진입 문맥(계약 §5.1) — 돌아갈 자리는 이 화면이고, 보기·필터·선택은 이 화면이 자기
+    // 상태로 들고 있으므로(§19.8) 복귀는 화면 키 하나면 족하다.
+    EditorEntry.openGuarded(name, {
+      entry_reason: "library",
+      evidence: evidence || {},
+      return_context: { surface: "library" },
+    });
   }
 
   /* '＋ 새 작업' — 라벨-행동 일치: 이전 에디터 세션을 초기화한 뒤 이동한다(EditorEntry 단일 출처). */

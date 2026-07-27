@@ -25,6 +25,7 @@ from .action_registry import validate_dispatch
 from ..core.job import JobRegistry, default_jobs_dir
 from ..core.text_registry import TextTemplateRegistry, default_text_templates_dir
 from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확정 게이트 판정(#33)
+from ..gui.edit_session import SECTION_BINDING  # 편집기 기본 착지 탭(계약 §5.1 어휘)
 from ..gui.file_filters import EXCEL_FILTER_PATTERN  # 확장자 단일 출처(RC-34) — Qt-free 상수
 from hwpxcore.native import single_instance
 from hwpxcore.native._debug import log
@@ -468,15 +469,27 @@ class WebFrontend:
         owned = collect_owned_paths(self._job_registry, self._pool_registry, session)
         return validate_owned_path(path, owned)
 
-    def open_job_in_editor(self, name: str) -> "str | None":
-        """홈 '편집' → 저장된 작업을 에디터 편집 세션으로 복원(#26 편집 모드).
+    def open_job_in_editor(self, name: str, context: "dict | None" = None) -> "str | None":
+        """저장된 작업을 **진입 문맥과 함께** 편집 세션으로 연다(계약 §5.1, 재작성 F7).
 
-        웹은 이 호출 후 에디터 화면으로 전환한다. 실패(작업 손상·템플릿 부재·RAW)는
-        ``ERROR:`` 접두로 시끄럽게 반환. 미저장 세션 확인은 웹이 ``editor_has_unsaved_work``
-        로 선판단한다(#25 미러).
+        웹은 이 호출 후 편집기 화면으로 전환한다. 실패(작업 손상·템플릿 부재·RAW·**미배선
+        진입 사유**)는 ``ERROR:`` 접두로 시끄럽게 반환 — 사유를 조용히 `voluntary` 로
+        떨어뜨리면 배너가 아무 말도 못 하는 진입이 생긴다. 미저장 세션 확인은 웹이
+        ``editor_has_unsaved_work`` 로 선판단한다(#25 미러).
+
+        ``context`` = ``{entry_reason, evidence, return_context, section}``. 기본값(빈 사전)은
+        자발적 진입이고 그때는 배너 자체가 서지 않는다(할 말이 없으면 침묵). ``section`` 은
+        deep-link 의 **거친 형태**(어느 탭인가)다 — 필드 단위 target 은 PR-B 자리다.
         """
+        ctx = context or {}
         try:
-            self._controller("editor").load_job(name)
+            self._controller("editor").load_job(
+                name,
+                landing_section=str(ctx.get("section") or SECTION_BINDING),
+                entry_reason=str(ctx.get("entry_reason") or "voluntary"),
+                evidence=ctx.get("evidence"),
+                return_context=ctx.get("return_context"),
+            )
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
         return name
@@ -1304,15 +1317,18 @@ _JOB_MIRROR_PROBE_JS = r"""
     // ⤢ 데이터 펼침 면은 **비동기 프로브**(_DATA_SHEET_PROBE_SETUP_JS)로 떼어 냈다: 열기가
     // Python 왕복(초안 생성) 뒤로 바뀌어(F3) 동기 측정으로는 열리기 전을 재게 된다.
 
+    // 편집기가 자기 화면으로 나가며(재작성 F7) 「편집 모드가 시트를 닫는다」는 계약은
+    // 화면 전환이 승계했다: 편집기로 가면 이 화면의 펼침 면은 화면째 시야에서 사라지고,
+    // 실 DOM 이 overlay 슬롯에 남는 교차 상태는 복귀 시 닫기가 정리한다.
     mirrorTrigger.click();
-    window.JobScreen.showEditMode();
-    out.edit_closes_sheets = !window.SurfaceSheet.isOpen('jobConfirmSheet') &&
-      mirror.parentNode === mirrorParent && restate.parentNode === restateParent &&
-      getComputedStyle(document.getElementById('jobEditHost')).display !== 'none';
+    window.Nav.go('editor', {force:true});
+    out.edit_closes_sheets = !document.getElementById('scr-job').classList.contains('on') &&
+      document.getElementById('scr-editor').classList.contains('on');
+    window.Nav.go('job', {force:true});
+    document.getElementById('jobConfirmSheetClose').click();
     (function () { var card = document.querySelector('#jobConfirmSheet .modal-card');
       var ev = new Event('transitionend', {bubbles:true});
       Object.defineProperty(ev, 'propertyName', {value:'opacity'}); card.dispatchEvent(ev); })();
-    window.JobScreen.showRunMode();
   } catch (e) { out.error = 'throw:' + (e && e.message); }
   return out;
 })()
@@ -1616,15 +1632,13 @@ _JOB_EDITMODE_PROBE_JS = r"""
 (function () {
   var out = {};
   try {
-    window.Nav.go('job');
-    window.JobScreen.showEditMode();
-    out.edit_host_shown = getComputedStyle(document.getElementById('jobEditHost')).display !== 'none';
-    out.zones_hidden = getComputedStyle(document.getElementById('jobZones')).display === 'none';
-    out.status_text = document.getElementById('jobStatus').textContent;
-    // 실행 복귀 출구(F2 PR-B 판정 D) — 편집 모드에서 **실제로 보이는가**. 좌 목록이 죽으며
-    // 이 버튼이 유일한 직접 복귀 경로가 됐는데, 정적 존재만 보는 계약은 「배선했지만 영영
-    // 숨어 있는」 상태를 통과시킨다(코덱스 리뷰 P2 의 실물).
-    out.edit_exit_shown = getComputedStyle(document.getElementById('jobEditExit')).display !== 'none';
+    // 몰입 표면(재작성 F7) — 편집기는 자기 화면이고 상단 2탭을 **실제로** 덮는가.
+    // 정적 계약(클래스 존재)만 보면 「배선했지만 여전히 나갈 구멍이 있는」 상태를 통과시킨다.
+    window.Nav.go('editor', {force:true});
+    out.editor_screen_on = document.getElementById('scr-editor').classList.contains('on');
+    out.job_screen_off = !document.getElementById('scr-job').classList.contains('on');
+    out.nav_hidden = getComputedStyle(document.querySelector('.nav')).display === 'none';
+    out.back_shown = getComputedStyle(document.getElementById('editorBack')).display !== 'none';
     // section 어휘(재작성 F7 판정 B) — 탭 집합은 Python 이 매체에서 파생해 내려준다.
     var draft = {section:'template', sections:['template','binding','filename'],
       reachable:{template:false, binding:false, filename:false}, dirty_sections:[],
@@ -1647,10 +1661,25 @@ _JOB_EDITMODE_PROBE_JS = r"""
       window.__push('editor', draft);
       return document.querySelectorAll('#editor-steps button.wstep-tab.dirty').length;
     })();
-    // 실행 복귀 뒤엔 다시 숨는다 — 실행 모드에 「실행으로 돌아가기」가 남으면 거짓 어포던스다.
-    window.JobScreen.showRunMode();
-    out.edit_exit_hidden_in_run =
-      getComputedStyle(document.getElementById('jobEditExit')).display === 'none';
+    // 머리 — 이름(안정 입력)·저장 상태·판본(§10.13 판정 O 표시 자리 ①).
+    draft.name = '공고서';
+    draft.revisions = {template:2, binding:5};
+    draft.dirty_sections = [];
+    window.__push('editor', draft);
+    out.name_input_value = document.getElementById('editorName').value;
+    out.save_state = document.getElementById('editorSaveState').textContent;
+    // 진입 문맥 배너 — 사유가 있으면 서고 자발적 진입이면 침묵한다.
+    out.ctx_hidden_when_voluntary =
+      getComputedStyle(document.getElementById('editorContext')).display === 'none';
+    draft.context = {entry_reason:'preview_result', evidence:{'보고 있던 행':'4 / 12'},
+      return_context:{surface:'preview'}};
+    window.__push('editor', draft);
+    out.ctx_shown = getComputedStyle(document.getElementById('editorContext')).display !== 'none';
+    out.ctx_text = document.getElementById('editorContext').textContent;
+    out.ctx_return_btn = !!document.querySelector('#editorContext [data-act="context-return"]');
+    // 나간 뒤엔 셸이 돌아온다 — 몰입이 영구 은닉이 되면 다른 화면으로 갈 길이 사라진다.
+    window.Nav.go('job', {force:true});
+    out.nav_back_after_leave = getComputedStyle(document.querySelector('.nav')).display !== 'none';
   } catch (e) { out.error = 'throw:' + (e && e.message); }
   return out;
 })()
@@ -1660,7 +1689,7 @@ _JOB_EDITMODE_PROBE_JS = r"""
 # render() 에 흘려 (a) 사용할 헤더가 **즉시 토글 칩**(체크박스 스테이징 소거)으로, (b) 미사용
 # 구역이 펼쳐지고(ignored_expanded), (c) 소유권 태그 4종(확정·수동·제안·후보 없음)이,
 # (d) touched 행에 '자동 제안으로 되돌리기'(↩)가 실 WebView2 에서 그려지는지 되읽는다.
-# 정의 surface 는 흡수(결정 39)로 「작업」 패널 편집 호스트에 산다 — 루트도 #jobEditHost.
+# 정의 surface 는 몰입 표면(재작성 F7)에 산다 — 루트도 #scr-editor.
 _EDITOR_CHIP_PROBE_JS = r"""
 (function () {
   var out = {};
@@ -1694,10 +1723,9 @@ _EDITOR_CHIP_PROBE_JS = r"""
       counts:{filled:3,empty:0,unmapped:1}, preview_empties:[], preview_index:1, preview_count:3,
       is_complete:false, schema_only:false
     };
-    window.Nav.go('job');
-    window.JobScreen.showEditMode();
+    window.Nav.go('editor', {force:true});
     window.__push('editor', snap);
-    var root = document.getElementById('jobEditHost');
+    var root = document.getElementById('scr-editor');
     out.active_chips = root.querySelectorAll('.hchip.on[data-act="toggle-header"]').length;
     out.has_checkbox_staging = !!root.querySelector('.hbx');  // 스테이징 소거 → false 여야
     out.ignored_chip = !!root.querySelector('.hchip.ign[data-act="toggle-header"]');
@@ -2187,8 +2215,7 @@ _EDITOR_LIB_PICKER_PROBE_JS = r"""
 (function () {
   var out = {};
   try {
-    window.Nav.go('job');
-    window.JobScreen.showEditMode();
+    window.Nav.go('editor', {force:true});
     var it = function (name, badge, level, cur) {
       return {key:name, name:name, path:'C:/lib/' + name, badge_label:badge, badge_level:level,
               is_error:false, detail:'필드 3개', current:!!cur};
@@ -2207,7 +2234,7 @@ _EDITOR_LIB_PICKER_PROBE_JS = r"""
         {group:'', collapsed:false, count:1, items:[it('d.hwpx','준비됨','ok',false)]}
       ]}};
     window.__push('editor', draft);
-    var host = document.getElementById('jobEditHost');
+    var host = document.getElementById('scr-editor');
     out.grp_heads = host.querySelectorAll('.job-grp-head').length;              // 입찰·계약·그룹없음
     out.rows_visible = host.querySelectorAll('.libselrow').length;             // 계약 접힘 → 2+1
     out.pick_btns = host.querySelectorAll('.libselrow button[data-act="use-library"]').length;

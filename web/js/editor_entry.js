@@ -2,8 +2,10 @@
    않고 확인 후 연다(#25 미러). home.editJob 과 job.openEditForRepair(드리프트·파일명 토큰 수리)이 축자
    동일했던 것을 여기로 수렴한다(relink.js 공용 헬퍼 선례). newJob/makeJob 은 진입 후 동작이
    달라(new_session vs openJobInEditor) 별개다 — 이 헬퍼는 '기존 작업 열기' 한 형상만 담는다.
-   에디터 흡수(결정 39~41): 목적지가 별도 화면에서 「작업」 패널의 편집 모드로 바뀌었다 —
-   가드·로드 계약은 그대로, 마지막 착지만 Nav("job")+showEditMode 다. */
+   재작성 F7: 목적지가 다시 **자기 화면**(#scr-editor 몰입 표면)이 됐다 — 가드·로드 계약은
+   그대로이고 마지막 착지만 Nav("editor") 다. 진입 문맥(사유·증거·복귀처)은 여기서 백엔드로
+   함께 넘어간다: 편집기는 스스로 열리지 않으므로(늘 다른 표면의 문제가 사람을 보낸다)
+   문맥 없는 진입은 왜 왔는지도 어디로 돌아갈지도 없는 표면이 된다(계약 §5.1). */
 (function () {
   /* land() — 편집 모드 착지의 단일 정의(PR-2 리뷰: 축자 복붙은 착지 변경 시 드리프트 표면 —
      한 곳이 밀리면 실행 모드에 조용히 오착지한다). 소비처 = 신규 초안(newDraft — 「문서 작업」 ＋·작업
@@ -11,9 +13,7 @@
      화면 T2 고지). JobScreen 미로드는 **loud**(PR-5 리뷰 F3: 백엔드 세션은 이미 초기화됐는데
      실행 모드에 조용히 떨어지면 사용자에게 설명 없는 무반응이 된다 — 조용한 오착지 금지). */
   function land() {
-    window.Nav.go("job");
-    if (window.JobScreen && window.JobScreen.showEditMode) window.JobScreen.showEditMode();
-    else window.alert("편집 모드를 열 수 없습니다. 화면 구성 요소(JobScreen)가 로드되지 않았습니다.");
+    window.Nav.go("editor", { force: true });
   }
 
   /* newDraft() — 「＋ 새 작업」의 단일 정의(PR-5 리뷰 F2: 「문서 작업」·작업 구획 ＋ 가 같은 흐름을

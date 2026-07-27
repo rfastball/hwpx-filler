@@ -51,21 +51,42 @@ Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다.
 상단 토바 탭과 최상위 DOM 화면의 현재 목록은 `library`, `job`, `draft`, `tpl` 네 개다
 (계약 2탭 = `job` 「문서 만들기」·`library` 「문서 작업」, 구분선 오른쪽 `draft`·`tpl` 은
 승계처가 서면 죽는 과도기 임시 — 지도 §10.9). 좌 레일과 그 접기는 F2 PR-B 에서 사망했다.
-`web/js/app.js`의 `window.Nav.go`가 표시 상태를 전환한다. `editor`는 라우팅 화면이 아니라
-`job` 화면 안의 편집 호스트이며 `EditorEntry`가 편집 모드로 착지시킨다.
+`web/js/app.js`의 `window.Nav.go`가 표시 상태를 전환한다. `editor`는 **탭 없는 다섯 번째
+화면**이다(재작성 F7): 상단 2탭을 덮는 몰입 표면이라 nav 버튼이 없고 진입은 `EditorEntry`,
+이탈은 `EditorScreen.leaveTo` 하나다 — `Nav.go` 가 편집기에서 나가는 모든 이동을 그 가드로
+위임한다(`{force:true}` 는 처분을 마친 재호출).
 
 | 라우트/표면 | DOM·JavaScript 소유자 | Python 컨트롤러 | 링1 ViewModel·상태 소유자 |
 |---|---|---|---|
 | `library` 문서 작업(전역 라이브러리) | `#scr-library`, `screens/library.js` | `LibraryController` | `HomeViewModel`(모듈명은 유지 — 지도 §10.8 판정 A) |
 | `job` 문서 만들기(데이터·실행) | `#scr-job`, `screens/job.js` | `JobController` | `RunViewModel`, `SelectionModel`, 필터 상태, 후보 판정(`work_candidates`) |
-| `job` 내부 작업 편집 | `#jobEditHost`, `screens/editor.js`, `editor_entry.js` | `EditorController` | `MappingModel`, 저장 판정, 공유 `TemplateManagerViewModel` |
+| `editor` 문서 작업 편집기(몰입) | `#scr-editor`, `screens/editor.js`, `editor_entry.js` | `EditorController` | `MappingModel`, `EditSession`·`EditContext`, 저장 판정, 공유 `TemplateManagerViewModel` |
 | `draft` 기안 작업·세션 | `#scr-draft`, `screens/draft.js`, `draftsession.js` | `DraftController` | `TxtDraftViewModel`, `MappingModel`, `SelectionModel`, `TxtQueueModel` |
 | `tpl` 템플릿 관리 | `#scr-tpl`, `screens/template.js` | `TemplateController` | `TemplateManagerViewModel`, 템플릿 그룹 상태 |
 | 데이터 선택 다이얼로그(화면 아님) | `#dataPickerModal`, `data_picker.js` | `PoolController` + 호스트 화면 | `DatasetPoolViewModel` |
 
 화면을 추가·삭제·이름 변경할 때는 DOM 루트, 화면 JavaScript의 `SCREEN`, Python 컨트롤러
-`name`, `WebFrontend.controllers`, action registry를 한 계약 변경으로 갱신한다. `job` 내부 편집
-표면처럼 라우트와 컨트롤러가 1:1이 아닌 경우도 위 표에 명시한다.
+`name`, `WebFrontend.controllers`, action registry를 한 계약 변경으로 갱신한다. 나가는 길에
+가드가 붙는 화면(편집기)은 `Nav.go` 위임까지 한 묶음이다 — 가드를 표면마다 따로 걸면
+완전성이 표면 수에 비례한다.
+
+#### 문서 작업 편집기 = 몰입 표면 + section patch 거래 (F7 PR-A — 지도 §10.13)
+
+- **탭은 계약 §5.1 의 section 문자열**(`template`·`binding`·`filename`, 「시험」은 F8)이고
+  **집합은 매체 파생**이다(TXT 는 파일 이름 탭 없음 — §3.2). 정수 단계 어휘는 사망했다:
+  patch 의 키와 탭이 같은 문자열이라야 같은 상태를 두 표면이 다르게 부르지 않는다.
+- **저장 단위는 한 section 의 patch**(§13-16). 다른 탭으로 가려면 저장·버리기·머무르기 중
+  하나를 명시한다 — 판정(무엇이 dirty 인가)은 Python, 3택 문안은 웹이다. 머무르기가 기본값
+  (Escape 로 편집이 사라지지 않는다). 「변경 버리기」는 **진입 시점 스냅샷**으로 되돌리고
+  데이터는 유지한다(데이터 선택은 patch 가 아니라 세션 문맥이다).
+- **주 행동은 하나** — 「변경 저장」. 「이번 생성에 적용」은 `runOverrides`(PR-B)의 표면이라
+  라디오를 미리 늘어놓지 않는다(§6: 같은 선택지를 모든 문맥에 나열하지 않는다).
+- **진입은 늘 문맥과 함께**(§5.1): 사유·증거·복귀처를 보낸 표면이 싣는다. 미배선 사유는
+  fail-closed 로 거절한다 — 조용한 폴백은 곧 배너가 아무 말도 못 하는 진입이다.
+- **판본은 저장 상태 옆에서 읽힌다**(`저장됨 · 템플릿 r2 · 연결 r5`). 규칙이 갈릴 때만 오르고
+  실행 결과 증거·미리보기 before/after 가 같은 값을 쓴다.
+- 「저장」 분류는 사망했고 그 항목은 흩어졌다: 이름=머리 인라인, 자동등록·기본 데이터 재진술=
+  연결 탭의 데이터 관문, 작성 출처=템플릿 탭, 저장 버튼·차단 사유=footer.
 
 ### 데이터 선택 다이얼로그 (재작성 F1 — `pool` 화면 사망의 승계처)
 
@@ -174,9 +195,10 @@ Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다.
   다른 증거를 싣는다. 템플릿 변경은 승인 축이 아니라 드리프트 게이트가 진다.
 - 승인 유효 범위는 위험별로 다르다: 표시형은 규칙 지문에만, 의미·파일명은 **선택 지문까지**
   결속된다(선택·순서가 바뀌면 그 증거 자체가 무효다).
-- 적용 범위는 「이 작업의 기본 규칙」 고정이다 — `runOverrides`(F7)가 아직 없으므로 「이번
-  생성에만」을 암시하는 문안을 두지 않는다. 행별 「수정」 deep-link 도 F7 소관이라 지금은
-  드로어 하나의 「이 작업 편집」 출구다.
+- 적용 범위는 「이 작업의 기본 규칙」 고정이다 — `runOverrides`(F7 **PR-B**)가 아직 없으므로
+  「이번 생성에만」을 암시하는 문안을 두지 않는다. 행별 「수정」 deep-link 도 PR-B 소관이라
+  지금은 드로어 하나의 「이 작업 편집」 출구이고, 그 출구는 진입 문맥(`preview_result` + 보고
+  있던 행)을 실어 편집기 배너가 왜 왔는지를 말한다(F7 PR-A).
 - 게이트 서열에서 검토 요구는 **전제조건 다음·열림 직전**(warn, `reason="review_required"`)
   이다. 선택 0건·저장 폴더 미지정 상태에서 "검토하세요"는 이행 불가능한 지시다.
 

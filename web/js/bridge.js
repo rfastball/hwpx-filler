@@ -53,7 +53,11 @@
     editorHasUnsavedWork() { return window.pywebview.api.editor_has_unsaved_work(); },
 
     /** 「문서 작업」 상세 '작업 편집' → 저장된 작업을 에디터 편집 세션으로 복원(#26). 이름·"ERROR:…". */
-    openJobInEditor(name) { return window.pywebview.api.open_job_in_editor(name); },
+    // context = {entry_reason, evidence, return_context}(계약 §5.1) — 진입 문맥은 **보낸
+    // 표면**이 안다. 편집기가 되계산하면 배너가 사용자가 방금 본 것과 다른 말을 한다.
+    openJobInEditor(name, context) {
+      return window.pywebview.api.open_job_in_editor(name, context || {});
+    },
 
     /** 「문서 작업」 손상 카드 '폴더 열기' → 탐색기에서 파일 표시(#26 #8). null·"ERROR:…". */
     revealCorruptJob(path) { return window.pywebview.api.reveal_corrupt_job(path); },

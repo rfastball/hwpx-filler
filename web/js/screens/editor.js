@@ -1,10 +1,11 @@
-/* 작업 정의(HWPX) 렌더러 — 브리지로 링1 EditorController 와 왕복. 3분류(템플릿·매핑·저장).
-   에디터 흡수(R-flow 블록 2 개정, 결정 39~41): 표면은 「작업」 패널의 편집 모드(#jobEditHost)에
-   산다 — 신규 초안은 마법사 **단계**(전진 게이트·푸터 내비), 저장된 작업 편집은 **탭**(자유
-   이동, editing_origin 으로 가른다). 구 2단계 '데이터 선택'은 매핑 단계의 관문으로 인라인
-   (3단계 접기) — 템플릿(0) → 매핑(1, 데이터 관문 내장) → 저장(2).
+/* 문서 작업 편집기 렌더러 — 브리지로 링1 EditorController 와 왕복. **몰입 표면**(#scr-editor,
+   재작성 F7 PR-A · 지도 §10.13): 상단 2탭을 덮고 출구는 back 하나다 — 그래야 patch 처분
+   (저장·버리기·머무르기)이 한 곳에서 끝난다. 구 「작업」 화면 편집 모드(#jobEditHost)는 사망.
+   탭은 계약 §5.1 의 section 문자열(템플릿·필드 연결·표시·파일 이름 / 「시험」은 F8)이고
+   **집합은 Python 이 매체에서 파생**해 내려준다. 신규 초안은 전진 게이트(순서 의존이 실재),
+   저장된 작업 편집은 자유 이동 + 처분 가드.
    렌더는 Python 이 window.__push('editor', snapshot) 로 밀어 넣는다.
-   표현 계층(단계/탭 UI·매핑표·행 색·표시형 라벨)만 여기서 만든다 — VM 로직 아님. */
+   표현 계층(탭 UI·매핑표·행 색·표시형 라벨·문맥 배너)만 여기서 만든다 — VM 로직 아님. */
 (function () {
   const SCREEN = "editor";
   const $ = (id) => document.getElementById(id);
@@ -31,18 +32,76 @@
 
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
-    Preserve.around(() => {  // 마법사 폼 포커스·캐럿·본문 스크롤 보존(#28)
+    Preserve.around(() => {  // 폼 포커스·캐럿·본문 스크롤 보존(#28)
       // 재구성 전 현 펼침을 읽어 이월(수동 개폐 존중) — 접힘별 전용 클래스로 분리 판독.
-      const fold = document.querySelector("#jobEditHost details.ign-fold");
+      const fold = document.querySelector("#scr-editor details.ign-fold");
       if (fold) foldOpen = fold.open;
-      const tokFold = document.querySelector("#jobEditHost details.tok-fold");
+      const tokFold = document.querySelector("#scr-editor details.tok-fold");
       if (tokFold) tokFoldOpen = tokFold.open;
       LAST = s;
+      renderHead(s);
+      renderContext(s);
       $("editor-steps").innerHTML = stepHeader(s);
       $("editor-body").innerHTML = stepBody(s);
       $("editor-foot").innerHTML = footer(s);
       $("editor-foot").style.display = footer(s) ? "" : "none";
     });
+  }
+
+  /* 머리 — 이름(안정 입력)·부제·저장 상태 + 판본. 「저장」 분류 사망의 승계처(§10.13.3).
+     이름 입력은 innerHTML 로 다시 짓지 않는다: 매 push 마다 다시 지으면 아직 change 로
+     확정되지 않은 타이핑이 스냅샷 값으로 조용히 덮인다. 포커스 중엔 값도 건드리지 않는다. */
+  function renderHead(s) {
+    const nameEl = $("editorName");
+    if (nameEl && document.activeElement !== nameEl && nameEl.value !== s.name) {
+      nameEl.value = s.name || "";
+    }
+    $("editorSubtitle").textContent = s.template_name
+      ? `템플릿 ${s.template_name}` : "템플릿을 아직 고르지 않았습니다.";
+    // 판본(§10.13 판정 O 표시 자리 ①) — 저장된 작업만 세대가 있다. 초안에 r1 을 붙이면
+    // 저장되지도 않은 규칙에 있지도 않은 세대를 말하게 된다.
+    const st = $("editorSaveState");
+    const rev = s.revisions || {};
+    const dirty = (s.dirty_sections || []).length > 0;
+    if (s.is_draft) {
+      st.dataset.level = "idle";
+      st.textContent = "아직 저장하지 않은 새 작업";
+    } else {
+      st.dataset.level = dirty ? "warn" : "idle";
+      st.textContent = (dirty ? "저장하지 않은 변경 · " : "저장됨 · ")
+        + `템플릿 r${rev.template || "?"} · 연결 r${rev.binding || "?"}`;
+    }
+  }
+
+  /* 진입 문맥 배너(계약 §5.1) — 왜 왔는지·무엇을 보고 왔는지·어디로 돌아가는지.
+     증거는 **보낸 표면이 본 것**을 그대로 싣는다(편집기가 다시 계산하면 배너와 화면이
+     갈린다). 사유가 자발적 진입이면 배너 자체를 세우지 않는다 — 할 말이 없으면 침묵. */
+  const ENTRY_LEAD = {
+    library: "「문서 작업」에서 열었습니다.",
+    preview_result: "미리보기에서 열었습니다.",
+    run_failure: "생성 실패 결과에서 열었습니다.",
+    output_result: "생성 결과에서 열었습니다.",
+    document_browser_repair: "실행을 막는 문제를 고치러 열었습니다.",
+  };
+  const RETURN_LABEL = {
+    data: "문서 만들기로 돌아가기", preview: "미리보기로 돌아가기",
+    result: "결과로 돌아가기", library: "「문서 작업」으로 돌아가기",
+    documents: "문서 탐색으로 돌아가기",
+  };
+  function renderContext(s) {
+    const box = $("editorContext");
+    const ctx = s.context || {};
+    const lead = ENTRY_LEAD[ctx.entry_reason];
+    if (!lead) { box.style.display = "none"; box.innerHTML = ""; return; }
+    const ev = ctx.evidence || {};
+    const rows = Object.keys(ev).map((k) =>
+      `<span><b>${esc(k)}</b> ${esc(ev[k])}</span>`).join("");
+    const surface = (ctx.return_context || {}).surface;
+    const back = RETURN_LABEL[surface]
+      ? `<button class="btn sm" data-act="context-return">${esc(RETURN_LABEL[surface])}</button>` : "";
+    box.style.display = "";
+    box.innerHTML = `<div class="row"><b>${esc(lead)}</b><span class="spacer"></span>${back}</div>` +
+      (rows ? `<div class="ctx-ev">${rows}</div>` : "");
   }
 
   /* 헤더: 신규=단계 표지(번호·게이트), 편집=탭(자유 이동 버튼). 같은 .wstep-tab 룩 재사용. */
@@ -146,6 +205,7 @@
       out += `<div class="row"><span class="lbl">선택한 템플릿</span>
         <span class="filechip"><b>${esc(s.template_name)}</b></span>
         ${PathTrack.affordances(s.template_path)}</div>`;
+      out += provenanceBlock(s);   // 「저장」 분류 사망의 승계(§10.13.3) — 템플릿·필드 어휘의 지문
     }
     if (s.raw_block) {
       out += `<p class="note dangerbox" style="white-space:pre-line">${esc(s.raw_block)}</p>`;
@@ -283,6 +343,8 @@
     return `<div class="wtitle">${esc(stageTitle(s, "binding"))}</div>
       <p class="wsub">필드마다 데이터 열을 지정하고 전 행을 확정하세요.</p>
       ${dataGateway(s)}
+      ${datasetBlock(s)}
+      ${defaultDatasetBlock(s)}
       ${headerSelect(s)}
       ${banner}
       <div class="tblwrap"><table class="map"><thead><tr>
@@ -354,18 +416,16 @@
       <td>${ownerTag(r, s)}</td></tr>`;
   }
 
-  /* ---- 분류 2: 저장 ---- */
+  /* ---- 탭: 파일 이름 — 대조표 20행의 승격(저장 단계 인라인 → 전용 탭).
+     이름·자동등록·기본 데이터·작성 출처는 각자의 거처로 흩어졌다(§10.13.3 승계 정산):
+     이름=머리, 자동등록·기본 데이터=연결 탭의 데이터 관문, 작성 출처=템플릿 탭. ---- */
   function saveStage(s) {
-    return `<div class="wtitle">${esc(stageTitle(s, "filename"))}${s.editing_origin ? ` <span class="pill">편집: ${esc(s.editing_origin)}</span>` : ""}</div>
-      <p class="wsub">이 작업(템플릿·매핑·파일명)을 저장합니다. 데이터는 실행할 때 고릅니다.</p>
-      <div class="row"><span class="lbl lbl-fixed">작업 이름</span>
-        <input class="field" data-act="name" value="${esc(s.name)}" placeholder="예: 공고서 자동생성"></div>
+    return `<div class="wtitle">${esc(stageTitle(s, "filename"))}</div>
+      <p class="wsub">이 작업이 만드는 파일의 이름 규칙입니다. HWPX 작업의 영구 규칙이고,
+        이번 생성에서만 쓸 값은 여기 두지 않습니다.</p>
       <div class="row"><span class="lbl lbl-fixed">파일명 패턴</span>
         <input class="field mono" data-act="pattern" value="${esc(s.pattern)}"></div>
       ${s.pattern_preview ? `<p class="hint mono" style="margin-top:0">예: ${esc(s.pattern_preview)}${s.record_count ? " (표본 1행 기준)" : ""}</p>` : ""}
-      ${provenanceBlock(s)}
-      ${datasetBlock(s)}
-      ${defaultDatasetBlock(s)}
       ${filenameTokenHelp(s)}
       <div id="save-msg" class="note" style="display:none"></div>`;
   }
@@ -615,6 +675,9 @@
         case "goto-tab":  // 탭 이동 — 처분 미확정이면 백엔드가 3택을 요구한다(§5.2).
           await gotoSection(el.dataset.section);
           break;
+        case "context-return":
+          await leaveTo(returnScreen());
+          break;
         case "discard-patch": {
           if (!(await Modal.confirm({
             body: "이 편집에서 바꾼 내용을 버리고 저장된 상태로 되돌립니다.\n\n계속할까요?",
@@ -658,8 +721,9 @@
             "새 작업 만들기를 취소하면 입력한 이름 · 데이터 · 매핑이 사라집니다.\n\n계속할까요?",
             el))) break;
           await Bridge.call(SCREEN, "discard_session", {});
-          if (window.JobScreen && window.JobScreen.showRunMode) window.JobScreen.showRunMode();
-          else window.alert("실행 모드로 돌아갈 수 없습니다. 화면 구성 요소(JobScreen)가 로드되지 않았습니다.");
+          // 확인·폐기를 마쳤으니 이탈 가드를 다시 태우지 않는다(force) — 같은 폐기를 두 번
+          // 묻는 것은 소음이고, 두 번째 확인에서 취소하면 이미 비운 세션에 남게 된다.
+          window.Nav.go(returnScreen(), { force: true });
           break;
         }
         case "back": await gotoSection(neighbour(-1)); break;
@@ -771,11 +835,58 @@
 
   function init() {
     Bridge.onPush(SCREEN, render);
-    // 에디터 흡수(결정 39) — 표면 거처는 「작업」 패널의 편집 호스트. 위임 루트도 함께 이사.
-    const root = $("jobEditHost");
+    // 몰입 표면(재작성 F7) — 위임 루트가 화면 전체다. back 은 재렌더가 만지지 않는 안정
+    // 요소라 여기서 직접 문다(문맥 배너의 복귀 버튼은 재구성되므로 위임으로 받는다).
+    const root = $("scr-editor");
     root.addEventListener("click", onClick);
     root.addEventListener("change", onChange);
+    $("editorBack").addEventListener("click", () => leaveTo(returnScreen()));
     Bridge.initial(SCREEN).then(render);
+  }
+
+  /* 복귀처 — 진입 문맥이 말한 표면(계약 §8). 없으면 「문서 만들기」다: 편집기는 늘 업무
+     표면에서 열리고, 모르는 자리로 보내느니 흐름의 본진으로 보낸다. */
+  const RETURN_SCREEN = {
+    data: "job", preview: "job", result: "job", documents: "job", library: "library",
+  };
+  function returnScreen() {
+    const ctx = (LAST && LAST.context) || {};
+    return RETURN_SCREEN[(ctx.return_context || {}).surface] || "job";
+  }
+
+  /* 편집기를 나가는 **단일 출구**(§10.13 판정 N) — back·문맥 복귀·다른 화면의 프로그램적
+     이동이 전부 여기로 모인다. 처분 미확정 patch 가 있으면 3택을 먼저 받고, 초안이면
+     세션 폐기 확인을 받는다(초안은 patch 가 아니라 세션 전체가 미저장이다 — 판정 P).
+     Nav.go 는 `force` 로 되돌아온다(가드 재진입 방지). */
+  async function leaveTo(target) {
+    const s = LAST || {};
+    const dirty = (s.dirty_sections || []).length > 0;
+    if (dirty && !s.is_draft) {
+      const choice = await Modal.choose({
+        title: "저장하지 않은 변경이 있습니다",
+        body: "편집기를 나가기 전에 이 변경을 어떻게 할지 정하세요."
+          + "\n저장하면 새 판본이 되고, 버리면 열었을 때 상태로 돌아갑니다.",
+        choices: [
+          { value: "save", label: "저장하고 나가기" },
+          { value: "discard", label: "버리고 나가기" },
+          { value: "stay", label: "머무르기" },
+        ],
+      });
+      if (choice === "save") {
+        if (!(await doSave({}))) return;      // 저장이 막혔으면 나가지 않는다(문맥 보존)
+      } else if (choice === "discard") {
+        await Bridge.call(SCREEN, "discard_patch", {});
+      } else {
+        return;
+      }
+    } else if (s.is_draft && !(await EditorEntry.confirmDiscard(
+      "편집기를 나가면 저장하지 않은 새 작업이 사라집니다."
+      + "\n사라지는 것: 이름 · 데이터 · 매핑\n\n계속할까요?"))) {
+      return;
+    } else if (s.is_draft) {
+      await Bridge.call(SCREEN, "new_session", {});   // 확인을 마쳤으면 실제로 폐기한다
+    }
+    window.Nav.go(target, { force: true });
   }
 
   /* 현 에디터 스냅샷 재당김·재렌더(#138 리뷰 F12) — 편집 모드로 복귀할 때 1단계 피커가
@@ -785,5 +896,5 @@
     if (window.pywebview && window.Bridge) Bridge.initial(SCREEN).then(render);
   }
 
-  window.EditorScreen = { init, rerender };
+  window.EditorScreen = { init, rerender, leaveTo };
 })();

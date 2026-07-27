@@ -56,10 +56,29 @@
      읽는다(다른 화면에서 접은 상태가 stale 로 남지 않게). */
   const REFRESH_ON_NAV = ["library", "tpl", "job", "draft"];
 
-  /* 화면 전환 — 탭 클릭과 라이브러리 상세의 프로그램적 이동이 공유하는 단일 경로. */
-  function go(id) {
+  /* 화면 전환 — 탭 클릭과 라이브러리 상세의 프로그램적 이동이 공유하는 단일 경로.
+
+     편집기(재작성 F7)는 **몰입 표면**이라 두 가지가 다르다: ①상단 2탭을 덮는다(셸 표지를
+     body 클래스로 내려 CSS 가 감춘다 — 편집 중에 화면 전환구가 살아 있으면 처분 미확정
+     이탈구가 다시 생긴다) ②나가는 이동은 편집기의 이탈 가드를 **먼저** 지난다. 가드는
+     비동기(3택 모달)라 여기서 위임하고 처분이 끝나면 `force` 로 되돌아온다 — go() 를
+     비동기로 바꾸면 반환값을 무시하는 기존 호출부 전부가 조용히 순서를 잃는다. */
+  function go(id, opts) {
+    const leaving = document.getElementById("scr-editor");
+    if (id !== "editor" && leaving && leaving.classList.contains("on")
+        && !(opts && opts.force) && window.EditorScreen && window.EditorScreen.leaveTo) {
+      window.EditorScreen.leaveTo(id);
+      return;
+    }
+    // 펼침 면 회수(F7) — 실 DOM 을 오버레이로 옮겨 띄우는 면이라, 열린 채 화면이 바뀌면
+    // 남의 화면 위에 이 화면의 DOM 이 떠 있는다. 전환 자체가 소유하므로 화면이 늘어도
+    // 같은 회수가 걸린다(종전엔 「편집 모드 진입」이 그 자리에서 닫아 줬다).
+    if (window.SurfaceSheet && window.SurfaceSheet.closeAllAndRestore) {
+      window.SurfaceSheet.closeAllAndRestore();
+    }
     navs.forEach((x) => x.setAttribute("aria-current", x.dataset.scr === id ? "true" : "false"));
     scrs.forEach((s) => s.classList.toggle("on", s.id === "scr-" + id));
+    document.body.classList.toggle("editor-open", id === "editor");
     if (!routingReady) return;  // pywebviewready 전에는 DOM 기본 랜딩만 정하고 브리지 호출은 미룬다.
     // pywebview 미준비(브라우저 단독 미리보기·부팅 직전)면 새로고칠 백엔드 자체가 없다.
     if (REFRESH_ON_NAV.includes(id) && window.pywebview && window.Bridge) {

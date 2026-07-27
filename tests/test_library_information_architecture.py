@@ -142,7 +142,7 @@ def test_primary_action_target_comes_from_python_not_the_surface() -> None:
         assert derived not in body, f"표면이 목적지를 조립합니다: {derived}"
     # 세 목적지 전부 실제 착지처가 있다 — 빈 화면으로 보내지 않는다.
     assert 'Nav.go("draft")' in body and "DraftScreen.openWork" in body
-    assert "editJob(name)" in body          # 미연결·미상 방식 → 고칠 수 있는 곳
+    assert "editJob(name," in body          # 미연결·미상 방식 → 고칠 수 있는 곳(문맥 동반, F7)
     assert "prefer_work" in body            # hwpx 연결분만 「문서 만들기」로
     # 취소면 화면을 바꾸지 않는다(§9.3 전이 순서 면).
     assert "if (!(await window.DraftScreen.openWork(name))) return;" in body

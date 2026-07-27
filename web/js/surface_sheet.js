@@ -69,8 +69,18 @@
   }
   function isOpen(id) { return !!active[id]; }
 
+  /* 화면을 떠날 때의 일괄 회수(재작성 F7) — 펼침 면은 **실 DOM 을 오버레이 슬롯으로
+     옮겨** 띄우므로, 열린 채 화면이 바뀌면 남의 화면 위에 이 화면의 DOM 이 그대로 떠
+     있는다. 종전에는 「편집 모드 진입」이 그 자리에서 닫아 줬는데(결정 39) 편집기가 자기
+     화면으로 나가며 그 훅이 사라졌다 — 소유를 화면 전환으로 올려 어느 화면이 늘어도
+     같은 회수가 걸리게 한다(가드의 완전성이 표면 수에 비례하지 않게). */
+  function closeAllAndRestore() {
+    Object.keys(active).forEach(closeAndRestore);
+  }
+
   window.SurfaceSheet = {
     open: open, close: close, closeAndRestore: closeAndRestore,
+    closeAllAndRestore: closeAllAndRestore,
     isOpen: isOpen, restore: restore, trigger: trigger,
   };
 })();
