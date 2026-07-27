@@ -440,3 +440,38 @@ def test_detail_is_none_when_nothing_is_selected(tmp_path):
     assert ctrl.snapshot()["detail"] is not None
     ctrl.dispatch("select_work", {"name": ""})          # 선택 해제
     assert ctrl.snapshot()["detail"] is None
+
+
+def test_group_names_are_registry_wide_not_a_projection(tmp_path):
+    """리뷰 1R P2 — 이동 도착지 후보는 보기·필터와 **무관**하게 전역이다.
+
+    평면 보기나 켜진 필터가 구획에서 그룹을 없애도 도착지는 그대로여야 한다 — 아니면
+    실재하는 그룹으로 옮길 길이 화면 상태에 따라 사라진다.
+    """
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.save(Job(name="가", template_path="", group="조달"))
+    reg.save(Job(name="나", template_path="", group="계약"))
+    reg.save(Job(name="다", template_path=""))
+    ctrl = LibraryController(reg, _text_reg(tmp_path), lambda s, snap: None,
+                          pool_registry=_pool(tmp_path))
+    assert ctrl.snapshot()["group_names"] == ["계약", "조달"]
+    # 평면 보기 + 아무것도 안 맞는 검색 → 구획은 비지만 도착지는 불변.
+    ctrl.dispatch("set_view", {"view": "favorites"})
+    ctrl.dispatch("set_query", {"text": "없는이름"})
+    snap = ctrl.snapshot()
+    assert _rows(snap) == {} and snap["group_names"] == ["계약", "조달"]
+
+
+def test_detail_survives_being_filtered_out_of_the_list(tmp_path):
+    """리뷰 1R P1 의 백엔드 전제 — 상세는 걸러지지 않은 rows() 에서 성형된다.
+
+    선택 행이 검색·facet 밖으로 밀려나도 상세(그리고 그 안의 tags·group)는 그대로 산다.
+    표면의 관리 동사가 여기서 정체를 읽어야 하는 근거다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_work", {"name": "공고서"})
+    ctrl.dispatch("set_query", {"text": "낙찰"})       # 선택 행이 목록에서 사라진다
+    snap = ctrl.snapshot()
+    assert "공고서" not in _rows(snap)
+    assert snap["detail"]["name"] == "공고서"
+    assert snap["detail"]["tags"] == {"금액구간": "1억미만"}   # 프리필 원천이 살아 있다

@@ -332,17 +332,26 @@
     return r;
   }
 
-  function findRow(name) {
-    let found = null;
-    ((LAST && LAST.sections) || []).forEach((sec) =>
-      (sec.rows || []).forEach((r) => { if (r.name === name) found = r; }));
-    return found;
+  /* 관리 동사가 읽는 정체 = **상세 스냅샷**(`LAST.detail`)이다(리뷰 1R P1).
+     목록 구획은 보기·검색·facet 이 걸러 낸 **투영**이라 선택한 행이 거기 없을 수 있다 —
+     검색으로 가려진 뒤 「태그…」를 누르면 프리필이 `{}` 가 되고, 그대로 확정하면 실제
+     태그가 통째로 지워진다(그룹 이동도 소속 그룹을 「그룹 없음」으로 조작한다). 상세는
+     걸러지지 않은 `rows()` 에서 성형되므로 선택이 살아 있는 한 언제나 있다.
+     그래도 없으면 **꾸며내지 않고 시끄럽게 멈춘다**(조용한 파괴 금지). */
+  function selectedWork(name) {
+    const d = LAST && LAST.detail;
+    if (d && d.name === name) return d;
+    window.alert(
+      `'${name}' 작업의 현재 상태를 읽지 못해 중단했습니다.\n` +
+      "목록을 새로 고친 뒤 다시 시도하세요.");
+    return null;
   }
 
+  /* 이동 다이얼로그의 도착지 후보는 **레지스트리 전역**(Python `group_names`)이다.
+     화면 구획에서 파생하면 평면 보기나 켜진 필터가 목록에서 뺀 그룹이 도착지에서도
+     사라져 있는 그룹으로 옮길 수 없다(리뷰 1R P2 — job·draft 화면과 같은 규약). */
   function allGroups() {
-    const seen = new Set();
-    ((LAST && LAST.sections) || []).forEach((sec) => { if (sec.value) seen.add(sec.value); });
-    return Array.from(seen).sort();
+    return (LAST && LAST.group_names) || [];
   }
 
   async function renameJob(name, returnFocus) {
@@ -358,10 +367,11 @@
   }
 
   function moveJob(name, returnFocus) {
-    const row = findRow(name);
+    const row = selectedWork(name);
+    if (!row) return;
     moveDialog.open({
       groups: allGroups(),
-      current: (row && row.group) || "",
+      current: row.group || "",
       nameText: `'${name}' 을(를) 옮길 그룹`,
       returnFocus,
       onConfirm: (group) => {
@@ -406,8 +416,9 @@
   /* 태그 편집(#26 #2·D14) — 현재 태그를 '축=값' 쌍으로 재진술·프리필하고 통째 교체 저장.
      비우면 전체 해제(사용자가 명시적으로 지운 것 — 추측 아님). 형식 오류는 loud. */
   async function editTags(name, returnFocus) {
-    const row = findRow(name);
-    const cur = (row && row.tags) || {};
+    const row = selectedWork(name);
+    if (!row) return;
+    const cur = row.tags || {};
     const ser = Object.entries(cur).map(([k, v]) => `${k}=${v}`).join(", ");
     // 왕복 가드(C9): 직렬화 직후 재파싱해 원본과 대조 — 값에 쉼표, 축에 쉼표/등호가 있으면
     // 이 인라인 프롬프트는 태그를 조용히 쪼개 재작성하거나 형식 오류로 막는다. 왕복 불가면

@@ -213,6 +213,10 @@ class LibraryController:
             "counts": self.vm.library_counts(),
             "facets": self._facets(),
             "sections": self._sections(),
+            # 그룹 이동 다이얼로그의 도착지 후보 — **레지스트리 전역**이다(리뷰 1R P2).
+            # 구획(`sections`)에서 파생하면 평면 보기(최근·즐겨찾기·확인 필요)나 켜진
+            # 필터가 목록에서 뺀 그룹이 도착지에서도 사라진다: 있는 그룹으로 못 옮긴다.
+            "group_names": self._job_registry.groups(),
             "selected": self.selected_work,
             "detail": self._detail(),
             # 손상 작업 — 숨기지 않고 시끄러운 위험 카드로(RC-05) + 조치 경로(#26 #8).

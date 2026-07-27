@@ -86,3 +86,37 @@ def test_empty_job_list_has_a_direct_new_job_cta_without_a_new_surface() -> None
     assert 'class="empty"' not in empty
     assert '$("jobEmptyNewBtn").addEventListener("click", startNewJob)' in JOB
     assert "EditorEntry.newDraft()" in JOB
+
+
+def test_management_verbs_read_identity_from_the_unfiltered_detail() -> None:
+    """리뷰 1R P1 — 관리 동사는 **상세 스냅샷**에서 정체를 읽는다.
+
+    목록 구획(`sections`)은 보기·검색·facet 이 걸러 낸 투영이라 선택 행이 거기 없을 수 있다.
+    거기서 읽으면 태그 프리필이 `{}` 로, 소속 그룹이 `""` 로 조작돼 사용자가 「확인」 한 번에
+    실제 태그를 통째로 지우고 그룹을 벗겨 낸다 — 조용한 파괴다. 상세는 걸러지지 않은
+    `rows()` 에서 성형되므로 선택이 살아 있는 한 언제나 있고, 없으면 꾸며내지 않고 멈춘다.
+    """
+    assert "function selectedWork" in LIB
+    src = LIB[LIB.index("function selectedWork"):LIB.index("function allGroups")]
+    assert "LAST.detail" in src, "선택 정체를 상세 스냅샷에서 읽지 않습니다(P1)."
+    assert "window.alert" in src and "return null" in src, (
+        "정체를 못 읽었을 때 조용히 진행합니다 — 빈 메타 조작으로 이어집니다(confirm-or-alarm)."
+    )
+    for fn, nxt in (("async function editTags", "function relinkTemplate"),
+                    ("function moveJob", "async function toggleFavorite")):
+        body = LIB[LIB.index(fn):LIB.index(nxt)]
+        assert "selectedWork(name)" in body, f"{fn} 가 상세에서 정체를 읽지 않습니다(P1)."
+        assert "if (!row) return" in body, f"{fn} 가 정체 부재를 통과시킵니다(P1)."
+    # 걸러진 구획에서 정체를 긁던 옛 헬퍼가 되살아나면 같은 결함이 재발한다.
+    assert "function findRow" not in LIB
+
+
+def test_move_dialog_targets_come_from_the_registry_wide_group_list() -> None:
+    """리뷰 1R P2 — 도착지 후보는 화면 구획이 아니라 레지스트리 전역 목록이다.
+
+    평면 보기(최근·즐겨찾기·확인 필요)나 켜진 필터는 구획에서 그룹을 없앤다 — 거기서
+    파생하면 실재하는 그룹으로 옮길 길이 사라진다(job·draft 화면은 완전한 목록을 받는다).
+    """
+    src = LIB[LIB.index("function allGroups"):LIB.index("async function renameJob")]
+    assert "LAST.group_names" in src, "도착지 후보가 레지스트리 전역 목록이 아닙니다(P2)."
+    assert "LAST.sections" not in src, "도착지 후보를 걸러진 구획에서 파생합니다(P2)."
