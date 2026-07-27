@@ -26,6 +26,7 @@
   let MODE = "run";
 
   const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
+  const ZONE_CHAIN = "job:zone";  // 데이터 존 + 범위 초안 출구의 공통 발신 체인
 
   /* ---- 데이터 존(필터 테이블·열 패널·칩·스트립) = 공용 팩토리(datazone.js, PR-2a 추출) ----
      표면 계약·리뷰 결정 주석은 팩토리가 소유한다 — 여기는 화면 고유값만 주입한다:
@@ -41,6 +42,10 @@
       tableHead: "jobTableHead", tableBody: "jobTableBody", colPanel: "jobColPanel",
       selAll: "jobSelAll", selNone: "jobSelNone",
     },
+    // 존 발신 직렬화 키(리뷰 2R) — 이 존의 13액션과 범위 초안의 적용·취소가 **한 체인**을
+    // 쓴다. 같은 범위 상태 하나를 바꾸는 발신들이라 도착 순서가 뒤바뀌면 취소한 편집이
+    // 커밋된 범위에 착지한다.
+    chainKey: ZONE_CHAIN,
     rowIdPrefix: "jobRow-",  // preserve.js 가 id 로 포커스 복원 — 접두 변경은 보존 계약 파손
     lead: {
       header: "문서",
@@ -652,7 +657,11 @@
      닫혔는데 Python 초안만 살아남는다(고아). 실패하면 면을 유지하고 사유를 남긴다. */
   async function discardAndClose() {
     try {
-      await Bridge.call(SCREEN, "range_draft_cancel", {});
+      // 대기 중 편집은 **보내지 않는다**(리뷰 2R P1) — 초안이 사라진 뒤 도착하면 사용자가
+      // 버린 검색어가 커밋된 필터에 착지한다. 이미 나간 발신은 같은 체인이 순서를 지킨다.
+      dz.dropPendingEdits();
+      await window.Intent.chained(ZONE_CHAIN, () =>
+        Bridge.call(SCREEN, "range_draft_cancel", {}));
     } catch (err) {
       log("범위 편집을 취소하지 못했습니다: " + String((err && err.message) || err));
       return;
@@ -663,7 +672,10 @@
 
   async function applyRangeDraft() {
     try {
-      await Bridge.call(SCREEN, "range_draft_apply", {});
+      // 디바운스 창 안에서 눌러도 방금 친 조건이 사라지지 않게 먼저 정산한다.
+      await dz.flushPendingEdits();
+      await window.Intent.chained(ZONE_CHAIN, () =>
+        Bridge.call(SCREEN, "range_draft_apply", {}));
     } catch (err) {
       // 실패(세대 불일치 등)에서는 **닫지 않는다**(§10.11.2 실패 경로 면) — 문맥을 남긴다.
       log("범위를 적용하지 못했습니다: " + String((err && err.message) || err));
@@ -679,6 +691,13 @@
     // 성사 뒤에만 연다(§9.3 4행): 초안 생성이 거절되면(생성 중·데이터 없음) 면을 띄우지
     // 않는다 — 열어 놓고 나서 실패를 말하면 편집기가 무엇을 편집 중인지 거짓이 된다.
     Bridge.call(SCREEN, "range_draft_open", {}).then(() => {
+      // 왕복 중 다른 탭으로 떠났거나 편집 모드로 넘어갔으면 **열지 않는다**(리뷰 2R P2):
+      // 전역 면이라 새 화면 위에 남의 화면 DOM 을 얹고 뜬다. 초안은 여기서 거둔다 —
+      // 안 그러면 아무 표면도 없는 초안이 남아 생성이 조용히 잠긴 채로 있는다.
+      if (!$("scr-job").classList.contains("on") || MODE !== "run") {
+        Bridge.call(SCREEN, "range_draft_cancel", {});
+        return;
+      }
       rangeApplied = false;
       rangeForceClose = false;
       $("dataSheetTitle").textContent = "처리할 행 범위";

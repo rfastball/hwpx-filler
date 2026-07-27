@@ -1179,10 +1179,16 @@ _JOB_MIRROR_PROBE_JS = r"""
     // true→false→true가 되고, native checkbox·aria-selected·행 tint가 같은 프레임에 맞는다(#217 R2).
     var realCall = window.Bridge.call;
     var toggleValues = [];
+    window.__jobToggleValues = toggleValues;   // 큐에서 풀리는 둘째 발신까지 담긴다(아래 참조)
     window.Bridge.call = function (screen, action, payload) {
       if (action === 'toggle_record') {
         toggleValues.push(payload.value);
-        return new Promise(function () {});
+        // **해소되는** 스텁이다(리뷰 2R): 존 변이는 한 체인에 직렬화되므로 영원히 미결인
+        // 첫 발신은 둘째를 영영 막는다. 이 프로브가 재는 것은 "push 가 오기 전 재클릭이
+        // 화면의 현재 상태를 쓰는가"이지 promise 가 매달리는가가 아니다 — push 는 여전히
+        // 안 온다(스텁이 스냅샷을 밀지 않는다). 둘째 값은 마이크로태스크 뒤에 실리므로
+        // 드라이브가 **별도 evaluate** 로 되읽는다.
+        return Promise.resolve({});
       }
       if (action === 'filter_panel') return new Promise(function () {});
       return realCall.call(window.Bridge, screen, action, payload);
@@ -1193,7 +1199,7 @@ _JOB_MIRROR_PROBE_JS = r"""
     renderedRow.click();
     out.row_optimistic_on = renderedRow.classList.contains('on') &&
       renderedRow.getAttribute('aria-selected') === 'true' && renderedRow.querySelector('input').checked;
-    out.row_toggle_values = toggleValues.slice();
+    out.row_toggle_values = toggleValues.slice();   // 즉시분(첫 발신) — 최종 확인은 별도 되읽기
     // filter_panel 응답은 영원히 미결이어도 클릭 프레임에 제목+로딩 껍데기가 먼저 선다(#217 R4).
     document.querySelector('#jobTableHead .fico').click();
     var loadingPanel = document.getElementById('jobColPanel');
@@ -2975,6 +2981,10 @@ def _selftest_drive(window: "object") -> None:
         result["job_inherited"] = window.evaluate_js(  # type: ignore[attr-defined]
             _JOB_INHERITED_AFFORDANCE_PROBE_JS)
         result["job_mirror"] = window.evaluate_js(_JOB_MIRROR_PROBE_JS)  # type: ignore[attr-defined]
+        # 존 변이는 한 체인이라 둘째 토글 발신은 마이크로태스크 뒤다 — 같은 스크립트 안에서
+        # 읽으면 아직 없다. 별도 evaluate(=새 JS 턴)로 되읽어 의도열 전체를 확인한다.
+        result["job_mirror"]["row_toggle_values"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "window.__jobToggleValues")
         # 결과 3태 구획(F4) — 거울 프로브 뒤(같은 화면·같은 스냅샷 문맥)에서 돈다.
         result["job_result"] = window.evaluate_js(_JOB_RESULT_PROBE_JS)  # type: ignore[attr-defined]
         result["job_result"].update(_probe_late(

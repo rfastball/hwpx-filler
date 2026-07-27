@@ -887,8 +887,31 @@ def test_job_range_draft_surface_contract():
     # 취소도 **성사 뒤에 닫는다**(리뷰 1R): 먼저 닫으면 느린 브리지에서 메인이 초안 기준
     # 행을 그리고, 발신이 거절되면 Python 초안만 고아로 남는다.
     discard = src.split("async function discardAndClose", 1)[1].split("\n  }", 1)[0]
-    assert discard.index("await Bridge.call") < discard.index("SurfaceSheet.close"), (
+    assert discard.index("await window.Intent.chained") < discard.index("SurfaceSheet.close"), (
         "취소가 폐기 성사 전에 면을 닫습니다."
+    )
+    # 디바운스 안에서 누른 취소는 대기 중 편집을 **보내지 않는다**(리뷰 2R P1) — 초안이
+    # 사라진 뒤 도착하면 버린 검색어가 커밋된 필터에 착지한다. 적용 쪽은 반대로 정산한다.
+    assert discard.index("dropPendingEdits") < discard.index("range_draft_cancel"), (
+        "취소가 대기 중 편집을 폐기하지 않습니다."
+    )
+    apply_fn = src.split("async function applyRangeDraft", 1)[1].split("\n  }", 1)[0]
+    assert apply_fn.index("flushPendingEdits") < apply_fn.index("range_draft_apply"), (
+        "적용이 대기 중 편집을 정산하지 않습니다(방금 친 조건이 사라집니다)."
+    )
+    # 존 발신과 초안 출구가 **한 체인**을 쓴다 — 도착 순서가 뒤바뀌면 취소한 편집이 커밋된다.
+    assert 'chainKey: ZONE_CHAIN' in src and 'ZONE_CHAIN = "job:zone"' in src
+    zone = (WEB_JS_DIR / "datazone.js").read_text(encoding="utf-8")
+    assert "window.Intent.chained(cfg.chainKey, send)" in zone, "존 발신이 체인을 타지 않습니다."
+    # 무변이 질의는 체인 밖 — 응답이 늦는 질의 하나가 이후 모든 변이를 막지 않게.
+    assert "ZONE_QUERIES" in zone and '"filter_panel"' in zone
+    assert "Bridge.call(SCREEN" not in zone.split("function call(", 1)[1].split("}", 1)[1], (
+        "존 발신 중 통로를 우회하는 호출이 남아 있습니다."
+    )
+    # 열기 왕복 중 화면 이탈 — 전역 면이 남의 화면 위에 뜨지 않게 열지 않고 초안을 거둔다.
+    open_fn = src.split("function openJobDataSheet", 1)[1].split("\n  }", 1)[0]
+    assert 'classList.contains("on")' in open_fn and 'MODE !== "run"' in open_fn, (
+        "열기 왕복 중 화면 이탈을 확인하지 않습니다."
     )
     # 결과 강등 판정은 표의 선택 표지가 아니라 Python 이 낸 커밋 지문을 쓴다(리뷰 1R P1).
     key = src.split("function sessionKey", 1)[1].split("\n  }", 1)[0]
