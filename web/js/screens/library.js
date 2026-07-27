@@ -108,6 +108,23 @@
     }
   }
 
+  /* 축 변이는 **한 체인**으로 직렬화한다(리뷰 4R — 「작업」 화면 탐색의 `Intent.chained`
+     선례). pywebview 는 호출마다 별도 스레드라 동시 발신의 도착 순서가 보장되지 않는다:
+     디바운스된 검색이 도는 중에 다른 축을 만지면 **늦게 도착한 옛 응답이 새 결과를
+     되돌려** 목록은 옛 검색어로 걸러진 채 입력창만 새 글자를 유지한다. 체인 하나면 클릭·
+     타이핑 순서가 곧 반영 순서다.
+
+     타이머를 **취소하지 않고** 그대로 두는 것이 의도적이다: 사용자가 친 글자는 그의 의사라
+     다른 축을 눌렀다고 버리지 않는다 — 체인이 순서를 지키므로 나중에 도착해도 옳다.
+     예외는 「필터 지우고 전체 보기」뿐이다(아래) — 그건 대기 중인 검색까지 걷겠다는 의사다. */
+  function axis(action, payload) {
+    return Intent.chained(SCREEN, () => Bridge.call(SCREEN, action, payload || {}));
+  }
+
+  function cancelPendingSearch() {
+    if (searchTimer) { clearTimeout(searchTimer); searchTimer = null; }
+  }
+
   /* ---- 축: 보기 탭 · 작업 방식 칩 · 태그 facet · 검색 ---- */
   /* 탭 건수는 **검색 전** 사실이다(링1 계약) — 검색어에 따라 흔들리면 "여기 몇 건인가"를 잃는다.
      라벨은 DOM 정본에서 읽고 건수만 덧댄다(재렌더마다 라벨이 누적되지 않게 접미를 걷는다). */
@@ -613,16 +630,17 @@
     const gh = e.target.closest("[data-group]");
     if (gh) {
       // 접힘은 보기 상태라 클릭한 프레임에 먼저 반영하고 영속 요청은 뒤에서 보낸다(공용 규율).
-      GroupList.toggleGroup(gh, () =>
-        Bridge.call(SCREEN, "toggle_group", { group: gh.dataset.group }));
+      GroupList.toggleGroup(gh, () => axis("toggle_group", { group: gh.dataset.group }));
       return;
     }
     const row = e.target.closest("[data-work]");
-    if (row) { Bridge.call(SCREEN, "select_work", { name: row.dataset.work }); return; }
+    if (row) { axis("select_work", { name: row.dataset.work }); return; }
     const nw = e.target.closest("[data-new-work]");
     if (nw) { newWork(); return; }
     const cf = e.target.closest("[data-clear-filters]");
-    if (cf) { Bridge.call(SCREEN, "clear_filters", {}); }
+    // 「지우고 전체 보기」는 **대기 중인 검색까지** 걷겠다는 의사다 — 안 취소하면 방금 지운
+    // 필터 위로 타이머가 옛 검색어를 다시 얹는다(리뷰 4R).
+    if (cf) { cancelPendingSearch(); axis("clear_filters", {}); }
   }
 
   function onDetailClick(e) {
@@ -639,15 +657,15 @@
 
   function onToolbarClick(e) {
     const view = e.target.closest("[data-library-view]");
-    if (view) { Bridge.call(SCREEN, "set_view", { view: view.dataset.libraryView }); return; }
+    if (view) { axis("set_view", { view: view.dataset.libraryView }); return; }
     const mode = e.target.closest("[data-library-mode]");
-    if (mode) { Bridge.call(SCREEN, "set_mode", { mode: mode.dataset.libraryMode }); return; }
+    if (mode) { axis("set_mode", { mode: mode.dataset.libraryMode }); return; }
     const chip = e.target.closest("[data-axis]");
     if (chip && !chip.disabled) {
-      Bridge.call(SCREEN, "toggle_facet", { axis: chip.dataset.axis, value: chip.dataset.val });
+      axis("toggle_facet", { axis: chip.dataset.axis, value: chip.dataset.val });
       return;
     }
-    if (e.target.id === "libraryClearFacets") Bridge.call(SCREEN, "clear_facets", {});
+    if (e.target.id === "libraryClearFacets") axis("clear_facets", {});
   }
 
   /* 보기 탭 좌우 이동(role=tablist 키보드 계약) — 탭은 primary classification 이라 화살표로
@@ -660,7 +678,7 @@
     e.preventDefault();
     const next = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
     next.focus();
-    Bridge.call(SCREEN, "set_view", { view: next.dataset.libraryView });
+    axis("set_view", { view: next.dataset.libraryView });
   }
 
   function wire() {
@@ -686,7 +704,7 @@
       const text = e.target.value;
       searchTimer = setTimeout(() => {
         searchTimer = null;
-        Bridge.call(SCREEN, "set_query", { text });
+        axis("set_query", { text });
       }, 180);
     });
   }

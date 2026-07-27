@@ -202,3 +202,48 @@ def test_favorite_intent_is_serialized_through_the_shared_mechanism() -> None:
     assert "data-next" not in LIB, "다음 값을 DOM 에서 읽습니다 — 미결 의도가 아닙니다(3R)."
     handler = LIB[LIB.index("function onListClick"):LIB.index("function onDetailClick")]
     assert 'favorite.toggle(fav.dataset.fav, fav.getAttribute("aria-pressed") === "true")' in handler
+
+
+def test_library_axis_mutations_share_one_chain() -> None:
+    """리뷰 4R — 축 변이(보기·방식·검색·facet·접힘·선택)는 **한 체인**으로 직렬화한다.
+
+    pywebview 는 호출마다 별도 스레드라 동시 발신의 도착 순서가 보장되지 않는다: 디바운스된
+    검색이 도는 중 다른 축을 만지면 늦게 도착한 옛 응답이 새 결과를 되돌려, 목록은 옛
+    검색어로 걸러진 채 입력창만 새 글자를 유지한다(「작업」 화면 탐색이 이미 밟은 결함류).
+    """
+    assert "function axis(action, payload)" in LIB
+    axis_fn = LIB[LIB.index("function axis(action, payload)"):LIB.index("function cancelPendingSearch")]
+    assert "Intent.chained(SCREEN" in axis_fn, "축 변이가 체인을 타지 않습니다(4R)."
+    for action in ("set_view", "set_mode", "set_query", "toggle_facet", "clear_facets",
+                   "clear_filters", "toggle_group", "select_work"):
+        assert f'axis("{action}"' in LIB, f"{action} 이 축 체인을 타지 않습니다(4R)."
+        assert f'Bridge.call(SCREEN, "{action}"' not in LIB, (
+            f"{action} 이 체인을 우회해 직접 발신합니다(4R)."
+        )
+
+
+def test_clearing_filters_cancels_the_pending_search() -> None:
+    """리뷰 4R — 「필터 지우고 전체 보기」는 **대기 중인 검색까지** 걷겠다는 의사다.
+
+    타이머를 안 취소하면 방금 지운 필터 위로 옛 검색어가 다시 얹힌다. 반대로 다른 축을
+    누를 때는 취소하지 않는다 — 사용자가 친 글자는 그의 의사이고 체인이 순서를 지킨다.
+    """
+    assert "function cancelPendingSearch" in LIB
+    handler = LIB[LIB.index("const cf = e.target.closest"):LIB.index("function onDetailClick")]
+    assert "cancelPendingSearch();" in handler, "지우기가 대기 검색을 취소하지 않습니다(4R)."
+    # 다른 축 경로에는 취소가 없어야 한다(친 글자를 말없이 버리지 않는다).
+    assert LIB.count("cancelPendingSearch()") == 2  # 정의부 1 + 지우기 1
+
+
+def test_pending_favorite_intent_is_shared_across_screens() -> None:
+    """리뷰 4R — 미결 의도는 모듈 스코프여야 "공용 몸통"이 이름뿐이 아니게 된다.
+
+    표면마다 사본을 두면, 라이브러리에서 별을 켠 직후 「작업」 화면의 아직 갱신 안 된 빈 별을
+    눌렀을 때 두 인스턴스가 똑같이 `true` 를 계산해 같은 쓰기가 두 번 나가고 두 번째 토글이
+    사라진다(멱등 재지정이 "껐다"를 삼키는 그 창).
+    """
+    intent = (ROOT / "web" / "js" / "intent.js").read_text(encoding="utf-8")
+    factory = intent[intent.index("function createFavorite"):intent.index("window.Intent =")]
+    assert "new Map()" not in factory, "팩토리가 호출마다 사본을 만듭니다(4R)."
+    module = intent[:intent.index("function createFavorite")]
+    assert "const FAV_PENDING = new Map();" in module and "const FAV_LAST = new Map();" in module

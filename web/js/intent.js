@@ -23,6 +23,14 @@
     return tail;
   }
 
+  /* 미결 의도는 **모듈 스코프**다 — 표면마다 사본을 두면 "공용 몸통"이 이름뿐이 된다
+     (리뷰 4R). 라이브러리에서 별을 켠 직후 「작업」 화면으로 넘어가 아직 갱신 안 된 빈 별을
+     누르면, 사본이 갈린 경우 두 인스턴스가 똑같이 `true` 를 계산해 같은 쓰기가 두 번 나가고
+     **두 번째 토글이 사라진다**. 키가 작업 이름이라 공유가 곧 옳은 의미다 — 쓰기 체인이
+     이미 전역 하나인 것과 같은 이유다(즐겨찾기 시각은 작업들 사이의 순위). */
+  const FAV_PENDING = new Map();  // 작업 이름 → 왕복 중인(또는 대기 중인) 의도 상태
+  const FAV_LAST = new Map();     // 작업 이름 → 그 작업이 마지막으로 큐에 든 링(정리 식별)
+
   /* 즐겨찾기 전이 몸통 — 낙관 표지 없이 Python 왕복 결과(push)로만 표시가 바뀐다. 별이 먼저
      켜졌다가 저장 실패로 되돌아가면 영속된 척하는 거짓 표지다(#215 동류).
 
@@ -33,22 +41,19 @@
 
      **쓰기 직렬화**: 의도를 옳게 계산해도 왕복을 동시에 띄우면 안 된다 — 나중 클릭의 쓰기가
      먼저 레지스트리 잠금을 잡으면 **마지막 클릭과 반대 상태가 영속된다**. 체인은 작업별이
-     아니라 **전역 하나**다: 즐겨찾기 시각은 작업들 사이의 **순위**라 서로 다른 작업 둘을
-     연속으로 별 찍을 때도 클릭 순서가 곧 쓰기 순서여야 한다(시각은 Python 이 잠금 안에서 찍는다).
+     아니라 **전역 하나**다: 서로 다른 작업 둘을 연속으로 별 찍을 때도 클릭 순서가 곧 쓰기
+     순서여야 한다(시각은 Python 이 잠금 안에서 찍는다).
 
-     `cfg` = {send(name, value) → Promise, onError(message)}. 소비 표면은 브리지 화면 키와
+     `cfg` = {send(name, value) → Promise, onError(message)}. 소비 표면은 브리지 왕복과
      오류 표면(로그/alert)만 주입한다 — 그 둘이 표면마다 정당하게 다른 전부다. */
   function createFavorite(cfg) {
-    const PENDING = new Map();  // 작업 이름 → 왕복 중인(또는 대기 중인) 의도 상태
-    const LAST = new Map();     // 작업 이름 → 그 작업이 마지막으로 큐에 든 링(정리 식별)
-
     function pending(name, domPressed) {
-      return PENDING.has(name) ? PENDING.get(name) : domPressed;
+      return FAV_PENDING.has(name) ? FAV_PENDING.get(name) : domPressed;
     }
 
     function toggle(name, domPressed) {
       const value = !pending(name, domPressed);
-      PENDING.set(name, value);
+      FAV_PENDING.set(name, value);
       const send = () => Promise.resolve(cfg.send(name, value)).catch((err) => {
         cfg.onError("즐겨찾기 변경 실패: " + String((err && err.message) || err));
       });
@@ -57,12 +62,12 @@
       // 있을 때 첫 왕복 완료가 최신 의도를 지운다. 그러면 뒤 클릭이 (스냅샷이 아직 없는) 낡은
       // DOM 을 읽어 의도가 어긋난다. 이 링이 마지막으로 큐에 든 것일 때만 걷는다.
       const tail = chained("favorite", send).then(() => {
-        if (PENDING.get(name) === value && LAST.get(name) === tail) {
-          PENDING.delete(name);
-          LAST.delete(name);
+        if (FAV_PENDING.get(name) === value && FAV_LAST.get(name) === tail) {
+          FAV_PENDING.delete(name);
+          FAV_LAST.delete(name);
         }
       });
-      LAST.set(name, tail);  // 작업별 "마지막으로 큐에 든 링" — 정리 식별
+      FAV_LAST.set(name, tail);  // 작업별 "마지막으로 큐에 든 링" — 정리 식별
       return tail;
     }
 
