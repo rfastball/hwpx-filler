@@ -75,6 +75,7 @@ from ..gui.work_candidates import (
     rank_available,
     suggested_work,
 )
+from .action_registry import ZONE_MUTATIONS
 from .job_list import drift_note
 from .settings import load_job_collapsed_groups, save_job_collapsed_groups
 from .data_zone import (
@@ -186,6 +187,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 레코드 집합 위에서 열렸는지의 표식이다(적용 시점 정합 판정).
         self.range_draft: "RecordRangeDraft | None" = None
         self._snapshot_gen = 0
+        # 존 변이의 **대상 세계 세대**(리뷰 4R) — 초안이 열리거나 닫히거나(적용·취소) 데이터가
+        # 갈릴 때 오른다. 웹은 발신 시점에 보고 있던 세대를 실어 보내고, 세대가 다른 변이는
+        # **남의 세계의 편집**이라 적용하지 않는다: 느린 출구 뒤에 줄 선 편집이 초안이 사라진
+        # 커밋 범위에 착지하던 창을 원천에서 닫는다(경계의 시간 축, 지도 §10.11.9).
+        self.zone_epoch = 0
         # 전체 표시순서(§18.10 ``recordRange.viewOrder``, 재작성 F3 — 지도 §10.11).
         # **데이터 귀속** 상태다: 새 스냅샷은 기본값으로 돌아간다(불변식 §18.11-13 "새
         # 스냅샷은 최신 행 먼저"). 개인화 설정으로 승격하지 않는다 — 순서가 파일명의
@@ -305,6 +311,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 초안이 살아남는 경로가 생기더라도 적용 시점에 그 사실이 **드러나게** 하는 표식이다.
         self._snapshot_gen += 1
         self.range_draft = None
+        self.zone_epoch += 1
 
     def _do_set_view_order(self, p: dict) -> None:
         """표시순서 전환 — 미지 값은 시끄럽게 거절한다(조용한 기본값 강등 금지).
@@ -345,7 +352,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 snapshot_gen=self._snapshot_gen,
                 base_fingerprint=committed.fingerprint(),
             )
-        return {"ok": True}
+            self.zone_epoch += 1     # 이 순간부터 존 변이의 대상은 초안이다
+        return {"ok": True, "epoch": self.zone_epoch}
 
     def _do_range_draft_apply(self, p: dict) -> dict:
         """적용 = 초안을 커밋으로 원자 교체. 세대가 다르면 **거절하고 면을 닫지 않는다**.
@@ -368,11 +376,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.filter = draft.range.filter
         self.view_order = draft.range.view_order
         self.range_draft = None
+        self.zone_epoch += 1     # 초안 세계는 여기서 끝난다 — 뒤늦은 편집은 남의 것
         return {"ok": True}
 
     def _do_range_draft_cancel(self, p: dict) -> dict:
         """취소 = 초안만 버린다(불변식 §18.11-21) — 메인 범위·실행 증거는 그대로다."""
         self.range_draft = None
+        self.zone_epoch += 1     # 적용과 같다: 버린 세계의 편집이 커밋에 착지하지 않게
         return {"ok": True}
 
     def _do_set_selected_only(self, p: dict) -> None:
@@ -778,6 +788,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 커밋 수치로 남아 게이트 지목 같은 판정이 계속 소비한다: 같은 이름의 값 하나가
             # 두 세계를 겸하면, 초안 체크박스와 footer 는 3건인데 표 머리만 5건인 자리가 난다.
             "zone_selected_count": self._zone_sel().selected_count(),
+            # 존 변이가 되실어 보낼 대상 세계 세대(리뷰 4R) — 웹은 판정하지 않고 나른다.
+            "zone_epoch": self.zone_epoch,
             # **커밋된** 실행 입력의 지문 — 완료 결과의 세션 판정(F4 판정 G 강등)이 소비한다.
             # 표면이 표의 선택 표지로 이 값을 만들면, 표가 초안을 그리는 동안(F3 판정 D)
             # 적용도 안 한 편집이 결과를 강등시키고 취소해도 되돌아오지 않는다(리뷰 1R).
@@ -940,6 +952,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         handler = getattr(self, f"_do_{action}", None)
         if handler is None:  # confirm-or-alarm: 미지 액션은 시끄럽게.
             raise ValueError(f"알 수 없는 작업 화면 액션: {action!r}")
+        if self._is_stale_zone_edit(action, payload):
+            # 조용한 무시가 아니라 **명시 판정**이다: 사용자는 그 세계를 이미 버렸고(취소·
+            # 적용·데이터 교체는 전부 명시 행동), 버린 세계의 편집을 지금 세계에 적용하는
+            # 것이야말로 조용한 파괴다. 상태는 그대로라 push 도 하지 않는다.
+            return {"stale": True, "epoch": self.zone_epoch}
         result = handler(payload)
         # 무변이 경로는 push 를 생략한다(고효율 리뷰 #8) — ① is_query 표식 핸들러(순수
         # 질의: filter_panel·guard_state) ② needs_confirm 반환(가드가 전이를 막아 상태
@@ -949,6 +966,19 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if not is_query and not blocked:
             self._push()
         return result
+
+    def _is_stale_zone_edit(self, action: str, payload: dict) -> bool:
+        """이 존 변이가 **남의 세계**를 겨누고 있는가(리뷰 4R).
+
+        세대를 안 실은 발신은 검사하지 않는다 — 존을 공유하는 「기안」 화면과 초안 개념이
+        없는 호출부는 세대를 모른다(무검사 통과가 그들에게는 정답이다).
+        """
+        if action not in ZONE_MUTATIONS or "epoch" not in payload:
+            return False
+        try:
+            return int(payload["epoch"]) != self.zone_epoch
+        except (TypeError, ValueError):
+            return True   # 해석 불가 = 정체 불명 → 적용하지 않는다(안전 방향)
 
     def _do_refresh(self, p: dict) -> "dict | None":
         """레지스트리 재스캔 반영(C6) + stale 세션 무효화(master-detail 불변식).

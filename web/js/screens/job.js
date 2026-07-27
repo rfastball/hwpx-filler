@@ -27,6 +27,7 @@
 
   const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
   const ZONE_CHAIN = "job:zone";  // 데이터 존 + 범위 초안 출구의 공통 발신 체인
+  let pendingZoneMutations = 0;   // 발신했지만 아직 결과가 안 온 존 변이 수(이탈 가드 소재)
 
   /* ---- 데이터 존(필터 테이블·열 패널·칩·스트립) = 공용 팩토리(datazone.js, PR-2a 추출) ----
      표면 계약·리뷰 결정 주석은 팩토리가 소유한다 — 여기는 화면 고유값만 주입한다:
@@ -46,6 +47,10 @@
     // 쓴다. 같은 범위 상태 하나를 바꾸는 발신들이라 도착 순서가 뒤바뀌면 취소한 편집이
     // 커밋된 범위에 착지한다.
     chainKey: ZONE_CHAIN,
+    // 대상 세계 세대(리뷰 4R) — 웹은 판정하지 않고 **보고 있던 세계**를 나른다.
+    epoch: () => (LAST ? LAST.zone_epoch : undefined),
+    // 아직 푸시가 안 온 편집 수 — 이탈 가드가 `dirty` 만 보면 방금 친 편집을 못 본다.
+    onMutation: (delta) => { pendingZoneMutations += delta; },
     rowIdPrefix: "jobRow-",  // preserve.js 가 id 로 포커스 복원 — 접두 변경은 보존 계약 파손
     lead: {
       header: "문서",
@@ -308,8 +313,20 @@
       // 체인 키는 **상태 단위**이지 위젯 단위가 아니다(리뷰 3R): 축을 따로 세웠더니 취소가
       // 먼저 초안을 지우고 늦은 축 변경이 **커밋된 범위**에 착지했다 — 같은 `recordRange`
       // 를 바꾸는 발신은 전부 한 줄에 선다.
-      await window.Intent.chained(ZONE_CHAIN, () =>
-        Bridge.call(SCREEN, "set_view_order", { value }));
+      pendingZoneMutations += 1;
+      try {
+        await window.Intent.chained(ZONE_CHAIN, () =>
+          Bridge.call(SCREEN, "set_view_order", { value, epoch: LAST && LAST.zone_epoch }));
+      } finally {
+        pendingZoneMutations -= 1;
+      }
+    } catch (err) {
+      // 실패하면 **스냅샷이 안 온다** — 의도만 놓으면 선택기는 거절된 값을 계속 보이고
+      // 표·생성 순서는 옛 값이라 화면이 거짓말한다(리뷰 4R). 값을 되돌리고 시끄럽게 알린다.
+      log("표시순서를 바꾸지 못했습니다: " + String((err && err.message) || err));
+      if (pendingOrder === value) pendingOrder = null;
+      if (LAST) renderOrderBar(LAST);
+      return;
     } finally {
       // 내 왕복이 마지막일 때만 의도를 놓는다 — 뒤에 더 고른 값이 있으면 그 값이 소유자다.
       if (pendingOrder === value) pendingOrder = null;
@@ -642,7 +659,9 @@
     if (rangeForceClose) { rangeForceClose = false; return true; }
     const d = draftState();
     if (!d || !d.open) return true;          // 초안 없는 면 = 평범한 닫기
-    if (!d.dirty) { discardAndClose(); return false; }
+    // `dirty` 는 **푸시가 온 사실**이다(리뷰 4R): 방금 친 편집이 아직 왕복 중이면 false 라,
+    // 그것만 보면 약속한 확인 없이 조용히 버린다. 내가 보낸 편집의 수를 함께 센다.
+    if (!d.dirty && pendingZoneMutations === 0) { discardAndClose(); return false; }
     window.Modal.confirm({
       title: "편집한 범위를 버릴까요?",
       body: "적용하지 않은 변경이 있습니다. 버리면 문서 만들기 화면의 범위는 그대로 남습니다.",

@@ -2682,6 +2682,9 @@ _DRAFT_FACING_SNAPSHOT_KEYS = {
     "restate",              # 선택 유래 재진술(존 소유)
     "range_draft",          # 초안 자신(열림·dirty·수치·보기 상태)
     "zone_selected_count",  # 표 머리 「선택 N/M」 — 표가 그리는 세계의 수치
+    # 경계 **자신의 정체**(리뷰 4R): 어느 세계를 편집 중인지의 세대. 내용이 아니라 좌표라
+    # 여기 든다 — 세계가 갈릴 때 오르는 것이 이 값의 일이다(단조 증가라 취소해도 안 되돌아온다).
+    "zone_epoch",
 }
 
 
@@ -2707,6 +2710,46 @@ def test_draft_touches_exactly_the_keys_the_boundary_table_names(tmp_path):
         f"누락={sorted(_DRAFT_FACING_SNAPSHOT_KEYS - moved)}"
     )
     # 취소하면 전부 제자리 — 초안은 아무것도 커밋에 남기지 않는다(불변식 §18.11-21).
+    # 예외는 세대뿐이다: 단조 증가가 곧 "버린 세계로는 못 돌아간다"는 보장이라 되돌리면 안 된다.
     ctrl.dispatch("range_draft_cancel", {})
     restored = ctrl.snapshot()
-    assert {k for k in before if before[k] != restored.get(k)} == set()
+    assert {k for k in before if before[k] != restored.get(k)} == {"zone_epoch"}
+    assert restored["zone_epoch"] > before["zone_epoch"]
+
+
+def test_zone_edit_from_a_dead_world_is_not_applied(tmp_path):
+    """리뷰 4R P1 — 느린 출구 뒤에 줄 선 편집이 커밋 범위에 착지하지 않는다.
+
+    세대는 웹이 **보고 있던 세계**의 좌표다. 취소·적용·데이터 교체는 전부 명시 행동이라,
+    그 뒤에 도착한 옛 세계의 편집을 지금 세계에 적용하는 쪽이 조용한 파괴다.
+    """
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl.dispatch("range_draft_open", {})
+    stale = ctrl.snapshot()["zone_epoch"]          # 초안 세계의 세대
+    ctrl.dispatch("range_draft_cancel", {})        # 출구 — 세대가 오른다
+    before = ctrl.selection.selected_indices()
+    res = ctrl.dispatch("set_none", {"epoch": stale})
+    assert res == {"stale": True, "epoch": ctrl.zone_epoch}
+    assert ctrl.selection.selected_indices() == before, "죽은 세계의 편집이 커밋에 착지했습니다."
+    # 축도 같은 자격이다 — 버린 세계의 순서가 생성 순서를 정하지 않는다.
+    assert ctrl.dispatch("set_view_order", {"value": "sourceAsc", "epoch": stale})["stale"]
+    assert ctrl.view_order == "sourceDesc"
+    # 지금 세계의 편집은 통과한다(세대 검사가 정상 편집을 막지 않는다).
+    ctrl.dispatch("set_none", {"epoch": ctrl.zone_epoch})
+    assert ctrl.selection.selected_count() == 0
+
+
+def test_zone_epoch_check_skips_callers_that_do_not_know_worlds(tmp_path):
+    """세대를 안 싣는 발신은 무검사 통과 — 존을 공유하는 「기안」 화면의 정답이다."""
+    ctrl, _ = _draft_session(tmp_path)
+    ctrl.dispatch("set_none", {})
+    assert ctrl.selection.selected_count() == 0
+
+
+def test_new_data_invalidates_in_flight_zone_edits(tmp_path):
+    """데이터 교체도 세계를 가른다 — 옛 스냅샷 좌표의 편집이 새 데이터에 착지하지 않는다."""
+    ctrl, _ = _draft_session(tmp_path)
+    stale = ctrl.snapshot()["zone_epoch"]
+    ctrl.load_data_path(_data_csv(tmp_path))
+    assert ctrl.dispatch("toggle_record", {"index": 0, "value": True, "epoch": stale})["stale"]
+    assert ctrl.selection.selected_count() == 0

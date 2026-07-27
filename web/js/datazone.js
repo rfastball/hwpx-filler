@@ -260,11 +260,24 @@
       // 통로는 **요청 시점**에 붙든다: 큐에서 풀릴 때 다시 찾으면 그 사이 바뀐 통로로 나간다
       // (프로브 스텁이 대표 사례 — 요청은 스텁에 걸렸는데 발신은 실물로 새는 자리).
       const dispatch = window.Bridge.call;   // **함수**를 붙든다 — 객체만 붙들면 큐에서 풀릴 때
-      const send = () => dispatch.call(window.Bridge, SCREEN, action, payload);
+      const query = ZONE_QUERIES.indexOf(action) >= 0;
+      // 변이는 **발신 시점에 보고 있던 세계의 세대**를 업고 간다(리뷰 4R). 판정은 Python 이
+      // 한다 — 웹은 자기가 무엇을 보고 있었는지만 정직하게 말한다. 세대를 안 주는 화면
+      // (「기안」)은 필드 없이 나가고 무검사로 통과한다.
+      const epoch = !query && cfg.epoch ? cfg.epoch() : undefined;
+      const body = (epoch === undefined || epoch === null)
+        ? payload : Object.assign({}, payload, { epoch: epoch });
+      const send = () => dispatch.call(window.Bridge, SCREEN, action, body);
       // 질의는 체인 밖이다. 넣으면 응답이 늦는 질의 하나가 **이후 모든 변이**를 막는다 —
       // 순서 보장은 같은 상태를 바꾸는 발신들 사이에서만 뜻이 있다.
-      if (!cfg.chainKey || ZONE_QUERIES.indexOf(action) >= 0) return send();
-      return window.Intent.chained(cfg.chainKey, send);
+      if (!cfg.chainKey || query) return send();
+      // 대기 중 변이 통지(리뷰 4R) — 이탈 가드가 "아직 푸시가 안 온 편집"을 셀 수 있게 한다.
+      if (cfg.onMutation) cfg.onMutation(1);
+      const done = window.Intent.chained(cfg.chainKey, send);
+      if (cfg.onMutation) {
+        done.then(() => cfg.onMutation(-1), () => cfg.onMutation(-1));
+      }
+      return done;
     }
 
     function segsHtml(segs) {
@@ -287,6 +300,9 @@
         // 오발되지 않게: 필터=세션 휘발, 결정 24). (리뷰 #1)
         selAnchor = null; selAnchorState = null; lastTableKey = tkey;
         clearTimeout(searchTimer); clearTimeout(colTextTimer);
+        // 타이머만 끄고 **대기 소재**를 남기면 나중 정산(flushPendingEdits)이 죽은 세션의
+        // 열 조건을 새 세션에 보낸다(리뷰 4R P2) — 소재도 같이 버린다.
+        colTextPending = null;
         closeColPanel();
       }
       const hasData = !!s.has_data;
