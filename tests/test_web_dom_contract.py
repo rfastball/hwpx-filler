@@ -54,10 +54,13 @@ SCREEN_ROOTS = (
 # 화면별 데이터 라벨은 반드시 고유 id 여야 한다(#27 dup-id 회귀 가드).
 SCOPED_DATA_LABELS = ("draftDataLabel", "jobDataLabel")
 
-# 접힘 상태에서 라벨이 사라지는 내비 버튼(회귀 시 접근 이름·툴팁 소실 → #27).
-# run=슬라이스 3·editor=슬라이스 5 사망(흡수); 「기안」이 구 txt·quickdraft 를 흡수·삭제
-# (#148 슬라이스 6, 레일 6→5); 「데이터 관리」는 데이터 선택 다이얼로그로 흡수·사망(F1, 5→4).
+# 상단 토바 탭(회귀 시 화면 소실·접근 이름 소실 → #27). run=슬라이스 3·editor=슬라이스 5
+# 사망(흡수); 「기안」이 구 txt·quickdraft 를 흡수·삭제(#148 슬라이스 6); 「데이터 관리」는
+# 데이터 선택 다이얼로그로 흡수·사망(F1); home 은 「문서 작업」 라이브러리로 사망(F2 PR-A).
+# 좌 레일은 F2 PR-B 에서 상단 2탭으로 교체 — 계약 2탭(job·library) + 과도기 임시 2(draft·tpl).
 NAV_SCREENS = ("library", "job", "draft", "tpl")
+# 구분선 오른쪽 임시 항목 — 승계처가 서면(F6·F8) 죽는다. title 이 제거 예고를 진다(지도 §10.9 판정 B).
+TEMP_NAV_SCREENS = ("draft", "tpl")
 
 # 커스텀 모달 → aria-labelledby 가 가리켜야 할 제목 id(다이얼로그 시맨틱, #27/#28).
 # sheetModal 은 다중 시트 확정 게이트(#33) — 같은 Modal 헬퍼·다이얼로그 계약을 공유한다.
@@ -171,47 +174,74 @@ def test_scoped_data_labels_present_and_unique():
 
 
 def test_nav_buttons_have_accessible_name_and_tooltip():
-    """접힘 상태에서 .n/.d 가 display:none 이 되어도 각 내비 버튼은 접근 이름과 툴팁을 유지해야 한다(#27).
+    """각 탭은 접근 이름(aria-label)과 호버 툴팁(title)을 버튼별로 고정해야 한다(#27).
 
-    접힘 시 라벨 span 이 숨겨지면 aria-label 없는 버튼은 접근 이름이 사라지고 title 없는 버튼은
-    호버 툴팁도 없다 — 둘 다 버튼별로 고정돼 있어야 회귀를 막는다.
+    좁은 창에서 라벨이 줄어들어도 이름이 남아야 하고, 툴팁은 탭이 무슨 화면인지(그리고 임시
+    항목이면 언제 사라지는지) 말하는 유일한 자리다.
     """
     buttons = _collect_nav_buttons()
     missing = [s for s in NAV_SCREENS if s not in buttons]
-    assert not missing, f"내비 버튼이 사라졌습니다(data-scr): {missing}"
+    assert not missing, f"탭이 사라졌습니다(data-scr): {missing}"
     for scr in NAV_SCREENS:
         attrs = buttons[scr]
         assert attrs.get("aria-label", "").strip(), (
-            f"navbtn[data-scr={scr}] 에 비어있지 않은 aria-label 이 필요합니다"
-            " — 접힘 시 접근 이름 소실(#27)."
+            f"navbtn[data-scr={scr}] 에 비어있지 않은 aria-label 이 필요합니다 — 접근 이름 소실(#27)."
         )
         assert attrs.get("title", "").strip(), (
-            f"navbtn[data-scr={scr}] 에 비어있지 않은 title 이 필요합니다"
-            " — 접힘 시 호버 툴팁 소실(#27)."
+            f"navbtn[data-scr={scr}] 에 비어있지 않은 title 이 필요합니다 — 호버 툴팁 소실(#27)."
         )
 
 
-def test_collapsed_nav_has_visual_marker():
-    """각 내비 버튼에 상시 보이는 아이콘 표지(.ni SVG)가 있고, 접힘 시 라벨열(.lbl)이 숨겨져도
-    그 표지는 남아야 한다(#27 개정).
+def test_transitional_tabs_announce_their_removal():
+    """과도기 임시 탭(기안·템플릿 관리)은 구분선 오른쪽에 서고 title 이 제거를 예고해야 한다.
 
-    옛 계약은 '.ni 글자표지를 펼침엔 숨기고 접힘에만 노출'이었으나, 앱 디자인 언어 채택으로 .ni 가
-    SVG 아이콘으로 승격돼 라벨과 상시 공존한다(중복이 아니라 스캔 보조). 따라서 계약을 뒤집는다 —
-    아이콘 상시 표지 + 접힘 시 라벨열(.lbl)만 숨김. aria-label/title 은 SR 이름·호버 툴팁으로 유지.
+    지도 §10.9 판정 B: 아직 정상 동작하는 화면이라 상시 배너 대신 title 이 예고를 진다(없는
+    소실을 큰 소리로 고지하면 경보가 싸구려가 된다 — §10.8.4 착지 정산과 같은 판단). 계약
+    2탭은 그 반대로 **예고를 달지 않는다** — 최종 형상이 조용히 흐려지지 않게.
+    """
+    buttons = _collect_nav_buttons()
+    index = WEB_INDEX.read_text(encoding="utf-8")
+    assert index.count('class="nav-sep"') == 1, "탭 구분선(.nav-sep)이 정확히 1개여야 합니다."
+    for scr in TEMP_NAV_SCREENS:
+        assert "temp" in buttons[scr].get("class", ""), (
+            f"navbtn[data-scr={scr}] 에 임시 표지(.temp)가 없습니다 — 최종 형상과 구분이 사라집니다."
+        )
+        assert "사라집니다" in buttons[scr].get("title", ""), (
+            f"navbtn[data-scr={scr}] title 이 제거를 예고하지 않습니다(지도 §10.9 판정 B)."
+        )
+    # 구분선 왼쪽(계약 2탭)이 임시 표지를 얻으면 최종 형상이 흐려진다.
+    for scr in ("job", "library"):
+        assert "temp" not in buttons[scr].get("class", ""), (
+            f"navbtn[data-scr={scr}] 는 계약 2탭이라 임시 표지가 붙으면 안 됩니다(§19 서문)."
+        )
+
+
+def test_nav_has_visual_marker_and_shell_is_topbar():
+    """각 탭에 상시 보이는 아이콘 표지(.ni SVG)가 있고, 셸은 상단 토바여야 한다(#27 개정 · F2 PR-B).
+
+    .ni 는 앱 디자인 언어 채택으로 SVG 아이콘으로 승격돼 라벨과 상시 공존한다(중복이 아니라
+    스캔 보조). 셸 교체(지도 §10.9)로 좌 레일과 그 접기가 죽었으므로, 접힘 규칙이 되살아나면
+    표면 없는 상태가 CSS 에 남았다는 뜻이다 — 다음 세션이 그걸 근거로 레일을 되살린다.
     """
     index = WEB_INDEX.read_text(encoding="utf-8")
     marker_count = index.count('class="ni"')
     assert marker_count == len(NAV_SCREENS), (
-        f"내비 시각 표지(.ni)가 {marker_count}개 — 버튼마다 정확히 1개여야 합니다(#27)."
+        f"탭 시각 표지(.ni)가 {marker_count}개 — 버튼마다 정확히 1개여야 합니다(#27)."
+    )
+    assert 'class="topbar"' in index and 'class="rail"' not in index, (
+        "셸이 상단 토바가 아닙니다 — 좌 레일은 F2 PR-B 에서 사망했습니다(지도 §10.9)."
     )
     css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
-    # 아이콘(.ni svg)은 상시 표지 — 크기 규칙 존재로 SVG 아이콘 착지를 확인(펼침 숨김 규칙 폐기).
-    assert ".navbtn.nisvg{width:18px" in css, (
-        "내비 아이콘(.ni svg) 상시 표지 규칙이 사라졌습니다(#27 개정)."
+    # 아이콘(.ni svg)은 상시 표지 — 크기 규칙 존재로 SVG 아이콘 착지를 확인.
+    assert ".navbtn.nisvg{width:18px" in css, "탭 아이콘(.ni svg) 상시 표지 규칙이 사라졌습니다(#27)."
+    assert "rail-collapsed" not in css, (
+        "레일 접힘 규칙이 남아 있습니다 — 표면 없는 상태는 되살아날 통로입니다(§10.9 4계약면 4행)."
     )
-    # 접힘 시 라벨열(.lbl)을 숨겨 작업영역을 넓히되, 아이콘은 남아 표지를 잇는다.
-    assert ".app.rail-collapsed.navbtn.lbl{display:none" in css, (
-        "접힘 상태에서 라벨열(.lbl)을 숨기는 규칙이 사라졌습니다(#27)."
+    # 토바 높이는 구조 치수 단일 출처 — 라이브러리 2-pane 계산이 이 변수를 소비한다(판정 G).
+    assert "--shell-topbar-h:64px" in css, "토바 높이 변수(구조 치수 · §19.12)가 사라졌습니다."
+    assert "calc(100vh-var(--shell-topbar-h)-250px)" in css, (
+        "라이브러리 2-pane 높이가 토바 변수를 소비하지 않습니다 — 리터럴 드리프트로 페이지가 "
+        "조용히 스크롤합니다(§19.6 명문 · 지도 §10.9 판정 G)."
     )
 
 

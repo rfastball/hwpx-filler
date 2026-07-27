@@ -181,22 +181,21 @@ def test_draft_font_preserves_other_keys(home):
 # ------------------------------------------------ 마일스톤 I 셸 개인화 영속(#221)
 def test_personalization_defaults_roundtrip_and_preserves_other_keys(home):
     assert settings.load_font_scale() == "normal"
-    assert settings.load_rail_collapsed() is False
     assert settings.load_master_width() == 240
 
     settings.save_theme("dark")
     settings.save_font_scale("larger")
-    settings.save_rail_collapsed(True)
     settings.save_master_width(333)
     assert settings.load_theme() == "dark"
     assert settings.load_font_scale() == "larger"
-    assert settings.load_rail_collapsed() is True
     assert settings.load_master_width() == 333
 
+    # 레일 접힘은 셸 교체(F2 PR-B)와 함께 사망 — 옛 파일에 남은 키는 읽히지 않고 무해하다
+    # (마이그레이션 없음: 되살릴 표면이 없으므로 지울 것도 없다, 지도 §10.9 4계약면 4행).
     (home / "settings.json").write_text(
         json.dumps({"rail_collapsed": "yes", "master_width": True}), encoding="utf-8"
     )
-    assert settings.load_rail_collapsed() is False
+    assert not hasattr(settings, "load_rail_collapsed")
     assert settings.load_master_width() == settings.DEFAULT_MASTER_WIDTH
 
 
@@ -210,11 +209,6 @@ def test_invalid_font_scale_is_loud(home, value):
 def test_invalid_master_width_is_loud(home, value):
     with pytest.raises(ValueError):
         settings.save_master_width(value)  # type: ignore[arg-type]
-
-
-def test_invalid_rail_collapsed_is_loud(home):
-    with pytest.raises(ValueError, match="bool"):
-        settings.save_rail_collapsed(1)  # type: ignore[arg-type]
 
 
 def test_window_geometry_roundtrip_and_corrupt_fallback(home):

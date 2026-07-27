@@ -59,7 +59,7 @@
     if (a.pool_corrupted > 0) {
       // 조치처는 실재해야 한다(F1: 「데이터 관리」 화면 사망) — 손상 격리의 새 거처는
       // 「작업」의 [데이터 선택…] 안 「고정한 데이터」 구획이다.
-      alerts.push(`<div class="note dangerbox">손상된 등록 데이터 ${a.pool_corrupted}건이 있습니다. 「작업」의 [데이터 선택…]에서 확인하세요.</div>`);
+      alerts.push(`<div class="note dangerbox">손상된 등록 데이터 ${a.pool_corrupted}건이 있습니다. 「문서 만들기」의 [데이터 선택…]에서 확인하세요.</div>`);
     }
     $("libraryAlerts").innerHTML = alerts.join("");
   }

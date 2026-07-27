@@ -37,7 +37,7 @@ body{padding:0}
 .galapp{height:auto!important;min-height:230px;border:1px solid var(--a-border);
   border-radius:10px;overflow:hidden}
 .galapp .stage{padding:16px;overflow:visible}
-.galapp .rail{overflow:visible}
+.galapp .topbar{overflow:visible}
 .stack{display:flex;flex-direction:column;gap:9px}
 /* 테마 검증 토글 — 색은 앱 토큰 참조만(하드코딩 금지, 드리프트-0 가드 준수). */
 .gal-theme{margin-top:10px;font:inherit;font-size:12px;cursor:pointer;
@@ -57,19 +57,25 @@ body{padding:0}
 <main class="catalog">
 
   <div class="spec">
-    <div class="spec-h">.app · rail nav — 앱 셸</div>
+    <div class="spec-h">.app · topbar nav — 앱 셸</div>
     <div class="app galapp">
-      <nav class="rail">
+      <header class="topbar">
         <div class="brand"><span class="brand-lockup"><svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><path d="M6 14.5 34.5 8c2.1-.5 3.5.7 3.5 2.8v12.7c0 2.2-1.3 3.7-3.4 4.2L6 34.5Z"/><path d="m26 38.5 32-8v18.2c0 2.3-1.7 3.5-3.8 2.9L26 43.8Z"/></svg><span class="brand-name">문서나르미</span></span></div>
-        <!-- 실 레일 6항목 미러 — 실행·매트릭스는 슬라이스 3/F9, 작업 에디터는 슬라이스 5
-             (결정 39 흡수)에서 사망. 손짠 표본이라 실앱과 자동 동기되지 않는다(항목이 늘면 수동 반영). -->
-        <button class="navbtn" aria-current="true"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h4v12H4zM10 4h3v12h-3zM15 5l2 11"/></svg></span><span class="lbl"><span class="n">문서 작업</span><span class="d">저장된 작업 찾기·정리</span></span></button>
-        <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h5v12H4zM11 4h5v7h-5z"/></svg></span><span class="lbl"><span class="n">작업</span><span class="d">목록 + 세션 패널</span></span></button>
-        <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h5l3 3v11H6zM11 3v3h3M8 11h5M8 14h5"/></svg></span><span class="lbl"><span class="n">기안문 채우기 (txt)</span><span class="d">실시간 채움 → 복사</span></span></button>
-        <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 2L5 11h4l-1 7 6-9h-4z"/></svg></span><span class="lbl"><span class="n">빠른 기안</span><span class="d">저장 없이 채워 복사</span></span></button>
-        <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3l7 4-7 4-7-4zM3 11l7 4 7-4"/></svg></span><span class="lbl"><span class="n">템플릿 관리</span><span class="d">HWPX·TXT</span></span></button>
-        <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3c3.3 0 6 1 6 2.3S13.3 7.7 10 7.7 4 6.7 4 5.3 6.7 3 10 3M4 5.3v9.4C4 16 6.7 17 10 17s6-1 6-2.3V5.3"/></svg></span><span class="lbl"><span class="n">데이터 관리</span><span class="d">등록 데이터(참조)</span></span></button>
-      </nav>
+        <!-- 실 상단 2탭 + 과도기 임시 2항목 미러(F2 PR-B) — 좌 레일 5화면 라우팅은 사망했다.
+             구분선 오른쪽(.temp)은 승계처가 서면(F6·F8) 죽는다. 손짠 표본이라 실앱과 자동
+             동기되지 않는다(항목이 바뀌면 수동 반영). -->
+        <nav class="nav">
+          <button class="navbtn" aria-current="true"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h5v12H4zM11 4h5v7h-5z"/></svg></span><span class="lbl"><span class="n">문서 만들기</span></span></button>
+          <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h4v12H4zM10 4h3v12h-3zM15 5l2 11"/></svg></span><span class="lbl"><span class="n">문서 작업</span></span></button>
+          <span class="nav-sep" aria-hidden="true"></span>
+          <button class="navbtn temp"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h8l4 4v8H4zM12 4v4h4M7 11h6M7 14h6"/></svg></span><span class="lbl"><span class="n">기안</span></span></button>
+          <button class="navbtn temp"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3l7 4-7 4-7-4zM3 11l7 4 7-4"/></svg></span><span class="lbl"><span class="n">템플릿 관리</span></span></button>
+        </nav>
+        <div class="topbar-tools">
+          <button class="shell-tool"><span class="ti" aria-hidden="true">◐</span><span class="d">시스템</span></button>
+          <button class="shell-tool"><span class="ti" aria-hidden="true">A</span><span class="d">기본</span></button>
+        </div>
+      </header>
       <div class="stage">
         <div class="scr-head"><div><h1>문서 작업</h1><p class="sub">저장된 문서 작업을 찾고 상태를 확인합니다.</p></div></div>
         <!-- 홈(KPI 타일 + 두 트랙 + group-by 렌즈)은 재작성 F2 에서 사망 — .kpis/.tracks/

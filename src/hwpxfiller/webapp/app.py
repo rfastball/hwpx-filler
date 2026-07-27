@@ -223,9 +223,8 @@ class WebFrontend:
         settings.save_font_scale(scale)
         return scale
 
-    def set_rail_collapsed(self, collapsed: bool) -> bool:
-        settings.save_rail_collapsed(collapsed)
-        return collapsed
+    # ``set_rail_collapsed`` 는 레일 사망(F2 PR-B)과 함께 제거 — 브리지 표면에 남으면
+    # 표면 없는 설정을 쓰는 통로가 되고, 그 통로가 다음 세션에 레일을 되살린다.
 
     def set_master_width(self, width: int) -> int:
         settings.save_master_width(width)
@@ -2619,14 +2618,26 @@ def _selftest_drive(window: "object") -> None:
         # 첫 confirm=true(확인 클릭), 재진입 confirm=false(즉시 안전측 거절)여야 한다.
         result["modal_confirm_serial"] = window.evaluate_js(  # type: ignore[attr-defined]
             "({ first: window.__cf1, second: window.__cf2 })")
-        # 반응형 경계(#27) — 창을 최소폭(760<820 경계)으로 줄였다 넓히며 .app 그리드 열 수를
-        # 실 엔진에서 되읽는다. 정적 CSS 경계 존재는 test_web_dom_contract 가, 실제 접힘/펴짐은
-        # 여기가 가드. resize 는 OS 이벤트라 relayout 안정까지 짧게 대기(게이트는 flaky 금지).
-        grid_probe = "getComputedStyle(document.querySelector('.app')).gridTemplateColumns"
-        window.resize(760, 600)  # type: ignore[attr-defined]  # 최소 크기 = 경계 아래 → 세로 적층
+        # 반응형 경계(#27 → F2 PR-B 재정의) — 셸이 좌 레일에서 상단 토바로 바뀌면서 좁은 창의
+        # 대응이 **열 접힘에서 토바 축약**으로 옮겼다: .app 은 항상 2행(토바+스테이지)이고,
+        # 820px 아래에서 브랜드 워드마크·도구 값 라벨이 접혀 탭 4개의 자리를 먼저 지킨다
+        # (도달성 우선). 그래서 되읽는 것도 열 수가 아니라 **탭 도달성 + 가로 오버플로**다 —
+        # 좁은 창에서 탭이 잘려 화면에 못 가는 것이 이 셸의 진짜 회귀다. 정적 CSS 경계 존재는
+        # test_web_dom_contract 가, 실 렌더는 여기가 가드. resize 는 OS 이벤트라 relayout
+        # 안정까지 짧게 대기(게이트는 flaky 금지).
+        grid_probe = """(function(){
+          var app=document.querySelector('.app'),body=document.body;
+          var tabs=Array.prototype.filter.call(document.querySelectorAll('.navbtn'),
+            function(b){return b.offsetParent!==null});
+          var brand=document.querySelector('.brand-name');
+          return {rows:getComputedStyle(app).gridTemplateRows.split(' ').length,
+                  tabs:tabs.length,
+                  brand_visible:!!(brand&&brand.offsetParent!==null),
+                  overflow:body.scrollWidth>body.clientWidth+1};})()"""
+        window.resize(760, 600)  # type: ignore[attr-defined]  # 최소 크기 = 경계 아래 → 토바 축약
         time.sleep(0.6)
         result["grid_narrow"] = window.evaluate_js(grid_probe)  # type: ignore[attr-defined]
-        window.resize(1440, 900)  # type: ignore[attr-defined]  # 새 기본 크기 = 셸 2판 + 기안 duo
+        window.resize(1440, 900)  # type: ignore[attr-defined]  # 새 기본 크기 = 토바 전개 + 기안 duo
         time.sleep(0.6)
         result["grid_wide"] = window.evaluate_js(grid_probe)  # type: ignore[attr-defined]
         # 다중 시트 확정 게이트(#33) — SheetPicker.choose 를 실 DOM 에서 구동(확정→로드, 취소→중단).
@@ -2732,7 +2743,9 @@ def _selftest_drive(window: "object") -> None:
             "var r=document.createRange();r.selectNodeContents(p);var s=getSelection();s.removeAllRanges();s.addRange(r);"
             "var selected=s.toString();s.removeAllRanges();p.remove();"
             "return {font_scale:root.getAttribute('data-font-scale'),root_px:getComputedStyle(root).fontSize,"
-            "rail_collapsed:app.classList.contains('rail-collapsed'),"
+            # 토바 높이는 라이브러리 2-pane 계산이 소비하는 **구조 치수**라 실측으로 핀한다
+            # (리터럴 드리프트 = 페이지가 조용히 스크롤하는 자리, 지도 §10.9 판정 G).
+            "topbar_h:Math.round(document.querySelector('.topbar').getBoundingClientRect().height),"
             "master_width:parseFloat(getComputedStyle(app).getPropertyValue('--master-width')),"
             "splitters:document.querySelectorAll('.master-splitter').length,"
             "body_overflow:body.scrollWidth>body.clientWidth+1,selected_text:selected};})()"
@@ -2917,7 +2930,6 @@ def main() -> int:
         try:
             personalization = {
                 "font_scale": settings.load_font_scale(),
-                "rail_collapsed": settings.load_rail_collapsed(),
                 "master_width": settings.load_master_width(),
             }
             personalized = window.evaluate_js(  # type: ignore[attr-defined]

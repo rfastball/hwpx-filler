@@ -36,7 +36,7 @@
   (`generate`, `import_template_file`, `import_library_template`), 에디터 착지
   (`load_template_into_editor`, `open_job_in_editor`, `editor_has_unsaved_work`), 경로 추적
   (`open_path`, `reveal_path`, `copy_path`, `reveal_corrupt_job`), 클립보드·설정
-  (`copy_clipboard`, `set_theme`, `set_font_scale`, `set_rail_collapsed`, `set_master_width`),
+  (`copy_clipboard`, `set_theme`, `set_font_scale`, `set_master_width`),
   시트 적재(`load_data_sheet`). 이 경로는 action registry **밖**이므로, 새 직접 메서드를
   추가하면 이 목록과 payload 검증 책임(메서드 본문)을 함께 갱신한다.
 
@@ -48,14 +48,16 @@ Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다.
 
 ## 현재 라우팅과 소유권
 
-레일과 최상위 DOM 화면의 현재 목록은 `library`, `job`, `draft`, `tpl` 네 개다.
+상단 토바 탭과 최상위 DOM 화면의 현재 목록은 `library`, `job`, `draft`, `tpl` 네 개다
+(계약 2탭 = `job` 「문서 만들기」·`library` 「문서 작업」, 구분선 오른쪽 `draft`·`tpl` 은
+승계처가 서면 죽는 과도기 임시 — 지도 §10.9). 좌 레일과 그 접기는 F2 PR-B 에서 사망했다.
 `web/js/app.js`의 `window.Nav.go`가 표시 상태를 전환한다. `editor`는 라우팅 화면이 아니라
 `job` 화면 안의 편집 호스트이며 `EditorEntry`가 편집 모드로 착지시킨다.
 
 | 라우트/표면 | DOM·JavaScript 소유자 | Python 컨트롤러 | 링1 ViewModel·상태 소유자 |
 |---|---|---|---|
 | `library` 문서 작업(전역 라이브러리) | `#scr-library`, `screens/library.js` | `LibraryController` | `HomeViewModel`(모듈명은 유지 — 지도 §10.8 판정 A) |
-| `job` 작업 목록·실행 | `#scr-job`, `screens/job.js` | `JobController` | `RunViewModel`, `SelectionModel`, 필터 상태, 후보 판정(`work_candidates`) |
+| `job` 문서 만들기(데이터·실행) | `#scr-job`, `screens/job.js` | `JobController` | `RunViewModel`, `SelectionModel`, 필터 상태, 후보 판정(`work_candidates`) |
 | `job` 내부 작업 편집 | `#jobEditHost`, `screens/editor.js`, `editor_entry.js` | `EditorController` | `MappingModel`, 저장 판정, 공유 `TemplateManagerViewModel` |
 | `draft` 기안 작업·세션 | `#scr-draft`, `screens/draft.js`, `draftsession.js` | `DraftController` | `TxtDraftViewModel`, `MappingModel`, `SelectionModel`, `TxtQueueModel` |
 | `tpl` 템플릿 관리 | `#scr-tpl`, `screens/template.js` | `TemplateController` | `TemplateManagerViewModel`, 템플릿 그룹 상태 |

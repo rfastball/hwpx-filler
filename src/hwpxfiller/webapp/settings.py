@@ -197,20 +197,13 @@ def save_font_scale(scale: str) -> None:
     _save_key("font_scale", scale)
 
 
-def load_rail_collapsed() -> bool:
-    """사이드 레일의 마지막 접힘 상태. 손상 값은 안전한 펼침으로 폴백한다."""
-    value = _read().get("rail_collapsed")
-    return value if isinstance(value, bool) else False
-
-
-def save_rail_collapsed(collapsed: bool) -> None:
-    if not isinstance(collapsed, bool):
-        raise ValueError("레일 접힘 상태는 bool 이어야 합니다")
-    _save_key("rail_collapsed", collapsed)
+# 레일 접힘(``rail_collapsed``)은 상단 토바 셸 교체로 표면과 함께 사망했다(재작성 F2 PR-B,
+# 지도 §10.9): 토바는 64px 한 줄이라 접을 것이 없다. 마이그레이션을 두지 않는다 — 옛 파일에
+# 남은 키는 _read() 가 읽고 아무도 묻지 않으므로 무해하고, 되살릴 표면이 없다.
 
 
 def load_master_width() -> int:
-    """작업·기안 좌 목록의 공유 폭(px). 비유효 값은 240px 기본으로 폴백한다."""
+    """「기안」 좌 목록의 폭(px). 비유효 값은 240px 기본으로 폴백한다."""
     value = _read().get("master_width")
     if isinstance(value, int) and not isinstance(value, bool) and MIN_MASTER_WIDTH <= value <= MAX_MASTER_WIDTH:
         return value

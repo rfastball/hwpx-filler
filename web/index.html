@@ -12,62 +12,61 @@
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-<!-- 웹 프론트엔드 셸 — 목업 docs/UI_PROTOTYPE_APPB.html 의 앱윈도 구조를 스튜디오 크롬(마스트헤드·
-     주석·캔버스) 없이 실앱으로 전개. 좌 레일(5화면 라우팅) + 우 스테이지. 링1 VM 에 브리지로 배선.
-     화면: 작업(부팅 랜딩·R-flow 세션+편집 두 모드 · #90)·기안·tpl(#13)·pool(데이터 관리 ·
-     #26 #4)·home(경보·상태 허브, 기본 랜딩 아님). 실행 화면(#18)은 슬라이스 3,
-     작업 에디터 별도 화면은 슬라이스 5(블록 2 개정 결정
-     39 — 「작업」 편집 모드로 흡수)에서 사망. matrix 는 F9 로 제거 — 실행 모델은 하나다. -->
+<!-- 웹 프론트엔드 셸 — v6 계약의 최상위 구조는 `문서 만들기 | 문서 작업` 2탭이다(§19 서문:
+     "새 home 화면은 만들지 않는다"). 상단 토바(64px 구조 치수 · §19.12) + 아래 스테이지이고,
+     좌 레일 5화면 라우팅은 재작성 F2 PR-B 에서 사망했다(지도 §10.9 · 대조표 1행).
+     탭 뒤 구분선 오른쪽 2항목(기안·템플릿 관리)은 **과도기 임시**다 — 승계처가 서는 슬라이스
+     (기안=F6 문서 만들기 TXT 구획+작업대, 템플릿 관리=F8 편집기 템플릿 탭+템플릿 바꾸기)에서
+     죽는다. 아직 정상 동작하는 화면이라 상시 배너 대신 title 이 제거 예고를 진다(§10.9 판정 B).
+     화면: 문서 만들기(부팅 랜딩·세션+편집 두 모드 · #90)·문서 작업(전역 라이브러리 · F2 PR-A)·
+     기안(#148)·템플릿 관리(#13). home 은 PR-A, pool 은 F1, 실행·작업 에디터 별도 화면은
+     그 이전 슬라이스에서 사망. -->
 <div class="app">
-  <nav class="rail" aria-label="화면 전환">
+  <header class="topbar">
     <!-- #258 제품명 문서나르미 — 심벌(두 평면, 단색 var(--a-brand))+워드마크 락업. 심벌은 장식이라
          aria-hidden(접근 이름은 텍스트 워드마크가 담당). 원본 SVG=docs/branding/document-narmi-mark-final.svg. -->
-    <div class="brand"><span class="brand-lockup"><svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><path d="M6 14.5 34.5 8c2.1-.5 3.5.7 3.5 2.8v12.7c0 2.2-1.3 3.7-3.4 4.2L6 34.5Z"/><path d="m26 38.5 32-8v18.2c0 2.3-1.7 3.5-3.8 2.9L26 43.8Z"/></svg><span class="brand-name">문서나르미</span></span>
-      <!-- #18/9B2AB35D-A: 사이드 패널 접기 — 좁은 창에서 작업 영역 확장(반응형) -->
-      <button class="rail-toggle" id="railToggle" title="사이드 패널 접기/펼치기"
-              aria-label="사이드 패널 접기/펼치기" aria-expanded="true">«</button></div>
-    <!-- 섹션 라벨("투트랙 허브")은 R-copy 에서 삭제(F1) — 개발결정 용어(ADR I)인 데다
-         5항목 단일 목록엔 섹션 구분 정보가 없다. -->
+    <div class="brand"><span class="brand-lockup"><svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><path d="M6 14.5 34.5 8c2.1-.5 3.5.7 3.5 2.8v12.7c0 2.2-1.3 3.7-3.4 4.2L6 34.5Z"/><path d="m26 38.5 32-8v18.2c0 2.3-1.7 3.5-3.8 2.9L26 43.8Z"/></svg><span class="brand-name">문서나르미</span></span></div>
 
-    <!-- #27(개정): .ni 는 이제 SVG 상시 아이콘 표지 — 접힘/펼침 모두 노출. 접힘 시 라벨(.lbl=.n+.d)만
-         숨어 아이콘이 표지를 잇는다(옛 '펼침 숨김' 계약 폐기 — 아이콘+라벨 공존은 스캔 보조). 접근
-         이름=aria-label, 호버 툴팁=title("이름 — 설명"). 부제 .d 는 활성 항목에만 인라인 노출. -->
-    <!-- 「문서 작업」 전역 라이브러리(§19.6·§19.7, 재작성 F2 PR-A) — 홈 화면의 승계자.
-         저장된 작업을 찾는 자리가 여기 하나로 모였다(카드 나열 + group-by 렌즈였던 홈은 사망).
-         셸이 상단 2탭으로 바뀌는 것은 F2 PR-B 다 — 그때까지 레일이 정직한 과도기 상태다. -->
-    <button class="navbtn" data-scr="library" aria-label="문서 작업" title="문서 작업: 저장된 문서 작업을 찾고 상태를 확인·정리">
-      <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h4v12H4zM10 4h3v12h-3zM15 5l2 11"/></svg></span><span class="lbl"><span class="n">문서 작업</span><span class="d">저장된 작업 찾기·정리</span></span></button>
-    <!-- 「작업」(R-flow, #90) — 좌 목록 + 우 세션 패널. 데이터를 채워 문서를 생성하는 유일
-         표면이다(실행 화면은 슬라이스 3에서 사망, 레일 「실행」 동시 제거 · 부록 A-4-36).
-         R-info 1부 결정 1에 따라 이 화면이 부팅 랜딩이다(#239). -->
-    <button class="navbtn" data-scr="job" aria-current="true" aria-label="작업" title="작업: 저장된 작업을 골라 세션 패널에서 데이터를 채워 생성">
-      <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h5v12H4zM11 4h5v7h-5z"/></svg></span><span class="lbl"><span class="n">작업</span><span class="d">목록 + 세션 패널</span></span></button>
-    <!-- 「기안」(R-info 3부, #148) — TXT 작업-앵커 master-detail. 「작업」(HWPX)의 대칭 화면으로
-         바로 다음 순번(최종 형상 작업·기안·템플릿·데이터). 좌 목록 + 우 휘발 세션 4존(3a) +
-         맞추기 표·원문 뷰 전환(3b)·큐 퇴화(3c)·유래/복원/승격(5)·「템플릿으로 저장」 흡수
-         (6a)까지 착지. 슬라이스 6b 에서 구 「기안문 채우기」·「빠른 기안」을 흡수·삭제하며
-         **레일 6→5**(홈·작업·기안·템플릿·데이터)가 됐다(결정 5·34). -->
-    <button class="navbtn" data-scr="draft" aria-label="기안" title="기안: 저장된 기안 작업을 골라 채워 복사 (TXT)">
-      <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h8l4 4v8H4zM12 4v4h4M7 11h6M7 14h6"/></svg></span><span class="lbl"><span class="n">기안</span><span class="d">기안 작업 목록 + 채움 (TXT)</span></span></button>
-    <!-- 레일 「작업 에디터」 사망(결정 39 — 에디터 흡수 완결): 생성 진입은 「작업」 구획
-         ＋ 새 작업(#jobNewBtn — 이 삭제가 승계 신설)·홈 ＋/카드 편집·템플릿 관리 「작업
-         만들기」가 담당한다(카드 ⋮ 편집 메뉴는 #110 목록 관리 소관). -->
-    <button class="navbtn" data-scr="tpl" aria-label="템플릿 관리" title="템플릿 관리: HWPX·TXT 라이브러리 · 상태·변환·검토">
-      <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3l7 4-7 4-7-4zM3 11l7 4 7-4"/></svg></span><span class="lbl"><span class="n">템플릿 관리</span><span class="d">HWPX·TXT 라이브러리 · 상태·변환·검토</span></span></button>
-    <!-- 「데이터 관리」 항목은 사망(재작성 F1, 지도 §10.7) — 등록 데이터의 목록·등록·보관·
-         활성화·삭제·다시 연결·손상 격리는 전부 데이터 선택 다이얼로그(#dataPickerModal)가
-         승계했다. 데이터는 작업의 입력이지 별도 자산 축이 아니라는 결정 1의 이행분. -->
-    <!-- 테마 전환(레일 하단, margin-top:auto) — navbtn 이 아니라 라우팅되지 않는다. 접힘 표지는
-         .ti(≠.ni)라 #27 시각표지 카운트와 무관. 라벨은 app.js 가 현재 모드로 갱신(themeLabel). -->
-    <button class="rail-theme" id="themeToggle" aria-label="테마 전환 (시스템 → 라이트 → 다크)"
-            title="테마 전환 (시스템 → 라이트 → 다크)">
-      <span class="ti">◐</span><span class="n">테마</span>
-      <span class="d" id="themeLabel">시스템</span></button>
-    <button class="rail-font" id="fontScaleToggle" aria-label="글자 크기 전환 (기본 → 크게 → 더 크게)"
-            title="글자 크기 전환 (기본 → 크게 → 더 크게)">
-      <span class="ti">A</span><span class="n">글자 크기</span>
-      <span class="d" id="fontScaleLabel">기본</span></button>
-  </nav>
+    <!-- 세그먼트 내비 — 활성 = 은은한 틴트 + 액센트 잉크. `data-scr` 는 **화면 키 그대로**
+         (job·library·draft·tpl)이고 개명된 것은 사용자가 읽는 라벨뿐이다(§10.9 판정 A):
+         job 은 도메인 개체 이름이라 화면 이름이 바뀌어도 어휘가 갈리지 않는다. 아이콘 표지
+         .ni 는 레일에서 그대로 승계(#27) — 라벨과 공존이 스캔 보조. -->
+    <nav class="nav" aria-label="화면 전환">
+      <!-- 「문서 만들기」(구 「작업」 · R-flow #90) — 데이터를 채워 문서를 생성하는 유일 표면.
+           R-info 1부 결정 1에 따라 부팅 랜딩이다(#239). -->
+      <button class="navbtn" data-scr="job" aria-current="true" aria-label="문서 만들기" title="문서 만들기: 데이터를 고르고 그 데이터로 쓸 문서 작업을 실행">
+        <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h5v12H4zM11 4h5v7h-5z"/></svg></span><span class="lbl"><span class="n">문서 만들기</span></span></button>
+      <!-- 「문서 작업」 전역 라이브러리(§19.6·§19.7, 재작성 F2 PR-A) — 홈 화면의 승계자.
+           저장된 작업을 찾는 자리가 여기 하나로 모였다(카드 나열 + group-by 렌즈였던 홈은 사망). -->
+      <button class="navbtn" data-scr="library" aria-label="문서 작업" title="문서 작업: 저장된 문서 작업을 찾고 상태를 확인·정리">
+        <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h4v12H4zM10 4h3v12h-3zM15 5l2 11"/></svg></span><span class="lbl"><span class="n">문서 작업</span></span></button>
+
+      <!-- 여기부터 과도기 임시 — 승계처가 서면 함께 죽는다(위 셸 주석). 구분선은 장식이라
+           aria-hidden: 접근성 트리에선 4항목 한 묶음이 정직하다(둘 다 지금 정상 화면이다). -->
+      <span class="nav-sep" aria-hidden="true"></span>
+      <!-- 「기안」(R-info 3부, #148) — TXT 작업-앵커 master-detail. 승계처 = F6(문서 만들기의
+           작업 방식 구획 + TXT 검토·복사 작업대). 휘발 기안 세션은 그때 사망한다(결정 2). -->
+      <button class="navbtn temp" data-scr="draft" aria-label="기안" title="기안: 저장된 기안 작업을 골라 채워 복사 (TXT) — 곧 「문서 만들기」로 합쳐지고 이 항목은 사라집니다">
+        <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h8l4 4v8H4zM12 4v4h4M7 11h6M7 14h6"/></svg></span><span class="lbl"><span class="n">기안</span></span></button>
+      <!-- 「템플릿 관리」(#13·#108) — 승계처 = F8(편집기 「템플릿」 탭 + 「템플릿 바꾸기」 화면).
+           §10.4.1 흡수 이행표가 항목별 거처를 소유한다. -->
+      <button class="navbtn temp" data-scr="tpl" aria-label="템플릿 관리" title="템플릿 관리: HWPX·TXT 라이브러리 · 상태·변환·검토 — 곧 편집기·템플릿 바꾸기로 흡수되고 이 항목은 사라집니다">
+        <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3l7 4-7 4-7-4zM3 11l7 4 7-4"/></svg></span><span class="lbl"><span class="n">템플릿 관리</span></span></button>
+    </nav>
+
+    <!-- 셸 전역 개인화 — navbtn 이 아니라 라우팅되지 않는다(라우터가 .navbtn 전부에
+         go(data-scr) 를 물린다 — 여기 navbtn 이 붙으면 클릭이 화면을 지운다). 레일 하단에서
+         토바 우측으로 거처만 옮겼고 라벨 동기 경로(themeLabel·fontScaleLabel)는 그대로다.
+         레일 접기(#18/9B2AB35D-A)는 함께 사망 — 토바는 64px 한 줄이라 접을 것이 없다. -->
+    <div class="topbar-tools">
+      <button class="shell-tool" id="themeToggle" aria-label="테마 전환 (시스템 → 라이트 → 다크)"
+              title="테마 전환 (시스템 → 라이트 → 다크)">
+        <span class="ti" aria-hidden="true">◐</span><span class="d" id="themeLabel">시스템</span></button>
+      <button class="shell-tool" id="fontScaleToggle" aria-label="글자 크기 전환 (기본 → 크게 → 더 크게)"
+              title="글자 크기 전환 (기본 → 크게 → 더 크게)">
+        <span class="ti" aria-hidden="true">A</span><span class="d" id="fontScaleLabel">기본</span></button>
+    </div>
+  </header>
 
   <main class="stage">
     <!-- ============ 「문서 작업」 전역 라이브러리 (§19.6·§19.7 · 재작성 F2 PR-A) ============ -->
@@ -84,7 +83,7 @@
           <h1>문서 작업</h1>
           <!-- §19.6 서문의 재진술: 여기서 행을 골라도 「작업」의 선택·데이터는 그대로다.
                상세 선택이 활성 작업을 바꾼다는 오해가 이 화면의 유일한 큰 오해다. -->
-          <p class="sub">저장된 문서 작업을 찾고 상태를 확인합니다. 여기서 다른 작업을 열어도 「작업」 화면의 선택과 데이터는 그대로입니다.</p>
+          <p class="sub">저장된 문서 작업을 찾고 상태를 확인합니다. 여기서 다른 작업을 열어도 「문서 만들기」의 선택과 데이터는 그대로입니다.</p>
         </div>
         <div class="scr-head-actions">
           <button class="btn primary sm" id="libraryNewWork">＋ 새 작업</button>
@@ -137,15 +136,18 @@
       </div>
     </section>
 
-    <!-- ============ 「작업」 화면 (R-flow 슬라이스 1 — master-detail 세션 패널 4존, #90) ============ -->
+    <!-- ============ 「문서 만들기」 화면 (구 「작업」 · R-flow #90 · 재작성 R1 2열) ============ -->
     <!-- 안정 DOM(id) + job.js 가 window.__push('job', snapshot) 로 값만 채운다(run/txt 패턴). 링1
          RunViewModel·SelectionModel 에 브리지로 배선 — VM 로직 재구현 없음(#87 가드). 좌 master
          목록 클릭 = 우 패널 in-pane 세션(화면 전환 0). 4존 = 헤더·데이터·본문·완료(블록 1). -->
     <section class="scr on" id="scr-job">
       <header class="scr-head">
         <div>
-          <h1>작업</h1>
-          <p class="sub">저장된 작업을 골라 데이터를 채워 문서를 만듭니다.</p>
+          <!-- 화면 이름은 계약 어휘(§19 서문 `문서 만들기 | 문서 작업`)로 개명했고 화면 키는
+               `job` 그대로다 — Job 은 도메인 개체 이름이라 화면이 개명돼도 어휘가 갈리지
+               않는다(지도 §10.9 판정 A). 부제는 데이터-우선 순서를 그대로 말한다. -->
+          <h1>문서 만들기</h1>
+          <p class="sub">데이터를 고르고, 그 데이터로 쓸 문서 작업을 실행합니다.</p>
         </div>
         <div class="scr-head-actions">
           <button class="btn sm" id="jobEditResume" style="display:none">편집 계속</button>

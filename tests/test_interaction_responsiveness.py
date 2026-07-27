@@ -16,7 +16,7 @@ def test_press_feedback_covers_round_trip_surfaces_and_reduced_motion() -> None:
     css = _read("css/app.css")
     selectors = (
         ".job-item", ".job-grp-head", ".jobtb tbody tr", ".mir-row.miss",
-        ".fico", ".fchip button", ".wstep-tab.as-tab", ".rail-toggle", ".rail-theme",
+        ".fico", ".fchip button", ".wstep-tab.as-tab", ".shell-tool",
     )
     active = css[css.index(".btn:active:not(:disabled)"):css.index("/* 부유 메뉴")]
     reduced = css[css.index("@media (prefers-reduced-motion:reduce)"):css.index("/* ---- 공통 컨트롤")]

@@ -267,15 +267,22 @@ class TestWebSelftestGate:
         assert s["cancelled"] is None, f"취소가 null(중단)로 해소 안 됨: {s.get('cancelled')!r}"
         assert s["closed_after"] is True, "취소 후 시트 모달이 닫히지 않았습니다(#33)."
 
-    def test_responsive_layout_collapses_at_min_width(self, selftest_result: dict) -> None:
-        # 최소폭(760<820 경계)에서 .app 이 세로 단일열(1 track)로 접힘 — 최소 크기 가로 오버플로 회귀 가드(#27).
+    def test_responsive_shell_keeps_all_tabs_reachable_at_min_width(self, selftest_result: dict) -> None:
+        # 최소폭(760<820 경계)에서 토바가 축약된다: 브랜드 워드마크는 접히고 탭 4개는 전부
+        # 남으며 가로 오버플로가 없다 — 좁은 창에서 탭이 잘려 화면에 못 가는 것이 상단 셸의
+        # 진짜 회귀다(F2 PR-B, 지도 §10.9 4계약면 4행).
         narrow = selftest_result["grid_narrow"]
-        assert len(narrow.split()) == 1, f"최소폭에서 .app 이 단일열로 안 접힘: {narrow!r}"
+        assert narrow["tabs"] == 4, f"최소폭에서 탭이 사라짐: {narrow!r}"
+        assert narrow["brand_visible"] is False, f"최소폭에서 브랜드 워드마크가 안 접힘: {narrow!r}"
+        assert narrow["overflow"] is False, f"최소폭에서 가로 오버플로: {narrow!r}"
 
-    def test_responsive_layout_restores_two_panes_when_wide(self, selftest_result: dict) -> None:
-        # 넓힐 때(경계 위) .app 이 2판(2 tracks, 레일+스테이지)으로 복귀 — 경계가 죽어 상시 적층되는 회귀 가드(#27).
+    def test_responsive_shell_expands_topbar_when_wide(self, selftest_result: dict) -> None:
+        # 넓힐 때(경계 위) 워드마크가 돌아오고 .app 은 여전히 2행(토바+스테이지)이다 —
+        # 축약이 눌러앉아 상시 접힘이 되는 회귀 가드(#27 승계).
         wide = selftest_result["grid_wide"]
-        assert len(wide.split()) == 2, f"넓은 폭에서 .app 이 2판으로 안 펴짐: {wide!r}"
+        assert wide["rows"] == 2, f"넓은 폭에서 .app 이 토바+스테이지 2행이 아님: {wide!r}"
+        assert wide["brand_visible"] is True, f"넓은 폭에서 브랜드 워드마크가 안 펴짐: {wide!r}"
+        assert wide["tabs"] == 4 and wide["overflow"] is False, f"넓은 폭 셸 이상: {wide!r}"
 
     def test_preserve_restores_focus_and_caret_across_rerender(self, selftest_result: dict) -> None:
         # Preserve 헬퍼가 innerHTML 재구성을 가로질러 포커스와 캐럿/선택 범위를 복원한다(#28).
@@ -960,8 +967,9 @@ class TestWebSelftestGate:
     def test_personalization_defaults_render_in_real_webview(self, selftest_result: dict) -> None:
         p = selftest_result["personalization_persist"]
         assert p["font_scale"] == "normal" and p["root_px"] == "16px"
-        assert p["rail_collapsed"] is False and p["master_width"] == 240
-        assert p["splitters"] == 2
+        assert p["master_width"] == 240 and p["splitters"] == 2
+        # 토바 높이는 라이브러리 2-pane 계산이 소비하는 구조 치수 — 실 엔진 실측으로 핀한다.
+        assert p["topbar_h"] == 64, f"토바 높이가 구조 치수(64px)와 다릅니다: {p!r}"
         assert p["body_overflow"] is False, f"기본 배율에서 가로 오버플로: {p!r}"
         assert p["selected_text"] == "선택 가능한 본문", f"본문 텍스트 선택 실패: {p!r}"
 
@@ -1036,7 +1044,7 @@ def test_font_scale_persists_across_restart_without_major_overflow(
     assert out_write.exists(), f"배율 쓰기 실패 rc={written_proc.returncode}: {written_proc.stderr[-2000:]}"
     assert json.loads(out_write.read_text(encoding="utf-8"))["set_result"] == scale
     saved = json.loads((home / "settings.json").read_text(encoding="utf-8"))
-    saved.update(rail_collapsed=True, master_width=333)
+    saved.update(master_width=333)
     (home / "settings.json").write_text(json.dumps(saved), encoding="utf-8")
 
     read_proc = subprocess.run(
@@ -1046,10 +1054,12 @@ def test_font_scale_persists_across_restart_without_major_overflow(
     assert out_read.exists(), f"배율 되읽기 실패 rc={read_proc.returncode}: {read_proc.stderr[-2000:]}"
     p = json.loads(out_read.read_text(encoding="utf-8"))["personalization_persist"]
     assert p["font_scale"] == scale and p["root_px"] == root_px
-    assert p["rail_collapsed"] is True and p["master_width"] == 333
+    assert p["master_width"] == 333
     assert p["body_overflow"] is False, f"{scale}에서 주요 가로 오버플로: {p!r}"
     full = json.loads(out_read.read_text(encoding="utf-8"))
-    assert len(full["grid_narrow"].split()) == 1 and len(full["grid_wide"].split()) == 2
+    # 큰 배율에서도 좁은 창의 탭 도달성과 넓은 창의 토바 전개가 유지된다(배율×셸 교차 회귀).
+    assert full["grid_narrow"]["tabs"] == 4 and full["grid_narrow"]["overflow"] is False
+    assert full["grid_wide"]["rows"] == 2 and full["grid_wide"]["brand_visible"] is True
 
 
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)

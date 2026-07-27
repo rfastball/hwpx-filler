@@ -75,7 +75,6 @@
 
     /** 앱 글자 배율·셸 레이아웃 영속 — 모두 오리진 비의존 settings.json. */
     setFontScale(scale) { return window.pywebview.api.set_font_scale(scale); },
-    setRailCollapsed(collapsed) { return window.pywebview.api.set_rail_collapsed(!!collapsed); },
     setMasterWidth(width) { return window.pywebview.api.set_master_width(Math.round(width)); },
   };
 
