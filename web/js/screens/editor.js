@@ -1,20 +1,43 @@
-/* 작업 정의(HWPX) 렌더러 — 브리지로 링1 EditorController 와 왕복. 3분류(템플릿·매핑·저장).
-   에디터 흡수(R-flow 블록 2 개정, 결정 39~41): 표면은 「작업」 패널의 편집 모드(#jobEditHost)에
-   산다 — 신규 초안은 마법사 **단계**(전진 게이트·푸터 내비), 저장된 작업 편집은 **탭**(자유
-   이동, editing_origin 으로 가른다). 구 2단계 '데이터 선택'은 매핑 단계의 관문으로 인라인
-   (3단계 접기) — 템플릿(0) → 매핑(1, 데이터 관문 내장) → 저장(2).
+/* 문서 작업 편집기 렌더러 — 브리지로 링1 EditorController 와 왕복. **몰입 표면**(#scr-editor,
+   재작성 F7 PR-A · 지도 §10.13): 상단 2탭을 덮고 출구는 back 하나다 — 그래야 patch 처분
+   (저장·버리기·머무르기)이 한 곳에서 끝난다. 구 「작업」 화면 편집 모드(#jobEditHost)는 사망.
+   탭은 계약 §5.1 의 section 문자열(템플릿·필드 연결·표시·파일 이름 / 「시험」은 F8)이고
+   **집합은 Python 이 매체에서 파생**해 내려준다. 신규 초안은 전진 게이트(순서 의존이 실재),
+   저장된 작업 편집은 자유 이동 + 처분 가드.
    렌더는 Python 이 window.__push('editor', snapshot) 로 밀어 넣는다.
-   표현 계층(단계/탭 UI·매핑표·행 색·표시형 라벨)만 여기서 만든다 — VM 로직 아님. */
+   표현 계층(탭 UI·매핑표·행 색·표시형 라벨·문맥 배너)만 여기서 만든다 — VM 로직 아님. */
 (function () {
   const SCREEN = "editor";
   const $ = (id) => document.getElementById(id);
   // 표시형/타입 라벨은 표현 계층 → 여기(뷰)에 둔다(Qt mapping_table 의 웹 짝).
   const TYPE_LABEL = { text: "텍스트", date: "날짜", amount: "금액", const: "고정값" };
   const INFERRED_LABEL = { text: "텍스트", date: "날짜", amount: "금액", number: "숫자", phone: "전화번호" };
-  const STEP_TITLES = ["템플릿 선택", "필드 매핑", "작업 저장"];
+  /* 탭 어휘 = 계약 §5.1 의 section 문자열(재작성 F7 판정 B) — 정수 단계는 사망했다.
+     탭 **집합**은 Python 이 매체에서 파생해 내려준다(s.sections): TXT 는 파일 이름 탭이
+     없고(§3.2) 「시험」은 F8 이라 아직 어느 매체에도 없다 — 여기서 목록을 발명하지 않는다. */
+  const SECTION_TITLES = {
+    template: "템플릿", binding: "필드 연결·표시", filename: "파일 이름", test: "시험",
+  };
   let LAST = null;
 
   const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
+
+  /* 편집기의 브리지 왕복은 **한 줄에 선다**(4R P2 → 5R P2 확장, 공용 `intent.js` 체인).
+     blur 로 발화하는 `change` 는 아무도 기다리지 않는 발신이고, 클릭 변이는 **자기 핸들러
+     안에서만** 기다린다 — 어느 쪽이든 사용자가 곧바로 back·다른 탭을 누르면 그 발신보다
+     먼저 판정이 나서, 방금 한 편집이 아무 확인 없이 좌초한다. 그래서 `change` 만이 아니라
+     **상태를 바꾸거나 그 순서에 기대는 왕복 전부**가 이 체인을 지난다(질의도 포함 — 대기 중
+     변이 뒤의 답이라야 참이다). `flushPendingEdits` 는 그 줄이 비었음을 뜻한다.
+
+     체인 밖에 남는 것 둘: `Bridge.initial`(첫 스냅샷 당김)과 `Bridge.editorHasUnsavedWork`
+     (정산 **뒤** 컨트롤러에게 직접 묻는 질의 — 체인에 넣으면 자기가 기다리는 줄에 선다). */
+  const EDIT_CHAIN = "editor:mutate";
+  function sendEdit(action, payload) {
+    return window.Intent.chained(EDIT_CHAIN, () => Bridge.call(SCREEN, action, payload));
+  }
+  function flushPendingEdits() {
+    return window.Intent.chained(EDIT_CHAIN, () => Promise.resolve());
+  }
 
   // 편집(탭) vs 신규(마법사 단계) — 정보 완전 동등, 공개 방식만 상이(결정 41).
   const isEditing = (s) => !!s.editing_origin;
@@ -26,39 +49,105 @@
 
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
-    Preserve.around(() => {  // 마법사 폼 포커스·캐럿·본문 스크롤 보존(#28)
+    Preserve.around(() => {  // 폼 포커스·캐럿·본문 스크롤 보존(#28)
       // 재구성 전 현 펼침을 읽어 이월(수동 개폐 존중) — 접힘별 전용 클래스로 분리 판독.
-      const fold = document.querySelector("#jobEditHost details.ign-fold");
+      const fold = document.querySelector("#scr-editor details.ign-fold");
       if (fold) foldOpen = fold.open;
-      const tokFold = document.querySelector("#jobEditHost details.tok-fold");
+      const tokFold = document.querySelector("#scr-editor details.tok-fold");
       if (tokFold) tokFoldOpen = tokFold.open;
       LAST = s;
+      renderHead(s);
+      renderContext(s);
       $("editor-steps").innerHTML = stepHeader(s);
       $("editor-body").innerHTML = stepBody(s);
       $("editor-foot").innerHTML = footer(s);
-      // 편집(탭)에선 저장 탭에만 푸터가 있다 — 빈 푸터의 고아 경계선 방지.
-      $("editor-foot").style.display = (isEditing(s) && s.step < 2) ? "none" : "";
+      $("editor-foot").style.display = footer(s) ? "" : "none";
     });
+  }
+
+  /* 머리 — 이름(안정 입력)·부제·저장 상태 + 판본. 「저장」 분류 사망의 승계처(§10.13.3).
+     이름 입력은 innerHTML 로 다시 짓지 않는다: 매 push 마다 다시 지으면 아직 change 로
+     확정되지 않은 타이핑이 스냅샷 값으로 조용히 덮인다. 포커스 중엔 값도 건드리지 않는다. */
+  function renderHead(s) {
+    const nameEl = $("editorName");
+    if (nameEl && document.activeElement !== nameEl && nameEl.value !== s.name) {
+      nameEl.value = s.name || "";
+    }
+    $("editorSubtitle").textContent = s.template_name
+      ? `템플릿 ${s.template_name}` : "템플릿을 아직 고르지 않았습니다.";
+    // 판본(§10.13 판정 O 표시 자리 ①) — 저장된 작업만 세대가 있다. 초안에 r1 을 붙이면
+    // 저장되지도 않은 규칙에 있지도 않은 세대를 말하게 된다.
+    const st = $("editorSaveState");
+    const rev = s.revisions || {};
+    // 세션 수준 dirty 는 **Python 이 낸 값 하나**를 읽는다(3R 근본 조치) — 여기서
+    // `dirty_sections` 로 다시 조립하면 이름처럼 section 밖의 편집을 「저장됨」이라 말한다.
+    const dirty = !!s.dirty;
+    if (s.is_draft) {
+      st.dataset.level = "idle";
+      st.textContent = "아직 저장하지 않은 새 작업";
+    } else {
+      st.dataset.level = dirty ? "warn" : "idle";
+      st.textContent = (dirty ? "저장하지 않은 변경 · " : "저장됨 · ")
+        + `템플릿 r${rev.template || "?"} · 연결 r${rev.binding || "?"}`;
+    }
+  }
+
+  /* 진입 문맥 배너(계약 §5.1) — 왜 왔는지·무엇을 보고 왔는지·어디로 돌아가는지.
+     증거는 **보낸 표면이 본 것**을 그대로 싣는다(편집기가 다시 계산하면 배너와 화면이
+     갈린다). 사유가 자발적 진입이면 배너 자체를 세우지 않는다 — 할 말이 없으면 침묵. */
+  const ENTRY_LEAD = {
+    library: "「문서 작업」에서 열었습니다.",
+    preview_result: "미리보기에서 열었습니다.",
+    run_failure: "생성 실패 결과에서 열었습니다.",
+    output_result: "생성 결과에서 열었습니다.",
+    document_browser_repair: "실행을 막는 문제를 고치러 열었습니다.",
+  };
+  const RETURN_LABEL = {
+    data: "문서 만들기로 돌아가기", preview: "미리보기로 돌아가기",
+    result: "결과로 돌아가기", library: "「문서 작업」으로 돌아가기",
+    documents: "문서 탐색으로 돌아가기",
+  };
+  function renderContext(s) {
+    const box = $("editorContext");
+    const ctx = s.context || {};
+    const lead = ENTRY_LEAD[ctx.entry_reason];
+    if (!lead) { box.style.display = "none"; box.innerHTML = ""; return; }
+    const ev = ctx.evidence || {};
+    const rows = Object.keys(ev).map((k) =>
+      `<span><b>${esc(k)}</b> ${esc(ev[k])}</span>`).join("");
+    const surface = (ctx.return_context || {}).surface;
+    const back = RETURN_LABEL[surface]
+      ? `<button class="btn sm" data-act="context-return">${esc(RETURN_LABEL[surface])}</button>` : "";
+    box.style.display = "";
+    box.innerHTML = `<div class="row"><b>${esc(lead)}</b><span class="spacer"></span>${back}</div>` +
+      (rows ? `<div class="ctx-ev">${rows}</div>` : "");
   }
 
   /* 헤더: 신규=단계 표지(번호·게이트), 편집=탭(자유 이동 버튼). 같은 .wstep-tab 룩 재사용. */
   function stepHeader(s) {
+    const sections = s.sections || [];
+    const here = sections.indexOf(s.section);
     if (isEditing(s)) {
-      return STEP_TITLES.map((t, i) => {
-        const cur = i === s.step ? ' aria-current="true"' : "";
-        return `<button class="wstep-tab as-tab" data-act="goto-tab" data-step="${i}"${cur}>${esc(t)}</button>`;
+      return sections.map((sec) => {
+        const cur = sec === s.section ? ' aria-current="true"' : "";
+        const dirty = (s.dirty_sections || []).includes(sec) ? " dirty" : "";
+        return `<button class="wstep-tab as-tab${dirty}" data-act="goto-tab" data-section="${esc(sec)}"${cur}>` +
+          `${esc(SECTION_TITLES[sec] || sec)}</button>`;
       }).join("");
     }
-    return STEP_TITLES.map((t, i) => {
-      const cur = i === s.step ? ' aria-current="true"' : "";
-      const done = i < s.step ? " done" : "";
-      return `<div class="wstep-tab${done}"${cur}><span class="k">${i + 1}</span>${esc(t)}</div>`;
+    return sections.map((sec, i) => {
+      const cur = sec === s.section ? ' aria-current="true"' : "";
+      const done = i < here ? " done" : "";
+      return `<div class="wstep-tab${done}"${cur}><span class="k">${i + 1}</span>${esc(SECTION_TITLES[sec] || sec)}</div>`;
     }).join("");
   }
 
-  /* 본문 표제 — 신규는 단계 서수를 말하고, 편집(탭)은 분류 이름만 말한다. */
-  function stageTitle(s, i) {
-    return isEditing(s) ? STEP_TITLES[i] : `${i + 1}단계: ${STEP_TITLES[i]}`;
+  /* 본문 표제 — 신규는 단계 서수를 말하고(순서 의존이 실재), 편집은 탭 이름만 말한다. */
+  function stageTitle(s, section) {
+    const title = SECTION_TITLES[section] || section;
+    if (isEditing(s)) return title;
+    const i = (s.sections || []).indexOf(section);
+    return i < 0 ? title : `${i + 1}단계: ${title}`;
   }
 
   function stepBody(s) {
@@ -66,9 +155,9 @@
     const notice = s.notice
       ? `<p class="note ${s.notice.level === "ok" ? "quiet" : "warnbox"}" style="white-space:pre-line">${esc(s.notice.text)}</p>`
       : "";
-    if (s.step === 0) return notice + templateStage(s);
-    if (s.step === 1) return notice + mappingStage(s);
-    return notice + saveStage(s);  // 2 = 저장
+    if (s.section === "template") return notice + templateStage(s);
+    if (s.section === "binding") return notice + mappingStage(s);
+    return notice + saveStage(s);
   }
 
   /* ---- 분류 0: 템플릿 — 신규 1단계 = **라이브러리에서 그룹 구획으로 고르기**(#108 슬라이스 3).
@@ -128,13 +217,14 @@
   }
 
   function templateStage(s) {
-    let out = `<div class="wtitle">${esc(stageTitle(s, 0))}</div>
+    let out = `<div class="wtitle">${esc(stageTitle(s, "template"))}</div>
       <p class="wsub">라이브러리에서 누름틀 템플릿을 고르거나 '가져오기…'로 추가하세요.</p>
       ${libraryPicker(s)}`;
     if (s.template_name) {
       out += `<div class="row"><span class="lbl">선택한 템플릿</span>
         <span class="filechip"><b>${esc(s.template_name)}</b></span>
         ${PathTrack.affordances(s.template_path)}</div>`;
+      out += provenanceBlock(s);   // 「저장」 분류 사망의 승계(§10.13.3) — 템플릿·필드 어휘의 지문
     }
     if (s.raw_block) {
       out += `<p class="note dangerbox" style="white-space:pre-line">${esc(s.raw_block)}</p>`;
@@ -269,9 +359,11 @@
     const banner = s.schema_only
       ? `<p class="note warnbox">데이터 없이 매핑 중입니다. 고정값을 넣거나 비움으로 확정하세요.</p>`
       : "";
-    return `<div class="wtitle">${esc(stageTitle(s, 1))}</div>
+    return `<div class="wtitle">${esc(stageTitle(s, "binding"))}</div>
       <p class="wsub">필드마다 데이터 열을 지정하고 전 행을 확정하세요.</p>
       ${dataGateway(s)}
+      ${datasetBlock(s)}
+      ${defaultDatasetBlock(s)}
       ${headerSelect(s)}
       ${banner}
       <div class="tblwrap"><table class="map"><thead><tr>
@@ -343,18 +435,16 @@
       <td>${ownerTag(r, s)}</td></tr>`;
   }
 
-  /* ---- 분류 2: 저장 ---- */
+  /* ---- 탭: 파일 이름 — 대조표 20행의 승격(저장 단계 인라인 → 전용 탭).
+     이름·자동등록·기본 데이터·작성 출처는 각자의 거처로 흩어졌다(§10.13.3 승계 정산):
+     이름=머리, 자동등록·기본 데이터=연결 탭의 데이터 관문, 작성 출처=템플릿 탭. ---- */
   function saveStage(s) {
-    return `<div class="wtitle">${esc(stageTitle(s, 2))}${s.editing_origin ? ` <span class="pill">편집: ${esc(s.editing_origin)}</span>` : ""}</div>
-      <p class="wsub">이 작업(템플릿·매핑·파일명)을 저장합니다. 데이터는 실행할 때 고릅니다.</p>
-      <div class="row"><span class="lbl lbl-fixed">작업 이름</span>
-        <input class="field" data-act="name" value="${esc(s.name)}" placeholder="예: 공고서 자동생성"></div>
+    return `<div class="wtitle">${esc(stageTitle(s, "filename"))}</div>
+      <p class="wsub">이 작업이 만드는 파일의 이름 규칙입니다. HWPX 작업의 영구 규칙이고,
+        이번 생성에서만 쓸 값은 여기 두지 않습니다.</p>
       <div class="row"><span class="lbl lbl-fixed">파일명 패턴</span>
         <input class="field mono" data-act="pattern" value="${esc(s.pattern)}"></div>
       ${s.pattern_preview ? `<p class="hint mono" style="margin-top:0">예: ${esc(s.pattern_preview)}${s.record_count ? " (표본 1행 기준)" : ""}</p>` : ""}
-      ${provenanceBlock(s)}
-      ${datasetBlock(s)}
-      ${defaultDatasetBlock(s)}
       ${filenameTokenHelp(s)}
       <div id="save-msg" class="note" style="display:none"></div>`;
   }
@@ -459,30 +549,75 @@
      실행 복귀는 화면 머리 「실행으로 돌아가기」가 담당하고(F2 PR-B — 좌 목록 행 클릭의
      승계처), 저장은 제자리에서 완결된다. ---- */
   function footer(s) {
+    const sections = s.sections || [];
+    const here = sections.indexOf(s.section);
     if (isEditing(s)) {
-      return s.step === 2
-        ? `<span class="spacer"></span><button class="btn primary" data-act="save">저장</button>`
-        : "";
+      // 편집의 주 행동은 **하나**다(§10.13 판정 E): 「변경 저장」. 「이번 생성에 적용」은
+      // runOverrides 가 서는 PR-B 자리라 여기 라디오를 미리 늘어놓지 않는다(§6: 같은
+      // 선택지를 모든 문맥에 나열하지 않는다). 손댄 것이 없으면 버릴 것도 없다.
+      const discard = s.dirty
+        ? `<button class="btn" data-act="discard-patch">변경 버리기</button>` : "";
+      return `${discard}<span class="spacer"></span>` +
+        `<button class="btn primary" data-act="save">변경 저장</button>`;
     }
-    const back = s.step > 0
+    const back = here > 0
       ? `<button class="btn" data-act="back">◀ 뒤로</button>` : `<button class="btn" disabled>◀ 뒤로</button>`;
-    let next;
-    if (s.step < 2) {
-      const can = s.reachable[s.step];
-      next = `<button class="btn primary" data-act="next"${can ? "" : " disabled"}>다음 ▶</button>`;
-    } else {
-      next = `<button class="btn primary" data-act="save">작업 저장</button>`;
-    }
-    const hint = (s.step < 2 && !s.reachable[s.step])
-      ? `<span class="muted capnote">${gateHint(s)}</span>` : "";
+    const last = here >= sections.length - 1;
+    const can = !!(s.reachable || {})[s.section];
+    const next = last
+      ? `<button class="btn primary" data-act="save">작업 저장</button>`
+      : `<button class="btn primary" data-act="next"${can ? "" : " disabled"}>다음 ▶</button>`;
+    const hint = (!last && !can) ? `<span class="muted capnote">${gateHint(s)}</span>` : "";
     return `<button class="btn" data-act="cancel-new">취소</button>${back}` +
       `<span class="spacer"></span>${hint}${next}`;
   }
 
   function gateHint(s) {
-    if (s.step === 0) return "템플릿을 선택하고 미해결 토큰을 확인해야 진행할 수 있습니다";
-    if (s.step === 1) return "전 행을 확정해야 진행할 수 있습니다";
+    if (s.section === "template") return "템플릿을 선택하고 미해결 토큰을 확인해야 진행할 수 있습니다";
+    if (s.section === "binding") return "전 행을 확정해야 진행할 수 있습니다";
     return "";
+  }
+
+  /* 탭 이웃 — 초안 마법사의 ◀뒤로/다음▶ 이 쓰는 자리. 목록은 Python 이 준다(발명 금지). */
+  function neighbour(delta) {
+    const sections = (LAST && LAST.sections) || [];
+    const here = sections.indexOf(LAST && LAST.section);
+    return sections[Math.min(sections.length - 1, Math.max(0, here + delta))];
+  }
+
+  /* 탭 이동 — 처분 미확정 patch 가 있으면 Python 이 `needs_section_guard` 로 되돌리고,
+     여기서 **3택**(저장하고 이동 · 버리고 이동 · 머무르기)을 받는다(계약 §5.2).
+     판정이 Python 인 이유: "무엇이 dirty 인가"는 규칙 비교라 표면이 재유도하면 두 답이
+     생긴다. 문안만 여기 있고, 통과 표지(`disposition`)를 실어 같은 액션을 다시 부른다.
+     머무르기는 **기본값**이다 — 모달을 Escape 로 닫아도 편집이 사라지지 않는다. */
+  async function gotoSection(target) {
+    if (!target) return;
+    // 대기 중 입력이 판정을 추월하지 않게 먼저 정산한다(4R P2) — 방금 친 패턴이 아직
+    // 도착하지 않은 채 판정하면 처분할 것이 없다고 읽고 그 편집을 다른 탭으로 끌고 간다.
+    await flushPendingEdits();
+    const r = await sendEdit("goto_section", { section: target });
+    if (!(r && r.needs_section_guard)) return;
+    const choice = await Modal.choose({
+      title: `「${r.section_label}」 에서 바꾼 내용이 있습니다`,
+      body: "다른 탭으로 가기 전에 이 변경을 어떻게 할지 정하세요.\n" +
+        "한 번에 한 곳만 고칩니다 — 저장하면 새 판본이 되고, 버리면 열었을 때 상태로 돌아갑니다.",
+      choices: [
+        { value: "save", label: "저장하고 이동" },
+        { value: "discard", label: "버리고 이동" },
+        { value: "stay", label: "머무르기" },
+      ],
+    });
+    if (choice === "save") {
+      const saved = await doSave({});
+      if (!saved) return;                       // 저장이 막혔으면 이동하지 않는다(문맥 보존)
+    } else if (choice === "discard") {
+      // **그 자리만** 되돌린다(2R P2) — 모달이 말한 범위가 곧 파기 범위다. 이름처럼 어느
+      // section 에도 없는 편집은 이 처분의 대상이 아니다.
+      await sendEdit("discard_patch", { section: r.section });
+    } else {
+      return;                                   // 머무르기(Escape 포함)
+    }
+    await sendEdit("goto_section", { section: target, disposition: choice });
   }
 
   /* 확정·수동 매핑 보호(PR#105 리뷰 F1) — 관문의 데이터 교체/비우기는 _ensure_model 재초안으로
@@ -510,7 +645,7 @@
   }
 
   async function confirmMappingResetIfConfirmed(verbPhrase) {
-    const st = await Bridge.call(SCREEN, "mapping_reset_stakes", {});
+    const st = await sendEdit("mapping_reset_stakes", {});
     const n = (st && st.human) || 0;
     if (!n) return true;
     return Modal.confirm({ body:
@@ -531,12 +666,12 @@
       switch (act) {
         case "use-library": {
           if (!(await confirmNewSessionIfUnsaved())) break;
-          await Bridge.call(SCREEN, "use_library_template", { path: el.dataset.path });
+          await sendEdit("use_library_template", { path: el.dataset.path });
           break;
         }
         case "toggle-lib-group":
           // 1단계 피커 그룹 접힘 — 관리 화면과 같은 모델 토글(뷰 상태, 세션 불변).
-          await Bridge.call(SCREEN, "toggle_library_group", { group: el.dataset.group });
+          await sendEdit("toggle_library_group", { group: el.dataset.group });
           break;
         case "import-template": {
           if (!(await confirmNewSessionIfUnsaved())) break;
@@ -544,7 +679,7 @@
           if (typeof r === "string" && r.startsWith("ERROR:")) alertMsg(r.slice(6).trim());
           break;
         }
-        case "ack-gate": await Bridge.call(SCREEN, "ack_gate", {}); break;
+        case "ack-gate": await sendEdit("ack_gate", {}); break;
         case "pick-data": {
           if (!(await confirmMappingResetIfConfirmed("데이터를 바꾸면"))) break;  // 확정 보호(F1)
           let r = await Bridge.pickDataFile(SCREEN);
@@ -557,22 +692,33 @@
         }
         case "skip-data": {
           if (!(await confirmMappingResetIfConfirmed("데이터 없이 진행하면"))) break;  // 확정 보호(F1)
-          await Bridge.call(SCREEN, "skip_data", {});
+          await sendEdit("skip_data", {});
           break;
         }
-        case "goto-tab":  // 편집(탭) 자유 이동(결정 41) — 게이트는 백엔드가 editing 기준으로 판정.
-          await Bridge.call(SCREEN, "goto_step", { step: Number(el.dataset.step) });
+        case "goto-tab":  // 탭 이동 — 처분 미확정이면 백엔드가 3택을 요구한다(§5.2).
+          await gotoSection(el.dataset.section);
           break;
+        case "context-return":
+          await leaveTo(returnScreen());
+          break;
+        case "discard-patch": {
+          if (!(await Modal.confirm({
+            body: "이 편집에서 바꾼 내용을 버리고 저장된 상태로 되돌립니다.\n\n계속할까요?",
+            returnFocus: el, confirmLabel: "변경 버리기", cancelLabel: "취소",
+          }))) break;
+          await sendEdit("discard_patch", {});
+          break;
+        }
         // 칩-라이브(결정 13): 칩 클릭 = 즉시 토글(활성↔미사용). 전체 사용/전체 미사용 대칭쌍.
         case "toggle-header":
-          await Bridge.call(SCREEN, "toggle_source_active", { field: el.dataset.field }); break;
-        case "use-all-headers": await Bridge.call(SCREEN, "use_all_headers", {}); break;
+          await sendEdit("toggle_source_active", { field: el.dataset.field }); break;
+        case "use-all-headers": await sendEdit("use_all_headers", {}); break;
         case "use-none": {
           // 수치는 Python 이 지금 판정(stale LAST 우회 차단 — F7 동형). 확정 존재는 확인
           // 모달 **전에** 선차단(PR-3 리뷰 F5: 파괴를 승인시킨 뒤 오류로 거부하는 확인-후-
           // 오류 순서 금지) — 백엔드 loud 차단은 백스톱으로 존속. 소스 겨눈 수동 미확정만
           // 실제 강등 집합이라 그 수치로 확인한다(리뷰 F4 — 문안=파괴 집합).
-          const st = await Bridge.call(SCREEN, "mapping_reset_stakes", {});
+          const st = await sendEdit("mapping_reset_stakes", {});
           if (st && st.confirmed) {
             window.alert(`확정한 매핑 ${st.confirmed}개가 있어 전체 미사용을 할 수 없습니다. 확정을 먼저 해제하거나 칩을 하나씩 끄세요.`);
             break;
@@ -582,28 +728,31 @@
             `전체 미사용하면 직접 소스를 고른 매핑 ${man}개의 수동 지정이 해제됩니다` +
             `(자동 제안으로만 복원).\n\n계속할까요?`,
             confirmLabel: "전체 미사용", cancelLabel: "취소" }))) break;
-          await Bridge.call(SCREEN, "use_none", {});
+          await sendEdit("use_none", {});
           break;
         }
         case "revert-source":
-          await Bridge.call(SCREEN, "revert_source", { index: idx }); break;
-        case "prev-rec": await Bridge.call(SCREEN, "step_preview", { delta: -1 }); break;
-        case "next-rec": await Bridge.call(SCREEN, "step_preview", { delta: 1 }); break;
-        case "unconfirm-all": await Bridge.call(SCREEN, "unconfirm_all", {}); break;
-        case "restore-confirmed": await Bridge.call(SCREEN, "restore_confirmed", {}); break;
+          await sendEdit("revert_source", { index: idx }); break;
+        case "prev-rec": await sendEdit("step_preview", { delta: -1 }); break;
+        case "next-rec": await sendEdit("step_preview", { delta: 1 }); break;
+        case "unconfirm-all": await sendEdit("unconfirm_all", {}); break;
+        case "restore-confirmed": await sendEdit("restore_confirmed", {}); break;
         case "confirm-all": await confirmAll(); break;
-        case "row-confirm": await Bridge.call(SCREEN, "set_confirmed", { index: idx, confirmed: el.checked }); break;
+        case "row-confirm": await sendEdit("set_confirmed", { index: idx, confirmed: el.checked }); break;
         case "cancel-new": {
           if (!(await EditorEntry.confirmDiscard(
             "새 작업 만들기를 취소하면 입력한 이름 · 데이터 · 매핑이 사라집니다.\n\n계속할까요?",
             el))) break;
-          await Bridge.call(SCREEN, "discard_session", {});
-          if (window.JobScreen && window.JobScreen.showRunMode) window.JobScreen.showRunMode();
-          else window.alert("실행 모드로 돌아갈 수 없습니다. 화면 구성 요소(JobScreen)가 로드되지 않았습니다.");
+          await sendEdit("discard_session", {});
+          // 확인·폐기를 마쳤으니 이탈 가드를 다시 태우지 않는다(force — `landOn` 이 건다) —
+          // 같은 폐기를 두 번 묻는 것은 소음이고, 두 번째 확인에서 취소하면 이미 비운
+          // 세션에 남게 된다. 착지는 이탈과 **같은 절차**를 쓴다: 편집기를 나가는 길이
+          // 둘이면 그중 하나만 재적재를 기다리는 비대칭이 다시 생긴다.
+          await landOn(returnScreen());
           break;
         }
-        case "back": await Bridge.call(SCREEN, "goto_step", { step: LAST.step - 1 }); break;
-        case "next": await Bridge.call(SCREEN, "goto_step", { step: LAST.step + 1 }); break;
+        case "back": await gotoSection(neighbour(-1)); break;
+        case "next": await gotoSection(neighbour(1)); break;
         case "save": await doSave({}); break;
         default: break;
       }
@@ -617,20 +766,20 @@
     if (!el) return;
     const idx = el.dataset.index !== undefined ? Number(el.dataset.index) : null;
     switch (el.dataset.act) {
-      case "row-source": Bridge.call(SCREEN, "set_source", { index: idx, source: el.value }); break;
-      case "row-type": Bridge.call(SCREEN, "set_type", { index: idx, type: el.value }); break;
-      case "row-fmt": Bridge.call(SCREEN, "set_fmt", { index: idx, fmt: el.value }); break;
-      case "row-const": Bridge.call(SCREEN, "set_const", { index: idx, const: el.value }); break;
-      case "name": Bridge.call(SCREEN, "set_name", { name: el.value }); break;
-      case "pattern": Bridge.call(SCREEN, "set_pattern", { pattern: el.value }); break;
-      case "dataset-name": Bridge.call(SCREEN, "set_dataset_name", { name: el.value }); break;
+      case "row-source": sendEdit("set_source", { index: idx, source: el.value }); break;
+      case "row-type": sendEdit("set_type", { index: idx, type: el.value }); break;
+      case "row-fmt": sendEdit("set_fmt", { index: idx, fmt: el.value }); break;
+      case "row-const": sendEdit("set_const", { index: idx, const: el.value }); break;
+      case "name": sendEdit("set_name", { name: el.value }); break;
+      case "pattern": sendEdit("set_pattern", { pattern: el.value }); break;
+      case "dataset-name": sendEdit("set_dataset_name", { name: el.value }); break;
       default: break;
     }
   }
 
   /* 모두 확정 — 내용 행 즉시 확정 + 비움 승격 이름게이트(ADR-E 반사적 dismiss 봉쇄). */
   async function confirmAll() {
-    const res = await Bridge.call(SCREEN, "confirm_all", {});
+    const res = await sendEdit("confirm_all", {});
     const blanks = (res && res.blanks) || [];
     if (!blanks.length) return;
     const ok = await Modal.confirm({ body:
@@ -638,7 +787,7 @@
       confirmLabel: "비움으로 확정", cancelLabel: "취소",
     });
     // await 로 던진다 — fire-and-forget 이면 rejection 이 디스패처 가드 밖으로 샌다(#45).
-    if (ok) await Bridge.call(SCREEN, "confirm_blanks", { fields: blanks });
+    if (ok) await sendEdit("confirm_blanks", { fields: blanks });
   }
 
   /* 저장 — 차단 사유·덮어쓰기·자동등록 확인 재진술(조용한 덮어쓰기 금지).
@@ -648,14 +797,14 @@
   async function doSave(flags) {
     let res;
     try {
-      res = await Bridge.call(SCREEN, "save", flags || {});
+      res = await sendEdit("save", flags || {});
     } catch (err) {
       window.alert("저장 처리 중 오류가 발생했습니다. 작업이 저장됐는지 「문서 작업」에서 확인하세요.\n" + err);
       return;
     }
     if (!res || typeof res !== "object") {
       alertMsg("저장 결과를 확인할 수 없습니다. 작업이 저장됐는지 「문서 작업」에서 확인하세요.");
-      return;
+      return false;
     }
     if (res.ok) {
       // 저장은 제자리(결정 40 — 포커스 튕김 없음). 후보·문서 탐색 스냅샷만 갱신해 새/개명
@@ -669,7 +818,10 @@
         window.alert(`작업 '${res.saved_name}' 은 저장됐지만 데이터 등록이 실패했습니다.\n`
           + res.dataset_register_error);
       }
-      return;
+      // **성공을 값으로 돌려준다**(1R P1): 「저장하고 이동」·「저장하고 나가기」는 이 값으로
+      // 계속할지를 정한다 — undefined 를 돌려주면 성공한 저장이 이동을 막아, 사용자가 고른
+      // 처분이 절반만 일어난다(저장은 됐는데 가려던 곳에 못 간다).
+      return true;
     }
     if (res.needs_overwrite) {
       // 본 문안을 그대로 되돌려 준다(#149) — 모달을 읽는 사이 디스크가 바뀌면 확인은 다른
@@ -679,22 +831,23 @@
         body: res.overwrite_text + "\n\n계속할까요?",
         confirmLabel: "덮어쓰기", cancelLabel: "취소", danger: true,
       })) {
-        doSave(Object.assign({}, flags, {
+        return doSave(Object.assign({}, flags, {
           confirm_overwrite: true,
           confirmed_overwrite_text: res.overwrite_text,
         }));
       }
-      return;
+      return false;
     }
     if (res.needs_dataset_confirm) {
       if (await Modal.confirm({
         body: res.dataset_text, confirmLabel: "덮어쓰기", cancelLabel: "취소", danger: true,
       })) {
-        doSave(Object.assign({}, flags, { confirm_dataset: true }));
+        return doSave(Object.assign({}, flags, { confirm_dataset: true }));
       }
-      return;
+      return false;
     }
     alertMsg(res.dataset_error || res.block_reason || "저장할 수 없습니다.");
+    return false;
   }
 
   function alertMsg(msg, level) {
@@ -710,11 +863,112 @@
 
   function init() {
     Bridge.onPush(SCREEN, render);
-    // 에디터 흡수(결정 39) — 표면 거처는 「작업」 패널의 편집 호스트. 위임 루트도 함께 이사.
-    const root = $("jobEditHost");
+    // 몰입 표면(재작성 F7) — 위임 루트가 화면 전체다. back 은 재렌더가 만지지 않는 안정
+    // 요소라 여기서 직접 문다(문맥 배너의 복귀 버튼은 재구성되므로 위임으로 받는다).
+    const root = $("scr-editor");
     root.addEventListener("click", onClick);
     root.addEventListener("change", onChange);
+    $("editorBack").addEventListener("click", () => leaveTo(returnScreen()));
     Bridge.initial(SCREEN).then(render);
+  }
+
+  /* 복귀처 — 진입 문맥이 말한 표면(계약 §8). 없으면 「문서 만들기」다: 편집기는 늘 업무
+     표면에서 열리고, 모르는 자리로 보내느니 흐름의 본진으로 보낸다. */
+  const RETURN_SCREEN = {
+    data: "job", preview: "job", result: "job", documents: "job", library: "library",
+  };
+  function returnScreen() {
+    const ctx = (LAST && LAST.context) || {};
+    return RETURN_SCREEN[(ctx.return_context || {}).surface] || "job";
+  }
+
+  /* 복귀 **상태**까지 되돌린다(1R P2) — 화면 키만 맞추면 「미리보기로 돌아가기」가 보통의
+     「문서 만들기」로 데려다 놓는다. 라벨이 약속한 자리와 실제 착지가 다른 것은 문안 부정직의
+     한 형태다. 면을 여는 절차(Python 왕복·성사 뒤 열기·포커스)는 그 화면이 소유한 seam 을
+     그대로 쓴다 — 여기서 다시 조립하면 열기 규율이 두 벌이 된다. */
+  async function restoreReturnState() {
+    const ret = ((LAST && LAST.context) || {}).return_context || {};
+    if (ret.surface === "preview" && ret.reopen_drawer
+        && window.JobScreen && window.JobScreen.openPreview) {
+      // 규칙 재적재는 `landOn` 이 **전환 전에** 이미 끝냈다(8R 근본 조치) — 여기서 다시
+      // 기다리면 순서 규율이 미리보기 복귀에만 사는 두 벌째가 되고, 그것이 5R→8R 사이에
+      // 데이터·결과 복귀를 무방비로 남긴 자리다.
+      await window.JobScreen.openPreview();
+    }
+  }
+
+  /* 편집기에서 나가는 **착지 절차**(8R P1) — 목적 화면을 노출하기 **전에** 그 화면이
+     디스크를 다시 읽게 한다. `Nav.go` 의 자동 refresh 는 기다려지지 않는 발신이라, 전환만
+     하면 사용자는 **편집 전 규칙**을 든 화면을 손에 쥔다: 그 창에서 「만들기」를 누르면
+     방금 고친 매핑이 반영되지 않은 문서가 나오고, 실행 증거는 그것을 최신이라 말한다.
+     복귀처별로 봉합하지 않고 이 한 자리에 두는 이유가 곧 F7 리뷰가 반복된 원인이다.
+     재적재가 실패하면 **나가지 않는다** — 옛 규칙을 든 화면에 실행구를 열어 주는 것이
+     조용한 거짓이고, 편집기에 머무르는 쪽은 시끄럽고 되돌릴 수 있다. */
+  async function landOn(target) {
+    try {
+      await window.Nav.refresh(target);
+    } catch (err) {
+      window.alert("돌아갈 화면을 다시 읽지 못해 편집기에 머무릅니다: "
+        + String((err && err.message) || err));
+      return false;
+    }
+    window.Nav.go(target, { force: true, refreshed: true });
+    // **초점도 되돌린다**(9R P2) — 화면만 바꾸면 초점은 방금 숨겨진 편집기의 back 버튼에
+    // 남는다. 키보드 사용자는 보이는 초점 없이 착지해 남의(숨은) 요소부터 tab 을 시작한다.
+    // 되돌릴 자리는 편집기를 **띄운 자리**이고, 그것을 아는 곳은 진입 seam 하나다.
+    window.EditorEntry.restoreEntryFocus();
+    return true;
+  }
+
+  /* 편집기를 나가는 **단일 출구**(§10.13 판정 N) — back·문맥 복귀·다른 화면의 프로그램적
+     이동이 전부 여기로 모인다. 처분 미확정 patch 가 있으면 3택을 먼저 받고, 초안이면
+     세션 폐기 확인을 받는다(초안은 patch 가 아니라 세션 전체가 미저장이다 — 판정 P).
+     Nav.go 는 `force` 로 되돌아온다(가드 재진입 방지). */
+  async function leaveTo(target) {
+    await flushPendingEdits();
+    const s = LAST || {};
+    // **section 밖의 편집도 잃을 것이다**(2R P1): 이름·자동등록 이름은 어느 section 에도
+    // 속하지 않아 탭 표지엔 안 뜬다 — 그것만 보면 머리에서 이름을 고치고 나가는 사람에게
+    // 아무것도 묻지 않고 그 편집을 버린다. 몰입 표면엔 그 세션으로 되돌아올 길이 없으므로
+    // (구 「편집 계속」은 사망) 조용한 파기가 된다. 판정은 Python 의 `dirty` 하나다.
+    // 정산 뒤에도 **스냅샷이 아니라 컨트롤러에게 묻는다**(4R P2): push 도착과 이 판정의
+    // 순서까지 기대고 싶지 않다 — 잃을 것이 있는지는 Python 이 지금 답할 수 있다.
+    // `s.dirty` 를 먼저 보는 것은 세션 손댐 표지가 아직 안 선 첫 왕복의 방어다.
+    let dirty = !!s.dirty;
+    if (!dirty && !s.is_draft) {
+      try {
+        dirty = await Bridge.editorHasUnsavedWork();
+      } catch (err) {
+        dirty = true;   // 모르면 묻는다(확인-또는-경보의 안전 방향)
+      }
+    }
+    if (dirty && !s.is_draft) {
+      const choice = await Modal.choose({
+        title: "저장하지 않은 변경이 있습니다",
+        body: "편집기를 나가기 전에 이 변경을 어떻게 할지 정하세요."
+          + "\n저장하면 새 판본이 되고, 버리면 열었을 때 상태로 돌아갑니다.",
+        choices: [
+          { value: "save", label: "저장하고 나가기" },
+          { value: "discard", label: "버리고 나가기" },
+          { value: "stay", label: "머무르기" },
+        ],
+      });
+      if (choice === "save") {
+        if (!(await doSave({}))) return;      // 저장이 막혔으면 나가지 않는다(문맥 보존)
+      } else if (choice === "discard") {
+        await sendEdit("discard_patch", {});
+      } else {
+        return;
+      }
+    } else if (s.is_draft && !(await EditorEntry.confirmDiscard(
+      "편집기를 나가면 저장하지 않은 새 작업이 사라집니다."
+      + "\n사라지는 것: 이름 · 데이터 · 매핑\n\n계속할까요?"))) {
+      return;
+    } else if (s.is_draft) {
+      await sendEdit("new_session", {});   // 확인을 마쳤으면 실제로 폐기한다
+    }
+    if (!(await landOn(target))) return;
+    if (target === returnScreen()) await restoreReturnState();
   }
 
   /* 현 에디터 스냅샷 재당김·재렌더(#138 리뷰 F12) — 편집 모드로 복귀할 때 1단계 피커가
@@ -724,5 +978,5 @@
     if (window.pywebview && window.Bridge) Bridge.initial(SCREEN).then(render);
   }
 
-  window.EditorScreen = { init, rerender };
+  window.EditorScreen = { init, rerender, leaveTo };
 })();

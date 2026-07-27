@@ -150,11 +150,9 @@
           <p class="sub">데이터를 고르고, 그 데이터로 쓸 문서 작업을 실행합니다.</p>
         </div>
         <div class="scr-head-actions">
-          <!-- 편집 모드의 두 출구(대칭): 「편집 계속」=실행에서 편집으로 비파괴 재진입(#218 G4),
-               「실행으로 돌아가기」=편집에서 실행으로(F2 PR-B 신설 — 결정 40 이 좌 목록 행
-               클릭에 줬던 소임의 승계처, 지도 §10.9 판정 D). 둘 다 세션을 파괴하지 않는다. -->
-          <button class="btn sm" id="jobEditResume" style="display:none">편집 계속</button>
-          <button class="btn sm" id="jobEditExit" style="display:none">실행으로 돌아가기</button>
+          <!-- 편집 모드의 두 출구(「편집 계속」·「실행으로 돌아가기」)는 편집기가 몰입
+               표면이 되며 사망했다(재작성 F7 판정 N): 나가는 경로가 back 하나이고 그때
+               patch 처분이 확정되므로 「처분 미확정으로 이탈」 상태 자체가 없다. -->
           <div class="status" id="jobStatus" data-level="idle">작업 선택</div>
         </div>
       </header>
@@ -174,10 +172,6 @@
           <!-- 구 미선택 안내 패널은 데이터-우선 전환으로 은퇴 — 세션 표면이 작업 미선택에도
                살아 있고(데이터 존=진입점), 다음 할 일 안내는 게이트 문안(prework_gate)이 승계. -->
           <div class="job-zones" id="jobZones" style="display:none">
-            <!-- T2 복귀 고지(결정 45 재정의) — 렌더 함수가 안 만지는 JS 소유 요소: 세션 전환
-                 리셋·재렌더에 증발하지 않고, 확인 버튼/편집 재진입으로만 걷힌다(job.js 소유). -->
-            <div class="note warnbox" id="jobEditExitNote" style="display:none"></div>
-
             <div class="data-grid" id="jobDataGrid">
             <!-- ── 좌: 현재 데이터 ─────────────────────────────────────────────── -->
             <section class="dg-main">
@@ -356,16 +350,6 @@
             </div>
           </div>
 
-          <!-- 편집 모드(정의) 호스트 — 에디터 흡수(R-flow 블록 2 개정, 결정 39~41).
-               에디터 화면의 세 컨테이너를 문안째 이관: editor.js 렌더러가 같은 id 를 그대로
-               소유한다(옮긴 것은 거처뿐). 신규=마법사 단계·편집=탭은 렌더러가 스냅샷
-               editing_origin 으로 가른다. 표시는 job.js 의 모드 상태가 소유(실행 기본). -->
-          <div class="job-edit-host" id="jobEditHost" style="display:none">
-            <div class="wsteps" id="editor-steps"></div>
-            <div class="wbody" id="editor-body" data-preserve-scroll></div>
-            <footer class="wfoot" id="editor-foot"></footer>
-          </div>
-
           <!-- 하단 sticky 액션바(#179 슬라이스 5b) — 생성은 세션의 최종 행동이라 스크롤과 무관하게
                항상 도달 가능해야 한다. 실행 모드(세션 4존)에서만 노출(job.js syncModeDisplay 가
                jobZones 와 함께 토글) — 편집 모드·미선택에선 숨는다. -->
@@ -382,8 +366,43 @@
       </div>
     </section>
 
-    <!-- 작업 에디터 별도 화면(scr-editor)은 슬라이스 5에서 사망(결정 39 — 「작업」 패널
-         편집 모드로 흡수). 정의 surface 는 scr-job 의 #jobEditHost, 렌더러는 editor.js 존속. -->
+    <!-- ============ 문서 작업 편집기 (v6 screen-editor · 재작성 F7 PR-A) ============ -->
+    <!-- **몰입 표면**: 상단 2탭을 덮고 출구는 back 하나다(지도 §10.13 사용자 확정 2행).
+         편집을 「문서 만들기」 안의 한 모드로 두면 상단 탭·화면 내 컨트롤이 전부 처분
+         미확정 이탈구가 되고, 가드의 완전성이 표면 수에 비례한다(조용한 누락의 온상).
+         출구가 하나면 patch 3택(저장·버리기·머무르기)이 그 한 곳에서 끝난다.
+         구 `#jobEditHost`(「작업」 화면 편집 모드, 결정 39)는 여기로 흡수돼 사망 —
+         편집 진입은 EditorEntry.land 단일 정의가 이 화면으로 착지시킨다. -->
+    <section class="scr" id="scr-editor">
+      <div class="editor-shell">
+        <button class="btn sm back" id="editorBack" type="button">← 원래 업무로 돌아가기</button>
+        <header class="scr-head editor-head">
+          <div>
+            <p class="eyebrow">문서 작업 편집기</p>
+            <!-- 이름은 page-head 인라인(§10.13.3 승계) — 「저장」 분류가 죽으며 이 자리로
+                 옮겨왔다. 정체이지 규칙이 아니라 어느 탭에도 속하지 않는다(판정 L 계열).
+                 렌더가 innerHTML 로 다시 짓지 않는 **안정 요소**다: 매 push 마다 다시 지으면
+                 아직 change 로 확정되지 않은 타이핑이 스냅샷 값으로 조용히 덮인다. -->
+            <h1 id="editorTitle"><input class="field title-input" id="editorName" type="text"
+                   data-act="name" placeholder="작업 이름을 입력하세요"
+                   aria-label="작업 이름"></h1>
+            <p class="sub" id="editorSubtitle"></p>
+          </div>
+          <!-- 저장 상태 + 판본(판정 O 표시 자리 ①) — 백엔드만 세우고 아무도 안 읽는
+               durable 필드는 다음 슬라이스에서 조용히 틀려도 아무도 모른다. -->
+          <div class="status" id="editorSaveState" data-level="idle">새 작업</div>
+        </header>
+        <!-- 진입 문맥 배너(계약 §5.1) — 왜 왔고 무엇을 보고 왔는지, 그리고 돌아갈 자리. -->
+        <section class="note ctxbanner" id="editorContext" style="display:none"></section>
+        <!-- 탭 줄 — role="tablist" 를 쓰지 않는다: 신규 초안은 같은 자리를 **버튼이 아닌
+             단계 표지**로 그리므로(전진 게이트) tablist 의 자식 계약(role="tab")을 지킬 수
+             없고, 반만 맞는 ARIA 는 없느니만 못하다. 현재 자리는 aria-current 가 말한다. -->
+        <div class="wsteps" id="editor-steps" aria-label="문서 작업 편집 영역"></div>
+        <div class="wbody" id="editor-body" data-preserve-scroll></div>
+        <footer class="wfoot" id="editor-foot"></footer>
+      </div>
+    </section>
+
 
     <!-- ============ 기안 (R-info 3부, #148 — TXT 작업-앵커 master-detail) ============ -->
     <!-- 「작업」(HWPX)의 대칭 화면: 좌 목록(TXT 작업 조회·그룹 관리, 공용 grouplist.js 팩토리
@@ -929,6 +948,21 @@
         <div class="modal-actions">
           <button class="btn" id="confirmModalCancel">취소</button>
           <button class="btn primary" id="confirmModalOk">확인</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3택 모달(재작성 F7) — patch 처분(저장하고 이동 · 버리고 이동 · 머무르기)처럼 답이
+         셋인 자리. 확인 모달로 두 번 물으면 "취소가 무엇을 취소하는지"가 갈리고(이동인가
+         편집인가) 그 모호함이 곧 조용한 파기다. 기본 포커스·Escape = 머무르기(안전측). -->
+    <div id="chooseModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="chooseModalTitle">
+      <div class="modal-card">
+        <h3 id="chooseModalTitle">선택</h3>
+        <p class="modal-body" id="chooseModalBody"></p>
+        <div class="modal-actions">
+          <button class="btn" id="chooseModalCancel">머무르기</button>
+          <button class="btn" id="chooseModalAlt"></button>
+          <button class="btn primary" id="chooseModalOk"></button>
         </div>
       </div>
     </div>

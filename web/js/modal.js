@@ -196,13 +196,15 @@
        missingText       골격 부재 시 loud 문안(사용자 표면)
        prepare(els)      본문/라벨/초기값 채우기
        initialFocus(els) 초기 포커스 대상(confirm=취소, prompt=입력칸)
-       okValue(els)      확인 시 resolve 값 */
+       okValue(els)      확인 시 resolve 값
+       altId/altValue    세 번째 답이 있는 다이얼로그(choose)의 보조 버튼과 그 값 */
   function _promiseModal(spec) {
     return new Promise(function (resolve) {
       const els = {
         root: document.getElementById(spec.id),
         ok: document.getElementById(spec.okId),
         cancel: document.getElementById(spec.cancelId),
+        alt: spec.altId ? document.getElementById(spec.altId) : null,
         input: spec.inputId ? document.getElementById(spec.inputId) : null,
         error: spec.errorId ? document.getElementById(spec.errorId) : null,
       };
@@ -212,7 +214,8 @@
       // confirm/prompt 가 재진입으로 거절되고 Escape 로도 못 푼다). root 가 .modal 을 잃는 건 정적
       // 계약(index.html class="modal")상 도달 불가하나, 가드가 그 가정에 기대지 않게 명시적으로 막는다.
       if (!els.root || !els.root.classList.contains("modal")
-          || !els.ok || !els.cancel || (spec.inputId && !els.input)) {
+          || !els.ok || !els.cancel || (spec.altId && !els.alt)
+          || (spec.inputId && !els.input)) {
         // 골격 부재/불량 = 안전측 거절 + loud(#92 리뷰 #4) — 조용한 no-op 는 confirm-or-alarm 위반.
         console.error("Modal: 다이얼로그 골격 부재/불량 — " + spec.id);
         window.alert(spec.missingText);
@@ -235,6 +238,7 @@
       let validating = false;
       function cleanup() {
         els.ok.removeEventListener("click", onOk);
+        if (els.alt) els.alt.removeEventListener("click", onAlt);
         els.cancel.removeEventListener("click", onCancel);
         if (els.input) els.input.removeEventListener("keydown", onInputKey);
       }
@@ -273,6 +277,7 @@
         }
         finish(value);
       }
+      function onAlt() { finish(spec.altValue); }
       function onCancel() { finish(spec.refusal); }
       function onInputKey(e) {
         // 한글 IME 조합 확정 Enter 는 제출이 아니다(#92 리뷰 #3) — isComposing/229 선-가드.
@@ -281,6 +286,7 @@
         if (e.key === "Enter") { e.preventDefault(); onOk(); }
       }
       els.ok.addEventListener("click", onOk);
+      if (els.alt) els.alt.addEventListener("click", onAlt);
       els.cancel.addEventListener("click", onCancel);
       if (els.input) els.input.addEventListener("keydown", onInputKey);
       // Escape·프로그램적 close는 안전측 거절, 버튼은 선택값. Promise는 160ms 퇴장 정착 뒤 해소해
@@ -349,5 +355,40 @@
     });
   }
 
-  window.Modal = { open, close, confirm, prompt };
+  /* 답이 셋인 자리(재작성 F7 — patch 처분). Promise<string>: 주 행동·보조 행동·거절.
+     Escape·복귀·프로그램적 close = **거절 값**(머무르기)이라 창을 닫아 편집을 잃는 경로가
+     없다. 라벨은 호출부가 준다 — 이 골격은 "셋 중 하나"라는 형상만 소유한다.
+     opts: { title?, body, choices: [주, 보조, 거절] }(각 {value,label}). */
+  function choose(opts) {
+    opts = opts || {};
+    const list = opts.choices || [];
+    const primary = list[0] || { value: "ok", label: "확인" };
+    const alt = list[1] || { value: "alt", label: "" };
+    const refusal = list[2] || { value: "cancel", label: "취소" };
+    return _promiseModal({
+      id: "chooseModal",
+      okId: "chooseModalOk",
+      altId: "chooseModalAlt",
+      cancelId: "chooseModalCancel",
+      refusal: refusal.value,
+      altValue: alt.value,
+      missingText: "선택 창을 열 수 없어 요청을 실행하지 않았습니다. 다시 시도하세요.",
+      prepare: function (els) {
+        _setText("chooseModalTitle", opts.title || "선택");
+        _setText("chooseModalBody", opts.body || "");
+        els.ok.textContent = primary.label;
+        els.alt.textContent = alt.label;
+        els.cancel.textContent = refusal.label;
+      },
+      initialFocus: function (els) { return els.cancel; },  // 기본=거절(안전측, confirm 과 같은 규율)
+      okValue: function () { return primary.value; },
+      returnFocus: opts.returnFocus,
+    });
+  }
+
+  // `restoreFocus` 도 내보낸다(9R P2) — 몰입 편집기 이탈도 「띄운 자리로 초점을 되돌린다」는
+  // 같은 사건이다(면을 닫는 것과 화면을 되돌리는 것의 차이일 뿐). 규칙을 저쪽에서 다시
+  // 쓰면 되돌림 판정이 두 벌이 되고, 이 함수가 일부러 피한 함정(분리·비활성 요소 흉내내기)을
+  // 그 두 번째 사본이 되풀이한다.
+  window.Modal = { open, close, confirm, prompt, choose, restoreFocus };
 })();

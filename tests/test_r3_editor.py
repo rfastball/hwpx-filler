@@ -48,7 +48,7 @@ def _complete_with_data(ctrl: EditorController, name: str) -> None:
     """데이터(다중시트 확정) 연결 세션을 저장 직전까지 구성."""
     ctrl.load_template_path(str(TPL_COMPILED))
     ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
-    ctrl.dispatch("goto_step", {"step": 1})   # 매핑 진입(데이터 겨눔 — 3단계 접기)
+    ctrl.dispatch("goto_section", {"section": "binding"})   # 매핑 진입(데이터 겨눔 — 3단계 접기)
     ctrl.dispatch("set_type", {"index": 0, "type": "const"})
     ctrl.dispatch("set_const", {"index": 0, "const": "v"})
     r = ctrl.dispatch("confirm_all", {})
@@ -64,7 +64,7 @@ def test_c1_data_change_never_arrives_confirmed(tmp_path):
     ctrl = _controller(tmp_path)
     ctrl.load_template_path(str(TPL_COMPILED))
     ctrl.load_data_path(str(MULTI_SHEET))            # 첫 시트(공고명·추정가격)
-    ctrl.dispatch("goto_step", {"step": 1})          # 매핑 진입(데이터 겨눔 — 3단계 접기)
+    ctrl.dispatch("goto_section", {"section": "binding"})          # 매핑 진입(데이터 겨눔 — 3단계 접기)
     ctrl.dispatch("set_source", {"index": 0, "source": "추정가격"})
     r = ctrl.dispatch("confirm_all", {})
     ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
@@ -156,16 +156,19 @@ def test_editor_js_click_dispatch_guards_bridge_rejection():
     # awaited 여야 rejection 이 디스패처 가드로 올라온다 — fire-and-forget 강등 금지.
     # 개별 이름 나열이 아니라 onClick 안의 **모든** Bridge.* 호출을 검사한다(PR #46 P2 —
     # ack_gate·step_preview 등 직접 호출이 무대기라 가드 밖으로 새던 잔여 봉합).
-    unawaited = re.findall(r"(?<!await )Bridge\.\w+\(", body)
+    # 편집기 왕복은 공용 체인(`sendEdit`)을 지난다(재작성 F7 5R P2) — 발신 이름이 바뀌어도
+    # **무대기 강등 금지**라는 계약은 그대로다. 둘 다 센다: 체인 밖 직행도, 체인 무대기도
+    # 같은 결함(rejection 이 디스패처 가드 밖으로 새고, 정산이 그 발신을 못 기다린다).
+    unawaited = re.findall(r"(?<!await )(?:Bridge\.\w+|sendEdit)\(", body)
     assert not unawaited, (
-        f"onClick 안에 await 없는 Bridge 호출이 있습니다 — rejection 이 가드 밖으로 샙니다(#45): "
+        f"onClick 안에 await 없는 브리지 호출이 있습니다 — rejection 이 가드 밖으로 샙니다(#45): "
         f"{unawaited}"
     )
     for frag in ("await confirmAll()", "await doSave({})"):
         assert frag in body, f"onClick 이 '{frag}' 로 대기하지 않습니다 — 가드 상속 단절(#45)."
     # confirmAll 내부 2차 호출(confirm_blanks)도 fire-and-forget 이면 가드 밖으로 샌다.
     confirm_body = _segment(src, "async function confirmAll", "async function doSave")
-    assert 'await Bridge.call(SCREEN, "confirm_blanks"' in confirm_body, (
+    assert 'await sendEdit("confirm_blanks"' in confirm_body, (
         "confirmAll 의 confirm_blanks 호출이 awaited 가 아닙니다 — rejection 이 삼켜집니다(#45)."
     )
 
@@ -258,9 +261,11 @@ def test_k9_save_rereads_existing_dataset_under_lock_and_preserves_lifecycle(tmp
     pool.load_calls = 0
     res = ctrl.dispatch("save", {"confirm_dataset": True})
     assert res["ok"] is True and res["dataset_registered"] == "multi_sheet"
-    # 게이트 판정 1회 + mutate 잠금 안 최신값 재확인 1회. 확인 전 stash를 그대로 저장하면
-    # 동시 보관/삭제를 되돌리므로 #182부터 두 번째 읽기가 내구성 계약이다.
-    assert pool.load_calls == 2
+    # 게이트 판정 1회 + mutate 잠금 안 최신값 재확인 1회가 내구성 계약이다 — 확인 전
+    # stash를 그대로 저장하면 동시 보관/삭제를 되돌린다(#182). **하한**으로 세는 이유:
+    # 저장 착지 스냅샷의 기본 데이터 재진술(재작성 F7 — 「저장」 분류 사망 뒤 데이터 관문이
+    # 승계)이 표시용으로 한 번 더 읽는다. 표시 읽기는 내구성 결함이 아니다.
+    assert pool.load_calls >= 2
     item = pool.load("multi_sheet")
     assert item.status == "archived" and item.note == "보존메모"  # 수명·메모 보존 유지
     assert item.opts["path"] == str(MULTI_SHEET) and item.opts["sheet"] == "낙찰현황"

@@ -49,7 +49,12 @@ import threading
 from ..batch import generate_batch
 from ..core.dataset_pool import DatasetPoolRegistry
 from ..core.identity_summary import identity_summary
-from ..core.job import MISSING_MARKER, JobRegistry, rules_fingerprints
+from ..core.job import (
+    MISSING_MARKER,
+    JobRegistry,
+    content_fingerprint,
+    rules_fingerprints,
+)
 from ..core.mapping import SOURCE_CARRIER_TYPES
 from ..core.template_status import OUTPUT_SUBDIR_NAME
 from ..gui.filter_state import (
@@ -66,6 +71,7 @@ from ..gui.review_state import (
     ReviewState,
     build_evidence,
     review_gate_text,
+    previous_values,
     review_requirement,
 )
 from ..gui.run_state import RunViewModel, resolve_file_source, resolve_pool_source
@@ -159,6 +165,19 @@ def _run_title(status: str, cancelled: bool, succeeded: int, failed: int) -> str
     return "문서 생성 실패"
 
 
+def _revisions_of(vm) -> "dict[str, int]":
+    """이 런이 쓰는 Template·Binding 판본(§13-7, 재작성 F7 판정 I).
+
+    ``vm`` 이 없으면(작업 미선택 방어 경로) 빈 사전 — 판본을 **모르면 모른다고 한다**.
+    기본값 ``r1`` 을 채우면 결과 증거가 확인되지 않은 세대를 단정하게 된다(F5 판정 N 이
+    「기준선 없음」을 조용히 채우지 않은 것과 같은 규율).
+    """
+    job = getattr(vm, "job", None)
+    if job is None:
+        return {}
+    return {"template": job.template_revision, "binding": job.binding_revision}
+
+
 class JobController(DataZoneMixin, PoolTargetingMixin):
     """「작업」 화면 — 좌 작업 목록 선택 + 우 세션 패널(링1 RunViewModel/SelectionModel 위임).
 
@@ -179,6 +198,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         push: PushSink,
         *,
         pool_registry: "DatasetPoolRegistry | None" = None,
+        generation_lock: "threading.Lock | None" = None,
     ) -> None:
         self.registry = registry
         self._push_sink = push
@@ -220,6 +240,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 비교한다. 작업 전환에도 남는다: 남아 있어야 "지금 열린 작업이 그 런의 작업과
         # 다르다"를 말할 수 있다.
         self._last_run_job = ""
+        # 직전 런이 **고정한** 판본(재작성 F7 판정 I·§13-7). 런 시작 시점에 찍고 그 뒤
+        # 디스크를 다시 읽지 않는다 — 결과가 대는 근거는 그 런이 실제로 쓴 규칙의 세대다.
+        self._run_revisions: "dict[str, int]" = {}
         # 검토 승인 사건(재작성 F5, 지도 §10.12 판정 B) — **세션 소유·미영속**. 기준선은
         # `Job.reviewed_rules` 가 durable 로 들고, 승인만 여기 산다: 승인하고 실행하지 않은
         # 채 재시작하면 요구가 되돌아온다(열린 게이트로 시작하지 않는다). 폐기 코드는 없다
@@ -259,11 +282,43 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.data_notice_text = ""
         self.data_notice_level = ""
         self._cancel_generation = threading.Event()
-        self._generation_lock = threading.Lock()
+        # 진행 중인 런은 **한 앱에 하나뿐인 사실**이라 자물쇠를 주입받을 수 있다(9R P1) —
+        # 규칙을 쓰는 표면이 이 화면 밖에도 있으므로(편집기 진입·라이브러리 재연결) 그쪽이
+        # 같은 자물쇠를 봐야 한다. 미주입은 자기 것을 세운다(단독 구성 테스트 호환).
+        self._generation_lock = (
+            generation_lock if generation_lock is not None else threading.Lock()
+        )
         # 등록 데이터(풀) 겨눔(#26/#6) — 기본은 홈 레지스트리, 테스트는 주입.
         self.pool_registry = (
             pool_registry if pool_registry is not None else default_pool_registry()
         )
+
+    # --------------------------------------------- 진행 중인 런과의 경합 거절(9R P1)
+    def raise_if_generating(self, then_do: str) -> None:
+        """진행 중인 런과 겹치면 안 되는 전이의 **단일 거절**.
+
+        이 거절이 필요한 자리의 공통 형상: 진행 중 배치가 **고정한 입력**(vm·데이터·범위)을
+        그 배치가 끝나기 전에 갈아치우는 전이다. 그러면 결과가 어느 입력으로 만들어진 것인지
+        갈리고, 최악은 결과가 **디스크에 없는 세대**를 자기 근거로 대는 것이다(§13-7).
+
+        **왜 한 정의로 모으는가**(9R P1): 같은 판정이 표면마다 인라인 사본으로 흩어져 있었고,
+        그래서 이 화면 밖에 있는 규칙 쓰기 경로(편집기 진입·라이브러리 재연결)가 조용히
+        빠져 있었다 — 열거가 흩어지면 한 자리가 빠진다는 F7 의 반복 기제와 같은 형태다
+        (지도 §10.13.14). 새 규칙 쓰기 표면은 이 메서드를 부르면 된다.
+
+        ``then_do`` = 「끝난 뒤에 ___」에 들어갈 사람 어휘(무엇을 못 했는지 재진술).
+        """
+        if self._generation_lock.locked():
+            raise ValueError(f"문서 생성이 진행 중입니다. 끝난 뒤에 {then_do}.")
+
+    def raise_if_generating_before_swap(self, then_do: str) -> None:
+        """위와 같은 거절의 **교체 계열 문안** — 중단이라는 출구를 함께 재진술한다.
+
+        데이터·작업 교체는 진행 중 배치를 기다릴 것 없이 **중단**해도 되는 전이라, 거절이
+        기다림만 말하면 사람이 쥔 출구 하나를 숨기는 셈이 된다(과소 안내).
+        """
+        if self._generation_lock.locked():
+            raise ValueError(f"문서 생성이 진행 중입니다. 중단하거나 완료된 뒤 {then_do}.")
 
     # ------------------------------------------------------------- 관측 푸시
     def _push(self) -> None:
@@ -363,8 +418,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         그리면 적용도 안 한 편집을 승인하게 되고 그건 불변식 21 위반이다) ⓒ선택 0건
         (§18.11-6: 선택 0건에서는 미리보기에 진입하지 않고 첫 레코드로 대신하지 않는다).
         """
-        if self._generation_lock.locked():
-            raise ValueError("문서 생성이 진행 중입니다. 끝난 뒤에 미리보기를 여세요.")
+        self.raise_if_generating("미리보기를 여세요")
         if self.range_draft is not None:
             raise ValueError("범위 편집을 적용하거나 취소한 뒤에 미리보기를 여세요.")
         if self.vm is None:
@@ -416,8 +470,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         되돌린다(멱등). 생성 중 진입은 거절한다 — 초안 적용은 실행 입력을 바꾸는 전이라
         진행 중인 런과 겹치면 어느 범위로 만든 결과인지 갈린다.
         """
-        if self._generation_lock.locked():
-            raise ValueError("문서 생성이 진행 중입니다. 끝난 뒤에 범위를 편집하세요.")
+        self.raise_if_generating("범위를 편집하세요")
         if self.datasource is None or not self.records:
             raise ValueError("데이터를 먼저 선택하세요.")
         if self.range_draft is None:
@@ -440,8 +493,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         「결과 닫기」 하나뿐이라는 규칙을 초안이 되돌리지 않는다.
         """
         draft = self._draft_or_raise()
-        if self._generation_lock.locked():
-            raise ValueError("문서 생성이 진행 중입니다. 끝난 뒤에 적용하세요.")
+        self.raise_if_generating("적용하세요")
         if draft.snapshot_gen != self._snapshot_gen:
             raise ValueError(
                 "데이터가 바뀌어 편집하던 범위를 적용할 수 없습니다. "
@@ -597,9 +649,22 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "structure_changed": req.structure_changed,
         }
 
+    def _raw_record(self, indices: "list[int]", pos: int) -> "dict":
+        """표시순 자리(`pos`)의 **원본 레코드** — 이전 판본 규칙을 다시 적용할 재료.
+
+        렌더된 값(`mapped`)으로는 다른 규칙을 적용할 수 없다: 이미 지금 규칙이 통과한
+        결과라 원천이 아니다. 자리→원본 index 변환은 실행 입력과 같은 리스트를 쓴다
+        (같은 순서를 두 번 계산하지 않는다 — 판정 M 의 서수 규율).
+        """
+        if not (0 <= pos < len(indices)):
+            return {}
+        index = indices[pos]
+        return self.records[index] if 0 <= index < len(self.records) else {}
+
     def _preview_payload(
         self, req: ReviewRequirement, unmet, mapped: "list[dict]", names: "list[str]",
         audit_counts: "tuple[int, int]",
+        indices: "list[int]",
     ) -> dict:
         """드로어 구획 — 닫혀 있으면 뼈대만(그리지 않는 값은 오조립의 미끼, §10.8.6 규칙 ①).
 
@@ -631,6 +696,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "evidence": build_evidence(
                 req, mapped=mapped, names=tuple(names), converged=converged,
                 too_long=too_long, pos=pos,
+                # 직전 판본 규칙으로 **같은 레코드**를 다시 렌더한 값(F7 판정 H — F5 가
+                # 되깎기 조건으로 박제한 before/after 의 회수).
+                before=previous_values(
+                    self.vm.job, req.changed_fields, self._raw_record(indices, pos)
+                ) if self.vm is not None else None,
             ),
             "can_approve": unmet is not None and total > 0,
             "empty_note": "" if total else "선택한 문서가 없습니다. 표에서 만들 문서를 고르세요.",
@@ -1161,11 +1231,19 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # 검토 요구·미리보기 드로어(F5). 이름·값은 위 단일 산출을 재사용한다 —
             # 표면이 따로 계획하면 미리보기가 실행과 다른 이름을 말한다(판정 A).
             "review": self._review_payload(req, req_unmet),
+            # **규칙의 지문**도 실행 입력의 정체다(6R P2). 결과가 「지금 결과」로 남으려면
+            # 그것을 만든 규칙이 아직 그 규칙이어야 한다 — 편집기에서 매핑·파일 이름을 고치고
+            # 돌아오면 재적재(`_reload_active_job`)가 규칙을 갈아 끼우는데, 세션 지문에 규칙이
+            # 없으면 **다른 규칙으로 만든 결과가 「지금 결과」로 남아** 후속 행동(실패분 선택·
+            # 파일 이름 수리)까지 열린 채다. 값은 검토 요구가 이미 계산한 그 지문을 쓴다 —
+            # 같은 상태를 두 번 세지 않는다(판정 단일 출처).
+            "rules_key": req.rules_key,
             # 드로어는 **생성 입력 그대로**를 그린다(표식 포함) — 여기가 "보이는 것 =
             # 만들어지는 것"의 마지막 자리다.
             "preview": self._preview_payload(
                 req, req_unmet, run_mapped, list(status.audit.names),
                 (len(status.audit.converged), len(status.audit.too_long)),
+                indices,
             ),
         })
         return base
@@ -1184,8 +1262,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         ``sheet`` 는 웹에서 확정한 시트명(다중 시트 확정 게이트 #33, None=CSV·단일 시트).
         시그니처 동형 — 브리지 ``pick_data_file``/``load_data_sheet`` 재사용.
         """
-        if self._generation_lock.locked():  # 생성 중 데이터 교체 금지(#302 P1 동류)
-            raise ValueError("문서 생성이 진행 중입니다. 중단하거나 완료된 뒤 데이터를 바꾸세요.")
+        self.raise_if_generating_before_swap("데이터를 바꾸세요")  # #302 P1 동류
         source, records = resolve_file_source(path, sheet=sheet)  # 실패는 raise(§18.2 원자)
         if not records:
             raise ValueError(NO_ROWS_TEXT)  # 성공 전 현재 runtime 미파기 — 아래 대입 전 반환
@@ -1254,6 +1331,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         작업 화면은 REFRESH_ON_NAV 에 있어 이 액션이 레일 복귀마다 발화하므로, 타 화면에서의
         삭제(그 화면으로 가려면 반드시 작업 화면을 이탈)가 복귀 시점에 잡힌다.
         """
+        if self.job_name and self.job_name in self.registry.names():
+            # **열린 작업의 규칙이 밖에서 바뀌었으면 다시 읽는다**(4R P1). 편집기가 자기
+            # 화면으로 나간 뒤(F7) 저장은 이 화면 밖에서 일어나고, `self.vm` 은 선택 시점의
+            # 인메모리 사본이라 그대로 두면 **저장한 사람이 옛 규칙으로 미리보고 옛 규칙으로
+            # 생성한다** — 영속·실행 경로가 화면 사이에서 갈리는 자리다. 세션(데이터·선택·
+            # 필터·저장 폴더)은 그대로 두고 규칙만 갈아 끼운다.
+            self._reload_active_job()
+            return None
         if self.job_name and self.job_name not in self.registry.names():
             lost = self.job_name
             # 세션 무효화(vm·job_name·데이터·폴더 clear). confirm=True — 작업이 이미
@@ -1263,6 +1348,46 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "notice": f"'{lost}' 작업이 다른 화면에서 삭제되어 열어 둔 실행 세션을 닫았습니다."
             }
         return None
+
+    def _reload_active_job(self) -> bool:
+        """디스크의 최신 규칙으로 활성 VM 을 다시 세운다 — 바뀐 게 없으면 아무것도 안 한다.
+
+        **지문이 갈릴 때만** 손대는 이유(4R P1): 이 경로는 화면 전환마다 발화한다
+        (`REFRESH_ON_NAV`). 무조건 재구성하면 평시 왕복이 실행 증거·미리보기 자리를 매번
+        되돌려, 아무 일도 없었는데 게이트가 다시 닫히는 것처럼 보인다.
+
+        갈렸을 때 버리는 것은 계약이 버리라는 것뿐이다(§19.10): **완주 담보**(그 규칙으로
+        만든 문서가 담보하던 것)와 **열려 있던 미리보기**(옛 규칙의 상). 승인은 따로 지우지
+        않는다 — 규칙 지문에 결속돼 자동으로 무효가 된다(F5 판정 I).
+        """
+        if self.vm is None or not self.job_name:
+            return False
+        try:
+            job = self.registry.load(self.job_name)
+        except Exception:  # noqa: BLE001 — 손상은 다음 스냅샷의 건강 표면이 말한다
+            return False
+        # **판본 메타까지 본다**(7R P2). `content_fingerprint` 는 판본 3필드를 일부러 뺀다
+        # (편집 세션에 거짓 파괴 확인을 띄우지 않으려고) — 그래서 그것만으로는 "지금 것인가"를
+        # 답할 수 없다: 규칙이 A→B→A 로 돌아온 저장은 내용 지문이 같지만 세대는 앞서 있고,
+        # 그 상태로 실행하면 결과가 **디스크에 없는 세대**를 자기 근거로 댄다(§13-7).
+        # 직전 판본 값도 같은 이유로 센다 — before/after 증거의 원천이다.
+        same_rules = content_fingerprint(job) == content_fingerprint(self.vm.job)
+        same_generation = (
+            job.template_revision == self.vm.job.template_revision
+            and job.binding_revision == self.vm.job.binding_revision
+            and job.previous_rules == self.vm.job.previous_rules
+        )
+        if same_rules and same_generation:
+            return False
+        self.vm = RunViewModel(job)
+        if self.records:
+            self.vm.set_acquired(self.datasource, self.records)  # ack 재평가 포함(RC-22)
+        if not same_rules:
+            # 규칙이 실제로 갈렸을 때만 증거를 걷는다 — 판본 메타만 앞선 경우(A→B→A)는
+            # 실행 입력이 그대로라 완주 담보·열린 면을 되돌릴 이유가 없다(과잉 리셋 금지).
+            self._last_generated = None
+            self._do_preview_close({})
+        return True
 
     def _do_select_job(self, p: dict) -> "dict | None":
         """후보·탐색에서 작업 선택 → RunViewModel 재구성. 저장 폴더 기본 = 템플릿/Results.
@@ -1280,8 +1405,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         name = p["name"]
         # 생성 진행 중 전환 금지(#302 P1) — vm 교체가 진행 중 배치의 검증·계획과 경합한다.
         # 조용한 무시가 아니라 시끄러운 거부(raise → 셸 rejection 백스톱이 표면화).
-        if self._generation_lock.locked():
-            raise ValueError("문서 생성이 진행 중입니다. 중단하거나 완료된 뒤 작업을 전환하세요.")
+        self.raise_if_generating_before_swap("작업을 전환하세요")
         self._clear_data_notice()
         # 사용자가 직접 골랐다 = 보관된 명시 사건보다 최신 의사. 들고 있으면 다음 마운트에서
         # 옛 의도가 되살아나 방금 고른 작업을 밀어낸다(지연된 조용한 추측).
@@ -1481,7 +1605,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
         커밋된 작업이 지금 패널에 선택돼 있으면 옛 경로의 VM 이 stale 이므로 ``_do_select_job``
         으로 재구성한다 — 데이터 겨눔·저장 폴더를 초기화하므로 결과 문구로 재진술(confirm-or-alarm).
+
+        **진행 중 런과 겹치면 거절한다**(9R P1 형제): 템플릿 경로는 durable 규칙이고 진행 중
+        배치는 옛 vm 을 고정해 뒀다 — 지금 갈아치우면 그 배치의 결과가 디스크에 없는 규칙을
+        자기 근거로 댄다. 편집기 진입과 같은 부류라 같은 술어를 쓴다.
         """
+        self.raise_if_generating("템플릿을 다시 연결하세요")
         res = relink_job_template(
             self.registry, p["name"], p.get("path", ""), confirm=bool(p.get("confirm")),
         )
@@ -1674,8 +1803,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         vm 경유(``load_pool_item``)는 작업 선택을 전제해 데이터-우선과 어긋난다. vm 이
         있으면 같은 데이터를 ``set_acquired`` 로 주입(ack 재평가 포함, RC-22).
         """
-        if self._generation_lock.locked():  # 생성 중 데이터 교체 금지(#302 P1 동류)
-            raise ValueError("문서 생성이 진행 중입니다. 중단하거나 완료된 뒤 데이터를 바꾸세요.")
+        self.raise_if_generating_before_swap("데이터를 바꾸세요")  # #302 P1 동류
         source, records = resolve_pool_source(item)
         if not records:
             return []
@@ -1783,6 +1911,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 완주 뒤 현재 상태를 읽으면 남의 작업에 역사를 적는다(_stamp_last_run 동류).
         run_job_name, run_vm = self.job_name, self.vm
         self._last_run_job = run_job_name   # 결과 행동의 주체(3R P2) — 세션 상태가 소유
+        # §13-7 「Run 은 사용한 Template·Binding 판본을 고정한다」(재작성 F7 판정 I).
+        # **시작 시점에** 붙든다: 배치가 도는 사이 에디터 저장이 착지하면 디스크 판본은
+        # 이미 다음 세대이고, 완주 뒤 그것을 읽어 말하면 결과가 **만들지 않은 규칙**을
+        # 자기 근거로 대게 된다(정체 고정과 같은 뿌리 — `_stamp_last_run` docstring).
+        self._run_revisions = _revisions_of(run_vm)
         indices = self._indices()
         out_dir = self.out_dir
 
@@ -1934,6 +2067,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "cancelled": cancelled,
             "attempted": attempted,
             "unstarted": batch.total - attempted,
+            "revisions": dict(self._run_revisions),
         }
 
     def _failure_rows(self, indices: "list[int]", results: list) -> "list[dict]":
@@ -2001,4 +2135,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "cancelled": False,
             "attempted": 0,
             "unstarted": n,
+            # 계약 §10.3 이 원인 미확정 화면에 **명시적으로** 요구하는 증거다("사용한
+            # Template·Binding 판본") — 원인을 모를수록 아는 사실을 빠짐없이 대야 한다.
+            "revisions": dict(self._run_revisions),
         }

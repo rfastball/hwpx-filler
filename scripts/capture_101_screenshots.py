@@ -250,59 +250,70 @@ def _drive(d: Driver) -> None:
     d.wait("document.querySelector('#scr-library.on') !== null", "문서 작업 화면")
     d.shot("library-empty")
     d.click_sel("#libraryNewWork")
+    # 편집기는 몰입 표면이다(재작성 F7) — 상단 2탭을 덮는 자기 화면으로 착지한다.
     d.wait(
-        "!document.getElementById('jobEditHost').hidden"
-        " && !!window.__cap.btn('#jobEditHost','이 템플릿으로')",
-        "편집 모드·라이브러리 피커",
+        "document.querySelector('#scr-editor.on') !== null"
+        " && !!window.__cap.btn('#scr-editor','이 템플릿으로')",
+        "편집기 화면·라이브러리 피커",
     )
     # 발주요청서 행의 "이 템플릿으로" — data-path 로 정확 겨눔.
-    d.click_sel('#jobEditHost button[data-act="use-library"][data-path*="발주요청서"]')
+    d.click_sel('#scr-editor button[data-act="use-library"][data-path*="발주요청서"]')
     d.wait(
-        "document.querySelector('#jobEditHost').textContent.includes('공고번호')",
+        "document.querySelector('#scr-editor').textContent.includes('공고번호')",
         "템플릿 선택·필드 스키마",
     )
     d.shot("template-pick")
 
     # ---- S3 2단계: 데이터 연결 + 모두 확정 ---------------------------------
-    d.click("#jobEditHost", "다음 ▶")
-    d.wait("!!window.__cap.btn('#jobEditHost','파일 선택…')", "2단계 데이터 관문")
+    d.click("#scr-editor", "다음 ▶")
+    d.wait("!!window.__cap.btn('#scr-editor','파일 선택…')", "「필드 연결·표시」 탭 데이터 관문")
     _DIALOG_ANSWERS.append(CSV)
-    d.click("#jobEditHost", "파일 선택…")
+    d.click("#scr-editor", "파일 선택…")
     d.wait(
-        "!!window.__cap.btn('#jobEditHost','모두 확정')"
-        " && document.querySelector('#jobEditHost').textContent.includes('해양수산부')",
+        "!!window.__cap.btn('#scr-editor','모두 확정')"
+        " && document.querySelector('#scr-editor').textContent.includes('해양수산부')",
         "데이터 로드·매핑표 미리보기",
     )
-    d.click("#jobEditHost", "모두 확정")
+    d.click("#scr-editor", "모두 확정")
     d.wait(
-        "document.querySelector('#jobEditHost').textContent.includes('확정 6/6')",
+        "document.querySelector('#scr-editor').textContent.includes('확정 6/6')",
         "전 행 확정",
     )
     # 확정 게이트 줄(확정 6/6·모두 확정)이 폴드 아래로 잘리지 않게 겨눠 스크롤.
-    d.js("window.__cap.btn('#jobEditHost','모두 해제')?.scrollIntoView({block:'center'}); true;")
+    d.js("window.__cap.btn('#scr-editor','모두 해제')?.scrollIntoView({block:'center'}); true;")
     d.shot("mapping-confirm")
 
-    # ---- S4 3단계: 이름·파일명 패턴 → 저장 ---------------------------------
-    d.click("#jobEditHost", "다음 ▶")
-    d.wait("!!document.querySelector('#jobEditHost input[data-act=\"name\"]')", "3단계 저장 폼")
-    assert d.js("window.__cap.setValue('#jobEditHost input[data-act=\"name\"]', '발주요청서')")
+    # ---- S4 「파일 이름」 탭: 이름·패턴 → 저장 ------------------------------
+    # 파일 이름은 F7 에서 **전용 탭**으로 승격했고(대조표 20행), 작업 이름은 화면 머리의
+    # 인라인 입력이다(「저장」 분류 사망의 승계 — §10.13.3).
+    d.click("#scr-editor", "다음 ▶")
+    d.wait("!!document.querySelector('#scr-editor input[data-act=\"pattern\"]')", "파일 이름 탭")
+    assert d.js("window.__cap.setValue('#editorName', '발주요청서')")
     assert d.js(
-        "window.__cap.setValue('#jobEditHost input[data-act=\"pattern\"]',"
+        "window.__cap.setValue('#scr-editor input[data-act=\"pattern\"]',"
         " '발주요청서-{{공고번호}}')"
     )
     d.wait(
-        "document.querySelector('#jobEditHost').textContent.includes('발주요청서-2026-001')",
+        "document.querySelector('#scr-editor').textContent.includes('발주요청서-2026-001')",
         "파일명 라이브 예시",
     )
     d.shot("save-job")
-    d.click("#jobEditHost", "작업 저장")
+    d.click("#scr-editor", "작업 저장")
     # 저장 착지를 먼저 확인한다 — 저장은 비동기라 곧바로 화면을 옮기면 라이브러리가 아직
     # 없는 작업을 기다린다(경합). 성공 재진술은 Python notice(ok) 채널이 낸다.
     d.wait(
-        "document.querySelector('#jobEditHost').textContent.includes('저장했습니다')",
+        "document.querySelector('#scr-editor').textContent.includes('저장했습니다')",
         "작업 저장 착지",
         timeout=30.0,
     )
+    # 저장 뒤 머리가 판본을 말한다(§10.13 판정 O) — 첫 저장이므로 r1 이다.
+    d.wait(
+        "document.getElementById('editorSaveState').textContent.includes('r1')",
+        "저장 상태·판본 표기",
+    )
+    # 편집기는 출구가 하나다 — back 이 원래 업무로 되돌린다(깨끗한 세션이라 가드 없음).
+    d.click_sel("#editorBack")
+    d.wait("document.querySelector('#scr-job.on') !== null", "편집기 이탈")
 
     # ---- S5 실행 세션(「문서 작업」에서 골라 문서 만들기로) ------------------
     # 좌 목록 사망 뒤 저장된 작업을 찾는 자리는 「문서 작업」 하나다(F2 PR-B). 3단계의

@@ -367,3 +367,97 @@ def test_a_field_the_filename_ignores_keeps_its_own_risk():
     job = _reviewed(_job(filename_pattern="{{공고명}}.hwpx"))
     job.mapping.mappings[1].fmt = "천단위"             # 금액은 이름에 안 쓰인다
     assert review_requirement(job).risk_class == "presentation"
+
+
+# ----------------------------------- 직전 판본 before/after (재작성 F7 판정 H — F5 되깎기)
+def test_before_values_render_the_same_record_with_the_previous_rules():
+    """before 는 **저장해 둔 값이 아니라 이전 규칙으로 지금 행을 다시 렌더한 값**이다.
+
+    저장된 값을 되읽으면 다른 시점의 다른 데이터가 before 로 붙는다 — 그건 증거가 아니라
+    지어낸 값이다(§10.3 계열). 같은 행에 두 규칙을 적용해야 사용자가 보는 두 값이 비교
+    가능해진다.
+    """
+    from hwpxfiller.core.job import rules_values
+    from hwpxfiller.gui.review_state import previous_values
+
+    job = _reviewed(_job())
+    before_snapshot = rules_values(job)          # 판본 r1 의 규칙
+    job.mapping.mappings[0].source = "다른열"     # r2 로 갈 변경
+    job.previous_rules = before_snapshot
+    record = {"bidNtceNm": "옛 공고", "다른열": "새 공고"}
+    assert previous_values(job, ("공고명",), record) == {"공고명": "옛 공고"}
+    # 표시형만 바뀐 축도 같은 규율 — 이전 표시형으로 같은 값을 다시 렌더한다.
+    assert previous_values(job, ("없는필드",), record) == {}
+
+
+def test_before_is_absent_not_empty_when_there_is_no_previous_revision():
+    """직전 판본이 없으면 before 를 **싣지 않는다** — 빈 값으로 세우면 "이전엔 비어
+    있었다"는 거짓 증거가 된다(있는 것과 없는 것은 다르다)."""
+    from hwpxfiller.gui.review_state import build_evidence, previous_values
+
+    job = _reviewed(_job())
+    job.mapping.mappings[1].source = "다른열"   # 금액 = 파일 이름 밖 → 의미 연결 위험
+    assert previous_values(job, ("금액",), {"다른열": "100"}) == {}   # 보관본 없음
+    req = review_requirement(job)
+    ev = build_evidence(req, mapped=[{"금액": "100"}], names=("x.hwpx",),
+                        converged=0, too_long=0, pos=0, before={})
+    assert ev["rows"] and "before" not in ev["rows"][0]
+
+
+def test_before_is_absent_for_fields_the_previous_revision_did_not_have():
+    """그 판본에 없던 필드도 before 가 없다 — 필드 추가는 「이전엔 이랬다」가 성립하지 않는다."""
+    from hwpxfiller.core.job import rules_values
+    from hwpxfiller.gui.review_state import previous_values
+
+    job = _reviewed(_job())
+    job.previous_rules = rules_values(job)
+    assert previous_values(job, ("새필드",), {"아무열": "값"}) == {}
+
+
+def test_evidence_carries_before_when_the_previous_revision_exists():
+    """증거 행이 두 규칙의 값을 함께 말한다(F5 가 되깎기 조건으로 박제한 자리의 이행)."""
+    from hwpxfiller.core.job import rules_values
+    from hwpxfiller.gui.review_state import build_evidence, previous_values
+
+    job = _reviewed(_job())
+    job.previous_rules = rules_values(job)
+    job.mapping.mappings[1].source = "다른열"    # 금액 = 파일 이름 밖 → 행 증거가 선다
+    req = review_requirement(job)
+    record = {"presmptPrce": "1000", "다른열": "2000"}
+    ev = build_evidence(
+        req, mapped=[{"금액": "2,000"}], names=("x.hwpx",), converged=0, too_long=0,
+        pos=0, before=previous_values(job, req.changed_fields, record),
+    )
+    row = next(r for r in ev["rows"] if r["name"] == "금액")
+    # 값은 **표시형까지 적용된** 문자열이다(사용자가 문서에서 볼 그 모양).
+    assert row["before"] == "1,000원" and row["value"] == "2,000"
+
+
+def test_before_omits_fields_whose_source_column_is_gone(tmp_path):
+    """**없는 열은 빈 값이 아니다**(3R P2) — 값을 못 말하는 것과 비어 있었다는 것은 다르다.
+
+    `value_for` 는 `record.get(source, "")` 라 소스 열이 사라져도 조용히 ``""`` 를 낸다.
+    그대로 실으면 증거가 "이전엔 비어 있었습니다"라고 **단정**한다.
+    """
+    from hwpxfiller.core.job import rules_values
+    from hwpxfiller.gui.review_state import previous_values
+
+    job = _reviewed(_job())
+    job.previous_rules = rules_values(job)         # 금액 ← presmptPrce
+    job.mapping.mappings[1].source = "다른열"
+    # 지금 데이터에 옛 소스 열이 없다 → 이전 값을 **말할 수 없다**(빈 값이 아니다).
+    assert previous_values(job, ("금액",), {"다른열": "2000"}) == {}
+    # 열이 있으면 그때 값을 말한다.
+    assert previous_values(job, ("금액",), {"presmptPrce": "1000", "다른열": "2000"})
+
+
+def test_before_keeps_fields_that_were_genuinely_unconnected():
+    """소스가 **애초에 없던** 필드는 그때도 빈 값이 참이라 남긴다 — 연결 신설의 before 다."""
+    from hwpxfiller.core.job import rules_values
+    from hwpxfiller.gui.review_state import previous_values
+
+    job = _reviewed(_job())
+    job.mapping.mappings[1].source = ""            # 이전 판본: 미연결
+    job.previous_rules = rules_values(job)
+    job.mapping.mappings[1].source = "추정가격"     # 새 판본: 연결
+    assert previous_values(job, ("금액",), {"추정가격": "1000"}) == {"금액": ""}

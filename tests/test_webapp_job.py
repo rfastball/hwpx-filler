@@ -6,12 +6,15 @@ JobController가 링1 계약을 위임해 소비하는지 못박는다.
 """
 from __future__ import annotations
 
+import threading
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 
 from hwpxfiller.core.job import Job, JobRegistry, rules_fingerprints
+from hwpxfiller.core.text_registry import TextTemplateRegistry
+from hwpxfiller.webapp.screen_library import LibraryController
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.gui.review_state import review_requirement
 from hwpxfiller.gui.run_state import RunViewModel
@@ -183,6 +186,36 @@ def test_generation_in_flight_blocks_switch_and_remount(tmp_path):
             ctrl.load_data_path(_data_csv(tmp_path))
     finally:
         ctrl._generation_lock.release()
+
+
+def test_every_durable_rule_writer_refuses_while_generating(tmp_path):
+    """진행 중 런과 겹치는 **규칙 쓰기**는 표면을 가리지 않고 거절된다(9R P1).
+
+    리뷰는 편집기 진입 하나를 지적했지만, 같은 부류의 자리가 셋이다 — 편집기 진입·「문서
+    만들기」 재연결·라이브러리 재연결. 진행 중 배치는 옛 vm 을 고정해 뒀으므로 그 사이
+    durable 규칙이 바뀌면 결과가 **디스크에 없는 세대**를 자기 근거로 댄다(§13-7).
+
+    자물쇠가 화면 소유였던 것이 이 결함의 형태다: 라이브러리는 런을 돌리지 않아 자기
+    자물쇠를 봐도 늘 열려 있었다. 그래서 앱이 **하나를 주입**하고 세 자리가 같은 것을 본다.
+    """
+    lock = threading.Lock()
+    reg = JobRegistry(tmp_path / "jobs")
+    job_ctrl = JobController(reg, lambda s, snap: None, generation_lock=lock)
+    lib_ctrl = LibraryController(
+        reg, TextTemplateRegistry(tmp_path / "txt"), lambda s, snap: None,
+        generation_lock=lock,
+    )
+    assert lock.acquire(blocking=False)
+    try:
+        # ①편집기 진입 술어(app.open_job_in_editor 가 부르는 그 메서드) ②·③ 두 재연결
+        with pytest.raises(ValueError, match="생성이 진행 중"):
+            job_ctrl.raise_if_generating("편집기를 여세요")
+        with pytest.raises(ValueError, match="생성이 진행 중"):
+            job_ctrl.dispatch("relink_template", {"name": "공고서", "path": "x.hwpx"})
+        with pytest.raises(ValueError, match="생성이 진행 중"):
+            lib_ctrl.dispatch("relink_template", {"name": "공고서", "path": "x.hwpx"})
+    finally:
+        lock.release()
 
 
 def test_generate_locked_never_rereads_live_vm():
@@ -908,6 +941,116 @@ def test_refresh_keeps_session_when_job_still_present(tmp_path):
     snap = ctrl.snapshot()
     assert snap["has_job"] is True and snap["job_name"] == "공고서"
     assert snap["record_count"] == 2  # 데이터 겨눔도 보존
+
+
+def test_refresh_reloads_rules_edited_in_the_editor_and_keeps_the_session(tmp_path):
+    """편집기에서 저장한 규칙이 **열린 실행 세션에 도달한다**(4R P1).
+
+    편집기가 자기 화면으로 나간 뒤(재작성 F7) 저장은 이 화면 밖에서 일어나고 `self.vm` 은
+    선택 시점의 인메모리 사본이다 — 다시 읽지 않으면 방금 저장한 사람이 **옛 규칙으로
+    미리보고 옛 규칙으로 생성한다**(영속·실행 경로가 화면 사이에서 갈리는 자리).
+    세션(데이터·선택·저장 폴더)은 그대로 살아야 한다: 규칙만 갈아 끼운다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    reg = ctrl.registry
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    before = ctrl.snapshot()
+    out_dir, records = ctrl.out_dir, before["record_count"]
+    assert ctrl.vm.job.filename_pattern != "새규칙-{{공고명}}"
+
+    job = reg.load("공고서")                      # 다른 화면(편집기)이 규칙을 바꿔 저장
+    job.filename_pattern = "새규칙-{{공고명}}"
+    reg.save(job, allow_overwrite=True)
+
+    assert ctrl.dispatch("refresh", {}) is None    # 삭제가 아니므로 고지는 없다
+    assert ctrl.vm.job.filename_pattern == "새규칙-{{공고명}}"   # 규칙은 새것
+    snap = ctrl.snapshot()
+    assert snap["has_job"] is True and snap["record_count"] == records   # 세션은 그대로
+    assert ctrl.out_dir == out_dir
+
+
+def test_reload_is_a_no_op_without_a_job_or_with_a_corrupt_file(tmp_path):
+    """재적재는 **읽을 수 있을 때만** 한다 — 작업 미선택·손상 파일에서 조용히 세션을 깨지 않는다.
+
+    손상은 다음 스냅샷의 건강 표면이 말한다(여기서 예외를 올리면 화면 전환마다 발화하는
+    경로가 그 작업 하나 때문에 통째로 죽는다).
+    """
+    ctrl, _ = _controller(tmp_path)
+    assert ctrl._reload_active_job() is False          # 작업 미선택 = 손댈 것이 없다
+
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.registry.path_for("공고서").write_text("{ 깨진 JSON", encoding="utf-8")
+    assert ctrl._reload_active_job() is False           # 못 읽으면 그대로 둔다
+    assert ctrl.snapshot()["has_job"] is True           # 세션은 살아 있다
+
+
+def test_snapshot_rules_key_changes_when_the_editor_changes_the_rules(tmp_path):
+    """결과의 세션 지문에 **규칙**이 든다(6R P2).
+
+    결과가 「지금 결과」로 남으려면 그것을 만든 규칙이 아직 그 규칙이어야 한다 — 편집기에서
+    고치고 돌아오면 재적재가 규칙을 갈아 끼우는데, 지문에 규칙이 없으면 **다른 규칙으로 만든
+    결과가 후속 행동(실패분 선택·파일 이름 수리)까지 열어 둔 채** 「지금」으로 남는다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    reg = ctrl.registry
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    before = ctrl.snapshot()["rules_key"]
+    assert before
+
+    job = reg.load("공고서")
+    job.filename_pattern = "새규칙-{{공고명}}"
+    reg.save(job, allow_overwrite=True)
+    ctrl.dispatch("refresh", {})
+    assert ctrl.snapshot()["rules_key"] != before      # 규칙이 갈리면 지문도 갈린다
+
+    # 선택·데이터만 그대로면 지문도 그대로다(과잉 강등 금지 — 결과는 살아 있어야 한다).
+    assert ctrl.snapshot()["rules_key"] == ctrl.snapshot()["rules_key"]
+
+
+def test_reload_also_follows_revision_metadata_that_the_content_fingerprint_hides(tmp_path):
+    """내용 지문이 같아도 **세대가 앞섰으면** 다시 읽는다(7R P2).
+
+    `content_fingerprint` 는 판본 3필드를 일부러 뺀다(편집 세션에 거짓 파괴 확인을 띄우지
+    않으려고) — 그래서 그것만으로는 "지금 것인가"를 답할 수 없다. 규칙이 A→B→A 로 돌아온
+    저장은 내용이 같지만 세대는 앞서 있고, 그 상태로 실행하면 결과가 **디스크에 없는 세대**를
+    자기 근거로 댄다(§13-7). 단 실행 입력이 그대로이므로 완주 담보는 걷지 않는다(과잉 리셋 금지).
+    """
+    ctrl, _ = _controller(tmp_path)
+    reg = ctrl.registry
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl._last_generated = {0}                          # 완주 담보가 서 있는 상태
+
+    job = reg.load("공고서")
+    original = job.filename_pattern
+    job.filename_pattern = "잠깐-{{공고명}}"             # A → B
+    reg.save(job, allow_overwrite=True)
+    job = reg.load("공고서")
+    job.filename_pattern = original                      # B → A(내용은 처음과 같다)
+    reg.save(job, allow_overwrite=True)
+    disk = reg.load("공고서")
+    assert disk.binding_revision == 3                    # 세대는 앞서 있다
+
+    assert ctrl._reload_active_job() is True
+    assert ctrl.vm.job.binding_revision == 3             # 실행이 대는 판본이 디스크와 같다
+    assert ctrl._last_generated == {0}                   # 실행 입력은 그대로 → 담보 유지
+
+
+def test_refresh_does_not_disturb_the_session_when_rules_are_unchanged(tmp_path):
+    """지문이 같으면 아무것도 안 한다 — 이 경로는 화면 전환마다 발화한다(REFRESH_ON_NAV).
+
+    무조건 재구성하면 평시 왕복이 실행 증거·미리보기 자리를 매번 되돌려, 아무 일도 없었는데
+    게이트가 다시 닫히는 것처럼 보인다(과잉 리셋).
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    vm_before = ctrl.vm
+    assert ctrl.dispatch("refresh", {}) is None
+    assert ctrl.vm is vm_before                    # 같은 정체를 그대로 들고 있다
 
 
 def test_unknown_action_is_loud(tmp_path):

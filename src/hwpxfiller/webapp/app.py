@@ -25,6 +25,7 @@ from .action_registry import validate_dispatch
 from ..core.job import JobRegistry, default_jobs_dir
 from ..core.text_registry import TextTemplateRegistry, default_text_templates_dir
 from ..data.excel import ambiguous_sheets, sheet_overview  # 다중 시트 확정 게이트 판정(#33)
+from ..gui.edit_session import SECTION_BINDING  # 편집기 기본 착지 탭(계약 §5.1 어휘)
 from ..gui.file_filters import EXCEL_FILTER_PATTERN  # 확장자 단일 출처(RC-34) — Qt-free 상수
 from hwpxcore.native import single_instance
 from hwpxcore.native._debug import log
@@ -146,15 +147,20 @@ class WebFrontend:
         # 추적성 로케이트 화이트리스트(#53-B)용 레지스트리 참조(밑줄=js_api 반영 제외).
         self._job_registry = job_registry
         self._pool_registry = pool_registry
+        # 진행 중인 런의 **단일 사실**(9R P1) — 규칙을 쓰는 표면이 여럿이라(「문서 만들기」·
+        # 라이브러리 재연결·편집기 진입) 자물쇠가 한 화면 소유이면 나머지가 조용히 빠진다.
+        generation_lock = threading.Lock()
         # 화면 등록 — 새 화면 = 컨트롤러 1개 추가(순수 데이터는 dispatch, 네이티브는 아래 메서드).
         controllers = [
             # 「문서 작업」 전역 라이브러리(§19.6) — 홈 화면의 승계자(재작성 F2). TXT
             # 레지스트리는 기안·템플릿 관리와 공유(변경이 반영). pool_registry 공유 =
             # 등록 데이터에서 생긴 손상이 라이브러리 경보에 즉시 보인다(#45).
-            LibraryController(job_registry, registry, self._push, pool_registry=pool_registry),
+            LibraryController(job_registry, registry, self._push, pool_registry=pool_registry,
+                              generation_lock=generation_lock),
             # 「문서 만들기」 — 세션 패널(v6 screen-data 2열). 링1 VM 을 직접 소유하며
             # 실행 결정 계약을 소비하는 유일 세션 표면이다.
-            JobController(job_registry, self._push, pool_registry=pool_registry),
+            JobController(job_registry, self._push, pool_registry=pool_registry,
+                          generation_lock=generation_lock),
             # 「기안」 화면 — TXT 작업-앵커 master-detail(「작업」의 대칭).
             # 같은 job_registry 를 쓰되 media=txt 만 조회한다(조회 경계 결정 13) — 저장 기계는
             # 하나·화면은 둘. 우 상세는 휘발 세션 4존이고, 세션 기계는 「기안문
@@ -468,15 +474,33 @@ class WebFrontend:
         owned = collect_owned_paths(self._job_registry, self._pool_registry, session)
         return validate_owned_path(path, owned)
 
-    def open_job_in_editor(self, name: str) -> "str | None":
-        """홈 '편집' → 저장된 작업을 에디터 편집 세션으로 복원(#26 편집 모드).
+    def open_job_in_editor(self, name: str, context: "dict | None" = None) -> "str | None":
+        """저장된 작업을 **진입 문맥과 함께** 편집 세션으로 연다(계약 §5.1, 재작성 F7).
 
-        웹은 이 호출 후 에디터 화면으로 전환한다. 실패(작업 손상·템플릿 부재·RAW)는
-        ``ERROR:`` 접두로 시끄럽게 반환. 미저장 세션 확인은 웹이 ``editor_has_unsaved_work``
-        로 선판단한다(#25 미러).
+        웹은 이 호출 후 편집기 화면으로 전환한다. 실패(작업 손상·템플릿 부재·RAW·**미배선
+        진입 사유**)는 ``ERROR:`` 접두로 시끄럽게 반환 — 사유를 조용히 `voluntary` 로
+        떨어뜨리면 배너가 아무 말도 못 하는 진입이 생긴다. 미저장 세션 확인은 웹이
+        ``editor_has_unsaved_work`` 로 선판단한다(#25 미러).
+
+        ``context`` = ``{entry_reason, evidence, return_context, section}``. 기본값(빈 사전)은
+        자발적 진입이고 그때는 배너 자체가 서지 않는다(할 말이 없으면 침묵). ``section`` 은
+        deep-link 의 **거친 형태**(어느 탭인가)다 — 필드 단위 target 은 PR-B 자리다.
         """
+        ctx = context or {}
         try:
-            self._controller("editor").load_job(name)
+            # **진행 중 런과 겹치는 진입은 거절한다**(9R P1). `setBusy()` 는 「문서 만들기」
+            # 루트 아래만 비활성화하므로 상단 탭·라이브러리 컨트롤은 생성 중에도 눌린다 —
+            # 여기서 열면 진행 중 배치가 고정한 옛 vm 과 무관하게 durable 규칙이 저장되고,
+            # 그 배치의 결과가 **디스크에 없는 세대**를 자기 근거로 댄다(§13-7). 판정은
+            # 「문서 만들기」가 소유한 단일 술어를 쓴다(자물쇠는 앱이 공유 주입).
+            self._controller("job").raise_if_generating("편집기를 여세요")
+            self._controller("editor").load_job(
+                name,
+                landing_section=str(ctx.get("section") or SECTION_BINDING),
+                entry_reason=str(ctx.get("entry_reason") or "voluntary"),
+                evidence=ctx.get("evidence"),
+                return_context=ctx.get("return_context"),
+            )
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
         return name
@@ -608,7 +632,38 @@ _MODAL_A11Y_PROBE_JS = r"""
     document.getElementById('confirmModalCancel').click();  // 후속 닫아 상태 원복
     finishModal('confirmModal');
   }
+  // 3택 모달(재작성 F7) — patch 처분처럼 답이 셋인 자리. 확인 모달을 두 번 물으면
+  // "취소가 무엇을 취소하는지"가 갈리므로 골격을 따로 뒀다. 여기서 보는 것은 ①세 버튼이
+  // 라벨을 받고 실제로 보이는가 ②초기 포커스가 **거절**(머무르기)인가 ③보조 버튼이 제
+  // 값을 돌려주는가. 배선만 하고 안 보이면 사용자는 나갈 길이 없다.
+  var chooseSpec = {
+    title: '처분 확인', body: '3택 프로브',
+    choices: [{value:'save',label:'저장하고 이동'},
+              {value:'discard',label:'버리고 이동'},
+              {value:'stay',label:'머무르기'}],
+  };
+  var chPromise = window.Modal.choose(chooseSpec);
+  var chRoot = document.getElementById('chooseModal');
+  var chOpen = !chRoot.classList.contains('hidden');
+  var chDisplay = getComputedStyle(chRoot).display;
+  var chFocus = document.activeElement ? document.activeElement.id : '';
+  var chLabels = ['chooseModalOk','chooseModalAlt','chooseModalCancel'].map(function (id) {
+    return document.getElementById(id).textContent;
+  }).join('|');
+  var chVisible = ['chooseModalOk','chooseModalAlt','chooseModalCancel'].every(function (id) {
+    return getComputedStyle(document.getElementById(id)).display !== 'none';
+  });
+  document.getElementById('chooseModalAlt').click();     // 보조 = 버리고 이동
+  finishModal('chooseModal');
+  var chValue = '';
+  chPromise.then(function (v) { chValue = v; window.__chooseValue = v; });
+
   return {
+    choose_opened: chOpen,          // F7: 3택 골격이 열렸는가
+    choose_display: chDisplay,      // F7: 열린 동안 display(flex 기대)
+    choose_focus: chFocus,          // F7: 초기 포커스 = 거절(머무르기)
+    choose_labels: chLabels,        // F7: 세 버튼이 호출부 라벨을 받았는가
+    choose_all_visible: chVisible,  // F7: 세 버튼이 **실제로 보이는가**
     opened: opened,               // 열기 후 hidden 해제됐는가
     focus_in: focusIn,            // 초기 포커스가 모달 안(pasteText)으로 들어갔는가
     closed_by_escape: closed,     // Escape 로 닫혔는가
@@ -1304,15 +1359,18 @@ _JOB_MIRROR_PROBE_JS = r"""
     // ⤢ 데이터 펼침 면은 **비동기 프로브**(_DATA_SHEET_PROBE_SETUP_JS)로 떼어 냈다: 열기가
     // Python 왕복(초안 생성) 뒤로 바뀌어(F3) 동기 측정으로는 열리기 전을 재게 된다.
 
+    // 편집기가 자기 화면으로 나가며(재작성 F7) 「편집 모드가 시트를 닫는다」는 계약은
+    // 화면 전환이 승계했다: 편집기로 가면 이 화면의 펼침 면은 화면째 시야에서 사라지고,
+    // 실 DOM 이 overlay 슬롯에 남는 교차 상태는 복귀 시 닫기가 정리한다.
     mirrorTrigger.click();
-    window.JobScreen.showEditMode();
-    out.edit_closes_sheets = !window.SurfaceSheet.isOpen('jobConfirmSheet') &&
-      mirror.parentNode === mirrorParent && restate.parentNode === restateParent &&
-      getComputedStyle(document.getElementById('jobEditHost')).display !== 'none';
+    window.Nav.go('editor', {force:true});
+    out.edit_closes_sheets = !document.getElementById('scr-job').classList.contains('on') &&
+      document.getElementById('scr-editor').classList.contains('on');
+    window.Nav.go('job', {force:true});
+    document.getElementById('jobConfirmSheetClose').click();
     (function () { var card = document.querySelector('#jobConfirmSheet .modal-card');
       var ev = new Event('transitionend', {bubbles:true});
       Object.defineProperty(ev, 'propertyName', {value:'opacity'}); card.dispatchEvent(ev); })();
-    window.JobScreen.showRunMode();
   } catch (e) { out.error = 'throw:' + (e && e.message); }
   return out;
 })()
@@ -1616,29 +1674,61 @@ _JOB_EDITMODE_PROBE_JS = r"""
 (function () {
   var out = {};
   try {
-    window.Nav.go('job');
-    window.JobScreen.showEditMode();
-    out.edit_host_shown = getComputedStyle(document.getElementById('jobEditHost')).display !== 'none';
-    out.zones_hidden = getComputedStyle(document.getElementById('jobZones')).display === 'none';
-    out.status_text = document.getElementById('jobStatus').textContent;
-    // 실행 복귀 출구(F2 PR-B 판정 D) — 편집 모드에서 **실제로 보이는가**. 좌 목록이 죽으며
-    // 이 버튼이 유일한 직접 복귀 경로가 됐는데, 정적 존재만 보는 계약은 「배선했지만 영영
-    // 숨어 있는」 상태를 통과시킨다(코덱스 리뷰 P2 의 실물).
-    out.edit_exit_shown = getComputedStyle(document.getElementById('jobEditExit')).display !== 'none';
-    var draft = {step:0, reachable:[false,false], template_path:'', template_name:'',
+    // 몰입 표면(재작성 F7) — 편집기는 자기 화면이고 상단 2탭을 **실제로** 덮는가.
+    // 정적 계약(클래스 존재)만 보면 「배선했지만 여전히 나갈 구멍이 있는」 상태를 통과시킨다.
+    window.Nav.go('editor', {force:true});
+    out.editor_screen_on = document.getElementById('scr-editor').classList.contains('on');
+    out.job_screen_off = !document.getElementById('scr-job').classList.contains('on');
+    out.nav_hidden = getComputedStyle(document.querySelector('.nav')).display === 'none';
+    out.back_shown = getComputedStyle(document.getElementById('editorBack')).display !== 'none';
+    // section 어휘(재작성 F7 판정 B) — 탭 집합은 Python 이 매체에서 파생해 내려준다.
+    var draft = {section:'template', sections:['template','binding','filename'],
+      reachable:{template:false, binding:false, filename:false}, dirty_sections:[],
+      is_draft:true, dirty:false, changes:{}, context:{entry_reason:'voluntary', evidence:{}, return_context:{}},
+      revisions:{}, template_path:'', template_name:'',
       field_count:0, fields:[], raw_block:'', gate_error:false, gate:null, notice:null,
       editing_origin:''};
     window.__push('editor', draft);
     out.wizard_steps = document.querySelectorAll('#editor-steps .wstep-tab .k').length;
     out.foot_shown_new = getComputedStyle(document.getElementById('editor-foot')).display !== 'none';
     draft.editing_origin = '공고서';
+    draft.is_draft = false;
     window.__push('editor', draft);
     out.edit_tabs = document.querySelectorAll('#editor-steps button.wstep-tab.as-tab').length;
-    out.foot_hidden_edit = getComputedStyle(document.getElementById('editor-foot')).display === 'none';
-    // 실행 복귀 뒤엔 다시 숨는다 — 실행 모드에 「실행으로 돌아가기」가 남으면 거짓 어포던스다.
-    window.JobScreen.showRunMode();
-    out.edit_exit_hidden_in_run =
-      getComputedStyle(document.getElementById('jobEditExit')).display === 'none';
+    // 편집의 주 행동(「변경 저장」)은 어느 탭에서도 상시 있다(§10.13 판정 E) — 구판은 저장
+    // 분류에만 푸터가 있어 다른 탭에선 저장 자체가 도달 불가였다.
+    out.foot_shown_edit = getComputedStyle(document.getElementById('editor-foot')).display !== 'none';
+    out.edit_dirty_tab_marked = (function () {
+      draft.dirty_sections = ['binding'];
+      draft.dirty = true;                     // 세션 수준 판정은 Python 이 낸 값 하나(3R)
+      window.__push('editor', draft);
+      // 손댄 상태에서는 머리가 「저장하지 않은 변경」을 말하고 제자리 되돌리기가 뜬다 —
+      // 「저장됨」이라 말하면서 버릴 길도 없던 자리(3R P2).
+      out.dirty_head = document.getElementById('editorSaveState').textContent;
+      out.dirty_discard_shown =
+        !!document.querySelector('#editor-foot [data-act="discard-patch"]');
+      return document.querySelectorAll('#editor-steps button.wstep-tab.dirty').length;
+    })();
+    // 머리 — 이름(안정 입력)·저장 상태·판본(§10.13 판정 O 표시 자리 ①).
+    draft.name = '공고서';
+    draft.revisions = {template:2, binding:5};
+    draft.dirty_sections = [];
+    draft.dirty = false;
+    window.__push('editor', draft);
+    out.name_input_value = document.getElementById('editorName').value;
+    out.save_state = document.getElementById('editorSaveState').textContent;
+    // 진입 문맥 배너 — 사유가 있으면 서고 자발적 진입이면 침묵한다.
+    out.ctx_hidden_when_voluntary =
+      getComputedStyle(document.getElementById('editorContext')).display === 'none';
+    draft.context = {entry_reason:'preview_result', evidence:{'보고 있던 행':'4 / 12'},
+      return_context:{surface:'preview'}};
+    window.__push('editor', draft);
+    out.ctx_shown = getComputedStyle(document.getElementById('editorContext')).display !== 'none';
+    out.ctx_text = document.getElementById('editorContext').textContent;
+    out.ctx_return_btn = !!document.querySelector('#editorContext [data-act="context-return"]');
+    // 나간 뒤엔 셸이 돌아온다 — 몰입이 영구 은닉이 되면 다른 화면으로 갈 길이 사라진다.
+    window.Nav.go('job', {force:true});
+    out.nav_back_after_leave = getComputedStyle(document.querySelector('.nav')).display !== 'none';
   } catch (e) { out.error = 'throw:' + (e && e.message); }
   return out;
 })()
@@ -1648,7 +1738,85 @@ _JOB_EDITMODE_PROBE_JS = r"""
 # render() 에 흘려 (a) 사용할 헤더가 **즉시 토글 칩**(체크박스 스테이징 소거)으로, (b) 미사용
 # 구역이 펼쳐지고(ignored_expanded), (c) 소유권 태그 4종(확정·수동·제안·후보 없음)이,
 # (d) touched 행에 '자동 제안으로 되돌리기'(↩)가 실 WebView2 에서 그려지는지 되읽는다.
-# 정의 surface 는 흡수(결정 39)로 「작업」 패널 편집 호스트에 산다 — 루트도 #jobEditHost.
+# 정의 surface 는 몰입 표면(재작성 F7)에 산다 — 루트도 #scr-editor.
+_EDITOR_GUARD_PROBE_SETUP_JS = r"""
+(() => {
+  /* 탭 처분 3택의 **이어짐**(재작성 F7 1R P1) — 「저장하고 이동」이 저장까지만 하고 이동을
+     안 하면 사용자가 고른 처분이 절반만 일어난다(저장은 됐는데 가려던 곳에 못 간다).
+     정적 계약은 이 결함을 못 본다: 배선·문안·판정이 전부 제자리이고 **성사 뒤 이어짐**만
+     끊긴다. 그래서 실 클릭 → 실 모달 → 실 재발신 순서를 그대로 밟고 발신 기록을 되읽는다.
+
+     자기 액션만 스텁하고 복원은 "내 스텁일 때만"(프로브 교차 오염 금지 —
+     [[gate-env-gotchas]]). 모달은 비동기라 완료 표지를 남기고 폴링한다. */
+  const out = { pending: true, calls: [] };
+  window.__editorGuard = out;
+  const real = window.Bridge.call;
+  const mine = function (screen, action, payload) {
+    if (screen !== 'editor') return real(screen, action, payload);
+    out.calls.push(action + (payload && payload.disposition ? ':' + payload.disposition : ''));
+    if (action === 'goto_section' && !(payload && payload.disposition)) {
+      return Promise.resolve({
+        ok: false, needs_section_guard: true, section: 'binding',
+        section_label: '필드 연결·표시', target: payload.section,
+      });
+    }
+    if (action === 'save') return Promise.resolve({ ok: true, saved_name: '공고서' });
+    return Promise.resolve({});
+  };
+  const finish = (why) => {
+    if (window.Bridge.call === mine) window.Bridge.call = real;
+    // **자기 판을 자기가 걷는다**(프로브 교차 오염 금지 — 첫 판에서 실제로 밟았다):
+    // 편집기는 셸을 덮는 화면이라 그대로 두면 뒤따르는 프로브가 상단 탭·브랜드를
+    // 「사라졌다」고 읽고, 모달이 남긴 포커스는 다음 프로브의 복귀 표적을 오염시킨다.
+    try {
+      window.Nav.go('job', { force: true });
+      const home = document.querySelector('.navbtn[data-scr="job"]');
+      if (home) home.focus();
+    } catch (e) { out.teardown_error = String(e && e.message); }
+    out.why = why;
+    out.pending = false;
+  };
+  try {
+    window.Nav.go('editor', { force: true });
+    window.__push('editor', {
+      section: 'binding', sections: ['template', 'binding', 'filename'],
+      reachable: { template: true, binding: true, filename: true },
+      dirty_sections: ['binding'], dirty: true, is_draft: false, changes: {},
+      context: { entry_reason: 'voluntary', evidence: {}, return_context: {} },
+      revisions: { template: 1, binding: 2 }, template_path: 'C:/t/공고서.hwpx',
+      template_name: '공고서.hwpx', field_count: 0, fields: [], raw_block: '',
+      gate: null, gate_error: false, notice: null, editing_origin: '공고서',
+      name: '공고서', pattern: 'x', rows: [], source_fields: [],
+      active_source_fields: [], ignored_source_fields: [], sample_rows: [],
+      type_options: [], fmt_options: {}, provenance: null, default_dataset: null,
+    });
+    window.Bridge.call = mine;
+    const tab = document.querySelector('#editor-steps button[data-section="filename"]');
+    if (!tab) { finish('탭 버튼 없음'); return; }
+    tab.click();
+    let ticks = 0;
+    const step = () => {
+      ticks += 1;
+      const ok = document.getElementById('chooseModalOk');
+      const open = !document.getElementById('chooseModal').classList.contains('hidden');
+      if (open && ok) {
+        out.modal_label = ok.textContent;
+        ok.click();                       // 「저장하고 이동」
+        setTimeout(() => finish('완료'), 400);   // 모달 정착(160ms) + 재발신 왕복
+        return;
+      }
+      if (ticks > 40) { finish('모달 미개방'); return; }
+      setTimeout(step, 50);
+    };
+    setTimeout(step, 50);
+  } catch (e) {
+    out.error = 'throw:' + (e && e.message);
+    finish('예외');
+  }
+})()
+"""
+
+
 _EDITOR_CHIP_PROBE_JS = r"""
 (function () {
   var out = {};
@@ -1660,7 +1828,10 @@ _EDITOR_CHIP_PROBE_JS = r"""
         row_state: conf?"confirmed":(hascontent?"unconfirmed":"unmatched")};
     };
     var snap = {
-      step:1, notice:null, reachable:[true,false],
+      section:'binding', sections:['template','binding','filename'], notice:null,
+      reachable:{template:true, binding:false, filename:false}, dirty_sections:[],
+      is_draft:false, dirty:false, changes:{}, revisions:{},
+      context:{entry_reason:'voluntary', evidence:{}, return_context:{}},
       template_path:"C:/t/공고서.hwpx", template_name:"공고서.hwpx", field_count:4,
       schema_summary:"", fields:[], raw_block:"", gate:null, gate_error:false,
       data_path:"C:/d/대장.xlsx", data_name:"대장.xlsx", data_sheet:"물품", record_count:3,
@@ -1679,10 +1850,9 @@ _EDITOR_CHIP_PROBE_JS = r"""
       counts:{filled:3,empty:0,unmapped:1}, preview_empties:[], preview_index:1, preview_count:3,
       is_complete:false, schema_only:false
     };
-    window.Nav.go('job');
-    window.JobScreen.showEditMode();
+    window.Nav.go('editor', {force:true});
     window.__push('editor', snap);
-    var root = document.getElementById('jobEditHost');
+    var root = document.getElementById('scr-editor');
     out.active_chips = root.querySelectorAll('.hchip.on[data-act="toggle-header"]').length;
     out.has_checkbox_staging = !!root.querySelector('.hbx');  // 스테이징 소거 → false 여야
     out.ignored_chip = !!root.querySelector('.hchip.ign[data-act="toggle-header"]');
@@ -2172,13 +2342,16 @@ _EDITOR_LIB_PICKER_PROBE_JS = r"""
 (function () {
   var out = {};
   try {
-    window.Nav.go('job');
-    window.JobScreen.showEditMode();
+    window.Nav.go('editor', {force:true});
     var it = function (name, badge, level, cur) {
       return {key:name, name:name, path:'C:/lib/' + name, badge_label:badge, badge_level:level,
               is_error:false, detail:'필드 3개', current:!!cur};
     };
-    var draft = {step:0, reachable:[false,false], template_path:'', template_name:'',
+    var draft = {section:'template', sections:['template','binding','filename'],
+      reachable:{template:false, binding:false, filename:false}, dirty_sections:[],
+      is_draft:true, dirty:false, changes:{}, revisions:{},
+      context:{entry_reason:'voluntary', evidence:{}, return_context:{}},
+      template_path:'', template_name:'',
       field_count:0, fields:[], raw_block:'', gate_error:false, gate:null, notice:null,
       editing_origin:'',
       library:{flat:false, sections:[
@@ -2188,7 +2361,7 @@ _EDITOR_LIB_PICKER_PROBE_JS = r"""
         {group:'', collapsed:false, count:1, items:[it('d.hwpx','준비됨','ok',false)]}
       ]}};
     window.__push('editor', draft);
-    var host = document.getElementById('jobEditHost');
+    var host = document.getElementById('scr-editor');
     out.grp_heads = host.querySelectorAll('.job-grp-head').length;              // 입찰·계약·그룹없음
     out.rows_visible = host.querySelectorAll('.libselrow').length;             // 계약 접힘 → 2+1
     out.pick_btns = host.querySelectorAll('.libselrow button[data-act="use-library"]').length;
@@ -3025,6 +3198,14 @@ def _selftest_drive(window: "object") -> None:
         result["preview_drawer"] = _probe_late(
             window, "__previewDrawer && !window.__previewDrawer.pending",
             "JSON.stringify(window.__previewDrawer)",
+        )
+        # 탭 처분 3택의 **이어짐**(F7 1R P1) — 「저장하고 이동」이 저장 뒤 실제로 이동을
+        # 재발신하는지. 배선·문안·판정이 다 제자리여도 성사 뒤 이어짐만 끊길 수 있고,
+        # 그건 정적 계약이 못 본다(실 클릭·실 모달·실 재발신 순서로만 드러난다).
+        window.evaluate_js(_EDITOR_GUARD_PROBE_SETUP_JS)  # type: ignore[attr-defined]
+        result["editor_guard"] = _probe_late(
+            window, "__editorGuard && !window.__editorGuard.pending",
+            "JSON.stringify(window.__editorGuard)",
         )
         # 호출 직렬화 체인의 실패 복구(리뷰 5R) — 정적 계약이 못 보는 실행 성질이라 실물로.
         window.evaluate_js(_CHAIN_RECOVERY_PROBE_SETUP_JS)  # type: ignore[attr-defined]

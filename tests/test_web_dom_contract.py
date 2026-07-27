@@ -101,6 +101,9 @@ MODAL_LABELLEDBY = {
     # 전용 jobOverwriteModal DOM 폐기(아래 test_job_overwrite_uses_shared_confirm_modal 가드).
     "confirmModal": "confirmModalTitle",  # 네이티브 window.confirm 대체(#86) + 덮어쓰기 확인
     "promptModal": "promptModalTitle",  # 네이티브 window.prompt 대체(#86)
+    # 답이 셋인 자리(재작성 F7 — patch 처분: 저장하고 이동·버리고 이동·머무르기). 확인 모달로
+    # 두 번 물으면 "취소가 무엇을 취소하는지"가 갈리고 그 모호함이 곧 조용한 파기다.
+    "chooseModal": "chooseModalTitle",
     "draftMapSheet": "draftMapSheetTitle",  # 기안 맞추기 펼침 면(#271)
     "dataSheet": "dataSheetTitle",  # 기안·작업 공용 데이터 펼침 면(#271/#272)
     "jobConfirmSheet": "jobConfirmSheetTitle",  # 작업 거울·재진술 펼침 면(#272)
@@ -458,7 +461,14 @@ def test_milestone_l_job_density_and_expansion_sheets():
     ):
         assert f'{{ id: "{node_id}", slotId: "dataSheetSlot" }}' in job_js
     assert 'closeAndRestore("jobConfirmSheet")' in job_js
-    assert 'closeAndRestore("dataSheet")' in job_js
+    # 화면을 떠날 때의 일괄 회수(재작성 F7) — 펼침 면은 실 DOM 을 오버레이로 옮겨 띄우므로
+    # 열린 채 화면이 바뀌면 남의 화면 위에 이 화면의 DOM 이 뜬다. 소유가 화면 전환으로
+    # 올라가 어느 화면이 늘어도 같은 회수가 걸린다(종전엔 편집 모드 진입이 그 자리에서 닫았다).
+    app_js_src = (WEB_JS_DIR / "app.js").read_text(encoding="utf-8")
+    assert "SurfaceSheet.closeAllAndRestore()" in app_js_src, (
+        "화면 전환이 펼침 면을 회수하지 않습니다 — 남의 화면 위에 실 DOM 이 남습니다."
+    )
+    assert "function closeAllAndRestore" in sheets
     assert "window.Modal.close(id);\n    restore(id);" in sheets
     # 펼침 트리거 포커스 복귀(#279 리뷰) — 캡스트립 위임 클릭의 currentTarget 은 포커스
     # 불가능한 컨테이너 div: 실클릭 버튼→상시 ⤢ 순으로 해석하는 SurfaceSheet.trigger 만 쓴다.
@@ -966,11 +976,12 @@ def test_job_range_draft_surface_contract():
     assert "flushPendingEdits" in open_fn2 and "Intent.chained(ZONE_CHAIN" in open_fn2, (
         "열기가 대기 중 편집을 추월합니다(정산·직렬화 없음)."
     )
-    # 데이터-우선(§18.2): 데이터 면의 강제 닫기는 **편집 모드**에서만 — 작업 미선택 렌더마다
-    # 닫으면 작업을 고르기 전엔 범위 편집기가 첫 왕복마다 취소돼 쓸 수 없다(리뷰 5R).
+    # 데이터-우선(§18.2): 데이터 면은 **렌더마다 닫지 않는다** — 작업 미선택 렌더마다 닫으면
+    # 작업을 고르기 전엔 범위 편집기가 첫 왕복마다 취소돼 쓸 수 없다(리뷰 5R). 화면을 떠날
+    # 때의 회수는 이제 전환이 진다(재작성 F7 — SurfaceSheet.closeAllAndRestore).
     mode_fn = src.split("function syncModeDisplay", 1)[1].split("\n  }", 1)[0]
-    assert 'if (edit) {' in mode_fn and 'closeAndRestore("dataSheet")' in mode_fn, (
-        "데이터 면 강제 닫기가 편집 모드 조건이 아닙니다."
+    assert 'closeAndRestore("dataSheet")' not in mode_fn, (
+        "데이터 면을 렌더마다 닫습니다 — 작업 미선택 세션에서 범위 편집기가 못 쓰게 됩니다."
     )
     assert '!hasJob) window.SurfaceSheet.closeAndRestore("jobConfirmSheet")' in mode_fn, (
         "거울 면은 작업이 없으면 닫혀야 합니다(작업의 것이라 설 자리가 없다)."
@@ -1015,7 +1026,7 @@ def test_job_range_draft_surface_contract():
     )
     # 열기 왕복 중 화면 이탈 — 전역 면이 남의 화면 위에 뜨지 않게 열지 않고 초안을 거둔다.
     open_fn = src.split("function openJobDataSheet", 1)[1].split("\n  }", 1)[0]
-    assert 'classList.contains("on")' in open_fn and 'MODE !== "run"' in open_fn, (
+    assert 'classList.contains("on")' in open_fn, (
         "열기 왕복 중 화면 이탈을 확인하지 않습니다."
     )
     # 결과 강등 판정은 표의 선택 표지가 아니라 Python 이 낸 커밋 지문을 쓴다(리뷰 1R P1).
@@ -1311,7 +1322,12 @@ def test_boot_hides_window_until_theme_applied():
 
 
 def test_native_close_and_editor_escape_affordances_are_wired():
-    """#218: X 가드·신규 취소·dismiss 뒤 편집 복귀 경로가 DOM/JS에서 함께 살아 있어야 한다."""
+    """#218: X 가드·신규 취소·편집기 이탈 경로가 DOM/JS에서 함께 살아 있어야 한다.
+
+    편집기가 몰입 표면이 되며(재작성 F7) 「편집 계속」 재진입구는 사망했다 — 나가는 길이
+    back 하나이고 그때 처분이 확정되므로 「처분 미확정으로 나온 세션」 자체가 없다.
+    그 자리를 back·이탈 가드가 대신 지킨다.
+    """
     html = WEB_INDEX.read_text(encoding="utf-8")
     app_py = (WEB_INDEX.parents[1] / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(encoding="utf-8")
     app_js = (WEB_JS_DIR / "app.js").read_text(encoding="utf-8")
@@ -1320,10 +1336,77 @@ def test_native_close_and_editor_escape_affordances_are_wired():
 
     assert "window.events.closing += frontend._handle_window_closing" in app_py
     assert "AppCloseGuard" in app_js and "confirm_window_close" in app_js
-    assert 'id="jobEditResume"' in html and "jobEditResume" in job_js
+    assert 'id="editorBack"' in html and 'editorBack' in editor_js
     assert 'data-act="cancel-new"' in editor_js
-    assert 'Bridge.call(SCREEN, "discard_session", {})' in editor_js
-    assert "showRunMode" in job_js
+    assert 'sendEdit("discard_session", {})' in editor_js   # 체인 경유(5R P2)
+    assert "async function leaveTo(" in editor_js, (
+        "편집기 이탈의 단일 출구(leaveTo)가 없습니다 — 출구가 여럿이면 처분 가드가 새어 나갑니다."
+    )
+    # **section 밖의 편집도 잃을 것이다**(2R P1): 이름·자동등록 이름은 어느 section 에도 없어
+    # 탭 표지엔 안 뜬다 — 그것만 보면 이름을 고치고 나가는 사람에게 아무것도 묻지 않고
+    # 버린다. 몰입 표면엔 그 세션으로 되돌아올 길이 없어 조용한 파기가 된다.
+    # (세션 dirty 단일 출처 계약은 아래 `test_edit_entries_carry_their_context` 가 센다.)
+    # **대기 중 입력이 판정을 추월하지 않는다**(4R P2): blur 로 발화하는 `change` 는 아무도
+    # 기다리지 않는 발신이라, 이름을 고치고 곧바로 back 을 누르면 가드가 그 발신보다 먼저
+    # 판정해 방금 친 편집이 아무 확인 없이 좌초한다. 순서는 공용 체인(intent.js)이 세우고
+    # 이탈·탭 이동은 정산 뒤에 판정한다 — job.js 존 체인과 같은 기제다(재발명 금지).
+    # **편집기의 브리지 왕복은 한 줄에 선다**(5R P2): `change` 만 체인에 세우면 클릭 변이
+    # (헤더 토글·확정·되돌리기…)가 밖에 남아, 누르자마자 back 을 누른 사용자의 편집이
+    # 판정보다 늦게 도착한다. 체인 밖 예외는 둘뿐 — 첫 스냅샷 당김과 정산 **뒤** 컨트롤러
+    # 직접 질의(자기가 기다리는 줄에 서면 안 된다).
+    assert editor_js.count("Bridge.call(SCREEN") == 1, (
+        "편집기 왕복이 체인을 우회합니다 — `sendEdit` 하나만 Bridge.call(SCREEN 을 씁니다."
+    )
+    assert "window.Intent.chained(EDIT_CHAIN" in editor_js, (
+        "편집기 입력 변이가 체인에 서지 않습니다 — 도착 순서가 보장되지 않습니다."
+    )
+    # 복귀는 **규칙을 다시 읽은 뒤** 목적 화면을 노출한다(8R P1 근본 조치). 5R 은 이 순서를
+    # 미리보기 복귀에만 세웠고, 그래서 데이터·결과 복귀는 옛 규칙을 든 화면을 내보인 채
+    # 「만들기」를 열어 뒀다 — 순서는 **모든** 복귀가 지나는 착지 절차 한 자리에 산다.
+    land = editor_js[editor_js.index("async function landOn("):]
+    land = land[:land.index("\n  }") + 4]
+    assert land.index("await window.Nav.refresh(") < land.index("window.Nav.go("), (
+        "착지가 재적재를 기다리지 않고 화면을 노출합니다 — 편집 전 규칙으로 실행됩니다(8R P1)."
+    )
+    assert "refreshed: true" in land, (
+        "착지가 전환에 기(既)대기를 알리지 않습니다 — 왕복이 두 벌이 되고 늦은 쪽이 면을 흔듭니다."
+    )
+    # 편집기를 나가는 길은 **모두** 그 절차를 지난다 — Nav.go 직행이 하나라도 남으면
+    # 그 경로만 재적재를 건너뛰는 비대칭이 다시 생긴다(F7 이 네 라운드에 걸쳐 겪은 자리).
+    assert editor_js.count("window.Nav.go(") == 1, (
+        "편집기에 Nav.go 직행 경로가 남았습니다 — 착지 절차(landOn) 하나만 전환해야 합니다."
+    )
+    # **초점도 되돌린다**(9R P2) — 화면만 바꾸면 초점이 방금 숨겨진 편집기 back 버튼에 남아
+    # 키보드 사용자가 보이는 초점 없이 착지한다. 되돌릴 자리를 아는 곳은 진입 seam 하나이고
+    # (복귀처 넷에 focus_target 을 심으면 새 진입처가 조용히 빠진다), 되돌림 **규칙**은
+    # 모달이 이미 가진 것을 쓴다(분리·비활성 요소 판정을 두 번 쓰지 않는다).
+    assert "window.EditorEntry.restoreEntryFocus()" in land, (
+        "이탈이 초점을 되돌리지 않습니다 — 숨은 요소에 초점이 남습니다(9R P2)."
+    )
+    entry_js = (WEB_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
+    assert entry_js.count("rememberEntryFocus()") == 3, (
+        "진입 seam 이 띄운 자리를 기억하지 않습니다 — 정의 1 + 두 진입(newDraft·openGuarded)."
+    )
+    assert "window.Modal.restoreFocus(" in entry_js, (
+        "초점 되돌림 규칙이 두 벌입니다 — 모달의 restoreFocus 를 재사용해야 합니다."
+    )
+    modal_js = (WEB_JS_DIR / "modal.js").read_text(encoding="utf-8")
+    assert re.search(r"window\.Modal = \{[^}]*\brestoreFocus\b", modal_js), (
+        "Modal.restoreFocus 가 내보내지지 않았습니다 — 이탈이 그 규칙을 쓸 수 없습니다."
+    )
+    for guard in ("async function leaveTo(", "async function gotoSection("):
+        body = editor_js[editor_js.index(guard):]
+        body = body[:body.index("\n  }") + 4]
+        assert "await flushPendingEdits()" in body, (
+            f"{guard} 가 대기 중 입력을 정산하지 않고 판정합니다(4R P2)."
+        )
+    # 탭 가드의 「버리고 이동」은 **모달이 말한 자리만** 되돌린다(2R P2).
+    assert 'discard_patch", { section: r.section }' in editor_js, (
+        "탭 가드의 되돌리기가 세션 전체를 겨눕니다 — 확인 문안보다 넓은 파기입니다."
+    )
+    assert "jobEditResume" not in job_js and "jobEditResume" not in html, (
+        "구 편집 모드 재진입구가 부활했습니다(F7 판정 N — 삭제는 의무를 상속한다)."
+    )
 
 
 def test_unhandledrejection_backstop_present_in_both_shells():
@@ -1345,41 +1428,43 @@ def test_unhandledrejection_backstop_present_in_both_shells():
         assert "preventDefault" in block, f"{app_js} 백스톱이 rejection 을 handled 처리하지 않습니다."
 
 
-def test_editor_surface_lives_in_job_panel():
-    """에디터 흡수 완결(R-flow 블록 2 개정, 결정 39~41) — 정의 surface 의 거처·진입 계약.
+def test_editor_is_an_immersive_screen_with_one_exit():
+    """편집기 = 몰입 표면(재작성 F7 PR-A, 지도 §10.13 사용자 확정 2행).
 
-    에디터 컨테이너 3종(editor-steps/-body/-foot)은 「작업」 패널의 편집 호스트
-    (#jobEditHost) 안에 살고, **scr-editor 별도 화면·레일 항목은 소멸**했다(슬라이스 5
-    삭제 — 재유입 가드). 진입점은 전부 편집 모드로 착지해야 한다: ``Nav.go("editor")`` 는
-    존재하지 않는 화면으로 보내는 죽은 경로라 금지한다.
+    편집 컨테이너 3종(editor-steps/-body/-foot)은 자기 화면(#scr-editor)에 살고, 「작업」
+    화면의 편집 호스트(#jobEditHost)와 두 모드 배선은 **사망**했다(재유입 가드 — 삭제는
+    의무를 상속한다). 요지는 미감이 아니라 가드다: 편집이 「문서 만들기」 안의 한 모드면
+    상단 탭·화면 안 컨트롤이 전부 처분 미확정 이탈구가 되고 가드의 완전성이 표면 수에
+    비례한다. 출구가 하나여야 patch 3택이 한 곳에서 끝난다.
     """
     html = WEB_INDEX.read_text(encoding="utf-8")
-    # scr-job 다음 섹션은 이제 scr-draft(구 scr-txt 는 #148 슬라이스 6 삭제) — 그 경계까지가 「작업」 패널.
-    job_sec = html.split('id="scr-job"')[1].split('id="scr-draft"')[0]
-    for cid in ("jobEditHost", "editor-steps", "editor-body", "editor-foot"):
-        assert cid in job_sec, f"{cid} 가 scr-job 편집 호스트에 없습니다(흡수 이사 회귀)."
-    # 별도 화면·레일 항목 재유입 가드(삭제는 의무를 상속한다 — 조용한 부활 금지).
-    assert 'id="scr-editor"' not in html, "scr-editor 별도 화면이 부활했습니다(결정 39 위반)."
-    assert 'data-scr="editor"' not in html, "레일 「작업 에디터」 항목이 부활했습니다(결정 39 위반)."
-    # 진입점 repoint — 죽은 목적지 금지 + 편집 모드 seam 배선.
-    all_js = "\n".join(
-        p.read_text(encoding="utf-8") for p in sorted(WEB_JS_DIR.rglob("*.js")))
-    assert 'Nav.go("editor")' not in all_js, (
-        'scr-editor 는 소멸 — Nav.go("editor") 는 존재하지 않는 화면으로 보내는 죽은 경로입니다'
-        "(편집 진입은 EditorEntry.land 로)."
+    editor_sec = html.split('id="scr-editor"')[1].split('id="scr-draft"')[0]
+    for cid in ("editorBack", "editorName", "editorSaveState", "editorContext",
+                "editor-steps", "editor-body", "editor-foot"):
+        assert cid in editor_sec, f"{cid} 가 편집기 화면에 없습니다."
+    # 구 거처 재유입 가드 — 편집 호스트·두 모드 출구는 승계처가 섰으므로 되살아나면 안 된다.
+    assert 'id="jobEditHost"' not in html, "구 편집 호스트가 부활했습니다(F7 판정 N)."
+    assert 'id="jobEditExit"' not in html and 'id="jobEditExitNote"' not in html, (
+        "구 편집 모드 출구·복귀 고지가 부활했습니다 — 그 소임은 patch 처분이 승계했습니다."
+    )
+    # 셸을 덮는다 — nav 은닉은 CSS 가, 편집 중 이탈은 Nav 위임이 진다.
+    app_js = (WEB_JS_DIR / "app.js").read_text(encoding="utf-8")
+    css = (WEB_INDEX.parent / "css" / "app.css").read_text(encoding="utf-8")
+    assert "editor-open" in app_js and "body.editor-open .nav" in css, (
+        "편집기가 상단 2탭을 덮지 않습니다 — 화면 전환구가 살아 있으면 처분 미확정 이탈구다."
+    )
+    assert "EditorScreen.leaveTo" in app_js, (
+        "Nav 가 편집기 이탈 가드를 지나지 않습니다 — 프로그램적 이동이 처분을 건너뜁니다."
     )
     # 진입 흐름은 EditorEntry 단일 정의(land/newDraft/openGuarded — 축자 복붙=드리프트 표면).
-    # 소비처 전수(라이브러리·템플릿 관리·작업 화면 — PR-5 리뷰 F5: job.js 가 가드 사각이었다).
     entry_src = (WEB_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
     for fn in ("function land", "function newDraft", "function openGuarded"):
         assert fn in entry_src, f"editor_entry.js 의 단일 정의({fn})가 사라졌습니다."
+    assert 'window.Nav.go("editor"' in entry_src, "편집 진입이 편집기 화면으로 착지하지 않습니다."
     for fname, needle in (
         ("screens/library.js", "EditorEntry.newDraft"),
         ("screens/library.js", "EditorEntry.openGuarded"),
         ("screens/template.js", "EditorEntry.land"),
-        # 「문서 만들기」는 좌 목록 사망(F2 PR-B)으로 **새 작업 진입을 더는 갖지 않는다** —
-        # `＋ 새 작업`은 라이브러리 화면 머리 한 곳이다(진입이 둘이면 폐기 확인이 갈린다).
-        # 남는 것은 수리 동선(드리프트·파일명 토큰)의 편집 진입뿐이다.
         ("screens/job.js", "EditorEntry.openGuarded"),
     ):
         src = (WEB_JS_DIR / fname).read_text(encoding="utf-8")
@@ -1388,41 +1473,72 @@ def test_editor_surface_lives_in_job_panel():
     assert "EditorEntry.newDraft" not in job_js, (
         "「문서 만들기」에 새 작업 진입이 되살아났습니다 — 승계처는 라이브러리 `＋ 새 작업`입니다."
     )
-    # 편집 모드의 두 출구(F2 PR-B 판정 D) — 「편집으로 돌아가기」(T2 고지)와 「실행으로
-    # 돌아가기」(결정 40 이 좌 목록 행 클릭에 줬던 소임의 승계처). 둘 다 비파괴다.
-    assert "return-to-edit" in job_js, "T2 고지의 비파괴 「편집으로 돌아가기」가 없습니다(F1)."
-    assert 'id="jobEditExit"' in job_sec, (
-        "편집 → 실행 복귀 어포던스가 없습니다 — 좌 목록 사망 뒤 실행으로 돌아갈 길이 사라집니다"
-        "(지도 §10.9 판정 D)."
+    assert "showEditMode" not in job_js and "exitEditToRun" not in job_js, (
+        "job.js 두 모드 배선이 되살아났습니다 — 편집은 자기 화면으로 나갔습니다(F7)."
     )
     editor_js = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
-    assert '$("jobEditHost")' in editor_js, "editor.js 위임 루트가 편집 호스트로 이사하지 않았습니다."
-    assert "exitEditToRun" in job_js and "showEditMode" in job_js, (
-        "job.js 패널 두 모드 배선(showEditMode/exitEditToRun)이 사라졌습니다(결정 39·40)."
+    assert '$("scr-editor")' in editor_js, "editor.js 위임 루트가 몰입 표면으로 이사하지 않았습니다."
+
+
+def test_edit_entries_carry_their_context():
+    """편집 진입은 **문맥과 함께** 일어난다(계약 §5.1 · 지도 §10.13 판정 K).
+
+    편집기는 스스로 열리지 않는다 — 늘 다른 표면의 문제가 사람을 보낸다. 사유·증거·복귀처를
+    안 들고 오면 사용자는 "내가 왜 여기 왔더라"를 편집기에서 다시 재구성해야 하고 돌아갈
+    자리도 잃는다. 그래서 **보낸 표면**이 자기가 본 것을 싣는다(편집기가 되계산하면 배너와
+    사용자가 방금 본 화면이 갈린다).
+    """
+    job = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    lib = (WEB_JS_DIR / "screens" / "library.js").read_text(encoding="utf-8")
+    bridge = (WEB_JS_DIR / "bridge.js").read_text(encoding="utf-8")
+    entry = (WEB_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
+    assert "openJobInEditor(name, context)" in bridge, (
+        "브리지가 진입 문맥을 나르지 않습니다 — 문맥 없는 편집기는 나갈 곳이 없다."
+    )
+    # **단일 정의 seam 은 인자까지 단일이어야 한다**(1R P1 의 영구 가드): 호출자가 문맥을
+    # 실어도 공용 seam 이 인자를 흘리면 모든 진입이 기본 자발적 진입으로 떨어져 배너·복귀처가
+    # 통째로 사라진다. 종전 계약은 "호출자가 무엇을 싣는가"만 보고 "seam 이 흘려보내는가"를
+    # 보지 않아 그 드리프트를 통과시켰다.
+    assert "async function openGuarded(name, context)" in entry, (
+        "공용 진입 seam 이 문맥 인자를 받지 않습니다 — 호출자가 실은 문맥이 버려집니다."
+    )
+    assert "Bridge.openJobInEditor(name, context" in entry, (
+        "공용 진입 seam 이 문맥을 백엔드로 흘려보내지 않습니다."
+    )
+    for reason in ("document_browser_repair", "preview_result", "output_result", "run_failure"):
+        assert reason in job, f"「문서 만들기」의 편집 진입이 사유({reason})를 싣지 않습니다."
+    assert 'entry_reason: "library"' in lib, "라이브러리 편집 진입이 사유를 싣지 않습니다."
+    # F4 가 남긴 빚의 회수 — 파일 이름 규칙 수리는 이제 전용 탭으로 곧장 착지한다.
+    assert 'section: "filename"' in job, (
+        "결과의 파일 이름 수리가 파일 이름 탭으로 착지하지 않습니다(F7 이 승격한 자리)."
+    )
+    # **약속한 복귀 상태는 실제로 되돌린다**(1R P2): 「미리보기로 돌아가기」가 보통의
+    # 「문서 만들기」로 데려다 놓으면 라벨이 거짓이 된다. 보낸 표면이 세운 `reopen_drawer` 를
+    # 복귀가 소비하고, 여는 절차는 그 화면의 seam 하나가 소유한다(열기 규율 두 벌 금지).
+    editor = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
+    assert "reopen_drawer" in job and "reopen_drawer" in editor, (
+        "미리보기 복귀 상태가 세워지기만 하고 소비되지 않습니다 — 라벨이 약속한 자리와"
+        " 실제 착지가 다릅니다."
+    )
+    assert "JobScreen.openPreview" in editor and "openPreview," in job, (
+        "복귀가 미리보기 열기 seam 을 쓰지 않습니다 — 열기 절차가 두 벌이 됩니다."
     )
 
 
-def test_use_in_job_lands_run_mode_not_the_editor():
-    """「문서 만들기에서 사용」은 **실행 모드**에 착지한다(F2 PR-B).
+def test_use_in_job_goes_straight_to_the_run_surface():
+    """「문서 만들기에서 사용」은 실행 표면에 착지한다(F2 PR-B 의 계약, F7 에서 단순해짐).
 
-    좌 목록이 살아 있을 땐 행 클릭이 이 정산을 겸했다(결정 40) — 편집 모드면 실행으로
-    되돌리고 미저장 편집은 고지했다. 목록이 죽으면서 그 정산이 빠지면, 작업을 저장한 직후
-    「문서 작업」에서 그것을 쓰겠다고 눌렀을 때 편집 호스트가 그대로 뜬다: 사용자가 요청한
-    것과 다른 표면에 착지하는 결함(2R P2 「빈 화면 착지」와 같은 클래스). 전이는 비파괴다.
+    편집기가 자기 화면으로 나가면서 「편집 모드면 되돌린다」는 정산 자체가 불필요해졌다 —
+    이 화면이 보이는 동안 편집기는 열려 있지 않다(몰입 표면은 셸을 덮는다). 승계처가 선
+    뒤에도 옛 정산을 남겨 두면 죽은 배선이 계약처럼 읽힌다.
     """
     lib = (WEB_JS_DIR / "screens" / "library.js").read_text(encoding="utf-8")
     job = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
-    use = lib[lib.index('Bridge.call(JOB, "prefer_work"'):lib.index("window.Nav.go(JOB);")]
-    assert "JobScreen.landRunMode" in use, (
-        "「문서 만들기에서 사용」이 실행 모드 착지를 정산하지 않습니다 — 편집 호스트에 착지합니다."
-    )
-    assert "async function landRunMode(" in job and "landRunMode," in job, (
-        "job.js 가 실행 모드 착지 seam(landRunMode)을 내보내지 않습니다."
-    )
-    body = job[job.index("async function landRunMode("):]
-    body = body[:body.index("\n  }") + 4]
-    assert "exitEditToRun()" in body and "showExitNote()" in body, (
-        "실행 착지가 기존 비파괴 전이·미저장 고지를 쓰지 않습니다(새 전이를 만들지 않는다)."
+    use = lib[lib.index('Bridge.call(JOB, "prefer_work"'):]
+    use = use[:use.index("window.Nav.go(JOB);") + len("window.Nav.go(JOB);")]
+    assert "window.Nav.go(JOB);" in use, "「문서 만들기에서 사용」이 실행 화면으로 가지 않습니다."
+    assert "landRunMode" not in lib and "landRunMode" not in job, (
+        "구 실행 모드 착지 seam 이 남아 있습니다 — 두 모드가 사라졌으므로 되돌릴 모드도 없습니다."
     )
 
 
