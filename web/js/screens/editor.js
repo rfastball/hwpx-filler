@@ -62,7 +62,9 @@
     // 저장되지도 않은 규칙에 있지도 않은 세대를 말하게 된다.
     const st = $("editorSaveState");
     const rev = s.revisions || {};
-    const dirty = (s.dirty_sections || []).length > 0;
+    // 세션 수준 dirty 는 **Python 이 낸 값 하나**를 읽는다(3R 근본 조치) — 여기서
+    // `dirty_sections` 로 다시 조립하면 이름처럼 section 밖의 편집을 「저장됨」이라 말한다.
+    const dirty = !!s.dirty;
     if (s.is_draft) {
       st.dataset.level = "idle";
       st.textContent = "아직 저장하지 않은 새 작업";
@@ -536,8 +538,7 @@
       // 편집의 주 행동은 **하나**다(§10.13 판정 E): 「변경 저장」. 「이번 생성에 적용」은
       // runOverrides 가 서는 PR-B 자리라 여기 라디오를 미리 늘어놓지 않는다(§6: 같은
       // 선택지를 모든 문맥에 나열하지 않는다). 손댄 것이 없으면 버릴 것도 없다.
-      const dirty = (s.dirty_sections || []).length > 0;
-      const discard = dirty
+      const discard = s.dirty
         ? `<button class="btn" data-act="discard-patch">변경 버리기</button>` : "";
       return `${discard}<span class="spacer"></span>` +
         `<button class="btn primary" data-act="save">변경 저장</button>`;
@@ -879,12 +880,10 @@
   async function leaveTo(target) {
     const s = LAST || {};
     // **section 밖의 편집도 잃을 것이다**(2R P1): 이름·자동등록 이름은 어느 section 에도
-    // 속하지 않아(판정 L 계열) `dirty_sections` 가 비어 있다 — 그것만 보면 머리에서 이름을
-    // 고치고 나가는 사람에게 아무것도 묻지 않고 그 편집을 버린다. 몰입 표면엔 그 세션으로
-    // 되돌아올 길이 없으므로(구 「편집 계속」은 사망) 조용한 파기가 된다. 세션이 손댔는지는
-    // Python 이 이미 `has_unsaved_work` 로 답한다 — 그 판정을 다시 만들지 않는다.
-    const dirty = (s.dirty_sections || []).length > 0 || !!s.has_unsaved_work;
-    if (dirty && !s.is_draft) {
+    // 속하지 않아 탭 표지엔 안 뜬다 — 그것만 보면 머리에서 이름을 고치고 나가는 사람에게
+    // 아무것도 묻지 않고 그 편집을 버린다. 몰입 표면엔 그 세션으로 되돌아올 길이 없으므로
+    // (구 「편집 계속」은 사망) 조용한 파기가 된다. 판정은 Python 의 `dirty` 하나다.
+    if (s.dirty && !s.is_draft) {
       const choice = await Modal.choose({
         title: "저장하지 않은 변경이 있습니다",
         body: "편집기를 나가기 전에 이 변경을 어떻게 할지 정하세요."

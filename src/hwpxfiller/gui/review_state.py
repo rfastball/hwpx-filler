@@ -53,6 +53,10 @@ EVIDENCE_POLICY = {
     "presentation": "formatted_value",
 }
 
+#: 소스 열을 **읽어** 값을 내는 유형 — `const`(리터럴)·`blank`(언제나 빈 값)는 여기 없다.
+#: 이전 판본의 값을 되세울 때 "그 열이 지금 있는가"를 물어야 하는 대상의 목록이다.
+_SOURCE_BACKED = frozenset({"text", "date", "amount"})
+
 #: 지문 키 → 사람이 읽는 대상 이름의 접미사. 표면 문안이 ``field:급여:source`` 같은
 #: 내부 키를 그대로 말하지 않게 한다.
 _AXIS_LABEL = {"source": "연결", "format": "표시형"}
@@ -217,6 +221,15 @@ def previous_values(job: Job, fields: "tuple[str, ...]", record: "dict") -> "dic
     for name in fields:
         axes = fields_before.get(name)
         if not axes:
+            continue
+        # **없는 열은 빈 값이 아니다**(3R P2). `value_for` 는 `record.get(source, "")` 라
+        # 소스 열이 지금 데이터에 없어도 조용히 ``""`` 를 낸다 — 그대로 실으면 증거가
+        # "이전엔 비어 있었습니다"라고 **단정**한다. 이전 값을 못 말하는 것과 이전 값이
+        # 비어 있었다는 것은 다르다. 소스를 읽는 유형(text·date·amount)에서 그 열이 지금
+        # 레코드에 없으면 뺀다 — 소스가 애초에 없던 필드(미연결)는 그때도 빈 값이 참이라
+        # 남긴다.
+        source = axes.get("source", "")
+        if axes.get("type", "text") in _SOURCE_BACKED and source and source not in record:
             continue
         try:
             # `blank` 축은 따로 넘기지 않는다 — `is_blank` 는 ``type == "blank"`` 의 파생이라

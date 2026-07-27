@@ -574,10 +574,13 @@ def _rules_values_or_raise(raw: "object") -> "dict":
     ``from_dict`` 의 다른 필드와 같은 규율(조기 loud 격리 > 지연 크래시): 형상이 깨진 값을
     통과시키면 증거 렌더가 뒤늦게 터지고, 그 자리는 사용자가 **변경을 확인하는** 자리라
     조용한 결손이 가장 비싸다."""
-    if not raw:
-        return {}
+    # **형상을 먼저 본다**(3R P2): `not raw` 를 앞에 두면 ``null``·``[]``·``""``·``0`` 같은
+    # 훼손 값이 「직전 판본 없음」이라는 **정상 상태로 위장**해 통과한다 — 다른 durable
+    # 필드는 전부 loud 인데 여기만 조용히 이력을 잃는다. 빈 사전만이 「없음」이다.
     if not isinstance(raw, dict):
         raise ValueError(f"'previous_rules' 는 사전이어야 하는데 {type(raw).__name__} 입니다")
+    if not raw:
+        return {}
     fields = raw.get("fields", {})
     if not isinstance(fields, dict):
         raise ValueError("'previous_rules.fields' 는 사전이어야 합니다")

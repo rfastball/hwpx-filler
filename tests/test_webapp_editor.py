@@ -1075,6 +1075,29 @@ def test_skip_data_requires_template_gate(tmp_path):
     assert ctrl.section == "binding"
 
 
+def test_session_dirty_is_one_python_owned_value(tmp_path):
+    """"이 세션이 잃을 것이 있는가"의 **단일 출처**(3R 근본 조치).
+
+    표면이 탭 표지(`dirty_sections`)로 이 판정을 재조립하면 소비자마다 답이 갈린다 —
+    실제로 2R 은 이탈 가드만 고쳤고 머리·footer 는 같은 상태를 「저장됨」이라 말했다.
+    이름처럼 어느 section 에도 없는 편집(판정 L)이 여기서 갈린다.
+    """
+    ctrl, _ = _controller26(tmp_path)
+    assert _save_named(ctrl, "단일출처")["ok"] is True
+    ctrl.load_job("단일출처")
+    snap = ctrl.snapshot()
+    assert snap["dirty"] is False and snap["dirty_sections"] == []   # 복원 직후 = 저장됨
+
+    ctrl.dispatch("set_name", {"name": "새 이름"})                    # section 밖 편집
+    snap = ctrl.snapshot()
+    assert snap["dirty_sections"] == []       # 탭 표지엔 안 뜨고
+    assert snap["dirty"] is True              # 세션 수준으로는 잃을 것이 있다
+
+    ctrl.dispatch("set_pattern", {"pattern": "다른-{{공고명}}"})
+    snap = ctrl.snapshot()
+    assert snap["dirty_sections"] == ["filename"] and snap["dirty"] is True
+
+
 def test_discarding_one_section_keeps_edits_that_live_outside_sections(tmp_path):
     """탭 가드의 「버리고 이동」은 **그 자리만** 되돌린다(2R P2).
 

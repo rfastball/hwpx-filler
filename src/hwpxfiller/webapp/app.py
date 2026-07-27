@@ -1673,7 +1673,7 @@ _JOB_EDITMODE_PROBE_JS = r"""
     // section 어휘(재작성 F7 판정 B) — 탭 집합은 Python 이 매체에서 파생해 내려준다.
     var draft = {section:'template', sections:['template','binding','filename'],
       reachable:{template:false, binding:false, filename:false}, dirty_sections:[],
-      is_draft:true, changes:{}, context:{entry_reason:'voluntary', evidence:{}, return_context:{}},
+      is_draft:true, dirty:false, changes:{}, context:{entry_reason:'voluntary', evidence:{}, return_context:{}},
       revisions:{}, template_path:'', template_name:'',
       field_count:0, fields:[], raw_block:'', gate_error:false, gate:null, notice:null,
       editing_origin:''};
@@ -1689,13 +1689,20 @@ _JOB_EDITMODE_PROBE_JS = r"""
     out.foot_shown_edit = getComputedStyle(document.getElementById('editor-foot')).display !== 'none';
     out.edit_dirty_tab_marked = (function () {
       draft.dirty_sections = ['binding'];
+      draft.dirty = true;                     // 세션 수준 판정은 Python 이 낸 값 하나(3R)
       window.__push('editor', draft);
+      // 손댄 상태에서는 머리가 「저장하지 않은 변경」을 말하고 제자리 되돌리기가 뜬다 —
+      // 「저장됨」이라 말하면서 버릴 길도 없던 자리(3R P2).
+      out.dirty_head = document.getElementById('editorSaveState').textContent;
+      out.dirty_discard_shown =
+        !!document.querySelector('#editor-foot [data-act="discard-patch"]');
       return document.querySelectorAll('#editor-steps button.wstep-tab.dirty').length;
     })();
     // 머리 — 이름(안정 입력)·저장 상태·판본(§10.13 판정 O 표시 자리 ①).
     draft.name = '공고서';
     draft.revisions = {template:2, binding:5};
     draft.dirty_sections = [];
+    draft.dirty = false;
     window.__push('editor', draft);
     out.name_input_value = document.getElementById('editorName').value;
     out.save_state = document.getElementById('editorSaveState').textContent;
@@ -1763,7 +1770,7 @@ _EDITOR_GUARD_PROBE_SETUP_JS = r"""
     window.__push('editor', {
       section: 'binding', sections: ['template', 'binding', 'filename'],
       reachable: { template: true, binding: true, filename: true },
-      dirty_sections: ['binding'], is_draft: false, changes: {},
+      dirty_sections: ['binding'], dirty: true, is_draft: false, changes: {},
       context: { entry_reason: 'voluntary', evidence: {}, return_context: {} },
       revisions: { template: 1, binding: 2 }, template_path: 'C:/t/공고서.hwpx',
       template_name: '공고서.hwpx', field_count: 0, fields: [], raw_block: '',
@@ -1812,7 +1819,7 @@ _EDITOR_CHIP_PROBE_JS = r"""
     var snap = {
       section:'binding', sections:['template','binding','filename'], notice:null,
       reachable:{template:true, binding:false, filename:false}, dirty_sections:[],
-      is_draft:false, changes:{}, revisions:{},
+      is_draft:false, dirty:false, changes:{}, revisions:{},
       context:{entry_reason:'voluntary', evidence:{}, return_context:{}},
       template_path:"C:/t/공고서.hwpx", template_name:"공고서.hwpx", field_count:4,
       schema_summary:"", fields:[], raw_block:"", gate:null, gate_error:false,
@@ -2331,7 +2338,7 @@ _EDITOR_LIB_PICKER_PROBE_JS = r"""
     };
     var draft = {section:'template', sections:['template','binding','filename'],
       reachable:{template:false, binding:false, filename:false}, dirty_sections:[],
-      is_draft:true, changes:{}, revisions:{},
+      is_draft:true, dirty:false, changes:{}, revisions:{},
       context:{entry_reason:'voluntary', evidence:{}, return_context:{}},
       template_path:'', template_name:'',
       field_count:0, fields:[], raw_block:'', gate_error:false, gate:null, notice:null,

@@ -1343,13 +1343,9 @@ def test_native_close_and_editor_escape_affordances_are_wired():
         "편집기 이탈의 단일 출구(leaveTo)가 없습니다 — 출구가 여럿이면 처분 가드가 새어 나갑니다."
     )
     # **section 밖의 편집도 잃을 것이다**(2R P1): 이름·자동등록 이름은 어느 section 에도 없어
-    # `dirty_sections` 가 비어 있다 — 그것만 보면 이름을 고치고 나가는 사람에게 아무것도 묻지
-    # 않고 버린다. 몰입 표면엔 그 세션으로 되돌아올 길이 없어 조용한 파기가 된다.
-    leave = editor_js[editor_js.index("async function leaveTo("):]
-    leave = leave[:leave.index("\n  }") + 4]
-    assert "has_unsaved_work" in leave, (
-        "이탈 가드가 section 밖 편집(이름 등)을 보지 않습니다 — 조용한 파기 경로입니다."
-    )
+    # 탭 표지엔 안 뜬다 — 그것만 보면 이름을 고치고 나가는 사람에게 아무것도 묻지 않고
+    # 버린다. 몰입 표면엔 그 세션으로 되돌아올 길이 없어 조용한 파기가 된다.
+    # (세션 dirty 단일 출처 계약은 아래 `test_edit_entries_carry_their_context` 가 센다.)
     # 탭 가드의 「버리고 이동」은 **모달이 말한 자리만** 되돌린다(2R P2).
     assert 'discard_patch", { section: r.section }' in editor_js, (
         "탭 가드의 되돌리기가 세션 전체를 겨눕니다 — 확인 문안보다 넓은 파기입니다."

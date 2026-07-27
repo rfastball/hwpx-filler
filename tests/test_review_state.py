@@ -431,3 +431,33 @@ def test_evidence_carries_before_when_the_previous_revision_exists():
     row = next(r for r in ev["rows"] if r["name"] == "금액")
     # 값은 **표시형까지 적용된** 문자열이다(사용자가 문서에서 볼 그 모양).
     assert row["before"] == "1,000원" and row["value"] == "2,000"
+
+
+def test_before_omits_fields_whose_source_column_is_gone(tmp_path):
+    """**없는 열은 빈 값이 아니다**(3R P2) — 값을 못 말하는 것과 비어 있었다는 것은 다르다.
+
+    `value_for` 는 `record.get(source, "")` 라 소스 열이 사라져도 조용히 ``""`` 를 낸다.
+    그대로 실으면 증거가 "이전엔 비어 있었습니다"라고 **단정**한다.
+    """
+    from hwpxfiller.core.job import rules_values
+    from hwpxfiller.gui.review_state import previous_values
+
+    job = _reviewed(_job())
+    job.previous_rules = rules_values(job)         # 금액 ← presmptPrce
+    job.mapping.mappings[1].source = "다른열"
+    # 지금 데이터에 옛 소스 열이 없다 → 이전 값을 **말할 수 없다**(빈 값이 아니다).
+    assert previous_values(job, ("금액",), {"다른열": "2000"}) == {}
+    # 열이 있으면 그때 값을 말한다.
+    assert previous_values(job, ("금액",), {"presmptPrce": "1000", "다른열": "2000"})
+
+
+def test_before_keeps_fields_that_were_genuinely_unconnected():
+    """소스가 **애초에 없던** 필드는 그때도 빈 값이 참이라 남긴다 — 연결 신설의 before 다."""
+    from hwpxfiller.core.job import rules_values
+    from hwpxfiller.gui.review_state import previous_values
+
+    job = _reviewed(_job())
+    job.mapping.mappings[1].source = ""            # 이전 판본: 미연결
+    job.previous_rules = rules_values(job)
+    job.mapping.mappings[1].source = "추정가격"     # 새 판본: 연결
+    assert previous_values(job, ("금액",), {"추정가격": "1000"}) == {"금액": ""}

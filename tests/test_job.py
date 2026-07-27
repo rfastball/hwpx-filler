@@ -1104,3 +1104,19 @@ def test_generate_batch_rejects_non_hwpx_template():
 
     with pytest.raises(MediaMismatchError):
         generate_batch("/x/d.txt", [{"a": "1"}], "/tmp/out", "n-{{seq}}")
+
+
+@pytest.mark.parametrize("bad", [None, [], "", 0, 3])
+def test_falsy_previous_rules_corruption_is_loud(bad):
+    """훼손 값이 「직전 판본 없음」이라는 **정상 상태로 위장**하지 못하게 한다(3R P2).
+
+    형상 검사보다 falsy 검사가 앞서면 ``null``·``[]``·``""``·``0`` 이 조용히 통과해 그
+    작업만 이력 증거를 잃는다 — 다른 durable 필드는 전부 loud 인데 여기만 조용해진다.
+    빈 사전만이 「없음」이다.
+    """
+    d = _job().to_dict()
+    d["previous_rules"] = bad
+    with pytest.raises(ValueError):
+        Job.from_dict(d)
+    d["previous_rules"] = {}                       # 빈 사전 = 정상(직전 판본 없음)
+    assert Job.from_dict(d).previous_rules == {}

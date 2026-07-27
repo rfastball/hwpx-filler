@@ -365,6 +365,12 @@ class EditorController:
             # 본다)을 **따로** 낸다. 둘을 하나로 뭉치면 미확정 편집이 조용히 버려진다.
             "is_draft": self.session.is_draft,
             "dirty_sections": list(dirty),
+            # **"이 세션이 잃을 것이 있는가"의 단일 출처**(3R 근본 조치). 표면이 이 판정을
+            # 스스로 조립하면(길이 검사 + 세션 표지) 소비자마다 다르게 답한다 — 실제로
+            # 2R 은 이탈 가드만 고쳤고 머리·footer 는 「저장됨」이라 말하고 있었다.
+            # `dirty_sections` 는 **탭 표지**의 자리이고, 세션 수준 판정은 이 값 하나다:
+            # 이름·자동등록 이름처럼 어느 section 에도 없는 편집(판정 L)이 여기 든다.
+            "dirty": bool(dirty) or self.has_unsaved_work(),
             "changes": self.session.changes(self._draft_job()),
             "context": self.session.context.to_dict(),
             # 판본(F7 판정 O 표시 자리 ①) — 저장된 작업만 세대가 있다. 초안은 아직 없다:

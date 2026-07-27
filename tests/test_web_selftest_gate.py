@@ -932,6 +932,13 @@ class TestWebSelftestGate:
             "손댄 탭이 표지되지 않습니다 — 어느 자리를 처분해야 하는지 3택 모달 전에 보여야"
             f" 한다(§5.2): {j['edit_dirty_tab_marked']!r}"
         )
+        # 3R P2 — 손댄 세션을 「저장됨」이라 말하면서 제자리 되돌리기도 없던 자리.
+        assert "저장하지 않은 변경" in j["dirty_head"], (
+            f"손댄 세션의 머리가 저장됐다고 말합니다: {j['dirty_head']!r}"
+        )
+        assert j["dirty_discard_shown"] is True, (
+            "손댄 세션에 「변경 버리기」가 없습니다 — 나가지 않고는 되돌릴 길이 없습니다."
+        )
         # 머리 — 이름은 안정 입력이고 저장 상태가 **판본을 말한다**(§10.13 판정 O 표시 자리 ①).
         assert j["name_input_value"] == "공고서", f"이름 입력이 값을 받지 않습니다: {j!r}"
         assert "r2" in j["save_state"] and "r5" in j["save_state"], (
