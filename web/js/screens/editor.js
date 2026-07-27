@@ -22,6 +22,19 @@
 
   const esc = window.escHtml;  // 공유 이스케이퍼(esc.js)
 
+  /* 입력 변이는 **한 체인**에 선다(4R P2 — job.js 존 체인 선례, 공용 `intent.js`).
+     blur 로 발화하는 `change` 는 아무도 기다리지 않는 발신이라, 이름을 고치고 곧바로 back 을
+     누르면 이탈 가드가 **그 발신보다 먼저** 판정한다 — 창이 열린 그 순간엔 잃을 것이 없다고
+     읽혀 방금 친 편집이 아무 확인 없이 좌초한다. 순서를 기제가 세우고, 이탈·탭 이동은
+     그 체인을 정산한 뒤 판정한다. */
+  const EDIT_CHAIN = "editor:mutate";
+  function sendEdit(action, payload) {
+    return window.Intent.chained(EDIT_CHAIN, () => Bridge.call(SCREEN, action, payload));
+  }
+  function flushPendingEdits() {
+    return window.Intent.chained(EDIT_CHAIN, () => Promise.resolve());
+  }
+
   // 편집(탭) vs 신규(마법사 단계) — 정보 완전 동등, 공개 방식만 상이(결정 41).
   const isEditing = (s) => !!s.editing_origin;
 
@@ -575,6 +588,9 @@
      머무르기는 **기본값**이다 — 모달을 Escape 로 닫아도 편집이 사라지지 않는다. */
   async function gotoSection(target) {
     if (!target) return;
+    // 대기 중 입력이 판정을 추월하지 않게 먼저 정산한다(4R P2) — 방금 친 패턴이 아직
+    // 도착하지 않은 채 판정하면 처분할 것이 없다고 읽고 그 편집을 다른 탭으로 끌고 간다.
+    await flushPendingEdits();
     const r = await Bridge.call(SCREEN, "goto_section", { section: target });
     if (!(r && r.needs_section_guard)) return;
     const choice = await Modal.choose({
@@ -744,13 +760,13 @@
     if (!el) return;
     const idx = el.dataset.index !== undefined ? Number(el.dataset.index) : null;
     switch (el.dataset.act) {
-      case "row-source": Bridge.call(SCREEN, "set_source", { index: idx, source: el.value }); break;
-      case "row-type": Bridge.call(SCREEN, "set_type", { index: idx, type: el.value }); break;
-      case "row-fmt": Bridge.call(SCREEN, "set_fmt", { index: idx, fmt: el.value }); break;
-      case "row-const": Bridge.call(SCREEN, "set_const", { index: idx, const: el.value }); break;
-      case "name": Bridge.call(SCREEN, "set_name", { name: el.value }); break;
-      case "pattern": Bridge.call(SCREEN, "set_pattern", { pattern: el.value }); break;
-      case "dataset-name": Bridge.call(SCREEN, "set_dataset_name", { name: el.value }); break;
+      case "row-source": sendEdit("set_source", { index: idx, source: el.value }); break;
+      case "row-type": sendEdit("set_type", { index: idx, type: el.value }); break;
+      case "row-fmt": sendEdit("set_fmt", { index: idx, fmt: el.value }); break;
+      case "row-const": sendEdit("set_const", { index: idx, const: el.value }); break;
+      case "name": sendEdit("set_name", { name: el.value }); break;
+      case "pattern": sendEdit("set_pattern", { pattern: el.value }); break;
+      case "dataset-name": sendEdit("set_dataset_name", { name: el.value }); break;
       default: break;
     }
   }
@@ -878,12 +894,24 @@
      세션 폐기 확인을 받는다(초안은 patch 가 아니라 세션 전체가 미저장이다 — 판정 P).
      Nav.go 는 `force` 로 되돌아온다(가드 재진입 방지). */
   async function leaveTo(target) {
+    await flushPendingEdits();
     const s = LAST || {};
     // **section 밖의 편집도 잃을 것이다**(2R P1): 이름·자동등록 이름은 어느 section 에도
     // 속하지 않아 탭 표지엔 안 뜬다 — 그것만 보면 머리에서 이름을 고치고 나가는 사람에게
     // 아무것도 묻지 않고 그 편집을 버린다. 몰입 표면엔 그 세션으로 되돌아올 길이 없으므로
     // (구 「편집 계속」은 사망) 조용한 파기가 된다. 판정은 Python 의 `dirty` 하나다.
-    if (s.dirty && !s.is_draft) {
+    // 정산 뒤에도 **스냅샷이 아니라 컨트롤러에게 묻는다**(4R P2): push 도착과 이 판정의
+    // 순서까지 기대고 싶지 않다 — 잃을 것이 있는지는 Python 이 지금 답할 수 있다.
+    // `s.dirty` 를 먼저 보는 것은 세션 손댐 표지가 아직 안 선 첫 왕복의 방어다.
+    let dirty = !!s.dirty;
+    if (!dirty && !s.is_draft) {
+      try {
+        dirty = await Bridge.editorHasUnsavedWork();
+      } catch (err) {
+        dirty = true;   // 모르면 묻는다(확인-또는-경보의 안전 방향)
+      }
+    }
+    if (dirty && !s.is_draft) {
       const choice = await Modal.choose({
         title: "저장하지 않은 변경이 있습니다",
         body: "편집기를 나가기 전에 이 변경을 어떻게 할지 정하세요."

@@ -49,7 +49,12 @@ import threading
 from ..batch import generate_batch
 from ..core.dataset_pool import DatasetPoolRegistry
 from ..core.identity_summary import identity_summary
-from ..core.job import MISSING_MARKER, JobRegistry, rules_fingerprints
+from ..core.job import (
+    MISSING_MARKER,
+    JobRegistry,
+    content_fingerprint,
+    rules_fingerprints,
+)
 from ..core.mapping import SOURCE_CARRIER_TYPES
 from ..core.template_status import OUTPUT_SUBDIR_NAME
 from ..gui.filter_state import (
@@ -1290,6 +1295,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         작업 화면은 REFRESH_ON_NAV 에 있어 이 액션이 레일 복귀마다 발화하므로, 타 화면에서의
         삭제(그 화면으로 가려면 반드시 작업 화면을 이탈)가 복귀 시점에 잡힌다.
         """
+        if self.job_name and self.job_name in self.registry.names():
+            # **열린 작업의 규칙이 밖에서 바뀌었으면 다시 읽는다**(4R P1). 편집기가 자기
+            # 화면으로 나간 뒤(F7) 저장은 이 화면 밖에서 일어나고, `self.vm` 은 선택 시점의
+            # 인메모리 사본이라 그대로 두면 **저장한 사람이 옛 규칙으로 미리보고 옛 규칙으로
+            # 생성한다** — 영속·실행 경로가 화면 사이에서 갈리는 자리다. 세션(데이터·선택·
+            # 필터·저장 폴더)은 그대로 두고 규칙만 갈아 끼운다.
+            self._reload_active_job()
+            return None
         if self.job_name and self.job_name not in self.registry.names():
             lost = self.job_name
             # 세션 무효화(vm·job_name·데이터·폴더 clear). confirm=True — 작업이 이미
@@ -1299,6 +1312,32 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "notice": f"'{lost}' 작업이 다른 화면에서 삭제되어 열어 둔 실행 세션을 닫았습니다."
             }
         return None
+
+    def _reload_active_job(self) -> bool:
+        """디스크의 최신 규칙으로 활성 VM 을 다시 세운다 — 바뀐 게 없으면 아무것도 안 한다.
+
+        **지문이 갈릴 때만** 손대는 이유(4R P1): 이 경로는 화면 전환마다 발화한다
+        (`REFRESH_ON_NAV`). 무조건 재구성하면 평시 왕복이 실행 증거·미리보기 자리를 매번
+        되돌려, 아무 일도 없었는데 게이트가 다시 닫히는 것처럼 보인다.
+
+        갈렸을 때 버리는 것은 계약이 버리라는 것뿐이다(§19.10): **완주 담보**(그 규칙으로
+        만든 문서가 담보하던 것)와 **열려 있던 미리보기**(옛 규칙의 상). 승인은 따로 지우지
+        않는다 — 규칙 지문에 결속돼 자동으로 무효가 된다(F5 판정 I).
+        """
+        if self.vm is None or not self.job_name:
+            return False
+        try:
+            job = self.registry.load(self.job_name)
+        except Exception:  # noqa: BLE001 — 손상은 다음 스냅샷의 건강 표면이 말한다
+            return False
+        if content_fingerprint(job) == content_fingerprint(self.vm.job):
+            return False
+        self.vm = RunViewModel(job)
+        if self.records:
+            self.vm.set_acquired(self.datasource, self.records)  # ack 재평가 포함(RC-22)
+        self._last_generated = None
+        self._do_preview_close({})
+        return True
 
     def _do_select_job(self, p: dict) -> "dict | None":
         """후보·탐색에서 작업 선택 → RunViewModel 재구성. 저장 폴더 기본 = 템플릿/Results.

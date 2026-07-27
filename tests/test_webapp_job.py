@@ -910,6 +910,47 @@ def test_refresh_keeps_session_when_job_still_present(tmp_path):
     assert snap["record_count"] == 2  # 데이터 겨눔도 보존
 
 
+def test_refresh_reloads_rules_edited_in_the_editor_and_keeps_the_session(tmp_path):
+    """편집기에서 저장한 규칙이 **열린 실행 세션에 도달한다**(4R P1).
+
+    편집기가 자기 화면으로 나간 뒤(재작성 F7) 저장은 이 화면 밖에서 일어나고 `self.vm` 은
+    선택 시점의 인메모리 사본이다 — 다시 읽지 않으면 방금 저장한 사람이 **옛 규칙으로
+    미리보고 옛 규칙으로 생성한다**(영속·실행 경로가 화면 사이에서 갈리는 자리).
+    세션(데이터·선택·저장 폴더)은 그대로 살아야 한다: 규칙만 갈아 끼운다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    reg = ctrl.registry
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    before = ctrl.snapshot()
+    out_dir, records = ctrl.out_dir, before["record_count"]
+    assert ctrl.vm.job.filename_pattern != "새규칙-{{공고명}}"
+
+    job = reg.load("공고서")                      # 다른 화면(편집기)이 규칙을 바꿔 저장
+    job.filename_pattern = "새규칙-{{공고명}}"
+    reg.save(job, allow_overwrite=True)
+
+    assert ctrl.dispatch("refresh", {}) is None    # 삭제가 아니므로 고지는 없다
+    assert ctrl.vm.job.filename_pattern == "새규칙-{{공고명}}"   # 규칙은 새것
+    snap = ctrl.snapshot()
+    assert snap["has_job"] is True and snap["record_count"] == records   # 세션은 그대로
+    assert ctrl.out_dir == out_dir
+
+
+def test_refresh_does_not_disturb_the_session_when_rules_are_unchanged(tmp_path):
+    """지문이 같으면 아무것도 안 한다 — 이 경로는 화면 전환마다 발화한다(REFRESH_ON_NAV).
+
+    무조건 재구성하면 평시 왕복이 실행 증거·미리보기 자리를 매번 되돌려, 아무 일도 없었는데
+    게이트가 다시 닫히는 것처럼 보인다(과잉 리셋).
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    vm_before = ctrl.vm
+    assert ctrl.dispatch("refresh", {}) is None
+    assert ctrl.vm is vm_before                    # 같은 정체를 그대로 들고 있다
+
+
 def test_unknown_action_is_loud(tmp_path):
     ctrl, _ = _controller(tmp_path)
     with pytest.raises(ValueError, match="알 수 없는 작업 화면 액션"):

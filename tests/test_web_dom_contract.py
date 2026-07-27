@@ -1346,6 +1346,19 @@ def test_native_close_and_editor_escape_affordances_are_wired():
     # 탭 표지엔 안 뜬다 — 그것만 보면 이름을 고치고 나가는 사람에게 아무것도 묻지 않고
     # 버린다. 몰입 표면엔 그 세션으로 되돌아올 길이 없어 조용한 파기가 된다.
     # (세션 dirty 단일 출처 계약은 아래 `test_edit_entries_carry_their_context` 가 센다.)
+    # **대기 중 입력이 판정을 추월하지 않는다**(4R P2): blur 로 발화하는 `change` 는 아무도
+    # 기다리지 않는 발신이라, 이름을 고치고 곧바로 back 을 누르면 가드가 그 발신보다 먼저
+    # 판정해 방금 친 편집이 아무 확인 없이 좌초한다. 순서는 공용 체인(intent.js)이 세우고
+    # 이탈·탭 이동은 정산 뒤에 판정한다 — job.js 존 체인과 같은 기제다(재발명 금지).
+    assert "window.Intent.chained(EDIT_CHAIN" in editor_js, (
+        "편집기 입력 변이가 체인에 서지 않습니다 — 도착 순서가 보장되지 않습니다."
+    )
+    for guard in ("async function leaveTo(", "async function gotoSection("):
+        body = editor_js[editor_js.index(guard):]
+        body = body[:body.index("\n  }") + 4]
+        assert "await flushPendingEdits()" in body, (
+            f"{guard} 가 대기 중 입력을 정산하지 않고 판정합니다(4R P2)."
+        )
     # 탭 가드의 「버리고 이동」은 **모달이 말한 자리만** 되돌린다(2R P2).
     assert 'discard_patch", { section: r.section }' in editor_js, (
         "탭 가드의 되돌리기가 세션 전체를 겨눕니다 — 확인 문안보다 넓은 파기입니다."
