@@ -9,7 +9,9 @@ from __future__ import annotations
 from datetime import datetime
 
 from hwpxfiller.naming import (
+    MAX_PATH_CHARS,
     OutputNamer,
+    audit_output_names,
     clean_filename,
     existing_outputs,
     make_output_filename,
@@ -164,3 +166,53 @@ def test_pattern_uses_seq_marks_the_order_filename_link():
     assert pattern_uses_seq("{{공고명}}-{{seq:001}}") is True
     assert pattern_uses_seq("{{공고명}}-{{date:YYYYMMDD}}") is False
     assert pattern_uses_seq("고정이름") is False
+
+
+# ------------------------------------- 집합 단위 감사(보고서 C-01, 재작성 F5 판정 K)
+def test_audit_names_match_the_plan_exactly():
+    """감사가 계획과 한 글자라도 다르면 미리보기가 실행과 다른 이름을 말한다."""
+    recs = [{"이름": "가"}, {"이름": "가"}, {"이름": "나"}]
+    audit = audit_output_names("{{이름}}", recs)
+    assert list(audit.names) == plan_output_names("{{이름}}", recs)
+
+
+def test_audit_counts_records_that_converged_on_one_name():
+    """꼬리표는 올바른 처분이지만 **몇 건이 수렴했는지**는 아무도 세지 않았다."""
+    recs = [{"이름": "가"}, {"이름": "가"}, {"이름": "나"}, {"이름": "가"}]
+    audit = audit_output_names("{{이름}}", recs)
+    assert audit.converged == (1, 3)
+    assert audit.names[1] == "가_1.hwpx" and audit.names[3] == "가_2.hwpx"
+
+
+def test_empty_token_values_collapse_and_are_counted():
+    """값이 빈 토큰은 이름을 무너뜨리고, 무너진 이름끼리 겹친다 — 수렴 집계가 함께 잡는다."""
+    audit = audit_output_names("{{이름}}", [{"이름": ""}, {"이름": ""}])
+    assert audit.converged == (1,)
+
+
+def test_seq_token_keeps_names_distinct_so_nothing_converges():
+    recs = [{"이름": "가"}, {"이름": "가"}]
+    assert audit_output_names("{{seq:001}}-{{이름}}", recs).converged == ()
+
+
+def test_audit_flags_paths_over_the_length_limit():
+    """실행하면 확실히 실패하는 것을 실행해서 알게 하지 않는다.
+
+    감사는 문자열 길이만 재므로 실제 폴더가 없어도 된다 — 임시 경로 길이에 결과가 흔들리지
+    않게 고정 폴더로 잰다(환경 의존 플레이크 차단).
+    """
+    out = "C:/out"
+    long_name = "가" * (MAX_PATH_CHARS - len(out) - len("/.hwpx"))
+    audit = audit_output_names("{{이름}}", [{"이름": "짧"}, {"이름": long_name}], out)
+    assert audit.too_long == (1,) and audit.has_warning
+
+
+def test_length_audit_is_silent_without_a_folder():
+    """폴더를 모르면 잴 경로가 없다 — 없는 근거로 경고하지 않는다."""
+    assert audit_output_names("{{이름}}", [{"이름": "가" * 300}]).too_long == ()
+
+
+def test_convergence_alone_is_not_a_warning():
+    """표 「문서」 열이 실이름을 이미 보여준다 — 보이는 변화 앞의 경고는 과경고다."""
+    audit = audit_output_names("{{이름}}", [{"이름": "가"}, {"이름": "가"}])
+    assert audit.converged and not audit.has_warning

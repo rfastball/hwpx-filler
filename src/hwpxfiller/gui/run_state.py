@@ -25,7 +25,13 @@ from ..core.fill_ledger import (
 from ..core.job import Job, RunRequest, require_hwpx
 from ..core.mapping import MappingProfile
 from ..data import source_for_path
-from ..naming import existing_outputs, pattern_field_tokens, plan_output_names
+from ..naming import (
+    OutputNameAudit,
+    audit_output_names,
+    existing_outputs,
+    pattern_field_tokens,
+    plan_output_names,
+)
 from .review_state import ReviewRequirement, review_gate_text
 
 
@@ -83,7 +89,7 @@ class GateState:
     #: 거울 배너는 자기 사실(드리프트 목록·미해소 토큰)을 따로 보고 그리면 게이트가 실제로
     #: 막고 있는 이유와 다른 것을 크게 말할 수 있다(예: 템플릿을 못 읽는데 "파일명을 고치라").
     #: ""=이 사유 축과 무관(warn·열림).
-    #: 값: drift | template_unreadable | name_tokens | review_required
+    #: 값: drift | template_unreadable | name_tokens | path_too_long | review_required
     reason: str = ""
 
 
@@ -401,11 +407,16 @@ class RunViewModel:
         out = req.output_report()
         drift, current_fields = self._structure_snapshot()
         states = self._compose_field_states(set(out.empty_valued), drift, current_fields)
+        # 경로 길이 감사는 **폴더와 대상이 다 정해졌을 때만** 뜻이 있다(그전엔 잴 경로가
+        # 없다). 앞선 전제조건이 이미 게이트를 닫는 구간이라 계산도 하지 않는다.
+        audit = (
+            self.output_name_audit(idx, out_dir) if idx and out_dir else OutputNameAudit()
+        )
         return RunStatus(
             preflight=self._compose_preflight(src, out, drift, name_gate is not None),
             field_states=tuple(states),
             gate=self._compose_gate(
-                states, drift, idx, out_dir, name_gate, review_unmet,
+                states, drift, idx, out_dir, name_gate, review_unmet, audit,
             ),
         )
 
@@ -452,9 +463,10 @@ class RunViewModel:
         self, states: "list[FieldState]", drift: TemplateStructureDrift,
         indices: "list[int]", out_dir: str, name_gate: "GateState | None" = None,
         review_unmet: "ReviewRequirement | None" = None,
+        audit: "OutputNameAudit | None" = None,
     ) -> GateState:
         """게이트 표시 결정 — 드리프트(danger·차단) > 파일명 토큰(danger) > 미확인
-        미입력(warn) > 전제조건(warn) > **검토 요구(warn)** > 열림.
+        미입력(warn) > 전제조건(warn) > **경로 길이(warn)** > **검토 요구(warn)** > 열림.
 
         UD-06: 이어채우기 문서·저장 폴더·레코드 선택 같은 warn 급 전제조건을 이 단일
         산출로 흡수해 '버튼 비활성 + 인라인 사유' 문법으로 통일한다(클릭 후 차단 모달
@@ -497,6 +509,16 @@ class RunViewModel:
             return GateState(
                 False, "warn",
                 "기존 문서 이어채우기는 1건만 지원합니다. 생성 대상을 1건만 선택하세요.",
+            )
+        if audit is not None and audit.too_long:
+            # 실행하면 확실히 실패하는 것을 실행해서 알게 하지 않는다(C-01 미충족분,
+            # 지도 §10.12 판정 K). 차단이 아니라 경고인 이유는 확장 경로·longPathsEnabled
+            # 환경에서 실제로 성공할 수 있어서다 — 단정하면 문안이 거짓이 된다.
+            return GateState(
+                False, "warn",
+                f"저장 경로가 너무 긴 문서가 {len(audit.too_long)}건 있습니다. "
+                "저장 폴더를 더 짧은 곳으로 바꾸거나 파일 이름 규칙을 줄이세요.",
+                reason="path_too_long",
             )
         if review_unmet is not None and review_unmet.required:
             return GateState(
@@ -622,6 +644,20 @@ class RunViewModel:
             now=now,
         )
         return existing_outputs(out_dir, names)
+
+    def output_name_audit(
+        self, indices: "list[int]", out_dir: str = "", *,
+        mark_missing: str = "", now: "datetime | None" = None,
+    ) -> OutputNameAudit:
+        """이 실행이 발급할 이름의 집합 감사(C-01, 지도 §10.12 판정 K).
+
+        ``output_conflicts`` 와 같은 입력·같은 규칙이되 디스크를 보지 않는다 — 이쪽은
+        **배치 안에서 자기들끼리** 생기는 성질(수렴·경로 길이)만 센다.
+        """
+        return audit_output_names(
+            self.job.filename_pattern, self.mapped_records(indices, mark_missing),
+            out_dir, now=now,
+        )
 
     # ------------------------------------------------------------ 생성 계획(RC-07)
     def build_generation_plan(

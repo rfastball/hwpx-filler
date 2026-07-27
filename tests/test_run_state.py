@@ -635,3 +635,34 @@ def test_no_review_requirement_leaves_the_gate_open(tmp_path):
     vm = _vm(tmp_path)
     vm.acknowledge("추정가격")
     assert vm.refresh([0, 1], "out", review_unmet=None).gate.enabled is True
+
+
+def test_path_length_warns_before_the_run_fails(tmp_path):
+    """C-01 미충족분(지도 §10.12 판정 K) — 확실히 실패할 실행을 실행해서 알게 하지 않는다.
+
+    차단이 아니라 경고인 이유는 확장 경로·longPathsEnabled 환경에서 실제로 성공할 수 있어서다.
+    """
+    vm = _vm(tmp_path)
+    vm.acknowledge("추정가격")
+    vm.job.filename_pattern = "{{공고명}}" + "가" * 250
+    gate = vm.gate_state([0, 1], "C:/out")
+    assert gate.enabled is False and gate.level == "warn"
+    assert gate.reason == "path_too_long" and "2건" in gate.text
+
+
+def test_path_length_outranks_review_but_yields_to_preconditions(tmp_path):
+    """길이 경고는 전제조건 **다음**·검토 **앞**이다: 폴더가 없으면 잴 경로부터 없다."""
+    vm = _vm(tmp_path)
+    vm.acknowledge("추정가격")
+    vm.job.filename_pattern = "{{공고명}}" + "가" * 250
+    req = review_requirement(vm.job)
+    assert vm.refresh([0, 1], "", review_unmet=req).gate.reason == ""       # 저장 폴더 먼저
+    assert (
+        vm.refresh([0, 1], "C:/out", review_unmet=req).gate.reason == "path_too_long"
+    )
+
+
+def test_short_paths_do_not_warn(tmp_path):
+    vm = _vm(tmp_path)
+    vm.acknowledge("추정가격")
+    assert vm.gate_state([0, 1], "C:/out").enabled is True
