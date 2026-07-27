@@ -80,16 +80,29 @@ _SAMPLE_ROWS = 3
 # 한 곳만 고치면 되도록 사전으로 모은다 — 즐겨찾기(슬라이스 2)가 같은 함정을 밟지 않게.
 _EMPTY_PRESERVED: "dict[str, object]" = {
     "tags": {}, "last_run_at": "", "group": "", "favorited_at": "",
+    # 검토 기준선(재작성 F5)도 **비-편집 메타**다: 에디터가 소유하는 것은 규칙(템플릿·매핑·
+    # 파일명)이고, "마지막 완주가 그중 무엇을 썼는가"는 실행 이력의 일이다. 안 되싣으면
+    # 규칙을 하나도 안 바꾸고 저장만 해도 기준선이 비어(§13-2 의 조용한 반복이 깨지고)
+    # 다음 실행이 가장 무거운 검토를 다시 요구한다(3R P2).
+    "reviewed_rules": {},
 }
 
 
 def _preserved_meta(job: "Job") -> "dict[str, object]":
-    """저장이 그대로 되싣는 비-편집 메타(태그·마지막 실행·그룹·즐겨찾기)."""
+    """저장이 그대로 되싣는 비-편집 메타(태그·마지막 실행·그룹·즐겨찾기·검토 기준선).
+
+    이 목록이 **완전한지**는 산문이 아니라 구조 가드가 답한다
+    (``test_job_editor_state`` 의 durable 필드 분류 가드): durable Job 필드는 저장이
+    **다시 짓거나**(편집 대상) **보존하거나**(비-편집 메타) 둘 중 하나여야 하고, 새 필드가
+    어느 쪽인지 선언되지 않으면 테스트가 실패한다. 그룹(슬라이스 2)·검토 기준선(F5 3R)이
+    같은 자리에서 조용히 사라졌다 — 두 번 같은 결함이면 목록이 아니라 규율이 문제다.
+    """
     return {
         "tags": dict(job.tags),
         "last_run_at": job.last_run_at,
         "group": job.group,
         "favorited_at": job.favorited_at,
+        "reviewed_rules": dict(job.reviewed_rules),
     }
 
 
@@ -1255,6 +1268,7 @@ class EditorController:
             tags=dict(preserved["tags"]),  # type: ignore[arg-type]
             group=str(preserved["group"]),
             favorited_at=str(preserved["favorited_at"]),
+            reviewed_rules=dict(preserved["reviewed_rules"]),  # type: ignore[arg-type]
             default_dataset_ref=default_dataset_ref,
         )
         # 위 게이트(needs_overwrite_confirm→confirm_overwrite)가 victim 을 재진술 확인시킨 뒤라

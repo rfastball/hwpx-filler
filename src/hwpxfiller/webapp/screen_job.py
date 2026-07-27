@@ -1032,10 +1032,20 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             return base
         job = self.vm.job
         indices = self._indices()
-        # 파일명 날짜 토큰의 기준 시각을 **스냅샷당 1회** 캡처한다(2R P2) — 게이트 감사·표
-        # 「문서」 열·드로어·생성(`_generate_locked` 가 이 값을 재사용)이 전부 같은 시각을
-        # 쓴다. 여기서 한 번 찍는 것이 "표시 = 확인 = 생성"(RC-02)의 시간 축이다.
-        self._names_now = datetime.now()
+        # 검토 요구(F5) — 요구 판정은 durable 기준선이, 승인 대조는 세션이 한다.
+        req, req_unmet = self._review()
+        # 파일명 날짜 토큰의 기준 시각(2R·3R P2) — 이 값은 **승인의 일부**다.
+        #
+        # 스냅샷당 1회 캡처하면 한 스냅샷 안의 소비처(게이트 감사·표 「문서」 열·드로어·
+        # 생성)는 서로 맞지만, **스냅샷 사이**에서 움직인다: 승인 왕복과 면 닫기가 각각
+        # push 를 부르므로 `{{date:SS}}` 가 그 사이 초 경계를 넘으면 생성이 사용자가
+        # 승인하지 않은 이름을 쓴다. 그래서 **누군가 그 값에 기대고 있는 동안 얼린다** —
+        # 면이 열려 있거나(지금 보고 있다) 승인이 서 있는 동안(그 이름으로 확인했다).
+        # 아무도 안 기대면 매 스냅샷 새로 찍는다(오래 열어 둔 세션의 날짜가 늙지 않게).
+        if not (self.preview_open or (req.required and req_unmet is None)):
+            self._names_now = datetime.now()
+        elif self._names_now is None:
+            self._names_now = datetime.now()
         # 선택분 매핑 적용은 1회 — 파일명 미리보기(_record_rows)와 거울 값(_mirror)이 공유한다.
         mapped = self.vm.mapped_records(indices) if indices else []
         # 생성이 실제로 쓸 표식(1R P2) — 확인된 빈칸은 문서에 **표식 문자열**로 들어가고,
@@ -1054,9 +1064,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 빈 값을 세는 진술이라, 표식을 채우면 언제나 0행이 되어 문안이 거짓이 된다.
         # 두 면이 같은 사실을 다른 각도로 말하는 것이지 판정이 둘인 게 아니다.
         run_mapped = self.vm.mapped_records(indices, marker) if marker else mapped
-        # 검토 요구(F5) — 요구 판정은 durable 기준선이, 승인 대조는 세션이 한다. 게이트에는
-        # **아직 승인 안 된** 요구만 넘긴다(승인됐으면 게이트가 그 자리에서 열려야 한다).
-        req, req_unmet = self._review()
+        # 게이트에는 **아직 승인 안 된** 요구만 넘긴다(승인됐으면 그 자리에서 열려야 한다).
         status = self.vm.refresh(  # 사전검증+배지+게이트+이름 계획 단일 산출(RC-23)
             indices, self.out_dir, review_unmet=req_unmet, mapped=run_mapped,
             now=self._names_now,

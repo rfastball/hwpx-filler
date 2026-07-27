@@ -3160,3 +3160,54 @@ def test_preview_and_table_agree_on_the_filename_timestamp(tmp_path):
     ctrl.dispatch("preview_open", {})
     snap = ctrl.snapshot()
     assert snap["preview"]["filename"] == snap["records"][0]["name"]
+
+
+# ---------------- 리뷰 3R 조치의 영구 가드(P2×2) ----------------
+def test_the_approved_filename_survives_the_pushes_between_approval_and_generation(tmp_path):
+    """3R P2 — 시각은 **승인의 일부**다.
+
+    정상 흐름에서 승인 왕복과 면 닫기가 각각 push 를 부른다. 그 사이 `{{date:SS}}` 가 초
+    경계를 넘으면 생성이 사용자가 승인하지 않은 이름을 쓴다 — 승인 키는 여전히 유효한
+    채로. 누군가 그 값에 기대고 있는 동안(면이 열려 있거나 승인이 서 있는 동안) 얼린다.
+    """
+    ctrl, _ = _controller(tmp_path, reviewed=False)
+    job = ctrl.registry.load("공고서")
+    job.filename_pattern = "doc-{{date:HHmmSS}}-{{seq}}"
+    ctrl.registry.save(job, allow_overwrite=True)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.set_output_folder(str(tmp_path / "out"))
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+
+    ctrl.dispatch("preview_open", {})
+    approved_name = ctrl.snapshot()["preview"]["filename"]
+    frozen = ctrl._names_now
+    ctrl.dispatch("preview_approve", {})          # push 1
+    ctrl.dispatch("preview_close", {})            # push 2
+    ctrl.snapshot()                               # 그 뒤의 임의 재렌더
+    assert ctrl._names_now == frozen, "승인 뒤 파일 이름의 시각이 움직였습니다."
+    assert ctrl.generate()["ok"] is True
+    assert approved_name in {p.name for p in (tmp_path / "out").glob("*.hwpx")}
+
+
+def test_the_timestamp_refreshes_when_nothing_depends_on_it(tmp_path):
+    """반대 방향 — 아무도 안 기대면 새로 찍는다(오래 열어 둔 세션의 날짜가 늙지 않게)."""
+    ctrl, _ = _session(tmp_path)
+    ctrl.snapshot()
+    first = ctrl._names_now
+    ctrl._names_now = datetime(2020, 1, 1)       # 늙은 값을 심는다
+    ctrl.snapshot()
+    assert ctrl._names_now != datetime(2020, 1, 1) and first is not None
+
+
+def test_the_timestamp_is_frozen_while_the_drawer_is_open(tmp_path):
+    """면이 열려 있는 동안 = 사용자가 지금 그 이름을 보고 있는 동안."""
+    ctrl, _ = _session(tmp_path)
+    ctrl.dispatch("preview_open", {})
+    frozen = ctrl._names_now
+    ctrl.snapshot()
+    ctrl.dispatch("preview_move", {"delta": 1})
+    assert ctrl._names_now == frozen
+    ctrl.dispatch("preview_close", {})
+    ctrl.snapshot()
+    assert ctrl._names_now != frozen, "면을 닫았는데도 시각이 얼어 있습니다."
