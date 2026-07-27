@@ -1490,9 +1490,26 @@ _JOB_RESULT_PROBE_JS = r"""
   var out = {};
   try {
     window.Nav.go('job');
+    // 이 프로브의 세션 = 작업 '공고서' — 결과의 주체와 같은 값에서 출발한다(2R P2 비교군).
+    window.__jobResultSnap = {
+      job_name:'공고서', has_job:true, out_dir:'D:\\out', data_label:'d.csv',
+      data_source_label:'파일: d.csv', data_notice:null,
+      template_name:'t.hwpx', template_path:'D:\\t.hwpx', filename_pattern:'doc-{{seq:001}}',
+      template_missing:false, has_data:true, record_count:1, selected_count:1,
+      records:[{index:0, selected:true, name:'', summary:'사무비품'}],
+      candidates:{top:[], more:0, needs_count:0, suggested:''},
+      browse:{tab:'available', query:'', rows:[], available_count:0, needs_count:0, filtered_out:0},
+      guard:{armed:false, sel_count:1, in_def:0, extra:0, filter_active:false, filter_parts:0},
+      table:{columns:[], rows:[], visible_count:0, hidden_selected:[]},
+      restate:{origin:'manual', filter_active:false, in_def:0, extra:0, sample:[0]},
+      preflight:{level:'', text:''}, mirror:[], drift:[], name_tokens:[],
+      gate:{enabled:false, level:'warn', text:'확인이 필요합니다.'}
+    };
+    window.__push('job', window.__jobResultSnap);
     var partial = {
       ok:true, status:'partiallyCompleted', title:'2개 성공 · 1개 실패',
       summary:'완료. 성공 2/3, 실패 1.', level:'danger', stage:'', message:'', known:true,
+      job_name:'공고서',
       out_dir:'D:\\out', succeeded:2, failed:1, failed_selectable:1, total:3,
       failures:[{index:7, identity:'사무비품', filename:'doc-003.hwpx',
                  reason:'설명 없는 오류', known:false}],
@@ -1534,6 +1551,20 @@ _JOB_RESULT_PROBE_JS = r"""
     window.JobScreen.markResultStale();
     out.stale_shown = !document.getElementById('jobResultStale').hidden;
     out.alive_after_stale = !document.getElementById('jobResult').hidden;
+    // 세션이 **다른 작업**으로 옮겨가면 결과는 남되 행동만 걷힌다(2R P2) — 편집 진입이
+    // 남의 작업을 겨누고 실패분 선택은 확실한 무동작이 되기 때문. 증거(제목·요약·실패 행)는
+    // 그대로 남고, 강등 문구가 어느 작업의 결과인지 밝힌다.
+    var snapB = JSON.parse(JSON.stringify(window.__jobResultSnap));
+    snapB.job_name = '둘째';
+    window.__push('job', snapB);
+    window.JobScreen.markResultStale();
+    out.foreign_rename_hidden = document.getElementById('jobResultRename').hidden;
+    out.foreign_failedsel_hidden = document.getElementById('jobResultFailedSel').hidden;
+    out.foreign_evidence_alive = !!document.getElementById('jobResultFail-7');
+    out.foreign_stale_names_owner =
+      document.getElementById('jobResultStale').textContent.indexOf('공고서') >= 0;
+    window.__push('job', window.__jobResultSnap);   // 비교군 복귀(다음 단계는 같은 작업 문맥)
+    window.JobScreen.renderResult(partial);
     // 구획 행동은 생성 중 잠긴다(계약면 2) — 선언 표식이 실제로 disabled 를 받는가.
     var acts = ['jobResultClose', 'jobResultFailedSel', 'jobResultRename'];
     out.busy_lock_declared = acts.every(function (id) {
@@ -1551,6 +1582,11 @@ _JOB_RESULT_PROBE_JS = r"""
     document.getElementById('jobResultClose').click();
     out.closed = document.getElementById('jobResult').hidden;
     out.close_focus = document.activeElement && document.activeElement.id;
+    // 실행 기록은 기본 접힘이되(노이즈 억제) 마지막 한 줄은 접힌 채로 보인다 — 접힘이
+    // 소음 제거가 되면 이 화면의 유일한 비모달 사건 채널이 조용해진다.
+    out.runlog_collapsed = !document.getElementById('jobRunLog').open;
+    out.runlog_last_visible =
+      getComputedStyle(document.getElementById('jobRunLogLast')).display !== 'none';
     // 실행 전 거절은 3태가 아니라 rejected 태로 선다 — 결과 자리를 비워 두지 않는다.
     var real = window.Bridge.generate;
     window.Bridge.generate = function () {
@@ -1563,6 +1599,8 @@ _JOB_RESULT_PROBE_JS = r"""
       var b = document.getElementById('jobResult');
       window.__rejectState = b.dataset.state;
       window.__rejectText = document.getElementById('jobResultSummary').textContent;
+      // 거절 사유는 log() 도 탄다 — 접힌 요약 줄이 그 사실을 실제로 나르는가.
+      window.__runlogLast = document.getElementById('jobRunLogLast').textContent;
       window.Bridge.generate = real;
       window.__resultProbeDone = true;
     }, 60);
@@ -2756,7 +2794,8 @@ def _selftest_drive(window: "object") -> None:
         result["job_result"].update(_probe_late(
             window, "__resultProbeDone",
             "JSON.stringify({reject_state: String(window.__rejectState),"
-            " reject_text: String(window.__rejectText)})",
+            " reject_text: String(window.__rejectText),"
+            " runlog_last: String(window.__runlogLast)})",
         ))
         # 협폭 적층 분기는 **창폭이 아니라 세션 패널 폭**(container query 900px)이 판정한다.
         # 좌 목록이 죽으며(F2 PR-B) 패널이 그만큼 넓어져 같은 창폭에서도 2열이 유지되므로,

@@ -2277,6 +2277,40 @@ def test_batch_exception_keeps_the_recovery_action_reachable(tmp_path, monkeypat
     assert ctrl.dispatch("select_failed", {})["selected"] == res["failed_selectable"]
 
 
+def test_failed_job_switch_keeps_the_recovery_target(tmp_path, monkeypatch):
+    """전환이 **성사되지 않으면** 실패 목록도 그대로다(2R P2).
+
+    `registry.load` 가 실패하면 세션은 그대로인데(vm·job_name 불변) 목록만 비면, 화면에
+    남아 있는 「실패한 N건만 선택」이 0건을 돌려주는 유령 행동이 된다.
+    """
+    ctrl, _ = _result_session(tmp_path)
+    _run_with(monkeypatch, ctrl, _fake_batch([True, False]))
+    assert ctrl.dispatch("select_failed", {})["selected"] == 1
+    with pytest.raises(OSError):                         # 사라진·읽을 수 없는 작업
+        ctrl.dispatch("select_job", {"name": "없는작업", "confirm": True})
+    assert ctrl.job_name == "공고서"                      # 세션 불변
+    assert ctrl.dispatch("select_failed", {})["selected"] == 1   # 복구 대상도 불변
+    # 전환이 실제로 성사되면 그때 비운다(다른 작업의 실패를 고르지 않는다).
+    ctrl.registry.save(Job(name="둘째"))
+    ctrl.dispatch("select_job", {"name": "둘째", "confirm": True})
+    assert ctrl.dispatch("select_failed", {})["selected"] == 0
+
+
+def test_result_carries_the_job_that_produced_it(tmp_path, monkeypatch):
+    """결과는 그 실행의 것이다 — 주체를 함께 실어야 표면 행동이 남의 작업을 겨누지 않는다(2R P2)."""
+    ctrl, _ = _result_session(tmp_path)
+    res = _run_with(monkeypatch, ctrl, _fake_batch([True, False]))
+    assert res["job_name"] == "공고서"
+
+    import hwpxfiller.webapp.screen_job as sj
+
+    def _boom(*a, **k):
+        raise OSError("[WinError 5] 액세스가 거부되었습니다")
+
+    monkeypatch.setattr(sj, "generate_batch", _boom)
+    assert ctrl.generate()["job_name"] == "공고서"        # 실패 경로도 같은 모양
+
+
 def test_cancelled_run_stays_a_partial_state(tmp_path, monkeypatch):
     """취소 런은 부분 태 + warn 채널을 유지한다(#278 리뷰가 세운 색 계약과 같은 걸음)."""
     ctrl, _ = _result_session(tmp_path)

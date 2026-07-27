@@ -361,6 +361,10 @@ class TestWebSelftestGate:
         # ④ 지문 변화 = 강등(파기 아님) — 실패분을 고르는 순간 결과가 사라지면 안 된다.
         assert j["stale_shown"] and j["alive_after_stale"], j
         # ⑤ 구획 행동은 생성 중 잠긴다(계약면 2) · ⑥ 닫기 뒤 포커스가 다음 행동에 착지.
+        # 작업 전환 뒤에는 결과가 남되 **행동만 걷힌다**(2R P2) — 편집 진입이 남의 작업을
+        # 겨누거나 실패분 선택이 확실한 무동작이 되는 것을 표면에서 끊는다. 증거는 남는다.
+        assert j["foreign_rename_hidden"] and j["foreign_failedsel_hidden"], j
+        assert j["foreign_evidence_alive"] and j["foreign_stale_names_owner"], j
         assert j["busy_lock_declared"], j
         # 저장 폴더 줄의 숨김은 계산 스타일로 확인한다(display:flex 가 [hidden] 을 이기는
         # 결함 클래스 — 속성만 보는 계약은 이 결함을 통과시킨다).
@@ -370,6 +374,10 @@ class TestWebSelftestGate:
         assert j["closed"] and j["close_focus"] in {"jobGenBtn", "jobResultZone"}, j
         # ⑦ 실행 전 거절은 3태가 아니라 rejected 태 — 눌렀는데 아무 일도 없는 것으로 읽히지 않게.
         assert j["reject_state"] == "rejected" and "빈 값" in j["reject_text"], j
+        # ⑧ 실행 기록은 기본 접힘(노이즈 억제)이되 마지막 한 줄은 접힌 채로 보인다 —
+        # 접힘이 소음 제거가 되면 이 화면의 유일한 비모달 사건 채널이 조용해진다.
+        assert j["runlog_collapsed"] and j["runlog_last_visible"], j
+        assert "빈 값" in j["runlog_last"], j
 
     def test_job_data_first_prework_surface(self, selftest_result: dict) -> None:
         # 데이터-우선(§18.2) — 작업 미선택+데이터 마운트 상태에서 세션 존·액션바가 살아 있고,

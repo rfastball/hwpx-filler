@@ -749,13 +749,18 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 옛 의도가 되살아나 방금 고른 작업을 밀어낸다(지연된 조용한 추측).
         self.preferred_work = ""
         self._last_generated = None  # 실행 증거는 세션 스코프 — 전환 시 소멸(§19.10)
-        self._last_failed = []  # 실패 목록도 같은 증거 — 다른 작업의 실패를 고르지 않는다
         if not name:  # 선택 해제 = 작업만 내려놓는다(데이터 존은 그대로)
             self.vm = None
             self.job_name = ""
             self.out_dir = ""
+            self._last_failed = []
             return
         job = self.registry.load(name)
+        # 실패 목록은 **전환이 실제로 성사된 뒤에** 비운다(2R P2): `load` 가 실패하면
+        # 세션은 그대로인데(vm·job_name 불변) 목록만 사라져, 화면에 남은 「실패한 N건만
+        # 선택」이 0건을 돌려주는 유령 행동이 된다. 위 `_last_generated` 조기 소거는
+        # 안전 방향(가드 재무장)이라 그대로 두지만, 이쪽은 **복구 경로가 사라지는** 방향이다.
+        self._last_failed = []
         self.vm = RunViewModel(job)
         self.job_name = name
         if self.records:
@@ -1254,6 +1259,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self._last_failed = list(indices)
             return self._failed_result(
                 indices, plan.out_dir, str(exc) or exc.__class__.__name__,
+                job_name=run_job_name,
             )
         cancelled = bool(getattr(batch, "cancelled", False))
         attempted = int(getattr(batch, "attempted", len(batch.results)))
@@ -1310,6 +1316,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         return {
             "ok": True,
             "status": status,
+            # 결과는 **그 실행의 것**이라 그 실행의 주체도 함께 진다(2R P2). 세션이 다른
+            # 작업으로 옮겨간 뒤에도 결과는 강등된 채 남으므로(판정 G), 주체를 안 실으면
+            # 표면의 행동(파일 이름 규칙 수정)이 지금 작업을 겨눠 **남의 작업을 편집**한다.
+            # 런의 주체를 시작 시점에 붙드는 규율(#302 P1)의 표면 쪽 짝이다.
+            "job_name": run_job_name,
             "title": _run_title(status, cancelled, batch.succeeded, failed_n),
             # 실패 단계·받은 메시지는 배치 진입 전 실패(_failed_result)의 자리다 —
             # 레코드 단위 실패는 각 행이 자기 사유를 진다. 모양은 한 벌로 유지한다.
@@ -1368,7 +1379,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             })
         return rows
 
-    def _failed_result(self, indices: "list[int]", out_dir: str, message: str) -> dict:
+    def _failed_result(
+        self, indices: "list[int]", out_dir: str, message: str, *, job_name: str = "",
+    ) -> dict:
         """배치 진입 전 실패 → ``failed`` 태 결과(§10.10 판정 C).
 
         계약 §10.3 이 요구하는 것을 그대로 싣는다: **실패 단계·영향 레코드·받은 메시지**
@@ -1386,6 +1399,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         return {
             "ok": True,
             "status": "failed",
+            "job_name": job_name,   # 결과의 주체(2R P2) — 완주 경로와 같은 모양
             "title": _run_title("failed", False, 0, n),
             "summary": f"문서를 만들지 못했습니다. 대상 {n}건이 모두 생성되지 않았습니다.",
             "level": "danger",

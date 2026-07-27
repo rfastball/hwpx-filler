@@ -277,9 +277,15 @@
               </section>
               <!-- 실행 기록 — 결과 사건은 위 3태 구획이 가져갔고(§10.10 판정 D), 여기 남는 것은
                    이 화면의 비-결과 사건(데이터 불러옴·검색/열기 실패·중단 요청·고지)이다.
-                   이 화면의 유일한 비모달 사건 채널이라 함께 죽이지 않았다. -->
-              <div class="zone-cap zone-cap-sub">실행 기록</div>
-              <div class="logbox" id="jobGenLog">이 세션에서 일어난 일이 여기에 남습니다.</div>
+                   **기본은 접힘**(평상시 노이즈 억제, 사용자 확정): 여기 쌓이는 대부분은
+                   평시에 볼 일 없는 진행 서사다. 단 이 상자가 이 화면의 유일한 비모달 사건
+                   채널이라 통째로 숨기면 실패 통보가 조용해진다 — 그래서 **마지막 기록 한
+                   줄은 접힌 채로도 보인다**(펼치면 전체 이력). -->
+              <details class="runlog" id="jobRunLog">
+                <summary><span class="zone-cap zone-cap-sub">실행 기록</span>
+                  <span class="runlog-last" id="jobRunLogLast">아직 기록이 없습니다.</span></summary>
+                <div class="logbox" id="jobGenLog">이 세션에서 일어난 일이 여기에 남습니다.</div>
+              </details>
             </div>
             </section>
 

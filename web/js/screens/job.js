@@ -109,12 +109,16 @@
     box.dataset.state = "";
     box.dataset.level = "";
     $("jobGenLog").textContent = "";
+    $("jobRunLogLast").textContent = "아직 기록이 없습니다.";
+    $("jobRunLog").open = false;   // 세션이 죽으면 다시 접는다(펼침은 그 세션의 의사표시)
     logStarted = false;
   }
 
-  /* 강등 = 결과는 남고 "직전 실행"이라고 말한다(판정 G). 이미 강등된 결과는 다시 안 건드린다. */
+  /* 강등 = 결과는 남고 "직전 실행"이라고 말한다(판정 G). 이미 강등돼 있어도 **다시 그린다**
+     (2R P2): 두 번째 변화가 작업 전환일 수 있고, 그때 결과의 행동 가용성이 달라진다 —
+     한 번 강등했다고 건너뛰면 남의 작업을 겨누는 버튼이 그대로 남는다. */
   function markResultStale() {
-    if (!RESULT || RESULT.stale) return;
+    if (!RESULT) return;
     RESULT.stale = true;
     renderResultPanel();
   }
@@ -704,6 +708,9 @@
     if (!logStarted) { box.textContent = ""; logStarted = true; }
     box.textContent += (box.textContent ? "\n" : "") + `[${ts}] ${msg}`;
     box.scrollTop = box.scrollHeight;
+    // 접힌 채로도 **마지막 한 줄**은 보인다 — 상자를 통째로 숨기면 이 화면의 유일한 비모달
+    // 사건 채널(작업 열기 실패·폴더 오류 등)이 조용해진다. 접힘은 노이즈 억제지 소음 제거다.
+    $("jobRunLogLast").textContent = msg;
   }
 
   /* ---- busy 잠금 — [data-busy-lock] 속성 선언(setBusy 누락 회귀 방지, #26) ---- */
@@ -799,12 +806,18 @@
     box.dataset.level = r.level || "";
     $("jobResultTitle").textContent = r.title || "";
     $("jobResultSummary").textContent = r.summary || "";
-    // 강등 표기 — 무엇이 달라졌는지까지는 말하지 않는다(추측 금지). 이 결과가 지금 선택의
-    // 것이 아니라는 사실만 말한다.
+    // 세션이 **다른 작업**으로 옮겨갔는가 — 결과는 그 실행(r.job_name)의 것이다(2R P2).
+    // 이때 결과의 행동 2종은 지금 작업을 겨누므로(편집 진입·실패분 선택) 남의 작업을
+    // 건드리거나 확실한 무동작이 된다. 그래서 **행동만 걷고 증거는 남긴다**.
+    const foreign = !!(r.job_name && LAST && LAST.job_name && r.job_name !== LAST.job_name);
+    // 강등 표기 — 무엇이 달라졌는지까지는 말하지 않는다(추측 금지). 다만 작업이 바뀐
+    // 경우엔 **어느 작업의 결과인지**를 밝힌다: 행동이 걷힌 이유가 거기 있다.
     const stale = $("jobResultStale");
     stale.hidden = !r.stale;
-    stale.textContent = r.stale
-      ? "이 결과는 직전 실행입니다. 그 뒤 작업·데이터·선택이 바뀌었습니다." : "";
+    stale.textContent = !r.stale ? ""
+      : foreign
+        ? `이 결과는 '${r.job_name}' 실행입니다. 지금은 다른 작업이 열려 있어 여기서 이어서 손볼 수 없습니다.`
+        : "이 결과는 직전 실행입니다. 그 뒤 작업·데이터·선택이 바뀌었습니다.";
 
     const dir = $("jobResultDir");
     const hasDir = !!(r.out_dir && !r.running && !r.rejected);
@@ -821,9 +834,12 @@
     // 전량이다 — 행에서 파생하면 그 런에서만 복구 행동이 통째로 사라진다.
     const sel = $("jobResultFailedSel");
     const selectable = r.failed_selectable || 0;
-    sel.hidden = !selectable;
+    // 작업이 바뀌었으면 실패 목록은 Python 에서 이미 죽었다 — 남겨 두면 0건을 돌려주는
+    // 유령 버튼이다. `hidden` 을 쓰는 이유: setBusy 가 [data-busy-lock] 의 disabled 를
+    // 매 렌더 되돌리므로 disabled 로는 이 판정이 유지되지 않는다.
+    sel.hidden = !selectable || foreign;
     sel.textContent = `실패한 ${selectable}건만 선택`;
-    $("jobResultRename").hidden = !!(r.running || r.rejected);
+    $("jobResultRename").hidden = !!(r.running || r.rejected) || foreign;
     $("jobResultClose").hidden = !!r.running;
     renderEvidence(r, fails);
   }
@@ -1213,8 +1229,16 @@
     // 없어(F7) 저장 단계의 규칙 입력으로 착지한다: 열리는 곳을 실제와 다르게 말하지 않는다.
     $("jobResultRename").addEventListener("click", () => {
       if (!(LAST && LAST.job_name)) { log("작업이 선택돼 있지 않습니다."); return; }
+      // 방어적 재확인(2R P2) — 이 버튼은 결과의 작업이 곧 열린 작업일 때만 뜨지만,
+      // 렌더 사이의 전환 경합이 있으면 열린 작업을 겨눠 **남의 작업을 편집**하게 된다.
+      // 겨눔 대상은 언제나 그 결과를 만든 작업이고, 어긋나면 열지 않고 사실을 말한다.
+      const owner = (RESULT && RESULT.job_name) || LAST.job_name;
+      if (owner !== LAST.job_name) {
+        log(`이 결과는 '${owner}' 실행입니다. 지금 열린 작업이 달라 파일 이름 규칙을 열지 않았습니다.`);
+        return;
+      }
       if (!window.EditorEntry) { window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다."); return; }
-      EditorEntry.openGuarded(LAST.job_name);
+      EditorEntry.openGuarded(owner);
     });
 
     // 데이터 선택 = 단일 출구(재작성 F1) — 현재/고정한/다른 세 갈래가 한 면 안에서 갈리고,

@@ -779,9 +779,16 @@ def test_job_result_zone_declares_the_three_state_contract():
     assert '<details class="result3-evidence" id="jobResultEvidence" hidden>' in flat
     # 구 단일 요약 줄은 3태 구획이 승계했다(두 벌 병존 금지).
     assert 'id="jobGenResult"' not in html
-    # 실행 기록은 존치하되 역할이 바뀌었다 — 캡션이 그 사실을 말한다.
-    assert '<div class="zone-cap zone-cap-sub">실행 기록</div>' in flat
-    assert 'id="jobGenLog"' in flat
+    # 실행 기록은 존치하되 역할이 바뀌었고(캡션), **기본은 접힘**이다(평상시 노이즈 억제).
+    # 단 접힘이 소음 제거가 되면 안 된다 — 마지막 기록 한 줄은 요약에 상시 남는다.
+    assert '<details class="runlog" id="jobRunLog">' in flat and "<details open" not in flat
+    assert '<span class="zone-cap zone-cap-sub">실행 기록</span>' in flat
+    assert 'id="jobRunLogLast"' in flat and 'id="jobGenLog"' in flat
+    job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    log_fn = job_js[job_js.index("function log(msg)"):job_js.index("function setBusy")]
+    assert '$("jobRunLogLast").textContent = msg' in log_fn, (
+        "접힌 실행 기록의 요약 줄이 갱신되지 않으면 실패 통보가 조용해집니다."
+    )
 
 
 def test_job_gate_adds_blocked_step_only_in_display_layer():
