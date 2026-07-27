@@ -6,6 +6,7 @@
    §9.3 4계약면(지도 §10.8.2)의 이행분이 이 파일에 있다:
    - 정체: 행 id = 작업 이름(안정 키), 탭·칩·헤더·상세 버튼 id 고정, 재렌더는 Preserve.around.
    - 잠금: 축 컨트롤·행 버튼에 data-busy-lock(생성 중 전역 잠금 대상).
+   - 의도: 즐겨찾기 직렬화는 공용 몸통 js/intent.js(「작업」 화면과 한 기제, 리뷰 3R).
    - 순서: 이동은 대상 화면 dispatch 로 **먼저 겨눈 뒤** window.Nav — 실패하면 화면 불변.
    - 실패: 실패는 이 화면 안에서 재진술하고 보기·필터·선택을 유지한다.
 
@@ -176,7 +177,10 @@
       `<span class="lib-row-meta">${esc(r.mode_label)}` +
       (r.group ? ` · ${esc(r.group)}` : "") +
       ` · ${esc(r.last_run_display)}</span></button>` +
-      `<button class="lib-fav" data-fav="${nm}" data-next="${r.favorited ? "0" : "1"}"` +
+      // 다음 값을 DOM 속성으로 심지 않는다 — 왕복 중 두 번째 클릭이 그 낡은 값을 읽으면
+      // 같은 의도를 두 번 보내 "껐다"가 삼켜진다(리뷰 3R). 현재 표시 상태만 두고 다음 값은
+      // 공용 몸통의 **미결 의도**가 계산한다.
+      `<button class="lib-fav" data-fav="${nm}"` +
       ` aria-pressed="${r.favorited ? "true" : "false"}"` +
       ` aria-label="${nm} 즐겨찾기" title="즐겨찾기" data-busy-lock>${r.favorited ? "★" : "☆"}</button></div>`;
   }
@@ -249,6 +253,7 @@
       `<li>${esc(c.text)}</li>`).join("");
     const relink = d.template_missing
       ? `<button class="btn sm" data-relink="${nm}">템플릿 다시 연결…</button>` : "";
+    const primary = d.primary || { target: "job", label: "문서 만들기에서 사용", hint: "" };
     const tags = Object.keys(d.tags || {}).length
       ? Object.entries(d.tags).map(([k, v]) =>
         `<span class="pill muted">${esc(k)}: ${esc(v)}</span>`).join(" ")
@@ -277,9 +282,9 @@
       `</div>` +
       // 상시 행동은 상세 스크롤과 **분리해** pane 아래 고정한다(§19.6 마지막 문단).
       `<div class="lib-detail-acts">` +
-      `<button class="btn primary sm" data-use="${nm}">` +
-      // 라벨-행동 일치: TXT 작업의 목적지는 「기안」이다(F6 합류 전까지).
-      (d.media === "txt" ? "기안에서 열기" : "문서 만들기에서 사용") + `</button>` +
+      // 라벨-행동 일치: 라벨도 목적지와 함께 Python 이 낸다(표면이 짝을 다시 맞추지 않는다).
+      `<button class="btn primary sm" data-use="${nm}" title="${esc(primary.hint)}">` +
+      `${esc(primary.label)}</button>` +
       `<button class="btn sm" data-edit="${nm}">작업 편집</button>` +
       `<span class="lib-detail-manage">` +
       `<button class="btn sm" data-rename="${nm}">이름 변경</button>` +
@@ -304,20 +309,28 @@
        incompatible → 활성 불변. 막힌 사유가 있는 「확인 필요」 탭으로 데려간다.
 
      겨눔이 실패하면(작업 소실·생성 중 등) await 가 throw 해 **화면을 바꾸지 않는다**. */
-  async function useInJob(name) {
+  /* 주 행동 — **목적지는 Python 이 낸다**(`detail.primary.target`, 리뷰 3R 근본 조치).
+     표면이 매체를 보고 목적지를 조립하면 표시용 정규화(미연결→hwpx)와 실행 판정(원시 매체)의
+     어휘가 갈려 「후보에서 배제 → 확인 필요에서도 배제 → 빈 화면」으로 끝난다. TXT(2R)와
+     미연결(3R)이 그 한 클래스의 두 표본이었다. 여기서는 라우팅만 한다. */
+  async function runPrimary(name) {
     const work = selectedWork(name);
     if (!work) return;
-    if (work.media === "txt") {
-      // TXT 작업은 아직 「기안」 화면이 소유한다(라이브러리 합류는 F6). 「문서 만들기」로
-      // 보내면 후보 판정(`compatibility_for`)이 hwpx 아닌 작업을 전부 배제해 「확인 필요」
-      // 탭에서도 안 보이는 **빈 화면**에 착지한다(리뷰 2R). 가드 문안·stale 재진술은
-      // 「기안」이 소유한 단일 경로에 위임하고, 취소면 화면을 바꾸지 않는다.
+    const target = (work.primary && work.primary.target) || "job";
+    if (target === "draft") {
+      // 가드 문안·stale 재진술은 「기안」이 소유한 단일 경로에 위임한다. 취소 = 화면 불변.
       if (!window.DraftScreen) {
         window.alert("기안 화면 구성 요소(DraftScreen)가 로드되지 않았습니다.");
         return;
       }
       if (!(await window.DraftScreen.openWork(name))) return;
       window.Nav.go("draft");
+      return;
+    }
+    if (target === "editor") {
+      // 아직 「문서 만들기」가 받을 수 없는 작업(미연결·미상 방식) — 실제로 고칠 수 있는
+      // 곳으로 보낸다. 빈 「확인 필요」에 착지시키는 것보다 정직하고 쓸모 있다.
+      editJob(name);
       return;
     }
     const r = await Bridge.call(JOB, "prefer_work", { name });
@@ -343,12 +356,15 @@
   /* ---- 관리 동사 ---- */
   /* 세션 정체와 결속된 동사는 「작업」 컨트롤러가 소유한다(§10.8 판정 F) — 여기서 부르고
      이 화면 스냅샷은 뒤이은 refresh 로 맞춘다. 판정을 두 곳에 두지 않는다. */
-  async function jobDispatch(action, payload, select) {
+  async function jobDispatch(action, payload, selectIfOk) {
     const r = await Bridge.call(JOB, action, payload);
-    // `select` = 정체가 바뀐 뒤의 새 이름(이름 변경). 안 실으면 선택이 옛 이름에 남아
+    // `selectIfOk` = 정체가 바뀐 뒤의 새 이름(이름 변경). 안 실으면 선택이 옛 이름에 남아
     // 상세가 닫히고 사용자가 보던 문맥이 사라진다 — 이름만 바뀌었을 뿐 그 작업은 그대로
     // 있는데(리뷰 2R). 한 왕복으로 끝내 중간 프레임에 상세가 깜빡이지도 않는다.
-    await Bridge.call(SCREEN, "refresh", select ? { select } : {});
+    // **실패하면 옮기지 않는다**(리뷰 3R): 이미 있는 이름으로 개명을 시도하면 거절되는데도
+    // 선택이 그 **남의 작업**으로 옮겨가 오류 모달이 엉뚱한 상세 위에 뜬다.
+    const ok = !(r && r.ok === false);
+    await Bridge.call(SCREEN, "refresh", ok && selectIfOk ? { select: selectIfOk } : {});
     return r;
   }
 
@@ -402,11 +418,19 @@
     });
   }
 
-  /* 즐겨찾기 — 값은 **의도한 상태**를 보낸다(현재 값을 백엔드가 뒤집지 않는다, #215 동류). */
-  async function toggleFavorite(name, next) {
-    const r = await Bridge.call(SCREEN, "toggle_favorite", { name, value: next });
-    if (r && r.ok === false) window.alert(r.error || "즐겨찾기를 바꾸지 못했습니다.");
-  }
+  /* 즐겨찾기 — 기제는 공용 몸통(js/intent.js)이 소유한다(리뷰 3R 근본 조치).
+     이 파일 머리말은 처음부터 「의도 직렬화 기제를 그대로 옮긴다」고 적어 뒀는데
+     실제로는 DOM 속성에 심어 둔 다음 값을 그대로 보냈다 — 계약이 거짓말한 자리다. 왕복 중 두 번째
+     클릭이 낡은 값을 읽어 같은 의도를 두 번 보내면 `set_favorite` 이 멱등이라 껐다 켠 것이
+     아니라 **켜진 채로 남고**, 동시 왕복은 마지막 클릭과 반대 상태를 영속시킬 수 있다.
+     이제 「작업」 화면과 **같은 몸통**을 쓴다(두 표면이 한 기제). */
+  const favorite = window.Intent.createFavorite({
+    send: (name, value) => Bridge.call(SCREEN, "toggle_favorite", { name, value })
+      .then((res) => {
+        if (res && res.ok === false) window.alert(res.error || "즐겨찾기를 바꾸지 못했습니다.");
+      }),
+    onError: (msg) => window.alert(msg),
+  });
 
   async function cloneJob(name) {
     try {
@@ -531,28 +555,34 @@
 
   async function renameGroup(group, returnFocus) {
     const seen = groupCount(group);
-    await Modal.prompt({
+    // 병합 확인은 **prompt 가 닫힌 뒤**에 한다(리뷰 3R): modal.js 는 진행 중인 promise
+    // 다이얼로그가 있으면 두 번째를 거절하므로(pendingDialog 직렬화), validate 안에서 연
+    // confirm 은 언제나 false 로 풀려 병합이 조용히 사라지고 재진입 alert 만 뜬다.
+    // 「작업」 화면과 같은 순서 — 값을 먼저 받고, 확정 왕복은 그다음이다.
+    const val = await Modal.prompt({
+      title: "그룹 이름 변경",
       body: `그룹 '${group}' 의 새 이름을 입력하세요. 소속 작업 ${seen}건이 함께 옮겨집니다.`,
       value: group,
       returnFocus,
-      validate: async (v) => {
-        let r = await jobDispatch("rename_group", { name: group, new: v, seen });
-        if (r && r.needs_confirm) {
-          // 기존 그룹으로의 개명 = 병합이라 건수를 재진술하고 확정을 받는다(#149 관측 고지).
-          const ok = await window.Modal.confirm({
-            title: "그룹 병합 확인",
-            body: `'${r.new}' 그룹이 이미 있습니다(${r.target_count}건).\n` +
-              `'${r.name}' 의 ${r.count}건을 그 그룹으로 합칩니다.`,
-            confirmLabel: "합치기", cancelLabel: "취소",
-          });
-          if (!ok) return "";  // 취소 = 본인 의사라 조용히 닫는다
-          r = await jobDispatch("rename_group", { name: group, new: v, seen, confirm: true });
-        }
-        if (r && r.ok === false) return r.error || "그룹 이름을 바꾸지 못했습니다.";
-        if (r && r.drift_note) window.alert(r.drift_note);
-        return "";
-      },
     });
+    if (val === null) return;
+    let r = await jobDispatch("rename_group", { name: group, new: val, seen });
+    if (r && r.needs_confirm) {
+      // 기존 그룹으로의 개명 = 병합이라 건수를 재진술하고 확정을 받는다. 수치는 약속이 아니라
+      // **그 시점의 관측**이다(#149) — 이동 집합의 규칙('전부')이 실제로 참인 진술이다.
+      const ok = await Modal.confirm({
+        title: "그룹 병합 확인",
+        body: `'${r.new}' 그룹이 이미 있습니다(현재 ${r.target_count}건).\n` +
+          `'${r.name}' 의 작업 전부(지금 기준 ${r.count}건)를 그 그룹으로 합칩니다.`,
+        confirmLabel: "합치기", cancelLabel: "취소",
+        returnFocus,
+      });
+      if (!ok) return;
+      r = await jobDispatch("rename_group",
+        { name: group, new: val, seen: r.count, confirm: true });
+    }
+    if (r && r.ok === false) { window.alert(r.error || "그룹 이름을 바꾸지 못했습니다."); return; }
+    if (r && r.drift_note) window.alert(r.drift_note);
   }
 
   async function disbandGroup(group, returnFocus) {
@@ -572,7 +602,12 @@
   /* ---- 이벤트(위임) ---- */
   function onListClick(e) {
     const fav = e.target.closest("[data-fav]");
-    if (fav) { toggleFavorite(fav.dataset.fav, fav.dataset.next === "1"); return; }
+    // 다음 값은 DOM 이 아니라 **미결 의도**에서 계산된다(공용 몸통) — 여기선 현재 표시 상태만
+    // 넘긴다. 빠른 2연타가 서로의 의도를 삼키지 않게 하는 §8.4 4행의 이행분이다.
+    if (fav) {
+      favorite.toggle(fav.dataset.fav, fav.getAttribute("aria-pressed") === "true");
+      return;
+    }
     const gm = e.target.closest("[data-group-more]");
     if (gm) { toggleGroupMenu(gm.dataset.groupMore, gm); return; }
     const gh = e.target.closest("[data-group]");
@@ -592,7 +627,7 @@
 
   function onDetailClick(e) {
     const pick = (a) => e.target.closest("[data-" + a + "]");
-    const use = pick("use"); if (use) { useInJob(use.dataset.use); return; }
+    const use = pick("use"); if (use) { runPrimary(use.dataset.use); return; }
     const ed = pick("edit"); if (ed) { editJob(ed.dataset.edit); return; }
     const rn = pick("rename"); if (rn) { renameJob(rn.dataset.rename, rn); return; }
     const mv = pick("move"); if (mv) { moveJob(mv.dataset.move, mv); return; }

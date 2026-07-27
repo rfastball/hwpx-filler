@@ -220,10 +220,13 @@ def test_unknown_library_action_is_loud(tmp_path):
 def test_set_tags_replaces_and_refreshes_axes(tmp_path):
     """태그 통째 교체 저장(#2·D14) — 저장 후 axes/facets 즉시 재발견 + 카드 프리필 노출."""
     ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_work", {"name": "공고서"})
     ctrl.dispatch("set_tags", {"name": "공고서", "tags": {"물품": "의약품"}})
     snap = ctrl.snapshot()
-    assert "물품" in {fa["axis"] for fa in snap["facets"]}     # 새 축 재발견
-    assert _rows(snap)["공고서"]["tags"] == {"물품": "의약품"}  # 교체 + 프리필 노출
+    assert "물품" in {fa["axis"] for fa in snap["facets"]}      # 새 축 재발견
+    # 프리필 원천은 **상세**다 — 행에는 싣지 않는다(리뷰 1R P1 근본 조치).
+    assert snap["detail"]["tags"] == {"물품": "의약품"}
+    assert "tags" not in _rows(snap)["공고서"]
     # durable 확인 — 레지스트리에 실제 저장됐다.
     assert JobRegistry(tmp_path / "jobs").load("공고서").tags == {"물품": "의약품"}
 
@@ -517,3 +520,48 @@ def test_txt_work_is_never_available_to_the_hwpx_picker(tmp_path):
     ctrl = LibraryController(reg, _text_reg(tmp_path), lambda s, snap: None,
                           pool_registry=_pool(tmp_path))
     assert _rows(ctrl.snapshot())["기안문"]["media"] == "txt"
+
+
+# ------------------------------------------------- 주 행동의 목적지(리뷰 3R 근본 조치)
+def test_primary_action_never_sends_a_work_the_document_screen_cannot_take(tmp_path):
+    """되풀이된 결함류의 구조 차단 — 「문서 만들기」는 **연결된 hwpx** 만 받는다.
+
+    표시용 정규화(`library_mode_of` 는 미연결을 hwpx 로 센다)에서 행동 경로를 파생하면
+    `rank_available`(원시 매체)이 배제하는 작업을 그쪽으로 보내게 되고, 이어 여는 「확인
+    필요」 탭에서도 배제돼 **빈 화면**에 착지한다. TXT(2R)와 미연결(3R)이 그 두 표본이었다.
+    """
+    from hwpxfiller.gui.work_candidates import rank_available
+    from hwpxfiller.webapp.screen_library import primary_action
+
+    txt = tmp_path / "안내문.txt"
+    txt.write_text("제목 {{공고명}}", encoding="utf-8")
+    reg = JobRegistry(tmp_path / "jobs2")
+    reg.save(Job(name="미연결", template_path=""))                     # 저작 중
+    reg.save(Job(name="기안문", template_path=str(txt)))               # TXT
+    reg.save(Job(name="미상", template_path=str(tmp_path / "x.doc")))  # 지원 안 하는 확장자
+    ctrl = LibraryController(reg, _text_reg(tmp_path), lambda s, snap: None,
+                          pool_registry=_pool(tmp_path))
+    rows = {r.name: r for r in ctrl.vm.rows()}
+    targets = {n: primary_action(r)["target"] for n, r in rows.items()}
+    assert targets == {"미연결": "editor", "기안문": "draft", "미상": "editor"}
+    # 라벨은 목적지와 **함께** 온다(표면이 짝을 다시 맞추면 또 갈린다).
+    assert primary_action(rows["기안문"])["label"] == "기안에서 열기"
+    assert primary_action(rows["미연결"])["hint"]                       # 왜 그쪽인지 말한다
+
+    # 불변식: target=="job" 인 작업은 반드시 「문서 만들기」 후보 판정에 **낄 자격**이 있다
+    # (열 이름만 맞으면 available). 자격조차 없는 작업을 그쪽으로 보내지 않는다.
+    fields = ["공고명"]
+    ranked = {r.name for r in rank_available(reg.list_jobs(), fields)}
+    for name, target in targets.items():
+        if target == "job":
+            assert name in ranked or rows[name].media == "hwpx"
+        else:
+            assert name not in ranked
+
+
+def test_detail_carries_the_primary_action(tmp_path):
+    """상세 페이로드가 목적지·라벨을 싣는다 — 표면은 그것을 그대로 쓴다."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_work", {"name": "공고서"})
+    primary = ctrl.snapshot()["detail"]["primary"]
+    assert primary["target"] == "job" and primary["label"] == "문서 만들기에서 사용"

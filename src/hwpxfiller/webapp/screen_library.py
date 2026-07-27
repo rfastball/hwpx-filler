@@ -61,6 +61,36 @@ MODE_LABELS = {
 }
 
 
+def primary_action(row: JobRow) -> dict:
+    """상세의 **주 행동** — 목적지·라벨을 Python 이 낸다(리뷰 3R 근본 조치).
+
+    되풀이된 결함류: 표면이 **표시용으로 정규화한 매체**(:func:`library_mode_of` 는 미연결을
+    `hwpx` 로 센다 — 사용자가 고치러 오는 필터에 남기려고)에서 **행동 경로**를 파생했다.
+    그런데 「문서 만들기에서 돌 수 있나」의 판정은 원시 ``Job.media`` 를 쓰는 `rank_available`
+    이 낸다. 같은 상태에 두 어휘가 생겨 표시와 행동이 갈렸고, TXT(리뷰 2R)와 미연결
+    (리뷰 3R)이 그 한 클래스의 두 표본이었다 — 둘 다 「후보에서 배제 → 확인 필요 탭에서도
+    배제 → 빈 화면 착지」로 끝났다.
+
+    그래서 목적지를 **작업 자체의 상태**(데이터 무관 — §19.7 이 이 화면에 준 권한)에서
+    한 번에 판정하고 표면은 그것을 그대로 쓴다. 데이터 의존 판정(이 데이터로 돌 수 있나)은
+    여전히 「문서 만들기」의 `prefer_work` 몫이다 — 층이 갈리지 섞이지 않는다.
+
+    ``target`` = 그 작업을 실제로 받을 수 있는 표면. ``hint`` 는 왜 그쪽인지(없으면 "").
+    """
+    if not row.template_linked:
+        # 미연결은 "미상 매체"가 아니라 저작 중 작업이다 — 고칠 수 있는 곳으로 보낸다.
+        # 「문서 만들기」로 보내면 후보에서 배제돼 빈 「확인 필요」에 착지한다(리뷰 3R).
+        return {"target": "editor", "label": "템플릿 연결하기",
+                "hint": "템플릿을 연결해야 문서를 만들 수 있습니다."}
+    # 여기부터는 연결된 작업이라 표시 정규화와 원시 매체가 일치한다(어휘가 갈리지 않는다).
+    if row.media == "txt":
+        return {"target": "draft", "label": "기안에서 열기", "hint": ""}
+    if row.media != "hwpx":
+        return {"target": "editor", "label": "작업 편집에서 확인",
+                "hint": "지원하지 않는 작업 방식입니다."}
+    return {"target": "job", "label": "문서 만들기에서 사용", "hint": ""}
+
+
 def _job_row_dict(r: JobRow) -> dict:
     """행 1건 성형 — 링1 JobRow 표면만 읽는다(VM 로직 재구현 없음).
 
@@ -70,6 +100,9 @@ def _job_row_dict(r: JobRow) -> dict:
     """
     mode = library_mode_of(r)
     severity, text = library_health(r)
+    # 태그는 **행에 싣지 않는다**(리뷰 1R P1 의 근본 조치): 행은 태그를 렌더하지 않는데
+    # 페이로드에만 있으면, 표면이 걸러진 목록에서 정체를 조립하는 미끼가 된다 — 실제로
+    # 필터 밖 선택의 태그가 `{}` 로 프리필돼 확인 한 번에 전멸했다. 정체는 상세가 소유한다.
     return {
         "name": r.name,
         "meta_line": r.meta_line(),
@@ -87,8 +120,6 @@ def _job_row_dict(r: JobRow) -> dict:
         # 심각도 숫자까지 싣는다: 문구만 주면 소비자가 경고(2)와 차단(3)을 구분 못 해
         # §19.7 건강 축을 "사유 있음/없음"으로 뭉갠다.
         "health": {"severity": severity, "text": text},
-        # 태그 편집(D14) 프리필용 — 행은 태그를 직접 렌더하지 않는다(facet·상세가 소비).
-        "tags": dict(r.tags),
     }
 
 
@@ -179,6 +210,9 @@ class LibraryController:
         mode = library_mode_of(row)
         return {
             **_job_row_dict(row),
+            # 정체 메타는 **상세만** 싣는다(행은 걸러진 투영이라 정체의 원천이 될 수 없다).
+            "tags": dict(row.tags),
+            "primary": primary_action(row),
             "template_name": row.template_name,
             # §19.6: HWPX 는 파일 이름 규칙을, 온나라 기안은 실행 방식을 보여준다.
             "filename_pattern": row.filename_pattern if mode == "hwpx" else "",

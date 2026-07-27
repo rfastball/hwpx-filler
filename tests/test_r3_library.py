@@ -88,9 +88,11 @@ def test_backend_set_tags_accepts_comma_values(tmp_path):
                           pool_registry=DatasetPoolRegistry(tmp_path / "datasets"))
     ctrl.dispatch("set_tags", {"name": "공고서", "tags": {"지역": "본청, 대전"}})
     assert reg.load("공고서").tags == {"지역": "본청, 대전"}
-    # 웹 스냅샷 프리필 표면에도 그대로 실린다 — library.js 왕복 가드가 다루는 바로 그 값.
-    rows = [r for sec in ctrl.snapshot()["sections"] for r in sec["rows"]]
-    assert rows[0]["tags"] == {"지역": "본청, 대전"}
+    # 웹 프리필 표면에도 그대로 실린다 — library.js 왕복 가드가 다루는 바로 그 값.
+    # 프리필의 원천은 **상세**다(행이 아니다): 행은 걸러진 투영이라 정체의 원천이 될 수 없다
+    # (리뷰 1R P1 근본 조치 — 행 페이로드에서 태그를 걷었다).
+    ctrl.dispatch("select_work", {"name": "공고서"})
+    assert ctrl.snapshot()["detail"]["tags"] == {"지역": "본청, 대전"}
 
 
 # --------------------------------------------------------------- N1: 새로고침 배선(F6 이관)

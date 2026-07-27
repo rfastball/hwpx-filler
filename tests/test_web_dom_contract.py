@@ -831,17 +831,29 @@ def test_job_candidate_ranking_surface_contract():
     assert 'data-menu="favorite"' in src, "좌 목록 ⋮ 메뉴에 즐겨찾기 항목이 없습니다."
     assert src.count("function toggleFavorite(") == 1, "즐겨찾기 전이 몸통이 둘입니다."
     # 왕복 중 두 번째 클릭이 의도를 뒤집으려면 다음 값을 DOM 이 아니라 미결 의도에서
-    # 계산해야 한다(리뷰 3R P2 — 멱등 재지정이 "껐다"를 삼키는 창).
-    assert "FAV_PENDING" in src and "function favPending(" in src, (
-        "즐겨찾기 미결 의도 직렬화가 없습니다."
+    # 계산해야 하고(3R P2 — 멱등 재지정이 "껐다"를 삼키는 창), 쓰기 자체도 클릭 순서로
+    # 직렬화돼야 한다(4R P2 — pywebview 는 호출마다 별도 스레드라 동시 발신이면 나중 클릭의
+    # 쓰기가 먼저 잠금을 잡아 반대 상태가 영속될 수 있다).
+    #
+    # **기제는 공용 몸통(js/intent.js)이 소유한다**(재작성 F2 리뷰 3R 근본 조치): 라이브러리가
+    # 같은 별을 새로 그리며 기제 없이 DOM 값만 보내 같은 결함류가 표면을 넘어 재발했다.
+    # 그래서 가드도 몸통 하나를 보고, 두 소비 표면이 그것을 쓰는지 함께 본다.
+    intent = (WEB_JS_DIR / "intent.js").read_text(encoding="utf-8")
+    assert "function chained(" in intent and "CALL_CHAINS" in intent, "호출 직렬화 몸통이 없습니다."
+    assert "function createFavorite(" in intent and "function pending(" in intent, (
+        "즐겨찾기 미결 의도 직렬화가 공용 몸통에 없습니다."
     )
-    # 쓰기 자체도 클릭 순서로 직렬화돼야 한다(4R P2 — pywebview 는 호출마다 별도 스레드라
-    # 동시 발신이면 나중 클릭의 쓰기가 먼저 잠금을 잡아 반대 상태가 영속될 수 있다).
-    # 직렬화 몸통은 공용이다(PR-1 5R): 즐겨찾기·탐색이 같은 기제를 쓰고 가드도 하나다.
-    # 즐겨찾기는 키 하나(작업 간 순위라 전역 1체인)로 클릭 순서 = 쓰기 순서를 보장한다.
-    assert "function chained(" in src and "CALL_CHAINS" in src, "호출 직렬화 몸통이 없습니다."
-    assert 'chained("favorite"' in src, "즐겨찾기 쓰기가 체인을 타지 않습니다."
-    assert src.count('chained("browse"') == 3, (
+    assert 'chained("favorite"' in intent, "즐겨찾기 쓰기가 체인을 타지 않습니다."
+    for consumer in ("screens/job.js", "screens/library.js"):
+        text = (WEB_JS_DIR / consumer).read_text(encoding="utf-8")
+        assert "Intent.createFavorite(" in text, (
+            f"{consumer} 가 즐겨찾기 기제를 공용 몸통에서 받지 않습니다 — 두 벌이면 또 갈린다."
+        )
+        assert "FAV_PENDING" not in text, f"{consumer} 에 손짠 의도 큐가 남아 있습니다."
+    # 메뉴 문안은 **이 클릭이 할 일**을 말해야 하므로 미결 의도를 읽는다 — 기제가 몸통으로
+    # 이사할 때 이 소비처가 뒤에 남아 실앱에서 메뉴가 안 열렸다(3R 픽스의 실물 증거).
+    assert "favorite.pending(" in src, "좌 목록 ⋮ 메뉴가 미결 의도를 읽지 않습니다."
+    assert src.count('Intent.chained("browse"') == 3, (
         "탐색 탭·검색·선택이 같은 체인을 타지 않습니다 — 늦은 옛 응답이 새 결과·선택을 되돌린다."
     )
     # 문안은 완주 스탬프 의미와 일치해야 한다(성공 뒤 실패 런에서 거짓이 되지 않게).
