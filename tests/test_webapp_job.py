@@ -937,6 +937,30 @@ def test_refresh_reloads_rules_edited_in_the_editor_and_keeps_the_session(tmp_pa
     assert ctrl.out_dir == out_dir
 
 
+def test_snapshot_rules_key_changes_when_the_editor_changes_the_rules(tmp_path):
+    """결과의 세션 지문에 **규칙**이 든다(6R P2).
+
+    결과가 「지금 결과」로 남으려면 그것을 만든 규칙이 아직 그 규칙이어야 한다 — 편집기에서
+    고치고 돌아오면 재적재가 규칙을 갈아 끼우는데, 지문에 규칙이 없으면 **다른 규칙으로 만든
+    결과가 후속 행동(실패분 선택·파일 이름 수리)까지 열어 둔 채** 「지금」으로 남는다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    reg = ctrl.registry
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    before = ctrl.snapshot()["rules_key"]
+    assert before
+
+    job = reg.load("공고서")
+    job.filename_pattern = "새규칙-{{공고명}}"
+    reg.save(job, allow_overwrite=True)
+    ctrl.dispatch("refresh", {})
+    assert ctrl.snapshot()["rules_key"] != before      # 규칙이 갈리면 지문도 갈린다
+
+    # 선택·데이터만 그대로면 지문도 그대로다(과잉 강등 금지 — 결과는 살아 있어야 한다).
+    assert ctrl.snapshot()["rules_key"] == ctrl.snapshot()["rules_key"]
+
+
 def test_refresh_does_not_disturb_the_session_when_rules_are_unchanged(tmp_path):
     """지문이 같으면 아무것도 안 한다 — 이 경로는 화면 전환마다 발화한다(REFRESH_ON_NAV).
 
