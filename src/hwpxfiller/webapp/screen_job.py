@@ -1337,13 +1337,27 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             job = self.registry.load(self.job_name)
         except Exception:  # noqa: BLE001 — 손상은 다음 스냅샷의 건강 표면이 말한다
             return False
-        if content_fingerprint(job) == content_fingerprint(self.vm.job):
+        # **판본 메타까지 본다**(7R P2). `content_fingerprint` 는 판본 3필드를 일부러 뺀다
+        # (편집 세션에 거짓 파괴 확인을 띄우지 않으려고) — 그래서 그것만으로는 "지금 것인가"를
+        # 답할 수 없다: 규칙이 A→B→A 로 돌아온 저장은 내용 지문이 같지만 세대는 앞서 있고,
+        # 그 상태로 실행하면 결과가 **디스크에 없는 세대**를 자기 근거로 댄다(§13-7).
+        # 직전 판본 값도 같은 이유로 센다 — before/after 증거의 원천이다.
+        same_rules = content_fingerprint(job) == content_fingerprint(self.vm.job)
+        same_generation = (
+            job.template_revision == self.vm.job.template_revision
+            and job.binding_revision == self.vm.job.binding_revision
+            and job.previous_rules == self.vm.job.previous_rules
+        )
+        if same_rules and same_generation:
             return False
         self.vm = RunViewModel(job)
         if self.records:
             self.vm.set_acquired(self.datasource, self.records)  # ack 재평가 포함(RC-22)
-        self._last_generated = None
-        self._do_preview_close({})
+        if not same_rules:
+            # 규칙이 실제로 갈렸을 때만 증거를 걷는다 — 판본 메타만 앞선 경우(A→B→A)는
+            # 실행 입력이 그대로라 완주 담보·열린 면을 되돌릴 이유가 없다(과잉 리셋 금지).
+            self._last_generated = None
+            self._do_preview_close({})
         return True
 
     def _do_select_job(self, p: dict) -> "dict | None":

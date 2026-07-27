@@ -1143,6 +1143,52 @@ def test_partial_discard_keeps_dirty_while_session_data_is_unsaved(tmp_path):
     assert ctrl.snapshot()["dirty"] is True            # 데이터 선택은 아직 미저장이다
 
 
+def test_partial_discard_refuses_a_tab_this_media_does_not_have(tmp_path):
+    """없는 자리를 되돌리라는 요청은 조용히 무시하지 않는다 — 어느 자리를 되돌렸는지가
+    문안의 약속이라, 모르는 자리를 받아 넘기면 그 약속을 지켰는지 말할 수 없다."""
+    ctrl, _ = _controller26(tmp_path)
+    assert _save_named(ctrl, "없는탭")["ok"] is True
+    ctrl.load_job("없는탭")
+    with pytest.raises(ValueError, match="탭이 없습니다"):
+        ctrl.dispatch("discard_patch", {"section": "test"})   # 시험 탭은 F8
+
+
+def test_discarding_a_binding_patch_without_data_restores_the_saved_vocabulary(tmp_path):
+    """데이터 없는 편집 세션의 되돌리기는 **저장 매핑의 어휘**로 되세운다.
+
+    어휘를 안 되세우면 되돌린 행이 전부 "(데이터에 없음)"으로 오표시된다 — 되돌렸는데
+    화면이 더 나빠 보이면 그 되돌리기는 사용자가 요청한 것이 아니다(load_job 과 동형).
+    """
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "어휘복원")
+    ctrl.dispatch("save", {})
+    ctrl.load_job("어휘복원")                       # 데이터 없이 복원(저장 매핑 어휘로 선다)
+    vocabulary = list(ctrl.source_fields)
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": False})
+    ctrl.dispatch("discard_patch", {"section": "binding"})
+    assert ctrl.source_fields == vocabulary and ctrl.dirty_sections() == ()
+    assert all(r.confirmed for r in ctrl.model.rows)          # 저장본 그대로 확정 복원
+
+
+def test_discarding_a_template_patch_keeps_the_name_and_data(tmp_path):
+    """템플릿 축은 스키마·매핑이 함께 서야 해 규칙 전체를 다시 세운다 — 그래도 **이름과
+    데이터는 남는다**(section 밖에 사는 것은 이 처분의 대상이 아니다)."""
+    ctrl, _ = _controller26(tmp_path)
+    _complete_with_data(ctrl, "템플릿되돌리기")
+    ctrl.dispatch("save", {})
+    ctrl.load_job("템플릿되돌리기")
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("set_name", {"name": "새 이름"})
+    base_template = ctrl.template_path
+    ctrl.dispatch("goto_section", {"section": "template"})
+    ctrl.load_template_path(str(TPL_PARTIAL))                 # 다른 템플릿으로 갈아 끼움
+    assert "template" in ctrl.dirty_sections()
+    ctrl.dispatch("discard_patch", {"section": "template"})
+    assert ctrl.template_path == base_template                # 템플릿은 되돌아갔고
+    assert ctrl.job_name == "새 이름" and ctrl.data_path      # 이름·데이터는 그대로
+
+
 def test_discarding_a_binding_patch_keeps_the_loaded_data(tmp_path):
     """연결 patch 를 되돌려도 사람이 고른 데이터는 내려놓지 않는다(판정 L).
 

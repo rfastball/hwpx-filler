@@ -937,6 +937,22 @@ def test_refresh_reloads_rules_edited_in_the_editor_and_keeps_the_session(tmp_pa
     assert ctrl.out_dir == out_dir
 
 
+def test_reload_is_a_no_op_without_a_job_or_with_a_corrupt_file(tmp_path):
+    """재적재는 **읽을 수 있을 때만** 한다 — 작업 미선택·손상 파일에서 조용히 세션을 깨지 않는다.
+
+    손상은 다음 스냅샷의 건강 표면이 말한다(여기서 예외를 올리면 화면 전환마다 발화하는
+    경로가 그 작업 하나 때문에 통째로 죽는다).
+    """
+    ctrl, _ = _controller(tmp_path)
+    assert ctrl._reload_active_job() is False          # 작업 미선택 = 손댈 것이 없다
+
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.registry.path_for("공고서").write_text("{ 깨진 JSON", encoding="utf-8")
+    assert ctrl._reload_active_job() is False           # 못 읽으면 그대로 둔다
+    assert ctrl.snapshot()["has_job"] is True           # 세션은 살아 있다
+
+
 def test_snapshot_rules_key_changes_when_the_editor_changes_the_rules(tmp_path):
     """결과의 세션 지문에 **규칙**이 든다(6R P2).
 
@@ -959,6 +975,35 @@ def test_snapshot_rules_key_changes_when_the_editor_changes_the_rules(tmp_path):
 
     # 선택·데이터만 그대로면 지문도 그대로다(과잉 강등 금지 — 결과는 살아 있어야 한다).
     assert ctrl.snapshot()["rules_key"] == ctrl.snapshot()["rules_key"]
+
+
+def test_reload_also_follows_revision_metadata_that_the_content_fingerprint_hides(tmp_path):
+    """내용 지문이 같아도 **세대가 앞섰으면** 다시 읽는다(7R P2).
+
+    `content_fingerprint` 는 판본 3필드를 일부러 뺀다(편집 세션에 거짓 파괴 확인을 띄우지
+    않으려고) — 그래서 그것만으로는 "지금 것인가"를 답할 수 없다. 규칙이 A→B→A 로 돌아온
+    저장은 내용이 같지만 세대는 앞서 있고, 그 상태로 실행하면 결과가 **디스크에 없는 세대**를
+    자기 근거로 댄다(§13-7). 단 실행 입력이 그대로이므로 완주 담보는 걷지 않는다(과잉 리셋 금지).
+    """
+    ctrl, _ = _controller(tmp_path)
+    reg = ctrl.registry
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl._last_generated = {0}                          # 완주 담보가 서 있는 상태
+
+    job = reg.load("공고서")
+    original = job.filename_pattern
+    job.filename_pattern = "잠깐-{{공고명}}"             # A → B
+    reg.save(job, allow_overwrite=True)
+    job = reg.load("공고서")
+    job.filename_pattern = original                      # B → A(내용은 처음과 같다)
+    reg.save(job, allow_overwrite=True)
+    disk = reg.load("공고서")
+    assert disk.binding_revision == 3                    # 세대는 앞서 있다
+
+    assert ctrl._reload_active_job() is True
+    assert ctrl.vm.job.binding_revision == 3             # 실행이 대는 판본이 디스크와 같다
+    assert ctrl._last_generated == {0}                   # 실행 입력은 그대로 → 담보 유지
 
 
 def test_refresh_does_not_disturb_the_session_when_rules_are_unchanged(tmp_path):

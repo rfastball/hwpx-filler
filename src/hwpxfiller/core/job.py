@@ -623,12 +623,22 @@ def advance_revisions(job: "Job", previous: "Job | None") -> None:
     binding_changed = old["filename"] != new["filename"] or old["fields"] != new["fields"]
     job.template_revision = previous.template_revision + (1 if template_changed else 0)
     job.binding_revision = previous.binding_revision + (1 if binding_changed else 0)
-    # 규칙이 그대로면 직전 판본도 그대로다 — 저장할 때마다 "직전"이 현재로 밀리면
-    # before/after 증거가 **같은 값 두 개**를 보여주고 만다(변경이 없다는 사실을 변경으로
-    # 재진술하는 꼴).
-    job.previous_rules = _copy_rules_values(
-        old if (template_changed or binding_changed) else previous.previous_rules
-    )
+    # 직전 판본은 **축별로** 밀린다(7R P2). 두 축이 한 스냅샷에 살지만 **각자의 세대**를
+    # 가지므로, 한 축만 저장했다고 나머지 축의 직전 값까지 현재로 밀면 아직 검토받지 않은
+    # 그 축의 증거가 「B → B」가 된다(연결을 A→B 로 바꿔 두고 템플릿만 저장한 경우가 실물).
+    # 규칙이 그대로면 직전 판본도 그대로다 — 변경이 없다는 사실을 변경으로 재진술하지 않는다.
+    if not (template_changed or binding_changed):
+        job.previous_rules = _copy_rules_values(previous.previous_rules)
+        return
+    kept = _copy_rules_values(previous.previous_rules) or {
+        "template": "", "filename": "", "fields": {},
+    }
+    if template_changed:
+        kept["template"] = old["template"]
+    if binding_changed:
+        kept["filename"] = old["filename"]
+        kept["fields"] = {name: dict(axes) for name, axes in old["fields"].items()}
+    job.previous_rules = kept
 
 
 class JobRegistryOwnershipError(RuntimeError):

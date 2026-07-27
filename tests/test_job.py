@@ -1120,3 +1120,31 @@ def test_falsy_previous_rules_corruption_is_loud(bad):
         Job.from_dict(d)
     d["previous_rules"] = {}                       # 빈 사전 = 정상(직전 판본 없음)
     assert Job.from_dict(d).previous_rules == {}
+
+
+def test_previous_revision_snapshot_advances_per_axis(tmp_path):
+    """직전 판본은 **축별로** 밀린다(7R P2).
+
+    두 축이 한 스냅샷에 살지만 각자의 세대를 가진다 — 연결을 A→B 로 바꿔 두고 템플릿만
+    저장했다고 연결의 직전 값까지 현재로 밀면, 아직 검토받지 않은 그 변경의 증거가
+    「B → B」가 된다(아무것도 안 바뀐 것처럼 보인다).
+    """
+    reg = JobRegistry(tmp_path)
+    reg.save(_job())                                     # 연결 A
+    changed = _job()
+    changed.mapping.mappings[0].source = "B열"            # 연결 A → B
+    reg.save(changed, allow_overwrite=True)
+    saved = reg.load("입찰공고서")
+    assert saved.binding_revision == 2
+    assert saved.previous_rules["fields"]["공고명"]["source"] == "bidNtceNm"   # 직전 = A
+
+    moved = _job()
+    moved.mapping.mappings[0].source = "B열"              # 연결은 그대로 B
+    moved.template_path = "/tmp/other.hwpx"              # 템플릿만 저장
+    reg.save(moved, allow_overwrite=True)
+    saved = reg.load("입찰공고서")
+    assert (saved.template_revision, saved.binding_revision) == (2, 2)
+    # 템플릿 축은 밀리고,
+    assert saved.previous_rules["template"] == "/tmp/template.hwpx"
+    # **연결 축의 직전 값은 A 그대로**다 — 아직 그 변경은 검토받지 않았다.
+    assert saved.previous_rules["fields"]["공고명"]["source"] == "bidNtceNm"
