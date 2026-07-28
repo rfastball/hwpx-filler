@@ -3558,3 +3558,36 @@ def test_browse_rows_section_inside_the_tab_not_across_it(tmp_path):
     assert b["tab"] == "available"
     assert {s["mode"] for s in b["sections"]} == {"hwpx_generate", "text_review_copy"}
     assert all("mode_label" in r for r in b["rows"])
+
+
+def test_review_and_preview_are_declared_out_of_scope_for_txt(tmp_path):
+    """검토 요구·미리보기 드로어는 TXT 에서 **배제 선언**이다(지도 §10.15 판정 J).
+
+    근거: 드로어는 값 + **파일 이름** + 승인의 면인데 TXT 엔 파일 이름 축이 없고(§3.2),
+    작업대가 이미 레코드 전수를 채운 모습으로 보여 주는 검토 표면이다. TXT 에 요구를
+    세우면 작업대에서 눈으로 본 것을 「문서 만들기」에서 또 확인하라는 **이중 권위**가
+    된다(§10.5 판정 단일 출처).
+
+    배제를 **선언으로** 남기는 이유는 F5 판정 O·F7 판정 K 와 같다: 조용한 무시와 선언된
+    배제는 다르다. 누군가 TXT 에 검토 축을 배선하면 이 테스트가 그 결정을 다시 꺼낸다.
+    """
+    ctrl, _ = _controller(tmp_path, reviewed=False)   # 한 번도 완주하지 않은 작업 = 요구 있음
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    assert ctrl.snapshot()["review"]["required"] is True, "hwpx 쪽 요구가 서지 않으면 대조가 무의미"
+    ctrl.dispatch("select_job", {"name": "발주요청_기안"})
+    snap = ctrl.snapshot()
+    assert snap["review"] == {
+        "required": False, "approved": False, "risk": "", "targets": [],
+        "first_run": False, "unknown_baseline": False, "structure_changed": False,
+    }
+    assert snap["preview"]["can_open"] is False
+    # 게이트 사유도 검토를 들먹이지 않는다 — TXT 게이트는 진입 자격만 센다.
+    assert "확인" not in snap["gate"]["text"] or "검토" not in snap["gate"]["text"]
+    # 드로어를 직접 열려는 발신은 **시끄럽게** 거절된다(표면 오발신 fail-closed). 문안은
+    # 사실이어야 한다: TXT 는 작업이 선택된 채로 `vm` 이 없으므로 "작업을 선택하세요"는
+    # 방금 고른 작업을 못 본 척하는 거짓 지시가 된다.
+    with pytest.raises(ValueError, match="작업대"):
+        ctrl.dispatch("preview_open", {})
+    assert ctrl.snapshot()["preview"]["open"] is False

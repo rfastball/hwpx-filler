@@ -296,3 +296,57 @@ def test_unknown_action_is_loud(tmp_path):
     ctrl, _, _ = _open(tmp_path)
     with pytest.raises(ValueError):
         ctrl.dispatch("없는액션", {})
+
+
+# ---------------------------------------------- 복사 완료 = 최근 사용 (§19.4, 판정 I)
+def test_first_copy_records_recent_use_once_per_session(tmp_path):
+    """§19.4 — "한 레코드라도 복사 완료"가 최근 사용을 기록한다. 진입만으로는 아니다."""
+    ctrl, reg, _ = _open(tmp_path)
+    assert reg.load("발주요청_기안").last_run_at == ""      # 진입만으로는 기록하지 않는다
+    ctrl.note_copied(ctrl.render()[1])
+    first = reg.load("발주요청_기안").last_run_at
+    assert first, "복사 완료가 최근 사용을 기록하지 않았습니다."
+    # 세션당 1회 — 두 번째 복사는 같은 사실을 다시 쓰지 않는다(durable 쓰기 증식 금지).
+    ctrl.dispatch("toggle_advance", {"value": True})
+    ctrl.note_copied(ctrl.render()[1])
+    assert reg.load("발주요청_기안").last_run_at == first
+
+
+def test_copy_does_not_write_a_review_baseline(tmp_path):
+    """TXT 는 검토 요구 축을 지지 않으므로 그 기준선을 찍지 않는다(판정 J 의 따름정리).
+
+    짓지 않은 축에 「검토했다」를 기록하는 것은 하지 않은 검토를 기록하는 것이다 —
+    조용한 누락보다 나쁘다.
+    """
+    ctrl, reg, _ = _open(tmp_path)
+    ctrl.note_copied(ctrl.render()[1])
+    assert reg.load("발주요청_기안").reviewed_rules == {}
+
+
+def test_stamp_failure_is_reported_not_swallowed(tmp_path, monkeypatch):
+    """복사는 이미 일어났다 — 스탬프 실패를 예외로 올려 완료 노트를 날리지도, 조용히
+    넘기지도 않는다(confirm-or-alarm: 사유를 완료 노트에 병기)."""
+    ctrl, reg, _ = _open(tmp_path)
+
+    def boom(*a, **k):
+        raise OSError("디스크에 쓸 수 없습니다")
+
+    monkeypatch.setattr(reg, "stamp_last_run", boom)
+    ctrl.note_copied(ctrl.render()[1])
+    last = ctrl.snapshot()["card"]["last_copy"]
+    assert "디스크" in last["stamp_error"]
+    assert ctrl.snapshot()["copied_count"] == 1   # 복사 자체는 성사됐다
+
+
+def test_the_two_media_share_the_field_but_not_the_predicate(tmp_path):
+    """같은 `Job.last_run_at` 을 쓰되 **찍는 사건이 다르다**(§19.2 — 의미 있는 결과 행동).
+
+    그 사실을 표면 문안이 갈라 말하는지는 `test_work_mode` 가 잰다. 여기서는 저장처가
+    하나라는 것과, TXT 경로가 hwpx 의 완주 술어를 빌리지 않는다는 것만 못박는다.
+    """
+    from hwpxfiller.gui.work_mode import WORK_MODE_TEXT, last_use_label
+
+    ctrl, reg, _ = _open(tmp_path)
+    ctrl.note_copied(ctrl.render()[1])
+    job = reg.load("발주요청_기안")
+    assert last_use_label(WORK_MODE_TEXT, job.last_run_at).startswith("마지막 복사")

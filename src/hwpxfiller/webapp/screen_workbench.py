@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 
 from ..core.format_engine import presets as format_presets
@@ -102,6 +103,9 @@ class WorkbenchController:
         self._fullwidth = False
         self._last_copy: "dict | None" = None
         self._copied_total = 0
+        # 최근 사용 스탬프는 **세션당 1회**다(§19.4: "한 레코드라도 복사 완료"). 매 복사마다
+        # 찍으면 durable 쓰기가 복사 수만큼 늘고, 기록되는 사실은 첫 건과 똑같다.
+        self._stamped = False
         self._review: "set[int]" = set()
         self.notice_text = ""
         self.notice_level = "muted"
@@ -515,10 +519,14 @@ class WorkbenchController:
         cur = self.queue.current
         if cur is None:
             return
+        stamp_error = self._stamp_first_copy()
         self._last_copy = {
             "row": self.source_rows[cur],
             "missing_fields": list(report.missing_fields),
             "empty_fields": gate_empty_fields(report, self.mapping),
+            # 스탬프 실패는 삼키지 않는다 — 복사는 이미 일어났으므로 예외로 완료 노트를
+            # 날리는 건 더 큰 손실이고, 조용히 넘기면 이력이 아무 말 없이 이 사건을 잃는다.
+            "stamp_error": stamp_error,
         }
         self._copied_total += 1
         self._review.discard(cur)   # 지금 규칙으로 다시 복사했다 = 재확인 해소
@@ -527,6 +535,36 @@ class WorkbenchController:
             self.queue.advance_to_next_uncopied()
         self.queue.reconcile()
         self._push()
+
+    def _stamp_first_copy(self) -> str:
+        """세션 첫 복사에서 **최근 사용**을 영속한다(§19.4) — 성공 시 ``""``, 실패 시 사유.
+
+        **두 매체는 다른 술어를 쓰고 같은 필드를 쓴다.** HWPX 는 완주(전건 성공)에서,
+        TXT 는 레코드 **복사 완료 1건**에서 찍는다 — 계약 §19.4 의 표 그대로다. 저장처가
+        같은 `Job.last_run_at` 인 것은 어휘의 혼선이 아니라 이 축의 정의가 「의미 있는 결과
+        행동의 시간 순위」이기 때문이고(§19.2), 그 사실을 표면 문안이
+        :func:`~hwpxfiller.gui.work_mode.last_use_label` 로 정직하게 갈라 말한다.
+
+        쓰기는 레지스트리의 **잠긴 경로**를 탄다(`stamp_last_run`) — 작업대 세션이 열려
+        있는 동안 편집기·라이브러리가 같은 작업을 만질 수 있고, 잠금 없는 통째 저장은 늦게
+        착지한 쪽이 상대 변경을 되돌린다.
+
+        **검토 기준선(`rules`)은 넘기지 않는다**(지도 §10.15 판정 I·J의 따름정리): TXT 는
+        검토 요구 축을 지지 않으므로, 그 기준선을 여기서 찍으면 짓지 않은 축에 「검토했다」를
+        기록하는 것이 된다. 하지 않은 검토를 기록하는 쪽이 조용한 누락보다 나쁘다.
+        """
+        if self._stamped or not self.job_name:
+            return ""
+        try:
+            job = self.registry.stamp_last_run(
+                self.job_name, datetime.now().isoformat(timespec="seconds"),
+            )
+        except (OSError, ValueError) as exc:
+            return str(exc) or exc.__class__.__name__
+        self._stamped = True
+        if self.base_job is not None:  # 인메모리 사본도 같은 사실을 들게(디스크와 갈리지 않게)
+            self.base_job = replace(self.base_job, last_run_at=job.last_run_at)
+        return ""
 
     # ------------------------------------------------------------- 진입 자격
     @staticmethod

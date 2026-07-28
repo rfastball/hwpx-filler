@@ -426,14 +426,23 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     def _do_preview_open(self, p: dict) -> dict:
         """드로어 열기. §13-2 대로 **요구가 없어도 열린다**(정상 반복 실행에서 선택).
 
-        거절 셋: ⓐ생성 중(진행 중 런의 입력을 보며 승인하면 어느 범위의 승인인지 갈린다)
+        거절 넷: ⓐ생성 중(진행 중 런의 입력을 보며 승인하면 어느 범위의 승인인지 갈린다)
         ⓑ범위 초안 열림(판정 H — 미리보기는 **커밋된** 실행 입력의 상이다. 초안 세계를
         그리면 적용도 안 한 편집을 승인하게 되고 그건 불변식 21 위반이다) ⓒ선택 0건
-        (§18.11-6: 선택 0건에서는 미리보기에 진입하지 않고 첫 레코드로 대신하지 않는다).
+        (§18.11-6: 선택 0건에서는 미리보기에 진입하지 않고 첫 레코드로 대신하지 않는다)
+        ⓓ**TXT 작업**(재작성 F6 판정 J — 배제 선언).
+
+        ⓓ의 문안이 ⓒ와 갈리는 이유: TXT 는 작업이 **선택된 채로** `vm` 이 없다. 그 상태에서
+        "먼저 문서 작업을 선택하세요"라고 말하면 방금 고른 작업을 못 본 척하는 거짓 지시가
+        된다 — 같은 술어(`vm is None`)에 뜻이 둘이라는 사실을 문안까지 끌고 온 자리다.
         """
         self.raise_if_generating("미리보기를 여세요")
         if self.range_draft is not None:
             raise ValueError("범위 편집을 적용하거나 취소한 뒤에 미리보기를 여세요.")
+        if self.txt_job is not None:
+            raise ValueError(
+                "이 작업은 검토·복사 작업대에서 행마다 값을 확인합니다."
+            )
         if self.vm is None:
             raise ValueError("먼저 문서 작업을 선택하세요.")
         if not self._indices():
