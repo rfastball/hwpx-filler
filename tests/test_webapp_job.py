@@ -106,7 +106,7 @@ def test_initial_has_no_active_work_and_loud_gate(tmp_path):
     assert snap["gate"]["enabled"] is False and "데이터 파일" in snap["gate"]["text"]
     # 데이터 미준비 = 후보 계산 자체를 안 한다(§18.1) — 4구획 전부 빈 골격.
     assert snap["candidates"] == {
-        "top": [], "more": 0, "needs_count": 0, "suggested": "",
+        "top": [], "sections": [], "more": 0, "needs_count": 0, "suggested": "",
     }
     # 문서 탐색도 미계산 골격(§18.1) — 탭·검색어는 세션 기본값을 그대로 재진술한다.
     assert snap["browse"]["rows"] == [] and snap["browse"]["available_count"] == 0
@@ -3523,3 +3523,38 @@ def test_hwpx_work_never_opens_the_workbench(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     res = ctrl.dispatch("open_workbench", {})
     assert res["ok"] is False
+
+
+def test_candidate_sections_stand_only_when_both_modes_are_present(tmp_path):
+    """§19.3 — 구획은 두 방식이 다 있을 때만. 판정은 Python 이 낸다(표면은 머리글만)."""
+    ctrl, _ = _controller(tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    only_hwpx = ctrl.snapshot()["candidates"]["sections"]
+    assert len(only_hwpx) == 1 and only_hwpx[0]["mode"] == "hwpx_generate"
+    _txt_job(ctrl, tmp_path)
+    both = ctrl.snapshot()["candidates"]["sections"]
+    assert {s["mode"] for s in both} == {"hwpx_generate", "text_review_copy"}
+    # 구획 순서는 순위의 함수다 — 전체 순위를 구획으로 자를 뿐 방식별 자리 보장은 없다.
+    top_names = [c["name"] for c in ctrl.snapshot()["candidates"]["top"]]
+    assert both[0]["names"][0] == top_names[0]
+
+
+def test_candidate_card_carries_the_media_aware_recent_use_label(tmp_path):
+    """§19.4 — 두 매체가 다른 술어를 쓴다는 사실을 카드 문안이 말한다."""
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    labels = {c["name"]: c["last_run_label"] for c in ctrl.snapshot()["candidates"]["top"]}
+    assert labels["공고서"] == "성공한 실행 없음"
+    assert labels["발주요청_기안"] == "복사한 적 없음"
+
+
+def test_browse_rows_section_inside_the_tab_not_across_it(tmp_path):
+    """§19.5 — 탭이 primary classification 이고 방식은 탭 **안**에서만 구획한다."""
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    b = ctrl.snapshot()["browse"]
+    assert b["tab"] == "available"
+    assert {s["mode"] for s in b["sections"]} == {"hwpx_generate", "text_review_copy"}
+    assert all("mode_label" in r for r in b["rows"])

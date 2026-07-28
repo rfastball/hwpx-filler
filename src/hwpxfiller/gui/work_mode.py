@@ -26,6 +26,8 @@ __all__ = [
     "WORK_MODE_TEXT",
     "WORK_MODE_UNSUPPORTED",
     "WORK_MODE_ORDER",
+    "last_use_label",
+    "mode_sections",
     "work_mode_label",
     "work_mode_of_filter_value",
 ]
@@ -67,3 +69,47 @@ def work_mode_of_filter_value(value: str) -> str:
     if value == "txt":
         return WORK_MODE_TEXT
     return WORK_MODE_UNSUPPORTED
+
+
+def last_use_label(mode: str, iso: str) -> str:
+    """최근 사용 표시 문구 — **매체마다 술어가 다르다는 사실을 문안이 말한다**(§19.4).
+
+    | 방식 | 기록하는 사건 | 문안 |
+    |---|---|---|
+    | HWPX | 생성 **완주**(전건 성공) | 「마지막 성공 실행 …」 / 「성공한 실행 없음」 |
+    | TXT | 레코드 **복사 완료** 1건 | 「마지막 복사 …」 / 「복사한 적 없음」 |
+
+    두 매체에 같은 문구를 쓰면 하필 구별이 중요한 자리에서 이력을 거짓으로 말한다: HWPX 의
+    스탬프는 성공 뒤 실패 런이 있어도 앞선 성공 시각에 머무르므로 "마지막 실행"이 아니고,
+    TXT 의 스탬프는 애초에 실행이 아니라 복사다. 저장 필드(`Job.last_run_at`)는 하나이되
+    그 뜻은 방식이 정한다 — 그래서 문구도 여기 한 자리에서 갈린다.
+    """
+    day = iso[:10]
+    if mode == WORK_MODE_TEXT:
+        return f"마지막 복사 {day}" if iso else "복사한 적 없음"
+    return f"마지막 성공 실행 {day}" if iso else "성공한 실행 없음"
+
+
+def mode_sections(items: "list[dict]", *, key: str = "mode") -> "list[dict]":
+    """항목 목록 → 작업 방식 구획(§19.3·§19.5). **순서는 첫 등장 순**이다.
+
+    계약이 정한 구획 순서는 "각 구획에 포함된 항목 중 가장 높은 전역 순위의 위치"이고,
+    입력이 이미 순위순이면 첫 등장 순이 곧 그 순서다 — 별도 정렬을 얹으면 순위 판정이 두
+    곳에 살게 된다(문서 탐색처럼 이름순인 목록에서도 같은 규칙이 그대로 성립한다).
+
+    **한 방식만 있으면 구획하지 않는다**(반환 1개 + 호출측이 `len(sections) > 1` 로 판단):
+    중복 정보를 줄이려는 계약의 퇴화 규칙이다. 카드 부제의 방식 텍스트는 그때도 유지되므로
+    (§19.3 마지막 문장) 정보가 사라지는 것이 아니라 **머리글만** 사라진다.
+    """
+    order: "list[str]" = []
+    buckets: "dict[str, list[dict]]" = {}
+    for item in items:
+        mode = str(item.get(key, "")) or WORK_MODE_UNSUPPORTED
+        if mode not in buckets:
+            order.append(mode)
+            buckets[mode] = []
+        buckets[mode].append(item)
+    return [
+        {"mode": m, "mode_label": work_mode_label(m), "names": [i["name"] for i in buckets[m]]}
+        for m in order
+    ]

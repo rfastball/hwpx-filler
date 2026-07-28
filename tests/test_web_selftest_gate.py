@@ -500,6 +500,12 @@ class TestWebSelftestGate:
         # 문안은 **완주 스탬프**의 의미와 일치해야 한다(4R P2): 성공 뒤 실패 런이 있으면
         # 스탬프는 앞선 성공에 머무르므로 "마지막 실행"은 거짓이 된다.
         assert j["last_run_text"] == "마지막 성공 실행 2026-07-20", j["last_run_text"]
+        # 방식 구획(§19.3, F6) — 두 방식이 섞인 판이라 머리글이 **선다**. 카드 부제의
+        # 방식 텍스트는 구획과 별개로 늘 남는다(색만으로 방식을 구별하지 않는다).
+        assert j["cand_sec_caps"] == ["HWPX 문서 생성", "온나라 기안 검토·복사"], (
+            f"작업 방식 구획 머리글이 서지 않았습니다: {j['cand_sec_caps']!r}"
+        )
+        assert j["cand_mode_texts"] == ["HWPX 생성", "온나라 기안"], j["cand_mode_texts"]
         # 별을 누르면 카드가 1순위로 이동한다 — 그 재렌더를 가로질러 포커스가 같은 작업의
         # 별에 남아야 키보드 사용자가 문서 처음으로 떨어지지 않는다(이름 유래 안정 id).
         assert j["fav_focus_restored"] == "kept", j["fav_focus_restored"]

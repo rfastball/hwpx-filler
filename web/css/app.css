@@ -1445,3 +1445,12 @@ body.resizing-master{cursor:col-resize;user-select:none}
   border-top:1px solid var(--a-border);padding-top:var(--sp-6)}
 .wb-foot .btn.primary{margin-left:auto}
 .wb-adv{display:flex;gap:var(--sp-8);align-items:center;font-size:var(--fs-caption)}
+
+/* 작업 방식 구획(§19.3·§19.5, 재작성 F6) — 두 방식이 모두 있을 때만 머리글이 선다.
+   색만으로 방식을 구별하지 않으므로(계약) 머리글은 텍스트이고, 카드 부제도 함께 남는다. */
+.cand-sec,.browse-sec{display:flex;flex-direction:column;gap:var(--sp-8)}
+.cand-sec+.cand-sec,.browse-sec+.browse-sec{margin-top:var(--sp-6)}
+.cand-sec-cap,.browse-sec-cap{margin:0;font-size:var(--fs-caption);font-weight:600;
+  color:var(--a-muted);letter-spacing:.02em}
+.cand-mode{color:var(--a-muted)}
+.cand-mode::after{content:" · "}

@@ -12,6 +12,8 @@ from hwpxfiller.core.job import (
 )
 from hwpxfiller.gui.work_mode import (
     WORK_MODE_ORDER,
+    last_use_label,
+    mode_sections,
     work_mode_label,
     work_mode_of_filter_value,
 )
@@ -57,3 +59,38 @@ def test_order_lists_every_mode_exactly_once():
         WORK_MODE_HWPX, WORK_MODE_TEXT, WORK_MODE_UNSUPPORTED,
     }
     assert len(WORK_MODE_ORDER) == 3
+
+
+# ------------------------------------------------ 최근 사용 문안(§19.4) — 매체별 술어
+def test_last_use_label_says_which_event_it_recorded():
+    """두 매체가 다른 술어를 쓴다는 사실을 문안이 말한다(지도 §10.15 판정 I).
+
+    HWPX 스탬프는 성공 뒤 실패 런이 있어도 앞선 성공 시각에 머무르므로 "마지막 실행"이
+    아니고, TXT 스탬프는 애초에 실행이 아니라 복사다. 같은 문구로 뭉치면 하필 구별이
+    중요한 자리에서 이력을 거짓으로 말한다.
+    """
+    assert last_use_label(WORK_MODE_HWPX, "2026-07-28T10:00:00") == "마지막 성공 실행 2026-07-28"
+    assert last_use_label(WORK_MODE_HWPX, "") == "성공한 실행 없음"
+    assert last_use_label(WORK_MODE_TEXT, "2026-07-28T10:00:00") == "마지막 복사 2026-07-28"
+    assert last_use_label(WORK_MODE_TEXT, "") == "복사한 적 없음"
+
+
+# ------------------------------------------------------- 방식 구획(§19.3·§19.5)
+def test_sections_follow_first_appearance_not_a_fixed_mode_order():
+    """구획 순서 = 각 구획 최고 순위 항목의 위치 — 방식별 고정 순서·할당이 아니다."""
+    ranked = [
+        {"name": "기안A", "mode": WORK_MODE_TEXT},
+        {"name": "문서A", "mode": WORK_MODE_HWPX},
+        {"name": "기안B", "mode": WORK_MODE_TEXT},
+    ]
+    secs = mode_sections(ranked)
+    assert [s["mode"] for s in secs] == [WORK_MODE_TEXT, WORK_MODE_HWPX]
+    assert secs[0]["names"] == ["기안A", "기안B"] and secs[1]["names"] == ["문서A"]
+    assert secs[0]["mode_label"] == "온나라 기안 검토·복사"
+
+
+def test_one_mode_degenerates_to_a_single_section():
+    """한 방식뿐이면 구획이 1개 — 표면이 머리글 없는 평면으로 퇴화한다(§19.3)."""
+    secs = mode_sections([{"name": "문서A", "mode": WORK_MODE_HWPX}])
+    assert len(secs) == 1 and secs[0]["names"] == ["문서A"]
+    assert mode_sections([]) == []

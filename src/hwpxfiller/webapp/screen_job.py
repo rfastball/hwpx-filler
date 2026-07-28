@@ -77,7 +77,7 @@ from ..gui.review_state import (
 )
 from ..gui.run_state import RunViewModel, resolve_file_source, resolve_pool_source
 from ..gui.selection_state import SelectionModel
-from ..gui.work_mode import work_mode_label
+from ..gui.work_mode import last_use_label, mode_sections, work_mode_label
 from ..gui.work_candidates import (
     KIND_NEEDS_ACTION,
     MAIN_TOP_N,
@@ -754,7 +754,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
           available 과 똑같이 수치로 고지한다.
         - ``suggested`` = 추천 작업 이름(§18.3 개정, 없으면 ``""``).
         """
-        empty = {"top": [], "more": 0, "needs_count": 0, "suggested": ""}
+        empty = {"top": [], "sections": [], "more": 0, "needs_count": 0, "suggested": ""}
         if self.datasource is None or not self.records:
             return empty
         fields = list(self.records[0].keys())
@@ -777,6 +777,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 # (후보 카드·문서 탐색·라이브러리) — 문구가 갈리면 같은 상태를 다르게 부른다.
                 "mode": r.mode,
                 "mode_label": work_mode_label(r.mode, short=True),
+                # 최근 사용 문안도 Python 이 낸다 — **매체마다 술어가 다르다**(§19.4).
+                # 표면이 한 문구로 뭉치면 하필 구별이 중요한 자리에서 이력을 거짓으로 말한다.
+                "last_run_label": last_use_label(r.mode, job.last_run_at),
             })
         needs = sorted(
             (
@@ -788,6 +791,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         )
         return {
             "top": top,
+            # 작업 방식 구획(§19.3) — **판정은 여기**서 하고 표면은 머리글을 그릴지만 정한다.
+            # 순서는 첫 등장 순 = 각 구획 최고 순위의 위치이고, 한 방식뿐이면 구획이 1개라
+            # 표면이 평면으로 퇴화한다(카드 부제의 방식 텍스트는 그때도 남는다).
+            "sections": mode_sections(top),
             "more": max(0, len(ranked) - MAIN_TOP_N),
             # 확인 필요 전체는 문서 탐색(§18.6)이 소유한다 — 후보 줄엔 **수치만** 남긴다
             # (슬라이스 3: 칩 구획 이사, 삭제는 의무를 상속한다).
@@ -803,7 +810,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         아무도 안 본다(스냅샷 분기보다 단순한 쪽).
         """
         empty = {
-            "tab": self.browse_tab, "query": self.browse_query, "rows": [],
+            "tab": self.browse_tab, "query": self.browse_query, "rows": [], "sections": [],
             "available_count": 0, "needs_count": 0, "filtered_out": 0,
         }
         if self.datasource is None or not self.records:
@@ -812,12 +819,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             jobs, list(self.records[0].keys()),
             tab=self.browse_tab, query=self.browse_query,
         )
+        rows = [{**r, "mode_label": work_mode_label(r["mode"], short=True)}
+                for r in res.rows]
         return {
             "tab": res.tab,
             "query": self.browse_query,
             # 행은 링1이 실은 `mode` 를 그대로 나른다 — 탭 **안**의 구획 판단용(§19.5).
-            "rows": [{**r, "mode_label": work_mode_label(r["mode"], short=True)}
-                     for r in res.rows],
+            "rows": rows,
+            # 탭 **안**의 방식 구획(§19.5) — 탭이 primary classification 이라 방식을 탭으로
+            # 올리지 않는다. 같은 퇴화 규칙(1방식 = 평면)이 여기도 그대로 선다.
+            "sections": mode_sections(rows),
             "available_count": res.available_count,
             "needs_count": res.needs_count,
             "filtered_out": res.filtered_out,

@@ -928,16 +928,28 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
       has_data:true, record_count:2, selected_count:1,
       records:[{index:1, selected:true, name:'', summary:'사무비품'},
                {index:0, selected:false, name:'', summary:'전산장비'}],
-      // 후보 4구획(슬라이스 2) — 순위 카드 2건(즐겨찾기·추천)·잘린 수·확인 필요.
+      // 후보 구획(슬라이스 2 + 재작성 F6) — 순위 카드 2건(즐겨찾기·추천)·잘린 수·확인 필요.
+      // **두 작업 방식이 섞인 판**이라 방식 구획 머리글이 실제로 서는지도 함께 본다(§19.3).
       candidates:{
         top:[{name:'공고서', tier:'favorite', favorited:true,
-              last_run_at:'2026-07-20T09:00:00', suggested:false},
+              last_run_at:'2026-07-20T09:00:00', suggested:false,
+              mode:'hwpx_generate', mode_label:'HWPX 생성',
+              last_run_label:'마지막 성공 실행 2026-07-20'},
              {name:'계약서', tier:'unused', favorited:false,
-              last_run_at:'', suggested:true}],
+              last_run_at:'', suggested:true,
+              mode:'text_review_copy', mode_label:'온나라 기안',
+              last_run_label:'복사한 적 없음'}],
+        sections:[{mode:'hwpx_generate', mode_label:'HWPX 문서 생성', names:['공고서']},
+                  {mode:'text_review_copy', mode_label:'온나라 기안 검토·복사',
+                   names:['계약서']}],
         more:2, needs_count:1,
         suggested:'계약서'},
       // 문서 탐색 구획(슬라이스 3) — 확인 필요 탭 + 검색으로 걸러낸 수.
-      browse:{tab:'needs_action', query:'견적', rows:[{name:'견적서', missing:['담당자']}],
+      browse:{tab:'needs_action', query:'견적',
+              rows:[{name:'견적서', missing:['담당자'], mode:'hwpx_generate',
+                     mode_label:'HWPX 생성'}],
+              sections:[{mode:'hwpx_generate', mode_label:'HWPX 문서 생성',
+                         names:['견적서']}],
               available_count:7, needs_count:1, filtered_out:2},
       filter:{active:false, reapply_available:false, reapply_hint:'', search:'', chips:[],
               definition:'', branches:[],
@@ -1057,6 +1069,14 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
       document.querySelectorAll('#jobCandidates [data-fav]'),
       function (b) { return b.getAttribute('aria-pressed'); });
     out.suggested_marks = document.querySelectorAll('#jobCandidates .cand-sug').length;
+    // 방식 구획(§19.3, F6) — 두 방식이 섞였으므로 머리글이 **선다**. 카드 부제의 방식
+    // 텍스트는 구획이 퇴화해도 남는 값이라 함께 되읽는다.
+    out.cand_sec_caps = Array.prototype.map.call(
+      document.querySelectorAll('#jobCandidates .cand-sec-cap'),
+      function (h) { return h.textContent; });
+    out.cand_mode_texts = Array.prototype.map.call(
+      document.querySelectorAll('#jobCandidates .cand-mode'),
+      function (m) { return m.textContent; });
     out.suggested_dashed = (function () {
       var card = document.querySelector('#jobCandidates .job-cand-card.suggested');
       return card ? getComputedStyle(card).borderStyle : '';

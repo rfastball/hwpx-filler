@@ -273,20 +273,20 @@
      필요(막힌 이유 병기). 데이터 미준비면 줄 자체가 없다(§18.1 — 후보 미계산).
      한 가지 작업 방식(HWPX)뿐이라 §19.3 의 방식 구획은 평면으로 퇴화한다 — 「기안」(TXT)이
      이 구획에 합류하는 슬라이스에서 헤더가 선다. */
-  function lastRunLabel(iso) {
-    // 표시 문안만 여기서 만든다(판정은 Python). 의미는 **완주(전건 성공) 실행**이므로 문안도
-    // 「마지막 성공 실행」이다(리뷰 4R P2): 성공 뒤 실패·부분 실패 런이 있으면 스탬프는 앞선
-    // 성공 시각에 머무르는데, 그걸 "마지막 실행"이라 쓰면 하필 구별이 중요한 그 상황에서
-    // 이력을 거짓으로 말한다. 없을 때도 "실행한 적 없음"이 아니라 성공 부재로 말한다.
-    return iso ? `마지막 성공 실행 ${esc(iso.slice(0, 10))}` : "성공한 실행 없음";
-  }
+  // 최근 사용 문안은 **Python 이 낸다**(F6): 두 매체가 다른 술어를 쓰기 때문이다(§19.4 —
+  // HWPX 는 완주, TXT 는 복사 1건). 표면이 한 문구로 뭉치면 하필 구별이 중요한 자리에서
+  // 이력을 거짓으로 말한다. 구 `lastRunLabel(iso)` 는 그래서 사망했다.
 
   function candCard(c, s) {
     const active = c.name === s.job_name;
     const fav = c.favorited === true;
     const verb = fav ? "즐겨찾기에서 제거" : "즐겨찾기에 추가";
+    // 카드 부제의 **작업 방식 텍스트는 늘 유지된다**(§19.3 마지막 문장) — 한 방식만 있어
+    // 머리글이 퇴화해도 여기는 남는다. 색만으로 방식을 구별하지 않는다는 계약의 이행이기도
+    // 하다(텍스트가 늘 함께 선다).
     const meta = (c.suggested ? `<span class="cand-sug">추천</span>` : "") +
-      `<span class="cand-run">${lastRunLabel(c.last_run_at)}</span>`;
+      `<span class="cand-mode">${esc(c.mode_label || "")}</span>` +
+      `<span class="cand-run">${esc(c.last_run_label || "")}</span>`;
     // 안정 id는 **이름 유래**다(#138 F13 관례의 변형): 별을 누르면 카드가 1순위로 이동하므로
     // 인덱스는 안정 식별자가 아니고, 그러면 preserve.js 가 방금 누른 별로 포커스를 못 돌려
     // 키보드 사용자가 재렌더마다 문서 처음으로 떨어진다. encodeURIComponent 로 특수문자를
@@ -349,20 +349,32 @@
     }
     const rows = b.rows || [];
     const needsTab = b.tab === "needs_action";
+    const browseRow = (r) => {
+      if (needsTab) {
+        return `<div class="browse-row off"><span class="browse-nm">${esc(r.name)}</span>` +
+          `<span class="browse-why muted">현재 데이터에 없는 열: ` +
+          `${esc((r.missing || []).join(", "))}</span></div>`;
+      }
+      const active = r.name === s.job_name;
+      return `<button class="browse-row" type="button" id="jobBrowseRow-${encodeURIComponent(r.name)}"` +
+        ` data-busy-lock data-browse-pick="${esc(r.name)}"` +
+        ` aria-pressed="${active}"><span class="browse-nm">${esc(r.name)}</span>` +
+        `<span class="browse-why muted">${esc(r.mode_label || "")}` +
+        (active ? " · 지금 선택된 작업" : "") + `</span></button>`;
+    };
+    // 탭 **안**에서만 방식으로 구획한다(§19.5) — 탭(사용 가능/확인 필요)이 primary
+    // classification 이라 방식을 탭으로 올리지 않는다. 퇴화 규칙은 후보 줄과 같다.
+    const bsecs = b.sections || [];
+    const byBrowseName = {};
+    rows.forEach((r) => { byBrowseName[r.name] = r; });
     $("jobBrowseRows").innerHTML = rows.length
-      ? rows.map((r) => {
-        if (needsTab) {
-          return `<div class="browse-row off"><span class="browse-nm">${esc(r.name)}</span>` +
-            `<span class="browse-why muted">현재 데이터에 없는 열: ` +
-            `${esc((r.missing || []).join(", "))}</span></div>`;
-        }
-        const active = r.name === s.job_name;
-        return `<button class="browse-row" type="button" id="jobBrowseRow-${encodeURIComponent(r.name)}"` +
-          ` data-busy-lock data-browse-pick="${esc(r.name)}"` +
-          ` aria-pressed="${active}"><span class="browse-nm">${esc(r.name)}</span>` +
-          (active ? `<span class="browse-why muted">지금 선택된 작업</span>` : "") +
-          `</button>`;
-      }).join("")
+      ? (bsecs.length > 1
+        ? bsecs.map((sec) =>
+          `<div class="browse-sec" data-browse-mode="${esc(sec.mode)}">` +
+          `<h3 class="browse-sec-cap">${esc(sec.mode_label)}</h3>` +
+          sec.names.map((n) => byBrowseName[n] ? browseRow(byBrowseName[n]) : "").join("") +
+          `</div>`).join("")
+        : rows.map(browseRow).join(""))
       : `<p class="muted capnote">${b.query
         ? "이름이 일치하는 작업이 없습니다."
         : (needsTab ? "확인이 필요한 작업이 없습니다."
@@ -386,7 +398,22 @@
       host.innerHTML = `<span class="muted">현재 데이터에 사용할 수 있는 문서 작업이 없습니다.</span>`;
       return;
     }
-    let html = top.map((t) => candCard(t, s)).join("");
+    // 작업 방식 구획(§19.3) — **구획 여부·순서 판정은 Python**(candidates.sections)이고
+    // 여기는 머리글을 그릴지만 정한다. 한 방식뿐이면 머리글 없는 평면으로 퇴화한다:
+    // 중복 정보를 줄이려는 계약의 규칙이지 정보를 버리는 것이 아니다(부제는 남는다).
+    const byName = {};
+    top.forEach((t) => { byName[t.name] = t; });
+    const sections = c.sections || [];
+    let html;
+    if (sections.length > 1) {
+      html = sections.map((sec) =>
+        `<div class="cand-sec" data-cand-mode="${esc(sec.mode)}">` +
+        `<h3 class="cand-sec-cap">${esc(sec.mode_label)}</h3>` +
+        sec.names.map((n) => byName[n] ? candCard(byName[n], s) : "").join("") +
+        `</div>`).join("");
+    } else {
+      html = top.map((t) => candCard(t, s)).join("");
+    }
     // 잘린 나머지·확인 필요는 **수치 + 문서 탐색 출구**로만 말한다(슬라이스 3): 목록의
     // 소유자는 이제 탐색 면이고, 후보 줄은 "지금 고를 것"만 보여 준다(조용한 절단 금지).
     const bits = [];

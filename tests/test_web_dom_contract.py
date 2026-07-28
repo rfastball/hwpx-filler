@@ -1149,9 +1149,20 @@ def test_job_candidate_ranking_surface_contract():
     assert src.count('Intent.chained("browse"') == 3, (
         "탐색 탭·검색·선택이 같은 체인을 타지 않습니다 — 늦은 옛 응답이 새 결과·선택을 되돌린다."
     )
-    # 문안은 완주 스탬프 의미와 일치해야 한다(성공 뒤 실패 런에서 거짓이 되지 않게).
-    assert "마지막 성공 실행" in src and "마지막 실행 " not in src, (
-        "카드 문안이 완주 스탬프 의미(마지막 성공 실행)와 어긋납니다."
+    # 최근 사용 문안은 **링1으로 이사했다**(F6): 두 매체가 다른 술어를 쓰므로(§19.4 HWPX
+    # 완주 / TXT 복사 1건) 표면이 한 문구로 뭉치면 하필 구별이 중요한 자리에서 이력을
+    # 거짓으로 말한다. 여기선 표면이 문구를 **다시 짓지 않는지**만 본다.
+    assert "last_run_label" in src, "카드가 Python 이 낸 최근 사용 문안을 쓰지 않습니다."
+    assert "마지막 성공 실행" not in src and "마지막 복사" not in src, (
+        "표면이 최근 사용 문안을 손으로 다시 짓습니다 — 술어가 갈리면 두 문구가 어긋난다."
+    )
+    # 카드 부제의 작업 방식 텍스트는 구획이 퇴화해도 남는다(§19.3 마지막 문장).
+    assert "cand-mode" in src and "mode_label" in src, (
+        "카드 부제에 작업 방식 텍스트가 없습니다 — 색만으로 방식을 구별하지 않는다."
+    )
+    # 구획 여부·순서 판정은 Python 이고 표면은 머리글만 그린다(§19.3).
+    assert "c.sections" in src and "sections.length > 1" in src, (
+        "방식 구획이 Python 판정(sections)을 소비하지 않습니다."
     )
     assert "c.more" in src, "순위 밖 후보 수(외 N건) 고지가 없습니다 — 조용한 절단 금지."
     # 확인 필요 목록은 탐색 면으로 이사했다 — 후보 줄엔 수치 + 출구만 남는다(슬라이스 3).
