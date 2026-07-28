@@ -160,6 +160,7 @@ def test_branding_generator_geometry_matches_shipped_symbol() -> None:
 
     for parts in (("docs", "branding", "document-narmi-mark-final.svg"),
                   ("docs", "branding", "document-narmi-lockup-final.svg"),
+                  ("docs", "branding", "document-narmi-final-board.svg"),
                   ("web", "img", "narmi-mark.svg"),
                   ("web", "index.html"),
                   ("docs", "UI_GALLERY.html")):
@@ -176,27 +177,22 @@ def test_branding_generator_geometry_matches_shipped_symbol() -> None:
 
 
 def test_generated_bitmaps_match_generator_geometry() -> None:
-    """커밋된 비트맵(.png/.ico)이 **현재 기하로 생성된 것**임을 매니페스트로 대조(리뷰 2R P2).
+    """커밋된 비트맵(.png/.ico)이 **현재 생성기가 만든 것**임을 매니페스트로 대조(리뷰 2R·3R P2).
 
-    위 텍스트 게이트는 SVG/HTML 만 본다 — 기하를 바꾸고 생성기를 안 돌리면 exe·설치본이
+    위 텍스트 게이트는 SVG/HTML 만 본다 — 렌더 로직을 바꾸고 생성기를 안 돌리면 exe·설치본이
     낡은 아이콘을 실은 채 게이트가 침묵한다. Pillow 없이 픽셀을 재생성할 수 없으므로
-    생성기가 쓰는 매니페스트(기하 다이제스트 + 산출물 sha256)를 2면으로 대조한다:
-    ①현재 기하 상수 ↔ 매니페스트 기하(생성기 재실행 누락 검출) ②커밋 파일 ↔ 매니페스트
-    해시(산출물만 손댄 드리프트 검출). 어느 쪽이 갈려도 처방은 같다 — 생성기 재실행.
+    생성기가 쓰는 매니페스트를 2면으로 대조한다: ①생성기 **소스 전체** 다이제스트 ↔
+    매니페스트(재실행 누락 검출 — 기하 상수만 재면 0.94 채움·색·보드 배치 같은 렌더 레시피
+    드리프트가 샌다, 3R 정정) ②커밋 파일 ↔ 매니페스트 해시(산출물만 손댄 드리프트 검출).
+    어느 쪽이 갈려도 처방은 같다 — 생성기 재실행.
     """
     import hashlib
     import json
 
     manifest = json.loads(_read("docs", "branding", "branding-manifest.json"))
-    geometry = _generator_geometry()
-    payload = json.dumps(
-        {"LAYERS": geometry["LAYERS"], "ARROW_BAR": geometry["ARROW_BAR"],
-         "ARROW_HEAD": geometry["ARROW_HEAD"], "MARK_RADIUS": geometry["MARK_RADIUS"],
-         "MARK_BBOX": geometry["MARK_BBOX"]},
-        sort_keys=True,
-    )
-    assert manifest["geometry_sha256"] == hashlib.sha256(payload.encode("utf-8")).hexdigest(), (
-        "생성기 기하가 매니페스트와 다르다 — 기하를 바꿨으면 "
+    source = _read("scripts", "render_document_narmi_branding.py")
+    assert manifest["generator_sha256"] == hashlib.sha256(source.encode("utf-8")).hexdigest(), (
+        "생성기 소스가 매니페스트와 다르다 — 생성기를 바꿨으면 "
         "render_document_narmi_branding.py 를 다시 돌려 비트맵·매니페스트를 함께 갱신하라"
     )
     files = manifest["files"]

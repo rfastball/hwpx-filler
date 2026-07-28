@@ -172,10 +172,12 @@ def render_ico() -> None:
     )
 
 
-# 게이트(test_branding)가 대조하는 비트맵 산출물 — 기하가 바뀌었는데 생성기를 안 돌리면
-# 커밋된 .png/.ico 가 낡은 형상인 채 조용히 남는다(심벌 v2 때 실제로 갈린 결함류).
-# 텍스트 SVG 처럼 기하를 직접 재구성할 수 없으므로, 생성 시점의 기하 다이제스트와 산출물
-# 해시를 매니페스트로 함께 커밋하고 게이트가 양쪽을 대조한다(리뷰 2R P2).
+# 게이트(test_branding)가 대조하는 비트맵 산출물 — 렌더 로직이 바뀌었는데 생성기를 안
+# 돌리면 커밋된 .png/.ico 가 낡은 형상인 채 조용히 남는다(심벌 v2 때 실제로 갈린 결함류).
+# 픽셀을 게이트에서 재생성할 수 없으므로(Pillow 는 프로젝트 의존성이 아님), 생성 시점의
+# **이 파일 소스 전체** 다이제스트와 산출물 해시를 매니페스트로 함께 커밋하고 게이트가
+# 양쪽을 대조한다(리뷰 2R·3R P2 — 기하 상수만 재면 0.94 채움·색·보드 배치 같은 렌더
+# 레시피 드리프트가 샌다). 소스가 한 글자라도 바뀌면 재실행이 곧 규율이다.
 MANIFEST = OUT / "branding-manifest.json"
 BITMAP_ARTIFACTS = (
     OUT / "document-narmi-mark-final.png",
@@ -184,18 +186,15 @@ BITMAP_ARTIFACTS = (
 )
 
 
-def geometry_digest() -> str:
-    payload = json.dumps(
-        {"LAYERS": LAYERS, "ARROW_BAR": ARROW_BAR, "ARROW_HEAD": ARROW_HEAD,
-         "MARK_RADIUS": MARK_RADIUS, "MARK_BBOX": MARK_BBOX},
-        sort_keys=True,
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+def generator_digest() -> str:
+    # read_text 의 유니버설 뉴라인이 CRLF 를 \n 으로 접는다 — 게이트(_read)와 같은 정규화.
+    source = Path(__file__).read_text(encoding="utf-8")
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
 def write_manifest() -> None:
     manifest = {
-        "geometry_sha256": geometry_digest(),
+        "generator_sha256": generator_digest(),
         "files": {
             p.relative_to(ROOT).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in BITMAP_ARTIFACTS
