@@ -147,13 +147,12 @@
     renderFoot(s);
   }
 
-  /* ---- 발신 */
-  function call(action, payload) {
-    return window.Bridge.call(SCREEN, action, payload || {});
-  }
+  /* ---- 발신 — `Bridge.call(SCREEN, …)` 을 **직접** 부른다. 로컬 래퍼를 두면 정적 가드
+     (test_dispatch_wiring 의 리터럴 추출)가 이 화면을 못 보고 **공허하게 통과**한다: 첫 판이
+     래퍼를 쓴 탓에 미등록 페이로드 키가 실 브리지에서만 드러났다(1R P1). */
 
   async function copyCard() {
-    const pre = await call("copy_precheck", {});
+    const pre = await window.Bridge.call(SCREEN, "copy_precheck", {});
     const blockers = [];
     if (pre.missing_fields && pre.missing_fields.length) {
       blockers.push(`채우지 못한 항목: ${pre.missing_fields.join(", ")}`);
@@ -175,35 +174,31 @@
   }
 
   async function saveRules() {
-    const first = await call("save_rules", {});
-    if (!first || first.ok === false) {
-      if (first && first.error) window.alert(first.error);
-      return;
-    }
-    if (first.needs_confirm) {
-      // §11: 영구 저장 확인에는 **모든 dirty 필드를 나열**한다. 이 저장은 다음 실행부터의
-      // 기본 규칙을 바꾸므로(override 없음) 무엇이 영구히 달라지는지 세지 않고 누르게 하지 않는다.
-      const lead = first.drift
-        ? "열어 둔 사이 이 작업이 다른 곳에서 바뀌었습니다. 지금 저장하면 그 변경 위에 아래 연결을 덮어씁니다.\n\n"
-        : "";
+    let r = await window.Bridge.call(SCREEN, "save_rules", {});
+    // 확인 문안을 **되돌려 보낸다**(confirmed_text) — 백엔드가 잠금 안에서 지금 문안을 다시
+    // 지어 대조하므로, 모달이 열린 사이 대상이 바뀌었으면(TOCTOU) 새 문안으로 다시 묻는다.
+    // 「기안으로 저장」·에디터 덮어쓰기와 **같은 관용구**다: 불리언 플래그로는 「이 상황을
+    // 확인했다」와 「어떤 상황을 확인했다」가 구별되지 않아, 첫 판은 클라이언트가 외부 변경을
+    // 미리 승인해 버렸다(1R P2). 문안 자체가 확인의 정체라 while 로 재확인을 받는다.
+    while (r && r.needs_confirm) {
+      const confirmedText = r.confirm_text;
       const ok = await window.Modal.confirm({
         title: "기본 규칙으로 저장할까요?",
-        body: lead + `다음 항목의 연결·표시가 이 작업의 기본 규칙이 됩니다:\n`
-          + (first.fields || []).join(", ")
-          + "\n\n이미 복사한 항목은 다시 확인이 필요해집니다.",
+        body: confirmedText,
         confirmLabel: "기본 규칙으로 저장",
         cancelLabel: "취소",
       });
       if (!ok) return;
-      const res = await call("save_rules", { confirm: true, confirm_drift: true });
-      if (res && res.ok === false && res.error) window.alert(res.error);
+      r = await window.Bridge.call(SCREEN, "save_rules",
+        { confirm: true, confirmed_text: confirmedText });
     }
+    if (r && r.ok === false && r.error) window.alert(r.error);  // 게이트 실패는 시끄럽게
   }
 
   /* ---- 이탈: 단일 관문. 나가는 모든 이동이 여기를 지난다(가드 완전성이 표면 수에
      비례하지 않게 — F7 편집기와 같은 규율). Nav.go 가 위임한다. */
   async function leaveTo(target) {
-    const g = await call("leave_guard", {});
+    const g = await window.Bridge.call(SCREEN, "leave_guard", {});
     if (g && g.armed) {
       const hasChanges = !!(LAST && LAST.dirty && LAST.dirty.count);
       if (hasChanges) {
@@ -220,7 +215,7 @@
         if (choice === "save") {
           await saveRules();
           // 저장이 확인 창에서 취소됐으면 여전히 dirty 다 — 그때는 나가지 않는다.
-          const after = await call("leave_guard", {});
+          const after = await window.Bridge.call(SCREEN, "leave_guard", {});
           if (after && after.armed && LAST && LAST.dirty && LAST.dirty.count) return;
         }
       } else {
@@ -233,37 +228,37 @@
         if (!ok) return;
       }
     }
-    await call("close", {});
+    await window.Bridge.call(SCREEN, "close", {});
     window.Nav.go(target, { force: true });
   }
 
   function wire() {
     $("wbBack").addEventListener("click", () => leaveTo("job"));
-    $("wbPrev").addEventListener("click", () => call("step", { delta: -1 }));
-    $("wbNext").addEventListener("click", () => call("step", { delta: 1 }));
+    $("wbPrev").addEventListener("click", () => window.Bridge.call(SCREEN, "step", { delta: -1 }));
+    $("wbNext").addEventListener("click", () => window.Bridge.call(SCREEN, "step", { delta: 1 }));
     $("wbCopy").addEventListener("click", copyCard);
     $("wbSaveRules").addEventListener("click", saveRules);
     $("wbAdvance").addEventListener("change", (e) =>
-      call("toggle_advance", { value: e.target.checked }));
+      window.Bridge.call(SCREEN, "toggle_advance", { value: e.target.checked }));
     document.querySelectorAll("[data-wb-view]").forEach((b) => {
-      b.addEventListener("click", () => call("set_view", { view: b.dataset.wbView }));
+      b.addEventListener("click", () => window.Bridge.call(SCREEN, "set_view", { view: b.dataset.wbView }));
     });
     const panel = $("wbMapPanel");
     panel.addEventListener("change", (e) => {
       const el = e.target, i = Number(el.dataset.i);
-      if (el.classList.contains("mapsrc-sel")) call("set_source", { index: i, source: el.value });
-      else if (el.classList.contains("maptype")) call("set_map_type", { index: i, code: el.value });
-      else if (el.classList.contains("mapfmt")) call("set_map_fmt", { index: i, code: el.value });
-      else if (el.classList.contains("mapck")) call("set_confirmed", { index: i, value: el.checked });
-      else if (el.classList.contains("mapval-in")) call("set_map_value", { index: i, value: el.value });
+      if (el.classList.contains("mapsrc-sel")) window.Bridge.call(SCREEN, "set_source", { index: i, source: el.value });
+      else if (el.classList.contains("maptype")) window.Bridge.call(SCREEN, "set_map_type", { index: i, code: el.value });
+      else if (el.classList.contains("mapfmt")) window.Bridge.call(SCREEN, "set_map_fmt", { index: i, code: el.value });
+      else if (el.classList.contains("mapck")) window.Bridge.call(SCREEN, "set_confirmed", { index: i, value: el.checked });
+      else if (el.classList.contains("mapval-in")) window.Bridge.call(SCREEN, "set_map_value", { index: i, value: el.value });
     });
     panel.addEventListener("click", (e) => {
       const sug = e.target.closest(".mapsug"), rev = e.target.closest(".maprev");
       if (sug) {
         const row = (LAST && LAST.rows) ? LAST.rows[Number(sug.dataset.i)] : null;
-        if (row) call("set_source", { index: Number(sug.dataset.i), source: row.suggest });
+        if (row) window.Bridge.call(SCREEN, "set_source", { index: Number(sug.dataset.i), source: row.suggest });
       } else if (rev) {
-        call("revert_map", { index: Number(rev.dataset.i) });
+        window.Bridge.call(SCREEN, "revert_map", { index: Number(rev.dataset.i) });
       }
     });
   }

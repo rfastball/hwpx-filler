@@ -367,14 +367,26 @@ class WebFrontend:
         return self._controller("editor").has_unsaved_work()
 
     def close_guard_state(self) -> dict:
-        """창 종료로 사라질 세션 상태를 한 시점에 판정한다(#218 G1)."""
+        """창 종료로 사라질 세션 상태를 한 시점에 판정한다(#218 G1).
+
+        **참여는 프로토콜이지 명단이 아니다**(F6 1R P2 근본 조치). 종전에는 화면 이름 셋을
+        손으로 셌고, 그래서 새 컨트롤러(작업대)가 미저장 매핑·복사 진행을 들고 있어도 창을
+        닫으면 **무경보로 사라졌다** — 가드의 완전성이 「누가 이 목록을 갱신했는가」에 걸려
+        있었다는 뜻이다. 이제 컨트롤러가 :meth:`close_guard_reason` 을 구현하면 자동으로
+        참여한다: 다음 세션 표면은 여기 손댈 필요가 없고, 구현을 빠뜨리면 그건 **선언된
+        비참여**다(조용한 무시와 다르다 — 아래 테스트가 그 선언을 센다).
+
+        순서는 컨트롤러 등록 순서다(`self.controllers` 삽입 순) — 결정적이면 충분하고,
+        어느 것이 먼저인지는 이 문안이 답할 질문이 아니다.
+        """
         reasons: list[str] = []
-        if self._controller("editor").has_unsaved_work():
-            reasons.append("저장하지 않은 작업 편집")
-        if self._controller("job")._guard_state()["armed"]:
-            reasons.append("작업 화면의 완료하지 않은 선택")
-        if self._controller("draft")._leave_guard()["armed"]:
-            reasons.append("기안 화면의 미저장 원문·매핑 또는 큐 진행")
+        for controller in self.controllers.values():
+            reason_of = getattr(controller, "close_guard_reason", None)
+            if reason_of is None:
+                continue
+            reason = reason_of()
+            if reason:
+                reasons.append(reason)
         return {"armed": bool(reasons), "reasons": reasons}
 
     def _show_close_prompt(self, state: dict) -> None:

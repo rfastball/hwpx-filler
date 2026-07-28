@@ -3456,7 +3456,7 @@ def test_selecting_a_txt_work_does_not_build_an_hwpx_run_view(tmp_path):
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.dispatch("select_job", {"name": "발주요청_기안"})
     snap = ctrl.snapshot()
-    assert ctrl.vm is None and ctrl.txt_job is not None
+    assert ctrl.vm is None and ctrl.job_is_txt is True
     assert snap["has_job"] is True and snap["job_name"] == "발주요청_기안"
     assert snap["run_action"] == {"key": "workbench", "label": "검토·복사 시작 · 2건"}
     # 파일 이름 규칙 축은 이 매체에 **없다**(§3.2) — 빈 값이 "아직 안 정했다"가 아니다.
@@ -3473,10 +3473,10 @@ def test_switching_back_to_an_hwpx_work_restores_the_run_view(tmp_path):
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.dispatch("select_job", {"name": "발주요청_기안"})
     ctrl.dispatch("select_job", {"name": "공고서"})
-    assert ctrl.vm is not None and ctrl.txt_job is None
+    assert ctrl.vm is not None and ctrl.job_is_txt is False
     assert ctrl.snapshot()["run_action"]["key"] == "generate"
     ctrl.dispatch("select_job", {"name": ""})
-    assert ctrl.vm is None and ctrl.txt_job is None
+    assert ctrl.vm is None and ctrl.job_is_txt is False
     assert ctrl.snapshot()["has_job"] is False
 
 
@@ -3591,3 +3591,55 @@ def test_review_and_preview_are_declared_out_of_scope_for_txt(tmp_path):
     with pytest.raises(ValueError, match="작업대"):
         ctrl.dispatch("preview_open", {})
     assert ctrl.snapshot()["preview"]["open"] is False
+
+
+def test_txt_session_survives_rename_because_it_holds_no_job_copy(tmp_path):
+    """이름 변경 뒤에도 작업대가 **지금 그 작업**을 연다(1R P2 근본 조치의 회귀).
+
+    첫 판은 세션이 `txt_job: Job` 사본을 들었고, 그 순간 durable 사실의 제2 정본이 생겨
+    이름 변경(`vm.job` 만 갱신)·재연결·재적재가 전부 조용한 구멍이 됐다. 사본을 없애고
+    **쓰는 순간** 레지스트리에서 읽으니 이 경로들은 고칠 것이 없다 — 그게 요점이다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "발주요청_기안"})
+    ctrl.dispatch("rename_job", {"name": "발주요청_기안", "new": "발주요청_기안 v2"})
+    assert ctrl.job_name == "발주요청_기안 v2" and ctrl.job_is_txt is True
+    wb = WorkbenchController(
+        ctrl.registry, lambda s, snap: None, target_font=TargetFontSetting())
+    ctrl.workbench = wb
+    assert ctrl.dispatch("open_workbench", {})["ok"] is True
+    assert wb.job_name == "발주요청_기안 v2"
+
+
+def test_txt_session_sees_rules_saved_elsewhere_on_re_entry(tmp_path):
+    """다른 표면이 저장한 규칙이 재진입에 **반영**된다 — 들고 있는 사본이 없으므로."""
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "발주요청_기안"})
+    ctrl.registry.mutate(
+        "발주요청_기안",
+        lambda j: setattr(j, "mapping", MappingProfile(mappings=[
+            FieldMapping(template_field="공고명", source="presmptPrce")])),
+    )
+    wb = WorkbenchController(
+        ctrl.registry, lambda s, snap: None, target_font=TargetFontSetting())
+    ctrl.workbench = wb
+    ctrl.dispatch("open_workbench", {})
+    assert wb.base_job is not None
+    assert wb.base_job.mapping.mappings[0].source == "presmptPrce"
+
+
+def test_open_workbench_is_loud_when_the_work_vanished(tmp_path):
+    """그사이 삭제된 작업은 조용한 무동작이 아니라 사유와 함께 거절된다."""
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "발주요청_기안"})
+    ctrl.registry.delete("발주요청_기안")
+    ctrl.workbench = WorkbenchController(
+        ctrl.registry, lambda s, snap: None, target_font=TargetFontSetting())
+    res = ctrl.dispatch("open_workbench", {})
+    assert res["ok"] is False and "읽을 수 없습니다" in res["error"]

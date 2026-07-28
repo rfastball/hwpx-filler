@@ -22,6 +22,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -408,6 +409,32 @@ class WorkbenchController:
     _do_copy_precheck.is_query = True  # type: ignore[attr-defined]
 
     # ---- 기본 규칙으로 저장(§11) — 착지점은 이것 하나(override 없음, 판정 H)
+    def _save_confirm_text(self, current: Job, changed: "list[dict]") -> str:
+        """확인 문안을 **잠금 안에서 지금** 성형한다 — 이 문자열이 곧 확인의 정체다.
+
+        무엇이 문안에 들어가야 하는지의 기준은 하나다: **그 값이 달라지면 사용자가 다시
+        확인해야 하는가.** 그래서 dirty 필드 전부(§11 "영구 저장 확인에는 모든 dirty 필드를
+        나열한다")와, 외부 변경이 있으면 그 **버전**까지 못박는다. 이름만 든 문안은 버전
+        불가지라 모달이 열린 사이 또 다른 외부 버전으로 바뀌어도 대조를 통과한다(#273).
+        """
+        names = ", ".join(c["name"] for c in changed)
+        base = (
+            f"다음 항목의 연결·표시가 이 작업의 기본 규칙이 됩니다: {names}\n"
+            "이미 복사한 항목은 다시 확인이 필요해집니다."
+        )
+        if self.base_job is None:
+            return base
+        if content_fingerprint(current) == content_fingerprint(self.base_job):
+            return base
+        digest = hashlib.sha256(
+            content_fingerprint(current).encode("utf-8")
+        ).hexdigest()[:8]
+        return (
+            f"열어 둔 사이 작업 '{current.name}' 이(가) 다른 곳에서 바뀌었습니다"
+            f" (현재 내용 #{digest}).\n지금 저장하면 그 변경 위에 아래 연결을 덮어씁니다.\n\n"
+            + base
+        )
+
     def _do_save_rules(self, p: dict) -> dict:
         """확인한 patch 만 Binding 판본에 저장하고 **같은 작업점**으로 돌아온다(§11).
 
@@ -418,8 +445,16 @@ class WorkbenchController:
         **읽기-수정-쓰기 전 구간이 잠금 안이다**(에디터·「기안」 저장과 같은 규율). 작업대
         세션은 오래 열려 있어 진입 시점에 읽은 Job 이 특히 낡기 쉽다 — 잠금 밖에서 저장하면
         그사이 다른 표면이 바꾼 그룹·태그·완주 스탬프를 되돌린다(lost update). 그래서 잠금
-        안에서 **지금 디스크를 다시 읽고** 그 위에 매핑만 얹는다. 매핑 자체가 외부에서
-        갈렸으면(내용 지문 불일치) 조용히 덮지 않고 확인을 다시 받는다.
+        안에서 **지금 디스크를 다시 읽고** 그 위에 매핑만 얹는다.
+
+        **확인은 `confirmed_text` 왕복이다**(1R P1·P2 근본 조치 — 「기안으로 저장」·에디터
+        덮어쓰기 게이트와 **같은 관용구**). 문안을 **잠금 안에서 지금** 성형해 사용자가 확인한
+        문안과 대조하고, 다르면 새 문안으로 다시 묻는다. 불리언 2개(`confirm`+`confirm_drift`)로
+        짰던 첫 판은 두 가지를 동시에 틀렸다: ①새 어휘라 dispatch 스키마 등록을 빠뜨려 실
+        브리지에서 저장이 **한 번도 성사되지 않았고** ②불리언은 「사용자가 **이** 상황을
+        확인했다」와 「**어떤** 상황을 확인했다」를 구별하지 못해 클라이언트가 드리프트를
+        미리 승인해 버렸다. 문안 대조는 그 구별을 **구조로** 만든다 — 상황이 바뀌면 문안이
+        바뀌고, 바뀐 문안은 대조에서 걸린다(리뷰 5c 6R P1 / 273 이 세운 규율의 승계).
         """
         self._require_open()
         block = self._save_block()
@@ -428,9 +463,6 @@ class WorkbenchController:
         changed = self._changed_fields()
         if not changed:
             return {"ok": False, "error": "저장할 변경이 없습니다."}
-        if not p.get("confirm"):
-            return {"ok": True, "needs_confirm": True,
-                    "fields": [c["name"] for c in changed]}
         assert self.base_job is not None and self.mapping is not None
         with self.registry.write_lock():
             try:
@@ -439,10 +471,9 @@ class WorkbenchController:
                 return {"ok": False, "error": (
                     f"작업 '{self.base_job.name}' 을(를) 더는 읽을 수 없습니다"
                     " — 다른 곳에서 지웠거나 파일이 손상됐습니다.")}
-            drifted = content_fingerprint(current) != content_fingerprint(self.base_job)
-            if drifted and not p.get("confirm_drift"):
-                return {"ok": True, "needs_confirm": True, "drift": True,
-                        "fields": [c["name"] for c in changed]}
+            gate_text = self._save_confirm_text(current, changed)
+            if not p.get("confirm") or p.get("confirmed_text", "") != gate_text:
+                return {"ok": False, "needs_confirm": True, "confirm_text": gate_text}
             # 지금 읽은 것 위에 **매핑만** 얹는다 — 그룹·태그·완주 스탬프 같은 이 화면이
             # 편집하지 않는 필드는 디스크의 최신값을 그대로 승계한다.
             draft = replace(current, mapping=self.mapping.to_profile(current.name))
@@ -483,6 +514,17 @@ class WorkbenchController:
         if self._pending_binding():
             lines.append("확정하지 않은 편집이 있습니다.")
         return {"armed": bool(lines), "lines": lines}
+
+    def close_guard_reason(self) -> str:
+        """창 종료 가드 참여(F6 1R P2) — 이탈 가드와 **같은 술어**를 쓴다.
+
+        back 으로 나가면 묻고 창을 닫으면 안 묻는 것은 같은 소실에 두 답을 주는 것이다.
+        그래서 문안만 창 종료 문맥으로 바꾸고 판정은 :meth:`leave_guard` 하나에 둔다.
+        """
+        return (
+            "검토·복사 작업대의 미저장 연결 변경 또는 복사 진행"
+            if self.leave_guard()["armed"] else ""
+        )
 
     def _do_leave_guard(self, p: dict) -> dict:
         return self.leave_guard()

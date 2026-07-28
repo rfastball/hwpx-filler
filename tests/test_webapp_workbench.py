@@ -13,8 +13,21 @@ import pytest
 
 from hwpxfiller.core.job import Job, JobRegistry
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+from hwpxfiller.webapp.action_registry import validate_dispatch
 from hwpxfiller.webapp.draft_session import TargetFontSetting
 from hwpxfiller.webapp.screen_workbench import WorkbenchController
+
+
+def _send(ctrl: WorkbenchController, action: str, payload: "dict | None" = None):
+    """**실 브리지와 같은 입구**로 보낸다 — 스키마 검증을 먼저 지나고 dispatch 한다.
+
+    1R 의 검출 실패가 여기서 났다: 테스트가 `ctrl.dispatch(...)` 를 직접 불러
+    :func:`validate_dispatch` **아래**로 진입하는 바람에, 실 브리지에서는 스키마가 거절하는
+    페이로드로 저장이 통과했다(미등록 키 `confirm_drift`). 판정과 기대가 같은 층에서 만나면
+    그 층이 통째로 틀려도 둘이 나란히 틀린다 — 그래서 이 스위트의 모든 발신은 이 관문을 쓴다.
+    """
+    checked = validate_dispatch(ctrl.name, action, payload or {})
+    return ctrl.dispatch(action, checked)
 
 
 def _job(tmp_path: Path, *, name: str = "발주요청_기안") -> Job:
@@ -47,6 +60,15 @@ def _ctrl(tmp_path: Path) -> "tuple[WorkbenchController, JobRegistry, list]":
     return ctrl, reg, pushes
 
 
+def _save(ctrl: WorkbenchController) -> dict:
+    """확인 왕복 1회를 그대로 밟는다 — 문안을 받아 **그대로** 되돌려 보낸다(실 클라이언트 판)."""
+    first = _send(ctrl, "save_rules", {})
+    if not first.get("needs_confirm"):
+        return first
+    return _send(ctrl, "save_rules",
+                 {"confirm": True, "confirmed_text": first["confirm_text"]})
+
+
 def _open(tmp_path: Path):
     ctrl, reg, pushes = _ctrl(tmp_path)
     job = _job(tmp_path)
@@ -62,7 +84,7 @@ def test_no_session_is_the_boot_default_and_the_screen_knows_it(tmp_path):
     snap = ctrl.snapshot()
     assert snap["open"] is False and snap["card"] is None and snap["rows"] == []
     with pytest.raises(ValueError):
-        ctrl.dispatch("step", {"delta": 1})
+        _send(ctrl, "step", {"delta": 1})
 
 
 def test_open_takes_a_frozen_copy_that_outside_changes_cannot_touch(tmp_path):
@@ -105,8 +127,8 @@ def test_editing_a_binding_is_an_unsaved_change_not_an_override(tmp_path):
     """
     ctrl, reg, _ = _open(tmp_path)
     assert ctrl.snapshot()["dirty"] == {"count": 0, "fields": [], "pending": False}
-    ctrl.dispatch("set_source", {"index": 0, "source": "사업명"})
-    ctrl.dispatch("set_confirmed", {"index": 0, "value": True})
+    _send(ctrl, "set_source", {"index": 0, "source": "사업명"})
+    _send(ctrl, "set_confirmed", {"index": 0, "value": True})
     d = ctrl.snapshot()["dirty"]
     assert d["count"] == 1 and d["fields"][0]["name"] == "수신"
     # 디스크는 아직 그대로다 — 미저장이라는 말이 참이어야 한다.
@@ -116,7 +138,7 @@ def test_editing_a_binding_is_an_unsaved_change_not_an_override(tmp_path):
 def test_unconfirmed_edits_block_saving_but_still_count_as_losable(tmp_path):
     """확정하지 않은 편집은 저장을 막되 **가드에는 잡힌다** — 버려지면 사라지기 때문이다."""
     ctrl, _, _ = _open(tmp_path)
-    ctrl.dispatch("set_map_value", {"index": 0, "value": "직접 쓴 값"})
+    _send(ctrl, "set_map_value", {"index": 0, "value": "직접 쓴 값"})
     snap = ctrl.snapshot()
     assert snap["save_block"] and snap["can_save"] is False
     assert snap["dirty"]["pending"] is True
@@ -127,21 +149,28 @@ def test_unconfirmed_edits_block_saving_but_still_count_as_losable(tmp_path):
 def test_save_lists_every_dirty_field_before_it_commits(tmp_path):
     """§11 — 영구 저장 확인에는 **모든 dirty 필드를 나열**한다."""
     ctrl, _, _ = _open(tmp_path)
-    ctrl.dispatch("set_source", {"index": 0, "source": "사업명"})
-    ctrl.dispatch("set_confirmed", {"index": 0, "value": True})
-    first = ctrl.dispatch("save_rules", {})
-    assert first["needs_confirm"] is True and first["fields"] == ["수신"]
+    _send(ctrl, "set_source", {"index": 0, "source": "사업명"})
+    _send(ctrl, "set_confirmed", {"index": 0, "value": True})
+    first = _send(ctrl, "save_rules", {})
+    assert first["needs_confirm"] is True and first["ok"] is False
+    # §11 — 확인 문안이 dirty 필드를 **전부** 나열한다. 문안 자체가 확인의 정체이므로
+    # 불리언이 아니라 이 문자열이 되돌아와야 저장이 성사된다.
+    assert "수신" in first["confirm_text"]
+    assert "이미 복사한 항목은 다시 확인이 필요해집니다." in first["confirm_text"]
+    # 문안이 다르면(= 사용자가 확인한 상황이 아니면) 성사되지 않는다.
+    stale = _send(ctrl, "save_rules", {"confirm": True, "confirmed_text": "딴 문안"})
+    assert stale["needs_confirm"] is True and stale["ok"] is False
 
 
 def test_save_bumps_the_binding_revision_and_keeps_the_work_point(tmp_path):
     """저장 뒤 재검증하고 **같은 작업점**으로 돌아온다(§11) — 판본은 저장이 정산한다."""
     ctrl, reg, _ = _open(tmp_path)
-    ctrl.dispatch("step", {"delta": 1})
+    _send(ctrl, "step", {"delta": 1})
     before_point = ctrl.queue.current
     before_rev = reg.load("발주요청_기안").binding_revision
-    ctrl.dispatch("set_source", {"index": 0, "source": "사업명"})
-    ctrl.dispatch("set_confirmed", {"index": 0, "value": True})
-    res = ctrl.dispatch("save_rules", {"confirm": True})
+    _send(ctrl, "set_source", {"index": 0, "source": "사업명"})
+    _send(ctrl, "set_confirmed", {"index": 0, "value": True})
+    res = _save(ctrl)
     assert res["ok"] and res["binding_revision"] == before_rev + 1
     assert ctrl.queue.current == before_point
     snap = ctrl.snapshot()
@@ -158,9 +187,9 @@ def test_saving_marks_already_copied_records_for_recheck(tmp_path):
     text, report = ctrl.render()
     ctrl.note_copied(report)
     assert ctrl.snapshot()["card"]["review_state"] == "copied"
-    ctrl.dispatch("set_source", {"index": 0, "source": "사업명"})
-    ctrl.dispatch("set_confirmed", {"index": 0, "value": True})
-    ctrl.dispatch("save_rules", {"confirm": True})
+    _send(ctrl, "set_source", {"index": 0, "source": "사업명"})
+    _send(ctrl, "set_confirmed", {"index": 0, "value": True})
+    _save(ctrl)
     assert ctrl.snapshot()["card"]["review_state"] == "recheck"
     assert ctrl.snapshot()["copied_count"] == 1   # 복사 이력은 그대로
     # 지금 규칙으로 다시 복사하면 재확인이 해소된다.
@@ -171,12 +200,12 @@ def test_saving_marks_already_copied_records_for_recheck(tmp_path):
 def test_save_preserves_fields_this_screen_does_not_edit(tmp_path):
     """잠금 안에서 디스크를 다시 읽고 **매핑만** 얹는다 — 그룹·이력은 최신값을 승계한다."""
     ctrl, reg, _ = _open(tmp_path)
-    ctrl.dispatch("set_source", {"index": 0, "source": "사업명"})
-    ctrl.dispatch("set_confirmed", {"index": 0, "value": True})
+    _send(ctrl, "set_source", {"index": 0, "source": "사업명"})
+    _send(ctrl, "set_confirmed", {"index": 0, "value": True})
     # 세션이 열려 있는 사이 다른 표면이 그룹·완주 스탬프를 바꾼다.
     reg.mutate("발주요청_기안", lambda j: setattr(j, "group", "조달"))
     reg.stamp_last_run("발주요청_기안", "2026-07-28T10:00:00")
-    res = ctrl.dispatch("save_rules", {"confirm": True})
+    res = _save(ctrl)
     assert res["ok"]
     saved = reg.load("발주요청_기안")
     assert saved.group == "조달" and saved.last_run_at == "2026-07-28T10:00:00"
@@ -186,8 +215,9 @@ def test_save_preserves_fields_this_screen_does_not_edit(tmp_path):
 def test_save_refuses_silently_overwriting_an_externally_changed_work(tmp_path):
     """열어 둔 사이 규칙이 갈렸으면 조용히 덮지 않고 확인을 **다시** 받는다."""
     ctrl, reg, _ = _open(tmp_path)
-    ctrl.dispatch("set_source", {"index": 0, "source": "사업명"})
-    ctrl.dispatch("set_confirmed", {"index": 0, "value": True})
+    _send(ctrl, "set_source", {"index": 0, "source": "사업명"})
+    _send(ctrl, "set_confirmed", {"index": 0, "value": True})
+    before_text = _send(ctrl, "save_rules", {})["confirm_text"]   # 드리프트 **전** 문안
     reg.mutate(
         "발주요청_기안",
         lambda j: setattr(j, "mapping", MappingProfile(mappings=[
@@ -195,10 +225,14 @@ def test_save_refuses_silently_overwriting_an_externally_changed_work(tmp_path):
             FieldMapping(template_field="건명", source="사업명"),
         ])),
     )
-    blocked = ctrl.dispatch("save_rules", {"confirm": True})
-    assert blocked["needs_confirm"] is True and blocked["drift"] is True
+    # 사용자가 **드리프트 전** 문안으로 확인해 두었다면 그 확인은 이 상황의 것이 아니다.
+    blocked = _send(ctrl, "save_rules", {"confirm": True, "confirmed_text": before_text})
+    assert blocked["needs_confirm"] is True and blocked["ok"] is False
+    assert "다른 곳에서 바뀌었습니다" in blocked["confirm_text"]
     assert reg.load("발주요청_기안").mapping.mappings[0].source == "다른열"  # 안 덮었다
-    ok = ctrl.dispatch("save_rules", {"confirm": True, "confirm_drift": True})
+    # 새 문안(외부 변경 버전을 못박은)으로 다시 확인해야 성사된다.
+    ok = _send(ctrl, "save_rules",
+               {"confirm": True, "confirmed_text": blocked["confirm_text"]})
     assert ok["ok"] and reg.load("발주요청_기안").mapping.mappings[0].source == "사업명"
 
 
@@ -209,7 +243,7 @@ def test_copy_keeps_the_work_point_unless_advance_is_on(tmp_path):
     start = ctrl.queue.current
     ctrl.note_copied(ctrl.render()[1])
     assert ctrl.queue.current == start
-    ctrl.dispatch("toggle_advance", {"value": True})
+    _send(ctrl, "toggle_advance", {"value": True})
     ctrl.note_copied(ctrl.render()[1])
     assert ctrl.queue.current != start
 
@@ -219,7 +253,7 @@ def test_card_and_clipboard_take_the_same_path(tmp_path):
     ctrl, _, _ = _open(tmp_path)
     text, _ = ctrl.render()
     assert text == "".join(s["text"] for s in ctrl.snapshot()["card"]["segments"])
-    ctrl.dispatch("set_fullwidth", {"value": True})
+    _send(ctrl, "set_fullwidth", {"value": True})
     text2, _ = ctrl.render()
     assert text2 == "".join(s["text"] for s in ctrl.snapshot()["card"]["segments"])
 
@@ -227,11 +261,11 @@ def test_card_and_clipboard_take_the_same_path(tmp_path):
 def test_raw_view_shows_tokens_without_filling_them(tmp_path):
     """원문 보기(§11) — 토큰을 채우지 않는다. 미지 보기 값은 fail-closed."""
     ctrl, _, _ = _open(tmp_path)
-    ctrl.dispatch("set_view", {"view": "raw"})
+    _send(ctrl, "set_view", {"view": "raw"})
     raw = "".join(s["text"] for s in ctrl.snapshot()["card"]["segments"])
     assert "{{수신}}" in raw and "회계과" not in raw
     with pytest.raises(ValueError):
-        ctrl.dispatch("set_view", {"view": "엉뚱"})
+        _send(ctrl, "set_view", {"view": "엉뚱"})
 
 
 def test_copy_gate_excludes_declared_blanks(tmp_path):
@@ -242,16 +276,16 @@ def test_copy_gate_excludes_declared_blanks(tmp_path):
     reg.save(job)
     ctrl.registry = reg
     ctrl.open(reg.load(job.name), [(0, {"부서": "총무과", "사업명": ""})])
-    assert ctrl.dispatch("copy_precheck", {})["empty_fields"] == ["건명"]
+    assert _send(ctrl, "copy_precheck", {})["empty_fields"] == ["건명"]
     idx = [r["name"] for r in ctrl.snapshot()["rows"]].index("건명")
     # 결속을 **둔 채** 확정하는 것은 선언이 아니다 — 그 빈 값은 그 행의 사실이라 남는다.
-    ctrl.dispatch("set_confirmed", {"index": idx, "value": True})
-    assert ctrl.dispatch("copy_precheck", {})["empty_fields"] == ["건명"]
+    _send(ctrl, "set_confirmed", {"index": idx, "value": True})
+    assert _send(ctrl, "copy_precheck", {})["empty_fields"] == ["건명"]
     # 결속을 풀고 확정해야 「비운다」 선언이 된다(결정 12).
-    ctrl.dispatch("set_source", {"index": idx, "source": ""})
-    ctrl.dispatch("set_confirmed", {"index": idx, "value": True})
+    _send(ctrl, "set_source", {"index": idx, "source": ""})
+    _send(ctrl, "set_confirmed", {"index": idx, "value": True})
     assert ctrl.snapshot()["rows"][idx]["blank_declared"] is True
-    assert ctrl.dispatch("copy_precheck", {})["empty_fields"] == []
+    assert _send(ctrl, "copy_precheck", {})["empty_fields"] == []
 
 
 def test_queue_degenerates_for_a_single_record(tmp_path):
@@ -271,8 +305,8 @@ def test_leave_guard_enumerates_only_what_actually_disappears(tmp_path):
     ctrl.note_copied(ctrl.render()[1])                      # 2건 중 1건 복사
     lines = ctrl.leave_guard()["lines"]
     assert any("복사 진행 1/2" in line for line in lines)
-    ctrl.dispatch("set_source", {"index": 0, "source": "사업명"})
-    ctrl.dispatch("set_confirmed", {"index": 0, "value": True})
+    _send(ctrl, "set_source", {"index": 0, "source": "사업명"})
+    _send(ctrl, "set_confirmed", {"index": 0, "value": True})
     lines = ctrl.leave_guard()["lines"]
     assert any("수신" in line and "저장하지 않은" in line for line in lines)
 
@@ -280,7 +314,7 @@ def test_leave_guard_enumerates_only_what_actually_disappears(tmp_path):
 def test_all_copied_is_not_a_loss(tmp_path):
     """전건 복사는 잃을 진행이 없다 — 끝난 세션을 붙잡지 않는다."""
     ctrl, _, _ = _open(tmp_path)
-    ctrl.dispatch("toggle_advance", {"value": True})
+    _send(ctrl, "toggle_advance", {"value": True})
     ctrl.note_copied(ctrl.render()[1])
     ctrl.note_copied(ctrl.render()[1])
     assert ctrl.leave_guard()["armed"] is False
@@ -288,7 +322,7 @@ def test_all_copied_is_not_a_loss(tmp_path):
 
 def test_close_clears_the_session(tmp_path):
     ctrl, _, _ = _open(tmp_path)
-    ctrl.dispatch("close", {})
+    _send(ctrl, "close", {})
     assert ctrl.snapshot()["open"] is False and ctrl.can_copy() is False
 
 
@@ -307,7 +341,7 @@ def test_first_copy_records_recent_use_once_per_session(tmp_path):
     first = reg.load("발주요청_기안").last_run_at
     assert first, "복사 완료가 최근 사용을 기록하지 않았습니다."
     # 세션당 1회 — 두 번째 복사는 같은 사실을 다시 쓰지 않는다(durable 쓰기 증식 금지).
-    ctrl.dispatch("toggle_advance", {"value": True})
+    _send(ctrl, "toggle_advance", {"value": True})
     ctrl.note_copied(ctrl.render()[1])
     assert reg.load("발주요청_기안").last_run_at == first
 
@@ -369,12 +403,12 @@ def test_work_point_number_follows_the_frozen_order_not_the_queue(tmp_path):
         (0, {"부서": "다", "사업명": "ㄷ"}),
     ])
     assert ctrl.snapshot()["card"]["position"] == 0        # 진입 = 첫 항목
-    ctrl.dispatch("step", {"delta": 1})
+    _send(ctrl, "step", {"delta": 1})
     assert ctrl.snapshot()["card"]["position"] == 1
     # 복사해도 그 카드의 자리는 그대로다(큐 후미 이동은 순회 순서의 일이지 번호의 일이 아니다).
     ctrl.note_copied(ctrl.render()[1])
     assert ctrl.snapshot()["card"]["position"] == 1
     assert ctrl.snapshot()["card"]["review_state"] == "copied"
     # 첫 항목으로 되돌아가도 자리는 고정 순서 그대로다.
-    ctrl.dispatch("set_current", {"index": 0})
+    _send(ctrl, "set_current", {"index": 0})
     assert ctrl.snapshot()["card"]["position"] == 0

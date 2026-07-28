@@ -489,3 +489,60 @@ def test_copy_clipboard_blocks_empty_when_no_work_point(tmp_path, monkeypatch):
     res = fe.copy_clipboard("draft")
     assert res["copied"] is False
     assert writes == [], "작업점 없는데 클립보드에 기록됐습니다(빈 템플릿 오염)."
+
+
+def test_close_guard_is_a_protocol_every_session_surface_joins(tmp_path, monkeypatch):
+    """창 종료 가드 참여는 **프로토콜**이지 손으로 세는 명단이 아니다(F6 1R P2).
+
+    종전에는 화면 이름 셋을 하드 열거했고, 그래서 새 세션 표면(작업대)이 미저장 매핑·복사
+    진행을 들고 있어도 창을 닫으면 무경보로 사라졌다 — 가드의 완전성이 「누가 이 목록을
+    갱신했는가」에 걸려 있었다. 이 테스트는 **세션을 든 컨트롤러가 빠짐없이 참여하는지**를
+    센다: 새 표면이 구현을 빠뜨리면 여기서 울고, 정말 참여하지 않을 것이면 아래 배제 표에
+    사유를 적어야 통과한다(조용한 무시와 선언된 배제는 다르다).
+    """
+    frontend = _frontend(tmp_path, monkeypatch)
+
+    # 세션을 들지 **않는** 컨트롤러 — 창을 닫아도 잃을 것이 없다(사유를 여기 적는다).
+    not_session = {
+        "library": "전역 목록 보기 — 상태는 전부 디스크에 있다",
+        "tpl": "템플릿 관리 — 각 동사가 즉시 영속한다",
+        "pool": "등록 데이터 참조 — 등록·전이가 즉시 영속한다",
+    }
+    missing = [
+        name for name, ctrl in frontend.controllers.items()
+        if name not in not_session and not hasattr(ctrl, "close_guard_reason")
+    ]
+    assert not missing, (
+        "세션을 든 컨트롤러가 창 종료 가드에 참여하지 않습니다 — "
+        f"close_guard_reason() 를 구현하거나 배제 사유를 적으세요: {missing}"
+    )
+    # 배제 표가 stale 해지지 않게: 적어 둔 이름이 실제로 존재해야 한다.
+    assert set(not_session) <= set(frontend.controllers)
+
+
+def test_workbench_session_blocks_the_window_close(tmp_path, monkeypatch):
+    """작업대의 미저장 연결·복사 진행은 창 종료에서 **경보한다**(리뷰 P2 회귀).
+
+    「문서 만들기」의 선택이 1클릭으로 재현 가능해 job 가드가 무장하지 않는 상태에서도
+    작업대 세션은 잃을 것이 있다 — 그 소실을 아무도 말하지 않는 것이 결함이었다.
+    """
+    from hwpxfiller.core.job import Job
+    from hwpxfiller.core.mapping import FieldMapping, MappingProfile
+
+    frontend = _frontend(tmp_path, monkeypatch)
+    assert frontend.close_guard_state()["armed"] is False
+
+    tpl = tmp_path / "기안.txt"
+    tpl.write_text("수신: {{수신}}", encoding="utf-8")
+    wb = frontend.controllers["workbench"]
+    job = Job(name="기안", template_path=str(tpl),
+              mapping=MappingProfile(mappings=[
+                  FieldMapping(template_field="수신", source="부서")]))
+    wb.registry.save(job)
+    wb.open(wb.registry.load("기안"), [(0, {"부서": "총무과"}), (1, {"부서": "회계과"})])
+    assert frontend.close_guard_state()["armed"] is False   # 아직 잃을 것이 없다
+
+    wb.note_copied(wb.render()[1])                          # 2건 중 1건 복사 = 진행 소실
+    state = frontend.close_guard_state()
+    assert state["armed"] is True
+    assert any("작업대" in reason for reason in state["reasons"]), state["reasons"]

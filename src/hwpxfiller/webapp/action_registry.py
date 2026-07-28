@@ -210,7 +210,11 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "copy_precheck": _schema(),
         # 「기본 규칙으로 저장…」(§11) — 확인 왕복. 이 저장은 **다음 실행부터의 기본 규칙**을
         # 바꾸므로(override 없음, 지도 §10.14) dirty 필드를 전부 나열한 뒤에만 성사된다.
-        "save_rules": _schema(optional="confirm"),
+        # `confirmed_text` = 사용자가 **본 문안 그대로**(「기안으로 저장」·에디터 덮어쓰기와
+        # 같은 관용구): 백엔드가 잠금 안에서 문안을 다시 지어 대조하므로, 모달이 열린 사이
+        # 대상이 바뀌면 새 문안으로 다시 묻는다. 불리언 플래그로는 「이 상황을 확인했다」와
+        # 「어떤 상황을 확인했다」가 구별되지 않는다(1R P2).
+        "save_rules": _schema(optional="confirm confirmed_text"),
         "leave_guard": _schema(),
         "close": _schema(),
     },
