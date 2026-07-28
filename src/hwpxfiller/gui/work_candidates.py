@@ -13,8 +13,11 @@ v6 워크플로 계약 §18.4 의 이식(정본: ``lab/ui-reboot`` 태그 ``prot
 - **``available`` 은 실행 완료를 보장하지 않는다** — 권위 판정은 작업 선택 뒤
   ``RunViewModel.refresh()`` (템플릿 구조 드리프트·빈 값·출력 폴더는 거기서 본다).
   전역 작업 건강(템플릿 파손 등)과도 섞지 않는다(§19.7) — 여기는 현재 데이터 호환성만.
-- **매체 국경(§19.1)** — hwpx 만 실행 후보다. txt 는 「기안」 화면 소유, 미상 확장자는
-  fail-closed 제외(모르는 것을 hwpx 로 추측하지 않는다).
+- **작업 방식 국경(§19.1)** — hwpx 와 txt **둘 다** 후보다(F6 합류). 미상 확장자·미연결은
+  ``unsupported`` 로 fail-closed 제외한다(모르는 것을 hwpx 로 추측하지 않는다). 호환성
+  **판정 자체는 방식과 무관**하다 — 두 방식이 같은 술어(필요 소스 키가 현재 데이터에
+  있는가)를 타야 같은 상태를 두 술어가 부르지 않는다. 방식이 정하는 것은 후보에 드는지와
+  선택 뒤 **실행이 어느 표면으로 가는지**(생성/작업대)이고, 후자는 컨트롤러 소관이다.
 
 데이터 미준비 시 호출하지 않는 것(§18.1)은 호출측(컨트롤러) 의무다 — 이 모듈은
 마운트된 fields 를 받는 순수 판정만 한다.
@@ -23,6 +26,7 @@ v6 워크플로 계약 §18.4 의 이식(정본: ``lab/ui-reboot`` 태그 ``prot
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from ..core.job import WORK_MODE_HWPX, WORK_MODE_UNSUPPORTED
 from .run_state import GateState
 
 if TYPE_CHECKING:
@@ -32,7 +36,7 @@ if TYPE_CHECKING:
 KIND_AVAILABLE = "available"
 #: 필수 소스 키가 현재 데이터에 없음 — 선택 전 연결 확인이 필요하다.
 KIND_NEEDS_ACTION = "needs_action"
-#: 실행 후보 자체가 아님(매체 국경) — 목록에서 fail-closed 로 빠진다.
+#: 실행 후보 자체가 아님(작업 방식 국경) — 목록에서 fail-closed 로 빠진다.
 KIND_EXCLUDED = "excluded"
 
 
@@ -43,8 +47,13 @@ class WorkCompatibility:
     kind: str
     #: 현재 데이터에 없는 필수 소스 키(문서순) — needs_action 일 때만 비지 않는다.
     missing: "tuple[str, ...]" = ()
-    #: excluded 사유: ``"media"`` (txt=기안 소유) | ``"unsupported"`` (미상 확장자).
+    #: excluded 사유: ``"unsupported"`` (미상 확장자·미연결) 하나뿐이다. F6 이전의
+    #: ``"media"`` (txt=기안 화면 소유)는 TXT 합류와 함께 **사망**했다 — 배제 사유를 남겨
+    #: 두면 아무도 만들지 않는 값이 되고, 그런 값은 배선을 빠뜨려도 아무 테스트가 울지 않는다.
     reason: str = ""
+    #: 이 작업의 시스템 작업 방식(§19.1) — 구획·실행 분기가 읽는다. excluded 도 싣는다
+    #: (「확인 필요」가 실제 이유를 말해야 하므로).
+    mode: str = WORK_MODE_HWPX
 
 
 def compatibility_for(job: "Job", fields: "list[str]") -> WorkCompatibility:
@@ -52,17 +61,19 @@ def compatibility_for(job: "Job", fields: "list[str]") -> WorkCompatibility:
 
     빈 매핑 작업은 요구 소스가 없어 자명하게 ``available`` 이다(퇴화 허용) —
     실제 생성 가능성은 어차피 권위 판정(RunViewModel)이 다시 본다.
+
+    **방식은 후보 자격만 가른다**(§19.1·지도 §10.15 판정 B): ``unsupported`` 만 배제하고,
+    hwpx 와 txt 는 **같은 술어**로 available/needs_action 을 판정한다. 매체별로 판정을
+    갈래 치면 같은 상태(필요한 열이 없다)를 두 술어가 부르게 된다.
     """
-    media = job.media
-    if media != "hwpx":
-        return WorkCompatibility(
-            KIND_EXCLUDED, reason="media" if media == "txt" else "unsupported"
-        )
+    mode = job.work_mode
+    if mode == WORK_MODE_UNSUPPORTED:
+        return WorkCompatibility(KIND_EXCLUDED, reason="unsupported", mode=mode)
     present = set(fields)
     missing = tuple(k for k in job.source_keys() if k not in present)
     if missing:
-        return WorkCompatibility(KIND_NEEDS_ACTION, missing=missing)
-    return WorkCompatibility(KIND_AVAILABLE)
+        return WorkCompatibility(KIND_NEEDS_ACTION, missing=missing, mode=mode)
+    return WorkCompatibility(KIND_AVAILABLE, mode=mode)
 
 
 def candidate_rows(
@@ -102,6 +113,10 @@ class RankedWork:
     tier: str
     #: 계층의 정렬 근거 시각(즐겨찾기=favorited_at, 최근 사용=last_run_at, 미사용="").
     at: str = ""
+    #: 시스템 작업 방식(§19.1) — **정렬이 아니라 구획**에 쓴다. 순위는 방식과 무관하게
+    #: 전체에서 매겨지고(§19.3: 전체 후보 정렬 → Top 5 → 그 결과를 구획), 방식별 최소
+    #: 자리 보장은 없다. 이 값을 정렬 키에 섞으면 계약이 금지한 방식별 할당이 된다.
+    mode: str = WORK_MODE_HWPX
 
 
 def rank_available(jobs: "list[Job]", fields: "list[str]") -> "list[RankedWork]":
@@ -127,6 +142,7 @@ def rank_available(jobs: "list[Job]", fields: "list[str]") -> "list[RankedWork]"
             TIER_FAVORITE if job.favorited_at
             else (TIER_RECENT if job.last_run_at else TIER_UNUSED),
             job.favorited_at or job.last_run_at,
+            compat.mode,
         )
         for job, compat in candidate_rows(jobs, fields)
         if compat.kind == KIND_AVAILABLE
@@ -213,17 +229,24 @@ def browse_candidates(
       (:mod:`~hwpxfiller.core.jamo`) — 검색 어휘를 이 표면만 다르게 발명하지 않는다.
     - 행은 이름순(결정적 순서). 메인 순위(§19.3)는 여기 쓰지 않는다: 탐색은 "찾기"이고
       순위는 "고르기"의 문법이라, 같은 목록에 두 정렬 근거를 겹치면 어느 쪽도 못 읽는다.
+    - 행은 **작업 방식**을 싣는다(§19.5 — 탭 **안**에서만 방식으로 구획한다). 탭이
+      primary classification 이라 방식을 탭으로 올리지 않고, 구획 여부는 표면이 실제
+      방식 수로 판단한다(한 방식이면 평면 퇴화).
     """
     from ..core.jamo import jamo_contains
 
     rows = candidate_rows(jobs, fields)
     avail = sorted(
-        ({"name": j.name, "missing": []} for j, c in rows if c.kind == KIND_AVAILABLE),
+        (
+            {"name": j.name, "missing": [], "mode": c.mode}
+            for j, c in rows
+            if c.kind == KIND_AVAILABLE
+        ),
         key=lambda d: d["name"],
     )
     needs = sorted(
         (
-            {"name": j.name, "missing": list(c.missing)}
+            {"name": j.name, "missing": list(c.missing), "mode": c.mode}
             for j, c in rows
             if c.kind == KIND_NEEDS_ACTION
         ),

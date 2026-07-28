@@ -49,17 +49,19 @@ from ..gui.home_state import (
     library_health_causes,
     library_mode_of,
 )
+from ..gui.work_mode import work_mode_label, work_mode_of_filter_value
 from .screens import PushSink, default_pool_registry, relink_job_template
 from .settings import load_job_collapsed_groups, save_job_collapsed_groups
 
-#: 작업 방식의 표시 문구(§19.1 표) — 표면이 라벨을 다시 짓지 않게 링2 단일 출처로 둔다.
-#: 매체 어휘 통일(v6 ``unsupported`` 합류)은 TXT 가 이 화면에 합류하는 F6 소관이므로, 지금은
-#: master 의 hwpx/txt 값과 "미상"을 정직하게 갈라 둔다(지도 대조표 17행).
-MODE_LABELS = {
-    "hwpx": "HWPX 문서 생성",
-    "txt": "온나라 기안 검토·복사",
-    "": "작업 방식 확인 필요",
-}
+def mode_label(filter_value: str) -> str:
+    """필터 값 → 작업 방식 표시 문구. 링1(:mod:`~hwpxfiller.gui.work_mode`) 위임.
+
+    F6 어휘 통일(지도 §10.15 판정 A) 이전에는 이 표가 여기 링2에 있었다. TXT 가 「문서
+    만들기」에 합류하면서 같은 축을 세 표면(후보 카드·문서 탐색·라이브러리)이 그리게 됐고,
+    각자 문구를 지으면 같은 상태를 다르게 부르는 자리가 셋이 된다 — 그래서 라벨은 링1이
+    소유하고 여기는 **필터 어휘 → 방식 어휘 번역**만 남는다(두 축이 다른 이유는 판정 A).
+    """
+    return work_mode_label(work_mode_of_filter_value(filter_value))
 
 
 def primary_action(row: JobRow) -> dict:
@@ -117,7 +119,7 @@ def _job_row_dict(r: JobRow) -> dict:
         # 필터가 쓰는 **정규화된** 매체를 그대로 싣는다(리뷰 P2): 미연결을 hwpx 로 걸러 놓고
         # 페이로드엔 빈 값을 주면 소비자가 같은 행을 다른 방식으로 읽는다(표시=판정 정합 붕괴).
         "media": mode,
-        "mode_label": MODE_LABELS.get(mode, MODE_LABELS[""]),
+        "mode_label": mode_label(mode),
         # 심각도 숫자까지 싣는다: 문구만 주면 소비자가 경고(2)와 차단(3)을 구분 못 해
         # §19.7 건강 축을 "사유 있음/없음"으로 뭉갠다.
         "health": {"severity": severity, "text": text},

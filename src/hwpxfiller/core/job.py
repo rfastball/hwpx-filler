@@ -223,6 +223,40 @@ def template_media(template_path: str) -> str:
     return ""
 
 
+# ------------------------------------------------------------------ 시스템 작업 방식(§19.1)
+# 계약 §19.1: "작업 방식은 사용자 group 이나 tag 가 아니라 실행·편집·결과를 결정하는 **시스템
+# 축**이다. 값은 불변 명목형이며 template_path 확장자에서만 파생한다."
+#
+# **매체(media)와 작업 방식(work mode)은 같은 것의 두 이름이 아니다** — 매체는 파일 형식이고
+# 작업 방식은 그 형식이 결정하는 *일의 종류*다. 값 집합이 셋으로 같지만 미상(``''``)의 뜻이
+# 갈린다: 매체의 ``''`` 는 "형식을 모른다"이고, 작업 방식의 ``unsupported`` 는 "이 앱이 할 수
+# 있는 일이 아니다"라는 **판정**이다. 그래서 v6 어휘를 별칭이 아니라 파생 함수로 둔다.
+#
+# **연결 상태는 이 축이 아니다**(지도 §10.15 판정 A): 경로가 빈 저작 중 작업은 여기서
+# ``unsupported`` 로 나오지만 그것은 "고장"이 아니라 "아직 방식을 정하지 않았다"이며, 그 사실을
+# 말하는 축은 ``template_path`` 의 존재 여부다. 라이브러리 필터의 「미연결 → hwpx」 귀속
+# (:func:`~hwpxfiller.gui.home_state.library_mode_of`)은 *필터 귀속 규칙*이지 방식 파생이
+# 아니다 — 서로 다른 것을 같게 부르는 것도 드리프트라서 두 함수를 합치지 않는다.
+WORK_MODE_HWPX = "hwpx_generate"
+WORK_MODE_TEXT = "text_review_copy"
+WORK_MODE_UNSUPPORTED = "unsupported"
+
+
+def work_mode(template_path: str) -> str:
+    """template_path → 시스템 작업 방식(§19.1 3값). I/O 없음(:func:`template_media` 파생).
+
+    ``.txt`` 가 아니면 모두 hwpx 로 보던 v5 fallback 은 없다 — 미상 확장자와 빈 경로는
+    ``unsupported`` 이고, 그 값은 메인 후보에서 제외되고 현재 데이터 문서 선택도 허용하지
+    않는다(fail-closed). 모르는 것을 추측하지 않는 것이 이 축의 요점이다.
+    """
+    media = template_media(template_path)
+    if media == "hwpx":
+        return WORK_MODE_HWPX
+    if media == "txt":
+        return WORK_MODE_TEXT
+    return WORK_MODE_UNSUPPORTED
+
+
 class MediaMismatchError(Exception):
     """hwpx 전용 소비 경로에 hwpx 아닌(txt·미상) 작업/경로가 들어오면 loud raise(3부 결정 13).
 
@@ -344,6 +378,16 @@ class Job:
         분기 표면은 매체를 다 보는 「홈」 하나로 줄고, hwpx 전용 경로는 :func:`require_hwpx` 로 막는다.
         """
         return template_media(self.template_path)
+
+    @property
+    def work_mode(self) -> str:
+        """이 작업의 **시스템 작업 방식**(§19.1 3값) — :func:`work_mode` 파생, 저장 필드 아님.
+
+        :attr:`media` 와 나란히 두는 이유는 소비자가 갈리기 때문이다: 매체는 *파일을 어떻게
+        읽는가*(파싱 경계·hwpx 가드)를, 작업 방식은 *무슨 일을 하는가*(후보 판정·구획·실행
+        분기·편집기 탭 집합)를 정한다. 한 값으로 뭉치면 미연결 작업 하나에 두 뜻이 겹친다.
+        """
+        return work_mode(self.template_path)
 
     def template_fields(self) -> "list[str]":
         """이 작업이 채우는 템플릿 필드(매핑이 방출하는 집합). 실행 사전검증의 요구필드."""
