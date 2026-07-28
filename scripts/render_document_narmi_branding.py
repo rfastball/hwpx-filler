@@ -80,6 +80,24 @@ def mark_image(width: int, color=BLUE, ss: int = 8) -> Image.Image:
     return image.resize((width, round(width * h / w)), Image.LANCZOS)
 
 
+def ico_frame(size: int, ss: int = 8) -> Image.Image:
+    """`size`×`size` 캔버스에 마크를 94% 폭으로 중앙 배치한 프레임 — .ico 의 실제 픽셀.
+
+    보드의 16/24/32px 견본이 이 함수를 그대로 쓴다: `mark_image(px)` 는 타이트 bbox 를
+    `px` 폭으로 그리는데, 출하 자산은 여백을 품는다(SVG 64 viewBox 안 56 폭 = 87.5%,
+    ICO 는 94%) — 견본이 여백 없는 확대판이면 소형 판독성 주장이 실물보다 후해진다.
+    """
+    x0, y0, x1, y1 = MARK_BBOX
+    mark_w = x1 - x0
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    canvas = size * ss
+    image = Image.new("RGBA", (canvas, canvas), (0, 0, 0, 0))
+    scale = canvas * 0.94 / mark_w
+    draw_mark(ImageDraw.Draw(image), (canvas / 2 - cx * scale, canvas / 2 - cy * scale),
+              scale=scale)
+    return image.resize((size, size), Image.LANCZOS)
+
+
 def rounded_panel(draw: ImageDraw.ImageDraw, box, radius=28, fill=PANEL):
     draw.rounded_rectangle(box, radius=radius, fill=fill)
 
@@ -112,9 +130,10 @@ def render_board() -> None:
     rounded_panel(draw, (96, 552, 704, 882))
     draw.text((144, 590), "SMALL SIZE", fill=INK, font=font(20, bold=True))
     draw.text((144, 630), "굵은 세 단계와 화살표의 외곽은 16 px에서도 선명합니다.", fill=MUTED, font=font(15))
-    # 실제 사용 크기 그대로 — 큰 마크를 줄여 보여 주면 소형 판독성 주장이 증명되지 않는다.
+    # 출하 .ico 프레임 그대로 — 캔버스 여백까지 포함해야 소형 판독성 주장이 실물 증명이
+    # 된다(타이트 bbox 확대판은 16px 사용 시 실제보다 큰 마크를 보여 준다 — 리뷰 1R P2).
     for px, x in ((32, 150), (24, 275), (16, 393)):
-        sample = mark_image(px)
+        sample = ico_frame(px)
         image.paste(sample, (x, 740 - sample.height), sample)
         draw.text((x, 771), f"{px} px", fill="#98A2B3", font=font(14))
 
@@ -137,25 +156,12 @@ def render_board() -> None:
 def render_ico() -> None:
     """packaging/hwpx-filler.ico — 실행 파일·설치 마법사 아이콘(#258).
 
-    각 크기를 8배 슈퍼샘플로 그린 뒤 LANCZOS 축소해 앨리어싱을 죽인다. 마크 실측
-    bbox(MARK_BBOX = x 4–60, y 7–57)를 캔버스 중앙에 놓고 폭 기준 94% 로 채운다
+    각 크기를 8배 슈퍼샘플로 그린 뒤 LANCZOS 축소해 앨리어싱을 죽인다. 프레임 기하
+    (94% 채움·중앙 배치)는 :func:`ico_frame` 단일 출처 — 보드 소형 견본과 같은 픽셀이다
     (소형에서도 세 겹의 어긋남이 식별되는 여백 — 완료 조건 16/24/32px).
     """
-    x0, y0, x1, y1 = MARK_BBOX
-    mark_w = x1 - x0
-    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
     sizes = (16, 24, 32, 48, 64, 128, 256)
-    frames = []
-    for size in sizes:
-        ss = 8
-        canvas = size * ss
-        image = Image.new("RGBA", (canvas, canvas), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(image)
-        scale = canvas * 0.94 / mark_w
-        ox = canvas / 2 - cx * scale
-        oy = canvas / 2 - cy * scale
-        draw_mark(draw, (ox, oy), scale=scale)
-        frames.append(image.resize((size, size), Image.LANCZOS))
+    frames = [ico_frame(size) for size in sizes]
     frames[-1].save(
         ROOT / "packaging" / "hwpx-filler.ico",
         format="ICO",
