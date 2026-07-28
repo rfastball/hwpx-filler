@@ -521,10 +521,11 @@ class WebFrontend:
         떨어뜨리면 배너가 아무 말도 못 하는 진입이 생긴다. 미저장 세션 확인은 웹이
         ``editor_has_unsaved_work`` 로 선판단한다(#25 미러).
 
-        ``context`` = ``{entry_reason, evidence, return_context, section}``. 기본값(빈 사전)은
-        자발적 진입이고 그때는 배너 자체가 서지 않는다(할 말이 없으면 침묵). ``section`` 은
-        deep-link 의 **거친 형태**(어느 탭인가)다 — 필드 단위 target 은 F6 동승분이다
-        (지도 §10.14.3).
+        ``context`` = ``{entry_reason, evidence, return_context, section, target}``. 기본값
+        (빈 사전)은 자발적 진입이고 그때는 배너 자체가 서지 않는다(할 말이 없으면 침묵).
+        ``section`` 은 deep-link 의 **거친 형태**(어느 탭인가), ``target`` 은 필드 단위
+        deep-link(§10.14.3 — ``binding/<fieldId>`` / ``filename/filenamePattern``)다.
+        target 이 서면 착지 탭도 target 이 정한다(load_job 소관).
         """
         ctx = context or {}
         try:
@@ -540,6 +541,7 @@ class WebFrontend:
                 entry_reason=str(ctx.get("entry_reason") or "voluntary"),
                 evidence=ctx.get("evidence"),
                 return_context=ctx.get("return_context"),
+                target=str(ctx.get("target") or ""),
             )
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"

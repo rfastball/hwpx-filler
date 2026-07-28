@@ -55,7 +55,10 @@ MUTABLE_MODULE_STATE_BUDGET = {
     # 작업대(F6) — 스냅샷 1개(LAST)뿐이다. 작업점·복사 이력·미저장 변경·린트를 전부
     # Python 이 소유하므로 표면이 들 것이 없다(데이터 존이 없는 화면이라 더 그렇다).
     "screens/workbench.js": 1,
-    "screens/editor.js": 3,
+    # 편집기 — LAST·접힘 2종 + deep-link 조준 대기 1슬롯(pendingAim, F6 PR-B §10.14.3).
+    # pendingAim 은 파생 불가다: 스냅샷은 「이 조준을 이미 소비했는가」를 모른다(한 번성
+    # 사건이지 상태가 아니다) — 스냅샷에 승격하면 소비 후 무효화 스킴이 따라온다.
+    "screens/editor.js": 4,
     "screens/library.js": 3,
     "data_picker.js": 4,
     "draftsession.js": 2,
@@ -1543,6 +1546,45 @@ def test_edit_entries_carry_their_context():
     )
     assert "JobScreen.openPreview" in editor and "openPreview," in job, (
         "복귀가 미리보기 열기 seam 을 쓰지 않습니다 — 열기 절차가 두 벌이 됩니다."
+    )
+
+
+def test_preview_row_fix_deep_link_is_wired_end_to_end():
+    """드로어 행별 「수정」 deep-link(F6 PR-B, §10.14.3) — 한 축(EditContext.target)의 배선.
+
+    계약 §8 표: 미리보기 필드 → ``binding/<fieldId>``, 파일 이름 → ``filename/filenamePattern``,
+    복귀 = 같은 previewIndex 와 같은 행. 행 정체성은 target 에서 파생한다 — `return_context`
+    에 둘째 축을 만들지 않는다(§10.15.15 판정 B). 착지점은 「변경 저장」 하나이고 「이번
+    생성에 적용」 배지는 없다(F7 PR-B 기각과 함께 죽은 상태다).
+    """
+    html = WEB_INDEX.read_text(encoding="utf-8")
+    job = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    editor = (WEB_JS_DIR / "screens" / "editor.js").read_text(encoding="utf-8")
+    # 발신 쪽 — 행 버튼·파일 이름 버튼·target 두 형태·preview_index 생산.
+    assert 'data-act="preview-fix"' in job, "행별 「수정」 버튼이 없습니다."
+    assert 'id="previewFixFilename"' in html, "파일 이름 「수정」 버튼(정적 DOM)이 없습니다."
+    assert '"binding/" + field' in job and '"filename/filenamePattern"' in job, (
+        "deep-link target 두 형태(계약 §8)가 발신되지 않습니다."
+    )
+    assert "preview_index: at" in job, "복귀 자리(preview_index)를 싣지 않습니다."
+    # `at` 은 Modal.close(→ preview_close 가 pos 를 리셋) **전에** 읽어야 한다 — 순서가
+    # 뒤집히면 복귀가 늘 첫 행으로 선다(발신 순서 규약의 이 표면 표본).
+    fix_body = job[job.index("async function previewFix"):job.index("function openEditForRepair")]
+    assert fix_body.index(".pos") < fix_body.index('Modal.close("previewModal")'), (
+        "previewFix 가 드로어를 닫은 뒤 pos 를 읽습니다 — 리셋된 0 이 실려 갑니다."
+    )
+    # 수신 쪽 — 편집기 조준(행 data-field·aimAt)과 복귀 소비(preview_index·focusTarget).
+    assert "aimAt" in editor and 'tr[data-field="' in editor.replace("${CSS.escape(field)}", '"'), (
+        "편집기가 target 행을 겨누지 않습니다(탭 착지만 하고 행을 버립니다)."
+    )
+    assert "ret.preview_index" in editor and "focusTarget: ctx.target" in editor, (
+        "복귀가 같은 자리·같은 행(§10.14.3)을 소비하지 않습니다."
+    )
+    assert "focusPreviewTarget" in job, "재개 드로어가 복귀 행에 초점을 세우지 않습니다."
+    # 배제 유지(판정 E) — 작업대는 편집기로 나가는 deep-link 를 갖지 않는다.
+    wb = (WEB_JS_DIR / "screens" / "workbench.js").read_text(encoding="utf-8")
+    assert "openJobInEditor" not in wb and "EditorEntry" not in wb, (
+        "작업대가 편집기 진입을 얻었습니다 — 판정 E(배제 선언)를 먼저 뒤집어야 합니다."
     )
 
 

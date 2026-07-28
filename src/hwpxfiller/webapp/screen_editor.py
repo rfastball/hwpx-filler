@@ -926,24 +926,34 @@ class EditorController:
         entry_reason: str = "voluntary",
         evidence: "dict | None" = None,
         return_context: "dict | None" = None,
+        target: str = "",
     ) -> None:
         """저장된 작업을 **문맥과 함께** 편집 세션으로 연다(계약 §5.1).
 
         진입 문맥(사유·증거·복귀처)은 여기서 한 번 세우고 그 뒤 재렌더·왕복을 건너 산다 —
         편집기는 스스로 열리지 않으므로(늘 다른 표면의 문제가 사람을 보낸다) 문맥 없는
-        진입은 "왜 왔는지도 어디로 돌아갈지도 없는 표면"이 된다. 미지·미배선 사유는
-        :func:`~hwpxfiller.gui.edit_session.make_context` 가 fail-closed 로 거절한다.
+        진입은 "왜 왔는지도 어디로 돌아갈지도 없는 표면"이 된다. 미지·미배선 사유·미지
+        target 은 :func:`~hwpxfiller.gui.edit_session.make_context` 가 fail-closed 로 거절한다.
+
+        ``target``(deep-link, §10.14.3) 이 서면 **착지 탭도 target 이 정한다**(값의 앞
+        절 = section) — 겨눈다고 말하고 다른 탭에 내리는 반쪽 착지를 막는다. 행 단위
+        조준(스크롤·포커스)은 뷰 소관이고, 스키마 드리프트로 행이 사라졌으면 뷰가
+        fail-open 한다(탭 착지·배너 증거는 그대로 참이다).
         """
         job = self.registry.load(name)  # 부재·손상 → loud raise
+        context = make_context(
+            job.name,
+            entry_reason=entry_reason,
+            evidence=evidence,
+            return_context=return_context,
+            target=target,
+        )
+        if context.target:
+            landing_section = context.target.partition("/")[0]
         self._restore_from(
             job,
             landing_section=landing_section,
-            context=make_context(
-                job.name,
-                entry_reason=entry_reason,
-                evidence=evidence,
-                return_context=return_context,
-            ),
+            context=context,
             emit_push=emit_push,
         )
 

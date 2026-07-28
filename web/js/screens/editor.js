@@ -47,6 +47,11 @@
   let foldOpen = false;     // 미사용 헤더 접힘(.ign-fold)
   let tokFoldOpen = false;  // 파일명 토큰 참조 접힘(.tok-fold, F27 — PR-4 리뷰 F6)
 
+  /* deep-link 조준 대기 1슬롯(F6 PR-B, §10.14.3) — 보낸 표면(드로어)이 진입 성사 뒤
+     `aimAt(target)` 로 건다. 조준 문맥의 push 가 아직이면 여기 걸어 두고 render 가 소비한다
+     (브리지 반환과 push 는 독립 채널이라 어느 쪽이 먼저인지 기대지 않는다). */
+  let pendingAim = null;
+
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
     Preserve.around(() => {  // 폼 포커스·캐럿·본문 스크롤 보존(#28)
@@ -63,6 +68,40 @@
       $("editor-foot").innerHTML = footer(s);
       $("editor-foot").style.display = footer(s) ? "" : "none";
     });
+    // 조준은 Preserve **밖**에서 — 안에서 겨누면 되돌림이 새 초점을 이전 초점으로 덮는다.
+    if (pendingAim && s.context && s.context.target === pendingAim) {
+      const target = pendingAim;
+      pendingAim = null;
+      aimAtTarget(s, target);
+    }
+  }
+
+  /* 조준 실행 — 행이 없으면 fail-open(스키마 드리프트: 탭 착지·배너 증거는 그대로 참이고,
+     없는 행에 가짜 초점을 세우지 않는다). 초점 대상은 사람이 고치러 온 그 컨트롤이다. */
+  function aimAtTarget(s, target) {
+    if (target === "filename/filenamePattern") {
+      const el = document.querySelector('#editor-body input[data-act="pattern"]');
+      if (el) el.focus();
+      return;
+    }
+    const field = target.slice("binding/".length);
+    const row = document.querySelector(
+      `#editor-body table.map tr[data-field="${CSS.escape(field)}"]`);
+    if (!row) return;
+    row.scrollIntoView({ block: "center" });
+    const sel = row.querySelector('select[data-act="row-source"]');
+    if (sel) sel.focus();
+  }
+
+  /* 드로어가 진입 성사 뒤 부르는 조준 seam(F6 PR-B). 조준 문맥이 이미 도착했으면 즉시,
+     아니면 다음 render 가 소비한다 — 두 순서 모두에서 정확히 한 번 겨눈다. */
+  function aimAt(target) {
+    const ctx = (LAST && LAST.context) || {};
+    if (ctx.target === target) {
+      aimAtTarget(LAST, target);
+      return;
+    }
+    pendingAim = target;
   }
 
   /* 머리 — 이름(안정 입력)·부제·저장 상태 + 판본. 「저장」 분류 사망의 승계처(§10.13.3).
@@ -449,7 +488,7 @@
     if (r.preview_error) preview = `<span class="pv emptyval">(미리보기 오류)</span>`;
     else if (r.preview_empty) preview = `<span class="pv emptyval">(이 행에서 빈 값)</span>`;
     else preview = `<span class="pv">${esc(r.preview)}</span>`;
-    return `<tr class="r-${r.row_state}">
+    return `<tr class="r-${r.row_state}" data-field="${esc(r.template_field)}">
       <td><input type="checkbox" class="cbx" data-act="row-confirm" data-index="${r.index}"${r.confirmed ? " checked" : ""}></td>
       <td><span class="fname" title="${esc(r.context || r.template_field)}">${esc(r.template_field)}</span>
         <span class="tbadge">[추정: ${esc(inferred)}]</span></td>
@@ -913,13 +952,19 @@
      한 형태다. 면을 여는 절차(Python 왕복·성사 뒤 열기·포커스)는 그 화면이 소유한 seam 을
      그대로 쓴다 — 여기서 다시 조립하면 열기 규율이 두 벌이 된다. */
   async function restoreReturnState() {
-    const ret = ((LAST && LAST.context) || {}).return_context || {};
+    const ctx = (LAST && LAST.context) || {};
+    const ret = ctx.return_context || {};
     if (ret.surface === "preview" && ret.reopen_drawer
         && window.JobScreen && window.JobScreen.openPreview) {
       // 규칙 재적재는 `landOn` 이 **전환 전에** 이미 끝냈다(8R 근본 조치) — 여기서 다시
       // 기다리면 순서 규율이 미리보기 복귀에만 사는 두 벌째가 되고, 그것이 5R→8R 사이에
       // 데이터·결과 복귀를 무방비로 남긴 자리다.
-      await window.JobScreen.openPreview();
+      // 같은 previewIndex·같은 행(§10.14.3): 자리는 진입 때 실은 값의 왕복이고, 행
+      // 정체성은 `context.target` 에서 파생한다 — 둘째 축을 만들지 않는다(판정 B).
+      await window.JobScreen.openPreview(null, {
+        at: ret.preview_index || 0,
+        focusTarget: ctx.target || "",
+      });
     }
   }
 
@@ -1004,5 +1049,5 @@
     if (window.pywebview && window.Bridge) Bridge.initial(SCREEN).then(render);
   }
 
-  window.EditorScreen = { init, rerender, leaveTo };
+  window.EditorScreen = { init, rerender, leaveTo, aimAt };
 })();

@@ -490,7 +490,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if not self._indices():
             raise ValueError("미리볼 문서를 최소 1건 선택하세요.")
         self.preview_open = True
-        self.preview_pos = 0
+        # `at`(deep-link 복귀, §10.15.15 판정 C) — 값의 출처는 Python 이 push 한
+        # `preview.pos` 의 왕복이다(EditContext 를 지나 돌아온다). 편집 중 선택이 줄었으면
+        # 클램프가 안전측으로 접는다 — stale 인덱스로 남의 행을 그리지 않는다.
+        self.preview_pos = max(0, min(len(self._indices()) - 1, int(p.get("at", 0) or 0)))
         # 핀(5R P2)은 여기서 조립하지 않는다 — 면이 열려 있는 동안 스냅샷이 **같은
         # 술어로** 채운다. 두 자리가 각자 조립하면 그 순간 정체가 두 벌이 된다
         # (F3 1R 이 표면의 자체 조립에서 났던 자리).

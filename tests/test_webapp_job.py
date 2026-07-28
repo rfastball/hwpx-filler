@@ -3779,3 +3779,17 @@ def test_candidates_txt_note_is_silent_without_an_injected_registry(tmp_path):
     ctrl, _ = _controller(tmp_path)
     _mount_all(ctrl, _data_csv(tmp_path))
     assert ctrl.snapshot()["candidates"]["txt_note"] == ""
+
+
+def test_preview_open_at_restores_the_same_position_with_clamp(tmp_path):
+    """deep-link 복귀의 같은 자리(§10.15.15 판정 C) — `at` 은 Python 스냅샷 값의 왕복이고
+    Python 이 클램프한다(편집 중 선택이 줄어도 stale 인덱스로 남의 행을 그리지 않는다)."""
+    ctrl, _ = _session(tmp_path)
+    ctrl.dispatch("preview_open", {"at": 1})
+    assert ctrl.snapshot()["preview"]["pos"] == 1               # 같은 자리 복귀
+    ctrl.dispatch("preview_close", {})
+    ctrl.dispatch("preview_open", {"at": 99})
+    assert ctrl.snapshot()["preview"]["pos"] == 1               # 상한 클램프(총 2건)
+    ctrl.dispatch("preview_close", {})
+    ctrl.dispatch("preview_open", {})
+    assert ctrl.snapshot()["preview"]["pos"] == 0               # 무인자 = 종전 거동(첫 행)

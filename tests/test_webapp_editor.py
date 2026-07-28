@@ -2077,3 +2077,32 @@ def test_toggle_library_group_routes_by_media(tmp_path):
     assert txt_groups.is_collapsed("온나라") and not hwpx_groups.is_collapsed("온나라")
     with pytest.raises(ValueError, match="알 수 없는 형식"):
         ctrl.dispatch("toggle_library_group", {"group": "온나라", "media": "hwp"})
+
+
+# ---------------------------------------- 드로어 deep-link 착지(F6 PR-B, §10.14.3)
+def test_load_job_with_target_lands_on_the_target_section_and_roundtrips(tmp_path):
+    """target 이 서면 착지 탭도 target 이 정한다(값의 앞 절 = section) + 스냅샷 왕복.
+
+    겨눈다고 말하고 다른 탭에 내리는 반쪽 착지 금지. 행 단위 조준(스크롤·포커스)은 뷰
+    소관이고 스키마 드리프트는 뷰가 fail-open 한다 — 여기는 탭·문맥 축만 고정한다.
+    """
+    ctrl, _ = _controller26(tmp_path)
+    assert _save_named(ctrl, "겨눔작업")["ok"] is True
+
+    ctrl.load_job(
+        "겨눔작업", entry_reason="preview_result",
+        return_context={"surface": "preview", "reopen_drawer": True, "preview_index": 2},
+        target="filename/filenamePattern",
+    )
+    snap = ctrl.snapshot()
+    assert snap["section"] == "filename"                     # landing_section 인자 없이도
+    assert snap["context"]["target"] == "filename/filenamePattern"
+    assert snap["context"]["return_context"]["preview_index"] == 2
+
+    ctrl.load_job("겨눔작업", entry_reason="preview_result",
+                  return_context={"surface": "preview"}, target="binding/공고명")
+    assert ctrl.snapshot()["section"] == "binding"
+
+    import pytest
+    with pytest.raises(ValueError, match="deep-link target"):
+        ctrl.load_job("겨눔작업", target="template/x")       # fail-closed 관통(make_context)
