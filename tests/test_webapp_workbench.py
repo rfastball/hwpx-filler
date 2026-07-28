@@ -350,3 +350,31 @@ def test_the_two_media_share_the_field_but_not_the_predicate(tmp_path):
     ctrl.note_copied(ctrl.render()[1])
     job = reg.load("발주요청_기안")
     assert last_use_label(WORK_MODE_TEXT, job.last_run_at).startswith("마지막 복사")
+
+
+def test_work_point_number_follows_the_frozen_order_not_the_queue(tmp_path):
+    """작업점 「N / M」은 **고정 사본의 자리**다(§13-13) — 복사해도 다시 매겨지지 않는다.
+
+    실앱 한 바퀴가 잡은 결함의 회귀다: `TxtQueueModel.position_of` 는 *미처리 큐* 안의
+    1-기반 순번이라 ①표면이 +1 하면 진입부터 「2 / 3」으로 어긋나고 ②복사할 때마다 번호가
+    다시 매겨지며 복사한 카드는 None 이 된다. 화면 부제가 「선택 당시 표시순서로 고정된
+    항목」이라고 말하므로 사람이 읽는 숫자도 그 고정 순서를 따라야 참이다.
+    """
+    ctrl, reg, _ = _ctrl(tmp_path)
+    job = _job(tmp_path)
+    reg.save(job)
+    ctrl.open(reg.load(job.name), [
+        (2, {"부서": "가", "사업명": "ㄱ"}),
+        (1, {"부서": "나", "사업명": "ㄴ"}),
+        (0, {"부서": "다", "사업명": "ㄷ"}),
+    ])
+    assert ctrl.snapshot()["card"]["position"] == 0        # 진입 = 첫 항목
+    ctrl.dispatch("step", {"delta": 1})
+    assert ctrl.snapshot()["card"]["position"] == 1
+    # 복사해도 그 카드의 자리는 그대로다(큐 후미 이동은 순회 순서의 일이지 번호의 일이 아니다).
+    ctrl.note_copied(ctrl.render()[1])
+    assert ctrl.snapshot()["card"]["position"] == 1
+    assert ctrl.snapshot()["card"]["review_state"] == "copied"
+    # 첫 항목으로 되돌아가도 자리는 고정 순서 그대로다.
+    ctrl.dispatch("set_current", {"index": 0})
+    assert ctrl.snapshot()["card"]["position"] == 0

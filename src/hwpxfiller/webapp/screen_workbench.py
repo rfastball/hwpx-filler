@@ -250,7 +250,12 @@ class WorkbenchController:
             "index": cur,
             "has_current": cur is not None,
             "queue_degenerate": total <= 1,
-            "position": self.queue.position_of(cur) if cur is not None else None,
+            # 작업점 자리 = **고정 사본의 서수**(0-기반)다. `TxtQueueModel.position_of` 는
+            # *미처리 큐* 안의 1-기반 순번이라 여기 쓸 수 없다: ①1-기반이라 표면이 +1 하면
+            # 진입부터 어긋나고 ②복사할 때마다 번호가 **다시 매겨지며** 복사한 카드는 아예
+            # None 이 된다. 이 화면의 부제는 「선택 당시 표시순서로 고정된 항목」이라고
+            # 말하므로, 사람이 읽는 숫자도 그 고정 순서를 따라야 참이다(§13-13).
+            "position": cur,
             "source_row": self.source_rows[cur] if cur is not None else None,
             "review_state": self._review_state(cur),
             "uncopied_count": len(self.queue.uncopied()),
