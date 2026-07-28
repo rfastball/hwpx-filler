@@ -1818,3 +1818,23 @@ def test_workbench_sends_all_share_one_chain():
         and line.strip() not in commit_bodies
     ]
     assert not stray, "체인 밖 작업대 변이 발신: " + " | ".join(stray)
+
+
+def test_volatile_draft_retirement_notices_have_producer_and_consumer() -> None:
+    """휘발 「기안」 폐지 고지 ①②(F6 PR-B, §10.15.15 점검표 6행) — 생산·소비가 한 벌인가.
+
+    페이로드 키만 등록되고 그리는 자리가 없으면 고지는 영영 안 보인다(「등록만 되고 배선
+    없는」 결함류 — F6 4R 표본). 문안 술어는 헤드리스(test_webapp_job·test_webapp_template)
+    가 보고, 여기는 정적 배선만 센다.
+    """
+    src = Path(__file__).resolve().parents[1] / "src" / "hwpxfiller" / "webapp"
+    job_py = (src / "screen_job.py").read_text(encoding="utf-8")
+    tpl_py = (src / "screen_template.py").read_text(encoding="utf-8")
+    job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    tpl_js = (WEB_JS_DIR / "screens" / "template.js").read_text(encoding="utf-8")
+    # ① 문서 만들기 후보 TXT 구획 빈 상태 — screen_job 이 내고 job.js 가 그린다.
+    assert '"txt_note"' in job_py and "_txt_onboarding_note" in job_py
+    assert "c.txt_note" in job_js
+    # ② tpl TXT 밴드 — screen_template 이 내고 template.js 가 그린다(F8 에 화면과 함께 사망).
+    assert 'txt["notice"]' in tpl_py
+    assert "band.notice" in tpl_js

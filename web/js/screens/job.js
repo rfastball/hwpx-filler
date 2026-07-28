@@ -394,8 +394,16 @@
     row.style.display = "";
     const c = s.candidates || { top: [], more: 0, needs_count: 0, suggested: "" };
     const top = c.top || [], needs = c.needs_count ? [1] : [];
+    // 고지 ①(F6 PR-B — 휘발 「기안」 폐지의 대체 경로 재진술): 술어(txt 템플릿 有 ∧ txt
+    // 작업 0건)는 Python 이 낸다. 빈 「온나라 기안」 구획 머리 + 경로 안내 한 줄.
+    const txtNote = c.txt_note
+      ? `<div class="cand-sec" data-cand-mode="text">` +
+        `<h3 class="cand-sec-cap">온나라 기안</h3>` +
+        `<span class="muted">${esc(c.txt_note)}</span></div>`
+      : "";
     if (!top.length && !needs.length) {
-      host.innerHTML = `<span class="muted">현재 데이터에 사용할 수 있는 문서 작업이 없습니다.</span>`;
+      host.innerHTML =
+        `<span class="muted">현재 데이터에 사용할 수 있는 문서 작업이 없습니다.</span>` + txtNote;
       return;
     }
     // 작업 방식 구획(§19.3) — **구획 여부·순서 판정은 Python**(candidates.sections)이고
@@ -424,7 +432,7 @@
         `<button class="btn sm" type="button" id="jobBrowseOpen" data-busy-lock data-browse-open>` +
         `문서 작업 찾기…</button></span>`;
     }
-    host.innerHTML = html;
+    host.innerHTML = html + txtNote;
   }
 
   function renderPreflight(s) {

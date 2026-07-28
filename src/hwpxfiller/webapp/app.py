@@ -159,9 +159,10 @@ class WebFrontend:
             LibraryController(job_registry, registry, self._push, pool_registry=pool_registry,
                               generation_lock=generation_lock),
             # 「문서 만들기」 — 세션 패널(v6 screen-data 2열). 링1 VM 을 직접 소유하며
-            # 실행 결정 계약을 소비하는 유일 세션 표면이다.
+            # 실행 결정 계약을 소비하는 유일 세션 표면이다. TXT 레지스트리는 고지 ①
+            # (후보 TXT 구획 빈 상태, F6 PR-B)의 술어 전용 — tpl·편집기와 같은 인스턴스.
             JobController(job_registry, self._push, pool_registry=pool_registry,
-                          generation_lock=generation_lock),
+                          generation_lock=generation_lock, text_registry=registry),
             # 「기안」 화면 — TXT 작업-앵커 master-detail(「작업」의 대칭).
             # 같은 job_registry 를 쓰되 media=txt 만 조회한다(조회 경계 결정 13) — 저장 기계는
             # 하나·화면은 둘. 우 상세는 휘발 세션 4존이고, 세션 기계는 「기안문

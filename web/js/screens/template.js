@@ -36,6 +36,9 @@
     band = band || {};
     countEl.textContent = band.count ? `${band.count}개` : "";
     if (dirEl) { dirEl.textContent = band.dir || ""; dirEl.title = band.dir || ""; }
+    // 고지 ②(F6 PR-B) — Python 이 낸 한시 문안(F8 에 화면과 함께 죽는다). 빈 밴드는 "".
+    const notice = band.notice
+      ? `<p class="note quiet" style="margin-top:0">${esc(band.notice)}</p>` : "";
     if (!band.count) {
       // 전용 빈 상태(#179 슬라이스 6) — 설명 + 단일 CTA(문안 속 대괄호 지시 대신 실 버튼).
       // 라이브러리 빈 상태와 같은 .empty 컴포넌트. hwpx=가져오기(자작 불가)·txt=새 TXT 저작.
@@ -51,12 +54,12 @@
     const sections = band.sections || [];
     if (band.flat) {
       // 퇴화 불변식(그룹 0개) — 헤더·들여쓰기 없는 평면.
-      host.innerHTML = sections.map((sec) =>
+      host.innerHTML = notice + sections.map((sec) =>
         `<div class="tpl-grp-rows flat">${sec.items.map((it) => cardHtml(media, it)).join("")}</div>`
       ).join("");
       return;
     }
-    host.innerHTML = sections.map((sec) => sectionHtml(media, sec)).join("");
+    host.innerHTML = notice + sections.map((sec) => sectionHtml(media, sec)).join("");
   }
 
   /* 그룹 구획(job.js 동형) — 헤더(접힘 화살표·이름·개수·그룹 ⋮) + 접히면 바디 생략. */
