@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import importlib.metadata
 import json
+import re
 import subprocess
 import sys
 import tomllib
@@ -35,8 +36,14 @@ def _version() -> str:
 
 
 def _numeric_version(version: str) -> tuple[int, int, int, int]:
-    core = version.split("+", 1)[0].split("-", 1)[0]
-    parts = [int(part) for part in core.split(".")]
+    # PEP440 프리릴리스(rc1)·dev(.dev1)·로컬(+meta) 식별자는 숫자가 아니라
+    # 마지막 릴리스 세그먼트에 바로 붙거나("0.3.0rc1") 구분자로 붙는다
+    # ("0.3.0.dev1", "0.3.0+meta"). Windows 버전 리소스는 숫자 4개뿐이라
+    # 선두의 점-구분 숫자열만 취한다.
+    match = re.match(r"\d+(\.\d+)*", version)
+    if not match:
+        raise ValueError(f"버전에서 숫자 부분을 찾을 수 없습니다: {version}")
+    parts = [int(part) for part in match.group().split(".")]
     if len(parts) > 4:
         raise ValueError(f"Windows 버전은 숫자 4개 이하여야 합니다: {version}")
     return tuple((parts + [0] * 4)[:4])  # type: ignore[return-value]
