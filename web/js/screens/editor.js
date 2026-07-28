@@ -52,6 +52,21 @@
      (브리지 반환과 push 는 독립 채널이라 어느 쪽이 먼저인지 기대지 않는다). */
   let pendingAim = null;
 
+  /* 열린 라이브러리 ⋮ 메뉴의 정체(F8 — tpl 화면 사망의 관리 동사 승계, §10.17.2 판정 D).
+     파생 불가: 스냅샷은 「어느 메뉴가 열려 있는가」를 모른다(뷰 상태 — template.js menuFor
+     의 이주분, 한 객체로 묶어 1변수). {media, kind:"row"|"group", key?|group?, item?, trigger} */
+  let libMenuFor = null;
+
+  /* 관리 기제 = 공용 팩토리·기존 DOM(#tplRowMenu·#tplMoveModal) **재사용, 이식 아님**(F2
+     교훈 ④). 관리 동사는 tpl 채널을 그대로 부른다(F1 data_picker→pool 동형 — 컨트롤러·
+     잠금·경로 검증 규율 생존, §10.17.2 판정 B). 목록의 정본은 editor 스냅샷 하나다. */
+  const libRowMenu = window.GroupList.createMenu({ menuId: "tplRowMenu" });
+  const libMoveDialog = window.GroupList.createMoveDialog({
+    modalId: "tplMoveModal", listId: "tplMoveList", errId: "tplMoveErr",
+    nameId: "tplMoveName", radioName: "tplMove",
+    newRadioId: "tplMoveNewRadio", newNameId: "tplMoveNewName",
+  });
+
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
     Preserve.around(() => {  // 폼 포커스·캐럿·본문 스크롤 보존(#28)
@@ -205,6 +220,15 @@
      매체(탭 구성·저장 게이트)를 정한다. 행 클릭은 두 밴드 모두 기존 use_library_template
      하나다(신규 액션 0). 바깥 파일은 「가져오기…」=라이브러리로 복사 후 그 사본으로
      시작(앱 소유 루트 — 원본 수정 불파급). ---- */
+  // 행 꼬리 관리 어포던스(F8 — tpl 화면 사망의 승계): 「그룹 없음」 행만 ＋그룹지정 칩,
+  // 모든 행에 ⋮(오류·손상 행 포함 — 삭제 도달성, F1 ⓒ와 같은 뿌리).
+  function libRowTail(media, t) {
+    const chip = t.group ? "" :
+      `<button class="tpl-assign" data-act="lib-assign" data-media="${media}" data-key="${esc(t.key)}">＋ 그룹 지정</button>`;
+    return `${chip}<button class="job-more" data-act="lib-more" data-media="${media}"` +
+      ` data-key="${esc(t.key)}" aria-haspopup="true" aria-label="템플릿 관리">⋮</button>`;
+  }
+
   function libRow(t) {
     // 상태 사유(detail)는 배지 title 로 — 오류 행은 선택 버튼 대신 사유를 보여준다(리뷰 F8:
     // 죽은 버튼이 생 예외 alert 로 끝나는 반쪽 노출 금지 — 원인 있는 사용 불가).
@@ -215,9 +239,13 @@
       : (t.current
         ? `<span class="muted capnote">선택됨</span>`
         : `<button class="btn sm" data-act="use-library" data-path="${esc(t.path)}">이 템플릿으로</button>`);
+    // 채움 완화 사전 고지(#154) — tpl 카드 warn 줄의 승계. 문안은 링1 확정.
+    const warns = (t.fill_warns || []).map(
+      (w) => `<div class="hint warn">${esc(w)}</div>`
+    ).join("");
     // .fname 이 남는 폭을 먹고 말줄임(F14) — 배지·동작은 고정폭이라 스페이서 불필요.
     return `<div class="libselrow${t.current ? " cur" : ""}"><span class="fname">${esc(t.name)}</span>` +
-      `${badge}${pick}</div>`;
+      `${badge}${pick}${libRowTail("hwpx", t)}</div>${warns}`;
   }
 
   // TXT 밴드 행(F6 PR-B) — 상태 축이 다르다: 필드 수(토큰 유무의 사전 신호)·읽기 오류.
@@ -231,17 +259,22 @@
         ? `<span class="muted capnote">선택됨</span>`
         : `<button class="btn sm" data-act="use-library" data-path="${esc(t.path)}">이 템플릿으로</button>`);
     return `<div class="libselrow${t.current ? " cur" : ""}"><span class="fname">${esc(t.name)}</span>` +
-      `${badge}${pick}</div>`;
+      `${badge}${pick}${libRowTail("txt", t)}</div>`;
   }
 
   function libGroupHead(sec, idx, media) {
     const label = sec.group || "그룹 없음";
     // 안정 id(#138 리뷰 F13) — 재렌더 뒤 Preserve 가 같은 헤더로 키보드 포커스를 복원한다
     // (구획 순서는 접힘 토글에 불변이라 밴드+인덱스가 안정 식별자다).
+    // 명명 그룹만 ⋮(이름 변경·해산 — F8, tpl 그룹 헤더 승계). 「그룹 없음」은 관리 대상 아님.
+    const more = sec.group
+      ? `<button class="job-more grp-more" data-act="lib-grp-more" data-media="${media}"` +
+        ` data-group="${esc(sec.group)}" aria-haspopup="true" aria-label="그룹 관리">⋮</button>`
+      : "";
     return `<div class="job-grp"><button class="job-grp-head" id="libgrp-${media}-${idx}" data-act="toggle-lib-group"` +
       ` data-group="${esc(sec.group)}" data-media="${media}" aria-expanded="${sec.collapsed ? "false" : "true"}">` +
       `<span class="grp-name">${esc(label)}</span><span class="grp-count">${sec.count}</span>` +
-      `<span class="grp-caret">${sec.collapsed ? "▸" : "▾"}</span></button></div>`;
+      `<span class="grp-caret">${sec.collapsed ? "▸" : "▾"}</span></button>${more}</div>`;
   }
 
   // 한 매체 밴드의 본문 — 그룹 구획(퇴화 시 평면), 빈 밴드는 조치 안내 한 줄.
@@ -264,20 +297,141 @@
 
   function libraryPicker(s) {
     const lib = s.library || {};
+    const hw = lib.hwpx || {}, tx = lib.txt || {};
+    // 라이브러리 결과 재진술 줄(F8 — `#tplResult` 승계): 성형·수명은 tpl 컨트롤러 소유,
+    // 여기는 스냅샷의 완성 문안을 그리기만 한다. 빈 결과는 자리도 차지하지 않는다.
+    const res = lib.result || {};
+    const resultLine = res.text
+      ? `<div class="run-result${res.level && res.level !== "muted" ? " " + esc(res.level) : ""}">${esc(res.text)}</div>`
+      : "";
+    // 밴드 캡션: 개수 + 라이브러리 루트 경로(tpl `#tplHwpxCount`·`#tplLibDir` 승계 —
+    // 점검표 10행). 경로는 말줄임 대신 title 로 전문 노출.
+    const bandCap = (label, band) =>
+      `<span class="cap">${label}</span>` +
+      (band.count ? `<span class="muted capnote">${band.count}개</span>` : "") +
+      (band.dir ? `<span class="muted capnote mono" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:22em" title="${esc(band.dir)}">${esc(band.dir)}</span>` : "");
     return `<div class="grp">
-      <div class="row" style="margin-bottom:var(--sp-4)"><span class="cap">HWPX 서식</span>
+      <div class="row" style="margin-bottom:var(--sp-4)">${bandCap("HWPX 서식", hw)}
         <span class="spacer"></span>
         <button class="btn sm" data-act="import-template">가져오기…</button></div>
       <p class="note quiet" style="margin-top:0">누름틀에 채운 .hwpx 문서 파일을 만드는 작업입니다.</p>
       ${libraryBand(lib.hwpx, "hwpx", libRow,
-        "라이브러리에 템플릿이 없습니다. '가져오기…'로 추가하거나 템플릿 관리에서 확인하세요.")}
+        "라이브러리에 템플릿이 없습니다. '가져오기…'로 추가하세요.")}
     </div>
     <div class="grp">
-      <div class="row" style="margin-bottom:var(--sp-4)"><span class="cap">TXT 기안</span></div>
+      <div class="row" style="margin-bottom:var(--sp-4)">${bandCap("TXT 기안", tx)}</div>
       <p class="note quiet" style="margin-top:0">채운 본문을 검토하고 복사해 쓰는 작업입니다. 파일은 만들지 않습니다.</p>
       ${libraryBand(lib.txt, "txt", txtLibRow,
-        "TXT 기안 템플릿이 없습니다. '템플릿 관리'에서 가져오거나 새로 만드세요.")}
-    </div>`;
+        "TXT 기안 템플릿이 없습니다. '가져오기…'로 추가하거나 새로 만드세요.")}
+    </div>${resultLine}`;
+  }
+
+  /* ---- 라이브러리 관리 동사(F8 — tpl 화면 사망의 승계, §10.17.2 판정 B·D) ----
+     디스패치는 tpl 채널 그대로(잠금·경로 검증·휴지통 규율 생존) — 몸통은 template.js 에서
+     이식했고, tpl push 를 init 의 구독이 받아 editor 스냅샷을 재당김해 되그린다. */
+  function findLibItem(media, key) {
+    const band = ((LAST && LAST.library) || {})[media] || {};
+    for (const sec of band.sections || []) {
+      for (const it of sec.items || []) if (it.key === key) return it;
+    }
+    return null;
+  }
+
+  function closeLibMenu() {
+    libMenuFor = null;
+    libRowMenu.hide();
+  }
+
+  function openLibMenu(media, kind, id, btn) {
+    let html;
+    if (kind === "group") {
+      html =
+        `<button data-menu="grp-rename">그룹 이름 변경</button>` +
+        `<button data-menu="grp-disband">그룹 해산</button>`;
+      libMenuFor = { media, kind, group: id, trigger: btn };
+    } else {
+      const it = findLibItem(media, id);
+      // 소비 동사(「이 템플릿으로」)는 행 버튼이 이미 소유 — 메뉴는 관리 동사만(2벌 금지,
+      // §10.17.2 판정 D). 무그룹 행의 그룹 지정은 ＋그룹지정 칩이 담당.
+      html =
+        (it && it.group ? `<button data-menu="move">그룹으로 이동…</button>` : "") +
+        `<button data-menu="delete" class="danger">삭제</button>`;
+      libMenuFor = { media, kind, key: id, item: it, trigger: btn };
+    }
+    libRowMenu.show(html, btn);  // 위치잡기·표시는 팩토리 소유(job.js·template.js 와 단일 출처)
+  }
+
+  function toggleLibMenu(media, kind, id, btn) {
+    const same = libMenuFor && libMenuFor.kind === kind && libMenuFor.media === media &&
+      (kind === "group" ? libMenuFor.group === id : libMenuFor.key === id);
+    if (same) { closeLibMenu(); return; }
+    openLibMenu(media, kind, id, btn);
+  }
+
+  async function onLibMenuClick(e) {
+    const btn = e.target.closest("button[data-menu]");
+    if (!btn || !libMenuFor) return;
+    const m = libMenuFor, act = btn.dataset.menu;
+    closeLibMenu();
+    try {
+      if (act === "move") openLibMoveDialog(m.media, m.item, m.trigger);
+      else if (act === "delete") await deleteLibTemplate(m.media, m.item);
+      else if (act === "grp-rename") await renameLibGroup(m.media, m.group, m.trigger);
+      else if (act === "grp-disband") await disbandLibGroup(m.media, m.group, m.trigger);
+    } catch (err) {
+      window.alert(String((err && err.message) || err));
+    }
+  }
+
+  function openLibMoveDialog(media, item, returnFocus) {
+    if (!item) return;
+    const band = ((LAST && LAST.library) || {})[media] || {};
+    libMoveDialog.open({
+      nameText: item.name,
+      groups: band.group_names || [],
+      current: item.group || "",
+      returnFocus,
+      onConfirm: (group) =>
+        Bridge.call("tpl", "set_group", { media, key: item.key, group })
+          .catch((err) => window.alert(String((err && err.message) || err))),
+    });
+  }
+
+  async function renameLibGroup(media, old, returnFocus) {
+    const val = await Modal.prompt({
+      title: "그룹 이름 변경", body: `'${old}' 의 새 이름`, value: old, returnFocus,
+    });
+    if (val === null) return;
+    const r = await Bridge.call("tpl", "rename_group", { media, group: old, new: val });
+    if (r && r.needs_confirm) {
+      if (await Modal.confirm({
+        body: `'${r.new}' 그룹이 이미 있습니다. '${old}' 의 ${r.count}개를 '${r.new}'(${r.target}개)에 합칠까요?`,
+        confirmLabel: "합치기", cancelLabel: "취소", returnFocus,
+      })) {
+        await Bridge.call("tpl", "rename_group", { media, group: old, new: val, confirm: true });
+      }
+    } else if (r && r.error) {
+      window.alert(r.error);
+    }
+  }
+
+  async function disbandLibGroup(media, name, returnFocus) {
+    const r = await Bridge.call("tpl", "disband_group", { media, group: name });
+    if (r && r.needs_confirm && (await Modal.confirm({
+      body: `'${name}' 그룹을 해산하면 ${r.count}개가 '그룹 없음'으로 이동합니다. 해산할까요?`, returnFocus,
+      confirmLabel: "해산", cancelLabel: "취소",
+    }))) {
+      await Bridge.call("tpl", "disband_group", { media, group: name, confirm: true });
+    }
+  }
+
+  async function deleteLibTemplate(media, item) {
+    if (!item) return;
+    const r = await Bridge.call("tpl", "delete", { media, path: item.path });
+    if (r && r.undo) window.UndoToast.show(`템플릿 '${item.name}' 을(를) 휴지통으로 옮겼습니다.`, async () => {
+      const restored = await Bridge.call("tpl", "undo_delete", {});
+      if (restored && restored.ok === false) throw new Error(restored.error);
+    });
   }
 
   function templateStage(s) {
@@ -738,6 +892,16 @@
           // media 가 밴드(hwpx/txt)를 고른다(F6 PR-B 2밴드).
           await sendEdit("toggle_library_group", { group: el.dataset.group, media: el.dataset.media });
           break;
+        // 라이브러리 관리 어포던스(F8 — tpl 화면 사망의 승계, §10.17.2 판정 D).
+        case "lib-more":
+          toggleLibMenu(el.dataset.media, "row", el.dataset.key, el);
+          break;
+        case "lib-grp-more":
+          toggleLibMenu(el.dataset.media, "group", el.dataset.group, el);
+          break;
+        case "lib-assign":
+          openLibMoveDialog(el.dataset.media, findLibItem(el.dataset.media, el.dataset.key), el);
+          break;
         case "import-template": {
           if (!(await confirmNewSessionIfUnsaved())) break;
           const r = await Bridge.importTemplateFile(SCREEN);
@@ -928,12 +1092,27 @@
 
   function init() {
     Bridge.onPush(SCREEN, render);
+    // tpl 채널 구독(F8 — F1 의 data_picker→pool 동형): 관리 동사(그룹·삭제·가져오기)의
+    // 결과·목록 변화를 editor 스냅샷 **재당김**으로 되그린다 — 목록·결과 렌더의 정본은
+    // editor 스냅샷 하나다(tpl 스냅샷을 여기서 직접 그리면 성형이 두 벌이 된다). 병존
+    // 기간 template.js 의 자기 구독과 공존한다(bridge.js 복수 구독).
+    Bridge.onPush("tpl", () => { Bridge.initial(SCREEN).then(render); });
     // 몰입 표면(재작성 F7) — 위임 루트가 화면 전체다. back 은 재렌더가 만지지 않는 안정
     // 요소라 여기서 직접 문다(문맥 배너의 복귀 버튼은 재구성되므로 위임으로 받는다).
     const root = $("scr-editor");
     root.addEventListener("click", onClick);
     root.addEventListener("change", onChange);
     $("editorBack").addEventListener("click", () => leaveTo(returnScreen()));
+    // 라이브러리 ⋮ 메뉴·이동 다이얼로그 배선(F8) — DOM(#tplRowMenu·#tplMoveModal)은 셸
+    // 레벨 공용이라 병존 기간 template.js 와 이중 배선되지만, 각 인스턴스가 자기 열림
+    // 상태(libMenuFor / onConfirm)로만 반응해 서로 간섭하지 않는다.
+    $("tplRowMenu").addEventListener("click", onLibMenuClick);
+    libMoveDialog.wire("tplMoveOk", "tplMoveCancel");
+    window.Popover.wireDismiss({
+      isOpen: () => libMenuFor !== null,
+      contains: (t) => !!(t.closest("#tplRowMenu") || t.closest("#scr-editor .job-more")),
+      close: closeLibMenu,
+    });
     Bridge.initial(SCREEN).then(render);
   }
 

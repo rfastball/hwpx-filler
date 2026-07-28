@@ -185,6 +185,11 @@ class WebFrontend:
                 # TXT 레지스트리·그룹 모델을 tpl 화면과 공유한다(가져오기·접힘이 함께 반영).
                 text_registry=registry,
                 txt_groups=txt_groups,
+                # 라이브러리 결과 재진술 줄(F8 — `#tplResult` 승계): 성형·수명은 tpl 컨트롤러가
+                # 계속 소유하고 편집기 스냅샷은 읽기만 한다(성형 두 벌 금지 — §10.17.2 판정 B).
+                library_result=lambda: {
+                    "text": tpl_ctrl.result_text, "level": tpl_ctrl.result_level,
+                },
             ),
         )
         self.controllers = {c.name: c for c in controllers}

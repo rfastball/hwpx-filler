@@ -40,6 +40,7 @@ import shutil
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
 from ..core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
 from ..core.format_engine import presets as format_presets
@@ -91,6 +92,11 @@ _FMT_OPTIONS = {t: [{"code": code, "label": label} for label, code in format_pre
 # 에 있으나 스냅샷엔 매핑 감(感)만 주는 소량만 노출한다(record_count 로 "외 M건" 표기).
 _SAMPLE_ROWS = 3
 
+# 1단계 피커 행에 싣지 않는 링1 액션(F8 — tpl 화면 사망의 승계 표면): `preview` 는 #13
+# 결정(10F2FF98-B — 작업 위저드와 중복), `make_job` 은 행 「이 템플릿으로」 버튼이 이미
+# 소유한다(같은 동사 2벌 금지 — §10.17.2 판정 D).
+_PICKER_HIDDEN_ACTIONS = frozenset({"preview", "make_job"})
+
 # TXT 판 RAW 차단 문안은 `screens.TXT_RAW_BLOCK` 단일 출처 — 재연결 게이트와 같은 판정
 # 같은 문안(리뷰 2R P1). 아래 import 로 이 모듈의 옛 소비자(테스트 포함)도 그대로 산다.
 
@@ -141,6 +147,7 @@ class EditorController:
         template_groups: "TemplateGroupModel | None" = None,
         text_registry: "TextTemplateRegistry | None" = None,
         txt_groups: "TemplateGroupModel | None" = None,
+        library_result: "Callable[[], dict] | None" = None,
     ) -> None:
         self.registry = registry
         self._push_sink = push
@@ -164,6 +171,10 @@ class EditorController:
         # 별도 인스턴스면 접힘·목록이 두 표면에서 갈린다). 미주입 시 표준 루트 지연 생성.
         self._text_registry = text_registry
         self._txt_groups = txt_groups
+        # 라이브러리 결과 재진술 줄(F8 — tpl 화면 사망의 `#tplResult` 승계): 성형·수명은
+        # TemplateController(result_text/level)가 계속 소유하고 여기는 **읽기만** 한다(성형
+        # 두 벌 금지 — §10.17.2 판정 B). 미주입(테스트 단독 구동)은 빈 결과.
+        self._library_result = library_result
         self._reset()
 
     def _reset(self) -> None:
@@ -561,23 +572,55 @@ class EditorController:
         items = [
             {
                 "key": rel_key(r.path, root),
+                "group": self.template_groups.group_of(rel_key(r.path, root)),
                 "name": r.name,
                 "path": r.path,
                 "badge_label": r.badge_label,
                 "badge_level": r.badge_level,
                 "is_error": r.is_error,
                 "detail": r.detail_line(),
+                # 채움 완화 사전 고지(#154) — tpl 화면 사망(F8)의 가시성 승계. 문안은 링1 확정.
+                "fill_warns": list(r.fill_warns),
+                # 상태 수선 동사(compile·review) — 라벨·구성은 링1 `_STATE_ACTIONS` 소유.
+                # `preview` 는 #13 결정(10F2FF98-B), `make_job` 은 행 「이 템플릿으로」 버튼이
+                # 이미 소유(같은 동사 2벌 금지 — §10.17.2 판정 D)라 여기서 걷는다.
+                "actions": [
+                    {"key": a.key, "label": a.label}
+                    for a in r.actions() if a.key not in _PICKER_HIDDEN_ACTIONS
+                ],
                 "current": bool(self.template_path) and r.path == self.template_path,
             }
             for r in self.template_library.rows()
         ]
+        hwpx_keys = [it["key"] for it in items]
         sections, flat = self.template_groups.build_sections(items, key_of=lambda it: it["key"])
+        txt_rows = self._txt_library_rows()
+        txt_keys = [it["key"] for it in txt_rows]
         txt_sections, txt_flat = self.txt_groups.build_sections(
-            self._txt_library_rows(), key_of=lambda it: it["key"]
+            txt_rows, key_of=lambda it: it["key"]
         )
+        # 관리 표면 승격(F8 — tpl 화면 사망): 이동 다이얼로그의 그룹 후보·개수·루트 경로를
+        # 밴드에 싣는다(tpl `_media_snapshot` 동형). **reconcile 은 여기서도 하지 않는다** —
+        # 유령 지정 위생은 관리 동사가 지나는 tpl 채널의 snapshot() 이 계속 소유한다(부분
+        # 목록 reconcile 이 살아있는 지정을 지우는 결함 클래스 봉쇄, 위 docstring).
+        result = self._library_result() if self._library_result is not None else {}
         return {
-            "hwpx": {"sections": sections, "flat": flat},
-            "txt": {"sections": txt_sections, "flat": txt_flat},
+            "hwpx": {
+                "sections": sections, "flat": flat,
+                "group_names": self.template_groups.existing_groups(hwpx_keys),
+                "count": len(items),
+                "dir": str(root) if root is not None else "",
+            },
+            "txt": {
+                "sections": txt_sections, "flat": txt_flat,
+                "group_names": self.txt_groups.existing_groups(txt_keys),
+                "count": len(txt_rows),
+                "dir": str(self.text_registry.directory),
+            },
+            "result": {
+                "text": str(result.get("text", "") or ""),
+                "level": str(result.get("level", "muted") or "muted"),
+            },
         }
 
     def _txt_library_rows(self) -> "list[dict]":
@@ -595,8 +638,10 @@ class EditorController:
                 field_count = len(t.fields())
             except Exception as exc:  # noqa: BLE001 — 손상 파일도 loud 노출(tpl 화면 동형)
                 error = str(exc)
+            key = rel_key(t.path, root)
             rows.append({
-                "key": rel_key(t.path, root),
+                "key": key,
+                "group": self.txt_groups.group_of(key),
                 "name": t.name,
                 "path": str(t.path),
                 "field_count": field_count,

@@ -59,7 +59,9 @@ MUTABLE_MODULE_STATE_BUDGET = {
     # 편집기 — LAST·접힘 2종 + deep-link 조준 대기 1슬롯(pendingAim, F6 PR-B §10.14.3).
     # pendingAim 은 파생 불가다: 스냅샷은 「이 조준을 이미 소비했는가」를 모른다(한 번성
     # 사건이지 상태가 아니다) — 스냅샷에 승격하면 소비 후 무효화 스킴이 따라온다.
-    "screens/editor.js": 4,
+    # +1(F8): libMenuFor — 열린 라이브러리 ⋮ 메뉴의 정체(tpl 화면 사망의 관리 동사 승계).
+    # 파생 불가(뷰 상태 — template.js menuFor 의 이주분, 한 객체로 묶어 1변수).
+    "screens/editor.js": 5,
     "screens/library.js": 3,
     "data_picker.js": 4,
     "datazone.js": 0,

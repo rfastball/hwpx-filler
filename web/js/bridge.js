@@ -2,11 +2,14 @@
    웹→Python 은 dispatch/네이티브 메서드, Python→웹은 window.__push(screen, snapshot) 관측 푸시.
    화면 모듈은 Bridge.onPush(screen, fn) 로 렌더러를 등록한다 — 브리지는 화면 로직을 모른다. */
 (function () {
-  const renderers = {};   // screen id → fn(snapshot)
+  // screen id → [fn, ...] — 한 채널 복수 구독(F8): 병존 기간 편집기가 tpl push 를 함께
+  // 듣는다. 교체 의미의 재등록 소비자는 없다(전 화면이 자기 채널 1회 등록) — 덮어쓰기
+  // 단일 슬롯이면 나중 등록이 먼저 등록을 조용히 밀어내 화면 하나가 렌더를 잃는다.
+  const renderers = {};
 
   const Bridge = {
-    /** 화면 렌더러 등록 — Python 이 그 화면을 푸시하면 fn(snapshot) 이 불린다. */
-    onPush(screen, fn) { renderers[screen] = fn; },
+    /** 화면 렌더러 등록 — Python 이 그 화면을 푸시하면 등록 순서대로 fn(snapshot) 이 불린다. */
+    onPush(screen, fn) { (renderers[screen] = renderers[screen] || []).push(fn); },
 
     /** 화면 초기 상태 당김(부팅 1회). */
     initial(screen) { return window.pywebview.api.initial(screen); },
@@ -84,10 +87,10 @@
     setMasterWidth(width) { return window.pywebview.api.set_master_width(Math.round(width)); },
   };
 
-  // Python→웹 푸시 진입점(app.py 의 evaluate_js 가 호출). 전역 노출.
+  // Python→웹 푸시 진입점(app.py 의 evaluate_js 가 호출). 전역 노출. 미구독 화면은 조용히
+  // 무시(등록 전 push 는 버려진다 — 부팅은 initial 당김이 정본).
   window.__push = function (screen, snapshot) {
-    const fn = renderers[screen];
-    if (fn) fn(snapshot);
+    for (const fn of renderers[screen] || []) fn(snapshot);
   };
 
   window.Bridge = Bridge;

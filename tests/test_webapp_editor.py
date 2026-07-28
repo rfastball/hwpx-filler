@@ -1685,6 +1685,63 @@ def test_editor_picker_does_not_reconcile_away_offscreen_group(tmp_path):
     assert TemplateGroupModel("hwpx").group_of("아직없는.hwpx") == "입찰"  # 지정 생존
 
 
+def test_library_snapshot_carries_management_surface(tmp_path):
+    """F8(§10.17.2 판정 A·D) — 피커가 선택 전용에서 **관리 표면**으로 승격: 행에 그룹·상태
+    동사·채움 고지, 밴드에 이동 후보(group_names)·개수·루트 경로. 상태 동사 목록은 링1
+    `_STATE_ACTIONS` 소유를 그대로 읽되 `preview`(#13 결정)·`make_job`(행 「이 템플릿으로」
+    버튼이 이미 소유 — 같은 동사 2벌 금지)은 걷는다."""
+    groups = TemplateGroupModel("hwpx")
+    groups.set_group(TPL_COMPILED.name, "계약")
+    txt_dir = tmp_path / "text_templates"
+    txt_dir.mkdir()
+    (txt_dir / "공문.txt").write_text("{{수신}} 귀중", encoding="utf-8")
+    txt_groups = TemplateGroupModel("txt")
+    txt_groups.set_group("공문.txt", "기안")
+    ctrl = EditorController(
+        JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
+        template_library=TemplateManagerViewModel(paths=[TPL_COMPILED, TPL_PARTIAL]),
+        template_groups=groups,
+        text_registry=TextTemplateRegistry(txt_dir),
+        txt_groups=txt_groups,
+    )
+    lib = ctrl.snapshot()["library"]
+    hwpx = {it["name"]: it for sec in lib["hwpx"]["sections"] for it in sec["items"]}
+    assert hwpx[TPL_COMPILED.name]["group"] == "계약"
+    assert hwpx[TPL_PARTIAL.name]["group"] == ""
+    assert isinstance(hwpx[TPL_PARTIAL.name]["fill_warns"], list)
+    acts = {a["key"] for it in hwpx.values() for a in it["actions"]}
+    assert "make_job" not in acts and "preview" not in acts
+    assert {a["key"] for a in hwpx[TPL_PARTIAL.name]["actions"]} == {"compile", "review"}
+    assert lib["hwpx"]["group_names"] == ["계약"]
+    assert lib["hwpx"]["count"] == 2
+    assert lib["hwpx"]["dir"] == ""  # 명시 경로 VM 은 루트 없음 — 빈 값 정직 노출
+    txt = {it["name"]: it for sec in lib["txt"]["sections"] for it in sec["items"]}
+    assert txt["공문"]["group"] == "기안"
+    assert lib["txt"]["group_names"] == ["기안"]
+    assert lib["txt"]["count"] == 1
+    assert lib["txt"]["dir"] == str(txt_dir)
+
+
+def test_library_result_line_reads_injected_source_live(tmp_path):
+    """F8(§10.17.2 판정 B) — 결과 재진술 줄(`#tplResult` 승계)의 성형·수명은 tpl 컨트롤러가
+    소유하고 편집기 스냅샷은 **읽기만** 한다: 주입 원천이 바뀌면 다음 스냅샷이 즉시 반영
+    (캐시 발산 없음). 미주입(단독 구동)은 빈 결과."""
+    result = {"text": "", "level": "muted"}
+    ctrl = EditorController(
+        JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
+        template_library=TemplateManagerViewModel(paths=[]),
+        text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
+        library_result=lambda: result,
+    )
+    assert ctrl.snapshot()["library"]["result"] == {"text": "", "level": "muted"}
+    result["text"] = "'서식.hwpx' 을 라이브러리로 가져왔습니다."
+    result["level"] = "ok"
+    assert ctrl.snapshot()["library"]["result"]["text"].startswith("'서식.hwpx'")
+    assert ctrl.snapshot()["library"]["result"]["level"] == "ok"
+    ctrl2, _ = _controller_lib(tmp_path)  # 미주입 — 빈 결과(성형 발명 금지)
+    assert ctrl2.snapshot()["library"]["result"] == {"text": "", "level": "muted"}
+
+
 def test_use_library_template_rejects_paths_outside_library(tmp_path):
     """라이브러리 밖 경로는 loud 거부(백엔드 화이트리스트) — 웹이 임의 경로를 실어도 생
     파일 직접 로드 경로가 부활하지 않는다(2부: 가져오기=복사가 유일한 바깥 입구)."""
