@@ -1,0 +1,8 @@
+{
+  "geometry_sha256": "138a067899e45e8d0565936eee4c3cd5d1b1924eadf18acf87c28bbfe50a47ae",
+  "files": {
+    "docs/branding/document-narmi-mark-final.png": "495b45bced3dd84a12f394dc97145defe5171a2a7279bd3bd0cd15b9dbc3cce9",
+    "docs/branding/document-narmi-final-board.png": "0414963b36048c7aed5c0857a7191de044aec602167ee4746d1e9c60d6fbfe25",
+    "packaging/hwpx-filler.ico": "081fdc421c86c56614e882783499a833c3a1bdd986b63fcf93762c39fe7a7ad7"
+  }
+}
