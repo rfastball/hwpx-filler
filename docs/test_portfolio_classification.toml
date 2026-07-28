@@ -303,10 +303,6 @@ layer = "integration"
 [files."tests/test_txt_queue.py"]
 risk_surfaces = ["application-workflows"]
 
-[files."tests/test_txt_state.py"]
-risk_surfaces = ["application-workflows"]
-layer = "contract"
-
 [files."tests/test_ui_contract.py"]
 risk_surfaces = ["architecture-design-system", "web-runtime-bridge"]
 layer = "contract"
@@ -350,10 +346,6 @@ correlation_group = "webview-selftest"
 risk_surfaces = ["web-runtime-bridge", "application-workflows", "data-ingestion-boundaries"]
 layer = "contract"
 
-[files."tests/test_webapp_draft.py"]
-risk_surfaces = ["application-workflows", "durable-registry-persistence", "mapping-validation-drift"]
-layer = "contract"
-
 [files."tests/test_webapp_editor.py"]
 risk_surfaces = ["application-workflows", "mapping-validation-drift", "data-ingestion-boundaries"]
 layer = "contract"
@@ -382,87 +374,3 @@ layer = "contract"
 risk_surfaces = ["application-workflows", "mapping-validation-drift", "durable-registry-persistence"]
 layer = "contract"
 
-[files."tests/test_webapp_txt_zone.py"]
-risk_surfaces = ["application-workflows", "extract-fill-transform", "mapping-validation-drift"]
-layer = "contract"
-
-[classes."tests/test_web_selftest_gate.py::TestWebSelftestGate"]
-execution_unit = "webview:selftest-main"
-correlation_group = "webview:selftest-main"
-disposition = "keep-owner"
-
-[tests."tests/test_atomic.py::test_failed_write_preserves_existing_and_cleans_tmp"]
-disposition = "keep-owner"
-
-[tests."tests/test_corpus_golden.py::test_golden_matches"]
-disposition = "keep-owner"
-
-[tests."tests/test_extract_invariants.py::test_paragraph_order_matches_document_order"]
-disposition = "keep-owner"
-
-[tests."tests/test_mapping.py::test_explicit_blank_is_covered_but_not_emitted_and_roundtrips"]
-disposition = "keep-owner"
-
-[tests."tests/test_job.py::test_write_lock_serializes_read_modify_write"]
-disposition = "keep-owner"
-correlation_group = "job-write-lock"
-
-[tests."tests/test_scenario_e2e.py::test_direct_match_batch_fills_bid_notice"]
-disposition = "keep-owner"
-
-[tests."tests/test_extract_invariants.py::test_corpus_not_empty"]
-disposition = "keep-owner"
-
-[tests."tests/test_diff_invariants.py::test_corpus_not_empty"]
-disposition = "merge-candidate"
-duplicate_of = "tests/test_extract_invariants.py::test_corpus_not_empty"
-
-[tests."tests/test_secret_store.py::test_windows_credential_store_real_round_trip"]
-platform = "windows"
-
-[tests."tests/test_webapp_bridge.py::test_win32_filter_block_derives_from_exts_and_is_double_null_terminated"]
-platform = "windows"
-
-[tests."tests/test_mapping_state.py::test_preview_amount_and_date_match_apply_transform"]
-correlation_group = "mapping-format"
-disposition = "keep-supporting"
-
-[tests."tests/test_mapping.py::test_transform_amount_formats_number"]
-correlation_group = "mapping-format"
-disposition = "keep-owner"
-
-[tests."tests/test_webapp_pool.py::test_same_name_reregister_needs_confirm_then_overwrites"]
-correlation_group = "pool-reregister"
-
-[tests."tests/test_r3_pool.py::test_confirmed_reregister_preserves_status_note_created_at"]
-correlation_group = "pool-reregister"
-disposition = "keep-owner"
-
-[tests."tests/test_nara.py::test_auth_failure_result_code_raises_loudly_no_leak"]
-correlation_group = "nara-auth"
-disposition = "keep-owner"
-
-[tests."tests/test_nara_state.py::test_acquire_auth_failure_distinguished_from_empty"]
-correlation_group = "nara-auth"
-
-[tests."tests/test_cli.py::test_nara_auth_failure_is_loud_exit_1"]
-correlation_group = "nara-auth"
-
-[tests."tests/test_data_factory.py::test_ambiguous_sheets_returns_overview_for_multi_sheet"]
-correlation_group = "multisheet-gate"
-disposition = "keep-owner"
-
-[tests."tests/test_cli.py::test_cli_fill_multisheet_without_sheet_errors"]
-correlation_group = "multisheet-gate"
-
-[tests."tests/test_webapp_bridge.py::test_pick_data_file_multi_sheet_defers_and_asks"]
-correlation_group = "multisheet-gate"
-
-[tests."tests/test_r3_py_core.py::test_multisheet_gate_sites_share_wording"]
-correlation_group = "multisheet-gate"
-
-[tests."tests/test_webapp_editor.py::test_edit_save_holds_the_registry_write_lock"]
-correlation_group = "job-write-lock"
-
-[tests."tests/test_webapp_job.py::test_public_delete_during_stamp_does_not_resurrect_the_job"]
-correlation_group = "job-write-lock"

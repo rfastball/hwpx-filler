@@ -47,6 +47,11 @@
   let foldOpen = false;     // 미사용 헤더 접힘(.ign-fold)
   let tokFoldOpen = false;  // 파일명 토큰 참조 접힘(.tok-fold, F27 — PR-4 리뷰 F6)
 
+  /* deep-link 조준 대기 1슬롯(F6 PR-B, §10.14.3) — 보낸 표면(드로어)이 진입 성사 뒤
+     `aimAt(target)` 로 건다. 조준 문맥의 push 가 아직이면 여기 걸어 두고 render 가 소비한다
+     (브리지 반환과 push 는 독립 채널이라 어느 쪽이 먼저인지 기대지 않는다). */
+  let pendingAim = null;
+
   /* ---- Python→웹 푸시 렌더 ---- */
   function render(s) {
     Preserve.around(() => {  // 폼 포커스·캐럿·본문 스크롤 보존(#28)
@@ -63,6 +68,40 @@
       $("editor-foot").innerHTML = footer(s);
       $("editor-foot").style.display = footer(s) ? "" : "none";
     });
+    // 조준은 Preserve **밖**에서 — 안에서 겨누면 되돌림이 새 초점을 이전 초점으로 덮는다.
+    if (pendingAim && s.context && s.context.target === pendingAim) {
+      const target = pendingAim;
+      pendingAim = null;
+      aimAtTarget(s, target);
+    }
+  }
+
+  /* 조준 실행 — 행이 없으면 fail-open(스키마 드리프트: 탭 착지·배너 증거는 그대로 참이고,
+     없는 행에 가짜 초점을 세우지 않는다). 초점 대상은 사람이 고치러 온 그 컨트롤이다. */
+  function aimAtTarget(s, target) {
+    if (target === "filename/filenamePattern") {
+      const el = document.querySelector('#editor-body input[data-act="pattern"]');
+      if (el) el.focus();
+      return;
+    }
+    const field = target.slice("binding/".length);
+    const row = document.querySelector(
+      `#editor-body table.map tr[data-field="${CSS.escape(field)}"]`);
+    if (!row) return;
+    row.scrollIntoView({ block: "center" });
+    const sel = row.querySelector('select[data-act="row-source"]');
+    if (sel) sel.focus();
+  }
+
+  /* 드로어가 진입 성사 뒤 부르는 조준 seam(F6 PR-B). 조준 문맥이 이미 도착했으면 즉시,
+     아니면 다음 render 가 소비한다 — 두 순서 모두에서 정확히 한 번 겨눈다. */
+  function aimAt(target) {
+    const ctx = (LAST && LAST.context) || {};
+    if (ctx.target === target) {
+      aimAtTarget(LAST, target);
+      return;
+    }
+    pendingAim = target;
   }
 
   /* 머리 — 이름(안정 입력)·부제·저장 상태 + 판본. 「저장」 분류 사망의 승계처(§10.13.3).
@@ -161,8 +200,10 @@
   }
 
   /* ---- 분류 0: 템플릿 — 신규 1단계 = **라이브러리에서 그룹 구획으로 고르기**(#108 슬라이스 3).
-     관리 화면 HWPX 구획과 **같은 그룹 모델·같은 접힘**(선택 전용). 매체는 hwpx 하나뿐(마법사=
-     .hwpx 산출 → 매체 자동 필터). 바깥 파일은 「가져오기…」=라이브러리로 복사 후 그 사본으로
+     관리 화면과 **같은 그룹 모델·같은 접힘**(선택 전용). **매체 2밴드**(F6 PR-B — 구 「기안」
+     화면 사망의 생성 경로 승계처): HWPX 서식·TXT 기안을 한 피커가 보이고, 고른 확장자가 세션
+     매체(탭 구성·저장 게이트)를 정한다. 행 클릭은 두 밴드 모두 기존 use_library_template
+     하나다(신규 액션 0). 바깥 파일은 「가져오기…」=라이브러리로 복사 후 그 사본으로
      시작(앱 소유 루트 — 원본 수정 불파급). ---- */
   function libRow(t) {
     // 상태 사유(detail)는 배지 title 로 — 오류 행은 선택 버튼 대신 사유를 보여준다(리뷰 F8:
@@ -179,46 +220,69 @@
       `${badge}${pick}</div>`;
   }
 
-  function libGroupHead(sec, idx) {
+  // TXT 밴드 행(F6 PR-B) — 상태 축이 다르다: 필드 수(토큰 유무의 사전 신호)·읽기 오류.
+  function txtLibRow(t) {
+    const badge = t.error
+      ? `<span class="tbadge" title="${esc(t.error)}">읽기 오류</span>`
+      : `<span class="tbadge">필드 ${t.field_count}</span>`;
+    const pick = t.error
+      ? `<span class="muted capnote" title="${esc(t.error)}">사용 불가</span>`
+      : (t.current
+        ? `<span class="muted capnote">선택됨</span>`
+        : `<button class="btn sm" data-act="use-library" data-path="${esc(t.path)}">이 템플릿으로</button>`);
+    return `<div class="libselrow${t.current ? " cur" : ""}"><span class="fname">${esc(t.name)}</span>` +
+      `${badge}${pick}</div>`;
+  }
+
+  function libGroupHead(sec, idx, media) {
     const label = sec.group || "그룹 없음";
     // 안정 id(#138 리뷰 F13) — 재렌더 뒤 Preserve 가 같은 헤더로 키보드 포커스를 복원한다
-    // (구획 순서는 접힘 토글에 불변이라 인덱스가 안정 식별자다).
-    return `<div class="job-grp"><button class="job-grp-head" id="libgrp-${idx}" data-act="toggle-lib-group"` +
-      ` data-group="${esc(sec.group)}" aria-expanded="${sec.collapsed ? "false" : "true"}">` +
+    // (구획 순서는 접힘 토글에 불변이라 밴드+인덱스가 안정 식별자다).
+    return `<div class="job-grp"><button class="job-grp-head" id="libgrp-${media}-${idx}" data-act="toggle-lib-group"` +
+      ` data-group="${esc(sec.group)}" data-media="${media}" aria-expanded="${sec.collapsed ? "false" : "true"}">` +
       `<span class="grp-name">${esc(label)}</span><span class="grp-count">${sec.count}</span>` +
       `<span class="grp-caret">${sec.collapsed ? "▸" : "▾"}</span></button></div>`;
   }
 
-  function libraryPicker(s) {
-    const lib = s.library || { sections: [], flat: true };
-    const sections = lib.sections || [];
+  // 한 매체 밴드의 본문 — 그룹 구획(퇴화 시 평면), 빈 밴드는 조치 안내 한 줄.
+  function libraryBand(band, media, rowFn, emptyText) {
+    const sections = (band && band.sections) || [];
     const total = sections.reduce((n, sec) => n + (sec.items ? sec.items.length : 0), 0);
-    let body;
     if (!total) {
-      body = `<div class="muted" style="padding:var(--sp-8)">라이브러리에 템플릿이 없습니다.` +
-        ` '가져오기…'로 추가하거나 템플릿 관리에서 확인하세요.</div>`;
-    } else if (lib.flat) {
-      // 퇴화 불변식(그룹 0개) — 헤더 없는 평면 나열.
-      body = `<div class="tpl-grp-rows flat">` +
-        sections.map((sec) => sec.items.map(libRow).join("")).join("") + `</div>`;
-    } else {
-      body = sections.map((sec, i) =>
-        libGroupHead(sec, i) +
-        (sec.collapsed ? "" : `<div class="tpl-grp-rows">${sec.items.map(libRow).join("")}</div>`)
-      ).join("");
+      return `<div class="muted" style="padding:var(--sp-8)">${emptyText}</div>`;
     }
+    if (band.flat) {
+      // 퇴화 불변식(그룹 0개) — 헤더 없는 평면 나열.
+      return `<div class="tpl-grp-rows flat">` +
+        sections.map((sec) => sec.items.map(rowFn).join("")).join("") + `</div>`;
+    }
+    return sections.map((sec, i) =>
+      libGroupHead(sec, i, media) +
+      (sec.collapsed ? "" : `<div class="tpl-grp-rows">${sec.items.map(rowFn).join("")}</div>`)
+    ).join("");
+  }
+
+  function libraryPicker(s) {
+    const lib = s.library || {};
     return `<div class="grp">
-      <div class="row" style="margin-bottom:var(--sp-4)"><span class="cap">템플릿 라이브러리</span>
+      <div class="row" style="margin-bottom:var(--sp-4)"><span class="cap">HWPX 서식</span>
         <span class="spacer"></span>
         <button class="btn sm" data-act="import-template">가져오기…</button></div>
-      <p class="note quiet" style="margin-top:0">HWPX 서식만 표시됩니다.</p>
-      ${body}
+      <p class="note quiet" style="margin-top:0">누름틀에 채운 .hwpx 문서 파일을 만드는 작업입니다.</p>
+      ${libraryBand(lib.hwpx, "hwpx", libRow,
+        "라이브러리에 템플릿이 없습니다. '가져오기…'로 추가하거나 템플릿 관리에서 확인하세요.")}
+    </div>
+    <div class="grp">
+      <div class="row" style="margin-bottom:var(--sp-4)"><span class="cap">TXT 기안</span></div>
+      <p class="note quiet" style="margin-top:0">채운 본문을 검토하고 복사해 쓰는 작업입니다. 파일은 만들지 않습니다.</p>
+      ${libraryBand(lib.txt, "txt", txtLibRow,
+        "TXT 기안 템플릿이 없습니다. '템플릿 관리'에서 가져오거나 새로 만드세요.")}
     </div>`;
   }
 
   function templateStage(s) {
     let out = `<div class="wtitle">${esc(stageTitle(s, "template"))}</div>
-      <p class="wsub">라이브러리에서 누름틀 템플릿을 고르거나 '가져오기…'로 추가하세요.</p>
+      <p class="wsub">만들 작업의 템플릿을 고르세요.</p>
       ${libraryPicker(s)}`;
     if (s.template_name) {
       out += `<div class="row"><span class="lbl">선택한 템플릿</span>
@@ -424,7 +488,7 @@
     if (r.preview_error) preview = `<span class="pv emptyval">(미리보기 오류)</span>`;
     else if (r.preview_empty) preview = `<span class="pv emptyval">(이 행에서 빈 값)</span>`;
     else preview = `<span class="pv">${esc(r.preview)}</span>`;
-    return `<tr class="r-${r.row_state}">
+    return `<tr class="r-${r.row_state}" data-field="${esc(r.template_field)}">
       <td><input type="checkbox" class="cbx" data-act="row-confirm" data-index="${r.index}"${r.confirmed ? " checked" : ""}></td>
       <td><span class="fname" title="${esc(r.context || r.template_field)}">${esc(r.template_field)}</span>
         <span class="tbadge">[추정: ${esc(inferred)}]</span></td>
@@ -671,7 +735,8 @@
         }
         case "toggle-lib-group":
           // 1단계 피커 그룹 접힘 — 관리 화면과 같은 모델 토글(뷰 상태, 세션 불변).
-          await sendEdit("toggle_library_group", { group: el.dataset.group });
+          // media 가 밴드(hwpx/txt)를 고른다(F6 PR-B 2밴드).
+          await sendEdit("toggle_library_group", { group: el.dataset.group, media: el.dataset.media });
           break;
         case "import-template": {
           if (!(await confirmNewSessionIfUnsaved())) break;
@@ -887,13 +952,19 @@
      한 형태다. 면을 여는 절차(Python 왕복·성사 뒤 열기·포커스)는 그 화면이 소유한 seam 을
      그대로 쓴다 — 여기서 다시 조립하면 열기 규율이 두 벌이 된다. */
   async function restoreReturnState() {
-    const ret = ((LAST && LAST.context) || {}).return_context || {};
+    const ctx = (LAST && LAST.context) || {};
+    const ret = ctx.return_context || {};
     if (ret.surface === "preview" && ret.reopen_drawer
         && window.JobScreen && window.JobScreen.openPreview) {
       // 규칙 재적재는 `landOn` 이 **전환 전에** 이미 끝냈다(8R 근본 조치) — 여기서 다시
       // 기다리면 순서 규율이 미리보기 복귀에만 사는 두 벌째가 되고, 그것이 5R→8R 사이에
       // 데이터·결과 복귀를 무방비로 남긴 자리다.
-      await window.JobScreen.openPreview();
+      // 같은 previewIndex·같은 행(§10.14.3): 자리는 진입 때 실은 값의 왕복이고, 행
+      // 정체성은 `context.target` 에서 파생한다 — 둘째 축을 만들지 않는다(판정 B).
+      await window.JobScreen.openPreview(null, {
+        at: ret.preview_index || 0,
+        focusTarget: ctx.target || "",
+      });
     }
   }
 
@@ -978,5 +1049,5 @@
     if (window.pywebview && window.Bridge) Bridge.initial(SCREEN).then(render);
   }
 
-  window.EditorScreen = { init, rerender, leaveTo };
+  window.EditorScreen = { init, rerender, leaveTo, aimAt };
 })();

@@ -32,7 +32,7 @@ class SaveVerdict:
         return not self.block_reason
 
 
-def validate_save(model, name: str, pattern: str, *, schema=None) -> SaveVerdict:
+def validate_save(model, name: str, pattern: str, *, schema=None, media: str = "hwpx") -> SaveVerdict:
     """저장 전 게이트 술어(순수) — 위젯은 ``block_reason`` 을 경고로 띄우기만 한다.
 
     ``model`` 은 :class:`~hwpxfiller.gui.mapping_state.MappingModel`(또는 ``None``).
@@ -44,6 +44,10 @@ def validate_save(model, name: str, pattern: str, *, schema=None) -> SaveVerdict
     ``schema`` 가 주어지면(현재 로드된 템플릿 스키마) 매핑 행 필드가 그 스키마 필드와
     정확히 일치하는지 재대조한다 — 세션 혼합(#25)으로 구 템플릿 스키마 기반 모델이
     새 템플릿으로 저장되는 조용한 오저장을 시끄럽게 차단한다(confirm-or-alarm, 방어층).
+
+    ``media`` — 파일명 패턴 게이트는 **매체 인지**다(F6 PR-B): TXT 작업은 파일을 만들지
+    않아 파일 이름 축 자체가 없다(§3.2 — 탭도 없다). 없는 규칙을 요구하면 고칠 표면이
+    없는 차단 문구가 된다.
     """
     if model is None or not model.is_complete():
         return SaveVerdict("모든 매핑 행을 확정해야 작업을 저장할 수 있습니다.")
@@ -56,8 +60,8 @@ def validate_save(model, name: str, pattern: str, *, schema=None) -> SaveVerdict
     if not name:
         return SaveVerdict("작업 이름을 입력하세요.")
     # 파일명 패턴은 문서 식별자를 결정한다 — 빈 입력을 화면에 없던 값으로
-    # 조용히 폴백하지 않는다(확인-또는-경보, RC-20).
-    if not pattern:
+    # 조용히 폴백하지 않는다(확인-또는-경보, RC-20). TXT 는 이 축이 없다(위 docstring).
+    if media != "txt" and not pattern:
         return SaveVerdict("파일명 패턴을 입력하세요.")
     if not model.emits_any_value():
         return SaveVerdict(

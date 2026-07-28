@@ -140,23 +140,17 @@ def test_primary_action_target_comes_from_python_not_the_surface() -> None:
     )
     for derived in ('media === "txt"', "template_linked", "mode_label"):
         assert derived not in body, f"표면이 목적지를 조립합니다: {derived}"
-    # 세 목적지 전부 실제 착지처가 있다 — 빈 화면으로 보내지 않는다.
-    assert 'Nav.go("draft")' in body and "DraftScreen.openWork" in body
+    # 두 목적지 전부 실제 착지처가 있다 — 빈 화면으로 보내지 않는다. TXT 는 F6 PR-B 로
+    # `job` 에 합쳐졌다(실행 버튼 2분기는 판정 D 소유 — 여기 매체 분기 부활 금지).
+    assert 'target === "draft"' not in body and "DraftScreen" not in body
     assert "editJob(name," in body          # 미연결·미상 방식 → 고칠 수 있는 곳(문맥 동반, F7)
-    assert "prefer_work" in body            # hwpx 연결분만 「문서 만들기」로
-    # 취소면 화면을 바꾸지 않는다(§9.3 전이 순서 면).
-    assert "if (!(await window.DraftScreen.openWork(name))) return;" in body
+    assert "prefer_work" in body            # 연결분(hwpx·txt)은 「문서 만들기」로
     # 라벨도 목적지와 함께 온다 — 표면이 짝을 다시 맞추면 또 갈린다.
     detail = LIB[LIB.index("function renderDetail"):LIB.index("async function runPrimary")]
     assert "esc(primary.label)" in detail, "라벨을 Python 페이로드에서 읽지 않습니다."
     # 라벨을 매체로 고르면 목적지와 짝이 또 갈린다 — 방어 기본값 하나만 허용한다.
     assert 'd.media === "txt"' not in detail
     assert detail.count('"기안에서 열기"') == 0
-    # 「기안」이 그 단일 경로를 내보내고 취소/실패를 boolean 으로 말한다.
-    draft = (ROOT / "web" / "js" / "screens" / "draft.js").read_text(encoding="utf-8")
-    assert "openWork: selectJob" in draft
-    sel = draft[draft.index("async function selectJob"):draft.index("/* ---- ⋮ 메뉴")]
-    assert "return false" in sel and "return true" in sel
 
 
 def test_rename_carries_the_selection_only_when_it_succeeded() -> None:

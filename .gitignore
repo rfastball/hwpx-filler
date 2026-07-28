@@ -35,6 +35,14 @@ coverage.xml
 pytest.xml
 .ruff_cache/
 .pyright/
+.pytest-codex/
+error.log
+
+# 에이전트 도구 자산(제품 아님 — 머신 고정이라 커밋 금지)
+# .claude/skills/ 는 .agents/skills/ 를 가리키는 절대경로 심링크다.
+.agents/
+.claude/skills/
+skills-lock.json
 
 # Installer output
 installer-dist/
@@ -52,3 +60,9 @@ desktop.ini
 # filler 는 scripts/render_document_narmi_branding.py 산출). 미커밋이면 CI 빌드에
 # 아이콘이 빠진 채 조용히 성공한다(spec 의 exists() 폴백).
 *.spec.bak
+
+# 브랜딩 초기 탐색 렌더(1MB 급 · 채택 안 된 방향) — 최종 산출물(*-final.*)과
+# 채택된 방향안(document-narmi-logo-directions-v2.*)만 저장소에 남는다.
+docs/branding/document-narmi-dashboard-mockup-*.png
+docs/branding/document-narmi-icon-direction-*.png
+docs/branding/document-narmi-abstract-icon-concepts-*.png

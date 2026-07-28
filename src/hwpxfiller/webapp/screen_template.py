@@ -160,6 +160,13 @@ class TemplateController:
         hwpx["dir"] = str(self.vm.library_dir) if self.vm.library_dir is not None else ""
         hwpx["empty_hint"] = self._hwpx_empty_hint()
         txt["dir"] = str(self.text_registry.directory)
+        # 휘발 「기안」 폐지 고지 ②(F6 PR-B — §10.15.15 점검표 6행): 대체 경로(저장 TXT
+        # 작업 경유)를 템플릿의 거처에서 재진술한다. tpl 화면은 F8 에 죽으므로 한시 문안.
+        # 템플릿이 있을 때만 발화한다 — 빈 밴드는 빈 상태 CTA 가 이미 경로를 말한다.
+        txt["notice"] = (
+            "TXT 템플릿은 '문서 작업'의 [＋ 새 작업]에서 저장 TXT 작업으로 만들어 채워 복사합니다."
+            if txt["count"] else ""
+        )
         return {
             "hwpx": hwpx,
             "txt": txt,

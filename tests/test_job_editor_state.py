@@ -55,6 +55,14 @@ def test_validate_save_blocks_on_empty_pattern():
     assert "패턴" in verdict.block_reason
 
 
+def test_validate_save_pattern_gate_is_media_aware():
+    """F6 PR-B — TXT 작업은 파일을 만들지 않아 파일 이름 축이 없다(§3.2): 패턴 게이트가
+    서지 않는다. 없는 규칙의 차단 문구는 고칠 표면이 없는 문구다. 그 외 게이트는 동일."""
+    assert validate_save(_model(_content_row()), "작업1", "", media="txt").ok
+    assert "이름" in validate_save(_model(_content_row()), "", "", media="txt").block_reason
+    assert "전부 비움" in validate_save(_model(_blank_row()), "작업1", "", media="txt").block_reason
+
+
 def test_validate_save_blocks_all_blank_job():
     """RC-08 회귀 — 전부 비움 확정 작업은 emits_any_value 질의로 시끄럽게 차단."""
     verdict = validate_save(

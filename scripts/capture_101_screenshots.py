@@ -429,82 +429,170 @@ def _drive(d: Driver) -> None:
     d.scroll_to("#jobResult")
     d.shot("generated")
 
-    # ---- S8 기안: 템플릿 + 데이터 채움 -------------------------------------
-    # 「기안」은 상단 탭의 구분선 오른쪽 **과도기 임시 항목**이다(F6 에서 「문서 만들기」로
-    # 합쳐지며 사라진다) — 캡처는 지금 실물을 그대로 찍는다.
-    d.js("window.Nav.go('draft'); true;")
-    d.wait("document.querySelector('#scr-draft.on') !== null", "기안 화면")
-    d.wait("document.querySelectorAll('#draftTplSel option').length >= 2", "템플릿 콤보 채움")
-    assert d.js("window.__cap.setValue('#draftTplSel', '발주요청_기안')")
+    # ---- S8 트랙 B: TXT 작업 만들기(편집기 「템플릿」 탭 TXT 밴드) ----------
+    # 휘발 「기안」 화면은 F6 PR-B 로 사라졌다 — TXT 도 같은 편집기에서 **저장 작업**으로
+    # 만들고(지도 §10.15.15 점검표 1행), 채워 복사는 검토·복사 작업대가 잇는다.
+    d.js("window.Nav.go('library'); true;")
+    d.wait("document.querySelector('#scr-library.on') !== null", "문서 작업 화면(트랙 B)")
+    d.click_sel("#libraryNewWork")
     d.wait(
-        "(document.getElementById('draftCardRender')||{textContent:''}).textContent"
-        ".includes('발주 요청')",
-        "기안 원문 렌더",
+        "document.querySelector('#scr-editor.on') !== null && !!document.querySelector("
+        "'#scr-editor button[data-act=\"use-library\"][data-path*=\"발주요청_기안\"]')",
+        "편집기 TXT 밴드",
     )
-    # 데이터 선택은 단일 출구(재작성 F1) — 버튼이 네이티브 피커를 바로 열지 않고 **데이터
-    # 선택 다이얼로그**를 연다. 「다른 데이터」의 [파일 찾아보기…]가 네이티브로 내려간다.
-    d.click_sel("#draftBtnPickData")
+    d.click_sel('#scr-editor button[data-act="use-library"][data-path*="발주요청_기안"]')
+    # TXT 세션 = 탭 2개(템플릿·필드 연결) — 파일 이름 탭이 없다(§3.2, 파일을 만들지 않는 작업).
     d.wait(
-        "!document.getElementById('dataPickerModal').classList.contains('hidden')",
-        "데이터 선택 다이얼로그",
+        "document.querySelectorAll('#editor-steps .wstep-tab').length === 2"
+        " && document.querySelector('#scr-editor').textContent.includes('공고번호')",
+        "TXT 스키마·탭 2개",
     )
+    d.click("#scr-editor", "다음 ▶")
+    d.wait("!!window.__cap.btn('#scr-editor','파일 선택…')", "TXT 필드 연결 데이터 관문")
     _DIALOG_ANSWERS.append(CSV)
-    d.click_sel("#dataPickerBrowse")
-    # 「작업」과 같은 데이터-우선 계약(§18.2) — 새 데이터는 선택 0건에서 시작하므로 채울
-    # 대상을 먼저 고른다. 그래야 카드가 첫 행 값으로 채워진다.
-    d.wait("!document.getElementById('draftSelAll').disabled", "기안 대상 행 표", timeout=25.0)
-    d.click_sel("#draftSelAll")
+    d.click("#scr-editor", "파일 선택…")
     d.wait(
-        "(document.getElementById('draftCardRender')||{textContent:''}).textContent"
-        ".includes('해양수산부')",
-        "기안 채움 미리보기",
+        "!!window.__cap.btn('#scr-editor','모두 확정')"
+        " && document.querySelector('#scr-editor').textContent.includes('해양수산부')",
+        "TXT 매핑표 미리보기",
+    )
+    d.click("#scr-editor", "모두 확정")
+    d.wait(
+        "document.querySelector('#scr-editor').textContent.includes('확정 6/6')",
+        "TXT 전 행 확정",
+    )
+    assert d.js("window.__cap.setValue('#editorName', '발주요청 기안')")
+    d.click("#scr-editor", "작업 저장")
+    # 트랙 A 가 같은 CSV 를 이미 「발주목록」으로 등록했다 — 같은 이름 재등록 확인이 선다
+    # (조용한 참조 덮어쓰기 금지). 같은 파일·같은 뜻이라 실습도 [덮어쓰기]로 지난다.
+    d.wait("!!window.__cap.btn(null,'덮어쓰기')", "등록 데이터 동명 확인")
+    d.js("window.__cap.clickBtn(null,'덮어쓰기'); true;")
+    d.wait(
+        "document.querySelector('#scr-editor').textContent.includes('저장했습니다')",
+        "TXT 작업 저장 착지",
+        timeout=30.0,
+    )
+    d.click_sel("#editorBack")
+    d.wait("document.querySelector('#scr-job.on') !== null", "편집기 이탈(트랙 B)")
+
+    # ---- S9 작업대 진입·검토 -----------------------------------------------
+    # 실행 버튼이 매체 분기(판정 D)로 「검토·복사 시작 · 3건」으로 서고 작업대가 열린다.
+    d.js("window.Nav.go('library'); true;")
+    d.wait(
+        "!!document.querySelector('#libraryList [data-work=\"발주요청 기안\"]')",
+        "TXT 작업 라이브러리 반영",
+    )
+    d.click_sel('#libraryList [data-work="발주요청 기안"]')
+    d.wait("!!document.querySelector('#libraryDetail [data-use=\"발주요청 기안\"]')", "TXT 상세")
+    d.click_sel('#libraryDetail [data-use="발주요청 기안"]')
+    d.wait(
+        "document.querySelector('#scr-job').textContent.includes('자동으로 연결')",
+        "TXT 기본 데이터 자동 연결",
         timeout=25.0,
     )
-    d.scroll_to("#draftCard")
-    d.shot("draft-filled")
-
-    # ---- S9 복사(클립보드) -------------------------------------------------
-    d.click_sel("#draftCardCopy")
+    d.click_sel("#jobSelAll")
     d.wait(
-        "(document.getElementById('draftNote')||{textContent:''}).textContent"
-        ".includes('복사')",
-        "복사 완료 노트",
+        "document.getElementById('jobGenBtn').textContent.includes('검토·복사 시작')"
+        " && !document.getElementById('jobGenBtn').disabled",
+        "검토·복사 진입 버튼",
     )
-    d.scroll_to("#draftNote")
-    d.shot("draft-copied")
-
-    # ---- S10 오류 연습: 미치환 토큰 경고 -----------------------------------
-    assert d.js("window.__cap.setValue('#draftTplSel', '오류연습_미치환')")
-    # 무장 세션 전환 가드 — in-page 확인 모달이 뜨면 실 클릭으로 지난다.
+    d.click_sel("#jobGenBtn")
+    # 카드 술어는 표시순서 무관하게 잡는다 — 고정 사본은 「최신 행 먼저」 기본 순서라 첫
+    # 카드가 CSV 1행이 아니다. 템플릿 원문([발주 요청])과 채운 값(구매)이 함께 서야 채움이다.
     d.wait(
-        "(document.getElementById('draftCardRender')||{textContent:''}).textContent"
-        ".includes('담당연락처')"
-        " || !!window.__cap.btn(null,'바꾸기')",
-        "전환 가드 or 전환 완료",
+        "document.querySelector('#scr-workbench.on') !== null"
+        " && (document.getElementById('wbCard')||{textContent:''}).textContent"
+        ".includes('[발주 요청]')"
+        " && (document.getElementById('wbCard')||{textContent:''}).textContent.includes('구매')",
+        "작업대 카드 채움",
     )
-    d.js("window.__cap.clickBtn(null,'바꾸기'); true;")
-    # 전환은 데이터를 유지한다 — 해제된 경우에만 다시 겨눈다(답변도 그때만 큐잉).
-    time.sleep(0.8)
-    if not d.js(
-        "((document.getElementById('draftDataLabel')||{value:'',textContent:''}).value||''"
-        " + (document.getElementById('draftDataLabel')||{textContent:''}).textContent)"
-        ".includes('발주목록')"
-    ):
-        d.click_sel("#draftBtnPickData")
-        d.wait(
-            "!document.getElementById('dataPickerModal').classList.contains('hidden')",
-            "데이터 선택 다이얼로그(재겨눔)",
-        )
-        _DIALOG_ANSWERS.append(CSV)
-        d.click_sel("#dataPickerBrowse")
+    d.shot("workbench-review")
+
+    # ---- S10 복사(클립보드) ------------------------------------------------
+    d.click_sel("#wbCopy")
     d.wait(
-        "(document.getElementById('draftCardRender')||{textContent:''}).textContent"
-        ".includes('{{담당연락처}}')",
-        "미치환 토큰 표시",
+        "(document.getElementById('wbCopied')||{textContent:''}).textContent"
+        ".trim().indexOf('1 /') === 0",
+        "복사 카운터",
+    )
+    d.shot("workbench-copied")
+    # 미복사 잔량이 있는 이탈은 가드가 확인을 요구한다(T3 승계) — 실 클릭으로 지난다.
+    d.click_sel("#wbBack")
+    d.wait(
+        "document.querySelector('#scr-job.on') !== null || !!window.__cap.btn(null,'나가기')",
+        "작업대 이탈 가드",
+    )
+    d.js("window.__cap.clickBtn(null,'나가기'); true;")
+    d.wait("document.querySelector('#scr-job.on') !== null", "작업대 이탈")
+
+    # ---- S11 오류 연습: 데이터에 없는 항목 = 비움 확정 → 〈빈 값〉 ----------
+    # 구 「기안」의 빨간 {{토큰}} 은 휘발 세션(미결속 허용)의 표면이었다. 저장 작업은 전 행
+    # 확정이 저장 조건이라, 없는 항목은 편집기가 **비움 확정**을 요구하고(조용히 지나가지
+    # 않는다) 작업대 카드에 〈빈 값〉으로 남는다 — 같은 경보의 새 거처를 그대로 찍는다.
+    d.js("window.Nav.go('library'); true;")
+    d.wait("document.querySelector('#scr-library.on') !== null", "문서 작업(오류 연습)")
+    d.click_sel("#libraryNewWork")
+    d.wait(
+        "document.querySelector('#scr-editor.on') !== null && !!document.querySelector("
+        "'#scr-editor button[data-act=\"use-library\"][data-path*=\"오류연습_미치환\"]')",
+        "편집기 TXT 밴드(오류 연습)",
+    )
+    d.click_sel('#scr-editor button[data-act="use-library"][data-path*="오류연습_미치환"]')
+    d.wait(
+        "document.querySelector('#scr-editor').textContent.includes('담당연락처')",
+        "오류 연습 스키마",
+    )
+    d.click("#scr-editor", "다음 ▶")
+    d.wait("!!window.__cap.btn('#scr-editor','파일 선택…')", "데이터 관문(오류 연습)")
+    _DIALOG_ANSWERS.append(CSV)
+    d.click("#scr-editor", "파일 선택…")
+    d.wait("!!window.__cap.btn('#scr-editor','모두 확정')", "매핑표(오류 연습)")
+    d.click("#scr-editor", "모두 확정")
+    # 데이터에 없는 「담당연락처」 — 채우지 않고 비움으로 확정할지 **묻는다**(이름게이트).
+    d.wait("!!window.__cap.btn(null,'비움으로 확정')", "비움 확정 이름게이트")
+    d.js("window.__cap.clickBtn(null,'비움으로 확정'); true;")
+    d.wait(
+        "document.querySelector('#scr-editor').textContent.includes('확정 3/3')",
+        "오류 연습 전 행 확정",
+    )
+    assert d.js("window.__cap.setValue('#editorName', '오류연습')")
+    d.click("#scr-editor", "작업 저장")
+    d.wait("!!window.__cap.btn(null,'덮어쓰기')", "등록 데이터 동명 확인(오류 연습)")
+    d.js("window.__cap.clickBtn(null,'덮어쓰기'); true;")
+    d.wait(
+        "document.querySelector('#scr-editor').textContent.includes('저장했습니다')",
+        "오류 연습 저장 착지",
+        timeout=30.0,
+    )
+    d.click_sel("#editorBack")
+    d.wait("document.querySelector('#scr-job.on') !== null", "편집기 이탈(오류 연습)")
+    d.js("window.Nav.go('library'); true;")
+    d.wait(
+        "!!document.querySelector('#libraryList [data-work=\"오류연습\"]')",
+        "오류 연습 작업 반영",
+    )
+    d.click_sel('#libraryList [data-work="오류연습"]')
+    d.wait("!!document.querySelector('#libraryDetail [data-use=\"오류연습\"]')", "오류 연습 상세")
+    d.click_sel('#libraryDetail [data-use="오류연습"]')
+    # 이번엔 「자동으로 연결」 고지가 없다 — 같은 데이터(발주목록)가 앞 단계에서 이미
+    # 마운트돼 있어 prefer_work 가 데이터 재연결 없이 작업만 바꾼다. 전환 사실로 기다린다.
+    d.wait(
+        "document.querySelector('#scr-job').textContent.includes('오류연습')"
+        " && !document.getElementById('jobSelAll').disabled",
+        "오류 연습 작업 전환",
         timeout=25.0,
     )
-    d.scroll_to("#draftCard")
-    d.shot("missing-token")
+    d.click_sel("#jobSelAll")
+    d.wait("!document.getElementById('jobGenBtn').disabled", "검토·복사 진입(오류 연습)")
+    d.click_sel("#jobGenBtn")
+    d.wait(
+        "document.querySelector('#scr-workbench.on') !== null"
+        " && (document.getElementById('wbCard')||{textContent:''}).textContent.includes('빈 값')"
+        " && (document.getElementById('wbMapPanel')||{textContent:''}).textContent"
+        ".includes('담당연락처')",
+        "작업대 〈빈 값〉 표면",
+    )
+    d.shot("workbench-empty-value")
 
 
 # ------------------------------------------------------------------ 부팅 배선

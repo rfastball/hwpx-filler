@@ -230,8 +230,7 @@ def test_job_panel_imports_ring1_and_does_not_reimplement() -> None:
 _ALLOWED_JOB_WRITE_SITES = {
     ("webapp/screen_editor.py", "save"):
         "저장 임계구역(_save_locked)이 registry.write_lock() 안 — 보존값 재읽기~저장 원자",
-    ("webapp/screen_draft.py", "save"):
-        "「기안으로 저장」 승격(_do_save_job)이 registry.write_lock() 안 — 생성 스레드 스탬프와 lost-update 방지(#148 슬라이스 5c)",
+    # (webapp/screen_draft.py 행 삭제 — 「기안」 화면 사망으로 모듈째 소멸, F6 PR-B.)
     ("webapp/screen_workbench.py", "save"):
         "작업대 「기본 규칙으로 저장」(_do_save_rules)이 registry.write_lock() 안 — 잠금 안에서 디스크를 다시 읽고 그 위에 매핑만 얹는다(오래 열린 세션일수록 진입 시 읽은 Job 이 낡는다, F6)",
 }

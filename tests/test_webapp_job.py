@@ -19,9 +19,9 @@ from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.gui.review_state import review_requirement
 from hwpxfiller.gui.run_state import RunViewModel
 from hwpxfiller.gui.selection_state import SelectionModel
-from hwpxfiller.webapp.draft_session import TargetFontSetting
 from hwpxfiller.webapp.screen_job import JobController
-from hwpxfiller.webapp.screen_workbench import WorkbenchController
+# TargetFontSetting 은 「기안」 사망(F6 PR-B)으로 작업대 모듈이 승계(동일 클래스·영속 키).
+from hwpxfiller.webapp.screen_workbench import TargetFontSetting, WorkbenchController
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
 MULTI_SHEET = Path(__file__).resolve().parents[0] / "fixtures" / "multi_sheet.xlsx"
@@ -107,6 +107,7 @@ def test_initial_has_no_active_work_and_loud_gate(tmp_path):
     # 데이터 미준비 = 후보 계산 자체를 안 한다(§18.1) — 4구획 전부 빈 골격.
     assert snap["candidates"] == {
         "top": [], "sections": [], "more": 0, "needs_count": 0, "suggested": "",
+        "txt_note": "",
     }
     # 문서 탐색도 미계산 골격(§18.1) — 탭·검색어는 세션 기본값을 그대로 재진술한다.
     assert snap["browse"]["rows"] == [] and snap["browse"]["available_count"] == 0
@@ -3746,3 +3747,49 @@ def test_workbench_entry_is_blocked_and_loud_when_the_template_vanished(tmp_path
         ctrl.registry, lambda s, n: None, target_font=TargetFontSetting())
     res = ctrl.dispatch("open_workbench", {})
     assert res["ok"] is False and "템플릿" in res["error"]
+
+
+# --------------------------------------------- 휘발 「기안」 폐지 고지 ①(F6 PR-B)
+def test_candidates_txt_note_speaks_only_to_the_volatile_draft_audience(tmp_path):
+    """고지 ①(§10.15.15 판정 A) 3태 — 술어(txt 템플릿 有 ∧ txt 작업 0건)의 양단 고정.
+
+    ① 템플릿 0: 침묵(순수 HWPX 사용자에 소음 금지) ② 템플릿 有·txt 작업 0: 발화(대체
+    경로 = 저장 TXT 작업 경유를 재진술) ③ txt 작업이 서면: 침묵(이미 건너간 사용자).
+    영속 플래그 없음 — 매 스냅샷 파생이라 상태가 바뀌면 문안이 저절로 걷힌다.
+    """
+    reg = _registry(tmp_path)                       # hwpx 작업 1개(공고서)
+    txt_dir = tmp_path / "text_templates"
+    ctrl = JobController(
+        reg, lambda s, snap: None, text_registry=TextTemplateRegistry(txt_dir)
+    )
+    _mount_all(ctrl, _data_csv(tmp_path))
+    assert ctrl.snapshot()["candidates"]["txt_note"] == ""      # ① 템플릿 0 = 침묵
+    txt_dir.mkdir()
+    (txt_dir / "기안.txt").write_text("{{공고명}}", encoding="utf-8")
+    note = ctrl.snapshot()["candidates"]["txt_note"]
+    assert "저장" in note and "＋ 새 작업" in note               # ② 발화 = 대체 경로 재진술
+    tpl = tmp_path / "기안틀.txt"
+    tpl.write_text("{{공고명}}", encoding="utf-8")
+    reg.save(Job(name="기안작업", template_path=str(tpl)))
+    assert ctrl.snapshot()["candidates"]["txt_note"] == ""      # ③ txt 작업 有 = 침묵
+
+
+def test_candidates_txt_note_is_silent_without_an_injected_registry(tmp_path):
+    """레지스트리 미주입(테스트·CLI 소비자) — 실 홈 스캔 없이 항상 침묵(격리·결정성)."""
+    ctrl, _ = _controller(tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    assert ctrl.snapshot()["candidates"]["txt_note"] == ""
+
+
+def test_preview_open_at_restores_the_same_position_with_clamp(tmp_path):
+    """deep-link 복귀의 같은 자리(§10.15.15 판정 C) — `at` 은 Python 스냅샷 값의 왕복이고
+    Python 이 클램프한다(편집 중 선택이 줄어도 stale 인덱스로 남의 행을 그리지 않는다)."""
+    ctrl, _ = _session(tmp_path)
+    ctrl.dispatch("preview_open", {"at": 1})
+    assert ctrl.snapshot()["preview"]["pos"] == 1               # 같은 자리 복귀
+    ctrl.dispatch("preview_close", {})
+    ctrl.dispatch("preview_open", {"at": 99})
+    assert ctrl.snapshot()["preview"]["pos"] == 1               # 상한 클램프(총 2건)
+    ctrl.dispatch("preview_close", {})
+    ctrl.dispatch("preview_open", {})
+    assert ctrl.snapshot()["preview"]["pos"] == 0               # 무인자 = 종전 거동(첫 행)

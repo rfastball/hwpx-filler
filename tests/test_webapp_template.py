@@ -478,3 +478,19 @@ def test_snapshot_carries_fill_precheck_warns(tmp_path, monkeypatch):
     warns = _item(snap["hwpx"], "marker.hwpx")["fill_warns"]
     assert len(warns) == 1 and "markpenBegin" in warns[0]
     assert _item(snap["hwpx"], "comp.hwpx")["fill_warns"] == []
+
+
+# --------------------------------------------- 휘발 「기안」 폐지 고지 ②(F6 PR-B)
+def test_txt_band_carries_the_replacement_path_notice(tmp_path, monkeypatch):
+    """고지 ②(§10.15.15 점검표 6행) — TXT 밴드가 대체 경로(저장 TXT 작업 경유)를 재진술한다.
+
+    템플릿이 있을 때만 발화한다(빈 밴드는 빈 상태 CTA 가 경로를 말한다). tpl 화면은 F8 에
+    죽으므로 한시 문안이고, 화면과 함께 걷힌다.
+    """
+    ctrl, _, _ = _controller(tmp_path, monkeypatch)
+    snap = ctrl.snapshot()
+    assert "저장 TXT 작업" in snap["txt"]["notice"]              # 템플릿 有 = 발화
+    assert "notice" not in snap["hwpx"]                          # hwpx 밴드는 무관
+    for t in ctrl.text_registry.list_templates():
+        t.path.unlink()
+    assert ctrl.snapshot()["txt"]["notice"] == ""                # 템플릿 0 = 침묵

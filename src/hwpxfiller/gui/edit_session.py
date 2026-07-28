@@ -69,7 +69,10 @@ LIVE_ENTRY_REASONS = frozenset({
 DEFERRED_ENTRY_REASONS = {
     "schema_new_field": "새 데이터 열 제안 표면이 아직 없다(계약 §7)",
     "schema_missing_field": "필수 누락 제안 표면이 아직 없다(계약 §7)",
-    "workbench_result": "TXT 검토·복사 작업대는 F6 소관",
+    # **영구 배제**(지도 §10.15.13 판정 E — 미배선이 아니라 설계다): 작업대는 인라인 필드
+    # 연결 편집을 승계했으므로 편집기로 나가는 deep-link 를 갖지 않는다. 자기 화면 안에서
+    # 겨눈다(wbMapPanel 착지). 이 줄을 지우려는 슬라이스는 그 판정을 먼저 뒤집어야 한다.
+    "workbench_result": "작업대는 편집기로 나가지 않는다(판정 E — 인라인 편집 승계)",
     "document_browser_new_work": "신규 작업 분기(identityDecision)는 F8 소관",
 }
 
@@ -103,14 +106,35 @@ def entry_reason_or_raise(reason: str) -> str:
     return reason
 
 
+#: 파일 이름 규칙을 겨누는 deep-link target(계약 §8) — 필드가 아니라 규칙 하나라 값이 닫혀 있다.
+TARGET_FILENAME = "filename/filenamePattern"
+
+#: 필드 단위 deep-link 의 접두 — ``binding/<fieldId>`` 형태(계약 §8 표).
+_TARGET_BINDING_PREFIX = "binding/"
+
+
+def target_or_raise(target: str) -> str:
+    """deep-link target 검증 — 계약 §8 의 두 형태만, 그 외는 loud(fail-closed).
+
+    조용한 폴백(빈 문자열로 떨어뜨리기)을 두지 않는 이유는 진입 사유와 같다: 그 폴백이 곧
+    "겨눈다고 말했는데 아무 데도 겨누지 않는 진입"이고, 보낸 표면은 그 사실을 영영 모른다.
+    """
+    if not target or target == TARGET_FILENAME:
+        return target
+    if target.startswith(_TARGET_BINDING_PREFIX) and target[len(_TARGET_BINDING_PREFIX):]:
+        return target
+    raise ValueError(f"알 수 없는 deep-link target: {target!r}")
+
+
 @dataclass(frozen=True)
 class EditContext:
     """이 편집 진입의 문맥 — 계약 §5.1. **Python 소유**(재렌더·왕복을 건너 산다).
 
-    `target`(필드 단위 deep-link, 계약 §8)은 아직 없다 — 드로어의 행별 「수정」과 함께 F6 에
-    동승한다(지도 §10.14.3). 같은 축의 표면으로 함께 짓기로 했던 `runOverrides` 배지 쪽은
-    **기각**됐고(§10.14), deep-link 는 override 없이 성립한다: 이상한 값을 본 자리에서 그
-    필드의 탭으로 가고, 고친 뒤 「변경 저장」 하나로 끝난다.
+    `target`(필드 단위 deep-link, 계약 §8) — 드로어의 행별 「수정」이 싣는다(지도 §10.14.3).
+    같은 축의 표면으로 함께 짓기로 했던 `runOverrides` 배지 쪽은 **기각**됐고(§10.14),
+    deep-link 는 override 없이 성립한다: 이상한 값을 본 자리에서 그 필드의 탭으로 가고,
+    고친 뒤 「변경 저장」 하나로 끝난다. 복귀 행 정체성도 이 축 하나에서 파생한다 —
+    `return_context` 에 둘째 축을 만들지 않는다(§10.15.15 판정 B).
     """
 
     work: str = ""
@@ -121,6 +145,8 @@ class EditContext:
     evidence: "dict[str, str]" = field(default_factory=dict)
     #: 복귀처 {surface, focus_target, ...} — 표면별 추가 키는 그 표면이 소유한다.
     return_context: "dict[str, object]" = field(default_factory=dict)
+    #: deep-link 겨눔(계약 §8): ``""``(없음) · ``binding/<fieldId>`` · ``filename/filenamePattern``.
+    target: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -128,6 +154,7 @@ class EditContext:
             "entry_reason": self.entry_reason,
             "evidence": dict(self.evidence),
             "return_context": dict(self.return_context),
+            "target": self.target,
         }
 
 
@@ -137,15 +164,19 @@ def make_context(
     entry_reason: str = "voluntary",
     evidence: "dict | None" = None,
     return_context: "dict | None" = None,
+    target: str = "",
 ) -> EditContext:
-    """진입 문맥 조립 — 사유·복귀 표면을 fail-closed 로 검증한다."""
+    """진입 문맥 조립 — 사유·복귀 표면·deep-link target 을 fail-closed 로 검증한다."""
     reason = entry_reason_or_raise(entry_reason)
     ret = dict(return_context or {})
     surface = str(ret.get("surface", ""))
     if surface and surface not in LIVE_RETURN_SURFACES:
         raise ValueError(f"알 수 없는 복귀 표면: {surface!r}")
     ev = {str(k): str(v) for k, v in (evidence or {}).items()}
-    return EditContext(work=work, entry_reason=reason, evidence=ev, return_context=ret)
+    return EditContext(
+        work=work, entry_reason=reason, evidence=ev, return_context=ret,
+        target=target_or_raise(target),
+    )
 
 
 def section_changes(base: "Job | None", draft: "Job") -> "dict[str, dict]":

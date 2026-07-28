@@ -165,3 +165,35 @@ def test_blocking_section_is_the_other_dirty_tab_only():
 
     draft = EditSession(context=make_context(""), base=None)
     assert draft.blocking_section(edited, "filename") == ""           # 초안은 거래 밖(판정 P)
+
+
+# --------------------------------------- deep-link target 축(F6 PR-B, §10.14.3)
+def test_make_context_validates_the_deep_link_target_fail_closed():
+    """target 은 계약 §8 의 두 형태만 — 그 외는 loud(조용한 무겨눔 진입 금지)."""
+    import pytest
+
+    from hwpxfiller.gui.edit_session import TARGET_FILENAME
+
+    assert make_context("작업").target == ""                       # 기본 = 겨눔 없음
+    ctx = make_context("작업", target="binding/공고명")
+    assert ctx.target == "binding/공고명"
+    assert ctx.to_dict()["target"] == "binding/공고명"             # 스냅샷 왕복 축
+    assert make_context("작업", target=TARGET_FILENAME).target == TARGET_FILENAME
+    for bad in ("binding/", "template/x", "garbage", "filename/"):
+        with pytest.raises(ValueError, match="deep-link target"):
+            make_context("작업", target=bad)
+
+
+def test_workbench_result_stays_excluded_by_design():
+    """판정 E — 작업대의 편집기 진입은 미배선이 아니라 **영구 배제**다(인라인 편집 승계).
+
+    거절 자체는 종전과 같고, 이 테스트는 배제가 조용히 풀리는 것(사유 삭제·LIVE 승격)을
+    막는다 — 풀려면 판정 E 를 문서에서 먼저 뒤집어야 한다.
+    """
+    import pytest
+
+    from hwpxfiller.gui.edit_session import DEFERRED_ENTRY_REASONS
+
+    assert "workbench_result" in DEFERRED_ENTRY_REASONS
+    with pytest.raises(ValueError, match="배선되지 않았습니다"):
+        make_context("작업", entry_reason="workbench_result")

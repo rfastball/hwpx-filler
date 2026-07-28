@@ -1,4 +1,8 @@
-"""작업 정의(HWPX) 컨트롤러 — 3분류(템플릿·필드 매핑·저장) 오케스트레이션(webview 비의존).
+"""작업 정의 컨트롤러 — 템플릿·필드 매핑·저장 오케스트레이션(webview 비의존).
+
+**매체 2종**(F6 PR-B): 「템플릿」 탭이 HWPX·TXT 두 밴드를 보이고, 선택 확장자가 세션
+매체를 정한다(:func:`~hwpxfiller.core.job.template_media` 파생 — 탭 구성·저장 게이트가
+따라온다). TXT 작업 생성은 구 「기안」 화면의 승계처가 여기다(지도 §10.15.15 점검표 1행).
 
 **에디터 흡수(R-flow 블록 2 개정, 결정 39~41)**: 이 컨트롤러의 표면은 별도 화면이 아니라
 「작업」 화면 상세 패널의 **편집 모드**다 — 신규 초안은 같은 3분류를 마법사 **단계**(전진
@@ -48,8 +52,10 @@ from ..core.job import (
     template_media,
 )
 from ..core.mapping import TYPES, MappingProfile
-from ..core.schema import extract_schema
+from ..core.schema import FieldSpec, TemplateSchema, extract_schema, infer_type
 from ..core.template_status import default_templates_dir
+from ..core.text_registry import TextTemplateRegistry, default_text_templates_dir
+from ..core.text_render import SEG_MISSING, render_segments, template_fields
 from ..data import source_for_path
 from ..gui.dataset_pool_state import kind_transition_clause, reference_summary
 from ..gui.edit_session import (
@@ -83,6 +89,13 @@ _FMT_OPTIONS = {t: [{"code": code, "label": label} for label, code in format_pre
 # 2단계 데이터 미리보기에 싣는 샘플 행 수(#16 98DDFE96) — 전체 적재는 이미 self.records
 # 에 있으나 스냅샷엔 매핑 감(感)만 주는 소량만 노출한다(record_count 로 "외 M건" 표기).
 _SAMPLE_ROWS = 3
+
+# TXT 판 RAW 차단(F6 PR-B) — hwpx 의 RAW_BLOCK_MESSAGE 는 누름틀·변환(fieldize)을 말하므로
+# 그대로 쓰면 조치 안내가 거짓이 된다. TXT 의 채울 대상은 {{토큰}}이고 처방은 템플릿 관리다.
+TXT_RAW_BLOCK = (
+    "채울 {{토큰}}이 없는 TXT 템플릿입니다.\n"
+    "'템플릿 관리'에서 원문에 {{필드이름}} 토큰을 넣은 뒤 다시 고르세요."
+)
 
 # 이 화면이 **편집하지 않는** durable 메타 — 저장이 Job 을 새로 조립하므로 여기 열거되지
 # 않은 필드는 조용히 기본값으로 떨어진다. 태그·마지막 실행만 열거하던 시절 그룹이 실제로
@@ -129,6 +142,8 @@ class EditorController:
         pool_registry: "DatasetPoolRegistry | None" = None,
         template_library: "TemplateManagerViewModel | None" = None,
         template_groups: "TemplateGroupModel | None" = None,
+        text_registry: "TextTemplateRegistry | None" = None,
+        txt_groups: "TemplateGroupModel | None" = None,
     ) -> None:
         self.registry = registry
         self._push_sink = push
@@ -147,6 +162,11 @@ class EditorController:
         # **지연 생성**(리뷰 F5: 생성자 즉시 스캔은 라이브러리를 안 쓰는 소비자·테스트에 실
         # 사용자 폴더 스캔 비용·비결정성을 물린다). 전체 개편(그룹·구획·F16)은 #108 소관.
         self._template_library = template_library
+        # TXT 템플릿 레지스트리·그룹 모델(F6 PR-B — 「템플릿」 탭 매체 분기): **앱 조립에선
+        # tpl 화면과 같은 인스턴스를 주입**한다(hwpx 라이브러리·그룹과 같은 단일 실체 규율 —
+        # 별도 인스턴스면 접힘·목록이 두 표면에서 갈린다). 미주입 시 표준 루트 지연 생성.
+        self._text_registry = text_registry
+        self._txt_groups = txt_groups
         self._reset()
 
     def _reset(self) -> None:
@@ -217,13 +237,24 @@ class EditorController:
 
     @property
     def template_groups(self) -> TemplateGroupModel:
-        """HWPX 그룹 모델 — 미주입이면 첫 접근 때 표준 hwpx 모델 지연 생성(라이브러리 VM 대칭).
-
-        에디터가 만드는 매체는 hwpx 뿐이라(마법사=.hwpx 산출) 그룹 축도 hwpx 하나면 족하다 —
-        매체 자동 필터가 곧 단일 매체 소비 표면(결정 3·6)."""
+        """HWPX 그룹 모델 — 미주입이면 첫 접근 때 표준 hwpx 모델 지연 생성(라이브러리 VM 대칭)."""
         if self._template_groups is None:
             self._template_groups = TemplateGroupModel("hwpx")
         return self._template_groups
+
+    @property
+    def text_registry(self) -> TextTemplateRegistry:
+        """TXT 템플릿 레지스트리 — 미주입이면 표준 루트 지연 생성(hwpx 라이브러리 VM 대칭)."""
+        if self._text_registry is None:
+            self._text_registry = TextTemplateRegistry(default_text_templates_dir())
+        return self._text_registry
+
+    @property
+    def txt_groups(self) -> TemplateGroupModel:
+        """TXT 그룹 모델 — 미주입이면 표준 txt 모델 지연 생성(template_groups 대칭)."""
+        if self._txt_groups is None:
+            self._txt_groups = TemplateGroupModel("txt")
+        return self._txt_groups
 
     def _refresh_library(self) -> None:
         """공유 라이브러리 VM 재스캔 — 외부(탐색기) 변경을 새 세션·가져오기 시점에 걷는다.
@@ -239,7 +270,15 @@ class EditorController:
         한 입구만 막으면 「가져오기=복사가 유일한 바깥 입구」(2부)가 문서만의 불변식이 된다.
         불일치면 **새 스캔 결과를 먼저 push** 하고 거절한다(리뷰 F7: 방금 삭제된 파일의
         stale 행이 남아 같은 클릭을 반복하게 만드는 무행동 안내 금지 — 목록이 스스로 걷힌다).
+
+        TXT 경로(F6 PR-B)는 TXT 레지스트리 소속을 같은 규율로 확인한다 — 레지스트리는
+        캐시 없이 매번 실 디스크를 스캔하므로 별도 refresh 없이 판정 자체가 최신이다.
         """
+        if template_media(path) == "txt":
+            if all(str(t.path) != path for t in self.text_registry.list_templates()):
+                self._push()  # 다음 스냅샷의 목록이 최신 스캔 — 거절 문구가 실행 가능해진다
+                raise ValueError("라이브러리에 없는 템플릿입니다. 목록을 새로 고쳤으니 다시 고르세요.")
+            return
         self._refresh_library()
         if all(r.path != path for r in self.template_library.rows()):
             self._push()  # 갱신된 목록을 먼저 보여준다 — 거절 문구가 실행 가능해진다
@@ -257,9 +296,11 @@ class EditorController:
         )
 
     def sections(self) -> "tuple[str, ...]":
-        """이 세션의 탭 구성 — **매체 파생**(§10.13 판정 A). 에디터 산출은 hwpx 라 매체가
-        아직 안 정해진 초안(템플릿 미선택)도 hwpx 구성으로 본다: 이 표면이 만드는 것이
-        무엇인지는 세션 시작 시점에 이미 정해져 있다(TXT 합류는 F6)."""
+        """이 세션의 탭 구성 — **매체 파생**(§10.13 판정 A). TXT 합류(F6 PR-B) 뒤에도
+        템플릿 미선택 초안은 hwpx 구성으로 두되, TXT 를 고르면 파생이 파일 이름 탭을
+        걷는다(§3.2 — 파일을 만들지 않는 작업). 미선택 폴백을 hwpx 로 두는 이유: 단계
+        표지는 「고르면 무엇이 이어지는가」의 안내이고, 고르는 순간 실 매체로 정정된다
+        (탭 접근은 전진 게이트가 템플릿 확정 전엔 어차피 막는다)."""
         return sections_for(
             template_media(self.template_path) if self.template_path else "hwpx"
         )
@@ -420,6 +461,8 @@ class EditorController:
             ),
             "template_path": self.template_path,
             "template_name": self.template_path.rsplit("\\", 1)[-1].rsplit("/", 1)[-1],
+            # 선택 템플릿의 매체(F6 PR-B) — 뷰가 확장자를 재파싱하지 않게 판정을 싣는다.
+            "template_media": template_media(self.template_path) if self.template_path else "",
             "field_count": len(self.schema.fields) if self.schema else 0,
             "schema_summary": self._schema_summary(),
             # 1단계 구조화 표(#16): 필드별 name/inferred_type/in_table/occurrences/context.
@@ -464,10 +507,13 @@ class EditorController:
             ),
             # 템플릿 라이브러리(신규 1단계=라이브러리에서 그룹 구획으로 고르기, #108 슬라이스 3)
             # — 템플릿 분류(0)에서만 스캔한다(파일시스템 재스캔이라 매핑 편집의 잦은 push 에 지불
-            # 금지; default_dataset 선례). 그 외 단계는 빈 구획.
+            # 금지; default_dataset 선례). 그 외 단계는 빈 구획. F6 PR-B: 매체 2밴드({hwpx, txt}).
             "library": (
                 self._library_snapshot() if self.section == SECTION_TEMPLATE
-                else {"sections": [], "flat": True}
+                else {
+                    "hwpx": {"sections": [], "flat": True},
+                    "txt": {"sections": [], "flat": True},
+                }
             ),
             # F26 — 파일명 라이브 예시(표본 1행 고정). 저장 분류(2)에서만 계산.
             "pattern_preview": (
@@ -500,17 +546,19 @@ class EditorController:
     def _library_snapshot(self) -> "dict":
         """1단계 피커 = 라이브러리를 **관리 화면과 같은 그룹 구획**으로(선택 전용, #108 슬라이스 3).
 
-        매체는 hwpx 하나뿐(마법사=.hwpx 산출 → 매체 자동 필터). 관리 화면 HWPX 구획과 같은
-        그룹 모델·같은 build_sections 로 성형해 두 표면이 한 조직을 보인다(결정 6). 여기는
-        **선택 전용** — 카드 ⋮·이동·삭제·＋그룹지정 없이 상태 배지·선택 버튼만. 상태 판정·
-        배지는 링1(TemplateManagerViewModel) 소유, 오류 행도 숨기지 않고 detail 과 함께 싣는다.
+        **매체 2밴드**(F6 PR-B — 「기안」 화면 사망의 승계처): ``{hwpx: {...}, txt: {...}}``.
+        어느 밴드든 관리 화면과 같은 그룹 모델·같은 build_sections 로 성형해 두 표면이 한
+        조직을 보인다(결정 6). 여기는 **선택 전용** — 카드 ⋮·이동·삭제·＋그룹지정 없이 상태
+        배지·선택 버튼만. HWPX 상태 판정·배지는 링1(TemplateManagerViewModel) 소유, TXT 는
+        tpl 화면 ``_txt_rows`` 와 같은 성형(필드 수·손상 loud). 오류 행도 숨기지 않는다.
 
         **공유 VM 직독**(#137·#138 리뷰 F8·F11): 별도 행 캐시를 두지 않고 공유 VM 의
         ``rows()``(재스캔 없이 캐시 반환)를 그대로 읽는다 — 관리 화면의 가져오기·삭제가
-        공유 VM 을 refresh 하면 여기 피커도 즉시 반영된다(발산 캐시 제거). **reconcile 미실행**:
+        공유 VM 을 refresh 하면 여기 피커도 즉시 반영된다(발산 캐시 제거). TXT 레지스트리는
+        캐시가 없어 매 스냅샷이 실 스캔이다. **reconcile 미실행**:
         유령 지정 정리는 관리 화면의 위생 소관이고, 여기서 (부분/필터된) 목록으로 reconcile 하면
         살아있는 그룹 지정을 영구 삭제할 수 있어 실행하지 않는다(build_sections 는 표시에서
-        고아를 이미 무시). ``{sections, flat}`` 반환(작업/관리 목록 동형).
+        고아를 이미 무시).
         """
         root = self.template_library.library_dir
         items = [
@@ -527,7 +575,38 @@ class EditorController:
             for r in self.template_library.rows()
         ]
         sections, flat = self.template_groups.build_sections(items, key_of=lambda it: it["key"])
-        return {"sections": sections, "flat": flat}
+        txt_sections, txt_flat = self.txt_groups.build_sections(
+            self._txt_library_rows(), key_of=lambda it: it["key"]
+        )
+        return {
+            "hwpx": {"sections": sections, "flat": flat},
+            "txt": {"sections": txt_sections, "flat": txt_flat},
+        }
+
+    def _txt_library_rows(self) -> "list[dict]":
+        """TXT 밴드 행 — tpl 화면 ``_txt_rows`` 성형 미러(선택 전용 최소분 + current 표지).
+
+        손상(비 UTF-8 등)은 삭제 가능한 오류 행으로 loud 노출한다(숨기면 관리 화면과 다른
+        목록을 조용히 보인다). 필드 수는 토큰 유무의 사전 신호일 뿐 차단은 로드가 맡는다.
+        """
+        root = self.text_registry.directory
+        rows: "list[dict]" = []
+        for t in self.text_registry.list_templates():
+            error = ""
+            field_count = 0
+            try:
+                field_count = len(t.fields())
+            except Exception as exc:  # noqa: BLE001 — 손상 파일도 loud 노출(tpl 화면 동형)
+                error = str(exc)
+            rows.append({
+                "key": rel_key(t.path, root),
+                "name": t.name,
+                "path": str(t.path),
+                "field_count": field_count,
+                "error": error,
+                "current": bool(self.template_path) and str(t.path) == self.template_path,
+            })
+        return rows
 
     def _pattern_preview(self) -> str:
         """F26 — 파일명 패턴의 라이브 예시 1행(표본 고정 = 첫 레코드, seq=1).
@@ -684,8 +763,16 @@ class EditorController:
     def _do_toggle_library_group(self, p: dict) -> None:
         """1단계 피커 그룹 접힘 토글 — **관리 화면과 같은 모델**을 토글해 한 조직을 공유한다
         (한 표면에서 접으면 다른 표면도 접힌 채로; 설정 영속). 세션 변이가 아니라 뷰 상태라
-        _session_clean 을 건드리지 않는다."""
-        self.template_groups.toggle_collapse(p["group"])
+        _session_clean 을 건드리지 않는다. ``media`` 가 밴드를 고른다(F6 PR-B 2밴드) —
+        미상 매체는 loud(tpl 화면 ``_model`` 동형)."""
+        media = str(p["media"])
+        if media == "hwpx":
+            model = self.template_groups
+        elif media == "txt":
+            model = self.txt_groups
+        else:
+            raise ValueError(f"알 수 없는 형식: {media!r}")
+        model.toggle_collapse(p["group"])
 
     def import_template(self, path: str) -> str:
         """템플릿 **가져오기 = 복사**(R-info 2부: 앱 소유 루트 — 생 파일 참조 금지).
@@ -732,12 +819,24 @@ class EditorController:
 
     # ------------------------------------------- 네이티브 보조(브리지가 다이얼로그 담당)
     def load_template_path(self, path: str, *, emit_push: bool = True) -> None:
-        """선택된 .hwpx 를 로드 — 스키마 추출 + PARTIAL 게이트 계산(Qt 위저드 _load_template 미러)."""
+        """선택 템플릿 로드 — **매체 분기**(F6 PR-B). hwpx 는 스키마 추출 + PARTIAL 게이트
+        (Qt 위저드 _load_template 미러), txt 는 ``{{토큰}}`` 목록을 동형 스키마로 성형한다.
+
+        txt 스키마를 :class:`TemplateSchema` 로 **동형 성형**하는 이유: ``_ensure_model`` ·
+        ``validate_save`` 의 스키마 대조가 매체 무관하게 같은 술어를 돌게 한다(판정 단일
+        출처 — 별도 txt 경로를 두면 스키마 정합 게이트를 txt 만 우회한다). PARTIAL 게이트·
+        extract_schema 는 hwpx 전용이라 txt 에선 서지 않는다(누름틀이 없는 매체다).
+        """
         self._session_clean = False  # 브리지 직행 변이(디스패치 밖) — 클린 표지 해제
         self.template_path = path
         self.gate = None
         self.gate_error = False
         self.raw_block = ""
+        if template_media(path) == "txt":
+            self._load_txt_template(path)
+            if emit_push:
+                self._push()
+            return
         self.schema = extract_schema(path)
         if not self.schema.fields:  # RAW: 채울 대상 없음 — 시끄럽게 차단.
             self.raw_block = RAW_BLOCK_MESSAGE
@@ -751,6 +850,36 @@ class EditorController:
             self.gate_error = True
         if emit_push:
             self._push()
+
+    def _load_txt_template(self, path: str) -> None:
+        """TXT 원문 → 동형 스키마. 판독 실패는 loud raise(조용한 빈 스키마 금지).
+
+        토큰 순회는 :func:`render_segments` 단일 출처를 지난다(빈 레코드 → 전 토큰이
+        missing 세그먼트로 등장별 1개) — 등장 횟수까지 재구현 없이 그대로 센다.
+        """
+        try:
+            text = Path(path).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise ValueError(f"TXT 템플릿을 읽을 수 없습니다: {exc}") from exc
+        segments, _report = render_segments(text, {})
+        occurrences: "dict[str, int]" = {}
+        for seg in segments:
+            if seg.kind == SEG_MISSING:
+                occurrences[seg.name] = occurrences.get(seg.name, 0) + 1
+        names = template_fields(text)
+        if not names:  # 토큰 0 = 채울 대상 없음(hwpx RAW 동형) — 시끄럽게 차단.
+            self.raw_block = TXT_RAW_BLOCK
+            self.schema = None
+            return
+        self.schema = TemplateSchema(fields=[
+            FieldSpec(
+                name=n,
+                inferred_type=infer_type(n),
+                occurrences=occurrences.get(n, 1),
+                in_table=False,
+            )
+            for n in names
+        ])
 
     def load_data_path(self, path: str, *, sheet: "str | None" = None) -> None:
         """선택된 데이터 파일 로드. ``sheet`` = 웹에서 확정한 시트명(다중 시트 게이트 #33,
@@ -797,24 +926,34 @@ class EditorController:
         entry_reason: str = "voluntary",
         evidence: "dict | None" = None,
         return_context: "dict | None" = None,
+        target: str = "",
     ) -> None:
         """저장된 작업을 **문맥과 함께** 편집 세션으로 연다(계약 §5.1).
 
         진입 문맥(사유·증거·복귀처)은 여기서 한 번 세우고 그 뒤 재렌더·왕복을 건너 산다 —
         편집기는 스스로 열리지 않으므로(늘 다른 표면의 문제가 사람을 보낸다) 문맥 없는
-        진입은 "왜 왔는지도 어디로 돌아갈지도 없는 표면"이 된다. 미지·미배선 사유는
-        :func:`~hwpxfiller.gui.edit_session.make_context` 가 fail-closed 로 거절한다.
+        진입은 "왜 왔는지도 어디로 돌아갈지도 없는 표면"이 된다. 미지·미배선 사유·미지
+        target 은 :func:`~hwpxfiller.gui.edit_session.make_context` 가 fail-closed 로 거절한다.
+
+        ``target``(deep-link, §10.14.3) 이 서면 **착지 탭도 target 이 정한다**(값의 앞
+        절 = section) — 겨눈다고 말하고 다른 탭에 내리는 반쪽 착지를 막는다. 행 단위
+        조준(스크롤·포커스)은 뷰 소관이고, 스키마 드리프트로 행이 사라졌으면 뷰가
+        fail-open 한다(탭 착지·배너 증거는 그대로 참이다).
         """
         job = self.registry.load(name)  # 부재·손상 → loud raise
+        context = make_context(
+            job.name,
+            entry_reason=entry_reason,
+            evidence=evidence,
+            return_context=return_context,
+            target=target,
+        )
+        if context.target:
+            landing_section = context.target.partition("/")[0]
         self._restore_from(
             job,
             landing_section=landing_section,
-            context=make_context(
-                job.name,
-                entry_reason=entry_reason,
-                evidence=evidence,
-                return_context=return_context,
-            ),
+            context=context,
             emit_push=emit_push,
         )
 
@@ -861,8 +1000,8 @@ class EditorController:
         # 작업 복원은 하나의 화면 전환이다. 템플릿만 로드된 중간 상태를 먼저 내보내면
         # 최종 편집 상태 직전에 DOM 전체가 한 번 더 재구성돼 화면이 깜빡인다.
         self.load_template_path(job.template_path, emit_push=False)
-        if self.schema is None:  # RAW — 채울 필드가 없어 매핑 편집이 성립하지 않는다.
-            raise ValueError(RAW_BLOCK_MESSAGE)
+        if self.schema is None:  # RAW/토큰 0 — 채울 필드가 없어 매핑 편집이 성립하지 않는다.
+            raise ValueError(self.raw_block or RAW_BLOCK_MESSAGE)  # 매체별 문안(F6 PR-B)
         if self.gate_error:
             raise ValueError("템플릿 상태를 확인할 수 없어 편집을 열 수 없습니다.")
         self.job_name = job.name
@@ -1546,7 +1685,11 @@ class EditorController:
         디스크가 바뀔 수 있어 ①확인 없이 외부 변경을 덮거나 ②읽은 문안과 다른 자리를 덮는다.
         검증(``validate_save``)은 순수 메모리 판정이라 잠금 밖에 남는다.
         """
-        verdict = validate_save(self.model, self.job_name, self.pattern, schema=self.schema)
+        verdict = validate_save(
+            self.model, self.job_name, self.pattern, schema=self.schema,
+            # 파일명 패턴 게이트는 매체 인지(F6 PR-B) — TXT 는 파일 이름 축이 없다(§3.2).
+            media=template_media(self.template_path) if self.template_path else "hwpx",
+        )
         if not verdict.ok:
             return {"ok": False, "block_reason": verdict.block_reason}
         # 태그·마지막 실행 메타는 편집 세션 밖(홈 태그 편집 등)에서 바뀌었을 수 있어

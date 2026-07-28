@@ -49,9 +49,9 @@ def test_focusout_and_capture_scroll_share_registry():
     assert re.search(r'addEventListener\("focusout"[\s\S]+?e\.relatedTarget', src)
     assert re.search(r'addEventListener\("scroll"[\s\S]+?\},\s*true\)', src)
     # 화면별 임시 scroll-close는 공용 capture 계약으로 대체되어야 한다.
-    for name in ("job.js", "draft.js", "library.js", "template.js"):
-        screen = _read(WEB / "js" / "screens" / name)
-        assert not re.search(r'addEventListener\("scroll"', screen), name
+    # (고정 열거 → 실존 화면 전수 — draft.js 사망(F6 PR-B) 같은 화면 증감에 목록이 썩지 않게.)
+    for path in sorted((WEB / "js" / "screens").glob("*.js")):
+        assert not re.search(r'addEventListener\("scroll"', _read(path)), path.name
 
 
 def test_rendered_size_drives_clamp_flip_and_origin():

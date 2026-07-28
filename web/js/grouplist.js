@@ -37,7 +37,7 @@
 
   /* 접힘은 보기 상태라 클릭한 프레임에 먼저 반영하고, 영속 요청은 뒤에서 보낸다.
      판정 데이터는 건드리지 않는다. 실패하면 현 DOM 이 아직 살아 있을 때만 되돌리고 loud 하게
-     알린다 — job/draft/template 세 화면이 같은 즉답·실패 규율을 공유한다(#217 R3). */
+     알린다 — 소비 화면들(library·tpl)이 같은 즉답·실패 규율을 공유한다(#217 R3). */
   function setGroupExpanded(button, expanded) {
     button.setAttribute("aria-expanded", expanded ? "true" : "false");
     const caret = button.querySelector(".grp-caret");

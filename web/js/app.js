@@ -1,5 +1,5 @@
 /* 라우터 + 부팅 — 상단 토바 탭으로 화면 전환, pywebview 준비 시 실화면 초기화.
-   화면별 로직은 js/screens/*.js 가 소유(DraftScreen.init 등). 여기선 배선만.
+   화면별 로직은 js/screens/*.js 가 소유(JobScreen.init 등). 여기선 배선만.
    셸은 좌 레일 5화면 라우팅에서 상단 2탭(+과도기 임시 2)으로 교체됐다(F2 PR-B, 지도 §10.9). */
 (function () {
   /* 네이티브 X 닫기 확인 착지(#218 G1). Python closing 이벤트가 현재 세션 술어를 판정해
@@ -54,7 +54,7 @@
      실행 화면(run)은 사망(슬라이스 3)이라 목록에서 제거. 홈은 「문서 작업」 라이브러리로
      대체됐다(재작성 F2) — 그 화면의 refresh 는 레지스트리 + 영속 그룹 접힘을 함께 다시
      읽는다(다른 화면에서 접은 상태가 stale 로 남지 않게). */
-  const REFRESH_ON_NAV = ["library", "tpl", "job", "draft"];
+  const REFRESH_ON_NAV = ["library", "tpl", "job"];
 
   /* 몰입 표면 — 상단 2탭을 덮고(셸 표지를 body 클래스로 내려 CSS 가 감춘다) 나가는 이동이
      자기 이탈 가드를 먼저 지나는 화면들. 탭이 없으므로 `navs` 에도 없다. */
@@ -73,8 +73,8 @@
         || !window.pywebview || !window.Bridge) {
       return Promise.resolve(null);
     }
-    // refresh 가 사후 고지(notice)를 돌려주면 alert 로 시끄럽게 알린다 — 결속 기안이 다른
-    // 화면에서 삭제돼 진행 세션이 닫힌 경우(draft 121). notice 없는 화면엔 무해(무반응).
+    // refresh 가 사후 고지(notice)를 돌려주면 alert 로 시끄럽게 알린다 — 열린 세션이 다른
+    // 화면의 삭제로 닫힌 경우 등. notice 없는 화면엔 무해(무반응).
     return Bridge.call(id, "refresh", {}).then((r) => {
       if (r && r.notice) window.alert(r.notice);
       return r;
@@ -127,9 +127,6 @@
     // 아니라 initial 1회로 채워지고(#135 — 다른 화면이 더한 템플릿이 안 보인다) ②**대상 글꼴
     // 선언은 앱 전역**이라 저쪽 기안 표면에서 바꿀 수 있다(코덱스 리뷰 P2). 둘 다 refresh
     // 디스패치로는 못 고친다(하나는 스냅샷 소유가 아니고, 하나는 재렌더가 필요).
-    if (id === "draft" && window.DraftScreen && window.DraftScreen.refreshOnEnter) {
-      window.DraftScreen.refreshOnEnter().catch((err) => window.alert(String((err && err.message) || err)));
-    }
   }
   // 「작업 에디터」 과도기 항목 사망(슬라이스 5)과 함께 제거 — 편집 진입은 EditorEntry.land
   // 소비처(「문서 작업」 상세·템플릿 관리)가 담당한다.
@@ -216,7 +213,6 @@
     if (window.LibraryScreen) window.LibraryScreen.init();  // 「문서 작업」 라이브러리(F2 — 홈 승계)
     if (window.EditorScreen) window.EditorScreen.init();
     if (window.JobScreen) window.JobScreen.init();  // 「문서 만들기」(#90) — 유일 생성 표면
-    if (window.DraftScreen) window.DraftScreen.init();  // 「기안」 화면(#148 슬라이스 2b) — TXT 작업-앵커
     if (window.WorkbenchScreen) window.WorkbenchScreen.init();  // TXT 검토·복사 작업대(F6)
     if (window.TemplateScreen) window.TemplateScreen.init();
     // 데이터 선택 다이얼로그(재작성 F1) — 화면이 아니라 오버레이라 라우팅 대상이 아니지만

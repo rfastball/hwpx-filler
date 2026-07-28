@@ -15,8 +15,8 @@ import pytest
 from hwpxfiller.core.job import Job, JobRegistry
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.webapp.action_registry import validate_dispatch
-from hwpxfiller.webapp.draft_session import TargetFontSetting
-from hwpxfiller.webapp.screen_workbench import WorkbenchController
+# TargetFontSetting 은 「기안」 사망(F6 PR-B)으로 작업대 모듈이 승계(동일 클래스·영속 키).
+from hwpxfiller.webapp.screen_workbench import TargetFontSetting, WorkbenchController
 
 
 def _send(ctrl: WorkbenchController, action: str, payload: "dict | None" = None):

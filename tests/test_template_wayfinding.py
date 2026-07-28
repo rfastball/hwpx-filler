@@ -20,7 +20,8 @@ def test_template_band_copy_names_live_destinations() -> None:
 
 def test_shared_row_menu_puts_use_cta_before_management_actions() -> None:
     assert 'data-menu="use"' in SCRIPT
-    assert 'media === "hwpx" ? "이 서식으로 새 작업" : "이 서식으로 기안 시작"' in SCRIPT
+    # 매체 분기 문안은 「기안」 사망(F6 PR-B)으로 은퇴 — 두 매체 모두 「새 작업」(편집기 착지).
+    assert 'const useLabel = "이 서식으로 새 작업";' in SCRIPT
     use = SCRIPT.index('`<button data-menu="use"')
     separator = SCRIPT.index('`<div class="sep"></div>`', use)
     edit = SCRIPT.index('`<button data-menu="edit">', separator)
@@ -30,11 +31,12 @@ def test_shared_row_menu_puts_use_cta_before_management_actions() -> None:
 
 
 def test_menu_ctas_route_with_preselected_template() -> None:
-    assert 'act === "use" && m.media === "hwpx"' in SCRIPT
-    assert "makeJob(m.item.path, m.trigger)" in SCRIPT
-    assert "openDraftTemplate(m.item.name, m.trigger)" in SCRIPT
-    assert 'Bridge.call("draft", "select_template", { name })' in SCRIPT
-    assert 'window.Nav.go("draft")' in SCRIPT
+    """⋮ 「사용」은 매체 무관 makeJob(편집기 착지) 하나다 — 「기안」 라우팅 사망(F6 PR-B)."""
+    assert 'if (act === "use") makeJob(m.item.path, m.trigger)' in SCRIPT
+    # 죽은 「기안」 진입 배선의 재유입 가드 — 없는 화면으로 보내는 버튼은 막다른 길이다.
+    assert "openDraftTemplate" not in SCRIPT
+    assert 'Bridge.call("draft"' not in SCRIPT
+    assert 'window.Nav.go("draft")' not in SCRIPT
 
 
 def test_card_surface_no_longer_duplicates_consume_ctas() -> None:
