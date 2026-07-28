@@ -33,6 +33,13 @@ jobs:
         run: uv sync --locked --all-extras --group dev --group build
       - name: Validate release version
         run: uv run python scripts/check_release_version.py $env:RELEASE_TAG
+      - name: Determine prerelease flag
+        shell: pwsh
+        run: |
+          # PEP440 프리릴리스 식별자(a/b/rc)나 dev 릴리스가 붙은 태그만 prerelease로 표시한다.
+          # 하이픈 검사로는 안 걸린다 — hatchling 이 강제하는 PEP440 은 하이픈 버전을 애초에 거부한다.
+          $isPrerelease = $env:RELEASE_TAG -match '\d(a|b|rc)\d+$|\.dev\d+$'
+          "IS_PRERELEASE=$($isPrerelease.ToString().ToLowerInvariant())" | Out-File $env:GITHUB_ENV -Append
       - name: Quality and tests
         shell: pwsh
         run: .\test.ps1
@@ -134,7 +141,7 @@ jobs:
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           generate_release_notes: true
-          prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
+          prerelease: ${{ env.IS_PRERELEASE == 'true' }}
           body: ${{ env.SIGNED_RELEASE == 'true' && 'Windows artifacts are Authenticode signed.' || 'Unsigned development release; verify SHA256SUMS.txt before use.' }}
           files: |
             installer-dist/*.exe
