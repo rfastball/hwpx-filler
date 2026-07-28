@@ -22,9 +22,9 @@
      편집기 TXT 밴드 + 검토·복사 작업대), 실행·작업 에디터 별도 화면은 그 이전 슬라이스에서 사망. -->
 <div class="app">
   <header class="topbar">
-    <!-- #258 제품명 문서나르미 — 심벌(두 평면, 단색 var(--a-brand))+워드마크 락업. 심벌은 장식이라
+    <!-- #258 제품명 문서나르미 — 쌓인 문서가 전달 화살표로 이어지는 심벌과 워드마크 락업. 심벌은 장식이라
          aria-hidden(접근 이름은 텍스트 워드마크가 담당). 원본 SVG=docs/branding/document-narmi-mark-final.svg. -->
-    <div class="brand"><span class="brand-lockup"><svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><path d="M6 14.5 34.5 8c2.1-.5 3.5.7 3.5 2.8v12.7c0 2.2-1.3 3.7-3.4 4.2L6 34.5Z"/><path d="m26 38.5 32-8v18.2c0 2.3-1.7 3.5-3.8 2.9L26 43.8Z"/></svg><span class="brand-name">문서나르미</span></span></div>
+    <div class="brand"><span class="brand-lockup"><svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><path class="brand-mark-layer" d="M9 7h31a5 5 0 0 1 5 5v8H9a5 5 0 0 1-5-5v-3a5 5 0 0 1 5-5Z"/><path class="brand-mark-layer" d="M16 23h31a5 5 0 0 1 5 5v8H16a5 5 0 0 1-5-5v-3a5 5 0 0 1 5-5Z"/><path class="brand-mark-arrow" d="M23 39h24v-6l13 12-13 12v-6H23a5 5 0 0 1-5-5v-2a5 5 0 0 1 5-5Z"/></svg><span class="brand-name">문서나르미</span></span></div>
 
     <!-- 세그먼트 내비 — 활성 = 은은한 틴트 + 액센트 잉크. `data-scr` 는 **화면 키 그대로**
          (job·library·tpl)이고 개명된 것은 사용자가 읽는 라벨뿐이다(§10.9 판정 A):
