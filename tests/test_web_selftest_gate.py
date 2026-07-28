@@ -1313,3 +1313,38 @@ def test_completed_boot_stamps_the_home_and_narrows_the_budget(tmp_path) -> None
     # 첫 부팅은 넓은 예산이었고, 이 스탬프 뒤로는 좁은 예산이다(판정의 실 왕복).
     assert decide("", stamp)[0] == COLD_BUDGET_SECONDS
     assert decide(stamp, stamp)[0] == WARM_BUDGET_SECONDS
+
+    def test_workbench_is_immersive_and_the_queue_degenerates(
+        self, selftest_result: dict
+    ) -> None:
+        """TXT 검토·복사 작업대(재작성 F6 PR-A) — 실 WebView2 되읽기.
+
+        정적 계약이 통과시키는 세 가지를 실물로 잡는다: ①몰입 셸이 실제로 상단 2탭을
+        덮는가 ②큐 퇴화가 순회 장치를 **실제로** 감추는가(스타일 계산까지) ③나가는 이동이
+        가드를 **지나서** 화면을 바꾸는가(발신 순서 포함 — 배선·문안이 다 제자리여도
+        성사 뒤 이어짐만 끊길 수 있고 그건 정적 계약이 못 본다, F7 1R 선례).
+        """
+        w = selftest_result["workbench"]
+        assert w.get("error") is None, f"작업대 프로브 예외: {w.get('error')!r}"
+        assert w["screen_on"] and w["nav_hidden"], (
+            f"작업대가 몰입 표면으로 서지 않습니다(화면·셸 은닉): {w!r}"
+        )
+        # 머리·상태 — 값은 전부 Python 스냅샷 파생이라 표면이 다시 계산하지 않는다.
+        assert w["title"] == "발주요청_기안"
+        assert w["position"] == "1 / 3" and w["copied"] == "1 / 3"
+        assert "연결 r4" in w["revision"]
+        assert "1건" in w["dirty_note"], f"미저장 변경 수치가 안 보입니다: {w['dirty_note']!r}"
+        assert "다시 확인" in w["review"], f"재확인 상태가 안 보입니다: {w['review']!r}"
+        assert w["save_enabled"] is True
+        # 좌 pane: 확정-비움은 입력칸이 아니라 **선언 표지**로 그려진다(결정 12).
+        assert w["map_rows"] == 2 and w["declared"] == 1
+        # 우 pane: 채움 표지 삼분이 공용 SegView 계약대로 그려진다.
+        assert w["card_fill"] == 1 and w["card_blank"] == 1
+        assert w["lint_shown"] is True
+        # 큐 퇴화 — 1건이면 이전/다음·자동 전진이 사라진다.
+        assert w["degen_prev"] == "none" and w["degen_adv"] == "none"
+        # 이탈: 가드를 먼저 묻고(leave_guard) 세션을 닫은 뒤에야 화면이 바뀐다.
+        assert w["leave_calls"] == ["leave_guard", "close"], (
+            f"이탈이 가드를 지나지 않거나 순서가 다릅니다: {w['leave_calls']!r}"
+        )
+        assert w["landed"] is True, "이탈 뒤 「문서 만들기」로 착지하지 않았습니다."

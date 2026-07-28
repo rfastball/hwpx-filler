@@ -51,10 +51,12 @@ Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다.
 상단 토바 탭과 최상위 DOM 화면의 현재 목록은 `library`, `job`, `draft`, `tpl` 네 개다
 (계약 2탭 = `job` 「문서 만들기」·`library` 「문서 작업」, 구분선 오른쪽 `draft`·`tpl` 은
 승계처가 서면 죽는 과도기 임시 — 지도 §10.9). 좌 레일과 그 접기는 F2 PR-B 에서 사망했다.
-`web/js/app.js`의 `window.Nav.go`가 표시 상태를 전환한다. `editor`는 **탭 없는 다섯 번째
-화면**이다(재작성 F7): 상단 2탭을 덮는 몰입 표면이라 nav 버튼이 없고 진입은 `EditorEntry`,
-이탈은 `EditorScreen.leaveTo` 하나다 — `Nav.go` 가 편집기에서 나가는 모든 이동을 그 가드로
-위임한다(`{force:true}` 는 처분을 마친 재호출).
+`web/js/app.js`의 `window.Nav.go`가 표시 상태를 전환한다. `editor`(재작성 F7)와 `workbench`(재작성 F6)는
+**탭 없는 몰입 표면**이다: 상단 2탭을 덮으므로 nav 버튼이 없고, 나가는 모든 이동이 자기
+이탈 가드를 지난다(`{force:true}` 는 처분을 마친 재호출). 위임은 화면마다의 특례가 아니라
+`app.js` 의 **몰입 표면 목록**(`IMMERSIVE`)이 진다 — 특례를 표면마다 늘리면 가드의 완전성이
+표면 수에 비례하고, 그것이 이 두 표면을 화면으로 올린 바로 그 이유다. 새 몰입 표면은 그
+목록에 한 줄이면 되고 셸 은닉(`body.<cls>-open`)과 이탈 위임이 함께 따라온다.
 
 | 라우트/표면 | DOM·JavaScript 소유자 | Python 컨트롤러 | 링1 ViewModel·상태 소유자 |
 |---|---|---|---|
@@ -62,6 +64,7 @@ Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다.
 | `job` 문서 만들기(데이터·실행) | `#scr-job`, `screens/job.js` | `JobController` | `RunViewModel`, `SelectionModel`, 필터 상태, 후보 판정(`work_candidates`) |
 | `editor` 문서 작업 편집기(몰입) | `#scr-editor`, `screens/editor.js`, `editor_entry.js` | `EditorController` | `MappingModel`, `EditSession`·`EditContext`, 저장 판정, 공유 `TemplateManagerViewModel` |
 | `draft` 기안 작업·세션 | `#scr-draft`, `screens/draft.js`, `draftsession.js` | `DraftController` | `TxtDraftViewModel`, `MappingModel`, `SelectionModel`, `TxtQueueModel` |
+| `workbench` TXT 검토·복사 작업대(몰입) | `#scr-workbench`, `screens/workbench.js` | `WorkbenchController` | `MappingModel`, `SelectionModel`, `TxtQueueModel`, `EditSession` |
 | `tpl` 템플릿 관리 | `#scr-tpl`, `screens/template.js` | `TemplateController` | `TemplateManagerViewModel`, 템플릿 그룹 상태 |
 | 데이터 선택 다이얼로그(화면 아님) | `#dataPickerModal`, `data_picker.js` | `PoolController` + 호스트 화면 | `DatasetPoolViewModel` |
 
@@ -201,6 +204,36 @@ Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다.
   있던 행)을 실어 편집기 배너가 왜 왔는지를 말한다(F7 PR-A).
 - 게이트 서열에서 검토 요구는 **전제조건 다음·열림 직전**(warn, `reason="review_required"`)
   이다. 선택 0건·저장 폴더 미지정 상태에서 "검토하세요"는 이행 불가능한 지시다.
+
+#### TXT 검토·복사 작업대 = 고정 사본 세션 (F6 PR-A — 지도 §10.15)
+
+TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): 후보·문서 탐색·데이터 존을 HWPX
+와 똑같이 쓰고, 갈리는 것은 실행 행동뿐이다 — 「N개 생성」 대신 **「검토·복사 시작 · N건」**
+이 작업대(`#scr-workbench`)를 연다.
+
+- **작업 방식은 3값이고 연결 상태는 다른 축이다**(§19.1). 값·파생은 링0
+  (`work_mode`), 표시 문구는 링1(`gui/work_mode.py`) 단일 출처 — 후보 카드·문서 탐색·
+  라이브러리 셋이 같은 문자열을 쓴다. 라이브러리 필터의 「미연결 → hwpx」 귀속은 *필터
+  규칙*이지 방식 파생이 아니다(두 함수를 합치지 않는다).
+- **후보 자격은 `unsupported` 만 가른다**: hwpx·txt 는 같은 술어(필요한 열이 현재 데이터에
+  있는가)로 판정된다. 미상 확장자·미연결은 그대로 fail-closed 제외다.
+- **세션은 진입 시 고정 사본**(§13-13·§18.11-25): 표시순 투영을 통과한 OrderedSelection 의
+  복사본을 받고, 이후 「문서 만들기」의 검색·필터·정렬·선택 변화가 작업점 순서를 바꾸지
+  않는다. 그래서 작업대에는 데이터 존이 **없다** — 데이터를 바꾸려면 나갔다 다시 들어온다.
+- **진입은 성사 뒤다**: 생성 중·범위 초안 열림·선택 0건이면 화면을 세우지 않고 사유를
+  돌려준다(작업대는 **커밋된** 실행 입력의 사본을 뜬다 — F5 드로어와 같은 경계).
+- **좌 pane 은 미저장 변경이지 override 가 아니다**. 착지점은 「기본 규칙으로 저장…」
+  하나이고, 확인 문안이 dirty 필드를 **전부** 나열한다(§11). 저장은 Binding 판본을 올리고
+  같은 작업점으로 돌아오며, 이미 복사한 레코드는 「다시 확인 필요」가 된다. 거래 모델은
+  편집기와 같은 `EditSession`(section=`binding`)이다.
+- **저장은 잠금 안에서 디스크를 다시 읽는다**: 작업대 세션은 오래 열려 있어 진입 시 읽은
+  Job 이 특히 낡기 쉽다. 그룹·태그·완주 스탬프는 최신값을 승계하고, 규칙이 외부에서
+  갈렸으면 조용히 덮지 않고 확인을 다시 받는다.
+- **승계 4종은 거처만 옮긴다**: 큐 퇴화(1건이면 큐 장치 3종 은닉) · T3 가드(복사 진행 중
+  이탈) · 정렬 린트(카드와 클립보드가 같은 값) · 확정-비움(게이트에서 제외). 판정 소유자는
+  각각 `TxtQueueModel`·가드 술어·`gui/txt_card.py`·`MappingModel` 그대로다.
+- **검토 요구·미리보기 드로어는 배제 선언**: TXT 엔 파일 이름 축이 없고(§3.2) 작업대가 이미
+  레코드 전수를 채운 모습으로 보여 주는 검토 표면이라, 같은 확인을 두 표면이 겸하지 않는다.
 
 #### 생성 결과 = 3태 구획 + 실행 기록 (F4 — 지도 §10.10)
 

@@ -286,3 +286,19 @@ def prework_gate(
             False, "warn", "현재 데이터에 사용할 수 있는 문서 작업이 없습니다."
         )
     return GateState(False, "warn", "문서 작업을 선택하세요.")
+
+
+def workbench_entry_gate(*, has_data: bool, selected_count: int) -> GateState:
+    """TXT 작업이 선택된 상태의 진입 게이트 — 작업대로 갈 수 있는가(§19.1 실행 분기).
+
+    HWPX 의 권위 판정(``RunViewModel.refresh``)에 대응하는 자리지만 **셋는 것이 다르다**:
+    작업대는 값·빈칸을 레코드마다 눈으로 보고 복사하는 표면이라, 여기서 미리 값 검증을
+    하면 같은 판정이 두 곳에 산다(작업대 복사 게이트가 그 권위다). 그래서 이 게이트는
+    **진입 자격**만 본다 — 데이터가 있고 처리할 항목이 하나 이상인가(§18.10 수용 6:
+    선택 0건에서는 TXT 세션에 진입하지 않고 첫 레코드를 대신 쓰지 않는다).
+    """
+    if not has_data:
+        return GateState(False, "warn", "데이터 파일을 먼저 선택하세요.")
+    if selected_count == 0:
+        return GateState(False, "warn", "처리할 항목을 선택하세요.")
+    return GateState(True, "ok", "선택한 항목을 작업대에서 검토하고 복사합니다.")

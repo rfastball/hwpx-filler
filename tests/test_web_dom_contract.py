@@ -52,6 +52,9 @@ MUTABLE_MODULE_STATE_BUDGET = {
     "screens/job.js": 17,
     "screens/template.js": 5,
     "screens/draft.js": 3,
+    # 작업대(F6) — 스냅샷 1개(LAST)뿐이다. 작업점·복사 이력·미저장 변경·린트를 전부
+    # Python 이 소유하므로 표면이 들 것이 없다(데이터 존이 없는 화면이라 더 그렇다).
+    "screens/workbench.js": 1,
     "screens/editor.js": 3,
     "screens/library.js": 3,
     "data_picker.js": 4,
@@ -1453,9 +1456,14 @@ def test_editor_is_an_immersive_screen_with_one_exit():
     assert "editor-open" in app_js and "body.editor-open .nav" in css, (
         "편집기가 상단 2탭을 덮지 않습니다 — 화면 전환구가 살아 있으면 처분 미확정 이탈구다."
     )
-    assert "EditorScreen.leaveTo" in app_js, (
-        "Nav 가 편집기 이탈 가드를 지나지 않습니다 — 프로그램적 이동이 처분을 건너뜁니다."
+    # 이탈 위임은 **몰입 표면 목록**으로 일반화됐다(F6 — 작업대 합류). 특례를 화면마다
+    # 늘리면 가드의 완전성이 표면 수에 비례한다(이 표면이 존재하는 바로 그 이유). 그래서
+    # 목록에 등록됐는지와, 목록이 leaveTo 로 위임하는지를 함께 센다.
+    assert "IMMERSIVE" in app_js and "owner.leaveTo" in app_js, (
+        "Nav 가 몰입 표면의 이탈 가드를 지나지 않습니다 — 프로그램적 이동이 처분을 건너뜁니다."
     )
+    for owner in ("EditorScreen", "WorkbenchScreen"):
+        assert owner in app_js, f"{owner} 이 몰입 표면 목록에 없습니다."
     # 진입 흐름은 EditorEntry 단일 정의(land/newDraft/openGuarded — 축자 복붙=드리프트 표면).
     entry_src = (WEB_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
     for fn in ("function land", "function newDraft", "function openGuarded"):

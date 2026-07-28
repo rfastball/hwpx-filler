@@ -51,6 +51,7 @@ from ..core.dataset_pool import DatasetPoolRegistry
 from ..core.identity_summary import identity_summary
 from ..core.job import (
     MISSING_MARKER,
+    Job,
     JobRegistry,
     content_fingerprint,
     rules_fingerprints,
@@ -76,6 +77,7 @@ from ..gui.review_state import (
 )
 from ..gui.run_state import RunViewModel, resolve_file_source, resolve_pool_source
 from ..gui.selection_state import SelectionModel
+from ..gui.work_mode import work_mode_label
 from ..gui.work_candidates import (
     KIND_NEEDS_ACTION,
     MAIN_TOP_N,
@@ -84,12 +86,14 @@ from ..gui.work_candidates import (
     browse_candidates,
     candidate_rows,
     prework_gate,
+    workbench_entry_gate,
     preferred_promotion,
     rank_available,
     suggested_work,
 )
 from .action_registry import ZONE_MUTATIONS
 from .job_list import drift_note
+from .screen_workbench import WorkbenchController
 from .settings import load_job_collapsed_groups, save_job_collapsed_groups
 from .data_zone import (
     EMPTY_FILTER as _EMPTY_FILTER,
@@ -261,6 +265,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._last_filter: "dict | None" = None  # {"source_key": str, "state": dict}
         self._data_key = ""  # 현 데이터 소스 정체(file:경로 | pool:참조) — 소스 일치 판정
         self.job_name = ""  # 후보·탐색에서 겨눈 작업(패널 세션의 주체)
+        # **TXT 작업이 선택된 상태**(재작성 F6) — `vm` 은 hwpx 실행뷰라 여기서 None 이다.
+        # 두 축을 가르는 이유(지도 §10.15 판정 A 의 표면판): F6 이전에는 `vm is None` 이
+        # 곧 「작업 미선택」이었는데, TXT 가 합류하면서 그 술어에 뜻이 둘 생겼다. 같은
+        # 상태를 두 뜻으로 부르는 자리를 남기지 않으려고 **선택 여부는 `job_name`,
+        # hwpx 실행뷰 존재는 `vm`, 작업대 대상은 이 값**으로 갈라 둔다.
+        self.txt_job: "Job | None" = None
+        # 작업대 컨트롤러(사후 주입 — 라이브러리 `session_guards` 선례). 진입 판정은 이
+        # 컨트롤러가 내고 세션 개시만 위임한다.
+        self.workbench = None
         # 문서 탐색 상태(§18.6) — 탭·검색어는 **세션 소유**다: 탭을 옮겨도 검색어가 살아야
         # 하고(계약 명문), 시트를 닫고 다시 열어도 방금 찾던 자리로 돌아온다. 스크롤·포커스는
         # 기존 보존 기제(preserve.js) 소관이라 여기 두지 않는다.
@@ -759,6 +772,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 # 의미는 **완주(전건 성공) 실행**이다(지도 §8.2 ②).
                 "last_run_at": job.last_run_at,
                 "suggested": r.name == suggested,
+                # 작업 방식(§19.1) + 그 표시 문구 — 카드 부제와 구획 판단이 소비한다(§19.3).
+                # 라벨을 표면이 짓지 않는 이유는 같은 축을 그리는 표면이 셋이기 때문이다
+                # (후보 카드·문서 탐색·라이브러리) — 문구가 갈리면 같은 상태를 다르게 부른다.
+                "mode": r.mode,
+                "mode_label": work_mode_label(r.mode, short=True),
             })
         needs = sorted(
             (
@@ -797,7 +815,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         return {
             "tab": res.tab,
             "query": self.browse_query,
-            "rows": [dict(r) for r in res.rows],
+            # 행은 링1이 실은 `mode` 를 그대로 나른다 — 탭 **안**의 구획 판단용(§19.5).
+            "rows": [{**r, "mode_label": work_mode_label(r["mode"], short=True)}
+                     for r in res.rows],
             "available_count": res.available_count,
             "needs_count": res.needs_count,
             "filtered_out": res.filtered_out,
@@ -1042,16 +1062,21 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         함께 사망했다(F2 PR-B, 지도 §10.9 판정 F): 아무도 그리지 않는 페이로드가 남으면 다음
         세션이 그걸 근거로 목록을 되살린다. 저장된 작업의 전역 목록은 「문서 작업」 소관이다.
         """
-        # 조회 경계(3부 결정 13 · 1층): 이 화면은 hwpx 워크플로 작업을 조회한다 — **txt 기안
-        # 작업만 뺀다**(「기안」 화면 소관). 빈/미상 매체(템플릿 미링크 = 저작 중)는 남긴다:
-        # 그것도 hwpx 작업이고, 여기서 빼면 막 만든 무템플릿 작업이 후보에서 사라진다.
-        jobs = [j for j in self.registry.list_jobs() if j.media != "txt"]
+        # 조회 경계(재작성 F6 — TXT 합류): 이 화면은 **저장 작업 전체**를 조회한다. 방식
+        # 국경은 이제 후보 판정(`compatibility_for`)이 지므로 목록에서 미리 걸러 내지
+        # 않는다 — 여기서 빼면 후보 판정이 못 보는 작업이 생겨 「확인 필요」 사유도 못 낸다.
+        jobs = self.registry.list_jobs()
         base = {
             "job_name": self.job_name,
             # 직전 런의 주체(3R P2) — 결과 구획의 행동이 "이 결과가 지금 열린 작업의
             # 것인가"를 물을 때 쓰는 값. 판정에 드는 두 값이 같은 출처(이 스냅샷)에서 온다.
             "last_run_job": self._last_run_job,
-            "has_job": self.vm is not None,
+            # 작업이 선택됐는가 — **`vm` 이 아니라 이름**이다(F6): TXT 는 hwpx 실행뷰를
+            # 세우지 않으므로 `vm is not None` 은 "선택됨"이 아니라 "hwpx 로 실행한다"다.
+            "has_job": bool(self.job_name),
+            # 실행 행동 = **매체 파생 2분기**(F6 판정 D). 라벨과 행동 키를 Python 이 낸다 —
+            # 표면이 매체를 다시 읽어 분기하면 같은 판정이 두 곳에 산다.
+            "run_action": self._run_action(),
             # 세션 가드 무장 상태(결정 26·27) — 표면 참고용(진실은 guard_state 실시간 질의;
             # 렌더 판은 _filter_sections 가 같은 뷰로 산출해 아래 update 가 덮는다).
             "guard": {
@@ -1093,6 +1118,46 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         base["browse"] = self._browse_payload(jobs)
         # 범위 초안 구획(F3) — 열림 여부가 DOM 클래스가 아니라 **상태**다(§10.11.2 정체 면).
         base["range_draft"] = self._range_draft_payload()
+        if self.txt_job is not None:
+            # ── TXT 작업 선택(재작성 F6) — 실행 표면이 작업대라 hwpx 실행뷰가 없다.
+            # 데이터 존·후보·탐색은 hwpx 와 **완전히 같은 것**을 쓴다(§18.11-24: 두 매체가
+            # 같은 OrderedSelection 을 소비한다). 갈리는 것은 게이트와 실행 행동뿐이다.
+            zone_indices = self._zone_indices()
+            record_rows = self._record_rows(zone_indices, [])
+            filter_snap, table_snap, restate_snap, guard_snap = self._filter_sections(
+                zone_indices, record_rows
+            )
+            tpath = self.txt_job.template_path
+            g = workbench_entry_gate(
+                has_data=self.datasource is not None,
+                selected_count=self.selection.selected_count(),
+            )
+            base.update({
+                "template_name": Path(tpath).name if tpath else "",
+                "template_path": tpath,
+                "template_missing": not tpath or not Path(tpath).exists(),
+                # 파일 이름 규칙은 TXT 에 **없다**(§3.2) — 빈 문자열은 "아직 안 정했다"가
+                # 아니라 "이 매체엔 그 축이 없다"이고, 표면이 그 자리를 그리지 않는다.
+                "filename_pattern": "",
+                "has_data": self.datasource is not None,
+                "record_count": len(self.records),
+                "selected_count": self.selection.selected_count(),
+                "records": record_rows,
+                "preflight": {"level": "", "text": ""},
+                # 거울·드리프트·이름 토큰은 hwpx 생성 경로의 것이다 — TXT 는 값 확인을
+                # 작업대가 레코드마다 눈으로 하므로 여기서 겸하지 않는다(판정 단일 출처).
+                "mirror": [], "drift": [], "name_tokens": [],
+                "filter": filter_snap, "table": table_snap, "restate": restate_snap,
+                "guard": guard_snap,
+                "gate": {"enabled": g.enabled, "level": g.level, "text": g.text},
+                # 검토 요구·미리보기 드로어는 **배제 선언**(지도 §10.15 판정 J): 드로어는
+                # 값+파일 이름+승인의 면인데 TXT 엔 파일 이름 축이 없고, 작업대가 이미
+                # 레코드 전수를 채운 모습으로 보여 주는 검토 표면이다. 골격만 실어 표면이
+                # 키 부재로 갈라지지 않게 한다.
+                "review": self._review_payload(ReviewRequirement(), None),
+                "preview": {"open": False, "pos": 0, "total": 0, "can_open": False},
+            })
+            return base
         if self.vm is None:
             # 작업 미선택 상태 — 데이터 존은 세션 소유라 그대로 산다(데이터-우선, §18.2).
             zone_indices = self._zone_indices()
@@ -1389,6 +1454,40 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self._do_preview_close({})
         return True
 
+    def _run_action(self) -> dict:
+        """실행 버튼의 (행동 키, 라벨) — 매체 파생 2분기(§19.1·F6 판정 D)."""
+        if self.txt_job is not None:
+            n = self.selection.selected_count()
+            return {"key": "workbench", "label": f"검토·복사 시작 · {n}건"}
+        return {"key": "generate", "label": "이 작업으로 문서 생성"}
+
+    def _do_open_workbench(self, p: dict) -> dict:
+        """TXT 검토·복사 작업대 진입 — 고정 사본을 넘기고 화면 전환은 웹이 한다.
+
+        **열기는 성사 뒤다**(§10.15.1 계약면 2·3): 자격 없는 진입은 화면을 세우지 않고
+        사유를 돌려준다. 진입을 막는 것은 셋이다 — 생성 중(진행 중 런의 규칙을 갈아 끼우면
+        RC-02 「확인 대상 = 생성 대상」이 깨진다) · 범위 초안 열림(작업대는 **커밋된** 실행
+        입력의 사본을 뜬다 — 적용도 안 한 편집으로 사본을 뜨면 어느 범위인지 갈린다) ·
+        게이트 미충족(선택 0건에서 첫 레코드를 대신 쓰지 않는다, §18.10 수용 6).
+        """
+        if self.txt_job is None:
+            return {"ok": False, "error": "TXT 검토·복사 작업이 아닙니다."}
+        self.raise_if_generating_before_swap("작업대를 여세요")
+        if self.range_draft is not None:
+            return {"ok": False,
+                    "error": "범위 편집을 먼저 적용하거나 취소한 뒤 작업대를 여세요."}
+        gate = workbench_entry_gate(
+            has_data=self.datasource is not None,
+            selected_count=self.selection.selected_count(),
+        )
+        if not gate.enabled:
+            return {"ok": False, "error": gate.text}
+        if self.workbench is None:  # confirm-or-alarm: 미배선은 시끄럽게(조용한 무동작 금지)
+            raise ValueError("작업대 컨트롤러가 배선되지 않았습니다.")
+        indices = self._indices()
+        self.workbench.open(self.txt_job, [(i, self.records[i]) for i in indices])
+        return {"ok": True, "count": len(indices)}
+
     def _do_select_job(self, p: dict) -> "dict | None":
         """후보·탐색에서 작업 선택 → RunViewModel 재구성. 저장 폴더 기본 = 템플릿/Results.
 
@@ -1419,6 +1518,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._do_preview_close({})
         if not name:  # 선택 해제 = 작업만 내려놓는다(데이터 존은 그대로)
             self.vm = None
+            self.txt_job = None
             self.job_name = ""
             self.out_dir = ""
             self._last_failed = []
@@ -1429,9 +1529,17 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 선택」이 0건을 돌려주는 유령 행동이 된다. 위 `_last_generated` 조기 소거는
         # 안전 방향(가드 재무장)이라 그대로 두지만, 이쪽은 **복구 경로가 사라지는** 방향이다.
         self._last_failed = []
-        self.vm = RunViewModel(job)
+        # 매체 파생 2분기(재작성 F6 판정 D) — TXT 는 hwpx 실행뷰를 세우지 않는다.
+        # `RunViewModel` 은 이 job 의 템플릿을 hwpx 로 파싱하므로(진입 가드가 loud 거부)
+        # 여기서 갈라야 조회 경계가 새지 않는다. 실행 표면도 갈린다: 생성 / 작업대.
+        if WorkbenchController.accepts(job):
+            self.vm = None
+            self.txt_job = job
+        else:
+            self.vm = RunViewModel(job)
+            self.txt_job = None
         self.job_name = name
-        if self.records:
+        if self.records and self.vm is not None:
             self.vm.set_acquired(self.datasource, self.records)  # ack 재평가 포함(RC-22)
             # 필터 열 유형 재조정(#302 리뷰 P2): 무작업 마운트의 필터는 값 스니핑만 탔다 —
             # 작업이 정해진 지금 매핑 확정 유형 힌트를 반영한다. 단 **정의 없는 필터만**

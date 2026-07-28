@@ -648,7 +648,8 @@ table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
 /* 편집기 몰입 표면(재작성 F7 — 구 .job-edit-host 승계). 상단 2탭을 덮으므로 셸 표지는
    body.editor-open 이 감춘다: 편집 중에 화면 전환구가 살아 있으면 처분 미확정 이탈구가
    다시 생긴다(가드의 완전성이 표면 수에 비례하는 구조를 없앤 것이 이 표면의 요지다). */
-body.editor-open .nav,body.editor-open .nav-sep{display:none}
+body.editor-open .nav,body.editor-open .nav-sep,
+body.workbench-open .nav,body.workbench-open .nav-sep{display:none}
 .editor-shell{flex:1;min-height:0;display:flex;flex-direction:column;gap:var(--sp-4)}
 .editor-shell .back{align-self:flex-start}
 .editor-head{padding:0;border:0;background:none}
@@ -1416,3 +1417,31 @@ body.resizing-master{cursor:col-resize;user-select:none}
    .wbody/.job-panel/.stage 로 휠·터치 스크롤이 연쇄되지 않게 contain 한다. */
 .tblwrap,.mapwrap,.jobtbwrap,.tpllist,.sheet-list,.colpanel .cp-vals{
   scrollbar-gutter:stable;overscroll-behavior:contain}
+
+
+/* TXT 검토·복사 작업대(v6 S7 · 재작성 F6) — 편집기와 같은 몰입 부류라 셸 규칙을 공유하고
+   (위 body.workbench-open) 본체만 2열이다. 좌 = 필드 연결(미저장 변경), 우 = 채운 모습/원문.
+   좁은 폭에서는 1열로 퇴화한다 — 두 pane 이 서로를 밀어 어느 쪽도 못 읽는 것보다 낫다. */
+.wb-shell{flex:1;min-height:0;display:flex;flex-direction:column;gap:var(--sp-4)}
+.wb-shell .back{align-self:flex-start}
+.wb-head{padding:0;border:0;background:none}
+.wb-head .eyebrow{font-size:var(--fs-caption);color:var(--a-muted);margin:0;letter-spacing:.02em}
+.wb-stats{display:flex;gap:var(--sp-4);align-items:center;flex-wrap:wrap}
+.wb-stats span{font-size:var(--fs-caption);color:var(--a-muted)}
+.wb-stats strong{color:var(--a-text);font-variant-numeric:tabular-nums}
+.wb-body{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  gap:var(--sp-4);align-items:start}
+@media (max-width:920px){.wb-body{grid-template-columns:minmax(0,1fr)}}
+.wb-left,.wb-right{min-width:0;display:flex;flex-direction:column;gap:var(--sp-6)}
+.wb-left .zone-head{display:flex;justify-content:space-between;align-items:flex-start;gap:var(--sp-4)}
+#wbMapPanel{max-height:360px;overflow:auto}
+.wb-toolbar{display:flex;gap:var(--sp-6);align-items:center}
+.wb-toolbar .status{margin-left:auto}
+/* 본문은 대상 글꼴 선언을 따르는 미리보기 면이라 「기안」 카드와 같은 판을 쓴다. */
+.wb-preview{white-space:pre-wrap;word-break:break-word;background:var(--a-surface);
+  border:1px solid var(--a-border);border-radius:var(--radius-2);padding:var(--sp-4);
+  min-height:180px;max-height:420px;overflow:auto}
+.wb-foot{display:flex;gap:var(--sp-6);align-items:center;flex-wrap:wrap;
+  border-top:1px solid var(--a-border);padding-top:var(--sp-6)}
+.wb-foot .btn.primary{margin-left:auto}
+.wb-adv{display:flex;gap:var(--sp-8);align-items:center;font-size:var(--fs-caption)}

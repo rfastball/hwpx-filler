@@ -930,7 +930,10 @@
     $("jobPreviewOpen").disabled = busy || !pv.can_open;
     $("previewPrev").disabled = busy || !pv.total || pv.pos <= 0;
     $("previewNext").disabled = busy || !pv.total || pv.pos >= pv.total - 1;
-    $("jobGenBtn").textContent = busy ? "생성 중…" : "이 작업으로 문서 생성";
+    // 실행 행동은 **매체 파생 2분기**(F6 판정 D) — 라벨도 행동 키도 Python 이 낸다.
+    // 표면이 매체를 다시 읽어 분기하면 같은 판정이 두 곳에 산다.
+    const ra = (LAST && LAST.run_action) || { key: "generate", label: "이 작업으로 문서 생성" };
+    $("jobGenBtn").textContent = busy ? "생성 중…" : ra.label;
     $("jobGenCancel").style.display = busy ? "" : "none";
     if (!busy) { $("jobGenCancel").disabled = false; $("jobGenCancel").textContent = "다음 건부터 중단"; }
   }
@@ -1422,7 +1425,16 @@
         if (LAST) Preserve.around(() => renderRestate(LAST));
       }
     });
-    $("jobGenBtn").addEventListener("click", () => doGenerate(false));
+    $("jobGenBtn").addEventListener("click", () => {
+      // TXT 는 생성이 아니라 작업대 진입이다. 진입 자격 판정도 Python 이 하고(선택 0건·
+      // 초안 열림·생성 중) 여기는 거절 사유를 재진술만 한다 — 조용한 무동작 금지.
+      const key = (LAST && LAST.run_action && LAST.run_action.key) || "generate";
+      if (key !== "workbench") { doGenerate(false); return; }
+      Bridge.call(SCREEN, "open_workbench", {}).then((res) => {
+        if (res && res.ok) { window.Nav.go("workbench"); return; }
+        log((res && res.error) || "작업대를 열지 못했습니다.");
+      });
+    });
     $("jobGenCancel").addEventListener("click", async () => {
       const btn = $("jobGenCancel");
       btn.disabled = true;

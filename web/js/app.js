@@ -56,6 +56,13 @@
      읽는다(다른 화면에서 접은 상태가 stale 로 남지 않게). */
   const REFRESH_ON_NAV = ["library", "tpl", "job", "draft"];
 
+  /* 몰입 표면 — 상단 2탭을 덮고(셸 표지를 body 클래스로 내려 CSS 가 감춘다) 나가는 이동이
+     자기 이탈 가드를 먼저 지나는 화면들. 탭이 없으므로 `navs` 에도 없다. */
+  const IMMERSIVE = [
+    { id: "editor", owner: "EditorScreen", cls: "editor-open" },
+    { id: "workbench", owner: "WorkbenchScreen", cls: "workbench-open" },
+  ];
+
   /* 화면 스냅샷 재당김의 **단일 정의**(8R 근본 조치) — 전환이 자동으로 쏘는 발신과, 그
      화면을 **노출하기 전에** 완료를 기다려야 하는 호출자(편집기 이탈)가 같은 절차를 쓴다.
      두 벌이 되면 한쪽만 고쳐지고 그 경로만 옛 규칙을 든 화면을 내보인다 — 실제로 F7 은
@@ -82,11 +89,16 @@
      비동기(3택 모달)라 여기서 위임하고 처분이 끝나면 `force` 로 되돌아온다 — go() 를
      비동기로 바꾸면 반환값을 무시하는 기존 호출부 전부가 조용히 순서를 잃는다. */
   function go(id, opts) {
-    const leaving = document.getElementById("scr-editor");
-    if (id !== "editor" && leaving && leaving.classList.contains("on")
-        && !(opts && opts.force) && window.EditorScreen && window.EditorScreen.leaveTo) {
-      window.EditorScreen.leaveTo(id);
-      return;
+    // 몰입 표면의 **단일 목록**(F6) — 편집기 하나였을 때는 특례 한 줄이었지만, 작업대가
+    // 합류하면서 같은 모양이 둘이 됐다. 특례를 늘리면 가드의 완전성이 표면 수에 비례한다
+    // (F7 이 편집기를 화면으로 올린 바로 그 이유) — 그래서 목록으로 만든다: 새 몰입 표면은
+    // 여기 한 줄이고, 이탈 위임과 셸 은닉이 자동으로 따라온다.
+    for (const im of IMMERSIVE) {
+      const el = document.getElementById("scr-" + im.id);
+      if (id !== im.id && el && el.classList.contains("on") && !(opts && opts.force)) {
+        const owner = window[im.owner];
+        if (owner && owner.leaveTo) { owner.leaveTo(id); return; }
+      }
     }
     // 펼침 면 회수(F7) — 실 DOM 을 오버레이로 옮겨 띄우는 면이라, 열린 채 화면이 바뀌면
     // 남의 화면 위에 이 화면의 DOM 이 떠 있는다. 전환 자체가 소유하므로 화면이 늘어도
@@ -96,7 +108,7 @@
     }
     navs.forEach((x) => x.setAttribute("aria-current", x.dataset.scr === id ? "true" : "false"));
     scrs.forEach((s) => s.classList.toggle("on", s.id === "scr-" + id));
-    document.body.classList.toggle("editor-open", id === "editor");
+    IMMERSIVE.forEach((im) => document.body.classList.toggle(im.cls, id === im.id));
     if (!routingReady) return;  // pywebviewready 전에는 DOM 기본 랜딩만 정하고 브리지 호출은 미룬다.
     // 실패는 조용히 삼키지 않는다(confirm-or-alarm) — 화면은 이미 전환됐고 스냅샷만 낡음.
     // `refreshed` 는 호출자가 **전환 전에** 이미 기다린 경우다(편집기 이탈 — 8R P1): 다시
@@ -205,6 +217,7 @@
     if (window.EditorScreen) window.EditorScreen.init();
     if (window.JobScreen) window.JobScreen.init();  // 「문서 만들기」(#90) — 유일 생성 표면
     if (window.DraftScreen) window.DraftScreen.init();  // 「기안」 화면(#148 슬라이스 2b) — TXT 작업-앵커
+    if (window.WorkbenchScreen) window.WorkbenchScreen.init();  // TXT 검토·복사 작업대(F6)
     if (window.TemplateScreen) window.TemplateScreen.init();
     // 데이터 선택 다이얼로그(재작성 F1) — 화면이 아니라 오버레이라 라우팅 대상이 아니지만
     // pool 관측 푸시의 구독자라 여기서 배선한다(구 PoolScreen.init 승계).

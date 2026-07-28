@@ -40,6 +40,7 @@ from .screen_job import JobController
 from .screen_pool import PoolController
 from .draft_session import TargetFontSetting
 from .screen_template import TemplateController
+from .screen_workbench import WorkbenchController
 from .template_groups import TemplateGroupModel
 from .screens import (
     collect_owned_paths,
@@ -172,6 +173,10 @@ class WebFrontend:
             TemplateController(registry, self._push, txt_groups=txt_groups),
             # 등록 데이터 참조·수명(#26 #4) — 화면은 사망하고 데이터 선택 다이얼로그가 소비(F1).
             PoolController(pool_registry, self._push),
+            # TXT 검토·복사 작업대(v6 S7, 재작성 F6) — 「문서 만들기」에서 TXT 작업을 실행하면
+            # 여기로 온다. 대상 글꼴은 「기안」과 **같은 인스턴스**를 공유한다(앱 전역 선언이라
+            # 두 벌이면 같은 사용자 선언에 두 값이 생긴다).
+            WorkbenchController(job_registry, self._push, target_font=target_font),
         ]
         # 에디터의 템플릿 라이브러리 = tpl 화면의 VM **같은 인스턴스**:
         # 별도 인스턴스면 두 표면의 스캔 캐시가 갈라져(가져오기·삭제가 한쪽에만 반영) 신규
@@ -191,6 +196,10 @@ class WebFrontend:
         self.controllers = {c.name: c for c in controllers}
         # 라이브러리 삭제의 타 화면 무장 세션 가드 배선(#268 리뷰) — 라이브러리가 작업·기안
         # 화면보다 먼저 생성되므로 사후 주입. 삭제는 이 조회로 소유 화면의 무장 세션을 먼저 묻는다.
+        # 작업대 배선(F6) — 「문서 만들기」가 진입 판정을 내고 세션 개시만 위임한다.
+        # 라이브러리 `session_guards` 와 같은 사후 주입: 컨트롤러 생성 순서에 의존을 만들지
+        # 않으려고 조립 지점에서 잇는다.
+        self.controllers["job"].workbench = self.controllers["workbench"]
         self.controllers["library"].session_guards = [
             self.controllers["job"].session_guard_for,
             self.controllers["draft"].session_guard_for,
@@ -3016,6 +3025,97 @@ def _finish_selftest(window: "object", result: dict) -> None:
     window.destroy()  # type: ignore[attr-defined]
 
 
+# TXT 검토·복사 작업대(재작성 F6 PR-A) — 합성 스냅샷으로 실 render() 를 돌려 되읽는다.
+# 정적 계약이 못 보는 것 셋을 겨눈다: ①몰입 셸(상단 2탭 은닉)이 실제로 걸리는가 ②큐 퇴화가
+# 큐 장치 3종을 실제로 감추는가 ③이탈이 **가드를 지나** 화면을 바꾸는가(발신 순서까지).
+_WORKBENCH_PROBE_SETUP_JS = r"""
+(function () {
+  const out = { pending: true };
+  window.__workbench = out;
+  const seg = (t, kind, name) => ({ text: t, kind: kind || 'literal', name: name || '' });
+  const snap = {
+    open: true, job_name: '발주요청_기안', mode_label: '온나라 기안 검토·복사',
+    view: 'filled', target_font: '맑은 고딕', fullwidth: false,
+    notice: { text: '', level: 'muted' },
+    total: 3, copied_count: 1, is_complete: false,
+    revision: { template: 1, binding: 4 },
+    source_fields: ['부서', '사업명'],
+    fmt_options: { text: [{ code: 'plain', label: '그대로' }] },
+    type_options: [{ code: 'text', label: '텍스트' }],
+    rows: [
+      { name: '수신', state: 'fill', source: '부서', own: 'auto', manual: false,
+        value: '회계과', fmt_kind: 'text', fmt_code: 'plain', suggest: '',
+        can_revert: false, confirmed: true, blank_declared: false },
+      { name: '비고', state: 'blank', source: '', own: '', manual: false, value: '',
+        fmt_kind: 'text', fmt_code: 'plain', suggest: '', can_revert: false,
+        confirmed: true, blank_declared: true },
+    ],
+    dirty: { count: 1, fields: [{ name: '수신' }], pending: false },
+    can_save: true, save_block: '',
+    guard: { armed: true, lines: ['복사 진행 1/3건 — 나가면 이 진행은 사라집니다.'] },
+    card: {
+      index: 0, has_current: true, queue_degenerate: false, position: 0, source_row: 7,
+      review_state: 'recheck', uncopied_count: 2, advance_after: false,
+      segments: [seg('수신: '), seg('회계과', 'fill', '수신'), seg('', 'blank', '비고')],
+      missing_fields: [], empty_fields: [],
+      lint: { proportional: true, space_run: true, applied: false, active: true },
+      last_copy: null, copied_total: 1,
+    },
+  };
+  window.Nav.go('workbench');
+  window.__push('workbench', snap);
+  setTimeout(() => {
+    try {
+      out.screen_on = !!document.querySelector('#scr-workbench.on');
+      out.nav_hidden = getComputedStyle(document.querySelector('.nav')).display === 'none';
+      out.title = document.getElementById('wbTitle').textContent;
+      out.position = document.getElementById('wbPosition').textContent;
+      out.copied = document.getElementById('wbCopied').textContent;
+      out.revision = document.getElementById('wbRevision').textContent;
+      out.dirty_note = document.getElementById('wbDirtyNote').textContent;
+      out.review = document.getElementById('wbReview').textContent;
+      out.map_rows = document.querySelectorAll('#wbMapPanel tbody tr').length;
+      out.declared = document.querySelectorAll('#wbMapPanel .mapval-declared').length;
+      out.card_fill = document.querySelectorAll('#wbCard .seg-fill').length;
+      out.card_blank = document.querySelectorAll('#wbCard .seg-blank').length;
+      out.lint_shown = document.getElementById('wbLint').style.display !== 'none';
+      out.save_enabled = !document.getElementById('wbSaveRules').disabled;
+      // 큐 퇴화 — 1건이면 순회 장치가 숨는다(정보가 없어서지 장식이라서가 아니다).
+      window.__push('workbench', Object.assign({}, snap, {
+        total: 1, copied_count: 0,
+        card: Object.assign({}, snap.card, { queue_degenerate: true, position: 0 }),
+      }));
+      setTimeout(() => {
+        try {
+          out.degen_prev = getComputedStyle(document.getElementById('wbPrev')).display;
+          out.degen_adv = getComputedStyle(document.querySelector('.wb-adv')).display;
+          // 이탈이 가드를 지나는가 — Nav.go 가 위임하고, 위임이 발신 순서를 지키는지.
+          const calls = [];
+          const real = window.Bridge.call;
+          window.Bridge.call = function (screen, action, payload) {
+            if (screen === 'workbench') {
+              calls.push(action);
+              if (action === 'leave_guard') return Promise.resolve({ armed: false, lines: [] });
+              return Promise.resolve({ ok: true });
+            }
+            return real(screen, action, payload);
+          };
+          window.Nav.go('job');
+          setTimeout(() => {
+            try {
+              window.Bridge.call = real;
+              out.leave_calls = calls;
+              out.landed = !!document.querySelector('#scr-job.on');
+            } finally { out.pending = false; }
+          }, 260);
+        } catch (e) { out.error = String(e); out.pending = false; }
+      }, 120);
+    } catch (e) { out.error = String(e); out.pending = false; }
+  }, 160);
+})();
+"""
+
+
 def _probe_late(window: "object", flag: str, expr: str) -> dict:
     """프로브의 비동기 단계가 끝나길 기다렸다가 결과 묶음(JSON)을 한 번에 회수한다.
 
@@ -3207,6 +3307,12 @@ def _selftest_drive(window: "object") -> None:
         result["editor_guard"] = _probe_late(
             window, "__editorGuard && !window.__editorGuard.pending",
             "JSON.stringify(window.__editorGuard)",
+        )
+        # TXT 검토·복사 작업대(재작성 F6) — 몰입 셸·큐 퇴화·이탈 위임을 실 DOM 에서 되읽는다.
+        window.evaluate_js(_WORKBENCH_PROBE_SETUP_JS)  # type: ignore[attr-defined]
+        result["workbench"] = _probe_late(
+            window, "__workbench && !window.__workbench.pending",
+            "JSON.stringify(window.__workbench)",
         )
         # 호출 직렬화 체인의 실패 복구(리뷰 5R) — 정적 계약이 못 보는 실행 성질이라 실물로.
         window.evaluate_js(_CHAIN_RECOVERY_PROBE_SETUP_JS)  # type: ignore[attr-defined]

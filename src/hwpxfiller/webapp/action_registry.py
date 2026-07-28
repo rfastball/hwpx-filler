@@ -152,9 +152,13 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         **_POOL_TARGETING,
         "guard_state": _schema(),
         "refresh": _schema(),
-        # 전체 표시순서 축(§18.10, 재작성 F3) — 데이터 존 공유 액션이 **아니다**: 기안 화면은
-        # 원본 순서 고정으로 살고, TXT 가 이 축을 얻는 것은 작업대 합류(F6) 소관이다.
+        # 전체 표시순서 축(§18.10, 재작성 F3) — 데이터 존 공유 액션이 **아니다**: 「기안」
+        # 화면은 원본 순서 고정으로 산다. TXT 는 F6 합류로 **이 화면에서** 축을 얻었다:
+        # 작업대는 데이터 존이 없고 표시순 투영을 통과한 고정 사본을 받기 때문이다.
         "set_view_order": _schema("value", "epoch"),
+        # TXT 검토·복사 작업대 진입(§11, 재작성 F6) — 무페이로드: 무엇을 넘길지(고정 사본)는
+        # Python 이 소유한다. 웹이 index 를 실어 보내면 그 사이 바뀐 표의 남의 행을 복사한다.
+        "open_workbench": _schema(),
         # 전문 범위 편집기 초안(§18.10, 재작성 F3) — 열기·적용·취소·보기 토글. 존 13액션은
         # **그대로** 초안을 향한다(같은 동사가 대상만 바꾼다, 지도 §10.11 판정 A).
         "range_draft_open": _schema(),
@@ -185,6 +189,30 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "disband_group": _schema("name", "confirm seen"),
         "ack_field": _schema("field"),
         "unack_field": _schema("field"),
+    },
+    # TXT 검토·복사 작업대(v6 S7 · 계약 §11, 재작성 F6) — 데이터 존이 **없다**: 데이터·범위
+    # 선택은 「문서 만들기」가 끝내고 여기는 고정 사본을 받는다(§13-13). 필드 연결 동사는
+    # 「기안」 맞추기 표와 같은 이름이다 — 같은 판정(MappingModel)을 부르므로 어휘를 갈라
+    # 두면 그 자체가 드리프트다.
+    "workbench": {
+        "step": _schema("delta"),
+        "set_current": _schema("index"),
+        "toggle_advance": _schema("value"),
+        "set_view": _schema(optional="view"),
+        "set_target_font": _schema(optional="font"),
+        "set_fullwidth": _schema("value"),
+        "set_source": _schema("index", "source"),
+        "set_map_value": _schema("index", "value"),
+        "set_map_fmt": _schema("index", "code"),
+        "set_map_type": _schema("index", "code"),
+        "set_confirmed": _schema("index value"),
+        "revert_map": _schema("index"),
+        "copy_precheck": _schema(),
+        # 「기본 규칙으로 저장…」(§11) — 확인 왕복. 이 저장은 **다음 실행부터의 기본 규칙**을
+        # 바꾸므로(override 없음, 지도 §10.14) dirty 필드를 전부 나열한 뒤에만 성사된다.
+        "save_rules": _schema(optional="confirm"),
+        "leave_guard": _schema(),
+        "close": _schema(),
     },
     "draft": {
         **_DATA_ZONE,

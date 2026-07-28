@@ -26,15 +26,13 @@ from ..core.format_engine import presets as format_presets
 from ..core.mapping import TYPES
 from ..core.text_render import (
     RenderReport,
-    align_segments,
-    render_segments,
-    segments_have_space_run,
     template_fields,
 )
 from ..core.text_registry import TextTemplateRegistry
 from ..gui.filter_state import sniff_column_kinds
 from ..gui.mapping_state import MappingModel
 from ..gui.selection_state import SelectionModel
+from ..gui.txt_card import card_text, gate_empty_fields, render_card
 from ..gui.txt_queue import TxtQueueModel
 from ..gui.txt_state import TxtDraftViewModel
 from .data_zone import DataZoneMixin
@@ -552,12 +550,13 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         # 표시형·상수). 프로파일은 push 당 1회 빌드해 카드·빈칸 지도·값 셀이 한 출처를 본다.
         profile = self.mapping.live_profile()
         card_values = profile.apply(card_rec)
-        segments, card_report = render_segments(vm.template_text, card_values)
-        # 정렬 린트 술어는 **치환 전 원문** 기준(결정 17) — 치환하면 런이 사라지므로 원문
-        # 기준으로 보아야 "적용됨 · 되돌리기" 상태에서도 무엇을 고쳤는지 정직하게 말한다.
-        space_run = segments_have_space_run(segments)
+        # 링1 공유 통로(F6) — 세그먼트·리포트·린트 술어가 **한 번의 렌더**에서 나온다.
+        rendered = render_card(
+            vm.template_text, self.mapping, card_rec, fullwidth=self._fullwidth
+        )
+        segments, card_report = rendered.segments, rendered.report
+        space_run = rendered.space_run
         proportional = is_proportional_font(self._font.value)
-        segments = self._aligned(segments)
 
         # 빈칸 지도(has_gap)는 레코드 값+템플릿+**매핑**에 의존 — 결속·표시형·상수가 바뀌면 어느
         # 카드가 빈칸인지도 바뀐다. 네비게이션·필터 타건마다 O(행×필드) 재계산하지 않게
@@ -1145,12 +1144,10 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         # 열명과 정확히 같아야만 채워지던 제약이 풀린다. 클립보드 텍스트 = **카드와 같은 변환의
         # 결과**(결정 17 치환의 계약): 세그먼트를 이어붙여 만든다(치환이 카드에만 걸려 "보이는 것
         # ≠ 복사되는 것"으로 갈라지지 않게 세그먼트 경로 하나로 묶는다).
-        segments, report = render_segments(self.vm.template_text, self.mapping.live_profile().apply(rec))
-        return "".join(s.text for s in self._aligned(segments)), report
-
-    def _aligned(self, segments: list) -> list:
-        """전각 치환 적용(세션 옵션이 켜졌을 때만) — 카드 렌더·클립보드 공용 통로."""
-        return align_segments(segments) if self._fullwidth else segments
+        rendered = render_card(
+            self.vm.template_text, self.mapping, rec, fullwidth=self._fullwidth
+        )
+        return card_text(rendered.segments), rendered.report
 
     def _gate_empty(self, report: "RenderReport") -> "list[str]":
         """리포트의 빈 값 집합에서 **확정-비움을 뺀** 게이트/노트용 집합(#148 슬라이스 4, 결정 12).
@@ -1159,8 +1156,7 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
         그대로 그리되, 「확인해야 하는가」에서는 사람이 선언한 비움을 뺀다. 데이터가 비어 생긴
         빈 값은 선언이 아니라 그 행의 사실이라 남는다(:meth:`MappingModel.declared_blank_fields`
         단일 출처 — 카드 스냅샷의 게이트 집합과 같은 판정)."""
-        declared = set(self.mapping.declared_blank_fields())
-        return [f for f in report.empty_fields if f not in declared]
+        return gate_empty_fields(report, self.mapping)
 
     def can_copy(self) -> bool:
         """복사 가능 = 작업점 실재(리뷰 F3) **또는 가상 카드**(무데이터 직접 입력, 결정 14).
