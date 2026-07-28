@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from hwpxfiller.core.job import JobRegistry
+from hwpxfiller.core.text_registry import TextTemplateRegistry
 from hwpxfiller.gui.template_manager_state import TemplateManagerViewModel
 from hwpxfiller.webapp.screen_editor import EditorController
 from hwpxfiller.webapp.template_groups import TemplateGroupModel
@@ -24,13 +25,26 @@ MULTI_SHEET = REPO / "tests" / "fixtures" / "multi_sheet.xlsx"
 def _controller(tmp_path: Path) -> "tuple[EditorController, list]":
     pushes: list = []
     reg = JobRegistry(tmp_path / "jobs")
-    # 빈 라이브러리 VM 주입 — 기본(표준 라이브러리 지연 생성)이 실 사용자 폴더를 스캔하면
-    # 테스트가 개발 머신 상태에 좌우된다(PR-4 리뷰 F5: 격리·결정성).
+    # 빈 라이브러리 VM·격리 TXT 레지스트리 주입 — 기본(표준 라이브러리 지연 생성)이 실
+    # 사용자 폴더를 스캔하면 테스트가 개발 머신 상태에 좌우된다(PR-4 리뷰 F5: 격리·결정성).
     ctrl = EditorController(
         reg, lambda s, snap: pushes.append((s, snap)),
         template_library=TemplateManagerViewModel(paths=[]),
+        text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
     )
     return ctrl, pushes
+
+
+def _txt_template(tmp_path: Path, name: str = "기안", body: "str | None" = None) -> Path:
+    """격리 TXT 템플릿 픽스처 — `_controller` 가 주입하는 레지스트리 루트에 쓴다."""
+    root = tmp_path / "text_templates"
+    root.mkdir(parents=True, exist_ok=True)
+    p = root / f"{name}.txt"
+    p.write_text(
+        body if body is not None else "건명: {{건명}}\n금액: {{금액}}\n담당: {{건명}}",
+        encoding="utf-8",
+    )
+    return p
 
 
 def test_compiled_template_opens_advance_gate(tmp_path):
@@ -452,6 +466,7 @@ def _controller26(tmp_path: Path):
         lambda s, snap: pushes.append((s, snap)),
         pool_registry=DatasetPoolRegistry(tmp_path / "pool"),
         template_library=TemplateManagerViewModel(paths=[]),
+        text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
     )
     return ctrl, pushes
 
@@ -1579,13 +1594,14 @@ def _controller_lib(tmp_path, paths=None, lib_dir=None):
         JobRegistry(tmp_path / "jobs"),
         lambda s, snap: pushes.append((s, snap)),
         template_library=vm,
+        text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
     )
     return ctrl, pushes
 
 
-def _lib_items(snap):
-    """1단계 피커의 그룹 구획을 평평화한 아이템(#108 슬라이스 3 — library 는 {sections,flat})."""
-    return [it for sec in snap["library"]["sections"] for it in sec["items"]]
+def _lib_items(snap, media="hwpx"):
+    """1단계 피커의 그룹 구획을 평평화한 아이템 — library 는 매체 2밴드(F6 PR-B)."""
+    return [it for sec in snap["library"][media]["sections"] for it in sec["items"]]
 
 
 def test_snapshot_exposes_library_on_template_stage(tmp_path):
@@ -1596,7 +1612,7 @@ def test_snapshot_exposes_library_on_template_stage(tmp_path):
     snap = ctrl.snapshot()
     names = [t["name"] for t in _lib_items(snap)]
     assert TPL_COMPILED.name in names and TPL_PARTIAL.name in names
-    assert snap["library"]["flat"] is True  # 그룹 0개 = 퇴화 평면
+    assert snap["library"]["hwpx"]["flat"] is True  # 그룹 0개 = 퇴화 평면
     assert all(set(t) >= {"name", "path", "badge_label", "badge_level", "current", "detail"}
                for t in _lib_items(snap))
     ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})
@@ -1604,7 +1620,10 @@ def test_snapshot_exposes_library_on_template_stage(tmp_path):
     assert snap["template_name"] == TPL_COMPILED.name                  # 선택 = 새 세션 로드
     assert [t["current"] for t in _lib_items(snap)] == [True, False]   # 현 선택 표지
     ctrl.dispatch("goto_section", {"section": "binding"})
-    assert ctrl.snapshot()["library"] == {"sections": [], "flat": True}  # 매핑 단계는 빈 구획
+    assert ctrl.snapshot()["library"] == {  # 매핑 단계는 빈 구획(매체 2밴드 형상 유지)
+        "hwpx": {"sections": [], "flat": True},
+        "txt": {"sections": [], "flat": True},
+    }
 
 
 def test_library_picker_shares_groups_and_collapse_with_management(tmp_path):
@@ -1619,16 +1638,17 @@ def test_library_picker_shares_groups_and_collapse_with_management(tmp_path):
         lambda s, snap: pushes.append((s, snap)),
         template_library=TemplateManagerViewModel(paths=[TPL_COMPILED, TPL_PARTIAL]),
         template_groups=groups,
+        text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
     )
-    lib = ctrl.snapshot()["library"]
+    lib = ctrl.snapshot()["library"]["hwpx"]
     assert lib["flat"] is False
     by = {sec["group"]: sec for sec in lib["sections"]}
     assert [it["name"] for it in by["계약"]["items"]] == [TPL_COMPILED.name]
     assert TPL_PARTIAL.name in [it["name"] for it in by[""]["items"]]  # 미지정 = 「그룹 없음」
     # 접힘 토글 = 공유 모델 경유 → 같은 모델이 접힌 채(관리 화면도 접혀 보인다) · 세션 불변.
-    ctrl.dispatch("toggle_library_group", {"group": "계약"})
+    ctrl.dispatch("toggle_library_group", {"group": "계약", "media": "hwpx"})
     assert groups.is_collapsed("계약")
-    assert {s["group"]: s for s in ctrl.snapshot()["library"]["sections"]}["계약"]["collapsed"] is True
+    assert {s["group"]: s for s in ctrl.snapshot()["library"]["hwpx"]["sections"]}["계약"]["collapsed"] is True
     assert ctrl.has_unsaved_work() is False
 
 
@@ -1641,7 +1661,8 @@ def test_editor_picker_reflects_shared_vm_refresh_without_stale_cache(tmp_path):
     lib.mkdir()
     vm = TemplateManagerViewModel(library_dir=lib)  # 빈 라이브러리로 시작
     ctrl = EditorController(
-        JobRegistry(tmp_path / "jobs"), lambda s, snap: None, template_library=vm
+        JobRegistry(tmp_path / "jobs"), lambda s, snap: None, template_library=vm,
+        text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
     )
     assert _lib_items(ctrl.snapshot()) == []
     shutil.copy2(TPL_COMPILED, lib / "새서식.hwpx")  # 관리 화면 가져오기 시뮬레이션
@@ -1658,6 +1679,7 @@ def test_editor_picker_does_not_reconcile_away_offscreen_group(tmp_path):
         JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
         template_library=TemplateManagerViewModel(paths=[TPL_COMPILED]),  # 그 파일 없음
         template_groups=groups,
+        text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
     )
     ctrl.snapshot()  # step 0 = 피커 build_sections(reconcile 없음)
     assert TemplateGroupModel("hwpx").group_of("아직없는.hwpx") == "입찰"  # 지정 생존
@@ -1939,3 +1961,119 @@ def test_changing_the_rules_keeps_the_old_baseline_so_review_stands(tmp_path):
     after = reg.load("규칙변경작업")
     assert after.reviewed_rules == job.reviewed_rules      # 기준선은 그대로
     assert review_requirement(after).required              # 규칙이 갈려 요구가 선다
+
+
+# ------------------------------------------ TXT 매체 분기(F6 PR-B — 「기안」 생성 경로 승계)
+def test_txt_template_loads_with_token_schema_and_two_tabs(tmp_path):
+    """TXT 선택 → {{토큰}} 동형 스키마 + 탭 2개(템플릿·연결 — 파일 이름 탭 없음, §3.2).
+
+    스키마가 :class:`TemplateSchema` 동형이라 `_ensure_model`·`validate_save` 의 스키마
+    대조 술어가 hwpx 와 같은 길을 돈다(판정 단일 출처). PARTIAL 게이트는 서지 않는다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    path = _txt_template(tmp_path)  # 건명(2회)·금액
+    ctrl.dispatch("use_library_template", {"path": str(path)})
+    snap = ctrl.snapshot()
+    assert snap["sections"] == ["template", "binding"]
+    assert snap["template_media"] == "txt"
+    assert snap["field_count"] == 2 and snap["gate"] is None and not snap["gate_error"]
+    by_name = {f["name"]: f for f in snap["fields"]}
+    assert by_name["건명"]["occurrences"] == 2          # 등장 횟수는 세그먼트 단일 출처로 센다
+    assert by_name["금액"]["inferred_type"] == "amount"  # 이름 휴리스틱(infer_type) 공유
+    assert ctrl.can_advance("template") is True
+    with pytest.raises(ValueError, match="'filename' 탭이 없습니다"):
+        ctrl.dispatch("goto_section", {"section": "filename"})
+
+
+def test_txt_band_lists_templates_and_reads_errors_loud(tmp_path):
+    """스냅샷 TXT 밴드 — 목록·필드 수·current 표지, 손상 파일은 오류 행으로 loud."""
+    ctrl, _ = _controller(tmp_path)
+    path = _txt_template(tmp_path)
+    (tmp_path / "text_templates" / "손상.txt").write_bytes("한글".encode("cp949"))
+    band = ctrl.snapshot()["library"]["txt"]
+    items = [it for sec in band["sections"] for it in sec["items"]]
+    by_name = {it["name"]: it for it in items}
+    assert by_name["기안"]["field_count"] == 2 and not by_name["기안"]["error"]
+    assert by_name["손상"]["error"]                     # 판독 실패는 숨기지 않는다
+    ctrl.dispatch("use_library_template", {"path": str(path)})
+    band = ctrl.snapshot()["library"]["txt"]
+    items = [it for sec in band["sections"] for it in sec["items"]]
+    assert {it["name"]: it["current"] for it in items}["기안"] is True
+
+
+def test_txt_path_outside_registry_is_rejected(tmp_path):
+    """레지스트리 밖 .txt 는 loud 거부 + 최신 목록 선 push(hwpx 화이트리스트와 같은 규율)."""
+    ctrl, pushes = _controller(tmp_path)
+    outside = tmp_path / "바깥.txt"
+    outside.write_text("{{건명}}", encoding="utf-8")
+    before = len(pushes)
+    with pytest.raises(ValueError, match="라이브러리에 없는 템플릿"):
+        ctrl.dispatch("use_library_template", {"path": str(outside)})
+    assert len(pushes) > before  # 거절 전에 갱신 목록을 먼저 보여준다
+
+
+def test_txt_template_without_tokens_blocks(tmp_path):
+    """토큰 0 TXT = hwpx RAW 동형 차단 — 매체에 맞는 문안(누름틀·fieldize 언급 금지)."""
+    ctrl, _ = _controller(tmp_path)
+    path = _txt_template(tmp_path, name="맹탕", body="토큰이 하나도 없는 본문")
+    ctrl.dispatch("use_library_template", {"path": str(path)})
+    snap = ctrl.snapshot()
+    assert "{{토큰}}" in snap["raw_block"] and "누름틀" not in snap["raw_block"]
+    assert snap["fields"] == [] and ctrl.can_advance("template") is False
+
+
+def test_txt_template_non_utf8_read_is_loud(tmp_path):
+    """비 UTF-8 TXT 는 조용한 빈 스키마가 아니라 loud raise(confirm-or-alarm)."""
+    ctrl, _ = _controller(tmp_path)
+    bad = tmp_path / "text_templates"
+    bad.mkdir(parents=True, exist_ok=True)
+    p = bad / "구형.txt"
+    p.write_bytes("건명: {{건명}}".encode("cp949"))
+    with pytest.raises(ValueError, match="TXT 템플릿을 읽을 수 없습니다"):
+        ctrl.dispatch("use_library_template", {"path": str(p)})
+
+
+def test_txt_draft_saves_without_pattern_gate_and_reopens_with_two_tabs(tmp_path):
+    """TXT 초안 저장 — 파일명 패턴 게이트가 서지 않고(매체 인지, §10.15.15 판정), 저장
+    Job 형상은 구 「기안」 저장과 같다(pattern 미편집 = 기본값 그대로). 재편집 왕복도
+    같은 2탭 구성으로 돌아온다(사망 점검표 5행)."""
+    from hwpxfiller.core.job import DEFAULT_FILENAME_PATTERN, template_media
+
+    ctrl, _ = _controller(tmp_path)
+    path = _txt_template(tmp_path)
+    ctrl.dispatch("use_library_template", {"path": str(path)})
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_const", {"index": 0, "const": "물품 구매"})
+    blanks = ctrl.dispatch("confirm_all", {})["blanks"]
+    ctrl.dispatch("confirm_blanks", {"fields": blanks})
+    ctrl.dispatch("set_name", {"name": "TXT기안작업"})
+    assert ctrl.dispatch("save", {})["ok"] is True
+
+    saved = JobRegistry(tmp_path / "jobs").load("TXT기안작업")
+    assert template_media(saved.template_path) == "txt"
+    assert saved.filename_pattern == DEFAULT_FILENAME_PATTERN  # 미편집 기본값(기안 저장 동형)
+
+    ctrl.load_job("TXT기안작업")
+    snap = ctrl.snapshot()
+    assert snap["sections"] == ["template", "binding"]
+    assert snap["section"] == "binding" and snap["editing_origin"] == "TXT기안작업"
+
+
+def test_toggle_library_group_routes_by_media(tmp_path):
+    """접힘 토글 — media 키가 밴드를 고른다(txt 토글이 hwpx 모델을 건드리지 않는다)."""
+    txt_groups = TemplateGroupModel("txt")
+    hwpx_groups = TemplateGroupModel("hwpx")
+    txt_groups.set_group("기안.txt", "온나라")
+    ctrl = EditorController(
+        JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
+        template_library=TemplateManagerViewModel(paths=[]),
+        template_groups=hwpx_groups,
+        text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
+        txt_groups=txt_groups,
+    )
+    _txt_template(tmp_path)
+    ctrl.dispatch("toggle_library_group", {"group": "온나라", "media": "txt"})
+    assert txt_groups.is_collapsed("온나라") and not hwpx_groups.is_collapsed("온나라")
+    with pytest.raises(ValueError, match="알 수 없는 형식"):
+        ctrl.dispatch("toggle_library_group", {"group": "온나라", "media": "hwp"})

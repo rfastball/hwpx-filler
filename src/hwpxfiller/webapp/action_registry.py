@@ -111,7 +111,8 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
     },
     "editor": {
         "use_library_template": _schema("path"),
-        "toggle_library_group": _schema("group"),
+        # `media` 가 밴드(hwpx/txt)를 고른다 — 신규 액션 대신 기존 액션의 키 확장(§10.15.15 판정 F).
+        "toggle_library_group": _schema("group media"),
         "new_session": _schema(),
         "discard_session": _schema(),
         # 탭 이동 — `disposition` 은 3택 가드를 통과했다는 표지(웹이 저장·버리기를 먼저

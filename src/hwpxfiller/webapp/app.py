@@ -191,6 +191,10 @@ class WebFrontend:
                 # 1단계 피커 그룹 구획 = tpl 화면과 **같은 hwpx 그룹 모델**:
                 # 별도 인스턴스면 접힘·지정 인메모리 캐시가 갈라져 두 표면이 다른 조직을 보인다.
                 template_groups=tpl_ctrl.hwpx_groups,
+                # TXT 밴드(F6 PR-B — 「기안」 화면 사망의 생성 경로 승계처)도 같은 단일 실체:
+                # TXT 레지스트리·그룹 모델을 tpl 화면과 공유한다(가져오기·접힘이 함께 반영).
+                text_registry=registry,
+                txt_groups=txt_groups,
             ),
         )
         self.controllers = {c.name: c for c in controllers}
@@ -2409,12 +2413,12 @@ _EDITOR_LIB_PICKER_PROBE_JS = r"""
       template_path:'', template_name:'',
       field_count:0, fields:[], raw_block:'', gate_error:false, gate:null, notice:null,
       editing_origin:'',
-      library:{flat:false, sections:[
+      library:{hwpx:{flat:false, sections:[
         {group:'입찰', collapsed:false, count:2,
          items:[it('a.hwpx','준비됨','ok',true), it('b.hwpx','변환 필요','warn',false)]},
         {group:'계약', collapsed:true, count:1, items:[it('c.hwpx','준비됨','ok',false)]},
         {group:'', collapsed:false, count:1, items:[it('d.hwpx','준비됨','ok',false)]}
-      ]}};
+      ]}, txt:{flat:true, sections:[]}}};
     window.__push('editor', draft);
     var host = document.getElementById('scr-editor');
     out.grp_heads = host.querySelectorAll('.job-grp-head').length;              // 입찰·계약·그룹없음
@@ -2422,7 +2426,10 @@ _EDITOR_LIB_PICKER_PROBE_JS = r"""
     out.pick_btns = host.querySelectorAll('.libselrow button[data-act="use-library"]').length;
     out.current_marked = host.querySelectorAll('.libselrow.cur').length;       // 현 선택(a) 1
     out.import_btn = !!host.querySelector('button[data-act="import-template"]');
-    out.filter_notice = /HWPX 서식만/.test(host.textContent);  // 줄바꿈 무관 부분매치
+    // F6 PR-B — 「HWPX 서식만」 단일 매체 고지는 2밴드 구조로 대체됐다: 각 밴드가 자기
+    // 산출물(파일 생성/복사)을 말한다. 두 고지의 실재를 되읽는다.
+    out.filter_notice = /\.hwpx 문서 파일을 만드는/.test(host.textContent)
+      && /복사해 쓰는 작업/.test(host.textContent);
     var caret = host.querySelector('.job-grp-head[aria-expanded="false"] .grp-caret');
     out.caret_collapsed = caret ? getComputedStyle(caret).visibility : 'missing';
     // F13 — 그룹 헤더에 안정 id(재렌더 뒤 포커스 복원 근거). F14 — 파일명 칸 말줄임/축소.
@@ -2432,7 +2439,8 @@ _EDITOR_LIB_PICKER_PROBE_JS = r"""
     out.fname_ellipsis = fn ? getComputedStyle(fn).textOverflow : 'missing';
     out.fname_minwidth = fn ? getComputedStyle(fn).minWidth : 'missing';
     // 퇴화 평면(그룹 0개) — 헤더 없는 선택 행 나열.
-    draft.library = {flat:true, sections:[{group:'', collapsed:false, count:1, items:[it('d.hwpx','준비됨','ok',false)]}]};
+    draft.library = {hwpx:{flat:true, sections:[{group:'', collapsed:false, count:1, items:[it('d.hwpx','준비됨','ok',false)]}]},
+                     txt:{flat:true, sections:[]}};
     window.__push('editor', draft);
     out.flat_heads = host.querySelectorAll('.job-grp-head').length;
     out.flat_rows = host.querySelectorAll('.libselrow').length;
@@ -3070,6 +3078,68 @@ def _finish_selftest(window: "object", result: dict) -> None:
     window.destroy()  # type: ignore[attr-defined]
 
 
+# 편집기 「템플릿」 탭 매체 2밴드(F6 PR-B) — 합성 스냅샷으로 실 render() 를 돌려 되읽는다.
+# 겨누는 것 둘: ①TXT 밴드(선택 버튼 포함)가 실 DOM 에 서는가 ②TXT 세션의 탭이 Python 이
+# 파생한 2개(파일 이름 탭 부재, §3.2)로 그려지는가. 스냅샷 성형 자체는 헤드리스가 본다 —
+# 여기는 렌더러가 그 계약을 실제로 그리는지의 실물 가드다(editor_guard 프로브 동형).
+_EDITOR_TXT_BAND_PROBE_SETUP_JS = r"""
+(() => {
+  const out = { pending: true };
+  window.__editorTxtBand = out;
+  const finish = (why) => {
+    /* 자기 판을 자기가 걷는다(프로브 교차 오염 금지) — 편집기는 셸을 덮는 화면이라
+       그대로 두면 뒤따르는 프로브가 상단 탭을 「사라졌다」고 읽는다(editor_guard 동형). */
+    try {
+      window.Nav.go('job', { force: true });
+      const home = document.querySelector('.navbtn[data-scr="job"]');
+      if (home) home.focus();
+    } catch (e) { out.teardown_error = String(e && e.message); }
+    out.why = why;
+    out.pending = false;
+  };
+  try {
+    window.Nav.go('editor', { force: true });
+    const base = {
+      section: 'template', sections: ['template', 'binding', 'filename'],
+      reachable: { template: false, binding: false, filename: false },
+      dirty_sections: [], dirty: false, is_draft: true, changes: {}, context: {},
+      revisions: {}, template_path: '', template_name: '', template_media: '',
+      field_count: 0, fields: [], raw_block: '', gate: null, gate_error: false,
+      notice: null, editing_origin: '', name: '', pattern: '', rows: [],
+      source_fields: [], active_source_fields: [], ignored_source_fields: [],
+      sample_rows: [], type_options: [], fmt_options: {}, provenance: null,
+      default_dataset: null,
+      library: {
+        hwpx: { sections: [], flat: true },
+        txt: {
+          sections: [{ group: '', count: 1, collapsed: false, items: [
+            { key: '기안.txt', name: '기안', path: 'C:/t/기안.txt',
+              field_count: 3, error: '', current: false },
+          ] }],
+          flat: true,
+        },
+      },
+    };
+    window.__push('editor', base);
+    const caps = Array.prototype.map.call(
+      document.querySelectorAll('#editor-body .grp .cap'), (el) => el.textContent);
+    out.bands = caps.filter((t) => t === 'HWPX 서식' || t === 'TXT 기안');
+    out.txt_pick = !!document.querySelector(
+      '#editor-body [data-act="use-library"][data-path="C:/t/기안.txt"]');
+    window.__push('editor', Object.assign({}, base, {
+      sections: ['template', 'binding'], template_path: 'C:/t/기안.txt',
+      template_name: '기안.txt', template_media: 'txt',
+    }));
+    out.txt_tabs = document.querySelectorAll('#editor-steps .wstep-tab').length;
+    finish('완료');
+  } catch (e) {
+    out.error = String(e && e.message);
+    finish('예외');
+  }
+})();
+"""
+
+
 # TXT 검토·복사 작업대(재작성 F6 PR-A) — 합성 스냅샷으로 실 render() 를 돌려 되읽는다.
 # 정적 계약이 못 보는 것 셋을 겨눈다: ①몰입 셸(상단 2탭 은닉)이 실제로 걸리는가 ②큐 퇴화가
 # 큐 장치 3종을 실제로 감추는가 ③이탈이 **가드를 지나** 화면을 바꾸는가(발신 순서까지).
@@ -3387,6 +3457,12 @@ def _selftest_drive(window: "object") -> None:
         result["editor_guard"] = _probe_late(
             window, "__editorGuard && !window.__editorGuard.pending",
             "JSON.stringify(window.__editorGuard)",
+        )
+        # 편집기 「템플릿」 탭 매체 2밴드(F6 PR-B) — TXT 밴드 렌더 + TXT 세션 탭 2개.
+        window.evaluate_js(_EDITOR_TXT_BAND_PROBE_SETUP_JS)  # type: ignore[attr-defined]
+        result["editor_txt_band"] = _probe_late(
+            window, "__editorTxtBand && !window.__editorTxtBand.pending",
+            "JSON.stringify(window.__editorTxtBand)",
         )
         # TXT 검토·복사 작업대(재작성 F6) — 몰입 셸·큐 퇴화·이탈 위임을 실 DOM 에서 되읽는다.
         window.evaluate_js(_WORKBENCH_PROBE_SETUP_JS)  # type: ignore[attr-defined]

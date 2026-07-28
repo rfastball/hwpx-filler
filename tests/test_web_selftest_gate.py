@@ -913,6 +913,25 @@ class TestWebSelftestGate:
             f"(발신 기록: {g['calls']!r})."
         )
 
+    def test_editor_template_tab_renders_txt_band_and_two_txt_tabs(
+        self, selftest_result: dict
+    ) -> None:
+        # F6 PR-B — 「기안」 화면 사망의 TXT 생성 경로 승계처가 실 DOM 에 서는지. 정적
+        # 계약은 「배선했지만 영영 안 보이는」 상태를 통과시킨다(F2 PR-B 실증) — 밴드
+        # 머리 2종·TXT 선택 버튼·TXT 세션 탭 2개(파일 이름 탭 부재, §3.2)를 실물로 센다.
+        b = selftest_result["editor_txt_band"]
+        assert b.get("error") is None, f"TXT 밴드 프로브 예외: {b.get('error')!r}"
+        assert b.get("why") == "완료", f"TXT 밴드 프로브 미완주: {b!r}"
+        assert sorted(b["bands"]) == ["HWPX 서식", "TXT 기안"], (
+            f"템플릿 탭 매체 2밴드가 서지 않습니다: {b['bands']!r}"
+        )
+        assert b["txt_pick"] is True, (
+            "TXT 행의 선택 버튼(use-library)이 없습니다 — 목록만 있고 생성 경로가 닫혀 있습니다."
+        )
+        assert b["txt_tabs"] == 2, (
+            f"TXT 세션 탭 수가 2가 아닙니다(파일 이름 탭은 HWPX 속성): {b['txt_tabs']!r}"
+        )
+
     def test_editor_is_immersive_and_carries_its_context(self, selftest_result: dict) -> None:
         # 편집기가 실 WebView2 에서 **자기 화면**으로 서고 상단 2탭을 덮는지, 머리(이름·저장
         # 상태·판본)와 진입 문맥 배너가 실제로 그려지는지 되읽는다. 정적 계약(클래스·문자열
@@ -1110,7 +1129,8 @@ class TestWebSelftestGate:
         assert e["current_marked"] == 1, f"현 선택 표지가 다릅니다: {e!r}"
         assert e["pick_btns"] == 2, f"선택 버튼 수가 가시·미선택 행과 다릅니다: {e!r}"
         assert e["import_btn"] is True, "「가져오기…」 어포던스가 없습니다."
-        assert e["filter_notice"] is True, "매체 자동 필터 고지가 렌더되지 않았습니다(결정 6)."
+        # F6 PR-B — 단일 매체 고지(「HWPX 서식만」)는 2밴드 각자의 산출물 고지로 대체됐다.
+        assert e["filter_notice"] is True, "매체 밴드 고지(파일 생성/복사)가 렌더되지 않았습니다."
         assert e["caret_collapsed"] == "visible", f"접힌 그룹 화살표가 상시 노출이 아닙니다: {e!r}"
         # 그룹 헤더 안정 id는 재렌더 뒤 Preserve 포커스 복원의 근거다.
         assert e["grp_head_has_id"] is True, "그룹 헤더에 안정 id 가 없어 토글 뒤 포커스가 사라집니다."
