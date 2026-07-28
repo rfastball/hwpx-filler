@@ -81,7 +81,8 @@ class TestWebSelftestGate:
         assert selftest_result["job_on"] is True
 
     def test_data_picker_buttons_present(self, selftest_result: dict) -> None:
-        # 데이터 선택 단일 출구(재작성 F1) — 작업·기안 두 세션 표면에 실재한다.
+        # 데이터 선택 단일 출구(재작성 F1) — 세션 표면(문서 만들기)에 실재한다.
+        # (「기안」 몫은 화면과 함께 사망 — F6 PR-B.)
         assert selftest_result["data_picker_buttons"] is True
 
     def test_data_picker_dialog_absorbs_pool_screen(self, selftest_result: dict) -> None:
@@ -112,14 +113,16 @@ class TestWebSelftestGate:
     def test_each_action_family_click_dispatches_and_returns_snapshot(
         self, selftest_result: dict,
     ) -> None:
-        """다섯 화면군이 실 click→JS bridge→Python registry→snapshot을 한 부팅에서 왕복한다."""
+        """네 화면군이 실 click→JS bridge→Python registry→snapshot을 한 부팅에서 왕복한다.
+
+        (「기안」 군은 화면 사망으로 표에서 빠졌다 — F6 PR-B.)
+        """
 
         probe = selftest_result["action_roundtrip"]
         assert probe["pending"] is False, probe
         expected = {
             "editor": ("editor", "new_session"),
             "job": ("job", "refresh"),
-            "draft": ("draft", "refresh"),
             "pool": ("pool", "refresh"),
             "template": ("tpl", "refresh"),
         }
@@ -163,7 +166,8 @@ class TestWebSelftestGate:
 
         면만 열리고 초안이 없으면 편집기가 무엇을 편집 중인지 거짓이 된다(성사 뒤에만
         연다). footer 는 화면 안에서 숨어 있다가 면 슬롯 안에서만 서는 것도 함께 본다 —
-        같은 펼침 면을 「기안」이 쓰기 때문이다.
+        공용 펼침 면 마크업에 화면 소유물이 새지 않는 계약이다(구 「기안」 공유의 잔재 계약,
+        화면은 사망 — F6 PR-B).
         """
         d = selftest_result["range_draft"]
         assert d.get("error") is None, f"범위 초안 프로브 오류: {d!r}"
@@ -220,10 +224,11 @@ class TestWebSelftestGate:
         assert c["after_value"] == "ok"
 
     def test_modal_opens_with_initial_focus_inside(self, selftest_result: dict) -> None:
-        # 커스텀 모달을 열면 hidden 해제 + 초기 포커스가 모달 안(draftSaveTplName)으로 들어간다.
+        # 커스텀 모달을 열면 hidden 해제 + 초기 포커스가 모달 안(txtEditName)으로 들어간다.
+        # (표적 모달은 draftSaveTplModal 사망으로 txtEditModal 로 재겨눔 — F6 PR-B.)
         m = selftest_result["modal_a11y"]
         assert m["opened"] is True
-        assert m["focus_in"] == "draftSaveTplName"
+        assert m["focus_in"] == "txtEditName"
 
     def test_modal_escape_closes_and_restores_focus(self, selftest_result: dict) -> None:
         # Escape 로 닫히고, 포커스가 열기 직전 트리거로 복귀한다(조용한 포커스 유실 금지 — #28).
@@ -349,21 +354,25 @@ class TestWebSelftestGate:
         assert s["closed_after"] is True, "취소 후 시트 모달이 닫히지 않았습니다(#33)."
 
     def test_responsive_shell_keeps_all_tabs_reachable_at_min_width(self, selftest_result: dict) -> None:
-        # 최소폭(760<820 경계)에서 토바가 축약된다: 브랜드 워드마크는 접히고 탭 4개는 전부
-        # 남으며 가로 오버플로가 없다 — 좁은 창에서 탭이 잘려 화면에 못 가는 것이 상단 셸의
-        # 진짜 회귀다(F2 PR-B, 지도 §10.9 4계약면 4행).
+        # 최소폭(760<820 경계)에서 토바가 축약된다: 브랜드 워드마크는 접히고 탭 3개(기안 탭
+        # 사망 — F6 PR-B)는 전부 남으며 가로 오버플로가 없다 — 좁은 창에서 탭이 잘려 화면에
+        # 못 가는 것이 상단 셸의 진짜 회귀다(F2 PR-B, 지도 §10.9 4계약면 4행).
+        from test_web_dom_contract import NAV_SCREENS
         narrow = selftest_result["grid_narrow"]
-        assert narrow["tabs"] == 4, f"최소폭에서 탭이 사라짐: {narrow!r}"
+        assert narrow["tabs"] == len(NAV_SCREENS), f"최소폭에서 탭이 사라짐: {narrow!r}"
         assert narrow["brand_visible"] is False, f"최소폭에서 브랜드 워드마크가 안 접힘: {narrow!r}"
         assert narrow["overflow"] is False, f"최소폭에서 가로 오버플로: {narrow!r}"
 
     def test_responsive_shell_expands_topbar_when_wide(self, selftest_result: dict) -> None:
         # 넓힐 때(경계 위) 워드마크가 돌아오고 .app 은 여전히 2행(토바+스테이지)이다 —
         # 축약이 눌러앉아 상시 접힘이 되는 회귀 가드(#27 승계).
+        from test_web_dom_contract import NAV_SCREENS
         wide = selftest_result["grid_wide"]
         assert wide["rows"] == 2, f"넓은 폭에서 .app 이 토바+스테이지 2행이 아님: {wide!r}"
         assert wide["brand_visible"] is True, f"넓은 폭에서 브랜드 워드마크가 안 펴짐: {wide!r}"
-        assert wide["tabs"] == 4 and wide["overflow"] is False, f"넓은 폭 셸 이상: {wide!r}"
+        assert wide["tabs"] == len(NAV_SCREENS) and wide["overflow"] is False, (
+            f"넓은 폭 셸 이상: {wide!r}"
+        )
 
     def test_preserve_restores_focus_and_caret_across_rerender(self, selftest_result: dict) -> None:
         # Preserve 헬퍼가 innerHTML 재구성을 가로질러 포커스와 캐럿/선택 범위를 복원한다(#28).
@@ -377,33 +386,26 @@ class TestWebSelftestGate:
         assert p["scroll_top"] == 120, f"옵트인 스크롤 위치 유실: {p['scroll_top']!r}"
 
     def test_real_screen_renders_survive_rerender(self, selftest_result: dict) -> None:
-        # 3개 실화면이 shipped __push 경로로 실 스냅샷을 재렌더해도 던지지 않는다 —
-        # Preserve.around 래핑이 실 render() 를 깨지 않음을 실 DOM 에서 가드한다.
+        # 2개 실화면(「기안」 사망 — F6 PR-B)이 shipped __push 경로로 실 스냅샷을 재렌더해도
+        # 던지지 않는다 — Preserve.around 래핑이 실 render() 를 깨지 않음을 실 DOM 에서 가드한다.
         p = selftest_result["preserve_real"]
-        for scr in ("draft", "editor", "job"):
+        for scr in ("editor", "job"):
             assert p.get(scr) == "ok", f"{scr} 실화면 재렌더 실패: {p.get(scr)!r}"
 
     def test_real_screen_scroll_preserved_end_to_end(self, selftest_result: dict) -> None:
-        # 실 기안 맞추기 표 패널(#draftTokPanel, max-height 300px·overflow auto)의 스크롤이 실
-        # 재렌더를 가로질러 유지된다(#28) — 합성 픽스처가 아닌 shipped render() 경로의 end-to-end
-        # 보존 검증. 카드 렌더는 master-detail 우측 패널이 통째로 스크롤하는 설계라(구 txt 전체화면과
-        # 다름) 내부 스크롤 요소인 토큰 패널로 겨눈다. 보존 없으면 재구성이 0 으로 리셋하므로,
+        # 실 편집기 본문(#editor-body, data-preserve-scroll)의 스크롤이 실 재렌더를 가로질러
+        # 유지된다(#28) — 구 「기안」 토큰 패널 프로브의 승계(F6 PR-B). 합성 픽스처가 아닌
+        # shipped render() 경로의 end-to-end 보존 검증. 보존 없으면 재구성이 0 으로 리셋하므로,
         # 설정값 60 근처(DPI 서브픽셀 스냅 허용 ±2)면 복원된 것.
         p = selftest_result["preserve_real"]
-        top = p["draft_scroll_top"]
+        top = p["editor_scroll_top"]
         assert isinstance(top, (int, float)) and abs(top - 60) < 2, (
             f"실화면 스크롤 유실(재구성이 0 으로 리셋됐거나 예외): {top!r}"
         )
 
-    def test_draft_expansion_sheets_move_and_restore_live_dom(self, selftest_result: dict) -> None:
-        s = selftest_result["draft_sheets"]
-        assert s.get("error") is None, s
-        assert s["map_open"] and s["map_moved"] and s["preview_moved"] and s["same_map"], s
-        assert s["filled_forced"], "맞추기 펼침 면은 채운 모습으로 열려야 합니다."
-        assert s["map_restored"] and s["map_focus_restored"], s
-        assert abs(s["map_scroll"] - 37) < 2, s
-        assert s["data_moved"] and s["data_restored"] and s["data_focus_restored"], s
-        assert s["first_col_sticky"], s
+    # (test_draft_expansion_sheets_move_and_restore_live_dom 삭제 — draft_sheets 프로브가
+    #  「기안」 화면과 함께 걷혔다, F6 PR-B. 펼침 면 실 DOM 이동/복귀의 생존 판은
+    #  job(dataSheet·jobConfirmSheet) 프로브·정적 계약이 진다.)
 
     def test_job_mirror_table_renders_four_state_rows(self, selftest_result: dict) -> None:
         # 「작업」 본문 존 거울 — 합성 스냅샷을 실 render() 에 흘려 필드
@@ -709,191 +711,10 @@ class TestWebSelftestGate:
             f"데이터·작업이 둘 다 없는데 「문서 작업」 출구가 없습니다: {j!r}"
         )
 
-    def test_draft_list_groups_render_and_menu(self, selftest_result: dict) -> None:
-        # 「기안」 좌 목록(#148 슬라이스 2b) — 「작업」과 같은 그룹 구획 스캐폴드 + 공용
-        # grouplist.js 팩토리(⋮ 메뉴·이동 다이얼로그)의 3번째 소비자를 실 render 로 되읽는다.
-        # 화면별 id 격리(draftList·draftRowMenu·draftMoveModal)로 job/tpl 과 리스너 충돌 없음.
-        d = selftest_result["draft_list"]
-        assert d.get("error") is None, f"기안 목록 프로브 예외: {d.get('error')!r}"
-        assert d["grp_heads"] == 3, f"그룹 헤더 수가 다릅니다: {d!r}"
-        assert d["rows_visible"] == 3, f"접힌 그룹 행이 뷰에서 제외되지 않았습니다: {d!r}"
-        assert d["grp_more"] == 2, "그룹 ⋮ 는 이름 그룹에만 있어야 합니다(「그룹 없음」 제외)."
-        assert d["row_more"] == 3, f"행 ⋮ 수가 가시 행 수와 다릅니다: {d!r}"
-        assert d["collapse_local_flip"] is True, f"기안 그룹 접힘이 왕복 전에 풀리지 않습니다: {d!r}"
-        # 미선택 = **휘발 세션 4존**(결정 5, 슬라이스 3a). 저장/휘발 한 패널(슬라이스 5a — 껍데기
-        # stub 폐기, 선택이 실제 복원이 되며 사라졌다). 상시 「이번 세션」 행이 휘발 귀환구.
-        assert d["session_shown"] is True, "미선택 상세에 휘발 세션 4존이 서지 않았습니다."
-        assert d["vol_row_present"] is True, "상시 「이번 세션」 행(휘발 귀환구)이 없습니다."
-        assert d["vol_row_current"] is True, "미결속인데 「이번 세션」 행이 결속 표시(aria-current)가 아닙니다."
-        # 행 ⋮ 메뉴 — 골격은 편집 미노출(세션 슬라이스 3): 복제·이름변경·이동·삭제만.
-        assert d["menu_shown"] is True, "행 ⋮ 클릭에 메뉴가 열리지 않았습니다."
-        assert d["menu_items"] == ["clone", "rename", "move", "delete"], (
-            f"골격 메뉴는 편집 미노출(복제·이름변경·이동·삭제)이어야 합니다: {d['menu_items']!r}"
-        )
-        # 이동 다이얼로그(공용 moveDialog 팩토리 3번째 소비) — ⋮→이동에 열리고 라디오 조립·닫힘.
-        assert d["move_shown"] is True, "⋮→이동에 이동 다이얼로그가 열리지 않았습니다."
-        assert d["move_opts"] == 4, f"이동 옵션(그룹 2 + 없음 + 새 그룹)이 다릅니다: {d!r}"
-        assert d["move_has_new"] is True, "새 그룹 라디오(data-new)가 없습니다."
-        assert d["move_closed"] is True, "취소에 이동 다이얼로그가 닫히지 않았습니다."
-        # 퇴화 불변식 — 그룹 0개면 헤더 없는 평면.
-        assert d["flat_heads"] == 0 and d["flat_rows"] == 1, f"퇴화 평면 위반: {d!r}"
-
-    def test_milestone_l_draft_density_duo_cap_and_fallback(self, selftest_result: dict) -> None:
-        """#270: duo/sticky, 300px 실측 캡 표지, 1180급 적층을 실제 WebView2로 되읽는다."""
-        wide = selftest_result["draft_session"]
-        assert len(wide["density_wide_columns"].split()) == 2, wide
-        assert wide["density_preview_position"] == "sticky", wide
-        assert wide["density_cap_height"] == "300px", wide
-        assert wide["density_default_cap_hidden"] is True, (
-            wide["density_default_client_height"], wide["density_default_scroll_height"]
-        )
-        assert wide["density_stress_cap_shown"] is True, wide
-        assert "전체 22행" in wide["density_stress_cap_text"], wide
-
-        narrow = selftest_result["draft_density_narrow"]
-        assert len(narrow["columns"].split()) == 1, narrow
-        assert narrow["preview_position"] == "static", narrow
-
-    def test_draft_session_zones_render(self, selftest_result: dict) -> None:
-        """「기안」 휘발 세션 4존(#148 슬라이스 3a) — 공용 팩토리의 두 번째 소비 인스턴스 실렌더.
-
-        같은 팩토리를 써도 **id 맵이 어긋나면 이 화면에서만 조용히 죽는다**(getElementById 는
-        화면 은닉과 무관하게 해소 — poolList 전례). 존별로 하나씩 실 WebView2 로 되읽는다.
-        """
-        d = selftest_result["draft_session"]
-        assert d.get("error") is None, f"기안 세션 프로브 예외: {d.get('error')!r}"
-        # ① 데이터 존 — 승계 계약(필터 좁힘·하이라이트·관통 스트립). 스트립을 떨어뜨리면
-        # "필터 밖 선택은 숨기지 않는다"가 거짓이 되어 큐가 거짓말을 한다(결정 7 승계 의무).
-        assert d["rows"] == 1, f"필터 적용 가시 행이 1이 아닙니다: {d!r}"
-        assert d["mark"] == "전산", f"검색어 하이라이트(<mark>)가 서지 않았습니다: {d!r}"
-        assert d["strip_shown"] is True, "필터 밖 선택 스트립이 서지 않았습니다(관통 계약 파손)."
-        assert "전산" in d["chips_text"], f"필터 칩 정의줄이 비었습니다: {d['chips_text']!r}"
-        # 데이터 해제 버튼(R-flow 결정 30, 리뷰 F — 구 「빠른 기안」 승계) — 데이터 있으면 뜨고,
-        # 무데이터(퇴화)면 숨는다. 삭제는 의무를 상속한다: 이 어포던스가 조용히 사라지지 않았음을 못박음.
-        assert d["clear_shown"] is True, "데이터가 물렸는데 「데이터 해제」 버튼이 없습니다(어포던스 소실)."
-        assert d["clear_hidden"] is True, "무데이터인데 「데이터 해제」 버튼이 남아 있습니다(dead control)."
-        # ② 맞추기 표(#148 슬라이스 3b) — 결속(소유권 색)·결속 빈값 미리보기·근사 제안·값 직접
-        # 입력을 실 WebView2 로 되읽는다. 표를 조용히 떨어뜨리면 항등 매핑으로 되돌아가(토큰명==
-        # 열명 강제) 합병의 정밀도 절반이 사라진다.
-        assert d["map_rows"] == 4, f"맞추기 표 행 수가 다릅니다: {d!r}"
-        assert d["map_own_auto"] == 2, f"소유권 색 점(결속=auto)이 어긋납니다: {d!r}"
-        assert d["map_val_inputs"] == 4, f"값 셀이 전 행 편집 가능(결속 값 고침→상수)이 아닙니다: {d!r}"
-        assert d["map_bound_value"] is True, "결속 값 입력에 현재 행의 데이터 값이 차 있지 않습니다."
-        assert d["map_suggest"] is True, "무결속 자리의 근사 제안 버튼이 없습니다(결정 30)."
-        assert d["map_src_options"] == 4, f"결속 드롭다운 후보((직접 입력)+열 3)가 다릅니다: {d!r}"
-        # Codex F1 — 상수(man)인데 소스를 기억한 자리의 드롭다운은 「(직접 입력)」(빈 값). 옛 열이
-        # selected 로 이겨 결속된 듯 보이면 표시 ≠ 실제 상태(지배 결함류)다.
-        assert d["map_man_src_value"] == "", (
-            f"man(소스 기억) 드롭다운이 「(직접 입력)」이 아니라 옛 열을 보입니다(F1): {d['map_man_src_value']!r}"
-        )
-        # ② 유형·확정 열(#148 슬라이스 4, 결정 12) — 유형 셀렉트는 결속(auto) 행에만(운반 유형이
-        # 뜻 있는 자리), 확정 체크박스는 전 행. 판정은 서버 토큰(fmt_kind·confirmed)이고 여긴 되읽기.
-        assert d["map_type_selects"] == 2, f"유형 셀렉트가 auto 행에만 뜨지 않았습니다: {d!r}"
-        assert d["map_type_options"] == 3, f"유형 후보(텍스트·날짜·금액)가 3 이 아닙니다: {d!r}"
-        assert d["map_type_value"] == "amount", (
-            f"유형 셀렉트의 유효 선택이 서버 fmt_kind(amount)를 따르지 않습니다: {d['map_type_value']!r}"
-        )
-        assert d["map_confirmed_checks"] == 4, f"확정 체크박스가 전 행에 뜨지 않았습니다: {d!r}"
-        assert d["map_confirmed_checked"] is True, "확정 토큰(공고명)의 체크박스가 체크되지 않았습니다."
-        assert d["map_unconfirmed"] is True, "미확정 토큰(비고)의 체크박스가 체크돼 있습니다(표시≠상태)."
-        # 확정-비움(결정 12) — 값 셀이 「비워둠(선언)」(「아직 안 씀」 아님)이고 textarea 가 없으며
-        # 행이 blank 로 표지된다. 게이트 제외는 Python(pytest)이 잡고 여긴 표면 정직성만.
-        assert d["blank_declared_marker"] == "비움 확정", (
-            f"확정-비움 값 셀이 「비움 확정」이 아닙니다(문안≠집합): {d['blank_declared_marker']!r}"
-        )
-        assert d["blank_declared_no_textarea"] is True, "확정-비움 자리에 값 입력 textarea 가 남아 있습니다."
-        assert d["blank_declared_row"] is True, "확정-비움 행이 blank 로 표지되지 않았습니다."
-        # ③ 원문 뷰 전환(결정 34) — 채운 모습 ↔ 원문(같은 칸의 두 모습). 원문은 휘발 세션의
-        # 입력구고 배타 표시다(둘이 동시에 서면 무엇이 진실인지 모른다).
-        assert d["view_default_filled"] is True, "기본 보기가 「채운 모습」이 아닙니다(원문 뷰 노출)."
-        assert d["view_source_shown"] is True, "「원문」 전환이 배타 표시로 서지 않았습니다."
-        assert d["src_has_text"] is True, "원문 뷰 textarea 에 템플릿 원문이 실리지 않았습니다."
-        # ③ 미리보기 — 채움 표지 삼분 · 상태 색인 점(빈칸 지도) · 선언 글꼴 추종 · 정렬 린트.
-        assert "전산장비 구매" in d["card_render"], f"카드 렌더에 채움 값이 없습니다: {d!r}"
-        assert d["card_fill"] is True and d["card_blank"] is True, f"표지 삼분 파손: {d!r}"
-        assert d["card_dots"] == 2 and d["card_gap_dot"] is True, f"상태 색인 점 파손: {d!r}"
-        assert "작업점 1/2" in d["card_readout"], f"상태 재진술이 다릅니다: {d['card_readout']!r}"
-        assert d["font_sel"] == "malgun" and "f-malgun" in d["font_class"], (
-            f"대상 글꼴 선언을 렌더가 추종하지 않습니다: {d!r}"
-        )
-        assert d["lint_shown"] is True and d["lint_fix"] == "fix", f"정렬 린트 파손: {d!r}"
-        # ④ 완료 — 복사 동사 + 자유 이동(경계 잠금 포함). 미루기는 **없다**(결정 10 사망 —
-        # 죽을 것을 새 표면에 짓지 않는다. 대체 어포던스가 ◀▶·점 클릭이다).
-        assert d["copy_enabled"] is True, "작업점이 있는데 복사가 잠겨 있습니다."
-        assert d["prev_disabled"] is True and d["next_enabled"] is True, (
-            f"자유 이동 경계 잠금이 어긋납니다: {d!r}"
-        )
-        assert d["defer_absent"] is True, "「기안」에 미루기 버튼이 있습니다(결정 10 사망 위반)."
-        # ④ 「템플릿으로 저장」(#148 슬라이스 6, #135) — 구 「빠른 기안」에서 흡수한 두 번째 승격
-        # 동사가 실제로 뜬다(붙여넣기 세션에서 「기안으로 저장」 비활성 사유가 가리키는 그 버튼).
-        # 휘발 세션 + 원문이면 뜨고, 플래그가 거짓이면(저장 결속·빈손) 숨는다 — 표시≠상태를 실렌더로 못박는다.
-        assert d["savetpl_shown"] is True, "휘발 세션에서 「템플릿으로 저장」 버튼이 뜨지 않았습니다(어포던스 소실)."
-        assert d["savetpl_hidden"] is True, "플래그 거짓(저장 결속·빈손)인데 「템플릿으로 저장」이 남아 있습니다(dead button)."
-        # 큐 퇴화(결정 8·14) — 유효 큐 ≤ 1건(단건·무데이터 가상 1건)이면 큐 장치 3종(진행 색인·
-        # ◀▶ 다음 카드·자동 전진)이 숨는다. 무데이터 가상 카드는 작업점 없이도 복사 가능하고,
-        # 맞추기 표 값 머리가 「지금 행의 값」→「값」으로 바뀐다. 비퇴화 복귀도 함께 못박는다.
-        assert d["degen_dots_hidden"] is True, "퇴화 시 진행 색인 점이 숨지 않았습니다."
-        assert d["degen_prev_hidden"] is True and d["degen_next_hidden"] is True, (
-            f"퇴화 시 ◀▶ 다음 카드가 숨지 않았습니다: {d!r}"
-        )
-        assert d["degen_advance_hidden"] is True, "퇴화 시 자동 전진 토글이 숨지 않았습니다."
-        assert d["degen_copy_enabled"] is True, "무데이터 가상 카드가 복사 불가입니다(결정 14 위반)."
-        assert d["degen_val_head"] == "값", f"무데이터 값 열 머리가 「값」이 아닙니다: {d['degen_val_head']!r}"
-        assert d["degen_src_options"] == 1, (
-            f"무데이터 결속 드롭다운이 「직접 입력」만이 아닙니다(열 후보 누출): {d['degen_src_options']!r}"
-        )
-        assert d["nondegen_dots_shown"] is True, "비퇴화(≥2건) 복귀에 진행 색인이 돌아오지 않았습니다."
-        # (구 txt_leak 격리 단언은 슬라이스 6 에서 소멸 — 두 번째 인스턴스였던 txt 화면 DOM 이
-        # 삭제돼 누출 대상 자체가 없다. datazone 팩토리 격리는 test_web_datazone 이 정적으로 가드.)
-        # 유래별 열 게이팅(#148 슬라이스 5a, 결정 7) — 휘발 모드에선 유형·확정(.persist) 열이 숨고
-        # 휘발 note 가 뜬다. 저장 기안 선택 → 세션 패널은 그대로 서고(껍데기 없음) 열이 뜨며 원문은
-        # 읽기 전용, note 는 사라진다. 겨눔 해제(휘발 귀환) → 패널 유지·열 재숨김(두 세션 병존).
-        assert d["persist_hidden_volatile"] is True, "휘발 모드인데 유형·확정 열이 숨지 않았습니다."
-        assert d["volatile_note_shown"] is True, "휘발 모드에 「유형·확정은 묻지 않습니다」 note 가 없습니다."
-        assert d["saved_session_shown"] is True, "저장 기안 선택에 세션 패널이 사라졌습니다(껍데기 회귀)."
-        assert d["saved_persist_shown"] is True, "저장 모드인데 유형·확정 열이 뜨지 않았습니다."
-        assert d["saved_src_readonly"] is True, "저장 모드 원문이 읽기 전용이 아닙니다(정의 조용한 분기 위험)."
-        assert d["saved_note_absent"] is True, "저장 모드인데 휘발 note 가 남아 있습니다."
-        assert d["vol_row_current_saved"] is True, "저장 결속 중인데 「이번 세션」 행이 결속 표시로 남았습니다."
-        # 원문바(#148 슬라이스 5b) — 저장 모드: 「사본으로 편집」이 읽기 전용의 유일 출구로 뜨고,
-        # 수정됨 표지는 없다(깨끗한 저장 정의). 포크(휘발+수정됨): 사본 버튼 숨고 표지 뜨고 편집 가능.
-        assert d["saved_fork_shown"] is True, "저장 모드에 「사본으로 편집」이 없습니다(읽기 전용 막다른 상태)."
-        assert d["saved_modbadge_hidden"] is True, "깨끗한 저장 정의인데 수정됨 표지가 떴습니다."
-        assert d["saved_srcname"] == "착수계", f"원문바 이름이 템플릿명이 아닙니다: {d['saved_srcname']!r}"
-        assert d["fork_fork_hidden"] is True, "휘발(사본)인데 「사본으로 편집」이 남아 있습니다(dead control)."
-        assert d["fork_modbadge_shown"] is True, "사본(수정됨)인데 수정됨 표지가 뜨지 않았습니다."
-        assert d["fork_src_editable"] is True, "사본인데 원문이 편집 불가입니다(포크 = 읽기 전용 해제)."
-        # 저장 모드 원문 정의 잠금 — 콤보·붙여넣기까지(textarea 만이 아니라). 데이터
-        # 컨트롤은 안 잠근다. 휘발 귀환 시 다시 풀린다(조용한 정의 교체 차단 = 계약 거짓말 봉합).
-        assert d["saved_tpl_locked"] is True, "저장 모드인데 템플릿 콤보·붙여넣기가 잠기지 않았습니다(원문 조용한 교체)."
-        assert d["saved_data_unlocked"] is True, "저장 모드인데 데이터 컨트롤까지 잠겼습니다(과잉 잠금)."
-        assert d["back_restores_session"] is True, "휘발 귀환에 세션 패널이 서지 않았습니다."
-        assert d["back_persist_hidden"] is True, "휘발 귀환에 유형·확정 열이 다시 숨지 않았습니다."
-        assert d["vol_tpl_unlocked"] is True, "휘발 귀환에 템플릿 콤보·붙여넣기가 다시 풀리지 않았습니다."
-        # 복원 결속 정직 표시 — 데이터 미연결이어도 결속된 열이 드롭다운에 selected.
-        assert d["restored_bind_option"] == "selected", (
-            f"복원 결속(데이터 미연결)이 드롭다운에 정직히 표시되지 않았습니다: {d['restored_bind_option']!r}"
-        )
-        # 「기안으로 저장」 승격 버튼(#148 슬라이스 5c, #135) — 라이브러리 배접만 활성, 아니면
-        # 비활성 + 사유(dead button 금지). 라벨은 유래로 갈린다(휘발/저장).
-        assert d["save_disabled_unbacked"] is True, "미배접(붙여넣기)인데 「기안으로 저장」이 활성입니다(dead button)."
-        assert d["save_note_shown"] is True, "저장 비활성인데 사유가 없습니다(#133 위반)."
-        assert d["save_enabled_backed"] is True, "라이브러리 배접인데 「기안으로 저장」이 비활성입니다."
-        assert d["save_note_hidden"] is True, "저장 활성인데 비활성 사유가 남아 있습니다."
-        assert d["save_label_volatile"] == "기안으로 저장", f"휘발 라벨이 다릅니다: {d['save_label_volatile']!r}"
-        assert d["save_label_saved"] == "다른 이름으로 저장", f"저장 라벨이 다릅니다: {d['save_label_saved']!r}"
-        # 세션 교체 가드 문안 — 「새 기안」은 세션을 교체하므로 미저장 매핑 편집만으로
-        # 무장해도 그 편집을 열거해야 "사라지는 것: ."(빈 목록)이 되지 않는다. 데이터 스왑은 매핑을
-        # 유지하므로 같은 상태에서 매핑 편집을 열거하면 over-warn(문안≠집합 결함류 양방향).
-        assert "미저장 매핑 편집" in d["guard_body_new_draft"], (
-            f"새 기안 가드가 미저장 매핑 편집을 열거하지 않습니다(F6 빈 목록): {d['guard_body_new_draft']!r}"
-        )
-        assert "사라지는 것: ." not in d["guard_body_new_draft"], (
-            f"새 기안 가드 소실 목록이 비었습니다(F6): {d['guard_body_new_draft']!r}"
-        )
-        assert "미저장 매핑 편집" not in d["guard_body_data_swap"], (
-            f"데이터 스왑 가드가 매핑 편집을 열거합니다(over-warn — 스왑은 유지): {d['guard_body_data_swap']!r}"
-        )
+    # (test_draft_list_groups_render_and_menu · test_milestone_l_draft_density_duo_cap_and_fallback ·
+    #  test_draft_session_zones_render 삭제 — draft_list/draft_session/draft_density_narrow
+    #  프로브 결과가 「기안」 화면과 함께 걷혔다, F6 PR-B. 좌 목록·그룹 계약의 생존 판은
+    #  라이브러리·tpl 프로브가, 세션·복사 계약은 작업대 프로브(test_workbench_*)가 진다.)
 
     def test_tab_disposition_actually_continues_after_saving(
         self, selftest_result: dict
@@ -911,6 +732,25 @@ class TestWebSelftestGate:
         assert g["calls"] == ["goto_section", "save", "goto_section:save"], (
             "저장하고 이동이 저장에서 멈췄습니다 — 사용자가 고른 처분이 절반만 일어납니다"
             f"(발신 기록: {g['calls']!r})."
+        )
+
+    def test_editor_template_tab_renders_txt_band_and_two_txt_tabs(
+        self, selftest_result: dict
+    ) -> None:
+        # F6 PR-B — 「기안」 화면 사망의 TXT 생성 경로 승계처가 실 DOM 에 서는지. 정적
+        # 계약은 「배선했지만 영영 안 보이는」 상태를 통과시킨다(F2 PR-B 실증) — 밴드
+        # 머리 2종·TXT 선택 버튼·TXT 세션 탭 2개(파일 이름 탭 부재, §3.2)를 실물로 센다.
+        b = selftest_result["editor_txt_band"]
+        assert b.get("error") is None, f"TXT 밴드 프로브 예외: {b.get('error')!r}"
+        assert b.get("why") == "완료", f"TXT 밴드 프로브 미완주: {b!r}"
+        assert sorted(b["bands"]) == ["HWPX 서식", "TXT 기안"], (
+            f"템플릿 탭 매체 2밴드가 서지 않습니다: {b['bands']!r}"
+        )
+        assert b["txt_pick"] is True, (
+            "TXT 행의 선택 버튼(use-library)이 없습니다 — 목록만 있고 생성 경로가 닫혀 있습니다."
+        )
+        assert b["txt_tabs"] == 2, (
+            f"TXT 세션 탭 수가 2가 아닙니다(파일 이름 탭은 HWPX 속성): {b['txt_tabs']!r}"
         )
 
     def test_editor_is_immersive_and_carries_its_context(self, selftest_result: dict) -> None:
@@ -1072,10 +912,15 @@ class TestWebSelftestGate:
         assert "blur(14px)" in h["sticky_material"]["backdrop"]
 
     def test_milestone_h_workcard_and_popover_interactions_render(self, selftest_result: dict) -> None:
+        # workcard 프로브는 「기안」 카드 사망으로 작업대 #wbCard(.wb-preview + wc-render +
+        # f-* 글꼴)로 재겨눔(F6 PR-B) — 캡은 .wb-preview 의 420px 이 이기고, 구 .wc-render
+        # 전용 gutter/overscroll 은 승계 규칙에 없어 프로브도 재지 않는다.
         h = selftest_result["milestone_h_overlay"]
         w = h["workcard"]
-        assert w["max_height"] == "360px" and w["overflow_y"] == "auto"
-        assert "stable" in w["gutter"] and "contain" in w["overscroll"]
+        assert w["max_height"] == "420px" and w["overflow_y"] == "auto"
+        assert ("GulimChe" in w["font_family"]) or ("굴림체" in w["font_family"]), (
+            f"카드가 f-gulimche 글꼴 선언을 추종하지 않습니다: {w['font_family']!r}"
+        )
         assert w["dot_hit"] == ["24px", "24px"] and w["dot_mark"] == ["14px", "14px"]
         assert w["dots_overflow"] == "visible"
         p = h["popover_place"]
@@ -1089,7 +934,8 @@ class TestWebSelftestGate:
     def test_milestone_h_modal_stack_ime_focus_and_short_viewport_render(self, selftest_result: dict) -> None:
         h = selftest_result["milestone_h_overlay"]
         assert h["modal_closed_popover"] is True and h["z_order"] is True
-        assert h["modal_focus_in"] == "draftSaveTplName"
+        # 표적 모달 재겨눔(draftSaveTplModal 사망 → txtEditModal, F6 PR-B).
+        assert h["modal_focus_in"] == "txtEditName"
         assert h["ime_escape_kept_open"] is True
         assert h["exit_blocks_pointer"] is True and h["menu_trigger_restored"] is True
         assert h["escape_one_layer"] is True
@@ -1110,7 +956,8 @@ class TestWebSelftestGate:
         assert e["current_marked"] == 1, f"현 선택 표지가 다릅니다: {e!r}"
         assert e["pick_btns"] == 2, f"선택 버튼 수가 가시·미선택 행과 다릅니다: {e!r}"
         assert e["import_btn"] is True, "「가져오기…」 어포던스가 없습니다."
-        assert e["filter_notice"] is True, "매체 자동 필터 고지가 렌더되지 않았습니다(결정 6)."
+        # F6 PR-B — 단일 매체 고지(「HWPX 서식만」)는 2밴드 각자의 산출물 고지로 대체됐다.
+        assert e["filter_notice"] is True, "매체 밴드 고지(파일 생성/복사)가 렌더되지 않았습니다."
         assert e["caret_collapsed"] == "visible", f"접힌 그룹 화살표가 상시 노출이 아닙니다: {e!r}"
         # 그룹 헤더 안정 id는 재렌더 뒤 Preserve 포커스 복원의 근거다.
         assert e["grp_head_has_id"] is True, "그룹 헤더에 안정 id 가 없어 토글 뒤 포커스가 사라집니다."
@@ -1153,8 +1000,9 @@ class TestWebSelftestGate:
     def test_personalization_defaults_render_in_real_webview(self, selftest_result: dict) -> None:
         p = selftest_result["personalization_persist"]
         assert p["font_scale"] == "normal" and p["root_px"] == "16px"
-        # 폭 스플리터 소비처는 「기안」 하나 — 「문서 만들기」 좌 목록은 사망(F2 PR-B).
-        assert p["master_width"] == 240 and p["splitters"] == 1
+        # 폭 스플리터 DOM 소비처 0 — 마지막 소비처 「기안」도 사망(F6 PR-B). 설정값(master_width)
+        # 영속·CSS 변수 배선은 남아 다음 master-detail 표면이 그대로 쓴다.
+        assert p["master_width"] == 240 and p["splitters"] == 0
         # 토바 높이는 라이브러리 2-pane 계산이 소비하는 구조 치수 — 실 엔진 실측으로 핀한다.
         assert p["topbar_h"] == 64, f"토바 높이가 구조 치수(64px)와 다릅니다: {p!r}"
         assert p["body_overflow"] is False, f"기본 배율에서 가로 오버플로: {p!r}"
@@ -1299,7 +1147,9 @@ def test_font_scale_persists_across_restart_without_major_overflow(
     assert p["body_overflow"] is False, f"{scale}에서 주요 가로 오버플로: {p!r}"
     full = json.loads(out_read.read_text(encoding="utf-8"))
     # 큰 배율에서도 좁은 창의 탭 도달성과 넓은 창의 토바 전개가 유지된다(배율×셸 교차 회귀).
-    assert full["grid_narrow"]["tabs"] == 4 and full["grid_narrow"]["overflow"] is False
+    from test_web_dom_contract import NAV_SCREENS
+    assert full["grid_narrow"]["tabs"] == len(NAV_SCREENS)
+    assert full["grid_narrow"]["overflow"] is False
     assert full["grid_wide"]["rows"] == 2 and full["grid_wide"]["brand_visible"] is True
 
 

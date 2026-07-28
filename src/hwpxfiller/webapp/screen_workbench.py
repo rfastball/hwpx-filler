@@ -41,7 +41,7 @@ from ..gui.txt_queue import TxtQueueModel
 from ..gui.work_mode import WORK_MODE_TEXT, work_mode_label
 from .mapping_verbs import MappingVerbsMixin
 from .screens import PushSink
-from .settings import is_proportional_font
+from .settings import is_proportional_font, load_draft_target_font, save_draft_target_font
 
 #: 표시형 프리셋·유형 선택지 — 「기안」·편집기와 **같은 표**(format_engine)에서 뽑는다.
 #: 세 표면이 표시형을 달리 부르면 저장 왕복에서 어휘가 갈린다.
@@ -66,6 +66,30 @@ def _row_own(row) -> str:
     return "auto" if row.source else ""
 
 
+class TargetFontSetting:
+    """대상 글꼴 선언(결정 17)의 **단일 실체** — 앱 전역 영속 값의 인메모리 캐시.
+
+    거처 이동(F6 PR-B, §10.15.15 판정 E): 「기안」 화면 사망으로 유일 생존 소비자인
+    작업대가 소유한다. 영속 키(``draft_target_font``)는 그대로다 — 개명은 마이그레이션
+    비용만 사고 얻는 게 없다. 컨트롤러마다 사본을 캐시하면 한쪽에서 바꾼 선언이 다른
+    쪽에 재부팅까지 도달하지 않는 「선언≠실제」 결함류라 공유 실체 하나로 닫는다(코덱스
+    리뷰 P2 — 소비자가 하나가 된 지금도 앱 조립이 한 인스턴스를 주입하는 규율은 유지).
+    스냅샷마다 설정 파일을 다시 읽는 대안은 매 타건 I/O 라 기각.
+    """
+
+    def __init__(self) -> None:
+        self._value = load_draft_target_font()
+
+    @property
+    def value(self) -> str:
+        return self._value
+
+    def set(self, font: str) -> None:
+        """선언 변경 — **저장이 먼저**(영속 실패 시 상태 불변 + 브리지 경보)."""
+        save_draft_target_font(font)  # 검증도 여기 단일 출처(열거형·문안 사본 금지)
+        self._value = font
+
+
 class WorkbenchController(MappingVerbsMixin):
     """검토·복사 작업대의 세션 소유자 — 화면 하나에 세션 하나(동시 다중 없음)."""
 
@@ -80,8 +104,8 @@ class WorkbenchController(MappingVerbsMixin):
     ) -> None:
         self.registry = registry
         self._push_sink = push
-        # 대상 글꼴은 앱 전역 선언이라 「기안」과 **같은 인스턴스**를 공유한다 — 두 벌이면
-        # 같은 사용자 선언에 두 값이 생긴다(PR-B 에서 「기안」이 죽으면 소비자는 하나가 된다).
+        # 대상 글꼴은 앱 전역 영속 선언(TargetFontSetting — 「기안」 사망으로 이 화면이
+        # 유일 소비자, §10.15.15 판정 E). 앱 조립이 단일 인스턴스를 주입한다.
         self._font = target_font
         # **세션 상태 전이의 임계구역**(6R P1 근본 조치). pywebview 는 브리지 호출마다 별도
         # 스레드라 이 컨트롤러의 진입점들이 실제로 겹친다.

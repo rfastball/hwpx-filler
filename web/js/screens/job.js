@@ -394,8 +394,16 @@
     row.style.display = "";
     const c = s.candidates || { top: [], more: 0, needs_count: 0, suggested: "" };
     const top = c.top || [], needs = c.needs_count ? [1] : [];
+    // 고지 ①(F6 PR-B — 휘발 「기안」 폐지의 대체 경로 재진술): 술어(txt 템플릿 有 ∧ txt
+    // 작업 0건)는 Python 이 낸다. 빈 「온나라 기안」 구획 머리 + 경로 안내 한 줄.
+    const txtNote = c.txt_note
+      ? `<div class="cand-sec" data-cand-mode="text">` +
+        `<h3 class="cand-sec-cap">온나라 기안</h3>` +
+        `<span class="muted">${esc(c.txt_note)}</span></div>`
+      : "";
     if (!top.length && !needs.length) {
-      host.innerHTML = `<span class="muted">현재 데이터에 사용할 수 있는 문서 작업이 없습니다.</span>`;
+      host.innerHTML =
+        `<span class="muted">현재 데이터에 사용할 수 있는 문서 작업이 없습니다.</span>` + txtNote;
       return;
     }
     // 작업 방식 구획(§19.3) — **구획 여부·순서 판정은 Python**(candidates.sections)이고
@@ -424,7 +432,7 @@
         `<button class="btn sm" type="button" id="jobBrowseOpen" data-busy-lock data-browse-open>` +
         `문서 작업 찾기…</button></span>`;
     }
-    host.innerHTML = html;
+    host.innerHTML = html + txtNote;
   }
 
   function renderPreflight(s) {
@@ -631,6 +639,10 @@
       `<div class="mir-row" data-field="${esc(row.name)}">` +
       `<span class="mir-name">${esc(row.name)}</span>` +
       `<span class="mir-val">${row.value ? esc(row.value) : "<em class='muted'>(빈 값)</em>"}</span>` +
+      // 행별 「수정」(F6 PR-B deep-link, §10.14.3) — 이상한 값을 본 그 자리에서 그 필드의
+      // 탭으로 간다. target 조립·발신은 previewFix 하나(파일 이름 「수정」과 단일 경로).
+      `<button class="btn sm" data-act="preview-fix" data-field="${esc(row.name)}"` +
+      ` aria-label="'${esc(row.name)}' 연결 수정">수정</button>` +
       `</div>`).join("");
     renderPreviewEvidence(p.evidence || { rows: [], note: "" });
     $("previewFilename").textContent = p.filename || "";
@@ -670,13 +682,16 @@
     window.Modal.close("previewModal");
   }
 
-  async function openPreview(e) {
+  async function openPreview(e, opts) {
+    const o = opts || {};
     const trigger = (e && e.currentTarget) || $("jobPreviewOpen");
     // 성사 뒤에만 연다(§9.3 4행 상속): 거절되면(생성 중·초안 열림·선택 0건) 면을 띄우지
     // 않는다 — 열어 놓고 실패를 말하면 무엇을 미리보는 중인지가 거짓이 된다.
+    // `at` = deep-link 복귀의 같은 자리(§10.15.15 판정 C) — 값은 Python 이 push 한
+    // preview.pos 의 왕복이고 Python 이 클램프한다. 리터럴 payload(정적 가드 판독 대상).
     try {
       await dz.flushPendingEdits();   // 예약된 편집이 뒤늦게 착지해 자리를 흔들지 않게
-      await Bridge.call(SCREEN, "preview_open", {});
+      await Bridge.call(SCREEN, "preview_open", { at: o.at || 0 });
     } catch (err) {
       log("미리보기를 열지 못했습니다: " + String((err && err.message) || err));
       return;
@@ -692,6 +707,42 @@
       initialFocus: $("previewClose"),
       onClose: () => { Bridge.call(SCREEN, "preview_close", {}); },
     });
+    // 복귀 초점 = 떠났던 그 행의 「수정」(§10.14.3 "같은 행"). 행 DOM 은 push 재렌더가
+    // 만들므로(브리지 반환과 독립 채널) 유한 재시도 후 폴백은 initialFocus(previewClose).
+    if (o.focusTarget) focusPreviewTarget(o.focusTarget);
+  }
+
+  function focusPreviewTarget(target) {
+    const find = () => (target === "filename/filenamePattern"
+      ? $("previewFixFilename")
+      : document.querySelector(
+          `#previewRows [data-act="preview-fix"][data-field="${CSS.escape(target.slice("binding/".length))}"]`));
+    let tries = 0;
+    const step = () => {
+      const el = find();
+      if (el && el.offsetParent !== null) { el.focus(); return; }
+      if (++tries > 3) return;             // 폴백 — 이미 선 previewClose 초점을 유지
+      requestAnimationFrame(step);
+    };
+    step();
+  }
+
+  /* 행별·파일 이름 「수정」의 단일 경로(F6 PR-B, §10.14.3) — EditContext.target 한 축.
+     `at` 은 Modal.close 가 onClose 로 preview_close 를 발화하기 **전에** 읽는다: pos 는
+     닫힘에 0 으로 리셋되므로, 순서를 바꾸면 복귀가 늘 첫 행으로 선다(발신 순서 규약). */
+  async function previewFix(target, evidence) {
+    const at = ((LAST && LAST.preview) || {}).pos || 0;
+    window.Modal.close("previewModal");   // 편집 호스트 위에 남의 모달 금지(F2 PR-B 교훈)
+    const opened = await openEditForRepair({
+      entry_reason: "preview_result",
+      target,
+      evidence,
+      return_context: { surface: "preview", reopen_drawer: true, preview_index: at },
+    });
+    // 착지 조준은 편집기 소유(스크롤·포커스) — 진입 성사 뒤에만 겨눈다.
+    if (opened && window.EditorScreen && window.EditorScreen.aimAt) {
+      window.EditorScreen.aimAt(target);
+    }
   }
 
   /* 이탈 가드(판정 F) — 변경이 있을 때만 묻는다. 3택 대신 2택인 근거는 「적용」이 이미 면
@@ -1326,8 +1377,13 @@
      아니라 제자리 모드 전환이 됐다). 확정·저장 후 「실행으로 돌아가기」로 세션 재개. */
   function openEditForRepair(context) {
     // #99-6 동형 방어(PR-5 리뷰 F4) — 셔틀 미로드의 동기 ReferenceError 는 조용한 무반응.
-    if (!window.EditorEntry) { window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다."); return; }
-    if (LAST && LAST.job_name) EditorEntry.openGuarded(LAST.job_name, context);
+    // 성사 여부를 되돌려 준다(F6 PR-B) — deep-link 조준은 진입이 실제로 열렸을 때만 건다.
+    if (!window.EditorEntry) {
+      window.alert("편집 진입 구성 요소(EditorEntry)가 로드되지 않았습니다.");
+      return Promise.resolve(false);
+    }
+    if (LAST && LAST.job_name) return EditorEntry.openGuarded(LAST.job_name, context);
+    return Promise.resolve(false);
   }
 
   /* 템플릿 다시 연결(#67) — 공용 흐름(relink.js)에 위임, 결과 재진술 채널만 log 주입.
@@ -1446,8 +1502,9 @@
       Bridge.call(SCREEN, "preview_approve", {}).catch((err) =>
         log("확인을 저장하지 못했습니다: " + String((err && err.message) || err)));
     });
-    // 「수정」은 편집기 진입 하나다(판정 L) — 필드별 deep-link 는 F7(EditContext) 소관.
-    // 면을 먼저 닫아 편집 호스트 위에 남의 모달이 떠 있지 않게 한다(F2 PR-B 교훈).
+    // 거친 진입(「이 작업 편집」 — target 없음)은 존치하고, 행별·파일 이름 「수정」이
+    // deep-link(§10.14.3)를 더한다. 면을 먼저 닫아 편집 호스트 위에 남의 모달이 떠 있지
+    // 않게 한다(F2 PR-B 교훈).
     $("previewEdit").addEventListener("click", () => {
       window.Modal.close("previewModal");
       openEditForRepair({
@@ -1455,6 +1512,26 @@
         evidence: { "보고 있던 행": ($("previewPos").textContent || "").trim() },
         return_context: { surface: "preview", reopen_drawer: true },
       });
+    });
+    // 행별 「수정」 — 위임(행 DOM 은 push 재렌더가 다시 짓는다). 증거는 이 표면이 **본
+    // 것**(Python 이 push 한 스냅샷 값)을 그대로 싣는다 — 편집기가 재계산하지 않는다.
+    $("previewRows").addEventListener("click", (e) => {
+      const btn = e.target.closest('[data-act="preview-fix"]');
+      if (!btn) return;
+      const field = btn.dataset.field;
+      const row = (((LAST && LAST.preview) || {}).rows || [])
+        .find((r) => r.name === field) || {};
+      previewFix("binding/" + field, {
+        "보고 있던 행": ($("previewPos").textContent || "").trim(),
+        "필드": field,
+        "본 값": row.value || "(빈 값)",
+      }).catch((err) => log("수정으로 이동하지 못했습니다: " + String((err && err.message) || err)));
+    });
+    $("previewFixFilename").addEventListener("click", () => {
+      previewFix("filename/filenamePattern", {
+        "보고 있던 행": ($("previewPos").textContent || "").trim(),
+        "파일 이름": ($("previewFilename").textContent || "").trim(),
+      }).catch((err) => log("수정으로 이동하지 못했습니다: " + String((err && err.message) || err)));
     });
     $("jobMirrorExpand").addEventListener("click", openJobConfirmSheet);
     $("jobMirrorCapstrip").addEventListener("click", (e) => {

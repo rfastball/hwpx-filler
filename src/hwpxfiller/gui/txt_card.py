@@ -1,7 +1,7 @@
 """TXT 작업점 카드의 공유 판정(링1) — 「보이는 것 = 복사되는 것」의 단일 통로.
 
 두 표면이 이 함수들을 소비한다: 「기안」 화면 세션
-(:mod:`hwpxfiller.webapp.draft_session`, PR-B 에서 사망)과 검토·복사 작업대
+(F6 PR-B 에서 사망)과 검토·복사 작업대
 (:mod:`hwpxfiller.webapp.screen_workbench`). 옮긴 것은 **판정**이고 스냅샷 성형은 각
 표면이 계속 소유한다.
 

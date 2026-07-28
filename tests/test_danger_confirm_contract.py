@@ -76,8 +76,8 @@ def test_durable_destructive_confirms_are_danger() -> None:
         ("app.js", 'confirmLabel: "종료"'),
         ("screens/editor.js", "res.overwrite_text"),
         ("screens/editor.js", "res.dataset_text"),
-        ("screens/draft.js", "body: confirmedText"),
-        ("screens/draft.js", 'title: "덮어쓰기 확인", body: r.confirm_text'),
+        # (screens/draft.js 두 행 삭제 — 「기안」 화면 사망, F6 PR-B. 덮어쓰기 확인의
+        #  생존 표면은 editor·job 행이 계속 진다.)
         ("screens/job.js", "body: overwriteBody(res)"),
         ("screens/library.js", "body: res.confirm_text"),
         ("screens/template.js", 'res.confirm_text + "\\n\\n지금 변환할까요?"'),
@@ -93,13 +93,13 @@ def test_durable_destructive_confirms_are_danger() -> None:
 
 def test_transient_or_organizational_confirms_stay_neutral() -> None:
     inventory = (
-        ("draftsession.js", 'title: "데이터 변경 확인"'),
+        # (draftsession.js 「데이터 변경 확인」·screens/draft.js 「기안 작업 삭제 확인」 행
+        #  삭제 — 「기안」 화면 사망, F6 PR-B.)
         ("screens/editor.js", "미확정으로 되돌리기"),
         # 좌 목록 사망(F2 PR-B)으로 두 문안의 거처가 라이브러리로 옮겼다 — 표면이 옮겨도
         # 「되돌릴 수 있는 조직 행위는 danger 로 물들이지 않는다」는 계약은 따라간다.
         ("screens/library.js", 'title: "그룹 병합 확인"'),
         ("screens/library.js", 'title: "작업 삭제 확인"'),
-        ("screens/draft.js", 'title: "기안 작업 삭제 확인"'),
         ("screens/template.js", "그룹을 해산하면"),
     )
     for relative, needle in inventory:

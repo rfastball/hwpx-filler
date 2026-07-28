@@ -90,24 +90,13 @@ def test_web_surfaces_free_of_issue_numbers():
     assert not offenders, "이슈번호가 UI 표면에 노출됩니다(F25):\n" + "\n".join(offenders)
 
 
-def test_txt_note_single_source_in_copy_js():
-    """기안 기본 안내문은 copy.js 단일 출처여야 한다 — index.html/화면 JS 두 벌 중복(실측된
-    드리프트 위험)의 재발 차단. 정적 #draftNote 는 비워 두고 draftsession.js 가 Copy.TXT_NOTE 로
-    채운다(구 #txtNote 는 #148 슬라이스 6 에서 scr-txt 와 함께 삭제 — 「기안」의 note 로 재겨눔)."""
+# (test_txt_note_single_source_in_copy_js 삭제 — 대상(#draftNote·draftsession.js)이
+#  「기안」 화면과 함께 사망, F6 PR-B. copy.js 자체는 다른 공용 문안으로 생존 —
+#  단일 출처 계약은 살아 있는 소비자가 생기면 그 표면의 테스트가 다시 진다.)
+def test_copy_js_still_loaded():
+    """공용 문안 모듈(copy.js)의 로드 배선은 「기안」 사망과 무관하게 산다."""
     index = WEB_INDEX.read_text(encoding="utf-8")
-    m = re.search(r'<p class="note" id="draftNote">([^<]*)</p>', index)
-    assert m is not None, "draftNote 요소가 사라졌습니다."
-    assert m.group(1).strip() == "", (
-        "index.html #draftNote 에 정적 문구가 다시 들어왔습니다 — copy.js(Copy.TXT_NOTE) 단일 출처 위반."
-    )
     assert 'src="js/copy.js"' in index, "copy.js 가 index.html 에 로드되지 않았습니다."
-    copy_js = (WEB / "js" / "copy.js").read_text(encoding="utf-8")
-    assert "TXT_NOTE" in copy_js, "copy.js 에 TXT_NOTE 가 없습니다."
-    # 안내문을 채우는 주체는 공용 기안 세션 팩토리(#148 슬라이스 3a) — 두 화면 한 출처.
-    sess_js = (WEB / "js" / "draftsession.js").read_text(encoding="utf-8")
-    assert "Copy.TXT_NOTE" in sess_js, (
-        "draftsession.js 가 Copy.TXT_NOTE 를 쓰지 않습니다(중복 재도입 위험)."
-    )
 
 
 # Python 문자열용 금지어 — 한국어 사용자 어휘만(영문 형태는 코드 식별자와 충돌 위험).

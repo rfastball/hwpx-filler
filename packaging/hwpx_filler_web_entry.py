@@ -16,27 +16,37 @@ def _selfcheck() -> int:
 
     from hwpxfiller.core.job import JobRegistry
     from hwpxfiller.core.text_registry import TextTemplateRegistry
+    from hwpxfiller.gui.template_manager_state import TemplateManagerViewModel
     from hwpxfiller.webapp.app import web_dir
-    from hwpxfiller.webapp.screen_draft import DraftController
+    from hwpxfiller.webapp.screen_editor import EditorController
 
     tmp = Path(tempfile.mkdtemp())
     (tmp / "샘플.txt").write_text("제목: {{공고명}} / 담당: {{담당자}}", encoding="utf-8")
 
     pushes: list = []
-    # 「기안」 화면(#148 슬라이스 6 — 구 TxtController 흡수)로 스모크한다: 좌 목록(JobRegistry)+
-    # 우 휘발 세션(TextTemplateRegistry). 세션이 첫 템플릿을 자동 선택해 initial 에 tokens 를 낸다.
-    ctrl = DraftController(
+    # 편집기 TXT 매체 분기(F6 PR-B — 구 「기안」 스모크의 승계처)로 스모크한다: 번들에서
+    # 브리지 없는 컨트롤러+링1 VM(스키마 동형 성형)이 실제로 도는지를 TXT 로드 한 바퀴로 본다.
+    ctrl = EditorController(
         JobRegistry(tmp / "jobs"),
         lambda s, snap: pushes.append((s, snap)),
-        TextTemplateRegistry(tmp),
+        template_library=TemplateManagerViewModel(paths=[]),
+        text_registry=TextTemplateRegistry(tmp),
     )
-    init = ctrl.initial()
-    vm_ok = "샘플" in init["templates"] and any(t["name"] == "공고명" for t in init["tokens"])
+    ctrl.dispatch("use_library_template", {"path": str(tmp / "샘플.txt")})
+    snap = ctrl.snapshot()
+    txt_names = [
+        it["name"] for sec in snap["library"]["txt"]["sections"] for it in sec["items"]
+    ]
+    vm_ok = (
+        "샘플" in txt_names
+        and snap["sections"] == ["template", "binding"]
+        and any(f["name"] == "공고명" for f in snap["fields"])
+    )
 
     web_ok = (web_dir() / "index.html").exists()  # 번들 web/ 확인(동결 시 _MEIPASS/web)
 
     print(
-        f"selfcheck: templates={init['templates']} tokens={len(init['tokens'])} "
+        f"selfcheck: txt_templates={txt_names} fields={len(snap['fields'])} "
         f"web_ok={web_ok} -> {'OK' if vm_ok and web_ok else 'FAIL'}"
     )
     return 0 if (vm_ok and web_ok) else 1

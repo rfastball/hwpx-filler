@@ -43,10 +43,14 @@ def test_wizard_tables_share_a_real_vertical_scrollport() -> None:
         assert "top:0" in rule
 
 
-def test_draft_map_header_sticks_inside_its_capped_host() -> None:
-    """실제로 세로 스크롤되는 dmap host와 불투명 sticky 헤더를 함께 고정한다."""
-    assert 'id="draftTokPanel" class="mapwrap"' in INDEX
-    host = _declarations("#draftTokPanel")
+def test_workbench_map_header_sticks_inside_its_capped_host() -> None:
+    """실제로 세로 스크롤되는 dmap host 와 불투명 sticky 헤더를 함께 고정한다.
+
+    「기안」 사망(F6 PR-B)으로 dmap 표의 생존 host 는 작업대 좌 pane(#wbMapPanel) —
+    표 클래스(dmap)와 sticky 헤더 계약은 그대로 승계됐다.
+    """
+    assert 'id="wbMapPanel"' in INDEX
+    host = _declarations("#wbMapPanel")
     assert "max-height:" in host and "overflow:auto" in host
 
     header = _declarations("table.dmap th")
@@ -56,24 +60,25 @@ def test_draft_map_header_sticks_inside_its_capped_host() -> None:
 
 
 def test_capped_scrollport_inventory_matches_dom_and_behavior_contract() -> None:
-    """허용된 캡 스크롤러 7종은 DOM에 있고 gutter/overscroll 계약을 공유한다."""
+    """허용된 캡 스크롤러는 DOM 에 있고 gutter/overscroll 계약을 공유한다.
+
+    (「기안」 사망 정산 — F6 PR-B: .mapwrap 은 DOM 소비자가 죽어 목록에서 빠지고,
+    구 .zone.workcard .wc-render 캡의 승계처는 작업대 .wb-preview / #wbMapPanel 인데
+    거기엔 gutter/overscroll 이 선언되지 않았다 — 캡·overflow 계약만 각자 테스트가 진다.)
+    """
     inventory = {
         ".tblwrap": EDITOR,
-        ".mapwrap": INDEX,
         ".jobtbwrap": INDEX,
         ".tpllist": INDEX,
         ".sheet-list": INDEX,
         ".colpanel .cp-vals": DATAZONE,
-        ".zone.workcard .wc-render": INDEX,
     }
     dom_needles = {
         ".tblwrap": 'class="tblwrap"',
-        ".mapwrap": 'class="mapwrap"',
         ".jobtbwrap": "jobtbwrap",
         ".tpllist": "tpllist",
         ".sheet-list": "sheet-list",
         ".colpanel .cp-vals": "cp-vals",
-        ".zone.workcard .wc-render": 'class="wc-render"',
     }
 
     for selector, source in inventory.items():

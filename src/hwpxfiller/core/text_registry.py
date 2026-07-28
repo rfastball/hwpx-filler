@@ -55,8 +55,8 @@ class TextTemplateRegistry:
         # 템플릿 파일 쓰기 직렬화 락(JobRegistry.write_lock 동형) — 「템플릿으로 저장」의 덮어쓰기
         # 재검증(내용 지문 재-읽기)과 실제 교체(write_text_atomic) 사이에 다른 스레드가 대상 파일을
         # 바꾸지 못하게 한 임계구역으로 묶는다(리뷰 F5). 효력은 **모든 템플릿 writer 가 함께
-        # 잡아야** 성립한다 — 관리 화면 「새 TXT」·내용 편집(screen_template)과 「템플릿으로 저장」
-        # (screen_draft)이 이 한 락을 공유한다. RLock(같은 스레드 재진입 허용).
+        # 잡아야** 성립한다 — 지금의 writer 는 관리 화면 「새 TXT」·내용 편집(screen_template)
+        # 하나다(구 「템플릿으로 저장」 공유자는 F6 PR-B 에서 화면과 함께 걷혔다). RLock.
         self._write_lock = threading.RLock()
 
     def write_lock(self) -> "threading.RLock":

@@ -21,7 +21,6 @@ import re
 from pathlib import Path
 
 from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
-from hwpxfiller.webapp.screen_draft import DraftController
 from hwpxfiller.webapp.screen_library import LibraryController
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp.screen_pool import PoolController
@@ -232,11 +231,11 @@ def test_appjs_nav_autorefresh_whitelist_matches_backend():
     assert m, "app.js 에 REFRESH_ON_NAV 화이트리스트가 없습니다 — 전환 시 스냅샷 고착 회귀(C6)."
     listed = set(re.findall(r'"(\w+)"', m.group(1)))
     # job 포함 — 레지스트리 파생 작업 목록을 스냅샷으로 그리는 표면이 빠지면 에디터에서 막
-    # 저장한 작업이 좌 목록에 안 보인다(전환 시 스냅샷 고착). draft(#148)도 같은 파생 목록이라
-    # 포함(TXT 작업 조회). run 은 사망(슬라이스 3).
+    # 저장한 작업이 좌 목록에 안 보인다(전환 시 스냅샷 고착). run 은 사망(슬라이스 3).
+    # draft 는 화면 사망(F6 PR-B) — TXT 작업도 job 목록이 승계한다.
     # pool 은 화면 사망(재작성 F1)이라 빠진다 — 등록 데이터 재스캔은 라우팅이 아니라 데이터
     # 선택 다이얼로그가 **열 때** 지불한다(안 여는 세션이 풀 I/O 를 물지 않는다).
-    assert listed == {"library", "tpl", "job", "draft"}
+    assert listed == {"library", "tpl", "job"}
 
     # 재당김의 **단일 정의**(8R 근본 조치) — 화이트리스트 판정 + refresh dispatch 가 한 자리에
     # 살고, 전환은 그것을 소비하며 실패를 표면화한다(.catch). 정의가 둘이면 한쪽만 고쳐진다.
@@ -253,7 +252,7 @@ def test_appjs_nav_autorefresh_whitelist_matches_backend():
 
     # 백엔드 상호 검증 — 화이트리스트 화면명 == 컨트롤러 name, 전부 _do_refresh 보유.
     ctrls = {c.name: c for c in (
-        LibraryController, TemplateController, JobController, DraftController,
+        LibraryController, TemplateController, JobController,
     )}
     assert set(ctrls) == listed
     for cls in ctrls.values():

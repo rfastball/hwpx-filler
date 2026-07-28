@@ -30,7 +30,8 @@ def _schema(required: str = "", optional: str = "") -> PayloadSchema:
 # 존 변이는 **대상 세계**를 함께 실어 보낸다(재작성 F3 리뷰 4R): `epoch` 는 발신 시점에 웹이
 # 보고 있던 범위 세계의 세대다. 초안이 열리거나 닫히거나(적용·취소) 데이터가 갈리면 세대가
 # 오르고, 그 전에 예약·발신된 변이는 **도착해도 남의 세계의 편집**이라 적용되지 않는다.
-# 선택 필드로 두는 이유: 존을 공유하는 「기안」 화면과 옛 호출부는 세대 개념이 없다(무검사 통과).
+# 선택 필드로 두는 이유: 세대 개념이 없는 옛 호출부의 무검사 통과 하위호환(소유는 job 하나 —
+# 구 「기안」 공유 소비자는 F6 PR-B 에서 화면과 함께 걷혔다).
 _ZONE_MUTATIONS = {
     "toggle_record": _schema("index value", "epoch"),
     "select_range": _schema("indices value", "epoch"),
@@ -60,31 +61,6 @@ _POOL_TARGETING = {
     "load_pool": _schema("name"),
 }
 
-_DRAFT_SESSION = {
-    "fork_to_volatile": _schema(optional="confirm"),
-    "fork_guard": _schema(),
-    "leave_for_template_guard": _schema(),
-    "select_template": _schema("name", "confirm"),
-    "new_draft": _schema(),
-    "copy_precheck": _schema(),
-    "set_template_text": _schema("text"),
-    "edit_source": _schema("text"),
-    "set_source": _schema("name", "col confirm"),
-    "set_map_value": _schema("name", "text"),
-    "set_map_fmt": _schema("name", "code"),
-    "set_map_type": _schema("name type"),
-    "set_confirmed": _schema("name", "value"),
-    "revert_map": _schema("name"),
-    "step": _schema("delta"),
-    "set_current": _schema(optional="index"),
-    "toggle_advance": _schema("value"),
-    "set_target_font": _schema("font"),
-    "set_fullwidth": _schema("value"),
-    "clear_data": _schema(),
-    "guard_state": _schema(),
-    "leave_guard": _schema(),
-}
-
 _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
     # 「문서 작업」 전역 라이브러리(§19.6·§19.7) — 구 `home` 채널의 승계자(재작성 F2).
     # 좌 목록 관리 동사 중 **열린 세션의 정체와 결속된 것**(rename_job·set_group·
@@ -111,7 +87,8 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
     },
     "editor": {
         "use_library_template": _schema("path"),
-        "toggle_library_group": _schema("group"),
+        # `media` 가 밴드(hwpx/txt)를 고른다 — 신규 액션 대신 기존 액션의 키 확장(§10.15.15 판정 F).
+        "toggle_library_group": _schema("group media"),
         "new_session": _schema(),
         "discard_session": _schema(),
         # 탭 이동 — `disposition` 은 3택 가드를 통과했다는 표지(웹이 저장·버리기를 먼저
@@ -167,7 +144,10 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         # 미리보기 드로어(§7 Value preview·§13-2·4, 재작성 F5) — 열림·자리는 **Python 소유**라
         # 웹은 이동 방향만 보낸다(레코드 index 를 되돌려주지 않는다, 지도 §10.12 판정 M).
         # 승인은 무페이로드 명시 사건이다: 무엇을 승인했는지는 Python 이 든 요구가 정한다.
-        "preview_open": _schema(),
+        # `at` 은 판정 M 의 carve-out 이 아니라 동류다(§10.15.15 판정 C): deep-link 복귀가
+        # 같은 자리로 서기 위한 값이고, 출처가 **Python 자신이 push 한 스냅샷**(preview.pos)
+        # 의 왕복이며 Python 이 클램프해 권위를 유지한다 — 값을 프런트가 짓지 않는다.
+        "preview_open": _schema(optional="at"),
         "preview_close": _schema(),
         "preview_move": _schema("delta"),
         "preview_approve": _schema(),
@@ -220,25 +200,6 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "save_rules": _schema(optional="confirm confirmed_text"),
         "leave_guard": _schema(),
         "close": _schema(),
-    },
-    "draft": {
-        **_DATA_ZONE,
-        **_POOL_TARGETING,
-        **_DRAFT_SESSION,
-        "refresh": _schema(),
-        "select_job": _schema("name", "confirm"),
-        "save_job": _schema("name", "confirm confirmed_text"),
-        "validate_save_name": _schema("name"),
-        "promote_info": _schema(),
-        "save_template": _schema("name", "group confirm confirmed_text"),
-        "toggle_group": _schema("group"),
-        "rename_job": _schema("name", "new"),
-        "clone_job": _schema("name"),
-        "delete_job": _schema("name", "confirm"),
-        "undo_delete_job": _schema(),
-        "set_group": _schema("name", "group"),
-        "rename_group": _schema("name", "new confirm seen"),
-        "disband_group": _schema("name", "confirm seen"),
     },
     "pool": {
         "refresh": _schema(),

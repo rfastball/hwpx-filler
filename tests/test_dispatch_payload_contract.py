@@ -37,7 +37,7 @@ SCREEN_OF_FILE = {
     "screens/library.js": "library",
     "screens/editor.js": "editor",
     "screens/job.js": "job",
-    "screens/draft.js": "draft",
+    # ("screens/draft.js" 행 삭제 — 「기안」 화면 사망, F6 PR-B.)
     "screens/template.js": "tpl",
     "screens/workbench.js": "workbench",
     "data_picker.js": "pool",
@@ -140,7 +140,9 @@ def test_literal_frontend_payloads_match_the_registered_schema() -> None:
                     f"{relative}: {screen}/{action} "
                     f"미등록 키={sorted(unexpected)} 필수 누락={sorted(missing)}"
                 )
-    assert checked >= 40, f"리터럴 페이로드를 너무 적게 읽었습니다({checked}) — 추출기 stale?"
+    # 실측 하한(F6 PR-B 정산): draft.js 리터럴이 화면과 함께 빠진 뒤의 실측값 = 71.
+    # 바닥은 실측에 붙여 둔다 — 실측보다 낮게 남기면 추출기가 반쯤 죽어도 초록이 된다.
+    assert checked >= 71, f"리터럴 페이로드를 너무 적게 읽었습니다({checked}) — 추출기 stale?"
     assert not offenders, (
         "프런트 페이로드가 등록 스키마와 어긋납니다 — 실 브리지가 거절합니다:\n"
         + "\n".join(offenders)
@@ -148,7 +150,7 @@ def test_literal_frontend_payloads_match_the_registered_schema() -> None:
 
 
 #: 이 가드가 **적용되는 화면** — 자기 화면 파일 하나가 자기 액션을 전부 부르는 곳.
-#: 나머지 화면은 공용 팩토리(`datazone.js`·`draftsession.js`·`intent.js`·`guard.js`)가
+#: 나머지 화면은 공용 팩토리(`datazone.js`·`intent.js`·`guard.js`)가
 #: 화면을 **변수**로 받아 발신하므로 정적 귀속이 성립하지 않는다 — 거기까지 억지로 세면
 #: 거짓 실패가 쏟아지고, 거짓 실패는 가드를 무디게 만든다(다음 사람이 목록에 넣고 잊는다).
 #: 범위를 좁히는 대신 **그 안에서는 예외를 두지 않는다**.

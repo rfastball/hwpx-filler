@@ -20,8 +20,8 @@ R-flow 구현 라운드(에픽 #90). R-info 1부가 확정한 「작업」 화�
 - 좌 목록의 2구획 틴트·group-by 렌즈·컴파일 배지 등 풍부화(홈 브라우저 VM 채택).
 - 건 연속성 직전 필터 재적용(블록 4 결정 28, PR-4)·txt 큐(블록 3)·빠른 기안(블록 5).
 - 세션 가드의 유보 성분: **T2**(마법사 인계 비파괴화 — 에디터 접합, 슬라이스 5)·수동 필드
-  입력 성분(블록 5, 슬라이스 7). **T3**(기안 큐 부분 진행)은 기안 세션 공용 본체
-  (:class:`~hwpxfiller.webapp.draft_session.DraftSessionMixin`)가 진다 — 술어 몸통은 이 화면과
+  입력 성분(블록 5, 슬라이스 7). **T3**(큐 부분 진행)은 검토·복사 작업대가 진다(F6 —
+  구 기안 세션 공용 본체의 승계처). 술어 몸통은 이 화면과
   공유(:meth:`~hwpxfiller.webapp.data_zone.DataZoneMixin._selection_guard`).
 (슬라이스 2 착지분 — 게이트 재진술 블록·거울 채움 테이블·덮어쓰기 modal.js 수치 합성·식별
 요약 링1 :func:`~hwpxfiller.core.identity_summary.identity_summary`(#88, A-1-15) — 과
@@ -231,9 +231,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         *,
         pool_registry: "DatasetPoolRegistry | None" = None,
         generation_lock: "threading.Lock | None" = None,
+        text_registry=None,
     ) -> None:
         self.registry = registry
         self._push_sink = push
+        # TXT 템플릿 레지스트리(F6 PR-B 고지 ①) — 후보 TXT 구획 빈 상태의 술어에만 쓴다
+        # (txt 템플릿 有 ∧ txt 작업 0건). 앱 조립에선 tpl·편집기와 같은 인스턴스를 주입한다.
+        # 미주입(None)이면 술어가 항상 거짓 — 테스트·CLI 소비자에 실 홈 스캔을 물리지 않는다.
+        self.text_registry = text_registry
         self.vm: "RunViewModel | None" = None
         # 세션 소유 데이터(data-first 봉합, §18.2 보존 계약) — 마운트된 datasource·records 는
         # 컨트롤러(세션)가 보유해 **작업 전환에서 생존**한다. vm 은 재생성 시
@@ -485,7 +490,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if not self._indices():
             raise ValueError("미리볼 문서를 최소 1건 선택하세요.")
         self.preview_open = True
-        self.preview_pos = 0
+        # `at`(deep-link 복귀, §10.15.15 판정 C) — 값의 출처는 Python 이 push 한
+        # `preview.pos` 의 왕복이다(EditContext 를 지나 돌아온다). 편집 중 선택이 줄었으면
+        # 클램프가 안전측으로 접는다 — stale 인덱스로 남의 행을 그리지 않는다.
+        self.preview_pos = max(0, min(len(self._indices()) - 1, int(p.get("at", 0) or 0)))
         # 핀(5R P2)은 여기서 조립하지 않는다 — 면이 열려 있는 동안 스냅샷이 **같은
         # 술어로** 채운다. 두 자리가 각자 조립하면 그 순간 정체가 두 벌이 된다
         # (F3 1R 이 표면의 자체 조립에서 났던 자리).
@@ -800,7 +808,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
           available 과 똑같이 수치로 고지한다.
         - ``suggested`` = 추천 작업 이름(§18.3 개정, 없으면 ``""``).
         """
-        empty = {"top": [], "sections": [], "more": 0, "needs_count": 0, "suggested": ""}
+        empty = {
+            "top": [], "sections": [], "more": 0, "needs_count": 0, "suggested": "",
+            "txt_note": "",
+        }
         if self.datasource is None or not self.records:
             return empty
         fields = list(self.records[0].keys())
@@ -846,7 +857,28 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             # (슬라이스 3: 칩 구획 이사, 삭제는 의무를 상속한다).
             "needs_count": len(needs),
             "suggested": suggested,
+            "txt_note": self._txt_onboarding_note(jobs),
         }
+
+    def _txt_onboarding_note(self, jobs) -> str:
+        """후보 TXT 구획 빈 상태 고지(F6 PR-B 고지 ① — §10.15.15 판정 A) — 대체 경로 재진술.
+
+        술어: **txt 템플릿 有 ∧ txt 방식 작업 0건**. 휘발 「기안」만 쓰던 사용자에게 정확히
+        발화하고, 순수 HWPX 사용자(템플릿 0 = 아래 스캔이 빈 목록으로 즉시 끝난다)와 이미
+        TXT 작업을 가진 사용자(in-memory 선판정으로 스캔 자체가 없다)에겐 0 소음이다.
+        상시 배너·1회 다이얼로그·영속 플래그를 두지 않는다 — 매 스냅샷 파생(결정 2).
+        """
+        if self.text_registry is None:
+            return ""
+        if any(work_mode(j.template_path) == WORK_MODE_TEXT for j in jobs):
+            return ""
+        if self.text_registry.count() == 0:
+            return ""
+        return (
+            "저장된 TXT 작업이 아직 없습니다. '문서 작업'의 [＋ 새 작업] 템플릿 탭에서 "
+            "TXT 템플릿을 골라 작업으로 저장하면 여기 후보로 서고, 검토·복사 작업대로 "
+            "이어집니다."
+        )
 
     def _browse_payload(self, jobs) -> dict:
         """문서 탐색 구획(§18.6·§19.5) — 탭·검색 판정은 링1 단일 출처 소비.

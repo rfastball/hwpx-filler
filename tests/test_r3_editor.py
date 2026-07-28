@@ -21,6 +21,8 @@ MULTI_SHEET = REPO / "tests" / "fixtures" / "multi_sheet.xlsx"
 
 def _controller(tmp_path: Path, *, pool_registry=None) -> EditorController:
     """레지스트리를 tmp 로 격리한 컨트롤러(풀은 주입 가능 — 실패/계수 더블용)."""
+    from hwpxfiller.core.text_registry import TextTemplateRegistry
+
     return EditorController(
         JobRegistry(tmp_path / "jobs"),
         lambda s, snap: None,
@@ -28,6 +30,7 @@ def _controller(tmp_path: Path, *, pool_registry=None) -> EditorController:
             pool_registry if pool_registry is not None
             else DatasetPoolRegistry(tmp_path / "pool")
         ),
+        text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
     )
 
 
