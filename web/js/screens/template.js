@@ -14,6 +14,10 @@
   let menuFor = null;                 // 열린 ⋮ 메뉴: {media, kind:"row"|"group", key?, group?, item?}
   let editBaseline = { name: "", content: "" };
   let editAllowClose = false;
+  // F8 병존 opener 가드(한시 — 이 파일은 커밋 6에 화면과 함께 죽는다): #txtEditModal 의
+  // OK·취소는 editor.js 도 배선한다. 「내가 열었는가」를 안 보면 남이 연 모달의 클릭에
+  // 이쪽 제출이 함께 발화해 빈 이름 txt_new 가 이중 디스패치된다.
+  let editOwned = false;
 
   /* 그룹 목록 기제(부유 ⋮ 메뉴·이동 다이얼로그) = 공용 팩토리(grouplist.js, job.js 와 단일 출처).
      위치잡기·다이얼로그 조립은 팩토리 소유. 여기는 매체 축·메뉴 내용·확정 디스패치만 주입한다. */
@@ -322,10 +326,12 @@
     $("txtEditContent").value = content || "";
     editBaseline = { name: "", content: content || "" };
     editAllowClose = false;
+    editOwned = true;
     $("txtEditError").style.display = "none";
     const focusTo = mode === "new" ? $("txtEditName") : $("txtEditContent");
       window.Modal.open("txtEditModal", {
       initialFocus: focusTo, returnFocus,
+      onClose: () => { editOwned = false; },
       beforeClose: () => {
         if (editAllowClose || !editModalDirty()) return true;
         confirmDiscardEdit();
@@ -340,6 +346,7 @@
   }
 
   async function confirmDiscardEdit() {
+    if (!editOwned) return;  // F8 병존 opener 가드 — 남이 연 모달엔 침묵
     if (!editModalDirty()) {
       editAllowClose = true;
       window.Modal.close("txtEditModal");
@@ -357,6 +364,7 @@
   }
 
   async function submitEditModal() {
+    if (!editOwned) return;  // F8 병존 opener 가드 — 남이 연 모달엔 침묵
     const content = $("txtEditContent").value;
     try {
       if (editMode === "new") {

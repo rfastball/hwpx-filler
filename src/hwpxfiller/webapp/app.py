@@ -54,7 +54,8 @@ DEFAULT_WINDOW_HEIGHT = 900
 # 파일 선택 다이얼로그 필터 — pick_data_file·pick_pool_data_file 공유 단일 출처(둘 다
 # "엑셀/CSV 데이터" 참조를 다루므로 필터가 같다; 확장자 자체의 단일 출처는 EXCEL_FILTER_PATTERN).
 _EXCEL_OR_ANY_FILTERS = [("엑셀/CSV 데이터", EXCEL_FILTER_PATTERN), ("모든 파일", "*.*")]
-# 템플릿 필터 — import_template_file·pick_template_path 공유 단일 출처.
+# 템플릿 필터 — pick_template_path(재연결) 전용. 가져오기는 F8 통일로
+# _LIBRARY_IMPORT_FILTERS 를 쓴다(§10.17.2 판정 C — hwpx·txt·RAW 수용).
 _TEMPLATE_FILTERS = [("HWPX 템플릿", "*.hwpx"), ("모든 파일", "*.*")]
 # 라이브러리 가져오기 필터(#108 결정 4) — HWPX·TXT 겸용. 확장자가 곧 매체 라우팅(복사 대상
 # 루트 결정)이라 두 형식을 함께 연다("모든 파일"은 오확장 유입 방지로 제외 — import 는 확장자로만 라우팅).
@@ -245,16 +246,18 @@ class WebFrontend:
 
     # 바깥 파일의 유일 입구는 import_template_file(가져오기=복사)이다.
     def import_template_file(self, screen: str) -> "str | None":
-        """Win32 열기 다이얼로그(HWPX) → 라이브러리로 **복사** 후 사본으로 새 세션(R-info 2부).
+        """Win32 열기 다이얼로그(HWPX·TXT) → 라이브러리 복사 → 편집기 채택 판정(F8 통일).
 
-        ``pick_template_file``(생 파일 직접 로드)의 후계 — 신규 1단계는 라이브러리가 정본이라
-        바깥 파일은 가져오기=복사로만 들어온다. 실패는 ``ERROR:`` 접두.
+        가져오기 통일(§10.17.2 판정 C): **복사 권위는 tpl 컨트롤러의 import_into_library
+        하나**(잠금·매체 라우팅·충돌 접미·무잔재)이고, 편집기는 사본으로 세션을 시작할 수
+        있는지만 판정한다(RAW·손상 = 목록 합류 + 수선 경로 notice). 실패는 ``ERROR:`` 접두.
         """
-        path = open_file_dialog(_TEMPLATE_FILTERS, owner_title=WINDOW_TITLE)
+        path = open_file_dialog(_LIBRARY_IMPORT_FILTERS, owner_title=WINDOW_TITLE)
         if not path:
             return None
         try:
-            return self._controller(screen).import_template(path)
+            dest = self._controller("tpl").import_into_library(path)
+            return self._controller(screen).adopt_imported_template(dest)
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
 

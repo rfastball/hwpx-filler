@@ -240,8 +240,9 @@ def test_import_routes_by_extension_and_is_independent(tmp_path, monkeypatch):
     src_txt.write_text("원본", encoding="utf-8")
     _write_compiled(ext / "용역.hwpx")
 
-    assert ctrl.import_into_library(str(src_txt)) == "협조전.txt"
-    assert ctrl.import_into_library(str(ext / "용역.hwpx")) == "용역.hwpx"
+    # 반환 = 사본의 **전체 경로**(F8 판정 C — 편집기 채택 판정이 정확한 목적지를 안다).
+    assert ctrl.import_into_library(str(src_txt)) == str(tp / "txt" / "협조전.txt")
+    assert ctrl.import_into_library(str(ext / "용역.hwpx")) == str(tp / "lib" / "용역.hwpx")
     # 확장자로 매체 루트 라우팅.
     assert (tp / "txt" / "협조전.txt").exists() and (tp / "lib" / "용역.hwpx").exists()
     # 원본 후속 수정은 라이브러리 사본에 불파급(복사=참조 아님).
@@ -258,8 +259,8 @@ def test_import_name_collision_suffixes(tmp_path, monkeypatch):
     ext = tp / "ext"
     ext.mkdir()
     (ext / "온나라_기안.txt").write_text("다른내용", encoding="utf-8")
-    name = ctrl.import_into_library(str(ext / "온나라_기안.txt"))
-    assert name == "온나라_기안 (2).txt"  # 조용한 덮어쓰기 금지
+    dest = ctrl.import_into_library(str(ext / "온나라_기안.txt"))
+    assert Path(dest).name == "온나라_기안 (2).txt"  # 조용한 덮어쓰기 금지(반환=전체 경로)
     assert (tp / "txt" / "온나라_기안.txt").read_text(encoding="utf-8") == "제목: {{공고명}}"
 
 

@@ -57,6 +57,11 @@
      의 이주분, 한 객체로 묶어 1변수). {media, kind:"row"|"group", key?|group?, item?, trigger} */
   let libMenuFor = null;
 
+  /* TXT 저작 모달의 열림 거래(F8 — template.js editMode·editPath·editBaseline·editAllowClose
+     4변수의 이주분을 1객체로). 파생 불가: 모달의 대상·기준선·닫기 허가는 스냅샷이 모른다
+     (열림 중 한 번성 거래 상태). null = 안 열림(병존 기간 이중 배선의 opener 가드 겸용). */
+  let txtEdit = null;
+
   /* 관리 기제 = 공용 팩토리·기존 DOM(#tplRowMenu·#tplMoveModal) **재사용, 이식 아님**(F2
      교훈 ④). 관리 동사는 tpl 채널을 그대로 부른다(F1 data_picker→pool 동형 — 컨트롤러·
      잠금·경로 검증 규율 생존, §10.17.2 판정 B). 목록의 정본은 editor 스냅샷 하나다. */
@@ -310,10 +315,16 @@
       `<span class="cap">${label}</span>` +
       (band.count ? `<span class="muted capnote">${band.count}개</span>` : "") +
       (band.dir ? `<span class="muted capnote mono" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:22em" title="${esc(band.dir)}">${esc(band.dir)}</span>` : "");
-    return `<div class="grp">
-      <div class="row" style="margin-bottom:var(--sp-4)">${bandCap("HWPX 서식", hw)}
-        <span class="spacer"></span>
-        <button class="btn sm" data-act="import-template">가져오기…</button></div>
+    // 상단 행동 줄(F8 — 죽은 tpl `.tpl-libbar` 의 승계): 가져오기는 hwpx·txt 겸용(확장자가
+    // 매체 라우팅 — §10.17.2 판정 C)이라 밴드 밖 공용 줄에 둔다. 새로고침 = 외부 FS 재스캔.
+    return `<div class="row" style="margin-bottom:var(--sp-4)">
+      <button class="btn sm" data-act="import-template">가져오기…</button>
+      <button class="btn sm" data-act="lib-new-txt">새 TXT 템플릿…</button>
+      <span class="spacer"></span>
+      <button class="btn sm" data-act="lib-refresh" title="라이브러리 폴더를 다시 읽습니다">새로고침</button>
+    </div>
+    <div class="grp">
+      <div class="row" style="margin-bottom:var(--sp-4)">${bandCap("HWPX 서식", hw)}</div>
       <p class="note quiet" style="margin-top:0">누름틀에 채운 .hwpx 문서 파일을 만드는 작업입니다.</p>
       ${libraryBand(lib.hwpx, "hwpx", libRow,
         "라이브러리에 템플릿이 없습니다. '가져오기…'로 추가하세요.")}
@@ -322,7 +333,7 @@
       <div class="row" style="margin-bottom:var(--sp-4)">${bandCap("TXT 기안", tx)}</div>
       <p class="note quiet" style="margin-top:0">채운 본문을 검토하고 복사해 쓰는 작업입니다. 파일은 만들지 않습니다.</p>
       ${libraryBand(lib.txt, "txt", txtLibRow,
-        "TXT 기안 템플릿이 없습니다. '가져오기…'로 추가하거나 새로 만드세요.")}
+        "TXT 기안 템플릿이 없습니다. '새 TXT 템플릿…'으로 만들거나 '가져오기…'로 추가하세요.")}
     </div>${resultLine}`;
   }
 
@@ -351,9 +362,16 @@
       libMenuFor = { media, kind, group: id, trigger: btn };
     } else {
       const it = findLibItem(media, id);
-      // 소비 동사(「이 템플릿으로」)는 행 버튼이 이미 소유 — 메뉴는 관리 동사만(2벌 금지,
-      // §10.17.2 판정 D). 무그룹 행의 그룹 지정은 ＋그룹지정 칩이 담당.
+      // 소비 동사(「이 템플릿으로」)는 행 버튼이 이미 소유 — 메뉴는 관리·수선 동사만(2벌
+      // 금지, §10.17.2 판정 D). 무그룹 행의 그룹 지정은 ＋그룹지정 칩이 담당.
+      // HWPX 상태 수선 동사(compile·review)의 목록·라벨은 링1 `_STATE_ACTIONS` 소유 —
+      // 스냅샷 actions 를 그대로 그린다(§10.4.1 409행의 승계, 여기서 발명 금지).
+      const repairs = media === "hwpx"
+        ? ((it && it.actions) || []).map((a) =>
+            `<button data-menu="act:${esc(a.key)}">${esc(a.label)}</button>`).join("")
+        : (it && !it.error ? `<button data-menu="edit">내용 편집</button>` : "");
       html =
+        repairs + (repairs ? `<div class="sep"></div>` : "") +
         (it && it.group ? `<button data-menu="move">그룹으로 이동…</button>` : "") +
         `<button data-menu="delete" class="danger">삭제</button>`;
       libMenuFor = { media, kind, key: id, item: it, trigger: btn };
@@ -378,8 +396,94 @@
       else if (act === "delete") await deleteLibTemplate(m.media, m.item);
       else if (act === "grp-rename") await renameLibGroup(m.media, m.group, m.trigger);
       else if (act === "grp-disband") await disbandLibGroup(m.media, m.group, m.trigger);
+      else if (act === "edit") {
+        const res = await Bridge.call("tpl", "txt_content", { path: m.item.path });
+        openTxtEditModal("edit", m.item.path, m.item.name, (res && res.content) || "", m.trigger);
+      } else if (act === "act:compile") await doLibCompile(m.item.path);
+      else if (act === "act:review") await Bridge.call("tpl", "review", { path: m.item.path });
     } catch (err) {
       window.alert(String((err && err.message) || err));
+    }
+  }
+
+  /* 누름틀 변환 — CLI 2단계 미러(스캔 dry-run → 확인 라운드트립 → 제자리 적용). 판정·문안은
+     Python(tpl 채널) 소유, 여기는 확인 왕복만(template.js doCompile 이식). */
+  async function doLibCompile(path) {
+    const res = await Bridge.call("tpl", "compile", { path });
+    if (res && res.needs_confirm) {
+      if (await Modal.confirm({
+        body: res.confirm_text + "\n\n지금 변환할까요?",
+        confirmLabel: "제자리 변환", cancelLabel: "취소", danger: true,
+      })) {
+        await Bridge.call("tpl", "compile", { path, confirm: true });
+      }
+    }
+  }
+
+  /* ---- TXT 저작 모달(F8 — tpl 화면 사망의 승계: template.js openEditModal 이식) ----
+     DOM(#txtEditModal)은 셸 레벨 생존(selftest Escape·커스텀 모달 프로브 표적 — 이동 금지),
+     소유 JS 만 여기로 왔다. 병존 기간 template.js 와 이중 배선 — 양쪽 다 「내가 열었는가」
+     (txtEdit ≠ null / editOwned)로만 반응해 서로의 열림에 간섭하지 않는다. */
+  function openTxtEditModal(mode, path, name, content, returnFocus) {
+    txtEdit = {
+      mode, path: path || "",
+      baseline: { name: "", content: content || "" },
+      allowClose: false,
+    };
+    $("txtEditTitle").textContent = mode === "new" ? "새 TXT 템플릿" : `TXT 템플릿 편집: ${name}`;
+    $("txtNameRow").style.display = mode === "new" ? "" : "none";
+    $("txtEditName").value = "";
+    $("txtEditContent").value = content || "";
+    $("txtEditError").style.display = "none";
+    const focusTo = mode === "new" ? $("txtEditName") : $("txtEditContent");
+    Modal.open("txtEditModal", {
+      initialFocus: focusTo, returnFocus,
+      beforeClose: () => {
+        if (!txtEdit || txtEdit.allowClose || !txtEditDirty()) { txtEdit = null; return true; }
+        confirmDiscardTxtEdit();
+        return false;
+      },
+    });
+  }
+
+  function txtEditDirty() {
+    return !!txtEdit && ($("txtEditName").value !== txtEdit.baseline.name ||
+      $("txtEditContent").value !== txtEdit.baseline.content);
+  }
+
+  async function confirmDiscardTxtEdit() {
+    if (!txtEdit) return;
+    if (!txtEditDirty()) {
+      txtEdit.allowClose = true;
+      Modal.close("txtEditModal");
+      return;
+    }
+    const ok = await Modal.confirm({
+      title: "편집 내용 버리기",
+      body: "저장하지 않은 템플릿 내용이 사라집니다.",
+      confirmLabel: "편집 내용 버리기", cancelLabel: "계속 편집",
+    });
+    if (ok && txtEdit) {
+      txtEdit.allowClose = true;
+      Modal.close("txtEditModal");
+    }
+  }
+
+  async function submitTxtEdit() {
+    if (!txtEdit) return;
+    const content = $("txtEditContent").value;
+    try {
+      if (txtEdit.mode === "new") {
+        await Bridge.call("tpl", "txt_new", { name: $("txtEditName").value, content });
+      } else {
+        await Bridge.call("tpl", "txt_edit", { path: txtEdit.path, content });
+      }
+      txtEdit.allowClose = true;
+      Modal.close("txtEditModal");
+    } catch (err) {
+      const note = $("txtEditError");
+      note.textContent = String((err && err.message) || err);
+      note.style.display = "block";
     }
   }
 
@@ -902,6 +1006,13 @@
         case "lib-assign":
           openLibMoveDialog(el.dataset.media, findLibItem(el.dataset.media, el.dataset.key), el);
           break;
+        case "lib-new-txt":
+          openTxtEditModal("new", "", "", "", el);
+          break;
+        case "lib-refresh":
+          // 외부 FS 재스캔(tpl 채널) — push 가 재당김을 태워 목록·결과 줄이 되그려진다.
+          await Bridge.call("tpl", "refresh", {});
+          break;
         case "import-template": {
           if (!(await confirmNewSessionIfUnsaved())) break;
           const r = await Bridge.importTemplateFile(SCREEN);
@@ -1108,6 +1219,10 @@
     // 상태(libMenuFor / onConfirm)로만 반응해 서로 간섭하지 않는다.
     $("tplRowMenu").addEventListener("click", onLibMenuClick);
     libMoveDialog.wire("tplMoveOk", "tplMoveCancel");
+    // TXT 저작 모달(F8 승계) — 병존 기간 template.js 와 이중 배선: 핸들러가 자기 열림
+    // 거래(txtEdit)로만 반응한다(submitTxtEdit·confirmDiscardTxtEdit 선두 가드).
+    $("txtEditCancel").addEventListener("click", confirmDiscardTxtEdit);
+    $("txtEditOk").addEventListener("click", submitTxtEdit);
     window.Popover.wireDismiss({
       isOpen: () => libMenuFor !== null,
       contains: (t) => !!(t.closest("#tplRowMenu") || t.closest("#scr-editor .job-more")),

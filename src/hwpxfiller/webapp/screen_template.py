@@ -228,7 +228,10 @@ class TemplateController:
             _ok(f"'{src.name}' 을 라이브러리로 가져왔습니다{renamed}. '그룹 없음'에서 시작합니다.")
         )
         self._push()
-        return dest.name
+        # 전체 경로 반환(F8 판정 C) — 편집기 채택 판정(adopt_imported_template)이 사본의
+        # 정확한 목적지를 알아야 한다(충돌 접미로 이름이 바뀔 수 있다). 프런트 소비자는
+        # "ERROR:" 접두 검사뿐이라 이름→경로 확장은 무해.
+        return str(dest)
 
     # ------------------------------------------------------- 웹→Python 데이터 액션
     def dispatch(self, action: str, payload: dict):

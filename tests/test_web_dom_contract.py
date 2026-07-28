@@ -51,7 +51,9 @@ PRESERVE_WRAPPED_FILES = ("screens/editor.js", "screens/job.js", "screens/workbe
 # 절차의 길이 — 절차를 늘리는 슬라이스(F7 재시도)가 이 천장을 먼저 만나야 한다.
 MUTABLE_MODULE_STATE_BUDGET = {
     "screens/job.js": 17,
-    "screens/template.js": 5,
+    # +1(F8 한시): editOwned — #txtEditModal 이중 배선(editor.js 승계)의 opener 가드.
+    # 이 파일은 커밋 6 에 화면과 함께 죽는다(그때 행째 삭제).
+    "screens/template.js": 6,
     # screens/draft.js·draftsession.js 는 화면 사망으로 파일째 삭제(F6 PR-B).
     # 작업대(F6) — 스냅샷 1개(LAST)뿐이다. 작업점·복사 이력·미저장 변경·린트를 전부
     # Python 이 소유하므로 표면이 들 것이 없다(데이터 존이 없는 화면이라 더 그렇다).
@@ -59,9 +61,10 @@ MUTABLE_MODULE_STATE_BUDGET = {
     # 편집기 — LAST·접힘 2종 + deep-link 조준 대기 1슬롯(pendingAim, F6 PR-B §10.14.3).
     # pendingAim 은 파생 불가다: 스냅샷은 「이 조준을 이미 소비했는가」를 모른다(한 번성
     # 사건이지 상태가 아니다) — 스냅샷에 승격하면 소비 후 무효화 스킴이 따라온다.
-    # +1(F8): libMenuFor — 열린 라이브러리 ⋮ 메뉴의 정체(tpl 화면 사망의 관리 동사 승계).
-    # 파생 불가(뷰 상태 — template.js menuFor 의 이주분, 한 객체로 묶어 1변수).
-    "screens/editor.js": 5,
+    # +2(F8): libMenuFor(열린 라이브러리 ⋮ 메뉴의 정체)·txtEdit(TXT 저작 모달의 열림 거래)
+    # — tpl 화면 사망의 관리·저작 동사 승계. 둘 다 파생 불가(뷰의 한 번성 거래 상태 —
+    # template.js 5변수의 이주분을 각 1객체로 묶음).
+    "screens/editor.js": 6,
     "screens/library.js": 3,
     "data_picker.js": 4,
     "datazone.js": 0,

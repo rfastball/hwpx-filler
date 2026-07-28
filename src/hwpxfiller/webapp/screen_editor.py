@@ -816,48 +816,54 @@ class EditorController:
             raise ValueError(f"알 수 없는 형식: {media!r}")
         model.toggle_collapse(p["group"])
 
-    def import_template(self, path: str) -> str:
-        """템플릿 **가져오기 = 복사**(R-info 2부: 앱 소유 루트 — 생 파일 참조 금지).
+    def adopt_imported_template(self, dest: str) -> str:
+        """가져온 사본의 편집기 채택 판정(F8 — §10.17.2 판정 C, 가져오기 통일).
 
-        고른 파일을 라이브러리 폴더로 복사하고 **그 사본**으로 새 작업 세션을 연다 — 원본의
-        후속 이동·수정은 라이브러리에 불파급. 이름 충돌은 조용히 덮지 않고 ``이름 (2).hwpx``
-        식 접미로 회피 + notice 재진술. 브리지(파일 다이얼로그)가 부른다.
-
-        **선검증·무잔재**(리뷰 F3): 복사 전에 원본에서 스키마를 뽑아 손상·RAW(누름틀 0)를
-        거른다 — 복사 먼저면 실패 사본이 앱 소유 라이브러리에 영구 오류 행으로 남는다(인앱
-        삭제 어포던스 없음). 복사·로드 중 실패도 사본을 걷어내고 재던진다(반가져오기 금지).
+        **복사 권위는 :meth:`TemplateController.import_into_library` 하나다**(잠금·충돌
+        접미·무잔재) — 여기는 그 사본으로 「세션을 시작할 수 있는가」만 판정한다.
+        시작 가능(hwpx 누름틀 有 / txt UTF-8 판독 가능) = 즉시 새 세션(F7 거동 보존).
+        불가(RAW·손상) = **세션 없이 목록 합류** + notice 가 수선 경로(행 ⋮ 변환·삭제)를
+        지목한다 — 종전 선거부의 근거(인앱 삭제 어포던스 부재 → 영구 오류 행)는 F8 이
+        행 ⋮ 삭제를 들이면서 소멸했다(근거가 죽으면 가드도 걷는다).
         """
-        src = Path(path)
-        schema = extract_schema(str(src))  # 손상 = 여기서 loud(복사 전 — 잔재 없음)
-        if not schema.fields:
-            raise ValueError(
-                "누름틀이 없는 템플릿(RAW)입니다. 템플릿 관리의 변환(fieldize)을 먼저 "
-                "거치거나 누름틀이 있는 파일을 가져오세요."
-            )
-        lib_dir = self.template_library.library_dir
-        if lib_dir is None:
-            raise ValueError("템플릿 라이브러리 폴더가 지정되지 않았습니다.")
-        lib_dir.mkdir(parents=True, exist_ok=True)
-        dest = lib_dir / src.name
-        n = 2
-        while dest.exists():
-            dest = lib_dir / f"{src.stem} ({n}){src.suffix}"
-            n += 1
-        try:
-            shutil.copy2(src, dest)
-            self._refresh_library()
-            self.new_job_session(str(dest))
-        except Exception:
-            dest.unlink(missing_ok=True)  # 반가져오기 잔재 제거(디스크 풀 등)
-            self._refresh_library()  # 잔재 제거를 공유 VM 에 반영(stale 오류 행 방지)
-            raise
-        renamed = f" (이름 충돌로 '{dest.name}' 로 저장)" if dest.name != src.name else ""
-        self._set_notice(
-            f"'{src.name}' 을 라이브러리로 복사해 시작합니다{renamed}.",
-            "ok",
-        )
+        path = Path(dest)
+        # 공유 VM 은 import_into_library 가 이미 refresh 했다 — 단독 구동(테스트)만을 위한
+        # 재스캔이 아니라, 채택 판정 전 목록 정합의 방어적 재확인(앱에선 무해한 중복).
+        self._refresh_library()
+        if path.suffix.lower() == ".hwpx":
+            try:
+                schema = extract_schema(str(path))
+            except Exception:
+                self._set_notice(
+                    f"'{path.name}' 을 가져왔지만 읽을 수 없습니다. "
+                    "목록의 행 ⋮ 에서 삭제하거나 파일을 확인하세요.",
+                    "warn",
+                )
+                self._push()
+                return path.name
+            if not schema.fields:
+                self._set_notice(
+                    f"'{path.name}' 은 누름틀이 없는 원본(RAW)입니다. "
+                    "목록의 행 ⋮ → '누름틀로 변환'을 거친 뒤 시작하세요.",
+                    "warn",
+                )
+                self._push()
+                return path.name
+        else:
+            try:
+                path.read_text(encoding="utf-8")
+            except Exception:
+                self._set_notice(
+                    f"'{path.name}' 을 가져왔지만 읽을 수 없습니다(UTF-8 아님). "
+                    "목록의 행 ⋮ 에서 삭제하거나 파일을 확인하세요.",
+                    "warn",
+                )
+                self._push()
+                return path.name
+        self.new_job_session(str(path))
+        self._set_notice(f"'{path.name}' 을 라이브러리로 복사해 시작합니다.", "ok")
         self._push()
-        return dest.name
+        return path.name
 
     # ------------------------------------------- 네이티브 보조(브리지가 다이얼로그 담당)
     def load_template_path(self, path: str, *, emit_push: bool = True) -> None:
