@@ -81,7 +81,7 @@ from ..gui.mapping_state import (
 from ..gui.template_manager_state import TemplateManagerViewModel
 from ..gui.work_mode import work_mode_label  # 교차 매체 거절 문안의 방식 라벨(§19.1)
 from ..naming import make_output_filename
-from .screens import NO_ROWS_TEXT, PushSink, default_pool_registry
+from .screens import NO_ROWS_TEXT, TXT_RAW_BLOCK, PushSink, default_pool_registry
 from .template_groups import TemplateGroupModel, rel_key
 
 # 표시형 프리셋은 유형별 고정 → 한 번 계산해 스냅샷에 싣는다(코어 라벨 그대로).
@@ -91,12 +91,8 @@ _FMT_OPTIONS = {t: [{"code": code, "label": label} for label, code in format_pre
 # 에 있으나 스냅샷엔 매핑 감(感)만 주는 소량만 노출한다(record_count 로 "외 M건" 표기).
 _SAMPLE_ROWS = 3
 
-# TXT 판 RAW 차단(F6 PR-B) — hwpx 의 RAW_BLOCK_MESSAGE 는 누름틀·변환(fieldize)을 말하므로
-# 그대로 쓰면 조치 안내가 거짓이 된다. TXT 의 채울 대상은 {{토큰}}이고 처방은 템플릿 관리다.
-TXT_RAW_BLOCK = (
-    "채울 {{토큰}}이 없는 TXT 템플릿입니다.\n"
-    "'템플릿 관리'에서 원문에 {{필드이름}} 토큰을 넣은 뒤 다시 고르세요."
-)
+# TXT 판 RAW 차단 문안은 `screens.TXT_RAW_BLOCK` 단일 출처 — 재연결 게이트와 같은 판정
+# 같은 문안(리뷰 2R P1). 아래 import 로 이 모듈의 옛 소비자(테스트 포함)도 그대로 산다.
 
 # 이 화면이 **편집하지 않는** durable 메타 — 저장이 Job 을 새로 조립하므로 여기 열거되지
 # 않은 필드는 조용히 기본값으로 떨어진다. 태그·마지막 실행만 열거하던 시절 그룹이 실제로

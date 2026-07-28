@@ -24,6 +24,7 @@ from ..core.dataset_pool import (
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
 from ..core.fill_ledger import template_path_drift  # 재연결 드리프트 재진술(#67)
 from ..core.job import template_media, work_mode  # 재연결 매체 게이트(§10.16 판정 C)
+from ..core.text_render import template_fields  # TXT 토큰 판정(에디터와 같은 술어)
 from ..gui.work_mode import work_mode_label  # 거절 문안의 방식 라벨 단일 출처(§19.1)
 
 # 푸시 sink: (화면 id, 스냅샷 dict) → None. 앱=evaluate_js, 테스트=수집.
@@ -38,6 +39,16 @@ PushSink = Callable[[str, dict], None]
 NARA_FROZEN_TEXT = (
     "나라장터 소스는 현재 웹에서 지원되지 않습니다. "
     "파일 또는 엑셀 참조 등록 데이터를 사용하세요."
+)
+
+# TXT 판 RAW 차단(F6 PR-B) — hwpx 의 RAW_BLOCK_MESSAGE 는 누름틀·변환(fieldize)을 말하므로
+# 그대로 쓰면 조치 안내가 거짓이 된다. TXT 의 채울 대상은 {{토큰}}이고 처방은 템플릿 관리다.
+# 여기(링2 공용)에 두는 이유: 같은 파일을 편집기 픽과 재연결 게이트가 각자 판정하므로
+# 술어(`template_fields` 빈 결과)와 문안이 한 자리여야 두 표면이 같은 말을 한다(리뷰 2R P1
+# — 편집기만 차단하고 재연결이 통과시키면 작업대가 모든 레코드에 같은 원문을 복사한다).
+TXT_RAW_BLOCK = (
+    "채울 {{토큰}}이 없는 TXT 템플릿입니다.\n"
+    "'템플릿 관리'에서 원문에 {{필드이름}} 토큰을 넣은 뒤 다시 고르세요."
 )
 
 
@@ -227,11 +238,13 @@ def relink_job_template(job_registry, name: str, path: str, *, confirm: bool = F
                 f"{drift.describe()}\n"
                 "매핑을 다시 확정하기 전에는 생성이 차단됩니다."
             )
-    else:  # txt — 여는 계약과 같은 방식(UTF-8)으로 읽어 보는 하드 차단만(드리프트 개념 없음).
+    else:  # txt — 여는 계약과 같은 방식(UTF-8)으로 읽고, 토큰 0 이면 에디터 픽과 같은 차단.
         try:
-            Path(path).read_text(encoding="utf-8")
+            text = Path(path).read_text(encoding="utf-8")
         except Exception as exc:  # noqa: BLE001 — 못 읽으면 이유 불문 하드 차단(알람)
             return {"ok": False, "error": f"새 템플릿을 읽을 수 없습니다: {exc}"}
+        if not template_fields(text):  # 채울 대상 0 = hwpx RAW 동형(리뷰 2R P1) — 하드 차단
+            return {"ok": False, "error": TXT_RAW_BLOCK}
     if not confirm:
         return {
             "ok": True, "needs_confirm": True, "name": name,

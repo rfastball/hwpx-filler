@@ -1285,7 +1285,9 @@ def test_relink_same_media_txt_recovery_works(tmp_path):
 
     종전엔 드리프트 프로브가 새 경로를 무조건 hwpx zip 으로 파싱해 같은 매체 복구가
     "읽을 수 없습니다"로 죽었다(잠복 결함 회귀 핀). 읽기 판정은 여는 계약과 같은 UTF-8 —
-    비-UTF-8 파일은 확인으로도 템플릿이 될 수 없다(하드 차단 대칭).
+    비-UTF-8 파일은 확인으로도 템플릿이 될 수 없다(하드 차단 대칭). 토큰 0 파일도 같은
+    차단이다(리뷰 2R P1): 에디터 픽은 `TXT_RAW_BLOCK` 으로 거절하는데 재연결만 통과하면
+    작업대가 모든 레코드에 같은 원문을 복사한다 — 술어·문안 단일 출처(`screens`).
     """
     ctrl, _ = _controller(tmp_path)
     _txt_job(ctrl, tmp_path)
@@ -1302,6 +1304,12 @@ def test_relink_same_media_txt_recovery_works(tmp_path):
     res = ctrl.dispatch(
         "relink_template", {"name": "발주요청_기안", "path": str(bad), "confirm": True})
     assert res["ok"] is False and "새 템플릿을 읽을 수 없습니다" in res["error"]
+    assert ctrl.registry.load("발주요청_기안").template_path == str(moved)
+    plain = tmp_path / "토큰없는_기안.txt"
+    plain.write_text("토큰이 하나도 없는 본문", encoding="utf-8")
+    res = ctrl.dispatch(
+        "relink_template", {"name": "발주요청_기안", "path": str(plain), "confirm": True})
+    assert res["ok"] is False and "{{토큰}}이 없는" in res["error"]
     assert ctrl.registry.load("발주요청_기안").template_path == str(moved)
 
 
