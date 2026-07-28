@@ -30,8 +30,9 @@ RESPONSIVE_BREAKPOINT_PX = 820
 # 화면들(#28). 어느 화면이 래핑을 조용히 떨구면 상호작용 유실 회귀 → 정적 가드로 차단.
 WEB_JS_DIR = Path(__file__).resolve().parents[1] / "web" / "js"
 # 렌더 래핑·데이터 피커 계약은 **표면을 소유한 파일**을 따라간다 — 화면 파일명과 1:1 이
-# 아니다(기안 세션은 공용 팩토리 draftsession.js 소유, 「기안」 화면이 소비).
-PRESERVE_WRAPPED_FILES = ("draftsession.js", "screens/editor.js", "screens/job.js")
+# 아니다. draftsession.js 는 「기안」 화면과 함께 사망(F6 PR-B) — 승계 표면인 작업대가
+# 맞추기 표 렌더를 같은 래핑으로 보존한다(workbench.js renderMap).
+PRESERVE_WRAPPED_FILES = ("screens/editor.js", "screens/job.js", "screens/workbench.js")
 
 # 렌더 층 **가변 모듈 상태 예산**. Python 이 상태를 단일 소유하고 스냅샷을 미는 모델에서 JS 의
 # 가변 모듈 상태는 전부 "스냅샷이 답하지 않아 표면이 답하는 것"이다 — 조용히 자라면 파생 가능한
@@ -51,7 +52,7 @@ PRESERVE_WRAPPED_FILES = ("draftsession.js", "screens/editor.js", "screens/job.j
 MUTABLE_MODULE_STATE_BUDGET = {
     "screens/job.js": 17,
     "screens/template.js": 5,
-    "screens/draft.js": 3,
+    # screens/draft.js·draftsession.js 는 화면 사망으로 파일째 삭제(F6 PR-B).
     # 작업대(F6) — 스냅샷 1개(LAST)뿐이다. 작업점·복사 이력·미저장 변경·린트를 전부
     # Python 이 소유하므로 표면이 들 것이 없다(데이터 존이 없는 화면이라 더 그렇다).
     "screens/workbench.js": 1,
@@ -61,7 +62,6 @@ MUTABLE_MODULE_STATE_BUDGET = {
     "screens/editor.js": 4,
     "screens/library.js": 3,
     "data_picker.js": 4,
-    "draftsession.js": 2,
     "datazone.js": 0,
 }
 
@@ -78,28 +78,28 @@ SCREEN_ROOTS = (
     # 「작업」(R-flow · #90) — 유일 생성 표면(실행 화면=슬라이스 3 사망) + 편집 모드(작업
     # 에디터 별도 화면=슬라이스 5 사망, 결정 39 흡수 — 정의 surface 는 scr-job 내부).
     "scr-job",
-    # 「기안」(R-info 3부 · #148) — TXT 작업-앵커. 구 「기안문 채우기」·「빠른 기안」을 흡수·삭제
-    # (#148 슬라이스 6 — 레일 6→5).
-    "scr-draft",
+    # 「기안」(scr-draft)은 사망(F6 PR-B) — TXT 생성은 편집기 TXT 밴드·검토는 작업대가
+    # 승계했다(§10.15.15).
 )
 
 # 화면별 데이터 라벨은 반드시 고유 id 여야 한다(#27 dup-id 회귀 가드).
-SCOPED_DATA_LABELS = ("draftDataLabel", "jobDataLabel")
+# draftDataLabel 은 화면과 함께 사망(F6 PR-B) — 데이터 존의 소비자는 job 하나다.
+SCOPED_DATA_LABELS = ("jobDataLabel",)
 
 # 상단 토바 탭(회귀 시 화면 소실·접근 이름 소실 → #27). run=슬라이스 3·editor=슬라이스 5
-# 사망(흡수); 「기안」이 구 txt·quickdraft 를 흡수·삭제(#148 슬라이스 6); 「데이터 관리」는
-# 데이터 선택 다이얼로그로 흡수·사망(F1); home 은 「문서 작업」 라이브러리로 사망(F2 PR-A).
-# 좌 레일은 F2 PR-B 에서 상단 2탭으로 교체 — 계약 2탭(job·library) + 과도기 임시 2(draft·tpl).
-NAV_SCREENS = ("library", "job", "draft", "tpl")
-# 구분선 오른쪽 임시 항목 — 승계처가 서면(F6·F8) 죽는다. title 이 제거 예고를 진다(지도 §10.9 판정 B).
-TEMP_NAV_SCREENS = ("draft", "tpl")
+# 사망(흡수); 「기안」은 F6 PR-B 에서 사망(TXT 는 편집기 밴드+작업대가 승계 — 탭 3→…
+# 최종 2는 F8 이 tpl 을 걷을 때); 「데이터 관리」는 데이터 선택 다이얼로그로 흡수·사망(F1);
+# home 은 「문서 작업」 라이브러리로 사망(F2 PR-A).
+# 좌 레일은 F2 PR-B 에서 상단 2탭으로 교체 — 계약 2탭(job·library) + 과도기 임시 1(tpl).
+NAV_SCREENS = ("library", "job", "tpl")
+# 구분선 오른쪽 임시 항목 — 승계처가 서면(F8) 죽는다. title 이 제거 예고를 진다(지도 §10.9 판정 B).
+TEMP_NAV_SCREENS = ("tpl",)
 
 # 커스텀 모달 → aria-labelledby 가 가리켜야 할 제목 id(다이얼로그 시맨틱, #27/#28).
 # sheetModal 은 다중 시트 확정 게이트(#33) — 같은 Modal 헬퍼·다이얼로그 계약을 공유한다.
 MODAL_LABELLEDBY = {
     "txtEditModal": "txtEditTitle",  # 템플릿 관리의 「새 TXT」·편집(template.js) — 화면 아닌 관리 모달(생존)
-    "pasteModal": "pasteTitle",  # 「기안」 붙여넣기(draftsession.js 공용 팩토리가 소비)
-    "draftSaveTplModal": "draftSaveTplTitle",  # 「기안」 「템플릿으로 저장」 승격(#148 슬라이스 6, #135)
+    # pasteModal·draftSaveTplModal 은 「기안」 화면과 함께 사망(F6 PR-B).
     "sheetModal": "sheetTitle",
     "poolRegModal": "poolRegTitle",  # 데이터 고정·등록(#26 #4 → F1 승계, 다이얼로그 위 스택)
     "dataPickerModal": "dataPickerTitle",  # 데이터 선택 통합 면(재작성 F1 — pool 화면 승계)
@@ -110,8 +110,8 @@ MODAL_LABELLEDBY = {
     # 답이 셋인 자리(재작성 F7 — patch 처분: 저장하고 이동·버리고 이동·머무르기). 확인 모달로
     # 두 번 물으면 "취소가 무엇을 취소하는지"가 갈리고 그 모호함이 곧 조용한 파기다.
     "chooseModal": "chooseModalTitle",
-    "draftMapSheet": "draftMapSheetTitle",  # 기안 맞추기 펼침 면(#271)
-    "dataSheet": "dataSheetTitle",  # 기안·작업 공용 데이터 펼침 면(#271/#272)
+    # draftMapSheet 은 「기안」과 함께 사망(F6 PR-B) — 맞추기 표는 작업대 #wbMapPanel 승계.
+    "dataSheet": "dataSheetTitle",  # 작업 데이터 펼침 면(#271/#272 — 기안 몫은 F6 PR-B 사망)
     "jobConfirmSheet": "jobConfirmSheetTitle",  # 작업 거울·재진술 펼침 면(#272)
 }
 
@@ -376,54 +376,10 @@ def test_responsive_breakpoint_collapses_layout():
     )
 
 
-def test_milestone_l_draft_density_structure_and_values():
-    """#270: 기본창·duo·300px 캡·정직한 표지·컨테이너 쿼리를 정적으로 고정한다."""
-    html = WEB_INDEX.read_text(encoding="utf-8")
-    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
-    app_py = (WEB_INDEX.parents[1] / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(
-        encoding="utf-8"
-    )
-    draft_js = (WEB_JS_DIR / "draftsession.js").read_text(encoding="utf-8")
-    screen_js = (WEB_JS_DIR / "screens" / "draft.js").read_text(encoding="utf-8")
-
-    assert "DEFAULT_WINDOW_WIDTH = 1440" in app_py
-    assert "DEFAULT_WINDOW_HEIGHT = 900" in app_py
-    assert 'class="duo draft-duo" id="draftDuo"' in html
-    duo = html.split('id="draftDuo"', 1)[1].split("<!-- ④ 완료", 1)[0]
-    assert duo.index('id="draftTokPanel"') < duo.index('id="draftCard"')
-    assert 'id="draftMapCapstrip" role="status" hidden' in duo
-    assert (
-        ".job-panel{flex:1;min-width:0;overflow:auto;display:flex;flex-direction:column;"
-        "container-type:inline-size;container-name:session-panel}" in css
-    )
-    assert "#draftTokPanel{max-height:300px;overflow:auto}" in css
-    assert ".capstrip[hidden]{display:none}" in css
-    assert "@containersession-panel(max-width:900px)" in css
-    assert "host.scrollHeight > host.clientHeight + 1" in draft_js
-    assert 'mapCapstrip: "draftMapCapstrip"' in screen_js
-    assert "ResizeObserver(measureMapCap)" in draft_js
-
-
-def test_milestone_l_draft_expansion_sheets_move_live_surfaces():
-    """#271: 두 펼침 면의 골격·정확한 버튼 문안·실 DOM 이동/복귀 계약을 고정한다."""
-    html = WEB_INDEX.read_text(encoding="utf-8")
-    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
-    sheets = (WEB_JS_DIR / "surface_sheet.js").read_text(encoding="utf-8")
-    draft_js = (WEB_JS_DIR / "draftsession.js").read_text(encoding="utf-8")
-
-    assert html.count("펼쳐서 맞추기 ⤢") >= 1
-    assert html.count("펼쳐서 행 고르기 ⤢") >= 1
-    assert '<div id="draftMapSheet" class="modal sheet hidden"' in html
-    assert '<div id="dataSheet" class="modal sheet hidden"' in html
-    for key in ("tokPanel", "mapLegend", "cardReadout", "cardRender"):
-        assert f"{{ id: id.{key}, slotId:" in draft_js
-    for key in ("recsHead", "chips", "tableHost", "strip", "colPanel"):
-        assert f"{{ id: id.{key}, slotId: \"dataSheetSlot\" }}" in draft_js
-    assert ".cloneNode(" not in sheets
-    assert "slot.appendChild(el)" in sheets
-    assert "m.parent.insertBefore(m.el, m.next)" in sheets
-    assert ".data-sheet-body.jobtbth:first-child" in css
-    assert "position:sticky;left:0" in css
+# (test_milestone_l_draft_density_structure_and_values ·
+#  test_milestone_l_draft_expansion_sheets_move_live_surfaces 삭제 — 대상(기안 duo·
+#  draftTokPanel·draftMapSheet·draftsession.js)이 화면과 함께 사망(F6 PR-B). 살아남은
+#  계약 — 기본창 수치·surface_sheet 실 DOM 이동/복귀·dataSheet — 는 아래 job 테스트가 진다.)
 
 
 def test_milestone_l_job_density_and_expansion_sheets():
@@ -438,6 +394,21 @@ def test_milestone_l_job_density_and_expansion_sheets():
     css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
     job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
     sheets = (WEB_JS_DIR / "surface_sheet.js").read_text(encoding="utf-8")
+    app_py = (WEB_INDEX.parents[1] / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(
+        encoding="utf-8"
+    )
+
+    # 기본창 수치(#270)와 펼침 면의 실 DOM 이동/복귀 계약(#271)은 기안 테스트가 지다가
+    # 화면 사망(F6 PR-B)으로 여기로 승계됐다 — 계약 자체는 매체 불가지라 그대로 산다.
+    assert "DEFAULT_WINDOW_WIDTH = 1440" in app_py
+    assert "DEFAULT_WINDOW_HEIGHT = 900" in app_py
+    assert '<div id="dataSheet" class="modal sheet hidden"' in html
+    assert ".cloneNode(" not in sheets
+    assert "slot.appendChild(el)" in sheets
+    assert "m.parent.insertBefore(m.el, m.next)" in sheets
+    assert ".data-sheet-body.jobtbth:first-child" in css
+    assert "position:sticky;left:0" in css
+    assert ".capstrip[hidden]{display:none}" in css
 
     assert 'class="data-grid" id="jobDataGrid"' in html
     assert 'class="duo job-duo"' not in html and ".job-duo{" not in css, (
@@ -478,15 +449,14 @@ def test_milestone_l_job_density_and_expansion_sheets():
     assert "window.Modal.close(id);\n    restore(id);" in sheets
     # 펼침 트리거 포커스 복귀(#279 리뷰) — 캡스트립 위임 클릭의 currentTarget 은 포커스
     # 불가능한 컨테이너 div: 실클릭 버튼→상시 ⤢ 순으로 해석하는 SurfaceSheet.trigger 만 쓴다.
-    draft_session = (WEB_JS_DIR / "draftsession.js").read_text(encoding="utf-8")
+    # (기안 소비자 draftsession.js 는 화면과 함께 사망 — F6 PR-B. 소비자는 job 하나다.)
     assert "trigger: trigger" in sheets
-    for src in (job_js, draft_session):
-        assert "window.SurfaceSheet.trigger(e," in src
-        assert "returnFocus: e && e.currentTarget" not in src
+    assert "window.SurfaceSheet.trigger(e," in job_js
+    assert "returnFocus: e && e.currentTarget" not in job_js
     # 캡스트립 생성 버튼은 복귀 표적 제외(#280 리뷰) — afterRestore 의 measure* 가
     # innerHTML 을 갈아 방금 포커스한 버튼이 분리된다(안정 헤더 ⤢ 폴백 고정).
     assert 'btn.closest(".capstrip")' in sheets
-    assert html.count('class="capstrip"') >= 2
+    assert html.count('class="capstrip"') >= 1
     # sticky 첫 열의 행 상태 보존(#279 리뷰) — 무조건 --a-card 는 tr.on/호버 배경을 덮어
     # 문서 정체 셀만 미선택처럼 보인다. sticky 는 투명 불가라 불투명 등가색으로 맞춘다.
     assert ".data-sheet-body.jobtbtbodytr.ontd:first-child{background:var(--a-sel)}" in css
@@ -534,10 +504,9 @@ def test_milestone_l_wide_probes_do_not_depend_on_host_monitor_width():
     app_py = (WEB_INDEX.parents[1] / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(
         encoding="utf-8"
     )
+    # draftPanel 프로브는 화면 사망(F6 PR-B)과 함께 걷혔다 — 남은 wide 분기는 job 하나.
     assert "jobPanel.style.flex = '0 0 1100px'" in app_py
-    assert "draftPanel.style.flex = '0 0 1100px'" in app_py
     assert "jobPanel.style.flex = jobPanelFlex" in app_py
-    assert "draftPanel.style.flex = draftPanelFlex" in app_py
 
 
 def _forced_colors_block(css_path: Path) -> str:
@@ -831,11 +800,12 @@ def test_job_session_surface_uses_v6_two_column_captions():
     H-03 의 znum 4존 문법은 **이 화면에서만** 은퇴한다: v6 `screen-data` 는 순서가 있는
     4단계가 아니라 마주 보는 두 열이고, 세로 1·2·3·4 를 2열에 얹으면 번호가 읽는 순서와
     어긋난다(우측 첫 구획이 ②가 되는 식). 기안(`draft`)의 znum 문법은 그대로 산다 —
-    거기는 여전히 순서 있는 세션이다. 번호의 정보(다음에 어디로)는 게이트 문안의 구획
-    지목(`gateStep`)이 승계한다.
+    거기는 여전히 순서 있는 세션이었으나 화면째 사망했다(F6 PR-B) — znum 문법은 이제
+    소비자가 없다. 번호의 정보(다음에 어디로)는 게이트 문안의 구획 지목(`gateStep`)이
+    승계한다.
     """
     html = " ".join(WEB_INDEX.read_text(encoding="utf-8").split())
-    job = html.split('id="scr-job"', 1)[1].split('id="scr-draft"', 1)[0]
+    job = html.split('id="scr-job"', 1)[1].split('id="scr-editor"', 1)[0]
     for caption in (
         "현재 데이터", "본문 확인", "생성 결과",
         "이 데이터에 사용할 문서", "선택한 작업", "생성 준비",
@@ -847,8 +817,7 @@ def test_job_session_surface_uses_v6_two_column_captions():
     assert '<span class="znum">' not in job, (
         "「작업」 세션 표면에 구 4존 서수가 재유입됐습니다."
     )
-    # 기안은 같은 은퇴에 휩쓸리지 않는다(순서 있는 세션 — 문법을 함께 지우면 회귀).
-    assert '<span class="znum">' in html.split('id="scr-draft"', 1)[1]
+    # (znum 존치 단언 삭제 — 유일 소비자였던 「기안」이 화면째 사망, F6 PR-B.)
 
 
 def test_job_result_zone_declares_the_three_state_contract():
@@ -860,7 +829,7 @@ def test_job_result_zone_declares_the_three_state_contract():
     화면의 유일한 비모달 채널이라 함께 죽이지 않았다(§10.10 판정 D).
     """
     html = WEB_INDEX.read_text(encoding="utf-8")
-    job = html.split('id="scr-job"', 1)[1].split('id="scr-draft"', 1)[0]
+    job = html.split('id="scr-job"', 1)[1].split('id="scr-editor"', 1)[0]
     flat = " ".join(job.split())
     assert 'id="jobResult" class="result3" data-state="" aria-live="polite" hidden' in flat
     for bid in ("jobResultFailedSel", "jobResultRename", "jobResultClose"):
@@ -894,7 +863,7 @@ def test_job_gate_adds_blocked_step_only_in_display_layer():
     """
     src = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
     html = " ".join(WEB_INDEX.read_text(encoding="utf-8").split())
-    job = html.split('id="scr-job"', 1)[1].split('id="scr-draft"', 1)[0]
+    job = html.split('id="scr-job"', 1)[1].split('id="scr-editor"', 1)[0]
     assert "function gateStep(s, g)" in src
     assert not re.search(r'return "[①②③]', src), "죽은 4존 서수가 남아 있습니다."
     for caption in ("현재 데이터", "이 데이터에 사용할 문서", "선택한 작업", "본문 확인"):
@@ -1457,7 +1426,7 @@ def test_editor_is_an_immersive_screen_with_one_exit():
     비례한다. 출구가 하나여야 patch 3택이 한 곳에서 끝난다.
     """
     html = WEB_INDEX.read_text(encoding="utf-8")
-    editor_sec = html.split('id="scr-editor"')[1].split('id="scr-draft"')[0]
+    editor_sec = html.split('id="scr-editor"')[1].split('id="scr-workbench"')[0]
     for cid in ("editorBack", "editorName", "editorSaveState", "editorContext",
                 "editor-steps", "editor-body", "editor-foot"):
         assert cid in editor_sec, f"{cid} 가 편집기 화면에 없습니다."
@@ -1636,51 +1605,10 @@ def test_editor_overwrite_confirm_echoes_the_text_it_showed():
     )
 
 
-def test_draft_has_return_path_to_volatile_session():
-    """「기안」에서 저장 기안을 고른 뒤 **휘발 세션으로 돌아갈 길**이 있어야 한다(#148 리뷰 P2).
-
-    미선택이 곧 휘발 진입구(R-info 3부 결정 5)라, 선택 해제 동사가 없으면 TXT 작업이 하나라도
-    있는 사용자는 한 번 고른 뒤 붙여넣기 화면으로 못 돌아온다 — 행 재클릭은 무동작이고 빈
-    영역 클릭도 해제가 아니라서 **앱 재시작이 유일한 출구**가 된다. 슬라이스 5a 에서 껍데기
-    stub 이 사라지고(선택이 실제 복원이 되며) 귀환 동사는 좌 목록의 **상시 「이번 세션」 행**
-    (``data-volatile``)이 승계했다 — 그 행 클릭이 곧 겨눔 해제(select_job 빈 이름)다.
-    """
-    src = (WEB_JS_DIR / "screens" / "draft.js").read_text(encoding="utf-8")
-    assert "data-volatile" in src, "상시 「이번 세션」 행(휘발 귀환구)이 목록에 없습니다(막다른 상태)."
-    # 「이번 세션」 행 클릭 → selectJob("") (진행 보존 가드 왕복을 겸하는 공용 경로, 리뷰 5a P1).
-    assert re.search(r'data-volatile[\s\S]*?selectJob\(""\)', src, re.S), (
-        "「이번 세션」 행 클릭이 selectJob(\"\") 로 배선되지 않았습니다 — 눌러도 아무 일이 없습니다."
-    )
-    # selectJob 은 select_job(빈 이름) 으로 겨눔을 푼다(무장이면 needs_confirm 왕복 후 confirm).
-    assert re.search(r'function selectJob\([\s\S]*?select_job', src, re.S), (
-        "selectJob 이 select_job 으로 배선되지 않았습니다."
-    )
-
-
-def test_draft_saved_source_has_fork_escape_hatch():
-    """저장 원문은 읽기 전용이므로 「사본으로 편집」이 **유일한 편집 출구**여야 한다(#148 슬라이스 5b).
-
-    읽기 전용만 걸고 사본 동사가 없으면 저장 기안의 원문은 손볼 길이 막힌다 — 원문바에 사본
-    버튼이 있고 fork_to_volatile 로 배선돼야 편집이 열린다(값·데이터·큐 진행은 승계). 백엔드도
-    저장 모드 edit_source 를 방어한다(표면 readonly 만 믿지 않는다 — 조용한 정의 분기 금지)."""
-    index = WEB_INDEX.read_text(encoding="utf-8")
-    assert 'id="draftSrcFork"' in index, "원문바에 「사본으로 편집」 버튼이 없습니다(읽기 전용 막다른 상태)."
-    src = (WEB_JS_DIR / "draftsession.js").read_text(encoding="utf-8")
-    assert re.search(
-        r'id\.srcFork\)[\s\S]*?fork_to_volatile', src, re.S,
-    ), "「사본으로 편집」이 fork_to_volatile 로 배선되지 않았습니다 — 눌러도 편집이 열리지 않습니다."
-
-
-def test_draft_live_edit_refreshes_source_bar():
-    """원문 라이브 편집(_NO_PUSH patchMap)도 원문바 이름·수정됨 표지를 갱신해야 한다(#148 5b, 리뷰 P2).
-
-    깨끗한 휘발 원문을 고치면 `source_dirty=true`·`template_name` 소거인데, `edit_source` 는
-    `_NO_PUSH` 라 full render 를 안 타 `patchMap` 이 원문바를 안 그리면 무관한 재렌더 전까지 옛
-    이름·수정됨 부재로 남는다(stale). `patchMap` 이 공유 `renderSourceBar` 를 부르는지 못박는다."""
-    src = (WEB_JS_DIR / "draftsession.js").read_text(encoding="utf-8")
-    assert re.search(r"function patchMap\([\s\S]*?renderSourceBar\(", src), (
-        "patchMap 이 renderSourceBar 를 부르지 않습니다 — 라이브 편집 뒤 원문바가 stale."
-    )
+# (test_draft_has_return_path_to_volatile_session ·
+#  test_draft_saved_source_has_fork_escape_hatch · test_draft_live_edit_refreshes_source_bar
+#  삭제 — 대상(draft.js 좌 목록·draftsession.js 원문바·휘발 세션)이 화면과 함께 사망,
+#  F6 PR-B. TXT 원문 편집의 승계 출구는 편집기 TXT 밴드·검토는 작업대다.)
 
 
 def test_job_preview_drawer_surface_contract():
@@ -1699,7 +1627,8 @@ def test_job_preview_drawer_surface_contract():
         "previewEdit", "previewEmpty", "jobPreviewOpen", "jobReviewFlag",
     ):
         assert f'id="{element}"' in html, f"미리보기 드로어 노드가 없습니다: {element}"
-    drawer = html.split('id="previewModal"', 1)[1].split('<!-- 붙여넣기 모달', 1)[0]
+    # 경계는 다음 모달(libraryMoveModal) — 구 경계(붙여넣기 모달)는 「기안」과 함께 사망(F6 PR-B).
+    drawer = html.split('id="previewModal"', 1)[1].split('id="libraryMoveModal"', 1)[0]
     assert 'role="dialog"' in drawer and 'aria-modal="true"' in drawer, (
         "드로어에 dialog 역할·모달 표기가 없습니다(정적 DOM 이 소유하는 계약)."
     )
@@ -1794,9 +1723,8 @@ COMMIT_SETTLE_GUARDS = (
     ("screens/workbench.js", "async function saveRules()", "Intent.settle(WB_CHAIN)"),
     ("screens/workbench.js", "async function leaveTo(", "Intent.settle(WB_CHAIN)"),
     ("screens/job.js", "async function doGenerate(", "Intent.settle(ZONE_CHAIN)"),
-    # 「기안」은 같은 술어를 자기 이름으로 갖고 있다(디바운스 타이머까지 함께 발사한다).
-    ("draftsession.js", "async function copyCard()", "flushDeb()"),
-    ("draftsession.js", "async function confirmNewDraftIfArmed()", "flushDeb()"),
+    # (「기안」 flushDeb 행 삭제 — draftsession.js 가 화면과 함께 사망, F6 PR-B.
+    #  복사 커밋의 승계처는 작업대 copyCard 로 위에 이미 서 있다.)
 )
 
 

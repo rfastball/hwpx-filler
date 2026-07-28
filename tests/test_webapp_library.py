@@ -160,9 +160,13 @@ def test_deleting_the_selected_row_clears_the_detail(tmp_path):
     assert snap["selected"] == "" and snap["detail"] is None
 
 
-def test_app_wires_library_session_guards_to_job_and_draft(tmp_path, monkeypatch):
-    """#268 리뷰 배선 가드 — WebFrontend 가 라이브러리 삭제 가드에 작업·기안 화면의
-    ``session_guard_for`` 를 실제로 꽂는다(가드 로직만 있고 배선이 빠지면 무의미)."""
+def test_app_wires_library_session_guards_to_job(tmp_path, monkeypatch):
+    """#268 리뷰 배선 가드 — WebFrontend 가 라이브러리 삭제 가드에 「문서 만들기」 화면의
+    ``session_guard_for`` 를 실제로 꽂는다(가드 로직만 있고 배선이 빠지면 무의미).
+
+    「기안」 가드는 화면 사망(F6 PR-B)과 함께 걷혔다 — 작업대는 몰입 표면이라 라이브러리와
+    동시에 보이지 않고, 진입 자체가 「문서 만들기」 세션을 지난다(app.py 배선 주석과 쌍).
+    """
     from hwpxfiller.webapp import app as app_mod
 
     monkeypatch.setattr(app_mod, "default_jobs_dir", lambda: tmp_path / "jobs")
@@ -170,7 +174,6 @@ def test_app_wires_library_session_guards_to_job_and_draft(tmp_path, monkeypatch
     library = frontend.controllers["library"]
     assert library.session_guards == [
         frontend.controllers["job"].session_guard_for,
-        frontend.controllers["draft"].session_guard_for,
     ]
     # 무장 아닌 상태에선 어떤 가드도 발화하지 않는다(즉시 통과 성질 보존).
     assert all(guard("아무거나") is None for guard in library.session_guards)

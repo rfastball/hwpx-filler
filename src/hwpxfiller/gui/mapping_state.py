@@ -521,7 +521,7 @@ class MappingModel:
 
         **확정-비움(#148 슬라이스 4, 결정 12)**: 확정됐는데 채울 내용이 없는 행(사람이
         「이 필드는 비운다」를 명시)은 **빈 값 방출**로 담는다 — 렌더는 데이터-빈값 ``blank`` 와
-        **같게**(〈빈 값〉·클립보드 빈 문자열) 보이되, 게이트 제외는 소비자(:mod:`draft_session`)가
+        **같게**(〈빈 값〉·클립보드 빈 문자열) 보이되, 게이트 제외는 소비자(작업대 `gate_empty_fields`)가
         :meth:`declared_blank_fields` 로 가른다. ``type="blank"`` 이 아니라 **빈 text 매핑**으로
         방출하는 이유: :meth:`MappingProfile.apply` 는 ``is_blank`` 를 값 사전에서 **드롭**하므로
         (hwpx 누름틀은 손대지 말라는 계약) blank 로 담으면 키가 사라져 ``missing`` 으로 렌더된다 —

@@ -160,7 +160,9 @@
     } else {
       const it = findItem(media, id);
       // 소비 CTA가 첫 항목, 관리 동사는 구분선 아래(#236). 무그룹 이동은 ＋그룹지정 칩이 담당.
-      const useLabel = media === "hwpx" ? "이 서식으로 새 작업" : "이 서식으로 기안 시작";
+      // 두 매체 다 「새 작업」이다(F6 PR-B) — TXT 의 구 「기안 시작」(휘발 세션)은 화면과
+      // 함께 죽었고, 승계처는 같은 편집기(저장 TXT 작업)다.
+      const useLabel = "이 서식으로 새 작업";
       html = `<button data-menu="use"${it && !it.is_error && !it.error ? "" : " disabled"}>${useLabel}</button>` +
         `<div class="sep"></div>` +
         (media === "txt" && it && !it.error ? `<button data-menu="edit">내용 편집</button>` : "") +
@@ -183,8 +185,7 @@
     if (!btn || !menuFor) return;
     const m = menuFor, act = btn.dataset.menu;
     closeRowMenu();
-    if (act === "use" && m.media === "hwpx") makeJob(m.item.path, m.trigger);
-    else if (act === "use") openDraftTemplate(m.item.name, m.trigger);
+    if (act === "use") makeJob(m.item.path, m.trigger);  // 매체 무관 — 편집기가 분기한다(F6 PR-B)
     else if (act === "edit") {
       Bridge.call(SCREEN, "txt_content", { path: m.item.path }).then((res) =>
         openEditModal("edit", m.item.path, m.item.name, (res && res.content) || "", m.trigger));
@@ -309,23 +310,6 @@
       else if (key === "review") Bridge.call(SCREEN, "review", { path });
       else if (key === "make_job") makeJob(path);
     }
-  }
-
-  /* 라이브러리 템플릿을 「기안」 화면에서 연다(#148 슬라이스 6 — 구 txt 흡수). 저장 기안 결속
-     세션이 진행 중이면 백엔드가 needs_confirm 을 돌려준다(리뷰 F3 — 구 홈 openDraft 와 같은 규약):
-     세션 교체는 저장되지 않은 진행을 폐기하므로 조용히 버리지 않는다. 취소=현 세션 그대로. */
-  async function openDraftTemplate(name, returnFocus) {
-    let r = await Bridge.call("draft", "select_template", { name });
-    if (r && r.needs_confirm) {
-      const ok = await window.Modal.confirm({
-        title: "진행 중인 기안을 떠납니다",
-        body: window.DraftScreen.leaveForTemplateBody(r),  // 두 세션 무장 반영(단일 출처, 리뷰 C)
-        confirmLabel: "열기", cancelLabel: "취소", returnFocus,
-      });
-      if (!ok) return;
-      r = await Bridge.call("draft", "select_template", { name, confirm: true });
-    }
-    window.Nav.go("draft");
   }
 
   /* ---- 편집/생성 모달(네이티브 입력 대체) ---- */

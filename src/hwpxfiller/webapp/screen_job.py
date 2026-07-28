@@ -20,8 +20,8 @@ R-flow 구현 라운드(에픽 #90). R-info 1부가 확정한 「작업」 화�
 - 좌 목록의 2구획 틴트·group-by 렌즈·컴파일 배지 등 풍부화(홈 브라우저 VM 채택).
 - 건 연속성 직전 필터 재적용(블록 4 결정 28, PR-4)·txt 큐(블록 3)·빠른 기안(블록 5).
 - 세션 가드의 유보 성분: **T2**(마법사 인계 비파괴화 — 에디터 접합, 슬라이스 5)·수동 필드
-  입력 성분(블록 5, 슬라이스 7). **T3**(기안 큐 부분 진행)은 기안 세션 공용 본체
-  (:class:`~hwpxfiller.webapp.draft_session.DraftSessionMixin`)가 진다 — 술어 몸통은 이 화면과
+  입력 성분(블록 5, 슬라이스 7). **T3**(큐 부분 진행)은 검토·복사 작업대가 진다(F6 —
+  구 기안 세션 공용 본체의 승계처). 술어 몸통은 이 화면과
   공유(:meth:`~hwpxfiller.webapp.data_zone.DataZoneMixin._selection_guard`).
 (슬라이스 2 착지분 — 게이트 재진술 블록·거울 채움 테이블·덮어쓰기 modal.js 수치 합성·식별
 요약 링1 :func:`~hwpxfiller.core.identity_summary.identity_summary`(#88, A-1-15) — 과

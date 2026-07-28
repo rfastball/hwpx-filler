@@ -402,7 +402,7 @@
 
   /* 이동 다이얼로그의 도착지 후보는 **레지스트리 전역**(Python `group_names`)이다.
      화면 구획에서 파생하면 평면 보기나 켜진 필터가 목록에서 뺀 그룹이 도착지에서도
-     사라져 있는 그룹으로 옮길 수 없다(리뷰 1R P2 — job·draft 화면과 같은 규약). */
+     사라져 있는 그룹으로 옮길 수 없다(리뷰 1R P2 — job·tpl 화면과 같은 규약). */
   function allGroups() {
     return (LAST && LAST.group_names) || [];
   }
@@ -522,15 +522,14 @@
   }
 
   /* 작업 삭제 — 30일 휴지통 + 최근 1건 복원. 사후 관용이 있으므로 사전 확인을 없앤다.
-     단 작업·기안 화면에 무장 세션이 열려 있으면 백엔드가 needs_confirm 을 돌려준다(#268
+     단 「문서 만들기」에 무장 세션이 열려 있으면 백엔드가 needs_confirm 을 돌려준다(#268
      리뷰) — 세션의 선택·진행은 파일 복원으로도 못 돌아오는 소실이라 확인 왕복만 남긴다. */
   async function deleteJob(name, returnFocus) {
     let r = await Bridge.call(SCREEN, "delete_job", { name });
     if (r && r.needs_confirm) {
-      const where = r.screen === "draft" ? "기안" : "작업";
       const ok = await window.Modal.confirm({
         title: "작업 삭제 확인",
-        body: `작업 '${name}' 이(가) ${where} 화면에 진행 중인 세션으로 열려 있습니다.\n` +
+        body: `작업 '${name}' 이(가) 문서 만들기 화면에 진행 중인 세션으로 열려 있습니다.\n` +
           `삭제하면 그 세션의 선택·데이터·진행이 함께 사라지며, 파일을 복원해도 세션은 돌아오지 않습니다.`,
         confirmLabel: "휴지통으로 이동", cancelLabel: "취소",
         returnFocus,

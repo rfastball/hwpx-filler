@@ -8,7 +8,6 @@ import pytest
 
 from hwpxfiller.webapp.action_registry import ACTION_REGISTRY, validate_dispatch
 from hwpxfiller.webapp.app import WebFrontend
-from hwpxfiller.webapp.screen_draft import DraftController
 from hwpxfiller.webapp.screen_editor import EditorController
 from hwpxfiller.webapp.screen_library import LibraryController
 from hwpxfiller.webapp.screen_job import JobController
@@ -23,7 +22,6 @@ CONTROLLERS = {
     "library": LibraryController,
     "editor": EditorController,
     "job": JobController,
-    "draft": DraftController,
     "pool": PoolController,
     "tpl": TemplateController,
     "workbench": WorkbenchController,
@@ -35,7 +33,6 @@ SCREEN_JS = {
     "library": "web/js/screens/library.js",
     "editor": "web/js/screens/editor.js",
     "job": "web/js/screens/job.js",
-    "draft": "web/js/screens/draft.js",
     # `pool` 화면은 사망(재작성 F1) — 그 액션의 프런트 소비자는 데이터 선택 다이얼로그다.
     # 여기 호출은 전부 명시 리터럴("pool")이고 마운트 호출만 호스트 화면 변수(session.screen).
     "pool": "web/js/data_picker.js",

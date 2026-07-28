@@ -30,7 +30,8 @@ def _schema(required: str = "", optional: str = "") -> PayloadSchema:
 # 존 변이는 **대상 세계**를 함께 실어 보낸다(재작성 F3 리뷰 4R): `epoch` 는 발신 시점에 웹이
 # 보고 있던 범위 세계의 세대다. 초안이 열리거나 닫히거나(적용·취소) 데이터가 갈리면 세대가
 # 오르고, 그 전에 예약·발신된 변이는 **도착해도 남의 세계의 편집**이라 적용되지 않는다.
-# 선택 필드로 두는 이유: 존을 공유하는 「기안」 화면과 옛 호출부는 세대 개념이 없다(무검사 통과).
+# 선택 필드로 두는 이유: 세대 개념이 없는 옛 호출부의 무검사 통과 하위호환(소유는 job 하나 —
+# 구 「기안」 공유 소비자는 F6 PR-B 에서 화면과 함께 걷혔다).
 _ZONE_MUTATIONS = {
     "toggle_record": _schema("index value", "epoch"),
     "select_range": _schema("indices value", "epoch"),
@@ -58,31 +59,6 @@ _DATA_ZONE = {
 
 _POOL_TARGETING = {
     "load_pool": _schema("name"),
-}
-
-_DRAFT_SESSION = {
-    "fork_to_volatile": _schema(optional="confirm"),
-    "fork_guard": _schema(),
-    "leave_for_template_guard": _schema(),
-    "select_template": _schema("name", "confirm"),
-    "new_draft": _schema(),
-    "copy_precheck": _schema(),
-    "set_template_text": _schema("text"),
-    "edit_source": _schema("text"),
-    "set_source": _schema("name", "col confirm"),
-    "set_map_value": _schema("name", "text"),
-    "set_map_fmt": _schema("name", "code"),
-    "set_map_type": _schema("name type"),
-    "set_confirmed": _schema("name", "value"),
-    "revert_map": _schema("name"),
-    "step": _schema("delta"),
-    "set_current": _schema(optional="index"),
-    "toggle_advance": _schema("value"),
-    "set_target_font": _schema("font"),
-    "set_fullwidth": _schema("value"),
-    "clear_data": _schema(),
-    "guard_state": _schema(),
-    "leave_guard": _schema(),
 }
 
 _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
@@ -224,25 +200,6 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "save_rules": _schema(optional="confirm confirmed_text"),
         "leave_guard": _schema(),
         "close": _schema(),
-    },
-    "draft": {
-        **_DATA_ZONE,
-        **_POOL_TARGETING,
-        **_DRAFT_SESSION,
-        "refresh": _schema(),
-        "select_job": _schema("name", "confirm"),
-        "save_job": _schema("name", "confirm confirmed_text"),
-        "validate_save_name": _schema("name"),
-        "promote_info": _schema(),
-        "save_template": _schema("name", "group confirm confirmed_text"),
-        "toggle_group": _schema("group"),
-        "rename_job": _schema("name", "new"),
-        "clone_job": _schema("name"),
-        "delete_job": _schema("name", "confirm"),
-        "undo_delete_job": _schema(),
-        "set_group": _schema("name", "group"),
-        "rename_group": _schema("name", "new confirm seen"),
-        "disband_group": _schema("name", "confirm seen"),
     },
     "pool": {
         "refresh": _schema(),

@@ -19,9 +19,9 @@ from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.gui.review_state import review_requirement
 from hwpxfiller.gui.run_state import RunViewModel
 from hwpxfiller.gui.selection_state import SelectionModel
-from hwpxfiller.webapp.draft_session import TargetFontSetting
 from hwpxfiller.webapp.screen_job import JobController
-from hwpxfiller.webapp.screen_workbench import WorkbenchController
+# TargetFontSetting 은 「기안」 사망(F6 PR-B)으로 작업대 모듈이 승계(동일 클래스·영속 키).
+from hwpxfiller.webapp.screen_workbench import TargetFontSetting, WorkbenchController
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
 MULTI_SHEET = Path(__file__).resolve().parents[0] / "fixtures" / "multi_sheet.xlsx"

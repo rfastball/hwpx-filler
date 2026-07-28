@@ -89,6 +89,12 @@
 
   function renderCard(s) {
     const c = s.card || {};
+    // 카드는 「기안」 카드의 시각 계약(wc-render: fill 음영·〈빈 값〉·{{토큰}} 빨강)과
+    // **대상 글꼴 선언 추종**(f-*)을 그대로 입는다(F6 PR-B 승계 완성) — 선언만 받고 글꼴
+    // 클래스를 안 입으면 정렬 린트가 선언 기준으로 판정하는데 카드는 다른 글꼴로 그려져
+    // 「선언≠실제」가 된다(이 저장소 지배 결함류).
+    $("wbCard").className =
+      "wb-preview wc-render f-" + (s.target_font || "gulimche");
     $("wbCard").innerHTML = window.SegView.paint(c.segments || []);
     const rv = REVIEW_TEXT[c.review_state] || REVIEW_TEXT.todo;
     $("wbReview").textContent = rv[0];

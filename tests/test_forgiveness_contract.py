@@ -15,14 +15,14 @@ def test_forgiveness_surface_contracts_are_wired() -> None:
     job = _read("web/js/screens/job.js")
     template = _read("web/js/screens/template.js")
     home = _read("web/js/screens/library.js")
-    draft = _read("web/js/screens/draft.js")
+    # (screens/draft.js 소비자 삭제 — 「기안」 화면 사망, F6 PR-B. validate 소비는 라이브러리가 잇는다.)
 
     assert 'id="undoToast"' in index and 'src="js/undo_toast.js"' in index
     assert 'id="jobGenCancel"' in index and '"cancel_generation"' in job
     assert 'data-act="restore-confirmed"' in editor and '"restore_confirmed"' in editor
     assert "beforeClose" in modal and "beforeClose:" in template
     assert "validate: opts.validate" in modal
-    assert "validate: async" in home and "validate: async" in draft
+    assert "validate: async" in home
 
 
 def test_soft_delete_replaces_preconfirmation_on_recoverable_surfaces() -> None:
@@ -52,12 +52,8 @@ def test_undo_toast_receives_pointer_events() -> None:
     assert "pointer-events:auto" in toast_rule
 
 
-def test_copy_fork_uses_one_composed_confirmation() -> None:
-    source = _read("web/js/draftsession.js")
-    start = source.index('$(id.srcFork).addEventListener')
-    block = source[start:source.index('$(id.pickBtn)', start)]
-    assert block.count("Modal.confirm({") == 1
-    assert '"fork_guard"' in block
+# (test_copy_fork_uses_one_composed_confirmation 삭제 — 대상(draftsession.js 「사본으로
+#  편집」 fork_guard)이 「기안」 화면과 함께 사망, F6 PR-B.)
 
 
 def test_confirm_inventory_is_net_lower_than_audit_ledger() -> None:

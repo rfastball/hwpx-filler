@@ -232,9 +232,10 @@ def test_personalization_shell_and_splitters_are_wired() -> None:
     app_js = (ROOT / "web" / "js" / "app.js").read_text(encoding="utf-8")
     css = (ROOT / "web" / "css" / "app.css").read_text(encoding="utf-8")
     assert 'src="js/personalization.js"' in index
-    # 「문서 만들기」 좌 목록 사망(F2 PR-B)으로 폭 스플리터 소비처는 「기안」 하나만 남았다 —
-    # 설정 키(master_width)와 배선은 그대로 공유 계약을 유지한다(F6 작업대 합류 지점).
-    assert index.count('class="master-splitter"') == 1
+    # 좌 목록 폭 스플리터의 마지막 DOM 소비처(「기안」)가 화면과 함께 사망(F6 PR-B) —
+    # 소비 0. 설정 키(master_width)·배선(공유 계약)은 남아 다음 master-detail 표면이
+    # 그대로 쓴다. DOM 이 되살아나면(>0) 이 계약을 다시 세우면 된다.
+    assert index.count('class="master-splitter"') == 0
     assert "saveMasterWidth" in app_js and "setRailCollapsed" not in app_js
     compact = "".join(css.split())
     assert ".jobtbtbodytr" in compact and "user-select:none" in compact

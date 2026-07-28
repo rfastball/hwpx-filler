@@ -20,9 +20,7 @@ import pytest
 from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
 from hwpxfiller.core.job import Job, JobRegistry
 from hwpxfiller.core.mapping import FieldMapping, MappingProfile
-from hwpxfiller.core.text_registry import TextTemplateRegistry
 from hwpxfiller.webapp.screen_job import JobController
-from hwpxfiller.webapp.screen_draft import DraftController
 from hwpxfiller.webapp.screens import PoolTargetingMixin, source_label
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
@@ -80,8 +78,12 @@ def _sink() -> "tuple[list, callable]":
 
 # ============================================================ K4 — 풀 래퍼 공용화(믹스인)
 def test_pool_wrappers_are_shared_not_copied():
-    """컨트롤러들의 풀 래퍼가 믹스인 단일 구현이어야 한다 — 복붙 재유입 가드(K4)."""
-    for ctrl_cls in (JobController, DraftController):
+    """컨트롤러의 풀 래퍼가 믹스인 단일 구현이어야 한다 — 복붙 재유입 가드(K4).
+
+    draft 는 화면 사망(F6 PR-B) — 남은 소비자는 job 하나지만, 믹스인이 단일 출처라는
+    계약 자체는 살아 있다(다음 소비자가 생겨도 사본이 아니라 상속으로 온다).
+    """
+    for ctrl_cls in (JobController,):
         assert issubclass(ctrl_cls, PoolTargetingMixin), (
             f"{ctrl_cls.__name__} 이 PoolTargetingMixin 을 상속하지 않습니다(K4)."
         )
@@ -116,15 +118,8 @@ def test_job_pool_load_resets_selection_via_hook(tmp_path):
     assert snap["record_count"] == 2 and snap["selected_count"] == 0  # 새 데이터 = 선택 0건
 
 
-def test_draft_pool_load_uses_default_hooks(tmp_path):
-    """기안: 훅 기본값(전제·후처리 없음) 그대로 공용 래퍼가 겨눔을 완주한다(K4)."""
-    (tmp_path / "샘플기안.txt").write_text("제목: {{bidNtceNm}}", encoding="utf-8")
-    pushes, sink = _sink()
-    ctrl = DraftController(_registry(tmp_path), sink, TextTemplateRegistry(tmp_path),
-                           pool_registry=_pool(tmp_path))
-    res = ctrl.dispatch("load_pool", {"name": "7월공고"})
-    assert res["ok"] is True and res["label"] == "등록 데이터: 7월공고"
-    assert ctrl.snapshot()["data_source_label"] == "등록 데이터: 7월공고"
+# (test_draft_pool_load_uses_default_hooks 삭제 — 대상 DraftController 사망, F6 PR-B.
+#  훅 기본값 경로의 소비자가 사라져 job 훅 테스트들이 남은 계약 전부를 덮는다.)
 
 
 # ============================================================ K8 — 소스 라벨 = 합성 파생
@@ -142,8 +137,6 @@ def test_no_stored_data_source_label_attribute(tmp_path):
     pushes, sink = _sink()
     controllers = [
         JobController(_registry(tmp_path), sink, pool_registry=_pool(tmp_path)),
-        DraftController(_registry(tmp_path), sink, TextTemplateRegistry(tmp_path),
-                        pool_registry=_pool(tmp_path)),
     ]
     for ctrl in controllers:
         assert not hasattr(ctrl, "data_source_label"), (
@@ -176,10 +169,10 @@ def test_js_dead_fallback_removed():
     """JS 사어 폴백 ``s.data_source_label || s.data_label`` 재유입 가드(K8).
 
     라벨은 서버가 항상 합성해 내려보내므로(data_source_label 키 상존) 구 라벨 폴백은
-    도달 불가한 죽은 분기다 — 두 화면 모두 제거 상태를 유지해야 한다.
+    도달 불가한 죽은 분기다 — 제거 상태를 유지해야 한다.
     """
-    # 기안 라벨 소비는 공용 팩토리(draftsession.js)로 이관(#148 슬라이스 3a).
-    for rel in ("screens/job.js", "draftsession.js"):
+    # draftsession.js 는 화면 사망으로 파일째 삭제(F6 PR-B) — 남은 소비자는 job 뿐.
+    for rel in ("screens/job.js",):
         src = (WEB_JS / rel).read_text(encoding="utf-8")
         assert "data_source_label" in src, f"{rel} 이 data_source_label 을 소비하지 않습니다."
         assert "data_source_label || s.data_label" not in src, (

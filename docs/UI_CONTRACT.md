@@ -48,9 +48,11 @@ Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다.
 
 ## 현재 라우팅과 소유권
 
-상단 토바 탭과 최상위 DOM 화면의 현재 목록은 `library`, `job`, `draft`, `tpl` 네 개다
-(계약 2탭 = `job` 「문서 만들기」·`library` 「문서 작업」, 구분선 오른쪽 `draft`·`tpl` 은
-승계처가 서면 죽는 과도기 임시 — 지도 §10.9). 좌 레일과 그 접기는 F2 PR-B 에서 사망했다.
+상단 토바 탭과 최상위 DOM 화면의 현재 목록은 `library`, `job`, `tpl` 세 개다
+(계약 2탭 = `job` 「문서 만들기」·`library` 「문서 작업」, 구분선 오른쪽 `tpl` 은
+승계처(F8)가 서면 죽는 과도기 임시 — 지도 §10.9). 「기안」(`draft`)은 F6 PR-B 에서
+사망했다(승계처 = 편집기 TXT 밴드 + 검토·복사 작업대 — 지도 §10.15.15 점검표).
+좌 레일과 그 접기는 F2 PR-B 에서 사망했다.
 `web/js/app.js`의 `window.Nav.go`가 표시 상태를 전환한다. `editor`(재작성 F7)와 `workbench`(재작성 F6)는
 **탭 없는 몰입 표면**이다: 상단 2탭을 덮으므로 nav 버튼이 없고, 나가는 모든 이동이 자기
 이탈 가드를 지난다(`{force:true}` 는 처분을 마친 재호출). 위임은 화면마다의 특례가 아니라
@@ -63,7 +65,6 @@ Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다.
 | `library` 문서 작업(전역 라이브러리) | `#scr-library`, `screens/library.js` | `LibraryController` | `HomeViewModel`(모듈명은 유지 — 지도 §10.8 판정 A) |
 | `job` 문서 만들기(데이터·실행) | `#scr-job`, `screens/job.js` | `JobController` | `RunViewModel`, `SelectionModel`, 필터 상태, 후보 판정(`work_candidates`) |
 | `editor` 문서 작업 편집기(몰입) | `#scr-editor`, `screens/editor.js`, `editor_entry.js` | `EditorController` | `MappingModel`, `EditSession`·`EditContext`, 저장 판정, 공유 `TemplateManagerViewModel` |
-| `draft` 기안 작업·세션 | `#scr-draft`, `screens/draft.js`, `draftsession.js` | `DraftController` | `TxtDraftViewModel`, `MappingModel`, `SelectionModel`, `TxtQueueModel` |
 | `workbench` TXT 검토·복사 작업대(몰입) | `#scr-workbench`, `screens/workbench.js` | `WorkbenchController` | `MappingModel`, `SelectionModel`, `TxtQueueModel`, `EditSession` |
 | `tpl` 템플릿 관리 | `#scr-tpl`, `screens/template.js` | `TemplateController` | `TemplateManagerViewModel`, 템플릿 그룹 상태 |
 | 데이터 선택 다이얼로그(화면 아님) | `#dataPickerModal`, `data_picker.js` | `PoolController` + 호스트 화면 | `DatasetPoolViewModel` |
@@ -93,7 +94,7 @@ Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다.
 
 ### 데이터 선택 다이얼로그 (재작성 F1 — `pool` 화면 사망의 승계처)
 
-데이터 선택은 「작업」·「기안」 두 세션 표면이 공유하는 **한 오버레이**(`#dataPickerModal`,
+데이터 선택은 「문서 만들기」 세션 표면이 여는 **한 오버레이**(`#dataPickerModal`,
 `web/js/data_picker.js`)로 수렴한다. 구 2버튼(「등록 데이터…」·「파일 선택…」)과 `pool`
 화면(`#scr-pool`·`screens/pool.js`)은 사망했고, 그 기능은 세 구획으로 흡수됐다:
 
@@ -128,7 +129,7 @@ Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다.
 - **znum 4존 서수는 이 화면에서 은퇴**했다(v6 는 순서 있는 4단계가 아니라 마주 보는 두 열).
   「다음에 어디로」의 정보는 게이트 문안 앞머리의 **구획 이름 지목**(`gateStep`)이 승계하며,
   지목 문자열은 실재하는 `zone-cap` 캡션과 일치해야 한다(죽은 번호는 지목을 거짓말로 만든다).
-  「기안」(`draft`)의 znum 문법은 그대로 산다 — 거기는 여전히 순서 있는 세션이다.
+  구 「기안」의 znum 문법은 화면과 함께 사망했다(F6 PR-B) — 작업대는 서수 없는 몰입 셸이다.
 - 좌 master 작업 목록은 **존치**한다 — 사망은 F2 PR-B 다(지도 §10.8). 그 관리 동사 중 열린
   세션의 정체와 결속된 것(`rename_job`·`set_group`·`rename_group`·`disband_group`)은 이 화면
   컨트롤러가 계속 **소유**하고, 라이브러리 표면이 교차 화면 dispatch 로 부른다(§10.8 판정 F) —
@@ -161,13 +162,13 @@ Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다.
 
 - 초안은 **Python 소유**다. 존 13액션은 이름 그대로 초안을 향하고(같은 동사, 다른 대상),
   경계는 믹스인의 훅 4개(`_zone_sel`·`_zone_flt`·`_zone_set_flt`·`_zone_visible`)에 한 번만
-  적힌다. 기본 구현이 커밋 상태를 돌려주므로 「기안」 화면은 이 거래에 들지 않는다.
+  적힌다. 기본 구현이 커밋 상태를 돌려준다(존 소비 화면은 이제 이 화면 하나다 — F6 PR-B).
 - 스냅샷 이중 소스 경계: **초안** = 표·필터·칩·필터 밖 스트립·재진술·footer 수치·표의 실
   파일 이름 / **커밋** = 실행 입력·게이트·거울·후보·세션 가드·직전 필터 슬롯. 적용 전 메인
   범위는 불변이다(불변식 §18.11-21).
-- footer(`#jobRangeFoot`)는 **화면 DOM 소유**이고 면 슬롯 안에서만 보인다(CSS) — 같은 면을
-  「기안」이 쓰기 때문이다. 구성 = 상태 문안 · 「선택된 항목만 보기」(초안 전용 보기 상태로
-  적용 대상 아님) · 「취소」 · 「선택 적용: N건」.
+- footer(`#jobRangeFoot`)는 **화면 DOM 소유**이고 면 슬롯 안에서만 보인다(CSS — 면 공유자
+  「기안」은 사망했지만 슬롯 격리 규율은 그대로 산다). 구성 = 상태 문안 · 「선택된 항목만
+  보기」(초안 전용 보기 상태로 적용 대상 아님) · 「취소」 · 「선택 적용: N건」.
 - 출구는 **한 관문**을 지난다: 취소·닫기·Escape 전부 `beforeClose` 가드를 통과하고, 변경이
   있을 때만 확인을 묻는다(「버리고 닫기」 / 「계속 편집」). 3택을 두지 않는 근거는 「적용」이
   면 안의 상시 버튼이라는 것 — 가드가 세 번째 선택지를 새 기제로 만들 필요가 없다.

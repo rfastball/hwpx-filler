@@ -52,9 +52,10 @@ def test_group_collapse_uses_one_optimistic_helper_on_all_three_surfaces() -> No
     assert "function toggleGroup(button, persist, errorMessage)" in helper
     assert helper.index("setGroupExpanded(button, !wasExpanded)") < helper.index("request = persist()")
     assert "Promise.resolve(request).catch" in helper and "window.alert" in helper
-    # 소비 표면 셋 — 「문서 만들기」 좌 목록이 죽고(F2 PR-B) 「문서 작업」 라이브러리가
-    # 그 자리를 승계했다. 기제는 여전히 한 벌(grouplist.js)이다.
-    for rel in ("js/screens/library.js", "js/screens/draft.js", "js/screens/template.js"):
+    # 소비 표면 — 「문서 만들기」 좌 목록이 죽고(F2 PR-B) 「문서 작업」 라이브러리가
+    # 그 자리를 승계했다. 「기안」 좌 목록도 화면과 함께 사망(F6 PR-B) — 기제는 여전히
+    # 한 벌(grouplist.js)이고 소비 표면은 둘이다.
+    for rel in ("js/screens/library.js", "js/screens/template.js"):
         src = _read(rel)
         assert "GroupList.toggleGroup(" in src, f"{rel}이 공용 즉답 토글을 쓰지 않습니다."
         assert 'sec.collapsed ? " hidden" : ""' in src, (

@@ -10,16 +10,13 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 from hwpxfiller.core.job import Job
-from hwpxfiller.core.text_registry import TextTemplateRegistry
 from hwpxfiller.gui.home_state import HomeViewModel, JobRow, TxtRow
 from hwpxfiller.gui.mapping_state import MappingModel, RowState
 from hwpxfiller.gui.run_state import RunViewModel
 from hwpxfiller.gui.selection_state import SelectionModel
 from hwpxfiller.gui.template_manager_state import TemplateManagerViewModel, TemplateRow
-from hwpxfiller.gui.txt_state import TxtDraftViewModel
 
 MOCKUP = Path(__file__).resolve().parents[1] / "docs" / "UI_PROTOTYPE_APPB.html"
-_NO_DIR = MOCKUP.parent / "__no_such_text_templates__"
 
 
 class _StubRegistry:
@@ -50,9 +47,14 @@ _INSTANCES = {
     "MappingModel": MappingModel(),
     "RowState": RowState(template_field=""),
     "SelectionModel": SelectionModel(0),
-    "TxtDraftViewModel": TxtDraftViewModel(TextTemplateRegistry(_NO_DIR)),
+    # TxtDraftViewModel 항목 제거 — 화면 사망으로 VM 소멸(F6 PR-B). TxtRow 는
+    # home_state 생존이라 유지.
     "TxtRow": TxtRow("x", 0),
 }
+
+# 동결 목업이 겨누지만 이후 라운드에서 소멸한 클래스 — 목업은 역사 문서라 고치지 않고,
+# 소멸 사실을 여기 명시 등재해 resolver 가 침묵 대신 근거 있는 면제로 지나가게 한다.
+_RETIRED = {"TxtDraftViewModel"}  # 「기안」 화면 사망(F6 PR-B)
 
 
 class _VmCollector(HTMLParser):
@@ -83,6 +85,8 @@ def test_every_data_vm_resolves_to_a_real_viewmodel_member():
     unresolved: "list[str]" = []
     for ref in _collect():
         cls_name, _, attr = ref.partition(".")
+        if cls_name in _RETIRED:
+            continue  # 소멸 클래스는 명시 등재로만 면제(조용한 미해결 은폐 금지)
         inst = _INSTANCES.get(cls_name)
         if inst is None or not attr or not hasattr(inst, attr):
             unresolved.append(ref)
@@ -94,8 +98,9 @@ def test_every_data_vm_resolves_to_a_real_viewmodel_member():
 
 def test_all_three_viewmodels_are_referenced():
     seen = {r.split(".")[0] for r in _collect()}
+    # TxtDraftViewModel 은 필수 목록에서 제외 — VM 소멸(F6 PR-B), 목업 주석은 역사 보존.
     for required in (
         "HomeViewModel", "RunViewModel", "MappingModel",
-        "SelectionModel", "TxtDraftViewModel",
+        "SelectionModel",
     ):
         assert required in seen, f"{required} 를 겨누는 목업 요소가 없습니다"
