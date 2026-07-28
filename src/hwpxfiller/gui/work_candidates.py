@@ -288,7 +288,9 @@ def prework_gate(
     return GateState(False, "warn", "문서 작업을 선택하세요.")
 
 
-def workbench_entry_gate(*, has_data: bool, selected_count: int) -> GateState:
+def workbench_entry_gate(
+    *, has_data: bool, selected_count: int, template_ready: bool = True
+) -> GateState:
     """TXT 작업이 선택된 상태의 진입 게이트 — 작업대로 갈 수 있는가(§19.1 실행 분기).
 
     HWPX 의 권위 판정(``RunViewModel.refresh``)에 대응하는 자리지만 **셋는 것이 다르다**:
@@ -301,4 +303,11 @@ def workbench_entry_gate(*, has_data: bool, selected_count: int) -> GateState:
         return GateState(False, "warn", "데이터 파일을 먼저 선택하세요.")
     if selected_count == 0:
         return GateState(False, "warn", "처리할 항목을 선택하세요.")
+    if not template_ready:
+        # 템플릿이 사라졌으면 **버튼이 먼저 정직해야** 한다(5R P2): 열리는 척하다 진입
+        # 시점에 파일 읽기로 터지면, 사용자는 누를 수 있는 버튼을 누르고 아무 설명도 못 듣는다.
+        return GateState(
+            False, "danger",
+            "템플릿 파일을 찾을 수 없습니다. 템플릿을 다시 연결한 뒤 진행하세요.",
+        )
     return GateState(True, "ok", "선택한 항목을 작업대에서 검토하고 복사합니다.")

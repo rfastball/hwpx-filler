@@ -322,10 +322,12 @@ class WebFrontend:
         와 같은 규율이고, 잠금이 아니라 **결속**으로 푸는 쪽이다(잠금은 DOM 이 진다).
         """
         ctrl = self._controller(screen)
-        token_of = getattr(ctrl, "copy_token", None)
-        if token_of is not None and token != token_of():
-            # 조용한 무동작이 아니라 stale 재진술 — 표면이 다시 확인받게 한다.
-            return {"missing_fields": [], "empty_fields": [], "copied": False, "stale": True}
+        # **거래를 컨트롤러가 소유하면 그쪽에 맡긴다**(5R P1). 여기서 네 걸음(대조→렌더→
+        # 쓰기→전진)을 밟으면 그 사이가 열려 있어, 겹친 두 호출이 같은 토큰으로 통과한 뒤
+        # 뒤선 쪽이 **확인하지 않은 카드**를 복사한다. 브리지는 OS 쓰기 함수만 건넨다.
+        atomic = getattr(ctrl, "copy_to", None)
+        if atomic is not None:
+            return atomic(token or "", set_clipboard_text)
         text, report = ctrl.render()
         # 작업점 없는 화면(txt 큐, 선택 0·레이스) — 빈 템플릿을 클립보드에 쓰지 않는다(리뷰 F3:
         # 조용한 쓰레기·무피드백 차단). can_copy 부재 화면(다른 소비자)은 종전대로 렌더·복사.

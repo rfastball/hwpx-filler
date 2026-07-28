@@ -1162,6 +1162,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             g = workbench_entry_gate(
                 has_data=self.datasource is not None,
                 selected_count=self.selection.selected_count(),
+                template_ready=bool(tpath) and Path(tpath).exists(),
             )
             base.update({
                 "template_name": Path(tpath).name if tpath else "",
@@ -1556,7 +1557,15 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if not WorkbenchController.accepts(job):  # fail-closed 재확인(매체가 갈렸다면)
             return {"ok": False, "error": "TXT 검토·복사 작업이 아닙니다."}
         indices = self._indices()
-        self.workbench.open(job, [(i, self.records[i]) for i in indices])
+        try:
+            self.workbench.open(job, [(i, self.records[i]) for i in indices])
+        except OSError as exc:
+            # 템플릿이 그사이 사라졌거나 읽을 수 없다 — **화면 안에서** 사유를 말한다(5R P2).
+            # 날것 예외로 올리면 호출부(.then)가 못 받아 아무 설명 없이 아무 일도 안 난 것처럼
+            # 보인다. 게이트도 이 사실을 미리 세지만(버튼이 정직하게 닫힌다) 그 판정과 이
+            # 진입 사이에도 파일은 사라질 수 있으므로 둘 다 필요하다.
+            return {"ok": False, "error": (
+                f"템플릿을 읽을 수 없습니다: {exc}. 템플릿을 다시 연결한 뒤 진행하세요.")}
         return {"ok": True, "count": len(indices)}
 
     def _do_select_job(self, p: dict) -> "dict | None":

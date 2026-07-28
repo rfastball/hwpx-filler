@@ -3672,3 +3672,23 @@ def test_cross_media_relink_reseats_the_active_session(tmp_path):
     ctrl.dispatch("refresh", {})
     assert ctrl.job_is_txt is True and ctrl.vm is None
     assert ctrl.snapshot()["run_action"]["key"] == "workbench"
+
+
+def test_workbench_entry_is_blocked_and_loud_when_the_template_vanished(tmp_path):
+    """템플릿이 사라졌으면 **버튼이 먼저 정직하고**, 그래도 눌리면 사유를 돌려준다(5R P2).
+
+    게이트만으로는 부족하다(판정과 진입 사이에도 파일은 사라진다). 진입만으로도 부족하다
+    (누를 수 있는 버튼이 아무 설명 없이 아무 일도 안 하는 것처럼 보인다). 둘 다 필요하다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "발주요청_기안"})
+    assert ctrl.snapshot()["gate"]["enabled"] is True
+    (tmp_path / "발주요청_기안.txt").unlink()          # 다른 곳에서 템플릿이 사라졌다
+    snap = ctrl.snapshot()
+    assert snap["gate"]["enabled"] is False and "템플릿" in snap["gate"]["text"]
+    ctrl.workbench = WorkbenchController(
+        ctrl.registry, lambda s, n: None, target_font=TargetFontSetting())
+    res = ctrl.dispatch("open_workbench", {})
+    assert res["ok"] is False and "템플릿" in res["error"]

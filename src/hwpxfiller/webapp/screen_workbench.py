@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import hashlib
+import threading
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -82,6 +83,9 @@ class WorkbenchController(MappingVerbsMixin):
         # 대상 글꼴은 앱 전역 선언이라 「기안」과 **같은 인스턴스**를 공유한다 — 두 벌이면
         # 같은 사용자 선언에 두 값이 생긴다(PR-B 에서 「기안」이 죽으면 소비자는 하나가 된다).
         self._font = target_font
+        # 복사 거래의 임계구역(5R P1) — pywebview 브리지 호출은 스레드별이라 복사가 **실제로**
+        # 겹친다. 대조와 쓰기 사이가 열려 있으면 토큰을 묶어도 창이 남는다.
+        self._copy_lock = threading.Lock()
         self._clear()
 
     # ------------------------------------------------------------- 세션 수명
@@ -216,8 +220,13 @@ class WorkbenchController(MappingVerbsMixin):
         """
         if self.mapping is None:
             return ""
+        # `confirmed` 도 담는다(5R P2). 무결속·미확정 행은 `live_profile` 에서 **빠져** 토큰이
+        # `{{이름}}` 그대로 복사되고, 확정하면 확정-비움이 되어 빈 문자열로 바뀐다 — 즉 확정은
+        # 게이트의 축만이 아니라 **복사되는 문자열의 축**이기도 하다. 2R 에서 "확정을 켜도
+        # 문장은 그대로"라고 단정한 것이 틀렸다(`live_profile` 의 계약이 반대로 적고 있다).
         rows = tuple(
-            (r.template_field, r.source, r.type, r.const, r.fmt) for r in self.mapping.rows
+            (r.template_field, r.source, r.type, r.const, r.fmt, r.confirmed)
+            for r in self.mapping.rows
         )
         return repr((rows, self._fullwidth))
 
@@ -560,6 +569,17 @@ class WorkbenchController(MappingVerbsMixin):
         copied, total = self.queue.copied_count(), len(self.records)
         if 0 < copied < total:
             lines.append(f"복사 진행 {copied}/{total}건 — 나가면 이 진행은 사라집니다.")
+        # **다시 확인 대기도 미완이다**(5R P2). 전건을 복사한 뒤 규칙을 고쳐 저장하면 복사
+        # 진행(=total)도 미저장 변경도 없지만, 그 문서들은 **지금 규칙의 산출물이 아니다** —
+        # 다시 복사해야 한다는 사실이 세션과 함께 사라지면 사용자는 낡은 문서를 붙여넣은 채
+        # 끝난다. 가드 문안은 실제로 사라지는 집합과 일치해야 한다(과경고도, 과소경고도 아니게).
+        recheck = sum(
+            1 for i in self._copied_rules if self._review_state(i) == REVIEW_RECHECK
+        )
+        if recheck:
+            lines.append(
+                f"규칙이 바뀌어 다시 확인해야 하는 항목 {recheck}건 — 나가면 그 표시가 사라집니다."
+            )
         changed = self._changed_fields()
         if changed:
             names = ", ".join(c["name"] for c in changed)
@@ -609,6 +629,37 @@ class WorkbenchController(MappingVerbsMixin):
         에서 함께 죽는다).
         """
         return self.is_open and self.queue.current is not None
+
+    def copy_to(self, token: str, write) -> dict:
+        """복사 한 건을 **원자로** 처리한다 — 대조·렌더·쓰기·전진이 한 임계구역 안이다.
+
+        **왜 토큰만으로 부족했나**(5R P1 — 3R 픽스가 연 창): 3R 은 확인 대상과 복사 대상을
+        토큰으로 **묶었지만**, 대조와 쓰기 사이를 잠그지 않았다. 브리지가 「대조 → 렌더 →
+        쓰기 → 전진」을 네 걸음으로 밟는 동안 두 호출이 겹치면 **둘 다 같은 토큰으로 통과**
+        하고, 앞선 호출이 자동 전진으로 작업점을 옮긴 뒤 뒤선 호출이 *새* 카드를 렌더해
+        복사한다. 정체를 묶어도 **시간**을 안 묶으면 같은 창이 남는다(F3 4R 이 존 세대에서
+        배운 것과 같은 축: 공간·이름을 닫아도 시간 축은 따로 닫아야 한다).
+
+        그래서 거래의 **소유권을 옮겼다**: 브리지는 OS 클립보드 쓰기 함수만 건네고, 순서와
+        원자성은 이 컨트롤러가 진다. 겹친 두 번째 호출은 잠금에서 기다렸다가 **바뀐 작업점**
+        때문에 토큰 대조에서 걸린다 — 조용한 오복사 대신 stale 재진술이 나간다.
+        """
+        with self._copy_lock:
+            if not self.is_open:
+                return {"copied": False, "missing_fields": [], "empty_fields": [],
+                        "error": "작업대 세션이 없습니다."}
+            if token != self.copy_token():
+                return {"copied": False, "stale": True,
+                        "missing_fields": [], "empty_fields": []}
+            if not self.can_copy():
+                text, report = self.render()
+                return {"copied": False, "missing_fields": list(report.missing_fields),
+                        "empty_fields": list(report.empty_fields)}
+            text, report = self.render()
+            write(text)                       # OS 쓰기도 임계구역 안 — 성사 뒤에만 전진한다
+            self.note_copied(report)
+            return {"copied": True, "missing_fields": list(report.missing_fields),
+                    "empty_fields": gate_empty_fields(report, self.mapping)}
 
     def note_copied(self, report) -> None:
         """복사 성사 뒤 상태 전진 — 클립보드 쓰기가 **성공한 뒤에만** 불린다.

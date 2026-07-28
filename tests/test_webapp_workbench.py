@@ -548,3 +548,92 @@ def test_queue_index_map_lets_the_user_jump_to_a_known_row(tmp_path):
     _send(ctrl, "set_map_value", {"name": "수신", "text": "고침"})
     marked = [d for d in ctrl.snapshot()["card"]["index_map"] if d["recheck"]]
     assert len(marked) == 1 and marked[0]["row"] == 1
+
+
+# ---------------------------------- 5R — 정체를 묶어도 시간을 안 묶으면 창이 남는다
+def test_overlapping_copies_cannot_write_an_unprechecked_card(tmp_path):
+    """복사 거래는 **원자**다 — 대조·렌더·쓰기·전진이 한 임계구역 안이다(5R P1).
+
+    3R 은 확인 대상과 복사 대상을 토큰으로 **묶었지만** 그 사이를 잠그지 않았다: 브리지가
+    네 걸음을 밟는 동안 두 호출이 겹치면 둘 다 같은 토큰으로 통과하고, 앞선 호출이 자동
+    전진으로 작업점을 옮긴 뒤 뒤선 호출이 *새* 카드를 복사한다. 여기서는 그 시나리오를
+    **쓰기 콜백 안에서 끼어들어** 재현한다 — 잠금이 없으면 두 번째가 통과한다.
+    """
+    import threading
+
+    ctrl, _, _ = _open(tmp_path)
+    _send(ctrl, "toggle_advance", {"value": True})
+    token = _send(ctrl, "copy_precheck", {})["token"]
+    written: "list[str]" = []
+    second: "list[dict]" = []
+    inside, release = threading.Event(), threading.Event()
+
+    def slow_write(text: str) -> None:
+        """첫 쓰기가 **진행 중**인 지점을 붙든다 — 겹침이 실제로 겹치게."""
+        written.append(text)
+        inside.set()
+        release.wait(2.0)
+
+    def overlapping() -> None:
+        inside.wait(2.0)                     # 첫 호출이 쓰기 한복판일 때 들어간다
+        second.append(ctrl.copy_to(token, written.append))
+        release.set()
+
+    # 브리지 호출은 스레드별이라 복사가 **실제로** 겹친다 — 그 조건을 그대로 만든다.
+    worker = threading.Thread(target=overlapping)
+    worker.start()
+    first = ctrl.copy_to(token, slow_write)
+    worker.join(3.0)
+    assert first["copied"] is True
+    assert second and second[0]["copied"] is False, "겹친 복사가 통과했습니다(원자성 없음)"
+    assert len(written) == 1, f"확인하지 않은 카드가 클립보드로 나갔습니다: {written}"
+
+
+def test_a_stale_token_never_reaches_the_clipboard(tmp_path):
+    """어긋난 토큰은 쓰기 콜백을 **부르지 않는다** — 큐도 스탬프도 움직이지 않는다."""
+    ctrl, reg, _ = _open(tmp_path)
+    written: "list[str]" = []
+    res = ctrl.copy_to("그사이-바뀐-토큰", written.append)
+    assert res["copied"] is False and res["stale"] is True
+    assert written == [] and ctrl.snapshot()["copied_count"] == 0
+    assert reg.load("발주요청_기안").last_run_at == ""
+
+
+def test_declaring_a_blank_changes_the_copied_text_and_the_badge(tmp_path):
+    """확정은 **복사되는 문자열의 축**이기도 하다(5R P2).
+
+    무결속·미확정 행은 `live_profile` 에서 빠져 토큰이 `{{이름}}` 그대로 복사되고, 확정하면
+    확정-비움이 되어 빈 문자열이 된다. 2R 에서 "확정을 켜도 문장은 그대로"라고 단정한 것이
+    틀렸다 — 계약(`live_profile` 문서)이 반대로 적고 있었다.
+    """
+    ctrl, _, _ = _open(tmp_path)
+    _send(ctrl, "set_source", {"name": "건명", "col": ""})
+    _send(ctrl, "set_confirmed", {"name": "건명", "value": False})
+    before, _ = ctrl.render()
+    assert "{{건명}}" in before                      # 미확정 = 토큰이 그대로 나간다
+    ctrl.note_copied(ctrl.render()[1])
+    assert ctrl.snapshot()["card"]["review_state"] == "copied"
+    _send(ctrl, "set_confirmed", {"name": "건명", "value": True})
+    after, _ = ctrl.render()
+    assert "{{건명}}" not in after                   # 확정-비움 = 빈 문자열
+    assert ctrl.snapshot()["card"]["review_state"] == "recheck"
+
+
+def test_leave_guard_counts_records_waiting_for_re_copy(tmp_path):
+    """**다시 확인 대기도 미완이다**(5R P2) — 전건 복사 뒤 규칙을 고쳐 저장한 세션.
+
+    복사 진행도(전건이라) 미저장 변경도(저장했으므로) 없지만, 그 문서들은 지금 규칙의
+    산출물이 아니다. 그 사실이 세션과 함께 조용히 사라지면 사용자는 낡은 문서를 붙여넣은
+    채 끝난다.
+    """
+    ctrl, _, _ = _open(tmp_path)
+    _send(ctrl, "toggle_advance", {"value": True})
+    ctrl.note_copied(ctrl.render()[1])
+    ctrl.note_copied(ctrl.render()[1])
+    assert ctrl.leave_guard()["armed"] is False        # 전건 복사 = 잃을 진행 없음
+    _send(ctrl, "set_source", {"name": "수신", "col": "사업명"})
+    _send(ctrl, "set_confirmed", {"name": "수신", "value": True})
+    _save(ctrl)
+    guard = ctrl.leave_guard()
+    assert guard["armed"] is True
+    assert any("다시 확인" in line and "2건" in line for line in guard["lines"]), guard
