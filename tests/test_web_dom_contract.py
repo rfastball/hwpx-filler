@@ -837,7 +837,9 @@ def test_job_session_surface_uses_v6_two_column_captions():
         "현재 데이터", "본문 확인", "생성 결과",
         "이 데이터에 사용할 문서", "선택한 작업", "생성 준비",
     ):
-        needle = rf'<div class="zone-cap[^"]*">(?:<span>)?{re.escape(caption)}'
+        # 캡션 자리에 id 가 붙을 수 있다(「생성 준비」는 매체에 따라 「복사 준비」로 바뀐다) —
+        # 계약이 세는 것은 **zone-cap 캡션의 존재**이지 속성 목록이 아니다.
+        needle = rf'<div class="zone-cap[^"]*"[^>]*>(?:<span[^>]*>)?{re.escape(caption)}'
         assert re.search(needle, job), f"세션 구획 캡션이 없습니다: {caption}"
     assert '<span class="znum">' not in job, (
         "「작업」 세션 표면에 구 4존 서수가 재유입됐습니다."
@@ -1709,3 +1711,26 @@ def test_preview_button_states_are_decided_after_the_busy_restore():
         assert f'$("{btn}").disabled' in busy_fn, (
             f"{btn} 가용성이 렌더 말미 단일 지점에서 정해지지 않습니다."
         )
+
+
+def test_job_screen_branches_the_output_surfaces_on_the_media_python_declared():
+    """산출 재진술·거울·저장 폴더는 **매체 파생**이다(F6 판정 D · 리뷰 6R).
+
+    TXT 작업은 파일을 만들지 않는다 — 「문서 N건 · 저장 폴더」도, 살아 있는 폴더 피커도,
+    행을 다 고른 뒤에도 「행을 선택하면 …」이라고 말하는 거울도 전부 거짓이다. 분기의
+    근거는 Python 이 낸 `run_action.key` 하나여야 한다: 표면이 확장자·매체를 다시 읽으면
+    같은 판정이 두 곳에 산다.
+    """
+    job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    assert 'run_action.key === "workbench"' in job_js, (
+        "매체 분기의 근거가 Python 이 낸 실행 행동 키가 아닙니다."
+    )
+    # 거울 존은 통째로 걷힌다(빈 상태 문안이 이행 불가능한 지시로 남지 않게).
+    assert 'jobMirrorZone' in job_js and 'id="jobMirrorZone"' in WEB_INDEX.read_text(
+        encoding="utf-8")
+    # 저장 폴더 행·피커는 이 매체에 없는 축이다 — 피커 잠금은 setBusy 단일 지점이 진다.
+    assert 'jobOutRow' in job_js
+    picker = job_js.split('$("jobBtnPickFolder").disabled')[1].split(";")[0]
+    assert "isCopyWork(LAST)" in picker, picker
+    # 산출 문안이 파일 생성을 주장하지 않는다.
+    assert "파일은 만들지 않습니다" in job_js

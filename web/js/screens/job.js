@@ -438,12 +438,24 @@
     box.textContent = p.text;
   }
 
+  /* 실행 표면이 작업대인가(매체 파생) — 판정은 Python 이 낸 `run_action.key` 하나를 읽는다.
+     표면이 확장자·매체를 다시 읽어 분기하면 같은 판정이 두 곳에 산다(F6 판정 D). 산출을
+     말하는 자리(거울·재진술·저장 폴더·상태 태)가 전부 이 술어 하나를 쓴다. */
+  function isCopyWork(s) {
+    return !!(s && s.run_action && s.run_action.key === "workbench");
+  }
+
   /* ---- 본문 존 거울 = 필드 채움 테이블(결정 36 ⓑ) ----
      hwpx 본문은 앱에서 렌더 못 하므로 거울이 비추는 것은 "생성될 문서의 채움 상태"다. ADR-E
      배지는 별도 UI가 아니라 거울의 행: 미입력 행 클릭=확인, 재클릭=철회(UD-19). danger(드리프트)는
      ack 로 안 풀리므로 같은 표에 섞지 않고 거울 자리 차단 배너 + 행동 링크로 분리한다(결정 36·S9). */
   function renderMirror(s) {
     const host = $("jobMirror");
+    // TXT 는 거울이 **없는 축**이다(스냅샷이 무조건 빈 mirror 를 싣는다) — 존을 통째로
+    // 걷는다. 남겨 두면 빈 상태 문안("행을 선택하면 …")이 행을 다 고른 뒤에도 그대로 서서,
+    // 따라 해도 아무 일이 없는 막다른 지시가 된다(리뷰 6R).
+    const zone = $("jobMirrorZone");
+    if (zone) zone.style.display = isCopyWork(s) ? "none" : "";
     const drift = s.drift || [];
     if (drift.length) {
       // danger = 차단 배너 + 상시 행동 링크(막다른 경보 금지 — 경보 어포던스는 숨지 않는다).
@@ -862,10 +874,16 @@
     const selLine = (rs.origin === "definition")
       ? `정의 매치 전체 ${sel.length}행: ${esc((s.filter && s.filter.definition) || "")}`
       : esc(selectionLine(sel.length, rs.filter_active, rs.in_def, rs.extra));
-    box.innerHTML =
-      `<span class="dl">선택</span><span>${selLine}</span>` +
-      `<span class="dl">생성</span><span>문서 ${sel.length}건 · 저장 폴더: ${esc(s.out_dir || "미지정")}` +
-      `<div class="namelist">${list}${more}</div></span>`;
+    // 산출 재진술은 **매체마다 다른 사실**이다(리뷰 6R). TXT 는 파일을 만들지 않으므로
+    // 「문서 N건 · 저장 폴더」도, 파일 이름 목록(전부 "(파일명 미정)")도 거짓이다 —
+    // 이 버튼이 실제로 하는 일(작업대에서 레코드마다 검토·복사)을 그대로 말한다.
+    box.innerHTML = isCopyWork(s)
+      ? `<span class="dl">선택</span><span>${selLine}</span>` +
+        `<span class="dl">복사</span><span>작업대에서 ${sel.length}건을 한 건씩 검토하고 ` +
+        `복사합니다. 파일은 만들지 않습니다.</span>`
+      : `<span class="dl">선택</span><span>${selLine}</span>` +
+        `<span class="dl">생성</span><span>문서 ${sel.length}건 · 저장 폴더: ${esc(s.out_dir || "미지정")}` +
+        `<div class="namelist">${list}${more}</div></span>`;
   }
 
   /* ---- 본문 존: 게이트·저장 폴더·생성 버튼 ---- */
@@ -886,6 +904,11 @@
   }
 
   function renderGateAndFolder(s) {
+    // 저장 폴더는 hwpx 생성의 축이다 — TXT 에선 그 자리를 그리지 않는다(빈 값으로 두면
+    // "아직 안 정했다"로 읽혀 사용자가 고르러 간다). 캡션도 하는 일을 따라간다.
+    const copyWork = isCopyWork(s);
+    $("jobOutRow").style.display = copyWork ? "none" : "";
+    $("jobRunCap").textContent = copyWork ? "복사 준비" : "생성 준비";
     $("jobOutDir").value = s.out_dir || "";
     // 저장 폴더 열기/경로 복사 어포던스(#53-B) — 실행 화면에서 승계(리뷰 F3). 생성 후 앱에서
     // 바로 폴더를 열거나 경로를 복사한다(빈 out_dir 이면 PathTrack 이 알아서 아무것도 안 그림).
@@ -904,8 +927,10 @@
     const pill = $("jobStatus");
     if (!s.has_job) { pill.dataset.level = "idle"; pill.textContent = "작업 선택"; return; }
     if (!s.has_data) { pill.dataset.level = "idle"; pill.textContent = "데이터 선택"; return; }
-    if (s.gate && s.gate.enabled) { pill.dataset.level = "ok"; pill.textContent = "생성 준비"; }
-    else { pill.dataset.level = "warn"; pill.textContent = "확인 필요"; }
+    if (s.gate && s.gate.enabled) {
+      pill.dataset.level = "ok";
+      pill.textContent = isCopyWork(s) ? "복사 준비" : "생성 준비";
+    } else { pill.dataset.level = "warn"; pill.textContent = "확인 필요"; }
   }
 
   /* 진행 델타 — 진행바 + 진행 태만 갱신(전체 재렌더 없음). 진행은 3태를 덮지 않는다:
@@ -950,7 +975,10 @@
     // 저장 폴더는 작업 속성(기본 = 템플릿/Results) — 작업 미선택에서 고르게 두면 작업
     // 선택이 기본값으로 조용히 덮어써 선택이 증발한다(#302 리뷰 P2). busy-lock 일괄 복원이
     // 되살리지 않도록 여기(렌더 말미 단일 지점)서 판정한다.
-    $("jobBtnPickFolder").disabled = busy || !(LAST && LAST.has_job);
+    // TXT 는 저장 폴더 축이 없으므로 피커도 없다(행 자체가 숨지만 잠금은 DOM 이 아니라
+    // 상태가 진다 — 일괄 복원이 되살리지 않게 여기서 못박는다).
+    $("jobBtnPickFolder").disabled =
+      busy || !(LAST && LAST.has_job) || isCopyWork(LAST);
     // 미리보기 버튼들도 여기서 정한다(F5) — 위 일괄 복원이 renderPreview 의 판정을 되살린다.
     // 열기는 선택이 있을 때, 이동은 경계에서 멈춘다(순환하지 않으므로 끝에서 비활성).
     const pv = (LAST && LAST.preview) || {};

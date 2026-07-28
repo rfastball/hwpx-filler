@@ -637,3 +637,108 @@ def test_leave_guard_counts_records_waiting_for_re_copy(tmp_path):
     guard = ctrl.leave_guard()
     assert guard["armed"] is True
     assert any("다시 확인" in line and "2건" in line for line in guard["lines"]), guard
+
+
+# ------------------------------------------------------- F6 PR-A 리뷰 6R 회귀
+
+
+def test_raw_view_blocks_copy_so_screen_and_clipboard_cannot_split(tmp_path):
+    """원문 보기에서는 복사하지 않는다 — 「보이는 것 = 복사되는 것」(결정 17).
+
+    원문 보기는 토큰을 채우지 않은 템플릿을 그리는데 복사 경로는 언제나 채운 카드를 쓴다.
+    버튼이 열려 있으면 화면엔 ``{{수신}}`` 이 보이는데 클립보드엔 값이 채워진 문장이 나가,
+    원문을 복사한 줄 알고 붙여넣은 사람이 잘못된 문서를 만든다.
+    """
+    ctrl, _, _ = _open(tmp_path)
+    assert ctrl.snapshot()["card"]["copy_block"] == ""
+    assert ctrl.can_copy() is True
+
+    _send(ctrl, "set_view", {"view": "raw"})
+    block = ctrl.snapshot()["card"]["copy_block"]
+    assert block and "원문" in block                 # 표면이 버튼을 닫고 사유를 말한다
+    assert ctrl.can_copy() is False
+
+    written: "list[str]" = []
+    res = ctrl.copy_to(ctrl.copy_token(), written.append)
+    assert res["copied"] is False and res["error"] == block
+    assert written == []                             # 잠금은 DOM 이 아니라 상태가 진다
+
+    _send(ctrl, "set_view", {"view": "filled"})
+    assert ctrl.snapshot()["card"]["copy_block"] == ""
+    assert ctrl.copy_to(ctrl.copy_token(), written.append)["copied"] is True
+
+
+def test_fields_missing_from_the_template_are_not_a_change_the_user_made(tmp_path):
+    """템플릿에서 사라진 토큰의 저장 매핑을 **없어지는 것으로 세지 않는다**.
+
+    맞추기 표의 행은 지금 템플릿의 토큰에서만 나므로, 그 뒤 토큰이 빠지면 저장 프로파일의
+    그 매핑을 모델이 모른다. 차분에 그대로 실으면 아무것도 안 건드린 채 들어온 화면이
+    「저장하지 않은 변경 1건」을 띄우고, 「저장하고 나가기」가 사용자가 한 적 없는 삭제를
+    영구히 쓴다.
+    """
+    ctrl, reg, _ = _ctrl(tmp_path)
+    job = _job(tmp_path)
+    job.mapping.mappings.append(FieldMapping(template_field="옛토큰", source="부서"))
+    reg.save(job)
+    ctrl.open(reg.load(job.name), _rows())
+
+    snap = ctrl.snapshot()
+    assert snap["dirty"]["count"] == 0, snap["dirty"]["fields"]
+    assert snap["can_save"] is False
+    assert ctrl.leave_guard()["armed"] is False
+
+    # 실제 저장에서도 승계한다 — 이 화면이 편집하지 않는 것을 지우지 않는다.
+    _send(ctrl, "set_source", {"name": "수신", "col": "사업명"})
+    _send(ctrl, "set_confirmed", {"name": "수신", "value": True})
+    assert _save(ctrl)["ok"] is True
+    saved = {m.template_field for m in reg.load(job.name).mapping.mappings}
+    assert "옛토큰" in saved
+
+
+def test_dispatch_honors_the_markers_its_own_handlers_declare(tmp_path):
+    """`is_query` 는 push 를 내지 않고 `is_no_push` 는 반환 스냅샷으로 돌려준다.
+
+    표식을 안 읽으면 그것을 붙인 자리가 조용히 죽는다 — 값 입력이 매 글자마다 포커스된
+    표를 서버 푸시로 재구성하고(IME 조합·캐럿 소실), 복사 사전확인이 모달 직전에 표
+    전체를 다시 짓는다.
+    """
+    ctrl, _, pushes = _open(tmp_path)
+    pushes.clear()
+    _send(ctrl, "copy_precheck", {})
+    _send(ctrl, "leave_guard", {})
+    assert pushes == []                              # 무변이 질의 — 재렌더할 것이 없다
+
+    out = _send(ctrl, "set_map_value", {"name": "수신", "text": "회계과장"})
+    assert pushes == []                              # 반환 스냅샷으로 겨냥 패치한다
+    assert out["rows"][0]["value"] == "회계과장"
+
+    _send(ctrl, "step", {"delta": 1})
+    assert len(pushes) == 1                          # 변이는 그대로 푸시한다
+
+
+def test_moving_the_work_point_drops_the_previous_copy_note(tmp_path):
+    """직전 복사 완료 노트는 **그 카드의 사실**이다 — 작업점이 옮겨지면 함께 사라진다.
+
+    남겨 두면 지금 보고 있는 카드가 이미 복사된 것으로 읽혀, 사용자가 붙여넣기를 건너뛰고
+    그 레코드의 기안문이 한 건 누락된다.
+    """
+    ctrl, _, _ = _open(tmp_path)
+    ctrl.note_copied(ctrl.render()[1])
+    assert ctrl.snapshot()["card"]["last_copy"]["row"] == 3   # 원본 행 번호(1-기반)
+    _send(ctrl, "step", {"delta": 1})
+    assert ctrl.snapshot()["card"]["last_copy"] is None
+
+
+def test_save_notice_does_not_outlive_the_state_it_describes(tmp_path):
+    """저장 성공 배너는 다음 편집에서 걷힌다 — 「저장했습니다」와 「저장하지 않은 변경 2건」이
+    나란히 서면 화면이 두 말을 한다."""
+    ctrl, _, _ = _open(tmp_path)
+    _send(ctrl, "set_source", {"name": "수신", "col": "사업명"})
+    _send(ctrl, "set_confirmed", {"name": "수신", "value": True})
+    _save(ctrl)
+    assert "저장했습니다" in ctrl.snapshot()["notice"]["text"]
+
+    _send(ctrl, "set_source", {"name": "건명", "col": "부서"})
+    snap = ctrl.snapshot()
+    assert snap["notice"]["text"] == ""
+    assert snap["dirty"]["count"] >= 1

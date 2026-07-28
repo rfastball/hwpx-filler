@@ -30,7 +30,7 @@ from pathlib import Path
 
 from ..core.format_engine import presets as format_presets
 from ..core.job import Job, JobRegistry, content_fingerprint, work_mode
-from ..core.mapping import TYPES
+from ..core.mapping import TYPES, MappingProfile
 from ..core.text_render import template_fields
 from ..gui.edit_session import SECTION_BINDING, EditContext, EditSession
 from ..gui.filter_state import sniff_column_kinds
@@ -187,6 +187,28 @@ class WorkbenchController(MappingVerbsMixin):
             return {}
         return self.records[cur]
 
+    def _profile_over(self, base: Job) -> "MappingProfile":
+        """모델이 낸 프로파일 + **이 템플릿에 없는 필드의 기존 매핑**을 그대로 승계한다.
+
+        맞추기 표의 행은 **지금 템플릿의 토큰**에서만 나므로(`template_fields`), 저장된
+        프로파일에 그 뒤 사라진·이름이 바뀐 토큰의 매핑이 남아 있으면 모델은 그 행을 아예
+        모른다. 그대로 `to_profile()` 을 쓰면 그 매핑들이 **없어지는 것**이 되어, 아무것도
+        건드리지 않은 채 들어온 화면이 「저장하지 않은 변경 1건」을 띄우고 이탈 가드가 무장한다
+        — 사용자가 한 적 없는 편집이다. 「저장하고 나가기」를 고르면 그 편집이 진짜로 일어나
+        매핑이 영구히 지워진다.
+
+        **이 화면은 자기가 편집하지 않는 것을 지우지 않는다**(`_do_save_rules` 가 그룹·태그·
+        완주 스탬프를 디스크 최신값으로 승계하는 것과 같은 규율). 사라진 토큰의 정리는
+        템플릿 축의 일이고 그 축을 가진 표면(편집기)이 진다.
+        """
+        assert self.mapping is not None
+        profile = self.mapping.to_profile(base.name)
+        known = {r.template_field for r in self.mapping.rows}
+        carried = [m for m in base.mapping.mappings if m.template_field not in known]
+        if not carried:
+            return profile
+        return replace(profile, mappings=list(profile.mappings) + carried)
+
     def _draft_job(self) -> "Job | None":
         """지금 화면이 그리는 규칙의 Job 형상 — 판본 대조·저장 대상의 단일 성형.
 
@@ -195,7 +217,7 @@ class WorkbenchController(MappingVerbsMixin):
         """
         if self.base_job is None or self.mapping is None:
             return None
-        return replace(self.base_job, mapping=self.mapping.to_profile(self.base_job.name))
+        return replace(self.base_job, mapping=self._profile_over(self.base_job))
 
     def _changed_fields(self) -> "list[dict]":
         """저장하면 달라지는 필드 목록 — 「기본 규칙으로 저장」 확인이 **전부 나열**한다(§11)."""
@@ -344,6 +366,9 @@ class WorkbenchController(MappingVerbsMixin):
             },
             "last_copy": self._last_copy,
             "copied_total": self._copied_total,
+            # 복사 차단 사유 — 버튼의 활성 여부와 그 이유를 **같은 값**에서 낸다(표면이
+            # `has_current` 만 보고 열어 두면 원문 보기에서 채운 문장이 나간다).
+            "copy_block": self._copy_block(),
         }
         base.update({
             "card": card,
@@ -382,15 +407,48 @@ class WorkbenchController(MappingVerbsMixin):
             return "확정하지 않은 편집이 있습니다. 각 행의 확정 열을 켠 뒤 저장하세요."
         return ""
 
+    def _copy_block(self) -> str:
+        """복사 차단 사유(없으면 ``""``) — 「보이는 것 = 복사되는 것」의 술어(결정 17).
+
+        원문 보기는 토큰을 **채우지 않은** 템플릿을 그린다(`_raw_segments`). 복사 경로는
+        보기와 무관하게 언제나 채운 카드를 쓰므로, 그 상태로 복사하면 화면엔 ``{{수신}}`` 이
+        보이는데 클립보드엔 값이 채워진 문장이 들어간다 — 원문을 복사한 줄 알고 붙여넣은
+        사람은 잘못된 문서를 만든다. 이 화면의 복사는 **채운 모습 하나**이므로, 원문 보기에선
+        조용히 다른 것을 주지 않고 **복사하지 않고 사유를 말한다**(confirm-or-alarm).
+        """
+        if self.view != "filled":
+            return "원문 보기에서는 복사하지 않습니다. 「채운 모습」으로 바꾼 뒤 복사하세요."
+        return ""
+
     def initial(self) -> dict:
         return self.snapshot()
 
     # ------------------------------------------------------- 웹→Python 액션
     def dispatch(self, action: str, payload: dict):
+        """액션 1건 — **핸들러가 선언한 표식을 읽는다**(「기안」·「문서 만들기」와 같은 규약).
+
+        표식을 안 읽으면 그것을 붙인 자리가 조용히 죽는다: `is_query` 는 무변이 질의라
+        재렌더할 것이 없고(복사 사전확인이 모달 직전에 표 전체를 다시 짓는다), `is_no_push`
+        는 **포커스된 입력을 서버 푸시가 재구성하지 못하게** 붙인 표식인데 무조건 push 가
+        바로 그 재구성을 일으킨다(IME 조합·캐럿이 왕복마다 끊긴다).
+
+        변이 동작은 **직전 왕복의 재진술 둘을 무효화한다**(「기안」 dispatch 승계):
+        ①복사 완료 노트 — 작업점이 옮겨지면 그 문장은 **다른 카드**의 사실이 된다(지금 카드가
+        이미 복사된 것으로 읽혀 붙여넣기를 건너뛴다). ②저장 성공 배너 — 저장 시점의 상태를
+        서술하는데, 그 뒤 편집이 오면 옆의 「저장하지 않은 변경 N건」과 동시에 서서 화면이 두
+        말을 한다. 둘 다 **핸들러 앞에서** 지운다: `_do_save_rules` 는 자기 성공 문안을 바로
+        그 자리에 남기므로, 뒤에서 지우면 저장이 아무 말도 못 하게 된다.
+        """
         handler = getattr(self, f"_do_{action}", None)
         if handler is None:  # confirm-or-alarm: 미지 액션은 시끄럽게.
             raise ValueError(f"알 수 없는 workbench 액션: {action!r}")
+        if getattr(handler, "is_query", False):
+            return handler(payload)
+        self._last_copy = None
+        self.notice_text, self.notice_level = "", "muted"
         result = handler(payload)
+        if getattr(handler, "is_no_push", False):
+            return result   # 반환 스냅샷으로 JS 가 겨냥 패치한다(맞추기 표 재구성 금지)
         self._push()
         return result
 
@@ -535,7 +593,7 @@ class WorkbenchController(MappingVerbsMixin):
                 return {"ok": False, "needs_confirm": True, "confirm_text": gate_text}
             # 지금 읽은 것 위에 **매핑만** 얹는다 — 그룹·태그·완주 스탬프 같은 이 화면이
             # 편집하지 않는 필드는 디스크의 최신값을 그대로 승계한다.
-            draft = replace(current, mapping=self.mapping.to_profile(current.name))
+            draft = replace(current, mapping=self._profile_over(current))
             self.registry.save(draft, allow_overwrite=True)
             saved = self.registry.load(draft.name)  # 판본은 저장이 정산(advance_revisions)
         self.base_job = saved
@@ -622,13 +680,13 @@ class WorkbenchController(MappingVerbsMixin):
         return card_text(rendered.segments), rendered.report
 
     def can_copy(self) -> bool:
-        """복사 가능 = 세션이 있고 작업점이 실재한다.
+        """복사 가능 = 세션이 있고 작업점이 실재하며 **채운 모습을 보고 있다**.
 
         「기안」의 가상 카드(무데이터 직접 입력)는 여기 없다 — 작업대는 언제나 고정 사본
         위에 서므로 레코드 없는 복사가 성립하지 않는다(그 경로는 휘발 세션의 것이고 PR-B
-        에서 함께 죽는다).
+        에서 함께 죽는다). 보기 축은 :meth:`_copy_block` 이 진다.
         """
-        return self.is_open and self.queue.current is not None
+        return self.is_open and self.queue.current is not None and not self._copy_block()
 
     def copy_to(self, token: str, write) -> dict:
         """복사 한 건을 **원자로** 처리한다 — 대조·렌더·쓰기·전진이 한 임계구역 안이다.
@@ -648,6 +706,12 @@ class WorkbenchController(MappingVerbsMixin):
             if not self.is_open:
                 return {"copied": False, "missing_fields": [], "empty_fields": [],
                         "error": "작업대 세션이 없습니다."}
+            block = self._copy_block()
+            if block:
+                # 버튼이 이미 닫혀 있지만 잠금은 DOM 이 아니라 상태가 진다 — 그사이 보기가
+                # 바뀐 왕복도 여기서 걸린다(사유는 화면 안에서 말한다).
+                return {"copied": False, "missing_fields": [], "empty_fields": [],
+                        "error": block}
             if token != self.copy_token():
                 return {"copied": False, "stale": True,
                         "missing_fields": [], "empty_fields": []}

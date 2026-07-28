@@ -22,6 +22,7 @@ from ..core.job import Job, JobRegistry, require_hwpx_template
 from ..core.template_status import CompileState, compile_status
 from .compile_badge import ERROR_BADGE_LEVEL, badge_level
 from .run_state import unresolved_name_tokens_for
+from .work_mode import last_use_label
 
 #: 손상 파일 조치의 화이트리스트 거절 문구 — 컨트롤러 선판정과 VM 재판정이 **같은 말**을
 #: 하도록 단일 출처로 둔다(두 곳이 다른 문구면 같은 거절이 두 얼굴로 보인다).
@@ -151,9 +152,11 @@ class JobRow:
             template_missing=template_missing,
             field_count=len(job.mapping.mappings),
             filename_pattern=job.filename_pattern,
-            last_run_display=(
-                f"최근 실행 {_fmt_iso(job.last_run_at)}" if job.last_run_at else "아직 실행 안 함"
-            ),
+            # 최근 사용 문구는 **방식이 정한다**(§19.4 표 · `last_use_label` 단일 출처).
+            # 저장 필드는 `last_run_at` 하나지만 그 뜻은 매체마다 다르다: hwpx 는 생성
+            # 완주에서, txt 는 작업대 **복사 완료** 1건에서 찍힌다. 한 문구로 뭉치면 문서를
+            # 한 번도 만든 적 없는 TXT 작업이 목록·상세에서 「최근 실행」으로 보인다.
+            last_run_display=last_use_label(job.work_mode, job.last_run_at),
             last_run_at=job.last_run_at,
             compile_state=compile_state,
             compile_badge=compile_badge,

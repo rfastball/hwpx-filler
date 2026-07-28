@@ -116,7 +116,11 @@
     $("wbPrev").disabled = degen || !c.can_prev;
     $("wbNext").disabled = degen || !c.can_next;
     $("wbAdvance").checked = !!c.advance_after;
-    $("wbCopy").disabled = !c.has_current;
+    // 복사 차단은 **Python 이 낸 사유**로 닫는다(`copy_block`) — 원문 보기는 채우지 않은
+    // 템플릿을 그리므로, 활성으로 두면 화면엔 `{{수신}}` 이 보이는데 클립보드엔 채운
+    // 문장이 나간다(「보이는 것 = 복사되는 것」, 결정 17).
+    $("wbCopy").disabled = !c.has_current || !!c.copy_block;
+    $("wbCopy").title = c.copy_block || "";
     const lc = c.last_copy;
     // 복사는 성사됐는데 **최근 사용 기록이 실패**했으면 그 사실을 병기한다(4R P2) —
     // 백엔드가 일부러 남긴 사유를 표면이 안 읽으면, 무조건 성공 문안이 뜨고 이력은 조용히
@@ -209,6 +213,8 @@
     const res = await window.Bridge.copyClipboard(SCREEN, pre.token);
     if (res && res.stale) {
       window.alert("작업점이 그사이 바뀌어 복사하지 않았습니다. 카드를 확인하고 다시 복사하세요.");
+    } else if (res && res.error) {
+      window.alert(res.error);   // 차단 사유(보기 축 등)는 조용한 무동작으로 두지 않는다
     }
   }
 

@@ -3674,6 +3674,60 @@ def test_cross_media_relink_reseats_the_active_session(tmp_path):
     assert ctrl.snapshot()["run_action"]["key"] == "workbench"
 
 
+def test_workbench_entry_is_loud_when_the_template_is_not_utf8(tmp_path):
+    """비-UTF-8 템플릿도 **화면 안에서** 사유를 말한다(6R).
+
+    온나라 기안 txt 는 ANSI/CP949 로 저장돼 오기 쉽다. 파일은 실재하므로 게이트는 열려
+    있고, 진입이 `UnicodeDecodeError`(`OSError` 아님)를 그대로 올리면 웹의 `.then` 이
+    발화하지 않아 사용자는 누를 수 있는 버튼을 누르고 아무 설명도 못 듣는다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "발주요청_기안"})
+    (tmp_path / "발주요청_기안.txt").write_bytes("공고: {{공고명}}".encode("cp949"))
+    assert ctrl.snapshot()["gate"]["enabled"] is True   # 파일은 실재한다
+    ctrl.workbench = WorkbenchController(
+        ctrl.registry, lambda s, n: None, target_font=TargetFontSetting())
+    res = ctrl.dispatch("open_workbench", {})
+    assert res["ok"] is False and "템플릿을 읽을 수 없습니다" in res["error"]
+
+
+def test_an_unsupported_template_does_not_blow_up_the_screen(tmp_path):
+    """hwpx 도 txt 도 아닌 경로로 갈린 활성 작업 — 재적재가 터지지 않고 사유를 말한다.
+
+    재연결 피커는 「모든 파일」을 연다. 「TXT 가 아니면 hwpx」로 갈면 `RunViewModel` 이
+    `require_hwpx` 에서 loud raise 하고, 그 예외가 화면 전환마다 도는 재적재 밖으로 튄다 —
+    사용자가 실행을 시작하지도 않은 경로다. 게다가 매체 래치는 이미 갈아 끼워진 뒤라
+    「작업 있음 + 어느 실행 표면도 아님」이 남는다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "발주요청_기안"})
+
+    odd = tmp_path / "발주요청_기안.docx"
+    odd.write_text("x", encoding="utf-8")
+    ctrl.registry.mutate("발주요청_기안", lambda j: setattr(j, "template_path", str(odd)))
+    ctrl.dispatch("refresh", {})                       # 예외 없이 자리를 다시 앉힌다
+    assert ctrl.job_is_txt is False and ctrl.vm is None
+    assert ctrl.job_unsupported is True
+
+    snap = ctrl.snapshot()
+    assert snap["has_job"] is True and snap["job_name"] == "발주요청_기안"
+    # 「작업 미선택」 문안을 쓰지 않는다 — 이미 고른 사람에게 이행 불가능한 지시가 된다.
+    assert snap["gate"]["enabled"] is False and snap["gate"]["level"] == "danger"
+    assert "다시 연결" in snap["gate"]["text"]
+    assert snap["template_name"] == "발주요청_기안.docx"
+
+    # 되돌아오면 다시 작업대의 것이 된다(래치가 한 자리에서만 선다).
+    ctrl.registry.mutate(
+        "발주요청_기안",
+        lambda j: setattr(j, "template_path", str(tmp_path / "발주요청_기안.txt")))
+    ctrl.dispatch("refresh", {})
+    assert (ctrl.job_is_txt, ctrl.job_unsupported) == (True, False)
+
+
 def test_workbench_entry_is_blocked_and_loud_when_the_template_vanished(tmp_path):
     """템플릿이 사라졌으면 **버튼이 먼저 정직하고**, 그래도 눌리면 사유를 돌려준다(5R P2).
 

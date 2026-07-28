@@ -56,13 +56,15 @@ def test_rows_shape_meta_and_missing_template(tmp_path):
     assert g.template_name == "t.hwpx"
     assert g.template_missing is True
     assert g.field_count == 1
-    assert "최근 실행 2026-07-09 15:42" == g.last_run_display
+    # 최근 사용 문구는 방식이 정한다(§19.4 · `last_use_label` 단일 출처) — hwpx 는 생성
+    # 완주에서 찍히므로 "실행"이 아니라 **성공한 실행**이라고 말한다.
+    assert g.last_run_display == "마지막 성공 실행 2026-07-09"
     assert g.meta_line() == "템플릿 t.hwpx · 필드 1개 · 파일명 공고-{{ID}}"
 
     n = rows["낙찰"]
     assert n.template_name == "—"          # 빈 템플릿 경로
     assert n.template_missing is False      # 경로 없음 = 부재 배지 아님
-    assert n.last_run_display == "아직 실행 안 함"
+    assert n.last_run_display == "성공한 실행 없음"
 
 
 def test_empty_registry(tmp_path):
@@ -813,3 +815,20 @@ def test_unknown_library_view_and_mode_degenerate(tmp_path):
     vm.set_library_view("엉뚱")
     vm.set_library_mode("엉뚱")
     assert vm.library_view == VIEW_ALL and vm.library_mode == "all"
+
+
+def test_last_use_wording_follows_the_work_mode(tmp_path):
+    """저장 필드는 하나(`last_run_at`)지만 그 뜻은 방식이 정한다(§19.4).
+
+    hwpx 는 생성 완주에서, txt 는 작업대 **복사 완료** 1건에서 찍힌다. 한 문구로 뭉치면
+    문서를 한 번도 만든 적 없는 TXT 작업이 라이브러리에서 「최근 실행」으로 보인다.
+    """
+    reg = JobRegistry(tmp_path / "jobs")
+    tpl = tmp_path / "기안.txt"
+    tpl.write_text("공고: {{공고명}}", encoding="utf-8")
+    reg.save(Job(name="기안", template_path=str(tpl),
+                 last_run_at="2026-07-28T09:10:00"))
+    reg.save(Job(name="빈기안", template_path=str(tpl)))
+    rows = {r.name: r for r in HomeViewModel(reg).rows()}
+    assert rows["기안"].last_run_display == "마지막 복사 2026-07-28"
+    assert rows["빈기안"].last_run_display == "복사한 적 없음"

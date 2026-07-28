@@ -244,7 +244,10 @@
 
             <!-- 본문 존 — 라이브 거울(필드 채움 테이블). 결정 3(§10.6): 거울은 빈 값 확인
                  게이트의 표면이라 v6 validationCard 로 대체되지 않고 병존한다. -->
-            <div class="zone job-mirror-zone">
+            <!-- TXT(검토·복사) 작업에선 이 존 전체가 숨는다: 값 확인은 작업대가 레코드마다
+                 눈으로 하는 일이고, 여기 남겨 두면 「행을 선택하면 …」 안내가 행을 다 고른
+                 뒤에도 영영 서 있는 이행 불가능한 지시가 된다(F6 PR-A 리뷰 6R). -->
+            <div class="zone job-mirror-zone" id="jobMirrorZone">
               <div class="zone-cap zone-cap-actions"><span>본문 확인</span>
                 <button class="btn sm" id="jobMirrorExpand" type="button">펼쳐서 확인 ⤢</button></div>
               <p class="muted hint">이 문서에 들어갈 값입니다. <span class="danger">빈 값</span>
@@ -338,8 +341,10 @@
 
               <!-- 생성 준비 — 저장 폴더 + 게이트 재진술 블록(상시, 결정 36 D1-B). -->
               <div class="zone">
-                <div class="zone-cap">생성 준비</div>
-                <div class="run-row"><span class="lbl">저장 폴더</span>
+                <!-- 캡션·저장 폴더 행은 **매체 파생**이다: TXT 는 파일을 만들지 않으므로
+                     저장 폴더 축 자체가 없다(§3.2 의 파일 이름 축과 같은 부류). -->
+                <div class="zone-cap" id="jobRunCap">생성 준비</div>
+                <div class="run-row" id="jobOutRow"><span class="lbl">저장 폴더</span>
                   <input class="field ro" id="jobOutDir" type="text" readonly
                          placeholder="이 폴더에 문서를 저장합니다">
                   <button class="btn" id="jobBtnPickFolder" data-busy-lock>찾아보기…</button>

@@ -55,6 +55,7 @@ from ..core.job import (
     JobRegistry,
     content_fingerprint,
     rules_fingerprints,
+    work_mode,
 )
 from ..core.mapping import SOURCE_CARRIER_TYPES
 from ..core.template_status import OUTPUT_SUBDIR_NAME
@@ -75,9 +76,20 @@ from ..gui.review_state import (
     previous_values,
     review_requirement,
 )
-from ..gui.run_state import RunViewModel, resolve_file_source, resolve_pool_source
+from ..gui.run_state import (
+    GateState,
+    RunViewModel,
+    resolve_file_source,
+    resolve_pool_source,
+)
 from ..gui.selection_state import SelectionModel
-from ..gui.work_mode import last_use_label, mode_sections, work_mode_label
+from ..gui.work_mode import (
+    WORK_MODE_HWPX,
+    WORK_MODE_TEXT,
+    last_use_label,
+    mode_sections,
+    work_mode_label,
+)
 from ..gui.work_candidates import (
     KIND_NEEDS_ACTION,
     MAIN_TOP_N,
@@ -112,6 +124,22 @@ from .screens import (
 
 # 사전검증 성공 문구는 링2 사용자 어휘로 순화한다(실행 화면 _PREFLIGHT_OK_TEXT 동형).
 _PREFLIGHT_OK_TEXT = "검증 완료. 생성할 수 있습니다."
+
+
+def _seat_kinds(job: Job) -> "tuple[bool, bool]":
+    """활성 작업의 착석 분류 ``(TXT 인가, 미상 매체인가)`` — 세 값짜리 축의 단일 판정.
+
+    이 화면의 실행 표면은 셋이다: hwpx 실행뷰 · TXT 작업대 · **어느 쪽도 아님**. 앞의 둘만
+    세면 세 번째가 hwpx 로 접혀 `RunViewModel` 이 `require_hwpx` 에서 loud raise 하고, 그
+    예외는 재적재·재연결처럼 **사용자가 실행을 시작하지도 않은** 경로에서 튄다.
+
+    빈 경로는 미상이지만 **저작 중인 hwpx 작업**이라 실행뷰를 세운다 — `require_hwpx` 도 빈
+    경로만 관용하고, 라이브러리 `library_mode_of` 도 같은 귀속을 쓴다.
+    """
+    mode = work_mode(job.template_path)
+    unsupported = bool(job.template_path) and mode not in (WORK_MODE_HWPX, WORK_MODE_TEXT)
+    return mode == WORK_MODE_TEXT, unsupported
+
 
 # 데이터 미겨눔 상태의 재진술 빈 골격 — 필터/테이블 골격은 데이터 존 공유 믹스인
 # (data_zone.EMPTY_*)이 소유한다(PR-2b).
@@ -277,6 +305,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 매체는 `template_path` 확장자 파생이라 이름이 바뀌어도 불변이고(§13-17), 실제
         # Job 은 **쓰는 순간** 스냅샷이 이미 읽는 목록·레지스트리에서 집는다.
         self.job_is_txt = False
+        # 선택된 작업의 템플릿이 hwpx 도 txt 도 아님 — 실행 표면이 **없다**. TXT 와 나란히
+        # 두는 이유는 같다: `vm is None` 하나로는 세 상태를 말할 수 없다(`_seat_kinds`).
+        self.job_unsupported = False
         # 작업대 컨트롤러(사후 주입 — 라이브러리 `session_guards` 선례). 진입 판정은 이
         # 컨트롤러가 내고 세션 개시만 위임한다.
         self.workbench = None
@@ -1205,9 +1236,26 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 # 순위 밖(more)도 선택 가능한 후보라 top 이 비어야만 "없음"이다.
                 has_candidates=bool(base["candidates"]["top"]),
             )
+            # **미상 매체는 「작업 미선택」이 아니다**: 작업은 골라져 있고(`has_job`) 실행
+            # 표면만 없다. prework 문안("먼저 문서 작업을 선택하세요")을 그대로 쓰면 이미
+            # 고른 사람에게 이행 불가능한 지시를 주고, 화면은 「작업 있음」과 「없음」을
+            # 동시에 말한다. 사유와 복구 동선(재연결)을 그 자리에서 말한다.
+            unsup_job = (
+                next((j for j in jobs if j.name == self.job_name), None)
+                if self.job_unsupported else None
+            )
+            utpath = unsup_job.template_path if unsup_job is not None else ""
+            if self.job_unsupported:
+                g = GateState(
+                    False, "danger",
+                    "이 작업의 템플릿은 HWPX 도 온나라 기안 TXT 도 아닙니다. "
+                    "템플릿을 다시 연결한 뒤 진행하세요.",
+                )
             base.update({
-                "template_name": "", "template_path": "", "filename_pattern": "",
-                "template_missing": False,
+                "template_name": Path(utpath).name if utpath else "",
+                "template_path": utpath,
+                "filename_pattern": "",
+                "template_missing": bool(utpath) and not Path(utpath).exists(),
                 "has_data": self.datasource is not None,
                 "record_count": len(self.records),
                 "selected_count": self.selection.selected_count(),
@@ -1466,7 +1514,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # **매체가 갈렸으면 자리를 다시 앉힌다**(2R P2). 재연결은 매체 교차가 가능하고
         # (파일 필터의 「모든 파일」), 그 변화는 이 화면 밖에서도 일어난다 — 라이브러리에서
         # 재연결하고 돌아오는 경로가 실물이다. 매체가 그대로면 아래 hwpx 규칙 대조로 간다.
-        if WorkbenchController.accepts(job) != self.job_is_txt:
+        if _seat_kinds(job) != (self.job_is_txt, self.job_unsupported):
             self._seat_active_job(job)
             self._last_generated = None   # 실행 표면 자체가 갈렸다 — 옛 증거는 남의 것이다
             self._do_preview_close({})
@@ -1509,8 +1557,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         HWPX→TXT 는 재적재가 `RunViewModel` 을 세우려다 터졌다. 두 값을 **한 자리에서만**
         세우면 갈라질 수가 없고, 갱신이 필요한 곳은 이 함수를 부르면 된다.
         """
-        self.job_is_txt = WorkbenchController.accepts(job)
-        self.vm = None if self.job_is_txt else RunViewModel(job)
+        self.job_is_txt, self.job_unsupported = _seat_kinds(job)
+        self.vm = None if (self.job_is_txt or self.job_unsupported) else RunViewModel(job)
         # 세션 데이터 주입도 **여기가** 한다: vm 을 세우는 자리와 그 vm 이 볼 데이터를
         # 실어 주는 자리가 갈리면, 한쪽만 부르는 경로가 곧 빈 실행뷰가 된다(재적재가
         # 실제로 그랬다). 데이터·선택·필터는 세션 소유라 작업 전환에서 생존한다(§18.2).
@@ -1559,11 +1607,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         indices = self._indices()
         try:
             self.workbench.open(job, [(i, self.records[i]) for i in indices])
-        except OSError as exc:
+        except (OSError, UnicodeDecodeError) as exc:
             # 템플릿이 그사이 사라졌거나 읽을 수 없다 — **화면 안에서** 사유를 말한다(5R P2).
             # 날것 예외로 올리면 호출부(.then)가 못 받아 아무 설명 없이 아무 일도 안 난 것처럼
             # 보인다. 게이트도 이 사실을 미리 세지만(버튼이 정직하게 닫힌다) 그 판정과 이
             # 진입 사이에도 파일은 사라질 수 있으므로 둘 다 필요하다.
+            #
+            # **`UnicodeDecodeError` 도 같은 사건이다**(6R). 작업대는 UTF-8 로 읽는데 온나라
+            # 기안 txt 는 ANSI/CP949 로 저장돼 오기 쉽고, 게이트는 파일 **존재**만 세므로
+            # 버튼은 열려 있다. `OSError` 가 아니라 `ValueError` 계열이라 잡지 않으면 사유를
+            # 말할 자리를 그대로 지나쳐, 열리는 척하던 버튼이 아무 말도 없이 끝난다.
             return {"ok": False, "error": (
                 f"템플릿을 읽을 수 없습니다: {exc}. 템플릿을 다시 연결한 뒤 진행하세요.")}
         return {"ok": True, "count": len(indices)}
@@ -1599,6 +1652,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if not name:  # 선택 해제 = 작업만 내려놓는다(데이터 존은 그대로)
             self.vm = None
             self.job_is_txt = False
+            self.job_unsupported = False
             self.job_name = ""
             self.out_dir = ""
             self._last_failed = []
