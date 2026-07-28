@@ -83,9 +83,24 @@ class WorkbenchController(MappingVerbsMixin):
         # 대상 글꼴은 앱 전역 선언이라 「기안」과 **같은 인스턴스**를 공유한다 — 두 벌이면
         # 같은 사용자 선언에 두 값이 생긴다(PR-B 에서 「기안」이 죽으면 소비자는 하나가 된다).
         self._font = target_font
-        # 복사 거래의 임계구역(5R P1) — pywebview 브리지 호출은 스레드별이라 복사가 **실제로**
-        # 겹친다. 대조와 쓰기 사이가 열려 있으면 토큰을 묶어도 창이 남는다.
-        self._copy_lock = threading.Lock()
+        # **세션 상태 전이의 임계구역**(6R P1 근본 조치). pywebview 는 브리지 호출마다 별도
+        # 스레드라 이 컨트롤러의 진입점들이 실제로 겹친다.
+        #
+        # 같은 결함이 세 번 왔고(3R=확인 대상과 복사 대상을 토큰으로 결속 · 5R=복사 거래를
+        # 컨트롤러가 원자로 소유 · 6R=그 잠금에 **변이 쪽이 참여하지 않음**), 그때마다 복사
+        # 경로만 넓혔다. 잠금은 잠금을 잡는 쪽끼리만 배제하므로, `copy_to` 혼자 잠가서는
+        # 「다음」·매핑 편집·이탈이 렌더와 `note_copied` 사이로 그대로 들어온다 — 옛 카드로
+        # 만든 문자열을 쓰고 **새** 작업점을 복사 완료로 찍거나, `_do_close` 가 비운
+        # `mapping` 위에서 이미 성공한 복사가 터진다.
+        #
+        # 그래서 정의를 넓혀 한 자리로 닫는다: 잠그는 것은 「복사」가 아니라 **이 세션의
+        # 상태를 바꾸는 모든 것**이다(dispatch 변이 · 세션 개시/파기 · 복사 거래). 무변이
+        # 질의도 같은 잠금 아래에서 읽어 전이 중간을 보지 않는다.
+        #
+        # 잠금 순서는 언제나 `_state_lock` → `registry.write_lock()` 이다(저장·최근 사용
+        # 스탬프가 그렇게 중첩한다). 역순으로 잡는 경로는 없다 — 레지스트리 잠금을 든 채
+        # 이 컨트롤러를 부르는 자리를 만들지 않는다.
+        self._state_lock = threading.RLock()
         self._clear()
 
     # ------------------------------------------------------------- 세션 수명
@@ -126,6 +141,8 @@ class WorkbenchController(MappingVerbsMixin):
         **실패 원자성**: 실패할 수 있는 템플릿 읽기를 **먼저** 끝낸 뒤에 상태를 교체한다.
         템플릿이 사라졌으면 :class:`OSError` 가 올라가고 이전 상태(보통 「세션 없음」)는
         그대로다 — 반쪽 세션으로 화면이 서지 않는다(「기안」 `_restore_from_job` 과 같은 규율).
+        파일 읽기는 잠금 **밖**이다: 실패해도 바꾸는 것이 없고, 느린 I/O 로 진행 중인 복사
+        거래를 잡아 둘 이유도 없다. 잠그는 것은 교체 자체다.
         """
         text = Path(job.template_path).read_text(encoding="utf-8")
         records = [dict(rec) for _, rec in rows]        # 고정 사본(§13-13) — 바깥과 공유 금지
@@ -137,27 +154,29 @@ class WorkbenchController(MappingVerbsMixin):
         # 저장 프로파일은 **과거 사람 확정**의 산출물이라 확정본으로 복원한다(결정 12) —
         # 라이브 재제안이 그 위를 덮으면 사람이 고른 결속이 조용히 바뀐다.
         mapping.apply_profile(job.mapping, confirm=True)
-        # 커밋(이 아래로는 실패 없음).
-        self._clear()
-        self.job_name = job.name
-        self.base_job = job
-        self.template_text = text
-        self.records = records
-        self.source_rows = [i + 1 for i, _ in rows]     # 1-based 원본 행 번호(정체 병기용)
-        self.mapping = mapping
-        # 고정 사본 **전체**가 이 세션의 대상이다(선택은 「문서 만들기」에서 이미 끝났다) —
-        # 여기서 다시 고르는 축을 만들면 같은 결정을 두 표면이 내리게 된다.
-        self.selection = SelectionModel(len(records))
-        self.queue = TxtQueueModel(self.selection)
-        self.session = EditSession(
-            context=EditContext(work=job.name), base=job, section=SECTION_BINDING,
-        )
-        self._push()
+        # 커밋(이 아래로는 실패 없음) — 세션 교체는 상태 전이라 잠금 안이다.
+        with self._state_lock:
+            self._clear()
+            self.job_name = job.name
+            self.base_job = job
+            self.template_text = text
+            self.records = records
+            self.source_rows = [i + 1 for i, _ in rows]  # 1-based 원본 행 번호(정체 병기용)
+            self.mapping = mapping
+            # 고정 사본 **전체**가 이 세션의 대상이다(선택은 「문서 만들기」에서 이미 끝났다) —
+            # 여기서 다시 고르는 축을 만들면 같은 결정을 두 표면이 내리게 된다.
+            self.selection = SelectionModel(len(records))
+            self.queue = TxtQueueModel(self.selection)
+            self.session = EditSession(
+                context=EditContext(work=job.name), base=job, section=SECTION_BINDING,
+            )
+            self._push()
 
     def close(self) -> None:
         """세션 파기 — 이탈이 성사된 뒤 호출한다(가드는 웹→`leave_guard` 가 먼저 본다)."""
-        self._clear()
-        self._push()
+        with self._state_lock:
+            self._clear()
+            self._push()
 
     @property
     def is_open(self) -> bool:
@@ -438,19 +457,25 @@ class WorkbenchController(MappingVerbsMixin):
         서술하는데, 그 뒤 편집이 오면 옆의 「저장하지 않은 변경 N건」과 동시에 서서 화면이 두
         말을 한다. 둘 다 **핸들러 앞에서** 지운다: `_do_save_rules` 는 자기 성공 문안을 바로
         그 자리에 남기므로, 뒤에서 지우면 저장이 아무 말도 못 하게 된다.
+
+        **모든 액션이 세션 잠금 안이다**(6R P1). 변이는 진행 중인 복사 거래의 렌더와
+        `note_copied` 사이로 끼어들 수 없어야 하고(끼어들면 옛 카드의 문자열을 새 작업점의
+        복사 완료로 찍는다), 질의도 전이 중간을 읽지 않아야 한다 — 복사 사전확인이 내는
+        토큰이 반쪽 상태의 정체이면 3R 이 세운 결속이 그 자리에서 무너진다.
         """
         handler = getattr(self, f"_do_{action}", None)
         if handler is None:  # confirm-or-alarm: 미지 액션은 시끄럽게.
             raise ValueError(f"알 수 없는 workbench 액션: {action!r}")
-        if getattr(handler, "is_query", False):
-            return handler(payload)
-        self._last_copy = None
-        self.notice_text, self.notice_level = "", "muted"
-        result = handler(payload)
-        if getattr(handler, "is_no_push", False):
-            return result   # 반환 스냅샷으로 JS 가 겨냥 패치한다(맞추기 표 재구성 금지)
-        self._push()
-        return result
+        with self._state_lock:
+            if getattr(handler, "is_query", False):
+                return handler(payload)
+            self._last_copy = None
+            self.notice_text, self.notice_level = "", "muted"
+            result = handler(payload)
+            if getattr(handler, "is_no_push", False):
+                return result   # 반환 스냅샷으로 JS 가 겨냥 패치(맞추기 표 재구성 금지)
+            self._push()
+            return result
 
     def _require_open(self) -> None:
         if not self.is_open:
@@ -651,11 +676,15 @@ class WorkbenchController(MappingVerbsMixin):
 
         back 으로 나가면 묻고 창을 닫으면 안 묻는 것은 같은 소실에 두 답을 주는 것이다.
         그래서 문안만 창 종료 문맥으로 바꾸고 판정은 :meth:`leave_guard` 하나에 둔다.
+
+        **다른 스레드에서 온다**(창 종료 훅) — 그래서 판정을 세션 잠금 아래에서 읽는다.
+        진행 중인 복사 거래의 중간을 보면 「잃을 것 없음」과 「있음」이 왕복마다 갈린다.
         """
-        return (
-            "검토·복사 작업대의 미저장 연결 변경 또는 복사 진행"
-            if self.leave_guard()["armed"] else ""
-        )
+        with self._state_lock:
+            return (
+                "검토·복사 작업대의 미저장 연결 변경 또는 복사 진행"
+                if self.leave_guard()["armed"] else ""
+            )
 
     def _do_leave_guard(self, p: dict) -> dict:
         return self.leave_guard()
@@ -701,8 +730,15 @@ class WorkbenchController(MappingVerbsMixin):
         그래서 거래의 **소유권을 옮겼다**: 브리지는 OS 클립보드 쓰기 함수만 건네고, 순서와
         원자성은 이 컨트롤러가 진다. 겹친 두 번째 호출은 잠금에서 기다렸다가 **바뀐 작업점**
         때문에 토큰 대조에서 걸린다 — 조용한 오복사 대신 stale 재진술이 나간다.
+
+        **왜 복사끼리 잠그는 것으로도 부족했나**(6R P1): 잠금은 잠금을 잡는 쪽끼리만
+        배제한다. 복사만 잠그면 「다음」·매핑 편집·이탈은 그대로 임계구역 **안으로** 들어와,
+        렌더와 :meth:`note_copied` 사이에서 작업점을 옮기거나(옛 카드의 문자열이 새 작업점의
+        복사 완료로 찍힌다) 세션을 비운다(이미 성공한 복사가 `mapping is None` 에서 터진다).
+        그래서 잠금의 정의를 「복사 거래」에서 **「세션 상태 전이」**로 넓혔다 —
+        :meth:`dispatch`·:meth:`open`·:meth:`close` 가 같은 잠금에 참여한다.
         """
-        with self._copy_lock:
+        with self._state_lock:
             if not self.is_open:
                 return {"copied": False, "missing_fields": [], "empty_fields": [],
                         "error": "작업대 세션이 없습니다."}
@@ -729,6 +765,11 @@ class WorkbenchController(MappingVerbsMixin):
         """복사 성사 뒤 상태 전진 — 클립보드 쓰기가 **성공한 뒤에만** 불린다.
 
         작업점은 복사해도 그 카드에 머문다(조용한 이동 금지) — 전진은 사용자가 켰을 때만.
+
+        **세션 잠금 안에서 불린다**(:meth:`copy_to` 가 유일한 실호출자). 여기서 다시 읽는
+        작업점·지문은 방금 렌더한 카드의 것이어야 하므로, 잠금 밖에서 부르면 그 사이의
+        이동이 **다른 카드**를 복사 완료로 찍는다. 잠금은 재진입 가능(`RLock`)이라 이
+        메서드를 잠금 안에서 부르는 것이 안전하다.
         """
         assert self.mapping is not None
         cur = self.queue.current

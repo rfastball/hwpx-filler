@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import pytest
@@ -742,3 +743,63 @@ def test_save_notice_does_not_outlive_the_state_it_describes(tmp_path):
     snap = ctrl.snapshot()
     assert snap["notice"]["text"] == ""
     assert snap["dirty"]["count"] >= 1
+
+
+def test_a_move_cannot_land_inside_the_copy_transaction(tmp_path):
+    """복사 거래 **안으로** 이동이 끼어들지 못한다(6R P1 근본 조치).
+
+    잠금은 잠금을 잡는 쪽끼리만 배제한다. 복사만 잠그면 렌더와 `note_copied` 사이로
+    「다음」이 들어와, **옛 카드로 만든 문자열**이 **새 작업점**의 복사 완료로 찍힌다.
+    그래서 잠금의 정의를 「복사 거래」가 아니라 **「세션 상태 전이」**로 넓혔다 —
+    여기서는 클립보드 쓰기 도중에 실제로 다른 스레드가 작업점 이동을 밀어 넣어 본다.
+    """
+    ctrl, _, _ = _open(tmp_path)
+    assert ctrl.snapshot()["card"]["source_row"] == 3     # 표시순 첫 카드
+    landed: "list[str]" = []
+    started = threading.Event()
+
+    def write(text: str) -> None:
+        landed.append(text)
+        started.set()
+        mover.join(timeout=2.0)      # 이동이 잠금에서 기다리는 동안 거래는 계속된다
+        assert mover.is_alive(), "이동이 복사 거래 안으로 들어왔습니다."
+
+    mover = threading.Thread(
+        target=lambda: (started.wait(2.0), _send(ctrl, "set_current", {"index": 1})),
+    )
+    mover.start()
+    res = ctrl.copy_to(ctrl.copy_token(), write)
+    mover.join(timeout=2.0)
+
+    assert res["copied"] is True and len(landed) == 1
+    # 복사 완료로 찍힌 카드는 **렌더된 그 카드**다(이동은 거래가 끝난 뒤 착지한다).
+    assert ctrl.queue.is_copied(0) is True
+    assert ctrl._copied_rules == {0: ctrl._rules_signature()}
+    # 이동은 삼켜지지 않았다 — 그 뒤에 정상으로 반영되고 완료 노트는 함께 걷힌다.
+    assert ctrl.snapshot()["card"]["source_row"] == 1
+    assert ctrl.snapshot()["card"]["last_copy"] is None
+
+
+def test_closing_mid_copy_cannot_destroy_the_session_under_the_write(tmp_path):
+    """쓰기 도중 이탈이 세션을 비우지 못한다 — 이미 성공한 복사가 터지지 않게.
+
+    `_do_close` 가 `mapping` 을 비운 뒤 `note_copied` 가 돌면, 클립보드에는 값이 나갔는데
+    화면은 예외로 끝난다(사용자는 복사를 받았고 앱은 실패했다고 말한다).
+    """
+    ctrl, _, _ = _open(tmp_path)
+    started = threading.Event()
+
+    def write(text: str) -> None:
+        started.set()
+        closer.join(timeout=2.0)
+        assert closer.is_alive(), "이탈이 복사 거래 안으로 들어왔습니다."
+
+    closer = threading.Thread(
+        target=lambda: (started.wait(2.0), _send(ctrl, "close", {})),
+    )
+    closer.start()
+    res = ctrl.copy_to(ctrl.copy_token(), write)
+    closer.join(timeout=2.0)
+
+    assert res["copied"] is True          # 거래는 온전히 끝난다
+    assert ctrl.is_open is False          # 이탈은 그 뒤에 착지한다
