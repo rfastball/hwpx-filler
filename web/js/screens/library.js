@@ -334,16 +334,8 @@
     const work = selectedWork(name);
     if (!work) return;
     const target = (work.primary && work.primary.target) || "job";
-    if (target === "draft") {
-      // 가드 문안·stale 재진술은 「기안」이 소유한 단일 경로에 위임한다. 취소 = 화면 불변.
-      if (!window.DraftScreen) {
-        window.alert("기안 화면 구성 요소(DraftScreen)가 로드되지 않았습니다.");
-        return;
-      }
-      if (!(await window.DraftScreen.openWork(name))) return;
-      window.Nav.go("draft");
-      return;
-    }
+    // TXT 도 `job` 으로 간다(F6 PR-B) — 실행 버튼 2분기(생성/검토·복사)는 「문서 만들기」의
+    // 판정 D 소유라 여기 매체 분기가 없다. 구 「기안에서 열기」(target "draft")는 걷혔다.
     if (target === "editor") {
       // 아직 「문서 만들기」가 받을 수 없는 작업(미연결·미상 방식) — 실제로 고칠 수 있는
       // 곳으로 보낸다. 빈 「확인 필요」에 착지시키는 것보다 정직하고 쓸모 있다.

@@ -529,11 +529,13 @@ def test_txt_work_joins_the_document_picker(tmp_path):
 
 # ------------------------------------------------- 주 행동의 목적지(리뷰 3R 근본 조치)
 def test_primary_action_never_sends_a_work_the_document_screen_cannot_take(tmp_path):
-    """되풀이된 결함류의 구조 차단 — 「문서 만들기」는 **연결된 hwpx** 만 받는다.
+    """되풀이된 결함류의 구조 차단 — 「문서 만들기」는 **연결된 hwpx·txt** 만 받는다.
 
     표시용 정규화(`library_mode_of` 는 미연결을 hwpx 로 센다)에서 행동 경로를 파생하면
     `rank_available`(원시 매체)이 배제하는 작업을 그쪽으로 보내게 되고, 이어 여는 「확인
     필요」 탭에서도 배제돼 **빈 화면**에 착지한다. TXT(2R)와 미연결(3R)이 그 두 표본이었다.
+    F6 PR-B: 「기안」 승계처(작업대)가 서면서 txt 도 `job` 으로 합쳐졌다 — 매체 분기는
+    실행 버튼(판정 D)이 소유하고 목적지 분기는 소멸했다(§10.15.15 점검표 2행).
     """
     from hwpxfiller.gui.work_candidates import rank_available
     from hwpxfiller.webapp.screen_library import primary_action
@@ -548,19 +550,17 @@ def test_primary_action_never_sends_a_work_the_document_screen_cannot_take(tmp_p
                           pool_registry=_pool(tmp_path))
     rows = {r.name: r for r in ctrl.vm.rows()}
     targets = {n: primary_action(r)["target"] for n, r in rows.items()}
-    assert targets == {"미연결": "editor", "기안문": "draft", "미상": "editor"}
+    assert targets == {"미연결": "editor", "기안문": "job", "미상": "editor"}
     # 라벨은 목적지와 **함께** 온다(표면이 짝을 다시 맞추면 또 갈린다).
-    assert primary_action(rows["기안문"])["label"] == "기안에서 열기"
+    assert primary_action(rows["기안문"])["label"] == "문서 만들기에서 사용"
     assert primary_action(rows["미연결"])["hint"]                       # 왜 그쪽인지 말한다
 
-    # 불변식(F6 합류 뒤의 형태): **목적지는 그 작업을 실제로 받을 수 있어야 한다.**
-    # 「문서 만들기」·「기안」은 둘 다 실행 표면이라 후보 자격이 있어야 하고, 「편집기」로
-    # 가는 것들(미연결·미상)은 어느 실행 표면도 받을 수 없어 자격이 없어야 한다.
-    # PR-B 에서 「기안」이 죽으면 txt 도 `job` 으로 합쳐지고 이 분기는 사라진다.
+    # 불변식: **목적지는 그 작업을 실제로 받을 수 있어야 한다.** `job` 으로 가는 것은
+    # 후보 자격이 있어야 하고, 「편집기」로 가는 것들(미연결·미상)은 자격이 없어야 한다.
     fields = ["공고명"]
     ranked = {r.name for r in rank_available(reg.list_jobs(), fields)}
     for name, target in targets.items():
-        if target in ("job", "draft"):
+        if target == "job":
             assert name in ranked or rows[name].media == "hwpx"
         else:
             assert name not in ranked, f"{name} → {target}"
