@@ -2976,10 +2976,14 @@ UI 층 귀결이다. `Job.media` 는 저장 필드가 아니라 파생 속성인
 
 | 자리 | 조치 |
 |---|---|
-| `screen_job._reload_active_job` 매체 교차 재착석 분기 | 삭제 — PR-A 2R P2 가 지은 방어 코드가 죽은 코드가 된다 |
+| `screen_job._reload_active_job` 매체 교차 재착석 분기 | ~~삭제~~ → **역할 좁힘 존치**(리뷰 1R P2 정정): 옛 역할(교차 방어)은 게이트가 원천 차단해 죽었지만, 게이트가 **허용**하는 복구 전이(미상 `.docx` → 라이브러리 relink 로 기지 매체)가 같은 분기를 실물로 쓴다 — 지우면 화면이 유효해진 템플릿을 재선택 전까지 unsupported 로 주장한다. 지문 대조는 unsupported 세션(vm 없음)을 못 보므로 대체 불가 |
 | `core/job.require_hwpx` docstring 「매체 교차 relink 는 예외」 | 삭제 — 예외 없는 가드 |
 | `test_architecture` 허용 소비자 등재 사유 | 「매체 교차 재확인」 → 「같은 매체 드리프트 재확인」 |
-| `test_webapp_job.test_cross_media_relink_reseats_the_active_session` | **반전** — 「갈리면 재착석한다」 → 「교차는 거절된다」 |
+| `test_webapp_job.test_cross_media_relink_reseats_the_active_session` | **반전** — 「갈리면 재착석한다」 → 「교차는 거절된다」(자리 불변). 재착석 쪽 회귀는 복구 전이 판으로 존치(`test_recovery_relink_reseats_the_active_session`) |
+
+정정의 교훈(1R): 「죽은 코드」 판정은 그 코드가 받치던 전이 목록에서 **이번 변경이 새로
+연 전이**(미상 구작업 복구 — 게이트 3분기의 통과 갈래)까지 세어야 한다 — 같은 커밋이
+문을 좁히면서 열어 준 갈래가 그 방어 코드의 새 소비자가 된다.
 
 #### 10.16.3 후속 규칙 — 파생의 원천을 바꾸는 동사는 그 파생이 결정한 전부를 바꾼다
 

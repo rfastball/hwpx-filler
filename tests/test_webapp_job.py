@@ -3779,13 +3779,13 @@ def test_workbench_entry_is_loud_when_the_template_is_not_utf8(tmp_path):
 
 
 def test_an_unsupported_template_does_not_blow_up_the_screen(tmp_path):
-    """hwpx 도 txt 도 아닌 경로로 갈린 작업 — 재적재·재선택이 터지지 않고 사유를 말한다.
+    """hwpx 도 txt 도 아닌 경로로 갈린 활성 작업 — 재적재가 터지지 않고 사유를 말한다.
 
     relink 게이트가 새 매체 미상을 거절하므로(§10.16 판정 C) 이 상태는 제품 경로로는 못
-    만든다 — 남는 실물은 JSON 손편집이다. 매체 교차 재착석 분기 회수(판정 E) 뒤 재적재는
-    자리를 갈지 않고(수용 잔여 — 그 주석의 실체) **재선택**이 자리를 앉히는 사건이다.
-    그때 「TXT 가 아니면 hwpx」로 갈면 `RunViewModel` 이 `require_hwpx` 에서 loud raise
-    하므로, unsupported 자리가 서고 사유 문안이 나와야 한다.
+    만든다 — 남는 실물은 JSON 손편집이다. 그래도 재적재는 자리를 다시 앉혀야 한다:
+    「TXT 가 아니면 hwpx」로 갈면 `RunViewModel` 이 `require_hwpx` 에서 loud raise 하고,
+    그 예외가 화면 전환마다 도는 재적재 밖으로 튄다. 복귀 방향(미상→txt)은 게이트가
+    허용하는 **복구 전이**이기도 하다(판정 E 정정 — 리뷰 1R P2).
     """
     ctrl, _ = _controller(tmp_path)
     _txt_job(ctrl, tmp_path)
@@ -3795,10 +3795,7 @@ def test_an_unsupported_template_does_not_blow_up_the_screen(tmp_path):
     odd = tmp_path / "발주요청_기안.docx"
     odd.write_text("x", encoding="utf-8")
     ctrl.registry.mutate("발주요청_기안", lambda j: setattr(j, "template_path", str(odd)))
-    ctrl.dispatch("refresh", {})                       # 예외 없이 — 자리는 재선택까지 유지
-    assert (ctrl.job_is_txt, ctrl.job_unsupported) == (True, False)
-
-    ctrl.dispatch("select_job", {"name": "발주요청_기안"})  # 재선택 = 자리 앉힘 사건
+    ctrl.dispatch("refresh", {})                       # 예외 없이 자리를 다시 앉힌다
     assert ctrl.job_is_txt is False and ctrl.vm is None
     assert ctrl.job_unsupported is True
 
@@ -3809,12 +3806,38 @@ def test_an_unsupported_template_does_not_blow_up_the_screen(tmp_path):
     assert "다시 연결" in snap["gate"]["text"]
     assert snap["template_name"] == "발주요청_기안.docx"
 
-    # 되돌아오면 다시 작업대의 것이 된다(래치는 `_seat_active_job` 한 자리에서만 선다).
+    # 되돌아오면 다시 작업대의 것이 된다(래치가 한 자리에서만 선다).
     ctrl.registry.mutate(
         "발주요청_기안",
         lambda j: setattr(j, "template_path", str(tmp_path / "발주요청_기안.txt")))
-    ctrl.dispatch("select_job", {"name": "발주요청_기안"})
+    ctrl.dispatch("refresh", {})
     assert (ctrl.job_is_txt, ctrl.job_unsupported) == (True, False)
+
+
+def test_recovery_relink_reseats_the_active_session(tmp_path):
+    """복구 재연결(미상→hwpx)이 화면 밖에서 커밋되면 재적재가 자리를 앉힌다(판정 E 정정, 리뷰 1R P2).
+
+    미상 `.docx` 구작업의 relink 는 게이트가 **허용**하는 복구 경로다(판정 C — 유일 복구).
+    라이브러리에서 복구하고 이 화면으로 돌아왔을 때 재착석 분기가 없으면, 화면은 유효해진
+    템플릿을 재선택 전까지 unsupported 라고 계속 주장한다 — 지문 대조는 unsupported
+    세션(vm 없음)을 못 보므로 대체가 아니다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    odd = tmp_path / "구양식.docx"
+    odd.write_text("x", encoding="utf-8")
+    ctrl.registry.save(Job(
+        name="깨진작업", template_path=str(odd),
+        mapping=ctrl.registry.load("공고서").mapping))
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "깨진작업"})
+    assert ctrl.job_unsupported is True and ctrl.vm is None
+
+    # 라이브러리 복구 relink 의 화면 밖 durable 변경을 시뮬레이트(같은 게이트 경로는 T4 가 가드).
+    ctrl.registry.mutate(
+        "깨진작업", lambda j: setattr(j, "template_path", str(tmp_path / "t.hwpx")))
+    ctrl.dispatch("refresh", {})
+    assert ctrl.job_unsupported is False and ctrl.vm is not None
+    assert ctrl.snapshot()["run_action"]["key"] == "generate"
 
 
 def test_workbench_entry_is_blocked_and_loud_when_the_template_vanished(tmp_path):
