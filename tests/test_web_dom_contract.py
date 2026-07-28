@@ -1734,3 +1734,87 @@ def test_job_screen_branches_the_output_surfaces_on_the_media_python_declared():
     assert "isCopyWork(LAST)" in picker, picker
     # 산출 문안이 파일 생성을 주장하지 않는다.
     assert "파일은 만들지 않습니다" in job_js
+
+
+# 커밋(= 누적된 상태를 **읽어서** 되돌릴 수 없는 일을 하는 발신)과, 그 앞에서 미착지 발신을
+# 정산해야 하는 관문. 값은 (파일, 함수, 정산 술어) 다.
+#
+# **왜 정적 가드인가**(F6 8R P1 근본 조치). 이 결함류는 리뷰에서 네 번 잡혔고 그때마다
+# 백엔드에서 한 칸씩 막았다 — 토큰 결속(3R) · 복사 거래 원자화(5R) · 잠금을 세션 전이로
+# 확대(7R). 전부 필요했지만 **끝낼 수 없는 층**이었다: 잠금은 겹치지 않게 할 뿐 도착 순서를
+# 정하지 않는다(먼저 잡는 쪽이 이긴다). 순서는 쏘는 쪽에서만 정해지고, 그 규약을 세운 자리가
+# 없어서 화면마다 각자 발명했다(job=Intent.chained · 기안=flushDeb · 작업대=아무것도 없음).
+#
+# 그래서 규약을 여기 못박는다: **같은 상태를 바꾸는 발신은 한 체인, 그 상태를 읽는 커밋은 그
+# 체인을 먼저 정산한다.** 새 화면이 이걸 빠뜨리면 리뷰 라운드가 아니라 이 게이트가 잡는다.
+COMMIT_SETTLE_GUARDS = (
+    ("screens/workbench.js", "async function copyCard()", "Intent.settle(WB_CHAIN)"),
+    ("screens/workbench.js", "async function saveRules()", "Intent.settle(WB_CHAIN)"),
+    ("screens/workbench.js", "async function leaveTo(", "Intent.settle(WB_CHAIN)"),
+    ("screens/job.js", "async function doGenerate(", "Intent.settle(ZONE_CHAIN)"),
+    # 「기안」은 같은 술어를 자기 이름으로 갖고 있다(디바운스 타이머까지 함께 발사한다).
+    ("draftsession.js", "async function copyCard()", "flushDeb()"),
+    ("draftsession.js", "async function confirmNewDraftIfArmed()", "flushDeb()"),
+)
+
+
+def _function_body(text: str, header: str) -> str:
+    """``header`` 로 시작하는 함수의 본문 — 여는 중괄호부터 짝이 맞는 닫는 중괄호까지."""
+    at = text.index(header)
+    open_at = text.index("{", at)
+    depth = 0
+    for i in range(open_at, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[open_at:i + 1]
+    raise AssertionError(f"함수 본문을 닫지 못했습니다: {header}")
+
+
+def test_commits_settle_pending_sends_before_they_read_state():
+    """커밋은 **미착지 발신을 정산한 뒤에** 상태를 읽는다(F6 8R P1 규약).
+
+    pywebview 는 브리지 호출마다 별도 스레드라 동시 발신의 도착 순서가 정의되지 않는다.
+    한 사용자 동작이 호출 둘로 쪼개지는 자리(값을 타이핑하고 곧바로 복사·나가기)에서 정산이
+    없으면, 화면엔 방금 친 값이 보이는데 클립보드엔 **이전 값**이 나가거나 이탈 가드가
+    「잃을 것 없음」을 답한 뒤 그 편집이 조용히 사라진다.
+    """
+    for rel, header, guard in COMMIT_SETTLE_GUARDS:
+        text = (WEB_JS_DIR / rel).read_text(encoding="utf-8")
+        assert header in text, f"{rel}: 커밋 함수가 사라졌습니다 — {header}"
+        body = _function_body(text, header)
+        assert guard in body, f"{rel} {header}: 정산 관문이 없습니다 — {guard}"
+        # 정산은 **첫 브리지 발신보다 앞**이어야 한다(뒤에 있으면 이미 옛 상태를 읽은 뒤다).
+        first_call = min(
+            (body.index(tok) for tok in ("Bridge.call(", "Bridge.copyClipboard(",
+                                         "Bridge.generate(") if tok in body),
+            default=len(body),
+        )
+        assert body.index(guard) < first_call, (
+            f"{rel} {header}: 정산이 첫 발신보다 뒤에 있습니다."
+        )
+
+
+def test_workbench_sends_all_share_one_chain():
+    """작업대의 상태 변이는 **한 체인**이다 — 축별로 가르면 서로를 추월한다.
+
+    이 화면의 작업점·보기·전각·맞추기 표는 전부 같은 세션을 바꾸고 같은 카드를 다시 그린다.
+    맨 `Bridge.call` 로 남은 변이가 하나라도 있으면 그것만 순서 밖으로 새므로, 커밋이 정산해도
+    잡히지 않는다(정산은 체인에 든 것만 기다린다).
+    """
+    text = (WEB_JS_DIR / "screens" / "workbench.js").read_text(encoding="utf-8")
+    # 커밋 3종은 정산으로 순서를 지키므로 체인 밖 직접 발신이 정당하다(위 테스트가 담보).
+    commit_bodies = "".join(
+        _function_body(text, h) for h in
+        ("async function copyCard()", "async function saveRules()", "async function leaveTo(")
+    )
+    stray = [
+        line.strip() for line in text.splitlines()
+        if "Bridge.call(SCREEN," in line
+        and not line.lstrip().startswith(("//", "/*", "*"))   # 주석에 적힌 예시는 발신이 아니다
+        and "sendWb(" not in line
+        and line.strip() not in commit_bodies
+    ]
+    assert not stray, "체인 밖 작업대 변이 발신: " + " | ".join(stray)

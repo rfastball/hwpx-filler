@@ -1005,6 +1005,9 @@
   }
 
   async function doGenerate(confirmOverwriteFlag) {
+    // 커밋은 대기 중인 존 변이 뒤에 선다(8R P1). 덮어쓰기 확인 뒤의 재귀 호출도 같은 관문을
+    // 지나되, 그 시점엔 체인이 이미 비어 있어 즉시 통과한다.
+    await window.Intent.settle(ZONE_CHAIN);
     generating = true; setBusy(true);
     if (!confirmOverwriteFlag) { $("jobGenBar").style.width = "0%"; log("생성 요청"); }
     // busy-lock 은 덮어쓰기 모달 종료까지 유지한다 — finally 를 needs_overwrite 흐름 뒤에 두어,
@@ -1480,7 +1483,11 @@
         if (LAST) Preserve.around(() => renderRestate(LAST));
       }
     });
-    $("jobGenBtn").addEventListener("click", () => {
+    $("jobGenBtn").addEventListener("click", async () => {
+      // 두 실행 행동 다 **커밋**이다 — 무엇을 대상으로 도는지가 방금 누른 존 변이에 달렸다.
+      // 존 발신은 ZONE_CHAIN 으로 서로의 순서를 지키지만 커밋은 그 체인 밖이라, 정산하지
+      // 않으면 행 토글이 착지하기 전에 생성이 **옛 선택**으로 돌 수 있다(F6 8R P1).
+      await window.Intent.settle(ZONE_CHAIN);
       // TXT 는 생성이 아니라 작업대 진입이다. 진입 자격 판정도 Python 이 하고(선택 0건·
       // 초안 열림·생성 중) 여기는 거절 사유를 재진술만 한다 — 조용한 무동작 금지.
       const key = (LAST && LAST.run_action && LAST.run_action.key) || "generate";

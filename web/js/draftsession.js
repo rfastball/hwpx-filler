@@ -572,6 +572,11 @@
        유지**로 분류한 '그럴싸한 오류'다 — 붙여넣기 전까지 아무도 그것이 오류인 줄 모른다. */
     async function copyCard() {
       if ($(id.cardCopy).disabled) return;  // 작업점 없음 = 무동작(모델 계약의 표면 반영)
+      // **미착지 편집을 먼저 정산한다**(F6 8R P1). 이 기제(`flushDeb`)는 처음부터 "복사=전
+      // 대상 최신성"을 위해 지어 놓고 정작 복사가 부르지 않았다 — blur 가 발사한 타건과 이
+      // 클릭은 서로 다른 스레드로 도착하므로, 기다리지 않으면 방금 친 값 대신 **이전 값**이
+      // 클립보드로 나간다. 소비자가 「템플릿으로 저장」 하나뿐이던 seam 을 여기로 넓힌다.
+      await flushDeb();
       // 판정은 Python 이 지금(스냅샷 캐시는 왕복 지연에서 stale — 작업 화면 가드와 같은 규율).
       const pre = await Bridge.call(SCREEN, "copy_precheck", {});
       if (!pre || !pre.can_copy) return;  // 작업점 소실(레이스) — 브리지도 같은 술어로 막는다
@@ -656,6 +661,9 @@
        를 질의한다(리뷰 F4 — guard_state 는 map_dirty 를 armed 에 안 넣어 저장 기안의 미저장 매핑
        편집을 데이터 없이 조용히 버렸다). true=진행. */
     async function confirmNewDraftIfArmed() {
+      // 가드가 「잃을 것 없음」이라고 답하려면 대기 중인 타건까지 세고 답해야 한다 —
+      // 정산 전에 물으면 방금 친 값이 열거에서 빠진 채 세션 교체로 사라진다(8R P1).
+      await flushDeb();
       const g = await Bridge.call(SCREEN, "leave_guard", {});
       if (!g || !g.armed) return true;
       return window.Modal.confirm({
