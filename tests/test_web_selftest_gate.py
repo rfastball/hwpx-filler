@@ -1349,6 +1349,9 @@ def test_completed_boot_stamps_the_home_and_narrows_the_budget(tmp_path) -> None
         assert w["lint_shown"] is True
         # 린트 처방(전각 치환)이 **손잡이로** 서 있는가 — 승계는 표지가 아니라 행동까지다.
         assert w["lint_action"] == "on:전각으로 바꾸기", w["lint_action"]
+        # 등록만 되고 아무도 못 부르던 seam 둘이 실제로 손잡이가 됐는가(4R P2).
+        assert w["font_value"] == "malgun", w["font_value"]
+        assert w["dots"] == ["7행 · 작업 중 · 다시 확인 필요", "4행 · 대기"], w["dots"]
         # 순회 경계는 Python 이 낸 값을 그대로 쓴다(2R P1): 표시 자리가 머리(1/3)인데도
         # 순회상 후미면 「이전」이 열리고 「다음」이 닫힌다 — 서수로 계산하면 정반대가 된다.
         assert (w["prev_disabled"], w["next_disabled"]) == (False, True), (

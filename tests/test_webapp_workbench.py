@@ -511,3 +511,40 @@ def test_stale_copy_writes_nothing_and_says_so(tmp_path):
     assert res["copied"] is False and res["stale"] is True
     assert ctrl.snapshot()["copied_count"] == 0        # 큐 불변
     assert reg.load("발주요청_기안").last_run_at == ""  # 최근 사용도 안 찍힌다
+
+
+# ------------------------------------------- 4R — 백엔드 seam 에 소비자가 있는가 (P2)
+def test_copy_note_carries_the_stamp_failure(tmp_path, monkeypatch):
+    """복사는 됐는데 **최근 사용 기록이 실패**했으면 완료 노트가 그 사실을 나른다(4R P2).
+
+    백엔드가 일부러 남긴 사유를 표면이 안 읽으면 무조건 성공 문안이 뜨고 이력은 조용히
+    빠진다 — 조용한 누락은 이 저장소에서 가장 비싼 부류다. 여기서는 **스냅샷에 실렸는지**를
+    잰다(문안 조립은 표면 몫이고 DOM 계약이 그 소비를 따로 센다).
+    """
+    ctrl, reg, _ = _open(tmp_path)
+
+    def boom(*a, **k):
+        raise OSError("디스크에 쓸 수 없습니다")
+
+    monkeypatch.setattr(reg, "stamp_last_run", boom)
+    ctrl.note_copied(ctrl.render()[1])
+    assert "디스크" in ctrl.snapshot()["card"]["last_copy"]["stamp_error"]
+
+
+def test_queue_index_map_lets_the_user_jump_to_a_known_row(tmp_path):
+    """순차 이동만으로는 아는 행에 못 간다 — 큐 색인이 그 자리를 연다(4R P2).
+
+    자리 라벨은 **원본 행 번호**다: 고정 사본의 정체를 사람이 아는 이름으로 말해야
+    「그 행으로 가겠다」가 성립한다.
+    """
+    ctrl, _, _ = _open(tmp_path)
+    imap = ctrl.snapshot()["card"]["index_map"]
+    assert [d["row"] for d in imap] == [3, 1]          # 표시순 그대로, 원본 행 번호
+    assert imap[0]["state"] == "current"
+    _send(ctrl, "set_current", {"index": imap[1]["index"]})
+    assert ctrl.snapshot()["card"]["source_row"] == 1
+    # 복사·재확인 상태도 색인이 함께 말한다(점 하나가 두 사실을 나른다).
+    ctrl.note_copied(ctrl.render()[1])
+    _send(ctrl, "set_map_value", {"name": "수신", "text": "고침"})
+    marked = [d for d in ctrl.snapshot()["card"]["index_map"] if d["recheck"]]
+    assert len(marked) == 1 and marked[0]["row"] == 1

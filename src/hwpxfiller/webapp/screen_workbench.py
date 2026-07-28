@@ -304,6 +304,18 @@ class WorkbenchController(MappingVerbsMixin):
             "can_next": 0 <= self._queue_pos() < len(self.queue.display_order()) - 1,
             "source_row": self.source_rows[cur] if cur is not None else None,
             "review_state": self._review_state(cur),
+            # 큐 색인(직접 이동) — 「기안」 점 표시와 같은 형상. 순서는 큐 표시순이고 자리
+            # 라벨은 **원본 행 번호**다(고정 사본의 정체를 사람이 아는 이름으로 말한다).
+            "index_map": [
+                {
+                    "index": i,
+                    "row": self.source_rows[i] if 0 <= i < len(self.source_rows) else None,
+                    "state": ("current" if i == cur
+                              else ("copied" if self.queue.is_copied(i) else "uncopied")),
+                    "recheck": self._review_state(i) == REVIEW_RECHECK,
+                }
+                for i in self.queue.display_order()
+            ],
             "uncopied_count": len(self.queue.uncopied()),
             "advance_after": self._advance_after,
             "segments": (

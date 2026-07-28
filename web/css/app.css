@@ -1435,7 +1435,10 @@ body.resizing-master{cursor:col-resize;user-select:none}
 .wb-left,.wb-right{min-width:0;display:flex;flex-direction:column;gap:var(--sp-6)}
 .wb-left .zone-head{display:flex;justify-content:space-between;align-items:flex-start;gap:var(--sp-4)}
 #wbMapPanel{max-height:360px;overflow:auto}
-.wb-toolbar{display:flex;gap:var(--sp-6);align-items:center}
+.wb-toolbar{display:flex;gap:var(--sp-6);align-items:center;flex-wrap:wrap}
+/* 큐 색인은 「기안」 점 표시와 같은 판을 쓴다(.wc-dots/.wc-dot 재사용). */
+.wb-dots{display:flex;flex-wrap:wrap;gap:var(--sp-2)}
+.wb-dots[hidden]{display:none}
 .wb-toolbar .status{margin-left:auto}
 /* 본문은 대상 글꼴 선언을 따르는 미리보기 면이라 「기안」 카드와 같은 판을 쓴다. */
 .wb-preview{white-space:pre-wrap;word-break:break-word;background:var(--a-surface);

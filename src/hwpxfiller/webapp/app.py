@@ -3078,7 +3078,7 @@ _WORKBENCH_PROBE_SETUP_JS = r"""
   const seg = (t, kind, name) => ({ text: t, kind: kind || 'literal', name: name || '' });
   const snap = {
     open: true, job_name: '발주요청_기안', mode_label: '온나라 기안 검토·복사',
-    view: 'filled', target_font: '맑은 고딕', fullwidth: false,
+    view: 'filled', target_font: 'malgun', fullwidth: false,
     notice: { text: '', level: 'muted' },
     total: 3, copied_count: 1, is_complete: false,
     revision: { template: 1, binding: 4 },
@@ -3101,6 +3101,9 @@ _WORKBENCH_PROBE_SETUP_JS = r"""
       // 경계는 Python 이 낸다(2R P1) — 표시 자리는 머리(0)인데 순회상으로는 **후미**인
       // 상태를 합성한다(복사 직후의 실물). 표면이 서수로 계산하면 여기서 갈린다.
       can_prev: true, can_next: false,
+      // 큐 색인(4R P2) — 순차 이동만으로는 아는 행에 못 간다. 자리 라벨은 원본 행 번호다.
+      index_map: [{ index: 0, row: 7, state: 'current', recheck: true },
+                  { index: 1, row: 4, state: 'uncopied', recheck: false }],
       review_state: 'recheck', uncopied_count: 2, advance_after: false,
       segments: [seg('수신: '), seg('회계과', 'fill', '수신'), seg('', 'blank', '비고')],
       missing_fields: [], empty_fields: [],
@@ -3130,6 +3133,10 @@ _WORKBENCH_PROBE_SETUP_JS = r"""
         var b = document.querySelector('#wbLint [data-fullwidth]');
         return b ? b.getAttribute('data-fullwidth') + ':' + b.textContent : '';
       })();
+      out.dots = Array.prototype.map.call(
+        document.querySelectorAll('#wbDots .wc-dot'),
+        function (d) { return d.getAttribute('title'); });
+      out.font_value = document.getElementById('wbTargetFont').value;
       out.prev_disabled = document.getElementById('wbPrev').disabled;
       out.next_disabled = document.getElementById('wbNext').disabled;
       out.save_enabled = !document.getElementById('wbSaveRules').disabled;

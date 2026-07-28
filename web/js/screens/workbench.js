@@ -118,11 +118,31 @@
     $("wbAdvance").checked = !!c.advance_after;
     $("wbCopy").disabled = !c.has_current;
     const lc = c.last_copy;
+    // 복사는 성사됐는데 **최근 사용 기록이 실패**했으면 그 사실을 병기한다(4R P2) —
+    // 백엔드가 일부러 남긴 사유를 표면이 안 읽으면, 무조건 성공 문안이 뜨고 이력은 조용히
+    // 빠진다. HWPX 완료 요약이 스탬프 실패를 병기하는 것과 같은 규율이다.
     $("wbNote").textContent = lc
       ? `${lc.row}행을 복사했습니다.`
         + (lc.empty_fields && lc.empty_fields.length
           ? ` (빈 값: ${lc.empty_fields.join(", ")})` : "")
+        + (lc.stamp_error ? ` — 최근 사용 기록은 실패했습니다: ${lc.stamp_error}` : "")
       : (c.source_row ? `원본 ${c.source_row}행` : "");
+  }
+
+  const DOT_STATE_LABEL = { current: "작업 중", copied: "복사 완료", uncopied: "대기" };
+
+  function renderDots(s) {
+    const c = s.card || {};
+    const order = c.index_map || [];
+    const host = $("wbDots");
+    host.hidden = !!c.queue_degenerate;      // 1건이면 순회할 곳이 없다(승계 규칙)
+    if (host.hidden) { host.innerHTML = ""; return; }
+    host.innerHTML = order.map((d) => {
+      const label = DOT_STATE_LABEL[d.state] || d.state;
+      const why = label + (d.recheck ? " · 다시 확인 필요" : "");
+      return `<button class="wc-dot ${d.state}${d.recheck ? " gap" : ""}" role="listitem"` +
+        ` data-i="${d.index}" aria-label="${d.row}행 ${why}" title="${d.row}행 · ${why}"></button>`;
+    }).join("");
   }
 
   function render(s) {
@@ -136,6 +156,11 @@
     $("wbDirtyNote").textContent = d.count
       ? `저장하지 않은 변경 ${d.count}건`
       : (d.pending ? "확정하지 않은 편집이 있습니다" : "저장하지 않은 변경 없음");
+    // 대상 글꼴은 앱 전역 선언이라 저쪽에서 바뀔 수 있다 — 스냅샷 값을 따라간다.
+    const font = $("wbTargetFont");
+    if (document.activeElement !== font && font.value !== (s.target_font || "")) {
+      font.value = s.target_font || "";
+    }
     $("wbSaveRules").disabled = !s.can_save;
     $("wbSaveRules").title = s.save_block || "";
     document.querySelectorAll("[data-wb-view]").forEach((b) => {
@@ -151,6 +176,7 @@
     // 붙어 있다. id 없이 재구성하면 push 한 번에 타이핑하던 자리가 body 로 떨어진다.
     window.Preserve.around(() => renderMap(s));
     renderCard(s);
+    renderDots(s);
     renderFoot(s);
   }
 
@@ -251,6 +277,13 @@
     $("wbNext").addEventListener("click", () => window.Bridge.call(SCREEN, "step", { delta: 1 }));
     $("wbCopy").addEventListener("click", copyCard);
     $("wbSaveRules").addEventListener("click", saveRules);
+    $("wbTargetFont").addEventListener("change", (e) =>
+      window.Bridge.call(SCREEN, "set_target_font", { font: e.target.value }));
+    // 큐 색인 직접 이동 — 아는 행으로 바로 간다(순차 이동만으로는 도달할 수 없던 자리).
+    $("wbDots").addEventListener("click", (e) => {
+      const dot = e.target.closest(".wc-dot");
+      if (dot) window.Bridge.call(SCREEN, "set_current", { index: Number(dot.dataset.i) });
+    });
     $("wbAdvance").addEventListener("change", (e) =>
       window.Bridge.call(SCREEN, "toggle_advance", { value: e.target.checked }));
     document.querySelectorAll("[data-wb-view]").forEach((b) => {

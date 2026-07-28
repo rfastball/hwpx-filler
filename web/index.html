@@ -441,8 +441,20 @@
             <div class="wb-toolbar" role="group" aria-label="본문 보기">
               <button class="btn sm" type="button" data-wb-view="filled">채운 모습</button>
               <button class="btn sm" type="button" data-wb-view="raw">원문</button>
+              <!-- 대상 글꼴 선언(결정 17) — 정렬 린트가 **이 선언**으로 비례폭을 판정하므로
+                   여기서 고칠 수 없으면 경고가 엉뚱한 글꼴 기준으로 뜨거나 숨는다. 값은 앱
+                   전역이라 「기안」과 같은 설정을 공유한다. -->
+              <label class="lbl" for="wbTargetFont">대상 글꼴</label>
+              <select class="field sm" id="wbTargetFont"
+                      title="붙여넣는 곳(기안작성기)의 표준 글꼴입니다(전역 설정으로 저장).">
+                <option value="gulimche">굴림체</option>
+                <option value="dotumche">돋움체</option>
+                <option value="malgun">맑은고딕</option>
+              </select>
               <span class="status" id="wbReview" data-level="idle">복사 전</span>
             </div>
+            <!-- 큐 색인 — 순차 이동만 두면 아는 행으로 바로 갈 길이 없다(「기안」 점 승계). -->
+            <div class="wb-dots" id="wbDots" role="list" aria-label="큐 진행 표시"></div>
             <article class="wb-preview" id="wbCard" data-preserve-scroll></article>
             <p class="muted" id="wbLint" style="display:none"></p>
           </section>
