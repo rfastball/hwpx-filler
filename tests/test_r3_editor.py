@@ -350,7 +350,8 @@ def test_discard_confirm_has_single_source():
     # 홈 ＋ 는 newDraft(내부가 confirmDiscard)로 한 층 더 수렴했다(PR-5 리뷰 F2).
     for rel, needle in (
         ("screens/library.js", "EditorEntry.newDraft"),
-        ("screens/template.js", "EditorEntry.confirmDiscard"),
+        # (template.js 는 화면과 함께 사망(F8) — 그 소비처였던 「이 서식으로 새 작업」의
+        #  폐기 확인은 편집기 안 use-library 의 confirmNewSessionIfUnsaved 가 잇는다.)
         ("screens/editor.js", "EditorEntry.confirmDiscard"),
     ):
         src = (REPO / "web" / "js" / rel).read_text(encoding="utf-8")
@@ -358,3 +359,35 @@ def test_discard_confirm_has_single_source():
     # 편집(탭) 맥락 전환 확인(리뷰 F1) — 클린 복원이어도 맥락 닫힘은 의식적이어야 한다.
     editor = (REPO / "web" / "js" / "screens" / "editor.js").read_text(encoding="utf-8")
     assert "편집을 닫고 새 작업 초안" in editor, "편집 맥락 전환 확인 문구가 사라졌습니다(F1)."
+
+
+def test_editor_library_management_wiring_is_static():
+    """정적 계약(F8 — §10.17.2 판정 B·D): tpl 화면 사망의 승계 배선.
+
+    ①편집기가 tpl 채널 push 를 구독해 관리 동사의 결과를 재당김으로 되그린다(구독이 없으면
+    가져오기·삭제·그룹 변경이 다음 진입까지 비가시) ②관리 동사는 tpl 채널을 **리터럴**로
+    부른다(잠금·경로 검증·휴지통 규율이 사는 채널 — 편집기 채널 재구현 금지) ③기제는 공용
+    팩토리·기존 DOM 재사용(F2 교훈 ④ — 옮기지 말고 공유).
+    """
+    src = (REPO / "web" / "js" / "screens" / "editor.js").read_text(encoding="utf-8")
+    assert 'Bridge.onPush("tpl"' in src, "tpl push 구독 소실 — 관리 결과가 편집기에 비가시."
+    for action in ("set_group", "rename_group", "disband_group", "delete", "undo_delete"):
+        assert f'Bridge.call("tpl", "{action}"' in src, (
+            f"관리 동사 {action} 이 tpl 채널을 부르지 않습니다 — 채널 재구현 금지."
+        )
+    for shared in ('createMenu({ menuId: "tplRowMenu" })', "createMoveDialog({",
+                   '"lib-assign"', '"lib-more"', '"lib-grp-more"'):
+        assert shared in src, f"관리 기제 공유 배선 소실: {shared}"
+
+
+def test_bridge_push_supports_multiple_subscribers_per_screen():
+    """정적 계약(F8) — 한 채널 복수 구독: 병존 기간 editor 가 tpl push 를 함께 듣는다.
+    단일 슬롯(덮어쓰기)으로 되돌리면 나중 등록이 먼저 등록을 조용히 밀어내 화면 하나가
+    렌더를 잃는다(template.js ↔ editor.js 어느 쪽이든 init 순서 복권)."""
+    bridge = (REPO / "web" / "js" / "bridge.js").read_text(encoding="utf-8")
+    assert "renderers[screen] = renderers[screen] || []" in bridge, (
+        "onPush 가 복수 구독을 지원하지 않습니다 — 덮어쓰기 단일 슬롯은 조용한 렌더 소실."
+    )
+    assert "for (const fn of renderers[screen] || [])" in bridge, (
+        "__push 가 구독자 전부를 부르지 않습니다."
+    )

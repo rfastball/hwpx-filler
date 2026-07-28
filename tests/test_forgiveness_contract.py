@@ -13,21 +13,21 @@ def test_forgiveness_surface_contracts_are_wired() -> None:
     modal = _read("web/js/modal.js")
     editor = _read("web/js/screens/editor.js")
     job = _read("web/js/screens/job.js")
-    template = _read("web/js/screens/template.js")
     home = _read("web/js/screens/library.js")
     # (screens/draft.js 소비자 삭제 — 「기안」 화면 사망, F6 PR-B. validate 소비는 라이브러리가 잇는다.)
 
     assert 'id="undoToast"' in index and 'src="js/undo_toast.js"' in index
     assert 'id="jobGenCancel"' in index and '"cancel_generation"' in job
     assert 'data-act="restore-confirmed"' in editor and '"restore_confirmed"' in editor
-    assert "beforeClose" in modal and "beforeClose:" in template
+    # TXT 저작 모달 dirty 가드 — 소유가 editor.js 로 이주(F8, tpl 화면 사망).
+    assert "beforeClose" in modal and "beforeClose:" in editor
     assert "validate: opts.validate" in modal
     assert "validate: async" in home
 
 
 def test_soft_delete_replaces_preconfirmation_on_recoverable_surfaces() -> None:
     library = _read("web/js/screens/library.js")
-    template = _read("web/js/screens/template.js")
+    editor = _read("web/js/screens/editor.js")
     # 복구 가능한 삭제 자체는 사전 확인 없음 — 라이브러리의 confirm 은 백엔드 needs_confirm
     # (타 화면 무장 세션 소실 = 파일 복원으로 못 돌아오는 파괴, #268 리뷰)이 돌려줄
     # 때만 발화한다. 무조건 confirm 재유입은 이 순서 검사가 잡는다.
@@ -35,10 +35,12 @@ def test_soft_delete_replaces_preconfirmation_on_recoverable_surfaces() -> None:
                         library.index("function closeGroupMenu")]
     assert "needs_confirm" in lib_block
     assert lib_block.index("needs_confirm") < lib_block.index("Modal.confirm")
-    start = template.index("async function deleteTemplate")
-    delete_block = template[start:template.index("async function doCompile", start)]
+    # 템플릿 삭제(30일 휴지통) — 거처가 편집기 「템플릿」 탭 ⋮ 로 이주(F8). 계약 불변:
+    # 복구 가능한 삭제는 사전 확인 대신 UndoToast.
+    start = editor.index("async function deleteLibTemplate")
+    delete_block = editor[start:editor.index("UndoToast.show", start)]
     assert "Modal.confirm" not in delete_block
-    assert "UndoToast.show" in library and "UndoToast.show" in template
+    assert "UndoToast.show" in library and "UndoToast.show" in editor
 
 
 def test_undo_toast_receives_pointer_events() -> None:

@@ -358,7 +358,7 @@ C=characterization).
 | 22 | Template/Binding **판본**(revision) + §19.10 무효화 규칙 | 없음 — 저장은 Job 전체 덮어쓰기(`content_fingerprint`) | `content_fingerprint`·`classify_existing` | **신설** | 불변식 §13-6·7이 요구(판본 변경 = 관련 validation·approval 폐기, Run은 사용 판본 고정). 재작성 중 **최대 백엔드 신설** | F7 | U·C |
 | 23 | `runOverrides`(이번 생성에 적용·레코드별 filename) | 없음 | — | ~~신설~~ **기각**(§10.14) | override 가 겨눌 실패가 이 제품에 없다(실측 4). §13-14·15 는 전제가 없어 **공허참**. 「master 대응물=없음」이 곧 「다른 층에서 이미 풀림」이던 표본 | ~~F7~~ **사망** | R·U·C |
 | 24 | 템플릿 바꾸기 4단계·작업 방식 전환·`dormantFilenamePattern` | `relink_template`(같은 매체 재연결만) | `template_manager_state`(후보 목록) | ~~신설~~ **기각**(§10.16) | 바꿀 대상인 작업 방식이 **생성 시점에 정해져 바뀌지 않는다**(불변식 1의 귀결). convert 의 유일한 정당성인 「이력 유지」가 §19.4 와 충돌해 이력을 위조하고, fork 는 같은 매체 안에서 `clone`+`relink` 로 도달하며 **매체 교차 fork 는 성립 개념이 아니다**(계승할 매핑이 없다 — §10.16.1 ③ 정정, 리뷰 3R P2) | ~~F8~~ **사망** | C·U |
-| 25 | 시험 탭(현재 validation·Template r·Binding r·미리보기 생성·승인) | 없음 | — | **신설** | 판본(22)·승인(16) 선행 | F8 | D·S |
+| 25 | 시험 탭(현재 validation·Template r·Binding r·미리보기 생성·승인) | 없음 | — | ~~신설~~ **기각**(§10.17.1) | 5지표 전부가 기존 술어의 **중복 표시**(검증=게이트 fail-closed·판본=편집기 머리 저장 상태줄·생성/승인=F5 드로어+복귀처 게이트)이고, 대표 샘플은 「필드 연결·표시」 탭의 필드별 미리보기 열+레코드 스테퍼가 **상위 호환으로 기존재**. 「없음」 행 리트머스(§10.14.4)의 3번째 적용 표본 | ~~F8~~ **사망** | — |
 | 26 | `dataFamily` 추론 분기 | — | — | **이식 금지** | §7 F-03 판정(백엔드 정본에 권위 없음). 연결 복구/신작업 분기는 `identityDecision` 사용자 택일 | — | — |
 | 27 | 템플릿 라이브러리 관리(#108 착지분)·데이터 관리(pool 수명) | `tpl` 매체 2밴드·그룹·가져오기·컴파일·검토·TXT 신규 작성 / `pool` 등록·보관·삭제 | `TemplateManagerViewModel`·`template_groups`·`DatasetPoolViewModel` | **화면 사망·기능 흡수**(결정 1) | 두 화면 모두 **두 탭의 상태전이 안으로 흡수**한다. 흡수처는 §10.4.1 표가 항목별로 소유 — 흡수처가 서기 **전에** 화면을 지우지 않는다(그때까지 임시 존치가 정직하다) | F1(pool)·F8(tpl) | U·C |
 
@@ -403,10 +403,10 @@ TXT 복사 사건 기록·마운트 참조 세션 복원(`RestoreMountedData`/`S
 | 등록 데이터 목록·손상 격리 (`pool/refresh`) | `dataPickerDialog` 「고정한 데이터」 구획 + `picker-status` | F1 |
 | 데이터 등록 (`register_excel`) | `pinDataDialog` 「이 데이터 고정」 | F1 |
 | 보관·활성·삭제 (`archive`·`activate`·`delete`) | 고정 목록 행의 객체 메뉴 | F1 |
-| HWPX·TXT 템플릿 목록·그룹 구획·접힘 (`tpl/toggle_group`·`set_group`) | 편집기 「템플릿」 탭 후보 목록 + `screen-transition` pick 단계(둘 다 이미 그룹 구획 스냅샷 소비 — #108 슬3) | F7·F8 |
-| 가져오기 (`import_library_template`) | 같은 템플릿 선택 표면의 `가져오기…` | F7 |
-| 새 TXT 템플릿·편집 (`txt_new`·`txt_edit`·`txt_content`) | TXT 작업의 편집기 「템플릿」 탭(원문 편집) | F7 |
-| 누름틀 변환·검토 (`compile`·`review`) | 편집기 「템플릿」 탭 — v6 `외부 편집 뒤 변경 확인` + 구조 개요 자리. **v6 에 정확한 대응물이 없는 유일 항목**이므로 문안·행동을 새로 짓되 기능을 줄이지 않는다 | F7 |
+| HWPX·TXT 템플릿 목록·그룹 구획·접힘 (`tpl/toggle_group`·`set_group`) | 편집기 「템플릿」 탭 후보 목록 **단독**(~~+ `screen-transition` pick 단계~~ — 그 화면이 §10.16 에서 통째로 기각·사망해 흡수처 절반이 소멸, 재지정 = §10.17.2 판정 A) | F7·F8 |
+| 가져오기 (`import_library_template`) | 같은 템플릿 선택 표면의 `가져오기…` — **F7 착지는 절반만 참**(편집기 `import_template_file` 은 hwpx 전용·RAW 거부): hwpx·txt·RAW 수용 통일은 §10.17.2 판정 C | F7·**F8** |
+| 새 TXT 템플릿·편집 (`txt_new`·`txt_edit`·`txt_content`) | TXT 작업의 편집기 「템플릿」 탭(원문 편집) | ~~F7~~ **F8**(§10.13.3 말미가 명시 이월) |
+| 누름틀 변환·검토 (`compile`·`review`) | 편집기 「템플릿」 탭 — v6 `외부 편집 뒤 변경 확인` + 구조 개요 자리. **v6 에 정확한 대응물이 없는 유일 항목**이므로 문안·행동을 새로 짓되 기능을 줄이지 않는다 | ~~F7~~ **F8**(§10.13.3 말미가 명시 이월) |
 | 템플릿 이동·삭제 (`tpl/delete`·`undo_delete`) | 템플릿 선택 표면 행의 객체 메뉴 | F8 |
 
 ### 10.5 진행 방식 — 핵심 흐름 먼저, 나머지는 하나씩 (사용자 확정 2026-07-27)
@@ -458,10 +458,11 @@ HwpxRun`) + §10(성공과 실패). 이 절이 소유하는 것은 흐름의 정
 | ~~F5~~ **착지** | 미리보기 드로어 + 검토 요구(`ReviewRequirement`) — **구조 검토는 F8 · override 는 기각(§10.14) · 행별 「수정」 deep-link 는 F6 동승** — PR #313 squash `8dcc209` · 계약 §10.12 · 정산 §10.12.4 · 리뷰 5라운드 §10.12.5~§10.12.10 | 16 |
 | ~~F6~~ **착지** | TXT 합류 + 작업대 → `draft` 흡수·사망(휘발 세션 폐지 고지) **+ F5 드로어 행별 「수정」 deep-link 동승**(§10.14.3) — **PR 2분할**: ~~A~~(TXT 합류·작업대 신설) PR #315 squash `275dd24` · 계약 §10.15 · 정산 §10.15.4 · 리뷰 9라운드 §10.15.5~§10.15.13 · 결산 §10.15.14 / ~~B~~(`draft` 사망·승계 정산·deep-link·101 트랙 B 재배선) 계약 §10.15.15 · 정산 §10.15.15.4 | 17·18·19 |
 | ~~F7~~ **완료** | 편집기 탭 재편 + `EditContext`·patch 거래 + 판본 — **PR-A 착지**(몰입 표면·탭·patch·판본) PR #314 squash `4004723` · 계약 §10.13 · 정산 §10.13.6 · 리뷰 9라운드 §10.13.7~§10.13.15 / **PR-B 기각**(`runOverrides`·재시도 3종) 근거 §10.14 | 20·21·22·~~23~~ |
-| F8 | 시험 탭 + `tpl` 흡수·사망 — **템플릿 바꾸기·작업 방식 전환은 기각**(§10.16) | ~~24~~·25 |
+| F8 | ~~시험 탭~~(**기각** §10.17.1) + `tpl` 흡수·사망 + 셸 2탭 최종 착지 — **템플릿 바꾸기·작업 방식 전환은 기각**(§10.16) — 착수 계약 §10.17 | ~~24~~·~~25~~·27·1 |
 
 F7 의 판본·patch 거래는 다른 항목의 전제가 아니다 — 계약 불변식(§13-6·7)이 요구하지만 핵심
-흐름은 그것 없이 오늘도 돈다. 실제로 필요해지는 시점(F5 승인 fingerprint·F8 시험 탭)에 당긴다.
+흐름은 그것 없이 오늘도 돈다. 실제로 필요해지는 시점(F5 승인 fingerprint·~~F8 시험 탭~~
+— 시험 탭은 기각됐고(§10.17.1) 판본의 표시 자리는 §10.13 판정 O 의 셋이 최종)에 당긴다.
 
 **항목 착수 전 필수 절차**(축적된 교훈의 선행 적용):
 
@@ -1510,7 +1511,9 @@ F-06 표의 「의도적 미사용」 행). 위험 서열은 **구조 > 파일�
 이미 fail-closed 다: 템플릿 구조가 확정 매핑과 다르면 `danger` 로 **차단**하고 에디터에서
 매핑을 다시 확정해야만 풀린다. 즉 「값 미리보기로 구조 변경을 승인」하는 F-07 결함 경로가
 master 엔 애초에 없다 — 승인 표면을 새로 만들면 오히려 **게이트를 우회하는 두 번째 권위**가
-생긴다. 구조 검토 표면은 계약대로 **F8**(템플릿 바꾸기·시험 탭) 소관.
+생긴다. 구조 검토 표면은 계약대로 **F8**(~~템플릿 바꾸기·시험 탭~~) 소관이었으나, F8 착수
+실측에서 그 후보 둘이 모두 기각돼(§10.16·§10.17.1) 이 판정의 「구조 위험은 게이트가 진다」가
+최종형으로 확정됐다.
 
 **구현 중 되깎기 1건(구멍을 막았다)**: 처음엔 "`template` 축을 `riskClass` 서열에 남기되
 승인은 요구하지 않는다"고 적었는데, 그러면 **템플릿과 필드 source 가 같이 바뀐 경우** 서열
@@ -1802,7 +1805,8 @@ F1 다이얼로그·F5 드로어와 다른 부류라 잠금·정체의 값이 �
 Template r·Binding r·미리보기 생성·승인)는 **25행이 F8 로 배정한 표면**이다. 빈 탭도
 「준비 중」 표기도 두지 않는다(§8.2 ② 선례 — 없는 기능을 있는 척하지 않는다). 대신 탭
 목록을 **매체 파생**으로 계산한다: §3.2 가 TXT 에 파일 이름 탭을 주지 않으므로, F6 이 TXT
-를 합류시킬 때 목록이 저절로 갈리고 F8 이 「시험」을 한 줄로 더한다.
+를 합류시킬 때 목록이 저절로 갈리고 ~~F8 이 「시험」을 한 줄로 더한다~~ **[F8 정정]** 「시험」은
+착수 실측에서 기각됐다(§10.17.1) — 탭 목록은 HWPX 3·TXT 2 가 최종형이다.
 
 **B. 어휘는 `section` 하나 — `step` 정수는 사망.** 계약 §5.1 의 section 값
 (`template`·`binding`·`filename`·`test`)을 스냅샷·액션·DOM·patch 가 **같은 문자열**로 쓴다.
@@ -3001,6 +3005,202 @@ UI 층 귀결이다. `Job.media` 는 저장 필드가 아니라 파생 속성인
 되는가」를 **먼저** 센다. 답이 이력·순위·문안처럼 **되돌릴 수 없는 기록**이면, 동사를 좁히는
 쪽이 방어 코드를 얹는 쪽보다 싸다 — 이 슬라이스에서 좁힘 한 번이 방어 코드 4곳과 미구현
 기능 3종(마법사·draft 상태·dormant 패턴)을 동시에 없앴다.
+
+### 10.17 F8 착수 계약 — `tpl` 흡수·사망 + 셸 2탭 최종 착지 (2026-07-29)
+
+마지막 슬라이스. 착수 실측에서 대조표 25행(시험 탭)이 기각돼(§10.17.1) 범위는 **한 주제**로
+좁아졌다: `tpl` 화면의 흡수 완결과 사망, 그리고 그 사망이 완성하는 셸 2탭 최종 형상. 기반
+`02471c3`, 단일 PR, 화면 사망 양식은 §10.15.15(F6 PR-B)를 따른다.
+
+#### 10.17.1 대조표 25행 「시험 탭」 기각 — 「없음」 행 리트머스 3번째 적용 (사용자 확정 2026-07-29)
+
+> *"Template r / Binding r 은 있을 이유가 없어보이고 (변경 회수로는 변경 내용을 복원할 수
+> 없음), 미리보기 생성·승인도 마찬가지. 어차피 돌아가서 확인할 것."* — 이 잣대를 다섯 지표에
+> 일관 적용하고 실측한 결과, **전체 기각**.
+
+§10.14.4 후속 규칙(「master 대응물=없음」 행일수록 먼저 실측한다)의 3번째 적용 표본이다
+(1번째 = 23행 `runOverrides`, 2번째 = 24행 템플릿 바꾸기). v6 시험 탭의 여섯 성분 전부가
+다른 층에서 이미 풀려 있었고, 이번엔 지을 이름조차 남지 않았다:
+
+| v6 성분 | master 의 실제 소유자 | 판정 |
+|---|---|---|
+| 현재 validation | 게이트(`GateState`·`RunStatus`) — fail-closed, 복귀 착지점이 표시 | 편집기 거울은 run-context 판정의 **두 번째 표시 자리**만 만든다(§10.12 판정 E 의 경고 그대로) |
+| Template r / Binding r | 편집기 page-head 저장 상태줄·실행 증거·F5 드로어(§10.13 판정 O 의 셋) | 회수 숫자 단독으로는 변경 내용을 복원할 수 없다 — 무엇과 병치될 때만 정보이고 그 병치 자리는 이미 셋 있다 |
+| 미리보기 생성·승인 | F5 드로어 세션 상태 + `ReviewRequirement`(게이트 서열 warn) | 승인 무효화는 게이트가 시끄럽게 잡는다 — 어차피 돌아가서 확인한다 |
+| 대표 샘플 | 「필드 연결·표시」 탭 필드별 미리보기 열 + 레코드 스테퍼(`editor.js` mappingStage) + 파일 이름 `pattern_preview` | v6 샘플 한 줄(이름·날짜·파일명)의 **상위 호환이 편집 자리 인라인**에 기존재 |
+| 「이 변경으로 미리보기 만들기」 | — | 저장 없이 실제 생성하는 경로는 §10.14 가 기각한 override 출구의 부활이고, 저장 후 생성은 job 화면에서 이미 도달 가능(F4 재시도 기각과 같은 논리) |
+
+v6 가 시험 탭 하나에 담은 것을 master 는 이미 해체 흡수했다 — **앞을 보는 정보(초안의
+효과)는 각 section 탭이 편집 자리에서 직접, 뒤를 보는 상태(검증·승인)는 복귀처 게이트가
+경보로**. 계약 §3.1/§3.2 의 탭 목록(HWPX 4·TXT 3)과 달라지는 자리이나, §10.0 의 규칙대로
+이미 확정된 개정분(§10.14 의 override 기각·§10.12 판정 E)이 계약 원문보다 우선한다 —
+최종형은 HWPX 3탭(템플릿·필드 연결·표시·파일 이름)·TXT 2탭이다.
+
+**죽은 예약의 정산**(빈 자리를 남기지 않는다): `gui/edit_session.py` `SECTION_TEST` 상수와
+"F8 소관" 주석, `web/js/screens/editor.js` `SECTION_TITLES` 의 `test` 라벨과 예고 주석 —
+F7 이 파 둔 홈이므로 F8 이 걷는다. §10.13 판정 A·§10.12 판정 E·§10.5 후속 항목표·대조표
+25행은 취소선 + 이 절 지목으로 정정했다.
+
+#### 10.17.2 판정 (착수 확정 5건)
+
+**A. §10.4.1 406행 흡수처 재지정 — 편집기 「템플릿」 탭 단독.** 원표가 지목한 흡수처 절반
+(`screen-transition` pick 단계)은 §10.16 이 화면째 기각·사망시켰다. 남는 실물 흡수처는
+편집기 「템플릿」 탭 후보 목록 하나이고, 그 목록은 이미 tpl 과 **같은 그룹 모델·같은 링1
+인스턴스**(`app.py` 가 `tpl_ctrl.vm`·`hwpx_groups`·`txt_groups` 를 편집기에 공유 주입)를
+소비 중이다 — 옮길 데이터 축은 없고 세울 것은 관리 동사의 어포던스뿐이다.
+
+**B. 채널·소유권 — F1 선례(화면은 죽고 `tpl` 채널·컨트롤러·12액션 생존).**
+`TemplateController` 의 실질은 잠금 규율(`_import_lock`·`write_lock` 임계구역)·경로 검증
+(`_live_paths`)·30일 휴지통·그룹 모델 소유다. EditorController 로 이전하면
+`test_webapp_template.py` 와 이 규율 전부가 이사하고 얻는 것은 이름 하나 — §10.14.4
+리트머스 탈락. F2 PR-B(표면 없는 파괴 동사는 채널에서 사망)와 다른 점: 여기선 흡수 표면이
+실재하므로 동사는 산다. 프런트는 editor.js 가 **명시 리터럴** `Bridge.call("tpl", …)` 로
+호출(F1 의 data_picker→pool 동형)하고 `Bridge.onPush("tpl", …)` 를 구독한다 — 핸들러는
+①`result` 캐시(결과 재진술 줄) ②`Bridge.initial("editor")` 재당김. **목록의 정본은 계속
+editor 스냅샷이다**(성형 두 벌 금지); tpl 스냅샷에서 소비하는 것은 `result` 하나. tpl
+스냅샷 중 고지②(`txt["notice"]` — 소스가 스스로 F8 사망을 명시)만 생산·소비·게이트 동반
+사망하고, 고지①(job `txt_note`)·close_guard 배제 표·selftest 액션군 왕복
+`['template','tpl','refresh']`·`test_webapp_template.py` 는 존치한다.
+
+**C. 가져오기 통일 — 이 슬라이스의 유일한 의미 변경.** 가져오기는 이원화돼 있었다: 편집기
+`import_template_file` 은 `_TEMPLATE_FILTERS`(hwpx 전용) + RAW 선거부, tpl
+`import_library_template` 은 `_LIBRARY_IMPORT_FILTERS`(hwpx·txt) + RAW 수용. §10.4.1
+407행의 "F7 착지"는 절반만 참이었다. 통일: 편집기 「가져오기…」가 `_LIBRARY_IMPORT_FILTERS`
+를 쓰고 **복사 권위는 `TemplateController.import_into_library` 하나로**(잠금·충돌 접미
+유지). 사본이 세션 시작 가능하면(hwpx 누름틀 有 / txt 판독 가능) 곧바로
+`new_job_session`(F7 거동 보존), 아니면(RAW·손상) 목록 추가 + notice 가 수선 경로를
+지목한다("행 ⋮ → 누름틀로 변환"). 편집기의 종전 RAW 선거부 근거(인앱 삭제 어포던스 부재 →
+영구 오류 행)는 이 슬라이스가 행 ⋮ 삭제를 들이면서 **소멸**한다 — 근거가 죽으면 가드도
+걷는다. `import_library_template` 브리지 메서드는 소비자 0 이 되므로 js_api·bridge.js 에서
+제거한다(표면 없는 통로 금지 — F2 PR-B `set_rail_collapsed` 선례).
+
+**D. 흡수 형상 — 선택 전용 피커를 완전한 라이브러리 관리 표면으로.**
+- 상단 행동 줄(`.tpl-libbar` 승계): `[가져오기…] [새 TXT 템플릿…] ─ [새로고침]`.
+- 행 ⋮ 메뉴(`GroupList.createMenu`·`#tplRowMenu` **재사용, 이식 아님** — F2 교훈 ④):
+  HWPX 행 = 링1 상태 동사(`compile`·`review`, 라벨은 `_STATE_ACTIONS` 소유, `make_job`·
+  `preview` 제외) → 그룹 이동 → 삭제(danger). TXT 행 = 내용 편집 → 그룹 이동 → 삭제.
+  오류·손상 행에도 ⋮(삭제 도달성 — F1 ⓒ와 같은 뿌리). **소비 동사는 ⋮ 에 넣지 않는다** —
+  행 「이 템플릿으로」 버튼이 이미 소유, 같은 동사 2벌 금지(§10.5 판정 단일 출처).
+- 그룹 헤더 ⋮(명명 그룹만): 이름 변경(병합 확인 왕복)·해산(확인 왕복). ＋그룹지정 칩은
+  「그룹 없음」 행에만 → `createMoveDialog`(`#tplMoveModal` 재사용).
+- `_library_snapshot` 확장: 밴드별 `group_names`·`count`·`dir`, hwpx 행 `actions`·
+  `fill_warns`(#154 가시성 유지), 결과 재진술 줄(`#tplResult` 승계).
+- TXT 저작: `#txtEditModal` DOM 은 셸 레벨 생존, 소유 JS(template.js 의 열기·dirty 가드·
+  제출)만 editor.js 로 이전 — selftest Escape·커스텀 모달 프로브 표적이라 DOM 이동 금지.
+- **「이 템플릿으로」의 의미는 불변**: 항상 새 초안 세션(`use_library_template` →
+  `confirmNewSessionIfUnsaved` 확인), in-place 교체 아님. §10.16 게이트와 충돌 없음(교차
+  게이트는 relink·저장 덮어쓰기에 이미 산다) — **신규 게이트 0, 신규 세션 액션 0**.
+
+**E. 셸 최종 형상 — 임시 탭 제도 자체의 은퇴.** `NAV_SCREENS` 3→2(`library`·`job`),
+`TEMP_NAV_SCREENS` 는 빈 튜플이 아니라 **기제째 은퇴**: 임시 표지 강제 테스트는 「`.nav-sep`
+0개·`.temp` navbtn 0개·계약 2탭 무예고」의 최종 형상 고정판으로 재작성한다(과도기 기제가
+공회전으로 남으면 그게 다음 부활 통로다). `REFRESH_ON_NAV` 에서 `tpl` 제거 — 편집기는 몰입
+표면이라 nav 재당김 대상이 아니고, 템플릿 탭 재진입 재스캔이 그 역할을 이미 진다.
+
+#### 10.17.3 `tpl` 사망 조건 점검표 — 전 행 도달 확인 후에만 지운다
+
+| # | 도달해야 하는 것 | 새 거처 | 도달 확인 |
+|---|---|---|---|
+| 1 | HWPX·TXT 목록·그룹 구획·접힘 영속 | 편집기 템플릿 탭 2밴드(기존재) | ✓ 기존재(F7·F6) + 프로브 `grp_heads`·`rows_visible` 실렌더 |
+| 2 | 가져오기(유효 HWPX·RAW·TXT) | 「가져오기…」 통일(판정 C — RAW·TXT 수용 신설) | ✓ 커밋 4 — 채택 3분기 헤드리스(`test_adopt_defers_raw…` 등 3건) |
+| 3 | 새 TXT 저작·내용 편집 | 새 TXT 버튼 + 행 ⋮ 내용 편집 + `txtEditModal`(소유 이전) | ✓ 커밋 4 — 프로브 `toolbar`·`txt_menu_items` + opener 가드 병존 검증 |
+| 4 | 누름틀 변환 2단계·검토 + 결과 재진술 | 행 ⋮ 상태 동사(링1 라벨) + 결과 줄 | ✓ 커밋 3·4 — 프로브 `hwpx_menu_items`·`result_line` + danger 계약 재겨눔 |
+| 5 | 그룹 지정·이동·개명(병합 확인)·해산(확인) | 행 ⋮·칩·그룹 헤더 ⋮(팩토리 공유) | ✓ 커밋 3 — 프로브 `group_menu_items`·`move_shown_after_chip` + 정적 배선 가드 |
+| 6 | 삭제(경로 검증·30일 휴지통)·복원 1건 | 행 ⋮ 삭제 + UndoToast | ✓ 커밋 3 — forgiveness 계약 재겨눔(사전 확인 없음 + UndoToast) |
+| 7 | 새로고침(외부 FS 재스캔) | 상단 행동 줄 + 탭 재진입 자동 재스캔(기존재) | ✓ 커밋 4 — `lib-refresh` + r3_pool 수동 버튼 계약 재겨눔 |
+| 8 | 「이 서식으로 새 작업」(매체 무관) | 행 「이 템플릿으로」(기존재) | ✓ 기존재(F7 `use-library` + `confirmNewSessionIfUnsaved`) — 판정 D 로 의미 확정 |
+| 9 | `fill_warns`(#154)·배지 가시성 | 행 배지 title + warn 줄(스냅샷 확장) | ✓ 커밋 3 — 프로브 `fill_warn` 실렌더 |
+| 10 | 라이브러리 폴더 경로 표시 | 밴드 캡션 옆 muted mono(스냅샷 `dir`) | ✓ 커밋 3 — 프로브 `band_caption`(개수·경로) |
+
+#### 10.17.4 사망이 곁들여 하던 정산 (§10.9.5 규칙의 전수)
+
+- **15px 구획 타이포 역할 표본**: DOM 계약·프로브가 `.tpl-band .tb-t` 를 표본으로 씀 —
+  생존 멤버 `.modal-card h3`(정적 DOM)로 재겨눔(F6 PR-B 가 draft→tpl 로 재겨눴던 그 표본의
+  두 번째 이사).
+- **selftest 프로브**: ①`_TPL_LIST_GROUP_PROBE_JS` 는 폐기가 아니라 **재작성** — 검증
+  대상(그룹 헤더·접힘 뷰 제외·⋮ 구성·칩·이동 다이얼로그 개폐·퇴화 평면)이 전부 편집기로
+  살아 이주하므로 합성 editor 스냅샷 기반 `_EDITOR_LIBRARY_MANAGE_PROBE_JS` 로 교체
+  ②③Escape·커스텀 모달 프로브 표적 `txtEditModal` 은 DOM 생존이라 재겨눔 불필요(소유 이전
+  이력만 주석 추기) ④액션군 왕복 존치(판정 B) ⑤milestone-H 카드 프로브 `.tplcard`→`.jcard`
+  재겨눔, H-04(매체 sunken 2면) 은퇴 — 승계 표면인 편집기 밴드는 `.grp` 문법이고 그 시각
+  계약은 새 프로브 ①이 잰다.
+- **DOM 계약**: `SCREEN_ROOTS` 에서 `scr-tpl` 제거, `NAV_SCREENS=("library","job")`,
+  임시 표지 테스트 최종 형상 고정판 재작성(판정 E), 고지② 게이트 ② 절반 삭제,
+  `.tplcard` 계약 정리, preserve 상태 원장 editor.js 수치 재실측.
+- **CSS**: 사망 = `.tpl-libbar`·`.tpl-medium`·`.tpl-band*`·`.tpl-banddir`·`.tplcard*`.
+  생존 = `.tpl-grp-rows`·`.tpl-assign`(칩 이주)·`.ctx-menu`·`#tplRowMenu`·`#tplMoveModal`.
+  죽은 CSS 를 남기지 않는다(부활 통로).
+- **정적 목록류 테스트**: r3_js·modal_system·interaction_responsiveness·forgiveness·
+  danger_confirm(compile 확인·그룹 해산 → editor.js 재겨눔)·ux_copy_round(사망 표에 tpl
+  추가)·dispatch_payload(SCREEN_OF_FILE 행 삭제 + 최소 판독 수 재실측)·r3_pool
+  (REFRESH_ON_NAV·refresh 가드 재겨눔)·dispatch_wiring(`SCREEN_JS` tpl 행 삭제,
+  `CONTROLLERS` 존치).
+- **문안 빚**: 셸 title 의 죽은 「템플릿 바꾸기」 지목(탭째 삭제로 해소), 편집기 빈 밴드
+  문안("템플릿 관리에서" → 탭 내 실 버튼 지목), `screen_editor.py` RAW 거부 사유문(판정 C 로
+  소멸), `docs/UI_CONTRACT.md` 의 `import_library_template` 등재 해제.
+- **101 하니스**: tpl 컷은 없으나 상단바 3탭이 전 컷에 찍힌다 — 사망 뒤 전 컷 재촬영·완주가
+  완료 조건(§10.9.5).
+
+#### 10.17.5 커밋 경계
+
+| # | 내용 | 게이트 |
+|---|---|---|
+| 1 | 지도 정산(이 절 + 25행 기각 + §10.4.1 재지정 + 문안 정정 4곳) | 문서 대조 |
+| 2 | 시험 탭 죽은 예약 정산(`SECTION_TEST`·`test` 라벨) | grep 0건 + 편집기 pytest |
+| 3 | 흡수 1 — 관리 기계(⋮·칩·이동·tpl push 구독·결과 줄·스냅샷 확장) + 헤드리스 테스트 동반 | 헤드리스 + ruff/pyright |
+| 4 | 흡수 2 — 저작·상태 동사·가져오기 통일(판정 C) + 문안 | 헤드리스(RAW/TXT 분기) + 전체 pytest |
+| 5 | selftest 재배선(프로브 교체·표본 재겨눔) — tpl 병존 시점이라 파손 창 0 | 실 WebView2 selftest 완주 |
+| 6 | `tpl` 화면 사망 **한 전이**(DOM·JS·CSS·셸·테스트 일괄) | 잔존 grep 0건 + 전체 pytest |
+| 7 | 101 재촬영·README | 하니스 완주 |
+| 8 | 점검표 전 행 도달 확인 기입 + 착지 정산 + 최종 게이트 | pytest·selftest·ruff·pyright·커버 8구획·101 |
+
+커버리지 완충(F6 PR-B 결산의 경고 이행): 착수 선실측 = webapp 86%(selftest 게이트 제외
+기준), `screen_template.py` 93%·`screen_editor.py` 93%, 삭제 예정 고지②는 커버 라인이라
+영향 소폭, 편집기 가져오기 미커버(788·794·805-808)는 커밋 4 재작성이 테스트를 동반해 상승
+방향. 신규 파이썬 분기는 같은 커밋에 헤드리스 테스트 동반이 규율.
+
+#### 10.17.6 착지 정산 (2026-07-29 — 커밋 8)
+
+**커밋 실물**: 1=지도 정산 · 2=시험 탭 죽은 예약 · 3=관리 기계(⋮·칩·이동·구독·결과 줄·
+스냅샷 확장) · 4=저작·상태 동사·가져오기 통일 · 5=selftest 재배선 · 6=사망 한 전이
+(25파일, +160/−765) · 7=101 재촬영+⋮ 노출 회수 · 8=이 정산.
+
+**사망 표면 열거**: `#scr-tpl` DOM·`screens/template.js`(파일)·임시 탭·`.nav-sep`(기제째)·
+tpl 전용 CSS(`.tpl-libbar`·`.tpl-medium`·`.tpl-band*`·`.tpl-banddir`·`.tpl-catalogs`·
+`.tplcard-more`)·고지②·`empty_hint`·`import_library_template`·`load_template_into_editor`
+(둘 다 소비자 0 통로)·`test_template_wayfinding.py`(계약은 승계 표면 테스트가 소유)·
+UI_GALLERY 의 `.tpl-medium` 표본·상태 원장 `screens/template.js` 행.
+
+**실측이 착수 계약을 정정한 자리 3**(교훈 — 사망 목록도 소비자 실측이 정본이다):
+① `.tplcard` 계열·`.tpllist` 는 **데이터 피커(F1 재사용)가 살아있는 소비자**라 생존 —
+"tplcard 전체 사망" 계획을 되깎았다(죽은 것은 tpl 전용 부속 `.tplcard-more` 뿐).
+② `Bridge.onPush` 가 **단일 슬롯(덮어쓰기)** 이었다 — 병존 기간 editor 의 tpl 구독이
+template.js 렌더러를 조용히 밀어낼 뻔한 자리. 기제 쪽(bridge.js)에서 복수 구독으로 확장
+(호출자 규율 아닌 기제 불변식 — F2 교훈 ①).
+③ `#txtEditModal` OK·취소의 **이중 배선 경합**: 병존 기간 양쪽 화면이 정적 버튼을 함께
+물어, opener 가드(editor `txtEdit`≠null / template `editOwned`) 없이는 남이 연 모달의
+클릭에 빈 이름 `txt_new` 가 이중 디스패치됐다.
+
+**눈검증 회수 1건**(101 컷 — §10.9.5 순회의 산물): 행 ⋮ 는 `.job-more` 기본 hidden 인데
+`.libselrow` 계열 호버 노출 규칙이 없어 **영영 은닉**이었다 — selftest 프로브의 프로그램적
+`click()` 은 hidden 요소를 통과해 못 잡는다(F2 PR-B 1R 「실물이 없던 자리」·관측자 한계
+동류). 노출 규칙 + 정적 CSS 가드로 회수.
+
+**곁들인 정산**: R-copy 금지어 표에 「템플릿 관리」 행 추가(죽은 표면 지시 CI 차단 — F1
+교훈 이행) · `TXT_RAW_BLOCK` 처방 재지정(행 ⋮ 내용 편집) · 15px 역할 표본 `.modal-card h3`
+재겨눔 · 카드 상태 표본 `.jcard` 이주 · `aria-label` 「템플릿 관리」→「항목 관리」.
+
+**게이트 최종**(CI 동형 전체 완주): pytest **2065 passed · 1 failed** — 유일 실패는
+**환경성**(selftest short viewport, 모달 높이 0.2px 초과)으로 **순정 `02471c3` 에서 동일
+재현 증명**(코드 무관 — F6 의 `test_job_process_topology` 와 같은 부류). 같은 부류였던
+workbench `aim_marked` 는 완주 런에서 통과(간헐 — 창 포커스 조건 의존). 커버리지 플로어
+**8구획 전부 PASS**(webapp 87.21/86 — 착수 86, 완충 상승) · dispatch payload 최소 판독
+**70**(template.js 몫이 editor.js 리터럴로 승계된 뒤 실측) · 101 하니스 **14컷 완주**
+(계약 2탭 최종 형상) · ruff·pyright 클린.
+
+**실앱 순회**: 101 하니스 트랙 A·B(실 클릭·실 dispatch·실 생성 3건·실 클립보드)가 사람
+순서의 기계판을 완주했고, 관리 동사 면은 editor_lib_manage 실렌더 프로브 + 액션군 왕복
+(`['template','tpl','refresh']`)이 실 WebView2 로 덮는다.
 
 ## 6. 원재료
 

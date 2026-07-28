@@ -2,11 +2,14 @@
    웹→Python 은 dispatch/네이티브 메서드, Python→웹은 window.__push(screen, snapshot) 관측 푸시.
    화면 모듈은 Bridge.onPush(screen, fn) 로 렌더러를 등록한다 — 브리지는 화면 로직을 모른다. */
 (function () {
-  const renderers = {};   // screen id → fn(snapshot)
+  // screen id → [fn, ...] — 한 채널 복수 구독(F8): 병존 기간 편집기가 tpl push 를 함께
+  // 듣는다. 교체 의미의 재등록 소비자는 없다(전 화면이 자기 채널 1회 등록) — 덮어쓰기
+  // 단일 슬롯이면 나중 등록이 먼저 등록을 조용히 밀어내 화면 하나가 렌더를 잃는다.
+  const renderers = {};
 
   const Bridge = {
-    /** 화면 렌더러 등록 — Python 이 그 화면을 푸시하면 fn(snapshot) 이 불린다. */
-    onPush(screen, fn) { renderers[screen] = fn; },
+    /** 화면 렌더러 등록 — Python 이 그 화면을 푸시하면 등록 순서대로 fn(snapshot) 이 불린다. */
+    onPush(screen, fn) { (renderers[screen] = renderers[screen] || []).push(fn); },
 
     /** 화면 초기 상태 당김(부팅 1회). */
     initial(screen) { return window.pywebview.api.initial(screen); },
@@ -44,12 +47,9 @@
       return window.pywebview.api.generate(screen, !!confirmOverwrite);
     },
 
-    /** 템플릿 관리 「가져오기…」 → 고른 HWPX·TXT 를 라이브러리 루트로 복사(#108 결정 4).
-        확장자가 매체 라우팅. 파일명·"ERROR:…"·null(취소). */
-    importLibraryTemplate() { return window.pywebview.api.import_library_template(); },
-
-    /** 템플릿 관리 '작업 만들기' → 그 템플릿을 에디터에 로드(크로스스크린). 파일명·"ERROR:…". */
-    loadTemplateIntoEditor(path) { return window.pywebview.api.load_template_into_editor(path); },
+    /* (importLibraryTemplate·loadTemplateIntoEditor 는 tpl 화면과 함께 사망(F8) — 가져오기는
+       importTemplateFile 하나로 통일(§10.17.2 판정 C), 라이브러리 선택은 편집기 dispatch
+       use_library_template 이 소유. 소비자 0 통로는 남기지 않는다.) */
 
     /** 에디터에 미저장 작업 세션이 있는가 — 크로스스크린 진입 전 폐기 확인 판단(#25). */
     editorHasUnsavedWork() { return window.pywebview.api.editor_has_unsaved_work(); },
@@ -84,10 +84,10 @@
     setMasterWidth(width) { return window.pywebview.api.set_master_width(Math.round(width)); },
   };
 
-  // Python→웹 푸시 진입점(app.py 의 evaluate_js 가 호출). 전역 노출.
+  // Python→웹 푸시 진입점(app.py 의 evaluate_js 가 호출). 전역 노출. 미구독 화면은 조용히
+  // 무시(등록 전 push 는 버려진다 — 부팅은 initial 당김이 정본).
   window.__push = function (screen, snapshot) {
-    const fn = renderers[screen];
-    if (fn) fn(snapshot);
+    for (const fn of renderers[screen] || []) fn(snapshot);
   };
 
   window.Bridge = Bridge;

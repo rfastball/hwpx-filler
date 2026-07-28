@@ -20,11 +20,12 @@ WEB_JS = WEB / "js"
 
 # 공유 이스케이퍼를 소비하는 파일들 — 전부 esc.js 뒤에 로드돼야 한다.
 # (draftsession.js·screens/draft.js 는 「기안」 화면과 함께 사망 — F6 PR-B.
+#  screens/template.js 는 「템플릿 관리」 화면과 함께 사망 — F8 §10.17.
 #  작업대(screens/workbench.js)가 새 소비자로 합류했다.)
 ESC_CONSUMERS = (
     "sheet_picker.js", "data_picker.js", "datazone.js",
     "screens/library.js", "screens/editor.js", "screens/job.js",
-    "screens/workbench.js", "screens/template.js",
+    "screens/workbench.js",
 )
 
 

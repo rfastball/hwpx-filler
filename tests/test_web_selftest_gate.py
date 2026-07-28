@@ -819,35 +819,41 @@ class TestWebSelftestGate:
             assert want in tags, f"소유권 태그 '{want}' 미렌더(칩-라이브 결정 12): {tags!r}"
         assert e["auto_revert_option"] is True, "touched 행에 '자동 제안으로 되돌리기'(↩) 버튼이 없습니다(리뷰 R5)."
 
-    def test_tpl_media_groups_render_collapse_and_menu(self, selftest_result: dict) -> None:
-        # 템플릿 관리(#108) — 매체 구획 + 그 안 그룹(작업 모델 재사용)이 실 WebView2 에서 서는지.
-        # 합성 스냅샷을 실 render() 에 흘려 그룹 헤더 3개·접힌 그룹 카드 제외·그룹/카드 ⋮·＋그룹지정
-        # 칩(「그룹 없음」에만)·접힘 캐럿 가시성·이동 다이얼로그 개폐를 되읽는다(부록 B-9 자동판).
-        t = selftest_result["tpl_groups"]
-        assert t.get("error") is None, f"템플릿 그룹 프로브 예외: {t.get('error')!r}"
+    def test_editor_library_manage_renders_menus_and_dialog(self, selftest_result: dict) -> None:
+        # F8(§10.17.2 판정 D) — 구 tpl 그룹 프로브의 승계 재작성: 관리 표면(그룹·⋮·칩·이동
+        # 다이얼로그·행동 줄·결과 줄)이 편집기 「템플릿」 탭 실 WebView2 에 서는지 되읽는다
+        # (부록 B-9 자동판 승계). 합성 editor 스냅샷을 실 render() 에 흘린다.
+        t = selftest_result["editor_lib_manage"]
+        assert t.get("error") is None, f"편집기 관리 표면 프로브 예외: {t.get('error')!r}"
+        assert t["toolbar"] == [True, True, True], (
+            f"상단 행동 줄(가져오기·새 TXT·새로고침 — .tpl-libbar 승계) 소실: {t['toolbar']!r}"
+        )
         assert t["grp_heads"] == 3, f"그룹 헤더 수가 다릅니다(입찰·계약·그룹없음): {t!r}"
-        assert t["cards_visible"] == 3, f"접힌 그룹(계약) 카드가 뷰에서 제외되지 않았습니다: {t!r}"
+        assert t["rows_visible"] == 4, f"접힌 그룹(계약) 행이 뷰에서 제외되지 않았습니다: {t!r}"
         assert t["grp_more"] == 2, "그룹 ⋮ 는 이름 그룹에만 있어야 합니다(「그룹 없음」 제외)."
-        assert t["card_more"] == 3, f"카드 ⋮ 수가 가시 카드 수와 다릅니다: {t!r}"
-        assert t["assign_chips"] == 1, "＋그룹지정 칩은 「그룹 없음」 카드에만 노출돼야 합니다(결정 2)."
-        # 접힘 화살표: 접힌 그룹=상시 노출, 펼친 그룹=호버 전 은닉(결정 5, job 목록 동형).
-        assert t["caret_collapsed"] == "visible", f"접힌 그룹 화살표가 상시 노출이 아닙니다: {t!r}"
-        assert t["caret_expanded"] == "hidden", f"펼친 그룹 화살표가 호버 전에 보입니다: {t!r}"
-        assert t["collapse_local_flip"] is True, f"템플릿 그룹 접힘이 왕복 전에 풀리지 않습니다: {t!r}"
-        # 그룹에 속한 카드 ⋮ = [이동, 삭제] · 그룹 헤더 ⋮ = [개명, 해산].
-        assert t["menu_shown"] is True, "카드 ⋮ 클릭에 메뉴가 열리지 않았습니다."
-        assert t["card_menu_items"] == ["use", "move", "delete"], (
-            f"그룹 있는 HWPX 카드 ⋮ 구성이 [새 작업·이동·삭제]와 다릅니다: {t['card_menu_items']!r}"
+        assert t["row_more"] == 4, f"행 ⋮ 수가 가시 행 수와 다릅니다(오류 행 포함 도달성): {t!r}"
+        assert t["assign_chips"] == 2, "＋그룹지정 칩은 「그룹 없음」 행에만 노출돼야 합니다(결정 2)."
+        assert t["fill_warn"] is True, "채움 완화 사전 고지(#154)가 행에 렌더되지 않았습니다."
+        assert t["result_line"] is True, "결과 재진술 줄(#tplResult 승계)이 렌더되지 않았습니다."
+        assert t["band_caption"] is True, "밴드 캡션(개수·루트 경로 — 점검표 10행)이 없습니다."
+        # 그룹 있는 HWPX 행 ⋮ = [링1 상태 동사, 이동, 삭제] — 소비 동사 없음(행 버튼 소유,
+        # 같은 동사 2벌 금지). TXT 무그룹 행 ⋮ = [내용 편집, 삭제](이동은 칩 소관).
+        assert t["menu_shown"] is True, "행 ⋮ 클릭에 메뉴가 열리지 않았습니다."
+        assert t["hwpx_menu_items"] == ["act:compile", "act:review", "move", "delete"], (
+            f"그룹 있는 HWPX 행 ⋮ 구성이 [변환·검토·이동·삭제]와 다릅니다: {t['hwpx_menu_items']!r}"
         )
         assert t["menu_closed"] is True, "바깥 클릭에 메뉴가 닫히지 않았습니다."
+        assert t["txt_menu_items"] == ["edit", "delete"], (
+            f"무그룹 TXT 행 ⋮ 구성이 [내용 편집·삭제]와 다릅니다: {t['txt_menu_items']!r}"
+        )
         assert t["group_menu_items"] == ["grp-rename", "grp-disband"], (
             f"그룹 헤더 ⋮ 구성이 [개명·해산]과 다릅니다: {t['group_menu_items']!r}"
         )
-        # ＋그룹지정 칩 → 이동 다이얼로그 개폐.
+        # ＋그룹지정 칩 → 이동 다이얼로그 개폐(기존 #tplMoveModal DOM 재사용).
         assert t["move_hidden_before"] is True, "이동 다이얼로그가 기본 닫힘이 아닙니다."
         assert t["move_shown_after_chip"] is True, "＋그룹지정 칩이 이동 다이얼로그를 열지 않았습니다."
         # 퇴화 불변식(결정 5) — 그룹 0개면 헤더 없는 평면.
-        assert t["flat_heads"] == 0 and t["flat_cards"] == 1, f"퇴화 평면 위반: {t!r}"
+        assert t["flat_heads"] == 0 and t["flat_rows"] == 1, f"퇴화 평면 위반: {t!r}"
 
     def test_milestone_h_heading_roles_and_job_steps_render(self, selftest_result: dict) -> None:
         """H-01/H-03: 계산 스타일 3단 역할과 작업 ①~④ 표지가 실 DOM에 선다."""
@@ -875,10 +881,12 @@ class TestWebSelftestGate:
     def test_milestone_h_template_and_card_surfaces_render(self, selftest_result: dict) -> None:
         """H-04/H-14: 매체 sunken 층과 지속 선택 막대가 계산 스타일에 반영된다."""
         h = selftest_result["milestone_h_wave1"]
-        assert h["template_media_count"] == 2
-        assert h["template_media"]["background"] != h["template_card"]["background"]
+        # 카드 상태 계약(F8 재겨눔) — .tplcard 는 tpl 화면과 함께 죽어, 같은 선택자 묶음의
+        # 생존 소비자 .jcard 로 잰다. (H-04 매체 sunken 2면은 은퇴 — 승계 표면인 편집기
+        # 밴드는 .grp 문법, 그 시각 계약은 editor_lib_manage 프로브 소관.)
         assert h["selected_card"] is not None
         assert h["selected_card"]["border_left"] != "rgba(0, 0, 0, 0)"
+        assert h["selected_card"]["background"] != h["card_base"]["background"]
 
     def test_milestone_h_disabled_primary_and_pathtrack_hierarchy(self, selftest_result: dict) -> None:
         """H-11/H-12: disabled primary가 물러나고 로케이트 동사는 아이콘 접근 이름을 갖는다."""

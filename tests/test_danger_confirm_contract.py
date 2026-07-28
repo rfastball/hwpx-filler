@@ -80,7 +80,8 @@ def test_durable_destructive_confirms_are_danger() -> None:
         #  생존 표면은 editor·job 행이 계속 진다.)
         ("screens/job.js", "body: overwriteBody(res)"),
         ("screens/library.js", "body: res.confirm_text"),
-        ("screens/template.js", 'res.confirm_text + "\\n\\n지금 변환할까요?"'),
+        # 누름틀 제자리 변환 확인 — 거처가 편집기 「템플릿」 탭 ⋮ 로 이주(F8, tpl 화면 사망).
+        ("screens/editor.js", 'res.confirm_text + "\\n\\n지금 변환할까요?"'),
         # 등록 데이터 삭제·동명 재등록 — 화면 사망 뒤 거처는 데이터 선택 다이얼로그(F1).
         ("data_picker.js", 'res.confirm_text + "\\n\\n삭제할까요?"'),
         ("data_picker.js", 'res.confirm_text + "\\n\\n계속할까요?"'),
@@ -100,7 +101,8 @@ def test_transient_or_organizational_confirms_stay_neutral() -> None:
         # 「되돌릴 수 있는 조직 행위는 danger 로 물들이지 않는다」는 계약은 따라간다.
         ("screens/library.js", 'title: "그룹 병합 확인"'),
         ("screens/library.js", 'title: "작업 삭제 확인"'),
-        ("screens/template.js", "그룹을 해산하면"),
+        # 그룹 해산 — 거처가 편집기 「템플릿」 탭 그룹 ⋮ 로 이주(F8, 문안 계약 불변).
+        ("screens/editor.js", "그룹을 해산하면"),
     )
     for relative, needle in inventory:
         assert "danger: true" not in _call_containing(relative, needle)

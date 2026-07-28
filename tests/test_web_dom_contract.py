@@ -51,7 +51,8 @@ PRESERVE_WRAPPED_FILES = ("screens/editor.js", "screens/job.js", "screens/workbe
 # 절차의 길이 — 절차를 늘리는 슬라이스(F7 재시도)가 이 천장을 먼저 만나야 한다.
 MUTABLE_MODULE_STATE_BUDGET = {
     "screens/job.js": 17,
-    "screens/template.js": 5,
+    # (screens/template.js 는 화면 사망으로 파일째 삭제 — F8 §10.17. 관리·저작 상태는
+    #  editor.js 의 libMenuFor·txtEdit 2객체로 이주했다.)
     # screens/draft.js·draftsession.js 는 화면 사망으로 파일째 삭제(F6 PR-B).
     # 작업대(F6) — 스냅샷 1개(LAST)뿐이다. 작업점·복사 이력·미저장 변경·린트를 전부
     # Python 이 소유하므로 표면이 들 것이 없다(데이터 존이 없는 화면이라 더 그렇다).
@@ -59,7 +60,10 @@ MUTABLE_MODULE_STATE_BUDGET = {
     # 편집기 — LAST·접힘 2종 + deep-link 조준 대기 1슬롯(pendingAim, F6 PR-B §10.14.3).
     # pendingAim 은 파생 불가다: 스냅샷은 「이 조준을 이미 소비했는가」를 모른다(한 번성
     # 사건이지 상태가 아니다) — 스냅샷에 승격하면 소비 후 무효화 스킴이 따라온다.
-    "screens/editor.js": 4,
+    # +2(F8): libMenuFor(열린 라이브러리 ⋮ 메뉴의 정체)·txtEdit(TXT 저작 모달의 열림 거래)
+    # — tpl 화면 사망의 관리·저작 동사 승계. 둘 다 파생 불가(뷰의 한 번성 거래 상태 —
+    # template.js 5변수의 이주분을 각 1객체로 묶음).
+    "screens/editor.js": 6,
     "screens/library.js": 3,
     "data_picker.js": 4,
     "datazone.js": 0,
@@ -72,7 +76,9 @@ GALLERY = Path(__file__).resolve().parents[1] / "docs" / "UI_GALLERY.html"
 SCREEN_ROOTS = (
     # 홈(scr-home)은 사망(재작성 F2 PR-A) — 저장된 작업을 찾는 자리는 「문서 작업」
     # 라이브러리(§19.6 browser+detail)가 잇는다.
-    "scr-library", "scr-tpl",
+    "scr-library",
+    # 「템플릿 관리」(scr-tpl)는 사망(F8 §10.17) — 목록·저작·변환·검토·그룹·삭제는 편집기
+    # 「템플릿」 탭이 승계했다(TemplateController 는 채널로 생존, 소비자만 바뀜).
     # 「데이터 관리」(scr-pool)는 사망(재작성 F1) — 등록 데이터의 목록·수명은 데이터 선택
     # 다이얼로그가 승계했다(PoolController 는 생존, 소비자만 바뀜).
     # 「작업」(R-flow · #90) — 유일 생성 표면(실행 화면=슬라이스 3 사망) + 편집 모드(작업
@@ -86,14 +92,12 @@ SCREEN_ROOTS = (
 # draftDataLabel 은 화면과 함께 사망(F6 PR-B) — 데이터 존의 소비자는 job 하나다.
 SCOPED_DATA_LABELS = ("jobDataLabel",)
 
-# 상단 토바 탭(회귀 시 화면 소실·접근 이름 소실 → #27). run=슬라이스 3·editor=슬라이스 5
-# 사망(흡수); 「기안」은 F6 PR-B 에서 사망(TXT 는 편집기 밴드+작업대가 승계 — 탭 3→…
-# 최종 2는 F8 이 tpl 을 걷을 때); 「데이터 관리」는 데이터 선택 다이얼로그로 흡수·사망(F1);
-# home 은 「문서 작업」 라이브러리로 사망(F2 PR-A).
-# 좌 레일은 F2 PR-B 에서 상단 2탭으로 교체 — 계약 2탭(job·library) + 과도기 임시 1(tpl).
-NAV_SCREENS = ("library", "job", "tpl")
-# 구분선 오른쪽 임시 항목 — 승계처가 서면(F8) 죽는다. title 이 제거 예고를 진다(지도 §10.9 판정 B).
-TEMP_NAV_SCREENS = ("tpl",)
+# 상단 토바 탭(회귀 시 화면 소실·접근 이름 소실 → #27) — **계약 2탭 최종 형상**(F8 완성).
+# run=슬라이스 3·editor=슬라이스 5 사망(흡수); 「기안」 F6 PR-B·「템플릿 관리」 F8 사망;
+# 「데이터 관리」는 데이터 선택 다이얼로그로 흡수·사망(F1); home 은 라이브러리로 사망(F2 PR-A).
+# 좌 레일은 F2 PR-B 에서 상단 탭으로 교체. 과도기 임시 탭 기제(.temp·.nav-sep·제거 예고
+# title)는 F8 에 제도째 은퇴 — 아래 최종 형상 고정 테스트가 부활을 막는다.
+NAV_SCREENS = ("library", "job")
 
 # 커스텀 모달 → aria-labelledby 가 가리켜야 할 제목 id(다이얼로그 시맨틱, #27/#28).
 # sheetModal 은 다중 시트 확정 게이트(#33) — 같은 Modal 헬퍼·다이얼로그 계약을 공유한다.
@@ -227,27 +231,24 @@ def test_nav_buttons_have_accessible_name_and_tooltip():
         )
 
 
-def test_transitional_tabs_announce_their_removal():
-    """과도기 임시 탭(기안·템플릿 관리)은 구분선 오른쪽에 서고 title 이 제거를 예고해야 한다.
+def test_shell_is_the_final_two_tab_shape_with_no_transitional_apparatus():
+    """셸 최종 형상 고정(F8 §10.17.2 판정 E) — 과도기 임시 탭 **기제 자체의 은퇴** 선언.
 
-    지도 §10.9 판정 B: 아직 정상 동작하는 화면이라 상시 배너 대신 title 이 예고를 진다(없는
-    소실을 큰 소리로 고지하면 경보가 싸구려가 된다 — §10.8.4 착지 정산과 같은 판단). 계약
-    2탭은 그 반대로 **예고를 달지 않는다** — 최종 형상이 조용히 흐려지지 않게.
+    「기안」(F6 PR-B)·「템플릿 관리」(F8)가 차례로 죽어 계약 2탭만 남았다. 임시 표지(.temp)·
+    구분선(.nav-sep)·제거 예고 title 이 하나라도 되살아나면 과도기 기제가 부활 통로로 남았다는
+    뜻이다(공회전 루프로 남겨 두면 그게 다음 임시 탭의 근거가 된다). 계약 2탭은 예고를 달지
+    않는다 — 최종 형상이 조용히 흐려지지 않게.
     """
     buttons = _collect_nav_buttons()
     index = WEB_INDEX.read_text(encoding="utf-8")
-    assert index.count('class="nav-sep"') == 1, "탭 구분선(.nav-sep)이 정확히 1개여야 합니다."
-    for scr in TEMP_NAV_SCREENS:
-        assert "temp" in buttons[scr].get("class", ""), (
-            f"navbtn[data-scr={scr}] 에 임시 표지(.temp)가 없습니다 — 최종 형상과 구분이 사라집니다."
+    assert set(buttons) == set(NAV_SCREENS), f"셸 탭이 계약 2탭이 아닙니다: {sorted(buttons)}"
+    assert index.count('class="nav-sep"') == 0, "탭 구분선(.nav-sep)은 임시 탭 제도와 함께 은퇴했습니다."
+    for scr, attrs in buttons.items():
+        assert "temp" not in attrs.get("class", ""), (
+            f"navbtn[data-scr={scr}] 에 임시 표지(.temp) — 과도기 기제는 F8 에 은퇴했습니다."
         )
-        assert "사라집니다" in buttons[scr].get("title", ""), (
-            f"navbtn[data-scr={scr}] title 이 제거를 예고하지 않습니다(지도 §10.9 판정 B)."
-        )
-    # 구분선 왼쪽(계약 2탭)이 임시 표지를 얻으면 최종 형상이 흐려진다.
-    for scr in ("job", "library"):
-        assert "temp" not in buttons[scr].get("class", ""), (
-            f"navbtn[data-scr={scr}] 는 계약 2탭이라 임시 표지가 붙으면 안 됩니다(§19 서문)."
+        assert "사라집니다" not in attrs.get("title", ""), (
+            f"navbtn[data-scr={scr}] title 이 제거를 예고합니다 — 계약 2탭은 예고를 달지 않습니다."
         )
 
 
@@ -770,8 +771,10 @@ def test_heading_typography_uses_three_shared_roles():
     """H-01: 화면·구획·존 제목은 세 역할 규칙만 소비한다."""
     css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
     assert ".scr-headh1{font-size:var(--fs-section);font-weight:700}" in css
+    # (.tpl-band .tb-t 멤버는 tpl 화면 사망(F8)과 함께 역할군에서 걷혔다 — 정적 생존 표본은
+    #  .modal-card h3, 실렌더 판은 selftest milestone-H 프로브가 같은 표본으로 잰다.)
     assert (
-        ".lib-detail-name,.job-sec-head,.tpl-band.tb-t,.modal-cardh3{"
+        ".lib-detail-name,.job-sec-head,.modal-cardh3{"
         "font-size:var(--fs-strong);font-weight:700}"
     ) in css
     assert (
@@ -782,7 +785,6 @@ def test_heading_typography_uses_three_shared_roles():
     for stale in (
         ".job-sec-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-8);font-size:",
         ".zone-cap{display:block;margin-bottom:var(--sp-10);font-size:",
-        ".tpl-band.tb-t{font-weight:",
         ".lib-detail-name{font-size:",
     ):
         assert stale not in css, f"개별 제목 타이포 재정의가 돌아왔습니다: {stale}"
@@ -1155,27 +1157,24 @@ def test_job_candidate_ranking_surface_contract():
     assert ".job-cand-card.active{border-color:var(--a-primary)" in css
 
 
-def test_template_media_sections_use_sunken_surface_without_shared_catalog_drift():
-    """H-04: HWPX/TXT만 sunken 표면을 쓰고 공유 tpl-catalogs는 독립적으로 남는다."""
+def test_template_media_sunken_surface_is_retired_with_the_screen():
+    """H-04 은퇴(F8 §10.17) — 매체 sunken 2면은 tpl 화면 전용 표면이라 화면과 함께 죽었다.
+
+    승계 표면(편집기 「템플릿」 탭 2밴드)은 .grp 문법이고 그 실렌더 계약은 selftest
+    editor_lib_manage 프로브가 잰다. 죽은 표면 문법이 CSS·DOM 에 되살아나면 부활 통로다.
+    """
     html = WEB_INDEX.read_text(encoding="utf-8")
-    assert html.count('class="tpl-medium"') == 2
-    for medium, groups_id in (("hwpx", "tplHwpxGroups"), ("txt", "tplTxtGroups")):
-        assert f'data-medium="{medium}"' in html
-        assert f'id="{groups_id}"' in html
-
     css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
-    assert (
-        ".tpl-medium{margin-top:var(--sp-16);padding:var(--sp-8)var(--sp-10)var(--sp-10);"
-        "background:var(--n-surface-alt);border:1pxsolidvar(--a-border);"
-        "border-radius:var(--rad-surface)}"
-    ) in css
-    assert ".tpl-medium.tplcard{border-color:var(--n-border-strong)}" in css
-    assert ".tpl-catalogs{display:grid" in css
-
-
-def test_gallery_exposes_template_media_surface():
-    html = GALLERY.read_text(encoding="utf-8")
-    assert ".tpl-medium — 매체 sunken 구획 / 카드 층" in html
+    for dead in ('class="tpl-medium"', 'id="tplHwpxGroups"', 'id="tplTxtGroups"'):
+        assert dead not in html, f"죽은 tpl 표면 DOM 이 되살아났습니다: {dead}"
+    for dead in (".tpl-medium{", ".tpl-band{", ".tpl-libbar{", ".tpl-catalogs{"):
+        assert dead not in css, f"죽은 tpl 표면 CSS 가 되살아났습니다: {dead}"
+    # 승계 표면의 ⋮ 노출 배선 — .job-more 는 기본 hidden 이라 행 계열마다 호버·포커스 노출
+    # 규칙이 있어야 실물이 보인다(101 눈검증 회수분: 프로브의 프로그램적 click 은 hidden 을
+    # 통과해 은닉을 못 잡는다 — F2 PR-B 1R 「실물이 없던 자리」와 같은 부류).
+    assert ".libselrow:hover.job-more,.libselrow:focus-within.job-more{visibility:visible}" in css, (
+        "편집기 「템플릿」 탭 행 ⋮ 의 호버 노출 규칙이 없습니다 — 관리 동사가 영영 은닉됩니다."
+    )
 
 
 def test_card_families_share_hover_and_keep_persistent_state_separate():
@@ -1457,7 +1456,8 @@ def test_editor_is_an_immersive_screen_with_one_exit():
     for fname, needle in (
         ("screens/library.js", "EditorEntry.newDraft"),
         ("screens/library.js", "EditorEntry.openGuarded"),
-        ("screens/template.js", "EditorEntry.land"),
+        # (template.js 의 EditorEntry.land 소비는 화면 사망(F8)으로 은퇴 — 편집기 안 선택은
+        #  이미 편집기 화면이라 착지 seam 이 필요 없다.)
         ("screens/job.js", "EditorEntry.openGuarded"),
     ):
         src = (WEB_JS_DIR / fname).read_text(encoding="utf-8")
@@ -1801,10 +1801,9 @@ def test_volatile_draft_retirement_notices_have_producer_and_consumer() -> None:
     job_py = (src / "screen_job.py").read_text(encoding="utf-8")
     tpl_py = (src / "screen_template.py").read_text(encoding="utf-8")
     job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
-    tpl_js = (WEB_JS_DIR / "screens" / "template.js").read_text(encoding="utf-8")
     # ① 문서 만들기 후보 TXT 구획 빈 상태 — screen_job 이 내고 job.js 가 그린다.
     assert '"txt_note"' in job_py and "_txt_onboarding_note" in job_py
     assert "c.txt_note" in job_js
-    # ② tpl TXT 밴드 — screen_template 이 내고 template.js 가 그린다(F8 에 화면과 함께 사망).
-    assert 'txt["notice"]' in tpl_py
-    assert "band.notice" in tpl_js
+    # ② tpl TXT 밴드 고지는 화면과 함께 사망(F8 §10.17) — 생산이 되살아나면 소비 없는
+    # 유령 페이로드다(「등록만 되고 배선 없는」 결함류의 역방향).
+    assert 'txt["notice"]' not in tpl_py

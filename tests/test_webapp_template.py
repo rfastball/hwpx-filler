@@ -240,8 +240,9 @@ def test_import_routes_by_extension_and_is_independent(tmp_path, monkeypatch):
     src_txt.write_text("원본", encoding="utf-8")
     _write_compiled(ext / "용역.hwpx")
 
-    assert ctrl.import_into_library(str(src_txt)) == "협조전.txt"
-    assert ctrl.import_into_library(str(ext / "용역.hwpx")) == "용역.hwpx"
+    # 반환 = 사본의 **전체 경로**(F8 판정 C — 편집기 채택 판정이 정확한 목적지를 안다).
+    assert ctrl.import_into_library(str(src_txt)) == str(tp / "txt" / "협조전.txt")
+    assert ctrl.import_into_library(str(ext / "용역.hwpx")) == str(tp / "lib" / "용역.hwpx")
     # 확장자로 매체 루트 라우팅.
     assert (tp / "txt" / "협조전.txt").exists() and (tp / "lib" / "용역.hwpx").exists()
     # 원본 후속 수정은 라이브러리 사본에 불파급(복사=참조 아님).
@@ -258,8 +259,8 @@ def test_import_name_collision_suffixes(tmp_path, monkeypatch):
     ext = tp / "ext"
     ext.mkdir()
     (ext / "온나라_기안.txt").write_text("다른내용", encoding="utf-8")
-    name = ctrl.import_into_library(str(ext / "온나라_기안.txt"))
-    assert name == "온나라_기안 (2).txt"  # 조용한 덮어쓰기 금지
+    dest = ctrl.import_into_library(str(ext / "온나라_기안.txt"))
+    assert Path(dest).name == "온나라_기안 (2).txt"  # 조용한 덮어쓰기 금지(반환=전체 경로)
     assert (tp / "txt" / "온나라_기안.txt").read_text(encoding="utf-8") == "제목: {{공고명}}"
 
 
@@ -326,17 +327,8 @@ def test_import_cleans_partial_file_on_copy_failure(tmp_path, monkeypatch):
     assert not (tp / "txt" / "협조전.txt").exists()  # 반가져오기 잔재 없음
 
 
-def test_empty_hint_points_to_import_not_removed_folder_picker(tmp_path, monkeypatch):
-    """#137 리뷰 F7 — 첫 실행(고정 루트 부재)에 폐기된 「폴더 선택」이 아니라 「가져오기」로 안내."""
-    monkeypatch.setenv("HWPXFILLER_HOME", str(tmp_path))
-    txt_dir = tmp_path / "txt"
-    txt_dir.mkdir()
-    ctrl = TemplateController(
-        TextTemplateRegistry(txt_dir), lambda s, x: None, library_dir=tmp_path / "nolib"
-    )
-    hint = ctrl.snapshot()["hwpx"]["empty_hint"]
-    assert "가져오기" in hint and "폴더 선택" not in hint
-
+# (test_empty_hint... 삭제 — empty_hint 는 tpl 화면과 함께 사망(F8 §10.17):
+#  빈 밴드 안내는 편집기 「템플릿」 탭이 자기 문안으로 소유한다.)
 
 def test_trash_is_not_rediscovered_as_template(tmp_path, monkeypatch):
     """#267 리뷰 — 삭제=루트 밑 ``.trash`` 이동이라, 재귀 스캔이 그 하위트리를 제외하지
@@ -480,17 +472,5 @@ def test_snapshot_carries_fill_precheck_warns(tmp_path, monkeypatch):
     assert _item(snap["hwpx"], "comp.hwpx")["fill_warns"] == []
 
 
-# --------------------------------------------- 휘발 「기안」 폐지 고지 ②(F6 PR-B)
-def test_txt_band_carries_the_replacement_path_notice(tmp_path, monkeypatch):
-    """고지 ②(§10.15.15 점검표 6행) — TXT 밴드가 대체 경로(저장 TXT 작업 경유)를 재진술한다.
-
-    템플릿이 있을 때만 발화한다(빈 밴드는 빈 상태 CTA 가 경로를 말한다). tpl 화면은 F8 에
-    죽으므로 한시 문안이고, 화면과 함께 걷힌다.
-    """
-    ctrl, _, _ = _controller(tmp_path, monkeypatch)
-    snap = ctrl.snapshot()
-    assert "저장 TXT 작업" in snap["txt"]["notice"]              # 템플릿 有 = 발화
-    assert "notice" not in snap["hwpx"]                          # hwpx 밴드는 무관
-    for t in ctrl.text_registry.list_templates():
-        t.path.unlink()
-    assert ctrl.snapshot()["txt"]["notice"] == ""                # 템플릿 0 = 침묵
+# (고지 ②(휘발 「기안」 폐지 재진술) 테스트 삭제 — 문안이 tpl 화면과 함께 사망(F8
+#  §10.17). 고지 ①(job txt_note)은 test_webapp_job 이 계속 진다.)

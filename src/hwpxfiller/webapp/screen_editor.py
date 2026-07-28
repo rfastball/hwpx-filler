@@ -40,6 +40,7 @@ import shutil
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
 from ..core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
 from ..core.format_engine import presets as format_presets
@@ -91,6 +92,11 @@ _FMT_OPTIONS = {t: [{"code": code, "label": label} for label, code in format_pre
 # 에 있으나 스냅샷엔 매핑 감(感)만 주는 소량만 노출한다(record_count 로 "외 M건" 표기).
 _SAMPLE_ROWS = 3
 
+# 1단계 피커 행에 싣지 않는 링1 액션(F8 — tpl 화면 사망의 승계 표면): `preview` 는 #13
+# 결정(10F2FF98-B — 작업 위저드와 중복), `make_job` 은 행 「이 템플릿으로」 버튼이 이미
+# 소유한다(같은 동사 2벌 금지 — §10.17.2 판정 D).
+_PICKER_HIDDEN_ACTIONS = frozenset({"preview", "make_job"})
+
 # TXT 판 RAW 차단 문안은 `screens.TXT_RAW_BLOCK` 단일 출처 — 재연결 게이트와 같은 판정
 # 같은 문안(리뷰 2R P1). 아래 import 로 이 모듈의 옛 소비자(테스트 포함)도 그대로 산다.
 
@@ -141,6 +147,7 @@ class EditorController:
         template_groups: "TemplateGroupModel | None" = None,
         text_registry: "TextTemplateRegistry | None" = None,
         txt_groups: "TemplateGroupModel | None" = None,
+        library_result: "Callable[[], dict] | None" = None,
     ) -> None:
         self.registry = registry
         self._push_sink = push
@@ -164,6 +171,10 @@ class EditorController:
         # 별도 인스턴스면 접힘·목록이 두 표면에서 갈린다). 미주입 시 표준 루트 지연 생성.
         self._text_registry = text_registry
         self._txt_groups = txt_groups
+        # 라이브러리 결과 재진술 줄(F8 — tpl 화면 사망의 `#tplResult` 승계): 성형·수명은
+        # TemplateController(result_text/level)가 계속 소유하고 여기는 **읽기만** 한다(성형
+        # 두 벌 금지 — §10.17.2 판정 B). 미주입(테스트 단독 구동)은 빈 결과.
+        self._library_result = library_result
         self._reset()
 
     def _reset(self) -> None:
@@ -263,7 +274,7 @@ class EditorController:
     def assert_library_path(self, path: str) -> None:
         """웹 유래 템플릿 경로의 라이브러리 소속 확인 — 바깥 입구 봉쇄의 공용 seam(리뷰 F4).
 
-        use_library_template 와 크로스스크린 load_template_into_editor 가 함께 쓴다 —
+        use_library_template 가 쓴다(구 크로스스크린 load_template_into_editor 는 F8 사망) —
         한 입구만 막으면 「가져오기=복사가 유일한 바깥 입구」(2부)가 문서만의 불변식이 된다.
         불일치면 **새 스캔 결과를 먼저 push** 하고 거절한다(리뷰 F7: 방금 삭제된 파일의
         stale 행이 남아 같은 클릭을 반복하게 만드는 무행동 안내 금지 — 목록이 스스로 걷힌다).
@@ -561,23 +572,55 @@ class EditorController:
         items = [
             {
                 "key": rel_key(r.path, root),
+                "group": self.template_groups.group_of(rel_key(r.path, root)),
                 "name": r.name,
                 "path": r.path,
                 "badge_label": r.badge_label,
                 "badge_level": r.badge_level,
                 "is_error": r.is_error,
                 "detail": r.detail_line(),
+                # 채움 완화 사전 고지(#154) — tpl 화면 사망(F8)의 가시성 승계. 문안은 링1 확정.
+                "fill_warns": list(r.fill_warns),
+                # 상태 수선 동사(compile·review) — 라벨·구성은 링1 `_STATE_ACTIONS` 소유.
+                # `preview` 는 #13 결정(10F2FF98-B), `make_job` 은 행 「이 템플릿으로」 버튼이
+                # 이미 소유(같은 동사 2벌 금지 — §10.17.2 판정 D)라 여기서 걷는다.
+                "actions": [
+                    {"key": a.key, "label": a.label}
+                    for a in r.actions() if a.key not in _PICKER_HIDDEN_ACTIONS
+                ],
                 "current": bool(self.template_path) and r.path == self.template_path,
             }
             for r in self.template_library.rows()
         ]
+        hwpx_keys = [it["key"] for it in items]
         sections, flat = self.template_groups.build_sections(items, key_of=lambda it: it["key"])
+        txt_rows = self._txt_library_rows()
+        txt_keys = [it["key"] for it in txt_rows]
         txt_sections, txt_flat = self.txt_groups.build_sections(
-            self._txt_library_rows(), key_of=lambda it: it["key"]
+            txt_rows, key_of=lambda it: it["key"]
         )
+        # 관리 표면 승격(F8 — tpl 화면 사망): 이동 다이얼로그의 그룹 후보·개수·루트 경로를
+        # 밴드에 싣는다(tpl `_media_snapshot` 동형). **reconcile 은 여기서도 하지 않는다** —
+        # 유령 지정 위생은 관리 동사가 지나는 tpl 채널의 snapshot() 이 계속 소유한다(부분
+        # 목록 reconcile 이 살아있는 지정을 지우는 결함 클래스 봉쇄, 위 docstring).
+        result = self._library_result() if self._library_result is not None else {}
         return {
-            "hwpx": {"sections": sections, "flat": flat},
-            "txt": {"sections": txt_sections, "flat": txt_flat},
+            "hwpx": {
+                "sections": sections, "flat": flat,
+                "group_names": self.template_groups.existing_groups(hwpx_keys),
+                "count": len(items),
+                "dir": str(root) if root is not None else "",
+            },
+            "txt": {
+                "sections": txt_sections, "flat": txt_flat,
+                "group_names": self.txt_groups.existing_groups(txt_keys),
+                "count": len(txt_rows),
+                "dir": str(self.text_registry.directory),
+            },
+            "result": {
+                "text": str(result.get("text", "") or ""),
+                "level": str(result.get("level", "muted") or "muted"),
+            },
         }
 
     def _txt_library_rows(self) -> "list[dict]":
@@ -595,8 +638,10 @@ class EditorController:
                 field_count = len(t.fields())
             except Exception as exc:  # noqa: BLE001 — 손상 파일도 loud 노출(tpl 화면 동형)
                 error = str(exc)
+            key = rel_key(t.path, root)
             rows.append({
-                "key": rel_key(t.path, root),
+                "key": key,
+                "group": self.txt_groups.group_of(key),
                 "name": t.name,
                 "path": str(t.path),
                 "field_count": field_count,
@@ -771,48 +816,54 @@ class EditorController:
             raise ValueError(f"알 수 없는 형식: {media!r}")
         model.toggle_collapse(p["group"])
 
-    def import_template(self, path: str) -> str:
-        """템플릿 **가져오기 = 복사**(R-info 2부: 앱 소유 루트 — 생 파일 참조 금지).
+    def adopt_imported_template(self, dest: str) -> str:
+        """가져온 사본의 편집기 채택 판정(F8 — §10.17.2 판정 C, 가져오기 통일).
 
-        고른 파일을 라이브러리 폴더로 복사하고 **그 사본**으로 새 작업 세션을 연다 — 원본의
-        후속 이동·수정은 라이브러리에 불파급. 이름 충돌은 조용히 덮지 않고 ``이름 (2).hwpx``
-        식 접미로 회피 + notice 재진술. 브리지(파일 다이얼로그)가 부른다.
-
-        **선검증·무잔재**(리뷰 F3): 복사 전에 원본에서 스키마를 뽑아 손상·RAW(누름틀 0)를
-        거른다 — 복사 먼저면 실패 사본이 앱 소유 라이브러리에 영구 오류 행으로 남는다(인앱
-        삭제 어포던스 없음). 복사·로드 중 실패도 사본을 걷어내고 재던진다(반가져오기 금지).
+        **복사 권위는 :meth:`TemplateController.import_into_library` 하나다**(잠금·충돌
+        접미·무잔재) — 여기는 그 사본으로 「세션을 시작할 수 있는가」만 판정한다.
+        시작 가능(hwpx 누름틀 有 / txt UTF-8 판독 가능) = 즉시 새 세션(F7 거동 보존).
+        불가(RAW·손상) = **세션 없이 목록 합류** + notice 가 수선 경로(행 ⋮ 변환·삭제)를
+        지목한다 — 종전 선거부의 근거(인앱 삭제 어포던스 부재 → 영구 오류 행)는 F8 이
+        행 ⋮ 삭제를 들이면서 소멸했다(근거가 죽으면 가드도 걷는다).
         """
-        src = Path(path)
-        schema = extract_schema(str(src))  # 손상 = 여기서 loud(복사 전 — 잔재 없음)
-        if not schema.fields:
-            raise ValueError(
-                "누름틀이 없는 템플릿(RAW)입니다. 템플릿 관리의 변환(fieldize)을 먼저 "
-                "거치거나 누름틀이 있는 파일을 가져오세요."
-            )
-        lib_dir = self.template_library.library_dir
-        if lib_dir is None:
-            raise ValueError("템플릿 라이브러리 폴더가 지정되지 않았습니다.")
-        lib_dir.mkdir(parents=True, exist_ok=True)
-        dest = lib_dir / src.name
-        n = 2
-        while dest.exists():
-            dest = lib_dir / f"{src.stem} ({n}){src.suffix}"
-            n += 1
-        try:
-            shutil.copy2(src, dest)
-            self._refresh_library()
-            self.new_job_session(str(dest))
-        except Exception:
-            dest.unlink(missing_ok=True)  # 반가져오기 잔재 제거(디스크 풀 등)
-            self._refresh_library()  # 잔재 제거를 공유 VM 에 반영(stale 오류 행 방지)
-            raise
-        renamed = f" (이름 충돌로 '{dest.name}' 로 저장)" if dest.name != src.name else ""
-        self._set_notice(
-            f"'{src.name}' 을 라이브러리로 복사해 시작합니다{renamed}.",
-            "ok",
-        )
+        path = Path(dest)
+        # 공유 VM 은 import_into_library 가 이미 refresh 했다 — 단독 구동(테스트)만을 위한
+        # 재스캔이 아니라, 채택 판정 전 목록 정합의 방어적 재확인(앱에선 무해한 중복).
+        self._refresh_library()
+        if path.suffix.lower() == ".hwpx":
+            try:
+                schema = extract_schema(str(path))
+            except Exception:
+                self._set_notice(
+                    f"'{path.name}' 을 가져왔지만 읽을 수 없습니다. "
+                    "목록의 행 ⋮ 에서 삭제하거나 파일을 확인하세요.",
+                    "warn",
+                )
+                self._push()
+                return path.name
+            if not schema.fields:
+                self._set_notice(
+                    f"'{path.name}' 은 누름틀이 없는 원본(RAW)입니다. "
+                    "목록의 행 ⋮ → '누름틀로 변환'을 거친 뒤 시작하세요.",
+                    "warn",
+                )
+                self._push()
+                return path.name
+        else:
+            try:
+                path.read_text(encoding="utf-8")
+            except Exception:
+                self._set_notice(
+                    f"'{path.name}' 을 가져왔지만 읽을 수 없습니다(UTF-8 아님). "
+                    "목록의 행 ⋮ 에서 삭제하거나 파일을 확인하세요.",
+                    "warn",
+                )
+                self._push()
+                return path.name
+        self.new_job_session(str(path))
+        self._set_notice(f"'{path.name}' 을 라이브러리로 복사해 시작합니다.", "ok")
         self._push()
-        return dest.name
+        return path.name
 
     # ------------------------------------------- 네이티브 보조(브리지가 다이얼로그 담당)
     def load_template_path(self, path: str, *, emit_push: bool = True) -> None:

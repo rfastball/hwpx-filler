@@ -1165,7 +1165,7 @@ def test_partial_discard_refuses_a_tab_this_media_does_not_have(tmp_path):
     assert _save_named(ctrl, "없는탭")["ok"] is True
     ctrl.load_job("없는탭")
     with pytest.raises(ValueError, match="탭이 없습니다"):
-        ctrl.dispatch("discard_patch", {"section": "test"})   # 시험 탭은 F8
+        ctrl.dispatch("discard_patch", {"section": "test"})   # 시험 탭은 기각(§10.17.1) — 영구 미지 section
 
 
 def test_discarding_a_binding_patch_without_data_restores_the_saved_vocabulary(tmp_path):
@@ -1685,6 +1685,63 @@ def test_editor_picker_does_not_reconcile_away_offscreen_group(tmp_path):
     assert TemplateGroupModel("hwpx").group_of("아직없는.hwpx") == "입찰"  # 지정 생존
 
 
+def test_library_snapshot_carries_management_surface(tmp_path):
+    """F8(§10.17.2 판정 A·D) — 피커가 선택 전용에서 **관리 표면**으로 승격: 행에 그룹·상태
+    동사·채움 고지, 밴드에 이동 후보(group_names)·개수·루트 경로. 상태 동사 목록은 링1
+    `_STATE_ACTIONS` 소유를 그대로 읽되 `preview`(#13 결정)·`make_job`(행 「이 템플릿으로」
+    버튼이 이미 소유 — 같은 동사 2벌 금지)은 걷는다."""
+    groups = TemplateGroupModel("hwpx")
+    groups.set_group(TPL_COMPILED.name, "계약")
+    txt_dir = tmp_path / "text_templates"
+    txt_dir.mkdir()
+    (txt_dir / "공문.txt").write_text("{{수신}} 귀중", encoding="utf-8")
+    txt_groups = TemplateGroupModel("txt")
+    txt_groups.set_group("공문.txt", "기안")
+    ctrl = EditorController(
+        JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
+        template_library=TemplateManagerViewModel(paths=[TPL_COMPILED, TPL_PARTIAL]),
+        template_groups=groups,
+        text_registry=TextTemplateRegistry(txt_dir),
+        txt_groups=txt_groups,
+    )
+    lib = ctrl.snapshot()["library"]
+    hwpx = {it["name"]: it for sec in lib["hwpx"]["sections"] for it in sec["items"]}
+    assert hwpx[TPL_COMPILED.name]["group"] == "계약"
+    assert hwpx[TPL_PARTIAL.name]["group"] == ""
+    assert isinstance(hwpx[TPL_PARTIAL.name]["fill_warns"], list)
+    acts = {a["key"] for it in hwpx.values() for a in it["actions"]}
+    assert "make_job" not in acts and "preview" not in acts
+    assert {a["key"] for a in hwpx[TPL_PARTIAL.name]["actions"]} == {"compile", "review"}
+    assert lib["hwpx"]["group_names"] == ["계약"]
+    assert lib["hwpx"]["count"] == 2
+    assert lib["hwpx"]["dir"] == ""  # 명시 경로 VM 은 루트 없음 — 빈 값 정직 노출
+    txt = {it["name"]: it for sec in lib["txt"]["sections"] for it in sec["items"]}
+    assert txt["공문"]["group"] == "기안"
+    assert lib["txt"]["group_names"] == ["기안"]
+    assert lib["txt"]["count"] == 1
+    assert lib["txt"]["dir"] == str(txt_dir)
+
+
+def test_library_result_line_reads_injected_source_live(tmp_path):
+    """F8(§10.17.2 판정 B) — 결과 재진술 줄(`#tplResult` 승계)의 성형·수명은 tpl 컨트롤러가
+    소유하고 편집기 스냅샷은 **읽기만** 한다: 주입 원천이 바뀌면 다음 스냅샷이 즉시 반영
+    (캐시 발산 없음). 미주입(단독 구동)은 빈 결과."""
+    result = {"text": "", "level": "muted"}
+    ctrl = EditorController(
+        JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
+        template_library=TemplateManagerViewModel(paths=[]),
+        text_registry=TextTemplateRegistry(tmp_path / "text_templates"),
+        library_result=lambda: result,
+    )
+    assert ctrl.snapshot()["library"]["result"] == {"text": "", "level": "muted"}
+    result["text"] = "'서식.hwpx' 을 라이브러리로 가져왔습니다."
+    result["level"] = "ok"
+    assert ctrl.snapshot()["library"]["result"]["text"].startswith("'서식.hwpx'")
+    assert ctrl.snapshot()["library"]["result"]["level"] == "ok"
+    ctrl2, _ = _controller_lib(tmp_path)  # 미주입 — 빈 결과(성형 발명 금지)
+    assert ctrl2.snapshot()["library"]["result"] == {"text": "", "level": "muted"}
+
+
 def test_use_library_template_rejects_paths_outside_library(tmp_path):
     """라이브러리 밖 경로는 loud 거부(백엔드 화이트리스트) — 웹이 임의 경로를 실어도 생
     파일 직접 로드 경로가 부활하지 않는다(2부: 가져오기=복사가 유일한 바깥 입구)."""
@@ -1693,18 +1750,69 @@ def test_use_library_template_rejects_paths_outside_library(tmp_path):
         ctrl.dispatch("use_library_template", {"path": str(TPL_COMPILED)})
 
 
-def test_import_template_copies_into_library_and_starts_session(tmp_path):
-    """가져오기 = 복사(2부: 앱 소유 루트) — 사본으로 세션이 서고, 이름 충돌은 조용히 덮지
-    않고 접미로 회피 + notice 재진술한다."""
+def test_import_unification_copies_via_tpl_authority_and_adopts(tmp_path):
+    """가져오기 통일(F8 — §10.17.2 판정 C): 복사 권위는 tpl 컨트롤러 하나(잠금·충돌 접미),
+    편집기는 사본 채택만 판정한다. 유효 hwpx = 즉시 새 세션(F7 거동 보존), 충돌 접미도
+    tpl 권위가 정한 정확한 목적지로 세션이 선다(반환이 이름이 아니라 경로인 이유)."""
+    from hwpxfiller.core.text_registry import TextTemplateRegistry as TxtReg
+    from hwpxfiller.webapp.screen_template import TemplateController
+
     lib = tmp_path / "lib"
     lib.mkdir()
+    txt_reg = TxtReg(tmp_path / "text_templates")
+    tpl = TemplateController(txt_reg, lambda s, snap: None, library_dir=lib)
+    ctrl = EditorController(
+        JobRegistry(tmp_path / "jobs"), lambda s, snap: None,
+        template_library=tpl.vm,          # 앱 조립과 같은 단일 실체 공유
+        text_registry=txt_reg,
+    )
+    dest = tpl.import_into_library(str(TPL_COMPILED))
+    assert dest == str(lib / TPL_COMPILED.name)                        # 전체 경로 반환
+    assert ctrl.adopt_imported_template(dest) == TPL_COMPILED.name
+    assert ctrl.template_path == dest                                  # 세션 = 사본(원본 아님)
+    dest2 = tpl.import_into_library(str(TPL_COMPILED))                 # 같은 이름 재가져오기
+    assert dest2 != dest and Path(dest2).exists()                      # 접미 회피(조용한 덮기 금지)
+    ctrl.adopt_imported_template(dest2)
+    assert ctrl.template_path == dest2                                 # 접미 목적지 그대로 채택
+
+
+def test_adopt_defers_raw_and_broken_copies_with_repair_notice(tmp_path):
+    """§10.17.2 판정 C — 시작 불가 사본(RAW·손상·비 UTF-8 TXT)은 **세션 없이 목록 합류** +
+    notice 가 수선 경로(행 ⋮ 변환·삭제)를 지목한다. 종전 선거부(무잔재)의 근거는 행 ⋮
+    삭제가 서면서 소멸 — 사본은 남고, 지울 수 있고, 세션은 서지 않는다."""
+    from test_webapp_template import _write_raw
+
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    raw = _write_raw(lib / "원본서식.hwpx")
+    junk = lib / "깨진.hwpx"
+    junk.write_bytes(b"this is not a hwpx zip")
+    bad_txt = lib / "잘못.txt"
+    bad_txt.write_bytes(b"\xff\xfe\x00 invalid utf8 \x80")
     ctrl, _ = _controller_lib(tmp_path, lib_dir=lib)
-    name = ctrl.import_template(str(TPL_COMPILED))
-    assert name == TPL_COMPILED.name and (lib / name).exists()         # 복사본 생성
-    assert ctrl.template_path == str(lib / name)                       # 세션 = 사본(원본 아님)
-    name2 = ctrl.import_template(str(TPL_COMPILED))                    # 같은 이름 재가져오기
-    assert name2 != name and (lib / name2).exists()                    # 접미 회피(조용한 덮기 금지)
-    assert "충돌" in ctrl.snapshot()["notice"]["text"]
+    for dest, needle in ((raw, "누름틀로 변환"), (junk, "읽을 수 없습니다"),
+                         (bad_txt, "읽을 수 없습니다")):
+        assert ctrl.adopt_imported_template(str(dest)) == dest.name
+        assert ctrl.template_path == ""                                # 세션 없음
+        snap = ctrl.snapshot()
+        assert snap["notice"]["level"] == "warn"
+        assert needle in snap["notice"]["text"]                        # 수선 경로 지목
+        assert dest.exists()                                           # 목록 합류(잔재 아님 — 행)
+
+
+def test_adopt_starts_txt_session_with_media_branch(tmp_path):
+    """§10.17.2 판정 C — TXT 사본도 같은 채택 seam: 판독 가능하면 새 세션이 서고 매체
+    분기(F6)가 그대로 탄다(파일 이름 탭 없음)."""
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    txt_dir = tmp_path / "text_templates"
+    txt_dir.mkdir()
+    doc = txt_dir / "협조전.txt"
+    doc.write_text("수신: {{수신}}", encoding="utf-8")
+    ctrl, _ = _controller_lib(tmp_path, lib_dir=lib)
+    assert ctrl.adopt_imported_template(str(doc)) == "협조전.txt"
+    assert ctrl.template_path == str(doc)
+    assert ctrl.snapshot()["sections"] == ["template", "binding"]      # TXT 매체 탭(§3.2)
 
 
 def test_pattern_preview_uses_real_renderer_on_save_stage(tmp_path):
@@ -1725,18 +1833,9 @@ def test_pattern_preview_uses_real_renderer_on_save_stage(tmp_path):
     assert ctrl.snapshot()["pattern_preview"] == ""                    # 저장 분류 밖은 미계산
 
 
-def test_import_template_rejects_broken_file_without_residue(tmp_path):
-    """가져오기 선검증·무잔재(PR-4 리뷰 F3) — 손상 파일은 복사 전에 loud 거부되고, 앱 소유
-    라이브러리에 오류 사본이 영구히 남지 않는다(인앱 삭제 어포던스가 없는 잔재 금지)."""
-    lib = tmp_path / "lib"
-    lib.mkdir()
-    junk = tmp_path / "junk.hwpx"
-    junk.write_bytes(b"this is not a hwpx zip")
-    ctrl, _ = _controller_lib(tmp_path, lib_dir=lib)
-    import zipfile
-    with pytest.raises((ValueError, OSError, zipfile.BadZipFile)):     # 손상 = 복사 전 loud
-        ctrl.import_template(str(junk))
-    assert list(lib.iterdir()) == []                                   # 무잔재
+# (구 test_import_template_rejects_broken_file_without_residue 삭제 — F8 판정 C: 선거부의
+#  근거(인앱 삭제 어포던스 부재)가 행 ⋮ 삭제로 소멸. 손상 사본은 이제 삭제 가능한 오류
+#  행으로 목록에 합류하고 세션만 서지 않는다 — 위 test_adopt_defers_raw_and_broken_copies.)
 
 
 def test_use_library_rejection_refreshes_stale_list(tmp_path):

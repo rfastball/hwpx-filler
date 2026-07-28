@@ -108,7 +108,8 @@ def test_menu_spawned_modals_carry_original_trigger_through_close_all() -> None:
     group = (ROOT / "web" / "js" / "grouplist.js").read_text(encoding="utf-8")
     assert "returnFocus: opts.returnFocus" in group
     assert "if (confirmed && cb) cb(confirmedGroup)" in group and "cb(group)" not in group
-    # (screens/draft.js 제외 — 「기안」 화면 사망, F6 PR-B.)
-    for rel in ("screens/library.js", "screens/job.js", "screens/template.js"):
+    # (screens/draft.js 는 「기안」 화면 사망(F6 PR-B), screens/template.js 는 「템플릿
+    #  관리」 사망(F8)으로 제외 — 메뉴발 모달의 새 소비자는 편집기 「템플릿」 탭이다.)
+    for rel in ("screens/library.js", "screens/job.js", "screens/editor.js"):
         src = (ROOT / "web" / "js" / rel).read_text(encoding="utf-8")
         assert "trigger" in src and "returnFocus" in src, rel

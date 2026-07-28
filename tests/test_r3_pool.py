@@ -206,17 +206,15 @@ def test_data_picker_register_dialog_is_guarded():
 
 def test_refresh_buttons_are_guarded():
     """새로고침 배선 — fire-and-forget refresh 금지(N1). 풀 재스캔의 거처는 다이얼로그다."""
-    wiring = (
-        ("data_picker.js", "dataPickerRefresh", '$("dataPickerPinned")'),
-        ("screens/template.js", "tplRefresh", '$("tplHwpxGroups")'),
+    src = _js("data_picker.js")
+    assert '() => Bridge.call(SCREEN, "refresh"' not in src, (
+        "data_picker.js 의 dataPickerRefresh 가 무방비 fire-and-forget 으로 회귀(N1)."
     )
-    for rel, btn, nxt in wiring:
-        src = _js(rel)
-        assert '() => Bridge.call(SCREEN, "refresh"' not in src, (
-            f"{rel} 의 {btn} 이 무방비 fire-and-forget 으로 회귀(N1)."
-        )
-        seg = _segment(src, f'$("{btn}")', nxt)  # 다음 배선 줄 전까지 = 버튼 핸들러
-        assert "catch" in seg, f"{rel} 의 {btn} 배선에 catch 표면화가 없습니다(N1)."
+    seg = _segment(src, '$("dataPickerRefresh")', '$("dataPickerPinned")')
+    assert "catch" in seg, "dataPickerRefresh 배선에 catch 표면화가 없습니다(N1)."
+    # (tpl 새로고침은 화면 사망(F8 §10.17)으로 편집기 lib-refresh 로 이주 — 그 배선은
+    #  editor.js onClick 디스패처의 공용 try/catch 가드가 상속한다: test_r3_editor 의
+    #  test_editor_js_click_dispatch_guards_bridge_rejection 소관.)
 
 
 # ================================================================== C6
@@ -235,7 +233,9 @@ def test_appjs_nav_autorefresh_whitelist_matches_backend():
     # draft 는 화면 사망(F6 PR-B) — TXT 작업도 job 목록이 승계한다.
     # pool 은 화면 사망(재작성 F1)이라 빠진다 — 등록 데이터 재스캔은 라우팅이 아니라 데이터
     # 선택 다이얼로그가 **열 때** 지불한다(안 여는 세션이 풀 I/O 를 물지 않는다).
-    assert listed == {"library", "tpl", "job"}
+    # tpl 은 화면 사망(F8 §10.17)이라 빠진다 — 편집기는 몰입 표면이라 nav 재당김 대상이
+    # 아니고, 템플릿 탭 재진입 재스캔 + tpl push 재당김 구독이 그 역할을 진다.
+    assert listed == {"library", "job"}
 
     # 재당김의 **단일 정의**(8R 근본 조치) — 화이트리스트 판정 + refresh dispatch 가 한 자리에
     # 살고, 전환은 그것을 소비하며 실패를 표면화한다(.catch). 정의가 둘이면 한쪽만 고쳐진다.
@@ -251,9 +251,9 @@ def test_appjs_nav_autorefresh_whitelist_matches_backend():
     )
 
     # 백엔드 상호 검증 — 화이트리스트 화면명 == 컨트롤러 name, 전부 _do_refresh 보유.
-    ctrls = {c.name: c for c in (
-        LibraryController, TemplateController, JobController,
-    )}
+    # (TemplateController 는 화면 사망(F8)으로 nav 재당김 목록에서 빠졌다 — 채널은 생존하나
+    #  탭이 없어 Nav.go 대상이 아니고, 재스캔은 편집기 lib-refresh·탭 재진입이 진다.)
+    ctrls = {c.name: c for c in (LibraryController, JobController)}
     assert set(ctrls) == listed
     for cls in ctrls.values():
         assert callable(getattr(cls, "_do_refresh", None)), (
@@ -264,4 +264,5 @@ def test_appjs_nav_autorefresh_whitelist_matches_backend():
 def test_manual_refresh_buttons_kept():
     """자동 refresh 가 수동 새로고침 버튼을 대체하지 않는다 — 명시적 재스캔 경로 유지(C6)."""
     assert '$("dataPickerRefresh")' in _js("data_picker.js")
-    assert '$("tplRefresh")' in _js("screens/template.js")
+    # tpl 수동 새로고침은 편집기 「템플릿」 탭 상단 행동 줄(lib-refresh)로 이주(F8).
+    assert 'data-act="lib-refresh"' in _js("screens/editor.js")

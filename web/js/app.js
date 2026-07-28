@@ -54,7 +54,7 @@
      실행 화면(run)은 사망(슬라이스 3)이라 목록에서 제거. 홈은 「문서 작업」 라이브러리로
      대체됐다(재작성 F2) — 그 화면의 refresh 는 레지스트리 + 영속 그룹 접힘을 함께 다시
      읽는다(다른 화면에서 접은 상태가 stale 로 남지 않게). */
-  const REFRESH_ON_NAV = ["library", "tpl", "job"];
+  const REFRESH_ON_NAV = ["library", "job"];
 
   /* 몰입 표면 — 상단 2탭을 덮고(셸 표지를 body 클래스로 내려 CSS 가 감춘다) 나가는 이동이
      자기 이탈 가드를 먼저 지나는 화면들. 탭이 없으므로 `navs` 에도 없다. */
@@ -128,8 +128,8 @@
     // 선언은 앱 전역**이라 저쪽 기안 표면에서 바꿀 수 있다(코덱스 리뷰 P2). 둘 다 refresh
     // 디스패치로는 못 고친다(하나는 스냅샷 소유가 아니고, 하나는 재렌더가 필요).
   }
-  // 「작업 에디터」 과도기 항목 사망(슬라이스 5)과 함께 제거 — 편집 진입은 EditorEntry.land
-  // 소비처(「문서 작업」 상세·템플릿 관리)가 담당한다.
+  // 「작업 에디터」 과도기 항목 사망(슬라이스 5)과 함께 제거 — 편집 진입은 EditorEntry
+  // 소비처(「문서 작업」 상세 등)가 담당한다.
   navs.forEach((b) => b.addEventListener("click", () => go(b.dataset.scr)));
   // 화면 간 프로그램적 이동의 단일 경로 — 라이브러리 상세의 「문서 만들기에서 사용」 등이
   // 대상 화면을 자체 dispatch 로 먼저 겨눈 뒤 여기로 전환한다(library.js 가 소비).
@@ -214,7 +214,7 @@
     if (window.EditorScreen) window.EditorScreen.init();
     if (window.JobScreen) window.JobScreen.init();  // 「문서 만들기」(#90) — 유일 생성 표면
     if (window.WorkbenchScreen) window.WorkbenchScreen.init();  // TXT 검토·복사 작업대(F6)
-    if (window.TemplateScreen) window.TemplateScreen.init();
+    // (「템플릿 관리」 화면은 사망(F8 §10.17) — tpl 채널 소비는 editor.js 구독이 잇는다.)
     // 데이터 선택 다이얼로그(재작성 F1) — 화면이 아니라 오버레이라 라우팅 대상이 아니지만
     // pool 관측 푸시의 구독자라 여기서 배선한다(구 PoolScreen.init 승계).
     if (window.DataPicker) window.DataPicker.init();
