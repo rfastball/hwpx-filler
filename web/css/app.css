@@ -44,11 +44,12 @@ code{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var
 .topbar{background:var(--n-header-bg);border-bottom:1px solid var(--a-border);
   display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
   gap:var(--sp-16);padding:0 var(--sp-16);min-width:0}
-.topbar .brand{font-weight:800;font-size:var(--fs-strong);letter-spacing:-.01em;min-width:0}
-/* #258 문서나르미 락업 — 심벌은 브랜드 파랑 단색(--a-brand, 액센트와 별개), 워드마크는 잉크 상속.
-   16–24px 소형 사용 원칙에 따라 20px·배경 타일 없음. */
-.brand-lockup{display:flex;align-items:center;gap:var(--sp-6);min-width:0}
-.brand-mark{width:20px;height:20px;flex:none;fill:var(--a-brand)}
+.topbar .brand{font-weight:700;font-size:var(--fs-strong);letter-spacing:-.02em;min-width:0}
+/* #258 문서나르미 락업 — 세 겹의 문서가 한 단계씩 이동해 전달 화살표로 완성된다.
+   타일 없이도 16px에서 외곽이 남으며, 브랜드 파랑은 액센트와 분리한다. */
+.brand-lockup{display:flex;align-items:center;gap:var(--sp-8);min-width:0}
+.brand-mark{width:24px;height:24px;flex:none}
+.brand-mark-layer,.brand-mark-arrow{fill:var(--a-brand)}
 .brand-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* 세그먼트 내비 — 가운데 정렬 한 묶음. 구분선(.nav-sep) 오른쪽은 과도기 임시 항목이라
    시각적으로도 갈라 둔다(§10.9 판정 B): 최종 형상은 구분선 왼쪽만 남는다. */

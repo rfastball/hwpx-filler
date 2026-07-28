@@ -1,0 +1,151 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 1040" role="img" aria-labelledby="title desc">
+  <title id="title">문서나르미 로고 방향 시안 3종</title>
+  <desc id="desc">스택 시프트, 폴드 포워드, 한글 캐리어 세 방향을 큰 락업과 작은 크기로 비교한 선택 보드</desc>
+  <defs>
+    <symbol id="mark-a" viewBox="0 0 64 64">
+      <path fill="currentColor" d="M9 7h31a5 5 0 0 1 5 5v8H9a5 5 0 0 1-5-5v-3a5 5 0 0 1 5-5Z"/>
+      <path fill="currentColor" d="M16 23h31a5 5 0 0 1 5 5v8H16a5 5 0 0 1-5-5v-3a5 5 0 0 1 5-5Z"/>
+      <path fill="currentColor" d="M23 39h24v-6l13 12-13 12v-6H23a5 5 0 0 1-5-5v-2a5 5 0 0 1 5-5Z"/>
+    </symbol>
+    <symbol id="mark-b" viewBox="0 0 64 64">
+      <path fill="currentColor" d="M14 5h25l18 18v28a8 8 0 0 1-8 8H14a8 8 0 0 1-8-8V13a8 8 0 0 1 8-8Z"/>
+      <path fill="var(--mark-cut, #FFFFFF)" d="M39 5v14a4 4 0 0 0 4 4h14L39 5Z"/>
+      <path fill="var(--mark-cut, #FFFFFF)" d="M16 29h18v-7l14 11-14 11v-7H16v-8Z"/>
+    </symbol>
+    <symbol id="mark-c" viewBox="0 0 64 64">
+      <path fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" d="M11 49V16a6 6 0 0 1 6-6h24a6 6 0 0 1 6 6v15"/>
+      <path fill="currentColor" d="M23 27h10v15h13v-7l14 12-14 12v-7H29a6 6 0 0 1-6-6V27Z"/>
+    </symbol>
+    <style>
+      .bg{fill:#F3F5F8}.card{fill:#FFFFFF;stroke:#E1E5EA;stroke-width:1}
+      .ink{fill:#111827}.muted{fill:#667085}.soft{fill:#98A2B3}.brand{color:#2874A6}
+      .title{font:700 28px "Pretendard GOV Variable","Pretendard","Noto Sans KR","Malgun Gothic",sans-serif;letter-spacing:-1px}
+      .subtitle{font:400 17px "Pretendard GOV Variable","Pretendard","Noto Sans KR","Malgun Gothic",sans-serif}
+      .label{font:700 15px "Pretendard GOV Variable","Pretendard","Noto Sans KR","Malgun Gothic",sans-serif;letter-spacing:1px}
+      .name{font:700 34px "Pretendard GOV Variable","Pretendard","Noto Sans KR","Malgun Gothic",sans-serif;letter-spacing:-1.3px}
+      .card-title{font:700 22px "Pretendard GOV Variable","Pretendard","Noto Sans KR","Malgun Gothic",sans-serif;letter-spacing:-.5px}
+      .body{font:400 15px "Pretendard GOV Variable","Pretendard","Noto Sans KR","Malgun Gothic",sans-serif}
+      .tiny{font:500 13px "Pretendard GOV Variable","Pretendard","Noto Sans KR","Malgun Gothic",sans-serif}
+    </style>
+  </defs>
+
+  <rect class="bg" width="1440" height="1040"/>
+  <text x="72" y="76" class="title ink">문서나르미 · LOGO DIRECTIONS 02</text>
+  <text x="72" y="110" class="subtitle muted">문서 생성 도구의 문법을 참고하되, 형태의 기억점은 문서나르미만의 것으로 비교합니다.</text>
+
+  <!-- A -->
+  <g transform="translate(72 150)">
+    <rect class="card" width="408" height="810" rx="24"/>
+    <text x="32" y="48" class="label" fill="#2874A6">A · STACK SHIFT</text>
+    <rect x="294" y="24" width="82" height="30" rx="15" fill="#2874A6"/>
+    <text x="335" y="44" class="tiny" fill="#FFFFFF" text-anchor="middle">SELECTED</text>
+    <text x="32" y="85" class="card-title ink">쌓이고, 앞으로 나아가는 흐름</text>
+    <text x="32" y="116" class="body muted">문서 스택이 한 단계씩 이동해 마지막에</text>
+    <text x="32" y="139" class="body muted">전달 화살표로 완성되는 모듈형 심벌입니다.</text>
+
+    <use href="#mark-a" x="130" y="184" width="148" height="148" class="brand"/>
+
+    <g transform="translate(46 378)">
+      <use href="#mark-a" width="52" height="52" class="brand"/>
+      <text x="72" y="38" class="name ink">문서나르미</text>
+    </g>
+
+    <rect x="32" y="464" width="344" height="104" rx="14" fill="#2874A6"/>
+    <g transform="translate(67 488)" color="#FFFFFF">
+      <use href="#mark-a" width="54" height="54"/>
+      <text x="74" y="39" class="name" fill="#FFFFFF">문서나르미</text>
+    </g>
+
+    <text x="32" y="620" class="label soft">SMALL SIZE</text>
+    <g transform="translate(40 650)" color="#2874A6">
+      <use href="#mark-a" width="32" height="32"/>
+      <use href="#mark-a" x="112" y="4" width="24" height="24"/>
+      <use href="#mark-a" x="216" y="8" width="16" height="16"/>
+    </g>
+    <text x="38" y="704" class="tiny soft">32 px</text>
+    <text x="146" y="704" class="tiny soft">24 px</text>
+    <text x="246" y="704" class="tiny soft">16 px</text>
+
+    <line x1="32" y1="736" x2="376" y2="736" stroke="#E1E5EA"/>
+    <text x="32" y="770" class="body ink">강점</text>
+    <text x="76" y="770" class="body muted">기능과 움직임이 즉시 읽힘</text>
+    <text x="32" y="796" class="body ink">인상</text>
+    <text x="76" y="796" class="body muted">정확함 · 생산성 · 속도</text>
+  </g>
+
+  <!-- B -->
+  <g transform="translate(516 150)">
+    <rect class="card" width="408" height="810" rx="24"/>
+    <text x="32" y="48" class="label" fill="#2874A6">B · FOLD FORWARD</text>
+    <text x="32" y="85" class="card-title ink">문서가 곧 전달 동작이 되는 형태</text>
+    <text x="32" y="116" class="body muted">접힌 문서 안의 굵은 화살표로 생성부터</text>
+    <text x="32" y="139" class="body muted">전달까지의 한 번에 끝나는 경험을 담습니다.</text>
+
+    <use href="#mark-b" x="130" y="184" width="148" height="148" class="brand"/>
+
+    <g transform="translate(46 378)">
+      <use href="#mark-b" width="52" height="52" class="brand"/>
+      <text x="72" y="38" class="name ink">문서나르미</text>
+    </g>
+
+    <rect x="32" y="464" width="344" height="104" rx="14" fill="#2874A6"/>
+    <g transform="translate(67 488)" color="#FFFFFF" style="--mark-cut:#2874A6">
+      <use href="#mark-b" width="54" height="54"/>
+      <text x="74" y="39" class="name" fill="#FFFFFF">문서나르미</text>
+    </g>
+
+    <text x="32" y="620" class="label soft">SMALL SIZE</text>
+    <g transform="translate(40 650)" color="#2874A6">
+      <use href="#mark-b" width="32" height="32"/>
+      <use href="#mark-b" x="112" y="4" width="24" height="24"/>
+      <use href="#mark-b" x="216" y="8" width="16" height="16"/>
+    </g>
+    <text x="38" y="704" class="tiny soft">32 px</text>
+    <text x="146" y="704" class="tiny soft">24 px</text>
+    <text x="246" y="704" class="tiny soft">16 px</text>
+
+    <line x1="32" y1="736" x2="376" y2="736" stroke="#E1E5EA"/>
+    <text x="32" y="770" class="body ink">강점</text>
+    <text x="76" y="770" class="body muted">제품 역할을 가장 빨리 이해함</text>
+    <text x="32" y="796" class="body ink">인상</text>
+    <text x="76" y="796" class="body muted">명료함 · 안정감 · 실용성</text>
+  </g>
+
+  <!-- C -->
+  <g transform="translate(960 150)">
+    <rect class="card" width="408" height="810" rx="24"/>
+    <text x="32" y="48" class="label" fill="#2874A6">C · HANGEUL CARRIER</text>
+    <text x="32" y="85" class="card-title ink">한글 구조에 담은 운반의 방향</text>
+    <text x="32" y="116" class="body muted">열린 ㅁ의 문서 틀과 ㄴ의 이동 경로를</text>
+    <text x="32" y="139" class="body muted">결합해 한국어 이름의 개성을 살렸습니다.</text>
+
+    <use href="#mark-c" x="130" y="184" width="148" height="148" class="brand"/>
+
+    <g transform="translate(46 378)">
+      <use href="#mark-c" width="52" height="52" class="brand"/>
+      <text x="72" y="38" class="name ink">문서나르미</text>
+    </g>
+
+    <rect x="32" y="464" width="344" height="104" rx="14" fill="#2874A6"/>
+    <g transform="translate(67 488)" color="#FFFFFF">
+      <use href="#mark-c" width="54" height="54"/>
+      <text x="74" y="39" class="name" fill="#FFFFFF">문서나르미</text>
+    </g>
+
+    <text x="32" y="620" class="label soft">SMALL SIZE</text>
+    <g transform="translate(40 650)" color="#2874A6">
+      <use href="#mark-c" width="32" height="32"/>
+      <use href="#mark-c" x="112" y="4" width="24" height="24"/>
+      <use href="#mark-c" x="216" y="8" width="16" height="16"/>
+    </g>
+    <text x="38" y="704" class="tiny soft">32 px</text>
+    <text x="146" y="704" class="tiny soft">24 px</text>
+    <text x="246" y="704" class="tiny soft">16 px</text>
+
+    <line x1="32" y1="736" x2="376" y2="736" stroke="#E1E5EA"/>
+    <text x="32" y="770" class="body ink">강점</text>
+    <text x="76" y="770" class="body muted">이름과 연결되는 고유한 기억점</text>
+    <text x="32" y="796" class="body ink">인상</text>
+    <text x="76" y="796" class="body muted">한국적 · 구조적 · 신뢰감</text>
+  </g>
+</svg>

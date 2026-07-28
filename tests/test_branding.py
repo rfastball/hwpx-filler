@@ -23,6 +23,8 @@ def test_web_shell_shows_product_name_only() -> None:
     html = _read("web", "index.html")
     assert f"<title>{PRODUCT}</title>" in html
     assert 'class="brand-mark"' in html, "레일 락업에 심벌 SVG 가 없다"
+    assert 'class="brand-mark-layer"' in html
+    assert 'class="brand-mark-arrow"' in html
     assert f'<span class="brand-name">{PRODUCT}</span>' in html
     assert "HWPX Filler" not in html
 
@@ -95,6 +97,8 @@ def test_root_readme_is_product_entry() -> None:
 
 
 def test_favicon_asset_bundled() -> None:
-    """web/img 심벌 SVG(파비콘)가 존재하고 브랜드 파랑 단색이다."""
+    """web/img 심벌 SVG(파비콘)가 브랜드 파랑의 세 문서 이동 단계를 담는다."""
     svg = _read("web", "img", "narmi-mark.svg")
     assert 'fill="#2874A6"' in svg
+    assert svg.count("<path ") == 3
+    assert "<rect " not in svg
