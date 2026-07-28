@@ -1543,9 +1543,12 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             job = self.registry.load(self.job_name)
         except Exception:  # noqa: BLE001 — 손상은 다음 스냅샷의 건강 표면이 말한다
             return False
-        # **매체가 갈렸으면 자리를 다시 앉힌다**(2R P2). 재연결은 매체 교차가 가능하고
-        # (파일 필터의 「모든 파일」), 그 변화는 이 화면 밖에서도 일어난다 — 라이브러리에서
-        # 재연결하고 돌아오는 경로가 실물이다. 매체가 그대로면 아래 hwpx 규칙 대조로 간다.
+        # **자리가 갈렸으면 다시 앉힌다**(2R P2 → §10.16 판정 E 정정, 리뷰 1R P2). 매체
+        # 교차 방어는 게이트가 원천 차단해 이 분기의 옛 역할은 죽었지만, 게이트가 **허용**하는
+        # 복구 전이(미상 `.docx` 구작업 → 라이브러리 relink 로 hwpx/txt 에 앉힘)가 자리를
+        # 갈고, 그 변화는 이 화면 밖에서 일어난다 — 여기서 안 받으면 화면이 유효해진 템플릿을
+        # 재선택 전까지 unsupported 라고 계속 주장한다. 지문 대조는 unsupported 세션(vm 없음)
+        # 을 못 보므로 대체가 아니다.
         if _seat_kinds(job) != (self.job_is_txt, self.job_unsupported):
             self._seat_active_job(job)
             self._last_generated = None   # 실행 표면 자체가 갈렸다 — 옛 증거는 남의 것이다
@@ -1584,10 +1587,11 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
         **왜 함수 하나인가**(2R P2 근본 조치): 1R 에서 Job 사본을 지웠지만 그 자리에 매체
         **래치**가 남았고, 그 래치는 「작업 선택」 사건에서만 갱신됐다. durable 템플릿 경로는
-        그 사건 **밖에서도** 바뀐다(라이브러리 재연결은 매체 교차가 가능하다 — 파일 필터에
-        「모든 파일」이 있다). 그래서 재연결 뒤 TXT→HWPX 는 실행 버튼이 계속 작업대를 광고하고,
-        HWPX→TXT 는 재적재가 `RunViewModel` 을 세우려다 터졌다. 두 값을 **한 자리에서만**
-        세우면 갈라질 수가 없고, 갱신이 필요한 곳은 이 함수를 부르면 된다.
+        그 사건 **밖에서도** 바뀐다(라이브러리 재연결 — 같은 매체 재연결과 미상 구작업의
+        복구가 경로를 갈아 끼운다; 교차는 §10.16 판정 C 가 게이트에서 차단). 값이 갈라진
+        상태는 실행 버튼이 엉뚱한 표면을 광고하거나 재적재가 `RunViewModel` 을 세우려다
+        터지는 형태로 나타났다. 두 값을 **한 자리에서만** 세우면 갈라질 수가 없고, 갱신이
+        필요한 곳은 이 함수를 부르면 된다.
         """
         self.job_is_txt, self.job_unsupported = _seat_kinds(job)
         self.vm = None if (self.job_is_txt or self.job_unsupported) else RunViewModel(job)

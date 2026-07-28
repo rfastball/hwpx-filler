@@ -1260,6 +1260,151 @@ def test_relink_selected_job_reloads_vm_and_restates(tmp_path):
     assert ctrl.vm.job.template_path == str(new_tpl)       # VM 재구성
 
 
+def test_relink_first_link_of_unlinked_job_is_allowed(tmp_path):
+    """미연결 작업의 첫 연결은 통과 — 아직 길을 고르지 않았다(§10.16 판정 C 1행).
+
+    `require_hwpx` 의 「빈 경로 = 통과」와 같은 규율: 매체 게이트가 막는 것은 **길을 바꾸는
+    것**이지 처음 고르는 것이 아니다. 확인 문안은 빈 기존 경로를 (비어 있음) 으로 재진술한다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.registry.save(Job(name="저작중", template_path="",
+                           mapping=MappingProfile(mappings=[])))
+    new_tpl = tmp_path / "first.hwpx"
+    _write_template(new_tpl, ["공고명"])
+    res = ctrl.dispatch("relink_template", {"name": "저작중", "path": str(new_tpl)})
+    assert res["ok"] is True and res["needs_confirm"] is True
+    assert "(비어 있음)" in res["confirm_text"]
+    res = ctrl.dispatch(
+        "relink_template", {"name": "저작중", "path": str(new_tpl), "confirm": True})
+    assert res["relinked"] is True
+    assert ctrl.registry.load("저작중").template_path == str(new_tpl)
+
+
+def test_relink_same_media_txt_recovery_works(tmp_path):
+    """txt→txt 재연결은 합법 복구다 — hwpx 파서에 빠져 죽지 않는다(§10.16 판정 C 2행).
+
+    종전엔 드리프트 프로브가 새 경로를 무조건 hwpx zip 으로 파싱해 같은 매체 복구가
+    "읽을 수 없습니다"로 죽었다(잠복 결함 회귀 핀). 읽기 판정은 여는 계약과 같은 UTF-8 —
+    비-UTF-8 파일은 확인으로도 템플릿이 될 수 없다(하드 차단 대칭). 토큰 0 파일도 같은
+    차단이다(리뷰 2R P1): 에디터 픽은 `TXT_RAW_BLOCK` 으로 거절하는데 재연결만 통과하면
+    작업대가 모든 레코드에 같은 원문을 복사한다 — 술어·문안 단일 출처(`screens`).
+    """
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    moved = tmp_path / "이동된_기안.txt"
+    moved.write_text("공고: {{공고명}}", encoding="utf-8")
+    res = ctrl.dispatch("relink_template", {"name": "발주요청_기안", "path": str(moved)})
+    assert res["ok"] is True and res["needs_confirm"] is True
+    res = ctrl.dispatch(
+        "relink_template", {"name": "발주요청_기안", "path": str(moved), "confirm": True})
+    assert res["relinked"] is True
+    assert ctrl.registry.load("발주요청_기안").template_path == str(moved)
+    bad = tmp_path / "ansi_기안.txt"
+    bad.write_bytes("공고: {{공고명}}".encode("cp949"))
+    res = ctrl.dispatch(
+        "relink_template", {"name": "발주요청_기안", "path": str(bad), "confirm": True})
+    assert res["ok"] is False and "새 템플릿을 읽을 수 없습니다" in res["error"]
+    assert ctrl.registry.load("발주요청_기안").template_path == str(moved)
+    plain = tmp_path / "토큰없는_기안.txt"
+    plain.write_text("토큰이 하나도 없는 본문", encoding="utf-8")
+    res = ctrl.dispatch(
+        "relink_template", {"name": "발주요청_기안", "path": str(plain), "confirm": True})
+    assert res["ok"] is False and "{{토큰}}이 없는" in res["error"]
+    assert ctrl.registry.load("발주요청_기안").template_path == str(moved)
+
+
+def test_cross_media_relink_is_rejected_with_recreate_guidance(tmp_path):
+    """매체 교차 재연결은 거절 — 문안이 삭제 후 재생성을 지목한다(§10.16 판정 C 3행).
+
+    hwpx→txt 는 종전에도 프로브 오류로 못 갔지만 문안이 거짓말을 했고("읽을 수 없습니다"),
+    txt→hwpx 는 조용히 **통과**하던 이력 위조 생존 경로다(`last_run_at` 의 뜻은 매체가
+    정한다 — §19.4). 둘 다 confirm 으로 뚫리지 않고 durable 은 불변이다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    res = ctrl.dispatch(
+        "relink_template",
+        {"name": "공고서", "path": str(tmp_path / "발주요청_기안.txt"), "confirm": True})
+    assert res["ok"] is False
+    assert "온나라 기안 TXT" in res["error"] and "삭제하고 새로 만드세요" in res["error"]
+    assert ctrl.registry.load("공고서").template_path.endswith("t.hwpx")
+    res = ctrl.dispatch(
+        "relink_template",
+        {"name": "발주요청_기안", "path": str(tmp_path / "t.hwpx"), "confirm": True})
+    assert res["ok"] is False and "HWPX 템플릿을 연결할 수 없습니다" in res["error"]
+    assert ctrl.registry.load("발주요청_기안").template_path.endswith(".txt")
+
+
+def test_relink_unknown_media_is_rejected_but_recovers_broken_jobs(tmp_path):
+    """새 매체 미상(.docx)은 fail-closed 거절, 미상 **구작업**의 연결은 복구로 통과(§10.16).
+
+    거절이 없으면 relink 가 unsupported 작업을 제조하고, 통과가 없으면 손상 작업은 영구
+    복구 불능이 된다 — 방향에 따라 답이 다른 이유를 게이트 3분기가 담는다. 복구는 **사용
+    이력을 승계하지 않는다**(리뷰 5R P2): 미상 스탬프는 어느 매체의 술어로도 읽을 수 없어
+    새 매체의 사건으로 재해석되면 위조다 — 고지 후 지우고, 즐겨찾기(방식 무관)는 남긴다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    docx = tmp_path / "낯선형식.docx"
+    docx.write_text("x", encoding="utf-8")
+    res = ctrl.dispatch(
+        "relink_template", {"name": "공고서", "path": str(docx), "confirm": True})
+    assert res["ok"] is False and "HWPX 또는 TXT 파일을 선택하세요" in res["error"]
+    assert ctrl.registry.load("공고서").template_path.endswith("t.hwpx")
+    ctrl.registry.save(Job(name="깨진작업", template_path=str(docx),
+                           mapping=MappingProfile(mappings=[])))
+    ctrl.registry.stamp_last_run("깨진작업", "2026-07-02T09:00:00")
+    ctrl.registry.set_favorite("깨진작업", True, "2026-07-01T09:00:00")
+    new_tpl = tmp_path / "복구.hwpx"
+    _write_template(new_tpl, ["공고명"])
+    res = ctrl.dispatch("relink_template", {"name": "깨진작업", "path": str(new_tpl)})
+    assert res["ok"] is True and res["needs_confirm"] is True
+    assert "최근 사용 기록은 함께 지워집니다" in res["confirm_text"]  # 조용한 삭제 금지
+    res = ctrl.dispatch(
+        "relink_template", {"name": "깨진작업", "path": str(new_tpl), "confirm": True})
+    assert res["relinked"] is True
+    saved = ctrl.registry.load("깨진작업")
+    assert saved.last_run_at == ""                            # 미상 이력 미승계
+    assert saved.favorited_at == "2026-07-01T09:00:00"        # 방식 무관 선호는 보존
+
+
+def test_relink_media_gate_rechecks_inside_the_lock(tmp_path):
+    """확인 왕복 사이에 매체가 정해졌으면 잠긴 커밋이 교차를 거절한다(리뷰 5R P2).
+
+    게이트는 잠금 밖 사본을 보고, 확인 왕복은 사람 시간이다 — 미연결 작업에 HWPX·TXT 첫
+    연결이 동시에 확인되면 둘 다 게이트를 지나고 두 번째 커밋이 교차 금지를 우회한다.
+    stale 사본을 돌려주는 load 로 그 창을 재현해, 커밋 콜백의 재판정이 같은 문안으로
+    거절하고 durable 이 불변임을 가드한다.
+    """
+    from hwpxfiller.webapp.screens import relink_job_template
+
+    ctrl, _ = _controller(tmp_path)
+    ctrl.registry.save(Job(name="경합작업", template_path="",
+                           mapping=MappingProfile(mappings=[])))
+    stale = ctrl.registry.load("경합작업")                     # 빈 경로 시점의 사본
+    hwpx = tmp_path / "t.hwpx"
+    ctrl.registry.mutate(                                      # 경쟁 relink 가 먼저 커밋
+        "경합작업", lambda j: setattr(j, "template_path", str(hwpx)))
+
+    class _StaleLoad:
+        """게이트가 본 사본이 낡은 상황의 최소 재현 — load 만 stale, 커밋은 실물."""
+
+        def __init__(self, real, stale_job):
+            self._real, self._stale = real, stale_job
+
+        def load(self, name):
+            return self._stale
+
+        def mutate(self, name, fn):
+            return self._real.mutate(name, fn)
+
+    txt = tmp_path / "경합.txt"
+    txt.write_text("공고: {{공고명}}", encoding="utf-8")
+    res = relink_job_template(
+        _StaleLoad(ctrl.registry, stale), "경합작업", str(txt), confirm=True)
+    assert res["ok"] is False and "삭제하고 새로 만드세요" in res["error"]
+    assert ctrl.registry.load("경합작업").template_path == str(hwpx)  # durable 불변
+
+
 # ------------------------------------------------ confirm-or-alarm 생성 계약
 def test_load_data_honors_confirmed_sheet(tmp_path):
     """다중 시트 확정 게이트(#33) — load_data_path(sheet=) 가 확정 시트를 관통.
@@ -3646,13 +3791,14 @@ def test_open_workbench_is_loud_when_the_work_vanished(tmp_path):
     assert res["ok"] is False and "읽을 수 없습니다" in res["error"]
 
 
-def test_cross_media_relink_reseats_the_active_session(tmp_path):
-    """재연결로 **매체가 갈리면** 실행 표면도 함께 갈린다(2R P2).
+def test_cross_media_relink_is_rejected_and_the_session_keeps_its_seat(tmp_path):
+    """교차 재연결은 거절되고 활성 세션의 자리는 그대로다(§10.16 판정 C·E).
 
-    재연결은 매체 교차가 가능하고(파일 필터에 「모든 파일」이 있다) 그 변화는 이 화면
-    밖에서도 일어난다 — 라이브러리에서 재연결하고 돌아오는 경로가 실물이다. 매체를
-    「작업 선택」 사건에 래치해 두면 TXT→HWPX 는 실행 버튼이 계속 작업대를 광고하고,
-    HWPX→TXT 는 재적재가 `RunViewModel` 을 세우려다 터진다.
+    종전 판(2R P2)은 「재연결로 매체가 갈리면 재착석한다」를 가드했다 — 매체 교차 relink
+    가 열려 있던 시절의 방어 코드다. 게이트가 교차를 원천 차단한 지금은 재착석할 사건
+    자체가 없고, 그 분기(`_reload_active_job` 의 seat-kind 대조)도 판정 E 로 회수됐다.
+    거절이 durable 과 세션 어느 쪽도 건드리지 않는 것을 실제 디스패치 경로로 가드한다
+    (종전 판의 레지스트리 직접 뮤테이션은 더는 제품 경로가 아니다).
     """
     ctrl, _ = _controller(tmp_path)
     _txt_job(ctrl, tmp_path)
@@ -3660,19 +3806,14 @@ def test_cross_media_relink_reseats_the_active_session(tmp_path):
     ctrl.dispatch("select_job", {"name": "발주요청_기안"})
     assert ctrl.snapshot()["run_action"]["key"] == "workbench"
 
-    # TXT → HWPX (다른 표면이 durable 경로를 갈아 끼운 뒤 이 화면으로 돌아온다)
-    hwpx = tmp_path / "t.hwpx"      # 픽스처가 만든 실제 hwpx 템플릿
-    ctrl.registry.mutate("발주요청_기안", lambda j: setattr(j, "template_path", str(hwpx)))
+    res = ctrl.dispatch(
+        "relink_template",
+        {"name": "발주요청_기안", "path": str(tmp_path / "t.hwpx"), "confirm": True})
+    assert res["ok"] is False and "삭제하고 새로 만드세요" in res["error"]
     ctrl.dispatch("refresh", {})
-    assert ctrl.job_is_txt is False and ctrl.vm is not None
-    assert ctrl.snapshot()["run_action"]["key"] == "generate"
-
-    # HWPX → TXT (반대 방향도 터지지 않고 자리를 다시 앉힌다)
-    txt = tmp_path / "발주요청_기안.txt"
-    ctrl.registry.mutate("발주요청_기안", lambda j: setattr(j, "template_path", str(txt)))
-    ctrl.dispatch("refresh", {})
-    assert ctrl.job_is_txt is True and ctrl.vm is None
+    assert ctrl.job_is_txt is True and ctrl.vm is None      # 자리 불변(재착석 사건 없음)
     assert ctrl.snapshot()["run_action"]["key"] == "workbench"
+    assert ctrl.registry.load("발주요청_기안").template_path.endswith(".txt")
 
 
 def test_workbench_entry_is_loud_when_the_template_is_not_utf8(tmp_path):
@@ -3697,10 +3838,11 @@ def test_workbench_entry_is_loud_when_the_template_is_not_utf8(tmp_path):
 def test_an_unsupported_template_does_not_blow_up_the_screen(tmp_path):
     """hwpx 도 txt 도 아닌 경로로 갈린 활성 작업 — 재적재가 터지지 않고 사유를 말한다.
 
-    재연결 피커는 「모든 파일」을 연다. 「TXT 가 아니면 hwpx」로 갈면 `RunViewModel` 이
-    `require_hwpx` 에서 loud raise 하고, 그 예외가 화면 전환마다 도는 재적재 밖으로 튄다 —
-    사용자가 실행을 시작하지도 않은 경로다. 게다가 매체 래치는 이미 갈아 끼워진 뒤라
-    「작업 있음 + 어느 실행 표면도 아님」이 남는다.
+    relink 게이트가 새 매체 미상을 거절하므로(§10.16 판정 C) 이 상태는 제품 경로로는 못
+    만든다 — 남는 실물은 JSON 손편집이다. 그래도 재적재는 자리를 다시 앉혀야 한다:
+    「TXT 가 아니면 hwpx」로 갈면 `RunViewModel` 이 `require_hwpx` 에서 loud raise 하고,
+    그 예외가 화면 전환마다 도는 재적재 밖으로 튄다. 복귀 방향(미상→txt)은 게이트가
+    허용하는 **복구 전이**이기도 하다(판정 E 정정 — 리뷰 1R P2).
     """
     ctrl, _ = _controller(tmp_path)
     _txt_job(ctrl, tmp_path)
@@ -3727,6 +3869,32 @@ def test_an_unsupported_template_does_not_blow_up_the_screen(tmp_path):
         lambda j: setattr(j, "template_path", str(tmp_path / "발주요청_기안.txt")))
     ctrl.dispatch("refresh", {})
     assert (ctrl.job_is_txt, ctrl.job_unsupported) == (True, False)
+
+
+def test_recovery_relink_reseats_the_active_session(tmp_path):
+    """복구 재연결(미상→hwpx)이 화면 밖에서 커밋되면 재적재가 자리를 앉힌다(판정 E 정정, 리뷰 1R P2).
+
+    미상 `.docx` 구작업의 relink 는 게이트가 **허용**하는 복구 경로다(판정 C — 유일 복구).
+    라이브러리에서 복구하고 이 화면으로 돌아왔을 때 재착석 분기가 없으면, 화면은 유효해진
+    템플릿을 재선택 전까지 unsupported 라고 계속 주장한다 — 지문 대조는 unsupported
+    세션(vm 없음)을 못 보므로 대체가 아니다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    odd = tmp_path / "구양식.docx"
+    odd.write_text("x", encoding="utf-8")
+    ctrl.registry.save(Job(
+        name="깨진작업", template_path=str(odd),
+        mapping=ctrl.registry.load("공고서").mapping))
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "깨진작업"})
+    assert ctrl.job_unsupported is True and ctrl.vm is None
+
+    # 라이브러리 복구 relink 의 화면 밖 durable 변경을 시뮬레이트(같은 게이트 경로는 T4 가 가드).
+    ctrl.registry.mutate(
+        "깨진작업", lambda j: setattr(j, "template_path", str(tmp_path / "t.hwpx")))
+    ctrl.dispatch("refresh", {})
+    assert ctrl.job_unsupported is False and ctrl.vm is not None
+    assert ctrl.snapshot()["run_action"]["key"] == "generate"
 
 
 def test_workbench_entry_is_blocked_and_loud_when_the_template_vanished(tmp_path):

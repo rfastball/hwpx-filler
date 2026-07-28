@@ -23,6 +23,9 @@ from ..core.dataset_pool import (
 )
 from ..data.excel import ambiguous_sheet_error  # 다중 시트 확정 게이트 판정+문구(#33)
 from ..core.fill_ledger import template_path_drift  # 재연결 드리프트 재진술(#67)
+from ..core.job import template_media, work_mode  # 재연결 매체 게이트(§10.16 판정 C)
+from ..core.text_render import template_fields  # TXT 토큰 판정(에디터와 같은 술어)
+from ..gui.work_mode import work_mode_label  # 거절 문안의 방식 라벨 단일 출처(§19.1)
 
 # 푸시 sink: (화면 id, 스냅샷 dict) → None. 앱=evaluate_js, 테스트=수집.
 PushSink = Callable[[str, dict], None]
@@ -36,6 +39,16 @@ PushSink = Callable[[str, dict], None]
 NARA_FROZEN_TEXT = (
     "나라장터 소스는 현재 웹에서 지원되지 않습니다. "
     "파일 또는 엑셀 참조 등록 데이터를 사용하세요."
+)
+
+# TXT 판 RAW 차단(F6 PR-B) — hwpx 의 RAW_BLOCK_MESSAGE 는 누름틀·변환(fieldize)을 말하므로
+# 그대로 쓰면 조치 안내가 거짓이 된다. TXT 의 채울 대상은 {{토큰}}이고 처방은 템플릿 관리다.
+# 여기(링2 공용)에 두는 이유: 같은 파일을 편집기 픽과 재연결 게이트가 각자 판정하므로
+# 술어(`template_fields` 빈 결과)와 문안이 한 자리여야 두 표면이 같은 말을 한다(리뷰 2R P1
+# — 편집기만 차단하고 재연결이 통과시키면 작업대가 모든 레코드에 같은 원문을 복사한다).
+TXT_RAW_BLOCK = (
+    "채울 {{토큰}}이 없는 TXT 템플릿입니다.\n"
+    "'템플릿 관리'에서 원문에 {{필드이름}} 토큰을 넣은 뒤 다시 고르세요."
 )
 
 
@@ -156,17 +169,39 @@ def source_label(source: str, data_label: str) -> str:
 
 
 # ------------------------------------------------- 템플릿 다시 연결(#67)
+def _cross_media_refusal(name: str, old_path: str, new_media: str) -> str:
+    """매체 교차 거절 문안(§10.16 판정 C) — 사전 게이트와 잠금 안 재판정이 같은 말을 한다."""
+    old_label = work_mode_label(work_mode(old_path))
+    new_noun = "온나라 기안 TXT" if new_media == "txt" else "HWPX"
+    return (
+        f"작업 '{name}' 은(는) '{old_label}' 작업이라 {new_noun} 템플릿을 "
+        "연결할 수 없습니다. 작업 방식을 바꾸려면 이 작업을 삭제하고 새로 만드세요."
+    )
+
+
+class _RelinkMediaRace(Exception):
+    """잠금 안 재판정이 잡은 매체 교차(리뷰 5R P2) — 사용자 문안을 그대로 실어 나른다."""
+
+
 def relink_job_template(job_registry, name: str, path: str, *, confirm: bool = False) -> dict:
     """작업 템플릿 참조 재지정 — run/home 공유 확정 게이트(교차-단위 계약 단일 출처).
 
     파일 이동/삭제로 끊긴 ``Job.template_path`` 를 새 파일로 갱신하는 유일한 durable
     뮤테이션 경로다. 에디터는 죽은 템플릿 작업을 loud 차단해 열지 못하므로(#67 결정)
-    여기가 막다른길을 푸는 입구이며, 드리프트 정책은 그 순서를 따른다:
+    여기가 막다른길을 푸는 입구다. relink 는 **같은 매체 안의 복구 동사**다(§10.16 판정 C
+    3분기): 미연결·미상 구작업의 연결은 허용(아직/이미 길이 없다 — 복구 유일 경로), 같은
+    매체 재연결은 허용(#67 그대로), **매체 교차는 거절**한다 — 작업 방식은 생성 시점에
+    정해져 바뀌지 않고(링0 불변식 1), `last_run_at` 의 뜻이 매체마다 달라(§19.4) 원천을
+    갈아치우면 이력·순위가 거짓이 된다. 게이트 통과 뒤 검사·확인 정책:
 
     - **read_error = 하드 차단**: 읽을 수 없는 파일은 확인으로도 템플릿이 될 수 없다(알람).
-    - **구조 드리프트 = 재진술 확인 후 허용**: 커밋해도 생성은 기존 드리프트 게이트
+      hwpx 는 드리프트 프로브가, txt 는 여는 계약과 같은 UTF-8 읽기가 판정한다
+      (:meth:`~hwpxfiller.gui.home_state.JobRow.from_job` 의 txt_readable 과 같은 규율).
+    - **구조 드리프트(hwpx) = 재진술 확인 후 허용**: 커밋해도 생성은 기존 드리프트 게이트
       (:meth:`~hwpxfiller.gui.run_state.RunViewModel` fail-closed)가 매핑 재확정 전까지
       차단하므로 안전하다. 여기서 막으면 '이동+구조 변경' 작업은 영구 복구 불능이 된다.
+      txt 는 hwpx 스키마 개념인 드리프트가 없다 — 프로브에 넣으면 zip 파싱 오류로 합법
+      복구가 죽는다(§10.16 후속에서 수리).
     - 드리프트가 없어도 durable JSON 뮤테이션이므로 기존→새 경로 재진술 확인 1회.
 
     실패는 raise 대신 오류 dict 재진술(``_do_register_excel`` 문법) — 웹이 그대로 표시.
@@ -179,27 +214,58 @@ def relink_job_template(job_registry, name: str, path: str, *, confirm: bool = F
         return {"ok": False, "error": f"작업을 찾을 수 없습니다(이미 삭제된 작업): {name}"}
     except ValueError as exc:  # 손상 JSON — 격리 대상, 재연결로 고칠 수 없다.
         return {"ok": False, "error": f"작업을 읽을 수 없습니다: {exc}"}
-    drift = template_path_drift(path, job.mapping)
-    if drift.read_error:  # has_drift 는 read_error 를 포함하므로 반드시 선판정
+    # 매체 게이트 3분기(§10.16 판정 C) — 검사·확인보다 먼저, confirm 으로도 못 뚫는다.
+    # 새 매체 미상은 fail-closed 거절(relink 가 unsupported 작업을 제조하지 못하게),
+    # 구 매체 미상(빈 경로·.docx)은 통과 — 첫 연결(require_hwpx 「빈 경로 = 통과」 규율)과
+    # 손상 복구의 유일 경로라 막으면 영구 복구 불능이 된다.
+    old_media = template_media(job.template_path)
+    new_media = template_media(path)
+    if new_media not in ("hwpx", "txt"):
         return {
             "ok": False,
-            "error": f"새 템플릿을 읽을 수 없습니다: {drift.read_error}",
+            "error": (
+                "새 템플릿이 HWPX 도 온나라 기안 TXT 도 아닙니다. "
+                "HWPX 또는 TXT 파일을 선택하세요."
+            ),
         }
-    if not confirm:
-        drift_clause = (
-            (
+    if old_media in ("hwpx", "txt") and new_media != old_media:
+        return {"ok": False, "error": _cross_media_refusal(name, job.template_path, new_media)}
+    drift_clause = ""
+    if new_media == "hwpx":
+        drift = template_path_drift(path, job.mapping)
+        if drift.read_error:  # has_drift 는 read_error 를 포함하므로 반드시 선판정
+            return {
+                "ok": False,
+                "error": f"새 템플릿을 읽을 수 없습니다: {drift.read_error}",
+            }
+        if drift.has_drift:
+            drift_clause = (
                 "\n\n⚠ 새 파일의 구조가 이 작업의 확정 매핑과 다릅니다:\n"
                 f"{drift.describe()}\n"
                 "매핑을 다시 확정하기 전에는 생성이 차단됩니다."
             )
-            if drift.has_drift else ""
-        )
+    else:  # txt — 여는 계약과 같은 방식(UTF-8)으로 읽고, 토큰 0 이면 에디터 픽과 같은 차단.
+        try:
+            text = Path(path).read_text(encoding="utf-8")
+        except Exception as exc:  # noqa: BLE001 — 못 읽으면 이유 불문 하드 차단(알람)
+            return {"ok": False, "error": f"새 템플릿을 읽을 수 없습니다: {exc}"}
+        if not template_fields(text):  # 채울 대상 0 = hwpx RAW 동형(리뷰 2R P1) — 하드 차단
+            return {"ok": False, "error": TXT_RAW_BLOCK}
+    # 미상 구작업의 사용 이력은 승계하지 않는다(리뷰 5R P2): `last_run_at` 의 뜻은 매체가
+    # 정하는데(§19.4) 미상 작업의 스탬프는 어느 술어로도 읽을 수 없다 — 새 매체의 사건으로
+    # 재해석되면 편집기 덮어쓰기 게이트(4R)가 막는 것과 같은 위조다. 즐겨찾기는 방식 무관
+    # 사용자 선호라 남기고, 검토 기준선은 규칙 지문에 결속돼 스스로 무효화된다.
+    history_clause = (
+        "\n\n형식을 확인할 수 없던 작업이라 최근 사용 기록은 함께 지워집니다."
+        if old_media not in ("hwpx", "txt") and job.last_run_at else ""
+    )
+    if not confirm:
         return {
             "ok": True, "needs_confirm": True, "name": name,
             "confirm_text": (
                 f"작업 '{name}' 의 템플릿 연결을 바꿉니다.\n"
                 f"기존: {job.template_path or '(비어 있음)'}\n"
-                f"새 파일: {path}{drift_clause}"
+                f"새 파일: {path}{drift_clause}{history_clause}"
             ),
         }
     old = job.template_path
@@ -208,9 +274,20 @@ def relink_job_template(job_registry, name: str, path: str, *, confirm: bool = F
     # 다른 writer(생성 스탬프·에디터 저장·태그 편집)가 남긴 변경을 낡은 값으로 되돌린다 —
     # 확인 게이트가 있어 그 창이 사람 시간만큼 길다는 점이 이 경로를 특히 위험하게 만든다.
     def _relink(j) -> None:
+        # 매체 재판정을 **잠금 안에서** 한 번 더(리뷰 5R P2): 게이트는 잠금 밖 사본을 봤고
+        # 확인 왕복은 사람 시간이다 — 그 사이 다른 relink(첫 연결·복구)가 매체를 정했으면
+        # 이 커밋이 교차 금지를 우회한다. 같은 문안으로 거절한다.
+        current = template_media(j.template_path)
+        if current in ("hwpx", "txt") and current != new_media:
+            raise _RelinkMediaRace(_cross_media_refusal(name, j.template_path, new_media))
+        if current not in ("hwpx", "txt"):
+            j.last_run_at = ""   # 미상 이력 미승계 — 위 history_clause 가 고지한 그 삭제
         j.template_path = path
 
-    job_registry.mutate(name, _relink)
+    try:
+        job_registry.mutate(name, _relink)
+    except _RelinkMediaRace as exc:
+        return {"ok": False, "error": str(exc)}
     return {"ok": True, "relinked": True, "name": name, "old": old, "path": path}
 
 

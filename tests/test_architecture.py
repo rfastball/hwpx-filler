@@ -280,8 +280,9 @@ def test_job_registry_writes_go_through_the_locked_path() -> None:
 # 여기 사유와 함께 등재된다. 새 자리가 생기면 등재 전까지 실패한다 — "txt 기안 작업이 hwpx
 # 코드에 조용히 닿는다"를 개별 결함이 아니라 **재유입 경로**로 막는다(결정 4 매체 유도의 짝).
 # 사유는 셋 중 하나다: ①진입 가드(require_hwpx/require_hwpx_template) 아래 ②hwpx 전용 표면
-# (에디터·매핑·템플릿 라이브러리 — 조회 경계 1층이 매체를 보장, Job 매체 분기 아님) ③매체 교차
-# 재확인(relink, 결정 13 예외) 또는 사용자 지정 raw 경로(CLI 역할 테스터, Job 아님).
+# (에디터·매핑·템플릿 라이브러리 — 조회 경계 1층이 매체를 보장, Job 매체 분기 아님) ③같은 매체
+# 드리프트 재확인(relink, §10.16 — 교차는 게이트 선차단) 또는 사용자 지정 raw 경로(CLI 역할
+# 테스터, Job 아님).
 # **값 = (호출 수, 사유).** 호출 지점 정체를 (파일, 심볼)로만 잡으면 이미 등재된 파일에 같은
 # 심볼의 새 미가드 호출이 조용히 통과하므로 등재 수를 함께 못박는다.
 _ALLOWED_HWPX_CONSUMERS = {
@@ -295,7 +296,8 @@ _ALLOWED_HWPX_CONSUMERS = {
     ("gui/run_state.py", "template_path_drift"):
         (1, "RunViewModel.structure_drift — __init__ 의 require_hwpx(job) 아래"),
     ("webapp/screens.py", "template_path_drift"):
-        (1, "relink_job_template — 매체 교차는 차단 아닌 재확인(결정 13 예외), 화면 게이트 소관"),
+        (1, "relink_job_template — 같은 매체 드리프트 재확인(§10.16 판정 C), "
+            "교차는 매체 게이트가 선차단하고 프로브는 new_media=='hwpx' 분기 안에서만 돈다"),
     ("webapp/screen_editor.py", "extract_schema"):
         (2, "에디터 = hwpx 전용 소비 표면(조회 경계 1층) — Job 아닌 편집 중 hwpx 템플릿 소비"),
     ("gui/mapping_state.py", "compile_status"):

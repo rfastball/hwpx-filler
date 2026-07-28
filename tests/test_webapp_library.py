@@ -320,6 +320,21 @@ def test_relink_template_commits_and_refreshes(tmp_path):
     assert snap["alerts"]["missing_template_count"] == 0   # 행·경보 최신화(refresh)
 
 
+def test_relink_cross_media_is_rejected_through_the_library_too(tmp_path):
+    """교차 매체 재연결은 이 화면 경유로도 거절된다(§10.16 판정 C).
+
+    게이트는 공유 확정 게이트(`relink_job_template`) 한 곳이다 — 둘째 호출면(라이브러리
+    디스패처)이 게이트를 우회하지 않는 것을 가드한다(교차-단위 계약 단일 출처).
+    """
+    ctrl, _ = _controller(tmp_path)
+    txt = tmp_path / "기안.txt"
+    txt.write_text("공고: {{공고명}}", encoding="utf-8")
+    res = ctrl.dispatch(
+        "relink_template", {"name": "공고서", "path": str(txt), "confirm": True})
+    assert res["ok"] is False and "삭제하고 새로 만드세요" in res["error"]
+    assert ctrl.snapshot()["alerts"]["missing_template_count"] == 1  # durable 불변
+
+
 # ------------------------------------------------------- 작업 복제(F22)
 def test_clone_job_creates_unique_copy_without_history(tmp_path):
     """복제 = 매핑·패턴·태그·기본참조 계승 + 유일 이름 + 실행 이력 미계승(F22).
