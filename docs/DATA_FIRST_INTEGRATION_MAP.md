@@ -3101,16 +3101,16 @@ editor 스냅샷이다**(성형 두 벌 금지); tpl 스냅샷에서 소비하�
 
 | # | 도달해야 하는 것 | 새 거처 | 도달 확인 |
 |---|---|---|---|
-| 1 | HWPX·TXT 목록·그룹 구획·접힘 영속 | 편집기 템플릿 탭 2밴드(기존재) | |
-| 2 | 가져오기(유효 HWPX·RAW·TXT) | 「가져오기…」 통일(판정 C — RAW·TXT 수용 신설) | |
-| 3 | 새 TXT 저작·내용 편집 | 새 TXT 버튼 + 행 ⋮ 내용 편집 + `txtEditModal`(소유 이전) | |
-| 4 | 누름틀 변환 2단계·검토 + 결과 재진술 | 행 ⋮ 상태 동사(링1 라벨) + 결과 줄 | |
-| 5 | 그룹 지정·이동·개명(병합 확인)·해산(확인) | 행 ⋮·칩·그룹 헤더 ⋮(팩토리 공유) | |
-| 6 | 삭제(경로 검증·30일 휴지통)·복원 1건 | 행 ⋮ 삭제 + UndoToast | |
-| 7 | 새로고침(외부 FS 재스캔) | 상단 행동 줄 + 탭 재진입 자동 재스캔(기존재) | |
-| 8 | 「이 서식으로 새 작업」(매체 무관) | 행 「이 템플릿으로」(기존재) | |
-| 9 | `fill_warns`(#154)·배지 가시성 | 행 배지 title + warn 줄(스냅샷 확장) | |
-| 10 | 라이브러리 폴더 경로 표시 | 밴드 캡션 옆 muted mono(스냅샷 `dir`) | |
+| 1 | HWPX·TXT 목록·그룹 구획·접힘 영속 | 편집기 템플릿 탭 2밴드(기존재) | ✓ 기존재(F7·F6) + 프로브 `grp_heads`·`rows_visible` 실렌더 |
+| 2 | 가져오기(유효 HWPX·RAW·TXT) | 「가져오기…」 통일(판정 C — RAW·TXT 수용 신설) | ✓ 커밋 4 — 채택 3분기 헤드리스(`test_adopt_defers_raw…` 등 3건) |
+| 3 | 새 TXT 저작·내용 편집 | 새 TXT 버튼 + 행 ⋮ 내용 편집 + `txtEditModal`(소유 이전) | ✓ 커밋 4 — 프로브 `toolbar`·`txt_menu_items` + opener 가드 병존 검증 |
+| 4 | 누름틀 변환 2단계·검토 + 결과 재진술 | 행 ⋮ 상태 동사(링1 라벨) + 결과 줄 | ✓ 커밋 3·4 — 프로브 `hwpx_menu_items`·`result_line` + danger 계약 재겨눔 |
+| 5 | 그룹 지정·이동·개명(병합 확인)·해산(확인) | 행 ⋮·칩·그룹 헤더 ⋮(팩토리 공유) | ✓ 커밋 3 — 프로브 `group_menu_items`·`move_shown_after_chip` + 정적 배선 가드 |
+| 6 | 삭제(경로 검증·30일 휴지통)·복원 1건 | 행 ⋮ 삭제 + UndoToast | ✓ 커밋 3 — forgiveness 계약 재겨눔(사전 확인 없음 + UndoToast) |
+| 7 | 새로고침(외부 FS 재스캔) | 상단 행동 줄 + 탭 재진입 자동 재스캔(기존재) | ✓ 커밋 4 — `lib-refresh` + r3_pool 수동 버튼 계약 재겨눔 |
+| 8 | 「이 서식으로 새 작업」(매체 무관) | 행 「이 템플릿으로」(기존재) | ✓ 기존재(F7 `use-library` + `confirmNewSessionIfUnsaved`) — 판정 D 로 의미 확정 |
+| 9 | `fill_warns`(#154)·배지 가시성 | 행 배지 title + warn 줄(스냅샷 확장) | ✓ 커밋 3 — 프로브 `fill_warn` 실렌더 |
+| 10 | 라이브러리 폴더 경로 표시 | 밴드 캡션 옆 muted mono(스냅샷 `dir`) | ✓ 커밋 3 — 프로브 `band_caption`(개수·경로) |
 
 #### 10.17.4 사망이 곁들여 하던 정산 (§10.9.5 규칙의 전수)
 
@@ -3158,6 +3158,49 @@ editor 스냅샷이다**(성형 두 벌 금지); tpl 스냅샷에서 소비하�
 기준), `screen_template.py` 93%·`screen_editor.py` 93%, 삭제 예정 고지②는 커버 라인이라
 영향 소폭, 편집기 가져오기 미커버(788·794·805-808)는 커밋 4 재작성이 테스트를 동반해 상승
 방향. 신규 파이썬 분기는 같은 커밋에 헤드리스 테스트 동반이 규율.
+
+#### 10.17.6 착지 정산 (2026-07-29 — 커밋 8)
+
+**커밋 실물**: 1=지도 정산 · 2=시험 탭 죽은 예약 · 3=관리 기계(⋮·칩·이동·구독·결과 줄·
+스냅샷 확장) · 4=저작·상태 동사·가져오기 통일 · 5=selftest 재배선 · 6=사망 한 전이
+(25파일, +160/−765) · 7=101 재촬영+⋮ 노출 회수 · 8=이 정산.
+
+**사망 표면 열거**: `#scr-tpl` DOM·`screens/template.js`(파일)·임시 탭·`.nav-sep`(기제째)·
+tpl 전용 CSS(`.tpl-libbar`·`.tpl-medium`·`.tpl-band*`·`.tpl-banddir`·`.tpl-catalogs`·
+`.tplcard-more`)·고지②·`empty_hint`·`import_library_template`·`load_template_into_editor`
+(둘 다 소비자 0 통로)·`test_template_wayfinding.py`(계약은 승계 표면 테스트가 소유)·
+UI_GALLERY 의 `.tpl-medium` 표본·상태 원장 `screens/template.js` 행.
+
+**실측이 착수 계약을 정정한 자리 3**(교훈 — 사망 목록도 소비자 실측이 정본이다):
+① `.tplcard` 계열·`.tpllist` 는 **데이터 피커(F1 재사용)가 살아있는 소비자**라 생존 —
+"tplcard 전체 사망" 계획을 되깎았다(죽은 것은 tpl 전용 부속 `.tplcard-more` 뿐).
+② `Bridge.onPush` 가 **단일 슬롯(덮어쓰기)** 이었다 — 병존 기간 editor 의 tpl 구독이
+template.js 렌더러를 조용히 밀어낼 뻔한 자리. 기제 쪽(bridge.js)에서 복수 구독으로 확장
+(호출자 규율 아닌 기제 불변식 — F2 교훈 ①).
+③ `#txtEditModal` OK·취소의 **이중 배선 경합**: 병존 기간 양쪽 화면이 정적 버튼을 함께
+물어, opener 가드(editor `txtEdit`≠null / template `editOwned`) 없이는 남이 연 모달의
+클릭에 빈 이름 `txt_new` 가 이중 디스패치됐다.
+
+**눈검증 회수 1건**(101 컷 — §10.9.5 순회의 산물): 행 ⋮ 는 `.job-more` 기본 hidden 인데
+`.libselrow` 계열 호버 노출 규칙이 없어 **영영 은닉**이었다 — selftest 프로브의 프로그램적
+`click()` 은 hidden 요소를 통과해 못 잡는다(F2 PR-B 1R 「실물이 없던 자리」·관측자 한계
+동류). 노출 규칙 + 정적 CSS 가드로 회수.
+
+**곁들인 정산**: R-copy 금지어 표에 「템플릿 관리」 행 추가(죽은 표면 지시 CI 차단 — F1
+교훈 이행) · `TXT_RAW_BLOCK` 처방 재지정(행 ⋮ 내용 편집) · 15px 역할 표본 `.modal-card h3`
+재겨눔 · 카드 상태 표본 `.jcard` 이주 · `aria-label` 「템플릿 관리」→「항목 관리」.
+
+**게이트 최종**(CI 동형 전체 완주): pytest **2065 passed · 1 failed** — 유일 실패는
+**환경성**(selftest short viewport, 모달 높이 0.2px 초과)으로 **순정 `02471c3` 에서 동일
+재현 증명**(코드 무관 — F6 의 `test_job_process_topology` 와 같은 부류). 같은 부류였던
+workbench `aim_marked` 는 완주 런에서 통과(간헐 — 창 포커스 조건 의존). 커버리지 플로어
+**8구획 전부 PASS**(webapp 87.21/86 — 착수 86, 완충 상승) · dispatch payload 최소 판독
+**70**(template.js 몫이 editor.js 리터럴로 승계된 뒤 실측) · 101 하니스 **14컷 완주**
+(계약 2탭 최종 형상) · ruff·pyright 클린.
+
+**실앱 순회**: 101 하니스 트랙 A·B(실 클릭·실 dispatch·실 생성 3건·실 클립보드)가 사람
+순서의 기계판을 완주했고, 관리 동사 면은 editor_lib_manage 실렌더 프로브 + 액션군 왕복
+(`['template','tpl','refresh']`)이 실 WebView2 로 덮는다.
 
 ## 6. 원재료
 
