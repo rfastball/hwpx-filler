@@ -14,6 +14,7 @@ from hwpxfiller.webapp.screen_library import LibraryController
 from hwpxfiller.webapp.screen_job import JobController
 from hwpxfiller.webapp.screen_pool import PoolController
 from hwpxfiller.webapp.screen_template import TemplateController
+from hwpxfiller.webapp.screen_workbench import WorkbenchController
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,6 +26,7 @@ CONTROLLERS = {
     "draft": DraftController,
     "pool": PoolController,
     "tpl": TemplateController,
+    "workbench": WorkbenchController,
 }
 
 # SCREEN 상수의 소유 화면. 공유 모듈은 호출 시 화면을 인자로 받으므로 별도 정적 추측 대신
@@ -38,6 +40,7 @@ SCREEN_JS = {
     # 여기 호출은 전부 명시 리터럴("pool")이고 마운트 호출만 호스트 화면 변수(session.screen).
     "pool": "web/js/data_picker.js",
     "tpl": "web/js/screens/template.js",
+    "workbench": "web/js/screens/workbench.js",
 }
 
 _LITERAL_CALL = re.compile(

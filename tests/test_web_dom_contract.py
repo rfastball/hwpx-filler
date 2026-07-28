@@ -52,6 +52,9 @@ MUTABLE_MODULE_STATE_BUDGET = {
     "screens/job.js": 17,
     "screens/template.js": 5,
     "screens/draft.js": 3,
+    # 작업대(F6) — 스냅샷 1개(LAST)뿐이다. 작업점·복사 이력·미저장 변경·린트를 전부
+    # Python 이 소유하므로 표면이 들 것이 없다(데이터 존이 없는 화면이라 더 그렇다).
+    "screens/workbench.js": 1,
     "screens/editor.js": 3,
     "screens/library.js": 3,
     "data_picker.js": 4,
@@ -834,7 +837,9 @@ def test_job_session_surface_uses_v6_two_column_captions():
         "현재 데이터", "본문 확인", "생성 결과",
         "이 데이터에 사용할 문서", "선택한 작업", "생성 준비",
     ):
-        needle = rf'<div class="zone-cap[^"]*">(?:<span>)?{re.escape(caption)}'
+        # 캡션 자리에 id 가 붙을 수 있다(「생성 준비」는 매체에 따라 「복사 준비」로 바뀐다) —
+        # 계약이 세는 것은 **zone-cap 캡션의 존재**이지 속성 목록이 아니다.
+        needle = rf'<div class="zone-cap[^"]*"[^>]*>(?:<span[^>]*>)?{re.escape(caption)}'
         assert re.search(needle, job), f"세션 구획 캡션이 없습니다: {caption}"
     assert '<span class="znum">' not in job, (
         "「작업」 세션 표면에 구 4존 서수가 재유입됐습니다."
@@ -1146,9 +1151,20 @@ def test_job_candidate_ranking_surface_contract():
     assert src.count('Intent.chained("browse"') == 3, (
         "탐색 탭·검색·선택이 같은 체인을 타지 않습니다 — 늦은 옛 응답이 새 결과·선택을 되돌린다."
     )
-    # 문안은 완주 스탬프 의미와 일치해야 한다(성공 뒤 실패 런에서 거짓이 되지 않게).
-    assert "마지막 성공 실행" in src and "마지막 실행 " not in src, (
-        "카드 문안이 완주 스탬프 의미(마지막 성공 실행)와 어긋납니다."
+    # 최근 사용 문안은 **링1으로 이사했다**(F6): 두 매체가 다른 술어를 쓰므로(§19.4 HWPX
+    # 완주 / TXT 복사 1건) 표면이 한 문구로 뭉치면 하필 구별이 중요한 자리에서 이력을
+    # 거짓으로 말한다. 여기선 표면이 문구를 **다시 짓지 않는지**만 본다.
+    assert "last_run_label" in src, "카드가 Python 이 낸 최근 사용 문안을 쓰지 않습니다."
+    assert "마지막 성공 실행" not in src and "마지막 복사" not in src, (
+        "표면이 최근 사용 문안을 손으로 다시 짓습니다 — 술어가 갈리면 두 문구가 어긋난다."
+    )
+    # 카드 부제의 작업 방식 텍스트는 구획이 퇴화해도 남는다(§19.3 마지막 문장).
+    assert "cand-mode" in src and "mode_label" in src, (
+        "카드 부제에 작업 방식 텍스트가 없습니다 — 색만으로 방식을 구별하지 않는다."
+    )
+    # 구획 여부·순서 판정은 Python 이고 표면은 머리글만 그린다(§19.3).
+    assert "c.sections" in src and "sections.length > 1" in src, (
+        "방식 구획이 Python 판정(sections)을 소비하지 않습니다."
     )
     assert "c.more" in src, "순위 밖 후보 수(외 N건) 고지가 없습니다 — 조용한 절단 금지."
     # 확인 필요 목록은 탐색 면으로 이사했다 — 후보 줄엔 수치 + 출구만 남는다(슬라이스 3).
@@ -1453,9 +1469,14 @@ def test_editor_is_an_immersive_screen_with_one_exit():
     assert "editor-open" in app_js and "body.editor-open .nav" in css, (
         "편집기가 상단 2탭을 덮지 않습니다 — 화면 전환구가 살아 있으면 처분 미확정 이탈구다."
     )
-    assert "EditorScreen.leaveTo" in app_js, (
-        "Nav 가 편집기 이탈 가드를 지나지 않습니다 — 프로그램적 이동이 처분을 건너뜁니다."
+    # 이탈 위임은 **몰입 표면 목록**으로 일반화됐다(F6 — 작업대 합류). 특례를 화면마다
+    # 늘리면 가드의 완전성이 표면 수에 비례한다(이 표면이 존재하는 바로 그 이유). 그래서
+    # 목록에 등록됐는지와, 목록이 leaveTo 로 위임하는지를 함께 센다.
+    assert "IMMERSIVE" in app_js and "owner.leaveTo" in app_js, (
+        "Nav 가 몰입 표면의 이탈 가드를 지나지 않습니다 — 프로그램적 이동이 처분을 건너뜁니다."
     )
+    for owner in ("EditorScreen", "WorkbenchScreen"):
+        assert owner in app_js, f"{owner} 이 몰입 표면 목록에 없습니다."
     # 진입 흐름은 EditorEntry 단일 정의(land/newDraft/openGuarded — 축자 복붙=드리프트 표면).
     entry_src = (WEB_JS_DIR / "editor_entry.js").read_text(encoding="utf-8")
     for fn in ("function land", "function newDraft", "function openGuarded"):
@@ -1690,3 +1711,110 @@ def test_preview_button_states_are_decided_after_the_busy_restore():
         assert f'$("{btn}").disabled' in busy_fn, (
             f"{btn} 가용성이 렌더 말미 단일 지점에서 정해지지 않습니다."
         )
+
+
+def test_job_screen_branches_the_output_surfaces_on_the_media_python_declared():
+    """산출 재진술·거울·저장 폴더는 **매체 파생**이다(F6 판정 D · 리뷰 6R).
+
+    TXT 작업은 파일을 만들지 않는다 — 「문서 N건 · 저장 폴더」도, 살아 있는 폴더 피커도,
+    행을 다 고른 뒤에도 「행을 선택하면 …」이라고 말하는 거울도 전부 거짓이다. 분기의
+    근거는 Python 이 낸 `run_action.key` 하나여야 한다: 표면이 확장자·매체를 다시 읽으면
+    같은 판정이 두 곳에 산다.
+    """
+    job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
+    assert 'run_action.key === "workbench"' in job_js, (
+        "매체 분기의 근거가 Python 이 낸 실행 행동 키가 아닙니다."
+    )
+    # 거울 존은 통째로 걷힌다(빈 상태 문안이 이행 불가능한 지시로 남지 않게).
+    assert 'jobMirrorZone' in job_js and 'id="jobMirrorZone"' in WEB_INDEX.read_text(
+        encoding="utf-8")
+    # 저장 폴더 행·피커는 이 매체에 없는 축이다 — 피커 잠금은 setBusy 단일 지점이 진다.
+    assert 'jobOutRow' in job_js
+    picker = job_js.split('$("jobBtnPickFolder").disabled')[1].split(";")[0]
+    assert "isCopyWork(LAST)" in picker, picker
+    # 산출 문안이 파일 생성을 주장하지 않는다.
+    assert "파일은 만들지 않습니다" in job_js
+
+
+# 커밋(= 누적된 상태를 **읽어서** 되돌릴 수 없는 일을 하는 발신)과, 그 앞에서 미착지 발신을
+# 정산해야 하는 관문. 값은 (파일, 함수, 정산 술어) 다.
+#
+# **왜 정적 가드인가**(F6 8R P1 근본 조치). 이 결함류는 리뷰에서 네 번 잡혔고 그때마다
+# 백엔드에서 한 칸씩 막았다 — 토큰 결속(3R) · 복사 거래 원자화(5R) · 잠금을 세션 전이로
+# 확대(7R). 전부 필요했지만 **끝낼 수 없는 층**이었다: 잠금은 겹치지 않게 할 뿐 도착 순서를
+# 정하지 않는다(먼저 잡는 쪽이 이긴다). 순서는 쏘는 쪽에서만 정해지고, 그 규약을 세운 자리가
+# 없어서 화면마다 각자 발명했다(job=Intent.chained · 기안=flushDeb · 작업대=아무것도 없음).
+#
+# 그래서 규약을 여기 못박는다: **같은 상태를 바꾸는 발신은 한 체인, 그 상태를 읽는 커밋은 그
+# 체인을 먼저 정산한다.** 새 화면이 이걸 빠뜨리면 리뷰 라운드가 아니라 이 게이트가 잡는다.
+COMMIT_SETTLE_GUARDS = (
+    ("screens/workbench.js", "async function copyCard()", "Intent.settle(WB_CHAIN)"),
+    ("screens/workbench.js", "async function saveRules()", "Intent.settle(WB_CHAIN)"),
+    ("screens/workbench.js", "async function leaveTo(", "Intent.settle(WB_CHAIN)"),
+    ("screens/job.js", "async function doGenerate(", "Intent.settle(ZONE_CHAIN)"),
+    # 「기안」은 같은 술어를 자기 이름으로 갖고 있다(디바운스 타이머까지 함께 발사한다).
+    ("draftsession.js", "async function copyCard()", "flushDeb()"),
+    ("draftsession.js", "async function confirmNewDraftIfArmed()", "flushDeb()"),
+)
+
+
+def _function_body(text: str, header: str) -> str:
+    """``header`` 로 시작하는 함수의 본문 — 여는 중괄호부터 짝이 맞는 닫는 중괄호까지."""
+    at = text.index(header)
+    open_at = text.index("{", at)
+    depth = 0
+    for i in range(open_at, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[open_at:i + 1]
+    raise AssertionError(f"함수 본문을 닫지 못했습니다: {header}")
+
+
+def test_commits_settle_pending_sends_before_they_read_state():
+    """커밋은 **미착지 발신을 정산한 뒤에** 상태를 읽는다(F6 8R P1 규약).
+
+    pywebview 는 브리지 호출마다 별도 스레드라 동시 발신의 도착 순서가 정의되지 않는다.
+    한 사용자 동작이 호출 둘로 쪼개지는 자리(값을 타이핑하고 곧바로 복사·나가기)에서 정산이
+    없으면, 화면엔 방금 친 값이 보이는데 클립보드엔 **이전 값**이 나가거나 이탈 가드가
+    「잃을 것 없음」을 답한 뒤 그 편집이 조용히 사라진다.
+    """
+    for rel, header, guard in COMMIT_SETTLE_GUARDS:
+        text = (WEB_JS_DIR / rel).read_text(encoding="utf-8")
+        assert header in text, f"{rel}: 커밋 함수가 사라졌습니다 — {header}"
+        body = _function_body(text, header)
+        assert guard in body, f"{rel} {header}: 정산 관문이 없습니다 — {guard}"
+        # 정산은 **첫 브리지 발신보다 앞**이어야 한다(뒤에 있으면 이미 옛 상태를 읽은 뒤다).
+        first_call = min(
+            (body.index(tok) for tok in ("Bridge.call(", "Bridge.copyClipboard(",
+                                         "Bridge.generate(") if tok in body),
+            default=len(body),
+        )
+        assert body.index(guard) < first_call, (
+            f"{rel} {header}: 정산이 첫 발신보다 뒤에 있습니다."
+        )
+
+
+def test_workbench_sends_all_share_one_chain():
+    """작업대의 상태 변이는 **한 체인**이다 — 축별로 가르면 서로를 추월한다.
+
+    이 화면의 작업점·보기·전각·맞추기 표는 전부 같은 세션을 바꾸고 같은 카드를 다시 그린다.
+    맨 `Bridge.call` 로 남은 변이가 하나라도 있으면 그것만 순서 밖으로 새므로, 커밋이 정산해도
+    잡히지 않는다(정산은 체인에 든 것만 기다린다).
+    """
+    text = (WEB_JS_DIR / "screens" / "workbench.js").read_text(encoding="utf-8")
+    # 커밋 3종은 정산으로 순서를 지키므로 체인 밖 직접 발신이 정당하다(위 테스트가 담보).
+    commit_bodies = "".join(
+        _function_body(text, h) for h in
+        ("async function copyCard()", "async function saveRules()", "async function leaveTo(")
+    )
+    stray = [
+        line.strip() for line in text.splitlines()
+        if "Bridge.call(SCREEN," in line
+        and not line.lstrip().startswith(("//", "/*", "*"))   # 주석에 적힌 예시는 발신이 아니다
+        and "sendWb(" not in line
+        and line.strip() not in commit_bodies
+    ]
+    assert not stray, "체인 밖 작업대 변이 발신: " + " | ".join(stray)

@@ -499,11 +499,13 @@ def test_refresh_can_carry_the_selection_to_a_renamed_work(tmp_path):
     assert ctrl.snapshot()["selected"] == "공고서 v2"
 
 
-def test_txt_work_is_never_available_to_the_hwpx_picker(tmp_path):
-    """리뷰 2R 의 전제 — TXT 작업은 「문서 만들기」 후보에서 배제된다.
+def test_txt_work_joins_the_document_picker(tmp_path):
+    """F6 합류 — TXT 작업은 「문서 만들기」 후보에 **든다**(지도 §10.15 판정 B).
 
-    그래서 라이브러리가 TXT 를 그쪽으로 보내면 `incompatible` 뒤 빈 「확인 필요」에 착지한다.
-    이 전제가 바뀌면(F6 합류) 이 테스트가 시끄럽게 알린다 — 그때 라우팅 분기를 걷는다.
+    이 테스트는 뒤집힌 것이다: F6 이전 판본은 "TXT 는 후보에서 배제된다"를 단언하면서
+    「이 전제가 바뀌면 시끄럽게 알린다」고 적어 뒀고, 실제로 매체 국경을 걷자 울었다.
+    남은 단언은 **합류 뒤에도 참이어야 하는 것**들이다: 방식은 라이브러리 필터에 그대로
+    보이고(방식 필터의 존재 이유), 후보 판정은 hwpx 와 같은 술어를 탄다.
     """
     from hwpxfiller.gui.work_candidates import rank_available
 
@@ -513,10 +515,13 @@ def test_txt_work_is_never_available_to_the_hwpx_picker(tmp_path):
     reg.save(Job(name="기안문", template_path=str(txt),
                  mapping=MappingProfile(mappings=[
                      FieldMapping(template_field="공고명", source="bidNtceNm")])))
-    ranked = [r.name for r in rank_available(reg.list_jobs(), ["bidNtceNm"])]
-    assert "기안문" not in ranked
+    ranked = {r.name: r for r in rank_available(reg.list_jobs(), ["bidNtceNm"])}
+    assert "기안문" in ranked
+    assert ranked["기안문"].mode == "text_review_copy"
+    # 같은 술어: 필요한 열이 없으면 TXT 도 똑같이 후보에서 빠진다(available 만 순위에 든다).
+    assert "기안문" not in {r.name for r in rank_available(reg.list_jobs(), ["다른열"])}
 
-    # 라이브러리는 그 작업을 **보여준다**(방식 필터의 존재 이유) — 그래서 열기 경로가 갈려야 한다.
+    # 라이브러리는 그 작업을 **보여준다**(방식 필터의 존재 이유).
     ctrl = LibraryController(reg, _text_reg(tmp_path), lambda s, snap: None,
                           pool_registry=_pool(tmp_path))
     assert _rows(ctrl.snapshot())["기안문"]["media"] == "txt"
@@ -548,15 +553,17 @@ def test_primary_action_never_sends_a_work_the_document_screen_cannot_take(tmp_p
     assert primary_action(rows["기안문"])["label"] == "기안에서 열기"
     assert primary_action(rows["미연결"])["hint"]                       # 왜 그쪽인지 말한다
 
-    # 불변식: target=="job" 인 작업은 반드시 「문서 만들기」 후보 판정에 **낄 자격**이 있다
-    # (열 이름만 맞으면 available). 자격조차 없는 작업을 그쪽으로 보내지 않는다.
+    # 불변식(F6 합류 뒤의 형태): **목적지는 그 작업을 실제로 받을 수 있어야 한다.**
+    # 「문서 만들기」·「기안」은 둘 다 실행 표면이라 후보 자격이 있어야 하고, 「편집기」로
+    # 가는 것들(미연결·미상)은 어느 실행 표면도 받을 수 없어 자격이 없어야 한다.
+    # PR-B 에서 「기안」이 죽으면 txt 도 `job` 으로 합쳐지고 이 분기는 사라진다.
     fields = ["공고명"]
     ranked = {r.name for r in rank_available(reg.list_jobs(), fields)}
     for name, target in targets.items():
-        if target == "job":
+        if target in ("job", "draft"):
             assert name in ranked or rows[name].media == "hwpx"
         else:
-            assert name not in ranked
+            assert name not in ranked, f"{name} → {target}"
 
 
 def test_detail_carries_the_primary_action(tmp_path):

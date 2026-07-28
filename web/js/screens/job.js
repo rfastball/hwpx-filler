@@ -273,20 +273,20 @@
      필요(막힌 이유 병기). 데이터 미준비면 줄 자체가 없다(§18.1 — 후보 미계산).
      한 가지 작업 방식(HWPX)뿐이라 §19.3 의 방식 구획은 평면으로 퇴화한다 — 「기안」(TXT)이
      이 구획에 합류하는 슬라이스에서 헤더가 선다. */
-  function lastRunLabel(iso) {
-    // 표시 문안만 여기서 만든다(판정은 Python). 의미는 **완주(전건 성공) 실행**이므로 문안도
-    // 「마지막 성공 실행」이다(리뷰 4R P2): 성공 뒤 실패·부분 실패 런이 있으면 스탬프는 앞선
-    // 성공 시각에 머무르는데, 그걸 "마지막 실행"이라 쓰면 하필 구별이 중요한 그 상황에서
-    // 이력을 거짓으로 말한다. 없을 때도 "실행한 적 없음"이 아니라 성공 부재로 말한다.
-    return iso ? `마지막 성공 실행 ${esc(iso.slice(0, 10))}` : "성공한 실행 없음";
-  }
+  // 최근 사용 문안은 **Python 이 낸다**(F6): 두 매체가 다른 술어를 쓰기 때문이다(§19.4 —
+  // HWPX 는 완주, TXT 는 복사 1건). 표면이 한 문구로 뭉치면 하필 구별이 중요한 자리에서
+  // 이력을 거짓으로 말한다. 구 `lastRunLabel(iso)` 는 그래서 사망했다.
 
   function candCard(c, s) {
     const active = c.name === s.job_name;
     const fav = c.favorited === true;
     const verb = fav ? "즐겨찾기에서 제거" : "즐겨찾기에 추가";
+    // 카드 부제의 **작업 방식 텍스트는 늘 유지된다**(§19.3 마지막 문장) — 한 방식만 있어
+    // 머리글이 퇴화해도 여기는 남는다. 색만으로 방식을 구별하지 않는다는 계약의 이행이기도
+    // 하다(텍스트가 늘 함께 선다).
     const meta = (c.suggested ? `<span class="cand-sug">추천</span>` : "") +
-      `<span class="cand-run">${lastRunLabel(c.last_run_at)}</span>`;
+      `<span class="cand-mode">${esc(c.mode_label || "")}</span>` +
+      `<span class="cand-run">${esc(c.last_run_label || "")}</span>`;
     // 안정 id는 **이름 유래**다(#138 F13 관례의 변형): 별을 누르면 카드가 1순위로 이동하므로
     // 인덱스는 안정 식별자가 아니고, 그러면 preserve.js 가 방금 누른 별로 포커스를 못 돌려
     // 키보드 사용자가 재렌더마다 문서 처음으로 떨어진다. encodeURIComponent 로 특수문자를
@@ -349,20 +349,32 @@
     }
     const rows = b.rows || [];
     const needsTab = b.tab === "needs_action";
+    const browseRow = (r) => {
+      if (needsTab) {
+        return `<div class="browse-row off"><span class="browse-nm">${esc(r.name)}</span>` +
+          `<span class="browse-why muted">현재 데이터에 없는 열: ` +
+          `${esc((r.missing || []).join(", "))}</span></div>`;
+      }
+      const active = r.name === s.job_name;
+      return `<button class="browse-row" type="button" id="jobBrowseRow-${encodeURIComponent(r.name)}"` +
+        ` data-busy-lock data-browse-pick="${esc(r.name)}"` +
+        ` aria-pressed="${active}"><span class="browse-nm">${esc(r.name)}</span>` +
+        `<span class="browse-why muted">${esc(r.mode_label || "")}` +
+        (active ? " · 지금 선택된 작업" : "") + `</span></button>`;
+    };
+    // 탭 **안**에서만 방식으로 구획한다(§19.5) — 탭(사용 가능/확인 필요)이 primary
+    // classification 이라 방식을 탭으로 올리지 않는다. 퇴화 규칙은 후보 줄과 같다.
+    const bsecs = b.sections || [];
+    const byBrowseName = {};
+    rows.forEach((r) => { byBrowseName[r.name] = r; });
     $("jobBrowseRows").innerHTML = rows.length
-      ? rows.map((r) => {
-        if (needsTab) {
-          return `<div class="browse-row off"><span class="browse-nm">${esc(r.name)}</span>` +
-            `<span class="browse-why muted">현재 데이터에 없는 열: ` +
-            `${esc((r.missing || []).join(", "))}</span></div>`;
-        }
-        const active = r.name === s.job_name;
-        return `<button class="browse-row" type="button" id="jobBrowseRow-${encodeURIComponent(r.name)}"` +
-          ` data-busy-lock data-browse-pick="${esc(r.name)}"` +
-          ` aria-pressed="${active}"><span class="browse-nm">${esc(r.name)}</span>` +
-          (active ? `<span class="browse-why muted">지금 선택된 작업</span>` : "") +
-          `</button>`;
-      }).join("")
+      ? (bsecs.length > 1
+        ? bsecs.map((sec) =>
+          `<div class="browse-sec" data-browse-mode="${esc(sec.mode)}">` +
+          `<h3 class="browse-sec-cap">${esc(sec.mode_label)}</h3>` +
+          sec.names.map((n) => byBrowseName[n] ? browseRow(byBrowseName[n]) : "").join("") +
+          `</div>`).join("")
+        : rows.map(browseRow).join(""))
       : `<p class="muted capnote">${b.query
         ? "이름이 일치하는 작업이 없습니다."
         : (needsTab ? "확인이 필요한 작업이 없습니다."
@@ -386,7 +398,22 @@
       host.innerHTML = `<span class="muted">현재 데이터에 사용할 수 있는 문서 작업이 없습니다.</span>`;
       return;
     }
-    let html = top.map((t) => candCard(t, s)).join("");
+    // 작업 방식 구획(§19.3) — **구획 여부·순서 판정은 Python**(candidates.sections)이고
+    // 여기는 머리글을 그릴지만 정한다. 한 방식뿐이면 머리글 없는 평면으로 퇴화한다:
+    // 중복 정보를 줄이려는 계약의 규칙이지 정보를 버리는 것이 아니다(부제는 남는다).
+    const byName = {};
+    top.forEach((t) => { byName[t.name] = t; });
+    const sections = c.sections || [];
+    let html;
+    if (sections.length > 1) {
+      html = sections.map((sec) =>
+        `<div class="cand-sec" data-cand-mode="${esc(sec.mode)}">` +
+        `<h3 class="cand-sec-cap">${esc(sec.mode_label)}</h3>` +
+        sec.names.map((n) => byName[n] ? candCard(byName[n], s) : "").join("") +
+        `</div>`).join("");
+    } else {
+      html = top.map((t) => candCard(t, s)).join("");
+    }
     // 잘린 나머지·확인 필요는 **수치 + 문서 탐색 출구**로만 말한다(슬라이스 3): 목록의
     // 소유자는 이제 탐색 면이고, 후보 줄은 "지금 고를 것"만 보여 준다(조용한 절단 금지).
     const bits = [];
@@ -411,12 +438,24 @@
     box.textContent = p.text;
   }
 
+  /* 실행 표면이 작업대인가(매체 파생) — 판정은 Python 이 낸 `run_action.key` 하나를 읽는다.
+     표면이 확장자·매체를 다시 읽어 분기하면 같은 판정이 두 곳에 산다(F6 판정 D). 산출을
+     말하는 자리(거울·재진술·저장 폴더·상태 태)가 전부 이 술어 하나를 쓴다. */
+  function isCopyWork(s) {
+    return !!(s && s.run_action && s.run_action.key === "workbench");
+  }
+
   /* ---- 본문 존 거울 = 필드 채움 테이블(결정 36 ⓑ) ----
      hwpx 본문은 앱에서 렌더 못 하므로 거울이 비추는 것은 "생성될 문서의 채움 상태"다. ADR-E
      배지는 별도 UI가 아니라 거울의 행: 미입력 행 클릭=확인, 재클릭=철회(UD-19). danger(드리프트)는
      ack 로 안 풀리므로 같은 표에 섞지 않고 거울 자리 차단 배너 + 행동 링크로 분리한다(결정 36·S9). */
   function renderMirror(s) {
     const host = $("jobMirror");
+    // TXT 는 거울이 **없는 축**이다(스냅샷이 무조건 빈 mirror 를 싣는다) — 존을 통째로
+    // 걷는다. 남겨 두면 빈 상태 문안("행을 선택하면 …")이 행을 다 고른 뒤에도 그대로 서서,
+    // 따라 해도 아무 일이 없는 막다른 지시가 된다(리뷰 6R).
+    const zone = $("jobMirrorZone");
+    if (zone) zone.style.display = isCopyWork(s) ? "none" : "";
     const drift = s.drift || [];
     if (drift.length) {
       // danger = 차단 배너 + 상시 행동 링크(막다른 경보 금지 — 경보 어포던스는 숨지 않는다).
@@ -835,10 +874,16 @@
     const selLine = (rs.origin === "definition")
       ? `정의 매치 전체 ${sel.length}행: ${esc((s.filter && s.filter.definition) || "")}`
       : esc(selectionLine(sel.length, rs.filter_active, rs.in_def, rs.extra));
-    box.innerHTML =
-      `<span class="dl">선택</span><span>${selLine}</span>` +
-      `<span class="dl">생성</span><span>문서 ${sel.length}건 · 저장 폴더: ${esc(s.out_dir || "미지정")}` +
-      `<div class="namelist">${list}${more}</div></span>`;
+    // 산출 재진술은 **매체마다 다른 사실**이다(리뷰 6R). TXT 는 파일을 만들지 않으므로
+    // 「문서 N건 · 저장 폴더」도, 파일 이름 목록(전부 "(파일명 미정)")도 거짓이다 —
+    // 이 버튼이 실제로 하는 일(작업대에서 레코드마다 검토·복사)을 그대로 말한다.
+    box.innerHTML = isCopyWork(s)
+      ? `<span class="dl">선택</span><span>${selLine}</span>` +
+        `<span class="dl">복사</span><span>작업대에서 ${sel.length}건을 한 건씩 검토하고 ` +
+        `복사합니다. 파일은 만들지 않습니다.</span>`
+      : `<span class="dl">선택</span><span>${selLine}</span>` +
+        `<span class="dl">생성</span><span>문서 ${sel.length}건 · 저장 폴더: ${esc(s.out_dir || "미지정")}` +
+        `<div class="namelist">${list}${more}</div></span>`;
   }
 
   /* ---- 본문 존: 게이트·저장 폴더·생성 버튼 ---- */
@@ -859,6 +904,11 @@
   }
 
   function renderGateAndFolder(s) {
+    // 저장 폴더는 hwpx 생성의 축이다 — TXT 에선 그 자리를 그리지 않는다(빈 값으로 두면
+    // "아직 안 정했다"로 읽혀 사용자가 고르러 간다). 캡션도 하는 일을 따라간다.
+    const copyWork = isCopyWork(s);
+    $("jobOutRow").style.display = copyWork ? "none" : "";
+    $("jobRunCap").textContent = copyWork ? "복사 준비" : "생성 준비";
     $("jobOutDir").value = s.out_dir || "";
     // 저장 폴더 열기/경로 복사 어포던스(#53-B) — 실행 화면에서 승계(리뷰 F3). 생성 후 앱에서
     // 바로 폴더를 열거나 경로를 복사한다(빈 out_dir 이면 PathTrack 이 알아서 아무것도 안 그림).
@@ -877,8 +927,10 @@
     const pill = $("jobStatus");
     if (!s.has_job) { pill.dataset.level = "idle"; pill.textContent = "작업 선택"; return; }
     if (!s.has_data) { pill.dataset.level = "idle"; pill.textContent = "데이터 선택"; return; }
-    if (s.gate && s.gate.enabled) { pill.dataset.level = "ok"; pill.textContent = "생성 준비"; }
-    else { pill.dataset.level = "warn"; pill.textContent = "확인 필요"; }
+    if (s.gate && s.gate.enabled) {
+      pill.dataset.level = "ok";
+      pill.textContent = isCopyWork(s) ? "복사 준비" : "생성 준비";
+    } else { pill.dataset.level = "warn"; pill.textContent = "확인 필요"; }
   }
 
   /* 진행 델타 — 진행바 + 진행 태만 갱신(전체 재렌더 없음). 진행은 3태를 덮지 않는다:
@@ -923,14 +975,20 @@
     // 저장 폴더는 작업 속성(기본 = 템플릿/Results) — 작업 미선택에서 고르게 두면 작업
     // 선택이 기본값으로 조용히 덮어써 선택이 증발한다(#302 리뷰 P2). busy-lock 일괄 복원이
     // 되살리지 않도록 여기(렌더 말미 단일 지점)서 판정한다.
-    $("jobBtnPickFolder").disabled = busy || !(LAST && LAST.has_job);
+    // TXT 는 저장 폴더 축이 없으므로 피커도 없다(행 자체가 숨지만 잠금은 DOM 이 아니라
+    // 상태가 진다 — 일괄 복원이 되살리지 않게 여기서 못박는다).
+    $("jobBtnPickFolder").disabled =
+      busy || !(LAST && LAST.has_job) || isCopyWork(LAST);
     // 미리보기 버튼들도 여기서 정한다(F5) — 위 일괄 복원이 renderPreview 의 판정을 되살린다.
     // 열기는 선택이 있을 때, 이동은 경계에서 멈춘다(순환하지 않으므로 끝에서 비활성).
     const pv = (LAST && LAST.preview) || {};
     $("jobPreviewOpen").disabled = busy || !pv.can_open;
     $("previewPrev").disabled = busy || !pv.total || pv.pos <= 0;
     $("previewNext").disabled = busy || !pv.total || pv.pos >= pv.total - 1;
-    $("jobGenBtn").textContent = busy ? "생성 중…" : "이 작업으로 문서 생성";
+    // 실행 행동은 **매체 파생 2분기**(F6 판정 D) — 라벨도 행동 키도 Python 이 낸다.
+    // 표면이 매체를 다시 읽어 분기하면 같은 판정이 두 곳에 산다.
+    const ra = (LAST && LAST.run_action) || { key: "generate", label: "이 작업으로 문서 생성" };
+    $("jobGenBtn").textContent = busy ? "생성 중…" : ra.label;
     $("jobGenCancel").style.display = busy ? "" : "none";
     if (!busy) { $("jobGenCancel").disabled = false; $("jobGenCancel").textContent = "다음 건부터 중단"; }
   }
@@ -947,6 +1005,9 @@
   }
 
   async function doGenerate(confirmOverwriteFlag) {
+    // 커밋은 대기 중인 존 변이 뒤에 선다(8R P1). 덮어쓰기 확인 뒤의 재귀 호출도 같은 관문을
+    // 지나되, 그 시점엔 체인이 이미 비어 있어 즉시 통과한다.
+    await window.Intent.settle(ZONE_CHAIN);
     generating = true; setBusy(true);
     if (!confirmOverwriteFlag) { $("jobGenBar").style.width = "0%"; log("생성 요청"); }
     // busy-lock 은 덮어쓰기 모달 종료까지 유지한다 — finally 를 needs_overwrite 흐름 뒤에 두어,
@@ -1422,7 +1483,20 @@
         if (LAST) Preserve.around(() => renderRestate(LAST));
       }
     });
-    $("jobGenBtn").addEventListener("click", () => doGenerate(false));
+    $("jobGenBtn").addEventListener("click", async () => {
+      // 두 실행 행동 다 **커밋**이다 — 무엇을 대상으로 도는지가 방금 누른 존 변이에 달렸다.
+      // 존 발신은 ZONE_CHAIN 으로 서로의 순서를 지키지만 커밋은 그 체인 밖이라, 정산하지
+      // 않으면 행 토글이 착지하기 전에 생성이 **옛 선택**으로 돌 수 있다(F6 8R P1).
+      await window.Intent.settle(ZONE_CHAIN);
+      // TXT 는 생성이 아니라 작업대 진입이다. 진입 자격 판정도 Python 이 하고(선택 0건·
+      // 초안 열림·생성 중) 여기는 거절 사유를 재진술만 한다 — 조용한 무동작 금지.
+      const key = (LAST && LAST.run_action && LAST.run_action.key) || "generate";
+      if (key !== "workbench") { doGenerate(false); return; }
+      Bridge.call(SCREEN, "open_workbench", {}).then((res) => {
+        if (res && res.ok) { window.Nav.go("workbench"); return; }
+        log((res && res.error) || "작업대를 열지 못했습니다.");
+      });
+    });
     $("jobGenCancel").addEventListener("click", async () => {
       const btn = $("jobGenCancel");
       btn.disabled = true;

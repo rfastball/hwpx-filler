@@ -1059,6 +1059,38 @@ def test_job_media_is_derived_not_stored():
     assert "media" not in Job(template_path="/x/t.hwpx").to_dict()  # 유도지 저장 아님
 
 
+def test_work_mode_derives_three_values_from_the_suffix_only():
+    """§19.1 — 작업 방식은 확장자에서**만** 파생하고 v5 fallback(그 외 = hwpx)은 없다."""
+    from hwpxfiller.core.job import (
+        WORK_MODE_HWPX,
+        WORK_MODE_TEXT,
+        WORK_MODE_UNSUPPORTED,
+        work_mode,
+    )
+
+    assert work_mode("/x/t.hwpx") == WORK_MODE_HWPX
+    assert work_mode("/x/d.TXT") == WORK_MODE_TEXT
+    for unknown in ("", "/x/r.docx", "/x/no_suffix", "/x/a.hwpx.bak"):
+        assert work_mode(unknown) == WORK_MODE_UNSUPPORTED, unknown
+
+
+def test_work_mode_and_media_stay_two_axes():
+    """방식과 매체를 한 값으로 뭉치지 않는다(지도 §10.15 판정 A).
+
+    미연결 작업에서 둘의 뜻이 갈린다: 매체는 ``""``(형식을 모른다), 방식은
+    ``unsupported``(이 앱이 할 수 있는 일이 아니다 — 후보에서 fail-closed 제외).
+    라이브러리 **필터**는 같은 행을 hwpx 칸에 놓는데(고치러 오는 자리에 남기려고),
+    그 귀속을 방식 파생이 흉내 내면 세 축이 서로를 덮어쓴다.
+    """
+    from hwpxfiller.core.job import WORK_MODE_UNSUPPORTED
+    from hwpxfiller.gui.home_state import MODE_HWPX, JobRow, library_mode_of
+
+    unlinked = Job(name="저작중", template_path="")
+    assert unlinked.media == "" and unlinked.work_mode == WORK_MODE_UNSUPPORTED
+    assert library_mode_of(JobRow.from_job(unlinked)) == MODE_HWPX
+    assert "work_mode" not in unlinked.to_dict()  # 파생이지 저장 아님
+
+
 def test_require_hwpx_template_passes_hwpx_and_rejects_others():
     """require_hwpx_template: hwpx 는 경로 그대로 반환(체이닝), txt·미상·빈 경로는 loud."""
     assert require_hwpx_template("/x/t.hwpx") == "/x/t.hwpx"

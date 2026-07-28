@@ -40,6 +40,7 @@ from .screen_job import JobController
 from .screen_pool import PoolController
 from .draft_session import TargetFontSetting
 from .screen_template import TemplateController
+from .screen_workbench import WorkbenchController
 from .template_groups import TemplateGroupModel
 from .screens import (
     collect_owned_paths,
@@ -172,6 +173,10 @@ class WebFrontend:
             TemplateController(registry, self._push, txt_groups=txt_groups),
             # 등록 데이터 참조·수명(#26 #4) — 화면은 사망하고 데이터 선택 다이얼로그가 소비(F1).
             PoolController(pool_registry, self._push),
+            # TXT 검토·복사 작업대(v6 S7, 재작성 F6) — 「문서 만들기」에서 TXT 작업을 실행하면
+            # 여기로 온다. 대상 글꼴은 「기안」과 **같은 인스턴스**를 공유한다(앱 전역 선언이라
+            # 두 벌이면 같은 사용자 선언에 두 값이 생긴다).
+            WorkbenchController(job_registry, self._push, target_font=target_font),
         ]
         # 에디터의 템플릿 라이브러리 = tpl 화면의 VM **같은 인스턴스**:
         # 별도 인스턴스면 두 표면의 스캔 캐시가 갈라져(가져오기·삭제가 한쪽에만 반영) 신규
@@ -191,6 +196,10 @@ class WebFrontend:
         self.controllers = {c.name: c for c in controllers}
         # 라이브러리 삭제의 타 화면 무장 세션 가드 배선(#268 리뷰) — 라이브러리가 작업·기안
         # 화면보다 먼저 생성되므로 사후 주입. 삭제는 이 조회로 소유 화면의 무장 세션을 먼저 묻는다.
+        # 작업대 배선(F6) — 「문서 만들기」가 진입 판정을 내고 세션 개시만 위임한다.
+        # 라이브러리 `session_guards` 와 같은 사후 주입: 컨트롤러 생성 순서에 의존을 만들지
+        # 않으려고 조립 지점에서 잇는다.
+        self.controllers["job"].workbench = self.controllers["workbench"]
         self.controllers["library"].session_guards = [
             self.controllers["job"].session_guard_for,
             self.controllers["draft"].session_guard_for,
@@ -298,14 +307,27 @@ class WebFrontend:
             return f"ERROR: {exc}"
         return Path(path).name
 
-    def copy_clipboard(self, screen: str) -> dict:
+    def copy_clipboard(self, screen: str, token: "str | None" = None) -> dict:
         """작업점 카드 렌더를 OS 클립보드로(복사=완료, 결정 16). 리포트를 돌려줘 웹이 재진술.
 
         복사 후 큐를 전진시킨다(작업점→처리 후미, 전진 opt-in) — 큐 상태 기제는 컨트롤러의
         :meth:`~hwpxfiller.webapp.draft_session.DraftSessionMixin.note_copied` 가 소유(클립보드 쓰기는
         네이티브라 브리지 몫). 큐가 없는 화면(``note_copied`` 부재)은 렌더·복사만 한다.
+
+        **확인 대상 = 복사 대상**(F6 3R P1). 컨트롤러가 :meth:`copy_token` 을 내면 그 토큰이
+        일치할 때만 쓴다. 없으면 이런 창이 열린다: 복사를 빠르게 두 번 누르면 둘 다 **같은
+        카드**로 사전확인을 통과하는데, 첫 복사가 (자동 전진으로) 작업점을 옮겨 두 번째가
+        **확인하지 않은 카드**를 클립보드에 쓴다. 이동도 같은 틈을 만든다. 토큰은 그 카드의
+        정체(작업점 + 지금 규칙)라, 그사이 무엇이든 바뀌면 대조에서 걸린다 — `confirmed_text`
+        와 같은 규율이고, 잠금이 아니라 **결속**으로 푸는 쪽이다(잠금은 DOM 이 진다).
         """
         ctrl = self._controller(screen)
+        # **거래를 컨트롤러가 소유하면 그쪽에 맡긴다**(5R P1). 여기서 네 걸음(대조→렌더→
+        # 쓰기→전진)을 밟으면 그 사이가 열려 있어, 겹친 두 호출이 같은 토큰으로 통과한 뒤
+        # 뒤선 쪽이 **확인하지 않은 카드**를 복사한다. 브리지는 OS 쓰기 함수만 건넨다.
+        atomic = getattr(ctrl, "copy_to", None)
+        if atomic is not None:
+            return atomic(token or "", set_clipboard_text)
         text, report = ctrl.render()
         # 작업점 없는 화면(txt 큐, 선택 0·레이스) — 빈 템플릿을 클립보드에 쓰지 않는다(리뷰 F3:
         # 조용한 쓰레기·무피드백 차단). can_copy 부재 화면(다른 소비자)은 종전대로 렌더·복사.
@@ -358,14 +380,26 @@ class WebFrontend:
         return self._controller("editor").has_unsaved_work()
 
     def close_guard_state(self) -> dict:
-        """창 종료로 사라질 세션 상태를 한 시점에 판정한다(#218 G1)."""
+        """창 종료로 사라질 세션 상태를 한 시점에 판정한다(#218 G1).
+
+        **참여는 프로토콜이지 명단이 아니다**(F6 1R P2 근본 조치). 종전에는 화면 이름 셋을
+        손으로 셌고, 그래서 새 컨트롤러(작업대)가 미저장 매핑·복사 진행을 들고 있어도 창을
+        닫으면 **무경보로 사라졌다** — 가드의 완전성이 「누가 이 목록을 갱신했는가」에 걸려
+        있었다는 뜻이다. 이제 컨트롤러가 :meth:`close_guard_reason` 을 구현하면 자동으로
+        참여한다: 다음 세션 표면은 여기 손댈 필요가 없고, 구현을 빠뜨리면 그건 **선언된
+        비참여**다(조용한 무시와 다르다 — 아래 테스트가 그 선언을 센다).
+
+        순서는 컨트롤러 등록 순서다(`self.controllers` 삽입 순) — 결정적이면 충분하고,
+        어느 것이 먼저인지는 이 문안이 답할 질문이 아니다.
+        """
         reasons: list[str] = []
-        if self._controller("editor").has_unsaved_work():
-            reasons.append("저장하지 않은 작업 편집")
-        if self._controller("job")._guard_state()["armed"]:
-            reasons.append("작업 화면의 완료하지 않은 선택")
-        if self._controller("draft")._leave_guard()["armed"]:
-            reasons.append("기안 화면의 미저장 원문·매핑 또는 큐 진행")
+        for controller in self.controllers.values():
+            reason_of = getattr(controller, "close_guard_reason", None)
+            if reason_of is None:
+                continue
+            reason = reason_of()
+            if reason:
+                reasons.append(reason)
         return {"armed": bool(reasons), "reasons": reasons}
 
     def _show_close_prompt(self, state: dict) -> None:
@@ -484,7 +518,8 @@ class WebFrontend:
 
         ``context`` = ``{entry_reason, evidence, return_context, section}``. 기본값(빈 사전)은
         자발적 진입이고 그때는 배너 자체가 서지 않는다(할 말이 없으면 침묵). ``section`` 은
-        deep-link 의 **거친 형태**(어느 탭인가)다 — 필드 단위 target 은 PR-B 자리다.
+        deep-link 의 **거친 형태**(어느 탭인가)다 — 필드 단위 target 은 F6 동승분이다
+        (지도 §10.14.3).
         """
         ctx = context or {}
         try:
@@ -918,16 +953,28 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
       has_data:true, record_count:2, selected_count:1,
       records:[{index:1, selected:true, name:'', summary:'사무비품'},
                {index:0, selected:false, name:'', summary:'전산장비'}],
-      // 후보 4구획(슬라이스 2) — 순위 카드 2건(즐겨찾기·추천)·잘린 수·확인 필요.
+      // 후보 구획(슬라이스 2 + 재작성 F6) — 순위 카드 2건(즐겨찾기·추천)·잘린 수·확인 필요.
+      // **두 작업 방식이 섞인 판**이라 방식 구획 머리글이 실제로 서는지도 함께 본다(§19.3).
       candidates:{
         top:[{name:'공고서', tier:'favorite', favorited:true,
-              last_run_at:'2026-07-20T09:00:00', suggested:false},
+              last_run_at:'2026-07-20T09:00:00', suggested:false,
+              mode:'hwpx_generate', mode_label:'HWPX 생성',
+              last_run_label:'마지막 성공 실행 2026-07-20'},
              {name:'계약서', tier:'unused', favorited:false,
-              last_run_at:'', suggested:true}],
+              last_run_at:'', suggested:true,
+              mode:'text_review_copy', mode_label:'온나라 기안',
+              last_run_label:'복사한 적 없음'}],
+        sections:[{mode:'hwpx_generate', mode_label:'HWPX 문서 생성', names:['공고서']},
+                  {mode:'text_review_copy', mode_label:'온나라 기안 검토·복사',
+                   names:['계약서']}],
         more:2, needs_count:1,
         suggested:'계약서'},
       // 문서 탐색 구획(슬라이스 3) — 확인 필요 탭 + 검색으로 걸러낸 수.
-      browse:{tab:'needs_action', query:'견적', rows:[{name:'견적서', missing:['담당자']}],
+      browse:{tab:'needs_action', query:'견적',
+              rows:[{name:'견적서', missing:['담당자'], mode:'hwpx_generate',
+                     mode_label:'HWPX 생성'}],
+              sections:[{mode:'hwpx_generate', mode_label:'HWPX 문서 생성',
+                         names:['견적서']}],
               available_count:7, needs_count:1, filtered_out:2},
       filter:{active:false, reapply_available:false, reapply_hint:'', search:'', chips:[],
               definition:'', branches:[],
@@ -1047,6 +1094,14 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
       document.querySelectorAll('#jobCandidates [data-fav]'),
       function (b) { return b.getAttribute('aria-pressed'); });
     out.suggested_marks = document.querySelectorAll('#jobCandidates .cand-sug').length;
+    // 방식 구획(§19.3, F6) — 두 방식이 섞였으므로 머리글이 **선다**. 카드 부제의 방식
+    // 텍스트는 구획이 퇴화해도 남는 값이라 함께 되읽는다.
+    out.cand_sec_caps = Array.prototype.map.call(
+      document.querySelectorAll('#jobCandidates .cand-sec-cap'),
+      function (h) { return h.textContent; });
+    out.cand_mode_texts = Array.prototype.map.call(
+      document.querySelectorAll('#jobCandidates .cand-mode'),
+      function (m) { return m.textContent; });
     out.suggested_dashed = (function () {
       var card = document.querySelector('#jobCandidates .job-cand-card.suggested');
       return card ? getComputedStyle(card).borderStyle : '';
@@ -3015,6 +3070,132 @@ def _finish_selftest(window: "object", result: dict) -> None:
     window.destroy()  # type: ignore[attr-defined]
 
 
+# TXT 검토·복사 작업대(재작성 F6 PR-A) — 합성 스냅샷으로 실 render() 를 돌려 되읽는다.
+# 정적 계약이 못 보는 것 셋을 겨눈다: ①몰입 셸(상단 2탭 은닉)이 실제로 걸리는가 ②큐 퇴화가
+# 큐 장치 3종을 실제로 감추는가 ③이탈이 **가드를 지나** 화면을 바꾸는가(발신 순서까지).
+_WORKBENCH_PROBE_SETUP_JS = r"""
+(function () {
+  const out = { pending: true };
+  window.__workbench = out;
+  const seg = (t, kind, name) => ({ text: t, kind: kind || 'literal', name: name || '' });
+  const snap = {
+    open: true, job_name: '발주요청_기안', mode_label: '온나라 기안 검토·복사',
+    view: 'filled', target_font: 'malgun', fullwidth: false,
+    notice: { text: '', level: 'muted' },
+    total: 3, copied_count: 1, is_complete: false,
+    revision: { template: 1, binding: 4 },
+    source_fields: ['부서', '사업명'],
+    fmt_options: { text: [{ code: 'plain', label: '그대로' }] },
+    type_options: [{ code: 'text', label: '텍스트' }],
+    rows: [
+      { name: '수신', state: 'fill', source: '부서', own: 'auto', manual: false,
+        value: '회계과', fmt_kind: 'text', fmt_code: 'plain', suggest: '',
+        can_revert: false, confirmed: true, blank_declared: false },
+      { name: '비고', state: 'blank', source: '', own: '', manual: false, value: '',
+        fmt_kind: 'text', fmt_code: 'plain', suggest: '', can_revert: false,
+        confirmed: true, blank_declared: true },
+    ],
+    dirty: { count: 1, fields: [{ name: '수신' }], pending: false },
+    can_save: true, save_block: '',
+    guard: { armed: true, lines: ['복사 진행 1/3건 — 나가면 이 진행은 사라집니다.'] },
+    card: {
+      index: 0, has_current: true, queue_degenerate: false, position: 0, source_row: 7,
+      // 경계는 Python 이 낸다(2R P1) — 표시 자리는 머리(0)인데 순회상으로는 **후미**인
+      // 상태를 합성한다(복사 직후의 실물). 표면이 서수로 계산하면 여기서 갈린다.
+      can_prev: true, can_next: false,
+      // 큐 색인(4R P2) — 순차 이동만으로는 아는 행에 못 간다. 자리 라벨은 원본 행 번호다.
+      index_map: [{ index: 0, row: 7, state: 'current', recheck: true },
+                  { index: 1, row: 4, state: 'uncopied', recheck: false }],
+      review_state: 'recheck', uncopied_count: 2, advance_after: false,
+      segments: [seg('수신: '), seg('회계과', 'fill', '수신'), seg('', 'blank', '비고')],
+      missing_fields: [], empty_fields: [],
+      lint: { proportional: true, space_run: true, applied: false, active: true },
+      last_copy: null, copied_total: 1,
+    },
+  };
+  window.Nav.go('workbench');
+  window.__push('workbench', snap);
+  setTimeout(() => {
+    try {
+      out.screen_on = !!document.querySelector('#scr-workbench.on');
+      out.nav_hidden = getComputedStyle(document.querySelector('.nav')).display === 'none';
+      out.title = document.getElementById('wbTitle').textContent;
+      out.position = document.getElementById('wbPosition').textContent;
+      out.copied = document.getElementById('wbCopied').textContent;
+      out.revision = document.getElementById('wbRevision').textContent;
+      out.dirty_note = document.getElementById('wbDirtyNote').textContent;
+      out.review = document.getElementById('wbReview').textContent;
+      out.map_rows = document.querySelectorAll('#wbMapPanel tbody tr').length;
+      out.declared = document.querySelectorAll('#wbMapPanel .mapval-declared').length;
+      out.card_fill = document.querySelectorAll('#wbCard .seg-fill').length;
+      out.card_blank = document.querySelectorAll('#wbCard .seg-blank').length;
+      out.lint_shown = document.getElementById('wbLint').style.display !== 'none';
+      // 린트는 표지 + **행동**이 한 벌이다(2R P2) — 경고만 두면 손잡이 없는 통보가 된다.
+      out.lint_action = (function () {
+        var b = document.querySelector('#wbLint [data-fullwidth]');
+        return b ? b.getAttribute('data-fullwidth') + ':' + b.textContent : '';
+      })();
+      out.dots = Array.prototype.map.call(
+        document.querySelectorAll('#wbDots .wc-dot'),
+        function (d) { return d.getAttribute('title'); });
+      out.font_value = document.getElementById('wbTargetFont').value;
+      out.prev_disabled = document.getElementById('wbPrev').disabled;
+      out.next_disabled = document.getElementById('wbNext').disabled;
+      out.save_enabled = !document.getElementById('wbSaveRules').disabled;
+      // 결과 → 규칙(계약 §11) — 조각이 토큰 신원을 지고 나가고, 누르면 소유 행이 선다.
+      // 정적으로는 조각도 표도 다 있어 통과한다: 둘을 잇는 길만 없는 상태가 여기서만 잡힌다.
+      out.card_tokens = document.querySelectorAll('#wbCard [data-token]').length;
+      (function () {
+        var s = document.querySelector('#wbCard [data-token="수신"]');
+        if (s) s.click();
+      })();
+      out.aim_row = (function () {
+        var a = document.activeElement;
+        return a && a.tagName === 'TR' ? (a.getAttribute('data-name') || '') : '';
+      })();
+      // 강조는 CSS 파생이라 **실 스타일 계산**까지 봐야 참이다 — 표 클래스가 스타일시트와
+      // 어긋나 있으면(구 `maptable`) 배선은 멀쩡한데 선 행이 아무 표지도 못 받는다.
+      out.aim_marked = (function () {
+        var a = document.activeElement;
+        if (!a || a.tagName !== 'TR' || !a.cells.length) return '';
+        return getComputedStyle(a.cells[0]).boxShadow;
+      })();
+      // 큐 퇴화 — 1건이면 순회 장치가 숨는다(정보가 없어서지 장식이라서가 아니다).
+      window.__push('workbench', Object.assign({}, snap, {
+        total: 1, copied_count: 0,
+        card: Object.assign({}, snap.card, { queue_degenerate: true, position: 0 }),
+      }));
+      setTimeout(() => {
+        try {
+          out.degen_prev = getComputedStyle(document.getElementById('wbPrev')).display;
+          out.degen_adv = getComputedStyle(document.querySelector('.wb-adv')).display;
+          // 이탈이 가드를 지나는가 — Nav.go 가 위임하고, 위임이 발신 순서를 지키는지.
+          const calls = [];
+          const real = window.Bridge.call;
+          window.Bridge.call = function (screen, action, payload) {
+            if (screen === 'workbench') {
+              calls.push(action);
+              if (action === 'leave_guard') return Promise.resolve({ armed: false, lines: [] });
+              return Promise.resolve({ ok: true });
+            }
+            return real(screen, action, payload);
+          };
+          window.Nav.go('job');
+          setTimeout(() => {
+            try {
+              window.Bridge.call = real;
+              out.leave_calls = calls;
+              out.landed = !!document.querySelector('#scr-job.on');
+            } finally { out.pending = false; }
+          }, 260);
+        } catch (e) { out.error = String(e); out.pending = false; }
+      }, 120);
+    } catch (e) { out.error = String(e); out.pending = false; }
+  }, 160);
+})();
+"""
+
+
 def _probe_late(window: "object", flag: str, expr: str) -> dict:
     """프로브의 비동기 단계가 끝나길 기다렸다가 결과 묶음(JSON)을 한 번에 회수한다.
 
@@ -3206,6 +3387,12 @@ def _selftest_drive(window: "object") -> None:
         result["editor_guard"] = _probe_late(
             window, "__editorGuard && !window.__editorGuard.pending",
             "JSON.stringify(window.__editorGuard)",
+        )
+        # TXT 검토·복사 작업대(재작성 F6) — 몰입 셸·큐 퇴화·이탈 위임을 실 DOM 에서 되읽는다.
+        window.evaluate_js(_WORKBENCH_PROBE_SETUP_JS)  # type: ignore[attr-defined]
+        result["workbench"] = _probe_late(
+            window, "__workbench && !window.__workbench.pending",
+            "JSON.stringify(window.__workbench)",
         )
         # 호출 직렬화 체인의 실패 복구(리뷰 5R) — 정적 계약이 못 보는 실행 성질이라 실물로.
         window.evaluate_js(_CHAIN_RECOVERY_PROBE_SETUP_JS)  # type: ignore[attr-defined]

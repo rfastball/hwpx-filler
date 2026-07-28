@@ -19,7 +19,9 @@ from hwpxfiller.core.mapping import FieldMapping, MappingProfile
 from hwpxfiller.gui.review_state import review_requirement
 from hwpxfiller.gui.run_state import RunViewModel
 from hwpxfiller.gui.selection_state import SelectionModel
+from hwpxfiller.webapp.draft_session import TargetFontSetting
 from hwpxfiller.webapp.screen_job import JobController
+from hwpxfiller.webapp.screen_workbench import WorkbenchController
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 
 MULTI_SHEET = Path(__file__).resolve().parents[0] / "fixtures" / "multi_sheet.xlsx"
@@ -104,7 +106,7 @@ def test_initial_has_no_active_work_and_loud_gate(tmp_path):
     assert snap["gate"]["enabled"] is False and "데이터 파일" in snap["gate"]["text"]
     # 데이터 미준비 = 후보 계산 자체를 안 한다(§18.1) — 4구획 전부 빈 골격.
     assert snap["candidates"] == {
-        "top": [], "more": 0, "needs_count": 0, "suggested": "",
+        "top": [], "sections": [], "more": 0, "needs_count": 0, "suggested": "",
     }
     # 문서 탐색도 미계산 골격(§18.1) — 탭·검색어는 세션 기본값을 그대로 재진술한다.
     assert snap["browse"]["rows"] == [] and snap["browse"]["available_count"] == 0
@@ -3418,3 +3420,329 @@ def test_unacknowledging_blanks_restores_the_earlier_approval(tmp_path):
     ctrl.dispatch("unack_field", {"field": "추정가격"})
     assert ctrl.snapshot()["gate"]["enabled"] is False   # 빈 값 게이트가 다시 닫는다
     assert ctrl._review()[1] is None, "같은 실행 입력인데 승인이 사라졌습니다."
+
+
+# ------------------------------------------- TXT 합류와 작업대 진입 (재작성 F6 PR-A)
+def _txt_job(ctrl, tmp_path, *, name: str = "발주요청_기안") -> None:
+    """같은 데이터로 돌 수 있는 TXT 작업을 하나 저장한다(후보 판정은 hwpx 와 같은 술어)."""
+    tpl = tmp_path / f"{name}.txt"
+    tpl.write_text("공고: {{공고명}}", encoding="utf-8")
+    ctrl.registry.save(Job(
+        name=name, template_path=str(tpl),
+        mapping=MappingProfile(mappings=[
+            FieldMapping(template_field="공고명", source="bidNtceNm")]),
+    ))
+
+
+def test_txt_work_joins_the_candidates_with_its_mode(tmp_path):
+    """TXT 는 hwpx 와 한 순위에서 겨루고 카드가 방식을 싣는다(§19.3 — 구획은 표면 몫)."""
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    top = ctrl.snapshot()["candidates"]["top"]
+    modes = {c["name"]: c["mode"] for c in top}
+    assert modes == {"공고서": "hwpx_generate", "발주요청_기안": "text_review_copy"}
+
+
+def test_selecting_a_txt_work_does_not_build_an_hwpx_run_view(tmp_path):
+    """매체 파생 2분기(판정 D) — TXT 선택은 실행뷰를 세우지 않는다.
+
+    `RunViewModel` 은 이 job 의 템플릿을 hwpx 로 파싱하므로(진입 가드가 loud 거부) 여기서
+    갈라야 조회 경계가 새지 않는다. 그리고 **작업은 선택된 상태**다: `has_job` 이
+    `vm is not None` 이 아니라 이름에서 오는 이유가 이것이다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "발주요청_기안"})
+    snap = ctrl.snapshot()
+    assert ctrl.vm is None and ctrl.job_is_txt is True
+    assert snap["has_job"] is True and snap["job_name"] == "발주요청_기안"
+    assert snap["run_action"] == {"key": "workbench", "label": "검토·복사 시작 · 2건"}
+    # 파일 이름 규칙 축은 이 매체에 **없다**(§3.2) — 빈 값이 "아직 안 정했다"가 아니다.
+    assert snap["filename_pattern"] == ""
+    # 검토 요구·미리보기 드로어는 배제 선언(판정 J) — 골격만 서고 열리지 않는다.
+    assert snap["preview"]["can_open"] is False
+    assert snap["review"]["required"] is False
+
+
+def test_switching_back_to_an_hwpx_work_restores_the_run_view(tmp_path):
+    """두 매체를 오가도 각자의 세계로 정확히 돌아온다(잔여 상태 누수 금지)."""
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "발주요청_기안"})
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    assert ctrl.vm is not None and ctrl.job_is_txt is False
+    assert ctrl.snapshot()["run_action"]["key"] == "generate"
+    ctrl.dispatch("select_job", {"name": ""})
+    assert ctrl.vm is None and ctrl.job_is_txt is False
+    assert ctrl.snapshot()["has_job"] is False
+
+
+def test_workbench_entry_refuses_without_a_selection(tmp_path):
+    """선택 0건에서는 TXT 세션에 진입하지 않는다(§18.10 수용 6 — 첫 레코드를 대신 쓰지 않는다)."""
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    ctrl.load_data_path(_data_csv(tmp_path))       # 마운트 직후 선택 0건
+    ctrl.dispatch("select_job", {"name": "발주요청_기안"})
+    res = ctrl.dispatch("open_workbench", {})
+    assert res["ok"] is False and "선택" in res["error"]
+
+
+def test_workbench_entry_refuses_over_an_open_range_draft(tmp_path):
+    """작업대는 **커밋된** 실행 입력의 사본을 뜬다(F5 판정 H 승계) — 초안 세계와 겹치지 않는다."""
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "발주요청_기안"})
+    ctrl.dispatch("range_draft_open", {})
+    res = ctrl.dispatch("open_workbench", {})
+    assert res["ok"] is False and "범위" in res["error"]
+
+
+def test_workbench_entry_hands_over_the_display_ordered_selection(tmp_path):
+    """넘기는 것은 표시순 투영을 통과한 고정 사본이다(§18.11-24: 두 매체가 같은 것을 소비)."""
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "발주요청_기안"})
+    wb = WorkbenchController(
+        ctrl.registry, lambda s, snap: None, target_font=TargetFontSetting())
+    ctrl.workbench = wb
+    res = ctrl.dispatch("open_workbench", {})
+    assert res["ok"] and res["count"] == 2
+    # 표시순서 기본값은 sourceDesc(최신 행 먼저) — 작업대가 그 순서를 그대로 받는다.
+    assert wb.source_rows == [2, 1] and wb.job_name == "발주요청_기안"
+
+
+def test_hwpx_work_never_opens_the_workbench(tmp_path):
+    """방식 국경은 진입에서도 fail-closed — 표면이 잘못 발신해도 조용히 열리지 않는다."""
+    ctrl, _ = _controller(tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    res = ctrl.dispatch("open_workbench", {})
+    assert res["ok"] is False
+
+
+def test_candidate_sections_stand_only_when_both_modes_are_present(tmp_path):
+    """§19.3 — 구획은 두 방식이 다 있을 때만. 판정은 Python 이 낸다(표면은 머리글만)."""
+    ctrl, _ = _controller(tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    only_hwpx = ctrl.snapshot()["candidates"]["sections"]
+    assert len(only_hwpx) == 1 and only_hwpx[0]["mode"] == "hwpx_generate"
+    _txt_job(ctrl, tmp_path)
+    both = ctrl.snapshot()["candidates"]["sections"]
+    assert {s["mode"] for s in both} == {"hwpx_generate", "text_review_copy"}
+    # 구획 순서는 순위의 함수다 — 전체 순위를 구획으로 자를 뿐 방식별 자리 보장은 없다.
+    top_names = [c["name"] for c in ctrl.snapshot()["candidates"]["top"]]
+    assert both[0]["names"][0] == top_names[0]
+
+
+def test_candidate_card_carries_the_media_aware_recent_use_label(tmp_path):
+    """§19.4 — 두 매체가 다른 술어를 쓴다는 사실을 카드 문안이 말한다."""
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    labels = {c["name"]: c["last_run_label"] for c in ctrl.snapshot()["candidates"]["top"]}
+    assert labels["공고서"] == "성공한 실행 없음"
+    assert labels["발주요청_기안"] == "복사한 적 없음"
+
+
+def test_browse_rows_section_inside_the_tab_not_across_it(tmp_path):
+    """§19.5 — 탭이 primary classification 이고 방식은 탭 **안**에서만 구획한다."""
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    b = ctrl.snapshot()["browse"]
+    assert b["tab"] == "available"
+    assert {s["mode"] for s in b["sections"]} == {"hwpx_generate", "text_review_copy"}
+    assert all("mode_label" in r for r in b["rows"])
+
+
+def test_review_and_preview_are_declared_out_of_scope_for_txt(tmp_path):
+    """검토 요구·미리보기 드로어는 TXT 에서 **배제 선언**이다(지도 §10.15 판정 J).
+
+    근거: 드로어는 값 + **파일 이름** + 승인의 면인데 TXT 엔 파일 이름 축이 없고(§3.2),
+    작업대가 이미 레코드 전수를 채운 모습으로 보여 주는 검토 표면이다. TXT 에 요구를
+    세우면 작업대에서 눈으로 본 것을 「문서 만들기」에서 또 확인하라는 **이중 권위**가
+    된다(§10.5 판정 단일 출처).
+
+    배제를 **선언으로** 남기는 이유는 F5 판정 O·F7 판정 K 와 같다: 조용한 무시와 선언된
+    배제는 다르다. 누군가 TXT 에 검토 축을 배선하면 이 테스트가 그 결정을 다시 꺼낸다.
+    """
+    ctrl, _ = _controller(tmp_path, reviewed=False)   # 한 번도 완주하지 않은 작업 = 요구 있음
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    assert ctrl.snapshot()["review"]["required"] is True, "hwpx 쪽 요구가 서지 않으면 대조가 무의미"
+    ctrl.dispatch("select_job", {"name": "발주요청_기안"})
+    snap = ctrl.snapshot()
+    assert snap["review"] == {
+        "required": False, "approved": False, "risk": "", "targets": [],
+        "first_run": False, "unknown_baseline": False, "structure_changed": False,
+    }
+    assert snap["preview"]["can_open"] is False
+    # 게이트 사유도 검토를 들먹이지 않는다 — TXT 게이트는 진입 자격만 센다.
+    assert "확인" not in snap["gate"]["text"] or "검토" not in snap["gate"]["text"]
+    # 드로어를 직접 열려는 발신은 **시끄럽게** 거절된다(표면 오발신 fail-closed). 문안은
+    # 사실이어야 한다: TXT 는 작업이 선택된 채로 `vm` 이 없으므로 "작업을 선택하세요"는
+    # 방금 고른 작업을 못 본 척하는 거짓 지시가 된다.
+    with pytest.raises(ValueError, match="작업대"):
+        ctrl.dispatch("preview_open", {})
+    assert ctrl.snapshot()["preview"]["open"] is False
+
+
+def test_txt_session_survives_rename_because_it_holds_no_job_copy(tmp_path):
+    """이름 변경 뒤에도 작업대가 **지금 그 작업**을 연다(1R P2 근본 조치의 회귀).
+
+    첫 판은 세션이 `txt_job: Job` 사본을 들었고, 그 순간 durable 사실의 제2 정본이 생겨
+    이름 변경(`vm.job` 만 갱신)·재연결·재적재가 전부 조용한 구멍이 됐다. 사본을 없애고
+    **쓰는 순간** 레지스트리에서 읽으니 이 경로들은 고칠 것이 없다 — 그게 요점이다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "발주요청_기안"})
+    ctrl.dispatch("rename_job", {"name": "발주요청_기안", "new": "발주요청_기안 v2"})
+    assert ctrl.job_name == "발주요청_기안 v2" and ctrl.job_is_txt is True
+    wb = WorkbenchController(
+        ctrl.registry, lambda s, snap: None, target_font=TargetFontSetting())
+    ctrl.workbench = wb
+    assert ctrl.dispatch("open_workbench", {})["ok"] is True
+    assert wb.job_name == "발주요청_기안 v2"
+
+
+def test_txt_session_sees_rules_saved_elsewhere_on_re_entry(tmp_path):
+    """다른 표면이 저장한 규칙이 재진입에 **반영**된다 — 들고 있는 사본이 없으므로."""
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "발주요청_기안"})
+    ctrl.registry.mutate(
+        "발주요청_기안",
+        lambda j: setattr(j, "mapping", MappingProfile(mappings=[
+            FieldMapping(template_field="공고명", source="presmptPrce")])),
+    )
+    wb = WorkbenchController(
+        ctrl.registry, lambda s, snap: None, target_font=TargetFontSetting())
+    ctrl.workbench = wb
+    ctrl.dispatch("open_workbench", {})
+    assert wb.base_job is not None
+    assert wb.base_job.mapping.mappings[0].source == "presmptPrce"
+
+
+def test_open_workbench_is_loud_when_the_work_vanished(tmp_path):
+    """그사이 삭제된 작업은 조용한 무동작이 아니라 사유와 함께 거절된다."""
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "발주요청_기안"})
+    ctrl.registry.delete("발주요청_기안")
+    ctrl.workbench = WorkbenchController(
+        ctrl.registry, lambda s, snap: None, target_font=TargetFontSetting())
+    res = ctrl.dispatch("open_workbench", {})
+    assert res["ok"] is False and "읽을 수 없습니다" in res["error"]
+
+
+def test_cross_media_relink_reseats_the_active_session(tmp_path):
+    """재연결로 **매체가 갈리면** 실행 표면도 함께 갈린다(2R P2).
+
+    재연결은 매체 교차가 가능하고(파일 필터에 「모든 파일」이 있다) 그 변화는 이 화면
+    밖에서도 일어난다 — 라이브러리에서 재연결하고 돌아오는 경로가 실물이다. 매체를
+    「작업 선택」 사건에 래치해 두면 TXT→HWPX 는 실행 버튼이 계속 작업대를 광고하고,
+    HWPX→TXT 는 재적재가 `RunViewModel` 을 세우려다 터진다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "발주요청_기안"})
+    assert ctrl.snapshot()["run_action"]["key"] == "workbench"
+
+    # TXT → HWPX (다른 표면이 durable 경로를 갈아 끼운 뒤 이 화면으로 돌아온다)
+    hwpx = tmp_path / "t.hwpx"      # 픽스처가 만든 실제 hwpx 템플릿
+    ctrl.registry.mutate("발주요청_기안", lambda j: setattr(j, "template_path", str(hwpx)))
+    ctrl.dispatch("refresh", {})
+    assert ctrl.job_is_txt is False and ctrl.vm is not None
+    assert ctrl.snapshot()["run_action"]["key"] == "generate"
+
+    # HWPX → TXT (반대 방향도 터지지 않고 자리를 다시 앉힌다)
+    txt = tmp_path / "발주요청_기안.txt"
+    ctrl.registry.mutate("발주요청_기안", lambda j: setattr(j, "template_path", str(txt)))
+    ctrl.dispatch("refresh", {})
+    assert ctrl.job_is_txt is True and ctrl.vm is None
+    assert ctrl.snapshot()["run_action"]["key"] == "workbench"
+
+
+def test_workbench_entry_is_loud_when_the_template_is_not_utf8(tmp_path):
+    """비-UTF-8 템플릿도 **화면 안에서** 사유를 말한다(6R).
+
+    온나라 기안 txt 는 ANSI/CP949 로 저장돼 오기 쉽다. 파일은 실재하므로 게이트는 열려
+    있고, 진입이 `UnicodeDecodeError`(`OSError` 아님)를 그대로 올리면 웹의 `.then` 이
+    발화하지 않아 사용자는 누를 수 있는 버튼을 누르고 아무 설명도 못 듣는다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "발주요청_기안"})
+    (tmp_path / "발주요청_기안.txt").write_bytes("공고: {{공고명}}".encode("cp949"))
+    assert ctrl.snapshot()["gate"]["enabled"] is True   # 파일은 실재한다
+    ctrl.workbench = WorkbenchController(
+        ctrl.registry, lambda s, n: None, target_font=TargetFontSetting())
+    res = ctrl.dispatch("open_workbench", {})
+    assert res["ok"] is False and "템플릿을 읽을 수 없습니다" in res["error"]
+
+
+def test_an_unsupported_template_does_not_blow_up_the_screen(tmp_path):
+    """hwpx 도 txt 도 아닌 경로로 갈린 활성 작업 — 재적재가 터지지 않고 사유를 말한다.
+
+    재연결 피커는 「모든 파일」을 연다. 「TXT 가 아니면 hwpx」로 갈면 `RunViewModel` 이
+    `require_hwpx` 에서 loud raise 하고, 그 예외가 화면 전환마다 도는 재적재 밖으로 튄다 —
+    사용자가 실행을 시작하지도 않은 경로다. 게다가 매체 래치는 이미 갈아 끼워진 뒤라
+    「작업 있음 + 어느 실행 표면도 아님」이 남는다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "발주요청_기안"})
+
+    odd = tmp_path / "발주요청_기안.docx"
+    odd.write_text("x", encoding="utf-8")
+    ctrl.registry.mutate("발주요청_기안", lambda j: setattr(j, "template_path", str(odd)))
+    ctrl.dispatch("refresh", {})                       # 예외 없이 자리를 다시 앉힌다
+    assert ctrl.job_is_txt is False and ctrl.vm is None
+    assert ctrl.job_unsupported is True
+
+    snap = ctrl.snapshot()
+    assert snap["has_job"] is True and snap["job_name"] == "발주요청_기안"
+    # 「작업 미선택」 문안을 쓰지 않는다 — 이미 고른 사람에게 이행 불가능한 지시가 된다.
+    assert snap["gate"]["enabled"] is False and snap["gate"]["level"] == "danger"
+    assert "다시 연결" in snap["gate"]["text"]
+    assert snap["template_name"] == "발주요청_기안.docx"
+
+    # 되돌아오면 다시 작업대의 것이 된다(래치가 한 자리에서만 선다).
+    ctrl.registry.mutate(
+        "발주요청_기안",
+        lambda j: setattr(j, "template_path", str(tmp_path / "발주요청_기안.txt")))
+    ctrl.dispatch("refresh", {})
+    assert (ctrl.job_is_txt, ctrl.job_unsupported) == (True, False)
+
+
+def test_workbench_entry_is_blocked_and_loud_when_the_template_vanished(tmp_path):
+    """템플릿이 사라졌으면 **버튼이 먼저 정직하고**, 그래도 눌리면 사유를 돌려준다(5R P2).
+
+    게이트만으로는 부족하다(판정과 진입 사이에도 파일은 사라진다). 진입만으로도 부족하다
+    (누를 수 있는 버튼이 아무 설명 없이 아무 일도 안 하는 것처럼 보인다). 둘 다 필요하다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "발주요청_기안"})
+    assert ctrl.snapshot()["gate"]["enabled"] is True
+    (tmp_path / "발주요청_기안.txt").unlink()          # 다른 곳에서 템플릿이 사라졌다
+    snap = ctrl.snapshot()
+    assert snap["gate"]["enabled"] is False and "템플릿" in snap["gate"]["text"]
+    ctrl.workbench = WorkbenchController(
+        ctrl.registry, lambda s, n: None, target_font=TargetFontSetting())
+    res = ctrl.dispatch("open_workbench", {})
+    assert res["ok"] is False and "템플릿" in res["error"]

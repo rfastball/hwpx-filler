@@ -32,7 +32,9 @@
 
     /** 작업점 카드 렌더를 OS 클립보드로(복사=완료, 결정 16). 리포트(missing/empty) 반환.
         건별 파일 저장(saveFile)은 사망(결정 18) — 기록 원본이 내부 시스템, 산출물 무소유. */
-    copyClipboard(screen) { return window.pywebview.api.copy_clipboard(screen); },
+    /** 클립보드 쓰기 — `token` 은 사전확인이 돌려준 **그 카드의 정체**다(F6 3R): 백엔드가
+        대조해 어긋나면 쓰지 않는다("확인 대상 = 복사 대상"). 토큰 개념이 없는 화면은 생략. */
+    copyClipboard(screen, token) { return window.pywebview.api.copy_clipboard(screen, token); },
 
     /** 네이티브 폴더 피커(SHBrowseForFolder) → 저장 폴더 지정. 경로·"ERROR:…"·null(취소). */
     pickOutputFolder(screen) { return window.pywebview.api.pick_output_folder(screen); },

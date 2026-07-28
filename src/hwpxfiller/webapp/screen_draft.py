@@ -562,6 +562,13 @@ class DraftController(DraftSessionMixin):
         """작업 복제 — 레지스트리 clone(유일 이름 합성·이력 미계승) 위임. 그룹 계승 = 인접."""
         return {"ok": True, "name": self.registry.clone(p["name"])}
 
+    def close_guard_reason(self) -> str:
+        """창 종료 가드 참여(F6 1R) — 미저장 원문·매핑 또는 큐 진행이 있으면 사유."""
+        return (
+            "기안 화면의 미저장 원문·매핑 또는 큐 진행"
+            if self._leave_guard()["armed"] else ""
+        )
+
     def session_guard_for(self, name: str) -> "dict | None":
         """타 화면(홈) 삭제 가드 조회(#268 리뷰, `screen_job.session_guard_for` 동형) —
         이 화면이 ``name`` 기안에 무장 결속 세션을 열어 두었으면 가드 수치(+``screen``)."""

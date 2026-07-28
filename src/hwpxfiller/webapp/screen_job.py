@@ -51,9 +51,11 @@ from ..core.dataset_pool import DatasetPoolRegistry
 from ..core.identity_summary import identity_summary
 from ..core.job import (
     MISSING_MARKER,
+    Job,
     JobRegistry,
     content_fingerprint,
     rules_fingerprints,
+    work_mode,
 )
 from ..core.mapping import SOURCE_CARRIER_TYPES
 from ..core.template_status import OUTPUT_SUBDIR_NAME
@@ -74,8 +76,20 @@ from ..gui.review_state import (
     previous_values,
     review_requirement,
 )
-from ..gui.run_state import RunViewModel, resolve_file_source, resolve_pool_source
+from ..gui.run_state import (
+    GateState,
+    RunViewModel,
+    resolve_file_source,
+    resolve_pool_source,
+)
 from ..gui.selection_state import SelectionModel
+from ..gui.work_mode import (
+    WORK_MODE_HWPX,
+    WORK_MODE_TEXT,
+    last_use_label,
+    mode_sections,
+    work_mode_label,
+)
 from ..gui.work_candidates import (
     KIND_NEEDS_ACTION,
     MAIN_TOP_N,
@@ -84,12 +98,14 @@ from ..gui.work_candidates import (
     browse_candidates,
     candidate_rows,
     prework_gate,
+    workbench_entry_gate,
     preferred_promotion,
     rank_available,
     suggested_work,
 )
 from .action_registry import ZONE_MUTATIONS
 from .job_list import drift_note
+from .screen_workbench import WorkbenchController
 from .settings import load_job_collapsed_groups, save_job_collapsed_groups
 from .data_zone import (
     EMPTY_FILTER as _EMPTY_FILTER,
@@ -108,6 +124,22 @@ from .screens import (
 
 # 사전검증 성공 문구는 링2 사용자 어휘로 순화한다(실행 화면 _PREFLIGHT_OK_TEXT 동형).
 _PREFLIGHT_OK_TEXT = "검증 완료. 생성할 수 있습니다."
+
+
+def _seat_kinds(job: Job) -> "tuple[bool, bool]":
+    """활성 작업의 착석 분류 ``(TXT 인가, 미상 매체인가)`` — 세 값짜리 축의 단일 판정.
+
+    이 화면의 실행 표면은 셋이다: hwpx 실행뷰 · TXT 작업대 · **어느 쪽도 아님**. 앞의 둘만
+    세면 세 번째가 hwpx 로 접혀 `RunViewModel` 이 `require_hwpx` 에서 loud raise 하고, 그
+    예외는 재적재·재연결처럼 **사용자가 실행을 시작하지도 않은** 경로에서 튄다.
+
+    빈 경로는 미상이지만 **저작 중인 hwpx 작업**이라 실행뷰를 세운다 — `require_hwpx` 도 빈
+    경로만 관용하고, 라이브러리 `library_mode_of` 도 같은 귀속을 쓴다.
+    """
+    mode = work_mode(job.template_path)
+    unsupported = bool(job.template_path) and mode not in (WORK_MODE_HWPX, WORK_MODE_TEXT)
+    return mode == WORK_MODE_TEXT, unsupported
+
 
 # 데이터 미겨눔 상태의 재진술 빈 골격 — 필터/테이블 골격은 데이터 존 공유 믹스인
 # (data_zone.EMPTY_*)이 소유한다(PR-2b).
@@ -261,6 +293,24 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._last_filter: "dict | None" = None  # {"source_key": str, "state": dict}
         self._data_key = ""  # 현 데이터 소스 정체(file:경로 | pool:참조) — 소스 일치 판정
         self.job_name = ""  # 후보·탐색에서 겨눈 작업(패널 세션의 주체)
+        # **선택된 작업이 TXT 인가**(재작성 F6) — `vm` 은 hwpx 실행뷰라 TXT 에선 None 이다.
+        # 두 축을 가르는 이유(지도 §10.15 판정 A 의 표면판): F6 이전에는 `vm is None` 이
+        # 곧 「작업 미선택」이었는데, TXT 가 합류하면서 그 술어에 뜻이 둘 생겼다. 그래서
+        # **선택 여부는 `job_name`, hwpx 실행뷰 존재는 `vm`, 매체는 이 플래그**다.
+        #
+        # **Job 사본을 들지 않는다**(1R P2 근본 조치). 첫 판은 여기에 `txt_job: Job` 을 들었고,
+        # 그 순간 durable 사실의 **제2 정본**이 생겨 이름 변경·재연결·재적재가 전부 조용한
+        # 구멍이 됐다(그 경로들은 `vm.job` 만 유지한다). 이 저장소가 이미 적어 둔 규율과
+        # 같다: "메모리 사본을 들지 않고 영속 키를 그때그때 읽고 쓴다"(`_recollapse`).
+        # 매체는 `template_path` 확장자 파생이라 이름이 바뀌어도 불변이고(§13-17), 실제
+        # Job 은 **쓰는 순간** 스냅샷이 이미 읽는 목록·레지스트리에서 집는다.
+        self.job_is_txt = False
+        # 선택된 작업의 템플릿이 hwpx 도 txt 도 아님 — 실행 표면이 **없다**. TXT 와 나란히
+        # 두는 이유는 같다: `vm is None` 하나로는 세 상태를 말할 수 없다(`_seat_kinds`).
+        self.job_unsupported = False
+        # 작업대 컨트롤러(사후 주입 — 라이브러리 `session_guards` 선례). 진입 판정은 이
+        # 컨트롤러가 내고 세션 개시만 위임한다.
+        self.workbench = None
         # 문서 탐색 상태(§18.6) — 탭·검색어는 **세션 소유**다: 탭을 옮겨도 검색어가 살아야
         # 하고(계약 명문), 시트를 닫고 다시 열어도 방금 찾던 자리로 돌아온다. 스크롤·포커스는
         # 기존 보존 기제(preserve.js) 소관이라 여기 두지 않는다.
@@ -413,14 +463,23 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     def _do_preview_open(self, p: dict) -> dict:
         """드로어 열기. §13-2 대로 **요구가 없어도 열린다**(정상 반복 실행에서 선택).
 
-        거절 셋: ⓐ생성 중(진행 중 런의 입력을 보며 승인하면 어느 범위의 승인인지 갈린다)
+        거절 넷: ⓐ생성 중(진행 중 런의 입력을 보며 승인하면 어느 범위의 승인인지 갈린다)
         ⓑ범위 초안 열림(판정 H — 미리보기는 **커밋된** 실행 입력의 상이다. 초안 세계를
         그리면 적용도 안 한 편집을 승인하게 되고 그건 불변식 21 위반이다) ⓒ선택 0건
-        (§18.11-6: 선택 0건에서는 미리보기에 진입하지 않고 첫 레코드로 대신하지 않는다).
+        (§18.11-6: 선택 0건에서는 미리보기에 진입하지 않고 첫 레코드로 대신하지 않는다)
+        ⓓ**TXT 작업**(재작성 F6 판정 J — 배제 선언).
+
+        ⓓ의 문안이 ⓒ와 갈리는 이유: TXT 는 작업이 **선택된 채로** `vm` 이 없다. 그 상태에서
+        "먼저 문서 작업을 선택하세요"라고 말하면 방금 고른 작업을 못 본 척하는 거짓 지시가
+        된다 — 같은 술어(`vm is None`)에 뜻이 둘이라는 사실을 문안까지 끌고 온 자리다.
         """
         self.raise_if_generating("미리보기를 여세요")
         if self.range_draft is not None:
             raise ValueError("범위 편집을 적용하거나 취소한 뒤에 미리보기를 여세요.")
+        if self.job_is_txt:
+            raise ValueError(
+                "이 작업은 검토·복사 작업대에서 행마다 값을 확인합니다."
+            )
         if self.vm is None:
             raise ValueError("먼저 문서 작업을 선택하세요.")
         if not self._indices():
@@ -741,7 +800,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
           available 과 똑같이 수치로 고지한다.
         - ``suggested`` = 추천 작업 이름(§18.3 개정, 없으면 ``""``).
         """
-        empty = {"top": [], "more": 0, "needs_count": 0, "suggested": ""}
+        empty = {"top": [], "sections": [], "more": 0, "needs_count": 0, "suggested": ""}
         if self.datasource is None or not self.records:
             return empty
         fields = list(self.records[0].keys())
@@ -759,6 +818,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 # 의미는 **완주(전건 성공) 실행**이다(지도 §8.2 ②).
                 "last_run_at": job.last_run_at,
                 "suggested": r.name == suggested,
+                # 작업 방식(§19.1) + 그 표시 문구 — 카드 부제와 구획 판단이 소비한다(§19.3).
+                # 라벨을 표면이 짓지 않는 이유는 같은 축을 그리는 표면이 셋이기 때문이다
+                # (후보 카드·문서 탐색·라이브러리) — 문구가 갈리면 같은 상태를 다르게 부른다.
+                "mode": r.mode,
+                "mode_label": work_mode_label(r.mode, short=True),
+                # 최근 사용 문안도 Python 이 낸다 — **매체마다 술어가 다르다**(§19.4).
+                # 표면이 한 문구로 뭉치면 하필 구별이 중요한 자리에서 이력을 거짓으로 말한다.
+                "last_run_label": last_use_label(r.mode, job.last_run_at),
             })
         needs = sorted(
             (
@@ -770,6 +837,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         )
         return {
             "top": top,
+            # 작업 방식 구획(§19.3) — **판정은 여기**서 하고 표면은 머리글을 그릴지만 정한다.
+            # 순서는 첫 등장 순 = 각 구획 최고 순위의 위치이고, 한 방식뿐이면 구획이 1개라
+            # 표면이 평면으로 퇴화한다(카드 부제의 방식 텍스트는 그때도 남는다).
+            "sections": mode_sections(top),
             "more": max(0, len(ranked) - MAIN_TOP_N),
             # 확인 필요 전체는 문서 탐색(§18.6)이 소유한다 — 후보 줄엔 **수치만** 남긴다
             # (슬라이스 3: 칩 구획 이사, 삭제는 의무를 상속한다).
@@ -785,7 +856,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         아무도 안 본다(스냅샷 분기보다 단순한 쪽).
         """
         empty = {
-            "tab": self.browse_tab, "query": self.browse_query, "rows": [],
+            "tab": self.browse_tab, "query": self.browse_query, "rows": [], "sections": [],
             "available_count": 0, "needs_count": 0, "filtered_out": 0,
         }
         if self.datasource is None or not self.records:
@@ -794,10 +865,16 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             jobs, list(self.records[0].keys()),
             tab=self.browse_tab, query=self.browse_query,
         )
+        rows = [{**r, "mode_label": work_mode_label(r["mode"], short=True)}
+                for r in res.rows]
         return {
             "tab": res.tab,
             "query": self.browse_query,
-            "rows": [dict(r) for r in res.rows],
+            # 행은 링1이 실은 `mode` 를 그대로 나른다 — 탭 **안**의 구획 판단용(§19.5).
+            "rows": rows,
+            # 탭 **안**의 방식 구획(§19.5) — 탭이 primary classification 이라 방식을 탭으로
+            # 올리지 않는다. 같은 퇴화 규칙(1방식 = 평면)이 여기도 그대로 선다.
+            "sections": mode_sections(rows),
             "available_count": res.available_count,
             "needs_count": res.needs_count,
             "filtered_out": res.filtered_out,
@@ -1042,16 +1119,21 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         함께 사망했다(F2 PR-B, 지도 §10.9 판정 F): 아무도 그리지 않는 페이로드가 남으면 다음
         세션이 그걸 근거로 목록을 되살린다. 저장된 작업의 전역 목록은 「문서 작업」 소관이다.
         """
-        # 조회 경계(3부 결정 13 · 1층): 이 화면은 hwpx 워크플로 작업을 조회한다 — **txt 기안
-        # 작업만 뺀다**(「기안」 화면 소관). 빈/미상 매체(템플릿 미링크 = 저작 중)는 남긴다:
-        # 그것도 hwpx 작업이고, 여기서 빼면 막 만든 무템플릿 작업이 후보에서 사라진다.
-        jobs = [j for j in self.registry.list_jobs() if j.media != "txt"]
+        # 조회 경계(재작성 F6 — TXT 합류): 이 화면은 **저장 작업 전체**를 조회한다. 방식
+        # 국경은 이제 후보 판정(`compatibility_for`)이 지므로 목록에서 미리 걸러 내지
+        # 않는다 — 여기서 빼면 후보 판정이 못 보는 작업이 생겨 「확인 필요」 사유도 못 낸다.
+        jobs = self.registry.list_jobs()
         base = {
             "job_name": self.job_name,
             # 직전 런의 주체(3R P2) — 결과 구획의 행동이 "이 결과가 지금 열린 작업의
             # 것인가"를 물을 때 쓰는 값. 판정에 드는 두 값이 같은 출처(이 스냅샷)에서 온다.
             "last_run_job": self._last_run_job,
-            "has_job": self.vm is not None,
+            # 작업이 선택됐는가 — **`vm` 이 아니라 이름**이다(F6): TXT 는 hwpx 실행뷰를
+            # 세우지 않으므로 `vm is not None` 은 "선택됨"이 아니라 "hwpx 로 실행한다"다.
+            "has_job": bool(self.job_name),
+            # 실행 행동 = **매체 파생 2분기**(F6 판정 D). 라벨과 행동 키를 Python 이 낸다 —
+            # 표면이 매체를 다시 읽어 분기하면 같은 판정이 두 곳에 산다.
+            "run_action": self._run_action(),
             # 세션 가드 무장 상태(결정 26·27) — 표면 참고용(진실은 guard_state 실시간 질의;
             # 렌더 판은 _filter_sections 가 같은 뷰로 산출해 아래 update 가 덮는다).
             "guard": {
@@ -1093,6 +1175,52 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         base["browse"] = self._browse_payload(jobs)
         # 범위 초안 구획(F3) — 열림 여부가 DOM 클래스가 아니라 **상태**다(§10.11.2 정체 면).
         base["range_draft"] = self._range_draft_payload()
+        if self.job_is_txt:
+            # ── TXT 작업 선택(재작성 F6) — 실행 표면이 작업대라 hwpx 실행뷰가 없다.
+            # 데이터 존·후보·탐색은 hwpx 와 **완전히 같은 것**을 쓴다(§18.11-24: 두 매체가
+            # 같은 OrderedSelection 을 소비한다). 갈리는 것은 게이트와 실행 행동뿐이다.
+            zone_indices = self._zone_indices()
+            record_rows = self._record_rows(zone_indices, [])
+            filter_snap, table_snap, restate_snap, guard_snap = self._filter_sections(
+                zone_indices, record_rows
+            )
+            # 템플릿 정체는 **이번 스캔의 목록**에서 집는다 — 세션이 Job 사본을 들지 않으므로
+            # (1R P2) 이름 변경·재연결이 자동으로 반영되고, 추가 I/O 도 없다(목록은 위에서
+            # 이미 읽었다). 그사이 삭제됐으면 정직하게 「템플릿 없음」으로 그린다 —
+            # 세션 정리는 `_do_refresh` 의 소실 고지가 다음 왕복에서 한다.
+            txt_job = next((j for j in jobs if j.name == self.job_name), None)
+            tpath = txt_job.template_path if txt_job is not None else ""
+            g = workbench_entry_gate(
+                has_data=self.datasource is not None,
+                selected_count=self.selection.selected_count(),
+                template_ready=bool(tpath) and Path(tpath).exists(),
+            )
+            base.update({
+                "template_name": Path(tpath).name if tpath else "",
+                "template_path": tpath,
+                "template_missing": not tpath or not Path(tpath).exists(),
+                # 파일 이름 규칙은 TXT 에 **없다**(§3.2) — 빈 문자열은 "아직 안 정했다"가
+                # 아니라 "이 매체엔 그 축이 없다"이고, 표면이 그 자리를 그리지 않는다.
+                "filename_pattern": "",
+                "has_data": self.datasource is not None,
+                "record_count": len(self.records),
+                "selected_count": self.selection.selected_count(),
+                "records": record_rows,
+                "preflight": {"level": "", "text": ""},
+                # 거울·드리프트·이름 토큰은 hwpx 생성 경로의 것이다 — TXT 는 값 확인을
+                # 작업대가 레코드마다 눈으로 하므로 여기서 겸하지 않는다(판정 단일 출처).
+                "mirror": [], "drift": [], "name_tokens": [],
+                "filter": filter_snap, "table": table_snap, "restate": restate_snap,
+                "guard": guard_snap,
+                "gate": {"enabled": g.enabled, "level": g.level, "text": g.text},
+                # 검토 요구·미리보기 드로어는 **배제 선언**(지도 §10.15 판정 J): 드로어는
+                # 값+파일 이름+승인의 면인데 TXT 엔 파일 이름 축이 없고, 작업대가 이미
+                # 레코드 전수를 채운 모습으로 보여 주는 검토 표면이다. 골격만 실어 표면이
+                # 키 부재로 갈라지지 않게 한다.
+                "review": self._review_payload(ReviewRequirement(), None),
+                "preview": {"open": False, "pos": 0, "total": 0, "can_open": False},
+            })
+            return base
         if self.vm is None:
             # 작업 미선택 상태 — 데이터 존은 세션 소유라 그대로 산다(데이터-우선, §18.2).
             zone_indices = self._zone_indices()
@@ -1108,9 +1236,26 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 # 순위 밖(more)도 선택 가능한 후보라 top 이 비어야만 "없음"이다.
                 has_candidates=bool(base["candidates"]["top"]),
             )
+            # **미상 매체는 「작업 미선택」이 아니다**: 작업은 골라져 있고(`has_job`) 실행
+            # 표면만 없다. prework 문안("먼저 문서 작업을 선택하세요")을 그대로 쓰면 이미
+            # 고른 사람에게 이행 불가능한 지시를 주고, 화면은 「작업 있음」과 「없음」을
+            # 동시에 말한다. 사유와 복구 동선(재연결)을 그 자리에서 말한다.
+            unsup_job = (
+                next((j for j in jobs if j.name == self.job_name), None)
+                if self.job_unsupported else None
+            )
+            utpath = unsup_job.template_path if unsup_job is not None else ""
+            if self.job_unsupported:
+                g = GateState(
+                    False, "danger",
+                    "이 작업의 템플릿은 HWPX 도 온나라 기안 TXT 도 아닙니다. "
+                    "템플릿을 다시 연결한 뒤 진행하세요.",
+                )
             base.update({
-                "template_name": "", "template_path": "", "filename_pattern": "",
-                "template_missing": False,
+                "template_name": Path(utpath).name if utpath else "",
+                "template_path": utpath,
+                "filename_pattern": "",
+                "template_missing": bool(utpath) and not Path(utpath).exists(),
                 "has_data": self.datasource is not None,
                 "record_count": len(self.records),
                 "selected_count": self.selection.selected_count(),
@@ -1360,11 +1505,23 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         만든 문서가 담보하던 것)와 **열려 있던 미리보기**(옛 규칙의 상). 승인은 따로 지우지
         않는다 — 규칙 지문에 결속돼 자동으로 무효가 된다(F5 판정 I).
         """
-        if self.vm is None or not self.job_name:
+        if not self.job_name:
             return False
         try:
             job = self.registry.load(self.job_name)
         except Exception:  # noqa: BLE001 — 손상은 다음 스냅샷의 건강 표면이 말한다
+            return False
+        # **매체가 갈렸으면 자리를 다시 앉힌다**(2R P2). 재연결은 매체 교차가 가능하고
+        # (파일 필터의 「모든 파일」), 그 변화는 이 화면 밖에서도 일어난다 — 라이브러리에서
+        # 재연결하고 돌아오는 경로가 실물이다. 매체가 그대로면 아래 hwpx 규칙 대조로 간다.
+        if _seat_kinds(job) != (self.job_is_txt, self.job_unsupported):
+            self._seat_active_job(job)
+            self._last_generated = None   # 실행 표면 자체가 갈렸다 — 옛 증거는 남의 것이다
+            self._do_preview_close({})
+            return True
+        # TXT 세션은 여기서 **되살릴 캐시가 없다**(1R P2 이후) — Job 사본을 들지 않으므로
+        # 다음 스냅샷이 목록에서 최신값을 집는다. 할 일이 없는 것이 정상이지 누락이 아니다.
+        if self.vm is None:
             return False
         # **판본 메타까지 본다**(7R P2). `content_fingerprint` 는 판본 3필드를 일부러 뺀다
         # (편집 세션에 거짓 파괴 확인을 띄우지 않으려고) — 그래서 그것만으로는 "지금 것인가"를
@@ -1379,15 +1536,90 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         )
         if same_rules and same_generation:
             return False
-        self.vm = RunViewModel(job)
-        if self.records:
-            self.vm.set_acquired(self.datasource, self.records)  # ack 재평가 포함(RC-22)
+        self._seat_active_job(job)
         if not same_rules:
             # 규칙이 실제로 갈렸을 때만 증거를 걷는다 — 판본 메타만 앞선 경우(A→B→A)는
             # 실행 입력이 그대로라 완주 담보·열린 면을 되돌릴 이유가 없다(과잉 리셋 금지).
             self._last_generated = None
             self._do_preview_close({})
         return True
+
+    def _seat_active_job(self, job: Job) -> None:
+        """활성 작업의 **매체와 실행뷰를 함께** 세운다 — 둘이 갈라질 자리를 남기지 않는다.
+
+        매체 파생 2분기(F6 판정 D): TXT 는 hwpx 실행뷰를 세우지 않는다(`RunViewModel` 이
+        템플릿을 hwpx 로 파싱하므로 진입 가드가 loud 거부한다).
+
+        **왜 함수 하나인가**(2R P2 근본 조치): 1R 에서 Job 사본을 지웠지만 그 자리에 매체
+        **래치**가 남았고, 그 래치는 「작업 선택」 사건에서만 갱신됐다. durable 템플릿 경로는
+        그 사건 **밖에서도** 바뀐다(라이브러리 재연결은 매체 교차가 가능하다 — 파일 필터에
+        「모든 파일」이 있다). 그래서 재연결 뒤 TXT→HWPX 는 실행 버튼이 계속 작업대를 광고하고,
+        HWPX→TXT 는 재적재가 `RunViewModel` 을 세우려다 터졌다. 두 값을 **한 자리에서만**
+        세우면 갈라질 수가 없고, 갱신이 필요한 곳은 이 함수를 부르면 된다.
+        """
+        self.job_is_txt, self.job_unsupported = _seat_kinds(job)
+        self.vm = None if (self.job_is_txt or self.job_unsupported) else RunViewModel(job)
+        # 세션 데이터 주입도 **여기가** 한다: vm 을 세우는 자리와 그 vm 이 볼 데이터를
+        # 실어 주는 자리가 갈리면, 한쪽만 부르는 경로가 곧 빈 실행뷰가 된다(재적재가
+        # 실제로 그랬다). 데이터·선택·필터는 세션 소유라 작업 전환에서 생존한다(§18.2).
+        if self.vm is not None and self.records:
+            self.vm.set_acquired(self.datasource, self.records)  # ack 재평가 포함(RC-22)
+
+    def _run_action(self) -> dict:
+        """실행 버튼의 (행동 키, 라벨) — 매체 파생 2분기(§19.1·F6 판정 D)."""
+        if self.job_is_txt:
+            n = self.selection.selected_count()
+            return {"key": "workbench", "label": f"검토·복사 시작 · {n}건"}
+        return {"key": "generate", "label": "이 작업으로 문서 생성"}
+
+    def _do_open_workbench(self, p: dict) -> dict:
+        """TXT 검토·복사 작업대 진입 — 고정 사본을 넘기고 화면 전환은 웹이 한다.
+
+        **열기는 성사 뒤다**(§10.15.1 계약면 2·3): 자격 없는 진입은 화면을 세우지 않고
+        사유를 돌려준다. 진입을 막는 것은 셋이다 — 생성 중(진행 중 런의 규칙을 갈아 끼우면
+        RC-02 「확인 대상 = 생성 대상」이 깨진다) · 범위 초안 열림(작업대는 **커밋된** 실행
+        입력의 사본을 뜬다 — 적용도 안 한 편집으로 사본을 뜨면 어느 범위인지 갈린다) ·
+        게이트 미충족(선택 0건에서 첫 레코드를 대신 쓰지 않는다, §18.10 수용 6).
+        """
+        if not self.job_is_txt or not self.job_name:
+            return {"ok": False, "error": "TXT 검토·복사 작업이 아닙니다."}
+        self.raise_if_generating_before_swap("작업대를 여세요")
+        if self.range_draft is not None:
+            return {"ok": False,
+                    "error": "범위 편집을 먼저 적용하거나 취소한 뒤 작업대를 여세요."}
+        gate = workbench_entry_gate(
+            has_data=self.datasource is not None,
+            selected_count=self.selection.selected_count(),
+        )
+        if not gate.enabled:
+            return {"ok": False, "error": gate.text}
+        if self.workbench is None:  # confirm-or-alarm: 미배선은 시끄럽게(조용한 무동작 금지)
+            raise ValueError("작업대 컨트롤러가 배선되지 않았습니다.")
+        # Job 은 **쓰는 순간** 읽는다(1R P2) — 세션이 사본을 들고 있으면 그사이 이름이
+        # 바뀌거나 규칙이 저장된 것을 못 본다. 여기가 유일한 소비처라 I/O 도 1회다.
+        try:
+            job = self.registry.load(self.job_name)
+        except (FileNotFoundError, ValueError) as exc:
+            return {"ok": False, "error": (
+                f"작업 '{self.job_name}' 을(를) 읽을 수 없습니다: {exc}")}
+        if not WorkbenchController.accepts(job):  # fail-closed 재확인(매체가 갈렸다면)
+            return {"ok": False, "error": "TXT 검토·복사 작업이 아닙니다."}
+        indices = self._indices()
+        try:
+            self.workbench.open(job, [(i, self.records[i]) for i in indices])
+        except (OSError, UnicodeDecodeError) as exc:
+            # 템플릿이 그사이 사라졌거나 읽을 수 없다 — **화면 안에서** 사유를 말한다(5R P2).
+            # 날것 예외로 올리면 호출부(.then)가 못 받아 아무 설명 없이 아무 일도 안 난 것처럼
+            # 보인다. 게이트도 이 사실을 미리 세지만(버튼이 정직하게 닫힌다) 그 판정과 이
+            # 진입 사이에도 파일은 사라질 수 있으므로 둘 다 필요하다.
+            #
+            # **`UnicodeDecodeError` 도 같은 사건이다**(6R). 작업대는 UTF-8 로 읽는데 온나라
+            # 기안 txt 는 ANSI/CP949 로 저장돼 오기 쉽고, 게이트는 파일 **존재**만 세므로
+            # 버튼은 열려 있다. `OSError` 가 아니라 `ValueError` 계열이라 잡지 않으면 사유를
+            # 말할 자리를 그대로 지나쳐, 열리는 척하던 버튼이 아무 말도 없이 끝난다.
+            return {"ok": False, "error": (
+                f"템플릿을 읽을 수 없습니다: {exc}. 템플릿을 다시 연결한 뒤 진행하세요.")}
+        return {"ok": True, "count": len(indices)}
 
     def _do_select_job(self, p: dict) -> "dict | None":
         """후보·탐색에서 작업 선택 → RunViewModel 재구성. 저장 폴더 기본 = 템플릿/Results.
@@ -1419,6 +1651,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._do_preview_close({})
         if not name:  # 선택 해제 = 작업만 내려놓는다(데이터 존은 그대로)
             self.vm = None
+            self.job_is_txt = False
+            self.job_unsupported = False
             self.job_name = ""
             self.out_dir = ""
             self._last_failed = []
@@ -1429,10 +1663,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 선택」이 0건을 돌려주는 유령 행동이 된다. 위 `_last_generated` 조기 소거는
         # 안전 방향(가드 재무장)이라 그대로 두지만, 이쪽은 **복구 경로가 사라지는** 방향이다.
         self._last_failed = []
-        self.vm = RunViewModel(job)
+        self._seat_active_job(job)
         self.job_name = name
-        if self.records:
-            self.vm.set_acquired(self.datasource, self.records)  # ack 재평가 포함(RC-22)
+        if self.records and self.vm is not None:
             # 필터 열 유형 재조정(#302 리뷰 P2): 무작업 마운트의 필터는 값 스니핑만 탔다 —
             # 작업이 정해진 지금 매핑 확정 유형 힌트를 반영한다. 단 **정의 없는 필터만**
             # 재생성한다: 사용자가 이미 만든 정의는 유형 재판정이 술어를 조용히 떨어뜨릴
@@ -1614,7 +1847,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         res = relink_job_template(
             self.registry, p["name"], p.get("path", ""), confirm=bool(p.get("confirm")),
         )
-        if res.get("relinked") and self.vm is not None and self.vm.job.name == p["name"]:
+        # 「지금 열어 둔 작업인가」는 **이름**으로 묻는다(1R P2) — `self.vm.job.name` 은 hwpx
+        # 세션에서만 참이라 TXT 를 재연결하면 세션이 옛 템플릿을 그대로 그린다. 같은 질문에
+        # 매체별 술어를 쓰면 그게 곧 구멍이다.
+        if res.get("relinked") and self.job_name == p["name"]:
             self._do_select_job({"name": p["name"]})
             res["restated"] = (
                 "템플릿을 다시 연결했습니다. 작업을 다시 불러왔으니 데이터와 저장 폴더 "
@@ -1653,6 +1889,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             self._last_run_job = new_clean
         return {"ok": True}
 
+    def close_guard_reason(self) -> str:
+        """창 종료 가드 참여(F6 1R) — 재현하기 어려운 선택이 열려 있으면 사유."""
+        return "작업 화면의 완료하지 않은 선택" if self._guard_state()["armed"] else ""
+
     def session_guard_for(self, name: str) -> "dict | None":
         """타 화면(홈) 삭제 가드 조회(#268 리뷰) — 이 화면이 ``name`` 에 무장 세션을 열어
         두었으면 가드 수치(+``screen``)를 돌려준다. 판정·수치는 :meth:`_guard_state` 단일
@@ -1674,7 +1914,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         **생성은 하지 않는다**: 의사표시 2클릭 분리(결정 28 「직전 필터 재적용」이 정의만
         복원하고 선택은 건드리지 않는 것과 같은 격 구분). 성공분 보존은 신설 기제가 아니라
         덮어쓰기 확인 왕복(RC-02)이 담보한다 — 재생성이 성공분을 겨누면 그 수치가 모달에
-        선다. 재시도(건별 재실행·filename override)는 이 슬라이스 밖이다(F7 선행).
+        선다. 별도의 재시도 동사(건별 재실행·filename override)는 **짓지 않는다**(지도 §10.14
+        기각): 확정 실패 원인 4종(권한·점유·공간·경로)은 규칙이 아니라 환경이 원인이라 **이
+        선택 + 「문서 만들기」** 가 곧 재시도이고, 저장 폴더를 바꾸면 「다른 폴더에서 재시도」다.
 
         목록이 비었으면(수명 경계를 지났거나 실패 없던 런) ``0`` 을 돌려 표면이 무동작을
         정직하게 말한다 — 아무 반응 없는 버튼은 결함으로 읽힌다(``_do_set_all`` 선례).

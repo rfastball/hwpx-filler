@@ -634,6 +634,10 @@ class EditorController:
         return self.snapshot()
 
     # ------------------------------------------- 세션 수명주기(confirm-or-alarm)
+    def close_guard_reason(self) -> str:
+        """창 종료 가드 참여(F6 1R) — 잃을 것이 있으면 사유, 없으면 ``""``."""
+        return "저장하지 않은 작업 편집" if self.has_unsaved_work() else ""
+
     def has_unsaved_work(self) -> bool:
         """버려질 **미저장** 변경이 있는가 — 폐기 전 확인·T2 고지 판단에 쓴다(#25).
 

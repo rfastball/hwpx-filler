@@ -244,7 +244,10 @@
 
             <!-- 본문 존 — 라이브 거울(필드 채움 테이블). 결정 3(§10.6): 거울은 빈 값 확인
                  게이트의 표면이라 v6 validationCard 로 대체되지 않고 병존한다. -->
-            <div class="zone job-mirror-zone">
+            <!-- TXT(검토·복사) 작업에선 이 존 전체가 숨는다: 값 확인은 작업대가 레코드마다
+                 눈으로 하는 일이고, 여기 남겨 두면 「행을 선택하면 …」 안내가 행을 다 고른
+                 뒤에도 영영 서 있는 이행 불가능한 지시가 된다(F6 PR-A 리뷰 6R). -->
+            <div class="zone job-mirror-zone" id="jobMirrorZone">
               <div class="zone-cap zone-cap-actions"><span>본문 확인</span>
                 <button class="btn sm" id="jobMirrorExpand" type="button">펼쳐서 확인 ⤢</button></div>
               <p class="muted hint">이 문서에 들어갈 값입니다. <span class="danger">빈 값</span>
@@ -338,8 +341,10 @@
 
               <!-- 생성 준비 — 저장 폴더 + 게이트 재진술 블록(상시, 결정 36 D1-B). -->
               <div class="zone">
-                <div class="zone-cap">생성 준비</div>
-                <div class="run-row"><span class="lbl">저장 폴더</span>
+                <!-- 캡션·저장 폴더 행은 **매체 파생**이다: TXT 는 파일을 만들지 않으므로
+                     저장 폴더 축 자체가 없다(§3.2 의 파일 이름 축과 같은 부류). -->
+                <div class="zone-cap" id="jobRunCap">생성 준비</div>
+                <div class="run-row" id="jobOutRow"><span class="lbl">저장 폴더</span>
                   <input class="field ro" id="jobOutDir" type="text" readonly
                          placeholder="이 폴더에 문서를 저장합니다">
                   <button class="btn" id="jobBtnPickFolder" data-busy-lock>찾아보기…</button>
@@ -403,6 +408,71 @@
       </div>
     </section>
 
+
+    <!-- ====== TXT 검토·복사 작업대 (v6 S7 · 계약 §11 — 재작성 F6 PR-A) ============ -->
+    <!-- 「문서 만들기」에서 TXT 작업을 실행하면 오는 **몰입 화면**(편집기와 같은 부류):
+         상단 2탭을 덮고 back 하나로 나간다. 진입 시 고정 사본을 받으므로 데이터 존이 없다.
+         안정 DOM + workbench.js 가 window.__push('workbench', snapshot) 로 값만 채운다. -->
+    <section class="scr" id="scr-workbench">
+      <div class="wb-shell">
+        <button class="btn sm back" id="wbBack" type="button">← 문서 만들기로 돌아가기</button>
+        <header class="scr-head wb-head">
+          <div>
+            <p class="eyebrow" id="wbMode">온나라 기안 검토·복사</p>
+            <h1 id="wbTitle">검토·복사</h1>
+            <p class="sub">선택 당시 표시순서로 고정된 항목만 검토합니다.</p>
+          </div>
+          <div class="wb-stats">
+            <span>작업점 <strong id="wbPosition">0 / 0</strong></span>
+            <span>복사 완료 <strong id="wbCopied">0 / 0</strong></span>
+            <span class="status" id="wbRevision" data-level="idle"></span>
+          </div>
+        </header>
+        <div class="note" id="wbNotice" role="status" style="display:none"></div>
+        <div class="wb-body">
+          <!-- 좌: 필드 연결·표시(미저장 변경 — override 아님, 지도 §10.15 판정 H) -->
+          <section class="wb-left">
+            <div class="zone-head">
+              <div>
+                <h2 class="zone-cap">필드 연결·표시</h2>
+                <p class="muted" id="wbDirtyNote">저장하지 않은 변경 없음</p>
+              </div>
+              <button class="btn" id="wbSaveRules" type="button" disabled>기본 규칙으로 저장…</button>
+            </div>
+            <div id="wbMapPanel" data-preserve-scroll></div>
+          </section>
+          <!-- 우: 채운 모습 / 원문 -->
+          <section class="wb-right">
+            <div class="wb-toolbar" role="group" aria-label="본문 보기">
+              <button class="btn sm" type="button" data-wb-view="filled">채운 모습</button>
+              <button class="btn sm" type="button" data-wb-view="raw">원문</button>
+              <!-- 대상 글꼴 선언(결정 17) — 정렬 린트가 **이 선언**으로 비례폭을 판정하므로
+                   여기서 고칠 수 없으면 경고가 엉뚱한 글꼴 기준으로 뜨거나 숨는다. 값은 앱
+                   전역이라 「기안」과 같은 설정을 공유한다. -->
+              <label class="lbl" for="wbTargetFont">대상 글꼴</label>
+              <select class="field sm" id="wbTargetFont"
+                      title="붙여넣는 곳(기안작성기)의 표준 글꼴입니다(전역 설정으로 저장).">
+                <option value="gulimche">굴림체</option>
+                <option value="dotumche">돋움체</option>
+                <option value="malgun">맑은고딕</option>
+              </select>
+              <span class="status" id="wbReview" data-level="idle">복사 전</span>
+            </div>
+            <!-- 큐 색인 — 순차 이동만 두면 아는 행으로 바로 갈 길이 없다(「기안」 점 승계). -->
+            <div class="wb-dots" id="wbDots" role="list" aria-label="큐 진행 표시"></div>
+            <article class="wb-preview" id="wbCard" data-preserve-scroll></article>
+            <p class="muted" id="wbLint" style="display:none"></p>
+          </section>
+        </div>
+        <footer class="wb-foot">
+          <label class="wb-adv"><input type="checkbox" id="wbAdvance"> 복사 후 다음 항목으로 이동</label>
+          <span class="muted" id="wbNote"></span>
+          <button class="btn" id="wbPrev" type="button">이전</button>
+          <button class="btn" id="wbNext" type="button">다음</button>
+          <button class="btn primary" id="wbCopy" type="button">복사</button>
+        </footer>
+      </div>
+    </section>
 
     <!-- ============ 기안 (R-info 3부, #148 — TXT 작업-앵커 master-detail) ============ -->
     <!-- 「작업」(HWPX)의 대칭 화면: 좌 목록(TXT 작업 조회·그룹 관리, 공용 grouplist.js 팩토리
@@ -1009,6 +1079,7 @@
 <script src="js/screens/editor.js"></script>
 <script src="js/screens/job.js"></script>
 <script src="js/screens/draft.js"></script>
+<script src="js/screens/workbench.js"></script>
 <script src="js/screens/template.js"></script>
 <script src="js/app.js"></script>
 </body>

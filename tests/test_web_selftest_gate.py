@@ -500,6 +500,12 @@ class TestWebSelftestGate:
         # 문안은 **완주 스탬프**의 의미와 일치해야 한다(4R P2): 성공 뒤 실패 런이 있으면
         # 스탬프는 앞선 성공에 머무르므로 "마지막 실행"은 거짓이 된다.
         assert j["last_run_text"] == "마지막 성공 실행 2026-07-20", j["last_run_text"]
+        # 방식 구획(§19.3, F6) — 두 방식이 섞인 판이라 머리글이 **선다**. 카드 부제의
+        # 방식 텍스트는 구획과 별개로 늘 남는다(색만으로 방식을 구별하지 않는다).
+        assert j["cand_sec_caps"] == ["HWPX 문서 생성", "온나라 기안 검토·복사"], (
+            f"작업 방식 구획 머리글이 서지 않았습니다: {j['cand_sec_caps']!r}"
+        )
+        assert j["cand_mode_texts"] == ["HWPX 생성", "온나라 기안"], j["cand_mode_texts"]
         # 별을 누르면 카드가 1순위로 이동한다 — 그 재렌더를 가로질러 포커스가 같은 작업의
         # 별에 남아야 키보드 사용자가 문서 처음으로 떨어지지 않는다(이름 유래 안정 id).
         assert j["fav_focus_restored"] == "kept", j["fav_focus_restored"]
@@ -1153,6 +1159,60 @@ class TestWebSelftestGate:
         assert p["topbar_h"] == 64, f"토바 높이가 구조 치수(64px)와 다릅니다: {p!r}"
         assert p["body_overflow"] is False, f"기본 배율에서 가로 오버플로: {p!r}"
         assert p["selected_text"] == "선택 가능한 본문", f"본문 텍스트 선택 실패: {p!r}"
+
+    def test_workbench_is_immersive_and_the_queue_degenerates(
+        self, selftest_result: dict
+    ) -> None:
+        """TXT 검토·복사 작업대(재작성 F6 PR-A) — 실 WebView2 되읽기.
+
+        정적 계약이 통과시키는 세 가지를 실물로 잡는다: ①몰입 셸이 실제로 상단 2탭을
+        덮는가 ②큐 퇴화가 순회 장치를 **실제로** 감추는가(스타일 계산까지) ③나가는 이동이
+        가드를 **지나서** 화면을 바꾸는가(발신 순서 포함 — 배선·문안이 다 제자리여도
+        성사 뒤 이어짐만 끊길 수 있고 그건 정적 계약이 못 본다, F7 1R 선례).
+        """
+        w = selftest_result["workbench"]
+        assert w.get("error") is None, f"작업대 프로브 예외: {w.get('error')!r}"
+        assert w["screen_on"] and w["nav_hidden"], (
+            f"작업대가 몰입 표면으로 서지 않습니다(화면·셸 은닉): {w!r}"
+        )
+        # 머리·상태 — 값은 전부 Python 스냅샷 파생이라 표면이 다시 계산하지 않는다.
+        assert w["title"] == "발주요청_기안"
+        assert w["position"] == "1 / 3" and w["copied"] == "1 / 3"
+        assert "연결 r4" in w["revision"]
+        assert "1건" in w["dirty_note"], f"미저장 변경 수치가 안 보입니다: {w['dirty_note']!r}"
+        assert "다시 확인" in w["review"], f"재확인 상태가 안 보입니다: {w['review']!r}"
+        assert w["save_enabled"] is True
+        # 좌 pane: 확정-비움은 입력칸이 아니라 **선언 표지**로 그려진다(결정 12).
+        assert w["map_rows"] == 2 and w["declared"] == 1
+        # 우 pane: 채움 표지 삼분이 공용 SegView 계약대로 그려진다.
+        assert w["card_fill"] == 1 and w["card_blank"] == 1
+        assert w["lint_shown"] is True
+        # 린트 처방(전각 치환)이 **손잡이로** 서 있는가 — 승계는 표지가 아니라 행동까지다.
+        assert w["lint_action"] == "on:전각으로 바꾸기", w["lint_action"]
+        # 등록만 되고 아무도 못 부르던 seam 둘이 실제로 손잡이가 됐는가(4R P2).
+        assert w["font_value"] == "malgun", w["font_value"]
+        assert w["dots"] == ["7행 · 작업 중 · 다시 확인 필요", "4행 · 대기"], w["dots"]
+        # 순회 경계는 Python 이 낸 값을 그대로 쓴다(2R P1): 표시 자리가 머리(1/3)인데도
+        # 순회상 후미면 「이전」이 열리고 「다음」이 닫힌다 — 서수로 계산하면 정반대가 된다.
+        assert (w["prev_disabled"], w["next_disabled"]) == (False, True), (
+            f"이동 경계가 표시 서수로 계산됩니다: {w['prev_disabled']}/{w['next_disabled']}"
+        )
+        # 결과 → 규칙(계약 §11 · 지도 §10.15.2 E) — 오른쪽 결과 조각을 누르면 그 값을 만든
+        # 왼쪽 규칙 행이 선다. 이 PR 이 스스로 정한 「작업대는 화면 안에서 겨눈다」의 이행이라
+        # 없으면 사용자가 소유 행을 손으로 찾는다(8R P2). 신원(data-token)·착지(포커스)·
+        # 표지(계산된 스타일) 셋이 다 서야 길이 열린 것이다 — 하나만 빠져도 정적으론 초록이다.
+        assert w["card_tokens"] == 2, f"조각이 토큰 신원을 안 지고 나갑니다: {w['card_tokens']}"
+        assert w["aim_row"] == "수신", f"결과 조각이 소유 규칙 행을 겨누지 못합니다: {w['aim_row']!r}"
+        assert w["aim_marked"] not in ("", "none"), (
+            f"겨눈 행이 아무 표지도 못 받습니다(표 클래스↔스타일시트 드리프트): {w['aim_marked']!r}"
+        )
+        # 큐 퇴화 — 1건이면 이전/다음·자동 전진이 사라진다.
+        assert w["degen_prev"] == "none" and w["degen_adv"] == "none"
+        # 이탈: 가드를 먼저 묻고(leave_guard) 세션을 닫은 뒤에야 화면이 바뀐다.
+        assert w["leave_calls"] == ["leave_guard", "close"], (
+            f"이탈이 가드를 지나지 않거나 순서가 다릅니다: {w['leave_calls']!r}"
+        )
+        assert w["landed"] is True, "이탈 뒤 「문서 만들기」로 착지하지 않았습니다."
 
 
 @pytest.mark.skipif(_GUI_GATE, reason=_GATE_REASON)
