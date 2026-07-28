@@ -86,8 +86,11 @@ def main() -> int:
         (args.out / f"hwpx_{key}_version.txt").write_text(
             _resource(product, version), encoding="utf-8"
         )
+    version_info = ".".join(str(part) for part in _numeric_version(version))
     (args.out / "version.iss").write_text(
-        f'#define AppVersion "{version}"\n', encoding="utf-8"
+        f'#define AppVersion "{version}"\n'
+        f'#define AppVersionInfo "{version_info}"\n',
+        encoding="utf-8",
     )
     commit = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=False
