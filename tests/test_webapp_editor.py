@@ -1165,7 +1165,7 @@ def test_partial_discard_refuses_a_tab_this_media_does_not_have(tmp_path):
     assert _save_named(ctrl, "없는탭")["ok"] is True
     ctrl.load_job("없는탭")
     with pytest.raises(ValueError, match="탭이 없습니다"):
-        ctrl.dispatch("discard_patch", {"section": "test"})   # 시험 탭은 F8
+        ctrl.dispatch("discard_patch", {"section": "test"})   # 시험 탭은 기각(§10.17.1) — 영구 미지 section
 
 
 def test_discarding_a_binding_patch_without_data_restores_the_saved_vocabulary(tmp_path):

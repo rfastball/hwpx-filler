@@ -41,10 +41,9 @@ from ..core.job import Job, rules_values
 SECTION_TEMPLATE = "template"
 SECTION_BINDING = "binding"
 SECTION_FILENAME = "filename"
-SECTION_TEST = "test"
 
 #: 매체별 탭 구성(계약 §3.1·§3.2) — TXT 는 파일 이름 탭을 **갖지 않는다**(HWPX 생성 속성).
-#: 「시험」은 F8 소관이라 아직 어느 매체에도 없다: 빈 탭을 세워 두지 않는다(§8.2 ②).
+#: 계약이 넷째로 적던 「시험」은 F8 착수 실측에서 기각됐다(§10.17.1) — 이 목록이 최종형이다.
 _SECTIONS_BY_MEDIA = {
     "hwpx": (SECTION_TEMPLATE, SECTION_BINDING, SECTION_FILENAME),
     "txt": (SECTION_TEMPLATE, SECTION_BINDING),

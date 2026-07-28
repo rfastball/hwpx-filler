@@ -1,7 +1,7 @@
 /* 문서 작업 편집기 렌더러 — 브리지로 링1 EditorController 와 왕복. **몰입 표면**(#scr-editor,
    재작성 F7 PR-A · 지도 §10.13): 상단 2탭을 덮고 출구는 back 하나다 — 그래야 patch 처분
    (저장·버리기·머무르기)이 한 곳에서 끝난다. 구 「작업」 화면 편집 모드(#jobEditHost)는 사망.
-   탭은 계약 §5.1 의 section 문자열(템플릿·필드 연결·표시·파일 이름 / 「시험」은 F8)이고
+   탭은 계약 §5.1 의 section 문자열(템플릿·필드 연결·표시·파일 이름 — 「시험」은 기각, §10.17.1)이고
    **집합은 Python 이 매체에서 파생**해 내려준다. 신규 초안은 전진 게이트(순서 의존이 실재),
    저장된 작업 편집은 자유 이동 + 처분 가드.
    렌더는 Python 이 window.__push('editor', snapshot) 로 밀어 넣는다.
@@ -14,9 +14,9 @@
   const INFERRED_LABEL = { text: "텍스트", date: "날짜", amount: "금액", number: "숫자", phone: "전화번호" };
   /* 탭 어휘 = 계약 §5.1 의 section 문자열(재작성 F7 판정 B) — 정수 단계는 사망했다.
      탭 **집합**은 Python 이 매체에서 파생해 내려준다(s.sections): TXT 는 파일 이름 탭이
-     없고(§3.2) 「시험」은 F8 이라 아직 어느 매체에도 없다 — 여기서 목록을 발명하지 않는다. */
+     없다(§3.2). 계약의 넷째 탭 「시험」은 기각(§10.17.1) — 여기서 목록을 발명하지 않는다. */
   const SECTION_TITLES = {
-    template: "템플릿", binding: "필드 연결·표시", filename: "파일 이름", test: "시험",
+    template: "템플릿", binding: "필드 연결·표시", filename: "파일 이름",
   };
   let LAST = null;
 
