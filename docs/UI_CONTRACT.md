@@ -33,8 +33,8 @@
 - **직접 브리지 경로:** 네이티브 자원이 관여하는 호출은 `web/js/bridge.js`가
   `WebFrontend` 공개 메서드를 **직접** 부른다 — 파일/폴더 피커(`pick_data_file`,
   `pick_output_folder`, `pick_template_path`, `pick_pool_data_file`), 실행·가져오기
-  (`generate`, `import_template_file`, `import_library_template`), 에디터 착지
-  (`load_template_into_editor`, `open_job_in_editor`, `editor_has_unsaved_work`), 경로 추적
+  (`generate`, `import_template_file` — 가져오기는 F8 통일로 이 하나, hwpx·txt·RAW 수용),
+  에디터 착지(`open_job_in_editor`, `editor_has_unsaved_work`), 경로 추적
   (`open_path`, `reveal_path`, `copy_path`, `reveal_corrupt_job`), 클립보드·설정
   (`copy_clipboard`, `set_theme`, `set_font_scale`, `set_master_width`),
   시트 적재(`load_data_sheet`). 이 경로는 action registry **밖**이므로, 새 직접 메서드를

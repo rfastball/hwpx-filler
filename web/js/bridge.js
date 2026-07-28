@@ -47,12 +47,9 @@
       return window.pywebview.api.generate(screen, !!confirmOverwrite);
     },
 
-    /** 템플릿 관리 「가져오기…」 → 고른 HWPX·TXT 를 라이브러리 루트로 복사(#108 결정 4).
-        확장자가 매체 라우팅. 파일명·"ERROR:…"·null(취소). */
-    importLibraryTemplate() { return window.pywebview.api.import_library_template(); },
-
-    /** 템플릿 관리 '작업 만들기' → 그 템플릿을 에디터에 로드(크로스스크린). 파일명·"ERROR:…". */
-    loadTemplateIntoEditor(path) { return window.pywebview.api.load_template_into_editor(path); },
+    /* (importLibraryTemplate·loadTemplateIntoEditor 는 tpl 화면과 함께 사망(F8) — 가져오기는
+       importTemplateFile 하나로 통일(§10.17.2 판정 C), 라이브러리 선택은 편집기 dispatch
+       use_library_template 이 소유. 소비자 0 통로는 남기지 않는다.) */
 
     /** 에디터에 미저장 작업 세션이 있는가 — 크로스스크린 진입 전 폐기 확인 판단(#25). */
     editorHasUnsavedWork() { return window.pywebview.api.editor_has_unsaved_work(); },

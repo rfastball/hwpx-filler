@@ -342,20 +342,9 @@ class WebFrontend:
         """세션 패널(screen 파라미터) 동기 생성 — 게이트 판정·덮어쓰기 재진술·결과 요약 dict."""
         return self._controller(screen).generate(confirm_overwrite=bool(confirm_overwrite))
 
-    def import_library_template(self) -> "str | None":
-        """Win32 열기 다이얼로그(HWPX·TXT) → 템플릿 관리 라이브러리로 **복사**(#108 결정 4).
-
-        확장자로 매체 루트를 정해 복사한다(제자리 등록 아님 — 앱 소유 고정 루트). 사본은
-        「그룹 없음」에서 시작. 실패는 ``ERROR:`` 접두로 시끄럽게 반환. None = 취소.
-        (구 ``pick_library_folder`` 폐기: 고정 루트라 라이브러리 재지정 표면이 사라짐 —
-        결정 4 "습관 고정".)"""
-        path = open_file_dialog(_LIBRARY_IMPORT_FILTERS, owner_title=WINDOW_TITLE)
-        if not path:
-            return None
-        try:
-            return self._controller("tpl").import_into_library(path)
-        except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
-            return f"ERROR: {exc}"
+    # (import_library_template 브리지는 tpl 화면과 함께 사망(F8) — 소비자 0 인 통로는 남기지
+    #  않는다(F2 PR-B set_rail_collapsed 선례). 유일 가져오기 = import_template_file(통일,
+    #  §10.17.2 판정 C — 복사 권위는 여전히 TemplateController.import_into_library).)
 
     def editor_has_unsaved_work(self) -> bool:
         """에디터에 진행 중인(미저장) 작업 세션이 있는가 — 크로스스크린 진입 전 폐기 확인용(#25)."""
@@ -524,24 +513,9 @@ class WebFrontend:
             return f"ERROR: {exc}"
         return name
 
-    def load_template_into_editor(self, path: str) -> "str | None":
-        """템플릿 관리 '작업 만들기' → 그 템플릿을 에디터에 로드(크로스스크린). 파일명·``ERROR:``.
-
-        웹은 이 호출 후 편집 모드로 전환한다 — 링1 seam(editor.new_job_session)을 재사용해
-        VM 로직을 재구현하지 않는다. 새 템플릿 진입은 새 작업 세션이라 이전 세션을 원자
-        초기화한다(#25) — 미저장 확인은 웹이 has_unsaved_work 로 선판단한다.
-
-        웹 유래 경로는 라이브러리 소속 확인을 거친다(PR-4 리뷰 F4) — use_library_template
-        만 막고 이 seam 을 열어 두면 「가져오기=복사가 유일한 바깥 입구」(2부)가 문서만의
-        불변식이 된다. tpl 화면과 VM 을 공유하므로 정상 경로는 항상 통과한다.
-        """
-        try:
-            ctrl = self._controller("editor")
-            ctrl.assert_library_path(path)
-            ctrl.new_job_session(path)
-        except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
-            return f"ERROR: {exc}"
-        return Path(path).name
+    # (load_template_into_editor 브리지는 tpl 화면과 함께 사망(F8) — 크로스스크린 「이
+    #  서식으로 새 작업」의 발신 표면이 죽어 소비자 0. 편집기 안 선택은 dispatch
+    #  use_library_template(같은 new_job_session seam + assert_library_path)가 소유한다.)
 
 
 # 모달 접근성 동적 프로브(#27/#28) — 실 브라우저에서 Modal 헬퍼의 초기포커스·Escape·복귀를
@@ -2334,9 +2308,9 @@ _MILESTONE_H_WAVE1_PROBE_JS = r"""
   var enabledPrimary = style('#jobGenBtn');
   gen.disabled = wasDisabled;
 
-  // 카드 상태 계약 표본(F8 재겨눔) — .tplcard 는 tpl 화면과 함께 죽고, 같은 선택자 묶음
-  // (hover·aria-current)의 생존 소비자 .jcard(손상 작업 danger 카드가 계속 씀)로 잰다.
-  // 표본은 자급(self-seed — #137 교차오염 교훈): 스타일 계약 측정이 목적이라 직접 심는다.
+  // 카드 상태 계약 표본(F8 이주) — .tplcard 는 tpl 화면 전용이 아니게 되어(피커 소비)도
+  // 죽은 화면 문법 대신, 같은 선택자 묶음(hover·aria-current)의 생존 소비자 .jcard
+  // (손상 작업 danger 카드가 계속 씀)로 잰다. 표본은 자급(self-seed — #137 교차오염 교훈).
   var card = document.createElement('div');
   card.className = 'jcard';
   card.setAttribute('data-selftest-probe', 'card');

@@ -350,7 +350,8 @@ def test_discard_confirm_has_single_source():
     # 홈 ＋ 는 newDraft(내부가 confirmDiscard)로 한 층 더 수렴했다(PR-5 리뷰 F2).
     for rel, needle in (
         ("screens/library.js", "EditorEntry.newDraft"),
-        ("screens/template.js", "EditorEntry.confirmDiscard"),
+        # (template.js 는 화면과 함께 사망(F8) — 그 소비처였던 「이 서식으로 새 작업」의
+        #  폐기 확인은 편집기 안 use-library 의 confirmNewSessionIfUnsaved 가 잇는다.)
         ("screens/editor.js", "EditorEntry.confirmDiscard"),
     ):
         src = (REPO / "web" / "js" / rel).read_text(encoding="utf-8")

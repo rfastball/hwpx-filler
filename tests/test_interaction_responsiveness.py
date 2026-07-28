@@ -52,10 +52,11 @@ def test_group_collapse_uses_one_optimistic_helper_on_all_three_surfaces() -> No
     assert "function toggleGroup(button, persist, errorMessage)" in helper
     assert helper.index("setGroupExpanded(button, !wasExpanded)") < helper.index("request = persist()")
     assert "Promise.resolve(request).catch" in helper and "window.alert" in helper
-    # 소비 표면 — 「문서 만들기」 좌 목록이 죽고(F2 PR-B) 「문서 작업」 라이브러리가
-    # 그 자리를 승계했다. 「기안」 좌 목록도 화면과 함께 사망(F6 PR-B) — 기제는 여전히
-    # 한 벌(grouplist.js)이고 소비 표면은 둘이다.
-    for rel in ("js/screens/library.js", "js/screens/template.js"):
+    # 소비 표면 — 「문서 만들기」 좌 목록(F2 PR-B)·「기안」 좌 목록(F6 PR-B)·「템플릿
+    # 관리」(F8 §10.17)가 차례로 죽어 즉답 토글의 소비 표면은 라이브러리 하나다. 편집기
+    # 「템플릿」 탭의 접힘은 설계상 백엔드 왕복(toggle_library_group — 공유 그룹 모델
+    # 영속)이라 이 기제의 소비자가 아니다.
+    for rel in ("js/screens/library.js",):
         src = _read(rel)
         assert "GroupList.toggleGroup(" in src, f"{rel}이 공용 즉답 토글을 쓰지 않습니다."
         assert 'sec.collapsed ? " hidden" : ""' in src, (

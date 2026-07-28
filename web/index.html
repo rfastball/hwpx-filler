@@ -15,21 +15,21 @@
 <!-- 웹 프론트엔드 셸 — v6 계약의 최상위 구조는 `문서 만들기 | 문서 작업` 2탭이다(§19 서문:
      "새 home 화면은 만들지 않는다"). 상단 토바(64px 구조 치수 · §19.12) + 아래 스테이지이고,
      좌 레일 5화면 라우팅은 재작성 F2 PR-B 에서 사망했다(지도 §10.9 · 대조표 1행).
-     탭 뒤 구분선 오른쪽 1항목(템플릿 관리)은 **과도기 임시**다 — F8(편집기 템플릿 탭 +
-     템플릿 바꾸기)에서 죽는다. 아직 정상 동작하는 화면이라 상시 배너 대신 title 이 제거
-     예고를 진다(§10.9 판정 B). 화면: 문서 만들기(부팅 랜딩 · #90)·문서 작업(전역 라이브러리 ·
-     F2 PR-A)·템플릿 관리(#13). home 은 F2 PR-A, pool 은 F1, 「기안」은 F6 PR-B(승계처 =
-     편집기 TXT 밴드 + 검토·복사 작업대), 실행·작업 에디터 별도 화면은 그 이전 슬라이스에서 사망. -->
+     과도기 임시 탭 제도는 F8 에 은퇴했다(§10.17.2 판정 E) — 이것이 **최종 형상**이다.
+     화면: 문서 만들기(부팅 랜딩 · #90)·문서 작업(전역 라이브러리 · F2 PR-A). home 은
+     F2 PR-A, pool 은 F1, 「기안」은 F6 PR-B, scr-tpl 은 F8(승계처 = 편집기 「템플릿」 탭)
+     에서 사망, 실행·작업 에디터 별도 화면은 그 이전 슬라이스에서 사망. -->
 <div class="app">
   <header class="topbar">
     <!-- #258 제품명 문서나르미 — 쌓인 문서가 전달 화살표로 이어지는 심벌과 워드마크 락업. 심벌은 장식이라
          aria-hidden(접근 이름은 텍스트 워드마크가 담당). 원본 SVG=docs/branding/document-narmi-mark-final.svg. -->
     <div class="brand"><span class="brand-lockup"><svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><path class="brand-mark-layer" d="M9 7h31a5 5 0 0 1 5 5v8H9a5 5 0 0 1-5-5v-3a5 5 0 0 1 5-5Z"/><path class="brand-mark-layer" d="M16 23h31a5 5 0 0 1 5 5v8H16a5 5 0 0 1-5-5v-3a5 5 0 0 1 5-5Z"/><path class="brand-mark-arrow" d="M23 39h24v-6l13 12-13 12v-6H23a5 5 0 0 1-5-5v-2a5 5 0 0 1 5-5Z"/></svg><span class="brand-name">문서나르미</span></span></div>
 
-    <!-- 세그먼트 내비 — 활성 = 은은한 틴트 + 액센트 잉크. `data-scr` 는 **화면 키 그대로**
-         (job·library·tpl)이고 개명된 것은 사용자가 읽는 라벨뿐이다(§10.9 판정 A):
-         job 은 도메인 개체 이름이라 화면 이름이 바뀌어도 어휘가 갈리지 않는다. 아이콘 표지
-         .ni 는 레일에서 그대로 승계(#27) — 라벨과 공존이 스캔 보조. -->
+    <!-- 세그먼트 내비 — 계약 2탭 최종 형상(§10.9 판정 B → F8 완성): 과도기 임시 항목·구분선
+         제도 자체가 은퇴했다(「기안」 F6 PR-B → 「템플릿 관리」 F8, §10.17.2 판정 E). 활성 =
+         은은한 틴트 + 액센트 잉크. `data-scr` 는 **화면 키 그대로**(job·library)이고 개명된
+         것은 사용자가 읽는 라벨뿐이다(§10.9 판정 A): job 은 도메인 개체 이름이라 화면 이름이
+         바뀌어도 어휘가 갈리지 않는다. 아이콘 표지 .ni 는 레일에서 그대로 승계(#27). -->
     <nav class="nav" aria-label="화면 전환">
       <!-- 「문서 만들기」(구 「작업」 · R-flow #90) — 데이터를 채워 문서를 생성하는 유일 표면.
            R-info 1부 결정 1에 따라 부팅 랜딩이다(#239). -->
@@ -39,14 +39,6 @@
            저장된 작업을 찾는 자리가 여기 하나로 모였다(카드 나열 + group-by 렌즈였던 홈은 사망). -->
       <button class="navbtn" data-scr="library" aria-label="문서 작업" title="문서 작업: 저장된 문서 작업을 찾고 상태를 확인·정리">
         <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h4v12H4zM10 4h3v12h-3zM15 5l2 11"/></svg></span><span class="lbl"><span class="n">문서 작업</span></span></button>
-
-      <!-- 여기부터 과도기 임시 — 승계처가 서면 함께 죽는다(위 셸 주석). 「기안」은 F6 PR-B 로
-           죽었고(승계처 = 편집기 TXT 밴드 + 검토·복사 작업대) 「템플릿 관리」만 F8 을 기다린다. -->
-      <span class="nav-sep" aria-hidden="true"></span>
-      <!-- 「템플릿 관리」(#13·#108) — 승계처 = F8(편집기 「템플릿」 탭 + 「템플릿 바꾸기」 화면).
-           §10.4.1 흡수 이행표가 항목별 거처를 소유한다. -->
-      <button class="navbtn temp" data-scr="tpl" aria-label="템플릿 관리" title="템플릿 관리: HWPX·TXT 라이브러리 · 상태·변환·검토 — 곧 편집기·템플릿 바꾸기로 흡수되고 이 항목은 사라집니다">
-        <span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3l7 4-7 4-7-4zM3 11l7 4 7-4"/></svg></span><span class="lbl"><span class="n">템플릿 관리</span></span></button>
     </nav>
 
     <!-- 셸 전역 개인화 — navbtn 이 아니라 라우팅되지 않는다(라우터가 .navbtn 전부에
@@ -469,54 +461,9 @@
       </div>
     </section>
 
-    <!-- ============ 템플릿 관리 (HWPX·TXT 라이브러리, #13 → R-info 2부 #108) ============ -->
-    <!-- 매체(HWPX/TXT) 2구획 + 그 안 작업 목록과 같은 그룹+접힘. 안정 DOM(id) + template.js 가
-         window.__push('tpl', snapshot) 로 값만 채운다(판정은 Python). 그룹 헤더·행 ⋮·이동 다이얼로그·
-         ＋그룹지정 칩·가져오기는 job.js 기계 이식.
-         [B] 61C7ADF8: 불투명 배경 div 카드라 Qt 하이라이트 비침 렌더 버그 구성상 소멸.
-         결정: 미리보기 액션 미노출(10F2FF98-B)·드리프트 UI 미노출(10F2FF98-D). -->
-    <section class="scr" id="scr-tpl">
-      <header class="scr-head">
-        <div>
-          <h1>템플릿 관리</h1>
-          <p class="sub">문서를 만들 원본 서식을 형식(HWPX·TXT)과 그룹으로 나눠 관리합니다.</p>
-        </div>
-      </header>
-
-      <!-- 라이브러리 바 — 고정 루트(결정 4)라 폴더 재지정 없음. 가져오기=복사·새 TXT 저작.
-           새로고침(외부 FS 재스캔)도 같은 지역 행동 그룹으로 모은다(#179 P0 — 헤더에서 강등),
-           우측 스페이서로 유틸리티(재스캔)와 생성 행동을 시각 구분. -->
-      <div class="tpl-libbar">
-        <button class="btn sm" id="btnTplImport">가져오기…</button>
-        <button class="btn sm" id="btnTplNewTxt">새 TXT 템플릿…</button>
-        <span class="spacer"></span>
-        <button class="btn sm" id="tplRefresh">새로고침</button>
-      </div>
-
-      <!-- HWPX 매체 구획 — 소비 동사=새 작업. 열 틴트 파랑 승계. -->
-      <section class="tpl-medium" data-medium="hwpx">
-        <div class="tpl-band hwpx">
-          <span class="tb-k">HWPX</span><span class="tb-t">서식</span>
-          <span class="tb-sub">선택한 서식으로 새 작업을 시작합니다</span>
-          <span class="spacer"></span><span class="muted capnote" id="tplHwpxCount"></span>
-        </div>
-        <div class="tpl-banddir"><span class="muted mono" id="tplLibDir"></span></div>
-        <div class="tpl-groups" id="tplHwpxGroups"></div>
-      </section>
-
-      <!-- TXT 매체 구획 — 소비 동사=기안. 열 틴트 초록 승계. -->
-      <section class="tpl-medium" data-medium="txt">
-        <div class="tpl-band txt">
-          <span class="tb-k">TXT</span><span class="tb-t">서식</span>
-          <span class="tb-sub">선택한 서식으로 기안을 시작하고 클립보드에 복사합니다</span>
-          <span class="spacer"></span><span class="muted capnote" id="tplTxtCount"></span>
-        </div>
-        <div class="tpl-banddir"><span class="muted mono" id="tplTxtDir"></span></div>
-        <div class="tpl-groups" id="tplTxtGroups"></div>
-      </section>
-
-      <div id="tplResult" class="run-result"></div>
-    </section>
+    <!-- (「템플릿 관리」(scr-tpl)는 사망 — F8 §10.17: 목록·저작·변환·검토·그룹·삭제는 편집기
+         「템플릿」 탭이, 결과 재진술은 그 탭의 결과 줄이 승계. #tplRowMenu·#tplMoveModal·
+         #txtEditModal(아래)은 셸 레벨 공용으로 생존하고 소유 JS 만 editor.js 로 옮겼다.) -->
 
     <!-- ============ 데이터 관리 (등록 데이터 참조 · 수명, #26 #4) ============ -->
     <!-- 안정 DOM(id) + pool.js 가 window.__push('pool', snapshot) 로 값만 채운다(tpl 패턴).
@@ -759,7 +706,8 @@
     </div>
 
     <!-- 템플릿 그룹 이동 다이얼로그(#108, libraryMoveModal 동형·별도 요소) — 화면별 wiring 격리.
-         기존 그룹 + 새 그룹 입력 동거 + 해제. 목록은 template.js 가 스냅샷 그룹명으로 채운다. -->
+         기존 그룹 + 새 그룹 입력 동거 + 해제. 목록은 editor.js(F8 — tpl 화면 사망의 승계)가
+         스냅샷 그룹명으로 채운다. -->
     <div id="tplMoveModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="tplMoveTitle">
       <div class="modal-card">
         <h3 id="tplMoveTitle">그룹으로 이동</h3>
@@ -840,7 +788,6 @@
 <script src="js/screens/editor.js"></script>
 <script src="js/screens/job.js"></script>
 <script src="js/screens/workbench.js"></script>
-<script src="js/screens/template.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

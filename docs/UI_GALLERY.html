@@ -61,15 +61,11 @@ body{padding:0}
     <div class="app galapp">
       <header class="topbar">
         <div class="brand"><span class="brand-lockup"><svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false"><path class="brand-mark-layer" d="M9 7h31a5 5 0 0 1 5 5v8H9a5 5 0 0 1-5-5v-3a5 5 0 0 1 5-5Z"/><path class="brand-mark-layer" d="M16 23h31a5 5 0 0 1 5 5v8H16a5 5 0 0 1-5-5v-3a5 5 0 0 1 5-5Z"/><path class="brand-mark-arrow" d="M23 39h24v-6l13 12-13 12v-6H23a5 5 0 0 1-5-5v-2a5 5 0 0 1 5-5Z"/></svg><span class="brand-name">문서나르미</span></span></div>
-        <!-- 실 상단 2탭 + 과도기 임시 2항목 미러(F2 PR-B) — 좌 레일 5화면 라우팅은 사망했다.
-             구분선 오른쪽(.temp)은 승계처가 서면(F6·F8) 죽는다. 손짠 표본이라 실앱과 자동
-             동기되지 않는다(항목이 바뀌면 수동 반영). -->
+        <!-- 실 상단 계약 2탭 미러 — 최종 형상(F8 §10.17.2 판정 E: 과도기 임시 탭·구분선
+             기제 은퇴). 손짠 표본이라 실앱과 자동 동기되지 않는다(항목이 바뀌면 수동 반영). -->
         <nav class="nav">
           <button class="navbtn" aria-current="true"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h5v12H4zM11 4h5v7h-5z"/></svg></span><span class="lbl"><span class="n">문서 만들기</span></span></button>
           <button class="navbtn"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h4v12H4zM10 4h3v12h-3zM15 5l2 11"/></svg></span><span class="lbl"><span class="n">문서 작업</span></span></button>
-          <span class="nav-sep" aria-hidden="true"></span>
-          <button class="navbtn temp"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h8l4 4v8H4zM12 4v4h4M7 11h6M7 14h6"/></svg></span><span class="lbl"><span class="n">기안</span></span></button>
-          <button class="navbtn temp"><span class="ni"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3l7 4-7 4-7-4zM3 11l7 4 7-4"/></svg></span><span class="lbl"><span class="n">템플릿 관리</span></span></button>
         </nav>
         <div class="topbar-tools">
           <button class="shell-tool"><span class="ti" aria-hidden="true">◐</span><span class="d">시스템</span></button>
@@ -142,17 +138,8 @@ body{padding:0}
     </div>
   </div>
 
-  <div class="spec">
-    <div class="spec-h">.tpl-medium — 매체 sunken 구획 / 카드 층</div>
-    <section class="tpl-medium" data-medium="hwpx" style="margin:0">
-      <div class="tpl-band hwpx"><span class="tb-k">HWPX</span><span class="tb-t">서식</span>
-        <span class="tb-sub">작업 에디터로 문서를 만듭니다</span></div>
-      <div class="tpl-groups"><div class="tpl-grp-rows flat">
-        <div class="tplcard"><div class="tplcard-top"><span class="tplcard-name">구매 계약서.hwpx</span></div>
-          <div class="tplcard-meta muted">8 필드</div></div>
-      </div></div>
-    </section>
-  </div>
+  <!-- (.tpl-medium 매체 sunken 표본은 tpl 화면 사망(F8 §10.17)과 함께 은퇴 — 살아있는
+       갤러리는 죽은 컴포넌트를 전시하지 않는다. .tplcard 계열은 데이터 피커가 계속 쓴다.) -->
 
   <div class="grid2">
     <div class="spec"><div class="spec-h">.tok — 토큰 상태 칩 (txt)</div>

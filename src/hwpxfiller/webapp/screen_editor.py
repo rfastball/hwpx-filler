@@ -274,7 +274,7 @@ class EditorController:
     def assert_library_path(self, path: str) -> None:
         """웹 유래 템플릿 경로의 라이브러리 소속 확인 — 바깥 입구 봉쇄의 공용 seam(리뷰 F4).
 
-        use_library_template 와 크로스스크린 load_template_into_editor 가 함께 쓴다 —
+        use_library_template 가 쓴다(구 크로스스크린 load_template_into_editor 는 F8 사망) —
         한 입구만 막으면 「가져오기=복사가 유일한 바깥 입구」(2부)가 문서만의 불변식이 된다.
         불일치면 **새 스캔 결과를 먼저 push** 하고 거절한다(리뷰 F7: 방금 삭제된 파일의
         stale 행이 남아 같은 클릭을 반복하게 만드는 무행동 안내 금지 — 목록이 스스로 걷힌다).

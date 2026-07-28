@@ -1,10 +1,15 @@
-"""템플릿 관리(tpl) 화면 컨트롤러 — HWPX·TXT 라이브러리 관리(webview 비의존).
+"""템플릿 라이브러리(tpl) 채널 컨트롤러 — HWPX·TXT 라이브러리 관리(webview 비의존).
 
-목업 scr-tpl 의 웹 이관(에픽 #20, 화면 #13) → **R-info 2부 개편(#108)**. 링1 VM 을 **그대로
-임포트**해 구동한다: HWPX 라이브러리 상태·상태별 게이트 액션·2단계 fieldize(스캔→적용)·lint 는
+**화면은 죽고 채널은 산다(F8 §10.17.2 판정 B — F1 pool 선례)**: 「템플릿 관리」 화면
+(scr-tpl·template.js)은 사망했고, 이 컨트롤러의 12액션·잠금 규율·경로 검증·휴지통은
+편집기 「템플릿」 탭(editor.js)이 리터럴 `Bridge.call("tpl", …)` 로 그대로 소비한다.
+push 스냅샷의 생존 소비자 = 편집기 결과 줄(result) + 재당김 신호.
+
+링1 VM 을 **그대로 임포트**해 구동한다: HWPX 라이브러리 상태·상태별 게이트 액션·2단계
+fieldize(스캔→적용)·lint 는
 :class:`~hwpxfiller.gui.template_manager_state.TemplateManagerViewModel`(Qt-free)가 소유한다.
 TXT 관리는 코어 :class:`~hwpxfiller.core.text_registry.TextTemplateRegistry`(Qt-free)를 그대로
-쓴다. 표현 계층(카드 렌더·확인 라운드트립)만 웹(js/screens/template.js)으로 이식한다.
+쓴다. 표현 계층(행 렌더·확인 라운드트립)은 편집기 「템플릿」 탭(editor.js)이 소유한다.
 
 **R-info 2부 개편(정본 `docs/R_INFO_JOB_HOME.md` 2부)**:
 - **매체 = 구조, 그룹 = 그 안**(결정 3): HWPX/TXT 는 소비 동사를 가르는 경성 축이라 구획으로,
@@ -42,7 +47,7 @@ _HIDDEN_ACTIONS = frozenset({"preview"})
 
 
 class TemplateController:
-    """템플릿 관리 화면 — HWPX 라이브러리 VM + TXT 레지스트리 + 매체별 그룹 모델(webview 비의존)."""
+    """템플릿 라이브러리 채널 — HWPX 라이브러리 VM + TXT 레지스트리 + 매체별 그룹 모델(webview 비의존)."""
 
     name = "tpl"
 
@@ -158,31 +163,15 @@ class TemplateController:
         hwpx = self._media_snapshot("hwpx", hwpx_rows, self.hwpx_groups)
         txt = self._media_snapshot("txt", txt_rows, self.txt_groups)
         hwpx["dir"] = str(self.vm.library_dir) if self.vm.library_dir is not None else ""
-        hwpx["empty_hint"] = self._hwpx_empty_hint()
         txt["dir"] = str(self.text_registry.directory)
-        # 휘발 「기안」 폐지 고지 ②(F6 PR-B — §10.15.15 점검표 6행): 대체 경로(저장 TXT
-        # 작업 경유)를 템플릿의 거처에서 재진술한다. tpl 화면은 F8 에 죽으므로 한시 문안.
-        # 템플릿이 있을 때만 발화한다 — 빈 밴드는 빈 상태 CTA 가 이미 경로를 말한다.
-        txt["notice"] = (
-            "TXT 템플릿은 '문서 작업'의 [＋ 새 작업]에서 저장 TXT 작업으로 만들어 채워 복사합니다."
-            if txt["count"] else ""
-        )
+        # (고지②(휘발 「기안」 폐지 재진술)와 empty_hint 는 tpl 화면과 함께 사망(F8 §10.17) —
+        # 빈 밴드 안내는 편집기 「템플릿」 탭이 자기 문안으로 소유한다. 고지①(job txt_note)은
+        # 존치. 이 스냅샷의 생존 소비자 = 편집기 결과 줄(result)·재당김 신호.)
         return {
             "hwpx": hwpx,
             "txt": txt,
             "result": {"text": self.result_text, "level": self.result_level},
         }
-
-    def _hwpx_empty_hint(self) -> str:
-        """빈 HWPX 구획 안내 — **고정 루트**라 폴더 재지정이 없다(#137 리뷰 F7). VM 의
-        empty_hint 는 폐기된 「폴더 선택」을 누르라 안내해 복구 불가 문구가 되므로, 여기서
-        「가져오기…」 로 복구를 겨눈다. 폴더 없음(첫 실행)과 빈 폴더를 구분해 재진술한다."""
-        d = self.vm.library_dir
-        if d is None:
-            return "표시할 템플릿이 없습니다."
-        if not d.is_dir():
-            return f"아직 HWPX 서식이 없습니다. '가져오기…'로 .hwpx 서식을 넣으세요.\n{d}"
-        return f"이 폴더에 .hwpx 서식이 없습니다. '가져오기…'로 추가하세요.\n{d}"
 
     def initial(self) -> dict:
         return self.snapshot()

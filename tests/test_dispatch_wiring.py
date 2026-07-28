@@ -36,7 +36,9 @@ SCREEN_JS = {
     # `pool` 화면은 사망(재작성 F1) — 그 액션의 프런트 소비자는 데이터 선택 다이얼로그다.
     # 여기 호출은 전부 명시 리터럴("pool")이고 마운트 호출만 호스트 화면 변수(session.screen).
     "pool": "web/js/data_picker.js",
-    "tpl": "web/js/screens/template.js",
+    # `tpl` 화면도 사망(F8 §10.17) — 12액션의 프런트 소비자는 편집기 「템플릿」 탭이고 호출은
+    # 전부 명시 리터럴("tpl")이라 editor.js 스캔(owner="editor")에서 그대로 검증된다.
+    # 별도 행을 두면 editor.js 의 SCREEN 상수 호출이 tpl 로 오해석돼 거짓 실패가 난다.
     "workbench": "web/js/screens/workbench.js",
 }
 

@@ -231,7 +231,7 @@
     const chip = t.group ? "" :
       `<button class="tpl-assign" data-act="lib-assign" data-media="${media}" data-key="${esc(t.key)}">＋ 그룹 지정</button>`;
     return `${chip}<button class="job-more" data-act="lib-more" data-media="${media}"` +
-      ` data-key="${esc(t.key)}" aria-haspopup="true" aria-label="템플릿 관리">⋮</button>`;
+      ` data-key="${esc(t.key)}" aria-haspopup="true" aria-label="항목 관리">⋮</button>`;
   }
 
   function libRow(t) {
