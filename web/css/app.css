@@ -817,7 +817,10 @@ body.resizing-master{cursor:col-resize;user-select:none}
 .job-more{flex:none;border:0;background:none;font:inherit;font-size:var(--fs-body);cursor:pointer;
   color:var(--a-muted);padding:var(--sp-2) var(--sp-6);border-radius:var(--rad-control);visibility:hidden}
 .job-row:hover .job-more,.job-row:focus-within .job-more,
-.job-grp:hover .grp-more,.job-grp:focus-within .grp-more{visibility:visible}
+.job-grp:hover .grp-more,.job-grp:focus-within .grp-more,
+/* 편집기 「템플릿」 탭 행 ⋮(F8 승계) — 노출 규칙이 없으면 기본 hidden 이라 영영 안 보인다
+   (101 컷 눈검증이 잡음: 프로브의 프로그램적 click 은 hidden 을 통과한다). */
+.libselrow:hover .job-more,.libselrow:focus-within .job-more{visibility:visible}
 .job-more:hover{background:var(--n-hover);color:var(--a-ink)}
 .job-grp{display:flex;align-items:center;min-width:0;margin-top:var(--sp-6)}
 .job-grp-head{flex:1;min-width:0;display:flex;align-items:center;gap:var(--sp-6);border:0;background:none;

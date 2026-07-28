@@ -1169,6 +1169,12 @@ def test_template_media_sunken_surface_is_retired_with_the_screen():
         assert dead not in html, f"죽은 tpl 표면 DOM 이 되살아났습니다: {dead}"
     for dead in (".tpl-medium{", ".tpl-band{", ".tpl-libbar{", ".tpl-catalogs{"):
         assert dead not in css, f"죽은 tpl 표면 CSS 가 되살아났습니다: {dead}"
+    # 승계 표면의 ⋮ 노출 배선 — .job-more 는 기본 hidden 이라 행 계열마다 호버·포커스 노출
+    # 규칙이 있어야 실물이 보인다(101 눈검증 회수분: 프로브의 프로그램적 click 은 hidden 을
+    # 통과해 은닉을 못 잡는다 — F2 PR-B 1R 「실물이 없던 자리」와 같은 부류).
+    assert ".libselrow:hover.job-more,.libselrow:focus-within.job-more{visibility:visible}" in css, (
+        "편집기 「템플릿」 탭 행 ⋮ 의 호버 노출 규칙이 없습니다 — 관리 동사가 영영 은닉됩니다."
+    )
 
 
 def test_card_families_share_hover_and_keep_persistent_state_separate():
