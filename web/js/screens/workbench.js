@@ -58,7 +58,11 @@
       `<input class="ck mapck" type="checkbox" id="wbMap-ck-${encodeURIComponent(t.name)}" data-name="${esc(t.name)}"` +
       `${t.confirmed ? " checked" : ""}` +
       ` aria-label="${esc(t.name)} 확정">`;
-    return `<tr data-name="${esc(t.name)}"${declared ? ' class="row-blank-declared"' : ""}>` +
+    // 행은 **겨눔의 착지점**이다(계약 §11) — 카드 조각을 누르면 여기로 온다. 그래서 안정 id 와
+    // `tabindex="-1"`(프로그램 포커스만; 탭 순서는 안 늘린다)를 진다. 강조는 별도 상태가 아니라
+    // **포커스 그 자체**이므로 표면이 들고 다니는 변수가 없다 — 아래 aimAt 주석 참조.
+    return `<tr data-name="${esc(t.name)}" id="wbMap-row-${encodeURIComponent(t.name)}" tabindex="-1"` +
+      `${declared ? ' class="row-blank-declared"' : ""}>` +
       `<td class="maptok" title="{{${esc(t.name)}}}">${esc(t.name)}</td>` +
       `<td>${src}</td><td class="maptype-cell">${typeCell}</td>` +
       `<td class="mapfmt-cell">${fmtCell}</td><td class="mapval-cell">${valCell}</td>` +
@@ -67,8 +71,11 @@
 
   function renderMap(s) {
     const rows = (s.rows || []).map((t, i) => mapRowHtml(s, t, i)).join("");
+    // 표 클래스도 「기안」과 **같은 것**이다(`dmap`). 같은 열·같은 동사·같은 행 마크업을 쓰면서
+    // 클래스 이름만 갈라 두면 스타일시트가 이 표를 못 알아본다 — 선언은 어휘 통일인데 실물은
+    // 테두리도 확정-비움 표지도 못 받는, 이 파일 첫 주석이 경고한 그 드리프트의 실물이었다.
     $("wbMapPanel").innerHTML =
-      `<table class="maptable"><thead><tr>` +
+      `<table class="dmap"><thead><tr>` +
       `<th>항목</th><th>데이터 열</th><th>유형</th><th>표시형</th><th>값</th><th>확정</th>` +
       `</tr></thead><tbody>${rows}</tbody></table>`;
   }
@@ -257,6 +264,28 @@
     if (r && r.ok === false && r.error) window.alert(r.error);  // 게이트 실패는 시끄럽게
   }
 
+  /* ---- 결과 → 규칙 겨눔(계약 §11 · 지도 §10.15.2 E). 오른쪽 결과 조각을 누르면 그 값을
+     만든 왼쪽 규칙 행이 선다 — 작업대는 편집기로 나가는 deep-link 를 갖지 않고 화면 안에서
+     겨눈다는 판정의 이행이다.
+
+     **겨눔은 포커스 그 자체다** — 표면이 「지금 겨눈 토큰」을 변수로 들지 않는다. 그러면
+     ①모듈 가변 상태가 늘고(렌더 층 예산) ②그 변수와 실제 포커스가 어긋날 수 있고 ③포커스가
+     행을 떠나도 강조만 남는다. 대신 행을 포커스하고 강조는 CSS `:focus` 가 낸다: 스냅샷
+     푸시가 표를 다시 그려도 Preserve 가 **같은 id 로** 포커스를 되찾아 겨눔이 그대로 살고,
+     사용자가 다른 곳으로 가면 강조도 같이 사라진다(늘 참인 파생이라 무효화할 것이 없다).
+
+     여기엔 발신이 없다 — 어느 조각이 어느 행 소유인지는 세그먼트가 이미 싣고 온
+     `data-token` 이 말한다. Python 에 물을 것도, 세션에 남길 것도 없는 순수 항행이다.
+     키보드 경로는 표 자체가 온전히 가진다(행·컨트롤이 모두 탭 순서 안) — 이 길은 그 위의
+     포인터 가속기라, 레코드 하나에 토큰이 수십일 때 검토→복사 본 줄기를 정거장으로 덮지
+     않도록 카드 조각을 탭 순서에 넣지 않는다. */
+  function aimAt(name) {
+    const row = name ? $("wbMap-row-" + encodeURIComponent(name)) : null;
+    if (!row) return;                       // 원문 여백·소유 행 없는 토큰 — 겨눌 곳이 없다
+    try { row.focus({ preventScroll: true }); } catch (e) { row.focus(); }
+    row.scrollIntoView({ block: "nearest" });   // 표는 스크롤 상자다 — 선 행이 화면 밖일 수 있다
+  }
+
   /* ---- 이탈: 단일 관문. 나가는 모든 이동이 여기를 지난다(가드 완전성이 표면 수에
      비례하지 않게 — F7 편집기와 같은 규율). Nav.go 가 위임한다. */
   async function leaveTo(target) {
@@ -317,6 +346,12 @@
     document.querySelectorAll("[data-wb-view]").forEach((b) => {
       b.addEventListener("click", () =>
         sendWb(() => window.Bridge.call(SCREEN, "set_view", { view: b.dataset.wbView })));
+    });
+    // 결과 → 규칙: 카드도 매 렌더마다 다시 그려지므로 위임으로 받는다(조각엔 id 가 없다 —
+    // 같은 토큰이 여러 번 나올 수 있어 신원은 id 가 아니라 `data-token` 이다).
+    $("wbCard").addEventListener("click", (e) => {
+      const seg = e.target.closest("[data-token]");
+      if (seg) aimAt(seg.dataset.token);
     });
     // 린트 행동은 매 렌더마다 다시 그려지므로 위임으로 받는다(안정 id 는 포커스 보존용).
     $("wbLint").addEventListener("click", (e) => {

@@ -1257,6 +1257,9 @@ body.resizing-master{cursor:col-resize;user-select:none}
   .wc-render .seg-fill.own-man{box-shadow:inset 0 -3px 0 LinkText}
   .own{border:1px solid CanvasText;background:CanvasText}
   .own.auto{background:Highlight}.own.man{background:LinkText}
+
+  /* 겨눈 규칙 행 — 강제 색 모드에선 배경이 시스템 소유라 시스템색 표지로 갈음한다. */
+  #wbMapPanel tbody tr:focus>td:first-child{box-shadow:inset 3px 0 0 Highlight}
 }
 
 /* ---- 작업 데이터 존 필터 표면(R-flow 블록 4, 슬라이스 4 PR-2b) ----
@@ -1435,6 +1438,11 @@ body.resizing-master{cursor:col-resize;user-select:none}
 .wb-left,.wb-right{min-width:0;display:flex;flex-direction:column;gap:var(--sp-6)}
 .wb-left .zone-head{display:flex;justify-content:space-between;align-items:flex-start;gap:var(--sp-4)}
 #wbMapPanel{max-height:360px;overflow:auto}
+/* 결과 → 규칙 겨눔(계약 §11) — 카드 조각을 누르면 소유 행이 선다. 강조는 **포커스 파생**이라
+   JS 가 드는 상태가 없다: 포커스가 행에 있으면 서고 떠나면 사라진다(무효화할 것이 없다).
+   프로그램 포커스(tabindex=-1)는 :focus-visible 을 켜지 않으므로 표지는 여기서 낸다. */
+#wbMapPanel tbody tr:focus{outline:none;background:var(--fb-fill-bg)}
+#wbMapPanel tbody tr:focus>td:first-child{box-shadow:inset 3px 0 0 var(--a-primary)}
 .wb-toolbar{display:flex;gap:var(--sp-6);align-items:center;flex-wrap:wrap}
 /* 큐 색인은 「기안」 점 표시와 같은 판을 쓴다(.wc-dots/.wc-dot 재사용). */
 .wb-dots{display:flex;flex-wrap:wrap;gap:var(--sp-2)}
@@ -1444,6 +1452,9 @@ body.resizing-master{cursor:col-resize;user-select:none}
 .wb-preview{white-space:pre-wrap;word-break:break-word;background:var(--a-surface);
   border:1px solid var(--a-border);border-radius:var(--radius-2);padding:var(--sp-4);
   min-height:180px;max-height:420px;overflow:auto}
+/* 토큰 조각은 소유 규칙 행으로 가는 손잡이다 — 손가락 표지는 그 행동이 **있는 곳에만** 둔다
+   (같은 페인터를 쓰는 「기안」 카드에서는 눌러도 갈 곳이 없어 표지가 거짓말이 된다). */
+.wb-preview [data-token]{cursor:pointer}
 .wb-foot{display:flex;gap:var(--sp-6);align-items:center;flex-wrap:wrap;
   border-top:1px solid var(--a-border);padding-top:var(--sp-6)}
 .wb-foot .btn.primary{margin-left:auto}

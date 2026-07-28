@@ -3142,6 +3142,24 @@ _WORKBENCH_PROBE_SETUP_JS = r"""
       out.prev_disabled = document.getElementById('wbPrev').disabled;
       out.next_disabled = document.getElementById('wbNext').disabled;
       out.save_enabled = !document.getElementById('wbSaveRules').disabled;
+      // 결과 → 규칙(계약 §11) — 조각이 토큰 신원을 지고 나가고, 누르면 소유 행이 선다.
+      // 정적으로는 조각도 표도 다 있어 통과한다: 둘을 잇는 길만 없는 상태가 여기서만 잡힌다.
+      out.card_tokens = document.querySelectorAll('#wbCard [data-token]').length;
+      (function () {
+        var s = document.querySelector('#wbCard [data-token="수신"]');
+        if (s) s.click();
+      })();
+      out.aim_row = (function () {
+        var a = document.activeElement;
+        return a && a.tagName === 'TR' ? (a.getAttribute('data-name') || '') : '';
+      })();
+      // 강조는 CSS 파생이라 **실 스타일 계산**까지 봐야 참이다 — 표 클래스가 스타일시트와
+      // 어긋나 있으면(구 `maptable`) 배선은 멀쩡한데 선 행이 아무 표지도 못 받는다.
+      out.aim_marked = (function () {
+        var a = document.activeElement;
+        if (!a || a.tagName !== 'TR' || !a.cells.length) return '';
+        return getComputedStyle(a.cells[0]).boxShadow;
+      })();
       // 큐 퇴화 — 1건이면 순회 장치가 숨는다(정보가 없어서지 장식이라서가 아니다).
       window.__push('workbench', Object.assign({}, snap, {
         total: 1, copied_count: 0,
