@@ -102,3 +102,74 @@ def test_favicon_asset_bundled() -> None:
     assert 'fill="#2874A6"' in svg
     assert svg.count("<path ") == 3
     assert "<rect " not in svg
+
+
+def _generator_geometry() -> dict[str, object]:
+    """render_document_narmi_branding.py 의 기하 상수 — ast 로 읽는다.
+
+    import 하지 않는 이유: 그 스크립트는 Pillow(프로젝트 의존성 아님)를 최상단에서
+    쓰는 dev 전용 생성기다. 숫자만 필요하므로 실행하지 않는다.
+    """
+    import ast
+
+    src = _read("scripts", "render_document_narmi_branding.py")
+    wanted = {"LAYERS", "ARROW_BAR", "ARROW_HEAD", "MARK_RADIUS", "MARK_BBOX"}
+    found: dict[str, object] = {}
+    for node in ast.parse(src).body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target = node.targets[0]
+            if isinstance(target, ast.Name) and target.id in wanted:
+                found[target.id] = ast.literal_eval(node.value)
+    assert wanted <= set(found), f"생성기 기하 상수 누락: {sorted(wanted - set(found))}"
+    return found
+
+
+def _layer_path(box, radius: int) -> str:
+    """문서 겹 — 오른쪽 아래만 각진 둥근 사각형의 SVG d 값."""
+    (x0, y0), (x1, y1) = box
+    r = radius
+    return (
+        f"M{x0 + r} {y0}h{x1 - x0 - 2 * r}a{r} {r} 0 0 1 {r} {r}v{y1 - y0 - r}"
+        f"H{x0 + r}a{r} {r} 0 0 1-{r}-{r}v-{y1 - y0 - 2 * r}a{r} {r} 0 0 1 {r}-{r}Z"
+    )
+
+
+def _arrow_path(bar, head, radius: int) -> str:
+    """전달 화살표 — 왼쪽만 둥근 몸통 + 삼각 머리."""
+    (x0, y0), (x1, y1) = bar
+    (hx0, hy0), (hx1, hy1), (_, hy2) = head
+    r = radius
+    return (
+        f"M{x0 + r} {y0}h{x1 - x0 - r}v-{y0 - hy0}l{hx1 - hx0} {hy1 - hy0}"
+        f"-{hx1 - hx0} {hy2 - hy1}v-{hy2 - y1}H{x0 + r}a{r} {r} 0 0 1-{r}-{r}"
+        f"v-{y1 - y0 - 2 * r}a{r} {r} 0 0 1 {r}-{r}Z"
+    )
+
+
+def test_branding_generator_geometry_matches_shipped_symbol() -> None:
+    """생성기 좌표 == SVG 정본 == 셸 마크업(#258).
+
+    .png/.ico 는 커밋된 정적 자산이라 생성기가 옛 형상을 그대로 그려도 아무도 울지
+    않는다 — 심벌 v2 때 실제로 갈렸다(스크립트는 두 평면, 자산·화면은 문서 3겹).
+    세 자리의 같은 숫자를 여기서 묶는다: 생성기 상수에서 d 값을 다시 지어 대조한다.
+    """
+    geometry = _generator_geometry()
+    radius = geometry["MARK_RADIUS"]
+    paths = [_layer_path(box, radius) for box in geometry["LAYERS"]]
+    paths.append(_arrow_path(geometry["ARROW_BAR"], geometry["ARROW_HEAD"], radius))
+
+    for parts in (("docs", "branding", "document-narmi-mark-final.svg"),
+                  ("docs", "branding", "document-narmi-lockup-final.svg"),
+                  ("web", "img", "narmi-mark.svg"),
+                  ("web", "index.html"),
+                  ("docs", "UI_GALLERY.html")):
+        text = _read(*parts)
+        for path in paths:
+            assert path in text, f"{'/'.join(parts)} 가 생성기와 다른 심벌을 쓴다: {path}"
+
+    x0, y0, x1, y1 = geometry["MARK_BBOX"]
+    corners = [c for box in geometry["LAYERS"] for c in box]
+    corners += [geometry["ARROW_BAR"][0], geometry["ARROW_BAR"][1]]
+    corners += list(geometry["ARROW_HEAD"])
+    assert x0 == min(c[0] for c in corners) and x1 == max(c[0] for c in corners)
+    assert y0 == min(c[1] for c in corners) and y1 == max(c[1] for c in corners)
