@@ -1339,7 +1339,9 @@ def test_relink_unknown_media_is_rejected_but_recovers_broken_jobs(tmp_path):
     """새 매체 미상(.docx)은 fail-closed 거절, 미상 **구작업**의 연결은 복구로 통과(§10.16).
 
     거절이 없으면 relink 가 unsupported 작업을 제조하고, 통과가 없으면 손상 작업은 영구
-    복구 불능이 된다 — 방향에 따라 답이 다른 이유를 게이트 3분기가 담는다.
+    복구 불능이 된다 — 방향에 따라 답이 다른 이유를 게이트 3분기가 담는다. 복구는 **사용
+    이력을 승계하지 않는다**(리뷰 5R P2): 미상 스탬프는 어느 매체의 술어로도 읽을 수 없어
+    새 매체의 사건으로 재해석되면 위조다 — 고지 후 지우고, 즐겨찾기(방식 무관)는 남긴다.
     """
     ctrl, _ = _controller(tmp_path)
     docx = tmp_path / "낯선형식.docx"
@@ -1350,10 +1352,57 @@ def test_relink_unknown_media_is_rejected_but_recovers_broken_jobs(tmp_path):
     assert ctrl.registry.load("공고서").template_path.endswith("t.hwpx")
     ctrl.registry.save(Job(name="깨진작업", template_path=str(docx),
                            mapping=MappingProfile(mappings=[])))
+    ctrl.registry.stamp_last_run("깨진작업", "2026-07-02T09:00:00")
+    ctrl.registry.set_favorite("깨진작업", True, "2026-07-01T09:00:00")
     new_tpl = tmp_path / "복구.hwpx"
     _write_template(new_tpl, ["공고명"])
     res = ctrl.dispatch("relink_template", {"name": "깨진작업", "path": str(new_tpl)})
     assert res["ok"] is True and res["needs_confirm"] is True
+    assert "최근 사용 기록은 함께 지워집니다" in res["confirm_text"]  # 조용한 삭제 금지
+    res = ctrl.dispatch(
+        "relink_template", {"name": "깨진작업", "path": str(new_tpl), "confirm": True})
+    assert res["relinked"] is True
+    saved = ctrl.registry.load("깨진작업")
+    assert saved.last_run_at == ""                            # 미상 이력 미승계
+    assert saved.favorited_at == "2026-07-01T09:00:00"        # 방식 무관 선호는 보존
+
+
+def test_relink_media_gate_rechecks_inside_the_lock(tmp_path):
+    """확인 왕복 사이에 매체가 정해졌으면 잠긴 커밋이 교차를 거절한다(리뷰 5R P2).
+
+    게이트는 잠금 밖 사본을 보고, 확인 왕복은 사람 시간이다 — 미연결 작업에 HWPX·TXT 첫
+    연결이 동시에 확인되면 둘 다 게이트를 지나고 두 번째 커밋이 교차 금지를 우회한다.
+    stale 사본을 돌려주는 load 로 그 창을 재현해, 커밋 콜백의 재판정이 같은 문안으로
+    거절하고 durable 이 불변임을 가드한다.
+    """
+    from hwpxfiller.webapp.screens import relink_job_template
+
+    ctrl, _ = _controller(tmp_path)
+    ctrl.registry.save(Job(name="경합작업", template_path="",
+                           mapping=MappingProfile(mappings=[])))
+    stale = ctrl.registry.load("경합작업")                     # 빈 경로 시점의 사본
+    hwpx = tmp_path / "t.hwpx"
+    ctrl.registry.mutate(                                      # 경쟁 relink 가 먼저 커밋
+        "경합작업", lambda j: setattr(j, "template_path", str(hwpx)))
+
+    class _StaleLoad:
+        """게이트가 본 사본이 낡은 상황의 최소 재현 — load 만 stale, 커밋은 실물."""
+
+        def __init__(self, real, stale_job):
+            self._real, self._stale = real, stale_job
+
+        def load(self, name):
+            return self._stale
+
+        def mutate(self, name, fn):
+            return self._real.mutate(name, fn)
+
+    txt = tmp_path / "경합.txt"
+    txt.write_text("공고: {{공고명}}", encoding="utf-8")
+    res = relink_job_template(
+        _StaleLoad(ctrl.registry, stale), "경합작업", str(txt), confirm=True)
+    assert res["ok"] is False and "삭제하고 새로 만드세요" in res["error"]
+    assert ctrl.registry.load("경합작업").template_path == str(hwpx)  # durable 불변
 
 
 # ------------------------------------------------ confirm-or-alarm 생성 계약
