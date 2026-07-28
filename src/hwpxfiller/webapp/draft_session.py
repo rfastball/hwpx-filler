@@ -36,6 +36,7 @@ from ..gui.txt_card import card_text, gate_empty_fields, render_card
 from ..gui.txt_queue import TxtQueueModel
 from ..gui.txt_state import TxtDraftViewModel
 from .data_zone import DataZoneMixin
+from .mapping_verbs import MappingVerbsMixin
 from .screens import (
     NO_ROWS_TEXT,
     DatasetPoolRegistry,
@@ -100,7 +101,7 @@ class TargetFontSetting:
         self._value = font
 
 
-class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
+class DraftSessionMixin(MappingVerbsMixin, DataZoneMixin, PoolTargetingMixin):
     """기안(txt) 휘발 세션 — :class:`TxtDraftViewModel` 소유·위임.
 
     스파이크가 끝까지 검증한 첫 실화면(SPIKE_FINDINGS.md). 표현 재진술(빨강 미입력
@@ -895,78 +896,12 @@ class DraftSessionMixin(DataZoneMixin, PoolTargetingMixin):
     _do_edit_source.is_no_push = True  # 포커스 원문 입력 보호 — 반환 스냅샷 겨냥 패치
 
     # ---------------------------------------------------- 맞추기 결속·표시형(#148 슬라이스 3b)
-    def _do_set_source(self, p: dict) -> "dict | None":
-        """토큰 결속·해제(드롭다운·제안 원클릭 공유) — 결정 5·30.
-
-        ``col`` = 데이터 열이면 자동 결속(auto, 유형은 값 스니핑), 빈 값이면 해제(무결속 →
-        근사 제안·재결속 대기). **수기 값 덮어쓰기 확인**: 직접 입력한 값이 있는 자리에 열을
-        붙이면 그 값은 되돌릴 수 없이 사라지므로 첫 호출은 확인 요구(``{"confirm": 문안}``)를
-        돌려주고, 웹이 확인받아 ``confirm=True`` 로 다시 부른다(빠른 기안·relink 게이트 문법)."""
-        name, col = p["name"], (p.get("col") or "")
-        idx = self.mapping.index_of(name)
-        if col:
-            if col not in self._map_source_fields():
-                raise ValueError(f"데이터에 없는 열입니다: {col}")  # confirm-or-alarm
-            row = self.mapping.rows[idx]
-            if row.type == "const" and row.const.strip() and not p.get("confirm"):
-                return {
-                    "confirm": (
-                        f"{{{{{name}}}}} 에 직접 입력한 값 '{row.const}'은 '{col}' 열의 값으로 "
-                        "바뀌고 되돌릴 수 없습니다. 계속하시겠습니까?"
-                    )
-                }
-            self.mapping.bind_column(idx, col, self._map_kind_of(col))
-        else:
-            self.mapping.unbind(idx)  # 무결속 — 값 동결 없음(큐는 행마다 값이 달라 단건 문법 부적용)
-        self._map_dirty = True  # 사람이 결속/해제 — 미저장 레시피 편집(147)
-        return None
-
-    def _do_set_map_value(self, p: dict) -> dict:
-        """토큰 값 직접 입력(man) — 상수 강등. 결속 소스는 기억(되돌리기로 복귀, 사용자 결정).
-
-        _NO_PUSH: 포커스된 값 입력을 서버 푸시가 재구성하지 않게 반환 스냅샷으로 미리보기·
-        소유권만 겨냥 패치한다(빠른 기안 `set_token` 선례). 값은 **전 행 공통 상수**다 —
-        큐에서 '어느 행의 값'인지 모호한 hand 대신 상수로 낙착한다."""
-        self.mapping.set_manual(self.mapping.index_of(p["name"]), p.get("text", ""))
-        self._map_dirty = True  # 직접 입력 = 미저장 레시피 편집(147)
-        return self.snapshot()
-
-    _do_set_map_value.is_no_push = True
-
-    def _do_set_map_fmt(self, p: dict) -> None:
-        """표시형(유형 내 프리셋) 정정 — 결속 열에서 오는 값에만 뜻이 있다(결정 34 2층)."""
-        self.mapping.set_fmt_for(p["name"], p.get("code", ""))
-        self._map_dirty = True  # 표시형 정정 = 미저장 레시피 편집(147)
-
-    def _do_set_map_type(self, p: dict) -> None:
-        """값 유형 정정(#148 슬라이스 4, 결정 12) — 값 스니핑 오판을 사람이 이긴다.
-
-        결속(auto) 값의 운반 유형(text/date/amount)을 사람이 고른다: 이름에 「금액」이 없어도
-        값이 숫자면 금액 스니핑이 맞지만, 틀렸을 때 사람 선택이 언제나 이긴다(:meth:`MappingModel.
-        set_type` 이 ``touched=True`` — 시스템 재제안 차단). 유형이 바뀌면 이전 표시형 프리셋은
-        무효라 기본으로 떨어진다(모델 계약). 미지 유형은 조용히 무시하지 않고 시끄럽게 거부한다
-        (set_type 이 열거형 검증 — confirm-or-alarm). 표면은 결속 행에만 이 컨트롤을 띄운다
-        (const/무결속엔 운반 유형이 뜻이 없어 dead control 금지)."""
-        self.mapping.set_type(self.mapping.index_of(p["name"]), p["type"])
-        self._map_dirty = True  # 유형 정정 = 미저장 레시피 편집(147)
-
-    def _do_set_confirmed(self, p: dict) -> None:
-        """행별 확정 토글(#148 슬라이스 4, 결정 12) — 확정+무내용 = 확정-비움(「비운다」 선언).
-
-        확정-비움은 렌더가 데이터-빈값 ``blank`` 와 같되(〈빈 값〉) 복사 전 빈칸 게이트에서
-        빠진다(:meth:`MappingModel.declared_blank_fields` 가 가른다). 저장 승격의 확정 게이트
-        (전 행 확정 = 「기안으로 저장」 자격)는 슬라이스 5 — 여기선 그릇만 세운다."""
-        self.mapping.set_confirmed(self.mapping.index_of(p["name"]), bool(p.get("value")))
-        self._map_dirty = True  # 확정 토글 = 미저장 레시피 편집(147)
-
-    def _do_revert_map(self, p: dict) -> None:
-        """man→auto 되돌리기 — 기억한 결속 소스 복귀(막다른 강등 금지, 결정 31).
-
-        직접 입력으로 상수 강등된 자리를 원 결속 열로 되살린다. 소스 기억이 없으면 무동작
-        (표면은 되돌리기를 소스 기억이 있을 때만 띄운다)."""
-        idx = self.mapping.index_of(p["name"])
-        if self.mapping.revert_binding(idx, self._map_kind_of(self.mapping.rows[idx].source)):
-            self._map_dirty = True  # 실제 되돌림 발생 = 미저장 레시피 편집(무동작이면 불변, 147)
+    # 맞추기 동사 6종은 :class:`MappingVerbsMixin` 이 소유한다(F6 3R) — 작업대가 같은 표를
+    # 그리면서 핸들러를 손으로 다시 짜다 규약이 갈렸다(표시형 index/이름 혼용·되돌리기 유형
+    # 유실·덮어쓰기 확인 누락). 여기 있던 구현이 그 정본이라 **그대로 올렸다**.
+    def _after_mapping_edit(self) -> None:
+        """편집 = 미저장 레시피(147) — 「기안으로 저장」이 이 표지를 소비한다."""
+        self._map_dirty = True
 
     def _do_step(self, p: dict) -> None:
         """작업점을 큐 표시 순서로 이동(↓/↑, 경계 멈춤) — 자유 레코드 커서가 아니라 큐 판(결정 16)."""

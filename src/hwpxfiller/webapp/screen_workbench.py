@@ -38,6 +38,7 @@ from ..gui.selection_state import SelectionModel
 from ..gui.txt_card import card_text, gate_empty_fields, render_card
 from ..gui.txt_queue import TxtQueueModel
 from ..gui.work_mode import WORK_MODE_TEXT, work_mode_label
+from .mapping_verbs import MappingVerbsMixin
 from .screens import PushSink
 from .settings import is_proportional_font
 
@@ -64,7 +65,7 @@ def _row_own(row) -> str:
     return "auto" if row.source else ""
 
 
-class WorkbenchController:
+class WorkbenchController(MappingVerbsMixin):
     """검토·복사 작업대의 세션 소유자 — 화면 하나에 세션 하나(동시 다중 없음)."""
 
     name = "workbench"
@@ -400,39 +401,19 @@ class WorkbenchController:
     def _do_set_fullwidth(self, p: dict) -> None:
         self._fullwidth = bool(p["value"])
 
-    # ---- 필드 연결(좌 pane) — 「기안」 맞추기 표와 같은 동사·같은 판정
-    def _row_index(self, p: dict) -> int:
-        self._require_open()
-        return int(p["index"])
+    # ---- 필드 연결(좌 pane) — 동사 6종은 :class:`MappingVerbsMixin` 소유(F6 3R).
+    # 손으로 다시 짜다 규약이 갈렸던 자리다(표시형이 이름 API 에 index 를 넘겨 **전부**
+    # 터졌고, 되돌리기는 스니핑 유형을 잃었고, 결속은 직접 입력 값을 무확인 덮었다).
+    # 여기 남는 것은 그 동사들이 쓰는 **훅** 둘뿐이다.
+    def _map_source_fields(self) -> "list[str]":
+        """결속 후보 열 — 고정 사본의 열 집합(세션 동안 불변)."""
+        return list(self.records[0].keys()) if self.records else []
 
-    def _do_set_source(self, p: dict) -> None:
-        assert self.mapping is not None
-        i, source = self._row_index(p), p.get("source", "")
-        if source:
-            kind = sniff_column_kinds(self.records).get(source, "")
-            self.mapping.bind_column(i, source, kind=kind)
-        else:
-            self.mapping.unbind(i)
-
-    def _do_set_map_value(self, p: dict) -> None:
-        assert self.mapping is not None
-        self.mapping.set_manual(self._row_index(p), p.get("value", ""))
-
-    def _do_set_map_fmt(self, p: dict) -> None:
-        assert self.mapping is not None
-        self.mapping.set_fmt_for(self._row_index(p), p.get("code", ""))
-
-    def _do_set_map_type(self, p: dict) -> None:
-        assert self.mapping is not None
-        self.mapping.set_type(self._row_index(p), p.get("code", ""))
-
-    def _do_set_confirmed(self, p: dict) -> None:
-        assert self.mapping is not None
-        self.mapping.set_confirmed(self._row_index(p), bool(p["value"]))
-
-    def _do_revert_map(self, p: dict) -> None:
-        assert self.mapping is not None
-        self.mapping.revert_binding(self._row_index(p))
+    def _map_kind_of(self, source: str) -> str:
+        """결속 대상 열의 스니핑 유형(없으면 ``""``) — 되돌리기·결속이 함께 쓴다."""
+        if not source:
+            return ""
+        return sniff_column_kinds(self.records).get(source, "")
 
     # ---- 복사 게이트(브리지가 클립보드를 쓰기 전에 묻는다)
     def _do_copy_precheck(self, p: dict) -> dict:
@@ -445,12 +426,25 @@ class WorkbenchController:
         )
         cur = self.queue.current
         return {
+            # 사전확인이 **어느 카드의 것인지**를 함께 돌려준다 — 웹이 이 토큰을 그대로
+            # 복사 호출에 실어 「확인 대상 = 복사 대상」을 만든다.
+            "token": self.copy_token(),
             "row": self.source_rows[cur] if cur is not None else None,
             "missing_fields": list(rendered.report.missing_fields),
             "empty_fields": gate_empty_fields(rendered.report, self.mapping),
         }
 
     _do_copy_precheck.is_query = True  # type: ignore[attr-defined]
+
+    def copy_token(self) -> str:
+        """지금 복사될 카드의 **정체** — 사전확인과 실제 쓰기를 묶는 값(3R P1).
+
+        작업점과 지금 규칙을 함께 담는다: 둘 중 무엇이 바뀌어도 사용자가 확인한 카드가
+        아니게 되기 때문이다. 브리지가 이 값을 대조해 어긋나면 쓰지 않는다 — 복사를 빠르게
+        두 번 누르거나 그사이 이동하면 **확인하지 않은 카드**가 클립보드로 나가던 창을 닫는다.
+        """
+        cur = self.queue.current
+        return "" if cur is None else f"{cur}|{self._rules_signature()}"
 
     # ---- 기본 규칙으로 저장(§11) — 착지점은 이것 하나(override 없음, 판정 H)
     def _save_confirm_text(self, current: Job, changed: "list[dict]") -> str:

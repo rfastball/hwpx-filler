@@ -25,26 +25,26 @@
     const dot = t.own ? `<span class="own ${t.own}" title="${OWN_LABEL[t.own] || ""}"></span>` : "";
     const src =
       `<div class="mapsrc">${dot}` +
-      `<select class="field sm mapsrc-sel" id="wbMap-src-${i}" data-i="${i}"` +
+      `<select class="field sm mapsrc-sel" id="wbMap-src-${encodeURIComponent(t.name)}" data-name="${esc(t.name)}"` +
       ` aria-label="${esc(t.name)} 데이터 열">` +
       `<option value=""${srcSel === "" ? " selected" : ""}>(직접 입력)</option>${cols}</select>` +
       (t.suggest && t.own !== "auto"
-        ? `<button class="btn sm mapsug" id="wbMap-sug-${i}" data-i="${i}"` +
+        ? `<button class="btn sm mapsug" id="wbMap-sug-${encodeURIComponent(t.name)}" data-name="${esc(t.name)}"` +
           ` title="이름이 비슷한 열입니다">` +
           `'${esc(t.suggest)}' 적용</button>` : "") +
       (t.can_revert
-        ? `<button class="btn sm maprev" id="wbMap-rev-${i}" data-i="${i}">자동으로 되돌리기</button>` : "") +
+        ? `<button class="btn sm maprev" id="wbMap-rev-${encodeURIComponent(t.name)}" data-name="${esc(t.name)}">자동으로 되돌리기</button>` : "") +
       `</div>`;
     const typeOpts = ((s.type_options) || []).map((o) =>
       `<option value="${esc(o.code)}"${o.code === t.fmt_kind ? " selected" : ""}>${esc(o.label)}</option>`).join("");
     const typeCell = t.own === "auto"
-      ? `<select class="field sm maptype" id="wbMap-type-${i}" data-i="${i}"` +
+      ? `<select class="field sm maptype" id="wbMap-type-${encodeURIComponent(t.name)}" data-name="${esc(t.name)}"` +
         ` aria-label="${esc(t.name)} 유형">${typeOpts}</select>`
       : `<span class="muted">—</span>`;
     const fmts = ((s.fmt_options && s.fmt_options[t.fmt_kind]) || []).map((o) =>
       `<option value="${esc(o.code)}"${o.code === t.fmt_code ? " selected" : ""}>${esc(o.label)}</option>`).join("");
     const fmtCell = (t.own === "auto" && fmts)
-      ? `<select class="field sm mapfmt" id="wbMap-fmt-${i}" data-i="${i}"` +
+      ? `<select class="field sm mapfmt" id="wbMap-fmt-${encodeURIComponent(t.name)}" data-name="${esc(t.name)}"` +
         ` aria-label="${esc(t.name)} 표시형">${fmts}</select>`
       : `<span class="muted">—</span>`;
     // 확정-비움(결정 12)은 「아직 안 씀」이 아니라 「비워둠(선언)」이다 — 판정은 서버.
@@ -52,13 +52,13 @@
     const valCell = declared
       ? `<span class="mapval-declared muted" title="비우기로 확정한 값입니다. 복사 전 확인에서 제외됩니다.">비움 확정</span>`
       : `<textarea class="mapval-in${(t.value || "").trim() === "" ? " empty" : ""}" rows="1"` +
-        ` id="wbMap-val-${i}" data-i="${i}" placeholder="직접 입력"` +
+        ` id="wbMap-val-${encodeURIComponent(t.name)}" data-name="${esc(t.name)}" placeholder="직접 입력"` +
         ` aria-label="${esc(t.name)} 값">${esc(t.value || "")}</textarea>`;
     const ckCell =
-      `<input class="ck mapck" type="checkbox" id="wbMap-ck-${i}" data-i="${i}"` +
+      `<input class="ck mapck" type="checkbox" id="wbMap-ck-${encodeURIComponent(t.name)}" data-name="${esc(t.name)}"` +
       `${t.confirmed ? " checked" : ""}` +
       ` aria-label="${esc(t.name)} 확정">`;
-    return `<tr data-i="${i}"${declared ? ' class="row-blank-declared"' : ""}>` +
+    return `<tr data-name="${esc(t.name)}"${declared ? ' class="row-blank-declared"' : ""}>` +
       `<td class="maptok" title="{{${esc(t.name)}}}">${esc(t.name)}</td>` +
       `<td>${src}</td><td class="maptype-cell">${typeCell}</td>` +
       `<td class="mapfmt-cell">${fmtCell}</td><td class="mapval-cell">${valCell}</td>` +
@@ -177,7 +177,13 @@
       if (!ok) return;
     }
     // 실제 클립보드 쓰기는 브리지가 한다 — 성사 뒤에만 큐·완료 노트가 움직인다.
-    await window.Bridge.copyClipboard(SCREEN);
+    // **사전확인이 본 그 카드**의 토큰을 실어 보낸다(3R P1): 그사이 작업점이 옮겨졌거나
+    // 규칙이 바뀌었으면 백엔드가 쓰지 않고 stale 로 돌려주므로, 확인하지 않은 카드가
+    // 클립보드로 나가지 않는다. 조용한 무동작이 아니라 다시 확인하라고 말한다.
+    const res = await window.Bridge.copyClipboard(SCREEN, pre.token);
+    if (res && res.stale) {
+      window.alert("작업점이 그사이 바뀌어 복사하지 않았습니다. 카드를 확인하고 다시 복사하세요.");
+    }
   }
 
   async function saveRules() {
@@ -256,21 +262,40 @@
       if (b) window.Bridge.call(SCREEN, "set_fullwidth", { value: b.dataset.fullwidth === "on" });
     });
     const panel = $("wbMapPanel");
+    // 행은 **토큰 이름**으로 겨눈다(F6 3R — 「기안」과 같은 규약). 결속은 직접 입력한 값을
+    // 지울 수 있어 확인 왕복을 가진다: 백엔드가 `{confirm: 문안}` 을 돌려주면 물어보고
+    // `confirm:true` 로 다시 보낸다(무확인 파괴 금지).
+    async function bindColumn(name, col) {
+      const r = await window.Bridge.call(SCREEN, "set_source", { name, col });
+      if (r && r.confirm) {
+        const ok = await window.Modal.confirm({
+          title: "직접 입력한 값을 덮어쓸까요?", body: r.confirm,
+          confirmLabel: "열 값으로 바꾸기", cancelLabel: "취소", danger: true,
+        });
+        if (!ok) { render(LAST); return; }   // 드롭다운을 스냅샷 상태로 되돌린다
+        await window.Bridge.call(SCREEN, "set_source", { name, col, confirm: true });
+      }
+    }
     panel.addEventListener("change", (e) => {
-      const el = e.target, i = Number(el.dataset.i);
-      if (el.classList.contains("mapsrc-sel")) window.Bridge.call(SCREEN, "set_source", { index: i, source: el.value });
-      else if (el.classList.contains("maptype")) window.Bridge.call(SCREEN, "set_map_type", { index: i, code: el.value });
-      else if (el.classList.contains("mapfmt")) window.Bridge.call(SCREEN, "set_map_fmt", { index: i, code: el.value });
-      else if (el.classList.contains("mapck")) window.Bridge.call(SCREEN, "set_confirmed", { index: i, value: el.checked });
-      else if (el.classList.contains("mapval-in")) window.Bridge.call(SCREEN, "set_map_value", { index: i, value: el.value });
+      const el = e.target, name = el.dataset.name;
+      if (!name) return;
+      if (el.classList.contains("mapsrc-sel")) bindColumn(name, el.value);
+      else if (el.classList.contains("maptype")) window.Bridge.call(SCREEN, "set_map_type", { name, type: el.value });
+      else if (el.classList.contains("mapfmt")) window.Bridge.call(SCREEN, "set_map_fmt", { name, code: el.value });
+      else if (el.classList.contains("mapck")) window.Bridge.call(SCREEN, "set_confirmed", { name, value: el.checked });
+      else if (el.classList.contains("mapval-in")) {
+        // 값 입력은 no-push 다(포커스된 입력을 서버 푸시가 재구성하지 않게) — 반환 스냅샷으로
+        // 그린다. 재구성을 가로지르는 캐럿은 Preserve 가 안정 id 로 되찾는다.
+        window.Bridge.call(SCREEN, "set_map_value", { name, text: el.value }).then(render);
+      }
     });
     panel.addEventListener("click", (e) => {
       const sug = e.target.closest(".mapsug"), rev = e.target.closest(".maprev");
       if (sug) {
-        const row = (LAST && LAST.rows) ? LAST.rows[Number(sug.dataset.i)] : null;
-        if (row) window.Bridge.call(SCREEN, "set_source", { index: Number(sug.dataset.i), source: row.suggest });
+        const hit = ((LAST && LAST.rows) || []).find((r) => r.name === sug.dataset.name);
+        if (hit) bindColumn(hit.name, hit.suggest);
       } else if (rev) {
-        window.Bridge.call(SCREEN, "revert_map", { index: Number(rev.dataset.i) });
+        window.Bridge.call(SCREEN, "revert_map", { name: rev.dataset.name });
       }
     });
   }

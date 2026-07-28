@@ -201,12 +201,15 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "set_view": _schema(optional="view"),
         "set_target_font": _schema(optional="font"),
         "set_fullwidth": _schema("value"),
-        "set_source": _schema("index", "source"),
-        "set_map_value": _schema("index", "value"),
-        "set_map_fmt": _schema("index", "code"),
-        "set_map_type": _schema("index", "code"),
-        "set_confirmed": _schema("index value"),
-        "revert_map": _schema("index"),
+        # 맞추기 동사 6종은 「기안」과 **같은 규약**이다(F6 3R — 공용 MappingVerbsMixin).
+        # 정체는 **토큰 이름**이다: 행 index 는 템플릿을 다시 읽으면 흔들리지만 이름은 그
+        # 표의 안정 식별자이고, 없는 이름은 `index_of` 가 시끄럽게 거절한다.
+        "set_source": _schema("name", "col confirm"),
+        "set_map_value": _schema("name", "text"),
+        "set_map_fmt": _schema("name", "code"),
+        "set_map_type": _schema("name type"),
+        "set_confirmed": _schema("name value"),
+        "revert_map": _schema("name"),
         "copy_precheck": _schema(),
         # 「기본 규칙으로 저장…」(§11) — 확인 왕복. 이 저장은 **다음 실행부터의 기본 규칙**을
         # 바꾸므로(override 없음, 지도 §10.14) dirty 필드를 전부 나열한 뒤에만 성사된다.

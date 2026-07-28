@@ -307,14 +307,25 @@ class WebFrontend:
             return f"ERROR: {exc}"
         return Path(path).name
 
-    def copy_clipboard(self, screen: str) -> dict:
+    def copy_clipboard(self, screen: str, token: "str | None" = None) -> dict:
         """작업점 카드 렌더를 OS 클립보드로(복사=완료, 결정 16). 리포트를 돌려줘 웹이 재진술.
 
         복사 후 큐를 전진시킨다(작업점→처리 후미, 전진 opt-in) — 큐 상태 기제는 컨트롤러의
         :meth:`~hwpxfiller.webapp.draft_session.DraftSessionMixin.note_copied` 가 소유(클립보드 쓰기는
         네이티브라 브리지 몫). 큐가 없는 화면(``note_copied`` 부재)은 렌더·복사만 한다.
+
+        **확인 대상 = 복사 대상**(F6 3R P1). 컨트롤러가 :meth:`copy_token` 을 내면 그 토큰이
+        일치할 때만 쓴다. 없으면 이런 창이 열린다: 복사를 빠르게 두 번 누르면 둘 다 **같은
+        카드**로 사전확인을 통과하는데, 첫 복사가 (자동 전진으로) 작업점을 옮겨 두 번째가
+        **확인하지 않은 카드**를 클립보드에 쓴다. 이동도 같은 틈을 만든다. 토큰은 그 카드의
+        정체(작업점 + 지금 규칙)라, 그사이 무엇이든 바뀌면 대조에서 걸린다 — `confirmed_text`
+        와 같은 규율이고, 잠금이 아니라 **결속**으로 푸는 쪽이다(잠금은 DOM 이 진다).
         """
         ctrl = self._controller(screen)
+        token_of = getattr(ctrl, "copy_token", None)
+        if token_of is not None and token != token_of():
+            # 조용한 무동작이 아니라 stale 재진술 — 표면이 다시 확인받게 한다.
+            return {"missing_fields": [], "empty_fields": [], "copied": False, "stale": True}
         text, report = ctrl.render()
         # 작업점 없는 화면(txt 큐, 선택 0·레이스) — 빈 템플릿을 클립보드에 쓰지 않는다(리뷰 F3:
         # 조용한 쓰레기·무피드백 차단). can_copy 부재 화면(다른 소비자)은 종전대로 렌더·복사.
