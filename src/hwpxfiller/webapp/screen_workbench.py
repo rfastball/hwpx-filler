@@ -107,7 +107,11 @@ class WorkbenchController:
         # 최근 사용 스탬프는 **세션당 1회**다(§19.4: "한 레코드라도 복사 완료"). 매 복사마다
         # 찍으면 durable 쓰기가 복사 수만큼 늘고, 기록되는 사실은 첫 건과 똑같다.
         self._stamped = False
-        self._review: "set[int]" = set()
+        # 복사 시점의 **규칙 지문**(행 index → 지문). 검토 상태는 이 값과 지금 지문의 **차이**로
+        # 파생한다(2R P2). 종전에는 저장 **사건**이 `_review` 집합을 채웠는데, 그러면 사건
+        # 밖의 변화(그냥 매핑을 고친 것)를 못 본다 — 카드는 이미 다른 문장을 보여 주는데
+        # 배지는 「복사 완료」라고 말하는 창이 열린다. 사건을 세지 말고 **조건을 재라**.
+        self._copied_rules: "dict[int, str]" = {}
         self.notice_text = ""
         self.notice_level = "muted"
 
@@ -162,6 +166,16 @@ class WorkbenchController:
         self.notice_text, self.notice_level = text, level
 
     # ------------------------------------------------------------- 파생
+    def _queue_pos(self) -> int:
+        """작업점의 **큐 순서** 자리(없으면 -1) — 순회 경계 판정 전용.
+
+        표시 서수와 갈리는 이유: 큐는 복사한 카드를 후미로 보내므로(결정 16) 같은 카드의
+        고정 자리는 그대로여도 순회상의 앞뒤는 바뀐다. 두 축을 한 값으로 뭉치지 않는다.
+        """
+        cur = self.queue.current
+        order = self.queue.display_order()
+        return order.index(cur) if cur is not None and cur in order else -1
+
     def _current_record(self) -> dict:
         cur = self.queue.current
         if cur is None or not (0 <= cur < len(self.records)):
@@ -192,12 +206,35 @@ class WorkbenchController:
             return False
         return any(r.touched and not r.confirmed for r in self.mapping.rows)
 
+    def _rules_signature(self) -> str:
+        """지금 카드를 만드는 규칙의 지문 — **보이는 문장을 바꾸는 것 전부**를 담는다.
+
+        결속·유형·상수·표시형은 물론 **전각 치환 여부**까지 센다: 그것도 복사되는 문자열을
+        바꾸므로, 빼면 「복사한 뒤 전각을 켰다」가 조용히 지나간다. 확정 열은 담지 않는다 —
+        확정-비움은 게이트의 축이지 렌더되는 값의 축이 아니다(확정을 켜도 문장은 그대로다).
+        """
+        if self.mapping is None:
+            return ""
+        rows = tuple(
+            (r.template_field, r.source, r.type, r.const, r.fmt) for r in self.mapping.rows
+        )
+        return repr((rows, self._fullwidth))
+
     def _review_state(self, index: "int | None") -> str:
-        if index is None:
+        """복사 상태는 **파생**이다 — 복사 시점 지문과 지금 지문의 차이(2R P2).
+
+        저장 사건에 결속하면 「복사 → 편집(카드가 즉시 바뀜) → 아직 저장 안 함」 구간에서
+        배지가 「복사 완료」로 남아, 사용자가 다시 복사해야 할 행을 건너뛴다. §11 이 요구하는
+        「이미 복사한 레코드는 다시 확인 필요」도 이 파생이 자연히 만족한다(저장이 아니라
+        규칙이 갈린 것이 원인이므로).
+        """
+        if index is None or index not in self._copied_rules:
             return REVIEW_TODO
-        if index in self._review:
-            return REVIEW_RECHECK
-        return REVIEW_COPIED if self.queue.is_copied(index) else REVIEW_TODO
+        return (
+            REVIEW_COPIED
+            if self._copied_rules[index] == self._rules_signature()
+            else REVIEW_RECHECK
+        )
 
     # ------------------------------------------------------------- 스냅샷
     def snapshot(self) -> dict:
@@ -257,6 +294,13 @@ class WorkbenchController:
             # None 이 된다. 이 화면의 부제는 「선택 당시 표시순서로 고정된 항목」이라고
             # 말하므로, 사람이 읽는 숫자도 그 고정 순서를 따라야 참이다(§13-13).
             "position": cur,
+            # 이동 가능 여부는 **큐 순서**의 질문이다(2R P1). 표시 서수(`position`)는 고정
+            # 사본의 자리라 순회 경계를 답할 수 없다: 복사하면 그 카드가 후미로 가므로 자리는
+            # 그대로인데 다음/이전은 달라진다. 하나의 값으로 두 질문에 답하면 그중 하나는
+            # 반드시 틀린다 — 실제로 복사 직후 「다음」이 눌리지만 아무 일도 안 하고 「이전」은
+            # 비활성이라 그 카드에 갇혔다. 그래서 경계도 Python 이 낸다.
+            "can_prev": self._queue_pos() > 0,
+            "can_next": 0 <= self._queue_pos() < len(self.queue.display_order()) - 1,
             "source_row": self.source_rows[cur] if cur is not None else None,
             "review_state": self._review_state(cur),
             "uncopied_count": len(self.queue.uncopied()),
@@ -483,14 +527,17 @@ class WorkbenchController:
         self.session = EditSession(
             context=EditContext(work=saved.name), base=saved, section=SECTION_BINDING,
         )
-        # 이미 복사한 레코드는 **다시 확인 필요**가 된다(§11 마지막 줄) — 규칙이 갈렸으므로
-        # 그 문서들은 지금 규칙의 산출물이 아니다. 큐 진행(복사 이력)은 지우지 않는다:
-        # 무엇을 이미 붙여넣었는지는 여전히 사실이고, 갈린 것은 「확인했는가」다.
-        self._review = {i for i in range(len(self.records)) if self.queue.is_copied(i)}
+        # 「이미 복사한 레코드는 다시 확인 필요」(§11 마지막 줄)를 여기서 **세우지 않는다** —
+        # 그 판정은 복사 시점 지문과의 차이에서 파생된다(2R P2). 저장은 규칙을 바꾸지 않고
+        # (바뀐 건 이미 편집 때다) 영속시킬 뿐이라, 여기서 집합을 다시 칠하면 같은 상태에
+        # 판정 주체가 둘이 된다. 큐 진행(복사 이력)도 그대로 둔다: 무엇을 이미 붙여넣었는지는
+        # 여전히 사실이고, 갈린 것은 「확인했는가」다.
+        recheck = sum(
+            1 for i in self._copied_rules if self._review_state(i) == REVIEW_RECHECK
+        )
         self._set_notice(
             f"기본 규칙을 저장했습니다 · 연결 r{saved.binding_revision}"
-            + (f" · 복사한 {len(self._review)}건은 다시 확인이 필요합니다"
-               if self._review else ""),
+            + (f" · 복사한 {recheck}건은 다시 확인이 필요합니다" if recheck else ""),
         )
         return {"ok": True, "binding_revision": saved.binding_revision}
 
@@ -576,7 +623,9 @@ class WorkbenchController:
             "stamp_error": stamp_error,
         }
         self._copied_total += 1
-        self._review.discard(cur)   # 지금 규칙으로 다시 복사했다 = 재확인 해소
+        # 지금 규칙으로 복사했다 — 그 지문을 못박는다. 다시 복사하면 덮어써 재확인이 해소되고,
+        # 규칙이 갈리면 같은 값에서 파생이 「다시 확인 필요」로 넘어간다(별도 무효화 코드 없음).
+        self._copied_rules[cur] = self._rules_signature()
         self.queue.copy(cur)
         if self._advance_after:
             self.queue.advance_to_next_uncopied()

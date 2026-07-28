@@ -3087,6 +3087,9 @@ _WORKBENCH_PROBE_SETUP_JS = r"""
     guard: { armed: true, lines: ['복사 진행 1/3건 — 나가면 이 진행은 사라집니다.'] },
     card: {
       index: 0, has_current: true, queue_degenerate: false, position: 0, source_row: 7,
+      // 경계는 Python 이 낸다(2R P1) — 표시 자리는 머리(0)인데 순회상으로는 **후미**인
+      // 상태를 합성한다(복사 직후의 실물). 표면이 서수로 계산하면 여기서 갈린다.
+      can_prev: true, can_next: false,
       review_state: 'recheck', uncopied_count: 2, advance_after: false,
       segments: [seg('수신: '), seg('회계과', 'fill', '수신'), seg('', 'blank', '비고')],
       missing_fields: [], empty_fields: [],
@@ -3111,6 +3114,13 @@ _WORKBENCH_PROBE_SETUP_JS = r"""
       out.card_fill = document.querySelectorAll('#wbCard .seg-fill').length;
       out.card_blank = document.querySelectorAll('#wbCard .seg-blank').length;
       out.lint_shown = document.getElementById('wbLint').style.display !== 'none';
+      // 린트는 표지 + **행동**이 한 벌이다(2R P2) — 경고만 두면 손잡이 없는 통보가 된다.
+      out.lint_action = (function () {
+        var b = document.querySelector('#wbLint [data-fullwidth]');
+        return b ? b.getAttribute('data-fullwidth') + ':' + b.textContent : '';
+      })();
+      out.prev_disabled = document.getElementById('wbPrev').disabled;
+      out.next_disabled = document.getElementById('wbNext').disabled;
       out.save_enabled = !document.getElementById('wbSaveRules').disabled;
       // 큐 퇴화 — 1건이면 순회 장치가 숨는다(정보가 없어서지 장식이라서가 아니다).
       window.__push('workbench', Object.assign({}, snap, {

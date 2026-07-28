@@ -87,12 +87,17 @@
     $("wbReview").textContent = rv[0];
     $("wbReview").setAttribute("data-level", rv[1]);
     // 정렬 린트(결정 17) — 판정은 서버다(글꼴 이름으로 비례폭을 재판별하지 않는다).
+    // 린트는 **표지 + 행동**이 한 벌이다(2R P2). 「기안」에서 옮겨 온 것은 경고 문안만이
+    // 아니라 그 처방(전각 치환)이다 — 판정 G 가 말한 「거처만 옮긴다」는 행동까지 포함한다.
+    // 경고만 두면 사용자는 문제를 통보받고 손잡이는 없는 상태가 된다.
     const lint = c.lint || {};
     const el = $("wbLint");
     el.style.display = lint.active ? "" : "none";
-    el.textContent = lint.applied
-      ? "연속 공백을 전각으로 바꿔 복사합니다."
-      : "이 글꼴에서는 연속 공백이 밀릴 수 있습니다.";
+    el.innerHTML = lint.applied
+      ? "연속 공백을 전각으로 바꿔 복사합니다. "
+        + `<button class="btn sm" type="button" id="wbLintAction" data-fullwidth="off">되돌리기</button>`
+      : "이 글꼴에서는 연속 공백이 밀릴 수 있습니다. "
+        + `<button class="btn sm" type="button" id="wbLintAction" data-fullwidth="on">전각으로 바꾸기</button>`;
   }
 
   function renderFoot(s) {
@@ -106,8 +111,10 @@
     $("wbPrev").style.display = degen ? "none" : "";
     $("wbNext").style.display = degen ? "none" : "";
     document.querySelector(".wb-adv").style.display = degen ? "none" : "";
-    $("wbPrev").disabled = degen || pos <= 1;
-    $("wbNext").disabled = degen || pos >= total;
+    // 경계 판정은 **Python 이 낸다**(2R P1) — 표시 서수는 고정 사본의 자리이고 순회는 큐
+    // 순서라 서로 다른 질문이다. 표면이 서수로 경계를 계산하면 복사 직후 그 카드에 갇힌다.
+    $("wbPrev").disabled = degen || !c.can_prev;
+    $("wbNext").disabled = degen || !c.can_next;
     $("wbAdvance").checked = !!c.advance_after;
     $("wbCopy").disabled = !c.has_current;
     const lc = c.last_copy;
@@ -242,6 +249,11 @@
       window.Bridge.call(SCREEN, "toggle_advance", { value: e.target.checked }));
     document.querySelectorAll("[data-wb-view]").forEach((b) => {
       b.addEventListener("click", () => window.Bridge.call(SCREEN, "set_view", { view: b.dataset.wbView }));
+    });
+    // 린트 행동은 매 렌더마다 다시 그려지므로 위임으로 받는다(안정 id 는 포커스 보존용).
+    $("wbLint").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-fullwidth]");
+      if (b) window.Bridge.call(SCREEN, "set_fullwidth", { value: b.dataset.fullwidth === "on" });
     });
     const panel = $("wbMapPanel");
     panel.addEventListener("change", (e) => {

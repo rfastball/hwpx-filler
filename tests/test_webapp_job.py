@@ -3643,3 +3643,32 @@ def test_open_workbench_is_loud_when_the_work_vanished(tmp_path):
         ctrl.registry, lambda s, snap: None, target_font=TargetFontSetting())
     res = ctrl.dispatch("open_workbench", {})
     assert res["ok"] is False and "읽을 수 없습니다" in res["error"]
+
+
+def test_cross_media_relink_reseats_the_active_session(tmp_path):
+    """재연결로 **매체가 갈리면** 실행 표면도 함께 갈린다(2R P2).
+
+    재연결은 매체 교차가 가능하고(파일 필터에 「모든 파일」이 있다) 그 변화는 이 화면
+    밖에서도 일어난다 — 라이브러리에서 재연결하고 돌아오는 경로가 실물이다. 매체를
+    「작업 선택」 사건에 래치해 두면 TXT→HWPX 는 실행 버튼이 계속 작업대를 광고하고,
+    HWPX→TXT 는 재적재가 `RunViewModel` 을 세우려다 터진다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    _txt_job(ctrl, tmp_path)
+    _mount_all(ctrl, _data_csv(tmp_path))
+    ctrl.dispatch("select_job", {"name": "발주요청_기안"})
+    assert ctrl.snapshot()["run_action"]["key"] == "workbench"
+
+    # TXT → HWPX (다른 표면이 durable 경로를 갈아 끼운 뒤 이 화면으로 돌아온다)
+    hwpx = tmp_path / "t.hwpx"      # 픽스처가 만든 실제 hwpx 템플릿
+    ctrl.registry.mutate("발주요청_기안", lambda j: setattr(j, "template_path", str(hwpx)))
+    ctrl.dispatch("refresh", {})
+    assert ctrl.job_is_txt is False and ctrl.vm is not None
+    assert ctrl.snapshot()["run_action"]["key"] == "generate"
+
+    # HWPX → TXT (반대 방향도 터지지 않고 자리를 다시 앉힌다)
+    txt = tmp_path / "발주요청_기안.txt"
+    ctrl.registry.mutate("발주요청_기안", lambda j: setattr(j, "template_path", str(txt)))
+    ctrl.dispatch("refresh", {})
+    assert ctrl.job_is_txt is True and ctrl.vm is None
+    assert ctrl.snapshot()["run_action"]["key"] == "workbench"

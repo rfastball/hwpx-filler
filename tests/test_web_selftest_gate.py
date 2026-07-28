@@ -1347,6 +1347,13 @@ def test_completed_boot_stamps_the_home_and_narrows_the_budget(tmp_path) -> None
         # 우 pane: 채움 표지 삼분이 공용 SegView 계약대로 그려진다.
         assert w["card_fill"] == 1 and w["card_blank"] == 1
         assert w["lint_shown"] is True
+        # 린트 처방(전각 치환)이 **손잡이로** 서 있는가 — 승계는 표지가 아니라 행동까지다.
+        assert w["lint_action"] == "on:전각으로 바꾸기", w["lint_action"]
+        # 순회 경계는 Python 이 낸 값을 그대로 쓴다(2R P1): 표시 자리가 머리(1/3)인데도
+        # 순회상 후미면 「이전」이 열리고 「다음」이 닫힌다 — 서수로 계산하면 정반대가 된다.
+        assert (w["prev_disabled"], w["next_disabled"]) == (False, True), (
+            f"이동 경계가 표시 서수로 계산됩니다: {w['prev_disabled']}/{w['next_disabled']}"
+        )
         # 큐 퇴화 — 1건이면 이전/다음·자동 전진이 사라진다.
         assert w["degen_prev"] == "none" and w["degen_adv"] == "none"
         # 이탈: 가드를 먼저 묻고(leave_guard) 세션을 닫은 뒤에야 화면이 바뀐다.

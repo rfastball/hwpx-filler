@@ -1456,13 +1456,23 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         만든 문서가 담보하던 것)와 **열려 있던 미리보기**(옛 규칙의 상). 승인은 따로 지우지
         않는다 — 규칙 지문에 결속돼 자동으로 무효가 된다(F5 판정 I).
         """
-        # TXT 세션은 **되살릴 캐시가 없다**(1R P2 이후) — Job 사본을 들지 않으므로 다음
-        # 스냅샷이 목록에서 최신값을 집는다. 여기서 할 일이 없는 것이 정상이지 누락이 아니다.
-        if self.vm is None or not self.job_name:
+        if not self.job_name:
             return False
         try:
             job = self.registry.load(self.job_name)
         except Exception:  # noqa: BLE001 — 손상은 다음 스냅샷의 건강 표면이 말한다
+            return False
+        # **매체가 갈렸으면 자리를 다시 앉힌다**(2R P2). 재연결은 매체 교차가 가능하고
+        # (파일 필터의 「모든 파일」), 그 변화는 이 화면 밖에서도 일어난다 — 라이브러리에서
+        # 재연결하고 돌아오는 경로가 실물이다. 매체가 그대로면 아래 hwpx 규칙 대조로 간다.
+        if WorkbenchController.accepts(job) != self.job_is_txt:
+            self._seat_active_job(job)
+            self._last_generated = None   # 실행 표면 자체가 갈렸다 — 옛 증거는 남의 것이다
+            self._do_preview_close({})
+            return True
+        # TXT 세션은 여기서 **되살릴 캐시가 없다**(1R P2 이후) — Job 사본을 들지 않으므로
+        # 다음 스냅샷이 목록에서 최신값을 집는다. 할 일이 없는 것이 정상이지 누락이 아니다.
+        if self.vm is None:
             return False
         # **판본 메타까지 본다**(7R P2). `content_fingerprint` 는 판본 3필드를 일부러 뺀다
         # (편집 세션에 거짓 파괴 확인을 띄우지 않으려고) — 그래서 그것만으로는 "지금 것인가"를
@@ -1477,15 +1487,34 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         )
         if same_rules and same_generation:
             return False
-        self.vm = RunViewModel(job)
-        if self.records:
-            self.vm.set_acquired(self.datasource, self.records)  # ack 재평가 포함(RC-22)
+        self._seat_active_job(job)
         if not same_rules:
             # 규칙이 실제로 갈렸을 때만 증거를 걷는다 — 판본 메타만 앞선 경우(A→B→A)는
             # 실행 입력이 그대로라 완주 담보·열린 면을 되돌릴 이유가 없다(과잉 리셋 금지).
             self._last_generated = None
             self._do_preview_close({})
         return True
+
+    def _seat_active_job(self, job: Job) -> None:
+        """활성 작업의 **매체와 실행뷰를 함께** 세운다 — 둘이 갈라질 자리를 남기지 않는다.
+
+        매체 파생 2분기(F6 판정 D): TXT 는 hwpx 실행뷰를 세우지 않는다(`RunViewModel` 이
+        템플릿을 hwpx 로 파싱하므로 진입 가드가 loud 거부한다).
+
+        **왜 함수 하나인가**(2R P2 근본 조치): 1R 에서 Job 사본을 지웠지만 그 자리에 매체
+        **래치**가 남았고, 그 래치는 「작업 선택」 사건에서만 갱신됐다. durable 템플릿 경로는
+        그 사건 **밖에서도** 바뀐다(라이브러리 재연결은 매체 교차가 가능하다 — 파일 필터에
+        「모든 파일」이 있다). 그래서 재연결 뒤 TXT→HWPX 는 실행 버튼이 계속 작업대를 광고하고,
+        HWPX→TXT 는 재적재가 `RunViewModel` 을 세우려다 터졌다. 두 값을 **한 자리에서만**
+        세우면 갈라질 수가 없고, 갱신이 필요한 곳은 이 함수를 부르면 된다.
+        """
+        self.job_is_txt = WorkbenchController.accepts(job)
+        self.vm = None if self.job_is_txt else RunViewModel(job)
+        # 세션 데이터 주입도 **여기가** 한다: vm 을 세우는 자리와 그 vm 이 볼 데이터를
+        # 실어 주는 자리가 갈리면, 한쪽만 부르는 경로가 곧 빈 실행뷰가 된다(재적재가
+        # 실제로 그랬다). 데이터·선택·필터는 세션 소유라 작업 전환에서 생존한다(§18.2).
+        if self.vm is not None and self.records:
+            self.vm.set_acquired(self.datasource, self.records)  # ack 재평가 포함(RC-22)
 
     def _run_action(self) -> dict:
         """실행 버튼의 (행동 키, 라벨) — 매체 파생 2분기(§19.1·F6 판정 D)."""
@@ -1571,14 +1600,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 선택」이 0건을 돌려주는 유령 행동이 된다. 위 `_last_generated` 조기 소거는
         # 안전 방향(가드 재무장)이라 그대로 두지만, 이쪽은 **복구 경로가 사라지는** 방향이다.
         self._last_failed = []
-        # 매체 파생 2분기(재작성 F6 판정 D) — TXT 는 hwpx 실행뷰를 세우지 않는다.
-        # `RunViewModel` 은 이 job 의 템플릿을 hwpx 로 파싱하므로(진입 가드가 loud 거부)
-        # 여기서 갈라야 조회 경계가 새지 않는다. 실행 표면도 갈린다: 생성 / 작업대.
-        self.job_is_txt = WorkbenchController.accepts(job)
-        self.vm = None if self.job_is_txt else RunViewModel(job)
+        self._seat_active_job(job)
         self.job_name = name
         if self.records and self.vm is not None:
-            self.vm.set_acquired(self.datasource, self.records)  # ack 재평가 포함(RC-22)
             # 필터 열 유형 재조정(#302 리뷰 P2): 무작업 마운트의 필터는 값 스니핑만 탔다 —
             # 작업이 정해진 지금 매핑 확정 유형 힌트를 반영한다. 단 **정의 없는 필터만**
             # 재생성한다: 사용자가 이미 만든 정의는 유형 재판정이 술어를 조용히 떨어뜨릴

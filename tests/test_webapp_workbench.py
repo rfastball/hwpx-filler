@@ -412,3 +412,66 @@ def test_work_point_number_follows_the_frozen_order_not_the_queue(tmp_path):
     # 첫 항목으로 되돌아가도 자리는 고정 순서 그대로다.
     _send(ctrl, "set_current", {"index": 0})
     assert ctrl.snapshot()["card"]["position"] == 0
+
+
+# ------------------------------------------------ 2R — 파생 vs 래치 (P1·P2 가족)
+def test_navigation_bounds_follow_the_queue_not_the_frozen_ordinal(tmp_path):
+    """이동 경계는 **큐 순서**의 질문이다(2R P1) — 표시 서수로 답하면 갇힌다.
+
+    복사하면 그 카드가 큐 후미로 간다(결정 16). 고정 자리는 그대로인데 순회상의 앞뒤는
+    달라지므로, 한 값으로 두 질문에 답하면 그중 하나는 반드시 틀린다: 실제로 복사 직후
+    「다음」은 눌리지만 아무 일도 안 했고 「이전」은 비활성이라 그 카드에 갇혔다.
+    """
+    ctrl, reg, _ = _ctrl(tmp_path)
+    job = _job(tmp_path)
+    reg.save(job)
+    ctrl.open(reg.load(job.name), [
+        (0, {"부서": "가", "사업명": "ㄱ"}),
+        (1, {"부서": "나", "사업명": "ㄴ"}),
+        (2, {"부서": "다", "사업명": "ㄷ"}),
+    ])
+    card = ctrl.snapshot()["card"]
+    assert (card["can_prev"], card["can_next"]) == (False, True)   # 큐 머리
+    ctrl.note_copied(ctrl.render()[1])                             # 복사 = 후미로 이동
+    card = ctrl.snapshot()["card"]
+    assert card["position"] == 0                                   # 표시 자리는 고정
+    # 순회상으로는 **후미**다 — 다음은 없고 이전은 있다. 종전 판정과 정확히 반대였다.
+    assert (card["can_prev"], card["can_next"]) == (True, False)
+    ctrl.dispatch("step", {"delta": -1})
+    assert ctrl.queue.current is not None and ctrl.queue.current != 0  # 실제로 빠져나온다
+
+
+def test_editing_a_mapping_marks_copied_records_for_recheck_at_once(tmp_path):
+    """복사 상태는 **파생**이다(2R P2) — 카드가 바뀌는 순간 배지도 바뀐다.
+
+    종전에는 저장 **사건**이 재확인 집합을 칠했다. 그러면 「복사 → 편집(카드 즉시 변함)
+    → 아직 저장 안 함」 구간에서 배지가 「복사 완료」로 남아, 사용자가 다시 복사해야 할
+    행을 건너뛴다 — 화면이 보여 주는 문장과 배지가 서로 다른 말을 하는 창이다.
+    """
+    ctrl, _, _ = _open(tmp_path)
+    ctrl.note_copied(ctrl.render()[1])
+    assert ctrl.snapshot()["card"]["review_state"] == "copied"
+    _send(ctrl, "set_map_value", {"index": 0, "value": "손으로 바꾼 값"})
+    assert ctrl.snapshot()["card"]["review_state"] == "recheck"     # 저장 **전에** 이미
+    # 지금 규칙으로 다시 복사하면 해소된다(별도 무효화 코드 없이 파생이 답한다).
+    ctrl.note_copied(ctrl.render()[1])
+    assert ctrl.snapshot()["card"]["review_state"] == "copied"
+
+
+def test_toggling_fullwidth_also_invalidates_a_copied_card(tmp_path):
+    """전각 치환도 **복사되는 문자열**을 바꾼다 — 규칙 지문이 그 사실을 담아야 참이다."""
+    ctrl, _, _ = _open(tmp_path)
+    ctrl.note_copied(ctrl.render()[1])
+    _send(ctrl, "set_fullwidth", {"value": True})
+    assert ctrl.snapshot()["card"]["review_state"] == "recheck"
+
+
+def test_saving_alone_does_not_repaint_the_review_state(tmp_path):
+    """저장은 규칙을 **영속**시킬 뿐 바꾸지 않는다 — 같은 상태에 판정 주체를 둘로 두지 않는다."""
+    ctrl, _, _ = _open(tmp_path)
+    _send(ctrl, "set_source", {"index": 0, "source": "사업명"})
+    _send(ctrl, "set_confirmed", {"index": 0, "value": True})
+    ctrl.note_copied(ctrl.render()[1])          # 편집 **뒤에** 복사 = 지금 규칙의 산출물
+    assert ctrl.snapshot()["card"]["review_state"] == "copied"
+    _save(ctrl)
+    assert ctrl.snapshot()["card"]["review_state"] == "copied"   # 저장이 뒤집지 않는다
