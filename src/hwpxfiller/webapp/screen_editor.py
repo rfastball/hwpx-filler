@@ -1638,7 +1638,11 @@ class EditorController:
         확인의 승격이 아니라 **거절**이다 — 작업 방식은 생성 시점에 정해져 바뀌지 않는다
         (판정 A). 자기-갱신 분기도 일부러 가른다: 편집 사이 외부에서 같은 이름이 다른
         매체 작업으로 교체됐으면 '외부 변경' 확인만으로 덮는 것도 같은 위조다(심층 방어).
-        손상 victim(매체 불명)은 여기서 판정하지 않는다 — 보존 메타가 빈 값으로 서서 위조가
+        **미상 매체 victim(로드 성공, `.docx` 등)도 거절이다**(리뷰 4R P2 — 손상과 다르다):
+        로드가 성공하므로 `_preserved_for_target` 이 그 이력·즐겨찾기를 그대로 보존하는데,
+        어느 매체의 술어로도 읽을 수 없는 이력이 새 방식에 이식되면 같은 위조다. 그 작업의
+        정도(正道)는 덮어쓰기가 아니라 relink 복구(미상→기지, §10.16 판정 C)다.
+        손상 victim(로드 실패)만 여기서 판정하지 않는다 — 보존 메타가 빈 값으로 서서 위조가
         없고, 기존 덮어쓰기 게이트의 victim 재진술 소관이다. 디스크를 읽으므로 쓰기 잠금
         안에서만 부른다(#149 규율, :meth:`_overwrite_gate` 동형).
         """
@@ -1649,8 +1653,8 @@ class EditorController:
         except Exception:  # noqa: BLE001 — 손상: _overwrite_gate 의 victim="" 문안 소관
             return ""
         draft_media = template_media(self.template_path) if self.template_path else "hwpx"
-        if victim.media in ("hwpx", "txt") and victim.media != draft_media:
-            victim_label = work_mode_label(victim.work_mode)
+        if victim.media != draft_media:
+            victim_label = work_mode_label(victim.work_mode)  # 미상은 「지원 작업 방식 확인 필요」
             return (
                 f"작업 이름 '{self.job_name}' 은(는) 이미 '{victim_label}' 작업입니다. "
                 "형식이 다른 작업은 덮어쓸 수 없으니 다른 이름으로 저장하거나 "

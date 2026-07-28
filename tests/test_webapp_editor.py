@@ -1971,6 +1971,28 @@ def test_saving_an_hwpx_draft_over_a_txt_job_name_is_rejected(tmp_path):
     assert JobRegistry(tmp_path / "jobs").load("기안작업").media == "txt"  # 자리 불변
 
 
+def test_saving_over_a_valid_unknown_media_job_is_rejected(tmp_path):
+    """미상 매체(.docx) **정상** 작업의 자리도 덮어쓰기 거절(리뷰 4R P2).
+
+    손상 victim(로드 실패)은 보존 메타가 빈 값으로 서서 위조가 없지만, 미상 매체 victim 은
+    로드가 성공해 `_preserved_for_target` 이 이력·즐겨찾기를 그대로 보존한다 — 어느 매체의
+    술어로도 읽을 수 없는 이력이 새 방식에 이식되는 같은 위조다. 그 작업의 정도는
+    덮어쓰기가 아니라 relink 복구(미상→기지, §10.16 판정 C)다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    reg = JobRegistry(tmp_path / "jobs")
+    docx = tmp_path / "구양식.docx"
+    docx.write_text("x", encoding="utf-8")
+    reg.save(Job(name="구양식작업", template_path=str(docx)))
+    reg.stamp_last_run("구양식작업", "2026-07-02T09:00:00")
+
+    res = _save_named(ctrl, "구양식작업")
+    assert res["ok"] is False and "형식이 다른" in res["block_reason"]
+    assert "지원 작업 방식 확인 필요" in res["block_reason"]  # 미상 라벨 fail-closed
+    saved = reg.load("구양식작업")
+    assert saved.media == "" and saved.last_run_at == "2026-07-02T09:00:00"  # 자리 불변
+
+
 def test_edit_save_preserves_the_review_baseline(tmp_path):
     """3R P2 — 규칙을 하나도 안 바꾸고 저장만 해도 기준선이 비면 §13-2 의 조용한 반복이
     깨지고 다음 실행이 가장 무거운 검토를 다시 요구한다.
