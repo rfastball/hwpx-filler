@@ -547,7 +547,9 @@ class WebFrontend:
 # 모달 접근성 동적 프로브(#27/#28) — 실 브라우저에서 Modal 헬퍼의 초기포커스·Escape·복귀를
 # 되읽는다. 알려진 트리거(첫 내비 버튼)에 포커스 → txtEditModal 열기 → Escape → 복귀 확인.
 # (표적 모달은 두 번 이사했다: pasteModal → draftSaveTplModal → txtEditModal — 화면이
-# 죽을 때마다 같은 Modal 헬퍼를 쓰는 생존 커스텀 모달로 재겨눔. F6 PR-B) IIFE 가 JSON 직렬화 가능한 객체를 반환하고, 게이트 테스트가 각 필드를 단언한다.
+# 죽을 때마다 같은 Modal 헬퍼를 쓰는 생존 커스텀 모달로 재겨눔. F6 PR-B. F8: tpl 화면
+# 사망에도 txtEditModal DOM 은 셸 레벨 생존·소유 JS 만 editor.js 로 이전 — 표적 불변.)
+# IIFE 가 JSON 직렬화 가능한 객체를 반환하고, 게이트 테스트가 각 필드를 단언한다.
 _MODAL_A11Y_PROBE_JS = r"""
 (function () {
   function finishModal(id) {
@@ -1807,78 +1809,88 @@ _DATA_PICKER_PROBE_JS = r"""
 
 
 
-# 템플릿 관리(#108) — 매체 구획 + 그 안 그룹 구획이 실 WebView2 에서 서는지 되읽는다(job 목록
-# 그룹 프로브 동형). 그룹 헤더·카드·⋮ 메뉴(그룹 있는 카드=이동+삭제 / 그룹 헤더=개명+해산)·
-# ＋그룹지정 칩(「그룹 없음」에만)·접힘 캐럿 가시성·이동 다이얼로그 개폐를 확인 — 부록 B-9 눈검증의
-# 자동판(이식한 그룹 UI 가 실제로 렌더되는가).
-_TPL_LIST_GROUP_PROBE_JS = r"""
+# 편집기 「템플릿」 탭 관리 표면(F8 — tpl 화면 사망의 승계, §10.17.2 판정 D) — 구
+# _TPL_LIST_GROUP_PROBE_JS 의 재작성: 검증 대상(그룹 헤더·접힘 뷰 제외·⋮ 구성·＋그룹지정
+# 칩·이동 다이얼로그 개폐·퇴화 평면)이 전부 편집기 표면으로 살아 이주했으므로 합성 editor
+# 스냅샷을 실 render() 에 흘려 같은 항목을 #scr-editor 에서 되읽는다(부록 B-9 자동판 승계).
+# 신규 항목: 상단 행동 줄 3버튼·결과 재진술 줄·채움 고지 줄·개수/루트 캡션.
+_EDITOR_LIBRARY_MANAGE_PROBE_JS = r"""
 (function () {
   var out = {};
   try {
-    window.Nav.go('tpl');
-    var C = function (key, group, name, badge) {
-      return {key:key, group:group, name:name, path:'C:/lib/' + name, state:'compiled',
-              badge_label:badge, badge_level:'ok', detail:'필드 3개', is_error:false,
-              actions:[{key:'make_job', label:'새 작업'}]};
+    window.Nav.go('editor', {force:true});
+    var acts = [{key:'compile', label:'누름틀 변환'}, {key:'review', label:'검토'}];
+    var H = function (name, group, cur, warns) {
+      return {key:name, group:group, name:name, path:'C:/lib/' + name,
+              badge_label:'누름틀', badge_level:'ok', is_error:false, detail:'필드 3개',
+              fill_warns:warns || [], actions:acts, current:!!cur};
     };
-    var snap = {
-      hwpx: {
-        count:4, flat:false, group_names:['계약','입찰'], dir:'C:/lib', empty_hint:'',
-        sections:[
+    var draft = {section:'template', sections:['template','binding','filename'],
+      reachable:{template:false, binding:false, filename:false}, dirty_sections:[],
+      is_draft:true, dirty:false, changes:{}, revisions:{},
+      context:{entry_reason:'voluntary', evidence:{}, return_context:{}},
+      template_path:'', template_name:'',
+      field_count:0, fields:[], raw_block:'', gate_error:false, gate:null, notice:null,
+      editing_origin:'',
+      library:{
+        hwpx:{flat:false, count:4, group_names:['계약','입찰'], dir:'C:/lib', sections:[
           {group:'입찰', collapsed:false, count:2,
-           items:[C('a.hwpx','입찰','a.hwpx','누름틀'), C('b.hwpx','입찰','b.hwpx','누름틀')]},
-          {group:'계약', collapsed:true, count:1, items:[C('c.hwpx','계약','c.hwpx','누름틀')]},
-          {group:'', collapsed:false, count:1, items:[C('d.hwpx','','d.hwpx','누름틀')]}
-        ]
-      },
-      txt: {count:0, flat:true, group_names:[], dir:'C:/txt', sections:[]},
-      result:{text:'', level:'muted'}
-    };
-    window.__push('tpl', snap);
-    var host = document.getElementById('tplHwpxGroups');
+           items:[H('a.hwpx','입찰',true), H('b.hwpx','입찰',false)]},
+          {group:'계약', collapsed:true, count:1, items:[H('c.hwpx','계약',false)]},
+          {group:'', collapsed:false, count:1,
+           items:[H('d.hwpx','',false,['빈 값 2건은 공란으로 채워집니다'])]}
+        ]},
+        txt:{flat:true, count:1, group_names:[], dir:'C:/txt', sections:[
+          {group:'', collapsed:false, count:1,
+           items:[{key:'메모.txt', group:'', name:'메모', path:'C:/txt/메모.txt',
+                   field_count:2, error:'', current:false}]}
+        ]},
+        result:{text:'검토: 문제 없음', level:'ok'}
+      }};
+    window.__push('editor', draft);
+    var host = document.getElementById('scr-editor');
+    // 상단 행동 줄(죽은 .tpl-libbar 승계) — 가져오기·새 TXT·새로고침.
+    out.toolbar = ['import-template', 'lib-new-txt', 'lib-refresh'].map(function (a) {
+      return !!host.querySelector('button[data-act="' + a + '"]');
+    });
     out.grp_heads = host.querySelectorAll('.job-grp-head').length;          // 입찰·계약·그룹없음
-    out.cards_visible = host.querySelectorAll('.tpl-grp-rows:not([hidden]) .tplcard').length; // 계약 접힘 → 2+1
-    out.grp_more = host.querySelectorAll('.grp-more').length;               // 명명 그룹만(그룹없음 제외)
-    out.card_more = host.querySelectorAll('.tpl-grp-rows:not([hidden]) .tplcard-more').length;
-    out.assign_chips = host.querySelectorAll('.tpl-grp-rows:not([hidden]) .tpl-assign').length; // 「그룹 없음」 카드만
-    var caretOf = function (expanded) {
-      var c = host.querySelector('.job-grp-head[aria-expanded="' + expanded + '"] .grp-caret');
-      return c ? getComputedStyle(c).visibility : 'missing';
-    };
-    out.caret_collapsed = caretOf('false');   // 접힌 그룹 캐럿 상시 노출
-    out.caret_expanded = caretOf('true');      // 펼친 그룹 캐럿 호버 전 숨김
-    var realCall = window.Bridge.call;
-    window.Bridge.call = function () { return new Promise(function () {}); };
-    var collapsedHead = host.querySelector('.job-grp-head[aria-expanded="false"]');
-    document.body.click();
-    collapsedHead.click();
-    var openedBody = collapsedHead.closest('.job-grp').nextElementSibling;
-    out.collapse_local_flip = collapsedHead.getAttribute('aria-expanded') === 'true' &&
-      collapsedHead.querySelector('.grp-caret').textContent === '▾' && !openedBody.hidden;
-    window.Bridge.call = realCall;
-    // 앞선 프로브가 Popover 바깥-닫기 pointerdown 을 남기면 그 인스턴스의 "다음 click 1회 소비"
-    // 플래그가 상주해 우리 첫 click 을 캡처 단계에서 먹는다(교차 프로브 오염). 던짐 click 으로
-    // 미리 소비해 상태를 청소한다(메뉴 개폐 사이마다도 동일 — 우리 close pointerdown 자기 소비).
+    out.rows_visible = host.querySelectorAll('.libselrow').length;          // 계약 접힘 제외 → 3+1
+    out.row_more = host.querySelectorAll('[data-act="lib-more"]').length;   // 모든 가시 행
+    out.grp_more = host.querySelectorAll('.grp-more').length;               // 명명 그룹만
+    out.assign_chips = host.querySelectorAll('[data-act="lib-assign"]').length; // 무그룹 행만(d+메모)
+    out.fill_warn = /빈 값 2건/.test(host.textContent);                     // #154 사전 고지 승계
+    var res = host.querySelector('.run-result');
+    out.result_line = !!res && /검토: 문제 없음/.test(res.textContent) &&
+      res.className.indexOf('ok') !== -1;                                   // #tplResult 승계
+    out.band_caption = /4개/.test(host.textContent) && /C:\/lib/.test(host.textContent);
+    // 앞선 프로브가 Popover 바깥-닫기 pointerdown 을 남기면 "다음 click 1회 소비" 플래그가
+    // 상주해 우리 첫 click 을 먹는다(교차 프로브 오염) — 던짐 click 으로 청소.
     var flush = function () { document.body.click(); };
-    // 그룹에 속한 카드 ⋮ = [이동, 삭제].
-    flush();
-    host.querySelector('.tplcard-more').click();
     var menu = document.getElementById('tplRowMenu');
+    // 그룹 있는 HWPX 행 ⋮ = [링1 상태 동사(변환·검토), 이동, 삭제] — 소비 동사 없음(행 버튼 소유).
+    flush();
+    host.querySelector('[data-act="lib-more"][data-key="b.hwpx"]').click();
     out.menu_shown = getComputedStyle(menu).display !== 'none';
-    out.card_menu_items = Array.prototype.map.call(
+    out.hwpx_menu_items = Array.prototype.map.call(
       menu.querySelectorAll('button[data-menu]'), function (b) { return b.dataset.menu; });
     document.body.dispatchEvent(new MouseEvent('pointerdown', {bubbles:true}));
     out.menu_closed = getComputedStyle(menu).display === 'none';
+    // 무그룹 TXT 행 ⋮ = [내용 편집, 삭제](이동은 칩 소관).
+    flush();
+    host.querySelector('[data-act="lib-more"][data-key="메모.txt"]').click();
+    out.txt_menu_items = Array.prototype.map.call(
+      menu.querySelectorAll('button[data-menu]'), function (b) { return b.dataset.menu; });
+    document.body.dispatchEvent(new MouseEvent('pointerdown', {bubbles:true}));
     // 그룹 헤더 ⋮ = [개명, 해산].
     flush();
     host.querySelector('.grp-more').click();
     out.group_menu_items = Array.prototype.map.call(
       menu.querySelectorAll('button[data-menu]'), function (b) { return b.dataset.menu; });
     document.body.dispatchEvent(new MouseEvent('pointerdown', {bubbles:true}));
-    // ＋그룹지정 칩 → 이동 다이얼로그.
+    // ＋그룹지정 칩 → 이동 다이얼로그(기존 #tplMoveModal DOM 재사용).
     out.move_hidden_before = document.getElementById('tplMoveModal').classList.contains('hidden');
     flush();
-    host.querySelector('.tpl-assign').click();
+    host.querySelector('[data-act="lib-assign"]').click();
     out.move_shown_after_chip = !document.getElementById('tplMoveModal').classList.contains('hidden');
     window.Modal.close('tplMoveModal');
     (function () {
@@ -1887,13 +1899,13 @@ _TPL_LIST_GROUP_PROBE_JS = r"""
       Object.defineProperty(ev, 'propertyName', {value:'opacity'});
       card.dispatchEvent(ev);
     })();
-    // 퇴화 평면(그룹 0개) — 헤더 없는 카드 나열.
-    snap.hwpx.flat = true;
-    snap.hwpx.group_names = [];
-    snap.hwpx.sections = [{group:'', collapsed:false, count:1, items:[C('d.hwpx','','d.hwpx','누름틀')]}];
-    window.__push('tpl', snap);
+    // 퇴화 평면(그룹 0개) — 헤더 없는 행 나열.
+    draft.library.hwpx = {flat:true, count:1, group_names:[], dir:'C:/lib',
+      sections:[{group:'', collapsed:false, count:1, items:[H('d.hwpx','',false)]}]};
+    draft.library.txt = {flat:true, count:0, group_names:[], dir:'C:/txt', sections:[]};
+    window.__push('editor', draft);
     out.flat_heads = host.querySelectorAll('.job-grp-head').length;
-    out.flat_cards = host.querySelectorAll('.tplcard').length;
+    out.flat_rows = host.querySelectorAll('.libselrow').length;
     out.error = null;
   } catch (e) { out.error = String((e && e.message) || e); }
   return out;
@@ -2322,21 +2334,17 @@ _MILESTONE_H_WAVE1_PROBE_JS = r"""
   var enabledPrimary = style('#jobGenBtn');
   gen.disabled = wasDisabled;
 
-  var card = document.querySelector('#tplHwpxGroups .tplcard, #tplTxtGroups .tplcard');
-  if (!card) {
-    card = document.createElement('div');
-    card.className = 'tplcard';
-    card.setAttribute('data-selftest-probe', 'card');
-    document.querySelector('#scr-tpl .tpl-medium').appendChild(card);
-  }
-  var selectedCard = null;
-  if (card) {
-    var oldCurrent = card.getAttribute('aria-current');
-    card.setAttribute('aria-current', 'true');
-    selectedCard = styleOf(card);
-    if (oldCurrent === null) card.removeAttribute('aria-current');
-    else card.setAttribute('aria-current', oldCurrent);
-  }
+  // 카드 상태 계약 표본(F8 재겨눔) — .tplcard 는 tpl 화면과 함께 죽고, 같은 선택자 묶음
+  // (hover·aria-current)의 생존 소비자 .jcard(손상 작업 danger 카드가 계속 씀)로 잰다.
+  // 표본은 자급(self-seed — #137 교차오염 교훈): 스타일 계약 측정이 목적이라 직접 심는다.
+  var card = document.createElement('div');
+  card.className = 'jcard';
+  card.setAttribute('data-selftest-probe', 'card');
+  document.body.appendChild(card);
+  var baseCard = styleOf(card);
+  card.setAttribute('aria-current', 'true');
+  var selectedCard = styleOf(card);
+  card.remove();
 
   // 로케이트 어포던스 표본 자급(self-seed) — 종전엔 앞 프로브(job_mirror)가 남긴 DOM 에
   // 무임승차했는데, 데이터-우선 무조건 렌더가 빈 경로 스냅샷으로 정직하게 지우면서 교차
@@ -2374,9 +2382,10 @@ _MILESTONE_H_WAVE1_PROBE_JS = r"""
   return {
     headings: {
       screen: style('.scr-head h1'),
-      // 15px 구획 역할의 표본 — 구 .job-sec-head DOM 은 「기안」 좌 목록과 함께 죽었다
-      // (F6 PR-B). 같은 역할군(app.css 한 선택자 묶음)의 정적 생존 표본으로 잰다.
-      section: style('#scr-tpl .tpl-band .tb-t'),
+      // 15px 구획 역할의 표본 — 구 .job-sec-head(F6 PR-B)·.tpl-band .tb-t(F8, tpl 화면
+      // 사망)가 차례로 죽어, 같은 역할군(app.css 한 선택자 묶음)의 정적 생존 표본
+      // .modal-card h3 로 잰다(모달 DOM 은 셸 레벨 상주).
+      section: style('.modal-card h3'),
       zone: style('#scr-job .zone-cap')
     },
     job_steps: Array.from(document.querySelectorAll('#scr-job .zone-cap')).map(function (e) {
@@ -2385,9 +2394,9 @@ _MILESTONE_H_WAVE1_PROBE_JS = r"""
       return label.textContent.trim();
     }),
     job_step_badges: document.querySelectorAll('#scr-job .zone-cap .znum').length,
-    template_media_count: document.querySelectorAll('#scr-tpl .tpl-medium').length,
-    template_media: style('#scr-tpl .tpl-medium'),
-    template_card: styleOf(card),
+    // (H-04 매체 sunken 2면 항목은 은퇴 — 승계 표면인 편집기 밴드는 .grp 문법이고 그 시각
+    //  계약은 editor_lib_manage 프로브가 잰다. 카드 상태 계약만 .jcard 로 승계.)
+    card_base: baseCard,
     selected_card: selectedCard,
     disabled_primary: disabledPrimary,
     enabled_primary: enabledPrimary,
@@ -3096,8 +3105,9 @@ def _selftest_drive(window: "object") -> None:
         time.sleep(0.4)  # 모달 닫힘 전이(CSS 160ms) 정산 — 다음 프로브의 클릭이 백드롭에 막히지 않게
         # 매핑 칩-라이브(슬라이스 5 PR-3) — 합성 매핑 스냅샷으로 실 render() 구동 후 칩·태그 되읽기.
         result["editor_chip"] = window.evaluate_js(_EDITOR_CHIP_PROBE_JS)  # type: ignore[attr-defined]
-        # 템플릿 관리(#108) — 매체 구획+그룹·⋮ 메뉴·＋그룹지정 칩·이동 다이얼로그 실렌더 되읽기.
-        result["tpl_groups"] = window.evaluate_js(_TPL_LIST_GROUP_PROBE_JS)  # type: ignore[attr-defined]
+        # 편집기 라이브러리 관리 표면(F8 — 구 tpl 그룹 프로브의 승계 재작성): 그룹·⋮ 메뉴·
+        # ＋그룹지정 칩·이동 다이얼로그·행동 줄·결과 줄 실렌더 되읽기.
+        result["editor_lib_manage"] = window.evaluate_js(_EDITOR_LIBRARY_MANAGE_PROBE_JS)  # type: ignore[attr-defined]
         # 마일스톤 H 웨이브 1 — 실제 계산 타이포·표면·버튼 위계와 PathTrack 접근 이름을
         # 합성 작업/템플릿 렌더 뒤 실 WebView2에서 되읽는다.
         result["milestone_h_wave1"] = window.evaluate_js(  # type: ignore[attr-defined]
