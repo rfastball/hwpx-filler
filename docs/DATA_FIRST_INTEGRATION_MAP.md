@@ -374,7 +374,7 @@ writer)·`core/fill_ledger.py`·`batch.py`·`naming.py`·`core/jamo.py`·`gui/ru
 (고정 → 사용자 축)·`library_health`(목록 1건 → 상세 전 원인)·`Job`(판본·override 보관).
 
 **신설 백엔드**(모두 링1): `RecordRangeState`/`RecordRangeDraft`·`EditContext`/`editSession`·
-Template·Binding 판본·~~`runOverrides`~~(기각 §10.14)·`ReviewRequirement`(F-06)·`templateTransitionDraft`·
+Template·Binding 판본·~~`runOverrides`~~(기각 §10.14)·`ReviewRequirement`(F-06)·~~`templateTransitionDraft`~~(기각 §10.16)·
 TXT 복사 사건 기록·마운트 참조 세션 복원(`RestoreMountedData`/`SaveMountedDataRef`).
 
 ### 10.4 죽는 링2 표면과 승계 의무
@@ -461,7 +461,7 @@ HwpxRun`) + §10(성공과 실패). 이 절이 소유하는 것은 흐름의 정
 | F8 | 시험 탭 + `tpl` 흡수·사망 — **템플릿 바꾸기·작업 방식 전환은 기각**(§10.16) | ~~24~~·25 |
 
 F7 의 판본·patch 거래는 다른 항목의 전제가 아니다 — 계약 불변식(§13-6·7)이 요구하지만 핵심
-흐름은 그것 없이 오늘도 돈다. 실제로 필요해지는 시점(F5 승인 fingerprint·F8 원자 전환)에 당긴다.
+흐름은 그것 없이 오늘도 돈다. 실제로 필요해지는 시점(F5 승인 fingerprint·F8 시험 탭)에 당긴다.
 
 **항목 착수 전 필수 절차**(축적된 교훈의 선행 적용):
 

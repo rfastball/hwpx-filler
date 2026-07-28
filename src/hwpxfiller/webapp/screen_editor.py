@@ -79,6 +79,7 @@ from ..gui.mapping_state import (
     profile_source_vocabulary,
 )
 from ..gui.template_manager_state import TemplateManagerViewModel
+from ..gui.work_mode import work_mode_label  # 교차 매체 거절 문안의 방식 라벨(§19.1)
 from ..naming import make_output_filename
 from .screens import NO_ROWS_TEXT, PushSink, default_pool_registry
 from .template_groups import TemplateGroupModel, rel_key
@@ -1632,6 +1633,35 @@ class EditorController:
             victim = ""
         return overwrite_confirm_text(self.job_name, victim)
 
+    def _cross_media_block(self) -> str:
+        """저장 대상 자리의 기존 작업과 이 세션의 매체가 갈리면 거절 문안, 아니면 ``""``(§10.16 판정 D).
+
+        F6 PR-B 가 편집기에 TXT 를 들이며 열린 경로다: TXT 초안을 기존 HWPX 작업 이름으로
+        저장하면 :meth:`_preserved_for_target` 이 victim 의 이력·즐겨찾기·검토 기준선을
+        보존해 이력 위조가 된다(`last_run_at` 의 뜻은 매체가 정한다 — §19.4). 덮어쓰기
+        확인의 승격이 아니라 **거절**이다 — 작업 방식은 생성 시점에 정해져 바뀌지 않는다
+        (판정 A). 자기-갱신 분기도 일부러 가른다: 편집 사이 외부에서 같은 이름이 다른
+        매체 작업으로 교체됐으면 '외부 변경' 확인만으로 덮는 것도 같은 위조다(심층 방어).
+        손상 victim(매체 불명)은 여기서 판정하지 않는다 — 보존 메타가 빈 값으로 서서 위조가
+        없고, 기존 덮어쓰기 게이트의 victim 재진술 소관이다. 디스크를 읽으므로 쓰기 잠금
+        안에서만 부른다(#149 규율, :meth:`_overwrite_gate` 동형).
+        """
+        if not self.registry.exists(self.job_name):
+            return ""
+        try:
+            victim = self.registry.load(self.job_name)
+        except Exception:  # noqa: BLE001 — 손상: _overwrite_gate 의 victim="" 문안 소관
+            return ""
+        draft_media = template_media(self.template_path) if self.template_path else "hwpx"
+        if victim.media in ("hwpx", "txt") and victim.media != draft_media:
+            victim_label = work_mode_label(victim.work_mode)
+            return (
+                f"작업 이름 '{self.job_name}' 은(는) 이미 '{victim_label}' 작업입니다. "
+                "형식이 다른 작업은 덮어쓸 수 없으니 다른 이름으로 저장하거나 "
+                "기존 작업을 삭제한 뒤 다시 저장하세요."
+            )
+        return ""
+
     def _preserved_for_target(self) -> "dict[str, object]":
         """저장 대상 파일이 **자기 것으로 유지해야 하는** 비-편집 메타(잠금 안에서 호출).
 
@@ -1643,7 +1673,8 @@ class EditorController:
         - **남의 자리 덮어쓰기**(대상이 이미 존재하는 다른 작업): **대상(victim)의** 메타를
           유지한다. 확인 문안이 약속한 것은 "그 파일을 덮어쓴다"이지 "그 작업의 분류·이력·
           즐겨찾기를 내 것으로 바꾼다"가 아니다 — 원점 메타를 실으면 남의 즐겨찾기가 조용히
-          꺼지거나 남의 카드에 내 실행 이력이 붙는다.
+          꺼지거나 남의 카드에 내 실행 이력이 붙는다. 매체가 같은 경우만 여기 도달한다
+          (:meth:`_cross_media_block` 선차단, §10.16 판정 D — 교차 보존은 이력 위조).
         - **빈 자리에 새 이름**: 분류(그룹·태그)는 편집을 따라가되(사본이 「그룹 없음」으로
           조용히 튀지 않게 — 「기안」 저장의 같은 결정) **이력·즐겨찾기는 계승하지 않는다**:
           새 identity 는 실행된 적도, 사용자가 고른 적도 없다(복제 규칙과 동형).
@@ -1712,6 +1743,10 @@ class EditorController:
         같으면 통과(같은 사실을 확인한 것). 게이트가 사라졌으면(외부 변경이 되돌려짐 등) 덮을
         것이 없으므로 그냥 통과한다.
         """
+        # 교차 매체 선차단(§10.16 판정 D) — 거절될 저장에 덮어쓰기 확인부터 보여주지 않는다.
+        blocked = self._cross_media_block()
+        if blocked:
+            return {"ok": False, "block_reason": blocked}
         gate_text = self._overwrite_gate()
         if gate_text and (
             not p.get("confirm_overwrite")

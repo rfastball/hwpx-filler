@@ -297,8 +297,6 @@ def require_hwpx(job: "Job") -> "Job":
       있음)은 물론, ``.docx`` 등 미지 접미사도 여기서 막는다 — 그대로 두면 RunViewModel 하위
       메서드가 그 경로를 hwpx zip 으로 파싱해 조용한 오작동이 된다. 실제 파싱 경계(``.hwpx``
       필수)는 :func:`require_hwpx_template` 가 별도로 엄격히 지킨다(배치 생성·홈 컴파일).
-
-    **매체 교차 relink 는 예외** — 차단이 아니라 재확인이라 여기서 raise 하지 않고 화면 게이트가 받는다.
     """
     if job.template_path and job.media != "hwpx":
         where = "'기안' 화면 소관" if job.media == "txt" else "hwpx 아닌 템플릿"

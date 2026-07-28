@@ -1915,6 +1915,62 @@ def test_saving_under_a_new_name_inherits_class_but_not_history(tmp_path):
     assert reg.load("원본").favorited_at == "2026-07-20T09:00:00"  # 원본 불변
 
 
+def _txt_draft_named(ctrl, tmp_path, name: str) -> dict:
+    """TXT 초안을 이름까지 세워 저장 직전으로 만드는 최소 흐름 — 저장 결과를 돌려준다."""
+    path = _txt_template(tmp_path)
+    ctrl.dispatch("use_library_template", {"path": str(path)})
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_const", {"index": 0, "const": "물품 구매"})
+    blanks = ctrl.dispatch("confirm_all", {})["blanks"]
+    ctrl.dispatch("confirm_blanks", {"fields": blanks})
+    ctrl.dispatch("set_name", {"name": name})
+    return ctrl.dispatch("save", {})
+
+
+def test_saving_a_txt_draft_under_an_existing_hwpx_name_is_rejected(tmp_path):
+    """TXT 초안을 기존 HWPX 작업 이름으로 저장 = 거절(§10.16 판정 D).
+
+    F6 PR-B 가 편집기에 TXT 를 들이며 열린 경로다: 일반 덮어쓰기 확인만 거치면
+    `_preserved_for_target` 이 victim 의 이력·즐겨찾기·검토 기준선을 보존해 이력 위조가
+    된다(`last_run_at` 의 뜻은 매체가 정한다 — §19.4). 확인 승격이 아니라 **거절**이다 —
+    `confirm_overwrite` 로도 뚫리지 않고 victim 은 디스크에서 불변이다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    assert _save_named(ctrl, "공고작업")["ok"] is True
+    reg = JobRegistry(tmp_path / "jobs")
+    reg.set_favorite("공고작업", True, "2026-07-01T09:00:00")
+    reg.stamp_last_run("공고작업", "2026-07-02T09:00:00")
+
+    res = _txt_draft_named(ctrl, tmp_path, "공고작업")
+    assert res["ok"] is False
+    assert "형식이 다른" in res["block_reason"] and "HWPX 문서 생성" in res["block_reason"]
+    assert "needs_overwrite" not in res          # 거절될 저장에 확인 문안을 겹치지 않는다
+    res = ctrl.dispatch("save", {"confirm_overwrite": True,
+                                 "confirmed_overwrite_text": "아무 문안"})
+    assert res["ok"] is False and "형식이 다른" in res["block_reason"]
+    victim = reg.load("공고작업")
+    assert victim.media == "hwpx"                # 자리 불변(위조 없음)
+    assert victim.favorited_at == "2026-07-01T09:00:00"
+    assert victim.last_run_at == "2026-07-02T09:00:00"
+
+
+def test_saving_an_hwpx_draft_over_a_txt_job_name_is_rejected(tmp_path):
+    """역방향 — HWPX 초안이 TXT 작업의 자리를 덮는 것도 같은 거절(§10.16 판정 D).
+
+    이쪽은 PR-B 이전부터 이론상 열려 있던 방향이다(편집기는 hwpx 만 만들었다) — 표면에
+    새 매체가 들어오면 기존 동사의 매체 가정을 함께 세어야 한다는 규칙의 대칭 가드.
+    """
+    ctrl, _ = _controller(tmp_path)
+    assert _txt_draft_named(ctrl, tmp_path, "기안작업")["ok"] is True
+
+    res = _save_named(ctrl, "기안작업")          # hwpx 초안이 같은 이름을 겨눈다
+    assert res["ok"] is False
+    assert "형식이 다른" in res["block_reason"]
+    assert "온나라 기안 검토·복사" in res["block_reason"]
+    assert JobRegistry(tmp_path / "jobs").load("기안작업").media == "txt"  # 자리 불변
+
+
 def test_edit_save_preserves_the_review_baseline(tmp_path):
     """3R P2 — 규칙을 하나도 안 바꾸고 저장만 해도 기준선이 비면 §13-2 의 조용한 반복이
     깨지고 다음 실행이 가장 무거운 검토를 다시 요구한다.
