@@ -431,7 +431,14 @@ def test_milestone_l_job_density_and_expansion_sheets():
     assert ".data-grid{display:grid;grid-template-columns:var(--data-grid-cols)}" in css
     assert ".session-actionbar{position:sticky;bottom:0;z-index:5;display:grid;" in css
     assert "grid-template-columns:var(--data-grid-cols);" in css
-    assert ".actionbar-row{display:flex;align-items:center;gap:var(--sp-12);flex-wrap:wrap;justify-content:flex-end}" in css
+    # 가로 패딩은 **트랙 밖**이다(리뷰 R5): 패딩이 트랙 안에 있으면 액션바가 패딩 뺀 폭에서
+    # 트랙을 계산해 1열 끝이 구분선보다 6px 앞에서 끝난다 — 같은 템플릿을 공유해도 **재는
+    # 상자**가 다르면 기준면이 어긋난다. 카드의 좌 여백은 트랙 안의 행이 진다.
+    assert "margin-top:var(--sp-12);padding:var(--sp-12)0;" in css
+    assert (
+        ".actionbar-row{display:flex;align-items:center;gap:var(--sp-12);flex-wrap:wrap;"
+        "justify-content:flex-end;padding-left:var(--sp-16)}"
+    ) in css
     assert '<div class="actionbar-row">' in html, (
         "액션바 내용을 감싸지 않으면 자식들이 두 열에 흩어진다."
     )
