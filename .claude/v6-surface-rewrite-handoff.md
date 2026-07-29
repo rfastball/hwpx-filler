@@ -14,16 +14,18 @@
 사용자 지적으로 중단했다 — 그 브랜치(`feat/slice3-library-surface`)는 **삭제됐다**. 같은
 실수를 반복하지 않는다: 죽을 구조 위에서 시각을 다듬지 않는다.
 
-## 1. 절대 기준 문서 (읽기 전용 lab 워크트리)
+## 1. 절대 기준 문서
 
-경로: `C:\Users\rfast\Desktop\PYTHON_Projects\hwpx-filler-ui-reboot` (브랜치 `lab/ui-reboot`,
-동결 태그 `prototype-v6-freeze`)
+브랜치 `lab/ui-reboot` 와 그 워크트리는 2026-07-29 에 은퇴했다. 계약은 저장소로 착지했고,
+나머지 랩 자산은 태그 `archive/lab-ui-reboot` 가 보존한다(`git show archive/lab-ui-reboot:<경로>`).
 
-- `docs/core-workflow.md` — 워크플로 계약 정본. §2·§18.1~§18.11·§19.1~§19.12 가 이번 사양의
-  본체(데이터 선택·문서 탐색·메인 순위·라이브러리·건강·무효화 규칙·시각 문법).
-- `docs/core-workflow-ui-mvp-demo-v6.html` — v6 시안(화면 구조·구획·문법).
-- `docs/core-workflow-prototype/v6.js` — 시안 동작. **이식 금지 목록**은 통합 지도 §4
-  (shadow-backend: 검증·무효화 재계산, mock 실행/결과, localStorage, dataFamily 추론 등).
+- `docs/core-workflow.md` — 워크플로 계약 정본. **이 저장소 master 에 있다.**
+  §2·§18.1~§18.11·§19.1~§19.12 가 이번 사양의 본체(데이터 선택·문서 탐색·메인 순위·
+  라이브러리·건강·무효화 규칙·시각 문법).
+- `docs/core-workflow-ui-mvp-demo-v6.html` — v6 시안(화면 구조·구획·문법). 아카이브 태그.
+- `docs/core-workflow-prototype/v6.js` — 시안 동작. 아카이브 태그. **이식 금지 목록**은
+  통합 지도 §4(shadow-backend: 검증·무효화 재계산, mock 실행/결과, localStorage,
+  dataFamily 추론 등).
 - `research-private/v6-state-transition-review.md` (integration 워크트리, git-ignored) —
   상태전이 결함 리뷰. triage 결과는 지도 §7.
 
@@ -35,10 +37,10 @@
 | 경로 | 브랜치 | 역할 |
 |---|---|---|
 | `hwpx-filler/` | `master` | 제품 정본(사용자가 직접 쓰는 체크아웃) |
-| `hwpx-filler-ui-reboot/` | `lab/ui-reboot` | v6 시안·계약 **읽기 전용 참고본** |
 | `hwpx-filler-integration/` | 작업 브랜치 | 실제 작업. 여기서 `origin/master` 기반 새 브랜치를 판다 |
 
-lab 은 수정하지 않는다. 통합 지도는 `docs/DATA_FIRST_INTEGRATION_MAP.md`(integration).
+lab 워크트리는 없어졌다 — v6 시안·프로토타입이 필요하면 태그 `archive/lab-ui-reboot` 에서
+꺼낸다. 통합 지도는 `docs/DATA_FIRST_INTEGRATION_MAP.md`(integration).
 
 ## 3. 현재 코드 상태 (전부 master 에 머지됨, 2026-07-27)
 

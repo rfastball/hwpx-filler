@@ -1,7 +1,7 @@
 """데이터-우선 후보 판정(링1) — 현재 데이터 필드에 대한 저장 작업의 최소 호환성.
 
-v6 워크플로 계약 §18.4 의 이식(정본: ``lab/ui-reboot`` 태그 ``prototype-v6-freeze`` 의
-``docs/core-workflow.md``; 봉합 지도: ``docs/DATA_FIRST_INTEGRATION_MAP.md``).
+v6 워크플로 계약 §18.4 의 이식(정본: ``docs/core-workflow.md``; 봉합 지도:
+``docs/DATA_FIRST_INTEGRATION_MAP.md``).
 
 계약 국경 세 가지:
 
