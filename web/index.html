@@ -370,7 +370,11 @@
                    「미리보기」면 문서가 렌더돼 보일 것을 기대하게 되는데 hwpx 본문은 앱에서
                    렌더하지 않는다 — 버튼이 약속하는 것과 면이 주는 것을 맞춘다. -->
               <button class="btn" id="jobPreviewOpen" data-busy-lock disabled>생성 값 미리보기</button>
-              <span class="pill warn" id="jobReviewFlag" style="display:none">확인 필요</span>
+              <!-- 규칙축은 「승인」이 갖고 「확인」은 필드축(거울 ack) 단독이다(U2 §2.10).
+                   새 어휘를 짓는 것이 아니라 링1 이름(`approve`·`PreviewApproved`, §13-4)을
+                   표면으로 올리는 것이다. 곁다리로 라이브러리 탭 「확인 필요」(후보 건전성)와
+                   글자까지 같던 충돌도 함께 풀린다. -->
+              <span class="pill warn" id="jobReviewFlag" style="display:none">승인 필요</span>
               <button class="btn primary" id="jobGenBtn" disabled>이 작업으로 문서 생성</button>
               <button class="btn" id="jobGenCancel" style="display:none">다음 건부터 중단</button>
               <span class="muted capnote" id="jobGate"></span>
@@ -619,7 +623,10 @@
          aria-labelledby="previewTitle">
       <div class="modal-card preview-drawer">
         <h3 id="previewTitle">생성 값 미리보기</h3>
-        <p class="modal-sub">실제로 문서에 들어갈 값입니다. 미리보기를 여는 것과 확인은 다른 일입니다.</p>
+        <!-- 「이름」을 앞세운다(U2 §2.10 C3): 첫 실행에서 거울이 못 보여 주는 유일한 것이
+             파일 이름 축인데, 부제·버튼이 그것을 안 가리켜 「방금 거울에서 본 값을 한 번 더
+             보는 화면」으로 읽혔다. 축의 차이를 면이 스스로 말한다. -->
+        <p class="modal-sub">이 이름으로 이 값이 나갑니다. 미리보기를 여는 것과 승인은 다른 일입니다.</p>
 
         <div class="preview-nav">
           <button class="btn sm" id="previewPrev" data-busy-lock aria-label="이전 문서">‹</button>
@@ -659,7 +666,7 @@
 
         <div class="modal-actions">
           <button class="btn" id="previewEdit">이 작업 편집</button>
-          <button class="btn primary" id="previewApprove" style="display:none">결과 확인 완료</button>
+          <button class="btn primary" id="previewApprove" style="display:none">이 이름과 값으로 승인</button>
           <button class="btn" id="previewClose">닫기</button>
         </div>
       </div>
