@@ -750,27 +750,12 @@ falsify하지 못했을 뿐, **수요 자체는 이미 운용 관측으로 성�
 > 비공개 이관으로 테스트가 참조를 잃어 삭제하면서, 재론 금지 경계를 이 문서가
 > 이어받는다(삭제는 의무를 상속한다).
 
-### 앱 A — diff 리뷰어 뷰 계약 (`src/hwpxdiff/`)
-> 앱 A(diff 리뷰어)는 앱 B와 **별도 제품**(읽기 도구)이라 본 문서(앱 B)와 스코프가 다르나,
-> ARCH·CONTRACT 가 앱 A 를 스코프 밖으로 두어 이 뷰 결정의 수용 문서가 달리 없어 여기 보존한다.
+### 앱 A — diff 리뷰어 뷰 계약 (저장소 이관)
 
-**코어 계약** (`hwpxdiff/diff.py`, 완성·골든 고정 — UI 가 건드리지 않음):
-- `diff_files(old, new) -> DiffResult` — 실코퍼스 ~30ms(동기 실행 충분; 대형 문서 워커 스레드는
-  개선 후보 = GitHub #6).
-- `DiffResult.rows` — **equal 포함 전문(全文) 대조 스트림**(`DocRow`; 변경 행 `seq`==`Change.seq`,
-  equal 은 None). 골든 밖의 뷰 데이터 = 신구대비표의 원천.
-- `DiffResult.change_items`·`render_html` 은 CLI(`diff --html`) 전용 유지 — GUI 는 안 씀.
-- `KIND_LABELS`/`KIND_COLORS` — 종류(추가/삭제/변경/번호변경) 어휘·색 단일 출처.
+이 절에 세들어 있던 diff 리뷰어 뷰 계약(코어 소유권·전문 신구대비표·필터 3종·내보내기 없음·
+발명 금지)은 2026-07-29 제품 분리와 함께 **정본이 옮겨 갔다**:
+[hwpx-diff 저장소의 `docs/DIFF_VIEW_CONTRACT.md`](https://github.com/rfastball/hwpx-diff/blob/master/docs/DIFF_VIEW_CONTRACT.md).
 
-**뷰 형태** (2026-07 사용자 피드백 확정 — 변경분-only 리포트 폐기):
-- **전문 신구대비표** — 원문 전체를 좌(구판)/우(신판) 대조(`_render_doc_html`). 변경만 발라내면
-  본문 맥락이 날아간다는 피드백의 산물. 변경 행은 구판 del/신판 ins 로 갈라 강조, equal 은 좌우 동일.
-- **변경 리스트 = 네비게이션** — 문서상 인접·동종 변경을 그룹 1행으로(`diff.group_changes` →
-  `DiffResult.change_groups`). 클릭 → `scrollToAnchor(chg-{첫 seq})`.
-- **필터 = 종류 3종 고정**(추가/삭제/변경) + 번호변경 전용 토글(기본 접힘·개수 노출). 세분
-  범주(숫자/조항…) 필터는 노이즈라 제거.
-- **내보내기 없음**(「브라우저에서 열기」·「HTML 저장」 제거). 낱말 diff 파편화는 코어
-  `diff.coalesce_word_ops` 가 완화 — GUI 전문 뷰와 CLI HTML 이 같은 성형 공유.
-
-**발명 금지:** 읽기 도구다 — 문서 편집·주석·병합 금지(스코프 밖). diff 정밀도(표 제목 매칭·셀
-재번호 인지)는 코어 파킹 항목이지 UI 일이 아니다.
+원래 여기 있던 이유는 "앱 A 는 별도 제품이라 스코프가 다르나 수용 문서가 달리 없어서" 였고,
+이제 수용 문서가 생겼으므로 그 사유가 소멸했다. 이 문서(앱 B = 문서나르미 UI ADR)는 앞으로
+diff 결정을 담지 않는다.

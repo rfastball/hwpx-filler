@@ -125,8 +125,6 @@ def test_repository_policy_has_audited_packages_only() -> None:
     floors = gate.load_floors(ROOT / "docs" / "package_coverage_floors.toml")
     assert {floor.name for floor in floors} == {
         "hwpxcore",
-        "hwpxdiff",
-        "hwpxdiff.webapp",
         "hwpxfiller",
         "hwpxfiller.core",
         "hwpxfiller.data",

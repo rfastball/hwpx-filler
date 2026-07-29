@@ -91,15 +91,10 @@ python -m hwpxfiller.cli lint T.hwpx                             # 템플릿 위
 
 ## 자매 도구: hwpxdiff
 
-같은 저장소에 공통 파서 `hwpxcore` 를 공유하는 읽기 쪽 도구가 하나 더 있습니다.
-`hwpxdiff` 는 규격서·공고서 두 판본을 의미 기반으로 비교해 좌우 대조(신구대비표)로
-렌더합니다. filler 가 문서를 *쓰는* 도구라면 diff 는 *읽고 견주는* 도구입니다.
-filler 만 쓸 거라면 무시해도 됩니다.
-
-```bash
-python -m hwpxdiff.webapp                                  # GUI 리뷰어
-python -m hwpxdiff.cli v2025.hwpx v2026.hwpx --html report.html
-```
+같은 파서(`hwpxcore`) 위에 선 읽기 쪽 도구가 하나 더 있습니다 — 규격서·공고서 두 판본을
+의미 기반으로 비교해 좌우 대조(신구대비표)로 렌더하는 **[hwpxdiff](https://github.com/rfastball/hwpx-diff)**
+입니다. 문서나르미가 문서를 *쓰는* 도구라면 저쪽은 *읽고 견주는* 도구입니다. 원래 이
+저장소에 함께 있었고 2026-07-29 에 분리했습니다.
 
 ## 개발
 
@@ -127,8 +122,9 @@ Authenticode 서명까지 합니다.
 사용자에게 보이는 제품명은 **문서나르미**, 저장소·패키지·실행 파일 등 기술
 식별자는 `hwpx-filler`(`hwpxfiller`) 계열입니다.
 
-공통 파서 `hwpxcore` 위에 제품 `hwpxfiller` 가 서고, 의존은 아래로만 흐릅니다
-(`hwpxfiller → hwpxcore ← hwpxdiff`, 두 제품 간 상호 임포트 금지).
+파서 `hwpxcore` 위에 제품 `hwpxfiller` 가 서고, 의존은 아래로만 흐릅니다
+(`hwpxfiller → hwpxcore`). 코어는 제품 로직을 담지 않습니다 — 파싱·패키징·검증뿐이고,
+[hwpxdiff](https://github.com/rfastball/hwpx-diff) 저장소가 같은 계층의 사본을 들고 있습니다.
 
 | 모듈 | 역할 |
 |------|------|

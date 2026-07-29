@@ -118,7 +118,7 @@ wheels = [
 ]
 
 [[package]]
-name = "hwpx-tools"
+name = "hwpx-filler"
 version = "0.3.0rc1"
 source = { editable = "." }
 dependencies = [

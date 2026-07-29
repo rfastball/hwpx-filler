@@ -20,11 +20,9 @@ from _web_css import ALL_CSS_FILES, app_css, linked_css
 
 WEB_INDEX = Path(__file__).resolve().parents[1] / "web" / "index.html"
 # web/ 앱 스타일시트는 분할됐다 — 여기서만 **문자열**(조각을 링크 순서대로 이어붙인 구
-# app.css 등가)이고, 아래 WEB_DIFF_CSS 는 단일 파일이라 Path 그대로다.
+# app.css 등가)이다.
 WEB_CSS = app_css()
-# web-diff(2판 diff 뷰어)는 별개 산출물이지만 강제색 대응은 web/ 와 짝 — 둘 다 가드한다.
-WEB_DIFF_CSS = Path(__file__).resolve().parents[1] / "web-diff" / "css" / "app.css"
-WEB_DIFF_INDEX = Path(__file__).resolve().parents[1] / "web-diff" / "index.html"
+# (web-diff/ 짝 가드는 hwpx-diff 저장소 분리와 함께 그쪽 test_web_dom_contract.py 로 갔다.)
 
 # 반응형 경계(#27): 창 최소폭(760)보다 넓은 이 경계에서 2판 레이아웃이 세로 적층으로 접혀야
 # 최소 크기에서도 가로 오버플로 없이 쓸 수 있다. 경계나 접힘 규칙이 사라지면 회귀.
@@ -469,23 +467,6 @@ def test_milestone_l_job_density_and_expansion_sheets():
     assert "color-mix(insrgb,var(--a-sel)40%,var(--a-card))" in css
 
 
-def test_diff_selftest_waits_for_renderer_registration_not_script_parse():
-    """#252 리뷰 — `typeof window.DiffScreen === 'object'` 는 스크립트 파싱 즉시 참이라,
-    pywebviewready → init() → onPush 등록 **전**에 push 하면 __push 가 조용히 버려 비교
-    버튼이 비활성인 채 게이트가 간헐 실패한다. 게이트는 렌더러 등록 표지(ready)를 기다린다."""
-    root = WEB_INDEX.parents[1]
-    diff_js = (root / "web-diff" / "js" / "screens" / "diff.js").read_text(encoding="utf-8")
-    diff_app = (root / "src" / "hwpxdiff" / "webapp" / "app.py").read_text(encoding="utf-8")
-    assert "window.DiffScreen = { init, ready: false }" in diff_js
-    assert "window.DiffScreen.ready = true" in diff_js
-    # 표지는 initial 렌더 **완료 뒤**에만 선다(#280 리뷰) — onPush 등록 직후 세우면
-    # 게이트 push 가 미해결 initial 응답과 경합해 빈 스냅샷이 push 를 덮어쓴다.
-    assert diff_js.index("Bridge.onPush(SCREEN, render)") < diff_js.index(
-        "render(await Bridge.initial(SCREEN))"
-    ) < diff_js.index("window.DiffScreen.ready = true")
-    assert "window.DiffScreen.ready === true" in diff_app
-
-
 def test_job_generation_result_renders_partial_cancellation_honestly():
     """#278 리뷰 — 취소된 배치를 진행바 100% + danger 로 그리면 정확한 요약 문안 옆에서
     시각이 '완주했고 오류'라고 거짓말한다: 진행 = attempted/total, warn 채널 보존.
@@ -565,23 +546,6 @@ def test_forced_colors_media_query_exists():
             f"매핑 표 행 상태({selector})의 강제색 보더 대체 신호가 사라졌습니다 — "
             "배경 틴트만으론 고대비에서 행 상태가 사라집니다(#3)."
         )
-
-
-def test_forced_colors_block_present_in_web_diff():
-    """web-diff(2판 diff 뷰어)도 강제색 블록과 삽입(ins) 밑줄 신호를 가져야 한다(#3, web/ 와 짝).
-
-    web/ 만 가드하면 web-diff 의 블록을 조용히 떨구는 이관/리팩터를 못 잡는다 — 이 PR 이
-    봉합하려던 '웹 이관 시 조용한 회귀' 패턴 그 자체. ins 는 배경 틴트뿐이라 고대비에서
-    색 외 신호(밑줄)가 반드시 있어야 한다.
-    """
-    block = _forced_colors_block(WEB_DIFF_CSS.read_text(encoding="utf-8"))
-    assert block, "web-diff 강제 색상 모드 @media(forced-colors:active) 블록이 사라졌습니다(#3)."
-    # 값까지 검사한다 — text-decoration 선언이 있어도 값이 none 이면 밑줄 신호가 무력화되므로
-    # underline 값 자체를 단언(선언 존재만 보면 none 으로 바꿔도 통과).
-    assert "underline" in _rule_body(block, ".doctableins"), (
-        "diff 삽입(ins)의 강제색 밑줄(text-decoration:underline) 신호가 사라졌습니다 — "
-        "배경 틴트만으론 고대비에서 삽입 구간이 사라집니다(#3)."
-    )
 
 
 # pickDataFile(=pick_data_file) 을 소비하는 모든 화면 — 브리지 반환 계약이 screen-불가지라
@@ -1230,22 +1194,6 @@ def test_disabled_primary_uses_light_neutral_surface_globally():
     assert ".btn.primary:disabled{background:var(--a-muted)" not in css
 
 
-def test_web_diff_pinned_to_light_until_tints_themed():
-    """web-diff 는 다크 셀 틴트가 준비될 때까지 라이트로 고정돼야 한다(<html data-theme="light">).
-
-    공유 tokens.css 가 다크 3블록을 함께 실어 web-diff 도 OS 다크를 자동 추종하게 되는데, diff
-    표의 added/removed 셀 배경은 백엔드 스냅샷의 라이트 파스텔을 인라인 style 로 박아 테마를
-    안 따른다 — 다크에선 밝은 본문 잉크가 밝은 틴트 위에 얹혀 판독 불가. 셀 틴트를 토큰화하기
-    전까지 라이트 고정이 정답이며, 이 핀이 조용히 풀려 깨진 자동 다크가 재개방되는 걸 막는다.
-    """
-    html = WEB_DIFF_INDEX.read_text(encoding="utf-8")
-    m = re.search(r"<html\b[^>]*>", html)
-    assert m and 'data-theme="light"' in m.group(0), (
-        "web-diff <html> 이 data-theme=\"light\" 로 고정돼야 합니다 — "
-        "diff 셀 틴트가 테마-불가지라 자동 다크에서 표가 깨집니다."
-    )
-
-
 def test_theme_helper_loaded_and_toggle_present():
     """다크모드 토글 배선 정적 가드 — theme.js 로드 + 레일 토글 버튼(접근 이름·툴팁).
 
@@ -1405,23 +1353,25 @@ def test_native_close_and_editor_escape_affordances_are_wired():
     )
 
 
-def test_unhandledrejection_backstop_present_in_both_shells():
-    """비동기 실패 최종 백스톱 — 두 셸이 unhandledrejection 을 alert 로 재진술해야 한다.
+def test_unhandledrejection_backstop_present_in_shell():
+    """비동기 실패 최종 백스톱 — 셸이 unhandledrejection 을 alert 로 재진술해야 한다.
 
     무대기·무catch 브리지 호출의 rejection 이 조용한 무반응으로 증발하는 결함류가
     파일 단위 봉합(F8·F9→#45 profile_*→PR #46 P2 onClick)으로 반복 재발했다 — 사이트별
     규율 대신 셸 전역 안전망으로 구조 차단한다. 지역 가드가 잡은 실패는 여기 오지
     않으므로 이 백스톱은 "가드를 잊은 곳" 전용이다. preventDefault 없이 alert 만 하면
     콘솔 소음이 남고, alert 없이 preventDefault 만 하면 완전 침묵(최악)이라 둘 다 단언한다.
+
+    (diff 셸의 짝 백스톱은 hwpx-diff 저장소가 같은 단언으로 지킨다 — 분리 전에는 이
+    루프가 두 셸을 함께 돌았다.)
     """
-    for app_js in (WEB_JS_DIR / "app.js",
-                   WEB_JS_DIR.parents[1] / "web-diff" / "js" / "app.js"):
-        src = app_js.read_text(encoding="utf-8")
-        m = re.search(r'addEventListener\("unhandledrejection",[\s\S]*?\}\);', src)
-        assert m, f"{app_js} 에 unhandledrejection 백스톱이 없습니다 — 조용한 무반응 결함류 재개방."
-        block = m.group(0)
-        assert "window.alert" in block, f"{app_js} 백스톱이 alert 로 재진술하지 않습니다."
-        assert "preventDefault" in block, f"{app_js} 백스톱이 rejection 을 handled 처리하지 않습니다."
+    app_js = WEB_JS_DIR / "app.js"
+    src = app_js.read_text(encoding="utf-8")
+    m = re.search(r'addEventListener\("unhandledrejection",[\s\S]*?\}\);', src)
+    assert m, f"{app_js} 에 unhandledrejection 백스톱이 없습니다 — 조용한 무반응 결함류 재개방."
+    block = m.group(0)
+    assert "window.alert" in block, f"{app_js} 백스톱이 alert 로 재진술하지 않습니다."
+    assert "preventDefault" in block, f"{app_js} 백스톱이 rejection 을 handled 처리하지 않습니다."
 
 
 def test_editor_is_an_immersive_screen_with_one_exit():

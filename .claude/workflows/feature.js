@@ -21,14 +21,13 @@ const AREAS = {
   docs:     { paths: ['docs/', 'README.md'] },
   packaging:{ paths: ['packaging/', 'build.ps1', 'test.ps1', 'scripts/', 'pyproject.toml', 'uv.lock'] },
 }
-// 동결 영역: 작업 초점은 filler — diff 제품 변경은 무엇이든 즉시 알람.
-const FROZEN = { diff: { paths: ['src/hwpxdiff/'] } }
 
 // 직교성 규칙 — planner가 병렬 인증할 때 반드시 지킬 제약.
 const ORTHOGONALITY_RULES = `
 - src/hwpxfiller/gui/style.py 는 단일 소유자다. 이 파일을 건드리는 task는 절대 둘 이상 병렬 금지 — 직렬화하거나 한 task로 묶어라.
 - fillcore(engine/schema/mapping) 변경은 gui/*_state.py 로 파문된다. 같은 기능이면 한 워커에 묶어라.
-- src/hwpxcore/ 변경은 filler·diff 양쪽에 파문된다. core를 건드리면 병렬 인증 불가 — 단일 워커 직렬.
+- src/hwpxcore/ 는 파서 토대라 변경이 저장소 전역으로 파문된다(별도 저장소 hwpx-diff 가 이
+  계층의 사본을 들고 있다는 점도 같이 본다). core를 건드리면 병렬 인증 불가 — 단일 워커 직렬.
 - 확신이 없으면 병렬로 인증하지 마라. 직렬이 기본값이다.`
 
 // 교차-단위 계약 점검 — #26 웹 패리티 회수(4개 독립 "단위" A/B/C/D 커밋)에서
@@ -113,17 +112,15 @@ const RECONCILE = { type: 'object', required: ['fixed', 'deferred'], properties:
 
 // ── 공통: 변경 파일 → 영역 매핑 (결정적, 스크립트 내 순수 JS) ─────────────────
 function mapAreas(files) {
-  const hit = new Set(), frozenHit = [], unmapped = []
+  const hit = new Set(), unmapped = []
   for (const f of files) {
     const p = f.replace(/\\/g, '/')
     let found = false
-    for (const [name, a] of Object.entries(FROZEN))
-      if (a.paths.some(x => p.startsWith(x))) { frozenHit.push(f); found = true }
     for (const [name, a] of Object.entries(AREAS))
       if (a.paths.some(x => p.startsWith(x))) { hit.add(name); found = true }
     if (!found) unmapped.push(f)
   }
-  return { areas: [...hit], frozenHit, unmapped }
+  return { areas: [...hit], unmapped }
 }
 
 // args 정규화 — 하네스가 Workflow args 를 JSON 문자열로 전달하는 경우가 있어(그러면
@@ -141,7 +138,6 @@ if (!A.mode || A.mode === 'plan') {
 기능 요청: ${A.request}
 
 영역 정의: ${JSON.stringify(AREAS)}
-동결 영역(건드리면 안 됨): src/hwpxdiff/
 
 조사할 것: 관련 기존 기능·유사 패턴, 수정 대상 모듈(실제 파일 경로 근거 필수),
 gui의 view/*_state 쌍 구조, 링 계약(tests/test_architecture.py·test_ui_contract.py가 코드로 강제하는 규칙),
@@ -162,8 +158,7 @@ task로 분할하라. 각 task에 objective·acceptance(검증 가능한 완료 
 임팩트 커버리지: 영향도 보고의 components 가 짚은 모든 영역·파일은 최소 한 task 의 areas·objective 가
 담당해야 한다 — 어떤 파일도 담당 task 없이 방치하지 마라(방치는 곧 조용한 미수정으로 샌다).
 직교성 인증: 아래 규칙을 적용해 task들이 병렬 실행 가능한지 판정하고 이유를 적어라.
-${ORTHOGONALITY_RULES}
-동결 영역(src/hwpxdiff/)을 필요로 하는 계획은 세우지 마라 — 필요하면 unknowns로 남겨야 했던 사안이다.`,
+${ORTHOGONALITY_RULES}`,
     { schema: PLAN, effort: 'high' })
 
   // 임팩트 커버리지 정산(결정적) — 영향도가 짚은 영역 중 어떤 task.areas 도 담당하지
@@ -228,7 +223,6 @@ ${JSON.stringify(task)}
 
 규칙:
 - task.areas 밖의 파일을 수정하지 마라. 필요해 보이면 discovered_impacts에 보고만 하라.
-- src/hwpxdiff/ 는 동결 — 절대 건드리지 마라.
 - 기존 코드의 관례(한국어 주석 톤, view/*_state 분리, style.py 셀렉터)를 따르라.
 - 구현 후 관련 테스트만 빠르게 확인: .\\test.ps1 ${task.test_files.join(' ')} -x -q${wt ? '\n  (worktree에 .venv 없으면 먼저: uv sync --all-extras --group dev)' : ''}
 - acceptance를 모두 충족했는지 스스로 점검하고 done을 정직하게 보고하라(실패면 done:false).${wt ? `
@@ -277,7 +271,7 @@ ${JSON.stringify(task)}
 discovered_impacts 를 처리하라(코드 수정 허용). 각 항목에 대해:
 - 비동결 영역의 구체적 코드 결함이면(잘못된 인자·깨진 콜러·미개편 잔재 등) 근본 원인을 수리하라.
 - 계획 task 영역: ${JSON.stringify(plan.tasks.map(t => ({ id: t.id, areas: t.areas })))}
-- src/hwpxdiff/ 는 동결. 테스트를 약화(assert 삭제·skip)하지 마라.
+- 테스트를 약화(assert 삭제·skip)하지 마라.
 - 수리한 항목은 fixed 에 요약. 안 고친 항목은 deferred 에 {impact, reason, is_defect} 로 —
   is_defect 는 '지금 방치하면 잘못 동작하는 실제 결함인가'(단순 후속 제안·문서 메모·마이그레이션 안내는 false).
 discovered_impacts:
@@ -299,7 +293,7 @@ passed는 최종 exit code 0 여부, tail은 실패 시 마지막 출력 ~2000�
     await agent(
       `게이트(${GATE_CMD}) 실패를 수리하라. 실패 출력:\n${gate ? gate.tail : '(없음)'}\n
 계획된 task 스코프 안에서만 고쳐라. 계획: ${JSON.stringify(plan.tasks.map(t => ({ id: t.id, areas: t.areas })))}
-src/hwpxdiff/ 동결. 근본 원인만 고치고 테스트를 약화시키지 마라(assert 삭제·skip 금지).${usePar ? `
+근본 원인만 고치고 테스트를 약화시키지 마라(assert 삭제·skip 금지).${usePar ? `
 수정 후 반드시 커밋하라(git add -A 후 git commit -m "wf: gate repair") — 현재 회수 브랜치(${mergeBranch})에 커밋 안 된 수리는 머지에서 빠진다.` : ''}`,
       { schema: IMPL, phase: 'Review', label: `repair#${attempt}` })
   }
@@ -346,7 +340,6 @@ blocker = 머지 불가 사유, warn = 사용자 판단 사항. 반증 실패면
   const blockers = []
   if (!report.gate || !report.gate.passed) blockers.push('결정적 게이트(test.ps1) 실패')
   if (!changed) blockers.push('변경 파일 실측 실패 — 드리프트 판정 불능')
-  if (report.drift.frozenHit.length) blockers.push(`동결 영역(src/hwpxdiff/) 변경: ${report.drift.frozenHit.join(', ')}`)
   if (unexpected.length) blockers.push(`계획 밖 영역 변경: ${unexpected.join(', ')}`)
   if (report.drift.unmapped.length) blockers.push(`영역 지도 밖 파일 변경: ${report.drift.unmapped.join(', ')}`)
   if (!report.review) blockers.push('적대적 리뷰 결과 없음')

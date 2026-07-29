@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  K1 onedir 번들(앱 A·B + CLI)을 빌드하고 스모크 검증한다.
+  onedir 번들(웹 앱 + CLI)을 빌드하고 스모크 검증한다.
 
 .EXAMPLE
   .\packaging\build.ps1
@@ -8,7 +8,7 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('all', 'filler', 'diff', 'cli')]
+    [ValidateSet('all', 'filler', 'cli')]
     [string]$Target = 'all',
     [switch]$SkipCheck
 )
@@ -37,13 +37,12 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $targets = @{
     filler = @{ Spec = 'hwpx_filler_web.spec'; Dir = 'hwpx-filler-web'; Exe = 'hwpx-filler-web.exe' }
-    diff   = @{ Spec = 'hwpx_diff.spec';        Dir = 'hwpx-diff';       Exe = 'hwpx-diff.exe' }
     cli    = @{ Spec = 'hwpx_cli.spec';         Dir = 'hwpx-cli';        Exe = 'hwpx-cli.exe' }
 }
-$plan = if ($Target -eq 'all') { @('filler', 'diff', 'cli') } else { @($Target) }
+$plan = if ($Target -eq 'all') { @('filler', 'cli') } else { @($Target) }
 
 function Test-BundleBoundary([string]$BundleDir) {
-    # 세 타깃 모두 웹 이관 완료(#20·#22·#23)로 Qt 미탑재 — PySide/Qt6 DLL 이 하나라도
+    # 두 타깃 모두 웹 이관 완료(#20·#23)로 Qt 미탑재 — PySide/Qt6 DLL 이 하나라도
     # 번들에 있으면 실패(재유입 차단).
     $files = Get-ChildItem $BundleDir -Recurse -File
     $unexpected = $files | Where-Object Name -Match '^(PySide|Qt6)'
@@ -70,13 +69,6 @@ foreach ($key in $plan) {
         # 컨트롤러·링1 VM·번들 web/ 를 스모크한다(창 기동은 app.py --selftest 담당).
         & $exe --selfcheck
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    } elseif ($key -eq 'diff') {
-        # diff 는 #22 로 웹(pywebview) 이관됨 — 헤드리스 --selfcheck 가 브리지·컨트롤러·
-        # 비교 엔진·번들 web-diff/ 를 스모크한다.
-        & $exe --selfcheck `
-            (Join-Path $corpus 'spec_revision_2025.hwpx') `
-            (Join-Path $corpus 'spec_revision_2026.hwpx')
-        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     } else {
         $template = Join-Path $corpus 'form_purchase_v1.hwpx'
         $template2 = Join-Path $corpus 'form_purchase_v2.hwpx'
@@ -92,4 +84,4 @@ foreach ($key in $plan) {
     }
 }
 
-Write-Host "`nK1 onedir 빌드·스모크 완료: $($plan -join ', ')" -ForegroundColor Green
+Write-Host "`nonedir 빌드·스모크 완료: $($plan -join ', ')" -ForegroundColor Green

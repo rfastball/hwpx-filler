@@ -322,7 +322,7 @@ _SUBCOMMANDS_EPILOG = """\
   lint TPL.hwpx             템플릿 위생 점검(--vocab 통제 어휘) — 이슈 있으면 exit 1
   drift OLD.hwpx NEW.hwpx   판본 간 필드 드리프트(추가/삭제/개명)
   render TPL.txt --data D   텍스트 템플릿 치환(온나라 기안 등)
-  diff                      hwpxdiff 로 분리됨 — hwpxdiff OLD.hwpx NEW.hwpx
+  diff                      별도 제품·별도 저장소로 분리됨(hwpxdiff OLD.hwpx NEW.hwpx)
 """
 
 
@@ -358,8 +358,9 @@ def main(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" 
 def _run(argv: "list[str] | None" = None, *, secret_store: "SecretStore | None" = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "diff":
-        # 개정 비교는 별도 제품(hwpxdiff)로 분리됐다 — 손에 익은 진입점만 안내.
-        print("diff 는 hwpxdiff 로 분리됐습니다: hwpxdiff OLD.hwpx NEW.hwpx [--html out.html]",
+        # 개정 비교는 별도 제품·별도 저장소(hwpxdiff)다 — 손에 익은 진입점만 안내.
+        print("diff 는 별도 제품 hwpxdiff 입니다: hwpxdiff OLD.hwpx NEW.hwpx [--html out.html]\n"
+              "  설치: https://github.com/rfastball/hwpx-diff",
               file=sys.stderr)
         return 2
     if argv and argv[0] == "schema":

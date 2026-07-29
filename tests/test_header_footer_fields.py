@@ -6,7 +6,6 @@ from lxml import etree
 
 from hwpxcore.package import MIMETYPE_NAME, MIMETYPE_VALUE, HwpxPackage
 from hwpxcore.text_extract import extract_document
-from hwpxdiff.diff import diff_files
 from hwpxfiller.core.engine import HwpxEngine
 from hwpxfiller.core.fields import FieldDocument, field_xml_names, read_fields
 
@@ -99,25 +98,9 @@ def test_generate_fills_same_name_in_body_header_footer_and_preserves_other_part
     assert FieldDocument(after.entries[UNTOUCHED_BODY]).read_field("유지필드") == "유지값"
 
 
-def test_header_footer_changes_surface_with_region_locations(tmp_path):
-    template = _package_path(tmp_path)
-    output = tmp_path / "filled.hwpx"
-    result = HwpxEngine().generate(str(template), {"공통": "새 계약값"}, str(output))
-    assert result.ok, result.error
-
-    diff = diff_files(str(template), str(output))
-    changed_regions = {
-        change.location["region"]
-        for change in diff.changes
-        if change.kind == "changed"
-    }
-    assert changed_regions == {"본문", "머리말", "꼬리말"}
-    for region in changed_regions:
-        assert any(
-            change.location["region"] == region
-            and change.location_label.startswith(f"{region} 1 · 문단")
-            for change in diff.changes
-        )
+# (채운 결과를 diff 로 되읽어 본문·머리말·꼬리말 변경이 각자 위치로 표면화되는지 보던
+#  테스트는 hwpxdiff 저장소 분리와 함께 그쪽 tests/test_header_footer_regions.py 로 갔다 —
+#  두 제품을 한 파일에서 임포트하던 유일한 자리였다.)
 
 
 def test_unknown_header_structure_is_recorded_in_coverage_ledger(tmp_path):

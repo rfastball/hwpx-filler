@@ -7,6 +7,15 @@
 
 > `scripts/audit_test_portfolio.py render`로 재생성한다. 수치는 위험 태그별 중복 집계를 허용한다.
 
+> **⚠ 이 산출물은 기준 SHA 시점에 멈춰 있다.** 아래 수치와 짝 CSV(`test_portfolio_inventory.csv`)는
+> `hwpxdiff` 분리(2026-07-29) 이전 형상이라 이제 이 저장소에 없는 `tests/test_diff_*.py` 행을
+> 포함한다. 재생성은 **분리와 무관한 선행 드리프트**로 막혀 있다 — `collect` 단계가
+> `classification file-rule mismatch` 로 실패하며, 미분류 5건(`test_branding`,
+> `test_danger_confirm_contract`, `test_dispatch_payload_contract`, `test_edit_session`,
+> `test_excel_contract`)과 사라진 2건(`test_r3_home`, `test_webapp_home`)이 원인이다.
+> 이 불일치는 분리 이전 master 에서도 동일하게 재현된다. `docs/test_portfolio_classification.toml`
+> 을 현재 테스트 목록에 맞춘 뒤 위 명령으로 재생성해야 수치가 되살아난다.
+
 - 기준 SHA: `8cace7a2648e602cd3e770902a74af1b2f288fe6`
 - 수집 사례: **1595**
 - 독립 실행 단위: **1553**

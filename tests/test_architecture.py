@@ -19,20 +19,15 @@ def _import_roots(package: str) -> set[str]:
     return roots
 
 
-def test_products_do_not_import_each_other() -> None:
-    assert "hwpxfiller" not in _import_roots("hwpxdiff")
-    assert "hwpxdiff" not in _import_roots("hwpxfiller")
-
-
 def test_src_has_no_pyside6_runtime_imports() -> None:
     """웹 이관(#20·#22·#23) 후 src/ 전체에 PySide6/shiboken6 런타임 임포트가 0 임을 못박는다.
 
-    Qt 위젯 계층은 물리 삭제됐고 두 제품 프론트엔드는 pywebview 다 — 어떤 모듈이든 Qt 를
+    Qt 위젯 계층은 물리 삭제됐고 프론트엔드는 pywebview 다 — 어떤 모듈이든 Qt 를
     다시 끌어오면(위젯 부활·실수 임포트) 여기서 시끄럽게 막는다(재유입 차단). 링1 상태
     모듈이 docstring 에 'PySide6' 를 언급해도 실 임포트가 아니면 통과한다(AST 임포트만 스캔)."""
     forbidden = {"PySide6", "shiboken6"}
     offenders: list[str] = []
-    for package in ("hwpxcore", "hwpxdiff", "hwpxfiller"):
+    for package in ("hwpxcore", "hwpxfiller"):
         for path in (ROOT / "src" / package).rglob("*.py"):
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
             for node in ast.walk(tree):
@@ -47,11 +42,12 @@ def test_src_has_no_pyside6_runtime_imports() -> None:
 
 
 def test_hwpxcore_native_stays_product_agnostic() -> None:
-    """hwpxcore.native(공용 Win32 글루)는 제품·Qt 를 임포트하지 않는다.
+    """hwpxcore.native(Win32 글루)는 제품·Qt 를 임포트하지 않는다.
 
-    diff·filler 웹이 파일 다이얼로그·클립보드를 이 공용 계층으로만 공유한다 — core 가
-    제품(hwpxfiller/hwpxdiff)이나 PySide6 로 역의존하면 그 공유 전제가 무너지므로 시끄럽게
-    막는다. stdlib+ctypes 만 허용."""
+    코어는 파싱·OS 글루뿐이라는 계층 전제다 — core 가 제품(hwpxfiller)이나 PySide6 로
+    역의존하면 그 전제가 무너지므로 시끄럽게 막는다. stdlib+ctypes 만 허용.
+    (hwpxdiff 분리 후에도 이 규칙은 유지한다: hwpx-diff 저장소가 이 계층의 사본을
+    들고 있어, 여기서 제품 색이 스며들면 두 사본의 대조가 불가능해진다.)"""
     forbidden = {"PySide6", "shiboken6", "hwpxfiller", "hwpxdiff"}
     roots = _import_roots("hwpxcore")  # native 는 hwpxcore 하위 — 패키지 전체를 스캔
     native_roots: set[str] = set()
@@ -66,23 +62,6 @@ def test_hwpxcore_native_stays_product_agnostic() -> None:
         f"hwpxcore.native 가 금지 패키지를 임포트한다: {forbidden & native_roots}"
     )
     assert forbidden.isdisjoint(roots), "hwpxcore 가 제품/Qt 로 역의존한다 — core 는 아래로만"
-
-
-def test_hwpxdiff_core_module_is_qt_free() -> None:
-    """hwpxdiff/diff.py(+cli.py)는 stdlib+hwpxcore 만 — 성형·그룹화·렌더 로직이 뷰로
-    돌아가 GUI/CLI 표면이 갈라지는 회귀(RC-17)를 막는다."""
-    for module in ("diff.py", "cli.py"):
-        path = ROOT / "src" / "hwpxdiff" / module
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
-            names: list[str] = []
-            if isinstance(node, ast.Import):
-                names = [alias.name for alias in node.names]
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                names = [node.module]
-            assert not any(n.split(".", 1)[0] in ("PySide6", "shiboken6") for n in names), (
-                f"hwpxdiff/{module} 에 Qt 임포트가 들어왔다 — 순수 계층을 지켜라"
-            )
 
 
 def test_filler_data_package_imports_no_core_or_qt() -> None:

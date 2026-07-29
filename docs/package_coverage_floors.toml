@@ -12,16 +12,6 @@ path = "src/hwpxcore"
 line = 95
 branch = 87
 
-[packages.hwpxdiff]
-path = "src/hwpxdiff"
-line = 95
-branch = 88
-
-[packages."hwpxdiff.webapp"]
-path = "src/hwpxdiff/webapp"
-line = 60
-branch = 40
-
 [packages.hwpxfiller]
 path = "src/hwpxfiller"
 line = 77

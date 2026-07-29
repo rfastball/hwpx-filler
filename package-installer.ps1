@@ -4,7 +4,7 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('all', 'filler', 'diff')]
+    [ValidateSet('all', 'filler')]
     [string]$App = 'all',
     [switch]$SkipExe
 )
@@ -27,7 +27,7 @@ if (-not $isccPath) {
     exit 1
 }
 
-$targets = if ($App -eq 'all') { @('filler', 'diff') } else { @($App) }
+$targets = if ($App -eq 'all') { @('filler') } else { @($App) }
 foreach ($target in $targets) {
     & $isccPath (Join-Path $root "packaging\installers\hwpx-$target.iss")
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
