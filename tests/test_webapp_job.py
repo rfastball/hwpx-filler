@@ -3091,6 +3091,22 @@ def test_new_job_is_blocked_until_the_result_is_reviewed(tmp_path):
     assert "아직 한 번도 문서를 만들지 않은" in gate["text"]
 
 
+def test_snapshot_carries_the_gate_reason_so_the_pill_can_say_approve(tmp_path):
+    """스냅샷이 `gate.reason` 을 싣는다 — 표지 문안이 서열을 재유도하지 않게(리뷰 R1).
+
+    어휘를 갈라 놓고(규칙축=「승인」, 필드축=「확인」) 상단 표지만 「확인 필요」로 두면 첫
+    실행 화면에서 **같은 행동을 두 이름으로** 부른다. 표지가 옳게 말하려면 「무엇이 막고
+    있는가」를 알아야 하는데 그 판정은 링1 이 이미 `reason` 으로 낸다 — 웹이 게이트 서열을
+    다시 유도하지 않고 이 이름 하나만 읽는 것이 이 필드의 존재 이유다.
+    """
+    ctrl, _ = _unreviewed_session(tmp_path)
+    assert ctrl.snapshot()["gate"]["reason"] == "review_required"
+    req, _ = ctrl._review()
+    ctrl.review.approve(req, ctrl._review_scope_key())
+    gate = ctrl.snapshot()["gate"]
+    assert gate["enabled"] is True and gate["reason"] == ""
+
+
 def test_approval_opens_the_gate_and_survives_a_push_round_trip(tmp_path):
     ctrl, _ = _unreviewed_session(tmp_path)
     req, unmet = ctrl._review()

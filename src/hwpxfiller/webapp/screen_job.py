@@ -1244,7 +1244,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "mirror": [], "drift": [], "name_tokens": [],
                 "filter": filter_snap, "table": table_snap, "restate": restate_snap,
                 "guard": guard_snap,
-                "gate": {"enabled": g.enabled, "level": g.level, "text": g.text},
+                "gate": {"enabled": g.enabled, "level": g.level, "text": g.text,
+                         "reason": g.reason},
                 # 검토 요구·미리보기 드로어는 **배제 선언**(지도 §10.15 판정 J): 드로어는
                 # 값+파일 이름+승인의 면인데 TXT 엔 파일 이름 축이 없고, 작업대가 이미
                 # 레코드 전수를 채운 모습으로 보여 주는 검토 표면이다. 골격만 실어 표면이
@@ -1297,7 +1298,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "filter": filter_snap, "table": table_snap, "restate": restate_snap,
                 "guard": guard_snap,
                 # 게이트는 링1 단일 산출(prework_gate) 소비 — 링2 문안 재조립 금지(RC-23 동형).
-                "gate": {"enabled": g.enabled, "level": g.level, "text": g.text},
+                "gate": {"enabled": g.enabled, "level": g.level, "text": g.text,
+                         "reason": g.reason},
                 # 작업이 없으면 검토할 규칙도 미리볼 값도 없다 — 뼈대만 실어 표면이
                 # 키 부재로 갈라지지 않게 한다(빈 값과 없는 키는 다른 결함류를 만든다).
                 "review": self._review_payload(ReviewRequirement(), None),
@@ -1400,10 +1402,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 self.vm.unresolved_name_tokens()
                 if status.gate.reason == "name_tokens" else []
             ),
+            # `reason` 도 함께 싣는다(리뷰 R1) — 표지 문안이 게이트 서열을 **재유도하지 않고**
+            # 이 이름 하나만 읽게 하려고 링1 이 낸 필드다(어휘 분리: 규칙축=「승인」).
             "gate": {
                 "enabled": status.gate.enabled,
                 "level": status.gate.level,
                 "text": status.gate.text,
+                "reason": status.gate.reason,
             },
             # 검토 요구·미리보기 드로어(F5). 이름·값은 위 단일 산출을 재사용한다 —
             # 표면이 따로 계획하면 미리보기가 실행과 다른 이름을 말한다(판정 A).

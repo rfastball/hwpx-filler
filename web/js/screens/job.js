@@ -992,7 +992,14 @@
     if (s.gate && s.gate.enabled) {
       pill.dataset.level = "ok";
       pill.textContent = isCopyWork(s) ? "복사 준비" : "생성 준비";
-    } else { pill.dataset.level = "warn"; pill.textContent = "확인 필요"; }
+      return;
+    }
+    // 막힌 이유가 규칙축이면 표지도 「승인」이다(U2 §2.10 · 리뷰 R1). 어휘를 갈라 놓고 이
+    // 자리만 「확인 필요」로 두면, 첫 실행 화면에서 상단 표지와 옆 표지가 **같은 행동을 두
+    // 이름으로** 부른다 — 어휘 분리가 하려던 일이 그 자리에서 무효가 된다. 서열을 다시
+    // 유도하지 않고 게이트가 낸 `reason` 하나만 읽는다(그러라고 있는 필드다).
+    pill.dataset.level = "warn";
+    pill.textContent = (s.gate && s.gate.reason) === "review_required" ? "승인 필요" : "확인 필요";
   }
 
   /* 진행 델타 — 진행바 + 진행 태만 갱신(전체 재렌더 없음). 진행은 3태를 덮지 않는다:

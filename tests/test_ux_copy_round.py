@@ -100,6 +100,29 @@ def test_copy_js_still_loaded():
     assert 'src="js/copy.js"' in index, "copy.js 가 index.html 에 로드되지 않았습니다."
 
 
+def test_status_pill_calls_the_rule_axis_approval():
+    """상단 상태 표지가 규칙축을 「승인」으로 부른다(U2 §2.10 · 리뷰 R1).
+
+    어휘 분리(규칙축=「승인」, 필드축=「확인」)는 표지 `#jobReviewFlag` 와 게이트 문안만
+    바꿨는데, **같은 화면의 상단 표지**는 막힌 이유와 무관하게 「확인 필요」였다. 첫 실행
+    화면에서는 규칙축 승인이 유일한 미충족 게이트라 두 표지가 같은 행동을 두 이름으로 부르고,
+    분리가 그 자리에서 무효가 된다 — 소명을 요구하지 않으려고 가른 어휘가 다시 소명을
+    요구한다.
+
+    판정은 링1 이 낸 `gate.reason` 하나로 한다(서열 재유도 금지) — 그래서 이 가드는 표지
+    문안과 그 근거가 **같은 자리**에 있는지를 본다.
+    """
+    body = _strip_js_comments((WEB / "js" / "screens" / "job.js").read_text(encoding="utf-8"))
+    status = re.search(r"function renderStatus\(s\) \{.*?\n  \}", body, re.S)
+    assert status, "renderStatus 를 찾지 못했습니다 — 가드가 겨눌 자리가 사라졌습니다."
+    src = status.group(0)
+    assert "승인 필요" in src, "규칙축이 막고 있을 때 표지가 「승인」을 안 씁니다."
+    assert "review_required" in src, (
+        "표지가 게이트 사유를 안 읽습니다 — 문안이 게이트 서열을 재유도하거나 한 이름으로 "
+        "두 축을 다시 누르고 있습니다."
+    )
+
+
 # Python 문자열용 금지어 — 한국어 사용자 어휘만(영문 형태는 코드 식별자와 충돌 위험).
 _PY_BANNED = [t for t in BANNED if not t.startswith("(") and "commit" not in t]
 
