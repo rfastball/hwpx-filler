@@ -891,6 +891,17 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
     };
     window.__push('job', snap);
     out.zones_shown = getComputedStyle(document.getElementById('jobZones')).display !== 'none';
+    // 행동이 붙은 캡션(⤢)은 **오른쪽 끝**에 선다(리뷰 R5) — `.zone-cap{display:block}` 이
+    // 곁의 `.zone-cap-actions{display:flex}` 를 덮으면 ⤢ 가 제목 바로 뒤에 붙는데, 규칙은
+    // 둘 다 살아 있어 정적 검사로는 안 보인다(같은 특정도·나중 로드가 이기는 자리).
+    out.cap_actions = (function () {
+      var cap = document.querySelector('#jobZones .zone-cap.zone-cap-actions');
+      var btn = cap && cap.querySelector('button');
+      if (!cap || !btn) return null;
+      return {display: getComputedStyle(cap).display,
+              far_edge: Math.round(cap.getBoundingClientRect().right
+                                   - btn.getBoundingClientRect().right)};
+    })();
     out.actionbar_shown = getComputedStyle(document.getElementById('jobActionBar')).display !== 'none';
     out.cands_row_shown = getComputedStyle(document.getElementById('jobCandsRow')).display !== 'none';
     out.cand_buttons = document.querySelectorAll('#jobCandidates [data-cand]').length;

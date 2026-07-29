@@ -84,7 +84,7 @@ Python, 문안·확인 UI 는 웹**.
 세션 소유권은 **데이터-우선**이다: 마운트된 데이터·선택·필터는 `JobController` 세션 소유이고
 작업 전환에서 생존한다. 잃는 것은 실행 증거뿐. 마운트 직후 선택은 0건이고, 실행 입력 순서는
 표시순서 투영(`_display_indices`)을 통과한다 — 표·거울·파일 이름 계획이 전부 같은 투영을 쓴다.
-배경과 대조표는 `docs/DATA_FIRST_INTEGRATION_MAP.md`.
+배경과 대조표는 `docs/archive/DATA_FIRST_INTEGRATION_MAP.md`.
 
 ## 제품 규칙 — 조용히 틀리지 않는다
 
@@ -152,7 +152,9 @@ Python, 문안·확인 UI 는 웹**.
 
 - `docs/DEVELOPMENT_ENVIRONMENT.md` — 환경·게이트·패키징·릴리스 절차
 - `docs/UI_CONTRACT.md` — 현재 웹 UI 의 링 구조·라우팅·화면별 계약
-- `docs/DATA_FIRST_INTEGRATION_MAP.md` — v6 워크플로 계약 ↔ master seam 대조
+- `docs/UX_FEEDBACK_U2.md` — v6 착지 후 실사용 피드백의 판정과 **미결 목록**(새 판정은 여기)
+- `docs/archive/DATA_FIRST_INTEGRATION_MAP.md` — v6 워크플로 계약 ↔ master seam 대조.
+  **완주·동결**(2026-07-29) — 인용은 하되 새 판정을 덧붙이지 않는다
 - `examples/quickstart-101/README.md` — 실제 사용 흐름(예제 템플릿·데이터 동봉)
 
 문서에 TODO 를 쓰지 않는다 — "done 상태가 있는가?"가 리트머스이고, 이산 조치는 GitHub 이슈,

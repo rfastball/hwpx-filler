@@ -116,7 +116,7 @@ Python→웹 관측 갱신은 `window.__push(screen, snapshot)`으로 흐른다.
 ### `job` 세션 표면의 형상 (v6 `screen-data` 2열 — 재작성 R1)
 
 세션 패널(`#jobZones`)은 구 4존(헤더·데이터·본문·완료)이 아니라 **v6 `screen-data` 2열**이다
-(`.data-grid` — 정본 `docs/DATA_FIRST_INTEGRATION_MAP.md` §10.5 R1).
+(`.data-grid` — 정본 `docs/archive/DATA_FIRST_INTEGRATION_MAP.md` §10.5 R1).
 
 | 열 | 구획 | 소유 |
 |---|---|---|
@@ -277,7 +277,7 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 ### `job` 화면의 데이터-우선 세션 계약 (data-first 봉합)
 
 `JobController` 는 마운트된 데이터(`datasource`·`records`)·선택(`SelectionModel`)·필터를
-**세션(컨트롤러) 소유**로 보유한다 — 정본: `docs/DATA_FIRST_INTEGRATION_MAP.md`.
+**세션(컨트롤러) 소유**로 보유한다 — 정본: `docs/archive/DATA_FIRST_INTEGRATION_MAP.md`.
 
 - 데이터 마운트(`pick_data_file`→`load_data_path`, `load_data_sheet`, `load_pool`)는 **작업
   미선택에도 허용**되고, 마운트 직후 선택은 **0건**이다.

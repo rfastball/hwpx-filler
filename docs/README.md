@@ -25,7 +25,6 @@
 |---|---|
 | [개발·빌드·배포 환경](DEVELOPMENT_ENVIRONMENT.md) | Python·의존성·품질 게이트·패키징·릴리스 절차 |
 | [UI 계약](UI_CONTRACT.md) | 현재 웹 UI의 계층, 화면 소유권, 계약 테스트 |
-| [data-first 봉합 지도](DATA_FIRST_INTEGRATION_MAP.md) | v6 워크플로 계약 ↔ master seam 소유권 대조, 신규·폐기·게이트 목록 |
 | [화면 문안 스타일](COPY_STYLE_GUIDE.md) | 사용자 대면 문장의 문형·길이·금지 표현 |
 | [UI 용어 규약](UI_VOCABULARY.md) | 사용자 가시 용어·단위·폼 배치의 단일 출처 |
 | [로드맵](ROADMAP.md) | 열린 방향·동결 항목·재개 신호 |
@@ -39,11 +38,12 @@
 
 | 문서 | 상태 | 유효 범위·후속 정본 |
 |---|---|---|
-| [핵심 워크플로 계약](core-workflow.md) | 부분 대체 | v4~v6 상태·전이·불변식의 계약 원문. 확정된 개정분은 [봉합 지도](DATA_FIRST_INTEGRATION_MAP.md) §7·§8.2가 우선 |
+| [핵심 워크플로 계약](core-workflow.md) | 부분 대체 | v4~v6 상태·전이·불변식의 계약 원문. 확정된 개정분은 [봉합 지도](archive/DATA_FIRST_INTEGRATION_MAP.md) §7·§8.2가 우선 |
 | [UI/백엔드 분리](ARCH_UI_SEPARATION.md) | 부분 대체 | 링0·링1 분리는 유효, Qt 링2는 [UI 계약](UI_CONTRACT.md)이 대체 |
 | [시각 디자인 언어](DESIGN_LANGUAGE.md) | 유효 결정 | 시각 문법의 이유; 실제 값은 UI 갤러리·토큰이 소유 |
 | [UI 표면 ADR](UI_DESIGN_DECISIONS.md) | 부분 대체 | 상호작용 결정과 뒤집힘의 원장; 현재 표면은 UI 계약이 소유 |
 | [웹 재렌더 보존](WEB_RENDER_PRESERVATION.md) | 유효 결정 | 전체 스냅샷 렌더에서 포커스·캐럿·스크롤을 보존하는 이유 |
+| [U2 실사용 피드백 라운드](UX_FEEDBACK_U2.md) | 유효 결정 | v6 착지 후 첫 외부 실측의 트리아지·판정. 미결 항목의 정본이기도 하다 |
 
 ## 역사·동결 자료
 
@@ -53,6 +53,7 @@
 | `design_language_*.html` | 동결 시안 | 시각 언어 결정 당시 비교안 |
 | `r-flow-mockups/` | 동결 시안 | 합의문이 참조하는 결정 시점 목업 |
 | `archive/UI_CONTRACT_QT.md` (#225에서 분리) | 역사 기록 | 웹 이관 전 목업↔ViewModel↔Qt 계약 |
+| [`archive/DATA_FIRST_INTEGRATION_MAP.md`](archive/DATA_FIRST_INTEGRATION_MAP.md) | 역사 기록 | v6 표면 전면 재작성(R1·F1~F8) 완주로 동결(2026-07-29). 대조표·슬라이싱은 정산됐고 **왜 그런 표면이 됐는지**의 근거 원장으로 남는다 — §7·§8.2·§10.x 판정은 계속 인용 대상 |
 
 ## 유지·아카이브·폐기 기준
 
