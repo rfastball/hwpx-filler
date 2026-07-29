@@ -44,6 +44,13 @@ class 에 대해 아무 말도 하지 않는다. 존 패딩 0 · 구분선 소�
 결과가 온전한 class 목록인지(모든 갈래가 공백으로 시작 — `" active"`) 아니면 이름의
 반쪽인지(`col-${kind}`)는 **갈래의 앞 공백**이 가른다.
 
+**붙어 있는 이웃이 있을 때만 앞 공백을 따진다**(리뷰 R4). 속성 전체가 보간이면
+(`class="${cls}"`) 갈래 자체가 온전한 이름이라 앞 공백을 요구할 이유가 없다 — 그 규칙을
+무조건 걸어 `segview.js` 의 `const cls = ... "seg-fill"` 를 통째로 놓쳤다. 다만 결속을 읽을 때
+**호출·대기가 있는 초기화식은 이름의 출처가 아니다**: `const r = await Bridge.call(screen,
+"load_pool", …)` 의 리터럴은 액션 이름인데 `r` 은 흔한 이름이라 다른 자리의 `${r.badge_level}`
+로 새어 `.load_pool` 을 요구하는 오탐이 됐다.
+
 **보간의 안은 지우지 않는다**(리뷰 R3). 반쪽인 경우를 통째로 구멍으로 바꿨더니 보간 안에
 들어앉은 마크업(`${v ? esc(v) : "<em class='muted'>(빈 값)</em>"}`)이 검사 밖으로 사라졌다 —
 구멍은 **경계 표시**여야지 내용을 없애는 도구가 아니다. 경계만 표시하고 안은 같은 규칙으로
@@ -116,6 +123,10 @@ _COMPARED_LIT = re.compile(r"(?:===|!==|==|!=)\s*(?:\"[^\"]*\"|'[^']*')")
 _LITERAL_BINDING = re.compile(
     r"\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([^;\n]+)"
 )
+#: 이름 값이 **아닌** 초기화식 — 호출·대기가 있으면 그 결속의 리터럴은 인자일 뿐이다(리뷰 R4).
+#: `const r = await Bridge.call(screen, "load_pool", {...})` 의 `"load_pool"` 은 액션 이름이지
+#: class 가 아닌데, `r` 은 흔한 이름이라 다른 자리의 `${r.badge_level}` 로 그대로 새어 들어왔다.
+_NOT_A_NAME_SOURCE = re.compile(r"\(|\bawait\b|\bnew\b")
 #: 객체 속성 결속 — `{ cls: "editor-open" }`. sink 가 `im.cls` 로 읽는 자리의 유일한 출처.
 _PROP_BINDING = re.compile(r"\b([A-Za-z_$][\w$]*)\s*:\s*(\"[^\"]*\"|'[^']*')")
 _BARE_IDENT = re.compile(r"(?<![.\w$])([A-Za-z_$][\w$]*)")
@@ -138,6 +149,8 @@ def _raw_bindings(text: str) -> "dict[str, list[str]]":
     """`const dirty = s.dirty ? " dirty" : ""` 처럼 **보간이 읽는** 이름 → 원문 리터럴들."""
     out: "dict[str, list[str]]" = {}
     for name, init in _LITERAL_BINDING.findall(text):
+        if _NOT_A_NAME_SOURCE.search(init):
+            continue
         got = _raw_literals(init)
         if got:
             out.setdefault(name, []).extend(got)
@@ -190,8 +203,16 @@ def _expand_interpolations(text: str, bindings: "dict[str, list[str]]") -> str:
         alternatives = _raw_literals(inner)
         for ident in _BARE_IDENT.findall(_STRING_LIT.sub(" ", inner)):
             alternatives.extend(bindings.get(ident, []))
-        whole = bool(alternatives) and all(
-            not alt or alt[:1].isspace() for alt in alternatives
+        # 이 보간이 **이름 하나로 통째로 서는가** — 붙어 있는 이웃이 있는지로 가른다(리뷰 R4).
+        # 앞뒤가 공백이거나 따옴표 경계면(`class="${cls}"`) 갈래 자체가 온전한 이름이므로 앞
+        # 공백을 요구할 이유가 없다. 붙어 있을 때만(`job-cand-card${...}`) 앞 공백이 「이름을
+        # 더하는가 vs 반쪽인가」를 가른다. 첫 판은 이 구분 없이 늘 앞 공백을 요구해
+        # `segview.js` 의 `const cls = ... "seg-fill"` → `class="${cls}"` 를 통째로 놓쳤다.
+        glued = bool(text[at - 1:at].strip()) and text[at - 1:at] not in "\"'`"
+        tail = text[end + 1:end + 2]
+        glued = glued or (bool(tail.strip()) and tail not in "\"'`")
+        whole = bool(alternatives) and (
+            not glued or all(not alt or alt[:1].isspace() for alt in alternatives)
         )
         out.append(text[i:at])
         if whole:
@@ -266,6 +287,8 @@ def _bindings(text: str) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
     """같은 파일의 리터럴 결속 — 변수(`const MARK = "openingMark"`)와 속성(`cls: "..."`)."""
     variables: dict[str, set[str]] = {}
     for name, init in _LITERAL_BINDING.findall(text):
+        if _NOT_A_NAME_SOURCE.search(init):
+            continue
         got = _literal_names(_COMPARED_LIT.sub(" ", init))
         if got:
             variables.setdefault(name, set()).update(got)
@@ -453,6 +476,9 @@ def test_interpolated_and_composed_class_names_are_seen() -> None:
         # 보간 **안**에 통째로 들어앉은 마크업(리뷰 R3 근본): `${v ? esc(v) :
         # "<em class='muted'>(빈 값)</em>"}` — 안을 지우면 이 자리의 class 가 검사 밖이 된다.
         ("muted", "web/js/screens/job.js"),
+        # 속성 **전체**가 변수인 자리(리뷰 R4): `const cls = ... "seg-fill"` → `class="${cls}"`.
+        # 붙어 있는 이웃이 없으므로 갈래 자체가 온전한 이름이다(앞 공백을 요구하면 못 본다).
+        ("seg-fill", "web/js/segview.js"),
     ):
         assert site in emitted.get(name, set()), (
             f".{name} 이 {site} 의 산출 목록에 없습니다 — 보간·합성 회수가 깨졌습니다."
