@@ -658,10 +658,6 @@
     sec.style.display = "";
     $("previewEvidenceReason").textContent = ev.reason || "";
     $("previewEvidenceReason").style.display = ev.reason ? "" : "none";
-    // 캡션은 **아래에 실릴 것이 있을 때만** 선다(U2 §2.3). 이유만 남는 분기(첫 실행)에서
-    // 「확인할 변경」을 세우면 빈 제목이 되고, 바로 위 이유 문장이 그 제목의 내용인 것처럼
-    // 읽힌다 — 「한 번도 만들지 않았다」는 변경이 아니다.
-    $("previewEvidenceCap").style.display = (rows.length || ev.note) ? "" : "none";
     // before 는 **있을 때만** 그린다(F7 판정 H): 직전 판본이 없는 작업(첫 저장·구 버전)에
     // 빈 값을 세우면 "이전엔 비어 있었다"는 거짓 증거가 된다. 값은 저장해 둔 문자열이 아니라
     // **이전 규칙으로 같은 행을 다시 렌더**한 것이라, 두 값이 같은 행의 두 규칙이다.
