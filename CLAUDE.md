@@ -4,14 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 이 저장소가 담은 것
 
-공통 파서 `hwpxcore` 위에 **두 제품**이 서는 단일 저장소다. 의존은 아래로만 흐른다:
-`hwpxfiller → hwpxcore ← hwpxdiff`. **두 제품은 서로 직접 import 하지 않는다**
-(`tests/test_architecture.py` 가 강제).
+파서 `hwpxcore` 위에 제품 `hwpxfiller` 가 서는 저장소다. 의존은 아래로만 흐른다:
+`hwpxfiller → hwpxcore`. 코어에 제품 로직을 두지 않는다(`tests/test_architecture.py` 가 강제).
 
 - `hwpxfiller` — 누름틀 HWPX 템플릿 + 엑셀/CSV 데이터로 문서 일괄 생성. 사용자 대면
   제품명은 **문서나르미**, 기술 식별자는 `hwpx-filler`/`hwpxfiller` 계열.
-- `hwpxdiff` — 두 판본 HWPX 의 의미 기반 비교(신구대비표).
 - HWP 프로그램·COM 자동화를 쓰지 않는다. `zipfile` + `lxml` 로 OCF ZIP 을 직접 읽고 쓴다.
+
+자매 제품 `hwpxdiff`(두 판본 HWPX 의 의미 기반 비교)는 2026-07-29 에 별도 저장소
+[rfastball/hwpx-diff](https://github.com/rfastball/hwpx-diff) 로 분리됐다. 그쪽이 `hwpxcore`
+**사본**을 들고 있어 자동 동기화되지 않는다 — 파서를 고칠 때 저쪽에도 필요한 변경인지
+판단하고, 필요하면 각각 반영한다.
 
 Windows 전용(pywebview 6.x + WebView2). Python 은 `.python-version` 의 3.13 고정이고
 환경은 전부 `uv` 가 소유한다 — 시스템 Python·수동 venv 를 만들지 않는다.
@@ -28,10 +31,9 @@ uv sync --locked --all-extras --group dev --group build   # 최초 1회
 
 .\run-filler.ps1                  # 소스 GUI (= python -m hwpxfiller.webapp)
 .\run-filler.ps1 -Cli --help      # 소스 CLI
-.\run-diff.ps1                    # diff 제품
 
-.\packaging\build.ps1 -Target all # canonical 포터블 빌드 + selfcheck (filler/diff/cli)
-.\build.ps1                       # GUI 두 제품만 위임하는 호환 러너
+.\packaging\build.ps1 -Target all # canonical 포터블 빌드 + selfcheck (filler/cli)
+.\build.ps1                       # GUI 제품만 위임하는 호환 러너
 .\package-installer.ps1           # Inno Setup 6 설치본
 ```
 
@@ -115,7 +117,7 @@ Python, 문안·확인 UI 는 웹**.
 | 실앱 게이트 | `tests/test_web_selftest_gate.py`, `python -m hwpxfiller.webapp --selftest` | 실 WebView2 부팅·렌더·클릭·브리지 왕복 되읽기 |
 | 헤드리스 컨트롤러 | `tests/test_webapp_*.py` | 링2 컨트롤러 dispatch·스냅샷 |
 | 링1 | `tests/test_*_state.py` | ViewModel 판정 |
-| 아키텍처·품질 | `test_architecture.py`, `test_quality_workflow.py`, `test_package_coverage_gate.py` | 제품 간 import 금지, CI 형상, coverage 하한 |
+| 아키텍처·품질 | `test_architecture.py`, `test_quality_workflow.py`, `test_package_coverage_gate.py` | 링 경계·코어 역의존 금지, CI 형상, coverage 하한 |
 
 두 게이트는 대체 관계가 아니다 — 구조적 누락은 정적 계약이, 브라우저 런타임에서만 드러나는
 결함은 selftest 가 잡는다. selftest 프로브의 `click` 은 hidden 요소도 통과하므로 가시성 단언을
