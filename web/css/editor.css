@@ -137,9 +137,21 @@ body.editor-open .nav,body.workbench-open .nav{display:none}
 .ctxbanner .ctx-ev b{color:var(--a-ink);font-weight:600}
 /* 증거의 이전 값(재작성 F7) — 지금 값과 대비되게 죽인다(강조는 새 값 쪽). */
 .ev-before{color:var(--a-muted);text-decoration:line-through}
-/* 이름은 제목 자리에 산다(「저장」 분류 사망의 승계) — 입력이되 제목처럼 읽힌다. */
-.title-input{font:inherit;font-size:var(--fs-h1,var(--fs-strong));font-weight:700;
-  border-color:transparent;background:transparent;padding:var(--sp-2) var(--sp-4);width:100%}
+/* 이름은 제목 자리에 산다(「저장」 분류 사망의 승계) — 입력이되 제목처럼 읽힌다.
+   토큰은 `--fs-section`(화면 제목 역할, H-01)을 쓴다 — 종전 `--fs-h1` 은 tokens.css 에
+   **정의가 없어** 늘 폴백(`--fs-strong`)으로 서고 있었다. 없는 토큰의 폴백에 기대면
+   그 토큰이 생기는 날 크기가 조용히 바뀐다.
+
+   **입력임이 보여야 한다**(U2 §2.4): 테두리·배경을 통째로 지우면 제목처럼 읽히는 대신
+   고칠 수 있는 칸이라는 사실이 사라진다. 보이는 라벨이 0이고 플레이스홀더가 유일한
+   안내라 더 그렇다. 밑줄 하나만 남겨 「제목처럼 읽히되 입력으로 보인다」를 둘 다 만족한다. */
+.title-input{font:inherit;font-size:var(--fs-section);font-weight:700;
+  border-color:transparent;border-bottom-color:var(--a-border);border-radius:0;
+  background:transparent;padding:var(--sp-2) var(--sp-4);width:100%}
+.title-input::placeholder{font-weight:400;color:var(--a-muted)}
 .title-input:hover{border-color:var(--a-border)}
 .title-input:focus{border-color:var(--a-primary);background:var(--a-card)}
+/* 저장이 이름에서 막히면 여기로 커서가 온다 — 초점만으로는 "왜 여기냐"를 말하지 못하므로
+   경보색 밑줄을 함께 단다(초점 표지는 이동을, 색은 사유를 말한다). */
+.title-input:invalid,.title-input[aria-invalid="true"]{border-bottom-color:var(--a-danger)}
 

@@ -1840,6 +1840,114 @@ _DATA_PICKER_PROBE_JS = r"""
 
 
 
+# 편집(탭) 저장 게이트의 **입력 지연**(리뷰 R2) — `s.dirty` 는 `change`(=blur)에서만 갱신되는데
+# 「변경 저장」이 그때까지 disabled 면 방금 고친 사람의 첫 클릭이 삼켜진다(비활성 버튼은 click 을
+# 내지 않는다). 정적 검사로는 못 본다 — 실 DOM 에서 타이핑 이벤트를 흘려 버튼 상태를 되읽는다.
+_EDITOR_SAVE_GATE_PROBE_JS = r"""
+(function () {
+  var out = {};
+  try {
+    var snap = {
+      section:'filename', sections:['template','binding','filename'], notice:null,
+      reachable:{template:true, binding:true, filename:true}, dirty_sections:[],
+      is_draft:false, dirty:false, changes:{}, revisions:{template:1, binding:1},
+      context:{entry_reason:'voluntary', evidence:{}, return_context:{}},
+      template_path:"C:/t/공고서.hwpx", template_name:"공고서.hwpx", field_count:1,
+      schema_summary:"", fields:[], raw_block:"", gate:null, gate_error:false,
+      data_path:"", data_name:"", data_sheet:"", record_count:0,
+      source_fields:[], active_source_fields:[], ignored_source_fields:[],
+      active_count:0, ignored_count:0, ignored_expanded:false, sample_rows:[],
+      type_options:["text"], fmt_options:{text:[]},
+      name:"공고서", pattern:"공고서-{{공고번호}}", pattern_preview:"공고서-1.hwpx",
+      has_unsaved_work:false, editing_origin:"공고서", dataset_name:"",
+      provenance:null, default_dataset:null, rows:[],
+      counts:{filled:0,empty:0,unmapped:0}, preview_empties:[], preview_index:0, preview_count:0,
+      is_complete:true, schema_only:true
+    };
+    window.Nav.go('editor', {force:true});
+    window.__push('editor', snap);
+    var saveBtn = function () {
+      return document.querySelector('#editor-foot [data-act="save"]');
+    };
+    out.save_present = !!saveBtn();
+    // ① 깨끗한 저장본 — 바꾼 것이 없으니 잠겨 있다(U2 §2.4 게이트 자체).
+    out.clean_disabled = !!(saveBtn() && saveBtn().disabled);
+    // ② 이름을 고친다. 발신은 change(=blur) 뿐이지만 **버튼은 지금 열려야** 첫 클릭이 산다.
+    var nameEl = document.getElementById('editorName');
+    nameEl.focus();
+    nameEl.value = '공고서 수정';
+    nameEl.dispatchEvent(new Event('input', {bubbles:true}));
+    out.typing_enabled = !!(saveBtn() && !saveBtn().disabled);
+    // ②-b 그 사이 push 가 와 footer 가 다시 그려져도 열린 채여야 한다 — 직접 켠 버튼만으로는
+    // 재렌더 한 번에 도로 잠기고, 그 push 는 사용자가 만지지 않은 다른 이유로도 온다.
+    window.__push('editor', snap);
+    out.rerender_keeps_enabled = !!(saveBtn() && !saveBtn().disabled);
+    // ③ 되돌려 치면 편집이 없던 것과 같다 — 열어 둔 채로 두지 않는다.
+    nameEl.value = '공고서';
+    nameEl.dispatchEvent(new Event('input', {bubbles:true}));
+    out.reverted_disabled = !!(saveBtn() && saveBtn().disabled);
+    // ④ 파일명 패턴도 같은 자격(재구성되는 입력이라 위임으로 받는다).
+    var patEl = document.querySelector('#editor-body input[data-act="pattern"]');
+    out.pattern_present = !!patEl;
+    if (patEl) {
+      patEl.focus();
+      patEl.value = '공고서-{{공고번호}}-2';
+      patEl.dispatchEvent(new Event('input', {bubbles:true}));
+      out.pattern_typing_enabled = !!(saveBtn() && !saveBtn().disabled);
+      // 다음 단계로 넘어가기 전에 이 편집을 되돌린다 — 안 그러면 대기 상태가 그대로 이어져
+      // 다음 단계의 「깨끗한 상태」 측정이 거짓 양성이 된다(프로브가 자기 잔재를 재는 꼴).
+      patEl.value = snap.pattern;
+      patEl.dispatchEvent(new Event('input', {bubbles:true}));
+      patEl.blur();
+    }
+    nameEl.blur();
+    // ⑤ 매핑 행의 상수 입력도 **같은 자격**이다(리뷰 R3) — 머리·꼬리 입력만 세면 이 자리에서만
+    // 첫 클릭이 삼켜진다. 행이 있는 단계로 갈아 끼우고 같은 것을 잰다.
+    var rowSnap = Object.assign({}, snap, {
+      section:'binding', schema_only:false, field_count:1,
+      source_fields:['품명'], active_source_fields:['품명'], active_count:1,
+      sample_rows:[['A']], type_options:['text','const'], fmt_options:{text:[],const:[]},
+      rows:[{index:0, template_field:'품명', inferred_type:'text', context:'', source:'',
+             type:'const', const:'고정값', fmt:'', confirmed:false, touched:true,
+             has_content:true, suggestion_score:0, preview:'고정값', preview_empty:false,
+             preview_error:false, row_state:'unconfirmed'}]
+    });
+    window.__push('editor', rowSnap);
+    out.row_clean_disabled = !!(saveBtn() && saveBtn().disabled);
+    var constEl = document.querySelector('#editor-body [data-act="row-const"]');
+    out.row_const_present = !!constEl;
+    if (constEl) {
+      constEl.focus();
+      constEl.value = '고정값 수정';
+      constEl.dispatchEvent(new Event('input', {bubbles:true}));
+      out.row_typing_enabled = !!(saveBtn() && !saveBtn().disabled);
+      constEl.value = '고정값';
+      constEl.dispatchEvent(new Event('input', {bubbles:true}));
+      out.row_reverted_disabled = !!(saveBtn() && saveBtn().disabled);
+      // ⑥ **타이핑 도중 푸시**(리뷰 R4 P1) — `#editor-body` 가 옛 스냅샷으로 다시 그려져도
+      // 친 값이 살아 있어야 한다. 값이 사라졌는데 버튼만 열려 있으면 사용자는 사라진 값을
+      // 저장했다고 믿는다(조용한 소실 + 그것을 가리는 표지).
+      constEl.value = '푸시 중 입력';
+      constEl.dispatchEvent(new Event('input', {bubbles:true}));
+      window.__push('editor', rowSnap);
+      var after = document.querySelector('#editor-body [data-act="row-const"]');
+      out.row_value_survives_push = !!after && after.value === '푸시 중 입력';
+      out.row_enabled_after_push = !!(saveBtn() && !saveBtn().disabled);
+      // ⑦ 되돌릴 자리가 사라지면(단계 이동) 대기도 버려야 한다 — 남은 편집이 없는데 열린
+      // 버튼은 거짓말이다.
+      window.__push('editor', snap);
+      out.gone_control_disables = !!(saveBtn() && saveBtn().disabled);
+      window.__push('editor', rowSnap);
+      constEl = document.querySelector('#editor-body [data-act="row-const"]');
+      if (constEl) constEl.blur();
+    }
+    out.error = null;
+  } catch (e) { out.error = String((e && e.message) || e); }
+  return out;
+})()
+"""
+
+
 # 편집기 「템플릿」 탭 관리 표면(F8 — tpl 화면 사망의 승계, §10.17.2 판정 D) — 구
 # _TPL_LIST_GROUP_PROBE_JS 의 재작성: 검증 대상(그룹 헤더·접힘 뷰 제외·⋮ 구성·＋그룹지정
 # 칩·이동 다이얼로그 개폐·퇴화 평면)이 전부 편집기 표면으로 살아 이주했으므로 합성 editor
@@ -3140,6 +3248,10 @@ def _selftest_drive(window: "object") -> None:
         time.sleep(0.4)  # 모달 닫힘 전이(CSS 160ms) 정산 — 다음 프로브의 클릭이 백드롭에 막히지 않게
         # 매핑 칩-라이브(슬라이스 5 PR-3) — 합성 매핑 스냅샷으로 실 render() 구동 후 칩·태그 되읽기.
         result["editor_chip"] = window.evaluate_js(_EDITOR_CHIP_PROBE_JS)  # type: ignore[attr-defined]
+        # 편집(탭) 저장 게이트 — 타이핑이 change 로 확정되기 **전에** 주 행동이 열리는가.
+        result["editor_save_gate"] = window.evaluate_js(  # type: ignore[attr-defined]
+            _EDITOR_SAVE_GATE_PROBE_JS
+        )
         # 편집기 라이브러리 관리 표면(F8 — 구 tpl 그룹 프로브의 승계 재작성): 그룹·⋮ 메뉴·
         # ＋그룹지정 칩·이동 다이얼로그·행동 줄·결과 줄 실렌더 되읽기.
         result["editor_lib_manage"] = window.evaluate_js(_EDITOR_LIBRARY_MANAGE_PROBE_JS)  # type: ignore[attr-defined]

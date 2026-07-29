@@ -47,6 +47,47 @@
   let foldOpen = false;     // 미사용 헤더 접힘(.ign-fold)
   let tokFoldOpen = false;  // 파일명 토큰 참조 접힘(.tok-fold, F27 — PR-4 리뷰 F6)
 
+  /* 아직 커밋되지 않은 타이핑이 있는가 — **DOM 만 아는 사실**(리뷰 R2).
+
+     텍스트 입력은 `change`(=blur)에서만 발신한다. 매 키에 발신하지 않는 것은 결정이고
+     (`docs/WEB_RENDER_PRESERVATION.md`: 이 앱의 푸시는 이산 액션이라 타이핑 중 재구성이
+     없다 — `renderHead` 가 포커스 중 이름 입력을 안 건드리는 것도 같은 결정의 이면),
+     그 대가가 저장 게이트에서 드러났다: 고치는 동안 Python 은 아직 모르니 `s.dirty` 가
+     false 이고, 「변경 저장」이 `disabled` 면 **방금 고친 사람의 첫 클릭이 삼켜진다** —
+     비활성 버튼은 click 을 내지 않아 그 클릭은 blur→change 만 태우고 한 번 더 눌러야 한다.
+
+     그래서 게이트를 `s.dirty || pendingFieldEdit` 로 **합성**한다. 판정을 두 곳이 하는 것이
+     아니다 — 「저장 대상이 바뀌었는가」는 여전히 Python 이고, 여기서 더하는 것은 「아직
+     도착하지 않은 입력이 있는가」라는 DOM 의 사실뿐이다. 되돌려 쳐서 스냅샷 값과 같아지면
+     다시 내려가고, `change` 가 발신하는 순간 소임이 끝나 꺼진다.
+
+     **이 사실은 편집 가능한 컨트롤 전부의 것이다**(리뷰 R3). 처음엔 머리·꼬리 3입력만 셌는데
+     매핑 행의 상수 입력(`row-const`)도 같은 `change` 발신이라 같은 자리에서 첫 클릭이
+     삼켜졌다. 목록을 늘리는 대신 **`onChange` 가 발신하는 편집 액션 전부**를 대상으로 삼고,
+     새 편집 컨트롤이 목록 밖으로 새면 정적 계약(`test_r3_editor`)이 시끄럽게 실패한다 —
+     열거로 푼 문제는 다음 열거에서 다시 샌다.
+
+     **대기는 값까지 든다**(리뷰 R4 P1). 「대기 중」이라는 사실만 들면, 타이핑 도중 푸시가 와
+     `#editor-body` 가 옛 스냅샷으로 다시 그려질 때 **친 값은 사라지는데 버튼은 열린 채**다 —
+     사용자는 사라진 값을 저장했다고 믿는다(조용한 소실 + 그것을 가리는 표지). 그래서 무엇을·
+     어디에·무슨 값을 쳤는지 함께 들고 재구성 **뒤에** 되돌려 놓는다. 되돌릴 자리가 사라졌으면
+     (단계 이동 등) 대기도 버린다 — 그때는 남은 편집이 정말 없으므로 열린 버튼이 거짓이다. */
+  const FIELD_EDIT_KEYS = { name: "name", pattern: "pattern", "dataset-name": "dataset_name" };
+  const ROW_EDIT_KEYS = {
+    "row-source": "source", "row-type": "type", "row-fmt": "fmt", "row-const": "const",
+  };
+  let pendingFieldEdit = null;  // {act, index, value} — null 이면 대기 없음
+
+  /* 이 컨트롤에 대해 **스냅샷이 든 값**(=Python 이 아는 값) — 편집 대상이 아니면 null. */
+  function snapshotValue(el) {
+    const act = el.dataset.act;
+    if (FIELD_EDIT_KEYS[act]) return (LAST && LAST[FIELD_EDIT_KEYS[act]]) || "";
+    const key = ROW_EDIT_KEYS[act];
+    if (!key) return null;
+    const row = LAST && LAST.rows && LAST.rows[Number(el.dataset.index)];
+    return row ? (row[key] || "") : null;
+  }
+
   /* deep-link 조준 대기 1슬롯(F6 PR-B, §10.14.3) — 보낸 표면(드로어)이 진입 성사 뒤
      `aimAt(target)` 로 건다. 조준 문맥의 push 가 아직이면 여기 걸어 두고 render 가 소비한다
      (브리지 반환과 push 는 독립 채널이라 어느 쪽이 먼저인지 기대지 않는다). */
@@ -85,6 +126,9 @@
       renderContext(s);
       $("editor-steps").innerHTML = stepHeader(s);
       $("editor-body").innerHTML = stepBody(s);
+      // 재구성이 지운 타이핑을 되돌린 **뒤에** footer 를 그린다 — 되돌릴 자리가 없어 대기가
+      // 버려지는 경우 그 사실이 같은 렌더의 저장 버튼 상태에 반영돼야 한다(리뷰 R4 P1).
+      restorePendingEdit();
       $("editor-foot").innerHTML = footer(s);
       $("editor-foot").style.display = footer(s) ? "" : "none";
     });
@@ -698,6 +742,9 @@
         <span class="spacer"></span>
         <button class="btn" data-act="confirm-all">모두 확정</button>
         <button class="btn" data-act="unconfirm-all">모두 해제</button>
+        <!-- 행 아이콘(↻)의 텍스트 짝(U2 §2.4·§2.6) — 행마다 라벨을 달 폭이 없어(3열 170px
+             고정) 아이콘으로 두는 대신, 그 기능의 이름은 여기서 한 번 말한다. -->
+        <button class="btn" data-act="resuggest-all">자동 제안 다시 받기</button>
         ${s.unconfirm_undo_count ? `<button class="btn" data-act="restore-confirmed">직전 확정 ${s.unconfirm_undo_count}개 복원</button>` : ""}
       </div>
       ${dataPreview(s)}`;
@@ -879,8 +926,13 @@
       // 선택지를 모든 문맥에 나열하지 않는다). 손댄 것이 없으면 버릴 것도 없다.
       const discard = s.dirty
         ? `<button class="btn" data-act="discard-patch">변경 버리기</button>` : "";
+      // 저장은 **바꾼 것이 있을 때만** 선다(U2 §2.4). 원문의 요지는 두 모드를 이름이
+      // 아니라 **상태로** 구별하자는 것이고, 판정은 이미 `s.dirty` 로 와 있었는데 표면이
+      // 안 썼다. 신규 마법사에는 걸지 않는다 — 거긴 항상 dirty 라 늘 활성이고, 마지막
+      // 단계의 「작업 저장」은 완료 행동이지 변경 저장이 아니다.
       return `${discard}<span class="spacer"></span>` +
-        `<button class="btn primary" data-act="save">변경 저장</button>`;
+        `<button class="btn primary" data-act="save"` +
+        `${(s.dirty || pendingFieldEdit) ? "" : " disabled"}>변경 저장</button>`;
     }
     const back = here > 0
       ? `<button class="btn" data-act="back">◀ 뒤로</button>` : `<button class="btn" disabled>◀ 뒤로</button>`;
@@ -1063,7 +1115,7 @@
             window.alert(`확정한 매핑 ${st.confirmed}개가 있어 전체 미사용을 할 수 없습니다. 확정을 먼저 해제하거나 칩을 하나씩 끄세요.`);
             break;
           }
-          const man = (st && st.manual_unconfirmed) || 0;
+          const man = (st && st.use_none_manual) || 0;
           if (man && !(await Modal.confirm({ body:
             `전체 미사용하면 직접 소스를 고른 매핑 ${man}개의 수동 지정이 해제됩니다` +
             `(자동 제안으로만 복원).\n\n계속할까요?`,
@@ -1073,6 +1125,31 @@
         }
         case "revert-source":
           await sendEdit("revert_source", { index: idx }); break;
+        case "resuggest-all": {
+          // use-none 과 같은 순서다: 수치는 Python 이 **지금** 판정하고(stale LAST 우회
+          // 차단), 확인은 그 수치로 묻는다. 다만 확정 행은 선차단이 아니라 **제외**다 —
+          // 일괄 재제안은 파괴가 아니라 재계산이고, 확정 하나 때문에 나머지를 못 돌리면
+          // 확정을 풀었다 다시 거는 우회를 시킨다.
+          // 수치는 **이 관문의 것**을 읽는다(리뷰 R1 P1) — use-none 의 수치(`use_none_manual`)는
+          // 소스를 겨눈 행만 세는데 이쪽은 미확정 행 전부를 리셋하므로, 그 수치로 물으면 소스
+          // 없이 상수만 직접 입력한 행이 확인 없이 지워진다. 관문마다 자기 수치를 읽는다.
+          const st = await sendEdit("mapping_reset_stakes", {});
+          const man = (st && st.resuggest_manual) || 0;
+          const kept = (st && st.confirmed) || 0;
+          if (man && !(await Modal.confirm({ body:
+            `직접 편집한 매핑 ${man}개가 자동 제안으로 돌아갑니다.` +
+            `\n직접 입력한 상수·유형·표시형도 함께 지워집니다.` +
+            (kept ? `\n확정한 ${kept}개는 그대로 둡니다.` : "") +
+            `\n\n계속할까요?`,
+            confirmLabel: "다시 받기", cancelLabel: "취소" }))) break;
+          const res = await sendEdit("resuggest_all", {});
+          // 아무것도 안 바뀐 경우를 조용히 넘기지 않는다 — 누른 버튼이 무동작으로 보이면
+          // 그게 조용한 소실이다(전 행이 확정이면 대상이 0개다).
+          if (res && !res.resuggested) {
+            window.alert(`자동 제안을 다시 받을 행이 없습니다. 확정한 ${res.kept_confirmed}개는 그대로 둡니다.`);
+          }
+          break;
+        }
         case "prev-rec": await sendEdit("step_preview", { delta: -1 }); break;
         case "next-rec": await sendEdit("step_preview", { delta: 1 }); break;
         case "unconfirm-all": await sendEdit("unconfirm_all", {}); break;
@@ -1101,9 +1178,41 @@
     }
   }
 
+  /* 타이핑 — **발신하지 않는다**. 커밋 전 편집의 존재만 표시해 주 행동을 열어 둔다(위 주석).
+     재렌더 없이 버튼 하나만 만진다: 여기서 render 를 돌리면 그게 곧 키스트로크 단위 재구성이다. */
+  function onInput(e) {
+    const el = e.target.closest("[data-act]");
+    const known = el && snapshotValue(el);
+    if (known === null || known === undefined) return;
+    pendingFieldEdit = el.value === known ? null : {
+      act: el.dataset.act, index: el.dataset.index, value: el.value,
+    };
+    const save = document.querySelector('#editor-foot [data-act="save"]');
+    if (save && LAST && isEditing(LAST)) save.disabled = !(LAST.dirty || pendingFieldEdit);
+  }
+
+  /* 재구성이 지운 타이핑을 제자리에 되돌린다 — 없으면 대기도 버린다(위 주석 R4 P1).
+     `render()` 안, `#editor-body` 를 다시 지은 **직후**에 부른다. */
+  function restorePendingEdit() {
+    if (!pendingFieldEdit) return;
+    const p = pendingFieldEdit;
+    // 화면 전체를 겨눈다 — 이름 입력은 머리(#editorName)에 살아 재구성 대상이 아니지만,
+    // 본문만 뒤지면 「자리가 없다」로 읽혀 멀쩡한 대기를 버린다.
+    const sel = p.index === undefined
+      ? `#scr-editor [data-act="${p.act}"]`
+      : `#scr-editor [data-act="${p.act}"][data-index="${p.index}"]`;
+    const el = document.querySelector(sel);
+    if (!el) { pendingFieldEdit = null; return; }   // 되돌릴 자리가 없다 = 남은 편집도 없다
+    el.value = p.value;
+  }
+
   function onChange(e) {
     const el = e.target.closest("[data-act]");
     if (!el) return;
+    // 발신하는 순간 이 사실의 소임이 끝난다 — 이후 판정은 Python 이 낸 `s.dirty` 가 진다.
+    // (버튼의 DOM 상태는 건드리지 않는다: 왕복이 끝나 push 가 올 때까지 열린 채여야
+    //  select 편집처럼 change 가 즉시 서는 자리에서도 첫 클릭이 살아 있다.)
+    if (snapshotValue(el) !== null) pendingFieldEdit = null;
     const idx = el.dataset.index !== undefined ? Number(el.dataset.index) : null;
     switch (el.dataset.act) {
       case "row-source": sendEdit("set_source", { index: idx, source: el.value }); break;
@@ -1187,7 +1296,29 @@
       return false;
     }
     alertMsg(res.dataset_error || res.block_reason || "저장할 수 없습니다.");
+    aimAtBlockedField(res.blocked_field);
     return false;
+  }
+
+  /* 차단당한 칸으로 커서를 옮긴다(U2 §2.4) — "입력하세요"라고 말한 뒤 어디에 입력할지
+     안 알려 주면 지시가 절반이다. 작업 이름은 보이는 라벨 없이 제목 자리에 사는 입력이라
+     (`.title-input`, 테두리·배경 투명) 특히 못 찾는다.
+
+     **어느 칸인지는 Python 이 말한다**(`blocked_field`). 그리고 이름 칸은 `#editor-body`
+     밖 고정 머리에 살아 섹션을 갈아도 살아 있다 — 파일명 패턴은 그 반대라 해당 탭이
+     그려져 있을 때만 겨눌 수 있고, 없으면 조용히 아무 일도 하지 않는다(없는 칸을 겨눈
+     척하지 않는다). */
+  function aimAtBlockedField(field) {
+    const el = field === "name" ? $("editorName")
+      : field === "pattern" ? document.querySelector('#editor-body input[data-act="pattern"]')
+        : null;
+    if (!el) return;
+    el.focus();
+    if (typeof el.select === "function") el.select();
+    // 초점은 **이동**을 말하고 색은 **사유**를 말한다 — 초점만 옮기면 왜 여기로 왔는지가
+    // 없다. 표지는 그 칸을 고치는 순간 걷는다(고쳐도 붉은 채면 표지가 거짓말이 된다).
+    el.setAttribute("aria-invalid", "true");
+    el.addEventListener("input", () => el.removeAttribute("aria-invalid"), { once: true });
   }
 
   function alertMsg(msg, level) {
@@ -1213,6 +1344,7 @@
     const root = $("scr-editor");
     root.addEventListener("click", onClick);
     root.addEventListener("change", onChange);
+    root.addEventListener("input", onInput);
     $("editorBack").addEventListener("click", () => leaveTo(returnScreen()));
     // 라이브러리 ⋮ 메뉴·이동 다이얼로그 배선(F8) — DOM(#tplRowMenu·#tplMoveModal)은 셸
     // 레벨 공용이라 병존 기간 template.js 와 이중 배선되지만, 각 인스턴스가 자기 열림

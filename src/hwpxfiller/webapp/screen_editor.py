@@ -1486,21 +1486,40 @@ class EditorController:
         어긋나지 않는다.
         """
         if self.model is None:
-            return {"human": 0, "manual_unconfirmed": 0, "confirmed": 0}
+            return {"human": 0, "use_none_manual": 0, "resuggest_manual": 0, "confirmed": 0}
         rows = [r for r in self.model.human_owned_rows() if r.confirmed or r.has_content()]
-        # manual_unconfirmed 는 '전체 미사용' 확인(리뷰 R2)의 근거 — **use_none 이 실제로
-        # 강등하는 집합과 같은 술어**여야 문안과 파괴가 일치한다(PR-3 리뷰 F4): 소스를 겨눈
-        # touched 미확정 행만. 소스 없는 수동 const 행은 강등 대상이 아니라 세지 않는다.
-        manual = [
+        # 파괴 확인의 수치는 **행동마다 다르다** — 두 관문이 강등하는 집합이 다르기 때문이다.
+        # 한 수치를 둘이 나눠 쓰면 좁은 쪽 술어가 넓은 쪽 파괴를 가려 준다(리뷰 R1 P1: 소스
+        # 없는 수동 const 행이 일괄 재제안에서 확인 없이 지워졌다). 그래서 이름을 소비자에게
+        # 붙인다 — 새 관문이 생기면 자기 수치를 여기 더한다.
+        #
+        # use_none: 소스를 겨눈 touched 미확정 행만 강등한다(PR-3 리뷰 F4 — 문안=파괴 집합).
+        use_none_manual = [
             r for r in self.model.rows if r.touched and not r.confirmed and r.source
         ]
+        # resuggest_all: 미확정 행 **전부**를 reset_to_system 한다 — 소스뿐 아니라 상수·유형·
+        # 표시형까지 지우므로 소스 없는 수동 행도 잃을 것이 있다. 술어는 실제 루프
+        # (`_resuggest_targets`)에서 되읽어 둘이 갈라질 자리를 없앤다.
+        resuggest_manual = [i for i in self._resuggest_targets() if self.model.rows[i].touched]
         # confirmed 는 use_none 사전 차단의 근거(PR-3 리뷰 F5) — 확인 모달을 띄운 뒤에야
         # 백엔드가 거부하는 확인-후-오류 순서를 웹이 선차단으로 뒤집는다.
         return {
             "human": len(rows),
-            "manual_unconfirmed": len(manual),
+            "use_none_manual": len(use_none_manual),
+            "resuggest_manual": len(resuggest_manual),
             "confirmed": self.model.confirmed_count(),
         }
+
+    def _resuggest_targets(self) -> "list[int]":
+        """일괄 재제안이 손대는 행 — 확인 수치와 실제 루프의 **단일 술어**(리뷰 R1 P1).
+
+        수치를 따로 세면 좁은 쪽이 넓은 쪽 파괴를 가린다: 종전 확인은 `r.source` 를 요구했고
+        루프는 요구하지 않아, 소스 없이 상수만 직접 입력한 미확정 행이 확인 없이 지워졌다
+        (`revert_to_auto` 가 const·type·fmt 를 함께 리셋한다).
+        """
+        if self.model is None:
+            return []
+        return [i for i, r in enumerate(self.model.rows) if not r.confirmed]
 
     # ---- 매핑 행 편집(모두 편집=확정 해제, VM 이 처리)
     def _do_set_source(self, p: dict) -> None:
@@ -1523,6 +1542,33 @@ class EditorController:
             raise ValueError("확정한 행은 되돌릴 수 없습니다. 확정을 먼저 해제하세요.")
         self.model.revert_to_auto(index)
         self.model.resuggest_row(index, self._active_sources())
+
+    def _do_resuggest_all(self, p: dict) -> dict:
+        """전 행을 자동 제안으로 다시 받는다(U2 §2.4) — 행 단위 ``revert_source`` 의 일괄판.
+
+        **확정한 행은 건드리지 않는다.** 행 단위가 확정 행을 시끄럽게 거절하는 것과 같은
+        근거인데(오클릭 한 번에 확정이 조용히 풀리면 안 된다), 일괄에서는 거절이 아니라
+        **제외**다: 확정 하나 때문에 나머지 전부를 못 돌리면 사용자는 확정을 풀었다 다시
+        걸어야 한다. 대신 무엇을 건드리고 무엇을 뒀는지 수치로 돌려준다 — 부분 동작을
+        조용히 하지 않는다(confirm-or-alarm).
+
+        되돌린 행마다 ``revert_to_auto`` → ``resuggest_row`` 로 간다: 행 단위와 **같은
+        착지**여야 「일괄로 한 것」과 「하나씩 N번 한 것」이 달라지지 않는다. 전집합
+        ``apply_active_sources`` 를 쓰지 않는 이유도 같다 — 그쪽은 확정 행까지 훑는다.
+        """
+        if self.model is None:
+            return {"resuggested": 0, "kept_confirmed": 0}
+        active = self._active_sources()
+        # 대상 술어는 `_resuggest_targets` 단일 출처 — 확인 수치가 여기서 파생돼야
+        # 「물어본 것」과 「지운 것」이 갈라지지 않는다(리뷰 R1 P1).
+        targets = self._resuggest_targets()
+        for index in targets:
+            self.model.revert_to_auto(index)
+            self.model.resuggest_row(index, active)
+        return {
+            "resuggested": len(targets),
+            "kept_confirmed": len(self.model.rows) - len(targets),
+        }
 
     def _do_set_type(self, p: dict) -> None:
         self.model.set_type(int(p["index"]), p["type"])
@@ -1773,7 +1819,13 @@ class EditorController:
             media=template_media(self.template_path) if self.template_path else "hwpx",
         )
         if not verdict.ok:
-            return {"ok": False, "block_reason": verdict.block_reason}
+            # 어느 칸을 고쳐야 하는지도 함께 돌려준다(U2 §2.4) — 표면이 차단 문구를 파싱해
+            # 알아내면 문안을 고칠 때마다 조준이 조용히 깨진다.
+            return {
+                "ok": False,
+                "block_reason": verdict.block_reason,
+                "blocked_field": verdict.blocked_field,
+            }
         # 태그·마지막 실행 메타는 편집 세션 밖(홈 태그 편집 등)에서 바뀌었을 수 있어
         # load_job 시점 스냅샷이 아니라 저장 직전 디스크 상태를 다시 읽어 보존한다 — 편집
         # 세션이 열린 사이 홈에서 단 태그를 조용히 되돌리지 않는다(#26 confirm-or-alarm).

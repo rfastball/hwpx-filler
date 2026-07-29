@@ -22,10 +22,17 @@ class SaveVerdict:
 
     술어 순서는 종전 ``accept()`` 와 동일하게 고정한다:
     매핑 미확정 → 이름 없음 → 파일명 패턴 없음(RC-20) → 전부 비움(RC-08).
+
+    ``blocked_field`` 는 **고칠 입력이 어디인가**다(U2 §2.4). 차단 문구만 띄우고 커서를
+    안 옮기면 "입력하세요"라고 말한 뒤 어디에 입력할지는 안 알려 주는 꼴이고, 작업 이름은
+    보이는 라벨 없이 제목 자리에 사는 입력이라 특히 못 찾는다. 판정이 낸 이름을 표면이
+    그대로 겨눈다 — 링2 가 차단 **문구를 파싱해** 어느 칸인지 알아내면 문안을 고칠 때마다
+    조준이 조용히 깨진다.
     """
 
     block_reason: str = ""
     profile: "MappingProfile | None" = None
+    blocked_field: str = ""
 
     @property
     def ok(self) -> bool:
@@ -58,11 +65,11 @@ def validate_save(model, name: str, pattern: str, *, schema=None, media: str = "
             "매핑이 현재 템플릿 스키마와 일치하지 않습니다. 템플릿을 다시 로드한 뒤 저장하세요."
         )
     if not name:
-        return SaveVerdict("작업 이름을 입력하세요.")
+        return SaveVerdict("작업 이름을 입력하세요.", blocked_field="name")
     # 파일명 패턴은 문서 식별자를 결정한다 — 빈 입력을 화면에 없던 값으로
     # 조용히 폴백하지 않는다(확인-또는-경보, RC-20). TXT 는 이 축이 없다(위 docstring).
     if media != "txt" and not pattern:
-        return SaveVerdict("파일명 패턴을 입력하세요.")
+        return SaveVerdict("파일명 패턴을 입력하세요.", blocked_field="pattern")
     if not model.emits_any_value():
         return SaveVerdict(
             "확정된 매핑이 전부 비움이라 채울 값이 없습니다. 소스를 지정한 뒤 저장하세요."

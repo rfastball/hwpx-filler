@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from hwpxfiller.core.dataset_pool import DatasetPoolItem, DatasetPoolRegistry
@@ -390,4 +391,32 @@ def test_bridge_push_supports_multiple_subscribers_per_screen():
     )
     assert "for (const fn of renderers[screen] || [])" in bridge, (
         "__push 가 구독자 전부를 부르지 않습니다."
+    )
+
+
+def test_every_editing_control_counts_toward_the_save_gate():
+    """`onChange` 가 발신하는 편집 컨트롤은 **전부** 저장 게이트의 대기 판정에 든다(U2 §2.4 R3).
+
+    「변경 저장」은 `s.dirty || pendingFieldEdit` 로 열린다. 앞엣것은 Python 이 `change`
+    (=blur) 뒤에야 아는 사실이고, 뒤엣것은 그 사이를 메우는 DOM 의 사실이다. 대상 목록이
+    발신 목록보다 좁으면 **빠진 컨트롤에서만** 첫 클릭이 삼켜진다 — 실제로 첫 판은 머리·꼬리
+    3입력만 세어 매핑 행의 상수 입력(`row-const`)이 그 상태였다(리뷰 R3).
+
+    그래서 열거를 늘리는 대신 **두 목록이 같은지**를 계약으로 건다: 새 편집 컨트롤을
+    `onChange` 에 더하면서 판정 목록에 안 넣으면 여기서 시끄럽다.
+    """
+    src = (REPO / "web" / "js" / "screens" / "editor.js").read_text(encoding="utf-8")
+    body = re.search(r"function onChange\(e\) \{.*?\n  \}", src, re.S)
+    assert body, "onChange 를 찾지 못했습니다 — 계약이 겨눌 자리가 사라졌습니다."
+    dispatching = set(re.findall(r'case "([\w-]+)":\s*sendEdit\(', body.group(0)))
+    assert dispatching, "onChange 에서 발신 case 를 하나도 못 읽었습니다(계측 실패)."
+    covered = set()
+    for name in ("FIELD_EDIT_KEYS", "ROW_EDIT_KEYS"):
+        decl = re.search(rf"const {name} = \{{(.*?)\}};", src, re.S)
+        assert decl, f"{name} 선언이 없습니다 — 저장 게이트의 대기 판정 목록 소실."
+        covered |= set(re.findall(r'"?([\w-]+)"?\s*:', decl.group(1)))
+    missing = sorted(dispatching - covered)
+    assert not missing, (
+        f"저장 게이트의 대기 판정에서 빠진 편집 컨트롤: {', '.join(missing)} — 그 컨트롤을 "
+        "고치고 바로 저장을 누르면 첫 클릭이 삼켜집니다(비활성 버튼은 click 을 내지 않습니다)."
     )

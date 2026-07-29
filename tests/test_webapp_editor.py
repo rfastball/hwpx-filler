@@ -1455,14 +1455,41 @@ def test_mapping_reset_stakes_judged_by_python_now(tmp_path):
     stakes = ctrl.dispatch("mapping_reset_stakes", {})
     assert stakes["human"] == 1                                        # 내용 있는 수동
     # 소스 없는 수동 const 행은 use_none 강등 대상이 아니다 — 문안=파괴 집합(리뷰 F4).
-    assert stakes["manual_unconfirmed"] == 0
+    assert stakes["use_none_manual"] == 0
+    # 같은 행이 일괄 재제안에서는 **잃을 것이 있다**(리뷰 R1 P1) — reset_to_system 이 상수를
+    # 지운다. 두 관문의 수치가 갈리는 자리라 이름도 소비자별로 갈라 둔다.
+    assert stakes["resuggest_manual"] == 1
     assert stakes["confirmed"] == 0                                    # use_none 선차단 근거(F5)
     r = ctrl.dispatch("confirm_all", {})
     ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
     stakes = ctrl.dispatch("mapping_reset_stakes", {})
     assert stakes["human"] == ctrl.snapshot()["field_count"]           # 전 행 확정(비움 포함)
-    assert stakes["manual_unconfirmed"] == 0                           # 확정 = 미확정 수동 아님
+    assert stakes["use_none_manual"] == 0                              # 확정 = 미확정 수동 아님
+    assert stakes["resuggest_manual"] == 0                             # 확정 행은 재제안 비대상
     assert stakes["confirmed"] == ctrl.snapshot()["field_count"]       # 선차단 수치(F5)
+
+
+def test_resuggest_stakes_count_every_row_the_loop_resets(tmp_path):
+    """일괄 재제안의 확인 수치 = **그 루프가 실제로 리셋하는 행**(리뷰 R1 P1).
+
+    종전엔 use_none 의 수치(`r.source` 를 요구)를 빌려 썼다. 소스 없이 상수만 직접 입력한
+    미확정 행은 그 술어에 안 걸려 수치가 0이 되는데, 루프는 그 행도 `revert_to_auto` 로
+    리셋한다(const·type·fmt 소거) — 확인 대화 없이 직접 입력이 사라졌다. 수치와 루프가
+    같은 술어(`_resuggest_targets`)에서 나오는지 확인한다: 확인 수치 ≥ 실제 잃는 행.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("skip_data", {})                        # 데이터 없음 = 소스를 겨눌 수 없음
+    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_const", {"index": 0, "const": "직접 입력한 값"})
+    stakes = ctrl.dispatch("mapping_reset_stakes", {})
+    assert stakes["use_none_manual"] == 0                 # use_none 은 이 행을 안 건드린다
+    assert stakes["resuggest_manual"] == 1                # 재제안은 건드린다 → 확인 근거가 선다
+
+    ctrl.dispatch("resuggest_all", {})
+    row = ctrl.snapshot()["rows"][0]
+    assert row["const"] == ""                             # 실제로 지운다(그래서 물어야 한다)
+    assert row["touched"] is False
 
 
 def test_ensure_model_carries_touched_unconfirmed_rows(tmp_path):
@@ -1552,6 +1579,66 @@ def test_revert_source_refuses_confirmed_rows(tmp_path):
     with pytest.raises(ValueError, match="확정을 먼저 해제"):
         ctrl.dispatch("revert_source", {"index": 0})
     assert ctrl.snapshot()["rows"][0]["confirmed"] is True            # 무파괴
+
+
+def test_resuggest_all_reverts_every_unconfirmed_row(tmp_path):
+    """일괄 재제안(U2 §2.4) — 행 단위 ↩ 의 일괄판. 착지가 행 단위와 **같아야** 한다.
+
+    「일괄로 한 것」과 「하나씩 N번 한 것」이 다르면 사용자는 둘 중 어느 쪽이 진짜인지
+    알 수 없다 — 그래서 전집합 `apply_active_sources` 가 아니라 행마다
+    `revert_to_auto` → `resuggest_row` 로 간다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    ctrl.dispatch("set_source", {"index": 0, "source": "계약일"})     # 수동 오지정
+    ctrl.dispatch("set_source", {"index": 1, "source": "없는열"})     # 또 다른 수동
+    res = ctrl.dispatch("resuggest_all", {})
+    snap = ctrl.snapshot()
+    assert res["kept_confirmed"] == 0
+    assert res["resuggested"] == len(snap["rows"])
+    # 행 단위 ↩ 와 같은 착지 — 전부 시스템 소유로 돌아간다.
+    assert all(r["touched"] is False for r in snap["rows"])
+    assert snap["rows"][1]["source"] != "없는열"
+
+
+def test_resuggest_all_keeps_confirmed_rows_and_says_so(tmp_path):
+    """확정 행은 **거절이 아니라 제외**다(U2 §2.4) — 그리고 제외했다고 수치로 말한다.
+
+    행 단위 ↩ 는 확정 행을 시끄럽게 거절하는데(오클릭 한 번에 확정이 풀리면 안 된다),
+    일괄에서 같은 규칙을 쓰면 확정 하나 때문에 나머지 전부를 못 돌려 「확정을 풀었다 다시
+    건다」는 우회를 시킨다. 대신 건드린 수와 둔 수를 함께 돌려준다 — 부분 동작을 조용히
+    하지 않는다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    ctrl.dispatch("set_source", {"index": 0, "source": "낙찰금액"})
+    ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": True})
+    total = len(ctrl.snapshot()["rows"])
+    res = ctrl.dispatch("resuggest_all", {})
+    snap = ctrl.snapshot()
+    assert res == {"resuggested": total - 1, "kept_confirmed": 1}
+    assert snap["rows"][0]["confirmed"] is True                       # 무파괴
+    assert snap["rows"][0]["source"] == "낙찰금액"
+
+
+def test_resuggest_all_reports_zero_when_everything_is_confirmed(tmp_path):
+    """대상이 0개면 0을 돌려준다 — 표면이 「무동작」을 말할 근거다(조용한 소실 금지)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    # `confirm_all` 액션은 **내용 있는 행만** 확정한다(confirm_content_rows) — 전 행 확정
+    # 상태를 만들려면 행마다 명시해야 한다.
+    total = len(ctrl.snapshot()["rows"])
+    for index in range(total):
+        ctrl.dispatch("set_confirmed", {"index": index, "confirmed": True})
+    assert ctrl.dispatch("resuggest_all", {}) == {
+        "resuggested": 0, "kept_confirmed": total,
+    }
 
 
 def test_same_file_repick_after_use_none_revives_suggestions(tmp_path):

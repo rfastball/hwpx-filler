@@ -402,8 +402,14 @@
         `<span class="muted">${esc(c.txt_note)}</span></div>`
       : "";
     if (!top.length && !needs.length) {
+      // 막다른 자리를 만들지 않는다(U2 §2.4). 흡수처 출구(`#jobNoDataExit`)는 데이터·작업이
+      // **둘 다** 없을 때만 서는데, 정작 출구가 필요한 상태는 여기다 — 데이터는 골랐고 그
+      // 데이터로 쓸 작업이 하나도 없어 이 화면에서 더 갈 데가 없다. 「흡수했다고 적어 놓고
+      // 가는 길을 안 보여 주면 그게 조용한 소실」이라는 §10.9 판정 C 가 이 자리에도 걸린다.
       host.innerHTML =
-        `<span class="muted">현재 데이터에 사용할 수 있는 문서 작업이 없습니다.</span>` + txtNote;
+        `<span class="muted">현재 데이터에 사용할 수 있는 문서 작업이 없습니다.</span>` +
+        `<button class="btn sm" type="button" data-cands-exit>「문서 작업」에서 고르기</button>` +
+        txtNote;
       return;
     }
     // 작업 방식 구획(§19.3) — **구획 여부·순서 판정은 Python**(candidates.sections)이고
@@ -1549,6 +1555,11 @@
     // 보는 경로는 「문서 작업」이 흡수했고, 여기서는 그 흡수처를 가리키기만 한다(겨눔 없음:
     // 명시 선택은 저쪽 「문서 만들기에서 사용」이 `prefer_work` 로 낸다).
     $("jobPickInLibrary").addEventListener("click", () => window.Nav.go("library"));
+    // 같은 출구가 「데이터는 있는데 쓸 작업이 0건」에도 선다(U2 §2.4). 후보 구획은 매 푸시
+    // 다시 그려지므로 안정 컨테이너에 위임한다 — 버튼에 직접 걸면 첫 렌더에만 붙는다.
+    $("jobCandidates").addEventListener("click", (e) => {
+      if (e.target.closest("[data-cands-exit]")) window.Nav.go("library");
+    });
     // 재렌더에도 살아남게 안정 컨테이너에 위임(#67).
     $("jobRelink").addEventListener("click", (e) => {
       if (e.target.closest('[data-act="relink-template"]')) doRelinkTemplate();

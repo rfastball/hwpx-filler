@@ -856,6 +856,57 @@ class TestWebSelftestGate:
             assert want in tags, f"소유권 태그 '{want}' 미렌더(칩-라이브 결정 12): {tags!r}"
         assert e["auto_revert_option"] is True, "touched 행에 '자동 제안으로 되돌리기'(↩) 버튼이 없습니다(리뷰 R5)."
 
+    def test_editor_save_gate_opens_on_typing_not_on_blur(self, selftest_result: dict) -> None:
+        """편집(탭)의 「변경 저장」이 **타이핑 시점에** 열린다(U2 §2.4 게이트 · 리뷰 R2).
+
+        `s.dirty` 는 `change`(=blur)에서만 갱신되는데, 그때까지 주 행동이 `disabled` 면 방금
+        고친 사람의 **첫 클릭이 삼켜진다** — 비활성 버튼은 click 을 내지 않아 그 클릭은
+        blur→change 만 태우고, 사용자는 아무 데나 한 번 누른 뒤 다시 눌러야 한다. 게이트를
+        없애는 대신 「아직 도착하지 않은 입력이 있는가」라는 DOM 의 사실을 더해 합성한다.
+
+        정적 검사로는 못 본다(이벤트 순서와 버튼 상태의 문제라 실 DOM 이 있어야 한다).
+        """
+        g = selftest_result["editor_save_gate"]
+        assert g.get("error") is None, f"저장 게이트 프로브 예외: {g.get('error')!r}"
+        assert g["save_present"] is True, "편집 모드 footer 에 「변경 저장」이 없습니다."
+        assert g["clean_disabled"] is True, (
+            "바꾼 것이 없는데 저장이 열려 있습니다 — 게이트 자체가 사라졌습니다(U2 §2.4)."
+        )
+        assert g["typing_enabled"] is True, (
+            "이름을 고쳤는데 저장이 잠긴 채입니다 — 첫 클릭이 삼켜지는 그 상태입니다."
+        )
+        assert g["rerender_keeps_enabled"] is True, (
+            "타이핑 중 push 한 번에 저장이 도로 잠깁니다 — 버튼만 직접 켜고 렌더 경로는 "
+            "옛 판정을 그대로 씁니다(두 자리가 다른 말을 합니다)."
+        )
+        assert g["reverted_disabled"] is True, (
+            "되돌려 쳐서 원래 값이 됐는데 저장이 열린 채입니다 — 없는 변경을 저장하라고 합니다."
+        )
+        assert g["pattern_present"] is True, "파일명 패턴 입력이 없습니다 — 프로브가 겨눌 자리 소실."
+        assert g["pattern_typing_enabled"] is True, (
+            "패턴을 고쳤는데 저장이 잠긴 채입니다 — 이름만 고치고 패턴은 빠졌습니다."
+        )
+        # 매핑 행의 상수 입력도 같은 자격(리뷰 R3) — 머리·꼬리 입력만 세면 이 자리만 남는다.
+        assert g["row_const_present"] is True, "매핑 행 상수 입력이 없습니다 — 프로브 겨눔 소실."
+        assert g["row_clean_disabled"] is True, "행 단계에서 바꾼 것이 없는데 저장이 열려 있습니다."
+        assert g["row_typing_enabled"] is True, (
+            "매핑 행 상수를 고쳤는데 저장이 잠긴 채입니다 — 그 컨트롤에서 첫 클릭이 삼켜집니다."
+        )
+        assert g["row_reverted_disabled"] is True, (
+            "행 상수를 되돌려 쳤는데 저장이 열린 채입니다 — 없는 변경을 저장하라고 합니다."
+        )
+        # 타이핑 도중 푸시(리뷰 R4 P1) — 값이 살고, 그래야 열린 버튼이 참이다.
+        assert g["row_value_survives_push"] is True, (
+            "재구성이 친 값을 지웠습니다 — 저장은 열려 있으니 사용자는 사라진 값을 저장했다고 "
+            "믿습니다(조용한 소실을 표지가 가립니다)."
+        )
+        assert g["row_enabled_after_push"] is True, (
+            "값은 살았는데 저장이 잠겼습니다 — 남은 편집을 없다고 말합니다."
+        )
+        assert g["gone_control_disables"] is True, (
+            "되돌릴 자리가 사라졌는데 저장이 열린 채입니다 — 없는 편집을 있다고 말합니다."
+        )
+
     def test_editor_library_manage_renders_menus_and_dialog(self, selftest_result: dict) -> None:
         # F8(§10.17.2 판정 D) — 구 tpl 그룹 프로브의 승계 재작성: 관리 표면(그룹·⋮·칩·이동
         # 다이얼로그·행동 줄·결과 줄)이 편집기 「템플릿」 탭 실 WebView2 에 서는지 되읽는다

@@ -105,6 +105,7 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "mapping_reset_stakes": _schema(),
         "set_source": _schema("index source"),
         "revert_source": _schema("index"),
+        "resuggest_all": _schema(),
         "set_type": _schema("index type"),
         "set_fmt": _schema("index fmt"),
         "set_const": _schema("index const"),
