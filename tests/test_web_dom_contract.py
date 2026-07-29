@@ -16,7 +16,7 @@ from collections import Counter
 from html.parser import HTMLParser
 from pathlib import Path
 
-from _web_css import ALL_CSS_FILES, app_css
+from _web_css import ALL_CSS_FILES, app_css, linked_css
 
 WEB_INDEX = Path(__file__).resolve().parents[1] / "web" / "index.html"
 # web/ 앱 스타일시트는 분할됐다 — 여기서만 **문자열**(조각을 링크 순서대로 이어붙인 구
@@ -750,25 +750,26 @@ def test_modal_promise_dialog_serialization_guards_present():
 def test_component_gallery_links_real_stylesheets_drift_free():
     """살아있는 컴포넌트 갤러리(docs/UI_GALLERY.html)는 실 stylesheet 를 <link> 로 물어야 한다.
 
-    갤러리의 유일한 존재 이유는 드리프트-0 — app.css 를 고치면 자동 반영되는 정직한 거울이다.
+    갤러리의 유일한 존재 이유는 드리프트-0 — 앱 CSS 를 고치면 자동 반영되는 정직한 거울이다.
     CSS 를 인라인 복사하면 실앱과 조용히 어긋난다(목업 docs/UI_PROTOTYPE_APPB.html 이 그 함정:
-    색만 생성기 동기, 나머지 드리프트). 따라서 갤러리는 반드시 (a) 실 tokens.css+app.css 를
-    링크하고 (b) 인라인 스타일에서 앱 색 토큰(--a-*)을 재정의하지 않는다 — 복사본 재유입을
-    loud 하게 차단한다.
+    색만 생성기 동기, 나머지 드리프트). 따라서 갤러리는 반드시 (a) 실 스타일시트 전 조각을
+    **셸과 같은 순서로** 링크하고 (b) 인라인 스타일에서 앱 색 토큰(--a-*)을 재정의하지
+    않는다 — 복사본 재유입을 loud 하게 차단한다.
+
+    순서까지 보는 이유: 앱 CSS 는 순서 보존 컷이라 **링크 순서가 곧 캐스케이드**다. "각
+    파일명이 어딘가 있는가"만 검사하면 두 링크를 뒤바꿔도 초록이고, 그러면 갤러리는
+    드리프트-0 을 표방한 채 실앱과 다른 화면을 그린다(PR #322 리뷰 P2).
     """
     assert GALLERY.exists(), f"컴포넌트 갤러리가 없습니다: {GALLERY}"
     html = GALLERY.read_text(encoding="utf-8")
     _IdCollector().feed(html)  # 구문 파싱 OK(기존 관례 HTMLParser).
-    assert 'href="../web/css/tokens.css"' in html, (
-        "갤러리가 실 tokens.css 를 링크하지 않습니다 — 드리프트-0 불변식 위반."
+    linked = linked_css(html, "../web/css/")
+    assert linked == ALL_CSS_FILES, (
+        "갤러리의 스타일시트 <link> 가 셸과 다릅니다 — 드리프트-0 불변식 위반.\n"
+        f"  갤러리:     {linked}\n"
+        f"  매니페스트: {ALL_CSS_FILES}\n"
+        "전 조각을 같은 순서로 링크하세요(순서가 캐스케이드입니다)."
     )
-    # 앱 스타일시트는 분할됐다 — **전 조각**을 링크해야 드리프트-0 이다. 한 조각만 빠져도
-    # 갤러리는 실앱과 조용히 다른 화면이 되고(그게 정확히 이 테스트가 막는 것), 목록의
-    # 단일 출처는 tests/_web_css.py 이므로 여기서 개수를 다시 세지 않는다.
-    for name in ALL_CSS_FILES:
-        assert f'href="../web/css/{name}"' in html, (
-            f"갤러리가 실 {name} 를 링크하지 않습니다 — 드리프트-0 불변식 위반."
-        )
     assert not re.search(r"--a-[\w-]+\s*:\s*#", html), (
         "갤러리 인라인 스타일이 앱 색 토큰(--a-*)을 재정의합니다 — "
         "링크된 tokens.css 만 쓰세요(인라인 복사는 드리프트 재도입)."

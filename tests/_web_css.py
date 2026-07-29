@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,3 +47,14 @@ def app_css() -> str:
     return "".join(
         (WEB_CSS_DIR / name).read_text(encoding="utf-8") for name in APP_CSS_FILES
     )
+
+
+def linked_css(html: str, prefix: str) -> tuple[str, ...]:
+    """`<link rel="stylesheet">` 로 실린 CSS 파일명을 **문서 순서대로** 뽑는다.
+
+    셸(`web/index.html`, prefix ``"css/"``)과 갤러리(`docs/UI_GALLERY.html`, prefix
+    ``"../web/css/"``)를 **같은 방식으로** 읽기 위한 단일 출처다. 한쪽만 "들어 있는가"로
+    검사하면 그쪽은 순서가 뒤바뀌어도 초록이고, 순서가 곧 캐스케이드인 이 분할에서는
+    그 면이 조용히 실앱과 다른 화면이 된다(PR #322 리뷰 P2 — 갤러리가 그랬다).
+    """
+    return tuple(re.findall(rf'<link\s+rel="stylesheet"\s+href="{re.escape(prefix)}([^"]+)"', html))

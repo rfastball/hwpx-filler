@@ -16,15 +16,12 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
-from _web_css import ALL_CSS_FILES, APP_CSS_FILES, WEB_CSS_DIR
+from _web_css import ALL_CSS_FILES, APP_CSS_FILES, WEB_CSS_DIR, linked_css
 
 ROOT = Path(__file__).resolve().parents[1]
 INDEX = ROOT / "web" / "index.html"
-
-_LINK = re.compile(r'<link\s+rel="stylesheet"\s+href="css/([^"]+)"')
 
 
 def test_app_css_manifest_matches_index_link_order() -> None:
@@ -35,7 +32,7 @@ def test_app_css_manifest_matches_index_link_order() -> None:
     → `.navbtn[aria-current]` 류)과 앞선 전 구역을 덮어야 하는 `forced-colors` 가 순서에
     걸려 있어, 한 줄만 뒤바뀌어도 화면이 조용히 달라진다.
     """
-    linked = tuple(_LINK.findall(INDEX.read_text(encoding="utf-8")))
+    linked = linked_css(INDEX.read_text(encoding="utf-8"), "css/")
     assert linked == ALL_CSS_FILES, (
         "web/index.html 의 스타일시트 <link> 순서가 매니페스트와 다릅니다.\n"
         f"  링크:       {linked}\n"
