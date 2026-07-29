@@ -9,7 +9,21 @@
      에서 저장 테마를 data-theme 로 주입한 뒤 show 한다(FOUC 은닉). pywebview 엔 첫 페인트 전
      주입 훅이 없어 head 동기 인라인(구 localStorage 판독)은 불가·불필요해 제거했다. -->
 <link rel="stylesheet" href="css/tokens.css">
-<link rel="stylesheet" href="css/app.css">
+<!-- 앱 스타일시트는 구 app.css 를 **순서 보존 컷**으로 자른 9조각이다: 이어붙이면 옛 파일과
+     바이트 동일하므로 캐스케이드가 원본과 완전히 같다. 따라서 이 순서는 장식이 아니라 계약이고
+     — 같은-명시도 hover→상태 쌍(.navbtn:hover → [aria-current] 류)과 마지막에 와야 하는
+     forced-colors 가 여기에 걸려 있다 — tests/_web_css.py 의 APP_CSS_FILES 와 일치해야 한다
+     (게이트 2개가 링크 순서·파일 전수를 대조한다). 이름이 소유권과 어긋나 보이는 둘은 의도다:
+     draftcard 는 「기안」 사망 후 작업대가 실소비자고, job 은 job/jobdata/tail 로 갈려 있다. -->
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/draftcard.css">
+<link rel="stylesheet" href="css/editor.css">
+<link rel="stylesheet" href="css/job.css">
+<link rel="stylesheet" href="css/overlay.css">
+<link rel="stylesheet" href="css/library.css">
+<link rel="stylesheet" href="css/forced-colors.css">
+<link rel="stylesheet" href="css/jobdata.css">
+<link rel="stylesheet" href="css/tail.css">
 </head>
 <body>
 <!-- 웹 프론트엔드 셸 — v6 계약의 최상위 구조는 `문서 만들기 | 문서 작업` 2탭이다(§19 서문:
@@ -62,7 +76,7 @@
          방식 필터·검색·태그 facet·건강 번역을 그대로 소비 — VM 로직 재구현 없음.
          browser(좌) + detail(우) 2-pane 이고 공간 배분은 목록 길이에 끌려다니지 않는다:
          넓고(≥921px) 높은(≥760px) 창에서 두 pane 이 뷰포트를 나눠 각자 스크롤하고 페이지는
-         스크롤하지 않는다(app.css .library-browser). 이동은 window.Nav 로만 — 이 화면은 다른
+         스크롤하지 않는다(library.css .library-browser). 이동은 window.Nav 로만 — 이 화면은 다른
          화면 컨트롤러를 모른다. 스코프 경계는 screen_library.py docstring. -->
     <section class="scr" id="scr-library">
       <header class="scr-head">

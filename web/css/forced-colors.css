@@ -1,0 +1,39 @@
+/* ---- 강제 색상 모드(Windows 고대비) 대응 — WCAG 1.4.3 (#3) ----
+   forced-colors 는 배경/전경/보더를 시스템 팔레트로 강제 재매핑한다 — 단 transparent·
+   currentColor 는 그대로 남아 "틴트 하나로만 상태를 전달하던" 요소가 통째로 사라진다.
+   여기선 그 사각(보더 없음/투명 베이스)만 메운다. forced-color-adjust:none 은 쓰지 않는다
+   — 사용자의 고대비 설정을 임의로 무시하지 않는다. 상태 배지(.tok/.pill)는 이미 텍스트
+   라벨과 실보더를 갖고 있어 자동 재매핑만으로 충분해 손대지 않는다. */
+@media (forced-colors:active){
+  .navbtn:focus-visible,
+  .btn:focus-visible{outline-color:Highlight}
+
+  .navbtn[aria-current="true"],
+  .wstep-tab[aria-current="true"],
+  .btn.primary:not(:disabled){background:Highlight;color:HighlightText;border-color:Highlight}
+  .btn.danger:not(:disabled){background:Mark;color:MarkText;border-color:Mark}
+
+  .jcard[aria-current="true"],.tplcard[aria-current="true"]{
+    border-left-color:Highlight}
+  .jcard.corrupt{border-left-color:Mark}
+
+  tr.r-unconfirmed td{border-left:3px solid Mark}
+  tr.r-unmatched td{border-left:3px dashed CanvasText}
+
+  .status{border:1px solid CanvasText}
+
+  .bar{border:1px solid CanvasText;background:Canvas}
+  .bar>i{background:Highlight}
+
+  /* 채움 소유권 3종 — 자동/직접 고침/무결속 수기를 시스템색 밑줄로 계속 구별한다. */
+  .wc-render .seg-fill{border:1px solid CanvasText;background:Canvas}
+  .wc-render .seg-fill.own-auto{box-shadow:inset 0 -3px 0 Highlight}
+  .wc-render .seg-fill.own-hand{box-shadow:inset 0 -3px 0 Mark}
+  .wc-render .seg-fill.own-man{box-shadow:inset 0 -3px 0 LinkText}
+  .own{border:1px solid CanvasText;background:CanvasText}
+  .own.auto{background:Highlight}.own.man{background:LinkText}
+
+  /* 겨눈 규칙 행 — 강제 색 모드에선 배경이 시스템 소유라 시스템색 표지로 갈음한다. */
+  #wbMapPanel tbody tr:focus>td:first-child{box-shadow:inset 3px 0 0 Highlight}
+}
+

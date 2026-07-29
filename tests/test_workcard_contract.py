@@ -11,9 +11,13 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from _web_css import app_css
+
 
 ROOT = Path(__file__).resolve().parents[1]
-CSS = (ROOT / "web" / "css" / "app.css").read_text(encoding="utf-8")
+# 카드 수치(.wb-preview·.wb-dots)는 tail.css, 점·글꼴 클래스(.wc-dot·.wc-render.f-*)는
+# draftcard.css 에 있다 — 이 창구를 거쳐야 한 검사가 승계 관계를 가로질러 본다.
+CSS = app_css()
 INDEX = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
 WORKBENCH = (ROOT / "web" / "js" / "screens" / "workbench.js").read_text(encoding="utf-8")
 PRESERVE = (ROOT / "web" / "js" / "preserve.js").read_text(encoding="utf-8")

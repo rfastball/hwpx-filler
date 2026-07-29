@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import gen_design_tokens as gen
 
+from _web_css import APP_CSS_FILES
+
 
 def test_tokens_in_sync():
     problems = gen.check()
@@ -91,8 +93,10 @@ def test_web_region_dark_declares_every_light_variable():
 
 # ---- 스케일 토큰(space/radius/type — 테마 불변) 가드 ----
 
+#: 스케일 리터럴 가드의 대상 — web/ 앱 스타일시트는 분할됐으므로 매니페스트에서 전개한다
+#: (파일별로 도는 검사라 이어붙이지 않는다. 새 조각 누락은 test_web_css_manifest 가 잡는다).
 _APP_CSS = (
-    gen.ROOT / "web" / "css" / "app.css",
+    *(gen.ROOT / "web" / "css" / name for name in APP_CSS_FILES),
     gen.ROOT / "web-diff" / "css" / "app.css",
 )
 
@@ -154,7 +158,7 @@ def test_overlay_tokens_define_scrim_and_strict_layer_order():
 
 
 def test_app_css_free_of_metric_literals():
-    """채택 완료 축(font-size·border-radius)은 app.css 에 px 리터럴이 남지 않는다(색 리터럴 가드의 스케일판).
+    """채택 완료 축(font-size·border-radius)은 앱 CSS 에 px 리터럴이 남지 않는다(색 리터럴 가드의 스케일판).
 
     허용 예외: ``font-size:0``(로고 접기)·``border-radius:50%``(원형)·``border-radius:0``은 스케일 값이
     아니라 리터럴 유지. 여백(padding/margin/gap)은 구조 치수가 리터럴로 남아 가드 대상에서 제외.

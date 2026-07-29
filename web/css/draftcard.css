@@ -1,0 +1,260 @@
+/* ---- ② 맞추기 표(#148 슬라이스 3b) — 토큰별 결속·근사 제안·표시형·소유권 색·「지금 행의 값」.
+     표 클래스는 `.dmap`(구 draft map — 지금은 작업대 좌 pane 이 쓴다) — 에디터 위저드의 `.map`(F23)과 열 구성·판정
+     주체가 달라 분리한다(같은 `.map` 이면 에디터 th:nth-child 폭·table-layout 이 교차 오염). ---- */
+table.dmap{border-collapse:collapse;width:100%;font-size:var(--fs-dense);min-width:420px}
+table.dmap th,table.dmap td{padding:var(--sp-6) var(--sp-10);text-align:left;
+  border-bottom:1px solid var(--a-border);vertical-align:middle}
+table.dmap th{background:var(--a-window);font-weight:600;font-size:var(--fs-caption);
+  color:var(--a-muted);white-space:nowrap;position:sticky;top:0;z-index:1}
+table.dmap tr:last-child td{border-bottom:0}
+.dmap .maptok{font-weight:600;white-space:nowrap;font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
+.dmap .maptok::before{content:"{{";color:var(--a-muted);font-weight:400}
+.dmap .maptok::after{content:"}}";color:var(--a-muted);font-weight:400}
+.mapsrc{display:flex;align-items:center;gap:var(--sp-6);flex-wrap:wrap}
+.mapsrc-sel{max-width:100%}
+/* 소유권 색 점(결정 33) — 카드 seg-fill.own-* 와 같은 색 언어(auto=파랑·man=초록). */
+.own{width:8px;height:8px;border-radius:50%;flex:none;display:inline-block}
+.own.auto{background:var(--a-primary)} .own.man{background:var(--a-ok)}
+/* 「지금 행의 값」 = **항상 편집 가능** 입력(결속 값을 고치면 상수 강등, 사용자 결정) —
+   내용 크기 칩(빠른 기안 qd-val 동형, field-sizing). 결속 값이 미리 차 있고 편집하면 man. */
+.mapval-in{field-sizing:content;width:auto;min-width:8ch;max-width:100%;resize:none;overflow-y:hidden;
+  padding:var(--sp-4) var(--sp-8);font:inherit;font-size:var(--fs-dense);
+  border:1px solid var(--a-border);border-radius:var(--rad-control);background:var(--fb-fill-bg);color:var(--a-ink)}
+@supports not (field-sizing:content){.mapval-in{width:100%}}
+.mapval-in:focus-visible{outline:2px solid var(--a-primary);outline-offset:1px}
+.mapval-in.empty{background:transparent;border:1px dashed var(--a-border)}
+.mapsug{color:var(--a-ok);border-color:var(--fb-fill-bd)}
+/* 유형·확정 열(#148 슬라이스 4·5a, 결정 7·12) — `.persist` 는 **유래 스위치의 훅**: 저장 모드
+   에서만 뜨고 휘발 모드에선 숨는다("저장하지 않으므로 유형·확정은 묻지 않는다"). data-mode 는
+   맞추기 표 host 에 소비 화면이 얹고(판정은 Python s.mode), CSS 가
+   display 를 가른다. 시안의 `.persist{display:none}`↔`[data-mode="saved"] display:table-cell` 이식.
+   구 화면은 저장 결속이 없어 늘 휘발이라 유형·확정이 숨는 게 옳다(무해). */
+.dmap .persist{display:none}
+[data-mode="saved"] .dmap .persist{display:table-cell}
+.dmap .maptype-cell .field.sm{max-width:100%}
+.dmap .mapck-cell{text-align:center}
+.dmap .mapck{width:16px;height:16px;margin:0;accent-color:var(--a-primary);cursor:pointer}
+/* 확정-비움(확정+무내용) — 값 셀이 「아직 안 씀」이 아니라 「비워둠(선언)」이라 말한다(문안≠집합
+   차단). 행은 데이터-빈값 blank 와 같은 색 언어(fb-blank)로 옅게 표지 — 복사 확인에서 빠짐. */
+.dmap .mapval-declared{font-size:var(--fs-caption);font-style:italic}
+.dmap tr.row-blank-declared{background:var(--fb-blank-bg)}
+.maplegend{display:flex;gap:var(--sp-14);flex-wrap:wrap;margin-top:var(--sp-8);
+  font-size:var(--fs-caption);color:var(--a-muted)}
+.maplegend span{display:inline-flex;align-items:center;gap:var(--sp-4)}
+/* 휘발 note(#148 슬라이스 5a) — 유형·확정을 왜 묻지 않는지. 범례와 한 줄에 섞이지 않게 개행. */
+.maplegend .volatile-note{flex-basis:100%}
+.maplegend i.own{width:8px;height:8px}
+
+/* ---- ③ 원문 뷰 전환(결정 34) — 채운 모습 ↔ 원문(같은 칸의 두 모습) ---- */
+.wc-index-head{display:flex;align-items:center;gap:var(--sp-10);flex-wrap:wrap;margin-bottom:var(--sp-8)}
+.viewsw{display:flex;border:1px solid var(--a-border);border-radius:var(--rad-control);overflow:hidden;margin-left:auto}
+.viewsw button{border:0;background:var(--a-card);color:var(--a-muted);font:inherit;
+  font-size:var(--fs-caption);padding:var(--sp-4) var(--sp-10);cursor:pointer}
+.viewsw button+button{border-left:1px solid var(--a-border)}
+.viewsw button:hover{background:var(--a-window)}
+.viewsw button:focus-visible{outline:2px solid var(--a-primary);outline-offset:-2px}
+.viewsw button[aria-pressed="true"]{background:var(--fb-fill-bg);color:var(--a-primary);font-weight:600}
+/* 원문바(#148 슬라이스 5b) — 이름 · 수정됨 표지 · 「사본으로 편집」(저장 모드에서만). */
+.wc-srcbar{display:flex;align-items:center;gap:var(--sp-8);margin-bottom:var(--sp-6)}
+.wc-srcname{flex:0 1 auto;min-width:0;font-size:var(--fs-body);font-weight:600;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wc-modbadge{flex:none;font-size:var(--fs-caption);font-weight:700;color:var(--a-warn);
+  background:var(--fb-blank-bg);border:1px solid var(--fb-blank-bd);border-radius:var(--rad-control);
+  padding:var(--sp-2) var(--sp-6)}
+.wc-modbadge[hidden]{display:none}
+.wc-srcbar .btn{margin-left:auto;flex:none}       /* 「사본으로 편집」을 오른쪽으로 */
+.wc-srcbar .btn[hidden]{display:none}
+.wc-srcbox{width:100%;min-height:180px;resize:vertical;padding:var(--sp-10) var(--sp-12);
+  font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var(--fs-body);line-height:1.7;
+  border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-window);color:var(--a-ink)}
+.wc-srcbox:focus-visible{outline:2px solid var(--a-primary);outline-offset:1px}
+.wc-srcbox[readonly]{background:var(--n-surface-alt);color:var(--a-muted)}
+
+/* ---- 작업점 카드 점 색인 — 구 「기안」 카드의 승계분(작업대 .wb-dots 가 .wc-dot 을 쓴다) ---- */
+.wc-dot{width:24px;height:24px;border:0;background:transparent;cursor:pointer;padding:0;
+  position:relative;flex:none;border-radius:var(--rad-pill)}
+/* 시각 점은 14px을 유지하되 버튼은 24px hit target — 조밀한 큐에서도 클릭/터치 겨눔을 보장한다. */
+.wc-dot::before{content:"";position:absolute;top:5px;left:5px;width:14px;height:14px;
+  border-radius:var(--rad-pill);
+  border:1px solid var(--a-border);background:var(--a-card)}
+.wc-dot.uncopied::before{background:var(--fb-blank-bg);border-color:var(--fb-blank-bd)}
+.wc-dot.copied::before{background:var(--fb-fill-bg);border-color:var(--fb-fill-bd)}
+.wc-dot.current::before{outline:2px solid var(--a-primary);outline-offset:1px;
+  background:var(--a-primary);border-color:var(--a-primary)}
+.wc-dot:focus-visible{outline:2px solid var(--a-primary);outline-offset:0}
+/* 빈칸 지도 표지 — 미충족 카드(항목 없음·빈 값)에 빨강 점 */
+.wc-dot.gap::after{content:"";position:absolute;top:2px;right:2px;width:6px;height:6px;
+  border-radius:50%;background:var(--a-danger);border:1px solid var(--a-card)}
+/* 카드 헤더: 정체 + 복사 동사(우상단) + 전진 토글(미루기는 결정 10 사망) */
+.wc-head{display:flex;align-items:center;gap:var(--sp-10);margin-bottom:var(--sp-8)}
+.wc-title{flex:1;min-width:0;font-size:var(--fs-caption);color:var(--a-muted);font-weight:700;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wc-acts{display:flex;align-items:center;gap:var(--sp-8);flex:none}
+.wc-advance{display:flex;align-items:center;gap:var(--sp-4);font-size:var(--fs-caption);
+  color:var(--a-muted);cursor:pointer;white-space:nowrap}
+/* 퇴화 시 자동 전진 토글도 숨어야 한다(같은 B-9 함정 — display:flex 가 [hidden] 을 이긴다). */
+.wc-advance[hidden]{display:none}
+/* 대상 글꼴 선언 바(결정 17) — 큐 상단 드롭다운. 값은 전역 영속(배치 ≠ 스코프). */
+.wc-fontbar{display:flex;align-items:center;gap:var(--sp-8);margin-bottom:var(--sp-10);flex-wrap:wrap}
+.wc-fontbar .lbl{font-size:var(--fs-caption);color:var(--a-muted);font-weight:700;flex:none}
+.wc-fontbar .field{flex:none;width:auto}
+.wc-fontbar .capnote{flex:1;min-width:0}
+/* 선언-조건부 정렬 린트 — 경보(치환 전)와 확인(치환 후) 두 상태를 같은 자리에서 말한다. */
+.wc-lint{display:flex;align-items:center;gap:var(--sp-8);flex-wrap:wrap;margin-top:var(--sp-8);
+  padding:var(--sp-6) var(--sp-10);border-radius:var(--rad-control);font-size:var(--fs-body);
+  background:var(--fb-blank-bg);border:1px solid var(--fb-blank-bd);color:var(--a-ink)}
+/* display:flex 는 UA 의 [hidden]{display:none} 을 특이도로 이긴다(부록 B-9 결함 클래스 2 —
+   시연에서 .overlay 가 같은 함정에 빠졌다). 침묵해야 할 린트가 빈 상자로 남지 않게 명시 차단. */
+.wc-lint[hidden]{display:none}
+.wc-lint[data-level="ok"]{background:var(--fb-fill-bg);border-color:var(--fb-fill-bd)}
+.wc-lint .txt{flex:1;min-width:0}
+/* 원문 렌더 = 코드블록 문법(고정폭 pre + 채움 표지 삼분) + 선언된 대상 글꼴 추종(결정 17):
+   굴림체·돋움체는 고정폭, 맑은고딕은 비례폭이라 연속 공백 정렬이 실제로 흐트러져 보인다 —
+   그 눈으로 보이는 사실이 린트 경보의 근거이므로 글꼴 폴백도 성질을 지키는 순서로 둔다. */
+.wc-render.f-gulimche{font-family:"GulimChe","굴림체","Gulim",ui-monospace,monospace}
+.wc-render.f-dotumche{font-family:"DotumChe","돋움체","Dotum",ui-monospace,monospace}
+.wc-render.f-malgun{font-family:"Malgun Gothic","맑은 고딕",system-ui,sans-serif}
+.wc-render{background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface);
+  padding:var(--sp-16) var(--sp-24);overflow:auto;font-size:var(--fs-body);line-height:1.85;
+  white-space:pre-wrap;color:var(--a-ink);margin:0;
+  font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
+.wc-render:focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
+.wc-render .seg-fill{background:var(--fb-fill-bg);border-radius:var(--rad-control);padding:0 2px}
+.wc-render .seg-blank{color:var(--a-warn);background:var(--fb-blank-bg);border-radius:var(--rad-control);
+  padding:0 var(--sp-4);font-weight:600}
+.wc-render .seg-missing{background:var(--fb-missing-bg);color:var(--a-danger);
+  border:1px dashed var(--fb-missing-bd);border-radius:var(--rad-control);padding:0 var(--sp-4);font-weight:700}
+/* 존 번호 표지(시안 ①②③④) — 캡션 앞 작은 원. 정보는 순서뿐이라 장식 최소. */
+.zone-cap .znum{display:inline-grid;place-items:center;width:15px;height:15px;margin-right:var(--sp-4);
+  border-radius:var(--rad-pill);background:var(--a-primary);color:var(--a-on-accent);
+  font-size:var(--fs-caption);font-weight:700;vertical-align:-2px}
+.capstrip{display:flex;align-items:center;gap:var(--sp-8);margin-top:var(--sp-6);
+  padding:var(--sp-6) var(--sp-10);font-size:var(--fs-caption);color:var(--a-warn);
+  background:var(--fb-blank-bg);border:1px solid var(--fb-blank-bd);
+  border-radius:var(--rad-control)}
+/* display:flex가 UA [hidden] 규칙을 이기는 B-9 결함류를 명시 차단한다. */
+.capstrip[hidden]{display:none}
+.zone-cap-actions{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-8)}
+.zone-cap-actions>.btn{margin-left:auto}
+
+/* ---- 빠른 기안(작업의 휘발 쌍둥이 · R-flow 블록 5 · 슬라이스 7) ----
+   미리보기는 txt 의 .wc-render(+.seg-*·f-* 글꼴)를 그대로 재사용한다 — 채움 표지 삼분이
+   두 표면에서 같은 계약(결정 22·33). 여기선 슬롯·2판·파이프라인 토큰 폼·탭·빈손 카드만 둔다. */
+.qd-slots{display:flex;gap:var(--sp-16);flex-wrap:wrap;align-items:center;
+  padding:var(--sp-10) var(--sp-12);background:var(--a-card);border:1px solid var(--a-border);
+  border-radius:var(--rad-surface);margin-bottom:var(--sp-12)}
+.qd-slot{display:flex;align-items:center;gap:var(--sp-8);min-width:0}
+.qd-slot .lbl{font-size:var(--fs-caption);color:var(--a-muted);font-weight:700;flex:none}
+.qd-slot .field.sm{flex:none;width:auto;max-width:240px}
+.qd-body{flex:1;min-height:0;display:flex}
+/* 값 폼 | 미리보기 2판 — 좁으면 세로 적층(반응형 C 동형) */
+.qd-2pane{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  gap:var(--sp-16)}
+.qd-formpane,.qd-prevpane{background:var(--a-card);border:1px solid var(--a-border);
+  border-radius:var(--rad-surface);padding:var(--sp-12);display:flex;flex-direction:column;min-height:0}
+.qd-formpane{overflow:auto}
+.qd-formpane h4,.qd-prevpane h4{margin:0 0 var(--sp-10);color:var(--a-muted)}
+/* 파이프라인 토큰 행(결정 34) — 윗줄=이름·칩, 아랫줄=↳ 출력(들여쓰기+음영 = "결과"임을 형태가 말함) */
+.qd-trow{display:flex;flex-direction:column;gap:var(--sp-6);padding:var(--sp-8) 0;
+  border-bottom:1px dashed var(--a-border)}
+.qd-trow:last-of-type{border-bottom:0}
+.qd-trow-head{display:flex;align-items:center;gap:var(--sp-8)}
+.qd-tname{flex:1;min-width:0;font-family:"Cascadia Code","Consolas",ui-monospace,monospace;
+  font-size:var(--fs-body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--a-ink)}
+.qd-chip{flex:none;font-size:var(--fs-caption);border-radius:var(--rad-pill);padding:1px var(--sp-8);
+  font-weight:600;white-space:nowrap}
+/* man(사람이 친 값) = **중립 티어**(#134): 종전의 fill-bg+ok 는 초록이라 "검증된 값"으로
+   읽혔다 — 사람이 친 값은 아직 아무것도 대조되지 않은 값이다. 채움 계열 색을 쓰지 않고
+   잉크색으로 서서 "여기 값이 있다"만 말한다(blank 의 muted 와도 구분된다). */
+.qd-chip.man{background:var(--a-window);color:var(--a-ink);border:1px solid var(--a-border)}
+.qd-chip.auto{background:var(--fb-fill-bg);color:var(--a-primary)}
+.qd-chip.hand{background:var(--fb-blank-bg);color:var(--a-warn)}
+.qd-chip.blank{background:var(--a-window);color:var(--a-muted)}
+/* 파이프라인 2열(소스 → 표시형)·근사 제안 — 값 줄과 같은 들여쓰기라 "이 토큰의 속줄"로 읽힌다 */
+.qd-pipe,.qd-suggest{display:flex;align-items:center;gap:var(--sp-6);padding-left:var(--sp-16);
+  flex-wrap:wrap}
+.qd-pipe .field.sm{width:auto;max-width:200px;flex:none}
+.qd-suggest{font-size:var(--fs-caption);color:var(--a-muted)}
+/* 데이터 슬롯 — 겨눔 라벨 + 행 스테퍼(단건 표면의 행 재겨눔) */
+.qd-dataline{display:flex;align-items:center;gap:var(--sp-6);min-width:0;font-size:var(--fs-caption)}
+.qd-datalabel{font-weight:600;color:var(--a-ink);white-space:nowrap}
+.qd-rowpos{color:var(--a-muted);white-space:nowrap}
+.qd-rowlabel{color:var(--a-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
+.qd-vline{display:flex;align-items:flex-start;gap:var(--sp-6);padding-left:var(--sp-16)}
+.qd-elbow{color:var(--a-muted);flex:none;line-height:1.6}
+/* 파이프라인 방향 화살표(결정 34 `소스→표시형`) — 표시형이 뜰 때만 선다 */
+.qd-arrow{color:var(--a-muted);flex:none}
+/* 출력칸 = 내용 크기 칩(결정 34, field-sizing) — 폭이 값의 실제 길이를 따른다. 미지원(폴백)은
+   전폭 + JS 높이 보정. 음영 = 미리보기 채움 표지(seg-fill)와 같은 계열(폼 출력=렌더 채움 자리). */
+.qd-val{field-sizing:content;width:auto;min-width:10ch;max-width:100%;resize:none;overflow-y:hidden;
+  line-height:1.5;min-height:26px;padding:var(--sp-4) var(--sp-6);border:1px solid transparent;
+  border-radius:var(--rad-control);background:var(--fb-fill-bg);color:var(--a-ink);
+  font:inherit}
+@supports not (field-sizing:content){.qd-val{width:100%;flex:1}}
+.qd-val:hover,.qd-val:focus{border-color:var(--a-border);background:var(--a-card);outline:none}
+.qd-val:focus-visible{outline:2px solid var(--a-primary);outline-offset:1px}
+.qd-val.empty{background:transparent;border:1px dashed var(--a-border)}
+.qd-formhint{font-size:var(--fs-caption);color:var(--a-muted);margin:var(--sp-8) 0 0}
+/* 우측 판 탭 — 미리보기 ↔ 원문 편집(결정 34) */
+.qd-prevhead{display:flex;align-items:center;gap:var(--sp-8);margin-bottom:var(--sp-10)}
+.qd-tabs{display:flex;gap:var(--sp-2)}
+.qd-tabs .btn[aria-pressed="true"]{background:var(--fb-fill-bg);border-color:var(--a-primary);
+  color:var(--a-primary);font-weight:600}
+.qd-srcedit{flex:1;min-height:220px;resize:none;font-size:var(--fs-body);line-height:1.6;
+  font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
+.qd-prevnote{font-size:var(--fs-caption);color:var(--a-muted);margin:var(--sp-8) 0 0}
+/* 휘발 표지 — 채움 알약과 별개로 **상시** 서는 화면 성질 배지(#134). 상태가 아니라 성질이라
+   data-level 색 체계를 쓰지 않고 조용한 중립으로 둔다(경보가 아니라 상시 사실). */
+.qd-volatile{font-size:var(--fs-caption);color:var(--a-muted);border:1px solid var(--a-border);
+  border-radius:var(--rad-pill);padding:1px var(--sp-8);white-space:nowrap}
+/* 정렬 린트 줄 — txt 카드 린트와 같은 형상(문안·처방 버튼 한 줄) */
+.qd-lint{display:flex;align-items:center;gap:var(--sp-8);margin:var(--sp-8) 0 0;
+  font-size:var(--fs-caption)}
+.qd-lint .txt{flex:1 1 auto}
+/* 빈손 진입 카드 — 두 방향(라이브러리 / 붙여넣기) */
+.qd-emptywrap{flex:1;display:flex;gap:var(--sp-16);align-items:stretch;justify-content:center;
+  flex-wrap:wrap;padding:var(--sp-24)}
+.qd-dircard{flex:1;max-width:320px;border:1px dashed var(--a-border);border-radius:var(--rad-surface);
+  padding:var(--sp-16);display:flex;flex-direction:column;gap:var(--sp-8);background:var(--a-card)}
+.qd-dircard h4{margin:0;font-size:var(--fs-strong)}
+.qd-dircard p{margin:0;flex:1;font-size:var(--fs-body);color:var(--a-muted)}
+.qd-dircard .btn{align-self:flex-start}
+
+/* ---- PR-4: 헤더 액션(새 기안)·소유권 색·표지 토글·출구 푸터(복사·승격 표면) ---- */
+.scr-head-actions{display:flex;align-items:center;gap:var(--sp-8);flex:none}
+/* 소유권 색(결정 33) — fill 값이 **누구 것인지**를 아래 밑줄 색으로 가른다. 폼 칩과 한 색
+   언어: 데이터 자동=파랑(primary)·직접 고침=주황(warn)·무결속 수기=초록(ok). 권위 있는
+   WHO 표기는 폼 칩(글자)이라 여긴 보조 시각 단서다(색만 의존 아님 — 밑줄 형태도 가른다). */
+.wc-render .seg-fill.own-auto{box-shadow:inset 0 -2px 0 var(--a-primary)}
+.wc-render .seg-fill.own-hand{background:var(--fb-blank-bg);box-shadow:inset 0 -2px 0 var(--a-warn)}
+.wc-render .seg-fill.own-man{background:transparent;box-shadow:inset 0 -2px 0 var(--a-ok)}
+/* 표지 토글 — 탭 옆 독립 버튼(좌측 탭 그룹과 시각 분리 위해 자동 좌여백). 눌림 상태 룩은
+   탭과 같은 어휘(눌리면 채워짐)라 표지가 켜졌음을 한 눈에 말한다. */
+.qd-prevhead #qdMarkerToggle{margin-left:auto}
+.qd-prevhead #qdMarkerToggle[aria-pressed="true"]{background:var(--fb-fill-bg);
+  border-color:var(--a-primary);color:var(--a-primary);font-weight:600}
+/* 출구 푸터 — 복사(실동작) + 승격 표면(비활성). 본문 아래 전폭 한 줄. */
+.qd-foot{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-16);
+  flex-wrap:wrap;margin-top:var(--sp-12);padding-top:var(--sp-12);border-top:1px solid var(--a-border)}
+/* display:flex 가 UA [hidden]{display:none} 을 특이도로 이기므로 되돌린다(부록 B-9 결함
+   클래스 2 — .wc-lint·.colpanel 선례). 빈손 세션엔 푸터가 실제로 사라져야 dead 크롬이 없다. */
+.qd-foot[hidden]{display:none}
+.qd-foot-main{display:flex;align-items:center;gap:var(--sp-12);min-width:0}
+.qd-copynote{font-size:var(--fs-caption);min-width:0}
+.qd-copynote[data-level="ok"]{color:var(--a-ok)}
+.qd-copynote[data-level="warn"]{color:var(--a-warn)}
+.qd-foot-promote{display:flex;align-items:center;gap:var(--sp-8);flex-wrap:wrap;min-width:0}
+.qd-promote-lbl{font-size:var(--fs-caption);color:var(--a-muted);font-weight:700;flex:none}
+.qd-promote-note{font-size:var(--fs-caption);color:var(--a-muted);flex:1;min-width:0}
+/* 저장 결과 노트(#135) — 사유 문안과 한 줄에 서다 좁아지면 접힌다(flex-wrap). 빈 문자열일
+   땐 텍스트가 없어 자리를 먹지 않는다(빈 상자 잔존 = 부록 B-9 결함류). */
+.qd-foot-promote .qd-copynote{flex:1 0 100%}
+
+/* ---- 반응형 C: 좁으면 2판 → 세로 적층 ---- */
+@media (max-width:820px){
+  .app{grid-template-columns:1fr}
+  .rail{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--a-border)}
+  .panes{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+  .qd-2pane{grid-template-columns:1fr;grid-template-rows:auto auto}
+}
+

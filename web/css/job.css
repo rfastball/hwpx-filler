@@ -1,0 +1,255 @@
+.run-row{display:flex;align-items:center;gap:var(--sp-8);margin-top:var(--sp-12)}
+.run-row .field{flex:1;min-width:0}
+.run-recs-head{justify-content:space-between}
+/* 범위 편집기 footer(F3) — 소유는 화면 DOM 이고 **면 슬롯 안에서만** 보인다(실 DOM 이동).
+   면 바닥에 붙어 표를 스크롤하는 동안에도 적용·취소가 상시 도달 가능하다. */
+.range-foot{display:none}
+#dataSheetSlot > .range-foot{display:flex;align-items:center;gap:var(--sp-8);
+  position:sticky;bottom:0;z-index:1;margin-top:var(--sp-10);
+  padding:var(--sp-10) 0 var(--sp-4);background:var(--a-card);
+  border-top:1px solid var(--a-border)}
+#dataSheetSlot > .range-foot .muted{flex:1;min-width:0;margin:0;font-size:var(--fs-caption)}
+#dataSheetSlot > .range-foot .btn[aria-pressed="true"]{border-color:var(--a-primary);color:var(--a-primary)}
+/* 표시순서 축(F3) — 라벨+선택기는 고정폭, 재진술 문안이 남는 폭을 먹고 줄바꿈한다
+   (기안 글꼴 바 .wc-fontbar 와 같은 조판 — 같은 형태의 줄은 같은 규칙으로 선다). */
+.job-orderbar{margin-top:var(--sp-8);flex-wrap:wrap}
+.job-orderbar .lbl{font-size:var(--fs-caption);color:var(--a-muted);font-weight:700;flex:none}
+.job-orderbar .field{flex:none;width:auto}
+.job-orderbar .capnote{flex:1;min-width:0}
+
+/* 사전검증 박스 */
+.preflight{margin-top:var(--sp-12);font-size:var(--fs-body);padding:var(--sp-8) var(--sp-10);border-radius:var(--rad-surface);line-height:1.5}
+
+/* ── 본문 존 거울 = 필드 채움 테이블(결정 36 ⓑ) — 배지=거울의 행. 색은 채움 표지 토큰
+   (--fb-*)을 그대로 써 표지 언어가 통일된다(블록 5 삼분과 동형). ── */
+.tbwrap{overflow-x:auto}
+.tb.mir{width:100%;border-collapse:collapse;margin-top:var(--sp-10);font-size:var(--fs-dense)}
+.tb.mir td{padding:var(--sp-4) var(--sp-8);border-top:1px solid var(--a-border);vertical-align:top}
+.tb.mir tr:first-child td{border-top:0}
+.mir-f{font-weight:600;white-space:nowrap;width:120px;color:var(--n-header-ink)}
+.mir-v{min-width:0;word-break:break-word}
+.mir-s{white-space:nowrap;text-align:right;width:1%}
+.mir-row.miss td{background:var(--fb-missing-bg)}
+.mir-row.miss{cursor:pointer}
+.mir-row.ackd td{background:var(--fb-ack-bg)}
+.mir-row.blankd td{background:var(--n-surface-alt);color:var(--a-muted)}
+.mir-row.miss:focus-visible{outline:2px solid var(--a-danger);outline-offset:-2px}
+.mir .st{font-size:var(--fs-caption);border-radius:var(--rad-pill);padding:1px var(--sp-8);
+  white-space:nowrap;font-weight:600;display:inline-block}
+.mir .st.filled{background:var(--fb-fill-bg);color:var(--a-ok)}
+.mir .st.miss{background:var(--fb-missing-bg);color:var(--a-danger)}
+.mir .st.ackd{background:var(--fb-ack-bg);color:var(--fb-ack-fg)}
+.mir .st.blankd{background:var(--n-surface-alt);color:var(--a-muted)}
+.mirempty{padding:var(--sp-8) 0}
+/* danger(구조 드리프트·미해소 토큰)는 ack 로 안 풀림 — 거울 표와 섞지 않고 차단 배너 +
+   상시 행동 링크로 분리(결정 36·S9, 막다른 경보 금지). */
+.mir-drift{background:var(--fb-missing-bg);border:1px solid var(--a-danger);border-radius:var(--rad-surface);
+  padding:var(--sp-10) var(--sp-12);margin-top:var(--sp-10);display:flex;flex-direction:column;
+  gap:var(--sp-8);align-items:flex-start}
+.mir-drift p{margin:0;color:var(--a-danger)}
+/* 재진술 블록(결정 36 D1-B) — 선택 유래 + 산출 요약 + 이름 목록(소량 전부·대량 표본+펼침). */
+.defblk{display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--sp-2) var(--sp-10);
+  margin-top:var(--sp-16);padding:var(--sp-10) var(--sp-12);background:var(--a-card);
+  border:1px solid var(--a-border);border-radius:var(--rad-surface);font-size:var(--fs-body)}
+.defblk .dl{font-size:var(--fs-caption);color:var(--n-header-ink);font-weight:700;padding-top:2px}
+.namelist{display:flex;flex-direction:column;gap:2px;margin-top:var(--sp-4)}
+.namelist .nm{font-size:var(--fs-caption);color:var(--a-muted);font-variant-numeric:tabular-nums;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.namelist .nm b{color:var(--a-ink);font-weight:600}
+.namelist .btn{align-self:flex-start;margin-top:2px}
+
+/* 액션 · 진행 · 결과 · 로그 */
+.run-actions{display:flex;align-items:center;gap:var(--sp-12);margin-top:var(--sp-16);flex-wrap:wrap}
+/* 「기안으로 저장」 승격(#148 슬라이스 5c) — 오른쪽으로 밀고, 비활성 사유는 아래 한 줄로. */
+.run-promote{display:flex;align-items:center;gap:var(--sp-8);margin-left:auto}
+.run-promote .lbl{font-size:var(--fs-caption)}
+.run-promote-note{font-size:var(--fs-caption);margin-top:var(--sp-6)}
+.run-promote-note[hidden]{display:none}
+/* 하단 sticky 액션바(#179 슬라이스 5b) — 최종 생성/복사를 스크롤과 무관하게 항상 도달 가능하게.
+   세션 패널(.job-panel, overflow:auto)의 마지막 자식이라 bottom:0 로 패널 뷰포트 하단에 고정.
+   sticky 표 머리와 같은 단일 크롬 재질(#244)을 소비해 밑의 내용이 잘린 대신 흐르는 층으로 읽힌다. */
+.session-actionbar{position:sticky;bottom:0;z-index:5;
+  display:flex;align-items:center;gap:var(--sp-12);flex-wrap:wrap;
+  margin-top:var(--sp-12);padding:var(--sp-12) var(--sp-16);
+  border:1px solid color-mix(in srgb,var(--a-border) 62%,transparent);border-radius:var(--rad-surface);
+  box-shadow:0 -8px 18px -14px var(--a-shadow)}
+.bar{height:8px;background:var(--n-track);border-radius:var(--rad-pill);overflow:hidden;margin-top:var(--sp-12)}
+.bar>i{display:block;height:100%;width:0;background:var(--a-primary);transition:width .25s ease}
+.run-result{font-size:var(--fs-body);margin-top:var(--sp-8);font-weight:600;min-height:1.2em}
+.run-result.ok{color:var(--a-ok)} .run-result.warn{color:var(--a-warn)} .run-result.danger{color:var(--a-danger)}
+
+/* ---- 결과 3태 구획(F4, 지도 §10.10) — 색은 태가 아니라 Python level 이 정한다.
+   태(data-state)는 구조를 정하고(어떤 조각이 뜨는가), level 은 채널을 정한다(ok·warn·
+   danger). 둘을 한 축으로 접으면 취소(warn)가 실패(danger)로 읽힌다(#278 리뷰). ---- */
+.result3{margin-top:var(--sp-10);padding:var(--sp-12);border-radius:var(--rad-surface);
+  border:1px solid var(--a-border);background:var(--a-card);
+  display:flex;flex-direction:column;gap:var(--sp-8)}
+.result3[hidden]{display:none}
+.result3[data-level="ok"]{border-color:color-mix(in srgb,var(--a-ok) 46%,var(--a-border))}
+.result3[data-level="warn"]{border-color:color-mix(in srgb,var(--a-warn) 52%,var(--a-border))}
+.result3[data-level="danger"]{border-color:color-mix(in srgb,var(--a-danger) 52%,var(--a-border))}
+.result3-head{display:flex;align-items:center;gap:var(--sp-8);flex-wrap:wrap}
+.result3-head>strong{font-size:var(--fs-body);flex:1;min-width:0}
+.result3[data-level="ok"] .result3-head>strong{color:var(--a-ok)}
+.result3[data-level="warn"] .result3-head>strong{color:var(--a-warn)}
+.result3[data-level="danger"] .result3-head>strong{color:var(--a-danger)}
+.result3-head .acts{display:flex;gap:var(--sp-6);flex-wrap:wrap}
+.result3-summary{font-size:var(--fs-caption);color:var(--a-muted)}
+.result3-stale{font-size:var(--fs-caption);color:var(--a-warn)}
+.result3-stale[hidden]{display:none}
+.result3-folder{display:flex;align-items:center;gap:var(--sp-8);font-size:var(--fs-caption);
+  color:var(--a-muted);flex-wrap:wrap}
+/* display:flex 가 UA [hidden]{display:none} 을 특이도로 이긴다(부록 B-9 결함 클래스 2) —
+   진행·거절 태에서 저장 폴더 줄을 숨기려면 되돌려 놔야 한다. */
+.result3-folder[hidden]{display:none}
+.result3-dir{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;word-break:break-all}
+.result3-fails{display:flex;flex-direction:column;gap:var(--sp-6)}
+.result3-fail{border:1px solid color-mix(in srgb,var(--a-danger) 38%,var(--a-border));
+  border-radius:var(--rad-control);padding:var(--sp-8);display:flex;flex-direction:column;gap:2px}
+.result3-fail-name{font-weight:600;font-size:var(--fs-caption)}
+.result3-fail-why{font-size:var(--fs-caption);color:var(--a-muted)}
+/* 「원인 진단 미연결」 = 아는 패턴이 없다는 사실의 표지(계약 §10.3) — 원인을 꾸며내지
+   않았음을 표면이 말한다. 아는 원인에는 절대 붙지 않는다. */
+.result3-undiagnosed{font-size:var(--fs-caption);color:var(--a-warn);font-weight:600}
+.result3-evidence{font-size:var(--fs-caption);color:var(--a-muted)}
+.result3-evidence[hidden]{display:none}
+.result3-evidence>summary{cursor:pointer}
+.result3-evidence pre{margin-top:var(--sp-6);white-space:pre-wrap;word-break:break-word;
+  font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
+.zone-cap-sub{margin-top:var(--sp-12)}
+/* 실행 기록 = 기본 접힘(F4 후속) — 요약 줄이 마지막 기록 한 줄을 계속 말한다.
+   `.zone-cap` 은 블록이라(위 .zone-cap{display:block}) summary 안에 그대로 두면 표지·캡션·
+   마지막 줄이 3행으로 흩어진다 — 이 자리에서만 인라인으로 되돌려 한 줄에 세운다. */
+.runlog{margin-top:var(--sp-12)}
+.runlog>summary{cursor:pointer;display:flex;align-items:baseline;gap:var(--sp-8);
+  list-style-position:inside}
+.runlog>summary .zone-cap{display:inline;margin:0}
+.runlog-last{font-size:var(--fs-caption);color:var(--a-muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+/* summary{display:flex} 는 기본 표지(▶)를 지운다 — 접힘/펼침이 보이지 않으면 상자가
+   있다는 사실 자체가 숨는다. 표지를 직접 그린다(회전은 열림 상태를 따른다). */
+.runlog>summary::before{content:"▸";color:var(--a-muted);flex:none;
+  transition:transform var(--dur-press) var(--ease-out)}
+.runlog[open]>summary::before{transform:rotate(90deg)}
+.runlog>summary::-webkit-details-marker{display:none}
+@media (prefers-reduced-motion:reduce){.runlog>summary::before{transition:none}}
+/* border 는 항상 — 라이트에선 어두운 콘솔의 은은한 테두리, 다크에선 카드와 붙는 콘솔을 분리
+   (다크에선 로그 표면·페이지가 둘 다 어두워 경계가 소실되므로 보더가 승강을 대신한다). */
+.logbox{margin-top:var(--sp-10);background:var(--log-surface);color:var(--log-ink);border-radius:var(--rad-surface);
+  border:1px solid var(--a-border);
+  padding:var(--sp-8) var(--sp-10);font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var(--fs-caption);
+  height:110px;overflow:auto;white-space:pre-wrap}
+@media (prefers-reduced-motion:reduce){.bar>i{transition:none}}
+
+/* ---- 「작업」 화면 (R-flow 슬라이스 1, #90) — master-detail 세션 패널 4존 ---- */
+/* 좌 master 목록 + 우 패널을 한 화면에 상시 병치(변형 B: 화면 전환 0). 좌는 고정폭·자체 스크롤,
+   우는 신축·자체 스크롤 — 페이지 세로 스크롤 없이 두 축이 독립적으로 걷힌다. */
+/* 「문서 만들기」는 좌 목록 사망(F2 PR-B) 뒤 세션 패널 하나다 — flex 는 「기안」과 공유하는
+   형상이라 남기고(그쪽은 여전히 master+detail), 여기선 자식이 하나라 그대로 편다. */
+.job-layout{display:flex;gap:var(--sp-16);flex:1;min-height:0}
+.job-master{flex:none;width:var(--master-width,240px);overflow:auto;display:flex;flex-direction:column;gap:var(--sp-16);
+  border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card);padding:var(--sp-10)}
+.master-splitter{flex:none;width:7px;margin:0 -7px 0 -9px;position:relative;z-index:2;cursor:col-resize;
+  touch-action:none;user-select:none}
+.master-splitter::after{content:"";position:absolute;left:3px;top:var(--sp-8);bottom:var(--sp-8);
+  width:1px;background:var(--a-border);transition:background-color var(--dur-press) var(--ease-out)}
+.master-splitter:hover::after,.master-splitter:focus-visible::after{background:var(--a-primary);width:2px}
+.master-splitter:focus-visible{outline:2px solid var(--a-primary);outline-offset:1px}
+body.resizing-master{cursor:col-resize;user-select:none}
+.job-sec-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-8);
+  padding:var(--sp-4) var(--sp-6);border-radius:var(--rad-control);
+  border-left:3px solid var(--a-border)}
+/* 구획 열 틴트 승계(홈 트랙 색 언어) — HWPX 파랑 / TXT 초록. */
+.job-sec-head.txt{border-left-color:var(--a-ok)}
+.job-list{display:flex;flex-direction:column;margin-top:var(--sp-6)}
+.job-item{text-align:left;font:inherit;font-size:var(--fs-body);cursor:pointer;background:none;border:0;
+  color:var(--a-ink);padding:var(--sp-6) var(--sp-8);border-radius:var(--rad-control);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.job-item:hover{background:var(--n-hover)}
+.job-item[aria-busy="true"]{cursor:progress;background:var(--a-sel);color:var(--a-primary)}
+/* 「여는 중」 지연 표지(#217 R1) — 좌 목록 행에서 후보 카드·탐색 행으로 승계(F2 PR-B).
+   라벨을 갈아치우지 않고 덧붙는 표식이라 카드의 이름·메타 구조를 건드리지 않는다. */
+.openingMark{color:var(--a-primary);font-size:var(--fs-caption);white-space:nowrap}
+[aria-busy="true"] .openingMark{cursor:progress}
+.job-item[aria-current="true"]{background:var(--a-primary);color:var(--a-on-accent);font-weight:600}
+.job-empty{font-size:var(--fs-body);padding:var(--sp-6)}
+.job-empty .btn{margin-top:var(--sp-8)}
+/* ---- 좌 목록 관리(결정 43) — 행 ⋮·그룹 헤더·접힘·인라인 이름 변경 ---- */
+.job-row{display:flex;align-items:center;min-width:0}
+.job-row .job-item{flex:1;min-width:0}
+.job-more{flex:none;border:0;background:none;font:inherit;font-size:var(--fs-body);cursor:pointer;
+  color:var(--a-muted);padding:var(--sp-2) var(--sp-6);border-radius:var(--rad-control);visibility:hidden}
+.job-row:hover .job-more,.job-row:focus-within .job-more,
+.job-grp:hover .grp-more,.job-grp:focus-within .grp-more,
+/* 편집기 「템플릿」 탭 행 ⋮(F8 승계) — 노출 규칙이 없으면 기본 hidden 이라 영영 안 보인다
+   (101 컷 눈검증이 잡음: 프로브의 프로그램적 click 은 hidden 을 통과한다). */
+.libselrow:hover .job-more,.libselrow:focus-within .job-more{visibility:visible}
+.job-more:hover{background:var(--n-hover);color:var(--a-ink)}
+.job-grp{display:flex;align-items:center;min-width:0;margin-top:var(--sp-6)}
+.job-grp-head{flex:1;min-width:0;display:flex;align-items:center;gap:var(--sp-6);border:0;background:none;
+  font:inherit;font-size:var(--fs-body);font-weight:600;cursor:pointer;text-align:left;color:var(--a-ink);
+  padding:var(--sp-4) var(--sp-6);border-radius:var(--rad-control)}
+.job-grp-head:hover{background:var(--n-hover)}
+.grp-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.grp-count{color:var(--a-muted);font-size:var(--fs-caption);font-variant-numeric:tabular-nums}
+/* 접힘 화살표: 이름 오른쪽·호버 노출, 접힌 그룹은 상시 노출(결정 5). */
+.grp-caret{color:var(--a-muted);font-size:var(--fs-caption);flex:none;visibility:hidden}
+.job-grp:hover .grp-caret,.job-grp-head:focus-visible .grp-caret,
+.job-grp-head[aria-expanded="false"] .grp-caret{visibility:visible}
+.job-grp-rows{display:flex;flex-direction:column;padding-left:26px} /* 위계 들여쓰기(결정 5) */
+.job-rename{width:100%;font-size:var(--fs-body)}
+.ctx-menu{position:fixed;z-index:var(--z-popover);pointer-events:auto;
+  background:var(--a-card);border:1px solid var(--n-border-strong);
+  border-radius:var(--rad-overlay);box-shadow:0 8px 24px var(--a-shadow);
+  padding:var(--sp-4);min-width:150px}
+.ctx-menu button{display:block;width:100%;text-align:left;border:0;background:none;font:inherit;
+  font-size:var(--fs-body);color:var(--a-ink);padding:var(--sp-6) var(--sp-10);
+  border-radius:var(--rad-control);cursor:pointer}
+.ctx-menu button:hover,.ctx-menu button:focus-visible{background:var(--n-hover)}
+.ctx-menu button.danger{color:var(--a-danger)}
+.ctx-menu .sep{height:1px;background:var(--a-border);margin:var(--sp-4) var(--sp-2)}
+.grp-opt{display:flex;align-items:center;gap:var(--sp-8);padding:var(--sp-4) var(--sp-2);
+  font-size:var(--fs-body)}
+.grp-opt .field{flex:1}
+.job-panel{flex:1;min-width:0;overflow:auto;display:flex;flex-direction:column;
+  container-type:inline-size;container-name:session-panel}
+.job-empty-panel{padding:var(--sp-16);font-size:var(--fs-body)}
+/* 세션 표면(#179 슬라이스 5a) — 4존을 상자 4개(중첩 경계)에서 **하나의 연속 표면 + 내부
+   구분선**으로. 종전엔 존마다 border+radius 카드에 legend(zone-cap 이 border 를 타넘던 절대배치)
+   라 패널 안에 상자가 겹쳐 보였다. 이제 job-zones 가 단일 카드, 존은 그 안의 구획(인접 존 사이
+   상단 구분선), zone-cap 은 절대 legend 대신 인라인 섹션 헤더. job 소유(.zone). */
+/* v6 `screen-data` 2열(재작성 R1) — 좌 `.dg-main`(현재 데이터·거울·결과) / 우 `.dg-side`
+   (이 데이터에 사용할 문서·선택한 작업·생성 준비). 구 `.job-duo`(표|거울 병치, #272)를
+   대체한다: v6 의 성격은 데이터와 문서 선택이 가로로 마주 보는 것이고, 표↔거울 같은 시야는
+   세로 인접 + 펼침 면(⤢)이 승계한다. 두 열은 존 구분선을 공유하는 한 카드 안의 구획이다. */
+.data-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(268px,.46fr)}
+.data-grid>.dg-main,.data-grid>.dg-side{min-width:0;display:flex;flex-direction:column}
+.data-grid>.dg-side{border-left:1px solid var(--a-border)}
+/* side-card 는 한 열이 좁다 — 라벨+입력+버튼을 한 줄에 밀어 넣으면 경로가 몇 글자로 잘려
+   "어디에 저장되는지"를 못 읽는다(저장 폴더는 생성의 되읽기 대상). 라벨을 위로 올리고
+   입력이 열 전체를 쓰게 감싼다. */
+.dg-side .run-row{flex-wrap:wrap;row-gap:var(--sp-4)}
+.dg-side .run-row>.lbl{flex:1 0 100%}
+.dg-side .run-row>.field{flex:1 1 100%}
+#jobMirror{max-height:420px;overflow:auto}
+.job-confirm-sheet-body #jobMirror{max-height:none;height:100%}
+/* 창폭이 아니라 실제 세션 패널 폭으로 판정한다. 900px 이하는 표가 읽힐 한 열 폭을 지키며
+   종전 세로 적층으로 복귀한다(1440 기본창=duo, 1180급 협폭=stack). */
+@container session-panel (max-width:900px){
+  .data-grid{grid-template-columns:1fr}
+  .data-grid>.dg-side{border-left:0;border-top:1px solid var(--a-border)}
+}
+.job-head-title{font-size:var(--fs-body);font-weight:600}
+.job-head-tpl{font-size:var(--fs-body);margin-top:var(--sp-2)}
+/* 좁은 창(반응형): 좌 목록을 위로 접어 세로 적층 — 셀프테스트 그리드 경계와 별개 국소 규칙. */
+@media (max-width:820px){.job-layout{flex-direction:column}.job-master{width:auto;flex-direction:row;flex-wrap:wrap}
+  .master-splitter{display:none}}
+
+/* 사이드 패널 접기(#18/9B2AB35D-A)는 레일과 함께 사망(F2 PR-B) — 토바는 64px 한 줄이라
+   접을 것이 없다. 좁은 창의 작업 영역은 브랜드 워드마크·도구 라벨 접힘(위 820px 규칙)이
+   대신 벌고, 저장 키 rail_collapsed 도 표면과 함께 걷혔다(지도 §10.9 4계약면 4행). */
+
+/* text_select=True에서 본문은 선택·복사 가능하되 조작 표면은 드래그 선택을 만들지 않는다.
+   jobtb 행의 user-select:none은 Shift+클릭 범위 선택 이벤트를 보존하면서 파란 텍스트 선택만 막는다. */
+.topbar,button,select,input[type="checkbox"],input[type="radio"],.jobtb tbody tr{user-select:none}
+

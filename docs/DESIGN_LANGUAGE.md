@@ -134,7 +134,7 @@ Linear 대비 검증된 추가가치가 없어 별개 방향에서 제외 — �
 
 1. ~~Segoe/Malgun 스택 → 동봉 Pretendard GOV 이관~~ — **착지(#179 슬라이스 2)**. 가변 woff2 한
    파일(`web/fonts/PretendardGOVVariable.woff2`, ~5.15 MB, SIL OFL 1.1)로 100~900 전 웨이트 동봉,
-   `web/css/app.css` `@font-face` + 스택 선두(`"Pretendard GOV Variable",…` , Malgun=한글 폴백).
+   `web/css/base.css` `@font-face` + 스택 선두(`"Pretendard GOV Variable",…` , Malgun=한글 폴백).
    정적 2개 합성으로는 앱이 쓰는 400·500·600·700·800 굵기 위계가 뭉개져 가변 단일 파일 채택.
    exe 크기 비용 = **+~5.15 MB**(전 웨이트 가변; PyInstaller `web/` 트리 datas 로 자동 동봉).
    범위는 파일러 앱(`web/`)만 — diff 뷰어(web-diff)는 별도 제품이라 현행 스택 유지.

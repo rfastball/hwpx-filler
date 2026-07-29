@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from _web_css import app_css
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -47,7 +49,7 @@ def test_undo_toast_receives_pointer_events() -> None:
     """#269 리뷰 — 토스트는 #overlayRoot(pointer-events:none) 자식이라 auto 를 명시
     복구하지 않으면 「되돌리기」 버튼이 실클릭을 못 받는다(확인 없는 삭제의 유일한
     즉시 복구 경로 사망). 모달·ctx-menu·colpanel 과 같은 복구 규약."""
-    css = "".join(_read("web/css/app.css").split())
+    css = "".join(app_css().split())
     assert "#overlayRoot{" in css and "pointer-events:none" in css
     toast_rule = css[css.index(".undo-toast{"):]
     toast_rule = toast_rule[:toast_rule.index("}")]

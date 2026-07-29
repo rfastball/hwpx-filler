@@ -8,13 +8,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from _web_css import app_css
+
 
 ROOT = Path(__file__).resolve().parents[1]
 INDEX = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
 APP = (ROOT / "web" / "js" / "app.js").read_text(encoding="utf-8")
 LIB = (ROOT / "web" / "js" / "screens" / "library.js").read_text(encoding="utf-8")
 JOB = (ROOT / "web" / "js" / "screens" / "job.js").read_text(encoding="utf-8")
-CSS = (ROOT / "web" / "css" / "app.css").read_text(encoding="utf-8")
+CSS = app_css()
 
 
 def test_cold_boot_lands_on_jobs() -> None:

@@ -1,0 +1,111 @@
+/* ---- 「문서 작업」 전역 라이브러리 (§19.6·§19.7 · 재작성 F2 PR-A) ---- */
+/* 홈의 두 트랙(.tracks/.track)·작업 브라우저 바(.jobbrowser)·txt 목록(.tlist)은 화면과 함께
+   사망했다. .jcard 는 손상 작업 danger 카드가 계속 쓰므로 남는다. */
+
+/* 축 도구줄 — 검색 · 보기 탭 · 작업 방식 칩 · 태그 facet */
+.library-toolbar{display:flex;align-items:center;gap:var(--sp-10) var(--sp-16);flex-wrap:wrap;
+  margin:var(--sp-10) 0 var(--sp-12)}
+.library-search-field{display:flex;align-items:center;gap:var(--sp-6)}
+.library-search-field .field{width:220px}
+.library-filter-group{display:flex;align-items:center;gap:var(--sp-6)}
+.library-filter-label{font-size:var(--fs-caption);color:var(--a-muted);white-space:nowrap}
+.library-tabs{display:inline-flex;border:1px solid var(--a-border);border-radius:var(--rad-surface);overflow:hidden}
+.library-tabs button{border:0;background:none;font:inherit;font-size:var(--fs-body);cursor:pointer;
+  padding:var(--sp-4) var(--sp-10);color:var(--a-muted);white-space:nowrap}
+.library-tabs button+button{border-left:1px solid var(--a-border)}
+.library-tabs button:hover{background:var(--n-hover)}
+.library-tabs button[aria-selected="true"]{background:var(--a-sel);color:var(--a-ink);font-weight:600}
+.library-tabs button:focus-visible{outline:2px solid var(--a-primary);outline-offset:-2px}
+.library-modes{display:inline-flex;gap:var(--sp-6);flex-wrap:wrap}
+.library-modes .pill,.library-facets .pill{cursor:pointer}
+.library-modes .pill[aria-pressed="true"]{background:var(--a-sel);border-color:var(--a-primary);color:var(--a-ink)}
+.library-facets{display:flex;align-items:center;gap:var(--sp-6);flex-wrap:wrap;flex-basis:100%}
+.library-facets .pill[disabled]{opacity:.45;cursor:not-allowed}
+
+/* 2-pane — 공간 배분은 목록 길이에 끌려다니지 않는다(§19.6 마지막 문단). 넓고 높은 창에서만
+   두 pane 이 뷰포트를 나눠 각자 스크롤하고 페이지는 스크롤하지 않는다. 그보다 좁거나 낮으면
+   세로 배치 + 페이지 스크롤로 퇴화한다(치수 921/760 은 계약 명문). */
+.library-browser{display:grid;grid-template-columns:1fr;gap:var(--sp-16)}
+.library-list-pane{min-width:0}
+.library-detail{min-width:0;background:var(--a-card);border:1px solid var(--a-border);
+  border-radius:var(--rad-surface);display:flex;flex-direction:column}
+@media(min-width:921px) and (min-height:760px){
+  .library-browser{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);
+    /* 상단 토바(구조 치수 · §19.12) + 화면 헤더·경보·도구줄이 먹는 높이를 뺀 나머지를 두
+       pane 이 나눠 갖는다. 토바 높이는 변수 단일 출처라 셸이 바뀌면 여기가 같이 따라온다 —
+       리터럴로 베끼면 셸 교체 때 페이지가 조용히 스크롤한다(§19.6 명문 위반, §10.9 판정 G). */
+    height:calc(100vh - var(--shell-topbar-h) - 250px);min-height:360px}
+  .library-list-pane,.library-detail{height:100%;overflow:hidden;display:flex;flex-direction:column}
+  .library-list{flex:1;overflow-y:auto;min-height:0}
+  .lib-detail-scroll{flex:1;overflow-y:auto;min-height:0}
+}
+.library-count{font-size:var(--fs-caption);color:var(--a-muted);margin:0 0 var(--sp-6)}
+.library-count:focus-visible{outline:2px solid var(--a-primary);outline-offset:2px}
+
+/* 행 — 선택 버튼과 즐겨찾기는 형제다(§19.6: 선택 버튼 안에 중첩 금지) */
+.lib-row{display:flex;align-items:center;gap:var(--sp-4);border:1px solid var(--a-border);
+  border-left:3px solid transparent;border-radius:var(--rad-surface);
+  padding:var(--sp-2) var(--sp-8) var(--sp-2) var(--sp-4);margin-bottom:var(--sp-6)}
+.lib-row:hover{background:var(--n-hover)}
+.lib-row.on{background:var(--a-sel);border-left-color:var(--a-primary)}
+.lib-row-main{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:1px;
+  border:0;background:none;font:inherit;text-align:left;cursor:pointer;padding:var(--sp-6) var(--sp-8)}
+.lib-row-name{font-weight:600;display:flex;gap:var(--sp-6);align-items:center;flex-wrap:wrap}
+.lib-row-meta{font-size:var(--fs-caption);color:var(--a-muted)}
+.lib-fav{flex:none;border:0;background:none;font:inherit;cursor:pointer;line-height:1;
+  padding:var(--sp-4) var(--sp-6);border-radius:var(--rad-control);color:var(--a-muted)}
+.lib-fav[aria-pressed="true"]{color:var(--a-primary)}
+.lib-fav:hover{background:var(--n-hover);color:var(--a-ink)}
+.lib-row-main:focus-visible,.lib-fav:focus-visible{outline:2px solid var(--a-primary);outline-offset:-2px}
+.lib-grp{margin-top:var(--sp-10)}
+.lib-grp-head{flex:1;min-width:0;display:flex;align-items:center;gap:var(--sp-6);border:0;background:none;
+  font:inherit;font-weight:700;text-align:left;cursor:pointer;padding:var(--sp-4) var(--sp-6);
+  border-radius:var(--rad-control)}
+.lib-grp-head:hover{background:var(--n-hover)}
+.lib-grp-head:focus-visible{outline:2px solid var(--a-primary);outline-offset:-2px}
+.lib-grp:hover .job-more,.lib-grp:focus-within .job-more{visibility:visible}
+.lib-grp-rows{display:flex;flex-direction:column;padding-left:22px}
+
+/* 상세 — 상시 행동은 스크롤과 분리해 pane 아래 고정(§19.6) */
+.lib-detail-scroll{padding:var(--sp-12) var(--sp-16)}
+.lib-detail-name{margin:0}
+.lib-detail-sub{font-size:var(--fs-body);color:var(--a-muted);margin:var(--sp-2) 0 var(--sp-10)}
+.lib-detail-note{font-size:var(--fs-caption);margin:0 0 var(--sp-6)}
+.lib-causes{margin:var(--sp-4) 0 var(--sp-8);padding-left:var(--sp-16)}
+.lib-detail-facts{display:grid;grid-template-columns:auto 1fr;gap:var(--sp-2) var(--sp-10);
+  margin:0 0 var(--sp-12);font-size:var(--fs-body)}
+.lib-detail-facts dt{color:var(--a-muted)}
+.lib-detail-facts dd{margin:0}
+.lib-bindings{width:100%;margin-bottom:var(--sp-12)}
+.lib-tags{display:flex;gap:var(--sp-6);flex-wrap:wrap;margin:var(--sp-4) 0 0}
+.lib-detail-acts{flex:none;display:flex;align-items:center;gap:var(--sp-6);flex-wrap:wrap;
+  border-top:1px solid var(--a-border);padding:var(--sp-10) var(--sp-16)}
+.lib-detail-manage{display:flex;gap:var(--sp-6);flex-wrap:wrap;margin-left:auto}
+/* 상시 노출 관리 줄의 삭제는 **글자색만** 위험을 말한다(솔리드 danger 는 확인 다이얼로그 몫). */
+.btn.lib-del{color:var(--a-danger)}
+.lib-detail-blank{padding:var(--sp-24) var(--sp-16);text-align:center;margin:0}
+
+/* 작업 카드(손상 작업 danger 카드가 계속 쓴다) */
+.jcard{border:1px solid var(--a-border);border-radius:var(--rad-surface);padding:var(--sp-10) var(--sp-12);margin-bottom:var(--sp-8);
+  border-left:3px solid transparent}
+.jcard .jn{font-weight:700;display:flex;gap:var(--sp-8);align-items:center;flex-wrap:wrap}
+.jcard .jm{font-size:var(--fs-body);color:var(--a-muted);margin-top:var(--sp-2)}
+.jcard .jfoot{display:flex;justify-content:space-between;align-items:center;margin-top:var(--sp-8);gap:var(--sp-8);flex-wrap:wrap}
+.jcard .jr{font-size:var(--fs-caption);color:var(--a-muted)}
+
+/* 빈 상태(온보딩) */
+.empty{background:var(--a-card);border:1px dashed var(--a-border);border-radius:var(--rad-surface);
+  padding:var(--sp-24);text-align:center;margin-top:var(--sp-6)}
+.empty .heading{font-size:var(--fs-strong);font-weight:700;color:var(--a-ink);margin-bottom:var(--sp-6)}
+.empty p{color:var(--a-muted);font-size:var(--fs-body);margin:0 0 var(--sp-16);white-space:pre-line}
+.route{font-size:var(--fs-caption);color:var(--a-muted);margin:var(--sp-10) 0 0;
+  font-family:"Cascadia Code","Consolas",ui-monospace,monospace}
+
+/* 카드 상호작용 어휘(H-14) — hover는 배경 틴트 하나, 좌 막대는 지속 상태만 쓴다. */
+.jcard:hover,.tplcard:hover{background:var(--n-hover)}
+.jcard[aria-current="true"],.tplcard[aria-current="true"]{
+  background:var(--a-sel);border-left-color:var(--a-primary)}
+.jcard.corrupt{border-left-color:var(--a-danger)}
+.jcard:focus-visible,.tplcard:focus-visible{
+  outline:2px solid var(--a-primary);outline-offset:2px}
+

@@ -1,0 +1,145 @@
+/* ---- 작업 에디터 마법사 (#15·#16) ---- */
+.wsteps{display:flex;gap:var(--sp-2);margin-bottom:var(--sp-12);flex-wrap:wrap;border-bottom:1px solid var(--a-border)}
+.wstep-tab{font-size:var(--fs-body);color:var(--a-muted);padding:var(--sp-8) var(--sp-12);border-radius:var(--rad-control) var(--rad-control) 0 0;
+  display:flex;align-items:center;gap:var(--sp-6)}
+.wstep-tab .k{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;
+  background:var(--n-pressed);color:var(--n-ink-soft);font-size:var(--fs-caption);font-weight:700}
+.wstep-tab[aria-current="true"]{color:var(--a-primary);font-weight:700;background:var(--a-card);
+  box-shadow:inset 0 -2px 0 var(--a-primary)}
+.wstep-tab[aria-current="true"] .k{background:var(--a-primary);color:var(--a-on-accent)}
+.wstep-tab.done .k{background:var(--a-ok);color:var(--a-on-accent)}
+/* 편집 탭(결정 41 + 재작성 F7) — 같은 분류를 탭 버튼으로. 단계 룩 재사용 + 버튼 리셋. */
+.wstep-tab.as-tab{border:0;background:none;font:inherit;font-size:var(--fs-body);cursor:pointer}
+.wstep-tab.as-tab:hover{color:var(--a-ink)}
+.wstep-tab.as-tab:focus-visible{outline:2px solid var(--a-primary);outline-offset:-2px}
+/* 손댄 탭 표지(재작성 F7) — 어느 자리를 처분해야 하는지 3택 모달 **전에** 보인다.
+   색만으로 말하지 않는다(§19.11-6 계열): 점 표지 + title 로 이유가 읽힌다. */
+.wstep-tab.as-tab.dirty::after{content:"";width:6px;height:6px;border-radius:50%;
+  background:var(--a-warn);display:inline-block}
+.wbody{flex:1;min-height:0;overflow:auto;padding:var(--sp-4) var(--sp-2)}
+.wfoot{display:flex;align-items:center;gap:var(--sp-10);margin-top:var(--sp-12);padding-top:var(--sp-12);
+  border-top:1px solid var(--a-border)}
+.wtitle{font-size:var(--fs-strong);font-weight:700;margin:var(--sp-6) 0 var(--sp-2)}
+.wsub{font-size:var(--fs-body);color:var(--a-muted);margin:0 0 var(--sp-12);max-width:72ch;line-height:1.5}
+.fields-head{font-size:var(--fs-body);margin:var(--sp-12) 0 var(--sp-6);line-height:1.5;color:var(--a-muted)}
+/* 1단계 필드표·2단계 데이터 미리보기 — 매핑표(table.map) 룩 재사용, 읽기전용 */
+table.schema-fields,table.data-preview{border-collapse:collapse;width:100%;font-size:var(--fs-dense)}
+table.schema-fields th,table.data-preview th{background:var(--n-header-bg);color:var(--n-header-ink);
+  font-weight:600;text-align:left;padding:var(--sp-6) var(--sp-8);border-bottom:1px solid var(--a-border);
+  position:sticky;top:0;white-space:nowrap}
+table.schema-fields td,table.data-preview td{padding:var(--sp-4) var(--sp-8);border-bottom:1px solid var(--n-track);
+  vertical-align:top}
+table.schema-fields tr:last-child td,table.data-preview tr:last-child td{border-bottom:0}
+.schema-fields .fctx{color:var(--a-muted);max-width:34ch;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+table.data-preview{min-width:520px}
+table.data-preview td{white-space:nowrap}
+.row{display:flex;align-items:center;gap:var(--sp-8);margin-top:var(--sp-4)}
+
+/* note 박스(게이트·경고·성공) */
+.note.warnbox,.note.dangerbox,.note.okbox{font-size:var(--fs-body);margin-top:var(--sp-10);padding:var(--sp-8) var(--sp-10);
+  border-radius:var(--rad-surface);line-height:1.5}
+.note.warnbox{background:var(--fb-blank-bg);border:1px solid var(--fb-blank-bd);color:var(--a-warn)}
+.note.dangerbox{background:var(--fb-missing-bg);border:1px solid var(--fb-missing-bd);color:var(--a-danger)}
+.note.okbox{background:var(--fb-fill-bg);border:1px solid var(--fb-fill-bd);color:var(--a-ok)}
+
+/* 매핑 표 — table-layout:fixed(F23): 값 길이에 따라 열폭이 변해 행 스텝마다 레이아웃이
+   튀던 것을 고정 열폭으로 봉쇄. 열폭은 th(첫 행)에 지정, 넘치는 값은 셀 안에서 말줄임.
+   min-width 는 고정 열 합(674px) + 유연 2열(템플릿 필드)의 실용 최소폭 — 좁은 창에서
+   가로 스크롤로 밀리더라도 핵심 식별자 열이 짜부라지지 않는다(PR #84 리뷰). */
+.tblwrap{max-height:min(42vh,360px);overflow:auto;border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card);margin-top:var(--sp-10)}
+table.map{border-collapse:collapse;width:100%;font-size:var(--fs-dense);min-width:940px;table-layout:fixed}
+table.map th{background:var(--n-header-bg);color:var(--n-header-ink);font-weight:600;text-align:left;
+  padding:var(--sp-6) var(--sp-8);border-bottom:1px solid var(--a-border);position:sticky;top:0}
+table.map th:nth-child(1){width:44px}   /* 확정 체크 */
+table.map th:nth-child(3){width:170px}  /* 데이터 항목 */
+table.map th:nth-child(4){width:150px}  /* 타입/고정값 */
+table.map th:nth-child(5){width:130px}  /* 표시형 */
+table.map th:nth-child(6){width:180px}  /* 미리보기 */
+table.map td{padding:var(--sp-6) var(--sp-8);border-bottom:1px solid var(--n-track);vertical-align:middle;
+  overflow:hidden}
+table.map .sel{width:100%}
+table.map td .pv{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+table.map tr:last-child td{border-bottom:0}
+tr.r-unconfirmed td{background:var(--a-unconf)}
+tr.r-unmatched td{background:var(--a-unmatch)}
+/* 확정 = 완료 신호(F24) — 은은한 녹색 틴트(완료=녹색 직관, 상태색은 액센트와 분리 유지).
+   스키마온리(데이터 미연결)는 '완료'가 아니라 중립 유지. */
+tr.r-confirmed td{background:var(--fb-fill-bg)}
+tr.r-schemaonly td{background:var(--a-card)}
+.cbx{width:15px;height:15px;accent-color:var(--a-primary);cursor:pointer}
+.fname{font-weight:600}
+.tbadge{font-size:var(--fs-caption);color:var(--n-ink-soft);font-weight:600;margin-left:var(--sp-4)}
+.sel{font:inherit;font-size:var(--fs-caption);border:1px solid var(--n-border-strong);border-radius:var(--rad-control);
+  padding:var(--sp-2) var(--sp-4);background:var(--a-card);color:var(--a-ink);max-width:100%}
+.pv{font-family:"Cascadia Code","Consolas",ui-monospace,monospace;font-size:var(--fs-caption)}
+.pv.emptyval{color:var(--a-empty);font-weight:600}
+.gate{display:flex;align-items:center;gap:var(--sp-10);margin-top:var(--sp-10);flex-wrap:wrap}
+.gatecount{font-size:var(--fs-body);font-weight:700}
+.gatecount.ok{color:var(--a-ok)} .gatecount.pend{color:var(--a-muted)}
+
+/* (실행 화면(#18) 전용 레이아웃 규칙 .run-jobbar/.run-jobmeta/.jm-line/.run-body 삭제 —
+   scr-run 사망(슬라이스 3)으로 참조 0. 공유 .run-row/.run-result/.run-actions 는 「작업」
+   패널이 계속 쓰므로 잔존.) */
+
+/* 캡션 박스(목업 .grp 이식) */
+.grp{border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card);
+  padding:var(--sp-12) var(--sp-12);margin-top:var(--sp-12);position:relative}
+.grp>.cap{position:absolute;top:-9px;left:12px;background:var(--a-window);
+  padding:0 var(--sp-6);font-size:var(--fs-body);font-weight:600;color:var(--n-header-ink)}
+.grp .hint{margin:var(--sp-2) 0 0}
+
+/* 추적성 로케이트 버튼(#53-B) — 열기·폴더보기·경로복사 */
+.track-affords{display:inline-flex;gap:var(--sp-4);flex-wrap:wrap;align-items:center}
+.track-btn{white-space:nowrap}
+
+/* 사용할 헤더(#49 + 칩-라이브 결정 13) — 즉시 토글 칩·미사용 접힘(체크박스 스테이징 소거) */
+.hchips{display:flex;flex-wrap:wrap;gap:var(--sp-6);margin-top:var(--sp-8)}
+.hchip{display:inline-flex;align-items:center;gap:var(--sp-4);font-family:inherit;font-size:var(--fs-body);
+  padding:var(--sp-2) var(--sp-8);border:1px solid var(--a-border);border-radius:var(--rad-pill);
+  background:var(--a-window);cursor:pointer;white-space:nowrap}
+.hchip.ign{color:var(--a-muted);border-style:dashed}  /* 클릭형(다시 사용) — pointer 유지(리뷰 R6) */
+.hidden-hdrs{margin-top:var(--sp-8);font-size:var(--fs-body)}
+.hidden-hdrs>summary{cursor:pointer;color:var(--a-muted)}
+
+/* 데이터 관문(R-flow 슬라이스 5 — 매핑 단계의 머리, 3단계 접기) */
+.row.gateway{margin-bottom:var(--sp-12);flex-wrap:wrap}
+.filechip{display:inline-flex;align-items:center;gap:var(--sp-8);border:1px solid var(--a-border);
+  background:var(--n-surface-alt);border-radius:var(--rad-control);padding:var(--sp-4) var(--sp-10);font-size:var(--fs-body)}
+.filechip b{font-weight:600}
+.filechip .sheet{color:var(--a-muted);font-size:var(--fs-caption)}
+.btn.linklike{border:0;background:none;color:var(--a-muted);text-decoration:underline;
+  text-underline-offset:2px;padding:var(--sp-2) var(--sp-4);font-size:var(--fs-caption)}
+.btn.linklike:hover{color:var(--a-ink)}
+
+/* 칩-라이브(R-flow 슬라이스 5 결정 12·13) — 즉시 토글 칩 + 소유권 태그 (기본 .hchip 는 위 참조) */
+.hchip.on{border-color:var(--a-primary);background:var(--a-sel);color:var(--a-primary);font-weight:600}
+.tag{font-size:var(--fs-caption);border-radius:var(--rad-pill);padding:1px var(--sp-8);white-space:nowrap;font-weight:600}
+.tag.sugg{background:color-mix(in srgb,var(--a-warn) 14%,transparent);color:var(--a-warn)}   /* 제안=시스템 소유(유동) */
+.tag.man{background:var(--a-sel);color:var(--a-primary)}                                      /* 수동=사람 소유 */
+.tag.conf{background:color-mix(in srgb,var(--a-ok) 14%,transparent);color:var(--a-ok)}        /* 확정 */
+.tag.none{background:var(--n-surface-alt);color:var(--a-muted);font-weight:400}               /* 후보 없음 */
+table.map th:nth-child(7){width:76px}  /* 상태(소유권 태그) */
+
+/* 편집 모드 호스트(에디터 흡수, 결정 39~41) — 패널 안에서 마법사/탭 컨테이너가 세로로 선다.
+   .wsteps/.wbody/.wfoot 은 화면 시절 규칙 그대로 재사용(옮긴 것은 거처뿐). */
+/* 편집기 몰입 표면(재작성 F7 — 구 .job-edit-host 승계). 상단 2탭을 덮으므로 셸 표지는
+   body.editor-open 이 감춘다: 편집 중에 화면 전환구가 살아 있으면 처분 미확정 이탈구가
+   다시 생긴다(가드의 완전성이 표면 수에 비례하는 구조를 없앤 것이 이 표면의 요지다). */
+body.editor-open .nav,body.workbench-open .nav{display:none}
+.editor-shell{flex:1;min-height:0;display:flex;flex-direction:column;gap:var(--sp-4)}
+.editor-shell .back{align-self:flex-start}
+.editor-head{padding:0;border:0;background:none}
+.editor-head .eyebrow{font-size:var(--fs-caption);color:var(--a-muted);margin:0;letter-spacing:.02em}
+.ctxbanner{display:flex;flex-direction:column;gap:var(--sp-6)}
+.ctxbanner .ctx-ev{display:flex;flex-wrap:wrap;gap:var(--sp-6) var(--sp-12);
+  font-size:var(--fs-dense);color:var(--a-muted)}
+.ctxbanner .ctx-ev b{color:var(--a-ink);font-weight:600}
+/* 증거의 이전 값(재작성 F7) — 지금 값과 대비되게 죽인다(강조는 새 값 쪽). */
+.ev-before{color:var(--a-muted);text-decoration:line-through}
+/* 이름은 제목 자리에 산다(「저장」 분류 사망의 승계) — 입력이되 제목처럼 읽힌다. */
+.title-input{font:inherit;font-size:var(--fs-h1,var(--fs-strong));font-weight:700;
+  border-color:transparent;background:transparent;padding:var(--sp-2) var(--sp-4);width:100%}
+.title-input:hover{border-color:var(--a-border)}
+.title-input:focus{border-color:var(--a-primary);background:var(--a-card)}
+

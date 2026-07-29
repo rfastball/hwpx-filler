@@ -1,0 +1,142 @@
+/* ---- 모달 ---- */
+#overlayRoot{position:fixed;inset:0;z-index:var(--z-overlay-root);pointer-events:none}
+.modal{position:absolute;inset:0;box-sizing:border-box;padding:var(--sp-16);
+  background:var(--a-scrim);backdrop-filter:blur(6px);display:flex;align-items:center;
+  justify-content:center;z-index:calc(var(--z-modal) + var(--modal-depth,0));pointer-events:auto}
+.modal.hidden{display:none}
+.modal-card{background:var(--a-card);border-radius:var(--rad-overlay);padding:var(--sp-24);width:min(560px,92vw);
+  max-height:calc(100vh - 2 * var(--sp-16));max-height:calc(100dvh - 2 * var(--sp-16));
+  box-sizing:border-box;overflow:auto;overscroll-behavior:contain;
+  box-shadow:0 12px 40px var(--a-shadow)}
+.modal-card h3{margin:0 0 var(--sp-6)}
+.modal-body{white-space:pre-wrap;margin:var(--sp-4) 0 var(--sp-8);color:var(--a-ink);font-size:var(--fs-body)}
+.modal-card textarea{width:100%;border:1px solid var(--a-border);border-radius:var(--rad-control);padding:var(--sp-10);
+  font-family:inherit;font-size:var(--fs-body);resize:vertical;color:var(--a-ink);background:var(--a-card)}
+.modal-actions{display:flex;justify-content:flex-end;gap:var(--sp-8);margin-top:var(--sp-12)}
+.modal-card .ctl{display:flex;flex-direction:column;gap:var(--sp-4);margin-top:var(--sp-4)}
+.modal-card .ctl .field{width:100%}
+.sheet .sheet-card{width:calc(100vw - 2 * var(--sp-16));height:calc(100vh - 2 * var(--sp-16));
+  height:calc(100dvh - 2 * var(--sp-16));max-height:none;padding:0;overflow:hidden;display:flex;flex-direction:column}
+.sheet-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-12);
+  padding:var(--sp-16) var(--sp-20);border-bottom:1px solid var(--a-border);flex:0 0 auto}
+.sheet-head h3{margin:0}
+.sheet-body{min-width:0;min-height:0;flex:1;padding:var(--sp-16);overflow:auto}
+.sheet-duo{display:grid;grid-template-columns:minmax(0,1.08fr) minmax(0,1fr);gap:var(--sp-16)}
+.sheet-pane{min-width:0;min-height:0;overflow:auto;border:1px solid var(--a-border);
+  border-radius:var(--rad-card);padding:var(--sp-12)}
+.data-sheet-body{display:flex;flex-direction:column;gap:var(--sp-10)}
+.data-sheet-body .jobtb-host{display:flex;flex-direction:column;min-height:0;flex:1}
+.data-sheet-body .jobtbwrap{max-height:none;min-height:0;flex:1}
+.data-sheet-body .jobtb th:first-child,.data-sheet-body .jobtb td:first-child{position:sticky;left:0;background:var(--a-card)}
+/* sticky 첫 열의 행 상태 보존(#279 리뷰) — 무조건 --a-card 만 깔면 tr.on/호버가 칠한
+   행 배경을 덮어, 문서 정체 셀(선택하며 보는 1차 셀)만 늘 미선택처럼 보인다. sticky 는
+   투명 불가(밑 열이 비침)라 카드 위에 같은 비율을 섞은 불투명 등가색으로 맞춘다. */
+.data-sheet-body .jobtb tbody tr:hover td:first-child{
+  background:color-mix(in srgb, var(--a-sel) 40%, var(--a-card))}
+.data-sheet-body .jobtb tbody tr.on td:first-child{background:var(--a-sel)}
+.data-sheet-body .jobtb th:first-child{z-index:3}
+.data-sheet-body .jobtb td:first-child{z-index:2}
+@media (max-width:900px){.sheet-duo{grid-template-columns:1fr}.sheet .sheet-card{width:100vw;height:100vh;height:100dvh}}
+@media (prefers-reduced-transparency:reduce){
+  .modal{background:var(--a-scrim-reduced);backdrop-filter:none}
+  .modal.is-closing{background:transparent}
+}
+/* 시트 선택 목록(#33) — 각 시트가 왼쪽 정렬 전폭 버튼. 이름·치수를 한 줄에. */
+.sheet-list{display:flex;flex-direction:column;gap:var(--sp-6);max-height:min(50vh,320px);overflow:auto}
+.sheet-opt{display:flex;align-items:baseline;gap:var(--sp-10);justify-content:flex-start;text-align:left;width:100%}
+.sheet-opt .sheet-name{font-size:var(--fs-body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sheet-opt .sheet-dim{margin-left:auto;white-space:nowrap;font-size:var(--fs-caption)}
+
+/* ---- 템플릿 관리(#13) ---- */
+/* 상태 배지(pill) — compile_badge level(muted/warn/ok/danger)을 fb 토큰 계열로 렌더.
+   홈 카드 배지와 같은 상태에 같은 심각도 신호(RC-29). */
+.pill{font-size:var(--fs-caption);padding:var(--sp-2) var(--sp-8);border-radius:var(--rad-pill);font-weight:700;white-space:nowrap;
+  border:1px solid transparent}
+.pill.ok{background:var(--fb-fill-bg);color:var(--a-ok);border-color:var(--fb-fill-bd)}
+.pill.warn{background:var(--fb-blank-bg);color:var(--a-warn);border-color:var(--fb-blank-bd)}
+.pill.danger{background:var(--fb-missing-bg);color:var(--a-danger);border-color:var(--fb-missing-bd)}
+.pill.muted{background:var(--a-window);color:var(--a-muted);border-color:var(--a-border)}
+
+/* 카탈로그 목록 — 데이터 관리(scr-pool) 등 공유 유틸(캡션 박스 안 헤더 + 스크롤 리스트).
+   템플릿 관리는 #108 개편으로 매체 밴드 구조로 갈라져 나갔지만 이 클래스들은 pool 이 계속 쓴다. */
+/* 데이터 관리 카탈로그(#179 슬라이스 6) — 구획이 하나뿐인데 2열 격자라 우측 절반이 늘 빈
+   캔버스로 남아 미완성처럼 보였다. 단일 열을 읽기 좋은 폭으로 캡(우측 여백은 의도된 여백). */
+.tpllist{margin-top:var(--sp-10);display:flex;flex-direction:column;gap:var(--sp-8);overflow:auto;max-height:360px}
+
+/* (tpl 화면 전용 표면 — .tpl-catalogs·.tpl-libbar·.tpl-medium·.tpl-band·.tpl-banddir·
+   .tpl-groups — 은 화면 사망(F8 §10.17)과 함께 걷혔다. 아래 .tpl-grp-rows·.tpl-assign 은
+   편집기 「템플릿」 탭이, .tpllist·.tplcard 계열은 데이터 피커(F1 재사용)가 계속 쓴다.) */
+/* 그룹 바디 — 카드 세로 나열 + 위계 들여쓰기(결정 5). 퇴화 평면(flat)은 들여쓰기 없음. */
+.tpl-grp-rows{display:flex;flex-direction:column;gap:var(--sp-8);padding:var(--sp-6) 0 var(--sp-4) 22px}
+.tpl-grp-rows.flat{padding:var(--sp-6) 0 var(--sp-4)}
+/* ＋그룹지정 칩 — 헤더가 그룹을 못 알려주는 「그룹 없음」 카드에만(결정 2). */
+.tpl-assign{display:inline-flex;align-items:center;gap:var(--sp-4);font:inherit;font-size:var(--fs-caption);
+  padding:var(--sp-2) var(--sp-8);border-radius:var(--rad-pill);background:none;color:var(--a-muted);
+  border:1px dashed var(--n-border-strong);cursor:pointer}
+.tpl-assign:hover{color:var(--a-primary);border-color:var(--a-primary)}
+/* 에디터 1단계 선택-전용 행(#108 슬라이스 3) — 같은 그룹 구획 안, 카드보다 가벼운 고르기 행. */
+.libselrow{display:flex;align-items:center;gap:var(--sp-8);padding:var(--sp-6) var(--sp-8);
+  border:1px solid var(--a-border);border-radius:var(--rad-control);background:var(--a-card)}
+.libselrow.cur{border-color:var(--a-primary);background:var(--a-sel)}
+/* 긴 파일명이 선택 동작을 화면 밖으로 밀지 않게(#138 리뷰 F14) — 이름 칸만 줄고 배지·동작 고정. */
+.libselrow .fname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.libselrow .tbadge,.libselrow .capnote,.libselrow .btn{flex:none}
+
+/* [B] 61C7ADF8: 불투명 배경 카드 — 뒤에 비칠 숨김 텍스트 레이어가 없어 겹침 렌더 버그가
+   구성상 소멸(Qt QListWidget 반투명 하이라이트의 웹 대체).
+   tpl 화면 사망(F8) 후의 소비자 = **데이터 피커**(F1 이 카드 어휘를 재사용 — .pk-row).
+   tpl 전용 부속(⋮ 호버 노출 .tplcard-more)만 화면과 함께 걷혔다. */
+.tplcard{background:var(--a-card);border:1px solid var(--a-border);border-radius:var(--rad-surface);
+  border-left:3px solid transparent;padding:var(--sp-8) var(--sp-10);display:flex;flex-direction:column;gap:var(--sp-4)}
+.tplcard.muted{color:var(--a-muted);font-size:var(--fs-body)}
+.tplcard-top{display:flex;align-items:center;gap:var(--sp-8)}
+.tplcard-name{font-weight:600;font-size:var(--fs-body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tplcard-meta{font-size:var(--fs-caption)}
+.tplcard-acts{display:flex;justify-content:flex-end;gap:var(--sp-6);flex-wrap:wrap;margin-top:var(--sp-2)}
+
+/* ---- 데이터 선택 다이얼로그 (재작성 F1 — v6 dataPickerDialog) ----
+   구획 셋(현재/고정한/다른)이 한 면에 서므로 표준 모달보다 넓고, 고정 목록만 세로로
+   자란다: 목록이 길어져도 「다른 데이터」와 닫기가 화면 밖으로 밀리지 않는다. */
+.data-picker{width:min(760px,94vw)}
+.picker-sec{margin-top:var(--sp-16)}
+.picker-sec>.cap{display:flex;align-items:center;gap:var(--sp-8);font-weight:600;
+  font-size:var(--fs-caption);color:var(--a-muted);margin-bottom:var(--sp-6)}
+.picker-sec>.cap .acts{margin-left:auto;display:flex;gap:var(--sp-6)}
+.picker-sec .tpllist{display:flex;flex-direction:column;gap:var(--sp-6);
+  max-height:38vh;overflow:auto;overscroll-behavior:contain}
+.picker-sec .capnote{display:block;margin-bottom:var(--sp-6)}
+#dataPickerCorrupt .note{margin-top:var(--sp-6)}
+/* 행 = 정보 열 + 행동 열(세로 밀도) — 참조·메모·로케이트가 각자 한 줄을 먹으면 3항목만으로
+   면이 넘친다. 이름 칸만 줄어 행동이 화면 밖으로 밀리지 않는다(#138 F14 규율 승계). */
+.pk-row{flex-direction:row;align-items:center;justify-content:space-between;gap:var(--sp-12)}
+.pk-info{min-width:0;display:flex;flex-direction:column;gap:var(--sp-2)}
+.pk-ref{display:flex;align-items:center;gap:var(--sp-6);min-width:0}
+.pk-ref>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pk-note{display:block}
+.pk-row .tplcard-acts{flex:none;margin:0;max-width:230px}
+
+/* ---- 미리보기 드로어 (재작성 F5 — v6 previewDrawer) ----
+   레코드 1건의 전 필드를 보여주므로 세로로 자라고, **자리(N/M)와 파일 이름은 고정**이다:
+   목록을 스크롤하다 지금 몇 번째를 보는지 잃으면 미리보기의 뜻이 반쯤 사라진다. */
+.preview-drawer{width:min(680px,94vw)}
+.preview-drawer .preview-nav{display:flex;align-items:center;gap:var(--sp-8);
+  margin-top:var(--sp-8)}
+.preview-drawer .preview-nav strong{font-variant-numeric:tabular-nums}
+/* 행 컨테이너만 겨눈다 — `.picker-sec>div` 로 넓게 걸면 구획 캡션(`.cap` 도 div)까지
+   세로 flex·스크롤 상자가 돼 캡션이 가운데로 뭉갠다(눈검증이 잡은 자리). */
+.preview-drawer #previewRows,
+.preview-drawer #previewEvidenceRows{display:flex;flex-direction:column;gap:var(--sp-2);
+  max-height:34vh;overflow:auto;overscroll-behavior:contain}
+.preview-drawer .mir-row{display:flex;gap:var(--sp-12);align-items:baseline;
+  padding:var(--sp-6) 0;border-bottom:1px solid var(--n-border)}
+.preview-drawer .mir-name{flex:0 0 34%;min-width:0;color:var(--a-muted);
+  font-size:var(--fs-caption);overflow-wrap:anywhere}
+.preview-drawer .mir-val{flex:1;min-width:0;overflow-wrap:anywhere}
+.preview-drawer .mir-val .doc-sum{display:block;color:var(--a-muted);
+  font-size:var(--fs-caption)}
+.preview-drawer .preview-foot{display:flex;flex-wrap:wrap;gap:var(--sp-16);
+  margin-top:var(--sp-16);padding-top:var(--sp-12);border-top:1px solid var(--n-border)}
+.preview-drawer .preview-foot>div{display:flex;flex-direction:column;gap:var(--sp-2);
+  min-width:0}
+.preview-drawer .preview-foot strong{overflow-wrap:anywhere}
+
