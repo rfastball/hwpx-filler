@@ -28,6 +28,23 @@ class 에 대해 아무 말도 하지 않는다. 존 패딩 0 · 구분선 소�
 생산자가 없는 죽은 선택자 — 지금 `.job-master`·`.master-splitter`·`.job-row`·`.job-item`)은
 잡지 않는다. 초기 오탐 정리가 별건 규모라 세우지 않았고, 그 사실을 여기 적어 둔다(조용한
 축소 금지). 죽은 CSS 정리는 이슈 #325(CSS 소유권 재정렬) 소관이다.
+
+**이름이 변수를 거쳐 가도 본다**(리뷰 R1). 첫 판은 `class="..."` 와 따옴표가 **붙어 있는**
+대입만 읽어서, `job.js` 의 `mark.className = MARK`(`const MARK = "openingMark"`)나 `app.js` 의
+`classList.toggle(im.cls, ...)`(`{ cls: "editor-open" }`)가 내는 class 를 한 줄도 못 봤다 —
+그 규칙을 지워도 이 게이트가 초록이면 **그물이 있다는 착각만 남는다**(이 파일이 막으려던
+바로 그 사고). 그래서 sink(`className=` · `classList.add/remove/toggle`)의 **식**을 읽고 세
+경로로 이름을 회수한다: ⑴ 문자열 리터럴 ⑵ 같은 파일의 `const/let/var` 리터럴 결속 ⑶ 같은
+파일의 객체 속성 리터럴 결속(`cls: "editor-open"`). 이름을 **하나도** 못 얻은 sink 는
+조용히 넘기지 않고 시끄럽게 실패한다 — 못 읽는 sink 가 늘면 그물이 다시 구멍 난다.
+
+식을 읽을 때 두 가지를 걷어낸다. **비교 피연산자**(`level === "danger"`)는 class 가 아니라
+값이고, **조각 이어붙이기**(`"... f-" + font`)의 뒤 리터럴은 이름의 반쪽이다 — 둘 다 세면
+`.danger`·`.gulimche` 같은 없는 이름을 요구하는 오탐이 된다.
+
+남는 구멍 하나는 적어 둔다: **값이 Python 에서 오는 tail**(`"note " + (s.notice.level || ...)`)
+은 리터럴이 코드에 없어 못 본다. 그 자리의 class 는 링1 이 내는 문자열이라 이 그물이 아니라
+스냅샷 계약이 지킨다.
 """
 
 from __future__ import annotations
@@ -37,6 +54,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
+#: 검사 대상 — 배포되는 셸과 화면 JS 전수(이름 회수·미해독 판정이 같은 목록을 본다).
+_SOURCES = [WEB / "index.html", *sorted(WEB.glob("js/**/*.js"))]
 
 #: 규칙이 없어도 정당한 class — **사유 없이는 등재하지 않는다**.
 #:
@@ -67,10 +86,21 @@ STYLELESS_BY_DESIGN: dict[str, str] = {
 _HOLE = "\x00"
 
 _CLASS_ATTR = re.compile(r'class="([^"]*)"')
-_CLASS_NAME_ASSIGN = re.compile(r'className\s*=\s*"([^"]*)"')
-_CLASS_LIST = re.compile(r"classList\.(?:add|remove|toggle)\(([^)]*)\)")
-_STRING_LIT = re.compile(r"\"([^\"]*)\"|'([^']*)'")
+_CLASS_NAME_ASSIGN = re.compile(r"\.className\s*=\s*([^;]+);")
+_CLASS_LIST = re.compile(r"classList\.(add|remove|toggle)\s*\(")
+_STRING_LIT = re.compile(r"\"([^\"]*)\"|'([^']*)'|`([^`]*)`")
 _IDENT = re.compile(r"[A-Za-z_][\w-]*\Z")
+
+#: 비교 피연산자 — `level === "danger"` 의 `"danger"` 는 값이지 class 가 아니다.
+_COMPARED_LIT = re.compile(r"(?:===|!==|==|!=)\s*(?:\"[^\"]*\"|'[^']*')")
+#: 변수 결속 — `const MARK = "openingMark"` 처럼 **리터럴만** 받는 이름.
+_LITERAL_BINDING = re.compile(
+    r"\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([^;\n]+)"
+)
+#: 객체 속성 결속 — `{ cls: "editor-open" }`. sink 가 `im.cls` 로 읽는 자리의 유일한 출처.
+_PROP_BINDING = re.compile(r"\b([A-Za-z_$][\w$]*)\s*:\s*(\"[^\"]*\"|'[^']*')")
+_BARE_IDENT = re.compile(r"(?<![.\w$])([A-Za-z_$][\w$]*)")
+_MEMBER_PROP = re.compile(r"\.([A-Za-z_$][\w$]*)")
 
 
 def _tokens(raw: str) -> set[str]:
@@ -87,21 +117,102 @@ def _tokens(raw: str) -> set[str]:
     }
 
 
+def _literal_names(expr: str) -> set[str]:
+    """식 안의 **문자열 리터럴**에서 온전한 class 이름만 거둔다.
+
+    조각 이어붙이기(`"wc-render f-" + font`)의 **뒤 리터럴**은 이름의 반쪽이라 버린다 —
+    앞이 하이픈으로 끝나면 다음 리터럴은 그 접미사다(`"gulimche"` 는 `.gulimche` 가 아니라
+    `f-gulimche` 의 꼬리). 앞 조각 자체는 `_tokens` 의 하이픈 규칙이 이미 버린다.
+    """
+    names: set[str] = set()
+    fragment_tail = False
+    for double, single, backtick in _STRING_LIT.findall(expr):
+        raw = double or single or backtick
+        if fragment_tail:
+            fragment_tail = raw.endswith("-")
+            continue
+        names |= _tokens(re.sub(r"\$\{[^}]*\}", _HOLE, raw))
+        fragment_tail = raw.endswith("-")
+    return names
+
+
+def _sink_names(expr: str, bindings: dict[str, set[str]], props: dict[str, set[str]]) -> set[str]:
+    """class sink 한 자리의 식 → 그 자리가 낼 수 있는 이름들(리터럴 + 결속 회수)."""
+    expr = _COMPARED_LIT.sub(" ", expr)
+    names = _literal_names(expr)
+    # 리터럴을 걷어낸 뒤에야 식별자를 본다 — 문자열 **안**의 단어가 변수 이름으로 읽히지
+    # 않게(`"note warnbox"` 의 `note` 는 식별자가 아니다).
+    bare = _STRING_LIT.sub(" ", expr)
+    for ident in _BARE_IDENT.findall(bare):
+        names |= bindings.get(ident, set())
+    for prop in _MEMBER_PROP.findall(bare):
+        names |= props.get(prop, set())
+    return names
+
+
+def _bindings(text: str) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+    """같은 파일의 리터럴 결속 — 변수(`const MARK = "openingMark"`)와 속성(`cls: "..."`)."""
+    variables: dict[str, set[str]] = {}
+    for name, init in _LITERAL_BINDING.findall(text):
+        got = _literal_names(_COMPARED_LIT.sub(" ", init))
+        if got:
+            variables.setdefault(name, set()).update(got)
+    properties: dict[str, set[str]] = {}
+    for name, literal in _PROP_BINDING.findall(text):
+        got = _literal_names(literal)
+        if got:
+            properties.setdefault(name, set()).update(got)
+    return variables, properties
+
+
+def _arg_body(text: str, open_paren: int) -> str:
+    """`(` 위치에서 짝 맞는 `)` 까지의 인자 본문."""
+    depth = 0
+    for i in range(open_paren, len(text)):
+        if text[i] == "(":
+            depth += 1
+        elif text[i] == ")":
+            depth -= 1
+            if depth == 0:
+                return text[open_paren + 1:i]
+    return text[open_paren + 1:]
+
+
+def _first_arg(args: str) -> str:
+    """최상위 첫 인자 — `toggle(cls, force)` 의 둘째 인자는 조건식이지 이름이 아니다."""
+    depth = 0
+    for i, ch in enumerate(args):
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            return args[:i]
+    return args
+
+
+def _class_sinks(text: str) -> list[str]:
+    """이 파일이 class 를 내는 자리들의 **식** — 이름 회수와 미해독 판정이 같은 목록을 쓴다."""
+    sinks = [m.group(1) for m in _CLASS_NAME_ASSIGN.finditer(text)]
+    for match in _CLASS_LIST.finditer(text):
+        args = _arg_body(text, match.end() - 1)
+        # add/remove 는 인자가 전부 이름이고, toggle 은 첫 인자만 이름이다.
+        sinks.append(_first_arg(args) if match.group(1) == "toggle" else args)
+    return sinks
+
+
 def _emitted_classes() -> dict[str, set[str]]:
     """셸과 화면 JS 가 실제로 DOM 에 내는 class → 그 자리들."""
     found: dict[str, set[str]] = {}
-    sources = [WEB / "index.html", *sorted(WEB.glob("js/**/*.js"))]
-    for path in sources:
+    for path in _SOURCES:
         text = path.read_text(encoding="utf-8")
         names: set[str] = set()
         for match in _CLASS_ATTR.finditer(text):
             # `${...}` 를 구멍 표식으로 바꾼다 — 붙어 있던 조각이 이름으로 새지 않게.
             names |= _tokens(re.sub(r"\$\{[^}]*\}", _HOLE, match.group(1)))
-        for match in _CLASS_NAME_ASSIGN.finditer(text):
-            names |= _tokens(re.sub(r"\$\{[^}]*\}", _HOLE, match.group(1)))
-        for match in _CLASS_LIST.finditer(text):
-            for double, single in _STRING_LIT.findall(match.group(1)):
-                names |= _tokens(double or single)
+        variables, properties = _bindings(text)
+        for expr in _class_sinks(text):
+            names |= _sink_names(expr, variables, properties)
         where = path.relative_to(ROOT).as_posix()
         for name in names:
             found.setdefault(name, set()).add(where)
@@ -152,6 +263,47 @@ def test_stylesless_allowlist_has_no_stale_entries() -> None:
     assert not gone, (
         f"DOM 이 더는 내지 않는 class 가 허용 목록에 남아 있습니다: {', '.join(gone)} — 등재를 지우세요."
     )
+
+
+def test_every_class_sink_yields_a_readable_name() -> None:
+    """이름을 **하나도** 못 얻은 class sink 가 없다 — 그물의 구멍은 조용히 넓어진다.
+
+    앞의 두 테스트는 「읽어 낸 이름」만 검사하므로, 읽지 못한 sink 는 검사 대상이 0개가 돼
+    **초록으로 보인다**. 이 파일이 기록한 사고가 바로 그 모양이었다(규칙이 사라져도 아무도
+    말하지 않음). 그래서 해독 실패 자체를 실패로 만든다: 새 sink 가 계산식으로 이름을 만들면
+    여기서 걸리고, 상수로 바꾸거나 회수 규칙을 넓히거나 둘 중 하나를 하게 된다.
+    """
+    unreadable: list[str] = []
+    for path in _SOURCES:
+        text = path.read_text(encoding="utf-8")
+        variables, properties = _bindings(text)
+        where = path.relative_to(ROOT).as_posix()
+        for expr in _class_sinks(text):
+            if not _sink_names(expr, variables, properties):
+                unreadable.append(f"  {where} — {' '.join(expr.split())[:80]}")
+    assert not unreadable, (
+        "class 이름을 읽어 낼 수 없는 자리가 있습니다(고아 검사가 이 자리를 통째로 건너뜁니다):\n"
+        + "\n".join(unreadable)
+        + "\n이름을 리터럴이나 같은 파일의 상수 결속으로 두거나, 회수 규칙을 넓히세요."
+    )
+
+
+def test_variable_backed_class_names_are_seen() -> None:
+    """변수·속성을 거쳐 나가는 이름도 회수된다 — 회수 경로 자체의 회귀 방지(리뷰 R1).
+
+    실물 두 자리를 그대로 든다: `job.js` 의 `const MARK = "openingMark"` → `mark.className`,
+    `app.js` 의 `{ cls: "editor-open" }` → `classList.toggle(im.cls, ...)`. 이 둘이 목록에서
+    빠지면 그 CSS 를 지워도 게이트가 초록이던 상태로 되돌아간 것이다.
+    """
+    emitted = _emitted_classes()
+    for name, site in (
+        ("openingMark", "web/js/screens/job.js"),
+        ("editor-open", "web/js/app.js"),
+        ("workbench-open", "web/js/app.js"),
+    ):
+        assert site in emitted.get(name, set()), (
+            f".{name} 이 {site} 의 산출 목록에 없습니다 — 변수·속성 결속 회수가 깨졌습니다."
+        )
 
 
 def test_allowlist_entries_carry_a_reason() -> None:
