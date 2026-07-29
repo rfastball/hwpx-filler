@@ -59,9 +59,28 @@
      그래서 게이트를 `s.dirty || pendingFieldEdit` 로 **합성**한다. 판정을 두 곳이 하는 것이
      아니다 — 「저장 대상이 바뀌었는가」는 여전히 Python 이고, 여기서 더하는 것은 「아직
      도착하지 않은 입력이 있는가」라는 DOM 의 사실뿐이다. 되돌려 쳐서 스냅샷 값과 같아지면
-     다시 내려가고, `change` 가 발신하는 순간 소임이 끝나 꺼진다. */
+     다시 내려가고, `change` 가 발신하는 순간 소임이 끝나 꺼진다.
+
+     **이 사실은 편집 가능한 컨트롤 전부의 것이다**(리뷰 R3). 처음엔 머리·꼬리 3입력만 셌는데
+     매핑 행의 상수 입력(`row-const`)도 같은 `change` 발신이라 같은 자리에서 첫 클릭이
+     삼켜졌다. 목록을 늘리는 대신 **`onChange` 가 발신하는 편집 액션 전부**를 대상으로 삼고,
+     새 편집 컨트롤이 목록 밖으로 새면 정적 계약(`test_r3_editor`)이 시끄럽게 실패한다 —
+     열거로 푼 문제는 다음 열거에서 다시 샌다. */
   const FIELD_EDIT_KEYS = { name: "name", pattern: "pattern", "dataset-name": "dataset_name" };
+  const ROW_EDIT_KEYS = {
+    "row-source": "source", "row-type": "type", "row-fmt": "fmt", "row-const": "const",
+  };
   let pendingFieldEdit = false;
+
+  /* 이 컨트롤에 대해 **스냅샷이 든 값**(=Python 이 아는 값) — 편집 대상이 아니면 null. */
+  function snapshotValue(el) {
+    const act = el.dataset.act;
+    if (FIELD_EDIT_KEYS[act]) return (LAST && LAST[FIELD_EDIT_KEYS[act]]) || "";
+    const key = ROW_EDIT_KEYS[act];
+    if (!key) return null;
+    const row = LAST && LAST.rows && LAST.rows[Number(el.dataset.index)];
+    return row ? (row[key] || "") : null;
+  }
 
   /* deep-link 조준 대기 1슬롯(F6 PR-B, §10.14.3) — 보낸 표면(드로어)이 진입 성사 뒤
      `aimAt(target)` 로 건다. 조준 문맥의 push 가 아직이면 여기 걸어 두고 render 가 소비한다
@@ -1154,9 +1173,9 @@
      재렌더 없이 버튼 하나만 만진다: 여기서 render 를 돌리면 그게 곧 키스트로크 단위 재구성이다. */
   function onInput(e) {
     const el = e.target.closest("[data-act]");
-    const key = el && FIELD_EDIT_KEYS[el.dataset.act];
-    if (!key) return;
-    const pending = el.value !== ((LAST && LAST[key]) || "");
+    const known = el && snapshotValue(el);
+    if (known === null || known === undefined) return;
+    const pending = el.value !== known;
     if (pending === pendingFieldEdit) return;
     pendingFieldEdit = pending;
     const save = document.querySelector('#editor-foot [data-act="save"]');
@@ -1167,7 +1186,9 @@
     const el = e.target.closest("[data-act]");
     if (!el) return;
     // 발신하는 순간 이 사실의 소임이 끝난다 — 이후 판정은 Python 이 낸 `s.dirty` 가 진다.
-    if (FIELD_EDIT_KEYS[el.dataset.act]) pendingFieldEdit = false;
+    // (버튼의 DOM 상태는 건드리지 않는다: 왕복이 끝나 push 가 올 때까지 열린 채여야
+    //  select 편집처럼 change 가 즉시 서는 자리에서도 첫 클릭이 살아 있다.)
+    if (snapshotValue(el) !== null) pendingFieldEdit = false;
     const idx = el.dataset.index !== undefined ? Number(el.dataset.index) : null;
     switch (el.dataset.act) {
       case "row-source": sendEdit("set_source", { index: idx, source: el.value }); break;

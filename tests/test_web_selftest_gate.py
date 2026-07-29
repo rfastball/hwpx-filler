@@ -886,6 +886,15 @@ class TestWebSelftestGate:
         assert g["pattern_typing_enabled"] is True, (
             "패턴을 고쳤는데 저장이 잠긴 채입니다 — 이름만 고치고 패턴은 빠졌습니다."
         )
+        # 매핑 행의 상수 입력도 같은 자격(리뷰 R3) — 머리·꼬리 입력만 세면 이 자리만 남는다.
+        assert g["row_const_present"] is True, "매핑 행 상수 입력이 없습니다 — 프로브 겨눔 소실."
+        assert g["row_clean_disabled"] is True, "행 단계에서 바꾼 것이 없는데 저장이 열려 있습니다."
+        assert g["row_typing_enabled"] is True, (
+            "매핑 행 상수를 고쳤는데 저장이 잠긴 채입니다 — 그 컨트롤에서 첫 클릭이 삼켜집니다."
+        )
+        assert g["row_reverted_disabled"] is True, (
+            "행 상수를 되돌려 쳤는데 저장이 열린 채입니다 — 없는 변경을 저장하라고 합니다."
+        )
 
     def test_editor_library_manage_renders_menus_and_dialog(self, selftest_result: dict) -> None:
         # F8(§10.17.2 판정 D) — 구 tpl 그룹 프로브의 승계 재작성: 관리 표면(그룹·⋮·칩·이동

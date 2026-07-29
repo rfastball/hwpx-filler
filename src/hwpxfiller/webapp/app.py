@@ -1894,8 +1894,38 @@ _EDITOR_SAVE_GATE_PROBE_JS = r"""
       patEl.value = '공고서-{{공고번호}}-2';
       patEl.dispatchEvent(new Event('input', {bubbles:true}));
       out.pattern_typing_enabled = !!(saveBtn() && !saveBtn().disabled);
+      // 다음 단계로 넘어가기 전에 이 편집을 되돌린다 — 안 그러면 대기 상태가 그대로 이어져
+      // 다음 단계의 「깨끗한 상태」 측정이 거짓 양성이 된다(프로브가 자기 잔재를 재는 꼴).
+      patEl.value = snap.pattern;
+      patEl.dispatchEvent(new Event('input', {bubbles:true}));
+      patEl.blur();
     }
     nameEl.blur();
+    // ⑤ 매핑 행의 상수 입력도 **같은 자격**이다(리뷰 R3) — 머리·꼬리 입력만 세면 이 자리에서만
+    // 첫 클릭이 삼켜진다. 행이 있는 단계로 갈아 끼우고 같은 것을 잰다.
+    var rowSnap = Object.assign({}, snap, {
+      section:'binding', schema_only:false, field_count:1,
+      source_fields:['품명'], active_source_fields:['품명'], active_count:1,
+      sample_rows:[['A']], type_options:['text','const'], fmt_options:{text:[],const:[]},
+      rows:[{index:0, template_field:'품명', inferred_type:'text', context:'', source:'',
+             type:'const', const:'고정값', fmt:'', confirmed:false, touched:true,
+             has_content:true, suggestion_score:0, preview:'고정값', preview_empty:false,
+             preview_error:false, row_state:'unconfirmed'}]
+    });
+    window.__push('editor', rowSnap);
+    out.row_clean_disabled = !!(saveBtn() && saveBtn().disabled);
+    var constEl = document.querySelector('#editor-body [data-act="row-const"]');
+    out.row_const_present = !!constEl;
+    if (constEl) {
+      constEl.focus();
+      constEl.value = '고정값 수정';
+      constEl.dispatchEvent(new Event('input', {bubbles:true}));
+      out.row_typing_enabled = !!(saveBtn() && !saveBtn().disabled);
+      constEl.value = '고정값';
+      constEl.dispatchEvent(new Event('input', {bubbles:true}));
+      out.row_reverted_disabled = !!(saveBtn() && saveBtn().disabled);
+      constEl.blur();
+    }
     out.error = null;
   } catch (e) { out.error = String((e && e.message) || e); }
   return out;
