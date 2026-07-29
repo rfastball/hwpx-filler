@@ -47,6 +47,22 @@
   let foldOpen = false;     // 미사용 헤더 접힘(.ign-fold)
   let tokFoldOpen = false;  // 파일명 토큰 참조 접힘(.tok-fold, F27 — PR-4 리뷰 F6)
 
+  /* 아직 커밋되지 않은 타이핑이 있는가 — **DOM 만 아는 사실**(리뷰 R2).
+
+     텍스트 입력은 `change`(=blur)에서만 발신한다. 매 키에 발신하지 않는 것은 결정이고
+     (`docs/WEB_RENDER_PRESERVATION.md`: 이 앱의 푸시는 이산 액션이라 타이핑 중 재구성이
+     없다 — `renderHead` 가 포커스 중 이름 입력을 안 건드리는 것도 같은 결정의 이면),
+     그 대가가 저장 게이트에서 드러났다: 고치는 동안 Python 은 아직 모르니 `s.dirty` 가
+     false 이고, 「변경 저장」이 `disabled` 면 **방금 고친 사람의 첫 클릭이 삼켜진다** —
+     비활성 버튼은 click 을 내지 않아 그 클릭은 blur→change 만 태우고 한 번 더 눌러야 한다.
+
+     그래서 게이트를 `s.dirty || pendingFieldEdit` 로 **합성**한다. 판정을 두 곳이 하는 것이
+     아니다 — 「저장 대상이 바뀌었는가」는 여전히 Python 이고, 여기서 더하는 것은 「아직
+     도착하지 않은 입력이 있는가」라는 DOM 의 사실뿐이다. 되돌려 쳐서 스냅샷 값과 같아지면
+     다시 내려가고, `change` 가 발신하는 순간 소임이 끝나 꺼진다. */
+  const FIELD_EDIT_KEYS = { name: "name", pattern: "pattern", "dataset-name": "dataset_name" };
+  let pendingFieldEdit = false;
+
   /* deep-link 조준 대기 1슬롯(F6 PR-B, §10.14.3) — 보낸 표면(드로어)이 진입 성사 뒤
      `aimAt(target)` 로 건다. 조준 문맥의 push 가 아직이면 여기 걸어 두고 render 가 소비한다
      (브리지 반환과 push 는 독립 채널이라 어느 쪽이 먼저인지 기대지 않는다). */
@@ -887,7 +903,8 @@
       // 안 썼다. 신규 마법사에는 걸지 않는다 — 거긴 항상 dirty 라 늘 활성이고, 마지막
       // 단계의 「작업 저장」은 완료 행동이지 변경 저장이 아니다.
       return `${discard}<span class="spacer"></span>` +
-        `<button class="btn primary" data-act="save"${s.dirty ? "" : " disabled"}>변경 저장</button>`;
+        `<button class="btn primary" data-act="save"` +
+        `${(s.dirty || pendingFieldEdit) ? "" : " disabled"}>변경 저장</button>`;
     }
     const back = here > 0
       ? `<button class="btn" data-act="back">◀ 뒤로</button>` : `<button class="btn" disabled>◀ 뒤로</button>`;
@@ -1133,9 +1150,24 @@
     }
   }
 
+  /* 타이핑 — **발신하지 않는다**. 커밋 전 편집의 존재만 표시해 주 행동을 열어 둔다(위 주석).
+     재렌더 없이 버튼 하나만 만진다: 여기서 render 를 돌리면 그게 곧 키스트로크 단위 재구성이다. */
+  function onInput(e) {
+    const el = e.target.closest("[data-act]");
+    const key = el && FIELD_EDIT_KEYS[el.dataset.act];
+    if (!key) return;
+    const pending = el.value !== ((LAST && LAST[key]) || "");
+    if (pending === pendingFieldEdit) return;
+    pendingFieldEdit = pending;
+    const save = document.querySelector('#editor-foot [data-act="save"]');
+    if (save && LAST && isEditing(LAST)) save.disabled = !(LAST.dirty || pendingFieldEdit);
+  }
+
   function onChange(e) {
     const el = e.target.closest("[data-act]");
     if (!el) return;
+    // 발신하는 순간 이 사실의 소임이 끝난다 — 이후 판정은 Python 이 낸 `s.dirty` 가 진다.
+    if (FIELD_EDIT_KEYS[el.dataset.act]) pendingFieldEdit = false;
     const idx = el.dataset.index !== undefined ? Number(el.dataset.index) : null;
     switch (el.dataset.act) {
       case "row-source": sendEdit("set_source", { index: idx, source: el.value }); break;
@@ -1267,6 +1299,7 @@
     const root = $("scr-editor");
     root.addEventListener("click", onClick);
     root.addEventListener("change", onChange);
+    root.addEventListener("input", onInput);
     $("editorBack").addEventListener("click", () => leaveTo(returnScreen()));
     // 라이브러리 ⋮ 메뉴·이동 다이얼로그 배선(F8) — DOM(#tplRowMenu·#tplMoveModal)은 셸
     // 레벨 공용이라 병존 기간 template.js 와 이중 배선되지만, 각 인스턴스가 자기 열림
