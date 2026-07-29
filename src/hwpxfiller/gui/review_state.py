@@ -323,9 +323,13 @@ def review_reason_text(req: ReviewRequirement) -> str:
 def review_gate_text(req: ReviewRequirement) -> str:
     """검토 요구가 게이트에 쓰는 문안 — ①무엇이 됐는가 ②다음에 뭘 하는가만
     (`docs/COPY_STYLE_GUIDE.md` §1·§2 오류 문형: 최대 2문장)."""
-    # 「생성 값 미리보기」는 그 버튼에 실제로 적힌 말이다(U2 §2.3) — 게이트가 다른 이름으로
-    # 부르면 지시받은 사람이 누를 것을 찾아야 한다.
-    return review_reason_text(req) + " '생성 값 미리보기'에서 결과를 확인해야 생성할 수 있습니다."
+    # 두 이름을 다 실물에 맞춘다: 「생성 값 미리보기」는 그 버튼에 적힌 말이고(U2 §2.3 —
+    # 게이트가 다르게 부르면 지시받은 사람이 누를 것을 찾아야 한다), 「승인」은 규칙축의
+    # 어휘다(U2 §2.10 — 「확인」은 필드축 ack 단독). 지목까지 준다: 이 축이 보는 것은 거울이
+    # 못 보여 주는 **이름**과 값이다.
+    return review_reason_text(req) + (
+        " '생성 값 미리보기'에서 나갈 이름과 값을 승인해야 생성할 수 있습니다."
+    )
 
 
 @dataclass

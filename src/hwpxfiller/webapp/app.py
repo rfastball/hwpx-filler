@@ -2334,7 +2334,7 @@ _PREVIEW_DRAWER_PROBE_SETUP_JS = r"""
         table: { columns: [], rows: [], visible_count: 0, hidden_selected: [] },
         restate: { origin: null, filter_active: false, in_def: 0, extra: 0, sample: [] },
         preflight: { level: 'ok', text: 'ok' }, mirror: [], drift: [], name_tokens: [],
-        gate: { enabled: false, level: 'warn', text: '결과를 확인해야 생성할 수 있습니다.' },
+        gate: { enabled: false, level: 'warn', text: '나갈 이름과 값을 승인해야 생성할 수 있습니다.' },
         review: { required: true, approved: false, risk: 'presentation',
                   targets: ['금액(표시형)'], first_run: false, unknown_baseline: false,
                   structure_changed: false },

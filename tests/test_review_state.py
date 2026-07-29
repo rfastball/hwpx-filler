@@ -268,6 +268,33 @@ def test_gate_text_for_a_new_job_does_not_claim_rules_changed():
     assert "규칙이 바뀌" not in text
 
 
+def test_rule_axis_says_approve_not_confirm():
+    """규칙축은 「승인」, 필드축은 「확인」 — 두 축이 한 동사를 나눠 쓰지 않는다(U2 §2.10).
+
+    제보는 *"두 확인 트리거의 차이를 소명하라"* 였고, 두 축이 다르다는 소명은 선다.
+    **소명을 요구했다는 사실이 결함**이라 어휘를 가른다: 거울은 "눌러서 **확인**해야
+    생성할 수 있습니다"(필드축 ack), 드로어는 "결과 **확인** 완료"(규칙축 승인)로 같은
+    동사가 두 축에 겹쳐 있었다.
+
+    새 어휘를 짓는 것이 아니라 링1 이름을 표면으로 올리는 것이다 — 코드는 이미 `approve`·
+    `PreviewApproved`(§13-4)로 그렇게 부르고 표면만 한 단어로 눌렀다.
+
+    「검토」·「확정」이 아닌 이유는 **점유 대조**다: 「검토」는 `work_mode` 의 「온나라 기안
+    검토·복사」가, 「확정」은 매핑 축이 이미 갖고 있다. 어휘는 점유를 안 세고 고르면 충돌을
+    옮길 뿐이다.
+    """
+    text = review_gate_text(review_requirement(_job()))
+    assert "승인" in text, "규칙축 게이트가 「승인」을 안 씁니다."
+    assert "확인" not in text, (
+        "규칙축 게이트가 필드축(거울 ack)의 동사 「확인」을 다시 씁니다 — 같은 동사가 두 축에 "
+        f"겹치면 사용자가 차이를 소명받아야 합니다: {text!r}"
+    )
+    # 지목까지 준다(C3): 이 축이 보는 것은 거울이 못 보여 주는 **이름**이다.
+    assert "이름" in text
+    # 점유 대조 — 다른 축이 쓰는 동사를 빌려오지 않는다.
+    assert "검토" not in text and "확정" not in text
+
+
 def test_rules_key_is_stable_across_processes():
     """hash() 가 아니라 안정 해시 — 같은 규칙이면 언제나 같은 키다."""
     assert rules_key(rules_fingerprints(_job())) == rules_key(rules_fingerprints(_job()))
