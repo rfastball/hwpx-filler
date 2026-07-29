@@ -365,8 +365,13 @@ TXT 작업은 「문서 만들기」에 **합류**한다(대조표 17·18행): �
 - 원시 디자인 토큰의 단일 출처는 `src/hwpxfiller/gui/design_tokens.json`이다.
   `scripts/gen_design_tokens.py`가 커밋되는 `web/css/tokens.css`와 동결 목업의 생성 구간을 만든다.
   `tests/test_design_tokens.py`가 생성물 드리프트를 막는다.
-- 실제 레이아웃·컴포넌트 스타일의 단일 출처는 `web/css/app.css`다. 현재 앱을 판단할 때
-  동결 목업의 인라인 CSS를 사용하지 않는다.
+- 실제 레이아웃·컴포넌트 스타일의 단일 출처는 `web/css/` 아래 **9개 스타일시트**다
+  (`base`·`draftcard`·`editor`·`job`·`overlay`·`library`·`forced-colors`·`jobdata`·`tail`).
+  구 `app.css`를 **순서 보존 컷**으로 자른 것이라 링크 순서대로 이어붙이면 옛 파일과 바이트
+  동일하고, 그래서 **`<link>` 순서가 캐스케이드 계약**이다 — 목록·순서의 단일 출처는
+  `tests/_web_css.py`의 `APP_CSS_FILES`이고 `tests/test_web_css_manifest.py`가 셸 링크 순서와
+  `web/css/*.css` 전수 등재를 게이트한다. 현재 앱을 판단할 때 동결 목업의 인라인 CSS를
+  사용하지 않는다.
 - 한 번만 쓰이는 정적 문구는 `web/index.html` 또는 해당 화면 JavaScript/Python 산출자가
   소유한다. 둘 이상에서 공유하는 사용자 문구만 `web/js/copy.js` 등 명시적 공용 상수로 올린다.
   문구 규율과 금지어는 [카피 스타일 가이드](COPY_STYLE_GUIDE.md)와 관련 테스트가 맡는다.

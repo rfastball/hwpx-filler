@@ -16,8 +16,12 @@ from collections import Counter
 from html.parser import HTMLParser
 from pathlib import Path
 
+from _web_css import ALL_CSS_FILES, app_css, linked_css
+
 WEB_INDEX = Path(__file__).resolve().parents[1] / "web" / "index.html"
-WEB_CSS = Path(__file__).resolve().parents[1] / "web" / "css" / "app.css"
+# web/ 앱 스타일시트는 분할됐다 — 여기서만 **문자열**(조각을 링크 순서대로 이어붙인 구
+# app.css 등가)이고, 아래 WEB_DIFF_CSS 는 단일 파일이라 Path 그대로다.
+WEB_CSS = app_css()
 # web-diff(2판 diff 뷰어)는 별개 산출물이지만 강제색 대응은 web/ 와 짝 — 둘 다 가드한다.
 WEB_DIFF_CSS = Path(__file__).resolve().parents[1] / "web-diff" / "css" / "app.css"
 WEB_DIFF_INDEX = Path(__file__).resolve().parents[1] / "web-diff" / "index.html"
@@ -267,7 +271,7 @@ def test_nav_has_visual_marker_and_shell_is_topbar():
     assert 'class="topbar"' in index and 'class="rail"' not in index, (
         "셸이 상단 토바가 아닙니다 — 좌 레일은 F2 PR-B 에서 사망했습니다(지도 §10.9)."
     )
-    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    css = "".join(WEB_CSS.split())
     # 아이콘(.ni svg)은 상시 표지 — 크기 규칙 존재로 SVG 아이콘 착지를 확인.
     assert ".navbtn.nisvg{width:18px" in css, "탭 아이콘(.ni svg) 상시 표지 규칙이 사라졌습니다(#27)."
     assert "rail-collapsed" not in css, (
@@ -331,7 +335,7 @@ def test_hidden_class_is_modal_only_elsewhere_use_the_attribute():
     바뀐 것이니 이 테스트부터 고쳐야 한다), (b) index.html 의 `class="… hidden …"` 이 전부
     `.modal` 인가, (c) JS 가 modal.js 밖에서 hidden 클래스를 조작하거나 마크업에 심지 않는가.
     """
-    css = WEB_CSS.read_text(encoding="utf-8")
+    css = WEB_CSS
     generic = re.search(r"(?m)^\s*\.hidden\s*[,{]", css)
     assert not generic, (
         "일반 `.hidden` 규칙이 생겼습니다 — 숨김 기제가 둘(속성·클래스)로 갈라지면 어느 쪽이"
@@ -368,7 +372,7 @@ def test_responsive_breakpoint_collapses_layout():
     실 렌더 검증(창을 실제로 줄여 되읽기)은 selftest 게이트가 한다 — 여기선 헤드리스 포함 전
     플랫폼에서 경계 규칙 자체의 존재를 정적으로 가드한다(경계·접힘 규칙 삭제 회귀 차단).
     """
-    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())  # 공백 제거 → 포맷 불가지
+    css = "".join(WEB_CSS.split())  # 공백 제거 → 포맷 불가지
     assert f"@media(max-width:{RESPONSIVE_BREAKPOINT_PX}px)" in css, (
         f"반응형 경계 @media(max-width:{RESPONSIVE_BREAKPOINT_PX}px) 가 사라졌습니다(#27)."
     )
@@ -392,7 +396,7 @@ def test_milestone_l_job_density_and_expansion_sheets():
     실 DOM 이동/복귀)은 그대로 살아 여기서 계속 고정된다.
     """
     html = WEB_INDEX.read_text(encoding="utf-8")
-    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    css = "".join(WEB_CSS.split())
     job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
     sheets = (WEB_JS_DIR / "surface_sheet.js").read_text(encoding="utf-8")
     app_py = (WEB_INDEX.parents[1] / "src" / "hwpxfiller" / "webapp" / "app.py").read_text(
@@ -491,7 +495,7 @@ def test_job_generation_result_renders_partial_cancellation_honestly():
     싣는 것이 이 계약의 새 표현이며, warn 이 실제로 danger 와 다른 색을 받는지는 CSS 가 진다.
     """
     job_js = (WEB_JS_DIR / "screens" / "job.js").read_text(encoding="utf-8")
-    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    css = "".join(WEB_CSS.split())
     block = job_js[job_js.index("function renderResult"):job_js.index("function warnResult")]
     assert "res.cancelled" in block and "res.attempted" in block
     assert '$("jobGenBar").style.width = "100%"' not in block
@@ -510,7 +514,7 @@ def test_milestone_l_wide_probes_do_not_depend_on_host_monitor_width():
     assert "jobPanel.style.flex = jobPanelFlex" in app_py
 
 
-def _forced_colors_block(css_path: Path) -> str:
+def _forced_colors_block(css_text: str) -> str:
     """``@media (forced-colors:active)`` 블록의 **본문**만 공백 제거 형태로 반환.
 
     파일 전체가 아니라 블록 내부를 봐야 한다 — 그러지 않으면 블록 밖에 이미 존재하는
@@ -518,7 +522,7 @@ def _forced_colors_block(css_path: Path) -> str:
     신호를 떨궈도 잡지 못한다(원 테스트의 사각). 주석을 먼저 걷어 브레이스 계수를
     오염시키지 않고, 여는 ``{`` 부터 짝 맞는 ``}`` 까지 깊이로 잘라낸다. 블록이 없으면 "".
     """
-    text = re.sub(r"/\*.*?\*/", "", css_path.read_text(encoding="utf-8"), flags=re.S)
+    text = re.sub(r"/\*.*?\*/", "", css_text, flags=re.S)
     css = "".join(text.split())
     marker = "@media(forced-colors:active){"
     i = css.find(marker)
@@ -570,7 +574,7 @@ def test_forced_colors_block_present_in_web_diff():
     봉합하려던 '웹 이관 시 조용한 회귀' 패턴 그 자체. ins 는 배경 틴트뿐이라 고대비에서
     색 외 신호(밑줄)가 반드시 있어야 한다.
     """
-    block = _forced_colors_block(WEB_DIFF_CSS)
+    block = _forced_colors_block(WEB_DIFF_CSS.read_text(encoding="utf-8"))
     assert block, "web-diff 강제 색상 모드 @media(forced-colors:active) 블록이 사라졌습니다(#3)."
     # 값까지 검사한다 — text-decoration 선언이 있어도 값이 none 이면 밑줄 신호가 무력화되므로
     # underline 값 자체를 단언(선언 존재만 보면 none 으로 바꿔도 통과).
@@ -746,20 +750,25 @@ def test_modal_promise_dialog_serialization_guards_present():
 def test_component_gallery_links_real_stylesheets_drift_free():
     """살아있는 컴포넌트 갤러리(docs/UI_GALLERY.html)는 실 stylesheet 를 <link> 로 물어야 한다.
 
-    갤러리의 유일한 존재 이유는 드리프트-0 — app.css 를 고치면 자동 반영되는 정직한 거울이다.
+    갤러리의 유일한 존재 이유는 드리프트-0 — 앱 CSS 를 고치면 자동 반영되는 정직한 거울이다.
     CSS 를 인라인 복사하면 실앱과 조용히 어긋난다(목업 docs/UI_PROTOTYPE_APPB.html 이 그 함정:
-    색만 생성기 동기, 나머지 드리프트). 따라서 갤러리는 반드시 (a) 실 tokens.css+app.css 를
-    링크하고 (b) 인라인 스타일에서 앱 색 토큰(--a-*)을 재정의하지 않는다 — 복사본 재유입을
-    loud 하게 차단한다.
+    색만 생성기 동기, 나머지 드리프트). 따라서 갤러리는 반드시 (a) 실 스타일시트 전 조각을
+    **셸과 같은 순서로** 링크하고 (b) 인라인 스타일에서 앱 색 토큰(--a-*)을 재정의하지
+    않는다 — 복사본 재유입을 loud 하게 차단한다.
+
+    순서까지 보는 이유: 앱 CSS 는 순서 보존 컷이라 **링크 순서가 곧 캐스케이드**다. "각
+    파일명이 어딘가 있는가"만 검사하면 두 링크를 뒤바꿔도 초록이고, 그러면 갤러리는
+    드리프트-0 을 표방한 채 실앱과 다른 화면을 그린다(PR #322 리뷰 P2).
     """
     assert GALLERY.exists(), f"컴포넌트 갤러리가 없습니다: {GALLERY}"
     html = GALLERY.read_text(encoding="utf-8")
     _IdCollector().feed(html)  # 구문 파싱 OK(기존 관례 HTMLParser).
-    assert 'href="../web/css/tokens.css"' in html, (
-        "갤러리가 실 tokens.css 를 링크하지 않습니다 — 드리프트-0 불변식 위반."
-    )
-    assert 'href="../web/css/app.css"' in html, (
-        "갤러리가 실 app.css 를 링크하지 않습니다 — 드리프트-0 불변식 위반."
+    linked = linked_css(html, "../web/css/")
+    assert linked == ALL_CSS_FILES, (
+        "갤러리의 스타일시트 <link> 가 셸과 다릅니다 — 드리프트-0 불변식 위반.\n"
+        f"  갤러리:     {linked}\n"
+        f"  매니페스트: {ALL_CSS_FILES}\n"
+        "전 조각을 같은 순서로 링크하세요(순서가 캐스케이드입니다)."
     )
     assert not re.search(r"--a-[\w-]+\s*:\s*#", html), (
         "갤러리 인라인 스타일이 앱 색 토큰(--a-*)을 재정의합니다 — "
@@ -769,7 +778,7 @@ def test_component_gallery_links_real_stylesheets_drift_free():
 
 def test_heading_typography_uses_three_shared_roles():
     """H-01: 화면·구획·존 제목은 세 역할 규칙만 소비한다."""
-    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    css = "".join(WEB_CSS.split())
     assert ".scr-headh1{font-size:var(--fs-section);font-weight:700}" in css
     # (.tpl-band .tb-t 멤버는 tpl 화면 사망(F8)과 함께 역할군에서 걷혔다 — 정적 생존 표본은
     #  .modal-card h3, 실렌더 판은 selftest milestone-H 프로브가 같은 표본으로 잰다.)
@@ -1151,7 +1160,7 @@ def test_job_candidate_ranking_surface_contract():
         assert banned not in src.split("renderCandidates")[1][:2000], (
             f"후보 렌더가 자체 정렬을 합니다: {banned!r}"
         )
-    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    css = "".join(WEB_CSS.split())
     # 추천은 활성과 시각으로 구별된다 — 점선(아직 고른 것 아님) vs 실선 강조(활성).
     assert ".job-cand-card.suggested:not(.active){border-style:dashed" in css
     assert ".job-cand-card.active{border-color:var(--a-primary)" in css
@@ -1164,7 +1173,7 @@ def test_template_media_sunken_surface_is_retired_with_the_screen():
     editor_lib_manage 프로브가 잰다. 죽은 표면 문법이 CSS·DOM 에 되살아나면 부활 통로다.
     """
     html = WEB_INDEX.read_text(encoding="utf-8")
-    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    css = "".join(WEB_CSS.split())
     for dead in ('class="tpl-medium"', 'id="tplHwpxGroups"', 'id="tplTxtGroups"'):
         assert dead not in html, f"죽은 tpl 표면 DOM 이 되살아났습니다: {dead}"
     for dead in (".tpl-medium{", ".tpl-band{", ".tpl-libbar{", ".tpl-catalogs{"):
@@ -1183,7 +1192,7 @@ def test_card_families_share_hover_and_keep_persistent_state_separate():
     구 홈 txt 목록(.tlist .titem)은 화면과 함께 사망했고(재작성 F2), 라이브러리 행(.lib-row)이
     같은 어휘의 새 소비자다 — 같은 규칙을 쓰는지 여기서 함께 본다.
     """
-    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    css = "".join(WEB_CSS.split())
     assert ".jcard:hover,.tplcard:hover{background:var(--n-hover)}" in css
     assert ".lib-row:hover{background:var(--n-hover)}" in css
     assert (
@@ -1198,7 +1207,7 @@ def test_card_families_share_hover_and_keep_persistent_state_separate():
 
 
 def test_card_families_keep_keyboard_focus_outline():
-    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    css = "".join(WEB_CSS.split())
     assert (
         ".jcard:focus-visible,.tplcard:focus-visible{"
         "outline:2pxsolidvar(--a-primary);outline-offset:2px}"
@@ -1213,7 +1222,7 @@ def test_card_families_keep_keyboard_focus_outline():
 
 def test_disabled_primary_uses_light_neutral_surface_globally():
     """H-11: 비활성 primary는 무거운 솔리드 색 대신 전역 중립 상태 한 벌을 쓴다."""
-    css = "".join(WEB_CSS.read_text(encoding="utf-8").split())
+    css = "".join(WEB_CSS.split())
     assert (
         ".btn.primary:disabled{background:var(--n-track);color:var(--a-muted);"
         "border-color:var(--a-border);opacity:1}"
@@ -1436,8 +1445,7 @@ def test_editor_is_an_immersive_screen_with_one_exit():
     )
     # 셸을 덮는다 — nav 은닉은 CSS 가, 편집 중 이탈은 Nav 위임이 진다.
     app_js = (WEB_JS_DIR / "app.js").read_text(encoding="utf-8")
-    css = (WEB_INDEX.parent / "css" / "app.css").read_text(encoding="utf-8")
-    assert "editor-open" in app_js and "body.editor-open .nav" in css, (
+    assert "editor-open" in app_js and "body.editor-open .nav" in WEB_CSS, (
         "편집기가 상단 2탭을 덮지 않습니다 — 화면 전환구가 살아 있으면 처분 미확정 이탈구다."
     )
     # 이탈 위임은 **몰입 표면 목록**으로 일반화됐다(F6 — 작업대 합류). 특례를 화면마다

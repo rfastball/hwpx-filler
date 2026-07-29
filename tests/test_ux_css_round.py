@@ -10,9 +10,11 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from _web_css import app_css
+
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
-APP_CSS = WEB / "css" / "app.css"
+APP_CSS = app_css()  # 분할 조각을 링크 순서대로 이어붙인 문자열(구 app.css 등가)
 JOB_JS = WEB / "js" / "screens" / "job.js"  # run.js 사망(슬라이스 3) → 「작업」 패널이 생성 표면
 EDITOR_JS = WEB / "js" / "screens" / "editor.js"
 PATHTRACK_JS = WEB / "js" / "pathtrack.js"
@@ -20,7 +22,7 @@ PATHTRACK_JS = WEB / "js" / "pathtrack.js"
 
 def _css() -> str:
     """주석 제거 + 공백 제거 — 포맷 불가지 검사(기존 관례: test_web_dom_contract)."""
-    text = re.sub(r"/\*.*?\*/", "", APP_CSS.read_text(encoding="utf-8"), flags=re.S)
+    text = re.sub(r"/\*.*?\*/", "", APP_CSS, flags=re.S)
     return "".join(text.split())
 
 
@@ -168,7 +170,7 @@ def test_normal_state_restatements_are_quiet_not_green_boxes():
         "editor.js 세션 통지의 ok 레벨이 quiet 가 아닙니다(F32)."
     )
     css = _css()
-    assert ".note.quiet{" in css, "quiet 재진술 스타일(.note.quiet)이 app.css 에 없습니다(F32)."
+    assert ".note.quiet{" in css, "quiet 재진술 스타일(.note.quiet)이 앱 CSS 에 없습니다(F32)."
 
 
 # ------------------------------------------------------------------ 타입 스케일 마크업 사각
@@ -182,12 +184,12 @@ def test_motion_discipline_press_feedback_and_no_transition_all():
     또 pressable 눌림(:active scale)과 reduced-motion 이동 제거가 실재해야 회귀를 잡는다.
     (구체 지속시간 값·테마 불변은 test_design_tokens 가, 실 개폐는 selftest 게이트가 본다.)
     """
-    raw = APP_CSS.read_text(encoding="utf-8")
+    raw = APP_CSS
     nocomment = re.sub(r"/\*.*?\*/", "", raw, flags=re.S)  # 주석 제거(공백 유지 — 단위 경계 보존)
     css = _css()  # 주석·공백 제거본
     # `transition: all` 금지 — 정확한 속성만 지정(불필요 리페인트·의도치 않은 전이 차단).
     assert "transition:all" not in css, (
-        "app.css 에 `transition: all` 이 있습니다 — 정확한 속성만 지정하세요(#179 완료 조건)."
+        "앱 CSS 에 `transition: all` 이 있습니다 — 정확한 속성만 지정하세요(#179 완료 조건)."
     )
     # 눌림 피드백 — :active 에 transform:scale 이 있고 :disabled 는 제외한다.
     assert ":active:not(:disabled){transform:scale(" in css, (
@@ -204,11 +206,11 @@ def test_motion_discipline_press_feedback_and_no_transition_all():
     # 주석 제거본에서 300ms 이상 하드코딩 지속시간이 없는지(진행바 .25s 같은 선행-점 소수 포함).
     for val, unit in re.findall(r"transition[^;{}]*?(\d*\.?\d+)\s*(ms|s)\b", nocomment):
         ms = float(val) * (1000 if unit == "s" else 1)
-        assert ms < 300, f"app.css transition 에 {val}{unit}(={ms}ms) — 300ms 이상 모션 금지(#179)."
+        assert ms < 300, f"앱 CSS transition 에 {val}{unit}(={ms}ms) — 300ms 이상 모션 금지(#179)."
 
 
 def test_web_markup_free_of_inline_font_size_literals():
-    """인라인 font-size px 리터럴 금지 — app.css 가드(test_design_tokens)의 마크업/JS 확장.
+    """인라인 font-size px 리터럴 금지 — 앱 CSS 가드(test_design_tokens)의 마크업/JS 확장.
 
     이 라운드가 걷어낸 인라인 12px(5역할 타입 스케일 밖 값)가 index.html·JS 템플릿 문자열로
     되돌아오는 회귀를 막는다. 크기는 var(--fs-*) 또는 클래스(capnote 등)로만.

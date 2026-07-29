@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from _web_css import app_css
+
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
@@ -13,7 +15,9 @@ def _read(rel: str) -> str:
 
 
 def test_press_feedback_covers_round_trip_surfaces_and_reduced_motion() -> None:
-    css = _read("css/app.css")
+    # 이 검사는 **원문 순서와 주석 텍스트**로 자른다(`/* 부유 메뉴`·`/* ---- 공통 컨트롤`).
+    # 순서 보존 컷이라 그 구간(모션층)은 통째로 base.css 안에 그대로 있다.
+    css = app_css()
     selectors = (
         ".job-item", ".job-grp-head", ".jobtb tbody tr", ".mir-row.miss",
         ".fico", ".fchip button", ".wstep-tab.as-tab", ".shell-tool",

@@ -45,7 +45,7 @@ _MOCKUP_MAP = [
 ]
 
 # 웹 CSS 변수 이름 ← 토큰 경로. --a-* 핵심 팔레트(목업과 동일)에 배지/상태/중성 틴트를 더한다.
-# 실앱 CSS(web/css/app.css)는 이 변수만 참조 — 색 리터럴 하드코딩 금지(스파이크 임시색 교체).
+# 실앱 CSS(web/css/ 의 스타일시트들)는 이 변수만 참조 — 색 리터럴 하드코딩 금지(스파이크 임시색 교체).
 _WEB_MAP = [
     ("--a-primary", "color.primary"), ("--a-primary-h", "color.primary_hover"),
     # brand = 문서나르미 심벌 단색(#258). 액센트(--a-primary, 로열블루)와 별개의 브랜드 파랑 —

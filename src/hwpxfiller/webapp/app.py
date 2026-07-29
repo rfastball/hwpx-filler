@@ -2357,7 +2357,7 @@ _MILESTONE_H_WAVE1_PROBE_JS = r"""
     headings: {
       screen: style('.scr-head h1'),
       // 15px 구획 역할의 표본 — 구 .job-sec-head(F6 PR-B)·.tpl-band .tb-t(F8, tpl 화면
-      // 사망)가 차례로 죽어, 같은 역할군(app.css 한 선택자 묶음)의 정적 생존 표본
+      // 사망)가 차례로 죽어, 같은 역할군(base.css 한 선택자 묶음)의 정적 생존 표본
       // .modal-card h3 로 잰다(모달 DOM 은 셸 레벨 상주).
       section: style('.modal-card h3'),
       zone: style('#scr-job .zone-cap')

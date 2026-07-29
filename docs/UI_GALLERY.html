@@ -1,8 +1,10 @@
 <!doctype html>
 <!--
   살아있는 컴포넌트 갤러리 (개발 전용 · 배포 exe 미포함).
-  실 web/css/tokens.css + web/css/app.css 를 <link> 로 그대로 물어 **스타일** 드리프트 0 —
-  app.css 를 고치면 이 페이지 색·간격·규칙이 자동 반영된다. 대조: docs/UI_PROTOTYPE_APPB.html
+  실 web/css/tokens.css + 앱 스타일시트 9조각을 <link> 로 그대로, **셸과 같은 순서로** 물어
+  **스타일** 드리프트 0 — CSS 를 고치면 이 페이지 색·간격·규칙이 자동 반영된다. 조각을 하나라도
+  빠뜨리거나 순서를 바꾸면 실앱과 다른 화면이 되므로, 링크 전수·순서는 테스트가 강제한다
+  (tests/test_web_dom_contract.py 드리프트-0 가드). 대조: docs/UI_PROTOTYPE_APPB.html
   은 CSS 를 인라인 복사(색만 생성기 동기)라 드리프트 가능 — 갤러리가 그 갭을 메운다.
   단, 아래 컴포넌트 **마크업은 손으로 짠 표본**이라 실앱과 자동 동기되지 않는다(인벤토리는
   부분 커버리지 · 링크 가드는 스타일만 강제). 컴포넌트를 여러 상태로 한눈에 보는 디자인
@@ -16,10 +18,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HWPX 필러 · 컴포넌트 갤러리</title>
 <link rel="stylesheet" href="../web/css/tokens.css">
-<link rel="stylesheet" href="../web/css/app.css">
+<!-- 앱 스타일시트 9조각 — 순서는 web/index.html 과 같아야 한다(드리프트-0 불변식). -->
+<link rel="stylesheet" href="../web/css/base.css">
+<link rel="stylesheet" href="../web/css/draftcard.css">
+<link rel="stylesheet" href="../web/css/editor.css">
+<link rel="stylesheet" href="../web/css/job.css">
+<link rel="stylesheet" href="../web/css/overlay.css">
+<link rel="stylesheet" href="../web/css/library.css">
+<link rel="stylesheet" href="../web/css/forced-colors.css">
+<link rel="stylesheet" href="../web/css/jobdata.css">
+<link rel="stylesheet" href="../web/css/tail.css">
 <style>
 /* 갤러리 전용 레이아웃 스캐폴드 — 색은 앱 토큰(--a-*·--n-*) 참조만, 하드코딩 금지.
-   app.css 전역 body(배경·타이포)를 그대로 상속한다. 앱 클래스와 이름 충돌 없음. */
+   base.css 전역 body(배경·타이포)를 그대로 상속한다. 앱 클래스와 이름 충돌 없음. */
 html,body{height:auto}
 body{padding:0}
 .gal-mast{padding:22px 24px 18px;border-bottom:1px solid var(--a-border);background:var(--a-card)}
@@ -49,7 +60,7 @@ body{padding:0}
 <body>
 <header class="gal-mast">
   <h1>컴포넌트 갤러리</h1>
-  <p>실 <span class="path">web/css/tokens.css</span> + <span class="path">web/css/app.css</span> 를 그대로 링크 — <b>스타일 드리프트 0</b>(색·간격·규칙이 실 파일). 단 아래 마크업은 손으로 짠 표본이라 자동 미러가 아니다(인벤토리는 부분 커버리지). 앱 컴포넌트를 여러 상태로 전시하는 디자인 참조·반복 표면. tokens.css 가 다크 팔레트를 실으므로 아래 토글로 전 컴포넌트를 다크에서 한눈에 눈검증한다(다크값 튜닝 표면).</p>
+  <p>실 <span class="path">web/css/tokens.css</span> + 앱 스타일시트 9조각을 셸과 같은 순서로 그대로 링크 — <b>스타일 드리프트 0</b>(색·간격·규칙이 실 파일). 단 아래 마크업은 손으로 짠 표본이라 자동 미러가 아니다(인벤토리는 부분 커버리지). 앱 컴포넌트를 여러 상태로 전시하는 디자인 참조·반복 표면. tokens.css 가 다크 팔레트를 실으므로 아래 토글로 전 컴포넌트를 다크에서 한눈에 눈검증한다(다크값 튜닝 표면).</p>
   <!-- 검증 전용 토글 — data-theme 만 세팅(색 리터럴 없음). 실앱 토글은 web/js/theme.js 소유. -->
   <button class="gal-theme" id="galTheme" type="button">테마: 시스템</button>
 </header>

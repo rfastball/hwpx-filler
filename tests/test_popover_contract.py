@@ -4,13 +4,17 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from _web_css import app_css
+
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
 POPOVER = WEB / "js" / "popover.js"
 GROUPLIST = WEB / "js" / "grouplist.js"
 DATAZONE = WEB / "js" / "datazone.js"
-CSS = WEB / "css" / "app.css"
+# 분할 조각을 이어붙인 문자열 — `.ctx-menu`(job.css)와 `.colpanel`(tail.css)이 서로 다른
+# 조각에 살지만, 이 창구를 거치면 `^\.ctx-menu{` 줄머리 정규식이 둘 다에 그대로 걸린다.
+CSS = app_css()
 
 
 def _read(path: Path) -> str:
@@ -70,7 +74,7 @@ def test_rendered_size_drives_clamp_flip_and_origin():
 
 
 def test_ctx_menu_and_colpanel_share_overlay_surface():
-    css = _read(CSS)
+    css = CSS
     for selector in (".ctx-menu", ".colpanel"):
         rule = _rule(css, selector)
         assert "border-radius:var(--rad-overlay)" in rule, selector

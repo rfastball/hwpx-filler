@@ -46,7 +46,8 @@ Qt 위젯을 링2로 두었던 최초 구현은 **대체됨**이다. 현재 화�
 색 토큰의 단일 출처는 `src/hwpxfiller/gui/design_tokens.json`이다.
 `scripts/gen_design_tokens.py`가 `web/css/tokens.css`와 동결 목업의 `<gen:tokens>` 영역을
 생성하며 `tests/test_design_tokens.py`가 드리프트를 차단한다. 생성물은 패키징 입력이므로
-저장소에 커밋한다. 실제 웹 레이아웃과 컴포넌트 CSS는 `web/css/app.css`가 소유한다.
+저장소에 커밋한다. 실제 웹 레이아웃과 컴포넌트 CSS는 `web/css/`의 9개 스타일시트가 나눠
+소유한다(구 `app.css`의 순서 보존 컷 — 목록·순서는 `tests/_web_css.py`가 단일 출처).
 
 ## 불변식
 

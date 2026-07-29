@@ -8,9 +8,11 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from _web_css import app_css
+
 
 ROOT = Path(__file__).resolve().parents[1]
-CSS = (ROOT / "web" / "css" / "app.css").read_text(encoding="utf-8")
+CSS = app_css()
 
 
 def _compact(text: str) -> str:

@@ -27,6 +27,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from _web_css import app_css
+
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
 WEB_INDEX = WEB / "index.html"
@@ -190,7 +192,7 @@ def test_moved_surfaces_not_redefined_in_job():
 def test_table_rows_keep_native_semantics_and_checkbox_in_lead_cell():
     """행은 row/aria-selected, 선택 의미는 선두 셀의 native checkbox가 소유한다."""
     src = DZ_JS.read_text(encoding="utf-8")
-    css = (WEB / "css" / "app.css").read_text(encoding="utf-8")
+    css = app_css()
     assert 'aria-selected="${r.selected ? "true" : "false"}"' in src
     assert 'role="checkbox"' not in src
     assert '<td class="doccol"><div class="doccell"><input type="checkbox"' in src
@@ -202,7 +204,7 @@ def test_table_rows_keep_native_semantics_and_checkbox_in_lead_cell():
 def test_table_consumes_snapshot_column_kind_without_web_inference():
     """금액·날짜 조판은 Python의 column.kind만 소비하고 웹 판정기를 만들지 않는다."""
     src = DZ_JS.read_text(encoding="utf-8")
-    css = (WEB / "css" / "app.css").read_text(encoding="utf-8")
+    css = app_css()
     assert 'class="col-${c.kind}"' in src
     assert "column.kind || \"text\"" in src
     assert ".jobtb .col-amount,.jobtb .col-date" in css
@@ -223,7 +225,7 @@ def test_unselected_lead_guidance_is_single_sourced_in_headers():
 def test_filter_roles_have_distinct_labels_and_surface_hierarchy():
     """정의·가지·관통 선택은 공용 렌더의 텍스트 라벨과 서로 다른 면을 함께 쓴다."""
     src = DZ_JS.read_text(encoding="utf-8")
-    css = (WEB / "css" / "app.css").read_text(encoding="utf-8")
+    css = app_css()
     assert 'class="fchip definition"><span class="chip-role">필터</span>' in src
     assert 'class="fchip branch"><span class="chip-role">가지</span>' in src
     assert 'class="fchip selection"><span class="chip-role">선택</span>' in src

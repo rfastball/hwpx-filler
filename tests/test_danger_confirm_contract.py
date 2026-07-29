@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from _web_css import app_css
+
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB_JS = ROOT / "web" / "js"
@@ -110,7 +112,9 @@ def test_transient_or_organizational_confirms_stay_neutral() -> None:
 
 def test_danger_button_has_light_dark_and_forced_color_contract() -> None:
     modal = (WEB_JS / "modal.js").read_text(encoding="utf-8")
-    css = (ROOT / "web" / "css" / "app.css").read_text(encoding="utf-8")
+    # `.btn.danger{`(base.css)와 forced-colors 의 `Mark` 강등(forced-colors.css)이 서로 다른
+    # 조각에 살지만, 이어붙인 문자열에서는 한 단언이 둘 다 본다.
+    css = app_css()
     tokens = (ROOT / "web" / "css" / "tokens.css").read_text(encoding="utf-8")
     assert 'classList.toggle("danger", !!opts.danger)' in modal
     assert 'classList.toggle("primary", !opts.danger)' in modal

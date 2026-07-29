@@ -7,10 +7,14 @@
 from html.parser import HTMLParser
 from pathlib import Path
 
+from _web_css import app_css
+
 
 ROOT = Path(__file__).resolve().parents[1]
 INDEX = ROOT / "web" / "index.html"
-CSS = ROOT / "web" / "css" / "app.css"
+# 분할된 앱 스타일시트를 링크 순서대로 이어붙인 **문자열**(구 app.css 등가) — 이 파일의
+# 단언은 119-128·838·894-900·932-933 이 한 문자열 안에 함께 있어야 성립한다.
+CSS = app_css()
 MODAL_JS = ROOT / "web" / "js" / "modal.js"
 
 
@@ -44,8 +48,8 @@ class _OverlayTree(HTMLParser):
                 return
 
 
-def _compact(path: Path) -> str:
-    return "".join(path.read_text(encoding="utf-8").split())
+def _compact(text: str) -> str:
+    return "".join(text.split())
 
 
 def test_overlay_root_is_body_direct_and_owns_every_modal() -> None:

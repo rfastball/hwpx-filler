@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from _web_css import app_css
+
 ROOT = Path(__file__).resolve().parents[1]
 
 PRODUCT = "문서나르미"
@@ -73,8 +75,7 @@ def test_brand_token_defined_in_both_themes_and_consumed() -> None:
     """--a-brand 가 라이트+다크(미디어·명시 2블록)에 선언되고 락업이 소비한다."""
     tokens = _read("web", "css", "tokens.css")
     assert tokens.count("--a-brand:") == 3
-    app_css = _read("web", "css", "app.css")
-    assert "var(--a-brand)" in app_css
+    assert "var(--a-brand)" in app_css()
 
 
 def test_root_readme_is_product_entry() -> None:

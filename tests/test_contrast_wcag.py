@@ -111,7 +111,7 @@ def test_dark_on_accent_ink_reads_on_accent_fills():
     """다크 on_accent(어두운 잉크)가 밝은 accent 필(primary/ok) 위에서 4.5:1 이상.
 
     라이트는 accent 가 어두워 흰 글씨였다 — 다크는 accent 를 밝혀 텍스트로도 읽히게 하므로
-    필 위 글씨는 흰색 대신 어두운 잉크여야 대비가 산다(app.css 의 --a-on-accent 로 배선).
+    필 위 글씨는 흰색 대신 어두운 잉크여야 대비가 산다(앱 CSS 의 --a-on-accent 로 배선).
     """
     d = gen.load_tokens()["dark"]
     ink = d["color"]["on_accent"]
