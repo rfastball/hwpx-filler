@@ -218,6 +218,18 @@ body.resizing-master{cursor:col-resize;user-select:none}
    구분선**으로. 종전엔 존마다 border+radius 카드에 legend(zone-cap 이 border 를 타넘던 절대배치)
    라 패널 안에 상자가 겹쳐 보였다. 이제 job-zones 가 단일 카드, 존은 그 안의 구획(인접 존 사이
    상단 구분선), zone-cap 은 절대 legend 대신 인라인 섹션 헤더. job 소유(.zone). */
+/* overflow 는 visible 유지 — 존 안 열 필터 팝오버(.colpanel, position:absolute)가 표면 밖으로
+   펼쳐질 때 잘리면 안 된다(구분선은 표면 중앙이라 둥근 모서리와 무관, 클리핑 불필요). */
+/* 이 네 규칙은 「기안」 사망(F6 PR-B, 67894b0)에서 .draft-duo 를 지울 때 **곁달려 함께**
+   삭제됐다가 복구된 것이다 — 죽은 것은 draft 쪽이고 이 넷은 살아 있는 「문서 만들기」의
+   것이었다. 소실이 조용했던 이유는 규칙 없는 class 에 브라우저가 아무 말도 하지 않기
+   때문이고, 그 침묵은 이제 tests/test_web_css_orphan_classes.py 가 깬다. */
+.job-zones{display:flex;flex-direction:column;
+  border:1px solid var(--a-border);border-radius:var(--rad-surface);background:var(--a-card)}
+.zone{padding:var(--sp-16) var(--sp-16) var(--sp-12);position:relative}
+.zone + .zone{border-top:1px solid var(--a-border)}
+.zone-cap{display:block;margin-bottom:var(--sp-10);
+  color:var(--n-header-ink)}
 /* v6 `screen-data` 2열(재작성 R1) — 좌 `.dg-main`(현재 데이터·거울·결과) / 우 `.dg-side`
    (이 데이터에 사용할 문서·선택한 작업·생성 준비). 구 `.job-duo`(표|거울 병치, #272)를
    대체한다: v6 의 성격은 데이터와 문서 선택이 가로로 마주 보는 것이고, 표↔거울 같은 시야는
