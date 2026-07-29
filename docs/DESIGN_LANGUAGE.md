@@ -137,7 +137,8 @@ Linear 대비 검증된 추가가치가 없어 별개 방향에서 제외 — �
    `web/css/base.css` `@font-face` + 스택 선두(`"Pretendard GOV Variable",…` , Malgun=한글 폴백).
    정적 2개 합성으로는 앱이 쓰는 400·500·600·700·800 굵기 위계가 뭉개져 가변 단일 파일 채택.
    exe 크기 비용 = **+~5.15 MB**(전 웨이트 가변; PyInstaller `web/` 트리 datas 로 자동 동봉).
-   범위는 파일러 앱(`web/`)만 — diff 뷰어(web-diff)는 별도 제품이라 현행 스택 유지.
+   범위는 파일러 앱(`web/`)만 — 당시 같은 저장소에 있던 diff 뷰어(`web-diff`)는 별도 제품이라
+   현행 스택을 유지했고, 2026-07-29 저장소 분리로 이 문서의 스코프 밖이 됐다.
 2. WebView2/Chromium 래스터라이저의 Pretendard **소자간 힌팅**이 10~13px 한글 밀집에서 native
    ClearType Malgun과 차이 나는지 미확인(글리프 메트릭은 동일). ← 착지 후 실앱 눈검증으로 좁힌다.
 3. 레일 부제 강등의 실앱 최적형(호버 툴팁 전부 vs 비자명 항목만 캡션)은 within-app 실측 없음 — 원리만.

@@ -5,9 +5,7 @@
 파일 다이얼로그가 함께 움직인다 — 화면 단위 하드코딩 사본이 새 형식을 조용히
 숨기는 드리프트를 끊는다.
 
-hwpxdiff 는 제품 간 임포트 금지 규칙(tests/test_architecture.py) 때문에 자체
-``HWPX_FILTER`` 상수를 소유한다. 재유입(필터 리터럴 하드코딩)은
-tests/test_file_filters.py 의 grep 게이트가 막는다.
+재유입(필터 리터럴 하드코딩)은 tests/test_file_filters.py 의 grep 게이트가 막는다.
 """
 
 from __future__ import annotations

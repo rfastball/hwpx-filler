@@ -6,7 +6,8 @@ truncate-then-write(``open('w'/'wb')`` 로 최종 경로 직접 기록)는 쓰�
 지난다: 페이로드를 임시 파일에 완성한 뒤 원자 교체하므로, 어느 단계에서 실패해도
 기존 파일은 무손상으로 남고 실패는 예외로 시끄럽게 올라간다(확인-또는-경보).
 
-hwpxdiff·hwpxfiller 양쪽이 쓰므로 공유 지점인 hwpxcore 에 둔다(제품 로직 없음).
+durable 쓰기 지점이 core·data·webapp 에 흩어져 있어 공유 지점인 hwpxcore 에 둔다
+(제품 로직 없음).
 """
 
 from __future__ import annotations

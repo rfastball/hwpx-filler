@@ -31,7 +31,7 @@ PLATFORMS = {
 RISK_SURFACES = {
     "document-package-integrity",
     "extract-fill-transform",
-    "diff-correctness",
+    # ("diff-correctness" 는 hwpxdiff 저장소 분리와 함께 이 저장소에서 소멸했다.)
     "mapping-validation-drift",
     "durable-registry-persistence",
     "data-ingestion-boundaries",

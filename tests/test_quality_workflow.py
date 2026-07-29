@@ -36,10 +36,10 @@ def test_pytest_job_keeps_native_and_package_floor_visible_separately() -> None:
     assert "package-coverage.md" in text
 
 
-def test_distribution_gate_builds_all_three_portable_targets() -> None:
+def test_distribution_gate_builds_all_portable_targets() -> None:
     text, _ = _workflow()
     assert ".\\packaging\\build.ps1 -Target all" in text
-    assert "distribution (filler + diff + CLI)" in text
+    assert "distribution (filler + CLI)" in text
 
 
 def test_installer_and_signing_remain_release_only() -> None:

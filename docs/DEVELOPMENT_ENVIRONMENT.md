@@ -72,11 +72,9 @@ uv sync --locked --all-extras --group dev --group build
 
 # 소스 GUI 실행
 .\run-filler.ps1
-.\run-diff.ps1
 
 # CLI 실행
 .\run-filler.ps1 -Cli --help
-.\run-diff.ps1 -Cli --help
 ```
 
 PowerShell 실행 정책으로 `.ps1` 실행이 차단된 PC에서는 다음처럼 호출한다.
@@ -101,7 +99,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1
 - `hwpxcore.native`는 낮은 coverage 하한을 두지 않고 `tests/test_native_positive.py`의
   Windows 양성 시나리오를 별도 CI 단계로 필수 실행한다. JS/CSS, 별도 WebView2 프로세스,
   frozen 번들, installer/signing은 Python coverage 수치에 포함하지 않는다.
-- `tests/test_architecture.py`는 두 제품이 서로 직접 import하지 않는지 확인한다.
+- `tests/test_architecture.py`는 링 경계를 확인한다 — 특히 `hwpxcore`가 제품이나 Qt로
+  역의존하지 않는지. 이 계층은 별도 저장소 `hwpx-diff`가 사본을 들고 있어, 제품 색이
+  스며들면 두 사본의 대조가 불가능해진다.
 
 pre-commit을 사용할 개발자는 한 번만 다음을 실행한다.
 
@@ -114,9 +114,8 @@ uv run pre-commit install
 ### portable EXE
 
 ```powershell
-.\build.ps1                 # 두 제품
+.\build.ps1                 # GUI 제품
 .\build.ps1 -App filler
-.\build.ps1 -App diff
 ```
 
 빌드는 `scripts/generate_build_metadata.py`로 다음 파일을 `build/version/`에 생성한 후
@@ -127,23 +126,21 @@ PyInstaller를 실행한다.
 - 버전, Git 커밋, Python, PyInstaller가 기록된 `build-metadata.json`
 
 산출물은 `dist\hwpx-filler-web\hwpx-filler-web.exe`,
-`dist\hwpx-diff\hwpx-diff.exe`, `dist\hwpx-cli\hwpx-cli.exe`(onedir 폴더)이며
-canonical `packaging/build.ps1 -Target all`이 세 번들과 각각의 selfcheck를 검증한다.
-루트 `build.ps1`은 GUI 두 제품을 canonical 스크립트로 위임하는 호환 러너다.
+`dist\hwpx-cli\hwpx-cli.exe`(onedir 폴더)이며 canonical
+`packaging/build.ps1 -Target all`이 두 번들과 각각의 selfcheck를 검증한다.
+루트 `build.ps1`은 GUI 제품을 canonical 스크립트로 위임하는 호환 러너다.
 
-### 제품별 설치파일
+### 설치파일
 
 로컬 PC에 Inno Setup 6을 설치한 뒤 실행한다.
 
 ```powershell
 .\package-installer.ps1
 .\package-installer.ps1 -App filler
-.\package-installer.ps1 -App diff
 ```
 
 기존 EXE를 재사용하려면 `-SkipExe`를 지정한다. 설치본은 사용자 권한으로
-`%LOCALAPPDATA%\Programs` 아래에 설치되며 두 제품은 서로 다른 AppId를 사용하므로
-독립적으로 설치, 업그레이드, 제거된다. 결과는 `installer-dist/`에 생성된다.
+`%LOCALAPPDATA%\Programs` 아래에 설치된다. 결과는 `installer-dist/`에 생성된다.
 
 ## 5. CI와 공식 릴리스
 
@@ -153,7 +150,7 @@ canonical `packaging/build.ps1 -Target all`이 세 번들과 각각의 selfcheck
 1. `static`: Ruff와 Pyright
 2. `pytest + package coverage floor`: Windows native 양성 시나리오, 전체 pytest, 패키지별
    line/branch floor와 누락 위치 보고
-3. `distribution (filler + diff + CLI)`: 세 portable onedir 빌드와 selfcheck
+3. `distribution (filler + CLI)`: 두 portable onedir 빌드와 selfcheck
 
 Inno Setup installer 생성·설치/제거 스모크·Authenticode 서명은 느리고 비밀값을 사용하는
 release-only 정책이다. PR quality workflow에서는 실행하지 않는다.

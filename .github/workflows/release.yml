@@ -69,8 +69,8 @@ jobs:
             Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $signtool) { throw 'signtool.exe not found' }
           "SIGNTOOL=$($signtool.FullName)" | Out-File $env:GITHUB_ENV -Append
-          & $signtool.FullName sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $pfx /p $env:SIGN_PASSWORD dist\hwpx-filler-web\hwpx-filler-web.exe dist\hwpx-diff\hwpx-diff.exe
-          & $signtool.FullName verify /pa dist\hwpx-filler-web\hwpx-filler-web.exe dist\hwpx-diff\hwpx-diff.exe
+          & $signtool.FullName sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $pfx /p $env:SIGN_PASSWORD dist\hwpx-filler-web\hwpx-filler-web.exe
+          & $signtool.FullName verify /pa dist\hwpx-filler-web\hwpx-filler-web.exe
       - name: Install Inno Setup
         run: choco install innosetup --yes --no-progress
       - name: Build product installers
@@ -90,7 +90,6 @@ jobs:
           # Start-Process -Wait -PassThru 로 종료를 확실히 기다리고 .ExitCode 를 읽는다.
           # 설치는 Inno /LOG 를 남겨 실패 시 원인이 CI 로그에 보이게 한다.
           $ErrorActionPreference = 'Stop'
-          $corpus = Resolve-Path 'tests\corpus\real'
           function Install-Product($setup, $dir, $label) {
             $log = Join-Path $env:RUNNER_TEMP "$label-install.log"
             $p = Start-Process -FilePath $setup.FullName -Wait -PassThru -ArgumentList @(
@@ -112,26 +111,16 @@ jobs:
           }
 
           $fillerDir = Join-Path $env:RUNNER_TEMP 'filler-installed'
-          $diffDir = Join-Path $env:RUNNER_TEMP 'diff-installed'
           $fillerSetup = Get-ChildItem installer-dist\HWPX-Filler-*-Setup.exe | Select-Object -First 1
-          $diffSetup = Get-ChildItem installer-dist\HWPX-Diff-*-Setup.exe | Select-Object -First 1
 
           Install-Product $fillerSetup $fillerDir 'filler'
           Invoke-SelfCheck (Join-Path $fillerDir 'hwpx-filler-web.exe') @('--selfcheck') 'filler'
           Uninstall-Product $fillerDir 'filler'
-
-          Install-Product $diffSetup $diffDir 'diff'
-          Invoke-SelfCheck (Join-Path $diffDir 'hwpx-diff.exe') @(
-            '--selfcheck',
-            (Join-Path $corpus 'spec_revision_2025.hwpx'),
-            (Join-Path $corpus 'spec_revision_2026.hwpx')) 'diff'
-          Uninstall-Product $diffDir 'diff'
       - name: Package portable bundles
         shell: pwsh
         run: |
           $version = $env:RELEASE_TAG.TrimStart('v')
           Compress-Archive -Path dist\hwpx-filler-web\* -DestinationPath ("installer-dist\HWPX-Filler-$version-portable.zip")
-          Compress-Archive -Path dist\hwpx-diff\* -DestinationPath ("installer-dist\HWPX-Diff-$version-portable.zip")
       - name: Create checksums and collect metadata
         shell: pwsh
         run: |

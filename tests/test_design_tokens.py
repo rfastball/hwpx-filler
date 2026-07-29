@@ -95,10 +95,7 @@ def test_web_region_dark_declares_every_light_variable():
 
 #: 스케일 리터럴 가드의 대상 — web/ 앱 스타일시트는 분할됐으므로 매니페스트에서 전개한다
 #: (파일별로 도는 검사라 이어붙이지 않는다. 새 조각 누락은 test_web_css_manifest 가 잡는다).
-_APP_CSS = (
-    *(gen.ROOT / "web" / "css" / name for name in APP_CSS_FILES),
-    gen.ROOT / "web-diff" / "css" / "app.css",
-)
+_APP_CSS = tuple(gen.ROOT / "web" / "css" / name for name in APP_CSS_FILES)
 
 
 def test_web_region_emits_scale_tokens():

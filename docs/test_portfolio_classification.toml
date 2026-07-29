@@ -76,47 +76,6 @@ risk_surfaces = ["architecture-design-system"]
 layer = "contract"
 verification_method = "static-source"
 
-[files."tests/test_diff_cli.py"]
-risk_surfaces = ["diff-correctness", "document-package-integrity"]
-layer = "integration"
-
-[files."tests/test_diff_controller.py"]
-risk_surfaces = ["diff-correctness", "application-workflows"]
-layer = "contract"
-
-[files."tests/test_diff_empty_gate.py"]
-risk_surfaces = ["diff-correctness"]
-layer = "contract"
-
-[files."tests/test_diff_golden.py"]
-risk_surfaces = ["diff-correctness"]
-layer = "contract"
-fixture_kind = "real-corpus"
-verification_method = "snapshot-golden"
-correlation_group = "real-hwpx-corpus"
-
-[files."tests/test_diff_invariants.py"]
-risk_surfaces = ["diff-correctness", "extract-fill-transform"]
-layer = "contract"
-fixture_kind = "real-corpus"
-correlation_group = "real-hwpx-corpus"
-
-[files."tests/test_diff_render.py"]
-risk_surfaces = ["diff-correctness"]
-
-[files."tests/test_diff_renumber.py"]
-risk_surfaces = ["diff-correctness"]
-layer = "contract"
-fixture_kind = "real-corpus"
-execution_unit = "diff:renumber-2025-2026"
-correlation_group = "diff-renumber-real-pair"
-
-[files."tests/test_diff_rows.py"]
-risk_surfaces = ["diff-correctness"]
-
-[files."tests/test_diff_synthetic.py"]
-risk_surfaces = ["diff-correctness"]
-
 [files."tests/test_dispatch_wiring.py"]
 risk_surfaces = ["architecture-design-system", "application-workflows"]
 layer = "contract"

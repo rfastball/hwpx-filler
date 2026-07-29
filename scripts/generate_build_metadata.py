@@ -21,12 +21,6 @@ PRODUCTS = {
         "filename": "hwpx-filler-web.exe",
         "internal_name": "hwpx-filler-web",
     },
-    "diff": {
-        "product_name": "HWPX Diff",
-        "description": "HWPX 규격서 개정 비교 리뷰어",
-        "filename": "hwpx-diff.exe",
-        "internal_name": "hwpx-diff",
-    },
 }
 
 

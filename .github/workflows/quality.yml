@@ -53,7 +53,7 @@ jobs:
         run: >-
           uv run --no-sync pytest -q
           --junitxml=pytest.xml
-          --cov=hwpxcore --cov=hwpxdiff --cov=hwpxfiller
+          --cov=hwpxcore --cov=hwpxfiller
           --cov-branch --cov-report=term-missing --cov-report=xml:coverage.xml
           --basetemp="$env:RUNNER_TEMP/pytest"
       - name: Enforce package line and branch floors
@@ -77,7 +77,7 @@ jobs:
           if-no-files-found: warn
 
   distribution:
-    name: distribution (filler + diff + CLI)
+    name: distribution (filler + CLI)
     runs-on: windows-latest
     timeout-minutes: 30
     env:
