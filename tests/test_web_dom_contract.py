@@ -65,7 +65,13 @@ MUTABLE_MODULE_STATE_BUDGET = {
     # +2(F8): libMenuFor(열린 라이브러리 ⋮ 메뉴의 정체)·txtEdit(TXT 저작 모달의 열림 거래)
     # — tpl 화면 사망의 관리·저작 동사 승계. 둘 다 파생 불가(뷰의 한 번성 거래 상태 —
     # template.js 5변수의 이주분을 각 1객체로 묶음).
-    "screens/editor.js": 6,
+    # +1(U2 §2.4 리뷰 R2): pendingFieldEdit — 「아직 커밋되지 않은 타이핑이 있는가」.
+    # **정의상 파생 불가**다. 두 출구가 원리적으로 막혀 있다: ①스냅샷은 이 사실을 모른다
+    # (모르는 것이 이 변수의 존재 이유 — 텍스트 입력은 change=blur 에서만 발신한다)
+    # ②Python 승격 = 키스트로크마다 발신인데, 그건 `docs/WEB_RENDER_PRESERVATION.md` 가
+    # 명시적으로 기각한 설계다(타이핑 중 재구성 없음이 Preserve 의 전제).
+    # 없으면 저장 게이트가 blur 전까지 잠긴 채라 방금 고친 사람의 **첫 클릭이 삼켜진다**.
+    "screens/editor.js": 7,
     "screens/library.js": 3,
     "data_picker.js": 4,
     "datazone.js": 0,
