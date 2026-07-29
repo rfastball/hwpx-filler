@@ -68,11 +68,18 @@
 /* 하단 sticky 액션바(#179 슬라이스 5b) — 최종 생성/복사를 스크롤과 무관하게 항상 도달 가능하게.
    세션 패널(.job-panel, overflow:auto)의 마지막 자식이라 bottom:0 로 패널 뷰포트 하단에 고정.
    sticky 표 머리와 같은 단일 크롬 재질(#244)을 소비해 밑의 내용이 잘린 대신 흐르는 층으로 읽힌다. */
+/* 정렬 기준면은 **좌 열의 오른쪽 끝**이다(U2 §2.2) — 화면 전체 우정렬이 아니다. 액션바는
+   `.data-grid` 의 형제라 패널 전폭인데, 겨누는 행동(미리보기·생성)의 입력은 전부 좌 열에
+   있으므로 우 열 폭만큼 밀면 버튼이 자기 입력과 다른 열에 선다. 그래서 두 표면이 같은 컬럼
+   템플릿(--data-grid-cols)을 공유하고, 액션바의 내용은 **1열 안에서** 우정렬한다. */
 .session-actionbar{position:sticky;bottom:0;z-index:5;
-  display:flex;align-items:center;gap:var(--sp-12);flex-wrap:wrap;
+  display:grid;grid-template-columns:var(--data-grid-cols);
   margin-top:var(--sp-12);padding:var(--sp-12) var(--sp-16);
   border:1px solid color-mix(in srgb,var(--a-border) 62%,transparent);border-radius:var(--rad-surface);
   box-shadow:0 -8px 18px -14px var(--a-shadow)}
+/* 2열은 비워 둔다 — 행동은 좌 열에 서고 우 side-card 아래를 침범하지 않는다. */
+.actionbar-row{display:flex;align-items:center;gap:var(--sp-12);flex-wrap:wrap;
+  justify-content:flex-end}
 .bar{height:8px;background:var(--n-track);border-radius:var(--rad-pill);overflow:hidden;margin-top:var(--sp-12)}
 .bar>i{display:block;height:100%;width:0;background:var(--a-primary);transition:width .25s ease}
 .run-result{font-size:var(--fs-body);margin-top:var(--sp-8);font-weight:600;min-height:1.2em}
@@ -240,7 +247,11 @@ body.resizing-master{cursor:col-resize;user-select:none}
    (이 데이터에 사용할 문서·선택한 작업·생성 준비). 구 `.job-duo`(표|거울 병치, #272)를
    대체한다: v6 의 성격은 데이터와 문서 선택이 가로로 마주 보는 것이고, 표↔거울 같은 시야는
    세로 인접 + 펼침 면(⤢)이 승계한다. 두 열은 존 구분선을 공유하는 한 카드 안의 구획이다. */
-.data-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(268px,.46fr)}
+/* 컬럼 템플릿은 **한 곳에서만** 선언한다 — 세션 카드(.data-grid)와 그 아래 액션바가 같은
+   기준면을 써야 버튼이 자기 입력과 같은 열에 선다(U2 §2.2). 두 표면이 형제라 공통 조상에
+   걸 수 없고, 컨테이너 질의는 컨테이너 자신(.job-panel)을 못 고치므로 둘에 함께 건다. */
+.job-zones,.session-actionbar{--data-grid-cols:minmax(0,1fr) minmax(268px,.46fr)}
+.data-grid{display:grid;grid-template-columns:var(--data-grid-cols)}
 .data-grid>.dg-main,.data-grid>.dg-side{min-width:0;display:flex;flex-direction:column}
 .data-grid>.dg-side{border-left:1px solid var(--a-border)}
 /* side-card 는 한 열이 좁다 — 라벨+입력+버튼을 한 줄에 밀어 넣으면 경로가 몇 글자로 잘려
@@ -254,7 +265,7 @@ body.resizing-master{cursor:col-resize;user-select:none}
 /* 창폭이 아니라 실제 세션 패널 폭으로 판정한다. 900px 이하는 표가 읽힐 한 열 폭을 지키며
    종전 세로 적층으로 복귀한다(1440 기본창=duo, 1180급 협폭=stack). */
 @container session-panel (max-width:900px){
-  .data-grid{grid-template-columns:1fr}
+  .job-zones,.session-actionbar{--data-grid-cols:1fr}
   .data-grid>.dg-side{border-left:0;border-top:1px solid var(--a-border)}
 }
 .job-head-title{font-size:var(--fs-body);font-weight:600}

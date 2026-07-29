@@ -424,9 +424,19 @@ def test_milestone_l_job_density_and_expansion_sheets():
     assert side.index('id="jobCandidates"') < side.index('id="jobHeadTitle"') < side.index('id="jobOutDir"')
     assert 'id="jobMirrorCapstrip" role="status" hidden' in main
     assert "#jobMirror{max-height:420px;overflow:auto}" in css
-    assert ".data-grid{display:grid;grid-template-columns:minmax(0,1fr)minmax(268px,.46fr)}" in css
+    # 컬럼 템플릿은 한 곳에서만 선언한다(U2 §2.2) — 세션 카드와 그 아래 액션바가 같은
+    # 기준면을 써야 「미리보기·생성」이 자기 입력(좌 열)과 같은 열의 오른쪽 끝에 선다.
+    # 리터럴이 두 번 적히면 한쪽만 고쳐져 두 표면이 조용히 어긋난다.
+    assert ".job-zones,.session-actionbar{--data-grid-cols:minmax(0,1fr)minmax(268px,.46fr)}" in css
+    assert ".data-grid{display:grid;grid-template-columns:var(--data-grid-cols)}" in css
+    assert ".session-actionbar{position:sticky;bottom:0;z-index:5;display:grid;" in css
+    assert "grid-template-columns:var(--data-grid-cols);" in css
+    assert ".actionbar-row{display:flex;align-items:center;gap:var(--sp-12);flex-wrap:wrap;justify-content:flex-end}" in css
+    assert '<div class="actionbar-row">' in html, (
+        "액션바 내용을 감싸지 않으면 자식들이 두 열에 흩어진다."
+    )
     assert "@containersession-panel(max-width:900px)" in css
-    assert ".data-grid{grid-template-columns:1fr}" in css
+    assert ".job-zones,.session-actionbar{--data-grid-cols:1fr}" in css
     # 좁은 side-card 에서 라벨+입력+버튼을 한 줄에 밀어 넣으면 저장 폴더 경로가 몇 글자로
     # 잘려 "어디에 저장되는지"를 못 읽는다 — 감싸기 규칙이 그 되읽기를 지킨다.
     assert ".dg-side.run-row{flex-wrap:wrap;row-gap:var(--sp-4)}" in css
