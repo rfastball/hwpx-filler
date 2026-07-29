@@ -472,6 +472,29 @@ class TestWebSelftestGate:
         j = selftest_result["job_data_first"]
         assert j.get("error") is None, f"data-first 프로브 예외: {j.get('error')!r}"
         assert j["zones_shown"] and j["actionbar_shown"], "무작업 상태에서 세션 존이 죽어 있습니다."
+        # 액션바는 좌 열의 오른쪽 끝(구분선)에 맞춰 선다(U2 §2.2 · 리뷰 R5) — 같은 템플릿을
+        # 공유해도 **재는 상자**가 다르면 어긋나므로 실 좌표로 잰다.
+        assert j["actionbar_plane"] is not None, "액션바·구분선을 못 찾았습니다 — 프로브 겨눔 소실."
+        assert abs(j["actionbar_plane"]) <= 1, (
+            f"액션바에서 **눈에 보이는 마지막 것**이 구분선에서 {j['actionbar_plane']}px "
+            "어긋났습니다 — 기준면 불일치(행의 상자가 아니라 보이는 끝이 기준이다)."
+        )
+        # 게이트 문안이 빈 상태(=생성이 열린 화면)에서도 같다 — 빈 문안이 자리를 안 비우면
+        # 그 앞 gap 이 살아 마지막 버튼만 물러선다(실측 12px).
+        assert abs(j["actionbar_plane_empty_note"]) <= 1, (
+            f"빈 게이트 문안이 자리를 차지해 버튼이 {j['actionbar_plane_empty_note']}px "
+            "물러섰습니다 — 폭 0 이어도 flex 항목이면 앞의 gap 이 남습니다."
+        )
+        # 행동이 붙은 캡션의 ⤢ 는 오른쪽 끝이다(리뷰 R5) — 규칙은 둘 다 살아 있고 **어느 쪽이
+        # 이기는가**만 갈리는 자리라 정적 검사가 못 본다.
+        cap = j["cap_actions"]
+        assert cap, "행동 캡션(.zone-cap-actions)을 찾지 못했습니다 — 프로브 겨눔 소실."
+        assert cap["display"] == "flex", (
+            f"행동 캡션이 flex 를 잃었습니다({cap['display']!r}) — 블록 규칙이 곁의 규칙을 덮었습니다."
+        )
+        assert abs(cap["far_edge"]) <= 1, (
+            f"⤢ 가 캡션 오른쪽 끝에서 {cap['far_edge']}px 떨어져 있습니다 — 제목 옆에 붙었습니다."
+        )
         # 행동이 붙은 캡션의 ⤢ 는 오른쪽 끝이다(리뷰 R5) — 규칙은 둘 다 살아 있고 **어느 쪽이
         # 이기는가**만 갈리는 자리라 정적 검사가 못 본다.
         cap = j["cap_actions"]
@@ -931,11 +954,20 @@ class TestWebSelftestGate:
 
     def test_milestone_h_workcard_and_popover_interactions_render(self, selftest_result: dict) -> None:
         # workcard 프로브는 「기안」 카드 사망으로 작업대 #wbCard(.wb-preview + wc-render +
-        # f-* 글꼴)로 재겨눔(F6 PR-B) — 캡은 .wb-preview 의 420px 이 이기고, 구 .wc-render
-        # 전용 gutter/overscroll 은 승계 규칙에 없어 프로브도 재지 않는다.
+        # f-* 글꼴)로 재겨눔(F6 PR-B) — 구 .wc-render 전용 gutter/overscroll 은 승계 규칙에
+        # 없어 프로브도 재지 않는다.
+        #
+        # 높이 계약은 **열 수에 달렸다**(리뷰 R1): 2열에서는 고정 캡이 아니라 `flex:1` 로 남는
+        # 높이를 받고(캡은 낮은 창에서 `.wb-body` 를 넘쳐 footer 가 마지막 행 위에 그려졌다),
+        # 1열 퇴화에서만 캡이 돌아온다. 어느 regime 을 쟀는지 프로브가 함께 실으므로 단언도
+        # 그것을 따라간다 — 한쪽 수치를 박아 두면 실창 폭이 바뀌는 날 거짓말이 된다.
         h = selftest_result["milestone_h_overlay"]
         w = h["workcard"]
-        assert w["max_height"] == "420px" and w["overflow_y"] == "auto"
+        assert w["overflow_y"] == "auto"
+        if w["narrow"]:
+            assert w["max_height"] == "320px" and w["flex_grow"] == "0"
+        else:
+            assert w["max_height"] == "none" and w["flex_grow"] == "1"
         assert ("GulimChe" in w["font_family"]) or ("굴림체" in w["font_family"]), (
             f"카드가 f-gulimche 글꼴 선언을 추종하지 않습니다: {w['font_family']!r}"
         )

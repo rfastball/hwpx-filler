@@ -891,6 +891,52 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
     };
     window.__push('job', snap);
     out.zones_shown = getComputedStyle(document.getElementById('jobZones')).display !== 'none';
+    // 액션바의 정렬 **기준면**은 좌 열의 오른쪽 끝(= 구분선)이다(U2 §2.2 · 리뷰 R5). 같은
+    // 컬럼 템플릿을 공유해도 재는 상자가 다르면(패딩) 트랙 끝이 어긋나는데, 규칙은 둘 다
+    // 맞아 보여 정적 검사가 못 본다. 재는 것은 **눈에 보이는 마지막 것**이지 행의 상자가
+    // 아니다 — 폭 0 인 빈 문안이 flex 항목으로 남으면 그 앞 gap 이 살아 마지막 버튼만
+    // 물러서는데, 행의 오른쪽 끝은 여전히 기준면이라 행을 재면 통과한다.
+    out.actionbar_plane = (function () {
+      var side = document.querySelector('#jobZones .data-grid > .dg-side');
+      var row = document.querySelector('#jobActionBar .actionbar-row');
+      if (!side || !row) return null;
+      var visible = Array.prototype.filter.call(row.children, function (c) {
+        return c.getBoundingClientRect().width > 0;
+      });
+      if (!visible.length) return null;
+      return Math.round(visible[visible.length - 1].getBoundingClientRect().right
+                        - side.getBoundingClientRect().left);
+    })();
+    // 문안이 **빈** 상태도 잰다 — 생성이 열린 화면이 그 상태다. 스냅샷을 바꾸지 않고 문안만
+    // 잠시 비웠다 되돌린다(이 프로브의 다른 측정과 같은 방식).
+    out.actionbar_plane_empty_note = (function () {
+      var note = document.getElementById('jobGate');
+      var side = document.querySelector('#jobZones .data-grid > .dg-side');
+      var row = document.querySelector('#jobActionBar .actionbar-row');
+      if (!note || !side || !row) return null;
+      var saved = note.textContent;
+      note.textContent = '';
+      var visible = Array.prototype.filter.call(row.children, function (c) {
+        return c.getBoundingClientRect().width > 0;
+      });
+      var gap = visible.length
+        ? Math.round(visible[visible.length - 1].getBoundingClientRect().right
+                     - side.getBoundingClientRect().left)
+        : null;
+      note.textContent = saved;
+      return gap;
+    })();
+    // 행동이 붙은 캡션(⤢)은 **오른쪽 끝**에 선다(리뷰 R5) — `.zone-cap{display:block}` 이
+    // 곁의 `.zone-cap-actions{display:flex}` 를 덮으면 ⤢ 가 제목 바로 뒤에 붙는데, 규칙은
+    // 둘 다 살아 있어 정적 검사로는 안 보인다(같은 특정도·나중 로드가 이기는 자리).
+    out.cap_actions = (function () {
+      var cap = document.querySelector('#jobZones .zone-cap.zone-cap-actions');
+      var btn = cap && cap.querySelector('button');
+      if (!cap || !btn) return null;
+      return {display: getComputedStyle(cap).display,
+              far_edge: Math.round(cap.getBoundingClientRect().right
+                                   - btn.getBoundingClientRect().right)};
+    })();
     // 행동이 붙은 캡션(⤢)은 **오른쪽 끝**에 선다(리뷰 R5) — `.zone-cap{display:block}` 이
     // 곁의 `.zone-cap-actions{display:flex}` 를 덮으면 ⤢ 가 제목 바로 뒤에 붙는데, 규칙은
     // 둘 다 살아 있어 정적 검사로는 안 보인다(같은 특정도·나중 로드가 이기는 자리).
@@ -2452,6 +2498,9 @@ _MILESTONE_H_OVERLAY_PROBE_SETUP_JS = r"""
     out.workcard = {
       max_height: cr && cr.maxHeight, overflow_y: cr && cr.overflowY,
       font_family: cr && cr.fontFamily,
+      /* 높이 계약이 열 수에 따라 갈린다 — 2열은 남는 높이(flex:1), 1열 퇴화는 캡.
+         어느 쪽을 쟀는지 함께 실어야 단언이 창 폭에 따라 거짓말하지 않는다. */
+      narrow: window.innerWidth <= 920, flex_grow: cr && cr.flexGrow,
       dot_hit: ds && [ds.width, ds.height], dot_mark: dm && [dm.width, dm.height],
       dots_overflow: getComputedStyle(document.getElementById('wbDots')).overflow
     };

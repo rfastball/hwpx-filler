@@ -969,7 +969,11 @@
     $("jobGenBtn").disabled = !g.enabled || generating;
     const gate = $("jobGate");
     gate.textContent = generating ? "" : gateStep(s, g) + g.text;
-    gate.className = "muted";
+    // 정적 선언(`class="muted capnote"`)을 **덮어쓰지 않는다**(리뷰 R5) — 여기서 "muted" 만
+    // 세우면 `capnote`(캡션급 크기)가 매 렌더에 조용히 벗겨지고, 빈 문안이 자리를 비우게 하는
+    // 규칙(`.actionbar-row>.capnote:empty`)도 붙을 곳을 잃는다. 마크업이 선언한 것을 지운 뒤
+    // 그 선언을 근거로 쓰는 규칙을 짜면 둘 다 거짓이 된다.
+    gate.className = "muted capnote";
     gate.style.color = g.level === "danger" ? "var(--a-danger)"
       : g.level === "warn" ? "var(--a-warn)" : "";
   }
