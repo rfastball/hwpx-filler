@@ -39,6 +39,7 @@
 
 | 문서 | 상태 | 유효 범위·후속 정본 |
 |---|---|---|
+| [핵심 워크플로 계약](core-workflow.md) | 부분 대체 | v4~v6 상태·전이·불변식의 계약 원문. 확정된 개정분은 [봉합 지도](DATA_FIRST_INTEGRATION_MAP.md) §7·§8.2가 우선 |
 | [UI/백엔드 분리](ARCH_UI_SEPARATION.md) | 부분 대체 | 링0·링1 분리는 유효, Qt 링2는 [UI 계약](UI_CONTRACT.md)이 대체 |
 | [시각 디자인 언어](DESIGN_LANGUAGE.md) | 유효 결정 | 시각 문법의 이유; 실제 값은 UI 갤러리·토큰이 소유 |
 | [UI 표면 ADR](UI_DESIGN_DECISIONS.md) | 부분 대체 | 상호작용 결정과 뒤집힘의 원장; 현재 표면은 UI 계약이 소유 |
