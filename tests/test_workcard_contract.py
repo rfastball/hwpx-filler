@@ -2,9 +2,9 @@
 
 「기안」 화면 사망(F6 PR-B)으로 계약의 주체가 이동했다: 카드 = #wbCard(.wb-preview 에
 workbench.js 가 .wc-render·f-* 글꼴 클래스를 얹는다), 점 색인 = #wbDots(.wb-dots 판 위의
-.wc-dot 항목 — 점·표지 CSS 는 「기안」 시절 그대로 재사용). 캡 수치는 .wb-preview 의 것
-(180~420px)이고, 구 .wc-render 전용 부속(scrollbar-gutter·overscroll-behavior)은 죽은
-구 .zone.workcard 규칙과 함께 걷혔다(승계처 .wb-preview 는 아직 선언하지 않는다).
+.wc-dot 항목 — 점·표지 CSS 는 「기안」 시절 그대로 재사용). 구 .wc-render 전용 부속
+(scrollbar-gutter·overscroll-behavior)은 죽은 구 .zone.workcard 규칙과 함께 걷혔다
+(승계처 .wb-preview 는 아직 선언하지 않는다).
 """
 from __future__ import annotations
 
@@ -33,11 +33,20 @@ def _declarations(selector: str) -> str:
     return ";".join(bodies)
 
 
-def test_workbench_card_is_a_capped_preserved_scrollport():
-    """카드 스크롤포트 승계(H-09→작업대): 캡·overflow·스크롤 보존 마크가 산다."""
+def test_workbench_card_is_a_bounded_preserved_scrollport():
+    """카드 스크롤포트 승계(H-09→작업대): 높이 경계·overflow·스크롤 보존 마크가 산다.
+
+    **경계를 무엇이 주는가는 열 수에 달렸다**(U2 §2.2 리뷰 R1). 2열에서는 좌 pane 과 같은
+    방식으로 `flex:1` 로 남는 높이를 받는다 — 고정 캡은 창이 낮아지면 `.wb-body` 를 넘쳐
+    뒤따르는 footer 가 내용 위에 그려졌고, 좌우 캡을 서로 맞춰 두는 방식은 한쪽만 고쳐지는
+    날이 온다. 1열 퇴화에서만 캡이 돌아온다(세로로 줄을 서면 나눠 가질 높이가 없다).
+    min-height 는 빈 카드가 접히지 않게 하는 바닥이라 두 regime 모두에서 산다.
+    """
     assert re.search(r'<article class="wb-preview" id="wbCard"[^>]*data-preserve-scroll', INDEX)
     rule = _declarations(".wb-preview")
-    assert "min-height:180px" in rule and "max-height:420px" in rule
+    assert "min-height:180px" in rule
+    assert "flex:1" in rule, "2열에서 남는 높이를 안 받으면 캡 시절의 끝단 어긋남이 돌아온다."
+    assert "max-height:320px" in rule, "1열 퇴화의 캡이 없으면 카드가 무한정 늘어난다."
     assert "overflow:auto" in rule
     assert "scrollTop" in PRESERVE and "marked[i].scrollTop" in PRESERVE
 

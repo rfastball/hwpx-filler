@@ -931,11 +931,20 @@ class TestWebSelftestGate:
 
     def test_milestone_h_workcard_and_popover_interactions_render(self, selftest_result: dict) -> None:
         # workcard 프로브는 「기안」 카드 사망으로 작업대 #wbCard(.wb-preview + wc-render +
-        # f-* 글꼴)로 재겨눔(F6 PR-B) — 캡은 .wb-preview 의 420px 이 이기고, 구 .wc-render
-        # 전용 gutter/overscroll 은 승계 규칙에 없어 프로브도 재지 않는다.
+        # f-* 글꼴)로 재겨눔(F6 PR-B) — 구 .wc-render 전용 gutter/overscroll 은 승계 규칙에
+        # 없어 프로브도 재지 않는다.
+        #
+        # 높이 계약은 **열 수에 달렸다**(리뷰 R1): 2열에서는 고정 캡이 아니라 `flex:1` 로 남는
+        # 높이를 받고(캡은 낮은 창에서 `.wb-body` 를 넘쳐 footer 가 마지막 행 위에 그려졌다),
+        # 1열 퇴화에서만 캡이 돌아온다. 어느 regime 을 쟀는지 프로브가 함께 실으므로 단언도
+        # 그것을 따라간다 — 한쪽 수치를 박아 두면 실창 폭이 바뀌는 날 거짓말이 된다.
         h = selftest_result["milestone_h_overlay"]
         w = h["workcard"]
-        assert w["max_height"] == "420px" and w["overflow_y"] == "auto"
+        assert w["overflow_y"] == "auto"
+        if w["narrow"]:
+            assert w["max_height"] == "320px" and w["flex_grow"] == "0"
+        else:
+            assert w["max_height"] == "none" and w["flex_grow"] == "1"
         assert ("GulimChe" in w["font_family"]) or ("굴림체" in w["font_family"]), (
             f"카드가 f-gulimche 글꼴 선언을 추종하지 않습니다: {w['font_family']!r}"
         )

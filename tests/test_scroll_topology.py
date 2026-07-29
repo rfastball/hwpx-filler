@@ -45,15 +45,23 @@ def test_wizard_tables_share_a_real_vertical_scrollport() -> None:
         assert "top:0" in rule
 
 
-def test_workbench_map_header_sticks_inside_its_capped_host() -> None:
+def test_workbench_map_header_sticks_inside_a_bounded_host() -> None:
     """실제로 세로 스크롤되는 dmap host 와 불투명 sticky 헤더를 함께 고정한다.
 
     「기안」 사망(F6 PR-B)으로 dmap 표의 생존 host 는 작업대 좌 pane(#wbMapPanel) —
     표 클래스(dmap)와 sticky 헤더 계약은 그대로 승계됐다.
+
+    **높이를 무엇이 가두는가는 열 수에 달렸다**(리뷰 R1). 2열에서는 고정 캡이 아니라
+    `flex:1` 로 **남는 높이**를 받는다 — 캡은 창이 낮아지면 `.wb-body` 를 넘쳐 뒤따르는
+    `.wb-foot` 이 마지막 매핑 행 위에 그려졌다. 1열 퇴화에서만 캡이 돌아온다(세로로 줄을
+    서면 나눠 가질 남는 높이가 없다). 둘 중 무엇이든 **경계가 있어야** sticky 헤더가 뜻을
+    갖는다 — 경계 없는 host 에서는 표가 바깥 면을 밀고 헤더는 붙을 데가 없다.
     """
     assert 'id="wbMapPanel"' in INDEX
     host = _declarations("#wbMapPanel")
-    assert "max-height:" in host and "overflow:auto" in host
+    assert "overflow:auto" in host
+    assert "flex:1" in host, "2열에서 남는 높이를 받지 않으면 캡 시절의 footer 침범이 돌아온다."
+    assert "max-height:" in host, "1열 퇴화의 캡이 없으면 host 가 무한정 늘어난다."
 
     header = _declarations("table.dmap th")
     assert "position:sticky" in header and "top:0" in header

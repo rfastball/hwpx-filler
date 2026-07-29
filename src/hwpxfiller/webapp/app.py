@@ -2452,6 +2452,9 @@ _MILESTONE_H_OVERLAY_PROBE_SETUP_JS = r"""
     out.workcard = {
       max_height: cr && cr.maxHeight, overflow_y: cr && cr.overflowY,
       font_family: cr && cr.fontFamily,
+      /* 높이 계약이 열 수에 따라 갈린다 — 2열은 남는 높이(flex:1), 1열 퇴화는 캡.
+         어느 쪽을 쟀는지 함께 실어야 단언이 창 폭에 따라 거짓말하지 않는다. */
+      narrow: window.innerWidth <= 920, flex_grow: cr && cr.flexGrow,
       dot_hit: ds && [ds.width, ds.height], dot_mark: dm && [dm.width, dm.height],
       dots_overflow: getComputedStyle(document.getElementById('wbDots')).overflow
     };
