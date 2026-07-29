@@ -38,13 +38,23 @@ class 에 대해 아무 말도 하지 않는다. 존 패딩 0 · 구분선 소�
 파일의 객체 속성 리터럴 결속(`cls: "editor-open"`). 이름을 **하나도** 못 얻은 sink 는
 조용히 넘기지 않고 시끄럽게 실패한다 — 못 읽는 sink 가 늘면 그물이 다시 구멍 난다.
 
-식을 읽을 때 두 가지를 걷어낸다. **비교 피연산자**(`level === "danger"`)는 class 가 아니라
-값이고, **조각 이어붙이기**(`"... f-" + font`)의 뒤 리터럴은 이름의 반쪽이다 — 둘 다 세면
-`.danger`·`.gulimche` 같은 없는 이름을 요구하는 오탐이 된다.
+**보간도 읽는다**(리뷰 R2). `class="job-cand-card${active ? " active" : ""}"` 처럼 보간 안에
+따옴표가 있으면 `class="([^"]*)"` 가 속성 끝이 아니라 그 따옴표에서 멈춰 **앞의 온전한
+이름까지** 통째로 못 봤다. 그래서 속성을 읽기 **전에** `${...}` 를 짝 맞춰 펼친다. 펼친
+결과가 온전한 class 목록인지(모든 갈래가 공백으로 시작 — `" active"`) 아니면 이름의
+반쪽인지(`col-${kind}`)는 **갈래의 앞 공백**이 가른다.
 
-남는 구멍 하나는 적어 둔다: **값이 Python 에서 오는 tail**(`"note " + (s.notice.level || ...)`)
-은 리터럴이 코드에 없어 못 본다. 그 자리의 class 는 링1 이 내는 문자열이라 이 그물이 아니라
-스냅샷 계약이 지킨다.
+**조각은 버리지 않고 이어 붙인다**(리뷰 R2). `"wc-render f-" + (font || "gulimche")` 의 앞뒤를
+둘 다 버리면 코드에 그대로 적혀 있는 `f-gulimche` 를 못 본다 — 그 규칙을 지워도 게이트가
+초록이고, 작업대는 조용히 폴백 글꼴로 그려진다. 뒤가 리터럴이면 합성하고(`f-` + `gulimche`),
+런타임 값이면 그때만 버린다. **비교 피연산자**(`level === "danger"`)는 값이지 class 가
+아니므로 이것만 걷어낸다 — 안 걷으면 `.danger` 를 요구하는 오탐이 된다.
+
+남는 구멍 하나는 적어 둔다: **값이 Python 에서 오는 tail**(`"note " + (s.notice.level || ...)`,
+`f-` + `target_font` 의 나머지 두 글꼴)은 리터럴이 코드에 없어 못 본다. 그 자리는 링1 이
+내는 문자열이라 이 그물이 아니라 스냅샷 계약과 이름을 가진 가드가 지킨다 — 글꼴 3종은
+`tests/test_workcard_contract.py::test_workbench_card_wears_the_render_and_font_classes` 가
+`.wc-render.f-*` 규칙의 존재를 직접 단언한다.
 """
 
 from __future__ import annotations
@@ -103,6 +113,82 @@ _BARE_IDENT = re.compile(r"(?<![.\w$])([A-Za-z_$][\w$]*)")
 _MEMBER_PROP = re.compile(r"\.([A-Za-z_$][\w$]*)")
 
 
+def _raw_literals(expr: str) -> "list[str]":
+    """식 안의 문자열 리터럴을 **원문 그대로**(앞뒤 공백 포함) 순서대로.
+
+    이름 회수는 공백을 지우지만, 보간이 온전한 class 를 더하는지(`" active"`)와 앞 조각의
+    꼬리인지(`"gulimche"`)를 가르는 것이 **바로 그 앞 공백**이라 여기선 보존한다.
+    """
+    return [
+        double or single or backtick
+        for double, single, backtick in _STRING_LIT.findall(_COMPARED_LIT.sub(" ", expr))
+    ]
+
+
+def _raw_bindings(text: str) -> "dict[str, list[str]]":
+    """`const dirty = s.dirty ? " dirty" : ""` 처럼 **보간이 읽는** 이름 → 원문 리터럴들."""
+    out: "dict[str, list[str]]" = {}
+    for name, init in _LITERAL_BINDING.findall(text):
+        got = _raw_literals(init)
+        if got:
+            out.setdefault(name, []).extend(got)
+    return out
+
+
+def _interpolation_end(text: str, start: int) -> int:
+    """`${` 의 `{` 위치에서 짝 맞는 `}` 의 위치 — 문자열 안의 중괄호·따옴표는 세지 않는다."""
+    depth = 0
+    quote = ""
+    i = start
+    while i < len(text):
+        ch = text[i]
+        if quote:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == quote:
+                quote = ""
+        elif ch in "\"'`":
+            quote = ch
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return len(text)
+
+
+def _expand_interpolations(text: str, bindings: "dict[str, list[str]]") -> str:
+    """`${...}` 를 **그 자리가 낼 수 있는 것**으로 바꾼다 — 이름이면 펼치고, 조각이면 구멍.
+
+    두 가지를 동시에 푼다(리뷰 R2). ⑴ `class="job-cand-card${active ? " active" : ""}"` 처럼
+    보간 **안에 따옴표**가 있으면 `class="([^"]*)"` 는 속성 끝이 아니라 그 따옴표에서 멈춰,
+    앞의 온전한 이름(`job-cand-card`)까지 통째로 못 봤다. ⑵ 보간이 내는 것이 **온전한
+    class 목록**인지(모든 갈래가 공백으로 시작) 아니면 **이름의 반쪽**(`col-${kind}`)인지는
+    갈래의 앞 공백이 가른다 — 앞엣것은 펼치고 뒤엣것만 구멍으로 남긴다.
+    """
+    out: "list[str]" = []
+    i = 0
+    while True:
+        at = text.find("${", i)
+        if at < 0:
+            out.append(text[i:])
+            return "".join(out)
+        end = _interpolation_end(text, at + 1)
+        inner = text[at + 2:end]
+        alternatives = _raw_literals(inner)
+        for ident in _BARE_IDENT.findall(_STRING_LIT.sub(" ", inner)):
+            alternatives.extend(bindings.get(ident, []))
+        whole = bool(alternatives) and all(
+            not alt or alt[:1].isspace() for alt in alternatives
+        )
+        out.append(text[i:at])
+        out.append(" " + " ".join(alternatives) + " " if whole else _HOLE)
+        i = end + 1
+
+
 def _tokens(raw: str) -> set[str]:
     """공백으로 가른 뒤 **온전한 이름만** 남긴다(보간 조각·비식별자는 버린다).
 
@@ -118,21 +204,30 @@ def _tokens(raw: str) -> set[str]:
 
 
 def _literal_names(expr: str) -> set[str]:
-    """식 안의 **문자열 리터럴**에서 온전한 class 이름만 거둔다.
+    """식 안의 **문자열 리터럴**에서 온전한 class 이름을 거둔다 — 조각은 이어 붙여서.
 
-    조각 이어붙이기(`"wc-render f-" + font`)의 **뒤 리터럴**은 이름의 반쪽이라 버린다 —
-    앞이 하이픈으로 끝나면 다음 리터럴은 그 접미사다(`"gulimche"` 는 `.gulimche` 가 아니라
-    `f-gulimche` 의 꼬리). 앞 조각 자체는 `_tokens` 의 하이픈 규칙이 이미 버린다.
+    조각 이어붙이기(`"wc-render f-" + (font || "gulimche")`)는 정규식이 볼 수 없는 경계라
+    **끝이 하이픈**인 토큰으로 판별한다(실제 class 이름은 하이픈으로 끝나지 않는다 — 웹 자산
+    전수 확인). 종전엔 앞뒤를 **둘 다 버려서** 코드에 그대로 적혀 있는 `f-gulimche` 를 못 봤고,
+    그 규칙을 지워도 게이트가 초록이었다(리뷰 R2). 이제 **합성한다**: 뒤 리터럴이 리터럴이면
+    `f-` + `gulimche` 로 이어 붙이고, 구멍(런타임 값)이면 그때만 버린다.
     """
     names: set[str] = set()
-    fragment_tail = False
-    for double, single, backtick in _STRING_LIT.findall(expr):
-        raw = double or single or backtick
-        if fragment_tail:
-            fragment_tail = raw.endswith("-")
-            continue
-        names |= _tokens(re.sub(r"\$\{[^}]*\}", _HOLE, raw))
-        fragment_tail = raw.endswith("-")
+    pending = ""  # 하이픈으로 끊긴 앞 조각 — 다음 리터럴의 첫 토큰과 합성 대기
+    for raw in _raw_literals(expr):
+        parts = raw.split()
+        if pending:
+            if parts and _HOLE not in parts[0]:
+                composed = pending + parts[0]
+                if _IDENT.match(composed):
+                    names.add(composed)
+                parts = parts[1:]
+            pending = ""
+        # 마지막 토큰이 공백으로 끝나지 않고 하이픈으로 끊겼으면 다음 리터럴이 그 꼬리다.
+        if parts and parts[-1].endswith("-") and not raw[-1:].isspace():
+            pending = parts[-1]
+            parts = parts[:-1]
+        names |= {p for p in parts if _HOLE not in p and not p.endswith("-") and _IDENT.match(p)}
     return names
 
 
@@ -201,15 +296,24 @@ def _class_sinks(text: str) -> list[str]:
     return sinks
 
 
+def _readable(path: Path) -> str:
+    """검사용 본문 — 템플릿 보간을 **먼저** 펼친 뒤에야 속성·sink 를 읽는다.
+
+    순서가 계약이다: 보간을 펼치기 전에 `class="..."` 를 찾으면 보간 안의 따옴표가 속성을
+    끊어 앞의 온전한 이름까지 잃는다(리뷰 R2).
+    """
+    text = path.read_text(encoding="utf-8")
+    return _expand_interpolations(text, _raw_bindings(text))
+
+
 def _emitted_classes() -> dict[str, set[str]]:
     """셸과 화면 JS 가 실제로 DOM 에 내는 class → 그 자리들."""
     found: dict[str, set[str]] = {}
     for path in _SOURCES:
-        text = path.read_text(encoding="utf-8")
+        text = _readable(path)
         names: set[str] = set()
         for match in _CLASS_ATTR.finditer(text):
-            # `${...}` 를 구멍 표식으로 바꾼다 — 붙어 있던 조각이 이름으로 새지 않게.
-            names |= _tokens(re.sub(r"\$\{[^}]*\}", _HOLE, match.group(1)))
+            names |= _tokens(match.group(1))
         variables, properties = _bindings(text)
         for expr in _class_sinks(text):
             names |= _sink_names(expr, variables, properties)
@@ -275,7 +379,7 @@ def test_every_class_sink_yields_a_readable_name() -> None:
     """
     unreadable: list[str] = []
     for path in _SOURCES:
-        text = path.read_text(encoding="utf-8")
+        text = _readable(path)
         variables, properties = _bindings(text)
         where = path.relative_to(ROOT).as_posix()
         for expr in _class_sinks(text):
@@ -285,6 +389,42 @@ def test_every_class_sink_yields_a_readable_name() -> None:
         "class 이름을 읽어 낼 수 없는 자리가 있습니다(고아 검사가 이 자리를 통째로 건너뜁니다):\n"
         + "\n".join(unreadable)
         + "\n이름을 리터럴이나 같은 파일의 상수 결속으로 두거나, 회수 규칙을 넓히세요."
+    )
+
+
+def test_interpolated_and_composed_class_names_are_seen() -> None:
+    """보간 안에 따옴표가 있어도, 이름이 조각으로 이어 붙어도 본다(리뷰 R2).
+
+    실물 두 자리를 든다. `job.js` 의 후보 카드는
+    `class="job-cand-card${active ? " active" : ""}${...}"` 인데, 보간 안의 따옴표가 속성을
+    끊어 **앞의 온전한 이름까지** 못 봤다 — `.job-cand-card` 를 지워도 게이트가 초록이었다.
+    `workbench.js` 의 카드 글꼴은 `"wc-render f-" + (font || "gulimche")` 로 **코드에 그대로
+    적힌** `f-gulimche` 인데, 조각 규칙이 앞뒤를 둘 다 버려 못 봤다.
+    """
+    emitted = _emitted_classes()
+    for name, site in (
+        ("job-cand-card", "web/js/screens/job.js"),   # 보간 앞의 온전한 이름
+        ("active", "web/js/screens/job.js"),          # 보간이 더하는 상태 class
+        ("suggested", "web/js/screens/job.js"),
+        ("f-gulimche", "web/js/screens/workbench.js"),  # 조각 합성
+    ):
+        assert site in emitted.get(name, set()), (
+            f".{name} 이 {site} 의 산출 목록에 없습니다 — 보간·합성 회수가 깨졌습니다."
+        )
+
+
+def test_fragment_tails_do_not_become_names() -> None:
+    """합성은 **리터럴 꼬리**에만 적용된다 — 런타임 값 자리는 여전히 이름이 아니다.
+
+    `class="col-${c.kind}"`·`class="r-${r.row_state}"` 의 접두는 반쪽이라 이름으로 세면
+    `.col-`·`.r-` 를 요구하는 오탐이 된다. 합성이 이 경계를 넘지 않았는지 본다.
+    """
+    emitted = _emitted_classes()
+    bad = sorted(n for n in emitted if n.endswith("-"))
+    assert not bad, f"조각이 이름으로 샜습니다: {', '.join(bad)}"
+    # 꼬리는 **합성된 이름으로만** 산다 — 반쪽이 홀로 이름이 되면 `.gulimche` 를 요구한다.
+    assert "gulimche" not in emitted, (
+        "조각의 뒤 리터럴이 홀로 이름이 됐습니다 — 합성 대신 그냥 세고 있습니다."
     )
 
 
