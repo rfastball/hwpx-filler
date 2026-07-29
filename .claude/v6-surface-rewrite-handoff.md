@@ -40,7 +40,7 @@
 | `hwpx-filler-integration/` | 작업 브랜치 | 실제 작업. 여기서 `origin/master` 기반 새 브랜치를 판다 |
 
 lab 워크트리는 없어졌다 — v6 시안·프로토타입이 필요하면 태그 `archive/lab-ui-reboot` 에서
-꺼낸다. 통합 지도는 `docs/DATA_FIRST_INTEGRATION_MAP.md`(integration).
+꺼낸다. 통합 지도는 `docs/archive/DATA_FIRST_INTEGRATION_MAP.md`(integration).
 
 ## 3. 현재 코드 상태 (전부 master 에 머지됨, 2026-07-27)
 
@@ -85,7 +85,7 @@ lab 워크트리는 없어졌다 — v6 시안·프로토타입이 필요하면 
    (슬라이스 1의 8열 지도와 같은 형식).
 3. 그 대조표를 근거로 **재작성 슬라이싱**을 제안한다(각 슬라이스 = 수직으로 완결되는 사용자
    가치 + 계약 게이트 갱신 단위).
-4. 지도(`docs/DATA_FIRST_INTEGRATION_MAP.md`)에 새 절로 쓰고 사용자 확정을 받은 뒤 착수.
+4. 지도(`docs/archive/DATA_FIRST_INTEGRATION_MAP.md`)에 새 절로 쓰고 사용자 확정을 받은 뒤 착수.
 
 ## 6. 작업 규율 (이 저장소의 확립된 관례)
 
