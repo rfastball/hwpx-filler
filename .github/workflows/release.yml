@@ -33,6 +33,19 @@ jobs:
         run: uv sync --locked --all-extras --group dev --group build
       - name: Validate release version
         run: uv run python scripts/check_release_version.py $env:RELEASE_TAG
+      - name: Determine prerelease flag
+        shell: pwsh
+        run: |
+          # PEP440 은 프리릴리스 식별자를 "0.4.0rc1"·"0.4.0-rc1"·"0.4.0.rc1"·"0.4.0_rc1" 등
+          # 여러 표기로 허용하고 전부 같은 값으로 정규화된다 — 정규식 한 방으로는 그 표기 편차를
+          # 다 못 잡는다(Codex 리뷰 지적, PR #321). packaging 라이브러리로 정규화해 판정한다.
+          # 앞선 Validate release version 단계가 태그==pyproject 버전을 이미 보장했다.
+          # 판정을 종료코드가 아니라 표준출력으로 실어 보낸다 — 안정판(exit 1)에서 종료코드를
+          # 그대로 두면 GitHub의 pwsh 래퍼가 $LASTEXITCODE 를 보고 이 스텝 자체를 실패로
+          # 처리해버린다(Codex 리뷰 지적, PR #321).
+          $version = $env:RELEASE_TAG.TrimStart('v')
+          $flag = uv run python -c "import sys; from packaging.version import Version; print(str(Version(sys.argv[1]).is_prerelease).lower())" $version
+          "IS_PRERELEASE=$flag" | Out-File $env:GITHUB_ENV -Append
       - name: Quality and tests
         shell: pwsh
         run: .\test.ps1
@@ -134,7 +147,7 @@ jobs:
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           generate_release_notes: true
-          prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
+          prerelease: ${{ env.IS_PRERELEASE == 'true' }}
           body: ${{ env.SIGNED_RELEASE == 'true' && 'Windows artifacts are Authenticode signed.' || 'Unsigned development release; verify SHA256SUMS.txt before use.' }}
           files: |
             installer-dist/*.exe
