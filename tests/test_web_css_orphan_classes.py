@@ -44,6 +44,12 @@ class 에 대해 아무 말도 하지 않는다. 존 패딩 0 · 구분선 소�
 결과가 온전한 class 목록인지(모든 갈래가 공백으로 시작 — `" active"`) 아니면 이름의
 반쪽인지(`col-${kind}`)는 **갈래의 앞 공백**이 가른다.
 
+**보간의 안은 지우지 않는다**(리뷰 R3). 반쪽인 경우를 통째로 구멍으로 바꿨더니 보간 안에
+들어앉은 마크업(`${v ? esc(v) : "<em class='muted'>(빈 값)</em>"}`)이 검사 밖으로 사라졌다 —
+구멍은 **경계 표시**여야지 내용을 없애는 도구가 아니다. 경계만 표시하고 안은 같은 규칙으로
+다시 펼쳐 남긴다. 속성은 **두 따옴표 다** 받는다(같은 리뷰): 형태를 세어서 규칙을 고르면
+다음 사람이 다른 쪽으로 적는 날 눈을 감는다.
+
 **조각은 버리지 않고 이어 붙인다**(리뷰 R2). `"wc-render f-" + (font || "gulimche")` 의 앞뒤를
 둘 다 버리면 코드에 그대로 적혀 있는 `f-gulimche` 를 못 본다 — 그 규칙을 지워도 게이트가
 초록이고, 작업대는 조용히 폴백 글꼴로 그려진다. 뒤가 리터럴이면 합성하고(`f-` + `gulimche`),
@@ -95,7 +101,10 @@ STYLELESS_BY_DESIGN: dict[str, str] = {
 #: 템플릿 보간 자리 표식 — `class="col-${i}"` 의 `col-` 같은 **조각**은 class 이름이 아니다.
 _HOLE = "\x00"
 
-_CLASS_ATTR = re.compile(r'class="([^"]*)"')
+#: class 속성 — **두 따옴표 다**(리뷰 R3). 셸이 쓰는 형태를 세어서 고르지 않고 문법을 받는다:
+#: 홑따옴표는 지금 2곳뿐이지만(`job.js` 의 `class='muted'`), 「지금 적은 쪽만」 읽는 규칙은
+#: 다음 사람이 다른 쪽으로 적는 날 조용히 눈을 감는다. 못 읽는 형태는 아래 테스트가 시끄럽다.
+_CLASS_ATTR = re.compile(r"""class\s*=\s*(?:"([^"]*)"|'([^']*)')""")
 _CLASS_NAME_ASSIGN = re.compile(r"\.className\s*=\s*([^;]+);")
 _CLASS_LIST = re.compile(r"classList\.(add|remove|toggle)\s*\(")
 _STRING_LIT = re.compile(r"\"([^\"]*)\"|'([^']*)'|`([^`]*)`")
@@ -185,7 +194,15 @@ def _expand_interpolations(text: str, bindings: "dict[str, list[str]]") -> str:
             not alt or alt[:1].isspace() for alt in alternatives
         )
         out.append(text[i:at])
-        out.append(" " + " ".join(alternatives) + " " if whole else _HOLE)
+        if whole:
+            out.append(" " + " ".join(alternatives) + " ")
+        else:
+            # **안을 지우지 않는다**(리뷰 R3 근본): 보간 안에는 중첩 템플릿이 통째로 들어앉기도
+            # 한다(`${v ? esc(v) : "<em class='muted'>(빈 값)</em>"}`). 통째로 구멍으로 바꾸면
+            # 그 안의 속성·sink 가 검사 밖으로 사라져, 그 자리에만 있는 class 는 규칙을 잃어도
+            # 게이트가 조용하다. 경계만 구멍으로 표시하고(바깥 이름과 붙어 한 토큰이 되지 않게)
+            # 안은 **같은 규칙으로 다시** 펼쳐 그대로 검사에 남긴다.
+            out.append(_HOLE + _expand_interpolations(inner, bindings) + _HOLE)
         i = end + 1
 
 
@@ -313,7 +330,7 @@ def _emitted_classes() -> dict[str, set[str]]:
         text = _readable(path)
         names: set[str] = set()
         for match in _CLASS_ATTR.finditer(text):
-            names |= _tokens(match.group(1))
+            names |= _tokens(match.group(1) if match.group(1) is not None else match.group(2))
         variables, properties = _bindings(text)
         for expr in _class_sinks(text):
             names |= _sink_names(expr, variables, properties)
@@ -369,6 +386,32 @@ def test_stylesless_allowlist_has_no_stale_entries() -> None:
     )
 
 
+def test_every_class_attribute_form_is_readable() -> None:
+    """`class=` 를 적는 **모든 형태**를 읽는다 — 못 읽는 형태가 있으면 시끄럽다(리뷰 R3).
+
+    첫 판은 큰따옴표만 읽었다. 셸에 홑따옴표가 2곳뿐이라 테스트는 통과했지만(그 둘의 class 가
+    마침 다른 데서도 나왔다), **그 형태로만 나오는 class 는 규칙을 잃어도 게이트가 조용했다**.
+    형태를 세어서 규칙을 고르면 다음 사람이 다른 쪽으로 적는 날 눈을 감는 것과 같다.
+
+    그래서 세는 대신 **문법을 받고**, 받지 못하는 형태는 여기서 실패시킨다 — 새 형태
+    (백틱 속성·무따옴표)가 들어오면 회수 규칙을 넓히든 형태를 통일하든 선택하게 된다.
+    """
+    unreadable: list[str] = []
+    for path in _SOURCES:
+        text = _readable(path)
+        where = path.relative_to(ROOT).as_posix()
+        for match in re.finditer(r"class\s*=\s*(.)", text):
+            if match.group(1) in "\"'":
+                continue
+            around = " ".join(text[match.start():match.start() + 60].split())
+            unreadable.append(f"  {where} — {around}")
+    assert not unreadable, (
+        "읽지 못하는 class 속성 형태가 있습니다(고아 검사가 그 자리를 통째로 건너뜁니다):\n"
+        + "\n".join(unreadable)
+        + "\n따옴표로 적거나, 회수 규칙을 그 형태까지 넓히세요."
+    )
+
+
 def test_every_class_sink_yields_a_readable_name() -> None:
     """이름을 **하나도** 못 얻은 class sink 가 없다 — 그물의 구멍은 조용히 넓어진다.
 
@@ -407,6 +450,9 @@ def test_interpolated_and_composed_class_names_are_seen() -> None:
         ("active", "web/js/screens/job.js"),          # 보간이 더하는 상태 class
         ("suggested", "web/js/screens/job.js"),
         ("f-gulimche", "web/js/screens/workbench.js"),  # 조각 합성
+        # 보간 **안**에 통째로 들어앉은 마크업(리뷰 R3 근본): `${v ? esc(v) :
+        # "<em class='muted'>(빈 값)</em>"}` — 안을 지우면 이 자리의 class 가 검사 밖이 된다.
+        ("muted", "web/js/screens/job.js"),
     ):
         assert site in emitted.get(name, set()), (
             f".{name} 이 {site} 의 산출 목록에 없습니다 — 보간·합성 회수가 깨졌습니다."
