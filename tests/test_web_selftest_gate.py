@@ -854,7 +854,17 @@ class TestWebSelftestGate:
         tags = e["tags"]
         for want in ("확정", "수동", "제안", "후보 없음"):
             assert want in tags, f"소유권 태그 '{want}' 미렌더(칩-라이브 결정 12): {tags!r}"
-        assert e["auto_revert_option"] is True, "touched 행에 '자동 제안으로 되돌리기'(↩) 버튼이 없습니다(리뷰 R5)."
+        assert e["auto_revert_option"] is True, "touched 행에 '자동 제안으로 되돌리기'(↻) 버튼이 없습니다(리뷰 R5)."
+        # 그 버튼이 select 와 **같은 줄에** 서는가(U2 §2.6). 정적 CSS 검사로는 못 보고
+        # 실렌더 기하로만 드러나는 결함이라 여기서 잰다: 버튼 있는 수동 행과 없는 제안
+        # 행의 「데이터 열」 칸 높이가 같으면 줄바꿈이 없는 것이다.
+        assert e["src_cell_h_manual"] == e["src_cell_h_suggested"], (
+            "재제안 버튼이 select 를 둘째 줄로 밀었습니다 — 수동 행과 제안 행의 칸 높이가 "
+            f"다릅니다({e['src_cell_h_manual']} vs {e['src_cell_h_suggested']})."
+        )
+        assert e["revert_same_line"] is True, (
+            "재제안 버튼과 select 의 세로 중심이 어긋났습니다 — 줄이 갈렸습니다."
+        )
 
     def test_editor_save_gate_opens_on_typing_not_on_blur(self, selftest_result: dict) -> None:
         """편집(탭)의 「변경 저장」이 **타이핑 시점에** 열린다(U2 §2.4 게이트 · 리뷰 R2).

@@ -776,8 +776,13 @@
     // 실열과 충돌 — 별도 액션 revert-source). 확정 행은 제외(PR-3 리뷰 F2: 확정도 touched 라
     // 무가드면 오클릭 한 번에 확정이 풀리고 다른 열로 치환 — 확정 해제가 의식적 1단계).
     // 데이터 있을 때만(재제안할 활성 소스가 있어야).
+    // 글리프는 ↻(U+21BB) — 하는 일이 「이 행 자동 제안 다시 받기」인데 ↩(undo)로 두면
+    // 기능이 이름에 가려진다(U2 §2.6: 같은 사용자가 이 버튼의 삭제와 「수동 재추천 버튼이
+    // 없다」를 동시에 요청했다). ⟳(U+27F3)는 Segoe UI 계열 커버리지가 얕아 두부로 조용히
+    // 떨어지므로 쓰지 않는다. 라벨의 텍스트 짝은 표 아래 「자동 제안 다시 받기」가 진다.
     const revertBtn = r.touched && !r.confirmed && s.record_count
-      ? ` <button class="btn sm" data-act="revert-source" data-index="${r.index}" title="자동 제안으로 되돌리기">↩</button>`
+      ? `<button class="btn icon" data-act="revert-source" data-index="${r.index}"` +
+        ` title="자동 제안으로 되돌리기" aria-label="이 행 자동 제안 다시 받기">↻</button>`
       : "";
     const typeOpts = (s.type_options || []).map((t) =>
       `<option value="${esc(t)}"${t === r.type ? " selected" : ""}>${esc(TYPE_LABEL[t] || t)}</option>`).join("");
@@ -797,7 +802,7 @@
       <td><input type="checkbox" class="cbx" data-act="row-confirm" data-index="${r.index}"${r.confirmed ? " checked" : ""}></td>
       <td><span class="fname" title="${esc(r.context || r.template_field)}">${esc(r.template_field)}</span>
         <span class="tbadge">[추정: ${esc(inferred)}]</span></td>
-      <td><select class="sel" data-act="row-source" data-index="${r.index}">${srcOpts}</select>${revertBtn}</td>
+      <td><div class="srcwrap"><select class="sel" data-act="row-source" data-index="${r.index}">${srcOpts}</select>${revertBtn}</div></td>
       <td><select class="sel" data-act="row-type" data-index="${r.index}">${typeOpts}</select> ${constInput}</td>
       <td><select class="sel" data-act="row-fmt" data-index="${r.index}"${fmtList.length ? "" : " disabled"}>${fmtOpts}</select></td>
       <td>${preview}</td>

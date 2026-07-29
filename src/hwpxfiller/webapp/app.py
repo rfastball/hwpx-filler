@@ -1784,6 +1784,22 @@ _EDITOR_CHIP_PROBE_JS = r"""
       return t.textContent.trim();
     });
     out.auto_revert_option = !!root.querySelector('table.map [data-act="revert-source"]');
+    // 재제안 버튼이 **select 와 같은 줄에** 서는가(U2 §2.6). 종전엔 select 가 width:100% 로
+    // 열폭을 다 먹고 버튼이 뒤에 인라인으로 붙어 둘째 줄로 밀렸다 — 정적 CSS 검사로는 못
+    // 보고 실렌더 높이로만 드러나는 결함이라, 수동 행(버튼 有)과 제안 행(버튼 無)의 「데이터
+    // 열」 칸 높이를 재서 비교한다. 같으면 안 밀린 것이다.
+    var cells = root.querySelectorAll('table.map tbody tr td:nth-child(3)');
+    var manual = cells[1], suggested = cells[2];
+    out.src_cell_h_manual = manual ? Math.round(manual.getBoundingClientRect().height) : -1;
+    out.src_cell_h_suggested = suggested ? Math.round(suggested.getBoundingClientRect().height) : -1;
+    // 버튼과 select 의 세로 중심이 같은가 — 줄이 갈리면 중심이 한 줄 높이만큼 벌어진다.
+    var wrap = manual && manual.querySelector('.srcwrap');
+    var sel = wrap && wrap.querySelector('.sel');
+    var btn = wrap && wrap.querySelector('[data-act="revert-source"]');
+    if (sel && btn) {
+      var a = sel.getBoundingClientRect(), b = btn.getBoundingClientRect();
+      out.revert_same_line = Math.abs((a.top + a.height / 2) - (b.top + b.height / 2)) < 4;
+    } else { out.revert_same_line = null; }
     out.error = null;
   } catch (e) { out.error = String((e && e.message) || e); }
   return out;
