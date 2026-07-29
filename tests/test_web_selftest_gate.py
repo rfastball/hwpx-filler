@@ -200,7 +200,11 @@ class TestWebSelftestGate:
         assert d["prev_disabled"] is False and d["next_disabled"] is True
         assert d["value_rows"] == 2 and d["evidence_rows"] == 1
         assert d["filename"] == "doc-002.hwpx"
-        assert "기본 규칙" in d["scope"] and "이번 생성" not in d["scope"]
+        # 「적용 범위」 축은 실렌더에도 없다(U2 §2.3). 종전엔 "「기본 규칙」이라고만 말하고
+        # 「이번 생성에만」을 암시하지 말라"였는데, runOverrides 기각·사망으로 값이 하나뿐인
+        # 축이 되어 자리째 걷혔다 — 정적 계약이 못 보는 것은 JS 가 그 자리를 **다시 만들지
+        # 않는가**이고, 그것은 실렌더에서만 확인된다.
+        assert d["scope_axis"] is False, "실렌더에서 적용 범위 축이 재유입됐습니다."
         assert d["approve_shown"] is True and d["flag_shown"] is True
         # 원격 닫힘 — 상태의 진실은 DOM 이 아니라 스냅샷이다.
         assert d["closed_by_state"] is True, "Python 이 닫았는데 면이 남았습니다."

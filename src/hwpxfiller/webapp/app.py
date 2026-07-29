@@ -2216,7 +2216,6 @@ _PREVIEW_DRAWER_PROBE_SETUP_JS = r"""
                   structure_changed: false },
         preview: {
           open: true, can_open: true, pos: 1, total: 2, filename: 'doc-002.hwpx',
-          scope: '이 작업의 기본 규칙',
           rows: [{ name: '공고명', value: '전산장비' }, { name: '금액', value: '' }],
           evidence: { policy: 'formatted_value',
                       rows: [{ name: '금액', value: '1,000', note: '표시형이 적용된 값입니다.' }],
@@ -2238,7 +2237,9 @@ _PREVIEW_DRAWER_PROBE_SETUP_JS = r"""
           out.evidence_rows =
             document.querySelectorAll('#previewEvidenceRows .mir-row').length;
           out.filename = document.getElementById('previewFilename').textContent;
-          out.scope = document.getElementById('previewScope').textContent;
+          // 「적용 범위」 축 부재 되읽기(U2 §2.3) — 정적 계약이 id 부재를 보지만, 실렌더에서
+          // JS 가 그 자리를 다시 만들지 않는지는 여기서만 확인된다.
+          out.scope_axis = !!document.getElementById('previewScope');
           out.approve_shown = getComputedStyle(
             document.getElementById('previewApprove')).display !== 'none';
           // 원격 닫힘: Python 이 닫았다고 말하면 DOM 도 닫힌다(상태의 진실은 스냅샷이다).

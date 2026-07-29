@@ -3295,13 +3295,24 @@ def test_filename_risk_evidence_reports_the_set_not_one_name(tmp_path):
     assert "꼬리표가 붙은 문서 1건" in ev["note"]
 
 
-def test_scope_says_default_rules_without_hinting_at_overrides(tmp_path):
-    """적용 범위는 「기본 규칙」 고정이다(F5 확정: override 는 F7) — 없는 기능을 암시하는
-    문안은 미끼다."""
+def test_preview_has_no_scope_axis(tmp_path):
+    """「적용 범위」 축은 없다(U2 §2.3) — 값이 하나뿐인 축은 없는 선택지의 암시다.
+
+    이 자리는 원래 `runOverrides`(F7 PR-B)의 짝이었다. 그것이 §10.14 에서 기각·사망하고
+    §10.15 판정 H 가 작업대의 대응 배지를 "말할 상태가 없다"며 죽였는데 드로어의 이 항목만
+    살아남아 있었다 — 판정 일관성의 미이행분이다.
+
+    **뒤집힌 선언이지 지운 테스트가 아니다.** 종전엔 "「기본 규칙」이라고만 말하고 「이번
+    생성에만」을 암시하지 말라"를 지켰다. override 가 실제로 서면 그때 축이 돌아오는 것이
+    맞고, 그때까지는 축의 부재가 계약이다.
+    """
     ctrl, _ = _session(tmp_path)
     ctrl.dispatch("preview_open", {})
-    scope = ctrl.snapshot()["preview"]["scope"]
-    assert "기본 규칙" in scope and "이번 생성" not in scope
+    preview = ctrl.snapshot()["preview"]
+    assert "scope" not in preview, (
+        "적용 범위 축이 재유입됐습니다 — runOverrides 없이 이 축을 세우면 "
+        "고를 수 없는 선택지를 암시합니다."
+    )
 
 
 # ---------------- 리뷰 1R 조치의 영구 가드(P1×2·P2×1) ----------------

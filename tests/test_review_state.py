@@ -249,7 +249,10 @@ def test_evidence_says_why_confirmation_is_asked():
     assert "한 번도 문서를 만들지 않은" in ev["reason"]
     # 파일 이름은 footer 소유 — 증거 행에 다시 싣지 않는다(한 면에 같은 문자열 두 번 금지).
     assert ev["rows"] == []
-    assert "서로 다릅니다" in ev["note"]
+    # 수렴 0건·경로 초과 0건이면 note 는 **빈다**(U2 §2.3). 종전엔 "이름이 모두 서로
+    # 다릅니다"가 떴는데, 위 docstring 이 이미 그 문장을 "묻지 않은 질문에 답한 꼴"이라고
+    # 적어 뒀다 — 이유 문장을 곁들이는 것으로 완화했던 것을 이제 자리째 비운다.
+    assert ev["note"] == ""
 
 
 def test_gate_text_names_what_changed():

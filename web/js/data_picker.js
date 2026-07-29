@@ -345,6 +345,9 @@
         initialFocus: $("dataPickerClose"),
       });
       // 외부 변경(다른 표면·CLI 등록) 재스캔 — 푸시가 목록을 채운다. 실패는 상태줄로.
+      // **이것이 유일한 재스캔 지점이다**(U2 §2.3 에서 수동 「새로고침」 제거). 손상 격리
+      // 판정(`corrupted`)도 이 호출로만 다시 계산되므로, 열 때마다 부르는 이 자리가 조용히
+      // 사라지면 면이 낡은 손상 목록을 보이게 된다.
       Bridge.call("pool", "refresh", {}).catch((err) => {
         setStatus("⚠ 고정한 데이터를 읽을 수 없습니다: " + errText(err), "danger");
       });
@@ -360,10 +363,6 @@
     });
     $("dataPickerBrowse").addEventListener("click", browseFile);
     $("dataPickerRegister").addEventListener("click", () => openRegDialog({ title: "데이터 등록" }));
-    $("dataPickerRefresh").addEventListener("click", async () => {
-      try { await Bridge.call("pool", "refresh", {}); }
-      catch (err) { setStatus("⚠ " + errText(err), "danger"); }
-    });
     // 재렌더에도 살아남게 안정 컨테이너에 위임(행은 푸시마다 다시 그려진다).
     $("dataPickerPinned").addEventListener("click", onPinnedClick);
     $("dataPickerCurrent").addEventListener("click", (e) => {

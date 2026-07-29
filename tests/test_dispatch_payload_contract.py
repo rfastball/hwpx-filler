@@ -144,7 +144,9 @@ def test_literal_frontend_payloads_match_the_registered_schema() -> None:
     # 실측 하한(F8 정산): template.js 리터럴이 화면과 함께 빠지고 editor.js 가 tpl 관리
     # 동사 리터럴을 이어받은 뒤의 실측값 = 70. 바닥은 실측에 붙여 둔다 — 실측보다 낮게
     # 남기면 추출기가 반쯤 죽어도 초록이 된다.
-    assert checked >= 70, f"리터럴 페이로드를 너무 적게 읽었습니다({checked}) — 추출기 stale?"
+    # (U2 §2.3 정산: 데이터 선택 수동 「새로고침」 사망으로 `pool/refresh` 리터럴이 둘에서
+    #  하나로 줄어 실측 69. 여는 경로의 호출은 그대로 산다.)
+    assert checked >= 69, f"리터럴 페이로드를 너무 적게 읽었습니다({checked}) — 추출기 stale?"
     assert not offenders, (
         "프런트 페이로드가 등록 스키마와 어긋납니다 — 실 브리지가 거절합니다:\n"
         + "\n".join(offenders)

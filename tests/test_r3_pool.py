@@ -204,14 +204,18 @@ def test_data_picker_register_dialog_is_guarded():
     )
 
 
-def test_refresh_buttons_are_guarded():
-    """새로고침 배선 — fire-and-forget refresh 금지(N1). 풀 재스캔의 거처는 다이얼로그다."""
+def test_pool_rescan_is_guarded():
+    """풀 재스캔 배선 — fire-and-forget refresh 금지(N1). 재스캔의 거처는 **면을 여는 순간**이다.
+
+    수동 「새로고침」 제거(U2 §2.3) 뒤 재스캔 호출은 `open()` 하나뿐이라, 그 한 자리의
+    실패 표면화가 곧 계약의 전부다. 조용히 실패하면 면은 낡은 목록을 새 목록인 양 보인다.
+    """
     src = _js("data_picker.js")
     assert '() => Bridge.call(SCREEN, "refresh"' not in src, (
-        "data_picker.js 의 dataPickerRefresh 가 무방비 fire-and-forget 으로 회귀(N1)."
+        "data_picker.js 의 풀 재스캔이 무방비 fire-and-forget 으로 회귀(N1)."
     )
-    seg = _segment(src, '$("dataPickerRefresh")', '$("dataPickerPinned")')
-    assert "catch" in seg, "dataPickerRefresh 배선에 catch 표면화가 없습니다(N1)."
+    seg = _segment(src, 'Bridge.call("pool", "refresh"', "function build()")
+    assert "catch" in seg, "풀 재스캔 배선에 catch 표면화가 없습니다(N1)."
     # (tpl 새로고침은 화면 사망(F8 §10.17)으로 편집기 lib-refresh 로 이주 — 그 배선은
     #  editor.js onClick 디스패처의 공용 try/catch 가드가 상속한다: test_r3_editor 의
     #  test_editor_js_click_dispatch_guards_bridge_rejection 소관.)
@@ -261,8 +265,31 @@ def test_appjs_nav_autorefresh_whitelist_matches_backend():
         )
 
 
-def test_manual_refresh_buttons_kept():
-    """자동 refresh 가 수동 새로고침 버튼을 대체하지 않는다 — 명시적 재스캔 경로 유지(C6)."""
-    assert '$("dataPickerRefresh")' in _js("data_picker.js")
-    # tpl 수동 새로고침은 편집기 「템플릿」 탭 상단 행동 줄(lib-refresh)로 이주(F8).
+def test_pool_rescan_rides_on_opening_the_dialog():
+    """데이터 선택 면의 재스캔은 **여는 행위**가 지불한다 — 수동 버튼은 없다(U2 §2.3).
+
+    **뒤집힌 선언이다.** 종전 이름은 `test_manual_refresh_buttons_kept` 였고 "자동 refresh
+    가 수동 새로고침 버튼을 대체하지 않는다"(C6)를 지켰다. 그 판정을 U2 에서 되깎았다:
+    `open()` 이 열 때마다 `pool.refresh` 를 부르므로 면에 들어온 목록은 **이미 방금 읽은
+    것**이고, 버튼에 남는 고유 쓸모는 「모달을 띄워 둔 채 외부에서 바뀐 것」 하나뿐이었다.
+    그 하나를 위해 상시 버튼을 두면 목록이 낡았을 수 있다는 인상을 매번 준다.
+
+    **잃은 것을 적어 둔다**(조용한 축소 금지): 면을 열어 둔 채 다른 표면·CLI 가 풀을 바꾸면
+    이제 다시 열기 전까지 반영되지 않는다. 손상 격리 판정(`corrupted`)도 같은 호출로만
+    갱신되므로 같은 창을 공유한다.
+
+    tpl 축은 무관하다 — 화면 사망(F8)으로 편집기 「템플릿」 탭 lib-refresh 가 승계했고,
+    거기는 여는 행위와 별개의 목록이라 수동 재스캔이 계속 산다.
+    """
+    src = _js("data_picker.js")
+    assert "dataPickerRefresh" not in src, (
+        "수동 새로고침 버튼이 재유입됐습니다 — open() 이 이미 재스캔합니다."
+    )
+    index = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    assert 'id="dataPickerRefresh"' not in index, "셸에 새로고침 버튼 DOM 이 남아 있습니다."
+    seg = _segment(src, "function open(", "function build()")
+    assert 'Bridge.call("pool", "refresh"' in seg, (
+        "여는 경로의 재스캔이 사라졌습니다 — 수동 버튼도 없으므로 목록을 갱신할 길이 없습니다."
+    )
+    # tpl 수동 새로고침은 편집기 「템플릿」 탭 상단 행동 줄(lib-refresh)로 이주(F8) — 존속.
     assert 'data-act="lib-refresh"' in _js("screens/editor.js")
