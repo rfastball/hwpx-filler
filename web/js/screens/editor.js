@@ -65,12 +65,18 @@
      매핑 행의 상수 입력(`row-const`)도 같은 `change` 발신이라 같은 자리에서 첫 클릭이
      삼켜졌다. 목록을 늘리는 대신 **`onChange` 가 발신하는 편집 액션 전부**를 대상으로 삼고,
      새 편집 컨트롤이 목록 밖으로 새면 정적 계약(`test_r3_editor`)이 시끄럽게 실패한다 —
-     열거로 푼 문제는 다음 열거에서 다시 샌다. */
+     열거로 푼 문제는 다음 열거에서 다시 샌다.
+
+     **대기는 값까지 든다**(리뷰 R4 P1). 「대기 중」이라는 사실만 들면, 타이핑 도중 푸시가 와
+     `#editor-body` 가 옛 스냅샷으로 다시 그려질 때 **친 값은 사라지는데 버튼은 열린 채**다 —
+     사용자는 사라진 값을 저장했다고 믿는다(조용한 소실 + 그것을 가리는 표지). 그래서 무엇을·
+     어디에·무슨 값을 쳤는지 함께 들고 재구성 **뒤에** 되돌려 놓는다. 되돌릴 자리가 사라졌으면
+     (단계 이동 등) 대기도 버린다 — 그때는 남은 편집이 정말 없으므로 열린 버튼이 거짓이다. */
   const FIELD_EDIT_KEYS = { name: "name", pattern: "pattern", "dataset-name": "dataset_name" };
   const ROW_EDIT_KEYS = {
     "row-source": "source", "row-type": "type", "row-fmt": "fmt", "row-const": "const",
   };
-  let pendingFieldEdit = false;
+  let pendingFieldEdit = null;  // {act, index, value} — null 이면 대기 없음
 
   /* 이 컨트롤에 대해 **스냅샷이 든 값**(=Python 이 아는 값) — 편집 대상이 아니면 null. */
   function snapshotValue(el) {
@@ -120,6 +126,9 @@
       renderContext(s);
       $("editor-steps").innerHTML = stepHeader(s);
       $("editor-body").innerHTML = stepBody(s);
+      // 재구성이 지운 타이핑을 되돌린 **뒤에** footer 를 그린다 — 되돌릴 자리가 없어 대기가
+      // 버려지는 경우 그 사실이 같은 렌더의 저장 버튼 상태에 반영돼야 한다(리뷰 R4 P1).
+      restorePendingEdit();
       $("editor-foot").innerHTML = footer(s);
       $("editor-foot").style.display = footer(s) ? "" : "none";
     });
@@ -1175,11 +1184,26 @@
     const el = e.target.closest("[data-act]");
     const known = el && snapshotValue(el);
     if (known === null || known === undefined) return;
-    const pending = el.value !== known;
-    if (pending === pendingFieldEdit) return;
-    pendingFieldEdit = pending;
+    pendingFieldEdit = el.value === known ? null : {
+      act: el.dataset.act, index: el.dataset.index, value: el.value,
+    };
     const save = document.querySelector('#editor-foot [data-act="save"]');
     if (save && LAST && isEditing(LAST)) save.disabled = !(LAST.dirty || pendingFieldEdit);
+  }
+
+  /* 재구성이 지운 타이핑을 제자리에 되돌린다 — 없으면 대기도 버린다(위 주석 R4 P1).
+     `render()` 안, `#editor-body` 를 다시 지은 **직후**에 부른다. */
+  function restorePendingEdit() {
+    if (!pendingFieldEdit) return;
+    const p = pendingFieldEdit;
+    // 화면 전체를 겨눈다 — 이름 입력은 머리(#editorName)에 살아 재구성 대상이 아니지만,
+    // 본문만 뒤지면 「자리가 없다」로 읽혀 멀쩡한 대기를 버린다.
+    const sel = p.index === undefined
+      ? `#scr-editor [data-act="${p.act}"]`
+      : `#scr-editor [data-act="${p.act}"][data-index="${p.index}"]`;
+    const el = document.querySelector(sel);
+    if (!el) { pendingFieldEdit = null; return; }   // 되돌릴 자리가 없다 = 남은 편집도 없다
+    el.value = p.value;
   }
 
   function onChange(e) {
@@ -1188,7 +1212,7 @@
     // 발신하는 순간 이 사실의 소임이 끝난다 — 이후 판정은 Python 이 낸 `s.dirty` 가 진다.
     // (버튼의 DOM 상태는 건드리지 않는다: 왕복이 끝나 push 가 올 때까지 열린 채여야
     //  select 편집처럼 change 가 즉시 서는 자리에서도 첫 클릭이 살아 있다.)
-    if (snapshotValue(el) !== null) pendingFieldEdit = false;
+    if (snapshotValue(el) !== null) pendingFieldEdit = null;
     const idx = el.dataset.index !== undefined ? Number(el.dataset.index) : null;
     switch (el.dataset.act) {
       case "row-source": sendEdit("set_source", { index: idx, source: el.value }); break;

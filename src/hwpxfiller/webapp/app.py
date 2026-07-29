@@ -1924,7 +1924,22 @@ _EDITOR_SAVE_GATE_PROBE_JS = r"""
       constEl.value = '고정값';
       constEl.dispatchEvent(new Event('input', {bubbles:true}));
       out.row_reverted_disabled = !!(saveBtn() && saveBtn().disabled);
-      constEl.blur();
+      // ⑥ **타이핑 도중 푸시**(리뷰 R4 P1) — `#editor-body` 가 옛 스냅샷으로 다시 그려져도
+      // 친 값이 살아 있어야 한다. 값이 사라졌는데 버튼만 열려 있으면 사용자는 사라진 값을
+      // 저장했다고 믿는다(조용한 소실 + 그것을 가리는 표지).
+      constEl.value = '푸시 중 입력';
+      constEl.dispatchEvent(new Event('input', {bubbles:true}));
+      window.__push('editor', rowSnap);
+      var after = document.querySelector('#editor-body [data-act="row-const"]');
+      out.row_value_survives_push = !!after && after.value === '푸시 중 입력';
+      out.row_enabled_after_push = !!(saveBtn() && !saveBtn().disabled);
+      // ⑦ 되돌릴 자리가 사라지면(단계 이동) 대기도 버려야 한다 — 남은 편집이 없는데 열린
+      // 버튼은 거짓말이다.
+      window.__push('editor', snap);
+      out.gone_control_disables = !!(saveBtn() && saveBtn().disabled);
+      window.__push('editor', rowSnap);
+      constEl = document.querySelector('#editor-body [data-act="row-const"]');
+      if (constEl) constEl.blur();
     }
     out.error = null;
   } catch (e) { out.error = String((e && e.message) || e); }

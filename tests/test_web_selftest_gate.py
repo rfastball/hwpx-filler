@@ -895,6 +895,17 @@ class TestWebSelftestGate:
         assert g["row_reverted_disabled"] is True, (
             "행 상수를 되돌려 쳤는데 저장이 열린 채입니다 — 없는 변경을 저장하라고 합니다."
         )
+        # 타이핑 도중 푸시(리뷰 R4 P1) — 값이 살고, 그래야 열린 버튼이 참이다.
+        assert g["row_value_survives_push"] is True, (
+            "재구성이 친 값을 지웠습니다 — 저장은 열려 있으니 사용자는 사라진 값을 저장했다고 "
+            "믿습니다(조용한 소실을 표지가 가립니다)."
+        )
+        assert g["row_enabled_after_push"] is True, (
+            "값은 살았는데 저장이 잠겼습니다 — 남은 편집을 없다고 말합니다."
+        )
+        assert g["gone_control_disables"] is True, (
+            "되돌릴 자리가 사라졌는데 저장이 열린 채입니다 — 없는 편집을 있다고 말합니다."
+        )
 
     def test_editor_library_manage_renders_menus_and_dialog(self, selftest_result: dict) -> None:
         # F8(§10.17.2 판정 D) — 구 tpl 그룹 프로브의 승계 재작성: 관리 표면(그룹·⋮·칩·이동
