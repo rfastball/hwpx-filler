@@ -754,9 +754,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "pos": pos,
             "total": total,
             "filename": names[pos] if 0 <= pos < len(names) else "",
-            # 적용 범위는 「기본 규칙」 고정이다(F5 확정: override 는 F7). 없는 기능을
-            # 암시하는 문안을 두지 않는다 — "이번 생성에만" 은 여기서 말하지 않는다.
-            "scope": "이 작업의 기본 규칙",
+            # 「적용 범위」 축은 없다(U2 §2.3). 이 축의 존재 이유였던 runOverrides 는 §10.14
+            # 에서 기각·사망했고 §10.15 판정 H 가 작업대의 대응 배지를 "말할 상태가 없다"며
+            # 이미 죽였다 — 값이 하나뿐인 축은 정보가 아니라 없는 선택지의 암시다.
             "rows": [
                 {"name": f, "value": str(record.get(f, ""))} for f in order
             ],

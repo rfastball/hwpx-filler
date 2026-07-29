@@ -646,7 +646,6 @@
       `</div>`).join("");
     renderPreviewEvidence(p.evidence || { rows: [], note: "" });
     $("previewFilename").textContent = p.filename || "";
-    $("previewScope").textContent = p.scope || "";
     // 승인 버튼은 **요구가 남아 있을 때만** 선다(v6 `approvePreview.hidden` 승계). 없는
     // 사건의 버튼을 회색으로 두면 "여기서 뭔가 해야 하나" 하는 미끼가 된다.
     $("previewApprove").style.display = p.can_approve ? "" : "none";
@@ -658,6 +657,7 @@
     if (!rows.length && !ev.note && !ev.reason) { sec.style.display = "none"; return; }
     sec.style.display = "";
     $("previewEvidenceReason").textContent = ev.reason || "";
+    $("previewEvidenceReason").style.display = ev.reason ? "" : "none";
     // before 는 **있을 때만** 그린다(F7 판정 H): 직전 판본이 없는 작업(첫 저장·구 버전)에
     // 빈 값을 세우면 "이전엔 비어 있었다"는 거짓 증거가 된다. 값은 저장해 둔 문자열이 아니라
     // **이전 규칙으로 같은 행을 다시 렌더**한 것이라, 두 값이 같은 행의 두 규칙이다.
@@ -672,6 +672,7 @@
       (row.note ? `<span class="doc-sum">${esc(row.note)}</span>` : "") +
       `</span></div>`).join("");
     $("previewEvidenceNote").textContent = ev.note || "";
+    $("previewEvidenceNote").style.display = ev.note ? "" : "none";
   }
 
   /* DOM 개폐를 상태에 맞춘다. Python 이 닫았다고 말했는데 면이 떠 있으면(작업 전환·데이터

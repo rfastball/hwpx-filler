@@ -135,7 +135,9 @@ def test_picker_skeleton_is_static_in_index_html():
     )
     for inner in (
         "dataPickerTitle", "dataPickerNote", "dataPickerCurrent", "dataPickerPinned",
-        "dataPickerCorrupt", "dataPickerBrowse", "dataPickerRegister", "dataPickerRefresh",
+        # (dataPickerRefresh 는 U2 §2.3 에서 사망 — open() 이 여는 순간 재스캔하므로 상시
+        #  버튼이 잉여였다. 그 부재는 test_r3_pool 이 단언한다.)
+        "dataPickerCorrupt", "dataPickerBrowse", "dataPickerRegister",
         "dataPickerClose",
     ):
         assert f'id="{inner}"' in index, (

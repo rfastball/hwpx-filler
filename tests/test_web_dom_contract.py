@@ -1598,10 +1598,13 @@ def test_job_preview_drawer_surface_contract():
         "previewModal", "previewTitle", "previewPos", "previewPrev", "previewNext",
         "previewRows", "previewEvidence", "previewEvidenceRows", "previewEvidenceNote",
         "previewEvidenceReason",
-        "previewFilename", "previewScope", "previewApprove", "previewClose",
+        "previewFilename", "previewApprove", "previewClose",
         "previewEdit", "previewEmpty", "jobPreviewOpen", "jobReviewFlag",
     ):
         assert f'id="{element}"' in html, f"미리보기 드로어 노드가 없습니다: {element}"
+    # 「적용 범위」 축은 없다(U2 §2.3) — runOverrides 기각·사망으로 값이 하나뿐인 축이 됐고,
+    # 고를 수 없는 선택지를 암시하는 자리만 남았다. 페이로드 쪽 부재는 test_webapp_job 소관.
+    assert 'id="previewScope"' not in html, "적용 범위 축이 재유입됐습니다."
     # 경계는 다음 모달(libraryMoveModal) — 구 경계(붙여넣기 모달)는 「기안」과 함께 사망(F6 PR-B).
     drawer = html.split('id="previewModal"', 1)[1].split('id="libraryMoveModal"', 1)[0]
     assert 'role="dialog"' in drawer and 'aria-modal="true"' in drawer, (

@@ -274,7 +274,10 @@ def build_evidence(
             bits.append(f"같은 이름으로 겹쳐 꼬리표가 붙은 문서 {converged}건")
         if too_long:
             bits.append(f"저장 경로가 너무 긴 문서 {too_long}건")
-        note = " · ".join(bits) if bits else "선택한 문서의 이름이 모두 서로 다릅니다."
+        # 0건이면 **비운다**(U2 §2.3). 판정 K 가 요구한 것은 **건수 증거**이지 0건 성공
+        # 문장이 아니다 — 「확인할 변경」 아래에서 "아무 문제 없습니다"는 확인할 것을 주지
+        # 않으면서 자리만 차지하고, 진짜 건수가 뜰 자리를 무해한 문장으로 길들인다.
+        note = " · ".join(bits)
     else:
         n = len(mapped)
         for name in req.changed_fields:
@@ -320,7 +323,9 @@ def review_reason_text(req: ReviewRequirement) -> str:
 def review_gate_text(req: ReviewRequirement) -> str:
     """검토 요구가 게이트에 쓰는 문안 — ①무엇이 됐는가 ②다음에 뭘 하는가만
     (`docs/COPY_STYLE_GUIDE.md` §1·§2 오류 문형: 최대 2문장)."""
-    return review_reason_text(req) + " 미리보기에서 결과를 확인해야 생성할 수 있습니다."
+    # 「생성 값 미리보기」는 그 버튼에 실제로 적힌 말이다(U2 §2.3) — 게이트가 다른 이름으로
+    # 부르면 지시받은 사람이 누를 것을 찾아야 한다.
+    return review_reason_text(req) + " '생성 값 미리보기'에서 결과를 확인해야 생성할 수 있습니다."
 
 
 @dataclass
