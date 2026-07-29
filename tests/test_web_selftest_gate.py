@@ -472,6 +472,16 @@ class TestWebSelftestGate:
         j = selftest_result["job_data_first"]
         assert j.get("error") is None, f"data-first 프로브 예외: {j.get('error')!r}"
         assert j["zones_shown"] and j["actionbar_shown"], "무작업 상태에서 세션 존이 죽어 있습니다."
+        # 행동이 붙은 캡션의 ⤢ 는 오른쪽 끝이다(리뷰 R5) — 규칙은 둘 다 살아 있고 **어느 쪽이
+        # 이기는가**만 갈리는 자리라 정적 검사가 못 본다.
+        cap = j["cap_actions"]
+        assert cap, "행동 캡션(.zone-cap-actions)을 찾지 못했습니다 — 프로브 겨눔 소실."
+        assert cap["display"] == "flex", (
+            f"행동 캡션이 flex 를 잃었습니다({cap['display']!r}) — 블록 규칙이 곁의 규칙을 덮었습니다."
+        )
+        assert abs(cap["far_edge"]) <= 1, (
+            f"⤢ 가 캡션 오른쪽 끝에서 {cap['far_edge']}px 떨어져 있습니다 — 제목 옆에 붙었습니다."
+        )
         assert j["cands_row_shown"] and j["cand_buttons"] == 2, j
         # 확인 필요·순위 밖은 후보 줄에서 수치 + 출구로만 말한다(슬라이스 3 구획 이사).
         assert j["cand_exit"] is True, "문서 탐색 출구가 후보 줄에 없습니다."
