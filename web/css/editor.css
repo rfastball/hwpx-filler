@@ -59,6 +59,16 @@ table.map th:nth-child(6){width:180px}  /* 미리보기 */
 table.map td{padding:var(--sp-6) var(--sp-8);border-bottom:1px solid var(--n-track);vertical-align:middle;
   overflow:hidden}
 table.map .sel{width:100%}
+/* 「데이터 열」 칸은 select + 재제안 버튼이 **한 줄에** 선다(U2 §2.6). 종전엔 select 가
+   width:100% 로 가용 154px 를 다 먹고 버튼이 그 뒤에 인라인으로 붙어 둘째 줄로 밀렸다 —
+   원문의 "과하게 커서 UI 깨짐"이 가리키는 것이 그 줄바꿈이다.
+   flex 는 **`td` 가 아니라 안쪽 래퍼**에 건다: `td` 에 직접 걸면 `table-layout:fixed` 의
+   열 정렬이 깨진다. */
+table.map .srcwrap{display:flex;align-items:center;gap:var(--sp-4)}
+table.map .srcwrap .sel{flex:1;min-width:0;width:auto}
+/* 버튼 글자는 표 본문(--fs-dense 13px)에 맞춘다 — .btn 기본은 --fs-body(14px) 라 표 안에서
+   혼자 크다. 폭은 .btn.icon 이 좌우 패딩을 줄여 벌어 준다. */
+table.map .srcwrap .btn.icon{flex:none;font-size:var(--fs-dense);line-height:1}
 table.map td .pv{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 table.map tr:last-child td{border-bottom:0}
 tr.r-unconfirmed td{background:var(--a-unconf)}
