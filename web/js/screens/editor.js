@@ -1070,7 +1070,7 @@
             window.alert(`확정한 매핑 ${st.confirmed}개가 있어 전체 미사용을 할 수 없습니다. 확정을 먼저 해제하거나 칩을 하나씩 끄세요.`);
             break;
           }
-          const man = (st && st.manual_unconfirmed) || 0;
+          const man = (st && st.use_none_manual) || 0;
           if (man && !(await Modal.confirm({ body:
             `전체 미사용하면 직접 소스를 고른 매핑 ${man}개의 수동 지정이 해제됩니다` +
             `(자동 제안으로만 복원).\n\n계속할까요?`,
@@ -1085,11 +1085,15 @@
           // 차단), 확인은 그 수치로 묻는다. 다만 확정 행은 선차단이 아니라 **제외**다 —
           // 일괄 재제안은 파괴가 아니라 재계산이고, 확정 하나 때문에 나머지를 못 돌리면
           // 확정을 풀었다 다시 거는 우회를 시킨다.
+          // 수치는 **이 관문의 것**을 읽는다(리뷰 R1 P1) — use-none 의 수치(`use_none_manual`)는
+          // 소스를 겨눈 행만 세는데 이쪽은 미확정 행 전부를 리셋하므로, 그 수치로 물으면 소스
+          // 없이 상수만 직접 입력한 행이 확인 없이 지워진다. 관문마다 자기 수치를 읽는다.
           const st = await sendEdit("mapping_reset_stakes", {});
-          const man = (st && st.manual_unconfirmed) || 0;
+          const man = (st && st.resuggest_manual) || 0;
           const kept = (st && st.confirmed) || 0;
           if (man && !(await Modal.confirm({ body:
-            `직접 소스를 고른 매핑 ${man}개가 자동 제안으로 바뀝니다.` +
+            `직접 편집한 매핑 ${man}개가 자동 제안으로 돌아갑니다.` +
+            `\n직접 입력한 상수·유형·표시형도 함께 지워집니다.` +
             (kept ? `\n확정한 ${kept}개는 그대로 둡니다.` : "") +
             `\n\n계속할까요?`,
             confirmLabel: "다시 받기", cancelLabel: "취소" }))) break;

@@ -1455,14 +1455,41 @@ def test_mapping_reset_stakes_judged_by_python_now(tmp_path):
     stakes = ctrl.dispatch("mapping_reset_stakes", {})
     assert stakes["human"] == 1                                        # 내용 있는 수동
     # 소스 없는 수동 const 행은 use_none 강등 대상이 아니다 — 문안=파괴 집합(리뷰 F4).
-    assert stakes["manual_unconfirmed"] == 0
+    assert stakes["use_none_manual"] == 0
+    # 같은 행이 일괄 재제안에서는 **잃을 것이 있다**(리뷰 R1 P1) — reset_to_system 이 상수를
+    # 지운다. 두 관문의 수치가 갈리는 자리라 이름도 소비자별로 갈라 둔다.
+    assert stakes["resuggest_manual"] == 1
     assert stakes["confirmed"] == 0                                    # use_none 선차단 근거(F5)
     r = ctrl.dispatch("confirm_all", {})
     ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
     stakes = ctrl.dispatch("mapping_reset_stakes", {})
     assert stakes["human"] == ctrl.snapshot()["field_count"]           # 전 행 확정(비움 포함)
-    assert stakes["manual_unconfirmed"] == 0                           # 확정 = 미확정 수동 아님
+    assert stakes["use_none_manual"] == 0                              # 확정 = 미확정 수동 아님
+    assert stakes["resuggest_manual"] == 0                             # 확정 행은 재제안 비대상
     assert stakes["confirmed"] == ctrl.snapshot()["field_count"]       # 선차단 수치(F5)
+
+
+def test_resuggest_stakes_count_every_row_the_loop_resets(tmp_path):
+    """일괄 재제안의 확인 수치 = **그 루프가 실제로 리셋하는 행**(리뷰 R1 P1).
+
+    종전엔 use_none 의 수치(`r.source` 를 요구)를 빌려 썼다. 소스 없이 상수만 직접 입력한
+    미확정 행은 그 술어에 안 걸려 수치가 0이 되는데, 루프는 그 행도 `revert_to_auto` 로
+    리셋한다(const·type·fmt 소거) — 확인 대화 없이 직접 입력이 사라졌다. 수치와 루프가
+    같은 술어(`_resuggest_targets`)에서 나오는지 확인한다: 확인 수치 ≥ 실제 잃는 행.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("skip_data", {})                        # 데이터 없음 = 소스를 겨눌 수 없음
+    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_const", {"index": 0, "const": "직접 입력한 값"})
+    stakes = ctrl.dispatch("mapping_reset_stakes", {})
+    assert stakes["use_none_manual"] == 0                 # use_none 은 이 행을 안 건드린다
+    assert stakes["resuggest_manual"] == 1                # 재제안은 건드린다 → 확인 근거가 선다
+
+    ctrl.dispatch("resuggest_all", {})
+    row = ctrl.snapshot()["rows"][0]
+    assert row["const"] == ""                             # 실제로 지운다(그래서 물어야 한다)
+    assert row["touched"] is False
 
 
 def test_ensure_model_carries_touched_unconfirmed_rows(tmp_path):
