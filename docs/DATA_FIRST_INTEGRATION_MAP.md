@@ -1,14 +1,16 @@
 # data-first 봉합 지도 (V6 → master)
 
-**문서 상태: 현재 정본** — `lab/ui-reboot`의 `docs/core-workflow-integration-plan.md`(봉합 계획)
+**문서 상태: 현재 정본** — v6 UI 랩의 `docs/core-workflow-integration-plan.md`(봉합 계획)
 단계 1 산출물. 워크플로 계약 정본은 [`docs/core-workflow.md`](core-workflow.md)이고,
 이 문서는 그 계약과 master 실물 사이의 **소유권 대조표**만 소유한다. 인용의 `lab:`은
 동결 시점 랩 워크트리, 무접두는 이 브랜치(master 계열) 기준이다.
 
-> 계약 문서는 랩 브랜치(태그 `prototype-v6-freeze`)에만 있다가 이 저장소로 옮겨졌다 —
-> 아래 본문의 `lab core-workflow.md` 표기는 **이제 `docs/core-workflow.md`를 가리킨다**.
-> 목업·프로토타입 자산(`core-workflow-ui-mvp-demo-*.html`, `core-workflow-prototype/`)은
-> 여전히 랩에만 있으므로 `lab:` 접두가 붙은 그쪽 인용은 그대로 읽는다.
+> **랩 자산을 어디서 찾나.** 계약 문서는 랩에만 있다가 이 저장소로 옮겨졌다 — 아래 본문의
+> `lab core-workflow.md` 표기는 **이제 `docs/core-workflow.md`를 가리킨다**. 나머지 랩 자산
+> (봉합 계획 원문, 목업 `core-workflow-ui-mvp-demo-*.html`, `core-workflow-prototype/`)은
+> 저장소에 없고 태그 **`archive/lab-ui-reboot`** 가 보존한다 — `lab:` 접두가 붙은 인용은
+> `git show archive/lab-ui-reboot:docs/…` 로 꺼내 읽는다. 브랜치 `lab/ui-reboot` 는
+> 2026-07-29 에 은퇴했다.
 
 ## 0. 총괄 판정
 

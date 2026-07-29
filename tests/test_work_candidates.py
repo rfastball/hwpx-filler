@@ -1,7 +1,7 @@
 """데이터-우선 후보 판정(링1) — v6 계약 §18.4·§19.1 이식의 경계 테스트.
 
-정본: docs/DATA_FIRST_INTEGRATION_MAP.md (봉합 지도) · lab 태그 prototype-v6-freeze 의
-docs/core-workflow.md. 판정의 단일 출처 = compatibility_for, 후보 열거 = candidate_rows.
+정본: docs/DATA_FIRST_INTEGRATION_MAP.md (봉합 지도) · docs/core-workflow.md (계약).
+판정의 단일 출처 = compatibility_for, 후보 열거 = candidate_rows.
 """
 
 from hwpxfiller.core.job import (
