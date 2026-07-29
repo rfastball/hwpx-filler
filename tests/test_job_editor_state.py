@@ -81,6 +81,26 @@ def test_validate_save_passes_with_profile():
     assert len(verdict.profile.mappings) == 2
 
 
+def test_blocked_field_names_the_input_to_fix():
+    """차단은 **고칠 칸**을 함께 말한다(U2 §2.4) — "입력하세요"만으로는 지시가 절반이다.
+
+    표면이 차단 문구를 파싱해 어느 칸인지 알아내면 문안을 고칠 때마다 조준이 조용히
+    깨진다. 판정이 이름을 내고 표면은 그것을 겨눈다.
+
+    칸을 겨눌 수 없는 차단(미확정·스키마 불일치·전부 비움)은 **빈 문자열**이다 — 없는
+    칸을 겨눈 척하지 않는다. 그것들은 표 전체가 대상이라 지목할 입력이 없다.
+    """
+    assert validate_save(_model(_content_row()), "", "doc-{{ID}}").blocked_field == "name"
+    assert validate_save(_model(_content_row()), "작업1", "").blocked_field == "pattern"
+    # TXT 는 파일 이름 축이 없어 패턴 차단 자체가 없다 — 겨눌 칸도 없다.
+    assert validate_save(_model(_content_row()), "작업1", "", media="txt").ok
+    for verdict in (
+        validate_save(_model(_content_row(confirmed=False)), "작업1", "doc-{{ID}}"),
+        validate_save(_model(_blank_row()), "작업1", "doc-{{ID}}"),
+    ):
+        assert not verdict.ok and verdict.blocked_field == ""
+
+
 def test_validate_save_predicate_order_is_stable():
     """차단 사유 순서 고정: 미확정 → 이름 → 패턴 → 전부 비움(종전 accept 와 동일)."""
     unconfirmed = _model(_content_row(confirmed=False))

@@ -1524,6 +1524,31 @@ class EditorController:
         self.model.revert_to_auto(index)
         self.model.resuggest_row(index, self._active_sources())
 
+    def _do_resuggest_all(self, p: dict) -> dict:
+        """전 행을 자동 제안으로 다시 받는다(U2 §2.4) — 행 단위 ``revert_source`` 의 일괄판.
+
+        **확정한 행은 건드리지 않는다.** 행 단위가 확정 행을 시끄럽게 거절하는 것과 같은
+        근거인데(오클릭 한 번에 확정이 조용히 풀리면 안 된다), 일괄에서는 거절이 아니라
+        **제외**다: 확정 하나 때문에 나머지 전부를 못 돌리면 사용자는 확정을 풀었다 다시
+        걸어야 한다. 대신 무엇을 건드리고 무엇을 뒀는지 수치로 돌려준다 — 부분 동작을
+        조용히 하지 않는다(confirm-or-alarm).
+
+        되돌린 행마다 ``revert_to_auto`` → ``resuggest_row`` 로 간다: 행 단위와 **같은
+        착지**여야 「일괄로 한 것」과 「하나씩 N번 한 것」이 달라지지 않는다. 전집합
+        ``apply_active_sources`` 를 쓰지 않는 이유도 같다 — 그쪽은 확정 행까지 훑는다.
+        """
+        if self.model is None:
+            return {"resuggested": 0, "kept_confirmed": 0}
+        active = self._active_sources()
+        targets = [i for i, r in enumerate(self.model.rows) if not r.confirmed]
+        for index in targets:
+            self.model.revert_to_auto(index)
+            self.model.resuggest_row(index, active)
+        return {
+            "resuggested": len(targets),
+            "kept_confirmed": len(self.model.rows) - len(targets),
+        }
+
     def _do_set_type(self, p: dict) -> None:
         self.model.set_type(int(p["index"]), p["type"])
 
@@ -1773,7 +1798,13 @@ class EditorController:
             media=template_media(self.template_path) if self.template_path else "hwpx",
         )
         if not verdict.ok:
-            return {"ok": False, "block_reason": verdict.block_reason}
+            # 어느 칸을 고쳐야 하는지도 함께 돌려준다(U2 §2.4) — 표면이 차단 문구를 파싱해
+            # 알아내면 문안을 고칠 때마다 조준이 조용히 깨진다.
+            return {
+                "ok": False,
+                "block_reason": verdict.block_reason,
+                "blocked_field": verdict.blocked_field,
+            }
         # 태그·마지막 실행 메타는 편집 세션 밖(홈 태그 편집 등)에서 바뀌었을 수 있어
         # load_job 시점 스냅샷이 아니라 저장 직전 디스크 상태를 다시 읽어 보존한다 — 편집
         # 세션이 열린 사이 홈에서 단 태그를 조용히 되돌리지 않는다(#26 confirm-or-alarm).

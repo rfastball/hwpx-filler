@@ -698,6 +698,9 @@
         <span class="spacer"></span>
         <button class="btn" data-act="confirm-all">모두 확정</button>
         <button class="btn" data-act="unconfirm-all">모두 해제</button>
+        <!-- 행 아이콘(↻)의 텍스트 짝(U2 §2.4·§2.6) — 행마다 라벨을 달 폭이 없어(3열 170px
+             고정) 아이콘으로 두는 대신, 그 기능의 이름은 여기서 한 번 말한다. -->
+        <button class="btn" data-act="resuggest-all">자동 제안 다시 받기</button>
         ${s.unconfirm_undo_count ? `<button class="btn" data-act="restore-confirmed">직전 확정 ${s.unconfirm_undo_count}개 복원</button>` : ""}
       </div>
       ${dataPreview(s)}`;
@@ -879,8 +882,12 @@
       // 선택지를 모든 문맥에 나열하지 않는다). 손댄 것이 없으면 버릴 것도 없다.
       const discard = s.dirty
         ? `<button class="btn" data-act="discard-patch">변경 버리기</button>` : "";
+      // 저장은 **바꾼 것이 있을 때만** 선다(U2 §2.4). 원문의 요지는 두 모드를 이름이
+      // 아니라 **상태로** 구별하자는 것이고, 판정은 이미 `s.dirty` 로 와 있었는데 표면이
+      // 안 썼다. 신규 마법사에는 걸지 않는다 — 거긴 항상 dirty 라 늘 활성이고, 마지막
+      // 단계의 「작업 저장」은 완료 행동이지 변경 저장이 아니다.
       return `${discard}<span class="spacer"></span>` +
-        `<button class="btn primary" data-act="save">변경 저장</button>`;
+        `<button class="btn primary" data-act="save"${s.dirty ? "" : " disabled"}>변경 저장</button>`;
     }
     const back = here > 0
       ? `<button class="btn" data-act="back">◀ 뒤로</button>` : `<button class="btn" disabled>◀ 뒤로</button>`;
@@ -1073,6 +1080,27 @@
         }
         case "revert-source":
           await sendEdit("revert_source", { index: idx }); break;
+        case "resuggest-all": {
+          // use-none 과 같은 순서다: 수치는 Python 이 **지금** 판정하고(stale LAST 우회
+          // 차단), 확인은 그 수치로 묻는다. 다만 확정 행은 선차단이 아니라 **제외**다 —
+          // 일괄 재제안은 파괴가 아니라 재계산이고, 확정 하나 때문에 나머지를 못 돌리면
+          // 확정을 풀었다 다시 거는 우회를 시킨다.
+          const st = await sendEdit("mapping_reset_stakes", {});
+          const man = (st && st.manual_unconfirmed) || 0;
+          const kept = (st && st.confirmed) || 0;
+          if (man && !(await Modal.confirm({ body:
+            `직접 소스를 고른 매핑 ${man}개가 자동 제안으로 바뀝니다.` +
+            (kept ? `\n확정한 ${kept}개는 그대로 둡니다.` : "") +
+            `\n\n계속할까요?`,
+            confirmLabel: "다시 받기", cancelLabel: "취소" }))) break;
+          const res = await sendEdit("resuggest_all", {});
+          // 아무것도 안 바뀐 경우를 조용히 넘기지 않는다 — 누른 버튼이 무동작으로 보이면
+          // 그게 조용한 소실이다(전 행이 확정이면 대상이 0개다).
+          if (res && !res.resuggested) {
+            window.alert(`자동 제안을 다시 받을 행이 없습니다. 확정한 ${res.kept_confirmed}개는 그대로 둡니다.`);
+          }
+          break;
+        }
         case "prev-rec": await sendEdit("step_preview", { delta: -1 }); break;
         case "next-rec": await sendEdit("step_preview", { delta: 1 }); break;
         case "unconfirm-all": await sendEdit("unconfirm_all", {}); break;
@@ -1187,7 +1215,29 @@
       return false;
     }
     alertMsg(res.dataset_error || res.block_reason || "저장할 수 없습니다.");
+    aimAtBlockedField(res.blocked_field);
     return false;
+  }
+
+  /* 차단당한 칸으로 커서를 옮긴다(U2 §2.4) — "입력하세요"라고 말한 뒤 어디에 입력할지
+     안 알려 주면 지시가 절반이다. 작업 이름은 보이는 라벨 없이 제목 자리에 사는 입력이라
+     (`.title-input`, 테두리·배경 투명) 특히 못 찾는다.
+
+     **어느 칸인지는 Python 이 말한다**(`blocked_field`). 그리고 이름 칸은 `#editor-body`
+     밖 고정 머리에 살아 섹션을 갈아도 살아 있다 — 파일명 패턴은 그 반대라 해당 탭이
+     그려져 있을 때만 겨눌 수 있고, 없으면 조용히 아무 일도 하지 않는다(없는 칸을 겨눈
+     척하지 않는다). */
+  function aimAtBlockedField(field) {
+    const el = field === "name" ? $("editorName")
+      : field === "pattern" ? document.querySelector('#editor-body input[data-act="pattern"]')
+        : null;
+    if (!el) return;
+    el.focus();
+    if (typeof el.select === "function") el.select();
+    // 초점은 **이동**을 말하고 색은 **사유**를 말한다 — 초점만 옮기면 왜 여기로 왔는지가
+    // 없다. 표지는 그 칸을 고치는 순간 걷는다(고쳐도 붉은 채면 표지가 거짓말이 된다).
+    el.setAttribute("aria-invalid", "true");
+    el.addEventListener("input", () => el.removeAttribute("aria-invalid"), { once: true });
   }
 
   function alertMsg(msg, level) {

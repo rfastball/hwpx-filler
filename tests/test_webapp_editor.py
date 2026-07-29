@@ -1554,6 +1554,66 @@ def test_revert_source_refuses_confirmed_rows(tmp_path):
     assert ctrl.snapshot()["rows"][0]["confirmed"] is True            # 무파괴
 
 
+def test_resuggest_all_reverts_every_unconfirmed_row(tmp_path):
+    """일괄 재제안(U2 §2.4) — 행 단위 ↩ 의 일괄판. 착지가 행 단위와 **같아야** 한다.
+
+    「일괄로 한 것」과 「하나씩 N번 한 것」이 다르면 사용자는 둘 중 어느 쪽이 진짜인지
+    알 수 없다 — 그래서 전집합 `apply_active_sources` 가 아니라 행마다
+    `revert_to_auto` → `resuggest_row` 로 간다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    ctrl.dispatch("set_source", {"index": 0, "source": "계약일"})     # 수동 오지정
+    ctrl.dispatch("set_source", {"index": 1, "source": "없는열"})     # 또 다른 수동
+    res = ctrl.dispatch("resuggest_all", {})
+    snap = ctrl.snapshot()
+    assert res["kept_confirmed"] == 0
+    assert res["resuggested"] == len(snap["rows"])
+    # 행 단위 ↩ 와 같은 착지 — 전부 시스템 소유로 돌아간다.
+    assert all(r["touched"] is False for r in snap["rows"])
+    assert snap["rows"][1]["source"] != "없는열"
+
+
+def test_resuggest_all_keeps_confirmed_rows_and_says_so(tmp_path):
+    """확정 행은 **거절이 아니라 제외**다(U2 §2.4) — 그리고 제외했다고 수치로 말한다.
+
+    행 단위 ↩ 는 확정 행을 시끄럽게 거절하는데(오클릭 한 번에 확정이 풀리면 안 된다),
+    일괄에서 같은 규칙을 쓰면 확정 하나 때문에 나머지 전부를 못 돌려 「확정을 풀었다 다시
+    건다」는 우회를 시킨다. 대신 건드린 수와 둔 수를 함께 돌려준다 — 부분 동작을 조용히
+    하지 않는다.
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    ctrl.dispatch("set_source", {"index": 0, "source": "낙찰금액"})
+    ctrl.dispatch("set_confirmed", {"index": 0, "confirmed": True})
+    total = len(ctrl.snapshot()["rows"])
+    res = ctrl.dispatch("resuggest_all", {})
+    snap = ctrl.snapshot()
+    assert res == {"resuggested": total - 1, "kept_confirmed": 1}
+    assert snap["rows"][0]["confirmed"] is True                       # 무파괴
+    assert snap["rows"][0]["source"] == "낙찰금액"
+
+
+def test_resuggest_all_reports_zero_when_everything_is_confirmed(tmp_path):
+    """대상이 0개면 0을 돌려준다 — 표면이 「무동작」을 말할 근거다(조용한 소실 금지)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.load_data_path(str(MULTI_SHEET), sheet="낙찰현황")
+    ctrl.dispatch("goto_section", {"section": "binding"})
+    # `confirm_all` 액션은 **내용 있는 행만** 확정한다(confirm_content_rows) — 전 행 확정
+    # 상태를 만들려면 행마다 명시해야 한다.
+    total = len(ctrl.snapshot()["rows"])
+    for index in range(total):
+        ctrl.dispatch("set_confirmed", {"index": index, "confirmed": True})
+    assert ctrl.dispatch("resuggest_all", {}) == {
+        "resuggested": 0, "kept_confirmed": total,
+    }
+
+
 def test_same_file_repick_after_use_none_revives_suggestions(tmp_path):
     """use_none 뒤 같은 파일 재겨눔(키 불변) — 관문 재동기화로 제안이 되살아난다(PR-3 리뷰 F3).
 
