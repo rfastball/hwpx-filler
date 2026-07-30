@@ -59,8 +59,10 @@
   background:color-mix(in srgb,var(--a-primary) 10%,var(--a-card))}
 .fchip.branch{background:var(--n-surface-alt);color:var(--n-ink-soft)}
 .fchip.selection{border-color:var(--n-border-strong);background:var(--a-card)}
+/* 숨김 열 표지(#341) — 보기 축의 선언이라 점선 테두리로 정의·선택 칩과 갈라 읽힌다. */
+.fchip.hidecols{border-style:dashed;background:var(--n-surface-alt);color:var(--n-ink-soft)}
 .fchip .chip-role{font-weight:700;color:var(--a-primary)}
-.fchip.branch .chip-role,.fchip.selection .chip-role{color:var(--a-muted)}
+.fchip.branch .chip-role,.fchip.selection .chip-role,.fchip.hidecols .chip-role{color:var(--a-muted)}
 .fchip button{border:0;background:transparent;color:var(--a-muted);cursor:pointer;
   font-size:var(--fs-caption);padding:0}
 .fchip button:hover{color:var(--a-danger)}

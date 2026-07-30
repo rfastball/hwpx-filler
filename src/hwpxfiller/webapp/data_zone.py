@@ -45,7 +45,10 @@ EMPTY_FILTER = {
     "active": False, "reapply_available": False, "reapply_hint": "", "search": "",
     "chips": [], "definition": "", "branches": [], "columns": [],
 }
-EMPTY_TABLE = {"columns": [], "rows": [], "visible_count": 0, "hidden_selected": []}
+EMPTY_TABLE = {
+    "columns": [], "rows": [], "visible_count": 0, "hidden_selected": [],
+    "hidden_columns": [],
+}
 
 
 class DataZoneMixin:
@@ -55,6 +58,11 @@ class DataZoneMixin:
     #: 슬롯 스태시가 이걸 복사해 간다 — 스태시 시점엔 레코드가 이미 교체됐을 수 있어서
     #: 그때 새로 지으면 남의 데이터로 죽은 세션을 묘사하게 된다(리뷰 F1). 미겨눔·무정의는 "".
     _filter_desc: str = ""
+
+    #: 사용자 열 선별(U2 §2.19, #341) — **표시 축뿐**이다: 숨긴 열도 필터·검색·매핑·생성에
+    #: 그대로 참여한다(숨김 ≠ 제외). 수명은 세션 소유(필터와 같은 계층)라 소비 컨트롤러가
+    #: 데이터 교체 seam 에서 비운다 — durable 저장은 어디에도 없다.
+    hidden_columns: "frozenset[str] | set[str]" = frozenset()  # 클래스 기본만 불변(인스턴스는 set)
 
     selection: SelectionModel
     filter: "FilterModel | None"
@@ -115,6 +123,40 @@ class DataZoneMixin:
         sourceDesc(§18.10)로 재정의한다. 표·실행 입력이 같은 훅을 소비해 보이는 순서와
         생성 순서가 갈라지지 않는다(WYSIWYG)."""
         return indices
+
+    # -------------------------------------------- 사용자 열 선별(U2 §2.19, #341)
+    def _zone_hidden(self) -> "set[str]":
+        """이번 렌더에 **적용되는** 숨김 집합 훅 — 기본은 세션 숨김 그대로.
+
+        「작업」 화면이 재정의한다: ⤢ 시트(범위 초안)는 전 열·원본 순서(#271 "시트 = 전체
+        진실" 유지)라 초안이 열려 있으면 빈 집합을 답한다 — 선별은 인라인 표 한정이다.
+        판정이 Python 한 곳이라 인라인·시트·칩이 각자 답을 갖지 않는다.
+        """
+        return set(self.hidden_columns)
+
+    def _hide_allowed(self) -> bool:
+        """지금 열을 숨길 수 있는 표면인가 — 「작업」 화면이 시트(초안) 열림에서 닫는다."""
+        return True
+
+    def _do_hide_column(self, p: dict) -> None:
+        """「이 열 숨기기」(열 패널) — **보기에서만** 숨긴다. 필터·검색·매핑·생성 불변.
+
+        선두 식별 열(파일명·식별 요약)은 데이터 열이 아니라 이 집합에 아예 들어올 수 없고
+        (열 이름 검증이 데이터 열 지형으로 닫는다), 시트에서는 항목이 서지 않지만 상태가
+        DOM 이 아니라 여기를 지키므로 오배선 호출도 시끄럽게 거절한다.
+        """
+        fm = self._filter_or_raise()
+        col = p["column"]
+        if col not in fm.columns:  # 선두 식별 열·죽은 열 이름 — 조용한 무시 금지
+            raise ValueError(f"숨길 수 없는 열입니다: {col!r}")
+        if not self._hide_allowed():
+            raise ValueError("펼친 화면은 전체 열을 보여줍니다 — 열 숨기기는 인라인 표에서 하세요.")
+        self.hidden_columns = set(self.hidden_columns) | {col}
+
+    def _do_unhide_columns(self, p: dict) -> None:
+        """「열 N개 숨김 ×」(칩 줄) — 숨김 전체 해제. 개별 해제 어포던스는 짓지 않는다
+        (#341: 되돌리기는 필터 칩 줄 관용구 하나)."""
+        self.hidden_columns = set()
 
     # ------------------------------------------------------------- 행 선택 액션
     def _do_toggle_record(self, p: dict) -> None:
@@ -221,6 +263,9 @@ class DataZoneMixin:
             "checked": state["values"],    # None=(전체)
             "options": fm.view(self._records()).column_values(col),
             "range": state["range"],
+            # 「이 열 숨기기」 항목의 유무(#341) — 판정은 Python(시트로 이사한 패널에는
+            # 항목이 서지 않는다). 표면은 이 값을 그리기만 한다.
+            "can_hide": self._hide_allowed(),
         }
 
     _do_filter_panel.is_query = True  # 무변이 질의 — dispatch 가 push 를 생략한다
@@ -455,10 +500,21 @@ class DataZoneMixin:
                 for c in columns
             ],
         }
+        # 사용자 열 선별(U2 §2.19, #341) — **표시 여부를 여기서 판정**해 얹는다. 숨김은
+        # 표시 축뿐이라 위 필터 평가·셀 합성(검색 하이라이트 포함)은 숨긴 열도 그대로
+        # 지난다(전체 열 검색이 숨긴 열을 계속 매치하는 것이 숨김 ≠ 제외의 증거).
+        hidden = self._zone_hidden() & set(columns)
         table_snap = {
             # 표 렌더러도 필터 모델이 이미 판정한 열 유형을 그대로 소비한다. 별도 판정기를
             # 두지 않는다 — 패널과 표 조판이 같은 ``FilterModel.kind`` 진실을 공유한다.
-            "columns": [{"name": c, "kind": fm.kind(c)} for c in columns],
+            # ``visible`` 은 표시 축 판정(#341) — 표면은 이 플래그로 그릴지만 정하고,
+            # ``cells`` 는 전 열을 실어 열 index 정렬(ci)을 지킨다.
+            "columns": [
+                {"name": c, "kind": fm.kind(c), "visible": c not in hidden}
+                for c in columns
+            ],
+            # 숨김 표지 칩의 소재 — 0개가 아니면 칩이 선다(상시, confirm-or-alarm).
+            "hidden_columns": [c for c in columns if c in hidden],
             "rows": table_rows,
             "visible_count": len(visible),
             # 필터 밖 선택 — 스트립이 상시 진술(결정 3). 순서는 **호출자가 준 ``indices``

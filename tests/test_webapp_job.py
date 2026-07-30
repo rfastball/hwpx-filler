@@ -1525,8 +1525,8 @@ def test_filter_search_shapes_table_and_chips(tmp_path):
     snap = ctrl.snapshot()
     t = snap["table"]
     assert t["columns"] == [
-        {"name": "bidNtceNm", "kind": "text"},
-        {"name": "presmptPrce", "kind": "text"},
+        {"name": "bidNtceNm", "kind": "text", "visible": True},
+        {"name": "presmptPrce", "kind": "text", "visible": True},
     ]
     assert t["visible_count"] == 1 and [r["index"] for r in t["rows"]] == [0]
     assert snap["filter"]["branches"] == ["bidNtceNm"]
@@ -1616,6 +1616,115 @@ def test_filter_panel_query_returns_options_and_state(tmp_path):
     res = ctrl.dispatch("filter_panel", {"column": "presmptPrce"})
     assert res["checked"] == [""]
     assert ctrl.snapshot()["table"]["visible_count"] == 1  # 빈값 행(0행)만
+
+
+# ------------------------------------------------- 사용자 열 선별(U2 §2.19, #341)
+def test_hide_column_is_a_view_axis_only(tmp_path):
+    """숨김은 **표시 축뿐**이다 — 플래그·표지 칩 소재가 서고 필터·검색은 그대로 참여한다.
+
+    「숨겼으니 문서에 안 들어간다」로 읽히면 법적 효력 있는 문서가 조용히 틀린다. 그래서
+    ①표시 여부는 링2 표면이 아니라 Python 판정(`table.columns[].visible`)이고 ②숨김이
+    0개가 아니면 칩 소재(`hidden_columns`)가 상시 실리며 ③「전체 열 검색」은 숨긴 열도
+    계속 매치한다(그 사실이 숨김 ≠ 제외의 증거).
+    """
+    ctrl, _ = _session(tmp_path)
+    res = ctrl.dispatch("hide_column", {"column": "presmptPrce"})
+    assert not (isinstance(res, dict) and res.get("stale"))
+    t = ctrl.snapshot()["table"]
+    assert [(c["name"], c["visible"]) for c in t["columns"]] == [
+        ("bidNtceNm", True), ("presmptPrce", False),
+    ]
+    assert t["hidden_columns"] == ["presmptPrce"]
+    assert all(len(r["cells"]) == 2 for r in t["rows"])   # 셀은 전 열 — ci 정렬 유지
+    # 「전체 열 검색」은 숨긴 열도 계속 매치한다 — 매치 행이 남고 표지도 그대로 선다.
+    ctrl.dispatch("filter_search", {"text": "2000000"})
+    t = ctrl.snapshot()["table"]
+    assert t["visible_count"] == 1
+    assert t["hidden_columns"] == ["presmptPrce"]
+    # 되돌리기는 칩 줄 관용구 하나 — 전체 해제.
+    ctrl.dispatch("unhide_columns", {})
+    t = ctrl.snapshot()["table"]
+    assert t["hidden_columns"] == [] and all(c["visible"] for c in t["columns"])
+
+
+def test_hidden_column_still_reaches_the_generated_document(tmp_path):
+    """열을 숨긴 채 생성해도 **그 열의 값이 문서에 그대로 들어간다**(#341 최우선 계약)."""
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    _mount_all(ctrl, _data_csv(tmp_path))
+    out = tmp_path / "out"
+    ctrl.set_output_folder(str(out))
+    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    ctrl.dispatch("hide_column", {"column": "presmptPrce"})
+    res = ctrl.generate()
+    assert res["ok"] is True and res["succeeded"] == 2
+    sections = [
+        HwpxPackage.open(str(p)).entries["Contents/section0.xml"]
+        for p in sorted(out.glob("*.hwpx"))
+    ]
+    assert any(b"2000000" in xml for xml in sections), (
+        "숨긴 열의 값이 생성 문서에 채워지지 않았습니다 — 숨김이 생성 축을 침범했습니다."
+    )
+
+
+def test_hiding_is_inline_only_the_sheet_shows_every_column(tmp_path):
+    """⤢ 시트(범위 초안)는 전 열이다(#271 유지) — 시트 패널에는 「숨기기」가 서지 않는다.
+
+    적용 여부의 판정이 Python 한 곳이라(`_zone_hidden`·`_hide_allowed`) 인라인·시트·칩이
+    각자 답을 갖지 않는다: 시트가 열리면 전 열 visible + 표지 0 + can_hide False, 닫으면
+    세션 숨김이 그대로 되살아난다(시트 왕복이 선별을 지우지 않는다).
+    """
+    ctrl, _ = _session(tmp_path)
+    ctrl.dispatch("hide_column", {"column": "presmptPrce"})
+    ctrl.dispatch("range_draft_open", {})
+    t = ctrl.snapshot()["table"]
+    assert all(c["visible"] for c in t["columns"])         # 시트 = 전 열
+    assert t["hidden_columns"] == []                       # 시트에는 표지도 서지 않는다
+    assert ctrl.dispatch("filter_panel", {"column": "presmptPrce"})["can_hide"] is False
+    with pytest.raises(ValueError, match="전체 열"):       # 오배선 호출도 시끄럽게
+        ctrl.dispatch("hide_column", {"column": "bidNtceNm", "epoch": ctrl.zone_epoch})
+    ctrl.dispatch("range_draft_cancel", {})
+    t = ctrl.snapshot()["table"]
+    assert t["hidden_columns"] == ["presmptPrce"]          # 인라인은 선별을 따른다
+    assert ctrl.dispatch("filter_panel", {"column": "bidNtceNm"})["can_hide"] is True
+
+
+def test_lead_identity_and_unknown_columns_cannot_be_hidden(tmp_path):
+    """선두 식별 열(#271 스캔 앵커)은 데이터 열이 아니라 숨김 지형 밖 — 미지 이름은 loud."""
+    ctrl, _ = _session(tmp_path)
+    assert ctrl.filter is not None
+    assert "문서" not in ctrl.filter.columns               # 선두 열은 열 지형에 없다(구조 배제)
+    with pytest.raises(ValueError, match="숨길 수 없는 열"):
+        ctrl.dispatch("hide_column", {"column": "문서"})
+    with pytest.raises(ValueError, match="숨길 수 없는 열"):
+        ctrl.dispatch("hide_column", {"column": "없는열"})
+
+
+def test_column_hiding_dies_with_the_data_and_never_persists(tmp_path):
+    """수명 = 세션 소유(필터와 같은 계층) — 데이터 교체에 소멸, durable 저장 0곳.
+
+    작업 선택은 데이터 교체가 아니므로 선별이 생존한다(숨김은 데이터의 축이지 작업의
+    축이 아니다). stale 세대의 늦은 숨김은 남의 세계의 편집이라 적용되지 않는다.
+    """
+    ctrl, _ = _session(tmp_path)
+    old_epoch = ctrl.zone_epoch
+    ctrl.dispatch("hide_column", {"column": "presmptPrce"})
+    ctrl.dispatch("select_job", {"name": ""})              # 작업 해제 — 선별 생존
+    assert ctrl.snapshot()["table"]["hidden_columns"] == ["presmptPrce"]
+    other = tmp_path / "e.csv"
+    other.write_text("presmptPrce,다른열\n1,값\n", encoding="utf-8")
+    ctrl.load_data_path(str(other))                        # 데이터 교체 = 선별 소멸
+    t = ctrl.snapshot()["table"]
+    assert t["hidden_columns"] == [] and all(c["visible"] for c in t["columns"])
+    # 죽은 세계의 늦은 숨김은 stale 재진술 — 새 데이터의 동명 열을 조용히 숨기지 않는다.
+    res = ctrl.dispatch("hide_column", {"column": "presmptPrce", "epoch": old_epoch})
+    assert res == {"stale": True, "epoch": ctrl.zone_epoch}
+    assert ctrl.snapshot()["table"]["hidden_columns"] == []
+    # durable 0곳 — 저장 작업(job JSON)에는 숨김이 어떤 형태로도 실리지 않는다.
+    raw = "".join(
+        p.read_text(encoding="utf-8") for p in (tmp_path / "jobs").rglob("*.json")
+    )
+    assert "hidden" not in raw and "숨김" not in raw
 
 
 def test_filter_actions_without_data_are_loud(tmp_path):

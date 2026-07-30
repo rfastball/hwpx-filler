@@ -9,12 +9,12 @@
    디스패치할 뿐이다(링2 표현 계층, #87 경계 동일).
 
    스냅샷 계약(소비 키): has_data · selected_count · record_count ·
-     table{columns[{name, kind}], rows[{index, selected, cells[[세그먼트]], …선두열 필드}], visible_count,
-           hidden_selected[{index, name, summary}]} ·
+     table{columns[{name, kind, visible}], rows[{index, selected, cells[[세그먼트]], …선두열 필드}],
+           visible_count, hidden_selected[{index, name, summary}], hidden_columns[이름]} ·
      filter{active, search, chips, branches, columns[{active}], reapply_available}
    디스패치 계약(액션): filter_panel · filter_col_text · filter_col_values · filter_clear_col ·
      filter_col_range · filter_search · filter_reapply · filter_prune · filter_clear ·
-     toggle_record · select_range · set_all · set_none
+     toggle_record · select_range · set_all · set_none · hide_column · unhide_columns
 
    config: {
      screen,                    // Bridge 디스패치 대상
@@ -155,7 +155,14 @@
         `<div class="cp-vals">` +
         `<label><input type="checkbox" data-val-all${allOn ? " checked" : ""}><b>(전체)</b></label>` +
         `${vals}</div></div>` +
-        `<div class="cp-acts"><button class="btn sm" data-act="col-clear" data-busy-lock>이 열 조건 지우기</button></div>`;
+        `<div class="cp-acts"><button class="btn sm" data-act="col-clear" data-busy-lock>이 열 조건 지우기</button></div>` +
+        // 「이 열 숨기기」(#341) — 항목 유무는 Python(can_hide)이 정한다: 시트로 이사한
+        // 패널에는 서지 않는다. 문안이 축을 말한다 — 숨김은 보기뿐, 생성 제외가 아니다.
+        (d.can_hide
+          ? `<div class="cp-sec"><div class="cp-acts">` +
+            `<button class="btn sm" data-act="col-hide" data-busy-lock>이 열 숨기기</button></div>` +
+            `<span class="cp-cap">보기에서만 숨깁니다 — 필터·검색·생성에는 그대로 쓰입니다</span></div>`
+          : "");
       p.removeAttribute("aria-busy");
       p.hidden = false;
     }
@@ -205,6 +212,13 @@
 
     async function onPanelClick(e) {
       if (e.target.closest('[data-act="panel-close"]')) { closeColPanel(); return; }
+      if (e.target.closest('[data-act="col-hide"]')) {
+        // 숨기면 이 열의 머리 버튼(앵커)이 사라진다 — 패널을 먼저 거둔다(#341).
+        const col = panelCol;
+        closeColPanel();
+        call("hide_column", { column: col });
+        return;
+      }
       if (e.target.closest('[data-act="col-clear"]')) {
         const col = panelCol;
         await call("filter_clear_col", { column: col });
@@ -289,12 +303,13 @@
       return segs.map(([t, hit]) => (hit ? `<mark>${esc(t)}</mark>` : esc(t))).join("");
     }
 
-    // production 스냅샷은 {name, kind}. 구 selftest fixture의 문자열 열도 text로 무해하게
-    // 받는다. 유형은 Python FilterModel의 기존 판정만 소비하며 웹에서 재판정하지 않는다.
+    // production 스냅샷은 {name, kind, visible}. 구 selftest fixture의 문자열 열도 text·
+    // 표시로 무해하게 받는다. 유형·표시 여부는 Python 의 판정만 소비하며 웹에서 재판정하지
+    // 않는다(#341: 숨김은 표시 축뿐 — 숨긴 열도 필터·검색·생성에 그대로 참여한다).
     function columnMeta(column) {
       return typeof column === "string"
-        ? { name: column, kind: "text" }
-        : { name: column.name, kind: column.kind || "text" };
+        ? { name: column, kind: "text", visible: true }
+        : { name: column.name, kind: column.kind || "text", visible: column.visible !== false };
     }
 
     function renderTable(s) {
@@ -348,11 +363,14 @@
       } else {
         empty.style.display = "none";
       }
+      // 숨긴 열(#341)은 머리·셀을 **그리지 않을 뿐**이다 — 판정(visible)은 Python 이 실어
+      // 보내고, cells 는 전 열이 실려 와 열 index(ci) 정렬로 필터 메타와 계속 맞는다.
       $(ids.tableHead).innerHTML =
         `<tr><th class="doccol">${esc(cfg.lead.header)}` +
         (cfg.lead.hint ? `<span class="col-hint">${esc(cfg.lead.hint)}</span>` : "") + `</th>` +
         t.columns.map((column, ci) => {
           const c = columnMeta(column);
+          if (!c.visible) return "";
           const meta = f.columns[ci] || { active: false };
           return `<th class="col-${c.kind}"><span>${esc(c.name)}</span> ` +
             `<button class="fico${meta.active ? " on" : ""}" data-col="${esc(c.name)}" ` +
@@ -367,6 +385,7 @@
           `<span class="doc-body">${cfg.lead.bodyHtml(r)}</span></div></td>` +
           r.cells.map((segs, ci) => {
             const c = columnMeta(t.columns[ci]);
+            if (!c.visible) return "";
             return `<td class="col-${c.kind}">${segsHtml(segs)}</td>`;
           }).join("") + `</tr>`;
       }).join("");
@@ -425,13 +444,17 @@
       toggleRow(Number(tr.dataset.i), e.shiftKey, tr);
     }
 
-    /* ---- 칩 줄 — 정의 재진술(describe_parts 단일 출처) + 가지 칩(× 프루닝) ---- */
+    /* ---- 칩 줄 — 정의 재진술(describe_parts 단일 출처) + 가지 칩(× 프루닝) +
+       숨김 열 표지(#341: 0개가 아니면 상시 — 문안이 축을 말한다: 숨김 ≠ 생성 제외) ---- */
     function renderChips(s) {
       const box = $(ids.chips);
       const f = s.filter || { active: false };
-      if (!s.has_data || !f.active) { box.style.display = "none"; box.innerHTML = ""; return; }
+      const hiddenCols = (s.table && s.table.hidden_columns) || [];
+      if (!s.has_data || (!f.active && !hiddenCols.length)) {
+        box.style.display = "none"; box.innerHTML = ""; return;
+      }
       box.style.display = "";
-      box.innerHTML =
+      const filterHtml = !f.active ? "" :
         (f.chips || []).map((c) =>
           `<span class="fchip definition"><span class="chip-role">필터</span>${esc(c)}</span>`
         ).join("") +
@@ -440,6 +463,12 @@
           `<button data-prune="${esc(b)}" aria-label="${esc(b)} 가지 제거" data-busy-lock>×</button></span>`
         ).join("") +
         `<button class="btn sm" data-act="filter-clear" data-busy-lock>필터 지우기</button>`;
+      const hideChip = !hiddenCols.length ? "" :
+        `<span class="fchip hidecols" title="${esc(hiddenCols.join(", "))}">` +
+        `<span class="chip-role">보기</span>` +
+        `열 ${hiddenCols.length}개 숨김 — 생성에는 그대로 쓰입니다` +
+        `<button data-act="unhide-cols" aria-label="숨긴 열 모두 표시" data-busy-lock>×</button></span>`;
+      box.innerHTML = filterHtml + hideChip;
     }
 
     /* ---- 필터 밖 선택 스트립(결정 3) — 선택은 관통, 밖은 상시 가시 ---- */
@@ -546,10 +575,11 @@
         const un = e.target.closest("[data-unsel]");
         if (un) call("toggle_record", { index: Number(un.dataset.unsel), value: false });
       });
-      // 칩 줄 — 가지 프루닝 ×·필터 지우기(재렌더 생존 위임).
+      // 칩 줄 — 가지 프루닝 ×·필터 지우기·숨긴 열 모두 표시(재렌더 생존 위임).
       $(ids.chips).addEventListener("click", (e) => {
         const pr = e.target.closest("[data-prune]");
         if (pr) { call("filter_prune", { column: pr.dataset.prune }); return; }
+        if (e.target.closest('[data-act="unhide-cols"]')) { call("unhide_columns", {}); return; }
         if (e.target.closest('[data-act="filter-clear"]')) call("filter_clear", {});
       });
       // 열 필터 패널 — 내부 위임(바깥 클릭/Escape 닫기는 위 Popover.wireDismiss 주입).

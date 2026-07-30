@@ -1023,6 +1023,32 @@ def test_job_range_draft_surface_contract():
     assert "beforeClose" in sheet, "펼침 면이 이탈 가드를 Modal 로 넘기지 않습니다."
 
 
+def test_job_user_column_hiding_surface_contract():
+    """사용자 열 선별(U2 §2.19, #341) 표면 배선 — 판정은 Python, 표면은 그리기만.
+
+    헤드리스 테스트는 링1·컨트롤러 판정(`visible`·`hidden_columns`·`can_hide`)까지만 본다 —
+    그 판정을 **소비하는 배선**이 빠지면 백엔드만 있고 표면이 침묵하는 반쪽이 된다(선언은
+    살고 결과는 죽는 결함류). 여기서 그 소비를 센다.
+    """
+    zone = (WEB_JS_DIR / "datazone.js").read_text(encoding="utf-8")
+    # 표시 여부는 Python 플래그 소비 — 머리·셀이 같은 판정으로 함께 빠진다(ci 정렬 유지).
+    assert zone.count("if (!c.visible) return \"\";") == 2, (
+        "숨긴 열의 머리·셀 렌더 스킵이 한 쌍이 아닙니다 — 표와 머리가 어긋납니다."
+    )
+    # 패널 항목은 can_hide(Python 판정)에만 선다 — 시트로 이사한 패널에는 서지 않는다.
+    assert "d.can_hide" in zone and 'data-act="col-hide"' in zone
+    assert '"hide_column"' in zone and '"unhide_columns"' in zone
+    # 숨김 표지는 상시 칩 — 문안이 축을 말한다(숨김은 보기뿐, 생성 제외가 아니다).
+    assert "hidden_columns" in zone and 'data-act="unhide-cols"' in zone
+    assert "생성에는 그대로 쓰입니다" in zone, "숨김 표지 문안이 축(보기≠생성)을 말하지 않습니다."
+    assert "보기에서만 숨깁니다" in zone, "패널 항목 문안이 축(보기≠생성)을 말하지 않습니다."
+    # 칩 줄은 필터가 없어도 숨김이 있으면 선다(상시 표지 — 0개가 아니면 칩이 선다).
+    chips_fn = zone.split("function renderChips", 1)[1].split("\n    }", 1)[0]
+    assert "hiddenCols.length" in chips_fn, "숨김 표지가 필터 활성에 묶여 있습니다."
+    css = (WEB_JS_DIR.parent / "css" / "jobdata.css").read_text(encoding="utf-8")
+    assert ".fchip.hidecols" in css, "숨김 표지 칩 변형 스타일이 없습니다."
+
+
 def test_job_document_browser_surface_contract():
     """슬라이스 3 정적 계약 — 문서 탐색 면은 `job` 화면의 **하위 화면**이고 판정은 Python 소유.
 
