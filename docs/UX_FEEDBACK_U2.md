@@ -57,28 +57,45 @@ v6 표면 전면 재작성(R1·F1~F8)이 완주한 직후 받은 **실사용자 
 | #333 | `a4ab7c1` | §2.4 4항목(작업명 발견성 + 저장 차단 조준 · dirty 게이트 · 일괄 재제안 · 현관 출구) |
 | #334 | `3469d44` | §2.6 전부 + §2.2 「되돌리기 `↩` 과대」 |
 | #335 | `5e0b7bb` | §2.10 C1(어휘 분리) · C3(지목 신설) |
-| #337 | `329cd7a` | §5.1 원인 확정 기록 → §2.11 승계(문서만) |
-| #338 | `e3577a1` | §2.11 전부 — 눌림 두 갈래 · 배경 축 4표면 · 고아 토큰 회수 · 검사 3층 · CI 전제 |
+| #336 | — | 착지 표식 규약(취소선 + 조치완료 병기)과 이 대장의 신설 |
+| **PR 없음** | `329cd7a` | §5.1 원인 확정 기록 → §2.11 승계(문서만) |
+| **PR 없음** | `e3577a1` | §2.11 전부 — 눌림 두 갈래 · 배경 축 4표면 · 고아 토큰 회수 · 검사 3층 · CI 전제 |
+| **PR 없음** | `621c9b3` | §2.12~§2.20 판정 신설 + splitter·sticky 기각(문서만 — ③ 소진) |
+
+> **번호 경보(2026-07-30 정정).** 이 대장은 위 두 줄을 처음에 **`#337`·`#338`** 로 적었고 **커밋
+> 메시지에도 그 번호가 박혔다**(`329cd7a`·`e3577a1`·`99cb7f9`). **그 PR 은 존재한 적이 없다** —
+> 실제 마지막 PR 은 `#336` 이고 셋은 **master 직접 커밋**이다. 그리고 **2026-07-30 에 337·338 이
+> 실제 이슈로 발급**됐으므로(§2.14·§2.17 / §2.15) **그 번호를 따라가면 다른 것이 나온다.**
+> 커밋 메시지는 역사라 고치지 않고, **인용은 커밋 해시로 한다.** 발행 전 번호를 미리 적으면
+> 나중에 그 번호가 남에게 발급된다.
 
 **미착지 잔여**(2026-07-30 실측 — 표식이 아니라 **생존 증거**가 잔여를 판정한다):
 
-| 잔여 | 미착지 증거 |
-|---|---|
-| §2.4 「이 데이터로 신규 작업」 | `gui/edit_session.py:75` `document_browser_new_work` 줄 생존 |
-| §2.7 데이터 선택 면의 단일 경로화(6행) | `web/index.html:600` `#dataPickerRegister` 생존 |
-| §2.9 종료 가드 「문서 만들기」 성분 사망 | `screen_job.py:1933` `close_guard_reason` 생존, `silent_loss_by_contract` 0건 |
-| §4 판정 A~F | `web/index.html:335-339` 「선택한 작업」 존·`#jobHeadTitle`·`#jobHeadTpl` 전부 생존 |
-| §2.12 삭제 문안 6자리 | `library.js:540`·`editor.js:579` 「휴지통으로 옮겼습니다」 생존 |
-| §2.13 1 pane 확인 면 + ack 폐기 | `action_registry.py:171-172` `ack_field`·`unack_field` 생존, `#previewModal`·`#jobConfirmSheet` 양쪽 생존 |
-| §2.14 저장 착지 제자리 통일 | `screen_editor.py:1929` `if self._editing_origin` 분기 생존 |
-| §2.15 작업대 큐 고정 순서 | `txt_queue.py:93` `_uncopied_order + _copied_order` 생존 |
-| §2.16 폴더 일괄 등록 | `app.py:248` 단건 `import_template_file` 만 존재, 폴더 경로 0곳 |
-| §2.17 버리기 dirty 규칙 | `editor.js:932` `s.dirty ? … : ""` 조건부 렌더 생존 |
-| §2.18 결과 성분별 처분 | `job.js:147` `sessionKey` 가 5성분 `join("\|")` 단일 문자열로 생존 |
-| §2.19 열 선별 | `data_zone.py:461` `table_snap["columns"]` 에 표시 축 부재(전 열 무조건) |
-| §2.20 라이브러리 상세 어포던스 | `screen_library.py:227` 상세 payload 에 `template_name` 만, `library.js` 에 `PathTrack` 0건 |
+| 잔여 | 이슈 | 미착지 증거 |
+|---|---|---|
+| §2.4 「이 데이터로 신규 작업」 | #349 | `gui/edit_session.py:75` `document_browser_new_work` 줄 생존 |
+| §2.7 데이터 선택 면의 단일 경로화(6행) | #343 | `web/index.html:600` `#dataPickerRegister` 생존 |
+| §2.9 종료 가드 「문서 만들기」 성분 사망 | #344 | `screen_job.py:1933` `close_guard_reason` 생존, `silent_loss_by_contract` 0건 |
+| §4 판정 A~F | #342 · #349(E) | `web/index.html:335-339` 「선택한 작업」 존·`#jobHeadTitle`·`#jobHeadTpl` 전부 생존 |
+| §2.12 삭제 문안 6자리 | #345 | `library.js:540`·`editor.js:579` 「휴지통으로 옮겼습니다」 생존 |
+| §2.13 1 pane 확인 면 + ack 폐기 | #346 | `action_registry.py:171-172` `ack_field`·`unack_field` 생존, `#previewModal`·`#jobConfirmSheet` 양쪽 생존 |
+| §2.14 저장 착지 제자리 통일 | #337 | `screen_editor.py:1929` `if self._editing_origin` 분기 생존 |
+| §2.15 작업대 큐 고정 순서 | #338 | `txt_queue.py:93` `_uncopied_order + _copied_order` 생존 |
+| §2.16 폴더 일괄 등록 | #339 | `app.py:248` 단건 `import_template_file` 만 존재, 폴더 경로 0곳 |
+| §2.17 버리기 dirty 규칙 | #337 | `editor.js:932` `s.dirty ? … : ""` 조건부 렌더 생존 |
+| §2.18 결과 성분별 처분 | #340 | `job.js:147` `sessionKey` 가 5성분 `join("\|")` 단일 문자열로 생존 |
+| §2.19 열 선별 | #341 | `data_zone.py:461` `table_snap["columns"]` 에 표시 축 부재(전 열 무조건) |
+| §2.20 라이브러리 상세 어포던스 | #342 | `screen_library.py:227` 상세 payload 에 `template_name` 만, `library.js` 에 `PathTrack` 0건 |
+| §5.3 판정 C·D 데이터 축 재편 | #347 | `Job.default_dataset_ref` 생존(§2.4·§4-E 의 선행) |
+| §5.3 판정 B 템플릿 상대키 | #348 | `Job.template_path` 절대경로 생존 |
 
-`#338` 은 §2.11 전부(전수조사 4표면 + 검사 3층 + 고아 토큰 회수 + CI 전제)를 담는다.
+**이슈 일괄 발행(2026-07-30)** — 위 표 + 별건 셋이 **#337~#352** 로 나갔고 마일스톤은
+**「M. U2 실사용 피드백 착지」**(별건 둘은 마일스톤 밖)다. 별건: **#350** 휴지통 표면 ·
+**#351** template+mapping 패키지(broad, 선행 #348) · **#352** 101 스크린샷 재생성(§6 매체 경보).
+**판정은 이 문서가, 열림/닫힘은 GitHub 이 진다** — 이슈 본문에 판정을 옮겨 적었으므로 둘이
+갈리면 **이 문서가 이긴다**.
+
+`e3577a1` 이 §2.11 전부(전수조사 4표면 + 검사 3층 + 고아 토큰 회수 + CI 전제)를 담는다.
 
 **라운드에서 빠진 것**: §2.8 — **폐기**(2026-07-30). 잔여가 아니라 **지을 것이 없어진 것**이라
 위 표에서 내린다.
@@ -441,7 +458,7 @@ DOM 이 내는 class 중 CSS 규칙이 **한 줄도 없는 것**을 실패로 �
 `review_gate_text`·`ReviewRequirement`)은 **바꾸지 않는다** — 표면 어휘 교체지 판정 축 개명이
 아니다.
 
-### ~~2.11 눌림 표지가 전폭 행을 부순다 — `tr` 에 `transform:scale`~~ — **조치완료**(#338 · `e3577a1`)
+### ~~2.11 눌림 표지가 전폭 행을 부순다 — `tr` 에 `transform:scale`~~ — **조치완료**(`e3577a1` · PR 없음, §1.1 번호 경보)
 
 ③에서 승계(§5.1 이 「원인 미상」으로 들고 있던 항목). `web/css/base.css:106` 이
 `.jobtb tbody tr:active{transform:scale(.97)}` 이고 `:101-103` 이
