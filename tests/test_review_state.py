@@ -6,6 +6,9 @@
 """
 from __future__ import annotations
 
+import json
+import shutil
+
 from hwpxfiller.core.job import (
     Job,
     JobRegistry,
@@ -540,3 +543,77 @@ def test_template_only_change_with_blanks_still_raises_blank_set():
     job.template_path = "T2.hwpx"
     req = review_requirement(job, blank_fields=("금액",))
     assert req.risk_class == "blank_set" and req.structure_changed is True
+
+
+# ------------------- 홈 이동과 검토 기준선(#348 · PR #368 P2 판정) -------------------
+def test_home_move_keeps_the_link_and_costs_only_the_structure_flag(tmp_path, monkeypatch):
+    """#348 이 링크를 이식 가능하게 만들어도 **검토 지문은 절대경로 그대로다** — 판정이다(#368 P2).
+
+    지적은 "홈을 옮길 때마다 미리보기·검토가 다시 강제된다"고 읽었지만 **그 결과는 실측되지
+    않는다**: 템플릿은 승인 축이 아니라(판정 E) 지문이 갈려도 ``required`` 는 서지 않고
+    ``structure_changed`` 병기 1비트만 붙는다. 실제 구조 게이트(``template_path_drift``)는 경로가
+    아니라 **파일을 다시 읽어** 판정하니 같은 파일의 이사에는 조용하다.
+
+    그래서 이 판정의 대가는 병기 1비트이고, 반대쪽(지문을 상대키로)의 대가는 **조용한 승인
+    통로**다: 기준선은 작업 JSON 에 실려 다니므로(#351 패키지 부트스트래핑의 동선) 남에게서 받은
+    작업이 한 번도 본 적 없는 템플릿에 대해 구조 변경 병기까지 지운 채 도착한다.
+
+    세 사실을 한 자리에서 못박는다 — 하나만 단언하면 다음 사람이 나머지를 결함으로 다시 연다.
+    """
+    home_a = tmp_path / "home-A"
+    (home_a / "templates" / "조달").mkdir(parents=True)
+    monkeypatch.setenv("HWPXFILLER_HOME", str(home_a))
+    tpl = home_a / "templates" / "조달" / "공고서.hwpx"
+
+    reg = JobRegistry(home_a / "jobs")
+    job = _job(template_path=str(tpl))
+    reg.save(job)
+    reg.stamp_last_run("공고", "2026-07-27T09:00:00", rules=rules_fingerprints(job))
+    assert not review_requirement(reg.load("공고")).required     # 완주 직후 = 조용하다
+
+    home_b = tmp_path / "home-B"
+    shutil.copytree(home_a, home_b)                              # 홈 통째 이사·수령
+    monkeypatch.setenv("HWPXFILLER_HOME", str(home_b))
+    moved = JobRegistry(home_b / "jobs").load("공고")
+
+    # ① 링크는 살아 있다 — 새 홈의 실제 파일로 해석된다(#348 의 이득은 그대로).
+    assert moved.template_path == str(home_b / "templates" / "조달" / "공고서.hwpx")
+    assert moved.template_key == "조달/공고서.hwpx"
+
+    # ② 게이트는 서지 않는다 — 지적이 든 "매 이사마다 재검토 강제"는 일어나지 않는다.
+    req = review_requirement(moved)
+    assert req.required is False and req.risk_class == ""
+
+    # ③ 병기는 붙는다 — 기준선이 옛 절대경로 그대로라 구조 축이 갈린 사실은 남는다(fail-safe).
+    assert req.structure_changed is True
+    assert moved.reviewed_rules["template"] == str(tpl), (
+        "읽기가 기준선을 새 경로로 재기입했습니다 — 어떤 실행도 벌지 않은 승인입니다."
+    )
+
+
+def test_reading_a_moved_job_does_not_rebase_the_baseline_on_disk(tmp_path, monkeypatch):
+    """지적이 제시한 대안(해석할 때 기준선 재기입)을 명시로 거절한다 — 읽기는 durable 을 안 고친다.
+
+    #348 의 「마이그레이션 없음」과 같은 줄이다: 읽는 김에 기준선을 밀면 목록 렌더 한 번이
+    사용자가 요청한 적 없는 **승인**을 만든다.
+    """
+    home_a = tmp_path / "home-A"
+    (home_a / "templates").mkdir(parents=True)
+    monkeypatch.setenv("HWPXFILLER_HOME", str(home_a))
+    reg = JobRegistry(home_a / "jobs")
+    job = _job(template_path=str(home_a / "templates" / "공고서.hwpx"))
+    reg.save(job)
+    reg.stamp_last_run("공고", "2026-07-27T09:00:00", rules=rules_fingerprints(job))
+
+    home_b = tmp_path / "home-B"
+    shutil.copytree(home_a, home_b)
+    monkeypatch.setenv("HWPXFILLER_HOME", str(home_b))
+    path = home_b / "jobs" / "공고.job.json"
+    before = path.read_bytes()
+
+    moved_reg = JobRegistry(home_b / "jobs")
+    moved_reg.load("공고")
+    moved_reg.list_jobs()
+    assert path.read_bytes() == before        # 바이트 한 톨 안 바뀐다
+    stored = json.loads(path.read_text(encoding="utf-8"))["reviewed_rules"]["template"]
+    assert stored == str(home_a / "templates" / "공고서.hwpx")
