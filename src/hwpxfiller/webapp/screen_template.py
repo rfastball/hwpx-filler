@@ -32,7 +32,6 @@ import shutil
 import threading
 import time
 import uuid
-from contextlib import nullcontext
 from pathlib import Path
 
 from hwpxcore.atomic import write_text_atomic
@@ -78,6 +77,13 @@ class TemplateController:
         # 직렬화해 두 배치가 교차하면 같은 목록이 번호 접미로 재반입된다. 배치 중복의 판정은
         # 여기 **한 곳**(비차단 획득 실패 = loud 거절)이고, JS 는 어포던스만 잠근다.
         self._folder_import_lock = threading.Lock()
+        # HWPX 라이브러리 writer 잠금(PR #355 P1 후속) — TXT 의 ``text_registry.write_lock()``
+        # 대응물. 「HWPX 는 공유 writer 가 없는 단일 표면」이라는 종전 전제는 **틀렸다**:
+        # 삭제 복원(:meth:`_do_undo_delete` 의 hwpx 갈래)이 바로 그 공유 writer 다. 둘 다
+        # 「이 basename 이 비었는가」를 보고 파일을 놓으므로, 잠금을 공유하지 않으면 복원이
+        # 원본을 되돌린 직후 배치의 ``copy2`` 가 그 위를 덮어 **복원은 성공을 보고하는데
+        # 지운 문서는 사라진다**. TXT 와 같은 축·같은 항목 단위 범위로 세운다. RLock.
+        self._hwpx_write_lock = threading.RLock()
         # 마지막 결과 문구(컴파일·검토·가져오기·TXT 변경) — 성과별 심각도 채널(UD-07).
         self.result_text = ""
         self.result_level = "muted"
@@ -279,19 +285,28 @@ class TemplateController:
         풀·원본 판독 불가) 부분 파일을 걷어내고 재던진다 — 다음 새로고침이 잘린 TXT/손상 HWPX
         를 목록에 노출하고 충돌 접미가 재시도를 막는 것을 방지(에디터 import_template 동형).
 
-        **TXT 는 공유 writer 축에 함께 선다**(PR #355 P1): ``_import_lock`` 은 가져오기끼리만
-        아는 잠금이라, 배치가 도는 동안 사용자가 「새 TXT」·내용 편집·복원을 하면 두 writer 가
-        서로를 모른 채 같은 이름을 겨눈다 — 목적지가 「비었다」고 고른 뒤 그 사이 채워지면
-        ``copy2`` 가 방금 쓴 내용을 덮고(반대 방향도 같다), 충돌 접미가 지켜야 할 사용자
-        내용이 조용히 사라진다. 그래서 TXT 항목은 목적지 선택~복사를 다른 TXT writer 와
-        **같은 잠금**(:meth:`~hwpxfiller.core.text_registry.TextTemplateRegistry.write_lock`)
-        안에서 한다. 획득은 **항목 단위**라 배치가 도는 내내 TXT 조작이 통째로 막히지 않는다.
+        **두 매체 모두 공유 writer 축에 함께 선다**(PR #355 P1·P1 후속): ``_import_lock`` 은
+        가져오기끼리만 아는 잠금이라, 배치가 도는 동안 사용자가 「새 TXT」·내용 편집·삭제
+        복원을 하면 두 writer 가 서로를 모른 채 같은 이름을 겨눈다 — 목적지가 「비었다」고
+        고른 뒤 그 사이 채워지면 ``copy2`` 가 방금 놓인 파일을 덮고(반대 방향도 같다),
+        충돌 접미가 지켜야 할 사용자 내용이 조용히 사라진다. **HWPX 도 예외가 아니다**:
+        「공유 writer 가 없는 단일 표면」이라는 전제는 틀렸고, :meth:`_do_undo_delete` 의
+        hwpx 갈래가 그 공유 writer 다(복원이 원본을 되돌린 직후 배치가 덮으면 복원은 성공을
+        보고하는데 지운 문서는 사라진다). 그래서 목적지 선택~복사를 **매체별 writer 잠금**
+        (TXT=:meth:`~hwpxfiller.core.text_registry.TextTemplateRegistry.write_lock`,
+        HWPX=``_hwpx_write_lock``) 안에서 한다. 획득은 **항목 단위**라 배치가 도는 내내
+        그 매체 조작이 통째로 막히지 않는다.
 
         **잠금 획득 순서 규약**: ``_folder_import_lock``(배치) → ``_import_lock``(가져오기)
-        → ``text_registry.write_lock()``(TXT writer). 항상 안쪽으로만 잡는다. 역순 획득
-        경로는 없다 — TXT writer 를 먼저 잡는 쪽(``_do_txt_new``·``_do_txt_edit``·
-        ``_do_undo_delete``)은 어느 것도 가져오기 잠금을 잡지 않으므로 순환 대기가 성립하지
-        않는다. 새 writer 를 더할 때도 이 순서를 지킨다."""
+        → 매체 writer(``text_registry.write_lock()`` / ``_hwpx_write_lock``). 항상 안쪽으로만
+        잡는다. 역순 획득 경로는 없다 — 매체 writer 를 먼저 잡는 쪽(``_do_txt_new``·
+        ``_do_txt_edit``·``_do_undo_delete``)은 어느 것도 가져오기 잠금을 잡지 않으므로 순환
+        대기가 성립하지 않는다. 두 매체 writer 는 서로 중첩되지 않는다(매체가 배타적 분기).
+        새 writer 를 더할 때도 이 순서를 지킨다.
+
+        (``_do_delete`` 는 이 축에 세우지 않는다: 삭제는 **있는** 파일을 치우는 이동이라
+        가져오기와 같은 이름을 두고 다투지 않는다 — 최악이 「방금 비워진 이름 대신 접미가
+        붙는다」이고 그건 내용 소실이 아니라 예고 정확도 축이다(별건 #365).)"""
         suffix = src.suffix.lower()
         if suffix == ".hwpx":
             root = self.vm.library_dir
@@ -302,12 +317,10 @@ class TemplateController:
         if root is None:
             raise ValueError("라이브러리 폴더가 지정되지 않았습니다.")
         root.mkdir(parents=True, exist_ok=True)
-        # HWPX 는 공유 writer 가 없는 단일 표면이라 가져오기 잠금 하나면 족하다(_do_undo_delete
-        # 의 매체 분기와 같은 비대칭 — 없는 축을 흉내내지 않는다).
-        txt_writer = (
-            self.text_registry.write_lock() if suffix == ".txt" else nullcontext()
+        media_writer = (
+            self.text_registry.write_lock() if suffix == ".txt" else self._hwpx_write_lock
         )
-        with self._import_lock, txt_writer:
+        with self._import_lock, media_writer:
             dest = root / src.name
             n = 2
             while dest.exists():
@@ -550,9 +563,16 @@ class TemplateController:
         같은 이름을 새로 쓸 수 있다 — 무락이면 복원이 그 새 파일을 조용히 덮거나, 동시 writer 가
         복원본을 즉시 덮는다. :meth:`~hwpxfiller.core.text_registry.TextTemplateRegistry.write_lock`
         을 존재 검사~교체~그룹 복원~실패 롤백까지 한 임계구역으로 잡는다(부분만 덮으면 롤백
-        ``replace`` 가 락 밖에서 동시 편집을 쓸어 넣는다 — 3R). HWPX 는 공유 writer 락이 없는
-        단일 표면이라 무락 동일 몸통. 복원 후 삭제 시점 그룹을 재지정한다(#269 리뷰) —
-        삭제 직후 reconcile 이 지정을 지웠으므로 슬롯의 그룹이 유일한 생존 기록이다."""
+        ``replace`` 가 락 밖에서 동시 편집을 쓸어 넣는다 — 3R).
+
+        **HWPX 도 같은 규율이다**(PR #355 P1 후속): 「공유 writer 락이 없는 단일 표면」이라
+        무락으로 두었던 것이 결함이었다 — 폴더 배치 가져오기가 같은 basename 을 겨누고
+        있으면 둘 다 그 이름을 「비었다」고 읽고, 복원이 원본을 되돌린 뒤 배치의 ``copy2``
+        가 그 위를 덮어 **복원은 성공을 보고하는데 지운 문서는 사라진다**. 그래서 hwpx 는
+        ``_hwpx_write_lock``(가져오기 몸통과 공유)을 같은 범위로 잡는다.
+
+        복원 후 삭제 시점 그룹을 재지정한다(#269 리뷰) — 삭제 직후 reconcile 이 지정을
+        지웠으므로 슬롯의 그룹이 유일한 생존 기록이다."""
         if self._deleted_template_slot is None:
             return {"ok": False, "error": "복원할 최근 템플릿이 없습니다."}
         media, path, trashed, group = self._deleted_template_slot
@@ -589,10 +609,12 @@ class TemplateController:
                     raise
             return None
 
-        if media == "txt":
-            with self.text_registry.write_lock():
-                error = restore_and_regroup()
-        else:
+        # 매체 writer 잠금 — 가져오기 복사 몸통(_copy_into_library)과 **같은 축**이라
+        # 배치가 겨눈 이름과 복원이 겨눈 이름이 겹쳐도 한쪽이 먼저 끝난 뒤에 다른 쪽이 본다.
+        writer = (
+            self.text_registry.write_lock() if media == "txt" else self._hwpx_write_lock
+        )
+        with writer:
             error = restore_and_regroup()
         if error is not None:
             return error

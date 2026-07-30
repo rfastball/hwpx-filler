@@ -570,6 +570,71 @@ def test_batch_txt_copy_joins_the_registry_writer_lock(tmp_path, monkeypatch):
     assert (tp / "txt" / "온나라_기안.txt").read_text(encoding="utf-8") == "제목: {{공고명}}"
 
 
+def test_batch_hwpx_copy_is_serialized_with_undo_restore(tmp_path, monkeypatch):
+    """PR #355 P1 후속 — HWPX 배치 복사도 **삭제 복원과 같은 writer 축**에 선다.
+
+    「HWPX 는 공유 writer 가 없는 단일 표면」이라는 전제가 틀렸다: ``_do_undo_delete`` 의
+    hwpx 갈래가 바로 그 공유 writer 다. 지운 basename 이 배치에 들어 있고 사용자가 확정
+    뒤에도 살아 있는 「되돌리기」를 누르면, 잠금을 공유하지 않는 두 쪽이 그 이름을 함께
+    「비었다」고 읽는다 — 복원이 원본을 되돌린 직후 ``copy2`` 가 그 위를 덮어 **복원은
+    성공을 보고하는데 지운 문서는 사라진다**.
+
+    TXT 판과 **같은 형태**로 잰다(복사 한복판에 경쟁 writer 주입): ①실제로 대기하고
+    ②조용한 덮어쓰기 없이 loud 거절되며 ③양쪽 결과가 온전하고(가져온 사본 + 휴지통에
+    남은 원본 = 복원 재시도 재료) ④교착이면 join 시간초과로 시끄럽게 멈춘다."""
+    import threading
+
+    import hwpxfiller.webapp.screen_template as st
+
+    ctrl, tp, _ = _controller(tmp_path, monkeypatch)
+    original_bytes = (tp / "lib" / "raw.hwpx").read_bytes()
+    ctrl.dispatch("delete", {"media": "hwpx", "path": str(tp / "lib" / "raw.hwpx")})
+    assert not (tp / "lib" / "raw.hwpx").exists()          # 이름이 비었다(양쪽이 노리는 자리)
+
+    ext = tp / "ext"
+    ext.mkdir()
+    _write_compiled(ext / "raw.hwpx")                      # 같은 basename, 다른 내용
+    imported_bytes = (ext / "raw.hwpx").read_bytes()
+    assert imported_bytes != original_bytes
+
+    real = st.shutil.copy2
+    rival_started = threading.Event()
+    rival_result: list = []
+    state: dict = {}
+
+    def rival() -> None:
+        rival_started.set()
+        rival_result.append(ctrl.dispatch("undo_delete", {}))
+
+    def copy_with_rival(src, dst):
+        if Path(src).name == "raw.hwpx" and "thread" not in state:
+            t = threading.Thread(target=rival)
+            state["thread"] = t
+            t.start()
+            rival_started.wait(2)
+            t.join(0.3)                       # 같은 축이면 여기서 못 끝난다
+            state["rival_blocked"] = t.is_alive()
+        return real(src, dst)
+
+    monkeypatch.setattr(st.shutil, "copy2", copy_with_rival)
+    res = ctrl.import_folder(str(ext), ["raw.hwpx"])
+    state["thread"].join(5)
+    assert not state["thread"].is_alive(), "복원 스레드가 풀려나지 못했습니다(교착 의심)."
+
+    assert state["rival_blocked"] is True, (
+        "복사 중인데 삭제 복원이 그대로 통과했습니다 — 두 writer 가 서로를 모릅니다"
+        "(HWPX 가 공유 writer 축에 서지 않은 상태)."
+    )
+    assert res["imported"] == 1
+    # 조용한 덮어쓰기 없음: 뒤늦은 복원은 loud 거절되고, 가져온 사본이 그 자리에 온전하다.
+    assert rival_result and rival_result[0]["ok"] is False
+    assert "이미 있어 복원할 수 없습니다" in rival_result[0]["error"]
+    assert (tp / "lib" / "raw.hwpx").read_bytes() == imported_bytes
+    # 지운 문서도 사라지지 않았다 — 휴지통 원본이 그대로라 복원 재시도 재료가 남는다.
+    _media, _path, trashed, _group = ctrl._deleted_template_slot
+    assert trashed.exists() and trashed.read_bytes() == original_bytes
+
+
 def test_import_folder_rejects_concurrent_batch_loudly(tmp_path, monkeypatch):
     """PR #355 2R — 배치 진행 중 재실행의 판정 정본은 tpl 권위 **한 곳**(비차단 잠금).
 
