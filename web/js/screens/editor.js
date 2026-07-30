@@ -1194,8 +1194,16 @@
     pendingFieldEdit = el.value === known ? null : {
       act: el.dataset.act, index: el.dataset.index, value: el.value,
     };
-    const save = document.querySelector('#editor-foot [data-act="save"]');
-    if (save && LAST && isEditing(LAST)) save.disabled = !(LAST.dirty || pendingFieldEdit);
+    // 저장·버리기는 **같은 합성 술어**다(§2.17) — 저장만 열면 clean 세션에서 타이핑 직후
+    // 「변경 버리기」가 재렌더까지 비활성으로 남아 첫 클릭이 삼켜진다(PR #354 리뷰:
+    // 비활성 버튼은 click 을 내지 않는다 — 저장 게이트와 같은 결함류).
+    if (LAST && isEditing(LAST)) {
+      const disabled = !(LAST.dirty || pendingFieldEdit);
+      for (const act of ["save", "discard-patch"]) {
+        const btn = document.querySelector(`#editor-foot [data-act="${act}"]`);
+        if (btn) btn.disabled = disabled;
+      }
+    }
   }
 
   /* 재구성이 지운 타이핑을 제자리에 되돌린다 — 없으면 대기도 버린다(위 주석 R4 P1).

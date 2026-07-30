@@ -1907,6 +1907,12 @@ _EDITOR_SAVE_GATE_PROBE_JS = r"""
     nameEl.value = '공고서 수정';
     nameEl.dispatchEvent(new Event('input', {bubbles:true}));
     out.typing_enabled = !!(saveBtn() && !saveBtn().disabled);
+    // 「변경 버리기」도 **같은 술어로 지금** 열려야 한다(§2.17 · PR #354 리뷰) — 저장만
+    // 열면 clean 세션 타이핑 직후 버리기의 첫 클릭이 삼켜진다(같은 결함류의 다른 버튼).
+    var discardBtn = function () {
+      return document.querySelector('#editor-foot [data-act="discard-patch"]');
+    };
+    out.typing_discard_enabled = !!(discardBtn() && !discardBtn().disabled);
     // ②-b 그 사이 push 가 와 footer 가 다시 그려져도 열린 채여야 한다 — 직접 켠 버튼만으로는
     // 재렌더 한 번에 도로 잠기고, 그 push 는 사용자가 만지지 않은 다른 이유로도 온다.
     window.__push('editor', snap);
@@ -1915,6 +1921,7 @@ _EDITOR_SAVE_GATE_PROBE_JS = r"""
     nameEl.value = '공고서';
     nameEl.dispatchEvent(new Event('input', {bubbles:true}));
     out.reverted_disabled = !!(saveBtn() && saveBtn().disabled);
+    out.reverted_discard_disabled = !!(discardBtn() && discardBtn().disabled);
     // ④ 파일명 패턴도 같은 자격(재구성되는 입력이라 위임으로 받는다).
     var patEl = document.querySelector('#editor-body input[data-act="pattern"]');
     out.pattern_present = !!patEl;

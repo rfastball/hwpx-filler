@@ -899,12 +899,20 @@ class TestWebSelftestGate:
         assert g["typing_enabled"] is True, (
             "이름을 고쳤는데 저장이 잠긴 채입니다 — 첫 클릭이 삼켜지는 그 상태입니다."
         )
+        # §2.17 + PR #354 리뷰 — 버리기도 같은 술어로 **타이핑 시점에** 열리고, 되돌려 치면
+        # 함께 잠긴다(저장만 열면 clean 세션 타이핑 직후 버리기 첫 클릭이 삼켜진다).
+        assert g["typing_discard_enabled"] is True, (
+            "이름을 고쳤는데 「변경 버리기」가 잠긴 채입니다 — 저장과 같은 술어여야 합니다."
+        )
         assert g["rerender_keeps_enabled"] is True, (
             "타이핑 중 push 한 번에 저장이 도로 잠깁니다 — 버튼만 직접 켜고 렌더 경로는 "
             "옛 판정을 그대로 씁니다(두 자리가 다른 말을 합니다)."
         )
         assert g["reverted_disabled"] is True, (
             "되돌려 쳐서 원래 값이 됐는데 저장이 열린 채입니다 — 없는 변경을 저장하라고 합니다."
+        )
+        assert g["reverted_discard_disabled"] is True, (
+            "되돌려 쳤는데 「변경 버리기」가 열린 채입니다 — 버릴 것 없는 버리기를 권합니다."
         )
         assert g["pattern_present"] is True, "파일명 패턴 입력이 없습니다 — 프로브가 겨눌 자리 소실."
         assert g["pattern_typing_enabled"] is True, (
