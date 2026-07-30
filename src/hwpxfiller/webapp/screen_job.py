@@ -42,6 +42,7 @@ seam 은 존치하나 이 패널이 노출하지 않는다. "없는 기능을 �
 """
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime
 from pathlib import Path
 import threading
@@ -349,6 +350,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 자리를 되돌린다. 자리는 **표시순 서수**이지 원본 index 가 아니다(판정 M).
         self.preview_open = False
         self.preview_pos = 0
+        # 「빈 값 있는 건만 보기」(U2 §2.13) — ‹ › 이동을 빈 값 있는 건으로 한정하는 면의
+        # 보기 상태. 열림·자리와 같은 이유로 Python 소유이고, 면이 닫히면 함께 놓는다.
+        # 훑기 가속의 실제 기제는 표지가 아니라 이 한정이다(선례: 「실패한 건만 선택」).
+        self.preview_blank_only = False
         # 미리보기가 **본 이름**의 시각을 붙들어 두는 핀(5R P2) — 값은 그때의 실행 입력
         # 정체다. 그 정체가 그대로인 동안만 유효하고, 생성이 소비하면 놓는다.
         self._names_pin: "str | None" = None
@@ -580,19 +585,69 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     def _do_preview_close(self, p: dict) -> None:
         self.preview_open = False
         self.preview_pos = 0
+        self.preview_blank_only = False  # 면의 보기 상태 — 열림과 같은 수명(U2 §2.13)
+
+    def _preview_blank_positions(self, mapped: "list[dict] | None" = None) -> "list[int]":
+        """빈 값이 있는 건의 **표시순 자리** 목록 — 「빈 값 있는 건만 보기」의 판정 원천.
+
+        판정은 표식 **없는** 매핑 출력에서 한다(거울이 그랬듯 빈 값을 세는 진술이라
+        표식을 채우면 언제나 0건이 된다). 의도적 빈칸(blank 선언)은 매핑이 키 자체를
+        제외하므로 자동으로 세지 않는다.
+        """
+        if self.vm is None:
+            return []
+        recs = self.vm.mapped_records(self._indices()) if mapped is None else mapped
+        return [
+            i for i, rec in enumerate(recs)
+            if any(not str(v).strip() for v in rec.values())
+        ]
+
+    def _do_preview_blank_only(self, p: dict) -> None:
+        """「빈 값 있는 건만 보기」 토글(U2 §2.13) — ‹ › 이동을 그 건들로 한정한다.
+
+        켤 때 빈 값 건이 없으면 시끄럽게 거절한다(무동작 토글 금지 — 표면도 0건이면
+        비활성이지만 잠금은 상태가 진다). 켜는 순간 자리가 대상 밖이면 가장 가까운
+        빈 값 건으로 당긴다 — 한정을 켰는데 대상 밖 건을 보고 있으면 ‹ › 가 어디서
+        움직이는지 갈린다.
+        """
+        if not self.preview_open:
+            raise ValueError("미리보기를 연 뒤에 쓸 수 있습니다.")
+        value = bool(p.get("value"))
+        if value:
+            positions = self._preview_blank_positions()
+            if not positions:
+                raise ValueError("빈 값이 있는 문서가 없습니다.")
+            if self.preview_pos not in positions:
+                after = [q for q in positions if q >= self.preview_pos]
+                self.preview_pos = after[0] if after else positions[-1]
+        self.preview_blank_only = value
 
     def _do_preview_move(self, p: dict) -> None:
         """레코드 이동 — 자리는 **표시순 서수**다(판정 M). 웹은 인덱스를 되돌려주지 않는다.
 
         경계에서 멈춘다(순환하지 않는다): 마지막에서 한 번 더 눌러 첫 건으로 돌아가면
-        「몇 번째를 보고 있는가」가 사용자 머릿속에서 끊긴다.
+        「몇 번째를 보고 있는가」가 사용자 머릿속에서 끊긴다. 「빈 값 있는 건만 보기」가
+        켜져 있으면 이동은 그 건들 사이로만 간다(§2.13 — 한정이 곧 훑기 가속의 기제).
         """
         if not self.preview_open:
             raise ValueError("미리보기가 열려 있지 않습니다.")
         total = len(self._indices())
         if not total:
             return
-        self.preview_pos = max(0, min(total - 1, self.preview_pos + int(p["delta"])))
+        delta = int(p["delta"])
+        if self.preview_blank_only:
+            positions = self._preview_blank_positions()
+            if positions:
+                if delta > 0:
+                    nxt = [q for q in positions if q > self.preview_pos]
+                    if nxt:
+                        self.preview_pos = min(nxt[0], total - 1)
+                else:
+                    prv = [q for q in positions if q < self.preview_pos]
+                    if prv:
+                        self.preview_pos = max(prv[-1], 0)
+                return
+        self.preview_pos = max(0, min(total - 1, self.preview_pos + delta))
 
     def _do_preview_approve(self, p: dict) -> None:
         """명시 승인 — 불변식 §13-4(생성 ≠ 승인)의 유일한 사건.
@@ -717,18 +772,18 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
     def _run_marker(self, indices: "list[int]") -> str:
         """이 실행 입력에 실제로 붙을 미입력 표식 — 생성·미리보기·승인의 **단일 술어**.
 
-        생성은 미입력 게이트를 통과한 **뒤에야** 표식을 붙이므로(``_generate_locked`` 3),
-        아직 확인 안 된 빈 값이 있으면 표식은 없다. 이 조건이 세 자리에서 갈리면 각각
-        다른 실행 입력을 그리거나 승인하게 된다(1R P2 · 4R P2 가 같은 술어의 두 얼굴).
+        조건은 「빈 값이 있으면」 하나다(U2 §2.13 재정의) — 필드축 ack 가 폐기되면서
+        「확인 안 된 빈 값」이라는 중간 상태 자체가 사라졌다. 표식 삽입 동의는 승인이
+        겸하고, 승인 지문에 빈 값 집합이 들어가 조용한 통과를 막는다. 이 조건이 세
+        자리에서 갈리면 각각 다른 실행 입력을 그리거나 승인하게 된다(1R P2 · 4R P2).
         """
         if self.vm is None or not indices:
             return ""
-        if self.vm.unmet_blanks(indices) or not self.vm.blank_fields(indices):
-            return ""
-        return MISSING_MARKER
+        return MISSING_MARKER if self.vm.blank_fields(indices) else ""
 
     def _review_scope_key(
-        self, indices: "list[int] | None" = None, marker: "str | None" = None,
+        self, indices: "list[int] | None" = None,
+        blanks: "list[str] | None" = None,
     ) -> str:
         """승인이 결속되는 범위 — **어느 스냅샷의** 어느 선택인가(2R P1).
 
@@ -744,16 +799,24 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         """
         idx = self._indices() if indices is None else indices
         sel = ",".join(str(i) for i in idx)
-        # 표식 상태도 승인의 일부다(4R P2): 확인 안 된 빈 값이 있는 상태로 승인하면 값은
-        # 비어 있고 이름은 표식 없이 계산된다. 사용자가 면을 닫고 빈 값을 확인하는 순간
-        # 실행 입력이 표식으로 바뀌는데, 규칙도 선택도 안 바뀌었으니 **승인은 그대로 유효**
-        # 하다 — 그러면 생성이 한 번도 보여준 적 없는 값과 이름을 쓴다. 상태가 바뀌면
-        # 승인이 무효가 되는 것이 정직하다(다시 확인하면 그때는 진짜 실행 입력을 본다).
-        mk = self._run_marker(idx) if marker is None else marker
-        return f"{self._snapshot_gen}|{'M' if mk else '-'}|{sel}"
+        # 표식 상태는 승인의 일부다(4R P2) — 그 성분이 종전엔 이진값(표식 유/무)이었는데
+        # **빈 값 필드 집합의 해시**로 승격했다(U2 §2.13 조건). 이진값이면 「담당자가 빈
+        # 데이터」에서 승인한 것이 「개찰장소가 빈 데이터」에서도 유효해, 한 번도 보지 않은
+        # 표식이 박힌 문서가 조용히 생성된다. 집합이 갈리면 키가 갈려 승인이 자동 무효다.
+        bl = (
+            (self.vm.blank_fields(idx) if self.vm is not None else [])
+            if blanks is None else blanks
+        )
+        if bl:
+            blob = ",".join(sorted(bl)).encode("utf-8")
+            bkey = hashlib.sha256(blob).hexdigest()[:12]
+        else:
+            bkey = "-"
+        return f"{self._snapshot_gen}|{bkey}|{sel}"
 
     def _review(
-        self, vm=None, indices: "list[int] | None" = None, marker: "str | None" = None,
+        self, vm=None, indices: "list[int] | None" = None,
+        blanks: "list[str] | None" = None,
     ) -> "tuple[ReviewRequirement, ReviewRequirement | None]":
         """(현재 검토 요구, 아직 승인 안 된 요구 or None) — F5 판정 B·I.
 
@@ -764,16 +827,20 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         ``vm``·``indices`` 를 받는 이유(1R P1): 생성 백스톱은 **그 런의 주체**로 물어야
         한다. 세션은 배치가 도는 사이에도 움직이므로(브리지 호출이 스레드별) 현재 상태를
         읽으면 남의 작업의 승인으로 이 런을 통과시킬 수 있다 — `_stamp_last_run` 이
-        정체를 인자로 받는 것과 같은 근거다.
+        정체를 인자로 받는 것과 같은 근거다. ``blanks`` 도 같은 이유로 **그 런의 주체**
+        (`target`)에서 센다 — 요구 판정(blank_set)과 승인 결속(scope key)이 같은 집합을
+        보게 호출측이 이미 센 값을 관통시킬 수 있다.
         """
         target = self.vm if vm is None else vm
         if target is None:
             return ReviewRequirement(), None
-        req = review_requirement(target.job)
+        idx = self._indices() if indices is None else indices
+        bl = list(target.blank_fields(idx)) if blanks is None else list(blanks)
+        req = review_requirement(target.job, blank_fields=tuple(bl))
         if not req.required:
             return req, None
         approved = self.review.is_approved(
-            req, self._review_scope_key(indices, marker)
+            req, self._review_scope_key(idx, bl)
         )
         return req, (None if approved else req)
 
@@ -810,27 +877,45 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self, req: ReviewRequirement, unmet, mapped: "list[dict]", names: "list[str]",
         audit_counts: "tuple[int, int]",
         indices: "list[int]",
+        blank_positions: "list[int] | None" = None,
     ) -> dict:
-        """드로어 구획 — 닫혀 있으면 뼈대만(그리지 않는 값은 오조립의 미끼, §10.8.6 규칙 ①).
+        """확인 면 구획 — 닫혀 있으면 뼈대만(그리지 않는 값은 오조립의 미끼, §10.8.6 규칙 ①).
 
         값·이름은 **파생**이다(판정 A): 값은 실행 입력과 같은 ``mapped_records``, 이름은
         표 「문서」 열이 쓰는 그 문자열 그대로다. 한 건만 따로 계산하면 ``{{seq}}`` 가 1 로
         고정되고 꼬리표가 사라져 미리보기가 실행과 다른 이름을 말한다.
+
+        ``blank_positions`` 는 빈 값 있는 건의 표시순 자리(§2.13 「빈 값 있는 건만 보기」) —
+        호출측(snapshot)이 표식 없는 매핑 출력에서 이미 센 값을 관통시킨다(이중 계산 방지).
         """
         total = len(mapped)
+        bp = self._preview_blank_positions() if blank_positions is None else blank_positions
         if not self.preview_open:
-            return {"open": False, "pos": 0, "total": total, "can_open": total > 0}
+            return {
+                "open": False, "pos": 0, "total": total, "can_open": total > 0,
+                "blank_only": False, "blank_count": len(bp),
+                "can_prev": False, "can_next": False,
+            }
         # 열려 있는 동안 선택이 줄면 자리가 넘칠 수 있다 — 닫지 않고 자리를 당긴다
         # (§10.12.1 실패 경로: 면 안에서 재진술하고 면을 닫지 않는다).
         pos = min(self.preview_pos, total - 1) if total else 0
         record = mapped[pos] if total else {}
         order = [m.template_field for m in self.vm.job.mapping.mappings] if self.vm else []
         converged, too_long = audit_counts
+        # ‹ › 가용성도 여기서 판정한다 — 한정(blank_only)이 켜지면 경계가 「그 건들의
+        # 처음·끝」으로 바뀌는데, 표면이 pos/total 로 재유도하면 두 판정이 갈린다.
+        blank_only = self.preview_blank_only and bool(bp)
+        can_prev = any(q < pos for q in bp) if blank_only else pos > 0
+        can_next = any(q > pos for q in bp) if blank_only else pos < total - 1
         return {
             "open": True,
             "can_open": total > 0,
             "pos": pos,
             "total": total,
+            "blank_only": blank_only,
+            "blank_count": len(bp),
+            "can_prev": can_prev,
+            "can_next": can_next,
             "filename": names[pos] if 0 <= pos < len(names) else "",
             # 「적용 범위」 축은 없다(U2 §2.3). 이 축의 존재 이유였던 runOverrides 는 §10.14
             # 에서 기각·사망했고 §10.15 판정 H 가 작업대의 대응 배지를 "말할 상태가 없다"며
@@ -1086,67 +1171,14 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             for i in self._display_indices(list(range(len(self.records))))
         ]
 
-    # ---- 본문 존 거울(D2 ⓑ, 결정 36) — 필드 채움 테이블 값 집계 --------------
-    def _formatted_fields(self) -> "set[str]":
-        """표시형(값 변환)이 붙는 필드 — 거울이 '채움 · 표시형'으로 병기한다.
-
-        date·amount 는 언제나 값을 변환하고, text 도 표시형 코드(``fmt``)가 있으면 변환한다.
-        const 는 리터럴이라 데이터 변환이 아니다(그냥 '채움').
-        """
-        return {
-            m.template_field for m in self.vm.job.mapping.mappings
-            if not m.is_blank and (m.type in ("date", "amount") or m.fmt)
-        }
-
-    def _field_value_display(self, state: str, name: str, mapped: "list[dict]") -> str:
-        """거울 행의 값 표시 — 상태별. 값은 매핑 출력(``mapped_records``)에서 온다(재구현 금지).
-
-        - ``blank``(의도적 빈칸) = 값 없음 표지.
-        - ``missing`` = 선택분 중 몇 행이 비었는지 재진술(낙관 서사 해소).
-        - ``filled`` = 실값. 선택 N>1 이고 값이 **실제로 다르면** 표본 명시 병기(S10) — 다 같으면
-          그냥 값(허위 '행마다 다름' 금지 — confirm-or-alarm 정직).
-        """
-        if state == "blank":
-            return "(비움 확정)"
-        n = len(mapped)
-        vals = [str(r.get(name, "")) for r in mapped]
-        if state == "missing":
-            blank_n = sum(1 for v in vals if not v.strip())
-            return f"(빈 값) 선택 {n}행 중 {blank_n}행에서 값이 비어 있습니다."
-        distinct = list(dict.fromkeys(vals))
-        if len(distinct) <= 1:
-            return distinct[0] if distinct else ""
-        # 표본 병기(S10) — '외 K개 값'은 **서로 다른 값 수**(len(distinct)-1)로 센다. 행 수로 세면
-        # 5행 중 4행이 같고 1행만 달라도 '외 4행'이 되어 변화를 과장한다(리뷰 반영, 정직).
-        return f"{vals[0]} (표본 · 외 {len(distinct) - 1}개 값)"
-
-    def _mirror(
-        self, indices: "list[int]", status, mapped: "list[dict]"
-    ) -> "tuple[list[dict], list[str]]":
-        """거울 행(비-drift 필드 값 테이블) + drift 필드 목록(차단 배너로 분리, 결정 36).
-
-        거울 = "생성될 문서의 채움 상태"(hwpx 본문은 앱에서 안 렌더). ADR-E 배지는 별도 UI 가
-        아니라 거울의 행이다. **drift(구조 불일치)는 미입력(ack 로 풀림)과 같은 표에 섞지 않는다**
-        — 거울 자리 차단 배너로 분리한다(danger, 에디터 가야 풀림). RC-23 심각도 서열의 공간 번역.
-
-        ``mapped`` 는 :meth:`snapshot` 가 1회 계산해 넘긴다(``_record_rows`` 와 공유 — 이중 적용 방지).
-        """
-        fmt = self._formatted_fields()
-        rows: "list[dict]" = []
-        drift: "list[str]" = []
-        for st in status.field_states:
-            if st.state == "drift":
-                drift.append(st.name)  # 구조 불일치는 선택과 무관 — 0 선택에서도 배너로 발화.
-            elif indices:
-                # 선택 0 = 생성될 문서 없음 → 거울 행 없음(빈 값을 '채움'으로 오도하지 않는다).
-                rows.append({
-                    "name": st.name,
-                    "state": st.state,
-                    "acknowledged": st.acknowledged,
-                    "value": self._field_value_display(st.state, st.name, mapped),
-                    "formatted": st.name in fmt,
-                })
-        return rows, drift
+    # ---- 본문 존(U2 §2.13 — 표 없는 한 줄) ------------------------------------
+    # 구 거울 테이블(_mirror·_field_value_display·_formatted_fields)은 필드축 ack 폐기와
+    # 함께 사망했다: 값을 말하는 표면은 확인 면(미리보기 시트) 하나다. 여기 남는 것은
+    # danger 차단 배너의 재료(drift 필드)와 빈 값 표지의 재료(blank_fields)뿐이다.
+    @staticmethod
+    def _drift_fields(status) -> "list[str]":
+        """구조 불일치 필드 — 선택과 무관하게 차단 배너로 발화한다(결정 36·RC-23)."""
+        return [st.name for st in status.field_states if st.state == "drift"]
 
     def _filter_sections(
         self, indices: "list[int]", record_rows: "list[dict]"
@@ -1214,17 +1246,13 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         스냅샷에서 필터를 이중 평가하지 않기 위한 전달이다(FilterView 캐시 계약,
         고효율 리뷰 #7). 디스패치 단발 판정(select_job·guard_state)은 생략하고 직접 평가.
 
-        **``ack_count`` 는 열거 성분이지 무장 성분이 아니다**(재작성 F1, 지도 §10.7.3):
-        데이터 전환은 ``set_acquired`` 로 빈 값 확인을 전량 재평가하므로 세워 둔 확인이
-        있으면 가드 문안이 그 사실을 말해야 한다. 그렇다고 확인만으로 무장시키지는 않는다 —
-        확인이 사라지면 게이트가 **다시 닫히는**(더 엄격해지는) 안전 방향이라, 결정 27 의
-        "재현 불가능한 수작업" 기준에 확인은 들지 않는다. 과경고는 경보를 싸구려로 만든다.
+        구 ``ack_count`` 열거 성분은 필드축 ack 폐기(U2 §2.13)와 함께 걷혔다 — 세워 둔
+        확인이라는 상태 자체가 없어졌으므로, 남겨 두면 가드가 **존재하지 않는 것을
+        잃는다고** 말한다(과경고는 경보를 싸구려로 만든다).
         """
-        guard = self._selection_guard(
+        return self._selection_guard(
             settled=set(self._last_generated or ()), vis_set=vis_set
         )
-        guard["ack_count"] = self.vm.acked_count() if self.vm is not None else 0
-        return guard
 
     def _do_guard_state(self, p: dict) -> dict:
         """무장 상태 실시간 질의 — 표면의 파괴 전이 사전 확인(데이터 재겨눔·재연결)이 소비.
@@ -1348,19 +1376,21 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "selected_count": self.selection.selected_count(),
                 "records": record_rows,
                 "preflight": {"level": "", "text": ""},
-                # 거울·드리프트·이름 토큰은 hwpx 생성 경로의 것이다 — TXT 는 값 확인을
-                # 작업대가 레코드마다 눈으로 하므로 여기서 겸하지 않는다(판정 단일 출처).
-                "mirror": [], "drift": [], "name_tokens": [],
+                # 빈 값 표지·드리프트·이름 토큰은 hwpx 생성 경로의 것이다 — TXT 는 값
+                # 확인을 작업대가 레코드마다 눈으로 하므로 여기서 겸하지 않는다(판정 단일 출처).
+                "blank_fields": [], "drift": [], "name_tokens": [],
                 "filter": filter_snap, "table": table_snap, "restate": restate_snap,
                 "guard": guard_snap,
                 "gate": {"enabled": g.enabled, "level": g.level, "text": g.text,
                          "reason": g.reason},
-                # 검토 요구·미리보기 드로어는 **배제 선언**(지도 §10.15 판정 J): 드로어는
+                # 검토 요구·확인 면은 **배제 선언**(지도 §10.15 판정 J): 확인 면은
                 # 값+파일 이름+승인의 면인데 TXT 엔 파일 이름 축이 없고, 작업대가 이미
                 # 레코드 전수를 채운 모습으로 보여 주는 검토 표면이다. 골격만 실어 표면이
                 # 키 부재로 갈라지지 않게 한다.
                 "review": self._review_payload(ReviewRequirement(), None),
-                "preview": {"open": False, "pos": 0, "total": 0, "can_open": False},
+                "preview": {"open": False, "pos": 0, "total": 0, "can_open": False,
+                            "blank_only": False, "blank_count": 0,
+                            "can_prev": False, "can_next": False},
             })
             return base
         if self.vm is None:
@@ -1409,7 +1439,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 "selected_count": self.selection.selected_count(),
                 "records": record_rows,
                 "preflight": {"level": "", "text": ""},
-                "mirror": [], "drift": [], "name_tokens": [],
+                "blank_fields": [], "drift": [], "name_tokens": [],
                 "filter": filter_snap, "table": table_snap, "restate": restate_snap,
                 "guard": guard_snap,
                 # 게이트는 링1 단일 산출(prework_gate) 소비 — 링2 문안 재조립 금지(RC-23 동형).
@@ -1418,17 +1448,21 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
                 # 작업이 없으면 검토할 규칙도 미리볼 값도 없다 — 뼈대만 실어 표면이
                 # 키 부재로 갈라지지 않게 한다(빈 값과 없는 키는 다른 결함류를 만든다).
                 "review": self._review_payload(ReviewRequirement(), None),
-                "preview": {"open": False, "pos": 0, "total": 0, "can_open": False},
+                "preview": {"open": False, "pos": 0, "total": 0, "can_open": False,
+                            "blank_only": False, "blank_count": 0,
+                            "can_prev": False, "can_next": False},
             })
             return base
         job = self.vm.job
         indices = self._indices()
-        # 생성이 실제로 쓸 표식(1R P2 · 4R P2) — 확인된 빈칸은 문서에 **표식 문자열**로
-        # 들어가고, 파일명 패턴이 그 필드를 참조하면 이름·수렴·경로 길이가 전부 달라진다.
-        # 검토·감사·드로어·생성이 **같은 술어**(`_run_marker`)를 공유한다.
-        marker = self._run_marker(indices)
+        # 빈 값 집합 1회 계산(U2 §2.13 단일 술어) — 표식(marker)·빈 값 표지(blank_fields)·
+        # 승인 지문 성분(scope key 해시)·요구 판정(blank_set)이 전부 이 한 집합을 소비한다.
+        # 표식이 붙으면 파일명 패턴이 그 필드를 참조할 때 이름·수렴·경로 길이가 전부
+        # 달라진다(1R P2 · 4R P2) — 생성·미리보기·승인이 같은 술어를 공유해야 하는 이유.
+        blanks = self.vm.blank_fields(indices) if indices else []
+        marker = MISSING_MARKER if blanks else ""
         # 검토 요구(F5) — 요구 판정은 durable 기준선이, 승인 대조는 세션이 한다.
-        req, req_unmet = self._review(marker=marker)
+        req, req_unmet = self._review(indices=indices, blanks=blanks)
         # 파일명 날짜 토큰의 기준 시각(2R·3R·5R P2) — 이 값은 **사용자가 본 것**의 일부다.
         #
         # 스냅샷당 1회 캡처하면 한 스냅샷 안의 소비처(게이트 감사·표 「문서」 열·드로어·
@@ -1443,7 +1477,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         #      다른 이름(그리고 다른 덮어쓰기 대상)이 만들어졌다.
         # 핀은 **실행 입력이 그대로인 동안**만 유효하다 — 규칙·데이터·표식·선택 중 하나라도
         # 바뀌면 화면이 보여준 이름도 이미 낡았으므로 새로 찍는 게 맞다(승인 정체와 같은 축).
-        pin = f"{req.rules_key}|{self._review_scope_key(indices, marker)}"
+        pin = f"{req.rules_key}|{self._review_scope_key(indices, blanks)}"
         if self.preview_open:
             self._names_pin = pin      # 보고 있는 동안 핀은 현재 정체를 따라간다
         pinned = self._names_pin == pin
@@ -1452,11 +1486,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         ):
             self._names_now = datetime.now()
             self._names_pin = None
-        # 선택분 매핑 적용은 1회 — 파일명 미리보기(_record_rows)와 거울 값(_mirror)이 공유한다.
+        # 선택분 매핑 적용은 표식 유/무 각 1회 — 표식 없는 판(빈 값 자리 판정)과 생성
+        # 입력 판(_record_rows·확인 면)이 공유한다(이중 적용 방지).
         mapped = self.vm.mapped_records(indices) if indices else []
-        # 거울은 표식 **없는** 값을 본다: 「선택 N행 중 M행에서 값이 비어 있습니다」가
-        # 빈 값을 세는 진술이라, 표식을 채우면 언제나 0행이 되어 문안이 거짓이 된다.
-        # 두 면이 같은 사실을 다른 각도로 말하는 것이지 판정이 둘인 게 아니다.
         run_mapped = self.vm.mapped_records(indices, marker) if marker else mapped
         # 게이트에는 **아직 승인 안 된** 요구만 넘긴다(승인됐으면 그 자리에서 열려야 한다).
         status = self.vm.refresh(  # 사전검증+배지+게이트+이름 계획 단일 산출(RC-23)
@@ -1466,7 +1498,10 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         preflight_text = (
             _PREFLIGHT_OK_TEXT if status.preflight.level == "ok" else status.preflight.text
         )
-        mirror_rows, drift_fields = self._mirror(indices, status, mapped)
+        drift_fields = self._drift_fields(status)
+        # 빈 값 있는 건의 자리(§2.13) — 표식 **없는** 매핑 출력에서 센다(표식을 채우면
+        # 언제나 0건). 확인 면 「빈 값 있는 건만 보기」와 ‹ › 가용성이 소비한다.
+        blank_positions = self._preview_blank_positions(mapped)
         # 표는 **존 대상**을 그린다(F3 판정 D): 초안이 열려 있으면 그 선택·축으로 이름까지
         # 다시 계획한다 — 이름이 커밋 기준이면 편집기 안에서 순서를 바꿔도 「문서」 열이 안
         # 움직여 판정 I 의 완화가 하필 그 축을 만지는 자리에서 죽는다. 초안이 없으면 위에서
@@ -1503,8 +1538,9 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "restate": restate_snap,
             "guard": guard_snap,
             "preflight": {"level": status.preflight.level, "text": preflight_text},
-            # 본문 존 거울(필드 채움 테이블) + drift 필드(차단 배너로 분리, 결정 36).
-            "mirror": mirror_rows,
+            # 본문 존 = 표 없는 한 줄(U2 §2.13) — 빈 값 표지의 재료(필드 이름 목록)만
+            # 싣는다. 값은 싣지 않는다: 값을 말하는 표면은 확인 면 하나다.
+            "blank_fields": list(blanks),
             "drift": drift_fields,
             # 미해소 파일명 토큰(#128) — 드리프트와 **같은 danger 자격**이라 같은 자리(거울)에서
             # 차단 배너 + 행동 링크로 발화한다. 종전엔 게이트 캡션 한 줄뿐이라 거울은 전 행
@@ -1542,7 +1578,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
             "preview": self._preview_payload(
                 req, req_unmet, run_mapped, list(status.audit.names),
                 (len(status.audit.converged), len(status.audit.too_long)),
-                indices,
+                indices, blank_positions,
             ),
         })
         return base
@@ -1570,7 +1606,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self.datasource = source
         self.records = records
         if self.vm is not None:
-            self.vm.set_acquired(source, records)  # ack 재평가 포함(RC-22)
+            self.vm.set_acquired(source, records)  # 데이터 귀속 원자 진입점(RC-22)
         self.data_label = Path(path).name
         self.data_source = "file"  # 병기 라벨은 스냅샷이 합성(#26·K8)
         self.data_pool_key = ""  # 파일 마운트 = 풀 겨눔 해제(§5.3 슬롯 정체)
@@ -1722,7 +1758,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         # 실어 주는 자리가 갈리면, 한쪽만 부르는 경로가 곧 빈 실행뷰가 된다(재적재가
         # 실제로 그랬다). 데이터·선택·필터는 세션 소유라 작업 전환에서 생존한다(§18.2).
         if self.vm is not None and self.records:
-            self.vm.set_acquired(self.datasource, self.records)  # ack 재평가 포함(RC-22)
+            self.vm.set_acquired(self.datasource, self.records)  # 데이터 귀속 원자 진입점(RC-22)
 
     def _run_action(self) -> dict:
         """실행 버튼의 (행동 키, 라벨) — 매체 파생 2분기(§19.1·F6 판정 D)."""
@@ -1785,7 +1821,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
         **데이터-우선 보존 계약(§18.2)**: 데이터·선택·필터는 세션 소유라 작업 전환에서
         **생존**한다 — 전환은 vm 만 재생성하고 세션 데이터를 ``set_acquired`` 로 주입한다.
-        전환이 잃는 것은 실행 증거(ack·완주 담보)뿐이고(§19.10) 게이트가 재검증을 강제하므로
+        전환이 잃는 것은 실행 증거(완주 담보·승인)뿐이고(§19.10) 게이트가 재검증을 강제하므로
         조용한 소실이 없다. 구 T1 스위치 가드(전환=세션 파기 재확인)는 파기 자체가 사라져
         함께 죽었다 — 가드 문안은 실제로 사라지는 집합과 일치해야 한다(과경고=거짓말).
         ``confirm`` 페이로드 키는 왕복 동형 유지를 위해 수용하되 더는 판정에 쓰지 않는다.
@@ -2159,17 +2195,8 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         self._last_generated = None  # 완주 집합의 인덱스는 이전 데이터 좌표 — 교체 시 무효
         self._do_preview_close({})   # 미리보던 값은 이전 스냅샷의 것이다(F5)
 
-    def _do_ack_field(self, p: dict) -> None:
-        """미입력 배지 클릭 = 직접 확인(강제 상호작용, ADR-E). 다 확인되면 생성이 열린다."""
-        if self.vm is None:
-            raise ValueError("작업이 선택되지 않았습니다.")
-        self.vm.acknowledge(p["field"])
-
-    def _do_unack_field(self, p: dict) -> None:
-        """ack 칩 재클릭 = 확인 철회(UD-19 토글) — 게이트가 다시 닫힌다."""
-        if self.vm is None:
-            raise ValueError("작업이 선택되지 않았습니다.")
-        self.vm.unacknowledge(p["field"])
+    # (_do_ack_field·_do_unack_field 는 필드축 ack 폐기와 함께 사망 — U2 §2.13.
+    #  표식 삽입 동의는 확인 면의 승인(preview_approve — blank_set 위험종)이 겸한다.)
 
     # -------------------------- 등록 데이터(풀) 겨눔(#26/#6) — 공용 래퍼(K4)의 화면별 훅
     def _pool_loader(self):
@@ -2181,7 +2208,7 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
 
         링1 리졸버(:func:`~hwpxfiller.gui.run_state.resolve_pool_source`)를 직접 소비한다 —
         vm 경유(``load_pool_item``)는 작업 선택을 전제해 데이터-우선과 어긋난다. vm 이
-        있으면 같은 데이터를 ``set_acquired`` 로 주입(ack 재평가 포함, RC-22).
+        있으면 같은 데이터를 ``set_acquired`` 로 주입(데이터 귀속 원자 진입점, RC-22).
         """
         self.raise_if_generating_before_swap("데이터를 바꾸세요")  # #302 P1 동류
         source, records = resolve_pool_source(item)
@@ -2304,27 +2331,23 @@ class JobController(DataZoneMixin, PoolTargetingMixin):
         if errors:
             return {"ok": False, "error": errors[0].message, "level": errors[0].level}
 
-        # 2) 미입력 강제 확인 게이트(ADR-E) — 버튼이 이미 비활성이어도 방어적 재확인.
-        unmet = run_vm.unmet_blanks(indices)
-        if unmet:
-            return {
-                "ok": False, "level": "warn",
-                "error": "빈 값 필드를 먼저 확인하세요: " + ", ".join(unmet),
-            }
+        # 2) 빈 값 집합 — 표식·승인 백스톱이 같은 집합을 소비한다(§2.13 단일 술어).
+        # 구 미입력 강제 확인 게이트(ADR-E ack)는 폐기됐다: 빈 값이 있으면 blank_set
+        # 검토 요구가 서고(승인 지문에 빈 값 집합이 든다), 아래 백스톱이 그것을 재확인한다.
+        blanks = run_vm.blank_fields(indices)
 
         # 2-b) 검토 요구 방어적 재확인(1R P1) — 버튼이 이미 비활성이어도 다시 묻는다.
         # 게이트는 **스냅샷을 만들 때** 판정한다. 그 사이 규칙이 바뀌거나(에디터 저장),
         # 스냅샷을 안 거치는 경로(브리지 `generate` 직접 호출·stale 프론트)가 들어오면
-        # 승인 없이 생성이 난다 — 미입력 게이트가 같은 이유로 여기 백스톱을 두는 자리다.
-        # 주체는 **이 런의 것**(`run_vm`·`indices`)이지 지금 세션의 것이 아니다.
-        _, review_unmet = self._review(run_vm, indices)
+        # 승인 없이 생성이 난다 — 빈 값 표식(blank_set)도 같은 백스톱을 지난다.
+        # 주체는 **이 런의 것**(`run_vm`·`indices`·그 입력의 빈 값)이지 지금 세션의 것이 아니다.
+        _, review_unmet = self._review(run_vm, indices, blanks)
         if review_unmet is not None:
             return {
                 "ok": False, "level": "warn", "error": review_gate_text(review_unmet),
             }
 
-        # 3) 미입력 표식(확인된 빈칸) — 완료 요약이 병기한다(낙관 서사 해소).
-        blanks = run_vm.blank_fields(indices)
+        # 3) 미입력 표식(승인된 빈칸) — 완료 요약이 병기한다(낙관 서사 해소).
         self._marked_fields = list(blanks)
         marker = MISSING_MARKER if blanks else ""
 

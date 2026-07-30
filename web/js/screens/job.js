@@ -16,10 +16,7 @@
   let LAST = null;
   let generating = false;
   let lastSessionKey = null;  // 완료 존 세션 스코프 판정(결정 7) — 성분별 지문(U2 §2.18)
-  let restateExpanded = false;  // 재진술 블록 이름 목록 펼침(대량 표본+「외 N건」, 결정 36)
-  let lastRestateKey = null;    // 펼침 리셋 판정 — 작업/데이터 전환 시 펼침을 끈다(세션 누수 방지)
-  let mirrorRowCount = 0;       // 420px 실측 캡의 현재 필드 수(#272)
-  let mirrorResizeObserver = null;
+  /* (구 거울 테이블의 펼침·캡 상태 4종 — 이름 목록 펼침·캡 실측 — 은 표 없는 한 줄 재편(U2 §2.13)과 함께 사망했다.) */
   /* 패널 모드(결정 39·40)는 편집기가 몰입 표면이 되며 사망했다(재작성 F7 판정 N):
      정의 편집은 자기 화면(#scr-editor)에 살고, 이 화면은 실행 세션 하나만 그린다.
      「이 화면이 안 보인다」는 판정은 이제 `.scr.on` 하나로 충분하다. */
@@ -230,11 +227,11 @@
 
   /* ---- 세션 표면 동기화 ---- */
   function syncModeDisplay(hasJob) {
-    // 거울 면은 **작업의 것**이라 작업이 없으면 설 자리가 없다. 데이터 면은 다르다:
-    // 데이터-우선(§18.2)에서 데이터 존은 작업 없이도 살고, 범위 편집기도 데이터만 있으면
-    // 연다 — `!hasJob` 으로 함께 닫으면 작업을 고르기 전엔 편집이 첫 왕복마다 취소돼
-    // 편집기 자체가 못 쓰는 것이 된다(리뷰 5R). 강제 닫기의 사유를 면별로 가른다.
-    if (!hasJob) window.SurfaceSheet.closeAndRestore("jobConfirmSheet");
+    // (구 거울 펼침 면(2 pane 확인 면)의 강제 닫기는 면 사망과 함께 걷혔다 — U2 §2.13.
+    //  확인 면(#previewSheet)의 개폐는 Python 소유 `preview.open` 이 지고, 작업 전환은
+    //  백엔드 `_do_select_job` 이 preview_close 로 닫는다. 데이터 면(dataSheet)은 데이터-
+    //  우선(§18.2)이라 작업 미선택에도 산다 — 렌더마다 닫지 않는다(리뷰 5R).)
+    void hasJob;
     // 데이터-우선: 세션 4존·액션바는 상시 — 작업 미선택에도 데이터 존이 진입점이다(§18.2).
     // 구 편집 모드 은닉(결정 39)은 편집기가 자기 화면으로 나가며 사라졌다(F7 판정 N).
     $("jobZones").style.display = "";
@@ -617,88 +614,68 @@
     return !!(s && s.run_action && s.run_action.key === "workbench");
   }
 
-  /* ---- 본문 존 거울 = 필드 채움 테이블(결정 36 ⓑ) ----
-     hwpx 본문은 앱에서 렌더 못 하므로 거울이 비추는 것은 "생성될 문서의 채움 상태"다. ADR-E
-     배지는 별도 UI가 아니라 거울의 행: 미입력 행 클릭=확인, 재클릭=철회(UD-19). danger(드리프트)는
-     ack 로 안 풀리므로 같은 표에 섞지 않고 거울 자리 차단 배너 + 행동 링크로 분리한다(결정 36·S9). */
+  /* ---- 본문 존 = 표 없는 한 줄(U2 §2.13) ----
+     구 거울 테이블(필드 채움 표 + 미입력 행 클릭 토글)은 필드축 ack 폐기와 함께 죽었다 —
+     값을 말하는 표면은 확인 면(#previewSheet) 하나다. 여기 남는 것은 빈 값 표지·이름
+     건수·확인 면 출구 한 줄과, danger 차단 배너(드리프트·미해소 토큰 — 같은 자리, 같은
+     형상, 결정 36·S9)뿐이다. */
+  /* 한 줄과 배너는 **다른 자리**다: 배너만 innerHTML 로 교체되고 한 줄은 안정 DOM 에 값만
+     채운다(확인 면 트리거가 재렌더로 교체되면 복귀 초점이 끊긴다 — #364 리뷰 P2). */
+  function showMirrorBanner(host, html) {
+    host.innerHTML = html;
+    $("jobMirrorLine").hidden = true;
+  }
+
+  function showMirrorLine(host, html) {
+    host.innerHTML = "";
+    $("jobMirrorSummary").innerHTML = html;
+    $("jobMirrorLine").hidden = false;
+  }
+
   function renderMirror(s) {
     const host = $("jobMirror");
-    // TXT 는 거울이 **없는 축**이다(스냅샷이 무조건 빈 mirror 를 싣는다) — 존을 통째로
-    // 걷는다. 남겨 두면 빈 상태 문안("행을 선택하면 …")이 행을 다 고른 뒤에도 그대로 서서,
-    // 따라 해도 아무 일이 없는 막다른 지시가 된다(리뷰 6R).
+    // TXT 는 이 존이 **없는 축**이다 — 존을 통째로 걷는다. 남겨 두면 빈 상태 문안이 행을
+    // 다 고른 뒤에도 그대로 서서, 따라 해도 아무 일이 없는 막다른 지시가 된다(리뷰 6R).
     const zone = $("jobMirrorZone");
     if (zone) zone.style.display = isCopyWork(s) ? "none" : "";
     const drift = s.drift || [];
     if (drift.length) {
       // danger = 차단 배너 + 상시 행동 링크(막다른 경보 금지 — 경보 어포던스는 숨지 않는다).
-      host.innerHTML =
+      showMirrorBanner(host,
         `<div class="mir-drift" role="alert">` +
         `<p>템플릿 구조가 확정 매핑과 달라져 문서를 생성할 수 없습니다. ` +
         `어긋난 필드: <b>${esc(drift.join(", "))}</b>.</p>` +
         `<button class="btn sm" data-act="fix-mapping" data-busy-lock>편집에서 매핑 확정…</button>` +
-        `</div>`;
-      syncMirrorCap(0);
+        `</div>`);
       return;
     }
-    // 미해소 파일명 토큰(#128) — **드리프트와 같은 danger 자격**이라 같은 자리에서 같은 형상으로
-    // 발화한다(주석 9: 배너 소관은 드리프트·토큰 둘 다). 종전엔 이 자리가 전 행 「채움」 표를
-    // 그려 문서가 건강해 보이고, 재진술 블록은 danger 라 말없이 사라지고, 남는 신호는 하단 회색
-    // 캡션 한 줄뿐이었다 — 차단은 걸렸는데 무엇을 하라는 출구가 없는 막다른 경보.
+    // 미해소 파일명 토큰(#128) — **드리프트와 같은 danger 자격**이라 같은 자리에서 같은
+    // 형상으로 발화한다(배너 소관은 드리프트·토큰 둘 다).
     const nameTokens = s.name_tokens || [];
     if (nameTokens.length) {
       const toks = nameTokens.map((t) => `{{${t}}}`).join(", ");
-      host.innerHTML =
+      showMirrorBanner(host,
         `<div class="mir-drift" role="alert">` +
         `<p>파일명 패턴의 토큰을 채우지 못해 문서를 생성할 수 없습니다. ` +
         `남는 토큰: <b>${esc(toks)}</b>.</p>` +
         `<button class="btn sm" data-act="fix-filename" data-busy-lock>편집에서 파일명 패턴 고치기…</button>` +
-        `</div>`;
-      syncMirrorCap(0);
+        `</div>`);
       return;
     }
-    const rows = s.mirror || [];
-    if (!rows.length) {  // 선택 0(또는 데이터 미겨눔) = 생성될 문서 없음
-      host.innerHTML = `<p class="mirempty muted capnote">행을 선택하면 이 문서에 들어갈 값이 여기 표시됩니다.</p>`;
-      syncMirrorCap(0);
+    const n = s.selected_count || 0;
+    if (!s.has_job || !s.has_data || !n) {  // 선택 0(또는 미겨눔) = 생성될 문서 없음
+      // 트리거는 그대로 두고 문안만 바꾼다 — 가용성은 `setBusy` 단일 지점이 정한다
+      // (`can_open` 이 false 라 비활성). 자리를 없애면 안정 복귀점도 함께 사라진다.
+      showMirrorLine(host, `<span class="mirempty muted capnote">행을 선택하면 생성 내용을 확인할 수 있습니다.</span>`);
       return;
     }
-    host.innerHTML =
-      `<div class="tbwrap"><table class="tb mir"><tbody>` +
-      rows.map(mirrorRow).join("") + `</tbody></table></div>`;
-    syncMirrorCap(rows.length);
-  }
-
-  /* 420px 캡은 필드 수가 아니라 실 오버플로로 판정한다. 배율·문안 줄바꿈에서도 거짓 표지를
-     내지 않고, 펼침 면에선 max-height 해제 뒤 ResizeObserver가 표지를 즉시 걷는다. */
-  function measureMirrorCap() {
-    const host = $("jobMirror"), strip = $("jobMirrorCapstrip");
-    const clipped = mirrorRowCount > 0 && host.clientHeight > 0
-      && host.scrollHeight > host.clientHeight + 1;
-    strip.hidden = !clipped;
-    strip.innerHTML = clipped
-      ? `전체 <b>${mirrorRowCount}필드</b> — ` +
-        `<button class="btn sm" type="button" data-mirror-expand>펼쳐서 확인 ⤢</button>`
-      : "";
-  }
-
-  function syncMirrorCap(count) {
-    mirrorRowCount = count;
-    measureMirrorCap();
-    if (window.requestAnimationFrame) window.requestAnimationFrame(measureMirrorCap);
-  }
-
-  function openJobConfirmSheet(e) {
-    window.SurfaceSheet.open({
-      modalId: "jobConfirmSheet",
-      // 클릭된 버튼(캡스트립 위임 포함) → 상시 ⤢ 버튼 순(#279 리뷰, SurfaceSheet.trigger).
-      returnFocus: window.SurfaceSheet.trigger(e, $("jobMirrorExpand")),
-      initialFocus: $("jobConfirmSheetClose"),
-      moves: [
-        { id: "jobMirror", slotId: "jobConfirmSheetMirrorSlot" },
-        { id: "jobRestate", slotId: "jobConfirmSheetRestateSlot" },
-      ],
-      afterRestore: measureMirrorCap,
-    });
+    // 한 줄: 빈 값 표지(정보 — 클릭 표적 아님) + 이름 건수 + 확인 면 출구(⤢).
+    // 어느 필드가 비는지는 이름으로 지목하되 **값은 말하지 않는다**(C3 폐색의 요점).
+    const blanks = s.blank_fields || [];
+    const blankBit = blanks.length
+      ? `<span class="mir-blank-flag">빈 값 <b>${blanks.length}필드</b>(${blanks.map(esc).join("·")})</span>`
+      : `빈 값 없음`;
+    showMirrorLine(host, `${blankBit} · 이름 <b>${n}건</b>`);
   }
 
   /* 문서 탐색 면 열기 — 실 DOM 이동(SurfaceSheet)이 아니라 자체 내용을 가진 면이라
@@ -796,6 +773,13 @@
     $("jobReviewFlag").style.display = r.required && !r.approved ? "" : "none";
     if (!p.open) { closePreviewIfOpen(); return; }
     $("previewPos").textContent = `${(p.pos || 0) + 1} / ${p.total || 0}`;
+    // 「빈 값 있는 건만 보기」(U2 §2.13) — 상태는 Python 소유라 스냅샷을 되읽는다
+    // (낙관 토글 없음, #215 동류). 가용성(0건 비활성)은 setBusy 단일 지점이 정한다.
+    $("previewBlankOnly").setAttribute("aria-pressed", p.blank_only ? "true" : "false");
+    // 이름 계획 한 줄(U2 §2.13) — 구 인라인 재진술의 파일 이름 목록이 접힌 자리. 개별
+    // 이름은 ‹ › 훑기(파일 이름 칸)가 말하고, 여기는 집합(건수·착지 폴더)만 말한다.
+    $("previewNamePlan").textContent =
+      `${p.total || 0}건 · 저장 폴더: ${s.out_dir || "미지정"}`;
     const empty = $("previewEmpty");
     empty.textContent = p.empty_note || "";
     empty.style.display = p.empty_note ? "" : "none";
@@ -844,12 +828,17 @@
      열려 있지 않은 대상의 `Modal.close` 는 스택에 없어 아무 일도 하지 않는다 — 그래서
      열림 여부를 DOM 에 되묻지 않는다(상태의 진실은 스냅샷이지 클래스가 아니다). */
   function closePreviewIfOpen() {
-    window.Modal.close("previewModal");
+    window.Modal.close("previewSheet");
   }
 
   async function openPreview(e, opts) {
     const o = opts || {};
-    const trigger = (e && e.currentTarget) || $("jobPreviewOpen");
+    // 복귀 트리거는 **실제 클릭된 버튼**으로 푼다(#364 리뷰 P2): 본문 존 한 줄의
+    // 「생성 값 미리보기 ⤢」는 위임 핸들러(`#jobMirror` 컨테이너)를 타므로 `currentTarget`
+    // 이 포커스 불가능한 div 다 — 그대로 넘기면 시트를 닫은 키보드 사용자의 초점이
+    // 그 버튼으로 못 돌아가고 body 로 떨어진다. 해석은 공용 SurfaceSheet.trigger 단일
+    // 정의를 쓴다(위임 클릭 → 버튼, 없으면 안정 폴백). 폴백은 액션바의 상시 버튼이다.
+    const trigger = window.SurfaceSheet.trigger(e, $("jobPreviewOpen"));
     // 성사 뒤에만 연다(§9.3 4행 상속): 거절되면(생성 중·초안 열림·선택 0건) 면을 띄우지
     // 않는다 — 열어 놓고 실패를 말하면 무엇을 미리보는 중인지가 거짓이 된다.
     // `at` = deep-link 복귀의 같은 자리(§10.15.15 판정 C) — 값은 Python 이 push 한
@@ -867,7 +856,7 @@
       Bridge.call(SCREEN, "preview_close", {});
       return;
     }
-    window.Modal.open("previewModal", {
+    window.Modal.open("previewSheet", {
       returnFocus: trigger,
       initialFocus: $("previewClose"),
       onClose: () => { Bridge.call(SCREEN, "preview_close", {}); },
@@ -897,7 +886,7 @@
      닫힘에 0 으로 리셋되므로, 순서를 바꾸면 복귀가 늘 첫 행으로 선다(발신 순서 규약). */
   async function previewFix(target, evidence) {
     const at = ((LAST && LAST.preview) || {}).pos || 0;
-    window.Modal.close("previewModal");   // 편집 호스트 위에 남의 모달 금지(F2 PR-B 교훈)
+    window.Modal.close("previewSheet");   // 편집 호스트 위에 남의 모달 금지(F2 PR-B 교훈)
     const opened = await openEditForRepair({
       entry_reason: "preview_result",
       target,
@@ -1021,46 +1010,22 @@
     })();
   }
 
-  function mirrorRow(r, i) {
-    const nm = esc(r.name);
-    const val = esc(r.value);
-    // 안정 id — 클릭형 미입력 행이 ack 재렌더를 가로질러 포커스를 잃지 않게(preserve.js 는 id 로
-    // 복원). 행 index 는 필드 집합이 안정인 세션 내에서 안정하다(이름 특수문자 회피).
-    const id = `jobMirF-${i}`;
-    if (r.state === "filled") {
-      return `<tr class="mir-row" id="${id}"><td class="mir-f">${nm}</td><td class="mir-v">${val}</td>` +
-        `<td class="mir-s"><span class="st filled">채움${r.formatted ? " · 표시형" : ""}</span></td></tr>`;
-    }
-    if (r.state === "blank") {
-      return `<tr class="mir-row blankd" id="${id}"><td class="mir-f">${nm}</td><td class="mir-v">${val}</td>` +
-        `<td class="mir-s"><span class="st blankd">비움 확정</span></td></tr>`;
-    }
-    // missing — 클릭형 행(확인/철회 토글). ack 여부로 색·칩 전환.
-    const ack = r.acknowledged;
-    const chip = ack ? `<span class="st ackd">확인됨 · 클릭=철회</span>`
-                     : `<span class="st miss">빈 값 · 클릭=확인</span>`;
-    return `<tr class="mir-row miss${ack ? " ackd" : ""}" id="${id}" role="button" tabindex="0" ` +
-      `data-f="${nm}" aria-pressed="${ack ? "true" : "false"}">` +
-      `<td class="mir-f">${nm}</td><td class="mir-v">${val}</td><td class="mir-s">${chip}</td></tr>`;
-  }
+  /* (구 거울 행 합성·클릭형 확인 토글(UD-19)은 필드축 ack 폐기와
+     함께 사망 — U2 §2.13. 빈 값 표지는 정보로 남고 클릭 표적만 사라졌다.) */
 
   /* (열 필터 패널·필터 테이블·칩 줄·스트립·검색 정산은 datazone.js 팩토리로 이동 — PR-2a
      추출. 표면 계약·리뷰 결정 주석은 팩토리가 소유한다. 화면 고유 popover 인 행/그룹 ⋮
      메뉴의 바깥-닫기는 공용 Popover.wireDismiss 주입(wire) — 기제 단일 출처, 상태는
      표면별 인스턴스라 패널 몫과 교차하지 않는다.) */
 
-  /* ---- 게이트 · 재진술 블록(상시, 결정 36 D1-B) — 선택 유래 + 산출 요약 + 이름 목록.
-     이미 보이는 것을 재검증하지 않으므로 모달이 아니라 상시 블록이다. 이름 = 실파일명(정준) ·
-     식별 요약(보조, PR-1 identity_summary). 소량(≤3)=전부, 대량=층화 표본(결정 5 —
-     Python restate.sample, 광의 OR 의 소수 가지가 반드시 등장) + 「외 N건 펼치기」.
+  /* ---- 게이트 · 재진술 블록(상시, 결정 36 D1-B) — 선택 유래 + 산출 요약.
+     이미 보이는 것을 재검증하지 않으므로 모달이 아니라 상시 블록이다.
+     구 파일 이름 목록(표본+「외 N건 펼치기」)은 확인 면의 「이름 계획」 한 줄로 이주했다
+     (U2 §2.13) — 값·이름을 말하는 표면은 확인 면 하나다. 여기 남는 것은 수치·경로뿐이다.
      선택 유래(결정 4) = 집합 비교 무상태 판정(restate.origin): 정의-유래면 정의줄을
      재진술하고, 이탈이면 매치/밖 수치를 병기한다(S4 델타). */
   function renderRestate(s) {
     const box = $("jobRestate");
-    // 펼침 상태는 작업/데이터 전환에 리셋한다(모듈 전역이 다른 세션으로 새지 않게). 선택 토글은
-    // 유지 — 같은 세션 내 편집이므로. 세션 지문(선택 제외)으로 판정.
-    const rkey = (s.job_name || "") + "|" + (s.data_source_label || "");
-    if (rkey !== lastRestateKey) { restateExpanded = false; lastRestateKey = rkey; }
     const sel = (s.records || []).filter((r) => r.selected);
     // danger 차단(드리프트·미해소 파일명 토큰) 중엔 재진술을 숨긴다 — "생성 불가"인데 "N건 생성"을
     // 동시에 진술하면 모순(confirm-or-alarm, 리뷰). '차단' 판정은 게이트 단일 출처를 소비한다
@@ -1071,35 +1036,20 @@
     if (!s.has_job || !s.has_data || !sel.length || blocked) { box.style.display = "none"; box.innerHTML = ""; return; }
     box.style.display = "";
     const rs = s.restate || { origin: null, filter_active: false, sample: [] };
-    const byIndex = {};
-    sel.forEach((r) => { byIndex[r.index] = r; });
-    // 표본 = 층화(Python) — 펼침·소량은 전부.
-    const sampleIdx = (sel.length <= 3 || restateExpanded)
-      ? sel.map((r) => r.index)
-      : (rs.sample || []).filter((i) => byIndex[i]);
-    const shown = sampleIdx.map((i) => byIndex[i]).filter(Boolean);
-    const list = shown.map((r) =>
-      `<span class="nm"><b>${esc(r.name || "(파일명 미정)")}</b>` +
-      (r.summary ? ` · ${esc(r.summary)}` : "") + `</span>`).join("");
-    const more = (sel.length > 3)
-      ? `<button class="btn sm" id="jobRestateMore" data-act="restate-more" data-busy-lock>` +
-        (restateExpanded ? "접기" : `⋯ 외 ${sel.length - shown.length}건 펼치기`) + `</button>`
-      : "";
     // 선택 유래 문안(결정 4·S4) — 정의-유래 = 정의줄 재진술이 「전체 선택」의 담보.
     // 직접 선택 문안은 가드 모달과 공유 합성기(selectionLine, 리뷰 #9)로 단일 출처.
     const selLine = (rs.origin === "definition")
       ? `정의 매치 전체 ${sel.length}행: ${esc((s.filter && s.filter.definition) || "")}`
       : esc(selectionLine(sel.length, rs.filter_active, rs.in_def, rs.extra));
     // 산출 재진술은 **매체마다 다른 사실**이다(리뷰 6R). TXT 는 파일을 만들지 않으므로
-    // 「문서 N건 · 저장 폴더」도, 파일 이름 목록(전부 "(파일명 미정)")도 거짓이다 —
-    // 이 버튼이 실제로 하는 일(작업대에서 레코드마다 검토·복사)을 그대로 말한다.
+    // 「문서 N건 · 저장 폴더」는 거짓이다 — 이 버튼이 실제로 하는 일(작업대에서
+    // 레코드마다 검토·복사)을 그대로 말한다.
     box.innerHTML = isCopyWork(s)
       ? `<span class="dl">선택</span><span>${selLine}</span>` +
         `<span class="dl">복사</span><span>작업대에서 ${sel.length}건을 한 건씩 검토하고 ` +
         `복사합니다. 파일은 만들지 않습니다.</span>`
       : `<span class="dl">선택</span><span>${selLine}</span>` +
-        `<span class="dl">생성</span><span>문서 ${sel.length}건 · 저장 폴더: ${esc(s.out_dir || "미지정")}` +
-        `<div class="namelist">${list}${more}</div></span>`;
+        `<span class="dl">생성</span><span>문서 ${sel.length}건 · 저장 폴더: ${esc(s.out_dir || "미지정")}</span>`;
   }
 
   /* ---- 본문 존: 게이트·저장 폴더·생성 버튼 ---- */
@@ -1132,13 +1082,16 @@
     // 링1 이 축 이름을 냈으면 그 이름만 읽는다 — 상태 재유도 금지(서열은 게이트의 것).
     const named = GATE_ZONE[g.reason || ""];
     if (named !== undefined) return named;
-    // 이름 없는 게이트(빈 값 확인·저장 폴더·이어채우기 등 hwpx warn 갈래)만 자리로 유추한다.
-    // 이 갈래들은 선택된 작업의 본문 축이라 지목이 하나뿐이고, 데이터·행이 안 갖춰졌으면
-    // 그게 먼저다(prework_gate 서열과 같은 걸음).
+    // 이름 없는 게이트(저장 폴더·이어채우기 등 hwpx warn 갈래)만 자리로 유추한다.
+    // 데이터·행이 안 갖춰졌으면 그게 먼저다(prework_gate 서열과 같은 걸음).
     const noRows = !s.has_data || !(s.selected_count > 0);
     if (!s.has_job) return noRows ? GATE_ZONE.no_data : GATE_ZONE.no_job;
     if (noRows) return GATE_ZONE.no_data;
-    return GATE_ZONE.drift;
+    // 이름 없는 warn 의 **마지막 소비자였던 필드축 ack 게이트가 폐기됐다**(U2 §2.13) —
+    // 남는 것(저장 폴더·이어채우기)은 본문 축이 아니라 그 자리를 가리키면 거짓 지목이
+    // 된다. `drift`·`name_tokens` 는 위 named 조회가 계속 「본문 확인」으로 보낸다:
+    // 그 danger 배너는 재편 뒤에도 그 존에 산다(사망한 것은 값 표·클릭형 행이다).
+    return "";
   }
 
   function renderGateAndFolder(s) {
@@ -1212,7 +1165,7 @@
     // ⤢ 펼침 면 2종도 같은 이유로 루트다: 실 DOM 이동이라 잠글 요소가 **면 안으로 옮겨가**
     // `#scr-job` 질의에서 빠진다(표시순서 축·전체 선택·검색이 그렇게 새 있었다, F3).
     [$("scr-job"), $("jobBrowseSheet"), $("dataPickerModal"),
-     $("dataSheet"), $("jobConfirmSheet"), $("previewModal")].forEach((root) => {
+     $("dataSheet"), $("previewSheet")].forEach((root) => {
       root.querySelectorAll("[data-busy-lock]").forEach((el) => { el.disabled = busy; });
     });
     // 초안이 열려 있으면 생성은 닫혀 있다(§10.11.2 계약면 2 — 잠금은 DOM 이 아니라 상태가
@@ -1230,10 +1183,17 @@
       busy || !(LAST && LAST.has_job) || isCopyWork(LAST);
     // 미리보기 버튼들도 여기서 정한다(F5) — 위 일괄 복원이 renderPreview 의 판정을 되살린다.
     // 열기는 선택이 있을 때, 이동은 경계에서 멈춘다(순환하지 않으므로 끝에서 비활성).
+    // 경계는 Python 이 낸다(can_prev·can_next — §2.13): 「빈 값 있는 건만 보기」가 켜지면
+    // 경계가 그 건들의 처음·끝으로 바뀌는데, 표면이 pos/total 로 재유도하면 판정이 갈린다.
     const pv = (LAST && LAST.preview) || {};
+    // 확인 면 출구는 둘(액션바·본문 존 한 줄)이고 **가용성 판정은 하나**다 — 두 자리가
+    // 각자 정하면 한쪽만 열린 채 남는다. 한 줄의 버튼은 안정 DOM 이라 여기서 잠근다.
     $("jobPreviewOpen").disabled = busy || !pv.can_open;
-    $("previewPrev").disabled = busy || !pv.total || pv.pos <= 0;
-    $("previewNext").disabled = busy || !pv.total || pv.pos >= pv.total - 1;
+    $("jobMirrorPreviewOpen").disabled = busy || !pv.can_open;
+    $("previewPrev").disabled = busy || !pv.total || !pv.can_prev;
+    $("previewNext").disabled = busy || !pv.total || !pv.can_next;
+    // 「빈 값 있는 건만 보기」 — 빈 값 건이 0이면 한정할 대상이 없어 비활성(무동작 토글 금지).
+    $("previewBlankOnly").disabled = busy || !pv.blank_count;
     // 실행 행동은 **매체 파생 2분기**(F6 판정 D) — 라벨도 행동 키도 Python 이 낸다.
     // 표면이 매체를 다시 읽어 분기하면 같은 판정이 두 곳에 산다.
     const ra = (LAST && LAST.run_action) || { key: "generate", label: "이 작업으로 문서 생성" };
@@ -1422,16 +1382,16 @@
   const selectionLine = window.Guard.selectionLine;
 
   /* 손실 열거는 **실제로 파기되는 집합**과 일치해야 한다(지도 §10.7.3 감사) — 과경고도
-     누락도 거짓말이다. 데이터 전환이 파기하는 것: ①선택(0건 재생성) ②필터 정의(재생성)
-     ③빈 값 확인(`set_acquired` 의 ack 재평가). 자동 조준 재진술은 사라지는 게 아니라 새
-     데이터가 스스로를 재진술하며 **대체**되고, 생성 결과·로그는 그대로 남으므로 열거하지
-     않는다. 필터 정의는 직전 슬롯에 스태시되지만 재적용은 **소스 일치**를 요구하므로
-     (`_reapply_available` 3연언) 다른 데이터로 가면 지금 자리에선 되살릴 수 없다 — 그 조건
-     까지 말해야 "사라진다"가 정확해진다. */
+     누락도 거짓말이다. 데이터 전환이 파기하는 것: ①선택(0건 재생성) ②필터 정의(재생성).
+     구 ③「빈 값 확인」 성분은 필드축 ack 폐기(U2 §2.13)로 걷었다 — 확인이라는 상태가
+     없어졌으므로 남겨 두면 가드가 존재하지 않는 것을 잃는다고 말한다. 자동 조준 재진술은
+     사라지는 게 아니라 새 데이터가 스스로를 재진술하며 **대체**되고, 생성 결과·로그는
+     처분 계약(§2.18)이 따로 지므로 열거하지 않는다. 필터 정의는 직전 슬롯에 스태시되지만
+     재적용은 **소스 일치**를 요구하므로(`_reapply_available` 3연언) 다른 데이터로 가면
+     지금 자리에선 되살릴 수 없다 — 그 조건까지 말해야 "사라진다"가 정확해진다. */
   function guardBody(g, verbPhrase) {
     const lost = [selectionLine(g.sel_count, g.filter_active, g.in_def, g.extra)];
     if (g.filter_parts > 0) lost.push(`필터 정의(${g.filter_parts}개 조건)`);
-    if (g.ack_count > 0) lost.push(`빈 값 확인 ${g.ack_count}개`);
     const stash = g.filter_parts > 0
       ? "\n필터 정의는 이 데이터로 돌아오면 「직전 필터 재적용」으로 되살릴 수 있습니다." : "";
     return `${verbPhrase} 이 세션의 선택이 사라집니다.\n` +
@@ -1537,12 +1497,6 @@
     window.Nav.go(SCREEN);
   }
 
-  /* 거울 미입력 행 = ADR-E 배지 — 클릭=확인·재클릭=철회(UD-19). ackd 클래스로 토글 방향 판정. */
-  function mirrorAck(rowEl) {
-    const act = rowEl.classList.contains("ackd") ? "unack_field" : "ack_field";
-    Bridge.call(SCREEN, act, { field: rowEl.dataset.f });
-  }
-
   function onMirrorClick(e) {
     // 두 danger 배너의 행동 링크(#128) — 목적지는 같은 편집 모드다(매핑도 파일명 패턴도 거기
     // 산다). 진입 흐름을 공유하되 라벨은 각자 고칠 것을 말한다.
@@ -1558,16 +1512,6 @@
       });
       return;
     }
-    const row = e.target.closest(".mir-row.miss");
-    if (row) mirrorAck(row);
-  }
-
-  function onMirrorKey(e) {
-    if (e.key !== "Enter" && e.key !== " ") return;
-    const row = e.target.closest(".mir-row.miss");
-    if (!row) return;
-    e.preventDefault();
-    mirrorAck(row);
   }
 
   /* danger(구조 드리프트) 수리 동선 — 이 작업을 **패널 편집 모드**에 열어 매핑을 재확정한다
@@ -1592,13 +1536,9 @@
   function wire() {
     // 데이터 존(테이블·열 패널·칩·스트립·전체 선택/해제·문서 레벨 닫기)은 팩토리 몫 배선.
     dz.wire();
-    if (window.ResizeObserver && !mirrorResizeObserver) {
-      mirrorResizeObserver = new ResizeObserver(measureMirrorCap);
-      mirrorResizeObserver.observe($("jobMirror"));
-    }
     // 문서 작업 후보 카드 클릭 = 작업 선택(§18.2 보존 전환 — 데이터·선택은 세션 소유라 생존).
     // 활성 후보 재활성화는 무시한다(#302 리뷰 P2): CSS pointer-events:none 은 키보드
-    // (Enter/Space) 합성 클릭을 막지 못하고, 재선택은 vm 재생성 = ack·완주 담보·폴더의
+    // (Enter/Space) 합성 클릭을 막지 못하고, 재선택은 vm 재생성 = 완주 담보·승인·폴더의
     // 조용한 소실이라 무해하지 않다(탐색 면 재선택 no-op 과 대칭).
     $("jobCandidates").addEventListener("click", (e) => {
       // 별 = 정렬 메타만(§18.5) — 작업 선택이 아니다. 카드 안 중첩 버튼이라 먼저 가른다.
@@ -1704,7 +1644,7 @@
     // 미리보기 드로어(F5) — 열기·이동·승인·편집 진입. 자리는 Python 이 서수로 소유하므로
     // 웹은 **방향만** 보낸다(레코드 index 를 되돌려주지 않는다, 판정 M).
     $("jobPreviewOpen").addEventListener("click", openPreview);
-    $("previewClose").addEventListener("click", () => window.Modal.close("previewModal"));
+    $("previewClose").addEventListener("click", () => window.Modal.close("previewSheet"));
     $("previewPrev").addEventListener("click", () =>
       Bridge.call(SCREEN, "preview_move", { delta: -1 }));
     $("previewNext").addEventListener("click", () =>
@@ -1717,7 +1657,7 @@
     // deep-link(§10.14.3)를 더한다. 면을 먼저 닫아 편집 호스트 위에 남의 모달이 떠 있지
     // 않게 한다(F2 PR-B 교훈).
     $("previewEdit").addEventListener("click", () => {
-      window.Modal.close("previewModal");
+      window.Modal.close("previewSheet");
       openEditForRepair({
         entry_reason: "preview_result",
         evidence: { "보고 있던 행": ($("previewPos").textContent || "").trim() },
@@ -1744,12 +1684,13 @@
         "파일 이름": ($("previewFilename").textContent || "").trim(),
       }).catch((err) => log("수정으로 이동하지 못했습니다: " + String((err && err.message) || err)));
     });
-    $("jobMirrorExpand").addEventListener("click", openJobConfirmSheet);
-    $("jobMirrorCapstrip").addEventListener("click", (e) => {
-      if (e.target.closest("[data-mirror-expand]")) openJobConfirmSheet(e);
+    // 「빈 값 있는 건만 보기」(U2 §2.13) — 의도한 값(현 표시의 반전)을 보내고 표시는
+    // 스냅샷 되읽기가 확정한다(#215 동류 — 낙관 토글 없음). 거절(빈 값 0건 등)은 loud.
+    $("previewBlankOnly").addEventListener("click", () => {
+      const on = $("previewBlankOnly").getAttribute("aria-pressed") === "true";
+      Bridge.call(SCREEN, "preview_blank_only", { value: !on }).catch((err) =>
+        log("빈 값 건만 보기를 바꾸지 못했습니다: " + String((err && err.message) || err)));
     });
-    $("jobConfirmSheetClose").addEventListener("click", () =>
-      window.SurfaceSheet.close("jobConfirmSheet"));
     $("dataSheetClose").addEventListener("click", () => window.SurfaceSheet.close("dataSheet"));
     // 데이터·작업이 둘 다 없는 상태의 유일 출구(지도 §10.9 판정 C) — 데이터 없이 작업을
     // 보는 경로는 「문서 작업」이 흡수했고, 여기서는 그 흡수처를 가리키기만 한다(겨눔 없음:
@@ -1760,18 +1701,13 @@
     $("jobCandidates").addEventListener("click", (e) => {
       if (e.target.closest("[data-cands-exit]")) window.Nav.go("library");
     });
-    // 거울(재렌더에도 살아남게 안정 컨테이너에 위임) — 미입력 행 ack + 드리프트 수리 링크.
+    // 본문 존 배너(재렌더에도 살아남게 안정 컨테이너에 위임) — danger 수리 링크.
+    // 구 거울의 ack 클릭·키보드 경로와 재진술 이름 목록 펼침은 함께 죽었다(U2 §2.13).
     $("jobMirror").addEventListener("click", onMirrorClick);
-    $("jobMirror").addEventListener("keydown", onMirrorKey);
-    // 재진술 블록 이름 목록 펼침/접기(대량 표본).
-    $("jobRestate").addEventListener("click", (e) => {
-      if (e.target.closest('[data-act="restate-more"]')) {
-        restateExpanded = !restateExpanded;
-        // Preserve.around 로 감싼다 — 토글 버튼(id=jobRestateMore)이 innerHTML 재구성을
-        // 가로질러 포커스를 유지하게(거울-행 ack 경로와 같은 규율, 리뷰). 밖에서 부르면 body 낙하.
-        if (LAST) Preserve.around(() => renderRestate(LAST));
-      }
-    });
+    // 한 줄의 확인 면 출구(U2 §2.13)는 **안정 DOM** 이라 직접 배선한다 — 열기 절차는
+    // openPreview 하나가 소유한다(액션바 버튼과 같은 경로: 표면이 둘이어도 절차는 하나).
+    // 직접 배선이라 이벤트가 그 버튼을 그대로 가리켜 복귀 초점도 그리로 돌아온다(#364).
+    $("jobMirrorPreviewOpen").addEventListener("click", openPreview);
     // 액션바 재연결(#342 3R) — 도달 보장 축의 입구. 흐름은 경고 카드와 **한 몸통**이다.
     $("jobActionRelink").addEventListener("click", () => {
       if (!(LAST && LAST.job_name)) return;
@@ -1881,7 +1817,7 @@
   window.JobScreen = {
     init, overwriteBody, guardBody, resultExitLine, confirmDataSwapIfArmed, openJob,
     refreshList,
-    openJobConfirmSheet, openJobDataSheet, openBrowseNeedsAction,
+    openJobDataSheet, openBrowseNeedsAction,
     // 미리보기 복귀 seam(1R P2) — 편집기가 「미리보기로 돌아가기」라고 적은 이상 실제로
     // 그 면으로 돌려보내야 한다. 열기 절차(왕복·성사 뒤 열기·포커스)는 여기 하나가 소유한다.
     openPreview,

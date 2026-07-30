@@ -236,6 +236,10 @@ class TestWebSelftestGate:
         # 축이 되어 자리째 걷혔다 — 정적 계약이 못 보는 것은 JS 가 그 자리를 **다시 만들지
         # 않는가**이고, 그것은 실렌더에서만 확인된다.
         assert d["scope_axis"] is False, "실렌더에서 적용 범위 축이 재유입됐습니다."
+        # 「빈 값 있는 건만 보기」(U2 §2.13) — 상태는 스냅샷 되읽기(정본=Python)이고,
+        # blank_count>0 이면 활성이다. 이름 계획 한 줄(인라인 이름 목록의 이주처)도 선다.
+        assert d["blank_toggle_pressed"] == "false" and d["blank_toggle_disabled"] is False, d
+        assert "2건" in d["name_plan"], f"이름 계획 한 줄이 서지 않았습니다: {d['name_plan']!r}"
         assert d["approve_shown"] is True and d["flag_shown"] is True
         # 원격 닫힘 — 상태의 진실은 DOM 이 아니라 스냅샷이다.
         assert d["closed_by_state"] is True, "Python 이 닫았는데 면이 남았습니다."
@@ -442,18 +446,27 @@ class TestWebSelftestGate:
     #  「기안」 화면과 함께 걷혔다, F6 PR-B. 펼침 면 실 DOM 이동/복귀의 생존 판은
     #  job(dataSheet·jobConfirmSheet) 프로브·정적 계약이 진다.)
 
-    def test_job_mirror_table_renders_four_state_rows(self, selftest_result: dict) -> None:
-        # 「작업」 본문 존 거울 — 합성 스냅샷을 실 render() 에 흘려 필드
-        # 채움 테이블이 실 WebView2 에서 4행(채움·채움+표시형·미입력·빈칸)으로 그려지고 미입력
-        # 행이 클릭형(role=button)인지 되읽는다. 배지=거울의 행(별도 UI 아님)의 실물 검증.
+    def test_job_mirror_zone_renders_one_line_without_values(self, selftest_result: dict) -> None:
+        # 「작업」 본문 존 = 표 없는 한 줄(U2 §2.13) — 합성 스냅샷을 실 render() 에 흘려
+        # ①값을 말하는 표가 서지 않고 ②빈 값 표지(필드 이름 지목)와 이름 건수 ③확인 면
+        # 출구(생성 값 미리보기 ⤢)가 한 줄로 서는지 되읽는다. 값 표면 단일화의 실물 검증.
         j = selftest_result["job_mirror"]
-        assert j.get("error") is None, f"거울 프로브 예외: {j.get('error')!r}"
-        assert j["mirror_rows"] == 4, f"거울 행이 4개가 아닙니다: {j!r}"
-        assert j["miss_clickable"] is True, "미입력 거울 행이 클릭형(role=button)이 아닙니다(ADR-E)."
-        chips = j["chips"]
-        assert any("채움 · 표시형" in c for c in chips), f"표시형 칩 미렌더: {chips!r}"
-        assert any("빈 값 · 클릭=확인" in c for c in chips), f"미입력 칩 미렌더: {chips!r}"
-        assert any("비움 확정" in c for c in chips), f"의도적 빈칸 칩 미렌더: {chips!r}"
+        assert j.get("error") is None, f"본문 존 프로브 예외: {j.get('error')!r}"
+        assert j["mirror_no_table"] is True, "본문 존에 값 표가 남아 있습니다(§2.13 값 표면 단일화 위반)."
+        assert j["mirror_line_has_blank_flag"] is True, "빈 값 표지가 서지 않았습니다."
+        line = j["mirror_line"]
+        assert "빈 값" in line and "1필드" in line and "낙찰율" in line, f"빈 값 지목 누락: {line!r}"
+        assert "이름" in line and "2건" in line, f"이름 건수 누락: {line!r}"
+        assert j["mirror_preview_exit"] is True, "확인 면 출구(생성 값 미리보기 ⤢)가 없습니다."
+        # 정상 지형(danger 없음)에서는 배너 자리가 비어 있다 — 두 자리가 배타로 서는지(#364).
+        assert j["mirror_banner_empty"] is True, "한 줄과 배너가 같은 자리를 다툽니다."
+        # 출구 가용성은 액션바 버튼과 **같은 판정**(`can_open`)에 결속된다(#364) — 두 값
+        # 대조로 재는 이유: 한 값만 보면 「늘 열려 있는 버튼」도 초록이고, 비활성 요소의
+        # `click()` 은 이벤트를 만들지 않아 발신 부재가 배선 부재와 구별되지 않는다.
+        assert j["mirror_trigger_disabled"] is False, "미리볼 문서가 있는데 출구가 잠겼습니다."
+        assert j["mirror_trigger_locked"] is True, (
+            "can_open=false 인데 출구가 열려 있습니다 — 잠금이 판정에 결속되지 않았습니다."
+        )
 
     def test_job_result_three_state_zone_behaves(self, selftest_result: dict) -> None:
         """결과 3태 구획(F4, 지도 §10.10) — 태·증거·강등·잠금·닫기 착지의 실 WebView2 되읽기.
@@ -689,8 +702,29 @@ class TestWebSelftestGate:
     def test_job_density_and_expansion_sheets(self, selftest_result: dict) -> None:
         j = selftest_result["job_mirror"]
         assert j.get("error") is None, j
-        assert j["mirror_capped"] and j["mirror_capstrip"], j
-        assert j["confirm_moved"] and j["confirm_dispatch"] and j["confirm_restored"], j
+        # 확인 면 출구(U2 §2.13) — 실클릭이 preview_open 을 발신하고, 죽은 필드축 ack
+        # 액션(ack_field·unack_field)은 발신되지 않는다(구 jobConfirmSheet 프로브의 승계).
+        # 발신 0 을 「배선 부재」로 읽기 전에 **클릭이 이벤트까지 갔는지** 먼저 가른다
+        # (부재판별력): 비활성 요소의 `click()` 은 이벤트를 만들지 않는다.
+        assert j["mirror_trigger_disabled_at_click"] is False, (
+            "클릭 시점에 출구가 잠겨 있습니다 — 이 상태의 발신 0 은 배선 부재가 아닙니다."
+        )
+        assert j["mirror_click_seen"] is True, "클릭이 이벤트를 만들지 못했습니다."
+        sent = [d["action"] for d in (j.get("mirror_preview_dispatch") or [])]
+        assert "preview_open" in sent, f"확인 면 출구가 preview_open 을 발신하지 않습니다: {sent!r}"
+        assert not ({"ack_field", "unack_field"} & set(sent)), f"죽은 액션 발신: {sent!r}"
+        # 닫은 뒤 초점은 **그 트리거**로 돌아온다(#364 리뷰 P2) — 위임 currentTarget 을
+        # 복귀점으로 쓰거나(포커스 불가능한 컨테이너) 트리거가 재렌더로 교체되면 여기서
+        # 화면 루트가 잡힌다. 키보드 사용자가 문서 처음에서 다시 걸어오는 그 결함이다.
+        # 복귀점이 틀린 것과 트리거가 그사이 잠긴 것(모달의 정상 경로)을 가르는 계기를
+        # 함께 읽는다 — 「초점이 안 왔다」만으로는 그 둘을 구별할 수 없다.
+        assert j["mirror_focus_target_state"] == "ready", (
+            f"측정 시점 트리거 상태가 복귀 가능하지 않습니다: {j['mirror_focus_target_state']!r} "
+            f"(창에 끼어든 push: {j.get('mirror_pushes')!r})"
+        )
+        assert j["mirror_preview_focus"] == "jobMirrorPreviewOpen", (
+            f"확인 면을 닫은 뒤 초점이 트리거로 돌아오지 않았습니다: {j['mirror_preview_focus']!r}"
+        )
         assert j["edit_closes_sheets"], j
         # ⤢ 데이터 면은 별도 비동기 프로브(열기가 Python 왕복 뒤 — F3): 이동·헤더 고정·복귀
         # (포커스 포함)에 더해 범위 편집기 footer 가 **면 안에서만** 서는 것까지 본다.
@@ -705,11 +739,14 @@ class TestWebSelftestGate:
         )
         assert len(narrow["columns"].split()) == 1
 
-    def test_job_restate_block_lists_selected_names(self, selftest_result: dict) -> None:
-        # 재진술 블록 — 선택 2행의 이름 목록이 상시 블록으로 실렌더된다.
+    def test_job_restate_block_keeps_counts_and_loses_names(self, selftest_result: dict) -> None:
+        # 재진술 블록 — 선택 유래·산출 수치는 상시 블록으로 남되, 파일 이름 목록은 확인
+        # 면의 「이름 계획」 한 줄로 이주했다(U2 §2.13 — 값·이름 표면은 확인 면 하나).
         j = selftest_result["job_mirror"]
         assert j["restate_shown"] is True, "재진술 블록이 표시되지 않았습니다(선택 있음)."
-        assert j["restate_names"] == 2, f"재진술 이름 목록이 선택 수와 다릅니다: {j['restate_names']!r}"
+        assert j["restate_no_namelist"] is True, (
+            "인라인 재진술에 파일 이름 목록이 남아 있습니다(§2.13 값 표면 단일화 위반)."
+        )
 
     def test_job_filter_surface_renders_table_chips_strip(self, selftest_result: dict) -> None:
         # 필터 표면 — 합성 필터 스냅샷이 실 WebView2 에서:
@@ -768,8 +805,8 @@ class TestWebSelftestGate:
         # danger 라 말없이 사라지고, 남는 신호는 하단 회색 캡션 한 줄뿐인 막다른 경보였다.
         j = selftest_result["job_mirror"]
         assert j["token_banner"] is True, "미해소 파일명 토큰에 차단 배너가 서지 않았습니다."
-        assert j["token_no_table"] is True, (
-            "차단 중인데 거울 표가 그대로 남아 문서가 건강해 보입니다(전 행 「채움」)."
+        assert j["token_no_line"] is True, (
+            "차단 중인데 본문 존이 건강한 한 줄을 그대로 그립니다(신호 없는 차단)."
         )
         assert j["token_fix_link"] is True, (
             "배너에 행동 링크가 없습니다 — 막다른 경보 금지(결정 36)."
@@ -795,14 +832,15 @@ class TestWebSelftestGate:
         assert "정의 매치 2" in body and "정의 밖 1" in body, f"S4 델타 병기 누락: {body!r}"
         assert "데이터를 바꾸면" in body, f"전이 동사구 누락: {body!r}"
         assert "필터 정의(2개 조건)" in body, f"필터 소실 재진술 누락: {body!r}"
-        # 실제 파기 집합과 일치(F1 §10.7.3): 빈 값 확인은 set_acquired 가 재평가로 지운다.
-        assert "빈 값 확인 2개" in body, f"ack 소실 열거 누락: {body!r}"
+        # 필드축 ack 폐기(U2 §2.13) — 「빈 값 확인 N개」는 존재하지 않는 손실이라
+        # 열거하면 가드가 거짓말을 한다(안 걷으면 F1 §10.7.3 감사 위반의 반대 방향).
+        assert "빈 값 확인" not in body, f"폐기된 ack 손실을 열거합니다: {body!r}"
         # 필터 정의는 직전 슬롯에 남지만 **소스 일치**를 요구한다 — 조건을 함께 말한다.
         assert "직전 필터 재적용" in body, f"필터 복원 조건 재진술 누락: {body!r}"
-        no_ack = selftest_result["job_mirror"]["guard_body_no_ack"]
-        assert "빈 값 확인" not in no_ack, f"없는 손실을 열거합니다(과경고): {no_ack!r}"
-        assert "직전 필터 재적용" not in no_ack, (
-            f"필터 정의가 없는데 복원 문구가 붙습니다(과경고): {no_ack!r}")
+        minimal = selftest_result["job_mirror"]["guard_body_minimal"]
+        assert "빈 값 확인" not in minimal, f"없는 손실을 열거합니다(과경고): {minimal!r}"
+        assert "직전 필터 재적용" not in minimal, (
+            f"필터 정의가 없는데 복원 문구가 붙습니다(과경고): {minimal!r}")
         # 데이터 재겨눔 사전 확인은 JS 전용 가드 지점이라 존재 자체를 핀한다.
         assert selftest_result["job_mirror"]["data_guard_wired"] is True, (
             "confirmDataSwapIfArmed 배선이 사라졌습니다 — 데이터 재겨눔 가드(결정 26) 회귀."
@@ -1237,12 +1275,12 @@ class TestWebSelftestGate:
         assert e["flat_heads"] == 0 and e["flat_rows"] == 1, f"퇴화 평면 위반: {e!r}"
 
     def test_job_drift_replaces_mirror_with_blocking_banner(self, selftest_result: dict) -> None:
-        # danger(구조 드리프트)는 거울 표와 섞이지 않고 차단 배너 + 행동 링크로 **교체**된다
-        # (결정 36·S9). overlay 로 표 위에 얹히는 게 아니라 실제로 표가 사라지고 배너가 선다.
+        # danger(구조 드리프트)는 본문 존 한 줄과 섞이지 않고 차단 배너 + 행동 링크로
+        # **교체**된다(결정 36·S9). overlay 로 얹히는 게 아니라 실제로 교체돼 선다.
         j = selftest_result["job_mirror"]
         assert j["drift_banner"] is True, "드리프트 차단 배너(role=alert)가 렌더되지 않았습니다."
         assert j["drift_fix_link"] is True, "「편집에서 매핑 확정…」 행동 링크가 없습니다(막다른 경보 금지)."
-        assert j["drift_no_table"] is True, "드리프트인데 거울 표가 남아 있습니다(배너로 교체 안 됨)."
+        assert j["drift_no_line"] is True, "드리프트인데 본문 존이 건강한 한 줄을 그대로 그립니다."
         # 재진술 블록은 danger 차단(드리프트 등) 중 숨는다 — "N건 생성" 진술이 차단 배너와 모순 금지.
         assert j["restate_hidden_on_drift"] is True, (
             "danger 차단인데 재진술 블록이 계속 '문서 N건 생성'을 진술합니다 — 차단 배너와 모순."

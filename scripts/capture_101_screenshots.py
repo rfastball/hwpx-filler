@@ -349,7 +349,7 @@ def _drive(d: Driver) -> None:
     )
     d.click_sel("#jobPreviewOpen")
     d.wait(
-        "!document.getElementById('previewModal').classList.contains('hidden')"
+        "!document.getElementById('previewSheet').classList.contains('hidden')"
         " && document.querySelectorAll('#previewRows .mir-row').length > 0"
         " && document.getElementById('previewFilename').textContent.length > 0",
         "미리보기 드로어·값·파일 이름",
@@ -364,7 +364,7 @@ def _drive(d: Driver) -> None:
     )
     d.click_sel("#previewClose")
     d.wait(
-        "document.getElementById('previewModal').classList.contains('hidden')"
+        "document.getElementById('previewSheet').classList.contains('hidden')"
         " && !document.getElementById('jobGenBtn').disabled",
         "확인 뒤 게이트 열림",
     )

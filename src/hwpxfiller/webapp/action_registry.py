@@ -158,6 +158,9 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "preview_open": _schema(optional="at"),
         "preview_close": _schema(),
         "preview_move": _schema("delta"),
+        # 「빈 값 있는 건만 보기」(U2 §2.13) — ‹ › 이동을 빈 값 있는 건으로 한정하는 면의
+        # 보기 상태. 열림·자리와 같은 이유로 Python 소유라 웹은 의도한 값만 보낸다.
+        "preview_blank_only": _schema("value"),
         "preview_approve": _schema(),
         "set_selected_only": _schema("value"),
         "select_job": _schema("name", "confirm"),
@@ -175,8 +178,8 @@ _REGISTRY: dict[str, dict[str, PayloadSchema]] = {
         "set_group": _schema("name", "group"),
         "rename_group": _schema("name", "new confirm seen"),
         "disband_group": _schema("name", "confirm seen"),
-        "ack_field": _schema("field"),
-        "unack_field": _schema("field"),
+        # (ack_field·unack_field 는 필드축 ack 폐기와 함께 사망 — U2 §2.13. 표식 삽입
+        #  동의는 확인 면의 승인(preview_approve)이 겸한다.)
     },
     # TXT 검토·복사 작업대(v6 S7 · 계약 §11, 재작성 F6) — 데이터 존이 **없다**: 데이터·범위
     # 선택은 「문서 만들기」가 끝내고 여기는 고정 사본을 받는다(§13-13). 필드 연결 동사는

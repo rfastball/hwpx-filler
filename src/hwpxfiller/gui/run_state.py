@@ -67,11 +67,12 @@ class GateError:
 
 @dataclass
 class FieldState:
-    """실행 화면 상시 인라인 배지 1개(ADR-E/B) — 필드의 채움 상태."""
+    """필드의 채움 상태 1개(ADR-E/B). 필드축 ack 는 폐기됐다(U2 §2.13) — 빈 값은
+    클릭 확인 대상이 아니라 승인 지문의 성분(``blank_set``)이고, 표식 삽입 동의는
+    승인 1번이 겸한다."""
 
     name: str
     state: str            # "filled" | "blank" | "missing" | "drift"(구조 불일치)
-    acknowledged: bool = False  # missing 만 유효 — 사용자가 직접 확인했는가
 
 
 @dataclass(frozen=True)
@@ -237,7 +238,6 @@ class RunViewModel:
         # 이어채우기: 기존 문서가 **템플릿 자리**에 온다(데이터 소스 아님 — 이음새 무관).
         self.template_override: "str | None" = None
         self.target_mode = "new"               # "new" | "continue"
-        self._acked: "set[str]" = set()        # 사용자가 직접 확인한 미입력 필드(ADR-E)
 
     # ------------------------------------------------------------ 대상 문서
     def effective_template(self) -> str:
@@ -281,7 +281,6 @@ class RunViewModel:
             return []
         self.datasource = source
         self.records = records
-        self.reset_acks()  # 새 데이터 → 미입력 확인 재평가
         return records
 
     def load_pool_item(self, item, *, secret_store=None, fetcher=None) -> "list[dict]":
@@ -305,19 +304,17 @@ class RunViewModel:
             return []
         self.datasource = source
         self.records = records
-        self.reset_acks()
         return records
 
     def set_acquired(self, datasource, records: "list[dict]") -> None:
         """이미 만들어진(키 없는) 소스·레코드를 직접 겨눈다 — 나라 애드혹 취득 등.
 
-        datasource/records 직접 대입 + ``reset_acks`` 수동 호출 관례(RC-22)에 의존하다
-        누락 시 stale ack 로 미입력 게이트가 무단 통과하던 잠복 함정을 원자 진입점으로
-        봉합한다.
+        데이터 귀속 상태의 원자 진입점(RC-22)으로 남는다. 종전에 여기서 재평가하던
+        빈 값 확인(ack)은 폐기됐다(U2 §2.13) — 빈 값 집합은 이제 승인 지문의 성분이라
+        데이터가 갈리면 승인이 키 결속으로 자동 무효가 된다(별도 리셋 코드 불요).
         """
         self.datasource = datasource
         self.records = list(records)
-        self.reset_acks()
 
     # ------------------------------------------------------------ 사전검증
     def request(self, indices: "list[int]") -> RunRequest:
@@ -332,7 +329,8 @@ class RunViewModel:
         return self.refresh(indices).preflight
 
     def blank_fields(self, indices: "list[int]") -> "list[str]":
-        """미충족 빈칸 필드(ADR-E 상시 인라인 게이트의 seam). 데이터 없으면 빈 목록."""
+        """선택분에서 값이 빈 필드 — 표식(`MISSING_MARKER`)·빈 값 표지·승인 지문
+        성분(`blank_set`, U2 §2.13)의 단일 원천. 데이터 없으면 빈 목록."""
         if self.datasource is None:
             return []
         return list(self.request(indices).output_report().empty_valued)
@@ -469,9 +467,7 @@ class RunViewModel:
             elif name in blanks:
                 states.append(FieldState(name, "blank"))
             else:
-                states.append(FieldState(
-                    name, "missing" if name in empty else "filled", name in self._acked
-                ))
+                states.append(FieldState(name, "missing" if name in empty else "filled"))
         return states
 
     def _compose_gate(
@@ -480,8 +476,11 @@ class RunViewModel:
         review_unmet: "ReviewRequirement | None" = None,
         audit: "OutputNameAudit | None" = None,
     ) -> GateState:
-        """게이트 표시 결정 — 드리프트(danger·차단) > 파일명 토큰(danger) > 미확인
-        미입력(warn) > 전제조건(warn) > **검토 요구(warn)** > 열림.
+        """게이트 표시 결정 — 드리프트(danger·차단) > 파일명 토큰(danger) >
+        전제조건(warn) > **검토 요구(warn)** > 열림.
+
+        구 「미확인 미입력」 단은 필드축 ack 폐기(U2 §2.13)와 함께 죽었다 — 빈 값은
+        승인 지문의 성분(``blank_set`` 위험종)이 되어 검토 요구 단이 진다.
 
         UD-06: 이어채우기 문서·저장 폴더·레코드 선택 같은 warn 급 전제조건을 이 단일
         산출로 흡수해 '버튼 비활성 + 인라인 사유' 문법으로 통일한다(클릭 후 차단 모달
@@ -509,13 +508,6 @@ class RunViewModel:
             )
         if name_gate is not None:
             return name_gate
-        unmet = [s.name for s in states if s.state == "missing" and not s.acknowledged]
-        if unmet:
-            return GateState(
-                False, "warn",
-                f"빈 값 필드 {len(unmet)}개의 배지를 눌러 확인해야 문서 생성이 가능합니다: "
-                f"{', '.join(unmet)}",
-            )
         if not out_dir:
             return GateState(False, "warn", "저장 폴더를 지정하세요.")
         if not indices:
@@ -572,36 +564,9 @@ class RunViewModel:
             else "사전검증 통과(치명 누락 없음). 아래 빈 값 목록을 확인하세요.",
         )
 
-    def acknowledge(self, field: str) -> None:
-        """미입력 필드를 사용자가 직접 확인함(강제 상호작용)."""
-        self._acked.add(field)
-
-    def unacknowledge(self, field: str) -> None:
-        """미입력 확인을 **제자리에서 철회**(UD-19: ack 칩 재클릭 토글).
-
-        원클릭 즉시 확정이 오클릭도 비가역 결정으로 승격시키던 결함을 푼다 — 철회하면
-        게이트가 다시 닫혀(unmet 재계상) 확인의 의미가 보전된다(확인-또는-경보).
-        """
-        self._acked.discard(field)
-
-    def reset_acks(self) -> None:
-        """확인 상태 초기화(새 데이터 겨눔 등)."""
-        self._acked.clear()
-
-    def acked_count(self) -> int:
-        """확인해 둔 미입력 필드 수 — **데이터 전환 손실 열거**가 소비한다(재작성 F1).
-
-        전환은 :meth:`set_acquired` 로 ack 를 전량 재평가(=소거)하므로, 세워 둔 확인이
-        있으면 가드 문안이 그 사실을 말해야 한다(§10.7.3 감사: 실제 파기 집합과 문안 일치).
-        """
-        return len(self._acked)
-
-    def unmet_blanks(self, indices: "list[int]") -> "list[str]":
-        """미입력이면서 아직 확인 안 된 필드 — 이게 남아 있으면 생성 게이트가 닫힌다."""
-        return [
-            s.name for s in self.field_states(indices)
-            if s.state == "missing" and not s.acknowledged
-        ]
+    # (acknowledge·unacknowledge·reset_acks·acked_count·unmet_blanks 는 필드축 ack
+    #  폐기와 함께 사망 — U2 §2.13. 빈 값 판정은 :meth:`blank_fields` 하나로 남고,
+    #  표식 삽입 동의는 승인(빈 값 집합이 지문 성분)이 겸한다.)
 
     # ------------------------------------------------------------ 생성 게이트
     def validate_generate(self, indices: "list[int]", out_dir: str) -> "list[GateError]":

@@ -246,19 +246,26 @@
               </div>
             </div>
 
-            <!-- 본문 존 — 라이브 거울(필드 채움 테이블). 결정 3(§10.6): 거울은 빈 값 확인
-                 게이트의 표면이라 v6 validationCard 로 대체되지 않고 병존한다. -->
+            <!-- 본문 존 — 표 없는 한 줄(U2 §2.13). 구 거울 테이블·필드축 ack(클릭=확인)는
+                 폐기됐다: 값을 말하는 표면은 확인 면(생성 값 미리보기) 하나다. 여기 남는
+                 것은 빈 값 표지 + 이름 건수 + 확인 면 출구, 그리고 danger 차단 배너
+                 (드리프트·미해소 토큰 — 같은 자리, 같은 형상)뿐이다. -->
             <!-- TXT(검토·복사) 작업에선 이 존 전체가 숨는다: 값 확인은 작업대가 레코드마다
-                 눈으로 하는 일이고, 여기 남겨 두면 「행을 선택하면 …」 안내가 행을 다 고른
+                 눈으로 하는 일이고, 여기 남겨 두면 빈 상태 안내가 행을 다 고른
                  뒤에도 영영 서 있는 이행 불가능한 지시가 된다(F6 PR-A 리뷰 6R). -->
             <div class="zone job-mirror-zone" id="jobMirrorZone">
-              <div class="zone-cap zone-cap-actions"><span>본문 확인</span>
-                <button class="btn sm" id="jobMirrorExpand" type="button">펼쳐서 확인 ⤢</button></div>
-              <p class="muted hint">이 문서에 들어갈 값입니다. <span class="danger">빈 값</span>
-                행은 <b>눌러서 확인</b>해야 생성할 수 있습니다.</p>
-              <!-- 거울 = 필드 채움 테이블(결정 36 ⓑ). danger(드리프트·토큰)는 차단 배너로 분리. -->
-              <div id="jobMirror" data-preserve-scroll></div>
-              <div class="capstrip" id="jobMirrorCapstrip" role="status" hidden></div>
+              <div class="zone-cap">본문 확인</div>
+              <!-- danger 차단 배너(드리프트·미해소 토큰) 전용 자리 — 여기만 innerHTML 로
+                   교체된다(행동 링크가 배너와 함께 나고 죽는다). -->
+              <div id="jobMirror"></div>
+              <!-- 한 줄은 **안정 DOM + 값만 채우기**다(셸 관례): 확인 면 트리거가 재렌더로
+                   교체되면 시트를 닫은 키보드 사용자의 초점이 그 버튼으로 못 돌아간다
+                   (Modal 은 분리된 복귀점을 건너뛰고 화면 루트로 내린다 — #280 캡스트립이
+                   같은 결함이었다). 그래서 요약 문안만 휘발이고 버튼은 고정이다. -->
+              <p class="mirline" id="jobMirrorLine" hidden>
+                <span id="jobMirrorSummary"></span>
+                <button class="btn sm" id="jobMirrorPreviewOpen" type="button">생성 값 미리보기 ⤢</button>
+              </p>
             </div>
 
             <!-- 결과 존 — 세션 스코프(진행·3태 결과·실행 기록). 자리는 v6 상단 result-panel 과
@@ -637,16 +644,22 @@
       </div>
     </div>
 
-    <!-- 미리보기 드로어(재작성 F5, v6 previewDrawer) — 레코드별 실제 주입값·파일 이름·
-         적용 범위·명시 승인. 값과 이름은 **실행 입력과 같은 산출**의 투영이다(지도 §10.12
-         판정 A): 여기서 따로 계산하면 미리보기가 실행과 다른 이름을 말한다.
-         열림·자리는 Python 소유라 이 DOM 은 뼈대만 갖고 job.js 가 값을 채운다. -->
-    <div id="previewModal" class="modal hidden" role="dialog" aria-modal="true"
+    <!-- 확인 면 = 생성 값 미리보기 **시트**(재작성 F5 드로어의 승격 — U2 §2.13). 레코드별
+         실제 주입값·파일 이름·이름 계획 한 줄·명시 승인. 값과 이름은 **실행 입력과 같은
+         산출**의 투영이다(지도 §10.12 판정 A): 여기서 따로 계산하면 미리보기가 실행과 다른
+         이름을 말한다. 열림·자리·「빈 값 있는 건만 보기」는 Python 소유라 이 DOM 은 뼈대만
+         갖고 job.js 가 값을 채운다. 680px 모달에서 시트로 넓힌 이유: 값을 말하는 표면이
+         여기 하나뿐이 됐고(§2.13 C3 폐색), 렌더러가 올 자리다. -->
+    <div id="previewSheet" class="modal sheet hidden" role="dialog" aria-modal="true"
          aria-labelledby="previewTitle">
-      <div class="modal-card preview-drawer">
-        <h3 id="previewTitle">생성 값 미리보기</h3>
-        <!-- 「이름」을 앞세운다(U2 §2.10 C3): 첫 실행에서 거울이 못 보여 주는 유일한 것이
-             파일 이름 축인데, 부제·버튼이 그것을 안 가리켜 「방금 거울에서 본 값을 한 번 더
+      <div class="modal-card sheet-card preview-drawer">
+        <div class="sheet-head">
+          <h3 id="previewTitle">생성 값 미리보기</h3>
+          <button class="btn" id="previewClose" type="button">닫기</button>
+        </div>
+        <div class="sheet-body preview-sheet-body">
+        <!-- 「이름」을 앞세운다(U2 §2.10 C3): 인라인 존이 못 보여 주는 유일한 것이
+             파일 이름 축인데, 부제·버튼이 그것을 안 가리켜 「방금 본 값을 한 번 더
              보는 화면」으로 읽혔다. 축의 차이를 면이 스스로 말한다. -->
         <p class="modal-sub">이 이름으로 이 값이 나갑니다. 미리보기를 여는 것과 승인은 다른 일입니다.</p>
 
@@ -654,6 +667,11 @@
           <button class="btn sm" id="previewPrev" data-busy-lock aria-label="이전 문서">‹</button>
           <strong id="previewPos">0 / 0</strong>
           <button class="btn sm" id="previewNext" data-busy-lock aria-label="다음 문서">›</button>
+          <!-- 「빈 값 있는 건만 보기」(U2 §2.13) — ‹ › 이동을 그 건들로 한정한다(선례:
+               결과 존 「실패한 건만 선택」). 훑기 가속의 실제 기제는 표지가 아니라 이
+               한정이다. 상태는 Python 소유(스냅샷 되읽기) — 낙관 토글 없음. -->
+          <button class="btn sm" id="previewBlankOnly" type="button" data-busy-lock
+                  aria-pressed="false">빈 값 있는 건만 보기</button>
         </div>
 
         <p id="previewEmpty" class="note" role="status" aria-live="polite" style="display:none"></p>
@@ -662,7 +680,7 @@
         <section class="picker-sec" id="previewEvidence" style="display:none"
                  aria-labelledby="previewEvidenceCap">
           <div class="cap" id="previewEvidenceCap">확인할 변경</div>
-          <!-- 왜 묻는지를 면이 스스로 말한다 — 드로어 안에서는 게이트 문안이 안 보인다.
+          <!-- 왜 묻는지를 면이 스스로 말한다 — 확인 면 안에서는 게이트 문안이 안 보인다.
                자리는 캡션 **아래** 그대로다: 3분기 중 하나(「아직 한 번도 문서를 만들지 않은
                작업입니다」)가 변경이 아니라는 지적은 맞지만, 사용자 확정으로 **미조치**다
                (U2 §2.3 — 거슬리나 해가 작다). 옮기지 않은 이유가 없어서가 아니다. -->
@@ -684,12 +702,16 @@
             <!-- 행별 「수정」의 파일 이름 짝(F6 PR-B deep-link, 지도 §10.14.3) —
                  target=filename/filenamePattern 으로 편집기 파일 이름 탭에 착지한다. -->
             <button class="btn sm" id="previewFixFilename" aria-label="파일 이름 규칙 수정">수정</button></div>
+          <!-- 이름 계획 한 줄(U2 §2.13) — 구 인라인 재진술의 파일 이름 목록이 확인 면의
+               집합 한 줄로 이주했다(값·이름을 말하는 표면은 이 면 하나다). -->
+          <div><span class="muted capnote">이름 계획</span>
+            <span class="muted" id="previewNamePlan"></span></div>
         </div>
 
         <div class="modal-actions">
           <button class="btn" id="previewEdit">이 작업 편집</button>
           <button class="btn primary" id="previewApprove" style="display:none">이 이름과 값으로 승인</button>
-          <button class="btn" id="previewClose">닫기</button>
+        </div>
         </div>
       </div>
     </div>
@@ -747,20 +769,9 @@
       </div>
     </div>
 
-    <!-- 작업 확인 펼침 면(#272) — 거울과 생성 재진술의 실 DOM을 양쪽 슬롯으로 이동한다. -->
-    <div id="jobConfirmSheet" class="modal sheet hidden" role="dialog" aria-modal="true"
-         aria-labelledby="jobConfirmSheetTitle">
-      <div class="modal-card sheet-card">
-        <div class="sheet-head">
-          <h3 id="jobConfirmSheetTitle">작업 본문 확인</h3>
-          <button class="btn" id="jobConfirmSheetClose" type="button">닫기</button>
-        </div>
-        <div class="sheet-body sheet-duo job-confirm-sheet-body">
-          <section class="sheet-pane" aria-label="필드 채움 거울" id="jobConfirmSheetMirrorSlot"></section>
-          <section class="sheet-pane" aria-label="생성 재진술" id="jobConfirmSheetRestateSlot"></section>
-        </div>
-      </div>
-    </div>
+    <!-- (작업 확인 펼침 면(#272 · 2 pane)은 사망 — U2 §2.13: 두 pane 은 이미 둘 다
+         점유돼 있었고(거울 + 파일 이름 계획) 그 내용이 확인 면(#previewSheet) 하나로
+         접혔다. 본문 존의 「생성 값 미리보기 ⤢」가 그 면을 연다.) -->
 
     <!-- 템플릿 그룹 이동 다이얼로그(#108, libraryMoveModal 동형·별도 요소) — 화면별 wiring 격리.
          기존 그룹 + 새 그룹 입력 동거 + 해제. 목록은 editor.js(F8 — tpl 화면 사망의 승계)가

@@ -953,7 +953,7 @@ _JOB_DATA_FIRST_PROBE_JS = r"""
                     cells:[[['전산장비',false]]]}],
              visible_count:2, hidden_selected:[]},
       restate:{origin:'manual', filter_active:false, in_def:0, extra:0, sample:[1]},
-      preflight:{level:'', text:''}, mirror:[], drift:[], name_tokens:[],
+      preflight:{level:'', text:''}, blank_fields:[], drift:[], name_tokens:[],
       gate:{enabled:false, level:'warn', text:'문서 작업을 선택하세요.'}
     };
     window.__push('job', snap);
@@ -1265,21 +1265,40 @@ _JOB_MIRROR_PROBE_JS = r"""
              hidden_selected:[{index:1, selected:true, name:'doc-002.hwpx', summary:'사무비품'}]},
       restate:{origin:'manual', filter_active:true, in_def:1, extra:1, sample:[0]},
       preflight:{level:'ok', text:'ok'},
-      mirror:[
-        {name:'공고명', state:'filled', acknowledged:false, value:'전산장비 (표본 · 외 1개 값)', formatted:false},
-        {name:'금액', state:'filled', acknowledged:false, value:'2,000,000원', formatted:true},
-        {name:'낙찰율', state:'missing', acknowledged:false, value:'(빈 값) 선택 2행 중 1행에서 값이 비어 있습니다.', formatted:false},
-        {name:'비고', state:'blank', acknowledged:false, value:'(비움 확정)', formatted:false}
-      ],
+      blank_fields:['낙찰율'],
+      // 확인 면 가용성은 **Python 이 낸다**(can_open) — 한 줄의 출구도 액션바 버튼과 같은
+      // 판정을 쓰므로(#364), 이 키가 없으면 트리거가 비활성이라 클릭이 조용한 무동작이 된다.
+      // 선택 2건 = 미리볼 문서가 있는 상태를 그대로 싣는다.
+      preview:{open:false, pos:0, total:2, can_open:true,
+               blank_only:false, blank_count:1, can_prev:false, can_next:true},
       drift:[], gate:{enabled:true, level:'', text:'생성 준비'}
     };
     window.__push('job', snap);
-    out.mirror_rows = document.querySelectorAll('#jobMirror table.mir tbody tr').length;
-    out.miss_clickable = !!document.querySelector('#jobMirror .mir-row.miss[role="button"]');
-    out.chips = Array.prototype.map.call(
-      document.querySelectorAll('#jobMirror .mir .st'), function (e) { return e.textContent; });
+    // 본문 존 = 표 없는 한 줄(U2 §2.13) — 값을 말하는 표가 서지 않고, 빈 값 표지(이름
+    // 지목·값 없음)와 이름 건수·확인 면 출구가 한 줄로 선다.
+    // 한 줄은 **안정 DOM**(#jobMirrorLine)이고 `#jobMirror` 는 danger 배너 전용이다(#364)
+    // — 자리를 가르는 것이 트리거를 재렌더에서 지키는 기제라, 프로브도 그 자리를 읽는다.
+    out.mirror_no_table = !document.querySelector('#jobMirrorZone table');
+    out.mirror_banner_empty = document.getElementById('jobMirror').children.length === 0;
+    out.mirror_line = (function(){ var l = document.getElementById('jobMirrorLine');
+      return l && !l.hidden ? l.textContent : ''; })();
+    out.mirror_line_has_blank_flag =
+      !!document.querySelector('#jobMirrorLine .mir-blank-flag');
+    out.mirror_preview_exit = !!document.getElementById('jobMirrorPreviewOpen');
+    // 판별 계기(#364 재게이트) — 「트리거가 있는가 / 잠겨 있지 않은가」를 클릭 **전에**
+    // 따로 센다: `click()` 은 비활성 요소에서 이벤트를 만들지 않아 조용한 무동작이 되고,
+    // 그러면 발신열만 보고는 「배선이 없다」와 구별할 수 없다(계측의 부재판별력).
+    out.mirror_trigger_disabled = document.getElementById('jobMirrorPreviewOpen').disabled;
+    // 음성 대조(두 값) — 가용성이 실제로 `can_open` 에 결속돼 있는가. 한 값만 재면
+    // 「늘 열려 있는 버튼」도 초록이라 잠금 계약이 검사되지 않는다.
+    snap.preview.can_open = false;
+    window.__push('job', snap);
+    out.mirror_trigger_locked = document.getElementById('jobMirrorPreviewOpen').disabled;
+    snap.preview.can_open = true;
+    window.__push('job', snap);
     out.restate_shown = getComputedStyle(document.getElementById('jobRestate')).display !== 'none';
-    out.restate_names = document.querySelectorAll('#jobRestate .namelist .nm').length;
+    // 파일 이름 목록은 확인 면으로 이주했다(§2.13) — 인라인 재진술에 이름 목록이 없다.
+    out.restate_no_namelist = !document.querySelector('#jobRestate .namelist');
     // 필터 표면 되읽기(블록 4) — 가시 행·하이라이트·칩·가지 ×·스트립·유래 수치·아이콘.
     out.tbl_rows = document.querySelectorAll('#jobTableBody tr[data-i]').length;
     var renderedRow = document.querySelector('#jobTableBody tr[data-i]');
@@ -1345,26 +1364,26 @@ _JOB_MIRROR_PROBE_JS = r"""
     // 열 패널 기본 닫힘 — [hidden] 이 display:flex 를 실제로 이긴다(부록 B-9 overlay/hidden
     // 결함류의 자동 눈검증: .colpanel 은 flex 라 override 가 없으면 hidden 이 은닉에 실패한다).
     out.panel_hidden = getComputedStyle(document.getElementById('jobColPanel')).display === 'none';
-    // 드리프트 스냅샷 → 거울 표가 차단 배너 + 행동 링크로 교체되는지(overlay 아닌 실제 교체).
-    // 실앱에서 드리프트는 게이트 danger 를 합성하므로 게이트도 danger 로 세운다(재진술 은닉은
-    // 게이트 단일 출처를 소비한다 — 리뷰).
-    snap.drift = ['유령', '계약조건']; snap.mirror = [];
+    // 드리프트 스냅샷 → 본문 존 한 줄이 차단 배너 + 행동 링크로 교체되는지(overlay 아닌
+    // 실제 교체). 실앱에서 드리프트는 게이트 danger 를 합성하므로 게이트도 danger 로 세운다
+    // (재진술 은닉은 게이트 단일 출처를 소비한다 — 리뷰).
+    snap.drift = ['유령', '계약조건']; snap.blank_fields = [];
     snap.gate = {enabled:false, level:'danger', text:'템플릿 구조가 확정 매핑과 달라졌습니다.'};
     window.__push('job', snap);
     out.drift_banner = !!document.querySelector('#jobMirror .mir-drift[role="alert"]');
     out.drift_fix_link = !!document.querySelector('#jobMirror [data-act="fix-mapping"]');
-    out.drift_no_table = !document.querySelector('#jobMirror table.mir');
+    out.drift_no_line = !document.querySelector('#jobMirror .mirline');
     // danger 차단 중엔 재진술 블록을 숨긴다 — "생성 불가" 배너와 "N건 생성" 모순 방지(리뷰).
     out.restate_hidden_on_drift = getComputedStyle(document.getElementById('jobRestate')).display === 'none';
-    // 파일명 토큰 danger(#128) — 드리프트와 **같은 자리·같은 형상**으로 서는지. 거울이 「채움」
-    // 표를 그려 건강해 보이고 재진술은 사라지는(신호 없는 차단) 회귀의 핀.
+    // 파일명 토큰 danger(#128) — 드리프트와 **같은 자리·같은 형상**으로 서는지. 본문 존이
+    // 건강한 한 줄을 그리고 재진술은 사라지는(신호 없는 차단) 회귀의 핀.
     snap.drift = []; snap.name_tokens = ['납품기한'];
-    snap.mirror = [{name:'공고명', state:'filled', acknowledged:false, value:'전산장비', formatted:false}];
+    snap.blank_fields = [];
     snap.gate = {enabled:false, level:'danger', text:'파일명 패턴의 토큰이…'};
     window.__push('job', snap);
     out.token_banner = !!document.querySelector('#jobMirror .mir-drift[role="alert"]');
     out.token_fix_link = !!document.querySelector('#jobMirror [data-act="fix-filename"]');
-    out.token_no_table = !document.querySelector('#jobMirror table.mir');
+    out.token_no_line = !document.querySelector('#jobMirror .mirline');
     out.token_banner_text = (function(){ var b = document.querySelector('#jobMirror .mir-drift');
       return b ? b.textContent : ''; })();
     out.token_restate_hidden = getComputedStyle(document.getElementById('jobRestate')).display === 'none';
@@ -1400,12 +1419,13 @@ _JOB_MIRROR_PROBE_JS = r"""
       {ok:true, status:'completed', title:'문서 생성 완료 · 3개', out_dir:'D:\\out'},
       '발주요청서');
     // 세션 가드 재진술 본문 합성(결정 27 수치 재진술) — 되읽어 수치·소실 목록 드리프트를 막는다.
+    // 구 「빈 값 확인 N개」 성분은 필드축 ack 폐기(U2 §2.13)로 걷혔다 — 존재하지 않는
+    // 손실을 열거하면 가드가 거짓말을 한다(과경고는 경보의 인플레).
     out.guard_body = window.JobScreen.guardBody(
-      {sel_count:3, in_def:2, extra:1, filter_active:true, filter_parts:2, ack_count:2},
+      {sel_count:3, in_def:2, extra:1, filter_active:true, filter_parts:2},
       '데이터를 바꾸면');
-    // ack 0 분기도 함께 핀한다 — 없는 손실을 열거하면 과경고(경보의 인플레)다.
-    out.guard_body_no_ack = window.JobScreen.guardBody(
-      {sel_count:1, in_def:0, extra:0, filter_active:false, filter_parts:0, ack_count:0},
+    out.guard_body_minimal = window.JobScreen.guardBody(
+      {sel_count:1, in_def:0, extra:0, filter_active:false, filter_parts:0},
       '데이터를 바꾸면');
     // 데이터 변경 사전 확인 배선 존재 핀(리뷰 #6) — JS 전용 가드 지점의 삭제 회귀 표식.
     out.data_guard_wired = typeof window.JobScreen.confirmDataSwapIfArmed === 'function';
@@ -1418,14 +1438,12 @@ _JOB_MIRROR_PROBE_JS = r"""
     window.__push('job', snap);
     out.reapply_hidden = getComputedStyle(document.getElementById('jobFilterReapply')).display === 'none';
     snap.filter.reapply_available = true;
-    // #272: 420px 거울 캡과 두 펼침 면을 실 DOM 이동/복귀 및 기존 dispatch까지 검증한다.
+    // U2 §2.13: 본문 존 한 줄의 확인 면 출구가 **preview_open 을 발신**하는지 실클릭으로
+    // 본다(구 jobConfirmSheet 펼침 면·거울 캡·ack_field 디스패치 프로브의 승계 —
+    // 죽은 액션은 단언하지 않는다). 스텁은 자기 구간만 가로채고 즉시 복원한다.
     snap.drift = []; snap.name_tokens = [];
     snap.gate = {enabled:true, level:'', text:'생성 준비'};
-    snap.mirror = [];
-    for (var mi = 0; mi < 36; mi++) snap.mirror.push({
-      name:'필드' + mi, state:mi === 0 ? 'missing' : 'filled', acknowledged:false,
-      value:mi === 0 ? '(빈 값)' : '값 ' + mi, formatted:false
-    });
+    snap.blank_fields = ['필드0'];
     window.__push('job', snap);
     // CI 가상 데스크톱은 window.resize(1440, 900)을 실제 화면 상한(약 1024px)에서
     // 클램프한다. 운영 CSS를 바꾸지 않고 컨테이너 자체를 900px 경계 너머로 고정해 wide
@@ -1435,48 +1453,73 @@ _JOB_MIRROR_PROBE_JS = r"""
     jobPanel.style.flex = '0 0 1100px'; jobPanel.style.width = '1100px';
     out.job_grid_wide = getComputedStyle(document.getElementById('jobDataGrid')).gridTemplateColumns;
     jobPanel.style.flex = jobPanelFlex; jobPanel.style.width = jobPanelWidth;
-    var mirror = document.getElementById('jobMirror');
-    var restate = document.getElementById('jobRestate');
-    var mirrorParent = mirror.parentNode, restateParent = restate.parentNode;
-    out.mirror_capped = mirror.clientHeight <= 421 && mirror.scrollHeight > mirror.clientHeight;
-    out.mirror_capstrip = !document.getElementById('jobMirrorCapstrip').hidden &&
-      /전체\s*36필드/.test(document.getElementById('jobMirrorCapstrip').textContent);
-    var mirrorTrigger = document.getElementById('jobMirrorExpand');
-    mirrorTrigger.focus(); mirrorTrigger.click();
-    out.confirm_moved = document.getElementById('jobConfirmSheetMirrorSlot').contains(mirror) &&
-      document.getElementById('jobConfirmSheetRestateSlot').contains(restate);
+    // 확인 면 출구는 openPreview(비동기 — 정산 뒤 발신)라 발신은 이 스크립트 턴 뒤에
+    // 확정된다: 발신열을 window 에 남기고 **별도 evaluate**(새 JS 턴)가 되읽는다
+    // (row_toggle_values 와 같은 회수 패턴). 스텁은 지연 복원하고 열린 면을 정리한다.
     var dispatched = [];
+    window.__mirrorPreviewDispatch = dispatched;
     var sheetRealCall = window.Bridge.call;
     window.Bridge.call = function (screen, action, payload) {
-      dispatched.push({screen:screen, action:action, field:payload && payload.field});
+      dispatched.push({screen:screen, action:action});
       return Promise.resolve({});
     };
-    mirror.querySelector('.mir-row.miss').click();
-    window.Bridge.call = sheetRealCall;
-    out.confirm_dispatch = dispatched.length === 1 && dispatched[0].action === 'ack_field' &&
-      dispatched[0].field === '필드0';
-    document.getElementById('jobConfirmSheetClose').click();
-    (function () { var card = document.querySelector('#jobConfirmSheet .modal-card');
-      var ev = new Event('transitionend', {bubbles:true});
-      Object.defineProperty(ev, 'propertyName', {value:'opacity'}); card.dispatchEvent(ev); })();
-    out.confirm_restored = mirror.parentNode === mirrorParent && restate.parentNode === restateParent &&
-      document.activeElement === mirrorTrigger;
+    // 이 창도 실 push 에서 격리한다(결과 프로브와 같은 근거·같은 기제): 프로브 첫머리
+    // `Nav.go('job')` 이 쏜 실 refresh 의 push(세션 없는 실 스냅샷)가 Python 스레드에서
+    // 늦게 착지해 정확히 이 비동기 창에 들어온다. 그러면 `setBusy` 가 `can_open:false` 로
+    // 트리거를 잠그고, 닫힘 시점의 `restoreFocus` 는 **비활성 트리거를 건너뛰는 것이
+    // 계약**이라(모달의 정상 경로) 초점이 화면 루트로 내려간다 — 실앱에선 옳은 처분이고
+    // 여기서는 합성 세션 위에 실 빈 스냅샷이 끼어드는 프로브 산물이다.
+    // 삼킨 것은 기록해 증언한다(조용한 격리 금지).
+    var mirrorRealPush = window.__push;
+    window.__mirrorPushes = [];
+    window.__push = function (screen, snap2) {
+      if (screen === 'job') {
+        window.__mirrorPushes.push({job: snap2 && snap2.job_name,
+                                    has_job: !!(snap2 && snap2.has_job)});
+        return;
+      }
+      return mirrorRealPush(screen, snap2);
+    };
+    var mirrorTrigger = document.getElementById('jobMirrorPreviewOpen');
+    // 클릭이 **이벤트까지 갔는가**를 따로 센다(부재판별력): 비활성 요소의 `click()` 은
+    // 이벤트를 만들지 않으므로, 이것 없이는 「발신 0」이 배선 부재인지 잠금인지 모른다.
+    window.__mirrorClickSeen = false;
+    mirrorTrigger.addEventListener('click', function () { window.__mirrorClickSeen = true; });
+    out.mirror_trigger_disabled_at_click = mirrorTrigger.disabled;
+    mirrorTrigger.focus();
+    mirrorTrigger.click();
+    setTimeout(function () {
+      // 정리는 **스텁이 산 채로** 한다(관측자 오염 리트머스): 닫힘 onClose 가 발화하는
+      // preview_close 가 실 백엔드에 닿으면 세션 없는(has_job:false) 실 스냅샷 push 가
+      // 뒤 프로브(결과 3태)의 비동기 창에 착지하고, §2.18 처분이 그 push 를 「작업 없음
+      // 전환」으로 읽어 방금 세운 rejected 결과를 초기화한다 — 프로브가 프로브를 오염시키는
+      // 자리다. 복원은 닫힘(전이 정착)까지 끝난 **뒤에** 한다.
+      window.Modal.close('previewSheet');
+      var card = document.querySelector('#previewSheet .modal-card');
+      if (card) { var ev2 = new Event('transitionend', {bubbles:true});
+        Object.defineProperty(ev2, 'propertyName', {value:'opacity'}); card.dispatchEvent(ev2); }
+      // 닫은 뒤 초점이 **그 트리거**로 돌아오는가(#364 리뷰 P2) — 위임 currentTarget 을
+      // 복귀점으로 쓰거나 트리거가 재렌더로 교체되면 여기서 화면 루트(scr-job)가 잡힌다.
+      window.__mirrorPreviewFocus = document.activeElement && document.activeElement.id;
+      // 측정 시점의 트리거 상태 — 초점이 안 돌아왔을 때 「복귀점이 틀렸다」와 「트리거가
+      // 그사이 잠겼다(정상 경로)」를 가른다.
+      window.__mirrorFocusTargetState = (function () {
+        var b = document.getElementById('jobMirrorPreviewOpen');
+        return b ? (b.disabled ? 'disabled' : (b.isConnected ? 'ready' : 'detached')) : 'missing';
+      })();
+      window.__push = mirrorRealPush;
+      window.Bridge.call = sheetRealCall;
+    }, 30);
 
     // ⤢ 데이터 펼침 면은 **비동기 프로브**(_DATA_SHEET_PROBE_SETUP_JS)로 떼어 냈다: 열기가
     // Python 왕복(초안 생성) 뒤로 바뀌어(F3) 동기 측정으로는 열리기 전을 재게 된다.
 
-    // 편집기가 자기 화면으로 나가며(재작성 F7) 「편집 모드가 시트를 닫는다」는 계약은
-    // 화면 전환이 승계했다: 편집기로 가면 이 화면의 펼침 면은 화면째 시야에서 사라지고,
-    // 실 DOM 이 overlay 슬롯에 남는 교차 상태는 복귀 시 닫기가 정리한다.
-    mirrorTrigger.click();
+    // 편집기가 자기 화면으로 나가며(재작성 F7) 「편집 모드가 화면을 덮는다」는 계약 —
+    // 열린 펼침 면의 일괄 회수는 화면 전환(SurfaceSheet.closeAllAndRestore)이 진다.
     window.Nav.go('editor', {force:true});
     out.edit_closes_sheets = !document.getElementById('scr-job').classList.contains('on') &&
       document.getElementById('scr-editor').classList.contains('on');
     window.Nav.go('job', {force:true});
-    document.getElementById('jobConfirmSheetClose').click();
-    (function () { var card = document.querySelector('#jobConfirmSheet .modal-card');
-      var ev = new Event('transitionend', {bubbles:true});
-      Object.defineProperty(ev, 'propertyName', {value:'opacity'}); card.dispatchEvent(ev); })();
   } catch (e) { out.error = 'throw:' + (e && e.message); }
   return out;
 })()
@@ -1507,7 +1550,7 @@ _JOB_INHERITED_AFFORDANCE_PROBE_JS = r"""
                     cells:[[['사무비품',false]]]}],
              visible_count:1, hidden_selected:[]},
       restate:{origin:'manual', filter_active:false, in_def:0, extra:0, sample:[0]},
-      preflight:{level:'', text:''}, mirror:[], drift:[], name_tokens:[],
+      preflight:{level:'', text:''}, blank_fields:[], drift:[], name_tokens:[],
       gate:{enabled:false, level:'warn', text:'문서 작업을 선택하세요.'}
     };
     window.__push('job', snap);
@@ -1689,7 +1732,7 @@ _JOB_RESULT_PROBE_JS = r"""
       guard:{armed:false, sel_count:1, in_def:0, extra:0, filter_active:false, filter_parts:0},
       table:{columns:[], rows:[], visible_count:0, hidden_selected:[]},
       restate:{origin:'manual', filter_active:false, in_def:0, extra:0, sample:[0]},
-      preflight:{level:'', text:''}, mirror:[], drift:[], name_tokens:[],
+      preflight:{level:'', text:''}, blank_fields:[], drift:[], name_tokens:[],
       gate:{enabled:false, level:'warn', text:'확인이 필요합니다.'}
     };
     window.__push('job', window.__jobResultSnap);
@@ -1816,7 +1859,9 @@ _JOB_RESULT_PROBE_JS = r"""
     window.__rejectGenCalls = 0;
     window.Bridge.generate = function () {
       window.__rejectGenCalls += 1;
-      return Promise.resolve({ok:false, error:'빈 값 필드를 먼저 확인하세요: 추정가격', level:'warn'});
+      // 문안은 살아 있는 blank_set 게이트 문형(U2 §2.13) — 죽은 ack 문형을 프로브가
+      // 정본처럼 실으면 다음 사람이 그 메시지가 산다고 읽는다.
+      return Promise.resolve({ok:false, error:'빈 값 필드가 표식으로 문서에 박힙니다: 추정가격.', level:'warn'});
     };
     // 거절 창 격리(관측자 오염 리트머스) — 이 프로브 첫머리의 Nav.go('job') 이 쏜 실
     // refresh 의 push(세션 없는 실 스냅샷)는 Python 스레드에서 늦게 착지해 정확히 이
@@ -2669,7 +2714,7 @@ _DATA_SHEET_PROBE_SETUP_JS = r"""
                         cells: [[['전산장비', false]]] }],
                visible_count: 2, hidden_selected: [] },
       restate: { origin: 'manual', filter_active: false, in_def: 0, extra: 0, sample: [1, 0] },
-      preflight: { level: 'ok', text: 'ok' }, mirror: [], drift: [], name_tokens: [],
+      preflight: { level: 'ok', text: 'ok' }, blank_fields: [], drift: [], name_tokens: [],
       gate: { enabled: true, level: '', text: '생성 준비' },
     });
     trigger.focus();
@@ -2753,7 +2798,7 @@ _PREVIEW_DRAWER_PROBE_SETUP_JS = r"""
   const out = { pending: true };
   window.__previewDrawer = out;
   const btn = document.getElementById('jobPreviewOpen');
-  const modal = document.getElementById('previewModal');
+  const modal = document.getElementById('previewSheet');
   out.present = !!(btn && modal);
   if (!out.present) { out.pending = false; return; }
   out.hidden_before = modal.classList.contains('hidden');
@@ -2783,13 +2828,14 @@ _PREVIEW_DRAWER_PROBE_SETUP_JS = r"""
                                search: '', chips: [], definition: '', branches: [], columns: [] },
         table: { columns: [], rows: [], visible_count: 0, hidden_selected: [] },
         restate: { origin: null, filter_active: false, in_def: 0, extra: 0, sample: [] },
-        preflight: { level: 'ok', text: 'ok' }, mirror: [], drift: [], name_tokens: [],
+        preflight: { level: 'ok', text: 'ok' }, blank_fields: [], drift: [], name_tokens: [],
         gate: { enabled: false, level: 'warn', text: '나갈 이름과 값을 승인해야 생성할 수 있습니다.' },
         review: { required: true, approved: false, risk: 'presentation',
                   targets: ['금액(표시형)'], first_run: false, unknown_baseline: false,
                   structure_changed: false },
         preview: {
           open: true, can_open: true, pos: 1, total: 2, filename: 'doc-002.hwpx',
+          blank_only: false, blank_count: 1, can_prev: true, can_next: false,
           rows: [{ name: '공고명', value: '전산장비' }, { name: '금액', value: '' }],
           evidence: { policy: 'formatted_value',
                       rows: [{ name: '금액', value: '1,000', note: '표시형이 적용된 값입니다.' }],
@@ -2811,6 +2857,12 @@ _PREVIEW_DRAWER_PROBE_SETUP_JS = r"""
           out.evidence_rows =
             document.querySelectorAll('#previewEvidenceRows .mir-row').length;
           out.filename = document.getElementById('previewFilename').textContent;
+          // 「빈 값 있는 건만 보기」(U2 §2.13) — 상태 되읽기(스냅샷이 정본, 낙관 토글 없음)
+          // 와 가용성(blank_count>0 이면 활성), 이름 계획 한 줄의 실렌더.
+          out.blank_toggle_pressed =
+            document.getElementById('previewBlankOnly').getAttribute('aria-pressed');
+          out.blank_toggle_disabled = document.getElementById('previewBlankOnly').disabled;
+          out.name_plan = document.getElementById('previewNamePlan').textContent;
           // 「적용 범위」 축 부재 되읽기(U2 §2.3) — 정적 계약이 id 부재를 보지만, 실렌더에서
           // JS 가 그 자리를 다시 만들지 않는지는 여기서만 확인된다.
           out.scope_axis = !!document.getElementById('previewScope');
@@ -2820,10 +2872,11 @@ _PREVIEW_DRAWER_PROBE_SETUP_JS = r"""
           // 세션은 살려 둔다 — 트리거가 살아 있어야 "초점이 트리거로 돌아온다"를 잴 수 있다
           // (세션째 죽이면 트리거가 비활성이 되고, 그건 초점 **대안 착지**라는 다른 계약이다).
           window.__push('job', { job_name: '공고서', has_job: true,
-            preview: { open: false, pos: 0, total: 2, can_open: true },
+            preview: { open: false, pos: 0, total: 2, can_open: true,
+                       blank_only: false, blank_count: 0, can_prev: false, can_next: false },
             review: { required: false, approved: false, risk: '', targets: [],
                       first_run: false, unknown_baseline: false, structure_changed: false },
-            records: [], mirror: [], drift: [], name_tokens: [],
+            records: [], blank_fields: [], drift: [], name_tokens: [],
             gate: { enabled: false, level: 'warn', text: '' } });
           setTimeout(() => {
             try {
@@ -3698,6 +3751,18 @@ def _selftest_drive(window: "object") -> None:
         # 읽으면 아직 없다. 별도 evaluate(=새 JS 턴)로 되읽어 의도열 전체를 확인한다.
         result["job_mirror"]["row_toggle_values"] = window.evaluate_js(  # type: ignore[attr-defined]
             "window.__jobToggleValues")
+        # 확인 면 출구 발신(U2 §2.13)도 비동기 확정 — 별도 evaluate(새 JS 턴)로 되읽는다.
+        time.sleep(0.2)
+        result["job_mirror"]["mirror_preview_dispatch"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "window.__mirrorPreviewDispatch")
+        result["job_mirror"]["mirror_preview_focus"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "String(window.__mirrorPreviewFocus)")
+        result["job_mirror"]["mirror_click_seen"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "!!window.__mirrorClickSeen")
+        result["job_mirror"]["mirror_focus_target_state"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "String(window.__mirrorFocusTargetState)")
+        result["job_mirror"]["mirror_pushes"] = window.evaluate_js(  # type: ignore[attr-defined]
+            "window.__mirrorPushes || []")
         # 결과 3태 구획(F4) — 거울 프로브 뒤(같은 화면·같은 스냅샷 문맥)에서 돈다.
         result["job_result"] = window.evaluate_js(_JOB_RESULT_PROBE_JS)  # type: ignore[attr-defined]
         result["job_result"].update(_probe_late(

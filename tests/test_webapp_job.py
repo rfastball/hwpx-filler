@@ -1,8 +1,8 @@
 """「작업」 화면 컨트롤러 계약 가드 — pywebview/Qt 불필요(헤드리스).
 
 패널 4존이 소비하는 링1 배선(부록 A-1)을 창 없이 되읽는다: 좌 목록 → 작업 선택 → 데이터 겨눔
-→ 미입력 강제 확인 게이트(ADR-E) → 덮어쓰기 재진술(RC-02) → 생성 end-to-end.
-JobController가 링1 계약을 위임해 소비하는지 못박는다.
+→ 빈 값 승인 게이트(blank_set — U2 §2.13, 구 필드축 ack 의 승계) → 덮어쓰기 재진술(RC-02)
+→ 생성 end-to-end. JobController가 링1 계약을 위임해 소비하는지 못박는다.
 """
 from __future__ import annotations
 
@@ -93,6 +93,17 @@ def _mount_all(ctrl, path, *, sheet=None) -> None:
     ctrl.dispatch("set_all", {})
 
 
+def _approve_run(ctrl) -> None:
+    """확인 면에서 승인한다 — 구 필드축 ack 게이트 통과의 승계 헬퍼(U2 §2.13).
+
+    빈 값이 있으면 blank_set 검토 요구가 서므로(침묵 금지), 게이트를 열려면 확인 면을
+    열어 승인해야 한다 — 표식 삽입 동의는 승인 1번이 겸한다.
+    """
+    ctrl.dispatch("preview_open", {})
+    ctrl.dispatch("preview_approve", {})
+    ctrl.dispatch("preview_close", {})
+
+
 # ---------------------------------------------------------------- 스냅샷 골격
 def test_initial_has_no_active_work_and_loud_gate(tmp_path):
     ctrl, _ = _controller(tmp_path)
@@ -134,10 +145,9 @@ def test_select_job_then_data_populates_records_and_badges(tmp_path):
     ctrl.dispatch("set_all", {})
     snap = ctrl.snapshot()
     assert snap["selected_count"] == 2
-    # 본문 존 거울 행(비-drift 필드) — 이름·상태·값 병기.
-    states = {s["name"]: s["state"] for s in snap["mirror"]}
-    assert states["공고명"] == "filled"
-    assert states["추정가격"] == "missing"  # rec0 빈값 → 미입력
+    # 본문 존 = 표 없는 한 줄(U2 §2.13) — 값 표(mirror)는 죽고 빈 값 표지 재료만 남는다.
+    assert "mirror" not in snap, "값을 말하는 거울 payload 가 부활했습니다(§2.13)."
+    assert snap["blank_fields"] == ["추정가격"]  # rec0 빈값 → 빈 값 표지 지목
 
 
 def test_data_mount_identity_changes_on_every_remount(tmp_path):
@@ -763,7 +773,11 @@ def test_filename_token_mode_back_resolves_and_excludes_non_carriers(tmp_path):
 
 
 # ---------------------------------------------------------------- 게이트·생성(링1 계약)
-def test_missing_gate_blocks_generate_until_acked(tmp_path):
+def test_blank_set_gate_blocks_generate_until_approved(tmp_path):
+    """U2 §2.13 — 빈 값이 있으면 blank_set 검토 요구가 서고, 승인해야 생성이 열린다.
+
+    구 필드축 ack(배지 클릭=확인)의 승계: 표식 삽입 동의는 확인 면의 승인 1번이 겸한다.
+    """
     ctrl, _ = _controller(tmp_path)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
@@ -771,13 +785,15 @@ def test_missing_gate_blocks_generate_until_acked(tmp_path):
 
     snap = ctrl.snapshot()
     assert snap["gate"]["enabled"] is False and "빈 값" in snap["gate"]["text"]
+    assert snap["gate"]["reason"] == "review_required"      # 어휘는 「승인」 하나(§2.10 승계)
+    assert "추정가격" in snap["gate"]["text"]                # 어느 필드인지 지목한다
 
     # 생성 시도도 방어적으로 차단(worker/API 우회 방지).
     res = ctrl.generate()
     assert res["ok"] is False and "빈 값" in res["error"]
 
-    # 배지 클릭 = 직접 확인 → 게이트 열림.
-    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    # 확인 면 승인 → 게이트 열림.
+    _approve_run(ctrl)
     assert ctrl.snapshot()["gate"]["enabled"] is True
 
 
@@ -787,7 +803,7 @@ def test_generate_writes_documents_and_marks_missing(tmp_path):
     _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
     ctrl.set_output_folder(str(out))
-    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    _approve_run(ctrl)
 
     res = ctrl.generate()
     assert res["ok"] is True
@@ -806,7 +822,7 @@ def test_generate_cancel_keeps_completed_and_restates_unstarted(tmp_path, monkey
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    _approve_run(ctrl)
 
     class _Done:
         ok = True
@@ -859,7 +875,7 @@ def test_generation_stamps_last_run_at(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    _approve_run(ctrl)
 
     res = ctrl.generate()
     assert res["ok"] is True and res["level"] == "ok"
@@ -876,7 +892,7 @@ def test_generation_stamp_does_not_clobber_disk_edits(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    _approve_run(ctrl)
     # 세션이 열린 사이 다른 표면(에디터)이 같은 작업을 편집·저장했다.
     edited = ctrl.registry.load("공고서")
     edited.filename_pattern = "edited-{{seq:001}}"
@@ -903,7 +919,7 @@ def test_stamp_goes_to_the_job_the_run_started_on(tmp_path, monkeypatch):
     _second_job(ctrl, tmp_path)                       # 전환 시도 대상(공고서2) 등록
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    _approve_run(ctrl)
 
     real_batch = sj.generate_batch
 
@@ -931,7 +947,7 @@ def test_stamp_uses_the_serialized_registry_path(tmp_path, monkeypatch):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    _approve_run(ctrl)
 
     calls: list = []
     real = ctrl.registry.stamp_last_run
@@ -952,7 +968,7 @@ def test_stamp_failure_is_loud_not_silent(tmp_path, monkeypatch):
     _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
     ctrl.set_output_folder(str(out))
-    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    _approve_run(ctrl)
 
     def _boom(job, **kwargs):
         raise OSError("디스크 쓰기 거부")
@@ -984,7 +1000,7 @@ def test_partial_failure_does_not_stamp_last_run_at(tmp_path, monkeypatch):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    _approve_run(ctrl)
 
     assert ctrl.generate()["failed"] == 1
     assert ctrl.registry.load("공고서").last_run_at == ""       # 미완주 = 역사 없음
@@ -995,7 +1011,7 @@ def test_overwrite_confirm_flow(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    _approve_run(ctrl)
     assert ctrl.generate()["ok"] is True  # 최초 생성
 
     # 같은 폴더 재생성 → 조용한 덮어쓰기 금지: 수치 합성 재진술 요구(총량·파괴분·신규분).
@@ -1025,63 +1041,29 @@ def _mirror_job(tmp_path) -> JobRegistry:
     return reg
 
 
-def test_mirror_value_display_filled_sample_missing_blank(tmp_path):
-    """거울 행 = 필드별 값 집계(재구현 아님, mapped_records 소비). 상태별 값·표시형 병기."""
+def test_blank_fields_exclude_declared_blanks_and_carry_no_values(tmp_path):
+    """본문 존 재료(U2 §2.13) — 빈 값 필드 **이름**만 싣는다: 값 집계(표본·행수 재진술)는
+    표와 함께 죽었고, 의도적 빈칸(blank 선언)은 빈 값이 아니다(매핑이 키를 제외한다)."""
     ctrl = JobController(_mirror_job(tmp_path), lambda s, snap: None)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
-    m = {r["name"]: r for r in ctrl.snapshot()["mirror"]}
-    # 공고명: 선택 2행 값이 달라 표본 명시 병기(S10) — 표본 = 표시순 첫 행(최신 행) 값.
-    assert m["공고명"]["state"] == "filled"
-    assert m["공고명"]["value"] == "사무비품 (표본 · 외 1개 값)"
-    assert m["공고명"]["formatted"] is False
-    # 추정가격: rec0 빈값 → missing, 값 = 빈 행수 재진술(낙관 서사 해소), amount → 표시형.
-    assert m["추정가격"]["state"] == "missing"
-    assert "선택 2행 중 1행" in m["추정가격"]["value"]
-    assert m["추정가격"]["formatted"] is True
-    # 비고: 의도적 빈칸 표지.
-    assert m["비고"]["state"] == "blank" and m["비고"]["value"] == "(비움 확정)"
+    snap = ctrl.snapshot()
+    assert snap["blank_fields"] == ["추정가격"]   # rec0 빈값 — 비고(blank 선언)는 안 든다
+    assert "mirror" not in snap
 
 
-def test_mirror_filled_same_value_is_not_labeled_sample(tmp_path):
-    """선택 N>1 이라도 값이 다 같으면 표본 라벨 없이 그냥 값(허위 '행마다 다름' 금지)."""
-    ctrl = JobController(_mirror_job(tmp_path), lambda s, snap: None)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    csv = tmp_path / "same.csv"
-    csv.write_text("bidNtceNm,presmptPrce\n동일공고,100\n동일공고,200\n", encoding="utf-8")
-    _mount_all(ctrl, str(csv))
-    m = {r["name"]: r for r in ctrl.snapshot()["mirror"]}
-    assert m["공고명"]["value"] == "동일공고"  # 표본 라벨 없음
-
-
-def test_mirror_sample_counts_distinct_values_not_rows(tmp_path):
-    """표본 병기 '외 K개 값'은 서로 다른 값 수로 센다 — 대부분 같고 하나만 달라도 과장 없음."""
-    ctrl = JobController(_mirror_job(tmp_path), lambda s, snap: None)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    csv = tmp_path / "mostly_same.csv"
-    # 4행 '전산장비' + 1행 '사무비품' → 서로 다른 값은 2종(외 1개), 행 수(5)로 세면 과장(외 4).
-    csv.write_text(
-        "bidNtceNm,presmptPrce\n전산장비,1\n전산장비,2\n전산장비,3\n전산장비,4\n사무비품,5\n",
-        encoding="utf-8",
-    )
-    _mount_all(ctrl, str(csv))
-    m = {r["name"]: r for r in ctrl.snapshot()["mirror"]}
-    # 표본 = 표시순 첫 행(최신 행='사무비품') 값, '외 K'는 서로 다른 값 수(2종-1=1).
-    assert m["공고명"]["value"] == "사무비품 (표본 · 외 1개 값)"  # 행 수 아님(외 4행 금지)
-
-
-def test_mirror_empty_when_no_selection(tmp_path):
-    """선택 0 = 생성될 문서 없음 → 거울 행 없음(빈 값을 '채움'으로 오도하지 않는다)."""
+def test_blank_fields_empty_when_no_selection(tmp_path):
+    """선택 0 = 생성될 문서 없음 → 빈 값 표지도 없다(없는 실행의 빈 값을 말하지 않는다)."""
     ctrl = JobController(_mirror_job(tmp_path), lambda s, snap: None)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.dispatch("set_none", {})
     snap = ctrl.snapshot()
-    assert snap["mirror"] == [] and snap["drift"] == []
+    assert snap["blank_fields"] == [] and snap["drift"] == []
 
 
 def test_mirror_drift_split_into_blocking_list(tmp_path):
-    """drift(구조 불일치) 필드는 거울 표에서 빠져 별도 drift 목록으로 — 차단 배너 분리(결정 36)."""
+    """drift(구조 불일치) 필드는 차단 배너 목록으로 분리된다(결정 36) — 빈 값 축과 섞지 않는다."""
     template = tmp_path / "t.hwpx"
     _write_template(template, ["공고명", "유령"])  # 유령 = 템플릿 전용(매핑 미커버) → drift
     reg = JobRegistry(tmp_path / "jobs")
@@ -1095,7 +1077,7 @@ def test_mirror_drift_split_into_blocking_list(tmp_path):
     _mount_all(ctrl, _data_csv(tmp_path))
     snap = ctrl.snapshot()
     assert snap["drift"] == ["유령"]
-    assert [r["name"] for r in snap["mirror"]] == ["공고명"]  # drift 필드는 표에서 제외
+    assert snap["blank_fields"] == []             # drift 필드는 빈 값 축이 아니다
 
 
 def test_snapshot_carries_unresolved_name_tokens_for_banner(tmp_path):
@@ -1119,8 +1101,8 @@ def test_snapshot_carries_unresolved_name_tokens_for_banner(tmp_path):
     snap = ctrl.snapshot()
     assert snap["name_tokens"] == ["미해소"]
     assert snap["gate"]["level"] == "danger" and snap["gate"]["enabled"] is False
-    # 거울 표는 여전히 「채움」으로 건강하다 — 그래서 배너가 없으면 신호가 사라진다.
-    assert [r["state"] for r in snap["mirror"]] == ["filled"]
+    # 빈 값 축은 건강하다 — 그래서 배너가 없으면 본문 존이 건강한 한 줄만 그린다(신호 소실).
+    assert snap["blank_fields"] == []
     ctrl.dispatch("select_job", {"name": ""})           # 미겨눔 골격도 키를 갖춘다
     assert ctrl.snapshot()["name_tokens"] == []
 
@@ -1157,7 +1139,7 @@ def test_select_none_closes_record_gate(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    _approve_run(ctrl)
     assert ctrl.snapshot()["gate"]["enabled"] is True
     ctrl.dispatch("set_none", {})
     snap = ctrl.snapshot()
@@ -1665,7 +1647,7 @@ def test_generate_uses_previewed_name_timestamp(tmp_path):
     _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
     ctrl.set_output_folder(str(out))
-    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    _approve_run(ctrl)
 
     # 스냅샷 미리보기가 시각을 캡처 → 이후 시계 전진을 결정적으로 모사(주입) → 생성이 캡처값 재사용.
     assert ctrl.snapshot()["records"][0]["name"].startswith("doc-")
@@ -1871,7 +1853,7 @@ def test_hidden_column_still_reaches_the_generated_document(tmp_path):
     _mount_all(ctrl, _data_csv(tmp_path))
     out = tmp_path / "out"
     ctrl.set_output_folder(str(out))
-    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    _approve_run(ctrl)   # 빈 값 게이트는 승인이 진다(U2 §2.13 — 구 필드축 ack 의 승계)
     ctrl.dispatch("hide_column", {"column": "presmptPrce"})
     res = ctrl.generate()
     assert res["ok"] is True and res["succeeded"] == 2
@@ -2094,26 +2076,17 @@ def test_guard_state_query_is_live_and_pushless(tmp_path):
     assert len(pushes) == before                       # 무변이 질의 = push 생략
 
 
-def test_guard_state_counts_acks_without_arming_on_them(tmp_path):
-    """빈 값 확인은 **열거 성분이지 무장 성분이 아니다**(재작성 F1, 지도 §10.7.3).
+def test_guard_state_no_longer_enumerates_the_dead_ack_axis(tmp_path):
+    """필드축 ack 폐기(U2 §2.13)의 상속 의무 — 가드가 존재하지 않는 손실을 말하지 않는다.
 
-    데이터 전환은 ``set_acquired`` 로 ack 를 재평가(=소거)하므로 문안이 그 손실을 말해야
-    한다 — 그래서 수치를 싣는다. 반대로 ack 만으로 무장시키지는 않는다: 확인이 사라지면
-    게이트가 다시 닫히는 안전 방향이라, 확인 왕복을 물리면 과경고다(결정 27 기준).
+    구 ``ack_count`` 는 데이터 전환 손실 열거 성분이었는데(F1 §10.7.3), 확인이라는 상태
+    자체가 사라졌으므로 성분이 남아 있으면 가드 문안이 없는 것을 잃는다고 말하게 된다.
     """
     ctrl, _ = _session(tmp_path)
     ctrl.dispatch("set_none", {})
-    assert ctrl.dispatch("guard_state", {})["ack_count"] == 0
-    # 미입력 필드를 확인해도 무장하지 않는다(선택이 비어 있으므로).
-    field = ctrl.snapshot()["mirror"]
-    ctrl.vm.acknowledge("없는필드")  # 이름 무관 — 확인 집합의 크기만 센다
     g = ctrl.dispatch("guard_state", {})
-    assert g["ack_count"] == 1 and g["armed"] is False, (g, field)
-    # 실제로 데이터 전환이 확인을 지운다 — 열거가 거짓이 아님을 같은 테스트가 증명한다.
-    other = tmp_path / "ack.csv"
-    other.write_text("다른열\n값\n", encoding="utf-8")
-    ctrl.load_data_path(str(other))
-    assert ctrl.dispatch("guard_state", {})["ack_count"] == 0
+    assert "ack_count" not in g, "폐기된 ack 열거 성분이 가드에 남았습니다(§2.13)."
+    assert g["armed"] is False
 
 
 def test_needs_confirm_does_not_push(tmp_path):
@@ -2607,7 +2580,7 @@ def test_generate_surfaces_fill_notes(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    _approve_run(ctrl)
 
     res = ctrl.generate()
     assert res["ok"] is True
@@ -3405,12 +3378,15 @@ def _rereview(ctrl, name: str = "공고서") -> None:
 
 
 def _unreviewed_session(tmp_path):
-    """검토 기준선이 없는 작업 + 데이터 + 저장 폴더 — 게이트가 검토에서 막히는 상태."""
+    """검토 기준선이 없는 작업 + 데이터 + 저장 폴더 — 게이트가 검토에서 막히는 상태.
+
+    (구 「빈 값 ack 먼저 통과」 단계는 필드축 ack 폐기 — U2 §2.13 — 로 사라졌다: 빈 값은
+    이제 같은 검토 요구의 성분이라 별도 선행 게이트가 없다.)
+    """
     ctrl, pushes = _controller(tmp_path, reviewed=False)
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    ctrl.dispatch("ack_field", {"field": "추정가격"})  # 빈 값 게이트는 먼저 통과시킨다
     return ctrl, pushes
 
 
@@ -3467,8 +3443,17 @@ def test_display_order_change_reinstates_the_approval(tmp_path):
 
 
 def test_a_completed_run_stamps_the_baseline_so_the_repeat_run_is_quiet(tmp_path):
-    """§13-2 — 정상 반복 실행에서 미리보기는 선택이다. 완주가 그 자격을 만든다."""
-    ctrl, _ = _unreviewed_session(tmp_path)
+    """§13-2 — 정상 반복 실행에서 미리보기는 선택이다. 완주가 그 자격을 만든다.
+
+    빈 값 없는 데이터를 쓴다 — 빈 값이 있으면 blank_set(§2.13)이 반복 실행에도 서는
+    것이 계약이라(침묵 금지), 「조용한 반복」의 전제가 데이터 축에서 갈린다.
+    """
+    ctrl, _ = _controller(tmp_path, reviewed=False)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    clean = tmp_path / "clean.csv"
+    clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n사무비품,2000000\n", encoding="utf-8")
+    _mount_all(ctrl, str(clean))
+    ctrl.set_output_folder(str(tmp_path / "out"))
     req, _ = ctrl._review()
     ctrl.review.approve(req, ctrl._review_scope_key())
     ctrl.generate()
@@ -3485,7 +3470,6 @@ def test_an_old_job_without_a_baseline_does_not_claim_it_never_ran(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    ctrl.dispatch("ack_field", {"field": "추정가격"})
     text = ctrl.snapshot()["gate"]["text"]
     assert "확인할 수 없습니다" in text and "한 번도" not in text
 
@@ -3541,9 +3525,65 @@ def test_preview_move_stops_at_the_edges(tmp_path):
     assert ctrl.snapshot()["preview"]["pos"] == 1
 
 
+def test_preview_blank_only_restricts_moves_to_blank_records(tmp_path):
+    """「빈 값 있는 건만 보기」(U2 §2.13) — ‹ › 이동이 빈 값 있는 건 사이로만 간다.
+
+    「12건 중 2건이 비었다」를 알아도 어느 2건인지 아무도 말하지 않아 전 건을 넘겨야
+    했다 — 훑기 가속의 실제 기제는 표지가 아니라 이 한정이다(선례: 「실패한 건만 선택」).
+    """
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    csv = tmp_path / "mixed.csv"
+    # 표시순(sourceDesc) = 원본 3·2·1·0. 빈 값(presmptPrce)은 원본 0·2 = 자리 1·3.
+    csv.write_text("bidNtceNm,presmptPrce\nA,\nB,100\nC,\nD,200\n", encoding="utf-8")
+    _mount_all(ctrl, str(csv))
+    ctrl.dispatch("preview_open", {})
+    p = ctrl.snapshot()["preview"]
+    assert p["blank_count"] == 2 and p["blank_only"] is False
+    ctrl.dispatch("preview_blank_only", {"value": True})
+    p = ctrl.snapshot()["preview"]
+    assert p["blank_only"] is True and p["pos"] == 1     # 대상 밖 자리 → 가장 가까운 빈 값 건
+    ctrl.dispatch("preview_move", {"delta": 1})
+    assert ctrl.snapshot()["preview"]["pos"] == 3        # 채움 건(자리 2)을 건너뛴다
+    p = ctrl.snapshot()["preview"]
+    assert p["can_next"] is False and p["can_prev"] is True  # 경계 = 그 건들의 처음·끝
+    ctrl.dispatch("preview_move", {"delta": 1})
+    assert ctrl.snapshot()["preview"]["pos"] == 3        # 경계에서 멈춘다(순환 없음)
+    ctrl.dispatch("preview_move", {"delta": -1})
+    assert ctrl.snapshot()["preview"]["pos"] == 1
+    ctrl.dispatch("preview_blank_only", {"value": False})
+    ctrl.dispatch("preview_move", {"delta": 1})
+    assert ctrl.snapshot()["preview"]["pos"] == 2        # 끄면 이동이 전 건으로 돌아온다
+    # 닫으면 보기 상태도 함께 놓는다(열림·자리와 같은 수명).
+    ctrl.dispatch("preview_close", {})
+    ctrl.dispatch("preview_open", {})
+    assert ctrl.snapshot()["preview"]["blank_only"] is False
+
+
+def test_preview_blank_only_refuses_when_no_record_is_blank(tmp_path):
+    """빈 값 건이 0이면 켤 수 없다 — 무동작 토글 금지(표면도 0건이면 비활성이지만
+    잠금은 상태가 진다)."""
+    ctrl, _ = _clean_session(tmp_path)
+    ctrl.dispatch("preview_open", {})
+    with pytest.raises(ValueError, match="빈 값이 있는 문서가 없습니다"):
+        ctrl.dispatch("preview_blank_only", {"value": True})
+    assert ctrl.snapshot()["preview"]["blank_count"] == 0
+
+
+def _clean_session(tmp_path):
+    """검토 요구가 하나도 없는 세션 — 기준선 있음 + **빈 값 없는** 데이터(§2.13 뒤로는
+    빈 값이 있으면 blank_set 요구가 서므로 「요구 없음」 픽스처는 데이터도 깨끗해야 한다)."""
+    ctrl, pushes = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    clean = tmp_path / "clean.csv"
+    clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n사무비품,2000000\n", encoding="utf-8")
+    _mount_all(ctrl, str(clean))
+    return ctrl, pushes
+
+
 def test_preview_opens_even_when_nothing_needs_review(tmp_path):
     """§13-2 — 정상 반복 실행에서 미리보기는 **선택**이지 금지가 아니다."""
-    ctrl, _ = _session(tmp_path)
+    ctrl, _ = _clean_session(tmp_path)
     assert ctrl.snapshot()["review"]["required"] is False
     ctrl.dispatch("preview_open", {})
     p = ctrl.snapshot()["preview"]
@@ -3568,7 +3608,7 @@ def test_approval_is_refused_outside_the_drawer(tmp_path):
 
 
 def test_approval_is_refused_when_nothing_needs_review(tmp_path):
-    ctrl, _ = _session(tmp_path)
+    ctrl, _ = _clean_session(tmp_path)
     ctrl.dispatch("preview_open", {})
     with pytest.raises(ValueError, match="확인이 필요한 변경이 없습니다"):
         ctrl.dispatch("preview_approve", {})
@@ -3727,7 +3767,7 @@ def test_preview_names_match_what_generation_will_write(tmp_path):
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    ctrl.dispatch("ack_field", {"field": "추정가격"})
+    _approve_run(ctrl)
     ctrl.dispatch("preview_open", {})
     shown = ctrl.snapshot()["preview"]["filename"]
     assert ctrl.generate()["ok"] is True
@@ -3735,9 +3775,13 @@ def test_preview_names_match_what_generation_will_write(tmp_path):
     assert shown in written, f"미리보기 이름 {shown!r} 가 생성물 {written!r} 에 없습니다."
 
 
-def test_the_marker_appears_only_when_generation_would_apply_it(tmp_path):
-    """반대 방향의 같은 거짓말 — 아직 확인 안 된 빈 값이 있으면 생성은 3) 에 도달하지
-    못하므로 표식도 없다. 조건을 느슨히 잡으면 실행되지도 않을 상태의 이름을 말한다."""
+def test_the_marker_appears_whenever_blanks_exist(tmp_path):
+    """`_run_marker` 재정의(U2 §2.13) — 조건은 「빈 값이 있으면」 하나다.
+
+    구 「확인 안 된 빈 값 = 표식 없음」 중간 상태는 ack 폐기와 함께 사라졌다: 생성·
+    미리보기·승인 세 자리가 같은 술어를 쓰므로, 미리보기 이름에도 처음부터 표식이 선다
+    — 승인이 곧 「이 표식이 박힌 이름·값」에 대한 동의가 된다.
+    """
     ctrl, _ = _controller(tmp_path, reviewed=True)
     job = ctrl.registry.load("공고서")
     job.filename_pattern = "{{추정가격}}"
@@ -3747,20 +3791,16 @@ def test_the_marker_appears_only_when_generation_would_apply_it(tmp_path):
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.dispatch("preview_open", {})
     ctrl.dispatch("preview_move", {"delta": 1})   # 빈 값이 나는 레코드로 이동
-    before = ctrl.snapshot()["preview"]["filename"]     # 미확인 = 표식 없음
-    ctrl.dispatch("ack_field", {"field": "추정가격"})
-    after = ctrl.snapshot()["preview"]["filename"]      # 확인 뒤 = 표식 적용
-    assert "미입력" not in before and "미입력" in after
+    assert "미입력" in ctrl.snapshot()["preview"]["filename"]
 
 
-def test_the_mirror_still_counts_blanks_as_blank(tmp_path):
-    """표식은 **파일 이름·미리보기 값**의 사실이고, 거울의 「N행에서 값이 비어 있습니다」는
-    빈 값을 세는 진술이다. 표식을 채우면 언제나 0행이 되어 그 문안이 거짓이 된다 —
-    두 면이 같은 사실을 다른 각도로 말하는 것이지 판정이 둘인 게 아니다."""
+def test_blank_fields_count_blanks_not_markers(tmp_path):
+    """빈 값 표지·「빈 값 있는 건만 보기」는 표식 **없는** 판에서 센다 — 표식(생성 입력)을
+    세면 언제나 0건이 되어 표지가 거짓이 된다. 두 판이 같은 사실을 다른 각도로 말한다."""
     ctrl, _ = _session(tmp_path)
-    ctrl.dispatch("ack_field", {"field": "추정가격"})
-    row = next(r for r in ctrl.snapshot()["mirror"] if r["name"] == "추정가격")
-    assert "1행에서 값이 비어 있습니다" in row["value"]
+    snap = ctrl.snapshot()
+    assert snap["blank_fields"] == ["추정가격"]
+    assert snap["preview"]["blank_count"] == 1     # 2건 중 1건이 빈 값
 
 
 # ---------------- 리뷰 2R 조치의 영구 가드(P1×1·P2×2) ----------------
@@ -3777,7 +3817,6 @@ def test_approval_does_not_survive_a_data_swap(tmp_path):
     other = tmp_path / "b.csv"
     other.write_text("bidNtceNm,presmptPrce\n다른공고,\n다른비품,3000000\n", encoding="utf-8")
     _mount_all(ctrl, str(other))          # 같은 열 지형·같은 행 수 = 같은 index 집합
-    ctrl.dispatch("ack_field", {"field": "추정가격"})
     assert ctrl.snapshot()["gate"]["enabled"] is False, (
         "다른 데이터의 값을 보지 않은 채 승인이 재사용됐습니다."
     )
@@ -3826,7 +3865,6 @@ def test_the_approved_filename_survives_the_pushes_between_approval_and_generati
     ctrl.dispatch("select_job", {"name": "공고서"})
     _mount_all(ctrl, _data_csv(tmp_path))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    ctrl.dispatch("ack_field", {"field": "추정가격"})
 
     ctrl.dispatch("preview_open", {})
     approved_name = ctrl.snapshot()["preview"]["filename"]
@@ -3853,10 +3891,16 @@ def test_an_optional_preview_pins_the_timestamp_until_generation(tmp_path):
     """5R P2 — 검토 요구가 없는 반복 실행에서도 미리보기는 열린다(§13-2). 생성 버튼을
     누르려면 면을 **닫아야** 하는데, 닫는 순간 시각이 풀리면 1초만 들여다봐도 화면이
     보여준 것과 다른 이름(그리고 다른 덮어쓰기 대상)이 만들어진다.
+
+    빈 값이 없는 데이터를 쓴다 — 빈 값이 있으면 blank_set 요구(§2.13)가 서서 「요구 없는
+    반복 실행」이라는 이 테스트의 전제가 성립하지 않는다.
     """
-    ctrl, _ = _session(tmp_path)
+    ctrl, _ = _controller(tmp_path)
+    ctrl.dispatch("select_job", {"name": "공고서"})
+    clean = tmp_path / "clean.csv"
+    clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n사무비품,2000000\n", encoding="utf-8")
+    _mount_all(ctrl, str(clean))
     ctrl.set_output_folder(str(tmp_path / "out"))
-    ctrl.dispatch("ack_field", {"field": "추정가격"})
     assert ctrl.snapshot()["review"]["required"] is False   # 요구 없는 반복 실행
     ctrl.dispatch("preview_open", {})
     ctrl.snapshot()
@@ -3884,46 +3928,48 @@ def test_the_pin_releases_when_the_run_input_changes(tmp_path):
     assert ctrl._names_now != frozen
 
 
-def test_approval_does_not_survive_acknowledging_blanks(tmp_path):
-    """4R P2 — 확인 안 된 빈 값이 있는 상태로 승인하면 값은 비어 있고 이름은 표식 없이
-    계산된다. 면을 닫고 빈 값을 확인하는 순간 실행 입력이 표식으로 바뀌는데, 규칙도 선택도
-    안 바뀌었으니 승인은 그대로 유효하다 — 그러면 생성이 **한 번도 보여준 적 없는** 값과
-    이름을 쓴다. 표식 상태를 승인 정체에 넣어 그 창을 닫는다.
+def test_new_blanks_on_new_data_reinstate_the_gate(tmp_path):
+    """침묵 금지(U2 §2.13 **최우선**) — 한 번 완주한 작업에 새 데이터를 올려 빈 값이
+    새로 생기면 게이트가 선다.
+
+    승인은 규칙 지문 기반이라 완주 뒤 영구히 조용해진다(판정 N). 빈 값 집합이 승인
+    지문에 들지 않으면 다음 달 새 데이터의 빈 값이 **표식이 박힌 문서를 조용히 생성**한다
+    — 생성 시점에 아무도 말하지 않고, 제출한 뒤에 아는 순서가 된다.
     """
-    ctrl, _ = _controller(tmp_path, reviewed=False)
-    job = ctrl.registry.load("공고서")
-    job.filename_pattern = "{{추정가격}}"     # 빈 값이 나는 필드를 이름이 참조한다
-    ctrl.registry.save(job, allow_overwrite=True)
+    ctrl, _ = _controller(tmp_path)                       # 기준선 있는 작업(완주 자격)
     ctrl.dispatch("select_job", {"name": "공고서"})
-    _mount_all(ctrl, _data_csv(tmp_path))
+    clean = tmp_path / "clean.csv"
+    clean.write_text("bidNtceNm,presmptPrce\n전산장비,1000\n사무비품,2000000\n", encoding="utf-8")
+    _mount_all(ctrl, str(clean))
     ctrl.set_output_folder(str(tmp_path / "out"))
+    assert ctrl.snapshot()["gate"]["enabled"] is True     # 빈 값 없음 = 조용한 반복 실행
+    assert ctrl.generate()["ok"] is True                  # 완주 — 기준선이 다시 선다
 
-    ctrl.dispatch("preview_open", {})          # 빈 값 미확인 상태에서 미리보기
-    ctrl.dispatch("preview_approve", {})
-    ctrl.dispatch("ack_field", {"field": "추정가격"})   # 실행 입력이 표식으로 바뀐다
-    assert ctrl.snapshot()["gate"]["enabled"] is False, (
-        "표식이 붙어 값·이름이 달라졌는데 옛 승인이 그대로 유효합니다."
-    )
-    assert ctrl.generate()["ok"] is False
+    _mount_all(ctrl, _data_csv(tmp_path))                 # 다음 달 데이터 — 빈 값 신규 발생
+    snap = ctrl.snapshot()
+    assert snap["gate"]["enabled"] is False, "새 빈 값인데 게이트가 서지 않습니다(조용한 표식 생성)."
+    assert snap["gate"]["reason"] == "review_required" and "빈 값" in snap["gate"]["text"]
+    res = ctrl.generate()                                 # 백스톱도 같은 판정
+    assert res["ok"] is False and "빈 값" in res["error"]
+    _approve_run(ctrl)                                    # 표식 삽입 동의 = 승인 1번
+    assert ctrl.snapshot()["gate"]["enabled"] is True
+    # 같은 폴더 재생성이라 덮어쓰기 확인(RC-02)이 먼저 선다 — 확인 뒤 생성이 열린다.
+    assert ctrl.generate()["needs_overwrite"] is True
+    assert ctrl.generate(confirm_overwrite=True)["ok"] is True
 
 
-def test_unacknowledging_blanks_restores_the_earlier_approval(tmp_path):
-    """되돌리면 되살아난다 — 표식 상태는 정체의 일부이지 단조 무효화 신호가 아니다
-    (같은 실행 입력으로 돌아왔으면 이미 확인한 것이 맞다)."""
-    ctrl, _ = _controller(tmp_path, reviewed=False)
-    job = ctrl.registry.load("공고서")
-    job.filename_pattern = "{{추정가격}}"
-    ctrl.registry.save(job, allow_overwrite=True)
-    ctrl.dispatch("select_job", {"name": "공고서"})
-    _mount_all(ctrl, _data_csv(tmp_path))
-    ctrl.set_output_folder(str(tmp_path / "out"))
-    ctrl.dispatch("preview_open", {})
-    ctrl.dispatch("preview_approve", {})
-    ctrl.dispatch("ack_field", {"field": "추정가격"})
-    assert ctrl.snapshot()["gate"]["enabled"] is False
-    ctrl.dispatch("unack_field", {"field": "추정가격"})
-    assert ctrl.snapshot()["gate"]["enabled"] is False   # 빈 값 게이트가 다시 닫는다
-    assert ctrl._review()[1] is None, "같은 실행 입력인데 승인이 사라졌습니다."
+def test_review_scope_key_hashes_the_blank_field_set(tmp_path):
+    """§2.13 조건 — 승인 지문의 표식 성분은 이진값(有/無)이 아니라 **빈 값 필드 집합의
+    해시**다. 「담당자가 빈 데이터」에서 한 승인이 「개찰장소가 빈 데이터」에서도 유효하면
+    한 번도 보지 않은 표식이 박힌 문서가 생긴다 — 집합이 갈리면 키가 갈려야 한다."""
+    ctrl, _ = _session(tmp_path)
+    k_none = ctrl._review_scope_key(blanks=[])
+    k_a = ctrl._review_scope_key(blanks=["담당자"])
+    k_b = ctrl._review_scope_key(blanks=["개찰장소"])
+    k_ab = ctrl._review_scope_key(blanks=["담당자", "개찰장소"])
+    assert len({k_none, k_a, k_b, k_ab}) == 4
+    # 순서는 정체가 아니다 — 같은 집합이면 같은 키(정렬 정규화).
+    assert ctrl._review_scope_key(blanks=["개찰장소", "담당자"]) == k_ab
 
 
 # ------------------------------------------- TXT 합류와 작업대 진입 (재작성 F6 PR-A)

@@ -21,9 +21,8 @@
   padding:var(--sp-16) var(--sp-20);border-bottom:1px solid var(--a-border);flex:0 0 auto}
 .sheet-head h3{margin:0}
 .sheet-body{min-width:0;min-height:0;flex:1;padding:var(--sp-16);overflow:auto}
-.sheet-duo{display:grid;grid-template-columns:minmax(0,1.08fr) minmax(0,1fr);gap:var(--sp-16)}
-.sheet-pane{min-width:0;min-height:0;overflow:auto;border:1px solid var(--a-border);
-  border-radius:var(--rad-card);padding:var(--sp-12)}
+/* (구 2 pane 시트 골격은 유일 소비자였던 작업 확인 펼침 면의 사망 — U2 §2.13 — 과 함께
+   걷혔다: 확인 면은 1 pane(#previewSheet)으로 접혔다.) */
 .data-sheet-body{display:flex;flex-direction:column;gap:var(--sp-10)}
 .data-sheet-body .jobtb-host{display:flex;flex-direction:column;min-height:0;flex:1}
 .data-sheet-body .jobtbwrap{max-height:none;min-height:0;flex:1}
@@ -36,7 +35,7 @@
 .data-sheet-body .jobtb tbody tr.on td:first-child{background:var(--a-sel)}
 .data-sheet-body .jobtb th:first-child{z-index:3}
 .data-sheet-body .jobtb td:first-child{z-index:2}
-@media (max-width:900px){.sheet-duo{grid-template-columns:1fr}.sheet .sheet-card{width:100vw;height:100vh;height:100dvh}}
+@media (max-width:900px){.sheet .sheet-card{width:100vw;height:100vh;height:100dvh}}
 @media (prefers-reduced-transparency:reduce){
   .modal{background:var(--a-scrim-reduced);backdrop-filter:none}
   .modal.is-closing{background:transparent}
@@ -115,12 +114,14 @@
 .pk-note{display:block}
 .pk-row .tplcard-acts{flex:none;margin:0;max-width:230px}
 
-/* ---- 미리보기 드로어 (재작성 F5 — v6 previewDrawer) ----
-   레코드 1건의 전 필드를 보여주므로 세로로 자라고, **자리(N/M)와 파일 이름은 고정**이다:
-   목록을 스크롤하다 지금 몇 번째를 보는지 잃으면 미리보기의 뜻이 반쯤 사라진다. */
-.preview-drawer{width:min(680px,94vw)}
+/* ---- 확인 면 = 생성 값 미리보기 시트 (재작성 F5 드로어의 승격 — U2 §2.13) ----
+   레코드 1건의 전 필드를 보여주고, **자리(N/M)와 파일 이름은 고정**이다: 목록을 스크롤하다
+   지금 몇 번째를 보는지 잃으면 미리보기의 뜻이 반쯤 사라진다. 폭은 시트 골격(.sheet-card)이
+   소유한다 — 구 680px 모달 폭은 렌더러가 올 자리라 좁아 승격과 함께 걷혔다. */
 .preview-drawer .preview-nav{display:flex;align-items:center;gap:var(--sp-8);
   margin-top:var(--sp-8)}
+.preview-drawer .preview-nav #previewBlankOnly[aria-pressed="true"]{
+  border-color:var(--a-primary);color:var(--a-primary)}
 .preview-drawer .preview-nav strong{font-variant-numeric:tabular-nums}
 /* 행 컨테이너만 겨눈다 — `.picker-sec>div` 로 넓게 걸면 구획 캡션(`.cap` 도 div)까지
    세로 flex·스크롤 상자가 돼 캡션이 가운데로 뭉갠다(눈검증이 잡은 자리). */

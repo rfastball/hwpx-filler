@@ -128,12 +128,8 @@ table.dmap tr:last-child td{border-bottom:0}
 .zone-cap .znum{display:inline-grid;place-items:center;width:15px;height:15px;margin-right:var(--sp-4);
   border-radius:var(--rad-pill);background:var(--a-primary);color:var(--a-on-accent);
   font-size:var(--fs-caption);font-weight:700;vertical-align:-2px}
-.capstrip{display:flex;align-items:center;gap:var(--sp-8);margin-top:var(--sp-6);
-  padding:var(--sp-6) var(--sp-10);font-size:var(--fs-caption);color:var(--a-warn);
-  background:var(--fb-blank-bg);border:1px solid var(--fb-blank-bd);
-  border-radius:var(--rad-control)}
-/* display:flex가 UA [hidden] 규칙을 이기는 B-9 결함류를 명시 차단한다. */
-.capstrip[hidden]{display:none}
+/* (.capstrip 은 유일 소비자 거울 캡스트립의 사망 — U2 §2.13 표 없는 한 줄 재편 — 과 함께
+   걷혔다.) */
 .zone-cap-actions{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-8)}
 .zone-cap-actions>.btn{margin-left:auto}
 
