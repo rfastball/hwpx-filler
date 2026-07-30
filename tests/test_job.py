@@ -8,6 +8,10 @@
 
 from __future__ import annotations
 
+import json
+import os
+import shutil
+
 import pytest
 
 from hwpxfiller.core.job import (
@@ -16,6 +20,7 @@ from hwpxfiller.core.job import (
     JobSlugCollisionError,
     RunRequest,
     SlugCollisionError,
+    _reject_unsafe_key,
     content_fingerprint,
     default_jobs_dir,
 )
@@ -1205,3 +1210,191 @@ def test_previous_revision_snapshot_advances_per_axis(tmp_path):
     assert saved.previous_rules["template"] == "/tmp/template.hwpx"
     # **연결 축의 직전 값은 A 그대로**다 — 아직 그 변경은 검토받지 않았다.
     assert saved.previous_rules["fields"]["공고명"]["source"] == "bidNtceNm"
+
+
+# ------------------------------------------------- 라이브러리 상대키(#348, U2 §5.3 판정 B)
+@pytest.fixture()
+def library_home(tmp_path, monkeypatch):
+    """``HWPXFILLER_HOME`` 을 못박고 두 매체 루트를 실제로 만든 홈 — 이식성 회귀의 무대."""
+    home = tmp_path / "home-A"
+    (home / "templates" / "조달").mkdir(parents=True)
+    (home / "text_templates").mkdir(parents=True)
+    monkeypatch.setenv("HWPXFILLER_HOME", str(home))
+    return home
+
+
+def test_template_link_is_stored_as_a_library_relative_key(library_home):
+    """저장은 절대경로 **옆에** 루트 상대 POSIX 키를 가산으로 싣는다(#348).
+
+    키는 그룹 지정이 이미 쓰는 값(결정 8)과 같은 관례이고, 루트 선택은 확장자가 한다 —
+    매체를 선언하는 새 필드는 없다. 신규 durable 필드는 상대키 하나뿐이다.
+    """
+    hwpx = library_home / "templates" / "조달" / "공고서.hwpx"
+    txt = library_home / "text_templates" / "안내문.txt"
+
+    job = Job(name="a", template_path=str(hwpx))
+    assert job.template_key == "조달/공고서.hwpx"          # 하위폴더까지 POSIX 한 값
+    assert job.to_dict()["template_key"] == "조달/공고서.hwpx"
+    assert job.to_dict()["template_path"] == str(hwpx)     # 절대경로는 **가산으로 유지**
+
+    # 루트가 확장자로 갈린다 — txt 는 text_templates 기준.
+    assert Job(name="b", template_path=str(txt)).template_key == "안내문.txt"
+    # 매체 미상은 승격하지 않는다(모르는 것을 추측하지 않는다).
+    docx = library_home / "templates" / "x.docx"
+    assert Job(name="c", template_path=str(docx)).template_key == ""
+    assert Job(name="d").template_key == ""
+
+
+def test_moving_the_home_keeps_the_keyed_template_resolved(library_home, tmp_path, monkeypatch):
+    """홈을 옮겨도 상대키를 가진 작업의 템플릿은 계속 해석된다 — 이 이슈의 존재 이유.
+
+    레지스트리는 원래 위치-불가지였는데 **내용물이 절대경로로 위치에 묶여** 홈 이동이 모든
+    작업의 링크를 한꺼번에 끊었다. 키는 기계 고유 부분을 이름으로 치환해 그 결속을 끊는다.
+    """
+    tpl = library_home / "templates" / "조달" / "공고서.hwpx"
+    JobRegistry(library_home / "jobs").save(Job(name="a", template_path=str(tpl)))
+
+    moved = tmp_path / "home-B"
+    shutil.copytree(library_home, moved)                  # 홈 통째 이사(백업 복원·PC 교체)
+    monkeypatch.setenv("HWPXFILLER_HOME", str(moved))
+
+    job = JobRegistry(moved / "jobs").load("a")
+    assert job.template_path == str(moved / "templates" / "조달" / "공고서.hwpx")
+    assert job.media == "hwpx"                            # 표면 파생(매체·방식)은 그대로 성립
+
+
+def test_template_outside_the_root_fails_promotion_without_a_filename_fallback(
+    library_home, tmp_path, monkeypatch
+):
+    """루트 밖 템플릿은 **폴백 없이** 승격에 실패하고 절대경로를 유지한다.
+
+    그룹 키(:func:`~hwpxfiller.webapp.template_groups.rel_key`)는 루트 밖이면 파일명으로
+    폴백하지만, 작업 링크에서 그 폴백은 **다른 폴더의 동명 파일에 조용히 붙는다**(끊긴 참조의
+    자동 파일명 매칭 = 영상 편집 도구들이 대가를 치른 결함류). 여기서는 "이 작업은 이식 대상이
+    아니다"를 정직하게 남긴다.
+    """
+    outside = tmp_path / "바탕화면" / "공고서.hwpx"          # 라이브러리 안 동명 파일과 같은 이름
+    outside.parent.mkdir(parents=True)
+    decoy = library_home / "templates" / "공고서.hwpx"      # 붙으면 안 되는 미끼
+    decoy.write_bytes(b"")
+
+    job = Job(name="a", template_path=str(outside))
+    assert job.template_key == ""                          # 파일명 폴백 없음
+    d = job.to_dict()
+    assert d["template_key"] == "" and d["template_path"] == str(outside)
+
+    JobRegistry(library_home / "jobs").save(job)
+    moved = tmp_path / "home-B"
+    shutil.copytree(library_home, moved)
+    monkeypatch.setenv("HWPXFILLER_HOME", str(moved))
+    reloaded = JobRegistry(moved / "jobs").load("a")
+    # 홈이 옮겨져도 미끼에 붙지 않는다 — 원래 절대경로 그대로(끊겼으면 끊긴 대로 보인다).
+    assert reloaded.template_path == str(outside)
+    assert reloaded.template_path != str(moved / "templates" / "공고서.hwpx")
+
+
+def test_reading_a_job_does_not_migrate_the_file(library_home):
+    """마이그레이션 없음 — 읽기는 옛 경로로 폴백만 하고 디스크를 고치지 않는다(조용한 변이 금지).
+
+    승격은 **저장이 지나갈 때만** 일어난다. 읽는 김에 durable 을 고치면 목록 렌더 한 번이
+    사용자가 요청한 적 없는 쓰기가 되고, 그 쓰기가 실패하는 환경에서 목록이 통째로 죽는다.
+    """
+    hwpx = library_home / "templates" / "조달" / "공고서.hwpx"
+    legacy = {"name": "a", "template_path": str(hwpx)}     # 구 JSON = 키 없음
+    path = library_home / "jobs" / "a.job.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(legacy, ensure_ascii=False), encoding="utf-8")
+    before = path.read_bytes()
+
+    reg = JobRegistry(library_home / "jobs")
+    assert reg.load("a").template_path == str(hwpx)        # 옛 경로 폴백으로 그대로 열린다
+    reg.list_jobs()
+    assert path.read_bytes() == before                     # 바이트 한 톨 안 바뀐다
+
+    reg.save(reg.load("a"), allow_overwrite=True)          # 저장이 지날 때 **비로소** 승격
+    assert json.loads(path.read_text(encoding="utf-8"))["template_key"] == "조달/공고서.hwpx"
+
+
+def test_corrupt_template_key_is_loud(library_home):
+    """상대키는 루트에 이어 붙여 해석되므로 절대·드라이브·``..`` 는 루트 밖으로 새는 값이다.
+
+    다른 durable 필드와 같은 규율으로 경계에서 loud raise —
+    :meth:`JobRegistry.list_jobs` 의 파일 단위 격리가 '손상됨' 행으로 표면화한다.
+    """
+    base = {"name": "a", "template_path": "/t.hwpx"}
+    escapes = ["C:/훔친/x.hwpx", "/x.hwpx", "../../x.hwpx", "조달/../../x.hwpx", r"\\srv\x.hwpx"]
+    for bad in escapes:
+        with pytest.raises(ValueError):
+            Job.from_dict({**base, "template_key": bad})
+    with pytest.raises(ValueError):
+        Job.from_dict({**base, "template_key": 7})         # 비문자열도 loud(문자열 계약)
+
+
+def test_lexical_path_components_are_normalized_before_promotion(library_home):
+    """쓰기가 **읽기 방어에 걸릴 키를 스스로 만들지 않는다**(#368 2R).
+
+    ``relative_to`` 는 ``.``·``..`` 를 **보존**하므로 정규화 전에는 ``sub/../공고서.hwpx`` 같은
+    키가 나왔고, 그 키는 로드에서 loud 거절돼 **앱이 자기가 저장한 작업을 스스로 손상됨으로
+    읽었다**. 저장~로드 한 바퀴를 실제로 돌려 그 자기모순이 없음을 못박는다.
+    """
+    tpl = library_home / "templates" / "조달" / "공고서.hwpx"
+    noisy = library_home / "templates" / "조달" / "sub" / ".." / "공고서.hwpx"
+
+    job = Job(name="a", template_path=str(noisy))
+    assert job.template_key == "조달/공고서.hwpx"          # `..` 가 걷힌 키
+    _reject_unsafe_key(job.template_key)                    # 읽기 방어를 통과하는 값이다
+
+    reg = JobRegistry(library_home / "jobs")
+    reg.save(job)
+    assert reg.load("a").template_path == str(tpl)          # 해석은 같은 파일을 가리킨다
+    assert reg.list_jobs()[0].name == "a"                   # '손상됨' 으로 떨어지지 않는다
+
+
+def test_normalization_does_not_loosen_the_outside_the_root_judgment(library_home):
+    """정규화가 「루트 밖은 폴백 없이 실패」를 흔들지 않는다 — 오히려 **조인다**.
+
+    정규화 전에는 루트로 시작하기만 하면 ``relative_to`` 가 통과해서
+    ``templates/../바깥/공고서.hwpx`` 가 ``../바깥/공고서.hwpx`` 라는 **루트를 벗어나는 키**가
+    됐다. 어휘 정규화 뒤 그 경로는 정직하게 루트 밖으로 판정돼 승격되지 않는다.
+    """
+    escaping = library_home / "templates" / ".." / "바깥" / "공고서.hwpx"
+    assert Job(name="a", template_path=str(escaping)).template_key == ""
+    # 루트 밖 판정은 그대로 절대경로 유지로 이어진다(폴백 없음).
+    assert Job(name="a", template_path=str(escaping)).to_dict()["template_path"] == str(escaping)
+
+
+def test_promotion_is_abandoned_when_normalization_would_name_another_file(
+    library_home, monkeypatch
+):
+    """어휘 정규화가 **다른 파일**을 이름하면 승격을 포기한다 — 심볼릭 링크 경유 ``..`` 의 자리.
+
+    ``resolve()`` 를 쓰지 않는 대신(관례 갈라짐·디스크 상태 의존, :func:`_lexically_normal` 선언)
+    정규화가 성분을 실제로 걷은 경우에만 왕복을 실측한다. 실 심볼릭 링크 생성은 윈도우 권한에
+    좌우되므로 그 실측 지점(``realpath``)을 대신 못박는다 — 조용한 재결속이 없다는 것이 계약이다.
+    """
+    noisy = library_home / "templates" / "조달" / "link" / ".." / "공고서.hwpx"
+    assert Job(name="a", template_path=str(noisy)).template_key == "조달/공고서.hwpx"
+
+    real = os.path.realpath
+
+    def _as_if_link_were_a_symlink(p):
+        # 걷힌 성분이 링크였던 세상: 원본은 링크 대상 밑을 이름한다.
+        if "link" in os.fspath(p):
+            return real(library_home / "다른곳" / "공고서.hwpx")
+        return real(p)
+
+    monkeypatch.setattr(os.path, "realpath", _as_if_link_were_a_symlink)
+    assert Job(name="a", template_path=str(noisy)).template_key == "", (
+        "정규화가 다른 파일을 이름하는데 승격했습니다 — 조용한 재결속입니다."
+    )
+
+
+def test_template_key_wins_over_a_stale_absolute_path(library_home):
+    """키와 경로가 어긋나면 **키가 이긴다** — 경로는 기계 고유 잔재이고 키가 정체성이다."""
+    stale = {
+        "name": "a",
+        "template_path": r"D:\옛PC\templates\조달\공고서.hwpx",
+        "template_key": "조달/공고서.hwpx",
+    }
+    job = Job.from_dict(stale)
+    assert job.template_path == str(library_home / "templates" / "조달" / "공고서.hwpx")

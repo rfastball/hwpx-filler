@@ -29,11 +29,13 @@ import uuid
 import weakref
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import TYPE_CHECKING
 
 from .mapping import MappingProfile
 from .paths import home_dir
+from .template_status import default_templates_dir
+from .text_registry import default_text_templates_dir
 from hwpxcore.atomic import write_text_atomic
 from hwpxcore.validate import ValidationReport, validate
 
@@ -280,6 +282,154 @@ def require_hwpx(job: "Job") -> "Job":
     return job
 
 
+# ------------------------------------------------------------------ 라이브러리 상대키(#348)
+# U2 §5.3 판정 B: 레지스트리는 위치-불가지인데(생성자가 디렉터리를 받는다) **내용물이 절대경로로
+# 위치에 묶여 있었다** — 홈을 옮기면 모든 작업의 ``template_path`` 가 한꺼번에 끊기고, 라이브러리는
+# 그 사실을 「템플릿이 연결되지 않은 **작업 N건**」이라고 작업 수로 셌다(간접층이 있었다면
+# 데이터 축처럼 「참조 1건」이었다). 웹 표준의 처방과 같다: 경로를 **버리는** 것이 아니라 경로에서
+# **기계 고유 부분만 이름으로 치환**한다(named root + root-relative).
+#
+# **새 관례를 만들지 않는다** — 라이브러리 루트 상대 POSIX 키는 템플릿 그룹 지정(결정 8)이 이미
+# 쓰는 값이고 에디터 피커도 이미 그 키로 말한다. 저장만 경로였다. 그래서 키 계산의 몸통은 여기
+# 링0 에 두고 :func:`~hwpxfiller.webapp.template_groups.rel_key` 가 이것을 감싼다.
+#
+# **폴백 정책만 다르다**(이 이슈의 유일한 새 규칙): 그룹 키는 루트 밖이면 파일명으로 폴백하지만,
+# 작업 링크에서 그 폴백은 **다른 폴더의 동명 파일에 조용히 붙는다** — 끊긴 참조를 파일명으로
+# 자동 매칭하는 것은 영상 편집 도구들이 대가를 치른 결함류다. 여기서는 폴백 없이 승격에
+# **실패**하고 기존 절대경로를 유지한다("이 작업은 이식 대상이 아니다"를 정직하게 남긴다).
+#
+# **루트 선택도 확장자로** 한다 — 매체 파생이 이미 계약(:func:`template_media`)이라 매체를
+# 선언하는 새 필드가 필요 없다. 신규 durable 필드는 상대키 하나뿐이다.
+#
+# **검토 지문(:func:`rules_values`)은 이 키를 쓰지 않는다** — 이식성을 여기서 멈추는 것은 누락이
+# 아니라 판정이다(PR #368 P2). 근거는 그 함수의 선언에 있다: 지문을 키로 바꾸면 홈·사람을 건너온
+# 작업이 한 번도 본 적 없는 템플릿에 대해 **구조 변경 병기까지 지운 채** 도착하고, 반대로 지금
+# 판정이 무는 대가는 병기 1비트뿐이다(템플릿은 승인 축이 아니라 게이트가 서지 않는다).
+
+
+def library_root_for(template_path: str) -> "Path | None":
+    """매체별 라이브러리 루트(hwpx=``templates``/txt=``text_templates``) — 확장자에서만 고른다.
+
+    I/O 없음. 미상 확장자·빈 경로는 ``None``(승격도 해석도 하지 않는다 — 모르는 것을 추측하지
+    않는다는 :func:`work_mode` 와 같은 fail-closed). 두 루트 모두 ``HWPXFILLER_HOME`` 을 존중하는
+    기본 해석기라 **홈을 옮기면 같은 키가 새 홈의 파일로 해석된다** — 이 함수가 이식성의 경첩이다.
+    """
+    media = template_media(template_path)
+    if media == "hwpx":
+        return default_templates_dir()
+    if media == "txt":
+        return default_text_templates_dir()
+    return None
+
+
+def _lexically_normal(path: "str | Path") -> Path:
+    """``.``·``..`` 성분을 걷은 경로 — **어휘** 정규화이고 I/O 도 심볼릭 링크 해석도 없다.
+
+    ``resolve()`` 를 쓰지 않는 근거가 셋이다(#368 2R):
+
+    1. **관례가 갈라진다.** 라이브러리 표면은 ``rglob`` 로 훑고 그 결과를 그대로 키로 쓴다
+       (:func:`~hwpxfiller.webapp.template_groups.rel_key`) — 링크를 해석하지 않는다. 작업 쪽만
+       해석하면 **같은 파일이 두 키로 갈라져** 그룹 지정과 작업 링크가 어긋난다. 이 함수를 공유하는
+       이유 자체가 그 갈라짐을 구조적으로 없애려는 것이라 여기서 되살릴 수 없다.
+    2. **durable 정체성이 디스크 상태에 좌우된다.** 키는 :meth:`Job.to_dict` 가 저장할 때마다 다시
+       뜬다. ``resolve()`` 는 파일이 있을 때와 없을 때(네트워크 드라이브 오프라인·일시 삭제) 다른
+       값을 내므로, **템플릿이 잠깐 안 보이는 사이의 저장이 키를 조용히 바꿔** 링크를 끊는다.
+    3. **대소문자·UNC 를 건드리지 않는다.** ``normcase`` 는 하지 않는다 — 그룹 키가 사용자 표기를
+       보존하는데 여기서만 접으면 다시 두 키가 된다(윈도우 ``relative_to`` 는 이미 대소문자
+       무시라 표기가 달라도 승격은 성립한다). UNC 루트(``\\\\srv\\share``)는 ``normpath`` 가
+       보존한다(실측) — 별도 처리가 필요 없고, 루트와 경로가 서로 다른 볼륨이면 ``relative_to``
+       가 실패해 정직하게 승격되지 않는다.
+
+    링크의 대가는 하나 남는다: 심볼릭 링크 디렉터리를 ``..`` 로 거슬러 오르는 경로는 어휘 정규화가
+    **다른 파일**을 이름한다. 그 경우는 :func:`library_rel_key` 가 왕복을 실측해 승격을 포기한다.
+    """
+    return Path(os.path.normpath(os.fspath(path)))
+
+
+def _key_names_the_same_file(resolved: Path, original: "str | Path") -> bool:
+    """정규화가 **같은 파일**을 이름하는지 실측 — 심볼릭 링크 경유 ``..`` 만 이 검사를 탄다.
+
+    ``realpath`` 는 존재하지 않는 경로에 대해선 순수 어휘 계산이라(실측) 미설치 템플릿에서도
+    결정적이다. 실패(OSError)는 ``False`` = 승격 포기 — 증명 못 하면 이식하지 않는다(fail-closed).
+    """
+    try:
+        return os.path.normcase(os.path.realpath(resolved)) == os.path.normcase(
+            os.path.realpath(original)
+        )
+    except OSError:
+        return False
+
+
+def library_rel_key(path: "str | Path", root: "Path | None") -> "str | None":
+    """루트 상대 POSIX 키 — **폴백 없이** 루트 밖·루트 미지정이면 ``None``(위 절 참조).
+
+    :func:`~hwpxfiller.webapp.template_groups.rel_key` 가 이 위에 파일명 폴백을 얹는다(그룹
+    지정은 오연결의 대가가 없다).
+
+    **쓰기는 읽기 방어에 걸릴 키를 만들지 않는다**(#368 2R): ``relative_to`` 는 ``.``·``..`` 를
+    **보존**하므로 ``…/templates/sub/../x.hwpx`` 가 ``sub/../x.hwpx`` 라는 키가 됐고, 그 키는
+    :func:`_reject_unsafe_key` 가 로드에서 loud 거절한다 — 앱이 **자기가 저장한 작업을 스스로
+    손상됨으로 읽는** 구조였다. 양쪽을 같은 함수로 정규화해 그 키가 애초에 생기지 않게 하고,
+    그래도 방어에 걸리는 값이 나오면(상대 루트 등 잔여 경로) 승격을 포기한다. 읽기 방어는
+    **그대로 둔다** — 외부에서 손댄 JSON 은 여전히 loud 여야 하고, 쓰기 정규화가 그 의무를
+    대신하지 않는다(두 방어는 서로 다른 위협을 본다).
+    """
+    if root is None:
+        return None
+    root_n, path_n = _lexically_normal(root), _lexically_normal(path)
+    try:
+        key = path_n.relative_to(root_n).as_posix()
+    except ValueError:
+        return None
+    try:
+        _reject_unsafe_key(key)
+    except ValueError:
+        return None  # 자기가 만든 키가 자기 방어에 걸리면 승격하지 않는다(절대경로 유지)
+    if path_n != Path(path) or root_n != Path(root):
+        # 정규화가 실제로 성분을 걷었다 — 걷힌 것이 심볼릭 링크 디렉터리였다면 키는 다른 파일을
+        # 이름한다. **해석이 지나갈 그 길 그대로**(root/key) 왕복을 실측해 아니면 포기한다.
+        if not _key_names_the_same_file(root_n / key, path):
+            return None
+    return key
+
+
+def library_key_for(template_path: str) -> str:
+    """템플릿 경로 → 라이브러리 루트 상대키. 루트 밖·미상 매체는 ``""``(승격 실패 = 절대경로 유지)."""
+    return library_rel_key(template_path, library_root_for(template_path)) or ""
+
+
+def _reject_unsafe_key(key: str) -> None:
+    """durable 키의 탈출 방어 — 드라이브·루트·``..`` 는 loud raise.
+
+    상대키는 루트에 이어 붙여 해석되므로 ``C:/x.hwpx``·``../../x.hwpx`` 같은 값이 들어오면
+    **루트 밖으로 조용히 새어나간다**(``root / 절대경로`` 는 절대경로를 그대로 돌려준다).
+    다른 durable 필드와 같은 규율으로 경계에서 막는다 — 격리는 :meth:`JobRegistry.list_jobs`
+    의 파일 단위 격리가 '손상됨' 행으로 표면화한다. ``PureWindowsPath`` 로 판정하는 이유는
+    두 구분자(``/``·``\\``)와 드라이브를 **모두** 인식하는 가장 엄격한 해석이기 때문이다.
+    """
+    p = PureWindowsPath(key)
+    if p.drive or p.root or ".." in p.parts:
+        raise ValueError(
+            f"작업 필드 'template_key' 는 라이브러리 루트 상대경로여야 하는데 {key!r} 입니다"
+        )
+
+
+def resolve_library_key(key: str) -> str:
+    """상대키 → **지금** 홈 기준 절대경로 문자열. 빈 키·미상 매체는 ``""``(호출측이 옛 경로 폴백).
+
+    해석은 순수 경로 계산이다 — 파일이 실제로 있는지는 보지 않는다(부재는 라이브러리의
+    「연결 안 됨」 표면이 이미 말한다). 디스크를 읽지도 쓰지도 않으므로 **읽기가 조용히
+    저장을 승격시키는 일이 없다**: 승격은 :meth:`Job.to_dict` 를 지나는 저장에서만 일어난다.
+    """
+    if not key:
+        return ""
+    _reject_unsafe_key(key)
+    root = library_root_for(key)
+    if root is None:
+        return ""
+    return str(root / key)
+
+
 # ------------------------------------------------------------------ 모델
 @dataclass
 class Job:
@@ -359,6 +509,19 @@ class Job:
         """
         return work_mode(self.template_path)
 
+    @property
+    def template_key(self) -> str:
+        """라이브러리 루트 상대키(``조달/공고서.hwpx``) — ``template_path`` 에서 **읽어낸다**(#348).
+
+        :attr:`media`·:attr:`work_mode` 와 같은 줄의 파생 속성이다. 인메모리 선언 필드를 두지
+        않는 이유는 이 파일이 매체에 대해 이미 말한 것과 같다: 선언 필드를 두면 선언과 실제가
+        갈라질 자리를 새로 만든다. 키는 durable **표현**이지 별도 상태가 아니라서, 저장
+        (:meth:`to_dict`)이 매번 현재 경로에서 다시 뜬다.
+
+        루트 밖 템플릿은 ``""`` — 폴백 없는 승격 실패이고, 그 작업의 링크는 절대경로로 남는다.
+        """
+        return library_key_for(self.template_path)
+
     def template_fields(self) -> "list[str]":
         """이 작업이 채우는 템플릿 필드(매핑이 방출하는 집합). 실행 사전검증의 요구필드."""
         return self.mapping.template_fields()
@@ -381,6 +544,10 @@ class Job:
             "version": self.version,
             "name": self.name,
             "template_path": self.template_path,
+            # 라이브러리 루트 상대키(#348) — **가산** 필드다: 절대경로도 그대로 함께 쓴다.
+            # 구 코드는 새 키를 무시하고 경로로 계속 열리고, 신 코드는 키를 우선해 홈이
+            # 옮겨져도 해석된다. 루트 밖 템플릿에선 ``""`` 라 경로만이 링크다(폴백 없음).
+            "template_key": self.template_key,
             "filename_pattern": self.filename_pattern,
             "mapping": self.mapping.to_dict(),
             "last_run_at": self.last_run_at,
@@ -445,9 +612,13 @@ class Job:
             if not isinstance(k, str) or not isinstance(v, str):
                 raise ValueError("'tags' 의 축·값은 모두 문자열이어야 합니다")
             tags[k] = v
+        # 템플릿 링크 해석(#348): 상대키가 있으면 **지금** 홈 기준으로 풀고, 없으면(구 JSON·
+        # 루트 밖 템플릿) 옛 절대경로를 그대로 쓴다. 마이그레이션은 없다 — 읽는 김에 디스크를
+        # 고치지 않고(조용한 변이 금지), 승격은 저장이 지나갈 때만 일어난다.
+        template_path = resolve_library_key(_str("template_key")) or _str("template_path")
         return cls(
             name=_str("name"),
-            template_path=_str("template_path"),
+            template_path=template_path,
             mapping=MappingProfile.from_dict(d.get("mapping", {})),
             filename_pattern=_str("filename_pattern", DEFAULT_FILENAME_PATTERN),
             version=d.get("version", 1),
@@ -554,8 +725,35 @@ def rules_values(job: "Job") -> "dict":
     :func:`rules_fingerprints` 가 이 위에서 지문을 조립한다 — 두 함수가 각자 매핑을 훑으면
     한쪽만 고쳐지는 날 "무엇이 바뀌었나"(지문)와 "무엇이었나"(직전 판본)가 서로 다른 규칙을
     말한다. 판본 보관이 지문이 아니라 이 값을 쓰는 근거는 §10.13 판정 H.
+
+    **템플릿 축은 상대키가 아니라 절대경로다 — 누락이 아니라 판정이다**(#348 · PR #368 P2).
+    #348 이 작업→템플릿 링크를 라이브러리 루트 상대키로 이식 가능하게 만든 뒤 "지문도 키로 바꿔
+    홈 이동 간 검토를 면제하라(또는 해석할 때 기준선을 새 경로로 재기입하라)"는 지적이 섰다.
+    **바꾸지 않는다**. 근거는 셋이고, 첫째는 지적이 든 결과가 실측되지 않는다는 것이다:
+
+    - **홈을 옮겨도 미리보기·검토가 강제되지 않는다.** 템플릿은 **승인 축이 아니다**(§10.12 판정 E
+      — :data:`~hwpxfiller.gui.review_state.EVIDENCE_POLICY` 서열에 없다). 지문이 갈리면
+      ``review_requirement`` 는 ``risk_class=""`` 로 ``required=False`` 를 내고 ``structure_changed``
+      **병기 1비트**만 붙는다. 실제 구조 게이트(:func:`~hwpxfiller.core.fill_ledger.template_path_drift`)
+      는 경로 문자열이 아니라 **템플릿 파일을 다시 읽어** 판정하므로, 같은 파일이 새 루트에 있는
+      이사에는 조용하다. 즉 이 판정의 비용은 "1회 검토 요구"조차 아니다.
+    - **키로 바꾸면 조용한 승인 통로가 열린다.** 기준선은 작업 JSON 에 실려 다니므로(#351 패키지
+      부트스트래핑이 정확히 그 동선이다) 남에게서 받은 작업이 **한 번도 본 적 없는 템플릿에 대해
+      구조 변경 병기까지 지운 채** 도착한다. :meth:`JobRegistry.stamp_last_run` 이 금지한 바로 그
+      방향이다("한 번도 실행·확인된 적 없는 새 규칙을 검토받은 것으로 기록" — 되돌릴 수 없다).
+    - **비용이 대칭이 아니다.** 지금 판정은 옮긴 사람에게 병기 1비트(과표시 = fail-safe), 키 판정은
+      **전원 기준선 1회 무효 + 이후 영구 면제**(과소표시 = fail-open)다. 무효화는 게다가 조용하다 —
+      어떤 표면도 "기준선 표기가 바뀌어 한 번 다시 확인합니다"라고 말해 줄 자리가 없다.
+
+    지적의 대안(해석 시 기준선 재기입)은 더 나쁘다: 읽기가 durable 을 고치는 **조용한 변이**(#348 이
+    명시로 거절한 것)인 데다, 그 재기입이 세우는 것은 어떤 실행도 벌지 않은 승인이다.
+
+    회귀는 ``tests/test_review_state.py`` 의 홈 이동 두 케이스가 진다 — 선언만 남기고 결과를 안 세우면
+    다음 사람이 같은 자리를 결함으로 다시 연다(이 저장소의 지배 결함류: 선언은 살고 결과는 죽는다).
     """
     return {
+        # 절대경로 유지는 위 선언의 실행부다(#348 · #368 P2) — :attr:`Job.template_key` 로
+        # 바꾸면 홈·사람을 건너온 사본이 구조 검토를 이미 통과한 채 도착한다. 바꾸지 않는다.
         "template": job.template_path,
         "filename": job.filename_pattern,
         "fields": {
