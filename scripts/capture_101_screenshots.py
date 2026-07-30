@@ -206,8 +206,15 @@ class Driver:
         if not ok:
             raise RuntimeError(f"스크롤 대상 못 찾음: {sel}")
 
-    def shot(self, name: str) -> None:
-        time.sleep(0.45)  # 렌더·모션(≤160ms)·스크롤 안정
+    def shot(self, name: str, settle: float = 0.45) -> None:
+        """캡처 1컷 — ``settle`` 은 셔터 앞 정착 시간(렌더·모션 ≤160ms·스크롤).
+
+        대기 조건은 **먼저 참이 되는 것 하나**만 본다(예: 복사 카운터). 같은 왕복이
+        낳는 다른 재렌더(왼쪽 표 전체)가 아직 합성 중이면 ``PrintWindow`` 가 반쪽
+        프레임을 뜬다 — 실제로 그렇게 찢긴 컷이 나왔다. 조건을 더 붙여도 「마지막
+        페인트가 끝났는가」는 DOM 에서 못 재므로, 재렌더가 큰 자리만 정착을 늘린다.
+        """
+        time.sleep(settle)
         self.shot_no += 1
         _capture_window(self.hwnd, OUT_DIR / f"{self.shot_no:02d}-{name}.png")
 
@@ -262,6 +269,10 @@ def _drive(d: Driver) -> None:
         "document.querySelector('#scr-editor').textContent.includes('공고번호')",
         "템플릿 선택·필드 스키마",
     )
+    # 텍스트가 **있다**는 것과 **보인다**는 것은 다르다: 스키마 표는 템플릿 목록 아래라
+    # 기본 스크롤에서 폴드 밖이고, 위 조건은 그 상태에서도 참이다(문서가 "6개 필드를
+    # 확인한다"고 적은 그림에 표가 없게 된다). 겨눠 스크롤해 그 말을 그림이 지게 한다.
+    d.scroll_to("#scr-editor table.schema-fields")
     d.shot("template-pick")
 
     # ---- S3 2단계: 데이터 연결 + 모두 확정 ---------------------------------
@@ -316,9 +327,7 @@ def _drive(d: Driver) -> None:
     d.wait("document.querySelector('#scr-job.on') !== null", "편집기 이탈")
 
     # ---- S5 실행 세션(「문서 작업」에서 골라 문서 만들기로) ------------------
-    # 좌 목록 사망 뒤 저장된 작업을 찾는 자리는 「문서 작업」 하나다(F2 PR-B). 3단계의
-    # "데이터 함께 등록" 기본값 덕에 이 작업은 기본 데이터를 가지므로, 「문서 만들기에서
-    # 사용」이 곧바로 열고 3건을 자동 연결한다(#53-A · 지도 §10.9 판정 I).
+    # 좌 목록 사망 뒤 저장된 작업을 찾는 자리는 「문서 작업」 하나다(F2 PR-B).
     d.js("window.Nav.go('library'); true;")
     d.wait(
         "!!document.querySelector('#libraryList [data-work=\"발주요청서\"]')",
@@ -328,13 +337,44 @@ def _drive(d: Driver) -> None:
     d.wait("!!document.querySelector('#libraryDetail [data-use]')", "상세 상시 행동")
     d.shot("library-detail")
     d.click_sel('#libraryDetail [data-use="발주요청서"]')
+    # 작업↔데이터 결속(`Job.default_dataset_ref`)과 자동 조준은 U2 §5.3 판정 D 로 폐기됐다
+    # (#347) — 「문서 만들기에서 사용」은 **데이터 선택을 반드시 지난다**. 데이터가 없으면
+    # 백엔드가 그 명시 사건을 보관만 하고(reason=no_data), 마운트 순간
+    # `_apply_preferred_work` 가 그때 판정해 작업을 연다. 101 도 이 순서를 그대로 가르친다.
+    d.wait("document.querySelector('#scr-job.on') !== null", "문서 만들기 착지")
+    _DIALOG_ANSWERS.append(CSV)
+    d.click_sel("#jobBtnPickData")
     d.wait(
-        "document.querySelector('#scr-job').textContent.includes('자동으로 연결')",
-        "기본 데이터 자동 연결",
+        "!document.getElementById('dataPickerModal').classList.contains('hidden')",
+        "데이터 선택 면",
+    )
+    d.click_sel("#dataPickerBrowse")
+    # 찾아보기 성사는 **면을 닫지 않는다**(U2 §2.7, #343): 「현재 데이터」가 방금 고른
+    # 파일로 재진술되고 그 자리에 「이 데이터 고정…」이 선다. 존재만 재면 hidden 버튼도
+    # 통과하므로(프로브 click 이 hidden 을 지나는 것과 같은 함정) **가시성**으로 잰다.
+    d.wait(
+        "(function(){"
+        "if(document.getElementById('dataPickerModal').classList.contains('hidden'))return false;"
+        "if(!document.querySelector('#dataPickerCurrent .tplcard-name'))return false;"
+        "const b=document.getElementById('dataPickerPin');"
+        "return !!b && getComputedStyle(b).display !== 'none';})()",
+        "찾아보기 성사·면 유지·고정 버튼 가시",
+        timeout=25.0,
+    )
+    d.click_sel("#dataPickerClose")
+    # 보관된 명시 사건이 이 마운트에서 판정돼 작업이 열린다. 「열렸다」의 정본은 액션바
+    # 이름이다(「선택한 작업」 존 사망의 승계처 — U2 §4 판정 A, #342): 후보 카드 문안으로
+    # 재면 카드 목록에 이름이 **있기만 해도** 참이 돼 안 열린 화면을 통과로 읽는다.
+    d.wait(
+        "document.getElementById('dataPickerModal').classList.contains('hidden')"
+        " && document.getElementById('jobActionName').textContent.trim() === '발주요청서'"
+        " && document.getElementById('jobDataLabel').value.length > 0"
+        " && !document.getElementById('jobSelAll').disabled",
+        "데이터 마운트·보관 작업 승격",
         timeout=25.0,
     )
     # 데이터-우선 계약(§18.2): 새 데이터의 선택은 **0건**에서 시작한다 — 무엇을 만들지는
-    # 사용자가 고른다. 그래서 자동 연결만으로는 게이트가 열리지 않고, 여기서 전체 선택을
+    # 사용자가 고른다. 그래서 마운트만으로는 게이트가 열리지 않고, 여기서 전체 선택을
     # 눌러야 「N개 생성」이 열린다. 101 도 이 순서를 그대로 가르친다.
     d.click_sel("#jobSelAll")
 
@@ -342,9 +382,13 @@ def _drive(d: Driver) -> None:
     # 방금 만든 작업은 아직 한 번도 문서를 만들지 않았다 — §13-3 대로 결과를 확인해야
     # 실행할 수 있다. 행을 골라도 게이트는 아직 닫혀 있고, 미리보기에서 확인해야 열린다.
     # 101 은 이 순서를 그대로 가르친다(다음 실행부터는 §13-2 대로 조용하다).
+    # 게이트가 「생성 값 미리보기」를 지목하는데 그 버튼이 잠겨 있으면 이행 불가능한
+    # 지시다 — 지목과 가용성을 **같이** 재고 나서 누른다(누를 것을 찾지 못하는 상태에서
+    # click 만 던지면 「버튼 못 찾음」이 아니라 조용한 무반응이 된다).
     d.wait(
         "document.getElementById('jobGenBtn').disabled"
-        " && document.getElementById('jobGate').textContent.includes('미리보기')",
+        " && document.getElementById('jobGate').textContent.includes('생성 값 미리보기')"
+        " && !document.getElementById('jobPreviewOpen').disabled",
         "첫 실행 검토 요구",
     )
     d.click_sel("#jobPreviewOpen")
@@ -352,9 +396,11 @@ def _drive(d: Driver) -> None:
         "!document.getElementById('previewSheet').classList.contains('hidden')"
         " && document.querySelectorAll('#previewRows .mir-row').length > 0"
         " && document.getElementById('previewFilename').textContent.length > 0",
-        "미리보기 드로어·값·파일 이름",
+        "확인 면(생성 값 미리보기)·값·파일 이름",
     )
-    d.shot("preview-drawer")
+    # 시트 전이(합성 레이어 신설 + 본문 채우기)도 같은 반쪽 프레임 함정이 있다 —
+    # 모달 컷이 간헐적으로 찢겼던 자리라 정착을 넉넉히 준다.
+    d.shot("preview-drawer", settle=1.2)
     d.click_sel("#previewApprove")
     # 승인은 명시 사건이다 — 버튼이 사라지는 것이 그 사건의 착지다(면은 열린 채 남아
     # 나머지 문서를 계속 넘겨볼 수 있다).
@@ -414,8 +460,17 @@ def _drive(d: Driver) -> None:
         "취소 뒤 메인 범위 보존",
     )
 
-    # ---- S6 본문 확인(거울) ------------------------------------------------
-    d.scroll_to("#jobMirror")
+    # ---- S6 본문 확인(한 줄) ------------------------------------------------
+    # 거울 표와 필드축 ack 는 U2 §2.13 으로 폐기됐다(#346) — 값을 말하는 표면은 확인 면
+    # 하나이고, 이 존에 남은 것은 빈 값 표지·이름 건수·확인 면 출구 한 줄이다. 그 줄이
+    # **서 있는 것을 확인한 뒤** 찍는다: 존만 겨눠 찍으면 한 줄이 hidden 인 화면(선택 0건·
+    # 차단 배너)도 같은 컷으로 지나간다.
+    d.wait(
+        "!document.getElementById('jobMirrorLine').hidden"
+        " && document.getElementById('jobMirrorSummary').textContent.trim().length > 0",
+        "본문 확인 한 줄",
+    )
+    d.scroll_to("#jobMirrorZone")
     d.shot("mirror-check")
 
     # ---- S7 생성 → 완료 요약 ----------------------------------------------
@@ -463,10 +518,8 @@ def _drive(d: Driver) -> None:
     )
     assert d.js("window.__cap.setValue('#editorName', '발주요청 기안')")
     d.click("#scr-editor", "작업 저장")
-    # 트랙 A 가 같은 CSV 를 이미 「발주목록」으로 등록했다 — 같은 이름 재등록 확인이 선다
-    # (조용한 참조 덮어쓰기 금지). 같은 파일·같은 뜻이라 실습도 [덮어쓰기]로 지난다.
-    d.wait("!!window.__cap.btn(null,'덮어쓰기')", "등록 데이터 동명 확인")
-    d.js("window.__cap.clickBtn(null,'덮어쓰기'); true;")
+    # (구 「등록 데이터 동명 확인 → [덮어쓰기]」 왕복은 #347 로 사라졌다 — 저장은 데이터를
+    #  등록하지도 결속하지도 않는다. 풀 등록은 데이터 선택 면의 「이 데이터 고정」뿐이다.)
     d.wait(
         "document.querySelector('#scr-editor').textContent.includes('저장했습니다')",
         "TXT 작업 저장 착지",
@@ -485,9 +538,13 @@ def _drive(d: Driver) -> None:
     d.click_sel('#libraryList [data-work="발주요청 기안"]')
     d.wait("!!document.querySelector('#libraryDetail [data-use=\"발주요청 기안\"]')", "TXT 상세")
     d.click_sel('#libraryDetail [data-use="발주요청 기안"]')
+    # 이번엔 데이터 선택을 다시 지나지 않는다 — 앞 단계에서 마운트한 발주목록이 **세션
+    # 소유**라 작업 전환에서 생존한다(데이터-우선 §18.2). 그래서 prefer_work 가 즉시
+    # 승격시키고, 그 사실을 액션바 이름이 말한다.
     d.wait(
-        "document.querySelector('#scr-job').textContent.includes('자동으로 연결')",
-        "TXT 기본 데이터 자동 연결",
+        "document.getElementById('jobActionName').textContent.trim() === '발주요청 기안'"
+        " && !document.getElementById('jobSelAll').disabled",
+        "TXT 작업 전환",
         timeout=25.0,
     )
     d.click_sel("#jobSelAll")
@@ -515,7 +572,9 @@ def _drive(d: Driver) -> None:
         ".trim().indexOf('1 /') === 0",
         "복사 카운터",
     )
-    d.shot("workbench-copied")
+    # 복사 왕복은 카운터·완료 배지·왼쪽 표를 함께 다시 그린다 — 카운터만 재고 곧바로
+    # 셔터를 누르면 표가 합성 중인 반쪽 프레임이 남는다(관측됨).
+    d.shot("workbench-copied", settle=1.2)
     # 미복사 잔량이 있는 이탈은 가드가 확인을 요구한다(T3 승계) — 실 클릭으로 지난다.
     d.click_sel("#wbBack")
     d.wait(
@@ -557,8 +616,6 @@ def _drive(d: Driver) -> None:
     )
     assert d.js("window.__cap.setValue('#editorName', '오류연습')")
     d.click("#scr-editor", "작업 저장")
-    d.wait("!!window.__cap.btn(null,'덮어쓰기')", "등록 데이터 동명 확인(오류 연습)")
-    d.js("window.__cap.clickBtn(null,'덮어쓰기'); true;")
     d.wait(
         "document.querySelector('#scr-editor').textContent.includes('저장했습니다')",
         "오류 연습 저장 착지",
@@ -574,10 +631,10 @@ def _drive(d: Driver) -> None:
     d.click_sel('#libraryList [data-work="오류연습"]')
     d.wait("!!document.querySelector('#libraryDetail [data-use=\"오류연습\"]')", "오류 연습 상세")
     d.click_sel('#libraryDetail [data-use="오류연습"]')
-    # 이번엔 「자동으로 연결」 고지가 없다 — 같은 데이터(발주목록)가 앞 단계에서 이미
-    # 마운트돼 있어 prefer_work 가 데이터 재연결 없이 작업만 바꾼다. 전환 사실로 기다린다.
+    # 여기도 데이터는 그대로다(세션 소유) — 작업만 바뀐다. 화면 전체 텍스트로 재면 후보
+    # 카드에 이름이 **떠 있기만 해도** 참이 되므로 액션바 이름으로 겨눈다.
     d.wait(
-        "document.querySelector('#scr-job').textContent.includes('오류연습')"
+        "document.getElementById('jobActionName').textContent.trim() === '오류연습'"
         " && !document.getElementById('jobSelAll').disabled",
         "오류 연습 작업 전환",
         timeout=25.0,
