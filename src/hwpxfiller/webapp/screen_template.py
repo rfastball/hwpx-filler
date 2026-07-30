@@ -362,10 +362,17 @@ class TemplateController:
         self._deleted_template_slot = (media, path, trashed, group)
         if media == "hwpx":
             self.vm.refresh()
-        # 삭제 확인은 **UndoToast 하나**다(U2 §2.12 자리 3, #345 — PR #353 리뷰): 결과줄에도
+        # 삭제 확인은 **UndoToast 하나**다(U2 §2.12 자리 3, #345 — PR #353 1R): 결과줄에도
         # 실으면 같은 말을 두 번 하고, 되돌리기 어포던스를 든 토스트가 이긴다. 문안 자체도
         # 「휴지통」이라 말하지 않는다 — .trash 30일 보존은 실재하지만 도달 표면이 아직 없다
         # (별건 #350). 보존 기제(위 컷오프 정리·이동)는 삭제가 상속하는 의무라 지우지 않는다.
+        #
+        # 다만 **말하지 않는 것과 남의 말을 남기는 것은 다르다**(2R): 직전 행동(TXT 생성·편집·
+        # 검토·가져오기)이 채워 둔 결과줄을 안 건드리면 dispatch 의 push 가 그 문장을 다시
+        # 실어, 지운 직후 화면에 삭제와 무관한 문장이 삭제의 결과인 것처럼 선다. 그래서
+        # 이 자리는 비운다(_do_refresh 와 같은 초기화 — 삭제 경로에만 적용).
+        self.result_text = ""
+        self.result_level = "muted"
         return {"ok": True, "undo": True, "name": path.stem}
 
     def _do_undo_delete(self, p: dict) -> dict:
