@@ -362,10 +362,10 @@ class TemplateController:
         self._deleted_template_slot = (media, path, trashed, group)
         if media == "hwpx":
             self.vm.refresh()
-        # 문안은 「삭제」다(U2 §2.12, #345) — .trash 30일 보존은 실재하지만 도달 표면(열어본다·
-        # 골라 복원한다·비운다)이 아직 없다(별건 #350). 보존 기제 자체는 지우지 않는다: 위
-        # 컷오프 정리·이동이 삭제가 상속하는 의무다(편집기 토스트와 같은 말 — 두 벌 금지).
-        self._set_result(_ok(f"템플릿 '{path.stem}' 을(를) 삭제했습니다."))
+        # 삭제 확인은 **UndoToast 하나**다(U2 §2.12 자리 3, #345 — PR #353 리뷰): 결과줄에도
+        # 실으면 같은 말을 두 번 하고, 되돌리기 어포던스를 든 토스트가 이긴다. 문안 자체도
+        # 「휴지통」이라 말하지 않는다 — .trash 30일 보존은 실재하지만 도달 표면이 아직 없다
+        # (별건 #350). 보존 기제(위 컷오프 정리·이동)는 삭제가 상속하는 의무라 지우지 않는다.
         return {"ok": True, "undo": True, "name": path.stem}
 
     def _do_undo_delete(self, p: dict) -> dict:

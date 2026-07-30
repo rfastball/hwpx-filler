@@ -284,15 +284,17 @@ def test_delete_hwpx_soft_delete_and_undo(tmp_path, monkeypatch):
     assert (tp / "lib" / "raw.hwpx").exists()
 
 
-def test_delete_copy_says_deleted_while_trash_retention_survives_without_surface(
+def test_delete_speaks_once_via_toast_while_trash_retention_survives_without_surface(
     tmp_path, monkeypatch
 ):
-    """U2 §2.12(#345) — 문안은 「삭제」, 기제는 30일 보존 그대로: 어휘와 의무의 분리.
+    """U2 §2.12(#345) — 확인은 UndoToast **하나**, 기제는 30일 보존 그대로.
 
-    「휴지통」은 도달 표면(열어본다·골라 복원한다·비운다)이 하나도 없어 사용자 문안에서
-    내렸다(표면은 별건 #350). 그 조치가 백엔드 보존을 함께 지우지 않았는지 세 값으로
-    묶어 잰다: ①결과 줄이 「삭제했습니다」를 말하고 「휴지통」을 말하지 않는다 ②파일은
-    ``.trash`` 에 실재한다(복원 재료) ③30일 컷오프 정리가 여전히 돈다."""
+    자리 3(결과줄)은 문안 교체가 아니라 **제거**다(PR #353 리뷰 — 토스트와 같은 말을 두 번
+    하고, 되돌리기 어포던스를 든 토스트가 이긴다). 「휴지통」은 도달 표면(열어본다·골라
+    복원한다·비운다)이 하나도 없어 사용자 문안에서 내렸다(표면은 별건 #350). 그 조치가
+    백엔드 보존을 함께 지우지 않았는지 세 값으로 묶어 잰다: ①삭제는 결과줄을 만지지
+    않는다(토스트 단독) ②파일은 ``.trash`` 에 실재한다(복원 재료) ③30일 컷오프 정리가
+    여전히 돈다."""
     import os
     import time as time_mod
 
@@ -306,10 +308,9 @@ def test_delete_copy_says_deleted_while_trash_retention_survives_without_surface
     old = time_mod.time() - 31 * 24 * 60 * 60
     os.utime(stale, (old, old))
 
-    ctrl.dispatch("delete", {"media": "txt", "path": str(tp / "txt" / "온나라_기안.txt")})
-    result = ctrl.snapshot()["result"]
-    assert "삭제했습니다" in result["text"] and "온나라_기안" in result["text"]
-    assert "휴지통" not in result["text"]                 # 도달 불가 장소를 약속하지 않는다
+    res = ctrl.dispatch("delete", {"media": "txt", "path": str(tp / "txt" / "온나라_기안.txt")})
+    assert res["undo"] is True                            # 확인·복구 경로 = 토스트 하나
+    assert ctrl.snapshot()["result"]["text"] == ""        # 결과줄 무사용(같은 말 두 번 금지)
     _media, _path, trashed, _group = ctrl._deleted_template_slot
     assert trashed.exists() and trashed.parent == trash   # 보존은 실재(의무 상속)
     assert not stale.exists()                             # 30일 컷오프 정리 생존
