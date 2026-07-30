@@ -1620,15 +1620,28 @@ _JOB_EDITMODE_PROBE_JS = r"""
     // 편집의 주 행동(「변경 저장」)은 어느 탭에서도 상시 있다(§10.13 판정 E) — 구판은 저장
     // 분류에만 푸터가 있어 다른 탭에선 저장 자체가 도달 불가였다.
     out.foot_shown_edit = getComputedStyle(document.getElementById('editor-foot')).display !== 'none';
+    // 「변경 버리기」는 상시 표시 + 상태 비활성(U2 §2.17) — 존재 단언은 상시 표시가 되는
+    // 순간 무엇을 밀어 넣어도 참이라 조용히 죽는다. 비활성 판정으로 승격해 clean/dirty
+    // **두 값**을 각각 재고, 저장이 같은 술어를 쓰는지도 함께 본다(음성·양성 대조).
+    var discardOf = function () {
+      return document.querySelector('#editor-foot [data-act="discard-patch"]');
+    };
+    var saveOf = function () {
+      return document.querySelector('#editor-foot [data-act="save"]');
+    };
+    out.discard_shown_clean = !!discardOf();
+    out.discard_disabled_clean = !!(discardOf() && discardOf().disabled);
+    out.save_disabled_clean = !!(saveOf() && saveOf().disabled);
     out.edit_dirty_tab_marked = (function () {
       draft.dirty_sections = ['binding'];
       draft.dirty = true;                     // 세션 수준 판정은 Python 이 낸 값 하나(3R)
       window.__push('editor', draft);
-      // 손댄 상태에서는 머리가 「저장하지 않은 변경」을 말하고 제자리 되돌리기가 뜬다 —
+      // 손댄 상태에서는 머리가 「저장하지 않은 변경」을 말하고 제자리 되돌리기가 활성이다 —
       // 「저장됨」이라 말하면서 버릴 길도 없던 자리(3R P2).
       out.dirty_head = document.getElementById('editorSaveState').textContent;
-      out.dirty_discard_shown =
-        !!document.querySelector('#editor-foot [data-act="discard-patch"]');
+      out.discard_shown_dirty = !!discardOf();
+      out.discard_enabled_dirty = !!(discardOf() && !discardOf().disabled);
+      out.save_enabled_dirty = !!(saveOf() && !saveOf().disabled);
       return document.querySelectorAll('#editor-steps button.wstep-tab.dirty').length;
     })();
     // 머리 — 이름(안정 입력)·저장 상태·판본(§10.13 판정 O 표시 자리 ①).

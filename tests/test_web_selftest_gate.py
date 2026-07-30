@@ -819,8 +819,22 @@ class TestWebSelftestGate:
         assert "저장하지 않은 변경" in j["dirty_head"], (
             f"손댄 세션의 머리가 저장됐다고 말합니다: {j['dirty_head']!r}"
         )
-        assert j["dirty_discard_shown"] is True, (
-            "손댄 세션에 「변경 버리기」가 없습니다 — 나가지 않고는 되돌릴 길이 없습니다."
+        # U2 §2.17 — 버리기는 상시 표시 + 상태 비활성. 존재 단언(dirty_discard_shown)은 상시
+        # 표시 승격의 순간 무엇을 밀어 넣어도 참이 되므로, clean/dirty 두 값으로 비활성을
+        # 각각 재고 저장이 같은 술어를 쓰는지도 본다(양성·음성 대조 — declaration-lives 류 차단).
+        assert j["discard_shown_clean"] is True and j["discard_disabled_clean"] is True, (
+            "클린 세션에서 「변경 버리기」가 숨거나 활성입니다 — 상시 표시 + 비활성이어야"
+            f" 합니다(§2.17): {j!r}"
+        )
+        assert j["save_disabled_clean"] is True, (
+            "클린 세션에서 「변경 저장」이 활성입니다 — 버리기와 같은 술어여야 합니다."
+        )
+        assert j["discard_shown_dirty"] is True and j["discard_enabled_dirty"] is True, (
+            "손댄 세션에 「변경 버리기」가 없거나 비활성입니다 — 나가지 않고는 되돌릴 길이"
+            " 없습니다."
+        )
+        assert j["save_enabled_dirty"] is True, (
+            "손댄 세션에서 「변경 저장」이 비활성입니다 — 버리기와 같은 술어여야 합니다."
         )
         # 머리 — 이름은 안정 입력이고 저장 상태가 **판본을 말한다**(§10.13 판정 O 표시 자리 ①).
         assert j["name_input_value"] == "공고서", f"이름 입력이 값을 받지 않습니다: {j!r}"

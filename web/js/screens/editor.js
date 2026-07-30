@@ -930,16 +930,16 @@
     if (isEditing(s)) {
       // 편집의 주 행동은 **하나**다(§10.13 판정 E): 「변경 저장」. 「이번 생성에 적용」은
       // runOverrides 가 서는 PR-B 자리라 여기 라디오를 미리 늘어놓지 않는다(§6: 같은
-      // 선택지를 모든 문맥에 나열하지 않는다). 손댄 것이 없으면 버릴 것도 없다.
-      const discard = s.dirty
-        ? `<button class="btn" data-act="discard-patch">변경 버리기</button>` : "";
-      // 저장은 **바꾼 것이 있을 때만** 선다(U2 §2.4). 원문의 요지는 두 모드를 이름이
-      // 아니라 **상태로** 구별하자는 것이고, 판정은 이미 `s.dirty` 로 와 있었는데 표면이
-      // 안 썼다. 신규 마법사에는 걸지 않는다 — 거긴 항상 dirty 라 늘 활성이고, 마지막
+      // 선택지를 모든 문맥에 나열하지 않는다).
+      // 저장·버리기는 **같은 합성 술어**로 상시 표시 + 상태 비활성이다(U2 §2.4·§2.17):
+      // 두 모드를 이름이 아니라 상태로 구별하고, 존재가 깜빡이는 대신 가능성이 꺼진다 —
+      // 조건부 렌더는 「버릴 길이 있는가」라는 어휘 자체를 clean 상태에서 숨겨 두 규칙을
+      // 만들었다. 신규 마법사에는 걸지 않는다 — 거긴 항상 dirty 라 늘 활성이고, 마지막
       // 단계의 「작업 저장」은 완료 행동이지 변경 저장이 아니다.
-      return `${discard}<span class="spacer"></span>` +
-        `<button class="btn primary" data-act="save"` +
-        `${(s.dirty || pendingFieldEdit) ? "" : " disabled"}>변경 저장</button>`;
+      const armed = !!(s.dirty || pendingFieldEdit);
+      return `<button class="btn" data-act="discard-patch"${armed ? "" : " disabled"}>변경 버리기</button>` +
+        `<span class="spacer"></span>` +
+        `<button class="btn primary" data-act="save"${armed ? "" : " disabled"}>변경 저장</button>`;
     }
     const back = here > 0
       ? `<button class="btn" data-act="back">◀ 뒤로</button>` : `<button class="btn" disabled>◀ 뒤로</button>`;

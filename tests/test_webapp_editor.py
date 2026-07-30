@@ -1366,6 +1366,30 @@ def test_save_lands_in_edit_session_of_saved_job(tmp_path):
     assert ctrl.has_unsaved_work() is False              # 클린 착지 — 직후 전환 헛확인 금지
 
 
+def test_new_hwpx_save_from_filename_tab_lands_in_place(tmp_path):
+    """U2 §2.14 — 실 UI 순서(filename 까지 전진 후 저장)의 신규 hwpx 저장은 **제자리** 착지.
+
+    구판은 신규 세션을 binding 으로 내려 3→2 로 뒤로 갔다(`_save_named` 는 binding 에서
+    저장해 이 자리를 안 밟았다 — 조치 전후로 초록인 헬퍼 경로는 위 테스트가 계속 진다).
+    착지는 여전히 저장본 편집 세션이다(원점·클린·notice(ok))."""
+    ctrl, _ = _controller26(tmp_path)
+    ctrl.load_template_path(str(TPL_COMPILED))
+    ctrl.dispatch("skip_data", {})
+    ctrl.dispatch("set_type", {"index": 0, "type": "const"})
+    ctrl.dispatch("set_const", {"index": 0, "const": "v"})
+    r = ctrl.dispatch("confirm_all", {})
+    ctrl.dispatch("confirm_blanks", {"fields": r["blanks"]})
+    ctrl.dispatch("goto_section", {"section": "filename"})   # 실 UI: 3단계까지 전진
+    ctrl.dispatch("set_name", {"name": "전진저장작업"})
+    ctrl.dispatch("set_pattern", {"pattern": "p-{{ID}}"})
+    assert ctrl.dispatch("save", {})["ok"] is True
+    snap = ctrl.snapshot()
+    assert snap["section"] == "filename"                     # 제자리 — 뒤로 가지 않는다
+    assert snap["editing_origin"] == "전진저장작업"          # 저장본 편집 세션 착지는 그대로
+    assert snap["notice"] and snap["notice"]["level"] == "ok"
+    assert ctrl.has_unsaved_work() is False
+
+
 def test_edit_save_preserves_current_tab(tmp_path):
     """편집 저장은 현재 탭을 유지하고 최종 상태만 한 번 렌더한다."""
     ctrl, pushes = _controller26(tmp_path)
@@ -2313,6 +2337,8 @@ def test_txt_draft_saves_without_pattern_gate_and_reopens_with_two_tabs(tmp_path
     ctrl.dispatch("confirm_blanks", {"fields": blanks})
     ctrl.dispatch("set_name", {"name": "TXT기안작업"})
     assert ctrl.dispatch("save", {})["ok"] is True
+    # 착지 = 제자리(U2 §2.14) — txt 는 binding 이 마지막 탭이라 저장 자리가 곧 착지다.
+    assert ctrl.snapshot()["section"] == "binding"
 
     saved = JobRegistry(tmp_path / "jobs").load("TXT기안작업")
     assert template_media(saved.template_path) == "txt"
