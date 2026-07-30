@@ -43,6 +43,7 @@ from .template_groups import TemplateGroupModel
 from .screens import (
     collect_owned_paths,
     default_pool_registry,
+    source_label,
     validate_owned_path,
 )
 
@@ -302,6 +303,21 @@ class WebFrontend:
             return tpl.import_folder(folder, files)
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return {"ok": False, "error": str(exc)}
+    def _mount_descriptor(self, screen: str, path: str, sheet: str = "") -> dict:
+        """마운트 성사 descriptor(U2 §2.7 3행) — ``label·path·sheet·rows``.
+
+        마운트한 **그 호출이 결과를 말한다**: 종전엔 파일명 문자열만 돌려줘 「이 데이터
+        고정」이 서는 데 필요한 path 를 웹이 다음 pool/job 푸시 도착에서 주워야 했다 —
+        발신 순서에 기대는 배선([[bridge-call-ordering-contract]] 결함류). label 은
+        :func:`~hwpxfiller.webapp.screens.source_label` 합성 그대로(링2 재조립 금지).
+        """
+        controller = self._controller(screen)
+        return {
+            "label": source_label("file", Path(path).name),
+            "path": path,
+            "sheet": sheet,
+            "rows": len(getattr(controller, "records", []) or []),
+        }
 
     def pick_data_file(self, screen: str) -> "str | dict | None":
         """Win32 파일 다이얼로그 → 링1 VM 로드. 실패는 ``ERROR:`` 접두로 시끄럽게 반환.
@@ -309,6 +325,10 @@ class WebFrontend:
         다중 시트 워크북이면 **조용히 첫 시트를 쓰지 않는다**(#33) — 로드를 미루고 시트
         목록을 실은 ``{"needs_sheet": True, ...}`` 를 돌려줘 웹이 시트를 확정받게 한다.
         확정된 시트로의 실제 로드는 :meth:`load_data_sheet` 가 담당한다.
+
+        성사 반환은 **descriptor**(``label·path·sheet·rows``, U2 §2.7 3행)다 — 데이터
+        선택 면이 닫히지 않고 「현재 데이터」를 재진술하려면 이 호출의 결과만으로 고정
+        버튼(`origin==="file" && path`)이 서야 한다.
         """
         log(f"pick_data_file: enter screen={screen}")
         filters = _EXCEL_OR_ANY_FILTERS
@@ -331,15 +351,16 @@ class WebFrontend:
             self._controller(screen).load_data_path(path)
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
-        return Path(path).name
+        return self._mount_descriptor(screen, path)
 
-    def load_data_sheet(self, screen: str, path: str, sheet: str) -> "str | None":
+    def load_data_sheet(self, screen: str, path: str, sheet: str) -> "str | dict | None":
         """웹에서 확정한 시트로 데이터 로드(#33) — 다중 시트 확정 게이트의 착지 지점.
 
         ``sheet`` 는 반드시 해당 워크북의 **실제 시트명**이어야 한다 — 모르는 이름을 조용히
         첫 시트로 강등하지 않고 시끄럽게 거절한다(confirm-or-alarm). 실패는 ``ERROR:`` 접두.
         시트 재조회(sheet_overview)도 로드와 같은 예외 변환 경계 안에 둔다 — 모달을 연 뒤
         파일이 사라지거나 잠기면 그 실패도 웹에 시끄럽게 되돌린다(P2).
+        성사 반환은 :meth:`pick_data_file` 과 같은 descriptor(U2 §2.7 3행)다.
         """
         try:
             names = [n for n, _r, _c in sheet_overview(path)]
@@ -348,7 +369,7 @@ class WebFrontend:
             self._controller(screen).load_data_path(path, sheet=sheet)
         except Exception as exc:  # noqa: BLE001  (사용자에 시끄럽게 반환)
             return f"ERROR: {exc}"
-        return Path(path).name
+        return self._mount_descriptor(screen, path, sheet)
 
     def copy_clipboard(self, screen: str, token: "str | None" = None) -> dict:
         """작업점 카드 렌더를 OS 클립보드로 — 거래는 **컨트롤러가 원자로 소유**한다(5R P1).
@@ -1977,15 +1998,23 @@ _EDITOR_CHIP_PROBE_JS = r"""
 # 고정된 참조라 숨는다) ②보관 항목이 목록에 남아 `활성화` 에 도달 가능한가(§10.7.2 C — 활성만
 # 실으면 그 동사가 사라진다) ③손상 격리가 목록 아래 상주 재진술되는가(RC-05).
 # 합성 pool 스냅샷을 실 __push 로 밀어 렌더 경로를 그대로 통과시킨다.
-_DATA_PICKER_PROBE_JS = r"""
+# 데이터 선택 다이얼로그 — pool 화면 승계(§10.7.4) + 단일 경로화(U2 §2.7). 찾아보기 마운트가
+# 비동기(브리지 스텁 await)라 setup+stash 형식이다. §2.7 의 실렌더 완료 기준: 찾아보기 성사
+# 뒤 면이 열려 있고 「이 데이터 고정」이 **가시**여야 한다 — 프로브 click 은 hidden 요소도
+# 통과하므로(F8 교훈) 존재가 아니라 계산 스타일·offsetParent 로 가시성까지 단언한다.
+_DATA_PICKER_PROBE_SETUP_JS = r"""
 (function () {
+  window.__dataPicker = { pending: true };
   var out = {};
+  (async function () {
   try {
     window.Nav.go('job');
     DataPicker.open({screen:'job', current:{
       label:'파일: 대장.xlsx', detail:'3건', path:'C:/d/대장.xlsx', sheet:'물품', origin:'file'}});
     out.opened = !document.getElementById('dataPickerModal').classList.contains('hidden');
     out.pin_offered = !!document.getElementById('dataPickerPin');
+    // 「＋ 직접 등록…」 사망(U2 §2.7 4행) — DOM 자체가 없어야 한다.
+    out.register_gone = !document.getElementById('dataPickerRegister');
     function row(name, status, badge, level, actions) {
       return {name:name, kind:'excel', kind_label:'엑셀/CSV', status:status,
         badge_label:badge, badge_level:level, reference:'C:/d/' + name + '.xlsx (물품)',
@@ -2012,11 +2041,42 @@ _DATA_PICKER_PROBE_JS = r"""
     out.pin_ok = document.getElementById('poolRegOk').textContent;
     out.pin_path = document.getElementById('poolRegPath').value;
     out.pin_sheet = document.getElementById('poolRegSheet').value;
+    // pin 모드 참조 잠금(U2 §2.7 5행) — path·sheet 읽기전용 + 폼 안 찾아보기 감춤.
+    out.pin_path_readonly = document.getElementById('poolRegPath').readOnly;
+    out.pin_sheet_readonly = document.getElementById('poolRegSheet').readOnly;
+    out.pin_browse_hidden =
+      getComputedStyle(document.getElementById('poolRegBrowse')).display === 'none';
     Modal.close('poolRegModal');
+    // 찾아보기 성사 = 면 유지(U2 §2.7 1행) — 브리지를 descriptor 스텁으로 갈아 실클릭한다.
+    var origPick = window.Bridge.pickDataFile;
+    window.Bridge.pickDataFile = function () {
+      return Promise.resolve({label:'파일: 새목록.xlsx', path:'C:/d/새목록.xlsx', sheet:'', rows:5});
+    };
+    try {
+      document.getElementById('dataPickerBrowse').click();
+      // browseFile 은 async — 상태줄 재진술이 설 때까지 짧게 폴링(마이크로태스크 흘리기).
+      for (var i = 0; i < 50; i++) {
+        await new Promise(function (r) { setTimeout(r, 10); });
+        var note = document.getElementById('dataPickerNote').textContent;
+        if (note.indexOf('새목록.xlsx') >= 0) break;
+      }
+    } finally {
+      window.Bridge.pickDataFile = origPick;
+    }
+    out.browse_kept_open =
+      !document.getElementById('dataPickerModal').classList.contains('hidden');
+    out.browse_restated =
+      document.getElementById('dataPickerCurrent').textContent.indexOf('새목록.xlsx') >= 0;
+    var pin2 = document.getElementById('dataPickerPin');
+    // 가시성까지 단언한다 — click 은 hidden 을 통과하므로 존재만으론 눈과 다른 결론이 난다.
+    out.browse_pin_visible = !!pin2 && getComputedStyle(pin2).display !== 'none'
+      && pin2.offsetParent !== null;
     Modal.close('dataPickerModal');
     out.error = null;
   } catch (e) { out.error = String((e && e.message) || e); }
-  return out;
+  out.pending = false;
+  window.__dataPicker = out;
+  })();
 })()
 """
 
@@ -3439,9 +3499,14 @@ def _selftest_drive(window: "object") -> None:
         # 걷혔다 — 공용 팩토리 datazone.js 는 「문서 만들기」 프로브가, 몰입 셸·카드·린트는
         # workbench 프로브가, 커스텀 모달 표적은 txtEditModal 이 잇는다.)
         result["job_editmode"] = window.evaluate_js(_JOB_EDITMODE_PROBE_JS)  # type: ignore[attr-defined]
-        # 데이터 선택 다이얼로그(재작성 F1) — pool 화면 사망의 승계처 실렌더 되읽기. 「작업」이
-        # 활성인 지점에 둔다(다이얼로그가 Nav 를 옮기므로 화면 폭 측정 프로브 앞이면 안 된다).
-        result["data_picker"] = window.evaluate_js(_DATA_PICKER_PROBE_JS)  # type: ignore[attr-defined]
+        # 데이터 선택 다이얼로그(재작성 F1 + U2 §2.7 단일 경로화) — pool 화면 사망의 승계처
+        # 실렌더 되읽기. 「작업」이 활성인 지점에 둔다(다이얼로그가 Nav 를 옮기므로 화면 폭
+        # 측정 프로브 앞이면 안 된다). 찾아보기 마운트가 비동기라 setup+stash 로 회수한다.
+        window.evaluate_js(_DATA_PICKER_PROBE_SETUP_JS)  # type: ignore[attr-defined]
+        result["data_picker"] = _probe_late(
+            window, "__dataPicker && !window.__dataPicker.pending",
+            "JSON.stringify(window.__dataPicker)",
+        )
         time.sleep(0.4)  # 모달 닫힘 전이(CSS 160ms) 정산 — 다음 프로브의 클릭이 백드롭에 막히지 않게
         # 매핑 칩-라이브(슬라이스 5 PR-3) — 합성 매핑 스냅샷으로 실 render() 구동 후 칩·태그 되읽기.
         result["editor_chip"] = window.evaluate_js(_EDITOR_CHIP_PROBE_JS)  # type: ignore[attr-defined]

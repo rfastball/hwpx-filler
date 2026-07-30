@@ -593,14 +593,11 @@
         </section>
 
         <section class="picker-sec" aria-labelledby="dataPickerPinCap">
-          <div class="cap" id="dataPickerPinCap">고정한 데이터
-            <span class="acts">
-              <!-- 「새로고침」은 없다(U2 §2.3) — open() 이 열 때마다 pool.refresh 를 부르므로
-                   면에 들어온 목록은 이미 방금 읽은 것이다. 남는 쓸모는 「모달을 띄워 둔 채
-                   외부에서 바뀐 것」 하나뿐인데, 그 하나 때문에 상시 버튼을 두면 목록이
-                   낡았을 수 있다는 인상을 매번 준다. -->
-              <button class="btn sm" id="dataPickerRegister" data-busy-lock>＋ 직접 등록…</button>
-            </span></div>
+          <!-- 캡션의 .acts 는 통째로 죽었다: 「새로고침」은 U2 §2.3(열 때마다 pool.refresh
+               재스캔 — 상시 버튼은 목록이 낡았을 수 있다는 인상만 준다), 「＋ 직접 등록…」은
+               U2 §2.7 4행(유일한 고유 기능=「읽지 않고 등록」이 곧 결함 — 등록은 「이 데이터
+               고정」·「다시 연결」 두 명시 진입만 남는다). -->
+          <div class="cap" id="dataPickerPinCap">고정한 데이터</div>
           <div id="dataPickerPinned" class="tpllist"></div>
           <div id="dataPickerCorrupt"></div>
         </section>

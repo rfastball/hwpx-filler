@@ -136,8 +136,10 @@ def test_picker_skeleton_is_static_in_index_html():
     for inner in (
         "dataPickerTitle", "dataPickerNote", "dataPickerCurrent", "dataPickerPinned",
         # (dataPickerRefresh 는 U2 §2.3 에서 사망 — open() 이 여는 순간 재스캔하므로 상시
-        #  버튼이 잉여였다. 그 부재는 test_r3_pool 이 단언한다.)
-        "dataPickerCorrupt", "dataPickerBrowse", "dataPickerRegister",
+        #  버튼이 잉여였다. 그 부재는 test_r3_pool 이 단언한다.
+        #  dataPickerRegister 는 U2 §2.7 4행에서 사망 — 부재 단언은 아래
+        #  test_direct_register_is_dead.)
+        "dataPickerCorrupt", "dataPickerBrowse",
         "dataPickerClose",
     ):
         assert f'id="{inner}"' in index, (
@@ -146,6 +148,28 @@ def test_picker_skeleton_is_static_in_index_html():
     # 골격은 정적 소유다 — 모듈이 다시 만들어 내면 정적 파싱 가드가 무력해진다.
     assert "createElement" not in _picker_src(), (
         "data_picker.js 가 골격을 동적 생성합니다 — 정적 DOM 계약 사각 재발(K12)."
+    )
+
+
+def test_direct_register_is_dead():
+    """「＋ 직접 등록…」(#dataPickerRegister)은 DOM·배선 모두 소멸해야 한다(U2 §2.7 4행).
+
+    유일한 고유 기능(마운트하지 않고 등록)이 가능한 이유가 곧 결함(경로만 반환하고 읽지
+    않음)이었다 — 대체 경로 신설 없이 삭제됐고, 등록 진입은 「이 데이터 고정」(pin)·
+    「다시 연결」(relink) 둘뿐이다. 캡션의 .acts span 도 §2.3 새로고침 제거와 합쳐져
+    통째로 비었으므로 함께 죽었다.
+    """
+    assert "dataPickerRegister" not in _index_src(), (
+        "「＋ 직접 등록…」 버튼 DOM 이 index.html 에 남아 있습니다(U2 §2.7 4행)."
+    )
+    assert "dataPickerRegister" not in _picker_src(), (
+        "「＋ 직접 등록…」 배선이 data_picker.js 에 남아 있습니다(U2 §2.7 4행)."
+    )
+    # 의무 상속분: relink 가 등록 모달의 찾아보기(#poolRegBrowse)를 쓰므로 브리지·버튼은
+    # 살되 pin 모드에서만 감춘다 — 감춤 배선의 존재를 함께 단언한다(§2.7 5행).
+    src = _picker_src()
+    assert "poolRegBrowse" in src and 'readOnly' in src, (
+        "pin 모드의 path·sheet 읽기전용/찾아보기 감춤 배선이 없습니다(U2 §2.7 5행)."
     )
 
 
